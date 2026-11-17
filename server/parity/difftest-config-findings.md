@@ -32,48 +32,48 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | H120 / real-dot-segment-network-redirect//api/profiles/default/mosdns/rule-proxy/cross-origin | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | open | — | c14763b3 | 400 / 200 |
 | H120 / real-dot-segment-network-redirect//api/profiles/default/mosdns/rule-proxy/same-origin-outside-api | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | open | — | c14763b3 | 400 / 200 |
 | H123 / original-and-mirror-both-fail-through-loopback-proxy | `GET /api/mosdns/rule-proxy` | open | — | c14763b3 | 502 / 502 |
-| H128 / sequence-root | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | c14763b3 | 200 / 200 |
-| H128 / sequence-root | `GET /api/rules/local/<name>` | open | — | c14763b3 | 200 / 200 |
-| H129 / duplicate-payload | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | c14763b3 | 200 / 200 |
-| H129 / duplicate-payload | `GET /api/rules/local/<name>` | open | — | c14763b3 | 200 / 200 |
-| H129 / mapping-payload | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | c14763b3 | 200 / 200 |
-| H129 / mapping-payload | `GET /api/rules/local/<name>` | open | — | c14763b3 | 200 / 200 |
-| H129 / missing-payload | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | c14763b3 | 200 / 200 |
-| H129 / missing-payload | `GET /api/rules/local/<name>` | open | — | c14763b3 | 200 / 200 |
-| H130 / alias | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | c14763b3 | 200 / 200 |
-| H130 / alias | `GET /api/rules/local/<name>` | open | — | c14763b3 | 200 / 200 |
-| H130 / anchor | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | c14763b3 | 200 / 200 |
-| H130 / anchor | `GET /api/rules/local/<name>` | open | — | c14763b3 | 200 / 200 |
-| H131 / block-entry | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | c14763b3 | 200 / 200 |
-| H131 / block-entry | `GET /api/rules/local/<name>` | open | — | c14763b3 | 200 / 200 |
-| H131 / nested-entry | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | c14763b3 | 200 / 200 |
-| H131 / nested-entry | `GET /api/rules/local/<name>` | open | — | c14763b3 | 200 / 200 |
-| H131 / non-string-entry | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | c14763b3 | 200 / 200 |
-| H131 / non-string-entry | `GET /api/rules/local/<name>` | open | — | c14763b3 | 200 / 200 |
-| H132 / duplicate-extra-flow-key | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | c14763b3 | 200 / 200 |
-| H132 / duplicate-extra-flow-key | `GET /api/rules/local/<name>` | open | — | c14763b3 | 200 / 200 |
-| H133 / multiline-extra-flow-value | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | c14763b3 | 200 / 200 |
-| H133 / multiline-extra-flow-value | `GET /api/rules/local/<name>` | open | — | c14763b3 | 200 / 200 |
-| H911 / actual-public-catalog-key-is-bound-to-DNS-follow | `PUT /api/rules/dns` | open | — | c14763b3 | 400 / 400 |
-| R007-S02 /  | `GET /api/aggregations/<agg_id>/preview` | closed | 1b280f1a；1b280f1a为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 200 / 200 |
-| R008-S05 / failed-source-valid-cache | `GET /api/aggregations/<agg_id>/provider` | closed | 1b280f1a；1b280f1a为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 200 / 200 |
+| H128 / sequence-root | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | 895f5e21 | 200 / 200 |
+| H128 / sequence-root | `GET /api/rules/local/<name>` | open | — | 895f5e21 | 200 / 200 |
+| H129 / duplicate-payload | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | 895f5e21 | 200 / 200 |
+| H129 / duplicate-payload | `GET /api/rules/local/<name>` | open | — | 895f5e21 | 200 / 200 |
+| H129 / mapping-payload | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | 895f5e21 | 200 / 200 |
+| H129 / mapping-payload | `GET /api/rules/local/<name>` | open | — | 895f5e21 | 200 / 200 |
+| H129 / missing-payload | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | 895f5e21 | 200 / 200 |
+| H129 / missing-payload | `GET /api/rules/local/<name>` | open | — | 895f5e21 | 200 / 200 |
+| H130 / alias | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | 895f5e21 | 200 / 200 |
+| H130 / alias | `GET /api/rules/local/<name>` | open | — | 895f5e21 | 200 / 200 |
+| H130 / anchor | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | 895f5e21 | 200 / 200 |
+| H130 / anchor | `GET /api/rules/local/<name>` | open | — | 895f5e21 | 200 / 200 |
+| H131 / block-entry | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | 895f5e21 | 200 / 200 |
+| H131 / block-entry | `GET /api/rules/local/<name>` | open | — | 895f5e21 | 200 / 200 |
+| H131 / nested-entry | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | 895f5e21 | 200 / 200 |
+| H131 / nested-entry | `GET /api/rules/local/<name>` | open | — | 895f5e21 | 200 / 200 |
+| H131 / non-string-entry | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | 895f5e21 | 200 / 200 |
+| H131 / non-string-entry | `GET /api/rules/local/<name>` | open | — | 895f5e21 | 200 / 200 |
+| H132 / duplicate-extra-flow-key | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | 895f5e21 | 200 / 200 |
+| H132 / duplicate-extra-flow-key | `GET /api/rules/local/<name>` | open | — | 895f5e21 | 200 / 200 |
+| H133 / multiline-extra-flow-value | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | 895f5e21 | 200 / 200 |
+| H133 / multiline-extra-flow-value | `GET /api/rules/local/<name>` | open | — | 895f5e21 | 200 / 200 |
+| H911 / actual-public-catalog-key-is-bound-to-DNS-follow | `PUT /api/rules/dns` | open | — | 895f5e21 | 400 / 400 |
+| R007-S02 /  | `GET /api/aggregations/<agg_id>/preview` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 200 / 200 |
+| R008-S05 / failed-source-valid-cache | `GET /api/aggregations/<agg_id>/provider` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 200 / 200 |
 | R011-F06 /  | `POST /api/auth/login` | accepted | [behaviour-changes.md · N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | c14763b3 | 500 / 400 |
 | R011-F07 /  | `POST /api/auth/login` | accepted | [behaviour-changes.md · N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | c14763b3 | 500 / 400 |
 | R011-F08 /  | `POST /api/auth/login` | accepted | [behaviour-changes.md · N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | c14763b3 | 500 / 415 |
 | R012-F01 /  | `GET /api/auth/status` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | c14763b3 | 405 / 405 |
-| R015-B01 /  | `POST /api/backup/config` | closed | 1b280f1a；1b280f1a为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 200 / 200 |
-| R015-B02 /  | `POST /api/backup/config` | closed | 1b280f1a；1b280f1a为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 200 / 200 |
-| R015-B03 /  | `POST /api/backup/config` | closed | 1b280f1a；1b280f1a为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 200 / 200 |
-| R015-B04 /  | `POST /api/backup/config` | closed | 1b280f1a；1b280f1a为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 200 / 200 |
-| R015-F08 / empty | `POST /api/backup/config` | closed | 1b280f1a；1b280f1a为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
-| R015-F09 / array | `POST /api/backup/config` | closed | 1b280f1a；1b280f1a为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
-| R015-F10 / unknown | `POST /api/backup/config` | closed | 1b280f1a；1b280f1a为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
-| R015-F11 / text-type | `POST /api/backup/config` | closed | 1b280f1a；1b280f1a为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
-| R015-F12 / auto-type | `POST /api/backup/config` | closed | 1b280f1a；1b280f1a为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
-| R015-F13 / keep-negative | `POST /api/backup/config` | closed | 1b280f1a；1b280f1a为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
-| R015-F14 / keep-large | `POST /api/backup/config` | closed | 1b280f1a；1b280f1a为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
-| R015-F15 / daily-large | `POST /api/backup/config` | closed | 1b280f1a；1b280f1a为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
-| R015-F16 / keep-bool | `POST /api/backup/config` | closed | 1b280f1a；1b280f1a为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R015-B01 /  | `POST /api/backup/config` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 200 / 200 |
+| R015-B02 /  | `POST /api/backup/config` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 200 / 200 |
+| R015-B03 /  | `POST /api/backup/config` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 200 / 200 |
+| R015-B04 /  | `POST /api/backup/config` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 200 / 200 |
+| R015-F08 / empty | `POST /api/backup/config` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R015-F09 / array | `POST /api/backup/config` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R015-F10 / unknown | `POST /api/backup/config` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R015-F11 / text-type | `POST /api/backup/config` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R015-F12 / auto-type | `POST /api/backup/config` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R015-F13 / keep-negative | `POST /api/backup/config` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R015-F14 / keep-large | `POST /api/backup/config` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R015-F15 / daily-large | `POST /api/backup/config` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R015-F16 / keep-bool | `POST /api/backup/config` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
 | R015-S04 /  | `POST /api/backup/config` | accepted | [behaviour-changes.md · C35空密码保留](behaviour-changes.md#c35webdav-凭据安全与表单密码保留) | c14763b3 | 200 / 200 |
 | R016-B02 /  | `POST /api/backup/now` | open | — | c14763b3 | 200 / 200 |
 | R016-B03 /  | `POST /api/backup/now` | open | — | c14763b3 | 200 / 200 |
@@ -81,35 +81,35 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | R016-B91 / Asia/Shanghai/previous-local-day-crosses-UTC-midnight | `POST /api/backup/now` | open | — | c14763b3 | 200 / 200 |
 | R016-B91 / Etc/GMT+12/previous-local-day-crosses-UTC-midnight | `POST /api/backup/now` | open | — | c14763b3 | 200 / 200 |
 | R016-B91 / Etc/GMT-14/previous-local-day-crosses-UTC-midnight | `POST /api/backup/now` | open | — | c14763b3 | 200 / 200 |
-| R016-F08 / array | `POST /api/backup/now` | closed | 1b280f1a；1b280f1a为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
-| R016-F09 / empty | `POST /api/backup/now` | closed | 1b280f1a；1b280f1a为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
-| R016-F10 / unknown | `POST /api/backup/now` | closed | 1b280f1a；1b280f1a为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
-| R016-F11 / text-type | `POST /api/backup/now` | closed | 1b280f1a；1b280f1a为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
-| R016-F12 / auto-type | `POST /api/backup/now` | closed | 1b280f1a；1b280f1a为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
-| R016-F13 / daily-large | `POST /api/backup/now` | closed | 1b280f1a；1b280f1a为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
-| R016-F13 / keep-bool | `POST /api/backup/now` | closed | 1b280f1a；1b280f1a为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
-| R016-F13 / keep-large | `POST /api/backup/now` | closed | 1b280f1a；1b280f1a为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
-| R016-F13 / keep-negative | `POST /api/backup/now` | closed | 1b280f1a；1b280f1a为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
-| R016-F15 /  | `POST /api/backup/now` | closed | abdf47ef, d01fdf32, f9963a7f, 6a99ee8b；6a99ee8b为O6英文内部诊断比较器纠正，不是Go业务修复；中文/HTTP数字/副作用继续严格比较 | c14763b3 | 500 / 500 |
-| R016-F15 / real-MKCOL-403-before-PUT | `POST /api/backup/now` | closed | 6a99ee8b；6a99ee8b为O6英文内部诊断比较器纠正，不是Go业务修复；中文/HTTP数字/副作用继续严格比较 | c14763b3 | 400 / 400 |
+| R016-F08 / array | `POST /api/backup/now` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R016-F09 / empty | `POST /api/backup/now` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R016-F10 / unknown | `POST /api/backup/now` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R016-F11 / text-type | `POST /api/backup/now` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R016-F12 / auto-type | `POST /api/backup/now` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R016-F13 / daily-large | `POST /api/backup/now` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R016-F13 / keep-bool | `POST /api/backup/now` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R016-F13 / keep-large | `POST /api/backup/now` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R016-F13 / keep-negative | `POST /api/backup/now` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R016-F15 /  | `POST /api/backup/now` | closed | abdf47ef, d01fdf32, f9963a7f, 25f1364a；25f1364a为O6英文内部诊断比较器纠正，不是Go业务修复；中文/HTTP数字/副作用继续严格比较 | c14763b3 | 500 / 500 |
+| R016-F15 / real-MKCOL-403-before-PUT | `POST /api/backup/now` | closed | 25f1364a；25f1364a为O6英文内部诊断比较器纠正，不是Go业务修复；中文/HTTP数字/副作用继续严格比较 | c14763b3 | 400 / 400 |
 | R016-F16 /  | `POST /api/backup/now` | open | — | c14763b3 | 200 / 200 |
 | R016-S01 /  | `POST /api/backup/now` | open | — | c14763b3 | 200 / 200 |
 | R016-S02 /  | `POST /api/backup/now` | open | — | c14763b3 | 200 / 200 |
 | R016-S03 /  | `POST /api/backup/now` | open | — | c14763b3 | 200 / 200 |
-| R017-F08 / array | `POST /api/backup/test` | closed | 1b280f1a；1b280f1a为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
-| R017-F09 / empty | `POST /api/backup/test` | closed | 1b280f1a；1b280f1a为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
-| R017-F10 / unknown | `POST /api/backup/test` | closed | 1b280f1a；1b280f1a为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
-| R017-F11 / text-type | `POST /api/backup/test` | closed | 1b280f1a；1b280f1a为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
-| R017-F12 / auto-type | `POST /api/backup/test` | closed | 1b280f1a；1b280f1a为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
-| R017-F13 / daily-large | `POST /api/backup/test` | closed | 1b280f1a；1b280f1a为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
-| R017-F13 / keep-bool | `POST /api/backup/test` | closed | 1b280f1a；1b280f1a为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
-| R017-F13 / keep-large | `POST /api/backup/test` | closed | 1b280f1a；1b280f1a为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
-| R017-F13 / keep-negative | `POST /api/backup/test` | closed | 1b280f1a；1b280f1a为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
-| R017-F14 /  | `POST /api/backup/test` | closed | 1b280f1a；1b280f1a为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
-| R017-F15 /  | `POST /api/backup/test` | closed | 1b280f1a；1b280f1a为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
-| R017-F16 /  | `POST /api/backup/test` | closed | 1b280f1a；1b280f1a为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
-| R017-F18 /  | `POST /api/backup/test` | closed | abdf47ef, d01fdf32, f9963a7f, 6a99ee8b；6a99ee8b为O6英文内部诊断比较器纠正，不是Go业务修复；中文/HTTP数字/副作用继续严格比较 | c14763b3 | 400 / 400 |
-| R017-F19 /  | `POST /api/backup/test` | closed | abdf47ef, d01fdf32, f9963a7f, 6a99ee8b；6a99ee8b为O6英文内部诊断比较器纠正，不是Go业务修复；中文/HTTP数字/副作用继续严格比较 | c14763b3 | 500 / 500 |
+| R017-F08 / array | `POST /api/backup/test` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R017-F09 / empty | `POST /api/backup/test` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R017-F10 / unknown | `POST /api/backup/test` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R017-F11 / text-type | `POST /api/backup/test` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R017-F12 / auto-type | `POST /api/backup/test` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R017-F13 / daily-large | `POST /api/backup/test` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R017-F13 / keep-bool | `POST /api/backup/test` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R017-F13 / keep-large | `POST /api/backup/test` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R017-F13 / keep-negative | `POST /api/backup/test` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R017-F14 /  | `POST /api/backup/test` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R017-F15 /  | `POST /api/backup/test` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R017-F16 /  | `POST /api/backup/test` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R017-F18 /  | `POST /api/backup/test` | closed | abdf47ef, d01fdf32, f9963a7f, 25f1364a；25f1364a为O6英文内部诊断比较器纠正，不是Go业务修复；中文/HTTP数字/副作用继续严格比较 | c14763b3 | 400 / 400 |
+| R017-F19 /  | `POST /api/backup/test` | closed | abdf47ef, d01fdf32, f9963a7f, 25f1364a；25f1364a为O6英文内部诊断比较器纠正，不是Go业务修复；中文/HTTP数字/副作用继续严格比较 | c14763b3 | 500 / 500 |
 | R055-B01 / disabled/domain/example.com | `POST /api/domain-discovery/region/route` | closed | 041ab5a6 | c14763b3 | 200 / 200 |
 | R055-S02 / new/domain/example.com | `POST /api/domain-discovery/region/route` | closed | 041ab5a6 | c14763b3 | 200 / 200 |
 | R056-B01 / name-collision/0 | `POST /api/domain-discovery/rulesets/init` | closed | 041ab5a6 | c14763b3 | 200 / 200 |
@@ -135,31 +135,31 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | R103-F10 /  | `POST /api/nodes/reorder` | accepted | [behaviour-changes.md · Step B #1](behaviour-changes.md#config-step-b--coordinator-decisions) | c14763b3 | 404 / 400 |
 | R103-F11 /  | `POST /api/nodes/reorder` | accepted | [behaviour-changes.md · Step B #1](behaviour-changes.md#config-step-b--coordinator-decisions) | c14763b3 | 404 / 400 |
 | R103-F14 /  | `POST /api/nodes/reorder` | accepted | [behaviour-changes.md · Step B #1](behaviour-changes.md#config-step-b--coordinator-decisions) | c14763b3 | 500 / 400 |
-| R122-S05 / failed-source-valid-cache | `GET /api/profiles/<profile_id>/aggregations/<agg_id>/provider` | closed | 1b280f1a；1b280f1a为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 200 / 200 |
+| R122-S05 / failed-source-valid-cache | `GET /api/profiles/<profile_id>/aggregations/<agg_id>/provider` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 200 / 200 |
 | R138-B04 / text/B04 | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | closed | 8f3d36ad | c14763b3 | 422 / 422 |
 | R138-B91 / absolute-query-dispatches-internal-content-endpoint | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | open | — | c14763b3 | 200 / 502 |
 | R138-F13 / text/F13 | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | closed | 8f3d36ad | c14763b3 | 422 / 422 |
 | R138-F16 / receipt-path-is-directory | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | open | — | c14763b3 | 500 / 400 |
 | R138-S90 / declared-no-cache-download-failure | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | closed | 8f3d36ad | c14763b3 | 502 / 502 |
 | R138-S91 /  | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | open | — | c14763b3 | 200 / 200 |
-| R151-S01 /  | `GET /api/profiles/<profile_id>/rules` | open | — | c14763b3 | 200 / 200 |
-| R151-S02 /  | `GET /api/profiles/<profile_id>/rules` | open | — | c14763b3 | 200 / 200 |
-| R152-B01 /  | `POST /api/profiles/<profile_id>/rules` | open | — | c14763b3 | 200 / 200 |
-| R152-B02 /  | `POST /api/profiles/<profile_id>/rules` | open | — | c14763b3 | 200 / 200 |
-| R152-B03 /  | `POST /api/profiles/<profile_id>/rules` | open | — | c14763b3 | 400 / 400 |
-| R152-F08 /  | `POST /api/profiles/<profile_id>/rules` | open | — | c14763b3 | 400 / 400 |
-| R152-F09 /  | `POST /api/profiles/<profile_id>/rules` | open | — | c14763b3 | 400 / 400 |
-| R152-F10 /  | `POST /api/profiles/<profile_id>/rules` | open | — | c14763b3 | 400 / 400 |
-| R152-F11 / DOMAIN | `POST /api/profiles/<profile_id>/rules` | open | — | c14763b3 | 400 / 400 |
-| R152-F11 / IP-CIDR | `POST /api/profiles/<profile_id>/rules` | open | — | c14763b3 | 400 / 400 |
-| R152-F12 /  | `POST /api/profiles/<profile_id>/rules` | open | — | c14763b3 | 400 / 400 |
-| R152-F13 /  | `POST /api/profiles/<profile_id>/rules` | open | — | c14763b3 | 400 / 400 |
-| R152-F14 /  | `POST /api/profiles/<profile_id>/rules` | open | — | c14763b3 | 400 / 400 |
-| R152-F15 /  | `POST /api/profiles/<profile_id>/rules` | open | — | c14763b3 | 400 / 400 |
-| R152-S01 /  | `POST /api/profiles/<profile_id>/rules` | open | — | c14763b3 | 200 / 200 |
-| R152-S02 /  | `POST /api/profiles/<profile_id>/rules` | open | — | c14763b3 | 200 / 200 |
-| R152-S03 /  | `POST /api/profiles/<profile_id>/rules` | open | — | c14763b3 | 200 / 200 |
-| R152-S04 /  | `POST /api/profiles/<profile_id>/rules` | open | — | c14763b3 | 200 / 200 |
+| R151-S01 /  | `GET /api/profiles/<profile_id>/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R151-S02 /  | `GET /api/profiles/<profile_id>/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R152-B01 /  | `POST /api/profiles/<profile_id>/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R152-B02 /  | `POST /api/profiles/<profile_id>/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R152-B03 /  | `POST /api/profiles/<profile_id>/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R152-F08 /  | `POST /api/profiles/<profile_id>/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R152-F09 /  | `POST /api/profiles/<profile_id>/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R152-F10 /  | `POST /api/profiles/<profile_id>/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R152-F11 / DOMAIN | `POST /api/profiles/<profile_id>/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R152-F11 / IP-CIDR | `POST /api/profiles/<profile_id>/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R152-F12 /  | `POST /api/profiles/<profile_id>/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R152-F13 /  | `POST /api/profiles/<profile_id>/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R152-F14 /  | `POST /api/profiles/<profile_id>/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R152-F15 /  | `POST /api/profiles/<profile_id>/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R152-S01 /  | `POST /api/profiles/<profile_id>/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R152-S02 /  | `POST /api/profiles/<profile_id>/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R152-S03 /  | `POST /api/profiles/<profile_id>/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R152-S04 /  | `POST /api/profiles/<profile_id>/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
 | R154-B03 / ?format=unknown | `GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies` | closed | 7b904725 | c14763b3 | 200 / 200 |
 | R154-B04 / URL-over-query-header | `GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies` | closed | 7b904725 | c14763b3 | 200 / 200 |
 | R154-B90 / Asia/Shanghai | `GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies` | closed | 7b904725 | c14763b3 | 200 / 200 |
@@ -178,176 +178,176 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | R154-S01 / open/authorized-provider | `GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies` | closed | 7b904725 | c14763b3 | 200 / 200 |
 | R154-S01 / token/authorized-provider | `GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies` | closed | 7b904725 | c14763b3 | 200 / 200 |
 | R154-S06 /  | `GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies` | closed | 7b904725 | c14763b3 | 200 / 200 |
-| R179-B01 /  | `POST /api/rule-sets` | open | — | c14763b3 | 200 / 200 |
-| R179-F08 /  | `POST /api/rule-sets` | open | — | c14763b3 | 500 / 500 |
-| R179-F09 /  | `POST /api/rule-sets` | open | — | c14763b3 | 400 / 400 |
-| R179-F10 /  | `POST /api/rule-sets` | open | — | c14763b3 | 400 / 400 |
-| R179-F11 /  | `POST /api/rule-sets` | open | — | c14763b3 | 400 / 400 |
-| R179-S01 /  | `POST /api/rule-sets` | open | — | c14763b3 | 200 / 200 |
-| R180-B01 /  | `DELETE /api/rule-sets/<rule_set_id>` | open | — | c14763b3 | 404 / 404 |
-| R180-B02 / P3/successful-rule-group-write | `DELETE /api/rule-sets/<rule_set_id>` | open | — | c14763b3 | 200 / 200 |
-| R180-B03 / P4/successful-rule-group-write | `DELETE /api/rule-sets/<rule_set_id>` | open | — | c14763b3 | 200 / 200 |
-| R180-B04 / P5/successful-rule-group-write | `DELETE /api/rule-sets/<rule_set_id>` | open | — | c14763b3 | 200 / 200 |
-| R180-B05 / P6/successful-rule-group-write | `DELETE /api/rule-sets/<rule_set_id>` | open | — | c14763b3 | 200 / 200 |
-| R180-F08 /  | `DELETE /api/rule-sets/<rule_set_id>` | open | — | c14763b3 | 404 / 404 |
-| R180-F09 /  | `DELETE /api/rule-sets/<rule_set_id>` | open | — | c14763b3 | 404 / 404 |
-| R180-S01 /  | `DELETE /api/rule-sets/<rule_set_id>` | open | — | c14763b3 | 200 / 200 |
-| R180-S01 / mosdns-selector | `DELETE /api/rule-sets/<rule_set_id>` | open | — | c14763b3 | 200 / 200 |
-| R181-B01 /  | `PUT /api/rule-sets/<rule_set_id>` | open | — | c14763b3 | 200 / 200 |
-| R181-F08 /  | `PUT /api/rule-sets/<rule_set_id>` | open | — | c14763b3 | 400 / 400 |
-| R181-F09 /  | `PUT /api/rule-sets/<rule_set_id>` | open | — | c14763b3 | 404 / 404 |
-| R181-F10 /  | `PUT /api/rule-sets/<rule_set_id>` | open | — | c14763b3 | 400 / 400 |
-| R181-S01 /  | `PUT /api/rule-sets/<rule_set_id>` | open | — | c14763b3 | 200 / 200 |
-| R182-S01 /  | `GET /api/rules` | open | — | c14763b3 | 200 / 200 |
-| R182-S02 /  | `GET /api/rules` | open | — | c14763b3 | 200 / 200 |
-| R183-B01 /  | `POST /api/rules` | open | — | c14763b3 | 200 / 200 |
-| R183-B02 /  | `POST /api/rules` | open | — | c14763b3 | 200 / 200 |
-| R183-B03 /  | `POST /api/rules` | open | — | c14763b3 | 400 / 400 |
-| R183-F08 /  | `POST /api/rules` | open | — | c14763b3 | 400 / 400 |
-| R183-F09 /  | `POST /api/rules` | open | — | c14763b3 | 400 / 400 |
-| R183-F10 /  | `POST /api/rules` | open | — | c14763b3 | 400 / 400 |
-| R183-F11 / DOMAIN | `POST /api/rules` | open | — | c14763b3 | 400 / 400 |
-| R183-F11 / IP-CIDR | `POST /api/rules` | open | — | c14763b3 | 400 / 400 |
-| R183-F12 /  | `POST /api/rules` | open | — | c14763b3 | 400 / 400 |
-| R183-F13 /  | `POST /api/rules` | open | — | c14763b3 | 400 / 400 |
-| R183-F14 /  | `POST /api/rules` | open | — | c14763b3 | 400 / 400 |
-| R183-F15 /  | `POST /api/rules` | open | — | c14763b3 | 400 / 400 |
-| R183-S01 /  | `POST /api/rules` | open | — | c14763b3 | 200 / 200 |
-| R183-S02 /  | `POST /api/rules` | open | — | c14763b3 | 200 / 200 |
-| R183-S03 /  | `POST /api/rules` | open | — | c14763b3 | 200 / 200 |
-| R183-S04 /  | `POST /api/rules` | open | — | c14763b3 | 200 / 200 |
-| R184-B01 /  | `DELETE /api/rules/<rule_id>` | open | — | c14763b3 | 200 / 200 |
-| R184-B02 / P3/successful-rule-group-write | `DELETE /api/rules/<rule_id>` | open | — | c14763b3 | 200 / 200 |
-| R184-B03 / P4/successful-rule-group-write | `DELETE /api/rules/<rule_id>` | open | — | c14763b3 | 200 / 200 |
-| R184-B04 / P5/successful-rule-group-write | `DELETE /api/rules/<rule_id>` | open | — | c14763b3 | 200 / 200 |
-| R184-B05 / P6/successful-rule-group-write | `DELETE /api/rules/<rule_id>` | open | — | c14763b3 | 200 / 200 |
-| R184-F08 /  | `DELETE /api/rules/<rule_id>` | open | — | c14763b3 | 404 / 404 |
-| R184-S01 /  | `DELETE /api/rules/<rule_id>` | open | — | c14763b3 | 200 / 200 |
-| R184-S01 / dns-cleanup/False | `DELETE /api/rules/<rule_id>` | open | — | c14763b3 | 200 / 200 |
-| R184-S01 / mosdns-selector | `DELETE /api/rules/<rule_id>` | open | — | c14763b3 | 200 / 200 |
-| R184-S02 / dns-cleanup/True | `DELETE /api/rules/<rule_id>` | open | — | c14763b3 | 200 / 200 |
-| R185-B01 /  | `PUT /api/rules/<rule_id>` | open | — | c14763b3 | 200 / 200 |
-| R185-B02 /  | `PUT /api/rules/<rule_id>` | open | — | c14763b3 | 200 / 200 |
-| R185-B03 /  | `PUT /api/rules/<rule_id>` | open | — | c14763b3 | 200 / 200 |
-| R185-F08 /  | `PUT /api/rules/<rule_id>` | open | — | c14763b3 | 400 / 400 |
-| R185-F09 /  | `PUT /api/rules/<rule_id>` | open | — | c14763b3 | 400 / 400 |
-| R185-F10 /  | `PUT /api/rules/<rule_id>` | open | — | c14763b3 | 400 / 400 |
-| R185-F11 /  | `PUT /api/rules/<rule_id>` | open | — | c14763b3 | 400 / 400 |
-| R185-F12 /  | `PUT /api/rules/<rule_id>` | open | — | c14763b3 | 400 / 400 |
-| R185-F13 /  | `PUT /api/rules/<rule_id>` | open | — | c14763b3 | 400 / 400 |
-| R185-F14 /  | `PUT /api/rules/<rule_id>` | open | — | c14763b3 | 400 / 400 |
-| R185-F15 /  | `PUT /api/rules/<rule_id>` | open | — | c14763b3 | 400 / 400 |
-| R185-F16 /  | `PUT /api/rules/<rule_id>` | open | — | c14763b3 | 404 / 404 |
-| R185-F18 /  | `PUT /api/rules/<rule_id>` | open | — | c14763b3 | 400 / 400 |
-| R185-S01 /  | `PUT /api/rules/<rule_id>` | open | — | c14763b3 | 200 / 200 |
-| R185-S02 /  | `PUT /api/rules/<rule_id>` | open | — | c14763b3 | 200 / 200 |
-| R185-S03 /  | `PUT /api/rules/<rule_id>` | open | — | c14763b3 | 200 / 200 |
-| R185-S03 / clear-route-with-type | `PUT /api/rules/<rule_id>` | open | — | c14763b3 | 200 / 200 |
-| R185-S04 /  | `PUT /api/rules/<rule_id>` | open | — | c14763b3 | 200 / 200 |
-| R186-B01 /  | `POST /api/rules/batch` | open | — | c14763b3 | 200 / 200 |
-| R186-B02 /  | `POST /api/rules/batch` | open | — | c14763b3 | 200 / 200 |
-| R186-B03 / concurrent-allocation | `POST /api/rules/batch` | open | — | c14763b3 | None / None |
-| R186-F08 /  | `POST /api/rules/batch` | open | — | c14763b3 | 400 / 400 |
-| R186-F09 /  | `POST /api/rules/batch` | open | — | c14763b3 | 400 / 400 |
-| R186-F10 /  | `POST /api/rules/batch` | open | — | c14763b3 | 400 / 400 |
-| R186-F11 /  | `POST /api/rules/batch` | open | — | c14763b3 | 400 / 400 |
-| R186-F12 /  | `POST /api/rules/batch` | open | — | c14763b3 | 400 / 400 |
-| R186-F13 /  | `POST /api/rules/batch` | open | — | c14763b3 | 400 / 400 |
-| R186-S01 /  | `POST /api/rules/batch` | open | — | c14763b3 | 200 / 200 |
-| R186-S02 /  | `POST /api/rules/batch` | open | — | c14763b3 | 200 / 200 |
-| R186-S03 /  | `POST /api/rules/batch` | open | — | c14763b3 | 200 / 200 |
-| R187-B01 /  | `POST /api/rules/compose` | open | — | c14763b3 | 200 / 200 |
-| R187-B02 /  | `POST /api/rules/compose` | open | — | c14763b3 | 200 / 200 |
-| R187-B03 /  | `POST /api/rules/compose` | open | — | c14763b3 | 200 / 200 |
-| R187-B04 /  | `POST /api/rules/compose` | open | — | c14763b3 | 200 / 200 |
-| R187-B05 /  | `POST /api/rules/compose` | open | — | c14763b3 | 200 / 200 |
-| R187-S01 /  | `POST /api/rules/compose` | open | — | c14763b3 | 200 / 200 |
-| R187-S02 /  | `POST /api/rules/compose` | open | — | c14763b3 | 200 / 200 |
-| R187-S03 /  | `POST /api/rules/compose` | open | — | c14763b3 | 200 / 200 |
-| R187-S04 /  | `POST /api/rules/compose` | open | — | c14763b3 | 200 / 200 |
-| R187-S05 /  | `POST /api/rules/compose` | open | — | c14763b3 | 200 / 200 |
-| R187-S06 /  | `POST /api/rules/compose` | open | — | c14763b3 | 200 / 200 |
-| R188-S01 / real-DNS-follow-binding-catalog | `GET /api/rules/dns` | open | — | c14763b3 | 200 / 200 |
-| R189-B01 /  | `PUT /api/rules/dns` | open | — | c14763b3 | 200 / 200 |
-| R189-B02 / native | `PUT /api/rules/dns` | open | — | c14763b3 | 200 / 200 |
-| R189-B02 / template | `PUT /api/rules/dns` | open | — | c14763b3 | 200 / 200 |
-| R189-F08 / native/ | `PUT /api/rules/dns` | open | — | c14763b3 | 400 / 400 |
-| R189-F08 / template/ | `PUT /api/rules/dns` | open | — | c14763b3 | 400 / 400 |
-| R189-F09 / native/ | `PUT /api/rules/dns` | open | — | c14763b3 | 400 / 400 |
-| R189-F09 / template/ | `PUT /api/rules/dns` | open | — | c14763b3 | 400 / 400 |
-| R189-F10 / native/ | `PUT /api/rules/dns` | open | — | c14763b3 | 400 / 400 |
-| R189-F10 / template/ | `PUT /api/rules/dns` | open | — | c14763b3 | 400 / 400 |
-| R189-F11 / native/ | `PUT /api/rules/dns` | open | — | c14763b3 | 400 / 400 |
-| R189-F11 / template/ | `PUT /api/rules/dns` | open | — | c14763b3 | 400 / 400 |
-| R189-F12 / native/'unknown' | `PUT /api/rules/dns` | open | — | c14763b3 | 400 / 400 |
-| R189-F12 / native/1 | `PUT /api/rules/dns` | open | — | c14763b3 | 400 / 400 |
-| R189-F12 / template/'unknown' | `PUT /api/rules/dns` | open | — | c14763b3 | 400 / 400 |
-| R189-F12 / template/1 | `PUT /api/rules/dns` | open | — | c14763b3 | 400 / 400 |
-| R189-F13 / native/ | `PUT /api/rules/dns` | open | — | c14763b3 | 400 / 400 |
-| R189-F13 / template/ | `PUT /api/rules/dns` | open | — | c14763b3 | 400 / 400 |
-| R189-F15 / native/ | `PUT /api/rules/dns` | open | — | c14763b3 | 400 / 400 |
-| R189-F15 / template/ | `PUT /api/rules/dns` | open | — | c14763b3 | 400 / 400 |
-| R189-S01 / cleanup-prepare/False | `PUT /api/rules/dns` | open | — | c14763b3 | 200 / 200 |
-| R189-S01 / cleanup-prepare/True | `PUT /api/rules/dns` | open | — | c14763b3 | 200 / 200 |
-| R189-S01 / native/blackhole | `PUT /api/rules/dns` | open | — | c14763b3 | 200 / 200 |
-| R189-S01 / native/direct | `PUT /api/rules/dns` | open | — | c14763b3 | 200 / 200 |
-| R189-S01 / native/nodata | `PUT /api/rules/dns` | open | — | c14763b3 | 200 / 200 |
-| R189-S01 / native/nxdomain | `PUT /api/rules/dns` | open | — | c14763b3 | 200 / 200 |
-| R189-S01 / native/proxy | `PUT /api/rules/dns` | open | — | c14763b3 | 200 / 200 |
-| R189-S01 / native/refused | `PUT /api/rules/dns` | open | — | c14763b3 | 200 / 200 |
-| R189-S01 / template/blackhole | `PUT /api/rules/dns` | open | — | c14763b3 | 200 / 200 |
-| R189-S01 / template/direct | `PUT /api/rules/dns` | open | — | c14763b3 | 200 / 200 |
-| R189-S01 / template/nodata | `PUT /api/rules/dns` | open | — | c14763b3 | 200 / 200 |
-| R189-S01 / template/nxdomain | `PUT /api/rules/dns` | open | — | c14763b3 | 200 / 200 |
-| R189-S01 / template/proxy | `PUT /api/rules/dns` | open | — | c14763b3 | 200 / 200 |
-| R189-S01 / template/refused | `PUT /api/rules/dns` | open | — | c14763b3 | 200 / 200 |
-| R189-S01 / type-guard-prepare | `PUT /api/rules/dns` | open | — | c14763b3 | 200 / 200 |
-| R189-S02 / native/follow | `PUT /api/rules/dns` | open | — | c14763b3 | 200 / 200 |
-| R189-S02 / template/follow | `PUT /api/rules/dns` | open | — | c14763b3 | 200 / 200 |
-| R189-S03 / native/default | `PUT /api/rules/dns` | open | — | c14763b3 | 200 / 200 |
-| R189-S03 / template/default | `PUT /api/rules/dns` | open | — | c14763b3 | 200 / 200 |
-| R189-S04 / native | `PUT /api/rules/dns` | open | — | c14763b3 | 200 / 200 |
-| R189-S04 / template | `PUT /api/rules/dns` | open | — | c14763b3 | 200 / 200 |
-| R191-B01 /  | `POST /api/rules/group-name` | open | — | c14763b3 | 200 / 200 |
-| R191-B02 /  | `POST /api/rules/group-name` | open | — | c14763b3 | 200 / 200 |
-| R191-B03 /  | `POST /api/rules/group-name` | open | — | c14763b3 | 200 / 200 |
-| R191-F08 / [] | `POST /api/rules/group-name` | open | — | c14763b3 | 400 / 400 |
-| R191-F08 / {} | `POST /api/rules/group-name` | open | — | c14763b3 | 400 / 400 |
-| R191-F09 /  | `POST /api/rules/group-name` | open | — | c14763b3 | 400 / 400 |
-| R191-F10 /  | `POST /api/rules/group-name` | open | — | c14763b3 | 400 / 400 |
-| R191-F11 /  | `POST /api/rules/group-name` | open | — | c14763b3 | 400 / 400 |
-| R191-F12 /  | `POST /api/rules/group-name` | open | — | c14763b3 | 404 / 404 |
-| R191-S01 /  | `POST /api/rules/group-name` | open | — | c14763b3 | 200 / 200 |
-| R191-S02 /  | `POST /api/rules/group-name` | open | — | c14763b3 | 200 / 200 |
-| R194-B01 /  | `PUT /api/rules/policy` | open | — | c14763b3 | 200 / 200 |
-| R194-B02 /  | `PUT /api/rules/policy` | open | — | c14763b3 | 200 / 200 |
-| R194-B03 / explicit-DNS-does-not-follow-policy-edit | `PUT /api/rules/policy` | open | — | c14763b3 | 200 / 200 |
-| R194-F08 /  | `PUT /api/rules/policy` | open | — | c14763b3 | 400 / 400 |
-| R194-F09 /  | `PUT /api/rules/policy` | open | — | c14763b3 | 400 / 400 |
-| R194-F10 /  | `PUT /api/rules/policy` | open | — | c14763b3 | 400 / 400 |
-| R194-F11 /  | `PUT /api/rules/policy` | open | — | c14763b3 | 400 / 400 |
-| R194-F12 /  | `PUT /api/rules/policy` | open | — | c14763b3 | 400 / 400 |
-| R194-F13 /  | `PUT /api/rules/policy` | open | — | c14763b3 | 400 / 400 |
-| R194-F14 /  | `PUT /api/rules/policy` | open | — | c14763b3 | 400 / 400 |
-| R194-F15 /  | `PUT /api/rules/policy` | open | — | c14763b3 | 404 / 404 |
-| R194-S01 /  | `PUT /api/rules/policy` | open | — | c14763b3 | 200 / 200 |
-| R194-S02 /  | `PUT /api/rules/policy` | open | — | c14763b3 | 200 / 200 |
-| R194-S03 /  | `PUT /api/rules/policy` | open | — | c14763b3 | 200 / 200 |
-| R194-S04 /  | `PUT /api/rules/policy` | open | — | c14763b3 | 200 / 200 |
-| R195-B01 /  | `POST /api/rules/reorder` | open | — | c14763b3 | 200 / 200 |
-| R195-B02 /  | `POST /api/rules/reorder` | open | — | c14763b3 | 200 / 200 |
-| R195-B03 / real-recognized-native-provider-order-rebuild | `POST /api/rules/reorder` | open | — | c14763b3 | 200 / 200 |
-| R195-F08 / [] | `POST /api/rules/reorder` | open | — | c14763b3 | 400 / 400 |
-| R195-F08 / {} | `POST /api/rules/reorder` | open | — | c14763b3 | 400 / 400 |
-| R195-F09 /  | `POST /api/rules/reorder` | open | — | c14763b3 | 400 / 400 |
-| R195-F10 /  | `POST /api/rules/reorder` | open | — | c14763b3 | 400 / 400 |
-| R195-F11 /  | `POST /api/rules/reorder` | open | — | c14763b3 | 404 / 404 |
-| R195-F12 /  | `POST /api/rules/reorder` | open | — | c14763b3 | 400 / 400 |
-| R195-F13 / {'ids': [1]} | `POST /api/rules/reorder` | open | — | c14763b3 | 404 / 404 |
-| R195-F13 / {'ids': [[1]]} | `POST /api/rules/reorder` | open | — | c14763b3 | 500 / 500 |
-| R195-S01 /  | `POST /api/rules/reorder` | open | — | c14763b3 | 200 / 200 |
-| R195-S02 /  | `POST /api/rules/reorder` | open | — | c14763b3 | 200 / 200 |
-| R195-S03 /  | `POST /api/rules/reorder` | open | — | c14763b3 | 200 / 200 |
+| R179-B01 /  | `POST /api/rule-sets` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R179-F08 /  | `POST /api/rule-sets` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | 895f5e21 | 500 / 500 |
+| R179-F09 /  | `POST /api/rule-sets` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R179-F10 /  | `POST /api/rule-sets` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R179-F11 /  | `POST /api/rule-sets` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R179-S01 /  | `POST /api/rule-sets` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R180-B01 /  | `DELETE /api/rule-sets/<rule_set_id>` | open | — | 895f5e21 | 404 / 404 |
+| R180-B02 / P3/successful-rule-group-write | `DELETE /api/rule-sets/<rule_set_id>` | open | — | 895f5e21 | 200 / 200 |
+| R180-B03 / P4/successful-rule-group-write | `DELETE /api/rule-sets/<rule_set_id>` | open | — | 895f5e21 | 200 / 200 |
+| R180-B04 / P5/successful-rule-group-write | `DELETE /api/rule-sets/<rule_set_id>` | open | — | 895f5e21 | 200 / 200 |
+| R180-B05 / P6/successful-rule-group-write | `DELETE /api/rule-sets/<rule_set_id>` | open | — | 895f5e21 | 200 / 200 |
+| R180-F08 /  | `DELETE /api/rule-sets/<rule_set_id>` | open | — | 895f5e21 | 404 / 404 |
+| R180-F09 /  | `DELETE /api/rule-sets/<rule_set_id>` | open | — | 895f5e21 | 404 / 404 |
+| R180-S01 /  | `DELETE /api/rule-sets/<rule_set_id>` | open | — | 895f5e21 | 200 / 200 |
+| R180-S01 / mosdns-selector | `DELETE /api/rule-sets/<rule_set_id>` | open | — | 895f5e21 | 200 / 200 |
+| R181-B01 /  | `PUT /api/rule-sets/<rule_set_id>` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R181-F08 /  | `PUT /api/rule-sets/<rule_set_id>` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R181-F09 /  | `PUT /api/rule-sets/<rule_set_id>` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | 895f5e21 | 404 / 404 |
+| R181-F10 /  | `PUT /api/rule-sets/<rule_set_id>` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R181-S01 /  | `PUT /api/rule-sets/<rule_set_id>` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R182-S01 /  | `GET /api/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R182-S02 /  | `GET /api/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R183-B01 /  | `POST /api/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R183-B02 /  | `POST /api/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R183-B03 /  | `POST /api/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R183-F08 /  | `POST /api/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R183-F09 /  | `POST /api/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R183-F10 /  | `POST /api/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R183-F11 / DOMAIN | `POST /api/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R183-F11 / IP-CIDR | `POST /api/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R183-F12 /  | `POST /api/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R183-F13 /  | `POST /api/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R183-F14 /  | `POST /api/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R183-F15 /  | `POST /api/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R183-S01 /  | `POST /api/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R183-S02 /  | `POST /api/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R183-S03 /  | `POST /api/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R183-S04 /  | `POST /api/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R184-B01 /  | `DELETE /api/rules/<rule_id>` | open | — | 895f5e21 | 200 / 200 |
+| R184-B02 / P3/successful-rule-group-write | `DELETE /api/rules/<rule_id>` | open | — | 895f5e21 | 200 / 200 |
+| R184-B03 / P4/successful-rule-group-write | `DELETE /api/rules/<rule_id>` | open | — | 895f5e21 | 200 / 200 |
+| R184-B04 / P5/successful-rule-group-write | `DELETE /api/rules/<rule_id>` | open | — | 895f5e21 | 200 / 200 |
+| R184-B05 / P6/successful-rule-group-write | `DELETE /api/rules/<rule_id>` | open | — | 895f5e21 | 200 / 200 |
+| R184-F08 /  | `DELETE /api/rules/<rule_id>` | open | — | 895f5e21 | 404 / 404 |
+| R184-S01 /  | `DELETE /api/rules/<rule_id>` | open | — | 895f5e21 | 200 / 200 |
+| R184-S01 / dns-cleanup/False | `DELETE /api/rules/<rule_id>` | open | — | 895f5e21 | 200 / 200 |
+| R184-S01 / mosdns-selector | `DELETE /api/rules/<rule_id>` | open | — | 895f5e21 | 200 / 200 |
+| R184-S02 / dns-cleanup/True | `DELETE /api/rules/<rule_id>` | open | — | 895f5e21 | 200 / 200 |
+| R185-B01 /  | `PUT /api/rules/<rule_id>` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R185-B02 /  | `PUT /api/rules/<rule_id>` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R185-B03 /  | `PUT /api/rules/<rule_id>` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R185-F08 /  | `PUT /api/rules/<rule_id>` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R185-F09 /  | `PUT /api/rules/<rule_id>` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R185-F10 /  | `PUT /api/rules/<rule_id>` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R185-F11 /  | `PUT /api/rules/<rule_id>` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R185-F12 /  | `PUT /api/rules/<rule_id>` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R185-F13 /  | `PUT /api/rules/<rule_id>` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R185-F14 /  | `PUT /api/rules/<rule_id>` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R185-F15 /  | `PUT /api/rules/<rule_id>` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R185-F16 /  | `PUT /api/rules/<rule_id>` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | 895f5e21 | 404 / 404 |
+| R185-F18 /  | `PUT /api/rules/<rule_id>` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R185-S01 /  | `PUT /api/rules/<rule_id>` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R185-S02 /  | `PUT /api/rules/<rule_id>` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R185-S03 /  | `PUT /api/rules/<rule_id>` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R185-S03 / clear-route-with-type | `PUT /api/rules/<rule_id>` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R185-S04 /  | `PUT /api/rules/<rule_id>` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R186-B01 /  | `POST /api/rules/batch` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R186-B02 /  | `POST /api/rules/batch` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R186-B03 / concurrent-allocation | `POST /api/rules/batch` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | None / None |
+| R186-F08 /  | `POST /api/rules/batch` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R186-F09 /  | `POST /api/rules/batch` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R186-F10 /  | `POST /api/rules/batch` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R186-F11 /  | `POST /api/rules/batch` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R186-F12 /  | `POST /api/rules/batch` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R186-F13 /  | `POST /api/rules/batch` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R186-S01 /  | `POST /api/rules/batch` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R186-S02 /  | `POST /api/rules/batch` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R186-S03 /  | `POST /api/rules/batch` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R187-B01 /  | `POST /api/rules/compose` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R187-B02 /  | `POST /api/rules/compose` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R187-B03 /  | `POST /api/rules/compose` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R187-B04 /  | `POST /api/rules/compose` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R187-B05 /  | `POST /api/rules/compose` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R187-S01 /  | `POST /api/rules/compose` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R187-S02 /  | `POST /api/rules/compose` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R187-S03 /  | `POST /api/rules/compose` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R187-S04 /  | `POST /api/rules/compose` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R187-S05 /  | `POST /api/rules/compose` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R187-S06 /  | `POST /api/rules/compose` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R188-S01 / real-DNS-follow-binding-catalog | `GET /api/rules/dns` | open | — | 895f5e21 | 200 / 200 |
+| R189-B01 /  | `PUT /api/rules/dns` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R189-B02 / native | `PUT /api/rules/dns` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 895f5e21 | 200 / 200 |
+| R189-B02 / template | `PUT /api/rules/dns` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R189-F08 / native/ | `PUT /api/rules/dns` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 895f5e21 | 400 / 400 |
+| R189-F08 / template/ | `PUT /api/rules/dns` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R189-F09 / native/ | `PUT /api/rules/dns` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 895f5e21 | 400 / 400 |
+| R189-F09 / template/ | `PUT /api/rules/dns` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R189-F10 / native/ | `PUT /api/rules/dns` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 895f5e21 | 400 / 400 |
+| R189-F10 / template/ | `PUT /api/rules/dns` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R189-F11 / native/ | `PUT /api/rules/dns` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 895f5e21 | 400 / 400 |
+| R189-F11 / template/ | `PUT /api/rules/dns` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R189-F12 / native/'unknown' | `PUT /api/rules/dns` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 895f5e21 | 400 / 400 |
+| R189-F12 / native/1 | `PUT /api/rules/dns` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 895f5e21 | 400 / 400 |
+| R189-F12 / template/'unknown' | `PUT /api/rules/dns` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R189-F12 / template/1 | `PUT /api/rules/dns` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R189-F13 / native/ | `PUT /api/rules/dns` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 895f5e21 | 400 / 400 |
+| R189-F13 / template/ | `PUT /api/rules/dns` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R189-F15 / native/ | `PUT /api/rules/dns` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 895f5e21 | 400 / 400 |
+| R189-F15 / template/ | `PUT /api/rules/dns` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R189-S01 / cleanup-prepare/False | `PUT /api/rules/dns` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R189-S01 / cleanup-prepare/True | `PUT /api/rules/dns` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 895f5e21 | 200 / 200 |
+| R189-S01 / native/blackhole | `PUT /api/rules/dns` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 895f5e21 | 200 / 200 |
+| R189-S01 / native/direct | `PUT /api/rules/dns` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 895f5e21 | 200 / 200 |
+| R189-S01 / native/nodata | `PUT /api/rules/dns` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 895f5e21 | 200 / 200 |
+| R189-S01 / native/nxdomain | `PUT /api/rules/dns` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 895f5e21 | 200 / 200 |
+| R189-S01 / native/proxy | `PUT /api/rules/dns` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 895f5e21 | 200 / 200 |
+| R189-S01 / native/refused | `PUT /api/rules/dns` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 895f5e21 | 200 / 200 |
+| R189-S01 / template/blackhole | `PUT /api/rules/dns` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R189-S01 / template/direct | `PUT /api/rules/dns` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R189-S01 / template/nodata | `PUT /api/rules/dns` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R189-S01 / template/nxdomain | `PUT /api/rules/dns` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R189-S01 / template/proxy | `PUT /api/rules/dns` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R189-S01 / template/refused | `PUT /api/rules/dns` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R189-S01 / type-guard-prepare | `PUT /api/rules/dns` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R189-S02 / native/follow | `PUT /api/rules/dns` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 895f5e21 | 200 / 200 |
+| R189-S02 / template/follow | `PUT /api/rules/dns` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R189-S03 / native/default | `PUT /api/rules/dns` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 895f5e21 | 200 / 200 |
+| R189-S03 / template/default | `PUT /api/rules/dns` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R189-S04 / native | `PUT /api/rules/dns` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 895f5e21 | 200 / 200 |
+| R189-S04 / template | `PUT /api/rules/dns` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R191-B01 /  | `POST /api/rules/group-name` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R191-B02 /  | `POST /api/rules/group-name` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R191-B03 /  | `POST /api/rules/group-name` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R191-F08 / [] | `POST /api/rules/group-name` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R191-F08 / {} | `POST /api/rules/group-name` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R191-F09 /  | `POST /api/rules/group-name` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R191-F10 /  | `POST /api/rules/group-name` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R191-F11 /  | `POST /api/rules/group-name` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R191-F12 /  | `POST /api/rules/group-name` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 404 / 404 |
+| R191-S01 /  | `POST /api/rules/group-name` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R191-S02 /  | `POST /api/rules/group-name` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R194-B01 /  | `PUT /api/rules/policy` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R194-B02 /  | `PUT /api/rules/policy` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R194-B03 / explicit-DNS-does-not-follow-policy-edit | `PUT /api/rules/policy` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R194-F08 /  | `PUT /api/rules/policy` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R194-F09 /  | `PUT /api/rules/policy` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R194-F10 /  | `PUT /api/rules/policy` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R194-F11 /  | `PUT /api/rules/policy` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R194-F12 /  | `PUT /api/rules/policy` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R194-F13 /  | `PUT /api/rules/policy` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R194-F14 /  | `PUT /api/rules/policy` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R194-F15 /  | `PUT /api/rules/policy` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 404 / 404 |
+| R194-S01 /  | `PUT /api/rules/policy` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R194-S02 /  | `PUT /api/rules/policy` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R194-S03 /  | `PUT /api/rules/policy` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R194-S04 /  | `PUT /api/rules/policy` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R195-B01 /  | `POST /api/rules/reorder` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R195-B02 /  | `POST /api/rules/reorder` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R195-B03 / real-recognized-native-provider-order-rebuild | `POST /api/rules/reorder` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 895f5e21 | 200 / 200 |
+| R195-F08 / [] | `POST /api/rules/reorder` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R195-F08 / {} | `POST /api/rules/reorder` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R195-F09 /  | `POST /api/rules/reorder` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R195-F10 /  | `POST /api/rules/reorder` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R195-F11 /  | `POST /api/rules/reorder` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | 895f5e21 | 404 / 404 |
+| R195-F12 /  | `POST /api/rules/reorder` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R195-F13 / {'ids': [1]} | `POST /api/rules/reorder` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | 895f5e21 | 404 / 404 |
+| R195-F13 / {'ids': [[1]]} | `POST /api/rules/reorder` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | 895f5e21 | 500 / 500 |
+| R195-S01 /  | `POST /api/rules/reorder` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R195-S02 /  | `POST /api/rules/reorder` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R195-S03 /  | `POST /api/rules/reorder` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
 | R217-S02 /  | `PUT /api/subscriptions/<sub_id>` | closed | e9187b9f | c14763b3 | 200 / 200 |
 | R218-F09 /  | `POST /api/subscriptions/<sub_id>/fetch` | closed | 8f3d36ad | c14763b3 | 500 / 500 |
 | R218-F10 /  | `POST /api/subscriptions/<sub_id>/fetch` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | c14763b3 | 400 / 400 |
@@ -399,19 +399,19 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | X04 / login/plain | `POST /api/auth/login` | accepted | [behaviour-changes.md · N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | c14763b3 | 500 / 415 |
 | X04 / new_domain/literal/"\ud800" | `POST /api/server-domain` | accepted | [behaviour-changes.md · Step B #2](behaviour-changes.md#config-step-b--coordinator-decisions) | c14763b3 | 500 / 400 |
 | X04 / token/literal/"\ud800" | `POST /api/config-token` | accepted | [behaviour-changes.md · Step B #2](behaviour-changes.md#config-step-b--coordinator-decisions) | c14763b3 | 500 / 400 |
-| X06 / encoded-slash/GET /api/profiles/<profile_id>/rules/local/<name> | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | c14763b3 | 404 / 404 |
-| X06 / encoded-slash/GET /api/rules/local/<name> | `GET /api/rules/local/<name>` | open | — | c14763b3 | 404 / 404 |
-| X06 / head//api/aggregations | `GET /api/aggregations` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | c14763b3 | 500 / 500 |
-| X06 / head//api/mosdns/api-settings | `GET /api/mosdns/api-settings` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | c14763b3 | 500 / 500 |
-| X06 / head//api/nodes | `GET /api/nodes` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | c14763b3 | 500 / 500 |
-| X06 / head//api/rule-sets | `GET /api/rule-sets` | open | — | c14763b3 | 500 / 200 |
-| X06 / head//api/rules | `GET /api/rules` | open | — | c14763b3 | 500 / 200 |
-| X06 / head//api/subscriptions | `GET /api/subscriptions` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | c14763b3 | 500 / 500 |
-| X06 / login/trailing-slash | `GET /api/subscriptions` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | c14763b3 | 404 / 404 |
-| X06 / login/unknown-admin | `GET /api/subscriptions` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | c14763b3 | 404 / 404 |
-| X06 / open/trailing-slash | `GET /api/subscriptions` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | c14763b3 | 404 / 404 |
-| X06 / open/unknown-admin | `GET /api/subscriptions` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | c14763b3 | 404 / 404 |
-| X06 / open/unknown-anonymous | `GET /api/subscriptions` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | c14763b3 | 404 / 404 |
+| X06 / encoded-slash/GET /api/profiles/<profile_id>/rules/local/<name> | `GET /api/profiles/<profile_id>/rules/local/<name>` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | 895f5e21 | 404 / 404 |
+| X06 / encoded-slash/GET /api/rules/local/<name> | `GET /api/rules/local/<name>` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | 895f5e21 | 404 / 404 |
+| X06 / head//api/aggregations | `GET /api/aggregations` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | 895f5e21 | 500 / 500 |
+| X06 / head//api/mosdns/api-settings | `GET /api/mosdns/api-settings` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | 895f5e21 | 500 / 500 |
+| X06 / head//api/nodes | `GET /api/nodes` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | 895f5e21 | 500 / 500 |
+| X06 / head//api/rule-sets | `GET /api/rule-sets` | accepted | [behaviour-changes.md · C32](behaviour-changes.md#c32--head-规则接口只读python-bug-修正) | 895f5e21 | 500 / 200 |
+| X06 / head//api/rules | `GET /api/rules` | accepted | [behaviour-changes.md · C32](behaviour-changes.md#c32--head-规则接口只读python-bug-修正) | 895f5e21 | 500 / 200 |
+| X06 / head//api/subscriptions | `GET /api/subscriptions` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | 895f5e21 | 500 / 500 |
+| X06 / login/trailing-slash | `GET /api/subscriptions` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | 895f5e21 | 404 / 404 |
+| X06 / login/unknown-admin | `GET /api/subscriptions` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | 895f5e21 | 404 / 404 |
+| X06 / open/trailing-slash | `GET /api/subscriptions` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | 895f5e21 | 404 / 404 |
+| X06 / open/unknown-admin | `GET /api/subscriptions` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | 895f5e21 | 404 / 404 |
+| X06 / open/unknown-anonymous | `GET /api/subscriptions` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | 895f5e21 | 404 / 404 |
 | X08 / retired-node-test-dns-migration | `startup` | separate | — | c14763b3 | None / None |
 
 ## R180-B01 /
@@ -424,7 +424,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | `body` | type | ['<!doctype html>', '<html lang=en>', '<title>404 Not Found</title>', '<h1>Not Found</h1>', '<p>Rule not found</p>'] | {'message': 'Rule not found', 'success': False} |
 | `db.fields.profile/default/mosdns.revision` | value | 1 | 9 |
 | `db.fields.profile/default/oxidns.revision` | value | 1 | 9 |
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:29.361700Z' | '2026-11-17T20:10:29.365694Z' |
 
 ## R180-B02 / P3/successful-rule-group-write
 
@@ -472,7 +471,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | `body` | type | ['<!doctype html>', '<html lang=en>', '<title>404 Not Found</title>', '<h1>Not Found</h1>', '<p>Rule not found</p>'] | {'message': 'Rule not found', 'success': False} |
 | `db.fields.profile/default/mosdns.revision` | value | 1 | 9 |
 | `db.fields.profile/default/oxidns.revision` | value | 1 | 9 |
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:29.361700Z' | '2026-11-17T20:10:29.365694Z' |
 
 ## R180-F09 /
 
@@ -484,7 +482,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | `body` | type | ['<!doctype html>', '<html lang=en>', '<title>404 Not Found</title>', '<h1>Not Found</h1>', '<p>Rule not found</p>'] | {'message': 'Rule not found', 'success': False} |
 | `db.fields.profile/default/mosdns.revision` | value | 1 | 9 |
 | `db.fields.profile/default/oxidns.revision` | value | 1 | 9 |
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:29.361700Z' | '2026-11-17T20:10:29.365694Z' |
 
 ## R180-S01 /
 
@@ -494,7 +491,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 |---|---|---|---|
 | `db.fields.profile/default/mosdns.revision` | value | 1 | 9 |
 | `db.fields.profile/default/oxidns.revision` | value | 1 | 9 |
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:29.361700Z' | '2026-11-17T20:10:29.365694Z' |
 
 ## R180-S01 / mosdns-selector
 
@@ -503,7 +499,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | 路径 | 类型 | Python | Go |
 |---|---|---|---|
 | `db.fields.profile/default/oxidns.revision` | value | 1 | 5 |
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:42.322511Z' | '2026-11-17T20:10:42.327547Z' |
 
 ## R184-B01 /
 
@@ -513,7 +508,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 |---|---|---|---|
 | `db.fields.profile/default/mosdns.revision` | value | 1 | 5 |
 | `db.fields.profile/default/oxidns.revision` | value | 2 | 5 |
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:45.145671Z' | '2026-11-17T20:10:45.150021Z' |
 
 ## R184-B02 / P3/successful-rule-group-write
 
@@ -561,7 +555,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | `body` | type | ['<!doctype html>', '<html lang=en>', '<title>404 Not Found</title>', '<h1>Not Found</h1>', '<p>Rule not found</p>'] | {'message': 'Rule not found', 'success': False} |
 | `db.fields.profile/default/mosdns.revision` | value | 1 | 11 |
 | `db.fields.profile/default/oxidns.revision` | value | 1 | 11 |
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:27.439307Z' | '2026-11-17T20:10:27.443113Z' |
 
 ## R184-S01 /
 
@@ -571,7 +564,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 |---|---|---|---|
 | `db.fields.profile/default/mosdns.revision` | value | 1 | 11 |
 | `db.fields.profile/default/oxidns.revision` | value | 1 | 11 |
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:27.439307Z' | '2026-11-17T20:10:27.443113Z' |
 
 ## R184-S01 / dns-cleanup/False
 
@@ -580,7 +572,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | 路径 | 类型 | Python | Go |
 |---|---|---|---|
 | `db.fields.profile/default/mosdns.revision` | value | 1 | 6 |
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:40.442543Z' | '2026-11-17T20:10:40.446661Z' |
 
 ## R184-S01 / mosdns-selector
 
@@ -589,7 +580,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | 路径 | 类型 | Python | Go |
 |---|---|---|---|
 | `db.fields.profile/default/oxidns.revision` | value | 1 | 5 |
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:42.298826Z' | '2026-11-17T20:10:42.303775Z' |
 
 ## R184-S02 / dns-cleanup/True
 
@@ -599,7 +589,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 |---|---|---|---|
 | `db.fields.profile/default/mosdns.revision` | value | 1 | 7 |
 | `db.fields.profile/default/oxidns.value.native_config` | value | "runtime:\n  worker_threads: 2\napi:\n  http:\n    listen: 127.0.0.1:9199\n    auth:\n      type: basic\n      username: synthetic-agent/token+01234567890123456789\n      password: synthetic-current-proxy/token+0123456789\nlog:\n  level: info\nplugins:\n- tag: lazy_cache\n  type: cache\n  args:\n    size: 10240\n    lazy_cache_ttl: 3600\n    short_circuit: true\n- tag: local_probe_cache\n  type: cache\n  args:\n    size: 2048\n    short_circuit: false\n- tag: forward_local\n  type: forward\n  args:\n    concurrent: 2\n    upstreams:\n    - addr: udp://223.5.5.5\n    - addr: udp://119.29.29.29\n- tag: forward_remote\n  type: forward\n  args:\n | "runtime:\n  worker_threads: 2\napi:\n  http:\n    listen: 127.0.0.1:9199\n    auth:\n      type: basic\n      username: synthetic-agent/token+01234567890123456789\n      password: synthetic-current-proxy/token+0123456789\nlog:\n  level: info\nplugins:\n  - tag: lazy_cache\n    type: cache\n    args:\n      size: 10240\n      lazy_cache_ttl: 3600\n      short_circuit: true\n  - tag: local_probe_cache\n    type: cache\n    args:\n      size: 2048\n      short_circuit: false\n  - tag: forward_local\n    type: forward\n    args:\n      concurrent: 2\n      upstreams:\n        - addr: udp://223.5.5.5\n        - addr: udp://119.29.29.29\n  - tag:  |
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:41.405244Z' | '2026-11-17T20:10:41.417070Z' |
 
 ## X06 / head//api/aggregations
 
@@ -764,22 +753,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | `subscription.source.requests[0].request_line` | value | 'CONNECT raw.githubusercontent.com:443 HTTP/1.0' | 'CONNECT raw.githubusercontent.com:443 HTTP/1.1' |
 | `subscription.source.requests[0].user_agent` | value | '' | 'Go-http-client/1.1' |
 
-## R151-S01 /
-
-路由：`GET /api/profiles/<profile_id>/rules`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:25.307871Z' | '2026-11-17T20:10:25.314072Z' |
-
-## R151-S02 /
-
-路由：`GET /api/profiles/<profile_id>/rules`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:25.307871Z' | '2026-11-17T20:10:25.314072Z' |
-
 ## H128 / sequence-root
 
 路由：`GET /api/profiles/<profile_id>/rules/local/<name>`；状态：different
@@ -904,22 +877,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | `status` | value | 500 | 200 |
 | `headers.content-type` | value | 'text/html; charset=utf-8' | 'application/json' |
 
-## R182-S01 /
-
-路由：`GET /api/rules`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:24.223032Z' | '2026-11-17T20:10:24.227636Z' |
-
-## R182-S02 /
-
-路由：`GET /api/rules`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:24.223032Z' | '2026-11-17T20:10:24.227636Z' |
-
 ## X06 / head//api/rules
 
 路由：`GET /api/rules`；状态：different
@@ -938,10 +895,10 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | `db.fields.system//_revision.revision` | value | 5 | 4 |
 | `db.fields.system//_revision.value` | value | 3 | 2 |
 | `db.fields.system//agents.revision` | value | 5 | 4 |
-| `db.fields.system//agents.value[0].dns_follow_state` | missing-in-go | {'status': 'failed', 'message': 'DNS 联动暂不可用：联动处理异常，请检查 Agent 连接后重试', 'updated_at': '2026-11-17T20:11:00.009742Z', 'events': [{'at': '2026-11-17T20:11:00.009698Z', 'status': 'failed', 'message': 'DNS 联动暂不可用：联动处理异常，请检查 Agent 连接后重试'}]} | None |
+| `db.fields.system//agents.value[0].dns_follow_state` | missing-in-go | {'status': 'failed', 'message': 'DNS 联动暂不可用：联动处理异常，请检查 Agent 连接后重试', 'updated_at': '2026-11-17T20:33:15.803790Z', 'events': [{'at': '2026-11-17T20:33:15.803709Z', 'status': 'failed', 'message': 'DNS 联动暂不可用：联动处理异常，请检查 Agent 连接后重试'}]} | None |
 | `db.meta.generation` | value | 5 | 4 |
-| `files.notifications.json` | missing-in-go | {'mode': 384, 'content': {'items': {'task:dns_follow:agent-synthetic': {'source': 'task', 'title': '合成 Agent 🧪 · DNS 联动', 'message': 'DNS 联动暂不可用：联动处理异常，请检查 Agent 连接后重试', 'impact': '', 'status_label': '执行失败', 'severity': 'error', 'profile_id': 'default', 'scope': 'profile', 'profile_name': '默认配置', 'target': {'path': '/agents', 'query': {'agent': 'agent-synthetic', 'profile': 'default', 'section': 'dns-follow'}, 'label': '查看同步设置'}, 'checked_at': '2026-11-17T20:11:00Z', 'failure_count': 1, 'id': 'task:dns_follow:agent-synthetic', 'state': 'pending', 'read': False, 'version': '2026-11-17T20:11:00.169919+00:00', 'first_seen_at': '2026-11-17T20:11: | None |
-| `files.task-status.json` | missing-in-go | {'mode': 384, 'content': {'dns_follow:agent-synthetic': {'last_run_at': '2026-11-17T20:11:00Z', 'last_finished_at': '2026-11-17T20:11:00Z', 'last_status': 'failed', 'last_duration_ms': 0, 'last_trigger': 'event', 'last_error': 'DNS 联动暂不可用：联动处理异常，请检查 Agent 连接后重试', 'run_count': 1, 'failure_count': 1, 'consecutive_failures': 1}}} | None |
+| `files.notifications.json` | missing-in-go | {'mode': 384, 'content': {'items': {'task:dns_follow:agent-synthetic': {'source': 'task', 'title': '合成 Agent 🧪 · DNS 联动', 'message': 'DNS 联动暂不可用：联动处理异常，请检查 Agent 连接后重试', 'impact': '', 'status_label': '执行失败', 'severity': 'error', 'profile_id': 'default', 'scope': 'profile', 'profile_name': '默认配置', 'target': {'path': '/agents', 'query': {'agent': 'agent-synthetic', 'profile': 'default', 'section': 'dns-follow'}, 'label': '查看同步设置'}, 'checked_at': '2026-11-17T20:33:15Z', 'failure_count': 1, 'id': 'task:dns_follow:agent-synthetic', 'state': 'pending', 'read': False, 'version': '2026-11-17T20:33:16.074951+00:00', 'first_seen_at': '2026-11-17T20:33: | None |
+| `files.task-status.json` | missing-in-go | {'mode': 384, 'content': {'dns_follow:agent-synthetic': {'last_run_at': '2026-11-17T20:33:15Z', 'last_finished_at': '2026-11-17T20:33:15Z', 'last_status': 'failed', 'last_duration_ms': 0, 'last_trigger': 'event', 'last_error': 'DNS 联动暂不可用：联动处理异常，请检查 Agent 连接后重试', 'run_count': 1, 'failure_count': 1, 'consecutive_failures': 1}}} | None |
 
 ## H128 / sequence-root
 
@@ -1384,142 +1341,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | `status` | value | 500 | 400 |
 | `body.message` | non-ascii-internal-error-text | "'list' object has no attribute 'get'" | '请求体必须是 JSON 对象' |
 
-## R152-B01 /
-
-路由：`POST /api/profiles/<profile_id>/rules`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:25.279988Z' | '2026-11-17T20:10:25.287927Z' |
-
-## R152-B02 /
-
-路由：`POST /api/profiles/<profile_id>/rules`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:25.307871Z' | '2026-11-17T20:10:25.314072Z' |
-
-## R152-B03 /
-
-路由：`POST /api/profiles/<profile_id>/rules`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:25.307871Z' | '2026-11-17T20:10:25.314072Z' |
-
-## R152-F08 /
-
-路由：`POST /api/profiles/<profile_id>/rules`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:25.307871Z' | '2026-11-17T20:10:25.314072Z' |
-
-## R152-F09 /
-
-路由：`POST /api/profiles/<profile_id>/rules`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:25.307871Z' | '2026-11-17T20:10:25.314072Z' |
-
-## R152-F10 /
-
-路由：`POST /api/profiles/<profile_id>/rules`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:25.307871Z' | '2026-11-17T20:10:25.314072Z' |
-
-## R152-F11 / DOMAIN
-
-路由：`POST /api/profiles/<profile_id>/rules`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:25.307871Z' | '2026-11-17T20:10:25.314072Z' |
-
-## R152-F11 / IP-CIDR
-
-路由：`POST /api/profiles/<profile_id>/rules`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:25.307871Z' | '2026-11-17T20:10:25.314072Z' |
-
-## R152-F12 /
-
-路由：`POST /api/profiles/<profile_id>/rules`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:25.307871Z' | '2026-11-17T20:10:25.314072Z' |
-
-## R152-F13 /
-
-路由：`POST /api/profiles/<profile_id>/rules`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:25.307871Z' | '2026-11-17T20:10:25.314072Z' |
-
-## R152-F14 /
-
-路由：`POST /api/profiles/<profile_id>/rules`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:25.307871Z' | '2026-11-17T20:10:25.314072Z' |
-
-## R152-F15 /
-
-路由：`POST /api/profiles/<profile_id>/rules`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:25.307871Z' | '2026-11-17T20:10:25.314072Z' |
-
-## R152-S01 /
-
-路由：`POST /api/profiles/<profile_id>/rules`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:25.191320Z' | '2026-11-17T20:10:25.195737Z' |
-
-## R152-S02 /
-
-路由：`POST /api/profiles/<profile_id>/rules`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:25.217173Z' | '2026-11-17T20:10:25.221590Z' |
-
-## R152-S03 /
-
-路由：`POST /api/profiles/<profile_id>/rules`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:25.237298Z' | '2026-11-17T20:10:25.241088Z' |
-
-## R152-S04 /
-
-路由：`POST /api/profiles/<profile_id>/rules`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:25.257032Z' | '2026-11-17T20:10:25.260456Z' |
-
-## R179-B01 /
-
-路由：`POST /api/rule-sets`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:29.234293Z' | '2026-11-17T20:10:29.237480Z' |
-
 ## R179-F08 /
 
 路由：`POST /api/rule-sets`；状态：different
@@ -1528,455 +1349,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 |---|---|---|---|
 | `headers.content-type` | value | 'text/html; charset=utf-8' | 'application/json' |
 | `body` | type | ['<!doctype html>', '<html lang=en>', '<title>500 Internal Server Error</title>', '<h1>Internal Server Error</h1>', '<p>The server encountered an internal error and was unable to complete your request. Either the server is overloaded or there is an error in the application.</p>'] | {'message': 'The server encountered an internal error and was unable to complete your request. Either the server is overloaded or there is an error in the application.', 'success': False} |
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:29.234293Z' | '2026-11-17T20:10:29.237480Z' |
-
-## R179-F09 /
-
-路由：`POST /api/rule-sets`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:29.234293Z' | '2026-11-17T20:10:29.237480Z' |
-
-## R179-F10 /
-
-路由：`POST /api/rule-sets`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:29.234293Z' | '2026-11-17T20:10:29.237480Z' |
-
-## R179-F11 /
-
-路由：`POST /api/rule-sets`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:29.234293Z' | '2026-11-17T20:10:29.237480Z' |
-
-## R179-S01 /
-
-路由：`POST /api/rule-sets`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:29.213543Z' | '2026-11-17T20:10:29.218005Z' |
-
-## R183-B01 /
-
-路由：`POST /api/rules`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:24.197480Z' | '2026-11-17T20:10:24.201974Z' |
-
-## R183-B02 /
-
-路由：`POST /api/rules`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:24.223032Z' | '2026-11-17T20:10:24.227636Z' |
-
-## R183-B03 /
-
-路由：`POST /api/rules`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:24.223032Z' | '2026-11-17T20:10:24.227636Z' |
-
-## R183-F08 /
-
-路由：`POST /api/rules`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:24.223032Z' | '2026-11-17T20:10:24.227636Z' |
-
-## R183-F09 /
-
-路由：`POST /api/rules`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:24.223032Z' | '2026-11-17T20:10:24.227636Z' |
-
-## R183-F10 /
-
-路由：`POST /api/rules`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:24.223032Z' | '2026-11-17T20:10:24.227636Z' |
-
-## R183-F11 / DOMAIN
-
-路由：`POST /api/rules`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:24.223032Z' | '2026-11-17T20:10:24.227636Z' |
-
-## R183-F11 / IP-CIDR
-
-路由：`POST /api/rules`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:24.223032Z' | '2026-11-17T20:10:24.227636Z' |
-
-## R183-F12 /
-
-路由：`POST /api/rules`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:24.223032Z' | '2026-11-17T20:10:24.227636Z' |
-
-## R183-F13 /
-
-路由：`POST /api/rules`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:24.223032Z' | '2026-11-17T20:10:24.227636Z' |
-
-## R183-F14 /
-
-路由：`POST /api/rules`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:24.223032Z' | '2026-11-17T20:10:24.227636Z' |
-
-## R183-F15 /
-
-路由：`POST /api/rules`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:24.223032Z' | '2026-11-17T20:10:24.227636Z' |
-
-## R183-S01 /
-
-路由：`POST /api/rules`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:24.104584Z' | '2026-11-17T20:10:24.108361Z' |
-
-## R183-S02 /
-
-路由：`POST /api/rules`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:24.127218Z' | '2026-11-17T20:10:24.131567Z' |
-
-## R183-S03 /
-
-路由：`POST /api/rules`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:24.149958Z' | '2026-11-17T20:10:24.153714Z' |
-
-## R183-S04 /
-
-路由：`POST /api/rules`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:24.172315Z' | '2026-11-17T20:10:24.176892Z' |
-
-## R186-B01 /
-
-路由：`POST /api/rules/batch`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:30.344949Z' | '2026-11-17T20:10:30.349724Z' |
-
-## R186-B02 /
-
-路由：`POST /api/rules/batch`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:30.379341Z' | '2026-11-17T20:10:30.383495Z' |
-
-## R186-B03 / concurrent-allocation
-
-路由：`POST /api/rules/batch`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:34.661760Z' | '2026-11-17T20:10:34.677227Z' |
-
-## R186-F08 /
-
-路由：`POST /api/rules/batch`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:30.379341Z' | '2026-11-17T20:10:30.383495Z' |
-
-## R186-F09 /
-
-路由：`POST /api/rules/batch`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:30.379341Z' | '2026-11-17T20:10:30.383495Z' |
-
-## R186-F10 /
-
-路由：`POST /api/rules/batch`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:30.379341Z' | '2026-11-17T20:10:30.383495Z' |
-
-## R186-F11 /
-
-路由：`POST /api/rules/batch`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:30.379341Z' | '2026-11-17T20:10:30.383495Z' |
-
-## R186-F12 /
-
-路由：`POST /api/rules/batch`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:30.379341Z' | '2026-11-17T20:10:30.383495Z' |
-
-## R186-F13 /
-
-路由：`POST /api/rules/batch`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:30.379341Z' | '2026-11-17T20:10:30.383495Z' |
-
-## R186-S01 /
-
-路由：`POST /api/rules/batch`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:30.279621Z' | '2026-11-17T20:10:30.283811Z' |
-
-## R186-S02 /
-
-路由：`POST /api/rules/batch`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:30.302285Z' | '2026-11-17T20:10:30.306050Z' |
-
-## R186-S03 /
-
-路由：`POST /api/rules/batch`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:30.323247Z' | '2026-11-17T20:10:30.327216Z' |
-
-## R187-B01 /
-
-路由：`POST /api/rules/compose`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:11:05.702260Z' | '2026-11-17T20:11:05.721226Z' |
-
-## R187-B02 /
-
-路由：`POST /api/rules/compose`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:11:09.672884Z' | '2026-11-17T20:11:09.685541Z' |
-
-## R187-B03 /
-
-路由：`POST /api/rules/compose`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:11:06.791217Z' | '2026-11-17T20:11:06.797245Z' |
-
-## R187-B04 /
-
-路由：`POST /api/rules/compose`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:11:07.775119Z' | '2026-11-17T20:11:07.779981Z' |
-
-## R187-B05 /
-
-路由：`POST /api/rules/compose`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:11:08.774337Z' | '2026-11-17T20:11:08.782042Z' |
-
-## R187-S01 /
-
-路由：`POST /api/rules/compose`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:11:01.356076Z' | '2026-11-17T20:11:01.361105Z' |
-
-## R187-S02 /
-
-路由：`POST /api/rules/compose`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:11:02.224810Z' | '2026-11-17T20:11:02.231493Z' |
-
-## R187-S03 /
-
-路由：`POST /api/rules/compose`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:11:03.102726Z' | '2026-11-17T20:11:03.106727Z' |
-
-## R187-S04 /
-
-路由：`POST /api/rules/compose`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:11:03.952019Z' | '2026-11-17T20:11:03.958668Z' |
-
-## R187-S05 /
-
-路由：`POST /api/rules/compose`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:11:12.687223Z' | '2026-11-17T20:11:12.694990Z' |
-
-## R187-S06 /
-
-路由：`POST /api/rules/compose`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:11:04.815449Z' | '2026-11-17T20:11:04.821011Z' |
-
-## R191-B01 /
-
-路由：`POST /api/rules/group-name`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:31.361868Z' | '2026-11-17T20:10:31.365950Z' |
-
-## R191-B02 /
-
-路由：`POST /api/rules/group-name`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:31.383470Z' | '2026-11-17T20:10:31.388217Z' |
-
-## R191-B03 /
-
-路由：`POST /api/rules/group-name`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:31.404900Z' | '2026-11-17T20:10:31.410641Z' |
-
-## R191-F08 / []
-
-路由：`POST /api/rules/group-name`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:31.404900Z' | '2026-11-17T20:10:31.410641Z' |
-
-## R191-F08 / {}
-
-路由：`POST /api/rules/group-name`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:31.404900Z' | '2026-11-17T20:10:31.410641Z' |
-
-## R191-F09 /
-
-路由：`POST /api/rules/group-name`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:31.404900Z' | '2026-11-17T20:10:31.410641Z' |
-
-## R191-F10 /
-
-路由：`POST /api/rules/group-name`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:31.404900Z' | '2026-11-17T20:10:31.410641Z' |
-
-## R191-F11 /
-
-路由：`POST /api/rules/group-name`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:31.404900Z' | '2026-11-17T20:10:31.410641Z' |
-
-## R191-F12 /
-
-路由：`POST /api/rules/group-name`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:31.404900Z' | '2026-11-17T20:10:31.410641Z' |
-
-## R191-S01 /
-
-路由：`POST /api/rules/group-name`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:31.314183Z' | '2026-11-17T20:10:31.318680Z' |
-
-## R191-S02 /
-
-路由：`POST /api/rules/group-name`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:31.337397Z' | '2026-11-17T20:10:31.341829Z' |
-
-## R195-B01 /
-
-路由：`POST /api/rules/reorder`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:33.708841Z' | '2026-11-17T20:10:33.718919Z' |
-
-## R195-B02 /
-
-路由：`POST /api/rules/reorder`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:33.736778Z' | '2026-11-17T20:10:33.740662Z' |
 
 ## R195-B03 / real-recognized-native-provider-order-rebuild
 
@@ -1985,39 +1357,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | 路径 | 类型 | Python | Go |
 |---|---|---|---|
 | `db.fields.profile/default/oxidns.value.native_config` | value | "runtime:\n  worker_threads: 2\napi:\n  http:\n    listen: 127.0.0.1:9199\n    auth:\n      type: basic\n      username: synthetic-agent/token+01234567890123456789\n      password: synthetic-current-proxy/token+0123456789\nlog:\n  level: info\nplugins:\n- tag: rules_domain_1_2\n  type: domain_set\n  args:\n    exps:\n    - full:second.example\n    - full:example.com\n- tag: lazy_cache\n  type: cache\n  args:\n    size: 10240\n    lazy_cache_ttl: 3600\n    short_circuit: true\n- tag: local_probe_cache\n  type: cache\n  args:\n    size: 2048\n    short_circuit: false\n- tag: forward_local\n  type: forward\n  args:\n    concurrent: 2\n    upstre | "runtime:\n  worker_threads: 2\napi:\n  http:\n    listen: 127.0.0.1:9199\n    auth:\n      type: basic\n      username: synthetic-agent/token+01234567890123456789\n      password: synthetic-current-proxy/token+0123456789\nlog:\n  level: info\nplugins:\n  - tag: rules_domain_1_2\n    type: domain_set\n    args:\n      exps:\n        - full:second.example\n        - full:example.com\n  - tag: lazy_cache\n    type: cache\n    args:\n      size: 10240\n      lazy_cache_ttl: 3600\n      short_circuit: true\n  - tag: local_probe_cache\n    type: cache\n    args:\n      size: 2048\n      short_circuit: false\n  - tag: forward_local\n    type: forwa |
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:57.453461Z' | '2026-11-17T20:10:57.460736Z' |
-
-## R195-F08 / []
-
-路由：`POST /api/rules/reorder`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:33.736778Z' | '2026-11-17T20:10:33.740662Z' |
-
-## R195-F08 / {}
-
-路由：`POST /api/rules/reorder`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:33.736778Z' | '2026-11-17T20:10:33.740662Z' |
-
-## R195-F09 /
-
-路由：`POST /api/rules/reorder`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:33.736778Z' | '2026-11-17T20:10:33.740662Z' |
-
-## R195-F10 /
-
-路由：`POST /api/rules/reorder`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:33.736778Z' | '2026-11-17T20:10:33.740662Z' |
 
 ## R195-F11 /
 
@@ -2027,15 +1366,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 |---|---|---|---|
 | `headers.content-type` | value | 'text/html; charset=utf-8' | 'application/json' |
 | `body` | type | ['<!doctype html>', '<html lang=en>', '<title>404 Not Found</title>', '<h1>Not Found</h1>', '<p>以下规则 id 不存在: [&#39;missing&#39;]</p>'] | {'message': "以下规则 id 不存在: ['missing']", 'success': False} |
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:33.736778Z' | '2026-11-17T20:10:33.740662Z' |
-
-## R195-F12 /
-
-路由：`POST /api/rules/reorder`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:33.736778Z' | '2026-11-17T20:10:33.740662Z' |
 
 ## R195-F13 / {'ids': [1]}
 
@@ -2045,7 +1375,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 |---|---|---|---|
 | `headers.content-type` | value | 'text/html; charset=utf-8' | 'application/json' |
 | `body` | type | ['<!doctype html>', '<html lang=en>', '<title>404 Not Found</title>', '<h1>Not Found</h1>', '<p>以下规则 id 不存在: [1]</p>'] | {'message': '以下规则 id 不存在: [1]', 'success': False} |
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:33.736778Z' | '2026-11-17T20:10:33.740662Z' |
 
 ## R195-F13 / {'ids': [[1]]}
 
@@ -2055,31 +1384,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 |---|---|---|---|
 | `headers.content-type` | value | 'text/html; charset=utf-8' | 'application/json' |
 | `body` | type | ['<!doctype html>', '<html lang=en>', '<title>500 Internal Server Error</title>', '<h1>Internal Server Error</h1>', '<p>The server encountered an internal error and was unable to complete your request. Either the server is overloaded or there is an error in the application.</p>'] | {'message': 'The server encountered an internal error and was unable to complete your request. Either the server is overloaded or there is an error in the application.', 'success': False} |
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:33.736778Z' | '2026-11-17T20:10:33.740662Z' |
-
-## R195-S01 /
-
-路由：`POST /api/rules/reorder`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:33.642494Z' | '2026-11-17T20:10:33.646758Z' |
-
-## R195-S02 /
-
-路由：`POST /api/rules/reorder`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:33.663777Z' | '2026-11-17T20:10:33.667484Z' |
-
-## R195-S03 /
-
-路由：`POST /api/rules/reorder`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:33.686220Z' | '2026-11-17T20:10:33.690596Z' |
 
 ## X04 / new_domain/literal/"\ud800"
 
@@ -2153,22 +1457,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 |---|---|---|---|
 | `db.fields.profile/default/domain_discovery.value.synthetic_legacy_extension` | extra-in-go | None | {'flag': False, 'values': []} |
 
-## R181-B01 /
-
-路由：`PUT /api/rule-sets/<rule_set_id>`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:29.314489Z' | '2026-11-17T20:10:29.319225Z' |
-
-## R181-F08 /
-
-路由：`PUT /api/rule-sets/<rule_set_id>`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:29.314489Z' | '2026-11-17T20:10:29.319225Z' |
-
 ## R181-F09 /
 
 路由：`PUT /api/rule-sets/<rule_set_id>`；状态：different
@@ -2177,111 +1465,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 |---|---|---|---|
 | `headers.content-type` | value | 'text/html; charset=utf-8' | 'application/json' |
 | `body` | type | ['<!doctype html>', '<html lang=en>', '<title>404 Not Found</title>', '<h1>Not Found</h1>', '<p>Rule not found</p>'] | {'message': 'Rule not found', 'success': False} |
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:29.314489Z' | '2026-11-17T20:10:29.319225Z' |
-
-## R181-F10 /
-
-路由：`PUT /api/rule-sets/<rule_set_id>`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:29.314489Z' | '2026-11-17T20:10:29.319225Z' |
-
-## R181-S01 /
-
-路由：`PUT /api/rule-sets/<rule_set_id>`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:29.289315Z' | '2026-11-17T20:10:29.294449Z' |
-
-## R185-B01 /
-
-路由：`PUT /api/rules/<rule_id>`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:28.310210Z' | '2026-11-17T20:10:28.315962Z' |
-
-## R185-B02 /
-
-路由：`PUT /api/rules/<rule_id>`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:27.262898Z' | '2026-11-17T20:10:27.267996Z' |
-
-## R185-B03 /
-
-路由：`PUT /api/rules/<rule_id>`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:27.290890Z' | '2026-11-17T20:10:27.296896Z' |
-
-## R185-F08 /
-
-路由：`PUT /api/rules/<rule_id>`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:27.316941Z' | '2026-11-17T20:10:27.323112Z' |
-
-## R185-F09 /
-
-路由：`PUT /api/rules/<rule_id>`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:27.316941Z' | '2026-11-17T20:10:27.323112Z' |
-
-## R185-F10 /
-
-路由：`PUT /api/rules/<rule_id>`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:27.316941Z' | '2026-11-17T20:10:27.323112Z' |
-
-## R185-F11 /
-
-路由：`PUT /api/rules/<rule_id>`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:27.316941Z' | '2026-11-17T20:10:27.323112Z' |
-
-## R185-F12 /
-
-路由：`PUT /api/rules/<rule_id>`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:27.316941Z' | '2026-11-17T20:10:27.323112Z' |
-
-## R185-F13 /
-
-路由：`PUT /api/rules/<rule_id>`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:27.316941Z' | '2026-11-17T20:10:27.323112Z' |
-
-## R185-F14 /
-
-路由：`PUT /api/rules/<rule_id>`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:27.316941Z' | '2026-11-17T20:10:27.323112Z' |
-
-## R185-F15 /
-
-路由：`PUT /api/rules/<rule_id>`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:27.316941Z' | '2026-11-17T20:10:27.323112Z' |
 
 ## R185-F16 /
 
@@ -2291,55 +1474,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 |---|---|---|---|
 | `headers.content-type` | value | 'text/html; charset=utf-8' | 'application/json' |
 | `body` | type | ['<!doctype html>', '<html lang=en>', '<title>404 Not Found</title>', '<h1>Not Found</h1>', '<p>Rule not found</p>'] | {'message': 'Rule not found', 'success': False} |
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:27.316941Z' | '2026-11-17T20:10:27.323112Z' |
-
-## R185-F18 /
-
-路由：`PUT /api/rules/<rule_id>`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:43.334643Z' | '2026-11-17T20:10:43.340845Z' |
-
-## R185-S01 /
-
-路由：`PUT /api/rules/<rule_id>`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:27.189307Z' | '2026-11-17T20:10:27.193753Z' |
-
-## R185-S02 /
-
-路由：`PUT /api/rules/<rule_id>`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:27.210168Z' | '2026-11-17T20:10:27.214428Z' |
-
-## R185-S03 /
-
-路由：`PUT /api/rules/<rule_id>`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:27.233381Z' | '2026-11-17T20:10:27.239329Z' |
-
-## R185-S03 / clear-route-with-type
-
-路由：`PUT /api/rules/<rule_id>`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:43.373818Z' | '2026-11-17T20:10:43.378589Z' |
-
-## R185-S04 /
-
-路由：`PUT /api/rules/<rule_id>`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:27.316941Z' | '2026-11-17T20:10:27.323112Z' |
 
 ## H911 / actual-public-catalog-key-is-bound-to-DNS-follow
 
@@ -2350,18 +1484,10 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | `db.fields.system//_revision.revision` | value | 5 | 4 |
 | `db.fields.system//_revision.value` | value | 3 | 2 |
 | `db.fields.system//agents.revision` | value | 5 | 4 |
-| `db.fields.system//agents.value[0].dns_follow_state` | missing-in-go | {'status': 'failed', 'message': 'DNS 联动暂不可用：联动处理异常，请检查 Agent 连接后重试', 'updated_at': '2026-11-17T20:11:00.009742Z', 'events': [{'at': '2026-11-17T20:11:00.009698Z', 'status': 'failed', 'message': 'DNS 联动暂不可用：联动处理异常，请检查 Agent 连接后重试'}]} | None |
+| `db.fields.system//agents.value[0].dns_follow_state` | missing-in-go | {'status': 'failed', 'message': 'DNS 联动暂不可用：联动处理异常，请检查 Agent 连接后重试', 'updated_at': '2026-11-17T20:33:15.803790Z', 'events': [{'at': '2026-11-17T20:33:15.803709Z', 'status': 'failed', 'message': 'DNS 联动暂不可用：联动处理异常，请检查 Agent 连接后重试'}]} | None |
 | `db.meta.generation` | value | 5 | 4 |
-| `files.notifications.json` | missing-in-go | {'mode': 384, 'content': {'items': {'task:dns_follow:agent-synthetic': {'source': 'task', 'title': '合成 Agent 🧪 · DNS 联动', 'message': 'DNS 联动暂不可用：联动处理异常，请检查 Agent 连接后重试', 'impact': '', 'status_label': '执行失败', 'severity': 'error', 'profile_id': 'default', 'scope': 'profile', 'profile_name': '默认配置', 'target': {'path': '/agents', 'query': {'agent': 'agent-synthetic', 'profile': 'default', 'section': 'dns-follow'}, 'label': '查看同步设置'}, 'checked_at': '2026-11-17T20:11:00Z', 'failure_count': 1, 'id': 'task:dns_follow:agent-synthetic', 'state': 'pending', 'read': False, 'version': '2026-11-17T20:11:00.169919+00:00', 'first_seen_at': '2026-11-17T20:11: | None |
-| `files.task-status.json` | missing-in-go | {'mode': 384, 'content': {'dns_follow:agent-synthetic': {'last_run_at': '2026-11-17T20:11:00Z', 'last_finished_at': '2026-11-17T20:11:00Z', 'last_status': 'failed', 'last_duration_ms': 0, 'last_trigger': 'event', 'last_error': 'DNS 联动暂不可用：联动处理异常，请检查 Agent 连接后重试', 'run_count': 1, 'failure_count': 1, 'consecutive_failures': 1}}} | None |
-
-## R189-B01 /
-
-路由：`PUT /api/rules/dns`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:39.454934Z' | '2026-11-17T20:10:39.471425Z' |
+| `files.notifications.json` | missing-in-go | {'mode': 384, 'content': {'items': {'task:dns_follow:agent-synthetic': {'source': 'task', 'title': '合成 Agent 🧪 · DNS 联动', 'message': 'DNS 联动暂不可用：联动处理异常，请检查 Agent 连接后重试', 'impact': '', 'status_label': '执行失败', 'severity': 'error', 'profile_id': 'default', 'scope': 'profile', 'profile_name': '默认配置', 'target': {'path': '/agents', 'query': {'agent': 'agent-synthetic', 'profile': 'default', 'section': 'dns-follow'}, 'label': '查看同步设置'}, 'checked_at': '2026-11-17T20:33:15Z', 'failure_count': 1, 'id': 'task:dns_follow:agent-synthetic', 'state': 'pending', 'read': False, 'version': '2026-11-17T20:33:16.074951+00:00', 'first_seen_at': '2026-11-17T20:33: | None |
+| `files.task-status.json` | missing-in-go | {'mode': 384, 'content': {'dns_follow:agent-synthetic': {'last_run_at': '2026-11-17T20:33:15Z', 'last_finished_at': '2026-11-17T20:33:15Z', 'last_status': 'failed', 'last_duration_ms': 0, 'last_trigger': 'event', 'last_error': 'DNS 联动暂不可用：联动处理异常，请检查 Agent 连接后重试', 'run_count': 1, 'failure_count': 1, 'consecutive_failures': 1}}} | None |
 
 ## R189-B02 / native
 
@@ -2370,15 +1496,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | 路径 | 类型 | Python | Go |
 |---|---|---|---|
 | `db.fields.profile/default/oxidns.value.native_config` | value | "runtime:\n  worker_threads: 2\napi:\n  http:\n    listen: 127.0.0.1:9199\n    auth:\n      type: basic\n      username: synthetic-agent/token+01234567890123456789\n      password: synthetic-current-proxy/token+0123456789\nlog:\n  level: info\nplugins:\n- tag: lazy_cache\n  type: cache\n  args:\n    size: 10240\n    lazy_cache_ttl: 3600\n    short_circuit: true\n- tag: local_probe_cache\n  type: cache\n  args:\n    size: 2048\n    short_circuit: false\n- tag: forward_local\n  type: forward\n  args:\n    concurrent: 2\n    upstreams:\n    - addr: udp://223.5.5.5\n    - addr: udp://119.29.29.29\n- tag: forward_remote\n  type: forward\n  args:\n | "runtime:\n  worker_threads: 2\napi:\n  http:\n    listen: 127.0.0.1:9199\n    auth:\n      type: basic\n      username: synthetic-agent/token+01234567890123456789\n      password: synthetic-current-proxy/token+0123456789\nlog:\n  level: info\nplugins:\n  - tag: lazy_cache\n    type: cache\n    args:\n      size: 10240\n      lazy_cache_ttl: 3600\n      short_circuit: true\n  - tag: local_probe_cache\n    type: cache\n    args:\n      size: 2048\n      short_circuit: false\n  - tag: forward_local\n    type: forward\n    args:\n      concurrent: 2\n      upstreams:\n        - addr: udp://223.5.5.5\n        - addr: udp://119.29.29.29\n  - tag:  |
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:37.592607Z' | '2026-11-17T20:10:37.601665Z' |
-
-## R189-B02 / template
-
-路由：`PUT /api/rules/dns`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:35.975642Z' | '2026-11-17T20:10:35.982474Z' |
 
 ## R189-F08 / native/
 
@@ -2387,15 +1504,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | 路径 | 类型 | Python | Go |
 |---|---|---|---|
 | `db.fields.profile/default/oxidns.value.native_config` | value | "runtime:\n  worker_threads: 2\napi:\n  http:\n    listen: 127.0.0.1:9199\n    auth:\n      type: basic\n      username: synthetic-agent/token+01234567890123456789\n      password: synthetic-current-proxy/token+0123456789\nlog:\n  level: info\nplugins:\n- tag: lazy_cache\n  type: cache\n  args:\n    size: 10240\n    lazy_cache_ttl: 3600\n    short_circuit: true\n- tag: local_probe_cache\n  type: cache\n  args:\n    size: 2048\n    short_circuit: false\n- tag: forward_local\n  type: forward\n  args:\n    concurrent: 2\n    upstreams:\n    - addr: udp://223.5.5.5\n    - addr: udp://119.29.29.29\n- tag: forward_remote\n  type: forward\n  args:\n | 'runtime:\n  worker_threads: 2\napi:\n  http:\n    listen: 127.0.0.1:9199\n    auth:\n      type: basic\n      username: synthetic-agent/token+01234567890123456789\n      password: synthetic-current-proxy/token+0123456789\nlog:\n  level: info\nplugins:\n  - tag: lazy_cache\n    type: cache\n    args:\n      size: 10240\n      lazy_cache_ttl: 3600\n      short_circuit: true\n  - tag: local_probe_cache\n    type: cache\n    args:\n      size: 2048\n      short_circuit: false\n  - tag: forward_local\n    type: forward\n    args:\n      concurrent: 2\n      upstreams:\n        - addr: udp://223.5.5.5\n        - addr: udp://119.29.29.29\n  - tag:  |
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:37.399223Z' | '2026-11-17T20:10:37.416867Z' |
-
-## R189-F08 / template/
-
-路由：`PUT /api/rules/dns`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:35.804636Z' | '2026-11-17T20:10:35.812763Z' |
 
 ## R189-F09 / native/
 
@@ -2404,15 +1512,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | 路径 | 类型 | Python | Go |
 |---|---|---|---|
 | `db.fields.profile/default/oxidns.value.native_config` | value | "runtime:\n  worker_threads: 2\napi:\n  http:\n    listen: 127.0.0.1:9199\n    auth:\n      type: basic\n      username: synthetic-agent/token+01234567890123456789\n      password: synthetic-current-proxy/token+0123456789\nlog:\n  level: info\nplugins:\n- tag: lazy_cache\n  type: cache\n  args:\n    size: 10240\n    lazy_cache_ttl: 3600\n    short_circuit: true\n- tag: local_probe_cache\n  type: cache\n  args:\n    size: 2048\n    short_circuit: false\n- tag: forward_local\n  type: forward\n  args:\n    concurrent: 2\n    upstreams:\n    - addr: udp://223.5.5.5\n    - addr: udp://119.29.29.29\n- tag: forward_remote\n  type: forward\n  args:\n | 'runtime:\n  worker_threads: 2\napi:\n  http:\n    listen: 127.0.0.1:9199\n    auth:\n      type: basic\n      username: synthetic-agent/token+01234567890123456789\n      password: synthetic-current-proxy/token+0123456789\nlog:\n  level: info\nplugins:\n  - tag: lazy_cache\n    type: cache\n    args:\n      size: 10240\n      lazy_cache_ttl: 3600\n      short_circuit: true\n  - tag: local_probe_cache\n    type: cache\n    args:\n      size: 2048\n      short_circuit: false\n  - tag: forward_local\n    type: forward\n    args:\n      concurrent: 2\n      upstreams:\n        - addr: udp://223.5.5.5\n        - addr: udp://119.29.29.29\n  - tag:  |
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:37.399223Z' | '2026-11-17T20:10:37.416867Z' |
-
-## R189-F09 / template/
-
-路由：`PUT /api/rules/dns`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:35.804636Z' | '2026-11-17T20:10:35.812763Z' |
 
 ## R189-F10 / native/
 
@@ -2421,15 +1520,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | 路径 | 类型 | Python | Go |
 |---|---|---|---|
 | `db.fields.profile/default/oxidns.value.native_config` | value | "runtime:\n  worker_threads: 2\napi:\n  http:\n    listen: 127.0.0.1:9199\n    auth:\n      type: basic\n      username: synthetic-agent/token+01234567890123456789\n      password: synthetic-current-proxy/token+0123456789\nlog:\n  level: info\nplugins:\n- tag: lazy_cache\n  type: cache\n  args:\n    size: 10240\n    lazy_cache_ttl: 3600\n    short_circuit: true\n- tag: local_probe_cache\n  type: cache\n  args:\n    size: 2048\n    short_circuit: false\n- tag: forward_local\n  type: forward\n  args:\n    concurrent: 2\n    upstreams:\n    - addr: udp://223.5.5.5\n    - addr: udp://119.29.29.29\n- tag: forward_remote\n  type: forward\n  args:\n | 'runtime:\n  worker_threads: 2\napi:\n  http:\n    listen: 127.0.0.1:9199\n    auth:\n      type: basic\n      username: synthetic-agent/token+01234567890123456789\n      password: synthetic-current-proxy/token+0123456789\nlog:\n  level: info\nplugins:\n  - tag: lazy_cache\n    type: cache\n    args:\n      size: 10240\n      lazy_cache_ttl: 3600\n      short_circuit: true\n  - tag: local_probe_cache\n    type: cache\n    args:\n      size: 2048\n      short_circuit: false\n  - tag: forward_local\n    type: forward\n    args:\n      concurrent: 2\n      upstreams:\n        - addr: udp://223.5.5.5\n        - addr: udp://119.29.29.29\n  - tag:  |
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:37.399223Z' | '2026-11-17T20:10:37.416867Z' |
-
-## R189-F10 / template/
-
-路由：`PUT /api/rules/dns`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:35.804636Z' | '2026-11-17T20:10:35.812763Z' |
 
 ## R189-F11 / native/
 
@@ -2438,15 +1528,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | 路径 | 类型 | Python | Go |
 |---|---|---|---|
 | `db.fields.profile/default/oxidns.value.native_config` | value | "runtime:\n  worker_threads: 2\napi:\n  http:\n    listen: 127.0.0.1:9199\n    auth:\n      type: basic\n      username: synthetic-agent/token+01234567890123456789\n      password: synthetic-current-proxy/token+0123456789\nlog:\n  level: info\nplugins:\n- tag: lazy_cache\n  type: cache\n  args:\n    size: 10240\n    lazy_cache_ttl: 3600\n    short_circuit: true\n- tag: local_probe_cache\n  type: cache\n  args:\n    size: 2048\n    short_circuit: false\n- tag: forward_local\n  type: forward\n  args:\n    concurrent: 2\n    upstreams:\n    - addr: udp://223.5.5.5\n    - addr: udp://119.29.29.29\n- tag: forward_remote\n  type: forward\n  args:\n | 'runtime:\n  worker_threads: 2\napi:\n  http:\n    listen: 127.0.0.1:9199\n    auth:\n      type: basic\n      username: synthetic-agent/token+01234567890123456789\n      password: synthetic-current-proxy/token+0123456789\nlog:\n  level: info\nplugins:\n  - tag: lazy_cache\n    type: cache\n    args:\n      size: 10240\n      lazy_cache_ttl: 3600\n      short_circuit: true\n  - tag: local_probe_cache\n    type: cache\n    args:\n      size: 2048\n      short_circuit: false\n  - tag: forward_local\n    type: forward\n    args:\n      concurrent: 2\n      upstreams:\n        - addr: udp://223.5.5.5\n        - addr: udp://119.29.29.29\n  - tag:  |
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:37.399223Z' | '2026-11-17T20:10:37.416867Z' |
-
-## R189-F11 / template/
-
-路由：`PUT /api/rules/dns`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:35.804636Z' | '2026-11-17T20:10:35.812763Z' |
 
 ## R189-F12 / native/'unknown'
 
@@ -2455,7 +1536,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | 路径 | 类型 | Python | Go |
 |---|---|---|---|
 | `db.fields.profile/default/oxidns.value.native_config` | value | "runtime:\n  worker_threads: 2\napi:\n  http:\n    listen: 127.0.0.1:9199\n    auth:\n      type: basic\n      username: synthetic-agent/token+01234567890123456789\n      password: synthetic-current-proxy/token+0123456789\nlog:\n  level: info\nplugins:\n- tag: lazy_cache\n  type: cache\n  args:\n    size: 10240\n    lazy_cache_ttl: 3600\n    short_circuit: true\n- tag: local_probe_cache\n  type: cache\n  args:\n    size: 2048\n    short_circuit: false\n- tag: forward_local\n  type: forward\n  args:\n    concurrent: 2\n    upstreams:\n    - addr: udp://223.5.5.5\n    - addr: udp://119.29.29.29\n- tag: forward_remote\n  type: forward\n  args:\n | 'runtime:\n  worker_threads: 2\napi:\n  http:\n    listen: 127.0.0.1:9199\n    auth:\n      type: basic\n      username: synthetic-agent/token+01234567890123456789\n      password: synthetic-current-proxy/token+0123456789\nlog:\n  level: info\nplugins:\n  - tag: lazy_cache\n    type: cache\n    args:\n      size: 10240\n      lazy_cache_ttl: 3600\n      short_circuit: true\n  - tag: local_probe_cache\n    type: cache\n    args:\n      size: 2048\n      short_circuit: false\n  - tag: forward_local\n    type: forward\n    args:\n      concurrent: 2\n      upstreams:\n        - addr: udp://223.5.5.5\n        - addr: udp://119.29.29.29\n  - tag:  |
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:37.399223Z' | '2026-11-17T20:10:37.416867Z' |
 
 ## R189-F12 / native/1
 
@@ -2464,23 +1544,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | 路径 | 类型 | Python | Go |
 |---|---|---|---|
 | `db.fields.profile/default/oxidns.value.native_config` | value | "runtime:\n  worker_threads: 2\napi:\n  http:\n    listen: 127.0.0.1:9199\n    auth:\n      type: basic\n      username: synthetic-agent/token+01234567890123456789\n      password: synthetic-current-proxy/token+0123456789\nlog:\n  level: info\nplugins:\n- tag: lazy_cache\n  type: cache\n  args:\n    size: 10240\n    lazy_cache_ttl: 3600\n    short_circuit: true\n- tag: local_probe_cache\n  type: cache\n  args:\n    size: 2048\n    short_circuit: false\n- tag: forward_local\n  type: forward\n  args:\n    concurrent: 2\n    upstreams:\n    - addr: udp://223.5.5.5\n    - addr: udp://119.29.29.29\n- tag: forward_remote\n  type: forward\n  args:\n | 'runtime:\n  worker_threads: 2\napi:\n  http:\n    listen: 127.0.0.1:9199\n    auth:\n      type: basic\n      username: synthetic-agent/token+01234567890123456789\n      password: synthetic-current-proxy/token+0123456789\nlog:\n  level: info\nplugins:\n  - tag: lazy_cache\n    type: cache\n    args:\n      size: 10240\n      lazy_cache_ttl: 3600\n      short_circuit: true\n  - tag: local_probe_cache\n    type: cache\n    args:\n      size: 2048\n      short_circuit: false\n  - tag: forward_local\n    type: forward\n    args:\n      concurrent: 2\n      upstreams:\n        - addr: udp://223.5.5.5\n        - addr: udp://119.29.29.29\n  - tag:  |
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:37.399223Z' | '2026-11-17T20:10:37.416867Z' |
-
-## R189-F12 / template/'unknown'
-
-路由：`PUT /api/rules/dns`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:35.804636Z' | '2026-11-17T20:10:35.812763Z' |
-
-## R189-F12 / template/1
-
-路由：`PUT /api/rules/dns`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:35.804636Z' | '2026-11-17T20:10:35.812763Z' |
 
 ## R189-F13 / native/
 
@@ -2489,15 +1552,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | 路径 | 类型 | Python | Go |
 |---|---|---|---|
 | `db.fields.profile/default/oxidns.value.native_config` | value | "runtime:\n  worker_threads: 2\napi:\n  http:\n    listen: 127.0.0.1:9199\n    auth:\n      type: basic\n      username: synthetic-agent/token+01234567890123456789\n      password: synthetic-current-proxy/token+0123456789\nlog:\n  level: info\nplugins:\n- tag: lazy_cache\n  type: cache\n  args:\n    size: 10240\n    lazy_cache_ttl: 3600\n    short_circuit: true\n- tag: local_probe_cache\n  type: cache\n  args:\n    size: 2048\n    short_circuit: false\n- tag: forward_local\n  type: forward\n  args:\n    concurrent: 2\n    upstreams:\n    - addr: udp://223.5.5.5\n    - addr: udp://119.29.29.29\n- tag: forward_remote\n  type: forward\n  args:\n | 'runtime:\n  worker_threads: 2\napi:\n  http:\n    listen: 127.0.0.1:9199\n    auth:\n      type: basic\n      username: synthetic-agent/token+01234567890123456789\n      password: synthetic-current-proxy/token+0123456789\nlog:\n  level: info\nplugins:\n  - tag: lazy_cache\n    type: cache\n    args:\n      size: 10240\n      lazy_cache_ttl: 3600\n      short_circuit: true\n  - tag: local_probe_cache\n    type: cache\n    args:\n      size: 2048\n      short_circuit: false\n  - tag: forward_local\n    type: forward\n    args:\n      concurrent: 2\n      upstreams:\n        - addr: udp://223.5.5.5\n        - addr: udp://119.29.29.29\n  - tag:  |
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:37.399223Z' | '2026-11-17T20:10:37.416867Z' |
-
-## R189-F13 / template/
-
-路由：`PUT /api/rules/dns`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:35.804636Z' | '2026-11-17T20:10:35.812763Z' |
 
 ## R189-F15 / native/
 
@@ -2506,23 +1560,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | 路径 | 类型 | Python | Go |
 |---|---|---|---|
 | `db.fields.profile/default/oxidns.value.native_config` | value | "runtime:\n  worker_threads: 2\napi:\n  http:\n    listen: 127.0.0.1:9199\n    auth:\n      type: basic\n      username: synthetic-agent/token+01234567890123456789\n      password: synthetic-current-proxy/token+0123456789\nlog:\n  level: info\nplugins:\n- tag: lazy_cache\n  type: cache\n  args:\n    size: 10240\n    lazy_cache_ttl: 3600\n    short_circuit: true\n- tag: local_probe_cache\n  type: cache\n  args:\n    size: 2048\n    short_circuit: false\n- tag: forward_local\n  type: forward\n  args:\n    concurrent: 2\n    upstreams:\n    - addr: udp://223.5.5.5\n    - addr: udp://119.29.29.29\n- tag: forward_remote\n  type: forward\n  args:\n | 'runtime:\n  worker_threads: 2\napi:\n  http:\n    listen: 127.0.0.1:9199\n    auth:\n      type: basic\n      username: synthetic-agent/token+01234567890123456789\n      password: synthetic-current-proxy/token+0123456789\nlog:\n  level: info\nplugins:\n  - tag: lazy_cache\n    type: cache\n    args:\n      size: 10240\n      lazy_cache_ttl: 3600\n      short_circuit: true\n  - tag: local_probe_cache\n    type: cache\n    args:\n      size: 2048\n      short_circuit: false\n  - tag: forward_local\n    type: forward\n    args:\n      concurrent: 2\n      upstreams:\n        - addr: udp://223.5.5.5\n        - addr: udp://119.29.29.29\n  - tag:  |
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:37.399223Z' | '2026-11-17T20:10:37.416867Z' |
-
-## R189-F15 / template/
-
-路由：`PUT /api/rules/dns`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:35.804636Z' | '2026-11-17T20:10:35.812763Z' |
-
-## R189-S01 / cleanup-prepare/False
-
-路由：`PUT /api/rules/dns`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:40.417137Z' | '2026-11-17T20:10:40.423262Z' |
 
 ## R189-S01 / cleanup-prepare/True
 
@@ -2531,7 +1568,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | 路径 | 类型 | Python | Go |
 |---|---|---|---|
 | `db.fields.profile/default/oxidns.value.native_config` | value | "runtime:\n  worker_threads: 2\napi:\n  http:\n    listen: 127.0.0.1:9199\n    auth:\n      type: basic\n      username: synthetic-agent/token+01234567890123456789\n      password: synthetic-current-proxy/token+0123456789\nlog:\n  level: info\nplugins:\n- tag: lazy_cache\n  type: cache\n  args:\n    size: 10240\n    lazy_cache_ttl: 3600\n    short_circuit: true\n- tag: local_probe_cache\n  type: cache\n  args:\n    size: 2048\n    short_circuit: false\n- tag: forward_local\n  type: forward\n  args:\n    concurrent: 2\n    upstreams:\n    - addr: udp://223.5.5.5\n    - addr: udp://119.29.29.29\n- tag: forward_remote\n  type: forward\n  args:\n | "runtime:\n  worker_threads: 2\napi:\n  http:\n    listen: 127.0.0.1:9199\n    auth:\n      type: basic\n      username: synthetic-agent/token+01234567890123456789\n      password: synthetic-current-proxy/token+0123456789\nlog:\n  level: info\nplugins:\n  - tag: lazy_cache\n    type: cache\n    args:\n      size: 10240\n      lazy_cache_ttl: 3600\n      short_circuit: true\n  - tag: local_probe_cache\n    type: cache\n    args:\n      size: 2048\n      short_circuit: false\n  - tag: forward_local\n    type: forward\n    args:\n      concurrent: 2\n      upstreams:\n        - addr: udp://223.5.5.5\n        - addr: udp://119.29.29.29\n  - tag:  |
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:41.347458Z' | '2026-11-17T20:10:41.362094Z' |
 
 ## R189-S01 / native/blackhole
 
@@ -2540,7 +1576,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | 路径 | 类型 | Python | Go |
 |---|---|---|---|
 | `db.fields.profile/default/oxidns.value.native_config` | value | "runtime:\n  worker_threads: 2\napi:\n  http:\n    listen: 127.0.0.1:9199\n    auth:\n      type: basic\n      username: synthetic-agent/token+01234567890123456789\n      password: synthetic-current-proxy/token+0123456789\nlog:\n  level: info\nplugins:\n- tag: lazy_cache\n  type: cache\n  args:\n    size: 10240\n    lazy_cache_ttl: 3600\n    short_circuit: true\n- tag: local_probe_cache\n  type: cache\n  args:\n    size: 2048\n    short_circuit: false\n- tag: forward_local\n  type: forward\n  args:\n    concurrent: 2\n    upstreams:\n    - addr: udp://223.5.5.5\n    - addr: udp://119.29.29.29\n- tag: forward_remote\n  type: forward\n  args:\n | 'runtime:\n  worker_threads: 2\napi:\n  http:\n    listen: 127.0.0.1:9199\n    auth:\n      type: basic\n      username: synthetic-agent/token+01234567890123456789\n      password: synthetic-current-proxy/token+0123456789\nlog:\n  level: info\nplugins:\n  - tag: lazy_cache\n    type: cache\n    args:\n      size: 10240\n      lazy_cache_ttl: 3600\n      short_circuit: true\n  - tag: local_probe_cache\n    type: cache\n    args:\n      size: 2048\n      short_circuit: false\n  - tag: forward_local\n    type: forward\n    args:\n      concurrent: 2\n      upstreams:\n        - addr: udp://223.5.5.5\n        - addr: udp://119.29.29.29\n  - tag:  |
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:37.399223Z' | '2026-11-17T20:10:37.416867Z' |
 
 ## R189-S01 / native/direct
 
@@ -2549,7 +1584,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | 路径 | 类型 | Python | Go |
 |---|---|---|---|
 | `db.fields.profile/default/oxidns.value.native_config` | value | "runtime:\n  worker_threads: 2\napi:\n  http:\n    listen: 127.0.0.1:9199\n    auth:\n      type: basic\n      username: synthetic-agent/token+01234567890123456789\n      password: synthetic-current-proxy/token+0123456789\nlog:\n  level: info\nplugins:\n- tag: lazy_cache\n  type: cache\n  args:\n    size: 10240\n    lazy_cache_ttl: 3600\n    short_circuit: true\n- tag: local_probe_cache\n  type: cache\n  args:\n    size: 2048\n    short_circuit: false\n- tag: forward_local\n  type: forward\n  args:\n    concurrent: 2\n    upstreams:\n    - addr: udp://223.5.5.5\n    - addr: udp://119.29.29.29\n- tag: forward_remote\n  type: forward\n  args:\n | "runtime:\n  worker_threads: 2\napi:\n  http:\n    listen: 127.0.0.1:9199\n    auth:\n      type: basic\n      username: synthetic-agent/token+01234567890123456789\n      password: synthetic-current-proxy/token+0123456789\nlog:\n  level: info\nplugins:\n  - tag: lazy_cache\n    type: cache\n    args:\n      size: 10240\n      lazy_cache_ttl: 3600\n      short_circuit: true\n  - tag: local_probe_cache\n    type: cache\n    args:\n      size: 2048\n      short_circuit: false\n  - tag: forward_local\n    type: forward\n    args:\n      concurrent: 2\n      upstreams:\n        - addr: udp://223.5.5.5\n        - addr: udp://119.29.29.29\n  - tag:  |
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:37.078982Z' | '2026-11-17T20:10:37.091046Z' |
 
 ## R189-S01 / native/nodata
 
@@ -2558,7 +1592,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | 路径 | 类型 | Python | Go |
 |---|---|---|---|
 | `db.fields.profile/default/oxidns.value.native_config` | value | "runtime:\n  worker_threads: 2\napi:\n  http:\n    listen: 127.0.0.1:9199\n    auth:\n      type: basic\n      username: synthetic-agent/token+01234567890123456789\n      password: synthetic-current-proxy/token+0123456789\nlog:\n  level: info\nplugins:\n- tag: lazy_cache\n  type: cache\n  args:\n    size: 10240\n    lazy_cache_ttl: 3600\n    short_circuit: true\n- tag: local_probe_cache\n  type: cache\n  args:\n    size: 2048\n    short_circuit: false\n- tag: forward_local\n  type: forward\n  args:\n    concurrent: 2\n    upstreams:\n    - addr: udp://223.5.5.5\n    - addr: udp://119.29.29.29\n- tag: forward_remote\n  type: forward\n  args:\n | "runtime:\n  worker_threads: 2\napi:\n  http:\n    listen: 127.0.0.1:9199\n    auth:\n      type: basic\n      username: synthetic-agent/token+01234567890123456789\n      password: synthetic-current-proxy/token+0123456789\nlog:\n  level: info\nplugins:\n  - tag: lazy_cache\n    type: cache\n    args:\n      size: 10240\n      lazy_cache_ttl: 3600\n      short_circuit: true\n  - tag: local_probe_cache\n    type: cache\n    args:\n      size: 2048\n      short_circuit: false\n  - tag: forward_local\n    type: forward\n    args:\n      concurrent: 2\n      upstreams:\n        - addr: udp://223.5.5.5\n        - addr: udp://119.29.29.29\n  - tag:  |
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:37.352769Z' | '2026-11-17T20:10:37.369353Z' |
 
 ## R189-S01 / native/nxdomain
 
@@ -2567,7 +1600,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | 路径 | 类型 | Python | Go |
 |---|---|---|---|
 | `db.fields.profile/default/oxidns.value.native_config` | value | "runtime:\n  worker_threads: 2\napi:\n  http:\n    listen: 127.0.0.1:9199\n    auth:\n      type: basic\n      username: synthetic-agent/token+01234567890123456789\n      password: synthetic-current-proxy/token+0123456789\nlog:\n  level: info\nplugins:\n- tag: lazy_cache\n  type: cache\n  args:\n    size: 10240\n    lazy_cache_ttl: 3600\n    short_circuit: true\n- tag: local_probe_cache\n  type: cache\n  args:\n    size: 2048\n    short_circuit: false\n- tag: forward_local\n  type: forward\n  args:\n    concurrent: 2\n    upstreams:\n    - addr: udp://223.5.5.5\n    - addr: udp://119.29.29.29\n- tag: forward_remote\n  type: forward\n  args:\n | "runtime:\n  worker_threads: 2\napi:\n  http:\n    listen: 127.0.0.1:9199\n    auth:\n      type: basic\n      username: synthetic-agent/token+01234567890123456789\n      password: synthetic-current-proxy/token+0123456789\nlog:\n  level: info\nplugins:\n  - tag: lazy_cache\n    type: cache\n    args:\n      size: 10240\n      lazy_cache_ttl: 3600\n      short_circuit: true\n  - tag: local_probe_cache\n    type: cache\n    args:\n      size: 2048\n      short_circuit: false\n  - tag: forward_local\n    type: forward\n    args:\n      concurrent: 2\n      upstreams:\n        - addr: udp://223.5.5.5\n        - addr: udp://119.29.29.29\n  - tag:  |
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:37.304216Z' | '2026-11-17T20:10:37.321232Z' |
 
 ## R189-S01 / native/proxy
 
@@ -2576,7 +1608,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | 路径 | 类型 | Python | Go |
 |---|---|---|---|
 | `db.fields.profile/default/oxidns.value.native_config` | value | "runtime:\n  worker_threads: 2\napi:\n  http:\n    listen: 127.0.0.1:9199\n    auth:\n      type: basic\n      username: synthetic-agent/token+01234567890123456789\n      password: synthetic-current-proxy/token+0123456789\nlog:\n  level: info\nplugins:\n- tag: lazy_cache\n  type: cache\n  args:\n    size: 10240\n    lazy_cache_ttl: 3600\n    short_circuit: true\n- tag: local_probe_cache\n  type: cache\n  args:\n    size: 2048\n    short_circuit: false\n- tag: forward_local\n  type: forward\n  args:\n    concurrent: 2\n    upstreams:\n    - addr: udp://223.5.5.5\n    - addr: udp://119.29.29.29\n- tag: forward_remote\n  type: forward\n  args:\n | "runtime:\n  worker_threads: 2\napi:\n  http:\n    listen: 127.0.0.1:9199\n    auth:\n      type: basic\n      username: synthetic-agent/token+01234567890123456789\n      password: synthetic-current-proxy/token+0123456789\nlog:\n  level: info\nplugins:\n  - tag: lazy_cache\n    type: cache\n    args:\n      size: 10240\n      lazy_cache_ttl: 3600\n      short_circuit: true\n  - tag: local_probe_cache\n    type: cache\n    args:\n      size: 2048\n      short_circuit: false\n  - tag: forward_local\n    type: forward\n    args:\n      concurrent: 2\n      upstreams:\n        - addr: udp://223.5.5.5\n        - addr: udp://119.29.29.29\n  - tag:  |
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:37.215915Z' | '2026-11-17T20:10:37.231074Z' |
 
 ## R189-S01 / native/refused
 
@@ -2585,63 +1616,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | 路径 | 类型 | Python | Go |
 |---|---|---|---|
 | `db.fields.profile/default/oxidns.value.native_config` | value | "runtime:\n  worker_threads: 2\napi:\n  http:\n    listen: 127.0.0.1:9199\n    auth:\n      type: basic\n      username: synthetic-agent/token+01234567890123456789\n      password: synthetic-current-proxy/token+0123456789\nlog:\n  level: info\nplugins:\n- tag: lazy_cache\n  type: cache\n  args:\n    size: 10240\n    lazy_cache_ttl: 3600\n    short_circuit: true\n- tag: local_probe_cache\n  type: cache\n  args:\n    size: 2048\n    short_circuit: false\n- tag: forward_local\n  type: forward\n  args:\n    concurrent: 2\n    upstreams:\n    - addr: udp://223.5.5.5\n    - addr: udp://119.29.29.29\n- tag: forward_remote\n  type: forward\n  args:\n | "runtime:\n  worker_threads: 2\napi:\n  http:\n    listen: 127.0.0.1:9199\n    auth:\n      type: basic\n      username: synthetic-agent/token+01234567890123456789\n      password: synthetic-current-proxy/token+0123456789\nlog:\n  level: info\nplugins:\n  - tag: lazy_cache\n    type: cache\n    args:\n      size: 10240\n      lazy_cache_ttl: 3600\n      short_circuit: true\n  - tag: local_probe_cache\n    type: cache\n    args:\n      size: 2048\n      short_circuit: false\n  - tag: forward_local\n    type: forward\n    args:\n      concurrent: 2\n      upstreams:\n        - addr: udp://223.5.5.5\n        - addr: udp://119.29.29.29\n  - tag:  |
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:37.260087Z' | '2026-11-17T20:10:37.273346Z' |
-
-## R189-S01 / template/blackhole
-
-路由：`PUT /api/rules/dns`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:35.804636Z' | '2026-11-17T20:10:35.812763Z' |
-
-## R189-S01 / template/direct
-
-路由：`PUT /api/rules/dns`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:35.587407Z' | '2026-11-17T20:10:35.592612Z' |
-
-## R189-S01 / template/nodata
-
-路由：`PUT /api/rules/dns`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:35.770212Z' | '2026-11-17T20:10:35.778368Z' |
-
-## R189-S01 / template/nxdomain
-
-路由：`PUT /api/rules/dns`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:35.737800Z' | '2026-11-17T20:10:35.745791Z' |
-
-## R189-S01 / template/proxy
-
-路由：`PUT /api/rules/dns`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:35.674381Z' | '2026-11-17T20:10:35.680349Z' |
-
-## R189-S01 / template/refused
-
-路由：`PUT /api/rules/dns`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:35.703021Z' | '2026-11-17T20:10:35.709589Z' |
-
-## R189-S01 / type-guard-prepare
-
-路由：`PUT /api/rules/dns`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:43.334643Z' | '2026-11-17T20:10:43.340845Z' |
 
 ## R189-S02 / native/follow
 
@@ -2650,15 +1624,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | 路径 | 类型 | Python | Go |
 |---|---|---|---|
 | `db.fields.profile/default/oxidns.value.native_config` | value | "runtime:\n  worker_threads: 2\napi:\n  http:\n    listen: 127.0.0.1:9199\n    auth:\n      type: basic\n      username: synthetic-agent/token+01234567890123456789\n      password: synthetic-current-proxy/token+0123456789\nlog:\n  level: info\nplugins:\n- tag: lazy_cache\n  type: cache\n  args:\n    size: 10240\n    lazy_cache_ttl: 3600\n    short_circuit: true\n- tag: local_probe_cache\n  type: cache\n  args:\n    size: 2048\n    short_circuit: false\n- tag: forward_local\n  type: forward\n  args:\n    concurrent: 2\n    upstreams:\n    - addr: udp://223.5.5.5\n    - addr: udp://119.29.29.29\n- tag: forward_remote\n  type: forward\n  args:\n | "runtime:\n  worker_threads: 2\napi:\n  http:\n    listen: 127.0.0.1:9199\n    auth:\n      type: basic\n      username: synthetic-agent/token+01234567890123456789\n      password: synthetic-current-proxy/token+0123456789\nlog:\n  level: info\nplugins:\n  - tag: lazy_cache\n    type: cache\n    args:\n      size: 10240\n      lazy_cache_ttl: 3600\n      short_circuit: true\n  - tag: local_probe_cache\n    type: cache\n    args:\n      size: 2048\n      short_circuit: false\n  - tag: forward_local\n    type: forward\n    args:\n      concurrent: 2\n      upstreams:\n        - addr: udp://223.5.5.5\n        - addr: udp://119.29.29.29\n  - tag:  |
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:37.115675Z' | '2026-11-17T20:10:37.123853Z' |
-
-## R189-S02 / template/follow
-
-路由：`PUT /api/rules/dns`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:35.612843Z' | '2026-11-17T20:10:35.618246Z' |
 
 ## R189-S03 / native/default
 
@@ -2667,15 +1632,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | 路径 | 类型 | Python | Go |
 |---|---|---|---|
 | `db.fields.profile/default/oxidns.value.native_config` | value | "runtime:\n  worker_threads: 2\napi:\n  http:\n    listen: 127.0.0.1:9199\n    auth:\n      type: basic\n      username: synthetic-agent/token+01234567890123456789\n      password: synthetic-current-proxy/token+0123456789\nlog:\n  level: info\nplugins:\n- tag: lazy_cache\n  type: cache\n  args:\n    size: 10240\n    lazy_cache_ttl: 3600\n    short_circuit: true\n- tag: local_probe_cache\n  type: cache\n  args:\n    size: 2048\n    short_circuit: false\n- tag: forward_local\n  type: forward\n  args:\n    concurrent: 2\n    upstreams:\n    - addr: udp://223.5.5.5\n    - addr: udp://119.29.29.29\n- tag: forward_remote\n  type: forward\n  args:\n | "runtime:\n  worker_threads: 2\napi:\n  http:\n    listen: 127.0.0.1:9199\n    auth:\n      type: basic\n      username: synthetic-agent/token+01234567890123456789\n      password: synthetic-current-proxy/token+0123456789\nlog:\n  level: info\nplugins:\n  - tag: lazy_cache\n    type: cache\n    args:\n      size: 10240\n      lazy_cache_ttl: 3600\n      short_circuit: true\n  - tag: local_probe_cache\n    type: cache\n    args:\n      size: 2048\n      short_circuit: false\n  - tag: forward_local\n    type: forward\n    args:\n      concurrent: 2\n      upstreams:\n        - addr: udp://223.5.5.5\n        - addr: udp://119.29.29.29\n  - tag:  |
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:37.152861Z' | '2026-11-17T20:10:37.179160Z' |
-
-## R189-S03 / template/default
-
-路由：`PUT /api/rules/dns`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:35.640491Z' | '2026-11-17T20:10:35.647612Z' |
 
 ## R189-S04 / native
 
@@ -2684,135 +1640,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | 路径 | 类型 | Python | Go |
 |---|---|---|---|
 | `db.fields.profile/default/oxidns.value.native_config` | value | "runtime:\n  worker_threads: 2\napi:\n  http:\n    listen: 127.0.0.1:9199\n    auth:\n      type: basic\n      username: synthetic-agent/token+01234567890123456789\n      password: synthetic-current-proxy/token+0123456789\nlog:\n  level: info\nplugins:\n- tag: lazy_cache\n  type: cache\n  args:\n    size: 10240\n    lazy_cache_ttl: 3600\n    short_circuit: true\n- tag: local_probe_cache\n  type: cache\n  args:\n    size: 2048\n    short_circuit: false\n- tag: forward_local\n  type: forward\n  args:\n    concurrent: 2\n    upstreams:\n    - addr: udp://223.5.5.5\n    - addr: udp://119.29.29.29\n- tag: forward_remote\n  type: forward\n  args:\n | "runtime:\n  worker_threads: 2\napi:\n  http:\n    listen: 127.0.0.1:9199\n    auth:\n      type: basic\n      username: synthetic-agent/token+01234567890123456789\n      password: synthetic-current-proxy/token+0123456789\nlog:\n  level: info\nplugins:\n  - tag: lazy_cache\n    type: cache\n    args:\n      size: 10240\n      lazy_cache_ttl: 3600\n      short_circuit: true\n  - tag: local_probe_cache\n    type: cache\n    args:\n      size: 2048\n      short_circuit: false\n  - tag: forward_local\n    type: forward\n    args:\n      concurrent: 2\n      upstreams:\n        - addr: udp://223.5.5.5\n        - addr: udp://119.29.29.29\n  - tag:  |
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:37.555125Z' | '2026-11-17T20:10:37.563911Z' |
-
-## R189-S04 / template
-
-路由：`PUT /api/rules/dns`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:35.945586Z' | '2026-11-17T20:10:35.953487Z' |
-
-## R194-B01 /
-
-路由：`PUT /api/rules/policy`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:32.711038Z' | '2026-11-17T20:10:32.726788Z' |
-
-## R194-B02 /
-
-路由：`PUT /api/rules/policy`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:44.270130Z' | '2026-11-17T20:10:44.275314Z' |
-
-## R194-B03 / explicit-DNS-does-not-follow-policy-edit
-
-路由：`PUT /api/rules/policy`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:56.418850Z' | '2026-11-17T20:10:56.424182Z' |
-
-## R194-F08 /
-
-路由：`PUT /api/rules/policy`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:31.627145Z' | '2026-11-17T20:10:31.634210Z' |
-
-## R194-F09 /
-
-路由：`PUT /api/rules/policy`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:31.627145Z' | '2026-11-17T20:10:31.634210Z' |
-
-## R194-F10 /
-
-路由：`PUT /api/rules/policy`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:31.627145Z' | '2026-11-17T20:10:31.634210Z' |
-
-## R194-F11 /
-
-路由：`PUT /api/rules/policy`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:31.627145Z' | '2026-11-17T20:10:31.634210Z' |
-
-## R194-F12 /
-
-路由：`PUT /api/rules/policy`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:31.627145Z' | '2026-11-17T20:10:31.634210Z' |
-
-## R194-F13 /
-
-路由：`PUT /api/rules/policy`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:31.627145Z' | '2026-11-17T20:10:31.634210Z' |
-
-## R194-F14 /
-
-路由：`PUT /api/rules/policy`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:31.627145Z' | '2026-11-17T20:10:31.634210Z' |
-
-## R194-F15 /
-
-路由：`PUT /api/rules/policy`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:31.627145Z' | '2026-11-17T20:10:31.634210Z' |
-
-## R194-S01 /
-
-路由：`PUT /api/rules/policy`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:31.496825Z' | '2026-11-17T20:10:31.504206Z' |
-
-## R194-S02 /
-
-路由：`PUT /api/rules/policy`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:31.540882Z' | '2026-11-17T20:10:31.548749Z' |
-
-## R194-S03 /
-
-路由：`PUT /api/rules/policy`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:31.585073Z' | '2026-11-17T20:10:31.591920Z' |
-
-## R194-S04 /
-
-路由：`PUT /api/rules/policy`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T20:10:31.627145Z' | '2026-11-17T20:10:31.634210Z' |
 
 ## X08 / retired-node-test-dns-migration
 

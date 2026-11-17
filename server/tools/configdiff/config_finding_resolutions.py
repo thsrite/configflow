@@ -10,6 +10,94 @@ from compare import differences
 DECISIONS = '[behaviour-changes.md · {item}](behaviour-changes.md#config-step-b--coordinator-decisions)'
 
 
+def native_yaml_layout_basis(item, raw, statuses):
+    """Accept N7-4 layout only, with exact typed Nodes and duplicate rejection."""
+    vectors = {('rule-dns-choices', case, variant): code for case, variant, code in [
+        ('R189-B02', 'native', 200), ('R189-S04', 'native', 200),
+        ('R189-S02', 'native/follow', 200), ('R189-S03', 'native/default', 200),
+        *[('R189-S01', 'native/' + choice, 200) for choice in ('blackhole', 'direct', 'nodata', 'nxdomain', 'proxy', 'refused')],
+        *[(case, 'native/', 400) for case in ('R189-F08', 'R189-F09', 'R189-F10', 'R189-F11', 'R189-F13', 'R189-F15')],
+        ('R189-F12', "native/'unknown'", 400), ('R189-F12', 'native/1', 400)]}
+    vectors['rule-dns-selectors-types', 'R189-S01', 'cleanup-prepare/True'] = 200
+    vectors['rule-dns-explicit-and-reorder', 'R195-B03', 'real-recognized-native-provider-order-rebuild'] = 200
+    code = vectors.get((item['group'], item['case'], item['variant']))
+    route = 'POST /api/rules/reorder' if item['case'] == 'R195-B03' else 'PUT /api/rules/dns'
+    if code is None or item['route'] != route or statuses != (code, code) or len(raw) != 1: return ''
+    row = raw[0]
+    if row['path'] != 'db.fields.profile/default/oxidns.value.native_config' or row['kind'] != 'value': return ''
+    if any(type(row[side]) is not str or len(row[side]) > 262144 for side in ('python', 'go')): return ''
+    if '\r' in row['go'] or '\t' in row['go'] or any(
+            (len(line) - len(line.lstrip(' '))) % 2 for line in row['go'].split('\n') if line.strip()): return ''
+    import yaml
+    def graph(value):
+        from yaml.tokens import ScalarToken
+        spans = [(token.start_mark.index, token.end_mark.index) for token in yaml.scan(value) if isinstance(token, ScalarToken)]
+        if any(char == '#' and not any(start <= index < end for start, end in spans)
+                for index, char in enumerate(value)):
+            raise ValueError('unreviewed generated comment')
+        seen, budget = set(), [10000]
+        def visit(node):
+            budget[0] -= 1
+            if budget[0] < 0 or node is None or id(node) in seen: raise ValueError('unexpected alias or oversized native document')
+            seen.add(id(node))
+            if isinstance(node, yaml.ScalarNode):
+                if node.tag not in {'tag:yaml.org,2002:' + tag for tag in ('str', 'int', 'bool', 'null', 'float')}:
+                    raise ValueError('unexpected scalar tag')
+                return node.tag, node.value
+            if isinstance(node, yaml.SequenceNode) and node.tag == 'tag:yaml.org,2002:seq':
+                return node.tag, tuple(visit(child) for child in node.value)
+            if isinstance(node, yaml.MappingNode) and node.tag == 'tag:yaml.org,2002:map':
+                keys, fields = set(), []
+                for key, child in node.value:
+                    if not isinstance(key, yaml.ScalarNode) or key.tag != 'tag:yaml.org,2002:str' or key.value in keys:
+                        raise ValueError('duplicate or non-string mapping key')
+                    keys.add(key.value)
+                    fields.append((key.value, visit(child)))
+                return node.tag, tuple(sorted(fields))
+            raise ValueError('unexpected node')
+        return visit(yaml.compose(value, Loader=yaml.SafeLoader))
+    try:
+        if graph(row['python']) != graph(row['go']): return ''
+    except (ValueError, RecursionError, yaml.YAMLError):
+        return ''
+    return '[behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正)'
+
+
+def rules_boundary_basis(item, raw, statuses):
+    """Approve finite observed C32 HEAD and Step B #3 error-envelope vectors."""
+    identity = item['case'], item['group'], item['route'], item['variant']
+    if identity in {('X06', 'http-head', 'GET ' + path, 'head/' + path)
+            for path in ('/api/rules', '/api/rule-sets')}:
+        expected = [{'path': 'status', 'kind': 'value', 'python': 500, 'go': 200},
+            {'path': 'headers.content-type', 'kind': 'value', 'python': 'text/html; charset=utf-8', 'go': 'application/json'}]
+        if statuses == (500, 200) and not differences(expected, raw):
+            return '[behaviour-changes.md · C32](behaviour-changes.md#c32--head-规则接口只读python-bug-修正)'
+        return ''
+    internal = ('The server encountered an internal error and was unable to complete your request. '
+        'Either the server is overloaded or there is an error in the application.')
+    missing = ('The requested URL was not found on the server. If you entered the URL manually '
+        'please check your spelling and try again.')
+    vectors = {
+        ('R179-F08', 'rules-sets', 'POST /api/rule-sets', ''): (500, internal),
+        ('R181-F09', 'rules-sets', 'PUT /api/rule-sets/<rule_set_id>', ''): (404, 'Rule not found'),
+        ('R185-F16', 'rules-update', 'PUT /api/rules/<rule_id>', ''): (404, 'Rule not found'),
+        ('R195-F11', 'rules-reorder', 'POST /api/rules/reorder', ''): (404, "以下规则 id 不存在: ['missing']"),
+        ('R195-F13', 'rules-reorder', 'POST /api/rules/reorder', "{'ids': [1]}"): (404, '以下规则 id 不存在: [1]'),
+        ('R195-F13', 'rules-reorder', 'POST /api/rules/reorder', "{'ids': [[1]]}"): (500, internal),
+        **{('X06', 'http-options-routing', 'GET ' + path, 'encoded-slash/GET ' + path): (404, missing)
+            for path in ('/api/rules/local/<name>', '/api/profiles/<profile_id>/rules/local/<name>')},
+    }
+    if identity not in vectors: return ''
+    code, message = vectors[identity]
+    title = {404: 'Not Found', 500: 'Internal Server Error'}[code]
+    html = ['<!doctype html>', '<html lang=en>', f'<title>{code} {title}</title>', f'<h1>{title}</h1>',
+        '<p>' + message.replace("'", '&#39;') + '</p>']
+    expected = [{'path': 'headers.content-type', 'kind': 'value', 'python': 'text/html; charset=utf-8', 'go': 'application/json'},
+        {'path': 'body', 'kind': 'type', 'python': html, 'go': {'message': message, 'success': False}}]
+    if statuses == (code, code) and not differences(expected, raw): return DECISIONS.format(item='Step B #3')
+    return ''
+
+
 def native_binding_basis(item):
     """Match only the nine actually observed, approved N8-6 login transitions."""
     if item.get('status') != 'open' or item.get('route') != 'POST /api/auth/login':
@@ -73,6 +161,12 @@ def accepted_basis(item):
     statuses = item.get('python_status'), item.get('go_status')
     if any(type(value) is not int for value in statuses):
         return ''
+    boundary = rules_boundary_basis(item, raw, statuses)
+    if boundary:
+        return boundary
+    layout = native_yaml_layout_basis(item, raw, statuses)
+    if layout:
+        return layout
     c35_path = 'db.fields.system//backup.value.webdav_password'
     c35_revision = 'db.fields.system//backup.revision'
     if (item['case'] == 'R015-S04' and item['group'] == 'settings-backup-validation'
@@ -191,6 +285,13 @@ def repair_commits(item):
         return []
     group = item['group']
     paths = {difference['path'] for difference in item['differences']}
+    timestamp_groups = {'rules-create', 'rules-sets', 'rules-update', 'rule-dns-selectors-types',
+        'rules-batch', 'rules-concurrent-batch', 'rules-compose-success', 'rules-compose-remote',
+        'rule-dns-choices', 'rules-labels-policy', 'rule-dns-native-locked',
+        'rule-dns-explicit-and-reorder', 'rules-reorder'}
+    if group in timestamp_groups and paths and paths <= {
+            'db.fields.profile/default/updated_at.value', 'db.fields.profile/other/updated_at.value'}:
+        return ['dbf24340']
     if paths and paths <= {'files.notifications.json'}:
         return ['8f3d36ad']
     if group in METADATA_GROUPS:
@@ -230,6 +331,8 @@ def annotate(records):
             item['status'] = 'accepted'
         item['fix_commits'] = repair_commits(item)
         item.pop('closure_note', None)
+        if item['status'] == 'closed' and 'dbf24340' in item['fix_commits']:
+            item['closure_note'] = 'dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比'
         if item['status'] == 'closed' and '25f1364a' in item['fix_commits']:
             item['closure_note'] = '25f1364a为O6英文内部诊断比较器纠正，不是Go业务修复；中文/HTTP数字/副作用继续严格比较'
         if item['status'] == 'closed' and 'd7e92cf2' in item['fix_commits']:

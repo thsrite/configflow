@@ -1251,24 +1251,18 @@
   "unaccounted": [],
   "unknown_labels": [],
   "routes": 228,
-  "request_variants": 10617,
+  "request_variants": 10648,
   "raw_verdicts": {
-    "compared": 2991,
-    "go-unimplemented": 7462,
-    "different": 53,
-    "go-unimplemented-dependency": 110,
+    "compared": 3543,
+    "go-unimplemented": 6856,
+    "different": 137,
+    "go-unimplemented-dependency": 111,
     "O12-separate": 1
   },
   "routes_missing_source_success_or_failure": [],
   "runtime_design_errors": [],
   "statement": "Not-exercised recipes are explicit boundaries, never compared/passed. Go skips remain skips.",
   "source_reports": [
-    "server/tools/configdiff/testdata/results.json",
-    "server/tools/configdiff/testdata/retained-runtime.json",
-    "server/tools/configdiff/testdata/listener-runtime-boundaries.json",
-    "server/tools/configdiff/testdata/concurrent-profile-isolation.json",
-    "server/tools/configdiff/testdata/log-runtime.json",
-    "server/tools/configdiff/testdata/listener-saved-state-and-extremes.json",
-    "server/tools/configdiff/testdata/internal-redirect.json"
+    "/home/sunbroke/rt/.paseo__worktrees__302rx1dg__go-difftest-config/server/tools/configdiff/testdata/results.json"
   ]
 }

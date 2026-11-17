@@ -2279,3 +2279,11 @@ setup已有真实check屏障下断连后receipt保存及新浏览器读回；pre
 ### Step B N8-6已批准的登录壳差异（批次145）
 
 最新go的原生binding使R011-F06/F07/F08和X04 empty/null/plain由Python500转为Go400/415；ignored-extra的NaN/Infinity/-Infinity使Python成功签发JWT而Go400。这九个实际差异按behaviour-changes.md的N8-6单独accepted，保留原始status/body/JWT诊断，不修改Go或原始verdict。接受谓词严格限制route/group/variant、每个差异路径/类型/两侧完整值，签名与claims/duration也复验；额外SQL/files/字段/错误消息/重复差异/错误JWT均会重新open。任务间隔路由尚未接通，不能据此假装已双端验收其native binder。
+
+### Step B rules接通后的夹具纠正与批准边界（批次150–151）
+
+公开规则写入会在[config_repository.py:1311](../../backend/common/config_repository.py#L1311)独立采样profile.updated_at；四个早期规则模块漏挂已有时间窗/格式策略，产生142个仅微秒差异，已由真实62组重跑撤回。dbf24340仅为夹具纠正；field revision、完整值、文件及前后无写入要求继续比较。完整402组全量无夹具错误；最新规则集成再跑62组也无夹具错误。
+
+已批准的C32 HEAD列表修正、Step B #3 API JSON错误出口、N7-4生成YAML布局按有限实际向量精确accepted，保留原始严格差异，不全局忽略状态/错误/SQL文本。N7-4只接受完整typed Nodes相同的生成native_config；重复键、别名、类型/列表顺序/额外字段/注释或其他SQL差异均不能被这个规则接受。具体批准链接逐例保存在findings。
+
+canonical覆盖审计为228路由、R4492（S712/F2763/B1017）、H936、G16；R/H未运行214项见上表，不能计通过。长流程的真实进程/存储/网络实验边界不因route S/F齐全而消失；Go尚未实现及依赖也始终单列。完整命令、基线、覆盖及门禁限制见[Step B进度](progress/difftest-config-b.md)。

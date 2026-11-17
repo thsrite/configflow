@@ -2498,3 +2498,21 @@ configdiff gate: Go=1 configdiff=1 logs=/tmp/configdiff-final-config-b-c14763b3-
 configdiff: groups402 / variants10648 / design_errors=[] / seconds2831.12
 Ran 142 tests in 8.825s ... OK
 ```
+
+## 批次 151：rules复验、批准差异精确接受及覆盖审计
+
+- .64 895f5e21按保存的62组清单实际重跑2651变体、653.35秒，design_errors=[]；原始1350 compared/1213未实现/6依赖/82不同。所有142个纯时间差实际相比通过，closed均明确dbf24340夹具时间窗纠正，不是Go业务修复。没有手改case verdict或吞revision。
+- 按已存在的批准决定新增30个精确accepted：C32两个HEAD列表500→200；Step B #3八个完整HTML→JSON错误出口；N7-4二十个仅生成OxiDNS native_config布局变化。仅有限case/group/route/variant/status组合；完整原始diff保留。YAML按完整typed Nodes比较，拒绝重复键/alias/未知tag/额外注释/值和类型改变/列表顺序/额外SQL；Go样式必须LF、无tab、偶数缩进。HTML与JSON、中文/英文、字段/头均逐值相同才接受，额外DB/文件差异仍open。
+- .64全部145项自检通过（10.023秒）；新增错误中文/头/状态/组路由/重复diff/SQL，以及YAML值/类型/顺序/重复键/tag/alias/额外字段/注释/CRLF变异均拒绝接受。refresh仅更新review注释，10648个实际case verdict保持不变。
+- 当前累计：3543 compared/6856未实现/111依赖/137严格差异/O12单列1；reviews closed265/accepted68/open69/separate1，全部在本轮全量c14763b3或定向895f5e21实际复验，closed无缺失归因。原始全量403项review并非403个业务缺陷；142是撤回的时间夹具证据。
+- open69归类：既有26（含3条YAML诊断、4条内部重定向），新22条规则交付WARNING缺失、19条删除规则/规则集后未变DNS字段revision被更新、2条DNS-follow启动失败回执/系统revision差异。全部仅合成数据，留移植agent处理；不存在“为通过而改Go”。T27本轮真实tick通过，8f3d36ad归因于原始通知缺失；旧4d8a665a高负载下额外调度差异本轮未复现，不宣称该提交修复了那些时序差异。
+- canonical单报告覆盖审计通过：228路由均有实际Python S/F；R4492（S712/F2763/B1017）+H936=5428个R/H配方，G16；未执行R38/H176=214明确处置（19不适用/合同更正，另含早期guard、跨域、真实存储/启动/窄窗口）。unaccounted/unknown/missing S-F/design_errors均空。不把214项或Go skip计作通过，真实Node/Supervisor/300秒idle、Nginx叠加/O9/O14等长流程边界仍按清单保留。
+- .32 home TMPDIR官方门禁已取得槽位，gofmt/vet/tag构建及proddiff exit0，race仍执行；未宣称最终Go gate已通过。
+
+```text
+RT_HOST=sunbroke@192.168.0.64 rt --back server/tools/configdiff/testdata/results.json --back server/parity/difftest-config-findings.md -- bash -lc 'selected=$(cat server/tools/configdiff/testdata/rules-integration-groups.txt); server/tools/configdiff/native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups "$selected" --baseline 895f5e21'
+62 groups / 2651 variants / design_errors=[] / seconds653.35；exit1仅因严格open
+Ran 145 tests in 10.023s ... OK
+recorded_rechecks: closed265 / open69 / accepted68 / separate1; actual_case_results_unchanged10648
+coverage audit: routes228 / variants10648 / R-H5428 / unaccounted=[] / unknown_labels=[] / missing S-F=[] / runtime_design_errors=[]；exit0
+```

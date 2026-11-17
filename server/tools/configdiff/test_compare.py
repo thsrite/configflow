@@ -17,6 +17,74 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_native_yaml_layout_approval_keeps_typed_nodes_duplicates_order_and_storage(self):
+        from config_finding_resolutions import annotate
+        source = 'plugins:\n- tag: kept\n  args:\n    values: [1, 2]\n'
+        target = 'plugins:\n  - tag: "kept"\n    args:\n      values:\n        - 1\n        - 2\n'
+        record = {'case': 'R189-S01', 'group': 'rule-dns-choices', 'route': 'PUT /api/rules/dns',
+            'variant': 'native/direct', 'status': 'open', 'python_status': 200, 'go_status': 200,
+            'differences': [], 'remaining_differences': [{'path': 'db.fields.profile/default/oxidns.value.native_config',
+                'kind': 'value', 'python': source, 'go': target}]}
+        self.assertEqual(annotate([copy.deepcopy(record)])[0]['status'], 'accepted')
+        for bad_text in (target.replace('"kept"', 'changed'), target.replace('- 1', '- "1"'),
+                target.replace('- 1\n        - 2', '- 2\n        - 1'),
+                target + 'extra: true\n', target + '# unexpected comment\n', target.replace('\n', '\r\n'),
+                target.replace('  - tag:', ' - tag:'), 'plugins: []\n', source + 'plugins: []\n',
+                'plugins: !unknown []\n', 'plugins: &cycle [*cycle]\n', '#' * 262145):
+            bad = copy.deepcopy(record)
+            bad['remaining_differences'][0]['go'] = bad_text
+            self.assertEqual(annotate([bad])[0]['status'], 'open', bad_text[:80])
+        for mutation in ('route', 'group', 'variant', 'status', 'extra-SQL', 'duplicate'):
+            bad = copy.deepcopy(record)
+            if mutation in ('route', 'group', 'variant'): bad[mutation] += '-unexpected'
+            elif mutation == 'status': bad['go_status'] = 400
+            elif mutation == 'extra-SQL': bad['remaining_differences'].append(
+                {'path': 'db.fields.profile/default/oxidns.revision', 'kind': 'value', 'python': 1, 'go': 2})
+            else: bad['remaining_differences'].append(copy.deepcopy(bad['remaining_differences'][0]))
+            self.assertEqual(annotate([bad])[0]['status'], 'open', mutation)
+
+    def test_rules_boundary_approvals_keep_exact_envelope_and_all_storage_differences(self):
+        from config_finding_resolutions import annotate
+        head = {'case': 'X06', 'group': 'http-head', 'route': 'GET /api/rules', 'variant': 'head//api/rules',
+            'status': 'open', 'python_status': 500, 'go_status': 200, 'differences': [],
+            'remaining_differences': [
+                {'path': 'status', 'kind': 'value', 'python': 500, 'go': 200},
+                {'path': 'headers.content-type', 'kind': 'value', 'python': 'text/html; charset=utf-8', 'go': 'application/json'}]}
+        message = 'Rule not found'
+        missing = {'case': 'R185-F16', 'group': 'rules-update', 'route': 'PUT /api/rules/<rule_id>', 'variant': '',
+            'status': 'open', 'python_status': 404, 'go_status': 404, 'differences': [],
+            'remaining_differences': [
+                {'path': 'headers.content-type', 'kind': 'value', 'python': 'text/html; charset=utf-8', 'go': 'application/json'},
+                {'path': 'body', 'kind': 'type', 'python': ['<!doctype html>', '<html lang=en>', '<title>404 Not Found</title>',
+                    '<h1>Not Found</h1>', '<p>Rule not found</p>'], 'go': {'message': message, 'success': False}}]}
+        for record in (head, missing):
+            self.assertEqual(annotate([copy.deepcopy(record)])[0]['status'], 'accepted')
+            for mutation in ('route', 'group', 'variant', 'status', 'extra-SQL', 'duplicate', 'message-or-header'):
+                bad = copy.deepcopy(record)
+                if mutation in ('route', 'group', 'variant'): bad[mutation] += '-unexpected'
+                elif mutation == 'status': bad['go_status'] = 403
+                elif mutation == 'extra-SQL': bad['remaining_differences'].append(
+                    {'path': 'db.fields.profile/default/updated_at.revision', 'kind': 'value', 'python': 1, 'go': 2})
+                elif mutation == 'duplicate': bad['remaining_differences'].append(copy.deepcopy(bad['remaining_differences'][0]))
+                else: bad['remaining_differences'][-1]['go'] = 'wrong-response'
+                self.assertEqual(annotate([bad])[0]['status'], 'open', mutation)
+
+    def test_rules_timestamp_closure_requires_real_recheck_and_exact_original_paths(self):
+        from config_finding_resolutions import annotate
+        record = {'case': 'R183-S01', 'variant': '', 'route': 'POST /api/rules', 'group': 'rules-create',
+            'status': 'closed', 'differences': [{'path': 'db.fields.profile/default/updated_at.value',
+                'kind': 'value', 'python': 'sample-a', 'go': 'sample-b'}]}
+        self.assertEqual(annotate([copy.deepcopy(record)])[0]['fix_commits'], ['dbf24340'])
+        for status in ('open', 'pending', 'blocked'):
+            bad = copy.deepcopy(record)
+            bad['status'] = status
+            self.assertNotIn('dbf24340', annotate([bad])[0]['fix_commits'])
+        for field, value in [('group', 'unrelated-group'), ('differences', [
+                {'path': 'db.fields.profile/default/updated_at.revision', 'kind': 'value', 'python': 1, 'go': 2}])]:
+            bad = copy.deepcopy(record)
+            bad[field] = value
+            self.assertNotIn('dbf24340', annotate([bad])[0]['fix_commits'])
+
     def test_profile_write_fixture_validates_metadata_times_without_hiding_other_rows(self):
         from datetime import datetime, timezone
         from unittest.mock import patch
