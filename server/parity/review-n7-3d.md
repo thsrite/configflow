@@ -1,7 +1,7 @@
 # N7-3d 独立复核
 
 复核者未参与作者实现；起点 `go@a08c4cc27`，范围 `f90a156e..a08c4cc2`。
-分支 `go-review-n7-3d`。仅用 rt 测试；新增用例为合成数据；无生产访问、push 或子 agent。
+分支 `go-review-n7-3d`，最终变基到`go@97580425b`，修复及文档提交变基无冲突。仅用 rt 测试；新增用例为合成数据；无生产访问、push 或子 agent。
 状态：实现复核完成，6项发现全部修复；high0 / medium3 / low3，未决0。最终完整 gate 在 .64 排队900秒未获slot，按约定停止，未计通过；相关包及全树fmt/vet均通过。
 
 ## 发现
@@ -14,7 +14,7 @@
   修复保留原因链，仍能匹配原验证错误类；中文展示文本不变，完整原生诊断、原生行列
   通过 `errors.As(*yamlx.SyntaxError)` 保留。gateway 不新增显示诊断，以遵守原有中文合同。
   `TestReviewN73DProviderReaderCauses` / `TestReviewN73DGatewayReaderCauses` 通过；
-  原235条 provider 完整显示参照也通过（0位置差）。修复提交：`117f785f0`。
+  原235条 provider 完整显示参照也通过（0位置差）。修复提交：`8b52d4442`。
 - **F2 / medium：AST 门漏扫 cmd/tools 对 yamlxtest 的运行时导入，并放过 yamlx 任意子包。**
   原门仅限制 internal 下运行时 helper 导入，且 WalkDir 跳过整个 yamlx 目录。
   合成违规文件在 cmd 导入 yamlxtest、在 yamlx/bypass 直接引用 yaml.Unmarshal，旧门均退出0；
@@ -22,18 +22,18 @@
   现扫描全部子包，仅 yamlx 本包和 yamlxtest 本包可直接读 YAML；两个固定 oracle 工具和
   testdata recorder 可以导入测试 helper，其余 cmd/tools/internal 的非测试文件均禁止。
   11个永久正/负控覆盖 import alias、函数引用、dot import、Clone、helper、子包，全部通过。
-  修复提交：`02afae340`。
+  修复提交：`b5605451c`。
 - **F3 / low：冻结档案缺少独立全来源执行门。**
   原有 Classify 按调用者选中的来源运行；convert 的3837来源只跑注入值/Parse audit，
   不调用 Classify。档案条数/SHA固定不能保证全部21343来源均在每次测试实际执行。
   新增 `TestAllFrozenReaderSources` 对每条来源调用 Classify，逐条校验当前完整图或完整错误，
-  不恢复旧实现；执行21343，unknown=0，类别计数与作者报告一致。修复提交：`02afae340`。
+  不恢复旧实现；执行21343，unknown=0，类别计数与作者报告一致。修复提交：`b5605451c`。
 
 - **F4 / low：deploy.SourceError 把原生未知坐标显示为第0行/第0列。**
   NUL 控制字符的原生解析错误没有位置；未闭合 flow list 只有行号。原实现无条件把0
   转为位置指针，向用户显示不存在的行列。新增三种真实 Parse 合成控制，修复前前两种
   失败；现在仅附加原生确有的正行号/列号，保留原始原因和诊断。provider hook 的历史
-  展示合同不变，235条冻结完整显示参照继续通过。修复提交：`2d027e716`。
+  展示合同不变，235条冻结完整显示参照继续通过。修复提交：`26191ee0f`。
 
 - **F5 / medium（A12）：规则文件明细错误地按 YAML 结构解释展示行。**
   Python `push_diff.rule_entries` 逐行扫描；Go RuleEntries 却调用 Parse 并解 alias/去注释。
@@ -44,12 +44,12 @@
   增加 RuleFileLines 入口支持 Unicode 分隔、空行和无限长行，不维护第二份切行算法。
   新 oracle 逐项比较原始条目、计数和完整展示；14/14通过，含1 MiB行、空文件、有效
   depth40 alias bomb（42个字面条目）。contentsync 公共入口也确认42项，循环flow为0项，
-  没有 graph 构造/引用展开。修复提交：`cf23b3fd7`。
+  没有 graph 构造/引用展开。修复提交：`c0b12ef2d`。
 - **F6 / low：matcher 内部 reader 没有保留错误原因。**
   外层 Match 无匹配合同与 Python 相同，但 yamlPayloadLines 把 policy/alias/syntax
   全部变成 nil。现内部 helper 返回原始 error；公共迭代器只在拒绝来源边界转为空迭代，
   不重试纯文本，不生成配置。新增子进程10秒硬截止测试检查原因/行诊断、depth40/self
-  和公共无匹配结果；实际约10毫秒完成。修复提交：`cf23b3fd7`。
+  和公共无匹配结果；实际约10毫秒完成。修复提交：`c0b12ef2d`。
 
 ## 验证（迭代）
 
@@ -174,7 +174,7 @@ yamlxtest27；Python检查16行、oracle生成31行，14行gzip合成语料3718 
 
 ## 最终完整门禁
 
-`cf23b3fd7` 启动 .64 前台 gate，`GOMAXPROCS=4`、`-p 6`，包含
+`cf23b3fd7`（变基前等价Go代码，现修复提交为`c0b12ef2d`）启动 .64 前台 gate，`GOMAXPROCS=4`、`-p 6`，包含
 FuzzMatcherYAML / FuzzRuleEntries / FuzzNodeItems / FuzzCustomConfigYAML（各60秒）。
 使用900秒无slot截止包装器；获得slot后不设900秒测试运行截止，不会误杀已开始的gate。
 日志 `.ci-results/review-n73d-gate/gate.out`。排队900秒后退出124：
@@ -199,3 +199,16 @@ Python合同控制全部通过；`FINAL TARGETED PASS; gofmt empty; vet passed`�
 收尾时本地go前进到97580425b（新增158个configdiff工具/文档提交，无Go文件、设计、scripts或cmd变化）。
 按约定变基到该提交后做集成检查，不把这些新工具重新计入本次N7-3d复核范围。
 
+
+变基后集成检查（最终Go代码与变基前的修复树逐文件相同）：
+
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt -e GOMAXPROCS=4 --back .ci-results/review-n73d-integrated -- bash -lc 'set -euo pipefail; review_logs="$PWD/.ci-results/review-n73d-integrated"; mkdir -p "$review_logs"; cd server; gofmt -l internal/ tools/ cmd/ > "$review_logs/gofmt.log"; test ! -s "$review_logs/gofmt.log"; go vet ./... > "$review_logs/vet.log" 2>&1; go test -p=4 -count=1 -v -run "^TestReviewN73D|^TestYAMLFacade|^TestAllFrozenReaderSources$|^TestN73NativeDiagnosticInterface$" ./internal/gateway ./internal/provider ./internal/deploy ./internal/rules ./internal/deploy/pushdiff ./internal/deploy/contentsync ./internal/yamlx ./internal/yamlx/yamlxtest > "$review_logs/tests.log" 2>&1; tail -10 "$review_logs/tests.log"; echo "INTEGRATED PASS; gofmt empty; vet passed"'
+```
+
+结果：gateway0.006s/provider0.038s/deploy0.009s/rules0.018s/pushdiff0.055s/
+contentsync0.021s/yamlx0.337s/yamlxtest2.999s PASS；21343来源再次完整执行，
+provider235完整显示再次相同；`INTEGRATED PASS; gofmt empty; vet passed`。
+
+交回：无未提交代码，无新增对Python的功能差异，原生YAML批准差异未扩大；
+A12展示恢复Python一致，deploy未知坐标不再虚构0。唯一待协调者完成的是合并树完整gate。

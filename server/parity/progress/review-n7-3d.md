@@ -1,62 +1,59 @@
-# N7-3d independent review — handoff state
+# N7-3d independent review — complete
 
-Branch `go-review-n7-3d`, base/current local go `a08c4cc27`. No push, no sub-agent,
-no production access. All testing via rt; new inputs synthetic only.
+Branch `go-review-n7-3d`; original base `a08c4cc27`, rebased cleanly onto local
+`go@97580425b`. Detailed Chinese report: `server/parity/review-n7-3d.md`.
+No push, sub-agents, production access or non-synthetic new fixtures.
 
-## Complete
+## Findings fixed (high0 / medium3 / low3 / open0)
 
-Detailed Chinese report: `server/parity/review-n7-3d.md`.
-Six findings fixed: medium3/low3/high0, none open.
-- `117f785f0`: F1 provider/gateway reader cause chains (14 failing-before controls).
-- `02afae340`: F2 AST helper/subpackage bypasses + F3 all21343-source frozen replay.
-- `2d027e716`: F4 direct deploy unknown coordinates (no line0/column0).
-- `cf23b3fd7`: F5 A12 lexical rule listings (14 real Python controls;9 fail before),
-  F6 matcher helper causes, public no-match unchanged, native provider size fallback
-  unchanged, design Clarified. Shared line splitting in rules/text.go; no separate
-  scanner. Valid depth40 lexical rule graph yields42 literal entries, no expansion.
+- F1 medium `8b52d4442`: provider/gateway typed YAML reader causes survive context
+  formatting (14 synthetic cases failed before). Existing visible messages kept.
+- F2 medium + F3 low `b5605451c`: AST helper-import/subpackage bypasses closed;
+  permanent11 positive/negative controls, plus live replay of every21343 frozen
+  source. Both bypasses passed the old real gate and fail the fixed gate.
+- F4 low `26191ee0f`: direct deploy formatter omits unavailable native coordinates;
+  native NUL/line-only controls failed before (line0/column0), pass after.
+- F5 medium + F6 low `c0b12ef2d`: A12 RuleEntries restores Python lexical display
+  rather than parsing YAML;14 real-Python controls (9 fail before), 1MiB line,
+  valid depth40 graph42 literal entries, aliases/empty/malformed/indentation/BOM/
+  Unicode/head200, complete raw entries/counts/display. Reuses rules/text.go line
+  splitting; no second scanner. Matcher helper retains cause; public no-match
+  unchanged. Native provider helper cause/size fallback unchanged. Design Clarified.
 
-Changed package full suites and vet pass on .64: gateway/provider/routersplit/
-yamlx/yamlxtest, rules/deploy/contentsync/pushdiff. Provider411s under host load25-28
-but passed. Final lexical rules/pushdiff/contentsync full run2.946s/6.663s/0.399s.
-Native gates: convert3837 sources/278=182+34+31+31, provider235 exact visible
-messages/0positions, gateway4/4, importer14, matcher981; unknown0. Full frozen
-replay actually executed21343 sources with original counts. Independent complete
-successful-output audits found only approved native typing and metadata scalar
-changes; diagnostics34/line deltas32/missing columns34 individually checked.
-Permanent synthetic Python oracle/checker is in pushdiff/testdata; temporary tools
-and deliberate poison files removed. New alias regressions have isolated10s caps;
-actual matcher~10ms/provider-listing~15ms/content-listing~39ms. No new dependencies.
+## Verification
 
-## In progress — must keep following in foreground
+All testing ran through rt on192.168.0.64. Changed-package full suites and vet:
+gateway8.500s/provider411.365s/routersplit9.378s/yamlx5.381s/yamlxtest7.032s;
+rules3.607s/deploy24.485s/contentsync0.642s/pushdiff7.947s before lexical change;
+final lexical rules2.946s/pushdiff6.663s/contentsync0.399s. Provider long duration
+was shared-host load25-28; passed without waiver or timeout changes.
 
-Final gate launched from committed code `cf23b3fd7` on .64 at06:41:46 host time
-(2026-11-17 22:41:46 UTC). `GOMAXPROCS=4`, gate.sh -p6, fuzz targets
-FuzzMatcherYAML, FuzzRuleEntries, FuzzNodeItems, FuzzCustomConfigYAML (60s each).
-Python foreground wrapper stops the gate process group after900s without a slot;
-once a slot is acquired there is no900s run cap. Both .64 slots were occupied;
-last check22:46 UTC still queued, no gate stage started. Tool exec session84484
-is active: poll via write_stdin, do not end turn waiting. Logs are fetched at exit
-to `.ci-results/review-n73d-gate/`; queue expiration returns124. Do not start
-another gate/race/proddiff alongside this one.
+Native gates: convert3837 sources/278 changes=182+34+31+31, provider235 complete
+visible messages/rejected193/position0, gateway4/4, importer14, matcher981;
+unknown0. Independent successful-output audit finds only approved native typing
+(including real port fields) and metadata scalar changes. Diagnostic34/line
+changes32/missing columns34 individually verified. Frozen replay21343 actually
+executes every source (not only archive hashes). New10s isolated alias regressions
+complete~10ms matcher/~15ms provider+listing/~39ms public contentsync.
 
-## Next
+Final fallback globalgofmt empty + go vet ./... passed; full convert15.826s,
+importer2.632s, aggregations0.761s, proddiff-generator0.016s; permanent Python
+contract checks passed. Logs `.ci-results/review-n73d-final/`.
 
-1. Follow session84484 to completion or900s queue stop. Communicate at least every60s.
-2. If queue stops, run final all-tree `gofmt -l` and `go vet ./...` through rt,
-   plus full convert/importer/aggregations and targeted proddiff-generator build/tests.
-   No full-race/proddiff outside gate. Gate-not-run must be explicit in handback.
-3. Fill final gate outcome + exact commands/output in report and this progress,
-   rebase onto local go (still a08), commit docs, verify clean tree, final Chinese
-   report with branch, commits and report link. Coordinator performs full gate if
-   queue limit prevents it; do not claim author's historical gate as this review.
+After rebase: upstream158 configdiff tool/doc commits had no Go changes. Global
+fmt/vet and all review regressions/AST controls/provider235/all21343 frozen sources
+pass again: gateway0.006s/provider0.038s/deploy0.009s/rules0.018s/pushdiff0.055s/
+contentsync0.021s/yamlx0.337s/yamlxtest2.999s. Final marker
+`INTEGRATED PASS; gofmt empty; vet passed`, logs `.ci-results/review-n73d-integrated/`.
+No new dependency, runtime Clone, legacy loader reference or temporary poison file.
 
-## Final queue result / integration
+## Full gate queue limit — coordinator handback required
 
-Session84484 exited124 after900s waiting; no gate stage ran. Logs fetched to
-.ci-results/review-n73d-gate. Session22085 final fallback passed: global gofmt empty,
-go vet ./... passes; convert15.826s/importer2.632s/aggregations0.761s/generator0.016s;
-permanent real-Python contracts checker passes. Logs .ci-results/review-n73d-final.
-Local go advanced to97580425b while waiting (158 configdiff tool/doc commits, no Go
-file or internal/design/script/cmd changes). Committing report then rebase to it,
-remap fix SHAs, final integrated checks, final clean commit/handback. Do not run a
-second full gate;900s queue allowance exhausted and no Go upstream drift exists.
+The foreground .64 gate on original equivalent code `cf23b3fd7` (rebased fix
+`c0b12ef2d`) waited900s without a slot and exited124 by the queue-limit wrapper.
+No gate stage started. Logs `.ci-results/review-n73d-gate/gate.out`:
+`QUEUE LIMIT: stopped after 900 seconds without a gate slot; no gate stages ran.`
+Full race/build-tag/difftest/proddiff/timed fuzz are NOT claimed passed. No
+second gate was started; coordinator runs full gate on merged tree per brief.
+Requested fuzz: FuzzMatcherYAML, FuzzRuleEntries, FuzzNodeItems, FuzzCustomConfigYAML.
+All foreground test sessions have completed; no pending background task.
