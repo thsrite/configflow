@@ -2070,6 +2070,8 @@ Final gate moved to equivalent .32 after confirming a free slot there (.64 still
 
 Current command: `RT_HOST=sunbroke@192.168.0.32 rt -e GATE_LOGS=/home/sunbroke/.cache/rt-tmp/c33-gate-20261118-final -- bash -lc 'test -n "$TMPDIR" && cat /proc/loadavg && server/scripts/gate.sh -p 6 FuzzEditableContent:./internal/api/rulelibrary && cat /proc/loadavg'`.
 
+Active .32 gate session9396, start13.76/23.34/36.29; gofmt/vet/双tag PASS。Proddiff already PASS: 23 self-checks, 89GET/91method-path, 1061actual, new=0 stale=0 coverage_regressions=0, aggregation2/2/bundle3/3. Proddiff load15.10/22.61/35.51→32.58/26.23/35.35; race observation41.89/31.57/33.75. Race still running; no final result claimed. Details in C33-HANDOFF.md.
+
 Approved decisions: draft revision uses native sorted encoding/json (D2 one-time stale-page 409). Stage content cache before DB commit, atomically replace afterwards, invalidate stable/legacy cache on failure (Python stale-delivery bug). Bulk testing disables only matching source declarations in a fresh transaction, using PUT native DNS rebuild/parking (Python concurrency bug).
 
 N8-5: draft/content PUT 的 DB+cache 原子性，N8-5 的事务 API 落地后，用正式的原语重写。

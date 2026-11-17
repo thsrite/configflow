@@ -1,6 +1,6 @@
 # C33 — 规则库和策略组路由交回
 
-当前状态：实现与针对性边界检查完成，最终 gate 排队中；本文件在 gate 结束后补齐最终结果。
+当前状态：实现与针对性边界检查完成，最终 gate 正在 .32 跑全量 race；proddiff 已通过，后续 live difftest/fuzz 等 gate 顺序执行。结束后补齐最终结果。
 分支 `go-port-c33`，已含 verified C32，当前变基到 `go=895f5e21`（门禁临时文件使用磁盘 TMPDIR）。不 push，不改已交回的 C32 分支。
 
 ## 范围
@@ -58,10 +58,12 @@ RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc '~/cf-test/.venv/bin/python server/
 ## 最终 gate（进行中）
 
 ```sh
-RT_HOST=sunbroke@192.168.0.64 rt -e GATE_LOGS=/home/sunbroke/.cache/rt-tmp/c33-gate-20261118-final -- bash -lc 'test -n "$TMPDIR" && cat /proc/loadavg && server/scripts/gate.sh -p 6 FuzzEditableContent:./internal/api/rulelibrary && cat /proc/loadavg'
+RT_HOST=sunbroke@192.168.0.32 rt -e GATE_LOGS=/home/sunbroke/.cache/rt-tmp/c33-gate-20261118-final -- bash -lc 'test -n "$TMPDIR" && cat /proc/loadavg && server/scripts/gate.sh -p 6 FuzzEditableContent:./internal/api/rulelibrary && cat /proc/loadavg'
 ```
 
-开始：`22.97 27.29 25.75`，前台 session79393，等待两-slot 限流。此前无磁盘 TMPDIR 的 session30829 在启动任何检查之前取消，仅更新门禁基础设施后重排，不计测试失败。结束后补 gofmt/vet、双 tag、全量 race、所有 difftest、proddiff 和60秒 fuzz输出。业务代码与 comparator/normalize 已冻结；Python 直接入口修正在 .32 验证36项。
+开始：`13.76 23.34 36.29`，.32 前台 session9396，slot1。gofmt、全仓 vet、双tag均通过，race/proddiff并行；proddiff已完成：89 GET模板/91 method-path、1061实际比较、coverage_regressions=0、new=0、stale=0，23项自检PASS，aggregation-provider2/2、agent-deployment-bundle3/3。其load开始15.10/22.61/35.51、结束32.58/26.23/35.35；race中间观察41.89/31.57/33.75。
+
+.64 的两次排队均在检查开始前取消：session30829没有后来新增的磁盘TMPDIR；session79393一直等slot，而 .32 有空slot，故转机且不增加并发轮次。.32第一轮gofmt发现自动合并的server.go导入块，纯格式修正后启动上述正式轮次。没有绕过gate限流、调大timeout或人工施压；业务逻辑与 comparator/normalize 冻结。
 
 ## 文件与提交
 
