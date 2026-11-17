@@ -2,9 +2,10 @@ package yamlx
 
 import (
 	"bytes"
-	"gopkg.in/yaml.v3"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 func TestEditScalarSplicePreservesOtherBytes(t *testing.T) {
@@ -64,6 +65,7 @@ func TestEditRewritesUnsafeSpliceShapes(t *testing.T) {
 	}{
 		{"first key after dash", "items:\n- remove: old # note\n  keep: value\n", func(n *Node) { Delete(Get(n, "items").Content[0], "remove") }},
 		{"flow removal", "items: {remove: old, keep: value} # note\n", func(n *Node) { Delete(Get(n, "items"), "remove") }},
+		{"exposed complex key", "remove:\n[]: # note", func(n *Node) { Delete(n, "remove") }},
 		{"new node", "key: 'old' # note\n", func(n *Node) { Set(n, "added", Seq(Str("new"))) }},
 		{"block scalar", "key: |\n  old\nkeep: value # note\n", func(n *Node) { Get(n, "key").Value = "new\n" }},
 		{"anchor consumer", "key: &value old\nother: *value # note\n", func(n *Node) { Get(n, "key").Value = "new" }},

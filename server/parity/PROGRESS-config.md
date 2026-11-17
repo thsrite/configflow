@@ -81,7 +81,7 @@ Coordinator clarifications are in design §2.3; independent O3-2/O3-3 review is 
 - jsonx: lone UTF-16 surrogates cannot be represented in Go strings (documented in `jsonx/doc.go`); `test_json_response.py::test_surrogate_strings_keep_normalization_before_redaction` depends on it.
 - Regex: `\N{name}` escapes and repeat counts > int32 → `*rules.UnsupportedRegexError` (filters with such patterns are not applied; validation accepts them like Python). Backtracking matches stop after 1 s and count as no match.
 - yamlx (since review C02 on the PyYAML port, `internal/pyyaml`): values, exception classes and texts are PyYAML's. Values jsonx cannot hold are reported after construction: non-string keys → `*NonStringKeyError` (or `*yamlx.Mapping` with `LoadOptions.KeepNonStringKeys`), recursive aliases and non-empty `!!set`/`!!omap`/`!!pairs` → `*UnrepresentableError`. CSafeDumper output (size measurement in `push_diff.py`) not reproduced.
-- Commented Mihomo YAML editor (`subs/commented`): refuses (400 with Python's message, original text kept) instead of writing different bytes; open categories are listed in C11 and are still being worked on.
+- Mihomo YAML editor: N7-2 replaces `subs/commented` with `yamlx.Edit` and output verification; C11 records acceptance and the deferred real-route checks.
 - Web listener: the Go server listens itself and serves the SPA (replaces nginx); nginx-specific behaviour has no counterpart (C07).
 - Not ported by decision (packages.md): legacy pre-SQLite migration, `models/`, `startup.py`, `http_server.py`, `http_queue.py`, `agents/node_test_dns_cleanup.py`, `metrics_history.LEGACY_DIRS`; `subscription_parser.parse_subscription`/`parse_clash_yaml` (no caller). Tests only about those: `test_split_layout_migration.py`, 25 cases of `test_config_storage_migration.py`, `test_http_server.py`, `test_startup.py`, `test_http_queue.py`, `test_node_test_dns_cleanup.py`.
 
@@ -510,13 +510,18 @@ Tests: `test_mihomo_listener_lifecycle.py` (10), `test_proxy_chains.py` (18), `t
 
 Routes: none.
 
-Evidence: `internal/subs` chains.go, listeners.go, proxyserverdns.go, `subs/commented` (3.4k lines: ruamel round-trip port) + corpora chains/dns/commented* (random 2411 rows, anchors 1884, realistic 4911, scalars 2080, blocks 1092). `test_mihomo_listener_lifecycle.py` 10/10 (listener-level), `test_proxy_chains.py` 8/18, `test_proxy_server_dns.py` 5/22 (helpers; `apply_node_dns` corpus-tested). Latest subs commits 17611a91, b7817902.
+Evidence: `internal/subs` chains.go, listeners.go, proxyserverdns.go and the
+shared `internal/yamlx.Edit`. `test_mihomo_listener_lifecycle.py` 10/10 at the
+listener boundary; `test_proxy_chains.py` 8/18 and `test_proxy_server_dns.py` 5/22
+helpers remain covered by existing tests/corpora. Deferred: the other 10 chain
+cases through generation/Surge/provider (C17/C18/C19), 17 proxy-server DNS cases
+through generation (C18) and Agent versions. The old C11 editor refusal classes
+(CRLF, flow/block expansion, null-item notes/tags) are superseded by N7-2's native
+parse/splice/rewrite policy. D1 and native YAML schema rejections are deliberate;
+valid frozen-corpus edits have zero editor refusals and zero semantic mismatches.
+`chains.go`'s existing PyRegex.Groups TODO is outside N7-2.
 
-Missing / deferred: **Open items (coordinator, 2026-11-15) — module cannot become `verified` until closed or accepted by the maintainer:** (1) CRLF documents with comments/blank lines between entries are refused (118 random-corpus rows; ruamel writes mixed `\r\r\n`/`\n`; est. 1–2 days, needs a port of ruamel's scanner comment handling); (2) a commented block collection expanded inside a flow collection is refused (33 anchor rows; est. half a day); (3) small: lone `-` plain scalar, comment on a null item of a nested compact sequence, `!!binary`/`!!map`/`!!seq`/`!!set` tags (≈20 rows). (The yamlx `1,000`/`!!int '0x-1F'` item is recorded under C02.) Realistic corpus of 128 repo configs: 0 refused, 0 mismatches. Deferred tests: `test_proxy_chains.py` 10 cases through generation/Surge/provider (→ C17/C18/C19), `test_proxy_server_dns.py` 17 cases through `generate` (→ C18) and agent core versions (→ agents).
-
-Reviewer notes: Refusals return Python's failure message and the route answers 400 with the original text kept (refusing beats different bytes). 24 Python-crash anchor rows are documented as is. `chains.go:489` TODO: needs a `PyRegex.Groups()` method in rules.
-
-N7-2 migration in progress: removed the private `subs/commented` parser/emitter
+N7-2 implementation: removed the private `subs/commented` parser/emitter
 and its generators. The frozen 12,479-row corpus now checks native YAML meaning
 and comment bytes, not ruamel formatting. Scalar tokens use in-place edits when
 positions/metadata are stable and no alias consumer can change; whole-line block
@@ -532,7 +537,7 @@ literal style to prevent yaml.v3's extra-newline bug (coordinator approved).
 Splices prove preservation of original comment bytes rather than yaml.v3's
 post-edit annotation count (the scanner may leave an orphan note unattached).
 Whole rewrites restore missing notes and verify each one. Exact classes,
-commands and corpus counts: progress/n7-2.md. Await final gates and Opus review;
+commands and corpus counts: progress/n7-2.md. Final .32 gates are recorded there; await Opus review;
 this entry does not mark C11 verified. Proxy-groups route difftest → C33 deferred.
 
 ## C12 — converter common, Mihomo node conversion, dialer references, EasyTier

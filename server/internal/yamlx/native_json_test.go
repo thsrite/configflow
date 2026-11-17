@@ -83,6 +83,12 @@ func TestNativePassThroughTags(t *testing.T) {
 }
 
 func FuzzNativeRoundTrip(f *testing.F) {
+	for _, source := range []string{
+		"A:\n[]: #", "A:\n{}: #", "? [one, two] # note\n: value\n",
+		"text: >-\n  with # hash\n      more\n    proxy: Pinned\n",
+	} {
+		f.Add([]byte(source))
+	}
 	for _, src := range []string{"", "# 中文\r\na: yes # comment\r\n", "base: &b {a: 0777}\nuse: {<<: *b, b: on}\n", "[1:30, 1_000, .nan, 2001-12-14]", "[!!str '\nline', null, true]", "a: [b, {c: d}]", "!!set {a: null}", "&a [*a]"} {
 		f.Add([]byte(src))
 	}

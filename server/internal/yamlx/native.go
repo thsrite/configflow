@@ -194,6 +194,17 @@ func prepareStrings(n *Node, seen map[*Node]bool) {
 	if n.Kind == yaml.ScalarNode && n.Style&yaml.FoldedStyle != 0 {
 		n.Style = n.Style&^yaml.FoldedStyle | yaml.LiteralStyle
 	}
+	if n.Kind == yaml.MappingNode {
+		for i := 0; i+1 < len(n.Content); i += 2 {
+			key := n.Content[i]
+			if key.Kind == yaml.SequenceNode || key.Kind == yaml.MappingNode {
+				// yaml.v3 can write a collection key's line comment before its
+				// colon, producing invalid YAML. Keep the note above the pair.
+				key.HeadComment = joinComment(key.HeadComment, key.LineComment)
+				key.LineComment = ""
+			}
+		}
+	}
 	protectString(n)
 	// The Node encoder bypasses yaml.v3's string encoder's YAML 1.1 quoting.
 	// Ask that encoder for the style instead of introducing another resolver.
