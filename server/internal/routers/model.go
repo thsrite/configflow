@@ -140,6 +140,8 @@ type DhcpDnsState struct {
 
 // RouterState is one readback of the device (later modules add their fields).
 type RouterState struct {
+	DNSGuard *DNSGuardSnapshot `json:"dns_guard,omitempty"`
+	DNSGuardPlan *DNSGuardPlan `json:"-"`
 	ROSPolicy     *ROSPolicySnapshot  `json:"ros_policy,omitempty"`
 	ROSPolicyPlan *ROSPolicyPlan      `json:"-"`
 	Routes        []*RouteEntry       `json:"routes"`

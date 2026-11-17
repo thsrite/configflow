@@ -130,6 +130,7 @@ type PolicyRules struct {
 
 // RoutesReport is the routes section; Mode and Policy only in policy mode.
 type RoutesReport struct {
+	ForwardHint    *ForwardHintResult  `json:"forward_hint,omitempty"`
 	Items          []RouteItem         `json:"items"`
 	Extra          []ExtraRoute        `json:"extra"`
 	UnmanagedOther []UnmanagedRoute    `json:"unmanaged_other"`

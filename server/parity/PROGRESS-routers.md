@@ -74,7 +74,7 @@ Python's `backend/routers` is one big import cycle (most cross-module imports ar
 | R06 | device route editor (RouterOS/iKuai static routes) | 684 | verified | HR | R04, R05 | – | internal/routers |
 | R07 | RouterOS NAT address lists, address-list sync, test helpers | 1422 | verified | HR | R03, R04 | – | internal/routers, internal/routers/routerfake |
 | R08 | RouterOS policy routing (plan, write, view) | 1349 | verified | HR | R07, C05, C26 (`normalize_policies`, present) | – | internal/routers |
-| R09 | forced DNS (DNS guard), IPv4 same-port forward hint | 773 | missing | HR | R04, R07 | – | internal/routers |
+| R09 | forced DNS (DNS guard), IPv4 same-port forward hint | 773 | in progress | HR | R04, R07 | – | internal/routers |
 | R10 | IPv6 policy, IPv6 fake-IP, IPv6 rule-set routes | 1247 | missing | HR | R04, R09 | – | internal/routers |
 | R11 | IPv6 PD guard, IPv6 DNS, RouterOS IPv6 readiness | 1161 | missing | HR | R10 | – | internal/routers |
 | R12 | release plan and staged execution | 1220 | missing | HR | R03–R11, A01 (return routing calls, ready) | – | internal/routers |
@@ -606,16 +606,29 @@ and the L5 lab items above. R12/R15 own their separately listed route/release in
 
 ## R09 — forced DNS (DNS guard), IPv4 same-port forward hint
 
-**Status: `missing`** · HR · prereqs: R04, R07 · Go: internal/routers
+**Status: `in progress`** · HR · prereqs: R04, R07 · Go: internal/routers
 
-Files:
-- `backend/routers/dns_guard.py` (589), `backend/routers/forward_hint.py` (184)
+Scope: `backend/routers/dns_guard.py` (589), `forward_hint.py` (184), latest upstream
+`2a8cb64c` / PR #572 incremental publication. No new route or UI entry. Existing R01
+`NormalizeDNSGuard` remains the settings validator. No dependency, production contact, push, or sub-agent.
 
-Tests: `test_router_dns_guard.py` (27), `test_router_forward_hint.py` (15)
+Implemented: typed guard snapshot/spec/manifest/plan/report/check/replace/undo; scoped address reads and moved-ID
+lookup; connected-route and HA VIP/real-host checks; safe object ordering; Netwatch scripts; exact ownership;
+incremental keep/delete/create with paused hijacks preserved; preview drift checks; reverse journal, restore
+anchors and per-table ID remap; hairpin assessment reuses R04 `stableROSRow`/`ownedHairpinIDs`. Driver registration
+for `dns_guard_replace/restore`; `lifecycle.Detach` at both write owners, 10s device calls. `ReportParts` chains its
+predecessor. Read-only forward hints use shared three-valued `ipv6_policy_eval.go` (R10 extends it).
 
-Routes: none.
+Acceptance and per-test mapping, all HR issue-class prevention, intentional Python fixes, interface notes and
+L5-only list: [progress/R09-dns-guard.md](progress/R09-dns-guard.md).
 
-Notes for porter: `relevant`, `snapshot`, `build`, `report`, `verify`, `owned_hairpins`, `NETWATCH_FIELDS`, `DEFAULTS`, `normalize_settings`/`SettingsError` (also used by `store`), incremental publish (upstream 2a8cb64c, "只增删有变化的对象"); forward hint is read-only and must never enter an operation or fingerprint. Python's `test_oxidns_ha.py` (A18) also drives dns_guard.
+Shared edits (minimal fields; gofmt aligns adjacent declarations): `desired.go` adds `DNSGuard`, `model.go` adds
+`DNSGuard` / `DNSGuardPlan`, `report.go` adds `RoutesReport.ForwardHint`, `routeros.go` adds DNS manifest set tracking.
+R08/R12 supplies policy CIDRs to `DesiredDNSGuard.PolicyCIDRs`; R12 uses `DNSGuardPublication()` to bridge its
+`Manifests` holder. R12/R15 attach ForwardHint to routes and warnings, never operations/checks/fingerprints.
+
+Current checks on .32: focused real Python boundary and safety tests pass. Final vet/race/full/difftest/fuzz/
+mutation/proddiff gates remain in progress; no claim of `verified`. Fresh Opus review and L5 still required.
 
 ## R10 — IPv6 policy, IPv6 fake-IP, IPv6 rule-set routes
 
@@ -627,6 +640,8 @@ Files:
 Tests: `test_ipv6_policy.py` (23), `test_router_ipv6_fakeip.py` (31), `test_router_ipv6_routes.py` (16), `test_router_ipv6_manifest_safety.py` (8)
 
 Routes: none.
+
+求值器已由 R09 落在 `ipv6_policy_eval.go`，R10 扩展它。
 
 Notes for porter: IPv6 address/prefix math against Python `ipaddress` (corpus: ULA, link-local, mapped, zone ids, `strict=False`, prefix lifetimes — RouterOS 7.25.1 lifetime fingerprint fix 4191cf70), manifests `ipv6_fakeip_state`/`ipv6_routes_state`, `relevant`/`settings`/`inspect`/`needs_host`.
 
