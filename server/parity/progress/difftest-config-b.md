@@ -1231,3 +1231,17 @@ design_errors=[] seconds=32.27；exit=0
 ```
 
 仍需managed finish设备报告分支、安装超时/断连/同session串行、H1001/1002/1005–1007/1055和余下helpers。T22目前验证上述fake发布边界状态机，不代表真实安装发布或实验网验收完成。
+
+## 批次 70：规则和策略组成功写入的空间选择
+
+- 19条写入路由、70个原B编号：显式profile URL优先于query/header，profile优先于profile_id，header回退和默认空间回退。真实执行策略组创建/删除/修改/健康URL/重排，以及规则/规则集创建删除修改、批量输入、compose、DNS、标签、策略和重排；每个变体独立干净fixture，成功200且核对实际目标空间业务字段，未用坏body提前拒绝替代选择验证。
+- 新增逐端隔离比较器：只允许选中空间增加一次profile revision和一次generation，其他空间、共享和系统的每行值/position/revision以及所有文件严格不变；不采用跨端时间或身份归一化。跨端再完整比较DB/files/响应，compose随机身份依既有严格双射捕获。故意改错外部空间、系统行、revision、generation和section顺序均能检出，65项自检通过。
+- 70变体均Go尚未实现；覆盖并集原R4053（S656/F2601/B796）、H322。独立报告暂存/tmp/configdiff-profile-writes.json，统一results.json待正在运行的.63旧组全量返回后合并刷新，未宣称新HEAD全量通过。
+
+```text
+.32 run.py --groups profile-rule-group-write-selectors
+current go-unimplemented=70 request_variants=70 design_errors=[] seconds=91.87；exit=0
+65 comparator self-checks + wrong-Go-response check OK
+```
+
+剩余生成/发现/设置等其他写入P3–P6及其业务分支继续实现；最终.32全量仍待执行。

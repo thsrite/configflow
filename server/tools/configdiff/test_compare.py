@@ -17,6 +17,34 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_selected_write_isolation_detects_foreign_row_and_revision_mutations(self):
+        from cases.profile_writes import isolation_errors, SelectedWrite
+        before = {'meta': {'generation': 10}, 'sections': [['profile', 'default', 0], ['profile', 'other', 1]],
+                  'fields': {'profile/default/_revision': {'value': 2}, 'profile/other/_revision': {'value': 4},
+                             'profile/default/rule_configs': {'value': []}, 'profile/other/rule_configs': {'value': []},
+                             'system//agents': {'value': []}}}
+        after = copy.deepcopy(before)
+        after['meta']['generation'] += 1
+        after['fields']['profile/default/_revision']['value'] += 1
+        after['fields']['profile/default/rule_configs']['value'] = [{'id': 'new'}]
+        self.assertEqual(isolation_errors(before, after, 'default'), [])
+        observer = SelectedWrite(None, 'default')
+        observer.observed[1] = []
+        self.assertEqual(observer.compare(Policy()), [])
+        for field in ('profile/other/rule_configs', 'profile/other/_revision', 'system//agents', 'profile/default/_revision'):
+            broken = copy.deepcopy(after)
+            broken['fields'][field]['value'] = 'wrong'
+            observer.observed[1] = isolation_errors(before, broken, 'default')
+            self.assertTrue(observer.compare(Policy()), field)
+        for section in ('meta', 'sections'):
+            broken = copy.deepcopy(after)
+            if section == 'meta':
+                broken['meta']['generation'] += 1
+            else:
+                broken['sections'].reverse()
+            observer.observed[1] = isolation_errors(before, broken, 'default')
+            self.assertTrue(observer.compare(Policy()), section)
+
     def test_setup_status_protocol_observer_detects_each_wrong_wire_field(self):
         from cases.setup_completion import GatewayAgent, StatusExchange, TOKENS
         from harness import send
