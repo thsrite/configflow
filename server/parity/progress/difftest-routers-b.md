@@ -1877,3 +1877,23 @@ observed_recipes170/probe_guard_audits12/verdict=variants-audited/native_compare
 443 executed declarations+5 source proofs+2 O6 entries;1851 pending if composed.
 Full report remains historical3054/301. No command pending. Remaining source/
 device/background/dynamics/aux transport, full composition and gate/rebase pending.
+
+Auxiliary HTTP transport and healthy public-process oracle increment:
+- Actual registered GET /api/auth/status completed normal two-process comparison
+  with zero HTTP/DB/file/fake differences. Formal boundary self-check added; it
+  is an oracle control, never counted as a routers route or matrix audit.
+- Preparatory http/assert_http/wait_guard and post-response settling reads now
+  retain concrete native request transport errors and actual process state.
+  Unknown classes, namespace faults and Python fixture errors still abort.
+  A completed main response is retained when a later settling request fails;
+  no incomplete HTTP response/status is fabricated. Dependent requests block.
+- Immediate state evidence is explicitly not a fence for background work or a
+  proof of successful compensation. Setup and main/post-response failures use
+  the same bounded snapshot helper. No product implementation changed.
+
+.64 command:
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY="$HOME/.cache/routerdiff-build-302rx1dg-a08c4cc27/configflow"; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python -m unittest -v test_runner test_boundary'`
+=> Ran46 tests40.555s/OK, including real healthy native HTTP and owned-process
+kill negative control. Native product findings/routers compared counts unchanged.
+443 executed declarations+5 source proofs+2 O6 entries;1851 pending if composed.
+Full composition, remaining matrix, final gate/rebase still pending.

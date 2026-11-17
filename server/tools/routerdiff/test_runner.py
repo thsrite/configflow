@@ -121,6 +121,67 @@ class RunnerTests(unittest.TestCase):
         with self.assertRaises(RemoteError):
             execute(pair(python=FailedRequest(side='python')), case, available, routes)
 
+    def test_auxiliary_native_transport_failures_block_dependencies_and_preserve_completed_http(self):
+        class FailedAuxiliary(ObservationSide):
+            def __init__(self, failed_path, side='go', error_class='RemoteDisconnected'):
+                super().__init__()
+                self.failed_path, self.side, self.error_class = failed_path, side, error_class
+
+            def request(self, **values):
+                if values['path'] == self.failed_path:
+                    self.requests.append(values)
+                    raise RemoteError(self.side, 'request', 'synthetic unrelated prose', '', self.error_class)
+                return super().request(**values)
+
+            def rpc(self, operation, **values):
+                if operation == 'process_status':
+                    return {'exit_code': None, 'running': True}
+                return super().rpc(operation, **values)
+
+        routes, _ = load()
+        available = {('GET', '/api/client-devices'), ('GET', '/api/aux'), ('PUT', '/api/aux')}
+        for operation in ('http', 'assert_http', 'wait_guard'):
+            control = {'rpc': operation, 'method': 'GET', 'path': '/api/aux', 'expected': 200}
+            if operation == 'wait_guard':
+                # Wait guards use an actual deliberate PUT/non-object refusal.
+                class GuardReference(ObservationSide):
+                    def request(self, **values):
+                        self.status = 400 if values['path'] == '/api/aux' else 200
+                        return super().request(**values)
+                reference = GuardReference()
+                control = {'rpc': operation, 'path': '/api/aux'}
+            else:
+                reference = ObservationSide()
+            case = Case('aux-' + operation, 'R002', 'GET', '/api/client-devices', 200, prepare=(control,))
+            world = pair(reference, FailedAuxiliary('/api/aux'))
+            result = execute(world, case, available, routes)
+            self.assertEqual(result['status'], 'different')
+            self.assertIsNone(result['go'])
+            self.assertEqual(result['go_process']['stage'], 'preparatory public HTTP request')
+            self.assertEqual(result['go_process']['request']['path'], '/api/aux')
+            self.assertTrue(result['go_process']['running'])
+            self.assertFalse(result['go_transport_state']['quiescence_proven'])
+            self.assertEqual(len(world.go.requests), 1)
+            following = execute(world, Case('following', 'R002', 'GET', '/api/client-devices', 200), available, routes)
+            self.assertEqual(following['status'], 'blocked-by-difference')
+            self.assertEqual(len(world.go.requests), 1)
+
+        case = Case('settling', 'R002', 'GET', '/api/client-devices', 200,
+                    after_poll=({'path': '/api/aux', 'expect': {'success': True}},))
+        world = pair(go=FailedAuxiliary('/api/aux'))
+        result = execute(world, case, available, routes)
+        self.assertEqual(result['status'], 'different')
+        self.assertEqual(result['go']['status'], 200)  # Actual main response is retained.
+        self.assertEqual(result['go_process']['stage'], 'post-response public settling request')
+        self.assertEqual(result['go_process']['request'], {'method': 'GET', 'path': '/api/aux'})
+        self.assertNotIn(case.ident, world.go.observations)  # Cannot be a settled prerequisite.
+        self.assertFalse(result['go_transport_state']['quiescence_proven'])
+        self.assertEqual(len(world.go.requests), 2)
+        for world in (pair(go=FailedAuxiliary('/api/aux', error_class='ValueError')),
+                      pair(python=FailedAuxiliary('/api/aux', side='python'))):
+            with self.assertRaises(RemoteError):
+                execute(world, case, available, routes)
+
     def test_execute_binds_probe_clock_to_storage_and_subsequent_public_list(self):
         class ProbeSide(ObservationSide):
             def __init__(self, native=False, corrupt=None):

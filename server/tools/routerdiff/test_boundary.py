@@ -19,6 +19,20 @@ import fixed_setup
 
 @unittest.skipUnless(os.environ.get('ROUTERDIFF_BINARY'), 'requires .32 native public Go binary')
 class BoundaryTests(unittest.TestCase):
+    def test_real_healthy_native_boundary_compares_complete_observations(self):
+        with Pair(Path(os.environ['ROUTERDIFF_BINARY'])) as pair:
+            available = registered(pair.go.rpc('manifest'))
+            self.assertIn(('GET', '/api/auth/status'), available)
+            case = Case('oracle-healthy-native', '', 'GET', '/api/auth/status', 200,
+                        boundary=('GET', '/api/auth/status'), owner='test oracle healthy control')
+            result = execute(pair, case, available, load()[0])
+            self.assertEqual(result['status'], 'compared')
+            self.assertEqual(result['differences'], [])
+            self.assertEqual(result['go']['status'], 200)
+            self.assertIsNone(result['go_process'])
+            self.assertEqual(pair.python.rpc('snapshot')['fake']['transcript'], [])
+            self.assertEqual(pair.go.rpc('snapshot')['fake']['transcript'], [])
+
     def test_real_native_exit_after_start_is_a_transport_observation_without_fabricated_http(self):
         with Pair(Path(os.environ['ROUTERDIFF_BINARY'])) as pair:
             available = registered(pair.go.rpc('manifest'))

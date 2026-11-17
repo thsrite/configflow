@@ -132,6 +132,20 @@ def wait_age(side, case):
     return anchor
 
 
+def transport_snapshot(side, before, reference_after, case_id):
+    """Capture bounded evidence only; a failed client does not fence server work."""
+    state = {'capture': 'immediate after client failure', 'quiescence_proven': False}
+    try:
+        after = logical_snapshot(side.rpc('snapshot'))
+        state['differences'] = [asdict(item) for item in differences(reference_after, after, '/state-immediate')]
+    except RemoteError as error:
+        state['snapshot_error_class'] = error.error_class
+    if not hasattr(side, 'failed_prerequisites'):
+        side.failed_prerequisites = []
+    side.failed_prerequisites.append(case_id)
+    return state
+
+
 def execute(pair, case, available, routes):
     request = dict(method=case.method, path=case.path, document=case.document, raw=case.raw,
                    headers=case.headers, auth=case.auth)
@@ -178,108 +192,119 @@ def execute(pair, case, available, routes):
         flow_requests[name] = []
         flow_checks[name] = []
         setup_observations[name] = []
-        for control in preparation:
-            if control.get('rpc') == 'restart':
-                side.rpc('stop', kill=control.get('kill', False))
-                try:
-                    side.start()  # Same production entry and fresh public login.
-                except RemoteError as error:
-                    failure = observed_startup_exit(side, error, 'public native process restart') if name == 'go' else None
-                    if failure is None:
-                        raise
-                    startup_failure = pair.go_startup_failure = failure
-                    implemented = False
-                    break
-            elif control.get('rpc') == 'filesystem_fault':
-                side.rpc(**{key: value for key, value in control.items() if key != 'rpc'}, operation='filesystem_fault')
-            elif control.get('rpc') == 'http':
-                checks = control.get('checks', {'success': True})
-                if not isinstance(checks, dict) or not checks:
-                    raise ValueError('public HTTP prerequisite needs explicit nonempty body checks')
-                values = {key: value for key, value in control.items() if key not in ('rpc', 'expected', 'checks', 'absent')}
-                reply = side.request(**values)
-                setup_observations[name].append({'request': values, 'response': response_view(reply)})
-                valid = reply['status'] == control['expected'] and isinstance(reply['content'], dict)
-                if valid:
+        preparation_before = (before_preparation if before_preparation is not None else
+                              logical_snapshot(side.rpc('snapshot'))) if preparation else None
+        try:
+            for control in preparation:
+                if control.get('rpc') == 'restart':
+                    side.rpc('stop', kill=control.get('kill', False))
                     try:
-                        valid = all(not differences(cases.at(reply['content'], path), expected)
-                                    for path, expected in checks.items())
-                    except (KeyError, IndexError, TypeError, ValueError):
-                        valid = False
-                    for path in control.get('absent', ()):
+                        side.start()  # Same production entry and fresh public login.
+                    except RemoteError as error:
+                        failure = observed_startup_exit(side, error, 'public native process restart') if name == 'go' else None
+                        if failure is None:
+                            raise
+                        startup_failure = pair.go_startup_failure = failure
+                        implemented = False
+                        break
+                elif control.get('rpc') == 'filesystem_fault':
+                    side.rpc(**{key: value for key, value in control.items() if key != 'rpc'}, operation='filesystem_fault')
+                elif control.get('rpc') == 'http':
+                    checks = control.get('checks', {'success': True})
+                    if not isinstance(checks, dict) or not checks:
+                        raise ValueError('public HTTP prerequisite needs explicit nonempty body checks')
+                    values = {key: value for key, value in control.items() if key not in ('rpc', 'expected', 'checks', 'absent')}
+                    reply = side.request(**values)
+                    setup_observations[name].append({'request': values, 'response': response_view(reply)})
+                    valid = reply['status'] == control['expected'] and isinstance(reply['content'], dict)
+                    if valid:
                         try:
-                            cases.at(reply['content'], path)
+                            valid = all(not differences(cases.at(reply['content'], path), expected)
+                                        for path, expected in checks.items())
                         except (KeyError, IndexError, TypeError, ValueError):
-                            pass
-                        else:
                             valid = False
-                if not valid:
-                    if name == 'python':
-                        raise RuntimeError(case.ident + ': public HTTP fixture setup failed on python')
-                    blocked_reference = 'Go public HTTP prerequisite returned an unexpected response'
-                    if values['method'] not in ('GET', 'HEAD', 'OPTIONS'):
+                        for path in control.get('absent', ()):
+                            try:
+                                cases.at(reply['content'], path)
+                            except (KeyError, IndexError, TypeError, ValueError):
+                                pass
+                            else:
+                                valid = False
+                    if not valid:
+                        if name == 'python':
+                            raise RuntimeError(case.ident + ': public HTTP fixture setup failed on python')
+                        blocked_reference = 'Go public HTTP prerequisite returned an unexpected response'
+                        if values['method'] not in ('GET', 'HEAD', 'OPTIONS'):
+                            if not hasattr(side, 'failed_prerequisites'):
+                                side.failed_prerequisites = []
+                            side.failed_prerequisites.append(case.ident)
+                        break
+                elif control.get('rpc') == 'open_request':
+                    values = {key: value for key, value in control.items() if key not in ('rpc', 'document')}
+                    document = control.get('document')
+                    flow_requests[name].append({'method': values['method'], 'path': values['path'], 'document': document})
+                    values['headers'] = {'Content-Type': 'application/json', **values.get('headers', {})}
+                    if side.token:
+                        values['headers'].setdefault('Authorization', 'Bearer ' + side.token)
+                    values['body'] = base64.b64encode(json.dumps(document, ensure_ascii=False, separators=(',', ':')).encode()).decode() \
+                                     if document is not None else None
+                    side.rpc('open_request', **values)
+                elif control.get('rpc') == 'abandon':
+                    side.rpc('abandon', ident=control['ident'])
+                elif control.get('rpc') == 'assert_http':
+                    values = {key: value for key, value in control.items() if key not in ('rpc', 'expected')}
+                    reply = side.request(**values)
+                    flow_checks[name].append({'request': values, 'response': response_view(reply)})
+                    if name == 'python' and reply['status'] != control['expected']:
+                        raise RuntimeError(case.ident + ': reference flow guard reached the wrong HTTP status')
+                elif control.get('rpc') == 'pending_status':
+                    reply = side.rpc('pending_status')
+                    flow_checks[name].append({'client_future_done': reply})
+                    if name == 'python' and differences(reply, control['expected']):
+                        raise RuntimeError(case.ident + ': reference concurrent-request overlap missed; rerun at lower load')
+                elif control.get('rpc') == 'wait_guard':
+                    reply = wait_guard(side, control['path'], control.get('seconds', 30), strict=name == 'python')
+                    flow_checks[name].append({'request': {'method': 'PUT', 'path': control['path'], 'document': []},
+                                              'response': response_view(reply)})
+                elif control.get('rpc') == 'begin':
+                    values = {key: value for key, value in control.items() if key != 'rpc'}
+                    ident = values['ident']
+                    side.pending[ident] = {'before': logical_snapshot(side.rpc('snapshot')), 'started': time.time(),
+                                           'started_monotonic': time.monotonic(),
+                                           'request': {'method': values['method'], 'path': values['path']}}
+                    values['headers'] = {'Authorization': 'Bearer ' + side.token, **values.get('headers', {})}
+                    values.setdefault('body', None)
+                    side.rpc('async', **values)
+                elif control.get('rpc') == 'await_gate':
+                    ident = control['ident']
+                    reply = side.rpc('await_gate', **{key: value for key, value in control.items() if key != 'rpc'})
+                    observation = {'request': side.pending[ident]['request'], 'gate': control['gate'],
+                                   'state': reply['state']}
+                    if 'response' in reply:
+                        observation['response'] = response_view(decode_response(reply['response']))
+                    for key in ('error_class', 'exit_code', 'seconds'):
+                        if key in reply:
+                            observation[key] = reply[key]
+                    setup_observations[name].append(observation)
+                    if reply['state'] != 'device-entered':
+                        if name == 'python':
+                            raise RuntimeError(case.ident + ': Python asynchronous prerequisite did not reach its device gate: '
+                                               + reply['state'])
+                        blocked_reference = 'Go asynchronous prerequisite did not reach its device gate'
                         if not hasattr(side, 'failed_prerequisites'):
                             side.failed_prerequisites = []
                         side.failed_prerequisites.append(case.ident)
-                    break
-            elif control.get('rpc') == 'open_request':
-                values = {key: value for key, value in control.items() if key not in ('rpc', 'document')}
-                document = control.get('document')
-                flow_requests[name].append({'method': values['method'], 'path': values['path'], 'document': document})
-                values['headers'] = {'Content-Type': 'application/json', **values.get('headers', {})}
-                if side.token:
-                    values['headers'].setdefault('Authorization', 'Bearer ' + side.token)
-                values['body'] = base64.b64encode(json.dumps(document, ensure_ascii=False, separators=(',', ':')).encode()).decode() \
-                                 if document is not None else None
-                side.rpc('open_request', **values)
-            elif control.get('rpc') == 'abandon':
-                side.rpc('abandon', ident=control['ident'])
-            elif control.get('rpc') == 'assert_http':
-                values = {key: value for key, value in control.items() if key not in ('rpc', 'expected')}
-                reply = side.request(**values)
-                flow_checks[name].append({'request': values, 'response': response_view(reply)})
-                if name == 'python' and reply['status'] != control['expected']:
-                    raise RuntimeError(case.ident + ': reference flow guard reached the wrong HTTP status')
-            elif control.get('rpc') == 'pending_status':
-                reply = side.rpc('pending_status')
-                flow_checks[name].append({'client_future_done': reply})
-                if name == 'python' and differences(reply, control['expected']):
-                    raise RuntimeError(case.ident + ': reference concurrent-request overlap missed; rerun at lower load')
-            elif control.get('rpc') == 'wait_guard':
-                reply = wait_guard(side, control['path'], control.get('seconds', 30), strict=name == 'python')
-                flow_checks[name].append({'request': {'method': 'PUT', 'path': control['path'], 'document': []},
-                                          'response': response_view(reply)})
-            elif control.get('rpc') == 'begin':
-                values = {key: value for key, value in control.items() if key != 'rpc'}
-                ident = values['ident']
-                side.pending[ident] = {'before': logical_snapshot(side.rpc('snapshot')), 'started': time.time(),
-                                       'started_monotonic': time.monotonic(),
-                                       'request': {'method': values['method'], 'path': values['path']}}
-                values['headers'] = {'Authorization': 'Bearer ' + side.token, **values.get('headers', {})}
-                values.setdefault('body', None)
-                side.rpc('async', **values)
-            elif control.get('rpc') == 'await_gate':
-                ident = control['ident']
-                reply = side.rpc('await_gate', **{key: value for key, value in control.items() if key != 'rpc'})
-                observation = {'request': side.pending[ident]['request'], 'gate': control['gate'],
-                               'state': reply['state']}
-                if 'response' in reply:
-                    observation['response'] = response_view(decode_response(reply['response']))
-                for key in ('error_class', 'exit_code', 'seconds'):
-                    if key in reply:
-                        observation[key] = reply[key]
-                setup_observations[name].append(observation)
-                if reply['state'] != 'device-entered':
-                    if name == 'python':
-                        raise RuntimeError(case.ident + ': Python asynchronous prerequisite did not reach its device gate: '
-                                           + reply['state'])
-                    blocked_reference = 'Go asynchronous prerequisite did not reach its device gate'
-                    if not hasattr(side, 'failed_prerequisites'):
-                        side.failed_prerequisites = []
-                    side.failed_prerequisites.append(case.ident)
-                    break
-            else:
-                side.rpc('fake', **control)
+                        break
+                else:
+                    side.rpc('fake', **control)
+        except RemoteError as error:
+            failure = observed_request_failure(side, error, 'preparatory public HTTP request') if name == 'go' else None
+            if failure is None:
+                raise
+            request_failure = {**failure, 'request': {'method': control.get('method', 'PUT' if control.get('rpc') == 'wait_guard' else 'GET'),
+                                                     'path': control.get('path')}}
+            transport_state = transport_snapshot(side, preparation_before, snapshots['python']['after'], case.ident)
+            break
         if name == 'go' and (blocked_reference or startup_failure):
             break
         before = (before_preparation if before_preparation is not None else
@@ -315,36 +340,41 @@ def execute(pair, case, available, routes):
                 else:
                     side.rpc('fake', **control)
         if request_failure:
-            # No complete HTTP response is available. Snapshot what is observable now;
-            # a live/unfinished handler or delayed peer may still be changing
-            # state, so this is never a proof of completed compensation.
-            transport_state = {'capture': 'immediate after client failure', 'quiescence_proven': False}
-            try:
-                after = logical_snapshot(side.rpc('snapshot'))
-                snapshots[name] = {'before': before, 'after': after}
-                transport_state['differences'] = [asdict(item) for item in differences(
-                    snapshots['python']['after'], after, '/state-immediate')]
-            except RemoteError as error:
-                transport_state['snapshot_error_class'] = error.error_class
-            if not hasattr(side, 'failed_prerequisites'):
-                side.failed_prerequisites = []
-            side.failed_prerequisites.append(case.ident)
+            transport_state = transport_snapshot(side, before, snapshots['python']['after'], case.ident)
             break
         if case.age_limit and response_ended - age_anchor >= case.age_limit:
             raise RuntimeError(case.ident + ': response exceeded real-time fixture window; rerun at lower server load')
         side.request_windows[case.ident] = {'started': request_started, 'ended': response_ended}
         response_elapsed[name] = response_ended - request_started
         response_windows[name] = (started, response_received_wall)
-        settled = [response_view(poll(side, {'method': 'GET', 'path': control['path']}, control['expect'],
-                                     control.get('seconds', 30), strict=name == 'python')) for control in case.after_poll]
-        if case.route == 'R023' and case.method == 'POST' and case.after_poll:
-            # A terminal receipt precedes task-status/notification persistence.
-            # Python sync() holds the same public L1 lock through both writes.
-            parts = urlsplit(own_request['path'])
-            guard_path = urlunsplit(parts._replace(path=parts.path.removesuffix('/rule-sync')))
-            guard = wait_guard(side, guard_path, 30, strict=name == 'python')
-            flow_checks[name].append({'request': {'method': 'PUT', 'path': guard_path, 'document': []},
-                                      'response': response_view(guard)})
+        try:
+            settled = []
+            for control in case.after_poll:
+                settling_request = {'method': 'GET', 'path': control['path']}
+                settled.append(response_view(poll(side, settling_request, control['expect'],
+                                                  control.get('seconds', 30), strict=name == 'python')))
+            if case.route == 'R023' and case.method == 'POST' and case.after_poll:
+                # A terminal receipt precedes task-status/notification persistence.
+                # Python sync() holds the same public L1 lock through both writes.
+                parts = urlsplit(own_request['path'])
+                guard_path = urlunsplit(parts._replace(path=parts.path.removesuffix('/rule-sync')))
+                settling_request = {'method': 'PUT', 'path': guard_path}
+                guard = wait_guard(side, guard_path, 30, strict=name == 'python')
+                flow_checks[name].append({'request': {'method': 'PUT', 'path': guard_path, 'document': []},
+                                          'response': response_view(guard)})
+        except RemoteError as error:
+            failure = observed_request_failure(side, error, 'post-response public settling request') if name == 'go' else None
+            if failure is None:
+                raise
+            request_failure = {**failure, 'request': settling_request}
+            # This main HTTP response really completed. Keep it as evidence,
+            # while refusing to call its background work settled or successful.
+            response['method'] = case.method
+            observations[name] = response_view(response)
+            if settled:
+                observations[name]['settled_reads'] = settled
+            transport_state = transport_snapshot(side, before, snapshots['python']['after'], case.ident)
+            break
         if case.join:
             del side.pending[case.join]
         response['method'] = case.method
