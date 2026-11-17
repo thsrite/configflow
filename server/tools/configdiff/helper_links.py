@@ -6,6 +6,11 @@ Unreachable/earlier-guard branches are deliberately absent.
 """
 
 LINKS = {
+    'R063-F09': ('GET /api/generate/artifacts/<preview_id>/<action>', ('H026',)),
+    'R063-F11': ('GET /api/generate/artifacts/<preview_id>/<action>', ('H027', 'H029')),
+    'R063-F12': ('GET /api/generate/artifacts/<preview_id>/<action>', ('H029',)),
+    'R063-F13': ('GET /api/generate/artifacts/<preview_id>/<action>', ('H028', 'H029')),
+    'R063-F14': ('GET /api/generate/artifacts/<preview_id>/<action>', ('H027', 'H029')),
     'R098-F12': ('POST /api/nodes/latency', ('H737',)),
     'R098-F17': ('POST /api/nodes/latency', ('H741',)),
     **{case: ('POST /api/rule-library/check-content', ('H149',)) for case in ('H146', 'H147', 'H148')},

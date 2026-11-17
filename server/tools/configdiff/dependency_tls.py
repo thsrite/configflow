@@ -20,7 +20,7 @@ def require_native_network():
     if (platform.system() != 'Linux' or 'microsoft' in platform.release().lower()
             or os.environ.get('CONFIGDIFF_ISOLATED_NETWORK') != '1'
             or {name for _, name in socket.if_nameindex()} != {'lo'}):
-        raise DesignError('dependency TLS fixtures require .32 native_network.sh (isolated loopback network)')
+        raise DesignError('dependency TLS fixtures require native_network.sh on a native Linux test server (isolated loopback network)')
 
 
 class GitHub:

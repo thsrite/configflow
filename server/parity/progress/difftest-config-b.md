@@ -1951,3 +1951,22 @@ current compared=20 different=1 open=1 design_errors=[] seconds=22.17；exit=1
 ```
 
 原R仍差186（含已审计N/A槽）、H仍差479及partial/长流程。继续artifact冻结/驱逐等，最终.32全量未执行。
+
+## 批次 115：冻结artifact成员、Unicode附件、TTL和真实profile
+
+- 先rebase到go `21dfb92c`，追加冲突保留A11原生归档决定与维护者的Web决定。已读更新后的brief：.63停用，.32/.64等价；README和native fixture提示同步，两台均可跑命名空间和最终门禁。生产循环与网络隔离逻辑未变。
+- 14新变体补13个原R编号：R062/R126的TTL、Unicode附件与profile优先级，R063真实附加文件、改配置后的旧成员及P4–P6。两空间worker_threads=2/5，manifest/source/公开profile_id和header必须对应所选空间，附件raw bytes与路径/size/hash对应。通过公开POST把live设置改为worker9后，旧file必须逐字节等于本端最初验证的bundle成员，且读取全SQL/文件不变。主YAML跨端仍结构比较；不拿每次重组ZIP的容器时间戳冒充冻结内容。manual预览是全局admin record，换合法profile上下文仍读同一旧成员，按Python实际合同验证。
+- 旧frozen错误组13变体复跑，真实错误关联H026–H029（非法ID、过期/错Agent、metadata坏、archive digest坏），新增H4。96项自检通过，故意改旧成员/存储可检出。草稿首轮把保存确认响应当设置对象，已改为核对真实SQL中的新配置；修正后独立及正式.32共27个Go尚未实现、design_errors=[]，未将其计通过。
+- T27在.64独立及正式复验仍9compared/1open、49条diff、design_errors=[]：四个到期源Python实际GET，Go零GET，和.32相同。已将这一finding实际复验基线更新21dfb92c，其余review保留各自真实基线，未外推“全量新基线通过”。findings仍closed80/accepted7/open21/O12单列1。
+- 统一9584变体、原R4357（S692/F2677/B988）、H637/G16。原R仍差173（含N/A）、H仍差475及partial/长流程。
+
+```text
+.32 native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups artifact-extra-frozen-profile-lifecycle,generated-frozen-reads --baseline 21dfb92c
+current go-unimplemented=27 design_errors=[] seconds=6.45；exit=0
+.64 native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups scheduler-tick --baseline 21dfb92c
+current compared=9 different=1 open=1 design_errors=[]；exit=1
+96 self-checks + deliberately wrong-Go-response detection OK
+独立报告/tmp/configdiff-artifact-frozen-draft.json、/tmp/configdiff-scheduler-native64-draft.json
+```
+
+继续artifact驱逐/错误落盘及剩余条目；最终完整all仍未执行。

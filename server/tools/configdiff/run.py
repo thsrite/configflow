@@ -124,6 +124,8 @@ def main():
     groups.update(dns_protocol)
     from cases.artifact import GROUPS as artifact
     groups.update(artifact)
+    from cases.artifact_frozen import GROUPS as artifact_frozen
+    groups.update(artifact_frozen)
     from cases.scheduler import GROUPS as scheduler
     groups.update(scheduler)
     from cases.http_shell import GROUPS as http_shell

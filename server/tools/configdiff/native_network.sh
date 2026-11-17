@@ -2,7 +2,7 @@
 # Run the complete public test boundary with loopback only, as the normal user.
 set -euo pipefail
 if [[ $(uname -s) != Linux || $(uname -r) == *[Mm]icrosoft* ]]; then
-  echo 'configdiff native network fixtures require the native Linux .32 server' >&2
+  echo 'configdiff native network fixtures require a native Linux test server (.32 or .64)' >&2
   exit 2
 fi
 if (($# == 0)); then

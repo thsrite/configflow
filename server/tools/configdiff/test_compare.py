@@ -17,6 +17,18 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_frozen_artifact_read_rejects_rerendering_and_storage_writes(self):
+        from cases.artifact_frozen import Frozen
+        observer = Frozen(None, [b'old member', b'old member'])
+        observer.before_values[1] = observer.after_values[1] = {'db': 'same', 'files': 'same'}
+        observer.observed = [{'own_frozen_bytes': True}, {'own_frozen_bytes': True}]
+        self.assertEqual(observer.compare(Policy()), [])
+        observer.observed[1] = {'own_frozen_bytes': False}
+        self.assertTrue(observer.compare(Policy()))
+        observer.observed[1] = {'own_frozen_bytes': True}
+        observer.after_values[1] = {'db': 'changed', 'files': 'same'}
+        self.assertTrue(observer.compare(Policy()))
+
     def test_discovery_shared_write_isolation_keeps_foreign_rows_revisions_sections_and_metadata_strict(self):
         from cases.discovery_profile_writes import foreign_snapshot
         from cases.setup import Stable

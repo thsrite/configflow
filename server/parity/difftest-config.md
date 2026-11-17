@@ -2029,3 +2029,9 @@ R051/R054/R060的B04（P3）没有显式`/api/profiles/<profile_id>/domain-disco
 R051/R054用两个配置空间的不同前置终态错误证明真正选中了配置，随后以正确空间轮询同一job，并确认另一空间即使带原owner header也不能通过query读取；任务终态、完整响应、SQL/files均相比。R060采用已公开心跳的默认空间Agent、另一空间无Agent且无采集记录，验证不同空间各自的准入错误及零Agent请求；这一选择器场景不声称启动了website worker，真实成功worker已有独立S/T用例。来源[domain_discovery.py:112](../../backend/routes/domain_discovery.py#L112)、[domain_discovery_service.py:767](../../backend/utils/domain_discovery_service.py#L767)、[domain_discovery_service.py:465](../../backend/utils/domain_discovery_service.py#L465)。
 
 同步R046-B05、R055-B03、R056-B03、R059-B02同样是不存在显式profile URL的P3槽，N/A；各自之后三个P4–P6槽仍实际测试成功写入。fixture为两个空间分配独立直连/代理/区域库和策略组，检查所选内容、历史/新指针与实际cache，其他空间、system/未涉shared字段的完整行位置、revision、时间及metadata不可变化；所有最终SQL/files继续跨实现比较。来源[domain_discovery.py:40](../../backend/routes/domain_discovery.py#L40)、[domain_discovery.py:72](../../backend/routes/domain_discovery.py#L72)、[domain_discovery.py:84](../../backend/routes/domain_discovery.py#L84)、[domain_discovery.py:171](../../backend/routes/domain_discovery.py#L171)。
+
+### Step B manual artifact的冻结成员与profile上下文
+
+R062-B04、R063-B03的P3无显式profile URL别名，N/A；R126-B04的URL优先真实可测。其余query/header/default创建用例在两个空间生成worker_threads=2/5的不同内容，artifact自身profile_id、响应header、私有source/manifest及Unicode附加文件均比较。R063的manual record存放于DATA_DIR全局预览目录；已授权管理员切换到另一合法profile上下文仍可读取原预览，不重新生成或按当前profile换内容，见[agents.py:1615](../../backend/routes/agents.py#L1615)。
+
+冻结比较针对每个端自己的已校验bundle成员原始字节。配置通过公开settings改为另一份后，旧file仍必须等于旧成员，完整SQL/预览文件不变；跨实现的生成主YAML照结构比较。ZIP下载由[generated_preview.download](../../backend/agents/generated_preview.py#L163)每次重打包，ZIP容器自身的时间戳不属于“旧成员内容不变”，不能把整个ZIP字节相等当作冻结条件。TTL仍核对真实expires_at≈创建时刻+3600，过期拒绝另由F11验证，不缩短生产TTL。
