@@ -21,6 +21,9 @@ asked in; the maintainer reads Chinese.
   the same copy (e.g. `rt -- …` then `rt --no-sync -- …` while another agent shares the worktree), pin it with
   `RT_HOST=sunbroke@192.168.0.32` (or `.64`). A timing-sensitive failure seen on one host only is re-checked on the
   other before you call it a bug.
+- **Memory:** `.64` has 15 GB (`.32` 31 GB). Several full `-race` runs at once got test binaries OOM-killed on .64
+  (2026-11-17: `signal: killed` in convert = OOM, not a test failure — check `sudo dmesg -T | grep -i oom`). On .64
+  run full `-race` with `-p=4`; if a package dies with `signal: killed`, re-run it before reporting anything.
 - **Real network stack** (Docker/Compose host/bridge/macvlan, iptables/nftables, policy routing, TUN, keepalived/VIPs,
   network namespaces, installer scripts in containers) runs on either server; never on the Mac. Real multi-host
   network behaviour (macvlan HA, VIP failover) belongs to the PVE lab batches, driven from either server (`ssh pve`).
