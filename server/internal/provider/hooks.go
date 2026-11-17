@@ -19,7 +19,6 @@
 package provider
 
 import (
-	"configflow/internal/agents/diag"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -29,6 +28,7 @@ import (
 	"strings"
 	"sync"
 
+	"configflow/internal/agents/diag"
 	"configflow/internal/convert"
 	"configflow/internal/jsonx"
 	"configflow/internal/pyyaml"
