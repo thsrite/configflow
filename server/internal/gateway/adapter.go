@@ -1,0 +1,361 @@
+package gateway
+
+// The boundary to packages that still speak jsonx (repo's configuration
+// view, convert's generated Mihomo document, routersplit, rulefetch) and to
+// the PyYAML-compatible yamlx facade. Nothing else in this package touches
+// jsonx. N8 replaces NewConfig's input by the typed model and N7 the yamlx
+// calls by the yaml.v3 facade; the rest of the package stays as it is.
+
+import (
+	"context"
+	"errors"
+	"os"
+	"strconv"
+	"strings"
+	"sync"
+
+	"configflow/internal/jsonx"
+	"configflow/internal/routersplit"
+	"configflow/internal/rulefetch"
+	"configflow/internal/yamlx"
+
+	"gopkg.in/yaml.v3"
+)
+
+// NewConfig reads the gateway's view of a profile configuration (repo's
+// compat view: profile, shared rule library, system settings, nodes). raw
+// is kept for the router split check and the rule content hook and must not
+// be modified while the Config is in use.
+func NewConfig(raw *jsonx.Object) *Config {
+	if raw == nil {
+		raw = jsonx.NewObject()
+	}
+	c := &Config{raw: raw, profileID: memberOf(raw, "profile_id")}
+	system, _ := raw.Value("system_config").(*jsonx.Object)
+	c.serverDomain, _ = system.Value("server_domain").(string)
+	c.configToken, _ = system.Value("config_token").(string)
+	mihomo, _ := raw.Value("mihomo").(*jsonx.Object)
+	c.customConfig, _ = mihomo.Value("custom_config").(string)
+	c.settings, c.settingsErr = settingsOf(mihomo)
+	for _, entry := range raw.GetList("rule_configs") {
+		if obj, ok := entry.(*jsonx.Object); ok {
+			c.rules = append(c.rules, ruleOf(obj))
+		}
+	}
+	for _, entry := range raw.GetList("rule_library") {
+		if obj, ok := entry.(*jsonx.Object); ok {
+			c.library = append(c.library, ruleOf(obj))
+		}
+	}
+	return c
+}
+
+// SettingsOf is the gateway setting of a profile configuration
+// (gateway_settings) without reading the rest of it.
+func SettingsOf(config *jsonx.Object) (Settings, error) {
+	mihomo, _ := config.Value("mihomo").(*jsonx.Object)
+	return settingsOf(mihomo)
+}
+
+func settingsOf(mihomo *jsonx.Object) (Settings, error) {
+	value, present := mihomo.Get("linux_gateway")
+	if !present || value == nil {
+		return NormalizeSettings(nil)
+	}
+	raw, err := jsonx.Compact(value)
+	if err != nil {
+		return Settings{}, gatewayError(msgSettingsNotObject)
+	}
+	return NormalizeSettings(raw)
+}
+
+func memberOf(obj *jsonx.Object, key string) member {
+	value, present := obj.Get(key)
+	text, isString := value.(string)
+	return member{present: present, isString: isString, text: text, truthy: present && jsonx.Truthy(value)}
+}
+
+func flagOf(obj *jsonx.Object, key string) flag {
+	value, present := obj.Get(key)
+	return flag{present: present, on: jsonx.Truthy(value)}
+}
+
+// strOf is Python's str() of the member, "" when it is absent.
+func strOf(obj *jsonx.Object, key string) string {
+	value, present := obj.Get(key)
+	if !present {
+		return ""
+	}
+	return jsonx.Str(value)
+}
+
+func ruleOf(obj *jsonx.Object) *Rule {
+	return &Rule{
+		id: memberOf(obj, "id"), itemType: memberOf(obj, "itemType"), name: memberOf(obj, "name"),
+		libraryRuleID: memberOf(obj, "library_rule_id"), behavior: memberOf(obj, "behavior"),
+		format: memberOf(obj, "format"), url: memberOf(obj, "url"), sourceType: memberOf(obj, "source_type"),
+		content: memberOf(obj, "content"), policy: memberOf(obj, "policy"),
+		enabled: flagOf(obj, "enabled"), libraryEnabled: flagOf(obj, "library_enabled"),
+		ruleType: strOf(obj, "rule_type"), value: strOf(obj, "value"),
+		raw: obj,
+	}
+}
+
+// JSONX is the stored entry (read only).
+func (r *Rule) JSONX() *jsonx.Object { return r.raw }
+
+// withSettings is the configuration with another gateway setting (a copy).
+func (c *Config) withSettings(s Settings) *Config {
+	raw := c.raw.DeepCopy()
+	mihomo, ok := raw.Value("mihomo").(*jsonx.Object)
+	if !ok {
+		mihomo = jsonx.NewObject()
+		raw.Set("mihomo", mihomo)
+	}
+	mihomo.Set("linux_gateway", jsonx.Obj("enabled", s.Enabled, "rule_set_ids", jsonx.ListOf(s.RuleSetIDs)))
+	return NewConfig(raw)
+}
+
+// checkGeneration is the router split check that precedes every gateway
+// patch of a generated document.
+func (c *Config) checkGeneration() error { return routersplit.CheckGeneration(c.raw) }
+
+// nodes are the shared nodes (config['nodes']) for the routing-mark check.
+func (c *Config) nodes() *yaml.Node {
+	value, _ := c.raw.Get("nodes")
+	return (&codec{}).node(value)
+}
+
+// BaseDocument is the profile's Mihomo base configuration
+// (mihomo.custom_config) as a mapping; empty text is an empty mapping.
+// Errors are *Error.
+func (c *Config) BaseDocument() (*yaml.Node, error) {
+	if strings.TrimSpace(c.customConfig) == "" {
+		return mapNode(), nil
+	}
+	value, err := yamlx.LoadWith(c.customConfig, yamlx.LoadOptions{KeepNonStringKeys: true, KeepUnrepresentable: true})
+	if err != nil {
+		return nil, gatewayError(msgBaseYAMLInvalid)
+	}
+	switch value.(type) {
+	case *jsonx.Object, *yamlx.Mapping:
+		return (&codec{}).node(value), nil
+	}
+	return nil, gatewayError(msgBaseNotMapping)
+}
+
+// yamlPayloadStrings reads a YAML rule set: the payload list of a mapping,
+// or the document itself, which must be a list of strings.
+func yamlPayloadStrings(text string) ([]string, error) {
+	value, err := yamlx.LoadWith(text, yamlx.LoadOptions{KeepNonStringKeys: true, KeepUnrepresentable: true})
+	if err != nil {
+		return nil, gatewayError(msgYAMLSyntax)
+	}
+	switch doc := value.(type) {
+	case *jsonx.Object:
+		value = doc.Value("payload")
+	case *yamlx.Mapping:
+		value, _ = doc.Get("payload")
+	}
+	list, ok := value.([]any)
+	if !ok {
+		return nil, gatewayError(msgYAMLPayload)
+	}
+	out := make([]string, len(list))
+	for i, item := range list {
+		if out[i], ok = item.(string); !ok {
+			return nil, gatewayError(msgYAMLPayload)
+		}
+	}
+	return out, nil
+}
+
+// dumpPayload writes a rule provider file ({payload: [...]}).
+func dumpPayload(payload []string) (string, error) {
+	return yamlx.SafeDumpUnicode(jsonx.Obj("payload", jsonx.ListOf(payload)))
+}
+
+// RulesetContentFunc reads a rule set's text like
+// routes.rules.get_ruleset_content(item, library, config_data=config): the
+// validated local cache, inline content, else a download (cached); "" when
+// it cannot be read. library is nil when the rule set has no library entry.
+type RulesetContentFunc func(ctx context.Context, item, library, config *jsonx.Object) (string, error)
+
+// ErrRulesetContentUnavailable is returned while no RulesetContentFunc is
+// set (config C32 sets it); reading rule contents then fails closed.
+var ErrRulesetContentUnavailable = errors.New("gateway: rule set content reader is not available (config C32)")
+
+var (
+	contentMu      sync.RWMutex
+	rulesetContent RulesetContentFunc
+)
+
+// SetRulesetContent installs the default rule content reader and returns a
+// function that restores the previous one.
+func SetRulesetContent(fn RulesetContentFunc) (restore func()) {
+	contentMu.Lock()
+	previous := rulesetContent
+	rulesetContent = fn
+	contentMu.Unlock()
+	return func() {
+		contentMu.Lock()
+		rulesetContent = previous
+		contentMu.Unlock()
+	}
+}
+
+// storedContent reads a rule set through the default reader. With
+// requireCache an empty result is only accepted when a cache file exists
+// (an explicitly empty source); a failed download is an *Error, so Mihomo
+// keeps its previous provider.
+func (c *Config) storedContent(ctx context.Context, item, library *Rule, requireCache bool) (string, error) {
+	contentMu.RLock()
+	read := rulesetContent
+	contentMu.RUnlock()
+	if read == nil {
+		return "", ErrRulesetContentUnavailable
+	}
+	var libraryRaw *jsonx.Object
+	if library != nil {
+		libraryRaw = library.raw
+	}
+	content, err := read(ctx, item.raw, libraryRaw, c.raw)
+	if err != nil || content != "" || !requireCache {
+		return content, err
+	}
+	var entries []any
+	if value, present := c.raw.Get("rule_library"); !present {
+		entries = []any{}
+	} else {
+		entries, _ = value.([]any)
+	}
+	path, err := rulefetch.RuleCacheReadPath(ctx, source(item, library).raw, entries)
+	if err != nil {
+		return "", err
+	}
+	if info, err := os.Stat(path); err != nil || !info.Mode().IsRegular() {
+		return "", gatewayError(msgUnreadable)
+	}
+	return "", nil
+}
+
+// ApplyJSONX is Apply on convert's generated document (the
+// convert.MihomoHooks.ApplyLinuxGateway hook): mihomo is changed in place
+// and only when the patch succeeds. With the gateway off nothing is
+// converted.
+func ApplyJSONX(mihomo, config *jsonx.Object, baseURL string) error {
+	c := NewConfig(config)
+	if settings, err := c.Settings(); err != nil || !settings.Enabled {
+		if checkErr := c.checkGeneration(); checkErr != nil {
+			return checkErr
+		}
+		return err
+	}
+	k := &codec{leaves: map[*yaml.Node]any{}}
+	doc := k.node(mihomo)
+	if err := c.Apply(doc, baseURL); err != nil {
+		return err
+	}
+	patched := k.value(doc).(*jsonx.Object)
+	for _, key := range mihomo.Keys() {
+		if !patched.Has(key) {
+			mihomo.Delete(key)
+		}
+	}
+	for key, value := range patched.All() {
+		mihomo.Set(key, value)
+	}
+	return nil
+}
+
+// RoutingMarkPathJSONX is RoutingMarkPath for a jsonx value (a loaded
+// provider file, for the deployment bundle).
+func RoutingMarkPathJSONX(value any, root string) string {
+	return RoutingMarkPath((&codec{}).node(value), root)
+}
+
+// codec converts jsonx values to nodes and back. With leaves set, each
+// scalar node remembers its original value, so values the patch did not
+// replace come back exactly as they were (number forms, timestamps, binary).
+type codec struct {
+	leaves map[*yaml.Node]any
+}
+
+func (k *codec) node(v any) *yaml.Node {
+	switch value := v.(type) {
+	case *jsonx.Object:
+		m := &yaml.Node{Kind: yaml.MappingNode, Tag: tagMap}
+		for key, child := range value.All() {
+			m.Content = append(m.Content, strNode(key), k.node(child))
+		}
+		return m
+	case *yamlx.Mapping:
+		m := &yaml.Node{Kind: yaml.MappingNode, Tag: tagMap}
+		for _, pair := range value.Pairs {
+			key := strNode("")
+			if text, ok := pair.Key.(string); ok {
+				key.Value = text
+			} else {
+				key.Tag, key.Value = tagOpaque, jsonx.Str(pair.Key)
+			}
+			m.Content = append(m.Content, key, k.node(pair.Value))
+		}
+		return m
+	case []any:
+		s := &yaml.Node{Kind: yaml.SequenceNode, Tag: tagSeq, Content: make([]*yaml.Node, 0, len(value))}
+		for _, child := range value {
+			s.Content = append(s.Content, k.node(child))
+		}
+		return s
+	}
+	n := &yaml.Node{Kind: yaml.ScalarNode, Tag: tagOpaque}
+	switch value := v.(type) {
+	case string:
+		n.Tag, n.Value = tagStr, value
+	case bool:
+		n.Tag, n.Value = tagBool, strconv.FormatBool(value)
+	case nil:
+		n.Tag, n.Value = tagNull, "null"
+	case jsonx.Number:
+		n.Tag, n.Value = tagFloat, value.String()
+		if value.IsInt() {
+			n.Tag = tagInt
+		}
+	}
+	if k.leaves != nil {
+		k.leaves[n] = v
+	}
+	return n
+}
+
+func (k *codec) value(n *yaml.Node) any {
+	n = resolve(n)
+	if original, ok := k.leaves[n]; ok {
+		return original
+	}
+	switch n.Kind {
+	case yaml.MappingNode:
+		obj := jsonx.NewObject()
+		for i := 0; i+1 < len(n.Content); i += 2 {
+			obj.Set(keyText(n.Content[i]), k.value(n.Content[i+1]))
+		}
+		return obj
+	case yaml.SequenceNode:
+		list := make([]any, 0, len(n.Content))
+		for _, child := range n.Content {
+			list = append(list, k.value(child))
+		}
+		return list
+	}
+	switch n.Tag {
+	case tagBool:
+		return n.Value == "true"
+	case tagNull:
+		return nil
+	case tagInt:
+		if i, err := strconv.ParseInt(n.Value, 10, 64); err == nil {
+			return jsonx.Int(i)
+		}
+	}
+	return n.Value
+}

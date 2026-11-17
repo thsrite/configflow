@@ -35,6 +35,7 @@ import (
 	"configflow/internal/convert"
 	"configflow/internal/convert/mihomoenv"
 	"configflow/internal/discovery"
+	"configflow/internal/gateway"
 	"configflow/internal/health"
 	"configflow/internal/httpx"
 	"configflow/internal/ippresence"
@@ -85,6 +86,7 @@ var wirePackages = []func(){
 	mihomoenv.Wire,
 	ippresence.Wire, // routers R02: convert.MihomoHooks.IsFullTun, oxidns classical_ip_lines
 	routers.Wire,    // routers R01: repo.Hooks.RedactRouters
+	gateway.Wire,    // agents A19: convert.MihomoHooks Linux gateway
 }
 
 func wireCore() {
