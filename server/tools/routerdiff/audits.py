@@ -476,6 +476,50 @@ def declared():
         'generation with400. The valid full-TUN shape reaches this guard rather than the preceding missing '
         'shape check. No mocked Python exceptions, Agent delivery or generated-preview record is used.',
         tuple(('split-agent-filter-' + key, 'G23/agent-full-tun-filtered-' + key, 400) for key in filter_keys))
+    base_sources = ('backend/common/router_split.py:95', 'backend/common/router_split.py:118',
+                    'backend/common/gateway_onboarding.py:500', 'backend/routes/gateway_onboarding.py:gateway_onboarding')
+    accepted_bases = tuple(('split-onboarding-accepted-' + label, 'G23/onboarding-accepted-' + label, 200)
+                           for label in ('base-empty', 'tun-null', 'tun-custom'))
+    base_guards = {
+        'H0102': tuple('tun-' + label for label in ('bool', 'number', 'string', 'array')),
+        'H0103': tuple('filter-' + key for key in filter_keys if key != 'all'),
+        'H0104': tuple('base-type-' + label for label in ('null', 'bool', 'number', 'array', 'object')),
+        'H0105': tuple('base-yaml-' + label for label in ('syntax', 'recursive-depth', 'unsafe-tag')),
+        'H0106': tuple('base-yaml-' + label for label in ('syntax', 'recursive-depth', 'unsafe-tag')),
+        'H0107': tuple('base-root-' + label for label in ('null', 'bool', 'number', 'array', 'string')),
+    }
+    for ident, labels in base_guards.items():
+        required = tuple(('split-onboarding-' + label, 'G23/onboarding-' + label, 200) for label in labels)
+        if ident in ('H0102', 'H0104', 'H0107'):
+            required += accepted_bases
+        audits[ident] = Audit(base_sources,
+            'Only the actual public gateway-onboarding preview invokes full_tun_base_yaml here. Its200 '
+            'report has ready=false and the exact single blocker; it is not an accepted install. Nonobject '
+            'tun, all eleven truthy filters, nontext base, actual YAML syntax/constructor/RecursionError '
+            'and nonobject YAML roots are separate inputs. Empty base, null tun and custom stack/mtu '
+            'advance through rendering and both service validations to the later no-proxy prerequisite. '
+            'The preview does not persist candidates or contact devices. No private Python call is used '
+            'as the expected result and no recursion error is simulated.', required)
+    state_sources = ('backend/common/router_split.py:143', 'backend/common/router_split.py:207',
+                     'backend/common/router_split.py:263', 'backend/routes/linux_gateway.py:71')
+    malformed_base = tuple('yaml-' + label for label in ('syntax', 'recursive-depth', 'unsafe-tag'))
+    state_guards = {
+        'H0108': tuple('root-' + label for label in ('null', 'bool', 'number', 'array', 'string'))
+                  + ('old-gateway-marker',) + malformed_base,
+        'H0109': ('missing-tun',) + tuple('tun-' + label for label in ('null', 'bool', 'number', 'array', 'string')),
+        'H0114': malformed_base,
+        'H0115': malformed_base,
+    }
+    for ident, labels in state_guards.items():
+        audits[ident] = Audit(state_sources,
+            'Real public Linux gateway editor GET diagnoses valid-marker base YAML without generating '
+            'or rewriting it. Root shape/old marker and missing/nonobject tun produce tun_missing; actual '
+            'syntax, unsafe-constructor and recursion errors are caught by _base_document and also '
+            'produce tun_missing. Complete full-TUN control has no issues. Eleven isolated filter '
+            'diagnostics are additional public controls, not used to inflate these requirement sets. '
+            'Full response/schema, no-store and complete before/after storage/device equality are retained.',
+            tuple(('split-state-' + label, 'G23/editor-state-' + label, 200)
+                  for label in (*labels, 'valid-full-tun')))
     return audits
 
 

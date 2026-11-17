@@ -1244,3 +1244,36 @@ all variants-audited, go_statuses[go-unimplemented]. No product requests mocked.
 No command pending. Last FULL composition remains37937739,3054 recipes/301 audits;
 the above is a separate increment, not a replacement full report. Main findings
 full statistics remain unchanged. Final composition/gate/rebase still pending.
+
+G23 actual wizard preparation and read-only state increment:
+-31 real gateway-onboarding previews reach full_tun_document/_load_base, unlike
+  ordinary config preview. Nonobject tun, all11 filters, five nontext base types,
+  real syntax/unsafe-constructor/1500-level recursion errors and five nonobject
+  roots. Three controls (empty base, null tun, custom stack/mtu) pass both service
+  render/validation phases and stop at the later no-proxy prerequisite. All
+  reports remain200/ready=false with exact sole blocker; never claim an install.
+-27 real Linux gateway editor GETs cover root/old marker/TUN shape, actual YAML
+  fallback, full-TUN positive and11 separate filter diagnostics. They preserve
+  complete stored bytes/device state and no-store. No Python exception patched.
+-H0102–H0109/H0114/H0115 ten explicit audits proven from58 actual observations;
+  declarations358, remaining1943 if composed. All58 Go external routes missing,
+  zero new reference bugs. Legacy setup/topology and publishing early exits
+  remain pending; no convenient unreachable classification was added.
+
+.64 pilot6 requests: Ran8 tests0.796s/OK; missing6/complete=false.
+Full preparation command:
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY=/tmp/routerdiff-build-302rx1dg-latest/configflow; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world-prefix split-onboarding- --output /tmp/routerdiff-split-onboarding-all.json'`
+=>31 requests, cross-domain missing31/references7/audits0 for that run's earlier
+loaded declarations/complete=false. All exact Python prerequisites passed.
+State/self-check command:
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY=/tmp/routerdiff-build-302rx1dg-latest/configflow; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python -m unittest -v test_audits test_recipes test_runner; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world-prefix split-state- --output /tmp/routerdiff-split-state-all.json'`
+=> Ran46 tests3.020s/OK;27 state requests, cross-domain missing27/references5/
+audits4/remaining2297 in this subset/complete=false. Same foreground shell then
+read the two synthetic JSON observation reports and evaluated explicit audit
+requirements: real_http_recipes58; all ten listed helpers variants-audited.
+
+No active command. Last FULL composition is still37937739,3054 recipes/301 audits;
+new increments not composed, main findings full header unchanged. Final gate and
+final rebase pending. Next priority remaining wrapper/helper coverage, scoped
+dynamic identities/times/generated content, device failure/compensation and
+background/crash paths. Final gate private snapshot scope was already authorized.

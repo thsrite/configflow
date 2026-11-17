@@ -15,9 +15,30 @@ import policy_owned
 import policy_side
 import policy_invalid
 import split
+import split_onboarding
+import split_state
 
 
 class AuditTests(unittest.TestCase):
+    def test_split_preparation_and_state_guards_require_their_real_distinct_callers(self):
+        audits = declared()
+        actual = {(world, case.ident): case
+                  for world, _, groups in split_onboarding.worlds() + split_state.worlds()
+                  for group in groups for case in group()}
+        counts = {'H0102': 7, 'H0103': 11, 'H0104': 8, 'H0105': 3, 'H0106': 3, 'H0107': 8,
+                  'H0108': 10, 'H0109': 7, 'H0114': 4, 'H0115': 4}
+        for ident, count in counts.items():
+            self.assertEqual(len(audits[ident].requirements), count)
+            for world, name, status in audits[ident].requirements:
+                with self.subTest(entry=ident, world=world, case=name):
+                    case = actual[world, name]
+                    self.assertIn(ident, case.entries)
+                    self.assertEqual(case.expected, status)
+                    self.assertTrue(case.boundary)
+                    self.assertTrue(case.unchanged)
+                    self.assertIn('gateway', case.path)
+                    self.assertNotIn('/generate', case.path)
+
     def test_split_guards_require_all_external_http_variants(self):
         audits = declared()
         actual = {(world, case.ident): case for world, _, groups in split.worlds()
@@ -39,7 +60,7 @@ class AuditTests(unittest.TestCase):
 
     def test_auth_audits_require_every_explicit_real_reference_variant(self):
         audits = declared()
-        self.assertEqual(len(audits), 26 * 7 + 25 * 3 + 5 + 14 + 12 + 5 + 8 + 23 + 1 + 5 + 4 + 6 + 4 + 4)
+        self.assertEqual(len(audits), 26 * 7 + 25 * 3 + 5 + 14 + 12 + 5 + 8 + 23 + 1 + 5 + 4 + 6 + 4 + 4 + 10)
         self.assertFalse(set(audits) - set(load()[1]))
         self.assertEqual({value['audit'] for value in evaluate([]).values()}, {'variants-pending'})
         ident = 'R005-F01'

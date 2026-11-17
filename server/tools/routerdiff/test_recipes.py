@@ -25,6 +25,8 @@ import policy_owned
 import policy_side
 import policy_invalid
 import split
+import split_onboarding
+import split_state
 from inventory import load
 from bugs import BUGS
 
@@ -122,7 +124,7 @@ class RecipeTests(unittest.TestCase):
 
     def test_router_split_generation_uses_only_external_public_boundaries(self):
         _, entries = load()
-        for world, options, groups in split.worlds():
+        for world, options, groups in split.worlds() + split_onboarding.worlds() + split_state.worlds():
             for group in groups:
                 for case in group():
                     self.assertEqual(case.route, '')
