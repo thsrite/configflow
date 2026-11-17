@@ -120,7 +120,7 @@ type serviceProcess struct {
 	done   chan error
 	dir    string
 	log    string
-	cancel context.CancelFunc
+	exited chan struct{}
 }
 
 func startService(t *testing.T, mode string) *serviceProcess {
@@ -146,7 +146,7 @@ func startProcess(t *testing.T, dir, mode string) *serviceProcess {
 	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestServiceProcess$", "-test.count=1")
 	cmd.Env = append(os.Environ(), "DATA_DIR="+dir, "O33_SERVICE_SCENARIO="+mode,
 		"ADMIN_USERNAME=", "ADMIN_PASSWORD=", "CONFIGFLOW_BACKEND_HOST=127.0.0.1", "CONFIGFLOW_BACKEND_PORT=5001",
-		"CONFIGFLOW_SHUTDOWN_GRACE_SECONDS=8", "PRODDIFF_ROUTES=")
+		"CONFIGFLOW_SHUTDOWN_GRACE_SECONDS=8", "PRODDIFF_ROUTES="+filepath.Join(dir, "test-routes"))
 	log := filepath.Join(dir, "test-process.log")
 	output, err := os.Create(log)
 	if err != nil {
@@ -159,9 +159,17 @@ func startProcess(t *testing.T, dir, mode string) *serviceProcess {
 		output.Close()
 		t.Fatal(err)
 	}
-	p := &serviceProcess{cmd: cmd, done: make(chan error, 1), dir: dir, log: log, cancel: cancel}
-	go func() { p.done <- cmd.Wait(); _ = output.Close() }()
-	t.Cleanup(func() { cancel(); _ = cmd.Process.Kill() })
+	p := &serviceProcess{cmd: cmd, done: make(chan error, 1), dir: dir, log: log, exited: make(chan struct{})}
+	go func() { defer close(p.exited); err := cmd.Wait(); _ = output.Close(); p.done <- err }()
+	t.Cleanup(func() {
+		cancel()
+		_ = cmd.Process.Kill()
+		<-p.exited
+		if t.Failed() {
+			data, _ := os.ReadFile(p.log)
+			t.Logf("service log:\n%s", data)
+		}
+	})
 	return p
 }
 

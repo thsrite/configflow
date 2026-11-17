@@ -231,6 +231,10 @@ func round(ctx context.Context) {
 // Loop runs the scheduler after its first delay and pauses after each round.
 // Cross-process exclusion belongs to instance.Acquire, before any loop starts.
 func Loop(ctx context.Context) {
+	if _, err := repo.GetRepository(ctx); err != nil {
+		logger.Exception("Scheduled refresh could not start", err)
+		return
+	}
 	if !loopSleep(ctx, FirstDelaySeconds*time.Second) {
 		return
 	}

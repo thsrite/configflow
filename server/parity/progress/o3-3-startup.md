@@ -40,3 +40,23 @@ Per coordinator routing correction, developer operation notes live at
 [design/o3-startup-shutdown.md](../../design/o3-startup-shutdown.md), not doc/.
 Rebased onto go@045f2485 before final .32 acceptance; three code steps now
 6be4e9f6 / feb5e869 / c09be36e. Final acceptance in progress.
+
+Final control-goroutine audit: HTTP drain now joins both native Shutdown workers even when ctx
+expires (Shutdown itself honours ctx), so the per-call fan-out never returns with its workers
+unjoined. This small main-only adjustment will be rechecked after the current foreground gate run.
+
+Also retain refresh.Loop's original repository validation before its first wait; only its flock
+is removed. This preserves the pre-loop failure boundary while keeping the same main behaviour.
+
+First final acceptance: gofmt/vet and every touched-package race passed (lifecycle3.104s,
+clock1.015s, lockx3.444s, httpx34.934s, cmd43.126s, instance7.747s, repo31.378s,
+metrics6.366s, refresh154.964s, discovery9.960s, monitor290.475s, substore7.277s).
+Proddiff-tag main tests then exposed a fixture mistake: PRODDIFF_ROUTES was cleared, so the
+required tagged manifest helper correctly refused startup. Give every child a private manifest path
+and join subprocess waiters during cleanup; report child logs on readiness failures. Production
+manifest behaviour is unchanged. Full/differential/proddiff stages had not yet run in that attempt.
+
+Post-audit focused .32 validation passes: refresh instance-owned loop race1.118s,
+real SIGTERM/grace scenarios under proddiff tag6.320s and difftest tag6.324s. Final acceptance
+will rerun fmt/vet, the required runtime/lock/http/cmd race set, both complete tagged test sets,
+full suite, every enabled tagged differential and proddiff on the corrected fixtures.

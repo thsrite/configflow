@@ -224,13 +224,10 @@ func drainServers(ctx context.Context, servers ...*http.Server) error {
 		}()
 	}
 	var result error
+	// http.Server.Shutdown honours ctx. Join both workers even when it expires,
+	// so this fan-out never leaves an untracked control goroutine behind.
 	for range count {
-		select {
-		case err := <-results:
-			result = errors.Join(result, err)
-		case <-ctx.Done():
-			return ctx.Err()
-		}
+		result = errors.Join(result, <-results)
 	}
 	return result
 }
