@@ -78,3 +78,14 @@ PVE、生产、家庭设备。该项同步列入主矩阵 L5-A 的执行变体�
 - R011 empty 发布是 S16；S04 保留给真正 return protocol2。
 
 所有条目仍处于变体审计中；修正编号不等于宣告整个条目已完成。
+
+### D26 DHCP delete ID wire type
+
+The matrix's D26 shorthand says `del{id:int}`. The checked-in real 4.0.314
+capture (backend/testdata/ikuai_fixed_ip_40314.json, request11) and its asserting
+Python test backend/test_ikuai_fixed_ip.py:67,84 instead show `{"id":"1"}`.
+The public Python adapter also sends a string (ikuai_fixed_ip.py:144). The fake
+now requires a positive decimal string for dhcp_static del, compares it to the
+integer show ID and actually removes that row. Actual HTTP contract regression
+checks integer refusal and string deletion. This is a fixture/matrix correction,
+not a finding against either product; other iKuai mutation forms are unchanged.

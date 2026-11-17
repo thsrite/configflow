@@ -15,6 +15,7 @@ import workflows
 import fixtures
 import probes
 import releases
+import clients
 from compare import differences, logical_snapshot, response_view, timestamp
 from harness import Pair
 from harness import decode_response
@@ -339,6 +340,10 @@ def main():
               ('release-ros', releases.options(), (releases.routeros_basic,)),
               ('release-ik-suffix', releases.options(), (releases.ikuai_suffix_bug,)),
               ('release-ik-plain', releases.options(), (releases.ikuai_plain,)),
+              ('fixed-ip', clients.options(), (clients.fixed_ip,)),
+              ('fixed-ip-guards', clients.options(), (clients.fixed_preview_guards,)),
+              ('discovery', clients.options(), (clients.discovery,)),
+              ('discovery-failures', clients.options(), (clients.discovery_failures,)),
               ('stored', fixtures.stored_options(), (fixtures.receipts, fixtures.stored_guards))]
     if args.world:
         unknown = set(args.world) - {name for name, _, _ in worlds}

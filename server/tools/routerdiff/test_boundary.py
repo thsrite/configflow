@@ -114,6 +114,12 @@ class BoundaryTests(unittest.TestCase):
                     body=base64.b64encode(json.dumps(form).encode()).decode())
                 self.assertEqual(base64.b64decode(reply['body']), b'')
                 self.assertEqual(len(side.rpc('snapshot')['fake']['ikuai']['static_rt']), 2)
+                side.rpc('fake', action='seed', ikuai={'dhcp_static': [{'id': 70, 'comment': 'owned synthetic row'}]})
+                delete = {'func_name': 'dhcp_static', 'action': 'del', 'param': {'id': 70}}
+                self.assertEqual(call(18082, '/Action/call', delete, cookie)['code'], 3001)
+                delete['param']['id'] = '70'
+                self.assertEqual(call(18082, '/Action/call', delete, cookie)['code'], 0)
+                self.assertEqual(side.rpc('snapshot')['fake']['ikuai']['dhcp_static'], [])
 
 
 if __name__ == '__main__':

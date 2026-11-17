@@ -325,3 +325,35 @@ IKUAI_NETMASK_SUFFIX_ROLLBACK, complete=false, remaining_audits=2301.
 Formatting/vet exit 0 with no output. Findings retrieved from this full run.
 1827 entries still lack an executed recipe; every entry still needs its final
 variant/reachability audit. Task continues; no final coverage/hand-back claim.
+
+Client discovery and fixed-IP iteration (2026-11-17, task continues):
+- Added real public HTTP preview/apply/delete for RouterOS dynamic make-static,
+  ARP-only new lease, and iKuai static allocation; own-side signed token refs,
+  preview-name distinct from saved name, foreign reservations/custom DHCP field
+  preservation, unchanged saved notes, binding visibility/deletion and revision
+  invariants. 13 transaction/read recipes.
+- Added 5 discovery/cache/rename recipes and 9 outage/degradation recipes: dual
+  vendor reads, literal refresh=1 vs refresh=true, names not cached, last useful
+  snapshot retained after all sources fail, independent partial/failed states,
+  optional table failures and reservation-enrichment failure containment.
+- Added 49 exact-guard previews: source-router evidence, foreign static deletion,
+  disabled/invalid/relayed/ambiguous scopes, malformed masks/addresses, dynamic
+  identity conflicts, protected RADIUS leases, duplicate/bad IDs and strict iKuai
+  static form shapes. Every expected refusal checks the actual Chinese message;
+  these are partial variants, not claims that whole matrix entries are complete.
+- Found/fixed a fixture protocol defect, not a product finding: captured iKuai
+  dhcp_static del sends a decimal STRING id while show/persisted IDs are integers
+  (backend/test_ikuai_fixed_ip.py:67,84 and its checked-in 4.0.314 capture). Fake
+  now implements that narrow protocol conversion and rejects non-string forms;
+  actual HTTP boundary regression checks both. D26's abbreviated `{id:int}` is
+  a matrix documentation inconsistency; see audit, not an excuse to change Python.
+- No Go business implementation read or changed. Current observed manifest still
+  registers zero of the 26 domain routes, so all these cases are Go 尚未实现.
+
+Exact .32 validation:
+`RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'set -euo pipefail; cd server/tools/routerdiff; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY=/tmp/routerdiff-build.AybfCK/configflow; ~/cf-test/.venv/bin/python -m unittest -v test_recipes test_boundary; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world fixed-ip --world discovery --output /tmp/routerdiff-clients.json'`
+→ Ran 6 tests in 17.659s / OK; fixed-ip13, discovery18 cumulative; fixture_error
+absent, go-unimplemented18, complete=false.
+`RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'set -euo pipefail; cd server/tools/routerdiff; export PYTHONDONTWRITEBYTECODE=1; ~/cf-test/.venv/bin/python -m unittest -v test_recipes; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary /tmp/routerdiff-build.AybfCK/configflow --world fixed-ip-guards --world discovery-failures --output /tmp/routerdiff-client-guards.json'`
+→ Ran 2 tests in 0.171s / OK; fixed-ip-guards49, discovery-failures58 cumulative;
+go-unimplemented58, referenced_entries16, complete=false, remaining_audits2301.

@@ -345,7 +345,14 @@ class World:
                 row['group_id'] = 'IPGP' + str(row['id'])
             rows.append(row)
             return self.ik_reply({})
-        row = next((row for row in rows if row.get('id') == param.get('id')), None)
+        ident = param.get('id')
+        if func == 'dhcp_static' and action == 'del':
+            # The 4.0.314 capture sends {id: "1"}; persisted/show IDs are
+            # integers. This is a protocol coercion, not a business shortcut.
+            if not isinstance(ident, str) or not re.fullmatch(r'[1-9][0-9]*', ident):
+                return self.ik_reply(code=3001)
+            ident = int(ident)
+        row = next((row for row in rows if row.get('id') == ident), None)
         if row is None:
             return self.ik_reply(code=3001)
         if action == 'edit':
