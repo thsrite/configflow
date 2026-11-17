@@ -1108,3 +1108,33 @@ audits5 in this subset/remaining2296/complete=false. Declarations330/remaining19
 if composed. No new Python bug. No pending command. Untracked policy_owned.py
 is the next input-fixture step, not yet wired/tested/claimed. Main findings and
 last full composition remain3054/301; final gate and rebase pending.
+
+Native policy ownership audit increment:
+- policy_owned.py supplies literal recorded direct rows and managed native
+  plugins/hook through public import.16 negative worlds ×4 public operations
+  prove missing/altered plugins, absent/duplicate/conditional hook, misplaced
+  hook before built-ins/after custom actions, each unrecorded name conflict and
+  extra goto/jump reference. These are direct ownership errors, never relabelled
+  _refuse. Name-only updates retain complete native bytes even while readonly.
+-3 valid controls recognize old ownership, change direct→smart and remove both
+  managed markers from actual stored native text, then rename without rewriting
+  native. New stored_excludes and deliberate residual/null/object negatives
+  prove withdrawal cannot pass with stale managed output.
+- H0096-H0099 explicit4 declarations require all guard variants plus positive
+  ownership/actual cleanup. Declared334, remaining1967 if composed. H0100/H0101
+  parent and native node-test side-listener classification still pending.
+
+.64 pilot: Ran27 tests0.595s/OK;67 requests passed.
+Authoritative command:
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY=/tmp/routerdiff-build-302rx1dg-latest/configflow; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python -m unittest -v test_audits test_recipes test_runner; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world-prefix native-owned- --world native-policy-valid --output /tmp/routerdiff-native-owned-audits.json'`
+=> Ran37 tests1.727s/OK;70 requests, Go routes0/missing70/references13/
+audits4 in this subset/remaining2297/complete=false, no new Python bug.
+No pending command. Last FULL composition remains379377393054 recipes/301 audits;
+current source has more cases/audits, no new full composition yet. Final gate/
+rebase still pending; task not ready to hand back.
+
+Maintainer clarified final gate scope this turn: run gate.sh normally, including
+read-only private-snapshot proddiff. No new synthetic-gate entry is needed. The
+handwritten domain cases/fixtures remain synthetic only. Never copy snapshot
+contents into code, tests, docs or reports; report only proddiff new/stale/
+self-check totals. Keep raw private gate/proddiff logs on the test server.

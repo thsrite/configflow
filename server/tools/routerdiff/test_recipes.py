@@ -21,6 +21,7 @@ import persistence
 import ipv6
 import device_policy
 import policy_graph
+import policy_owned
 from inventory import load
 from bugs import BUGS
 
@@ -29,7 +30,7 @@ class RecipeTests(unittest.TestCase):
     def test_unique_variants_and_real_design_references(self):
         routes, entries = load()
         seen = set()
-        for module in (cases, guards, workflows, fixtures, probes, releases, clients, sync, upstream, dns, gateway, disconnect, routing, policy_view, returns, persistence, ipv6, device_policy, policy_graph):
+        for module in (cases, guards, workflows, fixtures, probes, releases, clients, sync, upstream, dns, gateway, disconnect, routing, policy_view, returns, persistence, ipv6, device_policy, policy_graph, policy_owned):
             for name in module.__dict__:
                 value = getattr(module, name)
                 if not inspect.isgeneratorfunction(value) or getattr(value, '__module__', '') != module.__name__:
@@ -72,6 +73,20 @@ class RecipeTests(unittest.TestCase):
             self.assertTrue(rows[1].unchanged)
             self.assertIn('oxidns', rows[2].retained_fields)
             self.assertEqual(options['alpha']['oxidns']['config_mode'], 'native')
+
+    def test_managed_native_graph_errors_cannot_be_relabelled_as_refuse_helper(self):
+        _, entries = load()
+        seen = set()
+        for world, options, groups in policy_owned.worlds():
+            rows = [case for group in groups for case in group()]
+            self.assertEqual([case.expected for case in rows], [200, 400, 200, 200])
+            for case in rows:
+                self.assertNotIn(case.ident, seen)
+                seen.add(case.ident)
+                self.assertTrue(set(case.entries) <= set(entries))
+                self.assertNotIn('H0086', case.entries)
+            self.assertTrue(rows[1].unchanged)
+            self.assertIn('oxidns', rows[2].retained_fields)
 
     def test_response_references_are_side_local(self):
         value = {'revision': cases.Ref('first', '/body/own')}

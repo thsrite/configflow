@@ -330,6 +330,35 @@ def declared():
             'H0085 covers zero and512 smart-only policies plus a successful direct insertion whose actual '
             'stored native text must contain both managed plugins, client matcher and hook. This does '
             'not close ownership/legacy-node-test/read_policies parent families or the entire route.', required)
+    ownership = {
+        'H0096': ('missing-policy', 'missing-direct', 'changed-policy', 'changed-direct',
+                   'missing-hook', 'duplicate-hook', 'conditional-hook'),
+        'H0097': ('hook-before-builtin', 'hook-after-custom-step'),
+        'H0098': ('policy-only', 'direct-only', 'hook-only', 'all-unrecorded'),
+        'H0099': ('goto-policy-without-hook', 'goto-direct-without-owned', 'recorded-direct-extra-call'),
+    }
+    for ident, labels in ownership.items():
+        required = tuple(('native-owned-' + label, route + '/native-owned-' + middle + label, status)
+            for label in labels for route, middle, status in (
+                ('R002', '', 200), ('R003', 'mode-refused-', 400), ('R014', 'readonly-', 200)))
+        if ident == 'H0098':
+            required += (('native-policy-valid', 'R002/native-policy-recognized-main', 200),)
+        else:
+            required += (('native-owned-valid', 'R003/native-owned-direct-to-smart-withdraws-plugins', 200),)
+            if ident != 'H0099':
+                required += (('native-owned-valid', 'R002/native-owned-valid-recorded', 200),)
+        audits[ident] = Audit(
+            ('backend/common/oxidns_device_policy.py:314', 'backend/common/oxidns_common_routing.py:74',
+             'backend/routes/client_devices.py:55'),
+            'Literal previous direct policy plus its managed plugins/hook, supplied through public import. '
+            'Missing/changed plugin and missing/duplicate/conditional hook instantiate each ownership guard; '
+            'hook too early/late is tested against recognized built-in and custom main steps. Unrecorded '
+            'policy/direct/hook/both conflict independently; extra goto/jump references are rejected. '
+            'Every negative reads safely, atomically refuses mode change, allows note-only editing with '
+            'complete native retention, and returns the same workspace reason. Positive old ownership '
+            'reads editable and changing direct to smart removes both markers from actual stored native '
+            'text. No generic _refuse attribution: these four errors are direct ownership exceptions. '
+            'This does not close node-test listener classification or all native graph parents.', required)
     return audits
 
 

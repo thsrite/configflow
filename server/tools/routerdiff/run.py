@@ -29,6 +29,7 @@ import persistence
 import ipv6
 import device_policy
 import policy_graph
+import policy_owned
 from compare import differences, logical_snapshot, response_view, timestamp
 from harness import Pair, RemoteError, observed_startup_exit
 from harness import decode_response
@@ -345,6 +346,10 @@ def execute(pair, case, available, routes):
                 actual = cases.at(fields(after, 'profile', case.profile), path)
                 if not isinstance(actual, str) or not all(fragment in actual for fragment in fragments):
                     raise RuntimeError(case.ident + ': stored text lacks required evidence at ' + path)
+            for path, fragments in case.stored_excludes.items():
+                actual = cases.at(fields(after, 'profile', case.profile), path)
+                if not isinstance(actual, str) or any(fragment in actual for fragment in fragments):
+                    raise RuntimeError(case.ident + ': stale stored text evidence remains at ' + path)
             for path in case.stored_absent:
                 try:
                     cases.at(fields(after, 'profile', case.profile), path)
@@ -624,6 +629,7 @@ def main():
               ('client-canonical-names', options, (workflows.client_canonical_names,)),
               ('notes-capacity', fixtures.notes_capacity_options(), (fixtures.notes_capacity,)),
               ('client-mode-notes', options, (workflows.client_mode_notes,)),
+              ('native-owned-valid', policy_owned.options(policy_owned.document(), policy_owned.ROWS), (policy_owned.valid,)),
               ('native-policy-valid', policy_graph.options(policy_graph.document()), (policy_graph.valid,)),
               ('stored-policy-legacy', device_policy.legacy_options(), (device_policy.legacy,)),
               ('stored-policy-capacity', device_policy.capacity_options(), (device_policy.capacity,)),
@@ -709,6 +715,7 @@ def main():
               ('stored', fixtures.stored_options(), (fixtures.receipts, fixtures.stored_guards))]
     worlds += device_policy.worlds()
     worlds += policy_graph.worlds()
+    worlds += policy_owned.worlds()
     if args.world or args.world_prefix:
         names = {item[0] for item in worlds}
         unknown = set(args.world or ()) - names

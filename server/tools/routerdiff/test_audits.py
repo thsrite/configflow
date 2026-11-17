@@ -11,12 +11,13 @@ import fixtures
 import clients
 import cases
 import policy_graph
+import policy_owned
 
 
 class AuditTests(unittest.TestCase):
     def test_auth_audits_require_every_explicit_real_reference_variant(self):
         audits = declared()
-        self.assertEqual(len(audits), 26 * 7 + 25 * 3 + 5 + 14 + 12 + 5 + 8 + 23 + 1 + 5)
+        self.assertEqual(len(audits), 26 * 7 + 25 * 3 + 5 + 14 + 12 + 5 + 8 + 23 + 1 + 5 + 4)
         self.assertFalse(set(audits) - set(load()[1]))
         self.assertEqual({value['audit'] for value in evaluate([]).values()}, {'variants-pending'})
         ident = 'R005-F01'
@@ -171,6 +172,20 @@ class AuditTests(unittest.TestCase):
         self.assertEqual(len(audits['H0088'].requirements), 5 * 2)
         self.assertEqual(len(audits['H0089'].requirements), 7 * 2)
         self.assertIn('oxidns/native_config', actual['native-policy-valid', 'R003/native-policy-valid-direct'].stored_contains)
+    def test_native_ownership_audits_require_each_guard_and_actual_cleanup(self):
+        actual = {(world, case.ident): case for world, _, groups in policy_owned.worlds()
+                  for group in groups for case in group()}
+        actual.update({('native-owned-valid', case.ident): case for case in policy_owned.valid()})
+        actual.update({('native-policy-valid', case.ident): case for case in policy_graph.valid()})
+        audits = declared()
+        for number in range(96, 100):
+            ident = 'H' + str(number).zfill(4)
+            for world, name, status in audits[ident].requirements:
+                case = actual[world, name]
+                self.assertIn(ident, case.entries)
+                self.assertEqual(case.expected, status)
+        cleanup = actual['native-owned-valid', 'R003/native-owned-direct-to-smart-withdraws-plugins']
+        self.assertEqual(set(cleanup.stored_excludes['oxidns/native_config']), {'cf_device_policy', 'cf_device_direct'})
 
 
 if __name__ == '__main__':
