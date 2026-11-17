@@ -13,7 +13,7 @@ import (
 	"configflow/internal/jsonx"
 	"configflow/internal/yamlbridge"
 	"configflow/internal/yamlx"
-	"configflow/internal/yamlx/yamltest"
+	"configflow/internal/yamlx/yamlxtest"
 )
 
 // Rows of testdata/corpus.jsonl.gz (gen.py) and testdata/recorded.jsonl.gz
@@ -197,7 +197,7 @@ func callRow(fn string, args []any) (out any, err error, ok bool) {
 
 // compareRow returns "" when Go matches the row, else a description.
 // accepted reports an independently checked native schema or output comparison.
-func compareRow(t *testing.T, oracle *yamltest.Oracle, entry *jsonx.Object) (msg string, accepted, supported bool) {
+func compareRow(t *testing.T, oracle *yamlxtest.Oracle, entry *jsonx.Object) (msg string, accepted, supported bool) {
 	fn := entry.GetString("fn")
 	args := entry.GetList("args")
 	out, err, ok := callRow(fn, args)
@@ -234,14 +234,14 @@ func compareRow(t *testing.T, oracle *yamltest.Oracle, entry *jsonx.Object) (msg
 		if fn == "generate" {
 			a, aok := out.(string)
 			b, bok := want.(string)
-			if aok && bok && yamltest.SemanticEqual(a, b) {
+			if aok && bok && yamlxtest.SemanticEqual(a, b) {
 				return "", false, true
 			}
 		}
 		if fn == "upstreams" {
 			a, aok := out.(*jsonx.Object)
 			b, bok := want.(*jsonx.Object)
-			if aok && bok && a.Len() == 1 && b.Len() == 1 && yamltest.SemanticEqual(a.GetString("dump"), b.GetString("dump")) {
+			if aok && bok && a.Len() == 1 && b.Len() == 1 && yamlxtest.SemanticEqual(a.GetString("dump"), b.GetString("dump")) {
 				return "", false, true
 			}
 		}
@@ -251,7 +251,7 @@ func compareRow(t *testing.T, oracle *yamltest.Oracle, entry *jsonx.Object) (msg
 }
 
 func TestCorpus(t *testing.T) {
-	oracle := yamltest.NewOracle(t, "server/internal/mosdns/testdata/n73_reference.py")
+	oracle := yamlxtest.NewOracle(t, "server/internal/mosdns/testdata/n73_reference.py")
 	rows := loadRows(t, "testdata/corpus.jsonl.gz")
 	failures, accepted, unsupported := 0, 0, 0
 	counts := map[string]int{}

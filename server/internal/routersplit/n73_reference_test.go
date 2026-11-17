@@ -14,7 +14,7 @@ import (
 
 	"configflow/internal/jsonx"
 	"configflow/internal/yamlx"
-	"configflow/internal/yamlx/yamltest"
+	"configflow/internal/yamlx/yamlxtest"
 
 	"gopkg.in/yaml.v3"
 )
@@ -83,15 +83,15 @@ func (o *nativeOracle) compare(t *testing.T, row recordedRow, output any, actual
 	if !ok {
 		return "", false
 	}
-	class, err := yamltest.Classify(source)
+	class, err := yamlxtest.Classify(source)
 	if err != nil {
 		t.Logf("N7-3 unclassified %s %.80q: %v", row.Fn, source, err)
 		return "", false
 	}
-	if class == yamltest.Equal || class == yamltest.Diagnostics {
+	if class == yamlxtest.Equal || class == yamlxtest.Diagnostics {
 		return "", false
 	}
-	normalized, parseErr := yamltest.ReferenceText(source)
+	normalized, parseErr := yamlxtest.ReferenceText(source)
 	if parseErr != nil {
 		normalized = "["
 	} // Python's existing invalid-document path.
@@ -126,7 +126,7 @@ func (o *nativeOracle) compare(t *testing.T, row recordedRow, output any, actual
 	if row.Fn == "full_tun_base_yaml" {
 		got, gok := output.(string)
 		want, wok := expected.(string)
-		return class, gok && wok && yamltest.SemanticEqual(got, want)
+		return class, gok && wok && yamlxtest.SemanticEqual(got, want)
 	}
 	return class, jsonx.Equal(expected, output)
 }

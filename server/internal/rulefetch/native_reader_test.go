@@ -10,7 +10,6 @@ import (
 	"configflow/internal/repo"
 	"configflow/internal/rules"
 	"configflow/internal/yamlx"
-	"gopkg.in/yaml.v3"
 )
 
 func TestRuleYAMLAliasBoundaries(t *testing.T) {
@@ -45,13 +44,10 @@ func TestQuotedMultilineUsesNativeFoldAndRuleValidation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var native yaml.Node
-	if err := yaml.Unmarshal([]byte(source), &native); err != nil {
-		t.Fatal(err)
-	} // Reference parser, synthetic test input only.
-	if yamlx.Get(root, "payload").Content[0].Value != native.Content[0].Content[1].Content[0].Value {
-		t.Fatal("different native fold")
+	if yamlx.Get(root, "payload").Content[0].Value != "example. com" {
+		t.Fatal("native quoted multiline fold changed")
 	}
+
 	normalized, warnings := NormalizeMihomoYAML(source)
 	if len(warnings) != 0 {
 		t.Fatal(warnings)

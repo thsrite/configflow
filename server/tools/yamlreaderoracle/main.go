@@ -13,7 +13,6 @@ import (
 	"configflow/internal/logx"
 	"configflow/internal/yamlbridge"
 	"configflow/internal/yamlx"
-	"configflow/internal/yamlx/yamltest"
 	"configflow/internal/yamlx/yamlxtest"
 )
 
@@ -31,7 +30,7 @@ func run() error {
 			return err
 		}
 		answer := map[string]any{"source": request.Source, "mode": request.Mode}
-		category, comparisonErr := yamltest.Classify(request.Source)
+		category, comparisonErr := yamlxtest.Classify(request.Source)
 		root, err := yamlx.Parse([]byte(request.Source))
 		if err == nil {
 			answer["parse_nodes"] = yamlxtest.ParseAudit(root)
@@ -46,7 +45,7 @@ func run() error {
 			}
 			err = yamlx.ProjectJSONKeys(root, mode)
 			if errors.Is(err, yamlx.ErrType) {
-				category = yamltest.Policy
+				category = yamlxtest.Policy
 				comparisonErr = nil
 			}
 		}

@@ -1,6 +1,7 @@
 package difftest
 
 import (
+	"configflow/internal/yamlx"
 	"encoding/json"
 	"net/url"
 	"os"
@@ -60,7 +61,7 @@ func assertNativeOutputSyntax(t *testing.T, kind string, body []byte) {
 	t.Helper()
 	if kind == "compose" {
 		var document yaml.Node
-		if err := yaml.Unmarshal(body, &document); err != nil {
+		if err := yamlx.Unmarshal(body, &document); err != nil {
 			t.Fatalf("invalid Compose YAML: %v", err)
 		}
 		return

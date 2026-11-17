@@ -2412,3 +2412,9 @@ native-diagnostics34,nonfinite text31,binary/tagged31;3837 document-mode sources
 Diagnostic position subclass:32 primary lines/34 missing native columns,
 per-row record in convert/testdata/n73d_diagnostic_positions.json. Native
 Node→jsonx preserves physical sharing; N8-8 replaces this temporary boundary.
+
+N7-3d historical test merge: yamltest→yamlxtest.21,343 unique actual old/new
+reader comparisons frozen before implementation deletion, complete native audits
+and old graphs/errors retained,unknown0; mode-specific history7,174 inputs.
+All ten helper-dependent package suites passed; .32 full vet and changed API/
+facade-helper tests passed. New AST gate will enforce the final cleanup.

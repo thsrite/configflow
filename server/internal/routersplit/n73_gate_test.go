@@ -3,7 +3,7 @@ package routersplit
 import (
 	"testing"
 
-	"configflow/internal/yamlx/yamltest"
+	"configflow/internal/yamlx/yamlxtest"
 )
 
 func TestN73SplitReaderMigrationGate(t *testing.T) {
@@ -15,7 +15,7 @@ func TestN73SplitReaderMigrationGate(t *testing.T) {
 			}
 		}
 		for caller, sources := range byCaller {
-			yamltest.Check(t, path+"/"+caller, sources)
+			yamlxtest.Check(t, path+"/"+caller, sources)
 		}
 	}
 }

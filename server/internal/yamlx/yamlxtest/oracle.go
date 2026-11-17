@@ -1,4 +1,4 @@
-package yamltest
+package yamlxtest
 
 import (
 	"bufio"

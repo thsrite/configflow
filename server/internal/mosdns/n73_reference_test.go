@@ -8,7 +8,7 @@ import (
 
 	"configflow/internal/jsonx"
 	"configflow/internal/yamlx"
-	"configflow/internal/yamlx/yamltest"
+	"configflow/internal/yamlx/yamlxtest"
 
 	"gopkg.in/yaml.v3"
 )
@@ -19,7 +19,7 @@ func mosDNSSources(fn string, args []any) []string {
 	}
 	switch fn {
 	case "generate":
-		return yamltest.TextFields(args[0], "custom_config", "local_dns", "remote_dns", "fallback_dns")
+		return yamlxtest.TextFields(args[0], "custom_config", "local_dns", "remote_dns", "fallback_dns")
 	case "upstreams", "convert":
 		if text, ok := args[0].(string); ok {
 			return []string{text}
@@ -35,19 +35,19 @@ func sameMosDNSOutput(fn string, want, got any) bool {
 	if fn == "generate" {
 		a, aok := want.(string)
 		b, bok := got.(string)
-		return aok && bok && yamltest.SemanticEqual(a, b)
+		return aok && bok && yamlxtest.SemanticEqual(a, b)
 	}
 	if fn == "upstreams" {
 		a, aok := want.(*jsonx.Object)
 		b, bok := got.(*jsonx.Object)
-		return aok && bok && a.Len() == 1 && b.Len() == 1 && yamltest.SemanticEqual(a.GetString("dump"), b.GetString("dump"))
+		return aok && bok && a.Len() == 1 && b.Len() == 1 && yamlxtest.SemanticEqual(a.GetString("dump"), b.GetString("dump"))
 	}
 	return false
 }
 
 // nativeMosDNSOutcome permits only an independently classified input change;
 // all generated values are compared against the actual Python converter.
-func nativeMosDNSOutcome(t *testing.T, oracle *yamltest.Oracle, row *jsonx.Object, got any, actualErr error) bool {
+func nativeMosDNSOutcome(t *testing.T, oracle *yamlxtest.Oracle, row *jsonx.Object, got any, actualErr error) bool {
 	t.Helper()
 	fn := row.GetString("fn")
 	args := row.GetList("args")
@@ -58,18 +58,18 @@ func nativeMosDNSOutcome(t *testing.T, oracle *yamltest.Oracle, row *jsonx.Objec
 			var rejection *UnsupportedYAMLError
 			return errors.As(actualErr, &rejection) && errors.Is(actualErr, parseErrKind(parseErr)) && actualErr.Error() == fmt.Sprintf(msgCustomYAML, parseErr)
 		}
-		class, err := yamltest.Classify(source)
+		class, err := yamlxtest.Classify(source)
 		if err != nil {
 			return false
 		}
-		changed = changed || class != yamltest.Equal && class != yamltest.Diagnostics
+		changed = changed || class != yamlxtest.Equal && class != yamlxtest.Diagnostics
 	}
 	if !changed && (actualErr != nil || row.Has("err") || fn != "generate" && fn != "upstreams") {
 		return false
 	}
 	args = jsonx.DeepCopy(args).([]any)
 	normalize := func(source string) string {
-		text, err := yamltest.ReferenceText(source)
+		text, err := yamlxtest.ReferenceText(source)
 		if err != nil {
 			return source
 		}
@@ -108,7 +108,7 @@ func nativeMosDNSOutcome(t *testing.T, oracle *yamltest.Oracle, row *jsonx.Objec
 		} else if object, ok := got.(*jsonx.Object); ok {
 			actualText = object.GetString("dump")
 		}
-		normalized, err := yamltest.ReferenceText(actualText)
+		normalized, err := yamlxtest.ReferenceText(actualText)
 		if err != nil {
 			return false
 		}

@@ -4,6 +4,7 @@ package difftest
 import (
 	"bufio"
 	"bytes"
+	"configflow/internal/yamlx"
 	"context"
 	"encoding/json"
 	"errors"
@@ -34,7 +35,6 @@ import (
 	"configflow/internal/rules"
 	"configflow/internal/substore"
 	"configflow/internal/taskstatus"
-	"gopkg.in/yaml.v3"
 )
 
 const secret = "c31-synthetic-jwt-secret"
@@ -291,7 +291,7 @@ func snapshot(t *testing.T, srv *httpxtest.Server) any {
 		if ext == ".json" {
 			err = json.Unmarshal(data, &value)
 		} else {
-			err = yaml.Unmarshal(data, &value)
+			err = yamlx.Unmarshal(data, &value)
 		}
 		if err != nil {
 			return err
@@ -414,7 +414,7 @@ func (w *world) callComparing(method, path, body string, authenticated, nativeSy
 	} else if strings.Contains(got.Header.Get("Content-Type"), "json") {
 		err = json.Unmarshal(got.Body, &gb)
 	} else if strings.Contains(got.Header.Get("Content-Type"), "yaml") {
-		err = yaml.Unmarshal(got.Body, &gb)
+		err = yamlx.Unmarshal(got.Body, &gb)
 	} else {
 		gb = string(got.Body)
 	}
@@ -577,7 +577,7 @@ func (w *world) generate(body string) *httpxtest.Result {
 		result = map[string]any{"success": false, "message": message}
 	} else {
 		var content any
-		if err := yaml.Unmarshal([]byte(out.Content), &content); err != nil {
+		if err := yamlx.Unmarshal([]byte(out.Content), &content); err != nil {
 			t.Fatal(err)
 		}
 		result = map[string]any{"name": out.Name, "file_path": out.FilePath, "content": content, "subscription_node_counts": out.SubscriptionNodeCounts, "total_count": out.TotalCount}

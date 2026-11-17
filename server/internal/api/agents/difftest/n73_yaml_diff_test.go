@@ -5,7 +5,7 @@ import (
 
 	"configflow/internal/jsonx"
 	"configflow/internal/yamlx"
-	"configflow/internal/yamlx/yamltest"
+	"configflow/internal/yamlx/yamlxtest"
 )
 
 func equalComposeYAML(left, right string) bool {
@@ -39,8 +39,8 @@ func equalGuideComposeLayout(expected, actual []byte) []byte {
 	leftBundle, lok := a.Value("compose_bundle").(*jsonx.Object)
 	rightBundle, rok := b.Value("compose_bundle").(*jsonx.Object)
 	if lok && rok {
-		leftArchive, leftYAML, leftErr := yamltest.ComposeArchive(leftBundle.GetString("content_base64"))
-		rightArchive, rightYAML, rightErr := yamltest.ComposeArchive(rightBundle.GetString("content_base64"))
+		leftArchive, leftYAML, leftErr := yamlxtest.ComposeArchive(leftBundle.GetString("content_base64"))
+		rightArchive, rightYAML, rightErr := yamlxtest.ComposeArchive(rightBundle.GetString("content_base64"))
 		if leftErr == nil && rightErr == nil && equalComposeYAML(leftYAML, rightYAML) && jsonx.Equal(leftArchive, rightArchive) {
 			leftBundle.Set("content_base64", rightBundle.GetString("content_base64"))
 		}

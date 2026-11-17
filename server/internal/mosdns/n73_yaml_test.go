@@ -9,7 +9,7 @@ import (
 
 	"configflow/internal/jsonx"
 	"configflow/internal/yamlx"
-	"configflow/internal/yamlx/yamltest"
+	"configflow/internal/yamlx/yamlxtest"
 )
 
 func TestN73YAMLReadGraphs(t *testing.T) {
@@ -141,7 +141,7 @@ func TestN73SharedUpstreamMetadataMatchesPython(t *testing.T) {
 		t.Fatal("synthetic regression fixture changed")
 	}
 	output, err, _ := callRow("generate", row.GetList("args"))
-	oracle := yamltest.NewOracle(t, "server/internal/mosdns/testdata/n73_reference.py")
+	oracle := yamlxtest.NewOracle(t, "server/internal/mosdns/testdata/n73_reference.py")
 	if !nativeMosDNSOutcome(t, oracle, row, output, err) {
 		t.Fatalf("shared metadata output: %v", err)
 	}

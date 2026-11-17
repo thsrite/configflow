@@ -5,7 +5,7 @@ import (
 
 	"configflow/internal/jsonx"
 	"configflow/internal/yamlx"
-	"configflow/internal/yamlx/yamltest"
+	"configflow/internal/yamlx/yamlxtest"
 )
 
 // nativeProviderOutcome grants no blanket message exemption: the native error
@@ -22,7 +22,7 @@ func nativeProviderOutcome(kind string, input, want, got *jsonx.Object) bool {
 		return false
 	}
 	message := got.GetString("message")
-	for _, source := range yamltest.TextFields(input, "text", "content") {
+	for _, source := range yamlxtest.TextFields(input, "text", "content") {
 		_, err := yamlx.Parse([]byte(source))
 		if err == nil {
 			continue

@@ -3,6 +3,7 @@ package importer_test
 import (
 	"bufio"
 	"bytes"
+	"configflow/internal/yamlx"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -11,7 +12,6 @@ import (
 	"testing"
 
 	"configflow/internal/importer"
-	"gopkg.in/yaml.v3"
 )
 
 type corpusRow struct {
@@ -34,7 +34,7 @@ func normalized(data []byte) (any, error) {
 			if engine, ok := profile["mihomo"].(map[string]any); ok {
 				if text, ok := engine["custom_config"].(string); ok {
 					var parsed any
-					if err := yaml.Unmarshal([]byte(text), &parsed); err != nil {
+					if err := yamlx.Unmarshal([]byte(text), &parsed); err != nil {
 						return nil, err
 					}
 					raw, err := json.Marshal(parsed)

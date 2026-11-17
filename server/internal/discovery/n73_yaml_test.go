@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/yamlx/yamltest"
+	"configflow/internal/yamlx/yamlxtest"
 )
 
 func TestN73CustomPortYAMLGraphs(t *testing.T) {
@@ -68,5 +68,5 @@ func TestN73CustomPortsIgnoreCompositeMetadata(t *testing.T) {
 
 func TestN73CustomPortReaderMigrationGate(t *testing.T) {
 	sources := []string{"mixed-port: 7890", "port: 7891\nlisteners: [{name: Synthetic, port: 7892}]", "base: &b {mixed-port: 0o17322}\n<<: *b\n", "? [a,b]\n: ignored\nmixed-port: 7890", "mixed-port: !custom bad", "mixed-port: 1\nmixed-port: 2", "["}
-	yamltest.Check(t, "discovery/customPorts", sources)
+	yamlxtest.Check(t, "discovery/customPorts", sources)
 }

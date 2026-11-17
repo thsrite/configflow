@@ -3,6 +3,7 @@ package agents
 import (
 	"bufio"
 	"bytes"
+	"configflow/internal/yamlx"
 	"context"
 	"encoding/json"
 	"errors"
@@ -22,7 +23,6 @@ import (
 	"configflow/internal/jsonx"
 	"configflow/internal/oxidns"
 	"configflow/internal/repo"
-	"gopkg.in/yaml.v3"
 )
 
 type clientWorld struct {
@@ -168,7 +168,7 @@ func a24NormalizeInPlace(v any) any {
 			if k == "native_config" || k == "template_base_config" {
 				if text, ok := v.(string); ok && text != "" {
 					var parsed any
-					if yaml.Unmarshal([]byte(text), &parsed) == nil {
+					if yamlx.Unmarshal([]byte(text), &parsed) == nil {
 						raw, err := json.Marshal(parsed)
 						if err == nil {
 							json.Unmarshal(raw, &parsed)
@@ -213,7 +213,7 @@ func a24State(t *testing.T, s *httpxtest.Server) any {
 		if ext == ".json" {
 			err = json.Unmarshal(raw, &v)
 		} else {
-			err = yaml.Unmarshal(raw, &v)
+			err = yamlx.Unmarshal(raw, &v)
 		}
 		if err != nil {
 			return err

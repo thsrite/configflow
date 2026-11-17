@@ -4,14 +4,13 @@ package difftest
 import (
 	"bufio"
 	"bytes"
+	"configflow/internal/yamlx"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
-
-	"gopkg.in/yaml.v3"
 	"testing"
 
 	"configflow/internal/devicenotes"
@@ -211,7 +210,7 @@ func semantic(value any) any {
 			if key == "native_config" || key == "template_base_config" {
 				if text, ok := item.(string); ok {
 					var doc any
-					if yaml.Unmarshal([]byte(text), &doc) == nil {
+					if yamlx.Unmarshal([]byte(text), &doc) == nil {
 						v[key] = doc
 						continue
 					}

@@ -8,7 +8,7 @@ import (
 
 	"configflow/internal/jsonx"
 	"configflow/internal/yamlx"
-	"configflow/internal/yamlx/yamltest"
+	"configflow/internal/yamlx/yamlxtest"
 )
 
 func TestN73GatewayReaderMigration(t *testing.T) {
@@ -22,7 +22,7 @@ func TestN73GatewayReaderMigration(t *testing.T) {
 			payloads = append(payloads, stripped)
 		}
 	}
-	for _, row := range yamltest.Rows(t, "testdata/a19_corpus.jsonl.gz") {
+	for _, row := range yamlxtest.Rows(t, "testdata/a19_corpus.jsonl.gz") {
 		args := row.GetObject("args")
 		if config := args.GetObject("config"); config != nil {
 			if mihomo := config.GetObject("mihomo"); mihomo != nil {
@@ -30,7 +30,7 @@ func TestN73GatewayReaderMigration(t *testing.T) {
 					bases = append(bases, source)
 				}
 			}
-			for _, source := range yamltest.TextFields(config, "content") {
+			for _, source := range yamlxtest.TextFields(config, "content") {
 				addPayload(source)
 			}
 		}
@@ -48,8 +48,8 @@ func TestN73GatewayReaderMigration(t *testing.T) {
 	if len(bases) == 0 || len(payloads) == 0 {
 		t.Fatal("real gateway reader sources missing")
 	}
-	yamltest.Check(t, "gateway/base", bases)
-	yamltest.Check(t, "gateway/payload", payloads)
+	yamlxtest.Check(t, "gateway/base", bases)
+	yamlxtest.Check(t, "gateway/payload", payloads)
 }
 
 func TestN73GatewayRejectsUnsafeAliases(t *testing.T) {

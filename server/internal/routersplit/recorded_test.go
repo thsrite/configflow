@@ -15,7 +15,7 @@ import (
 	"configflow/internal/jsonx"
 	"configflow/internal/repo"
 	"configflow/internal/yamlx"
-	"configflow/internal/yamlx/yamltest"
+	"configflow/internal/yamlx/yamlxtest"
 )
 
 // Replay of every router_split call the Python suite made
@@ -321,7 +321,7 @@ func replay(t *testing.T, path string) {
 		problems = append(problems, env.problems...)
 		if len(problems) > 0 && len(env.problems) == 0 && env.next == len(env.calls) {
 			class, matches := oracle.compare(t, row, out, err)
-			if !matches && (class == yamltest.Typing || class == yamltest.Composite || class == yamltest.Deep) && row.Fn == "full_tun_base_yaml" && err == nil {
+			if !matches && (class == yamlxtest.Typing || class == yamlxtest.Composite || class == yamlxtest.Deep) && row.Fn == "full_tun_base_yaml" && err == nil {
 				if source, ok := rowYAML(row); ok {
 					if text, ok := out.(string); ok {
 						matches = nativeFullTunInvariant(source, text)
@@ -377,5 +377,5 @@ func sameYAML(got, want any) bool {
 		return false
 	}
 	right, err := yamlx.Parse([]byte(w))
-	return err == nil && (yamlx.Equal(left, right) || yamltest.SemanticEqual(g, w))
+	return err == nil && (yamlx.Equal(left, right) || yamlxtest.SemanticEqual(g, w))
 }

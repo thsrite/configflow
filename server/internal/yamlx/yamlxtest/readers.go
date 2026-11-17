@@ -51,6 +51,15 @@ func ReaderCases(t testing.TB, path string) *jsonx.Object {
 // projectors are transition functions only, never consumer business functions.
 func CheckReaderFixtures(t testing.TB, valuesPath, expectedPath string, projectors map[string]func(*yamlx.Node) error) {
 	t.Helper()
+	file, err := os.Open(valuesPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	historyErr := historicalFixture(file)
+	file.Close()
+	if historyErr != nil {
+		t.Fatal(historyErr)
+	}
 	sources := Fixture(t, valuesPath)
 	expected := Fixture(t, expectedPath)
 	modes, classes := map[string]int{}, map[string]int{}
@@ -69,24 +78,12 @@ func CheckReaderFixtures(t testing.TB, valuesPath, expectedPath string, projecto
 			}
 			classes[label]++
 		}
-		var oldErr error
-		// This is the dedicated migration gate. Consumers never call these old APIs.
-		switch mode {
-		case "parser", "core-corpus":
-			_, oldErr = yamlx.SafeLoad(source)
-		case "dialers":
-			_, oldErr = yamlx.LoadCSafeFirst(source, yamlx.LoadOptions{KeepNonStringKeys: true})
-		case "gateway-payload":
-			_, oldErr = yamlx.LoadWith(source, yamlx.LoadOptions{KeepNonStringKeys: true, KeepUnrepresentable: true})
-		default:
-			_, oldErr = yamlx.LoadWith(source, yamlx.LoadOptions{KeepNonStringKeys: true})
+		history, err := HistoricalReader(mode, source)
+		if err != nil {
+			t.Fatal(err)
 		}
-		oldMessage := ""
-		if oldErr != nil {
-			oldMessage = oldErr.Error()
-		}
-		if oldMessage != record.GetString("old_error") {
-			t.Fatalf("old API changed for %s", id)
+		if history.OldError != record.GetString("old_error") {
+			t.Fatalf("historical loader error changed for %s", id)
 		}
 		n, err := yamlx.Parse([]byte(source))
 		if err == nil {

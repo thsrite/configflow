@@ -4,6 +4,7 @@ package difftest
 import (
 	"bufio"
 	"bytes"
+	"configflow/internal/yamlx"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -31,7 +32,6 @@ import (
 	"configflow/internal/repo"
 	"configflow/internal/substore"
 	"configflow/internal/taskstatus"
-	"gopkg.in/yaml.v3"
 )
 
 const secret = "c30-synthetic-jwt-secret"
@@ -281,7 +281,7 @@ func snapshot(t *testing.T, srv *httpxtest.Server) any {
 		if ext == ".json" {
 			err = json.Unmarshal(data, &value)
 		} else {
-			err = yaml.Unmarshal(data, &value)
+			err = yamlx.Unmarshal(data, &value)
 		}
 		if err != nil {
 			return err
@@ -379,7 +379,7 @@ func (w *world) call(method, path, body string, authenticated bool) answer {
 	if strings.Contains(got.Header.Get("Content-Type"), "json") {
 		err = json.Unmarshal(got.Body, &gb)
 	} else if strings.Contains(got.Header.Get("Content-Type"), "yaml") {
-		err = yaml.Unmarshal(got.Body, &gb)
+		err = yamlx.Unmarshal(got.Body, &gb)
 	} else {
 		gb = string(got.Body)
 	}

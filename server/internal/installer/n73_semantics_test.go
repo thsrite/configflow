@@ -11,7 +11,7 @@ import (
 
 	"configflow/internal/jsonx"
 	"configflow/internal/yamlx"
-	"configflow/internal/yamlx/yamltest"
+	"configflow/internal/yamlx/yamlxtest"
 )
 
 var nativeArtifactReferences = sync.OnceValues(func() (map[string]string, error) {
@@ -40,7 +40,7 @@ func nativeArtifactDigest(value any) (string, error) {
 }
 
 func nativeZipValue(encoded string) (*jsonx.Object, error) {
-	manifest, _, err := yamltest.ComposeArchive(encoded)
+	manifest, _, err := yamlxtest.ComposeArchive(encoded)
 	return manifest, err
 }
 
@@ -124,7 +124,7 @@ func nativeOutcomeEqual(want, got any, key string) bool {
 			if err != nil {
 				return false
 			}
-			manifest, text, err := yamltest.ComposeArchive(actual.GetString("content_base64"))
+			manifest, text, err := yamlxtest.ComposeArchive(actual.GetString("content_base64"))
 			references, referenceErr := nativeArtifactReferences()
 			if err != nil || referenceErr != nil || !writerYAMLEqual(references["yaml:"+hash], text) || canonical(reference) != canonical(manifest) {
 				return false
@@ -132,11 +132,11 @@ func nativeOutcomeEqual(want, got any, key string) bool {
 			expected.Delete("content_sha256")
 			actual.Delete("content_base64")
 		} else if expected.Has("content_base64") && actual.Has("content_base64") {
-			a, aText, err := yamltest.ComposeArchive(expected.GetString("content_base64"))
+			a, aText, err := yamlxtest.ComposeArchive(expected.GetString("content_base64"))
 			if err != nil {
 				return false
 			}
-			b, bText, err := yamltest.ComposeArchive(actual.GetString("content_base64"))
+			b, bText, err := yamlxtest.ComposeArchive(actual.GetString("content_base64"))
 			if err != nil {
 				return false
 			}

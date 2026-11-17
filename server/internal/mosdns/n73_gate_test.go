@@ -7,7 +7,7 @@ import (
 
 	"configflow/internal/jsonx"
 	"configflow/internal/rules"
-	"configflow/internal/yamlx/yamltest"
+	"configflow/internal/yamlx/yamlxtest"
 )
 
 func TestN73MosDNSReaderMigrationGate(t *testing.T) {
@@ -20,7 +20,7 @@ func TestN73MosDNSReaderMigrationGate(t *testing.T) {
 			}
 			switch row.GetString("fn") {
 			case "generate":
-				byCaller["custom/upstreams"] = append(byCaller["custom/upstreams"], yamltest.TextFields(args[0], "custom_config", "local_dns", "remote_dns", "fallback_dns")...)
+				byCaller["custom/upstreams"] = append(byCaller["custom/upstreams"], yamlxtest.TextFields(args[0], "custom_config", "local_dns", "remote_dns", "fallback_dns")...)
 			case "upstreams":
 				if source, ok := args[0].(string); ok {
 					byCaller["upstreams"] = append(byCaller["upstreams"], source)
@@ -32,7 +32,7 @@ func TestN73MosDNSReaderMigrationGate(t *testing.T) {
 			}
 		}
 		for caller, sources := range byCaller {
-			yamltest.Check(t, path+"/"+caller, sources)
+			yamlxtest.Check(t, path+"/"+caller, sources)
 		}
 	}
 }
@@ -49,7 +49,7 @@ func TestN73ArchiveAndReviewReaderMigrationGate(t *testing.T) {
 			}
 		}
 	}
-	yamltest.Check(t, "mosdns/archive.checkReferences", sources)
+	yamlxtest.Check(t, "mosdns/archive.checkReferences", sources)
 	data, err := os.ReadFile("testdata/review_c21_ref.json")
 	if err != nil {
 		t.Fatal(err)
@@ -66,5 +66,5 @@ func TestN73ArchiveAndReviewReaderMigrationGate(t *testing.T) {
 		}
 		sources = append(sources, source)
 	}
-	yamltest.Check(t, "mosdns/C21-review", sources)
+	yamlxtest.Check(t, "mosdns/C21-review", sources)
 }

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"configflow/internal/yamlx/yamltest"
+	"configflow/internal/yamlx/yamlxtest"
 )
 
 func TestN73ComposeReaderMigrationGate(t *testing.T) {
@@ -25,11 +25,11 @@ func TestN73ComposeReaderMigrationGate(t *testing.T) {
 					sources = append(sources, text)
 				}
 			}
-			sources = append(sources, yamltest.TextFields(row.GetObject("out"), "compose")...)
+			sources = append(sources, yamlxtest.TextFields(row.GetObject("out"), "compose")...)
 		}
 	}
 	if len(sources) == 0 {
 		t.Fatal("no Compose reader inputs")
 	}
-	yamltest.Check(t, "installer/readCompose+annotateCompose", sources)
+	yamlxtest.Check(t, "installer/readCompose+annotateCompose", sources)
 }
