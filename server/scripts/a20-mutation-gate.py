@@ -14,6 +14,11 @@ mutants = [
     ('command-whitelist', 'internal/gateway/host/filter.go', 'if !commandPattern.MatchString(step)', 'if commandPattern.MatchString(step) && false', './internal/api/linuxgateway/difftest', '^TestA20HostFlask$'),
     ('credential-knowledge', 'internal/gateway/draft/draft.go', 'sourceCredentials(config, candidate)', 'sourceCredentials(document{}, document{})', './internal/gateway/draft', '^TestDraftPreviewCollectsCredentialsBeforeProjection$'),
     ('credential-metadata', 'internal/gateway/draft/draft.go', 'redact.SanitizeWithSecrets(path, seeds, false)', 'redact.SanitizeWithSecrets(path, nil, false)', './internal/gateway/draft', '^TestDraftPreviewHidesCredentialMetadata$'),
+    # A20 review fixes.
+    ('head-read-only', 'internal/api/agents/gateway.go', '|| c.Request.Method == http.MethodHead', '|| false', './internal/api/linuxgateway/difftest', '^TestA20PythonHEADForwardingWriteIsFixed$'),
+    ('preview-mask-words', 'internal/gateway/draft/adapter.go', 'return slices.ContainsFunc(hiddenKeyWords', 'return false && slices.ContainsFunc(hiddenKeyWords', './internal/gateway/draft', '^TestReviewA20DisplayHidesPythonCredentialKeys$'),
+    ('restore-exact-case', 'internal/gateway/draft/draft.go', 'json.Unmarshal(o["id"], &p.ID)', 'json.Unmarshal(raw, &p)', './internal/gateway/draft', '^TestReviewA20RestorePointMembersAreExactCase$'),
+    ('absent-managed', 'internal/gateway/host/host.go', 'if len(raw) == 0 || string(raw) == "null"', 'if string(raw) == "null"', './internal/gateway/host', '^TestReviewA20PersistEntryWithoutManagedHasNoRecord$'),
 ]
 passed = 0
 for name, relative, before, after, package, test in mutants:
