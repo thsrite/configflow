@@ -1,12 +1,14 @@
 package rules
 
 import (
+	"configflow/internal/rulefetch"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
@@ -18,7 +20,10 @@ import (
 var logger = logx.Get("backend.routes.rules")
 
 // Service owns rule-page operations and their transaction boundaries.
-type Service struct{}
+type Service struct {
+	client *rulefetch.Client
+	now    func() time.Time
+}
 
 func invalid(message string) error { return repo.NewValidationError(message) }
 func normalized(item, previous, profile record) error {

@@ -30,6 +30,9 @@ func IsRuleType(kind string) bool {
 	return found
 }
 
+// AllowsCommaPayload reports whether a rule type keeps commas inside its payload.
+func AllowsCommaPayload(kind string) bool { return commaPayload(kind) }
+
 // commaPayload reports the types whose payload may contain commas.
 func commaPayload(kind string) bool {
 	switch kind {

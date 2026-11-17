@@ -31,3 +31,24 @@ const (
 )
 
 const msgDNSUnsupported = "不支持的 DNS 处理：%s"
+
+const (
+	msgComposeObject        = "请求必须是 JSON 对象"
+	msgPosition             = "位置只能是 top 或 bottom"
+	msgPaste                = "请输入规则"
+	msgPasteLimit           = "一次最多添加 200 条，较多条目请改为新建规则集"
+	msgNoRules              = "没有可添加的规则"
+	msgIgnorePolicy         = "忽略第 %d 行行尾策略 %s"
+	msgWildcard             = "%s 将按 DOMAIN-SUFFIX 添加，也包含 %s 本身"
+	msgUnsupportedLineDNS   = "第 %d 行 %s 规则不参与 DNS 分流，请把 DNS 设为默认上游"
+	msgSelectLibraries      = "请选择 1 到 50 个规则集"
+	msgLibrarySource        = "请提供新规则集的来源"
+	msgLibraryName          = "请填写规则集名称"
+	msgRuleSourceKind       = "请选择规则来源：values、library 或 new_library"
+	msgDownloadFailed       = "规则源下载失败，未添加规则，请检查来源后重试"
+	msgLibraryExists        = "规则库已有同名规则集「%s」"
+	msgLibraryUsed          = "该规则集已在策略规则 #%d"
+	msgInvalidSource        = "请提供有效的规则来源和订阅地址"
+	msgComposedCacheWarning = "规则集已保存，但本地缓存失败，发布时会重新获取"
+	msgComposedCacheLog     = "Caching composed rule library failed; committed save retained"
+)

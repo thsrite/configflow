@@ -1,8 +1,10 @@
 package rules
 
 import (
+	"configflow/internal/rulefetch"
 	"errors"
 	"strings"
+	"time"
 
 	"configflow/internal/auth"
 	"configflow/internal/httpx"
@@ -11,8 +13,20 @@ import (
 
 // Register installs rule composition and DNS routes. Public delivery routes are
 // registered separately with their own cache-owner cancellation semantics.
-func Register(r *httpx.Router) {
-	s := &Service{}
+func Register(r *httpx.Router) { RegisterWithOptions(r, Options{}) }
+
+// Options supplies deterministic time and loopback-only rule transport in tests.
+type Options struct {
+	Client *rulefetch.Client
+	Now    func() time.Time
+}
+
+// RegisterWithOptions installs the routes with injected external collaborators.
+func RegisterWithOptions(r *httpx.Router, options Options) {
+	if options.Now == nil {
+		options.Now = time.Now
+	}
+	s := &Service{client: options.Client, now: options.Now}
 	for _, path := range []struct {
 		path, name string
 		sets       bool
@@ -47,6 +61,14 @@ func Register(r *httpx.Router) {
 			return respond(out, err)
 		}))
 	}
+	r.POST("/api/rules/compose", "rules.compose_rules", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
+		body, err := readBody(c, true)
+		if err != nil {
+			return nil, err
+		}
+		out, err := s.Compose(c.Context(), c.Param("profile_id"), body, requestBase(c, body))
+		return respond(out, err)
+	}))
 	r.POST("/api/rules/group-name", "rules.rename_rule_group", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
 		body, err := readBody(c, true)
 		if err != nil {
@@ -112,6 +134,14 @@ func requestBase(c *httpx.Ctx, body record) string {
 func respond(value any, err error) (*httpx.Response, error) {
 	if err == nil {
 		return httpx.JSON(value), nil
+	}
+	var paste *pasteError
+	if errors.As(err, &paste) {
+		return httpx.JSONStatus(400, struct {
+			Success bool         `json:"success"`
+			Message string       `json:"message"`
+			Fields  []fieldError `json:"field_errors"`
+		}{false, paste.Error(), paste.Fields}), nil
 	}
 	var f *fault
 	if errors.As(err, &f) {
