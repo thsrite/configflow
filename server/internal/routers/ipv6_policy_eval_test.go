@@ -127,7 +127,7 @@ func TestR09SharedEvaluatorPython(t *testing.T) {
 			if got := MatchPolicyRule(tc.Snapshot, tc.Row, tc.Packet); got != want {
 				t.Fatalf("match %v want %v", got, want)
 			}
-			if got := EvaluatePolicyChain(tc.Snapshot, "forward", tc.Packet); got != reference[i].Decision {
+			if got := EvaluatePolicyChain(tc.Snapshot, "filter", "forward", tc.Packet).Decision; got != reference[i].Decision {
 				t.Fatalf("decision %s want %s", got, reference[i].Decision)
 			}
 		})
@@ -147,7 +147,7 @@ func FuzzR09PolicyEvaluator(f *testing.F) {
 			return
 		}
 		_ = MatchPolicyRule(tc.Snapshot, tc.Row, tc.Packet)
-		_ = EvaluatePolicyChain(tc.Snapshot, "forward", tc.Packet)
+		_ = EvaluatePolicyChain(tc.Snapshot, "filter", "forward", tc.Packet).Decision
 	})
 }
 func FuzzR09DNSGuardManifest(f *testing.F) {

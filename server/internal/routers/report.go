@@ -414,6 +414,7 @@ func BuildReport(desired *Desired, state *RouterState) (*Report, error) {
 	if desired.ROSPolicy != nil {
 		parts = append(parts, policyReportPart(desired, state))
 	}
+	parts = append(parts, ipv6ReportParts(state)...)
 	r.Parts = parts
 	for _, part := range parts {
 		r.Routes.Extra = slices.DeleteFunc(r.Routes.Extra, func(e ExtraRoute) bool { return slices.Contains(part.RetireExtra, e.RouteID) })

@@ -352,7 +352,7 @@ func refusedConsole(error error) bool {
 	return routerErrorKind(error) != KindUncertainWrite || permissionError.MatchString(error.Error())
 }
 
-func (d *RouterOS) consoleAdd(ctx context.Context, values []Row, current []Row, hasCurrent bool, path string) (*consoleAddResult, error) {
+func (d *RouterOS) consoleAdd(ctx context.Context, values []Row, current []Row, hasCurrent bool, path string, beforeWrite ...func([]Row) error) (*consoleAddResult, error) {
 	destinations := make([]string, len(values))
 	for i, value := range values {
 		destinations[i] = rosText(value["dst-address"])
@@ -362,6 +362,11 @@ func (d *RouterOS) consoleAdd(ctx context.Context, values []Row, current []Row, 
 		current, err = d.query(ctx, "dst-address", destinations, path)
 		if err != nil {
 			return nil, nil
+		}
+	}
+	for _, guard := range beforeWrite {
+		if err := guard(current); err != nil {
+			return nil, err
 		}
 	}
 	before := rowIDs(current)
@@ -513,7 +518,7 @@ func checkWritten(check rosCheck, row Row, rows []Row) error {
 }
 
 func (d *RouterOS) addRoutes(ctx context.Context, rawOps []json.RawMessage, batch []int,
-	record func(json.RawMessage, json.RawMessage), path string) ([]int, error) {
+	record func(json.RawMessage, json.RawMessage), path string, beforeWrite ...func([]Row) error) ([]int, error) {
 	ops := make([]rosOperation, len(batch))
 	values := make([]Row, len(batch))
 	for i, index := range batch {
@@ -522,7 +527,7 @@ func (d *RouterOS) addRoutes(ctx context.Context, rawOps []json.RawMessage, batc
 		}
 		values[i] = routeAddValues(ops[i])
 	}
-	added, err := d.consoleAdd(ctx, values, nil, false, path)
+	added, err := d.consoleAdd(ctx, values, nil, false, path, beforeWrite...)
 	if err != nil {
 		return nil, err
 	}
@@ -614,7 +619,7 @@ func findProven(items []provenRoute, index int) *provenRoute {
 }
 
 func (d *RouterOS) deleteRoutes(ctx context.Context, rawOps []json.RawMessage, batch []int,
-	record func(json.RawMessage, json.RawMessage), path string) ([]int, error) {
+	record func(json.RawMessage, json.RawMessage), path string, proofs ...map[string]Row) ([]int, error) {
 	ops := make([]rosOperation, len(batch))
 	cidrs := make([]string, len(batch))
 	for i, index := range batch {
@@ -630,6 +635,19 @@ func (d *RouterOS) deleteRoutes(ctx context.Context, rawOps []json.RawMessage, b
 	byID := map[string]Row{}
 	for _, row := range rows {
 		byID[row.id()] = row
+	}
+	if len(proofs) > 0 {
+		counts := map[string]int{}
+		for _, row := range rows {
+			counts[row.id()]++
+		}
+		for _, op := range ops {
+			row := byID[op.ID]
+			want, ok := proofs[0][op.ID]
+			if !ok || row == nil || counts[op.ID] != 1 || !sameRow(StableIPv6Row(row), want) || policyFlag(row["dynamic"]) || policyFlag(row["connect"]) {
+				return nil, routerError(messageIPv6RoutesOwnership)
+			}
+		}
 	}
 	type preparedRoute struct {
 		index int
@@ -667,6 +685,28 @@ func (d *RouterOS) deleteRoutes(ctx context.Context, rawOps []json.RawMessage, b
 	var failure error
 	for start := 0; start < len(ids); start += removeBatch {
 		end := min(start+removeBatch, len(ids))
+		if len(proofs) > 0 {
+			current, readErr := d.query(ctx, ".id", ids[start:end], path)
+			if readErr != nil {
+				failure = readErr
+				break
+			}
+			byID := map[string]Row{}
+			counts := map[string]int{}
+			for _, row := range current {
+				byID[row.id()] = row
+				counts[row.id()]++
+			}
+			for _, id := range ids[start:end] {
+				if counts[id] != 1 || !sameRow(StableIPv6Row(byID[id]), proofs[0][id]) || policyFlag(byID[id]["dynamic"]) || policyFlag(byID[id]["connect"]) {
+					failure = routerError(messageIPv6RoutesOwnership)
+					break
+				}
+			}
+			if failure != nil {
+				break
+			}
+		}
 		if _, err := d.request(ctx, "POST", path+"/remove", Row{".id": strings.Join(ids[start:end], ",")}, rosTimeout); err != nil {
 			failure = err
 			break
@@ -791,7 +831,20 @@ func (d *RouterOS) restoreSingleChange(ctx context.Context, change ROSChange) st
 	return ""
 }
 
-func (d *RouterOS) restoreRemoved(ctx context.Context, changes []ROSChange, path string) []string {
+func (d *RouterOS) restoreRemoved(ctx context.Context, changes []ROSChange, path string, remaps ...map[string]string) []string {
+	restored := func(change ROSChange) string {
+		check, err := d.perform(ctx, change, &[]ROSChange{}, true)
+		if err == nil {
+			err = d.verifyChange(ctx, check)
+		}
+		if err != nil {
+			return rollbackFailed(err.Error())
+		}
+		if len(remaps) > 0 {
+			remaps[0][change.ID] = check.ID
+		}
+		return ""
+	}
 	errors := make([]string, len(changes))
 	ids := make([]string, len(changes))
 	for i, change := range changes {
@@ -800,7 +853,7 @@ func (d *RouterOS) restoreRemoved(ctx context.Context, changes []ROSChange, path
 	presentRows, err := d.query(ctx, ".id", ids, path)
 	if err != nil {
 		for i, change := range changes {
-			errors[i] = d.restoreSingleChange(ctx, change)
+			errors[i] = restored(change)
 		}
 		return errors
 	}
@@ -826,7 +879,7 @@ func (d *RouterOS) restoreRemoved(ctx context.Context, changes []ROSChange, path
 		}
 		if rows == nil {
 			for _, index := range chunk {
-				errors[index] = d.restoreSingleChange(ctx, changes[index])
+				errors[index] = restored(changes[index])
 			}
 			return
 		}
@@ -855,7 +908,7 @@ func (d *RouterOS) restoreRemoved(ctx context.Context, changes []ROSChange, path
 		}
 		if added == nil {
 			for _, index := range adding {
-				errors[index] = d.restoreSingleChange(ctx, changes[index])
+				errors[index] = restored(changes[index])
 			}
 			return
 		}
@@ -875,13 +928,15 @@ func (d *RouterOS) restoreRemoved(ctx context.Context, changes []ROSChange, path
 			}
 			if checkErr := checkWritten(rosCheck{ID: rosText(row[".id"]), Values: changes[index].Values}, row, nil); checkErr != nil {
 				errors[index] = rollbackFailed(checkErr.Error())
+			} else if len(remaps) > 0 {
+				remaps[0][changes[index].ID] = row.id()
 			}
 		}
 		for _, index := range adding[min(added.Count, len(adding)):] {
 			if added.Unexplained {
 				errors[index] = rollbackFailed(fmt.Sprintf(messageBatchIncomplete, path))
 			} else {
-				errors[index] = d.restoreSingleChange(ctx, changes[index])
+				errors[index] = restored(changes[index])
 			}
 		}
 	}
@@ -894,6 +949,9 @@ func (d *RouterOS) restoreRemoved(ctx context.Context, changes []ROSChange, path
 			} else if !rowsEqual(d.ownershipSnapshot(path, current), change.Expected) {
 				errors[index] = rollbackFailed(messageRollbackChanged)
 			}
+			if errors[index] == "" && len(remaps) > 0 {
+				remaps[0][change.ID] = change.ID
+			}
 			continue
 		}
 		for _, pendingIndex := range pending {
@@ -903,7 +961,7 @@ func (d *RouterOS) restoreRemoved(ctx context.Context, changes []ROSChange, path
 			}
 		}
 		if !consoleSafe(change.Values) {
-			errors[index] = d.restoreSingleChange(ctx, change)
+			errors[index] = restored(change)
 			continue
 		}
 		// Keep each script within the limit the add path uses (Python did

@@ -1,9 +1,10 @@
 package routers
 
-// This is the shared ipv6_policy rule evaluator. R09 uses its read-only
-// forward-chain subset; R10 must extend this file rather than add a private copy.
+// The shared evaluator is read-only and deliberately conservative: unknown
+// selectors never prove a packet path or a real connection.
 
 import (
+	"fmt"
 	"net/netip"
 	"slices"
 	"strconv"
@@ -27,6 +28,11 @@ const (
 // PolicySnapshot contains the tables needed by the shared rule evaluator.
 // Nil means unreadable; an empty non-nil table proves absence.
 type PolicySnapshot struct {
+	Family           int   `json:"-"`
+	Raw              []Row `json:"raw"`
+	Mangle           []Row `json:"mangle"`
+	NAT              []Row `json:"nat"`
+	Routes           []Row `json:"routes"`
 	Filter           []Row `json:"filter"`
 	AddressLists     []Row `json:"address_lists"`
 	InterfaceLists   []Row `json:"interface_lists"`
@@ -398,14 +404,61 @@ func MatchPolicyRule(s *PolicySnapshot, row Row, p PolicyPacket) PolicyMatch {
 	return out
 }
 
-// EvaluatePolicyChain evaluates ordered filter rules with unknown branches and
-// bounded jumps. It returns allow/drop/unknown; it proves no actual connectivity.
-func EvaluatePolicyChain(s *PolicySnapshot, chain string, p PolicyPacket) string {
-	if s == nil || s.Filter == nil {
-		return "unknown"
+// PolicyDecision contains a static conclusion and its ordered rule evidence.
+// Translation is set only for a proven NAT translation action.
+type PolicyDecision struct {
+	Decision    string   `json:"decision"`
+	Evidence    []string `json:"evidence"`
+	Translation string   `json:"translation,omitempty"`
+}
+
+func (s *PolicySnapshot) table(name string) []Row {
+	if s == nil {
+		return nil
+	}
+	switch name {
+	case "raw":
+		return s.Raw
+	case "mangle":
+		return s.Mangle
+	case "nat":
+		return s.NAT
+	case "filter":
+		return s.Filter
+	}
+	return nil
+}
+
+func policyEvidence(row Row, index int, table, chain string) string {
+	identity := row.id()
+	if identity == "" {
+		identity = fmt.Sprintf(messagePolicyPosition, index+1)
+	}
+	comment := []rune(strings.ReplaceAll(row.text("comment"), "\n", " "))
+	suffix := ""
+	if len(comment) > 0 {
+		suffix = fmt.Sprintf(messagePolicyComment, string(comment[:min(180, len(comment))]))
+	}
+	action := "accept"
+	if row.has("action") {
+		action = row.text("action")
+	}
+	return fmt.Sprintf(messagePolicyEvidence, table, chain, index+1, identity, suffix, action)
+}
+
+// EvaluatePolicyChain evaluates one ordered table with bounded unknown branches
+// and jumps. Nil tables mean unreadable; empty non-nil tables prove absence.
+func EvaluatePolicyChain(s *PolicySnapshot, table, chain string, p PolicyPacket) PolicyDecision {
+	rows := s.table(table)
+	if rows == nil {
+		key := table
+		if s != nil && s.Family == 4 {
+			key = "ipv4_" + key
+		}
+		return PolicyDecision{Decision: "unknown", Evidence: []string{fmt.Sprintf(messagePolicyUnread, key)}}
 	}
 	chains := map[string][]int{}
-	for i, row := range s.Filter {
+	for i, row := range rows {
 		if policyEnabled(row) {
 			chains[row.text("chain")] = append(chains[row.text("chain")], i)
 		}
@@ -415,11 +468,14 @@ func EvaluatePolicyChain(s *PolicySnapshot, chain string, p PolicyPacket) string
 		offset int
 	}
 	budget := 0
-	var walk func(string, int, []frame) string
-	walk = func(current string, offset int, stack []frame) string {
+	var walk func(string, int, []frame, []string) PolicyDecision
+	walk = func(current string, offset int, stack []frame, trail []string) PolicyDecision {
+		result := func(decision string, extra ...string) PolicyDecision {
+			return PolicyDecision{Decision: decision, Evidence: append(slices.Clone(trail), extra...)}
+		}
 		budget++
 		if budget > 256 || len(stack) > 12 {
-			return "unknown"
+			return result("unknown", messagePolicyBudget)
 		}
 		index := -1
 		for _, i := range chains[current] {
@@ -431,57 +487,64 @@ func EvaluatePolicyChain(s *PolicySnapshot, chain string, p PolicyPacket) string
 		if index < 0 {
 			if len(stack) > 0 {
 				parent := stack[len(stack)-1]
-				return walk(parent.chain, parent.offset, stack[:len(stack)-1])
+				return walk(parent.chain, parent.offset, stack[:len(stack)-1], trail)
 			}
-			return "allow"
+			message := fmt.Sprintf(messagePolicyDefault, table, current)
+			if table == "nat" {
+				message = fmt.Sprintf(messagePolicyNATDefault, current)
+			}
+			return result("allow", message)
 		}
-		row := s.Filter[index]
+		row := rows[index]
 		match := MatchPolicyRule(s, row, p)
 		action := "accept"
 		if row.has("action") {
-			// Only an absent action takes the default. Empty or malformed device
-			// values cannot prove that this rule accepts the packet.
 			action, _ = row.str("action")
 		}
 		if match == PolicyNoMatch || action == "log" || action == "passthrough" {
-			return walk(current, index+1, stack)
+			return walk(current, index+1, stack, trail)
 		}
-		apply := func() string {
+		evidence := policyEvidence(row, index, table, current)
+		nextTrail := append(slices.Clone(trail), evidence)
+		apply := func() PolicyDecision {
 			switch action {
 			case "accept":
-				return "allow"
+				return result("allow", evidence)
 			case "drop", "reject":
-				return "drop"
+				return result("drop", evidence)
 			case "return":
 				if len(stack) > 0 {
 					parent := stack[len(stack)-1]
-					return walk(parent.chain, parent.offset, stack[:len(stack)-1])
+					return walk(parent.chain, parent.offset, stack[:len(stack)-1], nextTrail)
 				}
-				return "allow"
+				return result("allow", evidence, messagePolicyReturn)
 			case "jump":
 				target := row.text("jump-target")
-				if target == "" || target == current || len(chains[target]) == 0 {
-					return "unknown"
-				}
+				cycle := target == "" || target == current || len(chains[target]) == 0
 				for _, f := range stack {
-					if f.chain == target {
-						return "unknown"
-					}
+					cycle = cycle || f.chain == target
 				}
-				return walk(target, 0, append(slices.Clone(stack), frame{current, index + 1}))
-			default:
-				return "unknown"
+				if cycle {
+					return result("unknown", evidence, messagePolicyJump)
+				}
+				return walk(target, 0, append(slices.Clone(stack), frame{current, index + 1}), nextTrail)
 			}
+			if table == "nat" && slices.Contains([]string{"masquerade", "src-nat", "dst-nat", "netmap", "redirect"}, action) {
+				out := result("translate", evidence)
+				out.Translation = action
+				return out
+			}
+			return result("unknown", evidence, messagePolicyAction)
 		}
 		matched := apply()
 		if match == PolicyMatches {
 			return matched
 		}
-		skipped := walk(current, index+1, stack)
-		if matched == skipped && (matched == "allow" || matched == "drop") {
-			return matched
+		skipped := walk(current, index+1, stack, trail)
+		if matched.Decision == skipped.Decision && (matched.Decision == "allow" || matched.Decision == "drop") {
+			return PolicyDecision{Decision: matched.Decision, Evidence: uniqueStrings(append(append(matched.Evidence, skipped.Evidence...), messagePolicyConverge))}
 		}
-		return "unknown"
+		return result("unknown", evidence, messagePolicyDiverge)
 	}
-	return walk(chain, 0, nil)
+	return walk(chain, 0, nil, nil)
 }

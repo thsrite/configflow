@@ -83,7 +83,7 @@ func forwardSnapshot(ctx context.Context, d *RouterOS, family int, rows []Row) (
 		}
 	} else {
 		for _, name := range names {
-			rows, err := d.list(ctx, "/ipv6/firewall/address-list?list="+url.QueryEscape(name))
+			rows, err := d.list(ctx, "/ipv6/firewall/address-list?list="+strings.ReplaceAll(url.QueryEscape(name), "+", "%20"))
 			if err != nil {
 				return nil, err
 			}
@@ -126,7 +126,7 @@ func CheckForwardHint(ctx context.Context, d *RouterOS, family int, lan string, 
 	}
 	for _, target := range targets {
 		packet := samePortPacket(lan, target)
-		if EvaluatePolicyChain(snapshot, "forward", packet) != "drop" {
+		if EvaluatePolicyChain(snapshot, "filter", "forward", packet).Decision != "drop" {
 			continue
 		}
 		var taker Row

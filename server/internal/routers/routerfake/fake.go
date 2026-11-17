@@ -68,6 +68,8 @@ type State struct {
 	// PolicyWire supplies the RouterOS wire defaults used by R08 (FIB presence
 	// flag, gateway @main alias, passthrough flag and active resolved next hop).
 	PolicyWire bool `json:"policy_wire,omitempty"`
+	// IPv6Wire supplies static IPv6 route activation and scoped resolution.
+	IPv6Wire bool `json:"ipv6_wire,omitempty"`
 }
 
 // Fake implements a synthetic RouterOS REST device. Control endpoints under
@@ -83,6 +85,7 @@ type Fake struct {
 	hiddenIDs     map[string]bool
 	hideNewRoutes bool
 	policyWire    bool
+	ipv6Wire      bool
 }
 
 // New returns an empty stateful RouterOS fake with all R04 tables available.
@@ -116,6 +119,7 @@ func (f *Fake) Reset(state State) {
 	f.hiddenIDs = map[string]bool{}
 	f.hideNewRoutes = state.HideNewRoutes
 	f.policyWire = state.PolicyWire
+	f.ipv6Wire = state.IPv6Wire
 }
 
 // Snapshot returns a deep copy of tables and calls.
@@ -123,7 +127,7 @@ func (f *Fake) Snapshot() State {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return State{Tables: cloneTables(f.tables), Calls: cloneCalls(f.calls), Faults: slices.Clone(f.faults),
-		HideNewRoutes: f.hideNewRoutes, PolicyWire: f.policyWire}
+		HideNewRoutes: f.hideNewRoutes, PolicyWire: f.policyWire, IPv6Wire: f.ipv6Wire}
 }
 
 // Calls returns the device requests recorded so far.
@@ -429,6 +433,13 @@ func (f *Fake) add(collection string, values Row) (Row, error) {
 			if _, ok := row["immediate-gw"]; !ok {
 				row["immediate-gw"] = gateway + "%bridge"
 			}
+		}
+	}
+	if f.ipv6Wire && collection == "/ipv6/route" {
+		row["active"] = "true"
+		row["dynamic"] = "false"
+		if strings.Contains(text(row["gateway"]), "%") {
+			row["immediate-gw"] = row["gateway"]
 		}
 	}
 	before := text(row["place-before"])

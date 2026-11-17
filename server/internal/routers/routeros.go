@@ -88,15 +88,19 @@ type RouterOS struct {
 	routeBatch int
 	batchMin   int
 
-	forwardFilterRows   []Row
-	natListTouched      bool
-	addressCache        map[string][]Row
-	addressExpected     map[string][]Row
-	addressReads        map[string]addressProof
-	policyManifest      json.RawMessage
-	policyManifestSet   bool
-	dnsGuardManifest    json.RawMessage
-	dnsGuardManifestSet bool
+	forwardFilterRows     []Row
+	natListTouched        bool
+	addressCache          map[string][]Row
+	addressExpected       map[string][]Row
+	addressReads          map[string]addressProof
+	policyManifest        json.RawMessage
+	policyManifestSet     bool
+	dnsGuardManifest      json.RawMessage
+	dnsGuardManifestSet   bool
+	ipv6FakeIPManifest    json.RawMessage
+	ipv6FakeIPManifestSet bool
+	ipv6RoutesManifest    json.RawMessage
+	ipv6RoutesManifestSet bool
 }
 
 // NewRouterOS constructs a REST driver with requests-compatible device HTTP.
@@ -131,6 +135,9 @@ func (d *RouterOS) Close() {
 func (*RouterOS) RenderScript([]json.RawMessage) (string, error) { return "", nil }
 
 func (d *RouterOS) request(ctx context.Context, method, path string, values Row, timeout time.Duration) (any, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	// Like requests' json=None, no values means no body (a nil Row would be "null").
 	var body any
 	if values != nil {
@@ -1344,7 +1351,7 @@ func (d *RouterOS) ownershipSnapshot(path string, row Row) Row {
 	return out
 }
 
-func (d *RouterOS) perform(ctx context.Context, change ROSChange, undo *[]ROSChange, restoring bool) (rosCheck, error) {
+func (d *RouterOS) perform(ctx context.Context, change ROSChange, undo *[]ROSChange, restoring bool, beforeCreate ...func([]Row) error) (rosCheck, error) {
 	method, path := change.Method, change.Path
 	values := cloneRow(change.Values)
 	if values == nil {
@@ -1402,6 +1409,11 @@ func (d *RouterOS) perform(ctx context.Context, change ROSChange, undo *[]ROSCha
 		}
 		if err != nil {
 			return rosCheck{}, err
+		}
+		for _, guard := range beforeCreate {
+			if err := guard(beforeRows); err != nil {
+				return rosCheck{}, err
+			}
 		}
 		before := rowIDs(beforeRows)
 		result, err := d.request(ctx, method, path, values, rosTimeout)
