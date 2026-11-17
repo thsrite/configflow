@@ -18,7 +18,7 @@ pflag=()
 if [ "${1:-}" = "-p" ]; then pflag=(-p="$2"); shift 2; fi
 fuzztime="${GATE_FUZZTIME:-60s}"
 fuzzpar="${GATE_FUZZ_PARALLEL:-2}"
-logs="${GATE_LOGS:-$(mktemp -d /tmp/gate.XXXXXX)}"
+logs="${GATE_LOGS:-$(mktemp -d "${TMPDIR:-/tmp}/gate.XXXXXX")}"
 mkdir -p "$logs"
 echo "gate: logs in $logs"; uptime
 

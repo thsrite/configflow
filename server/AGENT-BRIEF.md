@@ -28,6 +28,9 @@ asked in; the maintainer reads Chinese.
   gate.sh runs at most 2 full gates per server at once and queues the rest. Never run a full `-race` or proddiff
   outside gate.sh; while iterating, test only the packages you changed. A proddiff difference seen only under high
   load (check `/proc/loadavg`) is re-run at a quieter time before it is reported as a finding.
+- **Temp space:** `/tmp` on both servers is a small tmpfs (7.8 GB on .64) that concurrent Go builds filled
+  ("disk quota exceeded"). `rt` now sources `~/.rt-env`, which sets `TMPDIR`/`GOTMPDIR` to `~/.cache/rt-tmp` on the
+  home disk; do not write large files to `/tmp` yourself.
 - **Memory:** `.64` has 20 GB + 20 GB swap since 2026-11-18 (`.32` 31 GB). Before that, parallel full `-race` runs
   got test binaries OOM-killed on .64 (`signal: killed` = OOM, not a test failure — check `sudo dmesg -T | grep -i oom`).
   On .64 run full `-race` / gate.sh with `-p 6`; if a package dies with `signal: killed`, re-run it before reporting.
