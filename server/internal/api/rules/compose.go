@@ -10,6 +10,7 @@ import (
 
 	"configflow/internal/lifecycle"
 	"configflow/internal/oxidns"
+	"configflow/internal/rulefetch"
 	shared "configflow/internal/rules"
 )
 
@@ -28,13 +29,12 @@ func (e *pasteError) Error() string {
 	return fmt.Sprintf(msgLineError, e.Fields[0].Line, e.Fields[0].Message)
 }
 func pasteRows(text, defaultKind string) ([]pasteRow, []string, error) {
-	text = strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\r", "\n")
 	type inputLine struct {
 		number int
 		text   string
 	}
 	lines := []inputLine{}
-	for i, raw := range strings.Split(text, "\n") {
+	for i, raw := range rulefetch.RuleLines(text) {
 		line := strings.TrimSpace(raw)
 		if line != "" && !strings.HasPrefix(line, "#") && !strings.HasPrefix(line, "//") {
 			lines = append(lines, inputLine{i + 1, line})

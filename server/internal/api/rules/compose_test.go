@@ -3,6 +3,7 @@ package rules
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -129,14 +130,9 @@ func TestPasteKeepsCommaPayloadAndLineErrors(t *testing.T) {
 	}
 	_, _, err = pasteRows("DOMAIN,good.example\nIP-CIDR,bad.example\nDOMAIN,\n", "DOMAIN")
 	var fields *pasteError
-	if !errorsAsPaste(err, &fields) || !reflect.DeepEqual([]int{fields.Fields[0].Line, fields.Fields[1].Line}, []int{2, 3}) {
+	if !errors.As(err, &fields) || !reflect.DeepEqual([]int{fields.Fields[0].Line, fields.Fields[1].Line}, []int{2, 3}) {
 		t.Fatal(err)
 	}
-}
-func errorsAsPaste(err error, out **pasteError) bool {
-	value, ok := err.(*pasteError)
-	*out = value
-	return ok
 }
 func FuzzPastedRules(f *testing.F) {
 	for _, seed := range []string{"DOMAIN,example.com", "DOMAIN-REGEX,^a{1,3}\\.example$", "AND,((DOMAIN,a.example),(DST-PORT,443))", "# comment\n*.example.com\n"} {

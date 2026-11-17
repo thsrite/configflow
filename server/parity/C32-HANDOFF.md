@@ -24,3 +24,5 @@
 注意：当前 readBody 通过 HTTP JSON facade 读取后转换原生稀疏patch；C27 settings/节点操作与repo旧接口全部集中在adapter；不要把 jsonx 放进核心。新 rulefetch Append 返回(string,error)；yamlx 不允许用 Clone 展开用户图，也不允许把策略/alias错误降级为plaintext。无效旧 native draft 的删除路径先显式拒绝 YAML policy/alias 错误，语法损坏按Python保留不可发布草稿。最终报告需重写为已完成状态。
 
 全部21方法已实现；公开provider、lazy match、compact查重、2万条重复保留测试，.64 go test -p 4 -count=1 ./internal/api/rules PASS 0.854s。实际 Flask/DB/files 差分及最终门禁仍未做完。
+
+真实Flask差分现已通过全部21方法、模板/native/custom DNS、SQLite sections/fields、JSON/YAML/list文件。共享C27历史Agent非字符串名称丢成null已修为独立RawMessage；协调者批准并要求在C27记载及数字/数组/null回归，已添加。最新gate通知：.64内存20GB+swap，最终用-p 6。下一步重排/HEAD/YAML对抗边界及最终门禁。

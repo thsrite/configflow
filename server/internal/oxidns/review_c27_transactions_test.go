@@ -62,7 +62,7 @@ func TestC27ReviewConcurrentSnapshots(t *testing.T) {
 							failures <- errors.New("missing Agent view")
 							return
 						}
-						*state.Engine.Agents[0].Name = "changed"
+						state.Engine.Agents[0].Name[0] = 'x'
 						at(result.Settings, "extra", "retain").Content[0].Value = "changed"
 						agents := ProfileAgents(p)
 						set(agents[0], "name", S("changed"))
