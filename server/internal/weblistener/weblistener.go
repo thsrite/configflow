@@ -29,6 +29,7 @@ import (
 	"syscall"
 	"time"
 
+	"configflow/internal/ctxx"
 	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/lockx"
@@ -74,6 +75,10 @@ type Manager struct {
 	Getenv func(string) string
 	// LookupEnv is os.LookupEnv (tests).
 	LookupEnv func(string) (string, bool)
+	// IPv6Available probes kernel support; nil uses the native loopback probe.
+	IPv6Available func() bool
+	// HealthCheck probes both bound addresses; nil uses token-authenticated HTTP.
+	HealthCheck func(context.Context, int, bool, string) bool
 
 	mu     sync.Mutex
 	active *active
@@ -263,12 +268,19 @@ func listen(port int, ipv6 bool) ([]net.Listener, error) {
 }
 
 // randomToken is secrets.token_hex(16).
-func randomToken() string {
+func randomToken() (string, error) {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
-		panic(err)
+		return "", fmt.Errorf("create listener health token: %w", err)
 	}
-	return hex.EncodeToString(b)
+	return hex.EncodeToString(b), nil
+}
+
+func (m *Manager) ipv6Available() bool {
+	if m.IPv6Available != nil {
+		return m.IPv6Available()
+	}
+	return ipv6Available()
 }
 
 func (m *Manager) serve(ctx context.Context, listeners []net.Listener) error {
@@ -311,12 +323,21 @@ func (m *Manager) Start(ctx context.Context) (*jsonx.Object, error) {
 	if err := m.checkReserved(port); err != nil {
 		return nil, err
 	}
-	ipv6 := ipv6Available()
+	ipv6 := m.ipv6Available()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	listeners, err := listen(port, ipv6)
 	if err != nil {
 		return nil, err
 	}
-	token := randomToken()
+	token, err := randomToken()
+	if err != nil {
+		for _, l := range listeners {
+			l.Close()
+		}
+		return nil, err
+	}
 	previousToken := m.Server.ListenerToken()
 	m.Server.SetListenerToken(token)
 	if err := m.serve(ctx, listeners); err != nil {
@@ -324,6 +345,14 @@ func (m *Manager) Start(ctx context.Context) (*jsonx.Object, error) {
 		return nil, err
 	}
 	m.mu.Lock()
+	if err := ctx.Err(); err != nil {
+		m.mu.Unlock()
+		for _, l := range listeners {
+			l.Close()
+		}
+		m.Server.SetListenerToken(previousToken)
+		return nil, err
+	}
 	m.active = &active{port: port, ipv6: ipv6, token: token, listeners: listeners}
 	m.mu.Unlock()
 	return m.status()
@@ -417,12 +446,21 @@ func (m *Manager) Update(ctx context.Context, value any) (*jsonx.Object, error) 
 	m.mu.Lock()
 	old := m.active
 	m.mu.Unlock()
-	ipv6 := ipv6Available()
+	ipv6 := m.ipv6Available()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	listeners, err := listen(port, ipv6)
 	if err != nil {
 		return nil, err
 	}
-	token := randomToken()
+	token, err := randomToken()
+	if err != nil {
+		for _, l := range listeners {
+			l.Close()
+		}
+		return nil, err
+	}
 	m.Server.SetListenerToken(token)
 	if err := m.serve(ctx, listeners); err != nil {
 		m.Server.SetListenerToken(old.token)
@@ -438,11 +476,36 @@ func (m *Manager) Update(ctx context.Context, value any) (*jsonx.Object, error) 
 		restore()
 		return nil, err
 	}
-	if err := atomicWrite(m.statePath(), []byte(`{"port": `+strconv.Itoa(port)+"}\n"), 0o600); err != nil {
+	if err := ctx.Err(); err != nil {
 		restore()
-		return nil, fail("保存 Web 端口失败，已恢复原配置", 503)
+		return nil, err
+	}
+	previous, readErr := os.ReadFile(m.statePath())
+	if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
+		restore()
+		return nil, readErr
+	}
+	if err := atomicWrite(ctx, m.statePath(), []byte(`{"port": `+strconv.Itoa(port)+"}\n"), 0o600); err != nil {
+		restore()
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return nil, fail(msgSaveFailed, 503)
 	}
 	m.mu.Lock()
+	if err := ctx.Err(); err != nil {
+		m.mu.Unlock()
+		// A cancellation between the file and active pointer commits must not
+		// leave the saved selection pointing at sockets we are about to close.
+		var rollbackErr error
+		if errors.Is(readErr, os.ErrNotExist) {
+			rollbackErr = os.Remove(m.statePath())
+		} else {
+			rollbackErr = atomicWrite(ctxx.Uninterruptible(ctx), m.statePath(), previous, 0600)
+		}
+		restore()
+		return nil, errors.Join(err, rollbackErr)
+	}
 	m.active = &active{port: port, ipv6: ipv6, token: token, listeners: listeners}
 	m.mu.Unlock()
 	for _, l := range old.listeners {
@@ -459,10 +522,14 @@ func (m *Manager) healthTimeout() time.Duration {
 }
 
 func (m *Manager) waitHealthy(ctx context.Context, port int, ipv6 bool, token string) error {
+	probe := m.HealthCheck
+	if probe == nil {
+		probe = healthy
+	}
 	clock := lifecycle.ClockFrom(ctx)
 	deadline := clock.Now().Add(m.healthTimeout())
 	for {
-		if healthy(ctx, port, ipv6, token) {
+		if probe(ctx, port, ipv6, token) {
 			return nil
 		}
 		if err := ctx.Err(); err != nil {
@@ -508,7 +575,10 @@ func healthy(ctx context.Context, port int, ipv6 bool, token string) bool {
 	return true
 }
 
-func atomicWrite(path string, content []byte, mode os.FileMode) error {
+func atomicWrite(ctx context.Context, path string, content []byte, mode os.FileMode) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o777); err != nil {
 		return err
 	}
@@ -531,6 +601,9 @@ func atomicWrite(path string, content []byte, mode os.FileMode) error {
 		return err
 	}
 	if err := f.Close(); err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
 		return err
 	}
 	return os.Rename(temporary, path)

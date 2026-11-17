@@ -237,6 +237,11 @@ func (f *reviewBlockedClient) Probe(ctx context.Context, a Agent, p ProbeRequest
 }
 
 func TestReviewManualAutoTaskKeepsWorkValuesWithFreshScope(t *testing.T) {
+	if err := lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry(), Grace: time.Millisecond}); err != nil {
+		t.Fatal(err)
+	}
+	lifecycle.Start(context.Background())
+	t.Cleanup(func() { lifecycle.Stop(time.Second) })
 	ctx := jobFixture(t)
 	r, _ := repo.GetRepository(ctx)
 	repo.SetRepository(r)
@@ -275,7 +280,7 @@ func TestReviewManualAutoTaskKeepsWorkValuesWithFreshScope(t *testing.T) {
 	t.Cleanup(func() { client = previous })
 	wireTasks()
 	type key struct{}
-	request, cancel := context.WithCancel(context.WithValue(repo.WithScope(ctx), key{}, "kept-work-value"))
+	request, cancel := context.WithCancel(lifecycle.BindRequest(context.WithValue(repo.WithScope(ctx), key{}, "kept-work-value")))
 	original := repo.ScopeOf(request)
 	if err := tasks.Runner(tasks.SlotDomains)(request, "domain_discovery:default", "default"); err != nil {
 		t.Fatal(err)
@@ -300,6 +305,14 @@ func TestReviewManualAutoTaskKeepsWorkValuesWithFreshScope(t *testing.T) {
 	worker := <-fake.seen
 	if worker.Value(key{}) != "kept-work-value" || worker.Err() != nil || repo.ScopeOf(worker) == original {
 		t.Fatal("work lost its lifetime/values or retained the request repository scope")
+	}
+	lifecycle.Stop(time.Second)
+	if worker.Err() == nil {
+		t.Fatal("manual task lost its Runtime shutdown lifetime")
+	}
+	lifecycle.Start(context.Background())
+	if worker.Err() == nil {
+		t.Fatal("old task moved to the successor generation")
 	}
 
 }
