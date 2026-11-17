@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -25,6 +26,7 @@ import (
 	"configflow/internal/refresh"
 	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
+	"configflow/internal/weburl"
 	"configflow/internal/yamlx"
 
 	"gopkg.in/yaml.v3"
@@ -368,6 +370,15 @@ func detail(err error) string {
 // safeDetails describes an error without its text (which could hold URLs
 // or credentials): the error class and an HTTP status.
 func safeDetails(err error) string {
+	var linkErr *os.LinkError
+	if errors.As(err, &linkErr) {
+		return weburl.SafeErrorDetails(linkErr)
+	}
+	for _, cause := range []error{context.Canceled, context.DeadlineExceeded} {
+		if errors.Is(err, cause) {
+			return weburl.SafeErrorDetails(cause)
+		}
+	}
 	class := rulefetch.PythonClass(err) // shown to users: Python's names
 	if errors.Is(err, errNotUTF8) {
 		class = "UnicodeDecodeError"

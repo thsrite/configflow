@@ -12,6 +12,7 @@ import (
 	"io"
 	"io/fs"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -215,7 +216,12 @@ func isBadRequest(err error) bool {
 	var repoErr *repo.Error
 	var storeErr *store.Error
 	var pathErr *fs.PathError
+	var linkErr *os.LinkError
 	switch {
+	case errors.As(err, &linkErr), errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+		// Native receipt/rename failures and owner cancellation are server
+		// failures, never URL validation, even through wrapped error chains.
+		return false
 	case repo.IsValueError(err), errors.Is(err, errSizeLimit), errors.Is(err, errContentLength),
 		errors.Is(err, errNotUTF8), errors.Is(err, rulefetch.ErrInvalidURL):
 		return true
