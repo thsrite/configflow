@@ -1954,3 +1954,19 @@ Questions for the coordinator/maintainer:
    with a single trailing "\n" as expected differences, with a regression test. A09: done by its porter.
    A08 (verified) and C12 (verified): small follow-up by the next agent touching `internal/installer` / **A08/A09 part done by A10 (61f82de3, see A10 section).**
    `internal/convert` easytier code; the modules stay verified with this listed.
+
+## N8-7 first batch — A04/A05 file codecs
+
+- Native metrics JSONL/legacy JSON and traffic JSON file boundaries. NaN/±Infinity
+  become null on persisted reads, records and finite siblings survive, repaired
+  JSONL rewrites on next flush. New valid JSON numbers retain exact text.
+- Missing/out-of-float-range metric samples are skipped by derived calculations;
+  all-null summary stats return null. Raw history stays available. HTTP 200 and
+  valid finite-decoding JSON tested for 1e400/1e-400/4301-digit integer projections.
+- Real Python interop verifies both metrics formats and traffic files. Python can
+  load/save null-bearing metrics, but old summary/traffic arithmetic throws
+  TypeError until the 24-hour window expires; ledger/O14 records manual point
+  removal as the emergency rollback alternative.
+- No Agent heartbeat/traffic HTTP request binder is migrated here. Those legacy
+  request consumers still wait for N8-10/A04/A05 ingestion governance. Scope and
+  exact validation output: [progress/n8-7.md](progress/n8-7.md).

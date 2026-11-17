@@ -55,6 +55,21 @@ diagnosis and strict other fields/storage; no aggregation runtime code changes. 
 - Timings, historical scope/load caveats and direct discovery comparison:
   [progress/n73-gate-perf.md](progress/n73-gate-perf.md).
 
+## N8-7 — early consumers, first batch (ported; final acceptance running)
+
+- Branch go-n8-7 from a08c4cc2. Package commits: version c46c511e4, utilx
+  6b351e016, logx c98f3ec0e, localhttp 1cd533f6c, auth fa731d217,
+  jsonresp de05d6327, jsonstore 81e93b5e0, redact b69c03c10; metrics/file and
+  final acceptance commits follow. Full report: [progress/n8-7.md](progress/n8-7.md).
+- Native file codec, typed JWT claims, shared bounded native redaction. Real Python
+  file interchange, JWT bidirectional interop and HMAC negative controls.
+- Coordinator split: taskstatus waits for O3-6c; tasks, notifications (+store),
+  weblistener and api/{logs,stats,notifications,tasks} wait for C07. These are
+  N8-7 second batch, not claimed migrated here.
+- Persisted non-finite values individually become null; raw records survive;
+  metrics projections treat them as missing. Native numeric lexemes stay exact.
+  Ledger/O14 cover Python rollback arithmetic TypeError and 24-hour retention.
+
 ## N7-3d — final reader/legacy cleanup (complete; coordinator verification pending)
 
 Branch go-n7-3d was initially stacked on N7-4; now rebased onto go@28e6e0c12

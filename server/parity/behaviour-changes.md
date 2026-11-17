@@ -690,7 +690,7 @@ router_rule_sync、agent 两项，不放宽其他 503；content type 和全部�
 - Existing metrics JSON/JSONL and JSON stores (traffic, probe and region) read
   NaN/Infinity/-Infinity as null only at the individual value. Finite fields and
   complete points survive; strings containing those words are unchanged. Rewriting
-  produces valid JSON. This fixes invalid Python JSON that browsers could not read.
+  produces valid JSON; repaired metrics JSONL is queued for rewrite on the next flush. This fixes invalid Python JSON that browsers could not read.
   New migrated request callers reject non-finite JSON with 400.
 - Metrics summaries omit missing/null samples; an all-null sample set returns null.
   Traffic derived projections skip missing-counter points; raw points remain.
@@ -702,3 +702,16 @@ Summary and traffic endpoints can return 500 until affected points expire from t
 24-hour metrics history. Remove null-bearing points from the corresponding Agent
 metrics JSON/JSONL file or wait for retention; no migration tool is needed for this
 emergency path. Go handles the missing values directly.
+
+N8-7 native number range: persisted JSON retains valid number lexemes, including
+4301-digit integers and exponents outside float64 (1e400/1e-400), rather than applying
+Python's 4300-digit limit or rounding while loading. Derived metrics skip values
+that cannot be represented by float64; raw history and files keep the exact value.
+The synthetic metrics summary CPU average becomes 2.5625 from its four valid
+samples after the seeded NaN becomes missing. No broad response normalization is
+used; HTTP differential assertions name each changed field.
+
+Python's default 4300-digit integer input limit still applies on an emergency
+rollback: such a new synthetic oversized-integer JSONL point is skipped by the
+Python reader. No real caller input or production snapshot contained these values;
+this is the explicitly accepted native JSON range, not a common stored-file rewrite.
