@@ -1,6 +1,7 @@
 # N7-3b：YAML reader 迁移与边界复核
 
-分支：`go-n7-3b`。本轮源码验收点：`03f521b5`，基于 `go@6b50151c`。
+分支：`go-n7-3b`。完整源码验收点：`03f521b5`，基于 `go@6b50151c`；
+最终集成基点：`go@8303397c`，集成补验源码：`c4392d47`。
 测试固定 `RT_HOST=sunbroke@192.168.0.32`；未在 Mac 跑测试、构建或检查。
 未派子 agent，未推送，未改生产差分基线。最终输出见下文。
 
@@ -29,7 +30,8 @@ placeholder。键转换统一使用共享 `ProjectJSONKeys(StringifyScalarKeys)`
 
 共享提交全部接入：`0b98b42e`、`dc3f339c`、`23196ddd`、`a7acc788`、
 `a5f553d0`、`4ad822f5`、`942e752f`、`09740db3`（最后一个与 `ae109f82`
-逻辑相同，只是 gofmt）。没有私写标签、merge 或键投影规则。
+逻辑相同，只是 gofmt）。最终 rebase 时 8 个等价共享提交全部自动跳过，
+`internal/yamlx` 相对 go 无差异。没有私写标签、merge 或键投影规则。
 旧加载器和 internal/pyyaml 按分工保留，最后由 N7-3d 清理。
 
 ## 发现的问题与修复
@@ -173,12 +175,67 @@ proddiff: cases=2831 compared=415 self_check=PASS new=0 stale=0
 baseline: new=0 stale=0
 ```
 
-生产快照没有触发新增差异，未调整基线。验收后 go 新合入 C31，最后 rebase
-和该集成点的编译/差分/生产差分结果另行追加。
+生产快照没有触发新增差异，未调整基线。
 
-## 明确保留的集成待办
+## N7-3a 合入后的集成补验
 
-N7-3a runtime 尚未合并，refresh 委托的 subs/substore hosts、dialer、proxy-list
-读取在 a 合入后仍需复验。按协调者指示，本轮不等待；a 合入后 rebase，补跑
-refresh 相关测试、全部 difftest 包和 proddiff。此项未冒充已 verified。
-其余裸 decoder 已由协调者登记为 N7-3d。当前无未关闭的本分支功能问题。
+已 rebase 到 `go@8303397c`（包括 C31 与 N7-3a）。8 个重复共享提交全部自动
+跳过，`internal/yamlx` 与 go 完全一致。只有文档追加冲突，保留两方内容；
+没有运行时代码冲突。补验源码为 `c4392d47`，日志在 `.32` 的
+`/tmp/n73b-after-a-*.log`。
+
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc '
+set -euo pipefail
+cd server
+gofmt -l internal/ tools/ > /tmp/n73b-after-a-format.log
+test ! -s /tmp/n73b-after-a-format.log
+go vet ./... > /tmp/n73b-after-a-vet.log 2>&1
+go test -race -count=1 -timeout=30m ./internal/refresh > /tmp/n73b-after-a-refresh.log 2>&1 || { tail -n45 /tmp/n73b-after-a-refresh.log; exit 1; }
+tail -n3 /tmp/n73b-after-a-refresh.log
+for d in $(go list ./... | rg difftest); do CONFIGFLOW_DIFF=1 go test -count=1 "$d"; done > /tmp/n73b-after-a-difftests.log 2>&1 || { tail -n70 /tmp/n73b-after-a-difftests.log; exit 1; }
+tail -n16 /tmp/n73b-after-a-difftests.log
+cd ..
+server/scripts/proddiff.sh > /tmp/n73b-after-a-proddiff.log 2>&1 || { tail -n25 /tmp/n73b-after-a-proddiff.log; exit 1; }
+tail -n1 /tmp/n73b-after-a-proddiff.log
+'
+RT_HOST=sunbroke@192.168.0.32 rt --no-sync -- bash -lc 'cd server && go test -p=4 -count=1 ./... > /tmp/n73b-after-a-full.log 2>&1; result=$?; tail -n18 /tmp/n73b-after-a-full.log; exit "$result"'
+```
+
+另外逐行核对差分日志：恰好 12 条 `ok`，没有 FAIL/build failed/panic。
+最后的全量测试用 `--no-sync` 排队，避免同步干扰正在运行的命令。
+此前一轮 C31 测试与同步重叠，短暂读到不完整测试文件；该轮失败不计验收，
+由完整源码上的本次全量复验替代。
+
+```text
+gofmt: 无输出；go vet: 无输出
+ok configflow/internal/refresh 278.151s
+ok configflow/internal/api/agents/difftest 126.474s
+ok configflow/internal/api/aggregations/difftest 27.400s
+ok configflow/internal/api/subscriptions/difftest 78.602s
+ok configflow/internal/devicenotes/difftest 0.591s
+ok configflow/internal/discovery/difftest 2.191s
+ok configflow/internal/health/difftest 13.818s
+ok configflow/internal/httpx/difftest 1.391s
+ok configflow/internal/mosdns/difftest 1.754s
+ok configflow/internal/refresh/difftest 3.423s
+ok configflow/internal/subs/difftest 1.686s
+ok configflow/internal/substore/difftest 5.930s
+ok configflow/internal/webdav/difftest 18.006s
+proddiff: cases=2831 compared=435 self_check=PASS new=0 stale=0
+baseline: new=0 stale=0
+```
+
+当前基点全量 `go test -p=4 -count=1 ./...` 也已完成，exit 0，末行：
+
+```text
+ok configflow/internal/subs 8.019s
+ok configflow/internal/substore 2.734s
+ok configflow/internal/yamlx 1.948s
+ok configflow/internal/yamlx/yamlxtest 0.002s
+ok configflow/tools/proddiff/generator 0.010s
+```
+
+原先的集成待办已关闭：refresh 委托的 hosts、dialer、proxy-list 读取已经在
+a 合入后复验，策略/alias 拒绝不写缓存的边界也通过。当前没有未关闭的本分支
+功能问题。其余裸 decoder 与旧加载器删除仍按既定分工由 N7-3d 完成。

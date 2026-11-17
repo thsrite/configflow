@@ -2168,12 +2168,12 @@ Questions for the maintainer (from this audit):
 
 ## N7-3b — rulefetch / refresh / structured proxy YAML readers
 
-Status: b implementation and pinned `.32` full acceptance complete; final go composition in progress.
+Status: verified migration boundaries; pinned `.32` acceptance and N7-3a integration gates passed.
 Branch `go-n7-3b`; detailed inventory/results: [progress/N7-3b-readers.md](progress/N7-3b-readers.md).
 Scope added by coordinator: convert structured proxy reader and api/subscriptions'
 program-generated JSON→YAML helper; minimal convert error-return caller adapters
 in repo/provider/health and rule append-error caller adapters are separate commits. Shared yamlx validation
-comes from N7-3a's four commits, without private policy/merge implementations.
+comes from N7-3a's eight shared commits, without private policy/merge implementations.
 
 Migration gate replays actual caller inputs from the existing Python corpora and
 whole-suite recordings, comparing exact response fields/rule values; YAML edited
@@ -2210,10 +2210,13 @@ or its local cache. Refresh metadata/remember/download/preview entry tests rejec
 unsafe graphs before writing either cache. Native malformed input uses existing
 validation channels. Runtime `yamlx.Clone` callers: zero.
 
-Pending integration dependency (coordinator-approved): refresh delegates hosts,
-dialer and proxy-list reads to N7-3a's subs/substore. After a merges, rebase and
-re-run refresh, all difftest packages and proddiff. Do not mark that delegated
-integration verification complete before it runs. Remaining bare decoders in
+Integration dependency closed: rebased to go@8303397c after N7-3a merged; the
+eight equivalent shared commits were automatically dropped, with no yamlx diff
+against go. Refresh's delegated hosts/dialer/proxy-list reads pass -race278.151s;
+all12 CONFIGFLOW_DIFF difftest packages pass, including refresh/subs/substore.
+Proddiff2831 cases/435 compared, self_check PASS, new=0 stale=0. Full p4 suite
+also passes on this integrated source (subs8.019s/substore2.734s/yamlx1.948s).
+Remaining bare decoders in
 importer/rules/oxidns are assigned to N7-3d; legacy loaders/pyyaml remain until
 that follow-up, as instructed.
 

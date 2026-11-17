@@ -169,3 +169,18 @@ proddiff2831 cases/415 compared, self_check PASS, new=0 stale=0. No production
 baseline changes. Full final command/tail/count tables are in review-n7-3b.md.
 Final rebase includes the freshly integrated C31 modules and records composition
 checks separately; do not confuse that with the still-pending N7-3a runtime gate.
+
+N7-3a runtime gate closed after rebase onto go@8303397c: all8 equivalent shared
+yamlx commits automatically skipped; yamlx has no diff against go. Only additive
+document conflicts, both retained. Pinned.32 format/vet empty; refresh -race
+PASS278.151s; all12 CONFIGFLOW_DIFF difftest packages PASS; proddiff2831 cases,
+435 compared, self_check PASS, new=0 stale=0. Hosts/dialer/proxy-list delegation
+and policy/alias cache-preservation boundaries are now verified together.
+The earlier C31 full run overlapped rt's pre-lock sync and saw incomplete test
+files; it is excluded from acceptance. A fresh full p4 run on the stable rebased
+source is recorded below. No production baseline change and no remaining b
+integration dependency; legacy loader/decoder cleanup remains N7-3d scope.
+
+Stable-source post-a full `go test -p=4 -count=1 ./...` also PASS, exit0.
+Tail: subs8.019s, substore2.734s, yamlx1.948s, yamlxtest0.002s,
+tools/proddiff/generator0.010s. Full log: /tmp/n73b-after-a-full.log on.32.
