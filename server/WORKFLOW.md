@@ -437,3 +437,8 @@ the issue classes are now written down; porting is the most token-heavy step and
   tested on the *merged* tree with the other modules' tests of that driver (R07's private redaction in R04's shared
   `request` broke two verified R06 tests). Credential redaction hides only passwords/tokens, never usernames, and uses
   `internal/redact` — this class was found twice (R06 F2, R07 F1).
+- **Fourth standing item (A24 F2, C32 review high, 2026-11-18):** `lifecycle.Detach` keeps the shutdown cancellation,
+  but a fast owner path that never looks at it still commits after shutdown. Every write owner checks `ctx.Err()`
+  after Detach and before each commit point (repo transaction, file replace, device write), and leaf stores without a
+  ctx get one. Test with a real `Runtime.Start/BindRequest/Shutdown`: after shutdown no write lands; after a request
+  disconnect every write still completes.
