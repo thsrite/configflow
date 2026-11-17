@@ -1,5 +1,8 @@
 # N8-4a–d — typed stored documents
 
+本文记录 a–d 交付时的范围和验证。后续 Agent/Router HR 类型、字段来源、快照与合成覆盖、
+衔接裁定和门禁记录见 [n8-4ef-types.md](n8-4ef-types.md)。
+
 状态：**ported，最终门禁全部 PASS，待独立复核**；分支 `go-n8-4`，基于本地 `go`，不 push。
 范围仅 model 类型、编解码和对应测试；N8-4e/f（Agents、Routers）保持 RawMessage，
 repo 业务调用方迁移留给 N8-5。无新依赖，无 Python 功能差异。

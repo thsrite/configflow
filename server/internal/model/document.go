@@ -1,13 +1,12 @@
 package model
 
 import (
-	"encoding/json"
 	"fmt"
 	"reflect"
 	"slices"
 )
 
-// Profile holds typed profile settings; routers remain opaque until N8-4f.
+// Profile holds typed profile settings and router publication records.
 // Unknown members are retained in Fields.
 type Profile struct {
 	ID              string          `json:"id"`
@@ -23,7 +22,7 @@ type Profile struct {
 	Loon            LoonSettings    `json:"loon"`
 	MosDNS          MosDNSSettings  `json:"mosdns"`
 	OxiDNS          Dynamic         `json:"oxidns"`
-	Routers         json.RawMessage `json:"routers"`
+	Routers         Routers         `json:"routers"`
 	DomainDiscovery DomainDiscovery `json:"domain_discovery"`
 	DeviceNotes     DeviceNotes     `json:"device_notes"`
 	ClientFixedIPs  ClientFixedIPs  `json:"client_fixed_ips"`

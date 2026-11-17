@@ -23,6 +23,7 @@ if mode == 'snapshot':
     for pattern, name in (
         ('.agent-rule-sync/**/receipt.json', 'AgentRuleSyncReceipt'),
         ('.oxidns-ha-publications/**/payload.json', 'HAPayload'),
+        ('router-rule-sync/*.json', 'RouterRuleSyncReceipt'),
     ):
         for path in root.glob(pattern):
             rows.append((name, path.read_text()))

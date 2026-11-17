@@ -15,6 +15,31 @@ import (
 // unchanged source cannot mask a child codec dropping members.
 func storedRecordTypes() []reflect.Type {
 	return []reflect.Type{
+		reflect.TypeFor[Routers](),
+		reflect.TypeFor[Router](),
+		reflect.TypeFor[RouterDNSGuard](),
+		reflect.TypeFor[RouterPDGuard](),
+		reflect.TypeFor[RouterProbe](),
+		reflect.TypeFor[RouterRelease](),
+		reflect.TypeFor[RouterResource](),
+		reflect.TypeFor[ROSPolicyState](),
+		reflect.TypeFor[ROSPolicySpec](),
+		reflect.TypeFor[DNSGuardState](),
+		reflect.TypeFor[DNSGuardSpec](),
+		reflect.TypeFor[DNSGuardResource](),
+		reflect.TypeFor[IPv6FakeIPState](),
+		reflect.TypeFor[IPv6FakeIPSpec](),
+		reflect.TypeFor[IPv6RoutesState](),
+		reflect.TypeFor[IPv6PDGuardState](),
+		reflect.TypeFor[IPv6PDGuardSpec](),
+		reflect.TypeFor[PDGuardResource](),
+		reflect.TypeFor[RouterRuleSyncReceipt](),
+		reflect.TypeFor[RouterSyncLog](),
+		reflect.TypeFor[RouterSyncRule](),
+		reflect.TypeFor[RouterRuleSyncBaseline](),
+		reflect.TypeFor[RouterSyncDesired](),
+		reflect.TypeFor[RouterCIDR](),
+		reflect.TypeFor[RouterSyncNAT](),
 		reflect.TypeFor[Agent](),
 		reflect.TypeFor[AgentMetrics](),
 		reflect.TypeFor[AgentCPU](),
@@ -94,6 +119,9 @@ func typeJSON(typ reflect.Type, changed bool) []byte {
 		}
 		return []byte(`"qname example.com\n!qtype 28"`)
 	case reflect.TypeFor[Dynamic]():
+		if changed {
+			return []byte(`{"edited": [false,2.5,"changed.example.com"]}`)
+		}
 		return []byte(`{ "engine-extension": [1.0,"\u4f8b",true] }`)
 	case reflect.TypeFor[Int]():
 		if changed {
@@ -177,6 +205,9 @@ func TestStoredTypes(t *testing.T) {
 						t.Fatal("edit encode failed")
 					}
 					afterOrder, after := fuzzMembers(t, result)
+					if bytes.Equal(before[field.name], after[field.name]) {
+						t.Fatal("synthetic edit did not actually change the member")
+					}
 					var wanted, actual any
 					if json.Unmarshal(next, &wanted) != nil || json.Unmarshal(after[field.name], &actual) != nil || !reflect.DeepEqual(wanted, actual) {
 						t.Fatal("typed edit was not written")
@@ -321,6 +352,7 @@ func runTypesInterchange(t *testing.T, rows []interchangeRow, private bool) {
 		"client_fixed_ips": reflect.TypeFor[Profile](),
 		"oxidns":           reflect.TypeFor[Profile](),
 		"proxy_groups":     reflect.TypeFor[Profile](), "rule_configs": reflect.TypeFor[Profile](),
+		"routers":       reflect.TypeFor[Profile](),
 		"agents":        reflect.TypeFor[System](),
 		"system_config": reflect.TypeFor[System](), "backup": reflect.TypeFor[System](),
 		"nodes": reflect.TypeFor[Shared](), "subscriptions": reflect.TypeFor[Shared](),
@@ -367,7 +399,11 @@ func runTypesInterchange(t *testing.T, rows []interchangeRow, private bool) {
 	}
 	pythonTypes(t, "audit", prepared, output)
 	if private {
+		names := []string{"AgentRuleSyncReceipt", "HAPayload", "RouterRuleSyncReceipt"}
 		for name := range rowTypes {
+			names = append(names, name)
+		}
+		for _, name := range names {
 			if counts[name] == 0 {
 				t.Fatalf("snapshot lacks row for %s", name)
 			}
@@ -446,6 +482,8 @@ func checkSnapshotTypes(t *testing.T, rows []interchangeRow) {
 	for _, row := range rows {
 		var holder json.Unmarshaler
 		switch row.Name {
+		case "RouterRuleSyncReceipt":
+			holder = &RouterRuleSyncReceipt{}
 		case "AgentRuleSyncReceipt":
 			holder = &AgentRuleSyncReceipt{}
 		case "HAPayload":
@@ -454,13 +492,13 @@ func checkSnapshotTypes(t *testing.T, rows []interchangeRow) {
 			holder = &System{}
 		case "nodes", "subscriptions", "subscription_aggregations", "rule_library":
 			holder = &Shared{}
-		case "proxy_groups", "rule_configs", "mihomo", "surge", "loon", "mosdns", "domain_discovery", "device_notes", "client_fixed_ips", "oxidns":
+		case "routers", "proxy_groups", "rule_configs", "mihomo", "surge", "loon", "mosdns", "domain_discovery", "device_notes", "client_fixed_ips", "oxidns":
 			holder = &Profile{}
 		default:
 			continue
 		}
 		source := row.Value
-		if row.Name != "AgentRuleSyncReceipt" && row.Name != "HAPayload" {
+		if row.Name != "AgentRuleSyncReceipt" && row.Name != "HAPayload" && row.Name != "RouterRuleSyncReceipt" {
 			key, _ := json.Marshal(row.Name)
 			source = append(append(append([]byte("{"), key...), ':'), row.Value...)
 			source = append(source, '}')

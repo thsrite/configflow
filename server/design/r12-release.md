@@ -401,6 +401,14 @@ type Manifests struct { Policy, DNSGuard, IPv6FakeIP, IPv6Routes, IPv6PDGuard Ma
 type ManifestHolder interface { Manifests() Manifests } // RouterOS implements; iKuai does not (all unset)
 ```
 
+**Clarified in N8-4f (coordinator, 2026-11-17):** Stored model decoding preserves null and uses R5
+type fallback; neither a decoded nil nor a fallback empty value is a request to clear a manifest or a
+valid ownership proof. N8-5/R12 writer migration must explicitly carry untouched/replace/clear intent
+(the runtime `Manifest.Set` flag remains runtime-only). An unchanged null followed by assignment of nil
+remains null under R2; no new write-intent API is introduced in N8-4. Before any device operation,
+R08/R09/R12 and other ownership consumers must validate the complete required proof and refuse missing
+or malformed evidence; never adopt by a marker name or treat fallback resources as verified emptiness.
+
 **Clarified in R07 (coordinator, 2026-11-17):** R07 submits the minimal shared definitions in
 `internal/routers/plan_model.go`: `Op`, `OpHead`, `Stage` (field names, exports and JSON tags exactly as §2.2),
 the stage-key constants, and `NATUpdateOp` needed by NAT-list adoption. R12-1 extends this file instead of

@@ -301,7 +301,7 @@ func TestStoredRoundTrip(t *testing.T) {
 			d.System.Agents = roundTripDecode[[]model.Agent](t, records)
 		})
 		commit("router add", []modelRowKey{profileKey("routers")}, func(d *model.Document) {
-			fields := roundTripFields(t, d.Profiles[0].Routers)
+			fields := roundTripFields(t, must(model.Marshal(d.Profiles[0].Routers))(t))
 			items, _ := fields.Get("items")
 			records := must(roundTripList(items))(t)
 			added := roundTripNewRecord(t, "n8-router", "N8 router")
@@ -314,10 +314,10 @@ func TestStoredRoundTrip(t *testing.T) {
 			if fields.Set("items", must(model.Marshal(records))(t)) != nil {
 				t.Fatal("router list set failed")
 			}
-			d.Profiles[0].Routers = must(model.Marshal(fields))(t)
+			d.Profiles[0].Routers = roundTripDecode[model.Routers](t, fields)
 		})
 		commit("router setting", []modelRowKey{profileKey("routers")}, func(d *model.Document) {
-			fields := roundTripFields(t, d.Profiles[0].Routers)
+			fields := roundTripFields(t, must(model.Marshal(d.Profiles[0].Routers))(t))
 			items, _ := fields.Get("items")
 			records := must(roundTripList(items))(t)
 			for i := range records {
@@ -330,7 +330,7 @@ func TestStoredRoundTrip(t *testing.T) {
 			if fields.Set("items", must(model.Marshal(records))(t)) != nil {
 				t.Fatal("router list set failed")
 			}
-			d.Profiles[0].Routers = must(model.Marshal(fields))(t)
+			d.Profiles[0].Routers = roundTripDecode[model.Routers](t, fields)
 		})
 		commit("rules add", []modelRowKey{profileKey("rule_configs")}, func(d *model.Document) {
 			records := must(roundTripList(d.Profiles[0].RuleConfigs))(t)

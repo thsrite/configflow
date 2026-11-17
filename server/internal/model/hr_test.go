@@ -121,11 +121,97 @@ func TestHRPythonWriters(t *testing.T) {
 	}
 	counts := map[string]int{}
 	for _, row := range rows {
-		var target Agent
-		if target.UnmarshalJSON(row.Value) != nil {
-			t.Fatal("Python Agent decode failed")
+		var target json.Unmarshaler
+		switch row.Name {
+		case "Agent":
+			target = &Agent{}
+		case "Router":
+			target = &Router{}
+		case "RouterRuleSyncReceipt":
+			target = &RouterRuleSyncReceipt{}
+		default:
+			t.Fatal("unknown synthetic schema")
 		}
-		assertStoredTree(t, row.Value, reflect.ValueOf(&target), counts)
+		if target.UnmarshalJSON(row.Value) != nil {
+			t.Fatal("Python HR decode failed")
+		}
+		assertStoredTree(t, row.Value, reflect.ValueOf(target), counts)
 	}
 	runTypesInterchange(t, rows, false)
+}
+
+func TestRouterOwnershipPreservation(t *testing.T) {
+	source := []byte(` { "id":"router-example", "password":"synthetic-old", "verify_tls":false, "dns_guard":{"enabled":false,"failover":false}, "ros_policy_state":{"spec":{"naming_version":1,"policy_version":2},"resources":[{"path":"/ip/route","id":"*synthetic","config":{"future":{"ordered":[false,1.0,null]},"disabled":"false"},"future-proof":true}]}, "ipv6_pd_guard_state":{"version":1,"spec":{"hold":3600},"resources":[{"role":"hook","path":"/ipv6/dhcp-client","id":"*client-example"}]}, "last_release":{"fingerprint":"opaque-stored","ok":false}, "future":null } `)
+	var router Router
+	if router.UnmarshalJSON(source) != nil {
+		t.Fatal("router decode failed")
+	}
+	if router.VerifyTLS == nil || *router.VerifyTLS || router.DNSGuard.Failover == nil || *router.DNSGuard.Failover {
+		t.Fatal("explicit false lost")
+	}
+	encoded, err := Marshal(router)
+	if err != nil || !bytes.Equal(encoded, source) {
+		t.Fatal("router proof no-op changed bytes")
+	}
+	router.Password = "synthetic-new"
+	edited, err := Marshal(router)
+	if err != nil {
+		t.Fatal("router edit failed")
+	}
+	_, before := fuzzMembers(t, source)
+	_, after := fuzzMembers(t, edited)
+	for key, value := range before {
+		if key != "password" && !bytes.Equal(value, after[key]) {
+			t.Fatal("credential edit changed ownership or release identity")
+		}
+	}
+	var policy ROSPolicyState
+	var pd PDGuardResource
+	policy.Spec.Gateway = "192.0.2.1"
+	pd.ID = "*synthetic"
+	policyJSON, _ := Marshal(policy)
+	pdJSON, _ := Marshal(pd)
+	_, policyMembers := fuzzMembers(t, policyJSON)
+	_, pdMembers := fuzzMembers(t, pdJSON)
+	if _, ok := policyMembers["version"]; ok {
+		t.Fatal("invented policy version")
+	}
+	if _, ok := pdMembers["config"]; ok {
+		t.Fatal("invented PD proof config")
+	}
+	for _, fragment := range []string{`{}`, `{"ros_policy_state":null}`, `{"dns_guard_state":null}`} {
+		var value Router
+		if value.UnmarshalJSON([]byte(fragment)) != nil {
+			t.Fatal("null decode failed")
+		}
+		value.ROSPolicyState = nil
+		value.DNSGuardState = nil
+		out, err := Marshal(value)
+		if err != nil || string(out) != fragment {
+			t.Fatal("loaded nil became a clear command")
+		}
+	}
+}
+
+func TestOwnershipFallbackIsDiagnosed(t *testing.T) {
+	source := []byte(`{"ros_policy_state":{"spec":false,"resources":"synthetic-private"},"dns_guard_state":{"resources":[{"id":false,"config":{"future":[1,true]}}]},"ipv6_pd_guard_state":{"resources":[{"role":7}]}}`)
+	var router Router
+	if router.UnmarshalJSON(source) != nil {
+		t.Fatal("malformed proof decode failed")
+	}
+	issues := valueIssues(reflect.ValueOf(&router), "routers.items[0]")
+	for _, path := range []string{"ros_policy_state.spec", "ros_policy_state.resources", "dns_guard_state.resources[0].id", "ipv6_pd_guard_state.resources[0].role"} {
+		if !slices.Contains(issues, FieldIssue{"routers.items[0]." + path, IssueType}) {
+			t.Fatalf("missing ownership schema issue: %v", issues)
+		}
+	}
+	// The model is intentionally tolerant; empty fallback resources are not
+	// verified absence. Device consumers must reject incomplete evidence.
+	if len(router.ROSPolicyState.Resources) != 0 {
+		t.Fatal("invalid resources did not fall back")
+	}
+	out, err := Marshal(router)
+	if err != nil || !bytes.Equal(out, source) {
+		t.Fatal("malformed proof was silently repaired")
+	}
 }
