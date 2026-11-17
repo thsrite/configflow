@@ -14,7 +14,6 @@ import (
 	"testing"
 
 	"configflow/internal/jsonx"
-	"configflow/internal/yamlx"
 )
 
 // Port of backend/test_core_install_script.py: the standalone core installer
@@ -430,10 +429,11 @@ func (h *coreHarness) appendFile(t *testing.T, rel, text string) {
 
 func yamlValue(t *testing.T, text string, keys ...any) any {
 	t.Helper()
-	v, err := yamlx.Load(text)
+	document, err := readCompose(text)
 	if err != nil {
 		t.Fatal(err)
 	}
+	var v any = document
 	for _, key := range keys {
 		switch k := key.(type) {
 		case string:

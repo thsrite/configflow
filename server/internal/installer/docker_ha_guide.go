@@ -451,11 +451,10 @@ func guideCompose(params *jsonx.Object) (*jsonx.Object, error) {
 		}
 		return nil, err
 	}
-	loaded, err := yamlx.Load(text)
+	compose, err := readCompose(text)
 	if err != nil {
 		return nil, err
 	}
-	compose, _ := loaded.(*jsonx.Object)
 	if intIP {
 		// f"AGENT_IP={agent_ip}" and ipv4_address keep the int itself.
 		agent := jsonx.Path(compose, "services", "agent").(*jsonx.Object)

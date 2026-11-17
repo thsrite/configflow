@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"configflow/internal/jsonx"
-	"configflow/internal/yamlx"
 )
 
 func guideParams(t *testing.T, tmp, mode, kind string) *jsonx.Object {
@@ -180,11 +179,11 @@ func TestVerificationUsesLiteralIPv4(t *testing.T) {
 
 func loadCompose(t *testing.T, text string) *jsonx.Object {
 	t.Helper()
-	value, err := yamlx.Load(text)
+	value, err := readCompose(text)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return value.(*jsonx.Object)
+	return value
 }
 
 func TestMigrationComposeReusesExactMountAndAgentIdentity(t *testing.T) {

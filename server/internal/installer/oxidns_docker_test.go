@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"configflow/internal/jsonx"
-	"configflow/internal/yamlx"
 )
 
 // Port of backend/test_oxidns_docker_install.py (generator cases; the API
@@ -30,11 +29,11 @@ func haParams(mode string) DockerOptions {
 }
 
 func loadYAML(t *testing.T, text string) *jsonx.Object {
-	v, err := yamlx.SafeLoad(text)
+	v, err := readCompose(text)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return v.(*jsonx.Object)
+	return v
 }
 
 func strs(v any) []string {

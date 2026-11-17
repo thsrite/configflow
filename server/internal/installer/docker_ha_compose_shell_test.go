@@ -23,7 +23,6 @@ import (
 	"time"
 
 	"configflow/internal/jsonx"
-	"configflow/internal/yamlx"
 )
 
 var composeTestToken = strings.Repeat("t", 43)
@@ -431,11 +430,11 @@ func TestBundlePrepareReusesOnlyOwnedProjectAndRenewsFiles(t *testing.T) {
 			t.Fatalf("%s: %+v", mode, r)
 		}
 		text, _ := os.ReadFile(filepath.Join(p.files, "compose.yaml"))
-		loaded, err := yamlx.Load(strings.ReplaceAll(string(text), "$$", "$"))
+		loaded, err := readCompose(strings.ReplaceAll(string(text), "$$", "$"))
 		if err != nil {
 			t.Fatal(err)
 		}
-		compose := loaded.(*jsonx.Object)
+		compose := loaded
 		stored := jsonx.Obj("containers", jsonx.NewObject(), "networks", jsonx.NewObject())
 		for name, value := range compose.GetObject("services").All() {
 			service := value.(*jsonx.Object)
@@ -505,7 +504,7 @@ func TestBundlePrepareRefusesExistingDataUnownedResourcesAndInvalidEnvironment(t
 				os.WriteFile(p.state, []byte(`{"containers": {"`+body.GetString("agent_name")+`-oxidns": {}}}`), 0o644)
 			case "foreign-network":
 				text, _ := os.ReadFile(filepath.Join(p.files, "compose.yaml"))
-				loaded, _ := yamlx.Load(string(text))
+				loaded, _ := readCompose(string(text))
 				name := jsonx.Path(loaded, "networks", "dns-ha", "name").(string)
 				os.WriteFile(p.state, []byte(`{"networks": {"`+name+`": {}}}`), 0o644)
 			case "old-compose":

@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"configflow/internal/jsonx"
-	"configflow/internal/yamlx"
 )
 
 // Port of backend/test_agent_transaction_install.py (native installer
@@ -258,7 +257,7 @@ func TestNativeReinstallSafelyDetachesOldGateAndIsRepeatable(t *testing.T) {
 func TestDockerGeneratedVolumesPersistIdentityAndTransactionRoots(t *testing.T) {
 	o := NewDockerOptions("https://config.test")
 	o.EnableMosdns = true
-	compose, err := yamlx.SafeLoad(ok(GenerateDockerAgentCompose(o)))
+	compose, err := readCompose(ok(GenerateDockerAgentCompose(o)))
 	if err != nil {
 		t.Fatal(err)
 	}

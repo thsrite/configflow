@@ -11,8 +11,8 @@ import (
 
 	"configflow/internal/jsonx"
 	"configflow/internal/pystr"
-	"configflow/internal/pyyaml"
 	"configflow/internal/yamlx"
+	"gopkg.in/yaml.v3"
 )
 
 var (
@@ -259,27 +259,27 @@ func annotateCompose(text string, compose *jsonx.Object) (string, error) {
 		notes[notePath("networks", "dns-ha", "ipam", "config", 0, "gateway")] = "核对：局域网网关"
 	}
 	annotations := map[int]string{}
-	var visit func(node *pyyaml.Node, path []any, key *pyyaml.Node)
-	visit = func(node *pyyaml.Node, path []any, key *pyyaml.Node) {
+	var visit func(node *yamlx.Node, path []any, key *yamlx.Node)
+	visit = func(node *yamlx.Node, path []any, key *yamlx.Node) {
 		if note, found := notes[notePath(path...)]; found && len(path) > 0 {
 			marked := node
 			if key != nil {
 				marked = key
 			}
-			annotations[marked.Start.Line] = note
+			annotations[marked.Line-1] = note
 		}
 		switch node.Kind {
-		case pyyaml.MappingNode:
-			for _, pair := range node.Pairs {
-				visit(pair[1], append(append([]any{}, path...), pair[0].Value), pair[0])
+		case yaml.MappingNode:
+			for key, value := range yamlx.AllPairs(node) {
+				visit(value, append(append([]any{}, path...), key.Value), key)
 			}
-		case pyyaml.SequenceNode:
-			for index, item := range node.Items {
+		case yaml.SequenceNode:
+			for index, item := range node.Content {
 				visit(item, append(append([]any{}, path...), index), nil)
 			}
 		}
 	}
-	root, err := pyyaml.Compose(text)
+	root, err := yamlx.Parse([]byte(text))
 	if err != nil {
 		return "", err
 	}
