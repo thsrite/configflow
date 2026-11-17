@@ -318,3 +318,27 @@ profile 不匹配，包含数组/对象、大小写和空白，均在设备访�
 12项 helper/API 审计已满足，实际正向64台混合两种设备的预览、应用、删除
 仍走公开 HTTP。IP/MAC/name 的值校验、setup guard、签名 token、DHCP 状态
 和补偿是独立条目，没有因为外层400/409就自动算作完成。
+
+Fixed-IP field normalization (Step B, source-only oracle):
+- Read all of `backend/common/client_fixed_ip.py`, including validation, setup,
+  opening/planning, signed preview, apply/compensation and enrichment; read
+  `backend/routers/lan_clients.py` in full. Added97 literal rejected HTTP vectors
+  and12 device-backed positive previews in `fixed_normalization.py`.
+- H0038 is not just an arbitrary400:48 independent field values, three duplicate
+  IP contexts (including different routers and trimming), and twelve successes (including actual AF hex letter casing).
+  H0039 requires canonical and three normalized same-router duplicate MACs plus
+  a real same-MAC/different-router success (both devices actually see it).
+- Names: every C0/DEL, wrong JSON types,81 ASCII/Unicode/space characters refuse;
+  empty, whitespace-only,80 ASCII and80 codepoint Chinese/emoji previews work.
+  `normalize_name` remains the source of truth; no copied normalizer computes
+  reference values. The public preview token is inspected with its real library.
+- H0592/H0593 use the public preview to reach actual IPv4/hex ValueError catches.
+  Non-hex MAC segments have valid count/length, so their errors cannot be
+  credited to the earlier segment shape check. No tests call private helpers.
+- These previews are DB/device read-only, retain foreign reservations, and do
+  not claim that apply, compensation, firmware or real DHCP traffic is covered.
+  Native route absence still counts as Go 尚未实现, never as a passed comparison.
+- Remaining comparison gap discovered while reading apply: ROS ownership
+  comments gain a UUID suffix; iKuai adds a random cfip_ tag. A future alias
+  must bind each marker to exact writes/readback/owned storage. Generic UUID
+  replacement would hide an ownership defect and is explicitly not acceptable.

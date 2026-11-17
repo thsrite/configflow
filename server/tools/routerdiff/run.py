@@ -36,6 +36,7 @@ import split
 import split_onboarding
 import split_state
 import forwarding_guards
+import fixed_normalization
 from compare import differences, logical_snapshot, response_view, timestamp
 from harness import Pair, RemoteError, observed_startup_exit
 from harness import decode_response
@@ -738,6 +739,7 @@ def main():
               ('release-ik-suffix', releases.options(), (releases.ikuai_suffix_bug,)),
               ('release-ik-plain', releases.options(), (releases.ikuai_plain,)),
               ('fixed-ip', clients.options(), (clients.fixed_ip,)),
+              ('fixed-ip-normalization', clients.options(), (fixed_normalization.rejected, fixed_normalization.accepted)),
               ('fixed-ip-guards', clients.options(), (clients.fixed_preview_guards,)),
               ('fixed-ip-stale', clients.options(), (clients.fixed_stale,)),
               ('fixed-ip-uncertain', clients.options(), (clients.fixed_uncertain,)),

@@ -28,11 +28,34 @@ import split
 import split_onboarding
 import split_state
 import forwarding_guards
+import fixed_normalization
 from inventory import load
 from bugs import BUGS
 
 
 class RecipeTests(unittest.TestCase):
+    def test_fixed_normalization_vectors_do_not_use_reference_helpers(self):
+        _, entries = load()
+        bad = list(fixed_normalization.rejected())
+        good = list(fixed_normalization.accepted())
+        self.assertEqual(len(bad), 97)
+        self.assertEqual(len(good), 12)
+        self.assertEqual(len({case.ident for case in bad + good}), 109)
+        for case in bad + good:
+            self.assertTrue(set(case.entries) <= entries.keys())
+            self.assertEqual(case.method, 'POST')
+            self.assertEqual(case.route, 'R006')
+            self.assertEqual(case.requires, ())
+        self.assertTrue(all(case.unchanged and case.expected == 400 and case.expected_requests
+                            and not case.prepare for case in bad))
+        self.assertTrue(all(case.effect == 'device-read' and not case.unchanged for case in good))
+        # The positive duplicate-MAC control must actually be seen by BOTH
+        # devices; one MAC on two IPs of one router is a different refusal.
+        pair = good[-1]
+        self.assertEqual([row['router_id'] for row in pair.document['devices']], ['r-ik', 'r-ros'])
+        for table in ('dhcp_lease', 'monitor_lanip'):
+            self.assertEqual(pair.prepare[0]['ikuai'][table][0]['mac'], '02:00:00:00:00:21')
+
     def test_job_lock_worlds_do_not_require_unrelated_sibling_handlers(self):
         options = {'alpha': {'routers': {'items': []}}}
         worlds = workflows.job_lock_worlds(options)

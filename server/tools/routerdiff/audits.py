@@ -804,6 +804,61 @@ def declared():
             'complete state unchanged. Profile mismatch uses eleven wrong values of every JSON type '
             'plus case/whitespace and a valid row/token-shaped object, before device I/O or apply '
             'cache invalidation; no unknown signed-token value is substituted from Python into Go.', required)
+    normalization_sources = ('backend/common/client_fixed_ip.py:68',
+                             'backend/routers/lan_clients.py:64', 'backend/routers/lan_clients.py:72')
+    normal_ip = ('null', 'false', 'true', 'zero', 'integer', 'fraction', 'array', 'object', 'empty',
+                 'blank', 'garbage', 'ipv6', 'mapped-v6', 'cidr', 'leading-zero', 'unicode-digit',
+                 'octet-overflow', 'extra-octet', 'sign', 'zone', 'newline-inside')
+    normal_mac = ('null', 'false', 'true', 'zero', 'integer', 'fraction', 'array', 'object', 'empty',
+                  'blank', 'five', 'seven', 'dot', 'no-separator', 'long-octet', 'empty-octet',
+                  'non-hex', 'bad-hex-prefix')
+    normal_router = ('null', 'false', 'true', 'zero', 'integer', 'fraction', 'array', 'object', 'empty')
+    normal_good = ('canonical', 'hyphen', 'short-octets', 'mixed-separators', 'outer-whitespace',
+                   'empty-name', 'blank-name', 'ascii80', 'unicode80', 'lowercase', 'mixed-case',
+                   'same-MAC-different-router')
+    def normalized_case(label, status=400):
+        return ('fixed-ip-normalization', 'R006/normalize-' + label, status)
+    bad_fields = tuple(normalized_case(field + '-' + label)
+                       for field, labels in (('ip', normal_ip), ('mac', normal_mac), ('router_id', normal_router))
+                       for label in labels)
+    duplicate_ips = tuple(normalized_case('duplicate-' + label)
+                          for label in ('ip-same-router', 'ip-foreign-router', 'ip-trimmed'))
+    duplicate_macs = tuple(normalized_case('duplicate-' + label)
+                           for label in ('mac-hyphen', 'mac-short-octets', 'mac-trimmed'))
+    normal_controls = tuple(normalized_case('accepted-' + label, 200) for label in normal_good)
+    for ident in ('H0038', 'R006-F14'):
+        audits[ident] = Audit(normalization_sources,
+            'Every JSON type for IP/MAC/router ID, blank/nonempty wrong containers, IPv6/mapped IPv6, '
+            'CIDR, IPv4 leading zero/Unicode/overflow/extra octet/sign/zone/internal newline; MAC '
+            'segment count/length/notation and actual int-hex failures. Duplicate IP on same/different '
+            'routers and after trimming. All97 invalid-field/name/duplicate vectors are real HTTP '
+            'requests; this guard specifically requires48 field errors and3 IP duplicates. Twelve '
+            'device-backed positive previews include trim/hyphen/short/mixed MACs and same canonical '
+            'MAC on TWO routers. No private normalizer invocation or production data.',
+            bad_fields + duplicate_ips + normal_controls if ident == 'H0038' else bad_fields + duplicate_ips)
+    for ident in ('H0039', 'R006-F15'):
+        required = (('guards', 'R006/same-router-mac', 400),) + duplicate_macs
+        audits[ident] = Audit(normalization_sources,
+            'Canonical duplicate MAC, hyphen form, short octets and outer whitespace on distinct IPs '
+            'of the SAME router all400 with the later MAC-specific message. Positive control uses '
+            'the same MAC on different vendors, both with actual sightings; the request order is '
+            'iKuai then RouterOS and actions must retain that order. No duplicate-IP predecessor.',
+            required + normal_controls if ident == 'H0039' else required)
+    for ident, required, detail in (
+        ('H0592', tuple(normalized_case('ip-' + label) for label in normal_ip),
+         'Actual IPv4Address ValueError becomes empty IP, then the public preview returns exact400.'),
+        ('H0593', tuple(normalized_case('mac-' + label) for label in ('non-hex', 'bad-hex-prefix')),
+         'All six segments have accepted lengths; invalid hex reaches the int conversion catch, not the earlier count/length guard.'),
+        ('R006-B01', tuple(normalized_case('accepted-' + label, 200)
+                          for label in normal_good[:5] + ('lowercase', 'mixed-case')),
+         'Canonical, hyphen, short octets, mixed separators, trimmed IP/MAC and actual AF hex letter case reach seen-device planning.'),
+        ('R006-B02', duplicate_ips,
+         'Duplicate canonical IP is refused independently of router ID; outer whitespace cannot bypass it.'),
+        ('R006-B03', tuple(normalized_case('accepted-' + label, 200) for label in ('empty-name', 'blank-name')),
+         'Empty and all-whitespace names are legitimate PREVIEW inputs; saved-row requirement is an apply guard.')):
+        audits[ident] = Audit(normalization_sources, detail +
+            ' Checks full DB/files/devices and foreign rows; only device reads permitted for successful previews. '
+            'This is reference boundary evidence; an absent native route remains Go-unimplemented.', required)
     return audits
 
 

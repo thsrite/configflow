@@ -2,7 +2,7 @@
 
 Status: in progress; NOT ready for acceptance hand-back. Branch go-difftest-routers-b.
 Latest clean integration rebase: go15173872f; normal public binary built from it.
-Current declarations:410 source-reviewed variant audits,1891 remaining if all
+Current declarations:419 source-reviewed variant audits,1882 remaining if all
 completed increments are composed. Last FULL composition still37937739:3054
 recipes/301 audits. Newer subsets do not replace that full evidence; latest
 large subset2470 recipes/327 audits. All observed26 domain routes remain absent
@@ -1546,3 +1546,32 @@ No active command. Last full composition3054/301 still not replaced. Full curren
 composition/final gate/rebase pending; native parity and1900-ish remaining source
 paths are not complete. Next work: deeper fixed-IP fields/setup and reachability,
 remaining device/background/OS paths and content-bound dynamic comparison.
+
+
+Fixed-IP IP/MAC/name normalization increment:
+- Added97 rejected plus12 positive actual HTTP previews. Positive cases include
+  AF hex letters in lower/mixed case (a digits-only MAC cannot prove uppercasing),
+  short octets, mixed separators, outer whitespace, empty/blank/80-character
+  names and a same-MAC/different-vendor control with actual sightings on both.
+  Rejects cover every JSON type, malformed IPv4/MAC, normalized duplicates,
+  all C0/DEL and81 ASCII/Unicode/space names. Preview is DB/device read-only.
+- Nine named audits: H0038/H0039/H0592/H0593, R006-F14/F15/B01/B02/B03.
+  Current419 declarations/1882 pending if composed; no native parity claim.
+  Ownership-marker aliasing remains pending and is documented in the audit file.
+- Harness construction mistakes were caught by self-tests: an unclosed tuple,
+  then a missing inner generator loop/count assertion. Fixed before reference
+  rerun; they are test authoring failures, not product findings.
+
+.64 commands:
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY="$HOME/.cache/routerdiff-build-302rx1dg-current/configflow"; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python -m unittest -v test_audits test_recipes; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world guards --world fixed-ip-normalization --output "$HOME/.cache/routerdiff-reports/302rx1dg/fixed-normalization-audits.json"'`
+=> Ran32 tests4.311s/OK;1805 recipes, allGo-unimplemented, references361,
+320 audits/1981 pending in this subset, no Python bug, complete=false.
+Then strengthened the success set with actual AF hex case variants and reran only
+that changed world, keeping the unchanged guard observations:
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY="$HOME/.cache/routerdiff-build-302rx1dg-current/configflow"; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python -m unittest -v test_audits test_recipes; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world fixed-ip-normalization --output "$HOME/.cache/routerdiff-reports/302rx1dg/fixed-normalization-letters.json"'`
+=> Ran32 tests13.250s/OK;109 recipes,97 refusals/12 successes, allGo-unimplemented,
+7 audits in this single-world subset (two require the unchanged guard control).
+A foreground `rt --no-sync` Python evaluation joined only the unchanged guards
+from the first report with the109 current observations: observed_recipes1807,
+fixed_normalization_audits9, verdict=variants-audited, native_compared0.
+Last FULL report3054/301 remains unchanged; final composition/gate/rebase pending.
