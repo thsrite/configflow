@@ -15,7 +15,7 @@ import (
 // through the proxy-group routes (test_group_edit_relinks_only_fixed_inbounds_in_same_transaction,
 // test_other_references_still_block_deletion_without_changing_listener,
 // test_roundtrip_failure_does_not_partially_rename_or_rewrite_profile) and
-// through generate_mihomo_config belong to #16 and #6; their listener-level
+// through generate_mihomo_config belong to C33 and the converter work; their listener-level
 // assertions are covered here against RelinkGroupListeners and
 // ValidateListenerPolicies directly.
 
