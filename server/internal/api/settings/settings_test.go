@@ -200,8 +200,8 @@ func TestServerDomainAndAggregationAndVersion(t *testing.T) {
 	srv.Post("/api/server-domain", httpxtest.JSON(jsonx.Obj("new_domain", " https://cf.example "))).
 		WantJSON(jsonx.Obj("success", true, "server_domain", "https://cf.example"))
 	srv.Post("/api/server-domain", httpxtest.JSON(jsonx.Obj("new_domain", ""))).WantStatus(400)
-	srv.Post("/api/server-domain", httpxtest.Body([]byte("x"), "text/plain")).WantStatus(500)
-	srv.Do("HEAD", "/api/server-domain").WantStatus(500) // the view returns None for HEAD
+	srv.Post("/api/server-domain", httpxtest.Body([]byte("x"), "text/plain")).WantStatus(415)
+	srv.Do("HEAD", "/api/server-domain").WantStatus(200)
 	srv.Get("/api/settings/subscription-aggregation").WantJSON(jsonx.Obj("enabled", false))
 	srv.Post("/api/settings/subscription-aggregation", httpxtest.JSON(jsonx.Obj("enabled", "yes"))).
 		WantJSON(jsonx.Obj("success", true, "enabled", "yes"))

@@ -4,6 +4,7 @@ import (
 	"configflow/internal/httpx"
 	"configflow/internal/jsonx"
 	"configflow/internal/substore"
+	"encoding/json"
 )
 
 // listThirdPartyDependencies is GET /api/settings/dependencies: version,
@@ -33,9 +34,13 @@ func updateSubStoreDependency(c *httpx.Ctx) (*httpx.Response, error) {
 
 // setSubStoreMode is POST /api/settings/dependencies/sub-store/mode.
 func setSubStoreMode(c *httpx.Ctx) (*httpx.Response, error) {
-	data, ok := c.JSONSilent().(*jsonx.Object)
-	mode, _ := data.Value("mode").(string)
-	if !ok || data == nil || (mode != "on_demand" && mode != "always") {
+	var request settingsRequest
+	ok := c.BindSilent(&request)
+	var mode string
+	if err := json.Unmarshal(request.Mode, &mode); err != nil {
+		ok = false
+	}
+	if !ok || (mode != "on_demand" && mode != "always") {
 		return failure(400, "请选择按需启动或常驻运行"), nil
 	}
 	if err := substore.Default().Runtime.SetMode(c.Context(), mode); err != nil {

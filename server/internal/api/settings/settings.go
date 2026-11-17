@@ -59,15 +59,15 @@ func failure(status int, message string) *httpx.Response {
 func handleWebPort(c *httpx.Ctx) (*httpx.Response, error) {
 	manager := webListener.Load()
 	result, err := func() (*httpx.Response, error) {
-		// Python tests request.method == 'GET': HEAD takes the POST branch.
-		if c.Method() == "GET" {
-			status, err := manager.Status(c.Context())
+        // HEAD shares GET semantics and never enters the write branch.
+        if c.Method() == "GET" || c.Method() == "HEAD" {
+            status, err := manager.Status(c.Context())
 			if err != nil {
 				return nil, err
 			}
 			return httpx.JSON(status), nil
 		}
-		data := c.JSONObject()
+		data := silentRequestObject(c)
 		if data == nil {
 			return failure(400, "请提供 Web 监听端口"), nil
 		}
@@ -131,10 +131,10 @@ func handleRuleFetchProxy(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	if c.Method() == "GET" {
+	if c.Method() == "GET" || c.Method() == "HEAD" {
 		return httpx.JSON(jsonx.Obj("rule_fetch_proxy", systemSettings(config).GetOr("rule_fetch_proxy", ""))), nil
 	}
-	data := c.JSONObject()
+	data := silentRequestObject(c)
 	if data == nil {
 		return failure(400, "请提供规则下载代理，留空可清除设置"), nil
 	}
@@ -169,18 +169,13 @@ func pyStrip(v any) (string, error) {
 	return strings.TrimFunc(text, pyIsSpace), nil
 }
 
-// requestJSONObject is `data = request.json` followed by `data.get(...)`
-// inside a try block: the error message Python would put into str(e).
+// requestJSONObject bridges the native request DTO to the legacy repository API.
 func requestJSONObject(c *httpx.Ctx) (*jsonx.Object, error) {
-	data, err := c.JSON()
-	if err != nil {
+	var request settingsRequest
+	if err := c.Bind(&request); err != nil {
 		return nil, err
 	}
-	object, ok := data.(*jsonx.Object)
-	if !ok || object == nil {
-		return nil, errors.New(httpx.NoAttributeGet(data))
-	}
-	return object, nil
+	return request.legacyObject()
 }
 
 func handleServerDomain(c *httpx.Ctx) (*httpx.Response, error) {
@@ -192,7 +187,7 @@ func handleServerDomain(c *httpx.Ctx) (*httpx.Response, error) {
 		return nil, err
 	}
 	switch c.Method() {
-	case "GET":
+	case "GET", "HEAD":
 		return httpx.JSON(jsonx.Obj("server_domain", systemSettings(config).GetOr("server_domain", ""))), nil
 	case "POST":
 		response, err := func() (*httpx.Response, error) {
@@ -215,6 +210,10 @@ func handleServerDomain(c *httpx.Ctx) (*httpx.Response, error) {
 			return httpx.JSON(jsonx.Obj("success", true, "server_domain", newDomain)), nil
 		}()
 		if err != nil {
+			var binding *httpx.HTTPError
+			if errors.As(err, &binding) {
+				return nil, err
+			}
 			appLogger.Error("Failed to update server domain: " + err.Error())
 			return failure(500, err.Error()), nil
 		}
@@ -232,7 +231,7 @@ func handleConfigToken(c *httpx.Ctx) (*httpx.Response, error) {
 		return nil, err
 	}
 	switch c.Method() {
-	case "GET":
+	case "GET", "HEAD":
 		return httpx.JSON(jsonx.Obj("config_token", systemSettings(config).GetOr("config_token", ""))), nil
 	case "POST":
 		response, err := func() (*httpx.Response, error) {
@@ -265,6 +264,10 @@ func handleConfigToken(c *httpx.Ctx) (*httpx.Response, error) {
 			return httpx.JSON(jsonx.Obj("success", true, "config_token", newToken)), nil
 		}()
 		if err != nil {
+			var binding *httpx.HTTPError
+			if errors.As(err, &binding) {
+				return nil, err
+			}
 			appLogger.Error("Failed to update config token: " + err.Error())
 			return failure(500, err.Error()), nil
 		}
@@ -291,10 +294,14 @@ var backupFields = append(append([]string{}, backupTextFields...), "auto_backup"
 // backupRequestData is _backup_request_data: the validated body, or the 400
 // response.
 func backupRequestData(c *httpx.Ctx) (*jsonx.Object, *httpx.Response) {
-	data := c.JSONObject()
+	var request settingsRequest
+	var data *jsonx.Object
+	if c.BindSilent(&request) {
+		data, _ = request.legacyObject()
+	}
 	message := ""
 	switch {
-	case data == nil || data.Len() == 0:
+	case data == nil || !request.nonempty:
 		message = "请求体必须是非空 JSON 对象，请使用 Content-Type: application/json"
 	case !hasAny(data, backupFields):
 		message = "请提供 WebDAV 备份配置字段"
@@ -362,7 +369,7 @@ func backupConfig(c *httpx.Ctx) (*httpx.Response, error) {
 		return nil, err
 	}
 	switch c.Method() {
-	case "GET":
+	case "GET", "HEAD":
 		backup, _ := config.GetOr("backup", jsonx.NewObject()).(*jsonx.Object)
 		keepLatest, keepDaily := retentionSettings(backup)
 		password := ""
@@ -421,7 +428,7 @@ func handleSubscriptionAggregation(c *httpx.Ctx) (*httpx.Response, error) {
 		return nil, err
 	}
 	switch c.Method() {
-	case "GET":
+	case "GET", "HEAD":
 		return httpx.JSON(jsonx.Obj("enabled", systemSettings(config).GetOr("subscription_aggregation_enabled", false))), nil
 	case "POST":
 		response, err := func() (*httpx.Response, error) {
@@ -438,6 +445,10 @@ func handleSubscriptionAggregation(c *httpx.Ctx) (*httpx.Response, error) {
 			return httpx.JSON(jsonx.Obj("success", true, "enabled", enabled)), nil
 		}()
 		if err != nil {
+			var binding *httpx.HTTPError
+			if errors.As(err, &binding) {
+				return nil, err
+			}
 			appLogger.Error("Failed to update subscription aggregation: " + err.Error())
 			return failure(500, err.Error()), nil
 		}

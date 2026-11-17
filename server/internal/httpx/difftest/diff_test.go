@@ -169,14 +169,15 @@ func startGo(t *testing.T, dataDir string) string {
 }
 
 type request struct {
-	binding     *bindingExpectation
-	name        string
-	method      string
-	path        string
-	auth        string // "", "admin", "cross", "expired", "forged", "malformed", "claims-empty"
-	headers     map[string]string
-	body        string
-	contentType string
+	c06Difference string
+	binding       *bindingExpectation
+	name          string
+	method        string
+	path          string
+	auth          string // "", "admin", "cross", "expired", "forged", "malformed", "claims-empty"
+	headers       map[string]string
+	body          string
+	contentType   string
 	// mask lists top-level (or dotted) JSON keys whose values differ by
 	// design (random tokens, times, paths).
 	mask []string
@@ -265,10 +266,10 @@ func requests(t *testing.T) []request {
 		{name: "preflight protected admin", method: "OPTIONS", path: "/api/server-domain", auth: "admin", headers: map[string]string{
 			"Origin": "https://client.example", "Access-Control-Request-Method": "GET"}},
 		{name: "server domain", method: "GET", path: "/api/server-domain", auth: "admin"},
-		{name: "server domain HEAD", method: "HEAD", path: "/api/server-domain", auth: "admin"},
+		{name: "server domain HEAD", c06Difference: "head-500", method: "HEAD", path: "/api/server-domain", auth: "admin"},
 		{name: "server domain set", method: "POST", path: "/api/server-domain", auth: "admin", body: `{"new_domain":" http://127.0.0.1:5002 "}`, contentType: J},
 		{name: "server domain empty", method: "POST", path: "/api/server-domain", auth: "admin", body: `{"new_domain":""}`, contentType: J},
-		{name: "server domain not json", method: "POST", path: "/api/server-domain", auth: "admin", body: `x`, contentType: "text/plain"},
+		{name: "server domain not json", c06Difference: "binding-415", method: "POST", path: "/api/server-domain", auth: "admin", body: `x`, contentType: "text/plain"},
 		{name: "server domain number", method: "POST", path: "/api/server-domain", auth: "admin", body: `{"new_domain":5}`, contentType: J},
 		{name: "server domain read back", method: "GET", path: "/api/server-domain", auth: "admin"},
 		{name: "config token empty", method: "GET", path: "/api/config-token", auth: "admin"},
@@ -286,12 +287,12 @@ func requests(t *testing.T) []request {
 		{name: "rule fetch proxy read", method: "GET", path: "/api/settings/rule-fetch-proxy", auth: "admin"},
 		{name: "rule fetch proxy invalid", method: "POST", path: "/api/settings/rule-fetch-proxy", auth: "admin", body: `{"rule_fetch_proxy":"socks5://x:1"}`, contentType: J},
 		{name: "rule fetch proxy missing", method: "POST", path: "/api/settings/rule-fetch-proxy", auth: "admin", body: `{}`, contentType: J},
-		{name: "rule fetch proxy HEAD", method: "HEAD", path: "/api/settings/rule-fetch-proxy", auth: "admin"},
+		{name: "rule fetch proxy HEAD", c06Difference: "head-400", method: "HEAD", path: "/api/settings/rule-fetch-proxy", auth: "admin"},
 		{name: "rule fetch proxy clear", method: "POST", path: "/api/settings/rule-fetch-proxy", auth: "admin", body: `{"rule_fetch_proxy":""}`, contentType: J},
 		{name: "aggregation", method: "GET", path: "/api/settings/subscription-aggregation", auth: "admin"},
 		{name: "aggregation set", method: "POST", path: "/api/settings/subscription-aggregation", auth: "admin", body: `{"enabled":true}`, contentType: J},
 		{name: "aggregation set odd", method: "POST", path: "/api/settings/subscription-aggregation", auth: "admin", body: `{"enabled":[1]}`, contentType: J},
-		{name: "aggregation bad", method: "POST", path: "/api/settings/subscription-aggregation", auth: "admin", body: `[]`, contentType: J},
+		{name: "aggregation bad", c06Difference: "binding-400", method: "POST", path: "/api/settings/subscription-aggregation", auth: "admin", body: `[]`, contentType: J},
 		{name: "backup config", method: "GET", path: "/api/backup/config", auth: "admin"},
 		{name: "backup config save", method: "POST", path: "/api/backup/config", auth: "admin", body: `{"webdav_url":"https://dav.invalid","webdav_password":"pw","keep_latest":7}`, contentType: J},
 		{name: "backup config masked", method: "POST", path: "/api/backup/config", auth: "admin", body: `{"webdav_password":"******","auto_backup":false}`, contentType: J},
@@ -303,7 +304,7 @@ func requests(t *testing.T) []request {
 		{name: "web port reserved", method: "POST", path: "/api/settings/web-port", auth: "admin", body: `{"port":3001}`, contentType: J},
 		{name: "web port unsupported", method: "POST", path: "/api/settings/web-port", auth: "admin", body: `{"port":8081}`, contentType: J},
 		{name: "web port bad", method: "POST", path: "/api/settings/web-port", auth: "admin", body: `{"port":"80"}`, contentType: J},
-		{name: "web port HEAD", method: "HEAD", path: "/api/settings/web-port", auth: "admin"},
+		{name: "web port HEAD", c06Difference: "head-400", method: "HEAD", path: "/api/settings/web-port", auth: "admin"},
 		{name: "stats overview", method: "GET", path: "/api/stats/overview", auth: "admin", mask: []string{"data.profile.updated_at"}},
 		{name: "stats overview other profile", method: "GET", path: "/api/stats/overview", auth: "admin", headers: map[string]string{"X-ConfigFlow-Profile": "other"}, mask: []string{"data.profile.updated_at"}},
 		{name: "stats overview query profile", method: "GET", path: "/api/stats/overview?profile=other", auth: "admin", mask: []string{"data.profile.updated_at"}},
@@ -368,6 +369,9 @@ func maskJSON(value any, mask []string) any {
 }
 
 func compare(r request, py, gor response) []string {
+	if r.c06Difference != "" {
+		return c06ExpectedDifference(r, py, gor)
+	}
 	var diffs []string
 	if r.binding != nil {
 		py, diffs = bindingDifference(r, py, gor)

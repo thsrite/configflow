@@ -588,3 +588,12 @@ preview-regex 的 subscriptions/aggregations 空值继续按空选择处理；�
 手动缓存或新编辑可修复；名称、interval等非来源编辑不受影响，预备raw字节不重写。Create的实际提交加入
 同ID编辑/清理lease，下载仍在lease前。文件副作用后不提交DB候选，不新增revision/hook/接口或后台恢复。
 这些是已登记DB/cache可靠性修正的并发闭合，不代表其他模块自身DB-first修改来源的整条协议已完成。
+
+
+## C06 — HEAD 设置接口只读（与 C31/C32 同类，Python bug 修正）
+
+`rule-fetch-proxy`、`web-port`、`server-domain`、`config-token`、`backup/config`、`subscription-aggregation` 的 HEAD 一律走 GET，状态码和 headers 相同、无 body。修复 Python 将 HEAD 当写请求以及未返回响应的问题。每条路径用合法 JSON、畸形 JSON、非对象 body 断言完整 DB 指纹（含 revision）和所有文件不变；web-port 使用已启动的真实测试 listener，只改 HTTP 分派。真实 Flask 差分显式复现 rule-fetch-proxy HEAD 写入，作为已批准的预期差异。
+
+设置路由同时沿用 N8-6 `Bind`/`BindSilent`：严格读取的畸形 JSON、非对象/null body 返回 400，错误 MIME 返回 415，替代 Python 捕获异常后的 500；silent 读取仍返回原业务校验消息。其他字段值验证及持久化语义保持 Python 一致。见 `design/c06-http-settings.md`、`TestC06SettingsFlaskStorageBoundary`。
+
+C06 的 9 个 body reader 另有 27 条真实 Flask 对照，显式记录 NaN/Infinity/-Infinity → 原有严格或 silent 畸形请求响应的 N8-6 迁移差异；其中 Python 原来会保存非有限 aggregation enabled 值，Go 现在拒绝且 DB、文件及 revision 不变。其他有限数值及字段校验不变。
