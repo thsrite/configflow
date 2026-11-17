@@ -1605,3 +1605,20 @@ design_errors=[] seconds=13.54；exit=0
 ```
 
 原R仍差260、H仍差551及已列partial/长流程；继续升级/监听器等，最终.32全量未执行。
+
+## 批次 93：真实可信下载、Node 语法检查与异步升级终态
+
+- rebase至go045f2485。5新增变体相比通过，统一9318变体、原R4273（S686/F2657/B930）、H564、G16；R200-S01/F09/F10（后者两种形态）和H033缺asset。R200-F09/F10实际请求附H041/H040来源标签。已最新/503/无asset在worker前409，SQL/files不动且健康HTTP次数为1/0/0，TLS API请求精确一次。
+- R200-S01走真实可信TLS GitHub API和512KiB JavaScript下载、真实node --check；fake supervisor只有本fixture显式开启的restart能力，使用真实子进程读取各端DATA_DIR VERSION，再向带合成Bearer的fixture专用回环控制地址通知版本。未执行bundle、未重启宿主服务、未关闭证书校验。
+- POST202后逐端轮询公开dependencies至worker终态且maintenance已退出，才重置共享fake运行另一端；中途状态/target非法、轮询非200、12秒无终态均留下失败证据。比较完整终态JSON和声明响应头，finished_at仅允许真实运行时间窗内有限数字（故意旧时间/NaN/字符串会失败）。逐次轮询数可以因调度不同，但扣除本fixture发起的轮询后严格要求三个业务健康请求，所有健康method/path/auth/body/TE仍精确；API/download/CLI次数和内容逐项比较。
+- 全SQL保持不变，最终只能多出runtime VERSION和bundle，临时下载/回滚残留会失败；两端全文件比较加上最终两文件原始字节SHA256，不吞换行或尾部字节差异。终态/协议/写入比较器有故意错版本、重复restart、少下载、数据库写入和坏文件digest的自检，共83项。真实Node服务启动/端口接管仍属L1部分覆盖，未由fake冒充。
+
+```text
+.32 native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups dependency-update-preflight,dependency-update-success --baseline 045f2485
+R200-F09/F10(two variants)、H033、R200-S01：compared=5
+design_errors=[]；exit=0；统一报告常规runner合并完成
+83 self-checks + deliberate wrong-Go-response detection OK
+独立原始报告/tmp/configdiff-dependency-update.json
+```
+
+原R仍差257、H仍差548及partial/长流程；继续下载中冲突/升级回滚和其余清单，最终.32全量未执行。

@@ -37,6 +37,7 @@ class GitHub:
         self.context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         self.context.load_cert_chain(self.cert, key)
         self.requests, self.status = [], 200
+        self.before_reply = lambda _path: None
         self.bundle = b'"use strict";\n' + b' ' * (512 * 1024)
         self.release = {'tag_name': 'v2.42.1', 'published_at': '2026-01-01T00:00:00Z',
             'html_url': 'https://release.example/synthetic', 'body': 'synthetic release notes', 'assets': [{
@@ -53,6 +54,7 @@ class GitHub:
                     'authorization': self.headers.get('Authorization', ''), 'body': self.rfile.read(length).decode(),
                     **({'accept': self.headers.get('Accept', ''), 'user_agent': self.headers.get('User-Agent', '')}
                        if self.path == RELEASE_PATH else {})})
+                owner.before_reply(self.path)
                 if self.path == RELEASE_PATH:
                     status, body = owner.status, json.dumps(owner.release).encode()
                 elif self.path == '/sub-store.bundle.js':

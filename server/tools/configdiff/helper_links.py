@@ -6,6 +6,8 @@ Unreachable/earlier-guard branches are deliberately absent.
 """
 
 LINKS = {
+    'R200-F09': ('POST /api/settings/dependencies/sub-store/update', ('H041',)),
+    'R200-F10': ('POST /api/settings/dependencies/sub-store/update', ('H040',)),
     **{case: ('POST /api/generate/mosdns', ('H012',)) for case in ('H003', 'H004', 'H005', 'H006', 'H007', 'H008')},
     'H014': ('POST /api/generate/mosdns', ('H015',)),
     'R123-F08': ('POST /api/profiles/<profile_id>/clone', ('H770',)),

@@ -17,6 +17,42 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_dependency_update_observer_detects_terminal_protocol_and_storage_mutations(self):
+        from cases.dependency_updates import Update, terminal_diffs
+        policy = Policy(start=100, end=110)
+        value = {'dependencies': [{'update': {'finished_at': 105.25, 'state': 'success'},
+                                   'current_version': '2.42.1', 'lifecycle': {'state': 'running'}}]}
+        other = copy.deepcopy(value)
+        other['dependencies'][0]['update']['finished_at'] = 106.5
+        self.assertEqual(terminal_diffs(value, other, policy), [])
+        for mutation in ('old-time', 'string-time', 'nan', 'wrong-state', 'wrong-version', 'extra'):
+            other = copy.deepcopy(value)
+            row = other['dependencies'][0]
+            if mutation == 'old-time':
+                row['update']['finished_at'] = 99
+            elif mutation == 'string-time':
+                row['update']['finished_at'] = '105'
+            elif mutation == 'nan':
+                row['update']['finished_at'] = float('nan')
+            elif mutation == 'wrong-state':
+                row['update']['state'] = 'failed'
+            elif mutation == 'wrong-version':
+                row['current_version'] = '2.40.0'
+            else:
+                row['extra'] = False
+            self.assertTrue(terminal_diffs(value, other, policy), mutation)
+        observer = Update(None, None, None)
+        protocol = {'database_unchanged': True, 'worker_health_count': 3, 'github': ['release', 'download'],
+                    'commands': ['restart'], 'terminal_reached': True, 'installed_bytes': {'VERSION': 'exact-sha'}}
+        observer.observed = [copy.deepcopy(protocol), copy.deepcopy(protocol)]
+        observer.terminal = [copy.deepcopy(value), copy.deepcopy(value)]
+        self.assertEqual(observer.compare(policy), [])
+        for key, changed in [('database_unchanged', False), ('worker_health_count', 4),
+                             ('github', ['release']), ('commands', ['restart', 'restart']), ('terminal_reached', False),
+                             ('installed_bytes', {'VERSION': 'corrupted-sha'})]:
+            observer.observed[1] = {**protocol, key: changed}
+            self.assertTrue(observer.compare(policy), key)
+
     def test_managed_mode_protocol_rejects_mutating_commands_extra_health_reads_and_writes(self):
         from cases.dependency_modes import ModeProtocol, HEALTH
         observer = ModeProtocol(None, None, 1)

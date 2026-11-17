@@ -14,11 +14,27 @@ def events(pair):
 
 
 @contextmanager
-def managed(binary, recorder, *, fail=False, health_status=None, controller_status='RUNNING', unreadable_version=False, github=None):
+def managed(binary, recorder, *, fail=False, health_status=None, controller_status='RUNNING', unreadable_version=False, github=None, allow_restart=False):
     require_native_network()
     with Source(json.dumps({'data': {'version': '2.40.0'}}).encode()) as health:
         health.headers = {'Content-Type': 'application/json'}
         health.record_body = True
+        def control_version(path):
+            if path != '/_configdiff/version':
+                return
+            row = health.requests[-1]
+            try:
+                value = json.loads(bytes.fromhex(row['body_hex']))
+            except (ValueError, UnicodeError):
+                value = None
+            if (not allow_restart or row['method'] != 'POST'
+                    or row['authorization'] != 'Bearer synthetic-controller-capability'
+                    or value not in ({'version': '2.40.0'}, {'version': '2.42.1'})):
+                health.responses[path] = (403, b'controller fixture rejected', {})
+                return
+            health.body = json.dumps({'data': value}).encode()
+            health.responses[path] = (200, b'{"ok":true}', {'Content-Type': 'application/json'})
+        health.before_reply = control_version
         health.status = health_status if health_status is not None else 503 if fail else 200
         pair = Pair(binary, recorder)
         control = pair.root / 'control-runtime'
@@ -42,7 +58,22 @@ try:
     os.write(fd, (json.dumps(event) + '\\n').encode())
 finally:
     os.close(fd)
-if args != ['-c', '/etc/supervisor/conf.d/supervisord.conf', 'status', 'sub-store']:
+prefix = ['-c', '/etc/supervisor/conf.d/supervisord.conf']
+if args == prefix + ['restart', 'sub-store'] and os.environ.get('CONFIGDIFF_ALLOW_RESTART') == '1':
+    from urllib.request import Request, build_opener, ProxyHandler
+    version_file = Path(os.environ['DATA_DIR']) / 'sub-store/runtime/VERSION'
+    if not version_file.is_file():
+        version_file = Path(os.environ['SUB_STORE_BUILTIN_DIR']) / 'VERSION'
+    version = version_file.read_text().strip()
+    request = Request(os.environ['CONFIGDIFF_CONTROLLER_URL'],
+        json.dumps({'version': version}).encode(),
+        {'Authorization': 'Bearer synthetic-controller-capability', 'Content-Type': 'application/json'})
+    with build_opener(ProxyHandler({})).open(request, timeout=2) as response:
+        if response.status != 200:
+            sys.exit(96)
+    print('synthetic sub-store restarted')
+    sys.exit(0)
+if args != prefix + ['status', 'sub-store']:
     print('synthetic fake refuses every mutating or unknown command', file=sys.stderr)
     sys.exit(97)
 if os.environ.get('CONFIGDIFF_SUPERVISOR_FAIL') == '1':
@@ -57,6 +88,8 @@ print('sub-store ' + os.environ['CONFIGDIFF_SUPERVISOR_STATE'] + ' pid 1, uptime
             'PATH': str(tools) + os.pathsep + os.environ.get('PATH', ''),
             'CONFIGDIFF_SUPERVISOR_LOG': str(pair.root / 'supervisor-events.jsonl'),
             'CONFIGDIFF_SUPERVISOR_STATE': controller_status,
+            'CONFIGDIFF_ALLOW_RESTART': '1' if allow_restart else '0',
+            'CONFIGDIFF_CONTROLLER_URL': health.url + '/_configdiff/version',
             'CONFIGDIFF_SUPERVISOR_FAIL': '1' if fail else '0'}
         if github is not None:
             pair.options['environment'].update(REQUESTS_CA_BUNDLE=str(github.cert), SSL_CERT_FILE=str(github.cert),

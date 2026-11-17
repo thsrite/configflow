@@ -128,6 +128,8 @@ def main():
     groups.update(dependency_status)
     from cases.dependency_modes import GROUPS as dependency_modes
     groups.update(dependency_modes)
+    from cases.dependency_updates import GROUPS as dependency_updates
+    groups.update(dependency_updates)
     from cases.profile_rebind_helpers import GROUPS as profile_rebind_helpers
     groups.update(profile_rebind_helpers)
     from cases.profile_guards import GROUPS as profile_guards
