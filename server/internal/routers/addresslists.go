@@ -113,7 +113,7 @@ func (d *RouterOS) routerDigests(ctx context.Context, names []string) (map[strin
 		}
 	}
 	if len(result) != len(names) {
-		return nil, routerError(fmt.Sprintf(messageAddressDigest, shortConsoleOutput(output)))
+		return nil, routerError(fmt.Sprintf(messageAddressDigest, d.safeDeviceText(shortConsoleOutput(output))))
 	}
 	return result, nil
 }
@@ -337,7 +337,7 @@ func (d *RouterOS) OccupiedAddressNames(ctx context.Context, patterns, exclude [
 	output := executeOutput(value)
 	_, body, ok := strings.Cut(output, "cf-names:")
 	if !ok {
-		return nil, routerError(fmt.Sprintf(messageAddressNames, shortConsoleOutput(output)))
+		return nil, routerError(fmt.Sprintf(messageAddressNames, d.safeDeviceText(shortConsoleOutput(output))))
 	}
 	names := []string{}
 	for _, line := range strings.Split(strings.ReplaceAll(body, "\r", ""), "\n") {

@@ -15,6 +15,18 @@ try:
     action=case['action']; name=case.get('op',{}).get('name','L')
     if action=='digest': out['result']=lists.digest(case['state']['tables']['/ip/firewall/address-list'])
     elif action=='fetch': out['result']=lists.fetch(driver,name)
+    elif action=='addresses':
+        from backend.routers import ros_policy_write as write, routeros_nat_list as nat
+        journal=[]
+        ids={lists.ADDRESSES:set(row['.id'] for row in case['state']['tables'].get(lists.ADDRESSES,[]))}
+        try:
+            entries=[{'list':v['list'],'address':v['address'],'comment':v['comment'],'disabled':v['disabled']} for v in case['op']['entries']]
+            out['result']=write._create_addresses(driver,entries,journal,ids)
+        finally: out['records']=[{'step':step} for step in journal]
+    elif action in ('nat_apply','nat_roundtrip'):
+        undo=driver.apply(case['op'])
+        out['result']=undo
+        if action=='nat_roundtrip': out['result']={'undo':undo,'restored':driver.apply(undo)}
     elif action=='plan':
         from backend.routers.report import build_report
         from backend.routers import routeros_nat_list as nat

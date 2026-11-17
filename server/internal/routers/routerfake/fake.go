@@ -267,6 +267,9 @@ func (f *Fake) serveLocked(method, path string, query url.Values, body any, faul
 			if index < 0 {
 				return http.StatusNotFound, Row{"error": 404, "message": "Not Found"}, false
 			}
+			if readonlyRow(rows[index]) {
+				return http.StatusBadRequest, Row{"message": "Bad Request", "detail": "cannot modify dynamic object"}, false
+			}
 			f.tables[collection] = slices.Delete(rows, index, index+1)
 			delete(f.hiddenIDs, id)
 		}
@@ -316,6 +319,9 @@ func (f *Fake) serveLocked(method, path string, query url.Values, body any, faul
 		if index < 0 {
 			return http.StatusNotFound, Row{"error": 404, "message": "Not Found"}, false
 		}
+		if readonlyRow(rows[index]) {
+			return http.StatusBadRequest, Row{"message": "Bad Request", "detail": "cannot modify dynamic object"}, false
+		}
 		for key, value := range asRow(body) {
 			rows[index][key] = value
 		}
@@ -329,6 +335,9 @@ func (f *Fake) serveLocked(method, path string, query url.Values, body any, faul
 		index := rowIndex(rows, id)
 		if index < 0 {
 			return http.StatusNotFound, Row{"error": 404, "message": "Not Found"}, false
+		}
+		if readonlyRow(rows[index]) {
+			return http.StatusBadRequest, Row{"message": "Bad Request", "detail": "cannot modify dynamic object"}, false
 		}
 		f.tables[collection] = slices.Delete(rows, index, index+1)
 		delete(f.hiddenIDs, id)

@@ -156,7 +156,7 @@ func (d *RouterOS) request(ctx context.Context, method, path string, values Row,
 	if response.Status < 200 || response.Status >= 300 {
 		var body Row
 		_ = devhttp.DecodeJSON(response.Body, &body)
-		detail := strings.Join(nonEmpty([]string{rosText(body["message"]), rosText(body["detail"])}), ": ")
+		detail := d.safeDeviceText(strings.Join(nonEmpty([]string{rosText(body["message"]), rosText(body["detail"])}), ": "))
 		kind := KindRouter
 		if method != "GET" && response.Status >= 500 {
 			kind = KindUncertainWrite

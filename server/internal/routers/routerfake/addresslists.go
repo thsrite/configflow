@@ -168,3 +168,7 @@ func storedAddress(value string) string {
 	}
 	return value
 }
+
+func readonlyRow(row Row) bool {
+	return row["dynamic"] == true || row["dynamic"] == "true" || row["dynamic"] == "yes"
+}
