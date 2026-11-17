@@ -80,11 +80,14 @@ func ReadNotes(p *Profile) (map[string]string, error) {
 
 // SetNote changes only display names in the owning profile document.
 func SetNote(p *Profile, ip, name string) error {
-	state, err := notesState(p)
-	if err != nil {
-		return err
+	rawNotes, rawPolicies := p.get("device_notes"), get(p.Settings(), "device_policies")
+	if !has(p.doc, "device_notes") {
+		rawNotes = M()
 	}
-	notes, err := state.Set(ip, name)
+	if !has(p.Settings(), "device_policies") {
+		rawPolicies = L()
+	}
+	notes, err := devicenotes.Set(ToJSON(rawNotes), ToJSON(rawPolicies), ip, name)
 	if err != nil {
 		return fail(err.Error())
 	}

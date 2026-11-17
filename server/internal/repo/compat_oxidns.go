@@ -1,8 +1,9 @@
 // TODO(port): replace with package #11 oxidns editor, rule DNS
 // (backend/common/oxidns_device_policy.py::normalize_client_range, backend/common/rule_dns.py::normalize_action,
-// hydrate_ruleset), package #15 resource routes A (backend/common/device_notes.py::normalize_notes) and
+// hydrate_ruleset) and
 // package #38 clients (client_fixed_ip.validate_bindings now delegates to internal/routerdoc).
-// These packages import repo, so the replacements have to live in a package repo can import.
+// These packages import repo, so replacements must live in a leaf package.
+// Device notes now delegate to internal/devicenotes (C31).
 
 package repo
 

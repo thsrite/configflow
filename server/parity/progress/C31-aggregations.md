@@ -26,3 +26,12 @@ Iterate pure/unit on .63; real loopback sockets and final verification .32. Fina
 - .32 `go test -race -count=1 ./internal/devicenotes/` passes 1.017s; `go test -count=1 ./internal/oxidns/ -run "TestBoundaryEditorRecorded|TestBoundaryCommonRecorded|TestC22C26ReviewReferences|TestC05ReviewSettingsReferences"` passes 23.380s.
 - Notes table cases cover bad roots/addresses/types/control characters/canonical collisions, legacy DEL repair, empty-name hiding, removal carryover, owned snapshots and zero-value safety. `FuzzStoredNotes` seeds added; sustained fuzz and real-Python notes corpus pending.
 - Current go has no device_notes call sites in agents/routers yet (Python policy_workspace/client_devices are later owners); no existing Go private notes copy there. The shared API and oxidns wrappers cover their future integration. Existing repo and oxidns copies are replaced, not retained.
+
+## Second compiling step
+
+All eleven routes and a native aggregation renderer now compile and register in the full server; renderer wired to immutable provider capture/bundle/atomic commit. Node conversions retain one delivery scope across main and aggregation rendering. Shared notes fixes now preserve Python's lazy legacy validation for nonempty edits; typed policy edits no longer encode/decode themselves for validation.
+
+- .32 `go vet ./...` passed with route integration; full convert/provider tests passed 16.934s/12.646s.
+- Real-Python notes differential passes (1.055s): valid/invalid notes and policies, normalization, empty-name hiding, removed-row carryover, capacity, revisions, route edits and exact settings identity for name-only saves. Generated native drafts compared after YAML parsing.
+- Flask↔Go differential currently covers catalog/reorder/provider/preview/auth, statistics stripping, stale-profile catalog access, protected delete, synthetic opaque conversion and global bundle validation. Basic paths pass; finishing broader bundle corpus and source-clock fixture alignment.
+- First actual .32 proddiff passes `new=0 stale=0`, all self-checks pass, aggregation-provider now HTTP-compared **2 cases, 2 successes** (previous inventory used the wrong `aggregations` key and incorrectly reported zero). Both direct worker and HTTP inventory use `subscription_aggregations`; synthetic inventory regression added. A11 can remove its frozen provider byte input after C31 integration; do not alter A11 branch here.

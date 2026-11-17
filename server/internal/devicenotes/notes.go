@@ -181,6 +181,23 @@ func (s State) Set(ip, name string) (Names, error) {
 	return normalizeNames(notes)
 }
 
+// Set changes stored notes, consulting legacy policies only when hiding a name.
+// A valid nonempty note can repair a profile whose unrelated legacy rows are bad.
+func Set(rawNotes, rawPolicies json.RawMessage, ip, name string) (Names, error) {
+	notes, err := Parse(rawNotes)
+	if err != nil {
+		return nil, err
+	}
+	state := State{notes: notes}
+	if name == "" {
+		state.policies, err = ParsePolicies(rawPolicies)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return state.Set(ip, name)
+}
+
 // Revision identifies names shown beside the stored policy rows. The digest is
 // based on ordered rows and Go-native compact UTF-8 JSON, not map iteration.
 func (s State) Revision() (string, error) {

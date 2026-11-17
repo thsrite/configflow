@@ -55,26 +55,49 @@ func ParsePolicies(raw json.RawMessage) ([]Policy, error) {
 			}
 			name = *text
 		}
-		if utf8.RuneCountInString(name) > 80 || strings.ContainsFunc(name, func(r rune) bool { return r < 32 }) {
-			return nil, errors.New(NameMessage)
+		name, err := normalizePolicyName(name)
+		if err != nil {
+			return nil, err
 		}
 		var mode string
 		if json.Unmarshal(fields["mode"], &mode) != nil || mode != "smart" && mode != "direct" {
 			return nil, errors.New(PolicyModeMessage)
 		}
-		rows = append(rows, Policy{canonical, strings.TrimSpace(strings.ReplaceAll(name, "\x7f", "")), mode})
+		rows = append(rows, Policy{canonical, name, mode})
 	}
 	return rows, nil
 }
 
 func normalizePolicies(rows []Policy) ([]Policy, error) {
-	if rows == nil {
-		rows = []Policy{}
+	if len(rows) > 512 {
+		return nil, errors.New(PoliciesMessage)
 	}
-	// Encoding typed rows preserves the same validation order for direct callers.
-	raw, err := json.Marshal(rows)
-	if err != nil {
-		return nil, fmt.Errorf("encode device policy rows: %w", err)
+	result := make([]Policy, 0, len(rows))
+	seen := map[string]bool{}
+	for _, row := range rows {
+		ip, ok := clientrange.Normalize(row.IP)
+		if !ok {
+			return nil, errors.New(AddressMessage)
+		}
+		if seen[ip] {
+			return nil, fmt.Errorf(duplicatePolicyMessage, ip)
+		}
+		seen[ip] = true
+		name, err := normalizePolicyName(row.Name)
+		if err != nil {
+			return nil, err
+		}
+		if row.Mode != "smart" && row.Mode != "direct" {
+			return nil, errors.New(PolicyModeMessage)
+		}
+		result = append(result, Policy{ip, name, row.Mode})
 	}
-	return ParsePolicies(raw)
+	return result, nil
+}
+
+func normalizePolicyName(name string) (string, error) {
+	if utf8.RuneCountInString(name) > 80 || strings.ContainsFunc(name, func(r rune) bool { return r < 32 }) {
+		return "", errors.New(NameMessage)
+	}
+	return strings.TrimSpace(strings.ReplaceAll(name, "\x7f", "")), nil
 }
