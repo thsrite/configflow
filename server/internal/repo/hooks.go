@@ -121,6 +121,6 @@ func currentHooks() Hooks {
 // SetStructuredProxyStringParser replaces _parse_structured_proxy_string
 // (JSON or YAML node text → proxy object, nil when it needs Sub-Store). The
 // default is convert.InspectStructuredProxyString; tests use the hook.
-func SetStructuredProxyStringParser(parse func(proxyString string) *jsonx.Object) {
+func SetStructuredProxyStringParser(parse func(proxyString string) (*jsonx.Object, error)) {
 	parseStructuredProxyString = parse
 }

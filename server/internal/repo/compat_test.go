@@ -30,7 +30,7 @@ func compatCall(t *testing.T, fn string, input any) (any, error) {
 	case "raw_dialer":
 		return rawDialer(object)
 	case "parse_proxy_string":
-		if parsed := parseStructuredProxyString(input.(string)); parsed != nil {
+		if parsed := proxyObjectForTest(input.(string)); parsed != nil {
 			return goldenDefault(parsed), nil
 		}
 		return nil, nil
@@ -221,7 +221,7 @@ func goldenDefault(v any) any {
 // A YAML timestamp is a datetime in Python: truthy as a type, not a string
 // as a dialer. The golden writes it as [text], which is what Go returns.
 func TestCompatProxyStringTimestamp(t *testing.T) {
-	parsed := parseStructuredProxyString("type: ss\ndialer-proxy: 2024-01-02")
+	parsed := proxyObjectForTest("type: ss\ndialer-proxy: 2024-01-02")
 	if parsed == nil {
 		t.Fatal("not parsed")
 	}
@@ -233,16 +233,16 @@ func TestCompatProxyStringTimestamp(t *testing.T) {
 	if !isHelperClass(err, ClassDialerReference) || err.Error() != "原始 dialer-proxy 必须是非空名称" {
 		t.Fatalf("got %v", err)
 	}
-	if parseStructuredProxyString("type: 2024-13-45") != nil {
+	if proxyObjectForTest("type: 2024-13-45") != nil {
 		t.Fatal("an impossible date must make the string unparsable")
 	}
 	// bytes and self-referencing containers are truthy non-strings in Python too
 	for _, text := range []string{"type: !!binary YWJj", "a: &a [*a]\ntype: x", "type: &t [*t]", "type: ss\nself: &s {me: *s}"} {
-		if parseStructuredProxyString(text) == nil {
+		if proxyObjectForTest(text) == nil {
 			t.Errorf("%q: not parsed", text)
 		}
 	}
-	if parseStructuredProxyString("type: !!binary '***'") != nil {
+	if proxyObjectForTest("type: !!binary '***'") != nil {
 		t.Error("invalid base64 must make the string unparsable")
 	}
 }
@@ -251,7 +251,7 @@ func TestCompatProxyStringTimestamp(t *testing.T) {
 func TestCompatProxyStringOverride(t *testing.T) {
 	previous := parseStructuredProxyString
 	defer func() { parseStructuredProxyString = previous }()
-	parseStructuredProxyString = func(string) *jsonx.Object { return jsonx.Obj("type", "x", "dialer-proxy", "via") }
+	parseStructuredProxyString = func(string) (*jsonx.Object, error) { return jsonx.Obj("type", "x", "dialer-proxy", "via"), nil }
 	value, err := rawDialer(jsonx.Obj("proxy_string", "anything"))
 	if err != nil || value != "via" {
 		t.Fatalf("got %v, %v", value, err)
@@ -284,4 +284,9 @@ func refusedByNetURL(v any) bool {
 		}
 	}
 	return false
+}
+
+func proxyObjectForTest(text string) *jsonx.Object {
+	v, _ := parseStructuredProxyString(text)
+	return v
 }

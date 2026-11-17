@@ -224,7 +224,11 @@ func proxyOf(ctx context.Context, node *jsonx.Object, converter convert.ProxyStr
 // needsSubStore is _needs_sub_store(node).
 func needsSubStore(node *jsonx.Object) bool {
 	raw, ok := node.Value("proxy_string").(string)
-	return ok && raw != "" && convert.ParseStructuredProxyString(raw) == nil
+	if !ok || raw == "" {
+		return false
+	}
+	parsed, err := convert.ParseStructuredProxyString(raw)
+	return err == nil && parsed == nil
 }
 
 // runProbe is _run_probe(proxies, options): ordered name → result.

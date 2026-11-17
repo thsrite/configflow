@@ -224,7 +224,10 @@ func runCorpusRow(row corpusRow) (result any, mutated any, err error) {
 		}
 		return out, nil, err
 	case "parse_structured_proxy_string":
-		p := ParseStructuredProxyString(str(a[0]))
+		p, err := ParseStructuredProxyString(str(a[0]))
+		if err != nil {
+			return nil, nil, err
+		}
 		if p == nil {
 			return nil, nil, nil
 		}

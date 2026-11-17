@@ -808,7 +808,10 @@ func rawDialer(node *jsonx.Object) (any, error) {
 		if !ok {
 			return nil, pyError("AttributeError", "'"+pyTypeName(proxyString)+"' object has no attribute 'strip'")
 		}
-		parsed := InspectStructuredProxyString(text)
+		parsed, err := InspectStructuredProxyString(text)
+		if err != nil {
+			return nil, err
+		}
 		if parsed == nil || parsed.Len() == 0 {
 			return nil, nil
 		}

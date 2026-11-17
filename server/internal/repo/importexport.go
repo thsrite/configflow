@@ -433,7 +433,10 @@ func scopeLegacyDialers(source *jsonx.Object) (*jsonx.Object, error) {
 			continue
 		}
 		if proxyString := item.node.Value("proxy_string"); jsonx.Truthy(proxyString) {
-			parsed := parseStructuredProxyString(proxyString.(string))
+			parsed, err := parseStructuredProxyString(proxyString.(string))
+			if err != nil {
+				return nil, fromConvert(err)
+			}
 			if parsed == nil {
 				return nil, helperError(ClassTypeError, "'NoneType' object does not support item assignment")
 			}

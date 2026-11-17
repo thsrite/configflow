@@ -261,8 +261,7 @@ func TestNativeYAMLScalarBoundary(t *testing.T) {
 	} {
 		isolateCache(t)
 		for i := 0; i < 2; i++ {
-			got := ParseStructuredProxyString(tc.source)
-			var err error
+			got, err := ParseStructuredProxyString(tc.source)
 			if err != nil || !jsonx.Equal(got, tc.want) {
 				t.Fatalf("%s: %v %v", tc.source, got, err)
 			}
@@ -297,7 +296,7 @@ func TestAliasDiamondDoesNotExpandDuringCacheScreening(t *testing.T) {
 	for i := 1; i <= 40; i++ {
 		fmt.Fprintf(&b, "a%d: &a%d {l: *a%d, r: *a%d}\n", i, i, i-1, i-1)
 	}
-	if _, err := parseStructured(b.String()); !errors.Is(err, yamlx.ErrAliasBudget) {
+	if _, err := ParseStructuredProxyString(b.String()); !errors.Is(err, yamlx.ErrAliasBudget) {
 		t.Fatalf("expected alias budget: %v", err)
 	}
 	if cacheLen() != 0 {
@@ -832,6 +831,6 @@ func TestConversionLogLines(t *testing.T) {
 // parsedProxyForTest exposes the object for legacy replay; policy errors are
 // asserted separately by the native-reader boundary tests.
 func parsedProxyForTest(text string) *jsonx.Object {
-	value := ParseStructuredProxyString(text)
+	value, _ := ParseStructuredProxyString(text)
 	return value
 }

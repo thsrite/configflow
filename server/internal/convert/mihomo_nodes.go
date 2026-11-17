@@ -728,15 +728,13 @@ func pyTruthy(v any) bool {
 // ParseStructuredProxyString parses JSON or YAML locally. A nil result means
 // another parser may handle it. Policy and alias failures are returned instead
 // of being retried through Sub-Store.
-func ParseStructuredProxyString(proxyString string) *jsonx.Object {
-	result, _ := parseStructured(proxyString)
-	return result
+func ParseStructuredProxyString(proxyString string) (*jsonx.Object, error) {
+	return parseStructured(proxyString)
 }
 
 // InspectStructuredProxyString applies the same reader policies as generation.
-func InspectStructuredProxyString(proxyString string) *jsonx.Object {
-	result, _ := parseStructured(proxyString)
-	return result
+func InspectStructuredProxyString(proxyString string) (*jsonx.Object, error) {
+	return parseStructured(proxyString)
 }
 
 func parseStructured(proxyString string) (*jsonx.Object, error) {
@@ -863,7 +861,11 @@ func ConvertNodeToMihomo(ctx context.Context, node *jsonx.Object, converter Prox
 		if !ok {
 			return nil, attributeError(value, "strip")
 		}
-		if parsed := ParseStructuredProxyString(proxyString); parsed != nil && parsed.Len() > 0 {
+		parsed, err := ParseStructuredProxyString(proxyString)
+		if err != nil {
+			return nil, err
+		}
+		if parsed != nil && parsed.Len() > 0 {
 			mihomoLog.Info("节点 '" + jsonx.Str(outerName) + "' 为 JSON/YAML 格式，本地解析")
 			parsed.Set("name", outerName)
 			FixProxyFields(parsed)

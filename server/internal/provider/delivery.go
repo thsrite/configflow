@@ -944,7 +944,11 @@ func PrepareProviderBundle(ctx context.Context, config, main *jsonx.Object, opts
 		if !ok {
 			return nil, attributeError(ps, "strip")
 		}
-		if convert.InspectStructuredProxyString(text) == nil {
+		parsed, err := convert.InspectStructuredProxyString(text)
+		if err != nil {
+			return nil, err
+		}
+		if parsed == nil {
 			id, err := requiredKey(n, "id")
 			if err != nil {
 				return nil, err

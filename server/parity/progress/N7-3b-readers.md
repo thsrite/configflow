@@ -51,3 +51,13 @@ scalars cross ToJSON. Shared graphs bypass the old cache's copying path. Native
 scalar/tag/alias tests updated; compilation of convert/repo/provider/health passes
 on .32. Error-return API adaptation follows as a separate commit per coordinator.
 Fourth shared pick a7acc788 applied as476adc97 (syntax/policy/alias identities).
+
+convert API error-return caller adaptation (separate commit): both public proxy
+readers return (*jsonx.Object,error). Syntax/no structured object retains fallback;
+policy/alias errors propagate from ConvertNodeToMihomo, convert/repo rawDialer,
+repo import rewrite, and provider delivery through existing error channels.
+health.needsSubStore no longer counts a refused document as a remote conversion;
+proxyOf uses its existing failed-probe path. No bulk import/skip loop at these
+call sites, so no new silent skipping. Dedicated .32 tests prove policies/alias40
+never call the fake Sub-Store and never populate the proxy cache; syntax still
+falls back. Changed callers compile. Legacy scalar replay classification pending.
