@@ -192,3 +192,13 @@ func (s *Source) MatchesProfile(profile string) bool {
 	id, valid := value.(string)
 	return valid && id == profile
 }
+
+// HasAppliedContent reports whether a target carries a nonempty applied value,
+// including malformed values whose comparison is unavailable.
+func HasAppliedContent(t Target) bool {
+	if t.Record == nil {
+		return false
+	}
+	raw, err := encodeJSON(t.Record.Value("applied_content"))
+	return err == nil && !emptyJSON(raw)
+}

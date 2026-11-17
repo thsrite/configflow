@@ -1156,9 +1156,9 @@ Routes (4): `GET /api/agents`; `GET /api/agents/<agent_id>`; `GET /api/agents/<a
 
 A24 clarification: reuse the same-package `publicAgent(*agents.Record) *agents.Record` helper in `api/agents/public_agent_adapter.go`; do not add another serializer. It delegates deployment, upgrade and HA sanitization to their existing owners and omits unread history. A24 review additionally uses shared `redact.SanitizeCredentials` to mask legacy credential fields, Basic-auth hosts and references to known tokens / the environment registration key. Real Python field-by-field differential: `TestPublicAgentPython` (24 cases); the Python credential leak is a separate security correction, documented in `behaviour-changes.md`.
 
-Evidence: A13 content-sync/routes are not ported yet; `_public_agent` is supplied and verified by A24 (reuse the helper above). Extend the existing `createAgent`/`handleAgentItem` handlers with the GET branch (router panics on a second handler for the same endpoint). Provides for config: `content_sync.invalidate_content_sync` used by C13 `subscription_cache` (interface declared in C13, registered here).
+Evidence: GET branches extend the existing `createAgent`/`handleAgentItem` handlers, sharing endpoint registration. `_public_agent` is supplied by A24's shared helper. C13 `subscription_cache` invalidation is registered here and broadcasts to all live Manager-owned Checkers.
 
-Branch `go-port-a13`, base `631a4815`. Coordinator decisions are recorded in design/a14-publish.md “Clarified in A13”. A13-1 implemented: opaque input keys, bounded Checker, Manager lifetime cleanup, and api/agents dispatcher wiring. Production PrepareFunc remains injected for A14. A13-2 will cherry-pick A24 helper 78b796af; A14 production preparation remains injected. All tests run through rt; no subagents, pushes or production access.
+Branch `go-port-a13`, base `631a4815`. Coordinator decisions are recorded in design/a14-publish.md “Clarified in A13”. A13-1 commit `fd906f57`: opaque input keys, bounded Checker, Manager lifetime cleanup, and api/agents dispatcher wiring. A24 helper `96164399` was cherry-picked as `6351a282` (same contents as `78b796af` / `1af82bee`). A13-2 implements all four GET routes. A14 production preparation remains injected. All tests run through rt; no subagents, pushes or production access.
 
 
 A13-1 decisions and evidence:
@@ -1176,7 +1176,7 @@ rt --back server/internal/deploy/contentsync/testdata/checker.json -- bash -lc '
 rt -- bash -lc 'cd server && go test -count=1 ./internal/deploy/contentsync ./internal/deploy && go test -race -count=1 ./internal/deploy/contentsync && go vet ./internal/deploy/... ./internal/api/agents ./internal/agents'
 rt -- bash -lc 'cd server && go test -race -count=1 -run "TestContent|TestManagerClose|TestSingletonReplacement" ./internal/agents ./internal/api/agents'
 ```
-`.64`: Python Checker 9 histories / 2001 observations; contentsync unit+corpus PASS (0.083s), race PASS (1.804s), deploy PASS (1.552s), vet PASS. Manager/pool lifetime tests PASS. A13-2 follows as the next buildable step; use helper cherry-pick 96164399 if A24 has not merged.
+`.64`: Python Checker 9 histories / 2001 observations; contentsync unit+corpus PASS (0.083s), race PASS (1.804s), deploy PASS (1.552s), vet PASS. Manager/pool lifetime tests PASS.
 
 Python test_agent_content_sync.py mapping (42 functions):
 
@@ -1224,6 +1224,53 @@ Python test_agent_content_sync.py mapping (42 functions):
 | `test_inputs_that_cannot_be_copied_start_no_worker_and_keep_no_slot` | TestRequestSnapshotsAndRetarget; TestContentInputProjection; TestConcurrentPollsAndIsolatedScopes (typed immutable snapshots replace Python deepcopy) |
 | `test_requests_arriving_while_the_copies_are_made_start_no_second_worker` | TestRequestSnapshotsAndRetarget; TestContentInputProjection; TestConcurrentPollsAndIsolatedScopes (typed immutable snapshots replace Python deepcopy) |
 | `test_random_histories_answer_as_when_every_request_copied_first` | TestRequestSnapshotsAndRetarget; TestContentInputProjection; TestConcurrentPollsAndIsolatedScopes (typed immutable snapshots replace Python deepcopy) |
+
+A13-2 route coverage and decisions:
+- `content_routes_adapter.go` is the legacy-record HTTP boundary. Full/history=0 reads retain private deployment history for pending-state checks; summary=1 does not load profile snapshots, artifacts or a Checker. Public output always uses A24's `publicAgent`.
+- Preserve the applied publication origin; never substitute the UI request host. Source snapshots are reused within a list request by profile. Missing-profile errors affect only that Agent. Repository transactions reject broken profile bindings, so the stale-profile branch is tested at the adapter boundary with a stale record, matching Python's monkeypatched Manager scenario.
+- Push-diff and page responses use `WithoutStored` + `redact.StoredSecretFinder`; stored credentials cannot escape or match search. Validate page arguments before looking up the Agent; preserve no-store headers and stale precedence. Version IDs have Python's 16-hex-character shape (an initial 32-character implementation was corrected during boundary testing).
+- `TestContentReadsAgainstFlask`: 33 requests, no response fields masked. `TestContentChangesAgainstFlask`: real synthetic on-disk receipt, real Flask/Go Checker and pushdiff, only A14 preparation injected; complete changed JSON, 81-rule paging, Unicode search, stored-token search exclusion, missing file/group, replaced version, cached list/detail. Only independent random version IDs and checked_at timestamps are masked; IDs are captured per side, shape/presence and cached stability are separately asserted.
+- `content_http_test.go`: authentication for all four routes, shared list/detail/diff worker, history omission, pending detection, preparation failure with secret-free output, absent receipt fallback, Sub-Store hosts invalidation, paging/search/redaction, missing Agents and page bounds. `FuzzContentPageQuery` covers the new argument parser. A13 adds no YAML parser entry; YAML depth-40 aliases and self-references remain covered at the delegated A12 entry points.
+- No Python feature is intentionally changed; no Python bug fix was needed. Native Manager ownership replaces Python's global repository-object switching, and typed immutable snapshots replace deepcopy mechanics. A14 still owns real preparation and publishing/activation/receipt advancement; this approved seam fails closed until A14 is wired.
+
+Additional Python test mapping (all function names):
+
+| Python test | Go coverage |
+|---|---|
+| `test_agent_content_api.py::test_both_services_compare_full_contents_and_hide_private_baselines` | TestContentHTTPHistorySummaryAndPending, TestContentChangesAgainstFlask; service-neutral Checker tests. Actual both-service publishing is A14. |
+| `test_legacy_baseline_does_not_guess_from_revisions_or_fetch` | TestContentHTTPUnavailableProfileLegacyAndPreparation, TestInputProjectionAndPreconditions |
+| `test_ready_does_not_create_baseline_and_successful_repush_clears_changes` | TestContentHTTPHistorySummaryAndPending, TestInputProjectionAndPreconditions; ready/successful publishing transition is A14 |
+| `test_missing_profile_is_unknown_without_breaking_other_agents` | TestContentHTTPUnavailableProfileLegacyAndPreparation (stale route-adapter record; normal writes reject missing bindings) |
+| `test_summary_listing_skips_content_comparison_and_hides_private_baselines` | TestContentHTTPHistorySummaryAndPending, TestContentReadsAgainstFlask |
+| `test_summary_listing_leaves_out_the_history_and_never_copies_it` | TestContentHTTPHistorySummaryAndPending, existing Manager light-read tests; Go typed ownership replaces deepcopy assertions |
+| `test_single_agent_and_full_listing_still_carry_the_history` | TestContentHTTPHistorySummaryAndPending, TestContentReadsAgainstFlask |
+| `test_first_check_after_activation_sees_inputs_changed_since_preparation` | TestOldWorkersInvalidationAndReturnToOriginal, TestRequestSnapshotsAndRetarget; activation write side A14 |
+| `test_listing_without_history_keeps_the_comparison_and_drops_only_the_history` | TestContentHTTPHistorySummaryAndPending, TestContentChangesAgainstFlask |
+| `test_listing_without_history_still_sees_an_unfinished_deployment` | TestContentHTTPHistorySummaryAndPending, TestContentReadsAgainstFlask |
+| `test_agent_push_diff_api.py::test_unpushed_and_legacy_agents_explain_the_missing_baseline` | TestContentHTTPAuthAndUnavailableStates, TestContentHTTPUnavailableProfileLegacyAndPreparation, TestContentReadsAgainstFlask |
+| `test_synced_after_push_then_real_changes_are_listed_with_credentials_marked` | TestContentHTTPDiffPagingStoredRedactionAndSubstoreInvalidation, TestContentChangesAgainstFlask; initial push write A14 |
+| `test_list_check_and_change_list_share_one_worker` | TestContentHTTPHistorySummaryAndPending, TestProductionTTLsAndNoQueue |
+| `test_mosdns_without_saved_bundle_lists_files_by_digest` | TestContentHTTPMissingReceiptUsesDigests, TestPythonCorpus (A12 MosDNS corpus); real MosDNS publish A14 |
+| `test_pending_deployment_and_failed_preparation_are_reported` | TestContentHTTPHistorySummaryAndPending, TestContentHTTPUnavailableProfileLegacyAndPreparation |
+| `test_pull_token_is_shown_and_marked_and_stored_tokens_never_leave` | TestContentChangesAgainstFlask, TestContentHTTPDiffPagingStoredRedactionAndSubstoreInvalidation, A12 TestCredentialFieldsAndSpans |
+| `test_every_node_and_rule_is_paged_and_searched_through_the_api` | TestContentChangesAgainstFlask, TestContentHTTPDiffPagingStoredRedactionAndSubstoreInvalidation; A12 node/paging corpus |
+| `test_agent_push_diff_paging.py::test_the_first_page_is_listed_and_every_rule_kept_in_order` | A12 TestPagingBudgetsAndConcurrency, TestPythonCorpus; TestContentChangesAgainstFlask |
+| `test_page_bounds_offsets_past_the_end_and_the_byte_limit` | A12 TestPagingBudgetsAndConcurrency; TestContentHTTPPageValidation, TestContentChangesAgainstFlask |
+| `test_nodes_are_searched_by_name_info_and_field_but_never_by_credentials` | A12 TestStoredRedactionAndSearch, TestPythonCorpus |
+| `test_rules_are_searched_without_credential_pieces_or_stored_tokens` | A12 TestStoredRedactionAndSearch; TestContentChangesAgainstFlask |
+| `test_search_results_page_like_the_list` | A12 TestPagingBudgetsAndConcurrency; TestSharedDetailsExpiryPagingAndSearch |
+| `test_kept_entries_are_bounded_per_file_and_per_comparison` | A12 TestPagingBudgetsAndConcurrency; TestDetailCountByteQuotasAndSyncedCleanup |
+| `test_large_lists_are_kept_compact_and_read_back_quickly` | A12 TestPagingBudgetsAndConcurrency (100k entries), immutable compressed FileEntries |
+| `test_pages_come_from_the_shown_change_list_and_expire_with_it` | TestSharedDetailsExpiryPagingAndSearch, TestContentHTTPDiffPagingStoredRedactionAndSubstoreInvalidation |
+| `test_kept_lists_are_bounded_in_bytes_across_agents` | TestDetailCountByteQuotasAndSyncedCleanup |
+| `test_agent_first_push_sync.py::test_first_push_without_a_node_cache_is_synced_right_away` | A13 read half: TestProductionTTLsAndNoQueue, TestContentHTTPDiffPagingStoredRedactionAndSubstoreInvalidation; real first-push/download/commit remains A14 |
+| `test_first_push_delivers_the_subscription_hosts_with_policy_and_filter` | A14 preparation/publish; A13 observes invalidation via TestContentHTTPDiffPagingStoredRedactionAndSubstoreInvalidation |
+| `test_a_push_with_a_current_node_cache_is_unchanged` | A14 publication/cache commit; A13 cache comparison covered by TestProductionTTLsAndNoQueue |
+| `test_a_failed_download_without_a_cache_keeps_the_existing_error` | A14 preparation; A13 preparation error response covered by TestContentHTTPUnavailableProfileLegacyAndPreparation |
+| `test_a_failed_download_keeps_the_earlier_cache_and_is_not_retried` | A14 preparation/Sub-Store cache interaction; A13 does not own downloads or cache writes |
+| `test_rendering_again_asks_sub_store_once_per_uri_node` | A14 preparation; no production PrepareFunc in A13 by coordinator decision |
+
+A12's seven deferred Checker tests map to TestSharedDetailsExpiryPagingAndSearch (shared worker and prepared list), TestDetailCountByteQuotasAndSyncedCleanup (synced cleanup, eviction and rebuilding), TestDetailFailuresRetryWithoutDiscardingStatus (short detail retry), and TestInputProjectionAndPreconditions (synced/unavailable skips listing). Deferred A01/A03/A15 GET privacy/history/localization cases use TestContentReadsAgainstFlask, TestContentChangesAgainstFlask, TestContentHTTPHistorySummaryAndPending and A24 TestPublicAgentPython; write-side failure/upgrade/deployment setup remains with the respective owner.
 
 ## A14 — publishing: transactional content, push-config, deployments, receipts
 

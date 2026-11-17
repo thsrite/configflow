@@ -162,6 +162,10 @@ func copyDir(t *testing.T, from, to string) {
 }
 
 func startPython(t *testing.T, dataDir string) (string, func()) {
+	return startPythonArgs(t, dataDir, "-m", "backend.app")
+}
+
+func startPythonArgs(t *testing.T, dataDir string, args ...string) (string, func()) {
 	python := os.Getenv("CONFIGFLOW_DIFF_PYTHON")
 	if python == "" {
 		home, _ := os.UserHomeDir()
@@ -169,9 +173,9 @@ func startPython(t *testing.T, dataDir string) (string, func()) {
 	}
 	root, _ := filepath.Abs("../../../../..")
 	port := freePort(t)
-	cmd := exec.Command(python, "-m", "backend.app")
+	cmd := exec.Command(python, args...)
 	cmd.Dir = root
-	cmd.Env = append(os.Environ(), "DATA_DIR="+dataDir, "LOG_FILE="+filepath.Join(dataDir, "app.log"),
+	cmd.Env = append(os.Environ(), "PYTHONPATH="+root, "DATA_DIR="+dataDir, "LOG_FILE="+filepath.Join(dataDir, "app.log"),
 		"CONFIGFLOW_BACKEND_HOST=127.0.0.1", "CONFIGFLOW_BACKEND_PORT="+strconv.Itoa(port),
 		"ADMIN_USERNAME="+username, "ADMIN_PASSWORD="+password, "JWT_SECRET_KEY="+secret, "LOG_LEVEL=INFO",
 		"SUB_STORE_BUILTIN_DIR=/nonexistent", "PYTHONDONTWRITEBYTECODE=1", "AGENT_REGISTRATION_KEY=")

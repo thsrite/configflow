@@ -32,6 +32,7 @@ func (c *Checker) buildDetail(ctx context.Context, t deploy.Target, b *deploy.Bu
 	// A failed itemized listing preserves the successful status comparison.
 	failed := func() *detail {
 		version, _ := id()
+		version = version[:min(16, len(version))]
 		diff := pushdiff.Diff{Status: "changed", Reason: "diff_failed"}
 		return &detail{key: key, answer: answer(result, &diff, version), version: version, expires: c.now(ctx).Add(c.opts.ErrorTTL), ttl: c.opts.ErrorTTL}
 	}
@@ -62,6 +63,7 @@ func (c *Checker) buildDetail(ctx context.Context, t deploy.Target, b *deploy.Bu
 	if err != nil {
 		return failed()
 	}
+	version = version[:16]
 	d = &detail{key: key, answer: answer(result, &diff, version), version: version, files: files, groups: map[string]map[string]bool{}, expires: c.now(ctx).Add(c.opts.SuccessTTL), ttl: c.opts.SuccessTTL}
 	for path, f := range files {
 		d.size += f.Size()

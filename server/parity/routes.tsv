@@ -1,8 +1,8 @@
 # method	path	python handler	go package	status
-GET	/api/agents	routes.agents.handle_agents	24,26	todo
+GET	/api/agents	routes.agents.handle_agents	api/agents	done
 POST	/api/agents	routes.agents.handle_agents	api/agents	done
 DELETE	/api/agents/<agent_id>	routes.agents.handle_agent_item	api/agents	done
-GET	/api/agents/<agent_id>	routes.agents.handle_agent_item	24,26	todo
+GET	/api/agents/<agent_id>	routes.agents.handle_agent_item	api/agents	done
 PUT	/api/agents/<agent_id>	routes.agents.handle_agent_item	api/agents	done
 GET	/api/agents/<agent_id>/address	routes.agents.agent_address	api/agents	done
 PUT	/api/agents/<agent_id>/address	routes.agents.agent_address	api/agents	done
@@ -62,8 +62,8 @@ GET	/api/agents/<agent_id>/oxidns/queries/<record_id>	routes.agents.get_oxidns_q
 GET	/api/agents/<agent_id>/oxidns/rules/update	routes.agents.update_oxidns_rules	api/agents	done
 POST	/api/agents/<agent_id>/oxidns/rules/update	routes.agents.update_oxidns_rules	api/agents	done
 POST	/api/agents/<agent_id>/push-config	routes.agents.push_config_to_agent	26	todo
-GET	/api/agents/<agent_id>/push-diff	routes.agents.agent_push_diff	25	todo
-GET	/api/agents/<agent_id>/push-diff/entries	routes.agents.agent_push_diff_entries	25	todo
+GET	/api/agents/<agent_id>/push-diff	routes.agents.agent_push_diff	api/agents	done
+GET	/api/agents/<agent_id>/push-diff/entries	routes.agents.agent_push_diff_entries	api/agents	done
 POST	/api/agents/<agent_id>/restart	routes.agents.restart_agent	api/agents	done
 GET	/api/agents/<agent_id>/rule-sync	routes.agents.agent_rule_sync	27	todo
 PUT	/api/agents/<agent_id>/rule-sync	routes.agents.agent_rule_sync	27	todo

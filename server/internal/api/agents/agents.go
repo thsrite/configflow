@@ -44,8 +44,9 @@ var registrationLogFields = []string{"name", "host", "port", "service_type", "ve
 func Register(r *httpx.Router) {
 	r.POST("/api/agents/register", "agents.register_agent", registerAgent)
 	r.POST("/api/agents/<agent_id>/heartbeat", "agents.agent_heartbeat", agentHeartbeat)
-	r.POST("/api/agents", "agents.handle_agents", auth.Require(createAgent))
-	r.Handle([]string{"PUT", "DELETE"}, "/api/agents/<agent_id>", "agents.handle_agent_item", auth.Require(handleAgentItem))
+	r.Handle([]string{"GET", "POST"}, "/api/agents", "agents.handle_agents", auth.Require(createAgent))
+	r.Handle([]string{"GET", "PUT", "DELETE"}, "/api/agents/<agent_id>", "agents.handle_agent_item", auth.Require(handleAgentItem))
+	registerContentRoutes(r)
 	registerMetrics(r)
 	registerTraffic(r)
 	registerOxidns(r)
@@ -517,6 +518,9 @@ func heartbeat(c *httpx.Ctx) (*httpx.Response, error) {
 }
 
 func createAgent(c *httpx.Ctx) (*httpx.Response, error) {
+	if c.Method() == "GET" {
+		return listContentAgents(c)
+	}
 	ctx := c.Context()
 	manager, err := agents.Get(ctx)
 	if err != nil {
@@ -569,6 +573,9 @@ func handleAgentItem(c *httpx.Ctx) (*httpx.Response, error) {
 	manager, err := agents.Get(ctx)
 	if err != nil {
 		return nil, err
+	}
+	if c.Method() == "GET" {
+		return getContentAgent(c, manager)
 	}
 	var ok bool
 	if c.Method() == "PUT" {
