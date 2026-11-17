@@ -397,7 +397,9 @@ func (w *world) call(method, path, body string, authenticated bool) answer {
 		got = w.srv.Do(method, path, options...)
 	}
 	var gb any
-	if strings.Contains(got.Header.Get("Content-Type"), "json") {
+	if method == "HEAD" {
+		gb = ""
+	} else if strings.Contains(got.Header.Get("Content-Type"), "json") {
 		err = json.Unmarshal(got.Body, &gb)
 	} else if strings.Contains(got.Header.Get("Content-Type"), "yaml") {
 		err = yaml.Unmarshal(got.Body, &gb)
@@ -457,6 +459,13 @@ func (w *world) call(method, path, body string, authenticated bool) answer {
 	compare("provider comments", py.Comments, comments)
 	for _, key := range []string{"Content-Type", "Cache-Control", "X-ConfigFlow-Profile", "X-ConfigFlow-Provider", "Content-Disposition"} {
 
+		if method == "HEAD" && py.Status == 500 && key == "Content-Type" {
+			// Step B #3: API HTML errors migrate to JSON, including bodyless HEAD.
+			if !strings.HasPrefix(got.Header.Get(key), "application/json") {
+				t.Error("HEAD API error must use JSON media type")
+			}
+			continue
+		}
 		a, b := py.Headers[key], got.Header.Get(key)
 		if key == "Content-Disposition" {
 			a = dispositionTime.ReplaceAllString(a, "_<time>.yaml")

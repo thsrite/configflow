@@ -212,3 +212,14 @@ func TestRejectedSourceDoesNotPublish(t *testing.T) {
 		})
 	}
 }
+
+func TestAutomaticHEADDoesNotMutateCatalog(t *testing.T) {
+	w := newWorld(t, seed(t, true, ""), map[string]string{"s": feed})
+	for _, path := range []string{"/api/aggregations", "/api/aggregations/a", "/api/aggregations/missing"} {
+		w.call("HEAD", path, "", true)
+		w.call("HEAD", path, `{"name":"Forged","nodes":[],"subscriptions":[]}`, true)
+	}
+	for _, path := range []string{"/api/aggregations/a/count", "/api/aggregations/a/health-impact", "/api/aggregations/a/preview", "/api/aggregations/a/provider", "/api/profiles/default/aggregations/a/provider?token=c31-pull"} {
+		w.call("HEAD", path, "", true)
+	}
+}

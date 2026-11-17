@@ -102,7 +102,9 @@ for line in sys.stdin:
                 reply = app.test_client().open(request['path'], method=request['method'], headers=headers,
                                                data=request.get('body'))
                 text = reply.get_data(as_text=True)
-                if reply.is_json:
+                if request["method"] == "HEAD":
+                    body = ""
+                elif reply.is_json:
                     body = reply.get_json()
                 elif 'yaml' in reply.content_type:
                     body = yaml.safe_load(text)

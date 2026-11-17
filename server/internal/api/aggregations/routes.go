@@ -78,6 +78,9 @@ func collection(c *httpx.Ctx) (*httpx.Response, error) {
 	if c.Method() == http.MethodGet {
 		return httpx.JSON(items), nil
 	}
+	if c.Method() != http.MethodPost {
+		return nil, errors.New("unsupported aggregation collection method")
+	}
 	body, err := readBody(c)
 	if err != nil {
 		return nil, err
@@ -120,6 +123,9 @@ func item(c *httpx.Ctx) (*httpx.Response, error) {
 	items, err := shared.list("subscription_aggregations")
 	if err != nil {
 		return nil, err
+	}
+	if c.Method() != http.MethodGet && c.Method() != http.MethodPut && c.Method() != http.MethodDelete {
+		return nil, errors.New("unsupported aggregation item method")
 	}
 	id := c.Param("agg_id")
 	current := find(items, id)
