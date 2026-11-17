@@ -1146,3 +1146,19 @@ R去重3960（S643 F2594 B723），H272，G16
 ```
 
 R208创建、R207列表、R209读取、R210进度的所有原R编号已有至少一个有效变体；不代表每个多形态完全穷尽。下一步R211 source/prepare/router-draft/check/finish/abandon、相关H与并发/断连；最终还需.32全量。
+
+## 批次 65：setup来源选择和H1023–H1029
+
+- 52新增请求变体均Go尚未实现；新增原R编号5（S3/F1/B1）、H编号7。现有订阅/节点分别去重保序，step/max_step=2、SQL不改而session原子更新；HTTP URL trim、覆盖已有选择、重复/变更URL只保留一个setup_sub固定id，精确检查名称、enabled、86400秒刷新间隔和清空node_ids，中文名称保留。
+- HTTP来源用真实回环fake并比较完整请求记录，在source接口返回边界两端均不应立即下载；新源会成为后台调度输入，不宣称长期零请求。fake保持活到两端服务关闭，不可能误发到外网；后续自动刷新轮次仍属于T27。
+- 已准备后禁止改来源、两个ID数组错型/非文本/101项、URL错型/8193字符/协议/host/port/括号、已删除或停用资源、内联占位订阅、完全空选择，逐个真实发送R211-F17和对应H编号，精确消息/400或409，Stable验证拒绝操作每端SQL/files完全不变。
+
+```text
+.63 run.py --groups setup-source,setup-source-guards
+current go-unimplemented=52 design_errors=[] seconds=8.49；exit=0
+cumulative variants=7885 compared=2174 go-unimplemented=5596 dependency=37 different=77 O12-separate=1
+R去重3965（S646 F2595 B724），H279，G16
+60 comparator self-checks + wrong-Go-response check OK
+```
+
+继续prepare、router-draft、check/finish/abandon及其余H/T，尚未最终验收。

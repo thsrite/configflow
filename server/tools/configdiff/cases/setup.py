@@ -96,10 +96,10 @@ class Stable:
         return differences(self.before_values[1], self.after_values[1], 'setup.readonly-go')
 
 
-def call(pair, case, route, path=None, *, body=None, expect=200, check=None, variant='', headers=None, readonly=False):
+def call(pair, case, route, path=None, *, body=None, expect=200, check=None, variant='', headers=None, readonly=False, interaction=None):
     return pair.request(case, route, path, body=json_body(body) if isinstance(body, (dict, list)) else body, expect=expect,
                         writes=True, check=check, capture=profile_capture(pair), variant=variant, headers=headers,
-                        interaction=Stable(pair) if readonly else None)
+                        interaction=Stable(pair) if readonly else interaction)
 
 
 def creates(binary, recorder):
@@ -348,3 +348,79 @@ def concurrent_create(binary, recorder):
 
 
 GROUPS['setup-concurrent-create'] = concurrent_create
+
+
+NODE = {'id': 'setup-node', 'name': '节点中文🧪', 'type': 'ss', 'server': '192.0.2.1', 'port': 443,
+        'cipher': 'aes-128-gcm', 'password': 'synthetic'}
+SUB = {'id': 'setup-existing-sub', 'name': '已有订阅🧪', 'url': 'https://source.example/sub', 'interval': 0, 'enabled': True}
+
+
+def source_options(session_changes=None):
+    return {'config_token': PULL, 'setup_sessions': [{**CREATE, 'session': session_changes or {}}],
+            'shared': {'nodes': [NODE, {**NODE, 'id': 'disabled-node', 'enabled': False}],
+                       'subscriptions': [SUB, {**SUB, 'id': 'disabled-sub', 'enabled': False},
+                                         {**SUB, 'id': 'placeholder', 'url': 'proxies: []'}]}}
+
+
+def sources(binary, recorder):
+    from sources import Source
+    from subscriptions import Exchange
+    for case, field, identity in [('S02', 'subscription_ids', SUB['id']), ('S03', 'node_ids', NODE['id'])]:
+        with Pair(binary, recorder, options=source_options()) as pair:
+            configure(pair)
+            before = database(pair.dirs[0])
+            def check(reply):
+                value = reply.json()
+                require(value[field] == [identity] and value['step'] == value['max_step'] == 2
+                    and database(pair.dirs[0]) == before and session(pair)[field] == [identity],
+                    'existing resources deduplicate stably and unlock step 2 without modifying configuration')
+            call(pair, 'R211-' + case, ACTION, PATH + '/source', body={field: [identity, identity]}, check=check)
+    with Source() as source, Pair(binary, recorder, options=source_options()) as pair:
+        configure(pair)
+        for variant, raw in [('trimmed-URL-wins-over-existing-selections', '  ' + source.url + '/first?synthetic=1  '),
+                             ('repeat-one-owned-subscription', source.url + '/first?synthetic=1'),
+                             ('replace-owned-URL-stable-id', source.url + '/second?synthetic=2')]:
+            def check(reply):
+                value = reply.json()
+                identity = 'setup_sub_' + SID
+                rows = database(pair.dirs[0])['fields']['shared//subscriptions']['value']
+                owned = [s for s in rows if s['id'] == identity]
+                require(len(owned) == 1 and owned[0]['url'] == raw.strip() and owned[0]['name'] == NAME + '订阅'
+                    and owned[0]['enabled'] is True and owned[0]['interval'] == 86400
+                    and value['subscription_ids'] == [identity] and value['node_ids'] == [] and value['step'] == value['max_step'] == 2,
+                    'HTTP URL owns one stable shared source, overrides previous selected resources and keeps exact refresh interval')
+            body = {'url': raw, 'subscription_ids': [SUB['id']], 'node_ids': [NODE['id']]}
+            call(pair, 'R211-S01', ACTION, PATH + '/source', body=body, check=check,
+                 interaction=Exchange(pair, source, expected=0), variant=variant)
+        call(pair, 'R211-B03', ACTION, PATH + '/source', body={'node_ids': [NODE['id']]},
+             check=lambda r: require(r.json()['name'] == NAME and session(pair)['name'] == NAME, 'Chinese and emoji session name remains exact during source changes'))
+
+
+def source_guards(binary, recorder):
+    vectors = []
+    for field in ('subscription_ids', 'node_ids'):
+        for value in (None, True, [1], ['missing'] * 101):
+            vectors.append(('H1024', {field: value}, 400, '请选择有效的订阅或节点'))
+    for value in (None, 1, 'x' * 8193):
+        vectors.append(('H1025', {'url': value}, 400, '订阅链接格式不正确'))
+    for value in ('file:///synthetic', 'https:///missing', 'https://source.example:65536/sub', 'https://[bad'):
+        vectors.append(('H1026', {'url': value}, 400, '请输入 HTTP(S) 订阅链接'))
+    for field, values in [('subscription_ids', ['missing', 'disabled-sub']), ('node_ids', ['missing', 'disabled-node'])]:
+        for value in values:
+            vectors.append(('H1027', {field: [value]}, 409, '所选来源已删除或停用，请刷新后重选'))
+    vectors.extend([('H1028', {'subscription_ids': ['placeholder']}, 400, '所选订阅未填写订阅链接，请改用订阅链接添加'),
+                    ('H1029', {}, 400, '请添加订阅链接或选择已有节点'),
+                    ('H1029', {'url': '   '}, 400, '请添加订阅链接或选择已有节点')])
+    with Pair(binary, recorder, options=source_options()) as pair:
+        configure(pair)
+        for index, (helper, body, status, text) in enumerate(vectors):
+            for case in ('R211-F17', helper):
+                call(pair, case, ACTION, PATH + '/source', body=body, expect=status, check=message(text), readonly=True, variant=str(index))
+    with Pair(binary, recorder, options=source_options({'prepared': True})) as pair:
+        configure(pair)
+        for case in ('R211-F17', 'H1023'):
+            call(pair, case, ACTION, PATH + '/source', body={'node_ids': [NODE['id']]}, expect=409, readonly=True,
+                 check=message('方案已生成；修改来源请前往订阅来源或创建新的向导'), variant='prepared-session')
+
+
+GROUPS.update({'setup-source': sources, 'setup-source-guards': source_guards})
