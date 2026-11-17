@@ -175,7 +175,7 @@ func TestStoredRoundTrip(t *testing.T) {
 			t.Fatal("no-op fingerprint changed")
 		}
 		// Marshal only an opaque row envelope to a private temporary expectation.
-		expected := filepath.Join(t.TempDir(), "expected.json")
+		expected := filepath.Join(filepath.Dir(path), "expected.json")
 		data, err := json.Marshal(base.Document)
 		if err != nil {
 			t.Fatal("expectation encode failed")
@@ -242,8 +242,15 @@ func TestStoredRoundTrip(t *testing.T) {
 		run(t, path)
 	})
 	if snapshot := os.Getenv("CONFIGFLOW_SNAPSHOT"); snapshot != "" {
-		t.Run("private-snapshot", func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), Filename)
+        t.Run("private-snapshot", func(t *testing.T) {
+            home,err:=os.UserHomeDir()
+            if err!=nil{t.Fatal("locate private test directory failed")}
+            runs:=filepath.Join(home,"cf-prod-snapshot","runs")
+            if err:=os.MkdirAll(runs,0o700);err!=nil{t.Fatal("create private test directory failed")}
+            directory,err:=os.MkdirTemp(runs,"n8-2-roundtrip-")
+            if err!=nil{t.Fatal("create private copy directory failed")}
+            t.Cleanup(func(){if err:=os.RemoveAll(directory);err!=nil{t.Error("remove private test copy failed")}})
+            path := filepath.Join(directory, Filename)
 			python(t, "copy", filepath.Join(snapshot, Filename), path)
 			run(t, path)
 		})

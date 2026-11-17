@@ -30,7 +30,8 @@ Done:
 - `TestStoredRoundTrip` uses real Python, committed Go/Python fixture variants,
   and optional CONFIGFLOW_SNAPSHOT read-only SQLite backup. Only copies mutate;
   Python diagnostics suppressed; test output contains counts only. Private copies
-  and expectations are t.TempDir files, removed by testing on success/failure.
+  and expectations live in a mode-0700 directory under ~/cf-prod-snapshot/runs,
+  removed by t.Cleanup on success/failure. Other tests retain default /tmp.
 - Encoder inventory: parity/n8-2-json-encoders.tsv, 86 non-test call sites,
   classified by use; owning consumer steps apply D2 to persisted identities.
   No persisted application identity is changed by this storage-only step.
@@ -86,3 +87,14 @@ Sizes (Go non-test source lines, including comments/blank lines): store
 1629 → 1684; temporary repo bridge 212 + messages 8. New focused tests:
 store/raw_test.go 251, store/fuzz_test.go 35, repo/store_rows_test.go 74;
 Python raw interchange driver 77. No production schema or dependency changes.
+
+Runner correction: the first .32 commands exported TMPDIR under the snapshot's
+Btrfs disk for **all** packages; /tmp on .32 is tmpfs. Thousands of SQLite fsyncs
+there caused unrelated full-suite packages to exceed the default 600s; the next
+reduced-parallelism full run was intentionally terminated once the filesystem
+cause was identified. No timeout was increased. The harness now allocates only
+its private snapshot copy/expectation under ~/cf-prod-snapshot/runs and cleans
+that directory explicitly; ordinary test temp files remain on default /tmp.
+After rebasing on N7-1 (`e5903ffb`), live Python interchange on .32 passed again:
+fixture 12 + 12 rows, private 43 rows; total 0.677s. Final gates are rerun with
+this corrected environment, not counted from the invalid full-suite runs.
