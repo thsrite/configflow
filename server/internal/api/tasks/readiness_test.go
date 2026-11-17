@@ -77,3 +77,30 @@ func TestRunBodyBindingIsSilentAndExact(t *testing.T) {
 		s.Post("/api/tasks/run", httpxtest.Body([]byte(body), "application/json")).WantStatus(400)
 	}
 }
+
+func TestReviewRunFailuresUseCentralRedaction(t *testing.T) {
+	s := setup(t)
+	secret := "synthetic-private-task-token"
+	_, err := s.Repo.UpdateSystemTransaction(s.Context(), func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
+		system.GetObject("system_config").Set("rule_proxy_token", secret)
+		return nil, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		err    error
+		status int
+	}{
+		{&tasks.Busy{Message: secret}, 409},
+		{&tasks.Conflict{Message: secret}, 409},
+		{&tasks.NotFound{Message: secret}, 404},
+		{&tasks.Invalid{Message: secret}, 409},
+	} {
+		t.Run(tc.err.Error()+"/"+reflect.TypeOf(tc.err).String(), func(t *testing.T) {
+			t.Cleanup(tasks.SetRunner(tasks.SlotSubscriptions, func(context.Context, string, string) error { return tc.err }))
+			s.Post("/api/tasks/run", httpxtest.JSON(map[string]string{"key": "subscription:s"})).WantStatus(tc.status).
+				WantJSON(jsonx.Obj("success", false, "message", "[REDACTED]"))
+		})
+	}
+}

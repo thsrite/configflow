@@ -220,7 +220,7 @@ func startGo(t *testing.T, dataDir string) string {
 	t.Cleanup(func() { repo.SetRepository(nil) })
 	t.Cleanup(substore.SetDefault(substore.NewService(substore.NewEnv())))
 	for _, slot := range []string{tasks.SlotRouters, tasks.SlotAgents, tasks.SlotDomains} {
-		tasks.SetRows(slot, none)
+		t.Cleanup(tasks.SetRows(slot, none))
 	}
 	app := server.NewApp()
 	// Flask's metrics flush loop started with the app (its row shows the

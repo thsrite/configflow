@@ -6,9 +6,12 @@ import (
 	"errors"
 	"math"
 	"math/big"
+	"regexp"
 	"strconv"
 	"strings"
 )
+
+var decimalCounter = regexp.MustCompile(`^[+-]?[0-9]+(_[0-9]+)*$`)
 
 // historyCount accepts legacy decimal strings without losing large counters.
 // Floating values use the native IEEE-754 value and truncate toward zero.
@@ -25,7 +28,11 @@ func historyCount(raw json.RawMessage) (*big.Int, error) {
 		if err := json.Unmarshal(raw, &text); err != nil {
 			return nil, err
 		}
-		if count, ok := new(big.Int).SetString(strings.TrimSpace(text), 10); ok {
+		text = strings.TrimSpace(text)
+		if !decimalCounter.MatchString(text) {
+			return nil, errors.New("counter must contain a decimal integer")
+		}
+		if count, ok := new(big.Int).SetString(strings.ReplaceAll(text, "_", ""), 10); ok {
 			return count, nil
 		}
 		return nil, errors.New("counter must contain a decimal integer")

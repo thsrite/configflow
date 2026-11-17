@@ -483,7 +483,10 @@ func (m *Manager) Update(ctx context.Context, value any) (*jsonx.Object, error) 
 	previous, readErr := os.ReadFile(m.statePath())
 	if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
 		restore()
-		return nil, readErr
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return nil, fail(msgSaveFailed, 503)
 	}
 	if err := atomicWrite(ctx, m.statePath(), []byte(`{"port": `+strconv.Itoa(port)+"}\n"), 0o600); err != nil {
 		restore()

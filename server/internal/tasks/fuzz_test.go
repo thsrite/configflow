@@ -6,7 +6,7 @@ import (
 )
 
 func FuzzTaskHistoryCounters(f *testing.F) {
-	for _, seed := range []string{`null`, `true`, `false`, `0`, `-1`, `1.75`, `1e20`, `"42"`, `"9223372036854775808123"`, `"bad"`, `[]`, `{}`, `NaN`, `1e999`, `[1]`} {
+	for _, seed := range []string{`null`, `true`, `false`, `0`, `-1`, `1.75`, `1e20`, `"42"`, `"9223372036854775808123"`, `"1_000"`, `" +01_002 "`, `"1__0"`, `"0x10"`, `"bad"`, `[]`, `{}`, `NaN`, `1e999`, `[1]`} {
 		f.Add([]byte(seed))
 	}
 	f.Fuzz(func(t *testing.T, raw []byte) {

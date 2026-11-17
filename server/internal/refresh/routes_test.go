@@ -9,6 +9,7 @@ package refresh_test
 import (
 	"context"
 	"errors"
+	"reflect"
 	"slices"
 	"testing"
 	"time"
@@ -29,7 +30,7 @@ func server(t *testing.T) *httpxtest.Server {
 	t.Helper()
 	refresh.Wire()
 	for _, slot := range []string{tasks.SlotRouters, tasks.SlotAgents, tasks.SlotDomains, tasks.SlotMetrics} {
-		tasks.SetRows(slot, none)
+		t.Cleanup(tasks.SetRows(slot, none))
 	}
 	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(apitasks.RegisterAlways)})
 	_, err := srv.Repo.UpdateSharedTransaction(srv.Context(), func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
@@ -43,6 +44,15 @@ func server(t *testing.T) *httpxtest.Server {
 		t.Fatal(err)
 	}
 	return srv
+}
+
+func TestReviewTaskFixtureRestoresMissingSlots(t *testing.T) {
+	refresh.Wire()
+	before := tasks.Missing()
+	t.Run("fixture", func(t *testing.T) { server(t) })
+	if after := tasks.Missing(); !reflect.DeepEqual(before, after) {
+		t.Fatal("fake task providers leaked", before, after)
+	}
 }
 
 func rows(t *testing.T, srv *httpxtest.Server) map[string]*jsonx.Object {

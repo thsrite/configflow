@@ -99,6 +99,39 @@ func TestPersistenceFailureStillRollsBackLiveSockets(t *testing.T) {
 	assertOldListener(t, m, old, before)
 }
 
+func TestReviewStateReadFailureAfterHealthRollsBackWithSafeError(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("requires the normal unprivileged test user")
+	}
+	m := savedManager(t, map[string]string{})
+	old := m.active
+	before, err := os.ReadFile(m.statePath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.HealthCheck = func(ctx context.Context, port int, ipv6 bool, token string) bool {
+		ok := healthy(ctx, port, ipv6, token)
+		if ok {
+			if err := os.Chmod(m.DataDir, 0); err != nil {
+				t.Error(err)
+			}
+		}
+		return ok
+	}
+	t.Cleanup(func() { os.Chmod(m.DataDir, 0700) })
+	port := freePort(t)
+	_, err = m.Update(context.Background(), port)
+	if chmodErr := os.Chmod(m.DataDir, 0700); chmodErr != nil {
+		t.Fatal(chmodErr)
+	}
+	wantError(t, err, 503, msgSaveFailed)
+	assertOldListener(t, m, old, before)
+	if c, err := net.DialTimeout("tcp4", "127.0.0.1:"+strconv.Itoa(port), 100*time.Millisecond); err == nil {
+		c.Close()
+		t.Fatal("failed new socket leaked")
+	}
+}
+
 func TestHealthyProbeCannotCommitAfterRuntimeShutdown(t *testing.T) {
 	for _, shutdown := range []bool{false, true} {
 		t.Run(map[bool]string{false: "disconnect completes", true: "shutdown after successful probe"}[shutdown], func(t *testing.T) {

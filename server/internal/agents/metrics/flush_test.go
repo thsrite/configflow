@@ -6,6 +6,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"syscall"
@@ -203,7 +204,7 @@ func tasksApp(t *testing.T) (*httpxtest.Server, *agents.Manager) {
 	fresh(t)
 	none := func(context.Context, *jsonx.Object) ([]*jsonx.Object, error) { return nil, nil }
 	for _, slot := range []string{tasks.SlotSubscriptions, tasks.SlotRuleSources, tasks.SlotRouters, tasks.SlotAgents, tasks.SlotDomains} {
-		tasks.SetRows(slot, none)
+		t.Cleanup(tasks.SetRows(slot, none))
 	}
 	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(apitasks.RegisterAlways)})
 	seedAgent(t, srv.Context(), srv.Repo, false)
@@ -212,6 +213,15 @@ func tasksApp(t *testing.T) (*httpxtest.Server, *agents.Manager) {
 		t.Fatal(err)
 	}
 	return srv, m
+}
+
+func TestReviewTaskFixtureRestoresMissingSlots(t *testing.T) {
+	fresh(t)
+	before := tasks.Missing()
+	t.Run("fixture", func(t *testing.T) { tasksApp(t) })
+	if after := tasks.Missing(); !reflect.DeepEqual(before, after) {
+		t.Fatal("fake task providers leaked", before, after)
+	}
 }
 
 func taskRow(t *testing.T, srv *httpxtest.Server) *jsonx.Object {

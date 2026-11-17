@@ -262,10 +262,9 @@ func newWorldSaved(t *testing.T, retention *jsonx.Object) *world {
 	t.Cleanup(webdav.SetDefault(service))
 	webdav.Wire()
 	for _, slot := range tasks.Missing() {
-		tasks.SetRows(slot, func(context.Context, *jsonx.Object) ([]*jsonx.Object, error) { return []*jsonx.Object{}, nil })
+		t.Cleanup(tasks.SetRows(slot, func(context.Context, *jsonx.Object) ([]*jsonx.Object, error) { return []*jsonx.Object{}, nil }))
 	}
-	notifications.SetSources(notifications.Sources{Agents: func(context.Context) ([]*jsonx.Object, error) { return []*jsonx.Object{}, nil }, ListTasks: tasks.ListTasks})
-	t.Cleanup(notifications.ResetSources)
+	t.Cleanup(notifications.SetSources(notifications.Sources{Agents: func(context.Context) ([]*jsonx.Object, error) { return []*jsonx.Object{}, nil }, ListTasks: tasks.ListTasks}))
 	previousClock := notifications.Clock
 	notifications.Clock = func() time.Time { return fixed }
 	t.Cleanup(func() { notifications.Clock = previousClock })

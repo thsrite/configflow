@@ -14,7 +14,7 @@ import (
 )
 
 func TestHistoryCountersAgainstPython(t *testing.T) {
-	inputs := []json.RawMessage{[]byte(`null`), []byte(`false`), []byte(`true`), []byte(`""`), []byte(`[]`), []byte(`{}`), []byte(`0`), []byte(`-17`), []byte(`3.75`), []byte(`-3.75`), []byte(`1e2`), []byte(`"  +42  "`), []byte(`"9223372036854775808123"`), []byte(`9007199254740993`), []byte(`"bad"`), []byte(`[1]`), []byte(`{"x":1}`)}
+	inputs := []json.RawMessage{[]byte(`null`), []byte(`false`), []byte(`true`), []byte(`""`), []byte(`[]`), []byte(`{}`), []byte(`0`), []byte(`-17`), []byte(`3.75`), []byte(`-3.75`), []byte(`1e2`), []byte(`"  +42  "`), []byte(`"9223372036854775808123"`), []byte(`9007199254740993`), []byte(`"bad"`), []byte(`[1]`), []byte(`{"x":1}`), []byte(`"1_000"`), []byte(`" +01_002 "`), []byte(`"-9_223_372_036_854_775_808_123"`), []byte(`"1__0"`), []byte(`"_1"`), []byte(`"1_"`), []byte(`"0x10"`), []byte(`"0b10"`)}
 	root, err := filepath.Abs("../../..")
 	if err != nil {
 		t.Fatal(err)
