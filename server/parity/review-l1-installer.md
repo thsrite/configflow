@@ -138,8 +138,8 @@ All findings are fixed; **none is open**. Severity: **0 high, 1 medium, 6 low**.
 - **D1.** `GenerateGuide` and `GenerateCompact` both use `guidePath(..., false)`
   before any capability write; long-bind branch removed.
 - **Fingerprint and deltas.** `l1-rollback-deltas.json` contains only D3 edits
-  plus this review's (two journal lines, wrapper trap); fingerprint recomputed
-  from the three shell artifacts (`52ee8a8a…`), so review-time links are stale.
+  plus this review's (one AIO directory-journal line in the template; the wrapper trap and the forwarding-hook journal line as rendered-only deltas, emitted by the Go generators only where forwarding is managed); fingerprint recomputed
+  from the three shell artifacts (`9bed9bf8…`), so review-time links are stale.
   HA scripts are not saved as links, so D5/D6 need no fingerprint change.
 - **No Python emulation** in production code. Python appears only as test
   fakes (existing harness convention), delta generators, and the D5 probe that

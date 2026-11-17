@@ -313,7 +313,6 @@ for service in mihomo oxidns; do
     agent_rollback_save "$AGENT_BINARY"
     agent_rollback_save "$CONFIG_FILE"
     agent_rollback_save "/etc/logrotate.d/$AGENT_UNIT"
-    agent_rollback_save "$AGENT_DIR/enable-ipv4-forwarding.sh"
     agent_rollback_directory "$AGENT_DIR"
 done
 # Recheck after stopping: the first checks are snapshots, and stopping an Agent

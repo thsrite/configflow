@@ -22,6 +22,11 @@ func script(name string) string {
 	return string(data)
 }
 
+// forwardingHookJournal saves the IPv4 forwarding hook before the installer
+// writes it, so compensation restores (or removes) it with the other managed
+// files. Emitted only when forwarding is managed (L1 review R3).
+const forwardingHookJournal = "agent_rollback_save \"$AGENT_DIR/enable-ipv4-forwarding.sh\"\n"
+
 var (
 	cliOutputHelpers           = script("cli-output.sh")
 	installOutputHelpers       = script("install-output.sh")

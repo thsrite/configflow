@@ -45,7 +45,7 @@ class ComparatorTests(unittest.TestCase):
 
     def test_installer_compensation_wait_is_reversed_only_with_the_rollback_module(self):
         approved = json.loads((pd.ROOT / 'server/internal/installer/installertest/l1-rollback-deltas.json').read_text())
-        [wrapper] = approved['rendered']
+        wrapper = approved['rendered'][0]
         first = approved['deltas'][0]
         route = '/api/agents/install-script'
         original = '#!/bin/sh\n' + wrapper['before'] + first['before'] + ')\n'
@@ -53,6 +53,10 @@ class ComparatorTests(unittest.TestCase):
                    + ')\n')
         left = reply(original.encode(), 'text/plain; charset=utf-8')
         self.assertEqual([], pd.response_diffs(left, reply(changed.encode(), left[1]), route, []))
+        for hook in approved['rendered'][1:]:
+            with self.subTest(hook=hook['before']):
+                self.assertEqual([], pd.response_diffs(reply((original + hook['before']).encode(), left[1]),
+                                                       reply((changed + hook['after']).encode(), left[1]), route, []))
         # Without the D3 module (another installer) the wait trap stays a difference.
         bare = reply(('#!/bin/sh\n' + wrapper['after'] + ')\n').encode(), left[1])
         self.assertTrue(pd.response_diffs(reply(('#!/bin/sh\n' + wrapper['before'] + ')\n').encode(), left[1]), bare, route, []))

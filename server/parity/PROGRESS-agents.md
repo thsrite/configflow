@@ -664,7 +664,7 @@ Open findings: none.
 **L1 installer fixes (D1, D3–D8): `verified`** — independent HR review 2026-11-18,
 [review-l1-installer.md](review-l1-installer.md): 7 findings fixed (0 high, 1 medium:
 interrupts killed the report shell so compensation ran unseen; 6 low), **0 open**.
-Branch `go-opus-review-l1-installer`. Fingerprint now `52ee8a8a932df7dcd1ad4522f13097e8`.
+Branch `go-opus-review-l1-installer`. Fingerprint now `9bed9bf8869aa893a88c61e2bbce11c5`.
 
 L1 repair batch final acceptance (`go-fix-l1-installer`, based on go0f943623,
 ported/review pending): D1/D3–D8 complete. Full race: other85 packages passed;
@@ -786,7 +786,7 @@ that as a separate defect.
 **L1 installer fixes (D1, D3–D8): `verified`** — independent HR review 2026-11-18,
 [review-l1-installer.md](review-l1-installer.md): 7 findings fixed (0 high, 1 medium:
 interrupts killed the report shell so compensation ran unseen; 6 low), **0 open**.
-Branch `go-opus-review-l1-installer`. Fingerprint now `52ee8a8a932df7dcd1ad4522f13097e8`.
+Branch `go-opus-review-l1-installer`. Fingerprint now `9bed9bf8869aa893a88c61e2bbce11c5`.
 
 L1 D6 follow-up: verification selects dig/nslookup/BusyBox nslookup, always
 queries the validated VIP, preserves query failures; missing tools gives an
@@ -944,7 +944,7 @@ Review commands (shared worktree builds): `rt -- bash -lc 'cd server && go vet .
 **L1 installer fixes (D1, D3–D8): `verified`** — independent HR review 2026-11-18,
 [review-l1-installer.md](review-l1-installer.md): 7 findings fixed (0 high, 1 medium:
 interrupts killed the report shell so compensation ran unseen; 6 low), **0 open**.
-Branch `go-opus-review-l1-installer`. Fingerprint now `52ee8a8a932df7dcd1ad4522f13097e8`.
+Branch `go-opus-review-l1-installer`. Fingerprint now `9bed9bf8869aa893a88c61e2bbce11c5`.
 
 L1 D1 follow-up (2026-11-17): compact now rejects colon-bearing data directories
 before rendering/issuing capability, matching other installation methods; removed

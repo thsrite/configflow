@@ -813,15 +813,10 @@ func TestAgentStartFailureDoesNotCommitForwardingAndCanRetry(t *testing.T) {
 			t.Error("committed")
 		}
 		notContains(t, h.eventsText(), "sysctl -q -w net.ipv4.ip_forward=1")
-		helper := h.path(forwardHelper)
-		if !exists(helper) {
-			t.Fatal("hook missing")
-		}
-		if s := runShell(t, "/bin/sh", helper, runOptions{env: h.env, replace: true}); s.code != 0 {
-			t.Fatal(s.stderr)
-		}
-		if readFile(t, h.path("ip_forward")) != "0\n" {
-			t.Error("hook enabled before commit")
+		// L1 D3 + review R3: compensation restores the pre-install state, so a
+		// hook first written by the failed run is removed rather than left inert.
+		if exists(h.path(forwardHelper)) {
+			t.Fatal("hook written by the failed run was left behind")
 		}
 		if retried := h.run(t, "1"); retried.code != 0 {
 			t.Fatal(retried.stdout + retried.stderr)

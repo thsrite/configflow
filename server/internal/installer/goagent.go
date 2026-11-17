@@ -242,7 +242,7 @@ func GenerateGoAgentInstallScript(o GoAgentOptions) (string, error) {
 		"ipv4_forwarding_cleanup":         standaloneForwardingCleanup,
 		"ipv4_forwarding_functions":       forwardingFunctions,
 		"ipv4_forwarding_prepare":         standaloneForwardingPrepare,
-		"ipv4_forwarding_hook":            "install_ipv4_forwarding_hook\n",
+		"ipv4_forwarding_hook":            forwardingHookJournal + "install_ipv4_forwarding_hook\n",
 		"ipv4_systemd_pre":                "ExecStartPre=/bin/sh " + StandaloneForwardingHook + "\n",
 		"ipv4_openrc_pre":                 "    /bin/sh " + StandaloneForwardingHook + " || return 1\n",
 		"ipv4_forwarding_apply":           "persist_ipv4_forwarding\n",

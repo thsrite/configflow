@@ -364,7 +364,6 @@ fi
 agent_rollback_save /usr/local/bin/configflow-agent
 agent_rollback_save "$CONFIG_FILE"
 agent_rollback_save /etc/logrotate.d/configflow-agent
-agent_rollback_save "$AGENT_DIR/enable-ipv4-forwarding.sh"
 # Existing journals belong to the old config root, which may differ from the
 # newly requested config_path. Report pending work before losing its reference.
 if [ -f "$CONFIG_FILE" ]; then

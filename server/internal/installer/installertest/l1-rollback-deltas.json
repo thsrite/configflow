@@ -70,7 +70,7 @@
     {
       "file": "install-go.sh",
       "before": "",
-      "after": "# Capture identity only after the old process has stopped writing its config.\nagent_rollback_save /usr/local/bin/configflow-agent\nagent_rollback_save \"$CONFIG_FILE\"\nagent_rollback_save /etc/logrotate.d/configflow-agent\nagent_rollback_save \"$AGENT_DIR/enable-ipv4-forwarding.sh\"\n"
+      "after": "# Capture identity only after the old process has stopped writing its config.\nagent_rollback_save /usr/local/bin/configflow-agent\nagent_rollback_save \"$CONFIG_FILE\"\nagent_rollback_save /etc/logrotate.d/configflow-agent\n"
     },
     {
       "file": "install-go.sh",
@@ -120,7 +120,7 @@
     {
       "file": "install-go-aio.sh",
       "before": "",
-      "after": "done\n# Both old processes are stopped before snapshotting their final identities.\nfor service in mihomo oxidns; do\n    select_service \"$service\"\n    agent_rollback_save \"$AGENT_BINARY\"\n    agent_rollback_save \"$CONFIG_FILE\"\n    agent_rollback_save \"/etc/logrotate.d/$AGENT_UNIT\"\n    agent_rollback_save \"$AGENT_DIR/enable-ipv4-forwarding.sh\"\n    agent_rollback_directory \"$AGENT_DIR\"\n"
+      "after": "done\n# Both old processes are stopped before snapshotting their final identities.\nfor service in mihomo oxidns; do\n    select_service \"$service\"\n    agent_rollback_save \"$AGENT_BINARY\"\n    agent_rollback_save \"$CONFIG_FILE\"\n    agent_rollback_save \"/etc/logrotate.d/$AGENT_UNIT\"\n    agent_rollback_directory \"$AGENT_DIR\"\n"
     },
     {
       "file": "install-go-aio.sh",
@@ -132,6 +132,14 @@
     {
       "before": "cf_init \"安装与维护\"\n(\n",
       "after": "cf_init \"安装与维护\"\ntrap ':' HUP INT TERM\n(\n"
+    },
+    {
+      "before": "install_ipv4_forwarding_hook\n",
+      "after": "agent_rollback_save \"$AGENT_DIR/enable-ipv4-forwarding.sh\"\ninstall_ipv4_forwarding_hook\n"
+    },
+    {
+      "before": "    install_ipv4_forwarding_hook\n",
+      "after": "    agent_rollback_save \"$AGENT_DIR/enable-ipv4-forwarding.sh\"\n    install_ipv4_forwarding_hook\n"
     }
   ]
 }

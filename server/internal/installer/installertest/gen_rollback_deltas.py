@@ -35,6 +35,12 @@ for name in ['install-go.sh', 'install-go-aio.sh']:
 # on HUP/INT/TERM. Rendered scripts only; the shared wrapper text is unchanged.
 wrapper = 'cf_init "安装与维护"\n'
 rendered = [dict(before=wrapper + '(\n', after=wrapper + "trap ':' HUP INT TERM\n(\n")]
+# L1 review: the forwarding hook is journaled only where forwarding is managed;
+# the Go generators emit this line together with the hook call.
+journal = 'agent_rollback_save "$AGENT_DIR/enable-ipv4-forwarding.sh"\n'
+for indent in ['', '    ']:
+    call = indent + 'install_ipv4_forwarding_hook\n'
+    rendered.append(dict(before=call, after=indent + journal + call))
 
 Path(__file__).with_name('l1-rollback-deltas.json').write_text(json.dumps(
     dict(decision='L1 D3: restore old installation on failure', module=module, deltas=deltas, rendered=rendered),
