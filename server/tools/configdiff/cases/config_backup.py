@@ -225,11 +225,16 @@ def import_guards(binary, recorder):
                          expect=500, policy=exception_policy(pair), writes=True, capture=profile_capture(pair))
 
 
-def lifecycle(binary, recorder):
+def capability_lifecycle(binary, recorder, *, public_before=False):
+    from cases.setup import Stable
+    prefix = 'public-token-before-import/' if public_before else ''
     for mode in ('login', 'open'):
         for operation in ('missing', 'collision', 'current'):
             with Pair(binary, recorder, mode=mode) as pair:
                 pair.policy = profile_policy(pair)
+                if public_before:
+                    pair.request('R020-S01', 'POST /api/config-token', body=json_body({'token': 'synthetic-public-before-import'}),
+                        expect=200, writes=True, variant=prefix + mode + '/' + operation)
                 data = seed_document(pair)
                 cfg = data['system']['system_config']
                 if operation == 'missing':
@@ -237,7 +242,7 @@ def lifecycle(binary, recorder):
                 elif operation == 'collision':
                     cfg['config_token'] = CURRENT
                 cfg['retired_rule_proxy_tokens'] = [RETIRED, RETIRED, '', 123]
-                import_request(pair, 'R028-S90', data, variant=mode + '/' + operation,
+                import_request(pair, 'R028-S90', data, variant=prefix + mode + '/' + operation,
                                expected_token=CURRENT if operation == 'current' else None)
                 values = [settings(d).get('rule_proxy_token') for d in pair.dirs]
                 for token_kind in (('current', 'retired', 'old-current') if operation != 'current' else ('current', 'retired')):
@@ -245,12 +250,43 @@ def lifecycle(binary, recorder):
                     paths = ['/api/mosdns/rule-proxy?token=' + quote(t, safe='') for t in tokens]
                     pair.request('T28', 'GET /api/mosdns/rule-proxy', paths=paths, auth='',
                                  expect=400 if token_kind == 'current' else 401, writes=True,
-                                 variant=mode + '/' + operation + '/' + token_kind)
+                                 variant=prefix + mode + '/' + operation + '/' + token_kind)
                 # A new config-token may not embed a current or retired capability.
                 for token_kind, token in [('current', values[0]), ('retired', RETIRED)]:
-                    pair.request('T28', 'POST /api/config-token',
+                    pair.request('R020-B90' if public_before else 'T28', 'POST /api/config-token',
                                  bodies=[json_body({'token': 'prefix-' + t}) for t in (values if token_kind == 'current' else [token, token])],
-                                 expect=400, writes=True, variant=mode + '/' + operation + '/reject-config-token/' + token_kind)
+                                 expect=400, writes=True, interaction=Stable(pair),
+                                 variant=prefix + mode + '/' + operation + '/reject-config-token/' + token_kind)
+
+
+def lifecycle(binary, recorder):
+    capability_lifecycle(binary, recorder)
+
+
+def public_token_imports(binary, recorder):
+    # An unwired token setter must not block the independent import cases.
+    capability_lifecycle(binary, recorder, public_before=True)
+
+
+def public_token_reset(binary, recorder):
+    from cases.setup import Stable
+    with Pair(binary, recorder) as pair:
+        pair.policy = profile_policy(pair)
+        pair.request('R020-S01', 'POST /api/config-token', body=json_body({'token': 'synthetic-public-before-reset'}),
+            expect=200, writes=True, variant='public-token-reset-precondition')
+        snapshot = ImportSnapshot(pair)
+        old = [settings(directory)['rule_proxy_token'] for directory in pair.dirs]
+        def check(reply):
+            snapshot.check(reply)
+            if old[0] not in settings(pair.dirs[0]).get('retired_rule_proxy_tokens', []):
+                raise DesignError('reset after successful public-token save must retire the actual previous internal capability')
+        pair.request('R033-S01', 'POST /api/config/reset', body='{}', expect=200, writes=True,
+            check=check, capture=lambda replies, policy: snapshot.capture(replies, policy) + bind_capability(pair)(replies, policy),
+            variant='public-token-reset-rotates-internal-capability')
+        current = [settings(directory)['rule_proxy_token'] for directory in pair.dirs]
+        for kind, values in [('current', current), ('old-current', old)]:
+            pair.request('R020-B90', 'POST /api/config-token', bodies=[json_body({'token': value}) for value in values],
+                expect=400, writes=True, interaction=Stable(pair), variant='after-public-token-reset/reject-' + kind)
 
 
 def reset(binary, recorder):
@@ -296,6 +332,7 @@ def protected_routers(binary, recorder):
 
 
 GROUPS = {'config-export': exports, 'config-import': imports, 'config-import-guards': import_guards,
-          'config-capability-lifecycle': lifecycle, 'config-reset': reset}
+          'config-capability-lifecycle': lifecycle, 'config-reset': reset,
+          'config-token-import-boundary': public_token_imports, 'config-token-reset-boundary': public_token_reset}
 
 GROUPS['config-protected-router-import'] = protected_routers

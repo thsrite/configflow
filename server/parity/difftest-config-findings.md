@@ -111,7 +111,7 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | R222-S02 / disabled | `GET /api/subscriptions/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
 | R222-S03 / http403-cache-fallback | `GET /api/subscriptions/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
 | R222-S04 / none | `GET /api/subscriptions/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
-| R228-F01 /  | `GET /api/version` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | 3c8a1760 | 405 / 405 |
+| R228-F01 /  | `GET /api/version` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | 21dfb92c | 405 / 405 |
 | T06 / 12-second-last-good-and-background-finish | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
 | T06 / 20-clients-one-flight | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 3c8a1760 | [200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200] / [200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200] |
 | T06 / next-poll-is-fresh | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |

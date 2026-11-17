@@ -2035,3 +2035,9 @@ R051/R054用两个配置空间的不同前置终态错误证明真正选中了�
 R062-B04、R063-B03的P3无显式profile URL别名，N/A；R126-B04的URL优先真实可测。其余query/header/default创建用例在两个空间生成worker_threads=2/5的不同内容，artifact自身profile_id、响应header、私有source/manifest及Unicode附加文件均比较。R063的manual record存放于DATA_DIR全局预览目录；已授权管理员切换到另一合法profile上下文仍可读取原预览，不重新生成或按当前profile换内容，见[agents.py:1615](../../backend/routes/agents.py#L1615)。
 
 冻结比较针对每个端自己的已校验bundle成员原始字节。配置通过公开settings改为另一份后，旧file仍必须等于旧成员，完整SQL/预览文件不变；跨实现的生成主YAML照结构比较。ZIP下载由[generated_preview.download](../../backend/agents/generated_preview.py#L163)每次重打包，ZIP容器自身的时间戳不属于“旧成员内容不变”，不能把整个ZIP字节相等当作冻结条件。TTL仍核对真实expires_at≈创建时刻+3600，过期拒绝另由F11验证，不缩短生产TTL。
+
+### Step B token保存后的轮换与版本注入边界
+
+R020-B90新增独立公开前置：先真正保存public token，再分别执行缺内部能力/能力冲突/当前有效能力三种完整import（登录/认证关闭），及reset；当前/退役能力不能再保存为public token，失败全SQL/files精确不变。有效schema能力的import保留原值，缺失/冲突与reset才轮换，沿用上文T28 oracle更正。原独立import/reset用例保留，不因新增公开setter的wiring前置而丢掉原先能比较的路径。
+
+R228-B90实际测试未注入公开构建的完整`{"version":"dev"}`响应，检查精确字段形态且所有值仍严格比；没有用shape投影掩掉版本值。Docker发布时对[backend/version.py](../../backend/version.py)的Git tag替换和Go发布构建注入之间的值约定仍属O12/O14部分覆盖，当前dev/dev通过不能外推为发布版本注入已经验收。

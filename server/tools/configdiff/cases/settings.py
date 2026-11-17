@@ -69,6 +69,12 @@ def sync_settings(binary, recorder):
         pair.request('R228-F01', 'GET /api/version', method='POST', expect=405,
                      writes=True, interaction=Stable(pair))
         pair.request('R228-B01', 'GET /api/version', auth='invalid-synthetic-jwt', expect=200)
+        def version_shape(reply):
+            value = reply.json()
+            if set(value) != {'version'} or not isinstance(value['version'], str) or not value['version']:
+                raise DesignError('default public build has an exact nonempty version field')
+        pair.request('R228-B90', 'GET /api/version', expect=200, writes=True, interaction=Stable(pair),
+            check=version_shape, variant='uninjected-public-build-shape-and-full-values')
     # Old imported values must be observed, not normalized by our fixture.
     with Pair(binary, recorder, options={'system_config': {'server_domain': '',
                     'subscription_aggregation_enabled': 'legacy-string'}}) as pair:

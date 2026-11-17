@@ -2019,3 +2019,19 @@ Ran 99 tests in 3.841s / OK（其后增加有界证据自检）
 ```
 
 继续token轮换与版本等边界，最终完整all仍未执行。
+
+## 批次 119：公开token保存后import/reset的隔离边界与默认构建版本
+
+- R020-B90增加真实公开setter前置，再测试缺内部能力/能力冲突/有效当前能力三种import、登录及认证关闭；轮换/保留按T28实际合同验证，随后当前/退役能力不可保存为public token，拒绝时各端完整SQL/files不变。另有公开保存→reset→拒绝新/旧内部能力的独立序列。新前置放独立groups，原不依赖setter的import/reset组保留并回归，不能为新增前置牺牲独立路径。
+- R228-B90检查默认未注入公开构建的精确version字段，完整值仍比，无shape投影屏蔽dev差异。发布时Python Git tag替换/Go注入的值约定仍列O12/O14部分覆盖，不把默认dev/dev外推为发布注入通过。
+- 新增45变体、2原R编号；.64草稿和正式141变体：63compared、Go尚未实现19、依赖未实现58、严格different1/accepted1（既有version405），open0、design_errors=[]。99项自检及故意错误Go响应检出通过；未实现和依赖均不计Go通过。
+- 统一9693变体、原R4367（S692/F2683/B992）、H638/G16；findings仍closed80/accepted7/open21/O12单列1。原R仍差163（含N/A）、H仍差474及partial/长流程。
+
+```text
+.64 native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups config-capability-lifecycle,config-reset,config-token-import-boundary,config-token-reset-boundary,settings-sync --baseline 21dfb92c
+current compared=63 go-unimplemented=19 go-unimplemented-dependency=58 different=1 accepted=1 open=0 design_errors=[] seconds=22.39；exit=0
+99 self-checks + deliberately wrong-Go-response detection OK
+独立报告/tmp/configdiff-config-capability-edges-draft.json
+```
+
+继续生成与其他原路由槽、helper；最终完整all仍未执行。
