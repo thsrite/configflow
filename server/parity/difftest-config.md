@@ -2188,3 +2188,9 @@ R228-B90实际测试未注入公开构建的完整`{"version":"dev"}`响应，�
 T02先用两个真实HTTP线程/Barrier同时给default和other新增相同局部ID、不同值的规则，再同时保存不同Mihomo文本；query/header/显式URL故意相互冲突。每阶段完整比较SQL及文件：两profile各自_revision恰增1、全局generation恰增2，只允许两个合法提交顺序，未改字段/位置/其他行精确不变。各修改行必须属于该profile的同一次提交，提交ID必须是新hex32，时间在本轮窗口；经这些验证后才归一化两种独立提交先后。故意篡改值、generation、重复事务号、旧commit/时间、无关/缺失/额外行和位置均检出。
 
 最后通过真实scoped Mihomo pull验证只生成所选profile的`/api/profiles/<id>/rules/local/<name>`，对侧URL不得泄漏。原草稿错误地要求rule-library/content路径，已撤回；实际生成合同来自[mihomo.py:767](../../backend/converters/mihomo.py#L767)。选择器依据[profile_context.py:52](../../backend/common/profile_context.py#L52)，事务依据[config_repository.py:995](../../backend/common/config_repository.py#L995)。当前Go对应写入/拉取未接通，四变体保留未实现/依赖；Python确实执行两次并发写和两次生成，未计双端通过。路由接通后自动启用同样双端请求。
+
+### Step B 实际日志序列及10MiB×5轮转（批次140）
+
+X07固定序列真实执行登录失败、带token配置拉取、带密码DAV上传507、带token来源403、独立profile导入，然后实际GET logs/tail逐事件以search+level过滤。要求每个源事件恰好一次、原中文/等级/顺序和完整响应结构；total_lines须等于各端真实文件行数、log_file须是该端owned路径，验证后才替换成标记。仅asctime/logger行前缀属于O12格式边界；原始日志不得包含密码/JWT/public token/来源秘密和完整链接。DAV错误仅允许既有O6精确的NotEnoughSpace/HTTP507两种英文诊断，中文和其他字段不放宽。当前拉取/导入路由尚未接通，整个五事件双端序列保留依赖未实现，Python前提实际通过；其他三请求本身已双端相比。
+
+轮转由七次公开server-domain保存各产生>6MiB的完整日志事件，不外部填充日志、不强制roll、不替换logger、不缩小生产10MiB/five-backup常量。第七次之后必须只有app.log及.1–.5，准确保留最新六个事件、淘汰最旧事件；逐文件比名称/模式/完整消息/等级/顺序/额外行，七次HTTP与全部SQL/files也比较。双端八变体实际compared。源码为[settings.py:95](../../backend/routes/settings.py#L95)、[app.py:59](../../backend/app.py#L59)。新增自检故意改归档名/消息/等级/顺序/额外行/权限及tail envelope身份/计数/额外字段，均检出；没有用哈希替代实际正文比较。

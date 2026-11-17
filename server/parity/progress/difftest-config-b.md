@@ -2366,3 +2366,15 @@ current Go未实现2 / 依赖2；design_errors=[]；exit0
 130 self-checks + deliberately wrong-Go-response detection OK
 .64 official gate: GATE PASS; configdiff all still running
 ```
+
+## 批次 140：日志固定五事件与真实10MiB/five-backup轮转
+
+- X07新增固定五操作及真实logs/tail的search/level轮询。Python实际各事件恰好一次且原日志无密码/JWT/token/完整来源链接；tail计数/路径逐端验证后才规范化，中文等级与事件值完整比，格式前缀按O12边界。拉取和profile import未接通时五事件序列为依赖，不伪称Go日志相比通过。
+- 真实七次公开server-domain写入各>6MiB，未改生产10MiB/5份常量、未填充/强制roll/替换logger；完整比较SQL/HTTP，最终两端都准确保留最新六段、淘汰第一段。八变体compared；归档文件名称/权限/完整消息/等级/顺序和额外行都参与，故意变异全部检出。
+- .32 baseline4d8a665a，两个组14变体26.76秒：compared11/Go未实现2/依赖1，design_errors=[]、exit0；132项自检及故意错误Go响应检出。有效报告独立log-runtime.json，不与.64运行中的canonical竞争。首轮草稿两个编号不在matrix槽内，已修正为R011-F02/R030-S02并实际重跑，未保留失败草稿。
+
+```text
+.32 native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups logs-real-five-event-sequence-and-level-filter-polling,logs-real-public-write-driven-10MiB-five-backup-rotation --baseline 4d8a665a --output <独立报告>
+current compared11 / Go未实现2 / 依赖1；design_errors=[]；exit0
+132 self-checks + deliberately wrong-Go-response detection OK
+```

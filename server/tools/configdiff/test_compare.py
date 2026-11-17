@@ -17,6 +17,53 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_log_poll_normalization_preserves_extra_fields_counts_events_and_invalid_identities(self):
+        from cases.log_sequence import poll_value
+        marker = '合成日志：'
+        with tempfile.TemporaryDirectory() as root:
+            directory = Path(root)
+            raw = '2026-01-01 00:00:00,000 - synthetic - WARNING - ' + marker + '完整事件\n'
+            (directory / 'app.log').write_text(raw)
+            data = {'success': True, 'logs': [raw.rstrip('\n')], 'total_lines': 1,
+                'filtered_lines': 1, 'log_file': str(directory / 'app.log')}
+            reply = lambda value: Reply(200, {'content-type': 'application/json'}, json.dumps(value).encode())
+            valid = poll_value(reply(data), directory, marker)
+            self.assertFalse(valid['violations'])
+            for kind in ('wrong-file', 'wrong-total', 'wrong-filtered', 'lost-event', 'extra-field', 'wrong-message', 'wrong-level', 'non-string-line'):
+                bad = copy.deepcopy(data)
+                if kind == 'wrong-file': bad['log_file'] = '/unexpected/app.log'
+                elif kind == 'wrong-total': bad['total_lines'] = 3
+                elif kind == 'wrong-filtered': bad['filtered_lines'] = 3
+                elif kind == 'lost-event': bad['logs'] = []
+                elif kind == 'extra-field': bad['unexpected'] = True
+                elif kind == 'wrong-message': bad['logs'][0] += '篡改'
+                elif kind == 'wrong-level': bad['logs'][0] = bad['logs'][0].replace('WARNING', 'ERROR')
+                else: bad['logs'] = [None]
+                self.assertTrue(differences(valid, poll_value(reply(bad), directory, marker)), kind)
+
+    def test_real_log_rotation_snapshot_keeps_archive_names_modes_levels_and_every_message(self):
+        from cases.log_rotation import rotation_snapshot, rotation_errors, MARKER
+        domains = ['synthetic-' + str(i) for i in range(7)]
+        with tempfile.TemporaryDirectory() as root:
+            for index in range(6):
+                path = Path(root) / ('app.log' + ('.' + str(index) if index else ''))
+                path.write_text('2026-01-01 00:00:00,000 - synthetic - INFO - ' + MARKER + domains[6 - index] + '\n')
+                path.chmod(0o600)
+            valid = rotation_snapshot(root)
+            self.assertEqual(rotation_errors(valid, domains), [])
+            for kind in ('missing', 'extra', 'wrong-order', 'wrong-value', 'wrong-level', 'extra-line'):
+                bad = copy.deepcopy(valid)
+                if kind == 'missing': del bad['app.log.5']
+                elif kind == 'extra': bad['app.log.6'] = copy.deepcopy(bad['app.log.5'])
+                elif kind == 'wrong-order': bad['app.log.1']['events'] = copy.deepcopy(bad['app.log.2']['events'])
+                elif kind == 'wrong-value': bad['app.log']['events'][0]['message'] += 'changed'
+                elif kind == 'wrong-level': bad['app.log']['events'][0]['level'] = 'ERROR'
+                else: bad['app.log']['unrecognised_lines'] = 1
+                self.assertTrue(rotation_errors(bad, domains), kind)
+            bad = copy.deepcopy(valid)
+            bad['app.log']['mode'] = 0o644
+            self.assertTrue(differences(valid, bad), 'file mode still participates in cross-implementation comparison')
+
     def test_concurrent_profile_commits_allow_only_exact_independent_serial_orders(self):
         from cases.profile_concurrent_isolation import canonical_profile_writes
         from datetime import datetime, timezone

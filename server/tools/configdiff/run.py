@@ -100,6 +100,10 @@ def main():
     from cases.subscription_conversion_failures import GROUPS as subscription_conversion_failures
     groups.update(subscription_conversion_failures)
     groups.update(auth)
+    from cases.log_rotation import GROUPS as log_rotation
+    groups.update(log_rotation)
+    from cases.log_sequence import GROUPS as log_sequence
+    groups.update(log_sequence)
     from cases.redaction import GROUPS as redaction
     groups.update(redaction)
     from cases.admin_auth import GROUPS as admin_auth
