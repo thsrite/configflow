@@ -86,3 +86,12 @@ underlying call as Do, with no waiter goroutine or cancellation of shared work. 
 results on normal return, panic/Goexit and rejected Spawn. Tests combine Do/DoChan,1000 channel waiters,
 an unread cancelled waiter's buffered result, shared flags, panic and a blocked refusal with joiners.
 .64 fmt/vet green; race count3 lockx8.191s, lifecycle7.728s, lifecycletest1.007s.
+
+Flight commit: aee0d01e. Provider rendering now uses Flight.DoChan and tracked Spawn; every waiter
+selects its request cancellation, shared result and Runtime Clock timer. The production12s deadline
+and8-slot pool are unchanged. Missing fallback keeps waiting on the same result; invalid fallback
+keeps the existing read-error boundary without replacing ongoing work. Panic is handled once by
+Flight; the pool token is deferred. Preparation detaches through lifecycle; local commits remain
+uninterruptible. Fake-clock tests pin12s/8, fallback/no-cache/read-error reuse and cancellation;
+the existing HTTP isolation tests retain the production ServeProvider entry. .64 gofmt/vet green;
+provider full race count3 passed447.504s, including actual preparation I/O cancellation.

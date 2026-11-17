@@ -8,6 +8,7 @@ import (
 	"configflow/internal/agents/diag"
 	"configflow/internal/convert"
 	"configflow/internal/jsonx"
+ "configflow/internal/lifecycle"
 	"configflow/internal/pystr"
 	"configflow/internal/refresh"
 	"configflow/internal/repo"
@@ -452,8 +453,8 @@ type PrepareOptions struct {
 // subscription's name on failure. The result's CacheUpdates are staged.
 func PrepareSubscriptionProvider(ctx context.Context, sub, config *jsonx.Object, snapshot *Snapshot, opts PrepareOptions) (*Rendered, error) {
 	// PORTING rule 4b: Python finishes the fetch and validation after the
-	// client went away; only the fetches' own timeouts end them.
-	ctx = context.WithoutCancel(ctx)
+	// client went away; Runtime shutdown and the fetches' own timeouts bound I/O.
+	ctx = lifecycle.Detach(ctx)
 	opts.SourcePath = orEmpty(opts.SourcePath)
 	result, err := prepareSubscriptionProvider(ctx, sub, snapshot, opts)
 	if err != nil && isStrategyReference(err) {
@@ -777,7 +778,7 @@ type fetchFlight struct {
 func PrepareProviderBundle(ctx context.Context, config, main *jsonx.Object, opts BundleOptions) ([]*Rendered, error) {
 	// PORTING rule 4b: the shared per-subscription fetches and the bundle
 	// validation run to completion like Python's request thread.
-	ctx = context.WithoutCancel(ctx)
+	ctx = lifecycle.Detach(ctx)
 	env := currentEnv()
 	var requestedName any
 	hasRequested := opts.Requested != nil

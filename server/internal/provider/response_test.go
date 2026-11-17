@@ -7,12 +7,15 @@ import (
 	"context"
 	"os"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/jsonx"
+	"configflow/internal/lifecycle"
+	"configflow/internal/lockx"
 )
 
 type serveFixture struct {
@@ -44,6 +47,11 @@ func newServeFixture(t *testing.T, seconds float64) *serveFixture {
 		})
 	})})
 	ctx := f.srv.Context()
+	runner := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
+	runner.Start(ctx)
+	previous := flights
+	flights = lockx.NewFlight[flightKey, *responseCopy](responseTestSpawner{runner}, "provider-render")
+	t.Cleanup(func() { runner.Shutdown(context.Background()); flights = previous })
 	for _, id := range []string{"alpha", "beta"} {
 		if _, err := f.srv.Repo.CreateProfile(ctx, jsonx.Obj("id", id, "name", id), ""); err != nil {
 			t.Fatal(err)
@@ -105,11 +113,19 @@ func waitFor(t *testing.T, predicate func() bool) {
 	}
 }
 
-func flightCount() int {
-	flightsMu.Lock()
-	defer flightsMu.Unlock()
-	return len(flights)
+var activeProviderJobs atomic.Int64
+
+type responseTestSpawner struct{ runner *lifecycle.Runtime }
+
+func (s responseTestSpawner) Spawn(ctx context.Context, name string, fn func(context.Context)) error {
+	activeProviderJobs.Add(1)
+	err := s.runner.Spawn(ctx, name, func(work context.Context) { defer activeProviderJobs.Add(-1); fn(work) })
+	if err != nil {
+		activeProviderJobs.Add(-1)
+	}
+	return err
 }
+func flightCount() int { return int(activeProviderJobs.Load()) }
 
 // test_immediate_render_clears_flight_without_reentering_locked_callback:
 // a render finishing at once leaves no flight behind.

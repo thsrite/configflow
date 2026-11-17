@@ -12,8 +12,11 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"configflow/internal/clock"
 	"configflow/internal/httpx"
 	"configflow/internal/jsonx"
+	"configflow/internal/lifecycle"
+	"configflow/internal/lockx"
 	"configflow/internal/logx"
 	"configflow/internal/repo"
 	"configflow/internal/rules"
@@ -36,8 +39,7 @@ var (
 
 	pool = make(chan struct{}, PoolWorkers)
 
-	flightsMu sync.Mutex
-	flights   = map[flightKey]*flight{}
+	flights = lockx.NewFlight[flightKey, *responseCopy](lifecycle.DefaultSpawner{}, "provider-render")
 )
 
 // SetResponseSeconds replaces RESPONSE_SECONDS (tests); it returns a
@@ -66,12 +68,6 @@ type responseCopy struct {
 	status int
 	header http.Header
 	body   []byte
-}
-
-type flight struct {
-	done chan struct{}
-	resp *responseCopy
-	err  error
 }
 
 // Render renders a provider response. ctx outlives the request (the render
@@ -161,76 +157,79 @@ func ServeProvider(c *httpx.Ctx, kind, itemID, profileID string, configData any,
 	regex, _ := c.Arg("regex")
 	exclude, _ := c.Arg("exclude_regex")
 	key := flightKey{kind, profileID, itemID, format, regex, exclude, configDigest(configData)}
-	renderCtx := context.WithoutCancel(c.Context())
-
-	flightsMu.Lock()
-	f := flights[key]
-	if f == nil {
-		f = &flight{done: make(chan struct{})}
-		flights[key] = f
-		go runFlight(renderCtx, key, f, fallback, profileID, kind, itemID, render)
+	renderCtx := lifecycle.Detach(c.Context())
+	if err := renderCtx.Err(); err != nil {
+		return nil, err
 	}
-	flightsMu.Unlock()
+	result := flights.DoChan(renderCtx, key, func(work context.Context) (*responseCopy, error) {
+		return runFlight(work, fallback, profileID, kind, itemID, render)
+	})
+	clock := lifecycle.ClockFrom(c.Context())
+	return awaitResponse(c.Context(), clock, result, fallback, profileID, kind, itemID)
+}
 
+func awaitResponse(ctx context.Context, source clock.Clock, result <-chan lockx.Result[*responseCopy], fallback bool, profileID, kind, itemID string) (*httpx.Response, error) {
+	var timeout <-chan time.Time
+	seconds := currentResponseSeconds()
 	if fallback {
-		seconds := currentResponseSeconds()
-		timer := time.NewTimer(time.Duration(seconds * float64(time.Second)))
+		timer := source.NewTimer(time.Duration(seconds * float64(time.Second)))
 		defer timer.Stop()
+		timeout = timer.C()
+	}
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		select {
-		case <-f.done:
-		case <-timer.C:
-			cached, ok, err := readLastGood(c.Context(), profileID, kind, itemID)
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case r := <-result:
+			if r.Err != nil {
+				return nil, r.Err
+			}
+			return r.Value.response(), nil
+		case <-timeout:
+			timeout = nil
+			cached, ok, err := readLastGood(ctx, profileID, kind, itemID)
 			if err != nil {
 				return nil, err
 			}
+			// A missing fallback keeps waiting on this same channel: never admit a
+			// replacement render when the first one has already finished.
 			if ok {
-				responseLog.Warning(fmt.Sprintf("Provider %s/%s 生成超过 %d 秒，先返回上次成功内容，后台继续生成",
-					kind, itemID, int64(seconds)))
-				return httpx.Bytes(200, "text/yaml; charset=utf-8", []byte(cached)).
-					WithHeader("X-ConfigFlow-Provider", "last-good"), nil
+				responseLog.Warningf(msgSlowProvider, kind, itemID, int64(seconds))
+				return httpx.Bytes(200, "text/yaml; charset=utf-8", []byte(cached)).WithHeader("X-ConfigFlow-Provider", "last-good"), nil
 			}
 		}
 	}
-	<-f.done
-	if f.err != nil {
-		return nil, f.err
-	}
-	return f.resp.response(), nil
 }
 
-func runFlight(ctx context.Context, key flightKey, f *flight, fallback bool, profileID, kind, itemID string, render Render) {
-	pool <- struct{}{}
-	defer func() {
-		<-pool
-		flightsMu.Lock()
-		if flights[key] == f {
-			delete(flights, key)
-		}
-		flightsMu.Unlock()
-		close(f.done)
-	}()
-	f.resp, f.err = func() (resp *responseCopy, err error) {
-		defer func() {
-			if r := recover(); r != nil {
-				err = fmt.Errorf("provider render panicked: %v", r)
-			}
-		}()
-		rendered, err := render(ctx)
+func runFlight(ctx context.Context, fallback bool, profileID, kind, itemID string, render Render) (*responseCopy, error) {
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	select {
+	case pool <- struct{}{}:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	defer func() { <-pool }()
+	rendered, err := render(ctx)
+	if err != nil {
+		return nil, err
+	}
+	snapshot := snapshotResponse(rendered)
+	if fallback && snapshot.status == 200 && mimetype(snapshot.header) == "text/yaml" {
+		r, err := repo.GetRepository(ctx)
 		if err != nil {
 			return nil, err
 		}
-		snapshot := snapshotResponse(rendered)
-		if fallback && snapshot.status == 200 && mimetype(snapshot.header) == "text/yaml" {
-			r, err := repo.GetRepository(ctx)
-			if err != nil {
-				return nil, err
-			}
-			if _, err := r.WriteProfileText(ctx, profileID, lastGoodPath(kind, itemID), snapshot.body); err != nil {
-				return nil, err
-			}
+		if _, err := r.WriteProfileText(ctx, profileID, lastGoodPath(kind, itemID), snapshot.body); err != nil {
+			return nil, err
 		}
-		return snapshot, nil
-	}()
+	}
+	return snapshot, nil
 }
 
 // RequestedFilters is requested_filters(): the per-group text-provider
