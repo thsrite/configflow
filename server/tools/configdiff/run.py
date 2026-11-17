@@ -148,6 +148,8 @@ def main():
     groups.update(repository_resources)
     from cases.repository_public_guards import GROUPS as repository_public_guards
     groups.update(repository_public_guards)
+    from cases.repository_import_edges import GROUPS as repository_import_edges
+    groups.update(repository_import_edges)
     from cases.archive_callbacks import GROUPS as archive_callbacks
     groups.update(archive_callbacks)
     from cases.profile_generators import GROUPS as profile_generators
@@ -268,6 +270,8 @@ def main():
     groups.update(oxidns_schema_helpers)
     from cases.oxidns_assets import GROUPS as oxidns_assets
     groups.update(oxidns_assets)
+    from cases.oxidns_native_guards import GROUPS as oxidns_native_guards
+    groups.update(oxidns_native_guards)
     from cases.oxidns_editor import GROUPS as oxidns_editor
     groups.update(oxidns_editor)
     from cases.aggregations import GROUPS as aggregations

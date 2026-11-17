@@ -6,6 +6,12 @@ Unreachable/earlier-guard branches are deliberately absent.
 """
 
 LINKS = {
+    'H497': ('POST /api/generate/oxidns', ('H023',)),
+    'H498': ('POST /api/generate/oxidns', ('H023',)),
+    'R180-F10': ('DELETE /api/rule-sets/<rule_set_id>', ('H374',)),
+    'R184-F09': ('DELETE /api/rules/<rule_id>', ('H374',)),
+    'R028-F10': ('POST /api/config/import', ('H845',)),
+    'R028-F12': ('POST /api/config/import', ('H848',)),
     'R157-F19': ('POST /api/proxy-groups', ('H917',)),
     'R149-F19': ('POST /api/profiles/<profile_id>/proxy-groups', ('H917',)),
     'R159-F18': ('PUT /api/proxy-groups/<group_id>', ('H917',)),
@@ -78,6 +84,27 @@ VARIANT_LINKS = {
     for case, variant, labels in [(prefix + '-F13', 'text/F13', ('H124', 'H145')),
                                  (prefix + '-B04', 'text/B04', ('H143',))]
 }
+VARIANT_LINKS.update({
+    ('G10', variant, 'POST /api/generate/oxidns'): labels
+    for variant, labels in [('missing-resource/reject-package', ('H500', 'H023')),
+                            ('runtime-overlap/reject-package', ('H501', 'H023'))]
+})
+VARIANT_LINKS.update({
+    ('G13', age + '/' + selection + '/' + service + '/sub-a', 'GET /api/subscriptions/<sub_id>/proxies'): (helper,)
+    for age in ('fresh', 'expired', 'interval-zero') for selection in ('filtered', 'all')
+    for service, helper in [('surge', 'H175'), ('loon', 'H170')]
+})
+VARIANT_LINKS.update({
+    (rid + '-' + case, variant, route): (helper,)
+    for rid, route in [('R109', 'POST /api/oxidns/native-settings/apply'),
+                       ('R142', 'POST /api/profiles/<profile_id>/oxidns/native-settings/apply')]
+    for case, variants, helper in [
+        ('F12', ('None', '[]', '1'), 'H453'), ('F13', ('[]', "{'lazy_cache': 1}"), 'H454'),
+        ('F14', ("'lazy_cache'", '[1]', "['lazy_cache', 'lazy_cache']"), 'H455'),
+        ('F14', ("['unknown']",), 'H456'), ('F15', ('',), 'H457'),
+        ('B01', ('中文', 'emoji🧪'), 'H459'), ('F16', ('',), 'H461'), ('F18', ('',), 'H465')]
+    for variant in variants
+})
 
 ROUTE_LINKS = {(case, route): ('H423',)
     for case in ('H416', 'H417', 'H418', 'H419', 'H420', 'H421', 'H422')

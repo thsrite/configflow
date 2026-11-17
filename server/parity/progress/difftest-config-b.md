@@ -2088,3 +2088,21 @@ current compared=15 go-unimplemented=69 different=2 accepted=2 open=0 design_err
 ```
 
 原R仍差84（含N/A）、H仍差444及partial/长流程；继续剩余import/native、任务与断连等。最终完整all仍未执行。
+
+## 批次 123：完整导入闭包、原生YAML/附件真实限额与已核对的helper标签
+
+- 完整import新增31变体：R028-F10当前schema的profile key/内容ID不一致、R028-F12 Agent引用不存在profile，以及H855/H859–863/H870–874的组名/跟随/排序/规则类型/规则库/DNS选择/Action/Surge引用错误。公开HTTP精确中文400/409，完整SQL/files及零fake出站；不是给同一错误批量套H编号。
+- 原生编辑器default/scoped新增92变体，实际到达H469–496：安全键/重复键、真实UTF8 2MiB、深度34/50001节点、循环alias、binary/非有限数、主文件/metadata/state覆盖、路径重复/层级冲突、真实32MiB字符上限/16MiB字节上限/65MiB总量、513次include展开、include类型/路径/循环/缺失/UTF8/根类型和完整schema错误。生产常量未修改，全部拒绝保持完整SQL/files不变。未知插件的首份草稿只产生warning，已撤回其错误前提；改用已知cache插件错型size实际到达error，两个空间均重新跑通。
+- H497/H498必须用template自定义插件→完整ZIP资源materializer才可到达；native schema会先拒绝，4个新变体证明真实后续guard并关联H023。既有G10完整ZIP缺资源/运行数据重合、R180/R184手写provider删除和G13两客户端拨号拒绝重新执行后关联H023/H374/H500/H501/H170/H175。再核对并实际复跑native apply的字段/standard_add/rename/动态引用/依赖guard，关联8个真实H；未命中的重复防御分支不借相似文本计覆盖。
+- .32正式207变体：44compared、163Go尚未实现、design_errors=[]，47.75秒；.64随后named-native-applies正式均Go尚未实现。净增127请求变体、2原R和55H；103自检与故意错误Go响应检出通过。统一9984变体、原R4448（S706/F2743/B999）、H723/G16；findings不变closed81/accepted9/open20/O12单列1。
+
+```text
+.32 native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups repository-complete-import-edge-invariants,oxidns-native-yaml-attachment-real-limits,oxidns-template-package-resource-guards,oxidns-asset-guards,delivery-graph,rule-dns-native-write-boundaries --baseline 6b50151c
+current compared=44 go-unimplemented=163 design_errors=[] seconds=47.75；exit=0
+.64 native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups oxidns-named-native-applies --baseline 6b50151c
+current Go尚未实现、design_errors=[]；exit=0
+103 self-checks + deliberately wrong-Go-response detection OK
+独立有效报告/tmp/configdiff-config-{import-edges,native-guards,resource-refs,helper-graph-assets,native-applies-labels}-draft.json
+```
+
+原R仍差82（含N/A）、H仍差389及partial/长流程；继续任务、生成器断连与剩余guard。最终完整all仍未执行。

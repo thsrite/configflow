@@ -2046,6 +2046,10 @@ R062/R126-S90均用13种真实hosts缓存/DNS配置和真实Agent核心版本上
 
 R149/R157-F19、R159-F18用group默认DIRECT↔proxy确实改变已有following规则，从而触发自定义native的严格重建409；不是仅设置rule_dns_follow就认定走到失败。R180-F10/R184-F09的domain_set必须包含规则集真实派生路径/普通规则原子，删除400且完整状态不变。R185-F20须显式传dns，普通未传dns的修改是非严格warning路径。R154/R220-S04使用无URL来源证明的legacy缓存才先请求远端再降级；当前URL缓存按[subscription_refresh.py:126](../../backend/utils/subscription_refresh.py#L126)直接复用，不能强求重新下载。R154/R220-F12/F13是实际面板chain拒绝客户端，F14是坏拨号图不回缓存，F17用真实last-good写路径冲突；两个F17的HTML→JSON精确差异依维护者Step B #3接受，不接受额外副作用。
 
+### Step B 原生结构与导入补充（批次123）
+
+H469–496走真实default/scoped render、实际限额，不缩小生产常量；未知插件仅warning，H496须已知插件的错型参数等真实error。H497/H498的native坏files会被schema提前拒绝，故改走template手写插件的完整ZIP，实际到达resource_references。H500/H501关联既有完整ZIP guard；同样的公开路径只计一次变体。R028-F10以当前schema profile索引键/内容ID不一致驱动，R028-F12以Agent缺失profile引用驱动；导入的后续各H guard按本表源行保留前置、精确中文和全状态不变。H854空组名仍被更早validate_shapes拒绝，H857/H858缺共享引用仍被更早资源闭包拒绝，不能借前置错误宣称到达这些后续重复检查。
+
 冻结比较针对每个端自己的已校验bundle成员原始字节。配置通过公开settings改为另一份后，旧file仍必须等于旧成员，完整SQL/预览文件不变；跨实现的生成主YAML照结构比较。ZIP下载由[generated_preview.download](../../backend/agents/generated_preview.py#L163)每次重打包，ZIP容器自身的时间戳不属于“旧成员内容不变”，不能把整个ZIP字节相等当作冻结条件。TTL仍核对真实expires_at≈创建时刻+3600，过期拒绝另由F11验证，不缩短生产TTL。
 
 ### Step B token保存后的轮换与版本注入边界
