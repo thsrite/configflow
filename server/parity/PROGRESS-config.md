@@ -13,6 +13,25 @@ Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 9783acd1 (p
 - Python lazily imports in cycles (e.g. converters ↔ provider delivery ↔ route files, the whole OxiDNS cluster). Go needs a DAG: the prerequisite order below breaks the cycles; when a module needs a function of a later module, put a `compat.go` copy (`TODO(port)`) or an interface/hook and list it here.
 - Cross-domain calls (config → agents/routers code) are listed per module; they are the main blockers for C18, C27, C34, C36, C37.
 
+## N7-1 — native yamlx core (ported, 2026-11-17)
+
+New yaml.v3 Node API lives alongside the untouched legacy API; no caller/oxidns migration or pyyaml
+deletion in this step. Commits: `5e0d2f97` core, `885bddde` JSON/differential/fuzz coverage, `bc7948a6`
+scalar-text/type-error clarifications. Full handoff,
+exact commands and output: [progress/n7-1-yamlx.md](progress/n7-1-yamlx.md).
+
+257 synthetic documents + 15 string round trips compared to live PyYAML; the 1591/735 legacy corpora
+remain green. Final .32: gofmt/vet silent, yamlx race 9.054s, full Go suite passes; both fuzz targets 60s
+(260513/99450 executions); updated proddiff 23 self-checks PASS, 2831 cases, 415 comparisons,
+`baseline: new=0 stale=0`. Non-test yamlx lines 3109 → 4225, no new dependency.
+
+Coordinator-approved boundaries are in [design/n7-n8.md](../design/n7-n8.md) §2.2: D1 duplicate rejection
+with key/line; recursive and excessive aliases rejected; merge semantics; timestamp decoding by destination;
+non-finite YAML numbers → JSON strings; typed mismatches wrap ErrType and *yaml.TypeError. Fixed native
+encoder issues: document-wrapper comments lost and empty null keys changed to strings. No open N7-1
+finding; old/new corpus classification and invalid explicit tags (e.g. `!!null [a]`) are explicitly N7-3
+gates (§5.4). Editor is N7-2; consumers/writers migrate in N7-3/N7-4. Independent review pending.
+
 ## Known accepted differences (do not rediscover)
 
 - jsonx: lone UTF-16 surrogates cannot be represented in Go strings (documented in `jsonx/doc.go`); `test_json_response.py::test_surrogate_strings_keep_normalization_before_redaction` depends on it.
