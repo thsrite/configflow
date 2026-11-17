@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"sync"
 	"testing"
 
 	registry "configflow/internal/agents"
@@ -474,7 +475,25 @@ func TestA24FlaskBoundaries(t *testing.T) {
 	w.call("PUT", policy, edit, 409, "admin")
 	edit["revision"] = state["revision"]
 	edit["notes_revision"] = state["notes_revision"]
-	edit["policies"] = []any{map[string]any{"ip": "192.0.2.5", "name": "客厅电视", "mode": "smart"}}
+	// An unrelated note is absent from the open policy editor's names revision.
+	independent := map[string]any{"profile_id": "office", "ip": "192.0.2.9", "name": "手机", "previous_name": ""}
+	w.call("PUT", notes, independent, 200, "admin")
+	state = w.call("PUT", policy, edit, 200, "admin")
+	// Editing an existing policy's name invalidates that editor without touching settings.
+	rename := map[string]any{"profile_id": "office", "ip": "192.0.2.5", "name": "群晖", "previous_name": "客厅电视"}
+	w.call("PUT", notes, rename, 200, "admin")
+	w.call("PUT", policy, edit, 409, "admin")
+	state = w.call("GET", policy, nil, 200, "admin")
+	edit["notes_revision"] = state["notes_revision"]
+	edit["policies"] = []any{map[string]any{"ip": "192.0.2.5", "name": "群晖", "mode": "smart"}}
+	state = w.call("PUT", policy, edit, 200, "admin")
+	edit["revision"] = state["revision"]
+	edit["notes_revision"] = state["notes_revision"]
+	// An empty name on a new row inherits the latest independently edited note.
+	independent["name"] = "小米手机"
+	independent["previous_name"] = "手机"
+	w.call("PUT", notes, independent, 200, "admin")
+	edit["policies"] = []any{map[string]any{"ip": "192.0.2.5", "name": "群晖", "mode": "smart"}, map[string]any{"ip": "192.0.2.9", "name": "", "mode": "smart"}}
 	state = w.call("PUT", policy, edit, 200, "admin")
 	edit["revision"] = state["revision"]
 	edit["notes_revision"] = state["notes_revision"]
@@ -608,5 +627,63 @@ func TestClientDiscoveryReturnsRuntimeOverlay(t *testing.T) {
 	public := publicAgent(record)
 	if public.Has("token") {
 		t.Fatal("credential escaped")
+	}
+}
+
+func TestClientToolsConcurrentEditors(t *testing.T) {
+	for _, kind := range []string{"notes", "policies"} {
+		t.Run(kind, func(t *testing.T) {
+			s := a24Fixture(t)
+			ctx := s.Context()
+			p, err := clientConfig(ctx, "office", true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			profile := oxidns.NewProfile(p)
+			revision := oxidns.Revision(profile.Settings())
+			notes, err := oxidns.PolicyNamesRevision(profile)
+			if err != nil {
+				t.Fatal(err)
+			}
+			results := make(chan error, 2)
+			start := make(chan struct{})
+			var workers sync.WaitGroup
+			for _, name := range []string{"first", "second"} {
+				workers.Go(func() {
+					<-start
+					var err error
+					if kind == "notes" {
+						err = (clientTools{}).SaveNote(ctx, "m", noteEdit{"office", "192.0.2.5", name, "旧电脑"})
+					} else {
+						rows, _ := json.Marshal([]map[string]string{{"ip": "192.0.2.5", "name": name, "mode": "direct"}})
+						err = (clientTools{}).SavePolicies(ctx, "d", policyEdit{ProfileID: "office", Revision: revision, NotesRevision: notes, Policies: rows})
+					}
+					results <- err
+				})
+			}
+			close(start)
+			workers.Wait()
+			close(results)
+			successes, conflicts := 0, 0
+			for err := range results {
+				if err == nil {
+					successes++
+				} else if errors.Is(err, repo.ErrInUse) {
+					conflicts++
+				} else {
+					t.Fatal(err)
+				}
+			}
+			if successes != 1 || conflicts != 1 {
+				t.Fatalf("success=%d conflict=%d", successes, conflicts)
+			}
+			saved, err := clientConfig(ctx, "office", true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if oxidns.Revision(oxidns.NewProfile(saved).Settings()) != revision {
+				t.Fatal("name-only concurrent save changed settings")
+			}
+		})
 	}
 }

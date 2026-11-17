@@ -80,6 +80,9 @@ func freshClientDiscovery(ctx context.Context, id string) (discovery.Settings, e
 	if err != nil {
 		return discovery.Settings{}, err
 	}
+	return clientDiscoverySettings(config)
+}
+func clientDiscoverySettings(config *jsonx.Object) (discovery.Settings, error) {
 	var payload struct {
 		Settings discovery.Settings `json:"domain_discovery"`
 	}
@@ -170,7 +173,7 @@ func clientTargetsPayload(ctx context.Context, id string) (any, error) {
 	if targets == nil {
 		targets = []*jsonx.Object{}
 	}
-	settings, err := freshClientDiscovery(ctx, id)
+	settings, err := clientDiscoverySettings(config)
 	if err != nil {
 		return nil, err
 	}
@@ -246,12 +249,22 @@ func updateClientPolicies(ctx context.Context, id string, edit policyEdit) error
 				return nil, err
 			}
 		}
+		if latest == nil || latest.ServiceType != "oxidns" || profile != edit.ProfileID {
+			return nil, repo.NewInUse(msgPolicyConflict, nil)
+		}
 		p := oxidns.NewProfile(config)
+		settings := p.Settings()
+		if settings == nil {
+			settings = oxidns.M()
+		}
+		if edit.Revision != oxidns.Revision(settings) {
+			return nil, repo.NewInUse(msgPolicyConflict, nil)
+		}
 		notesRevision, err := oxidns.PolicyNamesRevision(p)
 		if err != nil {
 			return nil, err
 		}
-		if latest == nil || latest.ServiceType != "oxidns" || profile != edit.ProfileID || edit.Revision != oxidns.Revision(p.Settings()) || edit.NotesRevision != notesRevision {
+		if edit.NotesRevision != notesRevision {
 			return nil, repo.NewInUse(msgPolicyConflict, nil)
 		}
 		rows := oxidns.Null()
@@ -260,10 +273,6 @@ func updateClientPolicies(ctx context.Context, id string, edit policyEdit) error
 			if err != nil {
 				return nil, err
 			}
-		}
-		settings := p.Settings()
-		if settings == nil {
-			settings = oxidns.M()
 		}
 		saved, err := oxidns.SavePolicyRows(p, settings, rows, edit.BaseURL)
 		if err != nil {

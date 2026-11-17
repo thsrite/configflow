@@ -1417,7 +1417,21 @@ Commits: `78b796af` shared public Agent helper (A13 notified), `c87983b5` C37 gu
 
 Accepted formatting class: generated `native_config` / `template_base_config` YAML is compared structurally. Its settings revision may change with YAML formatting; each response revision is checked against that side's exact stored settings, and subsequent edits use that side's issued revision. No semantic field is ignored. Only nondeterministic created_at/updated_at/applied_at strings are normalized. C09's legacy validation errors are translated to repo validation errors (400) at the API boundary.
 
-Latest iteration (.64): `CONFIGFLOW_DIFF=1 go test -count=1 ./internal/api/agents ./internal/discovery ./internal/discovery/difftest` PASS (12.118s / 1.473s / 2.642s). Next: remaining targeted regressions, final gofmt/vet, changed-package race, full ordinary suite, every difftest package and proddiff; rebase local go and report in `A24-HANDOFF.md`.
+Python test mapping (all 15 functions retained through route/storage checks or existing shared-owner boundary suites):
+
+| `backend/test_client_tools.py` cases | Go coverage |
+|---|---|
+| shared notes with DNS; hidden legacy names; template-preserving name edits | `TestA24FlaskBoundaries`, `TestDeviceNotesBoundary` |
+| policy removal preserves notes; removed/hidden legacy rows and capacity | `TestA24FlaskBoundaries`, `devicenotes.TestLegacyNamesAndPolicyPlan`, real Python `TestDeviceNotesBoundary` capacity/removal cases |
+| names renamed elsewhere; unrelated notes do not invalidate editor; required names revision; empty new-row name inherits latest name | `TestA24FlaskBoundaries`, `TestClientToolsConcurrentEditors` |
+| bound validation/conflict | `TestA24FlaskBoundaries`, `TestClientToolsRejectStaleBindingsAndNames` |
+| note clone/export roundtrip | existing C31 `repo.TestProfileCloneDoesNotCopyRouterAccess` (asserts retained device_notes), shared notes storage/differential; A24 changes no clone/import code |
+| bound defaults / duplicates; six non-domain values; defaults change at write lock | `TestA24FlaskBoundaries`, `TestClientToolsRejectStaleBindingsAndNames/domain-default`; C37 `TestApplyDomainsTransactionGuard` proves callback runs with the transaction context before any write, `TestApplyDomainsGuardPassMatchesDefault` checks unchanged passing behavior |
+| admin auth | `TestA24FlaskBoundaries` all eight methods reject no JWT / Agent bearer |
+
+Additional Python files: `test_oxidns_device_policy.py` API binding/stale/duplicate/admin cases → `TestA24FlaskBoundaries` plus concurrent writers; remaining algorithm tests belong to C26. `test_agent_runtime_state.py` discovery switch/live overlay → `TestClientDiscoveryReturnsRuntimeOverlay`; discovery report switch behavior remains in A05 traffic/difftest. A24 adds no Agent controller calls or publication paths.
+
+Latest iteration (.64): `CONFIGFLOW_DIFF=1 go test -count=1 ./internal/api/agents ./internal/discovery ./internal/discovery/difftest` PASS (12.118s / 1.473s / 2.642s), followed by extra policy-name concurrency/independent note cases PASS (2.770s). Next: final gofmt/vet, changed-package race, full ordinary suite, every difftest package and proddiff; rebase local go and report in `A24-HANDOFF.md`.
 
 ## Cross-domain interfaces (decision 3: interfaces/hooks, no copies)
 
