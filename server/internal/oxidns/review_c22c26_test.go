@@ -6,6 +6,7 @@ import "testing"
 // references without accepted-difference waivers. Outputs compare structurally;
 // each input's post-state retains exact strings, including native YAML text.
 func TestC22C26ReviewReferences(t *testing.T) {
+	parallelBoundary(t)
 	functions := map[string]bool{}
 	for _, name := range []string{"load_native_yaml", "validate_native_config", "ensure_local_dns_watchdog", "apply_common_settings", "read_common_settings", "apply_policies", "read_policies", "prepare_editor", "preview_template"} {
 		functions[name] = true

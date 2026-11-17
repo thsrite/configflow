@@ -10,6 +10,7 @@ import (
 // Fresh references use no accepted-difference waiver. Compare rejection,
 // Chinese diagnostics, structured native issues, values and argument post-state.
 func TestC05ReviewSettingsReferences(t *testing.T) {
+	parallelBoundary(t)
 	rows := readRows(t, "review_c05.jsonl.gz", map[string]bool{"normalize": true, "safe_relative_path": true})
 	if len(rows) < 1500 {
 		t.Fatalf("incomplete C05 settings references: %d", len(rows))
@@ -93,6 +94,7 @@ func TestC05ReviewDefaultsAndNormalizationAreIndependent(t *testing.T) {
 // These suite recordings were previously marked pending C23 in C05. Run every
 // normalization directly: no PendingError, Unicode or native-library waivers.
 func TestC05ReviewRecordedNormalization(t *testing.T) {
+	parallelBoundary(t)
 	rows := readRows(t, "recorded.jsonl.gz", map[string]bool{"normalize": true})
 	if len(rows) < 1400 {
 		t.Fatalf("incomplete normalize recordings: %d", len(rows))

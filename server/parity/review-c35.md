@@ -93,7 +93,7 @@ proddiff 摘要仍有两端各 30 条响应正文中的 connection diagnostic �
 
 ## 后续：资源探测在全量并行 race 下的误超时
 
-协调者复验发现 `wide` 单跑正常（普通 0.72s、race 6.8s），但全量包并行时可能超过原 30s 墙钟限制；这不是解析器资源失控。修复分支 `go-fix-importer-bounds` 从 `go` 的 `aeff9d75` 创建，仅改测试：
+协调者复验发现 `wide` 单跑正常（普通 0.72s、race 6.8s），但全量包并行时可能超过原 30s 墙钟限制；这不是解析器资源失控。修复分支 `go-fix-importer-bounds` 从 `go` 的 `885d1f7c` 创建，随后变基至 `0efddadf`（上游仅文档变化），仅改测试：
 
 - 子进程启用 `RLIMIT_CPU` 硬上限，普通 3 CPU 秒、race 30 CPU 秒，按实际 user+system CPU 耗用计数，以原墙钟上限作为实际 CPU 预算，不把墙钟放宽转成计算预算放宽。
 - 墙钟只作死锁/I/O 兜底，普通 30s、race 5min（均为原上限 10 倍），允许全量包并行时等待调度。
@@ -106,4 +106,8 @@ proddiff 摘要仍有两端各 30 条响应正文中的 connection diagnostic �
 RT_HOST=sunbroke@192.168.0.63 rt -- bash -lc 'cd server && go test -count=1 -v ./internal/importer -run "TestAdversarialImporterResourceBounds|TestImportProbeCPULimit" && go test -race -count=1 -v ./internal/importer -run "TestAdversarialImporterResourceBounds|TestImportProbeCPULimit"'
 ```
 
-.32 最终连续两次全量 `go test -race -count=1 ./...` 验证进行中，结果待补。
+.32 初次按原命令 `go test -race -count=1 ./...`：importer 通过（65.743s，installer 419.528s），但未改动的 oxidns 包触发 go test 默认 10 分钟包总时限（`TestC27ReviewPublicBoundaries`；`FAIL configflow/internal/oxidns 600.141s`）。没有放宽该包内部断言，后续仅用 `-timeout=30m` 放宽全量测试驱动时限，默认包并行方式保留；importer 子进程自己的 CPU/RSS/墙钟限制不变。初次日志 `.32:/tmp/importer-bounds-race-1.log` 保留。
+
+连续两次全量 `go test -race -count=1 -timeout=30m ./...` 正在 .32 顺序执行，结果待补。
+
+OxiDNS 补充任务已接入同分支。此前两遍加 `-timeout=30m` 的全量实际已通过（importer 45.031s / 38.513s），但不计作新任务最终验收；现在要求优化 OxiDNS 并用默认 timeout/default -p 重新连续两遍。OxiDNS 基线 JSON profile 417.361s；第一、二版压力运行断言均通过（283s / 261s），仍未达到 200s 目标。比较器优化及最终验收进行中。

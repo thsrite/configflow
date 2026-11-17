@@ -2,6 +2,7 @@ package oxidns
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -10,6 +11,7 @@ import (
 // kinds, unknown fields, nested native fragments), and normalizing a stored
 // native draft keeps every stored field.
 func TestStorageRoundTrip(t *testing.T) {
+	parallelBoundary(t)
 	rows := readRows(t, "c26_recorded.jsonl.gz", map[string]bool{"prepare_editor": true, "apply_policies": true, "read_policies": true})
 	rows = append(rows, readRows(t, "c24_recorded.jsonl.gz", map[string]bool{"read_common_settings": true, "apply_common_settings": true})...)
 	checked := 0
@@ -63,17 +65,18 @@ func TestStorageRoundTrip(t *testing.T) {
 }
 
 func keysOrder(n *Node) string {
-	out := ""
+	var out strings.Builder
 	var walk func(*Node)
 	walk = func(v *Node) {
 		for i, c := range v.Content {
 			if isMap(v) && i%2 == 0 {
-				out += c.Value + ","
+				out.WriteString(c.Value)
+				out.WriteByte(',')
 				continue
 			}
 			walk(c)
 		}
 	}
 	walk(n)
-	return out
+	return out.String()
 }

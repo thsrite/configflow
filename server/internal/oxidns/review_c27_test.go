@@ -69,6 +69,7 @@ func c27ReviewReferences(t *testing.T) []c27ReviewReference {
 }
 
 func TestC27ReviewPublicBoundaries(t *testing.T) {
+	parallelBoundary(t)
 	rows := c27ReviewReferences(t)
 	generated, d2 := 0, 0
 	for _, reference := range rows {

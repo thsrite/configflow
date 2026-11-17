@@ -19,6 +19,7 @@ type ruleDNSReference struct {
 // TestRuleDNSPublicBoundary compares real-Python read/write entry points and the
 // final generated configurations. No accepted-difference waiver is used.
 func TestRuleDNSPublicBoundary(t *testing.T) {
+	parallelBoundary(t)
 	file, err := os.Open(testdataDir + "c27_public.jsonl.gz")
 	if err != nil {
 		t.Fatal(err)
