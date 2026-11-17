@@ -2017,3 +2017,7 @@ H118的未知method guard不能用公开GET/HEAD改成POST来冒充：当前conf
 H124–H127/H135–H138可通过R171 check-content得到200结构化errors/warnings，内容与changes仍必须保留；H139/H140通过R165创建的metadata/内容检查得到400；H134非文本content也由R165到达inspect_domain_content，不能拿R171提前返回的“请提交规则类型和文本内容”包装错误冒充该helper。H146–H149则在R171带append_lines时由read_rule_payload失败得到400通用payload提示；同样的YAML别名/复杂类型在“检查”和“追加”走的是不同分支。
 
 helper标签现在支持精确case+variant+route：只对R087/R138-F13的`text/F13`附H124/H145，只对B04的`text/B04`附H143；不能把这些编号的其他选择器/变体一并计数。标签仍只附到实际重跑的原请求，既不多发HTTP也不把Go尚未实现改为通过。
+
+### Step B Mihomo YAML交付helper的公开入口
+
+H128–H133的normalize_mihomo_yaml由[规则本地交付 target=mihomo](../../backend/routes/rules.py#L727)调用，公开驱动是R192/R153，不是R087/rule-proxy。内容型源的既存cache可以保存历史坏/歧义YAML；GET按[normalize_mihomo_ruleset](../../backend/utils/ruleset_content.py#L320)原样交付并写准确line-zero warning，而不改共享原文/缓存。Step B实际测试sequence root、缺失/非列表/重复payload、anchor/alias、非字符串/嵌套/块条目、flow额外键重复和额外值跨行；全响应原始字节、实际WARNING、全部SQL/files保持不变。H135–H138仍属于检查/追加入口，不能以它们替代交付helper。

@@ -100,6 +100,8 @@ def main():
     groups.update(rule_fetch_edges)
     from cases.rule_content_helpers import GROUPS as rule_content_helpers
     groups.update(rule_content_helpers)
+    from cases.rule_delivery_yaml import GROUPS as rule_delivery_yaml
+    groups.update(rule_delivery_yaml)
     from cases.rule_cache_faults import GROUPS as rule_cache_faults
     groups.update(rule_cache_faults)
     from cases.rule_concurrency import GROUPS as rule_concurrency

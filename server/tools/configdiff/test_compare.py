@@ -17,6 +17,20 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_rule_delivery_warning_compares_complete_event_and_stable_storage(self):
+        from cases.rule_delivery_yaml import Delivery, WARNING
+        observer = Delivery(None)
+        observer.before_values[1] = observer.after_values[1] = {'sql': 'same', 'files': 'same'}
+        rows = [{'level': 'WARNING', 'message': WARNING}]
+        observer.observed = [copy.deepcopy(rows), copy.deepcopy(rows)]
+        self.assertEqual(observer.compare(Policy()), [])
+        for wrong in ([], rows * 2, [{'level': 'WARN', 'message': WARNING}], [{'level': 'WARNING', 'message': WARNING + ' changed'}]):
+            observer.observed[1] = wrong
+            self.assertTrue(observer.compare(Policy()))
+        observer.observed[1] = copy.deepcopy(rows)
+        observer.after_values[1] = {'sql': 'same', 'files': 'rewritten-source'}
+        self.assertTrue(observer.compare(Policy()))
+
     def test_rule_concurrent_observer_detects_lost_commit_rejected_cache_and_second_response_changes(self):
         from cases.rule_concurrency import Race, CONFLICT
         observer = Race(None, SimpleNamespace(url='http://127.0.0.1:12345'), True)

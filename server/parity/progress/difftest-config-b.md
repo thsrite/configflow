@@ -1906,3 +1906,18 @@ current go-unimplemented=68 design_errors=[]；exit=0
 ```
 
 原R仍差207、H仍差485及partial/N/A/长流程。继续真正Mihomo规则交付的YAML guard；最终.32全量未执行。
+
+## 批次 112：真正local-rule交付的Mihomo YAML guard
+
+- H128–133从R192/R153公开GET的target=mihomo到达，纠正Step A把这些helper挂到R087的入口说明。22新变体用真实内容型库与既存历史cache，分别检验sequence root、缺/错型/重复payload、锚点/别名、数字/嵌套/块条目、flow额外键重复及额外值跨行。响应必须逐字节保留原文、不能悄悄修复；全部SQL/文件保持精确不变。
+- 每次从服务自己的新增文件日志观察准确一条WARNING（1 entries / line 0），没有用固定日志代替。消息与等级继续比，时间/包装沿用既有X07解析；新增自检能发现丢失/额外事件、WARN替代WARNING、消息变化和源cache被改写，94项自检通过。
+- .32草稿及正式均22个Go尚未实现、design_errors=[]；不计Go通过。统一9540变体、原R仍4323（S691/F2677/B955）、H633/G16；findings仍closed80/accepted7/open21/O12单列1。
+
+```text
+.32 native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups rule-delivery-yaml-helpers --baseline 3c8a1760
+current go-unimplemented=22 design_errors=[]；exit=0
+94 self-checks + deliberately wrong-Go-response detection OK
+独立报告/tmp/configdiff-rule-delivery-yaml-draft.json
+```
+
+原R仍差207、H仍差479及partial/N/A/长流程。继续profile选择与其余条目；最终.32全量未执行。
