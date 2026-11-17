@@ -1,8 +1,23 @@
 # C06 独立复核
 
-状态：复核完成，**high 0 / medium 0 / low 0，0 个模块内未决发现**。复核起点
+状态：复核完成，**high 0 / medium 1 / low 0，已修复，0 个模块内未决发现**。复核起点
 `go-port-c06-c11@cefe6f7e3`，分支 `go-review-c06-c11`，初始基于 `go@f90a156eb`。
 复核者不是移植作者；未 push、未启动子 agent、未访问生产。新增输入全部为合成数据。
+
+## 发现与修复
+
+**F1 / medium：完整设置值泄露到日志，并可带入伪造日志行。**
+`handleServerDomain` 将 newDomain 拼到 INFO 日志，`handleSubscriptionAggregation` 将
+宽松 enabled 值经 jsonx.Str 拼到日志。两个字段都允许字符串，包含 URL userinfo 密码、
+query token 和内部换行的合法设置可以原样写入日志；global JSON 脱敏不保护日志。
+Python 原版同样存在。`TestReviewSettingsLogsDoNotEchoValues` 在 `.64` 修复前真实 HTTP
+保存均返回 200，两个子例都检出 synthetic-log-secret、synthetic-query-secret、域名和
+forged-log-entry 泄露，测试退出 1（0.588s）。
+
+现在两个位置只记更新事件，不记录设置内容；继续保存、返回原值，没有改校验和 API。
+回归同时断言事件仍存在、完整存储值不变和日志无凭据/伪造行。遍历其他 C06 写 handler，
+proxy/token/backup/mode 已分别只记录固定事件、字段名、开关或已验证枚举，不存在另一个
+拼接任意设置值的 INFO 位点。此安全差异已登记 behaviour-changes；修复提交 `4754d18da`。
 
 ## 审计结论
 
@@ -57,7 +72,7 @@
 
 四常设项：测试没有改写其要验证的生产参数；C06 没有新增 HTTP/device client，备份继续走
 C35 共享 WebDAV；未修改共享驱动/脱敏实现；真实 Runtime 的关机/断开验证如上。
-无新增功能或操作入口，无需 doc 截图变更。无新增产品行为差异；既有 HEAD、N8-6 与
+无新增功能或操作入口，无需 doc 截图变更。本轮唯一新增差异是 F1 的日志安全修正；既有 HEAD、N8-6 与
 C35 安全修正继续以设计/behaviour-changes 为准。
 
 ## 验证
@@ -85,4 +100,19 @@ append-only 小节，保留 N7-3d 和 C06 全部记录，没有产品代码冲�
 在 `.32` 前台通过 rt + Python 子进程守卫执行：
 `GATE_LOGS=$HOME/.cache/rt-tmp/review-c06-c11-rebased server/scripts/gate.sh -p 6 FuzzBindNativeJSON:./internal/httpx FuzzSubscriptionYAMLReaders:./internal/subs`。
 守卫仅在 900 秒未取得 slot 时终止本次排队（exit 75），已取得 slot 后不限制 gate 执行时间。
-本轮最终结果待追加；不以作者的旧 gate 排队或变基前中止结果冒充门禁通过。
+这次已取得 slot 并进入 race/proddiff，随后因复现 F1 主动停止（exit 241），也不计通过。
+F1 修复后的最终 gate 另记；不以作者的旧 gate 排队或这两次主动中止冒充门禁通过。
+
+
+F1 修复后 `.64` 前台验收：
+
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'cd server && go test -race -count=1 ./internal/api/settings && CONFIGFLOW_DIFF=1 go test -count=1 ./internal/httpx/difftest && go vet ./internal/api/settings && test -z "$(gofmt -l internal/api/settings)"'
+```
+
+退出 0：settings race 37.306s、httpx/difftest 39.106s（含原 132 + 新 34 个存储 oracle）、
+vet/gofmt 无输出。修复前最小复现命令：
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'cd server && go test -count=1 -run "^TestReviewSettingsLogsDoNotEchoValues$" ./internal/api/settings'`，退出 1，两条路由各有四项泄露断言失败。
+
+最终 gate 在 `4754d18da` 上执行，目录 `.32:~/.cache/rt-tmp/review-c06-c11-fixed`，
+仍使用上面的 `gate.sh -p 6`、两个 fuzz 目标及相同前台 900 秒队列守卫。最终结果待补。

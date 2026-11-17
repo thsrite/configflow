@@ -30,7 +30,8 @@
 - 50 条源函数逐项核验：原始文件确有该函数；每个引用的 Go 测试存在；录制调用实际存在、
   没有以函数名相同但跳过的行冒充覆盖；手写逻辑图/入边、禁用链、深拷贝、
   注释/alias/merge/CRLF 和事务 rollback 测试检查相应断言。C18/C19 生成及 C15 refresh
-  replay 已复跑；F1 的实际 shared invalidator 和 C17 Capture/Validate 另行复验。
+  replay 已复跑；original-catalog 另核对 `TestProviderPreflightGetsLogicalProfileAndFinishedDocument`
+  确实断言实际 preflight 收到逻辑 profile，而非只回放生成输出；F1 的实际 shared invalidator 和 C17 Capture/Validate 另行复验。
   C06 映射另核验 58 个源函数无遗漏，本文不把外部 leaf 算作 C11 完成。
 - DNS 的可用 listener、hosts 最终目标/IP/循环、registrable-domain 压缩、Fake-IP
   blacklist/whitelist/rule、用户 policy 优先级、旧/未知内核、discovery 版本来源及
@@ -46,6 +47,8 @@
   这里已有 helper/editor/事务契约；真实路由验收仍由 C33 负责。
 - **C34**：真实 POST `/api/generate/mihomo/preview` 将 OutdatedAgents 写入
   `subscription_hosts.dns.outdated_agents`；生成 DNS 和 callback 单测不能替代此响应。
+- **A14**：传入内核版本后的生成结果有 C18 回放；实际 Agent preparation/publication 选择并传递
+  discovery 版本及其状态机仍归 A14，不能用 C11 的生成测试代替实际 owner 链验证。
 - **C13/C15**：C15 的四条元数据调用与 C13 的缓存失效副作用已拆开列证；没有借此
   宣称覆盖 Agent 内容状态机。C06 的共享最终提交窗口见 review-c06，属于 O3-6c。
 
@@ -66,4 +69,5 @@
 
 变基到本地最新 `go@a08c4cc27`（N7-3d），唯一冲突仅合并 behaviour-changes 两段追加文字。
 修正提交变为 `a3d95be15`、`7ae4ae1ef`。变基前 gate 主动中止（exit 241），不计通过；
-变基后的 `.32` 最终 gate 正在前台执行，命令、队列守卫及日志目录见 C06 报告，最终结果待追加。
+变基后第二次 gate 因 C06 新日志修复主动停止（exit 241）；最终 gate 在 `4754d18da`
+上运行，日志目录 `.32:~/.cache/rt-tmp/review-c06-c11-fixed`，队列守卫及命令见 C06 报告。最终结果待追加。
