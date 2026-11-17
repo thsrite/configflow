@@ -203,7 +203,7 @@ func (a *App) finalize(c *Ctx, r *Response) {
 		// API failures always have a JSON envelope, including explicit HTML/text
 		// failures returned by a handler. Do not echo arbitrary diagnostic bodies.
 		description := http.StatusText(r.Status)
-		if r.Status < 500 && strings.HasPrefix(r.Header().Get("Content-Type"), "text/plain") {
+		if strings.HasPrefix(r.Header().Get("Content-Type"), "text/plain") {
 			description = strings.TrimSuffix(string(r.Body()), "\n")
 		}
 		failure := (&HTTPError{Code: r.Status, Description: description}).response(c.path)

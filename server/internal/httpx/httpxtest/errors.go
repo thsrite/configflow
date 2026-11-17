@@ -15,7 +15,7 @@ func MigratedAPIError(method string, pyStatus, goStatus int, pyHeader, goHeader 
 	if pyStatus < 400 || pyStatus != goStatus || !strings.HasPrefix(goHeader.Get("Content-Type"), "application/json") {
 		return false
 	}
-	if !(strings.HasPrefix(pyHeader.Get("Content-Type"), "text/html") || pyStatus < 500 && strings.HasPrefix(pyHeader.Get("Content-Type"), "text/plain")) {
+	if !(strings.HasPrefix(pyHeader.Get("Content-Type"), "text/html") || strings.HasPrefix(pyHeader.Get("Content-Type"), "text/plain")) {
 		return false
 	}
 	if method == "HEAD" {
@@ -23,7 +23,7 @@ func MigratedAPIError(method string, pyStatus, goStatus int, pyHeader, goHeader 
 	}
 	var expected string
 	switch {
-	case strings.HasPrefix(pyHeader.Get("Content-Type"), "text/plain") && pyStatus < 500:
+	case strings.HasPrefix(pyHeader.Get("Content-Type"), "text/plain"):
 		expected = strings.TrimSuffix(string(pyBody), "\n")
 	case strings.HasPrefix(pyHeader.Get("Content-Type"), "text/html"):
 		_, paragraph, ok := strings.Cut(string(pyBody), "<p>")
