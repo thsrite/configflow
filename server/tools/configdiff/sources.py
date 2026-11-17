@@ -46,7 +46,7 @@ class Source:
                     length = int(self.headers.get('Content-Length', '0'))
                     owner.requests[-1].update(body_hex=self.rfile.read(length).hex(),
                         transfer_encoding=self.headers.get('Transfer-Encoding', ''))
-                if owner.record_wire:
+                if owner.record_wire or self.command == 'CONNECT':
                     owner.requests[-1].update(request_line=self.requestline, host=self.headers.get('Host', ''),
                                               proxy_authorization=self.headers.get('Proxy-Authorization', ''))
                 owner.before_reply(self.path)

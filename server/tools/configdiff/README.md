@@ -47,3 +47,7 @@ RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc \
 ```
 
 大字符串/字节在实际完整比较产生diff之后才压缩报告证据：长度、完整SHA256及首尾字节。状态、路径和差异仍保留，不拿摘要替代比较或把超长值视为相等；对应篡改自检覆盖Unicode、末尾改动和surrogate。
+
+CFG-05/10的协议比较在`protocol_compare.py`，只作用于fake的线序观察，不改变HTTP响应、DB或文件比较，也不修改原始观察。PROPFIND仅在两边正文都确认为空或纯`DAV:propfind/allprop`时视为同一操作；DTD/PI/注释、其他属性选择、namespace、额外内容、方法/Depth/认证/路径/资源变化仍严格失败。CONNECT持续记录request line、Host及代理认证，只允许HTTP/1.0与1.1的有效请求行差异和已观察到的空UA/Go默认UA；1.1必须有Host，Host必须对应目标authority。目标、认证、正文、顺序、次数及GET等其他方法的头不被归一化，未知UA也不忽略。
+
+`Pair.request(..., pending_dependency='具体原因')`仅用于明确待恢复的当前请求：仍运行并检查Python参考，跳过Go请求/比较并记录`go-unimplemented-dependency`及`blocked_by`；不自动污染同一Pair的后续请求。CFG-04的两个catalog/guard用例由此挂起；旧seed只证明Python局部guard，不能证明合法DNS-follow生命周期。A17移植完成后，必须先换成完整binding/fake再移除此标记，不能仅因路由登记就自动启用不完整seed。findings显示blocked及原因，不会记closed或Go通过。

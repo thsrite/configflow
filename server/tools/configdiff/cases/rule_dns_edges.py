@@ -134,11 +134,19 @@ def guards(binary, recorder):
     opts = options()
     opts['agent_updates'] = {'service_type': 'oxidns', 'dns_follow': {'upstream_tag': 'forward_local', 'upstream_index': 0}}
     with Pair(binary, recorder, options=opts) as pair:
+        # CFG-04: this historical seed establishes only the catalog/guard, not
+        # a valid running DNS-follow binding. Do not compare its accidental
+        # Python startup failure against the unported Go A17 background owner.
+        # Restore ONLY after A17 exists and a complete binding/fake replaces
+        # this partial seed; route registration alone is not sufficient.
+        dependency = 'CFG-04 / A17: complete DNS-follow binding and background owner pending; restore fixture after A17'
         replies = pair.request('R188-S01', 'GET /api/rules/dns', expect=200, writes=True, interaction=Stable(pair),
+                               pending_dependency=dependency,
                                variant='real-DNS-follow-binding-catalog')
         entry = next(item for item in replies[0].json()['upstreams'] if item['source'] == 'local' and item['linked'])
         pair.request('H911', 'PUT /api/rules/dns', body=json_body({'routes': {'r-a': 'upstream:' + entry['key']}}),
                      expect=400, writes=True, interaction=Stable(pair), check=message('已绑定 DNS 联动，请改选直连 DNS'),
+                     pending_dependency=dependency,
                      variant='actual-public-catalog-key-is-bound-to-DNS-follow')
 
 

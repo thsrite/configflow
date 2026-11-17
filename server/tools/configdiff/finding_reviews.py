@@ -23,6 +23,10 @@ def reviews(previous, current, saved=(), baseline=''):
         record['checked_baseline'] = baseline or 'unlabelled-run'
         record['python_status'], record['go_status'] = item.get('python_status'), item.get('go_status')
         record['remaining_differences'] = copy.deepcopy(item.get('differences', []))
+        if record['status'] == 'blocked' and item.get('blocked_by'):
+            record['blocked_by'] = copy.deepcopy(item['blocked_by'])
+        else:
+            record.pop('blocked_by', None)
     return annotate(sorted(by_key.values(), key=key))
 
 
@@ -37,7 +41,8 @@ def markdown(records):
         def safe(value):
             return str(value).replace('|', '\\|').replace('\n', ' ')
         lines.append('| ' + safe(item['case'] + ' / ' + item['variant']) + ' | `' + safe(item['route']) + '` | '
-                     + item['status'] + ' | ' + (', '.join(item.get('fix_commits', [])) or item.get('accepted_basis', '') or '—')
+                     + item['status'] + ' | ' + (', '.join(item.get('fix_commits', [])) or item.get('accepted_basis', '')
+                         or ('依赖未实现：' + safe(', '.join(item['blocked_by'])) if item.get('blocked_by') else '—'))
                      + ('；' + safe(item['closure_note']) if item.get('closure_note') else '')
                      + ' | ' + (item['checked_baseline'] or '尚未复验') + ' | '
                      + str(item.get('python_status', '—')) + ' / ' + str(item.get('go_status', '—')) + ' |')

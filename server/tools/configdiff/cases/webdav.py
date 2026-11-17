@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 from compare import Difference, differences, timestamp, database_diffs, file_diffs
 from fakes import WebDAV
 from harness import Pair, DesignError, Reply, json_body
+from protocol_compare import dav_differences
 
 
 def diagnostic_policy(pair, kind, *, stored=False):
@@ -104,7 +105,7 @@ class Exchange:
                     if tails[0] == tails[1] and all(m.startswith('备份成功：' + n) for m, n in zip(messages, names)):
                         policy.bind(*messages, r'备份成功：config_backup_[0-9]{8}_[0-9]{6}_[0-9]{6}\.json(?:，已清理 [0-9]+ 个旧备份)?', 'dav-success-message')
         receipt_policy(self.pair, policy)
-        return diffs + differences(a, b, 'dav', policy)
+        return diffs + dav_differences(a, b, policy)
 
 
 def dav_requests(binary, recorder):

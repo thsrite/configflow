@@ -6,6 +6,7 @@ import re
 
 from compare import Difference, differences
 from harness import DesignError
+from protocol_compare import source_differences
 
 
 def configure(pair, url):
@@ -56,7 +57,7 @@ class Exchange:
         transcripts = self.transcripts
         if self.unordered:
             transcripts = [sorted(rows, key=lambda item: json.dumps(item, sort_keys=True)) for rows in transcripts]
-        return differences(*transcripts, 'subscription.source.requests', policy)
+        return source_differences(*transcripts, policy)
 
 
 def capture_ids(pair):

@@ -17,6 +17,112 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_propfind_equivalence_preserves_auth_depth_methods_objects_and_invalid_xml(self):
+        from protocol_compare import dav_differences
+        source = {'requests': [{'method': 'PROPFIND', 'path': '/backup/', 'depth': '1',
+            'authorization': 'Basic synthetic', 'body': ''}], 'objects': {'kept': 'unchanged'}}
+        target = copy.deepcopy(source)
+        xml = '<?xml version="1.0"?><propfind xmlns="DAV:"><allprop/></propfind>'
+        for body in (xml, '<d:propfind xmlns:d="DAV:">\n<d:allprop />\n</d:propfind>'):
+            target['requests'][0]['body'] = body
+            self.assertFalse(dav_differences(source, target, Policy()))
+            self.assertEqual(target['requests'][0]['body'], body, 'raw observation is retained')
+        for body in (' ', '<propfind xmlns="DAV:"><propname/></propfind>',
+                '<propfind xmlns="DAV:"><prop><getetag/></prop></propfind>',
+                '<propfind xmlns="wrong:"><allprop/></propfind>',
+                '<propfind xmlns="DAV:"><allprop/><include/></propfind>',
+                '<propfind xmlns="DAV:" extra="1"><allprop/></propfind>',
+                '<propfind xmlns="DAV:">unexpected<allprop/></propfind>',
+                '<propfind xmlns="DAV:"><allprop extra="1"/></propfind>',
+                '<propfind xmlns="DAV:"><allprop>unexpected</allprop></propfind>',
+                '<!DOCTYPE propfind><propfind xmlns="DAV:"><allprop/></propfind>',
+                '<propfind xmlns="DAV:"><!-- hidden --><allprop/></propfind>',
+                '<?extra instruction?><propfind xmlns="DAV:"><allprop/></propfind>',
+                '<propfind xmlns="DAV:"><allprop>', None, {}, 'x' * 4097):
+            target['requests'][0]['body'] = body
+            self.assertTrue(dav_differences(source, target, Policy()), repr(body)[:100])
+        target['requests'][0]['body'] = xml
+        for field, wrong in [('authorization', 'Basic wrong'), ('depth', '0'), ('path', '/other/'), ('method', 'GET')]:
+            bad = copy.deepcopy(target); bad['requests'][0][field] = wrong
+            self.assertTrue(dav_differences(source, bad, Policy()), field)
+        for bad in ({**target, 'objects': {}}, {**target, 'requests': target['requests'] * 2}):
+            self.assertTrue(dav_differences(source, bad, Policy()))
+        put = copy.deepcopy(source); put['requests'][0]['method'] = 'PUT'
+        other = copy.deepcopy(put); other['requests'][0]['body'] = xml
+        self.assertTrue(dav_differences(put, other, Policy()), 'non-PROPFIND bytes remain strict')
+
+    def test_connect_equivalence_retains_target_auth_body_order_count_and_get_headers(self):
+        from protocol_compare import source_differences
+        source = [{'method': 'CONNECT', 'path': 'origin.example:443', 'authorization': '',
+            'proxy_authorization': 'Basic synthetic', 'request_line': 'CONNECT origin.example:443 HTTP/1.0',
+            'host': '', 'user_agent': ''},
+            {'method': 'GET', 'path': 'http://mirror.example/rules', 'authorization': '', 'user_agent': 'expected'}]
+        target = copy.deepcopy(source)
+        target[0].update(request_line='CONNECT origin.example:443 HTTP/1.1', host='ORIGIN.EXAMPLE:443',
+            user_agent='Go-http-client/1.1')
+        self.assertFalse(source_differences(source, target, Policy()))
+        self.assertEqual(target[0]['host'], 'ORIGIN.EXAMPLE:443', 'raw wire data must not mutate')
+        for field, value in [('path', 'other.example:443'), ('host', 'other.example:443'), ('host', ''),
+                ('proxy_authorization', 'Basic wrong'), ('authorization', 'Bearer unexpected'),
+                ('request_line', 'CONNECT other.example:443 HTTP/1.1'),
+                ('request_line', 'CONNECT origin.example:443 HTTP/2.0'),
+                ('request_line', 'GET origin.example:443 HTTP/1.1'),
+                ('user_agent', 'unexpected-secret'), ('body_hex', '77726f6e67'), ('extra', True),
+                ('path', 'origin.example:0'), ('path', 'origin.example:' + '9' * 5000)]:
+            bad = copy.deepcopy(target); bad[0][field] = value
+            self.assertTrue(source_differences(source, bad, Policy()), field)
+        for bad in (target[::-1], target + [target[1]], target[:1]):
+            self.assertTrue(source_differences(source, bad, Policy()))
+        bad = copy.deepcopy(target); bad[1]['user_agent'] = 'Go-http-client/1.1'
+        self.assertTrue(source_differences(source, bad, Policy()), 'GET header is not CONNECT metadata')
+        bad = copy.deepcopy(source); bad[0]['request_line'] = 'malformed'
+        self.assertTrue(source_differences(bad, bad, Policy()), 'invalid metadata cannot certify itself')
+
+    def test_explicit_pending_dependency_skips_only_go_without_hiding_normal_requests(self):
+        from unittest.mock import patch
+        from harness import Pair, Recorder, DesignError
+        route = 'GET /api/rules/dns'
+        pair = SimpleNamespace(policy=Policy(), unimplemented_mutations=set(),
+            route_available=lambda _: True, dirs=['python-dir', 'go-dir'], bases=['python', 'go'],
+            tokens=['source-token', 'go-token'], default_profile='default', recorder=Recorder())
+        good = Reply(200, {'content-type': 'application/json'}, b'{"ok":true}')
+        wrong = Reply(200, good.headers, b'{"ok":false}')
+        with patch('harness.send', side_effect=[good, good, wrong]) as send, \
+                patch('harness.database', return_value={'unchanged': True}), \
+                patch('harness.stored_files', return_value={}):
+            replies = Pair.request(pair, 'H911', route, writes=True, expect=200,
+                pending_dependency='CFG-04 / A17 incomplete binding and background owner')
+            self.assertEqual(send.call_count, 1)
+            self.assertEqual(replies[1].status, 0)
+            row = pair.recorder.results[-1]
+            self.assertEqual(row['state'], 'go-unimplemented-dependency')
+            self.assertIn('A17', row['blocked_by'][0])
+            self.assertFalse(pair.unimplemented_mutations, 'deferral does not silently block the next request')
+            Pair.request(pair, 'R188-S01', route, expect=200)
+            self.assertEqual(send.call_count, 3)
+            self.assertEqual(pair.recorder.results[-1]['state'], 'different', 'ordinary Go body mismatch remains visible')
+        from compare import Difference
+        with patch('harness.send', return_value=good) as send, \
+                patch('harness.database_diffs', return_value=[Difference('db.fields.kept.revision', 'value', 1, 2)]), \
+                patch('harness.file_diffs', return_value=[Difference('files.kept', 'value', 'old', 'wrong')]):
+            Pair.request(pair, 'R188-S01', route, expect=200, writes=True)
+            self.assertEqual(send.call_count, 2)
+            self.assertEqual(pair.recorder.results[-1]['state'], 'different')
+            self.assertEqual(len(pair.recorder.results[-1]['differences']), 2, 'SQL and files remain strict after a deferred request')
+        with patch('harness.send', return_value=wrong), patch('harness.database', return_value={}), \
+                patch('harness.stored_files', return_value={}):
+            with self.assertRaises(DesignError):
+                Pair.request(pair, 'H911', route, expect=400, pending_dependency='A17')
+        from finding_reviews import reviews, markdown
+        old = {'case': 'H911', 'variant': '', 'route': route, 'group': 'dns', 'state': 'different', 'differences': []}
+        deferred = {**old, **row, 'group': 'dns'}
+        review = reviews([old], [deferred], baseline='synthetic')[0]
+        self.assertEqual(review['status'], 'blocked')
+        self.assertIn('A17', '\n'.join(markdown([review])))
+        resumed = reviews([], [{**old, 'state': 'different'}], [review], baseline='restored')[0]
+        self.assertEqual(resumed['status'], 'open')
+        self.assertNotIn('blocked_by', resumed)
+
     def test_long_flow_audit_does_not_turn_mapping_into_observed_execution(self):
         from coverage_audit import long_flows
         text = '- **T01 first**\n- **T02 second**\n| T02 | partial steps | real process missing |\n'
