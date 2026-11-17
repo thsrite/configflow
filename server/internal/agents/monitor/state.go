@@ -5,6 +5,7 @@ package monitor
 // never query records.
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -13,11 +14,12 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"syscall"
 	"time"
 
 	"configflow/internal/agents"
 	"configflow/internal/jsonx"
+	"configflow/internal/lockx"
+	"configflow/internal/repo"
 )
 
 // MaxStateBytes, MaxRows, LockTimeout are MAX_STATE_BYTES, MAX_ROWS and
@@ -226,63 +228,26 @@ func (s *StateStore) Path(agentID string) string {
 	return filepath.Join(s.Directory, hex.EncodeToString(digest[:])+".json")
 }
 
-// locks are _LOCKS: a fixed set of in-process locks (here semaphores so the
-// wait can time out like RLock.acquire(timeout=...)).
-var locks = func() []chan struct{} {
-	out := make([]chan struct{}, 64)
-	for i := range out {
-		out[i] = make(chan struct{}, 1)
-	}
-	return out
-}()
+// stateLocks serializes one physical state file across Store instances.
+// Legacy Python .lock files remain untouched behind the instance boundary.
+var stateLocks = lockx.NewLeafKeyed[string]("dashboard-state")
 
-func lockFor(path string) chan struct{} {
-	if abs, err := filepath.Abs(path); err == nil {
-		if resolved, err := filepath.EvalSymlinks(filepath.Dir(abs)); err == nil {
-			abs = filepath.Join(resolved, filepath.Base(abs))
-		}
-		path = abs
-	}
-	digest := sha256.Sum256([]byte(path))
-	n := new(big.Int).SetBytes(digest[:])
-	return locks[new(big.Int).Mod(n, big.NewInt(int64(len(locks)))).Int64()]
-}
-
-// locked is _locked: the in-process lock, then flock on <digest>.lock,
-// both waiting at most LockTimeout. OSErrors become "Cannot access DNS
-// statistics state", like the except OSError around the yield.
-func (s *StateStore) locked(path string, body func() error) (err error) {
-	lock := lockFor(path)
-	select {
-	case lock <- struct{}{}:
-	case <-time.After(LockTimeout):
-		return &StateError{"DNS statistics state is busy"}
-	}
-	defer func() { <-lock }()
-	if err := os.MkdirAll(s.Directory, 0o700); err != nil {
-		return &StateError{"Cannot access DNS statistics state"}
-	}
-	lockPath := path[:len(path)-len(filepath.Ext(path))] + ".lock"
-	handle, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o600)
+func (s *StateStore) locked(ctx context.Context, path string, body func() error) error {
+	key, err := repo.ResolveDataDir(path)
 	if err != nil {
 		return &StateError{"Cannot access DNS statistics state"}
 	}
-	defer handle.Close()
-	deadline := time.Now().Add(LockTimeout)
-	for {
-		err := syscall.Flock(int(handle.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
-		if err == nil {
-			break
-		}
-		if !errors.Is(err, syscall.EWOULDBLOCK) {
-			return &StateError{"Cannot access DNS statistics state"}
-		}
-		if !time.Now().Before(deadline) {
-			return &StateError{"DNS statistics state is busy"}
-		}
-		time.Sleep(20 * time.Millisecond)
+	_, release, err := stateLocks.Lock(ctx, key, LockTimeout)
+	if errors.Is(err, lockx.ErrTimeout) {
+		return &StateError{"DNS statistics state is busy"}
 	}
-	defer syscall.Flock(int(handle.Fd()), syscall.LOCK_UN)
+	if err != nil {
+		return err
+	}
+	defer release()
+	if err := os.MkdirAll(s.Directory, 0o700); err != nil {
+		return &StateError{"Cannot access DNS statistics state"}
+	}
 	err = body()
 	var pathErr *os.PathError
 	if errors.As(err, &pathErr) {
@@ -321,10 +286,10 @@ func (s *StateStore) read(path string) (*jsonx.Object, error) {
 }
 
 // Read is DashboardStateStore.read(agent_id).
-func (s *StateStore) Read(agentID string) (*jsonx.Object, error) {
+func (s *StateStore) Read(ctx context.Context, agentID string) (*jsonx.Object, error) {
 	path := s.Path(agentID)
 	var result *jsonx.Object
-	err := s.locked(path, func() error {
+	err := s.locked(ctx, path, func() error {
 		var err error
 		result, err = s.read(path)
 		return err
@@ -333,13 +298,14 @@ func (s *StateStore) Read(agentID string) (*jsonx.Object, error) {
 }
 
 // CompareAndSet is compare_and_set: the generation is checked under the
-// same lock as the atomic replacement; verify (no network) runs in between;
-// a nil replacement only checks that a read is still current. expected ""
+// same leaf lock as the atomic replacement. Owners verify configuration under
+// a repository read snapshot before entering this lock. A nil replacement only
+// checks that a read is still current. expected ""
 // is None.
-func (s *StateStore) CompareAndSet(agentID, expected string, replacement *jsonx.Object, verify func() error) (*jsonx.Object, error) {
+func (s *StateStore) CompareAndSet(ctx context.Context, agentID, expected string, replacement *jsonx.Object) (*jsonx.Object, error) {
 	path := s.Path(agentID)
 	var result *jsonx.Object
-	err := s.locked(path, func() error {
+	err := s.locked(ctx, path, func() error {
 		current, err := s.read(path)
 		if err != nil {
 			return err
@@ -350,11 +316,6 @@ func (s *StateStore) CompareAndSet(agentID, expected string, replacement *jsonx.
 		}
 		if generation != expected {
 			return ErrStateConflict
-		}
-		if verify != nil {
-			if err := verify(); err != nil {
-				return err
-			}
 		}
 		if replacement == nil {
 			result = current

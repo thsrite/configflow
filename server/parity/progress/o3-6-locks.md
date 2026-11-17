@@ -78,3 +78,14 @@ and MarkRead finish immediately and survive the old source completing. Legacy se
 concurrent store mutations also pass. .64 gofmt/vet ./... and full notifications race3:15.574s.
 Next: monitor L3 read/verify→leaf CAS, listener, deployment Held, installer, Sub-Store; owner/handler
 migration and routers after the coordinator's merge notification. Repo commit88422be8.
+
+Notifications committedf24daeb1. Monitor now passes .64 gofmt/vet ./... and full monitor race1
+173.713s. StateStore Read/CAS take ctx and use per-physical-file NewLeafKeyed with the unchanged5s
+production bound (pinned by test); no file locks or Sleep polling. Manager requires WithReadSnapshot;
+FromAgents delegates to its repository. Target/publication verification occurs in L3 and remains
+held through leaf CAS. Real-repo concurrent tests hold the leaf and prove target/deployment writers
+cannot cross this boundary; after their changes, stale target/publication checks refuse CAS and
+preserve bytes. Normal Violations=0, timeout/cancel and legacy bytes/inode/mtime tests pass. The
+old four-process reset test is replaced by four independent Store objects in one process (instance
+cross-process exclusion already tested in O3-3); the single-winner CAS assertion remains intact.
+Listener changes (ctx API, shared L1 try, Clock health wait) are in progress on .32. Routers untouched.

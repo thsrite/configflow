@@ -11,14 +11,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"configflow/internal/jsonx"
 )
@@ -370,7 +368,7 @@ func TestGenerationCompareAndSetRejectsStaleSnapshot(t *testing.T) {
 	f := transport(t, nil, nil)
 	overview(t, m, "one")
 	store := NewStateStore(dir)
-	original, err := store.Read("one")
+	original, err := store.Read(ctx, "one")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -382,14 +380,14 @@ func TestGenerationCompareAndSetRejectsStaleSnapshot(t *testing.T) {
 	f.rk().Set("collected_at_ms", 3000)
 	f.hook = func(_ *jsonx.Object, endpoint string, _ query) {
 		if endpoint == "rankings" {
-			if _, err := store.CompareAndSet("one", original.GetString("generation"), replacement, nil); err != nil {
+			if _, err := store.CompareAndSet(ctx, "one", original.GetString("generation"), replacement); err != nil {
 				t.Error(err)
 			}
 		}
 	}
 	_, err = Overview(ctx, m, "one", nil)
 	wantMonitorError(t, err, "DASHBOARD_CHANGED", 0)
-	current, _ := store.Read("one")
+	current, _ := store.Read(ctx, "one")
 	wantJSON(t, current, replacement)
 }
 
@@ -443,7 +441,7 @@ func TestStoreSafeFilenameAndParallelGenerationCheck(t *testing.T) {
 	transport(t, nil, nil)
 	overview(t, m, "one")
 	store := NewStateStore(dir)
-	state, _ := store.Read("one")
+	state, _ := store.Read(ctx, "one")
 	if filepath.Dir(store.Path("../../escape")) != filepath.Join(dir, "dns-monitor") ||
 		filepath.Base(store.Path("../../escape")) == filepath.Base(store.Path(`..\..\escape`)) {
 		t.Fatal(store.Path("../../escape"))
@@ -457,7 +455,7 @@ func TestStoreSafeFilenameAndParallelGenerationCheck(t *testing.T) {
 			replacement := state.Clone()
 			replacement.Set("generation", fmt.Sprintf("%032x", index))
 			replacement.Set("reason", "manual")
-			if _, err := store.CompareAndSet("one", state.GetString("generation"), replacement, nil); err == nil {
+			if _, err := store.CompareAndSet(ctx, "one", state.GetString("generation"), replacement); err == nil {
 				atomic.AddInt32(&wins, 1)
 			} else if !errors.Is(err, ErrStateConflict) {
 				t.Error(err)
@@ -465,7 +463,7 @@ func TestStoreSafeFilenameAndParallelGenerationCheck(t *testing.T) {
 		}(index)
 	}
 	wg.Wait()
-	current, _ := store.Read("one")
+	current, _ := store.Read(ctx, "one")
 	if wins != 1 || !ValidateState(current) {
 		t.Fatal(wins)
 	}
@@ -640,10 +638,10 @@ func TestRemovedSelectedRecorderDoesNotTrapOverviewInErrors(t *testing.T) {
 		t.Fatal(jsonx.Repr(result.Value("statistics")))
 	}
 	store := NewStateStore(dir)
-	saved, _ := store.Read("one")
+	saved, _ := store.Read(ctx, "one")
 	_, err := ResetDashboard(ctx, m, "one", jsonx.Obj("recorder", "records"))
 	wantMonitorError(t, err, "INVALID_QUERY", 0)
-	current, _ := store.Read("one")
+	current, _ := store.Read(ctx, "one")
 	wantJSON(t, current, saved)
 }
 
@@ -680,74 +678,39 @@ func TestRuntimeGenerationChangeBetweenOverviewAndRankingsBlocksManualCommit(t *
 	}
 }
 
-// TestFileLockSerializesResetsAcrossProcesses runs four copies of the test
-// binary (TestHelperReplaceGeneration) against one state file.
-func TestFileLockSerializesResetsAcrossProcesses(t *testing.T) {
+func TestIndependentStoresSerializeResets(t *testing.T) {
 	freshRankings(t)
 	dir := t.TempDir()
 	m := dashboardManager(t, dir)
 	transport(t, nil, nil)
 	overview(t, m, "one")
 	store := NewStateStore(dir)
-	state, _ := store.Read("one")
-	ready := filepath.Join(dir, "ready")
-	var commands []*exec.Cmd
-	var outputs []*bytes.Buffer
-	for index := 1; index <= 4; index++ {
-		cmd := exec.Command(os.Args[0], "-test.run=^TestHelperReplaceGeneration$")
-		cmd.Env = append(os.Environ(), "MONITOR_HELPER_DIR="+dir, "MONITOR_HELPER_INDEX="+strconv.Itoa(index),
-			"MONITOR_HELPER_EXPECTED="+state.GetString("generation"), "MONITOR_HELPER_READY="+ready)
-		out := &bytes.Buffer{}
-		cmd.Stdout, cmd.Stderr = out, out
-		if err := cmd.Start(); err != nil {
-			t.Fatal(err)
-		}
-		commands, outputs = append(commands, cmd), append(outputs, out)
-	}
-	os.WriteFile(ready, nil, 0o644)
-	wins := 0
-	for i, cmd := range commands {
-		if err := cmd.Wait(); err != nil {
-			t.Fatal(err, outputs[i].String())
-		}
-		if strings.Contains(outputs[i].String(), "RESULT=won") {
-			wins++
-		}
-	}
-	current, _ := store.Read("one")
-	if wins != 1 || !ValidateState(current) {
-		t.Fatal(wins)
-	}
-}
-
-func TestHelperReplaceGeneration(t *testing.T) {
-	dir := os.Getenv("MONITOR_HELPER_DIR")
-	if dir == "" {
-		t.Skip("helper process")
-	}
-	for {
-		if _, err := os.Stat(os.Getenv("MONITOR_HELPER_READY")); err == nil {
-			break
-		}
-		time.Sleep(time.Millisecond)
-	}
-	store := NewStateStore(dir)
-	state, err := store.Read("one")
+	state, err := store.Read(ctx, "one")
 	if err != nil {
 		t.Fatal(err)
 	}
-	index, _ := strconv.Atoi(os.Getenv("MONITOR_HELPER_INDEX"))
-	replacement := state.Clone()
-	replacement.Set("generation", fmt.Sprintf("%032x", index))
-	replacement.Set("reason", "manual")
-	_, err = store.CompareAndSet("one", os.Getenv("MONITOR_HELPER_EXPECTED"), replacement, nil)
-	switch {
-	case err == nil:
-		fmt.Println("RESULT=won")
-	case errors.Is(err, ErrStateConflict):
-		fmt.Println("RESULT=lost")
-	default:
-		t.Fatal(err)
+	var wins atomic.Int32
+	var wg sync.WaitGroup
+	ready := make(chan struct{})
+	for index := 1; index <= 4; index++ {
+		wg.Go(func() {
+			<-ready
+			replacement := state.DeepCopy()
+			replacement.Set("generation", fmt.Sprintf("%032x", index))
+			replacement.Set("reason", "manual")
+			_, err := NewStateStore(dir).CompareAndSet(ctx, "one", state.GetString("generation"), replacement)
+			if err == nil {
+				wins.Add(1)
+			} else if !errors.Is(err, ErrStateConflict) {
+				t.Error(err)
+			}
+		})
+	}
+	close(ready)
+	wg.Wait()
+	current, err := store.Read(ctx, "one")
+	if err != nil || wins.Load() != 1 || !ValidateState(current) {
+		t.Fatal(wins.Load(), err, current)
 	}
 }
 

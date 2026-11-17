@@ -88,7 +88,7 @@ func (e *pubEnv) complete(t *testing.T, ident, status string) {
 
 func (e *pubEnv) read(t *testing.T) *jsonx.Object {
 	t.Helper()
-	state, err := e.store.Read("one")
+	state, err := e.store.Read(ctx, "one")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -311,7 +311,7 @@ func TestNeverOpenedDashboardDoesNotStartMonitoringOnPublication(t *testing.T) {
 	if len(f.endpoints()) != 0 {
 		t.Fatal(f.endpoints())
 	}
-	if state, _ := NewStateStore(dir).Read("one"); state != nil {
+	if state, _ := NewStateStore(dir).Read(ctx, "one"); state != nil {
 		t.Fatal(state)
 	}
 }
@@ -324,7 +324,7 @@ func TestConcurrentResetWinsOverPrepublicationNetworkSnapshot(t *testing.T) {
 	replacement.Set("reason", "manual")
 	e.f.hook = func(_ *jsonx.Object, endpoint string, _ query) {
 		if endpoint == "overview" {
-			if _, err := e.store.CompareAndSet("one", saved.GetString("generation"), replacement, nil); err != nil {
+			if _, err := e.store.CompareAndSet(ctx, "one", saved.GetString("generation"), replacement); err != nil {
 				t.Error(err)
 			}
 		}

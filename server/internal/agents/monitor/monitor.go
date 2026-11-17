@@ -28,6 +28,7 @@ import (
 
 	"configflow/internal/agents"
 	"configflow/internal/jsonx"
+	"configflow/internal/lifecycle"
 	"configflow/internal/weburl"
 )
 
@@ -135,12 +136,18 @@ func upgradeRequired(minVersion string) *Error {
 
 // Manager is what the monitor needs of the Agent manager.
 type Manager interface {
+	// WithReadSnapshot excludes configuration writers during verification and leaf CAS.
+	WithReadSnapshot(context.Context, func(context.Context) error) error
 	GetAgentByID(ctx context.Context, agentID string, history bool) (*jsonx.Object, error)
 	DataDir() string
 	Client() agents.Client
 }
 
 type agentsManager struct{ *agents.Manager }
+
+func (m agentsManager) WithReadSnapshot(ctx context.Context, fn func(context.Context) error) error {
+	return m.Repository().WithReadSnapshot(ctx, fn)
+}
 
 func (m agentsManager) DataDir() string { return m.Repository().DataDir() }
 
@@ -1140,7 +1147,7 @@ func dashboardOverview(ctx context.Context, m Manager, agentID string, params qu
 
 func dashboardWithState(ctx context.Context, m Manager, agent *jsonx.Object, agentID string, params query, manual bool) (*jsonx.Object, error) {
 	store := NewStateStore(m.DataDir())
-	previous, err := store.Read(agentID)
+	previous, err := store.Read(ctx, agentID)
 	if err != nil {
 		return nil, err
 	}
@@ -1189,8 +1196,8 @@ func dashboardWithState(ctx context.Context, m Manager, agent *jsonx.Object, age
 	if previous == nil || !jsonx.Equal(state, previous) {
 		replacement = state
 	}
-	if _, err := store.CompareAndSet(agentID, expected, replacement, func() error {
-		return verifyTarget(ctx, m, agentID, digest)
+	if err := compareState(ctx, m, store, agentID, expected, replacement, func(held context.Context) error {
+		return verifyTarget(held, m, agentID, digest)
 	}); err != nil {
 		return nil, err
 	}
@@ -1266,6 +1273,7 @@ func overviewRankings(ctx context.Context, m Manager, agent *jsonx.Object, param
 
 // Overview is overview(manager, agent_id, args).
 func Overview(ctx context.Context, m Manager, agentID string, args [][2]string) (*jsonx.Object, error) {
+	ctx = lifecycle.Detach(ctx)
 	params, err := dashboardParams(args)
 	if err != nil {
 		return nil, err
@@ -1275,6 +1283,7 @@ func Overview(ctx context.Context, m Manager, agentID string, args [][2]string) 
 
 // ResetDashboard is reset_dashboard(manager, agent_id, body).
 func ResetDashboard(ctx context.Context, m Manager, agentID string, body any) (*jsonx.Object, error) {
+	ctx = lifecycle.Detach(ctx)
 	object, ok := body.(*jsonx.Object)
 	if !ok || object == nil {
 		return nil, invalidQuery()
@@ -1602,4 +1611,18 @@ func Clients(ctx context.Context, m Manager, agentID string, args [][2]string) (
 	}
 	return jsonx.Obj("success", true, "recorder", recorder, "clients", result,
 		"sample_size", sample, "sample_limited", sample == ClientSampleLimit), nil
+}
+
+// compareState keeps configuration writers excluded from the last target/
+// publication verification through the state-file CAS. No I/O to devices runs
+// in either critical section; the snapshot was already collected.
+func compareState(ctx context.Context, m Manager, store *StateStore, agentID, expected string,
+	replacement *jsonx.Object, verify func(context.Context) error) error {
+	return m.WithReadSnapshot(ctx, func(held context.Context) error {
+		if err := verify(held); err != nil {
+			return err
+		}
+		_, err := store.CompareAndSet(held, agentID, expected, replacement)
+		return err
+	})
 }

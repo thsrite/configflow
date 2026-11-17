@@ -46,7 +46,13 @@ type fakeManager struct {
 	client  agents.Client
 }
 
-func (m *fakeManager) GetAgentByID(_ context.Context, id string, _ bool) (*jsonx.Object, error) {
+func (m *fakeManager) GetAgentByID(ctx context.Context, id string, _ bool) (*jsonx.Object, error) {
+	if snapshot, ok := ctx.Value(fakeSnapshotKey{}).(map[string]*jsonx.Object); ok {
+		if agent := snapshot[id]; agent != nil {
+			return agent.DeepCopy(), nil
+		}
+		return nil, nil
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if a, ok := m.agents[id]; ok {
@@ -589,4 +595,16 @@ func TestBodyReadFailureAfterStatusChecks(t *testing.T) {
 	install(m, &agents.Response{StatusCode: 200, Body: []byte("{"), BodyError: errors.New("reset")})
 	_, err = Overview(ctx, m, "oxi", nil)
 	wantMonitorError(t, err, "AGENT_UNREACHABLE", 502)
+}
+
+type fakeSnapshotKey struct{}
+
+func (m *fakeManager) WithReadSnapshot(ctx context.Context, fn func(context.Context) error) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	snapshot := make(map[string]*jsonx.Object, len(m.agents))
+	for id, agent := range m.agents {
+		snapshot[id] = agent.DeepCopy()
+	}
+	return fn(context.WithValue(ctx, fakeSnapshotKey{}, snapshot))
 }

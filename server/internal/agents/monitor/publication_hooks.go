@@ -14,6 +14,7 @@ import (
 
 	"configflow/internal/agents"
 	"configflow/internal/jsonx"
+	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
 )
 
@@ -52,6 +53,7 @@ func deploymentStatus(agent *jsonx.Object, ident string) (any, error) {
 // expected_revision): a best-effort snapshot before an activation;
 // monitoring failure never blocks publication.
 func Checkpoint(ctx context.Context, m Manager, agentID, deploymentID string, expectedRevision any) error {
+	ctx = lifecycle.Detach(ctx)
 	agent, err := m.GetAgentByID(ctx, agentID, true)
 	if err != nil {
 		return err
@@ -78,7 +80,7 @@ func checkpoint(ctx context.Context, m Manager, agentID, deploymentID string, ex
 		return nil
 	}
 	store := NewStateStore(m.DataDir())
-	previous, err := store.Read(agentID)
+	previous, err := store.Read(ctx, agentID)
 	if err != nil {
 		return err
 	}
@@ -146,25 +148,10 @@ func checkpoint(ctx context.Context, m Manager, agentID, deploymentID string, ex
 	if _, ok := state.Get("publication_count"); !ok {
 		next.Set("publication_count", 0)
 	}
-	verify := func() error {
-		if err := verifyTarget(ctx, m, agentID, digest); err != nil {
-			return err
-		}
-		current, err := m.GetAgentByID(ctx, agentID, true)
-		if err != nil {
-			return err
-		}
-		task, err := publicationTask(current, pending)
-		if err != nil {
-			return err
-		}
-		if status := task.Value("status"); !pyEqualStr(status, "uploading") && !pyEqualStr(status, "ready") {
-			return ErrStateConflict
-		}
-		return nil
-	}
+	verify := func(held context.Context) error { return verifyPublication(held, m, agentID, digest, pending) }
+
 	expected, _ := previous.Value("generation").(string)
-	_, err = store.CompareAndSet(agentID, expected, next, verify)
+	err = compareState(ctx, m, store, agentID, expected, next, verify)
 	return err
 }
 
@@ -172,6 +159,7 @@ func checkpoint(ctx context.Context, m Manager, agentID, deploymentID string, ex
 // reconcile once a transaction settles; retries are idempotent after the
 // compare-and-set.
 func Complete(ctx context.Context, m Manager, agentID, deploymentID string, status any) error {
+	ctx = lifecycle.Detach(ctx)
 	if unhashable(status) {
 		return typeErrorUnhashable(status)
 	}
@@ -195,7 +183,7 @@ func Complete(ctx context.Context, m Manager, agentID, deploymentID string, stat
 
 func complete(ctx context.Context, m Manager, agent *jsonx.Object, agentID, deploymentID string) error {
 	store := NewStateStore(m.DataDir())
-	previous, err := store.Read(agentID)
+	previous, err := store.Read(ctx, agentID)
 	if err != nil {
 		return err
 	}
@@ -223,8 +211,8 @@ func complete(ctx context.Context, m Manager, agent *jsonx.Object, agentID, depl
 		replacement = state
 	}
 	expected, _ := previous.Value("generation").(string)
-	_, err = store.CompareAndSet(agentID, expected, replacement, func() error {
-		return verifyTarget(ctx, m, agentID, digest)
+	err = compareState(ctx, m, store, agentID, expected, replacement, func(held context.Context) error {
+		return verifyTarget(held, m, agentID, digest)
 	})
 	return err
 }
@@ -236,4 +224,22 @@ func checkpointHook(ctx context.Context, m *agents.Manager, agentID, deploymentI
 
 func completeHook(ctx context.Context, m *agents.Manager, agentID, deploymentID string, status any) error {
 	return Complete(ctx, FromAgents(m), agentID, deploymentID, status)
+}
+
+func verifyPublication(ctx context.Context, m Manager, agentID, digest string, pending *jsonx.Object) error {
+	if err := verifyTarget(ctx, m, agentID, digest); err != nil {
+		return err
+	}
+	current, err := m.GetAgentByID(ctx, agentID, true)
+	if err != nil {
+		return err
+	}
+	task, err := publicationTask(current, pending)
+	if err != nil {
+		return err
+	}
+	if status := task.Value("status"); !pyEqualStr(status, "uploading") && !pyEqualStr(status, "ready") {
+		return ErrStateConflict
+	}
+	return nil
 }
