@@ -168,7 +168,7 @@ and exact Chinese boundary checks. Shared YAML D1 and disjoint ErrSyntax/policy/
 - Low malformed-record correction: missing/duplicate role/path/ID/config fails closed instead of Python crashes
   or missing-identity matches. Unknown stored manifest fields survive rollback refresh.
 - Low resource-bound correction: cyclic/deep interface includes stop at 12 levels/256 visits (Python has no
-  expansion bound). Rule-chain branch/jump bounds remain Python's 256/12. Unknown yields no drop assertion.
+  expansion bound). Rule-chain branch/jump bounds remain Python's 256/12. Unknown yields no drop assertion. Empty/wrong-typed actions and malformed interface-list includes also remain unknown, rather than taking a default allow/empty list.
 - Formatting only: compact native JSON wire body vs requests spaces/key order (semantically equal); exact raw
   expectations separately asserted. Password diagnostics use shared redaction as already approved in R06/R07.
 
@@ -197,5 +197,33 @@ All use `RT_HOST=sunbroke@192.168.0.32`, foreground via rt. Exact results update
 - `rt -- bash -lc 'cd server && go test -run "^$" -fuzz "^FuzzR09PolicyEvaluator$" -fuzztime 60s ./internal/routers'`
 - `rt -- bash -lc 'server/scripts/proddiff.sh'`
 
+Validation checkpoint c0d4f10d on .32: gofmt/vet; full routers/routersplit/devhttp race; 83-package full suite; 12 enabled difftest packages; three 60s fuzz targets; four compiled mutations; proddiff new=0 stale=0 all passed. The final conservative malformed-selector correction is being revalidated.
+
 Next: finish final gates, record results, commit explicit paths with `go(routers): R09 …`, rebase local go,
 re-run any checks affected by rebase, hand back commit IDs for a fresh Opus review. Do not push.
+
+## Added files / line counts
+
+Counts at the tested implementation; four shared Go files only gain fields/set tracking.
+
+| Path under server/ | Lines |
+|---|---:|
+| `internal/routers/dns_guard_messages.go` | 49 |
+| `internal/routers/dns_guard_model.go` | 150 |
+| `internal/routers/dns_guard_plan.go` | 268 |
+| `internal/routers/dns_guard_spec.go` | 261 |
+| `internal/routers/dns_guard_write.go` | 394 |
+| `internal/routers/forward_hint.go` | 213 |
+| `internal/routers/forward_hint_messages.go` | 8 |
+| `internal/routers/ipv6_policy_eval.go` | 477 |
+| `internal/routers/ipv6_policy_eval_test.go` | 174 |
+| `internal/routers/r09_boundary_test.go` | 370 |
+| `internal/routers/r09_forward_test.go` | 156 |
+| `internal/routers/r09_safety_test.go` | 441 |
+| `internal/routers/routerfake/r09.go` | 9 |
+| `internal/routers/testdata/r09_eval_reference.py` | 19 |
+| `internal/routers/testdata/r09_forward_reference.py` | 23 |
+| `internal/routers/testdata/r09_gates.sh` | 34 |
+| `internal/routers/testdata/r09_mutations.py` | 30 |
+| `internal/routers/testdata/r09_reference.py` | 54 |
+| `parity/progress/R09-dns-guard.md` | 227 |

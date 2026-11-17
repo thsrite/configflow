@@ -263,6 +263,11 @@ func policyInterfaceBounded(s *PolicySnapshot, iface *string, name string, visit
 	visited[name] = true
 	defer delete(visited, name)
 	listMatch := func(key string) PolicyMatch {
+		if rowValue, present := definition[key]; present {
+			if _, ok := rowValue.(string); !ok {
+				return PolicyUnknown
+			}
+		}
 		out := PolicyNoMatch
 		for _, nested := range strings.Split(definition.text(key), ",") {
 			if nested != "" {
@@ -432,7 +437,12 @@ func EvaluatePolicyChain(s *PolicySnapshot, chain string, p PolicyPacket) string
 		}
 		row := s.Filter[index]
 		match := MatchPolicyRule(s, row, p)
-		action := firstNonEmpty(row.text("action"), "accept")
+		action := "accept"
+		if row.has("action") {
+			// Only an absent action takes the default. Empty or malformed device
+			// values cannot prove that this rule accepts the packet.
+			action, _ = row.str("action")
+		}
 		if match == PolicyNoMatch || action == "log" || action == "passthrough" {
 			return walk(current, index+1, stack)
 		}
