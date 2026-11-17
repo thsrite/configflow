@@ -4,11 +4,12 @@ package store
 // API directly in raw_test.go. No decoding or schema logic lives in store.
 import (
 	"bytes"
-	"configflow/internal/jsonx"
 	"encoding/json"
 	"fmt"
 	"slices"
 	"time"
+
+	"configflow/internal/jsonx"
 )
 
 type legacyEntry struct {
@@ -96,148 +97,105 @@ func (s *legacyStore) BuildTemporary(doc, meta *jsonx.Object) (string, legacyEnt
 	result, err := legacyEntryOf(entry, err)
 	return path, result, err
 }
+
+// The old corpus is authored as whole ordered documents. This test-only codec
+// constructs their JSON text directly; it does not copy repo's byte-preserving
+// bridge or decide whether a field changed. The assertions compare real SQL rows.
 func legacyDecode(raw *Document) (*jsonx.Object, error) {
-	if raw == nil {
-		return nil, fmt.Errorf("decode store rows: missing document")
-	}
-	section := func(fields []Field) (*jsonx.Object, error) {
-		out := jsonx.NewObject()
-		for _, field := range fields {
-			value, err := jsonx.Parse(field.Value)
-			if err != nil {
-				return nil, fmt.Errorf("decode store field %s: %w", field.Name, err)
+	object := func(fields []Field) json.RawMessage {
+		var out bytes.Buffer
+		out.WriteByte('{')
+		for i, field := range fields {
+			if i > 0 {
+				out.WriteByte(',')
 			}
-			out.Set(field.Name, value)
+			key, _ := json.Marshal(field.Name)
+			out.Write(key)
+			out.WriteByte(':')
+			out.Write(field.Value)
 		}
-		return out, nil
+		out.WriteByte('}')
+		return out.Bytes()
 	}
-	root, err := section(raw.Root)
+	byName := map[string]json.RawMessage{}
+	for _, field := range raw.Root {
+		byName[field.Name] = field.Value
+	}
+	if raw.System != nil {
+		byName["system"] = object(raw.System.Fields)
+	}
+	if raw.Shared != nil {
+		byName["shared"] = object(raw.Shared.Fields)
+	}
+	profiles := []Field{}
+	for _, profile := range raw.Profiles {
+		profiles = append(profiles, Field{profile.ID, object(profile.Fields)})
+	}
+	byName["profiles"] = object(profiles)
+	fields := []Field{}
+	for _, key := range raw.Order {
+		fields = append(fields, Field{key, byName[key]})
+	}
+	value, err := jsonx.Parse(object(fields))
 	if err != nil {
 		return nil, err
 	}
-	out := jsonx.NewObject()
-	for _, key := range raw.Order {
-		switch key {
-		case "system", "shared":
-			sec := raw.System
-			if key == "shared" {
-				sec = raw.Shared
-			}
-			if sec == nil {
-				return nil, fmt.Errorf("decode store section %s: missing section", key)
-			}
-			value, err := section(sec.Fields)
-			if err != nil {
-				return nil, err
-			}
-			out.Set(key, value)
-		case "profiles":
-			profiles := jsonx.NewObject()
-			for _, p := range raw.Profiles {
-				value, err := section(p.Fields)
-				if err != nil {
-					return nil, err
-				}
-				profiles.Set(p.ID, value)
-			}
-			out.Set(key, profiles)
-		default:
-			out.Set(key, root.Value(key))
-		}
-	}
-	return out, nil
+	return value.(*jsonx.Object), nil
 }
 
-func legacyEncode(doc *jsonx.Object, base *Document) (*Document, error) {
+func legacyEncode(doc *jsonx.Object, _ *Document) (*Document, error) {
 	if doc == nil {
-		return nil, &Error{Kind: ErrDocument, Message: "配置文档必须是对象"}
+		return nil, newError(ErrDocument, msgDocumentObject)
 	}
-	result := &Document{Order: doc.Keys()}
-	// Preserve the original bytes whenever the legacy value did not change.
-	// Compare serialized ordered values, rather than Equal (which ignores key order).
-	fields := func(object *jsonx.Object, original []Field) ([]Field, error) {
-		previous := map[string]json.RawMessage{}
-		for _, field := range original {
-			previous[field.Name] = field.Value
+	fields := func(value any, scope, owner string) ([]Field, error) {
+		section, ok := jsonx.AsObject(value)
+		if !ok {
+			return nil, newError(ErrDocument, fmt.Sprintf("配置节 %s/%s 必须是对象", scope, owner))
 		}
-		out := make([]Field, 0, object.Len())
-		for name, value := range object.All() {
-			encoded, err := jsonx.Compact(value)
+		result := []Field{}
+		for key, v := range section.All() {
+			text, err := jsonx.Compact(v)
 			if err != nil {
 				return nil, err
 			}
-			if raw, ok := previous[name]; ok {
-				before, err := jsonx.Parse(raw)
-				if err != nil {
-					return nil, err
-				}
-				normalized, err := jsonx.Compact(before)
-				if err != nil {
-					return nil, err
-				}
-				if bytes.Equal(encoded, normalized) {
-					encoded = raw
-				}
-			}
-			out = append(out, Field{Name: name, Value: encoded})
+			result = append(result, Field{key, text})
 		}
-		return out, nil
+		return result, nil
 	}
-	if base == nil {
-		base = &Document{}
-	}
-	root := jsonx.NewObject()
-	for name, value := range doc.All() {
-		switch name {
+	raw := &Document{Order: doc.Keys()}
+	for key, value := range doc.All() {
+		switch key {
 		case "system", "shared":
-			object, ok := jsonx.AsObject(value)
-			if !ok {
-				return nil, &Error{Kind: ErrDocument, Message: fmt.Sprintf("配置节 %s/ 必须是对象", name)}
-			}
-			var old []Field
-			prior := base.System
-			if name == "shared" {
-				prior = base.Shared
-			}
-			if prior != nil {
-				old = prior.Fields
-			}
-			encoded, err := fields(object, old)
+			f, err := fields(value, key, "")
 			if err != nil {
 				return nil, err
 			}
-			if name == "system" {
-				result.System = &Section{Fields: encoded}
+			if key == "system" {
+				raw.System = &Section{f}
 			} else {
-				result.Shared = &Section{Fields: encoded}
+				raw.Shared = &Section{f}
 			}
 		case "profiles":
 			profiles, ok := jsonx.AsObject(value)
 			if !ok {
-				return nil, &Error{Kind: ErrDocument, Message: "profiles 必须是对象"}
+				return nil, newError(ErrDocument, "profiles 必须是对象")
 			}
-			previous := map[string][]Field{}
-			for _, p := range base.Profiles {
-				previous[p.ID] = p.Fields
-			}
-			for id, v := range profiles.All() {
-				profile, ok := jsonx.AsObject(v)
-				if !ok {
-					return nil, &Error{Kind: ErrDocument, Message: fmt.Sprintf("配置节 profile/%s 必须是对象", id)}
-				}
-				encoded, err := fields(profile, previous[id])
+			for id, p := range profiles.All() {
+				f, err := fields(p, "profile", id)
 				if err != nil {
 					return nil, err
 				}
-				result.Profiles = append(result.Profiles, ProfileRows{ID: id, Fields: encoded})
+				raw.Profiles = append(raw.Profiles, ProfileRows{id, f})
 			}
 		default:
-			root.Set(name, value)
+			text, err := jsonx.Compact(value)
+			if err != nil {
+				return nil, err
+			}
+			raw.Root = append(raw.Root, Field{key, text})
 		}
 	}
-	var err error
-	result.Root, err = fields(root, base.Root)
-	return result, err
+	return raw, nil
 }
 
 func legacyMeta(meta *jsonx.Object) (map[string]json.RawMessage, error) {
