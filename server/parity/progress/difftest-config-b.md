@@ -1828,3 +1828,18 @@ current compared=2 go-unimplemented=12 go-unimplemented-dependency=1 design_erro
 ```
 
 继续并发规则写入和剩余条目；最终.32全量未执行。
+
+## 批次 107：下载中的公开编辑冲突与两个远端写者
+
+- R167-F12真实暂扣/slow下载，让另一个公开PUT先改名并提交；随后释放下载，原编辑409。R167-B03先让第一个远端编辑到达HTTP gate，再由第二个远端编辑下载/提交，最后释放第一个，只允许一个200、一个409与一次generation/shared revision变化。没有直接调用业务helper或用假的revision替代并发。
+- 比较两位客户端的完整响应与headers、精确源GET序列、完整SQL及文件。源端Conflict是Flask HTML409，检查其中准确中文；未假设JSON。row.revision使用真实新generation；Python改名会重写原缓存并创建.bak，被拒远端编辑仍留下其声明绑定的预写cache，两种现象按source顺序逐字验证，未隐藏残留文件。
+- 92项自检通过：gate未到达、超时、双成功/丢提交、非法commit ID、错误/缺失被拒缓存、HTTP序列及第二个客户端响应的篡改均能失败。.32草稿及正式各2变体、Go尚未实现2、design_errors=[]；统一9435变体、原R4313（S689/F2674/B950）、H599/G16；findings仍closed81/accepted7/open20/O12单列1。
+
+```text
+.32 native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups rule-library-concurrent-source-edit --baseline 7521bb5c
+current go-unimplemented=2 design_errors=[]；exit=0
+92 self-checks + deliberately wrong-Go-response detection OK
+独立报告/tmp/configdiff-rule-concurrency-draft.json
+```
+
+原R仍差217、H仍差513及partial/N/A/长流程。继续parse-lines与其余条目；最终.32全量未执行。

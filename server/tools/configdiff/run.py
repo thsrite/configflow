@@ -102,6 +102,8 @@ def main():
     groups.update(rule_content_helpers)
     from cases.rule_cache_faults import GROUPS as rule_cache_faults
     groups.update(rule_cache_faults)
+    from cases.rule_concurrency import GROUPS as rule_concurrency
+    groups.update(rule_concurrency)
     from cases.pull_logging import GROUPS as pull_logging
     groups.update(pull_logging)
     from cases.log_stat_fault import GROUPS as log_stat_fault

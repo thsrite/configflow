@@ -17,6 +17,24 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_rule_concurrent_observer_detects_lost_commit_rejected_cache_and_second_response_changes(self):
+        from cases.rule_concurrency import Race, CONFLICT
+        observer = Race(None, SimpleNamespace(url='http://127.0.0.1:12345'), True)
+        value = {'gate_reached': True, 'no_gate_timeout': True, 'success_status': 200, 'rejected_status': 409,
+                 'success_body': {'success': True}, 'rejected_body': CONFLICT, 'exact_single_commit': True,
+                 'new_commit_identity': True, 'exact_files_including_rejected_remote_cache': True, 'source_requests': []}
+        reply = Reply(409, {'content-type': 'application/json'}, json.dumps(CONFLICT).encode())
+        observer.secondary = [reply, reply]
+        observer.observed = [copy.deepcopy(value), copy.deepcopy(value)]
+        self.assertEqual(observer.compare(Policy()), [])
+        for key, old in value.items():
+            changed = False if old is True else (201 if type(old) is int else {'wrong': 'value'})
+            observer.observed[1] = {**value, key: changed}
+            self.assertTrue(observer.compare(Policy()), key)
+        observer.observed[1] = copy.deepcopy(value)
+        observer.secondary[1] = Reply(200, reply.headers, reply.body)
+        self.assertTrue(observer.compare(Policy()), 'secondary client response must remain observable')
+
     def test_real_auth_log_tail_keeps_exact_message_level_and_credential_absence(self):
         from cases.pull_logging import Tail, AUTH_MARKER, AUTH_MESSAGE, events
         tail = Tail(None, AUTH_MARKER, AUTH_MESSAGE, ('synthetic-password-secret',))
