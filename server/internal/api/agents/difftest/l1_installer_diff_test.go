@@ -3,6 +3,7 @@ package difftest
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"configflow/internal/jsonx"
@@ -56,8 +57,37 @@ func TestL1CompactColonDifferentialAgainstFlask(t *testing.T) {
 	if files := installationFiles(t, goDir); len(files) != 0 {
 		t.Fatalf("Go refusal wrote files: %v", files)
 	}
-	if files := installationFiles(t, pyDir); len(files) != 4 || files[".issue.lock"] == "" {
-		t.Fatalf("Python must create exactly its directory, issue lock, session and index: %v", files)
+	// O12 excludes the retired resource lock from snapshots, but its differing
+	// filesystem effects remain explicit: Python creates it and Go must not.
+	if info, err := os.Lstat(filepath.Join(pyDir, "docker-ha-installations", ".issue.lock")); err != nil || !info.Mode().IsRegular() {
+		t.Fatalf("Python must create its issue lock as a regular file: %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(goDir, "docker-ha-installations", ".issue.lock")); !os.IsNotExist(err) {
+		t.Fatalf("Go created retired issue lock: %v", err)
+	}
+	files := installationFiles(t, pyDir)
+	if len(files) != 3 || files["."] != "-rwx------" {
+		t.Fatalf("Python must create exactly its private directory, session and index: %v", files)
+	}
+	sessions, indexes := 0, 0
+	for name, value := range files {
+		if name == "." {
+			continue
+		}
+		if !strings.HasPrefix(value, "-rw------- ") {
+			t.Fatalf("Python installation file %s must have mode 0600: %q", name, value)
+		}
+		switch {
+		case strings.HasSuffix(name, ".json"):
+			sessions++
+		case strings.HasSuffix(name, ".index"):
+			indexes++
+		default:
+			t.Fatalf("unexpected Python installation file: %s", name)
+		}
+	}
+	if sessions != 1 || indexes != 1 {
+		t.Fatalf("Python must create one session and one index: %v", files)
 	}
 	if !jsonx.Equal(finalAgents(t, pyDir), finalAgents(t, goDir)) {
 		t.Fatal("guide generation must not register an agent")
