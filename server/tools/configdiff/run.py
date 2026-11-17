@@ -85,6 +85,8 @@ def main():
     from cases.setup_router_draft_conflict import GROUPS as setup_router_draft_conflict
     groups.update(setup_router_draft_conflict)
     from cases.auth import GROUPS as auth
+    from cases.retained_runtime_failures import GROUPS as retained_runtime_failures
+    groups.update(retained_runtime_failures)
     from cases.rule_create_race import GROUPS as rule_create_race
     groups.update(rule_create_race)
     from cases.rule_remote_metadata import GROUPS as rule_remote_metadata

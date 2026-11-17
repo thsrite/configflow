@@ -2132,6 +2132,45 @@ H1067保留前一份无dialer的重复节点集合，第二来源真实启用拓
 
 H142用合法完整备份允许保留的坏远端metadata，经真实下载进入[validate_remote_rule_content](../../backend/utils/ruleset_content.py#L600)。H016用保留inline content=1进入真实ZIP转换，见[mosdns_archive.py:213](../../backend/utils/mosdns_archive.py#L213)；不是在类型wrapper先拒绝。H793以同ID的两个公开创建在下载屏障交错，确实到达[config_repository.py:1423](../../backend/common/config_repository.py#L1423)事务内ID检查，SQL只允许一次提交，只有胜出者缓存落盘。H769由R116-F12实际clone_from不存在调用到[_profile](../../backend/common/config_repository.py#L1062)。
 
+### Step B 剩余条目的公开边界复核（进行中）
+
+以下不是runtime通过，不增加S/F/B/H覆盖计数。先区分源码中确实较早拒绝、跨领域或属于启动/故障实验的条目；没有证明不可达的条目继续实现，不能因为尚未跑到就改成N/A。逐项原始来源仍见上文每条H的文件/行。
+
+| 编号 | 已确认的边界与后续验收 |
+|---|---|
+| R046-B05、R051-B04、R054-B04、R055-B03、R056-B03、R059-B02、R060-B04、R062-B04、R063-B03 | P3槽没有对应显式profile URL别名，N/A；真实P4–P6请求已有各自成功/失败及存储/任务证明，不能拿未知URL404充作P3成功。来源routes.tsv和各蓝图路由定义。 |
+| R078/R080/R082/R084/R086/R089/R090-B04 | 同为旧MosDNS POST的不存在显式profile URL槽，N/A；现有非路径选择器逐请求比较。 |
+| R123-F12 | clone路由把当前path作为clone_from，body中的clone_from不能替换它；不存在的path由profile前置解析先404。不能借另一个create路由的clone_from错误来计此分支。见[profiles.py:110](../../backend/routes/profiles.py#L110)。 |
+| R217-F17、R217-F19 | PUT用path强制资源id；未提交的普通字段依替换语义处理，interval有单独保留合同。旧清单的任意body改id/任意字段删除必报错条件不能从当前handler得到，按API实际合同验收，不造错误。见[subscriptions.py:101](../../backend/routes/subscriptions.py#L101)。 |
+| H757/H758、H230/H232 | 完整import先validate_shapes检查proxies_order及其成员；管理组请求先normalize_sources检查来源数组。对应较早H182/H227等已实际测试，不能给后置重复检查加标签。见[config_repository.py:2502](../../backend/common/config_repository.py#L2502)、[group_candidates.py:242](../../backend/utils/group_candidates.py#L242)。 |
+| H183、H185–190、H201 | 资源重复ID先经_items_by_id；公开共享节点禁止保存dialer_ref，标准链编译器才生成私有managed引用。手造非法Go内部图不是黑盒输入。已测公开非法managed字段、链端点、订阅/停用节点和循环；后置私有引用检查不因这些前置拒绝计通过。见[config_repository.py:2455](../../backend/common/config_repository.py#L2455)、[proxy_chains.py:115](../../backend/utils/proxy_chains.py#L115)。 |
+| H195/H196 | 共享raw节点要进入resolved profile先经_collect_resource_refs；错误原始名称在这里先拒绝。本批实跑草稿证明未到目标helper，已撤回；保留实际前置错误和合法raw拓扑生成覆盖。见[config_repository.py:328](../../backend/common/config_repository.py#L328)。 |
+| H256、H258/H259、H266/H267 | follow到chain、坏chain形态/端点在仓库闭包或profile校验先拒绝；lower时follow环已在前一轮H265检查，clone遇builtin已先H197。现有公开请求覆盖较早检查，不冒充后置私有编译检查。见[config_repository.py:270](../../backend/common/config_repository.py#L270)、[config_repository.py:2536](../../backend/common/config_repository.py#L2536)、[proxy_chains.py:61](../../backend/utils/proxy_chains.py#L61)。 |
+| H223 | query进入filter时已是字符串；管理组的JSON错类型先由字段校验拒绝，保留旧错型字段经_filter_value忽略。不能把这些不同入口的提示映射为通用filter_candidates的类型raise。见[group_candidates.py:20](../../backend/utils/group_candidates.py#L20)、[group_candidates.py:116](../../backend/utils/group_candidates.py#L116)。 |
+| H773/H774/H776、H783/H784 | import-client先校验body/name，传固定metadata和固定build回调；事务updater不是用户JSON里的可调用对象。不能用替换Python函数/注入回调返回值来构造后置类型错误。见[profiles.py:42](../../backend/routes/profiles.py#L42)、[config_repository.py:1155](../../backend/common/config_repository.py#L1155)。 |
+| H763、H766/H767、H787 | 完整document在_router_commit_guard之前先验证routers；嵌套写事务须程序回调再开事务；公开router normalizer保留既有id。公开body无法指定事务实现或非法replacement。见[config_repository.py:1041](../../backend/common/config_repository.py#L1041)、[routers/store.py:54](../../backend/routers/store.py#L54)。 |
+| H789–792、H800–804 | profile/shared/system保存参数及baseline由公开handler或ConfigProxy构造；不会把任意HTTP JSON当作这些底层完整snapshot/回调参数。规则内容类型已由read_rule_source_content固定为str/bytes。显式profile import修订冲突走自身H808，不能借给save_profile的重复guard。见[config_repository.py:1372](../../backend/common/config_repository.py#L1372)、[common/config.py](../../backend/common/config.py)、[rule_utils.py:167](../../backend/utils/rule_utils.py#L167)。 |
+| H805/H822、H827/H831、H854/H857/H858 | 非对象body在REST wrapper先拒绝；legacy原始profile形态在迁移前检查；normalize导入统一schema版本；空组名/资源缺失先由形态/闭包检查。均已有实际早期拒绝用例，未把它们算作下游重复guard。见[profiles.py:155](../../backend/routes/profiles.py#L155)、[config.py:257](../../backend/routes/config.py#L257)、[config_repository.py:2186](../../backend/common/config_repository.py#L2186)。 |
+| H875–880 | document_rows接收仓库已校验的完整document；JSON对象键只能是字符串。不能用直接调用底层存储函数传Python非dict/非字符串键来满足HTTP黑盒覆盖。见[config_store.py:104](../../backend/common/config_store.py#L104)、[config_repository.py:1043](../../backend/common/config_repository.py#L1043)。 |
+| H881–891、H896–902 | 损坏SQLite结构/JSON/meta或存储版本属于启动/存储恢复边界；故意损坏后不能再用正常SQL比较器读取并宣称“写入后相同”。现有migration在O12单列；后续损坏库启动拒绝需独立CLI/恢复实验，不能借任一路由前置HTML500计为目标HTTP catch。见[config_store.py:477](../../backend/common/config_store.py#L477)。 |
+| H761/H768/H892、H813–815、H893–895、H795/R165-F17 | 外部commit需发生在同一写事务base读取与commit之间；short write/备份短写、PRAGMA/新库验证故障、不确定COMMIT及读回失败需要真实存储故障。普通EACCES已有完整状态/回滚用例，但不等于这些分支；直接持Python flock也不是Go的等价公开输入。后续应使用受控故障文件系统/存储实验，不修改业务方法抛假异常。 |
+| H810–812/H816 | profile id在上下文先校验；generated filename由服务类型映射为固定文件名；artifact文件读取先验证冻结manifest成员。恶意URL的前置拒绝已经比对，不能冒充这些仅内部调用者传入的相对路径/filename检查。见[config_repository.py:1865](../../backend/common/config_repository.py#L1865)、[generated_preview.py:179](../../backend/agents/generated_preview.py#L179)。 |
+| H341、H430/H431、H788 | core_version约束仅在Agent发布传入；非空previous设备策略属于client-devices/routers；发布回读连接变化属于routers发布事务。config保存/生成/向导的read-only检查不能替代这些跨领域调用。 |
+| H944–951、H958–967、H971–986 | agents gateway-onboarding/安装保存与ready检查。config R211只直接复用_local_upstreams与_prepare_mihomo_dns；gateway_installation.latest的public投影不执行_saved_snapshot。上述条目转交agents清单/安装联测，config runtime不计通过，见[gateway_installation.py](../../backend/agents/gateway_installation.py)、[setup_flow.py:396](../../backend/common/setup_flow.py#L396)。 |
+| H968、H1043 | config prepare先_load_base拒绝非文本，未到_prepare_mihomo_dns的重复检查；固定首启模板保留普通策略组和最终MATCH，当前实际选源可用性错误在模板生成前拒绝。不能改随程序发布的模板来令其变成空计划。见[setup_flow.py:209](../../backend/common/setup_flow.py#L209)、[setup_presets.py:138](../../backend/common/setup_presets.py#L138)。 |
+| H1066/H1069、H1079/H1086 | URL fallback在严格拓扑下由较早来源失败拒绝，render_all+allow_transport_fallback的完整发布合同另在agents；公开Provider定义由当前资源构造；mode非法值和保存的interval非法值在wrapper/仓库先拒绝。H1086草稿已证明import先400，不计后置分支，见[provider_delivery.py:334](../../backend/utils/provider_delivery.py#L334)、[settings.py:394](../../backend/routes/settings.py#L394)、[config_repository.py:2442](../../backend/common/config_repository.py#L2442)。 |
+| R206-F17/F18/F19及H1094–1102/H1107/H1111 | 维护者已批准的Nginx退役边界：Go验证原生监听对应失败、配置不改、中文提示和旧端口仍可访问；Nginx自己的模板/CLI/重载/探活失败不要求Go复刻。真实Nginx+Flask叠加属于容器/O9/O14，见behaviour-changes.md。普通成功、占用、保存EACCES回滚已有实际完整部署双端测试。 |
+
+R222-F12、R025/R032-F10和H208随后由批次137实际补到，见下节。H1075/H1076/H1078的公开Sub-Store运行时租约/命令启动/20秒未就绪仍待定向构造。其余尚未在本表给出充分证据的H继续保持未覆盖；本表不构成全清单完成声明。
+
+### Step B 保留值的实际运行时错误（批次137）
+
+R222-F12用仓库允许保留的mihomo.custom_config=1，真实进入merged Provider的通用catch500；双端相比通过，无来源访问、全SQL/files不变，来源[subscriptions.py:465](../../backend/routes/subscriptions.py#L465)、[mihomo.py:334](../../backend/converters/mihomo.py#L334)。不能因为先前损坏SQLite的草稿没到该分支就宣称此项不可达。
+
+R025/R032-F10先正常启动，再通过公开完整import保存server_domain=1；OxiDNS生成必经[get_oxidns_ruleset_downloads](../../backend/converters/oxidns.py#L440)调用[_base](../../backend/converters/oxidns.py#L37)，实际非ValueError500。把该值放在启动seed的旧草稿会先在[common/config.py:214](../../backend/common/config.py#L214)退出，已撤回，不算目标覆盖。Go的完整import未接通时保留依赖未实现，不能把它当Go运行时相比通过。
+
+H208用逻辑节点名称唯一、params.name却使实际生成名称重复或等于DIRECT的两类保留值；当前Python转换器base.update(params)后实际名称改变，最终validate_emitted才拒绝400，default/scoped各一例。来源[mihomo.py:1162](../../backend/converters/mihomo.py#L1162)、[dialer_references.py:367](../../backend/utils/dialer_references.py#L367)。不能用较早logical names检查代替生成后的名称检查。
+
 R020-B90新增独立公开前置：先真正保存public token，再分别执行缺内部能力/能力冲突/当前有效能力三种完整import（登录/认证关闭），及reset；当前/退役能力不能再保存为public token，失败全SQL/files精确不变。有效schema能力的import保留原值，缺失/冲突与reset才轮换，沿用上文T28 oracle更正。原独立import/reset用例保留，不因新增公开setter的wiring前置而丢掉原先能比较的路径。
 
 R228-B90实际测试未注入公开构建的完整`{"version":"dev"}`响应，检查精确字段形态且所有值仍严格比；没有用shape投影掩掉版本值。Docker发布时对[backend/version.py](../../backend/version.py)的Git tag替换和Go发布构建注入之间的值约定仍属O12/O14部分覆盖，当前dev/dev通过不能外推为发布版本注入已经验收。

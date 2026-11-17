@@ -2321,3 +2321,19 @@ current compared56 / Go未实现85 / 依赖2 / different1（accepted1）；desig
 current compared23 / Go未实现61；design_errors=[]；seconds35.80；exit0
 126 self-checks + deliberately wrong-Go-response detection OK
 ```
+
+## 批次 137：4d8a665a复验启动与真实generic错误
+
+- rebase到go 4d8a665a；工具修正提交当前为a79362c9（O6内部英文诊断）和82917030（共同前提/固定缓存夹具），更新注释及精确自检，不冒充业务修复。
+- .32在9a208c6c上的官方完整gate已GATE PASS：gofmt/vet/两种build tags/全race/proddiff基线门禁/全部Go difftest通过。proddiff的`baseline: new=0 stale=0`表示没有超出已登记基线，不据此宣称原始生产差异为零。日志/tmp/configdiff-integrated-gate.log，官方日志/tmp/gate.E7c0jv；本轮结果不能冒充4d8a665a新提交的全量验收。
+- .64上4d8a665a的tools gate已取得官方两槽中的slot1，正在race/proddiff阶段；之后保留同一槽运行configdiff all，两个退出码独立。完整运行占用项目rt锁，后续定向报告暂用独立输出，避免同时写canonical JSON。日志/tmp/configdiff-final-driver.log及/tmp/configdiff-final-config-b-4d8a665a/，尚无最终结论。
+- .32独立定向8变体11.81秒、design_errors=[]：R222-F12真实保留Mihomo文本错型，compared；R025/R032-F10须正常启动后公开import保存坏origin再实际pull，Go未实现；H208 default/scoped两种params.name生成名称冲突，Go未实现。原始将domain=1置于启动seed的草稿实际先退出，已撤回；新前提实跑通过。126项自检和故意错误Go响应仍检出。
+- 有效独立报告暂存tools/configdiff/testdata/retained-runtime.json，不人工拼入正在运行的canonical。两份实际结果去重合计10580变体、原R4490（S712/F2762/B1016）、H929/G16；compared2965/Go未实现7458/依赖107/严格差异49/O12单列1。canonical当前仍10572/R4487/H928，待完整运行结束后用标准runner定向重跑合并。还差原R40/H183，包含清单新增的有源码依据的边界说明；未证明不可达的继续实现，不算通过。
+
+```text
+.32 server/scripts/gate.sh -p 4
+... internal/webdav/difftest 23.586s
+GATE PASS
+.32 native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups merged-provider-real-retained-config-generic-failure,oxidns-pull-real-retained-origin-runtime-failure,generator-real-converted-parameter-name-collisions --baseline 4d8a665a --output <独立报告>
+current compared1 / Go未实现7；design_errors=[]；seconds11.81；exit0
+```
