@@ -16,17 +16,18 @@ import (
 
 // Migration categories are the approved reader changes in design/n7-n8.md §5.7.
 const (
-	SyntaxRange = "原生解析器语法范围"
-	Equal       = "equal"
-	Diagnostics = "native-diagnostics"
-	Duplicate   = "D1-duplicate"
-	Policy      = "reader-policy"
-	Alias       = "unsafe-alias"
-	Typing      = "YAML1.1/timestamp"
-	Tags        = "tagged-collections"
-	Unknown     = "未知标签：Python 拒绝 → Go 接受"
-	Composite   = "复合映射键：Node 保留"
-	Deep        = "深层普通节点：Go 接受"
+	SyntaxRange          = "原生解析器语法范围"
+	ExplicitScalarNative = "explicit-scalar-native"
+	Equal                = "equal"
+	Diagnostics          = "native-diagnostics"
+	Duplicate            = "D1-duplicate"
+	Policy               = "reader-policy"
+	Alias                = "unsafe-alias"
+	Typing               = "YAML1.1/timestamp"
+	Tags                 = "tagged-collections"
+	Unknown              = "未知标签：Python 拒绝 → Go 接受"
+	Composite            = "复合映射键：Node 保留"
+	Deep                 = "深层普通节点：Go 接受"
 )
 
 // SemanticEqual compares output meaning under the native scalar-text and tag
@@ -200,6 +201,9 @@ func Classify(source string) (string, error) {
 	if unknown && oldErr != nil {
 		return Unknown, nil
 	}
+	if oldErr != nil && explicitDecimal(native, map[*yamlx.Node]bool{}) {
+		return ExplicitScalarNative, nil
+	}
 	if typing && oldErr != nil {
 		return Typing, nil
 	}
@@ -228,6 +232,12 @@ func Classify(source string) (string, error) {
 	legacy, err := yamlx.Parse([]byte(text))
 	if err != nil {
 		return "", fmt.Errorf("legacy output cannot be parsed: %w", err)
+	}
+	if containsScalarTextTag(native, map[*yamlx.Node]bool{}, "!!timestamp") {
+		return Typing, nil
+	}
+	if containsScalarTextTag(native, map[*yamlx.Node]bool{}, "!!set", "!!omap", "!!pairs", "!!binary") {
+		return Tags, nil
 	}
 	if yamlx.Equal(native, legacy) {
 		return Equal, nil
@@ -258,4 +268,40 @@ func nativeSyntaxRange(source string) bool {
 		return true
 	}
 	return false
+}
+
+func containsScalarTextTag(node *yamlx.Node, seen map[*yamlx.Node]bool, tags ...string) bool {
+	if node == nil || seen[node] {
+		return false
+	}
+	seen[node] = true
+	for _, tag := range tags {
+		if node.ShortTag() == tag {
+			return true
+		}
+	}
+	for _, child := range node.Content {
+		if containsScalarTextTag(child, seen, tags...) {
+			return true
+		}
+	}
+	return containsScalarTextTag(node.Alias, seen, tags...)
+}
+
+var decimalText = regexp.MustCompile(`^[+-]?[0-9]+$`)
+
+func explicitDecimal(node *yamlx.Node, seen map[*yamlx.Node]bool) bool {
+	if node == nil || seen[node] {
+		return false
+	}
+	seen[node] = true
+	if node.Kind == yaml.ScalarNode && node.ShortTag() == "!!int" && node.Style&yaml.TaggedStyle != 0 && decimalText.MatchString(node.Value) {
+		return true
+	}
+	for _, child := range node.Content {
+		if explicitDecimal(child, seen) {
+			return true
+		}
+	}
+	return explicitDecimal(node.Alias, seen)
 }
