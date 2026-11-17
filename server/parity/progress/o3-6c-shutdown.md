@@ -1,6 +1,6 @@
 # O3-6c — 共享提交点响应关机
 
-状态：implementing。分支 go-o3-6c，从 go@f90a156e 建立；不派子 agent、不 push、本机不跑测试。
+状态：implementing。分支 go-o3-6c，从 go@f90a156e 建立，已无冲突变基到 go@a08c4cc27（N7-3d）；不派子 agent、不 push、本机不跑测试。
 设计裁定见 o3-concurrency.md 的 Clarified in O3-6c。N8-5a 的 24d62bfc 已接受接口与合入顺序，
 在此期间不修改 update/writeLocked/commitStore/files.go。
 
@@ -24,12 +24,13 @@
 
 | 来源/窗口 | 修复提交 | 真实 Runtime 回归 | 状态 |
 |---|---|---|---|
-| A14/C29/C33/C06：普通 repo 锁等待、回调/序列化后最终 COMMIT | 待填 | 待填 | 未修 |
-| C29/C33/C06：规则缓存 touch/replace，普通文件 rename | 待填 | 待填 | 未修 |
-| C29/C33/C06：taskstatus Record/Forget 锁内提交 | 待填 | 待填 | 未修 |
-| C29/C06：MosDNS archive 下游 I/O/cache/status 取消与产物交付 | 待填 | 待填 | 未修 |
-| 多步例外：DeleteProfile、ImportAll/ResetAll、CreateRuleLibraryItem | 待填 | 标记前零副作用、标记后完整提交 | 未验 |
-| 主 rename 后关机：成功返回且备份完整 | 待填 | 待填 | 未验 |
+| A14/C29/C33/C06：普通 repo 锁等待、回调/序列化后最终 COMMIT | 8afa65d97 | TestO36cRepoBeforeCommitRuntimeBoundary / TestO36cRepoLockWaitRuntimeBoundary | 定向红→绿 |
+| C29/C33/C06：规则缓存 touch/replace，普通文件 rename | a8614e3b0 | TestO36cAtomicFileRuntimeBoundary / TestO36cRuleTouchLockRuntimeBoundary / TestO36cRuleTouchAfterShutdown / TestO36cFileOwnerLockRuntimeBoundary | 定向红→绿 |
+| C29/C33/C06：taskstatus Record/Forget 锁内提交 | a383a3d9b | TestO36cStatusLockWaitRuntimeBoundary / TestO36cStatusShutdownDuringRecord | 定向红→绿；C33 adapter待合入接线 |
+| C29/C06：MosDNS archive 下游 I/O/cache/status 取消与产物交付 | 7fe56b4a6 | TestO36cArchiveClosedRuntime / TestO36cArchiveShutdownAfterFetch / TestO36cArchiveRuntimeIOBoundary | 定向红→绿 |
+| 多步例外：DeleteProfile、ImportAll/ResetAll、CreateRuleLibraryItem | 8afa65d97 / 321b18eb1 | TestO36cExplicitBatchRuntimeBoundaries / TestCommitBatchMarkersMatchDesign | race3绿，保留批处理语义的控制组 |
+| 主 rename 后关机：成功返回且备份完整 | a8614e3b0 | TestO36cAtomicFileRuntimeBoundary/shutdown-after-primary | race3绿，保留已提交成功的控制组 |
+| C33 F7/F8：持久marker后重开inline交付、下一次编辑恢复及Forget接线 | 待合入 | 草稿 /tmp/o36c-c33-recovery.patch、/tmp/o36c-c33-forget-context-test.go | 尚未应用、不能算通过 |
 
 当前 archive.go 已在 O3-6a 改用 lifecycle.Detach，没有剩余入口 WithoutCancel；仍需共享层修复和
 真实 Runtime 端到端回归，不能据此把窗口标成已修。
@@ -130,3 +131,14 @@ HTTP下载保留真实生产3s/10s参数；取消直接返回context错误，不
   mosdns/oxidns/api-oxidns vet通过。三个新测试：TestO36cArchiveClosedRuntime、
   TestO36cArchiveShutdownAfterFetch、TestO36cArchiveRuntimeIOBoundary；最后一条用真实回环HTTP，
   验证取消在生产read timeout之前到达I/O、完整DB/files/revision不变，disconnect则生成cache/status和ZIP。
+
+## 当前检查点
+
+当前tip7fe56b4a6，6个步骤均已提交并各自通过定向race/vet。C33当前仍未合入go，
+不把两份依赖C33的草稿应用进分支；A14原SKIP仍等其合入后移除。N8-5a已避开提交核心，
+N8-7（097eba4e）也确认会等RecordContext/ForgetContext合入才迁移taskstatus，完成后需通知两者。
+
+正在 .64 前台跑12个受影响完整包的race，session54143，日志
+`/home/sunbroke/.cache/rt-tmp/o36c-targeted/race.log`。已输出repo241.518s、store20.152s、
+taskstatus4.977s、rulefetch31.618s、rules11.310s通过；其余仍在运行，不能记完整通过。
+无最终全仓gate正在排队或执行。
