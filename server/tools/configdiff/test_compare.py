@@ -17,6 +17,22 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_artifact_failure_observers_detect_partial_state_and_child_error_changes(self):
+        from cases.artifact_failures import PreviewFault, Propagation
+        fault = PreviewFault(None)
+        expected = {'fault_active': True, 'fault_mode_retained': True, 'old_private_bytes_unchanged': True,
+                    'all_database_rows_unchanged': True, 'only_generated_predecessor_backup_added': True}
+        fault.observed = [copy.deepcopy(expected), copy.deepcopy(expected)]
+        self.assertEqual(fault.compare(Policy()), [])
+        for key in expected:
+            fault.observed[1] = {**expected, key: False}
+            self.assertTrue(fault.compare(Policy()), key)
+        child = Propagation(None, '/unused')
+        child.observed = [[], []]
+        self.assertEqual(child.compare(Policy()), [])
+        child.observed[1] = [{'path': 'body.message', 'kind': 'value', 'python': 'original', 'go': 'wrapped'}]
+        self.assertTrue(child.compare(Policy()))
+
     def test_frozen_artifact_read_rejects_rerendering_and_storage_writes(self):
         from cases.artifact_frozen import Frozen
         observer = Frozen(None, [b'old member', b'old member'])

@@ -1985,3 +1985,18 @@ current go-unimplemented=81 design_errors=[] seconds=13.73；exit=0
 ```
 
 原R仍差171（含N/A）、H仍差475及partial/长流程。继续真实preview写失败和生成错误等，最终完整all仍未执行。
+
+## 批次 117：子生成错误传递与真实预览保存权限失败
+
+- R062/R126-F09分别先向同一公开child生成路由发送相同输入，再发送artifact，要求各端自己的完整status/headers/JSON错误精确原样传递，全SQL/files无改动；若child尚未注册，明确作为依赖未实现，不把child的404当artifact缺陷。输入[1]的Python生成错误在写文件前发生，未伪造helper返回。
+- R062/R126-F11在一次成功预览后，将真实preview root chmod0500，普通UID必须确实不能新建预览。失败后fault模式仍在，恢复权限后验证旧private record/archive全原始SHA、SQL全行不变，生成阶段只按Python顺序添加真实前输出.bak；没有错误地断言整个失败无文件副作用。用首次真实ID重新validate所有保留预览及完整ordinary/private内容，只有与既有artifact比较器相同的runtime lock边界被排除。
+- 97项自检通过，fault未生效/偷偷chmod、旧私有字节被改、SQL/输出残留、错误包装或丢字段都可检出。.32草稿及正式6新变体均Go尚未实现、design_errors=[]，不计Go通过。统一9644变体、原R4363（S692/F2681/B990）、H637/G16；findings仍closed80/accepted7/open21/O12单列1。
+
+```text
+.32 native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups artifact-child-error-propagation,artifact-real-save-permissions --baseline 21dfb92c
+current go-unimplemented=6 design_errors=[] seconds=6.93；exit=0
+97 self-checks + deliberately wrong-Go-response detection OK
+独立报告/tmp/configdiff-artifact-failures-draft.json
+```
+
+原R仍差167（含N/A）、H仍差475及partial/长流程。继续真实体积上限与其他条目；最终完整all仍未执行。
