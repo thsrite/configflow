@@ -17,6 +17,22 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_concurrent_metadata_accepts_only_two_legal_serial_histories(self):
+        from cases.profile_concurrency import metadata_batch_errors
+        initial = {'id': 'other', 'name': 'old', 'description': 'old-description', 'created_at': 'fixed'}
+        current = '2026-01-01T00:00:01Z'
+        policy = Policy(start=1767225600, end=1767225603)
+        a = {**initial, 'name': '并发改名🧪', 'updated_at': current}
+        b = {**initial, 'description': '并发说明🧪', 'updated_at': current}
+        final = {**a, **b, 'name': a['name']}
+        make = lambda body: Reply(200, {}, json.dumps(body, ensure_ascii=False).encode())
+        for bodies in ([a, final], [final, b]):
+            self.assertEqual(metadata_batch_errors([make(body) for body in bodies], initial, policy), [])
+        for bodies in ([a, b], [final, final], [a, {**final, 'extra': True}],
+                       [a, {**final, 'updated_at': 'not-time'}], [a, {**final, 'id': 'wrong'}]):
+            self.assertTrue(metadata_batch_errors([make(body) for body in bodies], initial, policy), repr(bodies))
+        self.assertTrue(metadata_batch_errors([make(a), Reply(500, {}, b'{}')], initial, policy))
+
     def test_approved_difference_requires_exact_case_values_and_no_extra_storage_effects(self):
         from config_finding_resolutions import annotate
         path = 'db.fields.profile/default/domain_discovery.value.synthetic_legacy_extension'

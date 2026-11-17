@@ -6,7 +6,6 @@ from sources import Source
 from cases.config_backup import message
 from cases.pull_routes import SourceStable
 from cases.rule_library import DOMAIN
-from cases.subscriptions import require
 
 NAME = '回调规则🧪'
 PREFIX = '规则“' + NAME + '”准备失败：'

@@ -1556,3 +1556,21 @@ go-unimplemented=13 design_errors=[]；exit=0
 ```
 
 继续profile剩余边界、归档/依赖与其余helpers、长流程；原R仍差285、H仍差551，最终.32全量未执行。
+
+## 批次 90：profile引用/导出、URL选择器和真实并发写入
+
+- 新增15变体，原R新增14编号（S2/B12），现统一9301变体、原R4259（S680/F2652/B927）、H561、G16；本批全部Go尚未实现，接通后自动比较。旧schema2导入用R028-S03现有编号独立变体，未虚增原编号。
+- 禁用Agent仍算用途；旧无profile_id输入通过真实完整schema2公开import后查看默认绑定并改到other，保留禁用且无推送。初版直接修改schema5为缺绑定被Python拒绝500，已撤销该非法前提；matrix明确R121-B01内部fallback仅部分观察。固定IP记录补齐归属字段；clone引用不复制共享资源，清空router/fixed-IP设备归属；source URL覆盖query/header，旧profile所有行保持原样。
+- 单profile导出验证整串能力/Agent token脱敏为[REDACTED]、顶层及嵌套未知字段（false/空数组）、中文emoji和default.json附件名。初版误以为逐token替换，已按Python整串替换修正并重跑。删除/切默认/独立import的P3实际写入指定空间；删除tombstone只绑定新目录名，旧导出内容时间戳和未修改SQL字段保持逐字比较。
+- R119-B03：两独立HTTP客户端同时修改name/description，验证最终两个字段及revision/generation+2、foreign行不动；每端两个完整响应必须准确满足Python的两种合法串行顺序之一（含字段集/ID/旧created_at/新updated_at窗口），不要求独立竞态选同一先后。headers/status及最终全SQL/files仍严格比较；故意丢更新、两个全新响应、额外字段、坏时间/ID/status自检均能拒绝。
+- R121-B02：两客户端同时用同一确认集合改绑，一方200另一方409准确中文，只一次system revision/generation推进；完整winner/loser响应按状态对应、全SQL/files、profile/shared不变及Agent HTTP0次。未用假的锁或直接业务函数驱动。
+
+```text
+.63 run.py --groups profile-binding-legacy-edges,profile-clone-reference-edges,profile-export-edges --baseline 0efddadf
+go-unimplemented=10 design_errors=[] seconds=7.17；exit=0；随后常规runner合并
+.63 run.py --groups profile-export-edges,profile-metadata-write-selectors,profile-concurrent-metadata,profile-concurrent-rebind --baseline 0efddadf
+go-unimplemented=8 design_errors=[]；exit=0；统一新增5（导出3为重跑）
+79 comparator/report/approval self-checks + deliberately wrong-Go-response detection OK
+```
+
+原R仍差271编号、H仍差551编号，已标partial/不可观察分支另计；继续依赖/监听器与其余清单，最终.32全量未执行。

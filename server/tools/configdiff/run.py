@@ -118,6 +118,10 @@ def main():
     groups.update(profile_generators)
     from cases.profile_queries import GROUPS as profile_queries
     groups.update(profile_queries)
+    from cases.profile_edges import GROUPS as profile_edges
+    groups.update(profile_edges)
+    from cases.profile_concurrency import GROUPS as profile_concurrency
+    groups.update(profile_concurrency)
     from cases.provider_auth import GROUPS as provider_auth
     groups.update(provider_auth)
     from cases.profile_rebind_helpers import GROUPS as profile_rebind_helpers

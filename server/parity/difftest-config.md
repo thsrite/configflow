@@ -1987,3 +1987,7 @@ H738的同时指定names/keys在[nodes.py:163](../../backend/routes/nodes.py#L16
 - H779：现有profiles-deletion先删除other，随后对唯一剩余default发DELETE，确实经过“只有一个配置空间”分支；R117-F08可关联H779，不拿仍有两个空间时缺new_default的H780充数。
 - H773/H774：import-client路由先校验name并构造固定metadata对象，再调用repository.import_client_profile；其metadata非对象/name无效重复guard无法由该入口的JSON直接驱动。R155-F08/F09的400属于wrapper，不关联H773/H774。依据[profiles.py:44](../../backend/routes/profiles.py#L44)。
 - H776：build_import只返回固定PROFILE_FIELDS，HTTP客户端不能传入自定义Python build callback；未知输出字段guard用于内部构造错误，当前未找到公开驱动。H783的非callable updater同理，HTTP不能替换应用定义的事务回调。两者保留未覆盖原因，不用无关参数错误充数。
+
+### Step B 旧Agent绑定与当前schema边界
+
+R120-S02/R121-B01：当前schema5直接塞入无profile_id的Agent会使repository读取失败，不能假装是合法现态；旧schema2完整备份允许缺失并在公开import时补成default。Step B实际执行该旧备份导入、读取默认绑定再公开改绑，验证目标显式绑定、禁用状态保留和零设备推送。R121内部`agent.get('profile_id') or default`的fallback并未由有效schema5现态证明执行，记部分覆盖；不能把手改坏库造成的500当作该合法fallback的输入。依据[config_repository.py:2390](../../backend/common/config_repository.py#L2390)、[config_repository.py:2487](../../backend/common/config_repository.py#L2487)。
