@@ -13,6 +13,8 @@ import (
 	"configflow/internal/mosdns"
 	"configflow/internal/netipx"
 	"configflow/internal/yamlx"
+
+	"gopkg.in/yaml.v3"
 )
 
 // DefaultFakeIPRange is Mihomo's default fake-ip range.
@@ -59,12 +61,14 @@ func RuleSourceIssue(item *RuleSet, library *LibraryRule, requireLibrary bool) s
 // FakeIPNetwork is the fake-ip network of the Mihomo base config
 // (dns.fake-ip-range of the custom YAML), 198.18.0.0/16 by default. The YAML
 // is read through yamlx like the Mihomo generator reads it, so the router
-// routes the range Mihomo uses (duplicate keys: the last wins).
+// routes the range Mihomo uses. Invalid YAML uses the established default.
 func FakeIPNetwork(customConfig string) netip.Prefix {
-	doc, err := yamlx.LoadWith(customConfig, yamlx.LoadOptions{KeepNonStringKeys: true, KeepUnrepresentable: true})
-	dns, _ := yamlx.Lookup(doc, "dns")
-	value, _ := yamlx.Lookup(dns, "fake-ip-range")
-	text, _ := value.(string)
+	doc, err := yamlx.Parse([]byte(customConfig))
+	value := yamlx.Resolve(yamlx.Get(yamlx.Get(doc, "dns"), "fake-ip-range"))
+	var text string
+	if value != nil && value.Kind == yaml.ScalarNode && value.ShortTag() == "!!str" {
+		text = value.Value
+	}
 	if network, ok := netipx.ParseNetwork4(text, false); ok && err == nil {
 		return network
 	}
