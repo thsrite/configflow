@@ -7,6 +7,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
+	"fmt"
 
 	"configflow/internal/convert"
 	"configflow/internal/jsonx"
@@ -55,6 +57,9 @@ func fetchedAtValue(result *substore.SubscriptionResult) any {
 // groups its chained nodes need; Sub-Store conversions and cache renders
 // contain proxies alone.
 func SourceCacheMetadata(sub *jsonx.Object, result *substore.SubscriptionResult) (*jsonx.Object, error) {
+	if err := validateSourceYAMLPolicy(result.Text); err != nil {
+		return nil, err
+	}
 	metadata := jsonx.Obj("subscription_name", sub.GetOr("name", ""), "url", sub.Value("url"),
 		"fetched_at", fetchedAtValue(result))
 	if result.Source != "cache" && result.Source != "prepared_yaml" {
@@ -97,6 +102,9 @@ func DownloadCachePath(url string) string {
 // return the result with its fetched_at fixed.
 func RememberSourceDownload(ctx context.Context, sub *jsonx.Object, result *substore.SubscriptionResult) (*substore.SubscriptionResult, error) {
 	ctx = detached(ctx)
+	if err := validateSourceYAMLPolicy(result.Text); err != nil {
+		return nil, err
+	}
 	result = newResult(result.Text, result.Source, result.Traffic, result.FetchedAt)
 	url, err := requiredString(sub, "url")
 	if err != nil {
@@ -286,4 +294,15 @@ func FetchSubscriptionSource(ctx context.Context, sub *jsonx.Object, fetch Sourc
 		return nil, err
 	}
 	return RememberSourceDownload(ctx, sub, fetched)
+}
+
+// validateSourceYAMLPolicy runs before any downloaded text can replace a cache.
+// Syntax fallback remains a caller decision; shared policy and alias refusals
+// cannot be mistaken for missing hosts, an empty subscription, or a good cache.
+func validateSourceYAMLPolicy(text string) error {
+	_, err := yamlx.Parse([]byte(text))
+	if errors.Is(err, yamlx.ErrPolicy) || errors.Is(err, yamlx.ErrAliasRecursion) || errors.Is(err, yamlx.ErrAliasBudget) {
+		return &repo.Error{Kind: repo.ErrValidation, Message: fmt.Sprintf(msgSourceYAML, err), Cause: err}
+	}
+	return nil
 }
