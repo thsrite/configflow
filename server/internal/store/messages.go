@@ -1,6 +1,10 @@
 package store
 
 const (
+	msgVersionTooLarge       = "数据库存储版本超出当前支持范围；请使用更新版本"
+	msgInvalidStoredText     = "配置数据库表 %s 键 %q 列 %s 在字节 %d 处无效：%s"
+	msgInvalidUTF8           = "无效 UTF-8"
+	msgInvalidJSON           = "无效 JSON"
 	msgInvalidRowText        = "配置行标识不是有效 UTF-8"
 	msgDocumentObject        = "配置文档必须是对象"
 	msgProfileID             = "配置空间 ID 必须是非空字符串"
@@ -11,12 +15,11 @@ const (
 	msgRootOrderMismatch     = "顶层键顺序与数据库内容不一致"
 	msgSectionOrderMismatch  = "配置节 %s 与顶层键顺序不一致"
 	msgProfilesOrderMismatch = "配置空间与顶层键顺序不一致"
-	msgMetaInvalid           = "数据库元信息无法解析：%s"
 	msgMetaValueInvalid      = "数据库元信息 %s 不是有效 JSON"
 	msgRootOrderInvalid      = "数据库元信息 root_order 无效"
 	msgHeadInvalid           = "数据库元信息缺少 store_id/generation"
 	msgCommitIDInvalid       = "数据库元信息 commit_id 无效"
-	msgVersionInvalid        = "数据库存储版本无效：%s"
+	msgVersionInvalid        = "数据库元信息 storage_version 不是有效的正整数"
 	msgVersionUnsupported    = "数据库存储版本 %s 高于当前支持的 %d"
 	msgConflict              = "配置数据库在事务外被修改"
 	msgBuiltMismatch         = "新建数据库的内容与迁移文档不一致"

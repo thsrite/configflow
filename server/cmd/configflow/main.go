@@ -42,7 +42,15 @@ func main() {
 		"frontend build directory served on the web port (empty: API only)")
 	flag.Parse()
 	if err := run(*frontend); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		// run has closed its sinks. Reopen them at the final error boundary
+		// so the same safe recovery diagnostic reaches the log and stderr.
+		root, setupErr := logx.Setup(logx.Config{Level: logx.Error, File: logx.DefaultFile(repo.DataDir()), Console: os.Stderr})
+		if setupErr == nil {
+			logx.Get("configflow").Error(err.Error())
+			root.Close()
+		} else {
+			fmt.Fprintln(os.Stderr, err)
+		}
 		os.Exit(1)
 	}
 }

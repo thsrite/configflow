@@ -1,6 +1,7 @@
 package store
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -109,20 +110,38 @@ func sqliteMessage(err error) string {
 	return message
 }
 
-// decodeError is the sqlite3.OperationalError Python's sqlite3 module raises
-// when a TEXT value read from the database is not valid UTF-8.
-type decodeError struct {
-	column string
-	text   string // the raw value
+// rowTextError reports a stored column without retaining or echoing its contents.
+// Offset is one-based, matching encoding/json.SyntaxError.Offset.
+func rowTextError(table, key, column string, offset int64, category string) error {
+	return newError(ErrCorrupt, fmt.Sprintf(msgInvalidStoredText, table, key, column, offset, category))
 }
 
-func (e *decodeError) Error() string {
-	// PyErr_Format writes the raw bytes with one U+FFFD per invalid byte.
-	var b strings.Builder
-	for _, r := range e.text {
-		b.WriteRune(r)
+func checkRowText(table, key string, columns []string, values ...string) error {
+	for i, value := range values {
+		for offset, r := range value {
+			if r == utf8.RuneError {
+				_, size := utf8.DecodeRuneInString(value[offset:])
+				if size == 1 {
+					return rowTextError(table, key, columns[i], int64(offset+1), msgInvalidUTF8)
+				}
+			}
+		}
 	}
-	return "Could not decode to UTF-8 column '" + e.column + "' with text '" + b.String() + "'"
+	return nil
+}
+
+func checkRowJSON(table, key, text string) error {
+	if json.Valid([]byte(text)) {
+		return nil
+	}
+	var raw json.RawMessage
+	err := json.Unmarshal([]byte(text), &raw)
+	var syntax *json.SyntaxError
+	var offset int64 = 1
+	if errors.As(err, &syntax) {
+		offset = syntax.Offset
+	}
+	return rowTextError(table, key, "value", offset, msgInvalidJSON)
 }
 
 // backupError is a failure of the SQLite backup API. Python reports it
@@ -151,18 +170,6 @@ func asBackupError(err error) error {
 	return err
 }
 
-// checkText fails like Python's row fetch when a TEXT column holds bytes
-// that are not UTF-8. columns and values are given in SELECT order; the
-// first invalid one is reported.
-func checkText(columns []string, values ...string) error {
-	for i, value := range values {
-		if !utf8.ValidString(value) {
-			return &decodeError{column: columns[i], text: value}
-		}
-	}
-	return nil
-}
-
 // isSQLiteFailure reports whether err is a failure Python raises as
 // sqlite3.Error: a SQLite result code or a text decoding failure. Errors
 // this package already classified (*Error) are not, even when their cause
@@ -173,10 +180,6 @@ func isSQLiteFailure(err error) bool {
 	}
 	if _, ok := err.(*Error); ok {
 		return false
-	}
-	var decode *decodeError
-	if errors.As(err, &decode) {
-		return true
 	}
 	_, ok := sqliteError(err)
 	return ok

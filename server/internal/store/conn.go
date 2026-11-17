@@ -5,7 +5,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"fmt"
 	"net/url"
 	"path/filepath"
 	"strconv"
@@ -162,11 +161,11 @@ func (c *Conn) metaRows(keys ...string) (map[string]json.RawMessage, error) {
 		if err := row.Scan(&key, &text); err != nil {
 			return err
 		}
-		if err := checkText(metaColumns, key, text); err != nil {
+		if err := checkRowText("meta", key, metaColumns, key, text); err != nil {
 			return err
 		}
-		if !json.Valid([]byte(text)) {
-			return newError(ErrCorrupt, fmt.Sprintf(msgMetaInvalid, "invalid JSON"))
+		if err := checkRowJSON("meta", key, text); err != nil {
+			return err
 		}
 		meta[key] = json.RawMessage(text)
 		return nil
@@ -237,7 +236,7 @@ func (c *Conn) storedRows() (*ordered[sectionKey, int64], *ordered[fieldKey, fie
 		if err := row.Scan(&key.scope, &key.owner, &position); err != nil {
 			return err
 		}
-		if err := checkText(sectionColumns, key.scope, key.owner); err != nil {
+		if err := checkRowText("sections", key.scope+"/"+key.owner, sectionColumns, key.scope, key.owner); err != nil {
 			return err
 		}
 		sections.set(key, position)
@@ -253,7 +252,7 @@ func (c *Conn) storedRows() (*ordered[sectionKey, int64], *ordered[fieldKey, fie
 		if err := row.Scan(&key.scope, &key.owner, &key.field, &field.position, &field.value); err != nil {
 			return err
 		}
-		if err := checkText(fieldColumns, key.scope, key.owner, key.field, field.value); err != nil {
+		if err := checkRowText("fields", key.scope+"/"+key.owner+"/"+key.field, fieldColumns, key.scope, key.owner, key.field, field.value); err != nil {
 			return err
 		}
 		fields.set(key, field)
@@ -283,8 +282,8 @@ func (c *Conn) Load() (Entry, error) {
 	for _, key := range fields.keys {
 		field := fields.values[key]
 		size += textLength(field.value)
-		if !json.Valid([]byte(field.value)) {
-			return Entry{}, newError(ErrCorrupt, fmt.Sprintf(msgInvalidField, key.scope, key.owner, key.field))
+		if err := checkRowJSON("fields", key.scope+"/"+key.owner+"/"+key.field, field.value); err != nil {
+			return Entry{}, err
 		}
 	}
 	doc, err := buildDocument(rootOrder, sections, fields)

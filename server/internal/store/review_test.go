@@ -8,46 +8,47 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"configflow/internal/jsonx"
 )
 
-// TestInvalidUTF8TextIsAStorageError: Python's sqlite3 cannot decode a
-// TEXT value that is not UTF-8 and raises OperationalError, which reads
-// translate to ConfigStorageError and check() lets through.
-func TestInvalidUTF8TextIsAStorageError(t *testing.T) {
-	cases := []struct {
-		name, statement string
-		load, check     string // "" = succeeds
+// Stored invalid UTF-8 is corrupt data, reported without its contents.
+func TestInvalidUTF8TextIsCorrupt(t *testing.T) {
+	tests := []struct {
+		name, statement, key  string
+		loadFails, checkFails bool
 	}{
-		{"value", "UPDATE fields SET value = CAST(X'5B22FF2041E4B8225D' AS TEXT) WHERE scope = 'system' AND field = 'agents'",
-			"配置数据库访问失败：Could not decode to UTF-8 column 'value' with text '[\"\ufffd A\ufffd\ufffd\"]'", ""},
-		{"meta", "UPDATE meta SET value = CAST(X'22F09F9822' AS TEXT) WHERE key = 'migration'",
-			"", "Could not decode to UTF-8 column 'value' with text '\"\ufffd\ufffd\ufffd\"'"},
-		{"meta-head", "UPDATE meta SET value = CAST(X'22F09F9822' AS TEXT) WHERE key = 'store_id'",
-			"配置数据库访问失败：Could not decode to UTF-8 column 'value' with text '\"\ufffd\ufffd\ufffd\"'",
-			"Could not decode to UTF-8 column 'value' with text '\"\ufffd\ufffd\ufffd\"'"},
+		{"value", "UPDATE fields SET value = CAST(X'5B22FF2041E4B8225D' AS TEXT) WHERE scope = 'system' AND field = 'agents'", "system//agents", true, false},
+		{"meta", "UPDATE meta SET value = CAST(X'22F09F9822' AS TEXT) WHERE key = 'migration'", "migration", false, true},
+		{"meta-head", "UPDATE meta SET value = CAST(X'22F09F9822' AS TEXT) WHERE key = 'store_id'", "store_id", true, true},
 	}
-	for _, item := range cases {
-		t.Run(item.name, func(t *testing.T) {
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
 			target := newStore(t)
-			must(target.Create(sampleDocument(t), jsonx.Obj("migration", jsonx.Obj("source", "defaults"))))(t)
-			execSQL(t, target.Path(), item.statement)
-			_, err := target.Load()
-			assertKind(t, "load", err, ErrStorage, item.load)
-			_, err = target.Fingerprint()
-			if item.load != "" || item.name == "meta" {
-				want := item.load
-				if want == "" {
-					want = "配置数据库访问失败：" + item.check
+			must(target.Create(sampleDocument(t), jsonx.Obj("migration", "seed")))(t)
+			execSQL(t, target.Path(), tt.statement)
+			check := func(err error, want bool) {
+				t.Helper()
+				if !want {
+					if err != nil {
+						t.Fatal(err)
+					}
+					return
 				}
-				assertKind(t, "fingerprint", err, ErrStorage, want)
+				if !errors.Is(err, ErrCorrupt) || !strings.Contains(err.Error(), tt.key) || !strings.Contains(err.Error(), msgInvalidUTF8) {
+					t.Fatalf("unsafe or incomplete diagnostic: %v", err)
+				}
 			}
-			assertKind(t, "check", target.Check(), ErrSQLite, item.check)
-			if item.check != "" && target.SalvageMeta() != nil {
-				t.Error("SalvageMeta: want nil like Python's None")
+			_, err := target.Load()
+			check(err, tt.loadFails)
+			_, err = target.Fingerprint()
+			check(err, true)
+			check(target.Check(), tt.checkFails)
+			if tt.checkFails && target.SalvageMeta() != nil {
+				t.Fatal("salvage accepted corrupt metadata")
 			}
 		})
 	}

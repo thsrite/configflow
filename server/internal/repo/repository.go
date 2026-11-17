@@ -20,6 +20,7 @@ package repo
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -235,9 +236,6 @@ func (r *Repository) emptyProfile(profileID string, name any, description any) *
 	return result
 }
 
-const restoreHint = "用“导出全部数据”的备份导入；或把 migrations/ 下 import/、legacy-config/ 快照里的 " +
-	"configflow.sqlite3 复制回数据目录；migration/ 快照只有迁移前的旧配置文件，需放回后重新迁移或导入。"
-
 func lexists(path string) bool {
 	_, err := os.Lstat(path)
 	return err == nil
@@ -325,8 +323,7 @@ func (r *Repository) openLocked(ctx context.Context) error {
 			return &Error{Kind: ErrRepository, Cause: err, Message: "配置数据库由更新版本的 ConfigFlow 创建（" + err.Error() +
 				"），当前版本无法读取；请升级到对应版本，或用“导出全部数据”的备份恢复。数据库未改动。"}
 		case errors.Is(err, store.ErrCorrupt):
-			return &Error{Kind: ErrRepository, Cause: err, Message: "配置数据库 " + DatabaseFilename + " 已损坏（" + err.Error() +
-				"），且没有可安全使用的恢复来源；请停止服务后恢复：" + restoreHint + "损坏文件未改动。"}
+			return &Error{Kind: ErrRepository, Cause: err, Message: fmt.Sprintf(msgStoreRecovery, r.dbPath, err.Error())}
 		default:
 			return &store.Error{Kind: store.ErrStorage, Cause: err,
 				Message: "无法打开配置数据库 " + DatabaseFilename + "：" + err.Error() + "；数据库未改动"}
@@ -337,7 +334,7 @@ func (r *Repository) openLocked(ctx context.Context) error {
 		if errors.Is(err, store.ErrStorage) {
 			return err
 		}
-		return &Error{Kind: ErrRepository, Cause: err, Message: "配置数据库内容未通过校验：" + err.Error()}
+		return &Error{Kind: ErrRepository, Cause: err, Message: fmt.Sprintf(msgStoreRecovery, r.dbPath, err.Error())}
 	}
 	system, _ := jsonx.AsObject(jsonx.DeepCopy(entry.Document.Value("system")))
 	if changed, err := ensureRuleProxyToken(system); err != nil {

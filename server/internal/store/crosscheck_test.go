@@ -281,6 +281,14 @@ func TestCrossCheckPythonErrors(t *testing.T) {
 			if !known {
 				t.Fatalf("%s/%s: unexpected Python exception %s", name, operation, want.GetString("type"))
 			}
+			// Invalid UTF-8 is classified as corrupt stored text instead of
+			// reproducing sqlite3's value-leaking OperationalError.
+			if strings.Contains(name, "bad-utf8") && err != nil {
+				if !errors.Is(err, ErrCorrupt) || !strings.Contains(err.Error(), msgInvalidUTF8) {
+					t.Errorf("%s/%s: expected safe UTF-8 corruption", name, operation)
+				}
+				return
+			}
 			var typed *Error
 			if err == nil || !errors.As(err, &typed) || typed.Kind != kind || !sameBoundaryError(name, err.Error(), want.GetString("message")) {
 				t.Errorf("%s/%s:\n  go %v (%v)\n  py %s: %s", name, operation, err, kindOf(err), want.GetString("type"), want.GetString("message"))
@@ -490,11 +498,13 @@ func TestCrossCheckPythonOddDocuments(t *testing.T) {
 func sameBoundaryError(scenario, got, want string) bool {
 	switch scenario {
 	case "field-not-json":
-		return strings.HasPrefix(got, "字段 shared//nodes 不是有效 JSON")
+		return strings.Contains(got, `fields 键 "shared//nodes"`) && strings.HasSuffix(got, msgInvalidJSON)
 	case "meta-not-json", "generation-not-json":
-		return strings.HasPrefix(got, "数据库元信息无法解析：")
-	case "version-string", "version-bool", "version-float", "version-null", "version-list":
-		return strings.HasPrefix(got, "数据库存储版本无效：")
+		return strings.HasPrefix(got, "配置数据库表 meta 键 ") && strings.HasSuffix(got, msgInvalidJSON)
+	case "version-huge":
+		return got == msgVersionTooLarge
+	case "version-string", "version-zero", "version-bool", "version-float", "version-null", "version-list":
+		return got == msgVersionInvalid
 	}
 	return got == want
 }

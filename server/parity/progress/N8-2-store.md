@@ -1,6 +1,6 @@
 # N8-2 — store on raw rows
 
-Status: **ported**, boundary acceptance passed; independent review pending.
+Status: **ported**; independent adversarial review in progress on `go-review-n8-2`.
 Branch: `go-n8-2`; integrated with N7-1 and N8-1 (`go` at `5535931d`).
 No design deviation, schema/version change, new dependency or push.
 
@@ -107,3 +107,25 @@ store/messages.go 31, store/raw_test.go 274, store/fuzz_test.go 35,
 store/legacy_test.go 211, testdata/raw_crosscheck.py 82, raw_rows.json 23;
 repo/store_rows_test.go 74. No open N8-2 finding or implementation work remains. Final `git rebase go`
 and clean-worktree check are performed after this acceptance record commit.
+
+## Independent review (in progress)
+
+- Reproduced unchanged-raw-metadata Commit writing rows/normalizing generation;
+  fixed equal-metadata filtering and unrelated generation-byte preservation.
+- Removed value-leaking CPython UTF-8 diagnostic emulation. Stored invalid UTF-8
+  is ErrCorrupt; native JSON/UTF-8 diagnostics name table/key/column/byte offset
+  and category only. Startup reports the original path and actionable recovery;
+  final error boundary sends it to the log and stderr.
+- Added synthetic corrupt/truncated/oversized/deep rows, large valid opaque rows,
+  eight concurrent raw writers, unchanged metadata, and cancellation-after-start
+  tests. New private-copy Python ProfileRepository writes ↔ Go repository writes
+  audit is pending the final .32 run (existing live store audits retained).
+- Scope decision: syntactically damaged JSON/non-UTF-8 refuses startup and keeps
+  the original database. Legal JSON wrong-type R5 belongs to N8-3.
+- **repo.update 入口 detach（PORTING 4b）→ N8-5/O3-6**. This review proves raw
+  Commit is not aborted after starting; it does not move outer lock cancellation.
+- Ancillary A07 failure: shared selector moved to x/net/httpproxy plus ALL_PROXY
+  fallback by coordinator decision; separate Agent/Sub-Store boundaries and
+  requests differential, with native outcomes explicitly asserted. See review.
+- Next: final .32 private interchange, formatting/vet/race/all/proddiff, then
+  rebase go and mark verified only when all review findings are closed.

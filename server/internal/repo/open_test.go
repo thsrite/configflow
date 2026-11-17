@@ -74,8 +74,8 @@ func TestCorruptDatabaseWithoutAnySourceFailsLoudly(t *testing.T) {
 			// A config.json next to it is never a rebuild source in this port.
 			noError(t, os.WriteFile(filepath.Join(r.DataDir(), "config.json"), []byte("{}"), 0o600))
 			_, err := Open(r.DataDir(), Options{})
-			wantError(t, err, ErrRepository, "没有可安全使用的恢复来源")
-			wantError(t, err, nil, "损坏文件未改动")
+			wantError(t, err, ErrRepository, "请先停止服务并保留原文件")
+			wantError(t, err, nil, "原数据库未改动")
 			if !bytes.Equal(must(os.ReadFile(r.DatabasePath()))(t), content) {
 				t.Fatal("damaged file changed")
 			}
@@ -140,7 +140,7 @@ func TestInvalidRowsFailValidationWithoutRebuilding(t *testing.T) {
 	rcSQL(t, r.DatabasePath(), `UPDATE fields SET value = '[{"id": "a", "profile_id": "missing"}]' WHERE scope = 'system' AND field = 'agents'`)
 	fingerprint := must(r.Store().Fingerprint())(t)
 	_, err := Open(r.DataDir(), Options{})
-	wantError(t, err, ErrRepository, "未通过校验")
+	wantError(t, err, ErrRepository, "无法加载配置数据库")
 	if must(r.Store().Fingerprint())(t) != fingerprint {
 		t.Fatal("database changed")
 	}

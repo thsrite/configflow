@@ -26,7 +26,6 @@ import (
 	"fmt"
 	"io"
 	"maps"
-	"math/big"
 	"os"
 	"path/filepath"
 	"slices"
@@ -200,7 +199,7 @@ func (s *Store) Fingerprint() (Fingerprint, error) {
 			if err := rows.Scan(&key, &value); err != nil {
 				return err
 			}
-			if err := checkText(metaColumns, key, value); err != nil {
+			if err := checkRowText("meta", key, metaColumns, key, value); err != nil {
 				return err
 			}
 			return row(key, value)
@@ -215,7 +214,7 @@ func (s *Store) Fingerprint() (Fingerprint, error) {
 			if err := rows.Scan(&scope, &owner, &position); err != nil {
 				return err
 			}
-			if err := checkText(sectionColumns, scope, owner); err != nil {
+			if err := checkRowText("sections", scope+"/"+owner, sectionColumns, scope, owner); err != nil {
 				return err
 			}
 			return row(scope, owner, position)
@@ -230,7 +229,7 @@ func (s *Store) Fingerprint() (Fingerprint, error) {
 			if err := rows.Scan(&scope, &owner, &field, &position, &value, &revision); err != nil {
 				return err
 			}
-			if err := checkText(fieldColumns, scope, owner, field, value); err != nil {
+			if err := checkRowText("fields", scope+"/"+owner+"/"+field, fieldColumns, scope, owner, field, value); err != nil {
 				return err
 			}
 			return row(scope, owner, field, position, value, revision)
@@ -295,6 +294,21 @@ func (s *Store) Commit(base Entry, document *Document, meta map[string]json.RawM
 		storedFields := fields
 		pending := diff(storedRootOrder, storedSections, storedFields, target)
 		changed := pending.any()
+		if len(meta) > 0 {
+			keys := make([]string, 0, len(meta))
+			for key := range meta {
+				keys = append(keys, key)
+			}
+			storedMeta, err := connection.metaRows(keys...)
+			if err != nil {
+				return err
+			}
+			for key, value := range meta {
+				if bytes.Equal(storedMeta[key], value) {
+					delete(meta, key)
+				}
+			}
+		}
 		if !changed && len(meta) == 0 {
 			connection.rollback()
 			return nil
@@ -372,7 +386,9 @@ func (c *Conn) apply(pending *changes, target *rows, generation int64, meta map[
 	if pending.rootOrder {
 		updates["root_order"] = jsonText(target.rootOrder)
 	}
-	updates["generation"] = jsonText(generation)
+	if pending.any() {
+		updates["generation"] = jsonText(generation)
+	}
 	for key, value := range updates {
 		if err := c.exec("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", key, string(value)); err != nil {
 			return err
@@ -612,13 +628,16 @@ func (s *Store) check() error {
 	if len(missing) > 0 {
 		return newError(ErrCorrupt, fmt.Sprintf(msgMissingMeta, strings.Join(missing, "、")))
 	}
-	version := meta["storage_version"]
-	value, ok := new(big.Int).SetString(string(bytes.TrimSpace(version)), 10)
-	if !ok || value.Sign() < 1 {
-		return newError(ErrCorrupt, fmt.Sprintf(msgVersionInvalid, string(version)))
+	version := strings.TrimSpace(string(meta["storage_version"]))
+	value, err := strconv.ParseInt(version, 10, 64)
+	if errors.Is(err, strconv.ErrRange) && !strings.HasPrefix(version, "-") {
+		return newError(ErrUnsupported, msgVersionTooLarge)
 	}
-	if !value.IsInt64() || value.Int64() > StorageVersion {
-		return newError(ErrUnsupported, fmt.Sprintf(msgVersionUnsupported, value.String(), StorageVersion))
+	if err != nil || value < 1 {
+		return newError(ErrCorrupt, msgVersionInvalid)
+	}
+	if value > StorageVersion {
+		return newError(ErrUnsupported, fmt.Sprintf(msgVersionUnsupported, version, StorageVersion))
 	}
 
 	mode, err := connection.strings1("PRAGMA journal_mode")

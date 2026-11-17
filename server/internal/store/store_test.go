@@ -441,7 +441,7 @@ func TestCheckRejectsDamagedAndNewerFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	execSQL(t, target.Path(), `UPDATE meta SET value = '"1"' WHERE key = 'storage_version'`)
-	if err := target.Check(); !errors.Is(err, ErrCorrupt) || err.Error() != "数据库存储版本无效：\"1\"" {
+	if err := target.Check(); !errors.Is(err, ErrCorrupt) || err.Error() != msgVersionInvalid {
 		t.Fatal(err)
 	}
 	execSQL(t, target.Path(), "DELETE FROM meta WHERE key IN ('storage_version', 'root_order')")
