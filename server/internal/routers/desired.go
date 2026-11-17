@@ -137,7 +137,7 @@ func MergeSources(sources map[netip.Prefix][]string) []ProxyCIDR {
 // the router (never inferred from policies); their public IPv6 networks are
 // listed apart. DNSSettings is added by the inspection.
 type Desired struct {
-	DNSGuard *DesiredDNSGuard `json:"dns_guard,omitempty"`
+	DNSGuard         *DesiredDNSGuard  `json:"dns_guard,omitempty"`
 	ROSPolicy        *ROSPolicyDesired `json:"ros_policy,omitempty"`
 	FakeIPRange      string            `json:"fake_ip_range"`
 	ProxyGateway     string            `json:"proxy_gateway"`

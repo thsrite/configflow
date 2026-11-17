@@ -12,8 +12,6 @@ type DNSGuardSnapshot map[string][]Row
 type DesiredDNSGuard struct {
 	Settings DNSGuard        `json:"settings"`
 	Previous json.RawMessage `json:"previous"`
-	// PolicyCIDRs supplies R08's destinations without coupling its model to R09.
-	PolicyCIDRs []ProxyCIDR `json:"-"`
 }
 
 // DNSGuardSpec is the IPv4 LAN path and exemptions actually written to RouterOS.

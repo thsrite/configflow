@@ -16,6 +16,8 @@ try:
     result = forward_hint.check(driver, case.get('family', 4), case['lan'], case['targets'])
     state = RouterState(routes=[], nat_bypass=[], address_sets={})
     state.nat_context = {'routes': case['state']['tables'].get('/ip/route', [])}
+    state.ros_policy = case.get('policy_live')
+    state.dns_guard = case.get('guard_live')
     hint = forward_hint.ipv4(case['router'], case['desired'], state, case['report'], driver)
 finally:
     driver.close()

@@ -254,7 +254,10 @@ func r09Go(t *testing.T, tc r09Case, f *routerfake.Fake, endpoint string) r09Out
 			t.Fatal(err)
 		}
 		request := r09Copy(*desired)
-		request.DNSGuard = &DesiredDNSGuard{Settings: settings, Previous: previous, PolicyCIDRs: tc.PolicyCIDRs}
+		request.DNSGuard = &DesiredDNSGuard{Settings: settings, Previous: previous}
+		if len(tc.PolicyCIDRs) > 0 {
+			request.ROSPolicy = &ROSPolicyDesired{CIDRs: tc.PolicyCIDRs}
+		}
 		plan := BuildDNSGuard(&request, state)
 		row := r09StepResult{Plan: plan, Manifest: guardRaw(previous), Undo: json.RawMessage("null")}
 		if step.AfterPreview != nil {

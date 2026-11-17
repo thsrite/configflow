@@ -85,8 +85,8 @@ func guardDesiredSpec(settings DNSGuard, desired *Desired, state *RouterState) (
 		return nil, err
 	}
 	targets := slices.Clone(desired.ProxyCIDRs)
-	if desired.DNSGuard != nil {
-		targets = append(targets, desired.DNSGuard.PolicyCIDRs...)
+	if desired.ROSPolicy != nil {
+		targets = append(targets, desired.ROSPolicy.CIDRs...)
 	}
 	for _, a := range singles {
 		if a != address && dns.HA != nil {

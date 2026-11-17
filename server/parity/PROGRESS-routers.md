@@ -1,6 +1,6 @@
 # PROGRESS — domain `routers`
 
-Domain `routers` (WORKFLOW.md): router core, iKuai, RouterOS core/policy, router DNS/IPv6, router publish/rule sync, clients/split (old packages #32–#38). **52 Python files, 17574 lines, 17 modules** (equal to the `routers` totals in `FILES.md`) — 11 missing, 0 partial, 1 ported, 5 verified (R01, R02, R03, R04, R05). Only reviewers set `verified`.
+Domain `routers` (WORKFLOW.md): router core, iKuai, RouterOS core/policy, router DNS/IPv6, router publish/rule sync, clients/split (old packages #32–#38). **52 Python files, 17574 lines, 17 modules** (equal to the `routers` totals in `FILES.md`) — 8 missing, 0 partial, 1 ported, 8 verified (R01–R08). Only reviewers set `verified`.
 
 Planning audit: 2026-11-16, worktree `configflow-go`, branch `go` at 7b1b90b5 (plus uncommitted work of the C24/C25 agent in `internal/oxidns`). The Go tree was searched directly (`grep -ri 'routeros|ikuai|router_split|routers_of|router' server/internal`): **no package ports any routers file**; `internal/server` wires no routers package. What exists is listed under "Go code that already touches this domain" below; nothing from the old `progress/` files covers #32–#38.
 
@@ -623,9 +623,17 @@ Acceptance and per-test mapping, all HR issue-class prevention, intentional Pyth
 L5-only list: [progress/R09-dns-guard.md](progress/R09-dns-guard.md).
 
 Shared edits (minimal fields; gofmt aligns adjacent declarations): `desired.go` adds `DNSGuard`, `model.go` adds
-`DNSGuard` / `DNSGuardPlan`, `report.go` adds `RoutesReport.ForwardHint`, `routeros.go` adds DNS manifest set tracking.
-R08/R12 supplies policy CIDRs to `DesiredDNSGuard.PolicyCIDRs`; R12 uses `DNSGuardPublication()` to bridge its
-`Manifests` holder. R12/R15 attach ForwardHint to routes and warnings, never operations/checks/fingerprints.
+`DNSGuard` / `DNSGuardPlan`, `report.go` adds `RoutesReport.ForwardHint`. R08's DNS manifest set flag/setter
+and `Manifests()` are reused without another driver edit. Guard reads `Desired.ROSPolicy.CIDRs` directly;
+ForwardHint uses native `ROSPolicyPlan.Items` and prefers the policy filter snapshot over DNS guard's,
+including the distinction between empty and missing filters. R12 uses `Manifests().DNSGuard`; the convenience
+`DNSGuardPublication()` remains. R12/R15 attach ForwardHint to routes and warnings, never operations/checks/fingerprints.
+
+Rebased onto R08+C32 (`go@76f65828`); no R09 callers of ComputeDesired/RulesetContent exist, and their C32 ctx
+signatures and caller contexts are retained. Additional integrated report/manifest/snapshot tests are being
+validated before the final `.64` `gate.sh -p 6` run. Runtime Netwatch scripts still select by comment in Python
+and Go: preview/apply block existing unproven matching NAT, but the full runtime ownership contract is a
+potential high-severity item **deferred to fresh Opus by the coordinator**. See the dedicated Chinese report section.
 
 Final .32: gofmt/vet PASS; **full -race 84 packages PASS** (routers 567.091s, routersplit 23.165s,
 devhttp 3.764s); earlier non-race full suite PASS. After final O3-5 rebase: both build-tag build/vet/lifecycle

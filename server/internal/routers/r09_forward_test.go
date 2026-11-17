@@ -11,14 +11,17 @@ import (
 )
 
 type r09ForwardCase struct {
-	Name    string           `json:"name"`
-	State   routerfake.State `json:"state"`
-	Family  int              `json:"family"`
-	LAN     string           `json:"lan"`
-	Targets []string         `json:"targets"`
-	Router  *Router          `json:"router"`
-	Desired *Desired         `json:"desired"`
-	Report  json.RawMessage  `json:"report"`
+	Name       string             `json:"name"`
+	State      routerfake.State   `json:"state"`
+	Family     int                `json:"family"`
+	LAN        string             `json:"lan"`
+	Targets    []string           `json:"targets"`
+	Router     *Router            `json:"router"`
+	Desired    *Desired           `json:"desired"`
+	Report     json.RawMessage    `json:"report"`
+	PolicyPlan *ROSPolicyPlan     `json:"policy_plan,omitempty"`
+	PolicyLive *ROSPolicySnapshot `json:"policy_live,omitempty"`
+	GuardLive  *DNSGuardSnapshot  `json:"guard_live,omitempty"`
 }
 
 func r09ForwardBase() r09ForwardCase {
@@ -40,7 +43,7 @@ func r09ForwardBase() r09ForwardCase {
 }
 func r09ForwardCases() []r09ForwardCase {
 	cases := []r09ForwardCase{}
-	for _, variant := range []string{"default", "early_accept", "late_accept", "renamed", "custom_drop", "jump", "default_deny", "empty", "disabled", "input", "wan_only", "new_only", "unknown_accept", "target_only", "address_list", "quoted_lan", "escaped_lan", "unreadable", "no_lan", "ikuai", "return_routing", "no_targets", "bad_gateway", "policy_only", "ipv6"} {
+	for _, variant := range []string{"default", "early_accept", "late_accept", "renamed", "custom_drop", "jump", "default_deny", "empty", "disabled", "input", "wan_only", "new_only", "unknown_accept", "target_only", "address_list", "quoted_lan", "escaped_lan", "unreadable", "no_lan", "ikuai", "return_routing", "no_targets", "bad_gateway", "policy_only", "policy_blocked", "policy_disabled", "dns_snapshot", "policy_snapshot", "policy_empty_snapshot", "policy_missing_filter", "ipv6"} {
 		tc := r09ForwardBase()
 		tc.Name = variant
 		rows := tc.State.Tables[rosFilter]
@@ -95,8 +98,26 @@ func r09ForwardCases() []r09ForwardCase {
 			tc.Report = r09Raw(map[string]any{"routes": map[string]any{"items": []map[string]string{{"cidr": "198.18.0.0/16", "status": "conflict"}}}})
 		case "bad_gateway":
 			tc.Desired.ProxyGateway = "not-an-ip"
-		case "policy_only":
-			tc.Report = r09Raw(map[string]any{"routes": map[string]any{"items": []any{}}, "policy_routing": map[string]any{"enabled": true, "blockers": []string{}, "items": []ProxyCIDR{{CIDR: "198.18.0.0/16"}}}})
+		case "policy_only", "policy_blocked", "policy_disabled":
+			tc.Desired.ROSPolicy = &ROSPolicyDesired{Selected: []string{"synthetic-policy"}}
+			tc.PolicyPlan = &ROSPolicyPlan{Items: []ROSPolicyItem{{ProxyCIDR: ProxyCIDR{CIDR: "198.18.0.0/16"}}}, Blockers: []string{}}
+			if variant == "policy_blocked" {
+				tc.PolicyPlan.Blockers = []string{"synthetic blocker"}
+			}
+			if variant == "policy_disabled" {
+				tc.Desired.ROSPolicy.Selected = nil
+			}
+			tc.Report = r09Raw(map[string]any{"routes": map[string]any{"items": []any{}}, "policy_routing": map[string]any{"enabled": len(tc.Desired.ROSPolicy.Selected) > 0, "blockers": tc.PolicyPlan.Blockers, "items": tc.PolicyPlan.Items}})
+		case "dns_snapshot", "policy_snapshot", "policy_empty_snapshot", "policy_missing_filter":
+			tc.GuardLive = &DNSGuardSnapshot{rosFilter: {Row(same)}}
+			switch variant {
+			case "policy_snapshot":
+				tc.PolicyLive = &ROSPolicySnapshot{rosFilter: {{".id": "*D", "chain": "forward", "action": "drop"}}}
+			case "policy_empty_snapshot":
+				tc.PolicyLive = &ROSPolicySnapshot{rosFilter: {}}
+			case "policy_missing_filter":
+				tc.PolicyLive = &ROSPolicySnapshot{}
+			}
 		case "ipv6":
 			tc.Family = 6
 			tc.Targets = []string{"2001:db8::/32"}
@@ -125,18 +146,11 @@ func TestR09ForwardHintPython(t *testing.T) {
 			if err := json.Unmarshal(tc.Report, &report); err != nil {
 				t.Fatal(err)
 			}
-			var extra struct {
-				Policy json.RawMessage `json:"policy_routing"`
-			}
-			_ = json.Unmarshal(tc.Report, &extra)
-			if len(extra.Policy) > 0 {
-				report.Parts = append(report.Parts, ReportPart{Key: "policy_routing", Section: extra.Policy})
-			}
 			routes := []Row{}
 			for _, row := range tc.State.Tables[rosRoutes] {
 				routes = append(routes, Row(row))
 			}
-			state := &RouterState{NatContext: &NatContext{Routes: routes}}
+			state := &RouterState{NatContext: &NatContext{Routes: routes}, ROSPolicyPlan: tc.PolicyPlan, ROSPolicy: tc.PolicyLive, DNSGuard: tc.GuardLive}
 			hint, err := ForwardHint(context.Background(), tc.Router, tc.Desired, state, &report, d)
 			if err != nil {
 				t.Fatal(err)

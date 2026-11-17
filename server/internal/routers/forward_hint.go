@@ -2,7 +2,6 @@ package routers
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/url"
 	"regexp"
@@ -159,25 +158,16 @@ func ForwardHint(ctx context.Context, r *Router, desired *Desired, state *Router
 			targets = append(targets, item.CIDR)
 		}
 	}
-	// R08's report section is consumed through a typed, read-only projection.
-	// Its model remains owned by R08, and no operation is reconstructed here.
-	for _, part := range report.Parts {
-		if part.Key == "policy_routing" {
-			var policy struct {
-				Enabled  bool        `json:"enabled"`
-				Blockers []string    `json:"blockers"`
-				Items    []ProxyCIDR `json:"items"`
-			}
-			raw, err := json.Marshal(part.Section)
-			if err == nil && json.Unmarshal(raw, &policy) == nil && policy.Enabled && len(policy.Blockers) == 0 {
-				for _, item := range policy.Items {
-					targets = append(targets, item.CIDR)
-				}
-			}
+	if desired.ROSPolicy != nil && len(desired.ROSPolicy.Selected) > 0 && state.ROSPolicyPlan != nil && len(state.ROSPolicyPlan.Blockers) == 0 {
+		for _, item := range state.ROSPolicyPlan.Items {
+			targets = append(targets, item.CIDR)
 		}
 	}
 	targets = uniqueStrings(targets)
 	slices.SortStableFunc(targets, func(a, b string) int {
+		if a == b {
+			return 0
+		}
 		if a == desired.FakeIPRange {
 			return -1
 		}
@@ -198,7 +188,9 @@ func ForwardHint(ctx context.Context, r *Router, desired *Desired, state *Router
 		return &ForwardHintResult{Status: "unknown", Warning: messageForwardUnknownLAN}, nil
 	}
 	var rows []Row
-	if state.DNSGuard != nil {
+	if state.ROSPolicy != nil {
+		rows = (*state.ROSPolicy)[rosFilter]
+	} else if state.DNSGuard != nil {
 		rows = (*state.DNSGuard)[rosFilter]
 	}
 	result := CheckForwardHint(ctx, d, 4, lan, targets, rows)

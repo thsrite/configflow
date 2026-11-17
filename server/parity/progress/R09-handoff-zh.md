@@ -97,7 +97,10 @@ RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && test -z "$(gofmt -l i
 ## 共享文件与接线
 
 仅最小修改 `desired.go`、`model.go`、`report.go`、`routeros.go` 的字段／manifest set 标志。
-ReportParts 链式保留前驱。R08/R12 提供 `DesiredDNSGuard.PolicyCIDRs`；R12 获取 `DNSGuardPublication()` 的值与 set 标志，保存成功或补偿后的 manifest。
+ReportParts 链式保留前驱，R08 的 policy report 保留。R09 直接读取 `Desired.ROSPolicy.CIDRs`，已删除临时 `DesiredDNSGuard.PolicyCIDRs`；同口提示直接使用 `state.ROSPolicyPlan.Items`，不再往返报告 JSON。只有启用且无 blocker 的 policy plan 提供提示目标。
+filter 优先读取非 nil 的 R08 snapshot，其次才是 DNS guard snapshot；空列表是有效证据，缺少 filter 时发起新读取，不误退回另一份快照。真实 Python 对照覆盖启用／禁用／被阻断，以及两种快照、优先级、空／缺少 filter。
+R08 的 DNS manifest 标志和 setter 各保留一份，`Manifests()` 完整保留；合并后 R09 对 `routeros.go` 没有额外 diff。R12 获取 `Manifests().DNSGuard` 的值与 set 标志（包括显式 null），保存成功或补偿后的 manifest；`DNSGuardPublication()` 保留为便捷接口。组合测试验证 BuildReport 同时保留两个可发布计划，DNS 冲突直接读取原生 policy CIDR，恢复 DNS 不覆盖 Policy manifest，返回副本不别名共享证明。
+C32 的 ComputeDesired／RulesetContent context 首参及已有调用方 ctx 完整保留；R09 没有这两个函数的新增调用点。R09 和 R08 共享写入／回滚路径均用 lifecycle.Detach。
 R12/R15 把 ForwardHint 放到 report/warnings，不能作为 fingerprint 输入。
 
 ## L5 与交回
@@ -105,6 +108,6 @@ R12/R15 把 ForwardHint 放到 report/warnings，不能作为 fingerprint 输入
 L5 尚未执行：真实 CHR 接受 payload/scripts、UDP/TCP DNS/hairpin/853、HA VIP 与真实主机豁免、15 秒故障确认、恢复 conntrack 清理、重启撤销、链路丢失、规则顺序及同口命令的实际流量效果。
 只能由协调者在隔离实验网安排，不能把 loopback fake 通过当实流证明。
 
-分支 `go-port-r09`，已 rebase 到 `go@9a208c6c`。实现提交：`54a3fd9f`（核心）、`63986dd9`（HA/解析门禁）、`9040581f`（未知选择器修正）；其后为门禁与文档提交。未 push，临时基线 worktree 已清理。
+分支 `go-port-r09`，已 rebase 到包含 R08+C32 的 `go@76f65828`。未 push，临时基线 worktree 已清理；最终提交及门禁结果将在完整 gate 结束后记录。
 
-独立验收已完成。协调者追加最终集成要求：等待 aggregation-oracle 修复 `72d4b2c0` 和已 verified 的 R08 合入 go，再 rebase、去重 manifest 标志并保留 Manifests()；接入 R08 的策略目的 CIDR 与 filter 快照，使用共享 gate.sh 重跑最终门禁后才交回。R09 自有写／恢复已用 lifecycle.Detach。已知 proddiff 例外及 L5 不作通过宣称。
+独立验收已完成，R08+C32 已整合；最终门禁固定 `.64`、`gate.sh -p 6`，完成后才交回。历史 aggregation proddiff 例外已由独立修复合入 go，最终门禁仍须证明 new=0 stale=0；旧失败保留作为历史记录。L5 和 Netwatch 运行时归属裁定不作通过宣称。
