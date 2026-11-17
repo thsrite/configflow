@@ -131,6 +131,12 @@ VARIANT_LINKS.update({
     for rid, route in [('R220', 'GET /api/subscriptions/<sub_id>/proxies'),
                        ('R154', 'GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies')]
 })
+VARIANT_LINKS.update({
+    (rid + '-' + case, variant, route): (helper,)
+    for rid, route in [('R095', 'POST /api/nodes/delete'), ('R096', 'POST /api/nodes/delete-preview')]
+    for case, helper in [('F09', 'H344'), ('F10', 'H344'), ('B01', 'H344'), ('F11', 'H345')]
+    for variant in ('False', 'True')
+})
 
 
 def attach(results):

@@ -248,6 +248,12 @@ def main():
     groups.update(aggregation_edges)
     from cases.profile_router_busy import GROUPS as profile_router_busy
     groups.update(profile_router_busy)
+    from cases.provider_health_guards import GROUPS as provider_health_guards
+    groups.update(provider_health_guards)
+    from cases.archive_limits import GROUPS as archive_limits
+    groups.update(archive_limits)
+    from cases.pull_failures import GROUPS as pull_failures
+    groups.update(pull_failures)
     from cases.groups import GROUPS as managed_groups
     groups.update(managed_groups)
     from cases.rule_library import GROUPS as rule_library

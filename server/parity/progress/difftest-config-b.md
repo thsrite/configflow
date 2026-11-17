@@ -2185,3 +2185,22 @@ current compared273 / Go未实现51 / different20 / accepted20 / open0；design_
 ```
 
 合并R117后10115变体、原R4476（S710/F2751/B1015），原R仍差54（含N/A）、H差370；最终最新go全量仍待完成。
+
+## 批次 128：038b基线全部finding复验、跨空间忙碌、健康检查和真实归档限额
+
+- 再次rebase到go 038b52ae；.64实际重跑全部40个finding组，744变体、308.10秒：622compared、72Go未实现、49strict different（29accepted/20open）、O12单列1、design_errors=[]，exit1只因20个已知真实差异。172个review全部checked_baseline=038b52ae，仍closed122/accepted29/open20/O12单列1。变基后的测试修正引用更新为当前可达提交9b421107（原bd7363fd）和5e5dd8ee（原3dc6e7bf），已通过115项自检；不是把业务修复提交改成测试提交。
+- R060-F13为两个配置空间各配真实在线心跳和采集记录，再由默认空间启动受fake Agent响应门阻塞的网站识别；另一个空间的合法识别必须409、job=null、准确中文、不泄露首任务ID、没有额外RPC/SQL/files，首任务随后真实完成。7变体全部compared；避免被“另一空间无Agent/无记录”的早期400抢先。
+- H240/H241经订阅和聚合POST/PUT四种公开入口驱动：null/数组/数值/字符串/false健康对象及未知字段，28变体全compared，准确中文400、全部行/文件不变、零出站。H344/H345只关联已确认进入node_deletion的缺/错/空ids和不存在节点；非对象body的wrapper错误不计helper。同组29变体实际compared，新加2H标签。
+- .32正式前三组64compared、design_errors=[]，13.21秒；累计10150变体、原R4477（S710/F2752/B1015）、H746/G16。
+- 归档新增真实H001/H002：规则库名称中的反斜杠、换行、../和/生成不安全本地路径，default/scoped完整MosDNS包500准确中文且零网络/原状态不动。H013使用2048个真实classical来源生成4096下载成员加主文件，触发文件顺序上限；H011使用4096条相邻路由交替规则产生4096个真实inline文件加主文件，触发add上限。未修改4096或256MiB生产常量；H011本批覆盖文件数条件，256MiB总字节条件仍未证明。
+- 预设H010的custom_hosts同名冲突实际200，因为builtin tag保留名会改成custom_hosts_2；撤回错误500前提和H010/H016标签，改为G10正向控制，真实ZIP逐字核对两个不同文件。组改名后旧草稿残留曾触发duplicate inventory，改用全新报告路径后14变体source全部通过/Go未实现、design_errors=[]，13.56秒；再由普通runner正式合并。
+- 再补7条pull F10：Python真实备份导入接受的non-text custom_config=1，使Loon/Surge/MosDNS GET实际500；default/scoped/filename别名逐条执行，完整SQL/files不变、零源访问。Go相关入口未接通；不用POST的坏JSON冒充GET生成失败。9.64秒有效草稿后正式合并。
+- 当前10171变体、原R4484（S710/F2759/B1015）、H750/G16；累计compared2938、Go未实现7083、依赖未实现100、strict different49、O12单列1。原R仍差46（含N/A）、H差362及partial/长流程。新增源前提通过不计Go通过，最终最新go完整all仍未完成。
+
+```text
+.64 --groups [上列40个finding组] --baseline 038b52ae：622compared/72TODO/49different/accepted29/open20/O12=1；design_errors=[]；seconds308.10；exit1
+.32 --groups discovery-website-foreign-profile-busy,provider-health-shared-write-guards,nodes-deletion --baseline 038b52ae：64compared；design_errors=[]；seconds13.21；exit0
+.64 --groups archive-real-name-path-guards,archive-real-download-file-order-limit,archive-real-inline-file-add-limit --baseline 038b52ae：14TODO；design_errors=[]；exit0
+.32 --groups config-pull-retained-non-text-settings-failure --baseline 038b52ae：7TODO；design_errors=[]；exit0
+115 self-checks + deliberately wrong-Go-response detection OK；有效草稿移至/tmp/configdiff-batch128-evidence。
+```

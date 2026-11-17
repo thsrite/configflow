@@ -2066,6 +2066,12 @@ R227-S06证明[dns_follow.py:324](../../backend/agents/dns_follow.py#L324)重试
 
 R117-F13使用真正router apply请求与第二个删除profile请求：首个REST GET正在等待响应时必须409，完整SQL/files不变；放行后首请求502且无设备写入。来源[config_repository.py:1217](../../backend/common/config_repository.py#L1217)、[config_repository.py:987](../../backend/common/config_repository.py#L987)、[routers.py:434](../../backend/routes/routers.py#L434)。这不是通过直接持有Python文件锁构造Go不等价输入。
 
+### Step B 真实跨空间互斥、公共健康校验与归档计数（批次128）
+
+R060-F13必须先让两个空间都有在线Agent和最近采集记录，否则[start_website_job](../../backend/utils/domain_discovery_service.py#L465)在到达跨空间busy分支前即400。当前夹具先真实心跳/traffic-report、阻塞默认空间RPC，再验证另一空间409/job=null/无额外RPC；默认任务放行后完成。H240/H241由四种共享资源保存入口进入[health_check.py:40](../../backend/utils/health_check.py#L40)，H344/H345由已通过wrapper和confirmation检查的请求进入[node_deletion.py:16](../../backend/common/node_deletion.py#L16)。
+
+H001/H002由真实规则库名称派生的包路径触发[mosdns_archive.py:28](../../backend/utils/mosdns_archive.py#L28)。H013真实2048个classical来源形成4097个最终成员；H011真实4096个相邻路由块加主文件触发add文件数上限（256MiB字节子条件仍partial），见[mosdns_archive.py:126](../../backend/utils/mosdns_archive.py#L126)。custom_hosts被[builtin tag保留名](../../backend/converters/mosdns.py#L8)自动改成custom_hosts_2，是成功形态，不能拿它计H010/H016冲突覆盖。7条Loon/Surge/MosDNS pull F10用真实导入的custom_config=1触发GET文本处理异常，源见[loon.py:68](../../backend/converters/loon.py#L68)、[surge.py:105](../../backend/converters/surge.py#L105)、[mosdns.py:730](../../backend/converters/mosdns.py#L730)。
+
 冻结比较针对每个端自己的已校验bundle成员原始字节。配置通过公开settings改为另一份后，旧file仍必须等于旧成员，完整SQL/预览文件不变；跨实现的生成主YAML照结构比较。ZIP下载由[generated_preview.download](../../backend/agents/generated_preview.py#L163)每次重打包，ZIP容器自身的时间戳不属于“旧成员内容不变”，不能把整个ZIP字节相等当作冻结条件。TTL仍核对真实expires_at≈创建时刻+3600，过期拒绝另由F11验证，不缩短生产TTL。
 
 ### Step B token保存后的轮换与版本注入边界
