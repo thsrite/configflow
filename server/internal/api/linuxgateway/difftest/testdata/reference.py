@@ -33,7 +33,7 @@ requests.sessions.Session.request = loopback
 def state():
     files = {}
     for path in root.rglob('*'):
-        if not path.is_file() or path.name.startswith('configflow.sqlite3') or path.suffix in ('.lock', '.log'):
+        if not path.is_file() or (path.parent == root and path.name in ('configflow.sqlite3', 'configflow.sqlite3-wal', 'configflow.sqlite3-shm', 'configflow.sqlite3-journal')) or path.suffix in ('.lock', '.log'):
             continue
         relative = path.relative_to(root).as_posix()
         raw = path.read_bytes()

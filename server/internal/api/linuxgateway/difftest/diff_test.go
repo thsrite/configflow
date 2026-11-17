@@ -17,6 +17,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -65,7 +66,7 @@ func snapshot(t *testing.T, s *httpxtest.Server) any {
 			return nil
 		}
 		ext := filepath.Ext(path)
-		if strings.HasPrefix(filepath.Base(path), "configflow.sqlite3") || ext == ".lock" || ext == ".log" {
+		if filepath.Dir(path) == s.DataDir && isDatabaseFile(filepath.Base(path)) || ext == ".lock" || ext == ".log" {
 			return nil
 		}
 		data, err := os.ReadFile(path)
@@ -317,62 +318,146 @@ func newWorld(t *testing.T, sessions ...string) *world {
 	}
 	return w
 }
-func normalize(v any) any {
-	switch x := v.(type) {
-	case map[string]any:
-		for k, v := range x {
-			if k == "created_at" || k == "updated_at" {
-				if _, ok := v.(string); ok {
-					x[k] = "<time>"
+func isDatabaseFile(name string) bool {
+	switch name {
+	case "configflow.sqlite3", "configflow.sqlite3-wal", "configflow.sqlite3-shm", "configflow.sqlite3-journal":
+		return true
+	}
+	return false
+}
+
+var previewIdentity = regexp.MustCompile(`^[0-9a-f]{64}$`)
+var restoreIdentity = regexp.MustCompile(`^[0-9a-f]{32}$`)
+
+// normalize changes only independently-generated identities/times at their
+// declared schema paths. Identically named user fields remain fully compared.
+func normalize(t *testing.T, value any, kind string) any {
+	t.Helper()
+	timestamp := func(v any) any {
+		t.Helper()
+		s, ok := v.(string)
+		if !ok {
+			t.Fatalf("metadata timestamp is not a string: %T", v)
+		}
+		if _, err := time.Parse(time.RFC3339Nano, s); err != nil {
+			t.Fatalf("invalid metadata timestamp: %q", s)
+		}
+		return "<time>"
+	}
+	bodyMap, _ := value.(map[string]any)
+	previewBody := kind == "body" && (bodyMap["action"] == "save" || bodyMap["action"] == "restore") && bodyMap["config_revision"] != nil && bodyMap["changes"] != nil
+	editorBody := kind == "body" && bodyMap["config_revision"] != nil && (bodyMap["settings"] != nil || previewBody)
+	var walk func(any, []string) any
+	walk = func(value any, path []string) any {
+		switch x := value.(type) {
+		case map[string]any:
+			profileMeta := len(path) == 4 && path[0] == "state" && path[1] == "document" && path[2] == "profiles"
+			summary := editorBody && len(path) == 2 && path[0] == "body" && path[1] == "restore_point"
+			point := len(path) == 6 && path[0] == "state" && path[1] == "document" && path[2] == "profiles" && path[4] == "mihomo" && path[5] == "linux_gateway_restore_point" || len(path) == 3 && path[0] == "sql-mihomo" && path[2] == "linux_gateway_restore_point"
+			rootBody := len(path) == 1 && path[0] == "body"
+			for key, item := range x {
+				if profileMeta && (key == "created_at" || key == "updated_at") || (summary || point) && key == "created_at" {
+					x[key] = timestamp(item)
 					continue
 				}
-			}
-			if k == "preview_token" {
-				s, _ := v.(string)
-				if len(s) != 64 {
-					panic("invalid preview token")
+				if (summary || point) && key == "id" {
+					id, ok := item.(string)
+					if ok && restoreIdentity.MatchString(id) {
+						x[key] = "<restore-id>"
+					}
+					continue
 				}
-				x[k] = "<preview-token>"
-				continue
-			}
-			if k == "id" && x["created_at"] != nil && len(x) == 2 {
-				x[k] = "<restore-id>"
-				continue
-			}
-			if k == "id" && x["version"] == float64(1) && x["mihomo"] != nil {
-				x[k] = "<restore-id>"
-				continue
-			}
-			if k == "changes" {
-				for _, raw := range v.([]any) {
-					c := raw.(map[string]any)
-					for _, side := range []string{"before", "after"} {
-						text := c[side].(string)
-						if strings.HasPrefix(text, "内容摘要 ") {
-							continue
+				if rootBody && previewBody && key == "preview_token" {
+					token, ok := item.(string)
+					if !ok || !previewIdentity.MatchString(token) {
+						t.Fatalf("invalid preview identity: %T", item)
+					}
+					x[key] = "<preview-token>"
+					continue
+				}
+				if rootBody && previewBody && key == "changes" {
+					changes, ok := item.([]any)
+					if !ok {
+						t.Fatalf("changes is not an array: %T", item)
+					}
+					for _, entry := range changes {
+						change, ok := entry.(map[string]any)
+						if !ok {
+							t.Fatalf("change is not an object: %T", entry)
 						}
-						if n, err := yamlx.Parse([]byte(text)); err == nil {
-							if b, err := yamlx.ToJSON(n); err == nil {
-								var decoded any
-								_ = json.Unmarshal(b, &decoded)
-								c[side] = decoded
+						for _, side := range []string{"before", "after"} {
+							text, ok := change[side].(string)
+							if !ok {
+								t.Fatalf("change display is not text: %T", change[side])
+							}
+							if strings.HasPrefix(text, "内容摘要 ") {
+								continue
+							}
+							if node, err := yamlx.Parse([]byte(text)); err == nil {
+								if b, err := yamlx.ToJSON(node); err == nil {
+									var decoded any
+									if err = json.Unmarshal(b, &decoded); err != nil {
+										t.Fatal(err)
+									}
+									change[side] = decoded
+								}
 							}
 						}
 					}
+					continue
+				}
+				x[key] = walk(item, append(append([]string{}, path...), key))
+			}
+		case []any:
+			sqlRow := len(path) == 3 && path[0] == "state" && path[1] == "fields" && len(x) == 5 && x[0] == "profile"
+			if sqlRow {
+				if x[2] == "created_at" || x[2] == "updated_at" {
+					x[4] = timestamp(x[4])
+					return x
+				}
+				if x[2] == "mihomo" {
+					x[4] = walk(x[4], []string{"sql-mihomo", fmt.Sprint(x[1])})
+					return x
 				}
 			}
-			x[k] = normalize(x[k])
+			for i, item := range x {
+				x[i] = walk(item, append(append([]string{}, path...), strconv.Itoa(i)))
+			}
 		}
-	case []any:
-		if len(x) == 5 && (x[2] == "updated_at" || x[2] == "created_at") {
-			x[4] = "<time>"
-		}
-		for i, v := range x {
-			x[i] = normalize(v)
-		}
+		return value
 	}
-	return v
+	return walk(value, []string{kind})
 }
+
+// An editor summary must name the exact snapshot persisted for its profile;
+// random-ID normalization must never hide a response/storage disagreement.
+func summaryMatchesStorage(t *testing.T, body, state any, path string) {
+	t.Helper()
+	response, ok := body.(map[string]any)
+	if !ok {
+		return
+	}
+	if response["config_revision"] == nil || response["settings"] == nil && response["action"] != "save" && response["action"] != "restore" {
+		return
+	}
+	summary, ok := response["restore_point"].(map[string]any)
+	if !ok {
+		return
+	}
+	profile := "home"
+	parts := strings.Split(strings.Split(path, "?")[0], "/")
+	if len(parts) > 3 && parts[2] == "profiles" {
+		profile = parts[3]
+	}
+	root := state.(map[string]any)
+	document := root["document"].(map[string]any)
+	profiles := document["profiles"].(map[string]any)
+	stored := profiles[profile].(map[string]any)["mihomo"].(map[string]any)["linux_gateway_restore_point"].(map[string]any)
+	if summary["id"] != stored["id"] || summary["created_at"] != stored["created_at"] {
+		t.Fatal("restore summary does not name persisted snapshot")
+	}
+}
+
 func (w *world) call(method, path, body string, authHeader bool) (answer, answer) {
 	return w.callBodies(method, path, body, body, authHeader)
 }
@@ -508,6 +593,8 @@ func (w *world) callBodies(method, path, goBody, pyBody string, authHeader bool)
 		}
 	}
 	got.State = snapshot(w.t, w.srv)
+	summaryMatchesStorage(w.t, got.Body, got.State, path)
+	summaryMatchesStorage(w.t, want.Body, want.State, path)
 	for _, k := range []string{"Content-Type", "Cache-Control"} {
 		if want.Headers[k] != got.Headers[k] {
 			w.t.Errorf("%s %s header %s PY=%q GO=%q", method, path, k, want.Headers[k], got.Headers[k])
@@ -531,7 +618,7 @@ func (w *world) callBodies(method, path, goBody, pyBody string, authHeader bool)
 		if nonFiniteDifference && pair.name == "body" {
 			continue
 		}
-		gn, pn := normalize(jsonValue(w.t, pair.g)), normalize(jsonValue(w.t, pair.p))
+		gn, pn := normalize(w.t, jsonValue(w.t, pair.g), pair.name), normalize(w.t, jsonValue(w.t, pair.p), pair.name)
 		if !reflect.DeepEqual(gn, pn) {
 			g, _ := json.Marshal(gn)
 			p, _ := json.Marshal(pn)
@@ -716,5 +803,25 @@ func TestA20RealWizardFixtures(t *testing.T) {
 			w.call("POST", "/api/profiles/home/custom-config/linux-gateway", `{"enabled":false}`, true)
 			w.call("POST", "/api/agents/gateway/linux-gateway/remove?profile_id=home", `{}`, true)
 		})
+	}
+}
+
+func TestA20NormalizationKeepsUserFields(t *testing.T) {
+	input := map[string]any{"document": map[string]any{"profiles": map[string]any{"home": map[string]any{"updated_at": "2026-01-01T00:00:00Z", "future": map[string]any{"created_at": "user-created", "updated_at": "user-updated", "preview_token": "user-token", "id": "user-id"}, "mihomo": map[string]any{"linux_gateway_restore_point": map[string]any{"version": 1, "id": strings.Repeat("a", 32), "created_at": "2026-01-01T00:00:00Z", "mihomo": map[string]any{}, "oxidns": map[string]any{}}}}}}}
+	output := normalize(t, jsonValue(t, input), "state").(map[string]any)
+	profile := output["document"].(map[string]any)["profiles"].(map[string]any)["home"].(map[string]any)
+	if profile["updated_at"] != "<time>" {
+		t.Fatal("metadata not normalized")
+	}
+	future := profile["future"].(map[string]any)
+	if future["created_at"] != "user-created" || future["updated_at"] != "user-updated" || future["preview_token"] != "user-token" || future["id"] != "user-id" {
+		t.Fatal("user fields ignored", future)
+	}
+	userBody := map[string]any{"preview_token": "user-token", "restore_point": map[string]any{"id": strings.Repeat("a", 32), "created_at": "user-created"}, "changes": []any{"user-change"}}
+	if normalized := normalize(t, jsonValue(t, userBody), "body"); !reflect.DeepEqual(normalized, jsonValue(t, userBody)) {
+		t.Fatal("unrelated response fields ignored", normalized)
+	}
+	if isDatabaseFile("configflow.sqlite3-extra") {
+		t.Fatal("non-database file excluded")
 	}
 }

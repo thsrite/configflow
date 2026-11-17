@@ -1708,7 +1708,13 @@ selective/full_tun/legacy 的 TUN、ip rule/route、nft/iptables、sysctl 转发
 
 A14 接口补充对齐：其 `gateway/agentversion.go` 也并入 A20，公开函数/常量名完全相同；底层改复用 A02 `agents.CompareVersions`，host 引用父包，不保留第二套版本算法。`RequireForwardingKept/RequireGatewayOffKept` 的拒绝现在可 `errors.As` 到 `gateway.Error`，连接失败保留 `monitor.Error` 链，A14 的 `IsPreparationFailure` 能按已有路径识别。A14 的 `deploy.SetGatewayGuards` 尚不在本分支基线；合入两者后在 server wiring 注册两个回调：`host.Bridge{Repository:m.Repository(),Manager:m}.RequireForwardingKept(ctx,t.ID,t.ProfileID)` 与 `RequireGatewayOffKept`（`t` 为 deploy.Target）。A14 的 bundle 上传保护已自行使用同一 parent version gate；A20 的 frozen-main guard 可独立复用。
 
-补充安全拒绝：写前发现 mihomo 不是对象，或首次 snapshot 需携带的 oxidns 不是对象，中文400、原始数据不变；不把错误类型降为 `{}` 快照。最终 gate / 提交号完成后补录。
+补充安全拒绝：写前发现 mihomo 不是对象，或首次 snapshot 需携带的 oxidns 不是对象，中文400、原始数据不变；不把错误类型降为 `{}` 快照。
+
+验收器进一步收窄：时间仅归一化 profile 元数据与真实 restore point，SQL 仅 scope=profile 的元数据行；随机 ID 仅声明的 restore point 路径，preview identity 仅 preview 响应；同名 future/user 字段不忽略。额外断言响应 restore summary 的 id/time 与对应 profile 的真实 DB 快照完全相同。普通文件比较只排除根目录四种 SQLite 主文件/WAL/SHM/journal，`configflow.sqlite3-extra` 仍计入；新增 normalizer 自检。
+
+完整门禁运行（代码 `f2380cf8` / `go@0dace4ae`，`.64`，`/tmp/a20-final-gate-20261118`）：gofmt/vet/双 tag 通过，proddiff self_check PASS、new=0/stale=0、coverage_regressions=0/unmapped_routes=0；A20 gateway 17.892s、draft 2.724s、host 4.257s race 通过，但 ippresence/provider/refresh 多条报 `disk quota exceeded`，repo 报 disk I/O error，故整轮 **不计通过**，也尚未执行后续 difftest/fuzz。环境证据：`findmnt /tmp` = 7.8GB tmpfs + usrquota，home 磁盘余170GB；协调者随后合入 `go@895f5e21` 的临时目录修复。改用 home 上独立 TMPDIR/GOTMPDIR 重跑 gate，不改业务代码、不放宽 baseline。
+
+独立临时目录补验：`RT_HOST=sunbroke@192.168.0.64 rt -e TMPDIR=/home/sunbroke/rt/a20-tmp -- bash -lc 'mkdir -p "$TMPDIR" && chmod 700 "$TMPDIR" && cd server && CONFIGFLOW_DIFF=1 go test -race -count=1 ./internal/api/linuxgateway/difftest && python3 scripts/a20-mutation-gate.py'` → strengthened HTTP/storage race `ok 36.060s`，六处变异均 DETECTED，sources restored。最终 gate / 提交号完成后补录。
 
 ## A21 — gateway onboarding
 
