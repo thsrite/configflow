@@ -89,6 +89,9 @@ type RouterOS struct {
 
 	forwardFilterRows []Row
 	natListTouched    bool
+	addressCache      map[string][]Row
+	addressExpected   map[string][]Row
+	addressReads      map[string]addressProof
 	policyManifest    json.RawMessage
 	dnsGuardManifest  json.RawMessage
 }

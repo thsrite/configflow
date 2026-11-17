@@ -92,7 +92,7 @@ func (f *Fake) Reset(state State) {
 	f.tables = cloneTables(state.Tables)
 	for _, path := range []string{
 		"/ip/route", "/ipv6/route", "/ip/firewall/nat", "/ip/firewall/mangle", "/ip/firewall/filter",
-		"/ip/firewall/address-list", "/routing/rule", "/ip/vrf", "/interface/list", "/interface/list/member",
+		"/ip/firewall/address-list", "/ip/firewall/raw", "/routing/rule", "/ip/vrf", "/interface/list", "/interface/list/member",
 		"/ip/dhcp-server/network", "/ip/dhcp-server", "/ip/dhcp-server/lease", "/ip/dhcp-server/option",
 		"/ip/dhcp-server/option/sets", "/ip/dhcp-server/matcher", "/tool/netwatch", "/system/script",
 		"/system/scheduler", "/ipv6/dhcp-client", "/ipv6/nd",
@@ -354,8 +354,21 @@ func (f *Fake) splitResource(path string) (string, string) {
 }
 
 func (f *Fake) add(collection string, values Row) (Row, error) {
+	if collection == addressPath {
+		values = cloneRow(values)
+		values["address"] = storedAddress(text(values["address"]))
+		for _, row := range f.tables[collection] {
+			if text(row["list"]) == text(values["list"]) && storedAddress(text(row["address"])) == text(values["address"]) {
+				return nil, fmt.Errorf("already have such entry")
+			}
+		}
+	}
 	f.nextID++
 	id := fmt.Sprintf("*%X", f.nextID)
+	for rowIndex(f.tables[collection], id) >= 0 {
+		f.nextID++
+		id = fmt.Sprintf("*%X", f.nextID)
+	}
 	row := Row{".id": id, "disabled": "false"}
 	for key, value := range values {
 		row[key] = value
@@ -381,6 +394,9 @@ func (f *Fake) add(collection string, values Row) (Row, error) {
 
 func (f *Fake) execute(body any, fault *Fault) (Row, bool) {
 	script := text(asRow(body)["script"])
+	if result, lost, ok := f.executeList(script, fault); ok {
+		return result, lost
+	}
 	lines := strings.Split(script, "\n")
 	output := []string{}
 	for _, line := range lines {

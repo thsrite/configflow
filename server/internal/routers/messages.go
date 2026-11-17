@@ -286,3 +286,41 @@ const (
 	messageEditSecretRollback  = "路由变更失败且安全补偿未完成：设备回复包含凭据，已隐藏详情，请检查路由器"
 	messageEditSecretUncertain = "路由写入结果无法确认：设备回复包含凭据，已隐藏详情，请检查路由器"
 )
+
+const (
+	messageROSNoOutput   = "RouterOS 无输出"
+	messageAddressDigest = "无法计算地址列表摘要：%s"
+	messageAddressNames  = "无法读取已占用的地址列表名称：%s"
+)
+
+const (
+ messageNATListDynamic = "地址列表 %s 含动态条目，可能被其他规则写入，无法安全维护"
+ messageNATListDisabled = "地址列表 %s 含停用条目 %s，请启用或删除后重新预览"
+ messageNATListForeign = "地址列表 %s 已存在非 ConfigFlow 条目，ConfigFlow 不会接管同名列表"
+ messageNATListForeignKept = "地址列表 %s 中有 %d 条不是 ConfigFlow 写入的条目，保留不动"
+ messageNATListsUnreadable = "无法读取 NAT 免转换地址列表，请重新预览"
+ messageNATMangleUnreadable = "无法读取 Mangle，不能确认 NAT 免转换地址列表未被其他规则引用"
+ messageNATFirewallUnreadable = "无法读取防火墙 filter 或 raw 规则，不能确认 NAT 免转换地址列表未被其他规则引用"
+ messageNATLegacyKept = "保留 %d 条旧的逐条 NAT 免转换规则（备注 cf-mihomo，目的 %s）：这些网段已不在代理网段中，但仍有路由把它们送往 mihomo，删除会让这部分流量被源 NAT、丢失客户端 IP"
+ messageNATAdopt = "接管 NAT 免转换规则「%s」（备注 → %s）"
+ messageNATSampleCount = " 等 %d 个"
+ messageNATWithdraw = "删除 NAT 免转换规则「cf-mihomo-nat」及其地址列表：已没有需要免转换的代理网段"
+ messageNATTarget = "源地址列表 cf-mihomo-nat-src（%s 所在 /24 除 %s 外，%d 段）→ 目的地址列表 cf-mihomo-nat-dst（%d 个网段），放在所有源 NAT 转换规则之前"
+ messageNATMerge = "将 %d 条 NAT 免转换规则合并为 1 条「cf-mihomo-nat」：%s"
+ messageNATFresh = "其中新增 %d 个网段（%s）"
+ messageNATWhyMerge = "逐条规则过多会拖慢每个新连接的源 NAT 匹配，自动同步也无法更新逐条规则"
+ messageNATCreateProve = "；先建立并回读校验新规则，再删除旧规则（备注 cf-mihomo）"
+ messageNATCreate = "新增 NAT 免转换规则「cf-mihomo-nat」：%s"
+ messageNATAdd = "新增 %d 个网段（%s）"
+ messageNATRemove = "移除 %d 个不再代理的网段（%s）"
+ messageNATDestination = "NAT 免转换目的列表 cf-mihomo-nat-dst："
+ messageNATSources = "源地址列表 cf-mihomo-nat-src 随网关 %s 更新：新增 %d 段、移除 %d 段"
+ messageNATMergeExisting = "将 %d 条旧的逐条 NAT 免转换规则（备注 cf-mihomo）与「cf-mihomo-nat」合并为 1 条：%s；先回读校验列表规则的覆盖，再删除旧规则"
+ messageNATResidual = "移除 %d 个不再代理的残留网段"
+ messageNATStale = "删除 %d 条残留的旧逐条免转换规则（备注 cf-mihomo，目的 %s）：这些网段已不再代理，保留它们会让去往这些网段的流量经 WAN 出去时不做源 NAT"
+ messageNATBeforeRoutes = "；在删除对应路由之前执行"
+ messageNATEgressConflict = "ConfigFlow 的 NAT 免转换规则限定出口 %s，与当前 mihomo 出口 %s 不一致，请先核对"
+ messageNATEgressNarrow = "；限定出口 %s：撤销来源策略期间，未走代理的流量不会被免转换"
+ messageNATSplitInvalid = "受管 NAT 的目的地址无法安全拆分，请先核对：%s"
+ messageNATSplitForeign = "列表型 NAT 免转换中有非 ConfigFlow 条目与策略目的重叠，无法自动拆分，请先核对：%s"
+)
