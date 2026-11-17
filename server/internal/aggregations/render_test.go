@@ -1,11 +1,11 @@
 package aggregations_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"reflect"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -130,6 +130,7 @@ func FuzzAggregationDocument(f *testing.F) {
 	f.Add([]byte(`{"id":"a","name":"Aggregate","nodes":[],"subscriptions":[]}`))
 	f.Add([]byte(`{"id":"a","name":"Aggregate","regex_filter":"["}`))
 	f.Add([]byte(`null`))
+	f.Add([]byte{})
 	// Input parsing, regex and serialization are exercised through the exported
 	// generator. Supplied main and empty catalog guarantee no upstream I/O.
 	srv := httpxtest.New(f, httpxtest.Options{})
@@ -140,7 +141,7 @@ func FuzzAggregationDocument(f *testing.F) {
 		}
 		before := append([]byte(nil), raw...)
 		_, _ = aggregations.Generate(srv.Context(), raw, config, aggregations.Options{Main: json.RawMessage(`{"proxies":[],"proxy-groups":[]}`)})
-		if !reflect.DeepEqual(before, raw) {
+		if !bytes.Equal(before, raw) {
 			t.Fatal("input mutated")
 		}
 	})

@@ -163,3 +163,19 @@ POST /api/agents/docker-oxidns-ha-guide
 POST /api/agents/docker-oxidns-ha-guide snapshot-parameter
 GENERATOR agent-deployment-bundle
 GENERATOR agent-deployment-bundle success
+GENERATOR aggregation-provider
+GENERATOR aggregation-provider success
+GET /api/aggregations
+GET /api/aggregations snapshot-parameter
+GET /api/aggregations/<agg_id>
+GET /api/aggregations/<agg_id> snapshot-parameter
+GET /api/aggregations/<agg_id>/count
+GET /api/aggregations/<agg_id>/count snapshot-parameter
+GET /api/aggregations/<agg_id>/preview
+GET /api/aggregations/<agg_id>/preview snapshot-parameter
+GET /api/aggregations/<agg_id>/provider
+GET /api/aggregations/<agg_id>/provider snapshot-parameter
+GET /api/aggregations/<resource_id>/health-impact
+GET /api/aggregations/<resource_id>/health-impact snapshot-parameter
+GET /api/profiles/<profile_id>/aggregations/<agg_id>/provider
+GET /api/profiles/<profile_id>/aggregations/<agg_id>/provider snapshot-parameter

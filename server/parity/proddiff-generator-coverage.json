@@ -149,25 +149,19 @@
     "reason": "No public Go router plan/script exporter exists."
   },
   "GENERATOR aggregation-provider": {
-    "mode": "Go 尚未实现",
-    "route": "GET /api/aggregations/<agg_id>/provider",
-    "cases": 0,
-    "success": 0,
-    "reason": "Go aggregation-provider hook still has its missing implementation."
+    "mode": "http",
+    "route": "GET /api/profiles/<profile_id>/aggregations/<agg_id>/provider",
+    "cases": 2,
+    "success": 2,
+    "both-error": 0,
+    "compared": 2
   },
   "GENERATOR agent-deployment-bundle": {
     "mode": "generator",
     "route": null,
     "cases": 3,
-    "success": 2,
+    "success": 3,
     "both-error": 0,
-    "compared": 3,
-    "partial": 1,
-    "partial_cases": [
-      {
-        "case": 25,
-        "coverage": "partial: A11 packaging only, aggregation provider frozen (C31 pending)"
-      }
-    ]
+    "compared": 3
   }
 }

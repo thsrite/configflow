@@ -1748,7 +1748,7 @@ Cross-module boundary remaining: a chain graph requiring aggregation materializa
 ## C31 — aggregation routes, device notes
 
 
-A11 proddiff dependency (coordinator-approved): one production Agent's aggregation provider bytes are frozen from real Python in the test server's private temporary report directory and supplied unchanged as both Build inputs. Its coverage is `partial: A11 packaging only, aggregation provider frozen (C31 pending)`, excluded from end-to-end success. `aggregation-provider` generator remains Go 尚未实现. **C31 task:** register the aggregation provider implementation, remove this frozen input path, and promote that Agent's bundle case to an independent end-to-end comparison (no fixture bytes committed).
+A11 proddiff dependency closed by C31: both workers now independently render aggregation providers. The former frozen provider path is removed from the production-snapshot harness, and that Agent's bundle is promoted from packaging-only partial coverage. Structured main/provider YAML compares parsed values, with each manifest size/SHA256 separately checked against its real delivered bytes; all other artifacts stay byte-exact. A11's branch was not modified.
 
 **Status: `wip`** · prereqs: C30, C26 · Go: internal/api/aggregations, internal/aggregations, internal/devicenotes; repo/oxidns adapters
 
@@ -1764,7 +1764,7 @@ Routes (11, 11 done):
 
 All 11 route methods registered and native aggregation renderer wired into provider bundles. Shared notes replace repo/oxidns validation copies; existing Go agents/routers have no private note consumers yet. Real Flask↔Go HTTP and real Python generated-provider/notes structural differentials are implemented; final expanded acceptance in progress. Restart file: [progress/C31-aggregations.md](progress/C31-aggregations.md).
 
-A11 integration: aggregation generator is now registered in proddiff, **2 production provider outputs compared successfully** (`new=0 stale=0`). The A11 Agent's frozen Python aggregation-provider input (partial A11 packaging only) can be removed after C31 is merged; the A11 branch is untouched. proddiff's former `aggregations` catalog lookup was corrected to `subscription_aggregations` in both HTTP and direct generator selectors.
+A11 integration: aggregation generator is now registered in proddiff, **2 production provider outputs compared successfully** (`new=0 stale=0`). The A11 Agent's frozen Python aggregation-provider input has now been removed after rebasing onto integrated A11; the A11 branch is untouched. proddiff's former `aggregations` catalog lookup was corrected to `subscription_aggregations` in both HTTP and direct generator selectors.
 
 Python test mapping (all functions in the three requested files):
 
@@ -1775,9 +1775,9 @@ Python test mapping (all functions in the three requested files):
 | `test_shared_resource_routes.py`: catalog ignores unrelated profile; referenced delete preserves all profiles; provider output scoped without source mutation | `TestSharedCatalogSelectionAndProtection` (stale selector, cloned Other, 409 delete, other-profile preview), `TestProviderAndPreview` (provider alias), `TestBoundedCollectionDetachesCancellationAndDoesNotMutate` (owned source snapshot), `TestPublishedSnapshotSurvivesArtifactReplacement`; state comparison includes all profiles/files. |
 | Same file: library rename/composition; shared dialer fields/profile-local chains; deleting source referenced by shared aggregation; global stats/local composition; cross-profile raw-dialer rename | Route ownership remains C33 rule-library/proxy-group, C30 nodes/subscriptions, C38 stats respectively. C30 already covers source-dependency and cross-profile guards; no duplicate route implementation here. C31 generation side is covered by the real bundle tests above. |
 
-Notes boundary: `devicenotes/difftest.TestDeviceNotesBoundary` drives all stored/read/set/revision/prepare/save public operations with real Python, including invalid and full-capacity data; name-only saves retain identical settings. `FuzzStoredNotes` and `FuzzAggregationDocument` exercise new parsing paths. Native JSON object key order/YAML indentation are not chased; malformed internal exception wording is native. A11 location-only deferral remains explicitly logged, with status/base Chinese validation/owning label/storage strict.
+Notes boundary: `devicenotes/difftest.TestDeviceNotesBoundary` drives all stored/read/set/revision/prepare/save public operations with real Python, including invalid and full-capacity data; name-only saves retain identical settings. `FuzzStoredNotes` and `FuzzAggregationDocument` exercise new parsing paths. Native JSON object key order/YAML indentation are not chased; malformed internal exception wording is native. After integration of A11, real `deploy.Locations` is wired in the C31 differential and its location-only deferral is removed; complete Chinese diagnostics and all state now compare strictly.
 
-Pending: final scoped race, full suite, all differentials and post-rebase proddiff; A11's existing location/excerpt hook remains that module's responsibility (400 status/validation/owning label and persisted effects compared strictly, only separately logged location lines deferred).
+Pending: final scoped race, full suite, all differentials and post-rebase proddiff. No A11 diagnostic deferral remains in C31.
 
 ## C32 — rule routes
 

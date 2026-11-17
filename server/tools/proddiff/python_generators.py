@@ -1,7 +1,7 @@
 """Invoke public Python generators against a private repository copy; no app/loops."""
 import json
+from hashlib import sha256
 import sys
-import os
 from pathlib import Path
 
 from backend.common.config import get_config, get_system_config, reset_config_context
@@ -39,12 +39,6 @@ def generate(job):
         if service=='mihomo':
             content=generate_mihomo_config(cfg,**kwargs)
             providers=prepare_provider_bundle(cfg,yaml.safe_load(content),render_all=True,subscription_fetch=offline_fetch)
-            frozen=[{key:p.get(key,'') for key in ('name','url','local_path','content')} for p in providers
-                    if '/aggregations/' in p.get('url','')]
-            if frozen:
-                target=Path(os.environ['PRODDIFF_FROZEN_PROVIDERS']) / (str(job['index'])+'.json')
-                target.write_text(json.dumps(frozen,ensure_ascii=False))
-                target.chmod(0o600)
         elif service=='mosdns':
             content=generate_mosdns_config(cfg,base_url=BASE_URL)
             downloads=get_mosdns_ruleset_downloads(cfg,BASE_URL);custom=get_mosdns_custom_files(cfg)
@@ -56,7 +50,10 @@ def generate(job):
         files=bundle.files();entries=[]
         for item in bundle.manifest['files']:
             entry={key:item[key] for key in ('path','role','name') if key in item}
-            if item['role']=='config':entry['document']=yaml.safe_load(files[item['path']])
+            data = files[item['path']]
+            if item['size'] != len(data) or item['sha256'] != sha256(data).hexdigest():
+                raise ValueError('bundle file integrity mismatch')
+            if item['role'] in ('config', 'provider'):entry['document']=yaml.safe_load(data)
             else:
                 entry.update(size=item['size'],sha256=item['sha256'])
                 value=base64.b64encode(files[item['path']]).decode()

@@ -73,8 +73,6 @@ def run_workers(snapshot, copies_parent, report, binary, doc, implemented, compa
     jobs, coverage = inventory(doc, implemented)
     manifest = report / 'generator-jobs.json'
     manifest.write_text(json.dumps(jobs))
-    frozen = report / 'a11-frozen-providers'
-    frozen.mkdir(mode=0o700)
     outputs = []
     import shutil
     for label in ('python', 'go'):
@@ -83,8 +81,7 @@ def run_workers(snapshot, copies_parent, report, binary, doc, implemented, compa
         output = report / ('generator-' + label + '.jsonl')
         env = dict(os.environ, DATA_DIR=str(data), LOG_FILE=str(report / ('generator-' + label + '.log')),
                    LOG_LEVEL='ERROR', SUB_STORE_BUILTIN_DIR='/nonexistent',
-                   CONFIGFLOW_BACKEND_HOST='127.0.0.1', CONFIGFLOW_BACKEND_PORT='5001',
-                   PRODDIFF_FROZEN_PROVIDERS=str(frozen))
+                   CONFIGFLOW_BACKEND_HOST='127.0.0.1', CONFIGFLOW_BACKEND_PORT='5001')
         command = [sys.executable, 'server/tools/proddiff/python_generators.py'] if label == 'python' else [str(binary)]
         with (report / ('generator-' + label + '.log')).open('wb') as log:
             subprocess.run(command + [str(manifest), str(output)], env=env, stdout=log, stderr=log,
@@ -110,12 +107,7 @@ def run_workers(snapshot, copies_parent, report, binary, doc, implemented, compa
             else:
                 found.add((key, 'status', 'generation-error-go' if right['status'] != 'ok' else 'generation-error-python'))
             continue
-        frozen_case = job['kind'] == 'agent-deployment-bundle' and (frozen / (str(job['index']) + '.json')).exists()
-        if frozen_case:
-            row['partial'] = row.get('partial', 0) + 1
-            row.setdefault('partial_cases', []).append({'case': job['index'], 'coverage': 'partial: A11 packaging only, aggregation provider frozen (C31 pending)'})
-        else:
-            row['success'] += 1
+        row['success'] += 1
         mime = {'yaml': 'text/yaml', 'json': 'application/json', 'text': 'text/plain'}[job['format']]
         a, b = (200, mime, left['content'].encode()), (200, mime, right['content'].encode())
         for field, kind in compare(a, b, '/generator/' + job['kind'], []):

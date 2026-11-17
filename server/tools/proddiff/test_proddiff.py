@@ -394,12 +394,12 @@ class ComparatorTests(unittest.TestCase):
         self.assertEqual(set(), successful_output_regressions(previous, {'GENERATOR mihomo': {'success': 2, 'mode': 'http'}}))
         self.assertEqual({'GENERATOR mihomo successful-output-count'}, successful_output_regressions(previous, {'GENERATOR mihomo': {'success': 1}}))
 
-    def test_a11_frozen_aggregation_is_partial_and_can_be_unfrozen(self):
+    def test_a11_previous_partial_coverage_is_promoted_without_losing_output(self):
         from generators import inventory, successful_output_regressions
         doc={'system': {'agents':[{'id':'agent-a','service_type':'mihomo'}]},'shared':{},'profiles':{'default':{}}}
         jobs,coverage=inventory(doc,set())
         self.assertEqual(1,coverage['GENERATOR agent-deployment-bundle']['cases'])
-        self.assertEqual('Go 尚未实现',coverage['GENERATOR aggregation-provider']['mode'])
+        self.assertEqual('generator',coverage['GENERATOR aggregation-provider']['mode'])
         key='GENERATOR agent-deployment-bundle'
         previous={key:{'success':2,'partial':1}}
         self.assertEqual(set(),successful_output_regressions(previous,{key:{'success':3,'partial':0}}))
@@ -431,6 +431,15 @@ class AggregationInventoryTests(unittest.TestCase):
         cases = list(pd.cases(rows, document, Path('/nonexistent')))
         self.assertEqual(12, len(cases))
         self.assertFalse(any('proddiff-missing' in case[2] for case in cases))
+
+    def test_unfrozen_provider_document_still_detects_changed_content(self):
+        document = {'files': [{'path': 'providers/a.yaml', 'role': 'provider',
+                    'document': {'proxies': [{'name': 'Node', 'port': 80}]}}]}
+        changed = json.loads(json.dumps(document))
+        changed['files'][0]['document']['proxies'][0]['port'] = 81
+        differences = pd.response_diffs(reply(document), reply(changed),
+                                       '/generator/agent-deployment-bundle', [])
+        self.assertIn(('body.files[0].document.proxies[0].port', 'value'), differences)
 
 
 if __name__ == "__main__":

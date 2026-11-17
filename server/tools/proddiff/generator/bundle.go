@@ -10,12 +10,11 @@ import (
 	"configflow/internal/repo"
 	"configflow/internal/yamlx"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"os"
-	"path/filepath"
-	"strconv"
 )
 
 // deploymentBundle compares the public Build API on a captured production
@@ -42,22 +41,7 @@ func deploymentBundle(ctx context.Context, config *jsonx.Object, j job, opts con
 			return "", err
 		}
 		in.ConfigContent = content
-		frozen := map[string]*provider.Rendered{}
-		if root := os.Getenv("PRODDIFF_FROZEN_PROVIDERS"); root != "" {
-			raw, readErr := os.ReadFile(filepath.Join(root, strconv.Itoa(j.Index)+".json"))
-			if readErr == nil {
-				var values []struct{ Name, Content string }
-				if err = json.Unmarshal(raw, &values); err != nil {
-					return "", err
-				}
-				for _, v := range values {
-					frozen[v.Name] = &provider.Rendered{Name: v.Name, HasName: true, Content: v.Content}
-				}
-			} else if !os.IsNotExist(readErr) {
-				return "", readErr
-			}
-		}
-		prepared, err := provider.PrepareProviderBundle(ctx, config, main, provider.BundleOptions{RenderAll: true, SubscriptionFetch: offlineFetch, Prepared: frozen})
+		prepared, err := provider.PrepareProviderBundle(ctx, config, main, provider.BundleOptions{RenderAll: true, SubscriptionFetch: offlineFetch})
 		if err != nil {
 			return "", err
 		}
@@ -168,7 +152,14 @@ func bundleView(b *deploy.Bundle) (string, error) {
 	}{m.ProtocolVersion, m.ServiceType, m.ConfigPath, []entry{}}
 	for _, f := range m.Files {
 		e := entry{Path: f.Path, Role: f.Role, Name: f.Name}
-		if f.Role == deploy.RoleConfig {
+		data, exists := files[f.Path]
+		if !exists {
+			return "", errors.New("bundle manifest file is absent")
+		}
+		if err := verifyBundleFile(f, data); err != nil {
+			return "", err
+		}
+		if f.Role == deploy.RoleConfig || f.Role == deploy.RoleProvider {
 			n, err := yamlx.Parse(files[f.Path])
 			if err != nil {
 				return "", err
@@ -186,4 +177,14 @@ func bundleView(b *deploy.Bundle) (string, error) {
 		out.Files = append(out.Files, e)
 	}
 	return encode(out, nil)
+}
+
+// verifyBundleFile checks real protocol metadata against each side's own bytes
+// before comparing generated main/provider YAML structurally across languages.
+func verifyBundleFile(file deploy.File, data []byte) error {
+	sum := sha256.Sum256(data)
+	if file.Size != int64(len(data)) || file.SHA256 != hex.EncodeToString(sum[:]) {
+		return errors.New("bundle file integrity mismatch")
+	}
+	return nil
 }

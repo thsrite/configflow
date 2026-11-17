@@ -24,6 +24,7 @@ import (
 
 	"configflow/internal/auth"
 	"configflow/internal/convert/mihomoenv"
+	"configflow/internal/deploy"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/jsonx"
 	"configflow/internal/notifications"
@@ -160,6 +161,7 @@ func newWorld(t *testing.T, setup func(context.Context, *repo.Repository), sourc
 	if os.Getenv("CONFIGFLOW_DIFF") != "1" {
 		t.Skip("set CONFIGFLOW_DIFF=1 on test server")
 	}
+	t.Cleanup(provider.SetLocations(deploy.Locations{}))
 	generation.Wire()
 	mihomoenv.Wire()
 	previousClock := notifications.Clock
@@ -309,19 +311,7 @@ var dispositionTime = regexp.MustCompile(`_[0-9]{8}_[0-9]{6}\.yaml`)
 func normalize(value any) any {
 	switch v := value.(type) {
 	case string:
-		if generatedID.MatchString(v) {
-			return "<generated-id>"
-		}
-		// Malformed optional request bodies retain status and rejection, while
-		// Go reports its own diagnostic instead of Python attribute errors.
-		if v == "request body must be a JSON object" || regexp.MustCompile(`^'(?:list|str|bool|int|float)' object has no attribute 'get'$`).MatchString(v) {
-			return "<invalid-object-body>"
-		}
-		// Only English/native exception identity is unstable; Chinese text stays exact.
-		v = regexp.MustCompile(`request_failed \([^)]*\)`).ReplaceAllString(v, "request_failed (<native-transport-error>)")
-		if strings.HasPrefix(v, "更新失败（") && strings.HasSuffix(v, "）") {
-			return "更新失败（<native-error-type>）"
-		}
+		// Retain the exact Chinese validation prefix; regexp diagnostics are native.
 		if strings.HasPrefix(v, "节点筛选正则无效: ") {
 			return "节点筛选正则无效: <native-regex-error>"
 		}
@@ -329,9 +319,21 @@ func normalize(value any) any {
 	case map[string]any:
 		for k, item := range v {
 			switch k {
-			case "created_at", "updated_at", "cached_updated_at", "fetched_at", "traffic_at", "timestamp", "last_run", "last_success", "next_run", "at", "last_finished_at", "last_success_at", "last_run_at", "last_duration_ms", "elapsed_ms", "duration_ms", "fetched_at_unix":
-				if item != nil {
-					v[k] = "<time>"
+			case "created_at", "updated_at", "cached_updated_at", "fetched_at", "traffic_at", "timestamp", "last_run", "last_success", "next_run", "at", "last_finished_at", "last_success_at", "last_run_at":
+				if text, ok := item.(string); ok {
+					_, absoluteErr := time.Parse(time.RFC3339Nano, text)
+					_, localErr := time.Parse("2006-01-02T15:04:05.999999999", text)
+					if absoluteErr == nil || localErr == nil {
+						v[k] = "<time>"
+					}
+				}
+			case "order":
+				if ids, ok := item.([]any); ok {
+					for i, id := range ids {
+						if text, ok := id.(string); ok && generatedID.MatchString(text) {
+							ids[i] = "<generated-id>"
+						}
+					}
 				}
 			case "id":
 				if s, ok := item.(string); ok && generatedID.MatchString(s) {
@@ -432,9 +434,7 @@ func (w *world) call(method, path, body string, authenticated bool) answer {
 		t.Helper()
 		a = normalize(jsonValue(a))
 		b = normalize(jsonValue(b))
-		if label == "body" && py.Status == 400 {
-			deferA11Locations(t, a, b)
-		}
+
 		if !reflect.DeepEqual(a, b) {
 			t.Errorf("%s %s %s: %s", method, path, label, firstDifference(a, b, ""))
 		}
@@ -493,50 +493,6 @@ func jsonValue(v any) any {
 	return out
 }
 
-// deferA11Locations delays only A11's diagnostic envelope, never HTTP status,
-// success, validation text, field paths or side effects. Remove after A11 wires
-// provider.SetLocations; that owner must rerun the annotated cases below.
-func deferA11Locations(t *testing.T, left, right any) {
-	t.Helper()
-	a, ok := left.(map[string]any)
-	if !ok {
-		return
-	}
-	b, ok := right.(map[string]any)
-	if !ok {
-		return
-	}
-	pm, ok := a["message"].(string)
-	if !ok {
-		return
-	}
-	gm, ok := b["message"].(string)
-	if !ok {
-		return
-	}
-	if pm == gm || !(strings.HasPrefix(pm, "订阅「") || strings.HasPrefix(pm, "订阅聚合「") || strings.HasPrefix(pm, "节点来源「")) {
-		return
-	}
-	prefix, core, found := strings.Cut(pm, "准备失败：")
-	if !found || !strings.HasSuffix(prefix, "」") {
-		return
-	}
-	// Only A11 file/coordinate/excerpt lines are deferred. Owning label,
-	// validation and source description must now compare exactly (Step B #7).
-	strip := func(message string) string {
-		keep := []string{}
-		for _, line := range strings.Split(message, "\n") {
-			if strings.HasPrefix(line, "文件：") || strings.HasPrefix(line, "位置：") || strings.HasPrefix(line, "出错内容：") || strings.HasPrefix(line, "原始诊断：") {
-				continue
-			}
-			keep = append(keep, line)
-		}
-		return strings.Join(keep, "\n")
-	}
-	_ = core
-	a["message"], b["message"] = strip(pm), strip(gm)
-	t.Log("DEFERRED A11: file/coordinate/excerpt only; provider context, source, status and storage compared")
-}
 func firstDifference(a, b any, path string) string {
 	if reflect.TypeOf(a) != reflect.TypeOf(b) {
 		return fmt.Sprintf("%s type %T != %T", path, a, b)

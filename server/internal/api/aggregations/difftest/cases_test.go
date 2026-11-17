@@ -6,6 +6,7 @@ import (
 	"configflow/internal/substore"
 	"context"
 	"fmt"
+	"reflect"
 	"testing"
 )
 
@@ -221,5 +222,28 @@ func TestAutomaticHEADDoesNotMutateCatalog(t *testing.T) {
 	}
 	for _, path := range []string{"/api/aggregations/a/count", "/api/aggregations/a/health-impact", "/api/aggregations/a/preview", "/api/aggregations/a/provider", "/api/profiles/default/aggregations/a/provider?token=c31-pull"} {
 		w.call("HEAD", path, "", true)
+	}
+}
+
+func TestNormalizationDoesNotHidePayloadChanges(t *testing.T) {
+	for _, value := range []any{false, 42, []any{"keep"}, map[string]any{"keep": true}, "not a timestamp"} {
+		input := map[string]any{"created_at": value, "custom": "node_deadbeef", "duration_ms": 17.0}
+		expected := jsonValue(input)
+		if actual := normalize(input); !reflect.DeepEqual(expected, jsonValue(actual)) {
+			t.Fatalf("normalization changed payload: %v", actual)
+		}
+	}
+}
+
+func TestProviderScalarAndUnknownFieldRoundTrip(t *testing.T) {
+	w := newWorld(t, nil, map[string]string{})
+	cfg := jsonx.Obj("profile_id", "default", "subscriptions", []any{jsonx.Obj("id", "s", "name", "Feed", "url", "https://feed.example/s")}, "nodes", []any{}, "proxy_groups", []any{}, "rule_configs", []any{})
+	for _, name := range []string{"on", "no", "001", "2026-01-01", "null", "中文\n名称", "quotes\"", "<html>&"} {
+		body, err := jsonx.Compact(jsonx.Obj("proxies", []any{jsonx.Obj("name", name, "type", "http", "server", "proxy.test", "port", 80, "tls", true, "skip-cert-verify", false, "future", jsonx.Obj("flag", false, "items", []any{nil, "on", 1}))}))
+		must(t, err)
+		w.control.Sources["s"] = string(body)
+		input, err := jsonx.Compact(jsonx.Obj("config", cfg, "aggregation", jsonx.Obj("id", "a", "name", "Aggregate", "subscriptions", []any{"s"}), "main", jsonx.Obj("proxies", []any{}, "proxy-groups", []any{}), "prepared", true))
+		must(t, err)
+		w.call("GENERATE", "a", string(input), true)
 	}
 }

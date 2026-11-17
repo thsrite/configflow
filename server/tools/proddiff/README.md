@@ -246,15 +246,15 @@ O3-3 的实例锁、Startup 和关机接线见 [实现说明](../../design/o3-st
 A11 bundle generator: `GENERATOR agent-deployment-bundle` now invokes the real Python
 `build_deployment_bundle` and Go `deploy.Build` on each transactional Agent's captured profile.
 Both materialize subscriptions from the snapshot with offline fetch and use isolated rule caches.
-Comparison includes protocol/service/config path, ordered paths/roles/names and exact size/SHA256/base64
-of every non-main file. The generated main file is parsed and compared structurally (its formatting,
-size, digest and archive encoding intentionally differ under N7/A14 7.1). No content fingerprint is
-normalized: byte-identical v1 fingerprint encoding is independently locked by the A11 Python corpus.
-This generator does not attest target final-preview, core reload or rollback (A14/L2).
+Comparison includes protocol/service/config path and ordered paths/roles/names. Both workers
+first verify every manifest size/SHA256 against their own delivered bytes. Generated main and
+provider YAML files are parsed and compared structurally; all other files retain exact
+size/SHA256/base64 comparisons. This accepts native YAML formatting without hiding corrupt
+protocol metadata or altered provider content. No content fingerprint is normalized: v1
+fingerprint encoding is independently locked by the A11 Python corpus. This generator does
+not attest target final-preview, core reload or rollback (A14/L2).
 
-Until C31 lands, a transactional Agent using aggregation has only A11 packaging coverage:
-real Python aggregation bytes are written mode 0600 in the private temporary report, and passed
-as the same frozen Build input on both sides. Summary/coverage mark this case
-`partial: A11 packaging only, aggregation provider frozen (C31 pending)` and exclude it from
-successful end-to-end counts. The separate aggregation-provider generator remains unimplemented.
-C31 must delete this freeze and restore independent generation; the bytes never leave the test server.
+C31 removes the temporary aggregation freeze. Both workers now independently render every
+provider with offline fetch and snapshot caches. The former partial Agent case is promoted
+to successful end-to-end generator coverage; the standalone aggregation-provider generator
+also compares real Python/Go output. No frozen fixture bytes are passed between workers.

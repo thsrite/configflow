@@ -1,58 +1,28 @@
 # C31 — aggregations and device notes
 
-Branch: `go-port-c31`, private worktree `go-review-c30`. Do not move or edit `go-fix-importer-bounds`; coordinator owns its integration. No subagents/pushes. Chinese hand-back.
+Branch `go-port-c31`, private worktree `go-review-c30`. Base `go` at `0b367ae5` includes A11 and N8-3. Do not touch `go-fix-importer-bounds` or `go-port-a11`. No subagents/pushes. Chinese hand-back.
 
-## Brief and scope
+## Current state
 
-Port all 11 routes in backend/routes/aggregations.py (including explicit-profile public provider), complete backend/common/device_notes.py, replace repo/oxidns name normalization copies with a shared leaf implementation, switch existing agents/routers consumers where present. Register aggregation generation in proddiff and note that A11's frozen aggregation input can be removed; do not edit go-port-a11. Python sources fully read before implementation. C30/C26 are integrated prerequisites.
+- All 11 methods implemented and registered in `internal/api/aggregations`; native generator in `internal/aggregations` uses immutable main capture, bounded eight-way fetch, staged cache updates and all-or-nothing provider publication. Opaque node conversion materialized once across main/provider. Every caller-owned JSON document remains owned.
+- `internal/devicenotes` owns complete validation, legacy fallback, hidden/removed names, revision and policy edit plans. Repo and oxidns delegate; name-only saves retain the settings object. No existing agents/routers private note consumers remain (their later client/policy route owners can use this shared API).
+- Real Flask HTTP response/storage/file comparison covers all methods, errors, auth, HEAD body/no-body, reorder/clone guards, preview/provider formats/filters, source errors and global bundle activation. Real Python dry provider and device-notes comparisons pass. Scalars/unknown protocol fields and full-capacity notes included. Python test mapping is in PROGRESS-config C31.
+- Post-A11 integration, full error diagnostics compare strictly with real deploy.Locations; the old location-only deferral is deleted.
+- Proddiff independently generates all providers: aggregation 2/2 and Agent bundles 3/3, no frozen/partial inputs. Manifest size/hash verified against each side's real bytes before structured main/provider YAML comparison; other artifacts byte-exact. Raised only observed output/route coverage floors; no difference baseline or normalization-rule changes.
+- Current feature work complete. Remaining: final combined .64 gates, report, final rebase/clean check. Status must become ported, never self-verified.
 
-## Implementation and remaining work
+## Findings and decisions
 
-- First compiling step: native `internal/devicenotes` handles stored notes, legacy policy fallback, empty-name hiding, policy edit plans and revisions; repo/oxidns delegate to it. Policy-row parsing also shared so no second name-validation algorithm remains. Oxidns keeps adapters and existing policy application; rename-only saves do not regenerate native settings.
-- Existing Go agents/routers currently have no device_notes consumers; Python policy_workspace/client_devices consumers belong to modules not yet ported. Shared APIs are provided for them; no private note copies will remain. Recheck call sites at final rebase.
-- Parse/fuzz and boundary tests being added. First .63 gofmt/vet and existing C05/C22-C26 reference tests pass (oxidns 0.566s). Need real Python device-notes differential including mutations and revision semantics.
-- Remaining: aggregation native renderer and provider hook, 11 routes, full Flask↔Go success/error/write-state differential, generator structural comparison/fuzz, registration conflict tests, proddiff inventory fixes, Python test mapping and final .32 checks.
-- Important discovery: proddiff currently enumerates `aggregations` instead of `subscription_aggregations`; fix generator and HTTP selector enumeration, not just the missing hook label.
-- Generator must use existing provider immutable capture/bundle/commit, preflight before fetch, serialize/conversion once, bounded 8-way source collection, deferred cache updates and all-artifact validation before publication. URL token auth remains profile-only public bypass, global path JWT first.
+- Fixed dangerous method fallthrough found during port audit: implicit HEAD with JSON could reach POST/PUT. Explicit gates preserve Python 500/no-catalog-write; all side effects compared. Common Step B #3 JSON error media type migration remains asserted.
+- Python preview re-reads the artifact after publication; Go returns the validated snapshot so concurrent artifact replacement cannot mix preview nodes and counts. Regression and behaviour-changes entry present.
+- Python dry generator treats a scalar subscription string as character IDs. Native selector decoding rejects incorrect types; one precise named oracle difference asserted with unchanged state. Normal public save contract already requires arrays.
+- Proddiff's old `aggregations` catalog lookup silently reported no aggregation samples; corrected to `subscription_aggregations` in both direct and HTTP selectors, regression proves enumeration.
+- Native map key order required changing only repo normalize_notes golden output to structural comparison. Values/types and all Chinese errors remain strict; other helper goldens untouched.
+- Aggregation fuzz first found a test-only nil-vs-empty bytes false positive, not mutation. Switched to bytes.Equal and seeded empty input. Notes sustained 60s fuzz passed; repeat both in final gate.
+- Differential normalization now only touches validated timestamp strings and generated UUIDs in identity/order fields; native regex diagnostic suffix alone is normalized. Negative control preserves arbitrary payload values/types. No A11 diagnostic masks.
 
-## Acceptance to complete
+## Validation history and next gate
 
-Iterate pure/unit on .63; real loopback sockets and final verification .32. Final: gofmt, go vet ./..., changed-package race, full go test ./..., every enabled difftest package, proddiff new=0 stale=0. Map test_aggregation_reorder.py, test_dialer_rendered_bundle.py, test_shared_resource_routes.py in PROGRESS-config. Commit explicit paths, `go(aggregations): ...`, update this file in every commit; final rebase go, clean worktree, no push. Report route completion, differences/Python bugs, severity-ranked issues, exact commands/tails and commit ids.
+Initial .63 extraction gofmt/vet/selected C05/C22-C26 references passed; .63 disappeared and was later retired. .32 old-base scoped race/full ordinary suite/all 12 enabled differentials passed; first full run's key-order golden failure was corrected and rerun. Changed collaborator race passed including oxidns 116.014s, convert 94.936s, provider 104.302s, repo 39.815s; C31 Flask race 66.022s. New user policy makes .32/.64 equivalent; final pinned host is **192.168.0.64**.
 
-
-## Validation so far
-
-- .63 first extraction: gofmt and whole-tree `go vet ./...` pass; selected C05/C22–C26 reference tests pass (oxidns 0.566s). .63 then became unreachable; use .32 until it returns.
-- .32 `go test -race -count=1 ./internal/devicenotes/` passes 1.017s; `go test -count=1 ./internal/oxidns/ -run "TestBoundaryEditorRecorded|TestBoundaryCommonRecorded|TestC22C26ReviewReferences|TestC05ReviewSettingsReferences"` passes 23.380s.
-- Notes table cases cover bad roots/addresses/types/control characters/canonical collisions, legacy DEL repair, empty-name hiding, removal carryover, owned snapshots and zero-value safety. `FuzzStoredNotes` seeds added; sustained fuzz and real-Python notes corpus pending.
-- Current go has no device_notes call sites in agents/routers yet (Python policy_workspace/client_devices are later owners); no existing Go private notes copy there. The shared API and oxidns wrappers cover their future integration. Existing repo and oxidns copies are replaced, not retained.
-
-## Second compiling step
-
-All eleven routes and a native aggregation renderer now compile and register in the full server; renderer wired to immutable provider capture/bundle/atomic commit. Node conversions retain one delivery scope across main and aggregation rendering. Shared notes fixes now preserve Python's lazy legacy validation for nonempty edits; typed policy edits no longer encode/decode themselves for validation.
-
-- .32 `go vet ./...` passed with route integration; full convert/provider tests passed 16.934s/12.646s.
-- Real-Python notes differential passes (1.055s): valid/invalid notes and policies, normalization, empty-name hiding, removed-row carryover, capacity, revisions, route edits and exact settings identity for name-only saves. Generated native drafts compared after YAML parsing.
-- Flask↔Go differential currently covers catalog/reorder/provider/preview/auth, statistics stripping, stale-profile catalog access, protected delete, synthetic opaque conversion and global bundle validation. Basic paths pass; finishing broader bundle corpus and source-clock fixture alignment.
-- First actual .32 proddiff passes `new=0 stale=0`, all self-checks pass, aggregation-provider now HTTP-compared **2 cases, 2 successes** (previous inventory used the wrong `aggregations` key and incorrectly reported zero). Both direct worker and HTTP inventory use `subscription_aggregations`; synthetic inventory regression added. A11 can remove its frozen provider byte input after C31 integration; do not alter A11 branch here.
-
-## Third compiling step
-
-- Flask↔Go catalog/provider/generator corpus now passes (13.826s). Added true full-server registration test (11 methods, static reorder path and profile alias), immutable-main chain activation and duplicate rejection across all aggregations in both orderings. Dry provider corpus compares real Python YAML structures, order, source statistics and all persistent effects; Unicode regex, invalid regex/type, chained nodes, reserved/duplicate names and malformed provider YAML included.
-- Core collection test checks bounded 8-worker fanout, stable subscription order, cancelled caller completion and no input mutation. Main+provider public generation test proves one opaque URI conversion across a delivery (real existing Sub-Store adapter, fake loopback transport).
-- Route fallback test proves authenticated last-good artifact fallback, singleflight for repeated requests, rejection before render, no YAML fallback for Surge, completion despite request cancellation and background artifact publication. Existing provider/convert suites remain green.
-- Python preview reads the provider file after generation and can observe a concurrent replacement inconsistent with its counts. Go preview uses the validated result's proxies directly; document this reliability fix in behaviour-changes and final handoff.
-
-The renderer/routes now pass whole-tree vet and the native registration/delivery/core tests; proddiff's synthetic comparator/inventory suite passes all 32 tests. Route state updated to 11/11 in routes.tsv; C31 stays wip until final acceptance and independent review (porter never self-verifies). Added deterministic route regression: zero fallback deadline, one shared upstream fetch, old aggregation artifact fallback, rejected token never reaches rendering, cancelled Surge waiter completes and background last-good publication is awaited. Main+provider conversion occurs once.
-
-## Additional boundary vectors before hand-back
-
-Expanded real-Python differential with valid/invalid actual `regex`/`exclude_regex` on Surge/Loon, missing aggregation names, null/false/string selector shapes, and local count fallbacks (including integer/float/legacy bool, null/string errors, malformed nodes). Preview now has an immutable-published-result replacement regression; the narrowly scoped Python preview race fix is recorded in behaviour-changes.md. Scoped new-package race passed: aggregations 1.190s; api/aggregations 1.257s; its Flask differential 22.760s; devicenotes 1.010s and Python differential 2.148s. Post-rebase full-suite and changed collaborator race are running on .32.
-
-Final rebase started from local go `3c8a1760`; current implementation commits after rebase: `5dc16a24`, `80325c40`, `7c7daa67`. Prior importer-bounds branch was not moved. Remaining only final validation/documentation and any failures it reveals; no route feature left unimplemented.
-
-The first post-rebase full suite found a legacy byte-order assertion in `repo.TestCompatGolden/normalize_notes` for the 2048-note case. Values/keys were identical, only native map key order differed. Fix that one helper's golden comparison to structural equality (no key/value/type masking); retain exact checks for all other helpers and all Chinese diagnostics. This is the accepted native object-order class, not a change to note values. Repeat full suite after the correction.
-
-Expanded corpus and repo comparison correction pass on .32: aggregations 0.031s; api/aggregations 0.027s; full Flask/generator differential 20.897s; repo 3.177s. Native selection decoding now rejects scalar/null subscription selectors instead of silently ignoring them; one named dry-generator Python bug (`subscriptions: "s"` treated as character IDs) is explicitly asserted as Go rejection with unchanged state, never broadly normalized. Valid public route contracts remain strictly compared. Bundle target coverage now includes relay, Static and DIRECT; malformed/reserved source route rejections preserve all files/caches.
-
-Final method audit found and fixed a dangerous porting fallthrough before hand-back: the combined collection/item handlers treated implicit HEAD as POST/PUT when it carried a JSON body. Added explicit mutation-method gates and a real Flask HEAD corpus (body/no-body, existing/missing items, cached read endpoints and both provider paths), with all state compared. Preserve Python's 500/no-write behavior for unsupported combined-handler HEAD; do not silently create/update. Common Step B #3 JSON media-type migration on HEAD errors is asserted explicitly.
+Post-rebase .64 strict C31 Flask differential passes 15.791s, then tightened normalization/scalar corpus passes 15.269s. Proddiff passes new=0 stale=0, self-check PASS, aggregation 2/2, bundle 3/3. Synthetic proddiff comparator/inventory suite 34/34; metadata corruption checks pass. Final command must run gofmt, whole vet, every changed package race, full go test, every CONFIGFLOW_DIFF difftest package, both 60s fuzz targets and proddiff. Record exact commands/tails in C31-HANDOFF.md, then final rebase go and clean worktree.
