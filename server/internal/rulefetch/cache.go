@@ -7,6 +7,7 @@ package rulefetch
 // RuleCacheReadPath, TouchUnchangedCache).
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os"
@@ -45,7 +46,9 @@ func RuleCacheReadPath(ctx context.Context, rule *jsonx.Object, library []any) (
 	}
 	// Python returns an existing current cache before it reads the shared
 	// document (a repository failure then does not matter).
-	if current := filepath.Join(root, rules.RuleCacheFilename(rule)); fileExists(current) || fileExists(current+".invalid") {
+	current := filepath.Join(root, rules.RuleCacheFilename(rule))
+	_, receiptErr := os.Stat(current + ".invalid")
+	if fileExists(current) || !errors.Is(receiptErr, os.ErrNotExist) {
 		return rules.RuleCacheReadPath(rule, library, nil, root), nil
 	}
 	shared, err := r.GetShared(ctx)
@@ -125,12 +128,75 @@ func WriteValidatedRuleCache(ctx context.Context, rule *jsonx.Object, content an
 		return "", err
 	}
 	data := contentBytes(content)
-	if !rules.TouchUnchangedCache(target, data) {
-		if _, err := r.WriteSharedText(ctx, relative, data); err != nil {
-			return "", err
+	write := func(locked context.Context) error {
+		if !rules.TouchUnchangedCache(target, data) {
+			_, err := r.WriteSharedText(locked, relative, data)
+			return err
 		}
+		return nil
+	}
+	if rule.GetOr("source_type", "url") == "content" {
+		err = writeCurrentInline(ctx, r, rule, target, data, write)
+	} else {
+		err = write(ctx)
+	}
+	if err != nil {
+		return "", err
 	}
 	return filename, nil
+}
+
+var errInlineCacheOnly = errors.New("inline cache write without document commit")
+
+// Every inline writer (including discovery and Agent tools) must serialize its
+// declaration check with DB edits. A stale caller may finish its request, but
+// must never replace the cache of a newer declaration or an active editor.
+func writeCurrentInline(ctx context.Context, r *repo.Repository, rule *jsonx.Object, target string, data []byte, write func(context.Context) error) error {
+	id := rule.GetString("library_rule_id")
+	if id == "" {
+		id = rule.GetString("id")
+	}
+	if id == "" {
+		return write(ctx)
+	}
+	check := func(tx context.Context, catalog *jsonx.Object) error {
+		if err := tx.Err(); err != nil {
+			return err
+		}
+		if _, err := os.Stat(target + ".invalid"); !errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		for _, value := range catalog.GetList("rule_library") {
+			current, ok := value.(*jsonx.Object)
+			if !ok || current.GetString("id") != id {
+				continue
+			}
+			if current.GetOr("source_type", "url") == "content" && bytes.Equal(data, contentBytes(current.GetOr("content", ""))) {
+				return write(tx)
+			}
+			break
+		}
+		return nil
+	}
+	if r.InTransaction(ctx) {
+		catalog, err := r.GetShared(ctx)
+		if err != nil {
+			return err
+		}
+		return check(ctx, catalog)
+	}
+	_, err := r.UpdateSharedTransaction(ctx, func(tx context.Context, catalog *jsonx.Object) (*jsonx.Object, error) {
+		if err := check(tx, catalog); err != nil {
+			return nil, err
+		}
+		// This existing transaction only serializes cache I/O. Abort its
+		// unchanged candidate so no revision, SQLite write or hook is produced.
+		return nil, errInlineCacheOnly
+	})
+	if errors.Is(err, errInlineCacheOnly) {
+		return nil
+	}
+	return err
 }
 
 // RefreshOptions are refresh_remote_rule's keyword arguments.

@@ -560,3 +560,7 @@ headers、完整 DB 和所有文件不变。合法 JSON、普通数字和原有�
 - **缓存选择必须是数组**。Python 把非空字符串/对象当容器筛选 ID；例如 `rule_ids: "manual"` 会同时缓存 ID `a` 和 `manual`。Go 拒绝这类非数组选择并返回现有 400，请调用方传 `rule_ids: ["manual"]`。前端已使用数组。真实 Flask 回归复现误选两条，Go 拒绝并保持 DB/文件不变；数组中的未知值仍按 Python 忽略，完全未匹配时返回原有 404。
 
 证据：`internal/api/rulelibrary/fault_test.go`、`draft_test.go`、`mutate_test.go`；真实 Flask/Go 的 `TestDraftHEADCannotWrite`、native DNS/parking、全部 25 方法 HTTP/SQLite/文件差分。D1 的 YAML 引号/缩进和 English 内部异常诊断按既有标准比较；监听入口用户注释另有保存断言。
+
+## C33 独立复核 — inline 缓存发布的读侧约束
+
+失效标记只有明确不存在时才允许稳定/legacy 回退；权限或 I/O 错误一律按失效处理。inline 交付在编辑标记存在期间不补写文件，防止旧请求快照在 draft rename 后覆盖新缓存。普通冷缓存仍会补写当前 DB 声明；共用 rulefetch 的 inline writer 在现有 repo 事务锁内核对当前声明及字节，过期/已删除/已变 remote 的迟到调用不发布。只做缓存副作用后中止未修改的 DB 候选，不改变 revision 或配置 hooks。交付保持 cache→inline 顺序，返回状态/内容和普通冷缓存文件与 Python 相同。没有新增后台恢复；失败/中断编辑的标记由下次编辑或手动缓存修复。

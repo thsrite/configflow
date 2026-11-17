@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -93,7 +94,9 @@ func RuleCacheReadPath(rule *jsonx.Object, library, stored []any, rulesDir strin
 	path := filepath.Join(rulesDir, RuleCacheFilename(rule))
 	// A handwritten edit marks its stable cache before committing the DB. A
 	// failed replacement must not resurrect either the stable or legacy bytes.
-	if fileExists(path + ".invalid") {
+	// Only a confirmed absence permits fallback. A permission/I/O failure while
+	// inspecting the receipt cannot establish that the old bytes are current.
+	if _, err := os.Stat(path + ".invalid"); !errors.Is(err, os.ErrNotExist) {
 		return filepath.Join(path+".invalid", "unavailable")
 	}
 	if fileExists(path) {

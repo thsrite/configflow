@@ -145,9 +145,11 @@ func (s *Service) local(ctx context.Context, id, name, target, host string) (del
 			// The committed inline declaration remains authoritative if an edit
 			// could not replace its stable cache. Never try the legacy cache again.
 			content = []byte(source.GetString("content"))
-			// Cache population is best effort here: delivery already has the
-			// committed bytes and does not need to read another file afterwards.
-			_, _ = rulefetch.SaveRuleToLocal(ctx, source, s.client)
+			// This reader has no editor lease. Publishing its snapshot could race
+			// a draft's DB commit/rename and overwrite the newly published cache.
+			// Cold-cache population resolves the current DB declaration and the
+			// shared writer checks it again under the repository lock.
+			populateInlineCache(ctx, source)
 		}
 	}
 	if err != nil {
@@ -165,6 +167,31 @@ func (s *Service) local(ctx context.Context, id, name, target, host string) (del
 		content = []byte(normalized)
 	}
 	return delivery{Content: content, Stale: stale != nil}, nil
+}
+
+func populateInlineCache(ctx context.Context, source *jsonx.Object) {
+	if ctx.Err() != nil {
+		return
+	}
+	r, err := repo.GetRepository(ctx)
+	if err != nil {
+		return
+	}
+	catalog, err := r.GetShared(ctx)
+	if err != nil {
+		return
+	}
+	for _, value := range catalog.GetList("rule_library") {
+		current, ok := value.(*jsonx.Object)
+		if !ok || current.GetString("id") != source.GetString("id") {
+			continue
+		}
+		if current.GetOr("source_type", "url") == "content" && ctx.Err() == nil {
+			// Never fetch a source that became remote while this read waited.
+			_, _ = rulefetch.SaveRuleToLocal(ctx, current, nil)
+		}
+		break
+	}
 }
 func boolPointer(value bool) *bool { return &value }
 func remoteFault(err error) *sourceFailure {

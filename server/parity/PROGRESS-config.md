@@ -2030,6 +2030,8 @@ R08 integration follow-up: rebased `go-port-c32` onto `go=d8f50b00`; preserved e
 
 ## C33 — rule library and proxy group routes
 
+独立复核进行中（`go-review-c33`，已 rebase 到 `go@dda8973d`，含 A13）。已复现并修复两项 high：失效标记 stat 权限错误可回退旧 legacy；无锁 inline writer 的旧快照可覆盖新 draft。普通冷缓存补写保留；一致性守卫收敛到现有 rulefetch writer，在 repo 事务锁内核对当前 content 声明/字节，覆盖 discovery、Agent、compose 的迟到写；内部 sentinel 中止未变 DB 候选，不新增 repo API、不推进 revision。新增真实 SIGKILL 四阶段重启/修复、交错旧 reader 与 draft、冷缓存当前声明及迟到共享 writer 回归；.32 最新定向 race7.476s通过。C32 offline 读优先级 fixture 改为直接构造已有物理缓存（不借用受保护的生产 writer 创建未登记来源），cache→inline/零网络断言保留。reorder 错类型的 medium 修复和扩展鉴权/D2/并发测试待下一提交，最终门禁待执行；完整记录见 review-c33.md。
+
 - Resolved C28 deferral: both `internal/mosdns/difftest` callback cases now run unconditionally through the registered `/api/profiles/<id>/rule-library/content/<id>` route and pass.
 
 **Status: `ported`** · prereqs: C32 · Go: internal/api/rulelibrary, api/proxygroups (new)
