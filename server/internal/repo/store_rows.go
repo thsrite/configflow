@@ -1,6 +1,7 @@
 package repo
 
-// Temporary N8-2 boundary. N8-3 replaces this with model's record codec.
+// Temporary legacy mutation adapter around the N8-3 model codec. N8-5 removes
+// the legacy intent normalization as repository mutations become typed.
 // The store itself has no dependency on jsonx or the document's schema.
 
 import (
@@ -9,72 +10,67 @@ import (
 	"fmt"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/store"
 )
 
 type storedEntry struct {
 	store.Entry
 	Document *jsonx.Object
+	Model    *model.Document
+	Issues   []model.FieldIssue
 }
 
 func decodeEntry(raw store.Entry) (storedEntry, error) {
-	doc, err := decodeRows(raw.Document)
-	return storedEntry{Entry: raw, Document: doc}, err
+	document, issues, err := decodeModelRows(raw.Document)
+	if err != nil {
+		return storedEntry{}, err
+	}
+	legacy, err := legacyModelDocument(document)
+	return storedEntry{Entry: raw, Document: legacy, Model: document, Issues: issues}, err
 }
 
 func decodeRows(raw *store.Document) (*jsonx.Object, error) {
-	if raw == nil {
-		return nil, fmt.Errorf("decode store rows: missing document")
-	}
-	section := func(fields []store.Field) (*jsonx.Object, error) {
-		out := jsonx.NewObject()
-		for _, field := range fields {
-			value, err := jsonx.Parse(field.Value)
-			if err != nil {
-				return nil, fmt.Errorf("decode store field %s: %w", field.Name, err)
-			}
-			out.Set(field.Name, value)
-		}
-		return out, nil
-	}
-	root, err := section(raw.Root)
+	document, _, err := decodeModelRows(raw)
 	if err != nil {
 		return nil, err
 	}
-	out := jsonx.NewObject()
-	for _, key := range raw.Order {
-		switch key {
-		case "system", "shared":
-			sec := raw.System
-			if key == "shared" {
-				sec = raw.Shared
-			}
-			if sec == nil {
-				return nil, fmt.Errorf("decode store section %s: missing section", key)
-			}
-			value, err := section(sec.Fields)
-			if err != nil {
-				return nil, err
-			}
-			out.Set(key, value)
-		case "profiles":
-			profiles := jsonx.NewObject()
-			for _, p := range raw.Profiles {
-				value, err := section(p.Fields)
-				if err != nil {
-					return nil, err
-				}
-				profiles.Set(p.ID, value)
-			}
-			out.Set(key, profiles)
-		default:
-			out.Set(key, root.Value(key))
-		}
-	}
-	return out, nil
+	return legacyModelDocument(document)
 }
 
+func legacyModelDocument(document *model.Document) (*jsonx.Object, error) {
+	encoded, err := model.Marshal(document)
+	if err != nil {
+		return nil, err
+	}
+	value, err := jsonx.Parse(encoded)
+	if err != nil {
+		return nil, err
+	}
+	object, ok := jsonx.AsObject(value)
+	if !ok {
+		return nil, fmt.Errorf("decode stored model: root must be an object")
+	}
+	return object, nil
+}
+
+// encodeRows translates legacy caller intent first, then makes the model codec
+// the stored-document boundary. N8-5 removes legacyIntentRows with the legacy
+// mutation API. In particular, two invalid legacy revisions (true/false) must
+// remain distinguishable even though both read as model.Int(0) under R5.
 func encodeRows(doc *jsonx.Object, base *store.Document) (*store.Document, error) {
+	proposed, err := legacyIntentRows(doc, base)
+	if err != nil {
+		return nil, err
+	}
+	document, _, err := decodeModelRows(proposed)
+	if err != nil {
+		return nil, &store.Error{Kind: store.ErrDocument, Message: err.Error(), Cause: err}
+	}
+	return encodeModelRows(document, proposed)
+}
+
+func legacyIntentRows(doc *jsonx.Object, base *store.Document) (*store.Document, error) {
 	if doc == nil {
 		return nil, &store.Error{Kind: store.ErrDocument, Message: msgStoreDocumentObject}
 	}

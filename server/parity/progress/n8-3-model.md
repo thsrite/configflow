@@ -48,3 +48,23 @@ Second buildable step validated on .63: `go vet ./internal/model` and
 `go test -race -count=1 ./internal/model` PASS (1.018s; see tool result if timing
 slightly differs). Adds model skeleton, exact scalar/container declaration
 checks, source Raw type binding, full untouched-member whitespace retention.
+
+Third buildable step: repo assembles model.Document from ordered raw rows and
+splits model output back to rows, preserving each untouched row's surrounding
+whitespace. Legacy callers still use the N8-2 intent adapter before model decode;
+N8-5 removes it when mutations become typed (true/false remain distinguishable
+legacy edits even though both fall back to model.Int(0)). Repo logs value-free
+issues once per head, including uncached oversized documents. Tests lock legacy
+revision/name load rejection, log deduplication/redaction, no-op fingerprint,
+field order/bytes and touched physical row revisions.
+
+TestStoredRoundTrip uses test-only nested records (production complex types stay
+RawMessage), scripted group/node/agent/router/rule edits, unknown members at every
+record level, R5 preservation and real Python ConfigStore/ProfileRepository.
+.63 fixture/live Python round trips PASS (4.685s); .32 fixture + private snapshot
+round trips PASS (25.692s; private rows=43, profiles=2). Private source backed up
+read-only into a unique 0700 runs directory and removed by cleanup; no values in
+output. Changed-package .63 ordinary tests passed: model 0.004s, store 12.769s,
+repo 43.389s; targeted repo race 3.616s. Both initial fuzz runs passed 60s each:
+record 671458 executions, document 725792 executions. Next: strengthen independent
+fuzz assertions, final .32 vet/race/full suite/proddiff/fuzz, rebase and clean.

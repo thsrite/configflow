@@ -73,9 +73,11 @@ type Repository struct {
 
 	// One validated generation only, keyed by the database head; public
 	// readers return independent values.
-	cacheMu       sync.Mutex
-	documentCache *storedEntry
-	tokensCache   atomic.Pointer[sanitizationTokens]
+	cacheMu           sync.Mutex
+	documentCache     *storedEntry
+	modelIssueHead    store.Head
+	modelIssueHeadSet bool
+	tokensCache       atomic.Pointer[sanitizationTokens]
 	// commitCount is the number of write transactions this process
 	// committed; request-scoped profile validation is invalidated by it.
 	commitCount atomic.Int64
@@ -409,6 +411,7 @@ func (r *Repository) cached() *storedEntry {
 // setCache keeps the latest loaded or committed entry: every read compares
 // its head with the database, so an older one only costs a reload.
 func (r *Repository) setCache(entry storedEntry) {
+	r.reportModelIssues(entry)
 	if entry.Size > r.cacheMaxBytes {
 		return
 	}
@@ -451,6 +454,7 @@ func (r *Repository) loadEntry() (storedEntry, error) {
 	if err != nil || hit {
 		return entry, err
 	}
+	r.reportModelIssues(entry)
 	r.validations.Add(1)
 	if err := ValidateDocument(entry.Document); err != nil {
 		return storedEntry{}, err
