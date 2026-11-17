@@ -56,6 +56,11 @@ semantics of generated configs and of what is written to routers. Python bugs ar
 Acceptance is at the external boundary: Flask↔Go HTTP differentials, generated outputs compared
 structurally against real Python, storage round trips, loopback fakes for devices.
 
+## Concurrency
+
+Locks, background loops, detached jobs, cancellation and shutdown: `server/design/o3-concurrency.md` (no new
+`flock`, no bare `go` for work that outlives its caller, loop timings from its table 2.4).
+
 ## Style, hand-off, escalation
 
 Follow the Go style section of the root `AGENTS.md` ("Go 后端（`server/`）代码风格"). Never stop with

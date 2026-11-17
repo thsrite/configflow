@@ -87,16 +87,19 @@ server/
    Pass `context.WithoutCancel(ctx)` (keeping the repo Scope) to anything that writes state, takes
    repository locks, runs shared/coalesced downloads, spawns workers or records task status; only use the
    cancellable context where Python itself has a timeout. Reviewers check this for every handler (found as
-   a high-severity defect in C13, C15 and C16).
+   a high-severity defect in C13, C15 and C16). From O3 on, the owning package's exported entry point detaches,
+   not the handler (o3-concurrency.md 2.5).
 5. **Device and network I/O goes through interfaces** declared in your package (HTTP client,
    clock, command runner), so tests use fakes instead of patching globals. No test may contact a
    real host; never run anything against production addresses.
 6. **No new dependencies** beyond those already in `server/go.mod` without saying so in the
    hand-back. Standard library first.
-7. **Concurrency.** Python used threads plus `flock`; the Go server is one process. Keep the same
-   lock files where another process could interfere (installers, Agents do not touch DATA_DIR, but
-   two server instances on one DATA_DIR must still exclude each other). Background loops take a
-   `context.Context` and stop on cancel.
+7. **Concurrency, locks and background tasks follow `server/design/o3-concurrency.md`** (O3, 2026-11-17):
+   one server process per DATA_DIR (instance lock); no new `flock` — Python's per-resource file locks become
+   in-process locks (`lockx`, levels L1 try-only → L2 → L3 `.config.lock` → L4 → L5); loops, startup work and
+   detached jobs go through `lifecycle` (Periodic / Startup / `Spawn`) with Python's first delays and
+   intervals (table 2.4 there); a lock Python takes before validation is taken at the same point (409 before
+   400). Until steps O3-2/O3-6 land, follow the transitional rule at the end of its section 4.
 8. **HTTP handlers** live in `internal/api/<blueprint>` and only translate HTTP ↔ package calls.
    Register routes in that package's `Register(*httpx.Router)`; never edit another package's
    registration. Update `parity/routes.tsv` for the routes you implemented (`go package`, status
