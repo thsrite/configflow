@@ -85,6 +85,14 @@ def main():
     from cases.setup_router_draft_conflict import GROUPS as setup_router_draft_conflict
     groups.update(setup_router_draft_conflict)
     from cases.auth import GROUPS as auth
+    from cases.rule_create_race import GROUPS as rule_create_race
+    groups.update(rule_create_race)
+    from cases.rule_remote_metadata import GROUPS as rule_remote_metadata
+    groups.update(rule_remote_metadata)
+    from cases.provider_emitted_guards import GROUPS as provider_emitted_guards
+    groups.update(provider_emitted_guards)
+    from cases.subscription_conversion_failures import GROUPS as subscription_conversion_failures
+    groups.update(subscription_conversion_failures)
     groups.update(auth)
     from cases.redaction import GROUPS as redaction
     groups.update(redaction)

@@ -2124,6 +2124,14 @@ H221/H222分别是已保存raw拓扑与真实Sub-Store转换才出现的dialer�
 
 H1055由实际私有草稿加公开profile import的同ID不同router到达；check在attach拒绝前已经保存检查回执，因此只允许installation/config_revision/route_instructions/updated_at变化，原路由器、其他session字段及全SQL必须不变，见[setup.py:115](../../backend/routes/setup.py#L115)、[setup_flow.py:597](../../backend/common/setup_flow.py#L597)。合成installation publication仍是边界前提，不代表安装或设备发布已经验收。
 
+### Step B 后置Provider图与实际事务竞争（批次136）
+
+H205/H206/H210–213/H215–219以实际生成或下载的选中来源到达[validate_emitted](../../backend/utils/dialer_references.py#L356)。H215须是未参与拓扑但被普通组引用的不可转换节点；拓扑内节点会先H204。H206用链式落地的backtick顺序过滤和原始“排序_”名称，不能手造compiler override。H216通过fake转换产生，而非保存时已经被拒绝的raw引用。
+
+H1067保留前一份无dialer的重复节点集合，第二来源真实启用拓扑后，完整bundle重新严格校验并拒绝；不把H210的首次拒绝借给后置catch，来源[provider_delivery.py:249](../../backend/utils/provider_delivery.py#L249)。H1065实际无旧缓存的403、H1070/H1072–1074实际非YAML的完整Sub-Store与直拉顺序，保持原始响应、所有回执和零半成品缓存。
+
+H142用合法完整备份允许保留的坏远端metadata，经真实下载进入[validate_remote_rule_content](../../backend/utils/ruleset_content.py#L600)。H016用保留inline content=1进入真实ZIP转换，见[mosdns_archive.py:213](../../backend/utils/mosdns_archive.py#L213)；不是在类型wrapper先拒绝。H793以同ID的两个公开创建在下载屏障交错，确实到达[config_repository.py:1423](../../backend/common/config_repository.py#L1423)事务内ID检查，SQL只允许一次提交，只有胜出者缓存落盘。H769由R116-F12实际clone_from不存在调用到[_profile](../../backend/common/config_repository.py#L1062)。
+
 R020-B90新增独立公开前置：先真正保存public token，再分别执行缺内部能力/能力冲突/当前有效能力三种完整import（登录/认证关闭），及reset；当前/退役能力不能再保存为public token，失败全SQL/files精确不变。有效schema能力的import保留原值，缺失/冲突与reset才轮换，沿用上文T28 oracle更正。原独立import/reset用例保留，不因新增公开setter的wiring前置而丢掉原先能比较的路径。
 
 R228-B90实际测试未注入公开构建的完整`{"version":"dev"}`响应，检查精确字段形态且所有值仍严格比；没有用shape投影掩掉版本值。Docker发布时对[backend/version.py](../../backend/version.py)的Git tag替换和Go发布构建注入之间的值约定仍属O12/O14部分覆盖，当前dev/dev通过不能外推为发布版本注入已经验收。

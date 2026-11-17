@@ -57,6 +57,24 @@ GROUPS = {'repository-real-dialer-dependency-graph-guards': guards}
 def emitted(binary, recorder):
     chain = {'id': 'emitted-chain', 'name': '真实生成链', 'type': 'chain', 'chain': copy.deepcopy(CHAIN)}
     cases = [
+        ('H205', 'native-chain-exclude-invalid', {'shared': {'nodes': NODES}, 'profile': {'proxy_groups': [
+            {**chain, 'chain': {**CHAIN, 'exit': {'type': 'group', 'id': 'native-exclude'}}},
+            {'id': 'native-exclude', 'name': '原生排除参数', 'type': 'select', 'manual_nodes': ['n-b'], 'exclude-filter': '['}]}},
+            'Provider 正则过滤无效或不受支持'),
+        ('H215', 'ordinary-member-conversion-omitted', {'shared': {'nodes': [
+            {**NODES[0], 'params': {'dialer-proxy': 'DIRECT'}}, {**NODES[1], 'type': ''}]},
+            'profile': {'proxy_groups': [{'id': 'missing-emitted', 'name': '未生成候选', 'type': 'select', 'manual_nodes': ['n-a', 'n-b']}]}},
+            '拨号拓扑中的策略组引用了未生成的代理或策略组'),
+        ('H217', 'disabled-provider-definition', {'shared': {'nodes': [{**NODES[0], 'params': {'dialer-proxy': 'DIRECT'}}],
+            'subscriptions': [{'id': 'disabled-emitted-sub', 'name': '停用来源', 'url': '', 'enabled': False, 'interval': 0}]},
+            'profile': {'proxy_groups': [{'id': 'disabled-provider-group', 'name': '缺失Provider', 'type': 'select',
+                'manual_nodes': ['n-a'], 'subscriptions': ['disabled-emitted-sub']}]}}, '策略组引用了未生成的 Provider'),
+        ('H219', 'dialer-target-filtered-to-empty', {'shared': {'nodes': [
+            {**NODES[0], 'params': {'dialer-proxy': '被全部过滤的前置'}}, NODES[1]]},
+            'profile': {'proxy_groups': [{'id': 'all-excluded', 'name': '被全部过滤的前置', 'type': 'select',
+                'manual_nodes': ['n-b'], 'exclude-filter': '.*'},
+                {'id': 'dialer-activation', 'name': '实际拓扑根', 'type': 'select', 'manual_nodes': ['n-a']}]}},
+            '拨号策略组过滤后没有可用候选'),
         ('H204', 'empty-type-participating-entry', {'shared': {'nodes': [{**NODES[0], 'type': ''}, NODES[1]]},
             'profile': {'proxy_groups': [chain]}}, '拨号拓扑参与节点转换失败，不能省略节点'),
         ('H264', 'provider-name-collision', {'shared': {'nodes': NODES,
@@ -87,22 +105,26 @@ def unsupported_clients(binary, recorder):
     opaque = 'synthetic-opaque-converter-node'
     converted = yaml.safe_dump({'proxies': [{'name': 'converted-inner', 'type': 'socks5',
         'server': '192.0.2.44', 'port': 1080, 'dialer-proxy': 'DIRECT'}]}).encode()
-    for service, client in [('surge', 'Surge'), ('loon', 'Loon')]:
+    for service, client in [('surge', 'Surge'), ('loon', 'Loon'), ('mihomo', 'Mihomo')]:
         for opaque_source in (False, True):
+            if service == 'mihomo' and not opaque_source:
+                continue
             node = {**NODES[0], **({'proxy_string': opaque} if opaque_source else {'params': {'dialer-proxy': 'DIRECT'}})}
-            with SubStore(converted) as store:
+            payload = converted.replace(b'DIRECT', b'missing-converted-dialer') if service == 'mihomo' else converted
+            with SubStore(payload) as store:
                 opts = {'shared': {'nodes': [node]}, 'profile': {'proxy_groups': [
                     {'id': 'raw-client-root', 'name': '实际拨号来源', 'type': 'select', 'manual_nodes': ['n-a']}]},
                     'environment': {'SUB_STORE_URL': store.url}}
                 with Pair(binary, recorder, options=opts) as pair:
                     # Each opaque conversion is memoized by the real process;
                     # use one request per fresh pair so the full wire is observed.
-                    from cases.setup import Stable
                     expected = (client + ' 暂不支持转换结果中的 dialer-proxy' if opaque_source else
                         client + ' 暂不支持 Mihomo 拨号代理拓扑，请使用 Mihomo 或显式移除拨号配置')
-                    pair.request('H222' if opaque_source else 'H221', 'POST /api/generate/' + service + '/preview',
+                    if service == 'mihomo':
+                        expected = '生成的 dialer-proxy 引用了不存在的代理或策略组'
+                    pair.request('H216' if service == 'mihomo' else 'H222' if opaque_source else 'H221', 'POST /api/generate/' + service + '/preview',
                         body='{}', expect=400, writes=True, check=message(expected),
-                        interaction=Conversion(pair, store, opaque) if opaque_source else Stable(pair),
+                        interaction=Conversion(pair, store, opaque) if opaque_source else SourceStable(pair, store),
                         variant=service + ('/converted-opaque-dialer' if opaque_source else '/raw-stored-dialer'))
 
 

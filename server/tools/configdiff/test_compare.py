@@ -1746,6 +1746,22 @@ serve(app, host='127.0.0.1', port=int(sys.argv[1]))
                 bad['files']['migrations/arbitrary/import/configflow.sqlite3'] = bad['files'].pop(path)
             self.assertTrue(rejected_import_errors(before, bad), mutation)
 
+    def test_concurrent_rule_creation_reports_every_changed_proof_and_second_response(self):
+        from cases.rule_create_race import CreationRace
+        observer = CreationRace.__new__(CreationRace)
+        value = {'gate_reached': True, 'gate_timeout': False, 'winner_status': 200, 'winner_body': {'success': True},
+            'exact_one_commit': True, 'fresh_commit': True, 'exact_only_winner_cache': True,
+            'source_requests': [{'method': 'GET', 'path': '/held-create'}]}
+        observer.observed = [copy.deepcopy(value), copy.deepcopy(value)]
+        observer.secondary = [Reply(200, {}, b'{"success":true}'), Reply(200, {}, b'{"success":true}')]
+        self.assertEqual(observer.compare(Policy()), [])
+        for key in value:
+            observer.observed[1] = {**copy.deepcopy(value), key: 'changed'}
+            self.assertTrue(observer.compare(Policy()), key)
+        observer.observed[1] = copy.deepcopy(value)
+        observer.secondary[1] = Reply(409, {}, b'{"success":false}')
+        self.assertTrue(observer.compare(Policy()))
+
     def test_draft_attachment_conflict_preserves_all_noncheck_state(self):
         from cases.setup_router_draft_conflict import preserved_errors
         from cases.setup import SID

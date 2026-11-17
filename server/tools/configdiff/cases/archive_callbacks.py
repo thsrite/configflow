@@ -48,3 +48,18 @@ def callbacks(binary, recorder):
 
 
 GROUPS = {'archive-callback-helper-guards': callbacks}
+
+
+def retained_conversion(binary, recorder):
+    from cases.archive_limits import settings, TARGETS
+    opts = settings('保留错误内容')
+    opts['shared']['rule_library'][0]['content'] = 1
+    with Source(b'inline conversion must not contact a network') as source, Pair(binary, recorder, options=opts) as pair:
+        for route, path in TARGETS:
+            pair.request('H016', route, path, body='{}', expect=500, writes=True,
+                interaction=SourceStable(pair, source),
+                check=message('规则“保留错误内容”转换失败：exception_type=AttributeError'),
+                variant='retained-inline-content-integer-reaches-real-conversion')
+
+
+GROUPS['archive-real-retained-inline-conversion-failure'] = retained_conversion

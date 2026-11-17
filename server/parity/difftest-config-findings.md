@@ -165,7 +165,7 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | R223-F09 /  | `POST /api/subscriptions/reorder` | accepted | [behaviour-changes.md · Step B #1](behaviour-changes.md#config-step-b--coordinator-decisions) | df6928ae | 404 / 400 |
 | R223-F10 /  | `POST /api/subscriptions/reorder` | accepted | [behaviour-changes.md · Step B #1](behaviour-changes.md#config-step-b--coordinator-decisions) | df6928ae | 404 / 400 |
 | R223-F12 /  | `POST /api/subscriptions/reorder` | accepted | [behaviour-changes.md · Step B #1](behaviour-changes.md#config-step-b--coordinator-decisions) | df6928ae | 500 / 400 |
-| R228-F01 /  | `GET /api/version` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | df6928ae | 405 / 405 |
+| R228-F01 /  | `GET /api/version` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | 9a208c6c | 405 / 405 |
 | T06 / 12-second-last-good-and-background-finish | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | df6928ae | 200 / 200 |
 | T06 / 20-clients-one-flight | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | df6928ae | [200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200] / [200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200] |
 | T06 / next-poll-is-fresh | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | df6928ae | 200 / 200 |

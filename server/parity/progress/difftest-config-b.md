@@ -2306,3 +2306,18 @@ current Go未实现52 / 依赖3；design_errors=[]；seconds16.35；exit0
 current compared56 / Go未实现85 / 依赖2 / different1（accepted1）；design_errors=[]；seconds72.09；exit0
 125 self-checks + deliberately wrong-Go-response detection OK
 ```
+
+## 批次 136：后置Provider图、真实转换错误及并发创建
+
+- H210/H211/H212/H213/H206/H218均用真实选中的Provider和实际下载字节进入：重复原名、空链式落地、内置名、悬空dialer、私有“排序_”前缀、静态与Provider重名候选。H1065实际403且没有任何旧缓存。H1067由第二来源启用拓扑后重新校验前一份普通重复节点：两次GET、两个原始transport文件精确，两个staged node cache均不能提交。以上Provider实跑均compared，不用坏JSON或非法旧SQL代替。
+- H205/H215/H217/H219公开生成实际到达非法原生exclude-filter、普通非拓扑成员转换缺失、停用Provider定义、dialer目标全部被过滤；H216则由真实fake Sub-Store返回新的未知dialer，完整create/download/delete协议和清理。已有H221 raw拒绝现在同时要求零Sub-Store请求。
+- H1070/H1072/H1073/H1074通过两种真实失败链路：已取回的非YAML正文转换失败不得重拉；带fragment先经Sub-Store非YAML，再直拉非YAML失败。比完整协议顺序、临时订阅清理、全部SQL/文件、task/health/notification。两例双端相比通过。H1080精确关联外部服务mode409。
+- H142保留的远端错误behavior/format通过default/scoped rule-proxy真实下载后才422，所有SQL不动、无原始规则缓存、失败回执完整相比；四例双端通过。H016是完整备份允许保留的inline content=1，真实MosDNS ZIP转换才AttributeError，default/scoped500，准确中文上下文和零网络/全状态验证，不替换任何函数。
+- H793首个公开创建停在真实HTTP下载，第二公开创建同ID先提交，首个在事务内409；仅一个共享库事务和胜出者的准确600缓存，输家的缓存不得存在。比较全部metadata/revision/行/文件和第二HTTP响应，新增逐项篡改自检。H769精确关联已有clone_from缺失的公开创建请求。
+- .64最终九组84变体、35.80秒（compared23/Go未实现61）、design_errors=[]；126项自检及故意错误Go响应检出。此前本批settings-sync等实际复跑90变体37.18秒（compared70/Go未实现19/accepted1），仍无open新增。统一10572变体、原R4487（S712/F2759/B1016）、H928/G16；累计compared2964/Go未实现7451/依赖107/严格差异49/O12单列1。原R差43/H差184，不把防御或跨域分支标为runtime通过。最终all及全部finding的新基线复验仍待完成。
+
+```text
+.64 --groups subscription-real-non-YAML-conversion-and-direct-failures,provider-real-downloaded-emitted-graph-guards,provider-real-late-topology-activation-revalidates-all-sources,generator-real-provider-name-and-follow-chain-guards,generator-real-unsupported-raw-and-converted-dialers,rule-real-downloaded-retained-metadata-errors,archive-real-retained-inline-conversion-failure,rule-library-real-concurrent-create-ID-conflict,profiles-metadata --baseline 9a208c6c
+current compared23 / Go未实现61；design_errors=[]；seconds35.80；exit0
+126 self-checks + deliberately wrong-Go-response detection OK
+```
