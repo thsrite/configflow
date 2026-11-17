@@ -13,3 +13,14 @@ regressions, awaiting rt runs queued behind full changed-package iteration on .6
 Next: finish those runs, commit separately, complete call-site/category audit, run
 final gate foreground (stop if queue >15m), finish report. Temporary review scripts
 under server/tools/review_n73d_* must be removed before final commit.
+
+F2/F3 committed02afae340. F4 direct deploy.SourceError zero coordinates failed
+before (native NUL/no position; malformed flow/line only) and passes after;
+provider235 exact reference still passes. Changed rules/deploy full packages and
+vet pass. Full gateway/provider/routersplit/yamlx/yamlxtest iteration passes;
+provider411.365s under shared-host load25-28 (no failure). User now explicitly
+requires A12 RuleEntries to use lexical scanning like Python, not YAML parsing.
+14 synthetic Python controls captured; old implementation fails9 controls including
+valid block/flow, malformed, indentation, alias, BOM and 200-line head boundary.
+Implement one shared line iterator and lexical listing, update safety tests and
+Clarified accordingly. Keep provider/matcher public behavior unchanged.

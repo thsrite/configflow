@@ -109,8 +109,14 @@ func SourceError(message, text string, at Position, cause error, sourceLabel str
 	}
 	var syntax *yamlx.SyntaxError
 	if at.Line == nil && errors.As(cause, &syntax) {
-		l, c := syntax.Line, syntax.Column
-		at.Line, at.Column = &l, &c
+		if syntax.Line > 0 {
+			l := syntax.Line
+			at.Line = &l
+			if syntax.Column > 0 {
+				c := syntax.Column
+				at.Column = &c
+			}
+		}
 	}
 	diagnostic := ""
 	if cause != nil {

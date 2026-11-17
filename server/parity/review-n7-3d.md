@@ -22,12 +22,18 @@
   现扫描全部子包，仅 yamlx 本包和 yamlxtest 本包可直接读 YAML；两个固定 oracle 工具和
   testdata recorder 可以导入测试 helper，其余 cmd/tools/internal 的非测试文件均禁止。
   11个永久正/负控覆盖 import alias、函数引用、dot import、Clone、helper、子包，全部通过。
-  修复提交：本次门禁补强提交，最终补列 SHA。
+  修复提交：`02afae340`。
 - **F3 / low：冻结档案缺少独立全来源执行门。**
   原有 Classify 按调用者选中的来源运行；convert 的3837来源只跑注入值/Parse audit，
   不调用 Classify。档案条数/SHA固定不能保证全部21343来源均在每次测试实际执行。
   新增 `TestAllFrozenReaderSources` 对每条来源调用 Classify，逐条校验当前完整图或完整错误，
-  不恢复旧实现；执行21343，unknown=0，类别计数与作者报告一致。修复提交：本次门禁补强提交，最终补列 SHA。
+  不恢复旧实现；执行21343，unknown=0，类别计数与作者报告一致。修复提交：`02afae340`。
+
+- **F4 / low：deploy.SourceError 把原生未知坐标显示为第0行/第0列。**
+  NUL 控制字符的原生解析错误没有位置；未闭合 flow list 只有行号。原实现无条件把0
+  转为位置指针，向用户显示不存在的行列。新增三种真实 Parse 合成控制，修复前前两种
+  失败；现在仅附加原生确有的正行号/列号，保留原始原因和诊断。provider hook 的历史
+  展示合同不变，235条冻结完整显示参照继续通过。修复提交：本次坐标修复提交，最终补列 SHA。
 
 ## 验证（迭代）
 
@@ -38,3 +44,6 @@
 - `go test -count=1 -v -run "^TestYAMLFacade|^TestAllFrozenReaderSources$" ./internal/yamlx ./internal/yamlx/yamlxtest` → yamlx0.572s/yamlxtest4.948s PASS；21343条真实冻结来源实际执行。
 
 最终逐调用点、分类抽样、用户补充条件和完整门禁结果待补齐。
+
+补验：`go test -count=1 -run "^TestReviewN73DSourceErrorUnknownCoordinates$|^TestN73NativeDiagnosticInterface$" ./internal/deploy ./internal/provider` → deploy0.022s/provider0.078s PASS。
+`go test -p=4 -count=1 ./internal/rules ./internal/deploy/...` → rules3.607s/deploy24.485s/contentsync0.642s/pushdiff7.947s PASS；随后相关包 vet 通过（规则明细恢复前）。
