@@ -264,6 +264,10 @@ def main():
     groups.update(scan_disconnect)
     from cases.oxidns_routing_guards import GROUPS as oxidns_routing_guards
     groups.update(oxidns_routing_guards)
+    from cases.group_listener_edges import GROUPS as group_listener_edges
+    groups.update(group_listener_edges)
+    from cases.repository_legacy_shapes import GROUPS as repository_legacy_shapes
+    groups.update(repository_legacy_shapes)
     from cases.groups import GROUPS as managed_groups
     groups.update(managed_groups)
     from cases.rule_library import GROUPS as rule_library

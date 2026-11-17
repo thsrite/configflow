@@ -137,6 +137,36 @@ VARIANT_LINKS.update({
     for case, helper in [('F09', 'H344'), ('F10', 'H344'), ('B01', 'H344'), ('F11', 'H345')]
     for variant in ('False', 'True')
 })
+VARIANT_LINKS.update({
+    ('H290', '1', 'POST /api/custom-config/mihomo'): ('H289',),
+    ('H320', '2001:db8::1', 'POST /api/custom-config/mihomo'): ('H319',),
+    **{(rid + '-F12', 'agg-a?' + query, route): ('H224',)
+       for rid, route in [('R008', 'GET /api/aggregations/<agg_id>/provider'),
+                           ('R122', 'GET /api/profiles/<profile_id>/aggregations/<agg_id>/provider')]
+       for query in ('format=surge&regex=%5B', 'format=loon&exclude_regex=%5B')},
+    **{('H1016', goal + '/' + number + '/' + stage,
+        'POST /api/setup/<session_id>/<operation>'): (helper,)
+       for goal, number, helper in [('router', '1', 'H969'), ('gateway', '2', 'H970')]
+       for stage in ('initial-catalog', 'repeat-exact-storage')},
+    **{(rid + '-' + case, '', 'POST ' + template + '/native-settings/apply'): ('H439',)
+       for rid, template in [('R109', '/api/oxidns'), ('R142', '/api/profiles/<profile_id>/oxidns')]
+       for case in ('F17', 'B03')},
+    **{('G12', str(scoped) + '/rename-unresolved-custom-text', 'POST ' + template + '/native-settings/apply'): ('H462',)
+       for scoped, template in [(False, '/api/oxidns'), (True, '/api/profiles/<profile_id>/oxidns')]},
+    **{('H' + str(case), 'schema2-before-resource-remap/' + str(number), 'POST /api/config/import'): ('H818',)
+       for case, numbers in [(176, (0, 2)), (177, (1, 3)), (178, range(4, 12)), (179, (12,)),
+                             (180, (13,)), (181, range(14, 32)), (182, range(32, 36))]
+       for number in numbers},
+    **{('H182', 'resource-closure/' + case + '/earlier-shape-guard', 'POST /api/config/import'): ('H853',)
+       for case in ('H757', 'H758')},
+})
+ROUTE_LINKS.update({
+    **{(case, 'POST /api/proxy-groups'): ('H856',) for case in ('H242', 'H243', 'H244', 'H245', 'H246', 'H247')},
+    **{(case, method + ' /api/' + route): ('H838',)
+       for case in ('H240', 'H241') for method in ('POST', 'PUT')
+       for route in (('subscriptions', 'subscription_aggregations') if method == 'POST' else
+                     ('subscriptions/<sub_id>', 'subscription_aggregations/<agg_id>'))},
+})
 
 
 def attach(results):

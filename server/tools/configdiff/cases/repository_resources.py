@@ -73,8 +73,8 @@ def guards(binary, recorder):
         # Preserve their public rejection as partial observation, not proof
         # that the later return ran.
         for case, value in [('H757', {}), ('H758', [None])]:
-            call(case, ['profiles', 'other', 'proxy_groups'], [{**group, 'proxies_order': value}],
-                 '策略组 proxies_order 必须是含 type/id 字符串的对象数组', 'earlier-shape-guard')
+            call('H182', ['profiles', 'other', 'proxy_groups'], [{**group, 'proxies_order': value}],
+                 '策略组 proxies_order 必须是含 type/id 字符串的对象数组', case + '/earlier-shape-guard')
         for i, value in enumerate(('', ' ', 1, False)):
             def install_node(data, value=value):
                 data['shared']['nodes'] = [{**NODE, 'params': {'dialer-proxy': value}}]

@@ -2080,6 +2080,10 @@ H1016–1022用真实prepare和合法导入保留的基础YAML进入[setup_flow.
 
 H378–392、H398/H401/H402及H435/H436逐项通过default/scoped editor请求驱动，见[oxidns_common_routing.py:904](../../backend/common/oxidns_common_routing.py#L904)、[oxidns_editor.py:270](../../backend/common/oxidns_editor.py#L270)。H389/H398/H401/H402特用null越过可选值前置；aggregate需两条真实相邻同策略规则，custom_match_position需已有真实自定义匹配，否则早期capability拒绝只能算H371，不能算后置guard。H386先通过真实apply创建现存action，H388选择已停用且存在parked action的规则。H346–348由完整备份import进入device_notes验证（原R107驱动建议不适用）：[device_notes.py:18](../../backend/common/device_notes.py#L18)、[config_repository.py:2561](../../backend/common/config_repository.py#L2561)。准确中文、所有原行/文件不变且零网络。
 
+H342/H343经default/scoped真实Mihomo生成/预览到达EasyTier输出校验，分别为与已发射节点重名、不存在的dialer-proxy，Python真实500且完整状态不变；不能把参数保存时400当成生成失败。H289关联H290的数值fake-ip-range变体，H319关联H320的合法IPv6出口变体。H254使用PyYAML可读但roundtrip编辑器拒绝的重复proxy键，实际公开组改名400且原字节不动；H255由真实生成检查固定listener的缺失策略。来源[mihomo_easytier.py:295](../../backend/common/mihomo_easytier.py#L295)、[mihomo_listeners.py:65](../../backend/utils/mihomo_listeners.py#L65)。H224只关联Surge/Loon provider的坏query正则，不关联只被格式wrapper拒绝的Mihomo query；H439/H462关联实际共享引用删除/不可改写重命名诊断。
+
+H176–182经schema2完整import在资源remap之前触发[validate_shapes](../../backend/utils/dialer_references.py#L9)及H818；包括节点/组集合、元素、ID/名称、params/proxy_string、每类源数组和排序对象形态。H817/H819/H820/H821/H828/H829分别在同一真实legacy流程覆盖坏profile、坏订阅引用、原始拨号类型/缺目标、中间格式与缺本地资源，来源[config_repository.py:2087](../../backend/common/config_repository.py#L2087)、[config_repository.py:2202](../../backend/common/config_repository.py#L2202)。原H757/H758两个前置拒绝请求改记实际H182，并关联H853；撤回后置guard的覆盖计数，UNOBSERVABLE理由保留。H838/H856只关联实际由repository捕获的provider/group健康错误；不是按同一中文提示给所有wrapper打标签。
+
 冻结比较针对每个端自己的已校验bundle成员原始字节。配置通过公开settings改为另一份后，旧file仍必须等于旧成员，完整SQL/预览文件不变；跨实现的生成主YAML照结构比较。ZIP下载由[generated_preview.download](../../backend/agents/generated_preview.py#L163)每次重打包，ZIP容器自身的时间戳不属于“旧成员内容不变”，不能把整个ZIP字节相等当作冻结条件。TTL仍核对真实expires_at≈创建时刻+3600，过期拒绝另由F11验证，不缩短生产TTL。
 
 ### Step B token保存后的轮换与版本注入边界

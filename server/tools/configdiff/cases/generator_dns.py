@@ -6,6 +6,9 @@ import yaml
 from harness import Pair, json_body
 from cases.generator_shapes import fixture, node, project
 from cases.subscriptions import require
+from sources import Source
+from cases.config_backup import message
+from cases.pull_routes import SourceStable
 
 EASYTIER = {'enabled': True, 'name': '虚拟网🧪', 'apply_to': 'subscription', 'routes': ['192.0.2.0/24'], 'magic_dns': True,
             'keepalive': {'enabled': False, 'url': 'http://192.0.2.50:18080/health', 'interval': 120},
@@ -80,3 +83,27 @@ def easytier(binary, recorder):
 
 
 GROUPS = {'generator-mihomo-dns': dns_fields, 'generator-easytier': easytier}
+
+
+def easytier_rejections(binary, recorder):
+    for case in ('H342', 'H343'):
+        settings = copy.deepcopy(EASYTIER)
+        outbound = node('socks5', {'username': 'synthetic', 'password': 'synthetic'})
+        if case == 'H342':
+            settings['name'] = outbound['name']
+            error = 'EasyTier 节点名「' + settings['name'] + '」与已有节点或策略组重名，请在 EasyTier 设置里改名'
+        else:
+            settings['options']['dialer-proxy'] = '不存在的拨号策略🧪'
+            error = 'EasyTier 的 dialer-proxy「不存在的拨号策略🧪」不在生成的节点或策略组里'
+        opts = fixture(outbound)
+        opts['profile']['mihomo'] = {'custom_config': 'dns: {enable: true}\n', 'easytier': settings}
+        with Source(b'rejected local EasyTier topology never downloads') as source, Pair(binary, recorder, options=opts) as pair:
+            for template, prefix in [('/api/generate', '/api/generate'),
+                    ('/api/profiles/<profile_id>/generate', '/api/profiles/default/generate')]:
+                for suffix in ('/mihomo', '/mihomo/preview'):
+                    pair.request(case, 'POST ' + template + suffix, prefix + suffix, body='{}', expect=500,
+                        writes=True, interaction=SourceStable(pair, source), check=message(error),
+                        variant='real-EasyTier-render/' + template + suffix)
+
+
+GROUPS['generator-easytier-live-topology-rejections'] = easytier_rejections

@@ -2245,3 +2245,19 @@ Python前提全部通过；Go未实现/依赖未实现；design_errors=[]；exit
 Python前提全部通过；Go未实现；design_errors=[]；exit0
 119 self-checks + deliberately wrong-Go-response detection OK
 ```
+
+## 批次 132：真实EasyTier输出、保留listener与legacy导入前置形态
+
+- H342/H343共8变体，真实Mihomo default/scoped生成与预览因名称冲突/无效dialer返回500，完整SQL/files与零出站验证。H254真实组改名触发roundtrip重复键拒绝；H255两个实际preview检查不存在的固定listener策略。原有精确变体复跑后补H289/H319/H969/H970/H439/H462/H224标签；不将Mihomo格式query的前置拒绝当成Surge/Loon正则helper覆盖。
+- schema2导入42个输入在实际legacy迁移前覆盖H176–182/H818及H817/H819/H820/H821/H828/H829：7类元数据形态、每个源数组、原始拨号和remap失败。全部真实公开import400、所有原库/文件精确不动、零网络。同步撤回H757/H758的后置覆盖计数：两请求一直只到较早validate_shapes，现标实际H182并关联H853。H838/H856仅给实际repository健康错误调用链加标签。
+- .32第一组正式8组489变体（compared39/Go未实现450）、182.58秒，design_errors=[]。后续legacy四组实际复跑正式合并，报告计数以下一行实际JSON为准；120项自检及故意错误Go响应检出。两次CLI选择器拼写错误只报unknown groups，修正后重跑，没有计入覆盖。
+- legacy正式196变体（compared28/Go未实现168）、27.66秒。统一10320变体、原R4487（S712/F2759/B1016）、H809/G16；累计compared2938/Go未实现7230/依赖102/严格差异49/O12单列1。findings仍closed122/accepted29/open20/O12单列1。原R差43（含N/A）、H差303（含已明确跨域/防御分支），最新go最终all未完成。
+- 明确范围审计：K06中输入校验/现有DNS结构准备/安装ready的一批helper由agents的gateway-onboarding和gateway-installations调用；R211只直接使用_local_upstreams及_prepare_mihomo_dns，latest(public)不执行_saved_snapshot。不能为H944–951、H958–967、H971–986伪造config向导驱动；H341 core_version也只在Agent部署入口传入，普通config生成不传。仍列partial/跨域，runtime未计通过；正在继续逐条审计剩余。
+
+```text
+.32 native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups generator-easytier-live-topology-rejections,mihomo-base-guards,mihomo-easytier-guards,setup-prepare-retained-base-guards,oxidns-named-native-applies,oxidns-editor-roundtrips,groups-real-retained-and-generated-listener-guards,aggregation-provider-formats --baseline 038b52ae
+current compared39 / Go未实现450；design_errors=[]；exit0
+.32 --groups repository-legacy-pre-migration-shape-guards,repository-resource-closure-guards,groups-candidate-guards,provider-health-shared-write-guards --baseline 038b52ae
+Python前提通过；compared/Go未实现；design_errors=[]；exit0
+120 self-checks + deliberately wrong-Go-response detection OK
+```

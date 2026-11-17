@@ -17,6 +17,22 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_helper_annotations_require_the_audited_route_and_specific_guard_input(self):
+        from helper_links import attach
+        vectors = [('H290', '1', 'POST /api/custom-config/mihomo', 'H289'),
+            ('H320', '2001:db8::1', 'POST /api/custom-config/mihomo', 'H319'),
+            ('H1016', 'router/1/initial-catalog', 'POST /api/setup/<session_id>/<operation>', 'H969'),
+            ('R109-F17', '', 'POST /api/oxidns/native-settings/apply', 'H439'),
+            ('G12', 'False/rename-unresolved-custom-text', 'POST /api/oxidns/native-settings/apply', 'H462')]
+        for case, variant, route, helper in vectors:
+            valid = {'case': case, 'variant': variant, 'route': route}
+            wrong_route = {**valid, 'route': 'POST /unrelated'}
+            wrong_input = {**valid, 'variant': variant + '/earlier-wrapper'}
+            attach([valid, wrong_route, wrong_input])
+            self.assertIn(helper, valid['helper_cases'])
+            self.assertNotIn('helper_cases', wrong_route)
+            self.assertNotIn('helper_cases', wrong_input)
+
     def test_cancelled_scan_compares_source_and_every_persistence_proof(self):
         from cases.scan_disconnect import CancelledScan
         observer = CancelledScan(SimpleNamespace(), None, {})
