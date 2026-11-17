@@ -66,9 +66,10 @@ A08 的历史逐字节基线只反向应用 `installertest/l1-rollback-deltas.js
 统一使用这条文案。Compose 的 `create_host_path: true` 会使用 Docker 的旧 Binds
 字符串格式，长格式 YAML 仍不能使冒号源路径可用；compact 又没有 prepare 阶段。
 
-四份原始录制语料保持不变，在比较器中仅显式认可这项路径拒绝及准确文案变化：
+五份原始录制语料保持不变，在比较器中仅显式认可这项路径拒绝及准确文案变化：
 `docker_ha_compose_recorded.jsonl.gz`、`docker_ha_compose.jsonl.gz`、
-`docker_ha_compose_review.jsonl.gz`、`docker_ha_recorded.jsonl.gz`。其余输出继续严格
+`docker_ha_compose_review.jsonl.gz`、`docker_ha_recorded.jsonl.gz`、旧 A09 的
+`docker_ha.jsonl.gz`（额外 1 条冒号拒绝、12 条旧路径提示）。其余输出继续严格
 比较。在线 Flask 差分明确断言 Python 200/生成失效挂载并写入 capability，与 Go
 400/不写入 capability 的差异。真实 Docker Compose 挂载测试见
 [L1 修复记录](progress/l1-installer-fixes.md)。

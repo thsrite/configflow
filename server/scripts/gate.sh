@@ -11,6 +11,7 @@
 #   -p N     package parallelism for race/difftest (default: go's default = GOMAXPROCS).
 #            Use -p 6 on .64 (20 GB RAM + swap; full -race at default -p was OOM-killed once at 15 GB).
 # Env: GATE_FUZZTIME (default 60s), GATE_FUZZ_PARALLEL (default 2 workers per target).
+# GATE_ONLY=proddiff or difftest runs only that stage, under the same slot limit.
 set -u
 cd "$(dirname "$0")/.."            # server/
 
@@ -18,6 +19,8 @@ pflag=()
 if [ "${1:-}" = "-p" ]; then pflag=(-p="$2"); shift 2; fi
 fuzztime="${GATE_FUZZTIME:-60s}"
 fuzzpar="${GATE_FUZZ_PARALLEL:-2}"
+stage="${GATE_ONLY:-all}"
+case "$stage" in all|proddiff|difftest) ;; *) echo "Unknown GATE_ONLY stage: $stage" >&2; exit 2 ;; esac
 logs="${GATE_LOGS:-$(mktemp -d "${TMPDIR:-/tmp}/gate.XXXXXX")}"
 mkdir -p "$logs"
 echo "gate: logs in $logs"; uptime
@@ -40,6 +43,23 @@ echo "gate: slot $got of $slots"
 
 fail() { echo "GATE FAIL: $*"; exit 1; }
 quiet() { grep -v -E '^ok |no test files' "$1"; }
+
+if [ "$stage" != all ]; then
+  echo "== $stage (only; other stages are not run)"
+  if [ "$stage" = proddiff ]; then
+    ( cd .. && server/scripts/proddiff.sh >"$logs/proddiff.log" 2>&1 )
+    result=$?
+    tail -30 "$logs/proddiff.log"
+  else
+    CONFIGFLOW_DIFF=1 go test "${pflag[@]}" -count=1 -timeout=40m $(go list ./... | grep difftest) >"$logs/diff.log" 2>&1
+    result=$?
+    grep -E '^(ok|FAIL|---)' "$logs/diff.log" || true
+  fi
+  [ "$result" -eq 0 ] || fail "$stage (see $logs)"
+  uptime
+  echo "GATE STAGE PASS: $stage"
+  exit 0
+fi
 
 echo "== gofmt"
 out="$(gofmt -l internal/ tools/ cmd/)"; [ -z "$out" ] || { echo "$out"; fail gofmt; }

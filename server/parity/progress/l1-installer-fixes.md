@@ -29,8 +29,9 @@ Each defect gets its own compiling commit with regression tests.
 - D7: out-of-bounds binary Range ->416, not inherited Python500; ledger + tests.
 - D8: coordinator explicitly approved an exception to Step B #3 after the old
   all-API-JSON intent was confirmed. Use an explicit **route-level marker** for
-  shell-facing installer/script/binary/archive routes. Preserve plain Chinese
-  error bodies/status; errors have no attachment disposition. List each route
+  the saved-install-link route only: final audit/refinement preserves all of
+  Python's original JSON errors, including binary downloads. Preserve original
+  plain Chinese error bodies/status; errors have no attachment disposition. List each route
   beneath Step B #3. Other API errors stay JSON. Test curl -fsSL and curl|sh,
   generic error-boundary tests and Flask differential.
 - Excluded: D2 custom-lifecycle Agent migration and D9 Agent MosDNS text.
@@ -79,7 +80,7 @@ api/agents 0.190s, D1_READY_TO_COMMIT. D1 is complete in this commit.
 
 D1 committed as 4c58d0cf.
 
-## D3 — failure compensation (implementation complete, acceptance in progress)
+## D3 — failure compensation (targeted acceptance complete)
 
 Added shared embedded POSIX agent-install-rollback.sh and inserted it into both
 single/AIO templates. It snapshots service active/enabled state, then stops old
@@ -107,7 +108,7 @@ content, both templates and all remaining rendered bytes remain strict. A08
 20,000 fuzz records + 949 matrix records + templates passed (4.873s), online
 Flask comparison: 293 equal, 0 differ (4.707s), before the final restored-service
 health check (which now verifies OpenRC supervisor has a living child too).
-Latest focused and real-container checks are running on .64. Initial container
+Latest focused and real-container checks passed on .64. Initial container
 fixture defects were corrected: AIO executable permissions must be 0755;
 OpenRC needs a reaping PID 1 (Docker --init). The hung old fixture was terminated
 and its uniquely named containers removed; no aborted run counts as acceptance.
@@ -119,10 +120,11 @@ states are checked against real init managers. No owned containers remain.
 Latest focused regression + fmt/vet passed on .64 (20.375s).
 Docker CLI execution now has bounded pipe-drain time and forwards termination
 through sudo, so a leaked daemon descriptor cannot hang the harness forever. Existing focused old native/AIO tests passed .32
-after the helper (11.746s). No D4–D8 code changed yet.
+after the helper (11.746s). D4–D8 are now complete as detailed below.
 
-Next after D3: D4 policy clarification, D5 health/port guards, D6 resolver
-fallback, D7 Range, D8 route-marker exception; then the final gates above.
+D3 container acceptance uses a controlled candidate executable with actual init
+managers: it exercises installation/identity/file/service compensation, not Agent
+D2 lifecycle behavior (explicitly excluded from this batch).
 
 D3 acceptance commands (.64):
 
@@ -274,3 +276,47 @@ was added or hidden. Updated comparator README and synthetic regression.
 `RT_HOST=sunbroke@192.168.0.64 rt -- bash -c 'set -eu; PYTHONDONTWRITEBYTECODE=1 "$HOME/cf-test/.venv/bin/python" -m unittest discover -s server/tools/proddiff -p test_proddiff.py'`
 → 34 tests in0.020s, OK. Stopped only our still-queued gate before changing the
 remote snapshot; final gate will restart with the updated comparator.
+
+## Current hand-back map (final gate pending)
+
+All fixes are ported; no independent-review status is claimed. Latest integrated
+base before the final gate: go9a208c6c; branch go-fix-l1-installer, no push.
+
+| Defect | Commits after rebase | Targeted evidence |
+|---|---|---|
+| D1 | 1bffcc12 + 4f03c25e | five old recording sets, no capability writes on refusal, real Compose5.6.1 old/new mount behavior |
+| D3 | 2f0f1d97 | stateful failure/cancellation/copy-failure regressions, six real systemd/OpenRC scenarios, A08 matrix/fuzz and Flask293/0 |
+| D4 | 55517bfb | old policy confirmed, missing-key hint, registry unchanged, existing-token and locked enrollment security |
+| D5 | c61ec802 | real UDP/TCP53 busy/free and Supervisor RUNNING/FATAL; Flask239/0 |
+| D6 | 368b2f9c | three real DNS clients resolve isolated VIP; actual minimal Debian12 missing-client hint |
+| D7 | c539c706 | 416 actual-length headers/HEAD/valid206; download Flask120/0 (12 inherited httpx classes) |
+| D8 | 786d6b0d + 46e578e5 | plain404/503 vs JSON binary404/invalid name; curl cases; strict proddiff comparator34 tests |
+
+D2/D9 remain outside this batch. No multi-host HA/VIP failover claim: that remains
+L3/lab work. All D3/D5/D6 containers are owned and removed; no PVE/production access.
+Final gate is queued through server/scripts/gate.sh -p4 on .64, logs
+/tmp/configflow-l1-installer-gate-r2; no parallel ad-hoc full suite/proddiff.
+
+Final gate state (2026-11-18, in progress): .64's queue remained occupied, so
+stopped only our waiting gate and moved the full gate to .32, which had a free
+slot. GATE_LOGS=/tmp/configflow-l1-installer-gate-r3, gate.sh -p4, acquired slot2.
+Gofmt/full vet and both tagged builds/vet/lifecycle tests passed; full race is
+still running. Initial proddiff's new785/stale0 consists of D3 approved installer
+line shifts (old comparator lacked the shared frozen delta) and the coordinator's
+three known aggregation-provider differences. Added exact D3 delta reversal from
+installertest/l1-rollback-deltas.json to proddiff too; source/module/route/status
+mutations stay visible. Comparator35 tests passed (.64,0.023s), bash -n gate.sh
+passed. No aggregation allowance/baseline entry was added.
+
+Coordinator confirmed 72d4b2c0 on go-fix-agg-provider-load fixes the three provider
+artifacts: only proddiff waits for both completed renders; production12s last-good
+policy stays unchanged. Wait for coordinator notification/merge, then rebase go
+and rerun ONLY proddiff (explicitly authorized); do not repeat the full race.
+
+Added GATE_ONLY=difftest|proddiff to gate.sh: both reuse its existing slot lock,
+report only their own stage, propagate failure, and leave ordinary full gates
+unchanged. This lets the remaining difftests run despite known proddiff failure
+and lets the final approved proddiff-only rerun obey the host's gate-slot limit.
+All difftests now queued on .64 through this stage mode, logs
+/tmp/configflow-l1-installer-diff-final. Exact commands/results are to be appended
+once these foreground runs finish. No active task may be handed back yet.
