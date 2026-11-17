@@ -83,20 +83,29 @@ func setDefault(m *yaml.Node, key string, value *yaml.Node) *yaml.Node {
 	return value
 }
 
-// cloneShared copies mappings and sequences (aliases become copies) but
-// shares scalar nodes, which this package never edits in place. Unlike
-// yamlx.Clone it keeps scalar identity, so the jsonx boundary (codec) can
-// return untouched values of a copied TUN or DNS section exactly.
+// cloneShared copies mappings and sequences but shares scalar nodes, which
+// this package never edits in place. A container reached twice (an alias)
+// is copied once and stays shared in the copy, like Python's deepcopy.
+// Unlike yamlx.Clone it keeps scalar identity, so the jsonx boundary (codec)
+// can return untouched values of a copied TUN or DNS section exactly.
 func cloneShared(n *yaml.Node) *yaml.Node {
+	return cloneSharedMemo(n, map[*yaml.Node]*yaml.Node{})
+}
+
+func cloneSharedMemo(n *yaml.Node, copies map[*yaml.Node]*yaml.Node) *yaml.Node {
 	n = yamlx.Resolve(n)
 	if n == nil || n.Kind == yaml.ScalarNode {
 		return n
 	}
+	if done, ok := copies[n]; ok {
+		return done
+	}
 	out := *n
 	out.Anchor = ""
 	out.Content = make([]*yaml.Node, len(n.Content))
+	copies[n] = &out
 	for i, child := range n.Content {
-		out.Content[i] = cloneShared(child)
+		out.Content[i] = cloneSharedMemo(child, copies)
 	}
 	return &out
 }

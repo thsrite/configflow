@@ -274,23 +274,67 @@ func RoutingMarkPathJSONX(value any, root string) string {
 	return RoutingMarkPath((&codec{}).node(value), root)
 }
 
-// codec converts jsonx values to nodes and back. With leaves set, each
-// scalar node remembers its original value, so values the patch did not
-// replace come back exactly as they were (number forms, timestamps, binary).
+// codec converts jsonx values to nodes and back. A container the input
+// shares (a YAML alias the loader kept as one value) becomes one shared node
+// and comes back as one shared value, as Python's dicts and lists stay shared:
+// the conversion is linear in the loaded document, never in its expansion.
+// With leaves set, each scalar node remembers its original value, so values
+// the patch did not replace come back exactly as they were (number forms,
+// timestamps, binary).
 type codec struct {
 	leaves map[*yaml.Node]any
+	nodes  map[any]*yaml.Node // shared input container -> its node
+	values map[*yaml.Node]any // container node -> its rebuilt value
+}
+
+// listID identifies a list: its first element and its length (two lists
+// that only share a prefix of one backing array are different lists).
+type listID struct {
+	first *any
+	n     int
+}
+
+// containerID identifies a jsonx container (aliases share it); ok is false
+// for scalars and empty lists.
+func containerID(v any) (id any, ok bool) {
+	switch value := v.(type) {
+	case *jsonx.Object:
+		return value, value != nil
+	case *yamlx.Mapping:
+		return value, value != nil
+	case []any:
+		if len(value) > 0 {
+			return listID{&value[0], len(value)}, true
+		}
+	}
+	return nil, false
 }
 
 func (k *codec) node(v any) *yaml.Node {
+	id, container := containerID(v)
+	if container {
+		if n, ok := k.nodes[id]; ok {
+			return n
+		}
+		if k.nodes == nil {
+			k.nodes = map[any]*yaml.Node{}
+		}
+	}
 	switch value := v.(type) {
 	case *jsonx.Object:
 		m := yamlx.Map()
+		if container {
+			k.nodes[id] = m
+		}
 		for key, child := range value.All() {
 			m.Content = append(m.Content, yamlx.Str(key), k.node(child))
 		}
 		return m
 	case *yamlx.Mapping:
 		m := yamlx.Map()
+		if container {
+			k.nodes[id] = m
+		}
 		for _, pair := range value.Pairs {
 			key := yamlx.Str("")
 			if text, ok := pair.Key.(string); ok {
@@ -303,6 +347,9 @@ func (k *codec) node(v any) *yaml.Node {
 		return m
 	case []any:
 		s := yamlx.Seq()
+		if container {
+			k.nodes[id] = s
+		}
 		for _, child := range value {
 			s.Content = append(s.Content, k.node(child))
 		}
@@ -329,21 +376,31 @@ func (k *codec) node(v any) *yaml.Node {
 }
 
 func (k *codec) value(n *yaml.Node) any {
-	n = yamlx.Resolve(n)
+	if n = yamlx.Resolve(n); n == nil {
+		return nil
+	}
 	if original, ok := k.leaves[n]; ok {
 		return original
+	}
+	if done, ok := k.values[n]; ok {
+		return done
+	}
+	if k.values == nil {
+		k.values = map[*yaml.Node]any{}
 	}
 	switch n.Kind {
 	case yaml.MappingNode:
 		obj := jsonx.NewObject()
+		k.values[n] = obj
 		for i := 0; i+1 < len(n.Content); i += 2 {
 			obj.Set(keyText(n.Content[i]), k.value(n.Content[i+1]))
 		}
 		return obj
 	case yaml.SequenceNode:
-		list := make([]any, 0, len(n.Content))
-		for _, child := range n.Content {
-			list = append(list, k.value(child))
+		list := make([]any, len(n.Content))
+		k.values[n] = list
+		for i, child := range n.Content {
+			list[i] = k.value(child)
 		}
 		return list
 	}

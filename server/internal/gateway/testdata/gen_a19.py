@@ -201,6 +201,15 @@ FIXED_CONTENT = [
     ('1.1.1.1%eth0', 'ipcidr'), ('//1.1.1.0/24\n;2.2.2.0/24\n3.3.3.0/24', 'ipcidr'),
     ('1.1.1.0/24\x0b2.2.2.0/24', 'ipcidr'), ('1.1.1.0/24\x0c2.2.2.0/24', 'ipcidr'),
     ('\n'.join(['8.8.8.8'] * 1000), 'ipcidr'),
+    ('payload\n: [x]\n', 'classical'), ('1.1.1.0/24\rpayload: x', 'classical'),
+] + [
+    # White space around "payload" that is not ASCII (review F3): YAML for
+    # Python, so an error rather than an empty capture.
+    (text, behavior)
+    for ws in ('\u00a0', '\u3000', '\x0b', '\x0c', '\x85', '\u2028', '\x1c', '\x1f', ' ', '\t')
+    for text in (ws + 'payload:\n  - IP-CIDR,1.2.3.0/24\n', 'payload' + ws + ':\n  - IP-CIDR,1.2.3.0/24\n',
+                 '# x\n' + ws + 'payload: ["IP-CIDR,1.2.3.0/24"]\n')
+    for behavior in ('classical', 'ipcidr')
 ]
 
 

@@ -37,28 +37,49 @@ const MarkerKey = "x-configflow-linux-gateway"
 // a mapping (Python failed with an AttributeError, a 500).
 var errProviderNotMapping = errors.New("gateway: rule provider is not a mapping")
 
+// errDocumentNotMapping: Apply was given something other than a Mihomo
+// document mapping (a caller error; Python's document was always a dict).
+var errDocumentNotMapping = errors.New("gateway: Mihomo document is not a mapping")
+
+// docContent is the content node of a document: a yaml.v3 document wrapper is
+// transparent, aliases are followed.
+func docContent(n *yaml.Node) *yaml.Node {
+	n = yamlx.Resolve(n)
+	if n != nil && n.Kind == yaml.DocumentNode && len(n.Content) == 1 {
+		return yamlx.Resolve(n.Content[0])
+	}
+	return n
+}
+
 // RoutingMarkPath is the path ("Mihomo.proxies.0.routing-mark") of the first
 // routing-mark set anywhere in value (depth first, in document order), ""
 // when there is none. root names value in the path. A routing-mark of null,
 // false, 0 or "" is not set. The gateway's routing marks would conflict.
+// Each mapping or sequence is visited once, so shared (aliased) and cyclic
+// node graphs take linear time; a yaml.v3 document wrapper is transparent.
 func RoutingMarkPath(value *yaml.Node, root string) string {
-	value = yamlx.Resolve(value)
-	if value == nil {
+	return routingMarkPath(value, root, map[*yaml.Node]bool{})
+}
+
+func routingMarkPath(value *yaml.Node, root string, seen map[*yaml.Node]bool) string {
+	value = docContent(value)
+	if value == nil || (value.Kind != yaml.MappingNode && value.Kind != yaml.SequenceNode) || seen[value] {
 		return ""
 	}
+	seen[value] = true
 	switch value.Kind {
 	case yaml.MappingNode:
 		if mark := yamlx.Get(value, "routing-mark"); mark != nil && !unset(mark) {
 			return root + ".routing-mark"
 		}
 		for i := 0; i+1 < len(value.Content); i += 2 {
-			if found := RoutingMarkPath(value.Content[i+1], root+"."+keyText(value.Content[i])); found != "" {
+			if found := routingMarkPath(value.Content[i+1], root+"."+keyText(value.Content[i]), seen); found != "" {
 				return found
 			}
 		}
 	case yaml.SequenceNode:
 		for i, child := range value.Content {
-			if found := RoutingMarkPath(child, root+"."+strconv.Itoa(i)); found != "" {
+			if found := routingMarkPath(child, root+"."+strconv.Itoa(i), seen); found != "" {
 				return found
 			}
 		}
@@ -83,6 +104,8 @@ func keyText(key *yaml.Node) string {
 // panel by stable ID, with the subscription token), the selected rule sets'
 // own providers re-pointed to their source URLs, fake-ip DNS on
 // 127.0.0.1:1053, rule mode, ipv6 off and the MarkerKey marker.
+// doc must be a mapping (a yaml.v3 document wrapper around one is accepted);
+// with the gateway on anything else is an error, never a silent no-op.
 // baseURL is used when system_config.server_domain is empty. Errors that
 // refuse the configuration are *Error; the document may then be partly
 // patched and must be discarded.
@@ -93,6 +116,9 @@ func (c *Config) Apply(doc *yaml.Node, baseURL string) error {
 	settings, err := c.Settings()
 	if err != nil || !settings.Enabled {
 		return err
+	}
+	if doc = docContent(doc); !isMap(doc) {
+		return errDocumentNotMapping
 	}
 	conflict := RoutingMarkPath(doc, pathMihomo)
 	if conflict == "" {

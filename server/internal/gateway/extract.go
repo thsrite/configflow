@@ -16,8 +16,12 @@ const (
 	maxRules        = 250000
 )
 
-// yamlPayload detects a YAML rule set ("payload:" on some line).
-var yamlPayload = regexp.MustCompile(`(?m)^\s*payload\s*:`)
+// yamlPayload detects a YAML rule set ("payload:" on some line). Any
+// Unicode white space or ASCII separator control (U+001C–U+001F) around the
+// key counts, so such a file is read (and refused) as YAML instead of being
+// read as text lines that hold no rule — which would silently empty a
+// classical set's capture.
+var yamlPayload = regexp.MustCompile(`(?m)^[\s\v\x{85}\p{Z}\x{1c}-\x{1f}]*payload[\s\v\x{85}\p{Z}\x{1c}-\x{1f}]*:`)
 
 // contentLines are the entries of a rule set: the strings of a YAML
 // payload (or top-level list), else the text lines. Errors are *Error.
