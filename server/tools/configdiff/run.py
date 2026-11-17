@@ -182,6 +182,8 @@ def main():
     groups.update(oxidns_controls)
     from cases.oxidns_plugin_helpers import GROUPS as oxidns_plugin_helpers
     groups.update(oxidns_plugin_helpers)
+    from cases.oxidns_zone_helpers import GROUPS as oxidns_zone_helpers
+    groups.update(oxidns_zone_helpers)
     from cases.oxidns_assets import GROUPS as oxidns_assets
     groups.update(oxidns_assets)
     from cases.oxidns_editor import GROUPS as oxidns_editor

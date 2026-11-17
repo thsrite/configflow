@@ -1959,3 +1959,9 @@ R211-F20/H1042：首次prepare会先由resolve_domain_rules/ensure_builtin_libra
 ### Step B MosDNS live YAML 的来源可观察性
 
 R024/R031-S04/S05及B91：仍比较相应Host/Forwarded请求的完整响应、规则集本地文件路径和存储；该live YAML本身不输出下载URL，不能据此证明Host改变了下载地址。`generate_mosdns_config`只把URL临时加入局部ruleset_downloads，配置插件只保留files路径（[mosdns.py:803](../../backend/converters/mosdns.py#L803)、[mosdns.py:821](../../backend/converters/mosdns.py#L821)）；下载清单另由[get_mosdns_ruleset_downloads](../../backend/converters/mosdns.py#L581)生成。此处origin选择标部分覆盖，不能用“输出含API URL”的错误断言或把相同本地路径当作origin证明。其他客户端及OxiDNS的具名测试用真实生成的provider/规则URL观察优先级。
+
+### Step B zone校验的可观察分支
+
+- H642/H652：`$TTL 4294967296`及记录内同值已由前一步`dns.ttl.from_text`拒绝，公开响应是H662的通用DNS记录诊断，之后的`>U32`专用return不可由这两种HTTP输入证明。超限拒绝场景已实际测试，但原指定return位置标部分覆盖；合法4294967295也有成功对照。依据[oxidns_plugin_constraints.py:535](../../backend/common/oxidns_plugin_constraints.py#L535)、[oxidns_plugin_constraints.py:575](../../backend/common/oxidns_plugin_constraints.py#L575)。
+- H651/H663：单独`# comment only`在当前wrapper中走“相对域名需要$ORIGIN”，不是最终0记录计数错误；空串和两条真实记录才分别覆盖0/>1记录门禁。不能根据zone通用语法假定注释已被wrapper跳过。依据[oxidns_plugin_constraints.py:516](../../backend/common/oxidns_plugin_constraints.py#L516)。
+- H664：schema format名称来自固定目录，HTTP草稿不能声明新的schema格式；未知plugin只产生unknown-plugin warning，不能触发`Unsupported plugin validation format`。该防御分支目前无黑盒HTTP驱动，单列未覆盖原因，不用无关拒绝充数。依据[oxidns_plugin_constraints.py:613](../../backend/common/oxidns_plugin_constraints.py#L613)、[oxidns_validation.py:242](../../backend/common/oxidns_validation.py#L242)。

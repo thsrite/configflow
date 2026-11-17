@@ -1356,3 +1356,20 @@ go-unimplemented=174 design_errors=[] seconds=5.17；exit=0
 ```
 
 继续zone记录、引用/quick语法及剩余helpers；当前H仍差698编号，最终.32全量未执行。
+
+## 批次 78：zone/RDATA、RFC3597、占位符与AdGuard细分
+
+- 56新增变体全部Go尚未实现：37 zone错误输入、3有效极值/占位符/RFC3597对照、16 AdGuard错误或跳过warning；新增H640–H663的24场景编号，包含下述2个指定return只能部分覆盖。统一累计8768变体，原R4162、H438、G16；compared2285、dependency67、different84、O12-separate1不变，Go尚未实现6331。
+- 源自公开validate的精确路径/消息/严重性/完整issues/code、valid/core_check_required和全SQL/files，所有fake HTTP请求必须0。$ORIGIN/$TTL/$INCLUDE/$GENERATE参数与范围、quoted/omitted/relative owner、缺type/RDATA、placeholder位置、RFC3597长度/hex/类型、RDATA引用、空或多条记录；include不读文件，generate不展开大量记录。合法最大TTL4294967295、{qname}/{qclass}与RFC3597应valid=true且issues=[]。
+- AdGuard补Hosts/URL/cosmetic/unsupported modifiers的warning、空pattern/正则/域名、denyallow/dnstype缺值或无效、反向查找/正则语法、内部pipe等，不能把warning统统改成error。
+- 部分覆盖明确记入matrix errata：H642/H652超限TTL在dnspython解析时已被拒绝，公开结果为通用H662；专用>U32 return不可观察。H664固定schema格式名不能由HTTP构造，仍未计入H438。注释单串实际走H651，首轮错误地预期H663已修正；没有伪造该输入会触发0记录门禁。
+
+```text
+.63 run.py --groups oxidns-zone-helper-records,oxidns-adguard-helper-rules
+首轮comment-only前提错误，不作通过；AdGuard16变体design正确
+.63 run.py --groups oxidns-zone-helper-records（修正注释分类后）
+current go-unimplemented=40 design_errors=[] seconds=3.48；exit=0
+独立新增合计56；68 comparator self-checks + wrong-Go-response check OK
+```
+
+继续引用/quick语法与剩余helpers；H仍差674编号，另有明确不可观察分支和多子形态部分覆盖，未完成Step B。
