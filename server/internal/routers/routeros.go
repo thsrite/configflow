@@ -1735,10 +1735,10 @@ func (d *RouterOS) ReadState(ctx context.Context) (*RouterState, error) {
 	}
 	referencedNames := referencedAddressLists(append(slices.Clone(nats), mangleRows...))
 	listNames := slices.Clone(referencedNames)
-	if d.natListTouched && !slices.Contains(listNames, "cf-mihomo-nat-src") {
+	if (d.natListTouched || slices.Contains(referencedNames, NATSrcList) || slices.Contains(referencedNames, NATDstList)) && !slices.Contains(listNames, "cf-mihomo-nat-src") {
 		listNames = append(listNames, "cf-mihomo-nat-src")
 	}
-	if d.natListTouched && !slices.Contains(listNames, "cf-mihomo-nat-dst") {
+	if (d.natListTouched || slices.Contains(referencedNames, NATSrcList) || slices.Contains(referencedNames, NATDstList)) && !slices.Contains(listNames, "cf-mihomo-nat-dst") {
 		listNames = append(listNames, "cf-mihomo-nat-dst")
 	}
 	slices.Sort(listNames)

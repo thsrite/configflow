@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -13,9 +14,12 @@ import (
 
 // Address batch limits follow the measured RouterOS console limits.
 const (
+	// AddressBatchMembers caps one console batch.
 	AddressBatchMembers = 200
-	AddressScriptBytes  = 16 * 1024
-	AddressRemoveBatch  = 500
+	// AddressScriptBytes is the maximum UTF-8 script size.
+	AddressScriptBytes = 16 * 1024
+	// AddressRemoveBatch caps one comma-ID remove request.
+	AddressRemoveBatch = 500
 )
 
 // NATStep is one guarded compensation record. A sweep temporarily stands in
@@ -89,14 +93,39 @@ func (d *RouterOS) guardResource(ctx context.Context, item ROSResource) (Row, er
 	return row, nil
 }
 func writableResource(path string, row Row) (Row, error) {
-	if row.flag("dynamic") {
+	if row.flag("dynamic") || path == rosAddresses && row.set("timeout") {
 		return nil, routerError(messagePolicyDynamic)
+	}
+	if path == rosAddresses || path == rosNAT {
+		values := configROSRow(row)
+		delete(values, "dynamic")
+		delete(values, "invalid")
+		return values, nil
 	}
 	values := payload(path, row)
 	if values == nil {
 		return nil, routerError(messagePolicyDynamic)
 	}
 	return values, nil
+}
+
+var consoleAddressField = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
+
+func validateAddressEntry(values Row) error {
+	for key, value := range values {
+		if !consoleAddressField.MatchString(key) {
+			return routerError(messageAddressInvalidField)
+		}
+		switch value.(type) {
+		case string, bool, json.Number, int, int64:
+		default:
+			return routerError(messageAddressInvalidField)
+		}
+	}
+	if values.text("address") == "" {
+		return routerError(messageAddressInvalidField)
+	}
+	return nil
 }
 
 func addressParams(shared Row) string {
@@ -203,6 +232,7 @@ func (d *RouterOS) CreateAddresses(ctx context.Context, entries []Row, journal *
 	return d.createAddresses(ctx, entries, journal, ids, nil)
 }
 func (d *RouterOS) createAddresses(ctx context.Context, entries []Row, journal *[]NATStep, ids ROSIDs, created map[int]ROSResource) ([]ROSResource, error) {
+	d.invalidateAddresses()
 	type member struct {
 		index  int
 		values Row
@@ -213,6 +243,9 @@ func (d *RouterOS) createAddresses(ctx context.Context, entries []Row, journal *
 	}
 	groups := []group{}
 	for i, values := range entries {
+		if err := validateAddressEntry(values); err != nil {
+			return nil, err
+		}
 		shared := cloneRow(values)
 		delete(shared, "address")
 		at := slices.IndexFunc(groups, func(g group) bool { return sameRow(g.shared, shared) })
@@ -260,13 +293,25 @@ func (d *RouterOS) createAddresses(ctx context.Context, entries []Row, journal *
 			wanted[key] = append(wanted[key], m)
 		}
 		unknown := []Row{}
+		counts := map[string]int{}
+		fresh := map[string]int{}
+		for _, row := range rows {
+			counts[row.id()]++
+			if !before[row.id()] && !ids.table(rosAddresses)[row.id()] {
+				fresh[comparable("address", row["address"])]++
+			}
+		}
+		limits := map[string]int{}
+		for key, members := range wanted {
+			limits[key] = len(members)
+		}
 		for _, row := range rows {
 			if before[row.id()] || ids.table(rosAddresses)[row.id()] {
 				continue
 			}
 			key := comparable("address", row["address"])
 			candidates := wanted[key]
-			if len(candidates) == 0 || !rosIDPattern.MatchString(row.id()) || !valuesMatch(rosAddresses, row, candidates[0].values) {
+			if counts[row.id()] != 1 || fresh[key] > limits[key] || row.flag("dynamic") || row.set("timeout") || len(candidates) == 0 || !rosIDPattern.MatchString(row.id()) || !valuesMatch(rosAddresses, row, candidates[0].values) {
 				unknown = append(unknown, row)
 				continue
 			}
@@ -354,6 +399,9 @@ func (d *RouterOS) DeleteAddresses(ctx context.Context, items []ROSResource, jou
 		return err
 	}
 	for _, item := range items {
+		if item.Path != rosAddresses || item.Config == nil || item.ID == "" {
+			return routerError(messageOperationFormat)
+		}
 		row := live[item.ID]
 		if row == nil || !sameRow(configROSRow(row), configROSRow(item.Config)) {
 			return routerError(fmt.Sprintf(messagePolicyChanged, item.Path, item.ID))
@@ -444,10 +492,22 @@ func (d *RouterOS) restoreAddressSweep(ctx context.Context, s NATStep) error {
 		wanted[key] = append(wanted[key], values)
 	}
 	removing := []string{}
+	counts := map[string]int{}
+	fresh := map[string]int{}
+	limits := map[string]int{}
+	for key, values := range wanted {
+		limits[key] = len(values)
+	}
+	for _, row := range rows {
+		counts[row.id()]++
+		if !before[row.id()] {
+			fresh[comparable("address", row["address"])]++
+		}
+	}
 	for _, row := range rows {
 		key := comparable("address", row["address"])
 		candidates := wanted[key]
-		if before[row.id()] || !rosIDPattern.MatchString(row.id()) || row.flag("dynamic") || row.set("timeout") || len(candidates) == 0 || !valuesMatch(rosAddresses, row, candidates[0]) {
+		if counts[row.id()] != 1 || fresh[key] > limits[key] || before[row.id()] || !rosIDPattern.MatchString(row.id()) || row.flag("dynamic") || row.set("timeout") || len(candidates) == 0 || !valuesMatch(rosAddresses, row, candidates[0]) {
 			continue
 		}
 		wanted[key] = candidates[1:]
@@ -480,7 +540,7 @@ func (d *RouterOS) restoreAddresses(ctx context.Context, steps []NATStep, ids RO
 		if row := live[s.ID]; row == nil {
 			absent = append(absent, s)
 			entries = append(entries, s.Values)
-		} else if !sameRow(configROSRow(row), configROSRow(s.Config)) {
+		} else if row.flag("dynamic") || row.set("timeout") || !sameRow(configROSRow(row), configROSRow(s.Config)) {
 			if changed == "" {
 				changed = s.ID
 			}

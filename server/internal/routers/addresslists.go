@@ -24,7 +24,13 @@ func EncodeAddressRow(row Row) string {
 	parts := []string{}
 	for _, key := range keys {
 		if key != "creation-time" && key != "timeout" {
-			parts = append(parts, key+"="+rosText(row[key]))
+			value := rosText(row[key])
+			switch row[key].(type) {
+			case []any, map[string]any, Row:
+				raw, _ := json.Marshal(row[key])
+				value = string(raw)
+			}
+			parts = append(parts, key+"="+value)
 		}
 	}
 	return strconv.Itoa(len(parts)) + ":" + strings.Join(parts, ";") + "\n"
@@ -43,6 +49,23 @@ func DigestAddresses(rows []Row) AddressDigest {
 		hashes += fmt.Sprintf("%x", md5.Sum([]byte(chunk.String())))
 	}
 	return AddressDigest{len(rows), fmt.Sprintf("%x", md5.Sum([]byte(hashes)))}
+}
+
+// RouterOS array-valued fields have no portable :tostr wire contract. Keep
+// their full REST values rather than manufacturing a digest proof for them.
+func digestableAddresses(rows []Row) bool {
+	for _, row := range rows {
+		for key, value := range row {
+			if key == "timeout" || key == "creation-time" {
+				continue
+			}
+			switch value.(type) {
+			case []any, map[string]any, Row:
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func decodeAddressRow(text string) Row {
@@ -177,7 +200,28 @@ type addressProof struct {
 func cloneRows(rows []Row) []Row {
 	out := make([]Row, len(rows))
 	for i, row := range rows {
-		out[i] = cloneRow(row)
+		out[i] = cloneAddressRow(row)
+	}
+	return out
+}
+
+func cloneAddressRow(row Row) Row {
+	out := make(Row, len(row))
+	for key, value := range row {
+		switch v := value.(type) {
+		case []any:
+			copy := make([]any, len(v))
+			for i, item := range v {
+				copy[i] = cloneAddressRow(Row{"value": item})["value"]
+			}
+			out[key] = copy
+		case map[string]any:
+			out[key] = map[string]any(cloneAddressRow(Row(v)))
+		case Row:
+			out[key] = cloneAddressRow(v)
+		default:
+			out[key] = value
+		}
 	}
 	return out
 }
@@ -244,6 +288,9 @@ func (d *RouterOS) ReadAddresses(ctx context.Context, names []string) (map[strin
 	reusable := map[string]bool{}
 	for _, name := range names {
 		rows, has := proof[name]
+		if has && !digestableAddresses(rows) {
+			has = false
+		}
 		var want *AddressDigest
 		if has {
 			v := DigestAddresses(rows)
@@ -293,6 +340,9 @@ func (d *RouterOS) ReadAddresses(ctx context.Context, names []string) (map[strin
 				d.ExpectAddresses(name, rows)
 				v := DigestAddresses(rows)
 				p.Digest = &v
+			}
+			if !digestableAddresses(rows) {
+				p.Digest = nil
 			}
 			reads[name] = p
 		}

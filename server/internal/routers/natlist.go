@@ -1,8 +1,8 @@
 package routers
 
 // The ConfigFlow RouterOS NAT list rule (one srcnat accept over two address
-// lists). Only its inspection lives here (the NAT assessment needs it); the
-// list sync is R07.
+// lists). Inspection is shared with NAT assessment; planning, reads and guarded
+// writes live in natlist_plan.go, natlist_read.go and natlist_write.go.
 
 import (
 	"maps"

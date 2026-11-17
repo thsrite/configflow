@@ -172,3 +172,36 @@ func storedAddress(value string) string {
 func readonlyRow(row Row) bool {
 	return row["dynamic"] == true || row["dynamic"] == "true" || row["dynamic"] == "yes"
 }
+
+var addressBatchGrammar = regexp.MustCompile(`(?s)^:local n 0\n:local m ""\n:foreach a in=\{(.*)\} do=\{:onerror e in=\{/ip/firewall/address-list/add (.*) address=\$a\} do=\{:set n \(\$n\+1\); :if \(\$n=1\) do=\{:set m \(\$a \. " " \. \$e\)\}\}\}\n:put \("cf-done:" \. \$n \. ":" \. \$m\)$`)
+
+// AddressBatch is a completely parsed, grammar-checked console address batch.
+// Field order is immaterial; address order and every field value are retained.
+type AddressBatch struct {
+	Addresses []string `json:"addresses"`
+	Shared    Row      `json:"shared"`
+}
+
+// ParseAddressBatch accepts only the complete R07 batch grammar. It does not
+// erase extra statements, duplicate fields, unparsed items or completion text.
+func ParseAddressBatch(script string) (AddressBatch, error) {
+	m := addressBatchGrammar.FindStringSubmatch(script)
+	if len(m) != 3 {
+		return AddressBatch{}, fmt.Errorf("invalid address batch grammar")
+	}
+	quoted := quotedValue.FindAllString(m[1], -1)
+	if strings.Join(quoted, ";") != m[1] {
+		return AddressBatch{}, fmt.Errorf("unparsed address items")
+	}
+	command := addressPath + "/add " + m[2]
+	_, shared, ok := parseAddCommand(command)
+	parts, splitOK := splitConsole(command)
+	if !ok || !splitOK || len(parts)-1 != len(shared) {
+		return AddressBatch{}, fmt.Errorf("invalid or duplicate address fields")
+	}
+	addresses := []string{}
+	for _, q := range quoted {
+		addresses = append(addresses, consoleString(q))
+	}
+	return AddressBatch{addresses, shared}, nil
+}

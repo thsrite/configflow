@@ -77,7 +77,12 @@ func r07State(variant string, count int) routerfake.State {
 	}
 	return routerfake.State{Tables: tables}
 }
-func r07CIDR(index int) string { return fmt.Sprintf("198.51.100.%d/32", index) }
+func r07CIDR(index int) string {
+	if index >= 256 {
+		return fmt.Sprintf("198.18.%d.%d/32", index/256, index%256)
+	}
+	return fmt.Sprintf("198.51.100.%d/32", index)
+}
 func r07Desired(count int) *routers.Desired {
 	raw := map[string]any{"fake_ip_range": "", "proxy_gateway": "192.0.2.3", "warnings": []string{}, "proxy_cidrs": []map[string]any{}}
 	items := []map[string]any{}

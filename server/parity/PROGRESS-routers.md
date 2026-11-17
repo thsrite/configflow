@@ -430,16 +430,17 @@ Latest targeted output: `171 real Python boundary cases`, `PASS`, `ok configflow
 
 ## R07 — RouterOS NAT address lists, address-list sync, test helpers
 
-**Status: `missing`** · HR · prereqs: R03, R04 · Go: internal/routers, internal/routers/routerfake
+**Status: implementation complete, final gates running; HR review pending** · HR · prereqs: R03, R04 · Go: internal/routers, internal/routers/routerfake
 
-Files:
-- `backend/routers/routeros_nat_list.py` (1016), `backend/routers/ros_address_lists.py` (297), `backend/routeros_test_helpers.py` (109, test helper → `routerfake`)
+Files: `backend/routers/routeros_nat_list.py` (1016), `ros_address_lists.py` (297), `backend/routeros_test_helpers.py` (109).
 
-Tests: `test_routeros_nat_list.py` (64), `test_nat_list_unchanged.py` (8), `test_ros_address_lists.py` (14), `test_ros_policy_bulk.py` (16)
+Commits: cb64b567 (scoped reads/proofs/fake), d6302eb1 (typed plan, lazy state reads), 4fee989f (bounded address writes, NAT migration/compensation), 2587327a (sync helpers, external-write/restore boundaries). No push; fresh Opus must review before `verified`.
 
-Routes: none.
+Full handoff, R04 F1–F10 prevention, Python test-file mapping, safety corrections and L5 list: [progress/R07-nat-lists.md](progress/R07-nat-lists.md).
 
-Notes for porter: `ros_address_lists.reuse(driver)` (per-preview proof cache), `digest`, `_encode`, paged `cf-rows`/`cf-digest` scripts, batch add with `cf-done:<failed>:<first>`; `nat_resources`, `member_update`, `migration`, `inspect_rule`, `verify`. `routerfake` is the Go port of `routeros_test_helpers.py` (script interpreter for route/NAT adds, address-list digests/pages/batches, `.query` prints) plus the state model of the session fakes; cross-check it against the Python helper on every `/execute` script found in the recordings.
+Typed API: `PlanNATLists`, `NATRemovalsFirst`, `RestrictNATEgress`, `NATPolicyMigrations`, `VerifyNATLists`; `RouterOS.NATResources`, `NATMemberUpdate`, `NATMigration`; registered `nat_list_sync` / `nat_list_restore` handlers. Shared `ReadAddresses`/`FetchAddresses`/`RememberAddresses`/`ExpectAddresses`/`ReuseAddressReads`/`LocateAddresses`/`OccupiedAddressNames`; address batching `CreateAddresses`/`DeleteAddresses`, `ROSResource`/`NATStep`/`ROSIDs`. No new dependency or jsonx. R08 fills typed `NATPolicyEvidence`; R12/R14 own serialized release/worker orchestration and the existing L1/L2 locks. R07 has no route or loop.
+
+Acceptance: real Python driver against the same loopback fake; compare plans, Chinese errors, undo journals, requests and final ordered tables. Independent Python test-helper interpreter verifies captured scripts. Negative mutation test deliberately changes Go result and must fail. All network fakes and final checks on .32; no real device contacted.
 
 ## R08 — RouterOS policy routing
 

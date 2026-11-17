@@ -168,6 +168,9 @@ func (d *RouterOS) DeleteNATRules(ctx context.Context, items []ROSResource, jour
 	}
 	deleting := map[string]bool{}
 	for _, item := range items {
+		if item.Path != rosNAT || item.Config == nil || item.ID == "" {
+			return routerError(messageOperationFormat)
+		}
 		row := findRow(rows, item.ID)
 		if row == nil || !sameRow(configROSRow(row), configROSRow(item.Config)) {
 			return routerError(fmt.Sprintf(messageNATChanged, rosNAT, item.ID))
@@ -369,6 +372,9 @@ func (d *RouterOS) runNATSteps(ctx context.Context, steps []NATStep, ids ROSIDs,
 		}
 		run := steps[start:end]
 		var err error
+		if len(*failures) > 0 && (action == "delete" || action == "sweep") {
+			deleteSafe = false
+		}
 		if address {
 			switch action {
 			case "restore":
@@ -650,6 +656,11 @@ func (d *RouterOS) ApplyNATLists(ctx context.Context, op NATListSync) (*NATListU
 // reports an incomplete rollback; it never deletes by a destination guess.
 func (d *RouterOS) RestoreNATLists(ctx context.Context, op NATListUndo) error {
 	ctx = context.WithoutCancel(ctx)
+	for _, step := range op.Steps {
+		if (step.Path != rosNAT && step.Path != rosAddresses) || (step.Action != "delete" && step.Action != "restore" && step.Action != "sweep") || (step.Action != "sweep" && (step.ID == "" || step.Config == nil)) {
+			return routerError(messageOperationFormat)
+		}
+	}
 	d.invalidateAddresses()
 	d.natListTouched = true
 	rows, err := d.list(ctx, rosNAT)

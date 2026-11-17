@@ -370,3 +370,5 @@ const (
 	messageNATKeptProtection   = "原有免转换对象未能全部恢复，已保留新的 NAT 免转换规则和地址列表条目，请检查后处理"
 	messageNATRollbackPrefix   = "NAT 免转换回滚未完成："
 )
+
+const messageAddressInvalidField = "地址列表条目含无法安全写入的字段"

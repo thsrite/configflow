@@ -38,6 +38,11 @@ func r07Calls(calls []routerfake.Call) []routerfake.Call {
 				body = map[string]any(row)
 			}
 		}
+		if script, ok := body["script"].(string); ok && strings.Contains(script, "address-list/add") {
+			if batch, err := routerfake.ParseAddressBatch(script); err == nil {
+				out[i].Body = map[string]any{"as-string": body["as-string"], "address_batch": batch}
+			}
+		}
 		if script, ok := body["script"].(string); ok && strings.HasPrefix(script, ":local f 0\n") {
 			adds, err := routerfake.ParseConsoleAdds(script)
 			if err == nil {
@@ -256,7 +261,7 @@ func TestAddressWriteBoundary(t *testing.T) {
 				case "unreadable":
 					state.Faults = []routerfake.Fault{{Method: "POST", Path: "/execute", Count: 2}, {Method: "POST", Path: "/execute", Count: 3}, {Method: "POST", Path: "/execute", Count: 4}}
 				case "unknown":
-					state.Faults = []routerfake.Fault{{Method: "POST", Path: "/execute", Count: 1, AfterCommit: true, ExtraRows: map[string][]routerfake.Row{"/ip/firewall/address-list": {{".id": "*F1", "list": routers.NATDstList, "address": "203.0.113.9", "comment": "foreign", "disabled": "false"}}}}}
+					state.Faults = []routerfake.Fault{{Method: "POST", Path: "/execute", Count: 1, AfterCommit: true, ExtraRows: map[string][]routerfake.Row{"/ip/firewall/address-list": {{".id": "*F0001", "list": routers.NATDstList, "address": "203.0.113.9", "comment": "foreign", "disabled": "false"}}}}}
 				case "bad_marker":
 					state.Faults = []routerfake.Fault{{Method: "POST", Path: "/execute", Count: 1, AfterCommit: true, Status: 200, Body: routerfake.Row{"ret": "cf-done:x:"}}}
 				}
@@ -281,6 +286,28 @@ func TestNATRestoreFaultBoundary(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			runR07Boundary(t, boundaryCase{action: "nat_restore", state: initial, op: map[string]any{"sync": op, "mutation": tc.mutation}})
+		})
+	}
+}
+
+func TestNATListRemovalBoundary(t *testing.T) {
+	for _, count := range []int{1, 5, 600} {
+		initial := r07State("list", count)
+		for _, target := range []int{0, count - 1} {
+			for _, action := range []string{"nat_apply", "nat_roundtrip"} {
+				t.Run(fmt.Sprintf("%d/to%d/%s", count, target, action), func(t *testing.T) {
+					op := r07PlannedOperation(t, initial, target)
+					runR07Boundary(t, boundaryCase{action: action, state: initial, op: op})
+				})
+			}
+		}
+	}
+	initial := r07State("list", 5)
+	for _, action := range []string{"nat_apply", "nat_roundtrip"} {
+		t.Run("restrict/"+action, func(t *testing.T) {
+			op := r07PlannedOperation(t, initial, 6)
+			op["replace_rule"], op["out_interface"] = true, "bridge"
+			runR07Boundary(t, boundaryCase{action: action, state: initial, op: op})
 		})
 	}
 }

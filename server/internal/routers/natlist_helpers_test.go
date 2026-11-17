@@ -185,3 +185,42 @@ func TestNATListReadHelpersBoundary(t *testing.T) {
 		runR07Boundary(t, boundaryCase{action: "helper", state: state, op: map[string]any{"function": "occupied", "patterns": []string{"CF_Source_Proxy_IP_[0-9]+", "cf-mihomo-nat-.*"}, "exclude": []string{routers.NATSrcList}}})
 	})
 }
+
+func TestNATListVerifyBoundary(t *testing.T) {
+	initial := r07State("list", 5)
+	src, dst := []string{}, []string{}
+	for _, row := range initial.Tables["/ip/firewall/address-list"] {
+		if row["list"] == routers.NATSrcList {
+			src = append(src, fmt.Sprint(row["address"]))
+		} else {
+			dst = append(dst, fmt.Sprint(row["address"]))
+		}
+	}
+	for _, variant := range []string{"valid", "extra_owned", "missing_member", "withdraw", "egress", "rule_missing", "legacy_present", "mangle_unreadable", "filter_unreadable", "raw_unreadable"} {
+		t.Run(variant, func(t *testing.T) {
+			state := r07State("list", 5)
+			check := routers.NATListCheck{Sources: src, Destinations: dst, Removed: []string{}, Members: routers.NATListMembers{Src: src, Dst: dst}}
+			switch variant {
+			case "extra_owned":
+				state.Tables["/ip/firewall/address-list"] = append(state.Tables["/ip/firewall/address-list"], routerfake.Row{".id": "*FFFF", "list": routers.NATDstList, "address": "203.0.113.1", "comment": routers.NATListComment, "disabled": "false"})
+			case "missing_member":
+				state.Tables["/ip/firewall/address-list"] = state.Tables["/ip/firewall/address-list"][1:]
+			case "withdraw":
+				check.Withdraw = true
+			case "egress":
+				check.OutInterface = "bridge"
+			case "rule_missing":
+				state.Tables["/ip/firewall/nat"] = state.Tables["/ip/firewall/nat"][1:]
+			case "legacy_present":
+				check.Removed = []string{"*3"}
+			case "mangle_unreadable":
+				state.Faults = []routerfake.Fault{{Method: "GET", Path: "/ip/firewall/mangle"}}
+			case "filter_unreadable":
+				state.Faults = []routerfake.Fault{{Method: "GET", Path: "/ip/firewall/filter"}}
+			case "raw_unreadable":
+				state.Faults = []routerfake.Fault{{Method: "GET", Path: "/ip/firewall/raw"}}
+			}
+			runR07Boundary(t, boundaryCase{action: "helper", state: state, op: map[string]any{"function": "verify", "check": check}})
+		})
+	}
+}
