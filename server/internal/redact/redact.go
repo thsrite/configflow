@@ -434,6 +434,10 @@ func StoredSecretFinder(ctx context.Context) (func(text string) []Range, error) 
 	if err != nil {
 		return nil, err
 	}
+	// Registration is a server credential too. It must be irreversibly masked
+	// in configuration diffs and excluded from search, rather than merely
+	// marked as a revealable user-supplied configuration credential.
+	secrets = NewSecrets(secrets, []string{os.Getenv("AGENT_REGISTRATION_KEY")})
 	var all []string
 	for _, secret := range secrets {
 		for _, variant := range variants(secret) {

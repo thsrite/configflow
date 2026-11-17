@@ -5,8 +5,9 @@
 无子 agent、无 push/PR、无生产访问，测试经 rt 在测试服务器执行。
 
 状态：**复核中**。已 rebase 到 `go@8d716ceb`（A24 复核、N8-6、R08、provider 负载修复）。
-F1/F3 已修复并经 race/HTTP 回归；F2 元数据兜底已修复，环境 finder 快照待正式整理。
-临时 `go-review-a13-a24-prep` 上的预验已完成，结束前清理其 worktree/branch 与 rt 副本。
+F1/F2/F3 已修复并经 race/HTTP 回归，0 未决实现发现；最终门禁通过后设 verified。
+临时 `go-review-a13-a24-prep` 上的预验已完成；两次临时 worktree 均已 rt clean、git worktree remove，
+第二次临时分支也已删除。无临时源码、测试目录或调试文件残留。
 
 ## 发现
 
@@ -20,7 +21,7 @@ F1/F3 已修复并经 race/HTTP 回归；F2 元数据兜底已修复，环境 fi
   `TestReviewCloseCancelsRealRuntimeWorkers` 使用真实 Runtime，分别覆盖运行中及启动前关闭，
   同时断言 WaitIdle、槽位、Keyed reservation、状态及详情全部清理。
   修复前两场景均失败；修复后 contentsync race 通过。
-- **F2，高，待修复：环境注册密钥在 diff/entries 及搜索中泄露。**
+- **F2，高，已修复：环境注册密钥在 diff/entries 及搜索中泄露。**
   `StoredSecretFinder` 只读取仓库 tokens，遗漏 `AGENT_REGISTRATION_KEY`。
   明文、URL 编码及跨 CJK 的局部文本能从 push-diff、entries 返回并被 q 命中。
   真实 Python 同样复现，属于安全修正；协调者已确认在共享 finder 纳入环境密钥，
@@ -31,6 +32,9 @@ F1/F3 已修复并经 race/HTTP 回归；F2 元数据兜底已修复，环境 fi
   和字典键含已知密钥则整项遮盖。排序确保遮盖后键冲突顺序确定。
   `TestReviewStoredCredentialMetadataFallback` 先失败，随后 pushdiff race 通过（60.471s）；
   普通上下文、用户可 reveal 的 password、隐藏视图和原对象不变均有断言。
+  StoredSecretFinder 现包含环境注册密钥的独立快照。真实 HTTP 对配置行、字典键、节点名、
+  raw 和 paged entries 检查明文/编码均不返回、不被 q 命中，普通节点/规则仍可搜索。
+  单测另验双层编码、中文局部范围、密钥轮换后旧闭包隔离，及全局 JSON hook 策略不变。
 - **F3，高，已修复：A24 publicAgent 投影顺序丢失密钥知识，跨字段引用泄露。**
   `deploy.PublicDeployment` 先把 history 中的 api_key 清成 `[REDACTED]`，随后
   外层 SanitizeCredentials 才收集字段，已经看不到原 key。顶层 journal 和 HA.message
@@ -137,5 +141,19 @@ RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'cd server && go vet ./internal/red
 redact 1.066s、API 8.507s、Manager 3.839s；初始 repo fixture 缺 profile binding，补上正确的
 默认 profile 后 repo 1.235s，再加入并发提交回归后 1.543s。无 API 或 redactor 未决失败。
 
-剩余：整理 F2 环境 finder、完成共享脱敏/分页与 20 条 baseline 因果证明复验，
+正式合并树 F2 与相关消费方复验（.64，exit 0）：
+
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'cd server && go vet ./internal/redact ./internal/deploy/... ./internal/api/agents ./internal/agents ./internal/repo && CONFIGFLOW_DIFF=1 go test -race -count=1 ./internal/redact ./internal/deploy/pushdiff ./internal/deploy/contentsync && CONFIGFLOW_DIFF=1 go test -race -count=1 -run "TestContent|TestReviewA13|TestPublicAgentPython" ./internal/api/agents && CONFIGFLOW_DIFF=1 go test -count=1 -run "TestContentReadsAgainstFlask|TestContentChangesAgainstFlask" ./internal/api/agents/difftest'
+```
+
+```text
+ok configflow/internal/redact 1.354s
+ok configflow/internal/deploy/pushdiff 64.166s
+ok configflow/internal/deploy/contentsync 4.126s
+ok configflow/internal/api/agents 17.507s
+ok configflow/internal/api/agents/difftest 3.405s
+```
+
+剩余：最新 go 变基、20 条 baseline 因果证明复验，
 `git rebase go` 后运行 `server/scripts/gate.sh -p 6` 和相关 fuzz；零未决后改 verified。

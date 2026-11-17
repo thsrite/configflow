@@ -351,3 +351,13 @@ it constructs no history copy and returns no raw history reference. The collecto
 bounded/cycle-safe visitor and never logs values. No global JSON-hook policy or revealable user
 configuration credential policy changes.
 
+## A13 — registration credentials in content diffs
+
+Security correction, reproduced through real Python preparation and Flask routes: the environment
+AGENT_REGISTRATION_KEY, including URL-encoded forms, could leave through push-diff, paged entries
+and search matches. StoredSecretFinder now includes an independent snapshot of that key. The sole
+A12 WithoutStored walker retains partial redaction for display texts and masks any remaining known
+credential in metadata strings/keys (including row paths and file paths). Search uses the same finder.
+Plain user configuration passwords remain revealable only in their existing marked credential pieces;
+their hidden view stays secret-free. Global ExternalPayloadSecrets / JSON-hook policy is unchanged.
+

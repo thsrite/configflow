@@ -1151,10 +1151,12 @@ repo.GetAgentsInspect / Manager 透传在同一 view、轻读前收集独立 Sec
 四种 GET 读法的 journal→deployment.api_key、HA 引用、HTTP error/panic 日志、cycle/depth、
 同代 snapshot/并发 commit、runtime overlay 均通过定向 race；repo 补验 1.543s，API 8.507s。
 **N8-5 迁移时需保留此 inspection 能力**；若 O3-6a 先合入，保持其锁结构并把 callback 接回原 read view。
-F2 高严重度（环境注册 key 从 diff/entries/search 泄露）：A12 唯一 mapTexts 元数据兜底已修复，
-finder 环境快照在临时分支预验通过，下一步整理到正式分支、完整 HTTP 回归、gate.sh -p 6 + 相关 fuzz。
+F2 高严重度（环境注册 key 从 diff/entries/search 泄露）已修复：A12 唯一 mapTexts 元数据兜底 +
+shared finder 环境快照；合并树实际 HTTP 明文/编码/节点名/字典键/分页/搜索、error/panic 日志全通过。
+定向 race：redact 1.354s / pushdiff 64.166s / contentsync 4.126s / API 17.507s；真实 Flask 两组差分 3.405s。
+下一步最新go变基、20条因果证明复验、gate.sh -p 6 + 相关 fuzz。
 基线36 tests、原Python六文件101 tests、三项安全oracle通过；原20项因果证明21 HTTP/3 actual bundles通过。
-当前仍 ported，最终门禁与 F2 回归全部通过后才 verified。临时 worktree/branch/rt副本结束前清理。
+当前仍 ported，0 未决实现发现，最终门禁通过后 verified。两次临时 worktree、临时 branch 和 rt 两机副本均已清理。
 
 **Design:** `server/design/a14-publish.md` (Opus, 2026-11-17) covers the whole chain A11→A14 — package map, types, Agent protocol, state machine, locks, failure table, steps A13-1, A13-2, acceptance. Port to it; contract changes need the designer's or coordinator's agreement.
 
