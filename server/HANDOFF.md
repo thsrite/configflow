@@ -61,45 +61,36 @@ started them. Re-route them by sending every running agent below a one-line `mcp
 `notifyOnFinish: true` ("协调会话已更换，任务不变，继续做，完成后照常报告。"). Then poll each once with
 `get_agent_status`; act on any that already finished.
 
-**Pending coordinator actions** (updated 2026-11-17 ~20:30 by coordinator bb75f5c0)
-Merged since 19:10: O3-4 (8bf1b189, verified on .64), N8-3 Opus review verified (fa237d77). O3-1..O3-4 joint Opus review
-61a8e7c1 running (go-opus-review-o3). O3-5 (6e5c7760, go-o3-5) does non-lockx/lifecycle parts first; internal/clock +
-Flight.DoChan + provider + matchercache after the O3 review merges. N8-4a–d → 95eb529e (go-n8-4); N8-4e/f (HR data, Opus
-review) + N8-6 + N8-7 (after O3-5) still to dispatch. N7-3a final gate running on .64; merge order a → b → c.
-Merged since: O3-3 (fb43c371), N8-3 ported + A11 Opus review verified (1e0f7ac3). Opus quota ran out ~18:00, reset 19:00;
-R07 review (64c0ec9d) and N8-3 review (38e6f0a7) resumed. Next Opus: O3-1..O3-3 joint review. A12 → fresh Codex.
-N7-3 shared yamlx commits on go-n7-3a, cherry-picked by b/c: 0b98b42e tag/shape, dc3f339c AllPairs, 23196ddd merge
-source + explicit scalars via yaml.v3 decode, a7acc788 error sentinels (ErrSyntax/ErrPolicy/ErrAliasRecursion/ErrAliasBudget).
-N7-3b also owns convert/proxyyaml_loose.go + convert API error returns; N7-3c also discovery/bridge.go customPorts.
-1. importer bounds: merged 601731d3 (full `-race` at default -p passes on .32).
-2. R06 Opus review merged (bd8a6a92 rebased; 1 high/2 medium/2 low; Codex keeps routers HR ports). R07 handed back →
-   Opus review 64c0ec9d (`go-opus-review-r07`); after it: R08/R09 (fresh Codex; 66833acf context ~409k).
-3. When N7-3a/b/c all merged: **N7-3d** to 097eba4e — (i) migrate the remaining bare yaml.v3 decoders found by
-   N7-3b's sweep to yamlx.Parse (D1/tag/merge/alias policy): internal/importer/parse.go:255, internal/rules/matcher.go:222,
-   internal/oxidns/adapter.go:136, internal/oxidns/native.go:103; (ii) delete `internal/pyyaml` + old loader; (iii) add
-   the grep gate as a test (no yaml.Unmarshal/NewDecoder on user text outside yamlx). Then N7-4.
-4. A11 handed back (ported, `go-port-a11` 49b51bc1) → Opus review 7ea2310a running. After it: A12 (author 74bce4a1
-   is idle, context ~385k/475k — consider a fresh Codex).
-5. Third test server done: `.64` (Hyper-V, set up and verified 2026-11-17 — full gate incl. proddiff passes; venv
-   identical to .32; snapshot copied; `ssh pve` key with from=.64). `rt` load-balances .32/.64.
-Done since the evening handoff: N7-2 verified on .32 and merged (go 75e280b9, pushed).
-Decision (coordinator, 2026-11-17): invalid explicit tag/shape combos (`!!null [a]` …) are rejected with a lined
-Chinese error (PyYAML rejects them too; same direction as D1 and N7-2 F6) — implemented once in yamlx by N7-3.
+**Pending coordinator actions** (updated 2026-11-17 ~21:45 by coordinator bb75f5c0)
+Merged today after 19:10: O3-4, N8-3 (+Opus review), C31 (+Codex review, verified), N7-3a, O3-1..O3-4 Opus review
+(verified), installer locale fix, R07 (+Opus review, verified), A12 (ported; Codex review 7d6eb2a0 running). go = 631a4815.
+Verification queue: .32 N7-3b (running) → N7-3c; .64 free. Merge order N7-3: b → c, then N7-3d (097eba4e).
+Rules learned: one full -race per server at a time; on .64 use -p=4 (15 GB, OOM-killed once); installer has an
+ETXTBSY flake (66833acf fixing on go-fix-installer-etxtbsy) — rerun alone before treating it as a failure.
+Decisions today (all recorded in design "Clarified in …"): N7-3 native YAML classes (5.7), invalid tag/shape/merge
+rejected, explicit scalars via yaml.v3 decode, error sentinels, Chinese syntax prefix; N8-6 Bind/BindSilent(bool);
+O3-4/O3-5 Clock/OnStart/Detach/Clear, internal/clock, Flight.DoChan; O3 review BindRequest; A13 Checker in api/agents,
+InputKey incl. profile_name; A24 C37 guard/query + shared publicAgent helper (78b796af).
+Next: R09 (fresh Codex, HR) when a slot frees; R05 iKuai netmask-suffix compensation bug from routers Step B → R05
+owner; N8-4e/f + Opus review after N8-4a–d; N8-7 after O3-5; A14 after A13; Opus: L1 lab running (93111aab).
+User owes nothing. .64 RAM increase suggested (optional).
 
 **Running agents** (Paseo project prj_b0033e1859522497; worktrees ~/.paseo/worktrees/302rx1dg/<slug>)
 | agent | kind | task | branch |
 |---|---|---|---|
-| 64c0ec9d-4e6e-4d7b-8e11-8fd4f97b4f3d | Opus | R07 HR review | go-opus-review-r07 |
-| 61a8e7c1-fef5-477b-8e16-2130779acce9 | Opus | O3-1..O3-4 joint review | go-opus-review-o3 |
+| 93111aab-7214-40a7-97d3-5758fe9c7a0a | Opus | L1 lab (installers, upgrade, address follow) | go-lab-l1 |
+| 92daf1d5-eeec-4589-b4d4-876e1231d3e4 | Codex | R08 policy routing (HR → Opus review) | go-port-r08 |
+| e4c12b68-f030-4c50-8cb2-a7a86b73f6bc | Codex | A13 content sync + routes | go-port-a13 |
+| 7d6eb2a0-4cd5-4f50-97ac-28c3d4ed68eb | Codex | A12 review | go-review-a12 |
+| 0d31fb93-a16c-48f8-8e5e-9c2756fb0e6f | Codex | A24 client tools | go-port-a24 |
+| 6e5c7760-36eb-4e1d-a5f0-1c378a081b14 | Codex | O3-5 Spawn migration | go-o3-5 |
 | 95eb529e-0369-4d40-9205-13e4c4764e1c | Codex | N8-4a–d model types | go-n8-4 |
-| e4c12b68-f030-4c50-8cb2-a7a86b73f6bc | Codex | A12 push diff (non-HR) | go-port-a12 |
-| 6e5c7760-36eb-4e1d-a5f0-1c378a081b14 | Codex | O3-5 Spawn migration (decisions 1–4 in Clarified in O3-5) | go-o3-5 |
-| c5332a35-f886-4d2d-90e2-f48496728a68 | Codex | routers black-box Step B (findings → difftest-routers-findings.md) | go-difftest-routers-b |
-| e46d698f-6345-41b9-8a38-06d61b6622d3 | Codex | config black-box Step B (findings file) | go-difftest-config-b |
-| 0d31fb93-a16c-48f8-8e5e-9c2756fb0e6f | Codex | C31 aggregation routes + device notes; register aggregation-provider in proddiff | go-port-c31 |
-| 097eba4e-3a43-4bf8-9920-6e970f43faa7 | Codex | N7-3a subs+substore readers → new yamlx | go-n7-3a |
-| 19338c67-c336-40c7-98a9-b4532a66af68 | Codex | N7-3b rulefetch+refresh readers | go-n7-3b |
-| 27131008-8a7b-4e5d-9354-a4a744d9df9d | Codex | N7-3c mosdns/routers/routersplit/installer/provider readers | go-n7-3c |
+| 097eba4e-3a43-4bf8-9920-6e970f43faa7 | Codex | N8-6 request binding (then N7-3d) | go-n8-6 |
+| 27131008-8a7b-4e5d-9354-a4a744d9df9d | Codex | N7-3c mosdns/routers/routersplit/installer/provider | go-n7-3c |
+| 19338c67-c336-40c7-98a9-b4532a66af68 | Codex | (N7-3b handed back, idle) | go-n7-3b |
+| 66833acf-d1e4-45fb-b3bb-3b7d4bae0cbd | Codex | installer ETXTBSY flake | go-fix-installer-etxtbsy |
+| e46d698f-6345-41b9-8a38-06d61b6622d3 | Codex | config Step B | go-difftest-config-b |
+| c5332a35-f886-4d2d-90e2-f48496728a68 | Codex | routers Step B | go-difftest-routers-b |
 Idle and reusable: 74bce4a1 (A11 author, context high), 66833acf (R07 author, context high), 12b84914 (proddiff load fix), c5332a35 after N8-3.
 
 **Queue (in order of value)**
