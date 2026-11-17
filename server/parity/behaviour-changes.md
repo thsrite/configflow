@@ -751,3 +751,9 @@ R10 不生成/重写 YAML；原保存 YAML（含 CRLF/注释/引号/alias）逐�
 R10 rule-set 的 borrowed 回读也要求路由仍然 active：Python 仅比较排除了 active 的 stable config，
 会把发布期间失活但配置未变的借用路由报为验证成功；Go 返回既有 borrowed verification 错误。
 `TestR10BorrowedRouteMustRemainActive` 同时固定 fake/rules 的只读回读边界。
+
+R10 复核 F1：IPv6 路由补偿 DELETE 报错（回复丢失、回读失败）后，若重新 `GET` 证明该 ID 已不存在，
+按补偿成功处理并继续后续恢复。Python 把它记为回滚失败（`RouterRollbackError`）但仍继续恢复；
+Go 移植版原本把它当失败并跳过 Fake-IP 旧路由恢复，使网段失去路由。现在设备结果与 Python 相同，
+旧路由的新 ID 按恢复响应重映射进 manifest，错误类别为原始失败而非回滚失败。
+`TestR10ReviewLostDeleteDeviceMatchesPython`、`TestR10ReviewFakeRollbackRestoresAfterLostDelete`。

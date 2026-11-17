@@ -76,6 +76,9 @@ Python's `backend/routers` is one big import cycle (most cross-module imports ar
 | R08 | RouterOS policy routing (plan, write, view) | 1349 | verified | HR | R07, C05, C26 (`normalize_policies`, present) | – | internal/routers |
 | R09 | forced DNS (DNS guard), IPv4 same-port forward hint | 773 | verified | HR | R04, R07 | – | internal/routers |
 | R10 | IPv6 policy, IPv6 fake-IP, IPv6 rule-set routes | 1247 | missing | HR | R04, R09 | – | internal/routers |
+
+| R09 | forced DNS (DNS guard), IPv4 same-port forward hint | 773 | ported | HR | R04, R07 | – | internal/routers |
+| R10 | IPv6 policy, IPv6 fake-IP, IPv6 rule-set routes | 1247 | verified | HR | R04, R09 | – | internal/routers |
 | R11 | IPv6 PD guard, IPv6 DNS, RouterOS IPv6 readiness | 1161 | missing | HR | R10 | – | internal/routers |
 | R12 | release plan and staged execution | 1220 | missing | HR | R03–R11, A01 (return routing calls, ready) | – | internal/routers |
 | R13 | inspection service, return advisory, pending reminders | 713 | missing | HR | R12, C07 (`RecordRouter`, ready), A01, A06 (ready); A23⁴ | – | internal/routers |
@@ -662,7 +665,7 @@ mapping are in the linked R09 progress file. Fresh Opus review and L5 remain req
 
 ## R10 — IPv6 policy, IPv6 fake-IP, IPv6 rule-set routes
 
-**Status: `ported`** · HR · prereqs: R04, R09 · Go: internal/routers
+**Status: `verified`** (Opus review 2026-11-18; L5-D pending) · HR · prereqs: R04, R09 · Go: internal/routers
 
 Files:
 - `backend/routers/ipv6_policy.py` (529), `backend/routers/ipv6_fakeip.py` (348), `backend/routers/ipv6_routes.py` (370)
@@ -693,6 +696,16 @@ routersplit 17.040s、devhttp 3.596s、repo 214.788s）；R10 / R09 evaluator �
 详细逐类复核防护、API 契约、Python 测试映射、行为修正、文件行数、精确命令与结果：
 [progress/R10-handoff-zh.md](progress/R10-handoff-zh.md)、[r10-test-map.md](r10-test-map.md)。
 R06/R07/R08/R09/A24/N8-4ef 问题类别均在交接文件逐项说明，行为修正已登记 behaviour-changes.md。
+
+### R10 独立 Opus 复核（2026-11-18）
+
+[review-r10.md](review-r10.md)：0 high、1 medium（已修）、1 low（已修）、3 low 记录。
+F1：补偿 DELETE 回复丢失但设备已删除时，Fake-IP 回滚跳过旧路由恢复，网段失去路由
+（Python 会恢复）；改为回读证明 ID 已不存在即按成功处理。F2：dynamic/connect 的正确 Fake-IP
+路由阻断文案与 Python 不同；候选判断改用与 Python `_correct` 同义的 `ipv6Routes`。
+修复提交 `33df00c2f`，新增 Python 对照探针 `62aac8870`（24 组路由序列、15 组 policy_checks 全部一致）。
+`./internal/routers/...` race 在 `.64` 通过（633.612s）。最终 `.64` gate.sh：gofmt/vet/build tags 通过，
+全量 race 97 包 ok，proddiff new=0 stale=0，difftest 15 包 ok，7 个 fuzz PASS（排队约 19 分钟，详见 review-r10.md）。
 
 ## R11 — IPv6 PD guard, IPv6 DNS, RouterOS IPv6 readiness
 
