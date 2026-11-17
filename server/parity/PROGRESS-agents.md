@@ -4,6 +4,27 @@ Domain `agents` (WORKFLOW.md): Agent registry/heartbeat, metrics/traffic, OxiDNS
 
 Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 496004d7. The Go code was read directly (`internal/agents`, `internal/api/agents`, `internal/notifications`, `internal/tasks`, `internal/server`); the hand-back in `progress/20-agents.md` was not relied on.
 
+## N7-3c — installer/discovery YAML readers (partial; final acceptance running)
+
+Branch `go-n7-3c`. Compose metadata/annotations and custom Mihomo port discovery
+use Parse/Node/Decode. Installer metadata refuses composite JSON keys with a
+Chinese message; annotations ignore non-string keys by their documented path
+schema. Discovery ignores opaque keys while retaining known inbound/listener
+ports; tagged integer Decode failures refuse explicitly instead of producing zero.
+
+**8246 input occurrences**: equal 8242; native diagnostics 1; D1 1;
+复合映射键：Node 保留 1; 未知标签：Python 拒绝 → Go 接受 1; other categories 0.
+8239 Compose inputs include independently regenerated Python artifacts whose
+original recorded hashes are verified before extracting reference semantics.
+ZIP member names/permissions and non-Compose bytes remain strict; tamper tests
+reject changed values/types, shell bytes, permissions and extra members.
+
+Every entry has depth-40 alias amplification/cycle regressions and 10000/10001
+plain-depth checks. Compose annotation traversal prunes unknown paths rather than
+copying ever-longer paths. Gate counts:
+[progress/n7-3c-gate.md](progress/n7-3c-gate.md); commands/final state:
+[progress/n7-3c.md](progress/n7-3c.md). No installation or device writes are executed.
+
 ## Conventions
 
 Same as `PROGRESS-config.md`: status `missing` / `partial` (exact list of what is missing) / `ported` (code and tests exist, not reviewed) / `verified` (reviewer only). A test file is listed under the module that owns its subject; cases that need a later module are **deferred** and listed in the section of the module that makes them runnable. Python test counts are `def test*` per file. Routes are rows of `server/parity/routes.tsv` (its "go package" column still carries the old package numbers; porters write the Go package when they set `done`).

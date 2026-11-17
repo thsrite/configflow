@@ -244,6 +244,14 @@ Coordinator decisions, 2026-11-17; `design/n7-n8.md` §§5.4/5.7.
 - Unknown and `!!python/*` tags are kept as Nodes (no Python constructors execute): scalar text and
   collection structure pass through. Typed fields still validate their native destination type;
   invalid tagged discovery ports return a Chinese validation error, never an empty/zero port.
+- Composite keys remain Nodes; string-key schemas ignore irrelevant keys, while JSON proxy
+  objects reject composite keys through the existing “Provider YAML 内容无效” path. Scalar
+  int/bool/null/float keys use the single shared JSON key projection. HR desired plans are tested
+  against the same input with opaque keys removed.
+- Ordinary deep nesting follows yaml.v3's limit rather than Python's recursion limit. Native
+  parser grammar (TAB, anchors, directives, BOM/escapes) and unlimited decimal integers follow
+  the approved shared policy; native syntax diagnostics carry Chinese context and positions
+  when available. Counts are in progress/n7-3c-gate.md.
 - Router desired reading and router-split base documents use the shared policies. Ordinary generated
   output remains semantically equivalent; native YAML typing, timestamp text and the approved
   rejection classes are counted individually in the N7-3c migration gate. No router-write logic changes.

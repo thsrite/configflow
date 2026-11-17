@@ -4,6 +4,28 @@ Domain `routers` (WORKFLOW.md): router core, iKuai, RouterOS core/policy, router
 
 Planning audit: 2026-11-16, worktree `configflow-go`, branch `go` at 7b1b90b5 (plus uncommitted work of the C24/C25 agent in `internal/oxidns`). The Go tree was searched directly (`grep -ri 'routeros|ikuai|router_split|routers_of|router' server/internal`): **no package ports any routers file**; `internal/server` wires no routers package. What exists is listed under "Go code that already touches this domain" below; nothing from the old `progress/` files covers #32–#38.
 
+## N7-3c — desired/router-split YAML readers (partial; final acceptance running)
+
+Branch `go-n7-3c`; **only YAML reading and base graph handling**; no router write
+logic changes. Desired fake-IP and router-split base/shape/generation reads use
+Parse/Node. Tagged/untagged values and composite-key/key-removed documents produce
+identical complete router plans. Opaque composite keys are preserved in free-form
+base YAML, ignored by string-key desired/TUN schema navigation; no default range
+is substituted merely because unrelated metadata has a composite key.
+
+**3438 actual input occurrences**: equal 3168; native diagnostics 141; D1 7;
+YAML 1.1/timestamp 43; reader policy 9; tag shape 33; unsafe aliases 6;
+复合映射键：Node 保留 8; 未知标签：Python 拒绝 → Go 接受 19; deep ordinary 4;
+native grammar/explicit-scalar-native 0. Counts and per-entry comparisons:
+[progress/n7-3c-gate.md](progress/n7-3c-gate.md).
+
+Full router-split recorded/corpus/edge comparisons pass on .32/.64. New graph
+regressions check depth-40 alias chains, cycles, displaced definitions, and plain
+10000/10001-depth documents. Native schema changes use an independent actual
+Python converter reference; every unrelated field and collaborator call stays
+strict. Final server acceptance and command/output record:
+[progress/n7-3c.md](progress/n7-3c.md). HR plan tests use synthetic data only.
+
 ## Conventions
 
 Same as `PROGRESS-config.md` / `PROGRESS-agents.md`: status `missing` / `partial` (exact list of what is missing) / `ported` (code and tests exist, not reviewed) / `verified` (reviewer only). Test counts are `def test*` per file. Routes are rows of `server/parity/routes.tsv`. A test file is listed under the module that owns its subject; when it also drives later modules, its replay rows for those modules stay *pending* until they are ported (pattern of `internal/oxidns`).

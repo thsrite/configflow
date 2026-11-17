@@ -4,6 +4,33 @@ Domain `config` (WORKFLOW.md): foundation (old packages #0–#5) and configurati
 
 Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 9783acd1 (plus uncommitted work of the subs and agents agents). File list and other domains: `server/parity/FILES.md`.
 
+## N7-3c — MosDNS/provider YAML readers (partial; final acceptance running)
+
+Branch `go-n7-3c`; call-site and command record:
+[progress/n7-3c.md](progress/n7-3c.md), every caller's input counts:
+[progress/n7-3c-gate.md](progress/n7-3c-gate.md). No old loaders are deleted.
+MosDNS custom base/upstreams/payload/archive references and provider proxies/source
+positions now use Parse/Node/Decode. JSON adaptation keeps scalar proxy keys through
+shared StringifyScalarKeys; composite proxy keys take the existing Chinese failure
+path, opaque root keys are ignored. MosDNS retains ordinary syntax fallback and
+explicitly refuses policy/unsafe aliases. Native source tags and free-form keys
+are kept; alias sharing survives generated forwarder reuse and displaced anchors.
+
+**20972 actual input occurrences**, one primary category each: equal 15400;
+native diagnostics 2965; D1 29; YAML 1.1/timestamp 586; reader policy 64;
+non-JSON tag shape 556; unsafe aliases 54; 原生解析器语法范围 1255;
+复合映射键：Node 保留 6; 未知标签：Python 拒绝 → Go 接受 57; deep ordinary 0.
+The shared 1591/735 core gate has 2326 classified rows (full table at the link).
+
+C21's 47072 rows compare actual Python output structurally with **no blanket
+unholdable-value exception**; C28's 87 YAML inputs and C21's 20 review inputs are
+included. Every YAML entry has depth-40 amplification/self-reference and native
+10000/10001 nesting checks. Final race/full/differentials/proddiff are running.
+Pending integration: C17 corpus parse rows 164–166 (`{[a]: b}`), 179–181 (TAB empty
+proxies), 209–211 (unused timestamp metadata) need N7-3a's substore reader merged
+before the final public ParseProviderProxies replay; this branch does not modify
+substore. Context, source labels and all non-YAML effects remain strict.
+
 ## Conventions
 
 - Status: `missing` (no Go code), `partial` (some code; the section lists exactly what is missing), `ported` (code and tests exist, nothing obviously missing; **not reviewed**), `verified` (set by a reviewer only, with commit ids and checks).
