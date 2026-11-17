@@ -2,6 +2,7 @@ package rulelibrary
 
 import (
 	"errors"
+	"strings"
 
 	"configflow/internal/auth"
 	"configflow/internal/httpx"
@@ -39,6 +40,22 @@ func RegisterWithOptions(r *httpx.Router, options Options) {
 		out, err := s.Create(c.Context(), body)
 		return respond(out, err)
 	}))
+	r.Handle([]string{"PUT", "DELETE"}, "/api/rule-library/<rule_id>", "rule_library.handle_rule_library_item", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
+		var body record
+		if c.Method() == "PUT" {
+			var ok bool
+			var err error
+			body, ok, err = readBody(c)
+			if err != nil {
+				return nil, err
+			}
+			if !ok {
+				return respond(nil, fail(400, msgObject))
+			}
+		}
+		out, err := s.Mutate(c.Context(), c.Param("rule_id"), body, c.Method() == "DELETE", strings.TrimRight(c.URLRoot(), "/"))
+		return respond(out, err)
+	}))
 	r.Handle([]string{"GET", "PUT"}, "/api/rule-library/<rule_id>/draft-content", "rule_library.edit_rule_library_content", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
 		if c.Method() != "PUT" {
 			out, err := s.Draft(c.Context(), c.Param("rule_id"))
@@ -53,6 +70,26 @@ func RegisterWithOptions(r *httpx.Router, options Options) {
 			return nil, err
 		}
 		out, err := s.SaveDraft(c.Context(), c.Param("rule_id"), body)
+		return respond(out, err)
+	}))
+	r.POST("/api/rule-library/test-single", "rule_library.test_single_rule", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
+		body, _, err := readBody(c)
+		if err != nil {
+			return nil, err
+		}
+		out, err := s.Single(c.Context(), body)
+		return respond(out, err)
+	}))
+	r.POST("/api/rule-library/test", "rule_library.test_rules", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
+		out, err := s.Test(c.Context(), strings.TrimRight(c.URLRoot(), "/"))
+		return respond(out, err)
+	}))
+	r.POST("/api/rule-library/cache", "rule_library.cache_rules", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
+		body, _, err := readBody(c)
+		if err != nil {
+			return nil, err
+		}
+		out, err := s.Cache(c.Context(), body)
 		return respond(out, err)
 	}))
 	r.POST("/api/rule-library/check-content", "rule_library.check_rule_content", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {

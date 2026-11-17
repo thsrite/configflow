@@ -56,7 +56,7 @@ func stageCache(ctx context.Context, item record, content []byte, replace func(s
 		stage.wasInvalid = true
 	} else if !errors.Is(err, os.ErrNotExist) {
 		file.Close()
-		stage.abort()
+		_ = os.Remove(stage.temp)
 		return nil, err
 	}
 	if _, err = file.Write(content); err == nil {
@@ -84,6 +84,10 @@ func stageCache(ctx context.Context, item record, content []byte, replace func(s
 		stage.abort()
 		return nil, err
 	}
+	if err = syncDirectory(filepath.Dir(path)); err != nil {
+		stage.abort()
+		return nil, err
+	}
 	return stage, nil
 }
 func (s *stagedCache) abort() {
@@ -104,8 +108,24 @@ func (s *stagedCache) commit() error {
 		_ = os.Remove(s.temp)
 		return fmt.Errorf("replace rule cache: %w", err)
 	}
+	// Persist the replacement before clearing its durable invalidation receipt.
+	if err := syncDirectory(filepath.Dir(s.path)); err != nil {
+		return fmt.Errorf("persist rule cache replacement: %w", err)
+	}
 	if err := os.Remove(s.marker); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("clear rule cache invalidation: %w", err)
 	}
-	return nil
+	return syncDirectory(filepath.Dir(s.path))
+}
+
+func syncDirectory(path string) error {
+	file, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	err = file.Sync()
+	if closeErr := file.Close(); err == nil {
+		err = closeErr
+	}
+	return err
 }
