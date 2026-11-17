@@ -229,3 +229,5 @@ Counts at the tested implementation; four shared Go files only gain fields/set t
 | `parity/progress/R09-dns-guard.md` | 227 |
 
 Final gate on ae2e0f59 + R09 is running with the newly required shared gate.sh. Parallel proddiff reported three new aggregation-provider differences (body.proxies length and X-ConfigFlow-Provider on two paths); runtime load 68–70, Python transport retries14, subsequent host load119. Baseline untouched; no provider code modified. A clean detached ae2e0f59 worktree is prepared for reference if needed; waiting for lower load before retry. Full race remains running.
+
+Coordinator confirmed the same three aggregation-provider differences on unmodified go@df6928ae on .64 (load~35), assigned f3bfb2cc / go-fix-agg-provider-load, and explicitly authorized R09 hand-back with this inherited baseline exception. Do not change baseline. Own failure log: .32 /tmp/configflow-r09-final/proddiff.log. Temporary clean reference worktree removed without running more duplicate load. Remaining gates continue; proddiff is reported as inherited failure, never PASS.
