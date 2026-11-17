@@ -155,6 +155,12 @@ const (
 	messageIkuaiGroupTaken      = "iKuai IP 分组「%s」已被其他配置占用，无法恢复，请检查"
 	messageIkuaiGroupUser       = "%s「%s」"
 
+	labelIkuaiNATRule     = "NAT 规则"
+	labelIkuaiPolicy      = "端口分流"
+	labelIkuaiGroup       = "IP 分组"
+	labelIkuaiNATBypass   = "NAT 免转换规则"
+	unitIkuaiNetworks     = "个网段"
+	unitIkuaiGroupRefs    = "个 IP 分组引用"
 	messageIkuaiOversized = "iKuai %s「%s」需要一次写入 %d %s，请求约 %d KB，超过 iKuai 单次请求上限（约 %d KB），发布会被拒绝。请减少代理网段（例如少选规则集）后重试"
 )
 

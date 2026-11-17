@@ -1,6 +1,6 @@
 # PROGRESS — domain `routers`
 
-Domain `routers` (WORKFLOW.md): router core, iKuai, RouterOS core/policy, router DNS/IPv6, router publish/rule sync, clients/split (old packages #32–#38). **52 Python files, 17574 lines, 17 modules** (equal to the `routers` totals in `FILES.md`) — 13 missing, 0 partial, 0 ported, 4 verified (R01, R02, R03, R04). Only reviewers set `verified`.
+Domain `routers` (WORKFLOW.md): router core, iKuai, RouterOS core/policy, router DNS/IPv6, router publish/rule sync, clients/split (old packages #32–#38). **52 Python files, 17574 lines, 17 modules** (equal to the `routers` totals in `FILES.md`) — 12 missing, 0 partial, 1 ported (R05), 4 verified (R01, R02, R03, R04). Only reviewers set `verified`.
 
 Planning audit: 2026-11-16, worktree `configflow-go`, branch `go` at 7b1b90b5 (plus uncommitted work of the C24/C25 agent in `internal/oxidns`). The Go tree was searched directly (`grep -ri 'routeros|ikuai|router_split|routers_of|router' server/internal`): **no package ports any routers file**; `internal/server` wires no routers package. What exists is listed under "Go code that already touches this domain" below; nothing from the old `progress/` files covers #32–#38.
 
@@ -41,7 +41,7 @@ Python's `backend/routers` is one big import cycle (most cross-module imports ar
 | R02 | router split (full TUN marker), rule IP presence | 381 | verified | HR | C04, C12, C14, C18, C21; C36² | – | internal/routersplit, internal/gateway/gwbase, internal/ippresence |
 | R03 | RouterOS NAT assessment, iKuai IP groups, drift report | 1499 | verified | HR | R01 | – | internal/routers |
 | R04 | RouterOS REST driver, batch writes | 1415 | verified | HR | R01, R03; shared requests client³ | – | internal/routers |
-| R05 | iKuai driver | 1179 | missing | HR | R01, R03; shared requests client³ | – | internal/routers |
+| R05 | iKuai driver | 1179 | ported | HR | R01, R03; shared requests client³ | – | internal/routers |
 | R06 | device route editor (RouterOS/iKuai static routes) | 684 | missing | HR | R04, R05 | – | internal/routers |
 | R07 | RouterOS NAT address lists, address-list sync, test helpers | 1422 | missing | HR | R03, R04 | – | internal/routers, internal/routers/routerfake |
 | R08 | RouterOS policy routing (plan, write, view) | 1349 | missing | HR | R07, C05, C26 (`normalize_policies`, present) | – | internal/routers |
@@ -330,18 +330,71 @@ Remaining module boundaries: R07 replaces plain address-list reads with digest p
 
 ## R05 — iKuai driver
 
-**Status: `partial`** (Opus port O5 in progress, branch `go-port-r05`) · HR · prereqs: R01, R03; shared requests client (`internal/devhttp`) · Go: internal/routers
+**Status: `ported`** (Opus port O5, 2026-11-17, branch `go-port-r05`; HR review by a fresh Opus pending) · HR · prereqs: R01, R03; shared device client `internal/devhttp` (R04) · Go: internal/routers, internal/routers/routerfake, internal/devhttp
 
-In progress: driver code committed (`ikuai.go`, `ikuai_dhcp.go`, `ikuai_apply.go`, messages, `RouterError.Undo` + `KindRejected`); next: loopback iKuai fake (`routerfake/ikuai.go`), Python reference harness (`testdata/r05_reference.py`), boundary corpus, Go-only HR tests, coverage map.
+Files: `backend/routers/ikuai.py` (1179). Tests: `test_ikuai_connection_errors.py` (7), `test_ikuai_dhcp_dns.py` (16), `test_ikuai_scale.py` (29); driver tests in other files: `test_routers.py` (2 iKuai), `test_router_release.py` (`test_encode_matches_ikuai_ui`, `test_ikuai_error_details_surface_in_message`). Routes: none.
 
-Files:
-- `backend/routers/ikuai.py` (1179)
+Commits: d782fa06 (driver), 7061a972 (fake, Python harness, boundary corpus, devhttp redirect fix), 561772aa (Go-only HR tests), plus the labels/PROGRESS commit after it.
 
-Tests: `test_ikuai_connection_errors.py` (7), `test_ikuai_dhcp_dns.py` (16), `test_ikuai_scale.py` (29)
+Go layout (no jsonx/pystr/urlx; device rows stay `Row` because iKuai forms are open-ended and must be written back whole):
+- `ikuai.go` — `Ikuai` driver (`NewIkuai`, `NewIkuaiWithHTTP`; one goroutine per driver): transport via devhttp (cookie jar, no proxy/redirects, 10 s or restore timeout), Chinese messages per failure class, `_http_error` (redirect target shown as origin only), login (`md5(pw)`, `base64("salt_11"+pw)`, 4.x `code`, 3.x `Result`), `send` (1008 → one re-login and one resend), exported `Call`, `Write` (refusal = `KindRejected`), `ListAll` (pages of 1000, fail closed on drift/short page/ID problems), `Probe`, `ReadState` (static routes, IP groups → `GroupsFromRows`/`ReadGroupRules`, NAT bypass, 端口分流, 当前路由表), `DecodeIkuaiValue`, `IkuaiRequestBytes`, `IkuaiTagname`, `IkuaiRouteFields`, `IkuaiDHCPStaticFields`.
+- `ikuai_dhcp.go` — `ReadDHCPDNS` (complete verified 4.0.120 form, blockers), guarded `dhcp_dns_update`/`dhcp_dns_restore` with full read-back and local restore.
+- `ikuai_apply.go` — `Apply` (all kinds of ikuai.py: routes, NAT, 端口分流, IP groups, `add_undo`, DHCP), `Batch(ctx, rollback, fn)` (Python's `batch()` context manager: one static_rt snapshot, new routes proven before the next other write and at the end, one group read until a named group changes), `IkuaiRoutePayload`, `IkuaiOversizedRequests`.
+- `model.go` — `RouterError.Undo` (Python's `error.undo`: the undo of a write that may have happened; the release must record it like a finished op's undo) + `UndoOf(err)`; `KindRejected`.
+- `messages.go` — every iKuai Chinese message/label; `routerfake/ikuai.go` — loopback iKuai fake; `testdata/r05_reference.py` — Python reference harness.
 
-Routes: none.
+Design decisions:
+- The release-facing API stays JSON at the driver boundary (`Driver.Apply(raw) → raw undo`, like R04); ops decode into one typed `ikuaiOp`, undo records are typed structs whose JSON keys equal Python's dicts.
+- Python mutated undo dicts it had already returned (`_confirm_added` and `_cf_refs` set `confirmed=False` when a complete read proved an add never happened). Go returns undo JSON, so the driver remembers such proofs (`absent`, per driver = per release) and `add_undo`/`ikuai_group_undo` consult them; a new add of the same name clears the proof. Corpus cases `policies_kept_until_routes_exist`, `swallowed_add_alone_fails_at_batch_end`, `group_add_swallowed_then_unreadable` compare the resulting rollback with Python.
+- `IkuaiRequestBytes` measures the body devhttp sends plus one byte per JSON separator, i.e. exactly Python's `json.dumps` size (checked against Python in `request_bytes`, incl. the 5706/5712 device probe); `GROUP_MAX_BYTES`/96 KiB keep their measured meaning and Go never sends more than that measure.
+- devhttp now calls the transport directly (cookie jar applied explicitly): `http.Client` failed on a 3xx with an unparseable `Location` before `ErrUseLastResponse` (Go reported "无法连接 iKuai"); R04's RouterOS corpus still passes; `TestRedirectReturnedAndCookiesKept`.
 
-Notes for porter: login (`md5(pw)` + `base64("salt_11"+pw)`), session expiry and re-login, paging of every list, `encode_value`/`decode_value` (must match the iKuai UI, `test_router_release.py::test_encode_matches_ikuai_ui`), `request_bytes`/`oversized_requests`, `_http_error`, `_call_error`; the five transport classes map to five Chinese messages (SSLError, ConnectTimeout, Timeout, ConnectionError, other RequestException) and an empty body → "iKuai 没有返回任何内容…". Version gate 4.x.
+Python bugs fixed in Go (each an intended corpus difference with an assertion on both sides, `ikuaiFixedCases`):
+1. (Medium, HR) `route_comment` whose reply was lost carried no undo: the user's route could stay marked `cf-…` (then treated as ours by later releases). Go attaches the `route_restore` undo.
+2. (Medium, HR) `route_delete` deleted first and then crashed computing the undo from an unreadable network, leaving no undo. Go computes the undo first and refuses before deleting.
+3. (Medium, HR) `_rebind` kept a gid that now belongs to another (the user's) group when ours was gone, writing a rule that references the wrong group. Go refuses (`iKuai IP 分组 … 不存在，无法恢复规则引用`).
+4. (Low) A write reply without a `code` was treated as a refusal (`_Rejected`, no undo) although nothing proves it was refused. Go treats it as a lost reply (`iKuai 调用 … 返回格式无法识别` + undo).
+5. (Low) requests raised ValueError (HTTP 500) on a redirect with an unparseable `Location`; Go explains it like any other redirect.
+
+How the R04 review classes are avoided by construction:
+- F1 panic on extra IDs / index out of range: no positional indexing of device replies; every device value is read through type assertions (`Row.text`, `jsonInt`, `ikuaiAddressField`) and lists are compared as strings (`nat_update` add_dst no longer uses `==` on interface values). `TestIkuaiMalformedDeviceDataNeverPanics` feeds every JSON shape into every field of every table and runs ReadState/ReadDHCPDNS/Probe and 15 op kinds.
+- F3 cancellation abandoning accepted work / rollback: `Apply` and the end-of-`Batch` read-back run on `context.WithoutCancel`; each request keeps its own timeout; the DHCP local restore runs inside `Apply`. `TestIkuaiCancellationFinishesStartedWork` (route add, batch end, DHCP restore after a lost reply, rollback).
+- F2/F5 messages and prefixes: every Chinese message is compared byte for byte with Python in the corpus (incl. `；DHCP DNS 局部撤销失败：`, `已提交但读不回新对象：`, group/use messages); a one-character mutation of the 1008 message fails 3 cases.
+- F7 array fields compared as empty / `maps.Equal` panics: all row comparisons are structural (`jsonEqual`, `slices.Equal` on typed entries).
+- F9 write without proof: `dhcp_dns_update` requires `expected` equal to a fresh read (`dhcp_expected_missing`); group writes require the previewed digest; deletes/undos of adds require the unique name and all recorded fields.
+- F8 unbounded scripts: iKuai has no scripts; request size is the analogue — plan blockers use Python's measure (`IkuaiOversizedRequests`), group writes are split by R03, an oversized request is refused by iKuai with an empty reply, which Go reports like Python (an edit then carries its idempotent undo, an add a name-based undo).
+- F6/F10: no batched-delete status here; helpers reused (`ikuaiEncode`/`GroupPayload` from R03, `CheckedDNSTarget` from R01, `uniqueStrings`, `netipx`), no private copies.
+- Credentials: only the failure class reaches messages; redirect targets are reduced to their origin; `TestIkuaiErrorsNeverCarryCredentials` checks password, its MD5, the salted base64, URL secrets and device bodies.
+
+Not chased (functional parity; iKuai 4.x sends ints/strings): Python truthiness/equality of bools and floats in ints (`True == 1`, `0.0 == 0`, `type(x) is int`), `str(None)` in device-derived texts (missing `prio` in 当前路由表 comments, missing detail fields), IPv4Address(int) for a numeric gateway/DNS, `unquote` replacement granularity for invalid UTF-8, Python crashes on malformed ops (Go returns `iKuai 操作格式无法识别` or a plain error).
+
+Acceptance (boundary): `TestIkuaiBoundaryCorpus` (`ikuai_boundary_test.go`, cases in `ikuai_cases_test.go`) — **307 cases, 0 differ, 5 intended differences** — the real Python `IKuaiDriver` and the Go driver against the same loopback fake; compared: outcome (results, undo records as returned, error class/message/carried undo, rollback results), complete request sequence (login and every show/add/edit/del with parsed bodies), final tables. Groups: session/HTTP/redirect/status/body/call-code/1008/write refusal/encoding/size (≈80), paging and read-back (≈45), DHCP (≈95), release flows with rollback incl. lost replies, swallowed writes, hand edits (≈35), IP groups and rebinding (≈35), values/tagnames, oversize blockers, request bytes, transport messages. Mutation check: disabling the confirm-before-next-write rule, the absent-add proof, or changing the 1008 message → 11 failing cases.
+Go-only (`ikuai_test.go`): cancellation, malformed data, credentials, request-size bound. `TestRedirectReturnedAndCookiesKept` in devhttp.
+
+Python test files → coverage:
+- `test_ikuai_connection_errors.py` (7): https/other redirects, credentials/paths omitted, same-origin/unknown targets, redirect after login → `redirect_*`, `fixed_unparseable_redirect_explained`, `TestIkuaiErrorsNeverCarryCredentials`; HTTP reasons → `http_status_*` (14 statuses); transport classes → `transport_messages`, `transport_restore_timeout_message`, `write_lost_reply`; `test_probe_api_persists_explanation_for_router_list` → R15 (route), its driver message here.
+- `test_ikuai_dhcp_dns.py` (16): full read, update+undo of the complete form, blank slots, drop/corrupt/lost/refused writes, local rollback failure, failed read-backs, undo with reads down, preview drift (+ missing `expected`, changed id), scope overlap, unverified fields (22 variants read+write), missing edit field, static binding overrides/evidence (11 variants), incomplete lists, invalid DNS (11), missing/odd scope (8) → `dhcp_*`.
+- `test_ikuai_scale.py` (29): every page / page drift / active table → `read_state_every_page`, `read_state_rows_change_between_pages`, `read_state_unreadable_active_table`, `read_state_no_active_table`, `list_all_*`; dhcp_static pages → `list_all_dhcp_static_pages`; constant reads for add/delete/adopt, hand edit during adoption, policies/covered routes kept until new routes exist, rollback after lost re-add, one read before deletes, batched = unbatched writes, rollback of 300 routes, route not read back / reply lost / refused / lost without route / changed after add, policy not read back, NAT reply lost, re-adds not read back → `routes_*`, `policies_kept_until_routes_exist`, `covered_route_kept_until_wider_exists`, `new_routes_read_once_before_deletes`, `mixed_stage_batched`/`_unbatched`, `rollback_*`, `route_*`, `refused_route_needs_no_undo`, `lost_request_without_route_is_nothing_to_undo`, `policy_added_not_read_back_is_rolled_back`, `nat_reply_lost_is_rolled_back`; session expiry → `write_relogin_once`, `write_1008_twice`, `show_*`; empty reply → `reply_body_*`, `write_oversized_body_gets_empty_reply`; oversize/limit → `oversized_blockers`, `request_bytes`. Plan/report/execute parts (`_plan`, `build_report`, `execute`, stage checks, `test_large_destination_sets_publish_in_requests_that_fit`, `test_router_plan_for_routeros_is_never_size_checked`, `test_routes_beyond_the_first_page…` report part) → R12 (and R03 for the report).
+- `test_routers.py` iKuai login/probe/state, 3.x → `probe_ok`, `read_state_details`, `probe_3x_version`; `test_router_release.py` encoding/details → `write_encode_matches_web_ui_test`, `write_error_details_surface` (rest of that file → R12).
+
+Requirements on later modules:
+- R12: record `UndoOf(err)` of a failed op exactly like a finished op's undo (Python `finished(op, error.undo, ok=False)`); wrap each stage in `Batch(ctx, false, …)` and the rollback in `Batch(ctx, true, …)`; skip empty undo records (`{}`); use `IkuaiOversizedRequests` for plan blockers; use one driver per release (the absent-add proofs are per driver).
+- R06/R16/R17: use `Call`, `ListAll`, `Write` (`KindRejected` = `_Rejected`), `DecodeIkuaiValue`, `IkuaiRoutePayload`, `IkuaiRouteFields`, `IkuaiDHCPStaticFields`; the fake (`routerfake.Ikuai`) already serves dhcp_static/dhcp_server and accepts string ids.
+
+L5 lab items (only a real iKuai 4.x VM can prove; difftest L5-A/B/C):
+1. Session: login replies of 4.0.3xx (code/Result), 1008 after a router restart or a second login, cookie name/path; account groups without read (1001)/write (1002) per feature and `Label`; funcs a firmware lacks (1003).
+2. Paging: `limit=offset,1000` and `TYPE total,data` on static_rt/static_rt_table/nat_rule/stream_ipport/route_object/dhcp_server and `static_total,static_data` on dhcp_static with >1000 rows; whether totals change under concurrent UI edits.
+3. Forms and encoding: the web UI encoding (`%`, whitespace, quotes, `$`, backtick, `&`, `;`, backslash, `|`, comment line breaks) round-trips on every form; netmask display suffix; runtime fields (`status`, `ref_count`, `group_id`, termname/hostname/ip_addr_int) accepted or refused in edits; edit = full replacement.
+4. Request size: empty 200 above ~98 KB on 4.0.314 (and newer firmware), restore timeout for >1000 literal entries.
+5. Names: duplicate tagname/group_name refused (3001), 1–15 characters, IP groups keep entry comments but no group comment, gid reuse after delete, refusal to delete a referenced group (incl. hidden ACL/流控 references).
+6. Lost replies: pull the management link after a write is accepted (add/edit/del of routes, NAT, 端口分流, groups, DHCP) — undo by name finds and removes only our object; DHCP before-image restore.
+7. 端口分流/static/NAT: next-hop rules with the gateway excluded as source, group references, 当前路由表 leftovers after static route edits (StaleRoutes warning).
+8. DHCP DNS: dns1=dns2 written with the complete form, clients renewing get the new DNS, static binding DNS overrides, relay-only/interface-limited services.
+9. TLS: HTTPS management with self-signed certificates, verify on/off.
+
+Commands (from the worktree root; iterate on .63, final run on .32):
+- corpus + Go-only tests: `RT_HOST=sunbroke@192.168.0.63 rt -- bash -lc 'cd server && go test -count=1 -run TestIkuai ./internal/routers/'`
+- race: `rt -- bash -lc 'cd server && go test -race -count=1 ./internal/routers/ ./internal/devhttp/'`
 
 ## R06 — device route editor
 

@@ -800,7 +800,7 @@ func objectsOf(field any) []Row {
 // groupUsers are the NAT and 端口分流 rules referencing the group, read now.
 func (d *Ikuai) groupUsers(ctx context.Context, group *IkuaiGroup) ([]string, error) {
 	var users []string
-	for _, part := range [][2]string{{"nat_rule", "NAT 规则"}, {"stream_ipport", "端口分流"}} {
+	for _, part := range [][2]string{{"nat_rule", labelIkuaiNATRule}, {"stream_ipport", labelIkuaiPolicy}} {
 		rows, err := d.ListAll(ctx, part[0], "", true, "")
 		if err != nil {
 			return nil, err
@@ -1139,14 +1139,14 @@ func IkuaiOversizedRequests(ops []json.RawMessage) []string {
 		groupOp := op.Kind == "ikuai_group_add" || op.Kind == "ikuai_group_update"
 		switch {
 		case groupOp:
-			funcName, label, name, count = "route_object", "IP 分组", op.Name, len(op.Values)
+			funcName, label, name, count = "route_object", labelIkuaiGroup, op.Name, len(op.Values)
 			form := GroupPayload(op.Name, op.Role, op.Values, nil, op.Notes)
 			if op.Kind == "ikuai_group_update" {
 				form.ID = new(int64)
 			}
 			payload = form
 		case op.Kind == "policy_route_add" || op.Kind == "policy_route_update":
-			funcName, label, name, count = "stream_ipport", "端口分流", op.Comment, len(op.Dst)
+			funcName, label, name, count = "stream_ipport", labelIkuaiPolicy, op.Comment, len(op.Dst)
 			var refs []any
 			if op.Groups != nil {
 				refs, count = placeholders(), len(*op.Groups)
@@ -1157,7 +1157,7 @@ func IkuaiOversizedRequests(ops []json.RawMessage) []string {
 			}
 			payload = form
 		case op.Kind == "nat_add" || op.Kind == "nat_update":
-			funcName, label, name = "nat_rule", "NAT 免转换规则", op.Comment
+			funcName, label, name = "nat_rule", labelIkuaiNATBypass, op.Comment
 			dst := op.Dst
 			if op.Kind == "nat_update" {
 				dst = op.AddDst
@@ -1180,9 +1180,9 @@ func IkuaiOversizedRequests(ops []json.RawMessage) []string {
 			action = "add"
 		}
 		if size := IkuaiRequestBytes(funcName, action, payload); size > IkuaiMaxRequestBytes {
-			unit := "个网段"
+			unit := unitIkuaiNetworks
 			if !groupOp && op.Groups != nil {
-				unit = "个 IP 分组引用"
+				unit = unitIkuaiGroupRefs
 			}
 			blockers = append(blockers, fmt.Sprintf(messageIkuaiOversized, label, name, count, unit,
 				size/1024, IkuaiMaxRequestBytes/1024))

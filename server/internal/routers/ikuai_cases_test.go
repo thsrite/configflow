@@ -322,6 +322,12 @@ func ikuaiSessionCases() []ikuaiCase {
 	special["tagname"] = "T a$b"
 	add(ikuaiCase{name: "write_encodes_like_web_ui", action: "write", input: map[string]any{"func": "static_rt",
 		"write_action": "add", "param": special}})
+	// backend/test_router_release.py test_encode_matches_ikuai_ui and test_ikuai_error_details_surface_in_message.
+	add(ikuaiCase{name: "write_encode_matches_web_ui_test", action: "write", input: map[string]any{"func": "nat_rule",
+		"write_action": "add", "param": map[string]any{"comment": " cf:Unraid SS\nnext ", "gateway": "192.0.2.4", "prio": 1,
+			"dst_addr": map[string]any{"custom": []any{"a b"}, "object": []any{}}, "x": "100% \"a\";$b"}}})
+	add(ikuaiCase{name: "write_error_details_surface", action: "write", input: map[string]any{"func": "static_rt",
+		"write_action": "add", "param": map[string]any{"tagname": "", "dst_addr": "192.0.2.0"}}})
 	huge := maps.Clone(route)
 	huge["comment"] = strings.Repeat("长", 20000)
 	add(ikuaiCase{name: "write_oversized_body_gets_empty_reply", action: "write", input: map[string]any{"func": "static_rt",
