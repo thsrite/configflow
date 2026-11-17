@@ -71,7 +71,15 @@ Decisions today (all recorded in design "Clarified in …"): N7-3 native YAML cl
 rejected, explicit scalars via yaml.v3 decode, error sentinels, Chinese syntax prefix; N8-6 Bind/BindSilent(bool);
 O3-4/O3-5 Clock/OnStart/Detach/Clear, internal/clock, Flight.DoChan; O3 review BindRequest; A13 Checker in api/agents,
 InputKey incl. profile_name; A24 C37 guard/query + shared publicAgent helper (78b796af).
-Next: R09 (fresh Codex, HR) when a slot frees; R05 iKuai netmask-suffix compensation bug from routers Step B → R05
+Update ~22:40: merged N7-3b (d58c5e72), L1 report (038b52ae). Verifying: .32 N7-3c; .64 A12 review + N8-4a–d.
+N7-3d scope (097eba4e, after N7-3c merges) now also includes convert's own readers (loadCustomConfig,
+GenerateMihomoDocument, node cache), removing the transitional bridge's Timestamp/[]byte/Mapping branches, merging
+test helpers yamlx/yamltest into yamlxtest, plus the earlier list (4 bare decoders, delete pyyaml/old loader, grep gate).
+N7-4 (097eba4e, go-n7-4) owns all remaining legacy writers; one shared transitional Node bridge at most.
+L1 defects: D1/D3–D8 → 66833acf (go-fix-l1-installer; D8 = plain-text exception for shell-facing install/download
+errors); D2/D9 are Agent-binary bugs → main repo task claude/agent-custom-lifecycle (Codex 047faa61, PR to upstream,
+user approved 2026-11-17). R08 92daf1d5, R09 5f08d05e (shared ipv6_policy_eval.go for R10).
+Next: R05 iKuai netmask-suffix compensation bug from routers Step B → R05
 owner; N8-4e/f + Opus review after N8-4a–d; N8-7 after O3-5; A14 after A13; Opus: L1 lab running (93111aab).
 User owes nothing. .64 RAM increase suggested (optional).
 
