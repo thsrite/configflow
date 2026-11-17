@@ -2,7 +2,7 @@
 
 Chinese hand-back: [R09-handoff-zh.md](R09-handoff-zh.md).
 
-Status: in progress, fresh Opus HR review required after `ported`. Branch `go-port-r09`, base `go@d7c481c7`.
+Status: `ported` (2026-11-18), fresh Opus HR review required before `verified`. Branch `go-port-r09`, rebased onto `go@9a208c6c` (initial base `d7c481c7`).
 No push, no sub-agent, no production/lab contact; synthetic data and loopback fakes only.
 
 ## Scope / interfaces
@@ -187,26 +187,70 @@ Only isolated PVE lab guests, driven by coordinator/Opus after review; never rea
 
 ## Commands / final gates
 
-All use `RT_HOST=sunbroke@192.168.0.32`, foreground via rt. Exact results updated at hand-back.
+All test commands run through `RT_HOST=sunbroke@192.168.0.32 rt`, never on the Mac.
 
-- `rt -- bash -lc 'cd server && go test -count=1 -run "^TestR09" ./internal/routers'`
-- `rt -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/routers/testdata/r09_mutations.py'`
-- `rt -- bash -lc 'cd server && gofmt -l internal/ tools/ && go vet ./...'`
-- `rt -- bash -lc 'cd server && go test -race -count=1 ./internal/routers/... ./internal/routersplit/... ./internal/devhttp/...'`
-- `rt -- bash -lc 'cd server && go test -p=4 -count=1 ./...'`
-- `rt -- bash -lc 'cd server && CONFIGFLOW_DIFF=1 go test -tags=configflow_difftest -p=4 -count=1 $(go list ./... | rg /difftest)'`
-- `rt -- bash -lc 'cd server && go test -run "^$" -fuzz "^FuzzR09DNSGuardManifest$" -fuzztime 60s ./internal/routers'`
-- `rt -- bash -lc 'cd server && go test -run "^$" -fuzz "^FuzzR09PolicyEvaluator$" -fuzztime 60s ./internal/routers'`
-- `rt -- bash -lc 'server/scripts/proddiff.sh'`
+1. `rt -- bash -lc 'GATE_LOGS=/tmp/configflow-r09-final server/internal/routers/testdata/r09_gates.sh'`
+   uses shared `server/scripts/gate.sh -p 4` with all three R09 fuzz targets. On the ae2e0f59 + R09 tree:
+   gofmt empty, vet PASS; full `go test -race -p=4 -count=1 -timeout=60m ./...`: **84 packages PASS**.
+   Log `/tmp/configflow-r09-final/race.log`:
+   ```
+   ok configflow/internal/routers      567.091s
+   ok configflow/internal/routersplit   23.165s
+   ok configflow/internal/devhttp        3.764s
+   ok configflow/tools/proddiff/generator 1.074s
+   ```
+   Shared gate exits 1 only at its proddiff check (known inherited exception below), so later steps were run
+   explicitly after rebase. The long full race ran during server-wide contention (load peaked at119).
+2. Earlier non-race full suite: **84 PASS**, routers 260.739s (`/tmp/configflow-r09-gates.MLAxV3/full.log`).
+   Earlier complete gates on go@65c0e6d4 + identical R09 code also had proddiff `new=0 stale=0`.
+3. After rebase to go@9a208c6c, for **each** `tag=configflow_proddiff/configflow_difftest`:
+   ```sh
+   rt -- bash -lc 'cd server; for tag in configflow_proddiff configflow_difftest; do
+     go build -p=4 -tags "$tag" ./... &&
+     go vet -tags "$tag" ./internal/lifecycle/... ./cmd/... &&
+     go test -p=4 -tags "$tag" -count=1 ./internal/lifecycle/... || exit 1
+   done'
+   ```
+   Both builds/vet PASS, lifecycle 0.203s / 0.226s and lifecycletest 0.004s / 0.006s PASS.
+   The actual run redirected each build/vet/test result into that directory before printing PASS.
+4. `rt -- bash -lc 'cd server && CONFIGFLOW_DIFF=1 go test -tags=configflow_difftest -p=4 -count=1 -timeout=40m $(go list ./... | rg /difftest)'`
+   → **all 12 PASS**, api/agents 182.832s, api/aggregations 68.728s, api/subscriptions 168.188s,
+   webdav 29.441s. Full output `/tmp/configflow-r09-remaining/diff.log`.
+5. For each target `FuzzR09DNSGuardManifest`, `FuzzR09DNSGuardOperation`, `FuzzR09PolicyEvaluator`:
+   `rt -- bash -lc 'cd server && go test -run "^$" -fuzz "^<target>$" -fuzztime=60s -parallel=2 ./internal/routers'`
+   → **PASS 60.305s / 61.226s / 61.308s**. These ran concurrently as the shared gate specifies.
+6. `rt -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/routers/testdata/r09_mutations.py'`:
+   ```
+   MUTATION_DETECTED result
+   MUTATION_DETECTED journal
+   MUTATION_DETECTED request
+   MUTATION_DETECTED table
+   R09_REMAINING_PASS
+   ```
+   Remaining-step command returned 0; logs and completion marker: `/tmp/configflow-r09-remaining/`.
+7. `rt --no-sync -- bash -lc 'cd server && go test -race -count=1 -timeout=10m -run "^TestR09" ./internal/routers'` on the final O3-5 rebase → `ok configflow/internal/routers 41.458s`.
 
-Validation checkpoint c0d4f10d on .32: gofmt/vet; full routers/routersplit/devhttp race; 83-package full suite; 12 enabled difftest packages; three 60s fuzz targets; four compiled mutations; proddiff new=0 stale=0 all passed. The conservative malformed-selector correction also passed the complete second run at go@65c0e6d4 (.32 logs /tmp/configflow-r09-gates.MLAxV3): 84 full packages, 12 difftests, race routers 506.150s, 3 fuzz targets, 4 mutations, proddiff new=0 stale=0. Its local SSH wrapper stayed open after remote completion; a separate rt --no-sync log audit returned 0. Latest go now requires the shared gate script; final rebased acceptance uses that script.
+### Inherited proddiff exception — not a pass, baseline untouched
 
-Next: finish final gates, record results, commit explicit paths with `go(routers): R09 …`, rebase local go,
-re-run any checks affected by rebase, hand back commit IDs for a fresh Opus review. Do not push.
+`/tmp/configflow-r09-final/proddiff.log`: self-check PASS, coverage_regressions=0, `new=3 stale=0`:
+
+- `GET /api/aggregations/<agg_id>/provider`: `body.proxies` length.
+- Same global route: `header.X-ConfigFlow-Provider` missing-in-go.
+- `GET /api/profiles/<profile_id>/aggregations/<agg_id>/provider`: same missing header.
+
+The coordinator reproduced exactly these three on **unmodified go@df6928ae on .64**, assigned
+f3bfb2cc / `go-fix-agg-provider-load`, and explicitly authorized R09 hand-back with this existing-go exception.
+This is not caused by R09 and is not suppressed/normalised here. The original run had load68–70 and Python
+transport_retries14, but the cause is left to the assigned investigation. No baseline changed. A temporary clean
+reference worktree was removed unused after the coordinator supplied the independent reproduction.
+
+No remaining R09 implementation work. Next owner: fresh Opus HR review, then R08/R12/R14/R15 integration and L5.
+No push. Implementation commits after the final rebase: 54a3fd9f (core), 63986dd9 (HA/parser gates),
+9040581f (malformed-selector conservatism); later commits only runner/progress/hand-back documents.
 
 ## Added files / line counts
 
-Counts at the tested implementation; four shared Go files only gain fields/set tracking.
+Four shared Go files only gain fields/set tracking; paths below are the R09 additions.
 
 | Path under server/ | Lines |
 |---|---:|
@@ -217,19 +261,16 @@ Counts at the tested implementation; four shared Go files only gain fields/set t
 | `internal/routers/dns_guard_write.go` | 394 |
 | `internal/routers/forward_hint.go` | 213 |
 | `internal/routers/forward_hint_messages.go` | 8 |
-| `internal/routers/ipv6_policy_eval.go` | 477 |
-| `internal/routers/ipv6_policy_eval_test.go` | 174 |
+| `internal/routers/ipv6_policy_eval.go` | 487 |
+| `internal/routers/ipv6_policy_eval_test.go` | 187 |
 | `internal/routers/r09_boundary_test.go` | 370 |
 | `internal/routers/r09_forward_test.go` | 156 |
 | `internal/routers/r09_safety_test.go` | 441 |
 | `internal/routers/routerfake/r09.go` | 9 |
 | `internal/routers/testdata/r09_eval_reference.py` | 19 |
 | `internal/routers/testdata/r09_forward_reference.py` | 23 |
-| `internal/routers/testdata/r09_gates.sh` | 34 |
+| `internal/routers/testdata/r09_gates.sh` | 12 |
 | `internal/routers/testdata/r09_mutations.py` | 30 |
 | `internal/routers/testdata/r09_reference.py` | 54 |
-| `parity/progress/R09-dns-guard.md` | 227 |
-
-Final gate on ae2e0f59 + R09 is running with the newly required shared gate.sh. Parallel proddiff reported three new aggregation-provider differences (body.proxies length and X-ConfigFlow-Provider on two paths); runtime load 68–70, Python transport retries14, subsequent host load119. Baseline untouched; no provider code modified. A clean detached ae2e0f59 worktree is prepared for reference if needed; waiting for lower load before retry. Full race remains running.
-
-Coordinator confirmed the same three aggregation-provider differences on unmodified go@df6928ae on .64 (load~35), assigned f3bfb2cc / go-fix-agg-provider-load, and explicitly authorized R09 hand-back with this inherited baseline exception. Do not change baseline. Own failure log: .32 /tmp/configflow-r09-final/proddiff.log. Temporary clean reference worktree removed without running more duplicate load. Remaining gates continue; proddiff is reported as inherited failure, never PASS.
+| `parity/progress/R09-handoff-zh.md` | 90 |
+| `parity/progress/R09-dns-guard.md` | 276 |

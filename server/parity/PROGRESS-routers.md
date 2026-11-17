@@ -74,7 +74,7 @@ Python's `backend/routers` is one big import cycle (most cross-module imports ar
 | R06 | device route editor (RouterOS/iKuai static routes) | 684 | verified | HR | R04, R05 | – | internal/routers |
 | R07 | RouterOS NAT address lists, address-list sync, test helpers | 1422 | verified | HR | R03, R04 | – | internal/routers, internal/routers/routerfake |
 | R08 | RouterOS policy routing (plan, write, view) | 1349 | verified | HR | R07, C05, C26 (`normalize_policies`, present) | – | internal/routers |
-| R09 | forced DNS (DNS guard), IPv4 same-port forward hint | 773 | in progress | HR | R04, R07 | – | internal/routers |
+| R09 | forced DNS (DNS guard), IPv4 same-port forward hint | 773 | ported | HR | R04, R07 | – | internal/routers |
 | R10 | IPv6 policy, IPv6 fake-IP, IPv6 rule-set routes | 1247 | missing | HR | R04, R09 | – | internal/routers |
 | R11 | IPv6 PD guard, IPv6 DNS, RouterOS IPv6 readiness | 1161 | missing | HR | R10 | – | internal/routers |
 | R12 | release plan and staged execution | 1220 | missing | HR | R03–R11, A01 (return routing calls, ready) | – | internal/routers |
@@ -606,7 +606,7 @@ and the L5 lab items above. R12/R15 own their separately listed route/release in
 
 ## R09 — forced DNS (DNS guard), IPv4 same-port forward hint
 
-**Status: `in progress`** · HR · prereqs: R04, R07 · Go: internal/routers
+**Status: `ported`** · HR · prereqs: R04, R07 · Go: internal/routers
 
 Scope: `backend/routers/dns_guard.py` (589), `forward_hint.py` (184), latest upstream
 `2a8cb64c` / PR #572 incremental publication. No new route or UI entry. Existing R01
@@ -627,8 +627,15 @@ Shared edits (minimal fields; gofmt aligns adjacent declarations): `desired.go` 
 R08/R12 supplies policy CIDRs to `DesiredDNSGuard.PolicyCIDRs`; R12 uses `DNSGuardPublication()` to bridge its
 `Manifests` holder. R12/R15 attach ForwardHint to routes and warnings, never operations/checks/fingerprints.
 
-Current checks on .32: focused real Python boundary and safety tests pass. Final vet/race/full/difftest/fuzz/
-mutation/proddiff gates remain in progress; no claim of `verified`. Fresh Opus review and L5 still required.
+Final .32: gofmt/vet PASS; **full -race 84 packages PASS** (routers 567.091s, routersplit 23.165s,
+devhttp 3.764s); earlier non-race full suite PASS. After final O3-5 rebase: both build-tag build/vet/lifecycle
+checks PASS; all 12 difftest packages PASS; three parsers fuzzed 60s each; four compiled mutations detected.
+Proddiff **new=3 stale=0**, only the coordinator-confirmed aggregation-provider differences also reproduced on
+unmodified go@df6928ae on .64; assigned `go-fix-agg-provider-load`, explicitly allowed for R09 hand-back.
+No baseline changed. Own log `.32:/tmp/configflow-r09-final/proddiff.log`. Earlier go65 + R09 gates had new=0 stale=0.
+
+Chinese hand-back: [progress/R09-handoff-zh.md](progress/R09-handoff-zh.md). Detailed checklist and Python-test
+mapping are in the linked R09 progress file. Fresh Opus review and L5 remain required; no push.
 
 ## R10 — IPv6 policy, IPv6 fake-IP, IPv6 rule-set routes
 

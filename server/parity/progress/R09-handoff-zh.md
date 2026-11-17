@@ -1,6 +1,6 @@
 # R09 交接
 
-状态：实现已提交，最终验证收尾中；完成后标为 `ported`，等待新的 Opus HR 复核，不标 `verified`。
+状态：`ported`（2026-11-18），等待新的 Opus HR 复核；不标 `verified`。
 
 ## 完成内容
 
@@ -67,11 +67,12 @@ R14 baseline、R12/R15 真实 HTTP 发布／指纹／规则同步长流程是其
 
 - 前两轮：R09 Python 对照、安全测试、routers/routersplit/devhttp race、全量、12 difftest、三个 60 秒 fuzz、四类编译变异通过。
 - 合入 N7-3c 的一轮：84 包全量通过，routers race 506.150s；proddiff `new=0 stale=0`。
-- 最新 ae2e0f59 集成基线：完整 `-race` 仍在运行，日志 `.32:/tmp/configflow-r09-final/race.log`。
+- ae2e0f59 + R09：完整 `-race` **84 包通过**；routers 567.091s、routersplit 23.165s、devhttp 3.764s。日志 `.32:/tmp/configflow-r09-final/race.log`。
 - proddiff 已知例外：`new=3 stale=0`，全部为 aggregation provider；原日志 `.32:/tmp/configflow-r09-final/proddiff.log`。
   协调者在未加 R09 的 `go@df6928ae`、`.64` 复现相同三条，并指示 R09 照常交回，另派 `go-fix-agg-provider-load` 排查。
   具体是全局 provider 的 `body.proxies` 长度、全局及 profile provider 的 `header.X-ConfigFlow-Provider` 缺失。未改 baseline。
-- 完整 race 结束后补齐被该 proddiff 失败阻断的后续步骤及新增两种 build tag 门禁，再填写最终结果。
+- 最终变基到 `go@9a208c6c` 后：两种 tag 的 build/vet/lifecycle 全过；12 difftest 全过；三个 60 秒 fuzz 全过（60.305/61.226/61.308s）；四类编译变异均检出。补跑命令退出 0，日志 `.32:/tmp/configflow-r09-remaining/`。
+- 最终 `go@9a208c6c` 变基后再次执行 `rt --no-sync -- bash -lc 'cd server && go test -race -count=1 -timeout=10m -run "^TestR09" ./internal/routers'`，通过：`ok configflow/internal/routers 41.458s`。
 
 ## 共享文件与接线
 
@@ -84,4 +85,6 @@ R12/R15 把 ForwardHint 放到 report/warnings，不能作为 fingerprint 输入
 L5 尚未执行：真实 CHR 接受 payload/scripts、UDP/TCP DNS/hairpin/853、HA VIP 与真实主机豁免、15 秒故障确认、恢复 conntrack 清理、重启撤销、链路丢失、规则顺序及同口命令的实际流量效果。
 只能由协调者在隔离实验网安排，不能把 loopback fake 通过当实流证明。
 
-分支 `go-port-r09`；最终提交及 rebase 结果将在验证结束时填写。不得 push。
+分支 `go-port-r09`，已 rebase 到 `go@9a208c6c`。实现提交：`54a3fd9f`（核心）、`63986dd9`（HA/解析门禁）、`9040581f`（未知选择器修正）；其后为门禁与文档提交。未 push，临时基线 worktree 已清理。
+
+最终仅待协调者启动新的 Opus HR 复核；R09 实现与所需验证均已交齐。已知 proddiff 例外及 L5 不作通过宣称。
