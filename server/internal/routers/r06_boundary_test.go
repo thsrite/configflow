@@ -212,6 +212,10 @@ func r06Cases() []r06Case {
 		tc.IK.Tables["static_rt"][0][field] = value
 		add(tc, "readonly/"+field)
 	}
+	// Review F4: a non-string interface is also an incomplete interface.
+	tc := r06Base("ikuai", "read")
+	tc.IK.Tables["static_rt"][0]["interface"] = 4
+	add(tc, "readonly/interface_number")
 	return append(append(cases, r06ExtraCases()...), r06ReconciliationCases()...)
 }
 

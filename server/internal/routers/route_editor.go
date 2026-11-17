@@ -1,15 +1,12 @@
 package routers
 
 import (
-	"configflow/internal/lockx"
-	"configflow/internal/redact"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"maps"
 	"net/netip"
 	"net/url"
 	"reflect"
@@ -17,7 +14,9 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"configflow/internal/lockx"
 	"configflow/internal/netipx"
+	"configflow/internal/redact"
 )
 
 // EditableRoute is an ordinary route plus its complete stable vendor snapshot.
@@ -75,15 +74,31 @@ type RouteIntent struct {
 
 // RoutePlan binds a preview to a connection, intent and stable route snapshot.
 type RoutePlan struct {
-	Action      string          `json:"action"`
-	ID          *string         `json:"id"`
-	Values      *RouteValues    `json:"values"`
-	Before      *PublicRoute    `json:"before"`
-	After       json.RawMessage `json:"after"`
-	Summary     string          `json:"summary"`
-	Warnings    []string        `json:"warnings"`
-	Fingerprint string          `json:"fingerprint"`
-	Empty       bool            `json:"empty"`
+	Action      string        `json:"action"`
+	ID          *string       `json:"id"`
+	Values      *RouteValues  `json:"values"`
+	Before      *PublicRoute  `json:"before"`
+	After       *PlannedRoute `json:"after"`
+	Summary     string        `json:"summary"`
+	Warnings    []string      `json:"warnings"`
+	Fingerprint string        `json:"fingerprint"`
+	Empty       bool          `json:"empty"`
+}
+
+// PlannedRoute is the route a plan leaves: the edited fields over the current
+// public view (keeping its editability and revision), or a bare main-table
+// route for an addition.
+type PlannedRoute struct {
+	ID       string  `json:"id"`
+	CIDR     string  `json:"cidr"`
+	Gateway  string  `json:"gateway"`
+	Enabled  bool    `json:"enabled"`
+	Comment  string  `json:"comment"`
+	Table    string  `json:"table"`
+	Editable *bool   `json:"editable,omitempty"`
+	Reason   *string `json:"reason,omitempty"`
+	Managed  bool    `json:"managed"`
+	Revision string  `json:"revision,omitempty"`
 }
 
 // RouteMutation is the vendor's proven result; a failure returns no success result.
@@ -238,25 +253,19 @@ func BuildRoutePlan(router Router, rows []*EditableRoute, data json.RawMessage) 
 			}
 		}
 	}
-	plan := &RoutePlan{Action: intent.Action, Values: v, Before: current.Public(), Warnings: []string{}, After: json.RawMessage("null")}
+	plan := &RoutePlan{Action: intent.Action, Values: v, Before: current.Public(), Warnings: []string{}}
 	if current != nil {
 		plan.ID = &intent.ID
 	}
-	after := map[string]json.RawMessage{}
 	if v != nil {
-		if plan.Before != nil {
-			data, _ := json.Marshal(plan.Before)
-			_ = json.Unmarshal(data, &after)
-		} else {
-			after["id"] = json.RawMessage(`""`)
-			after["table"] = json.RawMessage(`"main"`)
+		after := &PlannedRoute{Table: "main"}
+		if b := plan.Before; b != nil {
+			editable, reason := b.Editable, b.Reason
+			after = &PlannedRoute{ID: b.ID, Table: b.Table, Editable: &editable, Reason: &reason, Revision: b.Revision}
 		}
-		data, _ := json.Marshal(v)
-		var fields map[string]json.RawMessage
-		_ = json.Unmarshal(data, &fields)
-		maps.Copy(after, fields)
-		after["managed"], _ = json.Marshal(IsManaged(v.Comment))
-		plan.After, _ = json.Marshal(after)
+		after.CIDR, after.Gateway, after.Enabled, after.Comment = v.CIDR, v.Gateway, v.Enabled, v.Comment
+		after.Managed = IsManaged(v.Comment)
+		plan.After = after
 		plan.Empty = current != nil && routeValuesEqual(current, v)
 	}
 	cidr, gateway := "", ""
@@ -284,7 +293,7 @@ func BuildRoutePlan(router Router, rows []*EditableRoute, data json.RawMessage) 
 		Connection routeConnection `json:"connection"`
 		Intent     RouteIntent     `json:"intent"`
 		Before     *PublicRoute    `json:"before"`
-		After      json.RawMessage `json:"after"`
+		After      *PlannedRoute   `json:"after"`
 	}{1, connection, intent, plan.Before, plan.After})
 	return plan, nil
 }
@@ -349,14 +358,16 @@ func RouterOperationLock(ctx context.Context, router Router, write bool) (contex
 	return held, release, err
 }
 
-// A device may echo supplied credentials in its own error text. Keep the error
-// kind but never expose that text, including encoded secrets from URL userinfo.
-func routeSafeError(err error, endpoint string, secrets ...string) error {
+// A device may echo the password in its own error text. Keep the error kind but
+// never expose that text, including encoded passwords from URL userinfo.
+// Usernames are not secrets (the router form shows them) and often equal words
+// of the fixed diagnostics, such as a RouterOS user named "api".
+func routeSafeError(err error, endpoint, password string) error {
 	if err == nil {
 		return nil
 	}
+	secrets := []string{password}
 	if u, e := url.Parse(endpoint); e == nil && u.User != nil {
-		secrets = append(secrets, u.User.Username())
 		if p, ok := u.User.Password(); ok {
 			secrets = append(secrets, p)
 		}

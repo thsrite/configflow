@@ -74,8 +74,9 @@ boundary and **must exit 1 with a mismatch**; a compile failure does not count.
   public comment empty instead of Python dict/list repr. No Python repr emulation.
 - Add id/revision fields accept absent, null or empty text; wrong-typed falsy
   values (false/0/empty array/object) are refused with the Chinese identity error.
-- Credential echoes in vendor error text (plain or encoded) are hidden, keeping
+- Password echoes in vendor error text (plain or encoded) are hidden, keeping
   RouterError kind and a Chinese message; Python exposes them (matrix X01).
+  Usernames are shown (review-r06 F2).
 - RouterOS recreation additionally demands a valid fresh *hex ID; malformed
   recreation reply IDs never count as a verified restore.
 - Write L2 wait limited to ten minutes per O3 (Python waits forever); shared lockx removes unused

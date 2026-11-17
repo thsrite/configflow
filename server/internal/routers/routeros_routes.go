@@ -162,7 +162,7 @@ func editROSEntries(rows []Row) []*EditableRoute {
 
 // ReadRoutes reads manual route snapshots, retaining read-only rows for display.
 func (d *RouterOS) ReadRoutes(ctx context.Context) (result []*EditableRoute, err error) {
-	defer func() { err = routeSafeError(err, d.endpoint, d.editSecrets...) }()
+	defer func() { err = routeSafeError(err, d.endpoint, d.password) }()
 	rows, err := d.list(ctx, rosRoutes)
 	if err != nil {
 		return nil, err
@@ -235,7 +235,7 @@ func editResource(id string) string { return rosRoutes + "/" + escapeROSPathID(i
 
 // MutateRoute edits one route, proving ownership again before every compensation.
 func (d *RouterOS) MutateRoute(ctx context.Context, action string, expected *EditableRoute, values *RouteValues) (result *RouteMutation, err error) {
-	defer func() { err = routeSafeError(err, d.endpoint, d.editSecrets...) }()
+	defer func() { err = routeSafeError(err, d.endpoint, d.password) }()
 	ctx = context.WithoutCancel(ctx)
 	if action != "add" && action != "update" && action != "delete" {
 		return nil, routerError(messageEditVendorAction)
@@ -300,7 +300,7 @@ func (d *RouterOS) MutateRoute(ctx context.Context, action string, expected *Edi
 }
 func (d *RouterOS) editROSWrite(ctx context.Context, action string, desired Row, previous []Row, id *string, after *Row) (*RouteMutation, error) {
 	if action == "add" {
-		response, err := d.request(ctx, "PUT", rosRoutes, desired, 0)
+		response, err := d.request(ctx, "PUT", rosRoutes, desired, rosTimeout)
 		if err != nil {
 			return nil, err
 		}
@@ -324,7 +324,7 @@ func (d *RouterOS) editROSWrite(ctx context.Context, action string, desired Row,
 		if action == "delete" {
 			method = "DELETE"
 		}
-		if _, err := d.request(ctx, method, editResource(*id), desired, 0); err != nil {
+		if _, err := d.request(ctx, method, editResource(*id), desired, rosTimeout); err != nil {
 			return nil, err
 		}
 	}
@@ -355,7 +355,7 @@ func (d *RouterOS) editROSWrite(ctx context.Context, action string, desired Row,
 	return &RouteMutation{Changed: true, Entry: entry}, nil
 }
 func (d *RouterOS) editROSRestore(ctx context.Context, method, path string, values Row, verify func([]Row, any) bool) error {
-	response, writeErr := d.request(ctx, method, path, values, 0)
+	response, writeErr := d.request(ctx, method, path, values, rosTimeout)
 	rows, err := d.list(ctx, rosRoutes)
 	if err != nil {
 		return err

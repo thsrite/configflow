@@ -68,7 +68,7 @@ func editIkuaiEntry(raw Row) *EditableRoute {
 	if snapshot["enabled"] != "yes" && snapshot["enabled"] != "no" {
 		reasons = append(reasons, messageEditIKEnabled)
 	}
-	if snapshot.text("interface") == "" {
+	if iface, _ := snapshot["interface"].(string); iface == "" {
 		reasons = append(reasons, messageEditIKInterface)
 	}
 	tag, ok := snapshot["tagname"].(string)
@@ -96,7 +96,7 @@ func editIkuaiEntry(raw Row) *EditableRoute {
 
 // ReadRoutes reads every static_rt page, retaining unsupported forms as read-only.
 func (d *Ikuai) ReadRoutes(ctx context.Context) (result []*EditableRoute, err error) {
-	defer func() { err = routeSafeError(err, d.endpoint, d.username, d.password) }()
+	defer func() { err = routeSafeError(err, d.endpoint, d.password) }()
 	raw, err := d.ListAll(ctx, "static_rt", "", true, "")
 	if err != nil {
 		return nil, err
@@ -167,7 +167,7 @@ func (d *Ikuai) MutateRoute(ctx context.Context, action string, expected *Editab
 
 // name is a deterministic per-call seam for the Python boundary corpus, never a global hook.
 func (d *Ikuai) mutateRoute(ctx context.Context, action string, expected *EditableRoute, values *RouteValues, name string) (result *RouteMutation, err error) {
-	defer func() { err = routeSafeError(err, d.endpoint, d.username, d.password) }()
+	defer func() { err = routeSafeError(err, d.endpoint, d.password) }()
 	ctx = context.WithoutCancel(ctx)
 	if action != "add" && action != "update" && action != "delete" {
 		return nil, routerError(messageEditVendorAction)
@@ -180,11 +180,11 @@ func (d *Ikuai) mutateRoute(ctx context.Context, action string, expected *Editab
 		if err != nil {
 			return nil, err
 		}
-		copy := *values
-		copy.CIDR = p.String()
-		copy.Gateway = gateway
-		copy.Comment = strings.TrimSpace(copy.Comment)
-		values = &copy
+		normalized := *values
+		normalized.CIDR = p.String()
+		normalized.Gateway = gateway
+		normalized.Comment = strings.TrimSpace(normalized.Comment)
+		values = &normalized
 	}
 	if action == "add" && expected != nil {
 		return nil, routerError(messageEditIKAddOld)

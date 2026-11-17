@@ -46,7 +46,9 @@ HR issue-class handling (review-r04 F1-F10; review-r05 checklist 1-6):
   reuse: those rollbacks deliberately have weaker external-writer semantics.
 - Cancellation: vendor edit and ExecuteRoutePlan detach before preflight; every
   Call/ListAll/readback and compensation gets that detached context. Device I/O
-  still has its 10 s timeout. Cancellation cannot strand an accepted edit.
+  keeps its 10 s timeout (`rosTimeout` on every RouterOS write; review-r06 F1
+  fixed writes that passed 0 = no timeout). Cancellation cannot strand an
+  accepted edit.
 - Malformed/composite device data: no unchecked slices/assertions or comparable
   maps. Deep structural equality preserves composite distinctions. Unknown or
   wrong-typed stable config is visible but read-only; runtime fields are excluded.
@@ -84,8 +86,9 @@ protocol and conservative compensation, not firmware or actual packet paths.
 Accepted deviations: native opaque JSON hashes; malformed RouterOS comment objects
 remain in snapshots and are read-only but display empty instead of Python repr;
 add identity fields accept absent/null/empty strings, rejecting falsy wrong types
-that Python accepted. Device errors echoing credentials are replaced with a Chinese
-redacted diagnostic instead of exposing the text (matrix X01/O9 security fix).
+that Python accepted. Device errors echoing the password (plain or encoded, incl. a
+URL-userinfo password) are replaced with a Chinese redacted diagnostic (matrix
+X01/O9 security fix); usernames are not secrets (review-r06 F2).
 
 
 Rebase onto O3-1/O3-2: removed transitional lock map and use the shared Keyed;

@@ -78,9 +78,10 @@ type BatchDriver interface {
 // driver from one goroutine at a time (ReadState and the policy/DNS guard
 // manifests are per-driver state); only Ping may run concurrently.
 type RouterOS struct {
-	endpoint    string
-	client      DeviceHTTP
-	editSecrets []string
+	endpoint string
+	client   DeviceHTTP
+	// password is only used to hide device echoes of it in manual route errors.
+	password string
 
 	// Batch sizes are per driver so independent routers can use their own limits.
 	routeBatch int
@@ -97,7 +98,7 @@ func NewRouterOS(endpoint, username, password string, verifyTLS bool) *RouterOS 
 	driver := NewRouterOSWithHTTP(endpoint, devhttp.New(devhttp.Config{
 		VerifyTLS: verifyTLS, BasicAuth: true, Username: username, Password: password,
 	}))
-	driver.editSecrets = []string{username, password}
+	driver.password = password
 	return driver
 }
 
@@ -124,7 +125,12 @@ func (d *RouterOS) Close() {
 func (*RouterOS) RenderScript([]json.RawMessage) (string, error) { return "", nil }
 
 func (d *RouterOS) request(ctx context.Context, method, path string, values Row, timeout time.Duration) (any, error) {
-	response, err := d.client.Do(ctx, method, d.endpoint+"/rest"+path, values, timeout)
+	// Like requests' json=None, no values means no body (a nil Row would be "null").
+	var body any
+	if values != nil {
+		body = values
+	}
+	response, err := d.client.Do(ctx, method, d.endpoint+"/rest"+path, body, timeout)
 	if err != nil {
 		kind := KindRouter
 		if method != "GET" {

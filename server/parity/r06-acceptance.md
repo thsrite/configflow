@@ -21,7 +21,7 @@ or tagname plus every recorded field for ownership; ID reuse or any external
 change blocks destructive compensation; iKuai names must be unique before editing
 or deleting. Every write-path failure is a Chinese RouterError. Every edit detaches
 before its first read, so Call/ListAll/readback and compensation survive request
-cancellation. Each network request still has its device timeout. Credential echoes
+cancellation. Each network request keeps its device timeout (after review-r06 F1). Password echoes
 are hidden while keeping uncertain-write/failed-compensation status explicit.
 L2 uses shared lockx.Keyed and passes its held context; no new goroutine or flock.
 

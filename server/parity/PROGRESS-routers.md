@@ -42,7 +42,7 @@ Python's `backend/routers` is one big import cycle (most cross-module imports ar
 | R03 | RouterOS NAT assessment, iKuai IP groups, drift report | 1499 | verified | HR | R01 | – | internal/routers |
 | R04 | RouterOS REST driver, batch writes | 1415 | verified | HR | R01, R03; shared requests client³ | – | internal/routers |
 | R05 | iKuai driver | 1179 | verified | HR | R01, R03; shared requests client³ | – | internal/routers |
-| R06 | device route editor (RouterOS/iKuai static routes) | 684 | ported | HR | R04, R05 | – | internal/routers |
+| R06 | device route editor (RouterOS/iKuai static routes) | 684 | verified | HR | R04, R05 | – | internal/routers |
 | R07 | RouterOS NAT address lists, address-list sync, test helpers | 1422 | missing | HR | R03, R04 | – | internal/routers, internal/routers/routerfake |
 | R08 | RouterOS policy routing (plan, write, view) | 1349 | missing | HR | R07, C05, C26 (`normalize_policies`, present) | – | internal/routers |
 | R09 | forced DNS (DNS guard), IPv4 same-port forward hint | 773 | missing | HR | R04, R07 | – | internal/routers |
@@ -403,7 +403,9 @@ Commands (from the worktree root; iterate on .63, final run on .32):
 
 ## R06 — device route editor
 
-**Status: `ported`** · HR · prereqs: R04, R05 · Go: internal/routers
+**Status: `verified`** (O4 HR review of the Codex port, 2026-11-17, `parity/review-r06.md`; zero open findings; HTTP/L1 acceptance stays with R15; L5-A items listed there) · HR · prereqs: R04, R05 · Go: internal/routers
+
+O4 review summary: 5 findings, all fixed with failing-first tests — **1 high** (below the ≥ 2 fallback threshold): F1 RouterOS manual writes and compensation passed timeout 0 (= none in devhttp) on a detached context, so an unanswered write hung forever holding the router lock, unreconciled; hidden by the corpus's `r06ShortHTTP` timeout override. Medium: F2 redaction hid every message containing the *username* (a RouterOS user `api` lost the permission help) — only passwords are secrets now; F3 (R04 code) every RouterOS GET/DELETE sent a JSON body `null` from a typed-nil `Row` — no body now, like requests. Low: F4 iKuai non-string `interface` reason; F5 typed `PlannedRoute` instead of JSON-map merging, no shadowed `copy`. Tests: `r06_review_test.go`, corpus case `ikuai/readonly/interface_number` (172 cases). Final .32 run: gofmt empty; `go vet ./...` ok; race routers 264.823s / devhttp 3.488s; `go test -p=4 -count=1 ./...` exit 0 (routers 163.245s); 9 difftest packages ok; proddiff self-check PASS, new=0 stale=0; mutation gate result/request/ownership DETECTED.
 
 Files:
 - `backend/routers/route_editor.py` (164), `backend/routers/routeros_routes.py` (283), `backend/routers/ikuai_routes.py` (237)
