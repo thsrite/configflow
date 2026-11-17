@@ -16,6 +16,7 @@ import (
 	"strconv"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/lifecycle"
 )
 
 // AgentURL is f"http://{agent['host']}:{agent['port']}{path}".
@@ -176,18 +177,16 @@ type PushConfig struct {
 	// Extra is extra_data without the bundle (directories,
 	// ruleset_downloads, activate, base_url, resource_config,
 	// source_snapshot, ...): merged into the legacy JSON payload.
-	Extra *jsonx.Object
-	// Bundle is extra_data['deployment_bundle'] (#24), nil when absent.
-	Bundle              any
+	Extra               *jsonx.Object
 	ConfigRevision      any // int or nil
 	ExpectedProfileID   *string
 	ExpectedServiceType *string
 }
 
-// PushConfigToAgent is push_config_to_agent: mihomo/mosdns/oxidns Agents (and
-// every call with a bundle) publish transactionally through the
-// PublishDeployment hook; other services get the legacy /api/config/update.
-func (m *Manager) PushConfigToAgent(ctx context.Context, agentID, configContent string, push PushConfig) (*jsonx.Object, error) {
+// PushLegacyConfig sends only the legacy /api/config/update protocol.
+// Transactional service types fail closed; deploy.Push owns their publication.
+func (m *Manager) PushLegacyConfig(ctx context.Context, agentID, configContent string, push PushConfig) (*jsonx.Object, error) {
+	ctx = lifecycle.Detach(ctx)
 	agent, err := m.GetAgentByID(ctx, agentID, true)
 	if err != nil {
 		return nil, err
@@ -213,18 +212,8 @@ func (m *Manager) PushConfigToAgent(ctx context.Context, agentID, configContent 
 		}
 	}
 	service := agent.GetOr("service_type", "mihomo")
-	if push.Bundle != nil || service == "mihomo" || service == "mosdns" || service == "oxidns" {
-		if push.Bundle == nil {
-			return jsonx.Obj("success", false, "message", "A complete deployment bundle is required", "http_status", jsonx.Int(409)), nil
-		}
-		options := PublishOptions{Activate: true, ConfigRevision: push.ConfigRevision}
-		if value, ok := push.Extra.Get("activate"); ok {
-			options.Activate = jsonx.Truthy(value)
-		}
-		options.BaseURL, _ = push.Extra.GetOr("base_url", "").(string)
-		options.ResourceConfig, _ = push.Extra.Value("resource_config").(*jsonx.Object)
-		options.SourceSnapshot, _ = push.Extra.Value("source_snapshot").(*jsonx.Object)
-		return m.PublishDeployment(ctx, agentID, push.Bundle, options)
+	if service == "mihomo" || service == "mosdns" || service == "oxidns" {
+		return jsonx.Obj("success", false, "message", "A complete deployment bundle is required", "http_status", jsonx.Int(409)), nil
 	}
 
 	sum := md5.Sum([]byte(configContent))

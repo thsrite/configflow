@@ -70,3 +70,16 @@ const (
 	msgGeneratedConfig    = "config.yaml（生成配置）"
 	msgConfigKind         = "%s 配置"
 )
+
+const (
+	msgBindingChanged           = "草稿已保存，但设备绑定已改变，请重新选择设备后发布。"
+	msgUploadAccepted           = "Upload accepted; awaiting valid Agent status"
+	msgUploadUnknown            = "Upload outcome unknown; query deployment status"
+	msgCapabilitiesFailed       = "Unable to query Agent deployment capabilities"
+	msgTransactionalUnsupported = "Agent does not support transactional deployments; upgrade the Shell-installed or Docker Agent first"
+	msgReloadUpgrade            = "请升级 Agent 到 1.8.30-go 或更新版本后使用规则自动热加载"
+	msgFinalTargetChanged       = "目标设备配置已改变，请重新生成最终配置后推送。"
+	msgCheckingGeo              = "正在检查并准备 Mihomo Geo 资源"
+	msgCheckingOxiDNS           = "正在校验 OxiDNS 配置与规则文件"
+	msgUploading                = "正在上传发布包（%d 个文件，%s 字节）"
+)

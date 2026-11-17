@@ -751,3 +751,166 @@ func preparationFailure(err error) bool {
 	var rs *routersplit.PyError
 	return errors.As(err, &strategy) || errors.As(err, &base) || errors.As(err, &easy) || errors.As(err, &gatewayErr) || errors.As(err, &split) || errors.As(err, &settings) || errors.As(err, &validation) || errors.As(err, &reference) || errors.As(err, &remote) || errors.As(err, &agent) || errors.As(err, &archive) || repo.IsValueError(err) || (errors.As(err, &py) && py.Class == "ValueError") || (errors.As(err, &rs) && rs.Class == "ValueError")
 }
+
+// Raw returns an owned JSON snapshot, without exposing mutable legacy documents.
+func (s *Source) Raw() (json.RawMessage, error) { return encodeJSON(s.config()) }
+
+// Member returns an owned raw top-level source member (null when absent).
+func (s *Source) Member(key string) json.RawMessage {
+	b, _ := encodeJSON(s.config().Value(key))
+	return b
+}
+
+// WithMember returns a new source with one top-level member replaced.
+func (s *Source) WithMember(key string, raw json.RawMessage) (*Source, error) {
+	v, e := jsonx.Parse(raw)
+	if e != nil {
+		return nil, e
+	}
+	cfg := s.config().DeepCopy()
+	cfg.Set(key, v)
+	return NewSource(cfg, s.revision), nil
+}
+
+// SourceFromJSON decodes an owned immutable source, including preview snapshots.
+func SourceFromJSON(raw json.RawMessage, revision *int64) (*Source, error) {
+	v, e := jsonx.Parse(raw)
+	if e != nil {
+		return nil, e
+	}
+	cfg, ok := v.(*jsonx.Object)
+	if !ok {
+		return nil, preparation("Profile snapshot must be an object")
+	}
+	return NewSource(cfg, revision), nil
+}
+
+// CanonicalDigest hashes native canonical JSON (D2); it is shared by consumers.
+func CanonicalDigest(raw json.RawMessage) string { return SettingsDigest(raw) }
+
+func targetByID(ctx context.Context, m *agents.Manager, id string) (Target, bool, error) {
+	a, e := m.GetAgentByID(ctx, id, true)
+	if e != nil || a == nil {
+		return Target{}, false, e
+	}
+	t := NewTarget(a)
+	if t.ProfileID == "" {
+		t.ProfileID, e = m.Repository().DefaultProfileID(ctx)
+	}
+	if t.ServiceType == "" {
+		t.ServiceType = "mihomo"
+	}
+	return t, true, e
+}
+
+type taskView struct {
+	Success        bool   `json:"success"`
+	Existing       bool   `json:"existing"`
+	Submitted      bool   `json:"submitted"`
+	ManualRollback bool   `json:"manual_rollback"`
+	Status         string `json:"status"`
+	Message        string `json:"message"`
+	HTTPStatus     int    `json:"http_status"`
+	DeploymentID   string `json:"deployment_id"`
+	ProfileID      string `json:"profile_id"`
+	ServiceType    string `json:"service_type"`
+	SHA256         string `json:"sha256"`
+	SourceSHA256   string `json:"source_sha256"`
+}
+
+func resultView(r *agents.Result) taskView {
+	var v taskView
+	b, _ := encodeJSON(r)
+	_ = json.Unmarshal(b, &v)
+	return v
+}
+func taskViewOf(t Target, id string) (taskView, bool) {
+	r := t.Record.GetObject("deployments").GetObject(id)
+	return resultView(r), r != nil
+}
+func taskResult(t Target, id string) *agents.Result {
+	r := t.Record.GetObject("deployments").GetObject(id)
+	if r == nil {
+		return nil
+	}
+	return r.DeepCopy()
+}
+func result(success bool, status, message string, httpStatus int) *agents.Result {
+	r := jsonx.Obj("success", success)
+	if status != "" {
+		r.Set("status", status)
+	}
+	if message != "" {
+		r.Set("message", message)
+	}
+	if httpStatus != 0 {
+		r.Set("http_status", httpStatus)
+	}
+	return r
+}
+func resultWithID(r *agents.Result, id string) *agents.Result {
+	r = r.DeepCopy()
+	r.Set("deployment_id", id)
+	return r
+}
+func resultField(r *agents.Result, key string, value any) *agents.Result {
+	r = r.DeepCopy()
+	r.Set(key, value)
+	return r
+}
+func recordUpdate(ctx context.Context, m *agents.Manager, agentID, id string, u Update, o agents.RecordOptions) (*agents.Result, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	r := jsonx.NewObject()
+	for key, p := range map[string]*string{"status": u.Status, "message": u.Message, "error": u.Error, "error_details": u.ErrorDetails, "failed_stage": u.FailedStage, "sha256": u.SHA256, "source_sha256": u.SourceSHA256, "config_version": u.ConfigVersion} {
+		if p != nil {
+			r.Set(key, *p)
+		}
+	}
+	for key, p := range map[string]*bool{"success": u.Success, "submitted": u.Submitted, "manual_rollback": u.ManualRollback} {
+		if p != nil {
+			r.Set(key, *p)
+		}
+	}
+	if u.HTTPStatus != 0 {
+		r.Set("http_status", u.HTTPStatus)
+	}
+	if u.ConfigRevision != nil {
+		if u.ConfigRevision.Null {
+			r.Set("config_revision", nil)
+		} else {
+			r.Set("config_revision", jsonx.Int(u.ConfigRevision.Value))
+		}
+	}
+	return m.RecordDeployment(ctx, agentID, id, r, o)
+}
+func normalizeUpload(r *agents.Result) *agents.Result {
+	r = r.DeepCopy()
+	if r.GetInt("http_status") != 0 {
+		r.SetDefault("status", "failed")
+	} else if _, ok := r.Value("status").(string); !ok {
+		return result(true, "unknown", msgUploadAccepted, 0)
+	}
+	return r
+}
+func pairRequired(t Target) bool {
+	return t.Record.GetObject("oxidns_ha").GetBool("enabled") || t.Record.GetObject("latest_deployment").GetObject("ha_publication").Len() > 0
+}
+func legacyPush(ctx context.Context, m *agents.Manager, id, content string, o PushInput) (*agents.Result, error) {
+	extra := jsonx.NewObject()
+	if o.RestartAfterUpdate {
+		extra.Set("restart_after_update", true)
+	}
+	var revision any
+	if o.Publish.ConfigRevision != nil && !o.Publish.ConfigRevision.Null {
+		revision = o.Publish.ConfigRevision.Value
+	}
+	return m.PushLegacyConfig(ctx, id, content, agents.PushConfig{Extra: extra, ConfigRevision: revision, ExpectedProfileID: o.ExpectedProfileID, ExpectedServiceType: o.ExpectedServiceType})
+}
+func uploadRecord(ctx context.Context, m *agents.Manager, agentID, id string, r *agents.Result) (*agents.Result, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	return m.RecordDeployment(ctx, agentID, id, r, agents.RecordOptions{UploadReceipt: true})
+}

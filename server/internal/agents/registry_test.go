@@ -98,7 +98,7 @@ func TestAgentMutationsPersistThroughSystemTransactions(t *testing.T) {
 	}
 	fake := &fakeAgent{handle: always(jsonx.Obj("success", true), 200)}
 	e.m.SetClient(fake)
-	if got := must[*jsonx.Object](t)(e.m.PushConfigToAgent(e.ctx, id, "new config", PushConfig{})).Value("http_status"); !jsonx.Equal(got, 409) {
+	if got := must[*jsonx.Object](t)(e.m.PushLegacyConfig(e.ctx, id, "new config", PushConfig{})).Value("http_status"); !jsonx.Equal(got, 409) {
 		t.Fatalf("push %v", got)
 	}
 	if e.stored(id).Value("config_version") != "heartbeat" || len(fake.urls()) != 0 {

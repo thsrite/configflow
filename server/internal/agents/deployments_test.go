@@ -615,7 +615,7 @@ func TestLegacyErrorsKeepAgentReasonOnAllHTTPStatuses(t *testing.T) {
 				"error_details", "line 7: proxy group does not exist\npassword=do-not-echo"), status))
 			var result *jsonx.Object
 			if method == "push" {
-				result = must[*jsonx.Object](t)(e.m.PushConfigToAgent(e.ctx, e.id(), "[General]", PushConfig{}))
+				result = must[*jsonx.Object](t)(e.m.PushLegacyConfig(e.ctx, e.id(), "[General]", PushConfig{}))
 			} else {
 				result = must[*jsonx.Object](t)(e.m.RestartAgentService(e.ctx, e.id()))
 			}

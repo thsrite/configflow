@@ -25,7 +25,7 @@ func recordTask(e *env, status string) string {
 func legacyCall(e *env, method string) *jsonx.Object {
 	e.t.Helper()
 	if method == "push" {
-		return must[*jsonx.Object](e.t)(e.m.PushConfigToAgent(e.ctx, e.id(), "[General]", PushConfig{}))
+		return must[*jsonx.Object](e.t)(e.m.PushLegacyConfig(e.ctx, e.id(), "[General]", PushConfig{}))
 	}
 	return must[*jsonx.Object](e.t)(e.m.RestartAgentService(e.ctx, e.id()))
 }

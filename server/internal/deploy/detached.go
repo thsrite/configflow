@@ -19,6 +19,7 @@ func RunDetached(ctx context.Context, name string, fn func(context.Context) erro
 		// lifecycle recovers too, but this waiter must always be released.
 		defer func() {
 			if p := recover(); p != nil {
+				logger.Error("Agent deployment job panicked")
 				done <- fmt.Errorf("deployment job: %v", p)
 			}
 		}()

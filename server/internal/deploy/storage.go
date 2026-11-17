@@ -173,3 +173,8 @@ func (l *leafLocks) lock(key string) func() {
 		}
 	}
 }
+
+// WriteFileAtomic publishes one complete private file by fsync and rename.
+func WriteFileAtomic(ctx context.Context, path string, data []byte) error {
+	return atomicWrite(ctx, path, data)
+}

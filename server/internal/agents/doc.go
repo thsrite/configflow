@@ -24,8 +24,8 @@
 //     FinishDeploymentPreparation, GetDeployment, ActivateDeployment,
 //     RollbackDeployment, RecoverDeployment, DeploymentRequest
 //     (_deployment_request), GetDeploymentDirect / ActivateDeploymentDirect
-//     (the underscore versions for #29), PublishDeployment (hook).
-//   - Agent calls: Call (any request with the Bearer token), PushConfigToAgent,
+//     (the underscore versions for #29) (the publishing chain lives in deploy).
+//   - Agent calls: Call (any request with the Bearer token), PushLegacyConfig,
 //     RestartAgentService, GetAgentStatus, GetAgentLogSources, GetAgentLogs,
 //     ClearAgentLog, UninstallAgent, UpdateAgentVersion, ValidateAgentLogPath,
 //     Get/SetLoggingConfig, AgentJSONRequest, ProbeDomains, ReturnRouting*,
@@ -54,7 +54,7 @@
 // AddMetrics / DeleteMetricsHistory / DeleteTrafficHistory /
 // PublicationComplete / PublicationCheckpoint (#21), AddressFollow /
 // AddressConfirmed / ReceiptMatches (#28), HAServiceOperation /
-// HADeployment / HAActivate (#29), PublishDeployment (#24/#26/#29),
+// HADeployment / HAActivate (#29),
 // InstallationProfile / InstallationRegister (#30). OnAgentDeleted adds the
 // stores the DELETE route clears (#21 traffic_store, #14 domain_probe and
 // region_check, in that order); OnManagerInit adds the loops

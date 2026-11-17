@@ -15,15 +15,6 @@ import (
 	"configflow/internal/jsonx"
 )
 
-// PublishOptions are the keyword arguments of publish_deployment.
-type PublishOptions struct {
-	Activate       bool
-	ConfigRevision any // int or nil
-	BaseURL        string
-	ResourceConfig *jsonx.Object
-	SourceSnapshot *jsonx.Object
-}
-
 // InstallationError is gateway_installation.InstallationError (#30).
 type InstallationError struct {
 	Message string
@@ -73,11 +64,6 @@ type Hooks struct {
 	HAServiceOperation func(ctx context.Context, m *Manager, agentID string, operation func() (*jsonx.Object, error), uninstall bool) (*jsonx.Object, error)
 	HADeployment       func(ctx context.Context, m *Manager, agentID, deploymentID string) (*jsonx.Object, error)
 	HAActivate         func(ctx context.Context, m *Manager, agentID, deploymentID string) (*jsonx.Object, error)
-
-	// PublishDeployment is publish_deployment (oxidns_ha_publish.publish
-	// around _publish_deployment, #24/#26/#29). bundle is the deployment
-	// bundle of #24. Default: ErrNotPorted.
-	PublishDeployment func(ctx context.Context, m *Manager, agentID string, bundle any, options PublishOptions) (*jsonx.Object, error)
 
 	// InstallationProfile and InstallationRegister are
 	// gateway_installation.registration_profile / register (#30), used by
@@ -135,9 +121,6 @@ func RegisterHooks(h Hooks) {
 	}
 	if h.HAActivate != nil {
 		hooks.HAActivate = h.HAActivate
-	}
-	if h.PublishDeployment != nil {
-		hooks.PublishDeployment = h.PublishDeployment
 	}
 	if h.InstallationProfile != nil {
 		hooks.InstallationProfile = h.InstallationProfile
