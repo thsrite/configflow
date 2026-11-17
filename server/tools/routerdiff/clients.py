@@ -142,6 +142,74 @@ def discovery():
                expected_requests=({'match': {'peer': 'ros'}, 'count': 0}, {'match': {'peer': 'ikuai'}, 'count': 0}))
 
 
+
+
+def cache_lru_options():
+    def profile(ident):
+        return {'routers': {'items': [router()]}, 'device_notes': {'10.44.0.21': '缓存隔离 ' + ident}}
+    return {'alpha': profile('alpha'), 'beta': profile('beta'),
+            'additional_profiles': {'cache-' + str(number).zfill(3): profile('cache-' + str(number).zfill(3))
+                                    for number in range(127)}}
+
+
+def cache_lru():
+    arp = {'peer': 'ros', 'method': 'GET', 'path': '/rest/ip/arp'}
+    sequence = [('alpha-first', 'alpha', False), ('beta-first', 'beta', False)]
+    sequence += [('fill-' + str(number), 'cache-' + str(number).zfill(3), False) for number in range(126)]
+    sequence += [('touch-alpha-at128', 'alpha', True), ('insert129-evicts-beta', 'cache-126', False),
+                 ('alpha-recent-survives', 'alpha', True), ('beta-least-recent-rereads', 'beta', False),
+                 ('cache001-survives', 'cache-001', True), ('cache000-evicted-by-beta-rereads', 'cache-000', False)]
+    for index, (label, profile, cached) in enumerate(sequence):
+        yield Case('R004/cache-lru-' + label, 'R004', 'GET', '/api/client-devices/discovery?profile=' + profile, 200,
+            ('T03', 'R004-S07') if cached else ('T03',), profile=profile,
+            prepare=(device_world(),) if index == 0 else (), unchanged=cached,
+            effect='' if cached else 'device-read',
+            checks={'profile_id': profile, 'cached': cached,
+                    'devices/0/name': '缓存隔离 ' + profile},
+            expected_requests=({'match': arp, 'count': 0 if cached else 1},))
+
+
+def cache_coalescing():
+    arp = {'peer': 'ros', 'method': 'GET', 'path': '/rest/ip/arp'}
+    path = '/api/client-devices/discovery?refresh=1'
+    first = 'R004/cache-coalesce-owner'
+    yield Case(first, 'R004', 'GET', path, 200, ('T03',),
+        prepare=(device_world(), {'action': 'fault', 'match': arp, 'gate': 'coalesce-arp',
+                                 'apply': True, 'passthrough': True},
+                 {'rpc': 'begin', 'ident': 'coalesce-owner', 'method': 'GET', 'path': path},
+                 {'action': 'wait', 'gate': 'coalesce-arp'},
+                 {'rpc': 'begin', 'ident': 'coalesce-waiter', 'method': 'GET', 'path': path},
+                 {'rpc': 'pending_status', 'expected': {'coalesce-owner': False, 'coalesce-waiter': False}},
+                 {'action': 'release', 'gate': 'coalesce-arp'}),
+        join='coalesce-owner', unchanged=False, effect='device-read',
+        checks={'state': 'ok', 'cached': False, 'stale': False}, expected_requests=({'match': arp, 'count': 1},))
+    yield Case('R004/cache-coalesce-waiter-same-snapshot', 'R004', 'GET', path, 200, ('T03',),
+        join='coalesce-waiter', unchanged=False, effect='device-read',
+        checks={'': Ref(first, '/body')})
+    yield Case('R004/cache-coalesce-subsequent-explicit-refresh', 'R004', 'GET', path, 200, ('T03', 'R004-S08'),
+        unchanged=False, effect='device-read', checks={'cached': False, 'stale': False},
+        expected_requests=({'match': arp, 'count': 1},))
+
+def cache_staleness():
+    arp = {'match': {'peer': 'ros', 'method': 'GET', 'path': '/rest/ip/arp'}, 'count': 1}
+    quiet = ({'match': {'peer': 'ros'}, 'count': 0}, {'match': {'peer': 'ikuai'}, 'count': 0})
+    initial = 'R004/stale-cache-first'
+    yield Case(initial, 'R004', 'GET', '/api/client-devices/discovery?refresh=1', 200,
+        ('T03', 'R004-S08'), prepare=(device_world(),), unchanged=False, effect='device-read',
+        checks={'cached': False, 'stale': False, 'state': 'ok'}, times=('checked_at',), expected_requests=(arp,))
+    yield Case('R004/stale-cache-61s-only-marks-stale', 'R004', 'GET', '/api/client-devices/discovery', 200,
+        ('T03', 'R004-S07'), age_from=initial, age_seconds=61, age_anchor='ended',
+        checks={'cached': True, 'stale': True, 'checked_at': Ref(initial, '/body/checked_at')}, expected_requests=quiet)
+    yield Case('R004/stale-cache-true-does-not-refresh', 'R004', 'GET', '/api/client-devices/discovery?refresh=true', 200,
+        ('T03', 'R004-S07'), checks={'cached': True, 'stale': True,
+            'checked_at': Ref(initial, '/body/checked_at')}, expected_requests=quiet)
+    yield Case('R004/stale-cache-forced-refresh-clears-stale', 'R004', 'GET', '/api/client-devices/discovery?refresh=1', 200,
+        ('T03', 'R004-S08'), unchanged=False, effect='device-read',
+        checks={'cached': False, 'stale': False}, times=('checked_at',), expected_requests=(arp,))
+    yield Case('R004/stale-cache-process-restart-reads-again', 'R004', 'GET', '/api/client-devices/discovery', 200,
+        ('T03', 'X14'), prepare=({'rpc': 'restart'},), unchanged=False, effect='device-read',
+        checks={'cached': False, 'stale': False}, times=('checked_at',), expected_requests=(arp,))
+
 def fixed_preview_guards():
     for label, operation, ip, mac, router_id, message, entry in [
         ('missing-router', 'add', '10.44.0.21', '02:00:00:00:00:21', 'missing',

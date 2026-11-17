@@ -15,6 +15,7 @@ import sqlite3
 import subprocess
 import sys
 import time
+import threading
 import traceback
 
 from fakes import World
@@ -26,13 +27,15 @@ from seed import ADMIN, PASSWORD, JWT_SECRET
 ACTIVE = Path('/tmp/routerdiff-active')
 
 
-def request(method, path, headers=None, body=None, timeout=75, port=5000):
+def request(method, path, headers=None, body=None, timeout=75, port=5000, sent=None):
     if port not in (5000, 18081, 18082, 18083, 18084, 18085, 18086):
         raise ValueError('RPC HTTP target must be the local API or an owned fake')
     connection = http.client.HTTPConnection('127.0.0.1', port, timeout=timeout)
     try:
         connection.request(method, path, body=base64.b64decode(body) if body is not None else None,
                            headers=headers or {})
+        if sent is not None:
+            sent.set()
         response = connection.getresponse()
         content = response.read()
         return {'status': response.status, 'headers': response.getheaders(),
@@ -151,8 +154,16 @@ class Worker:
             ident = values.pop('ident')
             if ident in self.pending:
                 raise ValueError('duplicate async request')
-            self.pending[ident] = self.pool.submit(request, **values)
-            return {'started': ident}
+            sent = threading.Event()
+            self.pending[ident] = self.pool.submit(request, **values, sent=sent)
+            if not sent.wait(timeout=5):
+                raise TimeoutError('async client did not send request headers within fixture window')
+            return {'started': ident, 'headers_sent': True}
+        if operation == 'pending_status':
+            # Observe actual client futures after both sets of headers have
+            # crossed TCP. No application state or clock is patched.
+            time.sleep(.25)
+            return {ident: future.done() for ident, future in self.pending.items()}
         if operation == 'join':
             return self.pending.pop(values['ident']).result(timeout=values.get('timeout', 80))
         if operation == 'snapshot':

@@ -3,7 +3,7 @@ import copy
 from dataclasses import replace
 
 from cases import Case
-from seed import router
+from seed import router, DEVICE_PASSWORD
 
 
 def invalid(route, method, path, label, document, message, entries, status=400):
@@ -74,7 +74,7 @@ def guard_vendor_support():
             ('H0492', 'H1246', 'H1247'))
         yield invalid(route, method, path, 'iKuai-overlap-stops-at-vendor-check' + suffix,
             {**base, 'ip_rule_sets': ['same'], 'ros_policy_rule_sets': ['same']},
-            '按来源策略路由仅支持 RouterOS', ('H1240', 'H1241'))
+            '按来源策略路由仅支持 RouterOS', ('H1240',))
 
 
 def router_settings_ikuai():
@@ -115,6 +115,23 @@ def normalized_router_guards():
             stored={'routers/items/' + str(index) + '/dns_guard': defaults,
                     'routers/items/' + str(index) + '/ipv6_pd_guard': {'enabled': False}})
 
+
+    for ident in ('r-ros', 'r-ik'):
+        for interval in (15, 30, 60, 180, 360, 720, 1440):
+            yield Case('R010/interval-enum-' + ident + '-' + str(interval), 'R010', 'PUT', '/api/routers/' + ident, 200,
+                ('H1237', 'R010-S05'), document={'rule_sync_interval': interval},
+                unchanged=False, effect='profile-write', checks={'router/rule_sync_interval': interval})
+        flags = {'manage_return_routing': True, 'auto_rule_sync': ident == 'r-ros'}
+        yield Case('R010/native-boolean-flags-' + ident, 'R010', 'PUT', '/api/routers/' + ident, 200,
+            ('H1235', 'H1236'), document=flags, unchanged=False, effect='profile-write',
+            checks={'router/' + key: value for key, value in flags.items()})
+    for index, ident in enumerate(('r-ros', 'r-ik')):
+        for number, value in enumerate((None, 0, False, True, [], {})):
+            yield Case('R010/ignored-password-' + ident + '-' + str(number), 'R010', 'PUT', '/api/routers/' + ident, 200,
+                ('R010-B02', 'H1255'), document={'password': value}, unchanged=False, effect='profile-write',
+                checks={'router/has_password': True}, stored={'routers/items/' + str(index) + '/password': DEVICE_PASSWORD},
+                absent=('router/password',), expected_requests=({'match': {'peer': 'ros'}, 'count': 0},
+                                                              {'match': {'peer': 'ikuai'}, 'count': 0}))
 
 def rejected_draft_readback():
     # Extra sequence controls: DB snapshots alone cannot observe a Go handler

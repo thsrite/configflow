@@ -9,12 +9,13 @@ import device_policy
 import workflows
 import fixtures
 import clients
+import cases
 
 
 class AuditTests(unittest.TestCase):
     def test_auth_audits_require_every_explicit_real_reference_variant(self):
         audits = declared()
-        self.assertEqual(len(audits), 26 * 7 + 25 * 3 + 5 + 14 + 12 + 5 + 8)
+        self.assertEqual(len(audits), 26 * 7 + 25 * 3 + 5 + 14 + 12 + 5 + 8 + 23)
         self.assertFalse(set(audits) - set(load()[1]))
         self.assertEqual({value['audit'] for value in evaluate([]).values()}, {'variants-pending'})
         ident = 'R005-F01'
@@ -114,6 +115,29 @@ class AuditTests(unittest.TestCase):
                     self.assertEqual(case.expected, status)
         self.assertEqual(len(audits['R003-S07'].requirements), 4)
         self.assertEqual(len(audits['R003-S08'].requirements), 5)
+
+    def test_store_guard_audit_preserves_all_named_sources_and_vendor_precedence(self):
+        groups = [('guards', cases.body_guards), ('guards', guards.router_settings),
+                  ('guards', guards.router_settings_ikuai), ('guards', guards.guard_vendor_support),
+                  ('router-guard-normalization', guards.normalized_router_guards),
+                  ('legacy-credentials', fixtures.legacy_credentials), ('stored', fixtures.stored_guards),
+                  ('empty-manifests', fixtures.empty_manifests)]
+        actual = {(world, case.ident): case for world, group in groups for case in group()}
+        identifiers = ['H' + str(number).zfill(4) for number in range(1234, 1243)]
+        identifiers += ['H1245', 'H1248', 'H1249', 'H1250']
+        identifiers += ['H' + str(number).zfill(4) for number in range(1251, 1256)]
+        identifiers += ['H' + str(number).zfill(4) for number in range(1289, 1294)]
+        self.assertEqual(len(identifiers), 23)
+        audits = declared()
+        for ident in identifiers:
+            for world, name, status in audits[ident].requirements:
+                with self.subTest(entry=ident, world=world, case=name):
+                    case = actual[world, name]
+                    self.assertIn(ident, case.entries)
+                    self.assertEqual(case.expected, status)
+        self.assertEqual(len(audits['H1234'].requirements), 24)
+        self.assertEqual(len(audits['H1237'].requirements), 13 * 4 + 14)
+        self.assertEqual(len(audits['H1241'].requirements), 2)
 
 
 if __name__ == '__main__':

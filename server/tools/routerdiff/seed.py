@@ -9,6 +9,7 @@ import copy
 import json
 import os
 from pathlib import Path
+import re
 import sys
 
 from inventory import ROOT
@@ -58,13 +59,20 @@ def create(directory, options):
     document = repository.export_all()
     default = document['profiles'][repository.default_profile_id()]
     profiles = {}
-    for ident, name in (('alpha', '空间甲🧪'), ('beta', '空间乙🧪')):
+    extras = options.get('additional_profiles', {})
+    if not isinstance(extras, dict) or len(extras) > 256 or any(
+            not isinstance(ident, str) or not re.fullmatch(r'cache-[0-9]{3}', ident)
+            or not isinstance(patch, dict) for ident, patch in extras.items()):
+        raise ValueError('additional profiles must be bounded, explicitly synthetic cache fixtures')
+    specs = [('alpha', '空间甲🧪', options.get('alpha', {})), ('beta', '空间乙🧪', options.get('beta', {}))]
+    specs += [(ident, '合成缓存空间 ' + ident, patch) for ident, patch in extras.items()]
+    for ident, name, patch in specs:
         profile = copy.deepcopy(default)
         profile.update(id=ident, name=name, description='合成差分夹具', proxy_groups=[], rule_configs=[],
                        routers={'items': []}, device_notes={}, client_fixed_ips={},
                        domain_discovery={'auto_probe': False, 'auto_apply': False})
         profile['mihomo'] = {'custom_config': 'ipv6: false\ndns:\n  enable: true\n  enhanced-mode: fake-ip\n  fake-ip-range: 198.18.0.1/16\n'}
-        merge(profile, options.get(ident, {}))
+        merge(profile, patch)
         profiles[ident] = profile
     document['profiles'] = profiles
     document['shared'].update(subscriptions=[], subscription_aggregations=[], nodes=[], rule_library=[])

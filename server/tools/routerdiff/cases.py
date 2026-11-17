@@ -163,11 +163,14 @@ def query_credentials():
 
 
 def body_guards():
-    # Precise wrapper shape guards; no claim to cover downstream field guards.
+    # Precise wrapper shapes. R008/R010 enter store.normalize directly;
+    # other handlers reject before their domain field normalizers.
     definitions = [('R003', '/api/client-devices', 'PUT', 'F10'),
         ('R005', '/api/client-devices/fixed-ip/apply', 'POST', 'F10'),
         ('R006', '/api/client-devices/fixed-ip/preview', 'POST', 'F10'),
         ('R008', '/api/routers', 'POST', 'F10'),
+        ('R010', '/api/routers/r-ros', 'PUT', 'F13'),
+        ('R010', '/api/routers/r-ik', 'PUT', 'F13'),
         ('R015', '/api/routers/r-ros/policy-settings', 'PUT', 'F13'),
         ('R016', '/api/routers/r-ros/policy-settings/preview', 'POST', 'F10'),
         ('R024', '/api/routers/r-ros/rule-sync', 'PUT', 'F13'),
@@ -178,6 +181,7 @@ def body_guards():
             ('bool', b'true', 'application/json'), ('number', b'1', 'application/json'),
             ('malformed', b'{', 'application/json'), ('wrong-content-type', b'{}', 'text/plain')]:
             headers = {'Content-Type': content_type} if content_type else {}
-            yield Case(route + '-' + entry + '/' + variant, route, method, path, 400,
-                (route + '-' + entry,), raw=raw, headers=headers,
+            yield Case(route + '-' + entry + '/' + ('iKuai-' if path.endswith('/r-ik') else '') + variant,
+                route, method, path, 400, (route + '-' + entry, 'H1234') if route in ('R008', 'R010') else (route + '-' + entry,),
+                raw=raw, headers=headers, message='路由器参数必须是对象' if route in ('R008', 'R010') else None,
                 reason='request.get_json(silent=True) and exact outer shape guard')

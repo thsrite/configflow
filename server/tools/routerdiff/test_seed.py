@@ -9,6 +9,7 @@ import tempfile
 import unittest
 
 from inventory import ROOT
+import clients
 
 
 class SeedTests(unittest.TestCase):
@@ -46,6 +47,22 @@ class SeedTests(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn('ProfileValidationError', result.stderr)
                 self.assertIn('设备备注地址重复' if number in (5, 6) else '设备备注必须为对象', result.stderr)
+
+    def test_cache_profiles_are_real_independent_public_import_records(self):
+        with tempfile.TemporaryDirectory(prefix='routerdiff-cache-seed-') as directory:
+            root = Path(directory)
+            options = root / 'options.json'
+            options.write_text(json.dumps(clients.cache_lru_options()))
+            result = subprocess.run([sys.executable, str(Path(__file__).with_name('seed.py')), str(root / 'data'),
+                '--options', str(options)], cwd=ROOT, env={**os.environ, 'PYTHONDONTWRITEBYTECODE': '1'},
+                capture_output=True, text=True, check=True)
+            self.assertEqual(len(json.loads(result.stdout)['profiles']), 129)
+            with sqlite3.connect(root / 'data/configflow.sqlite3') as db:
+                rows = db.execute("SELECT owner,value FROM fields WHERE scope='profile' AND field='device_notes'").fetchall()
+            notes = {owner: json.loads(value) for owner, value in rows}
+            self.assertEqual(len(notes), 129)
+            for ident in ('alpha', 'beta', 'cache-000', 'cache-126'):
+                self.assertEqual(notes[ident], {'10.44.0.21': '缓存隔离 ' + ident})
 
     def test_public_python_import_and_independent_snapshot(self):
         with tempfile.TemporaryDirectory(prefix='routerdiff-seed-test-') as directory:

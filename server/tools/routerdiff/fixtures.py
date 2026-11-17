@@ -62,7 +62,7 @@ def legacy_credentials():
             yield Case('R010/legacy-no-password-' + ident + '-' + label, 'R010', 'PUT', path, 400,
                 ('H1255',), document=document, message='请填写密码')
         yield Case('R010/legacy-credential-repaired-' + ident, 'R010', 'PUT', path, 200,
-            ('R010-S02',), document={'password': DEVICE_PASSWORD}, unchanged=False, effect='profile-write',
+            ('R010-S02', 'H1255'), document={'password': DEVICE_PASSWORD}, unchanged=False, effect='profile-write',
             checks={'router/has_password': True, 'router/name': 'legacy credential repair'}, absent=('router/password',),
             stored={'routers/items/' + str(index) + '/password': DEVICE_PASSWORD,
                     'routers/items/' + str(index) + '/legacy_hint': 'keep synthetic unknown field'},
@@ -178,11 +178,29 @@ def stored_guards():
         ident = 'protected-' + str(index)
         root = 'routers/items/' + str(index + 2)
         yield Case('R010-B01/preserve-' + field, 'R010', 'PUT', '/api/routers/' + ident, 200,
-                   ('R010-B01',), document={'id': 'injected-id', field: None, 'injected_unknown': 'must-not-persist'},
+                   ('R010-B01', MANIFESTS[index][1]), document={'id': 'injected-id', field: None, 'injected_unknown': 'must-not-persist'},
                    unchanged=False, effect='profile-write', checks={'success': True, 'router/id': ident},
                    stored={root + '/id': ident, root + '/' + field: {'version': 1, 'resources': []}},
                    stored_absent=(root + '/injected_unknown',))
 
+
+
+def empty_manifest_options():
+    return {'alpha': {'routers': {'items': [router('empty-' + str(index), **{field: {}})
+        for index, (field, *_) in enumerate(MANIFESTS)]}}}
+
+
+def empty_manifests():
+    for index, (field, update_helper, delete_helper, *_) in enumerate(MANIFESTS):
+        path = '/api/routers/empty-' + str(index)
+        for label, document in (('endpoint', {'endpoint': 'http://10.44.0.1:18082'}), ('type', {'type': 'ikuai'})):
+            yield Case('R010/empty-' + field + '-' + label, 'R010', 'PUT', path, 200, (update_helper, 'R010-S04'),
+                document=document, unchanged=False, effect='profile-write',
+                stored={'routers/items/0/' + field: {}},
+                checks={'router/' + key: value for key, value in document.items()},
+                expected_requests=({'match': {'peer': 'ros'}, 'count': 0}, {'match': {'peer': 'ikuai'}, 'count': 0}))
+        yield Case('R009/empty-' + field + '-delete', 'R009', 'DELETE', path, 200, (delete_helper, 'R009-S01'),
+            unchanged=False, effect='router-delete')
 
 def agent_options():
     agents = []

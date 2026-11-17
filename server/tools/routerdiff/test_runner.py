@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import unittest
 
 from cases import Case, Ref
+from harness import RemoteError
 from inventory import load
 from run import execute, poll, shape, wait_guard, registered_request
 
@@ -115,6 +116,31 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(world.go.requests, [])
         self.assertEqual(len(world.python.requests), 1)
         self.assertEqual(result['differences'][0]['category'], 'process')
+
+    def test_real_exit_during_restart_retains_the_process_observation(self):
+        class RestartSide(ObservationSide):
+            def __init__(self, exit_code=None):
+                super().__init__()
+                self.exit_code = exit_code
+
+            def start(self):
+                if self.exit_code is not None:
+                    raise RemoteError('go', 'start', 'child exited', '')
+
+            def rpc(self, operation, **values):
+                if operation == 'stop':
+                    return 0
+                if operation == 'process_status':
+                    return {'exit_code': self.exit_code}
+                return super().rpc(operation, **values)
+        world = pair(RestartSide(), RestartSide(7))
+        case = Case('restart', 'R004', 'GET', '/api/client-devices/discovery', 200,
+                    prepare=({'rpc': 'restart'},))
+        result = execute(world, case, {('GET', '/api/client-devices/discovery')}, load()[0])
+        self.assertEqual(result['status'], 'different')
+        self.assertEqual(result['go_process'], {'exit_code': 7, 'stage': 'public native process restart'})
+        self.assertIsNone(result['go'])
+        self.assertEqual(world.go.requests, [])
 
     def test_notification_prerequisites_cannot_pass_missing_or_stale_evidence(self):
         routes, _ = load()

@@ -83,7 +83,7 @@ def client_mode_notes():
     body = {'revision': Ref(initial, '/body/workspace/revision'),
             'router': {'ip_rule_sets': [], 'ros_policy_rule_sets': [], 'proxy_gateway_agent_id': ''}, 'base_url': ''}
     yield Case('R015/mode-note-old-names-revision-refused', 'R015', 'PUT', '/api/routers/r-ros/policy-settings', 409,
-        ('R015-F15',), document={**body, 'names_revision': Ref(initial, '/body/workspace/names_revision'),
+        ('R015-F16',), document={**body, 'names_revision': Ref(initial, '/body/workspace/names_revision'),
             'policies': [{'ip': base['ip'], 'name': 'must not restore old name', 'mode': 'direct'}]},
         requires=('R014',), message='配置已在其他页面更新，请重新载入后再保存。')
     yield Case('R015/mode-note-modern-editor-keeps-renamed-note', 'R015', 'PUT', '/api/routers/r-ros/policy-settings', 200,

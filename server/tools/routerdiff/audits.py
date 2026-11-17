@@ -203,6 +203,62 @@ def declared():
             'the2048-note boundary and an actual DHCP binding. R015 stale names_revision vs modern '
             'editor success is tested separately, not inferred from the devices response.',
             tuple((world, name, 200) for world, name in required))
+    store_requirements = {
+        'H1234': tuple(('guards', route + '-' + suffix + '/' + prefix + variant, 400)
+            for route, suffix, prefix in (('R008', 'F10', ''), ('R010', 'F13', ''), ('R010', 'F13', 'iKuai-'))
+            for variant in ('none', 'null', 'array', 'text', 'bool', 'number', 'malformed', 'wrong-content-type')),
+        'H1235': settings_inputs(((21, 6),), field='manage_return_routing'),
+        'H1236': settings_inputs(((27, 6),), field='auto_rule_sync') + tuple(('guards', case, 400) for case in (
+            'R008/66-ikuai-auto', 'R010/66-ikuai-auto', 'R010/iKuai-shared-66-ikuai-auto')),
+        'H1237': settings_inputs(((33, 13),), field='rule_sync_interval'),
+        'H1238': settings_inputs(((46, 9),), field='ip_rule_sets'),
+        'H1239': settings_inputs(((55, 9),), field='ros_policy_rule_sets'),
+        'H1240': tuple(('guards', case, 400) for case in (
+            'R008/65-ikuai-policy', 'R010/65-ikuai-policy', 'R010/iKuai-shared-65-ikuai-policy'))
+            + vendor_inputs('iKuai-overlap-stops-at-vendor-check'),
+        'H1241': (('guards', 'R008/64-overlap', 400), ('guards', 'R010/64-overlap', 400)),
+        'H1251': settings_inputs(((0, 5),), field='name'),
+        'H1252': settings_inputs(((5, 6),), field='type', ikuai=False)
+            + tuple(('guards', 'R010/iKuai-shared-' + str(5 + index) + '-type-' + str(index), 400)
+                    for index in range(6)),
+        'H1253': settings_inputs(((11, 5),), field='endpoint'),
+        'H1254': settings_inputs(((16, 5),), field='username'),
+        'H1255': tuple(('guards', 'R008/password-' + str(index), 400) for index in range(6)),
+    }
+    for ident in ('H1235', 'H1236'):
+        store_requirements[ident] += tuple(('router-guard-normalization', 'R010/native-boolean-flags-' + rid, 200)
+                                           for rid in ('r-ros', 'r-ik'))
+    store_requirements['H1237'] += tuple(('router-guard-normalization', 'R010/interval-enum-' + rid + '-' + str(value), 200)
+        for rid in ('r-ros', 'r-ik') for value in (15, 30, 60, 180, 360, 720, 1440))
+    store_requirements['H1255'] += tuple(('router-guard-normalization', 'R010/ignored-password-' + rid + '-' + str(number), 200)
+        for rid in ('r-ros', 'r-ik') for number in range(6))
+    for vendor in ('routeros', 'ikuai'):
+        for form in ('empty', 'missing'):
+            rid = 'legacy-' + vendor + '-' + form
+            store_requirements['H1255'] += tuple(('legacy-credentials', 'R010/legacy-no-password-' + rid + '-' + label, 400)
+                                                for label in ('rename', 'null', 'empty'))
+            store_requirements['H1255'] += (('legacy-credentials', 'R010/legacy-credential-repaired-' + rid, 200),)
+    for field, update, delete in (
+        ('ros_policy_state', 'H1242', 'H1289'), ('ipv6_fakeip_state', 'H1249', 'H1290'),
+        ('ipv6_routes_state', 'H1250', 'H1291'), ('dns_guard_state', 'H1245', 'H1292'),
+        ('ipv6_pd_guard_state', 'H1248', 'H1293')):
+        store_requirements[update] = tuple(('stored', 'R010/' + field + '/' + label, 400) for label in ('type', 'endpoint'))
+        store_requirements[update] += (('stored', 'R010-B01/preserve-' + field, 200),)
+        store_requirements[update] += tuple(('empty-manifests', 'R010/empty-' + field + '-' + label, 200)
+                                             for label in ('endpoint', 'type'))
+        store_requirements[delete] = (('stored', 'R009/' + field, 409),
+                                      ('empty-manifests', 'R009/empty-' + field + '-delete', 200))
+    for ident, required in store_requirements.items():
+        audits[ident] = Audit(
+            ('backend/routers/store.py:54', 'backend/routes/routers.py:69', 'backend/routes/routers.py:157'),
+            'Public create/update and independent stored credential/manifest fixtures. Non-object inputs '
+            'include silent JSON failures on both stored vendors. Each boolean/type/member loop is explicit; '
+            'intervals include all seven legal integers and thirteen illegal forms. iKuai policy refusal '
+            'precedes overlap, so only RouterOS can reach H1241. Truthy manifests reject both connection '
+            'field changes but ignore injected manifest/id changes; genuinely empty manifests permit both '
+            'changes and deletion. Missing/empty legacy credentials load, reject incomplete edits, and can '
+            'be repaired without losing unknown stored fields. These are normalizer/ownership guards, '
+            'not proof that a selected resource exists or any publication succeeds.', required)
     return audits
 
 

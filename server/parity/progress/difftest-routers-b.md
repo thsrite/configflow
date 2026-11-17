@@ -993,3 +993,34 @@ Go missing9, known IKUAI_NETMASK_SUFFIX_ROLLBACK reproduced; complete=false.
 `RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; cd server/tools/routerdiff; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY=/tmp/routerdiff-build-302rx1dg-latest/configflow; ~/cf-test/.venv/bin/python -m unittest -v test_audits test_recipes; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world client-drafts --world client-canonical-names --world notes-capacity --world client-mode-notes --world stored-policy-legacy --world notes-keep-reservation --output /tmp/routerdiff-client-success-audits.json'`
 => Ran9 tests0.789s/OK;42 requests, references24, audits8 in this subset,
 Go missing42. No process pending. Full composition/gate/final rebase still pending.
+
+FULL current composition completed, immutable source37937739 on go f73983fb:
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY=/tmp/routerdiff-build-302rx1dg-latest/configflow; uptime; frozen_root=$(mktemp -d /tmp/routerdiff-composition.XXXXXX); rsync -a --exclude .git ./ "$frozen_root/"; printf "frozen synthetic source: %s\n" "$frozen_root"; trap '\''rm -rf "$frozen_root"'\'' EXIT; cd "$frozen_root/server/tools/routerdiff"; ~/cf-test/.venv/bin/python -m unittest discover -v; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --output /tmp/routerdiff-composition-37937739.json --findings /tmp/routerdiff-composition-37937739-findings.md'`
+=> Load17.33/29.02/28.16; Ran51 tests23.266s/OK.3054 recipes; all actual Python
+prerequisites passed; Go routes0/compared0/go-unimplemented3054; references649,
+audited301/remaining2000/complete=false. All4 registered Python bug classes
+reproduced. Real token expiry605.22s, real gateway timeouts91.41s. Frozen directory
+/tmp/routerdiff-composition.vQ3A2O removed by EXIT trap. Full findings file fetched
+from this report; it supersedes the old2435 recipe composition. This is not the
+complete2301-entry matrix and not a Go parity pass.
+
+Next source increment also passed, .64 load10.24/12.71/18.66:
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY=/tmp/routerdiff-build-302rx1dg-latest/configflow; uptime; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python -m unittest discover -v; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world guards --world router-guard-normalization --world empty-manifests --world stored --world legacy-credentials --world client-mode-notes --world discovery-coalescing --world discovery-lru --world discovery-staleness --output /tmp/routerdiff-cache-settings-audits.json'`
+=> Ran54 tests20.951s/OK; guards1666, mode1675, empty1690, legacy1707,
+normalization1743, coalescing1746(2.04s), LRU1880(72.66s), stale1885(66.29s),
+receipts1892, stored1940(2.72s). Go routes0/missing1940/referenced387/
+audited310/remaining1991 in this selected subset.23 new declarations proven;
+combined declared total324, remaining1977. No new Python bug. All queued/running
+commands completed; fetched full report with:
+`RT_HOST=sunbroke@192.168.0.64 rt --no-sync --back server/parity/difftest-routers-findings.md -- bash -lc 'set -euo pipefail; cp /tmp/routerdiff-composition-37937739-findings.md server/parity/difftest-routers-findings.md'`
+
+Changes since that full composition:16 extra non-object R010 bodies,28 interval/
+boolean/ignored-secret positive controls,15 truly empty manifest writes/deletes,
+134 real profile LRU requests,3 simultaneous refresh controls and5 real stale/
+restart controls. RPC start-exit classification also covers failed restarts;
+selftest proves no fabricated Go HTTP response. Fixed stale names_revision's
+attachment to R015-F16 (was incorrectly F15; HTTP expectation409 unchanged).
+All changes are tests/docs, no product code or Go business implementation read.
+T03 still pending its explicit integrated audit, as are native policy graph
+cases, deeper device/backgound branches, scoped dynamic comparison and external
+G23 dispatch. Final full composition/gate/final rebase remain pending; no hand-back.

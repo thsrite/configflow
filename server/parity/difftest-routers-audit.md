@@ -178,3 +178,31 @@ name类型/81字符/全部C0控制、mode缺失/非法。不是以 helper 调用
 策略旧名中的 DEL 被丢弃，但 normalize_name 拒绝 DEL；两者不能混为一个规则。
 只改名称会保存 canonical note，同时保持旧策略行与 native_config 原样。
 H0080–H0084 各有完整显式变体声明；没有据此宣称 R016 生成或所有策略图已覆盖。
+
+## store.normalize / manifest 保护的双向控制
+
+23条新增显式审计覆盖 H1234-H1242、H1245/H1248-H1255、H1289-H1293
+（已有的 DNS/PD 包装审计不重复计数）。创建/编辑的非对象 body、silent JSON
+失败，两个已有厂商的字段类型/循环成员、所有7个合法 interval 和13个非法
+形态都实际经过公开 HTTP。iKuai 先在厂商分支拒绝非空 policy selection；
+此类反例移除 H1241 附着，不能把它误当作已命中后续 overlap guard。
+
+五类非空 manifest 均拒绝改 type、endpoint，并拒绝删除；注入 id/manifest
+字段不能绕过保护。另建五条真正空 manifest 记录，公开改 endpoint/type、
+删除全部成功；不靠私有写入清理非空 manifest。空/缺失凭据可公开修复；
+已有密码上的6种非字符串值按 Python 保留，全部不向设备发请求。
+
+## T03 缓存新增实际证据（仍等待完整条目审计）
+
+- 同时发送两次 refresh=1，第一笔在真实设备 ARP GET 被 gate 挡住。客户端
+  确认两组请求头已通过 TCP，观察两个 future 尚未结束，再释放 gate；仅一组
+  设备读取，两端自己的 owner/waiter 响应完全一致。之后独立 refresh 仍重读。
+- 公开 import 建129个真实独立 profile，分别核对名称隔离；128条填满后触碰
+  alpha，插入第129条淘汰 beta 而保留 alpha，再检查后续 LRU 次序。134条
+  请求耗时72.66s；LRU用例不强行要求旧快照仍fresh，stale由独立时序验证。
+- 真实等待各端自己的首个请求结束61s：默认读与 refresh=true 均只标 stale，
+  无设备 I/O、checked_at不变；refresh=1重读清 stale；正常进程重启后默认读
+  再次读取设备。耗时66.29s，不改时钟/不覆写生产超时。
+
+以上是可执行的 T03 变体；本次未将 T03 自动关闭。还须整合既有全失败保好
+快照/partial 替换/普通重复读的明确声明，并核对签名变更控制。

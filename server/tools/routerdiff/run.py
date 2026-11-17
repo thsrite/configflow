@@ -29,7 +29,7 @@ import persistence
 import ipv6
 import device_policy
 from compare import differences, logical_snapshot, response_view, timestamp
-from harness import Pair
+from harness import Pair, RemoteError, observed_startup_exit
 from harness import decode_response
 from inventory import design_json, load
 from invariants import configuration_only, profile_write, fields
@@ -152,7 +152,15 @@ def execute(pair, case, available, routes):
         for control in preparation:
             if control.get('rpc') == 'restart':
                 side.rpc('stop', kill=control.get('kill', False))
-                side.start()  # Same production entry and fresh public login.
+                try:
+                    side.start()  # Same production entry and fresh public login.
+                except RemoteError as error:
+                    failure = observed_startup_exit(side, error, 'public native process restart') if name == 'go' else None
+                    if failure is None:
+                        raise
+                    startup_failure = pair.go_startup_failure = failure
+                    implemented = False
+                    break
             elif control.get('rpc') == 'filesystem_fault':
                 side.rpc(**{key: value for key, value in control.items() if key != 'rpc'}, operation='filesystem_fault')
             elif control.get('rpc') == 'http':
@@ -188,6 +196,11 @@ def execute(pair, case, available, routes):
                 flow_checks[name].append({'request': values, 'response': response_view(reply)})
                 if name == 'python' and reply['status'] != control['expected']:
                     raise RuntimeError(case.ident + ': reference flow guard reached the wrong HTTP status')
+            elif control.get('rpc') == 'pending_status':
+                reply = side.rpc('pending_status')
+                flow_checks[name].append({'client_future_done': reply})
+                if name == 'python' and differences(reply, control['expected']):
+                    raise RuntimeError(case.ident + ': reference concurrent-request overlap missed; rerun at lower load')
             elif control.get('rpc') == 'wait_guard':
                 reply = wait_guard(side, control['path'], control.get('seconds', 30), strict=name == 'python')
                 flow_checks[name].append({'request': {'method': 'PUT', 'path': control['path'], 'document': []},
@@ -201,7 +214,7 @@ def execute(pair, case, available, routes):
                 side.rpc('async', **values)
             else:
                 side.rpc('fake', **control)
-        if name == 'go' and blocked_reference:
+        if name == 'go' and (blocked_reference or startup_failure):
             break
         before = (before_preparation if before_preparation is not None else
                   side.pending[case.join]['before'] if case.join else logical_snapshot(side.rpc('snapshot')))
@@ -609,6 +622,7 @@ def main():
               ('stored-policy-legacy', device_policy.legacy_options(), (device_policy.legacy,)),
               ('stored-policy-capacity', device_policy.capacity_options(), (device_policy.capacity,)),
               ('notes-keep-reservation', clients.options(), (clients.notes_keep_reservation,)),
+              ('empty-manifests', fixtures.empty_manifest_options(), (fixtures.empty_manifests,)),
               ('legacy-credentials', fixtures.legacy_credentials_options(), (fixtures.legacy_credentials,)),
               ('router-guard-normalization', options, (guards.normalized_router_guards,)),
               ('workspace-drafts', options, (workflows.workspace_drafts, workflows.router_updates)),
@@ -641,6 +655,11 @@ def main():
               ('fixed-ip-binding-cap', clients.binding_limit_options(), (clients.binding_limit,)),
               ('fixed-ip-long-id', clients.options(), (clients.long_binding_id,)),
               ('discovery', clients.options(), (clients.discovery,)),
+              ('discovery-coalescing', {**clients.options(), 'alpha': {**clients.options()['alpha'],
+                  'routers': {'items': [router()]}}}, (clients.cache_coalescing,)),
+              ('discovery-lru', clients.cache_lru_options(), (clients.cache_lru,)),
+              ('discovery-staleness', {**clients.options(), 'alpha': {**clients.options()['alpha'],
+                  'routers': {'items': [router()]}}}, (clients.cache_staleness,)),
               ('discovery-failures', clients.options(), (clients.discovery_failures,)),
               ('rule-sync', sync.options(), (sync.manual_refresh,)),
               ('rule-sync-download-failures', sync.options(), (sync.download_failures,)),

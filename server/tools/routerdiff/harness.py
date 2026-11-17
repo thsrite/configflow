@@ -39,6 +39,16 @@ class RemoteError(RuntimeError):
         super().__init__(side + ' RPC: ' + error + '\n' + trace)
         self.side, self.operation, self.remote_error = side, operation, error
 
+
+def observed_startup_exit(side, error, stage):
+    """Return a real Go child exit; keep RPC and readiness faults distinct."""
+    if not isinstance(error, RemoteError) or error.side != 'go' or error.operation != 'start':
+        return None
+    status = side.rpc('process_status')
+    if status['exit_code'] is None:
+        return None
+    return {'exit_code': status['exit_code'], 'stage': stage}
+
 class Side:
     def __init__(self, name, directory, binary, options):
         self.name, self.directory = name, Path(directory)
@@ -142,15 +152,14 @@ class Pair:
                 try:
                     side.start()
                 except RemoteError as error:
-                    if name != 'go' or error.operation != 'start':
+                    if name != 'go':
                         raise
-                    status = side.rpc('process_status')
-                    # A live-but-slow listener or namespace failure remains a
-                    # fixture problem, never a manufactured product finding.
-                    if status['exit_code'] is None:
+                    failure = observed_startup_exit(side, error, 'public native process startup')
+                    # Live/slow listeners and namespace faults remain fixture
+                    # problems, never manufactured product findings.
+                    if failure is None:
                         raise
-                    self.go_startup_failure = {'exit_code': status['exit_code'],
-                                               'stage': 'public native process startup'}
+                    self.go_startup_failure = failure
         except BaseException:
             self.close()
             raise
