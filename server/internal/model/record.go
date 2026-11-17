@@ -19,6 +19,7 @@ type rawMember struct {
 // Raw is immutable record provenance: original bytes, order, typed baselines
 // and invalid-field diagnostics. Copying a record may safely share its Raw.
 type Raw struct {
+	typ     reflect.Type
 	source  jsonObject
 	members []rawMember
 	issues  []FieldIssue
@@ -43,6 +44,9 @@ var schemas sync.Map
 var rawType = reflect.TypeFor[Raw]()
 var fieldsType = reflect.TypeFor[Fields]()
 var jsonNumberType = reflect.TypeFor[json.Number]()
+var intType = reflect.TypeFor[Int]()
+var rawMessageType = reflect.TypeFor[json.RawMessage]()
+var unmarshalerType = reflect.TypeFor[json.Unmarshaler]()
 
 func schemaFor(typ reflect.Type) *recordSchema {
 	if cached, ok := schemas.Load(typ); ok {
@@ -79,6 +83,10 @@ func schemaFor(typ reflect.Type) *recordSchema {
 		}
 		if _, exists := schema.byName[tag]; exists {
 			schema.err = fmt.Errorf("%w: duplicate record tag", ErrJSON)
+			break
+		}
+		if err := storedType(field.Type); err != nil {
+			schema.err = err
 			break
 		}
 		item := recordField{tag, i}
@@ -120,22 +128,14 @@ func DecodeRecord(data []byte, rec any, raw *Raw) error {
 		return err
 	}
 	working := reflect.New(destination.Type()).Elem()
-	state := Raw{source: source}
+	state := Raw{source: source, typ: destination.Type()}
 	extra := Fields{state: &fieldState{source: source}}
 	for _, member := range source.members {
 		saved := rawMember{jsonMember: member}
 		if field, known := schema.byName[member.name]; known {
 			saved.known = true
 			target := reflect.New(working.Field(field.index).Type())
-			err := json.Unmarshal(member.value, target.Interface())
-			// encoding/json accepts quoted strings into json.Number; stored numbers
-			// require a numeric JSON literal, not numeric-looking text.
-			if target.Elem().Type() == jsonNumberType {
-				text := bytes.TrimSpace(member.value)
-				if len(text) == 0 || (text[0] != '-' && (text[0] < '0' || text[0] > '9')) {
-					err = ErrType
-				}
-			}
+			err := decodeValue(member.value, target.Interface())
 			if err != nil {
 				saved.invalid = true
 				state.issues = append(state.issues, FieldIssue{member.name, IssueType})
@@ -170,6 +170,9 @@ func EncodeRecord(rec any, raw *Raw) ([]byte, error) {
 	}
 	if raw == nil {
 		return nil, fmt.Errorf("%w: missing record provenance", ErrType)
+	}
+	if raw.typ != nil && raw.typ != value.Type() {
+		return nil, fmt.Errorf("%w: record provenance type mismatch", ErrType)
 	}
 	extra := Fields{}
 	if schema.extra >= 0 {
@@ -294,4 +297,49 @@ func valueIssues(value reflect.Value, prefix string) []FieldIssue {
 		}
 	}
 	return issues
+}
+
+// storedType enforces R6/R8/R9 at record declarations, before data is decoded.
+func storedType(typ reflect.Type) error {
+	for typ.Kind() == reflect.Pointer {
+		typ = typ.Elem()
+	}
+	if typ == intType || typ == jsonNumberType || typ == rawMessageType {
+		return nil
+	}
+	switch typ.Kind() {
+	case reflect.Bool, reflect.String, reflect.Float64:
+		return nil
+	case reflect.Array, reflect.Slice:
+		return storedType(typ.Elem())
+	case reflect.Struct:
+		if !typ.Implements(marshalerType) || !reflect.PointerTo(typ).Implements(unmarshalerType) {
+			return fmt.Errorf("%w: nested records must implement JSON codecs", ErrType)
+		}
+		if container, ok := reflect.Zero(typ).Interface().(interface{ storedValueType() reflect.Type }); ok {
+			return storedType(container.storedValueType())
+		}
+		return nil
+	default:
+		return fmt.Errorf("%w: stored fields require explicit model types", ErrType)
+	}
+}
+
+func decodeValue(data []byte, target any) error {
+	typ := reflect.TypeOf(target).Elem()
+	nullable := false
+	for typ.Kind() == reflect.Pointer {
+		nullable = true
+		typ = typ.Elem()
+	}
+	if typ == jsonNumberType {
+		text := bytes.TrimSpace(data)
+		if nullable && bytes.Equal(text, []byte("null")) {
+			return json.Unmarshal(data, target)
+		}
+		if len(text) == 0 || (text[0] != '-' && (text[0] < '0' || text[0] > '9')) {
+			return ErrType
+		}
+	}
+	return json.Unmarshal(data, target)
 }

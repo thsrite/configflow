@@ -18,8 +18,8 @@ var ErrJSON = errors.New("model: invalid JSON")
 var ErrType = errors.New("model: incompatible JSON type")
 
 type jsonMember struct {
-	name                           string
-	key, leading, separator, value []byte
+	name                                     string
+	key, leading, separator, value, trailing []byte
 }
 
 type jsonObject struct {
@@ -126,6 +126,9 @@ func parseObject(data []byte) (jsonObject, error) {
 		end := int(dec.InputOffset())
 		leading := data[previous:keyStart]
 		if comma := bytes.IndexByte(leading, ','); comma >= 0 {
+			if len(obj.members) > 0 {
+				obj.members[len(obj.members)-1].trailing = leading[:comma]
+			}
 			leading = leading[comma+1:]
 		}
 		obj.members = append(obj.members, jsonMember{name: name, key: data[keyStart:keyEnd], leading: leading, separator: data[keyEnd:valueStart], value: data[valueStart:end]})
@@ -134,7 +137,13 @@ func parseObject(data []byte) (jsonObject, error) {
 	if _, err := dec.Token(); err != nil {
 		return jsonObject{}, ErrJSON
 	}
-	obj.closing = data[previous:]
+	closingStart := skipSpace(data, previous)
+	if len(obj.members) > 0 {
+		obj.members[len(obj.members)-1].trailing = data[previous:closingStart]
+		obj.closing = data[closingStart:]
+	} else {
+		obj.closing = data[previous:]
+	}
 	return obj, nil
 }
 
@@ -179,6 +188,7 @@ func objectJSON(source jsonObject, members []jsonMember) ([]byte, error) {
 			out.WriteByte(':')
 		}
 		out.Write(m.value)
+		out.Write(m.trailing)
 	}
 	if source.closing != nil {
 		out.Write(source.closing)
@@ -346,6 +356,8 @@ func marshalValue(v reflect.Value, active map[visitKey]bool) ([]byte, error) {
 			members = append(members, jsonMember{name: key.String(), value: data})
 		}
 		return objectJSON(jsonObject{}, members)
+	case reflect.Struct:
+		return nil, fmt.Errorf("%w: record must implement JSON codecs", ErrType)
 	default:
 		return scalarJSON(v.Interface())
 	}

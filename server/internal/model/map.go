@@ -2,7 +2,6 @@ package model
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"iter"
 	"reflect"
@@ -110,6 +109,9 @@ func (m Map[V]) copyState() *mapState[V] {
 // UnmarshalJSON decodes ordered values, retaining invalid values as raw JSON
 // with a zero typed value and a diagnostic available through document decoding.
 func (m *Map[V]) UnmarshalJSON(data []byte) error {
+	if err := storedType(reflect.TypeFor[V]()); err != nil {
+		return err
+	}
 	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
 		m.state = &mapState[V]{null: true}
 		return nil
@@ -121,7 +123,7 @@ func (m *Map[V]) UnmarshalJSON(data []byte) error {
 	state := &mapState[V]{source: source}
 	for _, member := range source.members {
 		var value V
-		err := json.Unmarshal(member.value, &value)
+		err := decodeValue(member.value, &value)
 		invalid := err != nil
 		if invalid {
 			var zero V
@@ -188,3 +190,5 @@ func (m Map[V]) walkValues(visit func(reflect.Value) error) error {
 	}
 	return nil
 }
+
+func (m Map[V]) storedValueType() reflect.Type { return reflect.TypeFor[V]() }

@@ -177,3 +177,111 @@ func TestOrderedMapAndDynamic(t *testing.T) {
 		t.Fatal("SetNode edit missing")
 	}
 }
+
+func TestSkeletonPreservesOpaqueMembersAndDiagnostics(t *testing.T) {
+	original := []byte(`{ "schema_version":5,"system":{"agents":[{"token":"synthetic","future": { "z":1.0 }}],"_revision":true},"profiles":{"second":{"id":"second","name":7,"_revision":6e1,"proxy_groups":[{"name":"example","future":{"z":1}}]},"first":{}},"shared":{"nodes":[],"_revision":0},"future": { "a":1 } }`)
+	document, issues, err := DecodeDocument(original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if document.System.Revision != 0 || document.Profiles[0].Revision != 60 || document.Profiles[0].Name != "" {
+		t.Fatal("typed skeleton fallback")
+	}
+	if len(issues) != 2 || issues[0].Path != "system._revision" || issues[1].Path != "profiles[0].name" {
+		t.Fatalf("diagnostics=%v", issues)
+	}
+	encoded, err := Marshal(document)
+	if err != nil || !bytes.Equal(encoded, original) {
+		t.Fatalf("document no-op: %s %v", encoded, err)
+	}
+	document.Profiles[0].Name = "renamed"
+	encoded, err = Marshal(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(encoded, []byte(`"_revision":6e1`)) || !bytes.Contains(encoded, []byte(`"token":"synthetic","future": { "z":1.0 }`)) {
+		t.Fatal("unrelated field bytes changed")
+	}
+	document.Profiles[0], document.Profiles[1] = document.Profiles[1], document.Profiles[0]
+	encoded, err = Marshal(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Index(encoded, []byte(`"first":`)) > bytes.Index(encoded, []byte(`"second":`)) {
+		t.Fatal("profile reorder ignored")
+	}
+}
+
+func TestScalarTypesDefaultsAndMemberLayout(t *testing.T) {
+	// Whitespace before commas belongs to the untouched source layout too.
+	var record sampleRecord
+	original := []byte("{\"future\" : { \"z\":1 } \n, \"name\":\"before\" \t, \"count\":6e1 \n}")
+	if err := DecodeRecord(original, &record, &record.raw); err != nil {
+		t.Fatal(err)
+	}
+	record.Name = "after"
+	encoded, err := Marshal(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(encoded, []byte("{ \"z\":1 } \n,")) || !bytes.Contains(encoded, []byte("6e1 \n}")) {
+		t.Fatal("member layout changed")
+	}
+	if record.Enabled != nil {
+		t.Fatal("missing optional bool became present")
+	}
+	enabled := func(value *bool) bool { return value == nil || *value }
+	if !enabled(record.Enabled) {
+		t.Fatal("absent default is not true")
+	}
+	off := false
+	record.Enabled = &off
+	encoded, err = Marshal(record)
+	if err != nil || !bytes.Contains(encoded, []byte(`"enabled":false`)) {
+		t.Fatal("explicit false was lost")
+	}
+	var fields Fields
+	if err := fields.UnmarshalJSON([]byte(`{"n":{"z":1.0}}`)); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := fields.Get("n")
+	raw[0] = 'X'
+	got, _ := fields.Get("n")
+	if string(got) != `{"z":1.0}` {
+		t.Fatal("Fields.Get exposes mutable provenance")
+	}
+	type numericRecord struct {
+		Number *json.Number `json:"number"`
+		raw    Raw
+	}
+	var numeric numericRecord
+	if err := DecodeRecord([]byte(`{"number":"60"}`), &numeric, &numeric.raw); err != nil {
+		t.Fatal(err)
+	}
+	if numeric.Number != nil || len(numeric.raw.Issues()) != 1 {
+		t.Fatal("quoted json.Number accepted")
+	}
+	type unsafeRecord struct {
+		Value any `json:"value"`
+		raw   Raw
+	}
+	var unsafe unsafeRecord
+	if err := DecodeRecord([]byte(`{}`), &unsafe, &unsafe.raw); !errors.Is(err, ErrType) {
+		t.Fatal("interface field accepted")
+	}
+	type integerRecord struct {
+		Value int64 `json:"value"`
+		raw   Raw
+	}
+	var integer integerRecord
+	if err := DecodeRecord([]byte(`{}`), &integer, &integer.raw); !errors.Is(err, ErrType) {
+		t.Fatal("non-model integer field accepted")
+	}
+	type otherRecord struct {
+		Name string `json:"name"`
+	}
+	var other otherRecord
+	if _, err := EncodeRecord(&other, &record.raw); !errors.Is(err, ErrType) {
+		t.Fatal("provenance of another record type accepted")
+	}
+}
