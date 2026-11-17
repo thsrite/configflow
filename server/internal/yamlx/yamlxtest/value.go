@@ -1,8 +1,9 @@
 package yamlxtest
 
 import (
-	"configflow/internal/jsonx"
 	"encoding/json"
+
+	"configflow/internal/jsonx"
 )
 
 // ValueNode records a physical JSON value without expanding shared containers.

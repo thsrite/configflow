@@ -4,6 +4,13 @@ package deploy
 // values, yamlx nodes, opaque records or raw JSON.
 import (
 	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"sync"
+	"time"
+
 	"configflow/internal/agents"
 	"configflow/internal/agents/trafficstore"
 	"configflow/internal/convert"
@@ -17,12 +24,6 @@ import (
 	"configflow/internal/rulefetch"
 	"configflow/internal/subs"
 	"configflow/internal/yamlx"
-	"context"
-	"encoding/json"
-	"errors"
-	"net/http"
-	"sync"
-	"time"
 )
 
 // Source is an immutable profile snapshot until the typed repository lands.

@@ -1,13 +1,14 @@
 package deploy
 
 import (
-	"configflow/internal/agents"
-	"configflow/internal/agents/diag"
-	"configflow/internal/yamlx"
 	"errors"
 	"fmt"
 	"regexp"
 	"strings"
+
+	"configflow/internal/agents"
+	"configflow/internal/agents/diag"
+	"configflow/internal/yamlx"
 
 	"gopkg.in/yaml.v3"
 )

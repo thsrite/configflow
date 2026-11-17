@@ -15,7 +15,6 @@ import (
 	"configflow/internal/jsonx"
 	"configflow/internal/rules"
 	"configflow/internal/weburl"
-	"configflow/internal/yamlx"
 )
 
 // compatCall runs the Go counterpart of one golden function.
@@ -217,8 +216,6 @@ func goldenDefault(v any) any {
 			out[i] = goldenDefault(child)
 		}
 		return out
-	case yamlx.Timestamp:
-		return []any{value.String()}
 	case []byte:
 		return []any{"b" + jsonx.Repr(string(value))}
 	}

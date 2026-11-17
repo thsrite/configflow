@@ -7,7 +7,6 @@ import (
 	"configflow/internal/jsonx"
 	"configflow/internal/pystr"
 	"configflow/internal/weburl"
-	"configflow/internal/yamlx"
 )
 
 // Port of backend/common/mihomo_base_settings.py (C18): the server-side
@@ -140,14 +139,9 @@ func getPath(document any, path []string) any {
 // exactType is type(v) for _same: int and float, date and datetime and
 // bool are distinct types.
 func exactType(v any) string {
-	switch x := v.(type) {
+	switch v.(type) {
 	case missingValue:
 		return "missing"
-	case yamlx.Timestamp:
-		if x.HasTime {
-			return "datetime"
-		}
-		return "date"
 	case []byte:
 		return "bytes"
 	}
@@ -190,12 +184,6 @@ func same(left, right any) bool {
 			}
 		}
 		return true
-	case yamlx.Timestamp:
-		r := right.(yamlx.Timestamp)
-		if l.HasZone != r.HasZone {
-			return false // naive == aware is False
-		}
-		return l.Time().Equal(r.Time())
 	case []byte:
 		return string(l) == string(right.([]byte))
 	case jsonx.Number:

@@ -4,7 +4,6 @@ package difftest
 import (
 	"bufio"
 	"bytes"
-	"configflow/internal/yamlx"
 	"context"
 	"encoding/json"
 	"errors"
@@ -22,7 +21,6 @@ import (
 
 	generation "configflow/internal/aggregations"
 	"configflow/internal/api/aggregations"
-
 	"configflow/internal/auth"
 	"configflow/internal/convert/mihomoenv"
 	"configflow/internal/deploy"
@@ -35,6 +33,7 @@ import (
 	"configflow/internal/rules"
 	"configflow/internal/substore"
 	"configflow/internal/taskstatus"
+	"configflow/internal/yamlx"
 )
 
 const secret = "c31-synthetic-jwt-secret"

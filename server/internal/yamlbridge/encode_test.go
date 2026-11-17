@@ -12,7 +12,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func TestEncodeLegacyValues(t *testing.T) {
+func TestEncodeNativeDocuments(t *testing.T) {
 	for _, source := range []string{
 		"a: !!timestamp 2001-12-14 21:59:43.100000-05:00\nb: 2002-12-14\n",
 		"binary: !!binary |\n  YWJj\n",
@@ -20,7 +20,7 @@ func TestEncodeLegacyValues(t *testing.T) {
 		"{payload: [a.com], 1: x, null: y, false: z}",
 	} {
 		t.Run(source, func(t *testing.T) {
-			value, err := yamlx.LoadWith(source, yamlx.LoadOptions{KeepNonStringKeys: true})
+			value, err := yamlx.Parse([]byte(source))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -38,7 +38,7 @@ func TestEncodeLegacyValues(t *testing.T) {
 			}
 			got, err := yamlx.Parse(out)
 			if err != nil || !yamlx.Equal(want, got) {
-				t.Fatalf("legacy value changed: %s: %v", out, err)
+				t.Fatalf("native graph changed: %s: %v", out, err)
 			}
 		})
 	}
@@ -185,8 +185,8 @@ func FuzzEncode(f *testing.F) {
 		if err != nil {
 			t.Skip() // Invalid UTF-8 cannot produce a legacy generator input.
 		}
-		// The builder receives legacy parsed values until N7-3d. Compare the
-		// actual input value, not decimal precision already lost by that reader.
+		// The temporary builder receives JSON values. Compare their actual
+		// encoding, including arbitrary precision and float shape.
 		data, err := json.Marshal(value)
 		if err != nil {
 			t.Skip() // Non-finite values are covered explicitly above.

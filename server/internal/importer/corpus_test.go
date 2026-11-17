@@ -3,7 +3,6 @@ package importer_test
 import (
 	"bufio"
 	"bytes"
-	"configflow/internal/yamlx"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -12,6 +11,7 @@ import (
 	"testing"
 
 	"configflow/internal/importer"
+	"configflow/internal/yamlx"
 )
 
 type corpusRow struct {

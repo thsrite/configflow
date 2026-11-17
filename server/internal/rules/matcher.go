@@ -8,12 +8,12 @@ import (
 	"strings"
 	"sync"
 
-	"gopkg.in/yaml.v3"
-
 	"configflow/internal/jsonx"
 	"configflow/internal/logx"
 	"configflow/internal/weburl"
 	"configflow/internal/yamlx"
+
+	"gopkg.in/yaml.v3"
 )
 
 // Rule-line parsing and the indexed matcher (backend/utils/rule_matcher.py)

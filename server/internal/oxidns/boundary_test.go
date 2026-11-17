@@ -15,7 +15,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"gopkg.in/yaml.v3"
 	"os"
 	"reflect"
 	"sort"
@@ -26,6 +25,7 @@ import (
 	"unicode"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/yamlx"
 )
 
 const testdataDir = "testdata/"
@@ -830,7 +830,7 @@ func nativeBoundaryDifference(r row, args []*Node, got *Node, err error) bool {
 			}
 			if isStr(n) {
 				var doc Node
-				if yaml.Unmarshal([]byte(n.Value), &doc) == nil {
+				if yamlx.Unmarshal([]byte(n.Value), &doc) == nil {
 					var walk func(*Node) bool
 					walk = func(v *Node) bool {
 						if v.Tag == "!!merge" {

@@ -24,22 +24,10 @@ const (
 // CompareNativeReader compares the former native decoder with Parse. It is
 // migration-only evidence; server packages never use the direct decoder.
 func CompareNativeReader(source string, mode NativeReaderMode) (string, error) {
-	d := yaml.NewDecoder(strings.NewReader(source))
-	var document, extra yaml.Node
-	oldErr := d.Decode(&document)
+	document, oldErr := FormerNativeDocument(source)
 	old := yamlx.Null()
-	if errors.Is(oldErr, io.EOF) {
-		oldErr = nil
-	} else if oldErr == nil {
-		if len(document.Content) != 0 {
-			old = document.Content[0]
-		}
-		if err := d.Decode(&extra); !errors.Is(err, io.EOF) {
-			if err == nil {
-				err = yamlx.ErrMultipleDocuments
-			}
-			oldErr = err
-		}
+	if oldErr == nil && len(document.Content) != 0 {
+		old = document.Content[0]
 	}
 	if oldErr == nil && mode == NativeDecoded {
 		var value any
@@ -63,4 +51,27 @@ func CompareNativeReader(source string, mode NativeReaderMode) (string, error) {
 	default:
 		return "", fmt.Errorf("unclassified native reader change: old=%v new=%v", oldErr, err)
 	}
+}
+
+// FormerNativeDocument is the single test-only pre-facade yaml.v3 AST reader.
+// It deliberately applies no new policies: migration tests compare the actual
+// old native reader and unchanged builders to the validated production facade.
+// Runtime packages must never import yamlxtest.
+func FormerNativeDocument(source string) (*yamlx.Node, error) {
+	d := yaml.NewDecoder(strings.NewReader(source))
+	var document, extra yaml.Node
+	if err := d.Decode(&document); err != nil {
+		if errors.Is(err, io.EOF) {
+			document.Kind = yaml.DocumentNode
+			return &document, nil
+		}
+		return nil, err
+	}
+	if err := d.Decode(&extra); !errors.Is(err, io.EOF) {
+		if err == nil {
+			err = yamlx.ErrMultipleDocuments
+		}
+		return nil, err
+	}
+	return &document, nil
 }

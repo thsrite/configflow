@@ -2418,3 +2418,11 @@ reader comparisons frozen before implementation deletion, complete native audits
 and old graphs/errors retained,unknown0; mode-specific history7,174 inputs.
 All ten helper-dependent package suites passed; .32 full vet and changed API/
 facade-helper tests passed. New AST gate will enforce the final cleanup.
+
+N7-3d cleanup implementation complete; final gate pending. All old loaders/types
+and internal/pyyaml removed; yamlbridge retains only jsonx/native Node support.
+AST gate rejects bypass readers/runtime Clone and migration-helper imports.
+C29 shared bb1dac8d consumed as e10291f5. Native old/new reader gate on .32:
+native53364 (equal52544/D1547/policy177/alias96), template324455
+(equal324190/D1132/alias133),unknown0. Shared old native decoder is test-only,
+centralized within yamlxtest; the empty-stream contract has a regression test.

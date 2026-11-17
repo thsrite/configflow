@@ -1,32 +1,27 @@
 package oxidns
 
 import (
-	"gopkg.in/yaml.v3"
-	"io"
 	"math"
 	"math/big"
 	"strconv"
 	"strings"
+
+	"configflow/internal/yamlx/yamlxtest"
+
+	"gopkg.in/yaml.v3"
 )
 
 // Frozen pre-migration readers are test-only references; business builders are
 // shared so the comparison isolates the YAML reader rather than porting logic.
 func legacyParseYAML(text string, syntax error) (*Node, error) {
-	dec := yaml.NewDecoder(strings.NewReader(text))
-	var doc yaml.Node
-	if err := dec.Decode(&doc); err == io.EOF {
-		return Null(), nil
-	} else if err != nil {
+	doc, err := yamlxtest.FormerNativeDocument(text)
+	if err != nil {
 		return nil, syntax
 	}
-	var extra yaml.Node
-	if err := dec.Decode(&extra); err != io.EOF {
+	if duplicateAnchor(doc, map[string]bool{}) {
 		return nil, syntax
 	}
-	if duplicateAnchor(&doc, map[string]bool{}) {
-		return nil, syntax
-	}
-	root := &doc
+	root := doc
 	if doc.Kind == yaml.DocumentNode {
 		if len(doc.Content) == 0 {
 			return Null(), nil
@@ -50,15 +45,8 @@ func legacyParseYAML(text string, syntax error) (*Node, error) {
 }
 
 func legacySafeLoad(text string) (*Node, bool, error) {
-	dec := yaml.NewDecoder(strings.NewReader(text))
-	var doc yaml.Node
-	if err := dec.Decode(&doc); err == io.EOF {
-		return Null(), true, nil
-	} else if err != nil {
-		return nil, false, nil
-	}
-	var extra yaml.Node
-	if err := dec.Decode(&extra); err != io.EOF {
+	doc, err := yamlxtest.FormerNativeDocument(text)
+	if err != nil {
 		return nil, false, nil
 	}
 	if len(doc.Content) == 0 {

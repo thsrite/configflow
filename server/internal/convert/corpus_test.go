@@ -13,7 +13,6 @@ import (
 
 	"configflow/internal/jsonx"
 	"configflow/internal/weburl"
-	"configflow/internal/yamlx"
 )
 
 // fakeConverter mirrors fake_convert of testdata/gen.py.
@@ -113,8 +112,6 @@ func pyConv(v any) any {
 		return out
 	case []byte:
 		return jsonx.Obj("__bytes__", hex.EncodeToString(value))
-	case yamlx.Timestamp:
-		return jsonx.Obj("__date__", value.String())
 	}
 	return v
 }

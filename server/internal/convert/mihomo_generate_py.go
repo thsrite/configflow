@@ -8,7 +8,6 @@ import (
 	"configflow/internal/jsonx"
 	"configflow/internal/pystr"
 	"configflow/internal/weburl"
-	"configflow/internal/yamlx"
 )
 
 // Python-semantics helpers of the C18 generator. The generator is written
@@ -44,12 +43,7 @@ func catch(errp *error) {
 
 // typeName is type(v).__name__ including the YAML-only types.
 func typeName(v any) string {
-	switch x := v.(type) {
-	case yamlx.Timestamp:
-		if !x.HasTime {
-			return "date"
-		}
-		return "datetime"
+	switch v.(type) {
 	case []byte:
 		return "bytes"
 	}
@@ -146,8 +140,6 @@ func fstr(v any) string {
 	switch x := v.(type) {
 	case string:
 		return x
-	case yamlx.Timestamp:
-		return x.String()
 	case []byte:
 		return pyBytesRepr(x)
 	}

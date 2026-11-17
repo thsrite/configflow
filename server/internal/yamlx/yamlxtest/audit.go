@@ -2,6 +2,7 @@ package yamlxtest
 
 import (
 	"configflow/internal/yamlx"
+
 	"gopkg.in/yaml.v3"
 )
 

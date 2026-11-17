@@ -4,7 +4,6 @@ package difftest
 import (
 	"bufio"
 	"bytes"
-	"configflow/internal/yamlx"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -16,6 +15,7 @@ import (
 	"configflow/internal/devicenotes"
 	"configflow/internal/jsonx"
 	"configflow/internal/oxidns"
+	"configflow/internal/yamlx"
 )
 
 func TestDeviceNotesBoundary(t *testing.T) {

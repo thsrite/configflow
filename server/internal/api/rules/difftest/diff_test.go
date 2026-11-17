@@ -4,7 +4,6 @@ package difftest
 import (
 	"bufio"
 	"bytes"
-	"configflow/internal/yamlx"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -33,6 +32,7 @@ import (
 	"configflow/internal/routers"
 	shared "configflow/internal/rules"
 	"configflow/internal/taskstatus"
+	"configflow/internal/yamlx"
 )
 
 const secret = "c32-synthetic-secret"

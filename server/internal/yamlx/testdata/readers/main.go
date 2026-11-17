@@ -5,14 +5,16 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
+	"fmt"
+	"os"
+
 	"configflow/internal/logx"
 	"configflow/internal/subs"
 	"configflow/internal/yamlx"
 	"configflow/internal/yamlx/yamlxtest"
-	"encoding/json"
-	"fmt"
+
 	"gopkg.in/yaml.v3"
-	"os"
 )
 
 type wire struct {

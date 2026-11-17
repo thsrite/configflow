@@ -1,7 +1,6 @@
 package difftest
 
 import (
-	"configflow/internal/yamlx"
 	"encoding/json"
 	"net/url"
 	"os"
@@ -10,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"unicode/utf8"
+
+	"configflow/internal/yamlx"
 
 	"gopkg.in/yaml.v3"
 )

@@ -3,7 +3,6 @@ package agents
 import (
 	"bufio"
 	"bytes"
-	"configflow/internal/yamlx"
 	"context"
 	"encoding/json"
 	"errors"
@@ -23,6 +22,7 @@ import (
 	"configflow/internal/jsonx"
 	"configflow/internal/oxidns"
 	"configflow/internal/repo"
+	"configflow/internal/yamlx"
 )
 
 type clientWorld struct {

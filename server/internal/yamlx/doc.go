@@ -9,8 +9,6 @@
 // before navigating user documents. Edit verifies every edited output before it
 // can replace its source.
 //
-// During the remaining N7-3d migration, the old Load APIs still build legacy
-// jsonx values with Python loader semantics. Their implementation and old-only
-// types are removed when the final reader consumers migrate. No old writer API
-// remains; generation boundaries share the temporary internal/yamlbridge.
+// Dynamic generation still uses internal/yamlbridge at the temporary jsonx
+// boundary until N8. All YAML reading and writing policies are native here.
 package yamlx

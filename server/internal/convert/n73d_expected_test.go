@@ -1,8 +1,6 @@
 package convert_test
 
 import (
-	"configflow/internal/yamlbridge"
-	"configflow/internal/yamlx"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
@@ -10,6 +8,8 @@ import (
 	"testing"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/yamlbridge"
+	"configflow/internal/yamlx"
 	"configflow/internal/yamlx/yamlxtest"
 )
 

@@ -1,12 +1,9 @@
 // Package yamlbridge builds native YAML graphs from legacy generated values.
-// It owns no document schema. N7-3d 删除: Timestamp/[]byte/Mapping branches;
-// N8 removes the remaining jsonx transition boundary.
+// It owns no document schema. N8 removes this remaining jsonx transition.
 package yamlbridge
 
 import (
-	"encoding/base64"
 	"fmt"
-	"strings"
 
 	"configflow/internal/jsonx"
 	"configflow/internal/yamlx"
@@ -108,23 +105,6 @@ func Encode(value any) (*yamlx.Node, error) {
 			return yamlx.Str(v), nil
 		case bool:
 			return yamlx.Bool(v), nil
-		case yamlx.Timestamp:
-			return &yamlx.Node{Kind: yaml.ScalarNode, Tag: "!!timestamp", Value: v.String()}, nil
-		case []byte:
-			// Retain the old loaded binary value; line breaks are insignificant
-			// to binary consumers, but are part of the Node scalar text.
-			encoded := base64.StdEncoding.EncodeToString(v)
-			var text strings.Builder
-			for len(encoded) > 76 {
-				text.WriteString(encoded[:76])
-				text.WriteByte('\n')
-				encoded = encoded[76:]
-			}
-			if encoded != "" {
-				text.WriteString(encoded)
-				text.WriteByte('\n')
-			}
-			return &yamlx.Node{Kind: yaml.ScalarNode, Tag: "!!binary", Value: text.String(), Style: yaml.LiteralStyle}, nil
 		case *jsonx.Object:
 			if v == nil {
 				return yamlx.Null(), nil
@@ -140,27 +120,6 @@ func Encode(value any) (*yamlx.Node, error) {
 					return nil, err
 				}
 				n.Content = append(n.Content, yamlx.Str(key), child)
-			}
-			return n, nil
-		case *yamlx.Mapping:
-			if v == nil {
-				return yamlx.Null(), nil
-			}
-			if n := seen[v]; n != nil {
-				return alias(n), nil
-			}
-			n := yamlx.Map()
-			seen[v] = n
-			for _, pair := range v.Pairs {
-				key, err := build(pair.Key)
-				if err != nil {
-					return nil, err
-				}
-				child, err := build(pair.Value)
-				if err != nil {
-					return nil, err
-				}
-				n.Content = append(n.Content, key, child)
 			}
 			return n, nil
 		case []any:

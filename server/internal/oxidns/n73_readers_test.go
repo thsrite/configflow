@@ -14,7 +14,7 @@ import (
 
 	"configflow/internal/jsonx"
 	"configflow/internal/yamlx"
-	"configflow/internal/yamlx/yamltest"
+	"configflow/internal/yamlx/yamlxtest"
 )
 
 func n73ReaderDiagnostic(err error) bool {
@@ -52,7 +52,7 @@ func TestN73OxidnsReaderInputs(t *testing.T) {
 				t.Fatal("fixture JSON failed")
 			}
 			args := row.Value("args")
-			native := yamltest.TextFields(args, "native_config")
+			native := yamlxtest.TextFields(args, "native_config")
 			native = append(native, n73IncludeInputs(args)...)
 			if row.Value("fn") == "load_native_yaml" {
 				if list, ok := args.([]any); ok && len(list) != 0 {
@@ -61,7 +61,7 @@ func TestN73OxidnsReaderInputs(t *testing.T) {
 					}
 				}
 			}
-			template := yamltest.TextFields(args, "custom_config", "local_dns", "remote_dns", "fallback_dns")
+			template := yamlxtest.TextFields(args, "custom_config", "local_dns", "remote_dns", "fallback_dns")
 			for caller, inputs := range map[string][]string{"native": native, "template": template} {
 				for _, source := range inputs {
 					class, err := n73ReaderClass(caller, source)
@@ -102,26 +102,26 @@ func n73ReaderClass(caller, source string) (string, error) {
 	}
 	if oldOK == newOK && ((oldErr == nil && newErr == nil && yamlx.Equal(before, after)) ||
 		(oldErr != nil && newErr != nil && oldErr.Error() == newErr.Error())) {
-		return yamltest.Equal, nil
+		return yamlxtest.Equal, nil
 	}
 	if errors.Is(newErr, yamlx.ErrAliasRecursion) || errors.Is(newErr, yamlx.ErrAliasBudget) {
-		return yamltest.Alias, nil
+		return yamlxtest.Alias, nil
 	}
 	if errors.Is(newErr, yamlx.ErrDuplicateKey) {
-		return yamltest.Duplicate, nil
+		return yamlxtest.Duplicate, nil
 	}
 	if errors.Is(newErr, yamlx.ErrPolicy) {
-		return yamltest.Policy, nil
+		return yamlxtest.Policy, nil
 	}
 	// Repeated anchors are accepted by the native parser (5.7 grammar B).
 	if root, err := yamlx.Parse([]byte(source)); err == nil && duplicateAnchor(root, map[string]bool{}) {
-		return yamltest.SyntaxRange, nil
+		return yamlxtest.SyntaxRange, nil
 	}
-	class, err := yamltest.Classify(source)
+	class, err := yamlxtest.Classify(source)
 	if err != nil {
 		return "", err
 	}
-	if class == yamltest.Equal {
+	if class == yamlxtest.Equal {
 		return "", fmt.Errorf("reader delta outside approved categories")
 	}
 	return class, nil

@@ -21,7 +21,6 @@ import (
 	"configflow/internal/refresh"
 	"configflow/internal/rules"
 	"configflow/internal/subs"
-	"configflow/internal/yamlx"
 )
 
 // fakeSubStore mirrors fake_convert of testdata/gen_mihomo.py (and gen.py).
@@ -160,7 +159,6 @@ func pythonClass(err error) string {
 		health   *check.ValueError
 		hkey     *check.KeyError
 		candid   *rules.CandidateValidationError
-		yerr     *yamlx.Error
 		hook     *convert.HookMissingError
 	)
 	var replayed *replayedError
@@ -185,8 +183,6 @@ func pythonClass(err error) string {
 		return "CandidateValidationError"
 	case errors.As(err, &strategy):
 		return "StrategyReferenceError"
-	case errors.As(err, &yerr):
-		return yerr.Class
 	case errors.As(err, &hook):
 		return "HookMissingError"
 	}
@@ -241,8 +237,6 @@ func mihomoConv(v any) any {
 		return out
 	case []byte:
 		return jsonx.Obj("__bytes__", hex.EncodeToString(value))
-	case yamlx.Timestamp:
-		return jsonx.Obj("__date__", value.String())
 	}
 	return v
 }
