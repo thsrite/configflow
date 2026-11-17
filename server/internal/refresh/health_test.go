@@ -205,8 +205,9 @@ func TestOnlyDownloadedBodiesCarryHostsIntoTheCacheMetadata(t *testing.T) {
 	if metadata, _ := SourceCacheMetadata(feed, &substore.SubscriptionResult{Text: airport, Source: "cache"}); metadata.Has("hosts") {
 		t.Fatal(jsonx.Repr(metadata))
 	}
-	data, _ := yamlx.SafeLoad(airport)
-	conversion, _ := yamlx.SafeDump(jsonx.Obj("proxies", data.(*jsonx.Object).Value("proxies")))
+	doc, _ := yamlx.Parse([]byte(airport))
+	conversionBytes, _ := yamlx.Marshal(yamlx.Map(yamlx.Str("proxies"), yamlx.Get(doc, "proxies")))
+	conversion := string(conversionBytes)
 	if metadata, _ := SourceCacheMetadata(feed, &substore.SubscriptionResult{Text: conversion, Source: "sub_store"}); metadata.Has("hosts") {
 		t.Fatal(jsonx.Repr(metadata))
 	}

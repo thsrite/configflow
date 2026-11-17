@@ -486,9 +486,16 @@ func TestAutoDeliveryReadsCacheWithoutUpstreamOrExtendingAge(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			parsed, _ := yamlx.SafeLoad(result.Text)
-			proxies := parsed.(*jsonx.Object).GetList("proxies")
-			if result.Source != "cache" || len(proxies) != 1 || proxies[0].(*jsonx.Object).Value("name") != "Remote" {
+			var parsed struct {
+				Proxies []struct {
+					Name string `yaml:"name"`
+				} `yaml:"proxies"`
+			}
+			if err := yamlx.Unmarshal([]byte(result.Text), &parsed); err != nil {
+				t.Fatal(err)
+			}
+			proxies := parsed.Proxies
+			if result.Source != "cache" || len(proxies) != 1 || proxies[0].Name != "Remote" {
 				t.Fatal(result)
 			}
 		}

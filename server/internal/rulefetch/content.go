@@ -18,10 +18,10 @@ import (
 	"configflow/internal/convert"
 	"configflow/internal/jsonx"
 	"configflow/internal/pystr"
-	"configflow/internal/pyyaml"
 	"configflow/internal/repo"
 	"configflow/internal/rules"
 	"configflow/internal/yamlx"
+	"gopkg.in/yaml.v3"
 )
 
 // ResultCache is the thread-safe LRU for pure results keyed by content
@@ -193,37 +193,49 @@ func NormalizeClassicalLines(content string) (string, []any, error) {
 	return checked.GetString("content"), warnings, nil
 }
 
-var commentPattern = regexp.MustCompile(`#[^\r\n]*`)
-
-// yamlFailure is a caught (yaml.YAMLError, ValueError, RecursionError).
-type yamlFailure struct{ err error }
-
-func (f yamlFailure) Error() string { return f.err.Error() }
-
-func valueError(msg string) error { return yamlFailure{errors.New(msg)} }
-
-func isPayloadKey(key *pyyaml.Node) bool {
-	return key.Kind == pyyaml.ScalarNode && key.Value == "payload"
+func isPayloadKey(key *yamlx.Node) bool {
+	key = yamlx.Resolve(key)
+	return key != nil && key.Kind == yaml.ScalarNode && key.ShortTag() == "!!str" && key.Value == "payload"
 }
 
-func payloadPairs(root *pyyaml.Node) [][2]*pyyaml.Node {
-	var pairs [][2]*pyyaml.Node
-	for _, pair := range root.Pairs {
-		if isPayloadKey(pair[0]) {
-			pairs = append(pairs, pair)
+// payloadPairs returns direct pairs only: editing an inherited payload would
+// unexpectedly change its merge source.
+func payloadPairs(root *yamlx.Node) [][2]*yamlx.Node {
+	var pairs [][2]*yamlx.Node
+	if root == nil || root.Kind != yaml.MappingNode {
+		return pairs
+	}
+	for i := 0; i+1 < len(root.Content); i += 2 {
+		if isPayloadKey(root.Content[i]) {
+			pairs = append(pairs, [2]*yamlx.Node{root.Content[i], root.Content[i+1]})
 		}
 	}
 	return pairs
 }
 
-func singleLineStr(node *pyyaml.Node) bool {
-	return node.Kind == pyyaml.ScalarNode && node.Tag == pyyaml.TagStr && node.Style != '|' && node.Style != '>' &&
-		node.Start.Line == node.End.Line && !strings.ContainsAny(node.Value, "\n\r")
+func singleLineStr(node *yamlx.Node) bool {
+	return node != nil && node.Kind == yaml.ScalarNode && node.ShortTag() == "!!str" && node.Style&(yaml.LiteralStyle|yaml.FoldedStyle) == 0 && !strings.ContainsAny(node.Value, "\n\r")
 }
 
-// NormalizeMihomoYAML is normalize_mihomo_yaml: expand flow payloads for
-// Mihomo's line-oriented YAML provider reader, keeping block documents
-// byte for byte.
+// walkRuleNodes visits each physical node once, without expanding aliases.
+func walkRuleNodes(root *yamlx.Node, visit func(*yamlx.Node)) {
+	seen := map[*yamlx.Node]bool{}
+	var walk func(*yamlx.Node)
+	walk = func(n *yamlx.Node) {
+		if n == nil || seen[n] {
+			return
+		}
+		seen[n] = true
+		visit(n)
+		for _, child := range n.Content {
+			walk(child)
+		}
+	}
+	walk(root)
+}
+
+// NormalizeMihomoYAML expands flow payloads for Mihomo's line-oriented reader.
+// Already-block documents and every refused input retain their original bytes.
 func NormalizeMihomoYAML(content string) (string, []any) {
 	result, err := normalizeMihomoYAML(content)
 	if err != nil {
@@ -233,141 +245,59 @@ func NormalizeMihomoYAML(content string) (string, []any) {
 }
 
 func normalizeMihomoYAML(content string) (string, error) {
-	root, err := pyyaml.Compose(content)
+	root, err := yamlx.Parse([]byte(content))
 	if err != nil {
 		return "", err
 	}
-	if root == nil || root.Kind != pyyaml.MappingNode {
-		return "", valueError("YAML 规则需要 payload 列表。")
+	if root.Kind != yaml.MappingNode {
+		return "", errors.New(msgYAMLPayload)
 	}
 	pairs := payloadPairs(root)
-	if len(pairs) != 1 || pairs[0][1].Kind != pyyaml.SequenceNode {
-		return "", valueError("YAML 规则需要唯一的 payload 列表。")
+	if len(pairs) != 1 || pairs[0][1].Kind != yaml.SequenceNode {
+		return "", errors.New(msgUniquePayload)
 	}
-	key, payload := pairs[0][0], pairs[0][1]
-	tokens, err := pyyaml.Scan(content)
-	if err != nil {
-		return "", err
+	payload := pairs[0][1]
+	var anchor bool
+	walkRuleNodes(root, func(n *yamlx.Node) { anchor = anchor || n.Anchor != "" || n.Kind == yaml.AliasNode })
+	if anchor {
+		return "", errors.New(msgDeliveryAliases)
 	}
-	for _, token := range tokens {
-		if token.Kind == pyyaml.TokenAnchor || token.Kind == pyyaml.TokenAlias {
-			return "", valueError("请先展开 YAML 锚点或别名；Mihomo 下发保留了原文。")
-		}
-	}
-	for _, node := range payload.Items {
+	for _, node := range payload.Content {
 		if !singleLineStr(node) {
-			return "", valueError("payload 每项应为一行文本；复杂 YAML 内容已保留原文。")
+			return "", errors.New(msgDeliveryItem)
 		}
 	}
-	if len(payload.Items) == 0 || !(root.FlowStyle || payload.FlowStyle) {
+	if len(payload.Content) == 0 || root.Style&yaml.FlowStyle == 0 && payload.Style&yaml.FlowStyle == 0 {
 		return content, nil
 	}
-
-	runes := []rune(content)
-	var positions []int
-	var texts []string
-	cursor := 0
-	spans := [][2]int{}
-	for _, token := range tokens {
-		if token.Kind == pyyaml.TokenScalar {
-			spans = append(spans, [2]int{token.Start.Index, token.End.Index})
-		}
-	}
-	spans = append(spans, [2]int{len(runes), len(runes)})
-	for _, span := range spans {
-		if span[0] > cursor {
-			gap := string(runes[cursor:span[0]])
-			for _, loc := range commentPattern.FindAllStringIndex(gap, -1) {
-				positions = append(positions, cursor+runeLen(gap[:loc[0]]))
-				texts = append(texts, gap[loc[0]:loc[1]])
-			}
-		}
-		cursor = span[1]
-	}
-	comments := func(start, end int) []string {
-		i := sort.SearchInts(positions, start)
-		j := sort.SearchInts(positions, end)
-		if j < i {
-			return nil
-		}
-		return texts[i:j]
-	}
-
-	var rendered, prefix string
-	var start, end int
-	if root.FlowStyle {
-		document, err := yamlx.LoadWith(content, yamlx.LoadOptions{KeepNonStringKeys: true})
-		if err != nil {
-			return "", yamlFailure{err}
-		}
-		var unique func(node *pyyaml.Node) error
-		unique = func(node *pyyaml.Node) error {
-			switch node.Kind {
-			case pyyaml.MappingNode:
-				seen := map[string]bool{}
-				for _, pair := range node.Pairs {
-					if pair[0].Kind != pyyaml.ScalarNode || seen[pair[0].Value] {
-						return valueError("YAML 映射键重复或过于复杂，已保留原文。")
-					}
-					seen[pair[0].Value] = true
-				}
-				for _, pair := range node.Pairs {
-					if err := unique(pair[1]); err != nil {
-						return err
+	if root.Style&yaml.FlowStyle != 0 {
+		var invalid error
+		walkRuleNodes(root, func(n *yamlx.Node) {
+			if n.Kind == yaml.MappingNode {
+				for i := 0; i+1 < len(n.Content); i += 2 {
+					if n.Content[i].Kind != yaml.ScalarNode {
+						invalid = errors.New(msgComplexMapping)
 					}
 				}
-			case pyyaml.SequenceNode:
-				for _, item := range node.Items {
-					if err := unique(item); err != nil {
-						return err
-					}
-				}
-			default:
-				if node.Style == '|' || node.Style == '>' || node.Start.Line != node.End.Line {
-					return valueError("多行 YAML 内容已保留原文，请展开为普通 payload 列表。")
-				}
 			}
-			return nil
-		}
-		if err := unique(root); err != nil {
-			return "", err
-		}
-		dumped, err := yamlx.Dump(document, yamlx.DumpOptions{AllowUnicode: true, SortKeys: false,
-			FlowStyle: yamlx.FlowBlock, Width: 1<<31 - 1})
-		if err != nil {
-			return "", yamlFailure{err}
-		}
-		rendered = strings.TrimRight(dumped, "\n")
-		if notes := comments(root.Start.Index, root.End.Index); len(notes) > 0 {
-			rendered = strings.Join(notes, "\n") + "\n" + rendered
-		}
-		start, end = root.Start.Index, root.End.Index
-		prefix = string(runes[:start])
-		if strings.Trim(prefix, "\uFEFF \t") != "" && !strings.HasSuffix(prefix, "\n") {
-			prefix = strings.TrimRight(prefix, " \t") + "\n"
-		}
-	} else {
-		indent := strings.Repeat(" ", key.Start.Column+2)
-		var lines []string
-		cursor := payload.Start.Index
-		for _, node := range payload.Items {
-			for _, note := range comments(cursor, node.Start.Index) {
-				lines = append(lines, indent+note)
+			if n.Kind == yaml.ScalarNode && (n.Style&(yaml.LiteralStyle|yaml.FoldedStyle) != 0 || strings.ContainsAny(n.Value, "\n\r")) {
+				invalid = errors.New(msgMultilineContent)
 			}
-			lines = append(lines, indent+"- "+jsonDumps(node.Value, false))
-			cursor = node.End.Index
-		}
-		for _, note := range comments(cursor, payload.End.Index) {
-			lines = append(lines, indent+note)
-		}
-		rendered = strings.Join(lines, "\n")
-		start, end = payload.Start.Index, payload.End.Index
-		prefix = strings.TrimRight(string(runes[:start]), " \t")
-		if !strings.HasSuffix(prefix, "\n") {
-			prefix += "\n"
+		})
+		if invalid != nil {
+			return "", invalid
 		}
 	}
-	return prefix + rendered + string(runes[end:]), nil
+	edited, err := editRuleYAML(content, func(doc *yamlx.Node) error {
+		p := payloadPairs(doc)[0][1]
+		if doc.Style&yaml.FlowStyle != 0 {
+			walkRuleNodes(doc, func(n *yamlx.Node) { n.Style &^= yaml.FlowStyle })
+		} else {
+			p.Style &^= yaml.FlowStyle
+		}
+		return nil
+	})
+	return string(edited), err
 }
 
 type normalized struct {
@@ -447,6 +377,7 @@ type entry struct {
 	value      string
 	start, end int
 	isYAML     bool
+	node       *yamlx.Node
 }
 
 var foreignPrefix = mustPyRegex(`^(?:full|domain|keyword|regexp|regex|ip):`, true)
@@ -464,8 +395,8 @@ func validationError(message string) error { return repo.NewValidationError(mess
 
 // InspectDomainContent is inspect_domain_content: a lossless, explicit
 // repair proposal ({content, changes, errors[, warnings]}). content that is
-// not a string is a ProfileValidationError; a *pyyaml.RecursionError is
-// returned as is (Python does not catch it here).
+// not a string is a ProfileValidationError. Native YAML policy failures are
+// reported without changing the original text.
 func InspectDomainContent(contentValue, behavior, ruleFormat any) (*jsonx.Object, error) {
 	content, ok := contentValue.(string)
 	if !ok {
@@ -495,10 +426,6 @@ func InspectDomainContent(contentValue, behavior, ruleFormat any) (*jsonx.Object
 	}
 	entries, err := domainEntries(content, ruleFormat == "yaml" || yamlPayload)
 	if err != nil {
-		var recursion *pyyaml.RecursionError
-		if errors.As(err, &recursion) {
-			return nil, err
-		}
 		errorsList = append(errorsList, problemObject(0, nil, err.Error()))
 		return finish(), nil
 	}
@@ -507,6 +434,7 @@ func InspectDomainContent(contentValue, behavior, ruleFormat any) (*jsonx.Object
 		value      string
 	}
 	var replacements []replacement
+	yamlChanges := map[[2]int]string{}
 	for _, e := range entries {
 		value := e.value
 		stripped := pyStrip(value)
@@ -544,12 +472,27 @@ func InspectDomainContent(contentValue, behavior, ruleFormat any) (*jsonx.Object
 		}
 		if updated != value {
 			changes = append(changes, jsonx.Obj("line", jsonx.Int(int64(e.line)), "before", value, "after", updated))
-			text := updated
 			if e.isYAML {
-				text = jsonDumps(updated, false)
+				yamlChanges[[2]int{e.node.Line, e.node.Column}] = updated
+			} else {
+				replacements = append(replacements, replacement{e.start, e.end, updated})
 			}
-			replacements = append(replacements, replacement{e.start, e.end, text})
 		}
+	}
+	if len(yamlChanges) > 0 {
+		edited, err := editRuleYAML(content, func(root *yamlx.Node) error {
+			for _, node := range payloadPairs(root)[0][1].Content {
+				if value, ok := yamlChanges[[2]int{node.Line, node.Column}]; ok {
+					node.Value = value
+					node.Tag = "!!str"
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+		result.Set("content", string(edited))
 	}
 	if len(replacements) > 0 {
 		runes := []rune(content)
@@ -569,43 +512,29 @@ func InspectDomainContent(contentValue, behavior, ruleFormat any) (*jsonx.Object
 func domainEntries(content string, asYAML bool) ([]entry, error) {
 	var entries []entry
 	if asYAML {
-		root, err := pyyaml.Compose(content)
+		root, err := yamlx.Parse([]byte(content))
 		if err != nil {
 			return nil, err
 		}
-		if root == nil || root.Kind != pyyaml.MappingNode {
-			return nil, valueError("YAML 规则需要 payload 列表。")
+		if root.Kind != yaml.MappingNode {
+			return nil, errors.New(msgYAMLPayload)
 		}
 		pairs := payloadPairs(root)
-		if len(pairs) != 1 || pairs[0][1].Kind != pyyaml.SequenceNode {
-			return nil, valueError("YAML 规则需要唯一的 payload 列表。")
+		if len(pairs) != 1 {
+			return nil, errors.New(msgUniquePayload)
 		}
-		key, payload := pairs[0][0], pairs[0][1]
-		if payload.Start.Index < key.End.Index {
-			return nil, valueError("请将 payload 的 YAML 别名展开后再编辑。")
+		payload := pairs[0][1]
+		if payload.Kind == yaml.AliasNode {
+			return nil, errors.New(msgEditPayloadAlias)
 		}
-		var anchors []int
-		if strings.Contains(content, "&") {
-			tokens, err := pyyaml.Scan(content)
-			if err != nil {
-				return nil, err
-			}
-			for _, token := range tokens {
-				if token.Kind == pyyaml.TokenAnchor {
-					anchors = append(anchors, token.Start.Index)
-				}
-			}
+		if payload.Kind != yaml.SequenceNode {
+			return nil, errors.New(msgUniquePayload)
 		}
-		seen := map[*pyyaml.Node]bool{}
-		for _, node := range payload.Items {
-			i := sort.SearchInts(anchors, node.Start.Index)
-			hasAnchor := i < len(anchors) && anchors[i] < node.End.Index
-			if node.Kind != pyyaml.ScalarNode || node.Tag != pyyaml.TagStr || node.Start.Index < payload.Start.Index ||
-				seen[node] || node.Style == '|' || node.Style == '>' || hasAnchor {
-				return nil, valueError("payload 每项应为一行文本；请先展开 YAML 锚点、别名或多行内容。")
+		for _, node := range payload.Content {
+			if !singleLineStr(node) || node.Anchor != "" {
+				return nil, errors.New(msgEditPayloadItem)
 			}
-			seen[node] = true
-			entries = append(entries, entry{node.Start.Line + 1, node.Value, node.Start.Index, node.End.Index, true})
+			entries = append(entries, entry{line: node.Line, value: node.Value, isYAML: true, node: node})
 		}
 		return entries, nil
 	}
@@ -618,7 +547,7 @@ func domainEntries(content string, asYAML bool) ([]entry, error) {
 		value := pyStrip(line)
 		if value != "" && !hasAnyPrefix(value, "#", "//") {
 			start := offset + runeLen(raw) - runeLen(pyLstrip(line))
-			entries = append(entries, entry{number + 1, value, start, start + runeLen(value), false})
+			entries = append(entries, entry{line: number + 1, value: value, start: start, end: start + runeLen(value)})
 		}
 		offset += runeLen(raw)
 	}
@@ -759,11 +688,9 @@ func remoteTextEntries(content string, ruleFormat any) ([]textEntry, []any) {
 	}
 	fail := func(err error) ([]textEntry, []any) {
 		line, message := 0, err.Error()
-		var marked *pyyaml.Error
-		if errors.As(err, &marked) && marked.Marked() {
-			if marked.ProblemMark != nil {
-				line = marked.ProblemMark.Line + 1
-			}
+		var marked *yamlx.SyntaxError
+		if errors.As(err, &marked) {
+			line = marked.Line
 			if marked.Problem != "" {
 				message = marked.Problem
 			}
@@ -771,45 +698,36 @@ func remoteTextEntries(content string, ruleFormat any) ([]textEntry, []any) {
 		problem(line, "YAML 格式无效："+message)
 		return nil, problems
 	}
-	root, err := pyyaml.Compose(content)
+	root, err := yamlx.Parse([]byte(content))
 	if err != nil {
 		return fail(err)
 	}
-	if root == nil || root.Kind != pyyaml.MappingNode {
-		problem(1, "声明为 YAML，但文件需要包含 payload 列表；请检查订阅链接或文件格式。")
+	if root.Kind != yaml.MappingNode {
+		problem(1, msgRemotePayload)
 		return nil, problems
 	}
 	pairs := payloadPairs(root)
 	if len(pairs) != 1 {
-		line := 1
-		if len(pairs) > 1 {
-			line = pairs[1][0].Start.Line + 1
-		}
-		problem(line, "YAML 规则需要唯一的 payload 列表。")
+		problem(1, msgUniquePayload)
 		return nil, problems
 	}
 	payload := pairs[0][1]
-	if payload.Kind != pyyaml.SequenceNode {
-		problem(payload.Start.Line+1, "YAML payload 必须是列表。")
+	if payload.Kind != yaml.SequenceNode {
+		problem(payload.Line, msgPayloadList)
 		return nil, problems
 	}
-	tokens, err := pyyaml.Scan(content)
-	if err != nil {
-		return fail(err)
-	}
-	for _, token := range tokens {
-		if token.Kind == pyyaml.TokenAnchor || token.Kind == pyyaml.TokenAlias {
-			problem(token.Start.Line+1, "远端 YAML 规则不支持锚点或别名；请使用展开后的 payload 列表。")
+	walkRuleNodes(root, func(n *yamlx.Node) {
+		if n.Anchor != "" || n.Kind == yaml.AliasNode {
+			problem(n.Line, msgRemoteAliases)
 		}
-	}
+	})
 	var entries []textEntry
-	for _, node := range payload.Items {
-		number := node.Start.Line + 1
+	for _, node := range payload.Content {
 		if !singleLineStr(node) {
-			problem(number, "payload 每项必须是单行文本；不接受数字、布尔值、嵌套结构或多行内容。")
+			problem(node.Line, msgRemoteItem)
 			continue
 		}
-		entries = append(entries, textEntry{number, node.Value})
+		entries = append(entries, textEntry{node.Line, node.Value})
 	}
 	return entries, problems
 }
@@ -913,8 +831,8 @@ func validateRemoteContent(content any, rule *jsonx.Object, behavior, selected a
 }
 
 // ReadRulePayload is read_rule_payload: the payload lines of YAML (with its
-// sequence node for a lossless append) or the text lines (node nil).
-func ReadRulePayload(content string) ([]string, *pyyaml.Node, error) {
+// sequence node for comment-preserving edits) or the text lines (node nil).
+func ReadRulePayload(content string) ([]string, *yamlx.Node, error) {
 	if !rules.HasYAMLPayload(content) {
 		lines := splitLines(content, false)
 		if lines == nil {
@@ -922,59 +840,34 @@ func ReadRulePayload(content string) ([]string, *pyyaml.Node, error) {
 		}
 		return lines, nil, nil
 	}
-	invalid := validationError("规则集的 payload 格式无法读取，请先在规则仓库检查内容。")
-	// yaml.safe_load first: only YAMLError, ValueError, StopIteration and
-	// AttributeError are turned into the message; the constructors' KeyError,
-	// IndexError, TypeError and RecursionError propagate as in Python.
-	document, err := yamlx.LoadWith(content, yamlx.LoadOptions{KeepNonStringKeys: true})
-	var loadErr *yamlx.Error
-	if errors.As(err, &loadErr) && !loadErr.IsYAMLError() && loadErr.Class != "ValueError" && loadErr.Class != "AttributeError" {
-		return nil, nil, err
+	root, err := yamlx.Parse([]byte(content))
+	if err != nil {
+		return nil, nil, &repo.Error{Kind: repo.ErrValidation, Message: fmt.Sprintf(msgReadPayloadYAML, err), Cause: err}
 	}
-	node, composeErr := pyyaml.Compose(content)
-	var unrepresentable *yamlx.UnrepresentableError
-	if errors.As(err, &unrepresentable) && composeErr == nil {
-		// PyYAML loaded it (a set or a self-referencing list elsewhere in the
-		// document); read the payload from the nodes.
-		document, err = payloadDocument(node)
+	pairs := payloadPairs(root)
+	if len(pairs) != 1 || pairs[0][1].Kind != yaml.SequenceNode {
+		return nil, nil, validationError(msgUnreadablePayload)
 	}
-	if err != nil || composeErr != nil {
-		return nil, nil, invalid
-	}
-	payloadValue, _ := yamlx.Lookup(document, "payload")
-	items, isList := payloadValue.([]any)
-	if !yamlx.IsMapping(document) || !isList || node == nil || node.Kind != pyyaml.MappingNode {
-		return nil, nil, invalid
-	}
-	var key, payload *pyyaml.Node
-	for _, pair := range node.Pairs {
-		if isPayloadKey(pair[0]) {
-			key, payload = pair[0], pair[1]
-			break
+	payload := pairs[0][1]
+	lines := make([]string, 0, len(payload.Content))
+	for _, item := range payload.Content {
+		item = yamlx.Resolve(item)
+		if item == nil || item.Kind != yaml.ScalarNode || item.ShortTag() != "!!str" {
+			return nil, nil, validationError(msgUnreadablePayload)
 		}
-	}
-	if key == nil || payload.Start.Index < key.End.Index {
-		return nil, nil, invalid
-	}
-	lines := make([]string, 0, len(items))
-	for _, item := range items {
-		text, ok := item.(string)
-		if !ok {
-			return nil, nil, invalid
-		}
-		lines = append(lines, text)
+		lines = append(lines, item.Value)
 	}
 	return lines, payload, nil
 }
 
 // AppendRulePayload is append_rule_payload.
-func AppendRulePayload(content, line string, payload *pyyaml.Node) string {
+func AppendRulePayload(content, line string, payload *yamlx.Node) string {
 	return AppendRuleLines(content, []string{line}, payload)
 }
 
 // AppendRuleLines is append_rule_lines: insert into the existing sequence,
 // preserving comments and surrounding YAML.
-func AppendRuleLines(content string, lines []string, payload *pyyaml.Node) string {
+func AppendRuleLines(content string, lines []string, payload *yamlx.Node) string {
 	if len(lines) == 0 {
 		return content
 	}
@@ -985,33 +878,20 @@ func AppendRuleLines(content string, lines []string, payload *pyyaml.Node) strin
 		}
 		return content + separator + strings.Join(lines, "\n") + "\n"
 	}
-	quoted := make([]string, len(lines))
-	for i, line := range lines {
-		quoted[i] = jsonDumps(line, true)
-	}
-	runes := []rune(content)
-	if payload.FlowStyle {
-		index := payload.End.Index - 1
-		separator := ""
-		if len(payload.Items) > 0 {
-			index = payload.Items[len(payload.Items)-1].End.Index
-			separator = ", "
+	edited, err := editRuleYAML(content, func(root *yamlx.Node) error {
+		pairs := payloadPairs(root)
+		if len(pairs) != 1 || pairs[0][1].Kind != yaml.SequenceNode {
+			return validationError(msgUnreadablePayload)
 		}
-		return string(runes[:index]) + separator + strings.Join(quoted, ", ") + string(runes[index:])
+		for _, line := range lines {
+			pairs[0][1].Content = append(pairs[0][1].Content, yamlx.Str(line))
+		}
+		return nil
+	})
+	if err != nil {
+		return content
 	}
-	index := payload.End.Index
-	prefix, suffix := string(runes[:index]), string(runes[index:])
-	indent := strings.Repeat(" ", payload.Start.Column)
-	var b strings.Builder
-	b.WriteString(prefix)
-	if !strings.HasSuffix(prefix, "\n") {
-		b.WriteString("\n")
-	}
-	for _, line := range quoted {
-		b.WriteString(indent + "- " + line + "\n")
-	}
-	b.WriteString(suffix)
-	return b.String()
+	return string(edited)
 }
 
 // RemoveRulePayload is remove_rule_payload: remove matching entries, keeping
@@ -1041,100 +921,29 @@ func RemoveRulePayload(content string, matches func(string) bool) (string, []str
 		}
 		return b.String(), removed, nil
 	}
-	runes := []rune(content)
-	if len(selected) == len(lines) {
-		return string(runes[:payload.Start.Index]) + "[]\n" + string(runes[payload.End.Index:]), removed, nil
+	chosen := make(map[int]bool, len(selected))
+	for _, index := range selected {
+		chosen[index] = true
 	}
-	if payload.FlowStyle {
-		for k := len(selected) - 1; k >= 0; k-- {
-			index := selected[k]
-			_, current, err := ReadRulePayload(content)
-			if err != nil {
-				return "", nil, err
-			}
-			runes = []rune(content)
-			node := current.Items[index]
-			var start, end int
-			if index+1 < len(current.Items) {
-				start, end = node.Start.Index, current.Items[index+1].Start.Index
-			} else {
-				start, end = current.Items[index-1].End.Index, node.End.Index
-			}
-			content = string(runes[:start]) + string(runes[end:])
-		}
-		return content, removed, nil
-	}
-	for k := len(selected) - 1; k >= 0; k-- {
-		node := payload.Items[selected[k]]
-		start := lastIndexRune(runes, '\n', node.Start.Index) + 1
-		end := indexRune(runes, '\n', node.End.Index)
-		if end >= 0 {
-			end++
-		} else {
-			end = len(runes)
-		}
-		runes = append(append([]rune{}, runes[:start]...), runes[end:]...)
-	}
-	return string(runes), removed, nil
-}
-
-// lastIndexRune is str.rfind(ch, 0, end).
-func lastIndexRune(runes []rune, ch rune, end int) int {
-	if end > len(runes) {
-		end = len(runes)
-	}
-	for i := end - 1; i >= 0; i-- {
-		if runes[i] == ch {
-			return i
-		}
-	}
-	return -1
-}
-
-// indexRune is str.find(ch, start).
-func indexRune(runes []rune, ch rune, start int) int {
-	for i := start; i < len(runes); i++ {
-		if runes[i] == ch {
-			return i
-		}
-	}
-	return -1
-}
-
-// payloadDocument stands in for yaml.safe_load when PyYAML loads a value the
-// jsonx model cannot hold (a !!set or a list containing itself, outside the
-// payload): a mapping root yields an object with the last direct "payload"
-// entry, whose sequence items are their scalar text when tagged str (other
-// items are kept as nil, failing the str check). A payload that only comes
-// from a merge key has no direct key, which read_rule_payload refuses anyway.
-func payloadDocument(root *pyyaml.Node) (any, error) {
-	if root == nil || root.Kind != pyyaml.MappingNode {
-		return nil, errors.New("not a mapping")
-	}
-	document := jsonx.NewObject()
-	for _, pair := range root.Pairs {
-		if !isPayloadKey(pair[0]) || pair[0].Tag != pyyaml.TagStr {
-			continue
-		}
-		if pair[1].Kind != pyyaml.SequenceNode {
-			document.Set("payload", nil)
-			continue
-		}
-		items := []any{}
-		for _, item := range pair[1].Items {
-			if item.Kind == pyyaml.ScalarNode && item.Tag == pyyaml.TagStr {
-				items = append(items, item.Value)
-			} else {
-				items = append(items, nil)
+	edited, err := editRuleYAML(content, func(root *yamlx.Node) error {
+		sequence := payloadPairs(root)[0][1]
+		kept := make([]*yamlx.Node, 0, len(sequence.Content)-len(selected))
+		for i, node := range sequence.Content {
+			if !chosen[i] {
+				kept = append(kept, node)
 			}
 		}
-		document.Set("payload", items)
+		sequence.Content = kept
+		return nil
+	})
+	if err != nil {
+		return "", nil, err
 	}
-	return document, nil
+	return string(edited), removed, nil
 }
 
 // ReadRulePayloadAny and AppendRulePayloadAny adapt ReadRulePayload and
-// AppendRulePayload to rules.ConnectionDeps (payload is a *pyyaml.Node or
+// AppendRulePayload to rules.ConnectionDeps (payload is a *yamlx.Node or
 // nil).
 func ReadRulePayloadAny(content string) ([]string, any, error) {
 	lines, node, err := ReadRulePayload(content)
@@ -1146,6 +955,6 @@ func ReadRulePayloadAny(content string) ([]string, any, error) {
 
 // AppendRulePayloadAny: see ReadRulePayloadAny.
 func AppendRulePayloadAny(content, line string, payload any) string {
-	node, _ := payload.(*pyyaml.Node)
+	node, _ := payload.(*yamlx.Node)
 	return AppendRulePayload(content, line, node)
 }

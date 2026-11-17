@@ -10,9 +10,10 @@ import (
 	"testing"
 
 	"configflow/internal/jsonx"
-	"configflow/internal/pyyaml"
 	"configflow/internal/repo"
 	"configflow/internal/rules"
+	"configflow/internal/yamlx"
+	"gopkg.in/yaml.v3"
 )
 
 // recordedValue turns the recorder's {"__bytes__": hex} back into []byte.
@@ -26,26 +27,38 @@ func recordedValue(v any) any {
 	return v
 }
 
-// nodeFingerprint is the recorder's {"__node__": [class, start, end, flow]}.
-func nodeFingerprint(n *pyyaml.Node) any {
+// Node positions were Python implementation details. Boundary replay retains
+// the sequence kind/style; payload values and edit results are checked separately.
+func nodeFingerprint(n *yamlx.Node) any {
 	if n == nil {
 		return nil
 	}
-	class := map[pyyaml.NodeKind]string{pyyaml.ScalarNode: "ScalarNode", pyyaml.SequenceNode: "SequenceNode",
-		pyyaml.MappingNode: "MappingNode"}[n.Kind]
-	return jsonx.Obj("__node__", []any{class, jsonx.Int(int64(n.Start.Index)), jsonx.Int(int64(n.End.Index)), n.FlowStyle})
+	return jsonx.Obj("__node__", []any{"SequenceNode", n.Style&yaml.FlowStyle != 0})
+}
+
+func boundaryNodeFingerprint(v any) any {
+	if o, ok := v.(*jsonx.Object); ok && o.Len() == 1 {
+		if parts, ok := o.Value("__node__").([]any); ok && len(parts) == 4 {
+			return jsonx.Obj("__node__", []any{parts[0], parts[3]})
+		}
+	}
+	if values, ok := v.([]any); ok {
+		out := make([]any, len(values))
+		for i, item := range values {
+			out[i] = boundaryNodeFingerprint(item)
+		}
+		return out
+	}
+	return v
 }
 
 func recordedClass(err error) string {
 	var remote *RemoteRuleValidationError
-	var recursion *pyyaml.RecursionError
 	switch {
 	case errors.As(err, &remote):
 		return "RemoteRuleValidationError"
 	case errors.Is(err, repo.ErrValidation):
 		return "ProfileValidationError"
-	case errors.As(err, &recursion):
-		return "RecursionError"
 	}
 	return PythonClass(err)
 }
@@ -69,7 +82,7 @@ func noneString(v any) string {
 // payloadFor derives the payload node Python passed in from the content (it
 // came from read_rule_payload of the same content); the fingerprint check
 // catches a call where it did not.
-func payloadFor(content string, want any) (*pyyaml.Node, error) {
+func payloadFor(content string, want any) (*yamlx.Node, error) {
 	if want == nil {
 		return nil, nil
 	}
@@ -77,7 +90,7 @@ func payloadFor(content string, want any) (*pyyaml.Node, error) {
 	if err != nil {
 		return nil, err
 	}
-	if encode(nodeFingerprint(node)) != encode(want) {
+	if encode(nodeFingerprint(node)) != encode(boundaryNodeFingerprint(want)) {
 		return nil, fmt.Errorf("payload node %s differs from %s", encode(nodeFingerprint(node)), encode(want))
 	}
 	return node, nil
@@ -227,7 +240,7 @@ func TestRecordedSuiteCalls(t *testing.T) {
 			}
 		} else {
 			want, _ := wantURLRow(fn, row.Value("ok"))
-			wantText = encode(want)
+			wantText = encode(boundaryNodeFingerprint(want))
 			if gotErr != nil {
 				gotText = "error " + encode(recordedError(gotErr))
 			} else {

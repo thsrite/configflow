@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"syscall"
 
-	"configflow/internal/pyyaml"
 	"configflow/internal/repo"
 	"configflow/internal/store"
 )
@@ -19,7 +18,6 @@ import (
 func pythonClassOf(err error) string {
 	var classed interface{ PythonClass() string }
 	var remote *RemoteRuleValidationError
-	var recursion *pyyaml.RecursionError
 	var repoErr *repo.Error
 	var storeErr *store.Error
 	var pathErr *fs.PathError
@@ -58,8 +56,6 @@ func pythonClassOf(err error) string {
 			return "OperationalError"
 		}
 		return "StoreError"
-	case errors.As(err, &recursion):
-		return "RecursionError"
 	case errors.As(err, &pathErr):
 		switch {
 		case errors.Is(err, fs.ErrNotExist):

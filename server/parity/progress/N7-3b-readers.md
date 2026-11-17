@@ -27,3 +27,19 @@ input per-row old/new classification + depth40/shared/self alias entry tests;
 add fuzz; .63 iterate, final .32 format/vet/race/full p4/all difftests/fuzz60/
 proddiff. Check 3a merge before refresh delegated-input acceptance. No tests run
 yet in this step. Existing legacy loaders/pyyaml stay for other migrations.
+
+First buildable reader step: runtime rulefetch has no old Compose/Scan/Load,
+Mapping/Lookup/Timestamp/Unrepresentable. Read payload operates on Node scalars;
+edit callbacks use shared Edit (no private scanner/span). Removed old recursion
+exception probe and payloadDocument null placeholder. Replay node fingerprints
+retain kind/style only (old Python offsets are internal); full boundary corpus
+classification still pending. Refresh's two test reads use Parse/typed Unmarshal.
+Targeted .32 tests for flow/block, quoted keys, BOM, anchors, empty/refill and
+refresh cache reads pass (rulefetch .027s / refresh .025s). .63 went offline
+(SSH2222 timeout), so iterations continue on .32 per BRIEF.
+
+Scope extended by coordinator: convert/proxyyaml_loose.go and its structured
+proxy read path; remove private constructor/resolver/null-sentinel via native
+Nodes. discovery/customPorts assigned to N7-3c. api/subscriptions/providers.go
+reads program-generated JSON; replaced that YAML parser by FromJSON+Marshal.
+Shared third cherry-pick 23196ddd (merge/scalar validation) applied as44f86041.

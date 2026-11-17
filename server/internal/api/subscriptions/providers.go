@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"configflow/internal/httpx"
-	"gopkg.in/yaml.v3"
+	"configflow/internal/yamlx"
 )
 
 func yamlContent(proxies []object) (string, error) {
@@ -18,19 +18,13 @@ func yamlContent(proxies []object) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	var root yaml.Node
-	if err := yaml.Unmarshal(data, &root); err != nil {
+	// This is program-produced JSON, never user YAML. Build Nodes directly
+	// instead of sending that JSON through a second YAML parser.
+	root, err := yamlx.FromJSON(data)
+	if err != nil {
 		return "", err
 	}
-	var block func(*yaml.Node)
-	block = func(node *yaml.Node) {
-		node.Style = 0
-		for _, child := range node.Content {
-			block(child)
-		}
-	}
-	block(&root)
-	data, err = yaml.Marshal(&root)
+	data, err = yamlx.Marshal(root)
 	return string(data), err
 }
 func providerResponse(proxies []object, id, header string) (*httpx.Response, error) {

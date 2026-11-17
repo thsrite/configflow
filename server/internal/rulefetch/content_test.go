@@ -16,10 +16,10 @@ import (
 	"github.com/klauspost/compress/zstd"
 
 	"configflow/internal/jsonx"
-	"configflow/internal/pyyaml"
 	"configflow/internal/repo"
 	"configflow/internal/rules"
 	"configflow/internal/yamlx"
+	"gopkg.in/yaml.v3"
 )
 
 func remoteRule(behavior, format string) *jsonx.Object {
@@ -49,7 +49,15 @@ func safeDump(t *testing.T, v any) string {
 }
 
 func safeLoad(t *testing.T, text string) any {
-	v, err := yamlx.SafeLoad(text)
+	node, err := yamlx.Parse([]byte(text))
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := yamlx.ToJSON(node)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v, err := jsonx.Parse(data)
 	if err != nil {
 		t.Fatalf("safe_load(%q): %v", text, err)
 	}
@@ -298,7 +306,7 @@ func TestFlowLayoutBecomesBlockWithoutChangingValues(t *testing.T) {
 		if len(warnings) != 0 || !jsonx.Equal(safeLoad(t, result), safeLoad(t, source)) {
 			t.Fatalf("%q -> %q %v", source, result, warnings)
 		}
-		if root, err := pyyaml.Compose(result); err != nil || root.FlowStyle || payloadPairs(root)[0][1].FlowStyle {
+		if root, err := yamlx.Parse([]byte(result)); err != nil || root.Style&yaml.FlowStyle != 0 || payloadPairs(root)[0][1].Style&yaml.FlowStyle != 0 {
 			t.Fatalf("still flow: %q", result)
 		}
 		for _, comment := range []string{"# header", "# tail", "# suffix", "# metadata"} {
@@ -351,7 +359,7 @@ func TestLongRulesAreNotWrapped(t *testing.T) {
 		t.Fatal(warnings)
 	}
 	_, payload, _ := ReadRulePayload(result)
-	if payload.Items[0].Start.Line != payload.Items[0].End.Line {
+	if payload == nil || strings.Count(strings.TrimSpace(result), "\n") != 1 {
 		t.Fatal("wrapped")
 	}
 	if !jsonx.Equal(safeLoad(t, result), jsonx.Obj("payload", []any{value})) {
@@ -573,9 +581,15 @@ func TestQuotedYAMLPayloadKeysUseTheSameLosslessRewrite(t *testing.T) {
 		for _, prefix := range []string{"", "\uFEFF"} {
 			source := prefix + "# keep\n" + key + ":\n  - '+.tmdb.org' # suffix\n"
 			expected := prefix + "# keep\n" + key + ":\n  - \"DOMAIN-SUFFIX,tmdb.org\" # suffix\n"
-			for _, s := range []string{source, expected} {
-				if out, w := normalizeOK(t, s); out != expected || len(w) != 0 {
-					t.Fatal(out, w)
+			// Only the changed scalar token may acquire native quoting.
+			// The key, BOM, comments, indentation and other bytes are exact.
+			native := strings.Replace(source, "'+.tmdb.org'", "DOMAIN-SUFFIX,tmdb.org", 1)
+			if out, w := normalizeOK(t, source); out != native || len(w) != 0 {
+				t.Fatal(out, w)
+			}
+			for _, unchanged := range []string{expected, native} {
+				if out, w := normalizeOK(t, unchanged); out != unchanged || len(w) != 0 {
+					t.Fatal("no-op changed bytes", out, w)
 				}
 			}
 			lines, payload, err := ReadRulePayload(source)
