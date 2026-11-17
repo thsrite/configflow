@@ -43,13 +43,13 @@ func (p *Profile) UnmarshalJSON(data []byte) error { return DecodeRecord(data, p
 // MarshalJSON preserves the profile's unknown and unchanged members.
 func (p Profile) MarshalJSON() ([]byte, error) { return EncodeRecord(&p, &p.raw) }
 
-// Shared is the shared-resource skeleton; resource lists are opaque in N8-3.
+// Shared holds the resources shared by all profiles.
 type Shared struct {
-	Subscriptions json.RawMessage `json:"subscriptions"`
-	Nodes         json.RawMessage `json:"nodes"`
-	Aggregations  json.RawMessage `json:"subscription_aggregations"`
-	RuleLibrary   json.RawMessage `json:"rule_library"`
-	Revision      Int             `json:"_revision"`
+	Subscriptions []Subscription    `json:"subscriptions"`
+	Nodes         []Node            `json:"nodes"`
+	Aggregations  []Aggregation     `json:"subscription_aggregations"`
+	RuleLibrary   []RuleLibraryItem `json:"rule_library"`
+	Revision      Int               `json:"_revision"`
 	Fields        Fields
 	raw           Raw
 }

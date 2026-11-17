@@ -30,12 +30,16 @@ func (r *roundTripRecord) UnmarshalJSON(data []byte) error {
 }
 func (r roundTripRecord) MarshalJSON() ([]byte, error) { return model.EncodeRecord(&r, &r.raw) }
 
-func roundTripList(raw json.RawMessage) ([]roundTripRecord, error) {
+func roundTripList(value any) ([]roundTripRecord, error) {
+	raw, err := model.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
 	if len(raw) == 0 || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
 		return nil, nil
 	}
 	var records []roundTripRecord
-	err := json.Unmarshal(raw, &records)
+	err = json.Unmarshal(raw, &records)
 	return records, err
 }
 
@@ -266,7 +270,7 @@ func TestStoredRoundTrip(t *testing.T) {
 		commit("node add", []modelRowKey{{"shared", "", "nodes"}}, func(d *model.Document) {
 			records := must(roundTripList(d.Shared.Nodes))(t)
 			records = append(records, roundTripNewRecord(t, "n8-node", "N8 node"))
-			d.Shared.Nodes = must(model.Marshal(records))(t)
+			d.Shared.Nodes = roundTripDecode[[]model.Node](t, records)
 		})
 		commit("node delete", []modelRowKey{{"shared", "", "nodes"}}, func(d *model.Document) {
 			records := must(roundTripList(d.Shared.Nodes))(t)
@@ -276,7 +280,7 @@ func TestStoredRoundTrip(t *testing.T) {
 					kept = append(kept, record)
 				}
 			}
-			d.Shared.Nodes = must(model.Marshal(kept))(t)
+			d.Shared.Nodes = roundTripDecode[[]model.Node](t, kept)
 		})
 		commit("agent add", []modelRowKey{{"system", "", "agents"}}, func(d *model.Document) {
 			records := must(roundTripList(d.System.Agents))(t)
@@ -437,4 +441,17 @@ func TestStoredRoundTrip(t *testing.T) {
 			run(t, path, true)
 		})
 	}
+}
+
+func roundTripDecode[T any](t *testing.T, value any) T {
+	t.Helper()
+	var result T
+	data, err := model.Marshal(value)
+	if err != nil {
+		t.Fatal("typed fixture encode failed")
+	}
+	if json.Unmarshal(data, &result) != nil {
+		t.Fatal("typed fixture decode failed")
+	}
+	return result
 }
