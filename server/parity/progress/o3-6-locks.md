@@ -154,11 +154,17 @@ Validation (remote only, gofmt on explicit paths + go vet ./... passed in both):
 - .32 `go test -race -p=6 -count=1 -timeout=15m ./internal/repo`: PASS133.022s,
   log /tmp/o36-repo-owners.log. Earlier repo/resource90.651s remains recorded above.
 
-Remaining dependency: coordinator has not yet notified R08/R09 integration. Latest local go observed
-5680fbb3 (HANDOFF, after4d8a665a R08-release Detach), not the integrated R08/R09 boundary. DO NOT edit
-routers or rebase until the explicit notification. All independent steps are committed; no tests are
-running. When notified: git rebase go, reconcile to integrated routers, reuse its physical connection
-L1 Keyed for repo.JobLock, finish router write/rollback Detach including R04–R07/R09, tests then
-`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'server/scripts/gate.sh -p 6'` for both tags/full race/
-all difftest/proddiff. Rebase go again if advanced, verify clean; no push/subagents. This is not final
-acceptance and no gate/proddiff has been run for O3-6 yet.
+O3-6a delivery split (coordinator, 2026-11-18): all non-routers work is ready for independent
+integration, including repo's missing-JobLock fail-closed behavior. Initial rebase onto go@64815165 was conflict-free. Its .64 gate remained queued and was
+terminated before running any check when R08 merged at go@d8f50b00. Rebase onto that R08 integration
+and rerun the gate. Prior commit IDs above are historical pre-rebase references.
+Final gate command on .64: `RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'GATE_LOGS=/tmp/o36a-d8f50b00 server/scripts/gate.sh -p 6'`.
+Do not weaken fail-closed or reclassify its router failures; if it breaks existing difftest/proddiff,
+stop and report concrete paths. The changed guard covers existing router connection or manifest
+changes/deletion; creating a new record alone is not gated. Existing ownership-manifest invariants
+can reject a change earlier. Privileged already-locked commit APIs retain their existing contract.
+Actual HTTP/differential results are pending the gate.
+
+O3-6b is intentionally unimplemented here: routers-owned physical connection L1 Keyed → repo.JobLock,
+plus R04–R07/R09 write/readback/rollback Detach, after the explicit R08/R09 merge notification, on a
+new branch from then-current go. Routers and their handlers have not been edited. No push/subagents.

@@ -462,6 +462,11 @@ Implementation notes: [startup and shutdown](o3-startup-shutdown.md).
   so O3-6 corrects it. Routers writes and that wiring wait until R08/R09 have merged, then rebase.
 - As noted in review-o3, metrics history serialization spans disk I/O and task receipts; record it
   as an L2 operation lock with cancellation, rather than a short L5 memory mutex.
+- Split delivery (coordinator, 2026-11-18): O3-6a includes the non-routers locks, ctxx, owners and
+  missing-JobLock fail-closed default. Deliver it on current go without waiting for R08/R09, so N8-5
+  can build on the repository lock boundary. O3-6b separately wires the routers-owned JobLock and
+  completes R04–R07/R09 write/rollback Detach after those ports merge. Do not weaken fail-closed to
+  make a differential pass; report any affected router write path before proceeding.
 - Leave every Python-written lock file untouched. Final acceptance uses server/scripts/gate.sh
   (-p 6 on .64); it includes both tags, full race, all enabled difftests and proddiff.
 - Repo's other resource locks are included: profile operations use L2 Keyed by profile id, shared
