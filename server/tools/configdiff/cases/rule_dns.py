@@ -2,7 +2,8 @@
 import copy
 
 from compare import database
-from harness import Pair, json_body
+from harness import json_body
+from cases.helpers import profile_pair as Pair
 from cases.rules import RULE, options, rules
 from cases.subscriptions import require
 from cases.config_backup import message

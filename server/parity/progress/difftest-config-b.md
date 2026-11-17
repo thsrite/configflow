@@ -2484,3 +2484,17 @@ MUTATION-CHECK detected deliberately corrupted Go body.authEnabled
 - .64 c14763b3官方门禁：gofmt/vet/两种tag构建通过，proddiff exit0、baseline new=0 stale=0；完整race执行结束，但agents/monitor两项测试报disk I/O error (4874)，官方Go gate=1，未进入后续Go difftest。原始日志/tmp/gate.rU2HUZ/race.log保留，不能称GATE PASS。失败时检查/tmp尚有1.9GiB，home171GiB；不能仅凭检查时余量断定峰值或根因。
 - 同一官方锁槽内configdiff all继续，基线保持c14763b3，未同步或修改运行中的.64副本。源端真实执行和业务差异仍按原冻结基线记录。
 - go新增895f5e21临时目录调整及ca157bca/0dace4ae规则复核；本地rebase完成，工具归因引用更新为25f1364a/d7e92cf2。准备在.32通过官方gate复验，显式使用home磁盘TMPDIR，复验与原始失败分开记录。全量结束后针对这次规则增量复验相关公开黑盒组，不把旧基线当最新业务结果。
+
+## 批次 150：402组最终全量证据与rules时间夹具纠正
+
+- .64 c14763b3的configdiff all完整执行402组、10648变体、2831.12秒，design_errors=[]，end-to-end故意错误Go响应已检出；原始严格结果compared3401/未实现6856/依赖111/different279/O12单列1，accepted38/open241。所有403项finding review均实际checked_baseline=c14763b3：closed123/accepted38/open241/separate1；closed均有归因。该原始结果不等于241个有效业务缺陷，见下一项。
+- 复核发现其中142个open只有profile.updated_at正常采样时间差；rules/compose/DNS旧夹具漏挂已有profile_policy。Python config_repository.py:1311明确每次profile提交采样_now，不能要求两端微秒相等。新增显式profile_pair仅用于四个规则写入模块，复用已有四个精确metadata路径/时间窗/格式验证，完整revision/其他值/文件不变；撤回这些非等价业务证据，随后实际重跑而非手改case verdict。
+- 142项自检在.64通过（8.825秒），新增夹具自检故意过期/坏格式/不同zone写法/无关字段/错误revision/实际DNS值均检出，确认不是永远相等。最新规则集成重跑选择62组（清单保存在testdata/rules-integration-groups.txt），覆盖所有公开rules/rule-sets/rule-library及其鉴权、选择器、来源/断连前置。
+- 原始全量报告整份回传为canonical后保存于本提交；随后由标准runner替换62组。本轮总退出1：Go=1（两项已记录I/O失败）、configdiff=1（严格open）；没有宣称整体GATE PASS。.32 home TMPDIR官方门禁仍排队。
+
+```text
+RT_HOST=sunbroke@192.168.0.64 rt --back server/tools/configdiff/testdata/final-results.json --back server/tools/configdiff/testdata/final-findings.md -- bash -lc 'CONFIGDIFF_REPORT=server/tools/configdiff/testdata/final-results.json CONFIGDIFF_FINDINGS=server/tools/configdiff/testdata/final-findings.md CONFIGDIFF_GATE_LOGS=/tmp/configdiff-final-config-b-c14763b3-v2 server/tools/configdiff/gate.sh c14763b3 -p 4'
+configdiff gate: Go=1 configdiff=1 logs=/tmp/configdiff-final-config-b-c14763b3-v2
+configdiff: groups402 / variants10648 / design_errors=[] / seconds2831.12
+Ran 142 tests in 8.825s ... OK
+```

@@ -5,7 +5,8 @@ import hashlib
 import yaml
 
 from compare import database
-from harness import Pair, json_body
+from harness import json_body
+from cases.helpers import profile_pair as Pair
 from cases.config_backup import message
 from cases.groups import NODES
 from cases.rules import options, RULE

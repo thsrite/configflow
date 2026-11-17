@@ -23,6 +23,15 @@ def profile_policy(pair):
     return policy
 
 
+@contextmanager
+def profile_pair(binary, recorder, **options):
+    """Use bounded profile metadata timestamps in explicit profile-write groups."""
+    from harness import Pair
+    with Pair(binary, recorder, **options) as pair:
+        pair.policy = profile_policy(pair)
+        yield pair
+
+
 def profile_capture(pair, *, generated=False):
     """Bind created IDs and migration filenames, retaining all row/file contents."""
     def capture(replies, policy):

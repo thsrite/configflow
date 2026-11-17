@@ -17,6 +17,33 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_profile_write_fixture_validates_metadata_times_without_hiding_other_rows(self):
+        from datetime import datetime, timezone
+        from unittest.mock import patch
+        from cases.helpers import profile_pair
+        now = 1760000000.25
+        original = Policy(start=now - 1, end=now + 1, internal_errors={'body.message': 'known'})
+        fixture = SimpleNamespace(policy=original)
+        class Context:
+            def __enter__(self): return fixture
+            def __exit__(self, *args): pass
+        with patch('harness.Pair', return_value=Context()) as factory:
+            with profile_pair('binary', 'recorder', options={'profile': {}}) as pair:
+                factory.assert_called_once_with('binary', 'recorder', options={'profile': {}})
+                self.assertIs(pair, fixture)
+                self.assertEqual(pair.policy.internal_errors, original.internal_errors)
+                self.assertFalse(original.times, 'profile fixture does not mutate another policy')
+                left = datetime.fromtimestamp(now, timezone.utc).isoformat()
+                right = datetime.fromtimestamp(now + .001, timezone.utc).isoformat()
+                path = 'db.fields.profile/default/updated_at.value'
+                self.assertFalse(differences(left, right, path, pair.policy))
+                for bad in ('1990-01-01T00:00:00+00:00', 'invalid', right.replace('+00:00', 'Z')):
+                    self.assertTrue(differences(left, bad, path, pair.policy), bad)
+                self.assertTrue(differences(left, right, 'db.fields.profile/default/unrelated.value', pair.policy))
+                self.assertTrue(differences(3, 4, 'db.fields.profile/default/updated_at.revision', pair.policy))
+                self.assertTrue(differences({'dns': 'direct'}, {'dns': 'proxy'},
+                    'db.fields.profile/default/oxidns.value', pair.policy))
+
     def test_automatic_backup_compares_complete_snapshots_wire_objects_auth_and_storage(self):
         from datetime import datetime, timezone
         from cases.automatic_backup import snapshots_diffs
