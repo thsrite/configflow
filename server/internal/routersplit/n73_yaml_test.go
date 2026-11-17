@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"configflow/internal/jsonx"
 	"configflow/internal/yamlx"
@@ -57,4 +58,30 @@ func FuzzRouterSplitYAML(f *testing.F) {
 			t.Fatal("invalid generated YAML")
 		}
 	})
+}
+
+// Plain nesting has no alias limit; test the native limit without extrapolating
+// Python's recursion ceiling. Durations are logged, not compared to wall time.
+func TestN73PlainDepthBoundary(t *testing.T) {
+	for _, depth := range []int{1000, 4000, 10000, 10001} {
+		t.Run(fmt.Sprint(depth), func(t *testing.T) {
+			nested := strings.Repeat("[", depth) + "0" + strings.Repeat("]", depth)
+			started := time.Now()
+			source := "extra: " + nested
+			out, err := FullTunBaseYAML(source)
+			if depth <= 10000 {
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err = yamlx.Parse([]byte(out)); err != nil {
+					t.Fatal(err)
+				}
+			} else if err == nil {
+				t.Fatal("over-depth generated")
+			}
+			config := jsonx.Obj("mihomo", jsonx.Obj("custom_config", source))
+			_, _ = BaseIsFullTun(config)
+			t.Logf("depth=%d bytes=%d elapsed=%s", depth, len(nested), time.Since(started))
+		})
+	}
 }

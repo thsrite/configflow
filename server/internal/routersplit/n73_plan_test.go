@@ -9,15 +9,17 @@ import (
 	"configflow/internal/routersplit"
 )
 
-func TestN73TaggedValuesKeepTheRouterPlan(t *testing.T) {
+func TestN73OpaqueValuesKeepTheRouterPlan(t *testing.T) {
 	for _, pair := range [][2]string{
 		{"extra: opaque\n", "extra: !custom opaque\n"},
+		{"", "? [a, b]\n: opaque\n"},
+		{"dns: {fake-ip-range: 198.19.0.0/16}\n", "dns: {fake-ip-range: 198.19.0.0/16, ? [a, b]: opaque}\n"},
 		{"extra: [one, two]\n", "extra: !!python/tuple [one, two]\n"},
 		{"extra: {value: opaque}\n", "extra: !custom {value: opaque}\n"},
 	} {
 		plans := make([]any, 2)
 		for i, suffix := range pair {
-			base, err := routersplit.FullTunBaseYAML("dns: {fake-ip-range: 198.19.0.0/16}\n" + suffix)
+			base, err := routersplit.FullTunBaseYAML(suffix)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -35,7 +37,7 @@ func TestN73TaggedValuesKeepTheRouterPlan(t *testing.T) {
 			plans[i] = plan
 		}
 		if !reflect.DeepEqual(plans[0], plans[1]) {
-			t.Fatalf("tag changed router plan: %#v / %#v", plans[0], plans[1])
+			t.Fatalf("opaque metadata changed router plan: %#v / %#v", plans[0], plans[1])
 		}
 	}
 }

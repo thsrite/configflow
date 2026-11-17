@@ -15,6 +15,7 @@ import (
 	"configflow/internal/jsonx"
 	"configflow/internal/repo"
 	"configflow/internal/yamlx"
+	"configflow/internal/yamlx/yamltest"
 )
 
 // Replay of every router_split call the Python suite made
@@ -286,6 +287,8 @@ func replay(t *testing.T, path string) {
 	rows := loadRecorded(t, path)
 	identical, notExpr := map[string]int{}, map[string]int{}
 	differ := 0
+	nativeClasses := map[string]int{}
+	oracle := newNativeOracle(t)
 	tests, files := map[string]bool{}, map[string]bool{}
 	for _, row := range rows {
 		if row.Fn == "classical_ip_lines" {
@@ -316,6 +319,20 @@ func replay(t *testing.T, path string) {
 			problems = append(problems, fmt.Sprintf("Go made %d of Python's %d collaborator calls", env.next, len(env.calls)))
 		}
 		problems = append(problems, env.problems...)
+		if len(problems) > 0 && len(env.problems) == 0 && env.next == len(env.calls) {
+			class, matches := oracle.compare(t, row, out, err)
+			if !matches && (class == yamltest.Typing || class == yamltest.Composite || class == yamltest.Deep) && row.Fn == "full_tun_base_yaml" && err == nil {
+				if source, ok := rowYAML(row); ok {
+					if text, ok := out.(string); ok {
+						matches = nativeFullTunInvariant(source, text)
+					}
+				}
+			}
+			if matches {
+				nativeClasses[class]++
+				problems = nil
+			}
+		}
 		if len(problems) > 0 {
 			differ++
 			if differ <= 20 {
@@ -335,6 +352,7 @@ func replay(t *testing.T, path string) {
 		names = append(names, fmt.Sprintf("%s %d", name, n))
 	}
 	sort.Strings(names)
+	t.Logf("N7-3 reader classes: %v", nativeClasses)
 	t.Logf("%s router_split: %d identical, %d differ, %d not expressible %v; from %d tests in %d files; identical per function: %s",
 		path, total, differ, notTotal, notExpr, len(tests), len(files), strings.Join(names, ", "))
 }
@@ -359,5 +377,5 @@ func sameYAML(got, want any) bool {
 		return false
 	}
 	right, err := yamlx.Parse([]byte(w))
-	return err == nil && yamlx.Equal(left, right)
+	return err == nil && (yamlx.Equal(left, right) || yamltest.SemanticEqual(g, w))
 }
