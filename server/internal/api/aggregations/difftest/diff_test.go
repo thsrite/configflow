@@ -352,6 +352,15 @@ func normalize(value any) any {
 	return value
 }
 func (w *world) call(method, path, body string, authenticated bool) answer {
+	return w.callComparing(method, path, body, authenticated, false)
+}
+
+// callNativeProviderSyntax is used only by the five approved N7-3c diagnostics.
+func (w *world) callNativeProviderSyntax(method, path, body string, authenticated bool) answer {
+	return w.callComparing(method, path, body, authenticated, true)
+}
+
+func (w *world) callComparing(method, path, body string, authenticated, nativeSyntax bool) answer {
 	t := w.t
 	t.Helper()
 	headers := map[string]string{}
@@ -441,7 +450,14 @@ func (w *world) call(method, path, body string, authenticated bool) answer {
 		}
 	}
 	if !expectedRejection {
-		compare("body", py.Body, gb)
+		expectedBody := py.Body
+		if nativeSyntax {
+			expectedBody, err = nativeProviderSyntaxBody(method, path, w.control.Sources["s"], py, got.Status)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		compare("body", expectedBody, gb)
 	}
 	comments := []string{}
 	if strings.Contains(got.Header.Get("Content-Type"), "yaml") {

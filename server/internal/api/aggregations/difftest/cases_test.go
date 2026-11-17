@@ -121,7 +121,12 @@ func TestDryGeneratorCorpus(t *testing.T) {
 			w.control.Sources["s"] = text
 			raw, err := jsonx.Compact(jsonx.Obj("config", cfg, "aggregation", jsonx.Obj("id", "a", "name", "Aggregate", "subscriptions", []any{"s"}, "nodes", []any{}), "main", parse(t, main), "prepared", true))
 			must(t, err)
-			w.call("GENERATE", "a", string(raw), true)
+			if text == nativeProviderInvalidYAML {
+				// Exactly three main variants; only native YAML diagnostics differ.
+				w.callNativeProviderSyntax("GENERATE", "a", string(raw), true)
+			} else {
+				w.call("GENERATE", "a", string(raw), true)
+			}
 		}
 	}
 }
@@ -208,8 +213,14 @@ func TestRejectedSourceDoesNotPublish(t *testing.T) {
 			w := newWorld(t, seed(t, true, ""), map[string]string{"s": text})
 			// The seed has a legacy cache without current-source metadata, so a real
 			// fetch is required. Rejection must preserve it and every provider artifact.
-			w.call("GET", "/api/aggregations/a/preview", "", true)
-			w.call("GET", "/api/profiles/default/aggregations/a/provider?token=c31-pull", "", false)
+			if text == nativeProviderInvalidYAML {
+				// The other two approved comparisons retain 400 and strict storage checks.
+				w.callNativeProviderSyntax("GET", "/api/aggregations/a/preview", "", true)
+				w.callNativeProviderSyntax("GET", "/api/profiles/default/aggregations/a/provider?token=c31-pull", "", false)
+			} else {
+				w.call("GET", "/api/aggregations/a/preview", "", true)
+				w.call("GET", "/api/profiles/default/aggregations/a/provider?token=c31-pull", "", false)
+			}
 		})
 	}
 }
