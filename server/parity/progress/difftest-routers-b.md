@@ -104,3 +104,25 @@ cumulative; matrix_entries=2301, matrix_routes=26, implemented_routes=0,
 go-unimplemented=549, referenced_entries=268. This is partial coverage: each
 referenced entry remains variants-in-progress; 2033 entries still pending. No
 product differences can yet be claimed (zero implemented HTTP domain routes).
+
+Field guard group now executes 1162 concrete HTTP recipes (321 referenced design
+entries; all references still require final variant audit). Added exact Chinese
+message preconditions so an earlier 400 cannot masquerade as the intended guard.
+Router create/update cover each required field, bool/int distinctions, falsy vs
+non-list rule sets, DNS guard/PD switches and nested lists; client draft covers
+IP/name/mode/previous values; fixed-IP covers each outer/row condition, duplicate
+IP across vendors, duplicate MAC per router and 1,000,000/1,000,001 token boundary;
+manual route intent covers both plan/apply and every scalar/shape guard;
+workspace and rule-sync outer/key/type guards have independent variants.
+Python oracle corrected one fixture assumption: all-zero/broadcast-shaped MACs
+are syntactically accepted by normalize_mac, so they cannot be used to assert
+the invalid-MAC 400 guard (the request reached source-evidence 409 instead).
+No implementation changed; valid unusual MAC cases remain separate follow-ups.
+
+.32 command:
+`RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'set -euo pipefail; cd server/tools/routerdiff; export PYTHONDONTWRITEBYTECODE=1; ~/cf-test/.venv/bin/python run.py --binary /tmp/routerdiff-build.AybfCK/configflow --output /tmp/routerdiff-field-guards.json'`
+→ route_edit_shape 1106 cumulative; workspace_shape 1142; rule_sync_shape 1162;
+{"matrix_entries":2301,"matrix_routes":26,"implemented_routes":0,
+"recipe_counts":{"go-unimplemented":1162},"referenced_entries":321}.
+Detailed ledger stays in the synthetic .32 artifact; 1980 matrix entries still
+have no attached executed recipe. No final coverage or completion claimed.

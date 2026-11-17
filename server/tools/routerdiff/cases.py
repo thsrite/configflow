@@ -27,6 +27,7 @@ class Case:
     auth: bool = True
     unchanged: bool = True
     reason: str = ''
+    message: str | None = None
 
 
 def concrete(path, router_id='r-ros', agent_id='missing-agent'):

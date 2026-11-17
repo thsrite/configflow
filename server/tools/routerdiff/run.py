@@ -9,6 +9,7 @@ import sys
 import time
 
 import cases
+import guards
 from compare import differences, logical_snapshot, response_view
 from harness import Pair
 from inventory import design_json, load
@@ -44,6 +45,8 @@ def execute(pair, case, available, routes):
             if response['status'] != case.expected:
                 raise RuntimeError(f'{case.ident}: Python precondition expected {case.expected}, got '
                                    f'{response["status"]}: {response["content"]!r}')
+            if case.message is not None and response['content'].get('message') != case.message:
+                raise RuntimeError(case.ident + ': wrong Python guard reached: ' + repr(response['content']))
             if case.unchanged:
                 changed = differences(before, after)
                 if changed:
@@ -100,7 +103,9 @@ def main():
                'beta': {'routers': {'items': [router()]}}}
     with Pair(args.binary, options, args.keep) as pair:
         available = registered(pair.go.rpc('manifest'))
-        for group in (cases.authentication, cases.profile_selection_failures, cases.body_guards):
+        for group in (cases.authentication, cases.profile_selection_failures, cases.body_guards,
+                      guards.router_settings, guards.client_draft, guards.fixed_ip_shape,
+                      guards.route_edit_shape, guards.workspace_shape, guards.rule_sync_shape):
             started = time.monotonic()
             for case in group():
                 results.append(execute(pair, case, available, routes))
