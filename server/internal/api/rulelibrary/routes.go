@@ -59,11 +59,10 @@ func RegisterWithOptions(r *httpx.Router, options Options) {
 	r.Handle([]string{"GET", "PUT"}, "/api/rule-library/<rule_id>/draft-content", "rule_library.edit_rule_library_content", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
 		if c.Method() != "PUT" {
 			out, err := s.Draft(c.Context(), c.Param("rule_id"))
-			response, err := respond(out, err)
-			if err == nil && response != nil {
-				response.WithHeader("Cache-Control", "no-store")
+			if err != nil {
+				return respond(nil, err)
 			}
-			return response, err
+			return httpx.JSON(out).WithHeader("Cache-Control", "no-store"), nil
 		}
 		body, _, err := readBody(c)
 		if err != nil {

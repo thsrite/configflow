@@ -413,9 +413,9 @@ func TestDifferentialMosDNSRoutes(t *testing.T) {
 		proxy("proxy bad escape url", rp, q("url", "http://127.0.0.1:1/a%zz", "token", token), true),
 		proxy("proxy relative url", rp, q("url", "/api/profiles/default/rule-library/content/inline", "token", token), true),
 		// Python serves these through an in-process call of
-		// /api/profiles/<id>/rule-library/content/<id> (C33, not ported yet).
-		deferTo("C33", proxy("proxy userinfo inline", rp, q("url", "http://u@127.0.0.1:5001/api/profiles/default/rule-library/content/inline", "token", token), true)),
-		deferTo("C33", proxy("proxy inline disabled by null", rp, q("url", domain+"/api/profiles/default/rule-library/content/inline-off", "token", token), true)),
+		// C33 serves both callbacks through the complete local dispatch path.
+		proxy("proxy userinfo inline", rp, q("url", "http://u@127.0.0.1:5001/api/profiles/default/rule-library/content/inline", "token", token), true),
+		proxy("proxy inline disabled by null", rp, q("url", domain+"/api/profiles/default/rule-library/content/inline-off", "token", token), true),
 		proxy("proxy unknown profile", "/api/profiles/nope/mosdns/rule-proxy", q("url", inlineURL, "token", token), true),
 	)
 	failed := 0

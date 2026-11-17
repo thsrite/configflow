@@ -18,6 +18,7 @@ import (
 	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
 	"configflow/internal/rules"
+	"configflow/internal/yamlx"
 )
 
 type jsonValue = json.RawMessage
@@ -399,6 +400,11 @@ func rebuild(before, after record, routing, downloads bool, base string) (record
 		}
 	}
 	if downloads {
+		if content := text(child(after, "oxidns"), "native_config"); content != "" {
+			if _, err := yamlx.Parse([]byte(content)); err != nil && !errors.Is(err, yamlx.ErrSyntax) {
+				return after, nil, repo.NewValidationError(err.Error())
+			}
+		}
 		changed, err := oxidns.RebaseNativeRuleSources(a, b)
 		if err != nil {
 			return after, nil, err
@@ -410,6 +416,13 @@ func rebuild(before, after record, routing, downloads bool, base string) (record
 		}
 	}
 	return after, warnings, nil
+}
+
+func rejectedBeforeCommit(err error) bool {
+	var f *fault
+	var locked *oxidns.RoutingLockedError
+	_, settings := oxidns.IsSettingsError(err)
+	return errors.As(err, &f) || errors.As(err, &locked) || settings || errors.Is(err, repo.ErrValidation) || errors.Is(err, repo.ErrInUse) || errors.Is(err, repo.ErrExists) || errors.Is(err, repo.ErrNotFound)
 }
 
 func (s *Service) requestStatus(ctx context.Context, address string, system record, head bool) (int, error) {
@@ -430,6 +443,11 @@ func (s *Service) requestStatus(ctx context.Context, address string, system reco
 		return 0, err
 	}
 	defer response.Close()
+	if !head {
+		if _, err := response.Content(); err != nil {
+			return 0, err
+		}
+	}
 	return response.StatusCode, nil
 }
 func (s *Service) cacheOne(ctx context.Context, item, catalog record) (string, error) {
@@ -458,6 +476,20 @@ func (s *Service) cacheOne(ctx context.Context, item, catalog record) (string, e
 		}
 		return rules.RuleCacheFilename(raw), nil
 	}
-	return rulefetch.SaveRuleToLocal(ctx, raw, s.client)
+	content, err := s.readSource(ctx, item)
+	if err != nil {
+		return "", err
+	}
+	if content == nil {
+		return "", fail(400, msgSource)
+	}
+	stage, err := stageCache(ctx, item, content, s.replaceCache)
+	if err != nil {
+		return "", err
+	}
+	if err = stage.commit(); err != nil {
+		return "", err
+	}
+	return rules.RuleCacheFilename(raw), nil
 }
 func describeFailure(err error) string { return refresh.DescribeFailure(err) }

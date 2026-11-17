@@ -272,22 +272,22 @@ GET	/api/profiles/<profile_id>/oxidns/settings	routes.profiles.profile_oxidns_se
 POST	/api/profiles/<profile_id>/oxidns/settings	routes.profiles.profile_oxidns_settings	internal/api/oxidns	done
 POST	/api/profiles/<profile_id>/oxidns/template-preview	routes.profiles.profile_preview_oxidns_template	internal/api/oxidns	done
 POST	/api/profiles/<profile_id>/oxidns/validate	routes.profiles.profile_validate_oxidns_draft	internal/api/oxidns	done
-GET	/api/profiles/<profile_id>/proxy-groups	routes.profiles.profile_proxy_groups		todo
-POST	/api/profiles/<profile_id>/proxy-groups	routes.profiles.profile_proxy_groups		todo
-GET	/api/profiles/<profile_id>/rule-library/content/<rule_id>	routes.profiles.profile_rule_library_content		todo
+GET	/api/profiles/<profile_id>/proxy-groups	routes.profiles.profile_proxy_groups	api/proxygroups	done
+POST	/api/profiles/<profile_id>/proxy-groups	routes.profiles.profile_proxy_groups	api/proxygroups	done
+GET	/api/profiles/<profile_id>/rule-library/content/<rule_id>	routes.profiles.profile_rule_library_content	api/rulelibrary	done
 GET	/api/profiles/<profile_id>/rules	routes.profiles.profile_rules	internal/api/rules	done
 POST	/api/profiles/<profile_id>/rules	routes.profiles.profile_rules	internal/api/rules	done
 GET	/api/profiles/<profile_id>/rules/local/<name>	routes.profiles.profile_local_rule	internal/api/rules	done
 GET	/api/profiles/<profile_id>/subscriptions/<sub_id>/proxies	routes.profiles.profile_subscription_proxies	api/subscriptions	done
 POST	/api/profiles/import-client	routes.profiles.import_client_profile		todo
-GET	/api/proxy-groups	routes.proxy_groups.handle_proxy_groups		todo
-POST	/api/proxy-groups	routes.proxy_groups.handle_proxy_groups		todo
-DELETE	/api/proxy-groups/<group_id>	routes.proxy_groups.handle_proxy_group		todo
-PUT	/api/proxy-groups/<group_id>	routes.proxy_groups.handle_proxy_group		todo
-PUT	/api/proxy-groups/batch-health-url	routes.proxy_groups.update_batch_health_url		todo
-GET	/api/proxy-groups/health-defaults	routes.proxy_groups.health_defaults		todo
-POST	/api/proxy-groups/preview-regex	routes.proxy_groups.preview_proxy_group_regex		todo
-POST	/api/proxy-groups/reorder	routes.proxy_groups.reorder_proxy_groups		todo
+GET	/api/proxy-groups	routes.proxy_groups.handle_proxy_groups	api/proxygroups	done
+POST	/api/proxy-groups	routes.proxy_groups.handle_proxy_groups	api/proxygroups	done
+DELETE	/api/proxy-groups/<group_id>	routes.proxy_groups.handle_proxy_group	api/proxygroups	done
+PUT	/api/proxy-groups/<group_id>	routes.proxy_groups.handle_proxy_group	api/proxygroups	done
+PUT	/api/proxy-groups/batch-health-url	routes.proxy_groups.update_batch_health_url	api/proxygroups	done
+GET	/api/proxy-groups/health-defaults	routes.proxy_groups.health_defaults	api/proxygroups	done
+POST	/api/proxy-groups/preview-regex	routes.proxy_groups.preview_proxy_group_regex	api/proxygroups	done
+POST	/api/proxy-groups/reorder	routes.proxy_groups.reorder_proxy_groups	api/proxygroups	done
 GET	/api/routers	routes.routers.list_or_create_routers		todo
 POST	/api/routers	routes.routers.list_or_create_routers		todo
 DELETE	/api/routers/<router_id>	routes.routers.update_or_delete_router		todo
@@ -308,20 +308,20 @@ POST	/api/routers/<router_id>/rule-sync	routes.routers.router_rule_sync		todo
 PUT	/api/routers/<router_id>/rule-sync	routes.routers.router_rule_sync		todo
 GET	/api/routers/gateway-forwarding	routes.routers.gateway_forwarding		todo
 POST	/api/routers/gateway-forwarding	routes.routers.gateway_forwarding		todo
-GET	/api/rule-library	routes.rule_library.handle_rule_library		todo
-POST	/api/rule-library	routes.rule_library.handle_rule_library		todo
-DELETE	/api/rule-library/<rule_id>	routes.rule_library.handle_rule_library_item		todo
-PUT	/api/rule-library/<rule_id>	routes.rule_library.handle_rule_library_item		todo
-GET	/api/rule-library/<rule_id>/draft-content	routes.rule_library.edit_rule_library_content		todo
-PUT	/api/rule-library/<rule_id>/draft-content	routes.rule_library.edit_rule_library_content		todo
-POST	/api/rule-library/cache	routes.rule_library.cache_rules		todo
-POST	/api/rule-library/check-content	routes.rule_library.check_rule_content		todo
-GET	/api/rule-library/content/<rule_id>	routes.rule_library.get_rule_library_content		todo
-GET	/api/rule-library/proxy-domains	routes.rule_library.handle_proxy_domains		todo
-POST	/api/rule-library/proxy-domains	routes.rule_library.handle_proxy_domains		todo
-POST	/api/rule-library/reorder	routes.rule_library.reorder_rule_library		todo
-POST	/api/rule-library/test	routes.rule_library.test_rules		todo
-POST	/api/rule-library/test-single	routes.rule_library.test_single_rule		todo
+GET	/api/rule-library	routes.rule_library.handle_rule_library	api/rulelibrary	done
+POST	/api/rule-library	routes.rule_library.handle_rule_library	api/rulelibrary	done
+DELETE	/api/rule-library/<rule_id>	routes.rule_library.handle_rule_library_item	api/rulelibrary	done
+PUT	/api/rule-library/<rule_id>	routes.rule_library.handle_rule_library_item	api/rulelibrary	done
+GET	/api/rule-library/<rule_id>/draft-content	routes.rule_library.edit_rule_library_content	api/rulelibrary	done
+PUT	/api/rule-library/<rule_id>/draft-content	routes.rule_library.edit_rule_library_content	api/rulelibrary	done
+POST	/api/rule-library/cache	routes.rule_library.cache_rules	api/rulelibrary	done
+POST	/api/rule-library/check-content	routes.rule_library.check_rule_content	api/rulelibrary	done
+GET	/api/rule-library/content/<rule_id>	routes.rule_library.get_rule_library_content	api/rulelibrary	done
+GET	/api/rule-library/proxy-domains	routes.rule_library.handle_proxy_domains	api/rulelibrary	done
+POST	/api/rule-library/proxy-domains	routes.rule_library.handle_proxy_domains	api/rulelibrary	done
+POST	/api/rule-library/reorder	routes.rule_library.reorder_rule_library	api/rulelibrary	done
+POST	/api/rule-library/test	routes.rule_library.test_rules	api/rulelibrary	done
+POST	/api/rule-library/test-single	routes.rule_library.test_single_rule	api/rulelibrary	done
 GET	/api/rule-sets	routes.rules.handle_rule_sets	internal/api/rules	done
 POST	/api/rule-sets	routes.rules.handle_rule_sets	internal/api/rules	done
 DELETE	/api/rule-sets/<rule_set_id>	routes.rules.handle_rule_set	internal/api/rules	done

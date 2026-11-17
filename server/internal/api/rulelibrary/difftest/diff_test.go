@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -18,6 +19,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -231,6 +233,9 @@ func (w *world) normalize(v any) any {
 	case string:
 		return w.normalizeString(value)
 	case []any:
+		if len(value) == 5 && value[2] == "mihomo" {
+			value[4] = normalizeMihomo(w.t, value[4])
+		}
 		if len(value) == 5 && (value[2] == "updated_at" || value[2] == "created_at") {
 			if text, ok := value[4].(string); ok {
 				if _, err := time.Parse(time.RFC3339Nano, text); err == nil {
@@ -243,6 +248,10 @@ func (w *world) normalize(v any) any {
 		}
 	case map[string]any:
 		for key, item := range value {
+			if key == "mihomo" {
+				item = normalizeMihomo(w.t, item)
+				value[key] = item
+			}
 			if replacement := w.normalizeString(key); replacement != key {
 				delete(value, key)
 				key = replacement
@@ -276,6 +285,23 @@ func (w *world) normalize(v any) any {
 		}
 	}
 	return v
+}
+
+// normalizeMihomo compares the user YAML stored in a known Mihomo setting.
+// This is D1 formatting only; comment survival has separate route regressions.
+func normalizeMihomo(t *testing.T, value any) any {
+	t.Helper()
+	settings, ok := value.(map[string]any)
+	if !ok {
+		return value
+	}
+	if content, ok := settings["custom_config"].(string); ok && content != "" {
+		var document any
+		if yaml.Unmarshal([]byte(content), &document) == nil {
+			settings["custom_config"] = jsonValue(t, document)
+		}
+	}
+	return value
 }
 func (w *world) pairIDs(a, b any) {
 	// Pair generated IDs by their response positions, preserving one-to-one
@@ -330,6 +356,10 @@ func (w *world) pairIDs(a, b any) {
 	}
 }
 func (w *world) call(method, path, body string, authenticated bool) answer {
+	return w.callWithBody(method, path, body, body, authenticated)
+}
+
+func (w *world) callWithBody(method, path, body, goBody string, authenticated bool) answer {
 	t := w.t
 	t.Helper()
 	headers := map[string]string{}
@@ -341,7 +371,7 @@ func (w *world) call(method, path, body string, authenticated bool) answer {
 	var payload *string
 	if body != "" {
 		payload = &body
-		options = append(options, httpxtest.Body([]byte(body), "application/json"))
+		options = append(options, httpxtest.Body([]byte(goBody), "application/json"))
 	}
 	request := struct {
 		Method  string            `json:"method"`
@@ -367,7 +397,20 @@ func (w *world) call(method, path, body string, authenticated bool) answer {
 		t.Fatal(py.Error)
 	}
 	var got *httpxtest.Result
-	if method == "DESIRED" {
+	if method == "TWIN_DRAFT" {
+		statuses := make([]int, 2)
+		var workers sync.WaitGroup
+		for i := range statuses {
+			workers.Go(func() { statuses[i] = w.srv.Do("PUT", path, options...).Status })
+		}
+		workers.Wait()
+		sort.Ints(statuses)
+		data, err := json.Marshal(map[string]any{"statuses": statuses})
+		if err != nil {
+			t.Fatal(err)
+		}
+		got = &httpxtest.Result{Status: 200, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: data}
+	} else if method == "DESIRED" {
 		var request struct {
 			Gateway string   `json:"gateway"`
 			IDs     []string `json:"rule_ids"`
@@ -413,6 +456,39 @@ func (w *world) call(method, path, body string, authenticated bool) answer {
 		t.Helper()
 		a = w.normalize(jsonValue(t, a))
 		b = w.normalize(jsonValue(t, b))
+		if label == "body" && (method == "GET" || method == "PUT") && strings.HasSuffix(path, "/draft-content") && py.Status == 200 && got.Status == 200 {
+			// D2 changes only the ephemeral revision. Separate route tests prove
+			// each side is stable, invalidates old tokens, and rejects races.
+			for _, v := range []any{a, b} {
+				obj, ok := v.(map[string]any)
+				if !ok {
+					t.Fatal("draft returned no object")
+				}
+				token, ok := obj["revision"].(string)
+				if !ok || len(token) != 64 {
+					t.Fatal("invalid draft revision", obj["revision"])
+				}
+				if _, err := hex.DecodeString(token); err != nil {
+					t.Fatal(err)
+				}
+				obj["revision"] = "<native editor revision>"
+			}
+		}
+		if label == "body" && (path == "/api/rule-library/test" || path == "/api/rule-library/cache") {
+			// Python returns futures in completion order. Only this result array
+			// has no ordering contract; every other array stays ordered.
+			for _, v := range []any{a, b} {
+				if obj, ok := v.(map[string]any); ok {
+					if results, ok := obj["results"].([]any); ok {
+						sort.Slice(results, func(i, j int) bool {
+							left, _ := json.Marshal(results[i].(map[string]any)["id"])
+							right, _ := json.Marshal(results[j].(map[string]any)["id"])
+							return string(left) < string(right)
+						})
+					}
+				}
+			}
+		}
 		if !reflect.DeepEqual(a, b) {
 			t.Errorf("%s %s %s: %s", method, path, label, firstDifference(a, b, ""))
 		}
@@ -464,7 +540,7 @@ func (w *world) call(method, path, body string, authenticated bool) answer {
 			compare("body", py.Body, actual)
 		}
 	}
-	for _, key := range []string{"Content-Type", "X-ConfigFlow-Cache", "Warning", "X-ConfigFlow-Profile"} {
+	for _, key := range []string{"Content-Type", "Cache-Control", "X-ConfigFlow-Cache", "Warning", "X-ConfigFlow-Profile"} {
 		if key == "Content-Type" && migrated {
 			continue
 		}

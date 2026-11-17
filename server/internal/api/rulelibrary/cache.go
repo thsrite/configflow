@@ -99,6 +99,16 @@ func (s *stagedCache) abort() {
 		_ = os.Remove(s.marker)
 	}
 }
+
+// failClosed is used when the repository cannot establish a failed commit's
+// outcome. Keep the durable receipt across restarts; readers use DB/inline.
+func (s *stagedCache) failClosed() {
+	if s == nil {
+		return
+	}
+	_ = os.Remove(s.temp)
+	_ = os.Remove(s.path)
+}
 func (s *stagedCache) commit() error {
 	if s == nil {
 		return nil

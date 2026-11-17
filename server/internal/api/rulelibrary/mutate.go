@@ -185,6 +185,10 @@ func (s *Service) Mutate(ctx context.Context, id string, next record, remove boo
 		return put(catalog, "rule_library", library)
 	}, base)
 	if err != nil {
+		if !rejectedBeforeCommit(err) {
+			stage.failClosed()
+			stage = nil
+		}
 		return out, err
 	}
 	committed = true

@@ -78,6 +78,13 @@ for line in sys.stdin:
                     requests.sessions.Session.request = previous
                 assert not attempts, 'offline desired issued network requests'
                 answer = {'status': 200, 'headers': {'Content-Type': 'application/json'}, 'body': body, 'state': state()}
+            elif request['method'] == 'TWIN_DRAFT':
+                from concurrent.futures import ThreadPoolExecutor
+                def submit():
+                    return app.test_client().open(request['path'], method='PUT', headers=headers, data=request['body']).status_code
+                with ThreadPoolExecutor(max_workers=2) as workers:
+                    replies = list(workers.map(lambda _: submit(), range(2)))
+                answer = {'status': 200, 'headers': {'Content-Type': 'application/json'}, 'body': {'statuses': sorted(replies)}, 'state': state()}
             else:
                 reply = app.test_client().open(request['path'], method=request['method'], headers=headers, data=request.get('body'))
                 body = '' if request['method'] == 'HEAD' else reply.get_json() if reply.is_json else reply.get_data(as_text=True)

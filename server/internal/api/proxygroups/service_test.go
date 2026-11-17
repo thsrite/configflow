@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 
 	"configflow/internal/api/aggregations"
@@ -147,5 +148,31 @@ func TestPreviewBucketOrderingAndSourceFilters(t *testing.T) {
 	}
 	if state(t, s) != before {
 		t.Fatal("preview changed database")
+	}
+}
+
+func TestListenerRelinkingPreservesUserComments(t *testing.T) {
+	s := fixture(t)
+	auth := s.Login()
+	_, _, err := s.Repo.UpdateProfileTransaction(s.Context(), "other", func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
+		p.GetObject("mihomo").Set("custom_config", "# user heading\nlisteners:\n  - name: local\n    type: mixed\n    port: 7890\n    proxy: Select # keep comment\n")
+		return nil, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, patch := range []map[string]any{{"name": "Renamed"}, {"enabled": false}} {
+		r := s.Put("/api/proxy-groups/select?profile=other", auth, httpxtest.JSON(patch)).WantStatus(200)
+		if len(r.Object().GetList("listener_changes")) != 1 {
+			t.Fatal("listener was not relinked", r.Text())
+		}
+		p, err := s.Repo.GetProfile(s.Context(), "other")
+		if err != nil {
+			t.Fatal(err)
+		}
+		content := p.GetObject("mihomo").GetString("custom_config")
+		if !strings.Contains(content, "# user heading") || !strings.Contains(content, "# keep comment") {
+			t.Fatalf("listener editing lost comments: %q", content)
+		}
 	}
 }

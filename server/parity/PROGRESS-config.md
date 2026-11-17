@@ -2040,7 +2040,7 @@ Files:
 
 Tests: `test_proxy_group_batch_health.py` (6), `test_proxy_group_regex_exclusion.py` (9), `test_rule_library_create.py` (9)
 
-Routes (25, 0 done):
+Routes (25, 25 implemented; final gate pending):
 
 `GET /api/profiles/<profile_id>/proxy-groups`; `POST /api/profiles/<profile_id>/proxy-groups`; `GET /api/profiles/<profile_id>/rule-library/content/<rule_id>`; `GET /api/proxy-groups`; `POST /api/proxy-groups`; `DELETE /api/proxy-groups/<group_id>`; `PUT /api/proxy-groups/<group_id>`; `PUT /api/proxy-groups/batch-health-url`; `GET /api/proxy-groups/health-defaults`; `POST /api/proxy-groups/preview-regex`; `POST /api/proxy-groups/reorder`; `GET /api/rule-library`; `POST /api/rule-library`; `DELETE /api/rule-library/<rule_id>`; `PUT /api/rule-library/<rule_id>`; `GET /api/rule-library/<rule_id>/draft-content`; `PUT /api/rule-library/<rule_id>/draft-content`; `POST /api/rule-library/cache`; `POST /api/rule-library/check-content`; `GET /api/rule-library/content/<rule_id>`; `GET /api/rule-library/proxy-domains`; `POST /api/rule-library/proxy-domains`; `POST /api/rule-library/reorder`; `POST /api/rule-library/test`; `POST /api/rule-library/test-single`
 
@@ -2054,7 +2054,11 @@ Live Flask harness compares each response and DB sections/fields/export/files. P
 
 C32/R08 context integration completed separately on frozen `go-port-c32` (`d4a77fb6`); C33 resumed. All 25 method handlers now implemented. PUT/DELETE use native profile selection plus C27 rebuild/rebase in the existing combined transaction; cache writes stage and fsync before DB, replace+directory-fsync before clearing durable invalidation. Connectivity checks use ten joined workers and a fresh ID+declaration guard; cache refreshes share the editor lease and resolve fresh declarations. .64 vet/race PASS: library6.013s, server1.396s. HTTP regressions cover replacement/deletion/in-use rollback, interval preservation, pending HEAD versus concurrent PUT, subsequent conditional disable, manual caching and loopback GET status; FuzzEditableContent added.
 
-Remaining: live differential for remaining handlers and native DNS effects, D2 per-side token proofs, route table/mapping/behaviour ledger, cache fault/rollback/cancellation coverage, final gate and rebase after C32 merges. C32 is rebased onto R08; C33 still stacks on its original frozen C32 base until integration.
+All 25 handlers have live success/failure coverage; [matrix and Python ownership mapping](difftest-c33.md). Native template/follow/group-default changes, locked-native rollback, shared-source disable/restore/retype parking and listener relink compare real Flask DB/files. Both sides separately prove D2 token stability/invalidation and concurrent submissions200/409; real Flask HEAD draft writes are asserted as a fixed Python bug. C28's two deferred callback cases are now unconditional and pass. Route table and behaviour ledger updated. Unknown commit errors retain durable invalidation, cancellation joins workers, manual cache repairs the receipt; directory fsync/fault and comment-survival tests pass.
+
+Latest .64 commands: `CONFIGFLOW_DIFF=1 go test -race -count=1 ./internal/api/rulelibrary/... ./internal/api/proxygroups/...` PASS API8.318s/diff37.785s/proxy6.271s; final twin/HEAD live diff45.683s. Broader shared-cache gate: `go vet ./internal/api/rulelibrary/... ./internal/api/proxygroups/... && CONFIGFLOW_DIFF=1 go test -race -count=1 ./internal/api/rulelibrary/... ./internal/api/proxygroups/... ./internal/api/rules/... ./internal/rules/... ./internal/rulefetch/... ./internal/mosdns/difftest ./internal/subs/difftest ./internal/server/...` PASS: API7.861s/diff43.144s/proxy7.696s/C32API35.714s/C32diff160.883s/rules16.191s/fetch34.617s/C28diff22.046s/C11diff13.633s/server1.868s. No baseline changes.
+
+Remaining: last edge/download-reference tests, final gate/fuzz and rebase after C32 merges. C32 is rebased onto R08; C33 still stacks on its original frozen C32 base until integration.
 
 Approved decisions: draft revision uses native sorted encoding/json (D2 one-time stale-page 409). Stage content cache before DB commit, atomically replace afterwards, invalidate stable/legacy cache on failure (Python stale-delivery bug). Bulk testing disables only matching source declarations in a fresh transaction, using PUT native DNS rebuild/parking (Python concurrency bug).
 

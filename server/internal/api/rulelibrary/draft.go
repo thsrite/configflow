@@ -145,6 +145,10 @@ func (s *Service) SaveDraft(ctx context.Context, id string, body record) (draftR
 		return err
 	})
 	if err != nil {
+		if !rejectedBeforeCommit(err) {
+			staged.failClosed()
+			staged = nil
+		}
 		return out, err
 	}
 	committed = true

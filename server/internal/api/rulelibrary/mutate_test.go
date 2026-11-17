@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/jsonx"
@@ -73,7 +74,8 @@ func TestConnectivityDoesNotOverwriteConcurrentLibraryEdit(t *testing.T) {
 	s := fixture(t)
 	auth := s.Login()
 	started, finish := make(chan struct{}), make(chan struct{})
-	var once sync.Once
+	var once, released sync.Once
+	unblock := func() { released.Do(func() { close(finish) }) }
 	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "HEAD" {
 			once.Do(func() { close(started) })
@@ -88,15 +90,19 @@ func TestConnectivityDoesNotOverwriteConcurrentLibraryEdit(t *testing.T) {
 		w.Write([]byte("+.download.example\n"))
 	}))
 	defer origin.Close()
-	defer once.Do(func() { close(started) })
+	defer unblock()
 	initial := map[string]any{"id": "remote", "name": "Original", "source_type": "url", "behavior": "domain", "format": "text", "url": origin.URL + "/source"}
 	s.Post("/api/rule-library", auth, httpxtest.JSON(initial)).WantStatus(200)
 	pending := make(chan *httpxtest.Result, 1)
 	go func() { pending <- s.Post("/api/rule-library/test", auth, httpxtest.JSON(map[string]any{})) }()
-	<-started
+	select {
+	case <-started:
+	case <-time.After(10 * time.Second):
+		t.Fatal("probe did not start")
+	}
 	updated := map[string]any{"name": "Concurrent edit", "source_type": "url", "behavior": "domain", "format": "text", "url": origin.URL + "/source", "enabled": true}
 	s.Put("/api/rule-library/remote", auth, httpxtest.JSON(updated)).WantStatus(200)
-	close(finish)
+	unblock()
 	(<-pending).WantStatus(200)
 	item, err := source(s.Context(), "remote")
 	if err != nil || text(item, "name") != "Concurrent edit" || string(field(item, "enabled")) != "true" {
