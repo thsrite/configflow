@@ -54,6 +54,10 @@ for tag in configflow_proddiff configflow_difftest; do
     || { cat "$logs/tag-$tag.log"; fail "lifecycle tests -tags $tag"; }
 done
 
+echo "== proddiff observer self-checks"
+go test -tags configflow_proddiff -count=1 -run '^TestProddiff(Content|WaitsForFreshProvider)' ./internal/api/agents ./cmd/configflow \
+  >"$logs/observer.log" 2>&1 || { cat "$logs/observer.log"; fail "proddiff observer self-checks"; }
+
 echo "== race + proddiff (parallel)"
 ( cd .. && server/scripts/proddiff.sh >"$logs/proddiff.log" 2>&1; echo $? >"$logs/proddiff.rc" ) &
 pd=$!

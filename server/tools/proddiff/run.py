@@ -571,8 +571,15 @@ def compare_http(python, go, diffs, bracket=False, attempts=3):
     A transport failure or differing HTTP status stops bracketing immediately.
     Returns (python reply, go reply, bracket rescue round, per-side transport retries).
     """
-    senders = (python, go)
-    replies = [python(timeout=20), go(timeout=20)]
+    from content_policy import checked_reply
+
+    def observe(send):
+        def request(*, timeout):
+            return checked_reply(send(timeout=timeout))
+        return request
+
+    senders = tuple(observe(send) for send in (python, go))
+    replies = [senders[0](timeout=20), senders[1](timeout=20)]
     retries = [0, 0]
     last = 1
 
@@ -689,15 +696,18 @@ def main():
             http_successes = collections.defaultdict(set)
             all_cases = list(cases(rows, doc, copies[0]))
 
-            def ask(index, method, path, body, timeout):
+            def ask(index, method, route, path, body, timeout):
+                from content_policy import REQUEST_SECONDS, ROUTES
+                if method == 'GET' and route in ROUTES:
+                    timeout = max(timeout, REQUEST_SECONDS)
                 return scrub(send(15001 + index, method, path, tokens[index], body, timeout=timeout), copies[index])
 
             def compare(case):
                 method, route, path, body, no_data = case
                 if (method, route) not in implemented:
                     return case, None, None, 0, [0, 0]
-                python = lambda timeout: ask(0, method, path, body, timeout)
-                go = lambda timeout: ask(1, method, path, body, timeout)
+                python = lambda timeout: ask(0, method, route, path, body, timeout)
+                go = lambda timeout: ask(1, method, route, path, body, timeout)
                 return (case,) + compare_http(python, go, lambda a, b: response_diffs(a, b, route, rules),
                                               bracket=method == 'GET' and route in bracket)
 

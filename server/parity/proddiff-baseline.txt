@@ -1,4 +1,8 @@
 # Route template	key path	difference type	reason (entries marked open must be triaged before commit)
+GET /api/agents	body[0].content_sync.checked_at	missing-in-go	deferred → A14：PrepareFunc 未接线，接线后必须消失
+GET /api/agents	body[1].content_sync.checked_at	missing-in-go	deferred → A14：PrepareFunc 未接线，接线后必须消失
+GET /api/agents	body[2].content_sync.checked_at	missing-in-go	deferred → A14：PrepareFunc 未接线，接线后必须消失
+GET /api/agents/<agent_id>	body.content_sync.checked_at	missing-in-go	deferred → A14：PrepareFunc 未接线，接线后必须消失
 GET /api/agents	body[0].content_sync.reason	extra-in-go	deferred → A14：PrepareFunc 未接线，接线后必须消失
 GET /api/agents	body[0].content_sync.status	value	deferred → A14：PrepareFunc 未接线，接线后必须消失
 GET /api/agents	body[1].content_sync.reason	extra-in-go	deferred → A14：PrepareFunc 未接线，接线后必须消失

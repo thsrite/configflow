@@ -13,10 +13,18 @@ rt -- server/scripts/proddiff.sh ~/cf-prod-snapshot/20261116/data
 基线差异消失时打印 `stale` 并令检查失败，必须删除过期条目后重跑；门禁要求 `new=0 stale=0`。
 
 `rt -- server/scripts/proddiff.sh --a13-proof` 在同样的只读、断网命名空间中，使用真实 Python
-准备函数产出的候选 bundle 验证 A13 的 20 条 A14 延期差异。先证明不接线时这些差异能复现，再向
+准备函数产出的候选 bundle 验证 A13 的 24 条 A14 延期差异。先逐条证明原 20 项与新增 4 项
+（list 三条 content_sync.checked_at、detail 一条）不接线时都能复现，再向
 Go Checker 注入经过归档完整性校验的真实候选，比较同一批路由的完整响应。独立生成的时间和版本号
 单独检查格式、一一对应和缓存稳定性；标准 proddiff 的比较规则保持不变。真实数据只留在服务器的
 私有临时目录，不提交语料，不输出响应值。
+
+仅在 Go `configflow_proddiff` 构建和 Flask 测试启动器中，Agent list/detail 的 content_sync
+以及 push-diff 会等实际 Checker 不再返回 checking 后再交给比较器。等待上限 120 秒，
+这些 GET 的 HTTP 客户端上限至少 150 秒；entries 不触发准备，保留普通截止时间。
+超时以专用 harness header 标记为框架错误，比较器直接终止，不计算 new/stale；不会把
+checking、超时或别的阶段伪造成一致结果。生产异步响应、TTL 和比较字段均不改变。
+门禁包含慢 Checker 的 Go/Flask 自检和超时不进入比较器的回归。A14 接线后 **24 条全部要消失**。
 
 ## 隔离与认证
 

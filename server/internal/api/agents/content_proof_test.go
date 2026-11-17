@@ -102,9 +102,8 @@ func TestRealPreparationProof(t *testing.T) {
 			time.Sleep(time.Millisecond)
 		}
 	}
-	// Reproduce each of the exact twenty production-differential triplets before
-	// injection. A settled oracle also has four list/detail timestamps absent
-	// from the original asynchronous first poll; only those extra paths may vary.
+	// Reproduce all twenty-four exact production-differential triplets before
+	// injection, including the settled list/detail completion timestamps.
 	observed := map[string]bool{}
 	for i, f := range fixtures {
 		proofDifferences(f.Route, "body", decode(f.Body), get(i), observed)
@@ -116,10 +115,6 @@ func TestRealPreparationProof(t *testing.T) {
 			t.Fatal("an authorized deferred field was not reproduced")
 		}
 	}
-	for _, path := range []string{"body[0].content_sync.checked_at", "body[1].content_sync.checked_at", "body[2].content_sync.checked_at"} {
-		allowed["/api/agents\t"+path+"\tmissing-in-go"] = true
-	}
-	allowed["/api/agents/<agent_id>\tbody.content_sync.checked_at\tmissing-in-go"] = true
 	for difference := range observed {
 		if !allowed[difference] {
 			t.Fatal("unexpected difference without preparation; not deferred")
@@ -159,7 +154,7 @@ func TestRealPreparationProof(t *testing.T) {
 			t.Fatalf("case %d: prepared HTTP response differs; not deferred", i)
 		}
 	}
-	t.Logf("%d HTTP cases: all 20 exact differences reproduced absent preparation; full responses match real prepared bundles", len(fixtures))
+	t.Logf("%d HTTP cases: all 24 exact differences reproduced absent preparation; full responses match real prepared bundles", len(fixtures))
 }
 
 func proofDifferences(route, path string, want, got any, out map[string]bool) {
@@ -258,7 +253,11 @@ func pairProofMetadata(t *testing.T, want, got any, times, versions map[string]s
 	}
 }
 
-const a13DeferredFields = `/api/agents	body[0].content_sync.reason	extra-in-go
+const a13DeferredFields = `/api/agents	body[0].content_sync.checked_at	missing-in-go
+/api/agents	body[1].content_sync.checked_at	missing-in-go
+/api/agents	body[2].content_sync.checked_at	missing-in-go
+/api/agents/<agent_id>	body.content_sync.checked_at	missing-in-go
+/api/agents	body[0].content_sync.reason	extra-in-go
 /api/agents	body[0].content_sync.status	value
 /api/agents	body[1].content_sync.reason	extra-in-go
 /api/agents	body[1].content_sync.status	value

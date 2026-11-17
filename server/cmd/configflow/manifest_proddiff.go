@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 
+	apiagents "configflow/internal/api/agents"
 	"configflow/internal/httpx"
 	"configflow/internal/provider"
 )
@@ -16,6 +17,7 @@ func writeTestManifest(app *httpx.App) error {
 	// happened to serve after its 12-second client deadline. Flask's launcher
 	// selects the same wait policy; production binaries retain the deadline.
 	provider.SetResponseSeconds(-1)
+	apiagents.InstallProddiffContentObserver(app)
 	var manifest strings.Builder
 	for _, route := range app.Router.Routes() {
 		for _, method := range route.Methods {

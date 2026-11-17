@@ -4,6 +4,7 @@ No production values or prepared bytes leave the temporary server directory.
 The normal production differential and its comparison rules are unchanged.
 """
 import hashlib
+from concurrent.futures import ThreadPoolExecutor
 import json
 import os
 import re
@@ -17,6 +18,7 @@ import traceback
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import run as pd
+from content_policy import HEADER, checking
 
 
 def main():
@@ -43,12 +45,12 @@ def main():
         waitress.serve = lambda *args, **kwargs: None
         with (root / 'oracle.log').open('w') as log:
             original_stdout, original_stderr = sys.stdout, sys.stderr
+            executor = None
             try:
                 sys.stdout = sys.stderr = log
                 app = runpy.run_path('server/tools/proddiff/flask_worker.py')['app']
                 from backend.routes import agents
                 from backend.agents import content_sync
-                from backend.test_agent_content_sync import DeferredExecutor
                 real_prepare = agents._prepare_content_bundle
 
                 def capture(agent, config, **kwargs):
@@ -63,7 +65,7 @@ def main():
                     return bundle
 
                 agents._prepare_content_bundle = capture
-                executor = DeferredExecutor()
+                executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix='a13-proof-content')
                 content_sync._checker = content_sync.ContentSyncChecker(executor=executor)
                 client = app.test_client()
                 login = client.post('/api/auth/login', json=dict(username='proddiff-admin', password='proddiff-test-password'))
@@ -75,23 +77,19 @@ def main():
                          if case[0] == 'GET' and case[1] in selected]
                 fixtures = []
                 for _, route, path, _, _ in cases:
-                    for attempt in range(20):
-                        reply = client.get(path, headers=headers)
-                        value = reply.get_json()
-                        checking = (any(a.get('content_sync', {}).get('status') == 'checking' for a in value)
-                                    if isinstance(value, list) else value.get('status') == 'checking'
-                                    or value.get('content_sync', {}).get('status') == 'checking')
-                        if not checking:
-                            break
-                        while executor.jobs:
-                            executor.run()
-                    else:
-                        raise RuntimeError('reference comparison did not settle')
+                    reply = client.get(path, headers=headers)
+                    if reply.headers.get(HEADER):
+                        raise RuntimeError('reference content observer timed out')
+                    value = reply.get_json()
+                    if checking(value):
+                        raise RuntimeError('reference observer returned a transient comparison')
                     fixtures.append(dict(route=route, path=path, status=reply.status_code,
                                          headers={k: reply.headers.get(k, '') for k in
                                                   ('Content-Type', 'Cache-Control', 'X-ConfigFlow-Profile')}, body=value))
                 (root / 'fixtures.json').write_text(json.dumps(fixtures))
             finally:
+                if executor is not None:
+                    executor.shutdown(wait=True, cancel_futures=True)
                 sys.stdout, sys.stderr = original_stdout, original_stderr
         env = dict(os.environ, CONFIGFLOW_A13_PROOF=str(root), DATA_DIR=str(go_data), LOG_FILE=str(root / 'go.log'))
         with (root / 'go-proof.log').open('w') as log:
@@ -106,7 +104,7 @@ def main():
             raise RuntimeError('A13 real-preparation proof failed')
         if before != pd.digest_tree(snapshot):
             raise RuntimeError('source snapshot changed')
-        print(f'A13 real preparation: {len(fixtures)} HTTP cases, {len(list(prepared.glob("*.json")))} actual bundles; all 20 deferred fields reproduced without preparation and resolved with it; PASS')
+        print(f'A13 real preparation: {len(fixtures)} HTTP cases, {len(list(prepared.glob("*.json")))} actual bundles; all 24 deferred fields reproduced without preparation and resolved with it; PASS')
 
 
 if __name__ == '__main__':

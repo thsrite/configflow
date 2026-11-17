@@ -461,8 +461,8 @@ class BaselineExitTests(unittest.TestCase):
         rows = [line.split('\t', 3) for line in (pd.PARITY / 'proddiff-baseline.txt').read_text().splitlines()
                 if 'deferred → A14' in line]
         if not rows:
-            return  # A14 removes all twenty after wiring real preparation.
-        self.assertEqual(20, len(rows))
+            return  # A14 removes all twenty-four after wiring real preparation.
+        self.assertEqual(24, len(rows))
         fixture = Path(__file__).parents[2] / 'internal/api/agents/content_proof_test.go'
         approved = fixture.read_text().split('const a13DeferredFields = `', 1)[1].split('`', 1)[0]
         expected = {('GET ' + route, path, kind) for route, path, kind in
@@ -535,6 +535,60 @@ class BaselineExitTests(unittest.TestCase):
                 if record:
                     self.assertNotIn('body.old', path.read_text())
                     self.assertIn('body.value', path.read_text())
+
+
+class ContentObserverTests(unittest.TestCase):
+    def content_app(self, delay, endpoint, shape, timeout=1):
+        from flask import Flask
+        from content_policy import wait_for_content
+        app = Flask(__name__)
+        calls, clock = [0], [0.0]
+
+        def read():
+            calls[0] += 1
+            status = 'checking' if calls[0] <= delay else 'changed'
+            value = {'status': status}
+            return value if shape == 'diff' else {'content_sync': value} if shape == 'detail' else [{'content_sync': value}]
+
+        app.add_url_rule('/content', endpoint=endpoint, view_func=read)
+        wait_for_content(app, timeout=timeout, clock=lambda: clock[0], sleep=lambda seconds: clock.__setitem__(0, clock[0] + seconds))
+        return app.test_client(), calls
+
+    def test_both_slow_checkers_settle_before_any_comparison(self):
+        for endpoint, shape in (('agents.agent_push_diff', 'diff'), ('agents.handle_agent_item', 'detail'), ('agents.handle_agents', 'list')):
+            with self.subTest(shape=shape):
+                python, python_calls = self.content_app(2, endpoint, shape)
+                go, go_calls = self.content_app(5, endpoint, shape)
+
+                def send(client):
+                    def request(*, timeout):
+                        response = client.get('/content')
+                        return reply(response.data, response.content_type, response.status_code,
+                                     {key.lower(): value for key, value in response.headers.items()})
+                    return request
+
+                differences = mock.Mock(side_effect=lambda a, b: pd.response_diffs(a, b, '/content', []))
+                left, right, _, _ = pd.compare_http(send(python), send(go), differences, bracket=True)
+                self.assertEqual([], pd.response_diffs(left, right, '/content', []))
+                self.assertEqual((3, 6), (python_calls[0], go_calls[0]))
+                self.assertEqual(1, differences.call_count)
+                self.assertNotIn(b'checking', left[2] + right[2])
+
+    def test_timeout_is_harness_error_without_new_or_stale_classification(self):
+        from content_policy import HEADER
+        client, _ = self.content_app(1000, 'agents.agent_push_diff', 'diff', timeout=.2)
+        response = client.get('/content')
+        self.assertEqual(503, response.status_code)
+        self.assertEqual('content-sync-timeout', response.headers.get(HEADER))
+        failed = reply(response.data, response.content_type, response.status_code, {HEADER: 'content-sync-timeout'})
+        for side in (0, 1):
+            with self.subTest(side=side):
+                peers = [lambda **_: reply({'status': 'changed'}), lambda **_: reply({'status': 'changed'})]
+                peers[side] = lambda **_: failed
+                differences = mock.Mock(return_value=[])
+                with self.assertRaisesRegex(RuntimeError, 'observer timed out'):
+                    pd.compare_http(*peers, differences)
+                differences.assert_not_called()
 
 
 if __name__ == "__main__":

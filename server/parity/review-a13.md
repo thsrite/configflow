@@ -4,8 +4,9 @@
 范围：content sync Checker、缓存与失效广播、四个 GET 路由；非 HR。
 无子 agent、无 push/PR、无生产访问，测试经 rt 在测试服务器执行。
 
-状态：**复核中**。已 rebase 到 `go@8d716ceb`（A24 复核、N8-6、R08、provider 负载修复）。
-F1/F2/F3 已修复并经 race/HTTP 回归，0 未决实现发现；最终门禁通过后设 verified。
+状态：**复核中**。已接入 A24 复核、N8-6、R08 和 provider 负载修复；最终以最新 go 变基验收。
+F1/F2/F3 已修复并经 race/HTTP 回归；F4 验收框架修复的自检及 24 条因果证明通过。
+0 未决实现发现；最终门禁通过后设 verified。
 临时 `go-review-a13-a24-prep` 上的预验已完成；两次临时 worktree 均已 rt clean、git worktree remove，
 第二次临时分支也已删除。无临时源码、测试目录或调试文件残留。
 
@@ -53,6 +54,20 @@ F1/F2/F3 已修复并经 race/HTTP 回归，0 未决实现发现；最终门禁�
   repo 并发提交回归证明 seed 与返回 light record 同代、inspection 不阻塞 writer；Manager 回归
   证明 live overlay 与在线状态不变。**N8-5 迁移时需保留此 inspection 能力**；O3-6a 若先合入，
   保留其锁结构后把 callback 接回相同 read view。已按协调者要求独立提交。
+
+
+- **F4，低，已修复（验收框架）：异步 content sync 阶段不同时误报 stale。**
+  第一轮最终门禁中 full race 的 90 个包全部通过，proddiff 为 new=0/stale=9：
+  Python 的 push-diff 尚在 checking/synced，Go 为未接线的 unknown，九条 changed-only
+  schema 未被观察。该轮 load 约 42–50；这是观察时序依赖，不是 A13 生产行为缺陷。
+  按协调者要求，仅 tagged Go 构建与 Flask launcher 在 list/detail/push-diff 等真实 Checker
+  离开 checking 再比较，最多120秒，相关请求150秒。超时使用专用 header，compare_http
+  直接抛 harness 错误，尚未进入分类器，不生成 new/stale；不改生产异步语义、TTL 或归一化。
+  稳定观察后多出四条 checked_at 差异：list[0/1/2].content_sync.checked_at 与
+  detail.content_sync.checked_at。协调者明确批准逐条加入 A14 deferral；共24条，无通配符。
+  原20项仍必须逐项出现，新增4项同样证明未接线时出现、注入后消失；A14接线后24条全部删除。
+  Go真实慢 Checker 覆盖三个端点，假钟覆盖等待上限；Flask两端不同慢速进度均等到真实稳定
+  JSON 后仅比较一次，任一侧超时都在分类前中止。门禁新增 tagged observer 自检。
 
 ## 补充检查
 
@@ -116,9 +131,9 @@ Go HTTP 相反断言先失败，确认明文和编码形式都能泄露/搜索�
 → `A13 real preparation: 21 HTTP cases, 3 actual bundles; all 20 deferred fields reproduced without preparation and resolved with it; PASS`。
 基线退出路径测试直接调用 proddiff.main，保留真实 baseline/report/exit 流程，隔离进程/网络边界：
 matching=0、stale-only=1、new-only=1、explicit-record=0；验证 summary.new/stale 和实际 baseline 更新。
-另验 A13 baseline 只能是获批的精确 20 条，或 A14 接线后全部移除，无通配符。
+另验 A13 baseline 只能是获批的精确 24 条，或 A14 接线后全部移除，无通配符。
 `PYTHONPATH=server/tools/proddiff ~/cf-test/.venv/bin/python -m unittest discover -s server/tools/proddiff -p test_proddiff.py`
-经 rt .64：`Ran 36 tests in 0.040s — OK`。未改任何生产 comparator、归一化或 baseline 行。
+经 rt .64：`Ran 36 tests in 0.040s — OK`。此前未改任何生产 comparator、归一化或 baseline 行；F4 后仅新增获批的四条精确 baseline。
 原 Python 6 个相关测试文件完整执行：`101 passed in 12.31s`；新增三组安全参照 `3 passed in 1.38s`。
 
 临时 A24 基线上的预验（正式合并树仍需复验）：
@@ -155,5 +170,18 @@ ok configflow/internal/api/agents 17.507s
 ok configflow/internal/api/agents/difftest 3.405s
 ```
 
-剩余：最新 go 变基、20 条 baseline 因果证明复验，
-`git rebase go` 后运行 `server/scripts/gate.sh -p 6` 和相关 fuzz；零未决后改 verified。
+F4 自检（.64，exit 0）：
+
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt --back server/internal/api/agents/content_observer_proddiff.go --back server/internal/api/agents/content_observer_proddiff_test.go --back server/internal/api/agents/content_proof_test.go --back server/cmd/configflow/manifest_proddiff.go -- bash -lc 'set -e; PYTHONPATH=server/tools/proddiff ~/cf-test/.venv/bin/python -m unittest discover -s server/tools/proddiff -p test_proddiff.py; bash -n server/scripts/gate.sh; cd server; gofmt -w internal/api/agents/content_observer_proddiff.go internal/api/agents/content_observer_proddiff_test.go internal/api/agents/content_proof_test.go cmd/configflow/manifest_proddiff.go; go vet -tags configflow_proddiff ./internal/api/agents ./cmd/configflow; go test -race -tags configflow_proddiff -count=1 -run "^TestProddiff(Content|WaitsForFreshProvider)" ./internal/api/agents ./cmd/configflow'
+RT_HOST=sunbroke@192.168.0.64 rt -e GOMAXPROCS=4 -- server/scripts/proddiff.sh --a13-proof
+```
+
+```text
+Ran 39 tests in 0.100s — OK
+ok configflow/internal/api/agents 4.647s
+ok configflow/cmd/configflow 1.208s
+A13 real preparation: 21 HTTP cases, 3 actual bundles; all 24 deferred fields reproduced without preparation and resolved with it; PASS
+```
+
+剩余：`git rebase go` 后运行 `server/scripts/gate.sh -p 6` 和相关 fuzz；零未决后改 verified。
