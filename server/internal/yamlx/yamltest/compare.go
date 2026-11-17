@@ -201,7 +201,7 @@ func Classify(source string) (string, error) {
 	if unknown && oldErr != nil {
 		return Unknown, nil
 	}
-	if oldErr != nil && explicitDecimal(native, map[*yamlx.Node]bool{}) {
+	if oldErr != nil && explicitNativeInteger(native, map[*yamlx.Node]bool{}) {
 		return ExplicitScalarNative, nil
 	}
 	if typing && oldErr != nil {
@@ -264,7 +264,7 @@ func Classify(source string) (string, error) {
 // value/output exemption to arbitrary documents containing similar text.
 func nativeSyntaxRange(source string) bool {
 	switch source {
-	case "name:\tx\n", "a: b\t\n", "a:\t1\n", "a: \"\\/\"\n", "%YAML 1.2\n---\na: 1\n", "\ufeff\ufeffa: 1\n", "a: &x 1\nb: &x 2\nc: *x\n", "k: !!int \"0X1F\"\n", "proxies: [\t]":
+	case "name:\tx\n", "a: b\t\n", "a:\t1\n", "a: \"\\/\"\n", "%YAML 1.2\n---\na: 1\n", "\ufeff\ufeffa: 1\n", "a: &x 1\nb: &x 2\nc: *x\n", "proxies: [\t]":
 		return true
 	}
 	return false
@@ -288,20 +288,18 @@ func containsScalarTextTag(node *yamlx.Node, seen map[*yamlx.Node]bool, tags ...
 	return containsScalarTextTag(node.Alias, seen, tags...)
 }
 
-var decimalText = regexp.MustCompile(`^[+-]?[0-9]+$`)
-
-func explicitDecimal(node *yamlx.Node, seen map[*yamlx.Node]bool) bool {
+func explicitNativeInteger(node *yamlx.Node, seen map[*yamlx.Node]bool) bool {
 	if node == nil || seen[node] {
 		return false
 	}
 	seen[node] = true
-	if node.Kind == yaml.ScalarNode && node.ShortTag() == "!!int" && node.Style&yaml.TaggedStyle != 0 && decimalText.MatchString(node.Value) {
+	if node.Kind == yaml.ScalarNode && node.ShortTag() == "!!int" && node.Style&yaml.TaggedStyle != 0 {
 		return true
 	}
 	for _, child := range node.Content {
-		if explicitDecimal(child, seen) {
+		if explicitNativeInteger(child, seen) {
 			return true
 		}
 	}
-	return explicitDecimal(node.Alias, seen)
+	return explicitNativeInteger(node.Alias, seen)
 }

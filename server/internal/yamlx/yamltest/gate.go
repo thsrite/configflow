@@ -1,6 +1,7 @@
 package yamltest
 
 import (
+	"strings"
 	"testing"
 
 	"configflow/internal/jsonx"
@@ -11,6 +12,7 @@ import (
 func Check(t testing.TB, caller string, sources []string) map[string]int {
 	t.Helper()
 	counts := map[string]int{}
+	grammar := map[string]int{}
 	for i, source := range sources {
 		class, err := Classify(source)
 		if err != nil {
@@ -19,8 +21,23 @@ func Check(t testing.TB, caller string, sources []string) map[string]int {
 			continue
 		}
 		counts[class]++
+		if class == SyntaxRange {
+			switch {
+			case strings.Contains(source, "\t"):
+				grammar["TAB"]++
+			case strings.HasPrefix(source, "\ufeff\ufeff"):
+				grammar["C"]++
+			case strings.Contains(source, "&x 2"):
+				grammar["B"]++
+			default:
+				grammar["A"]++
+			}
+		}
 	}
 	t.Logf("N7-3 migration caller=%s rows=%d classes=%v", caller, len(sources), counts)
+	if len(grammar) != 0 {
+		t.Logf("N7-3 grammar caller=%s subclasses=%v", caller, grammar)
+	}
 	return counts
 }
 
