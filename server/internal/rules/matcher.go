@@ -204,7 +204,12 @@ func rulesetLines(content, format string) iter.Seq[rulesetLine] {
 				}
 			}
 		case "yaml":
-			for _, entry := range yamlPayloadLines(content) {
+			entries, err := yamlPayloadLines(content)
+			// Lookup refuses the whole source; it never retries it as text.
+			if err != nil {
+				return
+			}
+			for _, entry := range entries {
 				if !yield(entry) {
 					return
 				}
@@ -217,26 +222,29 @@ func rulesetLines(content, format string) iter.Seq[rulesetLine] {
 // one-line string scalars. Anything else (not one mapping document, a
 // missing or repeated payload key, other entries) yields nothing. A block
 // entry is shown as its source line, a flow entry as its value.
-func yamlPayloadLines(content string) []rulesetLine {
+func yamlPayloadLines(content string) ([]rulesetLine, error) {
 	root, err := yamlx.Parse([]byte(content))
-	if err != nil || root.Kind != yaml.MappingNode {
-		return nil
+	if err != nil {
+		return nil, err
+	}
+	if root.Kind != yaml.MappingNode {
+		return nil, nil
 	}
 	var payload *yaml.Node
 	for i := 0; i+1 < len(root.Content); i += 2 {
 		if root.Content[i].Kind == yaml.ScalarNode && root.Content[i].Value == "payload" {
 			if payload != nil {
-				return nil
+				return nil, nil
 			}
 			payload = root.Content[i+1]
 		}
 	}
 	if payload == nil || payload.Kind != yaml.SequenceNode {
-		return nil
+		return nil, nil
 	}
 	for _, node := range payload.Content {
 		if node.Kind != yaml.ScalarNode || node.ShortTag() != "!!str" || strings.ContainsAny(node.Value, "\n\r") {
-			return nil
+			return nil, nil
 		}
 	}
 	sourceLines := strings.Split(content, "\n")
@@ -248,7 +256,7 @@ func yamlPayloadLines(content string) []rulesetLine {
 		}
 		result = append(result, rulesetLine{strings.TrimSpace(node.Value), source})
 	}
-	return result
+	return result, nil
 }
 
 // parseRulesetLine interprets a provider entry by the rule set's Mihomo

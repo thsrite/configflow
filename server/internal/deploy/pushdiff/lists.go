@@ -5,47 +5,66 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
-	"configflow/internal/rulesetfmt"
+	"configflow/internal/rules"
 	"configflow/internal/yamlx"
 	"gopkg.in/yaml.v3"
 )
 
-// RuleEntries reads text rules or a YAML payload, rejecting invalid UTF-8 and
-// unsafe YAML. Comments, blank lines and YAML quoting are excluded from rules.
+// RuleEntries reads rule-file display lines without parsing YAML. Payload item
+// quoting is trimmed lexically; aliases, tags and malformed YAML stay literal.
+// Invalid UTF-8 is refused so binary files receive a byte-size summary.
 func RuleEntries(data []byte) ([]string, error) {
 	if !utf8.Valid(data) {
 		return nil, fmt.Errorf("rule file is not UTF-8")
 	}
-	text := strings.TrimPrefix(string(data), "\ufeff")
-	out := []string{}
-	if rulesetfmt.HasYAMLPayload(text) {
-		doc, err := yamlx.Parse([]byte(text))
-		if err != nil {
-			return nil, fmt.Errorf("parse rule payload: %w", err)
+	text := string(data)
+	payload := false
+	lineIndex := 0
+	for line := range rules.RuleFileLines(text) {
+		if lineIndex >= 200 {
+			break
 		}
-		payload := resolve(yamlx.Get(doc, "payload"))
-		if !isList(payload) {
-			return nil, fmt.Errorf("rule payload must be a sequence")
+		lineIndex++
+		trimmed := strings.TrimFunc(line, ruleSpace)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
 		}
-		for _, n := range payload.Content {
-			n = resolve(n)
-			if n == nil || n.Kind != yaml.ScalarNode {
-				return nil, fmt.Errorf("rule payload entry must be a scalar")
-			}
-			out = append(out, scalar(n))
-		}
-		return out, nil
+		payload = strings.HasPrefix(trimmed, "payload:")
+		break
 	}
-	for _, line := range strings.Split(strings.ReplaceAll(text, "\r", "\n"), "\n") {
-		s := strings.TrimSpace(line)
-		if s != "" && !strings.HasPrefix(s, "#") && !strings.HasPrefix(s, "//") {
-			out = append(out, s)
+	out := []string{}
+	for line := range rules.RuleFileLines(text) {
+		if payload {
+			item, ok := strings.CutPrefix(strings.TrimLeftFunc(line, ruleSpace), "-")
+			if !ok || item == "" {
+				continue
+			}
+			first, _ := utf8.DecodeRuneInString(item)
+			if !ruleSpace(first) {
+				continue
+			}
+			value := strings.TrimFunc(item, ruleSpace)
+			if len(value) >= 2 && value[0] == value[len(value)-1] && (value[0] == '\'' || value[0] == '"') {
+				value = value[1 : len(value)-1]
+			}
+			out = append(out, value)
+		} else {
+			value := strings.TrimFunc(line, ruleSpace)
+			if value != "" && !strings.HasPrefix(value, "#") && !strings.HasPrefix(value, "//") {
+				out = append(out, value)
+			}
 		}
 	}
 	return out, nil
 }
+
+func ruleSpace(r rune) bool {
+	return unicode.IsSpace(r) || r >= 0x1c && r <= 0x1f
+}
+
 func counts(items []string) map[string]int {
 	out := map[string]int{}
 	for _, s := range items {

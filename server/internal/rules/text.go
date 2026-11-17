@@ -4,6 +4,7 @@ import (
 	"iter"
 	"net/netip"
 	"strings"
+	"unicode/utf8"
 
 	"golang.org/x/net/idna"
 
@@ -87,9 +88,27 @@ func IPAddressVersion(text string) int {
 // lines yields CR, LF and CRLF-delimited rule-file lines, without adding an
 // empty line after a final delimiter. Other Unicode characters remain content.
 func lines(content string) iter.Seq[string] {
+	return ruleLines(content, false)
+}
+
+// RuleFileLines yields rule-file display lines, including Unicode line breaks.
+// It preserves blank lines and has no scanner token limit. It never parses YAML.
+func RuleFileLines(content string) iter.Seq[string] {
+	return ruleLines(content, true)
+}
+
+func ruleLines(content string, unicodeBreaks bool) iter.Seq[string] {
 	return func(yield func(string) bool) {
 		for content != "" {
 			end, separatorSize := strings.IndexAny(content, "\r\n"), 1
+			if unicodeBreaks {
+				end = strings.IndexFunc(content, func(r rune) bool {
+					return strings.ContainsRune("\r\n\v\f\x1c\x1d\x1e\u0085\u2028\u2029", r)
+				})
+				if end >= 0 {
+					_, separatorSize = utf8.DecodeRuneInString(content[end:])
+				}
+			}
 			if end < 0 {
 				yield(content)
 				return

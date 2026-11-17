@@ -45,7 +45,7 @@ func TestYAMLEntrypoints(t *testing.T) {
 			if (config.Status != "unparsable") != tc.accepted {
 				t.Fatalf("config: %+v", config)
 			}
-			// All YAML entries must pass the same facade before navigating a subtree.
+			// Structured configuration/provider readers validate before navigation.
 			provider := tc.source + "proxies: []\n"
 			_, err := nodeItems([]byte(provider))
 			if (err == nil) != tc.accepted {
@@ -53,33 +53,18 @@ func TestYAMLEntrypoints(t *testing.T) {
 			}
 			rules := tc.source + "payload: []\n"
 			_, err = RuleEntries([]byte(rules))
-			if (err == nil) != tc.accepted {
-				t.Fatalf("rules input: %v", err)
+			if err != nil {
+				t.Fatalf("lexical rule listing parsed YAML: %v", err)
 			}
 		})
 	}
 }
 
-func TestRulePayloadForms(t *testing.T) {
-	for _, source := range []string{"payload: ['+.a.example.com', b.example.com]\n", `{"payload": ["+.a.example.com", "b.example.com"]}`, "'payload':\n- '+.a.example.com' # comment\n- \"b.example.com\"\n", "payload: &p\n- '+.a.example.com'\n- b.example.com\n"} {
-		t.Run(source, func(t *testing.T) {
-			got, err := RuleEntries([]byte(source))
-			if err != nil {
-				t.Fatal(err)
-			}
-			compareJSON(t, got, []string{"+.a.example.com", "b.example.com"})
-		})
+// Lexical payload forms are checked against Python in TestReviewN73DPythonRuleListings.
+func TestRuleEntriesInvalidUTF8(t *testing.T) {
+	if _, err := RuleEntries([]byte{0xff}); err == nil {
+		t.Fatal("binary rule file accepted")
 	}
-	for _, source := range []string{"payload: scalar", "payload: [{nested: item}]", "payload: [*missing]", "payload: [a]\npayload: [b]"} {
-		if _, err := RuleEntries([]byte(source)); err == nil {
-			t.Fatalf("accepted %q", source)
-		}
-	}
-	got, err := RuleEntries([]byte("\ufeff# comment\r\n// comment\r+.a.example.com\n\n"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	compareJSON(t, got, []string{"+.a.example.com"})
 }
 
 func TestScalarSemanticsAndMerges(t *testing.T) {

@@ -24,3 +24,14 @@ requires A12 RuleEntries to use lexical scanning like Python, not YAML parsing.
 valid block/flow, malformed, indentation, alias, BOM and 200-line head boundary.
 Implement one shared line iterator and lexical listing, update safety tests and
 Clarified accordingly. Keep provider/matcher public behavior unchanged.
+
+F4 committed2d027e716. F5 A12 lexical listing now matches all14 real Python controls,
+including valid/flow/malformed/indentation/alias/1MiB/empty/BOM/head200/Unicode.
+F6 matcher helper preserves original cause with unchanged public no-match. New
+10s-isolated alias regressions pass (matcher~10ms, provider/listing~15ms,
+contentsync~39ms). rules/pushdiff/contentsync full suites +vet pass after lexical
+change. Native migration references pass: convert3837/278, gateway4 changes,
+provider235 exact messages/0positions, importer14, matcher981. Temporary tools
+removed; permanent oracle + contract checker live in pushdiff/testdata.
+Next: format final test cleanup remotely, commit F5/F6 + Clarified, run foreground
+full gate (queue limit15min), complete final detailed review report.

@@ -33,7 +33,23 @@
   NUL 控制字符的原生解析错误没有位置；未闭合 flow list 只有行号。原实现无条件把0
   转为位置指针，向用户显示不存在的行列。新增三种真实 Parse 合成控制，修复前前两种
   失败；现在仅附加原生确有的正行号/列号，保留原始原因和诊断。provider hook 的历史
-  展示合同不变，235条冻结完整显示参照继续通过。修复提交：本次坐标修复提交，最终补列 SHA。
+  展示合同不变，235条冻结完整显示参照继续通过。修复提交：`2d027e716`。
+
+- **F5 / medium（A12）：规则文件明细错误地按 YAML 结构解释展示行。**
+  Python `push_diff.rule_entries` 逐行扫描；Go RuleEntries 却调用 Parse 并解 alias/去注释。
+  因而正常 block 中的注释展示、flow 计数、非法缩进、`payload: [`、alias、BOM 和
+  首200行探测都与 Python 不同。独立14组 Python 控制中原实现9组失败。
+  按协调者明确要求恢复逐行扫描，不经过 YAML reader；invalid UTF-8 仍显示字节大小。
+  本基线不存在指定的 rules/ruleset_lines.go；复用现有 rules/text.go 的行切分算法，
+  增加 RuleFileLines 入口支持 Unicode 分隔、空行和无限长行，不维护第二份切行算法。
+  新 oracle 逐项比较原始条目、计数和完整展示；14/14通过，含1 MiB行、空文件、有效
+  depth40 alias bomb（42个字面条目）。contentsync 公共入口也确认42项，循环flow为0项，
+  没有 graph 构造/引用展开。修复提交：本次 A12 修复提交，最终补列 SHA。
+- **F6 / low：matcher 内部 reader 没有保留错误原因。**
+  外层 Match 无匹配合同与 Python 相同，但 yamlPayloadLines 把 policy/alias/syntax
+  全部变成 nil。现内部 helper 返回原始 error；公共迭代器只在拒绝来源边界转为空迭代，
+  不重试纯文本，不生成配置。新增子进程10秒硬截止测试检查原因/行诊断、depth40/self
+  和公共无匹配结果；实际约10毫秒完成。修复提交：本次 A12/合同修复提交，最终补列 SHA。
 
 ## 验证（迭代）
 

@@ -44,7 +44,7 @@ func TestN73MatcherRejectsUnsafeAliases(t *testing.T) {
 		"self":    "loop: &loop [*loop]\npayload: ['DOMAIN,example.com']\n",
 	} {
 		t.Run(name, func(t *testing.T) {
-			if entries := yamlPayloadLines(source); len(entries) != 0 {
+			if entries, _ := yamlPayloadLines(source); len(entries) != 0 {
 				t.Fatal("unsafe alias graph produced rule entries")
 			}
 			if got := matcherFor(source, "classical", "format", "yaml").Match("example.com"); got != nil {
@@ -59,7 +59,8 @@ func FuzzMatcherYAML(f *testing.F) {
 		f.Add(source)
 	}
 	f.Fuzz(func(t *testing.T, source string) {
-		for _, entry := range yamlPayloadLines(source) {
+		entries, _ := yamlPayloadLines(source)
+		for _, entry := range entries {
 			if strings.ContainsAny(entry.value, "\r\n") {
 				t.Fatal("multiline rule escaped validation")
 			}
