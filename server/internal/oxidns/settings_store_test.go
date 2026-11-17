@@ -1,10 +1,12 @@
 package oxidns
 
 import (
+	"configflow/internal/lifecycle"
 	"context"
 	"errors"
 	"sync"
 	"testing"
+	"time"
 
 	"configflow/internal/jsonx"
 	"configflow/internal/repo"
@@ -32,7 +34,10 @@ func TestC29SaveSettingsDetachesBeforeRepositoryLock(t *testing.T) {
 		holder <- err
 	}()
 	<-locked
-	request, cancel := context.WithCancel(repo.WithScope(repo.WithRepository(context.Background(), r)))
+	runtime := lifecycle.NewRuntime(lifecycle.Options{Grace: 2 * time.Second})
+	runtime.Start(ctx)
+	t.Cleanup(func() { runtime.Shutdown(context.Background()) })
+	request, cancel := context.WithCancel(runtime.BindRequest(repo.WithScope(repo.WithRepository(context.Background(), r))))
 	cancel()
 	result := make(chan error, 1)
 	go func() { _, err := SaveSettings(request, "default", M("worker_threads", I(6)), ""); result <- err }()

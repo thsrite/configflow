@@ -1,8 +1,8 @@
 # C29 hand-back
 
-状态：实现完成（ported，未标 verified）；完整 gate 正在 .64 排队，最终结果待填。
+状态：实现完成（ported，未标 verified）；已补第四常设项，完整 gate 待跑，最终结果待填。
 范围：Python oxidns_native_apply.py、oxidns_archive.py、routes/oxidns.py 和 profile wrappers，共18路由。
-旧 go-n8-4ef worktree 未修改。本分支 go-port-c29；已 rebase go@f147cf21。
+旧 go-n8-4ef worktree 未修改。本分支 go-port-c29；已 rebase go@e980d402。
 
 ## 实现与证据
 
@@ -32,9 +32,20 @@ Python shared tests download_aliases/withdrawn_downloads 继续由 C25–C27 既
   业务builder和validator不动；include错误仅保留reader cause。40层alias、自引用、重复键等安全回归。
 - 迁移逐输入occurrences：native53588 = equal52768 + D1 547 + policy177 + alias96；
   template326232 = equal325967 + D1 132 + alias133；两者unknown=0。详情 progress/n7-3d-oxidns.md。
-- 除上述差异，无已知C29功能差异、未移植项或待裁定问题；无新依赖、未push、未开子agent、未操作生产。
+- 除上述差异，无已知C29普通运行功能差异或未移植项；共享shutdown窗口见下；无新依赖、未push、未开子agent、未操作生产。
 - N8-5后续位置：settings_store.go 的storedSettings/事务赋值；api/oxidns的render config/NewProfile桥；
   archive.go现有共享MosDNS config参数。当前沿用已批准repo API，新设置载体已用model.Dynamic。
+
+## 关机自查与共享剩余窗口
+
+SaveSettings和BuildZIP均在Detach后及调用提交/归档前检查ctx.Err；SaveSettings锁内callback还在交回候选前检查。
+真实Runtime.Start/BindRequest/Shutdown回归比较完整DB/files/commit count/revision，并验证请求断开仍完成设置保存与完整ZIP。
+.64 scoped race已通过（2.811s）；同轮API 0.240s / Flask差分11.494s。
+
+按协调者最新分工，共享层不由C29修改：mosdns/archive的WithoutCancel、taskstatus RecordContext/ForgetContext、
+repo最终提交和rulefetch touch/rename取消检查，统一由6e5c7760（go-o3-6）在O3-6a之后的
+O3-6c “shared commit points honour shutdown”步骤补齐。C29入口已保护，已进入共享链的在途请求仍有此已知窗口。
+O3-6a合入后再只读复查链路并更新本项。
 
 ## 命令与输出
 
@@ -56,11 +67,11 @@ RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'server/scripts/gate.sh -p 6 FuzzNa
 ```
 
 为避免轮询饥饿，实际rt命令先阻塞等待现有slot 2再立即exec上述gate，完整命令见progress/c29.md。
-待记录：/tmp/c29-gate-ecf46242，gofmt/vet/build tags、全量race、proddiff、全部difftest、两fuzz各60秒。
+待记录：/tmp/c29-gate-e980d402，gofmt/vet/build tags、全量race、proddiff、全部difftest、两fuzz各60秒。
 
 ## 提交
 
-当前实现提交：5641af2c reader；728ce5ce native apply；4f7c9d51 archive/routes；ecf46242 N8-6向量。
+当前实现提交：bc5c7856 reader；0995742a native apply；415dbd45 archive/routes；c924454d N8-6向量；ed428ce2验收checkpoint。
 提交可能随最终rebase变化，以最终交回记录为准。
 
 ## 新文件（相对 server）

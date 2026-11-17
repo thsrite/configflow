@@ -96,6 +96,9 @@ func ReadSettings(ctx context.Context, profileID string) (StoredSettings, error)
 // check and follow invalidation both use the freshly locked complete snapshot.
 func SaveSettings(ctx context.Context, profileID string, value *Node, expected string) (SavedSettings, error) {
 	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return SavedSettings{}, err
+	}
 	if !isMap(value) {
 		return SavedSettings{}, fail(SettingsObjectMessage)
 	}
@@ -113,7 +116,13 @@ func SaveSettings(ctx context.Context, profileID string, value *Node, expected s
 	}
 	expected = strings.TrimPrefix(strings.TrimSpace(expected), "W/")
 	defer repo.ResetConfigContext(ctx)
-	saved, revision, err := repository.UpdateProfileTransaction(ctx, id, func(_ context.Context, current *jsonx.Object) (*jsonx.Object, error) {
+	if err := ctx.Err(); err != nil {
+		return SavedSettings{}, err
+	}
+	saved, revision, err := repository.UpdateProfileTransaction(ctx, id, func(ctx context.Context, current *jsonx.Object) (*jsonx.Object, error) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		stored, err := storedSettings(current)
 		if err != nil {
 			return nil, err
@@ -129,9 +138,12 @@ func SaveSettings(ctx context.Context, profileID string, value *Node, expected s
 		if err != nil {
 			return nil, err
 		}
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		// N8-5: assign model.Profile.OxiDNS once the typed updater is available.
 		current.Set("oxidns", ToJSONX(replacement))
-		return current, nil
+		return current, ctx.Err()
 	})
 	if err != nil {
 		return SavedSettings{}, err

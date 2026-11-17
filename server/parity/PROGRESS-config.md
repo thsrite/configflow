@@ -1854,6 +1854,9 @@ Detailed scope, commands, remaining acceptance and N8-5 adapters: [C29 progress]
 Missing / deferred: no C29 implementation deferred. Final gate pending; this is ported, not verified.
 The approved Python HEAD save bug is fixed as read-only with an explicit expected differential;
 N8-6 non-finite JSON rejection has 48 explicit Flask controls across all 16 POST pairs;
+C29 SaveSettings/BuildZIP now check shutdown after Detach and before shared commits; real Runtime
+shutdown/disconnect regressions pass under race. Shared in-flight archive/cache/taskstatus/repo final
+commit windows are explicitly assigned to 6e5c7760 (go-o3-6), O3-6c; C29 does not duplicate those fixes.
 reader policies follow N7-3d §5.7 (unknown=0). No new dependency or Python compatibility hash adapter.
 
 N8-5 follow-up: settings_store.go storedSettings and the transaction assignment bridge, the render

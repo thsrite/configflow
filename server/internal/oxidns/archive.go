@@ -17,6 +17,9 @@ import (
 // config is the captured repository snapshot; neither it nor the input files change.
 func BuildZIP(ctx context.Context, config *jsonx.Object, content string, downloads []mosdns.Download, custom []File, baseURL string) ([]byte, error) {
 	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	paths := make([]string, 0, len(downloads)+len(custom))
 	for _, item := range downloads {
 		p, err := mosdns.ArchivePath(item.LocalPath)
@@ -60,7 +63,13 @@ func BuildZIP(ctx context.Context, config *jsonx.Object, content string, downloa
 	for _, f := range custom {
 		files = append(files, mosdns.File{Path: f.Path, Content: string(f.Content)})
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	output, err := mosdns.BuildMosDNSZip(ctx, config, content, downloads, files, mosdns.ArchiveOptions{BaseURL: baseURL, SkipReferenceValidation: true})
+	if stop := ctx.Err(); stop != nil {
+		return nil, stop
+	}
 	var failure *mosdns.ArchiveError
 	if errors.As(err, &failure) {
 		return nil, &mosdns.ArchiveError{Message: strings.ReplaceAll(failure.Message, "MosDNS", "OxiDNS")}
