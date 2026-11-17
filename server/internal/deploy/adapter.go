@@ -5,9 +5,13 @@ package deploy
 import (
 	"bytes"
 	"context"
+	"crypto/md5"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -16,12 +20,16 @@ import (
 	"configflow/internal/convert"
 	"configflow/internal/gateway"
 	"configflow/internal/jsonx"
+	"configflow/internal/mosdns"
 	"configflow/internal/oxidns"
 	"configflow/internal/provider"
 	"configflow/internal/refresh"
 	"configflow/internal/repo"
+	"configflow/internal/routersplit"
 	"configflow/internal/rulefetch"
+	"configflow/internal/rules"
 	"configflow/internal/subs"
+	"configflow/internal/substore"
 	"configflow/internal/yamlx"
 )
 
@@ -465,4 +473,281 @@ func (s *Source) githubSource(rawURL string) string {
 		return candidates[0].URL
 	}
 	return rawURL
+}
+
+func generateAgentConfig(ctx context.Context, s *Source, t Target, base string) (AgentConfig, error) {
+	var text string
+	var err error
+	switch t.ServiceType {
+	case "", "mihomo":
+		text, err = convert.GenerateMihomoConfig(ctx, s.config(), convert.GenerateOptions{BaseURL: base, RegionProbe: t.DomainDiscovery, MihomoCoreVersion: reportedCore(ctx, t), ForAgent: true})
+	case "mosdns":
+		text, err = mosdns.GenerateMosDNSConfig(s.config(), base)
+	case "oxidns":
+		text, err = oxidns.Generate(oxidns.NewProfile(s.config()), base)
+	case "surge":
+		text, err = convert.GenerateSurgeConfig(ctx, s.config(), base)
+	default:
+		return AgentConfig{}, preparation("Unsupported service type: " + t.ServiceType)
+	}
+	sum := md5.Sum([]byte(text))
+	hash := hex.EncodeToString(sum[:])
+	return AgentConfig{Content: text, MD5: hash, Version: hash[:8], ServiceType: t.ServiceType}, err
+}
+func reportedCore(ctx context.Context, t Target) string {
+	store, err := trafficstore.Get(ctx)
+	if err != nil {
+		return ""
+	}
+	return subs.ReportedCoreVersion(t.Record, store.StatusOf)
+}
+func prepareContent(ctx context.Context, m *agents.Manager, t Target, s *Source, o PrepareOptions) (*Prepared, error) {
+	if s == nil {
+		return nil, preparation("Missing profile snapshot")
+	}
+	cfg := s.config()
+	p := &Prepared{Providers: []*provider.Rendered{}, ProviderDownloads: []ProviderFile{}, CustomFiles: []CustomFile{}, RulesetDownloads: []convert.Download{}}
+	service := t.ServiceType
+	if service == "" {
+		service = "mihomo"
+	}
+	if service == "mihomo" {
+		if s.gateway().Enabled() {
+			if err := gateway.RequireGatewayAgent(t.Version); err != nil {
+				return nil, err
+			}
+		}
+		marker, _ := routersplit.ReadMarker(cfg)
+		if marker != "absent" && t.DeploymentMethod != "docker" && !gateway.SupportsForwarding(t.Version) {
+			return nil, preparation(fmt.Sprintf(msgForwardingUpgrade, gateway.ForwardingMinAgentVersion))
+		}
+	}
+	if o.Progress.Phase != nil {
+		o.Progress.Phase(fmt.Sprintf(msgGenerating, map[string]string{"mihomo": "Mihomo", "mosdns": "MosDNS", "oxidns": "OxiDNS"}[service]))
+	}
+	var err error
+	switch service {
+	case "mihomo":
+		conversions := convert.NewConversionResults()
+		report := jsonx.NewObject()
+		generate := func(reuse bool) (*jsonx.Object, error) {
+			var e error
+			p.ConfigContent, e = convert.GenerateMihomoConfig(convert.WithNodeConversions(ctx, conversions, reuse), cfg, convert.GenerateOptions{BaseURL: o.BaseURL, SyncLANHosts: true, SkipProviderPreflight: true, RegionProbe: t.DomainDiscovery, MihomoCoreVersion: reportedCore(ctx, t), Report: report, ForAgent: true})
+			if e != nil {
+				return nil, e
+			}
+			node, e := yamlx.Parse([]byte(p.ConfigContent))
+			if e != nil {
+				return nil, generatedFailure(e, p.ConfigContent, "Mihomo")
+			}
+			raw, e := yamlx.ToJSON(node)
+			if e != nil {
+				return nil, e
+			}
+			v, e := jsonx.Parse(raw)
+			if e != nil {
+				return nil, e
+			}
+			main, ok := v.(*jsonx.Object)
+			if !ok {
+				return nil, preparation("Generated Mihomo configuration must be an object")
+			}
+			return main, nil
+		}
+		main, e := generate(false)
+		if e != nil {
+			return nil, e
+		}
+		publicationHooks.RLock()
+		guards := publicationHooks.guards
+		publicationHooks.RUnlock()
+		if routersplit.IsFullTun(cfg) {
+			if e = routersplit.RequireFullTunGenerated(main); e != nil {
+				return nil, e
+			}
+			if t.DeploymentMethod != "docker" {
+				if guards.RequireForwardingKept == nil {
+					return nil, ErrGatewayGuardMissing
+				}
+				if e = guards.RequireForwardingKept(ctx, m, t); e != nil {
+					return nil, e
+				}
+			}
+		} else if t.DeploymentMethod != "docker" && !main.GetObject(routersplit.GatewayMarker).GetBool("enabled") && gateway.SupportsGateway(t.Version) {
+			source, e := routersplit.PublishLegacySource(ctx, m.Repository(), t.ProfileID, cfg, t.ID)
+			if e != nil {
+				return nil, e
+			}
+			if source != nil {
+				used, e := routersplit.GatewayWasUsed(cfg, t.Record, source)
+				if e != nil {
+					return nil, e
+				}
+				if used {
+					if guards.RequireGatewayOffKept == nil {
+						return nil, ErrGatewayGuardMissing
+					}
+					if e = guards.RequireGatewayOffKept(ctx, m, t); e != nil {
+						return nil, e
+					}
+				}
+			}
+		}
+		downloads, e := convert.GetMihomoProviderDownloads(ctx, cfg, o.BaseURL, main)
+		if e != nil {
+			return nil, e
+		}
+		if len(downloads) > 0 {
+			opts := provider.BundleOptions{RenderAll: true, Progress: func(message string, _ bool) {
+				if o.Progress.Phase != nil {
+					o.Progress.Phase(message)
+				}
+			}}
+			if o.PreferCached {
+				opts.SubscriptionFetch = func(ctx context.Context, id, url string) (*substore.SubscriptionResult, error) {
+					return substore.Default().Client.GetSubscriptionProxiesYAML(ctx, id, url, "", substore.FetchOptions{PreferCached: true})
+				}
+			}
+			p.Providers, e = provider.PrepareProviderBundle(convert.WithNodeConversions(ctx, conversions, false), cfg, main, opts)
+			if e != nil {
+				return nil, e
+			}
+			updates := map[string]provider.CacheUpdate{}
+			order := []string{}
+			for _, v := range p.Providers {
+				for _, u := range v.CacheUpdates {
+					if _, ok := updates[u.SubID]; !ok {
+						order = append(order, u.SubID)
+					}
+					updates[u.SubID] = u
+				}
+			}
+			if o.StoreDownloads && len(updates) > 0 {
+				if ctx.Err() != nil {
+					return nil, ctx.Err()
+				}
+				list := []provider.CacheUpdate{}
+				for _, id := range order {
+					list = append(list, updates[id])
+				}
+				if e = provider.CommitCacheUpdates(ctx, list); e != nil {
+					return nil, e
+				}
+				if o.Progress.Phase != nil {
+					o.Progress.Phase(msgSavedSubscriptions)
+				}
+				main, e = generate(true)
+				if e != nil {
+					return nil, e
+				}
+				opts.SubscriptionFetch = func(context.Context, string, string) (*substore.SubscriptionResult, error) {
+					return nil, errors.New(msgAlreadyFetched)
+				}
+				opts.Progress = nil
+				p.Providers, e = provider.PrepareProviderBundle(convert.WithNodeConversions(ctx, conversions, true), cfg, main, opts)
+				if e != nil {
+					return nil, e
+				}
+			}
+			for _, v := range p.Providers {
+				path, ok := v.LocalPath.(string)
+				if !ok {
+					return nil, preparation("Invalid deployment file path")
+				}
+				p.ProviderDownloads = append(p.ProviderDownloads, ProviderFile{Name: v.Name, LocalPath: path, URL: v.URL, Content: []byte(v.Content)})
+			}
+		}
+		if s.gateway().Enabled() {
+			for name, value := range main.GetObject("rule-providers").All() {
+				r, ok := value.(*jsonx.Object)
+				if ok && r.GetString("type") == "http" && r.GetString("url") != "" {
+					p.RulesetDownloads = append(p.RulesetDownloads, convert.Download{Name: name, URL: r.Value("url"), LocalPath: r.Value("path"), Behavior: r.GetString("behavior"), Format: r.GetString("format")})
+				}
+			}
+		} else {
+			p.RulesetDownloads, e = convert.GetMihomoRulesetDownloads(ctx, cfg, o.BaseURL)
+			if e != nil {
+				return nil, e
+			}
+		}
+		p.SubscriptionHosts, _ = encodeJSON(report.Value("subscription_hosts"))
+		p.SubscriptionDialers, _ = encodeJSON(report.Value("subscription_dialers"))
+	case "mosdns":
+		p.ConfigContent, err = mosdns.GenerateMosDNSConfig(cfg, o.BaseURL)
+		if err != nil {
+			return nil, err
+		}
+		ds, e := mosdns.GetMosDNSRulesetDownloads(cfg, o.BaseURL)
+		if e != nil {
+			return nil, e
+		}
+		for _, v := range ds {
+			r, ok := v.(*jsonx.Object)
+			if !ok {
+				return nil, preparation("Invalid rule download")
+			}
+			p.RulesetDownloads = append(p.RulesetDownloads, convert.Download{Name: r.GetString("name"), URL: r.Value("url"), LocalPath: r.Value("local_path"), Behavior: r.GetString("behavior")})
+		}
+		fs, e := mosdns.GetMosDNSCustomFiles(cfg)
+		if e != nil {
+			return nil, e
+		}
+		for _, v := range fs {
+			r, ok := v.(*jsonx.Object)
+			if !ok {
+				return nil, preparation("Invalid custom file")
+			}
+			p.CustomFiles = append(p.CustomFiles, CustomFile{Path: r.GetString("path"), Name: r.GetString("name"), Content: []byte(r.GetString("content")), Native: r.GetBool("native")})
+		}
+	case "oxidns":
+		profile := oxidns.NewProfile(cfg)
+		p.ConfigContent, err = oxidns.Generate(profile, o.BaseURL)
+		if err != nil {
+			return nil, err
+		}
+		n, e := yamlx.Parse([]byte(p.ConfigContent))
+		if e == nil {
+			_, e = oxidns.RequireValidDocument(n)
+		}
+		if e != nil {
+			return nil, generatedFailure(e, p.ConfigContent, "OxiDNS")
+		}
+		ds, e := oxidns.RulesetDownloads(profile, o.BaseURL)
+		if e != nil {
+			return nil, e
+		}
+		for _, v := range ds {
+			p.RulesetDownloads = append(p.RulesetDownloads, convert.Download{Name: v.Name, URL: v.URL, LocalPath: v.LocalPath, Behavior: scalar(v.Behavior)})
+		}
+		fs, e := oxidns.CustomFiles(profile)
+		if e != nil {
+			return nil, e
+		}
+		for _, v := range fs {
+			p.CustomFiles = append(p.CustomFiles, CustomFile{Path: v.Path, Content: v.Content, Native: v.Native})
+		}
+	default:
+		return nil, preparation("Unsupported service type")
+	}
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	p.Bundle, err = Build(ctx, BuildInput{Target: t, Source: s, ConfigContent: p.ConfigContent, ProviderDownloads: p.ProviderDownloads, RulesetDownloads: p.RulesetDownloads, CustomFiles: p.CustomFiles, BaseURL: o.BaseURL, DeploymentID: o.DeploymentID, LocalDNSWatchdog: true, Progress: o.Progress})
+	return p, err
+}
+func preparationFailure(err error) bool {
+	var strategy *rules.StrategyReferenceError
+	var base *convert.BaseSettingsError
+	var easy *convert.EasyTierSettingsError
+	var gatewayErr *gateway.Error
+	var split *routersplit.RouterSplitError
+	var settings *oxidns.SettingsError
+	var validation *oxidns.ValidationError
+	var reference *oxidns.ReferenceError
+	var remote *rulefetch.RemoteRuleValidationError
+	var agent *agents.ValueError
+	var archive *mosdns.ArchiveError
+	var py *convert.PyError
+	var rs *routersplit.PyError
+	return errors.As(err, &strategy) || errors.As(err, &base) || errors.As(err, &easy) || errors.As(err, &gatewayErr) || errors.As(err, &split) || errors.As(err, &settings) || errors.As(err, &validation) || errors.As(err, &reference) || errors.As(err, &remote) || errors.As(err, &agent) || errors.As(err, &archive) || repo.IsValueError(err) || (errors.As(err, &py) && py.Class == "ValueError") || (errors.As(err, &rs) && rs.Class == "ValueError")
 }

@@ -53,3 +53,11 @@ func (r *Runtime) BindRequest(ctx context.Context) context.Context {
 func withGeneration(ctx context.Context, g *generation, cancelParent context.Context) context.Context {
 	return ctxx.WithParent(context.WithValue(ctx, generationKey{}, g), cancelParent)
 }
+
+// Tracked reports whether the caller is already an owned Runtime job or round.
+// A bound HTTP request has a cancellation parent but is not a tracked worker.
+func Tracked(ctx context.Context) bool {
+	return ctx.Value(trackedKey{}) == true
+}
+
+type trackedKey struct{}

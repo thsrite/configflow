@@ -94,6 +94,13 @@ func (p *contentPool) close() {
 // WireContentSync installs Sub-Store invalidation and Manager-owned cleanup.
 // A14 injects preparation through SetContentPrepare, avoiding a deploy cycle.
 func WireContentSync() {
+	SetContentPrepare(func(ctx context.Context, t deploy.Target, s *deploy.Source, url, id string) (*deploy.Bundle, error) {
+		m, err := core.Get(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return deploy.PrepareContentBundle(ctx, m, t, s, url, id)
+	})
 	substore.SetContentSyncInvalidator(func(context.Context) error { contentChecks.dispatcher.Invalidate(); return nil })
 	lifecycle.RegisterShutdown(lifecycle.ShutdownHook{Name: "agent-content-sync-close", Phase: lifecycle.PhaseClose, Run: func(context.Context) { contentChecks.close() }})
 }

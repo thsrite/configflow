@@ -60,3 +60,13 @@ const (
 )
 
 const msgUnexpandedInclude = "OxiDNS 发布配置必须先展开 include 后重新推送"
+
+const (
+	msgForwardingUpgrade  = "主路由分流（完整 TUN）需要 Mihomo Agent %s 或更新版本；旧版本在移除旧网关记录时可能关闭 IPv4 转发。请先在 Agent 页更新。"
+	msgGenerating         = "正在生成 %s config.yaml 并检查基础配置"
+	msgSavedSubscriptions = "已保存新下载的订阅节点，正在按保存的节点重新生成 config.yaml"
+	msgAlreadyFetched     = "本次发布已经尝试过下载这个订阅，不再重复下载"
+	msgGeneratedYAML      = "生成配置 YAML 格式错误"
+	msgGeneratedConfig    = "config.yaml（生成配置）"
+	msgConfigKind         = "%s 配置"
+)

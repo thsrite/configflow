@@ -263,7 +263,7 @@ func (r *Runtime) workContext(ctx context.Context, g *generation, detach bool) (
 	}
 	work, cancel := context.WithCancel(ctx)
 	stop := context.AfterFunc(g.jobs, cancel)
-	work = repo.WithScope(withGeneration(work, g, g.jobs))
+	work = repo.WithScope(context.WithValue(withGeneration(work, g, g.jobs), trackedKey{}, true))
 	return work, func() { stop(); cancel(); repo.ResetConfigContext(work) }
 }
 
