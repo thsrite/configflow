@@ -203,6 +203,11 @@ files once). After `cf-test`, use `rt --no-sync`.
 
 ## Coordinator habits (keep them)
 
+- **Never rebase a branch that is checked out in an agent's worktree from another worktree** (`git worktree add -f`):
+  the agent's working tree then shows reverse diffs of everything that moved (happened with go-o3-2 on 2026-11-17;
+  the agent verified and restored correctly). Ask the agent to rebase, or rebase a **copy** (`git branch tmp <b>`;
+  rebase tmp; fast-forward go to tmp) and leave the agent's branch alone.
+
 - **Emulation gate (2026-11-16):** on every hand-back, grep the diff for Python emulation (ports of
   CPython/PyYAML/requests/stdlib behaviour, `PyError`/emulated exception texts, `any` parameters mirroring
   Python call shapes, new `jsonx`/`pystr`/`urlx` uses, private helper copies) → send back. No size budget
