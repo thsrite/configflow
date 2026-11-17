@@ -817,7 +817,7 @@ Review commands (shared worktree builds): `rt -- bash -lc 'cd server && go vet .
 
 ## A11 — deployment bundle, locations, Mihomo resources, generated preview
 
-**Status: `missing`** · HR · prereqs: A02, A19 (`linux_gateway` routing mark, gateway bundle), C05 (`oxidns_settings.safe_relative_path`, `OxidnsSettingsError`), C12 (`converters.common.ruleset_format`), C14 (`rule_fetch`, `ruleset_content`, `remote_rule_sources`), C15 (`scheduled_refresh.read_rule_source`), C21 (`converters.mosdns` rule parts), C22 (`oxidns_native`, `converters.oxidns.unavailable_rulesets`), C25 (`dns_watchdog.ensure_local_dns_watchdog`), C11 (`subs.ReportedCoreVersion`, ready) · Go: internal/deploy (new)
+**Status: `wip`** · HR · prereqs: A02, A19 (`linux_gateway` routing mark, gateway bundle), C05 (`oxidns_settings.safe_relative_path`, `OxidnsSettingsError`), C12 (`converters.common.ruleset_format`), C14 (`rule_fetch`, `ruleset_content`, `remote_rule_sources`), C15 (`scheduled_refresh.read_rule_source`), C21 (`converters.mosdns` rule parts), C22 (`oxidns_native`, `converters.oxidns.unavailable_rulesets`), C25 (`dns_watchdog.ensure_local_dns_watchdog`), C11 (`subs.ReportedCoreVersion`, ready) · Go: internal/deploy (new)
 
 **Design:** `server/design/a14-publish.md` (Opus, 2026-11-17) covers the whole chain A11→A14 — package map, types, Agent protocol, state machine, locks, failure table, steps A11-1…A11-4, acceptance. Port to it; contract changes need the designer's or coordinator's agreement.
 
@@ -831,9 +831,44 @@ Tests: `test_agent_content_manifest.py` (8), `test_agent_content_preparation.py`
 
 Routes: none.
 
-Evidence: no Go code. Provides for config: `deployment_locations` (`preparation_context`, `source_error`, `DeploymentPreparationError`) used by C17 `provider_delivery`, and `_pack` used by C34 `routes/generate.py` — register through interfaces declared in C17/C34 (decision 3). `generated_preview` uses `rule_sync_store._write/bundle_files` (A14): put `rule_sync_store` before it in the same package or port A11 and A14's store file together.
+Evidence: A11-1 core implemented; A11-2–4 pending. Provides for config: `deployment_locations` (`preparation_context`, `source_error`, `DeploymentPreparationError`) used by C17 `provider_delivery`, and `_pack` used by C34 `routes/generate.py` — register through interfaces declared in C17/C34 (decision 3). `generated_preview` uses `rule_sync_store._write/bundle_files` (A14): put `rule_sync_store` before it in the same package or port A11 and A14's store file together.
 
 C30 dependency (maintainer decision, 2026-11-17): after registering `provider.SetLocations`, rerun `CONFIGFLOW_DIFF=1 go test -count=1 -v ./internal/api/subscriptions/difftest/`. Remove only `deferA11Locations` once the owning-artifact/source-location envelope matches. Annotated cases are the invalid-provider 400 branches of `TestProviderDeliveryGraphs`, `TestCombinedCrossFeedAndStaging` (bad-second and topology failures), and alternate-format/transport failures that carry provider preparation context. C30 continues comparing status, success, base validation message/field path and persisted state; only file/coordinate/excerpt diagnostics remain deferred after the Step B #7 fix. Provider ownership prefix and source labels now compare strictly through the default provider implementation; no early A11 wiring is added.
+
+### A11 implementation (go-port-a11, Codex)
+
+Scope: design A11-1–4 only; no A12–A14 routes/publication. Initially rebased on verified A19; next commit point rebases to `go` which now contains A19. No push; fresh Opus review required before `verified`.
+
+A11-1: typed immutable Bundle, lazy deterministic PAX/gzip packing, strict bounded structural archive reading, path/manifest validation, Python-compatible UTF-8 compact fingerprint and digests, comparison/retarget, Source/Target adapter, agents.Record/Result aliases, isolated agentfake capabilities/upload skeleton. Native archive bytes intentionally differ. Python corpus: 31 manifests + 17 paths + Python archive readback. Real Agent test uses its own extractDeployment/UnmarshalJSON against 15 server archives (three services, CJK/emoji, 4096 files, empty files, flags, resources).
+
+Python coverage: `test_agent_content_manifest.py`, `test_agent_content_baseline.py`, `test_deployment_bundle_lazy_archive.py` core/laziness/retarget halves → deploy/core_test.go + testdata/gen_a11_core.py; remaining baseline preparation/receipts → A11-3/4. No A11 routes; route-level diagnostics acceptance in A11-2, previews routes in A14.
+
+HR A11-1 checklist (each class):
+- R04 F1 unexpected/malformed replies: archive members/count/sizes/digests checked before use; no unchecked indexing. Fake checks target and headers.
+- R04 F2/F5 messages/check order: persisted fingerprint validation follows Python order; Chinese preparation context follows in A11-2.
+- R04 F3 cancellation/uncertain work: A11-1 pure in-memory; no state write or device activation.
+- R04 F4/F6 rollback/batch outcome: no device write/rollback; fake journal replay preserves prior content identity.
+- R04 F7 composite comparison: typed manifests with reflect.DeepEqual, byte equality for content; no interface comparability.
+- R04 F8 size bounds: per-file, aggregate, file-count, manifest and expanded archive limits checked before allocation/read.
+- R04 F9 absent proof: explicit file size required; missing/null metadata rejected; archive must match listed files.
+- R04 F10 shared helpers: yamlx/agents adapters reused; no Python codec copy or new dependency.
+- R05 C1 shared client: no shared transport change; fake handles Authorization and digest/target independently.
+- R05 C2 error typing: archive/path validation returns PreparationError; native gzip/tar errors wrap cause; no activation exists.
+- R05 C3 missing identity: no missing path/digest becomes a valid match; replay key checked nonempty.
+- R05 C4 reused identity/undo: no undo; fake same-ID/different-digest refuses.
+- R05 C5 indexed reads: archive scanned once; path and manifest maps indexed; deterministic sort once for writing.
+- R05 C6 refused/uncertain/cancellation: no publication yet; receiver journals only validated uploads.
+- A19 F1 shared/cyclic YAML: core handles typed acyclic manifests only; provider YAML validation belongs to A11-3.
+- A19 F2 wrappers/shapes: archive manifest decoded structurally; required config entry checked by real Agent.
+- A19 F3 whitespace/empty capture: no rule conversion yet; A11-2 conversion will preserve shared parser behavior.
+
+Commands/results A11-1:
+- `.63` Python generator → `A11 core: 31 manifests, 17 paths, Python PAX archive`.
+- `.63` go vet ./... → exit 0; go test -race deploy/agentfake → both ok; full `go test -p=4 -count=1 ./...` in progress at commit.
+- `.32` Agent conformance command from design 6.3 → `ok agent/routes 0.707s`.
+- `.32` `rt -- server/scripts/proddiff.sh` → self_check PASS, coverage_regressions 0, new 0, stale 0; bundle generator still missing until A11-3.
+
+Next: A11-2 locations/materialization + C30 strict diagnostics; A11-3 Build/resources/proddiff generator; A11-4 receipts/previews/validation; final .32 acceptance and rebase.
 
 ## A12 — push diff
 
