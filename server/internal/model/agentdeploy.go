@@ -214,6 +214,7 @@ type IPv6Verification struct {
 	ClientFingerprint   *string                 `json:"client_fingerprint"`
 	Message             *string                 `json:"message"`
 	CheckedAt           *string                 `json:"checked_at"`
+	ErrorCode           *string                 `json:"error_code"`
 	Fields              Fields
 	raw                 Raw
 }
@@ -271,6 +272,7 @@ type DeploymentManifest struct {
 	ConfigPath      string           `json:"config_path"`
 	Files           []DeploymentFile `json:"files"`
 	ReloadOnly      *bool            `json:"reload_only"`
+	FinalConfig     *bool            `json:"final_config"`
 	Fields          Fields
 	raw             Raw
 }

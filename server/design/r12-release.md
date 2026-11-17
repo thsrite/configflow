@@ -408,6 +408,8 @@ valid ownership proof. N8-5/R12 writer migration must explicitly carry untouched
 remains null under R2; no new write-intent API is introduced in N8-4. Before any device operation,
 R08/R09/R12 and other ownership consumers must validate the complete required proof and refuse missing
 or malformed evidence; never adopt by a marker name or treat fallback resources as verified emptiness.
+The N8-4e/f review settled the check: `model.IssueUnder(model.Issues(router), "<manifest member>")` true →
+refuse the stage (malformed proof), independent of whether the decoded pointer is nil or its `resources` empty.
 
 **Clarified in R07 (coordinator, 2026-11-17):** R07 submits the minimal shared definitions in
 `internal/routers/plan_model.go`: `Op`, `OpHead`, `Stage` (field names, exports and JSON tags exactly as §2.2),

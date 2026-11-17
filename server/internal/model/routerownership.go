@@ -61,15 +61,16 @@ func (r *DNSGuardState) UnmarshalJSON(data []byte) error { return DecodeRecord(d
 // MarshalJSON preserves unknown and unchanged DNSGuardState members.
 func (r DNSGuardState) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
-// DNSGuardSpec is the published LAN DNS interception specification.
+// DNSGuardSpec is the published LAN DNS interception specification. Exempt is a
+// pointer because older specs lack it and readers then derive it from Bypass.
 type DNSGuardSpec struct {
-	Agent     string   `json:"agent"`
-	Interface string   `json:"interface"`
-	Network   string   `json:"network"`
-	Bypass    []string `json:"bypass"`
-	BlockDoT  *bool    `json:"block_dot"`
-	Failover  *bool    `json:"failover"`
-	Exempt    []string `json:"exempt"`
+	Agent     string    `json:"agent"`
+	Interface string    `json:"interface"`
+	Network   string    `json:"network"`
+	Bypass    []string  `json:"bypass"`
+	BlockDoT  *bool     `json:"block_dot"`
+	Failover  *bool     `json:"failover"`
+	Exempt    *[]string `json:"exempt"`
 	Fields    Fields
 	raw       Raw
 }
