@@ -675,7 +675,7 @@ Routes: none.
 
 Notes for porter: IPv6 address/prefix math against Python `ipaddress` (corpus: ULA, link-local, mapped, zone ids, `strict=False`, prefix lifetimes — RouterOS 7.25.1 lifetime fingerprint fix 4191cf70), manifests `ipv6_fakeip_state`/`ipv6_routes_state`, `relevant`/`settings`/`inspect`/`needs_host`.
 
-实现提交 `67fcf4b1b`、`1632c3598`；基于 `go@28e6e0c12`，已 rebase 本地 go。
+实现提交 `55a022ad4`、`99c4b1cc3`；已 rebase 到 `go@f90a156eb`（O3-6a），已 rebase 本地 go。
 共享 evaluator 原位扩展为按表返回完整 evidence / NAT translation；R09 继续只取 Decision。
 IPv6 Fake-IP / rule-set typed inspect/apply/restore/verify、manifest/BuildReport/driver handler 已接线。
 不新增 HTTP route/loop/锁/依赖；R11 复用下一跳/环境转换，R12/R14 负责发布 orchestration。

@@ -2,8 +2,8 @@
 
 ## 范围与状态
 
-分支 `go-port-r10`，基底本地 `go@28e6e0c12`。实现提交 `67fcf4b1b`、`1632c3598`，
-已 `git rebase go`（当时无需移动）。状态 **ported，待独立 Opus HR 复核**。
+分支 `go-port-r10`，基底本地 `go@f90a156eb`（O3-6a 已合入）。实现提交 `55a022ad4`、`99c4b1cc3`、
+`165cb81fd`、`96e8b4326`；已无冲突 `git rebase go`。状态 **ported，待独立 Opus HR 复核**。
 只访问测试服务器上的 loopback fake；没有访问生产、真实路由器、DNS、PVE，没有 push/子 agent。
 
 完整移植 `backend/routers/ipv6_policy.py`、`ipv6_fakeip.py`、`ipv6_routes.py` 的模块功能，
@@ -38,7 +38,8 @@ readiness 读表服务仍属于各自模块；这里只提供实际可调用的�
   调用旧 routers.Router 时 raw Extra 会完整保留错误类型的 manifest 并拒绝；
   R12 从 model.Router 转入时仍必须按 N8-4f 检查 `model.Issues` 对应 ownership 字段，不能丢掉 R5 诊断。
 - R10 无新锁；继续每次发布独占一份 driver，由 R12/R14 持有 L1/L2；O3-6b 负责 JobLock 接线。
-  没有改 repo hooks 或另建锁系统。当前本地 go 尚无 O3-6a 新提交。
+  没有改 repo hooks 或另建锁系统。O3-6a 合入后 R10 四个新写 owner 使用 ctxx.Detach；无文件/持久叶资源，
+  不新增叶锁。共享 R08/R09 owner 保持现有转发，O3-6b 继续负责 router JobLock。
 
 ## 安全与行为修正
 
@@ -195,3 +196,20 @@ ipv6_settings_test.go 86、repo/r10_ipv6_safety_test.go 155；Python 三个合�
 不只修复已成功发布后 Restore 的记录。`.64` 定向全 R10 + R09 evaluator `8.142s`，vet clean。
 原完整 gate 已在 race/proddiff 阶段停止并确认其私有进程树退出；该轮不算 PASS。
 最终 gate 将在此修正提交后重新前台运行，沿用槽位限制。
+
+
+## O3-6a 合并树跟进
+
+协调者通知后已 rebase `go@f90a156eb`，无冲突；读完 `o3-6-locks.md`。
+四个 R10 写 owner 改用 `ctxx.Detach`，保持真实 Runtime 的 BindRequest/shutdown 取消父级；
+请求断开与提交前 ctx.Err 规则不变，无本地原子批处理/文件存储，不能用 Uninterruptible 屏蔽设备 I/O。
+没有为 router 提前接 JobLock 或新建叶锁。
+
+仓库测试允许修改连接的场景都显式装入非阻塞合成 JobLock hook，模拟 caller 已持有锁的契约，
+没有依赖未接线的默认成功。另增 `TestR10MissingJobLockRefusesProtectedTransactions`，
+两个 IPv6 manifest 的普通凭据更新，在无 hook 时必须 ErrInUse（409 对应消息）且 DB 指纹不变。
+原 84 个 repo 子场景加这两组为 86。生产在 O3-6b 前普通事务修改已有 router 的连接/manifest
+仍会 fail-closed，本模块没有放宽；R12/R15 接线时必须保留这条限制。
+
+旧基底 gate 在 race/proddiff 阶段因协调者通知暂停，并确认专属进程树退出；无完整 PASS 声明。
+最终门禁只以后续 O3-6a 合并树的执行结果为准。

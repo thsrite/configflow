@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"configflow/internal/devhttp"
-	"configflow/internal/lifecycle"
+	"configflow/internal/ctxx"
 )
 
 func ipv6ValidSpec(spec *IPv6RouteSpec) bool {
@@ -156,7 +156,7 @@ func ipv6MergeRollback(cause, rollback, remap error) error {
 // ApplyIPv6FakeIP executes one immutable preview. Browser disconnects cannot
 // abandon it; Runtime shutdown cancellation is checked at every write boundary.
 func (d *RouterOS) ApplyIPv6FakeIP(ctx context.Context, op IPv6FakeIPReplace) (*IPv6FakeIPUndo, error) {
-	ctx = lifecycle.Detach(ctx)
+	ctx = ctxx.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -274,7 +274,7 @@ func (d *RouterOS) ApplyIPv6FakeIP(ctx context.Context, op IPv6FakeIPReplace) (*
 
 // RestoreIPv6FakeIP reverses a completed transaction and refreshes trusted IDs.
 func (d *RouterOS) RestoreIPv6FakeIP(ctx context.Context, op IPv6FakeIPUndo) error {
-	ctx = lifecycle.Detach(ctx)
+	ctx = ctxx.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -360,7 +360,7 @@ func (d *RouterOS) writeIPv6Routes(ctx context.Context, raw []json.RawMessage, p
 // ApplyIPv6Routes adds before removing, guarding complete manifests even on the
 // console batching path. It never rebuilds ownership by searching for comments.
 func (d *RouterOS) ApplyIPv6Routes(ctx context.Context, op IPv6RoutesReplace) (*IPv6RoutesUndo, error) {
-	ctx = lifecycle.Detach(ctx)
+	ctx = ctxx.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -503,7 +503,7 @@ func (d *RouterOS) ApplyIPv6Routes(ctx context.Context, op IPv6RoutesReplace) (*
 
 // RestoreIPv6Routes reverses a completed rule-set delta, including partial remaps.
 func (d *RouterOS) RestoreIPv6Routes(ctx context.Context, op IPv6RoutesUndo) error {
-	ctx = lifecycle.Detach(ctx)
+	ctx = ctxx.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return err
 	}

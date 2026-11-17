@@ -153,3 +153,22 @@ func TestR10IPv6ConnectionRepairCloneAndDeleteGuards(t *testing.T) {
 		}
 	}
 }
+
+func TestR10MissingJobLockRefusesProtectedTransactions(t *testing.T) {
+	for _, field := range []string{"ipv6_fakeip_state", "ipv6_routes_state"} {
+		t.Run(field, func(t *testing.T) {
+			r, l := r10Repository(t)
+			r10Persist(t, r, l, field)
+			saved := rsRouter(t, r)
+			replacement := saved.DeepCopy()
+			replacement.Set("username", "replacement-api")
+			previous := SetHooks(Hooks{})
+			t.Cleanup(func() { SetHooks(previous) })
+			before := must(r.Store().Fingerprint())(t)
+			wantError(t, rsReplaceRouters(t, r, "fields", jsonx.Obj("items", []any{replacement})), ErrInUse, "路由器正在发布或同步")
+			if got := must(r.Store().Fingerprint())(t); got != before {
+				t.Fatal("missing JobLock did not fail closed")
+			}
+		})
+	}
+}
