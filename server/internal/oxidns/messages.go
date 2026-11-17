@@ -21,4 +21,5 @@ const (
 	messageDNSStaleUpstream         = "所选上游已不在 OxiDNS 上游设置中，请刷新后重选"
 	messageDNSUnchanged             = "OxiDNS 分流含自定义结构，DNS 未修改：%s"
 	messageDNSInvalidResult         = "写入后 OxiDNS 配置校验失败：%s"
+	messageDNSUpstreamKeyChanged    = "上游标识已更新，请刷新后重新选择；已有完整配置请在编辑器按当前上游重新生成分流"
 )

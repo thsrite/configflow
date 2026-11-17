@@ -28,7 +28,18 @@ func TestC27ReviewHelperOwnership(t *testing.T) {
 	}
 }
 
-func c27ReviewReferences(t *testing.T) []ruleDNSReference {
+type c27ReviewReference struct {
+	ruleDNSReference
+	D2 *struct {
+		Stage     string          `json:"stage"`
+		Source    string          `json:"source"`
+		LegacyKey string          `json:"legacy_key"`
+		NativeKey string          `json:"native_key"`
+		Delivered json.RawMessage `json:"delivered"`
+	} `json:"d2"`
+}
+
+func c27ReviewReferences(t *testing.T) []c27ReviewReference {
 	t.Helper()
 	file, err := os.Open(testdataDir + "review_c27.jsonl.gz")
 	if err != nil {
@@ -41,9 +52,9 @@ func c27ReviewReferences(t *testing.T) []ruleDNSReference {
 	}
 	defer reader.Close()
 	decoder := json.NewDecoder(reader)
-	var rows []ruleDNSReference
+	var rows []c27ReviewReference
 	for {
-		var reference ruleDNSReference
+		var reference c27ReviewReference
 		if err := decoder.Decode(&reference); err == io.EOF {
 			break
 		} else if err != nil {
@@ -59,11 +70,20 @@ func c27ReviewReferences(t *testing.T) []ruleDNSReference {
 
 func TestC27ReviewPublicBoundaries(t *testing.T) {
 	rows := c27ReviewReferences(t)
-	generated := 0
+	generated, d2 := 0, 0
 	for _, reference := range rows {
 		t.Run(reference.Fn+"/"+reference.Test, func(t *testing.T) {
 			args := reference.args(t)
+			original := make([][]byte, len(args))
+			for i, arg := range args {
+				original[i] = ToJSON(arg)
+			}
 			got, err := callRuleDNSReference(t, reference.Fn, args)
+			if reference.D2 != nil {
+				d2++
+				c27AssertD2(t, reference, args, original, got, err)
+				return
+			}
 			if difference := compare(reference.row, got, err); difference != "" {
 				t.Fatal(difference)
 			}
@@ -93,5 +113,101 @@ func TestC27ReviewPublicBoundaries(t *testing.T) {
 			}
 		})
 	}
-	t.Logf("%d new references; %d final generated documents", len(rows), generated)
+	if len(rows) != 505 || d2 != 36 || generated != 314 {
+		t.Fatalf("unexpected D2 scope: %d/%d, generated %d", d2, len(rows), generated)
+	}
+	t.Logf("%d strict references; %d final generated documents; %d explicit D2 outcomes", len(rows)-d2, generated, d2)
+}
+
+func c27AssertD2(t *testing.T, reference c27ReviewReference, args []*Node, original [][]byte, got *Node, err error) {
+	t.Helper()
+	d2 := reference.D2
+	if d2.NativeKey == d2.LegacyKey || d2.Source == "" {
+		t.Fatal("missing explicit D2 identity change")
+	}
+	for i, arg := range args {
+		if !bytes.Equal(original[i], ToJSON(arg)) {
+			t.Fatalf("D2 operation changed input %d", i)
+		}
+	}
+	switch d2.Stage {
+	case "catalog", "read":
+		if err != nil {
+			t.Fatal(err)
+		}
+		want, err := FromJSON(reference.Out)
+		if err != nil {
+			t.Fatal(err)
+		}
+		candidates := want
+		if d2.Stage == "read" {
+			candidates = get(want, "upstreams")
+			set(get(want, "engine"), "editable", B(false))
+			set(get(want, "engine"), "reason", S(messageDNSUpstreamKeyChanged))
+			// The expired helper has no trustworthy source. Do not report the
+			// heuristic's remote/fallback guess as an actual route.
+			del(get(want, "rules"), "a")
+		}
+		replaced := 0
+		for _, candidate := range items(candidates) {
+			if isOneOf(get(candidate, "key"), d2.LegacyKey) {
+				set(candidate, "key", S(d2.NativeKey))
+				replaced++
+			}
+		}
+		if replaced != 1 {
+			t.Fatalf("expected exactly one changed EntryKey, got %d", replaced)
+		}
+		if difference := firstDifference(got, want, "D2"); difference != "" {
+			t.Fatal(difference)
+		}
+		if d2.Stage == "read" {
+			text, err := Generate(profileOf(args[0]), "https://panel.example.com")
+			if err != nil {
+				t.Fatal(err)
+			}
+			document, err := LoadNativeYAML(text, NativeLabel)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want, err := FromJSON(d2.Delivered)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if difference := firstDifference(document, want, "unchanged legacy delivery"); difference != "" {
+				t.Fatal(difference)
+			}
+		}
+	case "select":
+		var setting *SettingsError
+		if !errors.As(err, &setting) || setting.Msg != messageDNSStaleUpstream {
+			t.Fatalf("old choice must fail as stale (400), got %v", err)
+		}
+	case "rebuild":
+		var locked *RoutingLockedError
+		if !errors.As(err, &locked) || !errors.Is(err, ErrRoutingLocked) || locked.Reason != messageDNSUpstreamKeyChanged {
+			t.Fatalf("expired native graph must fail as a lock (409), got %v", err)
+		}
+		if len(locked.Usages) != 1 || locked.Usages[0].Reason != messageDNSUpstreamKeyChanged {
+			t.Fatal("lock lost its user-facing reason")
+		}
+		assignments := []DNSAssignment{{"b", "refused"}}
+		result, err := ApplyRuleDNS(profileOf(args[0]), profileOf(args[1]), assignments, RuleDNSApplyOptions{Lenient: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !same(result.Settings, get(args[1], "oxidns")) || result.Changed {
+			t.Fatal("lenient D2 handling changed the old settings/YAML/source")
+		}
+		if len(result.Warnings) != 1 || result.Warnings[0] != "OxiDNS 分流含自定义结构，DNS 未修改："+messageDNSUpstreamKeyChanged {
+			t.Fatal("lenient D2 handling lost the recovery warning")
+		}
+	default:
+		t.Fatalf("unknown D2 assertion %q", d2.Stage)
+	}
+	for i, arg := range args {
+		if !bytes.Equal(original[i], ToJSON(arg)) {
+			t.Fatalf("D2 recovery check changed input %d", i)
+		}
+	}
 }

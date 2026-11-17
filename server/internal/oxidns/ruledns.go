@@ -303,6 +303,12 @@ func pinnedSource(key string, entry *Node, sources []string, plugins map[string]
 			return item
 		}
 	}
+	// Native JSON identities intentionally differ at the switch (design D2).
+	// A legacy JS-separator escape can lose the original source's hash. Do
+	// not infer a different source from a shape remote and fallback share.
+	if hasJSONSeparator(entry) {
+		return ""
+	}
 	if len(sources) == 1 {
 		return sources[0]
 	}
@@ -324,6 +330,21 @@ func pinnedSource(key string, entry *Node, sources []string, plugins map[string]
 		return ""
 	}
 	return sources[0]
+}
+
+func hasJSONSeparator(n *Node) bool {
+	if n == nil {
+		return false
+	}
+	if isStr(n) && strings.ContainsAny(n.Value, "\u2028\u2029") {
+		return true
+	}
+	for _, child := range n.Content {
+		if hasJSONSeparator(child) {
+			return true
+		}
+	}
+	return false
 }
 
 // parseExec is the route of one sequence_main rule-group exec ("" when it
@@ -358,6 +379,9 @@ func parseExec(value *Node, part string, plugins map[string]*Node) string {
 		}
 		source := pinnedSource(rest, entry, sources, plugins)
 		if source == "" {
+			if hasJSONSeparator(entry) {
+				return invalidRoute(messageDNSUpstreamKeyChanged)
+			}
 			return invalidRoute(chainReason(UpstreamPrefix + rest))
 		}
 		return "upstream:" + EntryKey(entry, source)
@@ -466,17 +490,10 @@ func followRoute(item *Node, routes map[string]string) string {
 	return "proxy"
 }
 
-func behaviorOf(item *Node) string {
-	if b := get(item, "behavior"); has(item, "behavior") {
-		return str(b) + map[bool]string{true: "", false: "\x00"}[isStr(b)]
-	}
-	return "domain"
-}
-
 // convertible: the rule can take part in DNS routing.
 func convertible(item *Node) bool {
-	if equal(get(item, "itemType"), S("ruleset")) {
-		return behaviorOf(item) != "ipcidr"
+	if isOneOf(get(item, "itemType"), "ruleset") {
+		return !isOneOf(get(item, "behavior"), "ipcidr")
 	}
 	return isOneOf(get(item, "rule_type"), "DOMAIN-SUFFIX", "DOMAIN", "DOMAIN-KEYWORD", "DOMAIN-REGEX")
 }
@@ -484,10 +501,10 @@ func convertible(item *Node) bool {
 // hasIPPart: the source has IP entries; a classical set only when its known
 // content has IP lines (p nil keeps the old assumption).
 func hasIPPart(item *Node, p *Profile) bool {
-	if equal(get(item, "itemType"), S("ruleset")) {
-		behavior := behaviorOf(item)
-		if behavior != "classical" || p == nil {
-			return behavior == "ipcidr" || behavior == "classical"
+	if isOneOf(get(item, "itemType"), "ruleset") {
+		behavior := get(item, "behavior")
+		if !isOneOf(behavior, "classical") || p == nil {
+			return isOneOf(behavior, "ipcidr", "classical")
 		}
 		return !p.classicalWithoutIP(item)
 	}

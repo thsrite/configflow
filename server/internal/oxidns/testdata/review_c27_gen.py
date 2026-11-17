@@ -47,6 +47,7 @@ def record(name, fn, args, call):
             row['usages'] = error.usages
     row['args_after'] = args
     ROWS.append(row)
+    return row
 
 
 def profile():
@@ -94,7 +95,7 @@ def write(name, before, assignments=None, mutate=None, strict=True):
     after = deepcopy(before)
     if mutate:
         mutate(after)
-    record(name, 'apply_rule_dns_boundary', [before, after, assignments or {}, strict], boundary)
+    return record(name, 'apply_rule_dns_boundary', [before, after, assignments or {}, strict], boundary)
 
 
 sys.settrace(trace)
@@ -225,6 +226,35 @@ for source in ('local', 'remote', 'fallback'):
         record(f'catalog/{source}/{kind}', 'upstream_catalog', [
             {'config_mode': 'native', '_common_disabled': {'forward_' + source: plugin}}, document,
             [{'upstream_tag': 'forward_' + source, 'upstream_index': 5}]], upstream_catalog)
+
+# Entry keys are persisted in native helper tags and sent back as choices.
+# A valid free-form upstream tag must survive JSON/YAML scalar escaping.
+for separator in ('\u2028', '\u2029', r'\u2028'):
+    for source in ('local', 'remote', 'fallback'):
+        entry = {'addr': 'udp://192.0.2.53', 'tag': 'slot' + separator + 'one'}
+        p = profile()
+        p['oxidns'][source + '_dns'] = yaml.safe_dump([entry], allow_unicode=True, sort_keys=False)
+        native_keys = {
+            '\u2028': {'local': '6a83730ec5ea', 'remote': 'b4bb15462234', 'fallback': '776c9ede99e2'},
+            '\u2029': {'local': '39ad037190b5', 'remote': '8ced42555070', 'fallback': 'c62eb1bd8dbb'},
+        }
+        def mark(row, stage):
+            if separator in native_keys:
+                row['d2'] = {'stage': stage, 'source': source, 'legacy_key': entry_key(entry, source),
+                             'native_key': native_keys[separator][source]}
+                if stage == 'read':
+                    row['d2']['delivered'] = yaml.safe_load(generate_oxidns_config(row['args'][0], BASE))
+        for mode in ('template', 'native'):
+            before = native(p) if mode == 'native' else p
+            mark(record(f'persisted-key/catalog/{separator!r}/{source}/{mode}', 'upstream_catalog',
+                        [before['oxidns'], None, []], upstream_catalog), 'catalog')
+            mark(write(f'persisted-key/select/{separator!r}/{source}/{mode}', before,
+                       {'a': 'upstream:' + entry_key(entry, source)}), 'select')
+        pinned = deepcopy(p)
+        pinned['oxidns']['rule_actions'] = {'a': {'action': 'upstream', 'source': source, 'upstream': entry}}
+        pinned = native(pinned)
+        mark(record(f'persisted-key/read-existing/{separator!r}/{source}', 'rule_dns_state', [pinned], rule_dns_state), 'read')
+        mark(write(f'persisted-key/rebuild-existing/{separator!r}/{source}', pinned, {'b': 'refused'}), 'rebuild')
 
 for length in (2, 63, 64, 65):
     p = profile()
