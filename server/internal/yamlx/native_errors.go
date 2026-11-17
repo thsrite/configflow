@@ -20,6 +20,13 @@ var (
 	ErrUnsafeEdit = errors.New("yamlx: edit cannot keep the rest of the text")
 )
 
+// multipleDocumentsError is the Chinese diagnostic for ErrMultipleDocuments.
+type multipleDocumentsError struct{ line int }
+
+func (e *multipleDocumentsError) Error() string { return fmt.Sprintf(msgMultipleDocuments, e.line) }
+
+func (e *multipleDocumentsError) Unwrap() error { return ErrMultipleDocuments }
+
 type decodeTypeError struct{ cause error }
 
 func (e *decodeTypeError) Error() string { return fmt.Sprintf(msgTypeMismatch, e.cause) }

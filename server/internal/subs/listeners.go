@@ -72,7 +72,8 @@ func RelinkGroupListeners(profile *jsonx.Object, oldName string, newName *string
 		if doc.Kind != yaml.MappingNode || doc.ShortTag() != "!!map" {
 			return lre(msgListenerBaseObject)
 		}
-		listeners := yamlx.Resolve(yamlx.Get(doc, "listeners"))
+		listenersItem := yamlx.Get(doc, "listeners")
+		listeners := yamlx.Resolve(listenersItem)
 		if listeners == nil || listeners.Kind == yaml.ScalarNode && listeners.ShortTag() == "!!null" {
 			return nil
 		}
@@ -102,19 +103,32 @@ func RelinkGroupListeners(profile *jsonx.Object, oldName string, newName *string
 		if len(indexes) == 0 {
 			return nil
 		}
-		// Ordinary unshared nodes keep their positions for a splice. Shared/merged
-		// listeners are cloned so aliases elsewhere retain the original values.
-		if !explicitListeners(doc) || sharedListenerNodes(listeners) {
-			listeners = yamlx.Clone(listeners)
+		// Ordinary unshared nodes keep their positions for a splice. With
+		// aliases or anchors, only containers reachable from elsewhere are
+		// copied (one level, children stay shared and unexpanded, like Python's
+		// deepcopy), so other consumers keep the original values and alias
+		// chains are never expanded (review N7-2 F1).
+		shared := !explicitListeners(doc) || sharedListenerNodes(listeners)
+		detached := !explicitListeners(doc) || listenersItem != listeners || listeners.Anchor != ""
+		if detached {
+			listeners = detachListenerNode(listenersItem)
 			yamlx.Set(doc, "listeners", listeners)
 		}
 		for _, i := range indexes {
-			listener := yamlx.Resolve(listeners.Content[i])
-			if newName == nil {
+			item := listeners.Content[i]
+			listener := yamlx.Resolve(item)
+			// Items of a copied sequence are still the original's items.
+			if detached || item != listener || listener.Anchor != "" {
+				listener = detachListenerNode(item)
+				listeners.Content[i] = listener
+			}
+			switch {
+			case newName == nil:
 				yamlx.Delete(listener, "proxy")
-			} else {
-				target := yamlx.Resolve(yamlx.Get(listener, "proxy"))
-				target.Value = *newName
+			case shared:
+				yamlx.Set(listener, "proxy", renamedListenerTarget(listener, *newName))
+			default:
+				yamlx.Resolve(yamlx.Get(listener, "proxy")).Value = *newName
 			}
 			changed = append(changed, fmt.Sprintf("listeners[%d].proxy", i))
 		}
@@ -148,6 +162,48 @@ func explicitListeners(doc *yamlx.Node) bool {
 		}
 	}
 	return false
+}
+
+// detachListenerNode copies a container that an alias or anchor makes
+// reachable from elsewhere. An alias keeps its own comments at this position.
+func detachListenerNode(item *yamlx.Node) *yamlx.Node {
+	n := yamlx.Resolve(item)
+	c := *n
+	c.Anchor = ""
+	c.Content = append([]*yamlx.Node(nil), n.Content...)
+	if item != n {
+		c.HeadComment, c.LineComment, c.FootComment = item.HeadComment, item.LineComment, item.FootComment
+		if c.Style&yaml.FlowStyle == 0 {
+			// yaml.v3 does not write a block collection's line comment.
+			c.HeadComment, c.LineComment = joinComments(c.HeadComment, c.LineComment), ""
+		}
+	}
+	return &c
+}
+
+func joinComments(a, b string) string {
+	if a == "" || b == "" {
+		return a + b
+	}
+	return a + "\n" + b
+}
+
+// renamedListenerTarget is a new proxy value for a listener whose nodes may be
+// shared. An explicit value keeps its comments; an inherited one is overridden.
+func renamedListenerTarget(listener *yamlx.Node, name string) *yamlx.Node {
+	for i := 0; i+1 < len(listener.Content); i += 2 {
+		key := listener.Content[i]
+		if key.Kind == yaml.ScalarNode && key.ShortTag() == "!!str" && key.Value == "proxy" {
+			item := listener.Content[i+1]
+			value := *yamlx.Resolve(item)
+			value.Anchor, value.Value = "", name
+			if item.Kind == yaml.AliasNode {
+				value.HeadComment, value.LineComment, value.FootComment = item.HeadComment, item.LineComment, item.FootComment
+			}
+			return &value
+		}
+	}
+	return yamlx.Str(name)
 }
 
 func sharedListenerNodes(n *yamlx.Node) bool {

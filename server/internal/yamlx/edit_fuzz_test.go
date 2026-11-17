@@ -77,6 +77,9 @@ func FuzzEditDeletePair(f *testing.F) {
 		"remove:\n  list: [one, two] # note\nkeep: same\n",
 		"remove: &shared {key: old}\nkeep: *shared # note\n",
 		"remove: |\n  # string content\n  text\nkeep: same # note\n",
+		"remove:\n- x # note\n- y\nkeep: same\n",
+		"x: &x [a, a] # note\nremove: &b [*x, *x]\nkeep: *b # consumer\n",
+		"base: &b {a: 1}\nremove: 1 # note\nkeep:\n  <<: *b\n",
 	} {
 		f.Add([]byte(source), uint(0))
 	}

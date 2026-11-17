@@ -53,6 +53,8 @@ func TestPublicRelinkTransactionalHTTPBoundary(t *testing.T) {
 	quoted := "new # : \"quoted\""
 	on := "on"
 	same := "Pinned"
+	aliasChain := "pad: [" + strings.Repeat("0, ", 3000) + "0]\nx: &x [" + strings.Repeat("a, ", 50) + "a]\nu: &u [" +
+		strings.Repeat("*x, ", 30) + "*x]\nlisteners:\n- name: in\n  proxy: Pinned\n  users: *u\n"
 	base := "# header\nfuture: {keep: false}\nlisteners:\n- name: first # name\n  proxy: Pinned # fixed\n  rule: local\n- {name: second, proxy: DIRECT}\n"
 	cases := []editCase{
 		{Name: "rename", Source: base, New: &renamed},
@@ -65,6 +67,9 @@ func TestPublicRelinkTransactionalHTTPBoundary(t *testing.T) {
 		{Name: "shared listener sequence", Source: "listeners: &all [{name: first, proxy: Pinned}]\nother: *all\n", New: &renamed},
 		{Name: "merge", Source: "shared: &base {name: first, proxy: Pinned}\nlisteners:\n- <<: *base\n  port: 17890\n", New: &renamed},
 		{Name: "rollback after edit", Source: base, New: &renamed, FailAfter: true},
+		{Name: "alias chain in listener (review N7-2 F1)", Source: aliasChain, New: &renamed},
+		{Name: "alias chain in unpinned listener (review N7-2 F1)", Source: aliasChain},
+		{Name: "merged listener comments (review N7-2 F4)", Source: "# top\nshared: &base {name: first, proxy: Pinned} # base\nlisteners:\n- <<: *base # merge\n  port: 17890\n"},
 		{Name: "parse diagnostic", Source: "listeners: [", Difference: "parse-diagnostic"},
 		{Name: "listeners wrong type", Source: "listeners: {proxy: Pinned}\n"},
 		{Name: "listener wrong type", Source: "listeners: [false]\n"},

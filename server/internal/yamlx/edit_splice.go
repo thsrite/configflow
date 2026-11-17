@@ -270,13 +270,15 @@ func (p *editSplicer) removePair(parent, key, value *Node) bool {
 	}
 	last := key.Line
 	indent := len(prefix)
+	// A block sequence value may start its entries at the key's indentation.
+	indentless := value.Kind == yaml.SequenceNode && value.Style&yaml.FlowStyle == 0 && value.Line > key.Line && value.Column-1 == indent
 	for last < len(p.lines) {
 		line := p.lines[last]
 		text := p.source[line.start:line.end]
 		trimmed := bytes.TrimSpace(text)
 		if len(trimmed) != 0 && trimmed[0] != '#' {
 			width := len(text) - len(bytes.TrimLeft(text, " \t"))
-			if width <= indent {
+			if width < indent || width == indent && !(indentless && editSequenceEntry(trimmed)) {
 				break
 			}
 		}
@@ -299,6 +301,11 @@ func (p *editSplicer) removePair(parent, key, value *Node) bool {
 		p.patches = append(p.patches, textPatch{line.start, line.next, keep, true})
 	}
 	return true
+}
+
+// editSequenceEntry reports whether a trimmed line starts a block sequence entry.
+func editSequenceEntry(trimmed []byte) bool {
+	return len(trimmed) > 0 && trimmed[0] == '-' && (len(trimmed) == 1 || trimmed[1] == ' ' || trimmed[1] == '\t')
 }
 
 // A flow collection can close at the enclosing map's indentation. Only splice

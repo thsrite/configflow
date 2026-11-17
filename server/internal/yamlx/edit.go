@@ -38,12 +38,13 @@ func Edit(src []byte, edit func(doc *Node) error) ([]byte, error) {
 	if out, ok := spliceEdit(src, doc, before); ok {
 		// The planner proves original comment bytes survive. yaml.v3 may no
 		// longer attach orphan notes to a Node, so verify only meaning here.
-		if err := verifyEdit(out, doc, nil); err != nil {
-			return src, err
+		// A layout the planner did not foresee falls back to the verified
+		// whole-document path (D3) instead of refusing a valid edit.
+		if err := verifyEdit(out, doc, nil); err == nil {
+			return out, nil
 		}
-		return out, nil
 	}
-	return rewriteEdit(src, doc, before.comments)
+	return rewriteEdit(src, doc, before)
 }
 
 type editSnapshot struct {
@@ -138,11 +139,16 @@ func keepEditComments(doc *Node, comments []string) {
 	}
 }
 
-func rewriteEdit(src []byte, doc *Node, comments []string) ([]byte, error) {
+func rewriteEdit(src []byte, doc *Node, before editSnapshot) ([]byte, error) {
+	comments := before.comments
 	if err := validateNode(doc); err != nil {
 		return src, fmt.Errorf("%w: validate edited document: %w", ErrUnsafeEdit, err)
 	}
+	// Verification compares with the document the caller produced, not with
+	// the tree after the preparation steps below rearranged it.
+	want := copyGraph(doc, map[*Node]*Node{})
 	materializeEditAliases(doc)
+	placeRemovedComments(doc, before)
 	keepEditComments(doc, comments)
 	out, err := Marshal(doc)
 	if err != nil {
@@ -152,7 +158,7 @@ func rewriteEdit(src []byte, doc *Node, comments []string) ([]byte, error) {
 	// LineComment, a position its emitter does not write. Check the emitted
 	// tree and relocate only missing notes before the final verification.
 	parsed, err := Parse(out)
-	if err != nil || !Equal(parsed, doc) {
+	if err != nil || !Equal(parsed, want) {
 		if err != nil {
 			return src, fmt.Errorf("%w: parse edited document: %w", ErrUnsafeEdit, err)
 		}
@@ -168,7 +174,7 @@ func rewriteEdit(src []byte, doc *Node, comments []string) ([]byte, error) {
 	if bytes.Contains(src, []byte("\r\n")) && !bytes.ContainsAny(bytes.ReplaceAll(src, []byte("\r\n"), nil), "\r\n") {
 		out = bytes.ReplaceAll(out, []byte("\n"), []byte("\r\n"))
 	}
-	if err := verifyEdit(out, doc, comments); err != nil {
+	if err := verifyEdit(out, want, comments); err != nil {
 		return src, err
 	}
 	return out, nil
@@ -188,24 +194,30 @@ func verifyEdit(out []byte, want *Node, comments []string) error {
 	return nil
 }
 
-// A removed/replaced anchor definition may still have alias consumers. Preserve
-// their original value before the emitter sees an undefined or forward alias.
+// A removed or moved anchor definition may still have alias consumers. The
+// first consumer that the emitter reaches becomes the definition (keeping the
+// anchor), so later consumers stay aliases. Nothing is expanded: an expansion
+// could exceed the alias budget and grow the document (review N7-2 F1).
 func materializeEditAliases(doc *Node) {
 	emitted := map[*Node]bool{}
 	var walk func(*Node)
 	walk = func(n *Node) {
-		if n == nil {
+		if n == nil || emitted[n] {
 			return
 		}
-		if n.Kind == yaml.AliasNode && !emitted[n.Alias] {
-			copy := Clone(n)
-			copy.HeadComment = joinComment(n.HeadComment, copy.HeadComment)
-			copy.LineComment = joinComment(n.LineComment, copy.LineComment)
-			copy.FootComment = joinComment(n.FootComment, copy.FootComment)
-			*n = *copy
-		}
-		if emitted[n] {
-			return
+		if n.Kind == yaml.AliasNode && n.Alias != nil && !emitted[n.Alias] {
+			target := n.Alias
+			definition := *target
+			definition.HeadComment = joinComment(n.HeadComment, target.HeadComment)
+			definition.LineComment = joinComment(n.LineComment, target.LineComment)
+			definition.FootComment = joinComment(n.FootComment, target.FootComment)
+			if definition.Kind != yaml.ScalarNode && definition.Style&yaml.FlowStyle == 0 {
+				// yaml.v3 does not write a block collection's line comment.
+				definition.HeadComment = joinComment(definition.HeadComment, definition.LineComment)
+				definition.LineComment = ""
+			}
+			*n = definition
+			emitted[target] = true
 		}
 		emitted[n] = true
 		for _, child := range n.Content {
@@ -213,6 +225,54 @@ func materializeEditAliases(doc *Node) {
 		}
 	}
 	walk(doc)
+}
+
+// placeRemovedComments keeps the notes of removed pairs next to the mapping
+// they left: before a sequence item (where the Python editor put them), or
+// before the following key of any other mapping. Without a following key they
+// become the mapping's own head comment.
+func placeRemovedComments(doc *Node, before editSnapshot) {
+	live := map[*Node]bool{}
+	walkEditNodes(doc, func(n *Node) { live[n] = true })
+	seen := map[*Node]bool{}
+	var walk func(n *Node, item bool)
+	walk = func(n *Node, item bool) {
+		if n == nil || seen[n] {
+			return
+		}
+		seen[n] = true
+		if old, ok := before.nodes[n]; ok && n.Kind == yaml.MappingNode && old.Kind == yaml.MappingNode {
+			var notes []string
+			var next *Node
+			for i := 0; i+1 < len(old.Content); i += 2 {
+				if live[old.Content[i]] {
+					if len(notes) > 0 && next == nil {
+						next = old.Content[i]
+					}
+					continue
+				}
+				for _, root := range old.Content[i : i+2] {
+					walkEditNodes(root, func(r *Node) {
+						if !live[r] {
+							notes = append(notes, nodeCommentLines(r)...)
+						}
+					})
+				}
+			}
+			if text := strings.Join(notes, "\n"); text != "" {
+				switch {
+				case next != nil && !item:
+					next.HeadComment = joinComment(text, next.HeadComment)
+				default:
+					n.HeadComment = joinComment(n.HeadComment, text)
+				}
+			}
+		}
+		for _, child := range n.Content {
+			walk(child, n.Kind == yaml.SequenceNode)
+		}
+	}
+	walk(doc, false)
 }
 
 func missingEditComments(doc *Node, comments []string) []string {

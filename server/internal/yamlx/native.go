@@ -29,7 +29,7 @@ func Parse(src []byte) (*Node, error) {
 		if err != nil {
 			return nil, syntaxError(err)
 		}
-		return nil, ErrMultipleDocuments
+		return nil, &multipleDocumentsError{line: extra.Line}
 	}
 	n := &doc
 	if n.Kind == yaml.DocumentNode {
@@ -204,6 +204,11 @@ func prepareStrings(n *Node, seen map[*Node]bool) {
 				key.LineComment = ""
 			}
 		}
+	}
+	// yaml.v3's resolver does not know `<<`, so its encoder spells an implicit
+	// merge key as `!!merge <<`. A plain `<<` reads back as the same merge key.
+	if n.Kind == yaml.ScalarNode && n.Style == 0 && n.Value == "<<" && n.ShortTag() == "!!merge" {
+		n.Tag = ""
 	}
 	protectString(n)
 	// The Node encoder bypasses yaml.v3's string encoder's YAML 1.1 quoting.
