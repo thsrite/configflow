@@ -563,7 +563,7 @@ Clarified in: [design/c06-http-settings.md](../design/c06-http-settings.md). HEA
 
 ## C07 — logs, stats, tasks, notifications, web listener
 
-**Status: `ported` — independent review pending; final gate result in progress** · prereqs: C06 · Go: internal/api/logs, api/stats, api/tasks, api/notifications, tasks, notifications, weblistener
+**Status: `ported` — independent review pending; final gate queued out (exit75, no stage ran)** · prereqs: C06 · Go: internal/api/logs, api/stats, api/tasks, api/notifications, tasks, notifications, weblistener
 
 Scope: backend/routes/{logs,stats,tasks,notifications}.py, backend/notifications.py,
 backend/utils/{notification_store,web_listener}.py. All nine routes now done,
@@ -573,7 +573,7 @@ routes. Missing real slots explicitly return 503; no empty production rows.
 Commits: 2ffecdce7 tasks readiness/owned interval/stored WebDAV runner/History;
 304ab927c notification context commits/partial observation retention/HEAD;
 a17c70899 logs/stats owners and stats HEAD; 464ff88ea native listener lifetime and
-portable socket/HTTP regression matrix. Acceptance/mapping commit follows.
+portable socket/HTTP regression matrix. Acceptance/mapping: 3fc75dc80; follow-up CFG-07: 006c806ad, malformed-history: cb3acb9cf, interval display-order: f62cc6ce0. Final foreground gate did not acquire a slot before the15-minute window (exit75); hand back targeted passes per coordinator. Full integration gate remains due.
 
 Clarified in C07 (2026-11-18): [design and external owners](../design/c07-status.md),
 [full source-test mapping](progress/c07-mapping.md), [commands/results](progress/c07.md).
