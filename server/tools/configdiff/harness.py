@@ -147,7 +147,7 @@ class Pair:
                    ADMIN_USERNAME=self.admin_username, ADMIN_PASSWORD=self.admin_password,
                    SUB_STORE_BUILTIN_DIR=str(self.root / 'missing-sub-store'),
                    SUB_STORE_URL='http://127.0.0.1:9', CONFIGFLOW_NODE_PROBE_BIN=str(self.root / 'missing-probe'),
-                   CONFIGDIFF_ROUTES=str(self.root / 'go-routes.tsv'), PYTHONDONTWRITEBYTECODE='1',
+                   PRODDIFF_ROUTES=str(self.root / 'go-routes.tsv'), PYTHONDONTWRITEBYTECODE='1',
                    PYTHONPATH=str(ROOT))
         env.update(CONFIGFLOW_NODE_TEST_URL='http://probe-target.example/generate_204')
         if self.options.get('probe_case'):
@@ -267,7 +267,9 @@ class Pair:
                 os.killpg(process.pid, signal.SIGTERM)
         for process in self.processes:
             try:
-                process.wait(timeout=8)
+                # The public Go command drains for up to eight seconds. Leave
+                # its final flush/exit two seconds before the fixture kills it.
+                process.wait(timeout=10)
             except subprocess.TimeoutExpired:
                 os.killpg(process.pid, signal.SIGKILL)
                 process.wait()

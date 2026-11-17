@@ -1,6 +1,6 @@
 # Config 领域公开 HTTP 差异测试
 
-依据 `server/parity/difftest-config.md`（含 O6）。只启动真正的 Python/Go 公开服务，不导入 Go 业务包，不从 Go 实现推导期望。`build.py` 只读取公开 `cmd/configflow/main.go`，临时 overlay 导出实际 method/template；后台生命周期保留生产行为。
+依据 `server/parity/difftest-config.md`（含 O6）。只启动真正的 Python/Go 公开服务，不导入 Go 业务包，不从 Go 实现推导期望。`build.py` 使用公开命令已有的 `configflow_proddiff` build tag 和 `PRODDIFF_ROUTES` 导出实际 method/template；后台生命周期保留生产行为，不再依赖 main.go 文本 overlay。
 
 在测试服务器运行，Python 依赖沿用 `~/cf-test/.venv`：
 

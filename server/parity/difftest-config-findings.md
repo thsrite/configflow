@@ -10,115 +10,115 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 
 | 用例 / 变体 | 路由 | 状态 | 修复提交 / 接受依据 | 最后复验Go基线 | Python / Go HTTP |
 |---|---|---|---|---|---|
-| G13 / expired/all/mihomo/sub-a | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
-| G13 / expired/all/mihomo/sub-b | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
-| G13 / expired/filtered/mihomo/sub-a | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
-| G13 / expired/filtered/mihomo/sub-b | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
-| G13 / fresh/all/mihomo/sub-a | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
-| G13 / fresh/all/mihomo/sub-b | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
-| G13 / fresh/filtered/mihomo/sub-a | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
-| G13 / fresh/filtered/mihomo/sub-b | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
-| G13 / interval-zero/all/mihomo/sub-a | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
-| G13 / interval-zero/all/mihomo/sub-b | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
-| G13 / interval-zero/filtered/mihomo/sub-a | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
-| G13 / interval-zero/filtered/mihomo/sub-b | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
-| G13 / same-name-different-definition/merged | `GET /api/subscriptions/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
-| G13 / same-name-identical/merged | `GET /api/subscriptions/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
-| H123 / original-and-mirror-both-fail-through-loopback-proxy | `GET /api/mosdns/rule-proxy` | open | — | 7521bb5c | 502 / 502 |
-| R016-B02 /  | `POST /api/backup/now` | open | — | aeff9d75 | 200 / 200 |
-| R016-B03 /  | `POST /api/backup/now` | open | — | aeff9d75 | 200 / 200 |
-| R016-B90 /  | `POST /api/backup/now` | open | — | aeff9d75 | 200 / 200 |
-| R016-F15 /  | `POST /api/backup/now` | open | — | aeff9d75 | 500 / 500 |
-| R016-F16 /  | `POST /api/backup/now` | open | — | aeff9d75 | 200 / 200 |
-| R016-S01 /  | `POST /api/backup/now` | open | — | aeff9d75 | 200 / 200 |
-| R016-S02 /  | `POST /api/backup/now` | open | — | aeff9d75 | 200 / 200 |
-| R016-S03 /  | `POST /api/backup/now` | open | — | aeff9d75 | 200 / 200 |
-| R017-F18 /  | `POST /api/backup/test` | open | — | aeff9d75 | 400 / 400 |
-| R017-F19 /  | `POST /api/backup/test` | open | — | aeff9d75 | 500 / 500 |
-| R055-B01 / disabled/domain/example.com | `POST /api/domain-discovery/region/route` | closed | 041ab5a6 | aeff9d75 | 200 / 200 |
-| R055-S02 / new/domain/example.com | `POST /api/domain-discovery/region/route` | closed | 041ab5a6 | aeff9d75 | 200 / 200 |
-| R056-B01 / name-collision/0 | `POST /api/domain-discovery/rulesets/init` | closed | 041ab5a6 | aeff9d75 | 200 / 200 |
-| R056-B02 / before-MATCH/0 | `POST /api/domain-discovery/rulesets/init` | closed | 041ab5a6 | aeff9d75 | 200 / 200 |
-| R056-S01 / direct/0 | `POST /api/domain-discovery/rulesets/init` | closed | 041ab5a6 | aeff9d75 | 200 / 200 |
-| R056-S01 / duplicate-targets/0 | `POST /api/domain-discovery/rulesets/init` | open | — | aeff9d75 | 200 / 200 |
-| R056-S02 / proxy/0 | `POST /api/domain-discovery/rulesets/init` | closed | 041ab5a6 | aeff9d75 | 200 / 200 |
-| R056-S03 / both/0 | `POST /api/domain-discovery/rulesets/init` | closed | 041ab5a6 | aeff9d75 | 200 / 200 |
-| R056-S03 / empty-means-both/0 | `POST /api/domain-discovery/rulesets/init` | closed | 041ab5a6 | aeff9d75 | 200 / 200 |
-| R056-S04 / repeat/0 | `POST /api/domain-discovery/rulesets/init` | closed | 041ab5a6 | aeff9d75 | 200 / 200 |
-| R056-S04 / repeat/1 | `POST /api/domain-discovery/rulesets/init` | closed | 041ab5a6 | aeff9d75 | 200 / 200 |
-| R058-B03 / stored-legacy-extension | `PUT /api/domain-discovery/settings` | accepted | [behaviour-changes.md · R058-B03](behaviour-changes.md#config-step-b--coordinator-decisions) | aeff9d75 | 200 / 200 |
-| R075-F08 / real-stat-EACCES-with-database-still-readable | `GET /api/logs/info` | open | — | 7521bb5c | 500 / 200 |
-| R087-B04 / text/B04 | `GET /api/mosdns/rule-proxy` | closed | 8f3d36ad | 7521bb5c | 422 / 422 |
-| R087-B91 / absolute-query-dispatches-internal-content-endpoint | `GET /api/mosdns/rule-proxy` | open | — | aeff9d75 | 200 / 502 |
-| R087-F13 / text/F13 | `GET /api/mosdns/rule-proxy` | closed | 8f3d36ad | 7521bb5c | 422 / 422 |
-| R087-F16 / receipt-path-is-directory | `GET /api/mosdns/rule-proxy` | open | — | aeff9d75 | 500 / 400 |
-| R087-S90 / declared-no-cache-download-failure | `GET /api/mosdns/rule-proxy` | closed | 8f3d36ad | aeff9d75 | 502 / 502 |
-| R087-S91 /  | `GET /api/mosdns/rule-proxy` | open | — | aeff9d75 | 200 / 200 |
-| R090-F10 / SQLite-trigger-rejects-real-editor-commit | `POST /api/mosdns/settings` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | 7521bb5c | 500 / 500 |
-| R138-B04 / text/B04 | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | closed | 8f3d36ad | 7521bb5c | 422 / 422 |
-| R138-B91 / absolute-query-dispatches-internal-content-endpoint | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | open | — | aeff9d75 | 200 / 502 |
-| R138-F13 / text/F13 | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | closed | 8f3d36ad | 7521bb5c | 422 / 422 |
-| R138-F16 / receipt-path-is-directory | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | open | — | aeff9d75 | 500 / 400 |
-| R138-S90 / declared-no-cache-download-failure | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | closed | 8f3d36ad | aeff9d75 | 502 / 502 |
-| R138-S91 /  | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | open | — | aeff9d75 | 200 / 200 |
-| R154-B03 / ?format=unknown | `GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
-| R154-B04 / URL-over-query-header | `GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
-| R154-B90 / Asia/Shanghai | `GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
-| R154-B90 / UTC | `GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
-| R154-B91 / HEAD/first-download | `GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
-| R154-F01 / open/provider-D1 | `GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
-| R154-F02 / open/provider-D2 | `GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
-| R154-F03 / open/provider-D3 | `GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
-| R154-F06 / open/provider-D6 | `GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
-| R154-F07 / open/provider-D7 | `GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
-| R154-F08 / open/named-provider-authorization-guard | `GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
-| R154-S01 / GET/first-download | `GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
-| R154-S01 / default | `GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
-| R154-S01 / login/authorized-provider | `GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
-| R154-S01 / open/authorized-provider | `GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
-| R154-S01 / token/authorized-provider | `GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
-| R154-S06 /  | `GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
-| R217-S02 /  | `PUT /api/subscriptions/<sub_id>` | closed | e9187b9f | aeff9d75 | 200 / 200 |
-| R218-F09 /  | `POST /api/subscriptions/<sub_id>/fetch` | closed | 8f3d36ad | aeff9d75 | 500 / 500 |
-| R218-F10 /  | `POST /api/subscriptions/<sub_id>/fetch` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | aeff9d75 | 400 / 400 |
-| R218-F11 /  | `POST /api/subscriptions/<sub_id>/fetch` | accepted | [behaviour-changes.md · Step B #1](behaviour-changes.md#config-step-b--coordinator-decisions) | aeff9d75 | 500 / 400 |
-| R218-F12 /  | `POST /api/subscriptions/<sub_id>/fetch` | closed | 0313e086, 8f3d36ad | aeff9d75 | 500 / 500 |
-| R218-F13 /  | `POST /api/subscriptions/<sub_id>/fetch` | closed | 0313e086, 3ab22d36 | aeff9d75 | 500 / 500 |
-| R218-S03 /  | `POST /api/subscriptions/<sub_id>/fetch` | closed | 8f3d36ad | aeff9d75 | 200 / 200 |
-| R220-B03 / ?format=unknown | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
-| R220-B90 / Asia/Shanghai | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
-| R220-B90 / UTC | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
-| R220-B91 / HEAD/first-download | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
-| R220-F01 / open/provider-D1 | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
-| R220-F02 / open/provider-D2 | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
-| R220-F03 / open/provider-D3 | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
-| R220-F06 / open/provider-D6 | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
-| R220-F07 / open/provider-D7 | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
-| R220-F08 / open/named-provider-authorization-guard | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
-| R220-S01 / GET/first-download | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
-| R220-S01 / default | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
-| R220-S01 / login/authorized-provider | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
-| R220-S01 / open/authorized-provider | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
-| R220-S01 / token/authorized-provider | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
-| R220-S06 /  | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
-| R222-B02 / none | `GET /api/subscriptions/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
-| R222-B90 / Asia/Shanghai | `GET /api/subscriptions/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
-| R222-B90 / UTC | `GET /api/subscriptions/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
-| R222-F11 / invalid-source-no-fallback | `GET /api/subscriptions/proxies` | open | — | aeff9d75 | 400 / 400 |
-| R222-S01 / different-definitions-no-chain | `GET /api/subscriptions/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
-| R222-S01 / identical-crossfeed | `GET /api/subscriptions/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
-| R222-S01 / two | `GET /api/subscriptions/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
-| R222-S02 / disabled | `GET /api/subscriptions/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
-| R222-S03 / http403-cache-fallback | `GET /api/subscriptions/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
-| R222-S04 / none | `GET /api/subscriptions/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
-| R228-F01 /  | `GET /api/version` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | 7521bb5c | 405 / 405 |
-| T06 / 12-second-last-good-and-background-finish | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
-| T06 / 20-clients-one-flight | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | aeff9d75 | [200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200] / [200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200] |
-| T06 / next-poll-is-fresh | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
-| T27 / real-tick/due-and-backoff | `startup` | closed | 8f3d36ad | aeff9d75 | None / None |
-| X04 / new_domain/literal/"\ud800" | `POST /api/server-domain` | accepted | [behaviour-changes.md · Step B #2](behaviour-changes.md#config-step-b--coordinator-decisions) | aeff9d75 | 500 / 400 |
-| X04 / token/literal/"\ud800" | `POST /api/config-token` | accepted | [behaviour-changes.md · Step B #2](behaviour-changes.md#config-step-b--coordinator-decisions) | aeff9d75 | 500 / 400 |
-| X08 / retired-node-test-dns-migration | `startup` | separate | — | aeff9d75 | None / None |
+| G13 / expired/all/mihomo/sub-a | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
+| G13 / expired/all/mihomo/sub-b | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
+| G13 / expired/filtered/mihomo/sub-a | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
+| G13 / expired/filtered/mihomo/sub-b | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
+| G13 / fresh/all/mihomo/sub-a | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
+| G13 / fresh/all/mihomo/sub-b | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
+| G13 / fresh/filtered/mihomo/sub-a | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
+| G13 / fresh/filtered/mihomo/sub-b | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
+| G13 / interval-zero/all/mihomo/sub-a | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
+| G13 / interval-zero/all/mihomo/sub-b | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
+| G13 / interval-zero/filtered/mihomo/sub-a | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
+| G13 / interval-zero/filtered/mihomo/sub-b | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
+| G13 / same-name-different-definition/merged | `GET /api/subscriptions/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
+| G13 / same-name-identical/merged | `GET /api/subscriptions/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
+| H123 / original-and-mirror-both-fail-through-loopback-proxy | `GET /api/mosdns/rule-proxy` | open | — | 3c8a1760 | 502 / 502 |
+| R016-B02 /  | `POST /api/backup/now` | open | — | 3c8a1760 | 200 / 200 |
+| R016-B03 /  | `POST /api/backup/now` | open | — | 3c8a1760 | 200 / 200 |
+| R016-B90 /  | `POST /api/backup/now` | open | — | 3c8a1760 | 200 / 200 |
+| R016-F15 /  | `POST /api/backup/now` | open | — | 3c8a1760 | 500 / 500 |
+| R016-F16 /  | `POST /api/backup/now` | open | — | 3c8a1760 | 200 / 200 |
+| R016-S01 /  | `POST /api/backup/now` | open | — | 3c8a1760 | 200 / 200 |
+| R016-S02 /  | `POST /api/backup/now` | open | — | 3c8a1760 | 200 / 200 |
+| R016-S03 /  | `POST /api/backup/now` | open | — | 3c8a1760 | 200 / 200 |
+| R017-F18 /  | `POST /api/backup/test` | open | — | 3c8a1760 | 400 / 400 |
+| R017-F19 /  | `POST /api/backup/test` | open | — | 3c8a1760 | 500 / 500 |
+| R055-B01 / disabled/domain/example.com | `POST /api/domain-discovery/region/route` | closed | 041ab5a6 | 3c8a1760 | 200 / 200 |
+| R055-S02 / new/domain/example.com | `POST /api/domain-discovery/region/route` | closed | 041ab5a6 | 3c8a1760 | 200 / 200 |
+| R056-B01 / name-collision/0 | `POST /api/domain-discovery/rulesets/init` | closed | 041ab5a6 | 3c8a1760 | 200 / 200 |
+| R056-B02 / before-MATCH/0 | `POST /api/domain-discovery/rulesets/init` | closed | 041ab5a6 | 3c8a1760 | 200 / 200 |
+| R056-S01 / direct/0 | `POST /api/domain-discovery/rulesets/init` | closed | 041ab5a6 | 3c8a1760 | 200 / 200 |
+| R056-S01 / duplicate-targets/0 | `POST /api/domain-discovery/rulesets/init` | open | — | 3c8a1760 | 200 / 200 |
+| R056-S02 / proxy/0 | `POST /api/domain-discovery/rulesets/init` | closed | 041ab5a6 | 3c8a1760 | 200 / 200 |
+| R056-S03 / both/0 | `POST /api/domain-discovery/rulesets/init` | closed | 041ab5a6 | 3c8a1760 | 200 / 200 |
+| R056-S03 / empty-means-both/0 | `POST /api/domain-discovery/rulesets/init` | closed | 041ab5a6 | 3c8a1760 | 200 / 200 |
+| R056-S04 / repeat/0 | `POST /api/domain-discovery/rulesets/init` | closed | 041ab5a6 | 3c8a1760 | 200 / 200 |
+| R056-S04 / repeat/1 | `POST /api/domain-discovery/rulesets/init` | closed | 041ab5a6 | 3c8a1760 | 200 / 200 |
+| R058-B03 / stored-legacy-extension | `PUT /api/domain-discovery/settings` | accepted | [behaviour-changes.md · R058-B03](behaviour-changes.md#config-step-b--coordinator-decisions) | 3c8a1760 | 200 / 200 |
+| R075-F08 / real-stat-EACCES-with-database-still-readable | `GET /api/logs/info` | open | — | 3c8a1760 | 500 / 200 |
+| R087-B04 / text/B04 | `GET /api/mosdns/rule-proxy` | closed | 8f3d36ad | 3c8a1760 | 422 / 422 |
+| R087-B91 / absolute-query-dispatches-internal-content-endpoint | `GET /api/mosdns/rule-proxy` | open | — | 3c8a1760 | 200 / 502 |
+| R087-F13 / text/F13 | `GET /api/mosdns/rule-proxy` | closed | 8f3d36ad | 3c8a1760 | 422 / 422 |
+| R087-F16 / receipt-path-is-directory | `GET /api/mosdns/rule-proxy` | open | — | 3c8a1760 | 500 / 400 |
+| R087-S90 / declared-no-cache-download-failure | `GET /api/mosdns/rule-proxy` | closed | 8f3d36ad | 3c8a1760 | 502 / 502 |
+| R087-S91 /  | `GET /api/mosdns/rule-proxy` | open | — | 3c8a1760 | 200 / 200 |
+| R090-F10 / SQLite-trigger-rejects-real-editor-commit | `POST /api/mosdns/settings` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | 3c8a1760 | 500 / 500 |
+| R138-B04 / text/B04 | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | closed | 8f3d36ad | 3c8a1760 | 422 / 422 |
+| R138-B91 / absolute-query-dispatches-internal-content-endpoint | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | open | — | 3c8a1760 | 200 / 502 |
+| R138-F13 / text/F13 | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | closed | 8f3d36ad | 3c8a1760 | 422 / 422 |
+| R138-F16 / receipt-path-is-directory | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | open | — | 3c8a1760 | 500 / 400 |
+| R138-S90 / declared-no-cache-download-failure | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | closed | 8f3d36ad | 3c8a1760 | 502 / 502 |
+| R138-S91 /  | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | open | — | 3c8a1760 | 200 / 200 |
+| R154-B03 / ?format=unknown | `GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
+| R154-B04 / URL-over-query-header | `GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
+| R154-B90 / Asia/Shanghai | `GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
+| R154-B90 / UTC | `GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
+| R154-B91 / HEAD/first-download | `GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
+| R154-F01 / open/provider-D1 | `GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
+| R154-F02 / open/provider-D2 | `GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
+| R154-F03 / open/provider-D3 | `GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
+| R154-F06 / open/provider-D6 | `GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
+| R154-F07 / open/provider-D7 | `GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
+| R154-F08 / open/named-provider-authorization-guard | `GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
+| R154-S01 / GET/first-download | `GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
+| R154-S01 / default | `GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
+| R154-S01 / login/authorized-provider | `GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
+| R154-S01 / open/authorized-provider | `GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
+| R154-S01 / token/authorized-provider | `GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
+| R154-S06 /  | `GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
+| R217-S02 /  | `PUT /api/subscriptions/<sub_id>` | closed | e9187b9f | 3c8a1760 | 200 / 200 |
+| R218-F09 /  | `POST /api/subscriptions/<sub_id>/fetch` | closed | 8f3d36ad | 3c8a1760 | 500 / 500 |
+| R218-F10 /  | `POST /api/subscriptions/<sub_id>/fetch` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | 3c8a1760 | 400 / 400 |
+| R218-F11 /  | `POST /api/subscriptions/<sub_id>/fetch` | accepted | [behaviour-changes.md · Step B #1](behaviour-changes.md#config-step-b--coordinator-decisions) | 3c8a1760 | 500 / 400 |
+| R218-F12 /  | `POST /api/subscriptions/<sub_id>/fetch` | closed | 0313e086, 8f3d36ad | 3c8a1760 | 500 / 500 |
+| R218-F13 /  | `POST /api/subscriptions/<sub_id>/fetch` | closed | 0313e086, 3ab22d36 | 3c8a1760 | 500 / 500 |
+| R218-S03 /  | `POST /api/subscriptions/<sub_id>/fetch` | closed | 8f3d36ad | 3c8a1760 | 200 / 200 |
+| R220-B03 / ?format=unknown | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
+| R220-B90 / Asia/Shanghai | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
+| R220-B90 / UTC | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
+| R220-B91 / HEAD/first-download | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
+| R220-F01 / open/provider-D1 | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
+| R220-F02 / open/provider-D2 | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
+| R220-F03 / open/provider-D3 | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
+| R220-F06 / open/provider-D6 | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
+| R220-F07 / open/provider-D7 | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
+| R220-F08 / open/named-provider-authorization-guard | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
+| R220-S01 / GET/first-download | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
+| R220-S01 / default | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
+| R220-S01 / login/authorized-provider | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
+| R220-S01 / open/authorized-provider | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
+| R220-S01 / token/authorized-provider | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
+| R220-S06 /  | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
+| R222-B02 / none | `GET /api/subscriptions/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
+| R222-B90 / Asia/Shanghai | `GET /api/subscriptions/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
+| R222-B90 / UTC | `GET /api/subscriptions/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
+| R222-F11 / invalid-source-no-fallback | `GET /api/subscriptions/proxies` | open | — | 3c8a1760 | 400 / 400 |
+| R222-S01 / different-definitions-no-chain | `GET /api/subscriptions/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
+| R222-S01 / identical-crossfeed | `GET /api/subscriptions/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
+| R222-S01 / two | `GET /api/subscriptions/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
+| R222-S02 / disabled | `GET /api/subscriptions/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
+| R222-S03 / http403-cache-fallback | `GET /api/subscriptions/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
+| R222-S04 / none | `GET /api/subscriptions/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
+| R228-F01 /  | `GET /api/version` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | 3c8a1760 | 405 / 405 |
+| T06 / 12-second-last-good-and-background-finish | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
+| T06 / 20-clients-one-flight | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 3c8a1760 | [200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200] / [200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200] |
+| T06 / next-poll-is-fresh | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 3c8a1760 | 200 / 200 |
+| T27 / real-tick/due-and-backoff | `startup` | open | — | 3c8a1760 | None / None |
+| X04 / new_domain/literal/"\ud800" | `POST /api/server-domain` | accepted | [behaviour-changes.md · Step B #2](behaviour-changes.md#config-step-b--coordinator-decisions) | 3c8a1760 | 500 / 400 |
+| X04 / token/literal/"\ud800" | `POST /api/config-token` | accepted | [behaviour-changes.md · Step B #2](behaviour-changes.md#config-step-b--coordinator-decisions) | 3c8a1760 | 500 / 400 |
+| X08 / retired-node-test-dns-migration | `startup` | separate | — | 3c8a1760 | None / None |
 
 ## R075-F08 / real-stat-EACCES-with-database-still-readable
 
@@ -129,9 +129,9 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | `log.stat-permission.assigned_path` | value | True | False |
 | `log.stat-permission.permission_error` | value | True | False |
 | `status` | value | 500 | 200 |
-| `body.error` | missing-in-go | "[Errno 13] Permission denied: '/tmp/configdiff-41i0wm5i/denied-log/synthetic.log'" | None |
+| `body.error` | missing-in-go | "[Errno 13] Permission denied: '/tmp/configdiff-0xezpncv/denied-log/synthetic.log'" | None |
 | `body.exists` | extra-in-go | None | False |
-| `body.path` | extra-in-go | None | '/tmp/configdiff-41i0wm5i/denied-log/synthetic.log' |
+| `body.path` | extra-in-go | None | '/tmp/configdiff-0xezpncv/denied-log/synthetic.log' |
 | `body.success` | value | False | True |
 
 ## H123 / original-and-mirror-both-fail-through-loopback-proxy
@@ -314,7 +314,7 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 
 | 路径 | 类型 | Python | Go |
 |---|---|---|---|
-| `files.shared/rules/by-id/4041f17d5c0fdd2b085350804ce17233c8aaee66326b570e4c54146b778a3c67.list.bak` | extra-in-go | None | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} |
+| `files.shared/rules/by-id/f2bfa147c0fa9588ed3c7d11436b52daf0ad90be493fd1145a022cb3f7724326.list.bak` | extra-in-go | None | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} |
 
 ## R090-F10 / SQLite-trigger-rejects-real-editor-commit
 
@@ -361,6 +361,62 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 |---|---|---|---|
 | `db.fields.profile/default/domain_discovery.value.synthetic_legacy_extension` | extra-in-go | None | {'flag': False, 'values': []} |
 
+## T27 / real-tick/due-and-backoff
+
+路由：`startup`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `scheduler.requests./cache-url-mismatch` | missing-in-go | [{'method': 'GET', 'path': '/cache-url-mismatch', 'authorization': '', 'user_agent': 'clash.meta'}] | None |
+| `scheduler.requests./due` | missing-in-go | [{'method': 'GET', 'path': '/due', 'authorization': '', 'user_agent': 'clash.meta'}] | None |
+| `scheduler.requests./retry-capped` | missing-in-go | [{'method': 'GET', 'path': '/retry-capped', 'authorization': '', 'user_agent': 'clash.meta'}] | None |
+| `scheduler.requests./retry-due` | missing-in-go | [{'method': 'GET', 'path': '/retry-due', 'authorization': '', 'user_agent': 'clash.meta'}] | None |
+| `files.notifications.json` | missing-in-go | {'mode': 384, 'content': {'items': {'task:subscription:backoff': {'source': 'task', 'title': '合成-backoff · 订阅更新', 'message': '任务未完成，请查看任务详情。', 'impact': '', 'status_label': '执行失败', 'severity': 'error', 'profile_id': None, 'scope': 'shared', 'profile_name': None, 'target': {'path': '/subscriptions', 'query': {'subscription': 'backoff', 'section': 'settings'}, 'label': '检查订阅设置'}, 'checked_at': '2026-11-17T10:12:07Z', 'failure_count': 3, 'id': 'task:subscription:backoff', 'state': 'pending', 'read': False, 'version': '2026-11-17T10:20:57.162597+00:00', 'first_seen_at': '2026-11-17T10:20:57.162597+00:00', 'last_seen_at': '2026-11-17T10:12:07Z', ' | None |
+| `files.shared/subscribes/cache-url-mismatch.json.content.metadata.fetched_at` | missing-in-go | '2026-11-17T10:20:57.186628+00:00' | None |
+| `files.shared/subscribes/cache-url-mismatch.json.content.metadata.subscription_name` | missing-in-go | '合成-cache-url-mismatch' | None |
+| `files.shared/subscribes/cache-url-mismatch.json.content.metadata.url` | value | 'http://127.0.0.1:35789/cache-url-mismatch' | 'http://other-source.example/feed' |
+| `files.shared/subscribes/cache-url-mismatch.json.content.nodes[0].id` | missing-in-go | 'node_29e69688' | None |
+| `files.shared/subscribes/cache-url-mismatch.json.content.nodes[0].name` | value | 'synthetic-node' | 'cached-node' |
+| `files.shared/subscribes/cache-url-mismatch.json.content.nodes[0].params` | missing-in-go | {} | None |
+| `files.shared/subscribes/cache-url-mismatch.json.content.nodes[0].server` | value | '192.0.2.1' | '192.0.2.2' |
+| `files.shared/subscribes/cache-url-mismatch.json.content.nodes[0].subscription_id` | missing-in-go | 'cache-url-mismatch' | None |
+| `files.shared/subscribes/cache-url-mismatch.json.content.nodes[0].subscription_name` | missing-in-go | '合成-cache-url-mismatch' | None |
+| `files.shared/subscribes/cache-url-mismatch.json.content.updated_at` | time-format | '2026-11-17T10:20:57.186628+00:00' | '2026-11-17T10:20:27Z' |
+| `files.shared/subscribes/cache-url-mismatch.json.mode` | value | 384 | 420 |
+| `files.shared/subscribes/cache-url-mismatch.json.bak` | missing-in-go | {'mode': 384, 'content': {'subscription_id': 'cache-url-mismatch', 'updated_at': '2026-11-17T10:20:27Z', 'count': 1, 'nodes': [{'name': 'cached-node', 'type': 'socks5', 'server': '192.0.2.2', 'port': 1080}], 'metadata': {'url': 'http://other-source.example/feed'}}} | None |
+| `files.shared/subscribes/due.json` | missing-in-go | {'mode': 384, 'content': {'subscription_id': 'due', 'updated_at': '2026-11-17T10:20:57.150523+00:00', 'count': 1, 'nodes': [{'name': 'synthetic-node', 'type': 'socks5', 'server': '192.0.2.1', 'port': 1080, 'params': {}, 'subscription_id': 'due', 'subscription_name': '合成-due', 'id': 'node_9ab3a74f'}], 'metadata': {'subscription_name': '合成-due', 'url': 'http://127.0.0.1:35789/due', 'fetched_at': '2026-11-17T10:20:57.150523+00:00'}}} | None |
+| `files.shared/subscribes/retry-capped.json` | missing-in-go | {'mode': 384, 'content': {'subscription_id': 'retry-capped', 'updated_at': '2026-11-17T10:20:57.171911+00:00', 'count': 1, 'nodes': [{'name': 'synthetic-node', 'type': 'socks5', 'server': '192.0.2.1', 'port': 1080, 'params': {}, 'subscription_id': 'retry-capped', 'subscription_name': '合成-retry-capped', 'id': 'node_d1e9b841'}], 'metadata': {'subscription_name': '合成-retry-capped', 'url': 'http://127.0.0.1:35789/retry-capped', 'fetched_at': '2026-11-17T10:20:57.171911+00:00'}}} | None |
+| `files.shared/subscribes/retry-due.json` | missing-in-go | {'mode': 384, 'content': {'subscription_id': 'retry-due', 'updated_at': '2026-11-17T10:20:57.166843+00:00', 'count': 1, 'nodes': [{'name': 'synthetic-node', 'type': 'socks5', 'server': '192.0.2.1', 'port': 1080, 'params': {}, 'subscription_id': 'retry-due', 'subscription_name': '合成-retry-due', 'id': 'node_fa000d26'}], 'metadata': {'subscription_name': '合成-retry-due', 'url': 'http://127.0.0.1:35789/retry-due', 'fetched_at': '2026-11-17T10:20:57.166843+00:00'}}} | None |
+| `files.shared/subscription-downloads/cd808723c39af3c69097010afda121912739272a15e0cf3618ea4915709f1d39.json` | missing-in-go | {'mode': 384, 'content': {'text': 'proxies:\n  - {name: synthetic-node, type: socks5, server: 192.0.2.1, port: 1080}\n', 'fetched_at': '2026-11-17T10:20:57.150523+00:00', 'traffic': None}} | None |
+| `files.shared/subscription-downloads/aca440d1b3b97ed81a3a75965a9f6c14a7445fa448f597256040af558ac0aa1c.json` | missing-in-go | {'mode': 384, 'content': {'text': 'proxies:\n  - {name: synthetic-node, type: socks5, server: 192.0.2.1, port: 1080}\n', 'fetched_at': '2026-11-17T10:20:57.186628+00:00', 'traffic': None}} | None |
+| `files.shared/subscription-downloads/67e1ac5b43e086a6436d937cf035d9d8122636fce26b98be573622c542afc4ae.json` | missing-in-go | {'mode': 384, 'content': {'text': 'proxies:\n  - {name: synthetic-node, type: socks5, server: 192.0.2.1, port: 1080}\n', 'fetched_at': '2026-11-17T10:20:57.171911+00:00', 'traffic': None}} | None |
+| `files.shared/subscription-downloads/e36ad2d5d3a2d8af014c6fec6627068a9dcbdb911ef5f92b2fa2f7cc1de6fbcf.json` | missing-in-go | {'mode': 384, 'content': {'text': 'proxies:\n  - {name: synthetic-node, type: socks5, server: 192.0.2.1, port: 1080}\n', 'fetched_at': '2026-11-17T10:20:57.166843+00:00', 'traffic': None}} | None |
+| `files.shared/subscription_health.json` | missing-in-go | {'mode': 384, 'content': {'due': {'history': [{'at': '2026-11-17T10:20:57.156219Z', 'status': 'ok', 'count': 1}]}, 'retry-due': {'history': [{'at': '2026-11-17T10:20:57.168848Z', 'status': 'ok', 'count': 1}]}, 'retry-capped': {'history': [{'at': '2026-11-17T10:20:57.177225Z', 'status': 'ok', 'count': 1}]}, 'cache-url-mismatch': {'history': [{'at': '2026-11-17T10:20:57.189853Z', 'status': 'ok', 'count': 1}]}}} | None |
+| `files.shared/subscription_health.json.bak` | missing-in-go | {'mode': 384, 'content': {'due': {'history': [{'at': '2026-11-17T10:20:57.156219Z', 'status': 'ok', 'count': 1}]}, 'retry-due': {'history': [{'at': '2026-11-17T10:20:57.168848Z', 'status': 'ok', 'count': 1}]}, 'retry-capped': {'history': [{'at': '2026-11-17T10:20:57.177225Z', 'status': 'ok', 'count': 1}]}}} | None |
+| `files.task-status.json.content.subscription:cache-url-mismatch` | missing-in-go | {'last_run_at': '2026-11-17T10:20:57Z', 'last_finished_at': '2026-11-17T10:20:57Z', 'last_status': 'success', 'last_duration_ms': 26, 'last_trigger': 'schedule', 'last_error': '', 'run_count': 1, 'last_success_at': '2026-11-17T10:20:57Z', 'consecutive_failures': 0, 'cache_updated_at': '2026-11-17T10:20:57.186628+00:00'} | None |
+| `files.task-status.json.content.subscription:due` | missing-in-go | {'last_run_at': '2026-11-17T10:20:57Z', 'last_finished_at': '2026-11-17T10:20:57Z', 'last_status': 'success', 'last_duration_ms': 10, 'last_trigger': 'schedule', 'last_error': '', 'run_count': 1, 'last_success_at': '2026-11-17T10:20:57Z', 'consecutive_failures': 0, 'cache_updated_at': '2026-11-17T10:20:57.150523+00:00'} | None |
+| `files.task-status.json.content.subscription:retry-capped.cache_updated_at` | missing-in-go | '2026-11-17T10:20:57.171911+00:00' | None |
+| `files.task-status.json.content.subscription:retry-capped.consecutive_failures` | value | 0 | 10 |
+| `files.task-status.json.content.subscription:retry-capped.last_duration_ms` | missing-in-go | 30 | None |
+| `files.task-status.json.content.subscription:retry-capped.last_error` | missing-in-go | '' | None |
+| `files.task-status.json.content.subscription:retry-capped.last_finished_at` | missing-in-go | '2026-11-17T10:20:57Z' | None |
+| `files.task-status.json.content.subscription:retry-capped.last_run_at` | invalid-time-window | '2026-11-17T10:20:57Z' | '2026-11-17T10:19:26Z' |
+| `files.task-status.json.content.subscription:retry-capped.last_status` | value | 'success' | 'failed' |
+| `files.task-status.json.content.subscription:retry-capped.last_success_at` | missing-in-go | '2026-11-17T10:20:57Z' | None |
+| `files.task-status.json.content.subscription:retry-capped.last_trigger` | missing-in-go | 'schedule' | None |
+| `files.task-status.json.content.subscription:retry-capped.run_count` | missing-in-go | 1 | None |
+| `files.task-status.json.content.subscription:retry-due.cache_updated_at` | missing-in-go | '2026-11-17T10:20:57.166843+00:00' | None |
+| `files.task-status.json.content.subscription:retry-due.consecutive_failures` | value | 0 | 3 |
+| `files.task-status.json.content.subscription:retry-due.last_duration_ms` | missing-in-go | 22 | None |
+| `files.task-status.json.content.subscription:retry-due.last_error` | missing-in-go | '' | None |
+| `files.task-status.json.content.subscription:retry-due.last_finished_at` | missing-in-go | '2026-11-17T10:20:57Z' | None |
+| `files.task-status.json.content.subscription:retry-due.last_run_at` | invalid-time-window | '2026-11-17T10:20:57Z' | '2026-11-17T09:58:47Z' |
+| `files.task-status.json.content.subscription:retry-due.last_status` | value | 'success' | 'failed' |
+| `files.task-status.json.content.subscription:retry-due.last_success_at` | missing-in-go | '2026-11-17T10:20:57Z' | None |
+| `files.task-status.json.content.subscription:retry-due.last_trigger` | missing-in-go | 'schedule' | None |
+| `files.task-status.json.content.subscription:retry-due.run_count` | missing-in-go | 1 | None |
+| `files.task-status.json.mode` | value | 384 | 420 |
+
 ## X08 / retired-node-test-dns-migration
 
 路由：`startup`；状态：O12-separate
@@ -379,7 +435,7 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | `db.fields.system//system_config.value.node_test_dns_config.servers` | length | 1 | 2 |
 | `db.fields.system//system_config.value.node_test_dns_config.servers[0]` | value | 'https://dns.example/dns-query' | '192.0.2.53:15353' |
 | `db.meta.generation` | value | 6 | 4 |
-| `files.notifications.json` | missing-in-go | {'mode': 384, 'content': {'items': {'notice:node-test-dns-managed-removed': {'source': 'notice', 'scope': 'system', 'severity': 'warning', 'status_label': '已自动调整', 'title': '节点测速 DNS 已自动调整', 'message': '节点测速的「OxiDNS 托管」模式已移除。测速 DNS 已改为自定义：https://dns.example/dns-query。原专用入口 192.0.2.53:15353 已从 OxiDNS 配置中去掉，「合成 Agent 🧪」上的监听在下一次发布 OxiDNS 后关闭。', 'impact': '', 'checked_at': '2026-11-17T06:36:36.485419+00:00', 'target': {'path': '/nodes', 'query': {}, 'label': '查看测速设置'}, 'id': 'notice:node-test-dns-managed-removed', 'state': 'pending', 'read': False, 'version': '2026-11-17T06:36:36.485487+00:00', 'first_seen_at': '2026-11-17T06:36:36.485487+00:00' | None |
+| `files.notifications.json` | missing-in-go | {'mode': 384, 'content': {'items': {'notice:node-test-dns-managed-removed': {'source': 'notice', 'scope': 'system', 'severity': 'warning', 'status_label': '已自动调整', 'title': '节点测速 DNS 已自动调整', 'message': '节点测速的「OxiDNS 托管」模式已移除。测速 DNS 已改为自定义：https://dns.example/dns-query。原专用入口 192.0.2.53:15353 已从 OxiDNS 配置中去掉，「合成 Agent 🧪」上的监听在下一次发布 OxiDNS 后关闭。', 'impact': '', 'checked_at': '2026-11-17T10:18:37.258696+00:00', 'target': {'path': '/nodes', 'query': {}, 'label': '查看测速设置'}, 'id': 'notice:node-test-dns-managed-removed', 'state': 'pending', 'read': False, 'version': '2026-11-17T10:18:37.258772+00:00', 'first_seen_at': '2026-11-17T10:18:37.258772+00:00' | None |
 
 ## S91 CONNECT 传输观察（待兼容性审查）
 

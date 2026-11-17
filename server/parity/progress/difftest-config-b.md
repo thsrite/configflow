@@ -1858,3 +1858,20 @@ current compared=9 design_errors=[]；exit=0
 ```
 
 原R仍差212、H仍差513及partial/N/A/长流程。继续node边界与剩余条目；最终.32全量未执行。
+
+## 批次 109：rebase新启动入口并复验全部历史findings
+
+- 已rebase到go `3c8a1760`。behaviour-changes追加冲突同时保留integration的N7/O3等决定和维护者的Go取代Nginx决定，未覆盖任何一方。公开cmd入口拆成service.go后，旧main.go文本overlay正确停在构建前；改用公开命令已有的`configflow_proddiff` tag / `PRODDIFF_ROUTES`清单入口，无需打开或改写任何业务文件。teardown给公开8秒drain另留2秒flush/exit时间，没有缩短或停用生产后台循环。
+- .32原30组、570变体重新执行，覆盖109项历史review；compared427、Go尚未实现114、严格different28（accepted7/open21）、O12单列1、design_errors=[]，342.20秒、exit1。全部review的checked_baseline确实为3c8a1760，没有给未执行条目改基线。
+- **T27 real-tick/due-and-backoff重新open**：Python四个到期源各实际GET一次，Go在真实40秒观察窗内零GET，缓存/任务/健康/通知未产生对应更新。单独再跑scheduler-tick + 已接通auth真实日志后仍复现49条严格diff；11compared/1open、design_errors=[]、46.50秒。未读Go业务定位或自行修改实现；按新基线保留完整合成证据。原closed81变为closed80，accepted7、open21、O12单列1；其他既有open仍保持open，已接受项仍精确指向批准条目。
+- 统一覆盖数未变：9444变体、原R4318（S691/F2675/B952）、H599/G16。构建前停止的首轮不算业务执行，修正公开入口后重新完整跑了所有30组。
+
+```text
+.32 native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups <全部30个finding所属组，见/tmp/configdiff-findings-rebased.log> --baseline 3c8a1760
+current compared=427 go-unimplemented=114 different=28 accepted=7 open=21 O12-separate=1 design_errors=[] seconds=342.20；exit=1
+.32 native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups scheduler-tick,auth-warning-and-real-tail --baseline 3c8a1760
+current compared=11 different=1 open=1 design_errors=[] seconds=46.50；exit=1
+比较器篡改自检 + deliberately wrong-Go-response detection OK
+```
+
+.63不可达继续按brief回退.32。余下node边界和OxiDNS helper草稿继续，最终.32完整all仍未执行。
