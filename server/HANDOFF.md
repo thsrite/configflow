@@ -61,45 +61,38 @@ started them. Re-route them by sending every running agent below a one-line `mcp
 `notifyOnFinish: true` ("协调会话已更换，任务不变，继续做，完成后照常报告。"). Then poll each once with
 `get_agent_status`; act on any that already finished.
 
-**Pending coordinator actions** (updated 2026-11-17 ~21:45 by coordinator bb75f5c0)
-Merged today after 19:10: O3-4, N8-3 (+Opus review), C31 (+Codex review, verified), N7-3a, O3-1..O3-4 Opus review
-(verified), installer locale fix, R07 (+Opus review, verified), A12 (ported; Codex review 7d6eb2a0 running). go = 631a4815.
-Verification queue: .32 N7-3b (running) → N7-3c; .64 free. Merge order N7-3: b → c, then N7-3d (097eba4e).
-Rules learned: one full -race per server at a time; on .64 use -p=4 (15 GB, OOM-killed once); installer has an
-ETXTBSY flake (66833acf fixing on go-fix-installer-etxtbsy) — rerun alone before treating it as a failure.
-Decisions today (all recorded in design "Clarified in …"): N7-3 native YAML classes (5.7), invalid tag/shape/merge
-rejected, explicit scalars via yaml.v3 decode, error sentinels, Chinese syntax prefix; N8-6 Bind/BindSilent(bool);
-O3-4/O3-5 Clock/OnStart/Detach/Clear, internal/clock, Flight.DoChan; O3 review BindRequest; A13 Checker in api/agents,
-InputKey incl. profile_name; A24 C37 guard/query + shared publicAgent helper (78b796af).
-Update ~22:40: merged N7-3b (d58c5e72), L1 report (038b52ae). Verifying: .32 N7-3c; .64 A12 review + N8-4a–d.
-N7-3d scope (097eba4e, after N7-3c merges) now also includes convert's own readers (loadCustomConfig,
-GenerateMihomoDocument, node cache), removing the transitional bridge's Timestamp/[]byte/Mapping branches, merging
-test helpers yamlx/yamltest into yamlxtest, plus the earlier list (4 bare decoders, delete pyyaml/old loader, grep gate).
-N7-4 (097eba4e, go-n7-4) owns all remaining legacy writers; one shared transitional Node bridge at most.
-L1 defects: D1/D3–D8 → 66833acf (go-fix-l1-installer; D8 = plain-text exception for shell-facing install/download
-errors); D2/D9 are Agent-binary bugs → main repo task claude/agent-custom-lifecycle (Codex 047faa61, PR to upstream,
-user approved 2026-11-17). R08 92daf1d5, R09 5f08d05e (shared ipv6_policy_eval.go for R10).
-Next: R05 iKuai netmask-suffix compensation bug from routers Step B → R05
-owner; N8-4e/f + Opus review after N8-4a–d; N8-7 after O3-5; A14 after A13; Opus: L1 lab running (93111aab).
-User owes nothing. .64 RAM increase suggested (optional).
+**Pending coordinator actions** (updated 2026-11-18 ~01:30 by coordinator bb75f5c0)
+Verify queue (use `cf-gate` from a temp worktree; RT_HOST pins; .64 uses -p 6):
+  .32: go-fix-agg-provider-load (running) → go-n8-6 → go-opus-review-r08 (R08 verified, merge after agg fix)
+  .64: go-review-a24 (running) → go-port-c32 → go-n7-4
+  Then: go-port-a13 (ported) + go-review-a13 when done; go-port-r09 after R08+C32 (desired.go conflicts: keep one
+  dnsGuardManifestSet, keep R08 Manifests(); C32 adds ctx to ComputeDesired/RulesetContent).
+Merged since 19:10 (2026-11-17): O3-4, O3-5, N8-3+review, C31+review, N7-3a/b/c, O3 review, R07+review, A12+review,
+  A24 (ported), N8-4a–d, installer locale, L1 report, gate.sh. Main repo PR #578 (Agent 1.8.62-go) awaits the user.
+Decisions recorded in design "Clarified in …" (N7-3, N8-6, N8-4f, O3-4/5/6, A13, A24, R08 review: device I/O uses
+  lifecycle.Detach). 20 proddiff baseline rows "deferred → A14" (A13); A14 must remove them (stale fails the gate).
+Infra: gate.sh = 2 slots/server, both tags, race+proddiff parallel, concurrent fuzz; cf-gate wrapper on the Mac.
+  .64 = 20 GB static + 20 GB swap. .32 often at load 50–130 (also other projects' rust builds).
+Opus: N8-4e/f HR data review running (9669815f). Next Opus: R09 review, A14 review, N8-5 (repo typed API).
+User may want faster switch; asked 2026-11-18, decided to keep the full plan (refactors before the switch).
 
 **Running agents** (Paseo project prj_b0033e1859522497; worktrees ~/.paseo/worktrees/302rx1dg/<slug>)
 | agent | kind | task | branch |
 |---|---|---|---|
-| 93111aab-7214-40a7-97d3-5758fe9c7a0a | Opus | L1 lab (installers, upgrade, address follow) | go-lab-l1 |
-| 92daf1d5-eeec-4589-b4d4-876e1231d3e4 | Codex | R08 policy routing (HR → Opus review) | go-port-r08 |
-| e4c12b68-f030-4c50-8cb2-a7a86b73f6bc | Codex | A13 content sync + routes | go-port-a13 |
-| 7d6eb2a0-4cd5-4f50-97ac-28c3d4ed68eb | Codex | A12 review | go-review-a12 |
-| 0d31fb93-a16c-48f8-8e5e-9c2756fb0e6f | Codex | A24 client tools | go-port-a24 |
-| 6e5c7760-36eb-4e1d-a5f0-1c378a081b14 | Codex | O3-5 Spawn migration | go-o3-5 |
-| 95eb529e-0369-4d40-9205-13e4c4764e1c | Codex | N8-4a–d model types | go-n8-4 |
-| 097eba4e-3a43-4bf8-9920-6e970f43faa7 | Codex | N8-6 request binding (then N7-3d) | go-n8-6 |
-| 27131008-8a7b-4e5d-9354-a4a744d9df9d | Codex | N7-3c mosdns/routers/routersplit/installer/provider | go-n7-3c |
-| 19338c67-c336-40c7-98a9-b4532a66af68 | Codex | (N7-3b handed back, idle) | go-n7-3b |
-| 66833acf-d1e4-45fb-b3bb-3b7d4bae0cbd | Codex | installer ETXTBSY flake | go-fix-installer-etxtbsy |
+| 9669815f-2b5e-4d92-9335-7f3629e9854a | Opus | N8-4e/f HR data review | go-opus-review-n8-4ef |
+| 6b0691d3-aa3b-4eed-9b40-f2c9a9d559d8 | Codex | A14 publish (HR) | go-port-a14 |
+| 0744d7f4-1e06-4dc0-ba4b-49b17f163bdb | Codex | A13 review | go-review-a13 |
+| 5f08d05e-9f29-4c95-bed3-a7ab0efae7e5 | Codex | R09 (waits for R08+C32 merge, then rebase+gate) | go-port-r09 |
+| 0d31fb93-a16c-48f8-8e5e-9c2756fb0e6f | Codex | C32 rule routes (final gate) | go-port-c32 |
+| 95eb529e-0369-4d40-9205-13e4c4764e1c | Codex | C29 OxiDNS native apply (+ oxidns readers to yamlx) | go-port-c29 |
+| 097eba4e-3a43-4bf8-9920-6e970f43faa7 | Codex | N7-4 writers (final gate), then N7-3d | go-n7-4 |
+| 6e5c7760-36eb-4e1d-a5f0-1c378a081b14 | Codex | O3-6 locks (routers last, after R08/R09) | go-o3-6 |
+| 66833acf-d1e4-45fb-b3bb-3b7d4bae0cbd | Codex | L1 installer defects D1/D3–D8 | go-fix-l1-installer |
+| f3bfb2cc-33d9-492b-bb72-fa489c2a872d | Codex | (agg provider fix handed back) | go-fix-agg-provider-load |
+| 3586bb0a-c53b-4bd6-8b8a-b69147e9f5a8 | Codex | slow test packages parallel (health/refresh/oxidns) | go-test-parallel-1 |
 | e46d698f-6345-41b9-8a38-06d61b6622d3 | Codex | config Step B | go-difftest-config-b |
 | c5332a35-f886-4d2d-90e2-f48496728a68 | Codex | routers Step B | go-difftest-routers-b |
-Idle and reusable: 74bce4a1 (A11 author, context high), 66833acf (R07 author, context high), 12b84914 (proddiff load fix), c5332a35 after N8-3.
+Idle and reusable: e4c12b68 (A12/A13 author, ctx 321k), 19338c67 (N7-3b), 74bce4a1, d2f2e2f1 (A24 review), 7d6eb2a0 (A12 review), 12b84914 (proddiff load fix), c5332a35 after N8-3.
 
 **Queue (in order of value)**
 - Opus: review O3-1+O3-2+O3-3 together once O3-3 is merged; review N8-3 when handed back; HR reviews of A11, R07 when
