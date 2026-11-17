@@ -79,8 +79,8 @@ func TestFileBytesAndKeyOrderMatchPython(t *testing.T) {
 	if info.Mode().Perm() != 0o600 {
 		t.Errorf("mode %v, tempfile.mkstemp gives 0600", info.Mode().Perm())
 	}
-	if _, err := os.Stat(filepath.Join(store.DataDir, Filename+".lock")); err != nil {
-		t.Errorf("lock file: %v", err)
+	if _, err := os.Stat(filepath.Join(store.DataDir, Filename+".lock")); !os.IsNotExist(err) {
+		t.Errorf("unexpected per-resource lock file: %v", err)
 	}
 	leftovers, _ := filepath.Glob(filepath.Join(store.DataDir, ".task-status-*"))
 	if len(leftovers) != 0 {

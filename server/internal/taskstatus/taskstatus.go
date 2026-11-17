@@ -4,9 +4,8 @@
 // Runtime receipts live beside the configuration, not inside it: they are not
 // part of revisions, exports or backups, and survive restarts so the page can
 // still say why the last automatic run failed after a reload. The file is
-// DATA_DIR/task-status.json, guarded by a process-wide mutex and by an
-// exclusive flock on task-status.json.lock (the lock file is kept so that two
-// server instances on one DATA_DIR exclude each other).
+// DATA_DIR/task-status.json, guarded by a process-wide leaf mutex. The server
+// instance lock excludes another server; legacy lock files are left untouched.
 package taskstatus
 
 import (
@@ -17,7 +16,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 	"unicode/utf8"
 
@@ -74,20 +72,12 @@ func ParseTime(value any) (time.Time, bool) {
 
 func (s *Store) path() string { return filepath.Join(s.DataDir, Filename) }
 
-// locked runs fn with the process mutex and the file lock held (_locked).
+// locked runs local file work under the process-wide leaf mutex.
 func (s *Store) locked(fn func(path string) error) error {
 	guard.Lock()
 	defer guard.Unlock()
 	path := s.path()
 	if err := os.MkdirAll(filepath.Dir(path), 0o777); err != nil {
-		return err
-	}
-	lock, err := os.OpenFile(path+".lock", os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o666)
-	if err != nil {
-		return err
-	}
-	defer lock.Close()
-	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX); err != nil {
 		return err
 	}
 	return fn(path)

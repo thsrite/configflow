@@ -23,7 +23,7 @@ masked parent across nested Detach, preserved values and child-owned cancellatio
 Additional coordinator ruling: repo's generic withLock also covered profile operation and file locks,
 so do not blindly label all of them L3. Migrate profile operation locks to L2 Keyed by profile id and
 cache/generated files to bounded leaf locks; retain only config's flock. Add concurrency/legacy-file
-sentinels; this ruling is now in Clarified in O3-6. No repo file changes have been made yet.
+sentinels; this ruling is now in Clarified in O3-6. Repo migration is now being implemented; validation is pending.
 
 Important agreed interfaces/boundaries:
 - ctxx depends only on context; WithParent/Detach share the existing lifecycle semantics.
@@ -44,3 +44,11 @@ physical directory; file-flock replacement must not weaken their mutual exclusio
 must remain whole even when a downstream owner detaches after job cancellation. Legacy leaf code
 currently calls external repo/task readers while holding its file lock; fix the boundary, not merely
 the syscall. CAS/publication/target-generation assertions are mandatory, not optional cleanup.
+
+ctxx commit: 3fcc53ec. Task-status now keeps its existing process-wide leaf mutex and atomic writes,
+without opening/creating the legacy lock. New tests exercise100 concurrent updates from independent
+Store objects and unchanged legacy bytes/inode/mtime, plus no new lock file. The old test expecting
+a new lock file now asserts its absence; content/key order/mode assertions are unchanged.
+.32 full taskstatus race3 passed2.613s. Notification leaf removal is pending its own commit; its
+full suite currently hits the newly fail-closed repo guard in a router-removal fixture, which will
+receive an explicit mock gate in the repo-contract step rather than weakening production defaults.
