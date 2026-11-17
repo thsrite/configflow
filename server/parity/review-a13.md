@@ -4,9 +4,10 @@
 范围：content sync Checker、缓存与失效广播、四个 GET 路由；非 HR。
 无子 agent、无 push/PR、无生产访问，测试经 rt 在测试服务器执行。
 
-状态：**复核中**。已接入 A24 复核、N8-6、R08 和 provider 负载修复；最终以最新 go 变基验收。
+状态：**verified（独立复核，0未决）**。最终 rebase `go@895f5e21`（包含要求的 `0dace4ae`）。
+**完整合并门禁尚未完成，按协调者2026-11-18明确指示，停止排队并交回，由其预留 cf-gate 槽执行。**
 F1/F2/F3 已修复并经 race/HTTP 回归；F4 验收框架修复的自检及 24 条因果证明通过。
-0 未决实现发现；最终门禁通过后设 verified。
+0 未决实现发现；不将排队、停止或先前未通过的门禁记为通过。
 临时 `go-review-a13-a24-prep` 上的预验已完成；两次临时 worktree 均已 rt clean、git worktree remove，
 第二次临时分支也已删除。无临时源码、测试目录或调试文件残留。
 
@@ -74,7 +75,7 @@ F1/F2/F3 已修复并经 race/HTTP 回归；F4 验收框架修复的自检及 24
 完整逐分支对照 `backend/agents/content_sync.py`、agents.py 四条 GET 路由、
 Go contentsync 全部实现、content adapter、composition wiring、A24 publicAgent 和共享 redactor。
 已读 AGENT-BRIEF/PORTING/WORKFLOW、A14 设计 A13/Clarified、O3 全文及各个 Clarified、
-PROGRESS A13、review-a12，以及 A24 分支上的 review-a24；合入后会再核对共享源码。
+PROGRESS A13、review-a12，以及 A24 分支上的 review-a24；A24合入后已再次核对共享源码。
 
 | 规则 | 复核证据 |
 |---|---|
@@ -184,4 +185,32 @@ ok configflow/cmd/configflow 1.208s
 A13 real preparation: 21 HTTP cases, 3 actual bundles; all 24 deferred fields reproduced without preparation and resolved with it; PASS
 ```
 
-剩余：`git rebase go` 后运行 `server/scripts/gate.sh -p 6` 和相关 fuzz；零未决后改 verified。
+## 最后复验与协调者接手门禁
+
+受测树 `538b5bcc`（基于go@c14763b3），.64，前置部分实际输出：
+
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt -e GOMAXPROCS=4 -e GATE_LOGS=/tmp/review-a13-settled-gate -- bash -lc 'set -euo pipefail; PYTHONPATH=server/tools/proddiff ~/cf-test/.venv/bin/python -m unittest discover -s server/tools/proddiff -p test_proddiff.py; PYTHONPATH=. ~/cf-test/.venv/bin/python -m pytest -q -p no:cacheprovider server/internal/api/agents/testdata/review_a13_reference.py; server/scripts/proddiff.sh --a13-proof; server/scripts/gate.sh -p 6 FuzzContentPageQuery:./internal/api/agents FuzzConfig:./internal/deploy/pushdiff FuzzRuleEntries:./internal/deploy/pushdiff FuzzNodeItems:./internal/deploy/pushdiff FuzzCredentialSpans:./internal/deploy/pushdiff 2>&1 | tee /tmp/review-a13-settled-gate-driver.log'
+```
+
+```text
+Ran 39 tests in 0.092s
+OK
+3 passed in 0.78s
+A13 real preparation: 21 HTTP cases, 3 actual bundles; all 24 deferred fields reproduced without preparation and resolved with it; PASS
+gate: logs in /tmp/review-a13-settled-gate
+gate: 2 gate(s) already running on this server; waiting for a slot...
+```
+
+完整gate未取得槽位，排队约25分钟后由协调者明确要求停止。已只终止本worktree的排队gate进程，
+不影响其他门禁；rt最终退出143（主动终止），本轮full race/difftest/proddiff/fuzz未开始。第一次门禁的full race 90包通过，
+proddiff因F4时序依赖stale=9而退出，该轮不算通过；F4修复后仅定向自检/因果证明已通过。
+完整合并门禁由协调者预留cf-gate执行：全量race、全部difftest、proddiff new=0/stale=0，
+逐项观察所有24条精确deferral，及上列五个相关fuzz（各60秒）。结果待其补录。
+
+最终变基新增仅C32 rules独立复核修复和TMPDIR门禁/文档调整，无A13共享接口或实现变化。
+工作树无未提交源码，无push；生产异步和TTL保持不变。A14接线时24条deferral必须全部消失。
+
+复核修复提交（最终变基后）：`f7f75d80` F1；`972ff692` F2元数据兜底；
+`4864ab65` 精确baseline/退出自检；`9d772f8f` F3共享publicAgent/inspection；
+`58e86bc1` F2注册key快照/HTTP回归；`a1a07e2c` F4稳定观察/24条proof；验收交回为本提交。

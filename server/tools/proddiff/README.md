@@ -24,7 +24,7 @@ Go Checker 注入经过归档完整性校验的真实候选，比较同一批路
 这些 GET 的 HTTP 客户端上限至少 150 秒；entries 不触发准备，保留普通截止时间。
 超时以专用 harness header 标记为框架错误，比较器直接终止，不计算 new/stale；不会把
 checking、超时或别的阶段伪造成一致结果。生产异步响应、TTL 和比较字段均不改变。
-门禁包含慢 Checker 的 Go/Flask 自检和超时不进入比较器的回归。A14 接线后 **24 条全部要消失**。
+验收同时运行慢 Checker 的 Go/Flask 自检和超时不进入比较器的回归；gate.sh 内包含 tagged Go 自检。A14 接线后 **24 条全部要消失**。
 
 ## 隔离与认证
 

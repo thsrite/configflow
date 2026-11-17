@@ -63,7 +63,7 @@ Same as `PROGRESS-config.md`: status `missing` / `partial` (exact list of what i
 | A10 | Docker HA compose variants, installer routes | 1018 | verified | HR | A08, A09 | 9 (9 done) | internal/installer, api/agents |
 | A11 | deployment bundle, locations, Mihomo resources, generated preview | 1264 | ported | HR | A02, A19, C05, C12, C14, C15, C21, C22, C25 | – | internal/deploy (new) |
 | A12 | push diff | 1465 | verified | | A11 | – | internal/deploy/pushdiff |
-| A13 | content sync, Agent list/detail, push-diff routes | 584 | ported | | A12, A15 | 4 | internal/deploy, api/agents |
+| A13 | content sync, Agent list/detail, push-diff routes | 584 | verified | | A12, A15 | 4 | internal/deploy, api/agents |
 | A14 | publishing: transactional content, push-config, deployments, receipts | 1002 | missing | HR | A11, A13, C13, C17, C18, C19, C20, C22, C23 | 9 | internal/deploy, api/agents |
 | A15 | upgrades, Agent operations, address follow | 745 | verified | HR | A01, A02 | 15 (15 done) | internal/agents/upgrades (new), api/agents |
 | A16 | Agent rule sync, projection, snapshot | 1371 | missing | HR | A07, A14, C25, C27 | 2 | internal/agents/rulesync (new), api/agents |
@@ -1142,9 +1142,9 @@ baseline: new=0 stale=0
 
 ## A13 — content sync, Agent list/detail, push-diff routes
 
-**Status: `ported`** · prereqs: A12, A15 (`upgrades.artifacts` for `upgrade_available`) · Go: internal/deploy, api/agents
+**Status: `verified`** · 独立复核0未决；完整合并门禁按协调者2026-11-18指示改由其预留 cf-gate 槽执行，尚未完成。prereqs: A12, A15 (`upgrades.artifacts` for `upgrade_available`) · Go: internal/deploy, api/agents
 
-独立对抗复核进行中（分支 `go-review-a13`，[review-a13.md](review-a13.md)），已 rebase go@8d716ceb。
+独立对抗复核完成（分支 `go-review-a13`，[review-a13.md](review-a13.md)）；最终 rebase go@895f5e21（包含0dace4ae）。
 F1 中严重度（真实 Spawn 丢失 Close 取消）和 F3 高严重度（公共投影丢失 credential 来源）已修复。
 F3 使用 shared CollectCredentials 和唯一 publicAgentWithCredentials projector；summary 通过
 repo.GetAgentsInspect / Manager 透传在同一 view、轻读前收集独立 Secrets，collector 不构造历史副本。
@@ -1157,9 +1157,12 @@ shared finder 环境快照；合并树实际 HTTP 明文/编码/节点名/字典
 新增验收时序修复：仅 proddiff tag / Flask launcher bounded settle（120s），超时明确 harness 错误，不分类 new/stale。
 协调者批准原20条外再加4条稳定后的 checked_at 精确 deferral，共24；proof必须逐项证明24，A14接线后24条全部消失。
 harness 39 tests、tagged 慢Checker/假钟超时 race 自检通过；24条因果证明21 HTTP/3 actual bundles通过。
-下一步最新go变基和最终 gate.sh -p 6 + 相关 fuzz。
+最终 gate.sh -p 6 + 相关 fuzz 在 .64 前台排队约25分钟；协调者明确要求停止排队并交回，完整门禁改由其预留 cf-gate 槽执行。
+合并前仍需全量race、所有difftest、proddiff new=0/stale=0（24条逐项观察）、五个相关60秒fuzz；本次不声称它们已全部通过。
+本轮受测树39个harness/3个真实Python安全oracle/24条proof已复验通过。
 基线36 tests、原Python六文件101 tests、三项安全oracle通过；原20项因果证明21 HTTP/3 actual bundles通过。
-当前仍 ported，0 未决实现发现，最终门禁通过后 verified。两次临时 worktree、临时 branch 和 rt 两机副本均已清理。
+复核提交：f7f75d80（F1）、972ff692（F2 metadata）、4864ab65（baseline）、9d772f8f（F3 shared projector/inspection）、58e86bc1（F2 registration）、a1a07e2c（F4 observer/proof）；交回为本提交。
+独立复核 verified，0 未决实现发现；完整门禁结果由协调者补录。两次临时 worktree、临时 branch 和 rt 两机副本均已清理。
 
 **Design:** `server/design/a14-publish.md` (Opus, 2026-11-17) covers the whole chain A11→A14 — package map, types, Agent protocol, state machine, locks, failure table, steps A13-1, A13-2, acceptance. Port to it; contract changes need the designer's or coordinator's agreement.
 
@@ -1248,7 +1251,7 @@ A13-2 route coverage and decisions:
 - Push-diff and page responses use `WithoutStored` + `redact.StoredSecretFinder`; stored credentials cannot escape or match search. Validate page arguments before looking up the Agent; preserve no-store headers and stale precedence. Version IDs have Python's 16-hex-character shape (an initial 32-character implementation was corrected during boundary testing).
 - `TestContentReadsAgainstFlask`: 33 requests, no response fields masked. `TestContentChangesAgainstFlask`: real synthetic on-disk receipt, real Flask/Go Checker and pushdiff, only A14 preparation injected; complete changed JSON, 81-rule paging, Unicode search, stored-token search exclusion, missing file/group, replaced version, cached list/detail. Only independent random version IDs and checked_at timestamps are masked; IDs are captured per side, shape/presence and cached stability are separately asserted.
 - `content_http_test.go`: authentication for all four routes, shared list/detail/diff worker, history omission, pending detection, preparation failure with secret-free output, absent receipt fallback, Sub-Store hosts invalidation, paging/search/redaction, missing Agents and page bounds. `FuzzContentPageQuery` covers the new argument parser. A13 adds no YAML parser entry; YAML depth-40 aliases and self-references remain covered at the delegated A12 entry points.
-- No Python feature is intentionally changed; no Python bug fix was needed. Native Manager ownership replaces Python's global repository-object switching, and typed immutable snapshots replace deepcopy mechanics. **Current limitation:** until A14 wires PrepareFunc, valid-baseline `content_sync` and push-diff requests return `unknown/check_failed`. A14 still owns real preparation and publishing/activation/receipt advancement.
+- Independent review records two Python credential-leak security corrections (F2/F3) in behaviour-changes.md. Native Manager ownership replaces Python's global repository-object switching, and typed immutable snapshots replace deepcopy mechanics. **Current limitation:** until A14 wires PrepareFunc, valid-baseline `content_sync` and push-diff requests return `unknown/check_failed`. A14 still owns real preparation and publishing/activation/receipt advancement.
 - Coordinator-authorized gate deferral (2026-11-17): exactly 24 schema triplets in proddiff-baseline.txt carry `deferred → A14：PrepareFunc 未接线，接线后必须消失`; no wildcards or comparison-rule changes. `rt -- server/scripts/proddiff.sh --a13-proof` verifies the same snapshot-derived routes using real Python preparation: 21 HTTP cases, 3 real candidate bundles; all 24 differences are reproduced without preparation and resolved with injected immutable bundles. Whole responses compare, with independently generated timestamps/nonces checked for shape, one-to-one identity and cache stability. Prepared bytes stay in the server's protected temporary directory. The standard differential remains unchanged.
 - Fixed gate defect: stale baseline entries previously printed a warning but did not fail. proddiff now returns failure for stale entries, enforcing the coordinator's `new=0 stale=0` requirement and A14 cleanup obligation. Initial proof setup lacked a launcher environment variable; fixed the harness before any successful comparison. No production response was normalized to hide a difference.
 - O3-5 integration found a low-severity test-fixture isolation issue: earlier API tests now activate lazy shared jobs, so A13's Configure could return ErrRunning in the full package. The fixture stops the previous Runtime before installing its private Registry, retaining the production eight-second grace. Full api/agents then passed plain (33.894s) and race (169.821s); no production behavior changed.
