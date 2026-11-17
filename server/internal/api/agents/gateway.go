@@ -12,9 +12,12 @@ import (
 	"configflow/internal/auth"
 	"configflow/internal/gateway/host"
 	"configflow/internal/httpx"
+	"configflow/internal/logx"
 	"configflow/internal/repo"
 	"configflow/internal/setupflow"
 )
+
+var gatewayLogger = logx.Get("backend.routes.linux_gateway_agents")
 
 func registerGateway(r *httpx.Router) {
 	r.Handle([]string{"GET", "POST"}, "/api/agents/<agent_id>/linux-gateway/<operation>", "agents.linux_gateway_operation", auth.Require(gatewayOperation))
@@ -123,6 +126,9 @@ func gatewayForwarding(c *httpx.Ctx) (*httpx.Response, error) {
 	for _, link := range linked {
 		if id == link.AgentID {
 			value, err := bridge.PersistForwarding(c.Context(), id, link.Routers)
+			if err == nil && string(value["success"]) == "true" {
+				gatewayLogger.Infof(msgGatewayForwarded, logx.LogText(id, 120))
+			}
 			return gatewayResult(value, err)
 		}
 	}
