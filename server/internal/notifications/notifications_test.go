@@ -39,7 +39,11 @@ func subscriptionRows(ctx context.Context, statuses *jsonx.Object) ([]*jsonx.Obj
 		enabled := sub.Value("enabled") != false && jsonx.Truthy(sub.Value("url"))
 		fields := []any{"resource_id", sub.Value("id"), "enabled", enabled, "interval_seconds", sub.Value("interval"),
 			"notifications_enabled", enabled, "running", running, "link", "/subscriptions"}
-		fields = append(fields, tasks.Spread(tasks.History(entry))...)
+		history, err := tasks.History(entry)
+		if err != nil {
+			return nil, err
+		}
+		fields = append(fields, tasks.Spread(history)...)
 		rows = append(rows, tasks.Row(key, "subscription", sub.GetString("name"), fields...))
 	}
 	return rows, nil
@@ -84,9 +88,9 @@ type fixture struct {
 func setup(t *testing.T) *fixture {
 	for _, slot := range []string{tasks.SlotSubscriptions, tasks.SlotRuleSources, tasks.SlotRouters, tasks.SlotAgents,
 		tasks.SlotDomains, tasks.SlotMetrics} {
-		tasks.SetRows(slot, none)
+		t.Cleanup(tasks.SetRows(slot, none))
 	}
-	tasks.SetRows(tasks.SlotSubscriptions, subscriptionRows)
+	t.Cleanup(tasks.SetRows(tasks.SlotSubscriptions, subscriptionRows))
 	notifications.ResetSources()
 	notifications.SetSources(notifications.Sources{ListTasks: tasks.ListTasks, Agents: storedAgents, Summarize: summarize})
 	t.Cleanup(notifications.ResetSources)

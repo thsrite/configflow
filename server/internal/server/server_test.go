@@ -53,12 +53,12 @@ func TestNewAppRegistersImplementedRoutes(t *testing.T) {
 		"settings.test_backup", "settings.backup_now",
 		"settings.list_third_party_dependencies", "settings.update_sub_store_dependency", "settings.set_sub_store_mode",
 		"logs.get_logs", "logs.get_log_info", "logs.clear_logs", "stats.get_overview",
-		"notifications.read_notifications"} {
+		"notifications.read_notifications", "tasks.get_tasks", "tasks.run_task", "tasks.set_interval"} {
 		if !app.Router.HasEndpoint(endpoint) {
 			t.Errorf("missing %s", endpoint)
 		}
 	}
-	for _, endpoint := range []string{"tasks.get_tasks", "notifications.list_notifications"} {
+	for _, endpoint := range []string{"notifications.list_notifications"} {
 		if app.Router.HasEndpoint(endpoint) {
 			t.Errorf("%s must wait for its packages", endpoint)
 		}

@@ -586,6 +586,8 @@ Missing / deferred: Missing: `GET /api/notifications` and the three `/api/tasks`
 
 Reviewer notes: Web listener: 14 Python cases are nginx-specific (reload failure restore, nginx validation, docker backend address unreachable by nginx, source update template) or route-level (`test_get_and_post_require_authentication`, `test_success_api_returns_active_settings`, `test_missing_port_is_rejected`, custom Sub-Store/backend port reservation, internal services sharing a port, IPv4-only kernel). Reviewer must classify each as obsolete-by-design (document) or missing (port); the reserved-port and IPv4-only cases look portable.
 
+Clarified in C07 (2026-11-18): coordinator approved immediate four-route registration with explicit missing-slot 503; ready owner commands remain usable, no production empty-slot placeholders; backup runner is C07; R14 and A16/A17 remain external. Native HEAD projections, owner shutdown checks, ctx-aware notification leaf commits, BindSilent, portable listener rollback/IPv4/reserved-port contracts, test provider cleanup and History string-counter correction are in scope. Only nginx validation/reachability/old-template mechanics are retired. C07 owns the overlapping packages before N8-7; O3-6c retains shared taskstatus/repo/rulefetch commits. See [progress/c07.md](progress/c07.md) for full decisions and acceptance.
+
 ## C08 — rule syntax, matcher, rule utils
 
 **Status: `verified`** (review 2026-11-16, one round; 0 open findings) · prereqs: C02 · Go: internal/rules, internal/rulefetch/cache.go (C08 functions)

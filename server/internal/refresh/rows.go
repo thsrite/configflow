@@ -29,17 +29,7 @@ func historyOf(entry any) (*jsonx.Object, error) {
 	if !ok {
 		return nil, attributeGet(entry)
 	}
-	row := tasks.History(object)
-	// int(row[key] or 0) for hand-edited values (tasks.History keeps a
-	// string as it is; Python converts it or raises).
-	for _, key := range []string{"run_count", "failure_count"} {
-		n, err := pyIntValue(orDefault(object.Value(key), jsonx.Int(0)))
-		if err != nil {
-			return nil, err
-		}
-		row.Set(key, jsonx.BigInt(n))
-	}
-	return row, nil
+	return tasks.History(object)
 }
 
 // host is routes/tasks._host(url): the host name, "" when there is none or

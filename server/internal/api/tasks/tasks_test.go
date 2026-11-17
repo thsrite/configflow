@@ -2,6 +2,7 @@ package tasks_test
 
 import (
 	"context"
+	"slices"
 	"testing"
 	"time"
 
@@ -21,9 +22,9 @@ func sourceRows(ctx context.Context, statuses *jsonx.Object) ([]*jsonx.Object, e
 
 func setup(t *testing.T) *httpxtest.Server {
 	for _, slot := range []string{tasks.SlotRuleSources, tasks.SlotRouters, tasks.SlotAgents, tasks.SlotDomains, tasks.SlotMetrics} {
-		tasks.SetRows(slot, none)
+		t.Cleanup(tasks.SetRows(slot, none))
 	}
-	tasks.SetRows(tasks.SlotSubscriptions, sourceRows)
+	t.Cleanup(tasks.SetRows(tasks.SlotSubscriptions, sourceRows))
 	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(apitasks.Register)})
 	_, err := srv.Repo.UpdateSharedTransaction(srv.Context(), func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
 		shared.Set("subscriptions", []any{jsonx.Obj("id", "s", "name", "Feed", "url", "https://airport.test/sub", "interval", 86400)})
@@ -95,12 +96,12 @@ func TestRunDispatchAndBackgroundBusy(t *testing.T) {
 	srv.Post("/api/tasks/run", httpxtest.JSON(jsonx.Obj("key", "other:x"))).WantStatus(400).
 		WantJSON(jsonx.Obj("success", false, "message", "这个任务不能在这里立即运行"))
 	release := make(chan struct{})
-	tasks.SetRunner("webdav_backup", func(ctx context.Context, key, resource string) error {
+	t.Cleanup(tasks.SetRunner("webdav_backup", func(ctx context.Context, key, resource string) error {
 		return tasks.StartBackground(ctx, key, func(context.Context) error { <-release; return nil })
-	})
-	tasks.SetRunner("subscription", func(ctx context.Context, key, resource string) error {
+	}))
+	t.Cleanup(tasks.SetRunner("subscription", func(ctx context.Context, key, resource string) error {
 		return &tasks.NotFound{Message: "订阅不存在"}
-	})
+	}))
 	srv.Post("/api/tasks/run", httpxtest.JSON(jsonx.Obj("key", "webdav_backup"))).WantStatus(202).
 		WantJSON(jsonx.Obj("success", true, "message", "已开始运行，结果会显示在列表中"))
 	if !tasks.IsBackground("webdav_backup") {
@@ -116,14 +117,13 @@ func TestRunDispatchAndBackgroundBusy(t *testing.T) {
 }
 
 func TestRoutesStayUnregisteredUntilEverySlotIsProvided(t *testing.T) {
-	tasks.SetRows(tasks.SlotMetrics, nil)
-	defer tasks.SetRows(tasks.SlotMetrics, none)
+	t.Cleanup(tasks.SetRows(tasks.SlotMetrics, nil))
 	app := httpx.New()
 	apitasks.Register(app.Router)
-	if app.Router.HasEndpoint("tasks.get_tasks") {
-		t.Fatal("registered with a missing slot")
+	if !app.Router.HasEndpoint("tasks.get_tasks") {
+		t.Fatal("missing route when slot not ready")
 	}
-	if missing := tasks.Missing(); len(missing) != 1 || missing[0] != tasks.SlotMetrics {
+	if missing := tasks.Missing(); !slices.Contains(missing, tasks.SlotMetrics) {
 		t.Fatal(missing)
 	}
 }

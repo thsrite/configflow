@@ -85,26 +85,32 @@ var (
 	intervals = map[string]IntervalFunc{}
 )
 
-// SetRows installs the row builder of a slot.
-func SetRows(slot string, f RowsFunc) {
+// SetRows installs the row builder of a slot and returns its restoration.
+func SetRows(slot string, f RowsFunc) func() {
 	mu.Lock()
+	previous := rows[slot]
 	rows[slot] = f
 	mu.Unlock()
+	return func() { mu.Lock(); rows[slot] = previous; mu.Unlock() }
 }
 
 // SetRunner installs the "run now" of a category (or of the exact key
-// "metrics_history_flush").
-func SetRunner(category string, f RunFunc) {
+// "metrics_history_flush") and returns its restoration.
+func SetRunner(category string, f RunFunc) func() {
 	mu.Lock()
+	previous := runners[category]
 	runners[category] = f
 	mu.Unlock()
+	return func() { mu.Lock(); runners[category] = previous; mu.Unlock() }
 }
 
-// SetIntervalSetter installs the interval edit of an exact task key.
-func SetIntervalSetter(key string, f IntervalFunc) {
+// SetIntervalSetter installs an exact-key editor and returns its restoration.
+func SetIntervalSetter(key string, f IntervalFunc) func() {
 	mu.Lock()
+	previous := intervals[key]
 	intervals[key] = f
 	mu.Unlock()
+	return func() { mu.Lock(); intervals[key] = previous; mu.Unlock() }
 }
 
 // Missing lists the slots nobody provides yet.
@@ -139,31 +145,23 @@ var historyKeys = []string{"last_run_at", "last_status", "last_error", "last_dur
 	"last_success_at", "run_count", "failure_count", "consecutive_failures", "cache_retained", "cache_updated_at"}
 
 // History is _history(entry).
-func History(entry *jsonx.Object) *jsonx.Object {
+func History(entry *jsonx.Object) (*jsonx.Object, error) {
 	row := jsonx.NewObject()
 	for _, key := range historyKeys {
 		row.Set(key, entry.Value(key))
 	}
 	for _, key := range []string{"run_count", "failure_count"} {
-		row.Set(key, pyIntOrZero(row.Value(key)))
-	}
-	return row
-}
-
-func pyIntOrZero(v any) any {
-	if !jsonx.Truthy(v) {
-		return 0
-	}
-	switch value := v.(type) {
-	case bool:
-		return 1
-	case jsonx.Number:
-		if value.IsInt() {
-			return value
+		raw, err := jsonx.Compact(row.Value(key))
+		if err != nil {
+			return nil, err
 		}
-		return int64(value.Float64())
+		count, err := historyCount(raw)
+		if err != nil {
+			return nil, fmt.Errorf("task history %s: %w", key, err)
+		}
+		row.Set(key, jsonx.BigInt(count))
 	}
-	return v
+	return row, nil
 }
 
 // Row is _row(key, category, name, **fields): the defaults, then fields
@@ -240,7 +238,10 @@ func backupRows(ctx context.Context, statuses *jsonx.Object) ([]*jsonx.Object, e
 		return nil, nil
 	}
 	entryObject, _ := entry.(*jsonx.Object)
-	history := History(entryObject)
+	history, err := History(entryObject)
+	if err != nil {
+		return nil, err
+	}
 	autoBackup := jsonx.Truthy(backup.Value("auto_backup"))
 	hint := ""
 	if !configured {
@@ -262,9 +263,21 @@ func ListTasks(ctx context.Context) ([]*jsonx.Object, error) {
 	return AvailableTasks(ctx)
 }
 
-// AvailableTasks projects receipts for registered task owners. Notifications use
-// this while the full task-page route still waits for every owner to be ported.
+// AvailableTasks projects receipts only for registered task owners. Callers
+// requiring a complete observation must check readiness or use ListTasks.
 func AvailableTasks(ctx context.Context) ([]*jsonx.Object, error) {
+	return availableRows(ctx, "")
+}
+
+// RowsFor returns only the selected provided slot, never a fake empty provider.
+func RowsFor(ctx context.Context, slot string) ([]*jsonx.Object, error) {
+	if !HasRows(slot) {
+		return nil, &Unavailable{Slots: []string{slot}}
+	}
+	return availableRows(ctx, slot)
+}
+
+func availableRows(ctx context.Context, selected string) ([]*jsonx.Object, error) {
 	repository, err := repo.GetRepository(ctx)
 	if err != nil {
 		return nil, err
@@ -276,6 +289,9 @@ func AvailableTasks(ctx context.Context) ([]*jsonx.Object, error) {
 	mu.Lock()
 	builders := make([]RowsFunc, 0, len(slotOrder))
 	for _, slot := range slotOrder {
+		if selected != "" && slot != selected {
+			continue
+		}
 		if build := rows[slot]; build != nil {
 			builders = append(builders, build)
 		}

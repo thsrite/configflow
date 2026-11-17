@@ -123,6 +123,7 @@ var automaticWorker = newAutomaticWorker(func(ctx context.Context, snapshot Snap
 
 // Wire installs the post-commit hook and bounded shutdown handling.
 func Wire() {
+	wireTasks()
 	registerHook(automaticWorker)
 	lifecycle.RegisterStartup(workerStartup(automaticWorker, lifecycle.DefaultSpawner{}, lifecycle.RegisterShutdown))
 }

@@ -224,15 +224,19 @@ type reviewBlockedClient struct {
 	autoClient
 	started chan struct{}
 	release chan struct{}
+	seen    chan context.Context
 }
 
 func (f *reviewBlockedClient) Probe(ctx context.Context, a Agent, p ProbeRequest) ([]ProbeRow, error) {
+	if f.seen != nil {
+		f.seen <- ctx
+	}
 	close(f.started)
 	<-f.release
 	return f.autoClient.Probe(ctx, a, p)
 }
 
-func TestReviewManualAutoTaskDropsRequestValuesWhileRunning(t *testing.T) {
+func TestReviewManualAutoTaskKeepsWorkValuesWithFreshScope(t *testing.T) {
 	ctx := jobFixture(t)
 	r, _ := repo.GetRepository(ctx)
 	repo.SetRepository(r)
@@ -265,23 +269,18 @@ func TestReviewManualAutoTaskDropsRequestValuesWhileRunning(t *testing.T) {
 	if err = os.WriteFile(filepath.Join(dir, "a1.json"), []byte(data), 0600); err != nil {
 		t.Fatal(err)
 	}
-	fake := &reviewBlockedClient{started: make(chan struct{}), release: make(chan struct{})}
+	fake := &reviewBlockedClient{started: make(chan struct{}), release: make(chan struct{}), seen: make(chan context.Context, 1)}
 	previous := client
 	client = fake
 	t.Cleanup(func() { client = previous })
 	wireTasks()
-	type marker struct{ data [1 << 20]byte }
 	type key struct{}
-	var ref weak.Pointer[marker]
-	func() {
-		payload := new(marker)
-		ref = weak.Make(payload)
-		request, cancel := context.WithCancel(context.WithValue(repo.WithScope(ctx), key{}, payload))
-		defer cancel()
-		if err := tasks.Runner(tasks.SlotDomains)(request, "domain_discovery:default", "default"); err != nil {
-			t.Fatal(err)
-		}
-	}()
+	request, cancel := context.WithCancel(context.WithValue(repo.WithScope(ctx), key{}, "kept-work-value"))
+	original := repo.ScopeOf(request)
+	if err := tasks.Runner(tasks.SlotDomains)(request, "domain_discovery:default", "default"); err != nil {
+		t.Fatal(err)
+	}
+	cancel()
 
 	// Always drain before restoring global collaborators, including failed GC assertions.
 	defer func() {
@@ -298,10 +297,11 @@ func TestReviewManualAutoTaskDropsRequestValuesWhileRunning(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("manual auto task did not start")
 	}
-	collectGarbage()
-	if ref.Value() != nil {
-		t.Error("manual automatic task retained cancelled request values")
+	worker := <-fake.seen
+	if worker.Value(key{}) != "kept-work-value" || worker.Err() != nil || repo.ScopeOf(worker) == original {
+		t.Fatal("work lost its lifetime/values or retained the request repository scope")
 	}
+
 }
 
 func TestReviewRegionTargetOrdering(t *testing.T) {

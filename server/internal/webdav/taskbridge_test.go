@@ -1,0 +1,96 @@
+package webdav
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"testing"
+	"time"
+
+	"configflow/internal/jsonx"
+	"configflow/internal/lifecycle"
+	"configflow/internal/repo"
+	"configflow/internal/tasks"
+	"configflow/internal/taskstatus"
+)
+
+func TestBackupTaskUsesStoredConfigurationAndRuntimeAdmission(t *testing.T) {
+	for _, shutdown := range []bool{false, true} {
+		t.Run(map[bool]string{false: "disconnect completes", true: "shutdown rejects"}[shutdown], func(t *testing.T) {
+			if err := lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry(), Grace: time.Millisecond}); err != nil {
+				t.Fatal(err)
+			}
+			lifecycle.Start(context.Background())
+			t.Cleanup(func() { lifecycle.Stop(time.Second) })
+			f, server := newDAV(t)
+			t.Cleanup(SetDefault(NewService(server.Client())))
+			t.Cleanup(wireTasks())
+			r, err := repo.Open(t.TempDir(), repo.Options{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx := repo.WithScope(repo.WithRepository(context.Background(), r))
+			settings, _ := json.Marshal(fixtureSettings(server))
+			value, err := jsonx.Parse(settings)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = r.UpdateSystemTransaction(ctx, func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
+				system.Set("backup", value)
+				return nil, nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			request, cancel := context.WithCancel(lifecycle.BindRequest(ctx))
+			defer cancel()
+			if shutdown {
+				lifecycle.Stop(time.Second)
+			} else {
+				cancel()
+			}
+			err = tasks.RunNow(request, tasks.BackupTaskKey)
+			if shutdown {
+				if !errors.Is(err, context.Canceled) {
+					t.Fatal(err)
+				}
+			} else {
+				if err != nil {
+					t.Fatal(err)
+				}
+				deadline := time.Now().Add(5 * time.Second)
+				for tasks.IsBackground(tasks.BackupTaskKey) && time.Now().Before(deadline) {
+					time.Sleep(time.Millisecond)
+				}
+				if tasks.IsBackground(tasks.BackupTaskKey) {
+					t.Fatal("backup never completed")
+				}
+			}
+			f.mu.Lock()
+			defer f.mu.Unlock()
+			statuses, err := taskstatus.New(r.DataDir()).Load()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if shutdown {
+				if f.uploads != 0 || statuses.Len() != 0 {
+					t.Fatal("stopped generation uploaded or recorded a result")
+				}
+			} else {
+				if f.uploads != 1 || statuses.GetObject(tasks.BackupTaskKey).GetString("last_status") != "success" {
+					t.Fatal("backup/receipt missing", f.uploads, statuses)
+				}
+				for _, data := range f.files {
+					var document struct {
+						System struct {
+							Backup Settings `json:"backup"`
+						} `json:"system"`
+					}
+					if err := json.Unmarshal(data, &document); err != nil || document.System.Backup.Username != "fixture-user" {
+						t.Fatal("not a full stored backup", err)
+					}
+				}
+			}
+		})
+	}
+}

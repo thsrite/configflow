@@ -26,7 +26,7 @@ func wireTasks() {
 		if err != nil {
 			return err
 		}
-		worker := repo.WithRepository(context.Background(), r)
+		worker := repo.WithRepository(ctx, r)
 		return tasks.StartBackground(worker, key, func(ctx context.Context) error { _, err := RunAutoTask(ctx, resource, "manual"); return err })
 	})
 }
@@ -60,7 +60,11 @@ func domainRows(ctx context.Context, statuses *jsonx.Object) ([]*jsonx.Object, e
 			name = p.ID
 		}
 		fields := []any{"resource_id", p.ID, "profile_id", p.ID, "profile_name", name, "enabled", c.Settings.AutoProbe, "interval_seconds", 600, "can_run", c.Settings.AutoProbe, "run_hint", hint, "running", tasks.IsBackground(key), "next_run_at", tasks.ISO(due), "link", "/domain-discovery"}
-		fields = append(fields, tasks.Spread(tasks.History(e))...)
+		history, err := tasks.History(e)
+		if err != nil {
+			return nil, err
+		}
+		fields = append(fields, tasks.Spread(history)...)
 		out = append(out, tasks.Row(key, tasks.SlotDomains, msgAutoName, fields...))
 	}
 	return out, nil

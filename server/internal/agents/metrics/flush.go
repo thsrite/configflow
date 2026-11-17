@@ -454,7 +454,11 @@ func Rows(ctx context.Context, statuses *jsonx.Object) ([]*jsonx.Object, error) 
 		"detail", "Agent 系统监控（CPU、内存、网速） · Mihomo 流量记录",
 		"editable", true, "can_run", true, "running", tasks.IsBackground(TaskKey) || IsRunning(),
 		"next_run_at", tasks.ISO(NextRunAt(entry, interval)), "link", "/agents"}
-	fields = append(fields, tasks.Spread(tasks.History(entry))...)
+	history, err := tasks.History(entry)
+	if err != nil {
+		return nil, err
+	}
+	fields = append(fields, tasks.Spread(history)...)
 	return []*jsonx.Object{tasks.Row(TaskKey, "metrics_history", "监控历史保存", fields...)}, nil
 }
 
