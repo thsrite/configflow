@@ -178,9 +178,9 @@ func TestReviewLatin1Tokens(t *testing.T) {
 				case "request":
 					_, err = request(e.ctx, e.m, agent, "GET", "/api/upgrade-info", nil)
 				case "reaches":
-					_, err = reaches(e.m, agent, "127.0.0.1")
+					_, err = reaches(e.ctx, e.m, agent, "127.0.0.1")
 				case "ask":
-					_, _, err = ask(e.m, agent, "127.0.0.1", "GET", nil)
+					_, _, err = ask(e.ctx, e.m, agent, "127.0.0.1", "GET", nil)
 				}
 				expected := want.GetObject(call)
 				got := <-seen

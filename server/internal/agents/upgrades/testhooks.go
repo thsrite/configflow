@@ -3,6 +3,9 @@ package upgrades
 import (
 	"configflow/internal/agents"
 	"configflow/internal/jsonx"
+	"configflow/internal/lifecycle"
+	"context"
+	"time"
 )
 
 // Test seams for route tests in other packages (the Python tests
@@ -38,11 +41,21 @@ func SetAskForTest(fn func(agent *jsonx.Object, host, method string, body *jsonx
 	return func() { askHook = previous }
 }
 
-// RunInlineForTest runs the background address check inside the request.
+// RunInlineForTest waits for an independently spawned test-runtime worker,
+// preserving the old seam's synchronous observation without unmanaged work.
 func RunInlineForTest() func() {
 	previous := startThread
-	startThread = func(fn func()) { fn() }
-	return func() { startThread = previous }
+	runner := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry(), Grace: 20 * time.Millisecond})
+	runner.Start(context.Background())
+	startThread = func(ctx context.Context, name string, fn func(context.Context)) error {
+		done := make(chan struct{})
+		if err := runner.Spawn(ctx, name, func(worker context.Context) { defer close(done); fn(worker) }); err != nil {
+			return err
+		}
+		<-done
+		return nil
+	}
+	return func() { startThread = previous; runner.Shutdown(context.Background()) }
 }
 
 // SetRetrySecondsForTest sets RETRY_SECONDS.

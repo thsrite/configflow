@@ -41,3 +41,10 @@ race3 10.974s and enabled tagged difftest27.918s. Fake-clock startup tests use n
 (the production1s debounce, not a replacement interval); cover restart, owner-scoped WaitIdle,
 refusal/panic cleanup, cross-generation gate and late hooks. Last shared-context guard/factory rerun:
 gofmt-l empty, vet ./... green, race3 tasks1.320s/discovery28.089s/metrics24.076s/webdav10.422s.
+
+WebDAV commit: f9660f6b. Agent address follow now uses Spawn, Detach and Runtime Clock for its
+production120s throttle; refused admission rolls the throttle back. Existing4s verification timeout
+and messages remain unchanged. Shutdown cancellation reaches the Agent client without producing an
+unreachable-address notice. Test hooks run accepted work through an isolated Runtime rather than inline
+goroutines. Production120s/4s parameters are pinned by tests. .32 gofmt/vet passed; race count3
+upgrades77.511s and api/agents416.954s; after adding tracked regressions upgrades113.664s passed.

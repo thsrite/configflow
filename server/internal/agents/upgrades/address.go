@@ -14,6 +14,7 @@ package upgrades
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -22,9 +23,11 @@ import (
 
 	"configflow/internal/agents"
 	"configflow/internal/jsonx"
+	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
 	"configflow/internal/notifications"
 	"configflow/internal/pystr"
+	"configflow/internal/repo"
 )
 
 // Constants of address_follow.py.
@@ -39,34 +42,34 @@ const (
 	RouterHint = "如果上游路由关联了这台设备（代理网关或 DHCP DNS），请重新预览并发布上游路由。"
 )
 
+// DefaultRetrySeconds is the production address-follow throttle.
+const DefaultRetrySeconds = 120
+
 // RetrySeconds is RETRY_SECONDS (a variable: tests set it to 0 as the
 // Python tests monkeypatch it).
-var RetrySeconds float64 = 120
+var RetrySeconds float64 = DefaultRetrySeconds
 
 var addressLog = logx.Get("backend.agents.address_follow")
 
 type attempt struct {
 	host   string
 	member bool
-	at     float64
+	at     time.Time
 }
 
 var (
 	addressMu sync.Mutex
 	attempts  = map[string]attempt{} // agent id -> last attempt
 	reported  = map[string]bool{}    // agent ids with a pending "address changed" notice
-	started   = time.Now()
 )
 
 // Test seams: startThread runs the background check (Python's daemon
 // thread), reachesHook and askHook replace _reaches and _ask.
 var (
-	startThread = func(fn func()) { go fn() }
+	startThread = lifecycle.Spawn
 	reachesHook func(agent *jsonx.Object, host string) bool
 	askHook     func(agent *jsonx.Object, host, method string, body *jsonx.Object) (int, *jsonx.Object)
 )
-
-func monotonic() float64 { return time.Since(started).Seconds() }
 
 // ResetAddressState forgets the attempts and pending notices (tests).
 func ResetAddressState() {
@@ -143,7 +146,11 @@ func agentIDOf(agent *jsonx.Object) (string, error) {
 
 // Follow is follow(manager, agent, reported): called for every heartbeat
 // that reports a host; returns at once and verifies in the background.
-func Follow(_ context.Context, m *agents.Manager, agent *jsonx.Object, reportedHost string) error {
+func Follow(ctx context.Context, m *agents.Manager, agent *jsonx.Object, reportedHost string) error {
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	host := Usable(reportedHost)
 	agentID, err := agentIDOf(agent)
 	if err != nil {
@@ -162,16 +169,24 @@ func Follow(_ context.Context, m *agents.Manager, agent *jsonx.Object, reportedH
 	if err != nil {
 		return err
 	}
-	now := monotonic()
+	now := lifecycle.ClockFrom(ctx).Now()
 	addressMu.Lock()
 	previous, ok := attempts[agentID]
-	if ok && previous.host == host && previous.member == member && now-previous.at < RetrySeconds {
+	if ok && previous.host == host && previous.member == member && now.Sub(previous.at).Seconds() < RetrySeconds {
 		addressMu.Unlock()
 		return nil
 	}
 	attempts[agentID] = attempt{host, member, now}
 	addressMu.Unlock()
-	startThread(func() { followInBackground(m, agentID, host) })
+	base := repo.WithRepository(context.Background(), m.Repository())
+	if err := startThread(base, "agent-address", func(worker context.Context) { followInBackground(worker, m, agentID, host) }); err != nil {
+		addressMu.Lock()
+		if current := attempts[agentID]; current == (attempt{host, member, now}) {
+			delete(attempts, agentID)
+		}
+		addressMu.Unlock()
+		return fmt.Errorf("start Agent address check: %w", err)
+	}
 	return nil
 }
 
@@ -213,7 +228,7 @@ func encodingFailure(err error) error {
 // reaches is _reaches(agent, host): only the Agent holding this record's
 // token answers this authenticated endpoint. requests.get with the
 // environment's proxies (trust_env).
-func reaches(m *agents.Manager, agent *jsonx.Object, host string) (bool, error) {
+func reaches(ctx context.Context, m *agents.Manager, agent *jsonx.Object, host string) (bool, error) {
 	if reachesHook != nil {
 		return reachesHook(agent, host), nil
 	}
@@ -221,9 +236,12 @@ func reaches(m *agents.Manager, agent *jsonx.Object, host string) (bool, error) 
 	if err != nil {
 		return false, err
 	}
-	response, err := m.Client().Do(context.Background(), agents.Request{Method: "GET", URL: base + "/api/capabilities",
+	response, err := m.Client().Do(ctx, agents.Request{Method: "GET", URL: base + "/api/capabilities",
 		Header: header, Timeout: agents.Seconds(VerifyTimeout), Latin1Headers: true})
 	if err != nil {
+		if ctx.Err() != nil {
+			return false, ctx.Err()
+		}
 		return false, encodingFailure(err) // every other failure is a RequestException here
 	}
 	return response.StatusCode == 200, nil
@@ -231,7 +249,7 @@ func reaches(m *agents.Manager, agent *jsonx.Object, host string) (bool, error) 
 
 // ask is _ask(agent, host, method, body): the Agent's own address endpoint;
 // status 0 is None (unreachable), the body a dict ({} otherwise).
-func ask(m *agents.Manager, agent *jsonx.Object, host, method string, body *jsonx.Object) (int, *jsonx.Object, error) {
+func ask(ctx context.Context, m *agents.Manager, agent *jsonx.Object, host, method string, body *jsonx.Object) (int, *jsonx.Object, error) {
 	if askHook != nil {
 		status, data := askHook(agent, host, method, body)
 		return status, data, nil
@@ -247,9 +265,12 @@ func ask(m *agents.Manager, agent *jsonx.Object, host, method string, body *json
 		}
 		header.Set("Content-Type", "application/json")
 	}
-	response, err := m.Client().Do(context.Background(), agents.Request{Method: method, URL: base + "/api/agent-address",
+	response, err := m.Client().Do(ctx, agents.Request{Method: method, URL: base + "/api/agent-address",
 		Header: header, Body: payload, Timeout: agents.Seconds(VerifyTimeout), Latin1Headers: true})
 	if err != nil {
+		if ctx.Err() != nil {
+			return 0, nil, ctx.Err()
+		}
 		if failure := encodingFailure(err); failure != nil {
 			return 0, nil, failure
 		}
@@ -263,13 +284,13 @@ func ask(m *agents.Manager, agent *jsonx.Object, host, method string, body *json
 	return response.StatusCode, object, nil
 }
 
-func followInBackground(m *agents.Manager, agentID, host string) {
+func followInBackground(ctx context.Context, m *agents.Manager, agentID, host string) {
 	defer func() {
 		if p := recover(); p != nil {
 			addressLog.Error("Could not follow the reported address of Agent " + agentID)
 		}
 	}()
-	if err := follow(context.Background(), m, agentID, host); err != nil {
+	if err := follow(ctx, m, agentID, host); err != nil {
 		addressLog.Exception("Could not follow the reported address of Agent "+agentID, err)
 	}
 }
@@ -324,7 +345,7 @@ func follow(ctx context.Context, m *agents.Manager, agentID, host string) error 
 		addressLog.Warning("Agent " + label + " 上报地址 " + host + " 与另一条同名记录相同，记录未修改")
 		return nil
 	}
-	ok, err := reaches(m, agent, host)
+	ok, err := reaches(ctx, m, agent, host)
 	if err != nil {
 		return err
 	}
@@ -426,7 +447,8 @@ func iterate(value any) ([]any, error) {
 
 // Describe is describe(agent): what the 修改地址 dialog shows before anything
 // is changed.
-func Describe(_ context.Context, m *agents.Manager, agent *jsonx.Object) (*jsonx.Object, error) {
+func Describe(ctx context.Context, m *agents.Manager, agent *jsonx.Object) (*jsonx.Object, error) {
+	ctx = lifecycle.Detach(ctx)
 	host := agent.Value("host")
 	if !jsonx.Truthy(host) {
 		host = ""
@@ -442,7 +464,7 @@ func Describe(_ context.Context, m *agents.Manager, agent *jsonx.Object) (*jsonx
 	if member {
 		return result("ha", HAEdit, []any{}, "", false), nil
 	}
-	status, info, err := ask(m, agent, jsonx.Str(agent.Value("host")), "GET", nil)
+	status, info, err := ask(ctx, m, agent, jsonx.Str(agent.Value("host")), "GET", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -481,6 +503,7 @@ func refusal(message any) *jsonx.Object { return jsonx.Obj("success", false, "me
 // the Agent there first, store it on the device, then in the record. It
 // returns the answer and its HTTP status.
 func Change(ctx context.Context, m *agents.Manager, agent *jsonx.Object, value any) (*jsonx.Object, int, error) {
+	ctx = lifecycle.Detach(ctx)
 	if text, ok := value.(string); ok {
 		value = pystr.Strip(text)
 	}
@@ -505,13 +528,13 @@ func Change(ctx context.Context, m *agents.Manager, agent *jsonx.Object, value a
 	} else if taken {
 		return refusal("另一条同名的 Agent 记录已经在用 " + host), 409, nil
 	}
-	status, info, err := ask(m, agent, host, "GET", nil)
+	status, info, err := ask(ctx, m, agent, host, "GET", nil)
 	if err != nil {
 		return nil, 0, err
 	}
 	if status == 404 {
 		// An Agent without the address endpoint: prove it is this Agent another way.
-		ok, err := reaches(m, agent, host)
+		ok, err := reaches(ctx, m, agent, host)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -532,7 +555,7 @@ func Change(ctx context.Context, m *agents.Manager, agent *jsonx.Object, value a
 	}
 	written := false
 	if chosen == "agent" {
-		status, reply, err := ask(m, agent, host, "POST", jsonx.Obj("host", host))
+		status, reply, err := ask(ctx, m, agent, host, "POST", jsonx.Obj("host", host))
 		if err != nil {
 			return nil, 0, err
 		}
