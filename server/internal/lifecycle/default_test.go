@@ -120,3 +120,33 @@ func TestDefaultRuntimeProcess(t *testing.T) {
 	receive(t, oldDone)
 	until(t, func() bool { return lifecycle.Configure(lifecycle.Options{}) == nil })
 }
+
+func TestStartupConfigureProcess(t *testing.T) {
+	if os.Getenv("O33_STARTUP_CONFIGURE_HELPER") != "1" {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestStartupConfigureProcess$", "-test.count=1")
+		cmd.Env = append(os.Environ(), "O33_STARTUP_CONFIGURE_HELPER=1")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("startup/configure: %v\n%s", err, out)
+		}
+		return
+	}
+	entered := make(chan struct{})
+	gate, finish := releaseGate(t)
+	lifecycle.RegisterStartup(lifecycle.Startup{Name: "configure-barrier", Run: func(context.Context) error {
+		close(entered)
+		<-gate
+		return nil
+	}})
+	done := make(chan struct{})
+	go func() { defer close(done); lifecycle.RunStartup(context.Background()) }()
+	receive(t, entered)
+	if err := lifecycle.Configure(lifecycle.Options{}); !errors.Is(err, lifecycle.ErrRunning) {
+		finish()
+		receive(t, done)
+		t.Fatalf("Configure replaced active startup: %v", err)
+	}
+	finish()
+	receive(t, done)
+}

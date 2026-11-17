@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"net"
 	"net/http"
 	"os"
@@ -41,9 +42,11 @@ func shutdownGrace() (time.Duration, error) {
 		return 8 * time.Second, nil
 	}
 	seconds, err := strconv.ParseFloat(raw, 64)
-	// The conversion also excludes NaN, infinity and duration overflow.
+	if err != nil || math.IsNaN(seconds) || math.IsInf(seconds, 0) || seconds <= 0 || seconds >= float64(math.MaxInt64)/float64(time.Second) {
+		return 0, errors.New(msgInvalidGrace)
+	}
 	grace := time.Duration(seconds * float64(time.Second))
-	if err != nil || seconds <= 0 || grace <= 0 {
+	if grace <= 0 {
 		return 0, errors.New(msgInvalidGrace)
 	}
 	return grace, nil
@@ -175,13 +178,25 @@ func run(ctx context.Context, frontendDir string, signals <-chan os.Signal, opts
 	case <-signals:
 	case serveErr = <-serveErrors:
 	}
-	stopped := make(chan struct{})
-	go func() { defer close(stopped); lifecycle.Stop(grace) }()
+	stopped := make(chan error, 1)
+	go func() {
+		var err error
+		defer func() {
+			if recover() != nil {
+				err = lifecycle.ErrPanic
+			}
+			stopped <- err
+		}()
+		lifecycle.Stop(grace)
+	}()
 	select {
 	case <-signals:
 		// A second stop signal is the explicitly documented force-exit path.
 		os.Exit(0)
-	case <-stopped:
+	case err := <-stopped:
+		if err != nil {
+			return err
+		}
 	}
 	if errors.Is(serveErr, http.ErrServerClosed) {
 		return nil

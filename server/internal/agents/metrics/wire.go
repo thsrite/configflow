@@ -71,9 +71,9 @@ func deleteHistory(m *agents.Manager, agentID string) {
 var lifecycleOnce sync.Once
 
 // Wire is A04's entry in internal/server wirePackages: the registry hooks
-// (heartbeat metrics, Agent deletion), loading the saved history when the
-// Agent manager is initialized at start, the task-list row with "run now"
-// and the interval edit, the flush loop, and the final save at shutdown.
+// (heartbeat metrics, Agent deletion), synchronous saved-history Startup,
+// the task-list row with "run now" and the interval edit, the flush loop,
+// and the two phased saves at shutdown.
 func Wire() {
 	agents.RegisterHooks(agents.Hooks{AddMetrics: addMetrics, DeleteMetricsHistory: deleteHistory})
 	RegisterStartup()

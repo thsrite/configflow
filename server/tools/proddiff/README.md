@@ -45,8 +45,8 @@ Python 通过测试启动器在导入 app 之前禁用具名启动函数，正�
 HTTP 模式直接构建 `cmd/configflow`，只加 `-tags configflow_proddiff`，不生成 overlay，
 不重写任何 Go 源码。`lifecycle/mode_proddiff.go` 将默认 Runtime 固定为 ModeManual，
 同步执行已注册 Startup；main 的 build-tag helper 从实际 Router 导出路由清单。
-`subscription-cache-prune` 已注册为 Startup（对应 Python 的 `prune_orphan_caches`），
-五个周期循环不启动。Startup 完成后输出 `.loops`、`.startups` 和最后的 `.ready` 标记，
+Startup 顺序为 `load-config`、`subscription-cache-prune`、`agent-manager-init`、
+`metrics-load-history`（对应 Python 导入时的一次性工作），五个周期循环不启动。Startup 完成后输出 `.loops`、`.startups` 和最后的 `.ready` 标记，
 比较程序等到 ready 才发请求；Startup 清单来自注册表，没有具名工作白名单。
 普通构建的 helper 是 noop，默认 Runtime 固定为 ModeRun，没有环境变量或参数能关闭循环。
 `configflow_difftest` 是另一独立 tag：只向 `CONFIGFLOW_LIFECYCLE_EVENTS` 指定的私有 JSONL
@@ -56,7 +56,7 @@ HTTP 模式直接构建 `cmd/configflow`，只加 `-tags configflow_proddiff`，
 Agent rule sync、metrics flush、OxiDNS ranking、domain discovery、scheduled refresh、
 router rule sync、Sub-Store idle monitor。
 当前 Go 禁用 5 个已注册循环：metrics-history-flush、oxidns-ranking-history、
-sub-store-idle、scheduled-refresh、domain-discovery-auto；subscription-cache-prune 按上文启动时执行一次。
+sub-store-idle、scheduled-refresh、domain-discovery-auto；四项 Startup 按上文顺序同步执行一次。
 Python 多出的 5 项（DNS follow、HA publication、IPv6 verification、Agent/router rule sync）在 Go 中尚无实现，
 无需禁用。`flask_worker.py` 记录每个启动的线程（只写私有目录），被禁用的循环一旦启动即框架失败。
 所有已知定时启动入口均已关闭；按请求执行的计算、连接尝试仍在隔离网络中运行。
