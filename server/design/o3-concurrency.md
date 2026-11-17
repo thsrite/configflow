@@ -435,6 +435,34 @@ Implementation notes: [startup and shutdown](o3-startup-shutdown.md).
 - Implement tasks/metrics-manual/discovery/WebDAV/upgrades/Sub-Store/listener first. Clock extraction,
   Flight.DoChan and dependent provider/matcher changes wait until the joint O3 review is merged, then rebase.
 
+**Clarified in O3-6 (coordinator, 2026-11-18):**
+- Move the recorded cancellation parent and Detach implementation into internal/ctxx, depending only
+  on context. lifecycle.Detach remains a forwarding API; repo owners use the same implementation,
+  avoiding the lifecycle → repo import cycle. Explicit ctxx.Uninterruptible marks local atomic/batch
+  work and masks the recorded parent: a downstream Detach must not restore shutdown cancellation.
+  CommitCacheUpdates, CommitProviderBundle and local batches use this entry. Test disconnects,
+  ordinary shutdown cancellation and Detach nested inside an uninterruptible batch.
+- NewLeafKeyed is for bounded, cancellable leaf-lock waits and releases unused entries. It neither
+  records nor checks L1–L3 levels; it never erases an ancestor's recorded level. Do not add an L4
+  constant or mislabel leaf locks as device locks. Ordinary L4 stores still use sync.Mutex.
+- Sub-Store's fixed work → control nesting has an explicit L2 suborder; the reverse remains a
+  violation. Pass held contexts rather than dropping them or suppressing checking. Use/Maintenance
+  callbacks become func(context.Context) error. JobLock receives ctx; StateStore and weblistener
+  blocking entry points receive ctx. Never recursively RLock while a writer is waiting.
+- .compose-enrollment.lock belongs to bootstrap.py on the target Agent, outside the server's
+  instance-lock boundary. Keep that cross-process flock and generated script unchanged. Only the
+  server-side installer .issue.lock is replaced here. O3-7 checks Go AST calls, not generated script
+  strings, for server-side Flock.
+- Notifications collect external observations outside the leaf lock, then merge under it with a
+  version guard against stale observations. Monitor uses L3 read/verification → L4 CAS, preserving
+  the R06 atomic target/publication check without an unlocked verification window. A minimal repo
+  locked-read snapshot interface is allowed. Add concurrent regressions for both boundaries.
+- JobLock missing its routers implementation fails closed; add the rejection regression before
+  wiring the real routers-owned Keyed. The old nil-hook implementation actually allowed commits,
+  so O3-6 corrects it. Routers writes and that wiring wait until R08/R09 have merged, then rebase.
+- Leave every Python-written lock file untouched. Final acceptance uses server/scripts/gate.sh
+  (-p 6 on .64); it includes both tags, full race, all enabled difftests and proddiff.
+
 ### 2.4 Mapping table (every Python loop/lock → Go construct)
 
 Porters of the missing modules use these names, timings and levels; reviewers check them.
@@ -475,8 +503,9 @@ Porters of the missing modules use these names, timings and levels; reviewers ch
 ### 2.5 Request handlers (PORTING 4b, made structural)
 
 - **The owner detaches, not the handler.** Every exported entry point that writes state, takes an L1–L3 lock,
-  records task status, starts a job or joins a shared download starts with `ctx = lifecycle.Detach(ctx)`
-  (repo already does this per n7-n8). Handlers pass `c.Context()` unchanged. Existing handler-level
+  records task status, starts a job or joins a shared download starts with `ctx = lifecycle.Detach(ctx)`.
+  Repo's matching owner detachment is added in O3-6 through the shared ctxx implementation; it was not
+  already present after n7-n8. Handlers pass `c.Context()` unchanged. Existing handler-level
   `WithoutCancel` calls (29 files) move into the owners in step O3-6; a handler may keep one only where the owner
   is a pure function.
 - External I/O always has its own timeout from Python (`context.WithTimeout(detached, …)`); the request ctx is used
