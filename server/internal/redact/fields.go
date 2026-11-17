@@ -19,7 +19,10 @@ type publicField struct {
 	key   string
 	value any
 }
-type orderedFields struct{ members []publicField }
+type orderedFields struct {
+	members []publicField
+	index   map[string]int
+}
 
 func (o *orderedFields) Keys() []string {
 	keys := make([]string, len(o.members))
@@ -29,20 +32,20 @@ func (o *orderedFields) Keys() []string {
 	return keys
 }
 func (o *orderedFields) Get(key string) (any, bool) {
-	for _, f := range o.members {
-		if f.key == key {
-			return f.value, true
-		}
+	if i, ok := o.index[key]; ok {
+		return o.members[i].value, true
 	}
 	return nil, false
 }
 func (o *orderedFields) Set(key string, value any) {
-	for i, f := range o.members {
-		if f.key == key {
-			o.members[i].value = value
-			return
-		}
+	if o.index == nil {
+		o.index = make(map[string]int)
 	}
+	if i, ok := o.index[key]; ok {
+		o.members[i].value = value
+		return
+	}
+	o.index[key] = len(o.members)
 	o.members = append(o.members, publicField{key, value})
 }
 

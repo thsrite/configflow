@@ -37,3 +37,22 @@ func TestNativeMapCyclesAreBounded(t *testing.T) {
 		t.Fatal("cycle changed credentials")
 	}
 }
+
+func FuzzNativeCredentialJSON(f *testing.F) {
+	for _, input := range []string{`{"message":"synthetic-secret","password":"synthetic-secret"}`, `{"a":[1,true,null,{"token":"synthetic-secret"}]}`, `{"x":"NaN Infinity","[REDACTED]":1}`} {
+		f.Add(input)
+	}
+	f.Fuzz(func(t *testing.T, input string) {
+		if !json.Valid([]byte(input)) {
+			return
+		}
+		output := SanitizeCredentials(json.RawMessage(input), NewSecrets([]string{"synthetic-secret"}))
+		if !json.Valid(output) {
+			t.Fatalf("invalid redacted JSON: %q", output)
+		}
+		// Values may move after a key collision, but a known secret cannot leave.
+		if strings.Contains(string(output), "synthetic-secret") {
+			t.Fatalf("known secret escaped: %q", output)
+		}
+	})
+}

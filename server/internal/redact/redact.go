@@ -250,7 +250,11 @@ func (s *sanitizer) visit(value any, depth int) any {
 		if ptr.Kind() == reflect.Pointer && ptr.IsNil() {
 			return nil
 		}
-		id := containerID{ptr.UnsafePointer(), -1}
+		identity := unsafe.Pointer(&v)
+		if ptr.Kind() == reflect.Pointer {
+			identity = ptr.UnsafePointer()
+		}
+		id := containerID{identity, -1}
 		if depth >= maxDepth || s.active[id] {
 			return Redacted
 		}
