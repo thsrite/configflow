@@ -61,7 +61,9 @@ started them. Re-route them by sending every running agent below a one-line `mcp
 `notifyOnFinish: true` ("协调会话已更换，任务不变，继续做，完成后照常报告。"). Then poll each once with
 `get_agent_status`; act on any that already finished.
 
-**Pending coordinator actions** (updated 2026-11-17 ~17:30 by coordinator bb75f5c0)
+**Pending coordinator actions** (updated 2026-11-17 ~19:10 by coordinator bb75f5c0)
+Merged since: O3-3 (fb43c371), N8-3 ported + A11 Opus review verified (1e0f7ac3). Opus quota ran out ~18:00, reset 19:00;
+R07 review (64c0ec9d) and N8-3 review (38e6f0a7) resumed. Next Opus: O3-1..O3-3 joint review. A12 → fresh Codex.
 N7-3 shared yamlx commits on go-n7-3a, cherry-picked by b/c: 0b98b42e tag/shape, dc3f339c AllPairs, 23196ddd merge
 source + explicit scalars via yaml.v3 decode, a7acc788 error sentinels (ErrSyntax/ErrPolicy/ErrAliasRecursion/ErrAliasBudget).
 N7-3b also owns convert/proxyyaml_loose.go + convert API error returns; N7-3c also discovery/bridge.go customPorts.
@@ -74,8 +76,8 @@ N7-3b also owns convert/proxyyaml_loose.go + convert API error returns; N7-3c al
    the grep gate as a test (no yaml.Unmarshal/NewDecoder on user text outside yamlx). Then N7-4.
 4. A11 handed back (ported, `go-port-a11` 49b51bc1) → Opus review 7ea2310a running. After it: A12 (author 74bce4a1
    is idle, context ~385k/475k — consider a fresh Codex).
-5. User owes: IP of a **third native-Linux test server** (Windows Hyper-V VM OK if always-on, bridged, Arch, 8+ cores,
-   16+ GB, no dynamic memory, user sunbroke + routeros-audit key). Set it up like .63 (see memory remote-test-server).
+5. Third test server done: `.64` (Hyper-V, set up and verified 2026-11-17 — full gate incl. proddiff passes; venv
+   identical to .32; snapshot copied; `ssh pve` key with from=.64). `rt` load-balances .32/.64.
 Done since the evening handoff: N7-2 verified on .32 and merged (go 75e280b9, pushed).
 Decision (coordinator, 2026-11-17): invalid explicit tag/shape combos (`!!null [a]` …) are rejected with a lined
 Chinese error (PyYAML rejects them too; same direction as D1 and N7-2 F6) — implemented once in yamlx by N7-3.
@@ -241,9 +243,9 @@ Brief template (adapt the package part; the agents already know the rest from PO
 
 ## Verification commands (run from the worktree; never on the Mac)
 
-Test servers: `.63` (WSL2 on the maintainer's PC, port 2222 via `~/.ssh/config`) for agents' iterative runs;
-`.32` (native Linux) for every authoritative run — agents' final hand-back run and **the coordinator's merge
-verification + proddiff gate always on .32** (WSL can be interrupted and differs from production Linux).
+Test servers: `.32` and `.64` are equivalent (since 2026-11-17; `.63` WSL retired). `rt` load-balances between them;
+pin with `RT_HOST` when a sequence of commands must hit the same copy. Merge verification + proddiff gate may run
+on either; the coordinator usually pins one per verification worktree.
 
 ```
 rt -- bash -lc 'cd server && gofmt -l internal/<pkg>; go vet ./internal/<pkg>/... && go test -count=1 ./internal/<pkg>/...'

@@ -12,17 +12,18 @@ asked in; the maintainer reads Chinese.
   runs the command there and returns its exit code. `rt --back <path>` copies a file back. Python for
   reference outputs on the server: `~/cf-test/.venv/bin/python` (run with `PYTHONPATH=.` from the repo root).
 - Only light work locally: editing, git, reading files, grep, scripts that finish in seconds.
-- **Two test servers** (same setup: Arch, Go, `~/cf-test/.venv` Python 3.11, prod snapshot for proddiff):
-  `192.168.0.32` (native Linux, default for `rt`) and `192.168.0.63` (WSL2 on a Windows PC, 16 cores; select
-  it with `RT_HOST=sunbroke@192.168.0.63 rt -- …`). **Iterate on .63** (porters' and reviewers' repeated
-  runs). Your **final hand-back run** (full suite, `-race`, proddiff) goes on **.32**. .63 can disappear when
-  the PC sleeps or reboots: if it is unreachable or a run is cut off, continue on .32 — that is not a test
-  failure. A timing-sensitive failure seen only on .63 must be re-checked on .32 before you call it a bug.
-- **Anything that uses a real network stack runs on .32 only, never on .63 (WSL):** starting Docker
-  containers or Compose (host / bridge / macvlan), iptables/nftables, policy routing, TUN, keepalived/VIPs,
-  network namespaces, installer scripts executed in containers. WSL's mirrored networking and kernel make
-  those results meaningless. Pure unit tests of generated compose files/scripts may run anywhere. Real
-  multi-host network behaviour (macvlan HA, VIP failover) belongs to the PVE lab batches, driven from .32.
+- **Two equivalent test servers** (same setup: Arch, Go, `~/cf-test/.venv` Python 3.11 with identical packages,
+  prod snapshot for proddiff, `ssh pve` to the lab): `192.168.0.32` (12 cores) and `192.168.0.64` (Hyper-V VM with
+  its own kernel and TUN, 16 cores; replaced the retired WSL `.63` on 2026-11-17). Without `RT_HOST`, `rt` picks the
+  less-loaded one for every run that syncs and prints `rt: running on <host>`; `--no-sync`/`--back`-only reruns reuse
+  the host it last picked for this worktree (`rt host` shows it). Both are valid for iteration **and** for the final
+  hand-back run (full suite, `-race`, proddiff); the hand-back report names the host. When several commands must hit
+  the same copy (e.g. `rt -- …` then `rt --no-sync -- …` while another agent shares the worktree), pin it with
+  `RT_HOST=sunbroke@192.168.0.32` (or `.64`). A timing-sensitive failure seen on one host only is re-checked on the
+  other before you call it a bug.
+- **Real network stack** (Docker/Compose host/bridge/macvlan, iptables/nftables, policy routing, TUN, keepalived/VIPs,
+  network namespaces, installer scripts in containers) runs on either server; never on the Mac. Real multi-host
+  network behaviour (macvlan HA, VIP failover) belongs to the PVE lab batches, driven from either server (`ssh pve`).
   Run full `-race` (`go test -race ./...`) only once at the end; while iterating use `-race` only on the
   packages you changed.
 - **Never run `rt clean` in `~/program/configflow-go`** (the shared worktree); only inside your own
