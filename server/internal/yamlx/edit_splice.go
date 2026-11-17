@@ -238,6 +238,9 @@ func (p *editSplicer) removePair(parent, key, value *Node) bool {
 	if len(bytes.Trim(prefix, " \t")) != 0 {
 		return false
 	} // includes first key after '- '.
+	if !p.singleLineCollections(value) {
+		return false
+	}
 	safe := true
 	for _, root := range []*Node{key, value} {
 		walkEditNodes(root, func(n *Node) {
@@ -294,6 +297,26 @@ func (p *editSplicer) removePair(parent, key, value *Node) bool {
 			keep = append(keep, p.source[line.start+comment:line.next]...)
 		}
 		p.patches = append(p.patches, textPatch{line.start, line.next, keep, true})
+	}
+	return true
+}
+
+// A flow collection can close at the enclosing map's indentation. Only splice
+// it when the native parser proves its entire value fits on its starting line;
+// indentation alone cannot locate a multiline flow collection's end.
+func (p *editSplicer) singleLineCollections(n *Node) bool {
+	if (n.Kind == yaml.MappingNode || n.Kind == yaml.SequenceNode) && n.Style&yaml.FlowStyle != 0 {
+		start, ok := p.offset(n)
+		if !ok {
+			return false
+		}
+		parsed, err := Parse(p.source[start:p.lines[n.Line-1].end])
+		return err == nil && Equal(parsed, n)
+	}
+	for _, child := range n.Content {
+		if !p.singleLineCollections(child) {
+			return false
+		}
 	}
 	return true
 }
