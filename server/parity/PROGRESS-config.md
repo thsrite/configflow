@@ -30,6 +30,21 @@ Flask differential packages pass, including agents twice (229.828s). Proddiff
 HTML-to-JSON errors are explicitly verified; existing A18/F1 remains recorded,
 with only its error representation fingerprint updated. No route coverage was removed.
 
+## N7-3a — native subs/substore YAML readers (ported; final gates pending)
+
+All YAML reader sites in subs/parser/compat/hosts/dialers and substore/client use Parse/Get/AllPairs
+and the one shared ProjectJSONKeys boundary. No legacy Load*/Mapping/Lookup/Timestamp/Compose in
+these packages; no runtime Clone. The bridge retains alias sharing and checks full/subtree budgets;
+40-level alias and self-reference regressions cover each entry. N8-9 removes the jsonx transition.
+
+Migration gate: 1944 real caller inputs (parser763/dialers610/hosts494/substore51/detection26), plus
+1591+735 old core texts; unknown=0. Real Python oracle patches only YAML loaders with separately
+recorded native values and complete pre-projection tag/alias audit. Business code is unchanged;
+expected changes / classified: subs209/209 out of7494, substore14/14 out of146. Per-class input counts,
+all eight shared yamlx commits, approved native behavior, exact commands and final gates are recorded
+in [progress/n7-3a.md](progress/n7-3a.md). Non-YAML golden assertions remain strict. Old loaders and
+pyyaml stay until a/b/c/d integration cleanup; no public route added. Independent review pending.
+
 ## N7-1 — native yamlx core (ported, 2026-11-17)
 
 New yaml.v3 Node API lives alongside the untouched legacy API; no caller/oxidns migration or pyyaml

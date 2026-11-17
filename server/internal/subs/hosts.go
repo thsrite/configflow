@@ -12,6 +12,7 @@ import (
 	"configflow/internal/logx"
 	"configflow/internal/weburl"
 	"configflow/internal/yamlx"
+	"gopkg.in/yaml.v3"
 )
 
 var hostsLogger = logx.Get("backend.utils.subscription_hosts")
@@ -238,36 +239,43 @@ func ExtractSubscriptionHosts(text string) *jsonx.Object {
 	if !ok {
 		return nil
 	}
-	document, err := yamlx.LoadWith(block, yamlx.LoadOptions{KeepNonStringKeys: true})
+	document, err := yamlx.Parse([]byte(block))
 	if err != nil {
 		return hostsFailure("parse_error")
 	}
-	raw, _ := yamlx.Lookup(document, "hosts")
-	if raw == nil {
+	raw := yamlx.Resolve(yamlx.Get(document, "hosts"))
+	if raw == nil || raw.Kind == yaml.ScalarNode && raw.ShortTag() == "!!null" {
 		return nil
 	}
-	var pairs []yamlx.Pair
-	switch hosts := raw.(type) {
-	case *jsonx.Object:
-		for key, value := range hosts.All() {
-			pairs = append(pairs, yamlx.Pair{Key: key, Value: value})
-		}
-	case *yamlx.Mapping:
-		pairs = hosts.Pairs
-	default:
+	if raw.Kind != yaml.MappingNode {
 		return hostsFailure("not_mapping")
+	}
+	type hostPair struct{ key, value *yamlx.Node }
+	var pairs []hostPair
+	for key, value := range yamlx.AllPairs(raw) {
+		pairs = append(pairs, hostPair{key, value})
 	}
 	entries := jsonx.NewObject()
 	skipped := []any{}
 	skippedCount := 0
 	index := 0
 	for _, pair := range pairs {
-		key, value := pair.Key, pair.Value
-		reason := ""
-		name := ""
-		switch key.(type) {
-		case string, jsonx.Number, bool:
-			name = pyLower(pyStrip(jsonx.Str(key)))
+		key := yamlx.Resolve(pair.key)
+		if key.Kind != yaml.ScalarNode {
+			return hostsFailure("parse_error")
+		}
+		value, err := subscriptionYAMLValue(pair.value)
+		if err != nil {
+			return hostsFailure("parse_error")
+		}
+		reason, name := "", ""
+		switch key.ShortTag() {
+		case "!!str", "!!int", "!!float", "!!bool":
+			keyValue, err := subscriptionYAMLValue(key)
+			if err != nil {
+				return hostsFailure("parse_error")
+			}
+			name = pyLower(pyStrip(jsonx.Str(keyValue)))
 		}
 		switch {
 		case index >= MaxEntries:

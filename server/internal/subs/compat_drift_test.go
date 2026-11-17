@@ -13,13 +13,13 @@ package subs
 import (
 	"bufio"
 	"compress/gzip"
-	"encoding/hex"
 	"errors"
+	"fmt"
 	"os"
 	"testing"
 
 	"configflow/internal/jsonx"
-	"configflow/internal/yamlx"
+	"configflow/internal/yamlx/yamlxtest"
 )
 
 type driftRow struct {
@@ -70,32 +70,6 @@ func nonStringValue(fn string, out any) bool {
 		return out != nil && !isString(out)
 	}
 	return false
-}
-
-// driftConv mirrors conv() of the corpus generator for YAML-only values.
-func driftConv(v any) any {
-	switch value := v.(type) {
-	case *jsonx.Object:
-		if value == nil {
-			return nil
-		}
-		out := jsonx.NewObject()
-		for k, child := range value.All() {
-			out.Set(k, driftConv(child))
-		}
-		return out
-	case []any:
-		out := make([]any, len(value))
-		for i, child := range value {
-			out[i] = driftConv(child)
-		}
-		return out
-	case []byte:
-		return jsonx.Obj("__bytes__", hex.EncodeToString(value))
-	case yamlx.Timestamp:
-		return jsonx.Obj("__date__", value.String())
-	}
-	return v
 }
 
 func driftRefs(refs []ref) []any {
@@ -172,8 +146,16 @@ func driftCall(row driftRow) (result any, err error, ok bool) {
 
 func TestCompatDoesNotDriftFromConvertCorpus(t *testing.T) {
 	rows := loadDriftCorpus(t)
+	oracle := nativeReaderCases(t)
 	checked, lenient := map[string]int{}, map[string]int{}
 	for i, row := range rows {
+		if row.fn == "parse_structured_proxy_string" {
+			if expected, changed := changedNativeCase(t, oracle, fmt.Sprintf("subs/drift/%d", i)); changed {
+				row.out = expected.Value("value")
+				row.errClass = expected.GetString("error")
+				row.errMsg = expected.GetString("message")
+			}
+		}
 		got, err, ok := driftCall(row)
 		if !ok {
 			continue
@@ -202,7 +184,7 @@ func TestCompatDoesNotDriftFromConvertCorpus(t *testing.T) {
 				t.Errorf("row %d %s %s: unexpected error %v", i, row.fn, compact(t, row.args), err)
 				continue
 			}
-			if g, w := compact(t, driftConv(got)), compact(t, row.out); g != w {
+			if g, w := compact(t, got), compact(t, row.out); !(row.fn == "parse_structured_proxy_string" && yamlxtest.EqualJSON(got, row.out)) && g != w {
 				t.Errorf("row %d %s %s:\n got  %s\n want %s", i, row.fn, compact(t, row.args), g, w)
 			}
 		}

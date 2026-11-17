@@ -1,6 +1,7 @@
 package subs
 
 import (
+	"errors"
 	"regexp"
 	"sort"
 	"strings"
@@ -69,13 +70,14 @@ func ExtractSubscriptionDialers(text string) (*jsonx.Object, error) {
 	if !strings.Contains(text, "dialer-proxy") {
 		return nil, nil
 	}
-	// _load: CSafeLoader, else yaml.safe_load. Only string keys are ever
-	// looked up below, so mappings with other keys lose just those keys.
-	data, err := yamlx.LoadCSafeFirst(text, yamlx.LoadOptions{KeepNonStringKeys: true})
+	data, err := readSubscriptionYAML(text, true)
 	if err != nil {
+		if errors.Is(err, yamlx.ErrAliasBudget) || errors.Is(err, yamlx.ErrAliasRecursion) {
+			return nil, err
+		}
 		return nil, nil
 	}
-	document, ok := stringKeysOnly(data).(*jsonx.Object)
+	document, ok := data.(*jsonx.Object)
 	if !ok {
 		return nil, nil
 	}
@@ -596,33 +598,4 @@ func AdaptSubscriptionProxies(subscription string, proxies []any, main, record *
 		dialersLogger.Infof("订阅「%s」跳过 %d 个链式节点：%s", subscription, len(dropped), strings.Join(shown, "、"))
 	}
 	return adapted
-}
-
-// stringKeysOnly turns every *yamlx.Mapping in a loaded value into a
-// *jsonx.Object without its non-string keys (for code that only looks up
-// and iterates string keys, where those keys cannot matter).
-func stringKeysOnly(value any) any {
-	switch v := value.(type) {
-	case *yamlx.Mapping:
-		out := jsonx.NewObject()
-		for _, pair := range v.Pairs {
-			if key, ok := pair.Key.(string); ok {
-				out.Set(key, stringKeysOnly(pair.Value))
-			}
-		}
-		return out
-	case *jsonx.Object:
-		for key, item := range v.All() {
-			if _, isMapping := item.(*yamlx.Mapping); isMapping {
-				v.Set(key, stringKeysOnly(item))
-			} else {
-				stringKeysOnly(item)
-			}
-		}
-	case []any:
-		for i, item := range v {
-			v[i] = stringKeysOnly(item)
-		}
-	}
-	return value
 }

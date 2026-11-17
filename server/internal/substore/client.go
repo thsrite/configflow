@@ -2,7 +2,6 @@ package substore
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math"
 	"net/http"
@@ -13,9 +12,9 @@ import (
 	"configflow/internal/convert"
 	"configflow/internal/jsonx"
 	"configflow/internal/logx"
-	"configflow/internal/pyyaml"
 	"configflow/internal/weburl"
 	"configflow/internal/yamlx"
+	"gopkg.in/yaml.v3"
 )
 
 // Reuse windows and bounds of sub_store_client.py. Shared by manual
@@ -155,25 +154,8 @@ func isYAMLResponse(text string) bool {
 	if strings.Contains(runePrefix(stripped, 200), "proxies:") || strings.HasPrefix(stripped, "proxies:") {
 		return true
 	}
-	// isinstance(data, dict) and 'proxies' in data: other keys may be anything.
-	data, err := yamlx.LoadWith(stripped, yamlx.LoadOptions{KeepNonStringKeys: true})
-	if _, has := yamlx.Lookup(data, "proxies"); err == nil && has {
-		return true
-	}
-	var unrepresentable *yamlx.UnrepresentableError
-	if errors.As(err, &unrepresentable) {
-		// PyYAML loaded it (a recursive alias, !!set …): only the root
-		// mapping's keys matter here.
-		if root, cerr := pyyaml.Compose(stripped); cerr == nil && root != nil && root.Kind == pyyaml.MappingNode &&
-			root.Tag == pyyaml.TagMap {
-			for _, pair := range root.Pairs {
-				if pair[0].Kind == pyyaml.ScalarNode && pair[0].Tag == pyyaml.TagStr && pair[0].Value == "proxies" {
-					return true
-				}
-			}
-		}
-	}
-	return false
+	n, err := yamlx.Parse([]byte(stripped))
+	return err == nil && yamlx.Get(n, "proxies") != nil
 }
 
 func preview(text string) string {
@@ -618,47 +600,29 @@ func proxyTypeOf(proxyString string) string {
 // a proxies value that is not a list (None, numbers: TypeError; a
 // non-empty string or mapping: AttributeError of fix_proxy_fields).
 func ParseProxiesFromYAML(text string) ([]any, error) {
-	// Mappings with int/bool/None keys are dicts in Python too.
-	data, err := yamlx.LoadWith(text, yamlx.LoadOptions{KeepNonStringKeys: true})
+	n, err := yamlx.Parse([]byte(text))
 	if err != nil {
-		// PyYAML's exception text and class come from the port of its parser.
-		if _, perr := pyyaml.Compose(text); perr != nil {
-			class := "YAMLError"
-			var marked *pyyaml.Error
-			if errors.As(perr, &marked) {
-				class = marked.Class
-			}
-			return nil, &PyError{Class: class, Message: perr.Error(), Err: perr}
-		}
-		return nil, &PyError{Class: "YAMLError", Message: err.Error(), Err: err}
+		return nil, fmt.Errorf(msgInvalidYAML, err)
 	}
-	if !yamlx.IsMapping(data) {
+	if n.Kind != yaml.MappingNode {
 		return []any{}, nil
 	}
-	value, present := yamlx.Lookup(data, "proxies")
-	if !present {
-		value = []any{}
+	proxiesNode := yamlx.Get(n, "proxies")
+	if proxiesNode == nil {
+		return []any{}, nil
+	}
+	value, err := proxyYAMLValue(proxiesNode)
+	if err != nil {
+		return nil, fmt.Errorf(msgInvalidYAML, err)
 	}
 	switch proxies := value.(type) {
 	case []any:
-		for i, proxy := range proxies {
-			proxy, err := jsonKeys(proxy)
-			if err != nil {
-				return nil, err
-			}
-			proxies[i] = proxy
+		for _, proxy := range proxies {
 			if err := fixProxy(proxy); err != nil {
 				return nil, err
 			}
 		}
 		return proxies, nil
-	case *yamlx.Mapping:
-		for _, pair := range proxies.Pairs {
-			if err := fixProxy(pair.Key); err != nil {
-				return nil, err
-			}
-		}
-		return []any{}, nil
 	case string:
 		if proxies == "" {
 			return []any{}, nil
@@ -673,62 +637,6 @@ func ParseProxiesFromYAML(text string) ([]any, error) {
 		return []any{}, nil
 	}
 	return nil, pyErr("TypeError", fmt.Sprintf("'%s' object is not iterable", typeName(value)))
-}
-
-// jsonKeys turns the mappings with non-string keys inside a proxy into
-// objects whose keys read as json.dumps writes them (1 → "1", True →
-// "true", None → "null", 1.5 → "1.5"): the form every node takes in the
-// subscription cache. Binary and date keys, which json.dumps refuses, are
-// a TypeError here.
-func jsonKeys(value any) (any, error) {
-	switch v := value.(type) {
-	case *yamlx.Mapping:
-		object := jsonx.NewObject()
-		for _, pair := range v.Pairs {
-			var key string
-			switch k := pair.Key.(type) {
-			case string:
-				key = k
-			case jsonx.Number:
-				key = k.String()
-			case bool:
-				key = "false"
-				if k {
-					key = "true"
-				}
-			case nil:
-				key = "null"
-			default:
-				return nil, pyErr("TypeError", fmt.Sprintf("keys must be str, int, float, bool or None, not %T", k))
-			}
-			item, err := jsonKeys(pair.Value)
-			if err != nil {
-				return nil, err
-			}
-			object.Set(key, item)
-		}
-		return object, nil
-	case *jsonx.Object:
-		for _, key := range v.Keys() {
-			item := v.Value(key)
-			converted, err := jsonKeys(item)
-			if err != nil {
-				return nil, err
-			}
-			if _, replaced := item.(*yamlx.Mapping); replaced {
-				v.Set(key, converted)
-			}
-		}
-	case []any:
-		for i, item := range v {
-			converted, err := jsonKeys(item)
-			if err != nil {
-				return nil, err
-			}
-			v[i] = converted
-		}
-	}
-	return value, nil
 }
 
 // fixProxy is fix_proxy_fields on one list item (falsy items are skipped,

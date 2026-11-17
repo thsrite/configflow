@@ -11,3 +11,5 @@ const (
 	msgListenerUnsafeEdit      = "无法安全保留 Mihomo 基础配置的注释与引用，原配置已保留"
 	msgListenerMissingPolicy   = "Mihomo listeners[%d].proxy 引用了不存在或未启用的策略「%s」"
 )
+
+const msgHostsKeyShape = "YAML hosts 的键必须是标量（第 %d 行）"

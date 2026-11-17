@@ -1,10 +1,12 @@
 package subs
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/yamlx/yamlxtest"
 )
 
 func asObj(v any) *jsonx.Object {
@@ -61,17 +63,24 @@ func TestFilterCorpus(t *testing.T) {
 
 func TestHostsCorpus(t *testing.T) {
 	rows := loadCorpus(t, "hosts.jsonl.gz")
+	oracle := nativeReaderCases(t)
 	kinds := map[string]int{}
 	for i, row := range rows {
 		kinds[row.Fn]++
 		switch row.Fn {
 		case "extract_subscription_hosts":
+			if expected, changed := changedNativeCase(t, oracle, fmt.Sprintf("subs/hosts/%d", i)); changed {
+				if expected.Has("error") {
+					t.Fatalf("unexpected native oracle rejection %d", i)
+				}
+				row.Out = expected.Value("value")
+			}
 			got := ExtractSubscriptionHosts(row.In.(string))
 			var g any
 			if got != nil {
 				g = got
 			}
-			if gs, ws := compact(t, g), compact(t, row.Out); gs != ws {
+			if gs, ws := compact(t, g), compact(t, row.Out); !yamlxtest.EqualJSON(g, row.Out) {
 				t.Fatalf("row %d extract(%q)\n got  %s\n want %s", i, row.In, gs, ws)
 			}
 		case "hosts_digest":

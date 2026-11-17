@@ -7,6 +7,7 @@ package substore
 // requests' URL preparation and response decoding.
 
 import (
+	"fmt"
 	"net"
 	"net/http"
 	"net/url"
@@ -57,8 +58,9 @@ func bytesOf(list []any) []byte {
 
 func TestPythonCorpus(t *testing.T) {
 	rows := loadCorpus(t)
+	oracle := nativeReaderCases(t)
 	counts := map[string]int{}
-	for _, row := range rows {
+	for i, row := range rows {
 		counts[row.fn]++
 		var got any
 		var err error
@@ -90,10 +92,6 @@ func TestPythonCorpus(t *testing.T) {
 			var proxies []any
 			proxies, err = ParseProxiesFromYAML(row.input.(string))
 			got = proxies
-			if o, ok := row.output.(*jsonx.Object); ok && o.Has("non_list") && !jsonx.Truthy(o.Value("non_list")) && len(proxies) == 0 {
-				// Python returns the falsy non-list value itself; Go an empty list.
-				got = row.output
-			}
 		case "proxies_to_nodes":
 			var proxies []any
 			if proxies, err = ParseProxiesFromYAML(row.input.(string)); err == nil {
@@ -141,6 +139,10 @@ func TestPythonCorpus(t *testing.T) {
 			}
 		default:
 			t.Fatalf("unknown fn %s", row.fn)
+		}
+		if row.fn == "is_yaml_response" || row.fn == "parse_proxies_from_yaml" || row.fn == "proxies_to_nodes" {
+			assertNativeReaderCase(t, oracle, fmt.Sprintf("substore/corpus/%d", i), got, err)
+			continue
 		}
 		label := row.fn + " " + jsonx.Repr(row.input)
 		if len(label) > 200 {

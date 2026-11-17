@@ -1,10 +1,12 @@
 package subs
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/yamlx/yamlxtest"
 )
 
 // C10 adversarial review: Python reference results for edge inputs
@@ -31,14 +33,26 @@ var yamlxDiffers = map[string]bool{}
 
 func TestReviewC10References(t *testing.T) {
 	rows := loadCorpus(t, "review_c10.jsonl.gz")
+	oracle := nativeReaderCases(t)
 	compared, unrepresentable, known, acceptedUTF8 := 0, 0, 0, 0
 	for i, row := range rows {
+		if expected, changed := changedNativeCase(t, oracle, fmt.Sprintf("subs/review_c10/%d", i)); changed {
+			if expected.Has("error") {
+				row.Out = jsonx.Obj("error", expected.GetString("error"))
+			} else {
+				row.Out = expected.Value("value")
+			}
+		}
 		if yamlxDiffers[row.In.(string)] {
 			known++
 			continue
 		}
 		special, isSpecial := reviewOut(row)
 		if isSpecial && special.Has("unrepresentable") {
+			record := oracle.GetObject(fmt.Sprintf("subs/review_c10/%d", i))
+			if len(record.GetList("old_loads"))+len(record.GetList("native_loads")) > 0 {
+				t.Fatalf("uncompared YAML row %d", i)
+			}
 			unrepresentable++
 			continue
 		}
@@ -89,7 +103,7 @@ func TestReviewC10References(t *testing.T) {
 			t.Errorf("row %d %s(%q): Go error %v, Python %s", i, row.Fn, in, err, compact(t, row.Out))
 			continue
 		}
-		if g, w := compact(t, got), compact(t, row.Out); g != w {
+		if g, w := compact(t, got), compact(t, row.Out); !yamlxtest.EqualJSON(got, row.Out) {
 			t.Errorf("row %d %s(%q)\n got  %s\n want %s", i, row.Fn, in, g, w)
 		}
 	}

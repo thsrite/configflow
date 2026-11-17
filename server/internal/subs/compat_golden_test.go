@@ -2,34 +2,15 @@ package subs
 
 import (
 	"errors"
+	"fmt"
 	"os"
+	"strings"
 	"testing"
 
 	"configflow/internal/jsonx"
 	"configflow/internal/yamlx"
+	"configflow/internal/yamlx/yamlxtest"
 )
-
-// goldenForm writes values JSON cannot hold the way the golden does: a
-// timestamp as a one-element list with its text.
-func goldenForm(v any) any {
-	switch x := v.(type) {
-	case yamlx.Timestamp:
-		return []any{x.String()}
-	case *jsonx.Object:
-		out := jsonx.NewObject()
-		for k, e := range x.All() {
-			out.Set(k, goldenForm(e))
-		}
-		return out
-	case []any:
-		out := make([]any, len(x))
-		for i, e := range x {
-			out[i] = goldenForm(e)
-		}
-		return out
-	}
-	return v
-}
 
 // TestCompatAgainstRepoGolden checks the private dialer_references copy of
 // compat.go (ValidateDialers, the structured proxy-string parser) against the
@@ -45,8 +26,18 @@ func TestCompatAgainstRepoGolden(t *testing.T) {
 		t.Fatal(err)
 	}
 	stats := map[string]int{}
+	oracle := nativeReaderCases(t)
 	for i, item := range parsed.(*jsonx.Object).GetList("cases") {
 		record := item.(*jsonx.Object)
+		if record.GetString("fn") == "parse_proxy_string" || record.GetString("fn") == "validate_dialers" {
+			if expected, changed := changedNativeCase(t, oracle, fmt.Sprintf("subs/golden/%d", i)); changed {
+				record = record.Clone()
+				record.Set("ok", expected.Value("value"))
+				record.Set("raised", expected.Has("error"))
+				record.Set("error_class", expected.GetString("error"))
+				record.Set("error", expected.GetString("message"))
+			}
+		}
 		input := record.Value("input")
 		switch record.GetString("fn") {
 		case "validate_dialers":
@@ -77,20 +68,17 @@ func TestCompatAgainstRepoGolden(t *testing.T) {
 			got := parseStructuredProxyString(input.(string))
 			var g any
 			if got != nil {
-				g = goldenForm(got)
+				g = got
 			}
 			if record.GetBool("raised") {
 				t.Errorf("case %d: python raised", i)
 				continue
 			}
-			var nsk *yamlx.NonStringKeyError
-			if _, lerr := yamlx.SafeLoad(pyStrip(input.(string))); got == nil && record.Value("ok") != nil && errors.As(lerr, &nsk) {
-				// Documented gap: a mapping with non-string keys (yamlx
-				// refuses them); Python returns the dict.
+			if _, lerr := readSubscriptionYAML(pyStrip(input.(string)), false); got == nil && record.Value("ok") != nil && errors.Is(lerr, yamlx.ErrPolicy) && strings.Contains(lerr.Error(), "JSON object key must be a string") {
 				stats["proxy_string_non_string_keys"]++
 				continue
 			}
-			if compact(t, g) != compact(t, record.Value("ok")) {
+			if !yamlxtest.EqualJSON(g, record.Value("ok")) {
 				stats["proxy_string_mismatch"]++
 				t.Errorf("case %d parse(%q): got %s python %s", i, input, compact(t, g), compact(t, record.Value("ok")))
 				continue

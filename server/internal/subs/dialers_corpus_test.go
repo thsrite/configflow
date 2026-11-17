@@ -2,6 +2,7 @@ package subs
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 
 	"configflow/internal/jsonx"
@@ -22,12 +23,20 @@ func corpusConvert(node *jsonx.Object) *jsonx.Object {
 
 func TestDialersCorpus(t *testing.T) {
 	rows := loadCorpus(t, "dialers.jsonl.gz")
+	oracle := nativeReaderCases(t)
 	kinds := map[string]int{}
 	errorsSeen := 0
 	for i, row := range rows {
 		kinds[row.Fn]++
 		switch row.Fn {
 		case "extract_subscription_dialers":
+			if expected, changed := changedNativeCase(t, oracle, fmt.Sprintf("subs/dialers/%d", i)); changed {
+				if expected.Has("error") {
+					row.Out = jsonx.Obj("error", expected.GetString("message"))
+				} else {
+					row.Out = expected.Value("value")
+				}
+			}
 			got, err := ExtractSubscriptionDialers(row.In.(string))
 			if _, isErr := isErrorOut(row.Out); isErr {
 				if err == nil {

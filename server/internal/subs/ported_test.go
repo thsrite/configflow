@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"configflow/internal/jsonx"
-	"configflow/internal/yamlx"
 )
 
 // Ports of the pure-function tests of backend/test_*.py. The tests that
@@ -15,7 +14,7 @@ import (
 
 func mustLoad(t *testing.T, text string) any {
 	t.Helper()
-	v, err := yamlx.SafeLoad(text)
+	v, err := readSubscriptionYAML(text, false)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -8,7 +8,10 @@ package substore
 // waiters with mixed flags.
 
 import (
+	"configflow/internal/yamlx"
 	"context"
+	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -71,9 +74,10 @@ func TestReviewParseUserinfo(t *testing.T) {
 }
 
 func TestReviewIsYAMLResponse(t *testing.T) {
-	for _, item := range reviewReference(t).GetList("is_yaml_response") {
+	oracle := nativeReaderCases(t)
+	for i, item := range reviewReference(t).GetList("is_yaml_response") {
 		row := item.(*jsonx.Object)
-		checkOutcome(t, "is_yaml_response "+jsonx.Repr(row.Value("input")), row, isYAMLResponse(row.GetString("input")), nil, false)
+		assertNativeReaderCase(t, oracle, fmt.Sprintf("substore/review/is_yaml_response/%d", i), isYAMLResponse(row.GetString("input")), nil)
 	}
 }
 
@@ -82,8 +86,9 @@ func TestReviewIsYAMLResponse(t *testing.T) {
 // them, the form the subscription cache keeps).
 func TestReviewParseProxiesFromYAML(t *testing.T) {
 	ref := reviewReference(t)
+	oracle := nativeReaderCases(t)
 	for _, fn := range []string{"parse_proxies_from_yaml", "proxies_to_nodes"} {
-		for _, item := range ref.GetList(fn) {
+		for i, item := range ref.GetList(fn) {
 			row := item.(*jsonx.Object)
 			text := row.GetString("input")
 			label := fn + " " + jsonx.Repr(text)
@@ -95,18 +100,12 @@ func TestReviewParseProxiesFromYAML(t *testing.T) {
 			if row.Has("unserializable") {
 				// Python keeps a date key until json.dumps refuses it when
 				// the cache is written; Go refuses it here (TypeError).
-				if err == nil || pythonClass(err) != "TypeError" {
+				if err == nil || !errors.Is(err, yamlx.ErrType) {
 					t.Errorf("%s: Go %s %v, want a TypeError", label, jsonx.Repr(got), err)
 				}
 				continue
 			}
-			if strings.Contains(text, "!!binary") || strings.Contains(text, "---\nproxies") {
-				// Class only: bytes have no jsonx type name; PyYAML's
-				// composer text is compared by the porter's corpus.
-				checkOutcome(t, label, row, got, err, false)
-				continue
-			}
-			checkOutcome(t, label, row, got, err, true)
+			assertNativeReaderCase(t, oracle, fmt.Sprintf("substore/review/%s/%d", fn, i), got, err)
 		}
 	}
 }

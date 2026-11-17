@@ -13,7 +13,6 @@ import (
 
 	"configflow/internal/jsonx"
 	"configflow/internal/rules"
-	"configflow/internal/yamlx"
 )
 
 // DialerReferenceError is dialer_references.DialerReferenceError, a
@@ -55,7 +54,7 @@ func parseStructuredProxyString(proxyString string) *jsonx.Object {
 			}
 		}
 	}
-	if v, err := yamlx.SafeLoad(stripped); err == nil {
+	if v, err := readSubscriptionYAML(stripped, false); err == nil {
 		if o, ok := v.(*jsonx.Object); ok && bytesTruthy(o.Value("type")) {
 			return o
 		}

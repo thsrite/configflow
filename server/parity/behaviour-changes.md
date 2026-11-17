@@ -153,3 +153,25 @@ OxiDNS RulesFingerprint 则专用于校验证明，绑定 Go 嵌入 schema 和�
 C31 生成器的输入校验修正：聚合的 `subscriptions` 必须为字符串数组，缺省为空数组；Go 不把字符串拆成字符 ID。Python 的干运行生成器会把 `"s"` 当成选择订阅 `s`，而某些 null/布尔值又会在更晚的步骤崩溃。Go 在生成前拒绝这些错误类型，保持已有公共保存接口的数组合同。用户应把 `"subscriptions":"s"` 改为 `"subscriptions":["s"]`。公共路由的正常状态码、字段和中文提示不变。
 
 C31 同时拒绝损坏的非数组节点缓存。Python 在拉取失败、缓存 `nodes` 为布尔值等错误类型时，会吞掉工作线程异常并返回成功的空 provider；Go 返回错误并保留旧发布内容，避免静默丢节点。真实 Python 差分 `TestCorruptNodeCacheCannotProducePartialProvider` 明确验证此修正，干运行两端均不写状态。
+
+## N7-3 — native YAML readers (subs/substore)
+
+Approved by the maintainer/coordinator; design §2.2/5.7. YAML 1.1 implicit spellings follow yaml.v3
+(strings for yes/on/sexagesimal forms). Explicit scalar tags must parse natively; integer tags additionally
+accept arbitrary-length signed decimal text, preserving precision. Duplicate keys, invalid tag shapes,
+invalid merge sources and recursive/excessive aliases are rejected. All native syntax errors have a
+Chinese prefix and an available line; policy/alias errors retain their Chinese diagnostics. D1 now
+matches ErrPolicy plus ErrDuplicateKey, not ErrSyntax.
+
+Timestamp/binary/nonfinite scalar JSON values preserve original text. Unknown/non-JSON tags retain
+native nodes/text rather than Python constructors. Tabs in native-valid separators/scalars/URIs may
+now be accepted. Native syntax range A (`\/`, `%YAML 1.2`, some double BOMs) is refused; B (repeated
+anchors, deeper ordinary sequences) is accepted; C (both leading BOMs skipped) fixes BOM key text.
+A cases occur only in synthetic core corpora, not actual consumer sources. No parser fork or text rewrite.
+
+Generated YAML style follows D3. Shared Marshal retains scalar tags even when the flow emitter quotes
+an implicitly typed value; Parse→Marshal→Parse must be Equal. JSON-boundary key policies remain
+caller-specific (parser rejects, dialers discard, substore converts number/bool/null); one shared
+projector preserves alias sharing and refuses over-budget output without truncation or null fallback.
+API statuses/fields and non-YAML behavior remain unchanged. Exact input counts, expected-change
+classification and final gates: [N7-3a report](progress/n7-3a.md).

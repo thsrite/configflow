@@ -4,7 +4,6 @@ import (
 	"strings"
 
 	"configflow/internal/jsonx"
-	"configflow/internal/yamlx"
 )
 
 // getOr is dict.get(key, fallback): the fallback only for a missing key.
@@ -29,7 +28,7 @@ func ParseURIList(content string) []*jsonx.Object {
 		}
 	}
 	if strings.HasPrefix(content, "- name:") || strings.HasPrefix(content, "- type:") {
-		if data, err := yamlx.SafeLoad(content); err == nil {
+		if data, err := readSubscriptionYAML(content, false); err == nil {
 			if list, ok := data.([]any); ok {
 				nodes := []*jsonx.Object{}
 				for _, item := range list {
@@ -87,7 +86,7 @@ func ParseYAMLObject(line string) *jsonx.Object {
 			return obj
 		}
 	}
-	v, err := yamlx.SafeLoad(line)
+	v, err := readSubscriptionYAML(line, false)
 	if err != nil {
 		return nil
 	}
