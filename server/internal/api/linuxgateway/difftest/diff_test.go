@@ -36,7 +36,6 @@ import (
 	"configflow/internal/routersplit"
 	"configflow/internal/setupflow"
 	"configflow/internal/yamlx"
-	"gopkg.in/yaml.v3"
 )
 
 func jsonValue(t *testing.T, v any) any {
@@ -78,7 +77,7 @@ func snapshot(t *testing.T, s *httpxtest.Server) any {
 		case ".json":
 			err = json.Unmarshal(data, &value)
 		case ".yaml", ".yml":
-			err = yaml.Unmarshal(data, &value)
+			err = yamlx.Unmarshal(data, &value)
 		default:
 			value = fmt.Sprintf("sha256:%x", sha256.Sum256(data))
 		}
