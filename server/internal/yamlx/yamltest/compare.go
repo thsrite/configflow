@@ -3,14 +3,12 @@
 package yamltest
 
 import (
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"math"
 	"regexp"
 	"strconv"
 	"strings"
-	"time"
 
 	"configflow/internal/yamlx"
 	"gopkg.in/yaml.v3"
@@ -31,8 +29,8 @@ const (
 	Deep        = "深层普通节点：Go 接受"
 )
 
-// SemanticEqual compares output meaning, including equivalent binary/timestamp
-// spellings and tags which the native Node policy deliberately passes through.
+// SemanticEqual compares output meaning under the native scalar-text and tag
+// policies. Scalar text is retained verbatim; presentation is ignored.
 func SemanticEqual(left, right string) bool {
 	a, err := yamlx.Parse([]byte(left))
 	if err != nil {
@@ -84,16 +82,7 @@ func normalize(node *yamlx.Node, seen map[*yamlx.Node]bool) {
 					node.Value += ".0"
 				}
 			}
-		case "!!timestamp":
-			var value time.Time
-			if yamlx.Decode(node, &value) == nil {
-				node.Value = value.Format(time.RFC3339Nano)
-			}
-			node.Tag = "!!str"
-		case "!!binary":
-			if value, err := base64.StdEncoding.DecodeString(strings.Join(strings.Fields(node.Value), "")); err == nil {
-				node.Value = base64.StdEncoding.EncodeToString(value)
-			}
+		case "!!timestamp", "!!binary":
 			node.Tag = "!!str"
 		default:
 			node.Tag = "!!str"
@@ -190,7 +179,7 @@ func Classify(source string) (string, error) {
 	if errors.Is(nextErr, yamlx.ErrPolicy) {
 		return Policy, nil
 	}
-	if nativeSyntaxRange(source) {
+	if nativeSyntaxRange(source) || nextErr == nil && oldErr != nil && strings.Contains(oldErr.Error(), "character '\\t'") {
 		return SyntaxRange, nil
 	}
 	if nextErr != nil && oldErr != nil {

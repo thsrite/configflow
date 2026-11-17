@@ -16,7 +16,7 @@ func TestN73NativeDepthBoundary(t *testing.T) {
 		node, err := yamlx.Parse([]byte(source))
 		if depth > 10000 {
 			var position *yamlx.SyntaxError
-			if err == nil || !errors.As(err, &position) || !strings.Contains(err.Error(), "YAML") || !(errors.Is(err, yamlx.ErrSyntax) || errors.Is(err, yamlx.ErrPolicy)) {
+			if err == nil || !errors.As(err, &position) || !strings.Contains(err.Error(), "语法") || !(errors.Is(err, yamlx.ErrSyntax) || errors.Is(err, yamlx.ErrPolicy)) {
 				t.Errorf("depth %d: missing Chinese positioned refusal: %v", depth, err)
 			}
 		} else {
