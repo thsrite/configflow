@@ -192,6 +192,19 @@ func Pairs(m *Node) iter.Seq2[string, *Node] {
 	}
 }
 
+// AllPairs iterates effective keys and values in stored order, inherited keys
+// first. Explicit values override merge defaults. Key nodes retain their tags;
+// callers decide whether to accept, skip or convert non-string keys.
+func AllPairs(m *Node) iter.Seq2[*Node, *Node] {
+	return func(yield func(*Node, *Node) bool) {
+		for _, p := range effectivePairs(m, map[*Node]bool{}) {
+			if !yield(p.key, p.value) {
+				return
+			}
+		}
+	}
+}
+
 type nodePair struct{ key, value *Node }
 
 func effectivePairs(m *Node, path map[*Node]bool) []nodePair {
