@@ -10,7 +10,13 @@ rt -- server/scripts/proddiff.sh ~/cf-prod-snapshot/20261116/data
 默认使用第二条命令的快照目录，Python 为 `~/cf-test/.venv/bin/python`。
 可通过 `CONFIGFLOW_DIFF_PYTHON` 指定相同依赖环境的解释器。
 退出码：0 表示没有新增差异和覆盖回退；1 表示发现回归；2 表示运行环境或框架失败。
-基线差异消失时打印 `stale` 并提示更新，不阻止检查。
+基线差异消失时打印 `stale` 并令检查失败，必须删除过期条目后重跑；门禁要求 `new=0 stale=0`。
+
+`rt -- server/scripts/proddiff.sh --a13-proof` 在同样的只读、断网命名空间中，使用真实 Python
+准备函数产出的候选 bundle 验证 A13 的 20 条 A14 延期差异。先证明不接线时这些差异能复现，再向
+Go Checker 注入经过归档完整性校验的真实候选，比较同一批路由的完整响应。独立生成的时间和版本号
+单独检查格式、一一对应和缓存稳定性；标准 proddiff 的比较规则保持不变。真实数据只留在服务器的
+私有临时目录，不提交语料，不输出响应值。
 
 ## 隔离与认证
 

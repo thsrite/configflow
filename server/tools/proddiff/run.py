@@ -853,7 +853,7 @@ def main():
                 print('COVERAGE-REGRESSION\t' + route, flush=True)
             for route in sorted(unmapped):
                 print(route, flush=True)
-            return int(bool(new or lost_coverage or unmapped or failures['one-sided-transport-failure']))
+            return int(bool(new or stale or lost_coverage or unmapped or failures['one-sided-transport-failure']))
     finally:
         stop_processes(processes)
         run_lock.close()

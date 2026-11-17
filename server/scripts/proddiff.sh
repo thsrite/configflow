@@ -5,21 +5,36 @@ umask 077
 root=$(cd "$(dirname "$0")/../.." && pwd)
 python=${CONFIGFLOW_DIFF_PYTHON:-$HOME/cf-test/.venv/bin/python}
 if [[ ${1:-} == --help ]]; then
- printf '%s\n' 'Usage: rt -- server/scripts/proddiff.sh [snapshot-data-directory] [--record-baseline]'
+ printf '%s\n' 'Usage: rt -- server/scripts/proddiff.sh [snapshot-data-directory] [--record-baseline | --a13-proof]'
  exit 0
 fi
 snapshot=$HOME/cf-prod-snapshot/20261116/data
 if (($#)) && [[ $1 != --* ]]; then snapshot=$1; shift; fi
+a13proof=0
 for option in "$@"; do
- [[ $option == --record-baseline ]] || { printf '%s\n' 'Unknown option'; exit 2; }
+ case $option in
+  --record-baseline) ;;
+  --a13-proof) a13proof=1 ;;
+  *) printf '%s\n' 'Unknown option'; exit 2 ;;
+ esac
 done
+runner=server/tools/proddiff/run.py
+if ((a13proof)); then
+ [[ $# == 1 ]] || { printf '%s\n' '--a13-proof cannot record a baseline'; exit 2; }
+ runner=server/tools/proddiff/a13_proof.py
+ shift
+fi
 snapshot=$(realpath "$snapshot")
 private=$HOME/cf-prod-snapshot
 mkdir -p "$private/runs"
 chmod 700 "$private" "$private/runs"
 build=$(mktemp -d)
 trap 'rm -rf "$build"' EXIT
-(cd "$root/server" && go build -tags configflow_proddiff -o "$build/configflow" ./cmd/configflow && go build -o "$build/generator" ./tools/proddiff/generator)
+if ((a13proof)); then
+ (cd "$root/server" && go test -c -o "$build/configflow" ./internal/api/agents)
+else
+ (cd "$root/server" && go build -tags configflow_proddiff -o "$build/configflow" ./cmd/configflow && go build -o "$build/generator" ./tools/proddiff/generator)
+fi
 # Mount namespace makes the source itself read-only, including to descendants.
 unshare --user --map-root-user --net --mount --pid --fork --kill-child --mount-proc bash -c '
  set -euo pipefail
@@ -43,5 +58,5 @@ unshare --user --map-root-user --net --mount --pid --fork --kill-child --mount-p
  cd "$2"
  export PYTHONPATH="$2" PYTHONDONTWRITEBYTECODE=1
  export PRODDIFF_GENERATOR="$(dirname "$4")/generator"
- exec "$3" server/tools/proddiff/run.py "$1" "$4" "${@:5}"
-' proddiff "$snapshot" "$root" "$python" "$build/configflow" "$@"
+ exec "$3" "$5" "$1" "$4" "${@:6}"
+' proddiff "$snapshot" "$root" "$python" "$build/configflow" "$runner" "$@"
