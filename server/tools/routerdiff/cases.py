@@ -57,6 +57,7 @@ class Case:
     fake_lengths: dict = field(default_factory=dict)
     python_bug: str = ''
     stored_absent: tuple = ()
+    request_order: tuple = ()
 
 
 def at(document, path):

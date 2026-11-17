@@ -84,7 +84,8 @@ def fixed_ip():
         yield Case('R005/fixed-delete-' + label, 'R005', 'POST', '/api/client-devices/fixed-ip/apply', 200,
                    ('R005-S05',) if router_id == 'r-ik' else ('R005-S04',),
                    document={'profile_id': 'alpha', 'token': Ref(preview, '/body/token')}, requires=('R006',),
-                   unchanged=False, effect='profile-write-device', foreign=FOREIGN, checks={'success': True},
+                   unchanged=False, effect='profile-write-device', foreign=FOREIGN,
+                   checks={'success': True},
                    stored_absent=('client_fixed_ips/' + ip,),
                    stored={'device_notes/' + ip: options()['alpha']['device_notes'][ip]},
                    fake_lengths={'ros/~1ip~1dhcp-server~1lease': 2 if index == 0 else 1,
@@ -242,3 +243,143 @@ def discovery_failures():
         yield Case('R004/' + label, 'R004', 'GET', '/api/client-devices/discovery?refresh=1', 200,
                    entries, prepare=(device_world(), rename, *faults), unchanged=False, effect='device-read',
                    checks={**checks, 'cached': False}, foreign=FOREIGN, times=('checked_at',))
+
+
+def fixed_stale():
+    for label in ('tamper', 'cross-profile', 'connection', 'scope', 'source', 'unsaved'):
+        world = device_world()
+        ip = '10.44.0.24' if label == 'unsaved' else '10.44.0.21'
+        if label == 'unsaved':
+            world['ros']['/ip/arp'].append({'address': ip, 'mac-address': '02:00:00:00:00:21',
+                                          'interface': 'bridge-lan', 'status': 'reachable'})
+            world['ros']['/ip/dhcp-server/lease'] = [world['ros']['/ip/dhcp-server/lease'][1]]
+        preview = 'R006/stale-' + label
+        yield Case(preview, 'R006', 'POST', '/api/client-devices/fixed-ip/preview', 200,
+                   ('R006-B90',), document=request('add', ip, '02:00:00:00:00:21', 'r-ros', '未必已保存🧪'),
+                   prepare=(world,), unchanged=False, effect='device-read', checks={'success': True})
+        prepare, profile = (), 'alpha'
+        token = Ref(preview, '/body/token')
+        if label == 'tamper':
+            token = Ref(preview, '/body/token', prefix='x')
+            message, entries = '固定 IP 预览无效或已过期，请重新预览确认。', ('R005-F13', 'H0045', 'H0046')
+        elif label == 'cross-profile':
+            profile = 'beta'
+            message, entries = '配置空间已切换，请重新预览。', ('R005-F13', 'R005-B02', 'H0047')
+        elif label == 'connection':
+            prepare = ({'rpc': 'http', 'method': 'PUT', 'path': '/api/routers/r-ros',
+                        'document': {'name': '连接记录改变🧪'}, 'expected': 200},)
+            message, entries = '路由器或 DHCP 绑定在预览后发生变化，请重新预览确认。', ('R005-F17', 'H0050')
+        elif label == 'scope':
+            world['ros']['/ip/dhcp-server/network'][0]['gateway'] = '10.44.0.9'
+            prepare = (world,)
+            message, entries = '路由器或 DHCP 绑定在预览后发生变化，请重新预览确认。', ('R005-F17', 'H0050')
+        elif label == 'source':
+            world['ros']['/ip/dhcp-server/lease'][0]['mac-address'] = '02:00:00:00:00:99'
+            world['ros']['/ip/arp'][0]['mac-address'] = '02:00:00:00:00:99'
+            prepare = (world,)
+            message, entries = ip + ' 的 MAC 或来源路由器已变化，请重新发现设备。', ('R005-F19', 'H0042')
+        else:
+            message, entries = '请先保存设备名称或 DNS 策略，再固定 IP。', ('R005-F18', 'H0051')
+        yield Case('R005/stale-' + label, 'R005', 'POST', '/api/client-devices/fixed-ip/apply?profile=' + profile,
+                   409, entries, document={'profile_id': profile, 'token': token}, requires=('R006',),
+                   prepare=prepare, unchanged=False, effect='device-read', message=message, foreign=FOREIGN)
+
+
+def fixed_uncertain():
+    make_static = {'peer': 'ros', 'method': 'POST', 'path': '/rest/ip/dhcp-server/lease/make-static'}
+    patch = {'peer': 'ros', 'method': 'PATCH', 'path': '/rest/ip/dhcp-server/lease/*B0'}
+    put = {'peer': 'ros', 'method': 'PUT', 'path': '/rest/ip/dhcp-server/lease'}
+    remove = {'peer': 'ros', 'method': 'DELETE', 'path': '/rest/ip/dhcp-server/lease/*B0'}
+    ik_add = {'peer': 'ikuai', '/body/func_name': 'dhcp_static', '/body/action': 'add'}
+    ik_del = {'peer': 'ikuai', '/body/func_name': 'dhcp_static', '/body/action': 'del'}
+    for label, match, rows_left, order, ip, mac, router_id in [
+        ('make-static-lost', make_static, 1, (make_static, remove), '10.44.0.21', '02:00:00:00:00:21', 'r-ros'),
+        ('patch-lost', patch, 1, (make_static, patch, remove), '10.44.0.21', '02:00:00:00:00:21', 'r-ros'),
+        ('put-lost', put, 2, (put, {'peer': 'ros', 'method': 'DELETE'}), '10.44.0.22', '02:00:00:00:00:22', 'r-ros'),
+        ('ik-add-lost', ik_add, 2, (ik_add, ik_del), '10.44.0.101', '02:00:00:00:00:65', 'r-ik')]:
+        preview = 'R006/uncertain-' + label
+        yield Case(preview, 'R006', 'POST', '/api/client-devices/fixed-ip/preview', 200, ('T07',),
+                   document=request('add', ip, mac, router_id, '不确定写入🧪'),
+                   prepare=(device_world(),), unchanged=False, effect='device-read')
+        yield Case('R005/uncertain-' + label, 'R005', 'POST', '/api/client-devices/fixed-ip/apply', 502,
+                   ('R005-F20', 'T07', 'D26' if router_id == 'r-ik' else 'D17'),
+                   document={'profile_id': 'alpha', 'token': Ref(preview, '/body/token')}, requires=('R006',),
+                   prepare=({'action': 'fault', 'match': match, 'apply': True, 'disconnect': True},),
+                   unchanged=False, effect='device-only', foreign=FOREIGN,
+                   formats={'message': r'.+'}, request_order=order,
+                   fake_lengths={'ros/~1ip~1dhcp-server~1lease': rows_left, 'ikuai/dhcp_static': 1},
+                   stored={'client_fixed_ips': {}})
+
+
+def fixed_batch_rollback():
+    body = request('add', '10.44.0.21', '02:00:00:00:00:21', 'r-ros', '第一项🧪')
+    body['devices'].extend([
+        request('add', '10.44.0.101', '02:00:00:00:00:65', 'r-ik', '第二项🧪')['devices'][0],
+        request('add', '10.44.0.22', '02:00:00:00:00:22', 'r-ros', '第三项🧪')['devices'][0]])
+    preview = 'R006/mixed-batch-preview'
+    yield Case(preview, 'R006', 'POST', '/api/client-devices/fixed-ip/preview', 200,
+               ('R006-S05',), document=body, prepare=(device_world(),), unchanged=False, effect='device-read',
+               checks={'actions/0/ip': '10.44.0.21', 'actions/1/ip': '10.44.0.101', 'actions/2/ip': '10.44.0.22'})
+    make_static = {'peer': 'ros', 'method': 'POST', 'path': '/rest/ip/dhcp-server/lease/make-static'}
+    ik_add = {'peer': 'ikuai', '/body/func_name': 'dhcp_static', '/body/action': 'add'}
+    ik_del = {'peer': 'ikuai', '/body/func_name': 'dhcp_static', '/body/action': 'del'}
+    put = {'peer': 'ros', 'method': 'PUT', 'path': '/rest/ip/dhcp-server/lease'}
+    delete = {'peer': 'ros', 'method': 'DELETE', 'path': '/rest/ip/dhcp-server/lease/*B0'}
+    yield Case('R005/mixed-batch-third-refused', 'R005', 'POST', '/api/client-devices/fixed-ip/apply', 502,
+               ('R005-F20', 'T06', 'H0053', 'H0059'),
+               document={'profile_id': 'alpha', 'token': Ref(preview, '/body/token')}, requires=('R006',),
+               prepare=({'action': 'fault', 'match': put, 'status': 400,
+                         'body': {'message': 'synthetic third lease refused'}},),
+               unchanged=False, effect='device-only', foreign=FOREIGN,
+               formats={'message': r'RouterOS PUT .+synthetic third lease refused.+客户端续租恢复动态 DHCP，IP 可能变化。'},
+               request_order=(make_static, ik_add, put, ik_del, delete),
+               expected_requests=tuple({'match': match, 'count': 1} for match in (make_static, ik_add, put, ik_del, delete)),
+               fake_lengths={'ros/~1ip~1dhcp-server~1lease': 1, 'ikuai/dhcp_static': 1}, stored={'client_fixed_ips': {}})
+
+
+def batch_options():
+    value = options()
+    value['alpha']['device_notes'] = {row['ip']: row['name'] for row in batch_request()['devices']}
+    return value
+
+
+def batch_request():
+    rows = []
+    for index in range(1, 33):
+        for vendor, subnet, router_id in [('ros', 1, 'r-ros'), ('ik', 2, 'r-ik')]:
+            rows.append({'ip': f'10.44.{subnet}.{index}', 'mac': f'02:AA:00:00:{subnet:02X}:{index:02X}',
+                         'router_id': router_id, 'name': '批次🧪' + vendor + str(index)})
+    return {'profile_id': 'alpha', 'operation': 'add', 'devices': rows}
+
+
+def batch64():
+    body = batch_request()
+    world = device_world()
+    world['ros']['/ip/address'] = [{'.id': '*A0', 'address': '10.44.1.254/24', 'interface': 'bridge-lan'}]
+    world['ros']['/ip/dhcp-server/network'] = [{'.id': '*A2', 'address': '10.44.1.0/24', 'gateway': '10.44.1.254'}]
+    world['ros']['/ip/dhcp-server/lease'] = [world['ros']['/ip/dhcp-server/lease'][1]]
+    world['ros']['/ip/arp'] = [{'address': row['ip'], 'mac-address': row['mac'], 'interface': 'bridge-lan',
+                               'status': 'reachable'} for row in body['devices'] if row['router_id'] == 'r-ros']
+    world['ikuai']['dhcp_server'][0].update(addr_pool='10.44.2.100-10.44.2.200', gateway='10.44.2.254')
+    world['ikuai']['dhcp_lease'] = []
+    world['ikuai']['monitor_lanip'] = [{'ip_addr': row['ip'], 'mac': row['mac'], 'interface': 'lan1'}
+                                     for row in body['devices'] if row['router_id'] == 'r-ik']
+    checks = {'success': True, **{'actions/' + str(index) + '/ip': row['ip']
+                                 for index, row in enumerate(body['devices'])}}
+    for operation in ('add', 'delete'):
+        preview = 'R006/mixed-64-' + operation
+        yield Case(preview, 'R006', 'POST', '/api/client-devices/fixed-ip/preview', 200,
+                   ('R006-S05', 'R006-B04', 'T05'), document={**body, 'operation': operation},
+                   prepare=(world,) if operation == 'add' else (), unchanged=False, effect='device-read',
+                   checks=checks, formats={'token': r'.{1,1000000}'}, foreign=FOREIGN)
+        yield Case('R005/mixed-64-' + operation, 'R005', 'POST', '/api/client-devices/fixed-ip/apply', 200,
+                   ('R005-S06', 'R005-B01', 'T05'),
+                   document={'profile_id': 'alpha', 'token': Ref(preview, '/body/token')}, requires=('R006',),
+                   unchanged=False, effect='profile-write-device', foreign=FOREIGN,
+                   checks={'success': True, **{'devices/' + str(index) + '/name': row['name']
+                           for index, row in enumerate(body['devices'])}},
+                   fake_lengths={'ros/~1ip~1dhcp-server~1lease': 33 if operation == 'add' else 1,
+                                 'ikuai/dhcp_static': 33 if operation == 'add' else 1},
+                   stored={('client_fixed_ips/' + row['ip'] + '/mac'): row['mac'] for row in body['devices']}
+                          if operation == 'add' else {'client_fixed_ips': {}},
+                   stored_absent=() if operation == 'add' else tuple('client_fixed_ips/' + row['ip'] for row in body['devices']))

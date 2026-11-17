@@ -39,6 +39,24 @@ def pair(python=None, go=None):
 
 
 class RunnerTests(unittest.TestCase):
+    def test_transaction_order_precondition_rejects_forward_undo(self):
+        original = ObservationSide().before
+        for actions, valid in ((['add-one', 'add-two', 'undo-two', 'undo-one'], True),
+                               (['add-one', 'add-two', 'undo-one', 'undo-two'], False)):
+            with self.subTest(actions=actions):
+                after = copy.deepcopy(original)
+                after['fake']['transcript'] = [{'method': 'POST', 'path': action, 'body': {}, 'headers': {}, 'raw': ''}
+                                              for action in actions]
+                world = pair(ObservationSide(200, original, after))
+                case = Case('rollback-order', 'R005', 'POST', '/api/client-devices/fixed-ip/apply', 200,
+                            unchanged=False, request_order=tuple({'path': action} for action in
+                            ('add-one', 'add-two', 'undo-two', 'undo-one')))
+                if valid:
+                    self.assertEqual(execute(world, case, set(), load()[0])['status'], 'go-unimplemented')
+                else:
+                    with self.assertRaisesRegex(RuntimeError, 'transaction order mismatch'):
+                        execute(world, case, set(), load()[0])
+
     def test_missing_go_response_reference_never_falls_back_to_python(self):
         routes, _ = load()
         world = pair()

@@ -357,3 +357,30 @@ absent, go-unimplemented18, complete=false.
 `RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'set -euo pipefail; cd server/tools/routerdiff; export PYTHONDONTWRITEBYTECODE=1; ~/cf-test/.venv/bin/python -m unittest -v test_recipes; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary /tmp/routerdiff-build.AybfCK/configflow --world fixed-ip-guards --world discovery-failures --output /tmp/routerdiff-client-guards.json'`
 → Ran 2 tests in 0.171s / OK; fixed-ip-guards49, discovery-failures58 cumulative;
 go-unimplemented58, referenced_entries16, complete=false, remaining_audits2301.
+
+Fixed-IP uncertainty/batch iteration (2026-11-17, task continues):
+- Added 12 real token/staleness recipes: public-preview token tampering,
+  cross-profile replay, public router edit, changed DHCP gateway, changed source
+  MAC and a discoverable device without a saved name/policy. Exact reached
+  conflict messages and unchanged storage/device configuration are asserted.
+- Added 8 actual lost-ack recipes: fake receives and commits ROS make-static,
+  PATCH, new PUT or iKuai static add, then closes the TCP reply. Python reads back
+  its own operation identity and compensates; dynamic undo removes the new
+  static reservation rather than fabricating a restored dynamic row. Foreign
+  leases survive and no binding is saved. Ordered outbound requests are checked.
+- Added a three-device mixed-vendor transaction: third write refused, then
+  iKuai second item is undone before ROS first item; exact operation counts,
+  reverse order, residual tables and unchanged configuration all checked. Added
+  an intentionally wrong forward-undo runner self-check proving order assertions
+  can fail; it is a harness test, not product simulation.
+- Added 64-device alternating ROS/iKuai preview/add/delete success through HTTP,
+  actions preserve input order, all 64 MAC bindings are persisted, notes survive,
+  then all bindings and owned reservations are removed. Each phase increments
+  revision exactly once. Both foreign reservations remain. No device address is
+  accessed outside the private namespace.
+
+Exact .32 command:
+`RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'set -euo pipefail; cd server/tools/routerdiff; export PYTHONDONTWRITEBYTECODE=1; ~/cf-test/.venv/bin/python -m unittest -v test_recipes test_runner; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary /tmp/routerdiff-build.AybfCK/configflow --world fixed-ip-stale --world fixed-ip-uncertain --world fixed-ip-batch-rollback --world fixed-ip-64 --output /tmp/routerdiff-fixed-complete-iteration.json'`
+→ Ran 7 tests in 0.243s / OK; stale12, uncertain20, mixed rollback22,
+64-device26 cumulative (last group49.82s); go-unimplemented26,
+referenced_entries24, complete=false, remaining_audits2301. No Go defect claim.

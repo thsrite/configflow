@@ -123,6 +123,13 @@ def execute(pair, case, available, routes):
                 count = sum(World.matches(item, requirement['match']) for item in transcript)
                 if count != requirement['count']:
                     raise RuntimeError(case.ident + ': outbound protocol count mismatch: ' + repr(requirement['match']))
+            cursor = 0
+            for match in case.request_order:
+                while cursor < len(transcript) and not World.matches(transcript[cursor], match):
+                    cursor += 1
+                if cursor == len(transcript):
+                    raise RuntimeError(case.ident + ': outbound transaction order mismatch: ' + repr(match))
+                cursor += 1
             if case.effect in ('profile-write', 'profile-write-device', 'router-create', 'router-delete'):
                 profile_write(before, after, case.profile)
                 if case.effect != 'profile-write-device':
@@ -342,6 +349,10 @@ def main():
               ('release-ik-plain', releases.options(), (releases.ikuai_plain,)),
               ('fixed-ip', clients.options(), (clients.fixed_ip,)),
               ('fixed-ip-guards', clients.options(), (clients.fixed_preview_guards,)),
+              ('fixed-ip-stale', clients.options(), (clients.fixed_stale,)),
+              ('fixed-ip-uncertain', clients.options(), (clients.fixed_uncertain,)),
+              ('fixed-ip-batch-rollback', clients.options(), (clients.fixed_batch_rollback,)),
+              ('fixed-ip-64', clients.batch_options(), (clients.batch64,)),
               ('discovery', clients.options(), (clients.discovery,)),
               ('discovery-failures', clients.options(), (clients.discovery_failures,)),
               ('stored', fixtures.stored_options(), (fixtures.receipts, fixtures.stored_guards))]
