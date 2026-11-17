@@ -1513,6 +1513,8 @@ Gate attempt /tmp/a14-final-3 (.32): production-snapshot read-only content compa
 
 Latest changed-package acceptance (.64): targeted race passed deploy 14.440s, agents 10.787s, real Flask/API difftest 13.099s and baseline worker 3.157s; complete provider race passed 212.486s; touched-package vet passed. The shared BeforeCommit regression is intentionally not hidden and awaits O3-6c.
 
+New parsing-entry fuzz (.32): `RT_HOST=sunbroke@192.168.0.32 rt -e GOMAXPROCS=4 -- bash -lc 'cd server && go test -run "^$" -fuzz "^FuzzPublishRequest$" -fuzztime=60s -parallel=2 ./internal/deploy'` → 339222 executions, 60s fuzz, PASS / ok configflow/internal/deploy 61.038s. No failing corpus.
+
 Real go-agent conformance (.32, no device/service activation), command and final output:
 ```sh
 RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd backend/agents/go-agent && CONFIGFLOW_SERVER_ARCHIVES=$PWD/../../../server/internal/deploy/testdata/archives go test -count=1 -v -run "^TestServerArchive$" ./routes/'
