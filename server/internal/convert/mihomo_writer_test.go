@@ -106,7 +106,7 @@ func FuzzMihomoWriter(f *testing.F) {
 		}
 		value, err := jsonx.ParseString(source)
 		if err != nil {
-			t.Fatal(err)
+			t.Skip() // Invalid UTF-8 cannot produce a legacy generator input.
 		}
 		// The builder receives legacy parsed values until N7-3d. Compare the
 		// actual input value, not decimal precision already lost by that reader.
