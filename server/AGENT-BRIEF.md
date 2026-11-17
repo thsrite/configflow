@@ -23,14 +23,14 @@ asked in; the maintainer reads Chinese.
   other before you call it a bug.
 - **Full gate script:** `server/scripts/gate.sh [-p N] [FuzzName:./pkg ...]` runs gofmt+vet, full `-race` and proddiff in
   parallel, all difftest packages in one `go test`, and the given fuzz targets concurrently (60 s each). Use it for your
-  final hand-back run: `rt -- bash -lc 'server/scripts/gate.sh -p 4 FuzzX:./internal/x'` (`-p 4` on .64). The separate
+  final hand-back run: `rt -- bash -lc 'server/scripts/gate.sh -p 6 FuzzX:./internal/x'` (`-p 6` on .64). The separate
   non-race full run is no longer required (the race run executes every test).
   gate.sh runs at most 2 full gates per server at once and queues the rest. Never run a full `-race` or proddiff
   outside gate.sh; while iterating, test only the packages you changed. A proddiff difference seen only under high
   load (check `/proc/loadavg`) is re-run at a quieter time before it is reported as a finding.
-- **Memory:** `.64` has 15 GB (`.32` 31 GB). Several full `-race` runs at once got test binaries OOM-killed on .64
-  (2026-11-17: `signal: killed` in convert = OOM, not a test failure — check `sudo dmesg -T | grep -i oom`). On .64
-  run full `-race` with `-p=4`; if a package dies with `signal: killed`, re-run it before reporting anything.
+- **Memory:** `.64` has 20 GB + 20 GB swap since 2026-11-18 (`.32` 31 GB). Before that, parallel full `-race` runs
+  got test binaries OOM-killed on .64 (`signal: killed` = OOM, not a test failure — check `sudo dmesg -T | grep -i oom`).
+  On .64 run full `-race` / gate.sh with `-p 6`; if a package dies with `signal: killed`, re-run it before reporting.
 - **Real network stack** (Docker/Compose host/bridge/macvlan, iptables/nftables, policy routing, TUN, keepalived/VIPs,
   network namespaces, installer scripts in containers) runs on either server; never on the Mac. Real multi-host
   network behaviour (macvlan HA, VIP failover) belongs to the PVE lab batches, driven from either server (`ssh pve`).
