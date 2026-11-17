@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"unsafe"
 
 	"configflow/internal/jsonx"
 	"configflow/internal/yamlx"
@@ -21,7 +22,6 @@ func TestNativeProxyPolicyErrorsDoNotReachSubStore(t *testing.T) {
 		name, source string
 		kind         error
 	}{
-		{"converted key collision", "type: ss\n1: first\n\"1\": second", yamlx.ErrPolicy},
 		{"duplicate", "type: ss\nport: 80\nport: 443", yamlx.ErrPolicy},
 		{"shape", "type: ss\nx: !!str [x]", yamlx.ErrPolicy},
 		{"merge", "type: ss\n<<: 7", yamlx.ErrPolicy},
@@ -87,5 +87,37 @@ func TestNativeProxyLinearAlias40PreservesSharing(t *testing.T) {
 	}
 	if cacheLen() != 0 {
 		t.Fatal("shared containers reached the cache copy path")
+	}
+}
+
+func TestProxyUsesSharedKeyProjectionAndBigIntegers(t *testing.T) {
+	isolateCache(t)
+	text := "type: ss\n1: first\n\"1\": second\nbig: !!int " + strings.Repeat("9", 100)
+	got, err := ParseStructuredProxyString(text)
+	if err != nil || got.GetString("1") != "second" {
+		t.Fatalf("shared projection: %v", err)
+	}
+	number, ok := got.Value("big").(jsonx.Number)
+	if !ok || string(number) != strings.Repeat("9", 100) {
+		t.Fatal("large integer lost precision")
+	}
+}
+
+func TestProxyScalarAliasesKeepBackingDataShared(t *testing.T) {
+	isolateCache(t)
+	var b strings.Builder
+	b.WriteString("type: ss\nvalue: &value " + strings.Repeat("x", 1<<20) + "\n")
+	for i := 0; i < 100; i++ {
+		fmt.Fprintf(&b, "copy%d: *value\n", i)
+	}
+	got, err := ParseStructuredProxyString(b.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := got.GetString("value")
+	for i := 0; i < 100; i++ {
+		if unsafe.StringData(got.GetString(fmt.Sprintf("copy%d", i))) != unsafe.StringData(original) {
+			t.Fatalf("scalar alias %d copied its backing data", i)
+		}
 	}
 }

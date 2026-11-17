@@ -230,13 +230,13 @@
     "category": "5.7 JSON mapping boundary",
     "input_id": "ef23867dc0808bc5527cf087b7a10b2392e066221a4cefc7c9b6012f9b7e122e",
     "error_class": "ValueError",
-    "error": "代理 YAML 校验失败: 代理 YAML 的映射键必须是标量"
+    "error": "代理 YAML 校验失败: 订阅 YAML 的对象键必须是字符串、数字、布尔值或空值（第 1 行）"
   },
   {
     "index": 251,
     "category": "5.7 JSON mapping boundary",
     "input_id": "d58b4031a4ee2145bf6913002844544bd77b407cb4c22f7608beb5d734e5899a",
     "error_class": "ValueError",
-    "error": "代理 YAML 校验失败: 代理 YAML 的映射键必须是标量"
+    "error": "代理 YAML 校验失败: 订阅 YAML 的对象键必须是字符串、数字、布尔值或空值（第 1 行）"
   }
 ]

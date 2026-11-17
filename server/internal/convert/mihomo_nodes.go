@@ -627,17 +627,11 @@ func cacheableProxyYAML(data any) bool {
 	return true
 }
 
-// loadProxyYAML caches bounded ordinary proxy objects. Shared containers and
-// non-string mapping keys are never cached, so no mutable alias is copied once
-// per occurrence or accidentally shared between independent parse calls.
+// loadProxyYAML caches bounded ordinary proxy objects. Shared containers bypass the copying cache path. JSON key projection is
+// owned by yamlx; every admitted result is an ordinary private JSON tree.
 func loadProxyYAML(text string) (any, error) {
 	if len(text) > proxyYAMLMaxInputBytes {
-		root, err := parseProxyYAML(text)
-		if err != nil {
-			return nil, err
-		}
-		bridge := proxyYAMLValue{containers: map[*yamlx.Node]any{}}
-		return bridge.value(root)
+		return readProxyYAML(text)
 	}
 	proxyYAMLMu.Lock()
 	if element, ok := proxyYAMLIndex[text]; ok {
@@ -646,19 +640,13 @@ func loadProxyYAML(text string) (any, error) {
 		proxyYAMLMu.Unlock()
 		return data.DeepCopy(), nil
 	}
-	root, err := parseProxyYAML(text)
-	if err != nil {
-		proxyYAMLMu.Unlock()
-		return nil, err
-	}
-	bridge := proxyYAMLValue{containers: map[*yamlx.Node]any{}}
-	data, err := bridge.value(root)
+	data, err := readProxyYAML(text)
 	if err != nil {
 		proxyYAMLMu.Unlock()
 		return nil, err
 	}
 	object, ok := data.(*jsonx.Object)
-	if bridge.nonStringKeys || !ok || object == nil || !pyTruthy(object.Value("type")) || !cacheableProxyYAML(object) {
+	if !ok || object == nil || !pyTruthy(object.Value("type")) || !cacheableProxyYAML(object) {
 		proxyYAMLMu.Unlock()
 		return data, nil
 	}

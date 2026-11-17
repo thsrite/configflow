@@ -11,11 +11,10 @@ import (
 )
 
 // proxyYAMLValue is the temporary boundary to convert's legacy document API.
-// Each parsed container is translated once. It preserves alias sharing and
+// Each parsed node is translated once. It preserves alias sharing and
 // never invents replacement values for cyclic or unsupported input.
 type proxyYAMLValue struct {
-	containers    map[*yamlx.Node]any
-	nonStringKeys bool
+	values map[*yamlx.Node]any
 }
 
 func (c *proxyYAMLValue) value(n *yamlx.Node) (any, error) {
@@ -23,38 +22,14 @@ func (c *proxyYAMLValue) value(n *yamlx.Node) (any, error) {
 	if n == nil {
 		return nil, errors.New(msgProxyYAMLNode)
 	}
-	if previous, ok := c.containers[n]; ok {
+	if previous, ok := c.values[n]; ok {
 		return previous, nil
 	}
 	switch n.Kind {
 	case yaml.MappingNode:
 		out := jsonx.NewObject()
-		c.containers[n] = out
-		for key, value := range yamlx.AllPairs(n) {
-			key = yamlx.Resolve(key)
-			if key == nil || key.Kind != yaml.ScalarNode {
-				return nil, errors.New(msgProxyYAMLKey)
-			}
-			name := key.Value
-			if key.ShortTag() != "!!str" {
-				c.nonStringKeys = true
-				encoded, err := yamlx.ToJSON(key)
-				if err != nil {
-					return nil, err
-				}
-				scalar, err := jsonx.Parse(encoded)
-				if err != nil {
-					return nil, err
-				}
-				if text, ok := scalar.(string); ok {
-					name = text
-				} else {
-					name = string(encoded)
-				}
-			}
-			if out.Has(name) {
-				return nil, &proxyYAMLKeyCollision{line: key.Line}
-			}
+		c.values[n] = out
+		for name, value := range yamlx.Pairs(n) {
 			child, err := c.value(value)
 			if err != nil {
 				return nil, err
@@ -64,7 +39,7 @@ func (c *proxyYAMLValue) value(n *yamlx.Node) (any, error) {
 		return out, nil
 	case yaml.SequenceNode:
 		out := make([]any, len(n.Content))
-		c.containers[n] = out
+		c.values[n] = out
 		for i, node := range n.Content {
 			child, err := c.value(node)
 			if err != nil {
@@ -84,13 +59,23 @@ func (c *proxyYAMLValue) value(n *yamlx.Node) (any, error) {
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", msgProxyYAMLScalar, err)
 		}
+		c.values[n] = value
 		return value, nil
 	default:
 		return nil, errors.New(msgProxyYAMLNode)
 	}
 }
 
-type proxyYAMLKeyCollision struct{ line int }
-
-func (e *proxyYAMLKeyCollision) Error() string { return fmt.Sprintf(msgProxyYAMLKeyCollision, e.line) }
-func (e *proxyYAMLKeyCollision) Unwrap() error { return yamlx.ErrPolicy }
+// readProxyYAML keeps shared policy and key projection ahead of the temporary
+// jsonx boundary. ProjectJSONKeys mutates only this request-owned parsed graph.
+func readProxyYAML(text string) (any, error) {
+	root, err := parseProxyYAML(text)
+	if err != nil {
+		return nil, err
+	}
+	if err := yamlx.ProjectJSONKeys(root, yamlx.StringifyScalarKeys); err != nil {
+		return nil, err
+	}
+	bridge := proxyYAMLValue{values: map[*yamlx.Node]any{}}
+	return bridge.value(root)
+}
