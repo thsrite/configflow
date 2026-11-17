@@ -67,29 +67,88 @@ def variants():
     return result
 
 
-def guard_cases(label, reason):
+
+def listener_variants():
+    suffix = '，无法安全插入设备策略；请先在 OxiDNS 完整参数中调整。'
+    result = []
+    value = document()
+    value['plugins'].pop()
+    result.append(('listener-none', value, '没有任何 DNS 监听入口（udp_server / tcp_server 等）' + suffix, ()))
+    for label, args in (('null', None), ('array', []), ('string', 'invalid')):
+        value = document()
+        value['plugins'][3]['args'] = args
+        result.append(('listener-args-' + label, value,
+            '监听入口 udp（未填写监听地址） 的 entry 无法读取' + suffix, ('H0088',)))
+    for label, entry in (('missing', None), ('empty', ''), ('number', 1), ('array', [])):
+        value = document()
+        value['plugins'][3]['args']['entry'] = entry
+        result.append(('listener-entry-' + label, value,
+            '监听入口 udp（127.0.0.1:53） 的 entry 无法读取' + suffix, ()))
+    for label, entries, helpers in (
+        ('null', None, ('H0089',)), ('empty', [], ('H0089',)), ('object', {}, ('H0089',)),
+        ('string', 'invalid', ('H0089',)), ('scalar-member', [1], ('H0089',)),
+        ('missing-exec', [{}], ()), ('empty-exec', [{'exec': ''}], ()), ('number-exec', [{'exec': 1}], ())):
+        value = document()
+        value['plugins'][3] = {'tag': 'http', 'type': 'http_server',
+                              'args': {'listen': '127.0.0.1:53', 'entries': entries}}
+        result.append(('listener-http-' + label, value,
+            '监听入口 http（127.0.0.1:53） 的 entry 无法读取' + suffix, helpers))
+    value = document()
+    value['plugins'][3]['args']['entry'] = 'china_dns'
+    result.append(('listener-no-direct-main', value, '没有任何监听入口进入主处理链 sequence_main' + suffix, ()))
+    for label, listen, helper in (
+        ('unset', None, ()), ('env', '127.0.0.1:${PORT}', ('H0087',)), ('zero', '127.0.0.1:0', ()),
+        ('overflow', '127.0.0.1:65536', ()), ('invalid', 'bad', ()), ('same', '127.0.0.1:53', ())):
+        value = document()
+        value['plugins'] += [{'tag': 'side', 'type': 'sequence', 'args': [{'exec': '$forward_local'}]},
+                             {'tag': 'side_udp', 'type': 'udp_server', 'args': {'listen': listen, 'entry': 'side'}}]
+        shown = '未填写监听地址' if listen is None else listen
+        detail = '监听客户端 DNS 端口 53' if label == 'same' else '无法确认监听端口'
+        reason = ('监听入口 side_udp（' + shown + '）' + detail
+            + '，但 entry 是 side，没有进入主处理链 sequence_main（经这里查询的客户端不受设备策略控制）'
+            + '，无法安全插入设备策略；请在 OxiDNS 完整参数中把它的 entry 改为 sequence_main，或让它改用其他端口。')
+        result.append(('listener-side-port-' + label, value, reason, helper))
+    for label, target, detail in (
+        ('missing', 'missing_side', '用到的插件 missing_side 不存在'),
+        ('dynamic', '${SIDE}', '含未展开的环境变量')):
+        value = document()
+        value['plugins'] += [{'tag': 'side_udp', 'type': 'udp_server',
+                             'args': {'listen': '127.0.0.1:5353', 'entry': target}}]
+        result.append(('listener-side-reach-' + label, value,
+            '监听入口 side_udp（127.0.0.1:5353） 的处理链' + detail + '，无法确认它是否经过主处理链' + suffix, ()))
+    value = document()
+    value['plugins'] += [{'tag': 'side', 'type': 'sequence', 'args': [{'exec': 'jump sequence_main'}]},
+                         {'tag': 'side_udp', 'type': 'udp_server',
+                          'args': {'listen': '127.0.0.1:5353', 'entry': 'side'}}]
+    result.append(('listener-side-indirect-main', value,
+        '监听入口 side_udp（127.0.0.1:5353） 的处理链 side 会间接调用主处理链 sequence_main，看不出设备策略是否生效'
+        '，无法安全插入设备策略；请在 OxiDNS 完整参数中把它的 entry 直接改为 sequence_main，或让它不再调用主处理链。', ()))
+    return result
+
+def guard_cases(label, reason, helpers=()):
     row = {'ip': '10.44.0.21', 'name': '现存备注🧪', 'mode': ''}
     body = {'profile_id': 'alpha', **row, 'previous_name': row['name'], 'previous_mode': '', 'base_url': ''}
     return (
         Case('R002/native-policy-' + label, 'R002', 'GET', '/api/client-devices', 200,
-            ('R002-F12', 'H0086', 'H0100', 'H0101'),
+            ('R002-F12', 'H0086', 'H0100', 'H0101') + helpers,
             checks={'editable': False, 'reason': reason, 'devices': [row], 'side_entries': []}),
         Case('R003/native-policy-mode-refused-' + label, 'R003', 'PUT', '/api/client-devices', 400,
-            ('R003-F15', 'H0086'), document={**body, 'name': 'must not half-save', 'mode': 'direct'}, message=reason),
+            ('R003-F15', 'H0086') + helpers, document={**body, 'name': 'must not half-save', 'mode': 'direct'}, message=reason),
         Case('R003/native-policy-name-only-' + label, 'R003', 'PUT', '/api/client-devices', 200,
             ('R003-S08',), document={**body, 'name': '仍可改名🧪'}, unchanged=False, effect='profile-write',
             retained_fields=('oxidns', 'routers', 'client_fixed_ips'),
             checks={'editable': False, 'reason': reason, 'devices': [{**row, 'name': '仍可改名🧪'}]}),
         Case('R014/native-policy-readonly-' + label, 'R014', 'GET', '/api/routers/r-ros/policy-settings', 200,
-            ('H0100', 'H0101'), checks={'workspace/sources/editable': False,
+            ('H0100', 'H0101') + helpers, checks={'workspace/sources/editable': False,
                 'workspace/sources/reason': reason, 'workspace/sources/policies': []}),
     )
 
 
 def worlds():
     result = []
-    for label, value, reason in variants():
-        items = guard_cases(label, reason)
+    source = [(label, value, reason, ()) for label, value, reason in variants()] + listener_variants()
+    for label, value, reason, helpers in source:
+        items = guard_cases(label, reason, helpers)
         result.append(('native-policy-' + label, options(value), (lambda items=items: items,)))
     return result
 

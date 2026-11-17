@@ -1070,3 +1070,19 @@ Authoritative full current graph batch:
 All actual Python assertions passed. No active/queued command. Declarations still
 325, remaining1976; last full composition remains379377393054 recipes/301 audits.
 Task remains in progress; final full/gate/rebase pending.
+
+Native listener graph increment:
+-26 independent public-import worlds ×4 HTTP operations=104 requests. Covers
+  no DNS listener, non-object args, invalid entry values, HTTP entries outer/member/
+  exec shapes, no listener directly entering main, unset/env/zero/overflow/bad/
+  client-port side listeners, missing/dynamic reach targets and indirect main.
+  Every world proves safe read-only diagnostics, atomic refused policy change,
+  usable note-only editing with exact native retention, and workspace readback.
+- H0087/H0088/H0089 attached only to the helper guards actually reached, but no
+  audit is closed yet. Main custom listener ports, inner dynamic references,
+  legitimate side/node-test listeners and policy ownership still to add.
+
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY=/tmp/routerdiff-build-302rx1dg-latest/configflow; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python -m unittest -v test_recipes; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world-prefix native-policy-listener --output /tmp/routerdiff-native-policy-listeners.json'`
+=> Ran4 tests0.360s/OK;104 requests, routes0/missing104/references9,
+complete=false, no new Python bug. No pending process; declarations325/remaining
+1976 unchanged. Last full composition remains3054/301. Task not ready to hand back.
