@@ -311,6 +311,12 @@ class Comparators(unittest.TestCase):
                                     {'message': '登录失败。原始错误：decode error'}, policy=policy), [])
         self.assertTrue(differences({'message': '登录失败。原始错误：AttributeError'},
                                    {'message': 'wrong message'}, policy=policy))
+        self.assertTrue(differences({'message': '登录失败。原始错误：AttributeError'},
+                                   {'message': '登录失败。原始错误：不同的中文提示'}, policy=policy))
+        bare = Policy(internal_errors={'body.message': ''})
+        self.assertTrue(differences({'message': '原始中文：1'}, {'message': '原始中文：2'}, policy=bare))
+        self.assertTrue(differences({'message': 'TypeError'}, {'message': '中文替代提示'}, policy=bare))
+        self.assertEqual(differences({'message': '原始中文：1'}, {'message': '原始中文：1'}, policy=bare), [])
 
     def test_nested_json_mutation_missing_and_type(self):
         value = {'a': [{'nested': {'number': 3, 'enabled': True}}]}

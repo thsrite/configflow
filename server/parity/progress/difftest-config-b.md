@@ -1044,3 +1044,15 @@ request_variants=7316 named_matrix_cases=3666（S562 F2479 B625），H去重253�
 ```
 
 继续其余写入P边界、website跨空间busy/真实Agent超时、H064及其余R/H/T；仍未最终全量。
+
+## 批次 59：内部异常英文例外不能吞掉中文
+
+- 收紧明确标注的internal_errors字段：只允许已验证prefix之后的纯ASCII异常措辞变化；tail出现中文/emoji等非ASCII时回到完整字符串比较，中文中的数字变化也必须报差异。固定prefix仍逐字节检查，未知字段/状态/DB/files始终不受这个例外影响。
+- 新增故意中文替代提示、中文数字变化、同文正例等自检，52项全部通过。本批新增请求0，历史记录仍7316 variants（R3666/H253/G16），在重新执行前不把历史67项差异视为新规则下的全量结论。
+
+```text
+.63 python -m unittest discover -s server/tools/configdiff -p test_compare.py
+Ran 52 tests in 1.354s; OK
+```
+
+开始在.32跑当前全部group，审核早期批次与seed/比较器变更的兼容性；仍有未实现的设计条目，这不是最终验收，结果与修正将在后续批次提交。

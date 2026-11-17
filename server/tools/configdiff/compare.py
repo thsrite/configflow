@@ -97,6 +97,10 @@ def differences(left, right, path='body', policy=None):
         prefix = policy.internal_errors[path]
         if not left.startswith(prefix) or not right.startswith(prefix):
             return [Difference(path, 'internal-error-prefix', left, right)]
+        # Only English exception wording may vary. A Chinese hint (or other
+        # non-ASCII text) in the tail must never disappear behind this rule.
+        if any(ord(char) > 127 for char in left[len(prefix):] + right[len(prefix):]):
+            return [] if left == right else [Difference(path, 'non-ascii-internal-error-text', left, right)]
         return []
     if path in policy.times or path in policy.future_times:
         offset = policy.future_times.get(path, 0)
