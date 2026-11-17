@@ -1,9 +1,9 @@
 # Routers Step B — independent public HTTP differential
 
 Status: in progress; NOT ready for acceptance hand-back. Branch go-difftest-routers-b.
-Latest clean integration rebase: go15173872f; normal public binary built from it.
-Current declarations:430 executed-variant audits plus3 explicit source-unreachable
-proofs plus2 O6 review-superseded entries;1866 remaining if all increments and
+Latest clean integration rebase: goa08c4cc27; normal public binary built from it.
+Current declarations:430 executed-variant audits plus5 explicit source-unreachable
+proofs plus2 O6 review-superseded entries;1864 remaining if all increments and
 controls are composed. Last FULL composition still37937739:3054
 recipes/301 audits. Newer subsets do not replace that full evidence; latest
 large subset2470 recipes/327 audits. All observed26 domain routes remain absent
@@ -1717,3 +1717,44 @@ O6 supersession ledger:
 312 executed audits/0 source exclusions/2 O6 supersessions/1987 pending in this
 subset; no Python bug, complete=false. No command pending. Full composition,
 remaining device/background/source/dynamic work, final gate/rebase still pending.
+
+
+Intermediate integration refresh (57 commits rebased cleanly onto goa08c4cc27):
+- No changes to backend Python or AGENT-BRIEF/WORKFLOW/PORTING/rootAGENTS versus
+  earlier base15173872f, checked with git diff. Existing Python source proofs and
+  fixture contracts remain based on unchanged reference code. No Go business
+  implementation read during integration.
+- New ordinary public binary (same observation-only manifest overlay):
+  $HOME/.cache/routerdiff-build-302rx1dg-a08c4cc27/configflow on .64.
+- Working source f6a069d95 before the subsequent local version-proof increment.
+  Build/self-check/foundation command:
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1; uptime; ~/cf-test/.venv/bin/python server/tools/routerdiff/build.py "$HOME/.cache/routerdiff-build-302rx1dg-a08c4cc27" --parallel 4; export ROUTERDIFF_BINARY="$HOME/.cache/routerdiff-build-302rx1dg-a08c4cc27/configflow"; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python -m unittest discover -v; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world router-creations --world runtime-reads --world split-valid-empty --output "$HOME/.cache/routerdiff-reports/302rx1dg/rebase-a08c4cc27-foundation.json"'`
+=> load16.35/18.97/20.47; build success; Ran103 tests66.722s/OK;94 real
+recipes,93 domain missing +1 cross-domain missing, actual domain routes0,
+16 references/0 audits/complete=false. No reference bug. This is an intermediate
+refresh, not final gate/hand-back. Old commit IDs above remain source provenance.
+
+
+H0002/H0003 outer version catch source proof:
+- Read _at_least and all three constant-minimum callers plus the full real
+  compare_versions function. Regex/type guard leaves only built-in strings with
+  exactly three ASCII numeric parts and optional-go. String operations cannot
+  throw TypeError/AttributeError; integer ValueError (including digit limits) is
+  caught INSIDE compare_versions, which always returns an int. Current public
+  input cannot reach the outer ValueError/TypeError/AttributeError catch/False.
+- Added a literal5000-zero major .0.0-go refusal through GET/POST, actual empty
+  public heartbeat preserving the stored version. No helper/exception/output
+  simulation; no claim of observing an inner exception through HTTP. The source
+  proof requires48 real named controls: all malformed types/forms, older parts,
+  exact minimums, suffixless/leading-zero/new versions and the oversized input.
+- Source exclusions now5, kept separate from430 executed-variant declarations
+  and2 O6 corrections;1864 remain pending if composed. These are author proofs
+  for Step B's independent review, not Go module verified statuses.
+
+.64 on new goa08c4cc27 binary:
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY="$HOME/.cache/routerdiff-build-302rx1dg-a08c4cc27/configflow"; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python -m unittest -v test_reachability test_audits test_recipes; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world-prefix forwarding-version- --output "$HOME/.cache/routerdiff-reports/302rx1dg/version-outer-catch-reachability.json"'`
+=> Ran38 tests10.972s/OK;48 actual recipes/allGo-unimplemented,5 references,
+2 executed audits/2 source exclusions/0 O6 corrections/2297 pending in this
+subset, no Python bug, complete=false. No command pending. Full report still
+historical3054/301. Next: scoped persisted probe clocks, other dynamic families,
+remaining source/device/background matrix, final composition/gate/rebase.

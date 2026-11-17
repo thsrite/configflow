@@ -421,3 +421,15 @@ R001-F08/F09 O6 supersession:
 - review_superseded_entries stays separate; no row is removed, no native result
   changes classification because of this proof. Missing/bad controls remain
   pending, and every actual implemented HTTP request is still compared strictly.
+
+H0002/H0003 _at_least outer catch:
+- Built-in JSON string plus ASCII dotted regex; minimum arguments are three
+  valid literal constants. compare_versions's only nontrivial conversion catches
+  its own ValueError, including Python's integer-digit guard, and returns int.
+  Outer TypeError/AttributeError cannot arise from the guarded string operations.
+- Author source proof now in reachability.py with48 named real public controls,
+  including a5000-digit zero-major below-minimum input. It is not an executed
+  catch, and its H IDs are not attached to those HTTP request execution tags.
+  Any ordinary invalid/old Agent version still has its exact real refusal test.
+- These classifications are reviewable Step B author evidence; no Go package is
+  marked verified and no Python exception is simulated or added to Go.

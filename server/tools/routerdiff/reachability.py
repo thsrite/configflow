@@ -69,6 +69,29 @@ def declared():
             'replacement explicit-profile refusal, both ignored selectors for missing/invalid '
             'profile values and a truly linked alpha/beta router result with an invalid header.',
             controls, 'review-superseded')
+    version_controls = tuple(('forwarding-version-' + label, route + '/forwarding-guard-version-' + label,
+                               200 if route == 'R025' else 409)
+                              for label in ('null', 'false', 'number', 'array', 'object', 'empty', 'text',
+                                            'no-patch', 'four-parts', 'prefix', 'suffix', 'extra-suffix',
+                                            'leading-space', 'trailing-space', 'newline', 'fullwidth', 'negative',
+                                            'old', 'old-major', 'old-minor', 'digit-limit')
+                              for route in ('R025', 'R026'))
+    version_controls += tuple(('forwarding-version-accepted-' + label, 'R026/forwarding-version-accepted-' + label, 200)
+                              for label in ('aio-1.8.40', 'standalone-1.8.41', 'suffixless', 'leading-zeroes',
+                                            'new-major', 'new-minor'))
+    for ident in ('H0002', 'H0003'):
+        proofs[ident] = SourceProof(('backend/agents/linux_gateway.py:54', 'backend/agents/linux_gateway.py:18',
+                                    'backend/agents/version.py:548'),
+            '_at_least returns before its try unless JSON version is a built-in str matching exactly '
+            'three ASCII decimal components plus optional -go. Every production minimum is a valid '
+            'literal string. compare_versions splits only these strings, so no TypeError or '
+            'AttributeError is possible; its integer conversion catches ValueError internally, '
+            'including oversized digit strings, before returning an integer. Thus the outer '
+            'ValueError/TypeError/AttributeError catch/False at H0002/H0003 cannot be driven by '
+            'normal public inputs. HTTP controls cover all pre-guard types/forms, older/minimum/'
+            'newer/leading-zero/suffixless success, and a5000-digit zero-major refusal. That last '
+            'control does not claim an inner exception was externally observed. No helper/exception '
+            'or Python comparison output is simulated.', version_controls)
     return proofs
 
 

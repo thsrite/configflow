@@ -56,6 +56,14 @@ def worlds():
             items = tuple(replace(case, entries=(*case.entries, 'H0022')) if case.method == 'POST' else case
                           for case in items)
         result.append(('forwarding-version-' + label, options({'version': value}), (lambda items=items: items,)))
+    # A valid ASCII dotted version can exceed Python's integer-digit limit.
+    # compare_versions catches its own ValueError; _at_least's outer exception
+    # handler still cannot be reached. This input stays below the minimum under
+    # either numeric or reference fallback comparison. No helper is patched.
+    items = refusal('version-digit-limit', 'H0022', 'upgrade_required', 409,
+                    'UPGRADE_REQUIRED', UPGRADE, online=True)
+    result.append(('forwarding-version-digit-limit', options({'version': '0' * 5000 + '.0.0-go'}),
+                   (lambda items=items: items,)))
     for label, missing in (('missing-status', True), ('unsupported-layout', False)):
         peers = agent_peers()
         status = peers['10.44.0.2:18083']['endpoints']['/api/linux-gateway/status']
