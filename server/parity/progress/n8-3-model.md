@@ -1,7 +1,10 @@
 # N8-3 — model skeleton and byte-preserving record codec
 
-Status: **ported**; ready for independent Opus stored-data-core review.
-Branch `go-n8-3`, no push; Opus review required before verified.
+Status: **verified**; independent Opus stored-data-core review complete, zero open N8-3 findings.
+Reviewer branch: `go-opus-review-n8-3`; report: [review-n8-3.md](../review-n8-3.md)
+(2 medium interface fixes: nil list/zero Map written as []/{}, copied profile keyed by its new ID;
+6 low; codec rules for N8-4+ in design/n7-n8.md §2.3 "Settled by the N8-3 review").
+Branch `go-n8-3` (merged as ported in go 1e0f7ac3), no push.
 Scope follows design/n7-n8.md §2.3, N8-3 and R1–R9. Concrete resource/settings
 records and public typed repo transactions remain N8-4/N8-5 respectively.
 
