@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"configflow/internal/lifecycle"
+	"configflow/internal/clock"
 )
 
 // Clock is a manually advanced, concurrency-safe clock with one-shot timers.
@@ -31,7 +31,7 @@ func NewClock(now time.Time) *Clock { return &Clock{now: now, timers: make(map[*
 func (c *Clock) Now() time.Time { c.mu.Lock(); defer c.mu.Unlock(); return c.now }
 
 // NewTimer creates a one-shot timer, firing immediately for nonpositive durations.
-func (c *Clock) NewTimer(d time.Duration) lifecycle.Timer {
+func (c *Clock) NewTimer(d time.Duration) clock.Timer {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.next++

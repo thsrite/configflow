@@ -1,33 +1,20 @@
 package lifecycle
 
 import (
+	"configflow/internal/clock"
 	"context"
 	"sort"
 	"sync"
 	"time"
 )
 
-// Timer is a stoppable one-shot timer supplied by a Clock.
-type Timer interface {
-	C() <-chan time.Time
-	Stop() bool
-}
+// Timer is the shared stoppable one-shot timer supplied by a Clock.
+type Timer = clock.Timer
 
-// Clock supplies time and timers; tests replace it with lifecycletest.Clock.
-type Clock interface {
-	Now() time.Time
-	NewTimer(time.Duration) Timer
-}
+// Clock is the shared time source; tests use lifecycletest.Clock.
+type Clock = clock.Clock
 
-type realClock struct{}
-
-func (realClock) Now() time.Time                 { return time.Now() }
-func (realClock) NewTimer(d time.Duration) Timer { return realTimer{time.NewTimer(d)} }
-
-type realTimer struct{ timer *time.Timer }
-
-func (t realTimer) C() <-chan time.Time { return t.timer.C }
-func (t realTimer) Stop() bool          { return t.timer.Stop() }
+type realClock = clock.Real
 
 // Signal coalesces notifications that interrupt a loop's current or next pause.
 // Its zero value is usable; notifying during a round never starts another round.

@@ -66,3 +66,17 @@ including actual sockets, owner Close, Runtime cancellation and partial admissio
 
 Prefix work is complete. Remaining: after O3 review merge notice, rebase go, shared Clock extraction,
 Flight.DoChan/provider/matcher, then all final gates (all enabled difftests and proddiff included).
+
+Prefix .64 complete preflight: gofmt-l empty, vet green, full `go test -race -p=4 -count=1
+-timeout=30m ./...` exit0; cmd105.920s, health282.052s, installer330.594s, provider180.245s,
+refresh270.129s, repo78.466s, oxidns115.417s, routers230.494s, yamlx12.267s. Difftest packages
+in this run were not enabled; their enabled tagged runs remain a final gate.
+
+Coordinator notified O3 review merged; rebased onto go@197c3c3f. Conflicts were only additive design
+sections and Sub-Store messages.go; both sides retained. Current prefix commits after rebase:
+f7ca67ec / ea0be396 / 181f46db / cabf9a24 / 28db8b31 / 06908f51 / ba7191ac.
+New BindRequest and recorded Detach parent remain as integrated; no replacement with older semantics.
+
+Shared Clock/Timer and real implementation now live in internal/clock. Lifecycle exports aliases;
+lifecycletest imports only clock, allowing rules tests/owners to use the shared fake without a cycle.
+.64 gofmt/vet pass; race count3 clock1.011s, lifecycle7.918s, lifecycletest1.015s, lockx8.495s.
