@@ -30,11 +30,33 @@ import split_state
 import forwarding_guards
 import fixed_normalization
 import fixed_setup
+import fixed_sources
 from inventory import load
 from bugs import BUGS
 
 
 class RecipeTests(unittest.TestCase):
+    def test_fixed_sources_use_real_vendor_and_binding_prerequisites(self):
+        router_cases = [case for _, _, groups in fixed_sources.router_worlds()
+                        for group in groups for case in group()]
+        self.assertEqual(len(router_cases), 34)
+        self.assertEqual(sum(case.expected == 409 for case in router_cases), 32)
+        guarded = [case for case in router_cases if 'H0040' in case.entries]
+        self.assertEqual(len(guarded), 26)
+        self.assertTrue(all(case.unchanged and case.expected_requests for case in guarded))
+        rows = [case for _, _, groups in fixed_sources.binding_worlds()
+                for group in groups for case in group()]
+        self.assertEqual(len(rows), 8)
+        for case in rows:
+            if case.route == 'R005':
+                self.assertIsInstance(case.document['token'], cases.Ref)
+                self.assertEqual(case.expected, 200)
+                self.assertEqual(case.stored['client_fixed_ips'], {})
+                self.assertEqual(case.effect, 'profile-write-device')
+                self.assertIn('device_notes', case.retained_fields)
+        stale = next(case for case in clients.fixed_stale() if case.ident == 'R005/stale-cross-profile')
+        self.assertEqual(stale.profile, stale.document['profile_id'])
+
     def test_setup_guard_uses_canonical_persistent_sessions_and_public_reopen(self):
         worlds = fixed_setup.worlds()
         rows = []

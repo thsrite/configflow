@@ -375,3 +375,22 @@ Fixed-IP setup guard, without the original unit test's monkeypatch:
   The static-file preview controls require only their actual fixed-IP route.
 - Session updated_at bytes after a real PATCH still need the separate persisted
   clock/content binding work before native parity can be claimed.
+
+Fixed-IP source and recovery:
+- Stored routers are only structurally validated as an items list of legacy
+  dictionaries; unsupported/missing JSON type fields can reach R006. Both add
+  and delete reject409 before driver selection, including array/object types;
+  missing/case/whitespace router identities have the same precise guard.
+- Source sightings and stored bindings are distinct checks: both vendors now
+  have mismatched IP/MAC/empty and known-good sightings, a borrowed router MAC,
+  plus stored wrong-router/wrong-MAC binding cases (no I/O).
+- Missing local metadata is not always an error: actual owned static rows can
+  be recovered by both adapters, previewed, then deleted with the public own
+  token. Foreign rows are retained, names/DNS/router unchanged and binding map
+  remains empty. No reservation creation or mocked adapter is used.
+- Source-unreachable candidates: adapter's unsupported vendor (H0034), _plan's
+  supports_write=false (H0041), enrich's supports_write=false (H0061). All real
+  calls flow through _router/type filtering and DRIVERS containing only the two
+  concrete classes, both class attributes supports_write=True, vendor constant.
+  Account permissions fail at HTTP and do not flip that flag. Currently these
+  three remain uncompleted; explicit source-proof classification is still to add.

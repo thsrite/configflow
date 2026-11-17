@@ -21,9 +21,30 @@ import gateway
 import forwarding_guards
 import fixed_normalization
 import fixed_setup
+import fixed_sources
 
 
 class AuditTests(unittest.TestCase):
+    def test_fixed_source_audits_require_each_operand_and_both_recovery_transactions(self):
+        actual = {(world, case.ident): case for factory in (fixed_sources.router_worlds, fixed_sources.binding_worlds)
+                  for world, _, groups in factory() for group in groups for case in group()}
+        for world, group in (('fixed-ip-guards', clients.fixed_preview_guards),
+                             ('fixed-ip-stale', clients.fixed_stale), ('fixed-ip', clients.fixed_ip)):
+            actual.update({(world, case.ident): case for case in group()})
+        counts = {'H0040': 26, 'R006-F18': 26, 'H0042': 10, 'R006-F19': 7,
+                  'H0043': 10, 'R006-F22': 6, 'R005-S07': 4, 'R006-S04': 5}
+        for ident, count in counts.items():
+            required = declared()[ident].requirements
+            self.assertEqual(len(required), count, ident)
+            for world, name, status in required:
+                case = actual[world, name]
+                self.assertEqual(case.expected, status)
+                self.assertIn(ident, case.entries)
+            evidence = [{'world': world, 'case': name, 'entries': [ident], 'python': {'status': status},
+                         'status': 'go-unimplemented'} for world, name, status in required]
+            self.assertEqual(evaluate(evidence)[ident]['audit'], 'variants-audited')
+            self.assertEqual(evaluate(evidence[:-1])[ident]['audit'], 'variants-pending')
+
     def test_setup_guard_audit_requires_saved_states_and_real_valid_token_reopen(self):
         actual = {(world, case.ident): case for world, _, groups in fixed_setup.worlds()
                   for group in groups for case in group()}
@@ -199,7 +220,7 @@ class AuditTests(unittest.TestCase):
 
     def test_auth_audits_require_every_explicit_real_reference_variant(self):
         audits = declared()
-        self.assertEqual(len(audits), 26 * 7 + 25 * 3 + 5 + 14 + 12 + 5 + 8 + 23 + 1 + 5 + 4 + 6 + 4 + 4 + 10 + 24 + 1 + 13 + 2 + 12 + 9 + 3)
+        self.assertEqual(len(audits), 26 * 7 + 25 * 3 + 5 + 14 + 12 + 5 + 8 + 23 + 1 + 5 + 4 + 6 + 4 + 4 + 10 + 24 + 1 + 13 + 2 + 12 + 9 + 3 + 8)
         self.assertFalse(set(audits) - set(load()[1]))
         self.assertEqual({value['audit'] for value in evaluate([]).values()}, {'variants-pending'})
         ident = 'R005-F01'

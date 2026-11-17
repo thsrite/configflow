@@ -2,7 +2,7 @@
 
 Status: in progress; NOT ready for acceptance hand-back. Branch go-difftest-routers-b.
 Latest clean integration rebase: go15173872f; normal public binary built from it.
-Current declarations:422 source-reviewed variant audits,1879 remaining if all
+Current declarations:430 source-reviewed variant audits,1871 remaining if all
 completed increments are composed. Last FULL composition still37937739:3054
 recipes/301 audits. Newer subsets do not replace that full evidence; latest
 large subset2470 recipes/327 audits. All observed26 domain routes remain absent
@@ -1636,3 +1636,29 @@ After adding declarations and path/mode safety controls:
 => Ran69 tests23.436s/OK;6 recipes, routes0/missing6,3 references/3 audits,
 2298 pending in this subset, complete=false. No command pending. Full composition,
 remaining source/device/background checks, dynamic binding, gate/rebase pending.
+
+
+Fixed-IP source/binding guards increment:
+-26 no-I/O409 variants: both add/delete against missing/case/space router IDs,
+  missing type and every wrong legacy stored type (including nonempty array/map).
+  These dictionaries genuinely pass public repository import; no forged driver.
+- Both vendors: unseen MAC, unseen IP, empty sighting tables, seen positive
+  controls; wrong-vendor source and changed-source-at-apply from existing real
+  workflows. Exact source-specific409; readonly fake tables and full DB/files.
+- Each vendor refuses a stored binding for a different router or MAC before
+  any I/O. Foreign device reservations with no local binding remain untouched.
+- Recovered ownership: no local binding, but an actual static device row has a
+  cf-client marker. Each vendor previews and confirms deletion using its own
+  signed token, retains foreign reservations and all saved names/DNS/router,
+  and leaves local binding empty. Covers R005-S07 without adding any reservation.
+- Corrected the cross-profile stale-token recipe's Case.profile metadata to beta
+  (its request/body already selected beta); matters for future scoped bindings.
+- Eight audits H0040/H0042/H0043, R006-F18/F19/F22/S04 and R005-S07.
+  Current430 declarations/1871 pending if composed. No new reference bug.
+
+.64 final command for this increment:
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY="$HOME/.cache/routerdiff-build-302rx1dg-current/configflow"; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python -m unittest -v test_audits test_recipes test_runner; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world-prefix fixed-source- --world fixed-ip-stale --world fixed-ip-guards --world fixed-ip --output "$HOME/.cache/routerdiff-reports/302rx1dg/fixed-sources-audits.json"'`
+=> Ran66 tests10.461s/OK;116 actual recipes, routes0/missing116,35 references,
+8 audits/2293 pending in this subset, no Python bug, complete=false. Last FULL
+composition3054/301 unchanged; no command pending. Remaining branch/device/
+background work, scoped dynamics, final composition, gate/rebase pending.

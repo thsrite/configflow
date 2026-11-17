@@ -427,6 +427,7 @@ def fixed_stale():
             message, entries = '请先保存设备名称或 DNS 策略，再固定 IP。', ('R005-F18', 'H0051')
         yield Case('R005/stale-' + label, 'R005', 'POST', '/api/client-devices/fixed-ip/apply?profile=' + profile,
                    409, entries, document={'profile_id': profile, 'token': token}, requires=('R006',),
+                   profile=profile,
                    prepare=prepare, unchanged=False, effect='device-read', message=message, foreign=FOREIGN)
 
 

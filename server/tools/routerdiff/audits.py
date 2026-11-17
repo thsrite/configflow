@@ -876,6 +876,39 @@ def declared():
             'all seeded states pass the real public session reader unchanged. The completed fixture '
             'tests an archived reader/guard flag, not the config domain installation/finish workflow. '
             'No monkeypatch of profile_sessions or manually signed apply token.', required)
+    source_guards = tuple(('fixed-source-router-' + label, 'R006/source-router-' + label + '-' + operation, 409)
+                          for label in ('unknown', 'case', 'empty', 'null', 'false', 'true', 'number', 'array', 'object', 'missing')
+                          for operation in ('add', 'delete'))
+    source_guards += tuple(('fixed-source-missing-router', 'R006/source-missing-' + ident + '-' + operation, 409)
+                           for ident in ('missing', 'r-ROS', ' r-ros ') for operation in ('add', 'delete'))
+    unseen_guards = tuple(('fixed-source-unseen', 'R006/source-unseen-' + vendor + '-' + label, 409)
+                          for vendor in ('routeros', 'ikuai') for label in ('mac', 'ip', 'empty'))
+    unseen_guards += (('fixed-ip-guards', 'R006/wrong-vendor-source', 409),)
+    seen_controls = tuple(('fixed-source-unseen', 'R006/source-seen-' + vendor, 200) for vendor in ('routeros', 'ikuai'))
+    binding_guards = tuple(('fixed-source-binding-' + vendor + '-' + field,
+                            'R006/source-binding-' + vendor + '-' + field, 409)
+                           for vendor in ('routeros', 'ikuai') for field in ('router_id', 'mac'))
+    binding_guards += tuple(('fixed-ip-guards', 'R006/delete-foreign-' + vendor, 409) for vendor in ('ros', 'ik'))
+    recovered_controls = tuple(('fixed-source-recover-' + vendor, route + '/source-recover-owned-' + vendor, 200)
+                               for vendor in ('routeros', 'ikuai') for route in ('R006', 'R005'))
+    fixed_source_refs = ('backend/common/client_fixed_ip.py:91', 'backend/common/client_fixed_ip.py:102',
+                         'backend/common/client_fixed_ip.py:109', 'backend/routers/store.py:18')
+    for ident, required, detail in (
+        ('H0040', source_guards, 'Both add/delete, absent/case/space router ID and every stored legacy type/missing field; exact409 before any driver I/O.'),
+        ('R006-F18', source_guards, 'Repository accepts legacy router dictionaries; preview diagnoses missing/unsupported vendor before selecting a driver.'),
+        ('H0042', unseen_guards + seen_controls + (('fixed-ip-stale', 'R005/stale-source', 409),),
+         'Both vendors: mismatched MAC, mismatched IP, empty sightings, wrong vendor source, real positive sightings and a valid token whose source changes before apply.'),
+        ('R006-F19', unseen_guards, 'Real source IP/MAC/empty-table checks on both vendors, including a MAC borrowed from a different router.'),
+        ('H0043', binding_guards + recovered_controls,
+         'All three OR operands: missing local metadata and foreign device marker; stored wrong router; stored wrong MAC. Both vendors recover an absent local binding from actual owned device state and delete only that row.'),
+        ('R006-F22', binding_guards, 'Both vendors refuse foreign reservations, binding router mismatch and binding MAC mismatch; no write and no guessing ownership.'),
+        ('R005-S07', recovered_controls, 'Actual preview/apply on each vendor with empty local binding map, persistent cf-client ownership, unchanged saved names/DNS/router and retained foreign reservation.'),
+        ('R006-S04', tuple(('fixed-ip', 'R006/fixed-delete-' + label, 200) for label in ('dynamic', 'new', 'ikuai'))
+         + tuple(item for item in recovered_controls if item[1].startswith('R006/')),
+         'Both vendors delete tracked owned reservations; RouterOS covers converted/new forms, plus both missing-local-binding recovery previews.')):
+        audits[ident] = Audit(fixed_source_refs, detail +
+            ' Public Python process, real repository and stateful loopback peers only. Every write '
+            'compares complete storage/files/device tables; fixtures never replace a driver or Python helper.', required)
     return audits
 
 

@@ -38,6 +38,7 @@ import split_state
 import forwarding_guards
 import fixed_normalization
 import fixed_setup
+import fixed_sources
 from compare import differences, logical_snapshot, response_view, timestamp
 from harness import Pair, RemoteError, observed_startup_exit
 from harness import decode_response
@@ -820,6 +821,8 @@ def main():
               ('stored', fixtures.stored_options(), (fixtures.receipts, fixtures.stored_guards))]
     worlds += device_policy.worlds()
     worlds += fixed_setup.worlds()
+    worlds += fixed_sources.router_worlds()
+    worlds += fixed_sources.binding_worlds()
     worlds += device_policy.invalid_ip_worlds()
     worlds += policy_graph.worlds()
     worlds += policy_owned.worlds()
