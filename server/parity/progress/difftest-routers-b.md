@@ -1048,3 +1048,25 @@ complete=false, no new Python bug. No active or queued command remains.
 Next: native device-policy graph read-only/atomic rejection and reachable H0085-
 H0101, remaining wrapper audits, deeper device/generator/background branches,
 scoped dynamic identities/timestamps/hashes and G23 external manifest dispatch.
+
+Native policy graph main-chain increment:
+- New policy_graph.py uses literal native documents, public repository import,
+  and only HTTP for every operation.18 malformed/unrecognized main graphs each
+  perform R002200 editable=false/exact reason, R003 mode-change400 with complete
+  state unchanged, R003 name-only200 retaining full native/settings bytes, and
+  R014200 with the same read-only reason. Includes include, missing/duplicate tags,
+  missing/wrong main/args/exec/tail and missing/wrong/empty local upstream.
+-3 ordinary native controls read recognized main, insert direct policy, then
+  rename without rewriting native settings. No helper is called to manufacture
+  expected application output; expected diagnostic fragments are literal data.
+- Helper H0086/H0100/H0101 attached only to reached branches, but not closed:
+  listener/ownership/side-entry families remain to implement. R002-F12/R003-F15
+  also remain pending their complete graph variants. No new declared audit yet.
+
+.64 pilot: Ran4 recipe integrity tests0.400s/OK;19 requests passed.
+Authoritative full current graph batch:
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY=/tmp/routerdiff-build-302rx1dg-latest/configflow; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world-prefix native-policy- --output /tmp/routerdiff-native-policy-main-guards.json'`
+=>75 requests, Go routes0/missing75/references8, complete=false, no new bug.
+All actual Python assertions passed. No active/queued command. Declarations still
+325, remaining1976; last full composition remains379377393054 recipes/301 audits.
+Task remains in progress; final full/gate/rebase pending.

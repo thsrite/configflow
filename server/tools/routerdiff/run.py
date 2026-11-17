@@ -28,6 +28,7 @@ import returns
 import persistence
 import ipv6
 import device_policy
+import policy_graph
 from compare import differences, logical_snapshot, response_view, timestamp
 from harness import Pair, RemoteError, observed_startup_exit
 from harness import decode_response
@@ -619,6 +620,7 @@ def main():
               ('client-canonical-names', options, (workflows.client_canonical_names,)),
               ('notes-capacity', fixtures.notes_capacity_options(), (fixtures.notes_capacity,)),
               ('client-mode-notes', options, (workflows.client_mode_notes,)),
+              ('native-policy-valid', policy_graph.options(policy_graph.document()), (policy_graph.valid,)),
               ('stored-policy-legacy', device_policy.legacy_options(), (device_policy.legacy,)),
               ('stored-policy-capacity', device_policy.capacity_options(), (device_policy.capacity,)),
               ('notes-keep-reservation', clients.options(), (clients.notes_keep_reservation,)),
@@ -702,6 +704,7 @@ def main():
               ('auth-off-sync', auth_off(sync.options()), (sync.manual_refresh,)),
               ('stored', fixtures.stored_options(), (fixtures.receipts, fixtures.stored_guards))]
     worlds += device_policy.worlds()
+    worlds += policy_graph.worlds()
     if args.world or args.world_prefix:
         names = {item[0] for item in worlds}
         unknown = set(args.world or ()) - names
