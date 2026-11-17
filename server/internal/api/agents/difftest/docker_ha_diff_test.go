@@ -238,6 +238,12 @@ func compareHA(t *testing.T, name string, py, gor response, same, failed *int, m
 	}
 	pyNorm.body, _ = normalizeHA(pyNorm.body)
 	gorNorm.body, _ = normalizeHA(gor.body)
+	// N7-3c: guide Compose is generated configuration. Only an independently
+	// parsed equal document may replace its byte layout for the JSON check;
+	// scripts, fields, statuses, headers and installation files remain strict.
+	if pyNorm.status == 200 && gorNorm.status == 200 {
+		pyNorm.body = equalGuideComposeLayout(pyNorm.body, gorNorm.body)
+	}
 	if diffs := compareInstaller(pyNorm, gorNorm, append([]string{"enrollment_expires_at"}, mask...)); len(diffs) > 0 {
 		*failed++
 		t.Errorf("DIFF %s:\n  %s", name, strings.Join(diffs, "\n  "))

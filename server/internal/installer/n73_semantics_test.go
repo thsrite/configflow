@@ -1,15 +1,11 @@
 package installer
 
 import (
-	"archive/zip"
-	"bytes"
 	"compress/gzip"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"sync"
 
@@ -44,50 +40,8 @@ func nativeArtifactDigest(value any) (string, error) {
 }
 
 func nativeZipValue(encoded string) (*jsonx.Object, error) {
-	data, err := base64.StdEncoding.DecodeString(encoded)
-	if err != nil {
-		return nil, err
-	}
-	archive, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
-	if err != nil {
-		return nil, err
-	}
-	result := jsonx.Obj()
-	for _, file := range archive.File {
-		if result.Has(file.Name) {
-			return nil, fmt.Errorf("duplicate archive member")
-		}
-		reader, err := file.Open()
-		if err != nil {
-			return nil, err
-		}
-		data, err := io.ReadAll(reader)
-		_ = reader.Close()
-		if err != nil {
-			return nil, err
-		}
-		member := jsonx.Obj("mode", file.ExternalAttrs>>16, "yaml", nil, "bytes", nil)
-		if file.Name == "compose.yaml" {
-			node, err := yamlx.Parse(data)
-			if err != nil {
-				return nil, err
-			}
-			raw, err := yamlx.ToJSON(node)
-			if err != nil {
-				return nil, err
-			}
-			value, err := jsonx.Parse(raw)
-			if err != nil {
-				return nil, err
-			}
-			member.Set("yaml", value)
-		} else {
-			sum := sha256.Sum256(data)
-			member.Set("bytes", hex.EncodeToString(sum[:]))
-		}
-		result.Set(file.Name, member)
-	}
-	return result, nil
+	manifest, _, err := yamltest.ComposeArchive(encoded)
+	return manifest, err
 }
 
 func nativeFieldValue(value any, key string) (any, error) {

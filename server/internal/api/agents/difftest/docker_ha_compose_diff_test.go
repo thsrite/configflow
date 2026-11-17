@@ -25,11 +25,17 @@ import (
 // composeEnrollment reads the capability a Compose answer carries.
 func composeEnrollment(method string, answer, body *jsonx.Object) (*installer.Enrollment, error) {
 	environment := func(key string) (string, error) {
-		loaded, err := yamlx.Load(answer.GetString("compose"))
+		node, err := yamlx.Parse([]byte(answer.GetString("compose")))
 		if err != nil {
 			return "", err
 		}
-		value, _ := jsonx.Path(loaded, "services", "agent", "environment", key).(string)
+		for _, part := range []string{"services", "agent", "environment", key} {
+			node = yamlx.Get(node, part)
+		}
+		var value string
+		if err := yamlx.Decode(node, &value); err != nil {
+			return "", err
+		}
 		return strings.ReplaceAll(value, "$$", "$"), nil
 	}
 	switch method {
@@ -108,6 +114,16 @@ func compareComposeAnswer(side string, body *jsonx.Object, r response) []string 
 	// routes/docker_ha_installation.py adds the expiry and one warning.
 	expected.Set("enrollment_expires_at", answer.Value("enrollment_expires_at"))
 	expected.Set("warnings", append(expected.GetList("warnings"), "新装命令的本机安装凭据有效期为 24 小时；过期后重新生成。生成命令不会创建设备记录。"))
+	expectedBytes, encodeErr := jsonx.Response(expected)
+	if encodeErr != nil {
+		return []string{side + " expected: " + encodeErr.Error()}
+	}
+	normalized := equalGuideComposeLayout(expectedBytes, r.body)
+	parsedExpected, parseErr := jsonx.Parse(normalized)
+	if parseErr != nil {
+		return []string{side + " expected: " + parseErr.Error()}
+	}
+	expected = parsedExpected.(*jsonx.Object)
 	if jsonx.Equal(expected, answer) {
 		return nil
 	}
