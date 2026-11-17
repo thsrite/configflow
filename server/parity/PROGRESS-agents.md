@@ -661,6 +661,16 @@ Open findings: none.
 
 ## A08 — installer script rendering, install command store
 
+L1 repair batch final acceptance (`go-fix-l1-installer`, based on go0f943623,
+ported/review pending): D1/D3–D8 complete. Full race: other85 packages passed;
+installer's three old N73 script assertions updated with approved D5 deltas,
+then whole installer race passed579.035s. All12 pre-integration difftest packages
+passed; fmt/full vet/tagged builds passed. Per coordinator, after provider-fix
+merge only proddiff reran on .32 via gate stage: new0/stale0, self_checkPASS,
+coverage_regressions0/unmapped_routes0; existing11 baseline differences unchanged.
+Per-defect rebased commits, real-container evidence and exact commands:
+[final report](progress/l1-installer-fixes.md). No push or independent-review claim.
+
 L1 D8: explicit httpx route marker preserves Python's plain-text 404/503 only
 for agents.download_install_command; removes error attachment header as approved.
 Binary downloads and other Python JSON errors retain JSON. Curl -fsSL/curl|sh,

@@ -2,6 +2,8 @@
 
 Branch `go-fix-l1-installer`, created from latest go=038b52ae after finishing the
 separate ETXTBSY fix (`go-fix-installer-etxtbsy`, a05c6047 + 58f1d8b3).
+**Final status (2026-11-18): implementation and acceptance complete; ported, independent HR review pending. Final base `go@0f943623`; no push.**
+
 Source report: [lab/L1.md](../lab/L1.md). No subagents, pushes or production access.
 Use .32/.64 only. Container method reference: installer-container-lab memory
 (Alpine with OpenRC softlevel; jrei/systemd-debian:12 with real systemd).
@@ -277,27 +279,28 @@ was added or hidden. Updated comparator README and synthetic regression.
 → 34 tests in0.020s, OK. Stopped only our still-queued gate before changing the
 remote snapshot; final gate will restart with the updated comparator.
 
-## Current hand-back map (final gate pending)
+## Final hand-back map (acceptance complete)
 
 All fixes are ported; no independent-review status is claimed. Latest integrated
-base before the final gate: go9a208c6c; branch go-fix-l1-installer, no push.
+base for final proddiff acceptance: go0f943623; branch go-fix-l1-installer, no push.
 
 | Defect | Commits after rebase | Targeted evidence |
 |---|---|---|
-| D1 | 1bffcc12 + 4f03c25e | five old recording sets, no capability writes on refusal, real Compose5.6.1 old/new mount behavior |
-| D3 | 2f0f1d97 | stateful failure/cancellation/copy-failure regressions, six real systemd/OpenRC scenarios, A08 matrix/fuzz and Flask293/0 |
-| D4 | 55517bfb | old policy confirmed, missing-key hint, registry unchanged, existing-token and locked enrollment security |
-| D5 | c61ec802 | real UDP/TCP53 busy/free and Supervisor RUNNING/FATAL; Flask239/0 |
-| D6 | 368b2f9c | three real DNS clients resolve isolated VIP; actual minimal Debian12 missing-client hint |
-| D7 | c539c706 | 416 actual-length headers/HEAD/valid206; download Flask120/0 (12 inherited httpx classes) |
-| D8 | 786d6b0d + 46e578e5 | plain404/503 vs JSON binary404/invalid name; curl cases; strict proddiff comparator34 tests |
+| D1 | 7d536406 + da6d9ea7 | five old recording sets, no capability writes on refusal, real Compose5.6.1 old/new mount behavior |
+| D3 | 7e9f1726 + 31b5f2c3 | stateful failure/cancellation/copy-failure regressions, six real systemd/OpenRC scenarios, A08 matrix/fuzz and Flask293/0 |
+| D4 | c822dc47 | old policy confirmed, missing-key hint, registry unchanged, existing-token and locked enrollment security |
+| D5 | 2bcf0a86 + 2784efbe | real UDP/TCP53 busy/free and Supervisor RUNNING/FATAL; Flask239/0 |
+| D6 | 07630d7c | three real DNS clients resolve isolated VIP; actual minimal Debian12 missing-client hint |
+| D7 | ecd18ef1 | 416 actual-length headers/HEAD/valid206; download Flask120/0 (12 inherited httpx classes) |
+| D8 | 204c11e1 + ba7ddee7 | plain404/503 vs JSON binary404/invalid name; curl cases; strict proddiff comparator34 tests |
 
 D2/D9 remain outside this batch. No multi-host HA/VIP failover claim: that remains
 L3/lab work. All D3/D5/D6 containers are owned and removed; no PVE/production access.
-Final gate is queued through server/scripts/gate.sh -p4 on .64, logs
-/tmp/configflow-l1-installer-gate-r2; no parallel ad-hoc full suite/proddiff.
+Final proddiff-only gate passed on .32, logs
+/tmp/configflow-l1-installer-proddiff-final (new0/stale0). All test commands have
+finished. Shared gate-stage helper: c66a38cb. Exact final command/output below.
 
-Final gate state (2026-11-18, in progress): .64's queue remained occupied, so
+Historical first full-gate state (2026-11-18): .64's queue remained occupied, so
 stopped only our waiting gate and moved the full gate to .32, which had a free
 slot. GATE_LOGS=/tmp/configflow-l1-installer-gate-r3, gate.sh -p4, acquired slot2.
 Gofmt/full vet and both tagged builds/vet/lifecycle tests passed; full race is
@@ -317,11 +320,10 @@ Added GATE_ONLY=difftest|proddiff to gate.sh: both reuse its existing slot lock,
 report only their own stage, propagate failure, and leave ordinary full gates
 unchanged. This lets the remaining difftests run despite known proddiff failure
 and lets the final approved proddiff-only rerun obey the host's gate-slot limit.
-All difftests now queued on .64 through this stage mode, logs
-/tmp/configflow-l1-installer-diff-final. Exact commands/results are to be appended
-once these foreground runs finish. No active task may be handed back yet.
+All difftests subsequently passed on .64 through this stage mode, logs
+/tmp/configflow-l1-installer-diff-final. Exact commands/results follow.
 
-## Remaining gates completed; waiting for provider fix integration
+## Race and differential acceptance (completed before provider integration)
 
 Full .32 gate finished its race stage: **85 packages passed**; only installer
 failed on TestN73ComposeHashOnlyReviewCases's three explicit old A10 semantic
@@ -365,3 +367,39 @@ three pre-fix installer assertions and the pre-update proddiff snapshot. The
 corrected installer package and all independent difftest packages passed as above.
 Per explicit coordinator instruction, after provider fix merge/rebase only
 proddiff must rerun; no redundant whole race. No active test commands remain.
+
+## Final provider integration and proddiff PASS
+
+Coordinator notified that provider fix was merged as go0f943623. Rebased
+go-fix-l1-installer onto that exact integration head without conflicts. As
+explicitly instructed, reran ONLY proddiff after rebase, using the same gate
+slots; .64 was occupied, so the actual run used .32's free slot2. No extra
+whole race/full-suite run. No production behavior or baseline was weakened.
+
+```sh
+git rebase go
+RT_HOST=sunbroke@192.168.0.32 rt -- bash -c 'set -eu; GATE_ONLY=proddiff GATE_LOGS=/tmp/configflow-l1-installer-proddiff-final server/scripts/gate.sh -p 4'
+```
+
+```text
+gate: slot 2 of 2
+== proddiff (only; other stages are not run)
+self-check: ... text-line=PASS text-insert=PASS text-line-endings=PASS
+coverage_regressions=0 unmapped_routes=0 unique_differences=11 self_check=PASS
+baseline: new=0 stale=0
+GATE STAGE PASS: proddiff
+```
+
+Compared75 GET routes/2831 cases, with462 comparisons in the detailed counter.
+All23 comparator self-checks passed. The existing11 schema-only baseline
+differences are unchanged; no aggregation allowance was added. Original
+production12s provider policy is unchanged; only proddiff waits for both
+completed artifacts, per the coordinator's merged fix.
+
+All implementation commits are separate by defect; mapping above uses final
+rebased IDs. Reports and behaviour ledger contain approved Python bug fixes,
+D4's original registration limitation, D8's sole route exception plus explicit
+attachment-header correction, commands and retained initial-failure evidence.
+Status remains ported pending independent review. D2/D9 and multi-host L3
+failover remain outside this batch. No active commands or owned containers;
+final git rebase go/clean-tree check follows the report commit. No push.
