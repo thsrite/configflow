@@ -17,6 +17,17 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_node_worker_deadline_rejects_immediate_and_unbounded_timeouts(self):
+        from cases.node_helpers import WorkerDeadline
+        observer = WorkerDeadline(SimpleNamespace(root=Path('/synthetic-unused')))
+        observer.before_values[1] = observer.after_values[1] = {'value': 'unchanged'}
+        observer.worker.inputs = [[], []]
+        observer.elapsed = [5.5, 5.5]
+        self.assertEqual(observer.compare(Policy()), [])
+        for wrong in (0, 4.9, 8.1, True, '5.5', None, float('nan'), float('inf')):
+            observer.elapsed[1] = wrong
+            self.assertTrue(observer.compare(Policy()), repr(wrong))
+
     def test_node_worker_observer_detects_storage_and_stdin_mutations(self):
         from cases.node_helpers import WorkerStable
         observer = WorkerStable(SimpleNamespace(root=Path('/synthetic-unused')))

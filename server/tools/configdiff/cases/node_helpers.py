@@ -1,9 +1,13 @@
 """Public node worker failures, bounded settings and candidate selection."""
+import time
+
+from compare import Difference
 from harness import Pair, json_body
 from probe import Exchange
 from cases.config_backup import message
 from cases.nodes import NODE
 from cases.setup import Stable
+from cases.subscriptions import require
 
 ROUTE = 'POST /api/nodes/latency'
 
@@ -64,3 +68,69 @@ def settings_guards(binary, recorder):
 
 
 GROUPS = {'node-helper-worker-failures': worker_failures, 'node-helper-settings-guards': settings_guards}
+
+
+def candidate_guards(binary, recorder):
+    rows = [('H738', {'keys': [], 'names': []}, [NODE], 'names 与 keys 不能同时指定'),
+            ('H739', {'keys': ['missing-' + str(i) for i in range(21)]}, [NODE], '单次最多测试 20 个节点，请分批测试'),
+            ('H740', {'names': [NODE['name']]}, [NODE, {**NODE, 'id': 'node-b'}], '存在同名节点，请使用 keys 指定节点来源后重试')]
+    for case, body, nodes, text in rows:
+        with Pair(binary, recorder, options={'shared': {'nodes': nodes}, 'probe_case': 'valid'}) as pair:
+            pair.request(case, ROUTE, body=json_body(body), expect=400, writes=True,
+                         check=message(text), interaction=WorkerStable(pair, 0), variant='candidate-guard')
+    nodes = [{**NODE, 'id': 'uri-' + str(i), 'name': 'URI-' + str(i),
+              'proxy_string': 'synthetic://opaque-uri-' + str(i)} for i in range(6)]
+    with Pair(binary, recorder, options={'shared': {'nodes': nodes}, 'probe_case': 'valid'}) as pair:
+        pair.request('H741', ROUTE, body='{}', expect=400, writes=True,
+                     check=message('单次最多测试 5 个需要 Sub-Store 转换的节点，请分批测试'),
+                     interaction=WorkerStable(pair, 0), variant='six-opaque-URI-nodes-before-conversion')
+
+
+def oversized_payload(binary, recorder):
+    node = {**NODE, 'params': {'username': 'synthetic', 'password': 'x' * (8 * 1024 * 1024)}}
+    with Pair(binary, recorder, options={'shared': {'nodes': [node]}, 'probe_case': 'valid'}) as pair:
+        pair.request('H726', ROUTE, body='{}', expect=400, writes=True,
+                     check=message('本批节点配置过大，请减少每批节点数'),
+                     interaction=WorkerStable(pair, 0), variant='serialized-worker-input-over-8-MiB')
+
+
+def deadline_errors(value):
+    if type(value) in (int, float) and 5 <= value <= 8:
+        return []
+    return [Difference('probe.node.elapsed', 'outside-production-worker-deadline', '5–8 seconds around 5.5s', value)]
+
+
+class WorkerDeadline(WorkerStable):
+    def __init__(self, pair):
+        super().__init__(pair)
+        self.elapsed = [None, None]
+
+    def before(self, index):
+        super().before(index)
+        self.started = time.monotonic()
+
+    def after(self, index, reply):
+        self.elapsed[index] = time.monotonic() - self.started
+        if index == 0:
+            require(not deadline_errors(self.elapsed[0]), 'actual worker killed at unmodified 500ms + 5s production budget')
+        super().after(index, reply)
+
+    def compare(self, policy):
+        return super().compare(policy) + deadline_errors(self.elapsed[1])
+
+
+def production_deadline(binary, recorder):
+    with Pair(binary, recorder, options={'shared': {'nodes': [NODE]}, 'probe_case': 'timeout',
+              'environment': {'CONFIGFLOW_NODE_TEST_TIMEOUT_MS': '500'}}) as pair:
+        pair.request('H727', ROUTE, body='{}', expect=503, writes=True,
+                     check=message('测速组件执行超时，已结束本批测试，请重试'),
+                     interaction=WorkerDeadline(pair), variant='actual-5.5-second-production-worker-budget')
+        # Success after a timed-out call proves the batch lock is released.
+        # An empty candidate selection never invokes the still-sleeping mode.
+        pair.policy.times.add('body.tested_at')
+        pair.request('T13', ROUTE, body=json_body({'keys': []}), expect=200, writes=True,
+                     interaction=Exchange(pair, 0), variant='lock-released-after-production-worker-timeout')
+
+
+GROUPS.update({'node-helper-candidate-guards': candidate_guards, 'node-helper-payload-limit': oversized_payload,
+               'node-helper-production-deadline': production_deadline})

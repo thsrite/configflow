@@ -1975,3 +1975,7 @@ R024/R031-S04/S05及B91：仍比较相应Host/Forwarded请求的完整响应、�
 ### Step B 资源闭包前置shape guard
 
 H757/H758的非数组proxies_order与非对象元素已被[validate_shapes](../../backend/utils/dialer_references.py#L35)拒绝，完整import公开400消息为“策略组 proxies_order 必须是含 type/id 字符串的对象数组”，无法证明后续_collect_resource_refs的两个指定return运行。保留相应HTTP拒绝测试并标部分观察，不把相似的拒绝归为该内部return的完整覆盖。
+
+### Step B 节点names/keys前置门禁
+
+H738的同时指定names/keys在[nodes.py:163](../../backend/routes/nodes.py#L163)先被拒绝400，消息与后续helper相同；HTTP覆盖这一行为，但不能证明node_latency._run_tests内重复防御分支执行。该内部return标部分观察，保留独立H738请求。

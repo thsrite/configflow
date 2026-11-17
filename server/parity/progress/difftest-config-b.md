@@ -1435,3 +1435,20 @@ go-unimplemented=96 request_variants=96 design_errors=[] seconds=4.13；exit=0
 ```
 
 继续生产超时恢复、其余helper/路由与长流程；当前H仍差586编号，未完成Step B。
+
+## 批次 83：节点体积、候选限额与实际生产超时恢复
+
+- 中断后核对并在.63整组重跑未提交草稿：7变体全部实际相比通过；新增H726/H727/H738–741共6编号及T13恢复子形态。覆盖并集原R4163、H532、G16，已验证变体并集9052。H738前置路由拒绝导致内部return仅部分观察，已同步matrix errata。
+- 实际序列化worker stdin超过8MiB拒绝400且不启动worker；21节点、6个需Sub-Store转换的URI、同名节点及names/keys同时指定在任何转换/worker启动前拒绝。拒绝及超时完整SQL/files原样，stdin调用数精确。
+- timeout设置为合法下界500ms，生产worker预算为500ms+5s，真实sleep子进程被终止；比较每端5–8秒窗口、安全503和零持久写入。随后空选择测速成功，证明锁释放，并比较实际生成的空历史文件；先前错误的恢复请求只读假设已撤销，没有掩码新增文件。新增故意过快/过慢/非法计时自检，70项通过。
+- go5535931d的前台.63全量在中断期间完成：8768变体、design_errors=[]、1787.60s，compared2285/unimplemented6331/dependency67/different84/O12-separate1。原结果保存/tmp/configdiff-rebased-5535931d-results.json；修复分支尚未合入go，待合入后重跑findings并通过常规runner更新统一报告。
+
+```text
+RT_HOST=sunbroke@192.168.0.63 rt --back server/tools/configdiff/testdata/node-bounds-draft.json --back server/tools/configdiff/testdata/node-bounds-draft.md -- bash -lc '~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups node-helper-candidate-guards,node-helper-payload-limit,node-helper-production-deadline --output server/tools/configdiff/testdata/node-bounds-draft.json --findings server/tools/configdiff/testdata/node-bounds-draft.md > /tmp/configdiff-node-bounds-63.log 2>&1; rc=$?; tail -7 /tmp/configdiff-node-bounds-63.log | head -6; exit $rc'
+H741 compared；H726 compared；H727 compared；T13 compared
+compared=7 request_variants=7 design_errors=[] seconds=21.11；exit=0
+70 comparator self-checks + wrong-Go-response check OK
+独立报告/tmp/configdiff-node-bounds.json（临时draft文件移出worktree）
+```
+
+继续H737并发busy、生成选择器、其余helper与长流程；最终.32全量未执行，Step B未完成。
