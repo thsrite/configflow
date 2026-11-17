@@ -2030,25 +2030,27 @@ R08 integration follow-up: rebased `go-port-c32` onto `go=d8f50b00`; preserved e
 
 ## C33 — rule library and proxy group routes
 
-**Status: `ported` — 独立代码复核完成，最终 gate 运行中** · prereq: C32 · Go: `internal/api/rulelibrary`、`internal/api/proxygroups`
+**Status: `verified` — C33范围无未结发现；最终gate排队超15分钟，交协调者执行** · prereq: C32 · Go: `internal/api/rulelibrary`、`internal/api/proxygroups`
 
 25/25 method/path 已实现且均为 done，无重复键；逐方法成功/失败、落盘比较和 Python 测试归属见 [difftest-c33.md](difftest-c33.md)。作者交回为 `go-port-c33@a4445071`；历史移植及旧 gate 记录见 [C33-HANDOFF.md](C33-HANDOFF.md)，不能代替本轮验收。
 
 Python：完整两路由 `backend/routes/rule_library.py`（540行）、`proxy_groups.py`（436行）；三项主测试（batch health / regex exclusion / create）及 policy editor 内容半边、DNS follow、scheduled rule source/cache 相关行为均有边界映射。RouterOS editor 和 MCP 自有入口仍属各自 owner，无新增路由或 UI 操作入口。
 
-独立复核分支 `go-review-c33`（复核者不是作者）。已从895f基底依次 rebase 到 A13、L1、C29（含复核）及最新本地 `go@28e6e0c12`（R09）。合并保留 C29 的 server 注册、18条 done 路由和共享 reader。完整结论见 [review-c33.md](review-c33.md)。
+独立复核分支 `go-review-c33`（复核者不是作者）。已从895f基底依次 rebase 到 A13、L1、C29（含复核）及最新本地 `go@f90a156eb`（含R09及O3-6a）。合并保留 C29 的 server 注册、18条 done 路由和共享 reader。完整结论见 [review-c33.md](review-c33.md)。
 
-7项发现均已修：3 high（失效标记权限错误复活 legacy；旧 inline writer 越过缓存提交协议；发布/撤销未与其他owner的DB提交串行化），2 medium（reorder 真值非对象404/500边界；严格输入的非有限 JSON 内部500），2 low（live D2 接受大写hex；预览来源选择默认/混合数组与非数组验证）。前四个修复提交 `e27c9c50c`、`d442f420a`、`1edf24f54`、`808d39374`；协议串行化在本提交补齐，最终ID见报告。
+8项发现均已修：4 high（失效标记权限错误复活 legacy；旧 inline writer 越过缓存提交协议；发布/撤销未与其他owner的DB提交串行化；O3-6a合并后回调丢失owner取消），2 medium（reorder 真值非对象404/500边界；严格输入的非有限 JSON 内部500），2 low（live D2 接受大写hex；预览来源选择默认/混合数组与非数组验证）。前四个修复提交 `c0e64a248`、`479e947c4`、`17735a0fa`、`30e25285e`；协议串行化提交 `23d2eff82`；回调恢复owner context的合并修复 `c5efcc5ca`。
 
 缓存：暂存/Sync → 持久 marker → DB → L3内核对来源声明并rename/目录Sync/清marker；marker只有明确不存在才允许回退。撤销也在L3核对原baseline后才清新marker，原有marker不清。Create在下载后、实际提交前加入同ID编辑/清理lease，保留迟到下载竞争语义。共享 rulefetch inline writer 在repo锁内核对当前声明/字节，过期调用不发布；文件副作用后以内部sentinel中止未变DB候选，不增加API/revision/hook。C32 cold cache、cache→inline优先级与零网络断言保留，无新增后台恢复。
 
-真实 SIGKILL/reopen 覆盖 staged/committed/renamed/complete 四点及手动修复；真实 Runtime 测试继续覆盖15类 owner（关机拒写、请求断开完成）。共享 taskstatus/repo/rulefetch 的**最终关机取消提交/锁等待窗口**仍归 `O3-6c / 6e5c7760`，不是 C33 发现；声明一致性守卫不代表那项已完成。
+真实 SIGKILL/reopen 覆盖 staged/committed/renamed/complete 四点及手动修复；真实 Runtime 测试继续覆盖15类 owner（关机拒写、请求断开完成）。共享 taskstatus/repo/rulefetch 的**最终关机取消提交/锁等待窗口**仍归 `O3-6c / 6e5c7760`，不是 C33 发现；声明一致性守卫不代表那项已完成。O3-6c尚未在验收基底f90a156eb中；后合入方需把C33 adapter.forget改为ForgetContext(owner ctx, key)，Record经refresh.recordStatus切换；并补真实Runtime关机后taskstatus不变回归，见review-c33衔接段。
 
 合并 C29 后 .32 全仓格式/vet、定向 oxidns reader race42.127s，C33 API111.073s/live140.268s、代理14.034s、C32 API120.945s/live254.575s、C29 API4.038s/live83.430s、rules22.663s/rulefetch54.203s、C28live19.904s/C11live25.970s/server2.037s全部通过。新 Bind 后 .64 C33/C29/server race+live通过；最终预览修复后 .32 C33 API92.565s/live144.693s/代理11.583s/server2.832s全绿。
 
 协议最终增量：.32 C33 API120.722s/live191.633s、代理14.051s、C32 API127.732s/live325.488s、rulefetch57.092s、server2.774s全部通过；发布/撤销/独立metadata/真实创建lease及慢GET与inline赢家控制的补跑2.928s通过。C37/A24自己DB-first修改来源的崩溃窗口另需协调者分派，不应与O3-6c取消任务混同；本轮只声明C33协议完成，详见报告。
 
-60秒独立FuzzEditableContent PASS（39412次）；proddiff harness direct/discover各42测试 PASS。旧树门禁均已取消，不计完整通过；本提交后重新执行最终完整gate，命令与最终日志位置见报告。只允许读测试服务器离线快照，报告只记录new/stale/self-check；不接触生产，不复制快照内容，不push、不使用子agent。
+最终冻结树c5efcc5ca（f90a156eb基底）：C33 API80.471s/live101.195s、代理7.290s、C32 API80.216s/live238.734s、C29 API2.151s/live40.952s、rulefetch28.623s、server2.050s均通过race/live，所有原用例及新增控制启用；F8真实回调关机两包2.818s/1.922s、缓存mtime连续3轮live8.588s通过。
+
+60秒独立FuzzEditableContent PASS（39412次）；最终冻结树全仓gofmt/vet通过，proddiff harness direct/discover各42测试 PASS。旧树门禁均已取消，不计完整通过；最终树.64 gate在06:01:39入队，06:16:53仍无slot，15分14秒后按约定终止自身进程组，退出143，未开始任何检查。完整门禁由协调者在合并树运行cf-gate；精确命令、日志位置、已完成定向结果见报告。只允许读测试服务器离线快照，报告只记录new/stale/self-check；不接触生产，不复制快照内容，不push、不使用子agent。
 
 ## C34 — generate, config and profile routes, config export
 
