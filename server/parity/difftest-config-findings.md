@@ -10,8 +10,8 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 
 | 用例 / 变体 | 路由 | 状态 | 修复提交 / 接受依据 | 最后复验Go基线 | Python / Go HTTP |
 |---|---|---|---|---|---|
-| G11 / log/off/False/draft | `POST /api/oxidns/render` | open | — | 28e6e0c12 | 200 / 200 |
-| G11 / log/off/True/draft | `POST /api/profiles/<profile_id>/oxidns/render` | open | — | 28e6e0c12 | 200 / 200 |
+| G11 / log/off/False/draft | `POST /api/oxidns/render` | closed | 5cfd38962；5cfd38962为测试夹具的限定时间窗/生成log.level文本读取纠正，不是Go修复；已实际重跑，其他字段严格比 | 28e6e0c12 | 200 / 200 |
+| G11 / log/off/True/draft | `POST /api/profiles/<profile_id>/oxidns/render` | closed | 5cfd38962；5cfd38962为测试夹具的限定时间窗/生成log.level文本读取纠正，不是Go修复；已实际重跑，其他字段严格比 | 28e6e0c12 | 200 / 200 |
 | G12 / False/conflict-current | `POST /api/oxidns/template-preview` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 200 / 200 |
 | G12 / False/conflict-template | `POST /api/oxidns/template-preview` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 200 / 200 |
 | G12 / False/merge-independent-fields | `POST /api/oxidns/template-preview` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 200 / 200 |
@@ -141,7 +141,7 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | H511 / /api/profiles/<profile_id>/oxidns/ros_route.args.min_ttl/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
 | H511 / /api/profiles/<profile_id>/oxidns/worker_threads/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
 | H911 / actual-public-catalog-key-is-bound-to-DNS-follow | `PUT /api/rules/dns` | open | — | 28e6e0c12 | 400 / 400 |
-| H916 / retained-native-issue-moves-after-removing-real-pinned-helpers | `PUT /api/rules/<rule_id>` | open | — | 28e6e0c12 | 409 / 409 |
+| H916 / retained-native-issue-moves-after-removing-real-pinned-helpers | `PUT /api/rules/<rule_id>` | closed | 5cfd38962；5cfd38962为测试夹具的限定时间窗/生成log.level文本读取纠正，不是Go修复；已实际重跑，其他字段严格比 | 28e6e0c12 | 409 / 409 |
 | R007-S02 /  | `GET /api/aggregations/<agg_id>/preview` | closed | a05dd1270；a05dd1270为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 200 / 200 |
 | R008-S05 / failed-source-valid-cache | `GET /api/aggregations/<agg_id>/provider` | closed | a05dd1270；a05dd1270为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 200 / 200 |
 | R011-F06 /  | `POST /api/auth/login` | accepted | [behaviour-changes.md · N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 500 / 400 |
@@ -267,7 +267,7 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | R109-S02 / graph-guard/actual-recorded-managed-rename | `POST /api/oxidns/native-settings/apply` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 200 / 200 |
 | R109-S03 /  | `POST /api/oxidns/native-settings/apply` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 200 / 200 |
 | R109-S04 /  | `POST /api/oxidns/native-settings/apply` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 200 / 200 |
-| R112-S02 / new-native-issue/real-save-with-retained-invalid-arguments | `POST /api/oxidns/settings` | open | — | 28e6e0c12 | 200 / 200 |
+| R112-S02 / new-native-issue/real-save-with-retained-invalid-arguments | `POST /api/oxidns/settings` | closed | 5cfd38962；5cfd38962为测试夹具的限定时间窗/生成log.level文本读取纠正，不是Go修复；已实际重跑，其他字段严格比 | 28e6e0c12 | 200 / 200 |
 | R113-B01 /  | `POST /api/oxidns/template-preview` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 200 / 200 |
 | R113-B02 /  | `POST /api/oxidns/template-preview` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 200 / 200 |
 | R113-B03 / P3/native-draft-selection | `POST /api/oxidns/template-preview` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 200 / 200 |
@@ -1982,14 +1982,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 |---|---|---|---|
 | `body.settings.native_config` | value | "runtime:\n  worker_threads: 2\napi:\n  http:\n    listen: 127.0.0.1:9199\nlog:\n  level: info\nplugins:\n- tag: rules_domain_1\n  type: domain_set\n  args:\n    files:\n    - ./rules/rule_19bb23c03f0cc731_domain.txt\n- tag: local_probe_cache\n  type: cache\n  args:\n    size: 2048\n    short_circuit: false\n- tag: forward_local\n  type: forward\n  args:\n    concurrent: 2\n    upstreams:\n    - addr: udp://223.5.5.5\n    - addr: udp://119.29.29.29\n- tag: forward_remote\n  type: forward\n  args:\n    concurrent: 1\n    upstreams:\n    - addr: https://1.1.1.1/dns-query\n    - addr: https://8.8.8.8/dns-query\n- tag: china_dns\n  type: sequence | "runtime:\n  worker_threads: 2\napi:\n  http:\n    listen: 127.0.0.1:9199\nlog:\n  level: info\nplugins:\n  - tag: rules_domain_1\n    type: domain_set\n    args:\n      files:\n        - ./rules/rule_19bb23c03f0cc731_domain.txt\n  - tag: local_probe_cache\n    type: cache\n    args:\n      size: 2048\n      short_circuit: false\n  - tag: forward_local\n    type: forward\n    args:\n      concurrent: 2\n      upstreams:\n        - addr: udp://223.5.5.5\n        - addr: udp://119.29.29.29\n  - tag: forward_remote\n    type: forward\n    args:\n      concurrent: 1\n      upstreams:\n        - addr: https://1.1.1.1/dns-query\n        - addr: htt |
 
-## G11 / log/off/False/draft
-
-路由：`POST /api/oxidns/render`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `body.config.log.level` | type | 'off' | False |
-
 ## H470 / native-normalization/duplicate-key
 
 路由：`POST /api/oxidns/render`；状态：different
@@ -2253,14 +2245,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | 路径 | 类型 | Python | Go |
 |---|---|---|---|
 | `body.config` | value | "runtime:\n  worker_threads: 2\napi:\n  http:\n    listen: 127.0.0.1:9199\n    auth:\n      type: basic\n      username: synthetic-agent/token+01234567890123456789\n      password: synthetic-current-proxy/token+0123456789\nlog:\n  level: info\nplugins:\n- tag: lazy_cache\n  type: cache\n  args:\n    size: 10240\n    lazy_cache_ttl: 3600\n    short_circuit: true\n- tag: local_probe_cache\n  type: cache\n  args:\n    size: 2048\n    short_circuit: false\n- tag: forward_local\n  type: forward\n  args:\n    concurrent: 2\n    upstreams:\n    - addr: udp://223.5.5.5\n    - addr: udp://119.29.29.29\n- tag: forward_remote\n  type: forward\n  args:\n | "runtime:\n  worker_threads: 2\napi:\n  http:\n    listen: 127.0.0.1:9199\n    auth:\n      type: basic\n      username: synthetic-agent/token+01234567890123456789\n      password: synthetic-current-proxy/token+0123456789\nlog:\n  level: info\nplugins:\n  - tag: lazy_cache\n    type: cache\n    args:\n      size: 10240\n      lazy_cache_ttl: 3600\n      short_circuit: true\n  - tag: local_probe_cache\n    type: cache\n    args:\n      size: 2048\n      short_circuit: false\n  - tag: forward_local\n    type: forward\n    args:\n      concurrent: 2\n      upstreams:\n        - addr: udp://223.5.5.5\n        - addr: udp://119.29.29.29\n  - tag:  |
-
-## R112-S02 / new-native-issue/real-save-with-retained-invalid-arguments
-
-路由：`POST /api/oxidns/settings`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T22:05:02.670058Z' | '2026-11-17T22:05:02.680903Z' |
 
 ## G12 / False/conflict-current
 
@@ -2740,14 +2724,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | 路径 | 类型 | Python | Go |
 |---|---|---|---|
 | `body.settings.native_config` | value | "runtime:\n  worker_threads: 2\napi:\n  http:\n    listen: 127.0.0.1:9199\nlog:\n  level: info\nplugins:\n- tag: rules_domain_1\n  type: domain_set\n  args:\n    files:\n    - ./rules/rule_19bb23c03f0cc731_domain.txt\n- tag: local_probe_cache\n  type: cache\n  args:\n    size: 2048\n    short_circuit: false\n- tag: forward_local\n  type: forward\n  args:\n    concurrent: 2\n    upstreams:\n    - addr: udp://223.5.5.5\n    - addr: udp://119.29.29.29\n- tag: forward_remote\n  type: forward\n  args:\n    concurrent: 1\n    upstreams:\n    - addr: https://1.1.1.1/dns-query\n    - addr: https://8.8.8.8/dns-query\n- tag: china_dns\n  type: sequence | "runtime:\n  worker_threads: 2\napi:\n  http:\n    listen: 127.0.0.1:9199\nlog:\n  level: info\nplugins:\n  - tag: rules_domain_1\n    type: domain_set\n    args:\n      files:\n        - ./rules/rule_19bb23c03f0cc731_domain.txt\n  - tag: local_probe_cache\n    type: cache\n    args:\n      size: 2048\n      short_circuit: false\n  - tag: forward_local\n    type: forward\n    args:\n      concurrent: 2\n      upstreams:\n        - addr: udp://223.5.5.5\n        - addr: udp://119.29.29.29\n  - tag: forward_remote\n    type: forward\n    args:\n      concurrent: 1\n      upstreams:\n        - addr: https://1.1.1.1/dns-query\n        - addr: htt |
-
-## G11 / log/off/True/draft
-
-路由：`POST /api/profiles/<profile_id>/oxidns/render`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `body.config.log.level` | type | 'off' | False |
 
 ## H470 / native-normalization/duplicate-key
 
@@ -3246,14 +3222,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 |---|---|---|---|
 | `headers.content-type` | value | 'text/html; charset=utf-8' | 'application/json' |
 | `body` | type | ['<!doctype html>', '<html lang=en>', '<title>404 Not Found</title>', '<h1>Not Found</h1>', '<p>Rule not found</p>'] | {'message': 'Rule not found', 'success': False} |
-
-## H916 / retained-native-issue-moves-after-removing-real-pinned-helpers
-
-路由：`PUT /api/rules/<rule_id>`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.profile/default/updated_at.value` | value | '2026-11-17T22:05:02.670058Z' | '2026-11-17T22:05:02.680903Z' |
 
 ## R185-F16 /
 

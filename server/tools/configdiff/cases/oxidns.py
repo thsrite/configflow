@@ -235,7 +235,8 @@ def normalization_guards(binary, recorder):
             reply = pair.request(MATRIX[get_route] + '-S01', get_route, path + '/settings', expect=200,
                                  variant=template + '/normalizer-base')
             base = reply[0].json()
-            malformed = pair.request('H511', 'POST ' + template + '/render', path + '/render',
+            malformed = pair.request(MATRIX['POST ' + template + '/render'] + '-F08',
+                'POST ' + template + '/render', path + '/render',
                 body='{', expect=400, writes=True, interaction=Stable(pair),
                 check=require_message('请提供 settings 配置对象'),
                 variant=template + '/nonfinite-malformed-control')[0]

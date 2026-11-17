@@ -60,6 +60,29 @@ class Comparators(unittest.TestCase):
             self.assertNotEqual(draft_projection({'config': text}, 1), expected)
         self.assertEqual(original['config'], "log:\n  level: 'off'\n")
 
+    def test_head_control_uses_get_metadata_and_detects_wrong_wire_or_storage(self):
+        from unittest.mock import patch
+        from cases.http_shell import oxidns_head_control, OXIDNS_HEAD_ETAG
+        fixture = SimpleNamespace(bases=['python', 'go'], dirs=['python-dir', 'go-dir'], tokens=['a', 'b'])
+        headers = {'content-type': 'application/json', 'etag': OXIDNS_HEAD_ETAG}
+        source_get = Reply(200, headers, b'{"settings":true}')
+        go_get = Reply(200, headers, b'{"settings":true}')
+        heads = [Reply(400, {}, b''), Reply(200, headers, b'')]
+        rows = {'fields': {'profile/default/oxidns': {'value': {}}}}
+        def observe(replies, target=go_get, files=None):
+            with patch('cases.http_shell.send', side_effect=[source_get, target]), \
+                    patch('cases.http_shell.database', return_value=rows), \
+                    patch('cases.http_shell.stored_files', side_effect=files or [{}, {}, {}, {}]), \
+                    patch('cases.http_shell.etag', return_value=OXIDNS_HEAD_ETAG):
+                return oxidns_head_control(fixture, replies, Policy())
+        self.assertFalse(observe(heads), 'legitimate GET body is not mistaken for a nonempty HEAD')
+        for reply in (Reply(500, headers, b''), Reply(200, headers, b'wrong HEAD body'),
+                Reply(200, {**headers, 'etag': 'wrong-etag'}, b'')):
+            self.assertTrue(observe([heads[0], reply]))
+        self.assertTrue(observe(heads, target=Reply(500, headers, b'{}')))
+        self.assertTrue(observe(heads, target=Reply(200, {**headers, 'etag': 'wrong'}, b'{}')))
+        self.assertTrue(observe(heads, files=[{}, {}, {}, {'unexpected': 'write'}]))
+
     def test_c29_head_approval_requires_source_get_etag_and_exact_changes(self):
         from config_finding_resolutions import annotate
         from cases.http_shell import OXIDNS_HEAD_ETAG

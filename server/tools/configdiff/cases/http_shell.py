@@ -1,5 +1,5 @@
 """X06 actual HEAD/OPTIONS, CORS, slash and escaped-segment routing."""
-from harness import Pair, send, DesignError
+from harness import Pair, Reply, send, DesignError
 from compare import database, files as stored_files, Difference, response_diffs
 from oxidns import etag
 import re
@@ -20,7 +20,9 @@ def oxidns_head_control(pair, replies, policy):
             if reply.status != 200 or reply.headers.get('etag') != expected or expected != OXIDNS_HEAD_ETAG or before != after:
                 raise DesignError('source HEAD control must be a read-only GET with exact stored-object ETag')
         else:
-            out += response_diffs(reply, replies[index], policy, method='HEAD')
+            # HEAD inherits GET's metadata, but GET's legitimate body is not a
+            # second HEAD response. The real HEAD body remains strictly empty.
+            out += response_diffs(Reply(reply.status, reply.headers, b''), replies[index], policy, method='HEAD')
             if reply.headers.get('etag') != OXIDNS_HEAD_ETAG:
                 out.append(Difference('head.get-etag', 'not-source-GET-SHA', OXIDNS_HEAD_ETAG, reply.headers.get('etag')))
             if before != after:

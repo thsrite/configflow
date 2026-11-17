@@ -2587,3 +2587,19 @@ full configdiff: groups403 / variants10664 / design_errors=[] / seconds3134.36
 Ran 148 tests in 10.284s; OK
 refresh_finding_reviews.py: open74 / accepted254 / closed265 / separate1; actual_case_results_unchanged10664
 ```
+
+## 批次 157：C29活控制实跑与4条夹具差异关闭
+
+- .64 Go28e6e0c12，http-head / oxidns-control-output / oxidns-normalization-guards / rule-DNS-real-new-native-validation-issue 四组1106变体225.43秒，compared956/different68/Go未实现82，design_errors=[]。两条G11 off和两条native-new-issue时间差异已实际compared，closed归因5cfd38962（夹具修正，不是Go修复）。源端真实malformed-body响应控制覆盖全部60条NaN，完整稳定headers/body及每端自身SQL/files无写入均通过。
+- HEAD活控制首次把真实GET正文拿去按HEAD空正文检查，产生1条测试侧假差异；明确撤回，控制改为GET的status/headers作为HEAD预期，真实HEAD仍须空body。新增活控制的故意错误状态、etag、HEAD正文、GET状态及写文件自检。其余两个新控制编号改为对应render路由F08。
+- 修正后再实跑http-head / oxidns-normalization-guards 两组905变体81.20秒，compared822 / accepted67 / Go未实现16 / open0，exit0，design_errors=[]；149项自检OK。HEAD真实GET/source存储SHA/完整稳定headers比较已通过，归accepted C29只读，不声称Python400与Go200相同。
+- 当前canonical累计10666变体：5754 compared / 4476 Go未实现 / 111未实现依赖 / 324原始different / O12单列1；594项reviews closed269 / accepted254 / open70 / separate1，closed均有归因，无pending/blocked。增加的是2条真实malformed-body控制请求，R4492/H936/G16覆盖编号不变。
+- 下一步只执行最终rebase与最新集成上仍open组/受影响边界的27组定向复核。完整403组证据仍是28基线，完整官方Go门禁仍是895基线，后续新集成不冒称同一轮全量。
+
+```text
+RT_HOST=sunbroke@192.168.0.64 rt --back server/tools/configdiff/testdata/results.json --back server/parity/difftest-config-findings.md -- bash -lc 'server/tools/configdiff/native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups http-head,oxidns-control-output,oxidns-normalization-guards,rule-DNS-real-new-native-validation-issue --baseline 28e6e0c12'
+current compared956 / different68 / Go未实现82; design_errors=[]; seconds225.43; exit1含HEAD夹具假差异（随后撤回）
+同命令 --groups http-head,oxidns-normalization-guards --baseline 28e6e0c12
+Ran 149 tests; OK
+current compared822 / accepted67 / Go未实现16 / open0; design_errors=[]; seconds81.20; exit0
+```

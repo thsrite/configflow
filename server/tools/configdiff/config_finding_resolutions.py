@@ -329,6 +329,12 @@ def repair_commits(item):
         return []
     group = item['group']
     paths = {difference['path'] for difference in item['differences']}
+    if ((group == 'rule-DNS-real-new-native-validation-issue'
+            and paths == {'db.fields.profile/default/updated_at.value'})
+            or (group == 'oxidns-control-output' and item['case'] == 'G11'
+                and item['variant'] in ('log/off/False/draft', 'log/off/True/draft')
+                and paths == {'body.config.log.level'})):
+        return ['5cfd38962']
     timestamp_groups = {'rules-create', 'rules-sets', 'rules-update', 'rule-dns-selectors-types',
         'rules-batch', 'rules-concurrent-batch', 'rules-compose-success', 'rules-compose-remote',
         'rule-dns-choices', 'rules-labels-policy', 'rule-dns-native-locked',
@@ -375,6 +381,8 @@ def annotate(records):
             item['status'] = 'accepted'
         item['fix_commits'] = repair_commits(item)
         item.pop('closure_note', None)
+        if item['status'] == 'closed' and '5cfd38962' in item['fix_commits']:
+            item['closure_note'] = '5cfd38962为测试夹具的限定时间窗/生成log.level文本读取纠正，不是Go修复；已实际重跑，其他字段严格比'
         if item['status'] == 'closed' and '838f7739f' in item['fix_commits']:
             item['closure_note'] = '838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比'
         if item['status'] == 'closed' and '93369229b' in item['fix_commits']:
