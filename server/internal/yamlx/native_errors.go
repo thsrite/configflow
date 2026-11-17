@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"regexp"
 	"strconv"
+	"strings"
 )
 
 var (
@@ -48,7 +49,15 @@ type SyntaxError struct {
 }
 
 // Error returns the diagnostic supplied by yaml.v3 or the facade's policy check.
-func (e *SyntaxError) Error() string { return e.Problem }
+func (e *SyntaxError) Error() string {
+	if e.cause == nil {
+		if e.Line > 0 {
+			return fmt.Sprintf(msgSyntaxAtLine, e.Line, e.Problem)
+		}
+		return fmt.Sprintf(msgSyntaxDetail, e.Problem)
+	}
+	return e.Problem
+}
 
 // Unwrap identifies syntax, policy or alias failures without conflating them.
 func (e *SyntaxError) Unwrap() error {
@@ -87,6 +96,9 @@ func syntaxError(err error) error {
 		return err
 	}
 	e := &SyntaxError{Problem: err.Error()}
+	if depth, ok := strings.CutPrefix(e.Problem, "yaml: exceeded max depth of "); ok {
+		e.Problem = fmt.Sprintf(msgDepthLimit, depth)
+	}
 	if m := nativePosition.FindStringSubmatch(e.Problem); m != nil {
 		e.Line, _ = strconv.Atoi(m[1])
 		if m[2] != "" {
