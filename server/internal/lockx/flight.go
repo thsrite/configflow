@@ -33,8 +33,11 @@ type flightCall[V any] struct {
 // Result is the result of shared work sent by DoChan. Shared reports whether
 // another caller joined before completion.
 type Result[V any] struct {
-	Value  V
-	Err    error
+	// Value is fn's returned value, or its zero value when work did not return.
+	Value V
+	// Err is the work or admission error, if any.
+	Err error
+	// Shared is true when another caller joined before completion.
 	Shared bool
 }
 

@@ -1,7 +1,9 @@
 # O3-5 — tracked detached work
 
-Status: implementation in progress on go-o3-5 from go@8bf1b189; no sub-agents or pushes.
-Coordinator approved the four interface/cancellation clarifications, recorded in design Clarified in O3-5.
+Status: ported on go-o3-5, rebased onto go@d3124353. Implementation and final acceptance are complete;
+awaiting coordinator verification. No sub-agents, pushes, new dependencies, baseline changes or exemptions.
+Coordinator's interface/cancellation clarifications are recorded in design Clarified in O3-5.
+The final acceptance block below supersedes the historical step/rebase notes.
 
 Order: tasks/metrics manual/discovery jobs, WebDAV, upgrades, Sub-Store update, web listener first.
 Clock extraction/Flight.DoChan/provider/matcher wait for the coordinator's O3 review merged notification;
@@ -159,3 +161,92 @@ Default mode and automatic cross-generation restart tests now use Periodic; the 
 restart regressions and Configure-old-work regression remain. PORTING's live API guide and the expired
 transitional rule now reflect the real API. .64 fmt/vet green, core race3 passes lifecycle7.664s,
 lifecycletest1.008s/clock1.008s/lockx8.035s. Repeat cmd/full/tags/final proddiff after this cleanup.
+
+## Final acceptance — 2026-11-17
+
+Final production implementation snapshot: 17ec4278, based on go@d3124353. The final report commit also
+adds field documentation for Flight.Result and records these results; that comment-only change passed
+gofmt/vet on .64. All code and reports are committed; final git rebase go and clean-tree check are
+performed immediately before handing back. Status is ported, not independently reviewed.
+
+Scope completed: tasks and manual metrics, discovery async/sync jobs, restartable WebDAV owner jobs,
+Agent address follow, Sub-Store update, listener Serve, Flight.DoChan/provider rendering, shared Clock
+and matcher cleanup. Busy admission is released on refusal/panic/completion; shutdown reaches migrated
+I/O while disconnects do not cancel work. WebDAV retains its cross-generation upload gate and owner
+WaitIdle. Matcher housekeeping stops at T0; nil Spawner has documented synchronous-only semantics and
+production wiring is pinned non-nil. Loop/OnShutdown and legacy runner infrastructure are removed.
+Handler detach migration and file-lock replacement remain O3-6, as scoped. No open O3-5 findings.
+
+All heavy commands ran remotely. Primary commands/arguments used in the final runs:
+
+```sh
+# .64: formatting, vet, all migrated owners + API integration race (before the final adapter cleanup).
+RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'cd server && test -z "$(gofmt -l internal tools cmd)" && go vet ./... && go test -race -p=4 -count=1 -timeout=30m ./internal/lifecycle/... ./internal/clock ./internal/lockx ./internal/tasks ./internal/discovery/... ./internal/webdav/... ./internal/agents/upgrades ./internal/agents/metrics ./internal/substore/... ./internal/weblistener ./internal/provider ./internal/rules ./internal/httpx/... ./cmd/... ./internal/api/tasks ./internal/api/settings ./internal/api/agents ./internal/api/subscriptions'
+
+# .64: N7-3b composition race.
+RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'cd server && go test -race -p=4 -count=1 -timeout=30m ./internal/provider ./internal/discovery/... ./internal/rules ./internal/refresh/... ./internal/api/aggregations ./internal/api/subscriptions ./internal/rulefetch ./internal/repo'
+
+# .64: final adapter removal, retaining restart and Configure regressions.
+RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'cd server && go test -race -p=4 -count=3 -timeout=30m ./internal/lifecycle/... ./internal/clock ./internal/lockx'
+RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'cd server && go test -race -p=4 -count=1 -timeout=30m ./internal/httpx ./cmd/configflow && go test -p=4 -count=1 -timeout=30m ./...'
+
+# .32: both build tags, all enabled differential packages, final proddiff.
+RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'set -e
+cd server
+for tag in configflow_proddiff configflow_difftest; do
+ go test -tags="$tag" -p=4 -count=1 ./internal/lifecycle/... ./internal/clock ./internal/lockx
+ go test -tags="$tag" -p=4 -count=1 -run "^$" ./...
+done
+for pkg in $(go list -tags=configflow_difftest ./... | rg "/difftest$"); do
+ CONFIGFLOW_DIFF=1 go test -tags=configflow_difftest -p=4 -count=1 -timeout=30m "$pkg"
+done
+cd ..
+server/scripts/proddiff.sh'
+```
+
+Final output:
+
+```text
+FINAL_FMT_VET_PASS
+core race3: lifecycle7.664s, lifecycletest1.008s, clock1.008s, lockx8.035s
+final HTTP/main race: httpx19.483s, cmd/configflow115.822s (real SIGTERM scenarios included)
+full: exit0, 85 ok packages; cmd104.205s, api/aggregations0.134s, lifecycle0.177s,
+      provider13.230s, routers165.275s, weblistener0.009s; CLEANUP_RACE_FULL_PASS
+configflow_proddiff_FINAL_BUILD_PASS
+configflow_difftest_FINAL_BUILD_PASS
+12 enabled difftests: agents129.088s, aggregations31.277s, subscriptions74.590s,
+ devicenotes0.622s, discovery2.190s, health13.755s, httpx1.352s, mosdns1.844s,
+ refresh3.506s, subs2.062s, substore7.485s, webdav22.580s; FINAL_DIFFTEST_PASS
+proddiff: exit0; 23/23 self-checks PASS,2831 cases,435 comparisons,
+ coverage_regressions0,unmapped_routes0,11 existing unique differences,new=0,stale=0
+baseline: new=0 stale=0
+FINAL_PRODDIFF_PASS
+```
+
+Only intended behavior changes: tracked shutdown ownership/cancellation and independently cancellable
+provider waits. Rendering still completes after disconnect and fallback still shares the same render;
+data/API outputs for live clients are unchanged. Two C31 test assumptions were updated to this approved
+wait contract and production global Runtime wiring. A listener move fixture now guarantees distinct
+ports; its close assertion remains and passed100 repetitions on each test host. No product workaround
+or skipped assertion was introduced. Production loops have no disable switch.
+
+Current implementation commits after final rebase (old hashes in the history above are superseded):
+
+```text
+e0a4e141 tasks/manual metrics
+87b22ac2 discovery jobs
+0963e8f8 WebDAV
+3f79aad0 Agent address follow
+6457d735 Sub-Store update
+70832b5e listener Serve
+0cd8a939 matcher clarification
+36c4476e shared Clock
+e11a9c5e Flight.DoChan
+35a8e478 provider
+2e128b29 matcher
+1b76b247 formatting/integration notes
+d42a5a50 C31 delivery fixture contract
+5541024d listener fixture ports
+2a5ea204 pre-reader acceptance record
+17ec4278 retire temporary adapters
+```
