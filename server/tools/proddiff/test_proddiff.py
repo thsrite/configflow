@@ -626,8 +626,6 @@ class ContentObserverTests(unittest.TestCase):
                 differences.assert_not_called()
 
 
-if __name__ == "__main__":
-    unittest.main()
 
 class C33EditorRevisionTests(unittest.TestCase):
     def test_native_editor_revision_normalization_is_exact_and_shape_checked(self):
@@ -654,3 +652,9 @@ class C33EditorRevisionTests(unittest.TestCase):
             with self.subTest(changed=changed):
                 self.assertTrue(pd.response_diffs(reply(source), reply(changed), route, selected))
         self.assertTrue(pd.response_diffs(reply(source), reply(target), '/api/rule-library', selected))
+
+
+
+
+if __name__ == '__main__':
+    unittest.main()

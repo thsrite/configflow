@@ -2066,6 +2066,8 @@ Rebased onto C32 verified review `go=0dace4ae`. Extra malformed JSON keeps Pytho
 
 Per coordinator, do not change taskstatus/repo/rulefetch shared commit logic here. Known remaining lock-wait/final-commit window is deferred to O3-6 author `6e5c7760` (O3-6c shared commit points, after O3-6a): add ForgetContext/RecordContext (old API retained), repo final commit and shared cache touch/rename checks. C33 currently checks immediately before these calls; switch to new entries and add shutdown-during-shared-lock-wait tests when that independent step lands. Final gate/fuzz remain; no C33-owned unclosed issue.
 
+Final foreground gate queued on .64: `RT_HOST=sunbroke@192.168.0.64 rt -e GATE_LOGS=/tmp/c33-gate-20261118-final -- bash -lc 'cat /proc/loadavg && server/scripts/gate.sh -p 6 FuzzEditableContent:./internal/api/rulelibrary && cat /proc/loadavg'`; exec session30829, initial load33.02/24.18/21.77, waiting for the two-slot limiter. Production code is frozen while it runs. A Python test-only follow-up moves the existing __main__ block below the new comparator class (both quote styles removed); .32 direct and discover now each run all36 tests and PASS. This does not change the gate's production comparator or normalization config.
+
 Approved decisions: draft revision uses native sorted encoding/json (D2 one-time stale-page 409). Stage content cache before DB commit, atomically replace afterwards, invalidate stable/legacy cache on failure (Python stale-delivery bug). Bulk testing disables only matching source declarations in a fresh transaction, using PUT native DNS rebuild/parking (Python concurrency bug).
 
 N8-5: draft/content PUT 的 DB+cache 原子性，N8-5 的事务 API 落地后，用正式的原语重写。
