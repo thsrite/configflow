@@ -28,6 +28,7 @@ import (
 	"configflow/internal/repo"
 	"configflow/internal/rules"
 	"configflow/internal/substore"
+	"configflow/internal/yamlbridge"
 	"configflow/internal/yamlx"
 )
 
@@ -257,11 +258,12 @@ func TestCorpus(t *testing.T) {
 				}
 			}
 		}
-		nativeMatch := !jsonx.Equal(want, got) && nativeProviderOutcome(kind, asObject(input), want, got)
+		sameOutput := writerOutcomeEqual(kind, want, got)
+		nativeMatch := !sameOutput && nativeProviderOutcome(kind, asObject(input), want, got)
 		if nativeMatch {
 			counts["N7-3 native boundary"]++
 		}
-		if !jsonx.Equal(want, got) && !nativeMatch {
+		if !sameOutput && !nativeMatch {
 			failures++
 			if failures <= 40 {
 				t.Errorf("row %d (%s) input %s%s", i, kind, diffText(input, nil)[6:], diffText(want, got))
@@ -375,10 +377,15 @@ func (s *scenario) fakeAggregation(ctx context.Context, agg, config, main *jsonx
 	if fake, ok := agg.Get("fake_content"); ok {
 		content = fake.(string)
 	} else {
-		var err error
-		if content, err = yamlx.IndentDump(jsonx.Obj("proxies", proxies)); err != nil {
+		node, err := yamlbridge.Encode(jsonx.Obj("proxies", proxies))
+		if err != nil {
 			return nil, err
 		}
+		data, err := yamlx.Marshal(node)
+		if err != nil {
+			return nil, err
+		}
+		content = string(data)
 	}
 	return &Rendered{Content: content, CacheUpdates: []CacheUpdate{}, Extra: jsonx.Obj("total_count", jsonx.Int(int64(len(proxies))))}, nil
 }
@@ -516,7 +523,7 @@ func scenarioRow(t *testing.T, kind string, in, row *jsonx.Object) (*jsonx.Objec
 		for _, k := range sortedKeys(files) {
 			gotFiles.Set(k, maskUpdatedAt(files[k], wantFiles.GetString(k)))
 		}
-		if !jsonx.Equal(wantFiles, gotFiles) {
+		if !providerWriterFilesEqual(wantFiles, gotFiles) {
 			t.Errorf("%s files for %s%s", kind, diffText(in, nil)[6:], diffText(wantFiles, gotFiles))
 		}
 	}

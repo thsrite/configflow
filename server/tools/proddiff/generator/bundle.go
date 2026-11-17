@@ -8,6 +8,7 @@ import (
 	"configflow/internal/oxidns"
 	"configflow/internal/provider"
 	"configflow/internal/repo"
+	"configflow/internal/yamlbridge"
 	"configflow/internal/yamlx"
 	"context"
 	"crypto/sha256"
@@ -36,7 +37,12 @@ func deploymentBundle(ctx context.Context, config *jsonx.Object, j job, opts con
 		if err != nil {
 			return "", err
 		}
-		content, err := yamlx.SafeDumpUnicode(main)
+		node, err := yamlbridge.Encode(main)
+		if err != nil {
+			return "", err
+		}
+		data, err := yamlx.Marshal(node)
+		content := string(data)
 		if err != nil {
 			return "", err
 		}

@@ -17,6 +17,7 @@ import (
 	"configflow/internal/subs"
 	"configflow/internal/substore"
 	"configflow/internal/taskstatus"
+	"configflow/internal/yamlbridge"
 	"configflow/internal/yamlx"
 )
 
@@ -268,7 +269,12 @@ func FetchSubscriptionSource(ctx context.Context, sub *jsonx.Object, fetch Sourc
 				proxies = append(proxies, proxy)
 			}
 		}
-		text, err := yamlx.Dump(jsonx.Obj("proxies", proxies), yamlx.DumpOptions{AllowUnicode: true, SortKeys: true})
+		node, err := yamlbridge.Encode(jsonx.Obj("proxies", proxies))
+		if err != nil {
+			return nil, err
+		}
+		data, err := yamlx.Marshal(node)
+		text := string(data)
 		if err != nil {
 			return nil, err
 		}

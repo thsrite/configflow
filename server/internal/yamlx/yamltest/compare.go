@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"configflow/internal/yamlbridge"
 	"configflow/internal/yamlx"
 
 	"gopkg.in/yaml.v3"
@@ -214,7 +215,7 @@ func Classify(source string) (string, error) {
 	if oldErr != nil {
 		return "", fmt.Errorf("native accepts legacy refusal: %w", oldErr)
 	}
-	text, dumpErr := yamlx.IndentDump(old)
+	oldGraph, dumpErr := yamlbridge.Encode(old)
 	if dumpErr != nil {
 		if complex {
 			return Composite, nil
@@ -230,7 +231,12 @@ func Classify(source string) (string, error) {
 		}
 		return "", fmt.Errorf("legacy result cannot be compared: %w", dumpErr)
 	}
-	legacy, err := yamlx.Parse([]byte(text))
+	data, err := yamlx.Marshal(oldGraph)
+	if err != nil {
+		return "", fmt.Errorf("legacy value cannot be rendered: %w", err)
+	}
+	text := string(data)
+	legacy, err := yamlx.Parse(data)
 	if err != nil {
 		return "", fmt.Errorf("legacy output cannot be parsed: %w", err)
 	}
@@ -258,7 +264,40 @@ func Classify(source string) (string, error) {
 	if special {
 		return Tags, nil
 	}
+	if scalarTagChangeOnly(native, legacy, map[[2]*yamlx.Node]bool{}) {
+		return Typing, nil
+	}
 	return "", fmt.Errorf("unclassified native/legacy value difference")
+}
+
+// scalarTagChangeOnly identifies actual loader tag differences for unchanged
+// scalar text. The old writer used to hide e.g. PyYAML's string 0X1F by emitting
+// it bare, then reparsing it as yaml.v3's integer. No lexical list or value
+// normalization is involved; every other field must remain equal.
+func scalarTagChangeOnly(a, b *yamlx.Node, seen map[[2]*yamlx.Node]bool) bool {
+	a, b = yamlx.Resolve(a), yamlx.Resolve(b)
+	if yamlx.Equal(a, b) || seen[[2]*yamlx.Node{a, b}] {
+		return true
+	}
+	if a == nil || b == nil || a.Kind != b.Kind || len(a.Content) != len(b.Content) {
+		return false
+	}
+	seen[[2]*yamlx.Node{a, b}] = true
+	if a.Kind == yaml.ScalarNode {
+		core := func(tag string) bool {
+			return tag == "!!str" || tag == "!!int" || tag == "!!float" || tag == "!!bool" || tag == "!!null"
+		}
+		return a.Value == b.Value && a.ShortTag() != b.ShortTag() && core(a.ShortTag()) && core(b.ShortTag())
+	}
+	if a.ShortTag() != b.ShortTag() {
+		return false
+	}
+	for i := range a.Content {
+		if !scalarTagChangeOnly(a.Content[i], b.Content[i], seen) {
+			return false
+		}
+	}
+	return true
 }
 
 // nativeSyntaxRange is the exact, reviewed grammar corpus. It grants no

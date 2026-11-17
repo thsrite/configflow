@@ -15,6 +15,7 @@ import (
 	"configflow/internal/subs"
 	"configflow/internal/substore"
 	"configflow/internal/weburl"
+	"configflow/internal/yamlbridge"
 	"configflow/internal/yamlx"
 
 	"gopkg.in/yaml.v3"
@@ -603,7 +604,12 @@ func prepareSubscriptionProvider(ctx context.Context, sub *jsonx.Object, snapsho
 	if err := snapshot.Validate(proxies, false, ProviderName(name)); err != nil {
 		return nil, err
 	}
-	content, err := yamlx.IndentDump(jsonx.Obj("proxies", proxies))
+	node, err := yamlbridge.Encode(jsonx.Obj("proxies", proxies))
+	if err != nil {
+		return nil, err
+	}
+	data, err := yamlx.Marshal(node)
+	content := string(data)
 	if err != nil {
 		return nil, err
 	}

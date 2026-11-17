@@ -389,7 +389,7 @@ func replayRecordedRows(t *testing.T, rows []*jsonx.Object, template string) {
 		}
 		gotText, _ := jsonx.Compact(got)
 		wantText, _ := jsonx.Compact(want)
-		if string(gotText) != string(wantText) {
+		if !sourceWriterOutcomeEqual(fn, want, got) {
 			failures++
 			if failures <= 30 {
 				t.Errorf("row %d %s (%s):\n  got  %s\n  want %s", i, fn, row.GetString("test"), clip(string(gotText)), clip(string(wantText)))

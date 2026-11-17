@@ -526,7 +526,7 @@ func TestRecordedPythonTests(t *testing.T) {
 		if len(missing) > 0 {
 			extra = append(extra, "A11 calls without a recorded answer: "+strings.Join(missing, "; "))
 		}
-		if !jsonx.Equal(m.value(want), m.value(got)) || len(extra) > 0 {
+		if !writerOutcomeEqual(fn, m.value(want), m.value(got)) || len(extra) > 0 {
 			failures++
 			if failures <= 30 {
 				t.Errorf("row %d %s (%s)%s %s", i, fn, row.GetString("test"), diffText(m.value(want), m.value(got)), strings.Join(extra, "\n"))

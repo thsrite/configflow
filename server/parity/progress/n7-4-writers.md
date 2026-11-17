@@ -228,3 +228,42 @@ Output: fmt/vet silent; yamlbridge **0.014s**, convert **27.593s**, mosdns **96.
 The preceding pre-c-integration race iteration on `.64` passed all six packages:
 convert91.520s/gateway18.656s/yamlx13.508s/rulefetch22.627s/subs42.750s/refresh272.300s.
 It is iteration evidence only; full final race remains pending.
+
+## Remaining provider/refresh/router/tool writers
+
+`provider.prepareSubscriptionProvider`, `refresh.FetchSubscriptionSource` cached
+conversion, `routersplit.dump` and the proddiff bundle adapter now build their
+Node through the one yamlbridge and call Marshal. Source order is retained;
+old sort/ASCII/width presets are gone. MosDNS already called Marshal in N7-3c;
+its private bridge was removed in the preceding commit.
+
+Provider corpus results and generated `profiles/*/providers/*.yaml` files now
+compare Parse/Equal, while cache updates, errors, other metadata and stored JSON
+file bytes stay strict. Refresh's recorded `fetch_subscription_source` compares
+only result text `[0]` as YAML; source/traffic/time and every other output field
+stay strict. Negative tests reject type/value/extra-field changes, cache metadata
+changes, missing files, and even a whitespace-only change in stored JSON.
+
+The N7-3c test classifier also stopped using the deleted writer: old loader
+values go through the same validated bridge. This exposed one pre-existing
+checker false-equality: old string `0X1F` was emitted bare and misread as int.
+The existing implicit typing class now uses actual node tag differences for
+unchanged scalar text, with all other fields equal; no new lexical scanner or
+normalization. A dedicated regression covers core and router caller shapes.
+This changes a migration test's diagnosis, not reader behavior.
+
+`.64` full fmt/vet and changed-package test output:
+
+```text
+configflow/tools/proddiff/generator PASS 0.083s
+configflow/internal/yamlx/yamltest PASS 0.553s
+configflow/internal/routersplit PASS 7.304s
+configflow/internal/provider PASS 28.395s
+configflow/internal/refresh PASS 35.459s
+```
+
+Command uses `go test -json -count=1` for the five packages above, recorded in
+`/tmp/n74-writer-gate.jsonl`; only test/package pass/fail metadata is printed to
+avoid dumping entire fixture documents. Initial expected byte mismatches were
+replaced by the narrow structural comparisons described above; unknown reader
+classifications remain zero. Subsequent comparator-negative tests pass (0.008s).

@@ -26,6 +26,7 @@ import (
 	"configflow/internal/jsonx"
 	"configflow/internal/pystr"
 	"configflow/internal/repo"
+	"configflow/internal/yamlbridge"
 	"configflow/internal/yamlx"
 
 	"gopkg.in/yaml.v3"
@@ -293,11 +294,12 @@ func loadBase(text any) (any, error) {
 
 // dump is yaml.safe_dump(document, allow_unicode=True, sort_keys=False).
 func dump(document any) (string, error) {
-	if node, ok := document.(*yamlx.Node); ok {
-		data, err := yamlx.Marshal(node)
-		return string(data), err
+	node, err := yamlbridge.Encode(document)
+	if err != nil {
+		return "", err
 	}
-	return yamlx.SafeDumpUnicode(document)
+	data, err := yamlx.Marshal(node)
+	return string(data), err
 }
 
 // FullTunBaseYAML is full_tun_base_yaml(text).
