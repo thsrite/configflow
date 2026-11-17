@@ -20,6 +20,7 @@ import (
 	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
 	"configflow/internal/rules"
+	"configflow/internal/yamlx"
 	"gopkg.in/yaml.v3"
 )
 
@@ -588,14 +589,39 @@ func listProfiles(ctx context.Context) ([]profile, error) {
 
 func customPorts(text string) (map[int]bool, error) {
 	out := map[int]bool{}
-	var parsed map[string]any
-	if yaml.Unmarshal([]byte(text), &parsed) != nil || parsed == nil {
+	parsed, parseErr := yamlx.Parse([]byte(text))
+	if parseErr != nil || parsed.Kind != yaml.MappingNode {
 		return out, nil
 	}
-	v, err := object(parsed)
+	for _, key := range convert.InboundPortKeys {
+		if node := yamlx.Get(parsed, key); node != nil {
+			value, err := customTaggedPort(node, key)
+			if err != nil {
+				return out, err
+			}
+			yamlx.Set(parsed, key, value)
+		}
+	}
+	if listeners := yamlx.Resolve(yamlx.Get(parsed, "listeners")); listeners != nil && listeners.Kind == yaml.SequenceNode {
+		for _, listener := range listeners.Content {
+			if node := yamlx.Get(listener, "port"); node != nil {
+				value, err := customTaggedPort(node, "listeners.port")
+				if err != nil {
+					return out, err
+				}
+				yamlx.Set(listener, "port", value)
+			}
+		}
+	}
+	data, err := yamlx.ToJSON(parsed)
 	if err != nil {
 		return out, err
 	}
+	value, err := jsonx.Parse(data)
+	if err != nil {
+		return out, err
+	}
+	v, _ := value.(*jsonx.Object)
 	ports, err := convert.MihomoUsedPorts(v)
 	if err != nil {
 		return out, err
@@ -606,4 +632,19 @@ func customPorts(text string) (map[int]bool, error) {
 		}
 	}
 	return out, nil
+}
+
+// customTaggedPort applies the existing validation-error path when an unknown
+// tag cannot decode to this field's integer type; failure is never a zero port.
+func customTaggedPort(node *yamlx.Node, field string) (*yamlx.Node, error) {
+	resolved := yamlx.Resolve(node)
+	switch resolved.ShortTag() {
+	case "!!str", "!!int", "!!float", "!!bool", "!!null", "!!timestamp", "!!binary", "!!seq", "!!map":
+		return node, nil
+	}
+	var port int
+	if err := yamlx.Decode(resolved, &port); err != nil {
+		return nil, invalid(fmt.Sprintf(msgCustomPort, field))
+	}
+	return yamlx.Int(int64(port)), nil
 }

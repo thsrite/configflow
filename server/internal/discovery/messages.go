@@ -4,6 +4,7 @@ const (
 	msgObject         = "请求必须是 JSON 对象"
 	msgRuleset        = "默认规则集必须是内容型、classical 或 domain 格式的规则库条目"
 	msgConfidence     = "自动采纳阈值只能是 80、90 或 95"
+	msgCustomPort     = "Mihomo 配置中的 %s 必须是整数端口"
 	msgPort           = "区域检测入口端口必须在 1024-65535 之间"
 	msgPortUsed       = "端口 %d 已被 Mihomo 配置中的入站占用"
 	msgBoolean        = "%s 必须是布尔值"
