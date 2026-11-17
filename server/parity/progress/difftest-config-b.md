@@ -1126,3 +1126,23 @@ cumulative variants=7758 compared=2174 go-unimplemented=5469 dependency=37 diffe
 R去重3918（S631 F2573 B714），H265，G16；新增原R编号14（S3/F8/B3）
 59 comparator self-checks + wrong-Go-response check OK；exit=0
 ```
+
+## 批次 64：setup列表、兼容session、进度和并发创建
+
+- 75新增请求/序列变体均Go尚未实现，新增原R编号42（S12/F21/B9）、H编号7。R207初次/已有设备/明确dismissed/已有session、禁用资源和非链接订阅过滤、中文名称；已有设备仅需持久绑定而不依赖在线，不伪造heartbeat覆盖在线分支。
+- R209未准备/已准备兼容记录、旧Linux gateway takeover推导、损坏JSON/错型500、非法/不存在session、profile删除404、中文备注。兼容session由Python在启动前创建，完整SQL与私有JSON复制给两端；prepared兼容快照只验证读取兼容，不冒充完成实际安装/发布/check流程。路由器引用fixture明确disabled/auto_sync=false，不接触真实设备。
+- R210合法step/0/空对象、manual/managed、当前profile router、真正abandoned记录继续后去标记；各字段/类型/越权router/gateway目标错误、Content-Length及真实chunked超32KiB、profile缺失/非法session。成功progress只写session，明确全配置SQL不变；响应与原子session文件相等。
+- R211前置错误：坏JSON/超限/未知operation/abandon参数/check与finish未准备/完成后abandon；session查找先于大正文校验，不存在session带超限坏JSON仍404；profile已删除404。H1010/1011/1014/1045–1048分别独立发请求验证准确消息，未借用编号填数。
+- Stable只读观察器分别捕获每端before/after的完整SQL及文件，在同一端内逐值比较，不采用跨端身份/时间归一化。因此读请求或拒绝写入偷偷改commit_id、updated_at、文件即使仍在允许时间窗内也能报差异；故意改这三类值的自检通过，60项自检全部通过。
+- R208-B03真正两个HTTP线程同时向一个session发创建（barrier同步），必须两次200且完整响应相等、session文件一致、只增加一个profile section和一次generation；Go接通后比较两次原始响应及完整最终DB/files，不按完成顺序排序掩盖错误。
+
+```text
+.63 run.py --groups setup-create,setup-create-guards,setup-list,setup-read,setup-progress,setup-action-guards
+.63 run.py --groups setup-concurrent-create
+current concurrent: go-unimplemented=1 design_errors=[] seconds=2.93
+cumulative variants=7833 compared=2174 go-unimplemented=5544 dependency=37 different=77 O12-separate=1
+R去重3960（S643 F2594 B723），H272，G16
+60 comparator self-checks + wrong-Go-response check OK；exit=0
+```
+
+R208创建、R207列表、R209读取、R210进度的所有原R编号已有至少一个有效变体；不代表每个多形态完全穷尽。下一步R211 source/prepare/router-draft/check/finish/abandon、相关H与并发/断连；最终还需.32全量。

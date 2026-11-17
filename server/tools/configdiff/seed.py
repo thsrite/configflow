@@ -130,6 +130,23 @@ def create(directory, options):
             value['oxidns'].update(config_mode='native', native_config=native)
             return value
         repository.update_profile_transaction(default, save_native)
+    # Compatibility fixtures are created by Python before either public server
+    # starts; both receive the same complete SQL/session-file snapshot.
+    if options.get('setup_sessions'):
+        from backend.common import setup_flow
+        for fixture in options['setup_sessions']:
+            session = setup_flow.create(repository, {key: fixture[key] for key in ('id', 'name', 'goal')})
+            if fixture.get('profile'):
+                def patch(value):
+                    for key, item in fixture['profile'].items():
+                        if isinstance(item, dict) and isinstance(value.get(key), dict):
+                            value[key].update(item)
+                        else:
+                            value[key] = item
+                    return value
+                repository.update_profile_transaction(session['profile_id'], patch)
+            session.update(fixture.get('session', {}))
+            setup_flow.write(repository, session)
     # Empty scheduler inputs and auto_backup=false are asserted by the harness.
     export = repository.export_all()
     Path(directory, 'configdiff-seed.json').write_text(json.dumps(export, ensure_ascii=False))

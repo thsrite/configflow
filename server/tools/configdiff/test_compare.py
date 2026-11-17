@@ -17,6 +17,19 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_setup_readonly_observer_rejects_timestamp_and_commit_mutations(self):
+        from cases.setup import Stable
+        observer = Stable(None)
+        baseline = {'database': {'commit_id': 'a' * 32, 'updated_at': '2026-01-01T00:00:00Z'}, 'files': {'session': 'unchanged'}}
+        observer.before_values[1] = baseline
+        observer.after_values[1] = copy.deepcopy(baseline)
+        self.assertEqual(observer.compare(Policy()), [])
+        for section, field, value in [('database', 'commit_id', 'b' * 32), ('database', 'updated_at', '2026-01-01T00:00:01Z'),
+                                       ('files', 'session', 'changed')]:
+            observer.after_values[1] = copy.deepcopy(baseline)
+            observer.after_values[1][section][field] = value
+            self.assertTrue(observer.compare(Policy()))
+
     def test_production_waitress_reconstructs_chunked_wsgi_content_length(self):
         import subprocess
         import sys
