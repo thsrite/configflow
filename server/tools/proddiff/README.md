@@ -29,7 +29,12 @@ Python、Go 和比较程序都在同一个断网命名空间。两端各加载�
 运行期间持有共享锁，第一个拿到独占锁的运行会删除被强制终止的旧运行遗留的副本；PID namespace
 确保服务退出后不会遗留子进程。直接 SIGKILL/主机断电无法执行文件清理，遗留副本仅会位于私有目录。
 没有外部设备假服务，也不会放开网络。真实设备不可达时保留并比较原始 HTTP 失败响应；
-报告另外统计两端连接失败数。HTTP 客户端超时为 20 秒，单边无响应额外判失败。
+报告另外统计两端连接失败数。HTTP 客户端初始超时为 20 秒；只有一侧传输失败
+（超时、连接被拒、连接被重置）时，只重试失败侧，每个用例每侧最多 3 次，
+超时依次为 40、80、160 秒（包括 bracket 期间的失败，共用同一预算）。
+重试成功后正常比较；耗尽后记录 `status transport-one-sided` 并令门禁失败。
+两侧都无响应仍记录 `status transport-both`，不重试；收到 HTTP 响应（包括 500）
+不会触发传输重试，真实状态码差异立即失败，也不能借 bracket 重问消除。
 
 两端使用相同的 `ADMIN_USERNAME`、`ADMIN_PASSWORD`、`JWT_SECRET_KEY` 测试环境变量，
 各自调用正常 `/api/auth/login` 获取 JWT。它们本来就支持环境变量账号；
@@ -87,7 +92,9 @@ Python 启动迁移和缓存整理仍正常执行，但只作用于临时副本�
   模式：默认（两端同类型标量才替换）；`pattern`（两端各自只替换匹配部分，其余文本照常比较）；
   `tolerance`（两端时间文本形状相同且相差不超过 N 秒）；`unordered`（按多重集合比较列表）；
   路由级 `bracket`（按墙钟时间窗口计算的 GET：出现差异时交替重问两端，
-  只有 Go 等于紧邻其前或其后的 Python 回复才通过，最多 3 轮；未声明的路由从不重试）。
+  只有 Go 等于紧邻其前或其后的 Python 回复才通过，最多 3 轮；
+  单侧传输重试恢复后从最新回复的另一侧继续交替，不能跳过相邻性检查。
+  未声明的路由不做窗口重问，只允许上述单侧传输重试）。
 - 每次运行必做 23 项自检，全部交给同一个生产比较器，并要求报告准确的路径和类型：
   对照组（真实回复与自身、重新编码的真实 JSON、重新输出的真实 YAML 必须无差异）；
   真实 Go 回复的状态码、Content-Type、响应头值/缺失、双端无响应；
@@ -95,7 +102,8 @@ Python 启动迁移和缓存整理仍正常执行，但只作用于临时副本�
   最大的真实 Go JSON 回复的叶子、缺键、多键、null 与值、列表顺序；
   真实 Go YAML 的叶子、重复键；真实 Go 文本的改行、插行、CRLF。
   任一项未检出、或缺少可用的真实样本即失败；永远不报差异或永远报差异的比较器都过不了对照组。
-  合成测试另覆盖响应头、规范化各模式、规则校验、bracket、分段顺序、数据目录替换和实体枚举。
+  合成测试另覆盖响应头、规范化各模式、规则校验、bracket、分段顺序、数据目录替换和实体枚举，
+  以及单侧传输恢复/耗尽、双方失败不重试、HTTP 500 不重试和恢复后的 bracket 相邻顺序。
 
 没有保存实例的路径参数用合成 missing 参数请求错误分支，并在 coverage 中明确计数。
 进程内探测 job、设备端 DNS query record 等无法从离线快照恢复，只覆盖错误分支。
@@ -168,6 +176,10 @@ rt --back server/parity/proddiff-baseline.txt \
 
 每次运行的报告位于测试服务器 `~/cf-prod-snapshot/runs/run-*/`，目录权限 700。
 `summary.json`、`coverage.json`、`differences.tsv`、`report.md` 是脱敏结果；
+summary 中的 `transport_retries` 分别累计 Python/Go 的实际传输重试请求数（不含初次请求），
+`counts.bracket-rescued` 保留成功窗口重问的用例数；两者都是随请求调度变化的重试计数。
+`loadavg.start` / `loadavg.end` 保存比较程序开始/结束时的 `/proc/loadavg` 原文；
+`connection_failures` 只统计最终回复，因此成功恢复的临时失败只体现在重试计数中。
 `responses.jsonl`、`generator-*.jsonl`、`generator-jobs.json` 和服务日志可能含真实请求参数、响应和凭据，只能留在该私有目录，
 不能复制到仓库、交接回复或公开报告。框架错误详情也只写入私有 `error.txt`。
 普通运行不会在项目中生成未跟踪文件。
@@ -189,3 +201,35 @@ rt --back server/parity/proddiff-baseline.txt \
 - 安装能力签发、安装登记、部署 activate/rollback/recover 和 settings 保存入口
 
 上述建议也写在每轮私有 report.md 的末尾。第一版不执行这些写操作。
+
+## 单侧传输重试验收（2026-11-17）
+
+仅修改本工具、合成测试和本文档；未修改业务代码、baseline 或 normalize。
+单元测试在 .32 上运行：
+
+```bash
+rt -- bash -lc '~/cf-test/.venv/bin/python server/tools/proddiff/test_proddiff.py'
+# Ran 30 tests ... OK
+```
+
+前台 `rt -- python -c ...` 驱动 CPU 压力和顺序的三次
+`subprocess.run(["server/scripts/proddiff.sh"])`，不使用 `--record-baseline`。
+压力使用有超时的 `stress-ng --cpu-method int64`，所有自加压力进程均已清理。
+共享服务器同时运行其他测试，实测一分钟负载如下：
+
+| 轮次 | 开始 / 结束负载 | Python / Go 传输重试 | bracket-rescued | 门禁结果 |
+|---|---|---|---|---|
+| 1 | 46.81 / 73.10 | 1 / 0 | 3 | exit=0, new=0, stale=0 |
+| 2 | 75.34 / 77.28 | 0 / 0 | 0 | exit=0, new=0, stale=0 |
+| 3 | 79.58 / 85.95 | 0 / 0 | 0 | exit=0, new=0, stale=0 |
+
+三轮均为 2831 个枚举用例、415 个 HTTP 比较、23 项运行自检通过，
+最终 Python/Go 连接失败计数均为 30，覆盖回退和未映射路由均为 0。
+仅去除 `transport_retries`、`counts.bracket-rescued`、`loadavg` 后，完整 summary
+序列化为排序键的紧凑 JSON，三轮 SHA-256 均为
+`fc0edcca151f6fb60c1fbb0387e17a536c125388207cd822c2fdc23c55ddcd5d`。
+脱敏 summary 保存在 .32 的 `~/cf-prod-snapshot/runs/load-acceptance-129088.json`。
+
+更早的一轮在 81.88 → 80.03 负载下发生 33 次 Python 传输重试，仍为
+`new=0 stale=0`、最终连接失败 30/30；但窗口重问增加了线程数量，
+那组三轮不满足非重试字段完全相同，未作为上述三轮验收结果。

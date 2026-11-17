@@ -250,6 +250,8 @@ def apply_rules(rules, route, a, b):
 
 def response_diffs(left, right, route, rules):
     out = []
+    if (left[0] == 0) != (right[0] == 0):
+        return [('status', 'transport-one-sided')]
     if left[0] != right[0]:
         out.append(('status', 'value'))
     if left[1].lower().replace(' ', '') != right[1].lower().replace(' ', ''):
@@ -305,7 +307,7 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def send(port, method, path, token='', body=None):
+def send(port, method, path, token='', body=None, timeout=20):
     headers = {'Host': '127.0.0.1:5001', 'X-Forwarded-Host': '127.0.0.1:5001',
                'X-Forwarded-Proto': 'http', 'Content-Type': 'application/json'}
     if token:
@@ -315,7 +317,7 @@ def send(port, method, path, token='', body=None):
                                      headers=headers, method=method)
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
     try:
-        response = opener.open(request, timeout=20)
+        response = opener.open(request, timeout=timeout)
     except urllib.error.HTTPError as error:
         response = error
     except (OSError, TimeoutError):
@@ -532,21 +534,44 @@ def phase(case):
     return 2 if route.startswith('/api/logs/') else 1 if method != 'GET' else 0
 
 
-def bracketed(python, go, diffs, attempts=3):
-    """Compare a wall-clock windowed GET: Go answered between two Python requests, so it must equal
-    the Python reply on one side of it. Returns (python reply, go reply, retries); retries == 0 and
-    a differing pair when no adjacent pair agrees. Only for routes declared with `bracket`."""
-    left, right = python(), go()
-    if not diffs(left, right):
-        return left, right, 0
-    for attempt in range(1, attempts + 1):
-        left = python()
-        if not diffs(left, right):
-            return left, right, attempt
-        right = go()
-        if not diffs(left, right):
-            return left, right, attempt
-    return left, right, 0
+def compare_http(python, go, diffs, bracket=False, attempts=3):
+    """Recover only one-sided transport failures, then compare adjacent HTTP replies.
+
+    Each side has a budget of three transport retries per case (40/80/160 s).
+    Windowed GETs may additionally alternate sides for at most three bracket rounds.
+    A transport failure or differing HTTP status stops bracketing immediately.
+    Returns (python reply, go reply, bracket rescue round, per-side transport retries).
+    """
+    senders = (python, go)
+    replies = [python(timeout=20), go(timeout=20)]
+    retries = [0, 0]
+    last = 1
+
+    def recover(index):
+        while replies[index][0] == 0 and retries[index] < 3:
+            retries[index] += 1
+            replies[index] = senders[index](timeout=20 * 2 ** retries[index])
+
+    if (replies[0][0] == 0) != (replies[1][0] == 0):
+        last = 0 if replies[0][0] == 0 else 1
+        recover(last)
+
+    def cannot_bracket():
+        return not replies[0][0] or not replies[1][0] or replies[0][0] != replies[1][0]
+
+    if cannot_bracket() or not bracket or not diffs(*replies):
+        return *replies, 0, retries
+    for step in range(attempts * 2):
+        # Recovery may have made Python the latest reply. Always ask the other side
+        # next, so equality never uses a Python reply separated from Go by another reply.
+        last = 1 - last
+        replies[last] = senders[last](timeout=20)
+        recover(last)
+        if cannot_bracket():
+            return *replies, 0, retries
+        if not diffs(*replies):
+            return *replies, 1 + step // 2, retries
+    return *replies, 0, retries
 
 
 def stop_processes(processes):
@@ -561,6 +586,7 @@ def stop_processes(processes):
 
 def main():
     global PRIVATE_REPORT
+    load_start = Path('/proc/loadavg').read_text().strip()
     assert_no_egress()
     snapshot, binary = map(Path, sys.argv[1:3])
     record = '--record-baseline' in sys.argv[3:]
@@ -633,18 +659,17 @@ def main():
             http_successes = collections.defaultdict(set)
             all_cases = list(cases(rows, doc, copies[0]))
 
-            def ask(index, method, path, body):
-                return scrub(send(15001 + index, method, path, tokens[index], body), copies[index])
+            def ask(index, method, path, body, timeout):
+                return scrub(send(15001 + index, method, path, tokens[index], body, timeout=timeout), copies[index])
 
             def compare(case):
                 method, route, path, body, no_data = case
                 if (method, route) not in implemented:
-                    return case, None, None, 0
-                python = lambda: ask(0, method, path, body)
-                go = lambda: ask(1, method, path, body)
-                if method == 'GET' and route in bracket:
-                    return (case,) + bracketed(python, go, lambda a, b: response_diffs(a, b, route, rules))
-                return case, python(), go(), 0
+                    return case, None, None, 0, [0, 0]
+                python = lambda timeout: ask(0, method, path, body, timeout)
+                go = lambda timeout: ask(1, method, path, body, timeout)
+                return (case,) + compare_http(python, go, lambda a, b: response_diffs(a, b, route, rules),
+                                              bracket=method == 'GET' and route in bracket)
 
             def results():
                 with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
@@ -653,8 +678,9 @@ def main():
                 yield from map(compare, [case for case in all_cases if phase(case) == 2])
 
             json_sample = None
+            transport_retries = {'python': 0, 'go': 0}
             with (report / 'responses.jsonl').open('w') as responses:
-                for case, left, right, retries in results():
+                for case, left, right, retries, transport in results():
                     method, route, path, body, no_data = case
                     key = method + ' ' + route
                     status = 'Go 尚未实现' if left is None else 'compared'
@@ -663,6 +689,8 @@ def main():
                     row['no-snapshot-parameter'] += int(no_data)
                     if left is None:
                         continue
+                    for index, label in enumerate(transport_retries):
+                        transport_retries[label] += transport[index]
                     counts['bracket-rescued'] += int(retries > 0)
                     responses.write(json.dumps({'method': method, 'route': route, 'path': path,
                                                 'python': [left[0], left[1], left[2].decode('utf-8', errors='replace'), left[3]],
@@ -768,6 +796,8 @@ def main():
                        'Go_not_implemented': sum(row.get('Go 尚未实现', 0) > 0 for row in coverage.values()),
                        'generators': generator_coverage, 'self_checks': checks,
                        'cases': len(all_cases), 'counts': dict(counts), 'connection_failures': dict(failures),
+                       'transport_retries': transport_retries,
+                       'loadavg': {'start': load_start, 'end': Path('/proc/loadavg').read_text().strip()},
                        'coverage_regressions': len(lost_coverage), 'unmapped_routes': len(unmapped),
                        'unique_differences': len(found), 'new': len(new), 'stale': len(stale), 'self_check': 'PASS'}
             (report / 'summary.json').write_text(json.dumps(summary, ensure_ascii=False, indent=2))

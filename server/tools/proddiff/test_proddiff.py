@@ -3,6 +3,7 @@ import importlib.util
 import io
 import json
 import zipfile
+from email.message import Message
 from pathlib import Path
 from unittest import mock
 import unittest
@@ -37,7 +38,7 @@ class ComparatorTests(unittest.TestCase):
             ('empty vs missing', reply(good[2].replace(b',"note":""', b'')), ('body.data.note', 'missing-in-go')),
             ('empty vs null', reply(good[2].replace(b'"note":""', b'"note":null')), ('body.data.note', 'type')),
             ('duplicate key', reply(good[2].replace(b'"count":3', b'"count":3,"count":3')), ('body', 'parse-go')),
-            ('one-sided transport', (0, '', b'', {}), ('status', 'value')),
+            ('one-sided transport', (0, '', b'', {}), ('status', 'transport-one-sided')),
         ]
         for name, bad, expected in tests:
             with self.subTest(name=name):
@@ -169,18 +170,137 @@ class ComparatorTests(unittest.TestCase):
         with mock.patch.object(Path, 'read_text', return_value=json.dumps([{'route': '/r', 'bracket': True, 'reason': 't'}])):
             self.assertEqual(1, len(pd.load_rules(rows)))
 
+    def compare_http(self, python, go, bracket=False):
+        senders = [mock.Mock(side_effect=python), mock.Mock(side_effect=go)]
+        result = pd.compare_http(*senders, lambda a, b: pd.response_diffs(a, b, '/synthetic', []), bracket=bracket)
+        return result, senders
+
+    def test_one_sided_transport_retries_only_failed_side(self):
+        good = reply({'data': 2})
+        # Exercise send() and comparison together: two timeouts, then a real response shape.
+        for side in (0, 1):
+            with self.subTest(side=side):
+                peers = [[good], [good]]
+                peers[side] = [TimeoutError(), TimeoutError(), good]
+                def open_request(request, timeout):
+                    value = peers[pd.urllib.parse.urlsplit(request.full_url).port - 15001].pop(0)
+                    if isinstance(value, Exception):
+                        raise value
+                    response = io.BytesIO(value[2])
+                    response.code = value[0]
+                    response.headers = Message()
+                    response.headers['Content-Type'] = value[1]
+                    return response
+                with mock.patch.object(pd.urllib.request, 'build_opener') as build:
+                    send = build.return_value.open
+                    send.side_effect = open_request
+                    result = pd.compare_http(lambda timeout: pd.send(15001, 'GET', '/', timeout=timeout),
+                                             lambda timeout: pd.send(15002, 'GET', '/', timeout=timeout),
+                                             lambda a, b: pd.response_diffs(a, b, '/synthetic', []))
+                self.assertEqual([], pd.response_diffs(*result[:2], '/synthetic', []))
+                self.assertEqual([2 if index == side else 0 for index in (0, 1)], result[3])
+                ports = [pd.urllib.parse.urlsplit(call.args[0].full_url).port for call in send.call_args_list]
+                self.assertEqual([20, 40, 80], [call.kwargs['timeout'] for call, port in zip(send.call_args_list, ports)
+                                               if port == 15001 + side])
+                self.assertEqual(1, sum(port != 15001 + side for port in ports))
+
+    def test_exhausted_transport_retries_are_a_difference(self):
+        good, failed = reply({}), (0, '', b'', {})
+        for side in (0, 1):
+            with self.subTest(side=side):
+                peers = [[good], [good]]
+                peers[side] = [failed] * 4
+                result, senders = self.compare_http(*peers, bracket=True)
+                self.assertEqual([('status', 'transport-one-sided')], pd.response_diffs(*result[:2], '/synthetic', []))
+                self.assertEqual([mock.call(timeout=t) for t in (20, 40, 80, 160)], senders[side].call_args_list)
+                self.assertEqual(1, senders[1 - side].call_count)
+                self.assertEqual(0, result[2])
+
+    def test_http_status_difference_never_retries(self):
+        for bracket in (False, True):
+            for side in (0, 1):
+                with self.subTest(bracket=bracket, side=side):
+                    peers = [[reply({})], [reply({})]]
+                    peers[side] = [reply({}, status=500)]
+                    result, senders = self.compare_http(*peers, bracket=bracket)
+                    self.assertEqual([('status', 'value')], pd.response_diffs(*result[:2], '/synthetic', []))
+                    self.assertEqual([1, 1], [sender.call_count for sender in senders])
+                    self.assertEqual([0, 0], result[3])
+
+    def test_both_sided_transport_does_not_retry(self):
+        failed = (0, '', b'', {})
+        for bracket in (False, True):
+            with self.subTest(bracket=bracket):
+                result, senders = self.compare_http([failed], [failed], bracket=bracket)
+                self.assertEqual([('status', 'transport-both')], pd.response_diffs(*result[:2], '/synthetic', []))
+                self.assertEqual([1, 1], [sender.call_count for sender in senders])
+
+    def test_http_error_after_transport_recovery_is_not_retried(self):
+        result, senders = self.compare_http([(0, '', b'', {}), reply({}, status=500)], [reply({})], bracket=True)
+        self.assertEqual([('status', 'value')], pd.response_diffs(*result[:2], '/synthetic', []))
+        self.assertEqual([2, 1], [sender.call_count for sender in senders])
+        self.assertEqual([1, 0], result[3])
+
+    def test_bracket_stops_on_a_new_http_status_difference(self):
+        result, senders = self.compare_http([reply({'data': 1}), reply({'data': 2}, status=500)],
+                                           [reply({'data': 2})], bracket=True)
+        self.assertEqual([('status', 'value')], pd.response_diffs(*result[:2], '/synthetic', []))
+        self.assertEqual([2, 1], [sender.call_count for sender in senders])
+        self.assertEqual((0, [0, 0]), result[2:])
+
     def test_bracketing_accepts_only_an_adjacent_python_state(self):
-        def sequence(values):
-            values = iter(values)
-            return lambda: next(values)
-        same = lambda a, b: [] if a == b else [('body', 'value')]
+        def compare(python, go):
+            result, _ = self.compare_http([reply({'data': n}) for n in python],
+                                          [reply({'data': n}) for n in go], bracket=True)
+            return json.loads(result[0][2])['data'], json.loads(result[1][2])['data'], result[2]
         # The window moved between the first Python reply and Go: the next Python reply agrees.
-        self.assertEqual((2, 2, 1), pd.bracketed(sequence([1, 2]), sequence([2]), same))
+        self.assertEqual((2, 2, 1), compare([1, 2], [2]))
         # Go answered before the window moved, Python after: the next Go reply agrees.
-        self.assertEqual((2, 2, 1), pd.bracketed(sequence([1, 2]), sequence([0, 2]), same))
+        self.assertEqual((2, 2, 1), compare([1, 2], [0, 2]))
         # A Go reply that never equals any Python state is reported, however often it is asked.
-        left, right, retries = pd.bracketed(sequence([1, 1, 1, 1]), sequence([9, 9, 9, 9]), same)
+        left, right, retries = compare([1, 1, 1, 1], [9, 9, 9, 9])
         self.assertEqual((0, 1, 9), (retries, left, right))
+
+    def test_bracketing_alternates_after_python_transport_recovery(self):
+        failed = (0, '', b'', {})
+        calls = []
+        python = iter([failed, reply({'data': 2}), reply({'data': 3})])
+        go = iter([reply({'data': 1}), reply({'data': 3})])
+        def ask(label, replies, timeout):
+            calls.append((label, timeout))
+            return next(replies)
+        result = pd.compare_http(lambda timeout: ask('python', python, timeout),
+                                 lambda timeout: ask('go', go, timeout),
+                                 lambda a, b: pd.response_diffs(a, b, '/synthetic', []), bracket=True)
+        self.assertEqual([], pd.response_diffs(*result[:2], '/synthetic', []))
+        self.assertEqual([('python', 20), ('go', 20), ('python', 40), ('go', 20), ('python', 20)], calls)
+        self.assertEqual([1, 0], result[3])
+
+    def test_bracket_transport_retry_budget_is_per_case(self):
+        failed = (0, '', b'', {})
+        result, senders = self.compare_http([failed, reply({'data': 1}), failed, failed, failed],
+                                           [reply({'data': 2}), reply({'data': 2})], bracket=True)
+        self.assertEqual([('status', 'transport-one-sided')], pd.response_diffs(*result[:2], '/synthetic', []))
+        self.assertEqual([3, 0], result[3])
+        self.assertEqual([mock.call(timeout=t) for t in (20, 40, 20, 80, 160)], senders[0].call_args_list)
+
+    def test_non_bracket_http_body_differences_never_retry(self):
+        result, senders = self.compare_http([reply({'data': 1})], [reply({'data': 2})])
+        self.assertEqual([('body.data', 'value')], pd.response_diffs(*result[:2], '/synthetic', []))
+        self.assertEqual([1, 1], [sender.call_count for sender in senders])
+
+    def test_send_distinguishes_transport_failures_from_http_errors(self):
+        for error in (TimeoutError(), ConnectionRefusedError(), ConnectionResetError(),
+                      pd.urllib.error.URLError(TimeoutError())):
+            with self.subTest(error=type(error).__name__), mock.patch.object(pd.urllib.request, 'build_opener') as build:
+                build.return_value.open.side_effect = error
+                self.assertEqual((0, '', b'', {}), pd.send(15001, 'GET', '/', timeout=80))
+                self.assertEqual(80, build.return_value.open.call_args.kwargs['timeout'])
+        with mock.patch.object(pd.urllib.request, 'build_opener') as build:
+            headers = Message()
+            headers['Content-Type'] = JSON
+            build.return_value.open.side_effect = pd.urllib.error.HTTPError('http://example.com', 500, 'error', headers, io.BytesIO(b'{}'))
+            self.assertEqual(500, pd.send(15001, 'GET', '/')[0])
 
     def test_phases_put_log_readers_last(self):
         self.assertEqual(0, pd.phase(('GET', '/api/agents', '', None, False)))
