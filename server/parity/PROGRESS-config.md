@@ -47,7 +47,8 @@ with key/line; recursive and excessive aliases rejected; merge semantics; timest
 non-finite YAML numbers → JSON strings; typed mismatches wrap ErrType and *yaml.TypeError. Fixed native
 encoder issues: document-wrapper comments lost and empty null keys changed to strings. No open N7-1
 finding; old/new corpus classification and invalid explicit tags (e.g. `!!null [a]`) are explicitly N7-3
-gates (§5.4). Editor is N7-2; consumers/writers migrate in N7-3/N7-4. Independent review pending.
+gates (§5.4). Editor is N7-2 (Opus-reviewed, verified: review-n7-2.md); consumers/writers migrate in
+N7-3/N7-4.
 
 ## O3-1 — lockx primitives (ported, 2026-11-17)
 
@@ -545,8 +546,12 @@ commands and corpus counts: progress/n7-2.md. Final .32 formatting/vet/race,
 three 60s fuzz targets, full Go suite (-p=2), all ten CONFIGFLOW_DIFF packages
 and proddiff (new=0 stale=0) PASS. The initial importer 3s resource-probe timeout
 passed both isolated and in the reduced-parallelism full rerun; no limit changed.
-Await Opus review;
-this entry does not mark C11 verified. Proxy-groups route difftest → C33 deferred.
+Opus review N7-2 (2026-11-17, review-n7-2.md): F1 high (alias expansion through `Clone`
+silently wrote `null` into relinked listeners/displaced alias consumers), F2 medium (splice failures
+refused instead of rewriting; indentless sequences), F3–F5 low (`!!merge <<`, removed-pair comments
+moved to the document head, English multi-document reason) — all fixed, 0 open; the editor is
+verified. C11 stays `partial` only for the deferred generation/route cases above. Proxy-groups route
+difftest → C33 deferred.
 
 ## C12 — converter common, Mihomo node conversion, dialer references, EasyTier
 

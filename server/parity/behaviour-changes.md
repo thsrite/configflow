@@ -114,3 +114,8 @@ scalar-key comments keep their position. Tab-containing strings use double quote
 (with explicit tags retained), since literal/folded Tab lines can be unparsable. Native YAML schema policies
 from N7-1 remain in force. No new application route is added in N7-2; actual
 proxy-groups route differential is deferred to C33.
+
+Opus review of N7-2 (2026-11-17, parity/review-n7-2.md): a base config with more than one YAML
+document is still refused with the same context (Python: context only); the appended reason is now
+Chinese, e.g. `YAML 只能包含一个文档（第 2 行开始第二个文档）`. Whole-document rewrites keep merge keys
+as `<<`, place notes of a removed pair before its listener (as Python did), and never expand aliases.
