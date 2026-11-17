@@ -111,6 +111,7 @@ func TestPublishHTTPAgainstFlask(t *testing.T) {
 	calls := 0
 	comparePair := func(r request, paths ...string) {
 		t.Helper()
+		defer comparePublicationState(t, pyDir, goDir, values)
 		rpy, rgo := r, r
 		if len(paths) == 2 {
 			rpy.path = paths[0]
@@ -181,28 +182,6 @@ func TestPublishHTTPAgainstFlask(t *testing.T) {
 		}
 		comparePair(request{name: "missing task", method: method, path: base + path, admin: true})
 	}
-	// Every stored member is compared, including private task proofs and full source snapshots.
-	docs := []any{}
-	for _, dir := range []string{pyDir, goDir} {
-		entry, e := store.New(filepath.Join(dir, "configflow.sqlite3"), func() time.Duration { return 10 * time.Second }).Load()
-		if e != nil {
-			t.Fatal(e)
-		}
-		raw, e := json.Marshal(entry.Document)
-		if e != nil {
-			t.Fatal(e)
-		}
-		var v any
-		_ = json.Unmarshal(raw, &v)
-		docs = append(docs, v)
-	}
-	for i, v := range docs {
-		normalizePublication(v, values[i])
-	}
-	if !reflect.DeepEqual(docs[0], docs[1]) {
-		t.Fatal("complete DB document: ", publishDifference("", docs[0], docs[1]))
-	}
-	comparePublicationFiles(t, pyDir, goDir, values)
 	left, right := pf.Calls(), gf.Calls()
 	if len(left) != len(right) {
 		t.Fatal("Agent call counts", len(left), len(right))
@@ -359,6 +338,19 @@ func normalizePublication(v any, values map[string]string) {
 				if e != nil {
 					x[k] = "@time"
 				}
+			case "checked_at", "first_seen_at", "last_seen_at", "version":
+				if k == "version" {
+					if _, notification := x["first_seen_at"]; !notification {
+						break
+					}
+				}
+				if text, ok := e.(string); ok {
+					_, naive := time.Parse("2006-01-02T15:04:05.999999", text)
+					_, utc := time.Parse(time.RFC3339Nano, text)
+					if naive == nil || utc == nil {
+						x[k] = "@time"
+					}
+				}
 			case "port":
 				x[k] = "@port"
 			case "sha256", "source_sha256":
@@ -426,57 +418,153 @@ func publishDifference(path string, a, b any) string {
 	}
 	return fmt.Sprintf("%s: %v != %v", path, a, b)
 }
+func comparePublicationState(t *testing.T, a, b string, values []map[string]string) {
+	t.Helper()
+	var documents [2]any
+	for i, dir := range []string{a, b} {
+		entry, err := store.New(filepath.Join(dir, "configflow.sqlite3"), func() time.Duration { return 10 * time.Second }).Load()
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw, err := json.Marshal(entry.Document)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = json.Unmarshal(raw, &documents[i]); err != nil {
+			t.Fatal(err)
+		}
+		normalizePublication(documents[i], values[i])
+	}
+	if !reflect.DeepEqual(documents[0], documents[1]) {
+		t.Fatal("complete DB document: ", publishDifference("", documents[0], documents[1]))
+	}
+	comparePublicationFiles(t, a, b, values)
+}
+
 func comparePublicationFiles(t *testing.T, a, b string, values []map[string]string) {
 	t.Helper()
 	collect := func(root string, replacements map[string]string) map[string]any {
 		out := map[string]any{}
-		for _, sub := range []string{".agent-rule-sync", ".generated-previews"} {
-			e := filepath.WalkDir(filepath.Join(root, sub), func(path string, entry os.DirEntry, e error) error {
-				if os.IsNotExist(e) {
-					return nil
-				}
-				if e != nil {
-					return e
-				}
-				if entry.IsDir() {
-					return nil
-				}
-				if entry.Name() == "lock" {
-					return nil
-				} // Python flock artifacts are intentionally absent under O3.
-				rel, _ := filepath.Rel(root, path)
-				for original, replacement := range replacements {
-					rel = strings.ReplaceAll(rel, original, replacement)
-				}
-				raw, e := os.ReadFile(path)
-				if e != nil {
-					return e
-				}
-				if strings.HasSuffix(rel, ".tar.gz") {
-					rel = filepath.Join(filepath.Dir(rel), "bundle-@archive.tar.gz")
-					out[rel] = "archive validated by raw Agent transcript"
-				} else {
-					var v any
-					if strings.HasSuffix(rel, ".json") {
-						if e = json.Unmarshal(raw, &v); e != nil {
-							return fmt.Errorf("%s: %w", rel, e)
-						}
-						normalizePublication(v, replacements)
-						out[rel] = v
-					} else {
-						out[rel] = string(raw)
-					}
+		err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			rel, err := filepath.Rel(root, path)
+			if err != nil {
+				return err
+			}
+			// DB contents are compared above. Runtime logs/framing and Python's old
+			// process-lock artifacts are the only excluded paths, never user files.
+			if entry.IsDir() {
+				if rel == ".agent-deployment-locks" {
+					return filepath.SkipDir
 				}
 				return nil
-			})
-			if e != nil {
-				t.Fatal(e)
 			}
+			if rel == "task-status.json.lock" || rel == ".dns-follow.lock" || rel == ".task-scheduler.lock" || rel == ".oxidns-rankings.lock" || rel == "router-rule-sync/.scheduler.lock" || rel == "probes/.auto.lock" {
+				raw, err := os.ReadFile(path)
+				if err != nil {
+					return err
+				}
+				if len(raw) != 0 {
+					return fmt.Errorf("nonempty process lock %s", rel)
+				}
+				return nil
+			}
+			if rel == "app.log" || rel == "configflow.sqlite3" || rel == "configflow.sqlite3-wal" || rel == "configflow.sqlite3-shm" || rel == "configflow.sqlite3.lock" {
+				return nil
+			}
+			if entry.Name() == "lock" && (strings.HasPrefix(rel, ".agent-rule-sync/") || strings.HasPrefix(rel, ".generated-previews/")) {
+				return nil
+			}
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			for original, replacement := range replacements {
+				rel = strings.ReplaceAll(rel, original, replacement)
+			}
+			if strings.HasSuffix(rel, ".tar.gz") {
+				gz, err := gzip.NewReader(bytes.NewReader(raw))
+				if err != nil {
+					return err
+				}
+				defer gz.Close()
+				tr := tar.NewReader(gz)
+				members := map[string][]byte{}
+				for {
+					header, err := tr.Next()
+					if err == io.EOF {
+						break
+					}
+					if err != nil {
+						return err
+					}
+					content, err := io.ReadAll(tr)
+					if err != nil {
+						return err
+					}
+					if _, exists := members[header.Name]; exists {
+						return fmt.Errorf("duplicate archive member")
+					}
+					members[header.Name] = content
+				}
+				var manifest deploy.Manifest
+				if err = json.Unmarshal(members["manifest.json"], &manifest); err != nil {
+					return err
+				}
+				if _, err = deploy.Open(manifest, raw, hashBytes(raw), "", nil); err != nil {
+					return err
+				}
+				normalized := map[string]any{}
+				for name, content := range members {
+					var value any
+					if name == "manifest.json" {
+						if err = json.Unmarshal(content, &value); err != nil {
+							return err
+						}
+						normalizePublication(value, replacements)
+					} else {
+						value = string(content)
+					}
+					normalized[name] = value
+				}
+				if strings.HasPrefix(filepath.Base(rel), "bundle-") {
+					rel = filepath.Join(filepath.Dir(rel), "bundle-@archive.tar.gz")
+				}
+				out[rel] = normalized
+			} else if strings.HasSuffix(rel, ".json") {
+				var value any
+				if err = json.Unmarshal(raw, &value); err != nil {
+					return fmt.Errorf("%s: %w", rel, err)
+				}
+				normalizePublication(value, replacements)
+				out[rel] = value
+			} else {
+				out[rel] = string(raw)
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
 		}
 		return out
 	}
 	x, y := collect(a, values[0]), collect(b, values[1])
 	if !reflect.DeepEqual(x, y) {
-		t.Fatal("private files: ", publishDifference("", x, y))
+		onlyLeft, onlyRight := []string{}, []string{}
+		for key := range x {
+			if _, ok := y[key]; !ok {
+				onlyLeft = append(onlyLeft, key)
+			}
+		}
+		for key := range y {
+			if _, ok := x[key]; !ok {
+				onlyRight = append(onlyRight, key)
+			}
+		}
+		sort.Strings(onlyLeft)
+		sort.Strings(onlyRight)
+		t.Fatalf("complete DATA_DIR files: %s; Python-only=%v; Go-only=%v", publishDifference("", x, y), onlyLeft, onlyRight)
 	}
 }
