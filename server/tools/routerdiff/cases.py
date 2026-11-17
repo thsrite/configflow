@@ -47,6 +47,7 @@ class Case:
     absent: tuple = ()
     html_error: bool = False
     requires: tuple = ()
+    manifest_requires: tuple = ()
     join: str = ''
     stored: dict = field(default_factory=dict)
     header_checks: dict = field(default_factory=dict)

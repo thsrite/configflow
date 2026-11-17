@@ -96,6 +96,8 @@ def execute(pair, case, available, routes):
     observations, snapshots, flow_requests, flow_checks = {}, {}, {}, {}
     missing_routes = [ident for ident in (case.route, *case.requires)
                       if (routes[ident].method, shape(routes[ident].path)) not in available]
+    missing_routes += [method + ' ' + path for method, path in case.manifest_requires
+                       if (method, shape(path)) not in available]
     implemented = not missing_routes and not pair.go.missing_effects
     blocked_reference = None
     for name, side in pair.sides.items():
@@ -537,7 +539,7 @@ def main():
               ('disconnect-fixed', clients.options(), (disconnect.fixed,)),
               ('disconnect-manual', options, (disconnect.manual,)),
               ('policy-view', policy_view.options(), (policy_view.reads,)),
-              ('routing-methods', options, (routing.options_and_dispatch, routing.local_heads)),
+              ('routing-methods', options, (routing.options_and_dispatch, routing.local_heads, routing.reserved_agents)),
               ('head-discovery', clients.options(), (routing.discovery_head,)),
               ('head-upstream', upstream.options(), (routing.upstream_head,)),
               ('head-collection-empty', options, (routing.head_collection_empty,)),

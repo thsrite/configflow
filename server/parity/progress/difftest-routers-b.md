@@ -658,3 +658,24 @@ upstream187(.38s); matrix2301/routes26/implemented0/go-unimplemented187,
 referenced_entries22, complete=false, remaining_audits2301. Earlier relevant
 `python -m unittest -v test_recipes test_runner test_compare`: Ran16 tests0.447s/OK.
 No pending test process; full current composition and audit remain unfinished.
+
+Overlap and no-follow filesystem snapshots:
+- Six public R001 reserved-name variants actually reach installation-state,
+  install-token and allowlisted binary handlers (auth vs public capability paths
+  retained). Additional required route signatures come from Python decorators
+  and routes.tsv; missing external registration is separately unimplemented,
+  never inferred from a business404. Negative runner check locks this oracle.
+- File snapshots now include permissions, empty directories, literal symlink
+  targets and special-file kinds; regular bytes remain exact. Directory-fd
+  traversal, O_NOFOLLOW, opened-inode identity checks avoid traversing links or
+  reading FIFOs. Only reviewed exact root DB/log names and *.lock remain excluded.
+  Synthetic regression proves nested similarly named files stay visible, external
+  links are not read, and bytes/mode/directory/target mutations all differ. This
+  strengthens future T21 evidence; does NOT claim T21 fault coverage yet.
+
+Exact .64 command:
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; cd server/tools/routerdiff; export PYTHONDONTWRITEBYTECODE=1; ~/cf-test/.venv/bin/python -m unittest -v test_filesystem test_compare test_runner test_recipes; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary /tmp/routerdiff-build-302rx1dg/configflow --world routing-methods --world policy-view --world disconnect-release --world disconnect-fixed --world disconnect-manual --output /tmp/routerdiff-filesystem.json'`
+→ Ran18 tests0.372s/OK; release2(.70s), fixed4(.95s), manual6(.28s),
+policy14(1.17s), methods184(1.05s), localHEAD189(.28s), reserved181-world cumulative
+195(.15s). Final matrix2301/routes26/implemented0/go-unimplemented195,
+referenced_entries22, complete=false, remaining_audits2301. No pending process.

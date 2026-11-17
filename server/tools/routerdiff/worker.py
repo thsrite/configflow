@@ -18,6 +18,7 @@ import time
 import traceback
 
 from fakes import World
+from filesystem import capture
 from inventory import ROOT
 from seed import ADMIN, PASSWORD, JWT_SECRET
 
@@ -110,17 +111,8 @@ class Worker:
                 columns = [row[1] for row in db.execute(f'PRAGMA table_info({name})')]
                 rows = list(db.execute(f'SELECT * FROM {name}'))
                 tables[name] = {'columns': columns, 'rows': sorted(rows, key=repr)}
-        files = {}
-        for path in sorted((ACTIVE / 'data').rglob('*')):
-            if not path.is_file():
-                continue
-            relative = str(path.relative_to(ACTIVE / 'data'))
-            # Database logical rows above; process logs are separately inspected.
-            if relative in ('configflow.sqlite3', 'configflow.sqlite3-wal', 'configflow.sqlite3-shm',
-                            'configflow.sqlite3-journal', 'app.log') or path.name.endswith('.lock'):
-                continue
-            files[relative] = base64.b64encode(path.read_bytes()).decode()
-        return {'database': tables, 'files': files, 'fake': self.world.snapshot()}
+        files, metadata = capture(ACTIVE / 'data')
+        return {'database': tables, 'files': files, 'filesystem': metadata, 'fake': self.world.snapshot()}
 
     def dispatch(self, operation, **values):
         if operation == 'start':

@@ -146,6 +146,16 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(world.python.requests[0]['document']['token'], 'python-only')
         self.assertEqual(world.go.requests, [])
 
+    def test_missing_external_overlap_handler_is_not_a_business_404_oracle(self):
+        routes, _ = load()
+        world = pair(ObservationSide(status=404), ObservationSide(status=404))
+        case = Case('external-overlap', 'R001', 'GET', '/api/agents/i/upstream-routers', 404,
+                    manifest_requires=(('GET', '/api/agents/i/<token>'),))
+        result = execute(world, case, {('GET', shape(routes['R001'].path))}, routes)
+        self.assertEqual(result['status'], 'go-unimplemented')
+        self.assertEqual(world.go.requests, [])
+        self.assertIn('GET /api/agents/i/<token>', result['unimplemented_reason']['missing_routes'])
+
     def test_unimplemented_write_cannot_poison_a_later_implemented_read(self):
         routes, _ = load()
         world = pair()

@@ -117,3 +117,20 @@ def upstream_head():
     yield Case('R001/GET-reuses-HEAD-cache', 'R001', 'GET', path, 200,
                ('X06', 'R001-S06'), checks={'cached': True},
                expected_requests=({'match': {'peer': 'ros'}, 'count': 0}, {'match': {'peer': 'ikuai'}, 'count': 0}))
+
+
+def reserved_agents():
+    # Read the public agents decorators/route table, not any Go dispatcher.
+    for reserved, external in (
+        ('gateway-installations', '/api/agents/gateway-installations/<session_id>'),
+        ('i', '/api/agents/i/<token>'),
+        ('download', '/api/agents/download/<filename>'),
+    ):
+        for auth in (True, False):
+            status = 401 if reserved == 'gateway-installations' and not auth else 404
+            message = ('安装会话不存在。' if reserved == 'gateway-installations' else 'Invalid filename')
+            yield Case('R001/reserved-' + reserved + '-auth-' + str(auth), 'R001', 'GET',
+                       '/api/agents/' + reserved + '/upstream-routers', status,
+                       ('X09', 'R001-B91'), auth=auth, manifest_requires=(('GET', external),),
+                       message=(message if status == 404 and reserved != 'i' else None),
+                       header_checks={'Cache-Control': 'no-store'} if reserved == 'i' else {})
