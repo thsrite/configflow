@@ -538,3 +538,12 @@ headers、完整 DB 和所有文件不变。合法 JSON、普通数字和原有�
   and report native reasons;34 diagnostic rows change displayed positions
   (32 primary lines,34 unavailable columns omitted), recorded in
   `internal/convert/testdata/n73d_diagnostic_positions.json` under5.7「诊断位置」.
+## Go 取代 Nginx：Web 监听端口的验收边界
+
+维护者在 Config Step B 中明确决定（2026-11-17）：Go 通过公开入口的 `CONFIGFLOW_FRONTEND_DIR` 启用原生 HTTP listener，取代 Python 部署中的 Nginx。API-only 模式没有 Web listener，不能拿它与带 Nginx 的完整 Python 部署比较并据此报缺失功能。
+
+- R206-F17/F18/F19 的 Nginx 配置检查、重载、回滚专属故障列为部分覆盖；Go 验证对应的原生监听失败。用户可见结果应等价：换端口失败时配置不被改动，响应有清楚的中文提示，原端口仍可继续访问。不要求 Go 模拟 Nginx 的进程、配置文件或错误文本。
+- Step B 继续比较完整部署的公开状态、成功换端口、占用拒绝、无变化重试、数据库/保存的端口文件与失败后的旧监听可达性。不同实现的临时端口必须按各自实际分配值验证，不能任意忽略端口字段。
+- O6 中“真实 Nginx + Flask 整体”的叠加验证归入 .32 容器实验和 O9/O14，不在 Step B 内执行。Step B 的 Python前端HTTP peer可以为fake，须明确其边界；Go 端仍从公开入口真正启动原生前端。
+
+之前以 API-only Go 对比完整 Python 部署得到的13个web变体证据已撤回，不能计作业务差异或覆盖通过；原始无效报告仅保留在测试者的临时目录。

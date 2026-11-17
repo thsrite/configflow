@@ -1681,3 +1681,23 @@ current compared=13 design_errors=[] seconds=264.87；exit=0
 ```
 
 继续Web监听器及其余清单，最终.32全量未执行。
+
+## 批次 98：Web完整前端公开边界及已撤回的API-only证据
+
+- 首次Web草稿把API-only Go与有Nginx配置的Python相比，产生13个无效different。核对允许读取的公开cmd/configflow/main.go发现Go需CONFIGFLOW_FRONTEND_DIR启用原生listener，已明确撤回全部13条：统一results/findings恢复至此前有效版本后重新执行正确夹具；未把无效different改成accepted/closed或覆盖通过。原始无效报告仅存/tmp/configdiff-web-api-only-invalid-*，真实Nginx草稿另存/tmp/configdiff-web-nginx-overlay-draft.py，未提交。
+- 维护者明确选择：Go取代Nginx；R206-F17/F18/F19的Nginx专属故障partial，Go验证原生监听失败后配置不变、清楚中文、旧端口可用，不比较Nginx错误文本。真实Nginx+Flask叠加归.32容器实验/O9/O14，不在Step B做。此明确新增授权已写behaviour-changes.md和matrix，未扩展成其他差异的全局豁免。
+- 新Pair选项仅从公开环境启用真正Go frontend，预置各端独立监听端口和同样合成index；其他Pair保持API-only。Python前端HTTP peer为回环fake，私有/etc/nginx只提供状态文件/模板存在性，全部新用例都在任何Nginx命令前返回；当前代码不启动真实Nginx，也不声称覆盖成功换端口或真实重载。
+- R205-S01、R206-S02、R206-F14三新增原编号实际相比通过。状态完整字段准确；同端口noop及占用拒绝前后各端全SQL/files严格不变；旧HTTP listener200、能力为32位hex并保持同值，配置文件未变、占用服务没有收到HTTP。各端port只按实际分配的两个值检查精确body/file路径，其他端口字段未mask。H1105由同次真实占用请求关联。
+- native_network.sh增加private mount namespace，owned临时目录绑定/etc/nginx、退出卸载删除；使用mount表和source/target inode校验安全边界，降权后运行测试。第一次以mountinfo根路径前缀判定失败（/tmp可为独立挂载），已改为精确mountpoint+inode校验；两次fixture错误不计业务结果。读取/对比类新增健康能力丢失、错误HTTP、意外请求、SQL/文件写入故意错误自检，现84项通过。
+- 统一9343变体、原R4286（S688/F2665/B933）、H573、G16；findings仍closed81/accepted5/open18/O12单列1，没有上述无效13条。原R仍差244、H仍差539，另有明确partial/长流程。
+
+```text
+.32 native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups web-listener-complete-readonly,web-listener-complete-occupied,dependency-status-protocol,dependency-managed-modes,dependency-builtin-status --baseline 045f2485
+current compared=15 design_errors=[] seconds=21.93；exit=0
+84 self-checks + deliberate wrong-Go-response detection OK
+独立有效原始报告/tmp/configdiff-web-complete.json
+```
+
+继续Web成功换端口/原生失败、其余路由及helper清单；最终.32全量尚未执行。未读Go业务实现、未推送、未派子agent。
+
+98批提交后rebase至go7521bb5c；behaviour-changes.md仅append冲突，保留集成分支N2原生代理决定和本批维护者Web决定两节。随后同5组15变体在.32重新执行：compared15、design_errors=[]、33.96s、exit0，84自检通过；统一报告更新该5组基线，未把其余未重跑组冒充新基线全量。

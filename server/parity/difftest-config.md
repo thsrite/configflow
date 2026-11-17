@@ -1999,3 +1999,9 @@ R198–R200现已有.32仅lo命名空间中的可信CA/MITM GitHub API及下载f
 R200-F12“外部服务”与F11“无内置目录”在Python公开update入口都由`is_builtin_available()`同一早期分支拒绝（[dependencies.py:336](../../backend/utils/dependencies.py#L336)）；没有另一个专用external guard。F12显式设置可用回环SUB_STORE_URL但没有builtin bundle，验证仍409且不探测外部服务、不查release、不写SQL/files，不能据此声称覆盖一个不存在的额外内部判定。
 
 H037以真实Node的stdin语法检查作为可重复外部工具夹具：wrapper只接受生产传入的精确`--check DATA_DIR/sub-store/runtime/sub-store.download.js`，读取真实下载字节并交给安装的Node编译器检查（不执行），逐次记录参数、字节digest和exit1；--version直接委托真实Node。stdin仅固定诊断源为`[stdin]`，避免两个独立DATA_DIR绝对路径影响前200字节截断。完整Node诊断和中文前缀继续相比，未整体忽略错误消息；原生绝对文件路径的Node诊断形态仍为部分覆盖。H038/H039则保留生产40秒启动/30秒回滚等待，没有缩短定时器；真实Node服务本身仍未由进程fake证明。
+
+### Step B Web 监听器完整部署与原生替代边界
+
+维护者已明确：Go 通过 `CONFIGFLOW_FRONTEND_DIR` 原生提供前端并取代 Nginx；API-only Go 不可作为完整Python部署的对照。R206-F17/F18/F19 的Nginx专属故障列partial，Go侧验证原生监听失败后的配置不变、清楚中文、旧端口可访问；不比较Nginx自身错误文本。真实Nginx+Flask叠加属于.32容器实验/O9/O14，不在Step B中做。见[behaviour-changes.md · Go取代Nginx](behaviour-changes.md#go-取代-nginxweb-监听端口的验收边界)。
+
+当前新fixture由公开入口启动真正Go frontend；Python前端HTTP peer为回环fake、监听配置文件位于私有mount namespace，只做不调用Nginx的状态/同端口noop/绑定前占用拒绝。此fixture不声称覆盖Python真实重载或Go成功换端口；这些尚待进一步实现。已撤回不等价API-only旧夹具的13变体，不计覆盖或findings。

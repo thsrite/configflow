@@ -6,6 +6,7 @@ Unreachable/earlier-guard branches are deliberately absent.
 """
 
 LINKS = {
+    'R206-F14': ('POST /api/settings/web-port', ('H1105',)),
     'R093-F10': ('DELETE /api/nodes/<node_id>', ('H796',)),
     'R093-F11': ('DELETE /api/nodes/<node_id>', ('H796',)),
     'R095-F14': ('POST /api/nodes/delete', ('H799',)),

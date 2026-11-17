@@ -17,6 +17,26 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_listener_observer_detects_health_capability_storage_and_unexpected_requests(self):
+        from cases.web_listener import Readonly
+        observer = Readonly(None, None)
+        observer.before_values[1] = observer.after_values[1] = {'sql': 'unchanged', 'file': 'unchanged'}
+        value = {'old_listener': {'status': 200, 'valid_capability': True, 'same_capability': True},
+                 'python_config_unchanged': True, 'occupied_requests': []}
+        observer.observed = [copy.deepcopy(value), copy.deepcopy(value)]
+        self.assertEqual(observer.compare(Policy()), [])
+        for key, changed in [('old_listener', {**value['old_listener'], 'status': 500}),
+                             ('old_listener', {**value['old_listener'], 'same_capability': False}),
+                             ('old_listener', {**value['old_listener'], 'valid_capability': False}),
+                             ('python_config_unchanged', False), ('occupied_requests', [{'method': 'GET'}])]:
+            observer.observed[1] = {**value, key: changed}
+            self.assertTrue(observer.compare(Policy()), key)
+        observer.observed[1] = copy.deepcopy(value)
+        observer.after_values[1] = {'sql': 'changed', 'file': 'unchanged'}
+        self.assertTrue(observer.compare(Policy()), 'rejected listener request writes SQL')
+        observer.after_values[1] = {'sql': 'unchanged', 'file': 'changed'}
+        self.assertTrue(observer.compare(Policy()), 'rejected listener request writes state')
+
     def test_dependency_update_observer_detects_terminal_protocol_and_storage_mutations(self):
         from cases.dependency_updates import Update, terminal_diffs
         policy = Policy(start=100, end=110)

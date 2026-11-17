@@ -13,7 +13,9 @@ RT_HOST=sunbroke@192.168.0.32 rt \
 
 `--groups precedence,jwt,auth-environments,redaction,startup,auth-routes` 可选择批次；`--binary /path/to/configflow` 可复用本工具生成的测试二进制。最终完整运行使用 .32；命名空间、容器、MITM 或真实网络栈实验只在 .32。
 
-`native_network.sh`在.32建立只有lo的网络命名空间，随后降回调用用户运行测试；不会修改宿主网络、路由或服务。依赖HTTPS fake要求这个边界，拒绝在WSL/普通宿主网络启动。`.63`迭代可直接运行不涉及该fixture的选定groups；默认all及最终全量使用上面的.32命令。网络命名空间内不能下载缺失依赖，首次需要的Go/Python工具链先在测试服务器普通环境安装或缓存。
+`native_network.sh`在.32建立只有lo的网络命名空间和private mount namespace，把owned临时目录绑定到`/etc/nginx`，随后降回调用用户运行测试；不会修改宿主网络、配置或服务。需要服务器安装nginx（Web状态只检查它存在，Step B不会启动真实Nginx）。fixture还验证mount表及临时源目录与挂载目录的inode对应。退出时卸载并删除owned目录。依赖HTTPS fake和Web完整部署要求这个边界，拒绝在WSL/普通宿主网络启动。`.63`迭代可直接运行不涉及该fixture的选定groups；默认all及最终全量使用上面的.32命令。网络命名空间内不能下载缺失依赖，首次需要的Go/Python工具链先在测试服务器普通环境安装或缓存。
+
+Web用例必须启用公开Go frontend入口，不能用API-only模式代表完整部署。Python前端HTTP peer为fake，状态/同端口noop/占用拒绝不调用Nginx；Go前端真实运行，失败后验证旧监听健康能力不变且端口可访问，全SQL及保存的监听文件不变。Nginx专属故障为partial，真实Nginx+Flask叠加留给.32容器/O9/O14，具体合同见behaviour-changes.md的Go取代Nginx条目。
 
 返回码：0 无未批准差异（可以有精确命中已批准决定的严格差异）；1 存在open差异；2 夹具、基础设施或参考前提错误。每次运行先执行比较器篡改自检。Go 未注册的 method/template 标 `go-unimplemented`，保留 Python 参考前提验证，未计通过/失败；未来路由接通后自动比较，绝不从一个业务 404 猜“未实现”。当前注册清单是实际 wiring，`routes.tsv` 的 todo/done 不会把已接通路由永久跳过。
 

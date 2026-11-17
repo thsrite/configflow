@@ -84,6 +84,8 @@ def main():
     groups.update(admin_auth)
     from cases.settings import GROUPS as settings
     groups.update(settings)
+    from cases.web_listener import GROUPS as web_listener
+    groups.update(web_listener)
     from cases.webdav import GROUPS as webdav
     groups.update(webdav)
     from cases.mosdns import GROUPS as mosdns

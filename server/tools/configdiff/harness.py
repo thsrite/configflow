@@ -155,6 +155,8 @@ class Pair:
                        CONFIGDIFF_PROBE_INPUT=str(self.root / 'probe-input.jsonl'),
                        CONFIGDIFF_PROBE_CASE=self.options['probe_case'])
         env.update(self.options.get('environment', {}))
+        if self.options.get('web_frontend') and directory == self.dirs[1]:
+            env['CONFIGFLOW_FRONTEND_DIR'] = str(self.root / 'frontend')
         if 'secret_key' in self.options:
             if self.options['secret_key'] is None:
                 env.pop('JWT_SECRET_KEY', None)
@@ -180,6 +182,18 @@ class Pair:
             raise DesignError('Python seed failed: ' + result.stderr[-5000:])
         for directory in self.dirs:
             shutil.copytree(seed, directory)
+        if self.options.get('web_frontend'):
+            frontend = self.root / 'frontend'
+            frontend.mkdir()
+            (frontend / 'index.html').write_text('synthetic ConfigFlow frontend\n')
+            ports = self.options.get('web_listener_ports')
+            if (not isinstance(ports, (list, tuple)) or len(ports) != 2 or ports[0] == ports[1]
+                    or any(type(port) is not int or not 1 <= port <= 65535 for port in ports)):
+                raise DesignError('complete web deployment requires two assigned listener ports')
+            for directory, port in zip(self.dirs, ports):
+                saved = directory / 'web-listener.json'
+                saved.write_text(json.dumps({'port': port}) + '\n')
+                saved.chmod(0o600)
         for ident, ports in self.options.get('agent_port_pairs', {}).items():
             if len(ports) != 2 or len(set(ports)) != 2 or any(type(p) is not int or not 1 <= p <= 65535 for p in ports):
                 raise DesignError('fake Agent requires two distinct allocated ports')
