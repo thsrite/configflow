@@ -754,8 +754,9 @@ func waitIdle(t *testing.T, key string) {
 
 // Instance ownership must not cause the scheduler to skip its rounds.
 func TestLoopRunsUnderTheInstanceLock(t *testing.T) {
-	f := setup(t, jsonx.Int(0))
+	f := setup(t, jsonx.Int(60))
 	f.updateShared(func(shared *jsonx.Object) { shared.GetList("rule_library")[0].(*jsonx.Object).Set("enabled", false) })
+	f.download(proxiesYAML(), "direct_yaml", nil)
 	owner, err := instance.Acquire(context.Background(), f.repo.DataDir())
 	if err != nil {
 		t.Fatal(err)
@@ -794,6 +795,10 @@ func TestLoopRunsUnderTheInstanceLock(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	if entry := f.status(SubscriptionKey("s")); entry.GetInt("run_count") != 1 || entry.GetString("last_trigger") != "schedule" {
+		t.Fatal("scheduler did not refresh under the instance lock", entry)
+	}
+
 }
 
 func awaitRefresh(t *testing.T, condition func() bool) {

@@ -354,6 +354,9 @@ func TestReviewJobSnapshotDoesNotShareCompletionPointer(t *testing.T) {
 
 func TestReviewAutoLoopRunsUnderInstanceLock(t *testing.T) {
 	ctx := jobFixture(t)
+	if err := editSettings(ctx, "default", func(s *Settings) error { s.AutoProbe = true; return nil }); err != nil {
+		t.Fatal(err)
+	}
 	r, _ := repo.GetRepository(ctx)
 	owner, err := instance.Acquire(ctx, r.DataDir())
 	if err != nil {
@@ -399,4 +402,13 @@ func TestReviewAutoLoopRunsUnderInstanceLock(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	receipts, err := osReadTask(r.DataDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry := receipts["domain_discovery:default"]
+	if entry["last_trigger"] != "schedule" || entry["last_status"] != "skipped" || entry["last_error"] != msgAutoPath {
+		t.Fatal("automatic round did not record its prerequisite result", entry)
+	}
+
 }

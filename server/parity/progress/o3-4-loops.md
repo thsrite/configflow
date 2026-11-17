@@ -1,119 +1,110 @@
 # O3-4 — periodic owner migration
 
-Status: implementation resumed after coordinator approval of Signal.Clear; final acceptance pending.
-go-o3-4 from go@fb43c371 after O3-3 merge. No sub-agents/pushes.
-.32 and .64 are accepted test servers; this task continues all validation on .32.
+Status: implementation complete; author acceptance passed on .32. Ready for coordinator verification
+and the planned joint Opus review of O3-1–O3-4.
+Branch: go-o3-4. No sub-agents, pushes or new dependencies.
+Both .32 and .64 are accepted servers; this task pins .32 for every test/build/vet/format command.
 
-Scope: refresh 30/30 (L1 Keyed, RunNow→Spawn, rows Held, ≤3 joined workers), discovery120/600,
-ranking60/60, metrics30/30+Signal and per-generation activation state, conditional Sub-Store0/5.
-Existing metrics Startup/two flush phases and prune Startup are already done.
+## Implementation
 
-Coordinator-approved API additions/boundaries are recorded in design Clarified in O3-4:
-ClockFrom returns Runtime or real Clock; Periodic.OnStart runs before first wait in ModeRun only;
-Detach drops request cancellation but preserves shutdown cancellation. Business clocks stay unchanged.
-Only listed refresh/discovery detach paths change now; async jobs/general StartBackground remain
-O3-5; Sub-Store leases/lock polling and remaining handler detach moves remain O3-6.
+- refresh: Periodic30/30, L1 Keyed shared by scheduled/manual work, RunNow uses tracked Spawn,
+  rows read Held. Resource lookup still precedes busy checking and the Chinese409 message is unchanged.
+  A round claims due keys, joins at most3 workers and releases unstarted claims when stopping.
+- discovery: Periodic120/600, fresh scope per profile, per-profile failures continue to the next profile.
+  RunAutoTask/automatic rounds and synchronous startJob retain Runtime shutdown cancellation.
+- OxiDNS rankings: Periodic60/60. Slot pauses use ClockFrom, and stopping prevents new Agent/slot work.
+  Business timestamps and existing owner clock seams remain unchanged.
+- metrics: Periodic30/30+Signal. OnStart resets startedAt/attemptedAt/stopping once per ModeRun activation,
+  before the first wait. Manual/proddiff mode does not initialize a schedule. Interval edits wake and reread
+  the configured due interval. Existing history Startup and first/final shutdown saves remain wired.
+- Sub-Store: Periodic0/5 only when builtin exists; Round calls Tick. Persisted state.json monotonic time
+  remains in the owner clock's kernel-uptime domain. Prune Startup remains unconditional.
+- lifecycle: ClockFrom, shutdown-aware Detach, Periodic.OnStart and Signal.Clear. Detach preserves values
+  and ignores disconnects while respecting the originating Runtime's grace−2s cancellation. Clear is a
+  nonblocking receive of at most one pending notification; its only production consumers are metrics
+  OnStart and ResetFlushState. Notify and normal waiting semantics are unchanged.
 
-Framework step: ClockFrom/Detach/OnStart implemented with fake-clock/lifetime tests.
-.32: lifecycle gofmt and vet pass; `go test -race -count=3 ./internal/lifecycle/...` passes
-(7.286s/1.015s); `go vet ./...` passes; full suite is running before owner sync.
-Next: owner migrations and tests,
-complete .32 gates (all enabled difftests/proddiff), rebase go and clean hand-back.
+All interface additions/boundaries are coordinator-approved and recorded under Clarified in O3-4 in
+[the design](../../design/o3-concurrency.md). Signal.Clear was explicitly approved after a fake-clock
+regression demonstrated that a previous shutdown wake shortened the next generation's first30s wait.
+The saved metrics draft has been applied; no pending API decision remains.
 
-Framework commit: 798f18d7. Its .32 full suite completed successfully (p=4, count=1).
-Second step: refresh/discovery/ranking owners registered as Periodic with actual first/after-round delays.
-Refresh owns an L1 Keyed shared by RunNow and due rounds; lookup precedes busy checking, rejection
-releases the key, queued claims release on stopping, <=3 workers are joined. Rows read Held.
-Refresh detached work and synchronous discovery jobs keep Runtime cancellation while ignoring disconnects.
-Discovery preserves per-profile fresh scopes/failure continuation. Ranking slot pauses use ClockFrom;
-business timestamps and existing seams remain unchanged.
-.32 gofmt and `go vet ./...` pass. Focused migration regressions under `-race -count=3`:
-refresh 1.509s, discovery 1.272s, monitor 1.246s. Full package race is deferred to the final run with
-an adequate timeout: early broad count=3 run was interrupted to avoid repeating the large unchanged
-SQLite corpora three times; a diagnostic 45s refresh run reached the unchanged recorded corpus and
-expired while building a SQLite fixture, not while waiting on a lock. One new cancellation test's
-receipt assertion was corrected: at the cancellation deadline storage may abort, while the tracked
-worker must exit and release its key. Request cancellation still permits completion (existing C15 tests).
-Next: metrics/Signal activation and conditional Sub-Store idle, followed by complete final gates.
+Remaining O3 work is outside this step: tasks.StartBackground/metrics manual/discovery async jobs(O3-5),
+Sub-Store work/control leases and polling plus other handler-level detach moves(O3-6).
+No production environment/flag switch was added to disable loops.
 
-Owner migration commit: f86d4de8. Sub-Store next step replaces Monitor with conditional Periodic0/5,
-Round delegates to Tick; work/control leases, readiness polling and persisted Monotonic stay unchanged.
-Fake-clock test executes Tick at0 and5s after round completion and checks state.json still uses1234.5
-from the existing owner clock, independent of the Runtime wall clock. Builtin/external Wire registration
-is tested with independent registries. .32 gofmt/vet pass; focused race count3 passes metrics1.173s,
-substore1.043s. Metrics Manual no-activation check is also green. Metrics restart/wake finalization awaits
-the coordinator's Signal.Clear API decision (pending old wake must not shorten the new first30s wait).
+## Tests and findings
 
-Broader .32 race completed with count1/p4/timeout30m: lifecycle3.093s, lifecycletest1.014s,
-lockx3.369s, refresh130.141s, discovery9.501s, monitor252.189s, substore7.106s; their ordinary
-(non-enabled) difftest packages also pass. The large recorded/SQLite corpora require normal timeouts.
-Enabled configflow_difftest run is in progress (agents passed125.847s).
-Pending Signal clarification has a concrete regression: .32 `go test -race -count=1 -timeout=30s
--run ^TestFlushPeriodicActivationWakeAndRestart$ ./internal/agents/metrics` fails at
-`old wake interrupted new first delay` without pending-signal cleanup. No reset of sync.Once or
-production timer disabling is used as a workaround. Coordinator session is currently quota-blocked;
-the API question was also presented to the maintainer.
+Fake-clock tests cover actual owner activation, first delay, pauses after round completion, metrics wake,
+restart reset and Manual no-activation/next-run behavior. Instance ownership regressions drive the real
+refresh/discovery/ranking rounds. Further assertions check the scheduled refresh receipt, discovery's
+prerequisite receipt and retired-Agent ranking cleanup, not only callback execution.
 
-All10 enabled difftest packages passed on .32 with the draft metrics migration (no Signal.Clear
-implemented yet): agents125.847s, subscriptions85.197s, discovery2.417s, health14.643s,
-httpx1.633s, mosdns2.090s, refresh3.983s, subs1.647s, substore5.456s, webdav18.154s.
-Sub-Store commit:9682b55b. Further regression checks (activation panic cleanup, real RunNow
-completion after request disconnect) pass race count3: lifecycle1.017s/refresh1.207s;
-whole-tree gofmt-l is empty and go vet ./... passes.
+Refresh regressions cover <=3 joined workers, stopping admission/release, shared running rows, lookup-before-
+busy, request-disconnect completion, cancellation reaching download I/O and release after rejected Spawn.
+Discovery's synchronous job test checks a fresh scope and cancellation reaching I/O. Lifecycle tests cover
+old-generation cancellation, no per-detach watcher leak, OnStart panic cleanup and startup registration.
+Signal tests check empty/pending/coalesced Clear and effective subsequent Notify.
 
-To leave a compiling, passing source tree while awaiting the required contract decision, the metrics
-migration draft (including failing restart regression and passing manual/wake tests) is preserved as:
-`$(git rev-parse --git-path o3-4-metrics-pending.patch)` (worktree git metadata, not pushed).
-`git apply --check` succeeds. After approval, apply that patch, add Signal.Clear with a nonblocking
-channel drain, use it in metrics OnStart and ResetFlushState, add a Signal regression, document the
-approved extension and run metrics/lifecycle tests. Then repeat the complete final gate on the complete
-O3-4 tree (race, both tags, full, all enabled difftests, proddiff), rebase go and hand back clean.
-The current checked-in metrics loop remains legacy until that decision; this is not an O3-4 completion claim.
+No unresolved product finding or external API/message difference. A new metrics test originally passed
+Background to its independent Runtime shutdown hook, opening a default test repository in the package
+folder. The fixture now passes its bound repository context and asserts the shutdown receipt's location;
+synthetic artifacts were removed and no package artifacts remain. No product fallback contract changed.
 
-## Clean partial hand-back (awaiting API decision)
+Focused race count3 before the final batch passed: lifecycle7.376s/lifecycletest1.024s/metrics19.219s;
+the strengthened metrics timing/repository assertions passed metrics1.560s/lifecycle1.032s.
 
-Rebased onto go@3c8a1760 without conflicts. Current implementation commits:
-- 32edd0db: framework ClockFrom/Detach/OnStart, context lifetime/activation tests and agreed design.
-- b7a2b658: refresh/discovery/ranking Periodics and L1/tracked refresh jobs.
-- 629d066e: conditional Sub-Store idle Periodic, stored monotonic domain unchanged.
-- 03dce773: activation panic/disconnect completion regressions and explicit scope/status.
+## Final acceptance
 
-Checks completed on .32; no local heavy commands, no pushes or sub-agents:
+Pinned runner: `RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc '…'`.
+These commands run sequentially in that shell, with failure preserving the failing log and exit status:
 
 ```sh
-# Full changed-owner race (before the final test-only additions; these additions passed focused race3):
-RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && go test -race -p=4 -timeout=30m -count=1 ./internal/lifecycle/... ./internal/lockx/... ./internal/refresh/... ./internal/discovery/... ./internal/agents/monitor/... ./internal/substore/... > /tmp/o34-owner-full-race.log 2>&1; code=$?; tail -n 20 /tmp/o34-owner-full-race.log; exit "$code"'
-# All enabled differential packages, on the draft tree before metrics was saved out:
-RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'set -e; cd server; for pkg in $(go list ./... | rg "/difftest$"); do CONFIGFLOW_DIFF=1 go test -tags=configflow_difftest -p=4 -count=1 -timeout=30m "$pkg"; done > /tmp/o34-difftest.log 2>&1; tail -n 16 /tmp/o34-difftest.log'
-# Clean partial tree after rebase, metrics still legacy:
-RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'set -e; cd server; test -z "$(gofmt -l internal/ tools/ cmd/)"; go vet ./...; go test -p=4 -timeout=30m -count=1 ./... > /tmp/o34-partial-full.log 2>&1; tail -n 12 /tmp/o34-partial-full.log; for tag in configflow_proddiff configflow_difftest; do go test -tags="$tag" -count=1 ./internal/lifecycle/...; done; cd ..; server/scripts/proddiff.sh > /tmp/o34-partial-proddiff.log 2>&1; grep -E "^self-check:|^baseline:|^proddiff:" /tmp/o34-partial-proddiff.log'
+set -euo pipefail
+cd server
+test -z "$(gofmt -l internal/ tools/ cmd/)"
+go vet ./...
+go test -race -p=4 -timeout=30m -count=1 ./internal/lifecycle/... ./internal/lockx/... ./internal/refresh/... ./internal/discovery/... ./internal/agents/monitor/... ./internal/agents/metrics/... ./internal/substore/... ./internal/httpx/... ./cmd/... > /tmp/o34-final-race.log 2>&1
+go test -p=4 -timeout=30m -count=1 ./... > /tmp/o34-final-full.log 2>&1
+for tag in configflow_proddiff configflow_difftest; do
+ go test -tags="$tag" -count=1 ./internal/lifecycle/...
+ go test -tags="$tag" -run "^$" ./cmd/configflow
+done
+for pkg in $(go list ./... | rg "/difftest$"); do
+ CONFIGFLOW_DIFF=1 go test -tags=configflow_difftest -p=4 -count=1 -timeout=30m "$pkg"
+done > /tmp/o34-final-difftest.log 2>&1
+cd ..
+server/scripts/proddiff.sh > /tmp/o34-final-proddiff.log 2>&1
 ```
 
-Final command exited0: gofmt empty, vet/full all green; both lifecycle tags0.044s (lifecycletest0.003s).
+Current output: GOFMT_PASS, VET_PASS, RACE_PASS, FULL_PASS; both TAG_PASS markers.
+Final race: lifecycle3.115s/lifecycletest1.023s, lockx3.432s, refresh252.626s, discovery9.070s,
+monitor199.662s, metrics7.878s, substore8.811s, httpx33.585s, cmd/configflow105.981s; nested packages pass.
+Full suite exited0. Both tags build main and pass lifecycle tests (0.047s/0.049s, helper0.004s).
+All10 enabled difftest packages passed: agents119.798s, subscriptions74.262s, discovery2.140s,
+health13.560s, httpx1.340s, mosdns1.514s, refresh3.318s, subs1.647s, substore6.004s,
+webdav17.544s. DIFFTEST_PASS.
 Proddiff: all23 self-checks PASS,2831 cases, coverage_regressions0, unmapped_routes0,
-new=0/stale=0. go_disabled_background4 is expected: no builtin Sub-Store exists in this test image,
-so sub-store-idle is not registered; no proddiff exemption/name whitelist was added.
+new=0/stale=0; final runner exited0 with ALL_PASS. go_disabled_background4 is expected because
+this image has no builtin Sub-Store, so sub-store-idle is not registered. No exemption was added.
 
-The only remaining scope is metrics Periodic+Signal migration and complete-tree final verification after
-Signal reset approval. The preserved patch path is
-`/Users/sunbroke/program/configflow/.git/worktrees/go-n7-1/o3-4-metrics-pending.patch`.
-Apply from the git root with `git apply "$(git rev-parse --git-path o3-4-metrics-pending.patch)"`.
-It has not been applied to the clean hand-back tree. Do not merge this branch as completed O3-4 yet.
+The final test-only instance-boundary assertions are checked afterward with:
 
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt --back server/internal/refresh/refresh_test.go --back server/internal/discovery/review_c37_test.go --back server/internal/agents/monitor/a07_review_test.go -- bash -lc 'cd server && gofmt -w internal/refresh/refresh_test.go internal/discovery/review_c37_test.go internal/agents/monitor/a07_review_test.go && test -z "$(gofmt -l internal/ tools/ cmd/)" && go vet ./... && go test -race -count=3 -timeout=5m -run "TestLoopRunsUnderTheInstanceLock|TestReviewAutoLoopRunsUnderInstanceLock|TestReviewRankingLoopRunsUnderInstanceLock" ./internal/refresh ./internal/discovery ./internal/agents/monitor'
+```
 
-## Resumed after Signal.Clear approval
+Before the batch, rebase onto go@0b367ae5 completed without conflicts (N8-3/A11 included).
+Implementation commits after that rebase:
+- b96e0a3b: framework clock/detach/activation.
+- b24fd2d5: refresh/discovery/ranking migrations.
+- 8dc55ecf: conditional Sub-Store scheduling.
+- 405c2ec1: activation panic and disconnect regressions.
+- c097c97e: earlier partial acceptance record (superseded by this complete report).
+- d19d1a94: metrics migration and approved Signal.Clear.
 
-Coordinator confirmed the nonblocking Clear API (at most one pending notification, Notify/wait unchanged).
-The saved metrics patch has been applied; Clear is called only from metrics OnStart/ResetFlushState.
-Signal tests cover no residual wake and successful subsequent Notify. Design Clarified in O3-4 updated.
-Metrics Periodic30/30 initializes memory per ModeRun activation, resets startedAt/attemptedAt/stopping,
-uses Signal for interval changes, and retains the existing Startup/two-phase save hooks. ModeManual
-never initializes the schedule. Final acceptance will supersede the partial hand-back above.
-
-Restored metrics migration + Signal.Clear: .32 gofmt/vet passed; full lifecycle/metrics race count3
-passed (lifecycle7.376s, lifecycletest1.024s, metrics19.219s). A shutdown test initially passed a bare
-Background context to its independent Runtime hook, causing the test-only default repository to open
-in the package directory. Corrected the fixture to pass its bound repository context, removed those
-synthetic artifacts, and added an assertion that the shutdown receipt is written to the fixture repository.
-Also strengthened the fake-clock test with a7s round duration and a29+1s next pause. Focused race count3
-then passed metrics1.560s/lifecycle1.032s. No product repository fallback or shutdown contracts changed.
+The final test-only boundary assertions passed race count3: refresh2.173s, discovery2.044s,
+monitor2.286s; whole-tree gofmt-l stayed empty and go vet ./... passed afterward.
+Only tests/report changed after the complete production-code gate. No package-local test artifacts remain.
+Final rebase/clean-worktree confirmation and final commit id are included in the hand-back message.
+There is no remaining O3-4 work; O3-5/O3-6 scope listed above is intentionally left to those steps.

@@ -207,6 +207,9 @@ func TestReviewRankingLoopRunsUnderInstanceLock(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer owner.Release()
+	store := GetRankingStore(repository.DataDir())
+	stamp := LastCompleteSlotEnd(nowSeconds()) - HistorySlot
+	addSlot(t, store, "removed-agent", "records", stamp, testSlot(1, i64(0), map[string]*Counts{"domains": NewCounts("example.com.", 1)}))
 	clock := lifecycletest.NewClock(time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC))
 	reg := lifecycle.NewRegistry()
 	spec := rankingPeriodic()
@@ -246,4 +249,9 @@ func TestReviewRankingLoopRunsUnderInstanceLock(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	fetched, err := store.Fetched("removed-agent", "records", []int64{stamp})
+	if err != nil || fetched[stamp] {
+		t.Fatal("ranking round did not remove retired Agent history under the instance lock", fetched, err)
+	}
+
 }
