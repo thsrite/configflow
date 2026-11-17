@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"maps"
 	"net/netip"
 	"slices"
@@ -58,22 +59,50 @@ func RuleSourceIssue(item *RuleSet, library *LibraryRule, requireLibrary bool) s
 	return ""
 }
 
-// FakeIPNetwork is the fake-ip network of the Mihomo base config
-// (dns.fake-ip-range of the custom YAML), 198.18.0.0/16 by default. The YAML
-// is read through yamlx like the Mihomo generator reads it, so the router
-// routes the range Mihomo uses. Invalid YAML uses the established default.
-func FakeIPNetwork(customConfig string) netip.Prefix {
+// FakeIPNetwork reads the IPv4 fake-IP range of a Mihomo base configuration.
+// Ordinary syntax errors and absent/invalid range values use the established
+// default; facade policy and unsafe-alias errors are returned before planning.
+func FakeIPNetwork(customConfig string) (netip.Prefix, error) {
 	doc, err := yamlx.Parse([]byte(customConfig))
+	if err != nil && !errors.Is(err, yamlx.ErrSyntax) {
+		return netip.Prefix{}, err
+	}
 	value := yamlx.Resolve(yamlx.Get(yamlx.Get(doc, "dns"), "fake-ip-range"))
 	var text string
-	if value != nil && value.Kind == yaml.ScalarNode && value.ShortTag() == "!!str" {
-		text = value.Value
+	if value != nil && value.Kind == yaml.ScalarNode {
+		switch value.ShortTag() {
+		case "!!null", "!!bool", "!!int", "!!float":
+		default:
+			text = value.Value
+		}
 	}
 	if network, ok := netipx.ParseNetwork4(text, false); ok && err == nil {
-		return network
+		return network, nil
 	}
 	network, _ := netipx.ParseNetwork4(DefaultFakeIPRange, false)
-	return network
+	return network, nil
+}
+
+// desiredYAMLError retains both the existing HTTP validation classification
+// and the native reason so callers can inspect D1/alias errors without parsing text.
+type desiredYAMLError struct {
+	validation *ValidationError
+	cause      error
+}
+
+func (e *desiredYAMLError) Error() string   { return e.validation.Error() }
+func (e *desiredYAMLError) Unwrap() []error { return []error{e.validation, e.cause} }
+
+func (d desiredProfile) label() string {
+	id, _ := jsonString(d.ProfileID)
+	if id == "" {
+		id, _ = jsonString(d.ID)
+	}
+	name, _ := jsonString(d.Name)
+	if name != "" && id != "" {
+		return name + "（" + id + "）"
+	}
+	return cmp.Or(name, id, messageCurrentProfile)
 }
 
 // ProxyCIDR is a collapsed network and the sources inside it.
@@ -127,7 +156,10 @@ var RulesetContent = func(profile json.RawMessage, item RuleSet, library *Librar
 }
 
 type desiredProfile struct {
-	Mihomo struct {
+	ID        json.RawMessage `json:"id"`
+	ProfileID json.RawMessage `json:"profile_id"`
+	Name      json.RawMessage `json:"name"`
+	Mihomo    struct {
 		CustomConfig string `json:"custom_config"`
 	} `json:"mihomo"`
 	ProxyGroups []json.RawMessage `json:"proxy_groups"`
@@ -162,6 +194,10 @@ func ComputeDesired(profile json.RawMessage, gateway string, ruleSets []string, 
 	if err := json.Unmarshal(profile, &doc); err != nil {
 		return nil, err
 	}
+	fakeIP, err := FakeIPNetwork(doc.Mihomo.CustomConfig)
+	if err != nil {
+		return nil, &desiredYAMLError{validation: &ValidationError{Message: fmt.Sprintf(messageDesiredYAML, doc.label(), err)}, cause: err}
+	}
 	if loader == nil {
 		loader = func(item RuleSet, library *LibraryRule) (string, error) {
 			return RulesetContent(profile, item, library)
@@ -172,7 +208,6 @@ func ComputeDesired(profile json.RawMessage, gateway string, ruleSets []string, 
 		d.Warnings = append(d.Warnings, message)
 		d.BlockingWarnings = append(d.BlockingWarnings, message)
 	}
-	fakeIP := FakeIPNetwork(strings.TrimSpace(doc.Mihomo.CustomConfig))
 	d.FakeIPRange = fakeIP.String()
 	sources := map[netip.Prefix][]string{fakeIP: {"fake-ip"}}
 	sources6 := map[netip.Prefix][]string{}

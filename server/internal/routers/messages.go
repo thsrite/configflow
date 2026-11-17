@@ -3,7 +3,9 @@ package routers
 // Router and DHCP messages are kept here so boundary tests and drivers share
 // one source for user-visible Chinese text.
 const (
-	permissionHelp = "请用管理员登录 WinBox，在 System → Users 找到 ConfigFlow 使用的账号并确认 Group；" +
+	messageDesiredYAML    = "配置「%s」的 Mihomo 基础 YAML 无效：%v"
+	messageCurrentProfile = "当前配置"
+	permissionHelp        = "请用管理员登录 WinBox，在 System → Users 找到 ConfigFlow 使用的账号并确认 Group；" +
 		"在 Groups 中为该账号的专用用户组启用 read、write、api、rest-api，重点检查 write。" +
 		"保存后重新生成发布预览；连接测试成功不代表已有写入权限。"
 

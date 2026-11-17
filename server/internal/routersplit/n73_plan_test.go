@@ -13,6 +13,7 @@ func TestN73OpaqueValuesKeepTheRouterPlan(t *testing.T) {
 	for _, pair := range [][2]string{
 		{"extra: opaque\n", "extra: !custom opaque\n"},
 		{"", "? [a, b]\n: opaque\n"},
+		{"dns: {fake-ip-range: 198.19.0.0/16}\n", "dns: {fake-ip-range: !custom 198.19.0.0/16}\n"},
 		{"dns: {fake-ip-range: 198.19.0.0/16}\n", "dns: {fake-ip-range: 198.19.0.0/16, ? [a, b]: opaque}\n"},
 		{"extra: [one, two]\n", "extra: !!python/tuple [one, two]\n"},
 		{"extra: {value: opaque}\n", "extra: !custom {value: opaque}\n"},

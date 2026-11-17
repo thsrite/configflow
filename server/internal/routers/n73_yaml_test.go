@@ -1,8 +1,8 @@
 package routers
 
 import (
+	"encoding/json"
 	"fmt"
-	"net/netip"
 	"strings"
 	"testing"
 	"time"
@@ -21,13 +21,13 @@ func TestN73FakeIPYAMLGraphs(t *testing.T) {
 		if _, err := yamlx.Parse([]byte(input)); err == nil {
 			t.Fatal("unsafe graph accepted by facade")
 		}
-		if got := FakeIPNetwork(input).String(); got != netip.MustParsePrefix(DefaultFakeIPRange).Masked().String() {
-			t.Fatalf("invalid document used for routing: %s", got)
+		if got, err := FakeIPNetwork(input); err == nil || got.IsValid() {
+			t.Fatalf("unsafe document used for routing: %s %v", got, err)
 		}
 	}
 	input := "dns: &dns {fake-ip-range: 198.19.0.0/16}\nother: *dns\n"
-	if got := FakeIPNetwork(input).String(); got != "198.19.0.0/16" {
-		t.Fatalf("ordinary shared mapping: %s", got)
+	if got, err := FakeIPNetwork(input); err != nil || got.String() != "198.19.0.0/16" {
+		t.Fatalf("ordinary shared mapping: %s %v", got, err)
 	}
 }
 
@@ -35,8 +35,23 @@ func FuzzFakeIPYAML(f *testing.F) {
 	f.Add("dns: {fake-ip-range: 198.19.0.0/16}")
 	f.Add("x: &x [*x]")
 	f.Fuzz(func(t *testing.T, text string) {
-		if !FakeIPNetwork(text).IsValid() {
+		network, err := FakeIPNetwork(text)
+		if err == nil && !network.IsValid() {
 			t.Fatal("invalid desired prefix")
+		}
+		profile, marshalErr := json.Marshal(struct {
+			Mihomo struct {
+				Custom string `json:"custom_config"`
+			} `json:"mihomo"`
+		}{Mihomo: struct {
+			Custom string `json:"custom_config"`
+		}{Custom: text}})
+		if marshalErr != nil {
+			t.Fatal(marshalErr)
+		}
+		plan, planErr := ComputeDesired(profile, "192.0.2.1", nil, nil)
+		if planErr != nil && plan != nil || planErr == nil && plan == nil {
+			t.Fatalf("inconsistent plan/error: %#v %v", plan, planErr)
 		}
 	})
 }
@@ -48,7 +63,11 @@ func TestN73PlainDepthBoundary(t *testing.T) {
 		t.Run(fmt.Sprint(depth), func(t *testing.T) {
 			nested := strings.Repeat("[", depth) + "0" + strings.Repeat("]", depth)
 			started := time.Now()
-			got := FakeIPNetwork("dns: {fake-ip-range: 198.19.0.0/16}\nextra: " + nested).String()
+			network, err := FakeIPNetwork("dns: {fake-ip-range: 198.19.0.0/16}\nextra: " + nested)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := network.String()
 			want := "198.19.0.0/16"
 			if depth > 10000 {
 				want = "198.18.0.0/16"

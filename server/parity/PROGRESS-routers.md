@@ -9,7 +9,10 @@ Planning audit: 2026-11-16, worktree `configflow-go`, branch `go` at 7b1b90b5 (p
 Branch `go-n7-3c`; **only YAML reading and base graph handling**; no router write
 logic changes. Desired fake-IP and router-split base/shape/generation reads use
 Parse/Node. Tagged/untagged values and composite-key/key-removed documents produce
-identical complete router plans. Opaque composite keys are preserved in free-form
+identical complete router plans. D1/other policy and both unsafe-alias categories now
+return typed Chinese errors with profile/reason before any desired plan or caller
+I/O; only actual ErrSyntax retains the default. Three loopback RouterOS cases
+assert no plan and zero requests, with a live fallback control. Opaque composite keys are preserved in free-form
 base YAML, ignored by string-key desired/TUN schema navigation; no default range
 is substituted merely because unrelated metadata has a composite key.
 

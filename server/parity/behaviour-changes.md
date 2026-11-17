@@ -255,3 +255,14 @@ Coordinator decisions, 2026-11-17; `design/n7-n8.md` §§5.4/5.7.
 - Router desired reading and router-split base documents use the shared policies. Ordinary generated
   output remains semantically equivalent; native YAML typing, timestamp text and the approved
   rejection classes are counted individually in the N7-3c migration gate. No router-write logic changes.
+
+### N7-3c HR desired-plan refusal (coordinator decision)
+
+Router desired reading previously substituted the default fake-IP network when
+YAML was refused. It now stops on D1/other ErrPolicy, recursive aliases and alias
+budget errors, returning a typed Chinese validation error identifying the profile
+and Mihomo base configuration, plus the native key/line/reason. No desired plan is
+returned and no caller-supplied work/device request starts. Only true ErrSyntax
+keeps the old default fallback. No router-writing code changes. Three D1/budget/
+self-reference loopback RouterOS regressions assert zero requests, with a live
+ordinary-syntax fallback control. R01 corpus: 3 D1 + 1 other policy refusal.

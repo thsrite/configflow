@@ -5,9 +5,9 @@ import (
 	"compress/gzip"
 	"encoding/json"
 	"errors"
-	"net/netip"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 
 	"configflow/internal/routerdoc"
@@ -46,25 +46,26 @@ func TestR01Corpus(t *testing.T) {
 		counts[row.Fn]++
 		got, gotErr := r01Call(t, row.Fn, row.In)
 		ok := false
-		switch {
-		case row.Err != nil && gotErr != nil:
-			ok = gotErr.Error() == row.Err[1] || !userMessage(row.Err[0])
-			if ok && !userMessage(row.Err[0]) {
-				internal[row.Fn+": "+row.Err[0]]++
-			}
-		case row.Err == nil && gotErr == nil:
-			ok = sameJSON(t, got, row.Out)
-			if !ok && row.Fn == "compute_desired" && desiredDuplicatePolicy(t, row.In, got, row.Out) {
-				ok = true
-				internal["N7-3 D1: duplicate document refused, default fake-IP"]++
-			}
-			if !ok && row.Fn == "stored" && readerDefaults(t, got, row.Out) {
-				ok = true
-				internal["stored: absent setting written with the reader default"]++
-			}
-			if !ok && row.Fn == "normalize" && reprField(t, got, row.Out) {
-				ok = true
-				internal["normalize: list/dict text field (Python repr)"]++
+		if row.Fn == "compute_desired" && desiredReaderPolicy(t, row.In, got, gotErr) {
+			ok = true
+			internal["N7-3 reader policy: no desired plan"]++
+		} else {
+			switch {
+			case row.Err != nil && gotErr != nil:
+				ok = gotErr.Error() == row.Err[1] || !userMessage(row.Err[0])
+				if ok && !userMessage(row.Err[0]) {
+					internal[row.Fn+": "+row.Err[0]]++
+				}
+			case row.Err == nil && gotErr == nil:
+				ok = sameJSON(t, got, row.Out)
+				if !ok && row.Fn == "stored" && readerDefaults(t, got, row.Out) {
+					ok = true
+					internal["stored: absent setting written with the reader default"]++
+				}
+				if !ok && row.Fn == "normalize" && reprField(t, got, row.Out) {
+					ok = true
+					internal["normalize: list/dict text field (Python repr)"]++
+				}
 			}
 		}
 		if !ok {
@@ -229,31 +230,32 @@ func r01Call(t *testing.T, fn string, in json.RawMessage) (any, error) {
 	return nil, nil
 }
 
-// desiredDuplicatePolicy checks the complete independently recorded response,
-// changing only the fake-IP fields of these three D1-refused documents.
-func desiredDuplicatePolicy(t *testing.T, input json.RawMessage, got any, want json.RawMessage) bool {
+// desiredReaderPolicy requires a typed rejection for precisely the native
+// policy/unsafe-alias inputs. No plan or default-range substitution is allowed.
+func desiredReaderPolicy(t *testing.T, input json.RawMessage, got any, actualErr error) bool {
 	t.Helper()
-	args := decode[struct {
+	var args struct {
 		Profile struct {
 			Mihomo struct {
 				Custom string `json:"custom_config"`
 			}
 		}
-	}](t, input)
-	_, err := yamlx.Parse([]byte(args.Profile.Mihomo.Custom))
-	if !errors.Is(err, yamlx.ErrDuplicateKey) {
+	}
+	if json.Unmarshal(input, &args) != nil {
 		return false
 	}
-	expected := decode[map[string]any](t, want)
-	cidrs, ok := expected["proxy_cidrs"].([]any)
-	if !ok || len(cidrs) != 1 {
+	_, parseErr := yamlx.Parse([]byte(args.Profile.Mihomo.Custom))
+	var kind error
+	for _, candidate := range []error{yamlx.ErrPolicy, yamlx.ErrAliasRecursion, yamlx.ErrAliasBudget} {
+		if errors.Is(parseErr, candidate) {
+			kind = candidate
+			break
+		}
+	}
+	if kind == nil {
 		return false
 	}
-	cidr, ok := cidrs[0].(map[string]any)
-	if !ok || !reflect.DeepEqual(cidr["sources"], []any{"fake-ip"}) {
-		return false
-	}
-	expected["fake_ip_range"], cidr["cidr"] = netip.MustParsePrefix(DefaultFakeIPRange).Masked().String(), netip.MustParsePrefix(DefaultFakeIPRange).Masked().String()
-	raw, err := json.Marshal(expected)
-	return err == nil && sameJSON(t, got, raw)
+	plan, ok := got.(*Desired)
+	var validation *ValidationError
+	return ok && plan == nil && errors.As(actualErr, &validation) && errors.Is(actualErr, kind) && strings.HasSuffix(actualErr.Error(), parseErr.Error())
 }
