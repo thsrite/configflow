@@ -76,6 +76,15 @@ func newWorld(t *testing.T) *world {
 	if err != nil {
 		t.Fatal(err)
 	}
+	_, err = s.Repo.UpdateSystemTransaction(s.Context(), func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
+		system.GetObject("system_config").Set("config_token", "fixture-capability")
+		system.GetObject("system_config").Set("rule_proxy_token", "fixture-local-secret")
+		system.Set("backup", jsonx.Obj("webdav_username", "fixture-user", "webdav_password", "fixture-password", "webdav_url", ""))
+		return nil, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(s.DataDir, "task-status.json"), []byte(`{"subscription:s":{"last_status":"success","last_run_at":"2026-11-18T08:00:00Z","run_count":"3","failure_count":"1"},"rule_source:r":{"last_status":"success","last_run_at":"2026-11-18T08:00:00Z"}}`), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -360,13 +369,14 @@ func TestC07ExpectedNonFiniteBindingDifference(t *testing.T) {
 func TestC07NotificationReadAndCombinedRedaction(t *testing.T) {
 	w := newWorld(t)
 	message := "请求失败 https://fixture-user:fixture-password@download.example.com/feed?token=fixture-capability password=fixture-local-secret"
-	status, err := json.Marshal(map[string]map[string]string{"subscription:s": {"last_status": "failed", "last_run_at": "2026-11-18T10:00:00Z", "run_count": "3", "failure_count": "1", "last_error": message}})
+	status, err := json.Marshal(map[string]map[string]string{"subscription:s": {"last_status": "failed", "last_run_at": "2026-11-18T10:00:00Z", "run_count": "3", "failure_count": "1", "last_error": message}, "rule_source:r": {"last_status": "success", "last_run_at": "2026-11-18T08:00:00Z"}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	commands := w.commands([]command{
 		{Method: "GET", Path: "/api/tasks", Write: map[string]json.RawMessage{"task-status.json": status}},
 		{Method: "GET", Path: "/api/notifications"},
+		{Method: "GET", Path: "/api/logs/tail", Write: map[string]json.RawMessage{"app.log": []byte(`"INFO: fixture-capability fixture-local-secret fixture-password"`)}},
 		{Method: "POST", Path: "/api/notifications/read", Body: `{"versions":{"task:subscription:s":"2026-11-18T12:00:00.123456+00:00"}}`},
 		{Method: "GET", Path: "/api/notifications"},
 		{Method: "POST", Path: "/api/notifications/read", Body: `{"versions":{"task:subscription:s":"stale"}}`},
@@ -375,6 +385,11 @@ func TestC07NotificationReadAndCombinedRedaction(t *testing.T) {
 	for i, c := range commands {
 		got := send(t, w, c)
 		compare(t, w, c, got, answers[i], true)
+		for _, secret := range []string{"fixture-password", "fixture-capability", "fixture-local-secret"} {
+			if bytes.Contains(got.Body, []byte(secret)) {
+				t.Fatal("public response leaked stored credential", c.Path, secret)
+			}
+		}
 		if i == 1 {
 			for _, secret := range []string{"fixture-user", "fixture-password", "fixture-capability", "fixture-local-secret"} {
 				if bytes.Contains(got.Body, []byte(secret)) {

@@ -43,18 +43,31 @@ func TestIntervalPresentationFailureCannotUndoSuccessfulResponse(t *testing.T) {
 	calls := 0
 	t.Cleanup(tasks.SetRows(tasks.SlotSubscriptions, func(context.Context, *jsonx.Object) ([]*jsonx.Object, error) {
 		calls++
-		if calls > 1 {
-			return nil, errors.New("synthetic presentation failure")
-		}
-		return nil, nil
+		return nil, errors.New("synthetic presentation failure")
 	}))
 	response := s.Put("/api/tasks/interval", httpxtest.JSON(map[string]any{"key": "subscription:s", "interval_seconds": 600})).WantStatus(200)
 	if response.Object().Value("task") != nil {
 		t.Fatal(response.Text())
 	}
+	if calls != 1 {
+		t.Fatal("presentation read before commit or retried", calls)
+	}
 	shared, err := s.Repo.GetShared(s.Context())
 	if err != nil || shared.GetList("subscriptions")[0].(*jsonx.Object).GetInt("interval") != 600 {
 		t.Fatal("save did not complete", err)
+	}
+}
+
+func TestBadPresentationCannotOverrideIntervalValidation(t *testing.T) {
+	s := setup(t)
+	t.Cleanup(tasks.SetRows(tasks.SlotSubscriptions, func(context.Context, *jsonx.Object) ([]*jsonx.Object, error) {
+		t.Error("invalid interval read presentation")
+		return nil, errors.New("synthetic presentation failure")
+	}))
+	s.Put("/api/tasks/interval", httpxtest.JSON(map[string]any{"key": "subscription:s", "interval_seconds": 30})).WantStatus(400)
+	shared, err := s.Repo.GetShared(s.Context())
+	if err != nil || shared.GetList("subscriptions")[0].(*jsonx.Object).GetInt("interval") != 86400 {
+		t.Fatal("invalid interval committed", err)
 	}
 }
 
