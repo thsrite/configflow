@@ -176,6 +176,8 @@ def main():
     groups.update(oxidns)
     from cases.oxidns_routes import GROUPS as oxidns_routes
     groups.update(oxidns_routes)
+    from cases.oxidns_common_guards import GROUPS as oxidns_common_guards
+    groups.update(oxidns_common_guards)
     from cases.setup import GROUPS as setup
     groups.update(setup)
     from cases.setup_prepare import GROUPS as setup_prepare

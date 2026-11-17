@@ -347,6 +347,11 @@ class Comparators(unittest.TestCase):
         self.assertEqual(valid['state'], 'go-unimplemented')
         self.assertNotIn('helper_cases', wrong_variant)
         self.assertNotIn('helper_cases', wrong_route)
+        policy_rows = [{'case': 'H416', 'route': route, 'state': 'go-unimplemented'} for route in (
+            'POST /api/oxidns/editor', 'POST /api/profiles/<profile_id>/oxidns/editor', 'POST /api/oxidns/render')]
+        attach(policy_rows)
+        self.assertEqual([row.get('helper_cases') for row in policy_rows], [['H423'], ['H423'], None])
+        self.assertTrue(all(row['state'] == 'go-unimplemented' for row in policy_rows))
 
     def test_version_405_json_approval_preserves_allow_storage_and_exact_public_payload(self):
         from config_finding_resolutions import annotate

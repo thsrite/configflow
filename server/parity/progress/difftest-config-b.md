@@ -1891,3 +1891,18 @@ current compared=12 design_errors=[]；exit=0
 ```
 
 继续OxiDNS common/client策略helper与规则交付YAML分支；最终.32全量未执行。
+
+## 批次 111：OxiDNS常用参数类型与客户端策略guard
+
+- 68新变体（含2个真实editor准备请求），通过默认/scoped公开API覆盖28个新增H：TLS对象、严格bool/int、block_qtypes数组及成员、文本、dynamic route、AdGuard URL/mode、未知字段排序、fallback/local upstream坏YAML/错shape/缺地址，分别验证准确中文400，全SQL/files不变。fallback的前置解析H353/354和local后置解析H372/373各用独立输入，未把相似消息当同一分支。
+- editor settings中的device_policies覆盖非字符串地址、多重slash、非法/超限prefix、IPv4-mapped小于96、组播/unspecified、列表及513条上限、row额外字段、映射后的重复地址、长/控制字符备注、未知mode；H416–422的异常再由同次请求关联H423。route+case精确helper映射只接editor两种路径，render等相似路由不贴标签，state保持TODO，自检验证这一边界。公开响应完整相比，不删除诊断示例地址或其他字段。
+- .32草稿和正式均Go尚未实现68、design_errors=[]；Python参考前提全部成立，93项自检和故意错误Go响应检出通过。统一9518变体、原R4323（S691/F2677/B955）、H627/G16；findings仍closed80/accepted7/open21/O12单列1。
+
+```text
+.32 native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups oxidns-common-type-guards,oxidns-client-policy-guards --baseline 3c8a1760
+current go-unimplemented=68 design_errors=[]；exit=0
+93 self-checks + deliberately wrong-Go-response detection OK
+独立报告/tmp/configdiff-oxidns-common-guards-draft.json
+```
+
+原R仍差207、H仍差485及partial/N/A/长流程。继续真正Mihomo规则交付的YAML guard；最终.32全量未执行。

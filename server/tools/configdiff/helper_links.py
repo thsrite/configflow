@@ -54,12 +54,17 @@ VARIANT_LINKS = {
                                  (prefix + '-B04', 'text/B04', ('H143',))]
 }
 
+ROUTE_LINKS = {(case, route): ('H423',)
+    for case in ('H416', 'H417', 'H418', 'H419', 'H420', 'H421', 'H422')
+    for route in ('POST /api/oxidns/editor', 'POST /api/profiles/<profile_id>/oxidns/editor')}
+
 
 def attach(results):
     for result in results:
         route, labels = LINKS.get(result['case'], ('', ()))
         labels = labels if result['route'] == route else ()
         labels += VARIANT_LINKS.get((result['case'], result.get('variant', ''), result['route']), ())
+        labels += ROUTE_LINKS.get((result['case'], result['route']), ())
         if labels:
             result['helper_cases'] = sorted(set(labels))
     return results
