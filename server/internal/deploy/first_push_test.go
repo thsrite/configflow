@@ -122,7 +122,25 @@ func TestFirstPushCachesAndStableContents(t *testing.T) {
 				mu.Unlock()
 			}
 			source := NewSource(cfg, nil)
-			p, e := PrepareContent(f.ctx, f.m, mustTarget(t, f), source, PrepareOptions{BaseURL: "https://panel.example.com", DeploymentID: "first", StoreDownloads: true})
+			var progressMu sync.Mutex
+			var unforced, forced []string
+			progress := Progress{
+				Phase:   func(m string) { progressMu.Lock(); forced = append(forced, m); progressMu.Unlock() },
+				Message: func(m string) { progressMu.Lock(); unforced = append(unforced, m); progressMu.Unlock() },
+			}
+			p, e := PrepareContent(f.ctx, f.m, mustTarget(t, f), source, PrepareOptions{BaseURL: "https://panel.example.com", DeploymentID: "first", StoreDownloads: true, Progress: progress})
+			// A14 review L1: per-provider details are throttled like Python's
+			// unforced phase_progress; only the graph validation is forced.
+			progressMu.Lock()
+			for _, m := range forced {
+				if strings.Contains(m, "已准备") || strings.HasPrefix(m, "正在准备") {
+					t.Error("provider detail forced", m)
+				}
+			}
+			if !tc.fail && len(unforced) == 0 {
+				t.Error("provider details missing")
+			}
+			progressMu.Unlock()
 			if tc.fail {
 				if e == nil || !IsPreparationFailure(e) {
 					t.Fatal("missing cache accepted", e)

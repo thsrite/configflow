@@ -165,6 +165,9 @@ type Progress struct {
 	Rules  func(done, total int)
 	Detail func(done *int, total int, name, phase string)
 	Phase  func(message string)
+	// Message reports an unforced detail that the owner may throttle (Python's
+	// phase_progress(message) without force). Nil falls back to Phase.
+	Message func(message string)
 }
 
 // BuildInput captures all inputs to one immutable bundle.

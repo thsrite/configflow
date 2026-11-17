@@ -611,8 +611,10 @@ func prepareContent(ctx context.Context, m *agents.Manager, t Target, s *Source,
 			return nil, e
 		}
 		if len(downloads) > 0 {
-			opts := provider.BundleOptions{RenderAll: true, Progress: func(message string, _ bool) {
-				if o.Progress.Phase != nil {
+			opts := provider.BundleOptions{RenderAll: true, Progress: func(message string, force bool) {
+				if !force && o.Progress.Message != nil {
+					o.Progress.Message(message)
+				} else if o.Progress.Phase != nil {
 					o.Progress.Phase(message)
 				}
 			}}

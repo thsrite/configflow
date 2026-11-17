@@ -34,7 +34,7 @@ func publishProgress(ctx context.Context, m *agents.Manager, id, did, token stri
 			lastDetail = now
 		}
 	}
-	return Progress{Phase: func(message string) { detail(message, true) }, Detail: func(done *int, total int, name, phase string) {
+	return Progress{Phase: func(message string) { detail(message, true) }, Message: func(message string) { detail(message, false) }, Detail: func(done *int, total int, name, phase string) {
 		if phase == "preparing" {
 			mu.Lock()
 			first := !started
