@@ -1,6 +1,7 @@
 package yamlx
 
 const (
+	msgJSONKey           = "订阅 YAML 的对象键必须是字符串、数字、布尔值或空值（第 %d 行）"
 	msgSyntax            = "YAML 语法错误"
 	msgSyntaxDetail      = msgSyntax + "：%s"
 	msgSyntaxAtLine      = msgSyntax + "（第 %d 行）：%s"
