@@ -46,6 +46,7 @@
 | A19 F1 alias/图爆炸 | R09 不解析 YAML；规则分支 256、跳转 12，接口引用也有预算与循环检查。 |
 | A19 F2 错误形状静默成功 | typed JSON 验证；无快照为 blocker／unknown；空或错误 action/include 不默认放行／空列表。 |
 | A19 F3 解析器不一致 | 不新增 YAML/classical 解析器；D1、alias 预算、ErrSyntax 才可回退的规则保持在共享 yamlx。 |
+| WORKFLOW 第四条／A24 F2／C32 high | Detach 后、每个 R09 perform 前、每个 manifest 提交前检查 ctx.Err；真实 Runtime.Start/BindRequest/Shutdown 覆盖 shutdown 后零请求／零 manifest 提交、空恢复、最后一次快照／删除归属证明后 shutdown；断开请求仍完成写入与恢复。 |
 
 R09 不新增锁、后台线程或循环；L1/L2 和 lock-before-validation 的外层 HTTP／发布职责留在 R12/R14/R15。
 
@@ -80,6 +81,14 @@ R14 baseline、R12/R15 真实 HTTP 发布／指纹／规则同步长流程是其
 
 测试机固定 `.32`，命令均通过 rt；日志不包含生产值。
 
+最终 R08+C32 合并树改用 `.64`，已 rebase `go@e980d402`，R09 代码截至 `cf5a015b`。执行：
+
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'GATE_LOGS=/tmp/configflow-r09-integrated-20261118 server/internal/routers/testdata/r09_gates.sh'
+```
+
+wrapper 调共享 gate.sh，参数 `-p 6`，三个 fuzz 各 60 秒，最后四类编译变异；日志在 `.64:/tmp/configflow-r09-integrated-20261118`。首次排队期间 go 新增第四条常设检查，故仅终止了本任务等待槽位的 gate（尚未执行任何检查，rt143），补 shutdown 提交点防线后重新启动；最终结果待结束后填写。集成后的真实 Python／报告／manifest 定向 race 已通过 24.885s；gofmt、routers vet 和更严格组合用例 race 通过 1.124s。
+
 - 前两轮：R09 Python 对照、安全测试、routers/routersplit/devhttp race、全量、12 difftest、三个 60 秒 fuzz、四类编译变异通过。
 - 合入 N7-3c 的一轮：84 包全量通过，routers race 506.150s；proddiff `new=0 stale=0`。
 - ae2e0f59 + R09：完整 `-race` **84 包通过**；routers 567.091s、routersplit 23.165s、devhttp 3.764s。日志 `.32:/tmp/configflow-r09-final/race.log`。
@@ -101,6 +110,8 @@ ReportParts 链式保留前驱，R08 的 policy report 保留。R09 直接读取
 filter 优先读取非 nil 的 R08 snapshot，其次才是 DNS guard snapshot；空列表是有效证据，缺少 filter 时发起新读取，不误退回另一份快照。真实 Python 对照覆盖启用／禁用／被阻断，以及两种快照、优先级、空／缺少 filter。
 R08 的 DNS manifest 标志和 setter 各保留一份，`Manifests()` 完整保留；合并后 R09 对 `routeros.go` 没有额外 diff。R12 获取 `Manifests().DNSGuard` 的值与 set 标志（包括显式 null），保存成功或补偿后的 manifest；`DNSGuardPublication()` 保留为便捷接口。组合测试验证 BuildReport 同时保留两个可发布计划，DNS 冲突直接读取原生 policy CIDR，恢复 DNS 不覆盖 Policy manifest，返回副本不别名共享证明。
 C32 的 ComputeDesired／RulesetContent context 首参及已有调用方 ctx 完整保留；R09 没有这两个函数的新增调用点。R09 和 R08 共享写入／回滚路径均用 lifecycle.Detach。
+跟进 `go@f73983fb` 第四条：R09 自有 owner 在 Detach 后、每个 perform／manifest 提交前显式检查 ctx.Err，避免零 I/O 恢复或最终回读后的快速提交越过 shutdown。测试使用真实 Runtime 的 Start/BindRequest/Shutdown，没有替换取消源、超时或生产 HTTP。
+`.64` 定向验证：gofmt 无输出、routers vet 通过，runtime／shutdown／请求断开测试 race 通过 2.043s。删除前探针按共享驱动真实的 Netwatch 集合回读定位，不假设存在单行端点；原先一次全部 R09 运行的失败来自该探针，最终 gate 将重新运行全套。
 R12/R15 把 ForwardHint 放到 report/warnings，不能作为 fingerprint 输入。
 
 ## L5 与交回
@@ -108,6 +119,6 @@ R12/R15 把 ForwardHint 放到 report/warnings，不能作为 fingerprint 输入
 L5 尚未执行：真实 CHR 接受 payload/scripts、UDP/TCP DNS/hairpin/853、HA VIP 与真实主机豁免、15 秒故障确认、恢复 conntrack 清理、重启撤销、链路丢失、规则顺序及同口命令的实际流量效果。
 只能由协调者在隔离实验网安排，不能把 loopback fake 通过当实流证明。
 
-分支 `go-port-r09`，已 rebase 到包含 R08+C32 的 `go@76f65828`。未 push，临时基线 worktree 已清理；最终提交及门禁结果将在完整 gate 结束后记录。
+分支 `go-port-r09`，已 rebase 到包含 R08+C32 与并行化测试／N7-4 writer 的 `go@e980d402`。未 push，临时基线 worktree 已清理；最终提交及门禁结果将在完整 gate 结束后记录。
 
 独立验收已完成，R08+C32 已整合；最终门禁固定 `.64`、`gate.sh -p 6`，完成后才交回。历史 aggregation proddiff 例外已由独立修复合入 go，最终门禁仍须证明 new=0 stale=0；旧失败保留作为历史记录。L5 和 Netwatch 运行时归属裁定不作通过宣称。

@@ -144,6 +144,9 @@ func (d *RouterOS) rollbackDNSGuard(ctx context.Context, changes []ROSChange) (m
 				change.Values["place-before"] = id
 			}
 		}
+		if err := ctx.Err(); err != nil {
+			return remap, err
+		}
 		check, err := d.perform(ctx, change, &[]ROSChange{}, true)
 		if err == nil {
 			err = d.verifyChange(ctx, check)
@@ -167,6 +170,9 @@ func (d *RouterOS) remapDNSGuard(ctx context.Context, raw json.RawMessage, remap
 		return err
 	}
 	if m == nil {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		d.SetDNSGuardManifest(nil)
 		return nil
 	}
@@ -195,6 +201,9 @@ func (d *RouterOS) remapDNSGuard(ctx context.Context, raw json.RawMessage, remap
 	}
 	document["resources"], _ = json.Marshal(resources)
 	value, _ := json.Marshal(document)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	d.SetDNSGuardManifest(value)
 	return nil
 }
@@ -203,6 +212,9 @@ func (d *RouterOS) remapDNSGuard(ctx context.Context, raw json.RawMessage, remap
 // finish after browser cancellation; device calls retain their 10-second bound.
 func (d *RouterOS) ApplyDNSGuard(ctx context.Context, op DNSGuardReplace) (*DNSGuardUndo, error) {
 	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if !guardValidateOp(op) {
 		return nil, routerError(messageOperationFormat)
 	}
@@ -244,6 +256,9 @@ func (d *RouterOS) ApplyDNSGuard(ctx context.Context, op DNSGuardReplace) (*DNSG
 			if !sameRow(guardComparable(e.Role, stableROSRow(e.Path, row), failover), guardComparable(e.Role, e.Config, failover)) {
 				return routerError(fmt.Sprintf(messageGuardEdited, e.Path, e.ID))
 			}
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			check, err := d.perform(ctx, ROSChange{Method: "DELETE", Path: e.Path, ID: e.ID, Expected: marshalRow(d.ownershipSnapshot(e.Path, row))}, &undo, false)
 			if err != nil {
 				return err
@@ -262,6 +277,9 @@ func (d *RouterOS) ApplyDNSGuard(ctx context.Context, op DNSGuardReplace) (*DNSG
 				if len(rows) > 0 {
 					values["place-before"] = rows[0].id()
 				}
+			}
+			if err := ctx.Err(); err != nil {
+				return err
 			}
 			check, err := d.perform(ctx, ROSChange{Method: "PUT", Path: item.Path, Values: values}, &undo, false)
 			if err != nil {
@@ -302,9 +320,15 @@ func (d *RouterOS) ApplyDNSGuard(ctx context.Context, op DNSGuardReplace) (*DNSG
 			resources = append(resources, e)
 		}
 		if op.Spec == nil {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			d.SetDNSGuardManifest(nil)
 		} else {
 			raw, _ := json.Marshal(DNSGuardManifest{Version: 1, Spec: op.Spec, Resources: resources})
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			d.SetDNSGuardManifest(raw)
 		}
 		return nil
@@ -327,6 +351,9 @@ func (d *RouterOS) ApplyDNSGuard(ctx context.Context, op DNSGuardReplace) (*DNSG
 // RestoreDNSGuard reverses a completed guard delta and refreshes restored IDs.
 func (d *RouterOS) RestoreDNSGuard(ctx context.Context, op DNSGuardUndo) error {
 	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	d.InvalidateAddressReads()
 	remap, err := d.rollbackDNSGuard(ctx, op.Changes)
 	if err != nil {

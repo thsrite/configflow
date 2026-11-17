@@ -2,7 +2,7 @@
 
 Chinese hand-back: [R09-handoff-zh.md](R09-handoff-zh.md).
 
-Status: `ported` (2026-11-18), fresh Opus HR review required before `verified`. Branch `go-port-r09`, R08+C32 integrated from `go@76f65828` (initial base `d7c481c7`); final shared gate pending below.
+Status: `ported` (2026-11-18), fresh Opus HR review required before `verified`. Branch `go-port-r09`, R08+C32 integrated; rebased onto `go@e980d402` (initial base `d7c481c7`); final shared gate running below.
 No push, no sub-agent, no production/lab contact; synthetic data and loopback fakes only.
 
 ## Scope / interfaces
@@ -62,6 +62,13 @@ and unchanged final tables. `r09_eval_reference.py` compares the real Python thr
 R08 integration adds real-Python blocked/disabled policy and filter reuse/empty/missing/precedence comparisons,
 plus TestR09ReportPreservesPolicyAndDNSGuard and TestR09ManifestHolderKeepsPolicyPublication to exercise combined
 BuildReport, native destination conflicts, unchanged policy publication and independent manifest copies.
+The fourth standing item (go@f73983fb, A24 F2/C32 high) is covered by native Runtime.Start/BindRequest/Shutdown:
+after shutdown no device request or manifest commit; empty restore cannot clear a proof; shutdown after the
+final snapshot or delete ownership read cannot commit; disconnected requests still complete apply and restore.
+R09 owners check ctx.Err after Detach, before each perform, and before every manifest commit.
+Focused runtime boundary race PASS2.043s on .64, with routers gofmt and vet PASS; no cancellation/timeout
+substitution. The delete probe observes the real shared driver's Netwatch collection read, not an invented
+single-row endpoint. The earlier full R09 run's failure was in this probe; all final checks run again below.
 
 Additional safety gates: production constructor/client; exact raw body bytes and headers before fake decoding;
 actual 10s unanswered PUT, per-call timeout capture through apply/restore; cancellation after accepted write;
@@ -206,7 +213,23 @@ Only isolated PVE lab guests, driven by coordinator/Opus after review; never rea
 
 ## Commands / final gates
 
-All test commands run through `RT_HOST=sunbroke@192.168.0.32 rt`, never on the Mac.
+All tests run through rt, never on the Mac. Earlier runs below used `.32`; the final integrated run is on `.64`.
+
+### Integrated R08+C32 gate
+
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'GATE_LOGS=/tmp/configflow-r09-integrated-20261118 server/internal/routers/testdata/r09_gates.sh'
+```
+
+Tree: `go@e980d402` + R09 through `cf5a015b`. The wrapper calls the shared gate with `-p 6`, all three
+60-second fuzz targets, then the four compiled mutations (saved to mutations.log). Gate logs stay in
+`.64:/tmp/configflow-r09-integrated-20261118`. First attempt queued at load33.70 behind two gates. It was
+terminated while still queued (no checks/tests ran, rt143) to add the newly published fourth standing item;
+the final run is restarted after the shutdown tests and another rebase.
+Focused integrated Python boundary/forward/report/manifest race PASS24.885s; gofmt + routers vet and stricter
+combined-report/manifest race PASS1.124s. Full-gate results will be recorded after completion.
+
+### Earlier standalone gates
 
 1. `rt -- bash -lc 'GATE_LOGS=/tmp/configflow-r09-final server/internal/routers/testdata/r09_gates.sh'`
    uses shared `server/scripts/gate.sh -p 4` with all three R09 fuzz targets. On the ae2e0f59 + R09 tree:
@@ -263,9 +286,10 @@ This is not caused by R09 and is not suppressed/normalised here. The original ru
 transport_retries14, but the cause is left to the assigned investigation. No baseline changed. A temporary clean
 reference worktree was removed unused after the coordinator supplied the independent reproduction.
 
-R09 standalone acceptance is complete. Coordinator now requires a final dependency integration before hand-back: wait for aggregation-oracle fix72d4b2c0 and verified R08 to merge into go, then rebase. Preserve R08 Manifests(), only one dnsGuardManifestSet/setter; all device/rollback I/O must use lifecycle.Detach. R09 own writes already do. Wire policy CIDRs and filter-snapshot reuse to R08 types, remove the transitional projection where possible, run the shared gate on the combined tree. Fresh Opus R09 review and L5 follow.
-No push. Implementation commits after the final rebase: 54a3fd9f (core), 63986dd9 (HA/parser gates),
-9040581f (malformed-selector conservatism); later commits only runner/progress/hand-back documents.
+The aggregation-oracle root cause was Python returning a last-good provider render under load; its independent
+fix is now merged in go. R08+C32 integration is complete, transitional projections removed, Manifests retained,
+and Detach retained throughout shared/device rollback I/O. The integrated gate above must pass without relying
+on the old provider exception. Fresh Opus R09 review and L5 follow; no push.
 
 ## Added files / line counts
 
