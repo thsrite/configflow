@@ -247,3 +247,17 @@ func TestProviderScalarAndUnknownFieldRoundTrip(t *testing.T) {
 		w.call("GENERATE", "a", string(input), true)
 	}
 }
+
+func TestCorruptNodeCacheCannotProducePartialProvider(t *testing.T) {
+	w := newWorld(t, func(ctx context.Context, r *repo.Repository) {
+		_, err := r.WriteSharedJSON(ctx, "subscribes/s.json", jsonx.Obj("nodes", true, "count", 1))
+		must(t, err)
+	}, nil)
+	w.control.Offline = true
+	w.control.CorruptCache = true
+	input := `{"config":{"profile_id":"default","subscriptions":[{"id":"s","name":"Feed","url":"https://feed.example/s"}],"nodes":[],"proxy_groups":[],"rule_configs":[]},"aggregation":{"id":"a","name":"Aggregate","subscriptions":["s"]},"main":{"proxies":[],"proxy-groups":[]},"prepared":true}`
+	// Python swallows len(bool) in a source future and returns a successful empty
+	// provider. Go rejects the malformed node cache; both dry runs must keep all
+	// state untouched. The named oracle exception asserts exact Go rejection.
+	w.call("GENERATE", "a", input, true)
+}

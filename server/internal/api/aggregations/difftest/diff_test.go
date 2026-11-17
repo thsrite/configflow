@@ -40,10 +40,11 @@ import (
 const secret = "c31-synthetic-jwt-secret"
 
 type control struct {
-	Sources  map[string]string `json:"sources"`
-	Offline  bool              `json:"offline"`
-	URIChain bool              `json:"uri_chain"`
-	Mutate   bool              `json:"mutate"`
+	Sources      map[string]string `json:"sources"`
+	CorruptCache bool              `json:"corrupt_cache"`
+	Offline      bool              `json:"offline"`
+	URIChain     bool              `json:"uri_chain"`
+	Mutate       bool              `json:"mutate"`
 }
 type fakeHTTP struct {
 	control *control
@@ -411,23 +412,23 @@ func (w *world) call(method, path, body string, authenticated bool) answer {
 	if err != nil {
 		t.Fatalf("decode Go: %v %s", err, got.Body)
 	}
-	// Named Python bug: its dry generator iterates a scalar string as IDs.
-	// Public catalog writes reject this schema already. Native generation rejects
-	// it too; compare the exact rejection and continue comparing all stored effects.
-	selectorBug := false
+	// Named Python bugs: scalar selectors are iterated as character IDs; a
+	// corrupt non-array cache can become a successful partial provider. Require
+	// exact native rejection and keep comparing every stored effect.
+	expectedRejection := false
 	if method == "GENERATE" {
 		var args struct {
 			Aggregation struct{ Subscriptions json.RawMessage }
 		}
-		if json.Unmarshal([]byte(body), &args) == nil && string(args.Aggregation.Subscriptions) == `"s"` && py.Status == 200 {
-			selectorBug = true
+		if json.Unmarshal([]byte(body), &args) == nil && (string(args.Aggregation.Subscriptions) == `"s"` || w.control.CorruptCache) && py.Status == 200 {
+			expectedRejection = true
 			if got.Status != 500 || string(got.Body) != `{"message":"聚合操作失败","success":false}` {
 				t.Errorf("scalar selector rejection: %d %s", got.Status, got.Body)
 			}
 			t.Log("EXPECTED C31 Python bug: scalar subscription selector rejected; storage still compared")
 		}
 	}
-	if got.Status != py.Status && !selectorBug {
+	if got.Status != py.Status && !expectedRejection {
 		t.Errorf("%s %s status Python=%d Go=%d body=%s", method, path, py.Status, got.Status, got.Body)
 	}
 	compare := func(label string, a, b any) {
@@ -439,7 +440,7 @@ func (w *world) call(method, path, body string, authenticated bool) answer {
 			t.Errorf("%s %s %s: %s", method, path, label, firstDifference(a, b, ""))
 		}
 	}
-	if !selectorBug {
+	if !expectedRejection {
 		compare("body", py.Body, gb)
 	}
 	comments := []string{}
@@ -476,7 +477,7 @@ func (w *world) call(method, path, body string, authenticated bool) answer {
 		}
 	}
 	compare("state", py.State, snapshot(t, w.srv))
-	t.Logf("same %s %s → %d", method, path, got.Status)
+	t.Logf("compared %s %s: Python=%d Go=%d", method, path, py.Status, got.Status)
 	return py
 }
 

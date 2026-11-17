@@ -138,7 +138,7 @@ Final upstream-only importer/oxidns test fixes were rechecked on .32 (2.477s/73.
 | C28 | MosDNS archive and routes | 838 | verified | C21, C15 | 15 (15 done) |
 | C29 | OxiDNS native apply, archive, routes | 739 | missing | C27, C28 | 18 (0 done) |
 | C30 | subscription and node routes, node deletion | 994 | ported | C17, C16, C19, C20 | 26 (26 done) |
-| C31 | aggregation routes, device notes | 722 | wip | C30, C26 | 11 (11 done) |
+| C31 | aggregation routes, device notes | 722 | ported | C30, C26 | 11 (11 done) |
 | C32 | rule routes | 1107 | missing | C09, C14, C27 | 21 (0 done) |
 | C33 | rule library and proxy group routes | 976 | missing | C32 | 25 (0 done) |
 | C34 | generate, config and profile routes, config export | 1443 | missing | C18, C19, C20, C28, C29, C31, C33 | 59 (0 done) |
@@ -1750,7 +1750,7 @@ Cross-module boundary remaining: a chain graph requiring aggregation materializa
 
 A11 proddiff dependency closed by C31: both workers now independently render aggregation providers. The former frozen provider path is removed from the production-snapshot harness, and that Agent's bundle is promoted from packaging-only partial coverage. Structured main/provider YAML compares parsed values, with each manifest size/SHA256 separately checked against its real delivered bytes; all other artifacts stay byte-exact. A11's branch was not modified.
 
-**Status: `wip`** · prereqs: C30, C26 · Go: internal/api/aggregations, internal/aggregations, internal/devicenotes; repo/oxidns adapters
+**Status: `ported`** · prereqs: C30, C26 · Go: internal/api/aggregations, internal/aggregations, internal/devicenotes; repo/oxidns adapters
 
 Files:
 - `backend/routes/aggregations.py` (617)
@@ -1762,7 +1762,7 @@ Routes (11, 11 done):
 
 `GET /api/aggregations`; `POST /api/aggregations`; `DELETE /api/aggregations/<agg_id>`; `GET /api/aggregations/<agg_id>`; `PUT /api/aggregations/<agg_id>`; `GET /api/aggregations/<agg_id>/count`; `GET /api/aggregations/<agg_id>/preview`; `GET /api/aggregations/<agg_id>/provider`; `GET /api/aggregations/<resource_id>/health-impact`; `POST /api/aggregations/reorder`; `GET /api/profiles/<profile_id>/aggregations/<agg_id>/provider`
 
-All 11 route methods registered and native aggregation renderer wired into provider bundles. Shared notes replace repo/oxidns validation copies; existing Go agents/routers have no private note consumers yet. Real Flask↔Go HTTP and real Python generated-provider/notes structural differentials are implemented; final expanded acceptance in progress. Restart file: [progress/C31-aggregations.md](progress/C31-aggregations.md).
+All 11 route methods registered and native aggregation renderer wired into provider bundles. Shared notes replace repo/oxidns validation copies; existing Go agents/routers have no private note consumers yet. Real Flask↔Go HTTP and real Python generated-provider/notes structural differentials are implemented; final expanded acceptance passed on .64, with final C31 cache differential race on .32. Restart file: [progress/C31-aggregations.md](progress/C31-aggregations.md).
 
 A11 integration: aggregation generator is now registered in proddiff, **2 production provider outputs compared successfully** (`new=0 stale=0`). The A11 Agent's frozen Python aggregation-provider input has now been removed after rebasing onto integrated A11; the A11 branch is untouched. proddiff's former `aggregations` catalog lookup was corrected to `subscription_aggregations` in both HTTP and direct generator selectors.
 
@@ -1777,7 +1777,7 @@ Python test mapping (all functions in the three requested files):
 
 Notes boundary: `devicenotes/difftest.TestDeviceNotesBoundary` drives all stored/read/set/revision/prepare/save public operations with real Python, including invalid and full-capacity data; name-only saves retain identical settings. `FuzzStoredNotes` and `FuzzAggregationDocument` exercise new parsing paths. Native JSON object key order/YAML indentation are not chased; malformed internal exception wording is native. After integration of A11, real `deploy.Locations` is wired in the C31 differential and its location-only deferral is removed; complete Chinese diagnostics and all state now compare strictly.
 
-Pending: final scoped race, full suite, all differentials and post-rebase proddiff. No A11 diagnostic deferral remains in C31.
+Final: gofmt/vet, all changed-package race, full ordinary suite (80 tested packages), all 12 enabled difftest packages, both 60s fuzz targets and proddiff pass. New=0 stale=0, aggregation-provider 2/2, independent Agent bundle 3/3 (no partial). No A11 diagnostic deferral remains. No remaining C31 route/feature work; independent adversarial review remains. Chinese findings, exact commands/output and commits: [C31-HANDOFF.md](C31-HANDOFF.md).
 
 ## C32 — rule routes
 
