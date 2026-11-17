@@ -107,7 +107,10 @@ def repair_commits(item):
     if group == 'subscription-fetch-failures':
         return ['0313e086', '8f3d36ad'] if item['case'] == 'R218-F12' else ['0313e086', '3ab22d36']
     if group == 'settings-webdav':
-        return ['abdf47ef', 'd01fdf32', 'f9963a7f']
+        return ['abdf47ef', 'd01fdf32', 'f9963a7f'] + (['bd7363fd'] if item['case'] in ('R016-F15', 'R017-F18', 'R017-F19') else [])
+    if (group == 'webdav-named-preflight-and-directory-failure' and item['case'] == 'R016-F15'
+            and item['route'] == 'POST /api/backup/now' and item['variant'] == 'real-MKCOL-403-before-PUT'):
+        return ['bd7363fd']
     return []
 
 
@@ -121,4 +124,7 @@ def annotate(records):
         if item['accepted_basis']:
             item['status'] = 'accepted'
         item['fix_commits'] = repair_commits(item)
+        item.pop('closure_note', None)
+        if item['status'] == 'closed' and 'bd7363fd' in item['fix_commits']:
+            item['closure_note'] = 'bd7363fd为O6英文内部诊断比较器纠正，不是Go业务修复；中文/HTTP数字/副作用继续严格比较'
     return records

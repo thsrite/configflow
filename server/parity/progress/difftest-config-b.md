@@ -2126,3 +2126,19 @@ current go-unimplemented=8 design_errors=[]；exit=0
 ```
 
 原R仍差77（含N/A）、H仍差382及partial/长流程；继续任务、断连与剩余guard。最终完整all仍未执行。
+
+## 批次 125：设备任务拒绝、完整DAV后台完成与真实客户端断开
+
+- R225-S03以实际设备绑定/状态和四次失败历史检查任务行；禁用的Agent规则同步保留历史、DNS跟随显示专用设备状态、router分钟间隔换算成秒且明确不可运行。R227-F14/F15分别验证未启用/无baseline路由器和无DNS绑定Agent的409准确中文；全SQL/files不变，fake零出站。
+- R227-S04连续两次真实202→DAV HEAD/MKCOL/PUT→成功持久回执，完整上传导出JSON、认证/路径/请求序列、远端对象、文件和SQL比较；第二次证明锁释放。R227-B02在实际HEAD进入fake后阻塞响应，客户端不读任何响应即关闭socket，再释放DAV，必须完成上传与回执。没有给未观察的初始响应编造202；记录status=null和真实gate证据。
+- fake DAV默认路径保持原语义，只给显式gate释放记录锁；新增自检证明等待响应期间可读取真实请求记录，避免观察器死锁。110项自检含故意错误Go响应，以及SQL变化、任务失败、远端对象变化的负向检查。
+- 旧DAV英文诊断的closed条目明确附bd7363fd：这是O6比较器纠正提交，不冒充Go业务修复。共享fake变更后实际回归settings-webdav和目录失败；已知PROPFIND请求体差异继续open。
+- .32正式6个新增请求变体均Go尚未实现，Python真实前提全部通过；净增5原R。累计10008变体、原R4458（S708/F2747/B1003）、H730/G16；findings closed85/accepted9/open20/O12单列1。
+
+```text
+.32 native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups tasks-device-status-and-retry-guards,tasks-real-WebDAV-completion,tasks-disconnected-WebDAV-completion,settings-webdav,webdav-named-preflight-and-directory-failure --baseline 6b50151c
+110 self-checks + deliberately wrong-Go-response detection OK；design_errors=[]；exit=1（既有PROPFIND差异）
+日志 /tmp/configdiff-batch125.log；独立有效草稿已移至本机/tmp，未提交草稿。
+```
+
+原R仍差72（含N/A）、H仍差382及partial/长流程；最终完整all仍未执行。

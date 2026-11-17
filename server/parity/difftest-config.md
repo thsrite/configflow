@@ -2054,6 +2054,8 @@ H469–496走真实default/scoped render、实际限额，不缩小生产常量�
 
 R206-F20完整部署真实保存EACCES要求回滚到原端口/能力、双栈可达、新端口关闭、全SQL/files不变；不是Nginx故障文本对比，见[web_listener.py:286](../../backend/utils/web_listener.py#L286)。R014-B90是只读设置、没有DAV交互，协议B90应由R016/R017承载，见[settings.py:201](../../backend/routes/settings.py#L201)。R016-F14即使400也记manual失败回执（[webdav_backup.py:48](../../backend/utils/webdav_backup.py#L48)）；H031实际被backup_now捕获为400。R016-B91按真实TZ检查上传名、以同一本地日跨UTC午夜的旧文件验证keep_daily；不冻结或修改系统时钟。英文异常类差异按本表开头O6做精确有限值比较，保留中文/目录/HTTP状态数字与其余全部数据；PROPFIND请求体仍作为真实未批准差异。R226-B03用两个真实同时HTTP请求修改URL与间隔，要求两提交和完整最终对象，两种操作不允许丢字段。
 
+R227-S04/B02通过真实异步DAV上传和持久回执验收，B02在HEAD已进入fake而未返回时关闭面板客户端，再放行设备响应；初始HTTP响应未读取，不能计作202，见[tasks.py:280](../../backend/routes/tasks.py#L280)、[webdav_backup.py:48](../../backend/utils/webdav_backup.py#L48)。R225-S03及R227-F14/F15覆盖设备状态显示与重试拒绝；成功DNS跟随/router同步仍需实际fake协议工作流，不能从202推断完成。
+
 冻结比较针对每个端自己的已校验bundle成员原始字节。配置通过公开settings改为另一份后，旧file仍必须等于旧成员，完整SQL/预览文件不变；跨实现的生成主YAML照结构比较。ZIP下载由[generated_preview.download](../../backend/agents/generated_preview.py#L163)每次重打包，ZIP容器自身的时间戳不属于“旧成员内容不变”，不能把整个ZIP字节相等当作冻结条件。TTL仍核对真实expires_at≈创建时刻+3600，过期拒绝另由F11验证，不缩短生产TTL。
 
 ### Step B token保存后的轮换与版本注入边界

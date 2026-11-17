@@ -38,6 +38,7 @@ def markdown(records):
             return str(value).replace('|', '\\|').replace('\n', ' ')
         lines.append('| ' + safe(item['case'] + ' / ' + item['variant']) + ' | `' + safe(item['route']) + '` | '
                      + item['status'] + ' | ' + (', '.join(item.get('fix_commits', [])) or item.get('accepted_basis', '') or '—')
+                     + ('；' + safe(item['closure_note']) if item.get('closure_note') else '')
                      + ' | ' + (item['checked_baseline'] or '尚未复验') + ' | '
                      + str(item.get('python_status', '—')) + ' / ' + str(item.get('go_status', '—')) + ' |')
     return lines + ['']

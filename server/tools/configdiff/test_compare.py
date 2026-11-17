@@ -17,6 +17,61 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_DAV_task_completion_detects_failed_completion_SQL_or_remote_objects(self):
+        from cases.task_webdav import DavCompletion
+        with tempfile.TemporaryDirectory() as temporary:
+            pair = SimpleNamespace(policy=Policy(), route_available=lambda route: False,
+                                   dirs=[Path(temporary) / 'python', Path(temporary) / 'go'])
+            observer = DavCompletion(pair, None)
+            observer.observations = [{'receipt_completed': True}, {'receipt_completed': True}]
+            observer.sql_unchanged = [True, True]
+            wire = {'requests': [], 'objects': {}}
+            observer.wire.observations = [copy.deepcopy(wire), copy.deepcopy(wire)]
+            self.assertEqual(observer.compare(pair.policy), [])
+            observer.sql_unchanged[1] = False
+            self.assertTrue(observer.compare(pair.policy), 'SQL change')
+            observer.sql_unchanged[1] = True
+            observer.observations[1]['receipt_completed'] = False
+            self.assertTrue(observer.compare(pair.policy), 'unfinished task')
+            observer.observations[1]['receipt_completed'] = True
+            observer.wire.observations[1]['objects']['unexpected.json'] = b'partial'
+            self.assertTrue(observer.compare(pair.policy), 'remote object')
+
+    def test_DAV_gate_keeps_recorded_requests_observable_before_reply(self):
+        from concurrent.futures import ThreadPoolExecutor
+        import threading
+        from fakes import WebDAV
+        from harness import send
+        entered, release = threading.Event(), threading.Event()
+        def gate(method, path):
+            entered.set()
+            release.wait(3)
+        with WebDAV() as fake, ThreadPoolExecutor(max_workers=1) as pool:
+            fake.before_reply = gate
+            future = pool.submit(send, fake.url, 'HEAD', '/backup/')
+            try:
+                self.assertTrue(entered.wait(2))
+                self.assertEqual(fake.snapshot()['requests'][0]['method'], 'HEAD')
+                self.assertFalse(future.done())
+            finally:
+                release.set()
+            self.assertEqual(future.result(timeout=3).status, 200)
+
+    def test_closed_DAV_diagnostic_attributes_comparison_fix_without_claiming_a_Go_fix(self):
+        from config_finding_resolutions import annotate
+        from finding_reviews import markdown
+        item = {'case': 'R016-F15', 'variant': 'real-MKCOL-403-before-PUT', 'route': 'POST /api/backup/now',
+                'group': 'webdav-named-preflight-and-directory-failure', 'status': 'closed', 'python_status': 400,
+                'go_status': 400, 'checked_baseline': 'synthetic', 'differences': [], 'remaining_differences': []}
+        result = annotate([copy.deepcopy(item)])[0]
+        self.assertEqual(result['fix_commits'], ['bd7363fd'])
+        self.assertIn('不是Go业务修复', result['closure_note'])
+        self.assertIn('不是Go业务修复', '\n'.join(markdown([result])))
+        for mutation in ({'status': 'open'}, {'variant': 'other'}, {'route': 'other'}):
+            wrong = annotate([{**copy.deepcopy(item), **mutation}])[0]
+            self.assertEqual(wrong['fix_commits'], [])
+            self.assertNotIn('closure_note', wrong)
+
     def test_finite_english_diagnostic_equivalence_preserves_Chinese_codes_and_other_fields(self):
         from cases.webdav import diagnostic_policy
         for kind, stored in [('space', True), ('mkdir', True), ('connection', False)]:

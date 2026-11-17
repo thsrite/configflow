@@ -13,6 +13,7 @@ class WebDAV:
     username, password = 'synthetic-dav-user', 'synthetic-dav-password'
 
     def __init__(self):
+        self.before_reply = None
         owner = self
         class Handler(BaseHTTPRequestHandler):
             def log_message(self, *_args):
@@ -27,7 +28,12 @@ class WebDAV:
                                            'authorization': self.headers.get('Authorization', ''),
                                            'depth': self.headers.get('Depth', ''),
                                            'body': json.loads(body) if self.command == 'PUT' else body.decode(errors='replace')})
-                    status, content = owner.respond(self.command, path, body)
+                    if owner.before_reply is None:
+                        status, content = owner.respond(self.command, path, body)
+                if owner.before_reply is not None:
+                    owner.before_reply(self.command, path)
+                    with owner.lock:
+                        status, content = owner.respond(self.command, path, body)
                 if status == 'disconnect':
                     self.connection.shutdown(socket.SHUT_RDWR)
                     self.connection.close()

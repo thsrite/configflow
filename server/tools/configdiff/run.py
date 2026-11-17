@@ -232,6 +232,10 @@ def main():
     groups.update(tasks)
     from cases.task_interval_race import GROUPS as task_interval_race
     groups.update(task_interval_race)
+    from cases.task_device_rows import GROUPS as task_device_rows
+    groups.update(task_device_rows)
+    from cases.task_webdav import GROUPS as task_webdav
+    groups.update(task_webdav)
     from cases.groups import GROUPS as managed_groups
     groups.update(managed_groups)
     from cases.rule_library import GROUPS as rule_library
