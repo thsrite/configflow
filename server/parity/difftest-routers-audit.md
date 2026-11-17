@@ -410,3 +410,14 @@ H0034/H0041/H0061 source-proof ledger:
 - Future changes to dispatch/driver capabilities require rechecking this proof.
   Source exclusions do not waive ordinary read/write permission or fixed-IP
   success/refusal/rollback cases and never establish native parity.
+
+R001-F08/F09 O6 supersession:
+- The approved row explicitly strikes these global P1/P2 entries out and points
+  to F14/F13 instead. They now have review-superseded evidence (distinct from
+  source-unreachable or executed coverage). Both missing/invalid header and
+  profile_id return200, explicit profile errors remain404/400, and linked
+  alpha/beta output with invalid header proves real scope rather than only an
+  empty result. All named controls are required, execution_claim=false.
+- review_superseded_entries stays separate; no row is removed, no native result
+  changes classification because of this proof. Missing/bad controls remain
+  pending, and every actual implemented HTTP request is still compared strictly.

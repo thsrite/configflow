@@ -12,6 +12,7 @@ class SourceProof:
     sources: tuple
     rationale: str
     controls: tuple
+    disposition: str = 'source-unreachable'
 
 
 def declared():
@@ -34,7 +35,7 @@ def declared():
                 'supports_write=True and constant vendor routeros/ikuai. There are no production '
                 'assignments replacing this map/property. Real device permission failures raise at '
                 'HTTP and cannot change this class capability flag. ')
-    return {
+    proofs = {
         'H0034': SourceProof(sources, dispatch +
             'All three adapter call sites are guarded: _plan gets _router-approved type; apply '
             'gets _router-approved type again; enrich receives one of those same drivers after '
@@ -52,17 +53,36 @@ def declared():
             'read failures still execute H0062, separately, as demonstrated by its public control.',
             accepted + discovery),
     }
+    for ident, replacement, code, number in (('R001-F08', 'R001-F14/explicit', 404, 0),
+                                            ('R001-F09', 'R001-F13/explicit', 400, 2)):
+        controls = (('guards', replacement, code),
+                    ('runtime-reads', 'R001-F91/global-' + str(number), 200),
+                    ('runtime-reads', 'R001-F91/global-' + str(number + 1), 200),
+                    ('upstream-linked', 'R001/linked-header-does-not-scope', 200))
+        proofs[ident] = SourceProof(('server/parity/difftest-routers.md:53',
+                                    'backend/routes/upstream_router_pending.py:11',
+                                    'backend/routes/__init__.py:15', 'backend/routers/pending.py:165'),
+            'O6 approved-with-additions explicitly strikes out this original global profile guard '
+            'in the R001 matrix row: agents blueprint ignores header/profile_id; only explicit '
+            '?profile= is validated by the authenticated handler. This is a REVIEW SUPERSESSION, '
+            'not a claimed executed404/400 and not a new design exemption. Controls require the '
+            'replacement explicit-profile refusal, both ignored selectors for missing/invalid '
+            'profile values and a truly linked alpha/beta router result with an invalid header.',
+            controls, 'review-superseded')
+    return proofs
 
 
 def evaluate(results):
     observed = {(row.get('world'), row['case']): row for row in results}
     verdicts = {}
     for ident, proof in declared().items():
-        if not proof.sources or not proof.rationale or not proof.controls:
+        if (not proof.sources or not proof.rationale or not proof.controls
+                or proof.disposition not in ('source-unreachable', 'review-superseded')):
             raise ValueError('source reachability proof needs sources, rationale and real public controls')
         missing = [world + ':' + case for world, case, status in proof.controls
                    if observed.get((world, case), {}).get('python', {}).get('status') != status]
-        verdicts[ident] = {'audit': 'source-proof-controls-pending' if missing else 'source-unreachable',
+        pending = 'source-proof-controls-pending' if proof.disposition == 'source-unreachable' else 'review-proof-controls-pending'
+        verdicts[ident] = {'audit': pending if missing else proof.disposition,
                           'execution_claim': False, 'sources': list(proof.sources), 'rationale': proof.rationale,
                           'required_controls': [world + ':' + case for world, case, _ in proof.controls],
                           'missing_controls': missing}

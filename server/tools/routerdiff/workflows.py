@@ -171,7 +171,8 @@ def runtime_reads():
         yield Case('R001-' + entry + '/unlinked', 'R001', 'GET',
                    '/api/agents/missing-agent/upstream-routers' + query, 200, ('R001-' + entry,),
                    checks={'success': True, 'routers': [], 'cached': False}, times=('checked_at',))
-    for index, (query, header) in enumerate((('', 'missing-profile'), ('?profile_id=missing-profile', 'beta'))):
+    for index, (query, header) in enumerate((('', 'missing-profile'), ('?profile_id=missing-profile', 'beta'),
+                                            ('', 'bad!profile'), ('?profile_id=bad!profile', 'beta'))):
         yield Case('R001-F91/global-' + str(index), 'R001', 'GET',
                    '/api/agents/missing-agent/upstream-routers' + query, 200, ('R001-F91',),
                    headers={'X-ConfigFlow-Profile': header}, checks={'success': True, 'routers': []}, times=('checked_at',))

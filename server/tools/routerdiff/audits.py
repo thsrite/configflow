@@ -63,13 +63,14 @@ def declared():
     ):
         audits[ident] = Audit(global_sources,
             'Global agents blueprint ignores request profile selectors before auth; only explicit query profile '
-            'is validated inside the authenticated upstream handler. Original R001-F08/F09 stay unclosed, '
-            'pending their explicit O6 supersession audit; no invalid global-guard assumption is reused.',
+            'is validated inside the authenticated upstream handler. Original R001-F08/F09 have a '
+            'separate explicit O6 supersession proof; no invalid global-guard assumption is reused.',
             (('guards', case, status),))
     audits['R001-F91'] = Audit(global_sources,
-        'Header and profile_id cannot select scope on a global agents route. Two empty-linked variants plus '
+        'Header and profile_id cannot select scope on a global agents route. Four empty-linked variants plus '
         'a genuinely linked alpha/beta case with invalid header prove it; all semantic response headers remain compared.',
         (('runtime-reads', 'R001-F91/global-0', 200), ('runtime-reads', 'R001-F91/global-1', 200),
+         ('runtime-reads', 'R001-F91/global-2', 200), ('runtime-reads', 'R001-F91/global-3', 200),
          ('upstream-linked', 'R001/linked-header-does-not-scope', 200)))
     # Explicit reviewed input positions, not "whatever cases currently claim H".
     # The integrity test fails if a later input insertion renumbers these cases.

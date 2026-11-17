@@ -223,7 +223,7 @@ class AuditTests(unittest.TestCase):
         self.assertEqual(len(audits), 26 * 7 + 25 * 3 + 5 + 14 + 12 + 5 + 8 + 23 + 1 + 5 + 4 + 6 + 4 + 4 + 10 + 24 + 1 + 13 + 2 + 12 + 9 + 3 + 8)
         self.assertFalse(set(audits) - set(load()[1]))
         self.assertEqual({value['audit'] for value in evaluate([]).values()},
-                         {'variants-pending', 'source-proof-controls-pending'})
+                         {'variants-pending', 'source-proof-controls-pending', 'review-proof-controls-pending'})
         ident = 'R005-F01'
         requirements = audits[ident].requirements
         rows = [{'world': world, 'case': case, 'entries': [ident], 'python': {'status': status},
@@ -252,7 +252,7 @@ class AuditTests(unittest.TestCase):
         self.assertEqual(evaluate(rows[:-1])[ident]['audit'], 'variants-pending')
         self.assertNotIn('R001-F08', audits)
         self.assertNotIn('R001-F09', audits)
-        self.assertEqual(len(audits['R001-F91'].requirements), 3)
+        self.assertEqual(len(audits['R001-F91'].requirements), 5)
 
     def test_settings_audit_requires_real_guard_ids_and_all_boolean_loop_fields(self):
         audits = declared()

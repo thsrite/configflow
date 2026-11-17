@@ -46,3 +46,9 @@ missing/bad controls keep it pending. These H IDs are not execution tags on the
 control recipes. Reports separate `audited_entries` (executed variants) from
 `source_unreachable_entries`; every proof is marked `execution_claim=false`.
 No branch is made reachable by patching a Python driver, class or helper.
+
+The two old R001 global P1/P2 entries explicitly struck out by the approved O6
+matrix are `review-superseded`, not unreachable-source branches or executed
+passes. Their replacement refusals and ignored-selector controls must all run;
+otherwise they remain `review-proof-controls-pending`. The report keeps a
+separate `review_superseded_entries` count and the full2301-entry denominator.

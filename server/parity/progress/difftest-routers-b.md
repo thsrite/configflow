@@ -3,7 +3,8 @@
 Status: in progress; NOT ready for acceptance hand-back. Branch go-difftest-routers-b.
 Latest clean integration rebase: go15173872f; normal public binary built from it.
 Current declarations:430 executed-variant audits plus3 explicit source-unreachable
-proofs;1868 remaining if all completed increments/controls are composed. Last FULL composition still37937739:3054
+proofs plus2 O6 review-superseded entries;1866 remaining if all increments and
+controls are composed. Last FULL composition still37937739:3054
 recipes/301 audits. Newer subsets do not replace that full evidence; latest
 large subset2470 recipes/327 audits. All observed26 domain routes remain absent
 from the actual Go public manifest, so no native domain parity is claimed.
@@ -1692,3 +1693,27 @@ Explicit source reachability ledger (separate from executed coverage):
 2 executed audits,3 source-unreachable proofs,2296 pending in this subset,
 complete=false. No new reference bug. Full report3054/301 still historical;
 final full composition/gate/rebase and remaining matrix work pending.
+
+
+O6 supersession ledger:
+- The approved matrix itself strikes out original R001-F08/F09 (global route
+  cannot use header/profile_id/default P1/P2). Their replacements F14/F13 remain
+  executed404/400 audits, while original IDs are review-superseded, not passed.
+- Added invalid as well as missing profile header/profile_id controls; both
+  ignored by global R001. With explicit ?profile= the matching invalid/missing
+  space still returns400/404. A genuinely linked alpha/beta result with invalid
+  header prevents an empty-list-only fixture from faking the scope proof.
+- Each supersession needs all named actual controls, otherwise
+  review-proof-controls-pending. execution_claim=false; separate
+  review_superseded_entries counter. No matrix row/denominator removed; no
+  native response masked or no-op500 treated as success. R001-F91 now requires
+  all four ignored-selector examples plus the linked control, not just three.
+-430 executed declarations +3 source proofs +2 explicit O6 supersessions;
+  1866 pending if composed. This subset does not replace the last full report.
+
+.64 exact command:
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY="$HOME/.cache/routerdiff-build-302rx1dg-current/configflow"; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python -m unittest -v test_reachability test_audits test_runner test_recipes; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world guards --world runtime-reads --world upstream-linked --output "$HOME/.cache/routerdiff-reports/302rx1dg/review-supersession.json"'`
+=> Ran68 tests12.623s/OK;1722 actual recipes/allGo-unimplemented,374 references,
+312 executed audits/0 source exclusions/2 O6 supersessions/1987 pending in this
+subset; no Python bug, complete=false. No command pending. Full composition,
+remaining device/background/source/dynamic work, final gate/rebase still pending.
