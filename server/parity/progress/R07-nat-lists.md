@@ -72,7 +72,7 @@ per-request timeouts. One release must retain one driver for the proof cache and
 operation compensates inside Apply; an incomplete compensation is KindRollback, with its explicit failure text
 (no duplicate/retried partial undo). R12 owns the stage loop: **every** error fails the stage, any UndoOf(err)
 is recorded before failing, and nil/empty/null/{} undo records are skipped. The R07 restore handler returns {}.
-R07 never suppresses an operation error; its successful undo journal is returned before a subsequent stage can
+R07 NAT lists have no ownership manifest (ownership is the unique rule shape and member snapshots); R12/R08 extend ManifestHolder for their own resources. R07 never suppresses an operation error; its successful undo journal is returned before a subsequent stage can
 run. TestR12TypedNATContract checks typed dispatch, JSON field presence and exported invalidation; existing real
 Python boundary tests continue to compare the same driver/API JSON after the model change.
 
@@ -82,3 +82,63 @@ stable identity before overwriting/deleting; row readbacks/positions and next su
 (no per-item JSON scans). Uncertain writes are compensated inside the same detached driver operation.
 A19 checklist: no YAML container/alias traversal or payload parser is introduced; address proof caches own deep
 JSON copies and composite-valued rows use REST instead of lossy digest coercion; no silent unsupported shape.
+
+
+## Added artifacts (lines)
+
+| File | Lines |
+|---|---:|
+| `internal/routers/addresslists.go` | 401 |
+| `internal/routers/addresslists_test.go` | 84 |
+| `internal/routers/addresswrite.go` | 572 |
+| `internal/routers/device_redact.go` | 20 |
+| `internal/routers/natlist_helpers_test.go` | 266 |
+| `internal/routers/natlist_plan.go` | 690 |
+| `internal/routers/natlist_plan_test.go` | 146 |
+| `internal/routers/natlist_policy_adapter.go` | 42 |
+| `internal/routers/natlist_read.go` | 243 |
+| `internal/routers/natlist_write.go` | 738 |
+| `internal/routers/natlist_write_test.go` | 324 |
+| `internal/routers/plan_model.go` | 68 |
+| `internal/routers/r07_safety_test.go` | 300 |
+| `internal/routers/r12_nat_contract_test.go` | 42 |
+| `internal/routers/routerfake/addresslists.go` | 207 |
+| `internal/routers/routerfake/mutation.go` | 40 |
+| `internal/routers/routerfake_python_test.go` | 122 |
+| `internal/routers/testdata/r07_fake_reference.py` | 36 |
+| `internal/routers/testdata/r07_reference.py` | 64 |
+
+
+## Authoritative validation before final upstream sync
+
+On .32, typed R12 contract implementation (through 0820b904):
+
+```text
+gofmt -l internal/ tools/                                   (empty)
+go vet ./...                                               exit 0
+CONFIGFLOW_R07_MUTATE={result,journal,request,table}          all 4 deliberately fail the Python comparison
+go test -race -timeout=30m -count=1 ./internal/routers/ ./internal/devhttp/
+  ok configflow/internal/routers 431.162s
+  ok configflow/internal/devhttp 3.486s
+go test -p=2 -timeout=30m -count=1 ./...                     exit 0
+  ok configflow/internal/webdav/difftest 0.013s
+  ok configflow/internal/weblistener 0.011s
+  ok configflow/internal/weburl 0.008s
+  ok configflow/internal/yamlx 2.470s
+  ?  configflow/tools/proddiff/generator [no test files]
+CONFIGFLOW_DIFF=1 go test -tags=configflow_difftest -p=2 -timeout=30m -count=1 <all 9 /difftest packages>
+  ok api/agents/difftest 153.505s; api/subscriptions/difftest 121.245s
+  ok discovery 2.987s; health 14.132s; httpx 1.580s; mosdns 1.847s
+  ok refresh 3.702s; substore 5.525s; webdav 19.982s
+server/scripts/proddiff.sh                                  baseline: new=0 stale=0
+strict null/missing comparison + R12 typed contract          ok routers 26.572s
+```
+
+Commands use `rt -- bash -lc 'cd server && …'` from this worktree. Difftest package list:
+`mapfile -t r07_difftest_packages < <(go list -tags=configflow_difftest ./... | rg "/difftest$")`.
+Mutation filter: `TestNATListWriteBoundary/new/1/nat_apply$`; each nonzero result is checked for an actual
+outcome/wire/table difference, not a build failure. `-p=2` bounds package concurrency on the shared server,
+without skipping tests. Proddiff has no public router plan exporter yet (R12/R15); device semantics are proven
+by the R07 loopback corpus, not claimed from the production generator comparison.
+
+Final upstream sync found new N8-2 storage/proxy code on go (3ae44741); rebase + final checks are being repeated.
