@@ -1,6 +1,6 @@
 # A24 — client tools, OxiDNS policies and discovery switches
 
-Branch: `go-port-a24`. Based on local `go`; no push. Final acceptance host: **192.168.0.64**.
+Branch: `go-port-a24`. Status: **ported**, 8/8 methods; nothing remains. Based on local `go`; no push. Final acceptance host: **192.168.0.64**.
 
 ## Scope and behavior
 
@@ -23,7 +23,7 @@ The same-package `publicAgent(*agents.Record) *agents.Record` adapter delegates 
 
 All new write entry points use `lifecycle.Detach` in the owner. No handler calls WithoutCancel, no background goroutines or new dependencies were added. Legacy JSONx access is confined to adapters.
 
-Added files (line counts at handback): `client_tools.go` 358; `client_tools_adapter.go` 388; `messages.go` 17; `client_tools_diff_test.go` 695; `public_agent_adapter.go` 36; `public_agent_test.go` 122; `discovery/query.go` 17; `discovery/a24_test.go` 130; Flask reference scripts `client_tools.py` 50 and `public_agent.py` 13. Existing manager, API registration, shared deploy serializer and C37 transaction adapter were modified. No backend/frontend files changed.
+Added files (line counts at handback): `client_tools.go` 358; `client_tools_adapter.go` 392; `messages.go` 17; `client_tools_diff_test.go` 704; `public_agent_adapter.go` 36; `public_agent_test.go` 122; `discovery/query.go` 17; `discovery/a24_test.go` 171; Flask reference scripts `client_tools.py` 50 and `public_agent.py` 13. Existing manager, API registration, shared deploy serializer and C37 transaction adapter were modified. No backend/frontend files changed.
 
 ## Boundary evidence and Python test mapping
 
@@ -49,35 +49,83 @@ No intentional functional difference or newly fixed Python bug. The existing acc
 
 ## Final commands and results
 
-Final acceptance start: local go `ac1f2377`. Initial `/proc/loadavg`: `13.02 13.83 14.29`; later observed `30.89 21.37 17.07` while other agents shared the host. No artificial pressure experiment.
+All commands ran on **192.168.0.64**. Production code tested on local go `d7c481c7` (C31 verified + O3 BindRequest/Detach + N7-3a + A12/R07). Final rebase to `038b52ae` adds only `parity/lab/L1.md`. Initial full rebased gate loadavg: `4.66 2.32 2.21`; last full ordinary/diff/proddiff run: `8.02 8.44 6.93`. No artificial stress workload.
+
+Complete rebased gate (exit 0; gofmt and full vet silent):
 
 ```sh
-RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -o pipefail; cd server && cat /proc/loadavg && gofmt -l internal/api/agents/{public_agent_adapter,public_agent_test,client_tools,client_tools_adapter,client_tools_diff_test,client_tools_messages,agents}.go internal/agents/manager.go internal/discovery/{write,bridge,query,a24_test}.go && go vet ./... && CONFIGFLOW_DIFF=1 go test -race -count=1 ./internal/api/agents/... ./internal/discovery/... ./internal/agents'
-```
-
-Exit 0. gofmt: no output; full vet: no output. Race tail:
-
-```text
-ok  configflow/internal/api/agents             162.725s
-ok  configflow/internal/api/agents/difftest     267.586s
-ok  configflow/internal/discovery                9.924s
-ok  configflow/internal/discovery/difftest        9.582s
-ok  configflow/internal/agents                252.748s
-```
-
-First full ordinary suite passed (93 package lines); all 12 enabled difftest packages passed. Parser fuzz: PASS, 502,767 executions in 61.020s with 2 workers.
-
-Final delta was separately formatted/vetted and race-checked on .64 (loadavg `21.50 21.08 19.43`):
-
-```sh
-RT_HOST=sunbroke@192.168.0.64 rt --back server/internal/api/agents/client_tools_diff_test.go --back server/internal/api/agents/public_agent_test.go --back server/internal/api/agents/messages.go --back server/internal/discovery/bridge.go --back server/internal/deploy/adapter.go -- bash -lc 'set -euo pipefail; cat /proc/loadavg; cd server; gofmt -w internal/api/agents/{client_tools_diff_test,public_agent_test,messages}.go internal/discovery/bridge.go internal/deploy/adapter.go; go vet ./...; CONFIGFLOW_DIFF=1 go test -race -count=1 ./internal/api/agents -run "TestPublicAgent|TestA24|TestClient"; CONFIGFLOW_DIFF=1 go test -race -count=1 ./internal/discovery/... ./internal/deploy'
+RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; cat /proc/loadavg; cd server; test -z "$(gofmt -l internal/api/agents/{public_agent_adapter,public_agent_test,client_tools,client_tools_adapter,client_tools_diff_test,messages,agents}.go internal/agents/manager.go internal/discovery/{write,bridge,query,a24_test}.go internal/deploy/adapter.go)"; go vet ./...; CONFIGFLOW_DIFF=1 go test -race -count=1 ./internal/api/agents/... ./internal/discovery/... ./internal/agents ./internal/deploy; go test -count=1 ./...; for d in $(go list ./... | grep difftest); do CONFIGFLOW_DIFF=1 go test -count=1 "$d"; done; cd ..; server/scripts/proddiff.sh'
 ```
 
 ```text
-ok  configflow/internal/api/agents          13.705s
-ok  configflow/internal/discovery           10.329s
-ok  configflow/internal/discovery/difftest    9.822s
-ok  configflow/internal/deploy              22.951s
+ok  configflow/internal/api/agents             116.998s
+ok  configflow/internal/api/agents/difftest     208.352s
+ok  configflow/internal/discovery                9.062s
+ok  configflow/internal/discovery/difftest        8.663s
+ok  configflow/internal/agents                 178.718s
+ok  configflow/internal/deploy                  22.955s
 ```
 
-Exit 0. Rebased on `d7c481c7` (C31 verified, O3 BindRequest/Detach, N7-3a, A12 and R07). The complete gate passed again: six race packages, full ordinary suite, all 12 enabled difftest packages and proddiff `new=0 stale=0`. One final labels-only delta was formatted/vetted and passed real Python A24/public helper race tests in 10.118s; final ordinary/difftest/proddiff rerun follows below.
+The final legacy-label delta was formatted/vetted and compared with real Python under race (exit 0):
+
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt --back server/internal/api/agents/client_tools_adapter.go --back server/internal/api/agents/client_tools_diff_test.go -- bash -lc 'set -euo pipefail; cd server; gofmt -w internal/api/agents/client_tools_adapter.go internal/api/agents/client_tools_diff_test.go; CONFIGFLOW_DIFF=1 go test -race -count=1 ./internal/api/agents -run "TestA24|TestClient|TestPublicAgent"; go vet ./...'
+```
+
+```text
+ok  configflow/internal/api/agents  10.118s
+```
+
+Full ordinary suite, all enabled difftest packages and proddiff were repeated after that final production delta (exit 0):
+
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; cat /proc/loadavg; cd server; go test -count=1 ./...; for d in $(go list ./... | grep difftest); do CONFIGFLOW_DIFF=1 go test -count=1 "$d"; done; cd ..; server/scripts/proddiff.sh'
+```
+
+All 94 ordinary package entries passed. All 12 enabled difftest packages passed:
+
+```text
+ok  configflow/internal/api/agents/difftest          106.518s
+ok  configflow/internal/api/aggregations/difftest     14.724s
+ok  configflow/internal/api/subscriptions/difftest    49.715s
+ok  configflow/internal/devicenotes/difftest           0.410s
+ok  configflow/internal/discovery/difftest             1.533s
+ok  configflow/internal/health/difftest               13.380s
+ok  configflow/internal/httpx/difftest                 1.046s
+ok  configflow/internal/mosdns/difftest                1.513s
+ok  configflow/internal/refresh/difftest               3.114s
+ok  configflow/internal/subs/difftest                  1.169s
+ok  configflow/internal/substore/difftest              3.657s
+ok  configflow/internal/webdav/difftest               13.505s
+baseline: new=0 stale=0
+```
+
+Proddiff: 75 GET routes, 2,831 cases, self-check PASS, unmapped_routes=0, coverage_regressions=0, 11 existing baseline differences unchanged. Aggregation providers 2/2 and Agent deployment bundles 3/3 still match. Its isolated-run `/proc/loadavg` start/end: `4.36 5.66 6.35` / `4.67 5.64 6.32`.
+
+The stronger cache-immutability assertion is test-only; production code did not change. It passed independently (exit 0):
+
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt --back server/internal/discovery/a24_test.go -- bash -lc 'set -euo pipefail; cd server; gofmt -w internal/discovery/a24_test.go; go vet ./internal/discovery; go test -race -count=1 ./internal/discovery -run TestApplyDomainsTransactionGuard -v'
+```
+
+```text
+--- PASS: TestApplyDomainsTransactionGuard (0.57s)
+    --- PASS: TestApplyDomainsTransactionGuard/reject (0.14s)
+    --- PASS: TestApplyDomainsTransactionGuard/accept (0.42s)
+PASS
+ok  configflow/internal/discovery  1.581s
+```
+
+Parser fuzz was run in the earlier complete suite (same parser/target, exit 0):
+
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; cat /proc/loadavg; cd server; go test -count=1 ./...; for d in $(go list ./... | grep difftest); do CONFIGFLOW_DIFF=1 go test -count=1 "$d"; done; go test ./internal/api/agents -run "^$" -fuzz "^FuzzClientConnectionEntries$" -fuzztime=60s -parallel=2'
+```
+
+```text
+fuzz: elapsed: 1m0s, execs: 502767, new interesting: 274 (total: 279)
+PASS
+ok  configflow/internal/api/agents  61.020s
+```
+
+No dependency additions, no subagents, no production egress, no baseline/coverage exceptions added. Final branch tip is included in the handback message.

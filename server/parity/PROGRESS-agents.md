@@ -1401,7 +1401,7 @@ Hooks to provide: `agents.OnManagerInit` (`ipv6_verification.start_loop`, last);
 
 ## A24 — client tools, OxiDNS device policies, domain-discovery toggles
 
-**Status: `in progress`** · prereqs: A05, C09 (`connection_rules`, ready), C26 (`oxidns_device_policy.read_policies/revision/normalize_client_range`), C31 (`device_notes`), C37 (`domain_discovery_service`, `provider_revisions`), C05 (`OxidnsSettingsError`) · Go: api/agents
+**Status: `ported`** · prereqs: A05, C09 (`connection_rules`, ready), C26 (`oxidns_device_policy.read_policies/revision/normalize_client_range`), C31 (`device_notes`), C37 (`domain_discovery_service`, `provider_revisions`), C05 (`OxidnsSettingsError`) · Go: api/agents
 
 Files:
 - `backend/routes/client_tools.py` (105) — registers on the agents blueprint (`agents.*` endpoints)
@@ -1433,7 +1433,7 @@ Additional Python files: `test_oxidns_device_policy.py` API binding/stale/duplic
 
 Legacy label clarification: Python Agent registration/edit accepts arbitrary JSON names. Policy peer labels must preserve nonempty stored JSON values (and use ID for empty ones), rather than narrowing them to string. The adapter uses json.RawMessage; real HTTP differential includes number, null, bool, empty list, object and nonempty list labels.
 
-Latest acceptance before final rebase (.64): full ordinary suite (93 package lines) PASS; all 12 enabled difftest packages PASS; 60s parser fuzz PASS (502,767 executions). Initial full scoped race/vet PASS: api/agents 162.725s, agents/difftest 267.586s, discovery 9.924s, discovery/difftest 9.582s, registry 252.748s. Final-delta race/vet PASS: A24/public Agent 13.705s, discovery 10.329s, discovery/difftest 9.822s, deploy 22.951s. Public serialization's empty-HA regression corrects the shared deploy owner (no private copy). C37 history/cache adapters now retain O3 shutdown cancellation with lifecycle.Detach. Rebased on d7c481c7; complete race/full ordinary/all 12 enabled difftests/proddiff passed (new=0/stale=0). Latest legacy-label delta also passed real Python scoped race and full vet (10.118s); final ordinary/difftest/proddiff rerun pending, then clean-worktree handback. Commands and evidence: `A24-HANDOFF.md`.
+Final acceptance (.64, production code based on d7c481c7; final go update adds only L1 lab documentation): gofmt/vet silent; all six related race packages PASS (api/agents 116.998s, agents/difftest 208.352s, discovery 9.062s, discovery/difftest 8.663s, registry 178.718s, deploy 22.955s). Full ordinary suite: all 94 package entries PASS; all 12 enabled real Python difftest packages PASS; parser fuzz: 502,767 executions / 60s PASS. Proddiff: 75 GET routes / 2,831 cases, self-check PASS, coverage_regressions=0, unmapped_routes=0, new=0, stale=0 (11 existing baseline differences unchanged). Final legacy-label delta: enabled A24/public Agent race + full vet PASS (10.118s), then full ordinary/all 12 difftests/proddiff PASS again. Guard rejection now compares the entire cache tree including content/path/mtime; focused race PASS (1.581s). No routes, features or open questions remain. No intentional functional difference or newly fixed Python bug; only the existing accepted YAML-format/derived-revision class. Exact commands/output, findings and file counts: `A24-HANDOFF.md`. Original separately notified public helper commit: 78b796af. No push; independent review sets verified later.
 
 ## Cross-domain interfaces (decision 3: interfaces/hooks, no copies)
 

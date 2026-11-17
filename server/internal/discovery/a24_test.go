@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"strings"
 	"testing"
 )
 
@@ -25,6 +24,7 @@ func TestApplyDomainsTransactionGuard(t *testing.T) {
 				t.Fatal(err)
 			}
 			snapshot, _ := json.Marshal(before)
+			cacheBefore := ruleCacheSnapshot(t, r.DataDir())
 			sentinel := errors.New("guard rejected")
 			calls := 0
 			_, err = ApplyDomains(ctx, "default", []ApplyEntry{{Value: "example.com", RuleType: "DOMAIN", Target: "direct"}}, "manual", nil, ApplyOptions{BeforeWrite: func(tx context.Context, infos map[string]*RulesetInfo) error {
@@ -53,12 +53,8 @@ func TestApplyDomainsTransactionGuard(t *testing.T) {
 				if !reflect.DeepEqual(snapshot, wire) {
 					t.Fatal("rejected guard changed repository")
 				}
-				files, _ := filepath.Glob(filepath.Join(r.DataDir(), "shared/rules/*"))
-				for _, file := range files {
-					raw, _ := os.ReadFile(file)
-					if strings.Contains(string(raw), "example.com") {
-						t.Fatal("cache changed")
-					}
+				if after := ruleCacheSnapshot(t, r.DataDir()); !reflect.DeepEqual(cacheBefore, after) {
+					t.Fatal("rejected guard changed cache contents, paths or modification times")
 				}
 			} else if err != nil {
 				t.Fatal(err)
@@ -127,4 +123,49 @@ func TestQueryRulesetIgnoresUnrelatedSettings(t *testing.T) {
 	if err != nil || out == nil || out.ID != "ip" || len(out.References) != 1 || !out.Active {
 		t.Fatalf("query: %+v %v", out, err)
 	}
+}
+
+// ruleCacheSnapshot detects even a redundant rewrite or a truncated empty cache.
+func ruleCacheSnapshot(t *testing.T, dir string) map[string]struct {
+	Body     string
+	Modified int64
+} {
+	t.Helper()
+	files := map[string]struct {
+		Body     string
+		Modified int64
+	}{}
+	root := filepath.Join(dir, "shared", "rules")
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		relative, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		files[relative] = struct {
+			Body     string
+			Modified int64
+		}{string(data), info.ModTime().UnixNano()}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return files
 }
