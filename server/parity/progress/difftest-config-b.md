@@ -2552,3 +2552,20 @@ current compared8 / Go未实现7 / different1；design_errors=[]；seconds38.77�
 agent_observations rules/delete: Python requests=[] errors=[] / Go requests=[] errors=[]；6s each
 coverage audit: routes228 / variants10664 / R-H5428 / unaccounted=[] / unknown_labels=[] / missing S-F=[] / runtime_design_errors=[]；exit0
 ```
+
+## 批次 155：.32完整官方门禁通过及新C29/R09基线冻结
+
+- .32 895f5e21官方gate完整结束exit0：gofmt/vet/两种tag构建通过，93个race包无失败，14个Go difftest包全部通过，proddiff baseline new=0 stale=0，最终GATE PASS。之前.tmpfs下agents/monitor的两项I/O失败在home TMPDIR整包复验未再现（包1379.935秒）；原.64失败没有改写成通过。
+- 门禁运行期间go又合并C29 OxiDNS公开路由和R09设备计划。已rebase到28e6e0c12，behaviour-changes冲突保留新的HEAD只读/N7-3d/native JSON条目与Web替代条目全部内容。未读Go业务实现，仅以公开路由/提交路径元数据识别新接通范围。
+- 为验证auto-wiring与补齐新增T25在单次all中的执行，固定28e6e0c12再跑完整403组。使用新增官方GATE_ONLY=proddiff阶段保留同一槽位，然后configdiff all，不重复刚完成的全量race；日志会明确GATE STAGE PASS与此前完整GATE PASS的区别。若排队超过最新15分钟上限则停止排队，由协调者合并树cf-gate承接；不会绕过槽位。
+- 当前工具修正归因分别更新为93369229b/a05dd1270/838f7739f；历史记录保留原映射。后续集成分支继续变化会明确列验证基线，不把冻结基线冒称为更新后的全量。
+
+```text
+RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'mkdir -p "$HOME/.cache/configdiff-go-gate-tmp"; export TMPDIR="$HOME/.cache/configdiff-go-gate-tmp"; GATE_LOGS=/tmp/configdiff-go-recheck-895f5e21 server/scripts/gate.sh -p 4'
+ok configflow/internal/httpx/difftest 6.982s
+ok configflow/internal/provider/difftest 54.526s
+ok configflow/internal/substore/difftest 16.087s
+ok configflow/internal/webdav/difftest 40.654s
+GATE PASS
+exit0；race93包 / difftest14包；proddiff baseline new=0 stale=0
+```
