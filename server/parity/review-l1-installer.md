@@ -240,4 +240,32 @@ dash 0.5.13 C-locale journal probe (.32, Arch dash 0.5.13.4-1, `env -i`):
 dash, bash and BusyBox each restored `units/中文 $HOME override.conf` exactly
 and removed the journal.
 
-Final gate: see below.
+The first full gate (before the rebase onto `76f65828`) failed only in
+`internal/installer`: the forwarding-hook journal line was unconditional, which
+broke two "no forwarding traces when unmanaged" tests, and an older test still
+expected the hook to survive a failed run. Fixed in the third review commit
+(journal emitted by the generators only with managed forwarding; the old test
+now expects D3's restore). Whole installer package with `-race` then passed on
+.64 (`ok configflow/internal/installer 719.481s`, agents difftest 123.927s).
+
+Final gate, rebased onto `go` `76f65828`, on .64:
+
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'GATE_LOGS=/tmp/l1-review-gate3 server/scripts/gate.sh -p 6 FuzzComposeYAML:./internal/installer'
+RT_HOST=sunbroke@192.168.0.64 rt --no-sync -- bash -c 'PYTHONDONTWRITEBYTECODE=1 "$HOME/cf-test/.venv/bin/python" -m unittest discover -s server/tools/proddiff -p test_proddiff.py'
+```
+
+```text
+== race + proddiff (parallel)       race: 91 packages ok, 0 FAIL
+ok  	configflow/internal/api/agents	253.233s
+ok  	configflow/internal/httpx	35.664s
+ok  	configflow/internal/installer	654.153s
+baseline: new=0 stale=0
+== difftest                          all 14 packages ok (api/agents/difftest 138.757s)
+FuzzComposeYAML ok  	configflow/internal/installer	61.055s
+GATE PASS
+Ran 37 tests in 0.023s
+OK
+```
+
+No owned containers remain on .32/.64 (`docker ps -a --filter label=configflow.l1-installer` empty).
