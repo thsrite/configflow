@@ -8,6 +8,7 @@ This is test coverage, not a claim that an unregistered Go route was compared.
 from dataclasses import dataclass
 
 from inventory import load
+import reachability
 
 
 @dataclass(frozen=True)
@@ -927,4 +928,8 @@ def evaluate(results):
                           'sources': list(audit.sources), 'rationale': audit.rationale,
                           'required_variants': [world + ':' + case for world, case, _ in audit.requirements],
                           'missing_variants': missing}
+    proofs = reachability.evaluate(results)
+    if verdicts.keys() & proofs.keys():
+        raise ValueError('a source-unreachable guard cannot also claim executed variant coverage')
+    verdicts.update(proofs)
     return verdicts

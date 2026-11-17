@@ -393,4 +393,20 @@ Fixed-IP source and recovery:
   calls flow through _router/type filtering and DRIVERS containing only the two
   concrete classes, both class attributes supports_write=True, vendor constant.
   Account permissions fail at HTTP and do not flip that flag. Currently these
-  three remain uncompleted; explicit source-proof classification is still to add.
+  three now have explicit source-proof classification; see the next section.
+
+
+H0034/H0041/H0061 source-proof ledger:
+- The full proof, source locations and real boundary controls are in
+  tools/routerdiff/reachability.py. It covers _plan/apply/enrich callsites,
+  _router and discovery type filters, open_driver/_driver, DRIVERS and both
+  vendor/supports_write constants. Test monkeypatches cannot establish HTTP
+  reachability. Device permissions are a distinct actual transport failure.
+- All required real controls must complete before the ledger emits
+  source-unreachable; otherwise it remains source-proof-controls-pending.
+  These are not executed branches: execution_claim=false, no H execution tag
+  added to control requests, and source_unreachable_entries counted separately
+  from audited_entries. No matrix row or denominator is removed.
+- Future changes to dispatch/driver capabilities require rechecking this proof.
+  Source exclusions do not waive ordinary read/write permission or fixed-IP
+  success/refusal/rollback cases and never establish native parity.

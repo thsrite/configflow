@@ -28,7 +28,7 @@ only observes the public no-op manifest hook; no lifecycle/business patches.
 Iteration (pin one native host; .32 and .64 are both supported):
 
 ```sh
-RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'set -euo pipefail; cd server/tools/routerdiff; export PYTHONDONTWRITEBYTECODE=1; routerdiff_build=$(mktemp -d /tmp/routerdiff-build.XXXXXX); ~/cf-test/.venv/bin/python build.py "$routerdiff_build"; ROUTERDIFF_BINARY="$routerdiff_build/configflow" ~/cf-test/.venv/bin/python -m unittest -v test_inventory test_seed test_compare test_recipes test_console test_boundary; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$routerdiff_build/configflow" --output /tmp/routerdiff-results.json --findings /tmp/routerdiff-findings.md'
+RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'set -euo pipefail; cd server/tools/routerdiff; export PYTHONDONTWRITEBYTECODE=1; routerdiff_build=$(mktemp -d "${TMPDIR:-$HOME/.cache/rt-tmp}/routerdiff-build.XXXXXX"); ~/cf-test/.venv/bin/python build.py "$routerdiff_build"; ROUTERDIFF_BINARY="$routerdiff_build/configflow" ~/cf-test/.venv/bin/python -m unittest -v test_inventory test_seed test_compare test_recipes test_console test_boundary; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$routerdiff_build/configflow" --output "$HOME/.cache/routerdiff-results.json" --findings "$HOME/.cache/routerdiff-findings.md"'
 ```
 
 The runner's default gate exits 2 while ANY reviewed design entry still needs a
@@ -38,3 +38,11 @@ Exit 1 denotes actual compared differences; fixture/precondition errors abort an
 persist their error in the JSON ledger. Each group atomically checkpoints the
 ledger, so an interrupted run cannot silently leave an older report looking new.
 Do not call the current foundation a completed Step B acceptance suite.
+
+Source-unreachable guards are separate ledger outcomes, never executed passes.
+`reachability.py` names the full Python call-chain proof and actual public
+controls. All those controls must complete before `source-unreachable` is emitted;
+missing/bad controls keep it pending. These H IDs are not execution tags on the
+control recipes. Reports separate `audited_entries` (executed variants) from
+`source_unreachable_entries`; every proof is marked `execution_claim=false`.
+No branch is made reachable by patching a Python driver, class or helper.

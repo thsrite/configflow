@@ -222,7 +222,8 @@ class AuditTests(unittest.TestCase):
         audits = declared()
         self.assertEqual(len(audits), 26 * 7 + 25 * 3 + 5 + 14 + 12 + 5 + 8 + 23 + 1 + 5 + 4 + 6 + 4 + 4 + 10 + 24 + 1 + 13 + 2 + 12 + 9 + 3 + 8)
         self.assertFalse(set(audits) - set(load()[1]))
-        self.assertEqual({value['audit'] for value in evaluate([]).values()}, {'variants-pending'})
+        self.assertEqual({value['audit'] for value in evaluate([]).values()},
+                         {'variants-pending', 'source-proof-controls-pending'})
         ident = 'R005-F01'
         requirements = audits[ident].requirements
         rows = [{'world': world, 'case': case, 'entries': [ident], 'python': {'status': status},

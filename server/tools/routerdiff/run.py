@@ -619,7 +619,9 @@ def report(output, results, available, announce=True, error=None):
               for ident, entry in entries.items()}
     for ident, verdict in evaluate(results).items():
         ledger[ident].update(verdict)
-    remaining = sum(item['audit'] != 'variants-audited' for item in ledger.values())
+    audited = sum(item['audit'] == 'variants-audited' for item in ledger.values())
+    source_unreachable = sum(item['audit'] == 'source-unreachable' for item in ledger.values())
+    remaining = len(entries) - audited - source_unreachable
     data = {'matrix_entries': len(entries), 'matrix_routes': len(routes),
         'implemented_routes': (sum((route.method, shape(route.path)) in available for route in routes.values())
                                if available is not None else None),
@@ -631,7 +633,7 @@ def report(output, results, available, announce=True, error=None):
         'executed_worlds': sorted({item.get('world', '<self-check>') for item in results}),
         'python_bugs': sorted({item['python_bug'] for item in results if item.get('python_bug')}),
         'complete': remaining == 0 and error is None, 'remaining_audits': remaining,
-        'audited_entries': len(entries) - remaining,
+        'audited_entries': audited, 'source_unreachable_entries': source_unreachable,
         'ledger': ledger, 'results': results}
     if error:
         data['fixture_error'] = error
@@ -655,7 +657,8 @@ def findings(path, data):
         + json.dumps(data.get('cross_domain_recipe_counts', {}), ensure_ascii=False) + '`（不算26条领域路由已实现/通过）。',
         '实际执行世界（统计仅涵盖这些世界）：`' + ', '.join(data['executed_worlds']) + '`。',
         f'已有执行配方引用的设计条目：{data["referenced_entries"]}；逐条变体审计仍未完成。',
-        f'本次实际执行满足显式变体审计：{data["audited_entries"]}；其余{data["remaining_audits"]}待补。', '',
+        f'本次实际执行满足显式变体审计：{data["audited_entries"]}；源码证明公开入口不可达：'
+        f'{data.get("source_unreachable_entries", 0)}（单列，不算执行通过）；其余{data["remaining_audits"]}待补。', '',
         '“Go 尚未实现”单独计数，不算失败，也不算差分通过。路由层 R15/R17 未注册时，',
         '即使底层 R01–R06 已移植，也不能声称 HTTP 行为已比较。', '',
         '仅使用合成数据；两端独立 DATA_DIR、网络命名空间和设备 fake；未访问生产或真实设备。',

@@ -2,8 +2,8 @@
 
 Status: in progress; NOT ready for acceptance hand-back. Branch go-difftest-routers-b.
 Latest clean integration rebase: go15173872f; normal public binary built from it.
-Current declarations:430 source-reviewed variant audits,1871 remaining if all
-completed increments are composed. Last FULL composition still37937739:3054
+Current declarations:430 executed-variant audits plus3 explicit source-unreachable
+proofs;1868 remaining if all completed increments/controls are composed. Last FULL composition still37937739:3054
 recipes/301 audits. Newer subsets do not replace that full evidence; latest
 large subset2470 recipes/327 audits. All observed26 domain routes remain absent
 from the actual Go public manifest, so no native domain parity is claimed.
@@ -1662,3 +1662,33 @@ Fixed-IP source/binding guards increment:
 8 audits/2293 pending in this subset, no Python bug, complete=false. Last FULL
 composition3054/301 unchanged; no command pending. Remaining branch/device/
 background work, scoped dynamics, final composition, gate/rebase pending.
+
+
+Explicit source reachability ledger (separate from executed coverage):
+- H0034/H0041/H0061 cannot be triggered through the current real Python public
+  graph. _router rejects non-routeros/ikuai before _open; discovery filters the
+  same two types before _read; fixed DRIVERS constructs only the two concrete
+  classes with supports_write=True and vendor constants. All three adapter
+  callsites are type-guarded or use that constant vendor. No production property
+  or dispatch registration changes this. Device account permissions raise at
+  HTTP and do not change this class flag. Unit monkeypatches are outside Step B.
+- reachability.py records full source/call-chain proof plus required real public
+  controls:26 legacy/missing source refusals, both real seen-device positives,
+  real dual-vendor discovery and actual enrichment failure. Source control
+  requests do NOT gain the unreachable H execution tag.
+- evaluate emits source-unreachable only after all named controls have correct
+  real Python outcomes, otherwise source-proof-controls-pending. Every proof
+  has execution_claim=false. Reports separately count audited_entries (executed)
+  and source_unreachable_entries; a proof is never a test pass. Test oracle
+  counterexamples prove missing/bad controls retain pending, and proofs cannot
+  inflate execution counts/referenced entries or imply native comparison.
+-430 executed-variant declarations plus3 source proofs;1868 still pending if
+  current increments are composed. Original R001-F08/F09 O6-superseded items and
+  other defensive branches remain uncompleted until separately proved.
+
+.64 exact command:
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY="$HOME/.cache/routerdiff-build-302rx1dg-current/configflow"; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python -m unittest -v test_reachability test_audits test_runner; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world-prefix fixed-source-router- --world fixed-source-missing-router --world fixed-source-unseen --world discovery --world discovery-failures --output "$HOME/.cache/routerdiff-reports/302rx1dg/source-reachability.json"'`
+=> Ran54 tests8.360s/OK;48 real recipes/allGo-unimplemented,20 references,
+2 executed audits,3 source-unreachable proofs,2296 pending in this subset,
+complete=false. No new reference bug. Full report3054/301 still historical;
+final full composition/gate/rebase and remaining matrix work pending.
