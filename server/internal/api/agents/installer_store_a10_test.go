@@ -29,7 +29,7 @@ func TestStorageFailuresHaveActionableErrors(t *testing.T) {
 		t.Errorf("save: %s", res.Text())
 	}
 	res = srv.Get("/api/agents/i/" + strings.Repeat("A", 22)).WantStatus(503)
-	if res.Object().GetBool("success") || !strings.Contains(res.Object().GetString("message"), "请稍后重试") || res.Header.Get("Content-Type") != "application/json" || res.Header.Get("Cache-Control") != "no-store" {
+	if !strings.Contains(res.Text(), "请稍后重试") || res.Header.Get("Content-Type") != "text/plain; charset=utf-8" || res.Header.Get("Cache-Control") != "no-store" || res.Header.Get("Content-Disposition") != "" {
 		t.Errorf("load: %s %v", res.Text(), res.Header)
 	}
 }

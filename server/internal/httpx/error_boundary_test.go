@@ -17,6 +17,9 @@ func TestConfigFindingsEveryAPIErrorUsesJSON(t *testing.T) {
 		r.GET("/api/plain", "test.plain", func(*httpx.Ctx) (*httpx.Response, error) {
 			return httpx.Bytes(500, "text/html", []byte("private diagnostic")), nil
 		})
+		r.GET("/api/shell", "test.shell", func(*httpx.Ctx) (*httpx.Response, error) {
+			return httpx.Text(404, "安装链接不存在。\n").WithHeader("Content-Disposition", "attachment"), nil
+		}).PreservePlainErrors = true
 	})})
 	for _, test := range []struct {
 		method, path string
@@ -33,5 +36,9 @@ func TestConfigFindingsEveryAPIErrorUsesJSON(t *testing.T) {
 				t.Errorf("invalid error envelope: %s", result.Body)
 			}
 		})
+	}
+	shell := srv.Get("/api/shell").WantStatus(404)
+	if shell.Text() != "安装链接不存在。\n" || shell.Header.Get("Content-Type") != "text/plain; charset=utf-8" || shell.Header.Get("Content-Disposition") != "" {
+		t.Fatalf("explicit shell-route exception: %s %v", shell.Body, shell.Header)
 	}
 }

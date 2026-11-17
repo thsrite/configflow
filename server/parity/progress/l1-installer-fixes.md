@@ -177,3 +177,26 @@ RT_HOST=sunbroke@192.168.0.64 rt --back server/internal/api/agents/l1_downloads_
 
 `ok configflow/internal/api/agents 0.038s`; downloads 120 comparisons equal,
 0 differ, 12 pre-existing httpx differences; `ok .../difftest 3.315s`.
+
+## D8 — explicit plain-text download exception
+
+Confirmed coordinator's refinement: preserve Python JSON where it originally
+existed, including Agent binary missing/invalid-name404. Only the saved install
+link has explicit plain-text404/503, so only agents.download_install_command gets
+Route.PreservePlainErrors. No URL inference. All other API boundaries remain JSON.
+Remove attachment header on these errors per earlier explicit instruction;
+Python has that header, so the differential declares and asserts this one header
+correction separately rather than claiming identical headers. Body (including
+newline), status, content-type and remaining route headers match Python exactly.
+Audited core/probe/install/Docker snippets and binary/config archive download
+errors; no extra plain-error markers warranted. Step B #3 lists the sole route.
+
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt --back server/internal/httpx/router.go --back server/internal/httpx/app.go --back server/internal/httpx/error_boundary_test.go --back server/internal/api/agents/l1_shell_download_test.go --back server/internal/api/agents/difftest/l1_download_errors_test.go -- bash -c 'set -eu; cd server; gofmt -w internal/httpx/router.go internal/httpx/app.go internal/httpx/error_boundary_test.go internal/api/agents/l1_shell_download_test.go internal/api/agents/difftest/l1_download_errors_test.go; go vet ./internal/httpx/... ./internal/api/agents/...; go test -count=1 -v -run "Test(ConfigFindingsEveryAPIErrorUsesJSON|L1ShellDownload|StorageFailures)" ./internal/httpx ./internal/api/agents; CONFIGFLOW_DIFF=1 go test -count=1 -v -run "Test(L1DownloadErrorFormats|InstallerDifferentialAgainstFlask)" ./internal/api/agents/difftest > /tmp/configflow-l1-d8-diff.log 2>&1; tail -10 /tmp/configflow-l1-d8-diff.log'
+```
+
+httpx0.016s, api/agents0.061s; installer293 comparisons equal/0 differ; new Flask
+cases both install404/malformed-token and binary404/invalid-filename pass;
+difftest2.829s. Curl-fsSL returns22 without a body, curl|sh exposes the original
+Chinese refusal rather than treating JSON as a script. No real network outside
+loopback; no production access.

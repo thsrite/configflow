@@ -661,6 +661,12 @@ Open findings: none.
 
 ## A08 — installer script rendering, install command store
 
+L1 D8: explicit httpx route marker preserves Python's plain-text 404/503 only
+for agents.download_install_command; removes error attachment header as approved.
+Binary downloads and other Python JSON errors retain JSON. Curl -fsSL/curl|sh,
+generic API boundary, storage failure and Flask body/status/type checks pass;
+see Step B #3 exception list and progress/l1-installer-fixes.md.
+
 L1 D4: confirmed Python's existing optional registration-key policy; ordinary
 Shell/Docker Agent has no registration_key input. Missing-key 403 now explains
 the policy and HA enrollment alternative, without exposing the key or relaxing

@@ -25,7 +25,7 @@ func registerInstaller(r *httpx.Router) {
 	r.GET("/api/agents/gateway-network-probe.sh", "agents.get_gateway_network_probe", getGatewayNetworkProbe)
 	r.POST("/api/agents/install-command", "agents.create_install_command", auth.Require(createInstallCommand))
 	r.POST("/api/agents/core-install-command", "agents.create_core_install_command", auth.Require(createCoreInstallCommand))
-	r.GET("/api/agents/i/<token>", "agents.download_install_command", downloadInstallCommand)
+	r.GET("/api/agents/i/<token>", "agents.download_install_command", downloadInstallCommand).PreservePlainErrors = true
 	r.GET("/api/agents/install-script", "agents.get_install_script", getInstallScript)
 	r.GET("/api/agents/docker-agent-compose", "agents.get_docker_agent_compose", auth.Require(getDockerAgentCompose))
 	r.GET("/api/agents/docker-agent-run", "agents.get_docker_agent_run", auth.Require(getDockerAgentRun))

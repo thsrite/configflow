@@ -81,6 +81,13 @@ func compareInstaller(py, gor response, mask []string) []string {
 		diffs = append(diffs, fmt.Sprintf("status python %d go %d", py.status, gor.status))
 	}
 	for _, name := range installerHeaders {
+		// L1 D8 restores the exact Python plain-text body/status/type. The
+		// approved error-header exception removes the download attachment name.
+		if name == "Content-Disposition" && (py.status == 404 || py.status == 503) &&
+			py.header.Get("Content-Type") == "text/plain; charset=utf-8" && gor.header.Get("Content-Type") == py.header.Get("Content-Type") &&
+			py.header.Get(name) == `attachment; filename="configflow-install.sh"` && gor.header.Get(name) == "" {
+			continue
+		}
 		if migrated && name == "Content-Type" {
 			continue
 		}

@@ -202,7 +202,11 @@ func (a *App) finalize(c *Ctx, r *Response) {
 		r.Header().Set("X-ConfigFlow-Profile", c.ProfileID)
 	}
 	repo.ResetConfigContext(c.ctx)
-	if r.Status >= 400 && (c.path == "/api" || strings.HasPrefix(c.path, "/api/")) && !strings.HasPrefix(r.Header().Get("Content-Type"), "application/json") {
+	preservePlain := c.route != nil && c.route.PreservePlainErrors && strings.HasPrefix(r.Header().Get("Content-Type"), "text/plain")
+	if r.Status >= 400 && preservePlain {
+		r.Header().Del("Content-Disposition")
+	}
+	if r.Status >= 400 && (c.path == "/api" || strings.HasPrefix(c.path, "/api/")) && !strings.HasPrefix(r.Header().Get("Content-Type"), "application/json") && !preservePlain {
 		// API failures always have a JSON envelope, including explicit HTML/text
 		// failures returned by a handler. Do not echo arbitrary diagnostic bodies.
 		description := http.StatusText(r.Status)

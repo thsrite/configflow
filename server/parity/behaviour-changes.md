@@ -151,11 +151,26 @@ C27：上游 `tag` 等字符串元数据包含真实 U+2028/U+2029 时，Go `enc
 |---|---|---|
 | Step B #1，nodes/reorder、subscriptions/reorder、subscriptions/<id>/fetch 非对象/非法排序字段 | truthy非法类型500，falsy非对象被当成空对象，或错误信息混入缺失ID | 400 JSON、准确中文；包括null/空数组/false/0/空字符串。排序形状在提交前校验；fetch在资源查找前拒绝，不访问上游、不写状态。`api/subscriptions/input_shape_test.go`。合法对象中的真实未知ID保持404。 |
 | Step B #2，server-domain/config-token 的孤立 UTF-16 JSON 转义 | Python 500；旧 Go 静默替换 U+FFFD 并提交 | 400 JSON「请求内容包含无效的 Unicode 字符」，提交前拒绝。合法代理对、显式 U+FFFD 与字面反斜杠不拒绝。`api/settings/unicode_test.go`。 |
-| Step B #3，所有 /api 错误出口 | Werkzeug HTML 错误页（含400/404/405/500及文件失败） | 同状态 JSON `{success:false,message}`；不回显内部诊断，保留 Allow 等头，HEAD 不返回正文。原JSON错误的字段与语义继续保留。非API HTML/重定向不改变。`httpx/error_boundary_test.go`。 |
+| Step B #3，/api 错误出口（下列显式例外除外） | Werkzeug HTML 错误页（含400/404/405/500及文件失败） | 同状态 JSON `{success:false,message}`；不回显内部诊断，保留 Allow 等头，HEAD 不返回正文。原JSON错误的字段与语义继续保留。非API HTML/重定向不改变。`httpx/error_boundary_test.go`。 |
 | R058-B03，domain-discovery 未知遗留字段 | 更新设置时删除未知字段 | 按N8保留未知字段并原样往返，包含false与空数组。`api/domaindiscovery/legacy_settings_test.go`。 |
 | Step B #12a，Docker HA server_url 末尾换行 | Python200（正则$接受末尾换行） | 保留既定A09决定：400「请填写完整的 ConfigFlow HTTP(S) 地址」。用例明确断言该差异。 |
 | Step B #12a，Docker HA非法IPv6 URL | urllib错误「Invalid IPv6 URL」 | 同为400、success=false，使用net/url原生英文诊断。只对该命名向量声明文本差异，其余字段/头严格比较。 |
 | Step B #12b，安装器非法UTF-8 query | Werkzeug保留非法字节为%XX | Go使用U+FFFD，引用/转义经过bash语法和隔离赋值测试。仅把非法字节规范化后的有效UTF-8请求交给真实Flask生成完整预期，与Go严格比较；不mask脚本片段。 |
+
+Step B #3 的面向 shell 下载例外（L1 D8，路由级 `PreservePlainErrors`）：
+
+- `GET/HEAD /api/agents/i/<token>`，`agents.download_install_command`：不存在、
+  过期或非法 token 的 404、读取存储失败的 503，保留原中文正文及末尾换行、
+  `text/plain; charset=utf-8`、状态码、no-store/nosniff。**与 Python 一致，不属于变化**。
+  按协调者先前的明确要求，错误额外移除 `Content-Disposition: attachment`；
+  此头在 Python 中存在，是单独声明的头部修正，差分显式断言两端取值。
+
+只标记上述确实返回纯文本错误的路由，不按 URL 猜测。审计的 Agent 二进制下载
+`/api/agents/download/<filename>`（缺失文件/非法文件名）、core-install-script、
+gateway-network-probe.sh、install-script、docker-agent-run/compose，以及已生成配置
+的文件/归档下载，原来明确返回的 JSON 错误继续为 JSON；不因成功时下载文件就豁免。
+新增 Flask 差分分别检查安装链接和二进制下载的 404/非法名称；正常 API 错误仍有
+全局 JSON 边界断言，并有真实 curl -fsSL、curl | sh 回归。
 
 ## N2 — Go 原生环境代理规则（2026-11-17）
 

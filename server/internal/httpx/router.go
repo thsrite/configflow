@@ -22,8 +22,11 @@ type Route struct {
 	Path     string
 	Endpoint string
 	Handler  HandlerFunc
-	parts    []part
-	allowed  []string
+	// PreservePlainErrors keeps explicit text/plain error bodies returned by
+	// shell-facing downloads. JSON and unexpected errors retain API policy.
+	PreservePlainErrors bool
+	parts               []part
+	allowed             []string
 }
 
 // Blueprint is request.blueprint: the endpoint before its last dot.
