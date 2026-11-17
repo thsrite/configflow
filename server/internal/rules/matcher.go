@@ -1,8 +1,6 @@
 package rules
 
 import (
-	"errors"
-	"io"
 	"iter"
 	"net/netip"
 	"regexp"
@@ -15,6 +13,7 @@ import (
 	"configflow/internal/jsonx"
 	"configflow/internal/logx"
 	"configflow/internal/weburl"
+	"configflow/internal/yamlx"
 )
 
 // Rule-line parsing and the indexed matcher (backend/utils/rule_matcher.py)
@@ -219,14 +218,11 @@ func rulesetLines(content, format string) iter.Seq[rulesetLine] {
 // missing or repeated payload key, other entries) yields nothing. A block
 // entry is shown as its source line, a flow entry as its value.
 func yamlPayloadLines(content string) []rulesetLine {
-	decoder := yaml.NewDecoder(strings.NewReader(content))
-	var doc, extra yaml.Node
-	if decoder.Decode(&doc) != nil || !errors.Is(decoder.Decode(&extra), io.EOF) ||
-		len(doc.Content) != 1 || doc.Content[0].Kind != yaml.MappingNode {
+	root, err := yamlx.Parse([]byte(content))
+	if err != nil || root.Kind != yaml.MappingNode {
 		return nil
 	}
 	var payload *yaml.Node
-	root := doc.Content[0]
 	for i := 0; i+1 < len(root.Content); i += 2 {
 		if root.Content[i].Kind == yaml.ScalarNode && root.Content[i].Value == "payload" {
 			if payload != nil {

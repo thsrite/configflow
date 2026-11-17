@@ -42,6 +42,21 @@ diagnosis and strict other fields/storage; no aggregation runtime code changes. 
 - Python lazily imports in cycles (e.g. converters ↔ provider delivery ↔ route files, the whole OxiDNS cluster). Go needs a DAG: the prerequisite order below breaks the cycles; when a module needs a function of a later module, put a `compat.go` copy (`TODO(port)`) or an interface/hook and list it here.
 - Cross-domain calls (config → agents/routers code) are listed per module; they are the main blockers for C18, C27, C34, C36, C37.
 
+## N7-3d — final reader/legacy cleanup (in progress)
+
+Branch go-n7-3d stacks on frozen N7-4@a6277937. Scope includes convert readers,
+importer/rules bare decoders, gateway's remaining legacy readers/Mapping codec,
+the proddiff loader and provider/deploy diagnostic interfaces, then removal of
+all old loader/pyyaml references and test-helper consolidation/grep gate.
+OxiDNS's two readers belong to C29. Chinese contexts stay unchanged; native
+positions are audited and any deltas counted separately.
+
+First buildable step: rules matcher now uses Parse with unchanged payload/source
+selection; real native-reader comparison equal940/native-diagnostics41,unknown0.
+The complete rules tests pass (.64 1.755s), including depth40 and self-alias
+rejection through both extraction and public Match. Other implementation and
+final acceptance remain pending. See [progress/n7-3d.md](progress/n7-3d.md).
+
 ## N7-4 — native YAML writers (complete; coordinator verification pending)
 
 All runtime writer callers now construct Nodes/typed values and call Marshal:
