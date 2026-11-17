@@ -48,7 +48,7 @@ type Hooks struct {
 	// config_export.redact_oxidns_settings, routers/store.redact_routers and
 	// mihomo_easytier.redact_settings. Each returns the redacted value.
 	// Default: ExportAll(true) fails rather than export secrets.
-	SanitizeExternalPayload func(payload *jsonx.Object, systemConfig *jsonx.Object) (*jsonx.Object, error)
+	SanitizeExternalPayload func(ctx context.Context, payload *jsonx.Object, systemConfig *jsonx.Object) (*jsonx.Object, error)
 	RedactOxidnsSettings    func(settings any) any
 	RedactRouters           func(routers any) any
 	RedactEasytierSettings  func(settings any) any

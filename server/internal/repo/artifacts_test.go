@@ -83,7 +83,7 @@ func TestDesensitizedExportNeedsRedactionHooks(t *testing.T) {
 
 	var sanitizedWith *jsonx.Object
 	SetHooks(Hooks{
-		SanitizeExternalPayload: func(payload, systemConfig *jsonx.Object) (*jsonx.Object, error) {
+		SanitizeExternalPayload: func(_ context.Context, payload, systemConfig *jsonx.Object) (*jsonx.Object, error) {
 			sanitizedWith = systemConfig
 			return payload, nil
 		},
@@ -167,4 +167,45 @@ func TestNodeDeletionGoesThroughThePlanHook(t *testing.T) {
 	wantEqual(t, must(r.GetProfile(bg, "default"))(t).GetList("proxy_groups")[0].(*jsonx.Object).Value("manual_nodes"), []any{"n2"})
 	// One commit: the profile and the shared section each advance once.
 	wantEqual(t, must(r.ConfigRevision(bg, "default"))(t), revision+2)
+}
+
+// Export hooks must not resolve credentials from a different repository or
+// generation after the export has removed its own agents and capability keys.
+func TestExportSanitizerUsesExportRepositorySnapshot(t *testing.T) {
+	r, other := newRepo(t), newRepo(t)
+	scAppendAgent(t, r, `{"id":"export-agent","name":"Export","profile_id":"default","token":"synthetic-export-token"}`)
+	scAppendAgent(t, other, `{"id":"other-agent","name":"Other","profile_id":"default","token":"synthetic-other-token"}`)
+	called := false
+	defer SetHooks(SetHooks(Hooks{
+		SanitizeExternalPayload: func(ctx context.Context, payload, settings *jsonx.Object) (*jsonx.Object, error) {
+			called = true
+			bound, err := GetRepository(ctx)
+			noError(t, err)
+			if bound != r || r.lockedSnapshot(ctx) == nil {
+				t.Fatal("sanitizer lost export repository snapshot")
+			}
+			tokens := must(bound.AgentTokensForSanitization(ctx))(t)
+			if !tokens.Has("synthetic-export-token") || tokens.Has("synthetic-other-token") {
+				t.Fatal("sanitizer used another repository")
+			}
+			if len(payload.GetObject("system").GetList("agents")) != 0 {
+				t.Fatal("export must omit agents before sanitization")
+			}
+			original := must(bound.GetSystemSettings(ctx))(t)
+			wantEqual(t, settings, original)
+			return payload, nil
+		},
+		RedactOxidnsSettings:   func(v any) any { return v },
+		RedactRouters:          func(v any) any { return v },
+		RedactEasytierSettings: func(v any) any { return v },
+	}))
+	must(r.ExportAll(WithRepository(bg, other), true))(t)
+	if !called {
+		t.Fatal("sanitizer not called")
+	}
+	called = false
+	full := must(r.ExportAll(WithRepository(bg, other), false))(t)
+	if called || len(full.GetObject("system").GetList("agents")) != 1 {
+		t.Fatal("full restorable export was sanitized")
+	}
 }

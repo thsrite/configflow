@@ -2115,6 +2115,9 @@ Python：完整两路由 `backend/routes/rule_library.py`（540行）、`proxy_g
 
 **Status: `missing`** · prereqs: C18, C19, C20, C28, C29, C31, C33 · Go: internal/api/generate, api/config, api/profiles, internal/configexport (new; internal/redact exists)
 
+
+**Clarified in C34 (2026-11-18):** HEAD uses the GET read-only branch for profile collections/items and all custom-config routes: no DB, business-file, revision or generation-cache changes. These fix Python dispatch bugs and have explicit expected differences. Artifact routes are registered before A14 integration and return 503 「等待 Agent 发布模块」; unknown services remain 400 and unknown actions 404. Frozen-artifact success coverage awaits A14, without copying its implementation. `repo.Hooks.SanitizeExternalPayload` gains a first `context.Context` parameter; desensitized ExportAll reads credentials from the same repository snapshot as the exported document. N8-5b was notified; N8-5c retains this contract. A11 Previews gets a separate shared-leaf-lock/shutdown fix **after O3-6c merges**, with real Runtime reproductions; the A14 reviewer has been notified. Commit sequence: export wiring, profiles, custom config, generation/live config, artifact integration. Shared commit points remain known and assigned to O3-6c; final gate queue limit is 15 minutes.
+
 Files:
 - `backend/routes/generate.py` (320)
 - `backend/routes/config.py` (497)

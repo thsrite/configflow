@@ -127,7 +127,7 @@ func xcExecuteC04(t *testing.T, r *Repository, op *jsonx.Object, arg func(string
 		result, err = r.GetSystemSettings(bg)
 	case "export_desensitized":
 		previous := SetHooks(Hooks{
-			SanitizeExternalPayload: func(payload, systemConfig *jsonx.Object) (*jsonx.Object, error) {
+			SanitizeExternalPayload: func(_ context.Context, payload, systemConfig *jsonx.Object) (*jsonx.Object, error) {
 				return jsonx.Obj("sanitized", payload, "system_config", systemConfig), nil
 			},
 			RedactOxidnsSettings:   func(value any) any { return jsonx.Obj("redacted_oxidns", value) },

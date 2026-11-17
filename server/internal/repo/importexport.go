@@ -23,6 +23,17 @@ var sensitiveSystemSettings = map[string]bool{"config_token": true, "rule_proxy_
 // result goes through the registered redaction hooks; without registered
 // hooks it fails instead of exporting secrets.
 func (r *Repository) ExportAll(ctx context.Context, desensitize bool) (result *jsonx.Object, err error) {
+	if desensitize {
+		err = r.WithReadSnapshot(WithRepository(ctx, r), func(held context.Context) error {
+			result, err = r.exportAll(held, true)
+			return err
+		})
+		return result, err
+	}
+	return r.exportAll(ctx, false)
+}
+
+func (r *Repository) exportAll(ctx context.Context, desensitize bool) (result *jsonx.Object, err error) {
 	err = r.view(ctx, func(document *jsonx.Object) error {
 		result = document.DeepCopy()
 		return nil
@@ -80,7 +91,7 @@ func (r *Repository) ExportAll(ctx context.Context, desensitize bool) (result *j
 			loon.Set("custom_config", "")
 		}
 	}
-	return h.SanitizeExternalPayload(result, systemConfig)
+	return h.SanitizeExternalPayload(ctx, result, systemConfig)
 }
 
 // prepareImport is _prepare_import.
