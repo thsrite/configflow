@@ -2516,3 +2516,9 @@ Ran 145 tests in 10.023s ... OK
 recorded_rechecks: closed265 / open69 / accepted68 / separate1; actual_case_results_unchanged10648
 coverage audit: routes228 / variants10648 / R-H5428 / unaccounted=[] / unknown_labels=[] / missing S-F=[] / runtime_design_errors=[]；exit0
 ```
+
+## 批次 152：A13集成后的config定向复验准备
+
+- rebase到go 15173872f（A13 Agent内容比较/secret收集及最新门禁说明）；behaviour-changes冲突完整保留A24/A13批准条目与维护者Web替代条目，未读业务实现。工具归因更新：25959d1cf/ac2df5d5e/d7bb7ca45分别对应前述两次夹具修正与profile时间修正，历史记录保持原样。
+- .32正在运行的官方门禁仍是其已冻结895f5e21副本，没有同步或修改它。新增15分钟排队上限是在本任务已取得槽位之后合入；当前没有排队命令。此前的长排队没有作为任何测试通过证据。
+- 最新集成只按公开受影响边界选择脱敏、Agent版本/发现读取、自动备份heartbeat及两类残余规则协议组复验。完整402组基线c14763b3、62组895f5e21与最新定向基线分别记录，不声称完整all已跑在15173872f上。
