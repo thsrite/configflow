@@ -2011,3 +2011,9 @@ H037以真实Node的stdin语法检查作为可重复外部工具夹具：wrapper
 H115/H116/H117现在由公开R202保存代理入口驱动（[settings.py:49](../../backend/routes/settings.py#L49)直接调用normalize_rule_fetch_proxy）：非字符串、path/query/fragment、URL语法错误分别到达对应源码guard；不必经过R087才算同一helper。H116的ValueError还经过H117，关联为同次真实HTTP标签。H119在R087/R138的真实302无Location响应到达；H121以已有四跳redirect-loop请求关联。
 
 H118的未知method guard不能用公开GET/HEAD改成POST来冒充：当前config调用方传入固定get/head，HTTP入口方法由路由提前处理。H122的`max_bytes`循环也不由R087/R138-F15证明：`mosdns._fetch_remote_content`调用request_rule时未传max_bytes，而在自身chunks循环另做大小限制（[mosdns.py:412](../../backend/routes/mosdns.py#L412)、[mosdns.py:426](../../backend/routes/mosdns.py#L426)）。已找到的显式max_bytes生产调用在Agent deployment_bundle/mihomo_panel，不能借相似400消息虚增config helper覆盖；目前保留partial/未覆盖，待对应领域/额外公开驱动。H123用配置的回环代理实际耗尽GitHub原始地址及镜像两个候选，确实到达最终candidate失败分支；单个普通URL在外层raise_for_status的502不能自动贴这个标签。
+
+### Step B 规则内容检查、追加和helper标签的入口区分
+
+H124–H127/H135–H138可通过R171 check-content得到200结构化errors/warnings，内容与changes仍必须保留；H139/H140通过R165创建的metadata/内容检查得到400；H134非文本content也由R165到达inspect_domain_content，不能拿R171提前返回的“请提交规则类型和文本内容”包装错误冒充该helper。H146–H149则在R171带append_lines时由read_rule_payload失败得到400通用payload提示；同样的YAML别名/复杂类型在“检查”和“追加”走的是不同分支。
+
+helper标签现在支持精确case+variant+route：只对R087/R138-F13的`text/F13`附H124/H145，只对B04的`text/B04`附H143；不能把这些编号的其他选择器/变体一并计数。标签仍只附到实际重跑的原请求，既不多发HTTP也不把Go尚未实现改为通过。

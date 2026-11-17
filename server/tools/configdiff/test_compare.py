@@ -246,6 +246,15 @@ class Comparators(unittest.TestCase):
         self.assertNotIn('helper_cases', wrong)
         self.assertEqual(auxiliary_cases(results), {'H770'})
         self.assertEqual(first['state'], 'go-unimplemented')
+        valid = {'case': 'R087-F13', 'variant': 'text/F13', 'route': 'GET /api/mosdns/rule-proxy', 'state': 'go-unimplemented'}
+        wrong_variant = {**valid, 'variant': 'different-input'}
+        wrong_route = {**valid, 'route': 'GET /api/profiles/<profile_id>/mosdns/rule-proxy'}
+        variants = attach([valid, wrong_variant, wrong_route])
+        self.assertEqual(len(variants), 3)
+        self.assertEqual(valid['helper_cases'], ['H124', 'H145'])
+        self.assertEqual(valid['state'], 'go-unimplemented')
+        self.assertNotIn('helper_cases', wrong_variant)
+        self.assertNotIn('helper_cases', wrong_route)
 
     def test_version_405_json_approval_preserves_allow_storage_and_exact_public_payload(self):
         from config_finding_resolutions import annotate

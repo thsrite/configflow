@@ -6,6 +6,7 @@ Unreachable/earlier-guard branches are deliberately absent.
 """
 
 LINKS = {
+    **{case: ('POST /api/rule-library/check-content', ('H149',)) for case in ('H146', 'H147', 'H148')},
     'H116': ('POST /api/settings/rule-fetch-proxy', ('H117',)),
     'R087-F11': ('GET /api/mosdns/rule-proxy', ('H121',)),
     'R138-F11': ('GET /api/profiles/<profile_id>/mosdns/rule-proxy', ('H121',)),
@@ -43,12 +44,22 @@ LINKS = {
     'R118-F09': ('GET /api/profiles/<profile_id>', ('H809',)),
 }
 
+VARIANT_LINKS = {
+    (case, variant, route): labels
+    for prefix, route in [('R087', 'GET /api/mosdns/rule-proxy'),
+                          ('R138', 'GET /api/profiles/<profile_id>/mosdns/rule-proxy')]
+    for case, variant, labels in [(prefix + '-F13', 'text/F13', ('H124', 'H145')),
+                                 (prefix + '-B04', 'text/B04', ('H143',))]
+}
+
 
 def attach(results):
     for result in results:
         route, labels = LINKS.get(result['case'], ('', ()))
-        if result['route'] == route:
-            result['helper_cases'] = list(labels)
+        labels = labels if result['route'] == route else ()
+        labels += VARIANT_LINKS.get((result['case'], result.get('variant', ''), result['route']), ())
+        if labels:
+            result['helper_cases'] = sorted(set(labels))
     return results
 
 

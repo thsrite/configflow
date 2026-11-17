@@ -1750,3 +1750,19 @@ current compared=61 different=1 open=1 design_errors=[]；exit=1（保留真实C
 ```
 
 继续规则内容helper、其余清单；最终.32全量未执行。
+
+## 批次 102：规则内容检查/metadata/追加的可达helper分支
+
+- 38新增实际HTTP变体覆盖H124–H127、H134–H140、H146–H149；检查路径逐字保留content/changes并精确验证200中的errors/warnings：Domain误填Classical、坏domain/CIDR/歧义外部语法、YAML根/重复payload/错类型/别名序列/锚点/块文本/嵌套复杂值等。append_lines路径则对同类payload结构返回400通用提示；不是把两个不同分支的错误合并。
+- 创建入口R165还验证5种非法metadata、2种内容错误、5种非文本content；失败全SQL/files/源HTTP0次，均在缓存和提交前拒绝。H134由此真正到达inspect_domain_content，不能拿R171提前校验错误代替。
+- helper标签新增case+variant+route精确键：重跑R087/R138声明组后仅text/F13附H124/H145、仅text/B04附H143。错variant/route不贴标签，Go尚未实现状态不改，新增对应自检；同次原请求不增加HTTP数。新增H17，统一9410变体、原R仍4292（S689/F2667/B936）、H599、G16。
+- .63四组60变体：22compared（原声明组）、38Go尚未实现（新内容路由组），design_errors=[]、86自检和故意错误Go响应检出通过。新用例参考端均执行了准确分支及持久化不变前提，Go路由接通后自动比较；不计作通过。findings仍closed81/accepted7/open19/O12单列1。
+
+```text
+.63 ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups rule-content-inspection-helpers,rule-content-metadata-helpers,rule-content-append-helpers,rule-proxy-declarations --baseline 7521bb5c
+current compared=22 go-unimplemented=38 design_errors=[]；exit=0
+86 self-checks + deliberately wrong-Go-response detection OK
+独立原始报告/tmp/configdiff-rule-content-helpers.json（首次不含后补H134五变体，统一报告含完整60）
+```
+
+原R仍差238、H仍差513，另有已列partial/防御性不可达槽；继续GET拉取日志/HEAD、其余helper与长流程，最终.32全量未执行。
