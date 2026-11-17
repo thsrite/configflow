@@ -133,3 +133,13 @@ func FuzzSavedMetricLines(f *testing.F) {
 		}
 	})
 }
+
+func TestMemoryCacheDoesNotApplyStoredJSONRepair(t *testing.T) {
+	useClock(t)
+	h := NewHistory(t.TempDir(), MaxPointsPerAgent)
+	at := naiveNow()
+	h.points["a"] = []point{{at, `{"timestamp":"` + isoformat(at) + `","cpu":{"usage_percent":NaN}}`}}
+	if _, err := h.GetMetrics("a", nil); err == nil {
+		t.Fatal("invalid native cache line was silently repaired")
+	}
+}

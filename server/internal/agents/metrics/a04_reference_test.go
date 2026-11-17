@@ -162,11 +162,17 @@ func referenceHistory(t *testing.T, item *jsonx.Object) *History {
 	var points []point
 	for _, raw := range item.GetList("points") {
 		line := raw.(string)
-		value, err := jsonx.ParseString(line)
+		// Build the fixture's cache through the approved persisted-data decoder.
+		// GetMetrics itself is strict: native cache lines must already be valid JSON.
+		var value *jsonx.Object
+		if err := jsonresp.DecodeStored([]byte(line), &value); err != nil {
+			t.Fatal(err)
+		}
+		encoded, err := jsonresp.Encode(value)
 		if err != nil {
 			t.Fatal(err)
 		}
-		points = append(points, point{naiveOf(t, value.(*jsonx.Object).GetString("timestamp")), line})
+		points = append(points, point{naiveOf(t, value.GetString("timestamp")), string(encoded)})
 	}
 	h.points["a"] = points
 	return h

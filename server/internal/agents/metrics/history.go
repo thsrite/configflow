@@ -653,7 +653,7 @@ func (h *History) GetMetrics(agentID string, hours *big.Int) ([]any, error) {
 	out := make([]any, 0, len(lines))
 	for _, line := range lines {
 		var value *jsonx.Object
-		err := jsonresp.DecodeStored([]byte(line), &value)
+		err := json.Unmarshal([]byte(line), &value)
 		if err != nil {
 			return nil, err
 		}
