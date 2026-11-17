@@ -14,6 +14,7 @@ package repo
 // fail; the Go error is logged.
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -289,7 +290,7 @@ func TestReferenceRouterCommitGuard(t *testing.T) {
 		}
 		calls := []any{}
 		held := 0
-		previousHooks := SetHooks(Hooks{JobLock: func(profileID, routerID string, router *jsonx.Object) (func(), bool) {
+		previousHooks := SetHooks(Hooks{JobLock: func(_ context.Context, profileID, routerID string, router *jsonx.Object) (func(), bool) {
 			calls = append(calls, []any{profileID, routerID})
 			if refuse[routerKey{profileID, routerID}] {
 				return nil, false
@@ -297,7 +298,7 @@ func TestReferenceRouterCommitGuard(t *testing.T) {
 			held++
 			return func() { held-- }, true
 		}})
-		release, err := r.routerCommitGuard(routers(record.Value("old")), routers(record.Value("new")), locked, policy)
+		release, err := r.routerCommitGuard(bg, routers(record.Value("old")), routers(record.Value("new")), locked, policy)
 		if release != nil {
 			release()
 		}

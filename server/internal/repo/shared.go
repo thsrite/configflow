@@ -72,7 +72,7 @@ func (r *Repository) CreateRuleLibraryItem(ctx context.Context, rule *jsonx.Obje
 				return exists("规则库 ID 已存在，请刷新后重试")
 			}
 		}
-		_, release, err := acquireLock(ctx, path+".lock")
+		_, release, err := acquireFile(ctx, path)
 		if err != nil {
 			return err
 		}

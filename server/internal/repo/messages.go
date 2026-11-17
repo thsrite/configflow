@@ -9,3 +9,5 @@ const (
 	msgStoreProfilesObject = "profiles 必须是对象"
 	msgStoreProfileObject  = "配置节 profile/%s 必须是对象"
 )
+
+const msgRouterJobBusy = "路由器正在发布或同步，不能替换连接或删除记录，请稍后重试"

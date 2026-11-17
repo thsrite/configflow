@@ -102,6 +102,9 @@ func TestNestedWriteIsRefusedAndReadsSeeWorkingCopy(t *testing.T) {
 }
 
 func TestReenteringAHeldLockTimesOut(t *testing.T) {
+	if repositoryChild(t, "TestReenteringAHeldLockTimesOut") {
+		return
+	}
 	t.Setenv(LockTimeoutEnv, "0.2")
 	path := filepath.Join(t.TempDir(), "x.lock")
 	err := withLock(bg, path, func(ctx context.Context) error {

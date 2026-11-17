@@ -10,6 +10,7 @@ import (
 	"strings"
 	"syscall"
 
+	"configflow/internal/ctxx"
 	"configflow/internal/jsonx"
 	"configflow/internal/pystr"
 )
@@ -214,7 +215,7 @@ func (r *Repository) ReadSharedJSON(ctx context.Context, relativePath string) (r
 	if err != nil {
 		return nil, err
 	}
-	err = withLock(ctx, path+".lock", func(context.Context) error {
+	err = withFile(ctx, path, func() error {
 		result, err = readJSON(path)
 		return err
 	})
@@ -223,20 +224,22 @@ func (r *Repository) ReadSharedJSON(ctx context.Context, relativePath string) (r
 
 // WriteSharedJSON is write_shared_json; it returns the file's path.
 func (r *Repository) WriteSharedJSON(ctx context.Context, relativePath string, data any) (string, error) {
+	ctx = ctxx.Detach(ctx)
 	path, err := r.SharedPath(relativePath)
 	if err != nil {
 		return "", err
 	}
-	return path, withLock(ctx, path+".lock", func(context.Context) error { return writeJSON(path, data) })
+	return path, withFile(ctx, path, func() error { return writeJSON(path, data) })
 }
 
 // WriteSharedText is write_shared_text; it returns the file's path.
 func (r *Repository) WriteSharedText(ctx context.Context, relativePath string, content []byte) (string, error) {
+	ctx = ctxx.Detach(ctx)
 	path, err := r.SharedPath(relativePath)
 	if err != nil {
 		return "", err
 	}
-	return path, withLock(ctx, path+".lock", func(context.Context) error { return writeAtomic(path, content) })
+	return path, withFile(ctx, path, func() error { return writeAtomic(path, content) })
 }
 
 // ProfileDir is profile_dir: DATA_DIR/profiles/<id>.
@@ -311,15 +314,12 @@ func (r *Repository) profileOperationLockPath(profileID string) (string, error) 
 // and write_profile_text: under the profile's operation lock, check that the
 // profile exists, then write under "<file>.lock".
 func (r *Repository) writeProfileFile(ctx context.Context, profileID, path string, write func() error) error {
-	operationLock, err := r.profileOperationLockPath(profileID)
-	if err != nil {
-		return err
-	}
-	return withLock(ctx, operationLock, func(ctx context.Context) error {
-		if _, err := r.ProfileMetadata(ctx, profileID); err != nil {
+	ctx = ctxx.Detach(ctx)
+	return r.withProfileOperation(ctx, profileID, func(held context.Context) error {
+		if _, err := r.ProfileMetadata(held, profileID); err != nil {
 			return err
 		}
-		return withLock(ctx, path+".lock", func(context.Context) error { return write() })
+		return withFile(held, path, write)
 	})
 }
 

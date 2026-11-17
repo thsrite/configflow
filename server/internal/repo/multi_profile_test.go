@@ -250,9 +250,6 @@ func TestOperatingSystemReleasesFileLockWhenHolderProcessCrashes(t *testing.T) {
 func TestThreadLockRemainsReentrantForSameThread(t *testing.T) {
 	directory := t.TempDir()
 	lockPath := filepath.Join(directory, "reentrant.lock")
-	if processLock(resolvePath(lockPath)) != processLock(resolvePath(filepath.Join(directory, ".", "reentrant.lock"))) {
-		t.Fatal("two in-process locks for one path")
-	}
 	noError(t, withLock(bg, lockPath, func(ctx context.Context) error {
 		if !holdsLock(ctx, lockPath) {
 			t.Fatal("held lock is not recorded in the context")

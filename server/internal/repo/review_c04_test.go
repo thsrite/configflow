@@ -7,10 +7,8 @@ package repo
 import (
 	"context"
 	"encoding/hex"
-	"errors"
 	"os"
 	"path/filepath"
-	"syscall"
 	"testing"
 
 	"configflow/internal/jsonx"
@@ -199,10 +197,10 @@ func TestCreateRuleLibraryItemHoldsCacheLockThroughCommit(t *testing.T) {
 	path := must(r.SharedPath(filepath.Join("rules", rules.RuleCacheFilename(rule))))(t)
 	checked := false
 	defer SetHooks(SetHooks(Hooks{ConfigurationCommitted: func(*Repository, *jsonx.Object, *jsonx.Object) {
-		handle := must(os.OpenFile(path+".lock", os.O_RDWR, 0))(t)
-		defer handle.Close()
-		if err := syscall.Flock(int(handle.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); !errors.Is(err, syscall.EWOULDBLOCK) {
-			t.Errorf("cache lock not held after the commit: %v", err)
+		_, release, acquired := fileLocks.TryLock(bg, resolvePath(path))
+		if acquired {
+			release()
+			t.Error("cache lock not held after the commit")
 		}
 		checked = true
 	}}))
@@ -210,9 +208,11 @@ func TestCreateRuleLibraryItemHoldsCacheLockThroughCommit(t *testing.T) {
 	if !checked {
 		t.Fatal("commit hook not called")
 	}
-	handle := must(os.OpenFile(path+".lock", os.O_RDWR, 0))(t)
-	defer handle.Close()
-	noError(t, syscall.Flock(int(handle.Fd()), syscall.LOCK_EX|syscall.LOCK_NB))
+	_, release, acquired := fileLocks.TryLock(bg, resolvePath(path))
+	if !acquired {
+		t.Fatal("cache lock retained after successful commit")
+	}
+	release()
 }
 
 // A creation whose commit fails removes its cache file and frees the lock.
@@ -226,7 +226,9 @@ func TestCreateRuleLibraryItemFailedCommitRemovesCache(t *testing.T) {
 	if pathExists(path) {
 		t.Fatal("cache of the failed creation kept")
 	}
-	handle := must(os.OpenFile(path+".lock", os.O_RDWR, 0))(t)
-	defer handle.Close()
-	noError(t, syscall.Flock(int(handle.Fd()), syscall.LOCK_EX|syscall.LOCK_NB))
+	_, release, acquired := fileLocks.TryLock(bg, resolvePath(path))
+	if !acquired {
+		t.Fatal("cache lock retained after failed commit")
+	}
+	release()
 }

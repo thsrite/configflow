@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"configflow/internal/ctxx"
 	"configflow/internal/jsonx"
 )
 
@@ -436,11 +437,8 @@ func (r *Repository) SetDefaultProfile(ctx context.Context, profileID string) (c
 // migrations/deleted-<id>-<uuid>/ together with deleted-profile.json (the
 // export_profile shape, mode 0600), and moved back when the commit fails.
 func (r *Repository) DeleteProfile(ctx context.Context, profileID, newDefaultID string) error {
-	operationLock, err := r.profileOperationLockPath(profileID)
-	if err != nil {
-		return err
-	}
-	return withLock(ctx, operationLock, func(ctx context.Context) error {
+	ctx = ctxx.Detach(ctx)
+	return r.withProfileOperation(ctx, profileID, func(ctx context.Context) error {
 		var releases []func()
 		defer func() {
 			for index := len(releases) - 1; index >= 0; index-- {
@@ -454,7 +452,7 @@ func (r *Repository) DeleteProfile(ctx context.Context, profileID, newDefaultID 
 			return err
 		}
 		lockedRouters := map[routerKey]bool{}
-		err = r.update(ctx, writeOptions{lockedRouters: lockedRouters}, func(_ context.Context, document *jsonx.Object) error {
+		err = r.update(ctx, writeOptions{lockedRouters: lockedRouters}, func(ctx context.Context, document *jsonx.Object) error {
 			profile, err := profileOf(document, profileID)
 			if err != nil {
 				return err
@@ -498,7 +496,7 @@ func (r *Repository) DeleteProfile(ctx context.Context, profileID, newDefaultID 
 					remaining.Set(key, value)
 				}
 			}
-			release, err := r.routerCommitGuard(document, jsonx.Obj("profiles", remaining), nil, nil)
+			release, err := r.routerCommitGuard(ctx, document, jsonx.Obj("profiles", remaining), nil, nil)
 			if err != nil {
 				return err
 			}

@@ -543,6 +543,9 @@ func TestRouterReadIsNotReplayedByRepeatedChecksAndMarkerClearsOnRemoval(t *test
 		t.Fatal(len(rows))
 	}
 	readAll(rows)
+	// This notification fixture owns no publisher; explicitly permit catalog cleanup.
+	previous := repo.SetHooks(repo.Hooks{JobLock: func(context.Context, string, string, *jsonx.Object) (func(), bool) { return func() {}, true }})
+	defer repo.SetHooks(previous)
 	_, _, err := f.srv.Repo.UpdateProfileTransaction(ctx, "default", func(_ context.Context, config *jsonx.Object) (*jsonx.Object, error) {
 		config.Set("routers", jsonx.Obj("items", []any{}))
 		return nil, nil

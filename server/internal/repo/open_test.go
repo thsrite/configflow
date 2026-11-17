@@ -310,6 +310,9 @@ func TestRestoredOlderDatabaseIsNeverServedFromCache(t *testing.T) {
 }
 
 func TestDeletingAProfileWithoutDerivedFilesKeepsItsJson(t *testing.T) {
+	// This storage fixture has no publisher; explicitly provide its cleanup gate.
+	previous := SetHooks(Hooks{JobLock: func(context.Context, string, string, *jsonx.Object) (func(), bool) { return func() {}, true }})
+	defer SetHooks(previous)
 	r := newRepo(t)
 	must(r.CreateProfile(bg, jsonx.Obj("id", "gone", "name", "Gone", "description", "含凭据"), ""))(t)
 	_, _, err := r.UpdateProfileFields(bg, "gone", parse(t, `{"routers": {"items": [

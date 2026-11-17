@@ -31,7 +31,7 @@ type rsJobLocks struct {
 	held map[string]bool
 }
 
-func (l *rsJobLocks) acquire(_, _ string, router *jsonx.Object) (func(), bool) {
+func (l *rsJobLocks) acquire(_ context.Context, _, _ string, router *jsonx.Object) (func(), bool) {
 	endpoint := ""
 	if value := router.Value("endpoint"); jsonx.Truthy(value) {
 		endpoint = jsonx.Str(value)
@@ -53,7 +53,7 @@ func (l *rsJobLocks) acquire(_, _ string, router *jsonx.Object) (func(), bool) {
 // hold is `with job_lock(...) as acquired: assert acquired`.
 func (l *rsJobLocks) hold(t *testing.T, router *jsonx.Object) func() {
 	t.Helper()
-	release, acquired := l.acquire("", "", router)
+	release, acquired := l.acquire(bg, "", "", router)
 	if !acquired {
 		t.Fatal("job lock is held")
 	}
@@ -355,7 +355,7 @@ func TestReplacementHoldsPublicationLockThroughDatabaseCommit(t *testing.T) {
 	connection := parse(t, rsConnection)
 	var observations []bool
 	r.Store().BeforeCommit = func() error {
-		release, acquired := locks.acquire("other", "other-router", connection)
+		release, acquired := locks.acquire(bg, "other", "other-router", connection)
 		observations = append(observations, acquired)
 		if acquired {
 			release()

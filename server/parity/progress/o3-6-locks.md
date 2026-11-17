@@ -52,3 +52,19 @@ a new lock file now asserts its absence; content/key order/mode assertions are u
 .32 full taskstatus race3 passed2.613s. Notification leaf removal is pending its own commit; its
 full suite currently hits the newly fail-closed repo guard in a router-removal fixture, which will
 receive an explicit mock gate in the repo-contract step rather than weakening production defaults.
+
+Repo resource migration now passes .64 gofmt/vet ./... and full touched-package race1:
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'cd server && go vet ./... && go test -race -p=6 -count=1 -timeout=20m ./internal/repo ./internal/notifications'`
+Tail: repo90.651s, notifications4.924s. Config retains flock with real L3, profiles have L2 keyed
+operations, generated/cache files bounded leaf admission; old resource files are not opened.
+ReadSnapshot supplies a coherent locked read, rejects writes, and expires with its callback.
+Missing JobLock rejects router-changing commits. Fixtures now explicitly supply the gate when
+required and C04 probes the actual leaf admission instead of creating a historical file lock.
+Regressions cover cancellation/batches, snapshot expiry and writer exclusion, profile parallelism,
+delete/write ordering, timeout/cancellation and legacy bytes/inode/mtime. Intentional order errors
+run in subprocesses; normal repository suite requires zero Violations.
+One fixture-edit script aborted before saving, then its shell ran stale tests; corrected with
+atomic apply_patch, unused import removed, and the full package run above passed. This was reported
+to the coordinator; no product assertions were removed.
+Notification store lock removal and staged observations/version fencing are currently uncommitted,
+with new concurrency regressions being validated next. Routers remain untouched.

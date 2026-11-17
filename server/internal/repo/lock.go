@@ -10,11 +10,13 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 	"unicode"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/lockx"
 )
 
 // Lock settings (ProfileRepository class attributes).
@@ -104,30 +106,17 @@ func secondsDuration(seconds float64) time.Duration {
 	return time.Duration(seconds * float64(time.Second))
 }
 
-// One in-process lock per resolved path (Python: _THREAD_LOCKS). Python's is
-// an RLock, but re-entering the same path in one thread then waits on its own
-// flock until the timeout; heldLocks reproduces that without a second
-// descriptor.
-var (
-	processLocks      = map[string]chan struct{}{}
-	processLocksGuard sync.Mutex
-)
-
-func processLock(key string) chan struct{} {
-	processLocksGuard.Lock()
-	defer processLocksGuard.Unlock()
-	lock, ok := processLocks[key]
-	if !ok {
-		lock = make(chan struct{}, 1)
-		processLocks[key] = lock
-	}
-	return lock
-}
+// configLocks serializes one physical configuration lock within this process.
+// The file flock remains necessary for external tools and instance startup.
+var configLocks = lockx.NewKeyed[string](lockx.LevelRepository, "repository")
+var profileOperations = lockx.NewKeyed[[2]string](lockx.LevelDevice, "profile-operation")
+var fileLocks = lockx.NewLeafKeyed[string]("repository-file")
 
 // heldLocks is the chain of lock files held by the call chain a context
 // belongs to (Python: the thread-local _HELD_LOCKS).
 type heldLocks struct {
 	path   string
+	active atomic.Bool
 	parent *heldLocks
 }
 
@@ -136,7 +125,7 @@ type heldLocksKey struct{}
 func holdsLock(ctx context.Context, path string) bool {
 	key := resolvePath(path)
 	for held, _ := ctx.Value(heldLocksKey{}).(*heldLocks); held != nil; held = held.parent {
-		if held.path == key {
+		if held.path == key && held.active.Load() {
 			return true
 		}
 	}
@@ -167,39 +156,34 @@ func withLock(ctx context.Context, path string, fn func(ctx context.Context) err
 // records it and the function that releases it (call it exactly once). It
 // is for locks held beyond one call, like Python's ExitStack entries.
 func acquireLock(ctx context.Context, path string) (locked context.Context, release func(), err error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0o777); err != nil {
+	if err := ctx.Err(); err != nil {
 		return nil, nil, err
+	}
+	if readSnapshotActive(ctx) {
+		return nil, nil, ErrReadOnlySnapshot
 	}
 	key, err := resolve(path)
 	if err != nil {
 		return nil, nil, err
 	}
-	if holdsLock(ctx, key) {
-		// Python: the RLock is re-entered, then flock on a second descriptor
-		// of the same file waits for this thread itself until the timeout.
-		select {
-		case <-time.After(LockTimeout()):
-			return nil, nil, repositoryError(lockTimeoutMessage)
-		case <-ctx.Done():
-			return nil, nil, ctx.Err()
-		}
-	}
-	lock := processLock(key)
-	select {
-	case lock <- struct{}{}:
-	case <-ctx.Done():
-		return nil, nil, ctx.Err()
-	}
-	handle, err := os.OpenFile(path, os.O_RDWR|os.O_APPEND|os.O_CREATE, 0o666)
+	deadline := time.Now().Add(LockTimeout())
+	held, releaseLocal, err := configLocks.Lock(ctx, key, time.Until(deadline))
 	if err != nil {
-		<-lock
+		if errors.Is(err, lockx.ErrTimeout) {
+			return nil, nil, &Error{Kind: ErrRepository, Message: lockTimeoutMessage, Cause: err}
+		}
 		return nil, nil, err
 	}
-	fail := func(err error) (context.Context, func(), error) {
-		handle.Close()
-		<-lock
+	if err := os.MkdirAll(filepath.Dir(path), 0777); err != nil {
+		releaseLocal()
 		return nil, nil, err
 	}
+	handle, err := os.OpenFile(path, os.O_RDWR|os.O_APPEND|os.O_CREATE, 0666)
+	if err != nil {
+		releaseLocal()
+		return nil, nil, err
+	}
+	fail := func(err error) (context.Context, func(), error) { handle.Close(); releaseLocal(); return nil, nil, err }
 	if info, err := handle.Stat(); err != nil {
 		return fail(err)
 	} else if info.Size() == 0 {
@@ -207,8 +191,10 @@ func acquireLock(ctx context.Context, path string) (locked context.Context, rele
 			return fail(err)
 		}
 	}
-	deadline := time.Now().Add(LockTimeout())
 	for {
+		if err := ctx.Err(); err != nil {
+			return fail(err)
+		}
 		err := syscall.Flock(int(handle.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
 		if err == nil {
 			break
@@ -223,19 +209,70 @@ func acquireLock(ctx context.Context, path string) (locked context.Context, rele
 		if remaining <= 0 {
 			return fail(repositoryError(lockTimeoutMessage))
 		}
+		timer := time.NewTimer(min(LockPollInterval, remaining))
 		select {
-		case <-time.After(min(LockPollInterval, remaining)):
+		case <-timer.C:
 		case <-ctx.Done():
+			timer.Stop()
 			return fail(ctx.Err())
 		}
+		timer.Stop()
 	}
+	parent, _ := ctx.Value(heldLocksKey{}).(*heldLocks)
+	record := &heldLocks{path: key, parent: parent}
+	record.active.Store(true)
+	var once sync.Once
 	release = func() {
-		syscall.Flock(int(handle.Fd()), syscall.LOCK_UN)
-		handle.Close()
-		<-lock
+		once.Do(func() {
+			record.active.Store(false)
+			syscall.Flock(int(handle.Fd()), syscall.LOCK_UN)
+			handle.Close()
+			releaseLocal()
+		})
 	}
-	held, _ := ctx.Value(heldLocksKey{}).(*heldLocks)
-	return context.WithValue(ctx, heldLocksKey{}, &heldLocks{path: key, parent: held}), release, nil
+	return context.WithValue(held, heldLocksKey{}, record), release, nil
+}
+
+func acquireFile(ctx context.Context, path string) (context.Context, func(), error) {
+	if readSnapshotActive(ctx) {
+		return nil, nil, ErrReadOnlySnapshot
+	}
+	key, err := resolve(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	held, release, err := fileLocks.Lock(ctx, key, LockTimeout())
+	if errors.Is(err, lockx.ErrTimeout) {
+		return nil, nil, &Error{Kind: ErrRepository, Message: lockTimeoutMessage, Cause: err}
+	}
+	return held, release, err
+}
+
+func withFile(ctx context.Context, path string, fn func() error) error {
+	_, release, err := acquireFile(ctx, path)
+	if err != nil {
+		return err
+	}
+	defer release()
+	return fn()
+}
+
+func (r *Repository) withProfileOperation(ctx context.Context, id string, fn func(context.Context) error) error {
+	if err := ValidateProfileID(id); err != nil {
+		return err
+	}
+	if readSnapshotActive(ctx) {
+		return ErrReadOnlySnapshot
+	}
+	held, release, err := profileOperations.Lock(ctx, [2]string{r.dataDir, id}, LockTimeout())
+	if err != nil {
+		if errors.Is(err, lockx.ErrTimeout) {
+			return &Error{Kind: ErrRepository, Message: lockTimeoutMessage, Cause: err}
+		}
+		return err
+	}
+	defer release()
+	return fn(held)
 }
 
 // resolvePath is pathlib.Path.resolve() (non-strict) without its symlink

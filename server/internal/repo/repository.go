@@ -31,6 +31,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"configflow/internal/ctxx"
 	"configflow/internal/jsonx"
 	"configflow/internal/logx"
 	"configflow/internal/store"
@@ -469,6 +470,9 @@ const conflictMessage = "配置数据库在事务外被修改，已放弃本次�
 // need .config.lock; a failed read is retried once serialized with writers
 // (network filesystems may not honour SQLite's own locks).
 func (r *Repository) readEntry(ctx context.Context, locked bool) (storedEntry, error) {
+	if snapshot := r.lockedSnapshot(ctx); snapshot != nil {
+		return snapshot.entry, nil
+	}
 	entry, err := r.loadEntry()
 	if err != nil && !locked && !holdsLock(ctx, r.lockFile) {
 		err = withLock(ctx, r.lockFile, func(context.Context) error {
@@ -541,12 +545,16 @@ type writeOptions struct {
 // an error discards everything. After the commit and the lock release the
 // ConfigurationCommitted hook runs when auto backup is on.
 func (r *Repository) update(ctx context.Context, options writeOptions, fn func(ctx context.Context, document *jsonx.Object) error) error {
+	ctx = ctxx.Detach(ctx)
+	if readSnapshotActive(ctx) {
+		return ErrReadOnlySnapshot
+	}
 	if r.working(ctx) != nil {
 		return inUse(nestedWriteMessage)
 	}
 	var previous, current *jsonx.Object
 	err := withLock(ctx, r.lockFile, func(ctx context.Context) error {
-		return r.writeLocked(ctx, options, func(ctx context.Context, before, document *jsonx.Object) error {
+		return r.writeLocked(ctxx.Uninterruptible(ctx), options, func(ctx context.Context, before, document *jsonx.Object) error {
 			previous, current = before, document
 			return fn(ctx, document)
 		})
@@ -589,7 +597,7 @@ func (r *Repository) writeLocked(ctx context.Context, options writeOptions,
 	if err := ValidateDocument(document); err != nil {
 		return err
 	}
-	release, err := r.routerCommitGuard(previous, document, options.lockedRouters, options.policyRouter)
+	release, err := r.routerCommitGuard(ctx, previous, document, options.lockedRouters, options.policyRouter)
 	if err != nil {
 		return err
 	}
@@ -629,7 +637,7 @@ func fieldsDiffer(old, updated *jsonx.Object, fields []string) bool {
 // under the document lock, through COMMIT. It refuses changes that would
 // orphan a published ownership record and takes the JobLock of every router
 // whose connection or manifest changes; release frees those locks.
-func (r *Repository) routerCommitGuard(previous, proposed *jsonx.Object, lockedRouters map[routerKey]bool,
+func (r *Repository) routerCommitGuard(ctx context.Context, previous, proposed *jsonx.Object, lockedRouters map[routerKey]bool,
 	policyRouter *routerKey) (release func(), err error) {
 	oldRouters, err := routerRecordsOf(previous)
 	if err != nil {
@@ -687,11 +695,15 @@ func (r *Repository) routerCommitGuard(previous, proposed *jsonx.Object, lockedR
 		if connections[connection] {
 			continue
 		}
+		if jobLock == nil {
+			release()
+			return nil, inUse(msgRouterJobBusy)
+		}
 		if jobLock != nil {
-			unlock, acquired := jobLock(key.ProfileID, key.RouterID, router)
+			unlock, acquired := jobLock(ctx, key.ProfileID, key.RouterID, router)
 			if !acquired {
 				release()
-				return nil, inUse("路由器正在发布或同步，不能替换连接或删除记录，请稍后重试")
+				return nil, inUse(msgRouterJobBusy)
 			}
 			if unlock != nil {
 				releases = append(releases, unlock)

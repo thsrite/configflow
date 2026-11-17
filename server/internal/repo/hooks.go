@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"context"
 	"sync"
 
 	"configflow/internal/jsonx"
@@ -24,8 +25,8 @@ type Hooks struct {
 	// It is called inside the write transaction, under .config.lock, after
 	// validation and immediately before the SQLite commit; it must not wait
 	// and must not call back into the repository.
-	// Default: always acquired.
-	JobLock func(profileID, routerID string, router *jsonx.Object) (release func(), acquired bool)
+	// Default: reject changed connections/manifests until routers is wired.
+	JobLock func(ctx context.Context, profileID, routerID string, router *jsonx.Object) (release func(), acquired bool)
 
 	// ConfigurationCommitted is utils/webdav_backup.configuration_committed.
 	// It is called after a write transaction committed and .config.lock was
