@@ -161,7 +161,7 @@ mktemp/build/Python片段；临时二进制用trap删除。最新变基只增加
 协调者明确不冻结 go；合并前会在集成分支上再跑全套，本报告不宣称最新 O3/R05
 代码又跑过一次全量。未推送、未开PR，无依赖新增。
 
-## 交接与文件
+## 首次交接与文件
 
 提交：`dcab48dc`（store/no-op/安全诊断）、`1a331eb0`（原生代理）、`9744bef9`
 （CLI边界脚本）、`8f065c7a`（版本分类）、`17f7d48e`（A15路由断言），另有最终验收
@@ -186,4 +186,73 @@ substore/review_n82_proxy_test.go **42**；scripts/review-n8-2-startup.py **53**
 没有skip，也没有按整行放行。源码全扫 loopback/HTTP_PROXY/CONFIGFLOW_DIFF；A15已更新，
 A06 NoProxy测试使用synthetic host，不依赖旧loopback例外；其余差分清空环境代理或
 明确NO_PROXY。另补跑包外WebDAV的CONFIGFLOW_DIFF TLS校验，避免只按包名筛漏。
-完整枚举 .32 验收结果待补（单独 substore/difftest 已通过5.917s）。
+完整枚举 .32 验收全部通过，结果如下（单独 substore/difftest 首次通过5.917s）。
+
+
+补充修复提交 `0eba907c`，验收基点 go `9e4bbc3d`；未改生产行为、未增加skip或差异
+接受范围。新的网络观察器使用mutex，记录逐次method、完整target、Host、代理认证、
+Authorization；三条路由逐例检查，不再依赖“至少4次代理请求”的总量断言。
+
+实际完整验收命令（.32，日志仅包含合成fixture，所有包均执行，失败不会提前中断）：
+
+```sh
+rt -- bash -lc 'set -uo pipefail
+cd server
+test -z "$(gofmt -l internal/ tools/ cmd/)" || exit 1
+go vet ./... || exit 1
+log_dir=$(mktemp -d /tmp/n82-all-difftest.XXXXXX)
+printf "logs=%s\n" "$log_dir"
+failures=0
+packages=$(go list ./... | grep difftest) || exit 1
+for d in $packages; do
+  log_file="$log_dir/$(echo "$d" | tr / _).log"
+  if CONFIGFLOW_DIFF=1 go test -count=1 "$d" >"$log_file" 2>&1; then
+    cat "$log_file"
+  else
+    failures=$((failures+1))
+    printf "FAILED %s\n" "$d"
+    tail -n 70 "$log_file"
+  fi
+done
+log_file="$log_dir/extra-opt-in.log"
+if CONFIGFLOW_DIFF=1 go test -count=1 ./internal/agents/ ./internal/substore/... ./internal/agents/upgrades/... ./internal/webdav/ >"$log_file" 2>&1; then
+  cat "$log_file"
+else
+  failures=$((failures+1))
+  printf "FAILED additional opt-in packages\n"
+  tail -n 90 "$log_file"
+fi
+printf "difftest_packages=%s failures=%s\n" "$(printf "%s\n" "$packages" | wc -l)" "$failures"
+test "$failures" -eq 0'
+```
+
+日志目录 `/tmp/n82-all-difftest.66z5C5`；退出0，输出：
+
+```text
+ok configflow/internal/api/agents/difftest        148.101s
+ok configflow/internal/api/subscriptions/difftest 123.828s
+ok configflow/internal/discovery/difftest           2.767s
+ok configflow/internal/health/difftest             14.293s
+ok configflow/internal/httpx/difftest               1.143s
+ok configflow/internal/mosdns/difftest               1.669s
+ok configflow/internal/refresh/difftest              3.231s
+ok configflow/internal/substore/difftest             6.171s
+ok configflow/internal/webdav/difftest              20.244s
+ok configflow/internal/agents                       7.750s
+ok configflow/internal/substore                     2.173s
+ok configflow/internal/substore/difftest             6.639s
+ok configflow/internal/agents/upgrades              12.531s
+ok configflow/internal/webdav                       0.589s
+difftest_packages=9 failures=0
+```
+
+额外确认新增并发recording harness的race：
+
+```sh
+rt -- bash -lc 'set -euo pipefail; cd server; test -z "$(gofmt -l internal/ tools/ cmd/)"; go vet ./...; CONFIGFLOW_DIFF=1 go test -race -count=1 ./internal/substore/difftest/'
+```
+
+退出0，`ok configflow/internal/substore/difftest 11.396s`；gofmt/vet无输出。源码全扫
+没有发现其他旧loopback断言；没有跳过本次失败。首次新增test构造时清空小写http_proxy
+会让Python也直连，已将大小写都明确设置到同一代理；readiness/update探测次数按真实
+Python/Go分支分别固定为1/0，随后全包正常与race全部通过。

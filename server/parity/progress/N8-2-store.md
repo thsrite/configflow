@@ -155,7 +155,7 @@ new dependency, feature omission, push or PR.
 
 Exact commands and final output: [review report](../review-n8-2.md).
 
-## Supplementary opt-in differential audit (in progress)
+## Supplementary opt-in differential audit — complete
 
 Coordinator found an omitted C13 route differential after hand-back. The original
 review had not enumerated every opt-in package; runtime proxy behaviour was
@@ -171,4 +171,17 @@ Source sweep of all *_test.go loopback / environment proxy references and all
 CONFIGFLOW_DIFF entry points found no other stale loopback assertion (A15
 already updated). A stale C13 comment was corrected. Next: enumerate every
 Go package named difftest on .32, then CONFIGFLOW_DIFF agents/substore/upgrades
-and the package-external WebDAV TLS probe; record complete results and rebase.
+and the package-external WebDAV TLS probe. All checks below passed.
+
+Supplementary fix: `0eba907c` on go base `9e4bbc3d`. .32 gofmt/vet all pass.
+All **9 difftest packages** enumerated by `go list ./... | grep difftest` pass:
+api/agents 148.101s; api/subscriptions 123.828s; discovery 2.767s; health 14.293s;
+httpx 1.143s; mosdns 1.669s; refresh 3.231s; substore 6.171s; webdav 20.244s.
+Additional CONFIGFLOW_DIFF=1 agents 7.750s / substore 2.173s / substore/difftest
+6.639s / agents/upgrades 12.531s / webdav 0.589s all pass. Aggregate failures=0.
+Changed substore/difftest race also passes 11.396s, gofmt/vet remain clean.
+Logs: /tmp/n82-all-difftest.66z5C5 on .32 (synthetic fixtures only).
+No new runtime change, skip, dependency or acceptance exception; the existing
+native proxy decision is now exercised at every identified consumer boundary.
+Full commands/results are appended to the review report. Final rebase and clean
+worktree check follow this acceptance commit; no push.
