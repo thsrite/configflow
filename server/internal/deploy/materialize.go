@@ -184,7 +184,7 @@ func MaterializeRule(ctx context.Context, rawURL string, src *Source, baseURL st
 			return nil, err
 		}
 		if stale != nil {
-			logger.Warningf(msgRuleStale, diag.FailureText(rawURL, nil, 120), diag.FailureText(stale.Error(), nil, 0))
+			logger.Warningf(msgRuleStale, diag.FailureText(displayName(o.SourceID), nil, 120), diag.FailureText(stale.Error(), nil, 0))
 		}
 		return data, nil
 	}

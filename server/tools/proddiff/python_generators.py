@@ -1,6 +1,7 @@
 """Invoke public Python generators against a private repository copy; no app/loops."""
 import json
 import sys
+import os
 from pathlib import Path
 
 from backend.common.config import get_config, get_system_config, reset_config_context
@@ -28,6 +29,39 @@ def generate(job):
         agent = next(item for item in get_system_config()['agents'] if item['id'] == job['agent_id'])
         kwargs.update(for_agent=True, region_probe=bool(agent.get('domain_discovery_enabled')),
                       mihomo_core_version=reported_core_version(agent))
+    if kind == 'agent-deployment-bundle':
+        from backend.agents.deployment_bundle import build_deployment_bundle
+        from backend.utils.provider_delivery import prepare_provider_bundle
+        import base64
+        service=agent.get('service_type','mihomo')
+        providers=downloads=custom=()
+        if service=='mihomo':
+            content=generate_mihomo_config(cfg,**kwargs)
+            providers=prepare_provider_bundle(cfg,yaml.safe_load(content),render_all=True,subscription_fetch=offline_fetch)
+            frozen=[{key:p.get(key,'') for key in ('name','url','local_path','content')} for p in providers
+                    if '/aggregations/' in p.get('url','')]
+            if frozen:
+                target=Path(os.environ['PRODDIFF_FROZEN_PROVIDERS']) / (str(job['index'])+'.json')
+                target.write_text(json.dumps(frozen,ensure_ascii=False))
+                target.chmod(0o600)
+        elif service=='mosdns':
+            content=generate_mosdns_config(cfg,base_url=BASE_URL)
+            downloads=get_mosdns_ruleset_downloads(cfg,BASE_URL);custom=get_mosdns_custom_files(cfg)
+        else:
+            content=generate_oxidns_config(cfg,base_url=BASE_URL)
+            downloads=get_oxidns_ruleset_downloads(cfg,BASE_URL);custom=get_oxidns_custom_files(cfg)
+        bundle=build_deployment_bundle(agent,cfg,content,provider_downloads=providers,ruleset_downloads=downloads,
+            custom_files=custom,base_url=BASE_URL,deployment_id='proddiff-bundle')
+        files=bundle.files();entries=[]
+        for item in bundle.manifest['files']:
+            entry={key:item[key] for key in ('path','role','name') if key in item}
+            if item['role']=='config':entry['document']=yaml.safe_load(files[item['path']])
+            else:
+                entry.update(size=item['size'],sha256=item['sha256'])
+                value=base64.b64encode(files[item['path']]).decode()
+                if value:entry['content']=value
+            entries.append(entry)
+        return json.dumps(dict(protocol_version=1,service_type=service,config_path=bundle.manifest['config_path'],files=entries),ensure_ascii=False)
     if kind in ('mihomo', 'agent-mihomo'):
         return generate_mihomo_config(cfg, **kwargs)
     for service, function in [('surge', generate_surge_config), ('loon', generate_loon_config),

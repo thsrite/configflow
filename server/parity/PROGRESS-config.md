@@ -1747,6 +1747,9 @@ Cross-module boundary remaining: a chain graph requiring aggregation materializa
 
 ## C31 — aggregation routes, device notes
 
+
+A11 proddiff dependency (coordinator-approved): one production Agent's aggregation provider bytes are frozen from real Python in the test server's private temporary report directory and supplied unchanged as both Build inputs. Its coverage is `partial: A11 packaging only, aggregation provider frozen (C31 pending)`, excluded from end-to-end success. `aggregation-provider` generator remains Go 尚未实现. **C31 task:** register the aggregation provider implementation, remove this frozen input path, and promote that Agent's bundle case to an independent end-to-end comparison (no fixture bytes committed).
+
 **Status: `missing`** · prereqs: C30, C26 · Go: internal/api/aggregations (new); device notes in internal/oxidns or own package
 
 Files:

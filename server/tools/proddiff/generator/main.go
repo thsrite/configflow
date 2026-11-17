@@ -146,6 +146,8 @@ func generate(ctx context.Context, j job) (string, error) {
 		opts.MihomoCoreVersion = subs.ReportedCoreVersion(agent, traffic.StatusOf)
 	}
 	switch j.Kind {
+case "agent-deployment-bundle":
+return deploymentBundle(ctx, config, j, opts)
 	case "mihomo", "agent-mihomo":
 		return convert.GenerateMihomoConfig(ctx, config, opts)
 	case "surge", "agent-surge":

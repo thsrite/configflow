@@ -25,11 +25,11 @@ INVENTORY = {
     'agent-mosdns': ('agent', 'yaml', 'GET /api/agents/<agent_id>/config'),
     'agent-oxidns': ('agent', 'yaml', 'GET /api/agents/<agent_id>/config'),
     'agent-surge': ('agent', 'text', 'GET /api/agents/<agent_id>/config'),
+    'agent-deployment-bundle': ('agent', 'json', None),
 }
 MISSING = {
     'router-script': ('POST /api/routers/<router_id>/plan', 'No public Go router plan/script exporter exists.'),
     'aggregation-provider': ('GET /api/aggregations/<agg_id>/provider', 'Go aggregation-provider hook still has its missing implementation.'),
-    'agent-deployment-bundle': ('POST /api/agents/<agent_id>/generate-config', 'No public Go deployment-bundle/final-device-render generator exists.'),
 }
 
 
@@ -48,7 +48,8 @@ def inventory(doc, implemented):
                 entities = config.get('subscriptions', [])
             else:
                 entities = [a for a in agents if (a.get('profile_id') or default_profile) == profile_id
-                            and 'agent-' + a.get('service_type', 'mihomo') == kind]
+                            and (kind == 'agent-deployment-bundle' and a.get('service_type', 'mihomo') in ('mihomo', 'mosdns', 'oxidns')
+                                 or 'agent-' + a.get('service_type', 'mihomo') == kind)]
             for entity in entities:
                 row['cases'] += 1
                 if mode == 'generator':
@@ -59,7 +60,6 @@ def inventory(doc, implemented):
     missing_counts = {
         'router-script': sum(len(profile.get('routers', {}).get('items', [])) for profile in profiles.values()),
         'aggregation-provider': sum(len(dict(doc['shared'], **profile).get('aggregations', [])) for profile in profiles.values()),
-        'agent-deployment-bundle': len(agents),
     }
     for kind, (route, reason) in MISSING.items():
         mode = 'http' if tuple(route.split(' ', 1)) in implemented else 'Go 尚未实现'
@@ -71,6 +71,8 @@ def run_workers(snapshot, copies_parent, report, binary, doc, implemented, compa
     jobs, coverage = inventory(doc, implemented)
     manifest = report / 'generator-jobs.json'
     manifest.write_text(json.dumps(jobs))
+    frozen = report / 'a11-frozen-providers'
+    frozen.mkdir(mode=0o700)
     outputs = []
     import shutil
     for label in ('python', 'go'):
@@ -79,7 +81,8 @@ def run_workers(snapshot, copies_parent, report, binary, doc, implemented, compa
         output = report / ('generator-' + label + '.jsonl')
         env = dict(os.environ, DATA_DIR=str(data), LOG_FILE=str(report / ('generator-' + label + '.log')),
                    LOG_LEVEL='ERROR', SUB_STORE_BUILTIN_DIR='/nonexistent',
-                   CONFIGFLOW_BACKEND_HOST='127.0.0.1', CONFIGFLOW_BACKEND_PORT='5001')
+                   CONFIGFLOW_BACKEND_HOST='127.0.0.1', CONFIGFLOW_BACKEND_PORT='5001',
+                   PRODDIFF_FROZEN_PROVIDERS=str(frozen))
         command = [sys.executable, 'server/tools/proddiff/python_generators.py'] if label == 'python' else [str(binary)]
         with (report / ('generator-' + label + '.log')).open('wb') as log:
             subprocess.run(command + [str(manifest), str(output)], env=env, stdout=log, stderr=log,
@@ -105,7 +108,12 @@ def run_workers(snapshot, copies_parent, report, binary, doc, implemented, compa
             else:
                 found.add((key, 'status', 'generation-error-go' if right['status'] != 'ok' else 'generation-error-python'))
             continue
-        row['success'] += 1
+        frozen_case = job['kind'] == 'agent-deployment-bundle' and (frozen / (str(job['index']) + '.json')).exists()
+        if frozen_case:
+            row['partial'] = row.get('partial', 0) + 1
+            row.setdefault('partial_cases', []).append({'case': job['index'], 'coverage': 'partial: A11 packaging only, aggregation provider frozen (C31 pending)'})
+        else:
+            row['success'] += 1
         mime = {'yaml': 'text/yaml', 'json': 'application/json', 'text': 'text/plain'}[job['format']]
         a, b = (200, mime, left['content'].encode()), (200, mime, right['content'].encode())
         for field, kind in compare(a, b, '/generator/' + job['kind'], []):
@@ -116,8 +124,12 @@ def run_workers(snapshot, copies_parent, report, binary, doc, implemented, compa
 
 def successful_output_regressions(expected, current):
     """Keep a real output from silently becoming an agreed rejection."""
-    return {key + ' successful-output-count' for key, previous in expected.items()
+    lost = {key + ' successful-output-count' for key, previous in expected.items()
             if current.get(key, {}).get('success', 0) < previous.get('success', 0)}
+    lost.update(key + ' packaging-output-count' for key, previous in expected.items()
+                if current.get(key, {}).get('success', 0) + current.get(key, {}).get('partial', 0)
+                < previous.get('success', 0) + previous.get('partial', 0))
+    return lost
 
 
 def _walk_values(value, keys=()):

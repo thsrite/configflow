@@ -156,10 +156,18 @@
     "reason": "Go aggregation-provider hook still has its missing implementation."
   },
   "GENERATOR agent-deployment-bundle": {
-    "mode": "Go 尚未实现",
-    "route": "POST /api/agents/<agent_id>/generate-config",
+    "mode": "generator",
+    "route": null,
     "cases": 3,
-    "success": 0,
-    "reason": "No public Go deployment-bundle/final-device-render generator exists."
+    "success": 2,
+    "both-error": 0,
+    "compared": 3,
+    "partial": 1,
+    "partial_cases": [
+      {
+        "case": 25,
+        "coverage": "partial: A11 packaging only, aggregation provider frozen (C31 pending)"
+      }
+    ]
   }
 }

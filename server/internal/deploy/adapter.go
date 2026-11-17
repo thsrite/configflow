@@ -6,9 +6,11 @@ import (
 	"configflow/internal/convert"
 	"configflow/internal/gateway"
 	"configflow/internal/jsonx"
+	"configflow/internal/oxidns"
 	"configflow/internal/provider"
 	"configflow/internal/pyyaml"
 	"configflow/internal/refresh"
+	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
 	"context"
 	"encoding/json"
@@ -157,3 +159,35 @@ func downloadRef(d convert.Download) (RuleRef, string, error) {
 
 // Wire installs deployment preparation diagnostics. A14 adds publication hooks.
 func Wire() { provider.SetLocations(Locations{}) }
+
+func (s *Source) normalize(value []byte, rule RuleRef) ([]byte, error) {
+	r := jsonx.Obj("id", rule.ID, "name", rule.Name, "url", rule.URL, "source_type", rule.SourceType, "behavior", defaultBehavior(rule.Behavior), "format", rule.Format)
+	format, err := convert.RulesetFormat(r, s.config(), "")
+	if err != nil {
+		return nil, err
+	}
+	text, warnings, err := rulefetch.NormalizeMihomoRuleset(string(value), defaultBehavior(rule.Behavior), format)
+	if len(warnings) > 0 {
+		logger.Warningf("Mihomo provider %s: %d unconverted lines", rule.Name, len(warnings))
+	}
+	return []byte(text), err
+}
+func (s *Source) validateRemote(value []byte, rule RuleRef) error {
+	return rulefetch.ValidateRemoteRuleContent(value, jsonx.Obj("name", rule.Name, "url", rule.URL, "source_type", "url", "behavior", rule.Behavior, "format", rule.Format), jsonx.NewObject(), rule.Format)
+}
+func (s *Source) unavailable(paths []string) []string {
+	return oxidns.UnavailableRulesets(oxidns.NewProfile(s.config()), paths)
+}
+func resolvedBuildProfile(ctx context.Context, src *Source, t Target) (string, error) {
+	if id := src.ProfileID(); id != "" {
+		return id, nil
+	}
+	if t.ProfileID != "" {
+		return t.ProfileID, nil
+	}
+	r, err := repo.GetRepository(ctx)
+	if err != nil {
+		return "", err
+	}
+	return r.DefaultProfileID(ctx)
+}

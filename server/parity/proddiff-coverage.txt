@@ -161,3 +161,5 @@ GET /api/version
 GET /api/version snapshot-parameter
 POST /api/agents/docker-oxidns-ha-guide
 POST /api/agents/docker-oxidns-ha-guide snapshot-parameter
+GENERATOR agent-deployment-bundle
+GENERATOR agent-deployment-bundle success
