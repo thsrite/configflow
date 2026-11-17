@@ -22,6 +22,22 @@ logs="${GATE_LOGS:-$(mktemp -d /tmp/gate.XXXXXX)}"
 mkdir -p "$logs"
 echo "gate: logs in $logs"; uptime
 
+# At most GATE_SLOTS full gates per test server at once (default 2): a dozen agents running full
+# -race + proddiff together pushed the load past 100 on 12 cores and produced timing-only diffs.
+slots="${GATE_SLOTS:-2}"
+mkdir -p "$HOME/rt/.gate-slots"
+waited=0
+while :; do
+  for i in $(seq 1 "$slots"); do
+    exec 8>"$HOME/rt/.gate-slots/$i"
+    if flock -n 8; then got=$i; break 2; fi
+    exec 8>&-
+  done
+  [ "$waited" -eq 0 ] && echo "gate: $slots gate(s) already running on this server; waiting for a slot..."
+  waited=1; sleep 20
+done
+echo "gate: slot $got of $slots"
+
 fail() { echo "GATE FAIL: $*"; exit 1; }
 quiet() { grep -v -E '^ok |no test files' "$1"; }
 
