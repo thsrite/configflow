@@ -17,11 +17,14 @@ package tasks
 import (
 	"context"
 	"errors"
+ "fmt"
 	"strings"
 	"sync"
 	"time"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/lifecycle"
+	"configflow/internal/lockx"
 	"configflow/internal/repo"
 	"configflow/internal/taskstatus"
 )
@@ -183,40 +186,33 @@ func Row(key, category, name string, fields ...any) *jsonx.Object {
 // Spread marks a *jsonx.Object to merge into a Row (Python's **history).
 func Spread(o *jsonx.Object) []any { return []any{o, nil} }
 
-var (
-	backgroundMu sync.Mutex
-	background   = map[string]bool{}
-)
+var background = lockx.NewKeyed[string](lockx.LevelJob, "tasks")
 
-// IsBackground is _is_background(key).
-func IsBackground(key string) bool {
-	backgroundMu.Lock()
-	defer backgroundMu.Unlock()
-	return background[key]
-}
+// IsBackground reports whether this process holds the task's busy key.
+func IsBackground(key string) bool { return background.Held(key) }
 
 // StartBackground is _start_background(key, work): run work once in the
 // background; a second start while it runs is Busy. Failures are recorded
 // by the work itself.
 func StartBackground(ctx context.Context, key string, work func(ctx context.Context) error) error {
-	backgroundMu.Lock()
-	if background[key] {
-		backgroundMu.Unlock()
-		return &Busy{Message: "这个任务正在运行，请稍后查看结果"}
+	return startBackground(ctx, key, work, lifecycle.DefaultSpawner{})
+}
+
+func startBackground(ctx context.Context, key string, work func(context.Context) error, spawner lockx.Spawner) error {
+	ctx = lifecycle.Detach(ctx)
+	held, release, ok := background.TryLock(ctx, key)
+	if !ok {
+		return &Busy{Message: msgBusy}
 	}
-	background[key] = true
-	backgroundMu.Unlock()
-	workCtx := repo.WithScope(context.WithoutCancel(ctx))
-	go func() {
-		defer func() {
-			recover()
-			repo.ResetConfigContext(workCtx)
-			backgroundMu.Lock()
-			delete(background, key)
-			backgroundMu.Unlock()
-		}()
-		_ = work(workCtx)
-	}()
+	if err := spawner.Spawn(held, "task-"+key, func(worker context.Context) {
+		defer release()
+		// The work owns recording and logging ordinary errors. Runtime recovers
+		// panics after this defer releases the busy key.
+		_ = work(worker)
+	}); err != nil {
+		release()
+		return fmt.Errorf("start background task: %w", err)
+	}
 	return nil
 }
 

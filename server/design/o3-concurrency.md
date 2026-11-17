@@ -411,6 +411,24 @@ Implementation notes: [startup and shutdown](o3-startup-shutdown.md).
   logged, as Python did; afterwards it exits at once. A stop signal during the ≤30 s instance wait ends the
   wait and exits 0 before storage is opened.
 
+**Clarified in O3-5 (coordinator, 2026-11-17):**
+- Move Clock, Timer and the real implementation to internal/clock. Lifecycle keeps type aliases and
+  ClockFrom; fake clocks stay in lifecycletest. MatcherCacheOptions receives Clock/Spawner from discovery.
+  Do not duplicate clock interfaces or retain time.AfterFunc (lifecycle → repo → rules forbids a reverse import).
+- Flight.DoChan(ctx, key, fn) returns a buffered channel of Result[V]{Value, Err, Shared}, sharing the same
+  underlying call with Do and creating no goroutine per waiter. Provider selects request cancellation,
+  the 12-second Clock timer and that same result channel; missing/unreadable fallback never starts another render.
+- Activate WebDAV each generation through Startup, with injected Clock/Spawner. Explicit Close stays terminal.
+  Preserve the upload gate across generations: old and new uploads must not overlap. Worker/webdav.WaitIdle
+  remains owner-scoped; Runtime also tracks the spawned work without replacing owner waits with global waits.
+  Matcher timer waits end at Stopping, so housekeeping cannot force an idle drain to wait until grace−2s.
+- Migrated job I/O (WebDAV Run/Upload/request, provider preparation, Sub-Store HTTP/exec, upgrades I/O)
+  uses Detach or passes the job context, preserving request-disconnect behavior and existing timeouts.
+  Local batch commits such as CommitCacheUpdates and repo transactions remain uninterruptible.
+  Handler-level WithoutCancel remains O3-6.
+- Implement tasks/metrics-manual/discovery/WebDAV/upgrades/Sub-Store/listener first. Clock extraction,
+  Flight.DoChan and dependent provider/matcher changes wait until the joint O3 review is merged, then rebase.
+
 ### 2.4 Mapping table (every Python loop/lock → Go construct)
 
 Porters of the missing modules use these names, timings and levels; reviewers check them.

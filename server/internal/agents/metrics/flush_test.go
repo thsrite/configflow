@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"context"
+	"errors"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -28,6 +29,19 @@ func bigOf(i int64) *big.Int { return big.NewInt(i) }
 func fresh(t *testing.T) {
 	t.Helper()
 	reset := func() {
+		// A tracked manual job may have released its key just before Runtime
+		// finishes scope cleanup. Reconfigure only after that work is idle.
+		deadline := time.Now().Add(5 * time.Second)
+		for {
+			err := lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry()})
+			if err == nil {
+				break
+			}
+			if !errors.Is(err, lifecycle.ErrRunning) || time.Now().After(deadline) {
+				t.Fatal(err)
+			}
+			time.Sleep(time.Millisecond)
+		}
 		Reset()
 		agents.ResetRuntime()
 		agents.ResetHooks()
