@@ -1,9 +1,11 @@
 package routers_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -142,6 +144,28 @@ func runR07Boundary(t *testing.T, tc boundaryCase) {
 		for _, step := range journal {
 			goOut.Records = append(goOut.Records, map[string]any{"step": step})
 		}
+	} else if tc.action == "nat_restore" {
+		d := routers.NewRouterOS(srv.URL, "synthetic-user", "synthetic-password", false)
+		defer d.Close()
+		undo, err := d.Apply(context.Background(), rawValue(tc.op["sync"]))
+		if err == nil {
+			goOut.Records = append(goOut.Records, map[string]any{"undo": json.RawMessage(undo)})
+			response, e := http.Post(srv.URL+"/__r04/mutate", "application/json", bytes.NewReader(rawValue(tc.op["mutation"])))
+			if e != nil {
+				t.Fatal(e)
+			}
+			response.Body.Close()
+			var restored json.RawMessage
+			restored, err = d.Apply(context.Background(), undo)
+			if err == nil {
+				goOut.Result = restored
+			}
+		}
+		if err != nil {
+			goOut.Error = &boundaryError{goErrorClass(err), err.Error()}
+		}
+	} else if tc.action == "helper" {
+		goOut = runR07Helper(tc, srv.URL)
 	} else {
 		tc.action = strings.TrimPrefix(tc.action, "nat_")
 		goOut = runGoBoundary(tc, srv.URL)
@@ -239,5 +263,24 @@ func TestAddressWriteBoundary(t *testing.T) {
 				runR07Boundary(t, boundaryCase{action: "addresses", state: state, op: map[string]any{"entries": entries}})
 			})
 		}
+	}
+}
+
+func TestNATRestoreFaultBoundary(t *testing.T) {
+	initial := r07State("legacy", 5)
+	op := r07PlannedOperation(t, initial, 6)
+	for _, tc := range []struct {
+		name     string
+		mutation routerfake.ExternalWrite
+	}{
+		{"anchor_gone", routerfake.ExternalWrite{Fault: routerfake.Fault{RemoveIDs: map[string][]string{"/ip/firewall/nat": {"*3"}}}}},
+		{"foreign_reference", routerfake.ExternalWrite{Fault: routerfake.Fault{ExtraRows: map[string][]routerfake.Row{"/ip/firewall/raw": {{".id": "*F1", "dst-address-list": routers.NATDstList, "chain": "prerouting", "action": "accept"}}}}}},
+		{"changed_member", routerfake.ExternalWrite{Fault: routerfake.Fault{PatchRows: map[string]map[string]routerfake.Row{"/ip/firewall/address-list": {"*65": {"comment": "external"}}}}}},
+		{"lost_restore", routerfake.ExternalWrite{Faults: []routerfake.Fault{{Method: "POST", Path: "/execute", Count: 2, LoseReply: true}}}},
+		{"partial_restore", routerfake.ExternalWrite{Faults: []routerfake.Fault{{Method: "PUT", Path: "/ip/firewall/nat", Count: 3}}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runR07Boundary(t, boundaryCase{action: "nat_restore", state: initial, op: map[string]any{"sync": op, "mutation": tc.mutation}})
+		})
 	}
 }

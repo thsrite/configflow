@@ -53,6 +53,9 @@ type Fault struct {
 	// PatchCreated changes fields of the row an /execute add created, by the
 	// add's index, as a device that normalizes or flags a new row would.
 	PatchCreated map[int]Row `json:"patch_created,omitempty"`
+	// PatchRows and RemoveIDs simulate an external writer after this request.
+	PatchRows map[string]map[string]Row `json:"patch_rows,omitempty"`
+	RemoveIDs map[string][]string       `json:"remove_ids,omitempty"`
 }
 
 // State is the fake device state and request log.
@@ -164,6 +167,9 @@ func (f *Fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		f.mutateLocked(r.Method, path)
 	}
+	if fault != nil && fault.AfterCommit {
+		f.applyMutation(*fault, path != "/execute")
+	}
 	f.mu.Unlock()
 	if closeReply || fault != nil && fault.LoseReply {
 		closeConnection(w)
@@ -184,6 +190,14 @@ func (f *Fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (f *Fake) control(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
+	case "/__r04/mutate":
+		var mutation ExternalWrite
+		if json.NewDecoder(r.Body).Decode(&mutation) != nil {
+			writeJSON(w, 400, Row{"error": "invalid mutation"})
+			return
+		}
+		f.ApplyExternal(mutation)
+		writeJSON(w, 200, Row{"ok": true})
 	case "/__r04/reset":
 		var state State
 		_ = json.NewDecoder(r.Body).Decode(&state)

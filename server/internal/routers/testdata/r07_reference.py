@@ -1,5 +1,6 @@
 """Real Python R07 entry points against the same loopback device as Go."""
 import json
+import ipaddress
 import os
 import sys
 import requests
@@ -15,6 +16,26 @@ try:
     action=case['action']; name=case.get('op',{}).get('name','L')
     if action=='digest': out['result']=lists.digest(case['state']['tables']['/ip/firewall/address-list'])
     elif action=='fetch': out['result']=lists.fetch(driver,name)
+    elif action=='nat_restore':
+        undo=driver.apply(case['op']['sync'])
+        out['records']=[{'undo':undo}]
+        requests.post(endpoint+'/__r04/mutate',json=case['op']['mutation'],timeout=5).raise_for_status()
+        out['result']=driver.apply(undo)
+    elif action=='helper':
+        from backend.routers import routeros_nat_list as nat
+        p=case['op']; fn=p['function']
+        if fn=='removals': out['result']=nat.removals_first(p['nat_ops'],p['route_ops'],p['gateway'])
+        elif fn=='restrict':
+            blocker=nat.restrict_egress(p['sync'],p['check'],p['interface'])
+            out['result']={'blocker':blocker,'sync':p['sync'],'check':p['check']}
+        elif fn=='member': out['result']=nat.member_update({'stages':p['stages']},{'nat_list':p.get('baseline')})
+        elif fn=='migration': out['result']=nat.migration({'stages':p['stages']})
+        elif fn=='policy_migrations': out['result']=nat.policy_migrations(p['row'],p['addresses'],[ipaddress.ip_network(v) for v in p['exclusions']])
+        elif fn=='baseline': out['result']=nat.nat_resources(driver)
+        elif fn=='verify': nat.verify(p['check'],driver.read_state())
+        elif fn=='locate': out['result']=lists.locate(driver,p['ids'])
+        elif fn=='occupied': out['result']=sorted(lists.occupied_names(driver,p['patterns'],p['exclude']))
+        else: raise ValueError(fn)
     elif action=='addresses':
         from backend.routers import ros_policy_write as write, routeros_nat_list as nat
         journal=[]
