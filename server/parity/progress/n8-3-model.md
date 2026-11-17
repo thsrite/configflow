@@ -68,3 +68,8 @@ output. Changed-package .63 ordinary tests passed: model 0.004s, store 12.769s,
 repo 43.389s; targeted repo race 3.616s. Both initial fuzz runs passed 60s each:
 record 671458 executions, document 725792 executions. Next: strengthen independent
 fuzz assertions, final .32 vet/race/full suite/proddiff/fuzz, rebase and clean.
+
+Independent fuzz assertions now use encoding/json tokens and RawMessage boundaries,
+not model.parseObject: check duplicate names recursively, exact untouched value
+bytes, root/profile member order and correct typed edit after record/document
+round trips. .63 `go test -race -count=1 ./internal/model` PASS (1.023s).
