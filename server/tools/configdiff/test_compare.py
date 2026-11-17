@@ -17,6 +17,20 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_real_auth_log_tail_keeps_exact_message_level_and_credential_absence(self):
+        from cases.pull_logging import Tail, AUTH_MARKER, AUTH_MESSAGE, events
+        tail = Tail(None, AUTH_MARKER, AUTH_MESSAGE, ('synthetic-password-secret',))
+        a = '2026-01-01 - WARNING - ' + AUTH_MESSAGE
+        b = json.dumps({'level': 'WARNING', 'message': AUTH_MESSAGE}, ensure_ascii=False)
+        tail.lines = [['source startup', a], ['Go startup', b]]
+        make = lambda row: {'success': True, 'logs': [row], 'total_lines': 2, 'filtered_lines': 1}
+        expected = tail.project(make(a), 0)
+        self.assertEqual(differences(expected, tail.project(make(b), 1)), [])
+        self.assertEqual(events((a + '\n').encode(), AUTH_MARKER), [{'level': 'WARNING', 'message': AUTH_MESSAGE}])
+        for changed in (b.replace('WARNING', 'WARN'), b.replace('127.0.0.1', '192.0.2.1'),
+                        b.replace(AUTH_MARKER, '登录成功：'), b + ' synthetic-password-secret'):
+            self.assertTrue(differences(expected, tail.project(make(changed), 1)))
+
     def test_cache_permission_observer_detects_inactive_fault_chmod_and_overwritten_old_bytes(self):
         from cases.rule_cache_faults import CacheFault
         observer = CacheFault(None)

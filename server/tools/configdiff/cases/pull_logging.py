@@ -5,7 +5,7 @@ import re
 import time
 
 from compare import differences
-from harness import Pair, send
+from harness import Pair, send, json_body, USERNAME, PASSWORD, SECRET
 from urllib.parse import quote
 from seed import PULL, CURRENT, RETIRED, AGENT
 from cases.crosscutting import PULL_ROUTES, pull_path
@@ -18,7 +18,7 @@ HEADERS = ('content-type', 'content-disposition', 'cache-control', 'etag', 'last
 BEFORE, HEAD, AFTER = ('configdiff-before-head', 'configdiff-head', 'configdiff-after-head')
 
 
-def events(raw):
+def events(raw, marker=MARKER):
     result = []
     try:
         lines = raw.decode('utf-8').splitlines()
@@ -33,13 +33,13 @@ def events(raw):
                 level = str(value.get('level', '')).upper()
         except ValueError:
             pass
-        if not isinstance(text, str) or MARKER not in text:
+        if not isinstance(text, str) or marker not in text:
             continue
-        prefix, message = text.split(MARKER, 1)
+        prefix, message = text.split(marker, 1)
         if not level:
             match = re.search(r'\b(INFO|WARNING|ERROR|DEBUG|WARN)\b', prefix)
             level = match[1] if match else '<missing-level>'
-        result.append({'level': level, 'message': MARKER + message})
+        result.append({'level': level, 'message': marker + message})
     return result
 
 
@@ -47,6 +47,7 @@ class HeadPull(Stable):
     def __init__(self, pair, route, path):
         super().__init__(pair)
         self.route, self.path = route, path
+        self.marker = MARKER
         self.observed = [None, None]
 
     def raw(self, index):
@@ -60,7 +61,7 @@ class HeadPull(Stable):
     def wait(self, index, agent):
         deadline = time.monotonic() + 2
         while time.monotonic() < deadline:
-            if any(agent in row['message'] for row in events(self.raw(index))):
+            if any(agent in row['message'] for row in events(self.raw(index), self.marker)):
                 return
             time.sleep(0.02)
 
@@ -126,9 +127,10 @@ class WarningPull(HeadPull):
 
 
 class Tail(Stable):
-    def __init__(self, pair):
+    def __init__(self, pair, marker=MARKER, expected_message=None, secrets=()):
         super().__init__(pair)
         self.lines = [None, None]
+        self.marker, self.expected_message, self.secrets = marker, expected_message, secrets
 
     def before(self, index):
         super().before(index)
@@ -142,16 +144,16 @@ class Tail(Stable):
         if not isinstance(rows, list) or not all(isinstance(row, str) for row in rows):
             return result
         expected = [line for line in self.lines[index][-100:]
-                    if MARKER in line and re.search(r'\bWARNING\b', line, re.IGNORECASE)]
+                    if self.marker in line and re.search(r'\bWARNING\b', line, re.IGNORECASE)]
         if rows != expected:
             result['logs'] = {'wrong-own-file-filter': rows, 'expected': expected}
         else:
-            parsed = [events((row + '\n').encode()) for row in rows]
+            parsed = [events((row + '\n').encode(), self.marker) for row in rows]
             result['logs'] = [items[0] if len(items) == 1 else {'unrecognized-row': row} for row, items in zip(rows, parsed)]
         total = result.get('total_lines')
         result['total_lines'] = '<validated-own-line-count>' if type(total) is int and total == len(self.lines[index]) else {
             'invalid-total': total, 'expected': len(self.lines[index])}
-        result['capabilities_absent'] = not any(value in '\n'.join(rows) for value in (PULL, CURRENT, RETIRED, AGENT))
+        result['capabilities_absent'] = not any(value in '\n'.join(rows) for value in (PULL, CURRENT, RETIRED, AGENT, *self.secrets))
         return result
 
     def reference(self, reply):
@@ -159,7 +161,8 @@ class Tail(Stable):
         require(value['success'] is True and value['filtered_lines'] == 1
                 and value['total_lines'] == '<validated-own-line-count>' and value['capabilities_absent'] is True
                 and len(value['logs']) == 1 and value['logs'][0]['level'] == 'WARNING'
-                and WARNING_AGENT in value['logs'][0]['message'],
+                and (value['logs'][0]['message'] == self.expected_message if self.expected_message is not None
+                     else WARNING_AGENT in value['logs'][0]['message']),
                 'tail searches real emitted warning and validates counts against actual unmodified file')
 
 
@@ -180,3 +183,41 @@ def warning_and_tail(binary, recorder):
 
 
 GROUPS['config-pull-warning-and-real-tail'] = warning_and_tail
+
+AUTH_MARKER = '登录失败：'
+AUTH_MESSAGE = AUTH_MARKER + '用户名或密码错误，用户 ' + USERNAME + '，来源 127.0.0.1'
+WRONG_PASSWORD = 'synthetic-unmatched-login-password'
+
+
+class AuthWarning(WarningPull):
+    def __init__(self, pair):
+        super().__init__(pair, None, None)
+        self.marker = AUTH_MARKER
+
+    def after(self, index, reply):
+        self.wait(index, USERNAME)
+        Stable.after(self, index, reply)
+        raw = self.raw(index)
+        self.observed[index] = {'events': events(raw, AUTH_MARKER),
+            'capabilities_absent': not any(value.encode() in raw for value in
+                (PULL, CURRENT, RETIRED, AGENT, PASSWORD, WRONG_PASSWORD, SECRET, *self.pair.tokens))}
+        if index == 0:
+            require(self.observed[0] == {'events': [{'level': 'WARNING', 'message': AUTH_MESSAGE}],
+                'capabilities_absent': True}, 'failed real login emits one exact safe WARNING without credentials/JWT/capabilities')
+
+
+def auth_warning_and_tail(binary, recorder):
+    with Pair(binary, recorder) as pair:
+        pair.request('R011-F03', 'POST /api/auth/login', auth='',
+            body=json_body({'username': USERNAME, 'password': WRONG_PASSWORD}), expect=401,
+            writes=True, runtime_writes=True, interaction=AuthWarning(pair),
+            variant='real-failed-login-warning-and-secret-redaction')
+        pair.policy.bind(*[str(directory / 'app.log') for directory in pair.dirs],
+                         r'/tmp/configdiff-[^/]+/(python|go)/app[.]log', 'real-auth-tail-file')
+        observer = Tail(pair, AUTH_MARKER, AUTH_MESSAGE, (PASSWORD, WRONG_PASSWORD, SECRET, *pair.tokens))
+        pair.request('R076-B91', 'GET /api/logs/tail', '/api/logs/tail?lines=100&level=warning&search=' + quote(AUTH_MARKER),
+            expect=200, writes=True, interaction=observer, projection=observer.project, check=observer.reference,
+            variant='real-auth-failure-warning-filter-and-secret-redaction')
+
+
+GROUPS['auth-warning-and-real-tail'] = auth_warning_and_tail

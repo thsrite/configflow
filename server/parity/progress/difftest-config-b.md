@@ -1813,3 +1813,18 @@ current go-unimplemented=7 design_errors=[] seconds=9.57；exit=0
 ```
 
 继续独立登录日志和并发规则写入；最终.32全量未执行。未读Go业务、未派子agent、未推送。
+
+## 批次 106：已接通登录路由的真实WARNING与tail
+
+- R011-F03实际错误密码返回401后，观察每端新增文件日志必须只有一条完整中文登录失败WARNING、真实用户和来源。检查正确/错误密码、JWT签名密钥、双方JWT及seed能力值均不出现。R076-B91随后按warning和中文search过滤真实文件；本端原始行/总数/过滤数先严格自证，再仅投影日志时间/包装，完整中文message与WARNING词不变。两端已接通，因此这两条均真正compared，不依赖config拉取TODO。
+- 复跑原pull warning/tail与11条HEAD，确认通用marker参数没有破坏原语义。15变体：compared2、Go尚未实现12、依赖未实现1、design_errors=[]；91项自检通过，新增auth marker/来源/等级/泄密篡改全部检出。
+- 统一9433变体、原R仍4311（S689/F2673/B949）、H599/G16；findings仍closed81/accepted7/open20/O12单列1。X07仍部分覆盖，尚不能以两类日志宣称完整生命周期或轮转通过。
+
+```text
+.32 native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups auth-warning-and-real-tail,config-pull-warning-and-real-tail,config-pull-head-and-real-logs --baseline 7521bb5c
+current compared=2 go-unimplemented=12 go-unimplemented-dependency=1 design_errors=[]；exit=0
+91 self-checks + deliberately wrong-Go-response detection OK
+独立报告/tmp/configdiff-auth-log-draft.json
+```
+
+继续并发规则写入和剩余条目；最终.32全量未执行。
