@@ -26,27 +26,27 @@ def reply(body, content_type=JSON, status=200, headers=None):
 
 
 class ComparatorTests(unittest.TestCase):
-    def test_short_link_json_error_migration_is_explicit_and_strict(self):
+    def test_short_link_plain_error_and_attachment_exception_are_strict(self):
         route = '/api/agents/i/<token>'
-        source = reply(b'<h1>Not Found</h1><p>Missing &amp; expired<br>retry</p>',
-                       'text/html; charset=utf-8', 404, {'cache-control': 'no-store'})
-        target = reply({'success': False, 'message': 'Missing & expired\nretry'},
-                       status=404, headers=source[3])
-        self.assertEqual([], pd.response_diffs(source, target, route, []))
-        for changed in [
-            reply({'success': True, 'message': 'Missing & expired\nretry'}, status=404),
-            reply({'success': False, 'message': 'different'}, status=404),
-            reply({'success': False, 'message': 'Missing & expired\nretry', 'extra': 1}, status=404),
-            reply(target[2], status=400),
-            reply(b'{"success":false,"success":false,"message":"Missing & expired\\nretry"}', status=404),
-            reply(target[2], 'text/plain', 404),
-        ]:
-            with self.subTest(changed=changed):
-                self.assertFalse(pd.migrated_api_error(source, changed, route))
-                self.assertTrue(pd.response_diffs(source, changed, route, []))
-        self.assertTrue(pd.response_diffs(source, target, '/other', []))
-        self.assertIn(('header.Cache-Control', 'missing-in-go'),
-                      pd.response_diffs(source, reply(target[2], status=404), route, []))
+        for status, message in [(404, '安装链接不存在或已过期，请在面板重新生成。\n'),
+                                (503, '安装脚本暂时不可用，请稍后重试。\n')]:
+            headers = {'cache-control': 'no-store',
+                       'content-disposition': 'attachment; filename="configflow-install.sh"'}
+            source = reply(message.encode(), 'text/plain; charset=utf-8', status, headers)
+            target = reply(message.encode(), source[1], status, {'cache-control': 'no-store'})
+            self.assertTrue(pd.plain_install_error(source, target, route))
+            self.assertEqual([], pd.response_diffs(source, target, route, []))
+            for changed in [reply({'success': False, 'message': message}, status=status),
+                            reply(b'different', source[1], status, target[3]),
+                            reply(target[2], source[1], 400, target[3]),
+                            reply(target[2], 'text/html', status, target[3]),
+                            reply(target[2], source[1], status, {'content-disposition': 'other'})]:
+                with self.subTest(status=status, changed=changed):
+                    self.assertFalse(pd.plain_install_error(source, changed, route))
+                    self.assertTrue(pd.response_diffs(source, changed, route, []))
+            self.assertTrue(pd.response_diffs(source, target, '/other', []))
+            self.assertIn(('header.Cache-Control', 'missing-in-go'),
+                          pd.response_diffs(source, reply(target[2], source[1], status), route, []))
 
     def test_mutations_are_detected(self):
         good = reply(b'{"success":true,"data":{"count":3,"name":"a","items":["x","y"],"note":""}}')

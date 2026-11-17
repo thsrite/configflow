@@ -104,10 +104,10 @@ Python 启动迁移和缓存整理仍正常执行，但只作用于临时副本�
   状态码、Content-Type、除传输层（Date、Server、Content-Length、Connection、Keep-Alive、
   Transfer-Encoding）之外的全部响应头独立比较；两端都无响应记为 `transport-both`。
   每个服务的临时数据目录路径在比较前替换为 `<DATA_DIR>`。差异只输出模板、键路径、类型。
-- Step B #3 的公开错误 JSON 化只对快照中已观察到的 `/api/agents/i/<token>` 显式断言：
-  状态相同且为错误、`success` 必须是 false、`message` 必须等于 Python 的公开描述，且无额外字段。
-  满足后才接受正文和 Content-Type 的预期变化，其余响应头仍比较；篡改状态、消息、字段或重复键会失败。
-  既有 A18/F1 的 Python 成功 / Go 500 仍是基线问题，只把旧 HTML 的差异路径更新为 JSON 字段。
+- L1 D8 恢复 `/api/agents/i/<token>` 的原始纯文本404/503：正文（含末尾换行）、状态、
+  Content-Type 必须与 Flask 完全一致，不再允许 JSON 包装。只有已批准的错误附件头移除
+  单独声明：Python 必须恰为 configflow-install.sh 的 attachment，Go 必须没有该头，
+  其余头仍比较。篡改消息、状态、类型或回到 JSON 都会失败。
 - `proddiff-normalize.json` 逐项声明精确路由（必须在 routes.tsv 中）、精确路径和原因，不支持通配符；
   未知字段或多个模式同时出现即框架失败。路径可用 `name[]` 表示列表每一项，`header.<name>` 表示响应头。
   模式：默认（两端同类型标量才替换）；`pattern`（两端各自只替换匹配部分，其余文本照常比较）；

@@ -263,3 +263,14 @@ ok configflow/internal/api/agents/difftest 4.442s
 --- PASS: TestL1HAVerificationWithRealDNSClients (7.06s)
 ok configflow/internal/installer 7.067s
 ```
+
+D8 gate-audit follow-up: the proddiff comparator still explicitly accepted the
+old short-link plain/HTML→JSON migration. Removed that obsolete waiver; original
+404/503 Chinese body+newline, status and type must now match exactly. The only
+narrow exception asserts Python's exact configflow-install.sh attachment header
+and Go's absence, keeping every other header strict. Mutations back to JSON,
+wrong body/status/type/header and unrelated routes fail. No baseline diff entry
+was added or hidden. Updated comparator README and synthetic regression.
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -c 'set -eu; PYTHONDONTWRITEBYTECODE=1 "$HOME/cf-test/.venv/bin/python" -m unittest discover -s server/tools/proddiff -p test_proddiff.py'`
+→ 34 tests in0.020s, OK. Stopped only our still-queued gate before changing the
+remote snapshot; final gate will restart with the updated comparator.
