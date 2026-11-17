@@ -414,3 +414,101 @@ func TestReviewN83RecordDeclarationGuards(t *testing.T) {
 		t.Fatalf("borrowed provenance on encode: %v", err)
 	}
 }
+
+// FuzzReviewRecordEdits applies deletions, additions, nil pointers, cleared
+// lists and Map deletions chosen by ops, then checks R1/R2/R3 independently:
+// valid unique JSON, untouched members keep bytes and relative order, the
+// deleted member is gone, and decode→encode of the output is stable.
+func FuzzReviewRecordEdits(f *testing.F) {
+	for _, seed := range []struct {
+		source string
+		ops    byte
+	}{
+		{`{}`, 0xff},
+		{"{ \"z\" : 1 ,\"name\":\"x\" , \"next\":{\"a\":1} }", 0x05},
+		{`{"numbers":[1,2],"byname":{"k":{"name":"v"},"j":null},"added":true}`, 0x1a},
+		{"{\"name\":\" \",\"raw\":[{\"a\":{}}],\"q\":null\n}", 0x21},
+		{`{"next":7,"numbers":"x","byname":[]}`, 0x1c},
+	} {
+		f.Add([]byte(seed.source), seed.ops)
+	}
+	f.Fuzz(func(t *testing.T, data []byte, ops byte) {
+		// Record nesting costs O(depth³) to decode (baselines per level, see
+		// review-n8-3.md); stored schemas nest a few levels, so cap the input.
+		if len(data) > 1024 {
+			return
+		}
+		var record reviewRecord
+		if DecodeRecord(data, &record, &record.raw) != nil {
+			return
+		}
+		order, before := fuzzMembers(t, data)
+		edited := map[string]bool{}
+		deleted := ""
+		if ops&0x01 != 0 && record.Fields.Len() > 0 {
+			deleted = record.Fields.Keys()[0]
+			record.Fields.Delete(deleted)
+			edited[deleted] = true
+		}
+		if ops&0x02 != 0 && deleted != "added" {
+			if err := record.Fields.Set("added", json.RawMessage(`{"x":[1, "<>&"]}`)); err != nil {
+				t.Fatal(err)
+			}
+			edited["added"] = true
+		}
+		if ops&0x04 != 0 {
+			record.Next = nil
+			edited["next"] = true
+		}
+		if ops&0x08 != 0 {
+			record.Numbers = nil
+			edited["numbers"] = true
+		}
+		if ops&0x10 != 0 {
+			if keys := record.Byname.Keys(); len(keys) > 0 {
+				record.Byname.Delete(keys[0])
+			}
+			edited["byname"] = true
+		}
+		if ops&0x20 != 0 {
+			record.Name = "e<>& "
+			edited["name"] = true
+		}
+		encoded, err := Marshal(record)
+		if err != nil {
+			t.Fatal(err)
+		}
+		afterOrder, after := fuzzMembers(t, encoded)
+		var kept, expected []string
+		for _, name := range order {
+			if !edited[name] {
+				expected = append(expected, name)
+				value, ok := after[name]
+				if !ok || !bytes.Equal(value, before[name]) {
+					t.Fatalf("untouched member %q changed", name)
+				}
+			}
+		}
+		for _, name := range afterOrder {
+			if _, original := before[name]; original && !edited[name] {
+				kept = append(kept, name)
+			}
+		}
+		if !slices.Equal(kept, expected) {
+			t.Fatal("untouched member order changed")
+		}
+		if deleted != "" {
+			if _, present := after[deleted]; present {
+				t.Fatal("deleted member written")
+			}
+		}
+		var again reviewRecord
+		if err := DecodeRecord(encoded, &again, &again.raw); err != nil {
+			t.Fatal(err)
+		}
+		stable, err := Marshal(again)
+		if err != nil || !bytes.Equal(stable, encoded) {
+			t.Fatal("decode/encode of output not stable")
+		}
+	})
+}
