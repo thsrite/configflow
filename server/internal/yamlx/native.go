@@ -189,6 +189,11 @@ func prepareStrings(n *Node, seen map[*Node]bool) {
 	if n.Kind == yaml.ScalarNode && n.ShortTag() == "!!null" && n.Value == "" {
 		n.Value = "null"
 	}
+	// yaml.v3's folded emitter can insert an extra newline around more-indented
+	// continuation lines. Literal style writes the actual value without refolding.
+	if n.Kind == yaml.ScalarNode && n.Style&yaml.FoldedStyle != 0 {
+		n.Style = n.Style&^yaml.FoldedStyle | yaml.LiteralStyle
+	}
 	protectString(n)
 	// The Node encoder bypasses yaml.v3's string encoder's YAML 1.1 quoting.
 	// Ask that encoder for the style instead of introducing another resolver.

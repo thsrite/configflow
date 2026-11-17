@@ -28,19 +28,25 @@ func relink(t *testing.T, source string, newName *string) (*jsonx.Object, []stri
 	return profile, changed, err
 }
 
-func expectEdited(t *testing.T, source string, newName *string) *jsonx.Object {
+func mustListenerParse(t *testing.T, source string) *yamlx.Node {
 	t.Helper()
-	expected := mustLoad(t, source).(*jsonx.Object)
-	listeners := append([]any(nil), expected.GetList("listeners")...)
-	first := listeners[0].(*jsonx.Object).DeepCopy()
-	if newName == nil {
-		first.Delete("proxy")
-	} else {
-		first.Set("proxy", *newName)
+	n, err := yamlx.Parse([]byte(source))
+	if err != nil {
+		t.Fatal(err)
 	}
-	listeners[0] = first
-	expected.Set("listeners", listeners)
-	return expected
+	return n
+}
+
+func expectEdited(t *testing.T, source string, newName *string) *yamlx.Node {
+	t.Helper()
+	doc := yamlx.Clone(mustListenerParse(t, source))
+	listener := yamlx.Get(doc, "listeners").Content[0]
+	if newName == nil {
+		yamlx.Delete(listener, "proxy")
+	} else {
+		yamlx.Set(listener, "proxy", yamlx.Str(*newName))
+	}
+	return doc
 }
 
 func TestListenerEditDoesNotChangeSharedYamlAliasOrUnrelatedDocument(t *testing.T) {
@@ -49,11 +55,11 @@ func TestListenerEditDoesNotChangeSharedYamlAliasOrUnrelatedDocument(t *testing.
 	if err != nil || strings.Join(changed, ",") != "listeners[0].proxy" {
 		t.Fatalf("changed %v err %v", changed, err)
 	}
-	document := mustLoad(t, profile.GetObject("mihomo").GetString("custom_config")).(*jsonx.Object)
-	if document.GetObject("shared").GetString("proxy") != "Pinned" {
+	document := mustListenerParse(t, profile.GetObject("mihomo").GetString("custom_config"))
+	if yamlx.Get(yamlx.Get(document, "shared"), "proxy").Value != "Pinned" {
 		t.Fatal("shared alias changed")
 	}
-	if document.GetList("listeners")[0].(*jsonx.Object).Has("proxy") {
+	if yamlx.Get(yamlx.Get(document, "listeners").Content[0], "proxy") != nil {
 		t.Fatal("proxy kept")
 	}
 	unrelated, changed, err := relink(t, "# keep this comment\nlisteners: []\n", nil)
@@ -82,7 +88,7 @@ func TestCommentEditsKeepAliasConsumersAndFlowOrMergeSemantics(t *testing.T) {
 					t.Fatalf("changed %v err %v (%v)", changed, err, causeOf(err))
 				}
 				result := profile.GetObject("mihomo").GetString("custom_config")
-				if !jsonx.Equal(mustLoad(t, result), expected) {
+				if !yamlx.Equal(mustListenerParse(t, result), expected) {
 					t.Fatalf("result does not load to the expected document:\n%s", result)
 				}
 				for _, c := range []string{"# top", "# base", "# list", "# shared", "# merge", "# port", "# policy note"} {
@@ -112,7 +118,7 @@ func TestCommentEditKeepsScalarTypesLiteralContentAndWindowsNewlines(t *testing.
 		t.Fatal(err, causeOf(err))
 	}
 	result := profile.GetObject("mihomo").GetString("custom_config")
-	if !jsonx.Equal(mustLoad(t, result), expected) {
+	if !yamlx.Equal(mustListenerParse(t, result), expected) {
 		t.Fatalf("result:\n%q", result)
 	}
 	if !strings.Contains(result, "# header") || !strings.Contains(result, "# This is string content") {
@@ -156,7 +162,7 @@ sub-rules: {lan-rules: [MATCH,DIRECT]} # sub-rule explanation
 				t.Fatalf("%v: comment %q lost", deref(name), c)
 			}
 		}
-		if !jsonx.Equal(mustLoad(t, result), expectEdited(t, source, name)) {
+		if !yamlx.Equal(mustListenerParse(t, result), expectEdited(t, source, name)) {
 			t.Fatalf("%v: result:\n%s", deref(name), result)
 		}
 	}
@@ -214,5 +220,25 @@ func TestGenerationKeepsValidOrUnpinnedListenerTargets(t *testing.T) {
 		if err := ValidateListenerPolicies(listenerDocument(t, target)); err != nil {
 			t.Fatalf("%v: %v", target, err)
 		}
+	}
+}
+
+func TestListenerDuplicateKeysAndCRLFRegression(t *testing.T) {
+	source := "# header\r\nlisteners:\r\n- name: first # first\r\n  proxy: Pinned # fixed\r\n\r\n# gap\r\n- name: second\r\n  proxy: DIRECT\r\n"
+	profile, changed, err := relink(t, source, strp("Renamed"))
+	if err != nil || len(changed) != 1 {
+		t.Fatalf("%v %v", changed, err)
+	}
+	if got := profile.GetObject("mihomo").GetString("custom_config"); got != strings.Replace(source, "proxy: Pinned", "proxy: Renamed", 1) {
+		t.Fatalf("CRLF splice changed layout: %q", got)
+	}
+	duplicate := "listeners:\n- name: one\n  proxy: Pinned\n  proxy: DIRECT\n"
+	profile, _, err = relink(t, duplicate, nil)
+	var detail *yamlx.DuplicateKeyError
+	if !errors.Is(err, yamlx.ErrDuplicateKey) || !errors.As(err, &detail) || detail.Key != "proxy" || detail.Line != 4 || !strings.HasPrefix(err.Error(), msgListenerBaseParse) {
+		t.Fatalf("wrong duplicate diagnostic: %v", err)
+	}
+	if profile.GetObject("mihomo").GetString("custom_config") != duplicate {
+		t.Fatal("duplicate source changed")
 	}
 }

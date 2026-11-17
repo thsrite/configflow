@@ -95,3 +95,19 @@ ALL_PROXY、优先级、CGI 零请求、显式代理和 redirect 边界。A15 �
 额外精确断言4条 loopback 的 Python代理/Go直连 trace，升级直连和可路由 follow
 仍保持完整严格比较。详情见
 [N8-2 复核报告](review-n8-2.md)。
+
+## N7-2 — native Mihomo base diagnostics and safe edits
+
+Coordinator decision, 2026-11-17; design/n7-n8.md §2.2.
+Relink parse errors retain their existing Chinese context and append yaml.v3's
+native reason. Duplicate keys match ErrDuplicateKey/ErrSyntax, expose Key/Line,
+and are rejected with the key and line shown; the source and transaction stay
+unchanged. Other listener validation messages stay unchanged.
+
+D3: a safe scalar/pair splice preserves all other bytes; ambiguous layouts
+rewrite the document, retaining comments and all values while normalising layout.
+CRLF documents with comments no longer have the old C11 refusal. Folded scalars
+are emitted in literal style by the shared Marshal API to preserve their actual
+value, avoiding yaml.v3's extra-newline emitter bug. Native YAML schema policies
+from N7-1 remain in force. No new application route is added in N7-2; actual
+proxy-groups route differential is deferred to C33.

@@ -1,27 +1,34 @@
 package subs
 
 import (
+	"errors"
 	"fmt"
+	"strings"
 
 	"configflow/internal/jsonx"
 	"configflow/internal/rules"
-	"configflow/internal/subs/commented"
 	"configflow/internal/yamlx"
+
+	"gopkg.in/yaml.v3"
 )
 
 // ListenerReferenceError is mihomo_listeners.ListenerReferenceError, a
 // StrategyReferenceError.
 type ListenerReferenceError struct {
 	Message string
-	// Cause is the Go-side reason (for example commented.ErrUnsupported); not part of the message.
+	// Cause retains an editor or parser failure for errors.Is/errors.As.
 	Cause error
 }
 
 func (e *ListenerReferenceError) Error() string { return e.Message }
 
-// Unwrap exposes the StrategyReferenceError base class.
-func (e *ListenerReferenceError) Unwrap() error {
-	return &rules.StrategyReferenceError{Message: e.Message}
+// Unwrap exposes validation classification and the underlying parser/editor error.
+func (e *ListenerReferenceError) Unwrap() []error {
+	chain := []error{&rules.StrategyReferenceError{Message: e.Message}}
+	if e.Cause != nil {
+		chain = append(chain, e.Cause)
+	}
+	return chain
 }
 
 func lre(msg string) error { return &ListenerReferenceError{Message: msg} }
@@ -36,15 +43,15 @@ func listenersOf(document *jsonx.Object) ([]any, error) {
 	}
 	listeners, ok := v.([]any)
 	if !ok {
-		return nil, lre("Mihomo listeners 必须是列表，无法确认入口的固定策略引用")
+		return nil, lre(msgListenerListRequired)
 	}
 	for i, l := range listeners {
 		o, ok := l.(*jsonx.Object)
 		if !ok {
-			return nil, lre(fmt.Sprintf("Mihomo listeners[%d] 必须是对象", i))
+			return nil, lre(fmt.Sprintf(msgListenerObjectRequired, i))
 		}
 		if t := o.Value("proxy"); t != nil && !isString(t) {
-			return nil, lre(fmt.Sprintf("Mihomo listeners[%d].proxy 必须是策略名称或留空", i))
+			return nil, lre(fmt.Sprintf(msgListenerTargetRequired, i))
 		}
 	}
 	return listeners, nil
@@ -57,61 +64,98 @@ func listenersOf(document *jsonx.Object) ([]any, error) {
 func RelinkGroupListeners(profile *jsonx.Object, oldName string, newName *string) ([]string, error) {
 	settings := profile.GetObject("mihomo")
 	source, _ := settings.Value("custom_config").(string)
-	if pyStrip(source) == "" || (newName != nil && oldName == *newName) {
+	if strings.TrimSpace(source) == "" || newName != nil && oldName == *newName {
 		return nil, nil
 	}
-	parsed, err := yamlx.SafeLoad(source)
-	if err != nil {
-		return nil, lre("Mihomo 基础配置无法解析，未修改策略组或入口引用")
-	}
-	document, ok := parsed.(*jsonx.Object)
-	if !ok {
-		return nil, lre("Mihomo 基础配置必须是对象，未修改策略组或入口引用")
-	}
-	listeners, err := listenersOf(document)
-	if err != nil {
-		return nil, err
-	}
 	var changed []string
-	var indexes []int
-	replacements := append([]any(nil), listeners...)
-	for i, l := range listeners {
-		listener := l.(*jsonx.Object)
-		target := listener.Value("proxy")
-		if s, ok := target.(string); ok && containsText(s, "${") {
-			return nil, lre(fmt.Sprintf("Mihomo listeners[%d].proxy 含未解析变量，无法安全联动此策略组；原配置已保留", i))
+	updated, err := yamlx.Edit([]byte(source), func(doc *yamlx.Node) error {
+		if doc.Kind != yaml.MappingNode || doc.ShortTag() != "!!map" {
+			return lre(msgListenerBaseObject)
 		}
-		if target != any(oldName) {
-			continue
+		listeners := yamlx.Resolve(yamlx.Get(doc, "listeners"))
+		if listeners == nil || listeners.Kind == yaml.ScalarNode && listeners.ShortTag() == "!!null" {
+			return nil
 		}
-		replacement := listener.DeepCopy()
-		if newName == nil {
-			replacement.Delete("proxy")
-		} else {
-			replacement.Set("proxy", *newName)
+		if listeners.Kind != yaml.SequenceNode || listeners.ShortTag() != "!!seq" {
+			return lre(msgListenerListRequired)
 		}
-		replacements[i] = replacement
-		indexes = append(indexes, i)
-		changed = append(changed, fmt.Sprintf("listeners[%d].proxy", i))
+		var indexes []int
+		for i, item := range listeners.Content {
+			listener := yamlx.Resolve(item)
+			if listener == nil || listener.Kind != yaml.MappingNode || listener.ShortTag() != "!!map" {
+				return lre(fmt.Sprintf(msgListenerObjectRequired, i))
+			}
+			target := yamlx.Resolve(yamlx.Get(listener, "proxy"))
+			if target == nil || target.Kind == yaml.ScalarNode && target.ShortTag() == "!!null" {
+				continue
+			}
+			if target.Kind != yaml.ScalarNode || target.ShortTag() != "!!str" {
+				return lre(fmt.Sprintf(msgListenerTargetRequired, i))
+			}
+			if strings.Contains(target.Value, "${") {
+				return lre(fmt.Sprintf(msgListenerVariable, i))
+			}
+			if target.Value == oldName {
+				indexes = append(indexes, i)
+			}
+		}
+		if len(indexes) == 0 {
+			return nil
+		}
+		// Ordinary unshared nodes keep their positions for a splice. Shared/merged
+		// listeners are cloned so aliases elsewhere retain the original values.
+		if !explicitListeners(doc) || sharedListenerNodes(listeners) {
+			listeners = yamlx.Clone(listeners)
+			yamlx.Set(doc, "listeners", listeners)
+		}
+		for _, i := range indexes {
+			listener := yamlx.Resolve(listeners.Content[i])
+			if newName == nil {
+				yamlx.Delete(listener, "proxy")
+			} else {
+				target := yamlx.Resolve(yamlx.Get(listener, "proxy"))
+				target.Value = *newName
+			}
+			changed = append(changed, fmt.Sprintf("listeners[%d].proxy", i))
+		}
+		return nil
+	})
+	if err != nil {
+		var listenerErr *ListenerReferenceError
+		if errors.As(err, &listenerErr) {
+			return nil, err
+		}
+		if errors.Is(err, yamlx.ErrUnsafeEdit) {
+			return nil, &ListenerReferenceError{Message: msgListenerUnsafeEdit, Cause: err}
+		}
+		return nil, &ListenerReferenceError{Message: fmt.Sprintf(msgListenerBaseParseDetail, err), Cause: err}
 	}
 	if len(changed) > 0 {
-		document.Set("listeners", replacements)
-		updated, err := commented.EditListenerTargets(source, indexes, newName, document)
-		if err != nil {
-			return nil, &ListenerReferenceError{Message: "无法安全保留 Mihomo 基础配置的注释与引用，原配置已保留", Cause: err}
-		}
 		if settings == nil {
 			settings = jsonx.NewObject()
 			profile.Set("mihomo", settings)
 		}
-		settings.Set("custom_config", updated)
+		settings.Set("custom_config", string(updated))
 	}
 	return changed, nil
 }
 
-func containsText(s, sub string) bool {
-	for i := 0; i+len(sub) <= len(s); i++ {
-		if s[i:i+len(sub)] == sub {
+func explicitListeners(doc *yamlx.Node) bool {
+	for i := 0; i+1 < len(doc.Content); i += 2 {
+		key := doc.Content[i]
+		if key.Kind == yaml.ScalarNode && key.ShortTag() == "!!str" && key.Value == "listeners" {
+			return true
+		}
+	}
+	return false
+}
+
+func sharedListenerNodes(n *yamlx.Node) bool {
+	if n.Kind == yaml.AliasNode || n.Anchor != "" {
+		return true
+	}
+	for _, child := range n.Content {
+		if sharedListenerNodes(child) {
 			return true
 		}
 	}
@@ -142,7 +186,7 @@ func ValidateListenerPolicies(document *jsonx.Object) error {
 	for i, l := range listeners {
 		target := l.(*jsonx.Object).Value("proxy")
 		if jsonx.Truthy(target) && !available[target.(string)] {
-			return lre(fmt.Sprintf("Mihomo listeners[%d].proxy 引用了不存在或未启用的策略「%s」", i, target.(string)))
+			return lre(fmt.Sprintf(msgListenerMissingPolicy, i, target.(string)))
 		}
 	}
 	return nil

@@ -12,6 +12,7 @@ type sourceLine struct{ start, end, next int }
 type textPatch struct {
 	start, end int
 	text       []byte
+	pair       bool
 }
 type editSplicer struct {
 	source   []byte
@@ -41,6 +42,13 @@ func spliceEdit(src []byte, doc *Node, before editSnapshot) ([]byte, bool) {
 	for _, patch := range p.patches {
 		if patch.start < from || patch.end < patch.start || patch.end > len(src) {
 			return nil, false
+		}
+		if patch.pair {
+			for _, comment := range before.comments {
+				if bytes.Count(src[patch.start:patch.end], []byte(comment)) > bytes.Count(patch.text, []byte(comment)) {
+					return nil, false
+				}
+			}
 		}
 		out.Write(src[from:patch.start])
 		out.Write(patch.text)
@@ -126,7 +134,7 @@ func (p *editSplicer) visit(n *Node, flow, isKey bool) bool {
 		if bytes.ContainsAny(text, "\r\n") {
 			return false
 		}
-		p.patches = append(p.patches, textPatch{start, end, text})
+		p.patches = append(p.patches, textPatch{start, end, text, false})
 	}
 	if n.Kind == yaml.MappingNode {
 		if len(n.Content)%2 != 0 {
@@ -272,7 +280,7 @@ func (p *editSplicer) removePair(parent, key, value *Node) bool {
 			keep = append(keep, text[:indentation]...)
 			keep = append(keep, p.source[line.start+comment:line.next]...)
 		}
-		p.patches = append(p.patches, textPatch{line.start, line.next, keep})
+		p.patches = append(p.patches, textPatch{line.start, line.next, keep, true})
 	}
 	return true
 }

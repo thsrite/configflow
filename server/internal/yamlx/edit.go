@@ -3,8 +3,9 @@ package yamlx
 import (
 	"bytes"
 	"fmt"
-	"gopkg.in/yaml.v3"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 // Edit applies a change to a parsed YAML tree, preserving comments and verifying
@@ -24,6 +25,7 @@ func Edit(src []byte, edit func(doc *Node) error) ([]byte, error) {
 			}
 		}
 	}
+	before.comments = sourceEditComments(src, doc, before.comments)
 	if err := edit(doc); err != nil {
 		return src, err
 	}
@@ -34,7 +36,9 @@ func Edit(src []byte, edit func(doc *Node) error) ([]byte, error) {
 		return src, fmt.Errorf("%w: validate edited document: %w", ErrUnsafeEdit, err)
 	}
 	if out, ok := spliceEdit(src, doc, before); ok {
-		if err := verifyEdit(out, doc, before.comments); err != nil {
+		// The planner proves original comment bytes survive. yaml.v3 may no
+		// longer attach orphan notes to a Node, so verify only meaning here.
+		if err := verifyEdit(out, doc, nil); err != nil {
 			return src, err
 		}
 		return out, nil

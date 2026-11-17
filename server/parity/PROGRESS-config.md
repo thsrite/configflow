@@ -498,7 +498,7 @@ Commands: `rt -- bash -lc 'cd server && go vet ./internal/subs/... && go test -c
 
 ## C11 — proxy chains, commented Mihomo editor, listeners, proxy-server DNS
 
-**Status: `partial`** · prereqs: C10 · Go: internal/subs, internal/subs/commented
+**Status: `partial`** · prereqs: C10 · Go: internal/subs, internal/yamlx.Edit
 
 Files:
 - `backend/utils/proxy_chains.py` (262)
@@ -515,6 +515,25 @@ Evidence: `internal/subs` chains.go, listeners.go, proxyserverdns.go, `subs/comm
 Missing / deferred: **Open items (coordinator, 2026-11-15) — module cannot become `verified` until closed or accepted by the maintainer:** (1) CRLF documents with comments/blank lines between entries are refused (118 random-corpus rows; ruamel writes mixed `\r\r\n`/`\n`; est. 1–2 days, needs a port of ruamel's scanner comment handling); (2) a commented block collection expanded inside a flow collection is refused (33 anchor rows; est. half a day); (3) small: lone `-` plain scalar, comment on a null item of a nested compact sequence, `!!binary`/`!!map`/`!!seq`/`!!set` tags (≈20 rows). (The yamlx `1,000`/`!!int '0x-1F'` item is recorded under C02.) Realistic corpus of 128 repo configs: 0 refused, 0 mismatches. Deferred tests: `test_proxy_chains.py` 10 cases through generation/Surge/provider (→ C17/C18/C19), `test_proxy_server_dns.py` 17 cases through `generate` (→ C18) and agent core versions (→ agents).
 
 Reviewer notes: Refusals return Python's failure message and the route answers 400 with the original text kept (refusing beats different bytes). 24 Python-crash anchor rows are documented as is. `chains.go:489` TODO: needs a `PyRegex.Groups()` method in rules.
+
+N7-2 migration in progress: removed the private `subs/commented` parser/emitter
+and its generators. The frozen 12,479-row corpus now checks native YAML meaning
+and comment bytes, not ruamel formatting. Scalar tokens use in-place edits when
+positions/metadata are stable and no alias consumer can change; whole-line block
+mapping pair deletions splice when bounds are unambiguous (never first key after
+`- `, never leaving an implicit empty map). New nodes, shared/merged listener
+copies, flow removals, block/multiline scalar changes, tags/anchors or uncertain
+ranges use whole-document yaml.v3 encoding. Missing annotations are retained;
+undefined/forward aliases expand to their original values. Every result is
+reparsed and Equal-checked; failures keep the source and existing unsafe-edit 400.
+CRLF splice/rewrite regressions pass. Shared Marshal normalises folded values to
+literal style to prevent yaml.v3's extra-newline bug (coordinator approved).
+
+Splices prove preservation of original comment bytes rather than yaml.v3's
+post-edit annotation count (the scanner may leave an orphan note unattached).
+Whole rewrites restore missing notes and verify each one. Exact classes,
+commands and corpus counts: progress/n7-2.md. Await final gates and Opus review;
+this entry does not mark C11 verified. Proxy-groups route difftest → C33 deferred.
 
 ## C12 — converter common, Mihomo node conversion, dialer references, EasyTier
 
@@ -1748,6 +1767,10 @@ Evidence: No Go package; no route registered.
 Missing / deferred: Everything in the files below.
 
 Notes for porter: Registers `/api/profiles/<id>/rule-library/content/<rule_id>` and `/proxy-groups`. Proxy-group routes run `subs.RelinkGroupListeners` (deferred listener-lifecycle cases of C11).
+
+N7-2 follow-up: 接入后运行 N7-2 relink 的 difftest。The current test HTTP shell
+covers the public relink boundary and repository rollback only; real proxy-group
+route wiring/HTTP differential belongs to C33 and is explicitly deferred.
 
 ## C34 — generate, config and profile routes, config export
 
