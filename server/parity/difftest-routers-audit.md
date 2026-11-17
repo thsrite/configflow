@@ -228,3 +228,20 @@ progress；H0030/H0031 的 OS 资源故障仍单列待补。
 因此普通 guard 输入使用中性 tag；原 udp 输入独立保留为 low 级参考缺陷，
 实际 GET200 editable=false、PUT400 与 Go尚未实现均已进入 findings。没有改
 设备 fake，没有删除失败输入，也没有把修复后的 Go 结果自动算作差分通过。
+
+## G23：区分配置预览、Agent 最终配置和向导准备
+
+`check_generation` 的无效标记与 Linux 网关冲突，在配置预览中由通用异常
+处理返回500及准确消息。合法预览没有 success 字段，返回 content 等字段。
+`require_full_tun_generated` 则由 Agent 最终配置生成调用，缺少完整 TUN 或
+带过滤时返回400。不能把仅供预览的普通生成器当成该 guard 的覆盖。
+
+H0110–H0113 的103条实际 HTTP 配方已满足四份显式审计：标记结构/边界、
+开关冲突、完整 TUN 必需字段及所有过滤键。完整 TUN 的 Docker Agent 夹具
+仅避开无关的原生主机转发查询，没有伪造业务结果；拒绝后无预览记录或设备
+写入。Go 公开清单没有注册这两个外部入口，均单独计 Go尚未实现，不增加
+26条领域路由分母。细节与首次测试假设修正见 progress。
+
+`full_tun_document` / `_load_base` 不由上述普通预览调用；调用方是
+setup_flow 与 gateway_onboarding。H0102–H0107 仍待通过这些公开向导入口
+补齐，不能以“已有无效 YAML”自动宣称覆盖。状态/旧版识别也仍单列待补。

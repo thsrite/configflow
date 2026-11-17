@@ -431,6 +431,51 @@ def declared():
         'retain native settings. Existing direct ownership cases change toward smart, others toward direct.',
         tuple((prefix + '-' + label, 'R003/' + prefix + '-mode-refused-' + label, 400)
               for prefix, labels in families for label in labels))
+    split_sources = ('backend/common/router_split.py:46', 'backend/common/router_split.py:143',
+                     'backend/common/router_split.py:162', 'backend/routes/generate.py:preview_mihomo',
+                     'backend/routes/agents.py:_prepare_transactional_content')
+    invalid_markers = ['null', 'bool', 'array', 'empty', 'extra', 'version-bool', 'version-float',
+                       'version-string', 'takeover', 'origin', 'version-zero', 'missing-key']
+    invalid_markers += ['ids-' + label for label in ('null', 'bool', 'object', 'string', '1025',
+        'empty', 'null-row', 'bool-row', 'number-row', 'array-row', 'object-row', '257')]
+    invalid_markers += ['control-' + str(number) for number in (*range(32), 127)]
+    marker_guards = tuple(('split-marker-' + label, 'G23/config-marker-' + label, 500)
+                          for label in invalid_markers)
+    valid_markers = tuple(('split-valid-' + label, 'G23/config-valid-' + label, 200)
+                         for label in ('empty', '1024-duplicate', 'unicode256'))
+    audits['H0110'] = Audit(split_sources,
+        'Actual public config preview rejects invalid marker shape/keys/exact-int version/takeover/origin; '
+        'IDs cover list type, cap1025, row types, empty text,257 Unicode characters, each C0 and DEL. '
+        'Empty IDs,1024 duplicates and256 Unicode characters are real public200 controls. The preview '
+        'wrapper translates RouterSplitError to500; no exception or generated output is emulated. '
+        'External routes have their own manifest oracle and do not count among26 routers routes.',
+        marker_guards + valid_markers)
+    audits['H0111'] = Audit(split_sources,
+        'Literal enabled=true on a valid full_tun marker refuses public config preview with exact500 '
+        'message. Three valid-marker gateway-disabled previews succeed; no Agent/device I/O or storage write.',
+        (('split-gateway-conflict', 'G23/config-full-tun-gateway-conflict', 500),) + valid_markers)
+    missing_tun = ['missing-tun'] + ['tun-' + label for label in ('null', 'bool', 'array', 'number', 'string')]
+    missing_tun += [key + '-' + label for key in ('enable', 'auto-route', 'auto-redirect')
+                   for label in ('missing', 'false', 'one', 'string')]
+    missing_tun += ['hijack-' + label for label in ('null', 'string', 'object', 'empty', 'tcp-only', 'wrong-case')]
+    missing_tun += ['old-route-' + key for key in ('route-address', 'inet4-route-address', 'inet6-route-address',
+                                                 'route-address-set', 'route-exclude-address-set')]
+    missing_tun += ['gateway-marker']
+    audits['H0112'] = Audit(split_sources,
+        'Actual Agent final generation, not preview, reaches require_full_tun_generated. Real Docker Agent '
+        'binding/version avoids unrelated live forwarding preconditions. Missing/nonobject tun, each required '
+        'literal-true flag, hijack list/any:53, all five removed route keys (even empty) and old gateway marker '
+        'refuse400 with exact missing-TUN message. Complete state unchanged and zero Agent requests. Root '
+        'nonobject YAML fails earlier in converter validation and is not falsely claimed at this guard.',
+        tuple(('split-agent-' + label, 'G23/agent-full-tun-' + label, 400) for label in missing_tun))
+    filter_keys = ('include-interface', 'exclude-interface', 'include-uid', 'include-uid-range',
+                   'exclude-uid', 'exclude-uid-range', 'include-mac-address', 'exclude-mac-address',
+                   'include-android-user', 'include-package', 'exclude-package', 'all')
+    audits['H0113'] = Audit(split_sources,
+        'Each of eleven TUN filter keys and the combined ordered diagnostic refuse actual Agent final '
+        'generation with400. The valid full-TUN shape reaches this guard rather than the preceding missing '
+        'shape check. No mocked Python exceptions, Agent delivery or generated-preview record is used.',
+        tuple(('split-agent-filter-' + key, 'G23/agent-full-tun-filtered-' + key, 400) for key in filter_keys))
     return audits
 
 

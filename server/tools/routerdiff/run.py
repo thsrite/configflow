@@ -32,6 +32,7 @@ import policy_graph
 import policy_owned
 import policy_side
 import policy_invalid
+import split
 from compare import differences, logical_snapshot, response_view, timestamp
 from harness import Pair, RemoteError, observed_startup_exit
 from harness import decode_response
@@ -755,6 +756,7 @@ def main():
     worlds += policy_owned.worlds()
     worlds += policy_side.worlds()
     worlds += policy_invalid.worlds()
+    worlds += split.worlds()
     if args.world or args.world_prefix:
         names = {item[0] for item in worlds}
         unknown = set(args.world or ()) - names

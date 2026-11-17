@@ -14,12 +14,32 @@ import policy_graph
 import policy_owned
 import policy_side
 import policy_invalid
+import split
 
 
 class AuditTests(unittest.TestCase):
+    def test_split_guards_require_all_external_http_variants(self):
+        audits = declared()
+        actual = {(world, case.ident): case for world, _, groups in split.worlds()
+                  for group in groups for case in group()}
+        for ident, count in (('H0110', 60), ('H0111', 4), ('H0112', 30), ('H0113', 12)):
+            self.assertEqual(len(audits[ident].requirements), count)
+            for world, name, status in audits[ident].requirements:
+                with self.subTest(entry=ident, world=world, case=name):
+                    case = actual[world, name]
+                    self.assertIn(ident, case.entries)
+                    self.assertEqual(case.expected, status)
+                    self.assertEqual(case.route, '')
+                    self.assertTrue(case.boundary)
+                    self.assertTrue(case.unchanged)
+            evidence = [{'world': world, 'case': name, 'entries': [ident], 'python': {'status': status},
+                         'status': 'go-unimplemented'} for world, name, status in audits[ident].requirements]
+            self.assertEqual(evaluate(evidence)[ident]['audit'], 'variants-audited')
+            self.assertEqual(evaluate(evidence[:-1])[ident]['audit'], 'variants-pending')
+
     def test_auth_audits_require_every_explicit_real_reference_variant(self):
         audits = declared()
-        self.assertEqual(len(audits), 26 * 7 + 25 * 3 + 5 + 14 + 12 + 5 + 8 + 23 + 1 + 5 + 4 + 6 + 4)
+        self.assertEqual(len(audits), 26 * 7 + 25 * 3 + 5 + 14 + 12 + 5 + 8 + 23 + 1 + 5 + 4 + 6 + 4 + 4)
         self.assertFalse(set(audits) - set(load()[1]))
         self.assertEqual({value['audit'] for value in evaluate([]).values()}, {'variants-pending'})
         ident = 'R005-F01'

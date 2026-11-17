@@ -1209,3 +1209,38 @@ G23 external boundary oracle foundation:
 => Ran31 tests0.635s/OK;11 runtime requests, domain missing11, cross-domain{},
 complete=false. No process pending. Actual external G23 input recipes are next;
 no new comparison/coverage claim yet. Declarations344/remaining1957 unchanged.
+
+G23 marker / final Agent TUN public guard increment:
+- Public manifest was re-read through the real Go process:181 method/path rows;
+  it contains neither these config preview nor Agent final-generation routes.
+  Missing external routes are independently observed, not inferred from404 or
+  from the absence of26 routers routes. No Go business implementation was read.
+-103 real Python HTTP recipes:57 invalid marker inputs, gateway conflict,
+  30 missing/modified full-TUN shapes,11 filter keys plus combined ordered
+  diagnostic, and3 accepted marker boundary controls. All100 refusals check
+  exact message, complete state unchanged; Agent refusals also require zero
+  Agent requests. Positive previews check the real content-bearing schema.
+- First whole increment stopped after100 successes because I incorrectly
+  assumed preview success included success=true. Actual public Python source
+  returns content/subscription_hosts/subscription_dialers without that field.
+  Fixed only the test prerequisite; reran all3 positive controls. Previous100
+  observations retained in the incomplete report, not represented as a clean
+  whole run. The two actual observation files satisfy all4 explicit H0110–13
+  requirement sets when evaluated together. No implementation or fake changed.
+- Declarations348/remaining1953 if composed. These4 are source/HTTP guard audits,
+  not a claim that all G23 helpers/generation or Go parity is complete. H0102–09
+  and H0114–18 still require their actual callers and branch variants. No new
+  Python bug. All103 external requests are Go尚未实现; domain count unchanged.
+
+Exact .64 commands:
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY=/tmp/routerdiff-build-302rx1dg-latest/configflow; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python -m unittest -v test_recipes; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world-prefix split- --output /tmp/routerdiff-split-all.json --findings /tmp/routerdiff-split-all-findings.md'`
+=> Ran8 tests1.391s/OK;100 real rejection recipes; then fixture_error 'success'.
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY=/tmp/routerdiff-build-302rx1dg-latest/configflow; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python -m unittest -v test_audits test_recipes; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world-prefix split-valid- --output /tmp/routerdiff-split-valid.json'`
+=> Ran21 tests2.376s/OK;3 valid previews, missing3/complete=false. In the same
+foreground shell a read-only Python evaluation joined results from the two JSON
+reports and called audits.evaluate: real_http_recipes103, H0110/H0111/H0112/H0113
+all variants-audited, go_statuses[go-unimplemented]. No product requests mocked.
+
+No command pending. Last FULL composition remains37937739,3054 recipes/301 audits;
+the above is a separate increment, not a replacement full report. Main findings
+full statistics remain unchanged. Final composition/gate/rebase still pending.
