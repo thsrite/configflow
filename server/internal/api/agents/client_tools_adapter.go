@@ -318,8 +318,8 @@ func clientPolicyPayload(ctx context.Context, id string, agent *clientDevice) (a
 		return nil, err
 	}
 	type peer struct {
-		ID   string `json:"id"`
-		Name string `json:"name"`
+		ID   string          `json:"id"`
+		Name json.RawMessage `json:"name"`
 	}
 	peers := []peer{}
 	for _, record := range all {
@@ -331,11 +331,15 @@ func clientPolicyPayload(ctx context.Context, id string, agent *clientDevice) (a
 			return nil, err
 		}
 		if bound == id {
-			label := record.GetString("name")
-			if label == "" {
-				label = record.GetString("id")
+			label := record.Value("name")
+			if !jsonx.Truthy(label) {
+				label = record.Value("id")
 			}
-			peers = append(peers, peer{record.GetString("id"), label})
+			raw, err := json.Marshal(label)
+			if err != nil {
+				return nil, err
+			}
+			peers = append(peers, peer{record.GetString("id"), raw})
 		}
 	}
 	var deployment *registry.Record

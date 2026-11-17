@@ -23,6 +23,8 @@ The same-package `publicAgent(*agents.Record) *agents.Record` adapter delegates 
 
 All new write entry points use `lifecycle.Detach` in the owner. No handler calls WithoutCancel, no background goroutines or new dependencies were added. Legacy JSONx access is confined to adapters.
 
+Added files (line counts at handback): `client_tools.go` 358; `client_tools_adapter.go` 388; `messages.go` 17; `client_tools_diff_test.go` 695; `public_agent_adapter.go` 36; `public_agent_test.go` 122; `discovery/query.go` 17; `discovery/a24_test.go` 130; Flask reference scripts `client_tools.py` 50 and `public_agent.py` 13. Existing manager, API registration, shared deploy serializer and C37 transaction adapter were modified. No backend/frontend files changed.
+
 ## Boundary evidence and Python test mapping
 
 `TestA24FlaskBoundaries` runs real Flask on a copied synthetic SQLite/data directory, compares status, JSON, no-store headers, complete database documents and every JSON/YAML file after **every** request. The actual Python libraries write rule caches and native policy drafts; no implementation result is frozen as an expectation. A07's existing catch-all is registered alongside the literal rule-target routes. All fixtures are synthetic; Python network calls are explicitly forbidden.
@@ -35,12 +37,13 @@ All 15 `backend/test_client_tools.py` functions are mapped individually by behav
 
 ## Findings and differences
 
-No unresolved findings. Integration defects caught and fixed while porting:
+No unresolved findings or high-severity security findings. Integration defects caught and fixed while porting (all closed):
 
-- Validation reliability: translate C09's legacy validation error into the repository error recognized by the HTTP layer, preserving Python's 400 instead of returning 500.
-- Write safety: fresh binding/default/dual-revision checks run inside transactions; a rejecting C37 guard prevents all writes. Registry discovery switch now detaches in its owner. Two existing C37 adapter calls were also changed from WithoutCancel to lifecycle.Detach so downstream history/cache calls retain the generation shutdown signal.
+- Validation reliability (medium): translate C09's legacy validation error into the repository error recognized by the HTTP layer, preserving Python's 400 instead of returning 500.
+- Write safety (medium): fresh binding/default/dual-revision checks run inside transactions; a rejecting C37 guard prevents all writes. Registry discovery switch now detaches in its owner. Two existing C37 adapter calls were also changed from WithoutCancel to lifecycle.Detach so downstream history/cache calls retain the generation shutdown signal.
+- Legacy peer labels (medium): Agent registration/edit accepts arbitrary JSON names; narrowing them to string changed public values. Preserve nonempty legacy names as json.RawMessage and retain Python's ID fallback for empty values. Real Flask coverage includes numbers, null, booleans, empty strings/containers, nonempty objects and lists.
 - Public serialization (medium): the shared deployment serializer treated an empty HA object as an active publication, adding/changing status/message/success fields. Require a nonempty HA object, matching Python; the real `_public_agent` reference now includes empty HA child/latest records.
-- Read consistency: rule-target summaries use one captured profile snapshot; write guards deliberately bypass request caches.
+- Read consistency (low): rule-target summaries use one captured profile snapshot; write guards deliberately bypass request caches.
 
 No intentional functional difference or newly fixed Python bug. The existing accepted formatting class applies to generated native YAML (`native_config`, `template_base_config`): compare parsed structure and values, not YAML indentation. Since settings revisions hash those exact serialized strings, each side's response revision is separately verified against its actual stored settings and used for that side's subsequent request. No semantic field is dropped. Only nondeterministic created_at/updated_at/applied_at strings are normalized.
 
@@ -77,4 +80,4 @@ ok  configflow/internal/discovery/difftest    9.822s
 ok  configflow/internal/deploy              22.951s
 ```
 
-Exit 0. Final rebase/full ordinary suite/all enabled difftests/proddiff: pending.
+Exit 0. Rebased on `d7c481c7` (C31 verified, O3 BindRequest/Detach, N7-3a, A12 and R07). The complete gate passed again: six race packages, full ordinary suite, all 12 enabled difftest packages and proddiff `new=0 stale=0`. One final labels-only delta was formatted/vetted and passed real Python A24/public helper race tests in 10.118s; final ordinary/difftest/proddiff rerun follows below.

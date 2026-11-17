@@ -65,6 +65,15 @@ func a24Fixture(t *testing.T) *httpxtest.Server {
 		for _, v := range []struct{ id, kind, profile string }{{"m", "mihomo", "office"}, {"d", "oxidns", "office"}, {"peer", "oxidns", "office"}, {"default", "oxidns", "default"}, {"other", "mosdns", "office"}} {
 			list = append(list, jsonx.Obj("id", v.id, "name", v.id, "profile_id", v.profile, "service_type", v.kind, "token", "secret-"+v.id, "host", "127.0.0.1", "port", 9, "enabled", true, "last_heartbeat", "2020-01-01T00:00:00", "version", "1.6.0-go"))
 		}
+		// Legacy Agent labels are not restricted to strings by registration/edit.
+		list[2].(*jsonx.Object).Set("name", jsonx.Int(7))
+		for i, name := range []any{nil, false, true, jsonx.Int(0), "", []any{}, jsonx.Obj(), jsonx.Obj("label", "future"), []any{"array"}} {
+			label := list[2].(*jsonx.Object).Clone()
+			label.Set("id", fmt.Sprintf("legacy-label-%d", i))
+			label.Set("name", name)
+			label.Set("token", fmt.Sprintf("secret-label-%d", i))
+			list = append(list, label)
+		}
 		system.Set("agents", list)
 		system.GetObject("system_config").Set("server_domain", "http://127.0.0.1:5001")
 		return nil, nil
