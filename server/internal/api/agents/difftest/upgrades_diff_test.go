@@ -13,9 +13,11 @@ package difftest
 // from each server, the stored Agent records and notifications.json.
 //
 // TestUpgradesProxyDifferentialAgainstFlask runs the trust_env routes with
-// HTTP_PROXY pointing at a loopback recording proxy (coordinator decision 5):
-// Agent operations and the address check go through it, upgrades._request
-// (trust_env=False) does not.
+// HTTP_PROXY pointing at a loopback recording proxy. Since the native N2
+// decision of 2026-11-17, Python proxies four loopback operations while Go
+// goes direct. Their full proxy traces are asserted independently; responses
+// and fake-Agent requests still compare strictly. Routable follow stays
+// proxied on both sides and upgrades._request (trust_env=False) stays direct.
 //
 //	rt -- bash -lc 'cd server && CONFIGFLOW_DIFF=1 go test -count=1 -v -run UpgradesDifferential ./internal/api/agents/difftest/'
 //	rt -- bash -lc 'cd server && CONFIGFLOW_DIFF=1 go test -count=1 -v -run UpgradesProxyDifferential ./internal/api/agents/difftest/'
@@ -705,7 +707,13 @@ func TestUpgradesProxyDifferentialAgainstFlask(t *testing.T) {
 		{request{name: "proxy follow", method: "POST", path: b + "follow/heartbeat", headers: map[string]string{"Authorization": "Bearer tok-follow"},
 			body: `{"version": "1.8.60-go", "host": "` + lan + `"}`, contentType: "application/json"}, "", 1500 * time.Millisecond},
 	}
-	failed := 0
+	nativeTraces := map[string]string{
+		"proxy status":           "GET http://127.0.0.1:" + strconv.Itoa(port) + "/api/logs/sources",
+		"proxy logs":             "GET http://127.0.0.1:" + strconv.Itoa(port) + "/api/logs?lines=5",
+		"proxy restart":          "POST http://127.0.0.1:" + strconv.Itoa(port) + "/api/restart",
+		"proxy address describe": "GET http://127.0.0.1:" + strconv.Itoa(port) + "/api/agent-address",
+	}
+	failed, nativeOutcomes := 0, 0
 	for _, r := range cases {
 		fake.setPhase(r.phase)
 		proxy.take()
@@ -716,8 +724,22 @@ func TestUpgradesProxyDifferentialAgainstFlask(t *testing.T) {
 		time.Sleep(r.wait)
 		goProxied, goCalls := onlyAgent(proxy.take()), fake.take()
 		diffs := compare(r.request, py, gor)
-		if strings.Join(pyProxied, "\n") != strings.Join(goProxied, "\n") {
-			diffs = append(diffs, fmt.Sprintf("proxied\n    python %q\n    go     %q", pyProxied, goProxied))
+		if want, ok := nativeTraces[r.name]; ok {
+			nativeOutcomes++
+			if len(pyProxied) != 1 || pyProxied[0] != want || len(goProxied) != 0 {
+				diffs = append(diffs, fmt.Sprintf("native N2 proxy trace: python=%q want=[%q], Go=%q want=[]", pyProxied, want, goProxied))
+			}
+		} else {
+			if strings.Join(pyProxied, "\n") != strings.Join(goProxied, "\n") {
+				diffs = append(diffs, fmt.Sprintf("proxied python=%q Go=%q", pyProxied, goProxied))
+			}
+			want := 0
+			if r.name == "proxy follow" {
+				want = 1
+			}
+			if len(pyProxied) != want || len(goProxied) != want {
+				diffs = append(diffs, fmt.Sprintf("proxy control: want %d requests on each side", want))
+			}
 		}
 		if strings.Join(pyCalls, "\n") != strings.Join(goCalls, "\n") {
 			diffs = append(diffs, fmt.Sprintf("agent requests\n    python %q\n    go     %q", pyCalls, goCalls))
@@ -726,8 +748,11 @@ func TestUpgradesProxyDifferentialAgainstFlask(t *testing.T) {
 			failed++
 			t.Errorf("DIFF %s:\n  %s", r.name, strings.Join(diffs, "\n  "))
 		} else {
-			t.Logf("same %-30s → %d (%d proxied, %d agent requests)", r.name, py.status, len(pyProxied), len(pyCalls))
+			t.Logf("match %-30s → %d (Python proxy=%d, Go proxy=%d, Agent=%d)", r.name, py.status, len(pyProxied), len(goProxied), len(pyCalls))
 		}
 	}
-	t.Logf("%d proxy cases, %d differences", len(cases), failed)
+	if nativeOutcomes != 4 {
+		t.Fatalf("only %d native outcomes checked", nativeOutcomes)
+	}
+	t.Logf("%d proxy cases, %d explicit native N2 outcomes, %d unexpected differences", len(cases), nativeOutcomes, failed)
 }

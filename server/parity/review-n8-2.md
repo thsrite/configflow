@@ -79,3 +79,9 @@ mihomo 中的合成未知成员后通过；这是测试构造错误，无生产�
 语法错误；已在范围判断前排除 `.eE`，保证坏版本仍分类为 ErrCorrupt，不误报为新版库。
 三条回归（长小数、长指数、长负整数）；.63 store 全包 live-Python race **16.131s**。
 此补充发生在 .32 组合验收进行中；结束后将针对最终 store 源码在 .32 再跑 race/vet。
+
+A15 consumer 补验：旧 TestUpgradesProxyDifferentialAgainstFlask 的6条路由中，4条
+loopback trace 因新决定出现预期差异，已实测复现（响应/Agent调用无差异）。现对
+status/logs/restart/address 四条命名路径逐一精确断言 Python proxy trace 与 Go 空
+trace；升级 trust_env-off 保持两端0次代理、可路由 follow 保持两端1次代理，并严格
+比较完整 trace、HTTP响应和实际Agent请求。没有整行skip或通用mask。

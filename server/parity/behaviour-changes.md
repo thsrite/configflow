@@ -91,5 +91,7 @@ C27：上游 `tag` 等字符串元数据包含真实 U+2028/U+2029 时，Go `enc
 
 验证：`agents.TestProxyDifferentialAgainstRequests` 对真实 requests 与 Go 的逐次
 录制请求分别精确断言（14 个环境 × 3 个目标）；另有 Agent/Sub-Store 的 loopback、
-ALL_PROXY、优先级、CGI 零请求、显式代理和 redirect 边界。详情见
+ALL_PROXY、优先级、CGI 零请求、显式代理和 redirect 边界。A15 的6条真实路由
+额外精确断言4条 loopback 的 Python代理/Go直连 trace，升级直连和可路由 follow
+仍保持完整严格比较。详情见
 [N8-2 复核报告](review-n8-2.md)。

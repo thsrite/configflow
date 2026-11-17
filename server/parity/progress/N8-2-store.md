@@ -145,3 +145,16 @@ on test servers; no snapshot content or network access. Final combined acceptanc
 Review follow-up: range checking of storage_version now first rejects decimal /
 exponent spellings, so a large float is not misclassified as a newer integer
 when strconv overflows before its suffix. Added three regression vectors.
+
+Final .32 combined acceptance (base 0efddadf): all five race packages pass,
+all-package ordinary suite pass, 42-request differential pass, CLI smoke pass,
+proddiff 23 self-checks / 2831 cases / 415 comparisons / 11 existing baselines,
+new=0 stale=0 coverage_regressions=0. Final version-check source also passes
+.32 full store race 12.510s and vet. Additional A15 proxy route differential
+reproduced four stale loopback trace expectations (responses/Agent requests
+match; trust_env-off update and routable follow match). Four named exact
+Python traces / Go zero-request assertions replace the stale equality only.
+
+A15 consumer acceptance on .32: six route cases, four exact native loopback
+outcomes / zero unexpected differences; -race 5.111s. No response or fake-Agent
+request masking. Normal test progress log now shows both Python and Go counts.
