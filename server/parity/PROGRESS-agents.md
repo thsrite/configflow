@@ -4,7 +4,7 @@ Domain `agents` (WORKFLOW.md): Agent registry/heartbeat, metrics/traffic, OxiDNS
 
 Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 496004d7. The Go code was read directly (`internal/agents`, `internal/api/agents`, `internal/notifications`, `internal/tasks`, `internal/server`); the hand-back in `progress/20-agents.md` was not relied on.
 
-## N7-3c — installer/discovery YAML readers (partial; final acceptance running)
+## N7-3c — installer/discovery YAML readers (ported)
 
 Branch `go-n7-3c`. Compose metadata/annotations and custom Mihomo port discovery
 use Parse/Node/Decode. Installer metadata refuses composite JSON keys with a
@@ -24,6 +24,10 @@ plain-depth checks. Compose annotation traversal prunes unknown paths rather tha
 copying ever-longer paths. Gate counts:
 [progress/n7-3c-gate.md](progress/n7-3c-gate.md); commands/final state:
 [progress/n7-3c.md](progress/n7-3c.md). No installation or device writes are executed.
+
+Final acceptance: gofmt/vet, scope race, full suite, all 12 live difftest packages,
+and eleven 60s fuzz targets pass on .32/.64. Proddiff:
+coverage_regressions=0/new=0/stale=0; full command/output record at the link above.
 
 ## Conventions
 

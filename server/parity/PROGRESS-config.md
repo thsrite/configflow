@@ -4,7 +4,7 @@ Domain `config` (WORKFLOW.md): foundation (old packages #0–#5) and configurati
 
 Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 9783acd1 (plus uncommitted work of the subs and agents agents). File list and other domains: `server/parity/FILES.md`.
 
-## N7-3c — MosDNS/provider YAML readers (partial; final acceptance running)
+## N7-3c — MosDNS/provider YAML readers (ported)
 
 Branch `go-n7-3c`; call-site and command record:
 [progress/n7-3c.md](progress/n7-3c.md), every caller's input counts:
@@ -25,11 +25,13 @@ The shared 1591/735 core gate has 2326 classified rows (full table at the link).
 C21's 47072 rows compare actual Python output structurally with **no blanket
 unholdable-value exception**; C28's 87 YAML inputs and C21's 20 review inputs are
 included. Every YAML entry has depth-40 amplification/self-reference and native
-10000/10001 nesting checks. Final race/full/differentials/proddiff are running.
-Pending integration: C17 corpus parse rows 164–166 (`{[a]: b}`), 179–181 (TAB empty
-proxies), 209–211 (unused timestamp metadata) need N7-3a's substore reader merged
-before the final public ParseProviderProxies replay; this branch does not modify
-substore. Context, source labels and all non-YAML effects remain strict.
+10000/10001 nesting checks. Final format/vet/race/full, all 12 live difftest
+packages and eleven 60s fuzz targets pass on .32/.64; proddiff has
+coverage_regressions=0/new=0/stale=0. After N7-3a rebase, C17 corpus parse rows
+164–166, 179–181 and 209–211 all pass through public ParseProviderProxies.
+Context, source labels and all non-YAML effects remain strict. The five explicitly
+authorized aggregation diagnostic comparisons retain exact 400/owner/source/native
+diagnosis and strict other fields/storage; no aggregation runtime code changes. No pending integration.
 
 ## Conventions
 

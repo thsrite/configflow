@@ -4,7 +4,7 @@ Domain `routers` (WORKFLOW.md): router core, iKuai, RouterOS core/policy, router
 
 Planning audit: 2026-11-16, worktree `configflow-go`, branch `go` at 7b1b90b5 (plus uncommitted work of the C24/C25 agent in `internal/oxidns`). The Go tree was searched directly (`grep -ri 'routeros|ikuai|router_split|routers_of|router' server/internal`): **no package ports any routers file**; `internal/server` wires no routers package. What exists is listed under "Go code that already touches this domain" below; nothing from the old `progress/` files covers #32–#38.
 
-## N7-3c — desired/router-split YAML readers (partial; final acceptance running)
+## N7-3c — desired/router-split YAML readers (ported)
 
 Branch `go-n7-3c`; **only YAML reading and base graph handling**; no router write
 logic changes. Desired fake-IP and router-split base/shape/generation reads use
@@ -28,6 +28,10 @@ regressions check depth-40 alias chains, cycles, displaced definitions, and plai
 Python converter reference; every unrelated field and collaborator call stays
 strict. Final server acceptance and command/output record:
 [progress/n7-3c.md](progress/n7-3c.md). HR plan tests use synthetic data only.
+
+Final acceptance: gofmt/vet, scope race, full suite, all 12 live difftest packages,
+and eleven 60s fuzz targets pass on .32/.64. Proddiff:
+coverage_regressions=0/new=0/stale=0; full command/output record at the link above.
 
 ## Conventions
 
