@@ -403,7 +403,7 @@ func TestRulesProofAndOldCandidateRefusal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.GetString("status") != "failed" || result.GetString("message") != UncheckedCandidateMessage || !jsonx.Equal(result.Value("http_status"), 409) {
+	if result.GetString("status") != "failed" || result.GetString("message") != agents.MessageUncheckedCandidate || !jsonx.Equal(result.Value("http_status"), 409) {
 		t.Fatal(result)
 	}
 	callsMu.Lock()

@@ -744,7 +744,7 @@ func (m *Manager) activateDeployment(ctx context.Context, agentID, deploymentID 
 					task.Set("status", "failed")
 					task.Set("failed_stage", "verifying")
 					task.Set("http_status", jsonx.Int(409))
-					task.Set("message", "候选配置缺少当前规则的校验证明，已停止激活。请重新推送配置并完成校验。")
+					task.Set("message", MessageUncheckedCandidate)
 					task.Set("updated_at", nowISO())
 					task.Set("events", AppendEvent(task.Value("events"), "failed", task.Value("message"), "", tokenSecrets(current)))
 					latest, _ := current.Value("latest_deployment").(*jsonx.Object)

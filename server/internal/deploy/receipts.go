@@ -11,6 +11,10 @@ import (
 	"sort"
 )
 
+// maxReceiptBytes bounds receipt.json, which embeds the whole profile snapshot
+// (inline content rules included); Python read it without a limit.
+const maxReceiptBytes = 512 << 20
+
 // Receipts owns one data directory's rule-sync baselines. L4 locks serialize
 // files/pruning per Agent, never repository reads or writes.
 type Receipts struct {
@@ -129,7 +133,7 @@ func (r *Receipts) Load(ctx context.Context, agent *agents.Record, withBundle bo
 	release := r.locks.lock(view.ID)
 	defer release()
 	folder := r.folder(view.ID, a.DeploymentID)
-	data, err := readPrivate(filepath.Join(folder, "receipt.json"), 32<<20)
+	data, err := readPrivate(filepath.Join(folder, "receipt.json"), maxReceiptBytes)
 	if err != nil {
 		return nil, nil
 	}

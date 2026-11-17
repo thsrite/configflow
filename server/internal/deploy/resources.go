@@ -11,6 +11,8 @@ import (
 	"regexp"
 	"strings"
 	"unicode/utf8"
+
+	"gopkg.in/yaml.v3"
 )
 
 const geoBase = "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/"
@@ -42,9 +44,16 @@ func RequiredGeoResources(doc *yamlx.Node, files map[string]Content) []string {
 			return
 		}
 		visited[n] = true
-		if n.Kind == 2 || n.Kind == 4 {
+		switch n.Kind {
+		case yaml.SequenceNode:
 			for _, child := range n.Content {
 				rules(child)
+			}
+			return
+		case yaml.MappingNode:
+			// Python walks dict values only; keys are names, not rules.
+			for i := 1; i < len(n.Content); i += 2 {
+				rules(n.Content[i])
 			}
 			return
 		}
@@ -63,7 +72,7 @@ func RequiredGeoResources(doc *yamlx.Node, files map[string]Content) []string {
 	}
 	list := func(n *yamlx.Node, fn func(string)) {
 		n = yamlx.Resolve(n)
-		if n != nil && n.Kind == 2 {
+		if n != nil && n.Kind == yaml.SequenceNode {
 			for _, v := range n.Content {
 				fn(scalar(v))
 			}
@@ -89,12 +98,14 @@ func RequiredGeoResources(doc *yamlx.Node, files map[string]Content) []string {
 		if !ok || !utf8.Valid(entry.Data) {
 			continue
 		}
+		// Python decodes both formats as utf-8-sig: a BOM never hides line one.
+		data := bytes.TrimPrefix(entry.Data, []byte{0xef, 0xbb, 0xbf})
 		if format == "yaml" {
-			if n, err := yamlx.Parse(bytes.TrimPrefix(entry.Data, []byte{0xef, 0xbb, 0xbf})); err == nil {
+			if n, err := yamlx.Parse(data); err == nil {
 				rules(n)
 			}
 		} else if format == "text" {
-			for _, line := range strings.Split(string(entry.Data), "\n") {
+			for _, line := range strings.Split(string(data), "\n") {
 				rules(yamlx.Str(line))
 			}
 		}
@@ -133,14 +144,14 @@ func RequiredGeoResources(doc *yamlx.Node, files map[string]Content) []string {
 	for _, key := range []string{"skip-src-address", "skip-dst-address"} {
 		list(yamlx.Get(sniffer, key), func(v string) {
 			if strings.HasPrefix(strings.ToLower(v), "geoip:") {
-				for _, code := range strings.Split(strings.SplitN(v, ":", 2)[1], ",") {
+				// The code list ends at the next colon, as in Python's split(':')[1].
+				for _, code := range strings.Split(strings.Split(v, ":")[1], ",") {
 					geoip(code)
 				}
 			}
 		})
 	}
-	mode := yamlx.Get(doc, "geodata-mode")
-	if required["geoip"] && (mode == nil || mode.Tag != "!!bool" || mode.Value != "true") {
+	if required["geoip"] && !isTrue(yamlx.Get(doc, "geodata-mode")) {
 		delete(required, "geoip")
 		required["mmdb"] = true
 	}
@@ -175,7 +186,7 @@ func PrepareMihomoResources(ctx context.Context, b *Bundle, c Capabilities, src 
 		existing[strings.ToLower(name)] = true
 	}
 	sources := yamlx.Resolve(yamlx.Get(doc, "geox-url"))
-	if truth(sources) && sources.Kind != 4 {
+	if truth(sources) && sources.Kind != yaml.MappingNode {
 		return nil, preparation(msgGeoxMapping)
 	}
 	m := b.Manifest()

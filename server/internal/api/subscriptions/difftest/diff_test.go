@@ -394,8 +394,6 @@ func (w *world) call(method, path, body string, authenticated bool) answer {
 		t.Helper()
 		a = normalize(jsonValue(a))
 		b = normalize(jsonValue(b))
-		if label == "body" && py.Status == 400 {
-		}
 		if !reflect.DeepEqual(a, b) {
 			t.Errorf("%s %s %s: %s", method, path, label, firstDifference(a, b, ""))
 		}

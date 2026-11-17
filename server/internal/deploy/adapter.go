@@ -111,20 +111,29 @@ func (s *Source) library() []RuleRef {
 func (s *Source) requestRule(ctx context.Context, rawURL string) (*rulefetch.Response, error) {
 	return rulefetch.RequestRule(ctx, rawURL, rulefetch.Request{Config: s.config(), MaxBytes: MaxFileBytes, Stream: true, ConnectTimeout: 10 * time.Second, ReadTimeout: 60 * time.Second})
 }
-func (s *Source) readRule(ctx context.Context, rawURL, sourceID string, declared *RuleRef, fetch func(context.Context, string) ([]byte, error)) ([]byte, error, error, bool) {
+
+// ruleRead is a declared remote source read through the shared refresh cache.
+type ruleRead struct {
+	data     []byte
+	stale    error  // the failed refresh when the last good cache was used
+	name     string // the declaration's name, for the stale-cache warning
+	declared bool   // false: no URL declaration, fetch the URL directly
+}
+
+func (s *Source) readRule(ctx context.Context, rawURL, sourceID string, declared *RuleRef, fetch func(context.Context, string) ([]byte, error)) (ruleRead, error) {
 	cfg := s.config()
 	rule, err := rulefetch.ResolveRemoteRuleSource(rawURL, cfg, sourceID)
 	if err != nil {
-		return nil, nil, err, true
+		return ruleRead{declared: true}, err
 	}
 	if rule == nil && declared != nil {
 		rule = jsonx.Obj("name", declared.Name, "behavior", declared.Behavior, "format", declared.Format, "source_type", "url", "url", rawURL)
 	}
 	if rule == nil || rule.GetOr("source_type", "url") != "url" {
-		return nil, nil, nil, false
+		return ruleRead{}, nil
 	}
 	value, stale, err := refresh.ReadRuleSource(ctx, rule, refresh.RuleOptions{Config: cfg, Fetch: func(u string) (any, error) { return fetch(ctx, u) }})
-	return value, stale, err, true
+	return ruleRead{data: value, stale: stale, name: rule.GetString("name"), declared: true}, err
 }
 
 // SourceError bridges the legacy provider parser's marks; all new deploy YAML

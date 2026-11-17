@@ -142,15 +142,47 @@ func (b *Bundle) Files(paths ...string) (map[string][]byte, error) {
 	if err := b.packed(); err != nil {
 		return nil, err
 	}
-	files, err := readArchive(b.manifest, b.archive)
-	if err != nil {
-		return nil, err
-	}
+	return readMembers(b.archive, wanted)
+}
+
+// readMembers reads the wanted file members of an archive that was validated
+// when it was packed or opened (and is never modified afterwards), in one pass
+// that stops once all are found — reading a few files of a large bundle does
+// not decompress and hash every other file again.
+func readMembers(archive []byte, wanted map[string]bool) (map[string][]byte, error) {
 	out := map[string][]byte{}
-	for p := range wanted {
-		if v, ok := files[p]; ok {
-			out[p] = v.Data
+	if len(wanted) == 0 {
+		return out, nil
+	}
+	gz, err := gzip.NewReader(bytes.NewReader(archive))
+	if err != nil {
+		return nil, fmt.Errorf("open deployment gzip: %w", err)
+	}
+	defer gz.Close()
+	tr := tar.NewReader(gz)
+	for len(out) < len(wanted) {
+		h, err := tr.Next()
+		if err == io.EOF {
+			break
 		}
+		if err != nil {
+			return nil, fmt.Errorf("read deployment tar: %w", err)
+		}
+		p, ok := strings.CutPrefix(h.Name, "files/")
+		if !ok || !wanted[p] || (h.Typeflag != tar.TypeReg && h.Typeflag != tar.TypeRegA) {
+			continue
+		}
+		if h.Size < 0 || h.Size > MaxFileBytes {
+			return nil, preparation("Deployment file exceeds size limit")
+		}
+		data, err := io.ReadAll(io.LimitReader(tr, h.Size))
+		if err != nil {
+			return nil, fmt.Errorf("read deployment member: %w", err)
+		}
+		if int64(len(data)) != h.Size {
+			return nil, preparation("Incomplete deployment archive member")
+		}
+		out[p] = data
 	}
 	return out, nil
 }

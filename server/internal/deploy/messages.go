@@ -60,6 +60,3 @@ const (
 )
 
 const msgUnexpandedInclude = "OxiDNS 发布配置必须先展开 include 后重新推送"
-
-// UncheckedCandidateMessage explains why a staged candidate needs a fresh push.
-const UncheckedCandidateMessage = "候选配置缺少当前规则的校验证明，已停止激活。请重新推送配置并完成校验。"

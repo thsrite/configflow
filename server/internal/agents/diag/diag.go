@@ -84,38 +84,35 @@ func atWordStart(text string, i int) bool {
 	return !isPyWord(r)
 }
 
-// replaceAtWordStart is pattern.sub(repl, text) for a Python pattern of the
+// matchesAtWordStart is pattern.finditer(text) for a Python pattern of the
 // form \b<pattern> (or ["']?\b<pattern> when quoteGroup > 0 names the group of
 // the optional quote): a match whose keyword does not start at a word
 // boundary is rejected and the search resumes one character later, as Python
-// does when \b fails at a start position.
-func replaceAtWordStart(text string, pattern *regexp.Regexp, quoteGroup int, repl func(groups []string) string) string {
-	var out strings.Builder
-	last, pos := 0, 0
-	for pos <= len(text) {
+// does when \b fails at a start position. Each result holds absolute submatch
+// byte offsets.
+func matchesAtWordStart(text string, pattern *regexp.Regexp, quoteGroup int) [][]int {
+	var out [][]int
+	for pos := 0; pos <= len(text); {
 		loc := pattern.FindStringSubmatchIndex(text[pos:])
 		if loc == nil {
 			break
 		}
-		start, end := pos+loc[0], pos+loc[1]
+		for i := range loc {
+			if loc[i] >= 0 {
+				loc[i] += pos
+			}
+		}
+		start, end := loc[0], loc[1]
 		keyword := start
 		if quoteGroup > 0 && loc[2*quoteGroup] >= 0 {
-			keyword = pos + loc[2*quoteGroup+1]
+			keyword = loc[2*quoteGroup+1]
 		}
 		if !atWordStart(text, keyword) {
 			_, size := utf8.DecodeRuneInString(text[start:])
 			pos = start + max(size, 1)
 			continue
 		}
-		groups := make([]string, len(loc)/2)
-		for g := range groups {
-			if loc[2*g] >= 0 {
-				groups[g] = text[pos+loc[2*g] : pos+loc[2*g+1]]
-			}
-		}
-		out.WriteString(text[last:start])
-		out.WriteString(repl(groups))
-		last = end
+		out = append(out, loc)
 		if end == start {
 			_, size := utf8.DecodeRuneInString(text[end:])
 			pos = end + max(size, 1)
@@ -123,8 +120,39 @@ func replaceAtWordStart(text string, pattern *regexp.Regexp, quoteGroup int, rep
 			pos = end
 		}
 	}
+	return out
+}
+
+// replaceAtWordStart is pattern.sub(repl, text) for the patterns of
+// matchesAtWordStart.
+func replaceAtWordStart(text string, pattern *regexp.Regexp, quoteGroup int, repl func(groups []string) string) string {
+	var out strings.Builder
+	last := 0
+	for _, loc := range matchesAtWordStart(text, pattern, quoteGroup) {
+		groups := make([]string, len(loc)/2)
+		for g := range groups {
+			if loc[2*g] >= 0 {
+				groups[g] = text[loc[2*g]:loc[2*g+1]]
+			}
+		}
+		out.WriteString(text[last:loc[0]])
+		out.WriteString(repl(groups))
+		last = loc[1]
+	}
 	out.WriteString(text[last:])
 	return out.String()
+}
+
+// SecretSpans returns the byte spans [start, end) of the key=value
+// credentials FailureText redacts (diagnostics._SECRET.finditer). A value
+// may continue on a later line, e.g. "authorization: Bearer" followed by the
+// token, so callers excerpting one line check whether a span crosses it.
+func SecretSpans(text string) [][2]int {
+	var out [][2]int
+	for _, loc := range matchesAtWordStart(text, secretPattern, 2) {
+		out = append(out, [2]int{loc[0], loc[1]})
+	}
+	return out
 }
 
 // FailureText is diagnostics.failure_text(value, secrets, limit): ANSI

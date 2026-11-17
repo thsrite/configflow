@@ -140,6 +140,12 @@ func Fingerprint(m Manifest) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	// encoding/json escapes U+2028/U+2029 even without HTML escaping; Python's
+	// ensure_ascii=False writes them raw. Paths never contain a backslash
+	// (RelativePath refuses it) and the other members are fixed ASCII, so these
+	// escapes can only come from the encoder.
+	b = bytes.ReplaceAll(b, []byte(`\u2028`), []byte("\u2028"))
+	b = bytes.ReplaceAll(b, []byte(`\u2029`), []byte("\u2029"))
 	return "v1:" + digest(b), nil
 }
 

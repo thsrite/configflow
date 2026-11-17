@@ -18,6 +18,8 @@ import (
 	"strings"
 	"sync"
 	"unicode/utf8"
+
+	"gopkg.in/yaml.v3"
 )
 
 func scalar(n *yamlx.Node) string {
@@ -28,15 +30,48 @@ func scalar(n *yamlx.Node) string {
 	return n.Value
 }
 func field(n *yamlx.Node, key string) string { return scalar(yamlx.Get(n, key)) }
+
+// truth is the truthiness of a YAML value: empty collections, null, false,
+// numeric zero (any notation, e.g. 0x0 or 0.0) and the empty string are false.
 func truth(n *yamlx.Node) bool {
 	n = yamlx.Resolve(n)
-	if n == nil || n.Tag == "!!null" {
+	if n == nil {
 		return false
 	}
-	if n.Kind == 2 || n.Kind == 4 {
+	if n.Kind == yaml.SequenceNode || n.Kind == yaml.MappingNode {
 		return len(n.Content) > 0
 	}
-	return n.Value != "" && !(n.Tag == "!!bool" && n.Value == "false") && !(n.Tag == "!!int" && n.Value == "0")
+	var v any
+	if err := yamlx.Decode(n, &v); err != nil {
+		return n.Value != ""
+	}
+	switch x := v.(type) {
+	case nil:
+		return false
+	case bool:
+		return x
+	case int:
+		return x != 0
+	case int64:
+		return x != 0
+	case uint64:
+		return x != 0
+	case float64:
+		return x != 0
+	case string:
+		return x != ""
+	}
+	return true
+}
+
+// isTrue reports a YAML boolean true (Python "is True": not 1, not "true").
+func isTrue(n *yamlx.Node) bool {
+	n = yamlx.Resolve(n)
+	if n == nil || n.Kind != yaml.ScalarNode {
+		return false
+	}
+	var v any
+	return yamlx.Decode(n, &v) == nil && v == true
 }
 func randomID() (string, error) {
 	var b [16]byte
@@ -148,7 +183,7 @@ func Build(ctx context.Context, in BuildInput) (*Bundle, error) {
 	if err != nil {
 		return nil, PreparationContext(SourceError(msgInvalidGeneratedYAML, in.ConfigContent, Position{}, err, ""), service, "config.yaml", msgConfig)
 	}
-	if main.Kind != 4 {
+	if main.Kind != yaml.MappingNode {
 		return nil, preparation("Generated configuration must be a YAML mapping")
 	}
 	if service == "oxidns" && truth(yamlx.Get(main, "include")) {
@@ -168,7 +203,7 @@ func Build(ctx context.Context, in BuildInput) (*Bundle, error) {
 					continue
 				}
 				refs := yamlx.Resolve(yamlx.Get(args, "files"))
-				if args.Kind != 4 || (refs != nil && refs.Kind != 2) {
+				if args.Kind != yaml.MappingNode || (refs != nil && refs.Kind != yaml.SequenceNode) {
 					return nil, preparation("MosDNS file references must be a list")
 				}
 				if refs == nil {
@@ -247,7 +282,7 @@ func Build(ctx context.Context, in BuildInput) (*Bundle, error) {
 	}
 	if service == "mihomo" {
 		if providers := yamlx.Get(main, "rule-providers"); providers != nil {
-			if providers.Kind != 4 {
+			if providers.Kind != yaml.MappingNode {
 				return nil, preparation("Rule providers must be a mapping")
 			}
 			downloads = nil
@@ -407,14 +442,14 @@ func Build(ctx context.Context, in BuildInput) (*Bundle, error) {
 	} else if plugins != nil {
 		for _, plugin := range plugins.Content {
 			args := yamlx.Resolve(yamlx.Get(plugin, "args"))
-			if args == nil || args.Kind != 4 {
+			if args == nil || args.Kind != yaml.MappingNode {
 				continue
 			}
 			refs := yamlx.Resolve(yamlx.Get(args, "files"))
 			if refs == nil {
 				continue
 			}
-			if refs.Kind != 2 {
+			if refs.Kind != yaml.SequenceNode {
 				return nil, preparation("MosDNS file references must be a list")
 			}
 			for i, ref := range refs.Content {

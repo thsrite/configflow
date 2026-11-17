@@ -173,8 +173,8 @@ func MaterializeRule(ctx context.Context, rawURL string, src *Source, baseURL st
 	if fetch == nil {
 		fetch = func(ctx context.Context, u string) ([]byte, error) { return fetchBytes(ctx, u, src) }
 	}
-	data, stale, err, declared := src.readRule(ctx, rawURL, o.SourceID, o.DeclaredRule, fetch)
-	if declared {
+	read, err := src.readRule(ctx, rawURL, o.SourceID, o.DeclaredRule, fetch)
+	if read.declared {
 		if err != nil {
 			var validation *rulefetch.RemoteRuleValidationError
 			if errors.As(err, &validation) {
@@ -182,10 +182,10 @@ func MaterializeRule(ctx context.Context, rawURL string, src *Source, baseURL st
 			}
 			return nil, err
 		}
-		if stale != nil {
-			logger.Warningf(msgRuleStale, diag.FailureText(displayName(o.SourceID), nil, 120), diag.FailureText(stale.Error(), nil, 0))
+		if read.stale != nil {
+			logger.Warningf(msgRuleStale, read.name, diag.FailureText(read.stale.Error(), nil, 0))
 		}
-		return data, nil
+		return read.data, nil
 	}
 	return fetch(ctx, rawURL)
 }

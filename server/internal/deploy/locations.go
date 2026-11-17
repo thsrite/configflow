@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 // Position carries real source coordinates (one-based), or a payload index.
@@ -44,8 +46,16 @@ func SourceExcerpt(text string, line int) string {
 	for _, s := range lines[:line-1] {
 		start += len(s) + 1
 	}
-	for _, loc := range quotedSecret.FindAllStringIndex(normalized, -1) {
-		if loc[0] < start && loc[1] > start {
+	// Python checks the redaction pattern (a value may follow "Bearer" on the
+	// next line), the uuid pattern and quoted values, in that order.
+	spans := diag.SecretSpans(normalized)
+	for _, pattern := range []*regexp.Regexp{uuidValue, quotedSecret} {
+		for _, loc := range pattern.FindAllStringIndex(normalized, -1) {
+			spans = append(spans, [2]int{loc[0], loc[1]})
+		}
+	}
+	for _, span := range spans {
+		if span[0] < start && span[1] > start {
 			return msgHidden
 		}
 	}
@@ -83,7 +93,7 @@ func SourceError(message, text string, at Position, cause error, sourceLabel str
 				idx := *at.PayloadIndex
 				mark := payload
 				if idx >= 0 {
-					if payload.Kind == 2 && idx < len(payload.Content) {
+					if payload.Kind == yaml.SequenceNode && idx < len(payload.Content) {
 						mark = yamlx.Resolve(payload.Content[idx])
 					} else {
 						mark = nil

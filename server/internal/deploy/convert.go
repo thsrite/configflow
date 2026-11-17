@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"configflow/internal/convert"
 	"configflow/internal/mosdns"
+	"configflow/internal/rulesetfmt"
 	"configflow/internal/yamlx"
 	"strings"
 	"sync"
-	"unicode"
 	"unicode/utf8"
+
+	"gopkg.in/yaml.v3"
 )
 
 type conversionKey struct {
@@ -60,20 +62,6 @@ func ConvertMosDNSRules(content []byte, ruleType string, mixed bool) ([]byte, er
 	return out, nil
 }
 
-func hasYAMLPayload(text string) bool {
-	for _, line := range strings.Split(text, "\n") {
-		line = strings.TrimLeftFunc(line, func(r rune) bool { return unicode.IsSpace(r) || r >= 0x1c && r <= 0x1f })
-		if !strings.HasPrefix(line, "payload") {
-			continue
-		}
-		tail := strings.TrimLeftFunc(strings.TrimPrefix(line, "payload"), unicode.IsSpace)
-		if strings.HasPrefix(tail, ":") {
-			return true
-		}
-	}
-	return false
-}
-
 func convertRules(content []byte, ruleType string, mixed bool) ([]byte, error) {
 	content = bytes.TrimPrefix(content, []byte{0xef, 0xbb, 0xbf})
 	if !utf8.Valid(content) {
@@ -84,7 +72,10 @@ func convertRules(content []byte, ruleType string, mixed bool) ([]byte, error) {
 		return nil, preparation("MosDNS rule source is binary")
 	}
 	lines := strings.Split(strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\r", "\n"), "\n")
-	payload := hasYAMLPayload(text)
+	// The shared detector also treats quoted payload keys and flow/JSON mappings
+	// as YAML documents, so a JSON rule set is parsed (or refused), never read
+	// line by line into an empty rule file.
+	payload := rulesetfmt.HasYAMLPayload(text)
 	invalid := func(message string, index int) error {
 		n := index + 1
 		at := Position{Line: &n}
@@ -99,14 +90,14 @@ func convertRules(content []byte, ruleType string, mixed bool) ([]byte, error) {
 		if err != nil {
 			return nil, SourceError("Invalid rule YAML payload", text, Position{}, err, msgBeforeConversion)
 		}
-		if p == nil || p.Kind != 2 {
+		if p == nil || p.Kind != yaml.SequenceNode {
 			idx := -1
 			return nil, SourceError("Invalid rule YAML payload", text, Position{PayloadIndex: &idx}, nil, msgBeforeConversion)
 		}
 		lines = make([]string, 0, len(p.Content))
 		for i, item := range p.Content {
 			item = yamlx.Resolve(item)
-			if item == nil || item.Kind != 8 || item.Tag != "!!str" {
+			if item == nil || item.Kind != yaml.ScalarNode || item.Tag != "!!str" {
 				return nil, invalid("Invalid rule YAML payload", i)
 			}
 			lines = append(lines, item.Value)
