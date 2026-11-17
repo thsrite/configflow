@@ -35,7 +35,7 @@ type runResult struct {
 
 type runOptions struct {
 	args    []string
-	env     []string // full environment when replace is set, else added to os.Environ()
+	env     []string // full environment when replace is set, else added to os.Environ(); UTF-8 locale is always set
 	replace bool
 	input   string
 	timeout time.Duration
@@ -53,10 +53,14 @@ func runShell(t *testing.T, shell, script string, o runOptions) runResult {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, shell, append([]string{script}, o.args...)...)
 	if o.replace {
-		cmd.Env = o.env
+		cmd.Env = append([]string(nil), o.env...)
 	} else {
 		cmd.Env = append(os.Environ(), o.env...)
 	}
+	// Start the interpreter in a UTF-8 locale. Dash 0.5.13.4 corrupts
+	// non-ASCII assignments in the C locale and cannot switch locale at runtime.
+	// Append after caller overrides, which may include an inherited locale.
+	cmd.Env = append(cmd.Env, "LANG=C.UTF-8", "LC_ALL=C.UTF-8")
 	cmd.Dir = o.dir
 	if o.setsid {
 		cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}

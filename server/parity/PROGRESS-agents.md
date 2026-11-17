@@ -674,6 +674,24 @@ Pitfall: a killed difftest run can leave its Flask child alive holding the rt lo
 
 Open findings: none.
 
+Installer locale follow-up (2026-11-17; [report and commands](progress/installer-locale.md)):
+the test harness now starts shell children with `LANG=C.UTF-8 LC_ALL=C.UTF-8`,
+after both inherited and explicitly supplied environments. Generated scripts remain
+byte-identical to Python (coordinator decision).
+**Known runtime limitation:** Arch dash `0.5.13.4-1` (.32) and
+`0.5.13.5-1` (.64) corrupt Chinese variable assignments when started in the C
+locale (LANG/LC_* absent, or LC_ALL=C). This corrupts terminal reports **and
+persistent report logs**, rather than only rendering glyphs incorrectly.
+Setting locale inside the script does not repair .13.4; .13.5 can switch at runtime.
+The tested generated Agent JSON uses ASCII escapes and stayed byte-identical,
+including a Chinese config path; no config-corruption defect is established by
+this probe, and it does not certify every installer path. Debian 12 officially
+ships [dash 0.5.12-2](https://packages.debian.org/bookworm/amd64/dash);
+the checksum-verified Debian binary passed the same report/config probe with
+absent locale, C and C.UTF-8 on .32. Full Debian guest install under absent LANG
+is still L1's independent check; if it proves configuration corruption, track
+that as a separate defect.
+
 ## A09 — Docker HA guide, preflight, enrollment
 
 **Status: `verified`** (review 2026-11-16, commits 2b9a0c88, 5a17282e, f43a0525, a379e23a + this PROGRESS commit; see "Review" below; HR: VM lab test still due after the maintainer agrees) · HR · prereqs: A08, A01, C05 · Go: internal/installer (`docker_ha_guide.go`, `docker_ha_preflight.go`, `docker_ha_enrollment.go`), internal/api/agents/docker_ha.go (+1 line in `Register`)
