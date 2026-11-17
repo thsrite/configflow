@@ -230,8 +230,19 @@ func TestHostsChangeInvalidatesAgentContentChecksOnce(t *testing.T) {
 	airport := "proxies:\n  - {name: HK 01, type: socks5, server: jp-node.example.net, port: 1080}\n" +
 		"hosts:\n  jp-node.example.net: jp-entry.example.org\n  google.com: 203.0.113.66\n"
 	store := func(text string) {
+		t.Helper()
 		metadata := jsonx.Obj("subscription_name", "机场", "hosts", subs.ExtractSubscriptionHosts(text))
-		must[*jsonx.Object](t)(SaveSubscriptionNodes(ctx, "air", []any{}, metadata))
+		proxies := must[[]any](t)(ParseProxiesFromYAML(text))
+		nodes := must[[]any](t)(ProxiesToNodes(proxies))
+		must[*jsonx.Object](t)(SaveSubscriptionNodes(ctx, "air", nodes, metadata))
+	}
+	// C11's test_only_hosts_changes_invalidate_agent_content_checks: a node
+	// address change without hosts does not invalidate the main config.
+	noHosts := strings.Split(airport, "hosts:\n")[0]
+	store(noHosts)
+	store(strings.Replace(noHosts, "jp-node.example.net", "other.example.net", 1))
+	if calls != 0 {
+		t.Fatalf("node-only changes invalidated content: %d", calls)
 	}
 	store(airport)
 	if calls != 1 { // none -> hosts
@@ -240,6 +251,10 @@ func TestHostsChangeInvalidatesAgentContentChecksOnce(t *testing.T) {
 	store(airport)
 	if calls != 1 { // same entries, only nodes refreshed
 		t.Fatalf("calls %d", calls)
+	}
+	store(strings.Replace(airport, "hosts:\n", "  - {name: HK 02, type: socks5, server: jp-node.example.net, port: 1081}\nhosts:\n", 1))
+	if calls != 1 { // another node uses the same mapping
+		t.Fatalf("new node on the same hosts mapping invalidated content: %d", calls)
 	}
 	logs := captureLogs(t)
 	store(strings.Replace(airport, "203.0.113.66", "203.0.113.67", 1))
