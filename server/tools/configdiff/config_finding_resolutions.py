@@ -10,9 +10,62 @@ from compare import differences
 DECISIONS = '[behaviour-changes.md · {item}](behaviour-changes.md#config-step-b--coordinator-decisions)'
 
 
+def native_binding_basis(item):
+    """Match only the nine actually observed, approved N8-6 login transitions."""
+    if item.get('status') != 'open' or item.get('route') != 'POST /api/auth/login':
+        return ''
+    bad = 'The browser (or proxy) sent a request that this server could not understand.'
+    media = "Did not attempt to load JSON data because the request Content-Type was not 'application/json'."
+    variants = {
+        ('R011-F06', 'auth-routes', ''): ("登录失败。原始错误：'list' object has no attribute 'get'", 400, bad),
+        ('R011-F07', 'auth-routes', ''): ('登录失败。原始错误：400 Bad Request: ' + bad, 400, bad),
+        ('R011-F08', 'auth-routes', ''): ('登录失败。原始错误：415 Unsupported Media Type: ' + media, 415, media),
+        ('X04', 'json-decoder', 'login/empty'): ('登录失败。原始错误：400 Bad Request: ' + bad, 400, bad),
+        ('X04', 'json-decoder', 'login/null'): ("登录失败。原始错误：'NoneType' object has no attribute 'get'", 400, bad),
+        ('X04', 'json-decoder', 'login/plain'): ('登录失败。原始错误：415 Unsupported Media Type: ' + media, 415, media),
+    }
+    raw = item.get('remaining_differences', [])
+    identity = item['case'], item['group'], item['variant']
+    def entry(path, kind, python, go):
+        return {'path': path, 'kind': kind, 'python': python, 'go': go}
+    if identity in variants:
+        message, code, target = variants[identity]
+        if (item.get('python_status'), item.get('go_status')) != (500, code): return ''
+        expected = [entry('status', 'value', 500, code), entry('body.message', 'internal-error-prefix', message, target)]
+    elif (item['case'] == 'X04' and item['group'] == 'json-decoder'
+            and item['variant'] in ('login/ignored-extra/NaN', 'login/ignored-extra/Infinity', 'login/ignored-extra/-Infinity')
+            and (item.get('python_status'), item.get('go_status')) == (200, 400)):
+        import jwt
+        from harness import SECRET, USERNAME
+        tokens = [row['python'] for row in raw if row['path'] == 'body.token' and row['kind'] == 'missing-in-go']
+        if len(tokens) != 1: return ''
+        token = tokens[0]
+        try:
+            # The live capture already checked the request-time window. Review
+            # may occur after expiry, so recheck signature/shape/duration here.
+            claims = jwt.decode(token, SECRET, algorithms=['HS256'], options={'verify_exp': False, 'verify_iat': False})
+            if (set(claims) != {'username', 'iat', 'exp'} or claims['username'] != USERNAME
+                    or type(claims['iat']) is not int or type(claims['exp']) is not int
+                    or claims['exp'] - claims['iat'] != 86400): return ''
+        except (jwt.PyJWTError, ValueError, TypeError):
+            return ''
+        expected = [entry('body.token', 'invalid-Go-JWT', '<valid-HS256>', '<invalid>'),
+            entry('status', 'value', 200, 400), entry('body.expiresIn', 'missing-in-go', 86400, None),
+            entry('body.message', 'extra-in-go', None, bad), entry('body.success', 'value', True, False),
+            entry('body.token', 'missing-in-go', token, None), entry('body.username', 'missing-in-go', USERNAME, None)]
+    else:
+        return ''
+    key = lambda row: (row['path'], row['kind'])
+    if differences(sorted(expected, key=key), sorted(raw, key=key)): return ''
+    return '[behaviour-changes.md · N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses)'
+
+
 def accepted_basis(item):
     if item['status'] != 'open':
         return ''
+    native = native_binding_basis(item)
+    if native:
+        return native
     raw = item.get('remaining_differences', [])
     values = {entry['path']: entry for entry in raw}
     if len(values) != len(raw):
@@ -151,18 +204,18 @@ def repair_commits(item):
     if group == 'subscription-fetch-failures':
         return ['0313e086', '8f3d36ad'] if item['case'] == 'R218-F12' else ['0313e086', '3ab22d36']
     if group == 'settings-webdav':
-        return ['abdf47ef', 'd01fdf32', 'f9963a7f'] + (['a79362c9'] if item['case'] in ('R016-F15', 'R017-F18', 'R017-F19') else [])
+        return ['abdf47ef', 'd01fdf32', 'f9963a7f'] + (['bc05a32b'] if item['case'] in ('R016-F15', 'R017-F18', 'R017-F19') else [])
     if (group == 'webdav-named-preflight-and-directory-failure' and item['case'] == 'R016-F15'
             and item['route'] == 'POST /api/backup/now' and item['variant'] == 'real-MKCOL-403-before-PUT'):
-        return ['a79362c9']
+        return ['bc05a32b']
     if (group == 'settings-backup-validation' and item['case'] != 'R015-S04'
             and paths == {'db.fields.system//backup.value.webdav_password'}):
-        return ['82917030']
+        return ['fd7f6f8f']
     if (group == 'aggregation-provider-refresh'
             and paths == {'files.shared/subscribes/sub-a.json.content.updated_at'} and (
             (item['case'] == 'R007-S02' and item['variant'] == '') or
             (item['case'] in ('R008-S05', 'R122-S05') and item['variant'] == 'failed-source-valid-cache'))):
-        return ['82917030']
+        return ['fd7f6f8f']
     return []
 
 
@@ -177,8 +230,8 @@ def annotate(records):
             item['status'] = 'accepted'
         item['fix_commits'] = repair_commits(item)
         item.pop('closure_note', None)
-        if item['status'] == 'closed' and 'a79362c9' in item['fix_commits']:
-            item['closure_note'] = 'a79362c9为O6英文内部诊断比较器纠正，不是Go业务修复；中文/HTTP数字/副作用继续严格比较'
-        if item['status'] == 'closed' and '82917030' in item['fix_commits']:
-            item['closure_note'] = '82917030为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复'
+        if item['status'] == 'closed' and 'bc05a32b' in item['fix_commits']:
+            item['closure_note'] = 'bc05a32b为O6英文内部诊断比较器纠正，不是Go业务修复；中文/HTTP数字/副作用继续严格比较'
+        if item['status'] == 'closed' and 'fd7f6f8f' in item['fix_commits']:
+            item['closure_note'] = 'fd7f6f8f为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复'
     return records

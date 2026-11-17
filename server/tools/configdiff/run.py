@@ -106,6 +106,8 @@ def main():
     groups.update(log_sequence)
     from cases.provider_key_isolation import GROUPS as provider_key_isolation
     groups.update(provider_key_isolation)
+    from cases.source_write_disconnect import GROUPS as source_write_disconnect
+    groups.update(source_write_disconnect)
     from cases.redaction import GROUPS as redaction
     groups.update(redaction)
     from cases.admin_auth import GROUPS as admin_auth

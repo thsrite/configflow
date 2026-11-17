@@ -2431,3 +2431,24 @@ routes228 / variants10617 / exercised R-H5428；unaccounted=[] / unknown_labels=
 current compared3；design_errors=[]；exit0
 136 self-checks + deliberately wrong-Go-response detection OK
 ```
+
+## 批次 145：旧全量复验、最新Go/N8-6与五类真实断连对照
+
+- rebase到go 93fdcc62，behaviour-changes冲突保留集成N8-6批准条目和维护者Web退役决定两者。当前工具修正提交引用更新为bc05a32b/fd7f6f8f，仍明确不是Go业务修复。
+- .64旧4d8a665a全量已经结束：Go=0 GATE PASS；configdiff=2、2401.55秒，因为该旧快照仍带着已撤回的origin=1启动seed草稿。该结果不算全量通过；当前代码已改为启动后公开import且在.32/最新Go实际复验通过。旧排队的相同草稿也已删除，不计覆盖。旧全量175项实际review为closed122/accepted29/open23/separate1，全部checked_baseline=4d8a665a；新增3个H1061为坏YAML错误定位Python EOF第2行 vs Go第1行，已在最新93fdcc62的.32定向复现，保留open，不以高负载吞掉确定性诊断差异。
+- 最新93fdcc62的.32七组205变体227.03秒，Go未实现21，design_errors=[]，实际验证修正origin前提及无tag生产T06；主机负载47时仍未将时序单次现象报成业务差异。随后.64再次定向复验auth/JSON与新断连，138项自检通过；当前44变体30compared/4未实现/10严格差异全部accepted（其中9个N8-6、1个既有405），current_open=0、design_errors=[]、29.91秒、exit0。
+- N8-6的九个实际登录差异按已批准条目精确accepted：500→400/415和忽略字段内非有限数200→400，原始完整证据保留。源JWT检查签名/完整claims/86400秒；严格枚举route/group/variant及完整差异集合。故意改中文/状态/SQL/重复条目/签名claims/额外字段均拒绝接受，不做全局400归一化。
+- T05五类source屏障正常完成对照与真实socket shutdown：create/compose/fetch/provider/MosDNS ZIP。完全相同Python seed分别启动普通及断连执行，全SQL/文件/模式/任务/健康/通知/源协议逐一相比，再双端比较；随机资源ID和cache路径先验证再双射。原响应明确不可观察。source成功无需notification文件，旧强制要求已撤回；Control↔abort独立身份映射，旧复用Python↔Go映射产生的commit假差异也已撤回，故意extra generation仍检出。
+- .64五组12变体：compared6/Go未实现6，design_errors=[]，exit0；证据source-abort-controls.json。provider/generate另已实际先验证，再五组合并回归。138项自检及故意错误Go响应检出。最终完整新基线gate尚未运行；随后rebase最新go并统一全量，不把旧快照或定向结果冒充全量。
+
+```text
+.64 server/tools/configdiff/gate.sh 4d8a665a -p 4
+GATE PASS
+configdiff gate: Go=0 configdiff=2 logs=/tmp/configdiff-final-config-b-4d8a665a
+旧快照中已修正的启动fixture错误；不是最终验收通过
+.64 --groups auth-routes,json-decoder,source-write-real-browser-disconnect-create,source-write-real-browser-disconnect-compose,source-write-real-browser-disconnect-fetch --baseline 93fdcc62 --output <独立报告>
+current compared30 / Go未实现4 / different10（全部accepted）；current_open0；design_errors=[]；seconds29.91；exit0
+.64 --groups source-write-real-browser-disconnect-create,source-write-real-browser-disconnect-compose,source-write-real-browser-disconnect-fetch,source-write-real-browser-disconnect-provider,source-write-real-browser-disconnect-generate --baseline 93fdcc62 --output testdata/source-abort-controls.json
+current compared6 / Go未实现6；design_errors=[]；exit0
+138 self-checks + deliberately wrong-Go-response detection OK
+```

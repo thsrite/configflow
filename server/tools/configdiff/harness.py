@@ -123,7 +123,8 @@ def verify_backup_fixture(backup, allow_backup_fixture=False):
 
 
 class Pair:
-    def __init__(self, binary, recorder, *, mode='login', options=None, tz='UTC', allow_backup_fixture=False):
+    def __init__(self, binary, recorder, *, mode='login', options=None, tz='UTC', allow_backup_fixture=False, seed_from=None):
+        self.seed_from = seed_from
         self.allow_backup_fixture = allow_backup_fixture
         self.binary, self.recorder, self.mode, self.tz = str(binary), recorder, mode, tz
         self.options = dict(options or {})
@@ -177,15 +178,21 @@ class Pair:
             from probe import install
             install(self.root, PYTHON, self.options['probe_case'])
         seed = self.root / 'seed'
-        seed.mkdir()
+        if self.seed_from is not None:
+            # A second execution of the same scenario must start with the
+            # identical Python-imported immutable seed, including store IDs.
+            # The source seed has no running process or SQLite WAL writer.
+            shutil.copytree(self.seed_from, seed)
+        else:
+            seed.mkdir()
         options_path = self.root / 'seed-options.json'
         # Large history/capacity fixtures exceed Linux's single-argument limit.
         # JSON on disk also preserves escaped Unicode without OS argv encoding.
         options_path.write_text(json.dumps(self.options, ensure_ascii=True), encoding='utf-8')
         result = subprocess.run([PYTHON, str(Path(__file__).with_name('seed.py')), str(seed),
                                  '--options-file', str(options_path)], cwd=ROOT,
-                                env=self.environment(seed, 0), capture_output=True, text=True)
-        if result.returncode:
+                                env=self.environment(seed, 0), capture_output=True, text=True) if self.seed_from is None else None
+        if result is not None and result.returncode:
             self.temp.cleanup()
             raise DesignError('Python seed failed: ' + result.stderr[-5000:])
         for directory in self.dirs:

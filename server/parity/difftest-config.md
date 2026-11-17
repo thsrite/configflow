@@ -2265,3 +2265,15 @@ H120不能列为防御不可达：存储origin指向owned回环fake，真实rule
 T07每端真实Barrier同时启动八客户端，交叉default/other、Surge/Loon、regex/exclude_regex和冲突profile header；使用两客户端都支持的SS节点，使两类过滤都可观察。逐请求完整响应与准确节点名单、所有SQL/files和零来源请求比较。随后公开PUT真正改变共享过滤设置（config digest改变），同样八键再次并发请求，只能得到新过滤结果。三个命名序列均双端compared（16个并发GET及一次PUT），不是给同一请求贴八个标签。前置Socks5草稿在Python Surge转换中被省略，不能验证筛选，已改用SS后重跑。
 
 此项验证公开并发输出隔离和真实配置改变后的结果，不读取私有flight map，不声称强制命中了“旧flight完成与新flight登记同时发生”的内部窄窗口。该清理竞争仍需领域Go并发测试/长期压力验证；T06已有真实source屏障下20客户端只一次fetch，及原始12秒fallback后台完成。
+
+### Step B 断连写入的正常完成对照（批次145）
+
+T05新增create/compose/fetch/provider/MosDNS生成五种真实source屏障：先从Python生成的不可变seed执行正常请求；再从完全相同seed启动独立服务，在真实上游已接收请求但未返回时shutdown客户端socket，放行来源后观察完整提交。数据库全部行/metadata/revision、所有文件/模式/缓存、task/health/notification及源协议须等于不断连对照，并继续做Python↔Go比较；随机composition/node身份先校验完整格式/唯一性及关联cache路径才建立双射。原响应从未读取，记录为不可观察，不捏造200。
+
+provider还用公开PUT启用真实首次拉取；对照和断连各自保存一遍相同设置。Control↔aborted与Python↔Go是两个不同配对，身份映射必须独立；原将两者混用产生的commit假差异已撤回，故意多一次真实generation/改行/文件字节/权限/额外文件仍检出。等待依据是完整对照状态已相等，不用固定sleep掩盖后台落盘。create/compose/generate的Go路由未接通，六变体保留未实现；fetch/provider六变体实际compared。原始源码分别为[rule_library.py:120](../../backend/routes/rule_library.py#L120)、[rule_composition.py](../../backend/utils/rule_composition.py)、[subscriptions.py:216](../../backend/routes/subscriptions.py#L216)、[provider_response.py:89](../../backend/utils/provider_response.py#L89)、[generate.py:169](../../backend/routes/generate.py#L169)。
+
+setup已有真实check屏障下断连后receipt保存及新浏览器读回；prepare的最后纯生成/事务窄窗口没有等价可控外部屏障，不以check覆盖冒充命中prepare中间位置。生成下载另有实际大响应首字节后关闭socket的完整落盘观察，见T08/B04，纯CPU阶段取消仍为部分覆盖。
+
+### Step B N8-6已批准的登录壳差异（批次145）
+
+最新go的原生binding使R011-F06/F07/F08和X04 empty/null/plain由Python500转为Go400/415；ignored-extra的NaN/Infinity/-Infinity使Python成功签发JWT而Go400。这九个实际差异按behaviour-changes.md的N8-6单独accepted，保留原始status/body/JWT诊断，不修改Go或原始verdict。接受谓词严格限制route/group/variant、每个差异路径/类型/两侧完整值，签名与claims/duration也复验；额外SQL/files/字段/错误消息/重复差异/错误JWT均会重新open。任务间隔路由尚未接通，不能据此假装已双端验收其native binder。

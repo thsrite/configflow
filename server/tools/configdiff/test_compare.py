@@ -17,6 +17,93 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_N8_login_approvals_require_exact_error_envelopes_and_valid_source_JWT(self):
+        import jwt
+        from harness import SECRET, USERNAME
+        from config_finding_resolutions import native_binding_basis
+        bad = 'The browser (or proxy) sent a request that this server could not understand.'
+        def diff(path, kind, python, go):
+            return {'path': path, 'kind': kind, 'python': python, 'go': go}
+        value = {'case': 'R011-F06', 'group': 'auth-routes', 'variant': '', 'route': 'POST /api/auth/login',
+            'status': 'open', 'python_status': 500, 'go_status': 400, 'remaining_differences': [
+                diff('status', 'value', 500, 400), diff('body.message', 'internal-error-prefix',
+                    "登录失败。原始错误：'list' object has no attribute 'get'", bad)]}
+        self.assertTrue(native_binding_basis(value))
+        token = jwt.encode({'username': USERNAME, 'iat': 1700000000, 'exp': 1700086400}, SECRET, algorithm='HS256')
+        finite = {**value, 'case': 'X04', 'group': 'json-decoder', 'variant': 'login/ignored-extra/NaN', 'python_status': 200,
+            'remaining_differences': [diff('body.token', 'invalid-Go-JWT', '<valid-HS256>', '<invalid>'),
+                diff('status', 'value', 200, 400), diff('body.expiresIn', 'missing-in-go', 86400, None),
+                diff('body.message', 'extra-in-go', None, bad), diff('body.success', 'value', True, False),
+                diff('body.token', 'missing-in-go', token, None), diff('body.username', 'missing-in-go', USERNAME, None)]}
+        self.assertTrue(native_binding_basis(finite))
+        for original in (value, finite):
+            for mutation in ('extra-SQL', 'wrong-status', 'wrong-route', 'wrong-group', 'changed-message', 'duplicate-difference'):
+                wrong = copy.deepcopy(original)
+                if mutation == 'extra-SQL': wrong['remaining_differences'].append(diff('db.fields.secret', 'value', 'kept', 'lost'))
+                elif mutation == 'wrong-status': wrong['go_status'] = 415
+                elif mutation == 'wrong-route': wrong['route'] = 'POST /api/unrelated'
+                elif mutation == 'wrong-group': wrong['group'] = 'unrelated'
+                elif mutation == 'changed-message':
+                    next(row for row in wrong['remaining_differences'] if row['path'] == 'body.message')['go'] += 'changed'
+                else: wrong['remaining_differences'].append(copy.deepcopy(wrong['remaining_differences'][0]))
+                self.assertFalse(native_binding_basis(wrong), mutation)
+        for claims in ({'username': 'wrong', 'iat': 1700000000, 'exp': 1700086400},
+                {'username': USERNAME, 'iat': 1700000000, 'exp': 1700086401},
+                {'username': USERNAME, 'iat': 1700000000, 'exp': 1700086400, 'extra': True}):
+            wrong = copy.deepcopy(finite)
+            next(row for row in wrong['remaining_differences'] if row['kind'] == 'missing-in-go' and row['path'] == 'body.token')['python'] = jwt.encode(claims, SECRET, algorithm='HS256')
+            self.assertFalse(native_binding_basis(wrong), claims)
+
+    def test_aborted_source_effects_compare_every_SQL_value_file_byte_and_mode(self):
+        from cases.source_write_disconnect import effects, bind_composition, control_policy
+        with tempfile.TemporaryDirectory() as root:
+            dirs = [Path(root) / part for part in ('control', 'aborted')]
+            for index, directory in enumerate(dirs):
+                directory.mkdir()
+                with sqlite3.connect(directory / 'configflow.sqlite3') as db:
+                    db.executescript('CREATE TABLE meta(key,value); CREATE TABLE sections(scope,owner,position); '
+                        'CREATE TABLE fields(scope,owner,field,position,value,revision);')
+                    db.execute('INSERT INTO fields VALUES (?,?,?,?,?,?)', ('shared', '', 'rule_library', 0, '[{"id":"fixed"}]', 1))
+                    db.execute('INSERT INTO meta VALUES (?,?)', ('commit_id', json.dumps(('a' if index == 0 else 'b') * 32)))
+                    db.execute('INSERT INTO meta VALUES (?,?)', ('generation', '1'))
+                (directory / 'complete.list').write_bytes(b'unchanged\n')
+                (directory / 'complete.list').chmod(0o600)
+            self.assertEqual(effects(*dirs, 'create', Policy()), [])
+            previous = Policy()
+            previous.bind('c' * 32, 'b' * 32, '[a-f0-9]{32}', 'previous-cross-backend-pair')
+            self.assertTrue(effects(*dirs, 'create', copy.deepcopy(previous)))
+            self.assertFalse(effects(*dirs, 'create', control_policy(previous)))
+            self.assertEqual(previous.identities, {'c' * 32: 'b' * 32})
+            with sqlite3.connect(dirs[1] / 'configflow.sqlite3') as db:
+                db.execute("UPDATE meta SET value='2' WHERE key='generation'")
+            self.assertTrue(effects(*dirs, 'create', control_policy(previous)), 'extra commit must remain visible')
+            with sqlite3.connect(dirs[1] / 'configflow.sqlite3') as db:
+                db.execute("UPDATE meta SET value='1' WHERE key='generation'")
+            with sqlite3.connect(dirs[1] / 'configflow.sqlite3') as db:
+                db.execute('UPDATE fields SET revision=2')
+            self.assertTrue(effects(*dirs, 'create', Policy()))
+            with sqlite3.connect(dirs[1] / 'configflow.sqlite3') as db:
+                db.execute('UPDATE fields SET revision=1')
+            path = dirs[1] / 'complete.list'
+            path.write_bytes(b'changed\n')
+            self.assertTrue(effects(*dirs, 'create', Policy()))
+            path.write_bytes(b'unchanged\n')
+            path.chmod(0o644)
+            self.assertTrue(effects(*dirs, 'create', Policy()))
+            path.chmod(0o600)
+            (dirs[1] / 'unexpected').write_text('extra')
+            self.assertTrue(effects(*dirs, 'create', Policy()))
+        library = {'id': 'lib_' + 'a' * 12, 'source_type': 'url', 'url': 'http://source.example/rules', 'behavior': 'domain'}
+        rule = {'id': 'ruleset_' + 'b' * 12, 'itemType': 'ruleset', 'library_rule_id': library['id']}
+        right = ([{**library, 'id': 'lib_' + 'c' * 12}], [{**rule, 'id': 'ruleset_' + 'd' * 12}])
+        self.assertFalse(bind_composition(([library], [rule]), right, Policy()))
+        for value in ([], {}, None, 'invalid'):
+            bad = copy.deepcopy(right)
+            bad[0][0]['id'] = value
+            self.assertTrue(bind_composition(([library], [rule]), bad, Policy()))
+        self.assertTrue(bind_composition(([library], [rule]), ([library, library], [rule]), Policy()))
+        self.assertTrue(bind_composition(([library], [rule]), ([None], [rule]), Policy()))
+
     def test_internal_redirect_observer_detects_extra_destination_and_changed_transport_path(self):
         from cases.rule_fetch_edges import InternalRedirectBoundary
         observer = InternalRedirectBoundary.__new__(InternalRedirectBoundary)
@@ -321,14 +408,14 @@ class Comparators(unittest.TestCase):
             item = {'group': group, 'case': case, 'variant': variant, 'route': route, 'status': 'closed',
                     'differences': [{'path': path}], 'remaining_differences': []}
             closed = annotate([copy.deepcopy(item)])[0]
-            self.assertEqual(closed['fix_commits'], ['82917030'])
+            self.assertEqual(closed['fix_commits'], ['fd7f6f8f'])
             self.assertIn('不是Go业务修复', closed['closure_note'])
             wrong = copy.deepcopy(item)
             wrong['differences'].append({'path': 'db.genuine-regression'})
-            self.assertNotIn('82917030', annotate([wrong])[0]['fix_commits'])
+            self.assertNotIn('fd7f6f8f', annotate([wrong])[0]['fix_commits'])
             wrong = copy.deepcopy(item)
             wrong['status'] = 'open'
-            self.assertNotIn('82917030', annotate([wrong])[0]['fix_commits'])
+            self.assertNotIn('fd7f6f8f', annotate([wrong])[0]['fix_commits'])
 
     def test_source_completion_gate_observes_fast_body_before_slow_response(self):
         import threading
@@ -453,7 +540,7 @@ class Comparators(unittest.TestCase):
                 'group': 'webdav-named-preflight-and-directory-failure', 'status': 'closed', 'python_status': 400,
                 'go_status': 400, 'checked_baseline': 'synthetic', 'differences': [], 'remaining_differences': []}
         result = annotate([copy.deepcopy(item)])[0]
-        self.assertEqual(result['fix_commits'], ['a79362c9'])
+        self.assertEqual(result['fix_commits'], ['bc05a32b'])
         self.assertIn('不是Go业务修复', result['closure_note'])
         self.assertIn('不是Go业务修复', '\n'.join(markdown([result])))
         for mutation in ({'status': 'open'}, {'variant': 'other'}, {'route': 'other'}):
