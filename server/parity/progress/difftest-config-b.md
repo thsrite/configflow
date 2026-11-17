@@ -1339,3 +1339,20 @@ current compared=33 design_errors=[]；exit=0
 ```
 
 仍余原R368编号及H783编号，另有已具名但多子形态/长流程部分覆盖；不把变体总数当作清单已完成。最终rebase与.32全量尚待执行。
+
+## 批次 77：H555–H639原生插件静态约束
+
+- 174新增HTTP变体覆盖85原H编号：H555–H639，每个编号独立公开POST /api/oxidns/validate。首轮85配方在.32通过Python前提校验，再按循环字段/条件展开到174变体在.63通过；全部Go尚未实现，接通后自动比较。统一累计8712变体，原R4162（S678/F2635/B849）、H414、G16；different仍84。
+- 正则/域名/Cron分段与范围、IP/CIDR、模板占位符（url/body/content_type/headers/query/form/script args/env）、Provider/DNS code/mark/random/env/表达式/TTL/EDNS0、black_hole互斥与null warning、缓存与TTL、探测方法、hosts/redirect/domain/zone/AdGuard/geosite、nft双地址族字段、RouterOS双插件及持久地址/CA/超时/默认路由警告、HTTP body三种互斥/头/模板/下载目标、时间段与定时任务。所有字段家族单独变体；临界数值及显式null保留类型。
+- 必须出现准确path+中文message+severity+source=config.yaml且code为非空；完整HTTP还逐字段比较所有issue及code，不掩码。valid须等于全部issues是否无error，明确不把warning当拒绝。有些schema层与helper层同路径同消息会在Python公开响应去重；本组只验证去重后的可观察结果，不宣称能辨认是哪一层生成了重复诊断。
+- 每次验证逐端DB/files原样，真实回环Source记录所有HTTP方法且期望0请求；仅静态草稿，不执行DNS核心、脚本、RouterOS或nft操作。相对路径位于隔离cwd；规则include只登记目标核心需检查的warning，没有读实际zone文件。沿用已有SourceStable故意出错自检，68项通过。
+
+```text
+.32 run.py --groups oxidns-plugin-helper-constraints（85原配方）
+go-unimplemented=85 design_errors=[] seconds=8.03；exit=0
+.63 run.py --groups oxidns-plugin-helper-constraints（174多字段/多形态变体）
+go-unimplemented=174 design_errors=[] seconds=5.17；exit=0
+.63同组常规runner合并统一results.json：design_errors=[]；exit=0
+```
+
+继续zone记录、引用/quick语法及剩余helpers；当前H仍差698编号，最终.32全量未执行。
