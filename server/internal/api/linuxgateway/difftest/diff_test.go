@@ -211,15 +211,16 @@ func (f *fakeAgent) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 type world struct {
-	t              *testing.T
-	srv            *httpxtest.Server
-	stdin          io.WriteCloser
-	scanner        *bufio.Scanner
-	cmd            *exec.Cmd
-	stderr         bytes.Buffer
-	token          string
-	fake           *fakeAgent
-	profileHeaders []string
+	t                 *testing.T
+	srv               *httpxtest.Server
+	stdin             io.WriteCloser
+	scanner           *bufio.Scanner
+	cmd               *exec.Cmd
+	stderr            bytes.Buffer
+	token             string
+	fake              *fakeAgent
+	profileHeaders    []string
+	privacyCorrection bool
 }
 
 func newWorld(t *testing.T, sessions ...string) *world {
@@ -602,6 +603,9 @@ func (w *world) callBodies(method, path, goBody, pyBody string, authHeader bool)
 			}
 		}
 	}
+	if w.privacyCorrection {
+		assertPrivacyCorrection(w.t, got.Body, want.Body)
+	}
 	got.State = snapshot(w.t, w.srv)
 	summaryMatchesStorage(w.t, got.Body, got.State, path)
 	summaryMatchesStorage(w.t, want.Body, want.State, path)
@@ -843,4 +847,77 @@ func TestA20CapturedProfileHeaderSemantics(t *testing.T) {
 		w.profileHeaders = headers
 		w.call("GET", path, "", true)
 	}
+}
+
+func displayValue(t *testing.T, value any) any {
+	t.Helper()
+	text, ok := value.(string)
+	if !ok {
+		t.Fatalf("display not text: %T", value)
+	}
+	node, err := yamlx.Parse([]byte(text))
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := yamlx.ToJSON(node)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result any
+	if err = json.Unmarshal(raw, &result); err != nil {
+		t.Fatal(err)
+	}
+	return result
+}
+
+// These two exact Python leaks are independently asserted, then replaced by
+// the required safe value. No other response member or storage field is ignored.
+func assertPrivacyCorrection(t *testing.T, goBody, pyBody any) {
+	t.Helper()
+	expectedPy := map[string]any{
+		"OxiDNS 草稿.note":   "previous synthetic-old-password; current synthetic-new-password; encoded synthetic%2Dnew%2Dpassword",
+		"OxiDNS 草稿.future": map[string]any{"password": "[已隐藏]", "note": "reference synthetic-nested-password"},
+	}
+	expectedGo := map[string]any{"OxiDNS 草稿.note": "[REDACTED]", "OxiDNS 草稿.future": map[string]any{"password": "[已隐藏]", "note": "[REDACTED]"}}
+	goChanges := map[string]map[string]any{}
+	for _, raw := range goBody.(map[string]any)["changes"].([]any) {
+		c := raw.(map[string]any)
+		goChanges[c["path"].(string)] = c
+	}
+	count := 0
+	for _, raw := range pyBody.(map[string]any)["changes"].([]any) {
+		c := raw.(map[string]any)
+		path := c["path"].(string)
+		unsafe, found := expectedPy[path]
+		if !found {
+			continue
+		}
+		if !reflect.DeepEqual(displayValue(t, c["before"]), unsafe) {
+			t.Fatal("Python credential leak changed", path, c["before"])
+		}
+		goChange := goChanges[path]
+		if goChange == nil || !reflect.DeepEqual(displayValue(t, goChange["before"]), expectedGo[path]) {
+			t.Fatal("Go did not mask exact credential reference", path, goChange)
+		}
+		replacement, err := json.Marshal(expectedGo[path])
+		if err != nil {
+			t.Fatal(err)
+		}
+		c["before"] = string(replacement)
+		count++
+	}
+	if count != 2 {
+		t.Fatalf("expected two explicit Python privacy differences, got %d", count)
+	}
+}
+
+func TestA20DraftPythonCredentialLeaksAreFixed(t *testing.T) {
+	w := newWorld(t)
+	root := "/api/profiles/home/custom-config/linux-gateway"
+	w.call("EDIT", "home", `{"oxidns":{"native_config":"plugins: []\n","password":"synthetic-old-password","note":"original"}}`, true)
+	w.call("POST", root, `{"enabled":false,"rule_set_ids":[]}`, true)
+	w.call("EDIT", "home", `{"oxidns":{"native_config":"plugins: []\n","password":"synthetic-new-password","note":"previous synthetic-old-password; current synthetic-new-password; encoded synthetic%2Dnew%2Dpassword","future":{"password":"synthetic-nested-password","note":"reference synthetic-nested-password"}}}`, true)
+	rev, _ := w.srv.Repo.ConfigRevision(w.srv.Context(), "home")
+	w.privacyCorrection = true
+	w.call("POST", root+"/restore/preview", fmt.Sprintf(`{"expected_config_revision":%d}`, rev), true)
 }

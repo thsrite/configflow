@@ -20,6 +20,7 @@ import (
 	"configflow/internal/gateway/gwbase"
 	"configflow/internal/httpx"
 	"configflow/internal/model"
+	"configflow/internal/redact"
 	"configflow/internal/repo"
 	"configflow/internal/yamlx"
 	"gopkg.in/yaml.v3"
@@ -216,16 +217,24 @@ func preview(ctx context.Context, config, candidate document, revision int64, re
 		action = "restore"
 	}
 	p := Preview{Success: true, Action: action, ConfigRevision: revision, Changes: []Change{}, Warnings: []string{}, RestorePoint: summary(config)}
+	seeds, err := sourceCredentials(config, candidate)
+	if err != nil {
+		return p, err
+	}
 	after, err := generate(ctx, candidate, baseURL)
 	if err != nil {
-		return p, invalid(fmt.Sprintf(msgGenerate, err))
+		return p, invalid(fmt.Sprintf(msgGenerate, failureText(err, seeds)))
 	}
-	before, err := generate(ctx, config, baseURL)
+	before, beforeErr := generate(ctx, config, baseURL)
+	seeds, err = generatedCredentials(before, after, seeds)
 	if err != nil {
+		return p, err
+	}
+	if beforeErr != nil {
 		p.Warnings = append(p.Warnings, msgCurrentInvalid)
 		p.Changes = append(p.Changes, Change{"Mihomo", msgInvalidBefore, msgValidAfter})
 	} else {
-		p.Changes = changes(before, after, "Mihomo")
+		p.Changes = changes(before, after, "Mihomo", seeds)
 	}
 	warnings, err := overlaps(ctx, candidate)
 	if err != nil {
@@ -242,7 +251,7 @@ func preview(ctx context.Context, config, candidate document, revision int64, re
 			if err != nil {
 				return p, err
 			}
-			p.Changes = append(p.Changes, changes(left, right, service.prefix)...)
+			p.Changes = append(p.Changes, changes(left, right, service.prefix, seeds)...)
 		}
 	}
 	// Agents and backup status are runtime observations, excluded from the input identity.
@@ -255,7 +264,7 @@ func preview(ctx context.Context, config, candidate document, revision int64, re
 	return p, nil
 }
 
-func changes(left, right *yamlx.Node, prefix string) []Change {
+func changes(left, right *yamlx.Node, prefix string, seeds redact.Secrets) []Change {
 	result := []Change{}
 	keys := map[string]bool{}
 	for key := range yamlx.Pairs(left) {
@@ -282,21 +291,21 @@ func changes(left, right *yamlx.Node, prefix string) []Change {
 			path = prefix + "." + key
 		}
 		if yamlx.Resolve(a) != nil && yamlx.Resolve(b) != nil && yamlx.Resolve(a).Kind == yaml.MappingNode && yamlx.Resolve(b).Kind == yaml.MappingNode {
-			result = append(result, changes(a, b, path)...)
+			result = append(result, changes(a, b, path, seeds)...)
 			continue
 		}
 		before, after := msgUnset, msgRemoved
 		if a != nil {
-			before = display(a, key)
+			before = display(a, key, seeds)
 		}
 		if b != nil {
-			after = display(b, key)
+			after = display(b, key, seeds)
 		}
 		result = append(result, Change{path, before, after})
 	}
 	return result
 }
-func display(value *yamlx.Node, key string) string {
+func display(value *yamlx.Node, key string, seeds redact.Secrets) string {
 	raw, err := yamlx.ToJSON(value)
 	if err != nil {
 		return msgHidden
@@ -306,7 +315,7 @@ func display(value *yamlx.Node, key string) string {
 	}
 	// Shared redaction handles credential names, multiline spans, URL userinfo,
 	// percent-encoded references and registration keys. No private secret parser.
-	safe, err := safeValue(key, raw)
+	safe, err := safeValue(key, raw, seeds)
 	if err != nil {
 		return msgHidden
 	}

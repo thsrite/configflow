@@ -198,7 +198,7 @@ func TestDraftSessionEvidenceAndPrivacy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	shown := display(node, "settings")
+	shown := display(node, "settings", nil)
 	for _, secret := range []string{"opaque-secret", "synthetic-password", "url-password", "query-secret", "legacy-registration", "continued-secret"} {
 		if strings.Contains(shown, secret) {
 			t.Fatalf("preview leaked %s: %s", secret, shown)
@@ -212,7 +212,7 @@ func TestDraftNodeGraphs(t *testing.T) {
 		if err != nil {
 			continue
 		}
-		changes := changes(yamlx.Map(), node, "Mihomo")
+		changes := changes(yamlx.Map(), node, "Mihomo", nil)
 		if len(changes) == 0 {
 			t.Fatal("accepted graph disappeared")
 		}
@@ -358,6 +358,47 @@ func TestWrongTypedDraftSectionsCannotBecomeEmptySnapshots(t *testing.T) {
 		}
 		if err == nil || string(before) != string(encode(native)) {
 			t.Fatal("wrong-typed section became empty evidence", config, err)
+		}
+	}
+}
+
+func TestDraftPreviewCollectsCredentialsBeforeProjection(t *testing.T) {
+	s := draftService(t)
+	ctx := context.Background()
+	_, _, err := s.Repository.UpdateProfileTransaction(ctx, "default", func(_ context.Context, c *jsonx.Object) (*jsonx.Object, error) {
+		c.GetObject("oxidns").Set("password", "synthetic-old-password")
+		c.GetObject("oxidns").Set("note", "original")
+		return nil, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.Execute(ctx, Operation{ProfileID: "default", Write: true, BaseURL: "http://localhost", Body: opBody(t, `{"enabled":true,"rule_set_ids":[]}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = s.Repository.UpdateProfileTransaction(ctx, "default", func(_ context.Context, c *jsonx.Object) (*jsonx.Object, error) {
+		o := c.GetObject("oxidns")
+		o.Set("password", "synthetic-new-password")
+		o.Set("note", "previous synthetic-old-password; current synthetic-new-password; encoded synthetic%2Dnew%2Dpassword")
+		o.Set("future", jsonx.Obj("password", "synthetic-nested-password", "note", "reference synthetic-nested-password"))
+		return nil, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rev, _ := s.Repository.ConfigRevision(ctx, "default")
+	before := state(t, s)
+	raw, err := s.Execute(ctx, Operation{ProfileID: "default", Write: true, Preview: true, Restore: true, BaseURL: "http://localhost", Body: opBody(t, string(encode(map[string]int64{"expected_config_revision": rev})))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if before != state(t, s) {
+		t.Fatal("preview changed stored documents")
+	}
+	for _, secret := range []string{"synthetic-old-password", "synthetic-new-password", "synthetic%2Dnew%2Dpassword", "synthetic-nested-password"} {
+		if strings.Contains(string(raw), secret) {
+			t.Fatalf("preview retained credential reference: %s", secret)
 		}
 	}
 }

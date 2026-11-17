@@ -1639,7 +1639,7 @@ The corpus proves the generated Mihomo configuration; it cannot prove what the h
 - `api/linuxgateway/difftest` 启动真实 Python Flask，输入全部是合成数据，requests 只能访问 loopback。18 条路由均有成功/失败；管理员鉴权、token/JWT providers、跨 profile、错误/大 body、版本边界、forwarding 状态、full_tun/invalid/legacy/legacy_full_tun、真实向导记录、旧式和带 guard 的保存/恢复均比较。每次响应后比较完整 export、SQLite sections/fields（含位置/所有成员）与所有普通文件（排除数据库本体/锁/日志；JSON/YAML 结构化，其余字节 SHA-256）。生成配置通过真实公开 Mihomo generator 与 Python 结构比较。仅时间、随机恢复 ID 和不透明 preview identity 归一化；两端各自的 preview token 保存并回传，不能拿固定 token 掩盖校验。
 - `host` 单测使用真实 Agent HTTPClient 的原始 GET 空 body、POST `{}`、Authorization/Accept/Content-Type，并断言生产 `Pair(3,45)`、512 KiB、NoProxy/NoRedirects；fake 不替换这些参数。
 - 真实 Runtime.Start/BindRequest/Shutdown：apply/remove/forwarding/PersistForwarding/底层写请求、草稿 save/restore 在关机后零请求/零 DB 改动；请求断开仍完成。关机发生在状态预检与 Agent POST 之间、发生在 repo 回调内生成预览之后，都拒绝提交。每个写 owner Detach 后与提交点前检查 ctx.Err；无 handler 级 detach。
-- `scripts/a20-mutation-gate.py`：response、完整 storage、wire timeout、forwarding proof、preview input、command whitelist 六处变异 **6/6 DETECTED**，源文件 finally 恢复。解析 fuzz：FuzzGatewaySpec、FuzzGatewayForwardFilter、FuzzGatewayBundle、FuzzGatewayDraft、FuzzSetupSession，另保留 A19 FuzzExtractCIDRs。
+- `scripts/a20-mutation-gate.py`：response、完整 storage、wire timeout、forwarding proof、preview input、command whitelist 原六处变异 **6/6 DETECTED**；另加 credential-knowledge 第七处（最终门禁后重跑记录），源文件 finally 恢复。解析 fuzz：FuzzGatewaySpec、FuzzGatewayForwardFilter、FuzzGatewayBundle、FuzzGatewayDraft、FuzzSetupSession，另保留 A19 FuzzExtractCIDRs。
 
 ### 复核问题类别逐项自查
 
@@ -1674,6 +1674,10 @@ The corpus proves the generated Mihomo configuration; it cannot prove what the h
 | R08 F3/F4 presence | Request map 区分缺失/显式 null，expected_config_revision/preview_token 任一存在即 guarded；空 rule_set_ids/commands/flows 输出 []；restore 删除快照通过完整 section 替换，非 pointer=nil 猜 clear。 |
 | R08 F5/F6 诊断/注释 | code/message/status 的真实 HTTP 比较；owner 注释明确 request cancellation dropped、Runtime shutdown kept，没有“任何取消都完成”的陈旧承诺。 |
 | N8-4ef 字段/未知数据/clear | model.Agent 只读，profile sections/恢复文档以原生 RawMessage 完整携带；首次 snapshot/未知字段与完整 SQLite 往返比较；restore 显式替换 mihomo/oxidns；错误数据不被有效空值覆盖。 |
+
+补读新合入的 `review-a13.md` 后在 A20 复现同类 high：原 preview 按叶子投影时会丢失原密码知识，旧/当前密码可由 OxiDNS note 或新增对象的 note 引用泄露。`TestDraftPreviewCollectsCredentialsBeforeProjection` 在修复前明确失败（synthetic-old-password），随后改为从完整 current/candidate 及生成文档先调用共享 `redact.CollectCredentials`，再投影/显示；生成错误也用同一 secrets 清洗。不修改共享 redactor，不复制 secret grammar。原密码字段保持中文 `[已隐藏]`；只把文本中的明文/编码引用遮盖。真实 Flask `TestA20DraftPythonCredentialLeaksAreFixed` 独立断言 Python 两条确切泄露和 Go 必须的安全值，随后仍比较其余全部响应与完整 DB/文件。
+
+新合入 A13 的 F1 不适用（A20 不 Spawn/不关闭 Checker）；F2/F3 通过上面的原始数据先收集、共享原始回复清洗与相同 Runtime 测试避免；F4 用最新 tagged observer 门禁，不添加宽泛 baseline。补测 captured profile 头/查询优先级与两个重复头，handler 走共享 `Ctx.HeaderDefault` 的 Flask 合并语义，Flask HTTP/race 34.650s 通过。
 
 无新增 L1 锁（Python A20 没有）；repo 只取 L3，Agent 预检严格在 L3 外；无 Spawn/Keyed/后台 loop 需要注册。
 

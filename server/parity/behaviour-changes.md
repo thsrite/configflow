@@ -629,6 +629,11 @@ Python接受。Go按本次安全修复要求统一拒绝这些歧义，保留Inv
 - Agent gateway replies and diagnostics now use shared credential redaction,
   including multiline/encoded passwords, legacy registration keys and Agent
   tokens. Usernames alone remain visible. Python forwarded these fields.
+- Draft previews collect named credentials from complete current/candidate and
+  generated documents before projecting fields. Plain/encoded references in
+  other change texts and nested added/removed objects are hidden; Python leaks
+  them. The original Chinese field mask stays `[已隐藏]`, and stored documents
+  remain untouched. Exact Python leaks are asserted in the HTTP differential.
 - Malformed host `managed` evidence is an unreadable record, never proof of no
   gateway record. Wrong-typed wizard routing evidence fails closed with a
   Chinese diagnostic and zero writes. The shared A14/C36 reader refuses a
