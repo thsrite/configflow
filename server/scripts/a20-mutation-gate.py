@@ -13,6 +13,7 @@ mutants = [
     ('preview-input', 'internal/gateway/draft/draft.go', 'subtle.ConstantTimeCompare([]byte(token), []byte(p.PreviewToken)) != 1', 'subtle.ConstantTimeCompare([]byte(token), []byte(token)) != 1', './internal/gateway/draft', '^TestDraftGuardAtomicityAndUnknownMembers$'),
     ('command-whitelist', 'internal/gateway/host/filter.go', 'if !commandPattern.MatchString(step)', 'if commandPattern.MatchString(step) && false', './internal/api/linuxgateway/difftest', '^TestA20HostFlask$'),
     ('credential-knowledge', 'internal/gateway/draft/draft.go', 'sourceCredentials(config, candidate)', 'sourceCredentials(document{}, document{})', './internal/gateway/draft', '^TestDraftPreviewCollectsCredentialsBeforeProjection$'),
+    ('credential-metadata', 'internal/gateway/draft/draft.go', 'redact.SanitizeWithSecrets(path, seeds, false)', 'redact.SanitizeWithSecrets(path, nil, false)', './internal/gateway/draft', '^TestDraftPreviewHidesCredentialMetadata$'),
 ]
 passed = 0
 for name, relative, before, after, package, test in mutants:

@@ -140,7 +140,17 @@ func safeValue(key string, value json.RawMessage, seeds redact.Secrets) (json.Ra
 	if err = project(node, key); err != nil {
 		return nil, err
 	}
-	return yamlx.ToJSON(node)
+	data, err := yamlx.ToJSON(node)
+	if err != nil {
+		return nil, err
+	}
+	projected, err := jsonx.Parse(data)
+	if err != nil {
+		return nil, err
+	}
+	// Scan metadata keys too, after named fields have their Chinese mask.
+	// This pass never discovers credentials from projected placeholders.
+	return jsonx.Compact(redact.SanitizeWithSecrets(projected, seeds, true))
 }
 
 func sourceCredentials(config, candidate document) (redact.Secrets, error) {

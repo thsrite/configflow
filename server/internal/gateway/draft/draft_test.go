@@ -16,6 +16,7 @@ import (
 	"configflow/internal/gateway"
 	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
+	"configflow/internal/redact"
 	"configflow/internal/repo"
 	"configflow/internal/setupflow"
 	"configflow/internal/yamlx"
@@ -400,5 +401,23 @@ func TestDraftPreviewCollectsCredentialsBeforeProjection(t *testing.T) {
 		if strings.Contains(string(raw), secret) {
 			t.Fatalf("preview retained credential reference: %s", secret)
 		}
+	}
+}
+
+func TestDraftPreviewHidesCredentialMetadata(t *testing.T) {
+	node, err := yamlx.FromJSON([]byte(`{"password":"synthetic-opaque-key","synthetic-opaque-key":"metadata"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if shown := display(node, "settings", nil); strings.Contains(shown, "synthetic-opaque-key") {
+		t.Fatal("display dictionary key exposed a known credential")
+	}
+	before, err := yamlx.FromJSON([]byte(`{"synthetic-opaque-key":"metadata"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := changes(before, yamlx.Map(), "Mihomo", redact.NewSecrets([]string{"synthetic-opaque-key"}))
+	if len(rows) != 1 || rows[0].Path != "[REDACTED]" {
+		t.Fatal("change path exposed a known credential")
 	}
 }

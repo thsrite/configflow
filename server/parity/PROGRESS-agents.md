@@ -1630,6 +1630,8 @@ The corpus proves the generated Mihomo configuration; it cannot prove what the h
 
 **Status: `ported`** · HR，等待新的 Opus 独立复核；L4 尚未执行。分支 `go-port-a20`，起点 `go@601a8121`。不 push、不开子 agent、未访问任何生产或实验设备。
 
+Python 范围完整读取：`backend/agents/linux_gateway.py`、`backend/routes/linux_gateway_agents.py`、`backend/common/linux_gateway_draft.py`、`backend/routes/linux_gateway.py`。下游入口：`host.Bridge{Repository,Manager}.Call/Forwarding/PersistForwarding/GatewayOffRefusal/RecordStatus/RequireForwardingKept/RequireGatewayOffKept`，父包 `gateway.Supports* / RequireGatewayAgent`，`draft.Service.Execute(ctx, Operation)` 与 `draft.RestoreKey`（别名 gwbase 共享常量）。
+
 实现：`internal/gateway/host`（版本能力、严格网络 spec、带转发保护的五种 Agent 操作、跨 profile 路由关联、转发状态/持久化、命令白名单、发布/bundle 前置检查）；`internal/gateway/draft`（首次恢复快照、只读生成预览、完整输入身份、版本/preview 二次校验、Mihomo+OxiDNS 原子保存/恢复）；`internal/api/linuxgateway` + `api/agents/gateway.go` 的 **18 条路由**，服务器注册及冲突优先级测试。全部请求走 `Bind/BindSilent`；YAML 走 yamlx；无新增依赖、Python 模拟、flock、后台任务或 goroutine。
 
 共享 C36 reader 已与 A14 对齐：先查 `go-port-a14@4ded0b99`，复用其 `internal/setupflow.ProfileSessions(ctx,dataDir,profileID)` 和 Session/Raw 接口，补类型错误/取消/16 MiB 上界及中文 fail-closed；`setupflow.Wire` 由服务器注入 `routersplit`。真实 `setup-sessions/*.json` fixture、缺失目录/会话、损坏 JSON、错误类型均覆盖。读取会话在 repo 写事务外，Agent 绑定/配置通过 repo 快照读取。`PROGRESS-config` C36 已注明将来的写入/流程扩展这里。A14 后续 rebase 时保留一套 reader，合并其 deploy.Wire 的同义 adapter。
@@ -1639,7 +1641,7 @@ The corpus proves the generated Mihomo configuration; it cannot prove what the h
 - `api/linuxgateway/difftest` 启动真实 Python Flask，输入全部是合成数据，requests 只能访问 loopback。18 条路由均有成功/失败；管理员鉴权、token/JWT providers、跨 profile、错误/大 body、版本边界、forwarding 状态、full_tun/invalid/legacy/legacy_full_tun、真实向导记录、旧式和带 guard 的保存/恢复均比较。每次响应后比较完整 export、SQLite sections/fields（含位置/所有成员）与所有普通文件（排除数据库本体/锁/日志；JSON/YAML 结构化，其余字节 SHA-256）。生成配置通过真实公开 Mihomo generator 与 Python 结构比较。仅时间、随机恢复 ID 和不透明 preview identity 归一化；两端各自的 preview token 保存并回传，不能拿固定 token 掩盖校验。
 - `host` 单测使用真实 Agent HTTPClient 的原始 GET 空 body、POST `{}`、Authorization/Accept/Content-Type，并断言生产 `Pair(3,45)`、512 KiB、NoProxy/NoRedirects；fake 不替换这些参数。
 - 真实 Runtime.Start/BindRequest/Shutdown：apply/remove/forwarding/PersistForwarding/底层写请求、草稿 save/restore 在关机后零请求/零 DB 改动；请求断开仍完成。关机发生在状态预检与 Agent POST 之间、发生在 repo 回调内生成预览之后，都拒绝提交。每个写 owner Detach 后与提交点前检查 ctx.Err；无 handler 级 detach。
-- `scripts/a20-mutation-gate.py`：response、完整 storage、wire timeout、forwarding proof、preview input、command whitelist 原六处变异 **6/6 DETECTED**；另加 credential-knowledge 第七处（最终门禁后重跑记录），源文件 finally 恢复。解析 fuzz：FuzzGatewaySpec、FuzzGatewayForwardFilter、FuzzGatewayBundle、FuzzGatewayDraft、FuzzSetupSession，另保留 A19 FuzzExtractCIDRs。
+- `scripts/a20-mutation-gate.py`：response、完整 storage、wire timeout、forwarding proof、preview input、command whitelist response/storage/wire-timeout/forwarding-proof/preview-input/command-whitelist/credential-knowledge/credential-metadata 八处 **8/8 DETECTED**，源文件 finally 恢复。解析 fuzz：FuzzGatewaySpec、FuzzGatewayForwardFilter、FuzzGatewayBundle、FuzzGatewayDraft、FuzzSetupSession，另保留 A19 FuzzExtractCIDRs。
 
 ### 复核问题类别逐项自查
 
@@ -1675,7 +1677,9 @@ The corpus proves the generated Mihomo configuration; it cannot prove what the h
 | R08 F5/F6 诊断/注释 | code/message/status 的真实 HTTP 比较；owner 注释明确 request cancellation dropped、Runtime shutdown kept，没有“任何取消都完成”的陈旧承诺。 |
 | N8-4ef 字段/未知数据/clear | model.Agent 只读，profile sections/恢复文档以原生 RawMessage 完整携带；首次 snapshot/未知字段与完整 SQLite 往返比较；restore 显式替换 mihomo/oxidns；错误数据不被有效空值覆盖。 |
 
-补读新合入的 `review-a13.md` 后在 A20 复现同类 high：原 preview 按叶子投影时会丢失原密码知识，旧/当前密码可由 OxiDNS note 或新增对象的 note 引用泄露。`TestDraftPreviewCollectsCredentialsBeforeProjection` 在修复前明确失败（synthetic-old-password），随后改为从完整 current/candidate 及生成文档先调用共享 `redact.CollectCredentials`，再投影/显示；生成错误也用同一 secrets 清洗。不修改共享 redactor，不复制 secret grammar。原密码字段保持中文 `[已隐藏]`；只把文本中的明文/编码引用遮盖。真实 Flask `TestA20DraftPythonCredentialLeaksAreFixed` 独立断言 Python 两条确切泄露和 Go 必须的安全值，随后仍比较其余全部响应与完整 DB/文件。
+补读新合入的 `review-a13.md` 后在 A20 复现同类 high：原 preview 按叶子投影时会丢失原密码知识，旧/当前密码可由 OxiDNS note 或新增对象的 note 引用泄露。`TestDraftPreviewCollectsCredentialsBeforeProjection` 在修复前明确失败（synthetic-old-password），随后改为从完整 current/candidate 及生成文档先调用共享 `redact.CollectCredentials`，再投影/显示；生成错误也用同一 secrets 清洗。不修改共享 redactor，不复制 secret grammar。原密码字段保持中文 `[已隐藏]`；只把文本中的明文/编码引用遮盖。真实 Flask `TestA20DraftPythonCredentialLeaksAreFixed` 独立断言 Python 三条确切差异（文本、对象键、change path）和 Go 必须的安全值，随后仍比较其余全部响应与完整 DB/文件。
+
+同类 metadata 检查也先在 `TestDraftPreviewHidesCredentialMetadata` 复现字典键泄露，再补全 `redact.SanitizeWithSecrets` 的显示对象键与 Change.Path 清洗；字段掩码仍是中文 `[已隐藏]`，投影后的占位符不再参与 credential discovery。最终定向 `.64`（home TMPDIR）race：draft `ok 5.006s`、enabled HTTP/storage `ok 34.530s`；mutation **8/8 detected; sources restored**；相关 vet 通过。未更改任何存储凭据或业务身份，仅减少显示层泄露。
 
 新合入 A13 的 F1 不适用（A20 不 Spawn/不关闭 Checker）；F2/F3 通过上面的原始数据先收集、共享原始回复清洗与相同 Runtime 测试避免；F4 用最新 tagged observer 门禁，不添加宽泛 baseline。补测 captured profile 头/查询优先级与两个重复头，handler 走共享 `Ctx.HeaderDefault` 的 Flask 合并语义，Flask HTTP/race 34.650s 通过。
 

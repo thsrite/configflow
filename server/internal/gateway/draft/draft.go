@@ -301,7 +301,8 @@ func changes(left, right *yamlx.Node, prefix string, seeds redact.Secrets) []Cha
 		if b != nil {
 			after = display(b, key, seeds)
 		}
-		result = append(result, Change{path, before, after})
+		publicPath := redact.SanitizeWithSecrets(path, seeds, false).(string)
+		result = append(result, Change{publicPath, before, after})
 	}
 	return result
 }

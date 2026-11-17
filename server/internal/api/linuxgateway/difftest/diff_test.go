@@ -870,15 +870,16 @@ func displayValue(t *testing.T, value any) any {
 	return result
 }
 
-// These two exact Python leaks are independently asserted, then replaced by
+// These exact Python leaks are independently asserted, then replaced by
 // the required safe value. No other response member or storage field is ignored.
 func assertPrivacyCorrection(t *testing.T, goBody, pyBody any) {
 	t.Helper()
 	expectedPy := map[string]any{
-		"OxiDNS 草稿.note":   "previous synthetic-old-password; current synthetic-new-password; encoded synthetic%2Dnew%2Dpassword",
-		"OxiDNS 草稿.future": map[string]any{"password": "[已隐藏]", "note": "reference synthetic-nested-password"},
+		"OxiDNS 草稿.note":                   "previous synthetic-old-password; current synthetic-new-password; encoded synthetic%2Dnew%2Dpassword",
+		"OxiDNS 草稿.future":                 map[string]any{"password": "[已隐藏]", "note": "reference synthetic-nested-password", "synthetic-old-password": "[已隐藏]"},
+		"OxiDNS 草稿.synthetic-new-password": "[已隐藏]",
 	}
-	expectedGo := map[string]any{"OxiDNS 草稿.note": "[REDACTED]", "OxiDNS 草稿.future": map[string]any{"password": "[已隐藏]", "note": "[REDACTED]"}}
+	expectedGo := map[string]any{"OxiDNS 草稿.note": "[REDACTED]", "OxiDNS 草稿.future": map[string]any{"password": "[已隐藏]", "note": "[REDACTED]", "[REDACTED]": "[已隐藏]"}, "OxiDNS 草稿.synthetic-new-password": "[已隐藏]"}
 	goChanges := map[string]map[string]any{}
 	for _, raw := range goBody.(map[string]any)["changes"].([]any) {
 		c := raw.(map[string]any)
@@ -895,7 +896,11 @@ func assertPrivacyCorrection(t *testing.T, goBody, pyBody any) {
 		if !reflect.DeepEqual(displayValue(t, c["before"]), unsafe) {
 			t.Fatal("Python credential leak changed", path, c["before"])
 		}
-		goChange := goChanges[path]
+		publicPath := path
+		if path == "OxiDNS 草稿.synthetic-new-password" {
+			publicPath = "[REDACTED]"
+		}
+		goChange := goChanges[publicPath]
 		if goChange == nil || !reflect.DeepEqual(displayValue(t, goChange["before"]), expectedGo[path]) {
 			t.Fatal("Go did not mask exact credential reference", path, goChange)
 		}
@@ -904,10 +909,11 @@ func assertPrivacyCorrection(t *testing.T, goBody, pyBody any) {
 			t.Fatal(err)
 		}
 		c["before"] = string(replacement)
+		c["path"] = publicPath
 		count++
 	}
-	if count != 2 {
-		t.Fatalf("expected two explicit Python privacy differences, got %d", count)
+	if count != 3 {
+		t.Fatalf("expected three explicit Python privacy differences, got %d", count)
 	}
 }
 
@@ -916,7 +922,7 @@ func TestA20DraftPythonCredentialLeaksAreFixed(t *testing.T) {
 	root := "/api/profiles/home/custom-config/linux-gateway"
 	w.call("EDIT", "home", `{"oxidns":{"native_config":"plugins: []\n","password":"synthetic-old-password","note":"original"}}`, true)
 	w.call("POST", root, `{"enabled":false,"rule_set_ids":[]}`, true)
-	w.call("EDIT", "home", `{"oxidns":{"native_config":"plugins: []\n","password":"synthetic-new-password","note":"previous synthetic-old-password; current synthetic-new-password; encoded synthetic%2Dnew%2Dpassword","future":{"password":"synthetic-nested-password","note":"reference synthetic-nested-password"}}}`, true)
+	w.call("EDIT", "home", `{"oxidns":{"native_config":"plugins: []\n","password":"synthetic-new-password","note":"previous synthetic-old-password; current synthetic-new-password; encoded synthetic%2Dnew%2Dpassword","future":{"password":"synthetic-nested-password","note":"reference synthetic-nested-password","synthetic-old-password":"keyed metadata"},"synthetic-new-password":"root metadata"}}`, true)
 	rev, _ := w.srv.Repo.ConfigRevision(w.srv.Context(), "home")
 	w.privacyCorrection = true
 	w.call("POST", root+"/restore/preview", fmt.Sprintf(`{"expected_config_revision":%d}`, rev), true)

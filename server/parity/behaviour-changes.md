@@ -631,7 +631,7 @@ Python接受。Go按本次安全修复要求统一拒绝这些歧义，保留Inv
   tokens. Usernames alone remain visible. Python forwarded these fields.
 - Draft previews collect named credentials from complete current/candidate and
   generated documents before projecting fields. Plain/encoded references in
-  other change texts and nested added/removed objects are hidden; Python leaks
+  other change texts, change paths and nested added/removed object keys are hidden; Python leaks
   them. The original Chinese field mask stays `[已隐藏]`, and stored documents
   remain untouched. Exact Python leaks are asserted in the HTTP differential.
 - Malformed host `managed` evidence is an unreadable record, never proof of no
