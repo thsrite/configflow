@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
 	"configflow/internal/repo"
 	"configflow/internal/taskstatus"
@@ -558,10 +559,22 @@ func RecordRouter(ctx context.Context, profileID string, config, router, report,
 	})
 }
 
-func refresh(ctx context.Context, items *jsonx.Object, repository *repo.Repository, completedTask string, s Sources) error {
+type observation struct {
+	key   string
+	value *jsonx.Object
+}
+
+type collectedObservations struct {
+	profiles     map[string]any
+	routers      map[string]string
+	keys         map[string]bool
+	observations []observation
+}
+
+func collect(ctx context.Context, repository *repo.Repository, completedTask string, s Sources) (*collectedObservations, error) {
 	profileList, err := repository.ListProfiles(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	profiles := map[string]any{}
 	var profileOrder []string
@@ -573,7 +586,7 @@ func refresh(ctx context.Context, items *jsonx.Object, repository *repo.Reposito
 	}
 	agentList, err := s.Agents(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	agents := map[string]*jsonx.Object{}
 	var agentOrder []string
@@ -585,9 +598,10 @@ func refresh(ctx context.Context, items *jsonx.Object, repository *repo.Reposito
 		agents[id] = agent
 	}
 	keys := map[string]bool{}
+	var observations []observation
 	tasks, err := s.ListTasks(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	for _, task := range tasks {
 		if completedTask != "" && task.Value("key") == completedTask {
@@ -596,22 +610,22 @@ func refresh(ctx context.Context, items *jsonx.Object, repository *repo.Reposito
 		}
 		key := "task:" + jsonx.Str(task.Value("key"))
 		keys[key] = true
-		Observe(items, key, TaskObservation(task, agents, profiles))
+		observations = append(observations, observation{key, TaskObservation(task, agents, profiles)})
 	}
 	for _, id := range agentOrder {
 		key := "deployment:" + id
 		keys[key] = true
-		observation, err := AgentObservation(ctx, agents[id], repository)
+		value, err := AgentObservation(ctx, agents[id], repository)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		Observe(items, key, observation)
+		observations = append(observations, observation{key, value})
 	}
 	routers := map[string]string{}
 	for _, profileID := range profileOrder {
 		config, err := repository.GetCompatConfig(ctx, profileID, nil)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		for _, router := range RoutersOf(config) {
 			prefix := "router:" + profileID + ":" + jsonx.Str(router.Value("id")) + ":"
@@ -630,14 +644,22 @@ func refresh(ctx context.Context, items *jsonx.Object, repository *repo.Reposito
 			if !jsonx.Truthy(message) {
 				message = "阶段「" + jsonx.Str(orValue(release.Value("failed_stage"), "未知")) + "」失败，请重新检查差异。"
 			}
-			Observe(items, key, jsonx.Obj("state", state, "source", "router-release",
+			observations = append(observations, observation{key, jsonx.Obj("state", state, "source", "router-release",
 				"scope", "profile", "profile_id", profileID, "severity", "error", "status_label", "发布失败",
 				"title", jsonx.Str(orValue(router.Value("name"), router.Value("id")))+" · 路由器发布",
 				"message", EventMessage(message, router.Value("password")),
 				"checked_at", release.Value("at"), "evidence", release.Value("at"),
-				"target", Target("/routers", "查看发布结果", "router", router.Value("id"), "profile", profileID, "section", "report")))
+				"target", Target("/routers", "查看发布结果", "router", router.Value("id"), "profile", profileID, "section", "report"))})
 		}
 	}
+	return &collectedObservations{profiles: profiles, routers: routers, keys: keys, observations: observations}, nil
+}
+
+func (c *collectedObservations) apply(items *jsonx.Object) {
+	for _, observation := range c.observations {
+		Observe(items, observation.key, observation.value)
+	}
+	profiles, routers, keys := c.profiles, c.routers, c.keys
 	for _, key := range append([]string{}, items.Keys()...) {
 		item, _ := items.Value(key).(*jsonx.Object)
 		if item == nil {
@@ -668,12 +690,15 @@ func refresh(ctx context.Context, items *jsonx.Object, repository *repo.Reposito
 			}
 		}
 	}
-	return nil
 }
 
 // Snapshot is snapshot(completed_task): refresh every receipt and return the
 // pending notifications, newest first within each severity.
 func Snapshot(ctx context.Context, completedTask string) ([]any, error) {
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	s := currentSources()
 	if s.ListTasks == nil || s.Agents == nil {
 		return nil, ErrSourcesMissing
@@ -682,10 +707,18 @@ func Snapshot(ctx context.Context, completedTask string) ([]any, error) {
 	if err != nil {
 		return nil, err
 	}
+	ticket := observationSequence.Add(1)
+	collected, err := collect(ctx, repository, completedTask, s)
+	if err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	var result []*jsonx.Object
-	err = Transaction(repository.DataDir(), func(items *jsonx.Object) error {
-		if err := refresh(ctx, items, repository, completedTask, s); err != nil {
-			return err
+	err = transaction(repository.DataDir(), ticket, func(items *jsonx.Object, apply bool) error {
+		if apply {
+			collected.apply(items)
 		}
 		for _, value := range items.Values() {
 			item, _ := value.(*jsonx.Object)

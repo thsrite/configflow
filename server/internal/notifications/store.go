@@ -8,17 +8,24 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
+	"sync/atomic"
 	"time"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/repo"
 )
 
 // The persistent attention items of backend/utils/notification_store.py:
-// DATA_DIR/notifications.json, guarded by a process mutex and an exclusive
-// flock on notifications.lock.
+// DATA_DIR/notifications.json is guarded by a process-wide leaf mutex. The
+// instance lock excludes other servers; legacy lock files are left untouched.
 
 var guard sync.Mutex
+
+// Observation tickets order collection starts against committed mutations.
+// appliedVersions is protected by guard; unrelated data directories do not
+// invalidate each other's observations.
+var observationSequence atomic.Uint64
+var appliedVersions = make(map[string]uint64)
 
 // Clock is the time source of the store (tests replace it).
 var Clock = time.Now
@@ -64,21 +71,20 @@ func dismissed(key string, item *jsonx.Object) *jsonx.Object {
 // document changed. Old read or resolved records are migrated on first
 // access. A file that does not decode returns the decoder error (ValueError).
 func Transaction(dataDir string, fn func(items *jsonx.Object) error) error {
+	return transaction(dataDir, 0, func(items *jsonx.Object, _ bool) error { return fn(items) })
+}
+
+func transaction(dataDir string, ticket uint64, fn func(items *jsonx.Object, apply bool) error) error {
+	key, err := repo.ResolveDataDir(dataDir)
+	if err != nil {
+		return err
+	}
 	path := filepath.Join(dataDir, "notifications.json")
 	guard.Lock()
 	defer guard.Unlock()
 	if err := os.MkdirAll(dataDir, 0o777); err != nil {
 		return err
 	}
-	lock, err := os.OpenFile(filepath.Join(dataDir, "notifications.lock"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o666)
-	if err != nil {
-		return err
-	}
-	defer lock.Close()
-	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX); err != nil {
-		return err
-	}
-	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
 
 	var data *jsonx.Object
 	raw, err := os.ReadFile(path)
@@ -120,10 +126,14 @@ func Transaction(dataDir string, fn func(items *jsonx.Object) error) error {
 		}
 	}
 	data.Set("items", migrated)
-	if err := fn(migrated); err != nil {
+	apply := ticket == 0 || ticket >= appliedVersions[key]
+	if err := fn(migrated, apply); err != nil {
 		return err
 	}
 	if jsonx.Equal(data, before) {
+		if ticket != 0 && apply {
+			appliedVersions[key] = ticket
+		}
 		return nil
 	}
 	encoded, err := jsonx.Compact(data)
@@ -147,7 +157,15 @@ func Transaction(dataDir string, fn func(items *jsonx.Object) error) error {
 	if err := temporary.Close(); err != nil {
 		return err
 	}
-	return os.Rename(name, path)
+	if err := os.Rename(name, path); err != nil {
+		return err
+	}
+	if ticket != 0 && apply {
+		appliedVersions[key] = ticket
+	} else {
+		appliedVersions[key] = observationSequence.Add(1)
+	}
+	return nil
 }
 
 // Observe is notification_store.observe: keep unread incidents; "unknown"

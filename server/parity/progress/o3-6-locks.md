@@ -68,3 +68,13 @@ atomic apply_patch, unused import removed, and the full package run above passed
 to the coordinator; no product assertions were removed.
 Notification store lock removal and staged observations/version fencing are currently uncommitted,
 with new concurrency regressions being validated next. Routers remain untouched.
+
+Notification leaf migration is complete: no flock/open of notifications.lock. Snapshot detaches at
+its owner, reserves an observation ticket, collects repo/task/Agent data outside the leaf, then
+merges only if no newer snapshot or committed notification mutation won. Successful unchanged
+snapshots also fence older work; failed callbacks/commits do not advance the applied version.
+Concurrent regressions hold a source open and prove newer snapshots, unchanged snapshots, notices,
+and MarkRead finish immediately and survive the old source completing. Legacy sentinel plus100
+concurrent store mutations also pass. .64 gofmt/vet ./... and full notifications race3:15.574s.
+Next: monitor L3 read/verify→leaf CAS, listener, deployment Held, installer, Sub-Store; owner/handler
+migration and routers after the coordinator's merge notification. Repo commit88422be8.
