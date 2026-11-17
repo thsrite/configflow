@@ -2046,7 +2046,9 @@ Routes (25, 0 done):
 
 Evidence: `go-port-c33`, stacked on frozen C32 (`c3e4e9ac`). Proxy-group routes and native service implemented; shared candidate, health, listener and DNS owners reused. Targeted race tests and vet pass on .64 (API 2.893s; server 1.275s). Tests cover malformed batches, atomic rejection, profile isolation, references, renames, unknown fields, legacy reorder and preview bucket order/filtering.
 
-Missing / deferred: rule-library routes; live Flask differential for all routes; final gate and rebase after C32 merges.
+Rule-library read/create/check-content/reorder/proxy-domains and both public content aliases implemented. .64 vet + related race pass: library 2.209s, proxygroups 4.029s, server 1.424s. Tests verify atomic creation rejection, raw cache bytes, public delivery, single-field settings edits, check-only writes and display-field-safe reorder. Shared creation uses the existing repo atomic primitive.
+
+Missing / deferred: library PUT/DELETE/draft/cache/connectivity, live Flask differential for all routes, final gate and rebase after C32 merges.
 
 Approved decisions: draft revision uses native sorted encoding/json (D2 one-time stale-page 409). Stage content cache before DB commit, atomically replace afterwards, invalidate stable/legacy cache on failure (Python stale-delivery bug). Bulk testing disables only matching source declarations in a fresh transaction, using PUT native DNS rebuild/parking (Python concurrency bug).
 
