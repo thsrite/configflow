@@ -292,6 +292,8 @@ def main():
     groups.update(profile_writes)
     from cases.profile_discovery import GROUPS as profile_discovery
     groups.update(profile_discovery)
+    from cases.discovery_profile_jobs import GROUPS as discovery_profile_jobs
+    groups.update(discovery_profile_jobs)
     requested = list(groups) if args.groups == 'all' else args.groups.split(',')
     unknown = set(requested) - groups.keys()
     if unknown:

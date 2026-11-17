@@ -1921,3 +1921,18 @@ current go-unimplemented=22 design_errors=[]；exit=0
 ```
 
 原R仍差207、H仍差479及partial/N/A/长流程。继续profile选择与其余条目；最终.32全量未执行。
+
+## 批次 113：异步发现与website准入的真实profile归属
+
+- R051/R054/R060各补P4–P6，共9个原R边界编号、18新HTTP变体（含6次foreign poll和3次真实心跳）。probe默认空间缺代理/另一空间缺Agent，region默认关闭/另一空间开启但缺Agent；不同终态中文错误证明实际读取了所选空间。Completion轮询现在显式带所选owner，完整job身份/生命周期/终态继续验证，另一空间query即使带原owner header也404。前后全SQL/files精确不变。
+- website用已心跳默认空间Agent与另一空间无Agent，两个空间分别到“缺采集记录”或“缺Agent”的准入分支，核对准确中文、X-ConfigFlow-Profile、零Agent HTTP及存储不变。此选择器不声称启动worker；成功worker仍由独立S/T组测。R051/R054/R060的P3无公开URL别名，明确N/A，不用query优先重复或不存在URL404冒充。
+- 旧preflight18变体回归复跑，证明默认owner行为和重启后job丢失不受影响。.32草稿及正式共36compared、design_errors=[]，94项自检通过，无新差异。统一9558变体、原R4332（S691/F2677/B964）、H633/G16；findings仍closed80/accepted7/open21/O12单列1。
+
+```text
+.32 native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups discovery-job-profile-selectors,discovery-website-profile-selectors,discovery-job-preflight --baseline 3c8a1760
+current compared=36 design_errors=[]；exit=0
+94 self-checks + deliberately wrong-Go-response detection OK
+独立报告/tmp/configdiff-discovery-profiles-draft.json
+```
+
+原R仍差198（含已审计N/A槽）、H仍差479及partial/长流程。继续同步发现写入与其他条目；最终.32全量未执行。

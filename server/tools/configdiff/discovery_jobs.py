@@ -59,8 +59,9 @@ def acceptance_view(value, valid):
 
 
 class Completion:
-    def __init__(self, pair, kind, message):
+    def __init__(self, pair, kind, message, *, profile=None):
         self.pair, self.kind, self.message = pair, kind, message
+        self.profile = profile if profile is not None else pair.default_profile
         self.ids, self.final = [None, None], [None, None]
         self.valid, self.violations = [False, False], [[], []]
         pair.policy.times.add('body.job.started_at')
@@ -88,7 +89,7 @@ class Completion:
             deadline = time.monotonic() + 4
             while time.monotonic() < deadline:
                 poll = send(self.pair.bases[index], 'GET', '/api/domain-discovery/probe/' + ident,
-                            headers={'Authorization': 'Bearer ' + self.pair.tokens[index], 'X-ConfigFlow-Profile': self.pair.default_profile})
+                            headers={'Authorization': 'Bearer ' + self.pair.tokens[index], 'X-ConfigFlow-Profile': self.profile})
                 try:
                     candidate = poll.json()
                 except (ValueError, UnicodeError):

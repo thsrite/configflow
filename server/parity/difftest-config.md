@@ -2021,3 +2021,9 @@ helper标签现在支持精确case+variant+route：只对R087/R138-F13的`text/F
 ### Step B Mihomo YAML交付helper的公开入口
 
 H128–H133的normalize_mihomo_yaml由[规则本地交付 target=mihomo](../../backend/routes/rules.py#L727)调用，公开驱动是R192/R153，不是R087/rule-proxy。内容型源的既存cache可以保存历史坏/歧义YAML；GET按[normalize_mihomo_ruleset](../../backend/utils/ruleset_content.py#L320)原样交付并写准确line-zero warning，而不改共享原文/缓存。Step B实际测试sequence root、缺失/非列表/重复payload、anchor/alias、非字符串/嵌套/块条目、flow额外键重复和额外值跨行；全响应原始字节、实际WARNING、全部SQL/files保持不变。H135–H138仍属于检查/追加入口，不能以它们替代交付helper。
+
+### Step B 异步发现的profile选择入口
+
+R051/R054/R060的B04（P3）没有显式`/api/profiles/<profile_id>/domain-discovery/...`公开别名，routes.tsv和[profiles.py](../../backend/routes/profiles.py)均无该入口，N/A；不以不存在URL的404或query优先重复充作URL覆盖。B05–07仍分别验证P4–P6。
+
+R051/R054用两个配置空间的不同前置终态错误证明真正选中了配置，随后以正确空间轮询同一job，并确认另一空间即使带原owner header也不能通过query读取；任务终态、完整响应、SQL/files均相比。R060采用已公开心跳的默认空间Agent、另一空间无Agent且无采集记录，验证不同空间各自的准入错误及零Agent请求；这一选择器场景不声称启动了website worker，真实成功worker已有独立S/T用例。来源[domain_discovery.py:112](../../backend/routes/domain_discovery.py#L112)、[domain_discovery_service.py:767](../../backend/utils/domain_discovery_service.py#L767)、[domain_discovery_service.py:465](../../backend/utils/domain_discovery_service.py#L465)。
