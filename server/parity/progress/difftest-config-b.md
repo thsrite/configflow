@@ -2569,3 +2569,21 @@ ok configflow/internal/webdav/difftest 40.654s
 GATE PASS
 exit0；race93包 / difftest14包；proddiff baseline new=0 stale=0
 ```
+
+## 批次 156：C29 接通后的完整403组证据和有限批准复核
+
+- .64 冻结 Go 28e6e0c12，403组10664变体3134.36秒，design_errors=[]；5748 compared / 4476 Go尚未实现 / 111依赖未实现 / 328原始different / O12单列1。C29自动接通后实际对比6076变体，没有把TODO视为通过。官方同槽位proddiff baseline new=0 stale=0，GATE STAGE PASS: proddiff；包装器Go=0/configdiff=1。完整Go GATE PASS仍是批次155的895f5e21，不冒称28基线跑过race。
+- 594项finding全部在28基线实际重新执行，无pending/blocked；本批有限批准后closed265 / accepted254 / open74 / separate1。保留328条原始差异及完整payload，不改verdict。121项仅生成YAML文本布局，逐个完整typed Node验证后链接N7-4；4项duplicate-key/recursive-alias诊断链接N7-3d；60项JSON NaN绑定诊断链接C29/N8-6；1项HEAD绑定只读GET决策。批准表只列有限case/route/group/variant/path；额外SQL/文件、错误状态、值/类型/顺序或重复键变化都不能被批准。
+- 新增真实Flask malformed-body控制，每个NaN的Go完整响应需与它严格相同，仍检两端拒绝时自身SQL/files不变；HEAD控制比较真实GET的全部稳定headers、源端存储对象SHA和读前后SQL/files。这两类活控制待下一批定向实跑；当前批准基于已完成完整运行的明确有限证据。
+- 两条G11字符串off差异是测试侧PyYAML 1.1将Go生成的plain off误读成bool；仅schema已知log.level、无显式tag且原始切片恰为off时按字符串读取，真实false/!!bool off/OFF/额外字段仍报错。两条native-new-issue的profile.updated_at漏标复用已有4字段格式/时间窗比较器，revision和值严格保留；这4项尚未实跑关闭。
+- .64 unittest test_compare 148项10.284秒OK；每个新增批准类均有故意错误的自检。canonical替换为本次完整单次all的原始实跑报告，下一批只重跑受夹具改动影响的4组，不重复全量race或另开proddiff。
+
+```text
+GATE_ONLY=proddiff CONFIGDIFF_GATE_LOGS=$HOME/.cache/configdiff-final-config-b-28e6e0c12 server/tools/configdiff/gate.sh 28e6e0c12 -p 4
+GATE STAGE PASS: proddiff
+configdiff gate: Go=0 configdiff=1 logs=/home/sunbroke/.cache/configdiff-final-config-b-28e6e0c12
+full configdiff: groups403 / variants10664 / design_errors=[] / seconds3134.36
+~/cf-test/.venv/bin/python -m unittest -q test_compare
+Ran 148 tests in 10.284s; OK
+refresh_finding_reviews.py: open74 / accepted254 / closed265 / separate1; actual_case_results_unchanged10664
+```

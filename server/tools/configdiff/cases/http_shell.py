@@ -1,7 +1,31 @@
 """X06 actual HEAD/OPTIONS, CORS, slash and escaped-segment routing."""
-from harness import Pair
-from compare import database, Difference
+from harness import Pair, send, DesignError
+from compare import database, files as stored_files, Difference, response_diffs
+from oxidns import etag
 import re
+
+OXIDNS_HEAD_ETAG = '"734b369f86f81bd42f5ed9008d5d318dfa5fadfcaee8e7615405a213eb36455b"'
+
+
+def oxidns_head_control(pair, replies, policy):
+    """Bind HEAD to real GET, source stored-object SHA, and read-only storage."""
+    out = []
+    for index, base in enumerate(pair.bases):
+        before = database(pair.dirs[index]), stored_files(pair.dirs[index])
+        reply = send(base, 'GET', '/api/oxidns/settings', headers={
+            'Authorization': 'Bearer ' + pair.tokens[index], 'X-ConfigFlow-Profile': 'default'})
+        after = database(pair.dirs[index]), stored_files(pair.dirs[index])
+        if index == 0:
+            expected = etag(before[0]['fields']['profile/default/oxidns']['value'])
+            if reply.status != 200 or reply.headers.get('etag') != expected or expected != OXIDNS_HEAD_ETAG or before != after:
+                raise DesignError('source HEAD control must be a read-only GET with exact stored-object ETag')
+        else:
+            out += response_diffs(reply, replies[index], policy, method='HEAD')
+            if reply.headers.get('etag') != OXIDNS_HEAD_ETAG:
+                out.append(Difference('head.get-etag', 'not-source-GET-SHA', OXIDNS_HEAD_ETAG, reply.headers.get('etag')))
+            if before != after:
+                out.append(Difference('head.get-storage', 'GET-wrote-storage', before, after))
+    return out
 
 
 def heads(binary, recorder):
@@ -16,6 +40,8 @@ def heads(binary, recorder):
                 '/api/proxy-groups', '/api/rules', '/api/rule-sets', '/api/custom-config/mihomo', '/api/mosdns/api-settings'}
             expected = 500 if path in strict_get_post else 201 if path == '/api/profiles' else 400 if path == '/api/oxidns/settings' else 200
             def capture(_replies, policy):
+                if path == '/api/oxidns/settings':
+                    return oxidns_head_control(pair, _replies, policy)
                 if path != '/api/profiles':
                     return []
                 rows = [database(d) for d in pair.dirs]

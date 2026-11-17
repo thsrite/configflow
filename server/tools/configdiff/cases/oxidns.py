@@ -10,6 +10,7 @@ from harness import Pair, DesignError, json_body, send
 from compare import Difference, database_diffs, file_diffs, response_diffs
 from inventory import routes
 from cases.helpers import profile_policy
+from cases.setup import Stable
 from oxidns import check as etag_check, capture as etag_capture
 
 MATRIX = routes()
@@ -234,6 +235,10 @@ def normalization_guards(binary, recorder):
             reply = pair.request(MATRIX[get_route] + '-S01', get_route, path + '/settings', expect=200,
                                  variant=template + '/normalizer-base')
             base = reply[0].json()
+            malformed = pair.request('H511', 'POST ' + template + '/render', path + '/render',
+                body='{', expect=400, writes=True, interaction=Stable(pair),
+                check=require_message('请提供 settings 配置对象'),
+                variant=template + '/nonfinite-malformed-control')[0]
             for case, field, value, message, enable, label in recipes():
                 altered = copy.deepcopy(base)
                 for key, item in enable.items():
@@ -246,6 +251,8 @@ def normalization_guards(binary, recorder):
                     body = body.replace('"CONFIGDIFF_RAW_EXPONENT"', '6e1')
                 pair.request(case, 'POST ' + template + '/render', path + '/render', body=body,
                              expect=400, check=require_message(message), writes=True,
+                             interaction=Stable(pair) if label == 'nan' else None,
+                             capture=(lambda replies, policy: response_diffs(malformed, replies[1], policy)) if label == 'nan' else None,
                              variant=template + '/' + field + '/' + label)
 
 

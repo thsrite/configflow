@@ -1,0 +1,1862 @@
+{
+  "description": "Finite observed identities only; layouts still require complete typed-node equivalence; diagnostic controls come from Python malformed-body or approved N7-3d reader policy. No Go output golden.",
+  "layouts": [
+    {
+      "case": "G12",
+      "group": "oxidns-editor-roundtrips",
+      "route": "POST /api/oxidns/template-preview",
+      "variant": "False/conflict-current",
+      "code": 200,
+      "paths": [
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "G12",
+      "group": "oxidns-editor-roundtrips",
+      "route": "POST /api/oxidns/template-preview",
+      "variant": "False/conflict-template",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "G12",
+      "group": "oxidns-editor-roundtrips",
+      "route": "POST /api/oxidns/template-preview",
+      "variant": "False/merge-independent-fields",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "G12",
+      "group": "oxidns-editor-roundtrips",
+      "route": "POST /api/oxidns/template-preview",
+      "variant": "False/no-op-comments",
+      "code": 200,
+      "paths": [
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "G12",
+      "group": "oxidns-editor-roundtrips",
+      "route": "POST /api/oxidns/editor",
+      "variant": "False/prepare-template",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "G12",
+      "group": "oxidns-editor-roundtrips",
+      "route": "POST /api/oxidns/native-settings/apply",
+      "variant": "False/remove-standard-cache",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config"
+      ]
+    },
+    {
+      "case": "G12",
+      "group": "oxidns-editor-roundtrips",
+      "route": "POST /api/oxidns/native-settings/apply",
+      "variant": "False/rename/False",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config"
+      ]
+    },
+    {
+      "case": "G12",
+      "group": "oxidns-editor-roundtrips",
+      "route": "POST /api/oxidns/native-settings/apply",
+      "variant": "False/rename/True",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config"
+      ]
+    },
+    {
+      "case": "G12",
+      "group": "oxidns-editor-roundtrips",
+      "route": "POST /api/oxidns/template-preview",
+      "variant": "False/resolved-baseline-is-idempotent",
+      "code": 200,
+      "paths": [
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "G12",
+      "group": "oxidns-editor-roundtrips",
+      "route": "POST /api/oxidns/native-settings/apply",
+      "variant": "False/restore-standard-cache",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config"
+      ]
+    },
+    {
+      "case": "G12",
+      "group": "oxidns-editor-roundtrips",
+      "route": "POST /api/profiles/<profile_id>/oxidns/template-preview",
+      "variant": "True/conflict-current",
+      "code": 200,
+      "paths": [
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "G12",
+      "group": "oxidns-editor-roundtrips",
+      "route": "POST /api/profiles/<profile_id>/oxidns/template-preview",
+      "variant": "True/conflict-template",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "G12",
+      "group": "oxidns-editor-roundtrips",
+      "route": "POST /api/profiles/<profile_id>/oxidns/template-preview",
+      "variant": "True/merge-independent-fields",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "G12",
+      "group": "oxidns-editor-roundtrips",
+      "route": "POST /api/profiles/<profile_id>/oxidns/template-preview",
+      "variant": "True/no-op-comments",
+      "code": 200,
+      "paths": [
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "G12",
+      "group": "oxidns-editor-roundtrips",
+      "route": "POST /api/profiles/<profile_id>/oxidns/editor",
+      "variant": "True/prepare-template",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "G12",
+      "group": "oxidns-editor-roundtrips",
+      "route": "POST /api/profiles/<profile_id>/oxidns/native-settings/apply",
+      "variant": "True/remove-standard-cache",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config"
+      ]
+    },
+    {
+      "case": "G12",
+      "group": "oxidns-editor-roundtrips",
+      "route": "POST /api/profiles/<profile_id>/oxidns/native-settings/apply",
+      "variant": "True/rename/False",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config"
+      ]
+    },
+    {
+      "case": "G12",
+      "group": "oxidns-editor-roundtrips",
+      "route": "POST /api/profiles/<profile_id>/oxidns/native-settings/apply",
+      "variant": "True/rename/True",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config"
+      ]
+    },
+    {
+      "case": "G12",
+      "group": "oxidns-editor-roundtrips",
+      "route": "POST /api/profiles/<profile_id>/oxidns/template-preview",
+      "variant": "True/resolved-baseline-is-idempotent",
+      "code": 200,
+      "paths": [
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "G12",
+      "group": "oxidns-editor-roundtrips",
+      "route": "POST /api/profiles/<profile_id>/oxidns/native-settings/apply",
+      "variant": "True/restore-standard-cache",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config"
+      ]
+    },
+    {
+      "case": "R107-B01",
+      "group": "oxidns-named-common-applies",
+      "route": "POST /api/oxidns/common-settings/apply",
+      "variant": "",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config"
+      ]
+    },
+    {
+      "case": "R107-B02",
+      "group": "oxidns-named-common-applies",
+      "route": "POST /api/oxidns/common-settings/apply",
+      "variant": "empty-list",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config"
+      ]
+    },
+    {
+      "case": "R107-B03",
+      "group": "oxidns-named-common-applies",
+      "route": "POST /api/oxidns/common-settings/apply",
+      "variant": "draft-only",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config"
+      ]
+    },
+    {
+      "case": "R107-B04",
+      "group": "oxidns-named-selectors",
+      "route": "POST /api/oxidns/common-settings/apply",
+      "variant": "P3/native-draft-selection",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R107-B05",
+      "group": "oxidns-named-selectors",
+      "route": "POST /api/oxidns/common-settings/apply",
+      "variant": "P4/native-draft-selection",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R107-B06",
+      "group": "oxidns-named-selectors",
+      "route": "POST /api/oxidns/common-settings/apply",
+      "variant": "P5/native-draft-selection",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R107-B07",
+      "group": "oxidns-named-selectors",
+      "route": "POST /api/oxidns/common-settings/apply",
+      "variant": "P6/native-draft-selection",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R107-F11",
+      "group": "oxidns-named-structure",
+      "route": "POST /api/oxidns/common-settings/apply",
+      "variant": "native-structure",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config"
+      ]
+    },
+    {
+      "case": "R107-S01",
+      "group": "oxidns-named-common-applies",
+      "route": "POST /api/oxidns/common-settings/apply",
+      "variant": "cache",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config"
+      ]
+    },
+    {
+      "case": "R107-S02",
+      "group": "oxidns-named-common-applies",
+      "route": "POST /api/oxidns/common-settings/apply",
+      "variant": "upstream",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config"
+      ]
+    },
+    {
+      "case": "R107-S03",
+      "group": "oxidns-common-late-routing-guards",
+      "route": "POST /api/oxidns/common-settings/apply",
+      "variant": "late-routing/existing-action-before-selector-conflict",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config"
+      ]
+    },
+    {
+      "case": "R107-S03",
+      "group": "oxidns-named-common-applies",
+      "route": "POST /api/oxidns/common-settings/apply",
+      "variant": "routing-clear",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config"
+      ]
+    },
+    {
+      "case": "R107-S04",
+      "group": "oxidns-named-common-applies",
+      "route": "POST /api/oxidns/common-settings/apply",
+      "variant": "adguard",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config"
+      ]
+    },
+    {
+      "case": "R108-B01",
+      "group": "oxidns-named-editor-render-validate",
+      "route": "POST /api/oxidns/editor",
+      "variant": "",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R108-B03",
+      "group": "oxidns-named-selectors",
+      "route": "POST /api/oxidns/editor",
+      "variant": "P3/native-draft-selection",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R108-B04",
+      "group": "oxidns-named-selectors",
+      "route": "POST /api/oxidns/editor",
+      "variant": "P4/native-draft-selection",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R108-B05",
+      "group": "oxidns-named-selectors",
+      "route": "POST /api/oxidns/editor",
+      "variant": "P5/native-draft-selection",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R108-B06",
+      "group": "oxidns-named-selectors",
+      "route": "POST /api/oxidns/editor",
+      "variant": "P6/native-draft-selection",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R108-S01",
+      "group": "oxidns-named-common-applies",
+      "route": "POST /api/oxidns/editor",
+      "variant": "common-applies-precondition",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R108-S01",
+      "group": "oxidns-common-type-guards",
+      "route": "POST /api/oxidns/editor",
+      "variant": "common-primitive-guards-precondition",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R108-S01",
+      "group": "oxidns-named-common-reads",
+      "route": "POST /api/oxidns/editor",
+      "variant": "common-reads-precondition",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R108-S01",
+      "group": "oxidns-named-editor-render-validate",
+      "route": "POST /api/oxidns/editor",
+      "variant": "editor-conversion",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R108-S01",
+      "group": "oxidns-native-common-graph-and-updater-guards",
+      "route": "POST /api/oxidns/editor",
+      "variant": "graph-guard/actual-URL-rule",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R108-S01",
+      "group": "oxidns-native-common-graph-and-updater-guards",
+      "route": "POST /api/oxidns/editor",
+      "variant": "graph-guard/custom-match-before-actual-rename",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R108-S01",
+      "group": "oxidns-native-common-graph-and-updater-guards",
+      "route": "POST /api/oxidns/editor",
+      "variant": "graph-guard/no-assets",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R108-S01",
+      "group": "oxidns-named-native-applies",
+      "route": "POST /api/oxidns/editor",
+      "variant": "native-apply-precondition",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R108-S01",
+      "group": "oxidns-named-native-applies",
+      "route": "POST /api/oxidns/editor",
+      "variant": "native-dependency-precondition",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R108-S01",
+      "group": "oxidns-explicit-native-lifecycle-guard-branches",
+      "route": "POST /api/oxidns/editor",
+      "variant": "native-lifecycle/live-download",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R108-S01",
+      "group": "oxidns-explicit-native-lifecycle-guard-branches",
+      "route": "POST /api/oxidns/editor",
+      "variant": "native-lifecycle/no-assets",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R108-S01",
+      "group": "oxidns-explicit-native-lifecycle-guard-branches",
+      "route": "POST /api/oxidns/editor",
+      "variant": "native-lifecycle/real-Hosts-source",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R108-S01",
+      "group": "rule-DNS-real-new-native-validation-issue",
+      "route": "POST /api/oxidns/editor",
+      "variant": "new-native-issue/real-pinned-upstream",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R108-S01",
+      "group": "oxidns-template-policy-and-retained-resource-guards",
+      "route": "POST /api/oxidns/editor",
+      "variant": "retained-Hosts-content-has-an-independent-consumer",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R108-S01",
+      "group": "oxidns-retained-selected-source-missing-URL",
+      "route": "POST /api/oxidns/editor",
+      "variant": "retained-empty-rule-URL/no-selected-rules",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R108-S01",
+      "group": "oxidns-common-late-routing-guards",
+      "route": "POST /api/oxidns/editor",
+      "variant": "routing-late-guards-two-adjacent-rules",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R108-S01",
+      "group": "oxidns-named-structure",
+      "route": "POST /api/oxidns/editor",
+      "variant": "structure-precondition",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R108-S01",
+      "group": "oxidns-named-template-previews",
+      "route": "POST /api/oxidns/editor",
+      "variant": "template-preview-precondition",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R108-S01",
+      "group": "oxidns-named-template-previews",
+      "route": "POST /api/oxidns/editor",
+      "variant": "template-resource-precondition",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R109-B04",
+      "group": "oxidns-named-selectors",
+      "route": "POST /api/oxidns/native-settings/apply",
+      "variant": "P3/native-draft-selection",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R109-B05",
+      "group": "oxidns-named-selectors",
+      "route": "POST /api/oxidns/native-settings/apply",
+      "variant": "P4/native-draft-selection",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R109-B06",
+      "group": "oxidns-named-selectors",
+      "route": "POST /api/oxidns/native-settings/apply",
+      "variant": "P5/native-draft-selection",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R109-B07",
+      "group": "oxidns-named-selectors",
+      "route": "POST /api/oxidns/native-settings/apply",
+      "variant": "P6/native-draft-selection",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R109-S02",
+      "group": "oxidns-named-native-applies",
+      "route": "POST /api/oxidns/native-settings/apply",
+      "variant": "",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config"
+      ]
+    },
+    {
+      "case": "R109-S02",
+      "group": "oxidns-native-common-graph-and-updater-guards",
+      "route": "POST /api/oxidns/native-settings/apply",
+      "variant": "graph-guard/actual-recorded-managed-rename",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config"
+      ]
+    },
+    {
+      "case": "R109-S03",
+      "group": "oxidns-named-native-applies",
+      "route": "POST /api/oxidns/native-settings/apply",
+      "variant": "",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config"
+      ]
+    },
+    {
+      "case": "R109-S04",
+      "group": "oxidns-named-native-applies",
+      "route": "POST /api/oxidns/native-settings/apply",
+      "variant": "",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config"
+      ]
+    },
+    {
+      "case": "R113-B01",
+      "group": "oxidns-named-template-previews",
+      "route": "POST /api/oxidns/template-preview",
+      "variant": "",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R113-B02",
+      "group": "oxidns-named-template-previews",
+      "route": "POST /api/oxidns/template-preview",
+      "variant": "",
+      "code": 200,
+      "paths": [
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R113-B03",
+      "group": "oxidns-named-selectors",
+      "route": "POST /api/oxidns/template-preview",
+      "variant": "P3/native-draft-selection",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R113-B04",
+      "group": "oxidns-named-selectors",
+      "route": "POST /api/oxidns/template-preview",
+      "variant": "P4/native-draft-selection",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R113-B05",
+      "group": "oxidns-named-selectors",
+      "route": "POST /api/oxidns/template-preview",
+      "variant": "P5/native-draft-selection",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R113-B06",
+      "group": "oxidns-named-selectors",
+      "route": "POST /api/oxidns/template-preview",
+      "variant": "P6/native-draft-selection",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R113-F11",
+      "group": "oxidns-named-structure",
+      "route": "POST /api/oxidns/template-preview",
+      "variant": "native-structure",
+      "code": 200,
+      "paths": [
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R113-S01",
+      "group": "oxidns-named-template-previews",
+      "route": "POST /api/oxidns/template-preview",
+      "variant": "",
+      "code": 200,
+      "paths": [
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R113-S02",
+      "group": "oxidns-named-template-previews",
+      "route": "POST /api/oxidns/template-preview",
+      "variant": "",
+      "code": 200,
+      "paths": [
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R113-S03",
+      "group": "oxidns-named-template-previews",
+      "route": "POST /api/oxidns/template-preview",
+      "variant": "",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R140-B01",
+      "group": "oxidns-named-common-applies",
+      "route": "POST /api/profiles/<profile_id>/oxidns/common-settings/apply",
+      "variant": "",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config"
+      ]
+    },
+    {
+      "case": "R140-B02",
+      "group": "oxidns-named-common-applies",
+      "route": "POST /api/profiles/<profile_id>/oxidns/common-settings/apply",
+      "variant": "empty-list",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config"
+      ]
+    },
+    {
+      "case": "R140-B03",
+      "group": "oxidns-named-common-applies",
+      "route": "POST /api/profiles/<profile_id>/oxidns/common-settings/apply",
+      "variant": "draft-only",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config"
+      ]
+    },
+    {
+      "case": "R140-B04",
+      "group": "oxidns-named-selectors",
+      "route": "POST /api/profiles/<profile_id>/oxidns/common-settings/apply",
+      "variant": "P3/native-draft-selection",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R140-F11",
+      "group": "oxidns-named-structure",
+      "route": "POST /api/profiles/<profile_id>/oxidns/common-settings/apply",
+      "variant": "native-structure",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config"
+      ]
+    },
+    {
+      "case": "R140-S01",
+      "group": "oxidns-named-common-applies",
+      "route": "POST /api/profiles/<profile_id>/oxidns/common-settings/apply",
+      "variant": "cache",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config"
+      ]
+    },
+    {
+      "case": "R140-S02",
+      "group": "oxidns-named-common-applies",
+      "route": "POST /api/profiles/<profile_id>/oxidns/common-settings/apply",
+      "variant": "upstream",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config"
+      ]
+    },
+    {
+      "case": "R140-S03",
+      "group": "oxidns-common-late-routing-guards",
+      "route": "POST /api/profiles/<profile_id>/oxidns/common-settings/apply",
+      "variant": "late-routing/existing-action-before-selector-conflict",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config"
+      ]
+    },
+    {
+      "case": "R140-S03",
+      "group": "oxidns-named-common-applies",
+      "route": "POST /api/profiles/<profile_id>/oxidns/common-settings/apply",
+      "variant": "routing-clear",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config"
+      ]
+    },
+    {
+      "case": "R140-S04",
+      "group": "oxidns-named-common-applies",
+      "route": "POST /api/profiles/<profile_id>/oxidns/common-settings/apply",
+      "variant": "adguard",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config"
+      ]
+    },
+    {
+      "case": "R141-B01",
+      "group": "oxidns-named-editor-render-validate",
+      "route": "POST /api/profiles/<profile_id>/oxidns/editor",
+      "variant": "",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R141-B03",
+      "group": "oxidns-named-selectors",
+      "route": "POST /api/profiles/<profile_id>/oxidns/editor",
+      "variant": "P3/native-draft-selection",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R141-S01",
+      "group": "oxidns-named-common-applies",
+      "route": "POST /api/profiles/<profile_id>/oxidns/editor",
+      "variant": "common-applies-precondition",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R141-S01",
+      "group": "oxidns-common-type-guards",
+      "route": "POST /api/profiles/<profile_id>/oxidns/editor",
+      "variant": "common-primitive-guards-precondition",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R141-S01",
+      "group": "oxidns-named-common-reads",
+      "route": "POST /api/profiles/<profile_id>/oxidns/editor",
+      "variant": "common-reads-precondition",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R141-S01",
+      "group": "oxidns-named-editor-render-validate",
+      "route": "POST /api/profiles/<profile_id>/oxidns/editor",
+      "variant": "editor-conversion",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R141-S01",
+      "group": "oxidns-native-common-graph-and-updater-guards",
+      "route": "POST /api/profiles/<profile_id>/oxidns/editor",
+      "variant": "graph-guard/actual-URL-rule",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R141-S01",
+      "group": "oxidns-native-common-graph-and-updater-guards",
+      "route": "POST /api/profiles/<profile_id>/oxidns/editor",
+      "variant": "graph-guard/custom-match-before-actual-rename",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R141-S01",
+      "group": "oxidns-native-common-graph-and-updater-guards",
+      "route": "POST /api/profiles/<profile_id>/oxidns/editor",
+      "variant": "graph-guard/no-assets",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R141-S01",
+      "group": "oxidns-named-native-applies",
+      "route": "POST /api/profiles/<profile_id>/oxidns/editor",
+      "variant": "native-apply-precondition",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R141-S01",
+      "group": "oxidns-named-native-applies",
+      "route": "POST /api/profiles/<profile_id>/oxidns/editor",
+      "variant": "native-dependency-precondition",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R141-S01",
+      "group": "oxidns-explicit-native-lifecycle-guard-branches",
+      "route": "POST /api/profiles/<profile_id>/oxidns/editor",
+      "variant": "native-lifecycle/live-download",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R141-S01",
+      "group": "oxidns-explicit-native-lifecycle-guard-branches",
+      "route": "POST /api/profiles/<profile_id>/oxidns/editor",
+      "variant": "native-lifecycle/no-assets",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R141-S01",
+      "group": "oxidns-explicit-native-lifecycle-guard-branches",
+      "route": "POST /api/profiles/<profile_id>/oxidns/editor",
+      "variant": "native-lifecycle/real-Hosts-source",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R141-S01",
+      "group": "oxidns-template-policy-and-retained-resource-guards",
+      "route": "POST /api/profiles/<profile_id>/oxidns/editor",
+      "variant": "retained-Hosts-content-has-an-independent-consumer",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R141-S01",
+      "group": "oxidns-retained-selected-source-missing-URL",
+      "route": "POST /api/profiles/<profile_id>/oxidns/editor",
+      "variant": "retained-empty-rule-URL/no-selected-rules",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R141-S01",
+      "group": "oxidns-common-late-routing-guards",
+      "route": "POST /api/profiles/<profile_id>/oxidns/editor",
+      "variant": "routing-late-guards-two-adjacent-rules",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R141-S01",
+      "group": "oxidns-named-structure",
+      "route": "POST /api/profiles/<profile_id>/oxidns/editor",
+      "variant": "structure-precondition",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R141-S01",
+      "group": "oxidns-named-template-previews",
+      "route": "POST /api/profiles/<profile_id>/oxidns/editor",
+      "variant": "template-preview-precondition",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R141-S01",
+      "group": "oxidns-named-template-previews",
+      "route": "POST /api/profiles/<profile_id>/oxidns/editor",
+      "variant": "template-resource-precondition",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R142-B04",
+      "group": "oxidns-named-selectors",
+      "route": "POST /api/profiles/<profile_id>/oxidns/native-settings/apply",
+      "variant": "P3/native-draft-selection",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R142-S02",
+      "group": "oxidns-named-native-applies",
+      "route": "POST /api/profiles/<profile_id>/oxidns/native-settings/apply",
+      "variant": "",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config"
+      ]
+    },
+    {
+      "case": "R142-S02",
+      "group": "oxidns-native-common-graph-and-updater-guards",
+      "route": "POST /api/profiles/<profile_id>/oxidns/native-settings/apply",
+      "variant": "graph-guard/actual-recorded-managed-rename",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config"
+      ]
+    },
+    {
+      "case": "R142-S03",
+      "group": "oxidns-named-native-applies",
+      "route": "POST /api/profiles/<profile_id>/oxidns/native-settings/apply",
+      "variant": "",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config"
+      ]
+    },
+    {
+      "case": "R142-S04",
+      "group": "oxidns-named-native-applies",
+      "route": "POST /api/profiles/<profile_id>/oxidns/native-settings/apply",
+      "variant": "",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config"
+      ]
+    },
+    {
+      "case": "R146-B01",
+      "group": "oxidns-named-template-previews",
+      "route": "POST /api/profiles/<profile_id>/oxidns/template-preview",
+      "variant": "",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R146-B02",
+      "group": "oxidns-named-template-previews",
+      "route": "POST /api/profiles/<profile_id>/oxidns/template-preview",
+      "variant": "",
+      "code": 200,
+      "paths": [
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R146-B03",
+      "group": "oxidns-named-selectors",
+      "route": "POST /api/profiles/<profile_id>/oxidns/template-preview",
+      "variant": "P3/native-draft-selection",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R146-F11",
+      "group": "oxidns-named-structure",
+      "route": "POST /api/profiles/<profile_id>/oxidns/template-preview",
+      "variant": "native-structure",
+      "code": 200,
+      "paths": [
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R146-S01",
+      "group": "oxidns-named-template-previews",
+      "route": "POST /api/profiles/<profile_id>/oxidns/template-preview",
+      "variant": "",
+      "code": 200,
+      "paths": [
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R146-S02",
+      "group": "oxidns-named-template-previews",
+      "route": "POST /api/profiles/<profile_id>/oxidns/template-preview",
+      "variant": "",
+      "code": 200,
+      "paths": [
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "R146-S03",
+      "group": "oxidns-named-template-previews",
+      "route": "POST /api/profiles/<profile_id>/oxidns/template-preview",
+      "variant": "",
+      "code": 200,
+      "paths": [
+        "body.settings.native_config",
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "X01",
+      "group": "redaction-native",
+      "route": "POST /api/oxidns/render",
+      "variant": "/api/oxidns/render",
+      "code": 200,
+      "paths": [
+        "body.config"
+      ]
+    },
+    {
+      "case": "X01",
+      "group": "redaction-native",
+      "route": "POST /api/oxidns/template-preview",
+      "variant": "/api/oxidns/template-preview",
+      "code": 200,
+      "paths": [
+        "body.settings.template_base_config"
+      ]
+    },
+    {
+      "case": "X01",
+      "group": "redaction-native",
+      "route": "POST /api/profiles/<profile_id>/oxidns/render",
+      "variant": "/api/profiles/<profile_id>/oxidns/render",
+      "code": 200,
+      "paths": [
+        "body.config"
+      ]
+    },
+    {
+      "case": "X01",
+      "group": "redaction-native",
+      "route": "POST /api/profiles/<profile_id>/oxidns/template-preview",
+      "variant": "/api/profiles/<profile_id>/oxidns/template-preview",
+      "code": 200,
+      "paths": [
+        "body.settings.template_base_config"
+      ]
+    }
+  ],
+  "messages": [
+    {
+      "case": "H470",
+      "group": "oxidns-native-yaml-attachment-real-limits",
+      "route": "POST /api/oxidns/render",
+      "variant": "native-normalization/duplicate-key",
+      "python": "OxiDNS YAML 包含重复字段",
+      "go": "YAML 包含重复键 \"plugins\"（第 2 行）",
+      "decision": "N7-3d"
+    },
+    {
+      "case": "H470",
+      "group": "oxidns-native-yaml-attachment-real-limits",
+      "route": "POST /api/profiles/<profile_id>/oxidns/render",
+      "variant": "native-normalization/duplicate-key",
+      "python": "OxiDNS YAML 包含重复字段",
+      "go": "YAML 包含重复键 \"plugins\"（第 2 行）",
+      "decision": "N7-3d"
+    },
+    {
+      "case": "H474",
+      "group": "oxidns-native-yaml-attachment-real-limits",
+      "route": "POST /api/oxidns/render",
+      "variant": "native-normalization/recursive-alias",
+      "python": "OxiDNS YAML 不支持循环别名",
+      "go": "YAML 包含递归引用（第 1 行）",
+      "decision": "N7-3d"
+    },
+    {
+      "case": "H474",
+      "group": "oxidns-native-yaml-attachment-real-limits",
+      "route": "POST /api/profiles/<profile_id>/oxidns/render",
+      "variant": "native-normalization/recursive-alias",
+      "python": "OxiDNS YAML 不支持循环别名",
+      "go": "YAML 包含递归引用（第 1 行）",
+      "decision": "N7-3d"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/oxidns/render",
+      "variant": "/api/oxidns/cache_dump_interval/nan",
+      "python": "cache_dump_interval 必须为 1–2147483647 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/oxidns/render",
+      "variant": "/api/oxidns/cache_lazy_ttl/nan",
+      "python": "cache_lazy_ttl 必须为 0–2147483647 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/oxidns/render",
+      "variant": "/api/oxidns/cache_size/nan",
+      "python": "cache_size 必须为 1–2147483647 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/oxidns/render",
+      "variant": "/api/oxidns/dynamic_domain_set.args.batch_size/nan",
+      "python": "batch_size 必须为 1–2147483647 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/oxidns/render",
+      "variant": "/api/oxidns/dynamic_domain_set.args.flush_interval_ms/nan",
+      "python": "flush_interval_ms 必须为 1–2147483647 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/oxidns/render",
+      "variant": "/api/oxidns/dynamic_domain_set.args.queue_size/nan",
+      "python": "queue_size 必须为 1–2147483647 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/oxidns/render",
+      "variant": "/api/oxidns/fallback_concurrent/nan",
+      "python": "fallback_concurrent 必须为 1–2147483647 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/oxidns/render",
+      "variant": "/api/oxidns/fallback_threshold/nan",
+      "python": "fallback_threshold 必须为 1–2147483647 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/oxidns/render",
+      "variant": "/api/oxidns/ip_selector.args.max_parallel_probes/nan",
+      "python": "max_parallel_probes 必须为 1–2147483647 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/oxidns/render",
+      "variant": "/api/oxidns/ip_selector.args.max_wait/nan",
+      "python": "max_wait 必须为 1–2147483647 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/oxidns/render",
+      "variant": "/api/oxidns/ip_selector.args.probe_stagger/nan",
+      "python": "probe_stagger 必须为 0–2147483647 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/oxidns/render",
+      "variant": "/api/oxidns/ip_selector.args.probe_timeout/nan",
+      "python": "probe_timeout 必须为 1–2147483647 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/oxidns/render",
+      "variant": "/api/oxidns/ip_selector.args.top_n/nan",
+      "python": "top_n 必须为 0–2147483647 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/oxidns/render",
+      "variant": "/api/oxidns/local_concurrent/nan",
+      "python": "local_concurrent 必须为 1–2147483647 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/oxidns/render",
+      "variant": "/api/oxidns/log.max_files/nan",
+      "python": "max_files 必须为 0–2147483647 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/oxidns/render",
+      "variant": "/api/oxidns/probe_cache_size/nan",
+      "python": "probe_cache_size 必须为 1–2147483647 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/oxidns/render",
+      "variant": "/api/oxidns/query_recorder.args.batch_size/nan",
+      "python": "batch_size 必须为 1–2147483647 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/oxidns/render",
+      "variant": "/api/oxidns/query_recorder.args.cleanup_interval_hours/nan",
+      "python": "cleanup_interval_hours 必须为 1–2147483647 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/oxidns/render",
+      "variant": "/api/oxidns/query_recorder.args.flush_interval_ms/nan",
+      "python": "flush_interval_ms 必须为 1–2147483647 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/oxidns/render",
+      "variant": "/api/oxidns/query_recorder.args.memory_tail/nan",
+      "python": "memory_tail 必须为 0–2147483647 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/oxidns/render",
+      "variant": "/api/oxidns/query_recorder.args.queue_size/nan",
+      "python": "queue_size 必须为 1–2147483647 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/oxidns/render",
+      "variant": "/api/oxidns/query_recorder.args.reader_concurrency/nan",
+      "python": "reader_concurrency 必须为 1–2147483647 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/oxidns/render",
+      "variant": "/api/oxidns/query_recorder.args.retention_days/nan",
+      "python": "retention_days 必须为 1–2147483647 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/oxidns/render",
+      "variant": "/api/oxidns/remote_concurrent/nan",
+      "python": "remote_concurrent 必须为 1–2147483647 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/oxidns/render",
+      "variant": "/api/oxidns/remote_ttl/nan",
+      "python": "remote_ttl 必须为 0–2147483647 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/oxidns/render",
+      "variant": "/api/oxidns/ros_address_list.args.max_ttl/nan",
+      "python": "max_ttl 必须为 0–2147483647 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/oxidns/render",
+      "variant": "/api/oxidns/ros_address_list.args.min_ttl/nan",
+      "python": "min_ttl 必须为 0–2147483647 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/oxidns/render",
+      "variant": "/api/oxidns/ros_route.args.max_ttl/nan",
+      "python": "max_ttl 必须为 0–2147483647 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/oxidns/render",
+      "variant": "/api/oxidns/ros_route.args.min_ttl/nan",
+      "python": "min_ttl 必须为 0–2147483647 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/oxidns/render",
+      "variant": "/api/oxidns/worker_threads/nan",
+      "python": "worker_threads 必须为 1–256 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/profiles/<profile_id>/oxidns/render",
+      "variant": "/api/profiles/<profile_id>/oxidns/cache_dump_interval/nan",
+      "python": "cache_dump_interval 必须为 1–2147483647 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/profiles/<profile_id>/oxidns/render",
+      "variant": "/api/profiles/<profile_id>/oxidns/cache_lazy_ttl/nan",
+      "python": "cache_lazy_ttl 必须为 0–2147483647 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/profiles/<profile_id>/oxidns/render",
+      "variant": "/api/profiles/<profile_id>/oxidns/cache_size/nan",
+      "python": "cache_size 必须为 1–2147483647 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/profiles/<profile_id>/oxidns/render",
+      "variant": "/api/profiles/<profile_id>/oxidns/dynamic_domain_set.args.batch_size/nan",
+      "python": "batch_size 必须为 1–2147483647 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/profiles/<profile_id>/oxidns/render",
+      "variant": "/api/profiles/<profile_id>/oxidns/dynamic_domain_set.args.flush_interval_ms/nan",
+      "python": "flush_interval_ms 必须为 1–2147483647 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/profiles/<profile_id>/oxidns/render",
+      "variant": "/api/profiles/<profile_id>/oxidns/dynamic_domain_set.args.queue_size/nan",
+      "python": "queue_size 必须为 1–2147483647 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/profiles/<profile_id>/oxidns/render",
+      "variant": "/api/profiles/<profile_id>/oxidns/fallback_concurrent/nan",
+      "python": "fallback_concurrent 必须为 1–2147483647 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/profiles/<profile_id>/oxidns/render",
+      "variant": "/api/profiles/<profile_id>/oxidns/fallback_threshold/nan",
+      "python": "fallback_threshold 必须为 1–2147483647 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/profiles/<profile_id>/oxidns/render",
+      "variant": "/api/profiles/<profile_id>/oxidns/ip_selector.args.max_parallel_probes/nan",
+      "python": "max_parallel_probes 必须为 1–2147483647 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/profiles/<profile_id>/oxidns/render",
+      "variant": "/api/profiles/<profile_id>/oxidns/ip_selector.args.max_wait/nan",
+      "python": "max_wait 必须为 1–2147483647 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/profiles/<profile_id>/oxidns/render",
+      "variant": "/api/profiles/<profile_id>/oxidns/ip_selector.args.probe_stagger/nan",
+      "python": "probe_stagger 必须为 0–2147483647 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/profiles/<profile_id>/oxidns/render",
+      "variant": "/api/profiles/<profile_id>/oxidns/ip_selector.args.probe_timeout/nan",
+      "python": "probe_timeout 必须为 1–2147483647 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/profiles/<profile_id>/oxidns/render",
+      "variant": "/api/profiles/<profile_id>/oxidns/ip_selector.args.top_n/nan",
+      "python": "top_n 必须为 0–2147483647 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/profiles/<profile_id>/oxidns/render",
+      "variant": "/api/profiles/<profile_id>/oxidns/local_concurrent/nan",
+      "python": "local_concurrent 必须为 1–2147483647 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/profiles/<profile_id>/oxidns/render",
+      "variant": "/api/profiles/<profile_id>/oxidns/log.max_files/nan",
+      "python": "max_files 必须为 0–2147483647 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/profiles/<profile_id>/oxidns/render",
+      "variant": "/api/profiles/<profile_id>/oxidns/probe_cache_size/nan",
+      "python": "probe_cache_size 必须为 1–2147483647 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/profiles/<profile_id>/oxidns/render",
+      "variant": "/api/profiles/<profile_id>/oxidns/query_recorder.args.batch_size/nan",
+      "python": "batch_size 必须为 1–2147483647 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/profiles/<profile_id>/oxidns/render",
+      "variant": "/api/profiles/<profile_id>/oxidns/query_recorder.args.cleanup_interval_hours/nan",
+      "python": "cleanup_interval_hours 必须为 1–2147483647 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/profiles/<profile_id>/oxidns/render",
+      "variant": "/api/profiles/<profile_id>/oxidns/query_recorder.args.flush_interval_ms/nan",
+      "python": "flush_interval_ms 必须为 1–2147483647 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/profiles/<profile_id>/oxidns/render",
+      "variant": "/api/profiles/<profile_id>/oxidns/query_recorder.args.memory_tail/nan",
+      "python": "memory_tail 必须为 0–2147483647 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/profiles/<profile_id>/oxidns/render",
+      "variant": "/api/profiles/<profile_id>/oxidns/query_recorder.args.queue_size/nan",
+      "python": "queue_size 必须为 1–2147483647 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/profiles/<profile_id>/oxidns/render",
+      "variant": "/api/profiles/<profile_id>/oxidns/query_recorder.args.reader_concurrency/nan",
+      "python": "reader_concurrency 必须为 1–2147483647 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/profiles/<profile_id>/oxidns/render",
+      "variant": "/api/profiles/<profile_id>/oxidns/query_recorder.args.retention_days/nan",
+      "python": "retention_days 必须为 1–2147483647 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/profiles/<profile_id>/oxidns/render",
+      "variant": "/api/profiles/<profile_id>/oxidns/remote_concurrent/nan",
+      "python": "remote_concurrent 必须为 1–2147483647 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/profiles/<profile_id>/oxidns/render",
+      "variant": "/api/profiles/<profile_id>/oxidns/remote_ttl/nan",
+      "python": "remote_ttl 必须为 0–2147483647 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/profiles/<profile_id>/oxidns/render",
+      "variant": "/api/profiles/<profile_id>/oxidns/ros_address_list.args.max_ttl/nan",
+      "python": "max_ttl 必须为 0–2147483647 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/profiles/<profile_id>/oxidns/render",
+      "variant": "/api/profiles/<profile_id>/oxidns/ros_address_list.args.min_ttl/nan",
+      "python": "min_ttl 必须为 0–2147483647 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/profiles/<profile_id>/oxidns/render",
+      "variant": "/api/profiles/<profile_id>/oxidns/ros_route.args.max_ttl/nan",
+      "python": "max_ttl 必须为 0–2147483647 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/profiles/<profile_id>/oxidns/render",
+      "variant": "/api/profiles/<profile_id>/oxidns/ros_route.args.min_ttl/nan",
+      "python": "min_ttl 必须为 0–2147483647 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    },
+    {
+      "case": "H511",
+      "group": "oxidns-normalization-guards",
+      "route": "POST /api/profiles/<profile_id>/oxidns/render",
+      "variant": "/api/profiles/<profile_id>/oxidns/worker_threads/nan",
+      "python": "worker_threads 必须为 1–256 的整数",
+      "go": "请提供 settings 配置对象",
+      "decision": "N8-6"
+    }
+  ]
+}

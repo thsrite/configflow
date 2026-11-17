@@ -1,5 +1,6 @@
 """A real native rewrite refuses newly indexed validation issues atomically."""
-from harness import Pair, json_body
+from harness import json_body
+from cases.helpers import profile_pair as Pair
 from inventory import routes
 from oxidns import check as etag_check, capture as etag_capture
 from cases.oxidns_editor import doc, text

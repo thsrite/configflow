@@ -68,6 +68,28 @@ def settings_for(control, shape):
     return value
 
 
+def draft_projection(value, index):
+    """Read the schema-known string log.level without YAML 1.1's off bool."""
+    result = copy.deepcopy(value)
+    if not isinstance(result, dict) or not isinstance(result.get('config'), str):
+        return result
+    text = result['config']
+    result['config'] = yaml.safe_load(text)
+    if index == 1 and isinstance(result['config'], dict):
+        root = yaml.compose(text, Loader=yaml.SafeLoader)
+        if isinstance(root, yaml.MappingNode):
+            for key, child in root.value:
+                if key.value != 'log' or not isinstance(child, yaml.MappingNode):
+                    continue
+                for name, scalar in child.value:
+                    if (name.value == 'level' and isinstance(scalar, yaml.ScalarNode)
+                            and scalar.style is None and scalar.value == 'off'
+                            and text[scalar.start_mark.index:scalar.end_mark.index] == 'off'
+                            and isinstance(result['config'].get('log'), dict)):
+                        result['config']['log']['level'] = 'off'
+    return result
+
+
 def verify(document, control, shape):
     enabled, custom = shape != 'off', shape == 'custom'
     plugins = {item['tag']: item for item in document['plugins']}
@@ -121,14 +143,9 @@ def matrix(binary, recorder):
                     pair.policy = profile_policy(pair)
                     def check(reply, key='config'):
                         verify(yaml.safe_load(reply.json()[key]), control, shape)
-                    def projection(value, index):
-                        result = copy.deepcopy(value)
-                        if isinstance(result, dict) and isinstance(result.get('config'), str):
-                            result['config'] = yaml.safe_load(result['config'])
-                        return result
                     pair.request('G11', 'POST ' + template + '/render', prefix + '/render',
                                  body=json_body({'settings': settings, 'base_url': 'http://panel.example'}),
-                                 expect=200, writes=True, projection=projection, check=check, variant=variant + '/draft')
+                                 expect=200, writes=True, projection=draft_projection, check=check, variant=variant + '/draft')
                     pair.request('G11', 'POST ' + template + '/settings', prefix + '/settings', body=json_body(settings),
                                  expect=200, writes=True, check=etag_check(pair), capture=etag_capture(pair), variant=variant + '/save')
                     pair.request('G11', 'POST ' + generate_template + '/oxidns/preview', generate_prefix + '/oxidns/preview',

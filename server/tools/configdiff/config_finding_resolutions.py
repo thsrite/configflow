@@ -4,10 +4,32 @@ Repair provenance requires an actual successful recheck. Explicit approvals
 require exact recorded differences. Raw case verdicts/evidence never change.
 """
 import re
+import json
+from pathlib import Path
+from functools import lru_cache
 
 from compare import differences
 
 DECISIONS = '[behaviour-changes.md · {item}](behaviour-changes.md#config-step-b--coordinator-decisions)'
+
+
+@lru_cache(maxsize=1)
+def c29_vectors():
+    """Read finite observed identities, not replacement response goldens."""
+    return json.loads((Path(__file__).parent / 'testdata/c29-approved-vectors.json').read_text())
+
+
+def c29_message_basis(item, raw, statuses):
+    if statuses != (400, 400) or len(raw) != 1:
+        return ''
+    for vector in c29_vectors()['messages']:
+        if all(item[key] == vector[key] for key in ('case', 'group', 'route', 'variant')):
+            expected = [{'path': 'body.message', 'kind': 'value', 'python': vector['python'], 'go': vector['go']}]
+            if not differences(expected, raw):
+                anchor = ('n7-3d-share--oxidns-readers' if vector['decision'] == 'N7-3d'
+                    else 'n8-6--native-request-binding-and-correct-bad-request-statuses')
+                return '[behaviour-changes.md · C29 / ' + vector['decision'] + '](behaviour-changes.md#' + anchor + ')'
+    return ''
 
 
 def native_yaml_layout_basis(item, raw, statuses):
@@ -22,9 +44,21 @@ def native_yaml_layout_basis(item, raw, statuses):
     vectors['rule-dns-explicit-and-reorder', 'R195-B03', 'real-recognized-native-provider-order-rebuild'] = 200
     code = vectors.get((item['group'], item['case'], item['variant']))
     route = 'POST /api/rules/reorder' if item['case'] == 'R195-B03' else 'PUT /api/rules/dns'
-    if code is None or item['route'] != route or statuses != (code, code) or len(raw) != 1: return ''
-    row = raw[0]
-    if row['path'] != 'db.fields.profile/default/oxidns.value.native_config' or row['kind'] != 'value': return ''
+    allowed_paths = {'db.fields.profile/default/oxidns.value.native_config'}
+    if code is None or item['route'] != route:
+        vector = next((vector for vector in c29_vectors()['layouts']
+            if all(item[key] == vector[key] for key in ('case', 'group', 'route', 'variant'))), None)
+        if vector is None: return ''
+        code, allowed_paths = vector['code'], set(vector['paths'])
+    if statuses != (code, code) or len(raw) != len(allowed_paths) or {row['path'] for row in raw} != allowed_paths:
+        return ''
+    if any(row['kind'] != 'value' for row in raw): return ''
+    if not all(yaml_row_equal(row) for row in raw): return ''
+    return '[behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正)'
+
+
+def yaml_row_equal(row):
+    """Preserve every typed node, sequence order and string value."""
     if any(type(row[side]) is not str or len(row[side]) > 262144 for side in ('python', 'go')): return ''
     if '\r' in row['go'] or '\t' in row['go'] or any(
             (len(line) - len(line.lstrip(' '))) % 2 for line in row['go'].split('\n') if line.strip()): return ''
@@ -60,12 +94,19 @@ def native_yaml_layout_basis(item, raw, statuses):
         if graph(row['python']) != graph(row['go']): return ''
     except (ValueError, RecursionError, yaml.YAMLError):
         return ''
-    return '[behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正)'
+    return True
 
 
 def rules_boundary_basis(item, raw, statuses):
     """Approve finite observed C32 HEAD and Step B #3 error-envelope vectors."""
     identity = item['case'], item['group'], item['route'], item['variant']
+    if identity == ('X06', 'http-head', 'GET /api/oxidns/settings', 'head//api/oxidns/settings'):
+        from cases.http_shell import OXIDNS_HEAD_ETAG
+        expected = [{'path': 'status', 'kind': 'value', 'python': 400, 'go': 200},
+            {'path': 'headers.etag', 'kind': 'value', 'python': '', 'go': OXIDNS_HEAD_ETAG}]
+        if statuses == (400, 200) and not differences(expected, raw):
+            return '[behaviour-changes.md · C29 HEAD只读](behaviour-changes.md#head-只读c29--c31--c32)'
+        return ''
     if identity in {('X06', 'http-head', 'GET ' + path, 'head/' + path)
             for path in ('/api/rules', '/api/rule-sets')}:
         expected = [{'path': 'status', 'kind': 'value', 'python': 500, 'go': 200},
@@ -164,6 +205,9 @@ def accepted_basis(item):
     boundary = rules_boundary_basis(item, raw, statuses)
     if boundary:
         return boundary
+    message = c29_message_basis(item, raw, statuses)
+    if message:
+        return message
     layout = native_yaml_layout_basis(item, raw, statuses)
     if layout:
         return layout

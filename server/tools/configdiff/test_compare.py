@@ -17,6 +17,68 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_c29_finite_approvals_preserve_every_unapproved_difference(self):
+        from config_finding_resolutions import annotate, c29_vectors
+        for vector in c29_vectors()['layouts']:
+            record = {key: vector[key] for key in ('case', 'group', 'route', 'variant')}
+            record.update(status='open', python_status=vector['code'], go_status=vector['code'], differences=[],
+                remaining_differences=[{'path': path, 'kind': 'value', 'python': 'plugins: []\n',
+                    'go': 'plugins: [ ]\n'} for path in vector['paths']])
+            self.assertEqual(annotate([copy.deepcopy(record)])[0]['status'], 'accepted')
+            for mutate in ('extra-SQL', 'wrong-type', 'changed-value', 'missing-field', 'unknown-identity'):
+                bad = copy.deepcopy(record)
+                if mutate == 'extra-SQL': bad['remaining_differences'].append(
+                    {'path': 'db.fields.profile/default/oxidns.revision', 'kind': 'value', 'python': 1, 'go': 2})
+                elif mutate == 'wrong-type': bad['remaining_differences'][0]['go'] = 'plugins: null\n'
+                elif mutate == 'changed-value': bad['remaining_differences'][0]['go'] = 'plugins: [changed]\n'
+                elif mutate == 'missing-field': bad['remaining_differences'][0]['go'] = '{}\n'
+                else: bad['variant'] += '-unexpected'
+                self.assertEqual(annotate([bad])[0]['status'], 'open', mutate)
+        for vector in c29_vectors()['messages']:
+            record = {key: vector[key] for key in ('case', 'group', 'route', 'variant')}
+            record.update(status='open', python_status=400, go_status=400, differences=[], remaining_differences=[
+                {'path': 'body.message', 'kind': 'value', 'python': vector['python'], 'go': vector['go']}])
+            self.assertEqual(annotate([copy.deepcopy(record)])[0]['status'], 'accepted')
+            for mutate in ('message', 'status', 'extra-field', 'identity'):
+                bad = copy.deepcopy(record)
+                if mutate == 'message': bad['remaining_differences'][0]['go'] += 'wrong'
+                elif mutate == 'status': bad['go_status'] = 500
+                elif mutate == 'extra-field': bad['remaining_differences'].append(
+                    {'path': 'body.unexpected', 'kind': 'extra-in-go', 'python': None, 'go': True})
+                else: bad['variant'] += '-unexpected'
+                self.assertEqual(annotate([bad])[0]['status'], 'open', mutate)
+
+    def test_go_generated_log_off_projection_cannot_hide_false_or_explicit_bool(self):
+        from cases.oxidns_controls import draft_projection
+        original = {'config': "log:\n  level: 'off'\n"}
+        expected = draft_projection(original, 0)
+        plain = {'config': 'log:\n  level: off\n'}
+        self.assertEqual(draft_projection(plain, 1), expected)
+        self.assertNotEqual(draft_projection(plain, 0), expected, 'Python YAML 1.1 oracle remains unchanged')
+        for text in ('log:\n  level: false\n', 'log:\n  level: !!bool off\n',
+                'log:\n  level: OFF\n', 'log:\n  level: off\nextra: false\n'):
+            self.assertNotEqual(draft_projection({'config': text}, 1), expected)
+        self.assertEqual(original['config'], "log:\n  level: 'off'\n")
+
+    def test_c29_head_approval_requires_source_get_etag_and_exact_changes(self):
+        from config_finding_resolutions import annotate
+        from cases.http_shell import OXIDNS_HEAD_ETAG
+        record = {'case': 'X06', 'group': 'http-head', 'route': 'GET /api/oxidns/settings',
+            'variant': 'head//api/oxidns/settings', 'status': 'open', 'python_status': 400, 'go_status': 200,
+            'differences': [], 'remaining_differences': [
+                {'path': 'status', 'kind': 'value', 'python': 400, 'go': 200},
+                {'path': 'headers.etag', 'kind': 'value', 'python': '', 'go': OXIDNS_HEAD_ETAG}]}
+        self.assertEqual(annotate([copy.deepcopy(record)])[0]['status'], 'accepted')
+        for mutate in ('etag', 'storage', 'GET-status', 'route'):
+            bad = copy.deepcopy(record)
+            if mutate == 'etag': bad['remaining_differences'][1]['go'] = '\"' + '0' * 64 + '\"'
+            elif mutate == 'storage': bad['remaining_differences'].append(
+                {'path': 'db.fields.profile/default/oxidns.revision', 'kind': 'value', 'python': 1, 'go': 2})
+            elif mutate == 'GET-status': bad['remaining_differences'].append(
+                {'path': 'status', 'kind': 'value', 'python': 500, 'go': 200})
+            else: bad['route'] += '-unexpected'
+            self.assertEqual(annotate([bad])[0]['status'], 'open', mutate)
+
     def test_native_yaml_layout_approval_keeps_typed_nodes_duplicates_order_and_storage(self):
         from config_finding_resolutions import annotate
         source = 'plugins:\n- tag: kept\n  args:\n    values: [1, 2]\n'
