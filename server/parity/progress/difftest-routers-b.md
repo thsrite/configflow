@@ -416,3 +416,39 @@ Exact .32 commands:
 → Ran 9 tests in 0.417s / OK; stable2, random4, rule-sync13 cumulative;
 go-unimplemented13, referenced_entries7, complete=false, remaining_audits2301.
 These are iteration subsets, not final combined coverage; task continues.
+
+Fresh combined run on .32 for 2f41fcc3:
+`RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'set -euo pipefail; cd server/tools/routerdiff; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY=/tmp/routerdiff-build.AybfCK/configflow; ~/cf-test/.venv/bin/python -m unittest -v test_inventory test_seed test_compare test_recipes test_console test_boundary test_runner test_addresses; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --output /tmp/routerdiff-client-sync-composition.json --findings /tmp/routerdiff-client-sync-findings.md; cd ../..; gofmt -l $(rg --files -g "*.go"); go vet ./...'`
+→ Ran 23 tests in 17.612s / OK; fixed64 group53.14s, rule-sync1574,
+receipts1581, stored1629 cumulative. matrix_entries2301, routes26,
+implemented0, go-unimplemented1629, referenced_entries533, complete=false,
+remaining_audits2301; known Python suffix rollback bug retained. Formatting/vet
+exit0/no output. Full findings retrieved from this run. 1768 design entries still
+lack an attached executed recipe, and every entry's final audit remains pending.
+
+Download-failure / proxy / linked reminder iteration:
+- 41 actual HTTP recipes enrol through manual publish before exercising 503,
+  invalid UTF-8, HTML/JSON/broken-YAML, comments-only, domain-only IPv4 collapse,
+  >4MiB download, 100001 lines and 20001 IPv4 entries. Failed vs paused states,
+  exact reached diagnostics, unchanged caches/device configurations, retry after
+  failed download and manual re-enrolment after pause are checked. Large rule
+  addresses are generated only in-server, remain text (never destinations), and
+  report aliases also cover individual members/base64 within runtime parents.
+- Explicit authenticated HTTP proxy job proves absolute-form request and Basic
+  proxy credential, zero direct-source requests, successful same-byte cache.
+  Fake read-only sources reject mutation methods and proxy credential mismatch.
+- 11 linked R001 recipes cover alpha/beta ordering, cache reuse, both refresh
+  spellings, partial single-router unknown, never reusing unknown, public-edit
+  signature invalidation, ignored sidebar header and deleted linked Agent without
+  a fake 404. All use live real reports; notifications are not disabled.
+- Still no Go business source read/changed. Current actual manifest has no domain
+  HTTP route; these are Go 尚未实现, not successful comparisons or completed audits.
+
+Exact .32 subset commands:
+`RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'set -euo pipefail; cd server/tools/routerdiff; export PYTHONDONTWRITEBYTECODE=1; ~/cf-test/.venv/bin/python -m unittest -v test_addresses test_recipes test_runner; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary /tmp/routerdiff-build.AybfCK/configflow --world rule-sync-download-failures --output /tmp/routerdiff-sync-downloads.json'`
+→ Ran 9 tests in 0.477s / OK; download_failures41 in8.34s;
+go-unimplemented41, referenced_entries6, complete=false, remaining_audits2301.
+`RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'set -euo pipefail; cd server/tools/routerdiff; export PYTHONDONTWRITEBYTECODE=1; ~/cf-test/.venv/bin/python -m unittest -v test_addresses test_recipes test_runner; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary /tmp/routerdiff-build.AybfCK/configflow --world rule-sync-proxy --world upstream-linked --output /tmp/routerdiff-proxy-reminder.json'`
+→ Ran 9 tests in 0.357s / OK; proxy3, upstream-linked14 cumulative;
+go-unimplemented14, referenced_entries16, complete=false, remaining_audits2301.
+No test processes remain after these commands. Task continues.

@@ -17,6 +17,7 @@ import probes
 import releases
 import clients
 import sync
+import upstream
 from compare import differences, logical_snapshot, response_view, timestamp
 from harness import Pair
 from harness import decode_response
@@ -393,6 +394,9 @@ def main():
               ('discovery', clients.options(), (clients.discovery,)),
               ('discovery-failures', clients.options(), (clients.discovery_failures,)),
               ('rule-sync', sync.options(), (sync.manual_refresh,)),
+              ('rule-sync-download-failures', sync.options(), (sync.download_failures,)),
+              ('rule-sync-proxy', sync.proxy_options(), (sync.proxy_refresh,)),
+              ('upstream-linked', upstream.options(), (upstream.linked,)),
               ('stored', fixtures.stored_options(), (fixtures.receipts, fixtures.stored_guards))]
     if args.world:
         unknown = set(args.world) - {name for name, _, _ in worlds}

@@ -18,10 +18,14 @@ class AddressTests(unittest.TestCase):
             self.assertFalse(value.network_address.is_multicast)
             self.assertFalse(value.network_address.is_reserved)
             document = {cidr: {'line': 'IP-CIDR,' + cidr, 'address': str(value.network_address),
-                               'bytes': base64.b64encode(cidr.encode()).decode()}}
+                               'bytes': base64.b64encode(cidr.encode()).decode(),
+                               'child': str(value.network_address + 17),
+                               'child-bytes': base64.b64encode(str(value.network_address + 17).encode()).decode()}}
             self.assertNotIn(cidr, repr(report_aliases(document)))
             self.assertNotIn(str(value.network_address), repr(report_aliases(document)))
             self.assertNotIn(base64.b64encode(cidr.encode()).decode(), repr(report_aliases(document)))
+            self.assertNotIn(str(value.network_address + 17), repr(report_aliases(document)))
+            self.assertNotIn(base64.b64encode(str(value.network_address + 17).encode()).decode(), repr(report_aliases(document)))
             self.assertIn(cidr, document)
             self.assertTrue(differences(document, {cidr: {'line': 'wrong', 'address': str(value.network_address)}}))
 

@@ -427,9 +427,13 @@ class World:
         return 200, {}, copy.deepcopy(entry)
 
     def rules_request(self, request):
+        if request['method'] not in ('GET', 'HEAD'):
+            return 405, {'Allow': 'GET, HEAD'}, b'synthetic read-only rule source'
         entry = self.documents.get(request['path'])
         if entry is None:
             return 404, {}, b'synthetic rule source absent'
+        if any(request['headers'].get(key) != expected for key, expected in entry.get('expected_headers', {}).items()):
+            return 407, {'Proxy-Authenticate': 'Basic realm="synthetic-routerdiff"'}, b'synthetic proxy authentication required'
         return entry.get('status', 200), entry.get('headers', {}), base64.b64decode(entry['body'])
 
     proxy_request = rules_request
