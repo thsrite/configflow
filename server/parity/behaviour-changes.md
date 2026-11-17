@@ -723,3 +723,24 @@ Python evidence; the new full logfields are asserted explicitly and other rows
 remain strict. Unicode15 Cf controls U+13439–U+1343F are still excluded, as are
 existing controls/newlines/bidi overrides. See the authoritative
 [Unicode15 category data](https://www.unicode.org/Public/15.0.0/ucd/UnicodeData.txt).
+
+## R10 — IPv6 路由归属与回滚安全修正
+
+Python 的 IPv6 规则集批量删除只核对 ID/目标地址，Go 在每个批次提交前核对完整 stable config，
+拒绝预览后外部修改/ID 复用；创建也在最后 scoped/console 读表拒绝新出现的同目标外部路由。
+Python `_rebuild` 可按相同配置猜测新的 owner ID，Go 只接受本次恢复响应证明的新 ID，
+部分成功也重映射；保持原配置证明，避免重映射时把外部编辑刷新为“自己的配置”。
+规则集整体回滚不完整时保存两代原始证明；Fake-IP 旧对象未恢复时保留当前已发布证明；
+失败恢复后不继续删除仍能保护流量的替代路由。见 R10 部分回滚/外部同配置/重映射回归。
+
+错误类型/空 ID/重复 ID/错误版本/缺失 resources、Fake-IP spec 与 resource 不一致的 manifest，
+即使该 ID 已不见也拒绝作为空 ownership。已带 zone 的 Agent 候选不再被拼成双 `%` 下一跳；
+路由前缀解析拒绝 scope-id，避免复用 matcher 的去 zone 处理误把 /64 截成 /128；
+接口地址 stable evidence 仍保留 zone/host bits，规范化 /064。
+无有效唯一候选时保持既有 blocker/skip。无效/缺失 range 的 Python 内部 ipaddress 异常文本
+改为明确中文（业务错误文案不改）。model 的 custom_config R5 fallback 也拒绝作“已关闭”处理。
+
+host 错误沿用共享 agents/diag 脱敏，隐藏已知 Agent token/router password 及标注凭据，
+普通 username/api/权限诊断保留。设备所有写/回滚 owner 在 Detach 后与提交前遵循 shutdown 检查，
+关机取消后禁止继续写；请求断开仍完成。不可证明的丢失写回复保留现场，不猜测、不删除。
+R10 不生成/重写 YAML；原保存 YAML（含 CRLF/注释/引号/alias）逐字节保留，读取政策沿用 N7。

@@ -662,7 +662,7 @@ mapping are in the linked R09 progress file. Fresh Opus review and L5 remain req
 
 ## R10 — IPv6 policy, IPv6 fake-IP, IPv6 rule-set routes
 
-**Status: `missing`** · HR · prereqs: R04, R09 · Go: internal/routers
+**Status: `ported`** · HR · prereqs: R04, R09 · Go: internal/routers
 
 Files:
 - `backend/routers/ipv6_policy.py` (529), `backend/routers/ipv6_fakeip.py` (348), `backend/routers/ipv6_routes.py` (370)
@@ -674,6 +674,21 @@ Routes: none.
 求值器已由 R09 落在 `ipv6_policy_eval.go`，R10 扩展它。
 
 Notes for porter: IPv6 address/prefix math against Python `ipaddress` (corpus: ULA, link-local, mapped, zone ids, `strict=False`, prefix lifetimes — RouterOS 7.25.1 lifetime fingerprint fix 4191cf70), manifests `ipv6_fakeip_state`/`ipv6_routes_state`, `relevant`/`settings`/`inspect`/`needs_host`.
+
+实现提交 `67fcf4b1b`、`1632c3598`；基于 `go@28e6e0c12`，已 rebase 本地 go。
+共享 evaluator 原位扩展为按表返回完整 evidence / NAT translation；R09 继续只取 Decision。
+IPv6 Fake-IP / rule-set typed inspect/apply/restore/verify、manifest/BuildReport/driver handler 已接线。
+不新增 HTTP route/loop/锁/依赖；R11 复用下一跳/环境转换，R12/R14 负责发布 orchestration。
+
+真实 Python：68 路由/完整报告序列、330 全证据 policy cases、14 settings/原 YAML 字节组；
+原始 wire/10s 参数、真实 Runtime shutdown/disconnect、归属/ID reuse/部分恢复回归；
+仓库 84 子场景；4/4 编译成功的 boundary mutations 检出。全部通过 rt 在 .64 跑。
+最终 `.64 gate.sh -p 6` 前台排队/执行中，最多等待 15 分钟；最终结果写入交接文件。
+未 push，未访问真实设备/生产/PVE，待新的 Opus 复核和 L5。
+
+详细逐类复核防护、API 契约、Python 测试映射、行为修正、文件行数、精确命令与结果：
+[progress/R10-handoff-zh.md](progress/R10-handoff-zh.md)、[r10-test-map.md](r10-test-map.md)。
+R06/R07/R08/R09/A24/N8-4ef 问题类别均在交接文件逐项说明，行为修正已登记 behaviour-changes.md。
 
 ## R11 — IPv6 PD guard, IPv6 DNS, RouterOS IPv6 readiness
 

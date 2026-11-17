@@ -84,3 +84,34 @@ func FuzzR10IPv6Input(f *testing.F) {
 		}
 	})
 }
+
+func TestR10IPv6AddressMathPython(t *testing.T) {
+	rows := []Row{}
+	for _, address := range []string{"fd00:1::4", "fd00:1::4/64", "fd00:1::4/064", "fe80::4", "fe80::4%eth0", "fe80::4%eth0/64", "fe80::4%eth0/128", "::ffff:192.0.2.4/128", "2001:db8:1::4/64", "invalid"} {
+		rows = append(rows, Row{"address": address, "actual-interface": "bridge", "valid": "2h", "preferred": "1h", "dynamic": "true"})
+	}
+	raw := r09Python(t, "r10_address_reference.py", rows, "")
+	var expected []Row
+	if err := json.Unmarshal(raw, &expected); err != nil {
+		t.Fatal(err, string(raw))
+	}
+	for i, row := range rows {
+		if got := StableIPv6Row(row); !reflect.DeepEqual(got, expected[i]) {
+			t.Errorf("%s: got=%v Python=%v", row.text("address"), got, expected[i])
+		}
+	}
+	for _, text := range []string{"fe80::4%eth0", "fe80::4%eth0/64", "fe80::4%eth0/128"} {
+		if _, ok := ipv6Network(text); ok {
+			t.Error("scoped route destination silently changed", text)
+		}
+	}
+	for _, text := range []string{"fd00:1::4/64", "fd00:1::4/064"} {
+		if p, ok := ipv6Network(text); !ok || p.String() != "fd00:1::/64" {
+			t.Error("host bits were not masked", text, p)
+		}
+	}
+	live := IPv6Snapshot{"addresses": {{"address": "fd00:1::1/64", "interface": "bridge"}}}
+	if gateway := IPv6Gateway(IPv6Host{Addresses: []IPv6HostAddress{{Address: "fe80::4%eth0"}}}, live, "bridge", nil); gateway != "" {
+		t.Error("double-scoped next hop produced", gateway)
+	}
+}

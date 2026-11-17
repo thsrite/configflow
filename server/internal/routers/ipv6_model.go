@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"net/netip"
 	"slices"
+	"strconv"
 	"strings"
 
 	"configflow/internal/model"
+	"configflow/internal/netipx"
 	"configflow/internal/yamlx"
 	"gopkg.in/yaml.v3"
 )
@@ -69,10 +71,15 @@ func StableIPv6Row(row Row) Row {
 	}
 	if value, ok := row["address"]; ok {
 		address := rosText(value)
-		if p, err := netip.ParsePrefix(address); err == nil {
-			address = p.String()
-		} else if a, err := netip.ParseAddr(address); err == nil {
-			address = netip.PrefixFrom(a, a.BitLen()).String()
+		addrText, mask, hasMask := strings.Cut(address, "/")
+		if a, err := netip.ParseAddr(addrText); err == nil {
+			networkText := a.WithZone("").String()
+			if hasMask {
+				networkText += "/" + mask
+			}
+			if n, ok := netipx.ParseNetwork(networkText, false); ok {
+				address = a.String() + "/" + strconv.Itoa(n.Bits())
+			}
 		}
 		out["address"] = address
 		if v, ok := row["actual-interface"]; ok {
@@ -103,7 +110,7 @@ func IPv6Evidence(live IPv6Snapshot) IPv6Snapshot {
 
 func ipv6Enabled(row Row) bool { return !policyFlag(row["disabled"]) }
 func ipv6Network(value string) (netip.Prefix, bool) {
-	p, ok := policyNetwork(value)
+	p, ok := netipx.ParseNetwork(value, false)
 	return p, ok && p.Addr().Is6()
 }
 func ipv6Key(row Row) string {

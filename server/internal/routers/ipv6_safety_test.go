@@ -430,3 +430,85 @@ func TestR10HostDiagnosticsRedactCredentials(t *testing.T) {
 		}
 	}
 }
+
+func TestR10ManifestSpecAndUnknownFields(t *testing.T) {
+	d, _ := r10Driver(t)
+	p := r10FakePlan(t, d)
+	if _, err := d.ApplyIPv6FakeIP(t.Context(), *p.Ops[0].(*IPv6FakeIPReplace)); err != nil {
+		t.Fatal(err)
+	}
+	var manifest map[string]json.RawMessage
+	_ = json.Unmarshal(d.ipv6FakeIPManifest, &manifest)
+	manifest["audit_note"] = json.RawMessage(`{"future":["keep"]}`)
+	var entries []map[string]json.RawMessage
+	_ = json.Unmarshal(manifest["resources"], &entries)
+	entries[0]["future_resource"] = json.RawMessage(`{"keep":true}`)
+	manifest["resources"], _ = json.Marshal(entries)
+	raw := mustPolicyJSON(manifest)
+	r := r10Router()
+	r.Extra["ipv6_fakeip_state"] = raw
+	p = InspectIPv6FakeIP(t.Context(), r10Config(r10YAML), r, r10Agent(), r10Host(), d)
+	if p.Status != "synced" || len(p.Ops) > 0 || !jsonValuesEqual(p.Check.Previous, raw) {
+		t.Fatal("noop lost previous manifest fingerprint", string(mustPolicyJSON(p)))
+	}
+	var spec IPv6RouteSpec
+	_ = json.Unmarshal(manifest["spec"], &spec)
+	spec.Gateway = "fe80::99%bridge"
+	manifest["spec"] = mustPolicyJSON(spec)
+	r.Extra["ipv6_fakeip_state"] = mustPolicyJSON(manifest)
+	p = InspectIPv6FakeIP(t.Context(), r10Config(r10YAML), r, r10Agent(), r10Host(), d)
+	if len(p.Blockers) == 0 || len(p.Ops) > 0 {
+		t.Fatal("corrupted spec became successful noop")
+	}
+	if err := d.remapIPv6(t.Context(), raw, map[string]string{}, true); err != nil {
+		t.Fatal(err)
+	}
+	if !jsonValuesEqual(d.ipv6FakeIPManifest, raw) {
+		t.Fatal("unknown manifest/resource fields lost")
+	}
+}
+
+func TestR10RestoreFailureKeepsPublishedOwnership(t *testing.T) {
+	for _, feature := range []string{"fake", "routes"} {
+		t.Run(feature, func(t *testing.T) {
+			d, f := r10Driver(t)
+			var undo json.RawMessage
+			if feature == "fake" {
+				p := r10FakePlan(t, d)
+				raw, err := d.Apply(t.Context(), mustPolicyJSON(p.Ops[0]))
+				if err != nil {
+					t.Fatal(err)
+				}
+				undo = raw
+			} else {
+				p := r10RoutesPlan(t, d, 1)
+				if _, err := d.ApplyIPv6Routes(t.Context(), *p.Ops[0].(*IPv6RoutesReplace)); err != nil {
+					t.Fatal(err)
+				}
+				p = r10RoutesPlan(t, d, 2)
+				u, err := d.ApplyIPv6Routes(t.Context(), *p.Ops[0].(*IPv6RoutesReplace))
+				if err != nil {
+					t.Fatal(err)
+				}
+				undo = mustPolicyJSON(u)
+			}
+			before := d.Manifests()
+			f.ApplyExternal(routerfake.ExternalWrite{Faults: []routerfake.Fault{{Method: "DELETE", Path: rosIPv6Routes + "/*65", Status: 403}, {Method: "DELETE", Path: rosIPv6Routes + "/*66", Status: 403}}})
+			if _, err := d.Apply(t.Context(), undo); err == nil {
+				t.Fatal("expected refused rollback")
+			}
+			live, _ := SnapshotIPv6(t.Context(), d, false)
+			raw := d.Manifests().IPv6FakeIP.Value
+			if feature == "routes" {
+				raw = d.Manifests().IPv6Routes.Value
+			}
+			owned, err := ipv6Owned(raw, live, feature == "fake")
+			if err != nil || len(owned) != len(live["routes"]) {
+				t.Fatalf("failed restore abandoned published proof: %s %v", raw, err)
+			}
+			if feature == "fake" && !jsonValuesEqual(before.IPv6FakeIP.Value, raw) {
+				t.Fatal("failed Fake-IP rollback replaced current publication")
+			}
+		})
+	}
+}
