@@ -28,7 +28,7 @@ func TestN73ComposeHashOnlyReviewCases(t *testing.T) {
 		} else if present {
 			expected = value
 		}
-		if !nativeOutcomeEqual(expected, result, "") {
+		if !nativeOutcomeEqual(expected, l1GuideBaseline(t, result), "") {
 			t.Errorf("%s: generated guide/bundle changed meaning", name)
 		}
 		checked++

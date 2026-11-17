@@ -320,3 +320,48 @@ and lets the final approved proddiff-only rerun obey the host's gate-slot limit.
 All difftests now queued on .64 through this stage mode, logs
 /tmp/configflow-l1-installer-diff-final. Exact commands/results are to be appended
 once these foreground runs finish. No active task may be handed back yet.
+
+## Remaining gates completed; waiting for provider fix integration
+
+Full .32 gate finished its race stage: **85 packages passed**; only installer
+failed on TestN73ComposeHashOnlyReviewCases's three explicit old A10 semantic
+rows. They bypassed the general comparison path and therefore had not applied
+D5's fixed source delta. Applied l1GuideBaseline to these three assertions;
+semantic guide/bundle checks stay strict. No production change. Whole installer
+race then passed on .64,579.035s. No other race failures or ETXTBSY occurred.
+
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt -- bash -c 'set -eu; GATE_LOGS=/tmp/configflow-l1-installer-gate-r3 server/scripts/gate.sh -p 4'
+RT_HOST=sunbroke@192.168.0.64 rt -- bash -c 'set -eu; GATE_ONLY=difftest GATE_LOGS=/tmp/configflow-l1-installer-diff-final server/scripts/gate.sh -p 4'
+RT_HOST=sunbroke@192.168.0.64 rt --back server/internal/installer/n73_review_test.go -- bash -c 'set -eu; cd server; gofmt -w internal/installer/n73_review_test.go; go vet ./internal/installer/...; go test -race -p 4 -count=1 -timeout=30m ./internal/installer > /tmp/configflow-l1-installer-race-final.log 2>&1; tail -12 /tmp/configflow-l1-installer-race-final.log'
+```
+
+```text
+# full gate: gofmt/full vet, tagged builds/vet/lifecycle PASS
+ok configflow/internal/api/agents 477.345s
+ok configflow/internal/devhttp 3.916s
+ok configflow/internal/httpx 35.624s
+ok configflow/internal/routers 510.899s
+# only failure: three old installer semantic assertions; fixed and rerun:
+ok configflow/internal/installer 579.035s
+# all enabled differentials:
+ok configflow/internal/api/agents/difftest 118.949s
+ok configflow/internal/api/aggregations/difftest 21.175s
+ok configflow/internal/api/subscriptions/difftest 61.335s
+ok configflow/internal/devicenotes/difftest 0.506s
+ok configflow/internal/discovery/difftest 1.999s
+ok configflow/internal/health/difftest 13.711s
+ok configflow/internal/httpx/difftest 1.389s
+ok configflow/internal/mosdns/difftest 1.796s
+ok configflow/internal/refresh/difftest 3.462s
+ok configflow/internal/subs/difftest 1.472s
+ok configflow/internal/substore/difftest 5.180s
+ok configflow/internal/webdav/difftest 15.693s
+GATE STAGE PASS: difftest
+```
+
+The original full gate exit1 is retained, not called GATE PASS: it contains the
+three pre-fix installer assertions and the pre-update proddiff snapshot. The
+corrected installer package and all independent difftest packages passed as above.
+Per explicit coordinator instruction, after provider fix merge/rebase only
+proddiff must rerun; no redundant whole race. No active test commands remain.
