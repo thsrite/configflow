@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/yamlx/yamlxtest"
 )
 
 type bindingExpectation struct {
@@ -62,10 +63,43 @@ func bindingDifference(r request, py, gor response) (response, []string) {
 		}
 		actual, aErr := jsonx.Parse(side.got.body)
 		expected, eErr := jsonx.ParseString(side.body)
-		if aErr != nil || eErr != nil || !jsonx.Equal(actual, expected) {
+		if aErr != nil || eErr != nil || !yamlxtest.EqualJSON(actual, expected) {
 			diffs = append(diffs, fmt.Sprintf("binding %s body %s want %s", side.name, side.got.body, side.body))
 		}
 	}
 	py.status, py.body = want.GoStatus, []byte(want.GoBody)
 	return py, diffs
+}
+
+func TestBindingComparatorRejectsUnexpectedChanges(t *testing.T) {
+	r := bindingRequests(t)[0]
+	want := r.binding
+	py := response{status: want.PythonStatus, body: []byte(want.PythonBody)}
+	good := response{status: want.GoStatus, body: []byte(want.GoBody)}
+	if _, diffs := bindingDifference(r, py, good); len(diffs) != 0 {
+		t.Fatal(diffs)
+	}
+	for _, body := range []string{
+		`{}`,
+		`{"success":false,"message":"wrong"}`,
+		`{"success":false,"message":null}`,
+		`{"success":0,"message":"The browser (or proxy) sent a request that this server could not understand."}`,
+		`{"success":false,"message":"The browser (or proxy) sent a request that this server could not understand.","extra":1}`,
+	} {
+		changed := good
+		changed.body = []byte(body)
+		if _, diffs := bindingDifference(r, py, changed); len(diffs) == 0 {
+			t.Fatalf("accepted mutated body %s", body)
+		}
+	}
+	changed := good
+	changed.status = 200
+	if _, diffs := bindingDifference(r, py, changed); len(diffs) == 0 {
+		t.Fatal("accepted wrong status")
+	}
+	changedPy := py
+	changedPy.body = []byte(`{"success":false,"message":"different Python result"}`)
+	if _, diffs := bindingDifference(r, changedPy, good); len(diffs) == 0 {
+		t.Fatal("ignored changed Python oracle")
+	}
 }

@@ -40,7 +40,9 @@
 
 - httpx/difftest 实际Flask与Go服务器，新增登录frontend JSON两种charset、+json、
   UTF8-BOM/UTF16、错型字段、精确key；新增R226 int/fraction/exponent/bool/string/huge/null/
-  container及重复/额外/key大小写输入。全部完整状态、头和JSON结构比较。
+  container及重复/额外/key大小写输入。全部完整状态、头和JSON结构比较，共118个向量，17项已批准变化分别校验。
+  复用已合入的yamlxtest.EqualJSON测试工具（无生产依赖，无复制实现），取代Python式bool/
+  number相等；新增反例验证wrong status/message/type、missing/extra字段及Python oracle漂移都失败。
 - 17个明确变化向量由 `testdata/n8_6_bind_gen.py` 记录真实Python login/R226响应；
   Go完整预期来自真实Flask strict JSON/畸形body控制请求。两端各自的完整状态和错误体
   都须匹配，不是统一normalize。成功/凭据错误/错型字段不进入变化分支。
@@ -65,9 +67,10 @@
 
 ## 已提交的可编译步骤
 
-- 763843a0：绑定核心/Number/原生性质fuzz。
-- 044fd3b6：R226与login示范DTO及HTTP单元回归。
-- 后续HTTP差分/设计说明及最终验收提交待补。
+- e6fcfff4（原763843a0）：绑定核心/Number/原生性质fuzz。
+- a0a86f26（原044fd3b6）：R226与login示范DTO及HTTP单元回归。
+- f18ee230（原ca0e31bb）：HTTP差分/设计说明及局部非有限请求切换约束。
+- 严格JSON比较与最终验收提交待补。
 
 测试全在rt远端（.64）：
 ```sh
@@ -81,3 +84,7 @@ httpx1.084s、refresh2.988s；17向量fixture录制成功；fuzz752514 exec、PA
 发现并修正的测试配置问题：auth内部测试引入httpxtest造成cycle，改外部测试并通过harness
 Options.Auth配置凭据；当前示范提交已修订为可编译。R226在httpx壳中因缺slots返回404，
 现按上文挂实际handler，未掩盖路由缺口。没有修改baseline或使用宽泛normalize。
+
+已在 .64 完成 rebase 到最新 go（含N7-3a/C31）；只发生文档追加冲突，双方记录均保留。
+严格比较下最新httpx差分：118 requests，0 unexpected differences，PASS1.470s。
+最终全门禁随后在同一台 .64 执行；不将阶段结果当最终全量结果。

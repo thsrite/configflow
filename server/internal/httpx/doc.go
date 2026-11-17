@@ -48,6 +48,7 @@
 // Number/RawMessage fields preserve business validation of wrong forms rather
 // than turning every wrong field type into a generic decoder error. The native
 // binders reject non-finite JSON; legacy JSON helpers migrate per consumer.
+//
 //	c.JSON()               legacy request.json: 415 / 400 *HTTPError on bad input (err.Error() is str(e))
 //	c.JSONSilent()         request.get_json(silent=True); JSONObject() for the usual isinstance(dict) check; JSONForce()
 //	c.Data(), c.Stream(), c.ContentLength()   request.get_data(), request.stream, request.content_length

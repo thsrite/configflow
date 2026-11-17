@@ -38,6 +38,7 @@ import (
 	"configflow/internal/logx"
 	"configflow/internal/repo"
 	"configflow/internal/server"
+	"configflow/internal/yamlx/yamlxtest"
 )
 
 const (
@@ -397,7 +398,7 @@ func compare(r request, py, gor response) []string {
 	case migrated:
 		// Step B #3/O12: the exact JSON error envelope was verified above.
 	case perr == nil && gerr == nil:
-		if !jsonx.Equal(maskJSON(pv, r.mask), maskJSON(gv, r.mask)) {
+		if !yamlxtest.EqualJSON(maskJSON(pv, r.mask), maskJSON(gv, r.mask)) {
 			diffs = append(diffs, fmt.Sprintf("json python %s go %s", py.body, gor.body))
 		}
 	default:
