@@ -3,6 +3,7 @@ package yamlx
 import (
 	"encoding/json"
 	"fmt"
+
 	"gopkg.in/yaml.v3"
 )
 
@@ -33,7 +34,16 @@ func ProjectJSONKeys(n *Node, mode JSONKeyMode) error {
 	if err := validateNode(n); err != nil {
 		return err
 	}
-	return projectJSONKeys(n, mode, map[*Node]bool{})
+	plan := map[*Node][]*Node{}
+	if err := planJSONKeys(n, mode, map[*Node]bool{}, plan); err != nil {
+		return err
+	}
+	// Plan against the untouched graph: changing an anchor first would change
+	// later merges' typed-key equality and converted-name collision order.
+	for mapping, content := range plan {
+		mapping.Content = content
+	}
+	return nil
 }
 
 func jsonKey(n *Node) (string, error) {
@@ -60,13 +70,14 @@ func jsonKey(n *Node) (string, error) {
 	}
 }
 
-func projectJSONKeys(n *Node, mode JSONKeyMode, seen map[*Node]bool) error {
+func planJSONKeys(n *Node, mode JSONKeyMode, seen map[*Node]bool, plan map[*Node][]*Node) error {
 	if n == nil || seen[n] {
 		return nil
 	}
 	seen[n] = true
+	content := n.Content
 	if n.Kind == yaml.MappingNode {
-		var content []*Node
+		content = nil
 		indices := map[string]int{}
 		for key, value := range AllPairs(n) {
 			name, isString := stringKey(key)
@@ -91,14 +102,14 @@ func projectJSONKeys(n *Node, mode JSONKeyMode, seen map[*Node]bool) error {
 				content = append(content, Str(name), value)
 			}
 		}
-		n.Content = content
+		plan[n] = content
 	}
-	for _, child := range n.Content {
-		if err := projectJSONKeys(child, mode, seen); err != nil {
+	for _, child := range content {
+		if err := planJSONKeys(child, mode, seen, plan); err != nil {
 			return err
 		}
 	}
-	return projectJSONKeys(n.Alias, mode, seen)
+	return planJSONKeys(n.Alias, mode, seen, plan)
 }
 
 type jsonKeyError struct{ line int }
