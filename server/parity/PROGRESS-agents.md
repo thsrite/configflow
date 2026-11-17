@@ -1149,6 +1149,8 @@ baseline: new=0 stale=0
 F2 高严重度，环境注册密钥明文/编码从 diff、entries、搜索泄露，Go 与真实 Python 均已复现。
 下一步等 A24 共享修复合进 go 后变基，在 shared StoredSecretFinder 纳入环境密钥，补 behaviour ledger，
 复验 20 条准确 baseline、最终 gate.sh -p 6 和 fuzz，零未决后 verified。生产 spec 边界和广播注销并发已补回归。
+F2 非显示元数据已在 A12 唯一 mapTexts 加同一 finder 兜底，pushdiff race 60.471s 通过；
+原版 20 条 baseline 因果证明复验也通过（21 HTTP cases / 3 actual bundles）。
 
 **Design:** `server/design/a14-publish.md` (Opus, 2026-11-17) covers the whole chain A11→A14 — package map, types, Agent protocol, state machine, locks, failure table, steps A13-1, A13-2, acceptance. Port to it; contract changes need the designer's or coordinator's agreement.
 

@@ -4,7 +4,8 @@
 范围：content sync Checker、缓存与失效广播、四个 GET 路由；非 HR。
 无子 agent、无 push/PR、无生产访问，测试经 rt 在测试服务器执行。
 
-状态：**复核中**。F1 已修复并经 race 回归；F2 已复现，等待 A24 共享修复进入 go 后变基接入。
+状态：**复核中**。F1 已修复并经 race 回归；F2 的元数据兜底已修复并经 pushdiff race，
+环境密钥快照等待 A24 共享修复进入 go 后变基接入。
 
 ## 发现
 
@@ -23,6 +24,12 @@
   明文、URL 编码及跨 CJK 的局部文本能从 push-diff、entries 返回并被 q 命中。
   真实 Python 同样复现，属于安全修正；协调者已确认在共享 finder 纳入环境密钥，
   保持全局 JSON hook 和用户可 reveal 的配置凭据策略不变。
+  更强回归发现仅更新 finder 仍不足：配置 `hosts` 字典键、row.key/path、文件路径等
+  不走显示文本转换，原来依赖全局 token hook 兜底。已在 A12 唯一的 mapTexts 遍历器
+  加入使用同一 finder 的元数据兜底，不新增私有算法；显示文本仍局部替换，其余字符串
+  和字典键含已知密钥则整项遮盖。排序确保遮盖后键冲突顺序确定。
+  `TestReviewStoredCredentialMetadataFallback` 先失败，随后 pushdiff race 通过（60.471s）；
+  普通上下文、用户可 reveal 的 password、隐藏视图和原对象不变均有断言。
 
 ## 补充检查
 
@@ -56,9 +63,13 @@ ok configflow/internal/deploy/contentsync 5.240s
 ```
 
 后续追加生产边界/并发广播后，同包 race：`ok configflow/internal/deploy/contentsync 2.531s`。
+元数据兜底：`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'cd server && go test -race -count=1 ./internal/deploy/pushdiff'`
+→ `ok configflow/internal/deploy/pushdiff 60.471s`。
 F2 真实 Python oracle 由 `testdata/review_a13_reference.py` 调用完整准备与 Flask 路由：
 `1 passed in 1.56s`，固定输出 `Python reference: registration key plaintext/encoded exposed in diff, entries and search; confirmed`。
 Go HTTP 相反断言先失败，确认明文和编码形式都能泄露/搜索。
+原版因果证明复验：`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'server/scripts/proddiff.sh --a13-proof'`
+→ `A13 real preparation: 21 HTTP cases, 3 actual bundles; all 20 deferred fields reproduced without preparation and resolved with it; PASS`。
 
 剩余：合入 A24 共享修复、修 F2、完成共享脱敏/分页与 20 条 baseline 因果证明复验，
 `git rebase go` 后运行 `server/scripts/gate.sh -p 6` 和相关 fuzz；零未决后改 verified。

@@ -228,10 +228,16 @@ func (t Text) withoutStored(find func(string) []redact.Range) Text {
 	return out
 }
 
-// WithoutStored replaces stored credentials only in display texts, preserving
-// useful context. The returned JSON-compatible value is independent of v.
+// WithoutStored replaces stored credentials inside display texts, preserving
+// useful context. Other metadata strings containing stored credentials are
+// masked as a whole. The returned JSON-compatible value is independent of v.
 func WithoutStored(v any, find func(string) []redact.Range) any {
-	return mapTexts(v, func(t Text) any { return t.withoutStored(find) })
+	return mapTexts(v, func(t Text) any { return t.withoutStored(find) }, func(text string) string {
+		if find != nil && len(find(text)) > 0 {
+			return redact.Redacted
+		}
+		return text
+	})
 }
 
 // WithoutSecrets renders the dialog's hidden-credential view.
@@ -246,10 +252,10 @@ func WithoutSecrets(v any) any {
 			}
 		}
 		return b.String()
-	})
+	}, nil)
 }
 
-func mapTexts(v any, rewrite func(Text) any) any {
+func mapTexts(v any, rewrite func(Text) any, metadata func(string) string) any {
 	data, err := json.Marshal(v)
 	if err != nil {
 		return nil
@@ -273,11 +279,18 @@ func mapTexts(v any, rewrite func(Text) any) any {
 	visit = func(v any) any {
 		switch x := v.(type) {
 		case map[string]any:
-			for k, item := range x {
+			out := make(map[string]any, len(x))
+			keys := make([]string, 0, len(x))
+			for key := range x {
+				keys = append(keys, key)
+			}
+			slices.Sort(keys)
+			for _, k := range keys {
+				item := x[k]
 				switch k {
 				case "name", "old", "new", "text", "info":
 					if item != nil {
-						x[k] = convert(item)
+						item = convert(item)
 					}
 				case "added_items", "removed_items", "lines":
 					if list, ok := item.([]any); ok {
@@ -286,12 +299,21 @@ func mapTexts(v any, rewrite func(Text) any) any {
 						}
 					}
 				default:
-					x[k] = visit(item)
+					item = visit(item)
 				}
+				if metadata != nil {
+					k = metadata(k)
+				}
+				out[k] = item
 			}
+			return out
 		case []any:
 			for i, item := range x {
 				x[i] = visit(item)
+			}
+		case string:
+			if metadata != nil {
+				return metadata(x)
 			}
 		}
 		return v
