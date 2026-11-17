@@ -176,11 +176,18 @@ func InitRulesets(ctx context.Context, id string, targets []string, proxyPolicy 
 	if len(targets) == 0 {
 		targets = []string{"direct", "proxy"}
 	}
+	selected := make([]string, 0, 2)
+	seen := make(map[string]bool, 2)
 	for _, t := range targets {
 		if t != "direct" && t != "proxy" {
 			return nil, invalid(msgTargets)
 		}
+		if !seen[t] {
+			seen[t] = true
+			selected = append(selected, t)
+		}
 	}
+	targets = selected
 	c, err := loadConfig(ctx, id)
 	if err != nil {
 		return nil, err

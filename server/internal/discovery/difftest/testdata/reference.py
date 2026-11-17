@@ -11,6 +11,13 @@ from backend.common.agent_manager import init_agent_manager
 
 repository = ProfileRepository(os.environ['DATA_DIR'])
 config.set_repository(repository)
+if sys.argv[1] == 'cfg06-seed':
+    repository.save_shared({'rule_library': []})
+    repository.save_profile('default', {
+        'proxy_groups': [{'id': 'g1', 'name': 'PROXY', 'type': 'select'}],
+        'rule_configs': [{'id': 'fallback', 'itemType': 'rule', 'rule_type': 'MATCH', 'policy': 'DIRECT'}],
+    })
+    sys.exit(0)
 if sys.argv[1] == 'seed':
     port = int(sys.argv[2])
     repository.save_shared({'rule_library': [
