@@ -62,6 +62,8 @@ class Case:
     wait_seconds: float = 30
     after_poll: tuple = ()
     file_contents: dict = field(default_factory=dict)
+    pause_before: float = 0
+    preserved: tuple = ()
 
 
 def at(document, path):

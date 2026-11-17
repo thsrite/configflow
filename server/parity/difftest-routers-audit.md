@@ -89,3 +89,15 @@ now requires a positive decimal string for dhcp_static del, compares it to the
 integer show ID and actually removes that row. Actual HTTP contract regression
 checks integer refusal and string deletion. This is a fixture/matrix correction,
 not a finding against either product; other iKuai mutation forms are unchanged.
+
+### H0032/H0033: storage validation can be reached from public fixed-IP apply
+
+These guards cannot be dismissed just because there is no direct binding editor.
+A valid public-import fixture with2048 existing bindings plus an ordinary preview/
+add reaches the2049 limit only when saving after the device write. A fake DHCP
+lease whose otherwise valid RouterOS ID exceeds512 characters likewise converts
+and reads back, then binding value validation refuses storage. Both recipes now
+pass through real R006→R005:502 generic storage-save message, exact DB unchanged,
+new reservation compensated; dynamic undo removes the static lease and warns of
+possible renewal/IP change. No private Python/Go helper is invoked. This proves
+reachability for the count and ID-length variants only, not all H0033 conjuncts.

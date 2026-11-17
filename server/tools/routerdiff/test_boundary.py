@@ -92,6 +92,13 @@ class BoundaryTests(unittest.TestCase):
                 self.assertEqual(call(18081, '/rest/ip/route/' + row['.id'], None, basic, 'GET')['comment'], 'foreign🧪')
                 call(18081, '/rest/ip/route/' + row['.id'], {'comment': 'updated'}, basic, 'PATCH')
                 self.assertEqual(side.rpc('snapshot')['fake']['ros']['/ip/route'][0]['comment'], 'updated')
+                first = call(18081, '/rest/ip/firewall/nat', {'chain': 'srcnat', 'action': 'accept',
+                             'comment': 'foreign first'}, basic, 'PUT')
+                second = call(18081, '/rest/ip/firewall/nat', {'chain': 'srcnat', 'action': 'accept',
+                              'comment': 'new before foreign', 'place-before': first['.id']}, basic, 'PUT')
+                ordered = side.rpc('snapshot')['fake']['ros']['/ip/firewall/nat']
+                self.assertEqual([item['.id'] for item in ordered], [second['.id'], first['.id']])
+                self.assertNotIn('place-before', ordered[0])
                 login = {'username': 'test-admin', 'passwd': hashlib.md5(DEVICE_PASSWORD.encode()).hexdigest(),
                          'pass': base64.b64encode(('salt_11' + DEVICE_PASSWORD).encode()).decode()}
                 self.assertEqual(call(18082, '/Action/login', login)['code'], 0)

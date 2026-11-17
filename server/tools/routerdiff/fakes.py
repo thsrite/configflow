@@ -38,6 +38,7 @@ class World:
                     '/routing/settings': {'policy-rules': 'mangle,vrf-lookup,vrf-unreach,local,user,main'},
                     '/ip/route': [], '/ip/firewall/nat': [], '/ip/firewall/mangle': [],
                     '/ip/firewall/filter': [], '/ip/firewall/address-list': [],
+                    '/tool/netwatch': [],
                     '/routing/table': [{'.id': '*1', 'name': 'main', 'fib': 'true'}]}
         self.ikuai = {name: [] for name in ('static_rt', 'static_rt_table', 'nat_rule', 'route_object',
             'stream_ipport', 'dhcp_server', 'dhcp_static', 'dhcp_lease', 'monitor_lanip', 'lan')}
@@ -271,6 +272,8 @@ class World:
         if method == 'PUT':
             if not isinstance(body, dict):
                 raise ProtocolError('ROS PUT needs object')
+            if 'place-before' in body and not any(row.get('.id') == body['place-before'] for row in self.ros.get(path, [])):
+                return 400, {}, {'message': 'no such item for place-before'}
             ident = self.ros_add(path, body)
             return 201, {}, copy.deepcopy(self.ros_row(path, ident))
         raise ProtocolError('unsupported ROS operation: ' + method + ' ' + path)
@@ -283,7 +286,9 @@ class World:
 
     def ros_add(self, path, values):
         self.sequence['ros'] += 1
-        row = {'.id': '*' + format(self.sequence['ros'], 'X'), **copy.deepcopy(values)}
+        values = copy.deepcopy(values)
+        before = values.pop('place-before', None)
+        row = {'.id': '*' + format(self.sequence['ros'], 'X'), **values}
         if path == '/ip/firewall/nat':
             row.update(invalid='true', dynamic='false')
             self.nat_pending.add(row['.id'])
@@ -292,7 +297,14 @@ class World:
         if path == '/ip/firewall/address-list' and row.get('address'):
             network = ipaddress.ip_network(row['address'], strict=False)
             row['address'] = str(network.network_address) if network.prefixlen == network.max_prefixlen else str(network)
-        self.ros.setdefault(path, []).append(row)
+        rows = self.ros.setdefault(path, [])
+        if before is None:
+            rows.append(row)
+        else:
+            position = next((index for index, item in enumerate(rows) if item.get('.id') == before), None)
+            if position is None:
+                raise ProtocolError('console add references missing place-before item')
+            rows.insert(position, row)
         return row['.id']
 
     @staticmethod

@@ -468,3 +468,50 @@ Native TLS and IPv6 device transport iteration:
 `RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'set -euo pipefail; cd server/tools/routerdiff; export PYTHONDONTWRITEBYTECODE=1; ~/cf-test/.venv/bin/python -m unittest -v test_recipes; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary /tmp/routerdiff-build.AybfCK/configflow --world probe-tls --world probe-ipv6 --output /tmp/routerdiff-probe-tls-ipv6.json'`
 → Ran 2 tests in0.234s / OK; TLS6 in0.79s, IPv6 transport10 cumulative in1.00s;
 go-unimplemented10, referenced_entries7, complete=false, remaining_audits2301.
+
+Real-time token boundary / DNS publication / storage-refusal iteration:
+- Fixed-IP token uses real elapsed time, no clock/signature/product monkeypatch:
+  public preview → wait598s → successful add → wait6s → exact expired-token409,
+  no second device request/storage write. Foreground test elapsed604.85s. Default
+  composition now includes this intentionally slow world; do not call the live
+  boundary complete after merely parsing/generating its recipe.
+- Reference preview payloads now inspect with the actual itsdangerous library:
+  known-key signature, exact scope/member shape, operation count/order, 64hex
+  connection digest and no router password. Random-key world inspects unverified
+  payload only; own-side HTTP apply/restart authenticates behaviour. This is a
+  Python reference privacy assertion, not Go-token format emulation or cross-side
+  token substitution. Negative protocol tests deliberately sign leaked-password,
+  wrong-scope/digest/identity payloads and prove rejection.
+- DNS guard all four block_dot/failover combinations publish/update/withdraw via
+  real HTTP, preserve unchanged owned hairpin/hijack IDs and foreign redirect/
+  connected route, retain DHCP domain/NTP and IPv6 RA lifetime. DHCP DNS single
+  OxiDNS and IPv6 advertise-dns disable are exercised. No real scripts execute;
+  Netwatch/RA traffic and failover remain L5, scripts stay exact compared content.
+- Fake implements actual place-before insertion without persisting that command
+  argument; actual TCP boundary test verifies device order and readback. Empty
+  Netwatch table is explicit; its missing snapshot initially failed a postcondition
+  (fixture only), now all workflows pass without relaxing expected device results.
+- Separate plain-mask iKuai DHCP variant verifies the COMPLETE DHCP form and all
+  unrelated fields survive, dns1/dns2 both explicit target; default suffix remains
+  enabled everywhere else. HA fixture with primary offline and peer online proves
+  VIP DHCP target + guard/Netwatch target while preserving both host exemptions.
+- H0032/H0033 are NOT convenient N/A: public add after a valid2048-binding import
+  hits record2049 validation; oversized real fake device ID hits binding value
+  length validation. Both actual successful device writes are compensated after
+  storage rejects, DB remains byte/logically unchanged, foreign rows survive.
+  Dynamic undo removes the static reservation and warns of renewal impact.
+
+Exact .32 commands/tails:
+`RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'set -euo pipefail; cd server/tools/routerdiff; export PYTHONDONTWRITEBYTECODE=1; ~/cf-test/.venv/bin/python -m unittest -v test_recipes; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary /tmp/routerdiff-build.AybfCK/configflow --world fixed-ip-expiry --output /tmp/routerdiff-fixed-expiry.json'`
+→ Ran 2 tests in0.180s / OK; real-time ageing598/598s,6/6s;
+fixed_expiry3 in604.85s; go-unimplemented3, complete=false, remaining_audits2301.
+`RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'set -euo pipefail; cd server/tools/routerdiff; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY=/tmp/routerdiff-build.AybfCK/configflow; ~/cf-test/.venv/bin/python -m unittest -v test_recipes test_boundary; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world dns-guard --output /tmp/routerdiff-dns-guard.json'`
+→ Ran 6 tests in10.325s / OK; later world failed only because missing empty fake
+Netwatch table (fixed). Authoritative rerun:
+`RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'set -euo pipefail; cd server/tools/routerdiff; export PYTHONDONTWRITEBYTECODE=1; ~/cf-test/.venv/bin/python -m unittest -v test_recipes; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary /tmp/routerdiff-build.AybfCK/configflow --world dns-guard --world dhcp-ikuai-plain --world dns-ha --output /tmp/routerdiff-dns-success.json'`
+→ Ran 2 tests in0.272s / OK; guard19 in26.70s, iKuai22, HA26 cumulative;
+go-unimplemented26, referenced_entries13, complete=false, remaining_audits2301.
+`RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'set -euo pipefail; cd server/tools/routerdiff; export PYTHONDONTWRITEBYTECODE=1; ~/cf-test/.venv/bin/python -m unittest -v test_tokens test_recipes test_runner; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary /tmp/routerdiff-build.AybfCK/configflow --world fixed-ip-binding-cap --world fixed-ip-long-id --world fixed-ip-restart-random --world fixed-ip --output /tmp/routerdiff-binding-validation.json'`
+→ Ran 9 tests in0.492s / OK; fixed13, random-key15, binding-cap17, long-id19;
+go-unimplemented19, referenced_entries21, complete=false, remaining_audits2301.
+No test sessions remain. Task continues; full latest composition not yet rerun.

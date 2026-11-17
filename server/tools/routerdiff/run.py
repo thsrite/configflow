@@ -18,6 +18,7 @@ import releases
 import clients
 import sync
 import upstream
+import dns
 from compare import differences, logical_snapshot, response_view, timestamp
 from harness import Pair
 from harness import decode_response
@@ -26,6 +27,8 @@ from invariants import configuration_only, profile_write, fields
 from seed import router, AGENT_TOKEN
 from fakes import World
 from addresses import report_aliases
+from tokens import inspect_python_token
+from seed import JWT_SECRET
 
 
 def shape(path):
@@ -57,6 +60,15 @@ def poll(side, values, expected, seconds, strict=True):
 
 
 def execute(pair, case, available, routes):
+    if not 0 <= case.pause_before <= 605:
+        raise ValueError('real-time boundary wait exceeds reviewed fixture limit')
+    if case.pause_before:
+        cases.resolve(case.document, pair.python.observations)  # Fail missing prerequisites before a long wait.
+        deadline = time.monotonic() + case.pause_before
+        while (remaining := deadline - time.monotonic()) > 0:
+            time.sleep(min(20, remaining))
+            print(case.ident + ': real-time ageing ' + str(round(case.pause_before - max(0, deadline - time.monotonic())))
+                  + '/' + str(case.pause_before) + 's', flush=True)
     request = dict(method=case.method, path=case.path, document=case.document, raw=case.raw,
                    headers=case.headers, auth=case.auth)
     observations, snapshots = {}, {}
@@ -126,6 +138,9 @@ def execute(pair, case, available, routes):
                     raise RuntimeError(case.ident + ': Python header precondition failed: ' + key)
             if case.message is not None and response['content'].get('message') != case.message:
                 raise RuntimeError(case.ident + ': wrong Python guard reached: ' + repr(response['content']))
+            if case.route == 'R006' and response['status'] == 200:
+                inspect_python_token(response['content']['token'], own_request['document']['profile_id'],
+                                     side.options.get('environment', {}).get('JWT_SECRET_KEY', JWT_SECRET))
             for path in case.absent:
                 try:
                     cases.at(response['content'], path)
@@ -211,6 +226,11 @@ def execute(pair, case, available, routes):
                     return [row for row in snapshot['fake'][peer][table] if row.get(identity_key) == identity]
                 if not objects(before) or differences(objects(before), objects(after)):
                     raise RuntimeError(case.ident + ': foreign device object changed or disappeared')
+            for peer, table, criteria in case.preserved:
+                def selected(snapshot):
+                    return [row for row in snapshot['fake'][peer][table] if World.matches(row, criteria)]
+                if not selected(before) or differences(selected(before), selected(after)):
+                    raise RuntimeError(case.ident + ': expected retained device objects changed or disappeared')
             if case.unchanged:
                 changed = differences(before, after)
                 if changed:
@@ -393,12 +413,18 @@ def main():
               ('fixed-ip-64', clients.batch_options(), (clients.batch64,)),
               ('fixed-ip-restart-stable', clients.options(), (clients.fixed_restart_stable,)),
               ('fixed-ip-restart-random', clients.random_key_options(), (clients.fixed_restart_random,)),
+              ('fixed-ip-expiry', clients.options(), (clients.fixed_expiry,)),
+              ('fixed-ip-binding-cap', clients.binding_limit_options(), (clients.binding_limit,)),
+              ('fixed-ip-long-id', clients.options(), (clients.long_binding_id,)),
               ('discovery', clients.options(), (clients.discovery,)),
               ('discovery-failures', clients.options(), (clients.discovery_failures,)),
               ('rule-sync', sync.options(), (sync.manual_refresh,)),
               ('rule-sync-download-failures', sync.options(), (sync.download_failures,)),
               ('rule-sync-proxy', sync.proxy_options(), (sync.proxy_refresh,)),
               ('upstream-linked', upstream.options(), (upstream.linked,)),
+              ('dns-guard', dns.options(), (dns.guard,)),
+              ('dhcp-ikuai-plain', dns.ikuai_options(), (dns.ikuai_dhcp,)),
+              ('dns-ha', dns.ha_options(), (dns.ha,)),
               ('stored', fixtures.stored_options(), (fixtures.receipts, fixtures.stored_guards))]
     if args.world:
         unknown = set(args.world) - {name for name, _, _ in worlds}

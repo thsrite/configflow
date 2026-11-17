@@ -411,3 +411,64 @@ def fixed_restart_stable():
 
 def fixed_restart_random():
     yield from _restart(False)
+
+
+def fixed_expiry():
+    preview = 'R006/real-time-expiry-preview'
+    yield Case(preview, 'R006', 'POST', '/api/client-devices/fixed-ip/preview', 200, ('T05',),
+               document=request('add', '10.44.0.22', '02:00:00:00:00:22', 'r-ros', '真实时间临界🧪'),
+               prepare=(device_world(),), unchanged=False, effect='device-read', checks={'success': True})
+    yield Case('R005/token-near-600-seconds', 'R005', 'POST', '/api/client-devices/fixed-ip/apply', 200,
+               ('R005-B07', 'T05'), document={'profile_id': 'alpha', 'token': Ref(preview, '/body/token')},
+               requires=('R006',), pause_before=598, unchanged=False, effect='profile-write-device', foreign=FOREIGN,
+               checks={'success': True}, stored={'client_fixed_ips/10.44.0.22/mac': '02:00:00:00:00:22'},
+               fake_lengths={'ros/~1ip~1dhcp-server~1lease': 3, 'ikuai/dhcp_static': 1})
+    yield Case('R005/token-past-600-seconds', 'R005', 'POST', '/api/client-devices/fixed-ip/apply', 409,
+               ('R005-B07', 'R005-F13', 'H0045', 'H0046', 'T05'),
+               document={'profile_id': 'alpha', 'token': Ref(preview, '/body/token')}, requires=('R006',),
+               pause_before=6, message='固定 IP 预览无效或已过期，请重新预览确认。',
+               expected_requests=({'match': {'peer': 'ros'}, 'count': 0}, {'match': {'peer': 'ikuai'}, 'count': 0}))
+
+
+def binding_limit_options():
+    value = options()
+    bindings = {}
+    for index in range(1, 2049):
+        ip = '10.45.' + str(index // 256) + '.' + str(index % 256)
+        bindings[ip] = {'router_id': 'r-ros', 'vendor': 'routeros', 'id': '*' + format(index + 1, 'X'),
+                        'ip': ip, 'mac': f'02:BB:00:00:{index // 256:02X}:{index % 256:02X}',
+                        'comment': 'cf-client:合成已有记录🧪', 'server': 'lan'}
+    value['alpha']['client_fixed_ips'] = bindings
+    return value
+
+
+def binding_limit():
+    preview = 'R006/binding-cap-preview'
+    yield Case(preview, 'R006', 'POST', '/api/client-devices/fixed-ip/preview', 200, ('T06',),
+               document=request('add', '10.44.0.22', '02:00:00:00:00:22', 'r-ros', '第2049条🧪'),
+               prepare=(device_world(),), unchanged=False, effect='device-read')
+    yield Case('R005/binding-cap-transaction-rejected', 'R005', 'POST', '/api/client-devices/fixed-ip/apply', 502,
+               ('H0032', 'R005-F22', 'T06'),
+               document={'profile_id': 'alpha', 'token': Ref(preview, '/body/token')}, requires=('R006',),
+               unchanged=False, effect='device-only', foreign=FOREIGN,
+               message='固定 IP 记录保存失败，已撤销本次路由器变更，请重试。',
+               fake_lengths={'ros/~1ip~1dhcp-server~1lease': 2},
+               request_order=({'peer': 'ros', 'method': 'PUT', 'path': '/rest/ip/dhcp-server/lease'},
+                              {'peer': 'ros', 'method': 'DELETE'}))
+
+
+def long_binding_id():
+    seed = device_world()
+    seed['ros']['/ip/dhcp-server/lease'][0]['.id'] = '*' + 'A' * 513
+    preview = 'R006/long-device-id-preview'
+    yield Case(preview, 'R006', 'POST', '/api/client-devices/fixed-ip/preview', 200, ('D17',),
+               document=request('add', '10.44.0.21', '02:00:00:00:00:21', 'r-ros', '长设备标识🧪'),
+               prepare=(seed,), unchanged=False, effect='device-read')
+    yield Case('R005/long-binding-id-transaction-rejected', 'R005', 'POST', '/api/client-devices/fixed-ip/apply', 502,
+               ('H0033', 'R005-F22', 'T06'),
+               document={'profile_id': 'alpha', 'token': Ref(preview, '/body/token')}, requires=('R006',),
+               unchanged=False, effect='device-only', foreign=FOREIGN,
+               message='固定 IP 记录保存失败，已撤销本次路由器变更，请重试。；RouterOS 已移除本次静态预留，客户端续租恢复动态 DHCP，IP 可能变化。',
+               stored={'client_fixed_ips': {}}, fake_lengths={'ros/~1ip~1dhcp-server~1lease': 1},
+               request_order=({'peer': 'ros', 'method': 'POST', 'path': '/rest/ip/dhcp-server/lease/make-static'},
+                              {'peer': 'ros', 'method': 'PATCH'}, {'peer': 'ros', 'method': 'DELETE'}))
