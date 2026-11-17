@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"configflow/internal/jsonx"
 	"configflow/internal/yamlx"
@@ -72,4 +73,54 @@ func readProviderTestValue(text string) (any, error) {
 		return nil, err
 	}
 	return jsonx.Parse(data)
+}
+
+// Plain nesting has no alias limit; test the native limit without extrapolating
+// Python's recursion ceiling. Durations are logged, not compared to wall time.
+func TestN73PlainDepthBoundary(t *testing.T) {
+	for _, depth := range []int{1000, 4000, 10000, 10001} {
+		t.Run(fmt.Sprint(depth), func(t *testing.T) {
+			nested := strings.Repeat("[", depth) + "0" + strings.Repeat("]", depth)
+			started := time.Now()
+			source := "proxies: []\nextra: " + nested
+			_, err := loadProviderProxies(source, "Synthetic", "", "订阅", "本次订阅返回的内容")
+			if (err == nil) != (depth <= 10000) {
+				t.Fatalf("provider loader: %v", err)
+			}
+			_, _ = nodeAt(source, []any{"extra"})
+			_, err = loadProviderProxies("proxies: "+nested, "Synthetic", "", "订阅", "本次订阅返回的内容")
+			if err == nil {
+				t.Fatal("invalid proxy shape materialized")
+			}
+			t.Logf("depth=%d bytes=%d elapsed=%s", depth, len(nested), time.Since(started))
+		})
+	}
+}
+
+func TestN73ProviderScalarAndCompositeKeys(t *testing.T) {
+	repoContext(t)
+	proxies, err := loadProviderProxies("proxies: [{1: a, name: A}]", "Synthetic", "", "订阅", "本次订阅返回的内容")
+	if err != nil || len(proxies) != 1 || !jsonx.Equal(proxies[0], jsonx.Obj("1", "a", "name", "A")) {
+		t.Fatalf("scalar key changed: %v %v", proxies, err)
+	}
+	if _, err := loadProviderProxies("proxies: [{? [a,b]: c, name: A}]", "Synthetic", "", "订阅", "本次订阅返回的内容"); err == nil || !strings.Contains(err.Error(), "Provider YAML 内容无效") {
+		t.Fatalf("composite key refusal lost context: %v", err)
+	}
+	proxies, err = loadProviderProxies("? [a,b]\n: ignored\nproxies: [{name: A}]", "Synthetic", "", "订阅", "本次订阅返回的内容")
+	if err != nil || len(proxies) != 1 || !jsonx.Equal(proxies[0], jsonx.Obj("name", "A")) {
+		t.Fatalf("opaque root metadata changed proxies: %v %v", proxies, err)
+	}
+}
+
+func TestN73ProviderScalarKeyProjectionAfterMerges(t *testing.T) {
+	repoContext(t)
+	source := "base: &b {1: inherited, name: Base}\nproxies: [{<<: *b, '1': explicit, name: A}]\n"
+	proxies, err := loadProviderProxies(source, "Synthetic", "", "订阅", "本次订阅返回的内容")
+	if err != nil || len(proxies) != 1 || !jsonx.Equal(proxies[0], jsonx.Obj("1", "explicit", "name", "A")) {
+		t.Fatalf("merged projection changed winner: %v %v", proxies, err)
+	}
+	proxies, err = ParseProviderProxies("proxies: [{1: a, name: A}]", "Synthetic", "")
+	if err != nil || len(proxies) != 1 || !jsonx.Equal(proxies[0], jsonx.Obj("1", "a", "name", "A")) {
+		t.Fatalf("public scalar-key normalization: %v %v", proxies, err)
+	}
 }

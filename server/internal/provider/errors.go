@@ -147,7 +147,7 @@ func shapeError(message string, field ...any) *Error {
 // yamlCause adapts native diagnostics to the existing A11 hook argument. It
 // preserves yaml.v3's message and position; it never reconstructs Python errors.
 func yamlCause(err error, _ string) *pyyaml.Error {
-	if !errors.Is(err, yamlx.ErrSyntax) && !errors.Is(err, yamlx.ErrPolicy) && !errors.Is(err, yamlx.ErrAliasRecursion) && !errors.Is(err, yamlx.ErrAliasBudget) {
+	if !errors.Is(err, yamlx.ErrType) && !errors.Is(err, yamlx.ErrSyntax) && !errors.Is(err, yamlx.ErrPolicy) && !errors.Is(err, yamlx.ErrAliasRecursion) && !errors.Is(err, yamlx.ErrAliasBudget) {
 		return nil
 	}
 	cause := &pyyaml.Error{Class: "YAMLError", Problem: err.Error()}

@@ -400,6 +400,9 @@ func loadProviderProxies(text string, name, path any, kind, sourceLabel string) 
 	if proxyNode == nil {
 		return []any{}, nil
 	}
+	if err := yamlx.ProjectJSONKeys(proxyNode, yamlx.StringifyScalarKeys); err != nil {
+		return nil, providerContext(providerSourceError(err, yamlCause(err, text), text, sourceLabel), name, path, kind)
+	}
 	encoded, err := yamlx.ToJSON(proxyNode)
 	if err != nil {
 		return nil, providerContext(providerSourceError(err, yamlCause(err, text), text, sourceLabel), name, path, kind)
