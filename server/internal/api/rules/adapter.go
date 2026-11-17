@@ -2,10 +2,13 @@ package rules
 
 // Only this boundary handles legacy repository, syntax and Agent record values.
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"reflect"
 
 	"configflow/internal/agents"
 	"configflow/internal/httpx"
@@ -77,20 +80,51 @@ func editProfile(ctx context.Context, id string, edit func(record) error) error 
 		if err != nil {
 			return nil, err
 		}
+		before := maps.Clone(profile)
 		if err = edit(profile); err != nil {
 			return nil, err
 		}
 		if err := tx.Err(); err != nil {
 			return nil, err
 		}
-		next, err := legacy(profile)
-		if err != nil {
-			return nil, err
+		for key, value := range profile {
+			previous, existed := before[key]
+			if bytes.Equal(previous, value) {
+				continue
+			}
+			if existed {
+				same, err := sameJSONValue(previous, value)
+				if err != nil {
+					return nil, fmt.Errorf("compare profile field %s: %w", key, err)
+				}
+				if same {
+					continue
+				}
+			}
+			next, err := jsonx.Parse(value)
+			if err != nil {
+				return nil, err
+			}
+			raw.Set(key, next)
 		}
-		raw.Update(next)
-		return nil, nil
+		return nil, tx.Err()
 	}, id)
 	return err
+}
+
+// sameJSONValue distinguishes real edits from re-encoding a nested object.
+// Numbers retain their original tokens; only object member order and separator
+// whitespace are immaterial here. The store's raw-byte/revision rules stay intact.
+func sameJSONValue(before, after json.RawMessage) (bool, error) {
+	var values [2]any
+	for i, raw := range []json.RawMessage{before, after} {
+		decoder := json.NewDecoder(bytes.NewReader(raw))
+		decoder.UseNumber()
+		if err := decoder.Decode(&values[i]); err != nil {
+			return false, err
+		}
+	}
+	return reflect.DeepEqual(values[0], values[1]), nil
 }
 func validateSyntax(item record) error {
 	raw, err := legacy(item)
