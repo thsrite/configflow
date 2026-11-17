@@ -7,6 +7,7 @@ import datetime
 import errno
 import fcntl
 import hashlib
+import html
 import io
 import itertools
 import json
@@ -248,7 +249,38 @@ def apply_rules(rules, route, a, b):
                 lc[lk], rc[rk] = pair
 
 
+def migrated_api_error(left, right, route):
+    """Step B #3/O12: assert the observed short-link error's JSON migration.
+
+    Only this snapshot route needs the exception. Status, exact public message,
+    success=False and the two-field envelope are required; headers still compare.
+    """
+    if route != '/api/agents/i/<token>' or left[0] < 400 or left[0] != right[0]:
+        return False
+    if not right[1].startswith('application/json'):
+        return False
+    try:
+        if left[1].startswith('text/html'):
+            match = re.search(r'<p>(.*?)</p>', left[2].decode('utf-8'), re.S)
+            if not match:
+                return False
+            message = html.unescape(match[1].replace('<br>', '\n'))
+        elif left[1].startswith('text/plain'):
+            message = left[2].decode('utf-8').removesuffix('\n')
+        else:
+            return False
+        body = load_json(right[2])
+    except (ValueError, UnicodeError):
+        return False
+    return (isinstance(body, dict) and set(body) == {'success', 'message'}
+            and body['success'] is False and body['message'] == message)
+
+
 def response_diffs(left, right, route, rules):
+    if migrated_api_error(left, right, route):
+        # The exact approved body/type change was verified, not masked. Keep
+        # the original Python headers so missing or changed headers still fail.
+        left = (left[0], right[1], right[2], *left[3:])
     out = []
     if (left[0] == 0) != (right[0] == 0):
         return [('status', 'transport-one-sided')]

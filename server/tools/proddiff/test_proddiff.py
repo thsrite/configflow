@@ -22,6 +22,28 @@ def reply(body, content_type=JSON, status=200, headers=None):
 
 
 class ComparatorTests(unittest.TestCase):
+    def test_short_link_json_error_migration_is_explicit_and_strict(self):
+        route = '/api/agents/i/<token>'
+        source = reply(b'<h1>Not Found</h1><p>Missing &amp; expired<br>retry</p>',
+                       'text/html; charset=utf-8', 404, {'cache-control': 'no-store'})
+        target = reply({'success': False, 'message': 'Missing & expired\nretry'},
+                       status=404, headers=source[3])
+        self.assertEqual([], pd.response_diffs(source, target, route, []))
+        for changed in [
+            reply({'success': True, 'message': 'Missing & expired\nretry'}, status=404),
+            reply({'success': False, 'message': 'different'}, status=404),
+            reply({'success': False, 'message': 'Missing & expired\nretry', 'extra': 1}, status=404),
+            reply(target[2], status=400),
+            reply(b'{"success":false,"success":false,"message":"Missing & expired\\nretry"}', status=404),
+            reply(target[2], 'text/plain', 404),
+        ]:
+            with self.subTest(changed=changed):
+                self.assertFalse(pd.migrated_api_error(source, changed, route))
+                self.assertTrue(pd.response_diffs(source, changed, route, []))
+        self.assertTrue(pd.response_diffs(source, target, '/other', []))
+        self.assertIn(('header.Cache-Control', 'missing-in-go'),
+                      pd.response_diffs(source, reply(target[2], status=404), route, []))
+
     def test_mutations_are_detected(self):
         good = reply(b'{"success":true,"data":{"count":3,"name":"a","items":["x","y"],"note":""}}')
         tests = [
