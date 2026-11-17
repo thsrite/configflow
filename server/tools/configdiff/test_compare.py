@@ -17,6 +17,27 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_pull_log_parser_and_observer_detect_extra_head_log_header_drift_and_capability_leaks(self):
+        from cases.pull_logging import events, HeadPull
+        message = '配置被拉取：mihomo（配置空间 默认），HTTP 200，来源 127.0.0.1，客户端 configdiff-before-head'
+        plain = ('2026-01-01 - INFO - ' + message + '\n').encode()
+        structured = (json.dumps({'level': 'INFO', 'message': message, 'time': '2026-01-01'}) + '\n').encode()
+        value = [{'level': 'INFO', 'message': message}]
+        self.assertEqual(events(plain), value)
+        self.assertEqual(events(structured), value)
+        self.assertNotEqual(events(plain.replace(b'INFO', b'WARN')), value)
+        self.assertNotEqual(events(plain + b'\xff'), value)
+        observer = HeadPull(None, None, None)
+        observer.before_values[1] = observer.after_values[1] = {'sql': 'same'}
+        observed = {'get_statuses': [200, 200], 'head_header_violations': [], 'pull_events': value,
+                    'capabilities_absent': True}
+        observer.observed = [copy.deepcopy(observed), copy.deepcopy(observed)]
+        self.assertEqual(observer.compare(Policy()), [])
+        for key, changed in [('get_statuses', [200, 401]), ('head_header_violations', [{'field': 'content-length'}]),
+                             ('pull_events', value * 2), ('pull_events', []), ('capabilities_absent', False)]:
+            observer.observed[1] = {**observed, key: changed}
+            self.assertTrue(observer.compare(Policy()), key)
+
     def test_listener_switch_observer_detects_false_success_and_controller_mutations(self):
         from cases.web_switch import Switch
         observer = Switch(None, None, None, None)

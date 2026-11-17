@@ -1766,3 +1766,19 @@ current compared=22 go-unimplemented=38 design_errors=[]；exit=0
 ```
 
 原R仍差238、H仍差513，另有已列partial/防御性不可达槽；继续GET拉取日志/HEAD、其余helper与长流程，最终.32全量未执行。
+
+## 批次 103：11条config拉取的HEAD与真实GET日志
+
+- R021/R022/R023/R024/R025/R026/R029/R030/R031/R032/R034-B90共11新增原编号，遍历所有真实pull模板。每个场景先GET，再HEAD，再GET作为有序日志屏障；比较本端HEAD与GET的Content-Type/Disposition/cache/ETag/Last-Modified/Vary/profile/Content-Length一致、HEAD无body，只有两条准确INFO拉取事件、没有HEAD事件，query中的能力值与已知capabilities不出现在新增日志中。完整SQL/files前后不变，未来Go接通后同样实测。
+- 两条GET使用不同受控User-Agent标记；等后一个GET事件到达再判HEAD缺席，不用固定日志或单次睡眠猜测。文件logger只解析时间/包装格式以外的完整中文消息与severity，JSON/plain双格式保留事件字段；非法UTF-8、缺失事件、额外HEAD事件、错误headers/status或capability泄露的故意错误自检均能失败。共87项自检通过。
+- .63本次SSH端口连接超时255，测试未成功启动/回传，已明确按brief回退.32，不计测试失败。.32独立和常规runner均跑完11变体，全部Go尚未实现、design_errors=[]；Python真实GET/HEAD/日志/存储前提全部通过，未把未接通视为相比通过。X07仍只有部分事件覆盖，轮转/完整生命周期后续继续。
+- 统一9421变体、原R4303（S689/F2667/B947）、H599、G16；findings仍closed81/accepted7/open19/O12单列1。原R仍差227、H仍差513及partial/N/A/长流程。
+
+```text
+.32 native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups config-pull-head-and-real-logs --baseline 7521bb5c
+current go-unimplemented=11 design_errors=[]；exit=0
+87 self-checks + deliberately wrong-Go-response detection OK
+独立原始报告/tmp/configdiff-pull-head-log.json
+```
+
+继续真实日志warning/tail、I/O失败与其余清单；最终.32全量未执行。未读Go业务、未派子agent、未推送。
