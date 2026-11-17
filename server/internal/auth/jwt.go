@@ -39,8 +39,8 @@ func (e *ClaimTypeError) Error() string { return e.Message }
 func decodeError(message string) error { return &TokenError{Message: message} }
 
 // EncodeHS256 is jwt.encode(claims, key, algorithm="HS256"): header
-// {"alg":"HS256","typ":"JWT"} (sorted), the claims as compact ASCII JSON in
-// their order, unpadded base64url segments, HMAC-SHA256 signature.
+// {"alg":"HS256","typ":"JWT"} (sorted), the claims as compact UTF-8 JSON with
+// native encoding, unpadded base64url segments, HMAC-SHA256 signature.
 func EncodeHS256(claims any, key string) (string, error) {
 	header := `{"alg":"HS256","typ":"JWT"}`
 	payload, err := jsonresp.Encode(claims)
@@ -167,7 +167,7 @@ func validateClaims(claims *Claims, now time.Time) error {
 			return &TokenError{Expired: true, Message: "Signature has expired"}
 		}
 	}
-	if value := claims.Audience; value != nil && string(value) != "null" && string(value) != `""` && string(value) != "[]" && string(value) != "{}" && string(value) != "false" && string(value) != "0" {
+	if audiencePresent(claims.Audience) {
 		return decodeError("Invalid audience")
 	}
 	return nil
@@ -234,4 +234,32 @@ func base64urlDecode(segment string) ([]byte, error) {
 		return base64.URLEncoding.DecodeString(segment)
 	}
 	return base64.RawURLEncoding.DecodeString(segment)
+}
+
+func audiencePresent(raw json.RawMessage) bool {
+	if raw == nil {
+		return false
+	}
+	var value any
+	d := json.NewDecoder(bytes.NewReader(raw))
+	d.UseNumber()
+	if d.Decode(&value) != nil {
+		return true
+	}
+	switch v := value.(type) {
+	case nil:
+		return false
+	case bool:
+		return v
+	case string:
+		return v != ""
+	case json.Number:
+		f, err := v.Float64()
+		return err != nil || f != 0
+	case []any:
+		return len(v) > 0
+	case map[string]any:
+		return len(v) > 0
+	}
+	return true
 }

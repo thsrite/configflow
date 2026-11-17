@@ -83,3 +83,39 @@ func TestNativeJWTInteroperatesWithPython(t *testing.T) {
 		t.Fatal("illegal signature alphabet accepted")
 	}
 }
+
+func TestNativeAudienceKeepsEmptyForms(t *testing.T) {
+	for _, audience := range []string{`null`, `false`, `0`, `0.0`, `0e1`, `""`, `[ ]`, `{ }`} {
+		token := signedSegments(`{"alg":"HS256"}`, `{"aud":`+audience+`}`, "synthetic-key")
+		if _, err := DecodeHS256(token, "synthetic-key", time.Now()); err != nil {
+			t.Fatalf("%s: %v", audience, err)
+		}
+	}
+}
+
+func FuzzNativeJWT(f *testing.F) {
+	for _, token := range []string{"abc", signedSegments(`{"alg":"HS256"}`, `{"exp":2000000000.5,"unknown":[1,true]}`, "synthetic-key"), signedSegments(`{"alg":"none"}`, `{}`, "synthetic-key")} {
+		f.Add(token)
+	}
+	f.Fuzz(func(t *testing.T, token string) {
+		claims, err := DecodeHS256(token, "synthetic-key", time.Unix(1900000000, 0))
+		if err == nil {
+			data, err := json.Marshal(claims)
+			if err != nil || !json.Valid(data) {
+				t.Fatalf("%s %v", data, err)
+			}
+		}
+	})
+}
+
+func TestNativeJWTAcceptsOptionalSegmentPadding(t *testing.T) {
+	const key = "synthetic-padded-key"
+	input := base64.URLEncoding.EncodeToString([]byte(`{"alg":"HS256","typ":"JWT"}`)) + "." + base64.URLEncoding.EncodeToString([]byte(`{"username":"x"}`))
+	mac := hmac.New(sha256.New, []byte(key))
+	mac.Write([]byte(input))
+	token := input + "." + base64.URLEncoding.EncodeToString(mac.Sum(nil))
+	claims, err := DecodeHS256(token, key, time.Now())
+	if err != nil || claimString(claims.Username) != "x" {
+		t.Fatalf("%+v %v", claims, err)
+	}
+}
