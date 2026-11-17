@@ -1485,3 +1485,19 @@ cumulative: go-unimplemented=6629 compared=2323 dependency=67 different=84 O12-s
 ```
 
 继续剩余清单；此为迭代报告，最终.32全量未执行。
+
+## 批次 86：只读查询选择器与provider三环境认证
+
+- 新增148已验证变体：查询/统计选择器16（4相比通过、12 Go尚未实现），provider认证132（48相比通过、66 Go尚未实现、18已知provider元数据差异）。新增原R31编号；覆盖并集原R4244（S678/F2651/B915）、H533、G16，统一9252变体。provider的18差异已写入findings，保留原始比较而非仅存临时报告。
+- 查重/匹配用两空间不同域名和规则ID明确观察选择结果及顺序，正则预览明确使用共享候选；统计用真实近期样本走生产30分钟节流，返回两空间不同规则数，同时SQL/files及两份历史精确不变。回环上游0请求。
+- 默认/scoped聚合和单订阅逐条跑登录、关闭登录但设置config_token、完全开放三环境D1–D8；开放D1/D2/D3/D6/D7实际200，当前/退役内部能力query始终401，配JWT或伪造internal header也拒绝。拒绝时全SQL/files不变；允许时比较缓存、served文件和所有metadata，来源HTTP0次。能力含+，必须query编码；初稿未编码导致测试了另一字符串，已修正整组重跑。沿用严格Metadata比较器检查文件名身份/时间窗，避免秒边界被误报，同时不吞掉注释差异。
+
+```text
+.63 run.py --groups profile-query-selectors --baseline 5535931d
+compared=4 go-unimplemented=12 design_errors=[] seconds=6.52；exit=0
+.63 run.py --groups provider-auth-environments --baseline 5535931d
+compared=48 go-unimplemented=66 different=18 design_errors=[] seconds=20.33；exit=1（真实已知元数据差异）
+随后常规runner重跑两个组写入统一results/findings；73项自检通过
+```
+
+协调者已通知最新go含findings修复/C35/N8-2；本批提交后立即rebase并逐组复验，closed须带修复提交，accepted须链接behaviour-changes条目，未解决继续open。

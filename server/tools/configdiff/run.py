@@ -111,6 +111,10 @@ def main():
     groups.update(repository_resources)
     from cases.profile_generators import GROUPS as profile_generators
     groups.update(profile_generators)
+    from cases.profile_queries import GROUPS as profile_queries
+    groups.update(profile_queries)
+    from cases.provider_auth import GROUPS as provider_auth
+    groups.update(provider_auth)
     from cases.profile_rebind_helpers import GROUPS as profile_rebind_helpers
     groups.update(profile_rebind_helpers)
     from cases.profile_guards import GROUPS as profile_guards
