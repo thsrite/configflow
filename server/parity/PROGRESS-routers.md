@@ -163,6 +163,8 @@ None of it is a port of a routers file; listed so porters replace or use it inst
 
 ## R01 — router models, store, DHCP DNS, desired state
 
+**C32 已接线**（协调者批准）：`ComputeDesired` 和 `RulesetContent` 首参增加 `context.Context`，`ContentLoader` 闭包形状不变。`api/rules.Wire` 复用共享 source helper 的 offline 选项，读取顺序为验证缓存 → inline，绝不联网。缺缓存与 Python 一样形成中文 blocking_warnings/不完整计划，不再返回 ErrNotPorted；真实 Python plan 差分及拒绝所有出站请求的 fake 覆盖此合同。合并顺序 R08 → C32 → R09；desired.go 仅改签名/透传 ctx，R08 字段全部保留。
+
 **Status: `verified`** (adversarial review 2026-11-16, commits 15a3c7b7, a4c56e1d + this section) · HR · prereqs: C04, C05, C21 (ready), C32¹ · Go: internal/routers, internal/routerdoc, internal/netipx
 
 Files:
@@ -202,7 +204,7 @@ Python test files → coverage:
 
 Dropped by the rule changes (decided by the maintainer, not left undone): the function-level record plugin (`routers_record.py`, written and run once over the full suite: 45085 distinct calls, plugin-induced failures fixed, then removed — function-level replay is no longer required); the loopback `routerfake` (R01 has no routes; the R15 HTTP differential builds it).
 
-Left for others: C32 must export `get_ruleset_content` and assign `routers.RulesetContent`. R09/R11 reuse `NormalizeDNSGuard`/`NormalizePDGuard`. R04/R05 add driver defaults and type RouterOS rows.
+Left for others: C32 has wired `routers.RulesetContent` (offline). R09/R11 reuse `NormalizeDNSGuard`/`NormalizePDGuard`. R04/R05 add driver defaults and type RouterOS rows.
 
 Commands (review: private detached worktree at 3a6e8792 + these files; all ok):
 - corpus: `rt --back server/internal/routers/testdata/r01_corpus.jsonl.gz -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/routers/testdata/gen_r01.py server/internal/routers/testdata/r01_corpus.jsonl.gz'`

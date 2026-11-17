@@ -1,5 +1,7 @@
 # C32 规则路由移植（门禁前检查点）
 
+最新：协调者追加批准 R01 最小 context 补齐，ComputeDesired/RulesetContent 首参 ctx，ContentLoader 不变；Wire 复用 sourceOptions.offline，绝不联网。`.32` 首轮 API0.604s/diff1.419s，相关 vet/race 正在跑。`.64` 完整 gate 继续（proddiff23自检PASS、81GET/693实际比较/new=0/stale=0）；协调者明确无需重跑整个 gate，只追加相关包。合并顺序 R08 → C32 → R09，如 desired.go 冲突只保留 ctx 签名/透传、保留 R08 全部字段。
+
 分支 `go-port-c32`，从 go `d3124353` 建立；不修改已交回的 A24 分支。不派子 agent、不 push。
 
 ## 完成

@@ -1,7 +1,6 @@
 package rules
 
 import (
-	"configflow/internal/rulefetch"
 	"errors"
 	"strconv"
 	"strings"
@@ -10,6 +9,7 @@ import (
 	"configflow/internal/auth"
 	"configflow/internal/httpx"
 	"configflow/internal/oxidns"
+	"configflow/internal/rulefetch"
 )
 
 // Register installs rule composition and DNS routes. Public delivery routes are

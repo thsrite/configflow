@@ -65,7 +65,7 @@ func TestN73DesiredPolicyStopsBeforeAnyDeviceRequest(t *testing.T) {
 				}
 				return raw
 			}
-			plan, err := routers.ComputeDesired(profile(test.source), "192.0.2.1", []string{"selected"}, loader)
+			plan, err := routers.ComputeDesired(context.Background(), profile(test.source), "192.0.2.1", []string{"selected"}, loader)
 			var validation *routers.ValidationError
 			if plan != nil || !errors.As(err, &validation) || !errors.Is(err, test.reason) {
 				t.Fatalf("policy generated plan: %#v %v", plan, err)
@@ -81,7 +81,7 @@ func TestN73DesiredPolicyStopsBeforeAnyDeviceRequest(t *testing.T) {
 			}
 			// A real syntax error retains the old default and proves the fake/loader
 			// observation is live rather than a disconnected zero-request assertion.
-			control, controlErr := routers.ComputeDesired(profile("["), "192.0.2.1", []string{"selected"}, loader)
+			control, controlErr := routers.ComputeDesired(context.Background(), profile("["), "192.0.2.1", []string{"selected"}, loader)
 			if controlErr != nil || control == nil || control.FakeIPRange != "198.18.0.0/16" || reads != 1 || len(fake.Calls()) != 1 {
 				t.Fatalf("syntax fallback control: %#v %v reads=%d calls=%v", control, controlErr, reads, fake.Calls())
 			}

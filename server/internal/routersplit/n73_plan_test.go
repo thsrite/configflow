@@ -1,6 +1,7 @@
 package routersplit_test
 
 import (
+	"context"
 	"encoding/json"
 	"reflect"
 	"testing"
@@ -28,7 +29,7 @@ func TestN73OpaqueValuesKeepTheRouterPlan(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			plan, err := routers.ComputeDesired(profile, "192.0.2.1", nil, func(routers.RuleSet, *routers.LibraryRule) (string, error) {
+			plan, err := routers.ComputeDesired(context.Background(), profile, "192.0.2.1", nil, func(routers.RuleSet, *routers.LibraryRule) (string, error) {
 				t.Fatal("unexpected source read")
 				return "", nil
 			})

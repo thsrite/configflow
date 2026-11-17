@@ -3,6 +3,7 @@ package routers
 import (
 	"bufio"
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -163,7 +164,7 @@ func r01Call(t *testing.T, fn string, in json.RawMessage) (any, error) {
 			RuleSets []string `json:"rule_sets"`
 			Contents map[string]string
 		}](t, in)
-		return ComputeDesired(args.Profile, args.Gateway, args.RuleSets, func(item RuleSet, _ *LibraryRule) (string, error) {
+		return ComputeDesired(context.Background(), args.Profile, args.Gateway, args.RuleSets, func(item RuleSet, _ *LibraryRule) (string, error) {
 			return args.Contents[item.ID], nil
 		})
 	case "dns_agent_settings":

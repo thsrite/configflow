@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -49,7 +50,7 @@ func FuzzFakeIPYAML(f *testing.F) {
 		if marshalErr != nil {
 			t.Fatal(marshalErr)
 		}
-		plan, planErr := ComputeDesired(profile, "192.0.2.1", nil, nil)
+		plan, planErr := ComputeDesired(context.Background(), profile, "192.0.2.1", nil, nil)
 		if planErr != nil && plan != nil || planErr == nil && plan == nil {
 			t.Fatalf("inconsistent plan/error: %#v %v", plan, planErr)
 		}

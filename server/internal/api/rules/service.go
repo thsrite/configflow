@@ -1,7 +1,6 @@
 package rules
 
 import (
-	"configflow/internal/rulefetch"
 	"context"
 	"encoding/json"
 	"errors"
@@ -14,6 +13,7 @@ import (
 	"configflow/internal/logx"
 	"configflow/internal/oxidns"
 	"configflow/internal/repo"
+	"configflow/internal/rulefetch"
 )
 
 var logger = logx.Get("backend.routes.rules")

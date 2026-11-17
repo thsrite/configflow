@@ -63,9 +63,25 @@ for line in sys.stdin:
             headers = request.get('headers', {})
             if request.get('body') is not None:
                 headers['Content-Type'] = 'application/json'
-            reply = app.test_client().open(request['path'], method=request['method'], headers=headers, data=request.get('body'))
-            body = '' if request['method'] == 'HEAD' else reply.get_json() if reply.is_json else reply.get_data(as_text=True)
-            answer = {'status': reply.status_code, 'headers': dict(reply.headers), 'body': body, 'state': state()}
+            if request['method'] == 'DESIRED':
+                from backend.routers.desired import compute_desired
+                payload = json.loads(request['body'])
+                attempts = []
+                previous = requests.sessions.Session.request
+                def reject_outbound(*args, **kwargs):
+                    attempts.append(True)
+                    raise AssertionError('offline desired must not issue requests')
+                requests.sessions.Session.request = reject_outbound
+                try:
+                    body = compute_desired(repository.get_compat_config(request['path']), payload['gateway'], payload['rule_ids'])
+                finally:
+                    requests.sessions.Session.request = previous
+                assert not attempts, 'offline desired issued network requests'
+                answer = {'status': 200, 'headers': {'Content-Type': 'application/json'}, 'body': body, 'state': state()}
+            else:
+                reply = app.test_client().open(request['path'], method=request['method'], headers=headers, data=request.get('body'))
+                body = '' if request['method'] == 'HEAD' else reply.get_json() if reply.is_json else reply.get_data(as_text=True)
+                answer = {'status': reply.status_code, 'headers': dict(reply.headers), 'body': body, 'state': state()}
         print(json.dumps(answer, ensure_ascii=False), flush=True)
     except Exception as error:
         print(json.dumps({'oracle_error': str(error)}), flush=True)

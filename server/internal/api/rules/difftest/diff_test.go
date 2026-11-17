@@ -29,6 +29,7 @@ import (
 	"configflow/internal/oxidns"
 	"configflow/internal/refresh"
 	"configflow/internal/repo"
+	"configflow/internal/routers"
 	shared "configflow/internal/rules"
 	"configflow/internal/taskstatus"
 	"gopkg.in/yaml.v3"
@@ -363,7 +364,35 @@ func (w *world) call(method, path, body string, authenticated bool) answer {
 	if py.Error != "" {
 		t.Fatal(py.Error)
 	}
-	got := w.srv.Do(method, path, options...)
+	var got *httpxtest.Result
+	if method == "DESIRED" {
+		var request struct {
+			Gateway string   `json:"gateway"`
+			IDs     []string `json:"rule_ids"`
+		}
+		if err := json.Unmarshal([]byte(body), &request); err != nil {
+			t.Fatal(err)
+		}
+		config, err := repo.GetConfig(w.srv.Context(), path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw, err := json.Marshal(config)
+		if err != nil {
+			t.Fatal(err)
+		}
+		result, err := routers.ComputeDesired(w.srv.Context(), raw, request.Gateway, request.IDs, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := json.Marshal(result)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got = &httpxtest.Result{Status: 200, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: data}
+	} else {
+		got = w.srv.Do(method, path, options...)
+	}
 	var actual any
 	if method == "HEAD" {
 		actual = ""

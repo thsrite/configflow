@@ -2,6 +2,7 @@ package routers
 
 import (
 	"cmp"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -152,7 +153,7 @@ type ContentLoader func(item RuleSet, library *LibraryRule) (string, error)
 
 // RulesetContent is the default loader: local cache or inline content, never
 // the network (C32 get_ruleset_content; fails closed until C32 sets it).
-var RulesetContent = func(profile json.RawMessage, item RuleSet, library *LibraryRule) (string, error) {
+var RulesetContent = func(ctx context.Context, profile json.RawMessage, item RuleSet, library *LibraryRule) (string, error) {
 	return "", ErrNotPorted
 }
 
@@ -190,7 +191,7 @@ func directOnlyGroups(groups []json.RawMessage) map[string]bool {
 
 // ComputeDesired builds the desired state for a profile (stored JSON), the
 // proxy gateway ("" when unlinked) and the router's static-route rule sets.
-func ComputeDesired(profile json.RawMessage, gateway string, ruleSets []string, loader ContentLoader) (*Desired, error) {
+func ComputeDesired(ctx context.Context, profile json.RawMessage, gateway string, ruleSets []string, loader ContentLoader) (*Desired, error) {
 	var doc desiredProfile
 	if err := json.Unmarshal(profile, &doc); err != nil {
 		return nil, err
@@ -201,7 +202,7 @@ func ComputeDesired(profile json.RawMessage, gateway string, ruleSets []string, 
 	}
 	if loader == nil {
 		loader = func(item RuleSet, library *LibraryRule) (string, error) {
-			return RulesetContent(profile, item, library)
+			return RulesetContent(ctx, profile, item, library)
 		}
 	}
 	d := &Desired{ProxyGateway: gateway, Warnings: []string{}, BlockingWarnings: []string{}}

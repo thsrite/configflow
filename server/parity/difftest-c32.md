@@ -45,3 +45,5 @@
 | test_rule_validation_routes.py (8) | TestSyntaxValidationAcrossWriteEntries（create/edit/batch/compose）、TestComposeSourcesDNSAndErrors、YAML policy原子拒绝、逗号payload和MATCH；库create/edit/draft/check归C33，不复制其校验。 |
 
 Fuzz：`FuzzPastedRules`，覆盖用户粘贴规则的逐行解析、逗号 payload、逻辑规则及多种换行。YAML 通过 C14/yamlx，D1重复键与alias recursion不得回退或留下写入；不新增私有 YAML 解析器。
+
+R01 默认加载器：`TestRouterOfflineSourceOrderAndZeroNetwork` 验证缓存优先于 inline、URL/mirror 不得访问、拒绝所有出站的 transport 为零调用。`TestRouterOfflineMissingCacheMatchesPython` 通过公共 `ComputeDesired(ctx,...)` 与真实 Python 默认加载器比较完整 plan 和 SQLite/文件；Python 同样安装拒绝请求的 fake 并断言零次。缺缓存保留中文 blocking_warnings，不改 R08 的 Desired 字段。

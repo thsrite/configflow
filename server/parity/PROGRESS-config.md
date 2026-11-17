@@ -1899,6 +1899,8 @@ Load-stability follow-up (`go-fix-agg-provider-load`, based on O3-5): old 65c0e6
 
 ## C32 — rule routes
 
+R01 collaborator completed with coordinator approval: ComputeDesired/RulesetContent receive ctx first, with unchanged ContentLoader closure; C32 Wire reuses sourceOptions.offline (validated cache → inline, never network). Missing-cache desired-plan diagnostics compare with real Python, and a refusing transport proves zero requests. `.32` first targeted pass API0.604s/diff1.419s; related vet/race follow. Existing `.64` full gate continues by explicit coordinator instruction; this final context addition needs only related-package checks.
+
 **Status: `in progress`** · prereqs: C09, C14, C27 · Go: internal/api/rules (new)
 
 Files:

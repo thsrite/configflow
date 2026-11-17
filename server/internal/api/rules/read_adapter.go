@@ -18,12 +18,18 @@ import (
 	"configflow/internal/lifecycle"
 	"configflow/internal/refresh"
 	"configflow/internal/repo"
+	"configflow/internal/routers"
 	"configflow/internal/rulefetch"
 	shared "configflow/internal/rules"
 	"configflow/internal/weburl"
 )
 
-func (s *Service) sourceContent(ctx context.Context, config, item, library *jsonx.Object, host string) (string, error) {
+type sourceOptions struct {
+	host    string
+	offline bool
+}
+
+func (s *Service) sourceContent(ctx context.Context, config, item, library *jsonx.Object, options sourceOptions) (string, error) {
 	source := library
 	if source == nil {
 		source = item
@@ -38,6 +44,9 @@ func (s *Service) sourceContent(ctx context.Context, config, item, library *json
 	if source.GetString("source_type") == "content" {
 		return source.GetString("content"), nil
 	}
+	if options.offline {
+		return "", nil
+	}
 	address := source.GetString("url")
 	if address == "" {
 		return "", nil
@@ -45,7 +54,7 @@ func (s *Service) sourceContent(ctx context.Context, config, item, library *json
 	if strings.HasPrefix(address, "/") {
 		address = strings.TrimRight(config.GetObject("system_config").GetString("server_domain"), "/") + address
 	}
-	fetch := s.fetch(ctx, config, host, 30*time.Second)
+	fetch := s.fetch(ctx, config, options.host, 30*time.Second)
 	content, _, err := rulefetch.RefreshRemoteRule(ctx, source, config, rulefetch.RefreshOptions{Client: s.client, Timeout: 30 * time.Second, Fetch: func(string) (any, error) { return fetch(address) }})
 	if err == nil {
 		return sourceText(content), nil
@@ -63,7 +72,7 @@ func (s *Service) sourceContent(ctx context.Context, config, item, library *json
 			return "", err
 		}
 		mirror.Set("format", format)
-		return s.sourceContent(ctx, config, mirror, nil, host)
+		return s.sourceContent(ctx, config, mirror, nil, options)
 	}
 	return "", nil
 }
@@ -164,7 +173,7 @@ func (s *Service) match(ctx context.Context, id, query, host string) (record, er
 	}
 	var invalidSource error
 	matcher := shared.NewRuleConfigMatcher(config.GetList("rule_configs"), config.GetList("rule_library"), func(item, library *jsonx.Object) (string, error) {
-		content, err := s.sourceContent(ctx, config, item, library, host)
+		content, err := s.sourceContent(ctx, config, item, library, sourceOptions{host: host})
 		// C14 accepts these source line boundaries and normalizes them for client
 		// delivery. Feed the same records to C09's CR/LF text index, keeping the
 		// common ASCII path allocation-free and leaving the raw cache untouched.
@@ -231,7 +240,7 @@ func (s *Service) scanRows(ctx context.Context, id, host string) ([]scanRow, fun
 	}
 	return rows, func(index int) (string, error) {
 		item := items[index].(*jsonx.Object)
-		return s.sourceContent(ctx, config, item, library[item.GetString("library_rule_id")], host)
+		return s.sourceContent(ctx, config, item, library[item.GetString("library_rule_id")], sourceOptions{host: host})
 	}, nil
 }
 
@@ -242,11 +251,30 @@ func sourceText(content []byte) string {
 	return strings.TrimPrefix(string(content), "\ufeff")
 }
 
-// Wire installs C32's shared source reader for Linux gateway providers. The
+// Wire installs C32's shared source readers for routers and gateway providers. The
 // gateway passes its immutable publish snapshot; resolving it again could mix
 // revisions. The source/cache owner retains shutdown cancellation.
 func Wire() {
 	s := &Service{client: rulefetch.DefaultClient}
+	routers.RulesetContent = func(ctx context.Context, profile json.RawMessage, item routers.RuleSet, library *routers.LibraryRule) (string, error) {
+		config, err := sourceObject(profile)
+		if err != nil {
+			return "", err
+		}
+		row, err := sourceObject(item.Raw)
+		if err != nil {
+			return "", err
+		}
+		var lib *jsonx.Object
+		if library != nil {
+			lib, err = sourceObject(library.Raw)
+			if err != nil {
+				return "", err
+			}
+		}
+		return s.sourceContent(lifecycle.Detach(ctx), config, row, lib, sourceOptions{offline: true})
+	}
+
 	gateway.SetRulesetContent(func(ctx context.Context, item, library, config *jsonx.Object) (string, error) {
 		ctx = lifecycle.Detach(ctx)
 		if config == nil {
@@ -256,6 +284,18 @@ func Wire() {
 				return "", err
 			}
 		}
-		return s.sourceContent(ctx, config, item, library, "")
+		return s.sourceContent(ctx, config, item, library, sourceOptions{})
 	})
+}
+
+func sourceObject(raw json.RawMessage) (*jsonx.Object, error) {
+	value, err := jsonx.Parse(raw)
+	if err != nil {
+		return nil, fmt.Errorf("decode rule source snapshot: %w", err)
+	}
+	object, ok := value.(*jsonx.Object)
+	if !ok {
+		return nil, errors.New("rule source snapshot must be an object")
+	}
+	return object, nil
 }
