@@ -417,7 +417,7 @@ func ReceiptMatches(agent *agents.Record, state *agents.Record) bool        // r
 func PublicDeployment(record *agents.Record) *agents.Record                 // _public_deployment (R17, routes)
 
 // Receipts is rule_sync_store (one per data dir; L4 mutex per Agent directory).
-type Receipts struct{ /* data dir, keyed L4 mutex */ }
+type Receipts struct{ /* data dir, per-Agent sync.Mutex map (L4) */ }
 func (r *Receipts) Capture(ctx context.Context, agentID string, b *Bundle, src *Source, baseURL string, comparison *File) error
 func (r *Receipts) Load(ctx context.Context, agent *agents.Record, withBundle bool) (*Receipt, error) // (nil, nil) = none
 func (r *Receipts) Stamp(agent *agents.Record) (Stamp, bool)
@@ -443,9 +443,9 @@ func GenerateFinal(ctx context.Context, m *agents.Manager, agentID string, r Gen
 `StoreDownloads`) — run their body through one helper, `runDetached(ctx, name, fn)`: `lifecycle.Spawn(ctx, name, …)`
 and wait for the result. Spawn drops the request's cancellation, tracks the job for the shutdown drain, and cancels
 its ctx only at the drain deadline, which is what 3.4 relies on. The helper is re-entrant: when ctx already carries
-deploy's job marker (or a lifecycle loop/job ctx of A16–A18/A22) it runs fn inline. `ErrStopping` from Spawn (after
-the drain deadline) is returned as is; nothing is recorded. Until O3-2 is merged: transitional rule (plain `go` +
-`recover` + `context.WithoutCancel`, `// TODO(O3): lifecycle.Spawn`). Short writers (`Receipts.*`,
+deploy's job marker (or a lifecycle loop/job ctx of A16–A18/A22) it runs fn inline. `lifecycle.ErrStopping` from Spawn
+(after the drain deadline) is returned as is; nothing is recorded. (O3-2 is merged: use `lifecycle.Spawn`
+directly; no transitional plain `go`.) Short writers (`Receipts.*`,
 `Manager.RememberPreparedContent`, A01 GET/activate/rollback/recover) use `ctx = context.WithoutCancel(ctx)`; each
 Agent call there has its own timeout. Reads honour the request ctx.
 
@@ -611,7 +611,7 @@ logged results = finished + rollback_failed; HTTP-terminal (route 200 / no 202) 
 |---|---|---|---|
 | preparation key `(agentID, deploymentID)` | L1 `lockx.Keyed`, try (O3-6) | from `BeginDeployment` until the publishing request ends (route `finally` and `PublishDirect` defer, as Python's two `finish_deployment_preparation` calls; release is idempotent) | 409 `Deployment preparation already running` |
 | progress mutex (per publication) | plain `sync.Mutex`, documented "held across one `RecordDeployment`; taken only by progress callbacks, which hold no lock" | one progress write | waits (keeps Python's message order) |
-| receipts directory per Agent | L4 `Keyed` in `Receipts` | file writes and pruning only; the retention set (applied + unfinished deployment IDs) is read from the repository **before** taking it, and `AdvanceContent`'s repository transaction runs **after** releasing it (never L3 inside L4) | waits |
+| receipts directory per Agent | L4: a `sync.Mutex` per Agent directory in `Receipts` (lockx levels stop at L3, O3-1 clarification) | file writes and pruning only; the retention set (applied + unfinished deployment IDs) is read from the repository **before** taking it, and `AdvanceContent`'s repository transaction runs **after** releasing it (never L3 inside L4) | waits |
 | previews store | L4 mutex (O3 table) | save + eviction | waits |
 | MosDNS conversion cache, raw-download cache of one build, content-sync maps | L5 | memory only, never across I/O | – |
 
