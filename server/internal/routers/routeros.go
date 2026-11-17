@@ -1742,17 +1742,26 @@ func (d *RouterOS) ReadState(ctx context.Context) (*RouterState, error) {
 		listNames = append(listNames, "cf-mihomo-nat-dst")
 	}
 	slices.Sort(listNames)
-	listRows := map[string][]Row{}
+	listRows, err := d.ReadAddresses(ctx, listNames)
+	if err != nil {
+		return nil, err
+	}
 	for _, name := range listNames {
-		rows, listErr := d.list(ctx, rosAddresses+"?"+url.Values{"list": []string{name}}.Encode())
-		if listErr != nil {
-			return nil, listErr
-		}
-		listRows[name] = rows
-		for _, row := range rows {
-			if slices.Contains(referencedNames, name) && row.text("list") == name && !rosTruthy(row["disabled"]) {
+		for _, row := range listRows[name] {
+			if slices.Contains(referencedNames, name) && !rosTruthy(row["disabled"]) {
 				state.AddressSets[name] = append(state.AddressSets[name], row.text("address"))
 			}
+		}
+	}
+	if slices.Contains(listNames, NATSrcList) || slices.Contains(listNames, NATDstList) || d.natListTouched {
+		state.NATLists, _ = d.stateNATLists(ctx, nats, listRows, mangleRows)
+	} else {
+		state.NATListsReader = func(ctx context.Context) (*NATLists, error) {
+			rows, err := d.ReadAddresses(ctx, []string{NATSrcList, NATDstList})
+			if err != nil {
+				return nil, err
+			}
+			return d.stateNATLists(ctx, nats, rows, mangleRows)
 		}
 	}
 

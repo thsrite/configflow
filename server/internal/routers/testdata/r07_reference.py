@@ -15,6 +15,12 @@ try:
     action=case['action']; name=case.get('op',{}).get('name','L')
     if action=='digest': out['result']=lists.digest(case['state']['tables']['/ip/firewall/address-list'])
     elif action=='fetch': out['result']=lists.fetch(driver,name)
+    elif action=='plan':
+        from backend.routers.report import build_report
+        from backend.routers import routeros_nat_list as nat
+        state=driver.read_state()
+        report=build_report(case['op']['desired'],state)
+        out['result']=nat.plan(report,state,case['op']['gateway'],set(case['op'].get('skipped',[])))
     elif action=='reuse':
         with lists.reuse(driver):
             rows=lists.read(driver,[name]);lists.expect(driver,name,rows[name]);out['result']=lists.read(driver,[name])

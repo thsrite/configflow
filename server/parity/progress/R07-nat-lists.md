@@ -18,5 +18,6 @@ R04 issue-class prevention:
 - F10: reuse configROSRow/payload/sameRow/ScriptString/putNAT, no private emulation helpers.
 
 Done: address proof/read layer and stateful fake scripts; 24 Python boundary comparisons (digest/fetch/reuse across 0/1/499/500/501/2000/2001/4500 members), content-mutation check. .32 go vet ./... and existing routers/devhttp tests pass.
-Next: boundary tests and first buildable commit; typed NAT planner; apply/restore journal; full Python boundary corpus; .32 final gates, proddiff, rebase go.
+Done step 1: cb64b567. Typed NAT planner/read integration: 135 boundary scenarios compare real Python plans and exact request sequences, all pass on .32. Covers no-list paths, adopt/unknown, merge/stale/retained, foreign/dynamic/disabled/reference/shape/order blockers and grow/shrink/unchanged membership.
+Next: address write + NAT apply/restore journal; failure/rollback boundary corpus; .32 final gates, proddiff, rebase go.
 Commands: `rt -- bash -lc 'cd server && gofmt -w internal/routers/addresslists.go internal/routers/routerfake/addresslists.go internal/routers/routeros.go internal/routers/routerfake/fake.go internal/routers/messages.go && go vet ./internal/routers/... && go test -count=1 ./internal/routers/ ./internal/devhttp/'`.

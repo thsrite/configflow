@@ -310,7 +310,7 @@ func (d *RouterOS) LocateAddresses(ctx context.Context, ids []string) ([]Row, er
 	}
 	rows := []Row{}
 	for _, id := range ids {
-		row, err := d.row(ctx, rosAddresses, id)
+		row, err := d.find(ctx, rosAddresses, id)
 		if err != nil {
 			return nil, err
 		}

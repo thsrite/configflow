@@ -157,6 +157,10 @@ type RouterState struct {
 	PolicyNATRetiring []string `json:"-"`
 	// iKuai only: IP groups with ConfigFlow ownership and the rules using them.
 	IkuaiGroups *GroupState `json:"-"`
+	// NATLists is eager when the lists are referenced; the reader is lazy otherwise.
+	NATLists       *NATLists                                `json:"-"`
+	NATListsReader func(context.Context) (*NATLists, error) `json:"-"`
+	NATPolicy      *NATPolicyEvidence                       `json:"-"`
 }
 
 // Driver talks to one router.
