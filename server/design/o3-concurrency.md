@@ -364,6 +364,8 @@ Implementation notes: [startup and shutdown](o3-startup-shutdown.md).
   O3-3, before Periodic migration. Otherwise the instance's separately opened descriptors exclude
   its own loops. Preserve first delays, intervals and round behaviour. Cross-process exclusion is
   tested at instance.Acquire; each Go loop must execute while the instance owns the directory.
+- repo.ResolveDataDir(path) shares Open's existing home-expansion and path resolution. Main resolves
+  before instance.Acquire, without opening storage; absolute, home and symlink aliases must share locks.
 - repo.PrepareConfig(ctx) performs configuration initialization without the manager hook;
   LoadConfig retains its existing callers' behaviour. Main explicitly orders configuration preparation,
   the existing prune, agents.Init and metrics history loading as Startup work before listening.

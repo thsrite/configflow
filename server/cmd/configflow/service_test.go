@@ -140,13 +140,14 @@ func startService(t *testing.T, mode string) *serviceProcess {
 	return startProcess(t, dir, mode)
 }
 
-func startProcess(t *testing.T, dir, mode string) *serviceProcess {
+func startProcess(t *testing.T, dir, mode string, environment ...string) *serviceProcess {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestServiceProcess$", "-test.count=1")
 	cmd.Env = append(os.Environ(), "DATA_DIR="+dir, "O33_SERVICE_SCENARIO="+mode,
 		"ADMIN_USERNAME=", "ADMIN_PASSWORD=", "CONFIGFLOW_BACKEND_HOST=127.0.0.1", "CONFIGFLOW_BACKEND_PORT=5001",
 		"CONFIGFLOW_SHUTDOWN_GRACE_SECONDS=8", "PRODDIFF_ROUTES="+filepath.Join(dir, "test-routes"))
+	cmd.Env = append(cmd.Env, environment...)
 	log := filepath.Join(dir, "test-process.log")
 	output, err := os.Create(log)
 	if err != nil {
@@ -347,5 +348,46 @@ func TestPythonLifetimeLocksRejectServerBeforeRepositoryOpen(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "configflow.sqlite3")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("server opened the repository before locking: %v", err)
+	}
+}
+
+func TestMainRejectsDataDirectoryAliases(t *testing.T) {
+	for _, mode := range []string{"home-alias", "symlink"} {
+		t.Run(mode, func(t *testing.T) {
+			first := startService(t, "idle")
+			waitFor(t, func() bool { _, err := os.Stat(filepath.Join(first.dir, "test-ready")); return err == nil })
+			home := filepath.Dir(first.dir)
+			alias := "~/" + filepath.Base(first.dir)
+			if mode == "symlink" {
+				alias = filepath.Join(t.TempDir(), "data-link")
+				if err := os.Symlink(first.dir, alias); err != nil {
+					t.Fatal(err)
+				}
+			}
+			probe, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+			_, expected := instance.Acquire(probe, first.dir)
+			cancel()
+			if !errors.Is(expected, instance.ErrInUse) {
+				t.Fatal(expected)
+			}
+			second := startProcess(t, t.TempDir(), "held-alias", "DATA_DIR="+alias, "HOME="+home)
+			select {
+			case err := <-second.done:
+				var exited *exec.ExitError
+				if !errors.As(err, &exited) || exited.ExitCode() != 1 {
+					t.Fatalf("alias server exit: %v", err)
+				}
+			case <-time.After(40 * time.Second):
+				t.Fatal("alias server did not respect the 30s acquisition deadline")
+			}
+			data, _ := os.ReadFile(second.log)
+			if !strings.Contains(string(data), expected.Error()) {
+				t.Fatalf("different ownership path: %s", data)
+			}
+			if err := first.cmd.Process.Signal(syscall.SIGTERM); err != nil {
+				t.Fatal(err)
+			}
+			first.wait(t)
+		})
 	}
 }

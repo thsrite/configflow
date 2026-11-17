@@ -97,11 +97,7 @@ type Repository struct {
 // legacy configuration files and no configflow.sqlite3 is refused, and a
 // corrupt database is never rebuilt from config.json.
 func Open(dataDir string, options Options) (*Repository, error) {
-	expanded, err := expandUser(dataDir)
-	if err != nil {
-		return nil, err
-	}
-	root, err := resolve(expanded)
+	root, err := ResolveDataDir(dataDir)
 	if err != nil {
 		return nil, err
 	}
@@ -126,6 +122,17 @@ func Open(dataDir string, options Options) (*Repository, error) {
 		return nil, err
 	}
 	return r, nil
+}
+
+// ResolveDataDir expands a home-directory alias and resolves the same absolute
+// path Open uses, without opening or creating a repository. The server resolves
+// its directory before taking instance locks so every alias shares ownership.
+func ResolveDataDir(path string) (string, error) {
+	expanded, err := expandUser(path)
+	if err != nil {
+		return "", err
+	}
+	return resolve(expanded)
 }
 
 // expandUser is Path.expanduser() of CPython 3.11: "~" is $HOME (or the

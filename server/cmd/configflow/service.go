@@ -71,7 +71,10 @@ func run(ctx context.Context, frontendDir string, signals <-chan os.Signal, opts
 	if err != nil {
 		return err
 	}
-	dataDir := repo.DataDir()
+	dataDir, err := repo.ResolveDataDir(repo.DataDir())
+	if err != nil {
+		return err
+	}
 	acquiring, cancelAcquire := context.WithTimeout(ctx, 30*time.Second)
 	owner, err := instance.Acquire(acquiring, dataDir)
 	cancelAcquire()

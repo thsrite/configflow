@@ -60,3 +60,13 @@ Post-audit focused .32 validation passes: refresh instance-owned loop race1.118s
 real SIGTERM/grace scenarios under proddiff tag6.320s and difftest tag6.324s. Final acceptance
 will rerun fmt/vet, the required runtime/lock/http/cmd race set, both complete tagged test sets,
 full suite, every enabled tagged differential and proddiff on the corrected fixtures.
+
+Coordinator-approved path-ownership fix: ResolveDataDir shares Open's existing expandUser/resolve;
+main normalizes before Acquire without opening storage. Added a no-I/O resolution unit test plus
+real server-vs-server home alias and symlink cases (each must reject at the 30s lock deadline).
+The earlier gate run still tests the pre-fix snapshot; full final acceptance must be rerun after this.
+
+ResolveDataDir/PrepareConfig/no-storage-creation regressions and main grace compilation pass on
+.63 race (repo1.192s, cmd1.038s). No path helper was copied; Open delegates to the exported resolver.
+Full real alias process cases will run on .32. Production operation-scoped SQLite handles are closed
+by store/traffic/ranking owners; no fake process-wide Close API was introduced.
