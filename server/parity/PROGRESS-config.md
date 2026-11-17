@@ -79,7 +79,7 @@ gates (§5.4). Editor is N7-2; consumers/writers migrate in N7-3/N7-4. Independe
 | C32 | rule routes | 1107 | missing | C09, C14, C27 | 21 (0 done) |
 | C33 | rule library and proxy group routes | 976 | missing | C32 | 25 (0 done) |
 | C34 | generate, config and profile routes, config export | 1443 | missing | C18, C19, C20, C28, C29, C31, C33 | 59 (0 done) |
-| C35 | config importer, WebDAV backup | 1375 | ported | C04, C06 | – |
+| C35 | config importer, WebDAV backup | 1375 | verified | C04, C06 | – |
 | C36 | setup flow | 1372 | missing | C34, C35 | 5 (0 done) |
 | C37 | domain discovery | 1658 | verified | C14, C16 | 17 (17 done) |
 
@@ -1731,15 +1731,15 @@ C35 supplies native `importer.Parse/Build` for `/api/profiles/import-client` (AP
 
 ## C35 — config importer, WebDAV backup
 
-**Status: `ported`** · prereqs: C04, C06 · Go: internal/importer, internal/webdav, internal/api/settings
+**Status: `verified`** · prereqs: C04, C06 · Go: internal/importer, internal/webdav, internal/api/settings
 
 Files: `backend/utils/config_importer.py` (1148), `backend/utils/webdav_backup.py` (227); backup handlers from `backend/routes/settings.py`.
 
 Routes: `POST /api/backup/now`, `POST /api/backup/test` [done; C06 accounting now 22/22]. No new GET routes; existing production coverage file needs no additions.
 
-Independent review in progress (`go-review-c35`): URL-userinfo/encoded-path credential leaks fixed; editor URL removes userinfo and blank/masked password preserves stored password per coordinator. Security differences tracked in `parity/behaviour-changes.md`; .32 vet and settings/webdav race pass. Remaining checks and exact command in `parity/review-c35.md`.
+Independent adversarial review complete (`go-review-c35`, 2026-11-17), no open C35 finding. Fixes: URL-userinfo/encoded credential leakage; blank/masked password preservation per coordinator; valid manual request no longer blocked by ignored malformed saved settings; explicit empty WebSocket Host; quadratic warning/section scans; duplicate-slash paths; native per-operation DAV cookies. Coordinator-approved dot-path rejection covers save/test/manual/automatic before network with a clear task error. Security decisions and migration advice: `parity/behaviour-changes.md`; severity-ranked findings, branch matrix and command outputs: [review-c35.md](review-c35.md). Review commits: `6ca39f71`, `762cdc56`, `801ed02e`.
 
-Review follow-up: malformed ignored saved connection fields no longer block a valid manual request; explicit empty WebSocket Host preserved; native map indices replace quadratic warning/section scans and slices.Contains replaces the private helper. 97 Python importer cases and isolated malformed/deep/large/alias probes pass (.63 normal 0.875s; prior race 11.998s). .32 enabled Flask differential under race 21.402s, TLS defaults compared with real Python, cross-origin redirects rejected, weak-pointer test proves completed worker Source release. Import path isolation and 60s fuzz (1,201,454 executions) pass on .63. Agent non-runtime fields trigger real repository-backed automatic uploads. Coordinator-approved dot-path rejection covers settings save and all execution paths before network, with clear automatic task error; repeated slashes normalize like Python. Native cookiejar restores DAV session compatibility. Final whole-tree .32 acceptance remains.
+Review acceptance: .63 importer 97 Python structural cases, deep/alias/32 MiB resource probes (~108 MiB normal peak RSS), repository path isolation, 60s fuzz (1,201,454 executions) pass. Agent non-runtime changes exercise real repo→worker→loopback DAV; TLS compared with real Python, weak references prove completed snapshot release. Final .32: gofmt/vet silent; scoped importer/webdav/settings/server race passes (importer 26.674s); full tree all 64 tested packages pass; enabled real Flask DAV race differential 39.009s, settings 8.592s, httpx differential 1.845s. Proddiff: 65 GET routes, 2831 cases, self-check PASS, coverage_regressions=0, new=0, stale=0 (10 existing differences); no baseline/coverage changes. Rebased on go `5535931d`; no push. C34 retains import HTTP integration; O3-5 retains the existing lifecycle migration.
 
 Implementation:
 - Pure typed importer `Parse → Plan → Build`: Mihomo/Clash, Surge, Loon, Shadowrocket; resource reuse/collisions, protocol/TLS/transport/WireGuard/ShadowTLS options, providers, group/rule ordering, warnings and custom settings. Protocol extras use json.RawMessage; free-form settings use yaml.Node. Native alias/merge expansion avoids dangling anchors after generated sections are removed. Node signatures retain JSON numbers, avoiding false reuse of adjacent integers above 2^53 (two dedicated Python-comparison corpus cases). Existing shared data is never rewritten by Build.

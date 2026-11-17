@@ -1,6 +1,6 @@
 # C35 对抗性复核
 
-状态：进行中。分支 `go-review-c35` 从本地 `go` 新建；没有子 agent、推送或生产设备访问。
+状态：`verified`（2026-11-17），本轮 C35 无未关闭问题。分支 `go-review-c35` 从本地 `go` 新建；没有子 agent、推送或生产设备访问。C34 的导入 HTTP 路由归属不变。
 
 ## 发现与修复
 
@@ -12,6 +12,20 @@
 - 中：默认 HTTP 客户端没有 cookie jar，不能连接依赖会话 cookie 的 DAV（Python 每次操作使用 requests.Session）。使用标准库 cookiejar，并为每次操作克隆 http.Client；同一次操作保留 cookie，不同操作不串会话，保留原 transport、TLS 校验和重定向策略。
 - 低：照搬 Python 的警告去重列表和 section 查找导致二次复杂度。改用 Go map 索引，警告只保存显示的前 8 项与精确去重计数，标准库 slices.Contains 替代私有 contains 副本；Python 警告顺序/去重/总数语料不变。
 - 已核对禁用行为：repo.update 在调用提交后 hook 前过滤 auto_backup=false；禁用提交不会启动 worker 或重置 pending deadline。原实现没有这项缺陷，新增测试通过。
+
+## 源码逐分支核对与边界
+
+| Python 分支 | Go 边界与复核证据 |
+| --- | --- |
+| `config_importer.py` 客户端选择、section/CSV/options、各协议/TLS/WS、provider/group/rule、复用与冲突、警告、自定义设置 | `importer.Parse/Build`；97 条真实 Python 结构语料、真实 repository 提交/失败回滚、Snell 导入→导出往返；补显式空 Host、警告去重/计数、非法输入及资源探测 |
+| `webdav_backup.py` root/check、递归目录、PUT、文件名、PROPFIND/保留/删除 | 真实 Flask↔Go HTTP 差分并比较完整导出、sidecars、远端目录/文件；只用 loopback fake DAV；成功上传后的清理失败仍视为成功，PUT 失败不清理 |
+| TLS、认证、异常处理、日志与凭据 | Go 和真实 Python 均拒绝自签名证书；独立 Basic 字段参与认证，URL userinfo 不参与；对原文/百分号/多层编码/加号变体扫描日志、错误、任务及通知 JSON；请求错误使用安全描述，响应不转发远端正文/头 |
+| `settings.py` GET/POST config、test、now、JWT、掩码与空值、非法类型/保留值 | 所有四条路由经真实 HTTP 边界；仅编辑接口按已裁定合同显示用户名/地址；安全差异逐字段单独断言 Python 原行为，未泛化归一化 |
+| post-commit hook、auto_backup、1 秒合并、上传中再次提交、异常/禁用/取消/退出 | worker 时序和真实 repo/Agent 写入测试；hook 在锁外，备份失败不回滚提交；WaitIdle 取消不取消上传，Close 丢弃 pending、当前 I/O 自带超时；失效后新提交可重启，空闲 goroutine 退出，弱引用证明 Source/快照释放 |
+
+风格复核：生产 importer 不依赖 jsonx；WebDAV 的 jsonx 限于存储 `adapter.go`。传输使用 net/http/encoding/xml/cookiejar、错误链和标准库路径处理；没有移植 requests/Python 异常类。原有 worker 是 O3 迁移范围，本次没有新增后台 goroutine；已核对新并发设计的过渡规则，原有 recover/logx 和有界 I/O 保留。完整生命周期统一迁移归 O3-5，非 C35 新增延期问题。
+
+C34 持有 `/api/profiles/import-client` HTTP 导入入口；C35 本轮验证纯 Parse/Build 和真实 repository 写入边界，不把该 HTTP 集成标为完成。生产差分使用隔离的只读生产快照；未操作真实 WebDAV 或设备。
 
 ## 已有证据
 
@@ -33,4 +47,46 @@ rt --back server/internal/api/settings/review_c35_test.go --back server/internal
 - .63 `go test -run=^$ -fuzz=FuzzClientImport -fuzztime=60s -parallel=4 ./internal/importer` 通过：96 个支持客户端的语料种子，1,201,454 次执行，61.037s；最大 1 MiB 与 HTTP edge 限额一致，另有 32 MiB 直接库调用资源探测。
 - .32 Agent O6 第 7 条真实 repo→worker→DAV 覆盖：创建以及 name/host/enabled/logging_config/rule_sync_state/dns_follow/oxidns_ha 变化触发，version/status/applied_content 运行字段不触发；race 通过（1.774s）。
 
-剩余：最终 .32 全量验收/proddiff/rebase。
+## 最终 .32 验收
+
+修复提交：`6ca39f71`（凭据与编辑密码）、`762cdc56`（手动快照/导入器边界与性能）、`801ed02e`（路径拦截/会话/Agent/fuzz）。已变基到 `go` 的 `5535931d`；最终 `git rebase go` 无待变基提交；工作区干净。
+
+以下在 .32 同一次 `rt -- bash -lc` 顺序执行，全部退出 0；所有 DAV 仅 loopback fake，未改 proddiff baseline/coverage/normalization：
+
+```sh
+cd server
+gofmt -l internal/ tools/                  # 无输出
+go vet ./...                             # 无输出
+go test -race -count=1 -timeout=20m ./internal/importer/... ./internal/webdav/... ./internal/api/settings/... ./internal/server/...
+go test -count=1 -timeout=20m ./...
+CONFIGFLOW_DIFF=1 go test -race -count=1 -timeout=20m ./internal/webdav/... ./internal/api/settings/...
+CONFIGFLOW_DIFF=1 go test -count=1 -timeout=20m ./internal/httpx/difftest/
+cd ..
+server/scripts/proddiff.sh
+```
+
+关键原始输出（完整日志在 .32 `/tmp/c35-final-{gofmt,vet,race,full,diff,httpx,proddiff}.log`）：
+
+```text
+# scoped race
+ok configflow/internal/importer         26.674s
+ok configflow/internal/webdav           5.019s
+ok configflow/internal/webdav/difftest   1.121s  # 此轮未启用；下方启用运行
+ok configflow/internal/api/settings     7.423s
+ok configflow/internal/server           1.056s
+# whole tree: 64 个有测试的包全部通过；包括
+ok configflow/internal/importer          3.193s
+ok configflow/internal/installer       298.375s
+ok configflow/internal/server            0.039s
+# real Python differential + TLS probe enabled under race
+ok configflow/internal/webdav            4.144s
+ok configflow/internal/webdav/difftest   39.009s
+ok configflow/internal/api/settings      8.592s
+ok configflow/internal/httpx/difftest     1.845s
+# proddiff (summary 摘要)
+self_check=PASS GET_routes_compared=65 routes_compared=66 cases=2831
+coverage_regressions=0 unmapped_routes=0 unique_differences=10 new=0 stale=0
+baseline: new=0 stale=0
+```
+
+proddiff 摘要仍有两端各 30 条响应正文中的 connection diagnostic 计数（隔离网络下的既有错误响应）；没有 status=0 的单边/双边 transport failure，未作为成功响应吞掉。所有 self-check 通过，10 个既有差异保留，无新增或过期 baseline 项。服务器高负载下全量 installer 用时约 298s，不改变测试断言。
