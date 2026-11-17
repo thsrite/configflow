@@ -50,6 +50,26 @@ def pair(python=None, go=None):
 
 
 class RunnerTests(unittest.TestCase):
+    def test_explicit_wait_constraint_is_checked_on_native_response_too(self):
+        class WaitingSide(ObservationSide):
+            def __init__(self, seconds):
+                super().__init__()
+                self.seconds = seconds
+
+            def request(self, **values):
+                time.sleep(self.seconds)  # Actual wait; no reference clock/helper is patched.
+                return super().request(**values)
+
+        case = Case('wait', 'R002', 'GET', '/api/client-devices', 200, elapsed_min=.08)
+        available, routes = {('GET', case.path)}, load()[0]
+        result = execute(pair(WaitingSide(.12), WaitingSide(0)), case, available, routes)
+        self.assertEqual(result['status'], 'different')
+        self.assertIn('timing', {item['category'] for item in result['differences']})
+        self.assertGreaterEqual(result['response_elapsed_seconds']['python'], .08)
+        self.assertLess(result['response_elapsed_seconds']['go'], .08)
+        result = execute(pair(WaitingSide(.12), WaitingSide(.12)), case, available, routes)
+        self.assertEqual(result['status'], 'compared')
+
     def test_main_native_transport_failure_retains_actual_error_without_an_http_status(self):
         class FailedRequest(ObservationSide):
             def __init__(self, error_class='RemoteDisconnected', operation='request', side='go', exit_code=-9,

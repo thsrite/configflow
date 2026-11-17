@@ -2,8 +2,8 @@
 
 Status: in progress; NOT ready for acceptance hand-back. Branch go-difftest-routers-b.
 Latest clean integration rebase: goa08c4cc27; normal public binary built from it.
-Current declarations:431 executed-variant audits plus5 explicit source-unreachable
-proofs plus2 O6 review-superseded entries;1863 remaining if all increments and
+Current declarations:443 executed-variant audits plus5 explicit source-unreachable
+proofs plus2 O6 review-superseded entries;1851 remaining if all increments and
 controls are composed. Last FULL composition still37937739:3054
 recipes/301 audits. Newer subsets do not replace that full evidence; latest
 large subset2470 recipes/327 audits. All observed26 domain routes remain absent
@@ -1840,3 +1840,40 @@ purpose-broken observations above are oracle tests, not native product findings.
 No active command. Counts431 executed declarations+5 source proofs+2 O6 entries,
 1863 pending if composed. Current full report remains historical3054/301.
 Remaining matrix/dynamics/aux transport, full composition, final gate/rebase pending.
+
+Probe resource/version/capability branch increment:
+- Read both drivers' construction/request/probe functions and R017 handler.
+  Fatal system reads return502 and persist failed probes; optional capability
+  errors return200/probe.ok=true, omitting ONLY the failed capability.
+-3 ROS paths each:401/403/404/500, bad JSON, disconnect, two list-shape guards,
+  actual10s timeout.4 iKuai capabilities each: permission,503, bad JSON,
+  disconnect, two1008 replies/one re-login, actual10s timeout.1008 controls are
+  response faults, not real-firmware session acceptance; no refused write applies.
+- Added late null after valid dict on3 ROS lists, eight non-object resource roots,
+  per-vendor JSON-kind version fields and seven min/current/new-major/rc/zeroes/
+  Chinese version/model successes. Messages are literal reference preconditions
+  verified by real Python; no generic Python formatter or helper substitution.
+-12 audits H0835/H0841/H0842/H0843/H0241/H0242/H1296,
+  R017-S01/S02/S03/F13/B04. H1296 requires110 fatal/healthy/TLS observations.
+  Broad R017-F12, DB-save failure, unhandled nested schema/O12 crashes, real
+  readonly/apply permissions and T15 remain open. No new product finding.
+- Fixed elapsed_min only checking Python: both sides now enforce declared minimum
+  on actual monotonic HTTP duration; too-fast native equal-body reply differs.
+  Async begin keeps original monotonic start. No raw RTT equality or clock patch;
+  oracle-only counterexample uses actual short waits. Upper bounds/in-budget
+  slow peers and load-sensitive timing review remain later D/T work.
+
+.64 long reference matrix:
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY="$HOME/.cache/routerdiff-build-302rx1dg-a08c4cc27/configflow"; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python -m unittest -v test_recipes test_probe_clocks; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world probe-errors --output "$HOME/.cache/routerdiff-reports/302rx1dg/probe-capability-failures.json"'`
+=> Ran18 tests0.947s/OK;136 requests, ROS49.39s/iKuai66.96s including7 child
+and2 fatal10s waits; allGo-unimplemented,34 references, no bug. Unchanged named
+fatal/capability records reused below; no output/evidence rows fabricated.
+Final changed controls/TLS/comparator:
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY="$HOME/.cache/routerdiff-build-302rx1dg-a08c4cc27/configflow"; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python -m unittest -v test_runner test_audits test_recipes; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world probe-guard-controls --world probe-tls --output "$HOME/.cache/routerdiff-reports/302rx1dg/probe-guard-audits-controls.json"'`
+=> Ran73 tests22.601s/OK;34 requests/allGo-unimplemented,17 references,
+2 audits in this subset. Foreground rt --no-sync evaluation joined only the
+unchanged136 and current34 observations against all12 named declarations:
+observed_recipes170/probe_guard_audits12/verdict=variants-audited/native_compared0.
+443 executed declarations+5 source proofs+2 O6 entries;1851 pending if composed.
+Full report remains historical3054/301. No command pending. Remaining source/
+device/background/dynamics/aux transport, full composition and gate/rebase pending.

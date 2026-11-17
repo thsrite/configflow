@@ -22,7 +22,7 @@ def probe(label, vendor, controls=(), message='', ok=False, checks=None, entries
     if not ok:
         stored[f'routers/items/{index}/last_probe/message'] = message if stored_message is None else stored_message
     return Case('R017/' + vendor + '/' + label, 'R017', 'POST', '/api/routers/' + ident + '/probe',
-                200 if ok else 502, (('R017-S01' if vendor == 'routeros' else 'R017-S02',) if ok else ('R017-F12',)) + entries,
+                200 if ok else 502, (('R017-S01' if vendor == 'routeros' else 'R017-S02',) if ok else ('R017-F12',)) + ('H1296',) + entries,
                 prepare=controls, finalize=finalize, elapsed_min=elapsed_min, expected_requests=expected_requests,
                 message=message, unchanged=False, effect='profile-write', stored=stored,
                 checks={'success': ok, 'probe/ok': ok, **(checks or {})}, times=('probe/at',))
@@ -92,7 +92,7 @@ def routeros():
             (fault('ros', resource, status=status, raw=base64.b64encode(b'<html>synthetic</html>').decode()),),
             'RouterOS 返回的不是 JSON' if status == 200 else 'RouterOS GET /system/resource 返回 HTTP 500',
             entries=('H0833', 'H0834') if status == 200 else ('H0831', 'H0832'))
-    for index, value in enumerate(([], ['row'], None, False, 123, 'text')):
+    for index, value in enumerate(([], ['row'], None, False, 123, 'text', True, 1.5)):
         yield probe('resource-shape-' + str(index), 'routeros', (fault('ros', resource, status=200, body=value),),
                     'RouterOS 系统信息格式无法识别', entries=('H0841',))
     for index, (value, shown) in enumerate((('', '未知'), (None, '未知'), (0, '未知'),
@@ -102,7 +102,7 @@ def routeros():
             '需要 RouterOS 7.1+，当前版本 ' + shown, entries=('H0842',))
     yield probe('204-is-empty-resource', 'routeros', (fault('ros', resource, status=204, raw=''),),
                 '需要 RouterOS 7.1+，当前版本 未知', entries=('H0842',))
-    for index, version in enumerate(('7.1', '7.24.5（合成）', '8.0')):
+    for index, version in enumerate(('7.1', '7.24.5（合成）', '8.0', '07.01', '7.1rc1')):
         yield probe('version-success-' + str(index), 'routeros',
             (fault('ros', resource, status=200, body={'version': version, 'board-name': '合成型号🧪'}),), ok=True,
             checks={'probe/version': version, 'probe/model': '合成型号🧪',
@@ -110,10 +110,18 @@ def routeros():
     capabilities = [('/rest/ip/route', 'routes'), ('/rest/ip/firewall/nat', 'nat_bypass'),
                     ('/rest/ip/firewall/address-list?list=cf-probe', 'address_sets')]
     for path, absent in capabilities:
-        for label, values in (('refused', {'status': 403}), ('bad-shape', {'status': 200, 'body': {}}),
-                              ('bad-row', {'status': 200, 'body': [None]})):
+        gate = 'capability-timeout-' + absent
+        for label, values in (('refused', {'status': 403}), ('missing', {'status': 404}),
+                              ('unauthenticated', {'status': 401}), ('server-error', {'status': 500}),
+                              ('not-json', {'status': 200, 'raw': base64.b64encode(b'<html>synthetic</html>').decode()}),
+                              ('closed', {'disconnect': True}), ('bad-shape', {'status': 200, 'body': {}}),
+                              ('bad-row', {'status': 200, 'body': [None]}),
+                              ('timeout', {'gate': gate, 'status': 200, 'body': []})):
+            entries = ('H0843', 'R017-S03', 'R017-F13') + (('H0835',) if label in ('bad-shape', 'bad-row') else ())
             yield probe('capability-' + absent + '-' + label, 'routeros', (fault('ros', path, **values),), ok=True,
-                checks={'probe/capabilities': [name for _, name in capabilities if name != absent]}, entries=('H0843',))
+                checks={'probe/capabilities': [name for _, name in capabilities if name != absent]}, entries=entries,
+                elapsed_min=9 if label == 'timeout' else 0,
+                finalize=({'action': 'release', 'gate': gate},) if label == 'timeout' else ())
     yield probe('connection-closed', 'routeros', (fault('ros', resource, disconnect=True),),
                 '无法连接 RouterOS：ConnectionError', entries=('H0826', 'H0827'))
     raw_message = f'RouterOS GET /system/resource 返回 HTTP 500（{DEVICE_PASSWORD}）'
@@ -199,7 +207,24 @@ def ikuai():
         yield probe('capability-' + func, 'ikuai',
             ({'action': 'fault', 'match': {'peer': 'ikuai', 'path': '/Action/call', '/body/func_name': func},
               'status': 200, 'body': {'Result': 10000, 'code': 1001}},), ok=True,
-            checks={'probe/capabilities': [name for _, name in capabilities if name != absent]}, entries=('H0242',))
+            checks={'probe/capabilities': [name for _, name in capabilities if name != absent]},
+            entries=('H0242', 'R017-S03', 'R017-F13'))
+        match = {'peer': 'ikuai', 'path': '/Action/call', '/body/func_name': func}
+        gate = 'ikuai-capability-timeout-' + func
+        variants = (
+            ('http', ({'action': 'fault', 'match': match, 'status': 503},)),
+            ('not-json', ({'action': 'fault', 'match': match, 'status': 200,
+                           'raw': base64.b64encode(b'<html>synthetic</html>').decode()},)),
+            ('closed', ({'action': 'fault', 'match': match, 'disconnect': True},)),
+            ('expired-twice', ({'action': 'fault', 'match': match, 'status': 200,
+                               'body': {'Result': 10000, 'code': 1008}},) * 2),
+            ('timeout', ({'action': 'fault', 'match': match, 'gate': gate},)))
+        for label, controls in variants:
+            yield probe('capability-' + func + '-' + label, 'ikuai', controls, ok=True,
+                checks={'probe/capabilities': [name for _, name in capabilities if name != absent]},
+                entries=('H0242', 'R017-S03', 'R017-F13'), elapsed_min=9 if label == 'timeout' else 0,
+                expected_requests=({'match': {'peer': 'ikuai', 'path': login}, 'count': 2},) if label == 'expired-twice' else (),
+                finalize=({'action': 'release', 'gate': gate},) if label == 'timeout' else ())
     yield probe('connection-closed', 'ikuai', (fault('ikuai', login, disconnect=True),),
                 '无法连接 iKuai 管理服务：请检查地址、端口和域名解析，确认管理服务已开启，并允许 ConfigFlow 所在主机访问。',
                 entries=('H0226', 'H0227'))

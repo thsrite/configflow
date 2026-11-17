@@ -8,6 +8,7 @@ import workflows
 import fixtures
 import probes
 import probe_workflows
+import probe_guards
 import releases
 import clients
 import sync
@@ -37,6 +38,30 @@ from bugs import BUGS
 
 
 class RecipeTests(unittest.TestCase):
+    def test_capability_refusal_keeps_probe_success_and_iteration_continues_after_late_bad_rows(self):
+        failures = [case for group in (probes.routeros, probes.ikuai) for case in group()
+                    if 'R017-S03' in case.entries]
+        self.assertEqual(len(failures), 51)
+        self.assertTrue(all(case.expected == 200 and case.checks['success'] for case in failures))
+        self.assertEqual(sum(case.elapsed_min == 9 for case in failures), 7)
+        self.assertTrue(all(len(case.checks['probe/capabilities']) >= 2 for case in failures))
+        later = list(probe_guards.late_rows())
+        self.assertEqual(len(later), 3)
+        for case in later:
+            self.assertEqual(case.prepare[0]['body'], [{}, None])
+            self.assertEqual(case.expected, 200)
+            self.assertIn('H0835', case.entries)
+            self.assertIn('H0843', case.entries)
+        controls = list(probe_guards.controls())
+        self.assertEqual(len(controls), 7)
+        for case in controls:
+            self.assertTrue(set(case.entries) <= load()[1].keys())
+            self.assertIn('H1296', case.entries)
+        invalid = list(probe_guards.invalid_versions())
+        self.assertEqual(len(invalid), 18)
+        self.assertTrue(all(case.expected == 502 and case.stored for case in invalid))
+        self.assertTrue(all('H1296' in case.entries for case in invalid))
+
     def test_probe_roundtrip_keeps_raw_own_time_and_editor_revision_references(self):
         rows = list(probe_workflows.roundtrip())
         self.assertEqual(len(rows), 10)

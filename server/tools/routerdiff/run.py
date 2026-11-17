@@ -16,6 +16,7 @@ import workflows
 import fixtures
 import probes
 import probe_workflows
+import probe_guards
 import releases
 import clients
 import sync
@@ -136,6 +137,7 @@ def execute(pair, case, available, routes):
                    headers=case.headers, auth=case.auth)
     observations, snapshots, flow_requests, flow_checks, setup_observations = {}, {}, {}, {}, {}
     response_windows = {}
+    response_elapsed = {}
     resolved_requests = {}
     request_failure = None
     transport_state = None
@@ -251,6 +253,7 @@ def execute(pair, case, available, routes):
                 values = {key: value for key, value in control.items() if key != 'rpc'}
                 ident = values['ident']
                 side.pending[ident] = {'before': logical_snapshot(side.rpc('snapshot')), 'started': time.time(),
+                                       'started_monotonic': time.monotonic(),
                                        'request': {'method': values['method'], 'path': values['path']}}
                 values['headers'] = {'Authorization': 'Bearer ' + side.token, **values.get('headers', {})}
                 values.setdefault('body', None)
@@ -293,7 +296,7 @@ def execute(pair, case, available, routes):
         resolved_requests[name] = own_request
         age_anchor = wait_age(side, case) if case.age_from else None
         started = side.pending[case.join]['started'] if case.join else time.time()
-        request_started = time.monotonic()
+        request_started = side.pending[case.join]['started_monotonic'] if case.join else time.monotonic()
         try:
             response = (decode_response(side.rpc('join', ident=case.join)) if case.join else
                         poll(side, own_request, case.wait_until, case.wait_seconds, strict=name == 'python') if case.wait_until else
@@ -330,6 +333,7 @@ def execute(pair, case, available, routes):
         if case.age_limit and response_ended - age_anchor >= case.age_limit:
             raise RuntimeError(case.ident + ': response exceeded real-time fixture window; rerun at lower server load')
         side.request_windows[case.ident] = {'started': request_started, 'ended': response_ended}
+        response_elapsed[name] = response_ended - request_started
         response_windows[name] = (started, response_received_wall)
         settled = [response_view(poll(side, {'method': 'GET', 'path': control['path']}, control['expect'],
                                      control.get('seconds', 30), strict=name == 'python')) for control in case.after_poll]
@@ -343,7 +347,6 @@ def execute(pair, case, available, routes):
                                       'response': response_view(guard)})
         if case.join:
             del side.pending[case.join]
-        ended = time.time()
         response['method'] = case.method
         observations[name] = response_view(response)
         if settled:
@@ -406,7 +409,7 @@ def execute(pair, case, available, routes):
             if not hasattr(pair, 'probe_clocks'):
                 pair.probe_clocks = ProbeClocks()
             pair.probe_clocks.reference(case, own_request, observations[name], after, response_windows[name])
-            if ended - started < case.elapsed_min:
+            if response_elapsed[name] < case.elapsed_min:
                 raise RuntimeError(case.ident + ': expected real transport wait did not occur')
             transcript = after['fake']['transcript'][len(before['fake']['transcript']):]
             for requirement in case.expected_requests:
@@ -515,6 +518,10 @@ def execute(pair, case, available, routes):
     if request_failure:
         found.append({'path': '/public-process/request', 'python': {'http_status': observations['python']['status']},
                       'go': request_failure, 'category': 'transport'})
+    if 'go' in response_elapsed and response_elapsed['go'] < case.elapsed_min:
+        found.append({'path': '/contract/http/minimum-elapsed-seconds',
+                      'python': {'minimum': case.elapsed_min, 'observed': response_elapsed['python']},
+                      'go': response_elapsed['go'], 'category': 'timing'})
     go_bug_outcome = None
     if implemented and not blocked_reference and not request_failure:
         if not hasattr(pair, 'router_ids'):
@@ -637,6 +644,7 @@ def execute(pair, case, available, routes):
             'blocked_reference': blocked_reference,
             'setup_observations': setup_observations,
             'go_process': request_failure or startup_failure, 'go_transport_state': transport_state,
+            'response_elapsed_seconds': response_elapsed if case.elapsed_min else None,
             'python': observations['python'], 'go': observations.get('go'),
             'python_bug': case.python_bug, 'python_bug_outcome': python_bug_outcome, 'go_bug_outcome': go_bug_outcome,
             'differences': [asdict(item) if not isinstance(item, dict) else item for item in found]}
@@ -803,6 +811,7 @@ def main():
               ('forwarding-uncertain', fixtures.agent_options(), (gateway.uncertain, gateway.timeouts)),
               ('probe-errors', options, (probes.routeros, probes.ikuai)),
               ('probe-clock-roundtrip', options, (probe_workflows.roundtrip,)),
+              ('probe-guard-controls', options, (probe_guards.controls, probe_guards.late_rows, probe_guards.invalid_versions)),
               ('probe-tls', probes.tls_options(), (probes.tls,)),
               ('probe-ipv6', probes.ipv6_options(), (probes.ipv6,)),
               ('release-ros', releases.options(), (releases.routeros_basic,)),

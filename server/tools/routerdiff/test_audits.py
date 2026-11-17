@@ -23,9 +23,33 @@ import fixed_normalization
 import fixed_setup
 import fixed_sources
 import probe_workflows
+import probe_guards
+import probes
 
 
 class AuditTests(unittest.TestCase):
+    def test_probe_guard_audits_require_fatal_persistence_and_per_capability_downgrades(self):
+        actual = {('probe-errors', case.ident): case for group in (probes.routeros, probes.ikuai) for case in group()}
+        actual.update({('probe-guard-controls', case.ident): case for group in
+                       (probe_guards.controls, probe_guards.late_rows, probe_guards.invalid_versions) for case in group()})
+        actual.update({('probe-tls', case.ident): case for case in probes.tls()})
+        counts = {'H0835': 10, 'H0841': 13, 'H0842': 23, 'H0843': 35, 'H0241': 15, 'H0242': 26,
+                  'H1296': 110, 'R017-S01': 5, 'R017-S02': 3, 'R017-S03': 54, 'R017-F13': 54, 'R017-B04': 7}
+        for ident, count in counts.items():
+            required = declared()[ident].requirements
+            self.assertEqual(len(required), count, ident)
+            for world, name, status in required:
+                case = actual[world, name]
+                self.assertEqual(case.expected, status, (ident, name))
+                self.assertIn(ident, case.entries, (ident, name))
+                self.assertEqual(case.effect, 'profile-write')
+                self.assertEqual(case.times, ('probe/at',))
+            evidence = [{'world': world, 'case': name, 'entries': [ident], 'python': {'status': status},
+                         'status': 'go-unimplemented'} for world, name, status in required]
+            self.assertEqual(evaluate(evidence)[ident]['audit'], 'variants-audited')
+            self.assertEqual(evaluate(evidence[:-1])[ident]['audit'], 'variants-pending')
+        self.assertNotIn('R017-F12', declared())  # Broader outer/schema/accepted-crash audit remains separate.
+
     def test_probe_invalidation_audit_needs_each_actual_probe_and_each_connection_operand(self):
         actual = {(world, case.ident): case for world, _, groups in probe_workflows.invalidation_worlds({})
                   for group in groups for case in group()}
@@ -235,7 +259,7 @@ class AuditTests(unittest.TestCase):
 
     def test_auth_audits_require_every_explicit_real_reference_variant(self):
         audits = declared()
-        self.assertEqual(len(audits), 26 * 7 + 25 * 3 + 5 + 14 + 12 + 5 + 8 + 23 + 1 + 5 + 4 + 6 + 4 + 4 + 10 + 24 + 1 + 13 + 2 + 12 + 9 + 3 + 8 + 1)
+        self.assertEqual(len(audits), 26 * 7 + 25 * 3 + 5 + 14 + 12 + 5 + 8 + 23 + 1 + 5 + 4 + 6 + 4 + 4 + 10 + 24 + 1 + 13 + 2 + 12 + 9 + 3 + 8 + 1 + 12)
         self.assertFalse(set(audits) - set(load()[1]))
         self.assertEqual({value['audit'] for value in evaluate([]).values()},
                          {'variants-pending', 'source-proof-controls-pending', 'review-proof-controls-pending'})

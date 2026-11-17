@@ -466,3 +466,21 @@ Native main-request failure classification:
 - Real own-namespace -9 negative control uses an actually registered auth route;
   it is not a router case or product finding. Main HTTP polls/joins are covered;
   auxiliary setup and post-response settling transport distinctions remain open.
+
+Probe fatal errors versus capability downgrades:
+- Every capability loop member has actual peer refusal/HTTP/non-JSON/disconnect/
+  timeout, plus ROS root/row guards and later null after valid row. Child errors
+  keep200/success and only remove that capability; fatal resource/auth/version
+  errors return502 and write failed probe metadata. All probes read device state.
+- Seven valid version/model controls, eight resource-root shapes and every JSON
+  version-field kind distinguish source guards and preserve Chinese/emoji.
+  TLS min/error controls and exact owned clocks/one revision protect persistence.
+- H1296's110 required observations do not claim DB-save failures, non-RouterError
+  crashes, all nested schemas, true permission acceptance or T15 completeness.
+  R017-F12 remains a separate open audit. Device password echo remains the known
+  X01/O9 policy observation; no message is masked or silently reclassified.
+- elapsed_min now checks native too, using real monotonic request duration and
+  original async start. It never compares arbitrary RTT equality. Timing-only
+  differences still require lower-load/other-host recheck; slow in-budget and
+  upper-bound device tests remain open. All new source controls ran on real
+  Python; purpose-broken oracle tests are separate from product findings.

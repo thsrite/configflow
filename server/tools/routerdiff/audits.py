@@ -928,6 +928,85 @@ def declared():
         'own response clock in DB and HTTP. Every edit commits one profile revision, keeps unrelated '
         'DNS/names/bindings and performs zero device I/O. Probe clock comparison is owned/content '
         'bound, never a last_probe field mask.', tuple(probe_edits))
+    def probe_result(vendor, label, status=200, world='probe-errors'):
+        return (world, 'R017/' + vendor + '/' + label, status)
+    ros_good = tuple(probe_result('routeros', 'guard-version-' + label, world='probe-guard-controls')
+                     for label in ('minimum', 'unicode', 'major', 'zeroes', 'rc'))
+    ik_good = tuple(probe_result('ikuai', 'guard-version-' + label, world='probe-guard-controls')
+                    for label in ('minimum', 'unicode'))
+    ros_caps = tuple(probe_result('routeros', 'capability-' + cap + '-' + label)
+                     for cap in ('routes', 'nat_bypass', 'address_sets')
+                     for label in ('refused', 'missing', 'unauthenticated', 'server-error', 'not-json',
+                                   'closed', 'bad-shape', 'bad-row', 'timeout'))
+    late_caps = tuple(probe_result('routeros', 'guard-late-row-' + cap, world='probe-guard-controls')
+                      for cap in ('routes', 'nat_bypass', 'address_sets'))
+    ik_caps = tuple(probe_result('ikuai', 'capability-' + func + suffix)
+                    for func in ('static_rt', 'nat_rule', 'route_object', 'stream_ipport')
+                    for suffix in ('', '-http', '-not-json', '-closed', '-expired-twice', '-timeout'))
+    bad_version_names = ('null', 'false', 'true', 'integer', 'number', 'empty-array', 'array', 'empty-object', 'object')
+    bad_versions = {vendor: tuple(probe_result(vendor, 'guard-invalid-version-' + label, 502, 'probe-guard-controls')
+                                  for label in bad_version_names) for vendor in ('routeros', 'ikuai')}
+    ros_versions = tuple(probe_result('routeros', 'old-version-' + str(index), 502) for index in range(8))
+    ros_versions += (probe_result('routeros', '204-is-empty-resource', 502),) + bad_versions['routeros']
+    ik_versions = tuple(probe_result('ikuai', 'old-version-' + str(index), 502) for index in range(4))
+    ik_versions += bad_versions['ikuai']
+    malformed_lists = tuple(probe_result('routeros', 'capability-' + cap + '-' + label)
+                            for cap in ('routes', 'nat_bypass', 'address_sets') for label in ('bad-shape', 'bad-row'))
+    probe_sources = ('backend/routers/routeros.py:125', 'backend/routers/routeros.py:162',
+                     'backend/routers/ikuai.py:299', 'backend/routes/routers.py:208')
+    for ident, required, detail in (
+        ('H0835', malformed_lists + late_caps + ros_good[:1],
+         'Each capability list: wrong root and non-object row, including a later null after a valid dict. Empty lists are a genuine successful read-access control; errors omit only that capability.'),
+        ('H0841', tuple(probe_result('routeros', 'resource-shape-' + str(index), 502) for index in range(8)) + ros_good,
+         'Eight non-object system roots cover all JSON kinds, empty/nonempty list and both booleans, plus five valid resource dictionaries. Malformed resource is a failed persisted probe, not capability-only downgrade.'),
+        ('H0842', ros_versions + ros_good,
+         'No-match versus below-minimum operands, missing/empty/zero/version forms,204 empty resource and every wrong JSON field kind. Valid minimum/current/new major/zero padding/rc preserve real version/model and full capabilities.'),
+        ('H0843', ros_caps + late_caps + ros_good,
+         'All three capability paths:403/404/401/500, non-JSON, disconnect, two list-shape guards and actual10-second read timeout. Late bad rows prove complete iteration. Every failure remains HTTP200 with only that capability missing and a successful stored probe.'),
+        ('H0241', ik_versions + ik_good,
+         'iKuai version empty/old/other major and every JSON value kind refuse502; actual4.0.0 and Unicode current-version/model controls succeed with all four capabilities.'),
+        ('H0242', ik_caps + ik_good,
+         'All four iKuai capabilities: permission refusal,503, non-JSON, disconnect,1008 replies retrying the same request once and real10-second timeout. Each keeps probe.ok=true and only omits its capability.1008 fault replies do not claim firmware session acceptance.'),
+        ('R017-S01', ros_good, 'Five real RouterOS resource/version/model controls with all three readable capabilities and exact owned persisted probe clock.'),
+        ('R017-S02', ik_good + (probe_result('ikuai', 'session-relogin-once'),),
+         'Actual iKuai4.x sysstat/current/minimum/Unicode model and all four readable capabilities, including real HTTP single re-login recovery.'),
+        ('R017-S03', ros_caps + late_caps + ik_caps,
+         'Both vendors and every capability path downgrade a child failure without losing healthy capabilities or failing the overall probe.'),
+        ('R017-F13', ros_caps + late_caps + ik_caps,
+         'Read/refusal/shape/transport/timeouts and bounded session retry at child capability scope, distinct from fatal system-information errors.'),
+        ('R017-B04', ros_good + ik_good, 'Both version and model retain Chinese/emoji and real firmware version suffixes through HTTP and storage.')):
+        audits[ident] = Audit(probe_sources, detail +
+            ' Every probe writes one profile revision even on fatal502, reads only device state, '
+            'keeps foreign storage and unrelated fake tables, and validates stored clock against its '
+            'own actual response. Fakes prove protocol only; firmware permissions/acceptance remain L5.', required)
+    ros_fatal = tuple(probe_result('routeros', 'http-' + str(status), 502) for status in (401, 403, 404))
+    ros_fatal += tuple(probe_result('routeros', 'http-detail-' + str(status), 502) for status in (300, 400, 405, 429, 500, 502, 503))
+    ros_fatal += tuple(probe_result('routeros', label, 502) for label in
+                       ('permissions-detail', 'not-json-200', 'not-json-500', 'connection-closed',
+                        'device-password-echo-is-not-global-token', 'global-token-whole-string-redacted', 'real-read-timeout'))
+    ros_fatal += tuple(probe_result('routeros', 'resource-shape-' + str(index), 502) for index in range(8)) + ros_versions
+    ik_fatal = tuple(probe_result('ikuai', 'http-' + str(status), 502)
+                     for status in (401, 403, 404, 405, 408, 429, 502, 503, 504, 418, 500))
+    ik_fatal += tuple(probe_result('ikuai', 'redirect-' + str(status) + '-' + label, 502)
+                      for status in (301, 302, 303, 307, 308) for label in ('relative', 'other-origin'))
+    ik_fatal += tuple(probe_result('ikuai', 'not-json-' + str(index), 502) for index in range(4))
+    ik_fatal += tuple(probe_result('ikuai', 'login-shape-' + str(index), 502) for index in range(5))
+    ik_fatal += tuple(probe_result('ikuai', label, 502) for label in
+                      ('result-success-code-refusal', 'login-missing-code-old-result-refused', 'old-call-Data',
+                       'old-call-Result', 'session-retry-still-expired', 'connection-closed', 'real-read-timeout'))
+    ik_fatal += tuple(probe_result('ikuai', 'call-code-' + str(index), 502) for index in range(4)) + ik_versions
+    tls_controls = tuple(probe_result(vendor, 'self-signed-' + label, status, 'probe-tls')
+                         for vendor in ('routeros', 'ikuai')
+                         for label, status in (('verified-0', 502), ('unverified-1', 200), ('verified-2', 502)))
+    audits['H1296'] = Audit(probe_sources,
+        'Every currently enumerated fatal RouterError family: system/auth/HTTP/redirect/non-JSON/root/'
+        'version/session/connection/read timeout plus both verified/unverified TLS states and valid '
+        'both-vendor controls. API502 still persists probe.ok=false/message/own fresh clock and bumps '
+        'one profile revision, with no device write. Explicit stored-vs-HTTP secret redaction checks '
+        'remain separate (do not mask messages). Child capability errors stay successful and have '
+        'their own loop audits. Does not claim database write failures, unhandled non-RouterError '
+        'crashes, real permission acceptance or all malformed nested peer schemas.',
+        ros_fatal + ik_fatal + tls_controls + ros_good + ik_good)
     return audits
 
 
