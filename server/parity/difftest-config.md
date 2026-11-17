@@ -1979,3 +1979,11 @@ H757/H758的非数组proxies_order与非对象元素已被[validate_shapes](../.
 ### Step B 节点names/keys前置门禁
 
 H738的同时指定names/keys在[nodes.py:163](../../backend/routes/nodes.py#L163)先被拒绝400，消息与后续helper相同；HTTP覆盖这一行为，但不能证明node_latency._run_tests内重复防御分支执行。该内部return标部分观察，保留独立H738请求。
+
+### Step B repository wrapper与helper关联审计
+
+- R123-F08/H770：表格中data.pop说明误用了R116创建入口；实际clone handler直接调用repository.clone_profile，truthy数组进入create_profile的metadata对象guard并返回400。现有公开HTTP用例已验证此路径；R116-F08仍为早期list.pop导致500，二者不能混用。
+- H805：公开独立import的非对象请求由[profiles.py:156](../../backend/routes/profiles.py#L156)先拒绝，“请求数据必须是 JSON 对象”不是repository的“Imported profile must be an object”；撤销R137-F08→H805关联，此内部重复防御目前无HTTP驱动。嵌套config非对象/共享副本/旧resource_refs/revision仍可到达后续H806–808。
+- H779：现有profiles-deletion先删除other，随后对唯一剩余default发DELETE，确实经过“只有一个配置空间”分支；R117-F08可关联H779，不拿仍有两个空间时缺new_default的H780充数。
+- H773/H774：import-client路由先校验name并构造固定metadata对象，再调用repository.import_client_profile；其metadata非对象/name无效重复guard无法由该入口的JSON直接驱动。R155-F08/F09的400属于wrapper，不关联H773/H774。依据[profiles.py:44](../../backend/routes/profiles.py#L44)。
+- H776：build_import只返回固定PROFILE_FIELDS，HTTP客户端不能传入自定义Python build callback；未知输出字段guard用于内部构造错误，当前未找到公开驱动。H783的非callable updater同理，HTTP不能替换应用定义的事务回调。两者保留未覆盖原因，不用无关参数错误充数。

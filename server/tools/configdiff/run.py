@@ -110,6 +110,10 @@ def main():
     groups.update(node_concurrency)
     from cases.repository_resources import GROUPS as repository_resources
     groups.update(repository_resources)
+    from cases.repository_public_guards import GROUPS as repository_public_guards
+    groups.update(repository_public_guards)
+    from cases.archive_callbacks import GROUPS as archive_callbacks
+    groups.update(archive_callbacks)
     from cases.profile_generators import GROUPS as profile_generators
     groups.update(profile_generators)
     from cases.profile_queries import GROUPS as profile_queries

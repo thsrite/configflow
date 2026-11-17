@@ -1538,3 +1538,21 @@ current compared=95 go-unimplemented=186；design_errors=[] seconds=38.18；exit
 ```
 
 原R仍差285编号、H仍差563编号，另有已明确partial/不可观察分支和长流程。继续清单；未改Go业务、未推送、未派子agent，最终.32全量仍待完成清单后执行。
+
+## 批次 89：helper关联纠正、repository公开门禁与归档回调
+
+- 又一次rebase到go0efddadf（相对aeff9d75只有流程说明提交）。核对wrapper源码发现R137-F08早于H805拒绝，撤销该H关联并在matrix说明；改以现有“先删other后删唯一default”的R117-F08关联真正H779。两组实际重跑后关联修正已进入统一结果，H总数净不变，未保留虚假覆盖。H773/H774/H776/H783的公开驱动限制已单列，不以wrapper相似错误计数。R123-F08与R116-F08的data.pop/metadata区别也明确更正。
+- 21新增repository变体覆盖metadata name/update/字符串类型分支、独立import移除仍被规则引用的策略组H785、无目录资源但主缓存或仅.bak已存在的H794；准确400/409、全SQL/files不变、真实回环HTTP0次。新增H2，累计9273变体/H551。独立41变体含重跑原有profile组，design_errors=[]、15.73s，常规runner已合并。
+- 13新增归档变体覆盖MosDNS回调H003–H008、H014，及同样输入穿过OxiDNS错误映射H024；同一次HTTP附H012准备失败包装、H015下载失败包装标签，新增H10。跨空间、同源回调循环、缺url、非法part、未知callback、快照不存在库；MRS拒绝在HTTP下载前。所有错误源均被已声明的回环代理围住，实际请求必须0，未访问panel.example/source.example；500/400准确中文及全SQL/files不变。Go尚未实现，接通后自动比较。
+- 统一9286变体、原R4245（S678/F2652/B915）、H561、G16。新增34实际变体均Go尚未实现；findings复验状态仍closed81/accepted5/open18/O12单列1。README补baseline、accepted/open退出码与helper标签不增加请求数的约定。
+
+```text
+.63 run.py --groups profiles-deletion,profiles-independent-import,repository-public-metadata-guards,repository-removed-policy-guard,repository-existing-cache-guard --baseline 0efddadf
+go-unimplemented=41 design_errors=[]；exit=0（其中新增21）
+.63 run.py --groups archive-callback-helper-guards --baseline 0efddadf
+go-unimplemented=13 design_errors=[]；exit=0
+两组均经常规runner写入统一results；78项自检及故意错误Go响应检出通过
+独立报告/tmp/configdiff-repository-public.json、/tmp/configdiff-archive-callbacks.json
+```
+
+继续profile剩余边界、归档/依赖与其余helpers、长流程；原R仍差285、H仍差551，最终.32全量未执行。

@@ -13,7 +13,7 @@ RT_HOST=sunbroke@192.168.0.63 rt \
 
 `--groups precedence,jwt,auth-environments,redaction,startup,auth-routes` 可选择批次；`--binary /path/to/configflow` 可复用本工具生成的测试二进制。最终完整运行使用 .32；命名空间、容器、MITM 或真实网络栈实验只在 .32。
 
-返回码：0 无差异；1 真实比较发现差异；2 夹具、基础设施或参考前提错误。每次运行先执行比较器篡改自检。Go 未注册的 method/template 标 `go-unimplemented`，保留 Python 参考前提验证，未计通过/失败；未来路由接通后自动比较，绝不从一个业务 404 猜“未实现”。当前注册清单是实际 wiring，`routes.tsv` 的 todo/done 不会把已接通路由永久跳过。
+返回码：0 无未批准差异（可以有精确命中已批准决定的严格差异）；1 存在open差异；2 夹具、基础设施或参考前提错误。每次运行先执行比较器篡改自检。Go 未注册的 method/template 标 `go-unimplemented`，保留 Python 参考前提验证，未计通过/失败；未来路由接通后自动比较，绝不从一个业务 404 猜“未实现”。当前注册清单是实际 wiring，`routes.tsv` 的 todo/done 不会把已接通路由永久跳过。
 
 `testdata/results.json` 记录合成用例的编号、具体变体、路由、状态和差异。按批次重跑替换旧结果，其他批次保留。`difftest-config-findings.md` 自动列两侧值，全部来自合成夹具；每次提交的真实覆盖与未完成项在 `parity/progress/difftest-config-b.md`。
 
@@ -28,3 +28,7 @@ RT_HOST=sunbroke@192.168.0.63 rt \
 异步任务会先改变内存中的 job/lock，再落盘。启动请求使用 `runtime_writes=True`：Go入口未接通时，后续已接通读取也标记依赖未实现，不拿Python的在途任务与Go空状态比较。源端仍走完整终态/DB/files前提验证；接通后自动进行真实双端比较。
 
 公开服务端口按 fixture 租约保留：同一 fixture 重启时继续保留旧端口，整个 fixture 确认进程停止后释放；新 fixture 可使用内核回收的端口。分配器有超过4096个生命周期的复用自检，并验证活动租约、重启和幂等关闭的隔离。
+
+`--baseline <公开Go源码提交>`标明本轮基线。`finding_reviews`保留原始差异及实际复验：仅compared能closed，附修复提交；仅精确命中`behaviour-changes.md`明确批准条目能accepted，额外响应/存储差异仍open；未跑pending、未实现/依赖blocked。严格case verdict和全差异不被改写，summary另列本轮accepted/open数。`refresh_finding_reviews.py`只根据已记录本轮组重算注释和Markdown，不执行、拼接或伪造case结果。
+
+`helper_cases`是同一次真实R请求对应的源码H标签，不增加HTTP变体，不改变Go尚未实现等状态；只有审计确认经过指定helper guard才关联。被wrapper先拒绝的重复防御分支写入matrix errata，不能借相似错误计为H覆盖。

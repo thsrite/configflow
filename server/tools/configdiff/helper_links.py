@@ -6,6 +6,8 @@ Unreachable/earlier-guard branches are deliberately absent.
 """
 
 LINKS = {
+    **{case: ('POST /api/generate/mosdns', ('H012',)) for case in ('H003', 'H004', 'H005', 'H006', 'H007', 'H008')},
+    'H014': ('POST /api/generate/mosdns', ('H015',)),
     'R123-F08': ('POST /api/profiles/<profile_id>/clone', ('H770',)),
     'R116-F09': ('POST /api/profiles', ('H771',)),
     'R123-F09': ('POST /api/profiles/<profile_id>/clone', ('H771',)),
@@ -16,13 +18,13 @@ LINKS = {
     'R119-F09': ('PUT /api/profiles/<profile_id>', ('H778',)),
     'R119-F10': ('PUT /api/profiles/<profile_id>', ('H778',)),
     'R119-F11': ('PUT /api/profiles/<profile_id>', ('H778',)),
+    'R117-F08': ('DELETE /api/profiles/<profile_id>', ('H779',)),
     'R117-F09': ('DELETE /api/profiles/<profile_id>', ('H780',)),
     'R117-F10': ('DELETE /api/profiles/<profile_id>', ('H781',)),
     'R117-B01': ('DELETE /api/profiles/<profile_id>', ('H781',)),
     'R117-F11': ('DELETE /api/profiles/<profile_id>', ('H782',)),
     'R095-F12': ('POST /api/nodes/delete', ('H797',)),
     'R095-F13': ('POST /api/nodes/delete', ('H798',)),
-    'R137-F08': ('POST /api/profiles/<profile_id>/import', ('H805',)),
     'R137-F09': ('POST /api/profiles/<profile_id>/import', ('H806',)),
     'R137-F10': ('POST /api/profiles/<profile_id>/import', ('H807',)),
     'R137-F11': ('POST /api/profiles/<profile_id>/import', ('H808',)),
