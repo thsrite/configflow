@@ -203,7 +203,7 @@ func handleServerDomain(c *httpx.Ctx) (*httpx.Response, error) {
 				return failure(400, "New domain is required"), nil
 			}
 			ensureSystemSettings(config).Set("server_domain", newDomain)
-			appLogger.Info("Updated server domain to " + newDomain)
+			appLogger.Info("Updated server domain")
 			if err := saveSettings(c.Context(), config); err != nil {
 				return nil, err
 			}
@@ -438,7 +438,7 @@ func handleSubscriptionAggregation(c *httpx.Ctx) (*httpx.Response, error) {
 			}
 			enabled := data.GetOr("enabled", false)
 			ensureSystemSettings(config).Set("subscription_aggregation_enabled", enabled)
-			appLogger.Info("Updated subscription aggregation enabled to " + jsonx.Str(enabled))
+			appLogger.Info("Updated subscription aggregation")
 			if err := saveSettings(c.Context(), config); err != nil {
 				return nil, err
 			}

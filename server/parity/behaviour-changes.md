@@ -597,3 +597,8 @@ preview-regex 的 subscriptions/aggregations 空值继续按空选择处理；�
 设置路由同时沿用 N8-6 `Bind`/`BindSilent`：严格读取的畸形 JSON、非对象/null body 返回 400，错误 MIME 返回 415，替代 Python 捕获异常后的 500；silent 读取仍返回原业务校验消息。其他字段值验证及持久化语义保持 Python 一致。见 `design/c06-http-settings.md`、`TestC06SettingsFlaskStorageBoundary`。
 
 C06 的 9 个 body reader 另有 27 条真实 Flask 对照，显式记录 NaN/Infinity/-Infinity → 原有严格或 silent 畸形请求响应的 N8-6 迁移差异；其中 Python 原来会保存非有限 aggregation enabled 值，Go 现在拒绝且 DB、文件及 revision 不变。其他有限数值及字段校验不变。
+
+C06 独立复核安全修正：服务域名和 subscription-aggregation 更新日志只记事件，
+不再拼接完整用户输入。Python 与原 Go 都会把包含 URL 密码、query token 或换行的
+new_domain / 宽松 enabled 值直接写入 INFO 日志。请求校验、响应和持久化值保持原语义；
+`TestReviewSettingsLogsDoNotEchoValues` 经真实 HTTP 保存验证日志无凭据/伪造行、DB 值不变。

@@ -9,12 +9,42 @@ import (
 	"testing"
 
 	"configflow/internal/httpx/httpxtest"
+	"configflow/internal/jsonx"
 	"configflow/internal/logx"
 )
 
 type failureLogs struct {
 	mu     sync.Mutex
 	buffer bytes.Buffer
+}
+
+func TestReviewSettingsLogsDoNotEchoValues(t *testing.T) {
+	for _, tc := range []struct{ path, requestKey, storedKey, event string }{
+		{"/api/server-domain", "new_domain", "server_domain", "Updated server domain"},
+		{"/api/settings/subscription-aggregation", "enabled", "subscription_aggregation_enabled", "Updated subscription aggregation"},
+	} {
+		t.Run(tc.path, func(t *testing.T) {
+			s := newServer(t, false)
+			var logs failureLogs
+			if _, err := logx.Setup(logx.Config{Level: logx.Debug, Console: &logs}); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _, _ = logx.Setup(logx.Config{Console: io.Discard}) })
+			const value = "https://operator:synthetic-log-secret@panel.example.com/?token=synthetic-query-secret\nforged-log-entry"
+			s.Post(tc.path, httpxtest.JSON(jsonx.Obj(tc.requestKey, value))).WantStatus(200)
+			if system(t, s).GetObject("system_config").GetString(tc.storedKey) != value {
+				t.Fatal("logging protection changed the stored setting")
+			}
+			if !strings.Contains(logs.String(), tc.event) {
+				t.Fatal("setting update event missing")
+			}
+			for _, private := range []string{"synthetic-log-secret", "synthetic-query-secret", "panel.example.com", "forged-log-entry"} {
+				if strings.Contains(logs.String(), private) {
+					t.Errorf("setting value escaped into logs: %s", private)
+				}
+			}
+		})
+	}
 }
 
 func (l *failureLogs) Write(data []byte) (int, error) {
