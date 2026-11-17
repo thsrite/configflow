@@ -5,7 +5,6 @@ import yaml
 
 from harness import Pair, json_body
 from oxidns import check as etag_check, capture as etag_capture
-from cases.generator_shapes import project
 from cases.helpers import profile_policy
 from cases.rule_library import DOMAIN
 from cases.subscriptions import require
@@ -68,25 +67,25 @@ def settings_for(control, shape):
     return value
 
 
-def draft_projection(value, index):
+def draft_projection(value, index, key='config'):
     """Read the schema-known string log.level without YAML 1.1's off bool."""
     result = copy.deepcopy(value)
-    if not isinstance(result, dict) or not isinstance(result.get('config'), str):
+    if not isinstance(result, dict) or not isinstance(result.get(key), str):
         return result
-    text = result['config']
-    result['config'] = yaml.safe_load(text)
-    if index == 1 and isinstance(result['config'], dict):
+    text = result[key]
+    result[key] = yaml.safe_load(text)
+    if index == 1 and isinstance(result[key], dict):
         root = yaml.compose(text, Loader=yaml.SafeLoader)
         if isinstance(root, yaml.MappingNode):
-            for key, child in root.value:
-                if key.value != 'log' or not isinstance(child, yaml.MappingNode):
+            for root_key, child in root.value:
+                if root_key.value != 'log' or not isinstance(child, yaml.MappingNode):
                     continue
                 for name, scalar in child.value:
                     if (name.value == 'level' and isinstance(scalar, yaml.ScalarNode)
                             and scalar.style is None and scalar.value == 'off'
                             and text[scalar.start_mark.index:scalar.end_mark.index] == 'off'
-                            and isinstance(result['config'].get('log'), dict)):
-                        result['config']['log']['level'] = 'off'
+                            and isinstance(result[key].get('log'), dict)):
+                        result[key]['log']['level'] = 'off'
     return result
 
 
@@ -150,7 +149,8 @@ def matrix(binary, recorder):
                                  expect=200, writes=True, check=etag_check(pair), capture=etag_capture(pair), variant=variant + '/save')
                     pair.request('G11', 'POST ' + generate_template + '/oxidns/preview', generate_prefix + '/oxidns/preview',
                                  body=json_body({'base_url': 'http://panel.example'}), expect=200, writes=True,
-                                 projection=project('oxidns'), check=lambda r: check(r, 'content'), variant=variant + '/saved-preview')
+                                 projection=lambda value, index: draft_projection(value, index, 'content'),
+                                 check=lambda r: check(r, 'content'), variant=variant + '/saved-preview')
 
 
 GROUPS = {'oxidns-control-output': matrix}

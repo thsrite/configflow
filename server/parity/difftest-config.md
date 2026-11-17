@@ -2289,3 +2289,24 @@ setup已有真实check屏障下断连后receipt保存及新浏览器读回；pre
 canonical覆盖审计为228路由、R4492（S712/F2763/B1017）、H936、G16；R/H未运行214项见上表，不能计通过。长流程的真实进程/存储/网络实验边界不因route S/F齐全而消失；Go尚未实现及依赖也始终单列。完整命令、基线、覆盖及门禁限制见[Step B进度](progress/difftest-config-b.md)。
 
 T25补充（批次154）：`write_agent_quiet.py`通过两端独立loopback Agent端口、真实heartbeat在线态，分别执行规则/策略组/规则库CRUD和Mihomo结构预览；每步比较HTTP/完整SQL/files，源端核实真实保存/重排/删除/生成。每流程末每端至少观察6秒，完整requests/errors写进报告；原始NoRequests比较器已有故意额外Go PUT及真实六动词记录自检。当前Go未接通的组/库/预览仍source-only且Go观察为null；rules流程双端零RPC，但删除保留已知MosDNS字段revision差异。该代表流程没有active deployment，也不替代native DNS绑定/既有content-sync异步状态或真实发布联测；有限窗口不宣称无限期零请求。总实际变体随之为10664，R/H覆盖数与214项边界不变。
+
+### Step B 长流程编号与实际执行边界（交回索引）
+
+实际报告有22个独立T标签；下列8个配方没有独立T标签，其已执行步骤使用R/H编号记录。此表只是可追溯索引，不能把它们额外计为8套完整通过的长流程。
+
+| 配方 | 已执行步骤对应实际组 | 仍不能由这些步骤证明的部分 |
+|---|---|---|
+| T03 | `profile-concurrent-metadata`、`profiles-real-concurrent-rules-settings-and-provider-URLs`、`rule-library-concurrent-source-edit`、`rules-concurrent-batch`、`setup-completion-concurrent-core-edit` | 并非每种写入都有等价外部屏障；外部SQLite提交恰逢内部COMMIT的窄窗口仍按partial-storage/race处置，不以普通409冒充。 |
+| T10 | `rule-duplicates-real-browser-disconnect`、`logs-real-five-event-sequence-and-level-filter-polling`、`logs-real-public-write-driven-10MiB-five-backup-rotation`、`logs-real-stat-permission` | 已观察真实浏览器断连、固定日志序列及轮换；未覆盖无界扫描压力、真实Agent日志或全部宿主日志来源。 |
+| T11 | `dependency-update-success`、`dependency-update-invalid-downloads`、`dependency-update-javascript-guard`、`dependency-update-readiness-timeouts`、`dependency-update-restart-rollback` | 回环HTTPS代理/CA及下载/控制器fake验证公开更新流程；真实Node/Supervisor服务及容器bootstrap仍需实验。 |
+| T12 | `dependency-managed-modes`、`dependency-real-active-conversion-excludes-mode-writer`、`dependency-real-controller-exec-unavailable`、`dependency-real-running-process-never-ready` | 真实完整Sub-Store、Supervisor及完整300秒闲置停机未由fake验收。 |
+| T15 | `settings-webdav`、`webdav-named-preflight-and-directory-failure`、`webdav-local-day-retention-boundary`、`tasks-real-WebDAV-completion` | 每次请求和文件保留集均记录；真实WebDAV服务器兼容性仍需联测，PROPFIND正文差异继续open。 |
+| T18 | `tasks-asynchronous`、`tasks-real-WebDAV-completion`、`tasks-DNS-follow-retry-intent`、`tasks-router-sync-queued-pause-and-retry-guard`、`tasks-interval-concurrent-URL-retention` | category的真实Agent/路由器/metrics工作不因202、fake回执或另一category成功而算通过。 |
+| T24 | `web-listener-complete-switch`、`web-listener-complete-occupied`、`web-listener-real-save-failure`、`web-listener-real-unprivileged-low-port-bind-failure`及环境/保存状态组 | Go真实原生listener，Python前端HTTP peer为fake；R206-F17/F18/F19真实Nginx叠加、进程重载及精确并发竞争归O9/O14。 |
+| T26 | `library-concurrent-draft`、`rule-library-real-concurrent-create-ID-conflict`、`repository-complete-import-edge-invariants`、`rule-proxy-processing-failure`及真实文件/SQL拒绝组 | 没有可控等价屏障的short-write、fsync、已提交后报错及不确定COMMIT仍partial-storage；不以只读目录代表所有故障。 |
+
+测试服务器现为等价的.32与.64，.63已停用；本交回的完整config运行和后续定向复验在.64，完整官方Go门禁在.32。先前正文中的“.32专用实验”按维护者最新规则可在两台任一执行，真实多机PVE实验仍需独立批次。
+
+最终Step B交回：228路由、R4492（S712/F2763/B1017）、H936、G16、T独立标签22及上述8个部分映射、X7、D8一套；10666实际变体中5754严格相比、257符合链接中的明确批准、67仍open、4476 Go未实现、111未实现依赖、1项O12迁移单列。未执行R38/H176共214项仍按机器索引逐项处置，不能算通过。完整403组在Go28e6e0c12/.64，最终27组1270变体在a08c4cc27/.64；150项自检和最终覆盖审计通过，完整官方Go gate另在895f5e21/.32通过，不把不同基线合称最新全量通过。详细命令和67条变体的根因分流见[进度批次158](progress/difftest-config-b.md#批次-158最终rebase最新集成复验与交回)。
+
+C29新增的生成响应YAML文本形态仅在有限121个身份/差异路径上按完整typed Nodes批准N7-4；非有限JSON的60条拒绝诊断有真实Flask malformed-body完整响应控制，HEAD有真实GET/源端存储SHA/完整稳定headers/不写存储控制。4条native duplicate/alias诊断按N7-3d、H1061三条普通YAML语法诊断按N7-3明确批准；后者仅同一合成输入的native EOF位置/片段/原始原因变化，中文业务上下文与400状态不变。所有原始different和payload仍保留，其他字段/SQL/files变化会重新open；不对整段配置或错误作宽泛mask。

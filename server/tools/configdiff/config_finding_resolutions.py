@@ -26,9 +26,11 @@ def c29_message_basis(item, raw, statuses):
         if all(item[key] == vector[key] for key in ('case', 'group', 'route', 'variant')):
             expected = [{'path': 'body.message', 'kind': 'value', 'python': vector['python'], 'go': vector['go']}]
             if not differences(expected, raw):
-                anchor = ('n7-3d-share--oxidns-readers' if vector['decision'] == 'N7-3d'
-                    else 'n8-6--native-request-binding-and-correct-bad-request-statuses')
-                return '[behaviour-changes.md · C29 / ' + vector['decision'] + '](behaviour-changes.md#' + anchor + ')'
+                anchor = {'N7-3d': 'n7-3d-share--oxidns-readers',
+                    'N7-3': 'n7-3--native-yaml-readers-subssubstore',
+                    'N8-6': 'n8-6--native-request-binding-and-correct-bad-request-statuses'}[vector['decision']]
+                label = vector.get('label', 'C29 / ' + vector['decision'])
+                return '[behaviour-changes.md · ' + label + '](behaviour-changes.md#' + anchor + ')'
     return ''
 
 
@@ -334,14 +336,14 @@ def repair_commits(item):
             or (group == 'oxidns-control-output' and item['case'] == 'G11'
                 and item['variant'] in ('log/off/False/draft', 'log/off/True/draft')
                 and paths == {'body.config.log.level'})):
-        return ['5cfd38962']
+        return ['b93269d6d']
     timestamp_groups = {'rules-create', 'rules-sets', 'rules-update', 'rule-dns-selectors-types',
         'rules-batch', 'rules-concurrent-batch', 'rules-compose-success', 'rules-compose-remote',
         'rule-dns-choices', 'rules-labels-policy', 'rule-dns-native-locked',
         'rule-dns-explicit-and-reorder', 'rules-reorder'}
     if group in timestamp_groups and paths and paths <= {
             'db.fields.profile/default/updated_at.value', 'db.fields.profile/other/updated_at.value'}:
-        return ['838f7739f']
+        return ['fd6355ce0']
     if paths and paths <= {'files.notifications.json'}:
         return ['8f3d36ad']
     if group in METADATA_GROUPS:
@@ -355,18 +357,18 @@ def repair_commits(item):
     if group == 'subscription-fetch-failures':
         return ['0313e086', '8f3d36ad'] if item['case'] == 'R218-F12' else ['0313e086', '3ab22d36']
     if group == 'settings-webdav':
-        return ['abdf47ef', 'd01fdf32', 'f9963a7f'] + (['93369229b'] if item['case'] in ('R016-F15', 'R017-F18', 'R017-F19') else [])
+        return ['abdf47ef', 'd01fdf32', 'f9963a7f'] + (['0b760d9cb'] if item['case'] in ('R016-F15', 'R017-F18', 'R017-F19') else [])
     if (group == 'webdav-named-preflight-and-directory-failure' and item['case'] == 'R016-F15'
             and item['route'] == 'POST /api/backup/now' and item['variant'] == 'real-MKCOL-403-before-PUT'):
-        return ['93369229b']
+        return ['0b760d9cb']
     if (group == 'settings-backup-validation' and item['case'] != 'R015-S04'
             and paths == {'db.fields.system//backup.value.webdav_password'}):
-        return ['a05dd1270']
+        return ['e4b3fb39f']
     if (group == 'aggregation-provider-refresh'
             and paths == {'files.shared/subscribes/sub-a.json.content.updated_at'} and (
             (item['case'] == 'R007-S02' and item['variant'] == '') or
             (item['case'] in ('R008-S05', 'R122-S05') and item['variant'] == 'failed-source-valid-cache'))):
-        return ['a05dd1270']
+        return ['e4b3fb39f']
     return []
 
 
@@ -381,12 +383,12 @@ def annotate(records):
             item['status'] = 'accepted'
         item['fix_commits'] = repair_commits(item)
         item.pop('closure_note', None)
-        if item['status'] == 'closed' and '5cfd38962' in item['fix_commits']:
-            item['closure_note'] = '5cfd38962为测试夹具的限定时间窗/生成log.level文本读取纠正，不是Go修复；已实际重跑，其他字段严格比'
-        if item['status'] == 'closed' and '838f7739f' in item['fix_commits']:
-            item['closure_note'] = '838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比'
-        if item['status'] == 'closed' and '93369229b' in item['fix_commits']:
-            item['closure_note'] = '93369229b为O6英文内部诊断比较器纠正，不是Go业务修复；中文/HTTP数字/副作用继续严格比较'
-        if item['status'] == 'closed' and 'a05dd1270' in item['fix_commits']:
-            item['closure_note'] = 'a05dd1270为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复'
+        if item['status'] == 'closed' and 'b93269d6d' in item['fix_commits']:
+            item['closure_note'] = 'b93269d6d为测试夹具的限定时间窗/生成log.level文本读取纠正，不是Go修复；已实际重跑，其他字段严格比'
+        if item['status'] == 'closed' and 'fd6355ce0' in item['fix_commits']:
+            item['closure_note'] = 'fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比'
+        if item['status'] == 'closed' and '0b760d9cb' in item['fix_commits']:
+            item['closure_note'] = '0b760d9cb为O6英文内部诊断比较器纠正，不是Go业务修复；中文/HTTP数字/副作用继续严格比较'
+        if item['status'] == 'closed' and 'e4b3fb39f' in item['fix_commits']:
+            item['closure_note'] = 'e4b3fb39f为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复'
     return records

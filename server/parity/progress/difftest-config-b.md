@@ -1,6 +1,8 @@
 # Config differential Step B 进度
 
-分支 `go-difftest-config-b`；依据 O6 审过的 `difftest-config.md`。只编辑 tools/difftest/testdata、进度与发现清单；未读 Go 业务实现，未派子 agent。**任务进行中，未交最终验收。**
+分支 `go-difftest-config-b`；依据 O6 审过的 `difftest-config.md`。只编辑 tools/difftest/testdata、进度与发现清单，以及维护者批准的 Web 替代行为条目；未读 Go 业务代码，未派子 agent，未推送。**Step B 测试实现与本轮复验已交齐，带明确部分覆盖及67条open发现，待独立审查。**
+
+交回快照：228路由；R4492（S712/F2763/B1017）、H936、G16、独立T标签22、X7、D8一套；10666实际变体，严格compared5754、accepted257、open67、Go未实现4476、未实现依赖111、O12单列1。历史findings复验closed269/accepted257/open67/separate1，closed全有提交归因。完整403组Go28e6e0c12在.64；完整官方Go门禁895f5e21在.32 GATE PASS；最终27组Goa08c4cc27在.64。150项自检与最终覆盖审计通过，详细命令、尾输出、剩余边界见末尾批次158。以下按批次保留历史状态，早期统计不是交回结论。
 
 ## 批次 1：框架、O6 横切起步、auth.py
 
@@ -2602,4 +2604,64 @@ current compared956 / different68 / Go未实现82; design_errors=[]; seconds225.
 同命令 --groups http-head,oxidns-normalization-guards --baseline 28e6e0c12
 Ran 149 tests; OK
 current compared822 / accepted67 / Go未实现16 / open0; design_errors=[]; seconds81.20; exit0
+```
+
+## 批次 158：最终rebase、最新集成复验与交回
+
+- `git rebase go`完成，集成基线a08c4cc27。冲突仅behaviour-changes追加位置：保留集成分支全部N7-3d决策，再保留维护者批准的Web/Nginx替代条目；未读业务实现。夹具修正归因更新为0b760d9cb/e4b3fb39f/fd6355ce0/b93269d6d，分别对应批次157之前的93369229b/a05dd1270/838f7739f/5cfd38962，历史批次文字保持原样。
+- .64最终27个open/受影响边界组1270变体567.80秒：compared1062 / 原始different146 / Go未实现62，design_errors=[]，实际错误Go响应破坏自检已检出。70条原open全部在a08基线重新复现，没有高负载偶发项冒充修复；此前所有594项已在28基线完整实跑（本轮190项更新至a08，余404项保留28基线）。
+- 复核维护者已批准的N7-3 native YAML reader诊断条目：3个H1061都是同一合成`proxies: [`，两端400且中文上下文不变，仅EOF行/片段/native parser原因变化。有限身份与完整两侧消息逐字匹配后accepted→N7-3，仍保留原始different；额外字段/SQL/files、错误状态或消息改变都会open，不推广到其他provider失败。
+- 本轮current复核后accepted79/open67；全局实际10666变体：5754严格compared、257接受差异、67open、4476 Go尚未实现、111未实现依赖、O12退役迁移单列1。594项reviews最终closed269/accepted257/open67/separate1，无pending/blocked，closed全有修复/夹具提交归因。全部open最后证据a08c4cc27；完整403组的单次原始证据保存在b93269d6d，不能称所有10666变体在a08上全量跑过。
+- `off`读取策略也复用于Go尚未接通的G11保存后预览，限定schema已知log.level及原文恰为未显式标记的off；真实false/!!bool off仍报错。新预览自检抓到参数被YAML循环key遮蔽的问题，已修正再跑150项9.090秒OK；没有把未接通预览当作Go通过。
+- 最终覆盖审计只读canonical：228路由均有参考S/F、R/H5428已实际执行；未独立执行R38/H176共214项逐条处置，无无理由遗漏/未知编号/错误标签。增加长流程审计：30个T配方中独立实跑标签22，另8配方只映射已执行R/H步骤及部分覆盖边界，不计完整长流程通过；漏标签/重复映射/未知标签的故意错误自检会失败。
+- 先前误读PROGRESS-config实现说明的限制偏离已在批次147披露，未读Go业务代码，也未据实现说明造期望；独立性审查时应一并知悉。
+
+尚open的67个**变体**（不是67个独立根因；严重度为测试者分流建议，具体完整两侧证据在findings/JSON）：
+
+| 建议级别 / 类别 | 数量 | Python / Go及最小定位 |
+|---|---:|---|
+| P1 内部redirect逃逸 | 4 | H120、default/scoped与same/cross-origin；Python400，Go200并访问受控fake目标，均为合成loopback。 |
+| P2 规则交付原文/审阅警告 | 22 | H128–H133两前缀；200/200，具体manual-review WARNING未观察到；其中H133两项还有原始flow文本跨行折叠变化，不能用N7-4生成布局接受整个mixed case。 |
+| P2 删除的无变化字段revision | 20 | R180/R184及selectors/native/T25删除；状态均对应200或404，MosDNS值相同但字段revision不一致；不能屏蔽revision。 |
+| P2 DNS-follow启动/事件状态 | 2 | R188-S01/H911；200/200或400/400；Python已有failed状态、task-status、通知和system revision，Go缺失。每端GET前后只读仍通过，不能归因GET写入。 |
+| P2 DAV兼容观察 | 10 | R016常规/本地日界保留；200/200，Python空PROPFIND body，Go发送显式allprop XML；保留完整线序，不擅自等价化。 |
+| P2 内部绝对URL的query回调 | 2 | R087/R138-B91；Python200，Go502。 |
+| P2 receipt目录处理失败 | 2 | R087/R138-F16；相同合成目录故障Python500处理失败，Go400 Invalid remote URL。 |
+| P2 真实stat权限错误 | 1 | R075-F08；Python500，Go200且exists=false。 |
+| P3 多余空缓存备份 | 1 | R056-S01重复目标；200/200，Go多一个空`.list.bak`。 |
+| P3 CONNECT传输观察 | 3 | H123与R087/R138-S91；两端状态502/502或200/200，原站CONNECT的HTTP版本、Host/User-Agent不同，最终结果与其余存储严格比。 |
+
+部分覆盖交接：214个R/H处置详见matrix机器索引；其中95个受更早guard/invariant支配、42跨域、33存储故障、19启动部署、5窄竞态、1运行环境、16不适用及3契约勘误。真实Node/Supervisor/300秒idle、真实Agent/设备/metrics工作及L1/O3/O14、T25有限6秒窗口、真实Nginx+Flask容器叠加O9/O14、fsync/short-write/不确定COMMIT/无等价外部屏障窗口未宣称通过。R206-F17/F18/F19按批准只对Go原生失败结果做差分，Nginx自身故障文本不比较。Go未实现用例保持manifest自动激活，非通过、非失败。
+
+```text
+# .64：完整403组冻结28基线；官方槽位内proddiff后config all
+RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'GATE_ONLY=proddiff server/tools/configdiff/gate.sh 28e6e0c12 -p 4'
+baseline: new=0 stale=0
+GATE STAGE PASS: proddiff
+configdiff gate: Go=0 configdiff=1
+groups403 / variants10664 / design_errors=[] / seconds3134.36
+
+# .32：完整官方Go门禁冻结895基线，home TMPDIR
+RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'mkdir -p "$HOME/.cache/configdiff-go-gate-tmp"; export TMPDIR="$HOME/.cache/configdiff-go-gate-tmp"; GATE_LOGS=/tmp/configdiff-go-recheck-895f5e21 server/scripts/gate.sh -p 4'
+ok configflow/internal/httpx/difftest 6.982s
+ok configflow/internal/provider/difftest 54.526s
+ok configflow/internal/substore/difftest 16.087s
+ok configflow/internal/webdav/difftest 40.654s
+GATE PASS
+race93包 / Go difftest14包 / proddiff baseline new=0 stale=0 / exit0
+
+# .64：最终27组，最新a08集成，标准runner实际执行并更新canonical
+RT_HOST=sunbroke@192.168.0.64 rt --back server/tools/configdiff/testdata/results.json --back server/parity/difftest-config-findings.md -- bash -lc 'server/tools/configdiff/native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups "$(paste -sd, server/tools/configdiff/testdata/final-recheck-groups.txt)" --baseline a08c4cc27'
+current compared1062 / raw different146 / Go未实现62 / design_errors=[] / seconds567.80
+exit1（70条原open；下述批准复核后为67条open，原始verdict未改）
+
+# .64：最终自检、批准归因刷新、覆盖索引（只更新注释/索引，不改实际case verdict）
+cd server/tools/configdiff
+~/cf-test/.venv/bin/python -m unittest -q test_compare
+Ran 150 tests in 9.090s; OK
+~/cf-test/.venv/bin/python refresh_finding_reviews.py
+recorded_rechecks closed269 / accepted257 / open67 / separate1; actual_case_results_unchanged10666
+~/cf-test/.venv/bin/python coverage_audit.py --output testdata/coverage-audit.json
+routes228 / variants10666 / R-H5428 / unaccounted=[] / unknown_labels=[] / missing S-F=[] / runtime_design_errors=[]
+T observed22 / partial-mapped8 / unaccounted=[] / unknown=[]; exit0
 ```

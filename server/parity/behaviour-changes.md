@@ -538,6 +538,7 @@ headers、完整 DB 和所有文件不变。合法 JSON、普通数字和原有�
   and report native reasons;34 diagnostic rows change displayed positions
   (32 primary lines,34 unavailable columns omitted), recorded in
   `internal/convert/testdata/n73d_diagnostic_positions.json` under5.7「诊断位置」.
+
 ## Go 取代 Nginx：Web 监听端口的验收边界
 
 维护者在 Config Step B 中明确决定（2026-11-17）：Go 通过公开入口的 `CONFIGFLOW_FRONTEND_DIR` 启用原生 HTTP listener，取代 Python 部署中的 Nginx。API-only 模式没有 Web listener，不能拿它与带 Nginx 的完整 Python 部署比较并据此报缺失功能。

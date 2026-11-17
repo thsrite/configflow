@@ -1,5 +1,5 @@
 {
-  "description": "Finite observed identities only; layouts still require complete typed-node equivalence; diagnostic controls come from Python malformed-body or approved N7-3d reader policy. No Go output golden.",
+  "description": "Finite observed C29/shared-reader classifications, not case verdict replacements. Layouts require complete typed-node equality; nonfinite diagnostics additionally use a live real-Python malformed-body control. Raw responses and strict verdicts stay intact.",
   "layouts": [
     {
       "case": "G12",
@@ -1857,6 +1857,36 @@
       "python": "worker_threads 必须为 1–256 的整数",
       "go": "请提供 settings 配置对象",
       "decision": "N8-6"
+    },
+    {
+      "case": "H1061",
+      "group": "provider-downloaded-shape-guards",
+      "route": "GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies",
+      "variant": "actual-YAML-syntax-error",
+      "python": "订阅「订阅甲🧪」准备失败：Provider YAML 内容无效\n内容来源：本次订阅返回的内容\n位置：第 2 行，第 1 列\n出错内容：[文件末尾]\n原始诊断：while parsing a flow node: expected the node content, but found '<stream end>'",
+      "go": "订阅「订阅甲🧪」准备失败：Provider YAML 内容无效\n内容来源：本次订阅返回的内容\n位置：第 1 行，第 1 列\n出错内容：proxies: [\n原始诊断：YAML 语法错误（第 1 行）：yaml: line 1: did not find expected node content",
+      "decision": "N7-3",
+      "label": "N7-3 native syntax diagnostics"
+    },
+    {
+      "case": "H1061",
+      "group": "provider-downloaded-shape-guards",
+      "route": "GET /api/subscriptions/<sub_id>/proxies",
+      "variant": "actual-YAML-syntax-error",
+      "python": "订阅「订阅甲🧪」准备失败：Provider YAML 内容无效\n内容来源：本次订阅返回的内容\n位置：第 2 行，第 1 列\n出错内容：[文件末尾]\n原始诊断：while parsing a flow node: expected the node content, but found '<stream end>'",
+      "go": "订阅「订阅甲🧪」准备失败：Provider YAML 内容无效\n内容来源：本次订阅返回的内容\n位置：第 1 行，第 1 列\n出错内容：proxies: [\n原始诊断：YAML 语法错误（第 1 行）：yaml: line 1: did not find expected node content",
+      "decision": "N7-3",
+      "label": "N7-3 native syntax diagnostics"
+    },
+    {
+      "case": "H1061",
+      "group": "provider-downloaded-shape-guards",
+      "route": "GET /api/subscriptions/proxies",
+      "variant": "actual-YAML-syntax-error",
+      "python": "订阅「订阅甲🧪」准备失败：Provider YAML 内容无效\n内容来源：本次订阅返回的内容\n位置：第 2 行，第 1 列\n出错内容：[文件末尾]\n原始诊断：while parsing a flow node: expected the node content, but found '<stream end>'",
+      "go": "订阅「订阅甲🧪」准备失败：Provider YAML 内容无效\n内容来源：本次订阅返回的内容\n位置：第 1 行，第 1 列\n出错内容：proxies: [\n原始诊断：YAML 语法错误（第 1 行）：yaml: line 1: did not find expected node content",
+      "decision": "N7-3",
+      "label": "N7-3 native syntax diagnostics"
     }
   ]
 }

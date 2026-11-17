@@ -39,6 +39,19 @@ def evaluate(expected, results, declared):
         'unaccounted': sorted(missing - declared.keys()), 'unknown_labels': sorted(unknown)}
 
 
+def long_flows(text, results):
+    """Keep partial recipe mappings separate from actually observed T labels."""
+    expected = set(re.findall(r'^- \*\*(T\d+) ', text, re.M))
+    mapped = re.findall(r'^\| (T\d+) \|', text, re.M)
+    if len(mapped) != len(set(mapped)):
+        raise ValueError('duplicate partial long-flow mapping')
+    observed = {row['case'] for row in results if re.fullmatch(r'T\d+', row['case'])}
+    return {'long_flow_observed_labels': sorted(expected & observed),
+        'long_flow_partial_mapped_labels': sorted((expected & set(mapped)) - observed),
+        'long_flow_unaccounted': sorted(expected - observed - set(mapped)),
+        'long_flow_unknown': sorted((observed | set(mapped)) - expected)}
+
+
 def audit(report, text):
     expected = {label: {'route': route} for label, route in cases().items()}
     sources = dict(re.findall(r'^### (K\d+) \[[^\]]+\]\(([^)#]+)', text, re.M))
@@ -46,6 +59,7 @@ def audit(report, text):
     for label, rid, source, line in re.findall(r'^\| (H\d+) /[^|]+\| (R\d+) \| (K\d+):(\d+) \|', text, re.M):
         expected[label] = {'route': route_ids[rid], 'source': sources[source] + '#L' + line}
     value = evaluate(expected, report['results'], dispositions(text))
+    value.update(long_flows(text, report['results']))
     covered = defaultdict(set)
     for row in report['results']:
         if row['case'] in expected and row['case'].startswith('R'):
@@ -74,9 +88,11 @@ def main():
     value['source_reports'] = [str(path) for path in reports]
     args.output.write_text(json.dumps(value, ensure_ascii=False, indent=2) + '\n')
     print(json.dumps({key: value[key] for key in ('routes', 'request_variants', 'exercised_reference_recipes',
-        'unaccounted', 'unknown_labels', 'routes_missing_source_success_or_failure', 'runtime_design_errors')}, ensure_ascii=False))
+        'unaccounted', 'unknown_labels', 'routes_missing_source_success_or_failure', 'runtime_design_errors',
+        'long_flow_observed_labels', 'long_flow_partial_mapped_labels', 'long_flow_unaccounted', 'long_flow_unknown')}, ensure_ascii=False))
     return int(bool(value['unaccounted'] or value['unknown_labels']
-        or value['routes_missing_source_success_or_failure'] or value['runtime_design_errors']))
+        or value['routes_missing_source_success_or_failure'] or value['runtime_design_errors']
+        or value['long_flow_unaccounted'] or value['long_flow_unknown']))
 
 
 if __name__ == '__main__':

@@ -17,6 +17,19 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_long_flow_audit_does_not_turn_mapping_into_observed_execution(self):
+        from coverage_audit import long_flows
+        text = '- **T01 first**\n- **T02 second**\n| T02 | partial steps | real process missing |\n'
+        rows = [{'case': 'T01'}, {'case': 'R001-S01'}]
+        value = long_flows(text, rows)
+        self.assertEqual(value['long_flow_observed_labels'], ['T01'])
+        self.assertEqual(value['long_flow_partial_mapped_labels'], ['T02'])
+        self.assertFalse(value['long_flow_unaccounted'])
+        self.assertEqual(long_flows(text.split('|')[0], rows)['long_flow_unaccounted'], ['T02'])
+        self.assertEqual(long_flows(text, rows + [{'case': 'T99'}])['long_flow_unknown'], ['T99'])
+        with self.assertRaises(ValueError):
+            long_flows(text + '| T02 | duplicate | wrong |\n', rows)
+
     def test_c29_finite_approvals_preserve_every_unapproved_difference(self):
         from config_finding_resolutions import annotate, c29_vectors
         for vector in c29_vectors()['layouts']:
@@ -59,6 +72,11 @@ class Comparators(unittest.TestCase):
                 'log:\n  level: OFF\n', 'log:\n  level: off\nextra: false\n'):
             self.assertNotEqual(draft_projection({'config': text}, 1), expected)
         self.assertEqual(original['config'], "log:\n  level: 'off'\n")
+        preview = {'content': "log:\n  level: 'off'\n", 'service': 'oxidns'}
+        expected_preview = draft_projection(preview, 0, 'content')
+        self.assertEqual(draft_projection({'content': plain['config'], 'service': 'oxidns'}, 1, 'content'), expected_preview)
+        for text in ('log:\n  level: false\n', 'log:\n  level: !!bool off\n'):
+            self.assertNotEqual(draft_projection({'content': text, 'service': 'oxidns'}, 1, 'content'), expected_preview)
 
     def test_head_control_uses_get_metadata_and_detects_wrong_wire_or_storage(self):
         from unittest.mock import patch
@@ -159,16 +177,16 @@ class Comparators(unittest.TestCase):
         record = {'case': 'R183-S01', 'variant': '', 'route': 'POST /api/rules', 'group': 'rules-create',
             'status': 'closed', 'differences': [{'path': 'db.fields.profile/default/updated_at.value',
                 'kind': 'value', 'python': 'sample-a', 'go': 'sample-b'}]}
-        self.assertEqual(annotate([copy.deepcopy(record)])[0]['fix_commits'], ['838f7739f'])
+        self.assertEqual(annotate([copy.deepcopy(record)])[0]['fix_commits'], ['fd6355ce0'])
         for status in ('open', 'pending', 'blocked'):
             bad = copy.deepcopy(record)
             bad['status'] = status
-            self.assertNotIn('838f7739f', annotate([bad])[0]['fix_commits'])
+            self.assertNotIn('fd6355ce0', annotate([bad])[0]['fix_commits'])
         for field, value in [('group', 'unrelated-group'), ('differences', [
                 {'path': 'db.fields.profile/default/updated_at.revision', 'kind': 'value', 'python': 1, 'go': 2}])]:
             bad = copy.deepcopy(record)
             bad[field] = value
-            self.assertNotIn('838f7739f', annotate([bad])[0]['fix_commits'])
+            self.assertNotIn('fd6355ce0', annotate([bad])[0]['fix_commits'])
 
     def test_profile_write_fixture_validates_metadata_times_without_hiding_other_rows(self):
         from datetime import datetime, timezone
@@ -662,14 +680,14 @@ class Comparators(unittest.TestCase):
             item = {'group': group, 'case': case, 'variant': variant, 'route': route, 'status': 'closed',
                     'differences': [{'path': path}], 'remaining_differences': []}
             closed = annotate([copy.deepcopy(item)])[0]
-            self.assertEqual(closed['fix_commits'], ['a05dd1270'])
+            self.assertEqual(closed['fix_commits'], ['e4b3fb39f'])
             self.assertIn('不是Go业务修复', closed['closure_note'])
             wrong = copy.deepcopy(item)
             wrong['differences'].append({'path': 'db.genuine-regression'})
-            self.assertNotIn('a05dd1270', annotate([wrong])[0]['fix_commits'])
+            self.assertNotIn('e4b3fb39f', annotate([wrong])[0]['fix_commits'])
             wrong = copy.deepcopy(item)
             wrong['status'] = 'open'
-            self.assertNotIn('a05dd1270', annotate([wrong])[0]['fix_commits'])
+            self.assertNotIn('e4b3fb39f', annotate([wrong])[0]['fix_commits'])
 
     def test_source_completion_gate_observes_fast_body_before_slow_response(self):
         import threading
@@ -794,7 +812,7 @@ class Comparators(unittest.TestCase):
                 'group': 'webdav-named-preflight-and-directory-failure', 'status': 'closed', 'python_status': 400,
                 'go_status': 400, 'checked_baseline': 'synthetic', 'differences': [], 'remaining_differences': []}
         result = annotate([copy.deepcopy(item)])[0]
-        self.assertEqual(result['fix_commits'], ['93369229b'])
+        self.assertEqual(result['fix_commits'], ['0b760d9cb'])
         self.assertIn('不是Go业务修复', result['closure_note'])
         self.assertIn('不是Go业务修复', '\n'.join(markdown([result])))
         for mutation in ({'status': 'open'}, {'variant': 'other'}, {'route': 'other'}):

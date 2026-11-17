@@ -10,8 +10,8 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 
 | 用例 / 变体 | 路由 | 状态 | 修复提交 / 接受依据 | 最后复验Go基线 | Python / Go HTTP |
 |---|---|---|---|---|---|
-| G11 / log/off/False/draft | `POST /api/oxidns/render` | closed | 5cfd38962；5cfd38962为测试夹具的限定时间窗/生成log.level文本读取纠正，不是Go修复；已实际重跑，其他字段严格比 | 28e6e0c12 | 200 / 200 |
-| G11 / log/off/True/draft | `POST /api/profiles/<profile_id>/oxidns/render` | closed | 5cfd38962；5cfd38962为测试夹具的限定时间窗/生成log.level文本读取纠正，不是Go修复；已实际重跑，其他字段严格比 | 28e6e0c12 | 200 / 200 |
+| G11 / log/off/False/draft | `POST /api/oxidns/render` | closed | b93269d6d；b93269d6d为测试夹具的限定时间窗/生成log.level文本读取纠正，不是Go修复；已实际重跑，其他字段严格比 | 28e6e0c12 | 200 / 200 |
+| G11 / log/off/True/draft | `POST /api/profiles/<profile_id>/oxidns/render` | closed | b93269d6d；b93269d6d为测试夹具的限定时间窗/生成log.level文本读取纠正，不是Go修复；已实际重跑，其他字段严格比 | 28e6e0c12 | 200 / 200 |
 | G12 / False/conflict-current | `POST /api/oxidns/template-preview` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 200 / 200 |
 | G12 / False/conflict-template | `POST /api/oxidns/template-preview` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 200 / 200 |
 | G12 / False/merge-independent-fields | `POST /api/oxidns/template-preview` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 200 / 200 |
@@ -46,176 +46,176 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | G13 / interval-zero/filtered/mihomo/sub-b | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 28e6e0c12 | 200 / 200 |
 | G13 / same-name-different-definition/merged | `GET /api/subscriptions/proxies` | closed | 7b904725 | 28e6e0c12 | 200 / 200 |
 | G13 / same-name-identical/merged | `GET /api/subscriptions/proxies` | closed | 7b904725 | 28e6e0c12 | 200 / 200 |
-| H1061 / actual-YAML-syntax-error | `GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies` | open | — | 28e6e0c12 | 400 / 400 |
-| H1061 / actual-YAML-syntax-error | `GET /api/subscriptions/<sub_id>/proxies` | open | — | 28e6e0c12 | 400 / 400 |
-| H1061 / actual-YAML-syntax-error | `GET /api/subscriptions/proxies` | open | — | 28e6e0c12 | 400 / 400 |
-| H120 / real-dot-segment-network-redirect//api/mosdns/rule-proxy/cross-origin | `GET /api/mosdns/rule-proxy` | open | — | 28e6e0c12 | 400 / 200 |
-| H120 / real-dot-segment-network-redirect//api/mosdns/rule-proxy/same-origin-outside-api | `GET /api/mosdns/rule-proxy` | open | — | 28e6e0c12 | 400 / 200 |
-| H120 / real-dot-segment-network-redirect//api/profiles/default/mosdns/rule-proxy/cross-origin | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | open | — | 28e6e0c12 | 400 / 200 |
-| H120 / real-dot-segment-network-redirect//api/profiles/default/mosdns/rule-proxy/same-origin-outside-api | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | open | — | 28e6e0c12 | 400 / 200 |
-| H123 / original-and-mirror-both-fail-through-loopback-proxy | `GET /api/mosdns/rule-proxy` | open | — | 28e6e0c12 | 502 / 502 |
-| H128 / sequence-root | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | 28e6e0c12 | 200 / 200 |
-| H128 / sequence-root | `GET /api/rules/local/<name>` | open | — | 28e6e0c12 | 200 / 200 |
-| H129 / duplicate-payload | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | 28e6e0c12 | 200 / 200 |
-| H129 / duplicate-payload | `GET /api/rules/local/<name>` | open | — | 28e6e0c12 | 200 / 200 |
-| H129 / mapping-payload | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | 28e6e0c12 | 200 / 200 |
-| H129 / mapping-payload | `GET /api/rules/local/<name>` | open | — | 28e6e0c12 | 200 / 200 |
-| H129 / missing-payload | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | 28e6e0c12 | 200 / 200 |
-| H129 / missing-payload | `GET /api/rules/local/<name>` | open | — | 28e6e0c12 | 200 / 200 |
-| H130 / alias | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | 28e6e0c12 | 200 / 200 |
-| H130 / alias | `GET /api/rules/local/<name>` | open | — | 28e6e0c12 | 200 / 200 |
-| H130 / anchor | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | 28e6e0c12 | 200 / 200 |
-| H130 / anchor | `GET /api/rules/local/<name>` | open | — | 28e6e0c12 | 200 / 200 |
-| H131 / block-entry | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | 28e6e0c12 | 200 / 200 |
-| H131 / block-entry | `GET /api/rules/local/<name>` | open | — | 28e6e0c12 | 200 / 200 |
-| H131 / nested-entry | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | 28e6e0c12 | 200 / 200 |
-| H131 / nested-entry | `GET /api/rules/local/<name>` | open | — | 28e6e0c12 | 200 / 200 |
-| H131 / non-string-entry | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | 28e6e0c12 | 200 / 200 |
-| H131 / non-string-entry | `GET /api/rules/local/<name>` | open | — | 28e6e0c12 | 200 / 200 |
-| H132 / duplicate-extra-flow-key | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | 28e6e0c12 | 200 / 200 |
-| H132 / duplicate-extra-flow-key | `GET /api/rules/local/<name>` | open | — | 28e6e0c12 | 200 / 200 |
-| H133 / multiline-extra-flow-value | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | 28e6e0c12 | 200 / 200 |
-| H133 / multiline-extra-flow-value | `GET /api/rules/local/<name>` | open | — | 28e6e0c12 | 200 / 200 |
+| H1061 / actual-YAML-syntax-error | `GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies` | accepted | [behaviour-changes.md · N7-3 native syntax diagnostics](behaviour-changes.md#n7-3--native-yaml-readers-subssubstore) | a08c4cc27 | 400 / 400 |
+| H1061 / actual-YAML-syntax-error | `GET /api/subscriptions/<sub_id>/proxies` | accepted | [behaviour-changes.md · N7-3 native syntax diagnostics](behaviour-changes.md#n7-3--native-yaml-readers-subssubstore) | a08c4cc27 | 400 / 400 |
+| H1061 / actual-YAML-syntax-error | `GET /api/subscriptions/proxies` | accepted | [behaviour-changes.md · N7-3 native syntax diagnostics](behaviour-changes.md#n7-3--native-yaml-readers-subssubstore) | a08c4cc27 | 400 / 400 |
+| H120 / real-dot-segment-network-redirect//api/mosdns/rule-proxy/cross-origin | `GET /api/mosdns/rule-proxy` | open | — | a08c4cc27 | 400 / 200 |
+| H120 / real-dot-segment-network-redirect//api/mosdns/rule-proxy/same-origin-outside-api | `GET /api/mosdns/rule-proxy` | open | — | a08c4cc27 | 400 / 200 |
+| H120 / real-dot-segment-network-redirect//api/profiles/default/mosdns/rule-proxy/cross-origin | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | open | — | a08c4cc27 | 400 / 200 |
+| H120 / real-dot-segment-network-redirect//api/profiles/default/mosdns/rule-proxy/same-origin-outside-api | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | open | — | a08c4cc27 | 400 / 200 |
+| H123 / original-and-mirror-both-fail-through-loopback-proxy | `GET /api/mosdns/rule-proxy` | open | — | a08c4cc27 | 502 / 502 |
+| H128 / sequence-root | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | a08c4cc27 | 200 / 200 |
+| H128 / sequence-root | `GET /api/rules/local/<name>` | open | — | a08c4cc27 | 200 / 200 |
+| H129 / duplicate-payload | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | a08c4cc27 | 200 / 200 |
+| H129 / duplicate-payload | `GET /api/rules/local/<name>` | open | — | a08c4cc27 | 200 / 200 |
+| H129 / mapping-payload | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | a08c4cc27 | 200 / 200 |
+| H129 / mapping-payload | `GET /api/rules/local/<name>` | open | — | a08c4cc27 | 200 / 200 |
+| H129 / missing-payload | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | a08c4cc27 | 200 / 200 |
+| H129 / missing-payload | `GET /api/rules/local/<name>` | open | — | a08c4cc27 | 200 / 200 |
+| H130 / alias | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | a08c4cc27 | 200 / 200 |
+| H130 / alias | `GET /api/rules/local/<name>` | open | — | a08c4cc27 | 200 / 200 |
+| H130 / anchor | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | a08c4cc27 | 200 / 200 |
+| H130 / anchor | `GET /api/rules/local/<name>` | open | — | a08c4cc27 | 200 / 200 |
+| H131 / block-entry | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | a08c4cc27 | 200 / 200 |
+| H131 / block-entry | `GET /api/rules/local/<name>` | open | — | a08c4cc27 | 200 / 200 |
+| H131 / nested-entry | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | a08c4cc27 | 200 / 200 |
+| H131 / nested-entry | `GET /api/rules/local/<name>` | open | — | a08c4cc27 | 200 / 200 |
+| H131 / non-string-entry | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | a08c4cc27 | 200 / 200 |
+| H131 / non-string-entry | `GET /api/rules/local/<name>` | open | — | a08c4cc27 | 200 / 200 |
+| H132 / duplicate-extra-flow-key | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | a08c4cc27 | 200 / 200 |
+| H132 / duplicate-extra-flow-key | `GET /api/rules/local/<name>` | open | — | a08c4cc27 | 200 / 200 |
+| H133 / multiline-extra-flow-value | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | a08c4cc27 | 200 / 200 |
+| H133 / multiline-extra-flow-value | `GET /api/rules/local/<name>` | open | — | a08c4cc27 | 200 / 200 |
 | H470 / native-normalization/duplicate-key | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N7-3d](behaviour-changes.md#n7-3d-share--oxidns-readers) | 28e6e0c12 | 400 / 400 |
 | H470 / native-normalization/duplicate-key | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N7-3d](behaviour-changes.md#n7-3d-share--oxidns-readers) | 28e6e0c12 | 400 / 400 |
 | H474 / native-normalization/recursive-alias | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N7-3d](behaviour-changes.md#n7-3d-share--oxidns-readers) | 28e6e0c12 | 400 / 400 |
 | H474 / native-normalization/recursive-alias | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N7-3d](behaviour-changes.md#n7-3d-share--oxidns-readers) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/oxidns/cache_dump_interval/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/oxidns/cache_lazy_ttl/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/oxidns/cache_size/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/oxidns/dynamic_domain_set.args.batch_size/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/oxidns/dynamic_domain_set.args.flush_interval_ms/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/oxidns/dynamic_domain_set.args.queue_size/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/oxidns/fallback_concurrent/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/oxidns/fallback_threshold/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/oxidns/ip_selector.args.max_parallel_probes/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/oxidns/ip_selector.args.max_wait/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/oxidns/ip_selector.args.probe_stagger/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/oxidns/ip_selector.args.probe_timeout/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/oxidns/ip_selector.args.top_n/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/oxidns/local_concurrent/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/oxidns/log.max_files/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/oxidns/probe_cache_size/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/oxidns/query_recorder.args.batch_size/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/oxidns/query_recorder.args.cleanup_interval_hours/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/oxidns/query_recorder.args.flush_interval_ms/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/oxidns/query_recorder.args.memory_tail/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/oxidns/query_recorder.args.queue_size/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/oxidns/query_recorder.args.reader_concurrency/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/oxidns/query_recorder.args.retention_days/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/oxidns/remote_concurrent/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/oxidns/remote_ttl/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/oxidns/ros_address_list.args.max_ttl/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/oxidns/ros_address_list.args.min_ttl/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/oxidns/ros_route.args.max_ttl/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/oxidns/ros_route.args.min_ttl/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/oxidns/worker_threads/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/profiles/<profile_id>/oxidns/cache_dump_interval/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/profiles/<profile_id>/oxidns/cache_lazy_ttl/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/profiles/<profile_id>/oxidns/cache_size/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/profiles/<profile_id>/oxidns/dynamic_domain_set.args.batch_size/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/profiles/<profile_id>/oxidns/dynamic_domain_set.args.flush_interval_ms/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/profiles/<profile_id>/oxidns/dynamic_domain_set.args.queue_size/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/profiles/<profile_id>/oxidns/fallback_concurrent/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/profiles/<profile_id>/oxidns/fallback_threshold/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/profiles/<profile_id>/oxidns/ip_selector.args.max_parallel_probes/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/profiles/<profile_id>/oxidns/ip_selector.args.max_wait/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/profiles/<profile_id>/oxidns/ip_selector.args.probe_stagger/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/profiles/<profile_id>/oxidns/ip_selector.args.probe_timeout/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/profiles/<profile_id>/oxidns/ip_selector.args.top_n/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/profiles/<profile_id>/oxidns/local_concurrent/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/profiles/<profile_id>/oxidns/log.max_files/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/profiles/<profile_id>/oxidns/probe_cache_size/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/profiles/<profile_id>/oxidns/query_recorder.args.batch_size/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/profiles/<profile_id>/oxidns/query_recorder.args.cleanup_interval_hours/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/profiles/<profile_id>/oxidns/query_recorder.args.flush_interval_ms/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/profiles/<profile_id>/oxidns/query_recorder.args.memory_tail/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/profiles/<profile_id>/oxidns/query_recorder.args.queue_size/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/profiles/<profile_id>/oxidns/query_recorder.args.reader_concurrency/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/profiles/<profile_id>/oxidns/query_recorder.args.retention_days/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/profiles/<profile_id>/oxidns/remote_concurrent/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/profiles/<profile_id>/oxidns/remote_ttl/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/profiles/<profile_id>/oxidns/ros_address_list.args.max_ttl/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/profiles/<profile_id>/oxidns/ros_address_list.args.min_ttl/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/profiles/<profile_id>/oxidns/ros_route.args.max_ttl/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/profiles/<profile_id>/oxidns/ros_route.args.min_ttl/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H511 / /api/profiles/<profile_id>/oxidns/worker_threads/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 400 / 400 |
-| H911 / actual-public-catalog-key-is-bound-to-DNS-follow | `PUT /api/rules/dns` | open | — | 28e6e0c12 | 400 / 400 |
-| H916 / retained-native-issue-moves-after-removing-real-pinned-helpers | `PUT /api/rules/<rule_id>` | closed | 5cfd38962；5cfd38962为测试夹具的限定时间窗/生成log.level文本读取纠正，不是Go修复；已实际重跑，其他字段严格比 | 28e6e0c12 | 409 / 409 |
-| R007-S02 /  | `GET /api/aggregations/<agg_id>/preview` | closed | a05dd1270；a05dd1270为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 200 / 200 |
-| R008-S05 / failed-source-valid-cache | `GET /api/aggregations/<agg_id>/provider` | closed | a05dd1270；a05dd1270为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 200 / 200 |
+| H511 / /api/oxidns/cache_dump_interval/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H511 / /api/oxidns/cache_lazy_ttl/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H511 / /api/oxidns/cache_size/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H511 / /api/oxidns/dynamic_domain_set.args.batch_size/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H511 / /api/oxidns/dynamic_domain_set.args.flush_interval_ms/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H511 / /api/oxidns/dynamic_domain_set.args.queue_size/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H511 / /api/oxidns/fallback_concurrent/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H511 / /api/oxidns/fallback_threshold/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H511 / /api/oxidns/ip_selector.args.max_parallel_probes/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H511 / /api/oxidns/ip_selector.args.max_wait/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H511 / /api/oxidns/ip_selector.args.probe_stagger/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H511 / /api/oxidns/ip_selector.args.probe_timeout/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H511 / /api/oxidns/ip_selector.args.top_n/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H511 / /api/oxidns/local_concurrent/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H511 / /api/oxidns/log.max_files/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H511 / /api/oxidns/probe_cache_size/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H511 / /api/oxidns/query_recorder.args.batch_size/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H511 / /api/oxidns/query_recorder.args.cleanup_interval_hours/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H511 / /api/oxidns/query_recorder.args.flush_interval_ms/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H511 / /api/oxidns/query_recorder.args.memory_tail/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H511 / /api/oxidns/query_recorder.args.queue_size/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H511 / /api/oxidns/query_recorder.args.reader_concurrency/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H511 / /api/oxidns/query_recorder.args.retention_days/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H511 / /api/oxidns/remote_concurrent/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H511 / /api/oxidns/remote_ttl/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H511 / /api/oxidns/ros_address_list.args.max_ttl/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H511 / /api/oxidns/ros_address_list.args.min_ttl/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H511 / /api/oxidns/ros_route.args.max_ttl/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H511 / /api/oxidns/ros_route.args.min_ttl/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H511 / /api/oxidns/worker_threads/nan | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H511 / /api/profiles/<profile_id>/oxidns/cache_dump_interval/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H511 / /api/profiles/<profile_id>/oxidns/cache_lazy_ttl/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H511 / /api/profiles/<profile_id>/oxidns/cache_size/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H511 / /api/profiles/<profile_id>/oxidns/dynamic_domain_set.args.batch_size/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H511 / /api/profiles/<profile_id>/oxidns/dynamic_domain_set.args.flush_interval_ms/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H511 / /api/profiles/<profile_id>/oxidns/dynamic_domain_set.args.queue_size/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H511 / /api/profiles/<profile_id>/oxidns/fallback_concurrent/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H511 / /api/profiles/<profile_id>/oxidns/fallback_threshold/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H511 / /api/profiles/<profile_id>/oxidns/ip_selector.args.max_parallel_probes/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H511 / /api/profiles/<profile_id>/oxidns/ip_selector.args.max_wait/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H511 / /api/profiles/<profile_id>/oxidns/ip_selector.args.probe_stagger/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H511 / /api/profiles/<profile_id>/oxidns/ip_selector.args.probe_timeout/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H511 / /api/profiles/<profile_id>/oxidns/ip_selector.args.top_n/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H511 / /api/profiles/<profile_id>/oxidns/local_concurrent/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H511 / /api/profiles/<profile_id>/oxidns/log.max_files/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H511 / /api/profiles/<profile_id>/oxidns/probe_cache_size/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H511 / /api/profiles/<profile_id>/oxidns/query_recorder.args.batch_size/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H511 / /api/profiles/<profile_id>/oxidns/query_recorder.args.cleanup_interval_hours/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H511 / /api/profiles/<profile_id>/oxidns/query_recorder.args.flush_interval_ms/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H511 / /api/profiles/<profile_id>/oxidns/query_recorder.args.memory_tail/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H511 / /api/profiles/<profile_id>/oxidns/query_recorder.args.queue_size/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H511 / /api/profiles/<profile_id>/oxidns/query_recorder.args.reader_concurrency/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H511 / /api/profiles/<profile_id>/oxidns/query_recorder.args.retention_days/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H511 / /api/profiles/<profile_id>/oxidns/remote_concurrent/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H511 / /api/profiles/<profile_id>/oxidns/remote_ttl/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H511 / /api/profiles/<profile_id>/oxidns/ros_address_list.args.max_ttl/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H511 / /api/profiles/<profile_id>/oxidns/ros_address_list.args.min_ttl/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H511 / /api/profiles/<profile_id>/oxidns/ros_route.args.max_ttl/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H511 / /api/profiles/<profile_id>/oxidns/ros_route.args.min_ttl/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H511 / /api/profiles/<profile_id>/oxidns/worker_threads/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
+| H911 / actual-public-catalog-key-is-bound-to-DNS-follow | `PUT /api/rules/dns` | open | — | a08c4cc27 | 400 / 400 |
+| H916 / retained-native-issue-moves-after-removing-real-pinned-helpers | `PUT /api/rules/<rule_id>` | closed | b93269d6d；b93269d6d为测试夹具的限定时间窗/生成log.level文本读取纠正，不是Go修复；已实际重跑，其他字段严格比 | a08c4cc27 | 409 / 409 |
+| R007-S02 /  | `GET /api/aggregations/<agg_id>/preview` | closed | e4b3fb39f；e4b3fb39f为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 200 / 200 |
+| R008-S05 / failed-source-valid-cache | `GET /api/aggregations/<agg_id>/provider` | closed | e4b3fb39f；e4b3fb39f为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 200 / 200 |
 | R011-F06 /  | `POST /api/auth/login` | accepted | [behaviour-changes.md · N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 500 / 400 |
 | R011-F07 /  | `POST /api/auth/login` | accepted | [behaviour-changes.md · N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 500 / 400 |
 | R011-F08 /  | `POST /api/auth/login` | accepted | [behaviour-changes.md · N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 500 / 415 |
 | R012-F01 /  | `GET /api/auth/status` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | 28e6e0c12 | 405 / 405 |
-| R015-B01 /  | `POST /api/backup/config` | closed | a05dd1270；a05dd1270为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 200 / 200 |
-| R015-B02 /  | `POST /api/backup/config` | closed | a05dd1270；a05dd1270为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 200 / 200 |
-| R015-B03 /  | `POST /api/backup/config` | closed | a05dd1270；a05dd1270为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 200 / 200 |
-| R015-B04 /  | `POST /api/backup/config` | closed | a05dd1270；a05dd1270为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 200 / 200 |
-| R015-F08 / empty | `POST /api/backup/config` | closed | a05dd1270；a05dd1270为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
-| R015-F09 / array | `POST /api/backup/config` | closed | a05dd1270；a05dd1270为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
-| R015-F10 / unknown | `POST /api/backup/config` | closed | a05dd1270；a05dd1270为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
-| R015-F11 / text-type | `POST /api/backup/config` | closed | a05dd1270；a05dd1270为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
-| R015-F12 / auto-type | `POST /api/backup/config` | closed | a05dd1270；a05dd1270为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
-| R015-F13 / keep-negative | `POST /api/backup/config` | closed | a05dd1270；a05dd1270为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
-| R015-F14 / keep-large | `POST /api/backup/config` | closed | a05dd1270；a05dd1270为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
-| R015-F15 / daily-large | `POST /api/backup/config` | closed | a05dd1270；a05dd1270为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
-| R015-F16 / keep-bool | `POST /api/backup/config` | closed | a05dd1270；a05dd1270为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
+| R015-B01 /  | `POST /api/backup/config` | closed | e4b3fb39f；e4b3fb39f为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 200 / 200 |
+| R015-B02 /  | `POST /api/backup/config` | closed | e4b3fb39f；e4b3fb39f为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 200 / 200 |
+| R015-B03 /  | `POST /api/backup/config` | closed | e4b3fb39f；e4b3fb39f为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 200 / 200 |
+| R015-B04 /  | `POST /api/backup/config` | closed | e4b3fb39f；e4b3fb39f为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 200 / 200 |
+| R015-F08 / empty | `POST /api/backup/config` | closed | e4b3fb39f；e4b3fb39f为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
+| R015-F09 / array | `POST /api/backup/config` | closed | e4b3fb39f；e4b3fb39f为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
+| R015-F10 / unknown | `POST /api/backup/config` | closed | e4b3fb39f；e4b3fb39f为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
+| R015-F11 / text-type | `POST /api/backup/config` | closed | e4b3fb39f；e4b3fb39f为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
+| R015-F12 / auto-type | `POST /api/backup/config` | closed | e4b3fb39f；e4b3fb39f为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
+| R015-F13 / keep-negative | `POST /api/backup/config` | closed | e4b3fb39f；e4b3fb39f为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
+| R015-F14 / keep-large | `POST /api/backup/config` | closed | e4b3fb39f；e4b3fb39f为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
+| R015-F15 / daily-large | `POST /api/backup/config` | closed | e4b3fb39f；e4b3fb39f为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
+| R015-F16 / keep-bool | `POST /api/backup/config` | closed | e4b3fb39f；e4b3fb39f为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
 | R015-S04 /  | `POST /api/backup/config` | accepted | [behaviour-changes.md · C35空密码保留](behaviour-changes.md#c35webdav-凭据安全与表单密码保留) | 28e6e0c12 | 200 / 200 |
-| R016-B02 /  | `POST /api/backup/now` | open | — | 28e6e0c12 | 200 / 200 |
-| R016-B03 /  | `POST /api/backup/now` | open | — | 28e6e0c12 | 200 / 200 |
-| R016-B90 /  | `POST /api/backup/now` | open | — | 28e6e0c12 | 200 / 200 |
-| R016-B91 / Asia/Shanghai/previous-local-day-crosses-UTC-midnight | `POST /api/backup/now` | open | — | 28e6e0c12 | 200 / 200 |
-| R016-B91 / Etc/GMT+12/previous-local-day-crosses-UTC-midnight | `POST /api/backup/now` | open | — | 28e6e0c12 | 200 / 200 |
-| R016-B91 / Etc/GMT-14/previous-local-day-crosses-UTC-midnight | `POST /api/backup/now` | open | — | 28e6e0c12 | 200 / 200 |
-| R016-F08 / array | `POST /api/backup/now` | closed | a05dd1270；a05dd1270为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
-| R016-F09 / empty | `POST /api/backup/now` | closed | a05dd1270；a05dd1270为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
-| R016-F10 / unknown | `POST /api/backup/now` | closed | a05dd1270；a05dd1270为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
-| R016-F11 / text-type | `POST /api/backup/now` | closed | a05dd1270；a05dd1270为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
-| R016-F12 / auto-type | `POST /api/backup/now` | closed | a05dd1270；a05dd1270为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
-| R016-F13 / daily-large | `POST /api/backup/now` | closed | a05dd1270；a05dd1270为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
-| R016-F13 / keep-bool | `POST /api/backup/now` | closed | a05dd1270；a05dd1270为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
-| R016-F13 / keep-large | `POST /api/backup/now` | closed | a05dd1270；a05dd1270为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
-| R016-F13 / keep-negative | `POST /api/backup/now` | closed | a05dd1270；a05dd1270为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
-| R016-F15 /  | `POST /api/backup/now` | closed | abdf47ef, d01fdf32, f9963a7f, 93369229b；93369229b为O6英文内部诊断比较器纠正，不是Go业务修复；中文/HTTP数字/副作用继续严格比较 | 28e6e0c12 | 500 / 500 |
-| R016-F15 / real-MKCOL-403-before-PUT | `POST /api/backup/now` | closed | 93369229b；93369229b为O6英文内部诊断比较器纠正，不是Go业务修复；中文/HTTP数字/副作用继续严格比较 | 28e6e0c12 | 400 / 400 |
-| R016-F16 /  | `POST /api/backup/now` | open | — | 28e6e0c12 | 200 / 200 |
-| R016-S01 /  | `POST /api/backup/now` | open | — | 28e6e0c12 | 200 / 200 |
-| R016-S02 /  | `POST /api/backup/now` | open | — | 28e6e0c12 | 200 / 200 |
-| R016-S03 /  | `POST /api/backup/now` | open | — | 28e6e0c12 | 200 / 200 |
-| R017-F08 / array | `POST /api/backup/test` | closed | a05dd1270；a05dd1270为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
-| R017-F09 / empty | `POST /api/backup/test` | closed | a05dd1270；a05dd1270为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
-| R017-F10 / unknown | `POST /api/backup/test` | closed | a05dd1270；a05dd1270为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
-| R017-F11 / text-type | `POST /api/backup/test` | closed | a05dd1270；a05dd1270为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
-| R017-F12 / auto-type | `POST /api/backup/test` | closed | a05dd1270；a05dd1270为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
-| R017-F13 / daily-large | `POST /api/backup/test` | closed | a05dd1270；a05dd1270为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
-| R017-F13 / keep-bool | `POST /api/backup/test` | closed | a05dd1270；a05dd1270为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
-| R017-F13 / keep-large | `POST /api/backup/test` | closed | a05dd1270；a05dd1270为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
-| R017-F13 / keep-negative | `POST /api/backup/test` | closed | a05dd1270；a05dd1270为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
-| R017-F14 /  | `POST /api/backup/test` | closed | a05dd1270；a05dd1270为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
-| R017-F15 /  | `POST /api/backup/test` | closed | a05dd1270；a05dd1270为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
-| R017-F16 /  | `POST /api/backup/test` | closed | a05dd1270；a05dd1270为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
-| R017-F18 /  | `POST /api/backup/test` | closed | abdf47ef, d01fdf32, f9963a7f, 93369229b；93369229b为O6英文内部诊断比较器纠正，不是Go业务修复；中文/HTTP数字/副作用继续严格比较 | 28e6e0c12 | 400 / 400 |
-| R017-F19 /  | `POST /api/backup/test` | closed | abdf47ef, d01fdf32, f9963a7f, 93369229b；93369229b为O6英文内部诊断比较器纠正，不是Go业务修复；中文/HTTP数字/副作用继续严格比较 | 28e6e0c12 | 500 / 500 |
+| R016-B02 /  | `POST /api/backup/now` | open | — | a08c4cc27 | 200 / 200 |
+| R016-B03 /  | `POST /api/backup/now` | open | — | a08c4cc27 | 200 / 200 |
+| R016-B90 /  | `POST /api/backup/now` | open | — | a08c4cc27 | 200 / 200 |
+| R016-B91 / Asia/Shanghai/previous-local-day-crosses-UTC-midnight | `POST /api/backup/now` | open | — | a08c4cc27 | 200 / 200 |
+| R016-B91 / Etc/GMT+12/previous-local-day-crosses-UTC-midnight | `POST /api/backup/now` | open | — | a08c4cc27 | 200 / 200 |
+| R016-B91 / Etc/GMT-14/previous-local-day-crosses-UTC-midnight | `POST /api/backup/now` | open | — | a08c4cc27 | 200 / 200 |
+| R016-F08 / array | `POST /api/backup/now` | closed | e4b3fb39f；e4b3fb39f为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
+| R016-F09 / empty | `POST /api/backup/now` | closed | e4b3fb39f；e4b3fb39f为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
+| R016-F10 / unknown | `POST /api/backup/now` | closed | e4b3fb39f；e4b3fb39f为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
+| R016-F11 / text-type | `POST /api/backup/now` | closed | e4b3fb39f；e4b3fb39f为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
+| R016-F12 / auto-type | `POST /api/backup/now` | closed | e4b3fb39f；e4b3fb39f为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
+| R016-F13 / daily-large | `POST /api/backup/now` | closed | e4b3fb39f；e4b3fb39f为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
+| R016-F13 / keep-bool | `POST /api/backup/now` | closed | e4b3fb39f；e4b3fb39f为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
+| R016-F13 / keep-large | `POST /api/backup/now` | closed | e4b3fb39f；e4b3fb39f为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
+| R016-F13 / keep-negative | `POST /api/backup/now` | closed | e4b3fb39f；e4b3fb39f为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
+| R016-F15 /  | `POST /api/backup/now` | closed | abdf47ef, d01fdf32, f9963a7f, 0b760d9cb；0b760d9cb为O6英文内部诊断比较器纠正，不是Go业务修复；中文/HTTP数字/副作用继续严格比较 | a08c4cc27 | 500 / 500 |
+| R016-F15 / real-MKCOL-403-before-PUT | `POST /api/backup/now` | closed | 0b760d9cb；0b760d9cb为O6英文内部诊断比较器纠正，不是Go业务修复；中文/HTTP数字/副作用继续严格比较 | 28e6e0c12 | 400 / 400 |
+| R016-F16 /  | `POST /api/backup/now` | open | — | a08c4cc27 | 200 / 200 |
+| R016-S01 /  | `POST /api/backup/now` | open | — | a08c4cc27 | 200 / 200 |
+| R016-S02 /  | `POST /api/backup/now` | open | — | a08c4cc27 | 200 / 200 |
+| R016-S03 /  | `POST /api/backup/now` | open | — | a08c4cc27 | 200 / 200 |
+| R017-F08 / array | `POST /api/backup/test` | closed | e4b3fb39f；e4b3fb39f为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
+| R017-F09 / empty | `POST /api/backup/test` | closed | e4b3fb39f；e4b3fb39f为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
+| R017-F10 / unknown | `POST /api/backup/test` | closed | e4b3fb39f；e4b3fb39f为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
+| R017-F11 / text-type | `POST /api/backup/test` | closed | e4b3fb39f；e4b3fb39f为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
+| R017-F12 / auto-type | `POST /api/backup/test` | closed | e4b3fb39f；e4b3fb39f为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
+| R017-F13 / daily-large | `POST /api/backup/test` | closed | e4b3fb39f；e4b3fb39f为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
+| R017-F13 / keep-bool | `POST /api/backup/test` | closed | e4b3fb39f；e4b3fb39f为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
+| R017-F13 / keep-large | `POST /api/backup/test` | closed | e4b3fb39f；e4b3fb39f为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
+| R017-F13 / keep-negative | `POST /api/backup/test` | closed | e4b3fb39f；e4b3fb39f为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
+| R017-F14 /  | `POST /api/backup/test` | closed | e4b3fb39f；e4b3fb39f为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
+| R017-F15 /  | `POST /api/backup/test` | closed | e4b3fb39f；e4b3fb39f为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
+| R017-F16 /  | `POST /api/backup/test` | closed | e4b3fb39f；e4b3fb39f为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
+| R017-F18 /  | `POST /api/backup/test` | closed | abdf47ef, d01fdf32, f9963a7f, 0b760d9cb；0b760d9cb为O6英文内部诊断比较器纠正，不是Go业务修复；中文/HTTP数字/副作用继续严格比较 | a08c4cc27 | 400 / 400 |
+| R017-F19 /  | `POST /api/backup/test` | closed | abdf47ef, d01fdf32, f9963a7f, 0b760d9cb；0b760d9cb为O6英文内部诊断比较器纠正，不是Go业务修复；中文/HTTP数字/副作用继续严格比较 | a08c4cc27 | 500 / 500 |
 | R055-B01 / disabled/domain/example.com | `POST /api/domain-discovery/region/route` | closed | 041ab5a6 | 28e6e0c12 | 200 / 200 |
 | R055-S02 / new/domain/example.com | `POST /api/domain-discovery/region/route` | closed | 041ab5a6 | 28e6e0c12 | 200 / 200 |
-| R056-B01 / name-collision/0 | `POST /api/domain-discovery/rulesets/init` | closed | 041ab5a6 | 28e6e0c12 | 200 / 200 |
-| R056-B02 / before-MATCH/0 | `POST /api/domain-discovery/rulesets/init` | closed | 041ab5a6 | 28e6e0c12 | 200 / 200 |
-| R056-S01 / direct/0 | `POST /api/domain-discovery/rulesets/init` | closed | 041ab5a6 | 28e6e0c12 | 200 / 200 |
-| R056-S01 / duplicate-targets/0 | `POST /api/domain-discovery/rulesets/init` | open | — | 28e6e0c12 | 200 / 200 |
-| R056-S02 / proxy/0 | `POST /api/domain-discovery/rulesets/init` | closed | 041ab5a6 | 28e6e0c12 | 200 / 200 |
-| R056-S03 / both/0 | `POST /api/domain-discovery/rulesets/init` | closed | 041ab5a6 | 28e6e0c12 | 200 / 200 |
-| R056-S03 / empty-means-both/0 | `POST /api/domain-discovery/rulesets/init` | closed | 041ab5a6 | 28e6e0c12 | 200 / 200 |
-| R056-S04 / repeat/0 | `POST /api/domain-discovery/rulesets/init` | closed | 041ab5a6 | 28e6e0c12 | 200 / 200 |
-| R056-S04 / repeat/1 | `POST /api/domain-discovery/rulesets/init` | closed | 041ab5a6 | 28e6e0c12 | 200 / 200 |
+| R056-B01 / name-collision/0 | `POST /api/domain-discovery/rulesets/init` | closed | 041ab5a6 | a08c4cc27 | 200 / 200 |
+| R056-B02 / before-MATCH/0 | `POST /api/domain-discovery/rulesets/init` | closed | 041ab5a6 | a08c4cc27 | 200 / 200 |
+| R056-S01 / direct/0 | `POST /api/domain-discovery/rulesets/init` | closed | 041ab5a6 | a08c4cc27 | 200 / 200 |
+| R056-S01 / duplicate-targets/0 | `POST /api/domain-discovery/rulesets/init` | open | — | a08c4cc27 | 200 / 200 |
+| R056-S02 / proxy/0 | `POST /api/domain-discovery/rulesets/init` | closed | 041ab5a6 | a08c4cc27 | 200 / 200 |
+| R056-S03 / both/0 | `POST /api/domain-discovery/rulesets/init` | closed | 041ab5a6 | a08c4cc27 | 200 / 200 |
+| R056-S03 / empty-means-both/0 | `POST /api/domain-discovery/rulesets/init` | closed | 041ab5a6 | a08c4cc27 | 200 / 200 |
+| R056-S04 / repeat/0 | `POST /api/domain-discovery/rulesets/init` | closed | 041ab5a6 | a08c4cc27 | 200 / 200 |
+| R056-S04 / repeat/1 | `POST /api/domain-discovery/rulesets/init` | closed | 041ab5a6 | a08c4cc27 | 200 / 200 |
 | R058-B03 / stored-legacy-extension | `PUT /api/domain-discovery/settings` | accepted | [behaviour-changes.md · R058-B03](behaviour-changes.md#config-step-b--coordinator-decisions) | 28e6e0c12 | 200 / 200 |
-| R075-F08 / real-stat-EACCES-with-database-still-readable | `GET /api/logs/info` | open | — | 28e6e0c12 | 500 / 200 |
+| R075-F08 / real-stat-EACCES-with-database-still-readable | `GET /api/logs/info` | open | — | a08c4cc27 | 500 / 200 |
 | R087-B04 / text/B04 | `GET /api/mosdns/rule-proxy` | closed | 8f3d36ad | 28e6e0c12 | 422 / 422 |
-| R087-B91 / absolute-query-dispatches-internal-content-endpoint | `GET /api/mosdns/rule-proxy` | open | — | 28e6e0c12 | 200 / 502 |
+| R087-B91 / absolute-query-dispatches-internal-content-endpoint | `GET /api/mosdns/rule-proxy` | open | — | a08c4cc27 | 200 / 502 |
 | R087-F13 / text/F13 | `GET /api/mosdns/rule-proxy` | closed | 8f3d36ad | 28e6e0c12 | 422 / 422 |
-| R087-F16 / receipt-path-is-directory | `GET /api/mosdns/rule-proxy` | open | — | 28e6e0c12 | 500 / 400 |
-| R087-S90 / declared-no-cache-download-failure | `GET /api/mosdns/rule-proxy` | closed | 8f3d36ad | 28e6e0c12 | 502 / 502 |
-| R087-S91 /  | `GET /api/mosdns/rule-proxy` | open | — | 28e6e0c12 | 200 / 200 |
+| R087-F16 / receipt-path-is-directory | `GET /api/mosdns/rule-proxy` | open | — | a08c4cc27 | 500 / 400 |
+| R087-S90 / declared-no-cache-download-failure | `GET /api/mosdns/rule-proxy` | closed | 8f3d36ad | a08c4cc27 | 502 / 502 |
+| R087-S91 /  | `GET /api/mosdns/rule-proxy` | open | — | a08c4cc27 | 200 / 200 |
 | R090-F10 / SQLite-trigger-rejects-real-editor-commit | `POST /api/mosdns/settings` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | 28e6e0c12 | 500 / 500 |
 | R103-F08 /  | `POST /api/nodes/reorder` | accepted | [behaviour-changes.md · Step B #1](behaviour-changes.md#config-step-b--coordinator-decisions) | 28e6e0c12 | 404 / 400 |
 | R103-F09 /  | `POST /api/nodes/reorder` | accepted | [behaviour-changes.md · Step B #1](behaviour-changes.md#config-step-b--coordinator-decisions) | 28e6e0c12 | 404 / 400 |
@@ -252,7 +252,7 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | R108-S01 / native-lifecycle/live-download | `POST /api/oxidns/editor` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 200 / 200 |
 | R108-S01 / native-lifecycle/no-assets | `POST /api/oxidns/editor` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 200 / 200 |
 | R108-S01 / native-lifecycle/real-Hosts-source | `POST /api/oxidns/editor` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 200 / 200 |
-| R108-S01 / new-native-issue/real-pinned-upstream | `POST /api/oxidns/editor` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 200 / 200 |
+| R108-S01 / new-native-issue/real-pinned-upstream | `POST /api/oxidns/editor` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | a08c4cc27 | 200 / 200 |
 | R108-S01 / retained-Hosts-content-has-an-independent-consumer | `POST /api/oxidns/editor` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 200 / 200 |
 | R108-S01 / retained-empty-rule-URL/no-selected-rules | `POST /api/oxidns/editor` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 200 / 200 |
 | R108-S01 / routing-late-guards-two-adjacent-rules | `POST /api/oxidns/editor` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 200 / 200 |
@@ -267,7 +267,7 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | R109-S02 / graph-guard/actual-recorded-managed-rename | `POST /api/oxidns/native-settings/apply` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 200 / 200 |
 | R109-S03 /  | `POST /api/oxidns/native-settings/apply` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 200 / 200 |
 | R109-S04 /  | `POST /api/oxidns/native-settings/apply` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 200 / 200 |
-| R112-S02 / new-native-issue/real-save-with-retained-invalid-arguments | `POST /api/oxidns/settings` | closed | 5cfd38962；5cfd38962为测试夹具的限定时间窗/生成log.level文本读取纠正，不是Go修复；已实际重跑，其他字段严格比 | 28e6e0c12 | 200 / 200 |
+| R112-S02 / new-native-issue/real-save-with-retained-invalid-arguments | `POST /api/oxidns/settings` | closed | b93269d6d；b93269d6d为测试夹具的限定时间窗/生成log.level文本读取纠正，不是Go修复；已实际重跑，其他字段严格比 | a08c4cc27 | 200 / 200 |
 | R113-B01 /  | `POST /api/oxidns/template-preview` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 200 / 200 |
 | R113-B02 /  | `POST /api/oxidns/template-preview` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 200 / 200 |
 | R113-B03 / P3/native-draft-selection | `POST /api/oxidns/template-preview` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 200 / 200 |
@@ -278,13 +278,13 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | R113-S01 /  | `POST /api/oxidns/template-preview` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 200 / 200 |
 | R113-S02 /  | `POST /api/oxidns/template-preview` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 200 / 200 |
 | R113-S03 /  | `POST /api/oxidns/template-preview` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 200 / 200 |
-| R122-S05 / failed-source-valid-cache | `GET /api/profiles/<profile_id>/aggregations/<agg_id>/provider` | closed | a05dd1270；a05dd1270为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 200 / 200 |
+| R122-S05 / failed-source-valid-cache | `GET /api/profiles/<profile_id>/aggregations/<agg_id>/provider` | closed | e4b3fb39f；e4b3fb39f为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 200 / 200 |
 | R138-B04 / text/B04 | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | closed | 8f3d36ad | 28e6e0c12 | 422 / 422 |
-| R138-B91 / absolute-query-dispatches-internal-content-endpoint | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | open | — | 28e6e0c12 | 200 / 502 |
+| R138-B91 / absolute-query-dispatches-internal-content-endpoint | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | open | — | a08c4cc27 | 200 / 502 |
 | R138-F13 / text/F13 | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | closed | 8f3d36ad | 28e6e0c12 | 422 / 422 |
-| R138-F16 / receipt-path-is-directory | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | open | — | 28e6e0c12 | 500 / 400 |
-| R138-S90 / declared-no-cache-download-failure | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | closed | 8f3d36ad | 28e6e0c12 | 502 / 502 |
-| R138-S91 /  | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | open | — | 28e6e0c12 | 200 / 200 |
+| R138-F16 / receipt-path-is-directory | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | open | — | a08c4cc27 | 500 / 400 |
+| R138-S90 / declared-no-cache-download-failure | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | closed | 8f3d36ad | a08c4cc27 | 502 / 502 |
+| R138-S91 /  | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | open | — | a08c4cc27 | 200 / 200 |
 | R140-B01 /  | `POST /api/profiles/<profile_id>/oxidns/common-settings/apply` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 200 / 200 |
 | R140-B02 / empty-list | `POST /api/profiles/<profile_id>/oxidns/common-settings/apply` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 200 / 200 |
 | R140-B03 / draft-only | `POST /api/profiles/<profile_id>/oxidns/common-settings/apply` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 200 / 200 |
@@ -327,24 +327,24 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | R146-S01 /  | `POST /api/profiles/<profile_id>/oxidns/template-preview` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 200 / 200 |
 | R146-S02 /  | `POST /api/profiles/<profile_id>/oxidns/template-preview` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 200 / 200 |
 | R146-S03 /  | `POST /api/profiles/<profile_id>/oxidns/template-preview` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 200 / 200 |
-| R151-S01 /  | `GET /api/profiles/<profile_id>/rules` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R151-S02 /  | `GET /api/profiles/<profile_id>/rules` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R152-B01 /  | `POST /api/profiles/<profile_id>/rules` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R152-B02 /  | `POST /api/profiles/<profile_id>/rules` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R152-B03 /  | `POST /api/profiles/<profile_id>/rules` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
-| R152-F08 /  | `POST /api/profiles/<profile_id>/rules` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
-| R152-F09 /  | `POST /api/profiles/<profile_id>/rules` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
-| R152-F10 /  | `POST /api/profiles/<profile_id>/rules` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
-| R152-F11 / DOMAIN | `POST /api/profiles/<profile_id>/rules` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
-| R152-F11 / IP-CIDR | `POST /api/profiles/<profile_id>/rules` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
-| R152-F12 /  | `POST /api/profiles/<profile_id>/rules` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
-| R152-F13 /  | `POST /api/profiles/<profile_id>/rules` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
-| R152-F14 /  | `POST /api/profiles/<profile_id>/rules` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
-| R152-F15 /  | `POST /api/profiles/<profile_id>/rules` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
-| R152-S01 /  | `POST /api/profiles/<profile_id>/rules` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R152-S02 /  | `POST /api/profiles/<profile_id>/rules` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R152-S03 /  | `POST /api/profiles/<profile_id>/rules` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R152-S04 /  | `POST /api/profiles/<profile_id>/rules` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R151-S01 /  | `GET /api/profiles/<profile_id>/rules` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R151-S02 /  | `GET /api/profiles/<profile_id>/rules` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R152-B01 /  | `POST /api/profiles/<profile_id>/rules` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R152-B02 /  | `POST /api/profiles/<profile_id>/rules` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R152-B03 /  | `POST /api/profiles/<profile_id>/rules` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
+| R152-F08 /  | `POST /api/profiles/<profile_id>/rules` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
+| R152-F09 /  | `POST /api/profiles/<profile_id>/rules` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
+| R152-F10 /  | `POST /api/profiles/<profile_id>/rules` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
+| R152-F11 / DOMAIN | `POST /api/profiles/<profile_id>/rules` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
+| R152-F11 / IP-CIDR | `POST /api/profiles/<profile_id>/rules` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
+| R152-F12 /  | `POST /api/profiles/<profile_id>/rules` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
+| R152-F13 /  | `POST /api/profiles/<profile_id>/rules` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
+| R152-F14 /  | `POST /api/profiles/<profile_id>/rules` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
+| R152-F15 /  | `POST /api/profiles/<profile_id>/rules` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
+| R152-S01 /  | `POST /api/profiles/<profile_id>/rules` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R152-S02 /  | `POST /api/profiles/<profile_id>/rules` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R152-S03 /  | `POST /api/profiles/<profile_id>/rules` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R152-S04 /  | `POST /api/profiles/<profile_id>/rules` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
 | R154-B03 / ?format=unknown | `GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 28e6e0c12 | 200 / 200 |
 | R154-B04 / URL-over-query-header | `GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 28e6e0c12 | 200 / 200 |
 | R154-B90 / Asia/Shanghai | `GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 28e6e0c12 | 200 / 200 |
@@ -363,176 +363,176 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | R154-S01 / open/authorized-provider | `GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 28e6e0c12 | 200 / 200 |
 | R154-S01 / token/authorized-provider | `GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 28e6e0c12 | 200 / 200 |
 | R154-S06 /  | `GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 28e6e0c12 | 200 / 200 |
-| R179-B01 /  | `POST /api/rule-sets` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R179-F08 /  | `POST /api/rule-sets` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | 28e6e0c12 | 500 / 500 |
-| R179-F09 /  | `POST /api/rule-sets` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
-| R179-F10 /  | `POST /api/rule-sets` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
-| R179-F11 /  | `POST /api/rule-sets` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
-| R179-S01 /  | `POST /api/rule-sets` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R180-B01 /  | `DELETE /api/rule-sets/<rule_set_id>` | open | — | 28e6e0c12 | 404 / 404 |
-| R180-B02 / P3/successful-rule-group-write | `DELETE /api/rule-sets/<rule_set_id>` | open | — | 28e6e0c12 | 200 / 200 |
-| R180-B03 / P4/successful-rule-group-write | `DELETE /api/rule-sets/<rule_set_id>` | open | — | 28e6e0c12 | 200 / 200 |
-| R180-B04 / P5/successful-rule-group-write | `DELETE /api/rule-sets/<rule_set_id>` | open | — | 28e6e0c12 | 200 / 200 |
-| R180-B05 / P6/successful-rule-group-write | `DELETE /api/rule-sets/<rule_set_id>` | open | — | 28e6e0c12 | 200 / 200 |
-| R180-F08 /  | `DELETE /api/rule-sets/<rule_set_id>` | open | — | 28e6e0c12 | 404 / 404 |
-| R180-F09 /  | `DELETE /api/rule-sets/<rule_set_id>` | open | — | 28e6e0c12 | 404 / 404 |
-| R180-S01 /  | `DELETE /api/rule-sets/<rule_set_id>` | open | — | 28e6e0c12 | 200 / 200 |
-| R180-S01 / mosdns-selector | `DELETE /api/rule-sets/<rule_set_id>` | open | — | 28e6e0c12 | 200 / 200 |
-| R181-B01 /  | `PUT /api/rule-sets/<rule_set_id>` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R181-F08 /  | `PUT /api/rule-sets/<rule_set_id>` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
-| R181-F09 /  | `PUT /api/rule-sets/<rule_set_id>` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | 28e6e0c12 | 404 / 404 |
-| R181-F10 /  | `PUT /api/rule-sets/<rule_set_id>` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
-| R181-S01 /  | `PUT /api/rule-sets/<rule_set_id>` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R182-S01 /  | `GET /api/rules` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R182-S02 /  | `GET /api/rules` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R183-B01 /  | `POST /api/rules` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R183-B02 /  | `POST /api/rules` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R183-B03 /  | `POST /api/rules` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
-| R183-F08 /  | `POST /api/rules` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
-| R183-F09 /  | `POST /api/rules` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
-| R183-F10 /  | `POST /api/rules` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
-| R183-F11 / DOMAIN | `POST /api/rules` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
-| R183-F11 / IP-CIDR | `POST /api/rules` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
-| R183-F12 /  | `POST /api/rules` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
-| R183-F13 /  | `POST /api/rules` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
-| R183-F14 /  | `POST /api/rules` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
-| R183-F15 /  | `POST /api/rules` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
-| R183-S01 /  | `POST /api/rules` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R183-S02 /  | `POST /api/rules` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R183-S03 /  | `POST /api/rules` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R183-S04 /  | `POST /api/rules` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R184-B01 /  | `DELETE /api/rules/<rule_id>` | open | — | 28e6e0c12 | 200 / 200 |
-| R184-B02 / P3/successful-rule-group-write | `DELETE /api/rules/<rule_id>` | open | — | 28e6e0c12 | 200 / 200 |
-| R184-B03 / P4/successful-rule-group-write | `DELETE /api/rules/<rule_id>` | open | — | 28e6e0c12 | 200 / 200 |
-| R184-B04 / P5/successful-rule-group-write | `DELETE /api/rules/<rule_id>` | open | — | 28e6e0c12 | 200 / 200 |
-| R184-B05 / P6/successful-rule-group-write | `DELETE /api/rules/<rule_id>` | open | — | 28e6e0c12 | 200 / 200 |
-| R184-F08 /  | `DELETE /api/rules/<rule_id>` | open | — | 28e6e0c12 | 404 / 404 |
-| R184-S01 /  | `DELETE /api/rules/<rule_id>` | open | — | 28e6e0c12 | 200 / 200 |
-| R184-S01 / dns-cleanup/False | `DELETE /api/rules/<rule_id>` | open | — | 28e6e0c12 | 200 / 200 |
-| R184-S01 / mosdns-selector | `DELETE /api/rules/<rule_id>` | open | — | 28e6e0c12 | 200 / 200 |
-| R184-S02 / dns-cleanup/True | `DELETE /api/rules/<rule_id>` | open | — | 28e6e0c12 | 200 / 200 |
-| R185-B01 /  | `PUT /api/rules/<rule_id>` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R185-B02 /  | `PUT /api/rules/<rule_id>` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R185-B03 /  | `PUT /api/rules/<rule_id>` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R185-F08 /  | `PUT /api/rules/<rule_id>` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
-| R185-F09 /  | `PUT /api/rules/<rule_id>` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
-| R185-F10 /  | `PUT /api/rules/<rule_id>` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
-| R185-F11 /  | `PUT /api/rules/<rule_id>` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
-| R185-F12 /  | `PUT /api/rules/<rule_id>` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
-| R185-F13 /  | `PUT /api/rules/<rule_id>` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
-| R185-F14 /  | `PUT /api/rules/<rule_id>` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
-| R185-F15 /  | `PUT /api/rules/<rule_id>` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
-| R185-F16 /  | `PUT /api/rules/<rule_id>` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | 28e6e0c12 | 404 / 404 |
-| R185-F18 /  | `PUT /api/rules/<rule_id>` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
-| R185-S01 /  | `PUT /api/rules/<rule_id>` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R185-S02 /  | `PUT /api/rules/<rule_id>` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R185-S03 /  | `PUT /api/rules/<rule_id>` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R185-S03 / clear-route-with-type | `PUT /api/rules/<rule_id>` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R185-S04 /  | `PUT /api/rules/<rule_id>` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R186-B01 /  | `POST /api/rules/batch` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R186-B02 /  | `POST /api/rules/batch` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R186-B03 / concurrent-allocation | `POST /api/rules/batch` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | None / None |
-| R186-F08 /  | `POST /api/rules/batch` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
-| R186-F09 /  | `POST /api/rules/batch` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
-| R186-F10 /  | `POST /api/rules/batch` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
-| R186-F11 /  | `POST /api/rules/batch` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
-| R186-F12 /  | `POST /api/rules/batch` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
-| R186-F13 /  | `POST /api/rules/batch` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
-| R186-S01 /  | `POST /api/rules/batch` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R186-S02 /  | `POST /api/rules/batch` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R186-S03 /  | `POST /api/rules/batch` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R187-B01 /  | `POST /api/rules/compose` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R187-B02 /  | `POST /api/rules/compose` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R187-B03 /  | `POST /api/rules/compose` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R187-B04 /  | `POST /api/rules/compose` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R187-B05 /  | `POST /api/rules/compose` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R187-S01 /  | `POST /api/rules/compose` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R187-S02 /  | `POST /api/rules/compose` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R187-S03 /  | `POST /api/rules/compose` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R187-S04 /  | `POST /api/rules/compose` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R187-S05 /  | `POST /api/rules/compose` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R187-S06 /  | `POST /api/rules/compose` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R188-S01 / real-DNS-follow-binding-catalog | `GET /api/rules/dns` | open | — | 28e6e0c12 | 200 / 200 |
-| R189-B01 /  | `PUT /api/rules/dns` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R179-B01 /  | `POST /api/rule-sets` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | a08c4cc27 | 200 / 200 |
+| R179-F08 /  | `POST /api/rule-sets` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | a08c4cc27 | 500 / 500 |
+| R179-F09 /  | `POST /api/rule-sets` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | a08c4cc27 | 400 / 400 |
+| R179-F10 /  | `POST /api/rule-sets` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | a08c4cc27 | 400 / 400 |
+| R179-F11 /  | `POST /api/rule-sets` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | a08c4cc27 | 400 / 400 |
+| R179-S01 /  | `POST /api/rule-sets` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | a08c4cc27 | 200 / 200 |
+| R180-B01 /  | `DELETE /api/rule-sets/<rule_set_id>` | open | — | a08c4cc27 | 404 / 404 |
+| R180-B02 / P3/successful-rule-group-write | `DELETE /api/rule-sets/<rule_set_id>` | open | — | a08c4cc27 | 200 / 200 |
+| R180-B03 / P4/successful-rule-group-write | `DELETE /api/rule-sets/<rule_set_id>` | open | — | a08c4cc27 | 200 / 200 |
+| R180-B04 / P5/successful-rule-group-write | `DELETE /api/rule-sets/<rule_set_id>` | open | — | a08c4cc27 | 200 / 200 |
+| R180-B05 / P6/successful-rule-group-write | `DELETE /api/rule-sets/<rule_set_id>` | open | — | a08c4cc27 | 200 / 200 |
+| R180-F08 /  | `DELETE /api/rule-sets/<rule_set_id>` | open | — | a08c4cc27 | 404 / 404 |
+| R180-F09 /  | `DELETE /api/rule-sets/<rule_set_id>` | open | — | a08c4cc27 | 404 / 404 |
+| R180-S01 /  | `DELETE /api/rule-sets/<rule_set_id>` | open | — | a08c4cc27 | 200 / 200 |
+| R180-S01 / mosdns-selector | `DELETE /api/rule-sets/<rule_set_id>` | open | — | a08c4cc27 | 200 / 200 |
+| R181-B01 /  | `PUT /api/rule-sets/<rule_set_id>` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | a08c4cc27 | 200 / 200 |
+| R181-F08 /  | `PUT /api/rule-sets/<rule_set_id>` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | a08c4cc27 | 400 / 400 |
+| R181-F09 /  | `PUT /api/rule-sets/<rule_set_id>` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | a08c4cc27 | 404 / 404 |
+| R181-F10 /  | `PUT /api/rule-sets/<rule_set_id>` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | a08c4cc27 | 400 / 400 |
+| R181-S01 /  | `PUT /api/rule-sets/<rule_set_id>` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | a08c4cc27 | 200 / 200 |
+| R182-S01 /  | `GET /api/rules` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R182-S02 /  | `GET /api/rules` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R183-B01 /  | `POST /api/rules` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R183-B02 /  | `POST /api/rules` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R183-B03 /  | `POST /api/rules` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
+| R183-F08 /  | `POST /api/rules` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
+| R183-F09 /  | `POST /api/rules` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
+| R183-F10 /  | `POST /api/rules` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
+| R183-F11 / DOMAIN | `POST /api/rules` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
+| R183-F11 / IP-CIDR | `POST /api/rules` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
+| R183-F12 /  | `POST /api/rules` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
+| R183-F13 /  | `POST /api/rules` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
+| R183-F14 /  | `POST /api/rules` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
+| R183-F15 /  | `POST /api/rules` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
+| R183-S01 /  | `POST /api/rules` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R183-S02 /  | `POST /api/rules` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R183-S03 /  | `POST /api/rules` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R183-S04 /  | `POST /api/rules` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R184-B01 /  | `DELETE /api/rules/<rule_id>` | open | — | a08c4cc27 | 200 / 200 |
+| R184-B02 / P3/successful-rule-group-write | `DELETE /api/rules/<rule_id>` | open | — | a08c4cc27 | 200 / 200 |
+| R184-B03 / P4/successful-rule-group-write | `DELETE /api/rules/<rule_id>` | open | — | a08c4cc27 | 200 / 200 |
+| R184-B04 / P5/successful-rule-group-write | `DELETE /api/rules/<rule_id>` | open | — | a08c4cc27 | 200 / 200 |
+| R184-B05 / P6/successful-rule-group-write | `DELETE /api/rules/<rule_id>` | open | — | a08c4cc27 | 200 / 200 |
+| R184-F08 /  | `DELETE /api/rules/<rule_id>` | open | — | a08c4cc27 | 404 / 404 |
+| R184-S01 /  | `DELETE /api/rules/<rule_id>` | open | — | a08c4cc27 | 200 / 200 |
+| R184-S01 / dns-cleanup/False | `DELETE /api/rules/<rule_id>` | open | — | a08c4cc27 | 200 / 200 |
+| R184-S01 / mosdns-selector | `DELETE /api/rules/<rule_id>` | open | — | a08c4cc27 | 200 / 200 |
+| R184-S02 / dns-cleanup/True | `DELETE /api/rules/<rule_id>` | open | — | a08c4cc27 | 200 / 200 |
+| R185-B01 /  | `PUT /api/rules/<rule_id>` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | a08c4cc27 | 200 / 200 |
+| R185-B02 /  | `PUT /api/rules/<rule_id>` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | a08c4cc27 | 200 / 200 |
+| R185-B03 /  | `PUT /api/rules/<rule_id>` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | a08c4cc27 | 200 / 200 |
+| R185-F08 /  | `PUT /api/rules/<rule_id>` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | a08c4cc27 | 400 / 400 |
+| R185-F09 /  | `PUT /api/rules/<rule_id>` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | a08c4cc27 | 400 / 400 |
+| R185-F10 /  | `PUT /api/rules/<rule_id>` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | a08c4cc27 | 400 / 400 |
+| R185-F11 /  | `PUT /api/rules/<rule_id>` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | a08c4cc27 | 400 / 400 |
+| R185-F12 /  | `PUT /api/rules/<rule_id>` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | a08c4cc27 | 400 / 400 |
+| R185-F13 /  | `PUT /api/rules/<rule_id>` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | a08c4cc27 | 400 / 400 |
+| R185-F14 /  | `PUT /api/rules/<rule_id>` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | a08c4cc27 | 400 / 400 |
+| R185-F15 /  | `PUT /api/rules/<rule_id>` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | a08c4cc27 | 400 / 400 |
+| R185-F16 /  | `PUT /api/rules/<rule_id>` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | a08c4cc27 | 404 / 404 |
+| R185-F18 /  | `PUT /api/rules/<rule_id>` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | a08c4cc27 | 400 / 400 |
+| R185-S01 /  | `PUT /api/rules/<rule_id>` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | a08c4cc27 | 200 / 200 |
+| R185-S02 /  | `PUT /api/rules/<rule_id>` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | a08c4cc27 | 200 / 200 |
+| R185-S03 /  | `PUT /api/rules/<rule_id>` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | a08c4cc27 | 200 / 200 |
+| R185-S03 / clear-route-with-type | `PUT /api/rules/<rule_id>` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | a08c4cc27 | 200 / 200 |
+| R185-S04 /  | `PUT /api/rules/<rule_id>` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | a08c4cc27 | 200 / 200 |
+| R186-B01 /  | `POST /api/rules/batch` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R186-B02 /  | `POST /api/rules/batch` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R186-B03 / concurrent-allocation | `POST /api/rules/batch` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | None / None |
+| R186-F08 /  | `POST /api/rules/batch` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
+| R186-F09 /  | `POST /api/rules/batch` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
+| R186-F10 /  | `POST /api/rules/batch` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
+| R186-F11 /  | `POST /api/rules/batch` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
+| R186-F12 /  | `POST /api/rules/batch` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
+| R186-F13 /  | `POST /api/rules/batch` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
+| R186-S01 /  | `POST /api/rules/batch` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R186-S02 /  | `POST /api/rules/batch` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R186-S03 /  | `POST /api/rules/batch` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R187-B01 /  | `POST /api/rules/compose` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R187-B02 /  | `POST /api/rules/compose` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R187-B03 /  | `POST /api/rules/compose` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R187-B04 /  | `POST /api/rules/compose` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R187-B05 /  | `POST /api/rules/compose` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R187-S01 /  | `POST /api/rules/compose` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R187-S02 /  | `POST /api/rules/compose` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R187-S03 /  | `POST /api/rules/compose` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R187-S04 /  | `POST /api/rules/compose` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R187-S05 /  | `POST /api/rules/compose` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R187-S06 /  | `POST /api/rules/compose` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R188-S01 / real-DNS-follow-binding-catalog | `GET /api/rules/dns` | open | — | a08c4cc27 | 200 / 200 |
+| R189-B01 /  | `PUT /api/rules/dns` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
 | R189-B02 / native | `PUT /api/rules/dns` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 200 / 200 |
-| R189-B02 / template | `PUT /api/rules/dns` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R189-B02 / template | `PUT /api/rules/dns` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
 | R189-F08 / native/ | `PUT /api/rules/dns` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 400 / 400 |
-| R189-F08 / template/ | `PUT /api/rules/dns` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
+| R189-F08 / template/ | `PUT /api/rules/dns` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
 | R189-F09 / native/ | `PUT /api/rules/dns` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 400 / 400 |
-| R189-F09 / template/ | `PUT /api/rules/dns` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
+| R189-F09 / template/ | `PUT /api/rules/dns` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
 | R189-F10 / native/ | `PUT /api/rules/dns` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 400 / 400 |
-| R189-F10 / template/ | `PUT /api/rules/dns` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
+| R189-F10 / template/ | `PUT /api/rules/dns` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
 | R189-F11 / native/ | `PUT /api/rules/dns` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 400 / 400 |
-| R189-F11 / template/ | `PUT /api/rules/dns` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
+| R189-F11 / template/ | `PUT /api/rules/dns` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
 | R189-F12 / native/'unknown' | `PUT /api/rules/dns` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 400 / 400 |
 | R189-F12 / native/1 | `PUT /api/rules/dns` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 400 / 400 |
-| R189-F12 / template/'unknown' | `PUT /api/rules/dns` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
-| R189-F12 / template/1 | `PUT /api/rules/dns` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
+| R189-F12 / template/'unknown' | `PUT /api/rules/dns` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
+| R189-F12 / template/1 | `PUT /api/rules/dns` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
 | R189-F13 / native/ | `PUT /api/rules/dns` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 400 / 400 |
-| R189-F13 / template/ | `PUT /api/rules/dns` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
+| R189-F13 / template/ | `PUT /api/rules/dns` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
 | R189-F15 / native/ | `PUT /api/rules/dns` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 400 / 400 |
-| R189-F15 / template/ | `PUT /api/rules/dns` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
-| R189-S01 / cleanup-prepare/False | `PUT /api/rules/dns` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R189-S01 / cleanup-prepare/True | `PUT /api/rules/dns` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 200 / 200 |
+| R189-F15 / template/ | `PUT /api/rules/dns` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
+| R189-S01 / cleanup-prepare/False | `PUT /api/rules/dns` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | a08c4cc27 | 200 / 200 |
+| R189-S01 / cleanup-prepare/True | `PUT /api/rules/dns` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | a08c4cc27 | 200 / 200 |
 | R189-S01 / native/blackhole | `PUT /api/rules/dns` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 200 / 200 |
 | R189-S01 / native/direct | `PUT /api/rules/dns` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 200 / 200 |
 | R189-S01 / native/nodata | `PUT /api/rules/dns` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 200 / 200 |
 | R189-S01 / native/nxdomain | `PUT /api/rules/dns` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 200 / 200 |
 | R189-S01 / native/proxy | `PUT /api/rules/dns` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 200 / 200 |
 | R189-S01 / native/refused | `PUT /api/rules/dns` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 200 / 200 |
-| R189-S01 / template/blackhole | `PUT /api/rules/dns` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R189-S01 / template/direct | `PUT /api/rules/dns` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R189-S01 / template/nodata | `PUT /api/rules/dns` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R189-S01 / template/nxdomain | `PUT /api/rules/dns` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R189-S01 / template/proxy | `PUT /api/rules/dns` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R189-S01 / template/refused | `PUT /api/rules/dns` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R189-S01 / type-guard-prepare | `PUT /api/rules/dns` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R189-S01 / template/blackhole | `PUT /api/rules/dns` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R189-S01 / template/direct | `PUT /api/rules/dns` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R189-S01 / template/nodata | `PUT /api/rules/dns` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R189-S01 / template/nxdomain | `PUT /api/rules/dns` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R189-S01 / template/proxy | `PUT /api/rules/dns` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R189-S01 / template/refused | `PUT /api/rules/dns` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R189-S01 / type-guard-prepare | `PUT /api/rules/dns` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | a08c4cc27 | 200 / 200 |
 | R189-S02 / native/follow | `PUT /api/rules/dns` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 200 / 200 |
-| R189-S02 / template/follow | `PUT /api/rules/dns` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R189-S02 / template/follow | `PUT /api/rules/dns` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
 | R189-S03 / native/default | `PUT /api/rules/dns` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 200 / 200 |
-| R189-S03 / template/default | `PUT /api/rules/dns` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R189-S03 / template/default | `PUT /api/rules/dns` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
 | R189-S04 / native | `PUT /api/rules/dns` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 200 / 200 |
-| R189-S04 / template | `PUT /api/rules/dns` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R191-B01 /  | `POST /api/rules/group-name` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R191-B02 /  | `POST /api/rules/group-name` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R191-B03 /  | `POST /api/rules/group-name` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R191-F08 / [] | `POST /api/rules/group-name` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
-| R191-F08 / {} | `POST /api/rules/group-name` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
-| R191-F09 /  | `POST /api/rules/group-name` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
-| R191-F10 /  | `POST /api/rules/group-name` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
-| R191-F11 /  | `POST /api/rules/group-name` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
-| R191-F12 /  | `POST /api/rules/group-name` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 404 / 404 |
-| R191-S01 /  | `POST /api/rules/group-name` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R191-S02 /  | `POST /api/rules/group-name` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R194-B01 /  | `PUT /api/rules/policy` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R194-B02 /  | `PUT /api/rules/policy` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R194-B03 / explicit-DNS-does-not-follow-policy-edit | `PUT /api/rules/policy` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R194-F08 /  | `PUT /api/rules/policy` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
-| R194-F09 /  | `PUT /api/rules/policy` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
-| R194-F10 /  | `PUT /api/rules/policy` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
-| R194-F11 /  | `PUT /api/rules/policy` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
-| R194-F12 /  | `PUT /api/rules/policy` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
-| R194-F13 /  | `PUT /api/rules/policy` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
-| R194-F14 /  | `PUT /api/rules/policy` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
-| R194-F15 /  | `PUT /api/rules/policy` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 404 / 404 |
-| R194-S01 /  | `PUT /api/rules/policy` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R194-S02 /  | `PUT /api/rules/policy` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R194-S03 /  | `PUT /api/rules/policy` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R194-S04 /  | `PUT /api/rules/policy` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R195-B01 /  | `POST /api/rules/reorder` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R195-B02 /  | `POST /api/rules/reorder` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R189-S04 / template | `PUT /api/rules/dns` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R191-B01 /  | `POST /api/rules/group-name` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R191-B02 /  | `POST /api/rules/group-name` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R191-B03 /  | `POST /api/rules/group-name` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R191-F08 / [] | `POST /api/rules/group-name` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
+| R191-F08 / {} | `POST /api/rules/group-name` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
+| R191-F09 /  | `POST /api/rules/group-name` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
+| R191-F10 /  | `POST /api/rules/group-name` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
+| R191-F11 /  | `POST /api/rules/group-name` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
+| R191-F12 /  | `POST /api/rules/group-name` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 404 / 404 |
+| R191-S01 /  | `POST /api/rules/group-name` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R191-S02 /  | `POST /api/rules/group-name` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R194-B01 /  | `PUT /api/rules/policy` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R194-B02 /  | `PUT /api/rules/policy` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | a08c4cc27 | 200 / 200 |
+| R194-B03 / explicit-DNS-does-not-follow-policy-edit | `PUT /api/rules/policy` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R194-F08 /  | `PUT /api/rules/policy` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
+| R194-F09 /  | `PUT /api/rules/policy` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
+| R194-F10 /  | `PUT /api/rules/policy` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
+| R194-F11 /  | `PUT /api/rules/policy` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
+| R194-F12 /  | `PUT /api/rules/policy` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
+| R194-F13 /  | `PUT /api/rules/policy` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
+| R194-F14 /  | `PUT /api/rules/policy` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
+| R194-F15 /  | `PUT /api/rules/policy` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 404 / 404 |
+| R194-S01 /  | `PUT /api/rules/policy` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R194-S02 /  | `PUT /api/rules/policy` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R194-S03 /  | `PUT /api/rules/policy` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R194-S04 /  | `PUT /api/rules/policy` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R195-B01 /  | `POST /api/rules/reorder` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R195-B02 /  | `POST /api/rules/reorder` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
 | R195-B03 / real-recognized-native-provider-order-rebuild | `POST /api/rules/reorder` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 200 / 200 |
-| R195-F08 / [] | `POST /api/rules/reorder` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
-| R195-F08 / {} | `POST /api/rules/reorder` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
-| R195-F09 /  | `POST /api/rules/reorder` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
-| R195-F10 /  | `POST /api/rules/reorder` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
+| R195-F08 / [] | `POST /api/rules/reorder` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
+| R195-F08 / {} | `POST /api/rules/reorder` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
+| R195-F09 /  | `POST /api/rules/reorder` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
+| R195-F10 /  | `POST /api/rules/reorder` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
 | R195-F11 /  | `POST /api/rules/reorder` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | 28e6e0c12 | 404 / 404 |
-| R195-F12 /  | `POST /api/rules/reorder` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
+| R195-F12 /  | `POST /api/rules/reorder` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 400 / 400 |
 | R195-F13 / {'ids': [1]} | `POST /api/rules/reorder` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | 28e6e0c12 | 404 / 404 |
 | R195-F13 / {'ids': [[1]]} | `POST /api/rules/reorder` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | 28e6e0c12 | 500 / 500 |
-| R195-S01 /  | `POST /api/rules/reorder` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R195-S02 /  | `POST /api/rules/reorder` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R195-S03 /  | `POST /api/rules/reorder` | closed | 838f7739f；838f7739f为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R195-S01 /  | `POST /api/rules/reorder` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R195-S02 /  | `POST /api/rules/reorder` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
+| R195-S03 /  | `POST /api/rules/reorder` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
 | R217-S02 /  | `PUT /api/subscriptions/<sub_id>` | closed | e9187b9f | 28e6e0c12 | 200 / 200 |
 | R218-F09 /  | `POST /api/subscriptions/<sub_id>/fetch` | closed | 8f3d36ad | 28e6e0c12 | 500 / 500 |
 | R218-F10 /  | `POST /api/subscriptions/<sub_id>/fetch` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | 28e6e0c12 | 400 / 400 |
@@ -575,12 +575,12 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | T06 / 12-second-last-good-and-background-finish | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 28e6e0c12 | 200 / 200 |
 | T06 / 20-clients-one-flight | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 28e6e0c12 | [200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200] / [200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200] |
 | T06 / next-poll-is-fresh | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | 28e6e0c12 | 200 / 200 |
-| T25 / rules/operation-5 | `DELETE /api/rules/<rule_id>` | open | — | 28e6e0c12 | 200 / 200 |
+| T25 / rules/operation-5 | `DELETE /api/rules/<rule_id>` | open | — | a08c4cc27 | 200 / 200 |
 | T27 / real-tick/due-and-backoff | `startup` | closed | 8f3d36ad | 28e6e0c12 | None / None |
-| X01 / /api/oxidns/render | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 200 / 200 |
-| X01 / /api/oxidns/template-preview | `POST /api/oxidns/template-preview` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 200 / 200 |
-| X01 / /api/profiles/<profile_id>/oxidns/render | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 200 / 200 |
-| X01 / /api/profiles/<profile_id>/oxidns/template-preview | `POST /api/profiles/<profile_id>/oxidns/template-preview` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 200 / 200 |
+| X01 / /api/oxidns/render | `POST /api/oxidns/render` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | a08c4cc27 | 200 / 200 |
+| X01 / /api/oxidns/template-preview | `POST /api/oxidns/template-preview` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | a08c4cc27 | 200 / 200 |
+| X01 / /api/profiles/<profile_id>/oxidns/render | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | a08c4cc27 | 200 / 200 |
+| X01 / /api/profiles/<profile_id>/oxidns/template-preview | `POST /api/profiles/<profile_id>/oxidns/template-preview` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | a08c4cc27 | 200 / 200 |
 | X04 / login/empty | `POST /api/auth/login` | accepted | [behaviour-changes.md · N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 500 / 400 |
 | X04 / login/ignored-extra/-Infinity | `POST /api/auth/login` | accepted | [behaviour-changes.md · N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 200 / 400 |
 | X04 / login/ignored-extra/Infinity | `POST /api/auth/login` | accepted | [behaviour-changes.md · N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | 28e6e0c12 | 200 / 400 |
@@ -591,13 +591,13 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | X04 / token/literal/"\ud800" | `POST /api/config-token` | accepted | [behaviour-changes.md · Step B #2](behaviour-changes.md#config-step-b--coordinator-decisions) | 28e6e0c12 | 500 / 400 |
 | X06 / encoded-slash/GET /api/profiles/<profile_id>/rules/local/<name> | `GET /api/profiles/<profile_id>/rules/local/<name>` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | 28e6e0c12 | 404 / 404 |
 | X06 / encoded-slash/GET /api/rules/local/<name> | `GET /api/rules/local/<name>` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | 28e6e0c12 | 404 / 404 |
-| X06 / head//api/aggregations | `GET /api/aggregations` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | 28e6e0c12 | 500 / 500 |
-| X06 / head//api/mosdns/api-settings | `GET /api/mosdns/api-settings` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | 28e6e0c12 | 500 / 500 |
-| X06 / head//api/nodes | `GET /api/nodes` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | 28e6e0c12 | 500 / 500 |
-| X06 / head//api/oxidns/settings | `GET /api/oxidns/settings` | accepted | [behaviour-changes.md · C29 HEAD只读](behaviour-changes.md#head-只读c29--c31--c32) | 28e6e0c12 | 400 / 200 |
-| X06 / head//api/rule-sets | `GET /api/rule-sets` | accepted | [behaviour-changes.md · C32](behaviour-changes.md#c32--head-规则接口只读python-bug-修正) | 28e6e0c12 | 500 / 200 |
-| X06 / head//api/rules | `GET /api/rules` | accepted | [behaviour-changes.md · C32](behaviour-changes.md#c32--head-规则接口只读python-bug-修正) | 28e6e0c12 | 500 / 200 |
-| X06 / head//api/subscriptions | `GET /api/subscriptions` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | 28e6e0c12 | 500 / 500 |
+| X06 / head//api/aggregations | `GET /api/aggregations` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | a08c4cc27 | 500 / 500 |
+| X06 / head//api/mosdns/api-settings | `GET /api/mosdns/api-settings` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | a08c4cc27 | 500 / 500 |
+| X06 / head//api/nodes | `GET /api/nodes` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | a08c4cc27 | 500 / 500 |
+| X06 / head//api/oxidns/settings | `GET /api/oxidns/settings` | accepted | [behaviour-changes.md · C29 HEAD只读](behaviour-changes.md#head-只读c29--c31--c32) | a08c4cc27 | 400 / 200 |
+| X06 / head//api/rule-sets | `GET /api/rule-sets` | accepted | [behaviour-changes.md · C32](behaviour-changes.md#c32--head-规则接口只读python-bug-修正) | a08c4cc27 | 500 / 200 |
+| X06 / head//api/rules | `GET /api/rules` | accepted | [behaviour-changes.md · C32](behaviour-changes.md#c32--head-规则接口只读python-bug-修正) | a08c4cc27 | 500 / 200 |
+| X06 / head//api/subscriptions | `GET /api/subscriptions` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | a08c4cc27 | 500 / 500 |
 | X06 / login/trailing-slash | `GET /api/subscriptions` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | 28e6e0c12 | 404 / 404 |
 | X06 / login/unknown-admin | `GET /api/subscriptions` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | 28e6e0c12 | 404 / 404 |
 | X06 / open/trailing-slash | `GET /api/subscriptions` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | 28e6e0c12 | 404 / 404 |
@@ -815,9 +815,9 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | `log.stat-permission.assigned_path` | value | True | False |
 | `log.stat-permission.permission_error` | value | True | False |
 | `status` | value | 500 | 200 |
-| `body.error` | missing-in-go | "[Errno 13] Permission denied: '/tmp/configdiff-5q7oa1jy/denied-log/synthetic.log'" | None |
+| `body.error` | missing-in-go | "[Errno 13] Permission denied: '/tmp/configdiff-47pksql1/denied-log/synthetic.log'" | None |
 | `body.exists` | extra-in-go | None | False |
-| `body.path` | extra-in-go | None | '/tmp/configdiff-5q7oa1jy/denied-log/synthetic.log' |
+| `body.path` | extra-in-go | None | '/tmp/configdiff-47pksql1/denied-log/synthetic.log' |
 | `body.success` | value | False | True |
 
 ## X06 / head//api/mosdns/api-settings
@@ -1103,10 +1103,10 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | `db.fields.system//_revision.revision` | value | 5 | 4 |
 | `db.fields.system//_revision.value` | value | 3 | 2 |
 | `db.fields.system//agents.revision` | value | 5 | 4 |
-| `db.fields.system//agents.value[0].dns_follow_state` | missing-in-go | {'status': 'failed', 'message': 'DNS 联动暂不可用：联动处理异常，请检查 Agent 连接后重试', 'updated_at': '2026-11-17T22:07:38.548104Z', 'events': [{'at': '2026-11-17T22:07:38.548045Z', 'status': 'failed', 'message': 'DNS 联动暂不可用：联动处理异常，请检查 Agent 连接后重试'}]} | None |
+| `db.fields.system//agents.value[0].dns_follow_state` | missing-in-go | {'status': 'failed', 'message': 'DNS 联动暂不可用：联动处理异常，请检查 Agent 连接后重试', 'updated_at': '2026-11-17T22:46:33.590994Z', 'events': [{'at': '2026-11-17T22:46:33.590913Z', 'status': 'failed', 'message': 'DNS 联动暂不可用：联动处理异常，请检查 Agent 连接后重试'}]} | None |
 | `db.meta.generation` | value | 5 | 4 |
-| `files.notifications.json` | missing-in-go | {'mode': 384, 'content': {'items': {'task:dns_follow:agent-synthetic': {'source': 'task', 'title': '合成 Agent 🧪 · DNS 联动', 'message': 'DNS 联动暂不可用：联动处理异常，请检查 Agent 连接后重试', 'impact': '', 'status_label': '执行失败', 'severity': 'error', 'profile_id': 'default', 'scope': 'profile', 'profile_name': '默认配置', 'target': {'path': '/agents', 'query': {'agent': 'agent-synthetic', 'profile': 'default', 'section': 'dns-follow'}, 'label': '查看同步设置'}, 'checked_at': '2026-11-17T22:07:38Z', 'failure_count': 1, 'id': 'task:dns_follow:agent-synthetic', 'state': 'pending', 'read': False, 'version': '2026-11-17T22:07:38.752416+00:00', 'first_seen_at': '2026-11-17T22:07: | None |
-| `files.task-status.json` | missing-in-go | {'mode': 384, 'content': {'dns_follow:agent-synthetic': {'last_run_at': '2026-11-17T22:07:38Z', 'last_finished_at': '2026-11-17T22:07:38Z', 'last_status': 'failed', 'last_duration_ms': 0, 'last_trigger': 'event', 'last_error': 'DNS 联动暂不可用：联动处理异常，请检查 Agent 连接后重试', 'run_count': 1, 'failure_count': 1, 'consecutive_failures': 1}}} | None |
+| `files.notifications.json` | missing-in-go | {'mode': 384, 'content': {'items': {'task:dns_follow:agent-synthetic': {'source': 'task', 'title': '合成 Agent 🧪 · DNS 联动', 'message': 'DNS 联动暂不可用：联动处理异常，请检查 Agent 连接后重试', 'impact': '', 'status_label': '执行失败', 'severity': 'error', 'profile_id': 'default', 'scope': 'profile', 'profile_name': '默认配置', 'target': {'path': '/agents', 'query': {'agent': 'agent-synthetic', 'profile': 'default', 'section': 'dns-follow'}, 'label': '查看同步设置'}, 'checked_at': '2026-11-17T22:46:33Z', 'failure_count': 1, 'id': 'task:dns_follow:agent-synthetic', 'state': 'pending', 'read': False, 'version': '2026-11-17T22:46:33.870655+00:00', 'first_seen_at': '2026-11-17T22:46: | None |
+| `files.task-status.json` | missing-in-go | {'mode': 384, 'content': {'dns_follow:agent-synthetic': {'last_run_at': '2026-11-17T22:46:33Z', 'last_finished_at': '2026-11-17T22:46:33Z', 'last_status': 'failed', 'last_duration_ms': 0, 'last_trigger': 'event', 'last_error': 'DNS 联动暂不可用：联动处理异常，请检查 Agent 连接后重试', 'run_count': 1, 'failure_count': 1, 'consecutive_failures': 1}}} | None |
 
 ## H128 / sequence-root
 
@@ -1493,7 +1493,7 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 
 | 路径 | 类型 | Python | Go |
 |---|---|---|---|
-| `files.shared/rules/by-id/57dd3a99c8f85e438e5b63f912f9efaa2a1b944f33845873aee9364fcd0d832f.list.bak` | extra-in-go | None | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} |
+| `files.shared/rules/by-id/d52cb19c352cc143634a6b5027961c1db86af1b69aad6291b0d8fbb65a16125b.list.bak` | extra-in-go | None | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} |
 
 ## R090-F10 / SQLite-trigger-rejects-real-editor-commit
 
@@ -3241,10 +3241,10 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | `db.fields.system//_revision.revision` | value | 5 | 4 |
 | `db.fields.system//_revision.value` | value | 3 | 2 |
 | `db.fields.system//agents.revision` | value | 5 | 4 |
-| `db.fields.system//agents.value[0].dns_follow_state` | missing-in-go | {'status': 'failed', 'message': 'DNS 联动暂不可用：联动处理异常，请检查 Agent 连接后重试', 'updated_at': '2026-11-17T22:07:38.548104Z', 'events': [{'at': '2026-11-17T22:07:38.548045Z', 'status': 'failed', 'message': 'DNS 联动暂不可用：联动处理异常，请检查 Agent 连接后重试'}]} | None |
+| `db.fields.system//agents.value[0].dns_follow_state` | missing-in-go | {'status': 'failed', 'message': 'DNS 联动暂不可用：联动处理异常，请检查 Agent 连接后重试', 'updated_at': '2026-11-17T22:46:33.590994Z', 'events': [{'at': '2026-11-17T22:46:33.590913Z', 'status': 'failed', 'message': 'DNS 联动暂不可用：联动处理异常，请检查 Agent 连接后重试'}]} | None |
 | `db.meta.generation` | value | 5 | 4 |
-| `files.notifications.json` | missing-in-go | {'mode': 384, 'content': {'items': {'task:dns_follow:agent-synthetic': {'source': 'task', 'title': '合成 Agent 🧪 · DNS 联动', 'message': 'DNS 联动暂不可用：联动处理异常，请检查 Agent 连接后重试', 'impact': '', 'status_label': '执行失败', 'severity': 'error', 'profile_id': 'default', 'scope': 'profile', 'profile_name': '默认配置', 'target': {'path': '/agents', 'query': {'agent': 'agent-synthetic', 'profile': 'default', 'section': 'dns-follow'}, 'label': '查看同步设置'}, 'checked_at': '2026-11-17T22:07:38Z', 'failure_count': 1, 'id': 'task:dns_follow:agent-synthetic', 'state': 'pending', 'read': False, 'version': '2026-11-17T22:07:38.752416+00:00', 'first_seen_at': '2026-11-17T22:07: | None |
-| `files.task-status.json` | missing-in-go | {'mode': 384, 'content': {'dns_follow:agent-synthetic': {'last_run_at': '2026-11-17T22:07:38Z', 'last_finished_at': '2026-11-17T22:07:38Z', 'last_status': 'failed', 'last_duration_ms': 0, 'last_trigger': 'event', 'last_error': 'DNS 联动暂不可用：联动处理异常，请检查 Agent 连接后重试', 'run_count': 1, 'failure_count': 1, 'consecutive_failures': 1}}} | None |
+| `files.notifications.json` | missing-in-go | {'mode': 384, 'content': {'items': {'task:dns_follow:agent-synthetic': {'source': 'task', 'title': '合成 Agent 🧪 · DNS 联动', 'message': 'DNS 联动暂不可用：联动处理异常，请检查 Agent 连接后重试', 'impact': '', 'status_label': '执行失败', 'severity': 'error', 'profile_id': 'default', 'scope': 'profile', 'profile_name': '默认配置', 'target': {'path': '/agents', 'query': {'agent': 'agent-synthetic', 'profile': 'default', 'section': 'dns-follow'}, 'label': '查看同步设置'}, 'checked_at': '2026-11-17T22:46:33Z', 'failure_count': 1, 'id': 'task:dns_follow:agent-synthetic', 'state': 'pending', 'read': False, 'version': '2026-11-17T22:46:33.870655+00:00', 'first_seen_at': '2026-11-17T22:46: | None |
+| `files.task-status.json` | missing-in-go | {'mode': 384, 'content': {'dns_follow:agent-synthetic': {'last_run_at': '2026-11-17T22:46:33Z', 'last_finished_at': '2026-11-17T22:46:33Z', 'last_status': 'failed', 'last_duration_ms': 0, 'last_trigger': 'event', 'last_error': 'DNS 联动暂不可用：联动处理异常，请检查 Agent 连接后重试', 'run_count': 1, 'failure_count': 1, 'consecutive_failures': 1}}} | None |
 
 ## R189-B02 / native
 
