@@ -961,3 +961,10 @@ Taken by the designer (tell the maintainer, no action needed):
 
 For the maintainer: **none.** Every user-visible difference above is a failure-path or shutdown-path improvement
 recorded for O12; the success path, stage order, messages, plan/API shapes and device writes are Python's.
+
+**Coordinator decisions 2026-11-17:** D-R12-1 accepted (R12 absorbs `_inspect` + helpers, `ros_return_advisory.py` and the
+release-route core; R13 keeps `pending.py`; PROGRESS-routers module table to be updated by the R12 porter).
+D-R12-2 accepted (Go-native fingerprints; previews opened before the switch need one re-preview — consistent with D2).
+D-R12-3 accepted (shutdown past the drain deadline stops after the current operation, writes the failure record and
+ownership list, no rollback; all other errors roll back) — record in O12 and in the O14 switch plan.
+
