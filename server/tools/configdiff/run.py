@@ -100,6 +100,8 @@ def main():
     groups.update(http_shell)
     from cases.profiles import GROUPS as profiles
     groups.update(profiles)
+    from cases.profile_rebind_helpers import GROUPS as profile_rebind_helpers
+    groups.update(profile_rebind_helpers)
     from cases.profile_guards import GROUPS as profile_guards
     groups.update(profile_guards)
     from cases.logs import GROUPS as logs
@@ -186,6 +188,8 @@ def main():
     groups.update(oxidns_zone_helpers)
     from cases.oxidns_reference_helpers import GROUPS as oxidns_reference_helpers
     groups.update(oxidns_reference_helpers)
+    from cases.oxidns_schema_helpers import GROUPS as oxidns_schema_helpers
+    groups.update(oxidns_schema_helpers)
     from cases.oxidns_assets import GROUPS as oxidns_assets
     groups.update(oxidns_assets)
     from cases.oxidns_editor import GROUPS as oxidns_editor

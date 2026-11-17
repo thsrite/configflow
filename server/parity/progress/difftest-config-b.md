@@ -1388,3 +1388,21 @@ current go-unimplemented=84 request_variants=84 design_errors=[] seconds=9.52；
 ```
 
 继续schema格式/类型分支与剩余helpers；H仍差640编号，另有partial/不可观察分支，最终.32全量未执行。
+
+## 批次 80：schema诊断、include来源与改绑事务门禁
+
+- 新增68请求变体：39 schema、29 REBIND，均Go尚未实现，design_errors=[]。新增H25编号（schema21含H719部分观察、REBIND4）及原R121-F17；覆盖并集原R4163（S678/F2636/B849）、H497、G16，累计已验证变体并集8920。统一报告仍待go5535931d全量结束后由常规runner合并，未手工拼报告。
+- H699–H720除H704的类型严格性、动态占位符warning、enum/min/max/exclusiveMinimum、长度/条目上下限、required、额外字段拒绝或warning、插件未知/缺args、准确include来源。完整issues/code/source/order及valid仍精确比较，SQL/files不变、回环HTTP0次。H704不可观察、H719前置校验已拒绝的部分范围已写入matrix errata。
+- 本组先后发现三种字段选择错误（ECS、HTTP URL、cron时区实际不走目标schema格式）；按完整schema目录核对后改用forward/time字段，最终39变体完整重跑通过。此前exit2前提错误不记通过、不登记为Go差异。
+- H742–H745逐条件：同空间、列表缺失/null/空/错误类型/非法元素/重复、确认集合缺失或额外；部署/升级/HA非终态和未知状态。R121-F17补HA忙拒绝；HA的rolled_back仍忙，不能与普通部署的终态集合混淆。拒绝后全部DB/files原样，Agent指向可记录回环fake且请求必须0。沿用SourceStable故意存储/请求错误自检。
+
+```text
+.32 run.py --groups oxidns-schema-helper-constraints
+go-unimplemented=39 design_errors=[] seconds=3.66；exit=0
+.32 run.py --groups profile-rebind-helper-guards
+go-unimplemented=29 design_errors=[] seconds=16.76；exit=0
+68 comparator self-checks + wrong-Go-response check OK
+独立报告/tmp/configdiff-oxidns-schema.json、/tmp/configdiff-rebind-guards.json
+```
+
+继续节点worker和其余helpers；H仍差615编号，另有已标partial和不可观察分支，最终.32全量未执行。

@@ -1965,3 +1965,9 @@ R024/R031-S04/S05及B91：仍比较相应Host/Forwarded请求的完整响应、�
 - H642/H652：`$TTL 4294967296`及记录内同值已由前一步`dns.ttl.from_text`拒绝，公开响应是H662的通用DNS记录诊断，之后的`>U32`专用return不可由这两种HTTP输入证明。超限拒绝场景已实际测试，但原指定return位置标部分覆盖；合法4294967295也有成功对照。依据[oxidns_plugin_constraints.py:535](../../backend/common/oxidns_plugin_constraints.py#L535)、[oxidns_plugin_constraints.py:575](../../backend/common/oxidns_plugin_constraints.py#L575)。
 - H651/H663：单独`# comment only`在当前wrapper中走“相对域名需要$ORIGIN”，不是最终0记录计数错误；空串和两条真实记录才分别覆盖0/>1记录门禁。不能根据zone通用语法假定注释已被wrapper跳过。依据[oxidns_plugin_constraints.py:516](../../backend/common/oxidns_plugin_constraints.py#L516)。
 - H664：schema format名称来自固定目录，HTTP草稿不能声明新的schema格式；未知plugin只产生unknown-plugin warning，不能触发`Unsupported plugin validation format`。该防御分支目前无黑盒HTTP驱动，单列未覆盖原因，不用无关拒绝充数。依据[oxidns_plugin_constraints.py:613](../../backend/common/oxidns_plugin_constraints.py#L613)、[oxidns_validation.py:242](../../backend/common/oxidns_validation.py#L242)。
+
+### Step B schema格式与严格渲染的可达性
+
+- H704与H664相同：格式名由固定Python schema目录决定，公开草稿不能声明新schema；保留未覆盖原因，不用未知plugin warning充作RuntimeError。依据[oxidns_validation.py:152](../../backend/common/oxidns_validation.py#L152)。
+- H719：公开render确实拒绝有error的native草稿，但[oxidns_native.py](../../backend/common/oxidns_native.py)在后续require_valid_document之前已拒绝同一输入，因此HTTP400只证明严格渲染门禁，不能证明H719指定的后置防御return执行。此编号标部分观察。
+- H699–H703的字段按实际schema选择：forward.dial_addr为IP、forward.upstreams[].addr为upstream-address、time.timezone为timezone。ECS、http_request.url与cron.timezone分别由插件约束或nonempty-string处理，不能借它们的相似错误声称对应schema format分支已覆盖。依据[global.json](../../backend/schemas/oxidns/global.json)、[plugins.json](../../backend/schemas/oxidns/plugins.json)。

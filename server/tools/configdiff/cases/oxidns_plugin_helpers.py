@@ -202,12 +202,12 @@ def vectors(origin):
     return rows
 
 
-def check_issue(reply, path, text, severity):
+def check_issue(reply, path, text, severity, *, source='config.yaml'):
     value = reply.json()
     require(value['schema_version'] == '1.6.1' and value['core_check_required'] is True,
             'static diagnostics retain the pinned schema and explicit target-core validation requirement')
     matching = [item for item in value['issues'] if item.get('path') == path and item.get('message') == text
-                and item.get('severity') == severity and item.get('source') == 'config.yaml']
+                and item.get('severity') == severity and item.get('source') == source]
     require(len(matching) == 1 and isinstance(matching[0].get('code'), str) and bool(matching[0]['code']),
             'named helper branch produces exactly its expected path/message/severity and a code: ' + repr((path, text, value)))
     require(value['valid'] is (not any(item['severity'] == 'error' for item in value['issues'])),
