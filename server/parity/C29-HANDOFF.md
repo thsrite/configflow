@@ -79,12 +79,37 @@ FuzzZoneValidation ok configflow/internal/oxidns 61.027s
 GATE PASS
 ```
 
-最后rebase go并跑受影响的C29/C32包：结果待补。
+最后rebase到go@0dace4ae（C32 review）。C29运行时代码相对完整gate已测3eac32e7无diff；
+新增C32复核逻辑在合并树补测，两边HTTP边界全部通过：
+
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'cd server && CONFIGFLOW_DIFF=1 go test -count=1 -timeout=15m ./internal/api/oxidns/... ./internal/api/rules/... && go test -race -count=1 -run "^TestC29" -timeout=10m ./internal/oxidns'
+```
+
+```text
+ok configflow/internal/api/oxidns 0.082s
+ok configflow/internal/api/oxidns/difftest 6.034s
+ok configflow/internal/api/rules 4.188s
+ok configflow/internal/api/rules/difftest 67.369s
+ok configflow/internal/oxidns 59.860s
+```
+
+完整gate与rebase后补测分开记录；没有把新基线补测冒称为又一轮完整gate。
+O3-6a/O3-6c尚未合入本交回基线，未改共享包，剩余窗口按上文负责人衔接。
 
 ## 提交
 
-当前实现提交：bc5c7856 reader；0995742a native apply；415dbd45 archive/routes；c924454d N8-6向量；ed428ce2验收checkpoint。
-提交可能随最终rebase变化，以最终交回记录为准。
+最终分支：`go-port-c29`，基线`go@0dace4ae`。实现与验收提交：
+
+- `bb1dac8d` N7-3d share: oxidns readers to yamlx
+- `20e900bb` go(oxidns): C29 add native draft reconciliation
+- `0aee7049` go(oxidns): C29 port archive and editor routes with boundary parity
+- `f813f3b5` go(oxidns): C29 record native JSON rejection and route success controls
+- `c73db2c2` go(oxidns): C29 checkpoint acceptance before integration rebase
+- `466f1335` go(oxidns): C29 reject owned writes after Runtime shutdown
+- `695ae71c` go(oxidns): C29 record complete gate and shared shutdown ownership
+
+最后另有交回文档收尾提交（见分支HEAD）；无push。
 
 ## 新文件（相对 server）
 
@@ -95,7 +120,7 @@ GATE PASS
 | `internal/api/oxidns/messages.go` | 6 lines |
 | `internal/api/oxidns/oxidns.go` | 282 lines |
 | `internal/api/oxidns/routes_test.go` | 93 lines |
-| `internal/oxidns/archive.go` | 95 lines |
+| `internal/oxidns/archive.go` | 104 lines |
 | `internal/oxidns/archive_test.go` | 210 lines |
 | `internal/oxidns/n73_legacy_test.go` | 126 lines |
 | `internal/oxidns/n73_readers_test.go` | 223 lines |
@@ -105,10 +130,11 @@ GATE PASS
 | `internal/oxidns/native_input.go` | 67 lines |
 | `internal/oxidns/native_response.go` | 18 lines |
 | `internal/oxidns/reader.go` | 29 lines |
-| `internal/oxidns/settings_store.go` | 148 lines |
-| `internal/oxidns/settings_store_test.go` | 111 lines |
+| `internal/oxidns/runtime_writes_test.go` | 150 lines |
+| `internal/oxidns/settings_store.go` | 160 lines |
+| `internal/oxidns/settings_store_test.go` | 116 lines |
 | `internal/oxidns/testdata/c29_archive.py` | 26 lines |
 | `internal/oxidns/testdata/c29_gen.py` | 85 lines |
 | `internal/oxidns/testdata/c29_native.jsonl.gz` | 479251 bytes |
-| `parity/progress/c29.md` | 75 lines |
-| `parity/progress/n7-3d-oxidns.md` | 30 lines |
+| `parity/progress/c29.md` | 105 lines |
+| `parity/progress/n7-3d-oxidns.md` | 32 lines |

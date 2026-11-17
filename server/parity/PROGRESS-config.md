@@ -1853,6 +1853,8 @@ Detailed scope, commands, remaining acceptance and N8-5 adapters: [C29 progress]
 
 Missing / deferred: no C29 implementation deferred; shared in-flight shutdown windows remain assigned to O3-6c below.
 Final .64 gate (-p6) passed: gofmt/vet/tags/full race/all15 difftest, proddiff new=0 stale=0, both specified fuzz60s.
+Rebased onto go@0dace4ae (C32 review); C29 runtime code unchanged from the gated version.
+Merged C29/C32 API differentials and all new C29 tests under race passed again.
 This is ported, not independently verified. Evidence and exact commands: [C29 hand-back](C29-HANDOFF.md).
 The approved Python HEAD save bug is fixed as read-only with an explicit expected differential;
 N8-6 non-finite JSON rejection has 48 explicit Flask controls across all 16 POST pairs;
