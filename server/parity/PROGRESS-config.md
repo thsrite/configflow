@@ -2032,7 +2032,7 @@ R08 integration follow-up: rebased `go-port-c32` onto `go=d8f50b00`; preserved e
 
 - Deferred from C28: `internal/mosdns/difftest` cases marked `deferTo("C33")` (rule proxy served via in-process `/api/profiles/<id>/rule-library/content/<id>`); remove the marks once that route is registered.
 
-**Status: `missing`** · prereqs: C32 · Go: internal/api/rulelibrary, api/proxygroups (new)
+**Status: `in progress`** · prereqs: C32 · Go: internal/api/rulelibrary, api/proxygroups (new)
 
 Files:
 - `backend/routes/rule_library.py` (540)
@@ -2044,9 +2044,15 @@ Routes (25, 0 done):
 
 `GET /api/profiles/<profile_id>/proxy-groups`; `POST /api/profiles/<profile_id>/proxy-groups`; `GET /api/profiles/<profile_id>/rule-library/content/<rule_id>`; `GET /api/proxy-groups`; `POST /api/proxy-groups`; `DELETE /api/proxy-groups/<group_id>`; `PUT /api/proxy-groups/<group_id>`; `PUT /api/proxy-groups/batch-health-url`; `GET /api/proxy-groups/health-defaults`; `POST /api/proxy-groups/preview-regex`; `POST /api/proxy-groups/reorder`; `GET /api/rule-library`; `POST /api/rule-library`; `DELETE /api/rule-library/<rule_id>`; `PUT /api/rule-library/<rule_id>`; `GET /api/rule-library/<rule_id>/draft-content`; `PUT /api/rule-library/<rule_id>/draft-content`; `POST /api/rule-library/cache`; `POST /api/rule-library/check-content`; `GET /api/rule-library/content/<rule_id>`; `GET /api/rule-library/proxy-domains`; `POST /api/rule-library/proxy-domains`; `POST /api/rule-library/reorder`; `POST /api/rule-library/test`; `POST /api/rule-library/test-single`
 
-Evidence: No Go package; no route registered.
+Evidence: `go-port-c33`, stacked on frozen C32 (`c3e4e9ac`). Proxy-group routes and native service implemented; shared candidate, health, listener and DNS owners reused. Targeted race tests and vet pass on .64 (API 2.893s; server 1.275s). Tests cover malformed batches, atomic rejection, profile isolation, references, renames, unknown fields, legacy reorder and preview bucket order/filtering.
 
-Missing / deferred: Everything in the files below.
+Missing / deferred: rule-library routes; live Flask differential for all routes; final gate and rebase after C32 merges.
+
+Approved decisions: draft revision uses native sorted encoding/json (D2 one-time stale-page 409). Stage content cache before DB commit, atomically replace afterwards, invalidate stable/legacy cache on failure (Python stale-delivery bug). Bulk testing disables only matching source declarations in a fresh transaction, using PUT native DNS rebuild/parking (Python concurrency bug).
+
+N8-5: draft/content PUT 的 DB+cache 原子性，N8-5 的事务 API 落地后，用正式的原语重写。
+
+Command: `RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'cd server && go vet ./internal/api/proxygroups && go test -race -count=1 ./internal/api/proxygroups ./internal/server'`.
 
 Notes for porter: Registers `/api/profiles/<id>/rule-library/content/<rule_id>` and `/proxy-groups`. Proxy-group routes run `subs.RelinkGroupListeners` (deferred listener-lifecycle cases of C11).
 

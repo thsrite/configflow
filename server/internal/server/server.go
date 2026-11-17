@@ -30,6 +30,7 @@ import (
 	apinodes "configflow/internal/api/nodes"
 	apinotifications "configflow/internal/api/notifications"
 	apioxidns "configflow/internal/api/oxidns"
+	apiproxygroups "configflow/internal/api/proxygroups"
 	apirules "configflow/internal/api/rules"
 	apisettings "configflow/internal/api/settings"
 	apistats "configflow/internal/api/stats"
@@ -61,6 +62,7 @@ var routePackages = []func(*httpx.Router){
 	apisubscriptions.Register,
 	apiaggregations.Register,
 	apirules.Register,
+	apiproxygroups.Register,
 	apiagents.Register,
 	apisettings.Register,
 	apilogs.Register,
