@@ -602,3 +602,14 @@ C06 独立复核安全修正：服务域名和 subscription-aggregation 更新�
 不再拼接完整用户输入。Python 与原 Go 都会把包含 URL 密码、query token 或换行的
 new_domain / 宽松 enabled 值直接写入 INFO 日志。请求校验、响应和持久化值保持原语义；
 `TestReviewSettingsLogsDoNotEchoValues` 经真实 HTTP 保存验证日志无凭据/伪造行、DB 值不变。
+
+## CFG-01：内部规则 API 下载边界
+
+内部API原始分类不再因dot-normalization丢失；规范化后及每次redirect前共用origin/API
+前缀检查，边界在整条链中保留。歧义的初始穿越地址会在任何I/O前更早400（Python可能
+先请求一次源再拒绝redirect），禁止目标请求数必须始终0。正常内部重定向和外部源不变。
+20组真实Python合成loopback对照另证明：编码API前缀的dot初始路径可被Python当外部并
+访问跨origin目标；encoded-dot、double-encoded-dot、backslash redirect目标也可被
+Python接受。Go按本次安全修复要求统一拒绝这些歧义，保留Invalid remote URL的400出口，
+不复制Python的边界缺陷。具体向量和原始路径见rulefetch/testdata/cfg01.json；待独立
+安全复核，不用此条泛化豁免其他URL/响应/存储差异。

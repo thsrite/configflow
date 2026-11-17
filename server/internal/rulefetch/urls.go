@@ -3,9 +3,11 @@ package rulefetch
 import (
 	"errors"
 	"net/url"
+	"path"
 	"strings"
 	"unicode"
 
+	"configflow/internal/jsonx"
 	"configflow/internal/weburl"
 )
 
@@ -29,6 +31,85 @@ func joinURL(base, location string) (string, error) {
 
 // ErrInvalidURL is the ValueError of validate_rule_url.
 var ErrInvalidURL = errors.New("Invalid HTTP/HTTPS URL")
+
+// ErrInternalRedirect identifies a target outside an internal API boundary.
+var ErrInternalRedirect = errors.New("Internal API redirect leaves its origin")
+
+// internalBoundary is sticky for the whole redirect chain once a URL enters
+// this server's API. It is not reclassified as external after preparation.
+type internalBoundary struct {
+	base   *url.URL
+	origin origin
+	prefix string
+}
+
+func prepareRuleTarget(raw string, config *jsonx.Object, hostURL string, boundary *internalBoundary) (*url.URL, *url.URL, *internalBoundary, error) {
+	prepared, err := ValidateRuleURL(raw)
+	if err != nil {
+		return nil, nil, boundary, err
+	}
+	if boundary == nil {
+		base, internal, err := internalRuleBase(raw, config, hostURL)
+		if err != nil {
+			return nil, nil, boundary, err
+		}
+		if !internal {
+			base, internal, err = internalRuleBase(prepared.String(), config, hostURL)
+			if err != nil {
+				return nil, nil, boundary, err
+			}
+		}
+		if internal {
+			base, err = weburl.Prepare(base.String(), nil)
+			if err != nil {
+				return nil, nil, boundary, err
+			}
+			o, err := originOf(base)
+			if err != nil {
+				return nil, nil, boundary, err
+			}
+			boundary = &internalBoundary{base: base, origin: o, prefix: strings.TrimRight(base.Path, "/") + "/api/"}
+		}
+	}
+	if boundary != nil {
+		if err := boundary.validate(prepared); err != nil {
+			return nil, nil, boundary, err
+		}
+		return prepared, boundary.base, boundary, nil
+	}
+	return prepared, nil, nil, nil
+}
+
+func (b *internalBoundary) validate(target *url.URL) error {
+	o, err := originOf(target)
+	if err != nil || o != b.origin {
+		return ErrInternalRedirect
+	}
+	// Path is already decoded once by net/url. Check nested escaped forms too:
+	// a reverse proxy must not turn an accepted encoded traversal into a path
+	// outside the API. Backslashes have inconsistent separator semantics.
+	candidate := target.Path
+	for round := 0; round < 8; round++ {
+		if strings.Contains(candidate, "\\") {
+			return ErrInternalRedirect
+		}
+		clean := path.Clean(candidate)
+		if strings.HasSuffix(candidate, "/") {
+			clean += "/"
+		}
+		if !strings.HasPrefix(clean, b.prefix) {
+			return ErrInternalRedirect
+		}
+		decoded, err := url.PathUnescape(candidate)
+		if err != nil || decoded == candidate {
+			return nil
+		}
+		candidate = decoded
+	}
+	// Do not spend unbounded work peeling adversarial encodings or accept a
+	// still-ambiguous path when the bounded native checks cannot prove it safe.
+	return ErrInternalRedirect
+}
 
 // ValidateRuleURL is validate_rule_url: syntax only (http/https, a host,
 // a port in 1..65535, no whitespace or backslash in the authority, no

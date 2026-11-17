@@ -6,6 +6,7 @@ from harness import Pair, json_body
 from sources import Source
 from cases.config_backup import message
 from cases.pull_routes import SourceStable
+from cases.setup import Stable
 from cases.rule_proxy import ROUTES
 from cases.subscriptions import require
 
@@ -69,7 +70,17 @@ class InternalRedirectBoundary(SourceStable):
 
     def compare(self, policy):
         from compare import differences
-        return super().compare(policy) + differences(*self.proof, 'rule.internal-redirect-boundary', policy)
+        # CFG-01 rejects the ambiguous initial API path before any I/O. Python
+        # makes exactly one normalized source request before refusing redirect.
+        # Preserve that reference proof above; require Go's earlier refusal
+        # exactly (zero source AND forbidden-target requests), never mask traces
+        # globally or accept a request to the forbidden target.
+        reference = {'destination_requests': [], 'source_paths': ['/redirect']}
+        expected = {'destination_requests': [], 'source_paths': []}
+        return (Stable.compare(self, policy) + differences(reference, self.proof[0],
+            'rule.internal-redirect-boundary.reference', policy) + differences(expected, self.proof[1],
+            'rule.internal-redirect-boundary.early-refusal', policy))
+
 
 
 def internal_redirect_escape(binary, recorder):

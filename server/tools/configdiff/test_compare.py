@@ -527,13 +527,22 @@ class Comparators(unittest.TestCase):
         observer = InternalRedirectBoundary.__new__(InternalRedirectBoundary)
         observer.before_values, observer.after_values = [{}, {}], [{}, {}]
         observer.exchange = SimpleNamespace(compare=lambda policy: [])
-        observer.proof = [{'destination_requests': [], 'source_paths': ['/redirect']} for _ in range(2)]
+        observer.proof = [{'destination_requests': [], 'source_paths': ['/redirect']},
+                          {'destination_requests': [], 'source_paths': []}]
         self.assertEqual(observer.compare(Policy()), [])
         observer.proof[1]['destination_requests'] = [{'method': 'GET', 'path': '/landing'}]
         self.assertTrue(observer.compare(Policy()))
         observer.proof[1]['destination_requests'] = []
+        observer.proof[1]['source_paths'] = ['/redirect']
+        self.assertTrue(observer.compare(Policy()))  # Earlier refusal must be exact.
         observer.proof[1]['source_paths'].append('/landing')
         self.assertTrue(observer.compare(Policy()))
+        observer.proof[1]['source_paths'] = []
+        observer.proof[0]['source_paths'] = ['/changed-reference-path']
+        self.assertTrue(observer.compare(Policy()))
+        observer.proof[0]['source_paths'] = ['/redirect']
+        observer.before_values[1] = {'changed': True}
+        self.assertTrue(observer.compare(Policy()))  # Storage isolation still checked.
 
     def test_coverage_accounting_never_turns_dispositions_or_Go_skips_into_passes(self):
         from coverage_audit import evaluate, dispositions

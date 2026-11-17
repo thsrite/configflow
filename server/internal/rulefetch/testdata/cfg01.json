@@ -1,0 +1,375 @@
+[
+  {
+    "name": "dot",
+    "start": "{origin}/api/../redirect",
+    "locations": [
+      "{external}/landing"
+    ],
+    "refused": true,
+    "python": {
+      "refused": true,
+      "error_class": "ValueError",
+      "error": "Internal API redirect leaves its origin",
+      "source_paths": [
+        "/redirect"
+      ],
+      "external_paths": [],
+      "forbidden": 0
+    }
+  },
+  {
+    "name": "encoded-dot",
+    "start": "{origin}/api/%2e%2e/redirect",
+    "locations": [
+      "{external}/landing"
+    ],
+    "refused": true,
+    "python": {
+      "refused": true,
+      "error_class": "ValueError",
+      "error": "Internal API redirect leaves its origin",
+      "source_paths": [
+        "/api/../redirect"
+      ],
+      "external_paths": [],
+      "forbidden": 0
+    }
+  },
+  {
+    "name": "encoded-dot-uppercase",
+    "start": "{origin}/api/%2E%2E/redirect",
+    "locations": [
+      "{external}/landing"
+    ],
+    "refused": true,
+    "python": {
+      "refused": true,
+      "error_class": "ValueError",
+      "error": "Internal API redirect leaves its origin",
+      "source_paths": [
+        "/api/../redirect"
+      ],
+      "external_paths": [],
+      "forbidden": 0
+    }
+  },
+  {
+    "name": "double-encoded-dot",
+    "start": "{origin}/api/%252e%252e/redirect",
+    "locations": [
+      "{external}/landing"
+    ],
+    "refused": true,
+    "python": {
+      "refused": true,
+      "error_class": "ValueError",
+      "error": "Internal API redirect leaves its origin",
+      "source_paths": [
+        "/api/%252e%252e/redirect"
+      ],
+      "external_paths": [],
+      "forbidden": 0
+    }
+  },
+  {
+    "name": "backslash",
+    "start": "{origin}/api/..\\redirect",
+    "locations": [
+      "{external}/landing"
+    ],
+    "refused": true,
+    "python": {
+      "refused": true,
+      "error_class": "ValueError",
+      "error": "Internal API redirect leaves its origin",
+      "source_paths": [
+        "/api/..%5Credirect"
+      ],
+      "external_paths": [],
+      "forbidden": 0
+    }
+  },
+  {
+    "name": "encoded-backslash",
+    "start": "{origin}/api/..%5credirect",
+    "locations": [
+      "{external}/landing"
+    ],
+    "refused": true,
+    "python": {
+      "refused": true,
+      "error_class": "ValueError",
+      "error": "Internal API redirect leaves its origin",
+      "source_paths": [
+        "/api/..%5Credirect"
+      ],
+      "external_paths": [],
+      "forbidden": 0
+    }
+  },
+  {
+    "name": "encoded-api-dot",
+    "start": "{origin}/%61pi/../redirect",
+    "locations": [
+      "{external}/landing"
+    ],
+    "refused": true,
+    "python": {
+      "refused": false,
+      "status": 200,
+      "body": "ok",
+      "source_paths": [
+        "/redirect"
+      ],
+      "external_paths": [
+        "/landing"
+      ],
+      "forbidden": 1
+    }
+  },
+  {
+    "name": "encoded-api-valid",
+    "start": "{origin}/%61pi/start",
+    "locations": [],
+    "refused": false,
+    "python": {
+      "refused": false,
+      "status": 200,
+      "body": "ok",
+      "source_paths": [
+        "/api/start"
+      ],
+      "external_paths": [],
+      "forbidden": 0
+    }
+  },
+  {
+    "name": "cross-origin",
+    "start": "{origin}/api/start",
+    "locations": [
+      "{external}/landing"
+    ],
+    "refused": true,
+    "python": {
+      "refused": true,
+      "error_class": "ValueError",
+      "error": "Internal API redirect leaves its origin",
+      "source_paths": [
+        "/api/start"
+      ],
+      "external_paths": [],
+      "forbidden": 0
+    }
+  },
+  {
+    "name": "outside-api",
+    "start": "{origin}/api/start",
+    "locations": [
+      "/landing"
+    ],
+    "refused": true,
+    "python": {
+      "refused": true,
+      "error_class": "ValueError",
+      "error": "Internal API redirect leaves its origin",
+      "source_paths": [
+        "/api/start"
+      ],
+      "external_paths": [],
+      "forbidden": 0
+    }
+  },
+  {
+    "name": "redirect-dot",
+    "start": "{origin}/api/start",
+    "locations": [
+      "/api/../landing"
+    ],
+    "refused": true,
+    "python": {
+      "refused": true,
+      "error_class": "ValueError",
+      "error": "Internal API redirect leaves its origin",
+      "source_paths": [
+        "/api/start"
+      ],
+      "external_paths": [],
+      "forbidden": 0
+    }
+  },
+  {
+    "name": "redirect-encoded-dot",
+    "start": "{origin}/api/start",
+    "locations": [
+      "/api/%2e%2e/landing"
+    ],
+    "refused": true,
+    "python": {
+      "refused": false,
+      "status": 200,
+      "body": "ok",
+      "source_paths": [
+        "/api/start",
+        "/api/../landing"
+      ],
+      "external_paths": [],
+      "forbidden": 1
+    }
+  },
+  {
+    "name": "redirect-double-encoded-dot",
+    "start": "{origin}/api/start",
+    "locations": [
+      "/api/%252e%252e/landing"
+    ],
+    "refused": true,
+    "python": {
+      "refused": false,
+      "status": 200,
+      "body": "ok",
+      "source_paths": [
+        "/api/start",
+        "/api/%252e%252e/landing"
+      ],
+      "external_paths": [],
+      "forbidden": 1
+    }
+  },
+  {
+    "name": "redirect-backslash",
+    "start": "{origin}/api/start",
+    "locations": [
+      "/api/..\\landing"
+    ],
+    "refused": true,
+    "python": {
+      "refused": false,
+      "status": 200,
+      "body": "ok",
+      "source_paths": [
+        "/api/start",
+        "/api/..%5Clanding"
+      ],
+      "external_paths": [],
+      "forbidden": 0
+    }
+  },
+  {
+    "name": "escape-hop-3",
+    "start": "{origin}/api/start",
+    "locations": [
+      "/api/step1",
+      "/api/step2",
+      "{external}/landing"
+    ],
+    "refused": true,
+    "python": {
+      "refused": true,
+      "error_class": "ValueError",
+      "error": "Internal API redirect leaves its origin",
+      "source_paths": [
+        "/api/start",
+        "/api/step1",
+        "/api/step2"
+      ],
+      "external_paths": [],
+      "forbidden": 0
+    }
+  },
+  {
+    "name": "escape-hop-5",
+    "start": "{origin}/api/start",
+    "locations": [
+      "/api/step1",
+      "/api/step2",
+      "/api/step3",
+      "/api/step4",
+      "{external}/landing"
+    ],
+    "refused": true,
+    "python": {
+      "refused": true,
+      "error_class": "ValueError",
+      "error": "Internal API redirect leaves its origin",
+      "source_paths": [
+        "/api/start",
+        "/api/step1",
+        "/api/step2",
+        "/api/step3",
+        "/api/step4"
+      ],
+      "external_paths": [],
+      "forbidden": 0
+    }
+  },
+  {
+    "name": "internal-valid",
+    "start": "{origin}/api/start",
+    "locations": [
+      "/api/second"
+    ],
+    "refused": false,
+    "python": {
+      "refused": false,
+      "status": 200,
+      "body": "ok",
+      "source_paths": [
+        "/api/start",
+        "/api/second"
+      ],
+      "external_paths": [],
+      "forbidden": 0
+    }
+  },
+  {
+    "name": "internal-dot-stays-api",
+    "start": "{origin}/api/first/../start",
+    "locations": [
+      "/api/second"
+    ],
+    "refused": false,
+    "python": {
+      "refused": false,
+      "status": 200,
+      "body": "ok",
+      "source_paths": [
+        "/api/start",
+        "/api/second"
+      ],
+      "external_paths": [],
+      "forbidden": 0
+    }
+  },
+  {
+    "name": "internal-encoded-name",
+    "start": "{origin}/api/name%20part",
+    "locations": [],
+    "refused": false,
+    "python": {
+      "refused": false,
+      "status": 200,
+      "body": "ok",
+      "source_paths": [
+        "/api/name%20part"
+      ],
+      "external_paths": [],
+      "forbidden": 0
+    }
+  },
+  {
+    "name": "ordinary-external",
+    "start": "{external}/source",
+    "locations": [],
+    "refused": false,
+    "python": {
+      "refused": false,
+      "status": 200,
+      "body": "ok",
+      "source_paths": [],
+      "external_paths": [
+        "/source"
+      ],
+      "forbidden": 0
+    }
+  }
+]

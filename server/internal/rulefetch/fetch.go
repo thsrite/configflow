@@ -117,11 +117,13 @@ func internalRuleBase(rawURL string, config *jsonx.Object, hostURL string) (*url
 		if parsed == nil {
 			// Parsed only when there is a base to compare with.
 			var err error
-			if parsed, err = parseRuleURL(rawURL); err != nil {
+			// Classification must retain the caller's API prefix before any
+			// transport dot-normalization can remove it.
+			if parsed, err = weburl.Parse(rawURL); err != nil {
 				return nil, false, err
 			}
 		}
-		o, err := parseRuleURL(base)
+		o, err := weburl.Parse(base)
 		if err != nil {
 			return nil, false, err
 		}
@@ -137,7 +139,8 @@ func internalRuleBase(rawURL string, config *jsonx.Object, hostURL string) (*url
 			continue
 		}
 		prefix := strings.TrimRight(weburl.RawPath(o), "/") + "/api/"
-		if strings.HasPrefix(weburl.RawPath(parsed), prefix) {
+		decodedPrefix := strings.TrimRight(o.Path, "/") + "/api/"
+		if strings.HasPrefix(weburl.RawPath(parsed), prefix) || strings.HasPrefix(parsed.Path, decodedPrefix) {
 			return o, true, nil
 		}
 	}
@@ -297,15 +300,15 @@ func (c *Client) requestOnce(ctx context.Context, url string, r *Request, config
 		maxRedirects = *r.MaxRedirects
 	}
 	current := url
+	var boundary *internalBoundary
 	for hop := 0; hop <= maxRedirects; hop++ {
-		parsed, err := ValidateRuleURL(current)
+		parsed, base, nextBoundary, err := prepareRuleTarget(current, config, r.HostURL, boundary)
 		if err != nil {
 			return nil, err
 		}
-		base, internal, err := internalRuleBase(current, config, r.HostURL)
-		if err != nil {
-			return nil, err
-		}
+		boundary = nextBoundary
+		current = parsed.String()
+		internal := base != nil
 		proxy, err := RuleRequestProxy(current, config, r.HostURL)
 		if err != nil {
 			return nil, err
@@ -362,33 +365,15 @@ func (c *Client) requestOnce(ctx context.Context, url string, r *Request, config
 			if err != nil {
 				return "", err
 			}
-			targetParts, err := ValidateRuleURL(target)
+			targetParts, _, nextBoundary, err := prepareRuleTarget(target, config, r.HostURL, boundary)
 			if err != nil {
 				return "", err
 			}
-			if internal {
-				left, err := originOf(parsed)
-				if err != nil {
-					return "", err
-				}
-				right, err := originOf(targetParts)
-				if err != nil {
-					return "", err
-				}
-				targetInternal := false
-				if left == right {
-					if targetInternal, err = IsInternalRuleURLChecked(target, config, r.HostURL); err != nil {
-						return "", err
-					}
-				}
-				if !targetInternal {
-					return "", errors.New("Internal API redirect leaves its origin")
-				}
-			}
+			boundary = nextBoundary
 			if hop == maxRedirects {
 				return "", errors.New("Too many redirects")
 			}
-			return target, nil
+			return targetParts.String(), nil
 		}()
 		if err != nil {
 			return nil, err
