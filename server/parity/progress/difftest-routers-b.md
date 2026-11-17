@@ -64,3 +64,12 @@ DATA_DIR binds; real Python -m backend.app. Stateful fakes and transcript-gated
 lock holder must be ready before device cases. Need strict comparator mutation
 self-checks and physically meaningful Python precondition checks before ledger
 entries count as compared/unimplemented. Do not treat inventory as coverage.
+
+Foundation build/seed step completed on .32: production Go public command builds
+with only its no-op manifest hook observed (no proddiff tag/lifecycle patch).
+`RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python -m unittest -v test_inventory test_seed; routerdiff_build=$(mktemp -d /tmp/routerdiff-build.XXXXXX); ~/cf-test/.venv/bin/python build.py "$routerdiff_build"'`
+→ Ran 4 tests in 0.292s / OK; /tmp/routerdiff-build.AybfCK/configflow.
+Read Python routers.py through line 825 (including all policy/workspace/manual
+route/rule-sync handlers), routeros.py 1–260 and ikuai.py 1–230. Config Step B
+native namespace wrapper read as infrastructure reference only. No HTTP coverage
+yet; only the synthetic repository import and build boundary are validated.
