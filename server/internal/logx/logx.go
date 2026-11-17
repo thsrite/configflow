@@ -18,8 +18,7 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"configflow/internal/jsonx"
+	"unicode"
 )
 
 // Level is a Python logging level number.
@@ -277,7 +276,7 @@ func LogText(value any, limit int) string {
 	case fmt.Stringer:
 		text = v.String()
 	default:
-		text = jsonx.Str(value)
+		text = fmt.Sprint(value)
 	}
 	var b strings.Builder
 	count := 0
@@ -300,8 +299,9 @@ func LogText(value any, limit int) string {
 	return b.String()
 }
 
-// IsPrintable is str.isprintable() for one character (Python 3.11, Unicode 14).
-func IsPrintable(r rune) bool { return jsonx.IsPrintable(r) }
+// IsPrintable accepts visible Unicode letters, marks, numbers, punctuation and
+// symbols plus ASCII space. Whitespace and invisible controls cannot forge logs.
+func IsPrintable(r rune) bool { return r == ' ' || unicode.IsGraphic(r) && !unicode.IsSpace(r) }
 
 // ClientIP is client_ip(): the request source for operation logs, X-Real-IP
 // (set by nginx) or else the socket address, through LogText with limit 64.

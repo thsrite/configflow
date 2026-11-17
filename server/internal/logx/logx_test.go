@@ -19,7 +19,7 @@ func TestLogTextNeutralizesLineBreaksAndBoundsLength(t *testing.T) {
 	if got := LogText(strings.Repeat("x", 200), 10); got != strings.Repeat("x", 10)+"…" {
 		t.Errorf("got %q", got)
 	}
-	if got := LogText(nil, 120); got != "None" {
+	if got := LogText(nil, 120); got != "<nil>" {
 		t.Errorf("got %q", got)
 	}
 	if got := LogText(strings.Repeat("例", 10), 10); got != strings.Repeat("例", 10) {
@@ -33,7 +33,7 @@ func TestLogTextNeutralizesLineBreaksAndBoundsLength(t *testing.T) {
 	}
 }
 
-func TestIsPrintableMatchesPython(t *testing.T) {
+func TestIsPrintableRejectsInvisibleCharacters(t *testing.T) {
 	printable := []rune{' ', 'a', '~', 'é', '例', '🚀', '­' + 0, 0xFFFD, 0x20AC}
 	for _, r := range printable {
 		if r == 0xAD {
