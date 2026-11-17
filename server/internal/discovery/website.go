@@ -1,6 +1,7 @@
 package discovery
 
 import (
+	"configflow/internal/lifecycle"
 	"context"
 	"fmt"
 )
@@ -30,6 +31,7 @@ func websiteCandidates(domain string, h *Host) []ProbeTarget {
 
 // StartWebsite identifies only domains recently collected by eligible Agents.
 func StartWebsite(ctx context.Context, id string, values []string) (*Job, error) {
+	ctx = lifecycle.Detach(ctx)
 	values, err := cleanValues(values)
 	if err != nil {
 		return nil, err

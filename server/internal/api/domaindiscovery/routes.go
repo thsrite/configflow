@@ -2,7 +2,6 @@
 package domaindiscovery
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 
@@ -82,7 +81,7 @@ func settings(c *httpx.Ctx) (*httpx.Response, error) {
 	return response(200, v, e)
 }
 func updateSettings(c *httpx.Ctx) (*httpx.Response, error) {
-	v, e := discovery.UpdateSettings(context.WithoutCancel(c.Context()), c.ProfileID, body(c))
+	v, e := discovery.UpdateSettings(c.Context(), c.ProfileID, body(c))
 	return response(200, v, e)
 }
 func initRulesets(c *httpx.Ctx) (*httpx.Response, error) {
@@ -96,7 +95,7 @@ func initRulesets(c *httpx.Ctx) (*httpx.Response, error) {
 			return nil, repo.NewValidationError(msgTargets)
 		}
 	}
-	v, e := discovery.InitRulesets(context.WithoutCancel(c.Context()), c.ProfileID, targets, text(p, "proxy_policy"))
+	v, e := discovery.InitRulesets(c.Context(), c.ProfileID, targets, text(p, "proxy_policy"))
 	return response(200, v, e)
 }
 func domains(c *httpx.Ctx) (*httpx.Response, error) {
@@ -113,7 +112,7 @@ func agents(c *httpx.Ctx) (*httpx.Response, error) {
 	return response(200, v, e)
 }
 func apply(c *httpx.Ctx) (*httpx.Response, error) {
-	ctx := context.WithoutCancel(c.Context())
+	ctx := c.Context()
 	p, err := payload(c)
 	if err != nil {
 		return nil, err
@@ -134,7 +133,7 @@ func undo(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	v, e := discovery.UndoDomain(context.WithoutCancel(c.Context()), c.ProfileID, text(p, "value"), text(p, "target"))
+	v, e := discovery.UndoDomain(c.Context(), c.ProfileID, text(p, "value"), text(p, "target"))
 	return response(200, map[string]any{"removed": v}, e)
 }
 func history(c *httpx.Ctx) (*httpx.Response, error) {
@@ -146,7 +145,7 @@ func ignore(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	v, e := discovery.UpdateIgnored(context.WithoutCancel(c.Context()), c.ProfileID, values(p, "values"), c.Request.Method == "POST")
+	v, e := discovery.UpdateIgnored(c.Context(), c.ProfileID, values(p, "values"), c.Request.Method == "POST")
 	return response(200, map[string]any{"ignored": v}, e)
 }
 func jobResponse(c *httpx.Ctx, j *discovery.Job, err error) (*httpx.Response, error) {
@@ -169,7 +168,7 @@ func probe(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	j, e := discovery.StartProbe(context.WithoutCancel(c.Context()), c.ProfileID, values(p, "domains"))
+	j, e := discovery.StartProbe(c.Context(), c.ProfileID, values(p, "domains"))
 	return jobResponse(c, j, e)
 }
 func getProbe(c *httpx.Ctx) (*httpx.Response, error) {
@@ -196,7 +195,7 @@ func checkRegion(c *httpx.Ctx) (*httpx.Response, error) {
 	if v, ok := p["domains"]; ok && discovery.JSONOptionEnabled(v) && vs == nil {
 		return nil, repo.NewValidationError(msgDomains)
 	}
-	j, e := discovery.StartRegion(context.WithoutCancel(c.Context()), c.ProfileID, services, vs)
+	j, e := discovery.StartRegion(c.Context(), c.ProfileID, services, vs)
 	return jobResponse(c, j, e)
 }
 func routeRegion(c *httpx.Ctx) (*httpx.Response, error) {
@@ -204,15 +203,15 @@ func routeRegion(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	v, e := discovery.RouteToPolicy(context.WithoutCancel(c.Context()), c.ProfileID, text(p, "kind"), text(p, "value"), text(p, "policy"))
+	v, e := discovery.RouteToPolicy(c.Context(), c.ProfileID, text(p, "kind"), text(p, "value"), text(p, "policy"))
 	return response(200, v, e)
 }
 func website(c *httpx.Ctx) (*httpx.Response, error) {
 	p, _ := payload(c)
-	j, e := discovery.StartWebsite(context.WithoutCancel(c.Context()), c.ProfileID, values(p, "domains"))
+	j, e := discovery.StartWebsite(c.Context(), c.ProfileID, values(p, "domains"))
 	return jobResponse(c, j, e)
 }
 func note(c *httpx.Ctx) (*httpx.Response, error) {
-	v, e := discovery.SaveWebsiteNote(context.WithoutCancel(c.Context()), c.ProfileID, body(c))
+	v, e := discovery.SaveWebsiteNote(c.Context(), c.ProfileID, body(c))
 	return response(200, v, e)
 }

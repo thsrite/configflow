@@ -2,6 +2,7 @@ package subscriptions
 
 // All calls to packages that still expose jsonx documents are confined here.
 import (
+	"configflow/internal/lifecycle"
 	"context"
 	"encoding/json"
 	"errors"
@@ -72,6 +73,7 @@ func listShared(ctx context.Context) ([]object, []object, error) {
 	return subs, nodes, err
 }
 func editSubscriptions(ctx context.Context, mutate func([]object) ([]object, error)) error {
+	ctx = lifecycle.Detach(ctx)
 	_, err := repo.UpdateSharedConfigTransaction(ctx, func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
 		list, err := nativeObjects(shared.GetList("subscriptions"))
 		if err != nil {
@@ -96,6 +98,7 @@ func editSubscriptions(ctx context.Context, mutate func([]object) ([]object, err
 	return err
 }
 func appendImported(ctx context.Context, nodes []object) (int, error) {
+	ctx = lifecycle.Detach(ctx)
 	added := 0
 	_, err := repo.UpdateSharedConfigTransaction(ctx, func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
 		existing := shared.GetList("nodes")
@@ -200,6 +203,7 @@ func usage(ctx context.Context, id string) (*httpx.Response, error) {
 	return httpx.JSON(v), err
 }
 func forgetTask(ctx context.Context, id string) error {
+	ctx = lifecycle.Detach(ctx)
 	r, err := repo.GetRepository(ctx)
 	if err != nil {
 		return err
@@ -207,6 +211,7 @@ func forgetTask(ctx context.Context, id string) error {
 	return notifications.TaskStatus(ctx, r.DataDir()).Forget(refresh.SubscriptionKey(id))
 }
 func forgetSubscription(ctx context.Context, id string) error {
+	ctx = lifecycle.Detach(ctx)
 	if err := refresh.Forget(ctx, id); err != nil {
 		return err
 	}
@@ -217,6 +222,7 @@ func forgetSubscription(ctx context.Context, id string) error {
 	return err
 }
 func refreshSubscription(ctx context.Context, sub object) ([]object, *cache, error) {
+	ctx = lifecycle.Detach(ctx)
 	o, err := legacyObject(sub)
 	if err != nil {
 		return nil, nil, err
@@ -314,6 +320,7 @@ func (d *delivery) adapt(ctx context.Context, sub object, proxies []object, chai
 	return nativeObjects(out)
 }
 func fetchRaw(ctx context.Context, sub object) ([]object, *substore.SubscriptionResult, error) {
+	ctx = lifecycle.Detach(ctx)
 	o, err := legacyObject(sub)
 	if err != nil {
 		return nil, nil, err
@@ -514,6 +521,7 @@ func (d *delivery) serve(c *httpx.Ctx, id string, render provider.Render) (*http
 	return provider.ServeProvider(c, "subscription", id, d.profileID, d.config, render)
 }
 func recordFetch(ctx context.Context, id string, ok, fromCache bool, count int) error {
+	ctx = lifecycle.Detach(ctx)
 	_, err := refresh.RecordFetch(ctx, id, refresh.FetchRecord{OK: ok, FromCache: fromCache, Count: jsonx.Int(int64(count))})
 	return err
 }

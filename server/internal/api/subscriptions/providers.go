@@ -86,7 +86,7 @@ func combinedProxies(c *httpx.Ctx) (*httpx.Response, error) {
 	if rejected, err := authorize(c); err != nil || rejected != nil {
 		return rejected, err
 	}
-	ctx := materializeContext(context.WithoutCancel(c.Context()))
+	ctx := materializeContext(c.Context())
 	delivery, list, err := resource(ctx, nil)
 	if err != nil {
 		return providerFailure(err)

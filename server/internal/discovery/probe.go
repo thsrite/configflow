@@ -1,6 +1,7 @@
 package discovery
 
 import (
+	"configflow/internal/lifecycle"
 	"context"
 	"fmt"
 	"sort"
@@ -228,6 +229,7 @@ func runProbes(ctx context.Context, id string, values []string, progress func(in
 
 // StartProbe starts an exclusive asynchronous probe job.
 func StartProbe(ctx context.Context, id string, values []string) (*Job, error) {
+	ctx = lifecycle.Detach(ctx)
 	values, err := cleanValues(values)
 	if err != nil {
 		return nil, err

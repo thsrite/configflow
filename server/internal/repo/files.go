@@ -209,7 +209,7 @@ func (r *Repository) SharedRulesDir() (string, error) { return r.SharedPath("rul
 // SharedCacheDir is shared_cache_dir().
 func (r *Repository) SharedCacheDir() (string, error) { return r.CacheDir("") }
 
-// ReadSharedJSON is read_shared_json (under "<file>.lock").
+// ReadSharedJSON reads shared JSON under its bounded in-process leaf lock.
 func (r *Repository) ReadSharedJSON(ctx context.Context, relativePath string) (result *jsonx.Object, err error) {
 	path, err := r.SharedPath(relativePath)
 	if err != nil {
@@ -312,7 +312,7 @@ func (r *Repository) profileOperationLockPath(profileID string) (string, error) 
 
 // writeProfileFile is the common body of write_generated, write_profile_json
 // and write_profile_text: under the profile's operation lock, check that the
-// profile exists, then write under "<file>.lock".
+// profile exists, then write under its bounded in-process file leaf lock.
 func (r *Repository) writeProfileFile(ctx context.Context, profileID, path string, write func() error) error {
 	ctx = ctxx.Detach(ctx)
 	return r.withProfileOperation(ctx, profileID, func(held context.Context) error {
@@ -326,6 +326,7 @@ func (r *Repository) writeProfileFile(ctx context.Context, profileID, path strin
 // WriteGenerated is write_generated: config.yaml, config.conf or loon.lcf in
 // the profile's generated directory.
 func (r *Repository) WriteGenerated(ctx context.Context, profileID, filename string, content []byte) (string, error) {
+	ctx = ctxx.Detach(ctx)
 	if filename != "config.yaml" && filename != "config.conf" && filename != "loon.lcf" {
 		return "", validationError("Invalid generated filename")
 	}
@@ -339,6 +340,7 @@ func (r *Repository) WriteGenerated(ctx context.Context, profileID, filename str
 
 // WriteProfileJSON is write_profile_json.
 func (r *Repository) WriteProfileJSON(ctx context.Context, profileID, relativePath string, data any) (string, error) {
+	ctx = ctxx.Detach(ctx)
 	path, err := r.ProfilePath(profileID, relativePath)
 	if err != nil {
 		return "", err
@@ -357,6 +359,7 @@ func (r *Repository) ReadProfileJSON(profileID, relativePath string) (*jsonx.Obj
 
 // WriteProfileText is write_profile_text.
 func (r *Repository) WriteProfileText(ctx context.Context, profileID, relativePath string, content []byte) (string, error) {
+	ctx = ctxx.Detach(ctx)
 	path, err := r.ProfilePath(profileID, relativePath)
 	if err != nil {
 		return "", err

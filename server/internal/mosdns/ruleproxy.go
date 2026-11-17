@@ -5,6 +5,7 @@ package mosdns
 // glue is in internal/api/mosdns.
 
 import (
+	"configflow/internal/lifecycle"
 	"context"
 	"errors"
 	"fmt"
@@ -188,7 +189,7 @@ func failure(status int, message string) *RuleProxyResponse {
 // is a 502 rather than an old cache (it could roll devices back). ctx must
 // carry the request's repository scope.
 func RuleProxy(ctx context.Context, request RuleProxyRequest) *RuleProxyResponse {
-	ctx = context.WithoutCancel(ctx) // cache writes and task records finish
+	ctx = lifecycle.Detach(ctx) // cache writes and task records finish
 	response, err := ruleProxy(ctx, request)
 	if err == nil {
 		return response

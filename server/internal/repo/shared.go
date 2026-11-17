@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"configflow/internal/ctxx"
 	"context"
 	"crypto/subtle"
 	"errors"
@@ -45,6 +46,7 @@ func (r *Repository) GetSharedWithSource(ctx context.Context) (result, source *j
 // outcome of the commit is unknown the cache is kept and the error is
 // ErrRuleLibraryCreationUncertain.
 func (r *Repository) CreateRuleLibraryItem(ctx context.Context, rule *jsonx.Object, content []byte) (*jsonx.Object, error) {
+	ctx = ctxx.Detach(ctx)
 	if _, err := itemsByID([]any{rule}, "rule_library"); err != nil {
 		return nil, err
 	}
@@ -162,6 +164,7 @@ func (r *Repository) applySharedLocked(ctx context.Context, document *jsonx.Obje
 // of the shared section; the SharedFields of its result are stored and the
 // revision advances by one. It returns a copy of the committed section.
 func (r *Repository) UpdateSharedTransaction(ctx context.Context, updater Updater) (*jsonx.Object, error) {
+	ctx = ctxx.Detach(ctx)
 	var proposed *jsonx.Object
 	err := r.update(ctx, writeOptions{}, func(ctx context.Context, document *jsonx.Object) error {
 		var err error
@@ -176,6 +179,7 @@ func (r *Repository) UpdateSharedTransaction(ctx context.Context, updater Update
 
 // SaveShared is save_shared(snapshot, baseline).
 func (r *Repository) SaveShared(ctx context.Context, snapshot, baseline *jsonx.Object) (*jsonx.Object, error) {
+	ctx = ctxx.Detach(ctx)
 	if snapshot == nil {
 		return nil, validationError("Shared data must be an object")
 	}
@@ -221,6 +225,7 @@ func Profiles(ids ...string) ProfileSelector {
 // the updated profiles (an object keyed by profile id, in selection order).
 func (r *Repository) UpdateSharedAndProfilesTransaction(ctx context.Context, sharedUpdater Updater,
 	profileUpdater ProfileUpdater, profileIDs ProfileSelector) (shared, profiles *jsonx.Object, err error) {
+	ctx = ctxx.Detach(ctx)
 	err = r.update(ctx, writeOptions{}, func(ctx context.Context, document *jsonx.Object) error {
 		chosen, err := profileIDs(document.GetObject("shared"), document.GetObject("profiles"))
 		if err != nil {
@@ -322,6 +327,7 @@ var confirmationPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 // in one transaction, provided the plan still has the reviewed
 // confirmation digest.
 func (r *Repository) DeleteNodesWithReferences(ctx context.Context, nodeIDs any, confirmation string) (preview *jsonx.Object, err error) {
+	ctx = ctxx.Detach(ctx)
 	if !confirmationPattern.MatchString(confirmation) {
 		return nil, validationError("请先查看并确认删除影响")
 	}

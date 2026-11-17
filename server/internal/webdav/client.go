@@ -238,6 +238,7 @@ func (c *client) remove(ctx context.Context, remote string) error {
 
 // Test checks the root, then recursively creates the requested directory.
 func (s *Service) Test(ctx context.Context, settings Settings) (bool, error) {
+	ctx = lifecycle.Detach(ctx)
 	c, err := s.client(settings)
 	if err != nil {
 		return false, err

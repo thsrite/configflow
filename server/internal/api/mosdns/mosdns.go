@@ -90,7 +90,7 @@ func body(c *httpx.Ctx, allowEmpty bool) (map[string]json.RawMessage, error) {
 }
 
 func (s section) handle(c *httpx.Ctx) (*httpx.Response, error) {
-	ctx := context.WithoutCancel(c.Context())
+	ctx := c.Context()
 	config, err := repo.GetConfig(ctx, "")
 	if err != nil {
 		return nil, err
@@ -221,7 +221,7 @@ func intOf(raw json.RawMessage, def int64) *big.Int {
 }
 
 func saveSettings(c *httpx.Ctx) (*httpx.Response, error) {
-	ctx := context.WithoutCancel(c.Context())
+	ctx := c.Context()
 	var data map[string]json.RawMessage
 	if raw, err := c.Data(); err != nil || !c.IsJSON() || json.Unmarshal(raw, &data) != nil || data == nil {
 		return nil, repo.NewValidationError("MosDNS 设置必须是 JSON 对象")

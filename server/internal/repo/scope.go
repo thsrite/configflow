@@ -10,6 +10,7 @@ package repo
 // GetConfig reads the repository every time and saves have no merge baseline.
 
 import (
+	"configflow/internal/ctxx"
 	"context"
 	"os"
 	"strings"
@@ -429,6 +430,7 @@ func LoadConfig(ctx context.Context) (*jsonx.Object, error) {
 // PrepareConfig performs configuration startup preparation without initializing
 // the Agent manager. The server orders that work as a separate Startup step.
 func PrepareConfig(ctx context.Context) (*jsonx.Object, error) {
+	ctx = ctxx.Detach(ctx)
 	if err := prepareConfig(ctx); err != nil {
 		return nil, err
 	}
@@ -467,6 +469,7 @@ func prepareConfig(ctx context.Context) error {
 // of config (nil: the Scope's snapshot from GetConfig), merged against the
 // baseline captured when the profile was read in this Scope.
 func SaveConfig(ctx context.Context, config *jsonx.Object, profileID string) error {
+	ctx = ctxx.Detach(ctx)
 	_, err := saveConfig(ctx, config, profileID, true)
 	return err
 }
@@ -504,6 +507,7 @@ func saveConfig(ctx context.Context, config *jsonx.Object, profileID string, sna
 // and return the exact committed version for an optional push:
 // {expected_profile_id, expected_service_type, expected_config_revision}.
 func SaveConfigWithPublishGuard(ctx context.Context, config *jsonx.Object, serviceType, profileID string) (*jsonx.Object, error) {
+	ctx = ctxx.Detach(ctx)
 	saved, err := saveConfig(ctx, config, profileID, false)
 	if err != nil {
 		return nil, err
@@ -517,6 +521,7 @@ func SaveConfigWithPublishGuard(ctx context.Context, config *jsonx.Object, servi
 // it returns a copy of the stored profile. The Scope's snapshot of that
 // profile is dropped.
 func UpdateConfigTransaction(ctx context.Context, updater Updater, profileID string) (*jsonx.Object, error) {
+	ctx = ctxx.Detach(ctx)
 	resolvedID, err := ResolveProfileID(ctx, profileID)
 	if err != nil {
 		return nil, err
@@ -540,6 +545,7 @@ func UpdateConfigTransaction(ctx context.Context, updater Updater, profileID str
 
 // SafeImportConfig is safe_import_config(new_data, profile_id).
 func SafeImportConfig(ctx context.Context, newData *jsonx.Object, profileID string) error {
+	ctx = ctxx.Detach(ctx)
 	resolvedID, err := ResolveProfileID(ctx, profileID)
 	if err != nil {
 		return err
@@ -585,6 +591,7 @@ func GetSharedConfig(ctx context.Context) (*jsonx.Object, error) {
 // SaveSharedConfig is save_shared_config(config, baseline); a nil baseline
 // uses the one captured by GetSharedConfig in this Scope, if any.
 func SaveSharedConfig(ctx context.Context, config, base *jsonx.Object) error {
+	ctx = ctxx.Detach(ctx)
 	repository, err := GetRepository(ctx)
 	if err != nil {
 		return err
@@ -603,6 +610,7 @@ func SaveSharedConfig(ctx context.Context, config, base *jsonx.Object) error {
 
 // UpdateSharedConfigTransaction is update_shared_config_transaction.
 func UpdateSharedConfigTransaction(ctx context.Context, updater Updater) (*jsonx.Object, error) {
+	ctx = ctxx.Detach(ctx)
 	repository, err := GetRepository(ctx)
 	if err != nil {
 		return nil, err
@@ -620,6 +628,7 @@ func UpdateSharedConfigTransaction(ctx context.Context, updater Updater) (*jsonx
 // profileIDs selects the request's profile.
 func UpdateSharedAndConfigTransaction(ctx context.Context, sharedUpdater Updater, updater ProfileUpdater,
 	profileIDs ProfileSelector) (shared, profiles *jsonx.Object, err error) {
+	ctx = ctxx.Detach(ctx)
 	if profileIDs == nil {
 		resolvedID, err := ResolveProfileID(ctx, "")
 		if err != nil {
@@ -658,6 +667,7 @@ func GetSystemConfig(ctx context.Context) (*jsonx.Object, error) {
 // SaveSystemConfig is save_system_config(config, baseline); a nil baseline
 // uses the one captured by GetSystemConfig in this Scope, if any.
 func SaveSystemConfig(ctx context.Context, config, base *jsonx.Object) error {
+	ctx = ctxx.Detach(ctx)
 	repository, err := GetRepository(ctx)
 	if err != nil {
 		return err

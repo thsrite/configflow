@@ -1,6 +1,7 @@
 package substore
 
 import (
+	"configflow/internal/lifecycle"
 	"context"
 	"fmt"
 	"math"
@@ -237,6 +238,7 @@ func (c *Client) deleteSubscription(ctx context.Context, base, subID string) {
 // least 60 s when the upstream answered 403/429). The shared result must
 // not be modified.
 func (c *Client) GetSubscriptionProxiesYAML(ctx context.Context, subID, url, target string, opts FetchOptions) (*SubscriptionResult, error) {
+	ctx = lifecycle.Detach(ctx)
 	if target == "" {
 		target = "ClashMeta"
 	}
@@ -494,6 +496,7 @@ func (c *Client) ConvertProxyString(ctx context.Context, proxyString string) *js
 // Successful results are remembered per bundled Sub-Store version (LRU of
 // NodeConversionLimit); callers get their own copy.
 func (c *Client) ConvertProxyStringTarget(ctx context.Context, proxyString, target string) *jsonx.Object {
+	ctx = lifecycle.Detach(ctx)
 	version := c.nodeConversionVersion()
 	key := convKey{version, target, proxyString}
 	if version != "" {

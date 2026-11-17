@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"configflow/internal/agents"
+	"configflow/internal/ctxx"
 	"configflow/internal/lifecycle"
 	"context"
 	"encoding/json"
@@ -165,7 +166,7 @@ func (p *Previews) root() string { return filepath.Join(p.dataDir, ".generated-p
 // Save writes a private artifact and evicts oldest/expired entries atomically
 // under L4. Archive and source metadata both count toward the quota.
 func (p *Previews) Save(ctx context.Context, in PreviewInput) (*Preview, error) {
-	ctx = context.WithoutCancel(ctx)
+	ctx = lifecycle.Detach(ctx)
 	key, err := randomID()
 	if err != nil {
 		return nil, err
@@ -223,6 +224,7 @@ func (p *Previews) Save(ctx context.Context, in PreviewInput) (*Preview, error) 
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	ctx = ctxx.Uninterruptible(ctx)
 	if err = privateDir(p.root()); err != nil {
 		return nil, err
 	}

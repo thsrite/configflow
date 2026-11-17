@@ -1,7 +1,6 @@
 package subscriptions
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -31,7 +30,7 @@ func healthImpact(c *httpx.Ctx) (*httpx.Response, error) {
 	return usage(c.Context(), c.Param("resource_id"))
 }
 func handleSubscriptions(c *httpx.Ctx) (*httpx.Response, error) {
-	ctx := context.WithoutCancel(c.Context())
+	ctx := c.Context()
 	list, _, err := listShared(ctx)
 	if err != nil {
 		return nil, err
@@ -94,7 +93,7 @@ func handleSubscriptions(c *httpx.Ctx) (*httpx.Response, error) {
 	}{true, sub}), err
 }
 func handleSubscription(c *httpx.Ctx) (*httpx.Response, error) {
-	ctx := context.WithoutCancel(c.Context())
+	ctx := c.Context()
 	id := c.Param("sub_id")
 	deleting := c.Request.Method == "DELETE"
 	// Python checks existence before decoding a PUT body.
@@ -184,7 +183,7 @@ func (e *reorderError) Error() string {
 	return fmt.Sprintf(msgMissingIDs, "["+strings.Join(quoted, ", ")+"]")
 }
 func reorderSubscriptions(c *httpx.Ctx) (*httpx.Response, error) {
-	ctx := context.WithoutCancel(c.Context())
+	ctx := c.Context()
 	body, err := readRequestObject(c)
 	if err != nil {
 		var bad *httpx.HTTPError
@@ -323,7 +322,7 @@ func fetchSubscription(c *httpx.Ctx) (*httpx.Response, error) {
 }
 
 func fetchSubscriptionData(c *httpx.Ctx) (*httpx.Response, error) {
-	ctx := context.WithoutCancel(c.Context())
+	ctx := c.Context()
 	body, err := readRequestObject(c)
 	if err != nil {
 		var bad *httpx.HTTPError

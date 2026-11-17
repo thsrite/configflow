@@ -270,6 +270,7 @@ func ApplyDomains(ctx context.Context, id string, entries []ApplyEntry, source s
 
 // ProbeEvidence picks the strongest actionable probe or latest observation.
 func ProbeEvidence(ctx context.Context, id string, entries []ApplyEntry) (map[string]Probe, error) {
+	ctx = lifecycle.Detach(ctx)
 	as, err := profileAgents(ctx, id)
 	if err != nil {
 		return nil, err
@@ -311,6 +312,7 @@ func betterProbe(a, b Probe) bool {
 
 // UndoDomain removes matching domain lines from the historically selected library.
 func UndoDomain(ctx context.Context, id, value, target string) ([]string, error) {
+	ctx = lifecycle.Detach(ctx)
 	value = CleanDomain(value)
 	if value == "" || (target != "direct" && target != "proxy" && !strings.HasPrefix(target, "policy:")) {
 		return nil, invalid(msgUndo)

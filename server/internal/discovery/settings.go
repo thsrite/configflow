@@ -1,6 +1,7 @@
 package discovery
 
 import (
+	"configflow/internal/lifecycle"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -34,6 +35,7 @@ func invalid(msg string) error { return repo.NewValidationError(msg) }
 
 // UpdateSettings validates and saves a partial settings object.
 func UpdateSettings(ctx context.Context, id string, payload json.RawMessage) (map[string]any, error) {
+	ctx = lifecycle.Detach(ctx)
 	var fields map[string]json.RawMessage
 	if json.Unmarshal(payload, &fields) != nil || fields == nil {
 		return nil, invalid(msgObject)
@@ -170,6 +172,7 @@ func insertRules(rules []ruleConfig, index int, added ...ruleConfig) []ruleConfi
 
 // InitRulesets creates new discovery libraries and references before MATCH.
 func InitRulesets(ctx context.Context, id string, targets []string, proxyPolicy string) (map[string]any, error) {
+	ctx = lifecycle.Detach(ctx)
 	if len(targets) == 0 {
 		targets = []string{"direct", "proxy"}
 	}
@@ -253,6 +256,7 @@ func CleanDomain(value string) string {
 
 // UpdateIgnored adds or removes normalized domains in the bounded ignore list.
 func UpdateIgnored(ctx context.Context, id string, values []string, add bool) ([]string, error) {
+	ctx = lifecycle.Detach(ctx)
 	if len(values) == 0 {
 		return nil, invalid(msgIgnored)
 	}
@@ -290,6 +294,7 @@ func UpdateIgnored(ctx context.Context, id string, values []string, add bool) ([
 
 // SaveWebsiteNote saves or deletes the bounded annotation for a domain.
 func SaveWebsiteNote(ctx context.Context, id string, payload json.RawMessage) (map[string]string, error) {
+	ctx = lifecycle.Detach(ctx)
 	var fields map[string]json.RawMessage
 	if json.Unmarshal(payload, &fields) != nil || fields == nil {
 		return nil, invalid(msgObject)

@@ -238,6 +238,7 @@ func descriptionOf(metadata *jsonx.Object) string {
 // description. A non-empty cloneFrom copies that profile without its
 // routers and client fixed IPs. It returns the new profile's metadata.
 func (r *Repository) CreateProfile(ctx context.Context, metadata *jsonx.Object, cloneFrom string) (*jsonx.Object, error) {
+	ctx = ctxx.Detach(ctx)
 	if metadata == nil {
 		return nil, validationError("Profile metadata must be an object")
 	}
@@ -299,6 +300,7 @@ func (r *Repository) CloneProfile(ctx context.Context, sourceID string, metadata
 // profile's metadata.
 func (r *Repository) ImportClientProfile(ctx context.Context, metadata *jsonx.Object,
 	build func(ctx context.Context, shared *jsonx.Object) (*jsonx.Object, error)) (*jsonx.Object, error) {
+	ctx = ctxx.Detach(ctx)
 	if metadata == nil {
 		return nil, validationError("Profile metadata must be an object")
 	}
@@ -377,6 +379,7 @@ func (r *Repository) ImportClientProfile(ctx context.Context, metadata *jsonx.Ob
 // UpdateProfile is update_profile(profile_id, updates): rename or describe a
 // profile; updates may only hold "name" and "description".
 func (r *Repository) UpdateProfile(ctx context.Context, profileID string, updates *jsonx.Object) (*jsonx.Object, error) {
+	ctx = ctxx.Detach(ctx)
 	if updates == nil {
 		return nil, validationError("只能修改配置名称和说明")
 	}
@@ -649,6 +652,7 @@ func (r *Repository) updateProfileLocked(ctx context.Context, document *jsonx.Ob
 // the profile; its ProfileFields are stored. It returns a copy of the
 // stored profile and the new config revision.
 func (r *Repository) UpdateProfileTransaction(ctx context.Context, profileID string, updater Updater) (saved *jsonx.Object, revision int64, err error) {
+	ctx = ctxx.Detach(ctx)
 	var current *jsonx.Object
 	err = r.update(ctx, writeOptions{}, func(ctx context.Context, document *jsonx.Object) error {
 		var err error
@@ -669,6 +673,7 @@ func (r *Repository) UpdateProfileTransaction(ctx context.Context, profileID str
 // field present in it is merged three-way into the current value; without
 // one a _revision in fields must equal the profile's.
 func (r *Repository) UpdateProfileFields(ctx context.Context, profileID string, fields, baseline *jsonx.Object) (*jsonx.Object, int64, error) {
+	ctx = ctxx.Detach(ctx)
 	if fields == nil {
 		return nil, 0, validationError("Profile fields and baseline must be objects")
 	}
@@ -695,6 +700,7 @@ func (r *Repository) UpdateProfileFields(ctx context.Context, profileID string, 
 
 // SaveProfile is save_profile(profile_id, data, baseline).
 func (r *Repository) SaveProfile(ctx context.Context, profileID string, data, baseline *jsonx.Object) (*jsonx.Object, int64, error) {
+	ctx = ctxx.Detach(ctx)
 	return r.UpdateProfileFields(ctx, profileID, data, baseline)
 }
 
@@ -702,6 +708,7 @@ func (r *Repository) SaveProfile(ctx context.Context, profileID string, data, ba
 // fields from an exported profile (or {"config": profile}); shared resource
 // copies are refused.
 func (r *Repository) ImportProfile(ctx context.Context, profileID string, data *jsonx.Object) (*jsonx.Object, error) {
+	ctx = ctxx.Detach(ctx)
 	if data == nil {
 		return nil, validationError("Imported profile must be an object")
 	}
@@ -778,6 +785,7 @@ func expectedRouterID(expectedRouter *jsonx.Object) (routerID string, isString b
 // caller holds this router's job lock. The stored record must still equal
 // expectedRouter.
 func (r *Repository) SaveRouterSettings(ctx context.Context, profileID string, expectedRouter, replacement *jsonx.Object) error {
+	ctx = ctxx.Detach(ctx)
 	routerID, isString, err := expectedRouterID(expectedRouter)
 	if err != nil {
 		return err
@@ -822,6 +830,7 @@ func (r *Repository) SaveRouterSettings(ctx context.Context, profileID string, e
 // manifest; it cannot delete a router or alter its connection, and
 // unrelated edits made during the device operation are retained.
 func (r *Repository) SaveRouterPublication(ctx context.Context, profileID string, expectedRouter *jsonx.Object, publication RouterPublication) error {
+	ctx = ctxx.Detach(ctx)
 	routerID, isString, err := expectedRouterID(expectedRouter)
 	if err != nil {
 		return err

@@ -1,7 +1,6 @@
 package settings
 
 import (
-	"context"
 	"encoding/json"
 
 	"configflow/internal/httpx"
@@ -16,7 +15,7 @@ func connectionSettings(c *httpx.Ctx, inheritRetention bool) (webdav.Settings, *
 		return webdav.Settings{}, bad, nil
 	}
 	data = data.DeepCopy()
-	saved, err := repo.GetSystemConfig(context.WithoutCancel(c.Context()))
+	saved, err := repo.GetSystemConfig(c.Context())
 	if err != nil {
 		return webdav.Settings{}, nil, err
 	}

@@ -2,7 +2,6 @@ package nodes
 
 import (
 	"bytes"
-	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -74,7 +73,7 @@ func registerCRUD(r *httpx.Router) {
 	r.POST("/api/nodes/delete-preview", "nodes.delete_nodes_with_references", auth.Require(deleteNodes))
 }
 func handleNodes(c *httpx.Ctx) (*httpx.Response, error) {
-	ctx := context.WithoutCancel(c.Context())
+	ctx := c.Context()
 	if c.Request.Method == "GET" {
 		list, err := sharedNodes(ctx)
 		return nativeJSON(200, list), err
@@ -106,7 +105,7 @@ func handleNodes(c *httpx.Ctx) (*httpx.Response, error) {
 	}{true, body}), err
 }
 func handleNode(c *httpx.Ctx) (*httpx.Response, error) {
-	ctx := context.WithoutCancel(c.Context())
+	ctx := c.Context()
 	deleting := c.Request.Method == "DELETE"
 	var body record
 	if !deleting {
@@ -185,7 +184,7 @@ func parseLines(c *httpx.Ctx) (*httpx.Response, error) {
 		Error string          `json:"error,omitempty"`
 	}
 	results := make([]result, len(lines))
-	ctx := context.WithoutCancel(c.Context())
+	ctx := c.Context()
 	for i, line := range lines {
 		if line = strings.TrimSpace(line); line != "" {
 			results[i].Proxy = parseLine(ctx, line)
@@ -218,7 +217,7 @@ func reorderNodes(c *httpx.Ctx) (*httpx.Response, error) {
 	if body == nil {
 		return httpx.Message(400, false, msgBodyObject), nil
 	}
-	order, _, err := reorderNodesStored(context.WithoutCancel(c.Context()), body)
+	order, _, err := reorderNodesStored(c.Context(), body)
 	var bad *httpx.HTTPError
 	if errors.As(err, &bad) && bad.Code == 400 {
 		return httpx.Message(400, false, bad.Description), nil
@@ -243,7 +242,7 @@ func deleteNodes(c *httpx.Ctx) (*httpx.Response, error) {
 	if body == nil {
 		return httpx.Message(400, false, msgNodeObject), nil
 	}
-	response, err := reviewedDeletion(context.WithoutCancel(c.Context()), body, strings.HasSuffix(c.Path(), "/delete-preview"))
+	response, err := reviewedDeletion(c.Context(), body, strings.HasSuffix(c.Path(), "/delete-preview"))
 	if errors.Is(err, repo.ErrNodeDeletionChanged) {
 		return nativeJSON(409, struct {
 			Success bool   `json:"success"`

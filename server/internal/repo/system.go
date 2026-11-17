@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"configflow/internal/ctxx"
 	"context"
 	"crypto/rand"
 	"encoding/base64"
@@ -284,6 +285,7 @@ func (r *Repository) GetSystemWithSource(ctx context.Context) (result, source *j
 // from its result and the revision advances by one. It returns a copy of
 // the committed section.
 func (r *Repository) UpdateSystemTransaction(ctx context.Context, updater Updater) (result *jsonx.Object, err error) {
+	ctx = ctxx.Detach(ctx)
 	err = r.update(ctx, writeOptions{}, func(ctx context.Context, document *jsonx.Object) error {
 		current := document.GetObject("system")
 		updated, err := applyUpdater(ctx, current.DeepCopy(), updater)
@@ -324,6 +326,7 @@ func revisionConflict(snapshot, current, baseline *jsonx.Object) bool {
 // caller's changes are merged three-way into the current section; without
 // one objects are deep-merged and other values replaced.
 func (r *Repository) SaveSystem(ctx context.Context, snapshot, baseline *jsonx.Object) (*jsonx.Object, error) {
+	ctx = ctxx.Detach(ctx)
 	if snapshot == nil {
 		return nil, validationError("System data must be an object")
 	}

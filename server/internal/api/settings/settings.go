@@ -9,7 +9,6 @@
 package settings
 
 import (
-	"context"
 	"errors"
 	"os"
 	"strings"
@@ -357,7 +356,7 @@ func badRetention(data *jsonx.Object) bool {
 }
 
 func backupConfig(c *httpx.Ctx) (*httpx.Response, error) {
-	ctx := context.WithoutCancel(c.Context())
+	ctx := c.Context()
 	config, err := repo.GetSystemConfig(ctx)
 	if err != nil {
 		return nil, err

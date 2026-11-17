@@ -1,6 +1,7 @@
 package discovery
 
 import (
+	"configflow/internal/lifecycle"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -269,6 +270,7 @@ func runRegion(ctx context.Context, id string, services bool, values []string, p
 
 // StartRegion starts an exclusive service/domain region check.
 func StartRegion(ctx context.Context, id string, services bool, values []string) (*Job, error) {
+	ctx = lifecycle.Detach(ctx)
 	var err error
 	if len(values) > 0 {
 		values, err = cleanValues(values)
@@ -339,6 +341,7 @@ func checkedAt(raw json.RawMessage) string {
 
 // RouteToPolicy prepares a regional ruleset ahead of competing rules and adopts domains.
 func RouteToPolicy(ctx context.Context, id, kind, value, policy string) (ApplyResult, error) {
+	ctx = lifecycle.Detach(ctx)
 	var values []string
 	switch kind {
 	case "service":

@@ -25,6 +25,7 @@ import (
 	"configflow/internal/agents"
 	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
+	"configflow/internal/lockx"
 	"configflow/internal/logx"
 	"configflow/internal/notifications"
 	"configflow/internal/repo"
@@ -49,8 +50,8 @@ const (
 var IntervalChoices = []int64{300, 600, 1800, 3600}
 
 var (
-	// runMu is _run_lock; running is its locked().
-	runMu   sync.Mutex
+	// runMu is the L2 save operation, spanning history I/O and its receipt.
+	runMu   = lockx.NewMutex(lockx.LevelDevice, "metrics-history-save")
 	running atomic.Bool
 	// wake coalesces interval edits without launching overlapping rounds.
 	wake lifecycle.Signal
@@ -289,12 +290,14 @@ func errorText(err error) string {
 // task_status; a failed run keeps the points in memory for the next one and
 // returns the first error.
 func Run(ctx context.Context, trigger string, recordIdle bool) (*jsonx.Object, error) {
-	runMu.Lock()
+	ctx = lifecycle.Detach(ctx)
+	ctx, release, err := runMu.Lock(ctx, 0)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	running.Store(true)
-	defer func() {
-		running.Store(false)
-		runMu.Unlock()
-	}()
+	defer running.Store(false)
 	attempt := utcNow()
 	stateMu.Lock()
 	attemptedAt = &attempt

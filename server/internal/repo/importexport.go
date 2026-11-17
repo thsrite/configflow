@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"configflow/internal/ctxx"
 	"context"
 	"io/fs"
 	"os"
@@ -243,6 +244,7 @@ func (r *Repository) applyImport(previous, document *jsonx.Object, reason string
 // multi-profile backup. The database is first copied to
 // migrations/<ts>-<uuid>/import/. It returns ExportAll.
 func (r *Repository) ImportAll(ctx context.Context, data *jsonx.Object) (*jsonx.Object, error) {
+	ctx = ctxx.Detach(ctx)
 	document, err := r.prepareImport(data)
 	if err != nil {
 		return nil, err
@@ -259,6 +261,7 @@ func (r *Repository) ImportAll(ctx context.Context, data *jsonx.Object) (*jsonx.
 
 // ResetAll is reset_all(): ImportAll of the initial configuration.
 func (r *Repository) ResetAll(ctx context.Context) (*jsonx.Object, error) {
+	ctx = ctxx.Detach(ctx)
 	return r.ImportAll(ctx, r.initialConfig())
 }
 

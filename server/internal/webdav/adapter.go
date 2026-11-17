@@ -77,6 +77,7 @@ func captureDocument(ctx context.Context, r *repo.Repository) (Snapshot, *jsonx.
 // Capture exports the complete configuration for a manual backup. The caller
 // supplies request settings; unrelated malformed saved settings cannot block it.
 func Capture(ctx context.Context) (Snapshot, error) {
+	ctx = lifecycle.Detach(ctx)
 	r, err := repo.GetRepository(ctx)
 	if err != nil {
 		return Snapshot{}, err

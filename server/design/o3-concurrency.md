@@ -460,6 +460,8 @@ Implementation notes: [startup and shutdown](o3-startup-shutdown.md).
 - JobLock missing its routers implementation fails closed; add the rejection regression before
   wiring the real routers-owned Keyed. The old nil-hook implementation actually allowed commits,
   so O3-6 corrects it. Routers writes and that wiring wait until R08/R09 have merged, then rebase.
+- As noted in review-o3, metrics history serialization spans disk I/O and task receipts; record it
+  as an L2 operation lock with cancellation, rather than a short L5 memory mutex.
 - Leave every Python-written lock file untouched. Final acceptance uses server/scripts/gate.sh
   (-p 6 on .64); it includes both tags, full race, all enabled difftests and proddiff.
 - Repo's other resource locks are included: profile operations use L2 Keyed by profile id, shared
@@ -479,7 +481,7 @@ Porters of the missing modules use these names, timings and levels; reviewers ch
 | P2 router-rule-sync | `Periodic{"router-rule-sync", AtBoot, 30s, 30s}` | as Python | worker key `routers:rule-sync` (L1) shared with start_job; job lock (L1); op lock (L2) | 409 `已有规则同步任务正在运行，请稍后重试` before any lookup; round skipped |
 | P3 domain-discovery-auto | `Periodic{…, 120s, 600s}` | as Python | discovery single-job lock (L1) | `ProbeBusy` skipped in rounds |
 | P4 oxidns-ranking-history | `Periodic{…, 60s, 60s}` | as Python | – | – |
-| P5 metrics-history-flush | `Periodic{…, 30s, 30s, Wake}`; `Startup{"metrics-load-history"}`; shutdown hooks at PhaseStopSignal and PhaseAfterDrain | as Python | run lock (L5 memory) | run now uses the task key |
+| P5 metrics-history-flush | `Periodic{…, 30s, 30s, Wake}`; `Startup{"metrics-load-history"}`; shutdown hooks at PhaseStopSignal and PhaseAfterDrain | as Python | save operation Mutex (L2; spans history I/O and receipts) | run now uses the task key |
 | P6 sub-store-idle | `Periodic{…, 0, 5s}` (registered only when built-in Sub-Store exists) | as Python | `work` RWMutex (L2; idle stop = explicit TryLock; conversions shared with 45 s; maintenance exclusive with 90 s), `control` Mutex (L2) | `正忙` texts |
 | P7 dns-follow | `Periodic{…, 0, 5s}` + `agents.IdleRounds` | as Python | `dnsfollow` Mutex (L1, try) for rounds and edits | 409 `DNS 联动正在处理，请稍后重试` |
 | P8 oxidns-ha-publish | `Periodic{…, 0, 2s}` + IdleRounds | as Python | HA Mutex (L1, try); pair then sorted member keys (L1, try) | 409 `DNS 高可用正在处理，请稍后重试`; round skips |

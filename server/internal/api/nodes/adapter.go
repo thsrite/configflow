@@ -2,6 +2,7 @@ package nodes
 
 // This file is the only bridge to the repository's legacy document model.
 import (
+	"configflow/internal/lifecycle"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -49,6 +50,7 @@ func sharedNodes(ctx context.Context) ([]record, error) {
 	return result, err
 }
 func mutateNodes(ctx context.Context, mutate func([]record) ([]record, error)) error {
+	ctx = lifecycle.Detach(ctx)
 	_, err := repo.UpdateSharedConfigTransaction(ctx, func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
 		var nodes []record
 		if err := decodeStored(shared.Value("nodes"), &nodes); err != nil {
@@ -68,6 +70,7 @@ func mutateNodes(ctx context.Context, mutate func([]record) ([]record, error)) e
 	return err
 }
 func reorderNodesStored(ctx context.Context, body record) ([]string, []string, error) {
+	ctx = lifecycle.Detach(ctx)
 	if _, err := rules.OrderIDs(body, "nodes"); err != nil {
 		return nil, nil, httpx.BadRequest(err.Error())
 	}
@@ -99,6 +102,7 @@ func reorderNodesStored(ctx context.Context, body record) ([]string, []string, e
 	return order, missing, err
 }
 func parseLine(ctx context.Context, line string) json.RawMessage {
+	ctx = lifecycle.Detach(ctx)
 	proxy := substore.Default().Client.ConvertProxyString(ctx, line)
 	if proxy == nil {
 		return nil

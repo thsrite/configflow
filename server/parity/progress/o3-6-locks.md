@@ -135,3 +135,30 @@ is preserved inside BeginDeployment. Tests cover Manager copies, interrupted pre
 disconnected request, synthetic failed/panicked/cancelled commits, no new legacy file and unchanged
 legacy bytes/inode/mtime. Normal paths require Violations=0. Removed obsolete lock-path I/O-error
 expectation: that path is now an ignored sentinel. Next: owner/handler cancellation and routers.
+
+Agent leases committedbac4d3f6. Non-router owner cancellation migration is complete and validated:
+HTTP handlers now pass original contexts; discovery edits/probes/jobs, health workers, MosDNS,
+Sub-Store shared fetch/conversion, WebDAV and native adapter owners detach themselves. Repo public
+write entry points also detach before any preparation reads; the existing update transaction uses
+Uninterruptible for its local commit. Deploy preview/receipt file batches explicitly mask the parent
+while holding their leaf lock. The review's metrics note is implemented: its save mutex is recorded
+as L2, waiting with ctx, not held as an L5 memory lock over I/O. Its running flag retains its previous
+meaning (actual admitted Run); no new lockx API. New DNS-I/O/metrics-wait regressions prove disconnect
+survival and shutdown cancellation. No changes to routers or its handlers.
+
+Validation (remote only, gofmt on explicit paths + go vet ./... passed in both):
+- .64 `go test -race -p=6 -count=1 -timeout=20m ./internal/agents/metrics ./internal/api/domaindiscovery ./internal/api/mosdns ./internal/api/nodes ./internal/api/settings ./internal/api/subscriptions ./internal/deploy ./internal/discovery ./internal/health ./internal/mosdns ./internal/substore ./internal/webdav`
+  PASS:10.386s,3.211s,1.037s,22.664s,14.992s,3.791s,59.800s,18.020s,310.735s,181.116s,24.563s,4.966s.
+  Log /tmp/o36-owners.log in this rt copy. Vet first caught an assumed Mutex.Held API; retained the
+  existing running atomic flag and used only the already available Mutex.Lock/ctx contract.
+- .32 `go test -race -p=6 -count=1 -timeout=15m ./internal/repo`: PASS133.022s,
+  log /tmp/o36-repo-owners.log. Earlier repo/resource90.651s remains recorded above.
+
+Remaining dependency: coordinator has not yet notified R08/R09 integration. Latest local go observed
+5680fbb3 (HANDOFF, after4d8a665a R08-release Detach), not the integrated R08/R09 boundary. DO NOT edit
+routers or rebase until the explicit notification. All independent steps are committed; no tests are
+running. When notified: git rebase go, reconcile to integrated routers, reuse its physical connection
+L1 Keyed for repo.JobLock, finish router write/rollback Detach including R04–R07/R09, tests then
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'server/scripts/gate.sh -p 6'` for both tags/full race/
+all difftest/proddiff. Rebase go again if advanced, verify clean; no push/subagents. This is not final
+acceptance and no gate/proddiff has been run for O3-6 yet.

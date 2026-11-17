@@ -1,6 +1,7 @@
 package health
 
 import (
+	"configflow/internal/lifecycle"
 	"context"
 	"fmt"
 	"strings"
@@ -404,7 +405,7 @@ func saveResults(ctx context.Context, results *jsonx.Object) {
 func RunTests(ctx context.Context, names, keys []string) (*jsonx.Object, error) {
 	// A started test finishes and stores its results even when the request
 	// is cancelled (Python's request thread is never interrupted).
-	ctx = context.WithoutCancel(ctx)
+	ctx = lifecycle.Detach(ctx)
 	if !testLock.TryLock() {
 		return nil, &ProbeBusy{"已有节点测速正在进行，请稍后重试"}
 	}

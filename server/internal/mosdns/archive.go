@@ -8,6 +8,7 @@ package mosdns
 import (
 	"archive/zip"
 	"bytes"
+	"configflow/internal/lifecycle"
 	"context"
 	"encoding/json"
 	"errors"
@@ -396,7 +397,7 @@ type fetched struct {
 func BuildMosDNSZip(ctx context.Context, config *jsonx.Object, yamlContent string, downloads []Download, custom []File, opts ArchiveOptions) ([]byte, error) {
 	// Downloads, cache writes and task records finish even when the caller
 	// goes away.
-	ctx = context.WithoutCancel(ctx)
+	ctx = lifecycle.Detach(ctx)
 	config = config.DeepCopy()
 	var snap snapshot
 	if err := viaJSON(config, &snap); err != nil {

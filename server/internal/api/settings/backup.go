@@ -1,7 +1,6 @@
 package settings
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"net/url"
@@ -25,7 +24,7 @@ func testBackup(c *httpx.Ctx) (*httpx.Response, error) {
 	if bad != nil || err != nil {
 		return bad, err
 	}
-	connected, err := webdav.Default().Test(context.WithoutCancel(c.Context()), settings)
+	connected, err := webdav.Default().Test(c.Context(), settings)
 	if err != nil {
 		var directory *webdav.DirectoryError
 		if errors.Is(err, webdav.ErrIncompleteSettings) || errors.Is(err, webdav.ErrUnsafePath) || errors.As(err, &directory) {
@@ -45,7 +44,7 @@ func backupNow(c *httpx.Ctx) (*httpx.Response, error) {
 	if bad != nil || err != nil {
 		return bad, err
 	}
-	ctx := context.WithoutCancel(c.Context())
+	ctx := c.Context()
 	snapshot, err := webdav.Capture(ctx)
 	if err == nil {
 		snapshot.Settings = settings
