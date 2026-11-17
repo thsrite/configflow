@@ -5,6 +5,7 @@ import (
 	"compress/flate"
 	"compress/gzip"
 	"compress/zlib"
+	"configflow/internal/lifecycle"
 	"context"
 	"crypto/x509"
 	"errors"
@@ -356,7 +357,7 @@ func (RequestsClient) Do(ctx context.Context, request *Request) (*Response, erro
 	// Python's worker thread finishes a request even when the browser that
 	// asked has gone: a cancelled request context must not abort a fetch
 	// whose result (or failure cooldown) other callers share.
-	ctx = context.WithoutCancel(ctx)
+	ctx = lifecycle.Detach(ctx)
 	prepared, prepareErr := PrepareURL(strings.TrimLeftFunc(request.URL, pyIsSpace), request.Params)
 	if err := checkURL(prepared); err != nil {
 		return nil, err

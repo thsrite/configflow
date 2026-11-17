@@ -48,3 +48,12 @@ and messages remain unchanged. Shutdown cancellation reaches the Agent client wi
 unreachable-address notice. Test hooks run accepted work through an isolated Runtime rather than inline
 goroutines. Production120s/4s parameters are pinned by tests. .32 gofmt/vet passed; race count3
 upgrades77.511s and api/agents416.954s; after adding tracked regressions upgrades113.664s passed.
+
+Agent follow commit: 7df35b31. Sub-Store update now uses injected Spawner and L1 admission. Refusal,
+panic and completion all release the update key; update state/messages remain compatible. HTTP and
+ExecRunner retain job-aware cancellation and their existing timeouts; leases/polling remain O3-6.
+Fixture jobs use isolated Runtime instances, native empty repositories and no production resources.
+Regressions cover cancelled-request continuation, actual loopback HTTP cancellation, subprocess
+cancellation, refused admission and production500KiB/15s-connect/120s-read bounds. .32 fmt/vet green;
+race3 substore32.298s/settings44.573s, then fixture isolation race1 substore22.125s/settings15.724s;
+final added cancellation regressions with full substore race3 passed55.844s.

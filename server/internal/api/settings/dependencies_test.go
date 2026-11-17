@@ -13,6 +13,7 @@ import (
 
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/jsonx"
+	"configflow/internal/lifecycle"
 	"configflow/internal/substore"
 )
 
@@ -56,7 +57,11 @@ func subStoreWorld(t *testing.T, builtin bool, latestRelease string) *substore.S
 	service := substore.NewService(env)
 	service.Runtime.Directory = filepath.Join(base, "runtime")
 	service.Dependencies.LatestReleaseURL = github.URL + "/repos/sub-store-org/Sub-Store/releases/latest"
-	service.Dependencies.Go = func(fn func()) {}
+	runner := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry(), Grace: 20 * time.Millisecond})
+	runner.Start(context.Background())
+	release := make(chan struct{})
+	service.Dependencies.Spawner = heldUpdateSpawner{runner: runner, release: release}
+	t.Cleanup(func() { close(release); runner.Shutdown(context.Background()) })
 	t.Cleanup(substore.SetDefault(service))
 	return service
 }
@@ -128,4 +133,21 @@ func TestUpdateRoute(t *testing.T) {
 	subStoreWorld(t, false, `{}`)
 	srv.Post("/api/settings/dependencies/sub-store/update").WantStatus(409).
 		WantJSON(jsonx.Obj("success", false, "message", "当前环境没有内置 Sub-Store，无法在线更新"))
+}
+
+// heldUpdateSpawner retains the route's in-progress observation without
+// dropping work: every accepted callback runs once in a tracked goroutine.
+type heldUpdateSpawner struct {
+	runner  *lifecycle.Runtime
+	release <-chan struct{}
+}
+
+func (s heldUpdateSpawner) Spawn(ctx context.Context, name string, fn func(context.Context)) error {
+	return s.runner.Spawn(ctx, name, func(worker context.Context) {
+		select {
+		case <-s.release:
+		case <-worker.Done():
+		}
+		fn(worker)
+	})
 }

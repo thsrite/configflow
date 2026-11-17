@@ -17,6 +17,8 @@ import (
 
 	"configflow/internal/convert"
 	"configflow/internal/jsonx"
+	"configflow/internal/lifecycle"
+	"configflow/internal/lockx"
 	"configflow/internal/logx"
 	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
@@ -49,16 +51,15 @@ type Dependencies struct {
 	LatestReleaseURL string
 	// MinBundleSize is _MIN_BUNDLE_SIZE.
 	MinBundleSize int64
-	// Go starts the background update (threading.Thread); tests run it
-	// synchronously.
-	Go func(func())
+	// Spawner owns detached update work and supplies shutdown cancellation.
+	Spawner lockx.Spawner
 
 	latestMu        sync.Mutex
 	latestCheckedAt float64
 	latestData      *jsonx.Object
 	latestError     string
 
-	updateLock sync.Mutex
+	updateLock *lockx.Mutex
 	stateMu    sync.Mutex
 	state      *jsonx.Object
 }
@@ -67,7 +68,7 @@ type Dependencies struct {
 func NewDependencies(env *Env, runtime *Runtime, client *Client) *Dependencies {
 	return &Dependencies{env: env, runtime: runtime, client: client,
 		LatestReleaseURL: fmt.Sprintf(latestAPIFormat, SubStoreRepo), MinBundleSize: minBundleSize,
-		Go:    func(fn func()) { go fn() },
+		Spawner: lifecycle.DefaultSpawner{}, updateLock: lockx.NewMutex(lockx.LevelJob, "sub-store-update"),
 		state: jsonx.Obj("state", "idle", "message", "", "target_version", "", "finished_at", jsonx.Float(0))}
 }
 
@@ -396,21 +397,21 @@ func (d *Dependencies) downloadBundle(ctx context.Context, release *jsonx.Object
 
 // runUpdate is _run_update (the update lock is held by the caller and
 // released here).
-func (d *Dependencies) runUpdate(ctx context.Context, release *jsonx.Object) {
-	defer d.updateLock.Unlock()
+func (d *Dependencies) runUpdate(ctx context.Context, release *jsonx.Object, unlock func()) {
+	defer unlock()
 	err := func() (err error) {
 		// A panic must not take the server down: Python's thread caught the
 		// exception and recorded the failure.
 		defer func() {
 			if p := recover(); p != nil {
-				err = pyErr("Exception", fmt.Sprint(p))
+				err = pyErr("Exception", "")
 			}
 		}()
 		return d.runtime.Maintenance(ctx, func() error { return d.installRelease(ctx, release) })
 	}()
 	if err != nil {
 		depsLog.Warning("Sub-Store 更新等待失败: " + safeExceptionDetails(err))
-		d.setState("failed", "Sub-Store 正忙或服务不可用，请稍后重试")
+		d.setState("failed", msgUpdateUnavailable)
 	}
 }
 
@@ -608,17 +609,20 @@ func (d *Dependencies) installRelease(ctx context.Context, release *jsonx.Object
 // StartSubStoreUpdate is start_sub_store_update(): start the background
 // update; (ok, message).
 func (d *Dependencies) StartSubStoreUpdate(ctx context.Context) (bool, string) {
+	ctx = lifecycle.Detach(ctx)
 	if !d.env.IsBuiltinAvailable() {
-		return false, "当前环境没有内置 Sub-Store，无法在线更新"
+		return false, msgUpdateNoBuiltin
 	}
-	if !d.updateLock.TryLock() {
-		return false, "已有更新任务在进行中"
+	held, unlock, ok := d.updateLock.TryLock(ctx)
+	if !ok {
+		return false, msgUpdateBusy
 	}
+	ctx = held
 	release, err := func() (*jsonx.Object, error) {
 		release, message := d.FetchLatestRelease(ctx, true)
 		if release == nil {
 			if message == "" {
-				message = "无法获取最新版本"
+				message = msgLatestUnavailable
 			}
 			return nil, pyErr("RuntimeError", message)
 		}
@@ -633,17 +637,24 @@ func (d *Dependencies) StartSubStoreUpdate(ctx context.Context) (bool, string) {
 			}
 		}
 		if current != "" && !IsNewer(release.Value("version"), current) {
-			return nil, pyErr("RuntimeError", "当前已是最新版本 "+current)
+			return nil, pyErr("RuntimeError", fmt.Sprintf(msgAlreadyLatest, current))
 		}
 		return release, nil
 	}()
 	if err != nil {
-		d.updateLock.Unlock()
+		unlock()
 		return false, err.Error()
 	}
 	version := jsonx.Str(release.Value("version"))
-	d.setState("running", "准备更新到 "+version+"…", "target_version", release.Value("version"), "finished_at", jsonx.Float(0))
-	background := context.WithoutCancel(ctx)
-	d.Go(func() { d.runUpdate(background, release) })
-	return true, "开始更新到 " + version
+	d.setState("running", fmt.Sprintf(msgPreparingUpdate, version), "target_version", release.Value("version"), "finished_at", jsonx.Float(0))
+	spawner := d.Spawner
+	if spawner == nil {
+		spawner = lifecycle.DefaultSpawner{}
+	}
+	if err := spawner.Spawn(ctx, "sub-store-update", func(worker context.Context) { d.runUpdate(worker, release, unlock) }); err != nil {
+		unlock()
+		d.setState("failed", msgUpdateUnavailable)
+		return false, msgUpdateUnavailable
+	}
+	return true, fmt.Sprintf(msgStartingUpdate, version)
 }

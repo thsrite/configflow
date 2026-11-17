@@ -2,6 +2,7 @@ package substore
 
 import (
 	"bytes"
+	"configflow/internal/lifecycle"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -83,7 +84,7 @@ type ExecRunner struct{}
 // Run implements CommandRunner.
 func (ExecRunner) Run(ctx context.Context, argv []string, timeout time.Duration) (CommandResult, error) {
 	// subprocess.run is not interrupted when the HTTP client goes away.
-	runCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeout)
+	runCtx, cancel := context.WithTimeout(lifecycle.Detach(ctx), timeout)
 	defer cancel()
 	cmd := exec.CommandContext(runCtx, argv[0], argv[1:]...)
 	var stdout, stderr bytes.Buffer

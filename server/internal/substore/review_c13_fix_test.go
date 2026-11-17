@@ -211,11 +211,16 @@ func TestReviewUpdatePanicIsAFailure(t *testing.T) {
 	h.store.setVersion("2.40.0")
 	d := h.service.Dependencies
 	d.env.HTTP = panickingHTTP{}
-	d.updateLock.Lock()
-	d.runUpdate(context.Background(), jsonx.Obj("version", "2.41.0", "download_url", "https://example.test/x.js"))
-	if !d.updateLock.TryLock() {
+	held, unlock, locked := d.updateLock.TryLock(context.Background())
+	if !locked {
+		t.Fatal("update lock busy")
+	}
+	d.runUpdate(held, jsonx.Obj("version", "2.41.0", "download_url", "https://example.test/x.js"), unlock)
+	_, release, available := d.updateLock.TryLock(context.Background())
+	if !available {
 		t.Fatal("update lock kept")
 	}
+	release()
 	state := d.GetUpdateState()
 	if state.GetString("state") != "failed" || state.GetString("message") != "更新失败：exception_type=Exception" {
 		t.Fatalf("state %s", jsonx.Repr(state))

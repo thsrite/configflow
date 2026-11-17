@@ -17,7 +17,9 @@ import (
 	"time"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
+	"configflow/internal/repo"
 )
 
 // fakeSubStore emulates the Sub-Store endpoints the client and the runtime
@@ -338,6 +340,14 @@ func newHarness(t *testing.T, opts harnessOptions) *harness {
 	base := t.TempDir()
 	h := &harness{t: t, store: newFakeSubStore(t), clock: newFakeClock(), vars: map[string]string{},
 		builtin: filepath.Join(base, "opt"), data: filepath.Join(base, "data")}
+	// Standalone helpers that call GetMode without a bound context must use
+	// this fixture's native repository, never the package directory or another test.
+	repository, err := repo.Open(h.data, repo.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo.SetRepository(repository)
+	t.Cleanup(func() { repo.SetRepository(nil) })
 	h.commands = &fakeCommands{store: h.store, runVersion: opts.version}
 	if h.commands.runVersion == "" {
 		h.commands.runVersion = "2.40.0"
@@ -379,7 +389,10 @@ func newHarness(t *testing.T, opts harnessOptions) *harness {
 	}
 	h.service = NewService(env)
 	h.service.Runtime.Directory = filepath.Join(base, "runtime")
-	h.service.Dependencies.Go = func(fn func()) { fn() }
+	runner := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry(), Grace: 20 * time.Millisecond})
+	runner.Start(context.Background())
+	t.Cleanup(func() { runner.Shutdown(context.Background()) })
+	h.service.Dependencies.Spawner = completingUpdateSpawner{runner}
 	return h
 }
 
@@ -431,4 +444,17 @@ func must[T any](t *testing.T) func(T, error) T {
 		}
 		return v
 	}
+}
+
+// completingUpdateSpawner preserves the old harness's synchronous observations,
+// but actual update work still runs independently under a tracked Runtime.
+type completingUpdateSpawner struct{ runner *lifecycle.Runtime }
+
+func (s completingUpdateSpawner) Spawn(ctx context.Context, name string, fn func(context.Context)) error {
+	done := make(chan struct{})
+	if err := s.runner.Spawn(ctx, name, func(worker context.Context) { defer close(done); fn(worker) }); err != nil {
+		return err
+	}
+	<-done
+	return nil
 }

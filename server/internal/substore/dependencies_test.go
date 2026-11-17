@@ -214,15 +214,19 @@ func TestUpdateRefusedWithoutBundle(t *testing.T) {
 }
 
 func (dh *depsHarness) run(release *jsonx.Object) {
-	dh.d.updateLock.Lock()
-	dh.d.runUpdate(dh.ctx, release)
+	held, unlock, ok := dh.d.updateLock.TryLock(dh.ctx)
+	if !ok {
+		dh.t.Fatal("update lock busy")
+	}
+	dh.d.runUpdate(held, release, unlock)
 }
 
 func (dh *depsHarness) unlocked(t *testing.T) {
-	if !dh.d.updateLock.TryLock() {
+	_, unlock, ok := dh.d.updateLock.TryLock(context.Background())
+	if !ok {
 		t.Fatal("update lock still held")
 	}
-	dh.d.updateLock.Unlock()
+	unlock()
 }
 
 // test_dependencies.py::test_update_success_writes_runtime_bundle
@@ -378,8 +382,7 @@ func TestUpdateFailureMessages(t *testing.T) {
 		dh := newDepsHarness(t)
 		dh.d.runtime = &Runtime{env: dh.service.Env, Directory: filepath.Join(t.TempDir(), "file")}
 		os.WriteFile(dh.d.runtime.Directory, nil, 0o644)
-		dh.d.updateLock.Lock()
-		dh.d.runUpdate(dh.ctx, dh.releaseFor([]byte("x"), "2.41.0"))
+		dh.run(dh.releaseFor([]byte("x"), "2.41.0"))
 		if m := dh.d.GetUpdateState().GetString("message"); m != "Sub-Store 正忙或服务不可用，请稍后重试" {
 			t.Fatalf("message %s", m)
 		}
@@ -489,11 +492,14 @@ func TestStartSubStoreUpdateRunsTheUpdate(t *testing.T) {
 		t.Fatalf("state %s", jsonx.Repr(state))
 	}
 	dh.unlocked(t)
-	dh.d.updateLock.Lock()
+	_, unlock, locked := dh.d.updateLock.TryLock(dh.ctx)
+	if !locked {
+		t.Fatal("update lock busy")
+	}
 	if ok, message := dh.d.StartSubStoreUpdate(dh.ctx); ok || message != "已有更新任务在进行中" {
 		t.Fatalf("%v %s", ok, message)
 	}
-	dh.d.updateLock.Unlock()
+	unlock()
 	// GitHub unreachable: the last good release is still used (and is current).
 	dh.github.Close()
 	if ok, message := dh.d.StartSubStoreUpdate(dh.ctx); ok || message != "当前已是最新版本 2.41.0" {
