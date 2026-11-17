@@ -239,3 +239,48 @@ func TestOnlyIdempotentRequestsAreRetried(t *testing.T) {
 		})
 	}
 }
+
+// A 3xx is returned whole even when its Location does not parse (the drivers
+// explain redirects themselves), and the cookie jar keeps a login session.
+func TestRedirectReturnedAndCookiesKept(t *testing.T) {
+	var seen []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cookie, _ := r.Cookie("sess_key")
+		if cookie != nil {
+			seen = append(seen, cookie.Value)
+		} else {
+			seen = append(seen, "")
+		}
+		switch r.URL.Path {
+		case "/login":
+			http.SetCookie(w, &http.Cookie{Name: "sess_key", Value: "s1", Path: "/"})
+		case "/bad":
+			w.Header().Set("Location", "https://[invalid")
+			w.WriteHeader(http.StatusFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	tests := []struct {
+		path   string
+		status int
+	}{{"/login", 200}, {"/bad", 302}, {"/next", 200}}
+	c := New(Config{Cookies: true})
+	defer c.Close()
+	for _, tt := range tests {
+		resp, err := c.Do(context.Background(), "POST", srv.URL+tt.path, map[string]any{}, time.Second)
+		if err != nil || resp.Status != tt.status {
+			t.Fatalf("%s: status %v err %v", tt.path, resp, err)
+		}
+	}
+	if strings.Join(seen, ",") != ",s1,s1" {
+		t.Fatalf("cookies sent: %q", seen)
+	}
+	plain := New(Config{})
+	defer plain.Close()
+	if _, err := plain.Do(context.Background(), "POST", srv.URL+"/login", nil, time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := plain.Do(context.Background(), "POST", srv.URL+"/next", nil, time.Second); err != nil || seen[len(seen)-1] != "" {
+		t.Fatalf("a client without Cookies sent one: %q %v", seen, err)
+	}
+}

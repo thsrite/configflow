@@ -80,7 +80,7 @@ type Client struct {
 	cfg       Config
 	auth      string
 	transport *http.Transport
-	http      *http.Client
+	jar       http.CookieJar // nil without Config.Cookies
 }
 
 // New returns a client for one device.
@@ -95,10 +95,8 @@ func New(cfg Config) *Client {
 		MaxIdleConnsPerHost: 4,
 		IdleConnTimeout:     90 * time.Second,
 	}
-	c.http = &http.Client{Transport: c.transport,
-		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	if cfg.Cookies {
-		c.http.Jar, _ = cookiejar.New(nil)
+		c.jar, _ = cookiejar.New(nil)
 	}
 	return c
 }
@@ -289,7 +287,20 @@ func (c *Client) Do(ctx context.Context, method, rawURL string, body any, timeou
 	if c.auth != "" {
 		req.Header.Set("Authorization", c.auth)
 	}
-	resp, err := c.http.Do(req)
+	// The transport is used directly: redirects are never followed, and
+	// http.Client would fail on a 3xx whose Location does not parse before
+	// handing the response back (the drivers explain such redirects).
+	if c.jar != nil {
+		for _, cookie := range c.jar.Cookies(req.URL) {
+			req.AddCookie(cookie)
+		}
+	}
+	resp, err := c.transport.RoundTrip(req)
+	if err == nil && c.jar != nil {
+		if cookies := resp.Cookies(); len(cookies) > 0 {
+			c.jar.SetCookies(req.URL, cookies)
+		}
+	}
 	if err != nil {
 		if context.Cause(ctx) == errReadTimeout {
 			return nil, &Error{Class: ReadTimeout, Err: errReadTimeout}
