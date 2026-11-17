@@ -127,7 +127,7 @@ def successful_output_regressions(expected, current):
     lost = {key + ' successful-output-count' for key, previous in expected.items()
             if current.get(key, {}).get('success', 0) < previous.get('success', 0)}
     lost.update(key + ' packaging-output-count' for key, previous in expected.items()
-                if current.get(key, {}).get('success', 0) + current.get(key, {}).get('partial', 0)
+                if previous.get('partial', 0) and current.get(key, {}).get('success', 0) + current.get(key, {}).get('partial', 0)
                 < previous.get('success', 0) + previous.get('partial', 0))
     return lost
 

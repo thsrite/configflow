@@ -344,3 +344,54 @@ func TestGeoPreparation(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestRawCacheFailureDoesNotPoisonRetry(t *testing.T) {
+	cache := newRawCache()
+	var calls atomic.Int32
+	failing := true
+	fetch := func(context.Context, string) ([]byte, error) {
+		calls.Add(1)
+		if failing {
+			return nil, fmt.Errorf("synthetic failure")
+		}
+		return []byte("good"), nil
+	}
+	if _, err := cache.get(context.Background(), "example", fetch); err == nil {
+		t.Fatal("failure lost")
+	}
+	failing = false
+	value, err := cache.get(context.Background(), "example", fetch)
+	if err != nil || string(value) != "good" || calls.Load() != 2 {
+		t.Fatal(string(value), err, calls.Load())
+	}
+	for i := range 3 {
+		_, err := cache.get(context.Background(), fmt.Sprint(i), func(context.Context, string) ([]byte, error) { return make([]byte, maxRawCacheBytes/2), nil })
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if cache.size > maxRawCacheBytes || cache.entries["0"] != nil {
+		t.Fatal("byte LRU limit not enforced")
+	}
+}
+
+func TestUnusedSourceChangesDoNotChangeBundle(t *testing.T) {
+	source := jsonx.Obj("profile_id", "alpha", "system_config", jsonx.Obj("server_domain", "https://panel.example"), "rule_library", []any{jsonx.Obj("id", "unused", "name", "Unused", "source_type", "url", "url", "https://unused.example/rules")})
+	in := BuildInput{Target: Target{ID: "example", ProfileID: "alpha", ServiceType: "mihomo"}, Source: NewSource(source, nil), ConfigContent: "mode: rule", DeploymentID: "metadata"}
+	first, err := Build(testContext(t), in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source.Set("name", "rename")
+	source.GetList("rule_library")[0].(*jsonx.Object).Set("url", "https://changed.example/rules")
+	in.Source = NewSource(source, nil)
+	second, err := Build(testContext(t), in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, _ := Fingerprint(first.Manifest())
+	b, _ := Fingerprint(second.Manifest())
+	if a != b {
+		t.Fatal("unused draft changed content identity")
+	}
+}

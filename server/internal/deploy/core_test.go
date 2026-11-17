@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -194,6 +195,22 @@ func TestWriteServerArchives(t *testing.T) {
 			if err = os.WriteFile(filepath.Join("testdata/archives", service+"-"+kind+".tar.gz"), a, 0600); err != nil {
 				t.Fatal(err)
 			}
+		}
+	}
+}
+
+func TestFingerprintAggregateBound(t *testing.T) {
+	m := Manifest{ProtocolVersion: 1, ServiceType: "mihomo", ConfigPath: "config.yaml", Files: []File{{Path: "config.yaml", Role: RoleConfig, Size: 1, SHA256: strings.Repeat("a", 64)}}}
+	for i := range 4 {
+		m.Files = append(m.Files, File{Path: fmt.Sprintf("rules/%d", i), Role: RoleRule, Size: MaxFileBytes, SHA256: strings.Repeat("a", 64)})
+	}
+	if _, err := Fingerprint(m); err == nil || err.Error() != "Deployment exceeds size limit" {
+		t.Fatal(err)
+	}
+	for _, raw := range []string{`{"reload_only":null}`, `{"final_config":"true"}`} {
+		var manifest Manifest
+		if err := json.Unmarshal([]byte(raw), &manifest); err == nil {
+			t.Fatal("invalid flag accepted")
 		}
 	}
 }

@@ -34,3 +34,32 @@ const (
 	msgOxidnsUnavailable      = "OxiDNS 还在使用不可用的规则集，发布已停止，设备配置没有改动。"
 	msgOxidnsMissing          = "OxiDNS 配置用到了文件 %s，但附加文件里没有它，发布已停止，设备配置没有改动。\n请在 OxiDNS 设置的「附加文件」中添加它，或在 YAML 中删除这个引用。"
 )
+
+const (
+	msgGeoxMapping    = "geox-url 必须是资源名称与下载地址的映射"
+	msgGeoReuse       = "复用已有 %s 资源（%s），不重复下载"
+	msgGeoDownload    = "正在下载 %s 资源：%s"
+	msgGeoCheck       = "正在检查 %s 下载内容与文件大小"
+	msgGeoReady       = "%s 已准备（%s 字节），已计算发布用 SHA256"
+	msgGeoInvalidURL  = "geox-url.%s 未填写有效下载地址"
+	msgGeoInvalid     = "下载结果为空或是网页，不是 Geo 数据文件"
+	msgGeoFailure     = "%s 下载失败。本次发布已停止，设备仍使用原配置。\n原因：%s\n下载地址：%s\n目标文件：%s\n修复：更换 geox-url.%s，或检查「GitHub 代理域名」和「系统设置 → 规则下载代理」。\n也可手动下载对应数据文件，放到 Agent 机器的 %s，确保 Mihomo 可读取，再重新发布。"
+	msgGeoLimit       = "%s 超出发布文件大小限制"
+	msgAgentConfigDir = "Agent 配置目录"
+)
+
+const (
+	msgPreviewInvalid        = "生成结果无效，请重新生成。"
+	msgPreviewUnavailable    = "生成结果已过期或不可用，请重新生成后推送。"
+	msgPreviewLimit          = "生成结果超过临时存储上限，请减少配套文件后重试。"
+	msgPreviewProfileMissing = "生成时的配置空间已不可用，请重新选择并生成。"
+	msgPreviewConfigChanged  = "配置已改变，请重新生成并检查后推送。"
+	msgPreviewTargetChanged  = "目标设备或绑定已改变，请重新生成并检查后推送。"
+	msgUpdateForPreview      = "请先更新目标 Agent，再生成最终下发配置。"
+	msgFinalPreviewFailed    = "设备无法生成最终配置，请检查 Agent 状态。"
+)
+
+const msgUnexpandedInclude = "OxiDNS 发布配置必须先展开 include 后重新推送"
+
+// UncheckedCandidateMessage explains why a staged candidate needs a fresh push.
+const UncheckedCandidateMessage = "候选配置缺少当前规则的校验证明，已停止激活。请重新推送配置并完成校验。"

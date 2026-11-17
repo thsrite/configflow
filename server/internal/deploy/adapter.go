@@ -3,6 +3,9 @@ package deploy
 // All legacy document boundaries live here; the rest of deploy only sees typed
 // values, yamlx nodes, opaque records or raw JSON.
 import (
+	"bytes"
+	"configflow/internal/agents"
+	"configflow/internal/agents/trafficstore"
 	"configflow/internal/convert"
 	"configflow/internal/gateway"
 	"configflow/internal/jsonx"
@@ -12,9 +15,12 @@ import (
 	"configflow/internal/refresh"
 	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
+	"configflow/internal/subs"
+	"configflow/internal/yamlx"
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"strings"
 	"time"
 )
@@ -158,7 +164,10 @@ func downloadRef(d convert.Download) (RuleRef, string, error) {
 }
 
 // Wire installs deployment preparation diagnostics. A14 adds publication hooks.
-func Wire() { provider.SetLocations(Locations{}) }
+func Wire() {
+	provider.SetLocations(Locations{})
+	agents.RegisterHooks(agents.Hooks{ReceiptMatches: ReceiptMatches})
+}
 
 func (s *Source) normalize(value []byte, rule RuleRef) ([]byte, error) {
 	r := jsonx.Obj("id", rule.ID, "name", rule.Name, "url", rule.URL, "source_type", rule.SourceType, "behavior", defaultBehavior(rule.Behavior), "format", rule.Format)
@@ -190,4 +199,281 @@ func resolvedBuildProfile(ctx context.Context, src *Source, t Target) (string, e
 		return "", err
 	}
 	return r.DefaultProfileID(ctx)
+}
+
+func (s *Source) snapshotJSON() (json.RawMessage, error) {
+	cfg := s.config().DeepCopy()
+	cfg.Delete("agents")
+	return encodeJSON(cfg)
+}
+func (s *Source) inputDigest() string {
+	cfg := s.config().DeepCopy()
+	for _, key := range []string{"agents", "_revision", "updated_at", "created_at", "profile_name", "name", "description", "backup"} {
+		cfg.Delete(key)
+	}
+	raw, err := encodeJSON(cfg)
+	if err != nil {
+		return ""
+	}
+	canonical, err := nativeCanonical(raw)
+	if err != nil {
+		return ""
+	}
+	return digest(canonical)
+}
+func nativeCanonical(raw []byte) ([]byte, error) {
+	d := json.NewDecoder(bytes.NewReader(raw))
+	d.UseNumber()
+	var value any
+	if err := d.Decode(&value); err != nil {
+		return nil, err
+	}
+	return encodeJSON(value)
+}
+func equalJSON(a, b []byte) bool {
+	left, err := yamlx.FromJSON(a)
+	if err != nil {
+		return false
+	}
+	right, err := yamlx.FromJSON(b)
+	return err == nil && yamlx.Equal(left, right)
+}
+
+type appliedView struct {
+	PreparedContent
+	DeploymentID  string `json:"deployment_id"`
+	ConfigVersion string `json:"config_version"`
+}
+type receiptAgentView struct {
+	ID            string      `json:"id"`
+	ProfileID     string      `json:"profile_id"`
+	ServiceType   string      `json:"service_type"`
+	ConfigVersion string      `json:"config_version"`
+	Applied       appliedView `json:"applied_content"`
+}
+
+func receiptAgentRaw(agent *agents.Record) receiptAgentView {
+	var view receiptAgentView
+	raw, err := encodeJSON(agent)
+	if err == nil {
+		_ = json.Unmarshal(raw, &view)
+	}
+	return view
+}
+func receiptAgent(ctx context.Context, agent *agents.Record) (receiptAgentView, error) {
+	view := receiptAgentRaw(agent)
+	if view.ProfileID == "" {
+		r, err := repo.GetRepository(ctx)
+		if err != nil {
+			return view, err
+		}
+		view.ProfileID, err = r.DefaultProfileID(ctx)
+		if err != nil {
+			return view, err
+		}
+	}
+	return view, nil
+}
+func retainedReceipts(ctx context.Context, r *repo.Repository, agentID, deploymentID string) (map[string]bool, error) {
+	system, err := r.GetSystem(ctx)
+	if err != nil {
+		return nil, err
+	}
+	retained := map[string]bool{digest([]byte(deploymentID)): true, digest(nil): true}
+	for _, value := range system.GetList("agents") {
+		agent, ok := value.(*jsonx.Object)
+		if !ok || agent.GetString("id") != agentID {
+			continue
+		}
+		if id := agent.GetObject("applied_content").GetString("deployment_id"); id != "" {
+			retained[digest([]byte(id))] = true
+		}
+		tasks := agent.GetObject("deployments")
+		if tasks != nil {
+			for id, value := range tasks.All() {
+				state, ok := value.(*jsonx.Object)
+				if ok && !finished(state.GetString("status")) {
+					retained[digest([]byte(id))] = true
+				}
+			}
+		}
+		break
+	}
+	return retained, nil
+}
+func finished(status string) bool {
+	return status == "succeeded" || status == "failed" || status == "rolled_back"
+}
+func advanceApplied(ctx context.Context, m *agents.Manager, agent *agents.Record, fingerprint string, files map[string]string) (bool, error) {
+	accepted := false
+	expected := agent.Value("applied_content")
+	id := agent.GetString("id")
+	if id == "" || expected == nil {
+		return false, nil
+	}
+	fileMap := jsonx.NewObject()
+	for p, sha := range files {
+		fileMap.Set(p, sha)
+	}
+	_, err := m.Repository().UpdateSystemTransaction(ctx, func(ctx context.Context, system *jsonx.Object) (*jsonx.Object, error) {
+		for _, value := range system.GetList("agents") {
+			current, ok := value.(*jsonx.Object)
+			if !ok || current.GetString("id") != id {
+				continue
+			}
+			applied := current.GetObject("applied_content")
+			if applied == nil || !jsonx.Equal(applied, expected) {
+				return nil, nil
+			}
+			latest := current.GetObject("latest_deployment")
+			if latest != nil && !finished(latest.GetString("status")) {
+				return nil, nil
+			}
+			applied.Set("fingerprint", fingerprint)
+			applied.Set("files", fileMap.DeepCopy())
+			deploymentID := applied.GetString("deployment_id")
+			for _, state := range []*jsonx.Object{current.GetObject("deployments").GetObject(deploymentID), latest} {
+				if state != nil && state.GetString("deployment_id") == deploymentID {
+					if prepared := state.GetObject("prepared_content"); prepared != nil {
+						prepared.Set("fingerprint", fingerprint)
+						prepared.Set("files", fileMap.DeepCopy())
+					}
+				}
+			}
+			accepted = true
+			break
+		}
+		return nil, nil
+	})
+	return accepted, err
+}
+func receiptMatches(agent, state *agents.Record) bool {
+	if agent == nil || state == nil || agent.GetString("id") == "" || agent.GetString("service_type") != "oxidns" || state.GetString("service_type") != "oxidns" {
+		return false
+	}
+	view, err := receiptAgent(context.Background(), agent)
+	if err != nil {
+		return false
+	}
+	profile := state.GetString("profile_id")
+	sha := state.GetString("sha256")
+	fingerprint := state.GetObject("prepared_content").GetString("fingerprint")
+	id := state.GetString("deployment_id")
+	if profile == "" || profile != view.ProfileID || id == "" || sha == "" || fingerprint == "" {
+		return false
+	}
+	expected := ValidationReceipt{Version: 1, RulesSHA256: RulesFingerprint(), AgentID: view.ID, DeploymentID: id, ProfileID: profile, ServiceType: "oxidns", SHA256: sha, Fingerprint: fingerprint}
+	raw, err := encodeJSON(expected)
+	if err != nil {
+		return false
+	}
+	proof, err := jsonx.Parse(raw)
+	return err == nil && jsonx.Equal(proof, state.Value("oxidns_validation_receipt"))
+}
+func publicDeployment(record *agents.Record) *agents.Record {
+	if record == nil {
+		return nil
+	}
+	out := record.DeepCopy()
+	if public := out.GetObject("ha_publication"); public != nil {
+		out = agents.HAAggregate(out, public)
+	}
+	out.Delete("prepared_content")
+	out.Delete("oxidns_validation_receipt")
+	return agents.PublicDeploymentMessages(out)
+}
+
+// AgentIdentity freezes fields that affect target adaptation, including the
+// reported Mihomo core. Canonical JSON is a transient native identity.
+func AgentIdentity(t Target) []byte {
+	record := t.Record
+	if record == nil {
+		record = jsonx.Obj("id", t.ID, "profile_id", t.ProfileID, "service_type", t.ServiceType, "host", t.Host, "token", t.Token, "version", t.Version, "deployment_method", t.DeploymentMethod, "domain_discovery_enabled", t.DomainDiscovery)
+		if len(t.Port) > 0 {
+			if port, err := jsonx.Parse(t.Port); err == nil {
+				record.Set("port", port)
+			}
+		}
+	}
+	identity := jsonx.NewObject()
+	for _, key := range []string{"id", "profile_id", "service_type", "host", "port", "token", "enabled", "version", "deployment_method", "domain_discovery_enabled", "oxidns_ha"} {
+		identity.Set(key, record.Value(key))
+	}
+	core := ""
+	if record.GetBool("domain_discovery_enabled") {
+		if store, err := trafficstore.Get(context.Background()); err == nil {
+			core = subs.ReportedCoreVersion(record, store.StatusOf)
+		}
+	}
+	identity.Set("core_version", core)
+	raw, err := encodeJSON(identity)
+	if err != nil {
+		return nil
+	}
+	canonical, err := nativeCanonical(raw)
+	if err != nil {
+		return nil
+	}
+	return canonical
+}
+func previewSnapshot(ctx context.Context, m *agents.Manager, profileID string) (*Source, int64, error) {
+	config, revision, err := m.Repository().GetPublishSnapshot(ctx, profileID, false)
+	if err != nil {
+		return nil, 0, err
+	}
+	return NewSource(config, &revision), revision, nil
+}
+func previewTarget(ctx context.Context, m *agents.Manager, id string) (Target, bool, error) {
+	agent, err := m.GetAgentByID(ctx, id, false)
+	if err != nil || agent == nil {
+		return Target{}, false, err
+	}
+	return NewTarget(agent), true, nil
+}
+func queryCapabilities(ctx context.Context, m *agents.Manager, t Target) (Capabilities, error) {
+	timeout := agents.Seconds(5)
+	response, err := m.DeploymentRequest(ctx, t.Record, "GET", "capabilities", nil, nil, &timeout)
+	if err != nil {
+		return Capabilities{}, err
+	}
+	raw, err := encodeJSON(response)
+	if err != nil {
+		return Capabilities{}, err
+	}
+	var c Capabilities
+	if err = json.Unmarshal(raw, &c); err != nil {
+		return c, err
+	}
+	return c, nil
+}
+func finalPreview(ctx context.Context, m *agents.Manager, t Target, content string) (string, error) {
+	body, err := encodeJSON(struct {
+		Content string `json:"content"`
+	}{content})
+	if err != nil {
+		return "", err
+	}
+	timeout := agents.Seconds(30)
+	response, err := m.DeploymentRequest(ctx, t.Record, "POST", "config/final-preview", http.Header{"Content-Type": []string{"application/json"}}, body, &timeout)
+	if err != nil {
+		return "", err
+	}
+	value, ok := response.Value("content").(string)
+	success, successOK := response.Value("success").(bool)
+	if !successOK || !success || !ok {
+		message := response.GetString("message")
+		if message == "" {
+			message = msgFinalPreviewFailed
+		}
+		return "", preparation(message)
+	}
+	return value, nil
+}
+
+func (s *Source) githubSource(rawURL string) string {
+	candidates, err := rulefetch.GithubDownloadCandidates(rawURL, s.config(), "")
+	if err == nil && len(candidates) > 0 {
+		return candidates[0].URL
+	}
+	return rawURL
 }

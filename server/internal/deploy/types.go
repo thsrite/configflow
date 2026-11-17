@@ -205,3 +205,19 @@ func (f *File) UnmarshalJSON(data []byte) error {
 	}
 	return json.Unmarshal(data, (*plain)(f))
 }
+
+// UnmarshalJSON requires actual booleans for supplied protocol flags, like the
+// real Agent. Null may not silently disable a no-restart/final-config contract.
+func (m *Manifest) UnmarshalJSON(data []byte) error {
+	var flags map[string]json.RawMessage
+	if err := json.Unmarshal(data, &flags); err != nil {
+		return err
+	}
+	for _, key := range []string{"reload_only", "final_config"} {
+		if flag, ok := flags[key]; ok && string(flag) != "true" && string(flag) != "false" {
+			return preparation(key + " must be a boolean")
+		}
+	}
+	type plain Manifest
+	return json.Unmarshal(data, (*plain)(m))
+}

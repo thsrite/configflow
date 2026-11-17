@@ -273,6 +273,13 @@ adapter accessors and passes the object back to `RecordDeployment` unchanged.
 | `RulesFingerprint()` | `oxidns_validation_receipt.rules_sha256` | sha256 over the embedded OxiDNS schema files and the server build (`debug.ReadBuildInfo` main version + `vcs.revision`; `version.Version` when absent) | changes: staged OxiDNS `ready` candidates from Python are refused at activation (fail closed, 7.1) |
 | preview `input_digest`, content-sync input key, agent identity | memory / preview record (TTL 1 h) | canonical JSON as SettingsDigest | irrelevant (transient) |
 
+**Clarified in A11 (coordinator, 2026-11-17):** `oxidns.SchemaFingerprint() string` is a read-only
+summary of sorted embedded schema names and bytes (NUL separators). `deploy.RulesFingerprint` combines it
+with the native validator build identity as designed; Python's five validator source files are not copied.
+This is a server validation receipt identity, separate from the byte-compatible content `Fingerprint`.
+Python-era OxiDNS ready candidates fail closed and require a fresh push (7.1/O12). Tests lock content
+fingerprint parity separately from schema/build invalidation and the Chinese re-push diagnostic.
+
 ### 2.4 Exported API
 
 **A11 (`deploy`)**

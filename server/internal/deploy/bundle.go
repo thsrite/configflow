@@ -236,6 +236,7 @@ func readArchive(m Manifest, archive []byte) (map[string]Content, error) {
 	files := map[string]Content{}
 	seenManifest := false
 	seen := map[string]bool{}
+	headers := 0
 	var total int64
 	roles := map[string]Role{}
 	for _, f := range m.Files {
@@ -249,8 +250,19 @@ func readArchive(m Manifest, archive []byte) (map[string]Content, error) {
 		if err != nil {
 			return nil, fmt.Errorf("read deployment tar: %w", err)
 		}
-		if h.Typeflag == tar.TypeDir && strings.HasPrefix(h.Name, "files/") {
-			if _, err := RelativePath(strings.TrimSuffix(strings.TrimPrefix(h.Name, "files/"), "/")); err != nil {
+		headers++
+		if headers > MaxFiles*2 {
+			return nil, preparation("Too many deployment archive entries")
+		}
+		if h.Typeflag == tar.TypeDir {
+			n := strings.TrimSuffix(h.Name, "/")
+			if n == "files" {
+				continue
+			}
+			if !strings.HasPrefix(n, "files/") {
+				return nil, preparation("Invalid deployment archive directory")
+			}
+			if _, err := RelativePath(strings.TrimPrefix(n, "files/")); err != nil {
 				return nil, err
 			}
 			continue
@@ -311,7 +323,10 @@ func readArchive(m Manifest, archive []byte) (map[string]Content, error) {
 		return nil, preparation("Deployment archive has no manifest")
 	}
 	// Consume the gzip footer to reject truncation even after tar's end markers.
-	if _, err := io.Copy(io.Discard, io.LimitReader(gz, 16<<20)); err != nil {
+	if n, err := io.Copy(io.Discard, io.LimitReader(gz, (1<<20)+1)); err != nil || n > 1<<20 {
+		if err == nil {
+			return nil, preparation("Invalid deployment gzip trailer")
+		}
 		return nil, fmt.Errorf("read deployment gzip footer: %w", err)
 	}
 	if err := checkContents(m, files); err != nil {

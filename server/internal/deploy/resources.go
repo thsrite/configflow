@@ -14,18 +14,6 @@ import (
 )
 
 const geoBase = "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/"
-const (
-	msgGeoxMapping    = "geox-url 必须是资源名称与下载地址的映射"
-	msgGeoReuse       = "复用已有 %s 资源（%s），不重复下载"
-	msgGeoDownload    = "正在下载 %s 资源：%s"
-	msgGeoCheck       = "正在检查 %s 下载内容与文件大小"
-	msgGeoReady       = "%s 已准备（%s 字节），已计算发布用 SHA256"
-	msgGeoInvalidURL  = "geox-url.%s 未填写有效下载地址"
-	msgGeoInvalid     = "下载结果为空或是网页，不是 Geo 数据文件"
-	msgGeoFailure     = "%s 下载失败。本次发布已停止，设备仍使用原配置。\n原因：%s\n下载地址：%s\n目标文件：%s\n修复：更换 geox-url.%s，或检查「GitHub 代理域名」和「系统设置 → 规则下载代理」。\n也可手动下载对应数据文件，放到 Agent 机器的 %s，确保 Mihomo 可读取，再重新发布。"
-	msgGeoLimit       = "%s 超出发布文件大小限制"
-	msgAgentConfigDir = "Agent 配置目录"
-)
 
 type geoResource struct {
 	key, label, path, defaultFile string

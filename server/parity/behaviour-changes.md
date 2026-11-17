@@ -137,3 +137,12 @@ Go 不接受 legacy 存储，不再执行 `node_test_dns_cleanup.migrate` 等一
 SIGTERM/SIGINT 先保存历史，再在默认 8 秒宽限期内收尾，在截止前 2 秒取消剩余工作，
 最后保存新增历史并关闭资源；空闲提前结束。Python 原来在保存后直接退出，Go 在镜像
 既有 10 秒停止预算内等待已有工作。第二次信号立即退出；镜像停止时限没有提高。
+
+## A11：归档编码与 OxiDNS 校验证明
+
+按 A14 设计 2.3/7.1 及 A11 澄清：Go 使用原生 tar/gzip，归档字节与 SHA256 会变；已由真实 Agent 解包验证。
+内容漂移的 v1 Fingerprint 保持 Python 紧凑 UTF-8 JSON 编码：文件内容未变时不因编码迁移产生变更。
+生成主 YAML 的字节变化仍属于 N7 已接受的一次性重新发布。
+OxiDNS RulesFingerprint 则专用于校验证明，绑定 Go 嵌入 schema 和构建版本；Python 下 ready 的旧候选需要重新推送。
+旧候选激活返回「候选配置缺少当前规则的校验证明，已停止激活。请重新推送配置并完成校验。」且不发出激活请求。
+此外修正 Python 对缺少 profile_id 的 Agent 固定使用 default 字面量的问题：回执按当前仓库解析后的默认配置空间匹配。

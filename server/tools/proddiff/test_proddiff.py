@@ -394,6 +394,18 @@ class ComparatorTests(unittest.TestCase):
         self.assertEqual(set(), successful_output_regressions(previous, {'GENERATOR mihomo': {'success': 2, 'mode': 'http'}}))
         self.assertEqual({'GENERATOR mihomo successful-output-count'}, successful_output_regressions(previous, {'GENERATOR mihomo': {'success': 1}}))
 
+    def test_a11_frozen_aggregation_is_partial_and_can_be_unfrozen(self):
+        from generators import inventory, successful_output_regressions
+        doc={'system': {'agents':[{'id':'agent-a','service_type':'mihomo'}]},'shared':{},'profiles':{'default':{}}}
+        jobs,coverage=inventory(doc,set())
+        self.assertEqual(1,coverage['GENERATOR agent-deployment-bundle']['cases'])
+        self.assertEqual('Go 尚未实现',coverage['GENERATOR aggregation-provider']['mode'])
+        key='GENERATOR agent-deployment-bundle'
+        previous={key:{'success':2,'partial':1}}
+        self.assertEqual(set(),successful_output_regressions(previous,{key:{'success':3,'partial':0}}))
+        self.assertEqual({key+' packaging-output-count'},successful_output_regressions(previous,{key:{'success':2,'partial':0}}))
+        self.assertIn(key+' successful-output-count',successful_output_regressions(previous,{key:{'success':1,'partial':2}}))
+
     def test_http_subscription_takeover_requests_all_formats(self):
         doc = {'system': {'agents': []}, 'shared': {'subscriptions': [{'id': 'sub-a'}]},
                'profiles': {'one': {'routers': {'items': []}}}}

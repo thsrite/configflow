@@ -243,7 +243,7 @@ func downloadFailure(rawURL string, src *Source, err error) (string, *Remedy) {
 			message = fmt.Sprintf(msgDownloadHTTP, fetch.Status)
 		}
 		if fetch.Class != "HTTPError" && !src.internal(rawURL, "") {
-			remedy = &Remedy{Kind: "rule_download", Github: rulefetch.IsGithubURL(rawURL)}
+			remedy = &Remedy{Kind: "rule_download", Github: rulefetch.IsGithubURL(src.githubSource(rawURL))}
 		}
 	}
 	return prefix + message, remedy
