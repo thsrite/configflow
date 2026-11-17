@@ -118,3 +118,34 @@ func TestO36cStatusShutdownDuringRecord(t *testing.T) {
 		t.Fatal("status temporary file remained", files, err)
 	}
 }
+
+func TestRecordContextPreservesNativeStorageErrors(t *testing.T) {
+	t.Run("rename", func(t *testing.T) {
+		s := New(t.TempDir())
+		if err := os.Mkdir(s.path(), 0700); err != nil {
+			t.Fatal(err)
+		}
+		_, ctx := statusRuntime(t)
+		_, err := s.RecordContext(ctx, "native", Result{OK: true})
+		var link *os.LinkError
+		if !errors.As(err, &link) || link.Op != "rename" || link.New != s.path() {
+			t.Fatalf("rename cause was replaced: %T %v", err, err)
+		}
+		files, readErr := os.ReadDir(s.DataDir)
+		if readErr != nil || len(files) != 1 || files[0].Name() != Filename || !files[0].IsDir() {
+			t.Fatal("failed replacement left temporary files", files, readErr)
+		}
+	})
+	t.Run("parent-path", func(t *testing.T) {
+		root := t.TempDir() + "/blocked"
+		if err := os.WriteFile(root, []byte("directory is a file"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		_, ctx := statusRuntime(t)
+		_, err := New(root).RecordContext(ctx, "native", Result{OK: true})
+		var path *os.PathError
+		if !errors.As(err, &path) || errors.Is(err, context.Canceled) {
+			t.Fatalf("path cause was replaced: %T %v", err, err)
+		}
+	})
+}
