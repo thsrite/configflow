@@ -61,28 +61,34 @@ started them. Re-route them by sending every running agent below a one-line `mcp
 `notifyOnFinish: true` ("协调会话已更换，任务不变，继续做，完成后照常报告。"). Then poll each once with
 `get_agent_status`; act on any that already finished.
 
-**Pending coordinator actions**
-1. **N7-2** (yaml.v3 editor; Opus review verified, `<<` quoting fix done): branch `go-opus-review-n7-2`. The old
-   session started its .32 verification (race, full, all difftests, 3 fuzz × 60 s, proddiff) but it will be lost —
-   **re-run it** on a temp copy (`git branch -f tmp b; worktree add; rebase go`), then fast-forward go and push.
-2. When **R06 Opus review** (1866c686, branch `go-opus-review-r06` off `go-port-r06`) hands back: verify on .32 and
-   merge. It is the first Codex-ported HR module — read its "Codex-port quality" note; ≥2 high findings ⇒ routers HR
-   ports go back to Opus (WORKFLOW last section).
-3. User owes: IP of a **third native-Linux test server** (Windows Hyper-V VM OK if always-on, bridged, Arch, 8+ cores,
+**Pending coordinator actions** (updated 2026-11-17 ~17:10 by coordinator bb75f5c0)
+1. **importer bounds** (`go-fix-importer-bounds`, tests only): .32 verification running on temp branch
+   `tmp-verify-ib` in `~/program/configflow-go-verify-ib` (full `-race` at default -p to prove the fix). Pass →
+   ff go, push, drop the `-p=4` rule below.
+2. **R06 Opus review** done (`go-opus-review-r06` 31b00538, 1 high/2 medium/2 low, all fixed; <2 high ⇒ Codex keeps
+   porting routers HR). Verify on .32 after item 1, then merge. Its two checklist items are in WORKFLOW (6090e113).
+3. When N7-3a/b/c all merged: tell 097eba4e to delete `internal/pyyaml` + old loader (N7-3 final step); then N7-4.
+4. A11 handed back (ported, `go-port-a11` 49b51bc1) → Opus review 7ea2310a running. After it: A12 (author 74bce4a1
+   is idle, context ~385k/475k — consider a fresh Codex).
+5. User owes: IP of a **third native-Linux test server** (Windows Hyper-V VM OK if always-on, bridged, Arch, 8+ cores,
    16+ GB, no dynamic memory, user sunbroke + routeros-audit key). Set it up like .63 (see memory remote-test-server).
+Done since the evening handoff: N7-2 verified on .32 and merged (go 75e280b9, pushed).
+Decision (coordinator, 2026-11-17): invalid explicit tag/shape combos (`!!null [a]` …) are rejected with a lined
+Chinese error (PyYAML rejects them too; same direction as D1 and N7-2 F6) — implemented once in yamlx by N7-3.
 
 **Running agents** (Paseo project prj_b0033e1859522497; worktrees ~/.paseo/worktrees/302rx1dg/<slug>)
 | agent | kind | task | branch |
 |---|---|---|---|
-| 1866c686-a5d3-4465-bdbd-ddcf37a936ad | Opus | R06 HR review | go-opus-review-r06 |
-| 74bce4a1-d81e-4f7f-9379-91ca1f2bfe48 | Codex | A11 bundle (HR) per design/a14-publish.md A11-1..4 | go-port-a11 |
+| 7ea2310a-f0cc-4b00-8c28-f822d575bb57 | Opus | A11 HR review | go-opus-review-a11 |
 | 66833acf-d1e4-45fb-b3bb-3b7d4bae0cbd | Codex | R07 NAT address lists (HR); adapting API to r12-release.md §2.4, landing minimal shared plan types | go-port-r07 |
 | 6e5c7760-36eb-4e1d-a5f0-1c378a081b14 | Codex | O3-3 instance lock/startup/shutdown (+ ResolveDataDir path fix) | go-o3-3 |
 | c5332a35-f886-4d2d-90e2-f48496728a68 | Codex | N8-3 model skeleton + byte-preserving codec (→ Opus review) | go-n8-3 |
-| 0d31fb93-a16c-48f8-8e5e-9c2756fb0e6f | Codex | importer bounds test + oxidns race runtime | go-fix-importer-bounds |
 | e46d698f-6345-41b9-8a38-06d61b6622d3 | Codex | config black-box Step B (findings file) | go-difftest-config-b |
-Idle and reusable: 19338c67 (reviewer, knows convert/oxidns/store/proxy), 097eba4e (N8-1/N7-2 author),
-27131008 (C30/C35/findings author), 12b84914 (proddiff load fix), c5332a35 after N8-3.
+| 0d31fb93-a16c-48f8-8e5e-9c2756fb0e6f | Codex | C31 aggregation routes + device notes; register aggregation-provider in proddiff | go-port-c31 |
+| 097eba4e-3a43-4bf8-9920-6e970f43faa7 | Codex | N7-3a subs+substore readers → new yamlx | go-n7-3a |
+| 19338c67-c336-40c7-98a9-b4532a66af68 | Codex | N7-3b rulefetch+refresh readers | go-n7-3b |
+| 27131008-8a7b-4e5d-9354-a4a744d9df9d | Codex | N7-3c mosdns/routers/routersplit/installer/provider readers | go-n7-3c |
+Idle and reusable: 74bce4a1 (A11 author, context high), 12b84914 (proddiff load fix), c5332a35 after N8-3.
 
 **Queue (in order of value)**
 - Opus: review O3-1+O3-2+O3-3 together once O3-3 is merged; review N8-3 when handed back; HR reviews of A11, R07 when
