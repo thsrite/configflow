@@ -529,6 +529,12 @@ Commands (all on .32, no local tests):
 - `RT_HOST=sunbroke@192.168.0.64 rt --back server/internal/routers -- bash -lc 'cd server && gofmt -w internal/routers && go vet ./... && go test ./internal/routers -run "TestR08|TestNATListHelperBoundary/migration|TestNATListWriteBoundary|TestNATListRemovalBoundary" -count=1'` → vet clean; `ok configflow/internal/routers 36.871s`.
 
 
+Self-audit follow-up: full BuildReport differential `report_policy_nat_retirement` caught a
+medium integration defect before hand-back: PolicyNATRetiring must be the NAT resources in the
+actual replacement op's Owned list, not NAT migrations from Check. Corrected to Python's rule;
+complete report JSON now compares against real Python (including NAT status/summary on withdrawal).
+Targeted .32 command: `go test ./internal/routers -run "TestR08PythonBoundary/report_policy_nat_retirement|TestR08NamesGatewayAndReportIntegration" -count=1` → `ok configflow/internal/routers 0.371s`.
+
 ### R08 HR issue-class checklist
 
 - R04 F1 malformed/extra reply IDs: uses R07 createResource/CreateAddresses fresh unique ID proofs and R04 bounded consoleAdd; unknown surplus rows are not journaled; FuzzR08PolicyInput rejects malformed manifest/lookup shapes without panic.

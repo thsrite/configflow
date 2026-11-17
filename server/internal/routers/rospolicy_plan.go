@@ -429,8 +429,14 @@ func policyReportPart(desired *Desired, state *RouterState) ReportPart {
 			if item.Path == rosRoutes {
 				retiring = append(retiring, item.ID)
 			}
-			if item.Path == rosNAT {
-				state.PolicyNATRetiring = append(state.PolicyNATRetiring, item.ID)
+		}
+	}
+	for _, operation := range plan.Ops {
+		if op, ok := operation.(*ROSPolicyReplace); ok {
+			for _, item := range op.Owned {
+				if item.Path == rosNAT {
+					state.PolicyNATRetiring = append(state.PolicyNATRetiring, item.ID)
+				}
 			}
 		}
 	}

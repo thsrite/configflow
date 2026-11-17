@@ -48,6 +48,14 @@ func r08Desired(selected bool) *Desired {
 
 func r08Plan(ctx context.Context, d *RouterOS, desired *Desired) (*ROSPolicyPlan, error) {
 	desired.ROSPolicy.Previous = slices.Clone(d.policyManifest)
+	state, err := r08InspectState(ctx, d)
+	if err != nil {
+		return nil, err
+	}
+	return BuildROSPolicy(desired, state), nil
+}
+
+func r08InspectState(ctx context.Context, d *RouterOS) (*RouterState, error) {
 	state, err := d.ReadState(ctx)
 	if err != nil {
 		return nil, err
@@ -61,7 +69,7 @@ func r08Plan(ctx context.Context, d *RouterOS, desired *Desired) (*ROSPolicyPlan
 	if state.NatContext.Mangle == nil {
 		state.NatContext.Mangle = (*state.ROSPolicy)[rosMangle]
 	}
-	return BuildROSPolicy(desired, state), nil
+	return state, nil
 }
 
 type r08Step struct {
@@ -111,6 +119,17 @@ func r08Run(t *testing.T, f *routerfake.Fake, endpoint string, tc r08Case) r08Ou
 			f.ApplyExternal(*step.Mutation)
 		}
 		switch step.Action {
+		case "report":
+			step.Desired.ROSPolicy.Previous = slices.Clone(d.policyManifest)
+			var state *RouterState
+			state, err = r08InspectState(ctx, d)
+			if err == nil {
+				var report *Report
+				report, err = BuildReport(step.Desired, state)
+				if err == nil {
+					appendResult(report)
+				}
+			}
 		case "legacy":
 			var fields map[string]json.RawMessage
 			_ = json.Unmarshal(d.policyManifest, &fields)
@@ -357,6 +376,9 @@ func r08Cases() []r08Case {
 		{"publish_noop_view", r08State(), []r08Step{{Action: "publish", Desired: r08Desired(true)}, {Action: "plan", Desired: r08Desired(true)}, {Action: "view"}}},
 		{"rollback", r08State(), []r08Step{{Action: "rollback", Desired: r08Desired(true)}}},
 	}
+	reportState := r08State()
+	delete(reportState.Tables[rosNAT][0], "out-interface")
+	cases = append(cases, r08Case{"report_policy_nat_retirement", reportState, []r08Step{{Action: "report", Desired: r08Desired(true)}, {Action: "publish", Desired: r08Desired(true)}, {Action: "report", Desired: r08Desired(true)}, {Action: "report", Desired: r08Desired(false)}}})
 	for _, action := range []string{"publish", "rollback"} {
 		cases = append(cases, r08Case{"legacy_" + action, r08State(), []r08Step{{Action: "publish", Desired: r08Desired(true)}, {Action: "legacy"}, {Action: "view"}, {Action: action, Desired: r08Desired(true)}}})
 	}

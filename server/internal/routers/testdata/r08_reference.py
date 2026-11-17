@@ -23,14 +23,18 @@ driver = RouterOSDriver(endpoint, 'synthetic-user', 'synthetic-password', verify
 out = {'results': [], 'error': None, 'manifest': None}
 
 
-def plan(desired):
+def inspect_state():
     state = driver.read_state()
     state.ros_policy = policy.snapshot(driver)
     state.nat_context.update(routing_rules=state.ros_policy[policy.RULES],
                              vrfs=state.ros_policy[policy.VRFS])
     if state.nat_context['mangle'] is None:
         state.nat_context['mangle'] = state.ros_policy[policy.MANGLE]
-    result = policy.build(desired, state)
+    return state
+
+
+def plan(desired):
+    result = policy.build(desired, inspect_state())
     # R12 build_plan always attaches this required field to the R08 operation.
     for op in result['ops']:
         op['static_checks'] = []
@@ -80,6 +84,10 @@ try:
             continue
         desired = copy.deepcopy(step['desired'])
         desired['ros_policy']['previous'] = getattr(driver, 'ros_policy_manifest', None)
+        if action == 'report':
+            from backend.routers.report import build_report
+            out['results'].append(build_report(desired, inspect_state()))
+            continue
         result = plan(desired)
         out['results'].append(copy.deepcopy(result))
         if action == 'plan' or result['blockers'] or not result['ops']:
