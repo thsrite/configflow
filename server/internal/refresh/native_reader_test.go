@@ -72,3 +72,30 @@ func FuzzSourceYAMLPolicy(f *testing.F) {
 	}
 	f.Fuzz(func(t *testing.T, source string) { _ = validateSourceYAMLPolicy(source) })
 }
+
+func TestUnsafeDownloadedCacheRejectedBeforeReuse(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("proxies: []\na0: &a0 [example.com]\n")
+	for i := 1; i <= 40; i++ {
+		fmt.Fprintf(&b, "a%d: &a%d [*a%d, *a%d]\n", i, i, i-1, i-1)
+	}
+	for _, source := range []string{b.String(), "a: &a [*a]", "x: !!str [secret]"} {
+		f := setup(t, jsonx.Int(86400))
+		sub := f.sub()
+		cache := jsonx.Obj("text", source, "fetched_at", isoMicro(f.clock.Now()), "traffic", nil)
+		if _, err := f.repo.WriteSharedJSON(f.ctx, DownloadCachePath(subURL), cache); err != nil {
+			t.Fatal(err)
+		}
+		result, err := FetchSubscriptionSource(f.ctx, sub, func(context.Context, string, string) (*substore.SubscriptionResult, error) {
+			t.Fatal("unsafe fresh cache triggered a fetch")
+			return nil, nil
+		})
+		if result != nil || err == nil {
+			t.Fatalf("unsafe cached source reused: %v", err)
+		}
+		after, err := f.repo.ReadSharedJSON(f.ctx, DownloadCachePath(subURL))
+		if err != nil || !jsonx.Equal(after, cache) {
+			t.Fatal("refusal modified the original cache")
+		}
+	}
+}

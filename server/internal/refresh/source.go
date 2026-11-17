@@ -283,6 +283,9 @@ func FetchSubscriptionSource(ctx context.Context, sub *jsonx.Object, fetch Sourc
 	} else if downloaded, err := r.ReadSharedJSON(ctx, DownloadCachePath(url)); err == nil {
 		text, isText := downloaded.Value("text").(string)
 		if isText && isFresh(downloaded.Value("fetched_at"), interval) {
+			if err := validateSourceYAMLPolicy(text); err != nil {
+				return nil, err
+			}
 			traffic, _ := downloaded.Value("traffic").(*jsonx.Object)
 			return newResult(text, "source_cache", traffic, downloaded.Value("fetched_at").(string)), nil
 		}

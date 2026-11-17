@@ -93,3 +93,15 @@ parser diagnostic suffix rows; all pass. No rules runtime reader was modified
 agrees with the equivalent one-line rule; illegal space-folded domains still
 fail validation. Initial full run stopped only on those stale C09 assertions;
 full acceptance is rerun after the focused consumer checks passed.
+
+Fresh-cache follow-up: FetchSubscriptionSource's existing transport-cache reuse
+branch now applies the same policy gate before returning text. Alias40/self/tag
+regressions prove the old cached bytes are retained, no fallback fetch occurs,
+and no unsafe text is returned. Focused .32 race passes (refresh1.261s).
+
+Pinned .32 acceptance before final rebase: format/vet logs empty;7 affected
+packages race PASS, followed by rulefetch/rules consumer race PASS; full p4 suite
+PASS after adapting C09 assertions; all10 CONFIGFLOW_DIFF difftest packages PASS;
+three60s fuzz runs PASS (rulefetch563715, refresh98895, convert83684 executions);
+proddiff2831 cases,415 compared, self_check PASS, new=0 stale=0. The fresh-cache
+follow-up is subsequently included in the post-rebase integration run.
