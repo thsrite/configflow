@@ -115,6 +115,9 @@ func downloadAgentBinary(c *httpx.Ctx) (*httpx.Response, error) {
 		return fail(err)
 	}
 	if problem := werkzeugConditionalError(c.Request, info.Size(), response.Header().Get("ETag"), response.Header().Get("Last-Modified")); problem != "" {
+		if problem == werkzeugRangeNotSatisfiable {
+			return failure(416, problem).WithHeader("Content-Range", "bytes */"+strconv.FormatInt(info.Size(), 10)), nil
+		}
 		logger.Errorf("Error downloading agent binary: %s", problem)
 		return failure(500, problem), nil
 	}

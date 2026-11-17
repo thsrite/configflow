@@ -3,8 +3,9 @@ package agents
 // download_agent_binary calls flask.send_file inside `try: … except
 // Exception`, so the RequestedRangeNotSatisfiable that Werkzeug 3.1's
 // make_conditional raises for an unusable Range header becomes the view's
-// 500 JSON answer instead of a 416 page; so does an OverflowError from
-// parse_date. werkzeugConditionalError decides when that happens
+// 500 JSON answer instead of a 416 page. L1 D7 deliberately corrects that
+// range error to 416; parse_date OverflowError remains a 500.
+// werkzeugConditionalError decides when that happens
 // (Response.make_conditional, _process_range_request with
 // _is_range_request_processable, parse_range_header, Range.range_for_length,
 // is_resource_modified, parse_date = email.utils.parsedate_to_datetime).

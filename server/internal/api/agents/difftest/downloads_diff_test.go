@@ -9,6 +9,7 @@ package difftest
 //	rt -- bash -lc 'cd server && CONFIGFLOW_DIFF=1 go test -count=1 -v -run Download ./internal/api/agents/difftest/'
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"math"
@@ -56,6 +57,23 @@ func sendDownload(t *testing.T, base string, r downloadRequest) response {
 }
 
 func compareDownload(py, gor response) []string {
+	// L1 D7 fixes Flask's catch-all 500 for unsatisfiable ranges. Accept only
+	// the identical JSON error (or HEAD body), corrected status and size header.
+	if py.status == 500 && gor.status == 416 && strings.Contains(py.header.Get("Content-Type"), "application/json") {
+		var a, b struct {
+			Success bool   `json:"success"`
+			Message string `json:"message"`
+		}
+		if py.method == "HEAD" && len(py.body) == 0 && len(gor.body) == 0 ||
+			json.Unmarshal(py.body, &a) == nil && json.Unmarshal(gor.body, &b) == nil && a == b && !a.Success && a.Message == "416 Requested Range Not Satisfiable: The server cannot provide the requested range." {
+			if !strings.HasPrefix(gor.header.Get("Content-Range"), "bytes */") || gor.header.Get("Content-Disposition") != "" {
+				return []string{"invalid L1 D7 range error headers"}
+			}
+			py.status = 416
+			py.header = py.header.Clone()
+			py.header.Set("Content-Range", gor.header.Get("Content-Range"))
+		}
+	}
 	var diffs []string
 	pv, perr := jsonx.Parse(py.body)
 	gv, gerr := jsonx.Parse(gor.body)
@@ -145,6 +163,9 @@ func TestDownloadDifferentialAgainstFlask(t *testing.T) {
 				etag = py.header.Get("ETag")
 			}
 			diffs := compareDownload(py, gor)
+			if gor.status == 416 && gor.header.Get("Content-Range") != "bytes */"+strconv.Itoa(len(binary)) {
+				diffs = append(diffs, "L1 D7 wrong binary size in Content-Range")
+			}
 			if etagFloatOnly(py, gor) {
 				// Werkzeug's ETag uses CPython's st_mtime (sec + nsec*1e-9 as a
 				// double); httpx formats a differently rounded float.

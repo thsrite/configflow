@@ -14,6 +14,14 @@ redactor 的既有策略不变。无新接口或 UI 操作变化。
 `redact.TestPublicMetadataCredentials`。24 组非泄露类真实 Python 参照继续逐字段相等；
 泄露类单独断言安全结果，不放宽差分比较。见 [A24 复核](review-a24.md)。
 
+## L1 D7 — 无法满足的二进制下载 Range 返回 416
+
+协调者批准修复：Agent 二进制下载中 Werkzeug 原本抛出的范围错误被 Python 的
+catch-all 转成 500；Go 返回正确的 416 和 `Content-Range: bytes */<实际长度>`。
+保持 JSON 错误消息、GET/HEAD 语义，不带附件头，不记为服务器 ERROR。
+正常 200/206/304、非法文件名和不存在文件的 404 不改变。差分只认可准确的同一
+范围错误的 500→416 及长度头变化，其余响应严格比较。
+
 ## L1 D4 — 注册锁定提示
 
 Python 原来就要求普通注册提交 `registration_key`，而现有 Agent/普通安装器没有

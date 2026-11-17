@@ -162,3 +162,18 @@ old path-message cases. Explicitly classified using the same narrow helpers;
 all other cases remain strict. On .64:
 `RT_HOST=sunbroke@192.168.0.64 rt --back server/internal/installer/docker_ha_corpus_test.go -- bash -c 'set -eu; cd server; gofmt -w internal/installer/docker_ha_corpus_test.go; go test -count=1 -v -run TestDockerHACorpusMatchesPython ./internal/installer'`
 → 3279 cases, 0 differ; `ok configflow/internal/installer 0.511s`.
+
+## D7 — unsatisfiable download ranges
+
+Return 416 (not the Python catch-all 500), with Content-Range bytes */actual-size,
+no attachment header and no server ERROR log. Preserve JSON error text and HEAD
+empty-body handling. Regression covers boundary/huge/multiple ranges + valid206;
+Flask differential explicitly accepts only the exact range error's status/header
+correction. All other downloads remain strict.
+
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt --back server/internal/api/agents/l1_downloads_test.go --back server/internal/api/agents/difftest/downloads_diff_test.go -- bash -c 'set -eu; cd server; gofmt -w internal/api/agents/l1_downloads_test.go internal/api/agents/difftest/downloads_diff_test.go; go vet ./internal/api/agents/...; go test -count=1 -v -run TestL1UnsatisfiableBinaryRangeIs416 ./internal/api/agents; CONFIGFLOW_DIFF=1 go test -count=1 -v -run TestDownloadDifferentialAgainstFlask ./internal/api/agents/difftest > /tmp/configflow-l1-d7-diff.log 2>&1; tail -5 /tmp/configflow-l1-d7-diff.log'
+```
+
+`ok configflow/internal/api/agents 0.038s`; downloads 120 comparisons equal,
+0 differ, 12 pre-existing httpx differences; `ok .../difftest 3.315s`.
