@@ -170,8 +170,9 @@ func TestReviewLatin1Tokens(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			want := headers.GetObject(name)
 			for _, call := range []string{"request", "reaches", "ask"} {
-				port, seen := captureAuthorization(t)
 				e := newUpgradeEnv(t)
+				// Fixture initialization must not consume the listener's deadline.
+				port, seen := captureAuthorization(t)
 				agent := jsonx.Obj("id", "a1", "host", "127.0.0.1", "port", port, "token", token)
 				var err error
 				switch call {
