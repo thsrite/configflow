@@ -7,7 +7,7 @@
 | 严重程度 | 发现 | 修复 / 边界证据 |
 |---|---|---|
 | medium | store.Commit 提交完全相同的 raw metadata 仍执行写入，generation 的空白格式也会被重写 | 过滤 byte-identical metadata；meta-only 写入不改无关 generation。新 no-op 回归先复现失败，再修复 |
-| medium | decodeError 模拟 sqlite3 异常并回显整个非 UTF-8 行，可泄露 token、密码等任意字段 | 删除模拟；报表/键/列、一基字节偏移、错误类别。非 UTF-8 统一 ErrCorrupt；坏 JSON 使用 encoding/json SyntaxError.Offset；不打印 value |
+| medium | decodeError 模拟 sqlite3 异常并回显整个非 UTF-8 行，可泄露 token、密码等任意字段 | 删除模拟；报告表名/键/列、一基字节偏移、错误类别。非 UTF-8 统一 ErrCorrupt；坏 JSON 使用 encoding/json SyntaxError.Offset；不打印 value |
 | medium | 坏行启动失败缺少完整原路径/可执行恢复说明，错误只到 stderr | repo 原文件路径及停止服务/保留原文件/备份恢复/最后可读版本导出提示；最终 startup 边界 logx 同时输出日志和 stderr |
 | low | storage_version 的错误诊断回显值，超大数用 big.Int 解析并整段输出 | 原生 strconv.ParseInt；错误类型提示无 value，超大正数给有界的 unsupported 提示 |
 | medium/security | N2 简化环境选择器遗失 CGI 的 httpoxy 防护；原 differential 28 次请求有 5 处失败 | 改共享 httpproxy，CGI 不发请求。loopback 直连和其余原生差异经协调者明确接受；保留 ALL_PROXY 用户功能 |
@@ -46,6 +46,24 @@ metadata/head、diff、commit/apply、build/install/check/salvage/backup），Go
 - Agent / Sub-Store 新测试：ALL fallback、scheme 优先、小写优先、CGI/ALL 不绕过；
   旧 loopback 回归改为直连，Sub-Store 显式代理、proxy→direct redirect 仍实测。
 
+`backend/test_config_store.py` 的 11 项全部保留：
+
+| Python 行为 | Go 边界 |
+|---|---|
+| rows round-trip、额外键、Unicode、顺序 | store.TestRowsRoundTripPreservesOrderUnicodeAndExtraKeys / TestStoredRoundTrip |
+| repository export after reopen | repo.TestRepositoryExportIsByteIdenticalAfterReopening / 新私有仓库往返 |
+| pragmas/file mode、WAL reset | store.TestPragmasAndFileMode / TestWalModeIsResetToDeleteByCheck；repo 对应测试 |
+| 只写变化行、删除 profile cascade、profile reorder | store.TestCommitWritesOnlyChangedRows / TestDeletingAProfileCascadesItsFieldsAndReorders / TestReorderingProfilesIsAChange |
+| 空 diff、meta-only、generation | store.TestEmptyDiffAndMetaOnlyCommitDoNotBumpGeneration / 新 no-op metadata 回归 |
+| 外部 head/revision 冲突 | store.TestHeadMovedOutsideTheLockRaisesConflict / Go-Python 跨进程并发；repo SaveProfile/SaveShared 三方合并与 stale revision 原有交叉检查 |
+| 非 JSON 在写入前失败 | store.TestRawRowsRefuseInvalidEnvelopesBeforeWriting；旧任意 Go 值改为 raw JSON 验证；repo.TestRawStoreBridgeRejectsNonJSONWithoutWriting |
+| Fingerprint 读稳定、写变化 | store.TestFingerprintIsStableAcrossReadsAndChangesOnWrite；实际行字节/field revision 断言，非 Python 哈希格式 |
+
+额外检查：raw 源码未引入 jsonx/pystr 等 emulation；错误不携带 raw value；临时
+repo 桥是既定 N8-3 交接层；排序比较保持原始位置，复合 row key 是 struct；SQL 的
+BEGIN IMMEDIATE + head 核对保证并发单赢家；提交失败 rollback、Entry 返回值不
+共享调用者的可变字节由作者测试和新增并发大行测试共同覆盖。无功能省略。
+
 迭代用 .63；需要真实代理 differential 和私有快照在 .32。最终命令/尾部输出待补。
 
 已通过迭代：.63 `go vet ./...`；真实 Python 环境下 store 12.910s、repo 49.691s、
@@ -56,3 +74,8 @@ mihomo 中的合成未知成员后通过；这是测试构造错误，无生产�
 代理最终迭代：.63 vet/agents 41.321s、substore 6.481s、weburl 0.003s；.32 42请求
 差分 **18 个显式结果差异 / 24 相同，4.511s**。3种合成坏库的真实CLI启动：退出1，
 日志/stderr均有安全恢复提示，原数据库逐字节不变；即使 LOG_LEVEL=CRITICAL 也可见。
+
+最终源码再检查发现 ParseInt 对很长的浮点字面量可能先报告 range 而不是 suffix
+语法错误；已在范围判断前排除 `.eE`，保证坏版本仍分类为 ErrCorrupt，不误报为新版库。
+三条回归（长小数、长指数、长负整数）；.63 store 全包 live-Python race **16.131s**。
+此补充发生在 .32 组合验收进行中；结束后将针对最终 store 源码在 .32 再跑 race/vet。

@@ -141,3 +141,7 @@ Buildable proxy step: `3ac0714d`; store step `ba7af7d2`. Added reproducible
 `server/scripts/review-n8-2-startup.py` synthetic CLI smoke: .32 exit 0,
 3 cases exit=1 / safe log+stderr / original bytes unchanged. It builds/runs only
 on test servers; no snapshot content or network access. Final combined acceptance pending.
+
+Review follow-up: range checking of storage_version now first rejects decimal /
+exponent spellings, so a large float is not misclassified as a newer integer
+when strconv overflows before its suffix. Added three regression vectors.

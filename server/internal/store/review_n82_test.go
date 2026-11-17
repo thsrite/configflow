@@ -175,3 +175,20 @@ func TestN82ReviewHugeVersionDiagnosticIsBounded(t *testing.T) {
 		t.Fatal("check changed huge version row")
 	}
 }
+
+func TestN82ReviewVersionMustBeIntegerBeforeRangeCheck(t *testing.T) {
+	for _, raw := range []string{"999999999999999999999999999.0", "999999999999999999999999999e0", "-999999999999999999999999999"} {
+		t.Run(raw, func(t *testing.T) {
+			s := New(filepath.Join(t.TempDir(), Filename), seconds(5))
+			must(s.Create(rawFixture(t), nil))(t)
+			c := must(connect(s.Path(), false, 0))(t)
+			if err := c.exec("UPDATE meta SET value=? WHERE key='storage_version'", raw); err != nil {
+				t.Fatal(err)
+			}
+			c.close()
+			if err := s.Check(); !errors.Is(err, ErrCorrupt) || err.Error() != msgVersionInvalid {
+				t.Fatal("non-positive-integer version misclassified")
+			}
+		})
+	}
+}

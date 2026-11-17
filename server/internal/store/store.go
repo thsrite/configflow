@@ -629,6 +629,11 @@ func (s *Store) check() error {
 		return newError(ErrCorrupt, fmt.Sprintf(msgMissingMeta, strings.Join(missing, "、")))
 	}
 	version := strings.TrimSpace(string(meta["storage_version"]))
+	// A large floating-point spelling must not be mistaken for a newer
+	// integer version just because ParseInt overflows before its suffix.
+	if strings.ContainsAny(version, ".eE") {
+		return newError(ErrCorrupt, msgVersionInvalid)
+	}
 	value, err := strconv.ParseInt(version, 10, 64)
 	if errors.Is(err, strconv.ErrRange) && !strings.HasPrefix(version, "-") {
 		return newError(ErrUnsupported, msgVersionTooLarge)
