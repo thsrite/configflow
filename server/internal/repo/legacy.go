@@ -129,7 +129,11 @@ func ensureLegacyRuleProxyToken(tx *transaction, legacy *jsonx.Object) error {
 	if err := json.Unmarshal(encoded, &settings); err != nil {
 		return err
 	}
-	tx.document.System.SystemConfig = settings
+	// Only these two members belong to token maintenance. Replacing the
+	// entire record would borrow provenance from the legacy encoding and
+	// normalize every untouched member (including R5 values and unknowns).
+	tx.document.System.SystemConfig.RuleProxyToken = settings.RuleProxyToken
+	tx.document.System.SystemConfig.RetiredRuleProxyTokens = settings.RetiredRuleProxyTokens
 	return nil
 }
 
