@@ -398,6 +398,19 @@ Implementation notes: [startup and shutdown](o3-startup-shutdown.md).
 - Sub-Store work/control leases and lock polling remain O3-6. Migrate only its 0/5 Monitor scheduling;
   retain the persisted state.json kernel-monotonic clock domain unchanged.
 
+**Clarified in O3 review (Opus, 2026-11-17; findings in `parity/review-o3.md`):**
+- Detach keeps a recorded cancellation parent: the generation's job context for rounds, jobs, Startup work,
+  OnStart and bound requests; the overall shutdown grace inside shutdown hooks and Drain (they run across
+  or after the job cancellation phase, so the job context would already be cancelled there).
+- `BindRequest(ctx) context.Context` (and `(*Runtime).BindRequest`): httpx binds every request to the live
+  generation, so 2.5 owner entry points that detach from a request keep the grace−2s shutdown cancellation.
+  A context already inside a Runtime, or a process without a live generation, is returned unchanged.
+- RequestSeen does eligibility work only for the first admitted request of a generation; later
+  registrations and Start start newly eligible loops themselves.
+- main: a second SIGTERM/SIGINT while the stop-signal hooks (the first metrics save) run is ignored and
+  logged, as Python did; afterwards it exits at once. A stop signal during the ≤30 s instance wait ends the
+  wait and exits 0 before storage is opened.
+
 ### 2.4 Mapping table (every Python loop/lock → Go construct)
 
 Porters of the missing modules use these names, timings and levels; reviewers check them.
@@ -523,7 +536,8 @@ and syncs were killed. Go keeps both flushes and does better within the containe
 | then | `PhaseClose` hooks: close SQLite handles, flush logx, release the instance lock; exit 0. |
 
 `grace` = `CONFIGFLOW_SHUTDOWN_GRACE_SECONDS` (default 8, so the whole sequence fits Docker's and supervisord's
-default 10 s). A second SIGTERM/SIGINT during shutdown exits at once (Python: second Ctrl+C force-quits). Decision
+default 10 s). A second SIGTERM/SIGINT during shutdown exits at once (Python: second Ctrl+C force-quits), except
+while the first metrics save runs, when it is ignored as in Python (O3 review). Decision
 M1 (section 6) is whether the image raises the grace.
 
 ### 3.5 Restart and crash recovery

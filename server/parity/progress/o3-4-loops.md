@@ -1,6 +1,7 @@
 # O3-4 — periodic owner migration
 
-Status: implementation complete; author acceptance passed on .32. Ready for coordinator verification
+Status: **verified** — joint Opus O3 review, zero open findings ([review-o3.md](../review-o3.md)).
+Author status before review: implementation complete; author acceptance passed on .32. Ready for coordinator verification
 and the planned joint Opus review of O3-1–O3-4.
 Branch: go-o3-4. No sub-agents, pushes or new dependencies.
 Both .32 and .64 are accepted servers; this task pins .32 for every test/build/vet/format command.

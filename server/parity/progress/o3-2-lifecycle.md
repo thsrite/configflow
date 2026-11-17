@@ -1,6 +1,7 @@
 # O3-2 — lifecycle v2 and tagged differential modes
 
-Status: ported; final rebased `.32` acceptance complete. Branch `go-o3-2`, stacked on
+Status: **verified** — joint Opus O3 review, zero open findings ([review-o3.md](../review-o3.md)).
+Author status before review: ported; final rebased `.32` acceptance complete. Branch `go-o3-2`, stacked on
 O3-1 and rebased onto integration `0efddadf` (includes config findings `885d1f7c`). No sub-agents or pushes.
 
 ## Scope and implementation

@@ -102,7 +102,7 @@ finding; old/new corpus classification and invalid explicit tags (e.g. `!!null [
 gates (§5.4). Editor is N7-2 (Opus-reviewed, verified: review-n7-2.md); consumers/writers migrate in
 N7-3/N7-4.
 
-## O3-1 — lockx primitives (ported, 2026-11-17)
+## O3-1 — lockx primitives (verified, 2026-11-17)
 
 Branch `go-o3-1`, code commits `11d187c8` and `9cae8b68`: new Mutex/Keyed/RWMutex/Flight with L1–L3
 context order checker; no caller migration or file I/O. L4/L5 remain sync.Mutex. Coordinator's API
@@ -114,7 +114,7 @@ child processes. Includes 10k-key cleanup, concurrent stress, explicit limit/try
 waiter drainage and shared-work lifetime tests. Non-test lines 0 → 568, no new dependency. No open
 O3-1 finding; independent review pending. O3-2 integrates Spawner; O3-6 migrates consumers.
 
-## O3-2 — lifecycle v2 (ported, 2026-11-17)
+## O3-2 — lifecycle v2 (verified, 2026-11-17)
 
 Branch `go-o3-2` stacks on O3-1: task registry/clock, restartable Runtime, tracked Spawn/scopes/Flight,
 manual rounds, first-request gate, phased bounded shutdown and injected HTTP Drain. Legacy adapters
@@ -129,7 +129,7 @@ probe timeout reproduced in the first parallel suite; its original-threshold foc
 reduced-concurrency full rerun pass. That probe is owned by go-fix-importer-bounds and was not changed here.
 Coordinator clarifications are in design §2.3; independent O3-2/O3-3 review is still scheduled.
 
-## O3-3 — instance/startup/shutdown integration (ported, 2026-11-17)
+## O3-3 — instance/startup/shutdown integration (verified, 2026-11-17)
 
 Five-lock instance ownership precedes log/repository initialization; shared ResolveDataDir makes
 absolute, home and symlink aliases use the same lock. Ordered synchronous Startup precedes listening;
@@ -146,6 +146,21 @@ blocked Drain and second-signal cases pass; real Python-compatible and alias own
 with zero scheduled egress. Author status is ported; Opus review with O3-1/O3-2 is still required.
 Latest-go composition check also passes with N7-2; no O3-3 production source changed during rebase.
 Final upstream-only importer/oxidns test fixes were rechecked on .32 (2.477s/73.814s), with fmt/vet clean.
+
+## O3-4 — periodic owner migration (verified, 2026-11-17)
+
+refresh 30/30 (Keyed L1 claims shared with run now, ≤3 joined workers, rows from `Held`), discovery
+120/600, OxiDNS rankings 60/60, metrics 30/30 + Wake (OnStart, `Signal.Clear`), Sub-Store 0/5 when built
+in; `ClockFrom`, shutdown-aware `Detach`, `Periodic.OnStart`. Handoff: [progress/o3-4-loops.md](progress/o3-4-loops.md).
+
+## O3 joint review (O3-1..O3-4 verified, 2026-11-17)
+
+Fresh Opus review of O3-1..O3-4 together: [review-o3.md](review-o3.md). 0 high, 2 medium (Detach inside
+shutdown hooks returned the cancelled job context; request-detached work never got the shutdown
+cancellation → `lifecycle.BindRequest` in httpx), 4 low (second signal during the first save ignored as in
+Python; stop signal ends the instance wait; RequestSeen fast path; ranking slot-pause production test).
+All fixed with regression tests and mutation-checked; zero open findings, so O3-1..O3-4 are `verified`.
+Rules for O3-5..O3-8 are in the review's last section.
 
 ## Known accepted differences (do not rediscover)
 

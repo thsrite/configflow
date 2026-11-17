@@ -1,6 +1,7 @@
 # O3-1 — in-process lock primitives
 
-Status: ported; final .32 acceptance passed, ready for independent review. Branch `go-o3-1`, based on
+Status: **verified** — joint Opus O3 review, zero open findings ([review-o3.md](../review-o3.md)).
+Author status before review: ported; final .32 acceptance passed, ready for independent review. Branch `go-o3-1`, based on
 `go` at `e5903ffb`. No consumers, sub-agents or pushes.
 
 ## Brief

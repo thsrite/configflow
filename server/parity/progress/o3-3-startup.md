@@ -1,6 +1,7 @@
 # O3-3 — instance ownership, startup and shutdown
 
-Status: ported; all final `.32` checks complete. Branch `go-o3-3`, rebased onto `go@a44b343b`.
+Status: **verified** — joint Opus O3 review, zero open findings ([review-o3.md](../review-o3.md)).
+Author status before review: ported; all final `.32` checks complete. Branch `go-o3-3`, rebased onto `go@a44b343b`.
 Required race/tag candidate `00126bf9` and N7-2 composition candidate `bcccb1d9` share the same O3-3
 source as the final branch. No sub-agents, pushes or production-device access.
 Coordinator successor: `bb75f5c0-8c87-410c-84cd-20801944f7e0`.
