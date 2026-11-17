@@ -1,8 +1,6 @@
 // Package version is the port of backend/version.py.
 package version
 
-import "configflow/internal/jsonx"
-
 // Version is the release the binary was built as. The image build sets it
 // (Python rewrote `__version__ = "dev"` in version.py with sed):
 //
@@ -11,5 +9,10 @@ import "configflow/internal/jsonx"
 // A local build reports "dev".
 var Version = "dev"
 
-// Info is get_version_info(): {"version": Version}.
-func Info() *jsonx.Object { return jsonx.Obj("version", Version) }
+// Information is the public build metadata.
+type Information struct {
+	Version string `json:"version"`
+}
+
+// Info returns the current release metadata.
+func Info() Information { return Information{Version: Version} }

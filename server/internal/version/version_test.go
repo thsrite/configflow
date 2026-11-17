@@ -3,17 +3,17 @@ package version
 import (
 	"testing"
 
-	"configflow/internal/jsonx"
+	"encoding/json"
 )
 
 func TestInfo(t *testing.T) {
-	body, _ := jsonx.Compact(Info())
+	body, _ := json.Marshal(Info())
 	if string(body) != `{"version":"dev"}` {
 		t.Errorf("got %s", body)
 	}
 	Version = "1.2.3"
 	defer func() { Version = "dev" }()
-	if Info().GetString("version") != "1.2.3" {
+	if Info().Version != "1.2.3" {
 		t.Error("Info does not follow Version")
 	}
 }
