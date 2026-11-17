@@ -17,6 +17,82 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_source_completion_gate_observes_fast_body_before_slow_response(self):
+        import threading
+        import urllib.request
+        from concurrent.futures import ThreadPoolExecutor
+        from sources import Source
+        with Source(b'actual-complete-body') as source:
+            entered, sent = threading.Event(), threading.Event()
+            order = []
+            def before(path):
+                if path == '/slow':
+                    entered.set()
+                    if not sent.wait(4):
+                        raise AssertionError('fast body was not sent')
+            def after(path):
+                order.append(path)
+                if path == '/fast':
+                    sent.set()
+            source.before_reply, source.after_reply = before, after
+            def fetch(path):
+                with urllib.request.urlopen(source.url + path, timeout=5) as response:
+                    return response.read()
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                slow = pool.submit(fetch, '/slow')
+                self.assertTrue(entered.wait(2))
+                fast = pool.submit(fetch, '/fast')
+                self.assertEqual(fast.result(timeout=5), source.body)
+                self.assertEqual(slow.result(timeout=5), source.body)
+            self.assertEqual(order, ['/fast', '/slow'])
+
+    def test_approved_C35_reorder_and_HEAD_changes_keep_all_other_fields_strict(self):
+        from config_finding_resolutions import annotate
+        common = {'status': 'open', 'differences': [], 'variant': ''}
+        samples = [
+            {**common, 'case': 'R015-S04', 'group': 'settings-backup-validation', 'route': 'POST /api/backup/config',
+             'python_status': 200, 'go_status': 200, 'remaining_differences': [
+                 {'path': 'db.fields.system//backup.revision', 'kind': 'value', 'python': 8, 'go': 6},
+                 {'path': 'db.fields.system//backup.value.webdav_password', 'kind': 'value', 'python': '', 'go': 'synthetic-pass'}]},
+            {**common, 'case': 'R103-F08', 'group': 'nodes-reorder', 'route': 'POST /api/nodes/reorder',
+             'python_status': 404, 'go_status': 400, 'remaining_differences': [
+                 {'path': 'status', 'kind': 'value', 'python': 404, 'go': 400},
+                 {'path': 'body.message', 'kind': 'value', 'python': "以下节点 id 不存在: ['ids 必须是数组']", 'go': 'ids 必须是数组'}]},
+            {**common, 'case': 'R223-F12', 'group': 'subscriptions-reorder', 'route': 'POST /api/subscriptions/reorder',
+             'python_status': 500, 'go_status': 400, 'remaining_differences': [
+                 {'path': 'status', 'kind': 'value', 'python': 500, 'go': 400},
+                 {'path': 'body.message', 'kind': 'value', 'python': '订阅操作失败', 'go': '请求体必须是 JSON 对象'}]},
+            {**common, 'case': 'X06', 'group': 'http-head', 'route': 'GET /api/nodes', 'variant': 'head//api/nodes',
+             'python_status': 500, 'go_status': 500, 'remaining_differences': [
+                 {'path': 'headers.content-type', 'kind': 'value', 'python': 'text/html; charset=utf-8', 'go': 'application/json'}]},
+        ]
+        for item in samples:
+            self.assertEqual(annotate([copy.deepcopy(item)])[0]['status'], 'accepted', item['case'])
+            for field in ('case', 'group', 'route', 'variant', 'go_status', 'extra-SQL', 'extra-header', 'changed-value'):
+                wrong = copy.deepcopy(item)
+                if field in ('case', 'group', 'route', 'variant'):
+                    wrong[field] += 'wrong'
+                elif field == 'go_status':
+                    wrong[field] = 503
+                elif field == 'changed-value':
+                    wrong['remaining_differences'][-1]['go'] = 'wrong'
+                else:
+                    wrong['remaining_differences'].append({'path': 'db.foreign' if field == 'extra-SQL' else 'headers.allow',
+                        'kind': 'value', 'python': 'old', 'go': 'wrong'})
+                self.assertEqual(annotate([wrong])[0]['status'], 'open', (item['case'], field))
+
+    def test_real_download_cancellation_requires_every_transport_observation(self):
+        from cases.download_disconnect import transfer_errors
+        valid = {'status': 200, 'content_length_is_large': True, 'one_byte_read': True,
+                 'unread_response_bytes': True, 'receive_buffer_is_small': True, 'socket_closed': True,
+                 'length_matches_own_completed_materialization': True}
+        self.assertEqual(transfer_errors(valid), [])
+        for field in valid:
+            broken = dict(valid)
+            broken[field] = 500 if field == 'status' else False
+            self.assertTrue(transfer_errors(broken), field)
+        self.assertTrue(transfer_errors({**valid, 'invented': True}))
+
     def test_DAV_task_completion_detects_failed_completion_SQL_or_remote_objects(self):
         from cases.task_webdav import DavCompletion
         with tempfile.TemporaryDirectory() as temporary:

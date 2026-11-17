@@ -118,6 +118,7 @@ def remote(binary, recorder):
                     configure(pair, sub['url'])
                     if shape == 'failed-source-valid-cache':
                         install(pair, url=sub['url'], legacy=True)
+                        pair.policy.times.discard('files.shared/subscribes/sub-a.json.content.updated_at')
                     def check(reply):
                         cached = pair.dirs[0] / 'shared/subscribes/sub-a.json'
                         require(cached.exists() and (pair.dirs[0] / ('profiles/' + profile + '/providers/agg-a.yaml')).exists(),
@@ -142,6 +143,7 @@ def remote(binary, recorder):
                          body=json_body(sub), expect=200, writes=True, variant='aggregation-preview/enable-refresh')
             install(pair, url=sub['url'], legacy=True)
             configure(pair, sub['url'])
+            pair.policy.times.discard('files.shared/subscribes/sub-a.json.content.updated_at')
             pair.request('R007-S02', 'GET /api/aggregations/<agg_id>/preview', '/api/aggregations/agg-a/preview',
                          expect=200, writes=True, interaction=Exchange(pair, source), capture=capture_notice(pair),
                          check=lambda r: require(r.json()['count'] == 3, 'preview uses prior valid subscription cache when real transport fails'))

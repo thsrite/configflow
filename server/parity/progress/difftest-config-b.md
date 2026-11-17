@@ -2142,3 +2142,29 @@ current go-unimplemented=8 design_errors=[]；exit=0
 ```
 
 原R仍差72（含N/A）、H仍差382及partial/长流程；最终完整all仍未执行。
+
+## 批次 126：ac1全量复验及已跑通的新分支（正式合并报告前）
+
+- 已rebase到go ac1f2377；.32执行现有全部组，日志`/tmp/configdiff-all-ac1.log`，2995.27秒。实际10007变体：compared2786、Go未实现7034、依赖未实现100、strict different86、O12单列1；原R4458（S708/F2747/B1003）、H729/G16。现存85closed/9accepted/77open/O12单列1，所有既有finding均实际重跑。唯一design_error为H726的Go启动未就绪；原始全量不能算通过。长SSH连接后来reset，未自动取回报告，已用固定.32的rt --no-sync --back取回真实落盘结果，未拼接结果。
+- H726随后在.64和.32分别实际compared、design_errors=[]（13.50/15.58秒），确认不是持续的跨实现差异；正式报告待下一次正常runner合并该组，保留原全量失败事实。
+- 全量多出的57项中，35条是C35空密码行为在单一有状态序列中的传播、19条为已批准Step B #1/#3，三条为旧缓存固定时间误按当前时间检查。修正旧缓存时间规则；在R015-B01同时提交真实密码和keep_latest=0，使两端都发生真实行变化、后续基线相同，不吞掉S04原始密码/行revision差异。接受规则只匹配精确用例/路由/变体、status、完整差异字段和值，额外SQL/files/header一律保持open；C35精确记录本夹具8/6行revision及空/原密码。补篡改自检。已独立复跑backup：41compared+1严格差异/accepted1/open0；旧三项聚合缓存时间也实际compared。
+- .64新规则库五变体：R167-S04在保留第二个真实下载项时禁用/再启用目标源，实际native YAML发生变化、无warning、组合和另一源不变；只有最后一个下载项时Python会因空download列表校验失败，先前“必然成功”前提撤回。R167-F15自定义native按non-strict返回200/warning并提交，不能误设成400；R176-F08非法HEAD地址实际ValueError逐项失败且自动禁用；R176-F10真实SQLite trigger整体保存500，SQL/files完全不动。均源前提通过、Go未接通。
+- R227-S06实际202后保存waiting、attempt从2到3、清除旧job、准确事件/时间；来源没有成功发布，后台不应联系设备。第二次重试409且保持意图。只证明重试准入/持久化，后续HR发布仍partial。两变体源通过/Go未实现。
+- Provider真实下载12种坏YAML/字段×默认/scoped/merged，连同前置写入72变体全部compared；覆盖H1057–1063。必须拒绝而不降级成旧节点，完整SQL、旧缓存/发布文件不变；只允许真实原始transport文件，其模式、正文、traffic、时刻单独核验。另H1087三形态和H1082–1084/H1071精确标签实际65变体compared；无效scheme、语法/引用/值错型、零更新无缓存均不是空响应伪覆盖。
+- 10个default/scoped下载B04使用>1MiB真实大响应、小SO_RCVBUF，读取实际200/头和一个字节后shutdown真实socket；比较完整生成文件及其.bak和全部SQL/files，不给未读响应编造正文。20变体源实际通过/Go未接通，修正后复跑41.51秒。取消观察器每个布尔项/status/额外字段均有负向自检。
+- R007-B01真实并发两源，第一源阻塞直到第二源正文已写出，再要求preview和真实provider均保留配置顺序；3变体compared。Source新增显式完成钩子，默认行为不变，另以真实两个HTTP客户端自检门的时序。R009-B01已有两空间引用中的真实中文emoji名称也实际compared。113项自检及故意错误Go响应检出。
+
+这些有效草稿下一批通过普通runner合并，当前正式报告仍保留上述原始ac1全量状态；不手改case verdict。新覆盖17原R和12H，合并后预期剩55原R（含N/A）、370H及partial/长流程；不得把此估算当作正式运行计数。R103-F13/R163-F12的“坏现存拨号图→400”草稿撤回：schema5导入拒绝共享managed ref，手写坏raw参数也未触发预期guard；没有提交该草稿代码，也不计覆盖。继续找合法可达输入或逐条明确防御分支边界。
+
+```text
+.32 full all --baseline ac1f2377（14GiB MemoryMax/无scope swap）
+remote SUMMARY: request_variants=10007 design_errors=[node-helper-payload-limit: 1 server did not become ready] seconds=2995.27
+SSH returned255（长连接reset）；报告通过rt --no-sync --back取回，远端结果本身含上述design_error。
+.64/.32 node-helper-payload-limit：各1compared，design_errors=[]；exit0
+.64 provider-downloaded-shape-guards：72compared，design_errors=[]；exit0
+.64 provider-manual-mode-missing-cache-guard,subscriptions-validation,provider-real-stale-cache：65compared；exit0
+.64 generated-download-real-client-disconnect：20 Go未实现、design_errors=[]；exit0
+.64 settings-backup-validation：41compared、1strict different/accepted1/open0；exit0
+```
+
+现有全量已完成一次，但新增内容及最终最新go完整门禁尚未完成，任务继续。

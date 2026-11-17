@@ -151,6 +151,11 @@ def backup_validation(binary, recorder):
                              ('S03', {'webdav_password': '******'}), ('S04', {'webdav_password': ''}),
                              ('B01', {'keep_latest': 0}), ('B02', {'keep_latest': 1000}),
                              ('B03', {'keep_daily': 3650}), ('B04', {'webdav_path': '/中文🧪/%空 格/'})]:
+            if suffix == 'B01':
+                # C35 keeps Go's password on S04. The next real boundary
+                # write changes keep_latest on both sides and restores the
+                # same real password, so later cases share an exact baseline.
+                data = {**data, 'webdav_password': good['webdav_password']}
             pair.request('R015-' + suffix, 'POST /api/backup/config', body=json_body(data), expect=200, writes=True)
             if suffix == 'S03':
                 pair.request('R014-S02', 'GET /api/backup/config', expect=200,

@@ -2056,6 +2056,14 @@ R206-F20完整部署真实保存EACCES要求回滚到原端口/能力、双栈�
 
 R227-S04/B02通过真实异步DAV上传和持久回执验收，B02在HEAD已进入fake而未返回时关闭面板客户端，再放行设备响应；初始HTTP响应未读取，不能计作202，见[tasks.py:280](../../backend/routes/tasks.py#L280)、[webdav_backup.py:48](../../backend/utils/webdav_backup.py#L48)。R225-S03及R227-F14/F15覆盖设备状态显示与重试拒绝；成功DNS跟随/router同步仍需实际fake协议工作流，不能从202推断完成。
 
+### Step B 实际断连、原始Provider错误与native启停（批次126）
+
+10个default/scoped下载B04在真实大响应头和一个字节后shutdown客户端socket，接收窗口远小于响应；完整生成文件/bak与SQL/files仍比，未读取的正文不当成完整响应，来源[generate.py:96](../../backend/routes/generate.py#L96)。R007-B01用真实源正文完成钩子固定第二源先完成，preview/落盘provider仍按声明排序，见[aggregations.py:200](../../backend/routes/aggregations.py#L200)。R009-B01比较真实引用空间的Unicode名称，见[aggregations.py:53](../../backend/routes/aggregations.py#L53)。
+
+R167-S04须保留第二个下载项，禁用最后一个下载项会触发Python schema的空download校验而走warning，不能拿它证明成功重建。F15调用[rule_library.py:238](../../backend/routes/rule_library.py#L238)的strict=False路径，按200/warning/保持原YAML但提交资源验收。H1057–1063通过真实订阅下载到达[provider_delivery.py:120](../../backend/utils/provider_delivery.py#L120)，坏源不能降级为已有合法节点；原始transport下载文件与旧节点缓存分别核对。H1082–1084由公开保存入口驱动，H1071当前源码是抛SubscriptionFetchError而非旧清单的return None（[sub_store_client.py:268](../../backend/utils/sub_store_client.py#L268)），真实403/429仍不得立即经Sub-Store重试。H1087为零更新间隔且无当前缓存，必须在网络前400。
+
+R227-S06证明[dns_follow.py:324](../../backend/agents/dns_follow.py#L324)重试持久化和重复重试拒绝；没有新的Mihomo成功发布时应保持waiting/零设备交互，后续发布完成仍partial。R103-F13/R163-F12未从合法现态证明到达：共享managed ref在import时提前拒绝，损坏raw参数草稿也没有触发目标guard，已撤回、不计完成。
+
 冻结比较针对每个端自己的已校验bundle成员原始字节。配置通过公开settings改为另一份后，旧file仍必须等于旧成员，完整SQL/预览文件不变；跨实现的生成主YAML照结构比较。ZIP下载由[generated_preview.download](../../backend/agents/generated_preview.py#L163)每次重打包，ZIP容器自身的时间戳不属于“旧成员内容不变”，不能把整个ZIP字节相等当作冻结条件。TTL仍核对真实expires_at≈创建时刻+3600，过期拒绝另由F11验证，不缩短生产TTL。
 
 ### Step B token保存后的轮换与版本注入边界

@@ -122,6 +122,14 @@ def validation(binary, recorder):
         with Pair(binary, recorder, options=opts) as pair:
             pair.request('R009-' + {0: 'S03', 1: 'S01', 2: 'S02'}[count], 'GET /api/aggregations/<resource_id>/health-impact',
                          '/api/aggregations/agg-a/health-impact', expect=200, writes=True)
+            if count == 2:
+                from cases.setup import Stable
+                pair.request('R009-B01', 'GET /api/aggregations/<resource_id>/health-impact',
+                             '/api/aggregations/agg-a/health-impact', expect=200, writes=True,
+                             interaction=Stable(pair), variant='actual-Unicode-profile-usage-names',
+                             check=lambda reply: require(len(reply.json()) == 2
+                                 and any('🧪' in item['name'] for item in reply.json()),
+                                 'usage response preserves the actual Unicode/emoji profile name'))
             if count:
                 pair.request('R003-F08', 'DELETE /api/aggregations/<agg_id>', '/api/aggregations/agg-a', expect=409, writes=True, variant='profiles-' + str(count))
             pair.request('R009-F08', 'GET /api/aggregations/<resource_id>/health-impact', '/api/aggregations/missing/health-impact',

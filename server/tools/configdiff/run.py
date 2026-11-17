@@ -236,6 +236,16 @@ def main():
     groups.update(task_device_rows)
     from cases.task_webdav import GROUPS as task_webdav
     groups.update(task_webdav)
+    from cases.library_routing_edges import GROUPS as library_routing_edges
+    groups.update(library_routing_edges)
+    from cases.task_dns_retry import GROUPS as task_dns_retry
+    groups.update(task_dns_retry)
+    from cases.provider_shapes import GROUPS as provider_shapes
+    groups.update(provider_shapes)
+    from cases.download_disconnect import GROUPS as download_disconnect
+    groups.update(download_disconnect)
+    from cases.aggregation_edges import GROUPS as aggregation_edges
+    groups.update(aggregation_edges)
     from cases.groups import GROUPS as managed_groups
     groups.update(managed_groups)
     from cases.rule_library import GROUPS as rule_library

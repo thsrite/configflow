@@ -17,6 +17,7 @@ class Source:
         self.headers = {'Content-Type': 'text/yaml; charset=utf-8'}
         self.responses = {}
         self.before_reply = lambda _path: None
+        self.after_reply = lambda _path: None
         owner = self
         class Handler(BaseHTTPRequestHandler):
             def log_message(self, *_args):
@@ -63,6 +64,11 @@ class Source:
                         self.wfile.write(body)
                     except (BrokenPipeError, ConnectionResetError):
                         pass  # Size-limit consumers may close immediately after headers.
+                    else:
+                        self.wfile.flush()
+                        owner.after_reply(self.path)
+                else:
+                    owner.after_reply(self.path)
         server_type = ThreadingHTTPServer
         if host == '::1':
             class IPv6Server(ThreadingHTTPServer):

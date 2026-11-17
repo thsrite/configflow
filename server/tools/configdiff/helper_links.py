@@ -115,6 +115,23 @@ ROUTE_LINKS = {(case, route): ('H423',)
     for case in ('H416', 'H417', 'H418', 'H419', 'H420', 'H421', 'H422')
     for route in ('POST /api/oxidns/editor', 'POST /api/profiles/<profile_id>/oxidns/editor')}
 
+VARIANT_LINKS.update({
+    (rid + '-F15', variant, route): (helper,)
+    for rid, route in [('R214', 'POST /api/subscriptions'), ('R217', 'PUT /api/subscriptions/<sub_id>')]
+    for helper, variants in [('H1082', ('1', 'True', '[]', '{}')), ('H1083', ('regex-syntax',))]
+    for variant in variants
+})
+VARIANT_LINKS.update({
+    (rid + '-F16', variant, route): ('H1084',)
+    for rid, route in [('R214', 'POST /api/subscriptions'), ('R217', 'PUT /api/subscriptions/<sub_id>')]
+    for variant in ('-1', '59', '604801', '2592000', 'True', '60.0', "'60'", 'None')
+})
+VARIANT_LINKS.update({
+    (rid + '-S04', 'real-403-then-last-valid-node-cache', route): ('H1071',)
+    for rid, route in [('R220', 'GET /api/subscriptions/<sub_id>/proxies'),
+                       ('R154', 'GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies')]
+})
+
 
 def attach(results):
     for result in results:
