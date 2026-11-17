@@ -154,3 +154,21 @@ cancellation is deliberately not migrated here. No schema/version change,
 new dependency, feature omission, push or PR.
 
 Exact commands and final output: [review report](../review-n8-2.md).
+
+## Supplementary opt-in differential audit (in progress)
+
+Coordinator found an omitted C13 route differential after hand-back. The original
+review had not enumerated every opt-in package; runtime proxy behaviour was
+correct but TestDifferentialReviewLoopbackProxy still asserted old decision 5.
+It now checks each route's full Python proxy / Go origin request (list=1, mode
+readiness=1, failed GitHub update=0), including authority/auth headers. The list
+asserts current_version Python=2.99.0 / Go=2.40.0, then strictly compares the
+entire remaining JSON; mode/update and persisted mode compare strictly.
+New non-loopback explicit-proxy differential compares real requests and Go:
+full authenticated absolute target, status, content type and complete JSON.
+No skips or broad normalization. .32 targeted substore/difftest passed 5.917s.
+Source sweep of all *_test.go loopback / environment proxy references and all
+CONFIGFLOW_DIFF entry points found no other stale loopback assertion (A15
+already updated). A stale C13 comment was corrected. Next: enumerate every
+Go package named difftest on .32, then CONFIGFLOW_DIFF agents/substore/upgrades
+and the package-external WebDAV TLS probe; record complete results and rebase.

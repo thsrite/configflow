@@ -25,7 +25,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync/atomic"
+	"sync"
 	"testing"
 	"time"
 
@@ -160,7 +160,10 @@ func login(t *testing.T, base string) string {
 type request struct {
 	name, method, path, body string
 	anonymous                bool
-	contains                 string // both bodies must contain it
+	contains                 string    // both bodies must contain it
+	currentVersions          [2]string // explicit native loopback outcomes, Python then Go
+	before                   func()
+	observe                  func(*testing.T, string)
 }
 
 func send(t *testing.T, base, token string, r request) (int, []byte, http.Header) {
@@ -226,12 +229,52 @@ func runWith(t *testing.T, env map[string]string, prepare func(pyDir, goDir stri
 	pyToken, goToken := login(t, pyBase), login(t, goBase)
 	failed := 0
 	for _, r := range requests {
+		if r.before != nil {
+			r.before()
+		}
 		ps, pb, ph := send(t, pyBase, pyToken, r)
+		if r.observe != nil {
+			r.observe(t, "python")
+		}
+		if r.before != nil {
+			r.before()
+		}
 		gs, gb, gh := send(t, goBase, goToken, r)
+		if r.observe != nil {
+			r.observe(t, "go")
+		}
 		pv, perr := jsonx.Parse(pb)
 		gv, gerr := jsonx.Parse(gb)
+		expected := pv
+		if r.currentVersions != ([2]string{}) {
+			if ps != 200 || gs != 200 || perr != nil || gerr != nil {
+				t.Fatalf("%s: native version boundary did not return JSON 200", r.name)
+			}
+			// Only the named version leaf differs. Assert both actual values
+			// before constructing the complete expected Go response.
+			for side, body := range []any{pv, gv} {
+				root, ok := body.(*jsonx.Object)
+				if !ok {
+					t.Fatal("dependency response is not an object")
+				}
+				dependencies := root.GetList("dependencies")
+				if len(dependencies) != 1 {
+					t.Fatal("dependency list changed")
+				}
+				dependency, ok := dependencies[0].(*jsonx.Object)
+				if !ok || dependency.GetString("current_version") != r.currentVersions[side] {
+					t.Fatalf("%s: side %d unexpected current_version", r.name, side)
+				}
+			}
+			if ph.Get("Content-Type") != "application/json" || gh.Get("Content-Type") != "application/json" {
+				t.Fatal("native dependency content type changed")
+			}
+			t.Logf("native %s: current_version Python=%s Go=%s; remaining response strict", r.name, r.currentVersions[0], r.currentVersions[1])
+			expected = jsonx.DeepCopy(pv)
+			expected.(*jsonx.Object).GetList("dependencies")[0].(*jsonx.Object).Set("current_version", r.currentVersions[1])
+		}
 		migrated := httpxtest.MigratedAPIError(r.method, ps, gs, ph, gh, pb, gb)
-		same := migrated || ps == gs && ((perr == nil && gerr == nil && jsonx.Equal(pv, gv)) || bytes.Equal(pb, gb))
+		same := migrated || ps == gs && ((perr == nil && gerr == nil && jsonx.Equal(expected, gv)) || bytes.Equal(pb, gb))
 		if r.contains != "" && (!strings.Contains(string(pb), r.contains) || !strings.Contains(string(gb), r.contains)) {
 			failed++
 			t.Errorf("%s: body lacks %q:\n  python %s\n  go     %s", r.name, r.contains, pb, gb)
@@ -332,45 +375,126 @@ func runtimeRoot(dataDir string) string {
 	return filepath.Join(tmp, "configflow-sub-store-"+hex.EncodeToString(sum[:])[:12])
 }
 
-// recordingProxy answers every proxied request as a Sub-Store of another
-// version, so a response shows which way the request went.
-func recordingProxy(t *testing.T) (*httptest.Server, *int32) {
-	var seen int32
+// requestLog records every HTTP request, including its authority and credentials.
+type requestLog struct {
+	mu      sync.Mutex
+	entries []string
+}
+
+func (l *requestLog) record(r *http.Request) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.entries = append(l.entries, r.Method+" "+r.RequestURI+" host="+r.Host+" proxy-auth="+r.Header.Get("Proxy-Authorization")+" auth="+r.Header.Get("Authorization"))
+}
+func (l *requestLog) take() []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	entries := l.entries
+	l.entries = nil
+	return entries
+}
+
+// recordingProxy returns a distinct version so accidental proxying is observable.
+func recordingProxy(t *testing.T) (*httptest.Server, *requestLog) {
+	log := &requestLog{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.RequestURI, "http://") {
-			atomic.AddInt32(&seen, 1)
-		}
+		log.record(r)
 		w.Header().Set("Content-Type", "application/json")
 		io.WriteString(w, `{"status":"success","data":{"backend":"Node","version":"2.99.0"}}`)
 	}))
 	t.Cleanup(srv.Close)
-	return srv, &seen
+	return srv, log
 }
 
-// TestDifferentialReviewLoopbackProxy (review C13): with HTTP_PROXY set and no NO_PROXY,
-// requests sends the loopback Sub-Store requests through the proxy; both servers must
-// report the proxy's answer.
+// TestDifferentialReviewLoopbackProxy asserts the 2026-11-17 native N2
+// decision independently: requests proxies loopback, Go goes direct.
 func TestDifferentialReviewLoopbackProxy(t *testing.T) {
 	if os.Getenv("CONFIGFLOW_DIFF") != "1" {
 		t.Skip("set CONFIGFLOW_DIFF=1 on the test server")
 	}
-	fake := fakeSubStore(t)
+	direct := &requestLog{}
+	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		direct.record(r)
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"status":"success","data":{"backend":"Node","version":"2.40.0"}}`)
+	}))
+	t.Cleanup(fake.Close)
 	proxy, seen := recordingProxy(t)
 	bundle := t.TempDir()
 	os.WriteFile(filepath.Join(bundle, substore.SubStoreAsset), []byte("bundle"), 0o644)
 	os.WriteFile(filepath.Join(bundle, "VERSION"), []byte("2.40.0\n"), 0o644)
 	port := fake.URL[strings.LastIndex(fake.URL, ":")+1:]
-	mode := "/api/settings/dependencies/sub-store/mode"
-	runWith(t, map[string]string{"SUB_STORE_BUILTIN_DIR": bundle, "SUB_STORE_BACKEND_API_PORT": port,
-		"HTTPS_PROXY": closedProxy(t), "HTTP_PROXY": proxy.URL, "NO_PROXY": "", "no_proxy": "", "SUB_STORE_URL": ""},
-		nil, []request{
-			{name: "list via proxy", method: "GET", path: "/api/settings/dependencies", contains: `2.99.0`},
-			{name: "mode always via proxy", method: "POST", path: mode, body: `{"mode": "always"}`},
-			{name: "update via proxy", method: "POST", path: "/api/settings/dependencies/sub-store/update"},
-		})
-	if atomic.LoadInt32(seen) < 4 {
-		t.Errorf("proxy saw %d requests", atomic.LoadInt32(seen))
+	targetHost := strings.TrimPrefix(fake.URL, "http://")
+	observe := func(want int) func(*testing.T, string) {
+		return func(t *testing.T, side string) {
+			t.Helper()
+			proxied, origin := seen.take(), direct.take()
+			wantProxy, wantDirect := []string{}, []string{}
+			if want != 0 {
+				if side == "python" {
+					wantProxy = []string{"GET " + fake.URL + "/api/utils/env host=" + targetHost + " proxy-auth= auth="}
+				} else {
+					wantDirect = []string{"GET /api/utils/env host=" + targetHost + " proxy-auth= auth="}
+				}
+			}
+			if strings.Join(proxied, "\n") != strings.Join(wantProxy, "\n") || strings.Join(origin, "\n") != strings.Join(wantDirect, "\n") {
+				t.Fatalf("%s: proxy=%q want=%q direct=%q want=%q", side, proxied, wantProxy, origin, wantDirect)
+			}
+		}
 	}
+	reset := func() { seen.take(); direct.take() }
+	runWith(t, map[string]string{"SUB_STORE_BUILTIN_DIR": bundle, "SUB_STORE_BACKEND_API_PORT": port, "HTTPS_PROXY": closedProxy(t), "HTTP_PROXY": proxy.URL, "http_proxy": proxy.URL, "NO_PROXY": "", "no_proxy": "", "ALL_PROXY": "", "all_proxy": "", "REQUEST_METHOD": "", "SUB_STORE_URL": ""}, nil, []request{
+		{name: "list native loopback", method: "GET", path: "/api/settings/dependencies", currentVersions: [2]string{"2.99.0", "2.40.0"}, before: reset, observe: observe(1)},
+		{name: "mode always native loopback", method: "POST", path: "/api/settings/dependencies/sub-store/mode", body: `{"mode":"always"}`, before: reset, observe: observe(1)},
+		{name: "update native loopback", method: "POST", path: "/api/settings/dependencies/sub-store/update", before: reset, observe: observe(0)},
+	})
+}
+
+// TestDifferentialExplicitRemoteProxy compares real requests and Go with an
+// explicit proxy for a synthetic non-loopback URL. No origin DNS is contacted.
+func TestDifferentialExplicitRemoteProxy(t *testing.T) {
+	if os.Getenv("CONFIGFLOW_DIFF") != "1" {
+		t.Skip("set CONFIGFLOW_DIFF=1 on the test server")
+	}
+	proxy, seen := recordingProxy(t)
+	target := "http://upstream.example:8080/subscription?token=synthetic"
+	proxyURL := strings.Replace(proxy.URL, "://", "://review:synthetic-password@", 1)
+	python := os.Getenv("CONFIGFLOW_DIFF_PYTHON")
+	if python == "" {
+		python = filepath.Join(os.Getenv("HOME"), "cf-test/.venv/bin/python")
+	}
+	const script = `import json, requests, sys
+r=requests.Session().get(sys.argv[1],proxies={'http':sys.argv[2],'https':sys.argv[2]},headers={'Authorization':'Bearer synthetic-token'},timeout=5)
+print(json.dumps({'status':r.status_code,'type':r.headers['Content-Type'],'body':r.json()}))`
+	cmd := exec.Command(python, "-I", "-c", script, target, proxyURL)
+	cmd.Env = append(os.Environ(), "HTTP_PROXY=", "http_proxy=", "HTTPS_PROXY=", "https_proxy=", "ALL_PROXY=", "all_proxy=", "NO_PROXY=*", "no_proxy=*", "REQUEST_METHOD=")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("real requests explicit proxy failed: %v %s", err, output)
+	}
+	pyTrace := seen.take()
+	response, err := (substore.RequestsClient{}).Do(context.Background(), &substore.Request{Method: "GET", URL: target, Proxy: proxyURL, Timeout: substore.Seconds(5), Header: http.Header{"Authorization": {"Bearer synthetic-token"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	goTrace := seen.take()
+	expectedTrace := "GET " + target + " host=upstream.example:8080 proxy-auth=Basic cmV2aWV3OnN5bnRoZXRpYy1wYXNzd29yZA== auth=Bearer synthetic-token"
+	if len(pyTrace) != 1 || pyTrace[0] != expectedTrace || len(goTrace) != 1 || goTrace[0] != expectedTrace {
+		t.Fatalf("explicit proxy traces: python=%q Go=%q", pyTrace, goTrace)
+	}
+	py, err := jsonx.Parse(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := jsonx.Parse(response.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	actual := jsonx.Obj("status", response.StatusCode, "type", response.Header.Get("Content-Type"), "body", body)
+	if !jsonx.Equal(py, actual) {
+		t.Fatalf("explicit proxy response differs: python=%s Go=%s", output, response.Body)
+	}
+	t.Log("explicit non-loopback proxy: status, content type, complete JSON and authenticated request trace match")
 }
 
 // TestDifferentialReviewMalformedState (review C13): a state.json that is not an object

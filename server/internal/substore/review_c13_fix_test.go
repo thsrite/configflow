@@ -1,7 +1,7 @@
 package substore
 
 // Regression tests of review C13 fixes that are not covered by the Python
-// reference file: requests' environment proxies (no loopback bypass),
+// reference file: native environment proxies (loopback bypass since N2),
 // cancelled request contexts, host label checks, subprocess text decoding,
 // os.makedirs error texts, remembered falsy conversions and panics in the
 // update thread.

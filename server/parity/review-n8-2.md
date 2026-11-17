@@ -172,3 +172,18 @@ PROGRESS-agents 和用户手册 doc/manual/system-settings.md（环境配置说�
 repo/testdata/review_n82_interchange.py **80**；agents/review_n82_proxy_test.go **48**；
 substore/review_n82_proxy_test.go **42**；scripts/review-n8-2-startup.py **53**；本报告。
 无私有数据、真实域名/IP/凭据或临时debug文件提交。
+
+
+## 补充：遗漏的 opt-in 差分审计
+
+协调者复验发现 C13 `TestDifferentialReviewLoopbackProxy` 仍按旧决定5断言。上次没有
+完整枚举所有 opt-in 包，属于验收覆盖遗漏；生产选择器没有新增功能错误。现逐例
+记录完整 method/target/Host/代理认证/Authorization：依赖列表和切常驻 readiness
+各1次 Python代理/Go直连；GitHub检查失败的update在读取运行版本前结束，两端0次。
+列表仅 `dependencies[0].current_version` 明确断言 Python=2.99.0、Go=2.40.0；然后
+完整比较其余响应，模式/update响应及持久化mode仍严格一致。新增非loopback目标的
+显式代理真实requests↔Go差分，认证请求trace、状态、Content-Type、完整JSON都严格比较。
+没有skip，也没有按整行放行。源码全扫 loopback/HTTP_PROXY/CONFIGFLOW_DIFF；A15已更新，
+A06 NoProxy测试使用synthetic host，不依赖旧loopback例外；其余差分清空环境代理或
+明确NO_PROXY。另补跑包外WebDAV的CONFIGFLOW_DIFF TLS校验，避免只按包名筛漏。
+完整枚举 .32 验收结果待补（单独 substore/difftest 已通过5.917s）。
