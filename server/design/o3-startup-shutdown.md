@@ -1,6 +1,7 @@
-# Go 后端的启动与停止
+# O3-3 实现说明：启动与停止
 
-Go 后端要求一个数据目录只由一个服务进程使用。启动时先取得
+Go 后端要求一个数据目录只由一个服务进程使用。main 先调用共享的
+`repo.ResolveDataDir` 展开用户目录并解析符号链接，再取得
 `DATA_DIR/.configflow-server.lock`，并同时持有 Python 的四把调度器生命周期锁。
 如果前一个 Go 或 Python 服务尚未退出，最多等待 30 秒，然后以状态码 1 退出，提示：
 
@@ -21,3 +22,11 @@ Go 后端要求一个数据目录只由一个服务进程使用。启动时先�
 
 Go 不接受 legacy 存储，也不再执行旧版一次性 DNS 清理迁移。切换前须先升级到最后一个
 Python 版本并启动一次，完成旧数据迁移，再使用 Go 后端。
+
+接口和阶段约定见 [o3-concurrency.md](o3-concurrency.md)。Startup 注册在 Wire 重复注册时
+保留原位置，`lifecycle.RunStartup` 先执行一次性工作，监听后才由 Start 启动周期循环。
+httpx 的通知位于 profile hook 和 auth gate 之后；鉴权门禁拒绝时不启动首请求循环。
+
+HTTP Drain 并行等待 API/web 的 `http.Server.Shutdown` 并回收控制协程。到截止时间后，
+PhaseClose 会关闭剩余连接、刷出日志、释放实例锁。SQLite 连接由各操作的 owner 关闭，
+目前没有需要伪造 Close 方法的常驻全局数据库对象。

@@ -77,6 +77,23 @@ probe timeout reproduced in the first parallel suite; its original-threshold foc
 reduced-concurrency full rerun pass. That probe is owned by go-fix-importer-bounds and was not changed here.
 Coordinator clarifications are in design §2.3; independent O3-2/O3-3 review is still scheduled.
 
+## O3-3 — instance/startup/shutdown integration (ported, 2026-11-17)
+
+Five-lock instance ownership precedes log/repository initialization; shared ResolveDataDir makes
+absolute, home and symlink aliases use the same lock. Ordered synchronous Startup precedes listening;
+httpx signals profile/auth-passed requests. Main injects HTTP Drain, splits first/final metrics saves,
+bounds shutdown with the default 8s grace, closes resources/releases ownership and supports immediate
+second-signal exit. Three old loop lifetime flocks removed now; their timing/Periodic migration stays
+O3-4. Production has no loop-disable switch. Implementation and approved boundaries:
+[progress/o3-3-startup.md](progress/o3-3-startup.md), [design notes](../design/o3-startup-shutdown.md).
+
+Post-fix .32 fmt/vet, required race plus instance/repo, both tag sets, `-p=4` full suite, all nine then
+present enabled tagged differentials, three synthetic corrupt-startup checks and 31 proddiff tool tests
+pass; proddiff 23 self-checks/2831cases/415comparisons, `new=0 stale=0`. Actual SIGTERM idle/publishing/
+blocked Drain and second-signal cases pass; real Python-compatible and alias ownership rejection pass
+with zero scheduled egress. Author status is ported; Opus review with O3-1/O3-2 is still required.
+Final latest-go composition check includes N7-2's additional subs/difftest package.
+
 ## Known accepted differences (do not rediscover)
 
 - jsonx: lone UTF-16 surrogates cannot be represented in Go strings (documented in `jsonx/doc.go`); `test_json_response.py::test_surrogate_strings_keep_normalization_before_redaction` depends on it.

@@ -1,111 +1,140 @@
 # O3-3 — instance ownership, startup and shutdown
 
-Status: in progress, branch `go-o3-3` from integrated O3-1/O3-2 on `go`. No sub-agents or pushes.
+Status: implementation and post-fix `.32` acceptance complete; latest-go composition check pending. Branch `go-o3-3`, rebased onto
+`go@3ae44741`; tested candidate `00126bf9`. No sub-agents, pushes or production-device access.
+Coordinator successor: `bb75f5c0-8c87-410c-84cd-20801944f7e0`.
 
-Scope: five lifetime instance locks, ordered synchronous startup before listening, profile/auth-passed
-request notification, injected HTTP drain, two metrics flush phases, bounded signal shutdown and cleanup.
-Tests/builds run only on servers; real cross-process/SIGTERM acceptance runs on .32.
+## Implementation and approved boundaries
 
-Coordinator approved in O3-3: remove the three old loop lifetime flocks now without changing timing;
-introduce repo.PrepareConfig while preserving LoadConfig callers; explicitly order configuration, prune,
-Agent init and metrics history startup; do not resurrect the deliberately retired node DNS migration.
-Record these clarifications in design §2 and mark the early metrics startup work done under O3-4.
+- New `internal/instance` holds `.configflow-server.lock` and all four Python lifetime locks until
+  Release. Busy locks retry at 500ms under main's 30s deadline. Failure rolls back partial ownership;
+  ErrInUse retains the context cause and emits the centralized Chinese directory diagnostic.
+  Server-file diagnostics contain pid/version/start-time; old Python lock bytes and files are preserved.
+- `repo.ResolveDataDir` shares Open's existing home expansion/path resolution without opening storage.
+  Main resolves before Acquire, then initializes logging and opens the repository. This fixes the
+  high-severity home-alias ownership bypass found during implementation: raw `~/data` must never be
+  locked while the repository opens the expanded home path. Absolute/home/symlink aliases share locks.
+- `repo.PrepareConfig` prepares configuration without initializing the Agent manager; LoadConfig keeps
+  its prior hook behaviour. Main explicitly registers Startup in order: load-config, existing prune,
+  agent-manager-init, metrics-load-history; RunStartup completes before any listener is opened.
+  Repeated Wire registration replaces specifications in place, preserving this order.
+- Remove the three old lifetime flocks now (refresh, discovery auto, ranking history), as approved;
+  otherwise instance ownership would exclude the Go process's own loops. Existing Loop timing remains
+  30/30, 120/600 and 60/60. Periodic migration remains O3-4. Metrics startup/history loading and the two
+  shutdown-save phases are already complete here; the O3-4 row records that early work.
+- httpx notifies lifecycle after profile resolution and the auth gate. Rejected profiles/credentials
+  do not count; authenticated requests and allowed public heartbeats do. This supplies the D3 trigger;
+  it does not port the future Agent rule-sync worker itself.
+- Configure injects concurrent API/web http.Server.Shutdown as Drain. First metrics save precedes drain;
+  handlers/jobs drain together, remaining jobs cancel at grace−2s, cancellation waits at most 0.5s,
+  then the final save runs. PhaseClose closes remaining HTTP connections, flushes logx and releases
+  instance ownership. Native Shutdown workers and API Serve are joined. Second SIGTERM/SIGINT exits 0.
+- Grace defaults to 8s under the unchanged 10s image stop budget; validate finite positive durations.
+  Production has no loop-disable flag or env switch. Test callbacks and helper envs live in `_test.go`.
+- Store, traffic and ranking SQLite handles are operation-scoped and already closed by their owners;
+  there is no persistent process-wide sql.DB or repository Close API to fake.
+- Preserve N8-2 safe corrupt-storage diagnostics in file+stderr at the main error boundary. Busy
+  ownership failures only log to console. Both error-log and service paths use the shared resolver.
+- Do not revive node-test-dns-migrate: users upgrade/start the final Python version first. This existing
+  PORTING decision now has an explicit O12 entry. Coordinator clarifications are in design §2.3;
+  developer notes are [o3-startup-shutdown.md](../../design/o3-startup-shutdown.md), outside user doc/.
 
-Instance core and cross-process tests pass on .32: gofmt/vet clean, race 7.726s. Six cases cover each Go/Python lock and all four Python lifetime locks together; diagnostics, preserved legacy bytes, retry, cancellation, rollback and idempotent release also pass. Next: startup/config wiring,
-request gate notification, main signal/drain/close phases, real SIGTERM tests, final .32 acceptance,
-rebase and clean tree. The existing slow oxidns full-race issue is owned by a separate agent.
+## Regression evidence
 
-Startup preparation and request-gate step implemented: PrepareConfig preserves LoadConfig's hook
-behaviour; global RunStartup permits listening only after startup and blocks Configure while running.
-Metrics history loading now registers as Startup, with separate first/last shutdown flush hooks;
-substore exposes the existing prune registration for main ordering. Three old loop flocks removed,
-timing unchanged; per-loop regressions drive the existing waits under real instance ownership.
-.63 vet and focused tests pass (repo .101s, metrics .536s, refresh .177s, discovery .100s,
-monitor .073s, lifecycle .012s). Initial focused build found two obsolete test imports; removed them.
-HTTP profile/auth/public heartbeat regression passes under .63 race (httpx3.340s, lifecycle2.037s). Main now acquires before repository open, registers ordered startup, injects concurrent HTTP drain, and uses phased flush/close/release with second-signal force exit; main vet/build and focused httpx/lifecycle tests pass. Real SIGTERM process coverage and final full acceptance pending.
+- Real cross-process flock holders cover each of the five locks and all four Python locks together,
+  context timeout, Chinese error text, retry, partial rollback, persistent file contents, diagnostics
+  and concurrent idempotent Release. Real main refuses the Python-compatible holder at 30s before DB open.
+- PrepareConfig defers manager initialization; LoadConfig still initializes it. Configure cannot
+  replace a Runtime while its synchronous RunStartup callback is active.
+- Isolated HTTP child tests prove profile/auth rejection does not trigger work, public heartbeats count,
+  and later accepted requests do not repeat the first-request trigger.
+- Every old loop executes under instance ownership with injected waits proving unchanged delays/intervals.
+- Real `.32` main process race passes: idle SIGTERM 1.048s, publishing 1.087s, blocked HTTP drain 7.010s,
+  second-signal exit 1.060s. Publishing writes a second metric after flush #1; flush #2 persists it.
+  Every scenario permits ownership reacquisition after exit.
+- Real home/symlink server-vs-server rejection passes at 31.43s/31.44s, each with outbound count 0.
+  The clock and loop delays remain real; a recording/refusing refresh.Env covers every subscription,
+  rule-source and userinfo I/O boundary of the only scheduler eligible in this 30s window. A positive
+  test calls all three boundaries and proves the observer records/refuses them.
+- Fixtures are legitimate empty stores created with repo.Open(Options{}), explicit empty resources and
+  a synthetic Agent; real child main still uses OpenDefault. No template resources, product guard
+  bypass, legacy-name whitelist or loop-disabling mode is used.
 
-Real `.32` process race validation passes (cmd/configflow 42.943s): actual SIGTERM idle 1.237s,
-publishing 1.481s, blocked HTTP drain 7.009s, second-signal force exit 1.245s; each reacquires the
-instance after exit. First save is observed before work completion; second saves its additional point.
-A separate process blocked by all four Python-compatible locks exits 1 at 30.05s, emits the same
-centralized Chinese diagnostic, and never creates configflow.sqlite3. New finite/range grace parsing
-and Configure-during-synchronous-startup tests are being checked before the final acceptance run.
+## Findings and integration
 
-Finite/range grace validation and Configure-during-startup regression pass on .32 race;
-cmd12.346s, lifecycle2.031s, fake clock1.015s. The real signal scenarios also reran after the managed
-shutdown panic boundary was added. The retired migration was listed in PORTING but not explicitly
-in the behaviour-change table; an O12 entry now makes that operator prerequisite explicit.
+Fixed: raw-home path could lock a different directory from the DB; old three lifetime flocks would
+skip Go loops under instance ownership; per-call HTTP drain must join its control goroutines.
+No open production finding is known; independent Opus review is still required with O3-1/O3-2.
 
-Per coordinator routing correction, developer operation notes live at
-[design/o3-startup-shutdown.md](../../design/o3-startup-shutdown.md), not doc/.
-Rebased onto go@045f2485 before final .32 acceptance; three code steps now
-6be4e9f6 / feb5e869 / c09be36e. Final acceptance in progress.
+Fixed test setup errors: proddiff-tag child needed its own manifest path; editing/deleting referenced
+production-template resources correctly failed repository guards. Two failed resource-edit attempts
+were escalated under AGENT-BRIEF; coordinator approved the empty native-store fixture above.
+Neither product reference validation nor loop behaviour was changed to silence those tests.
 
-Final control-goroutine audit: HTTP drain now joins both native Shutdown workers even when ctx
-expires (Shutdown itself honours ctx), so the per-call fan-out never returns with its workers
-unjoined. This small main-only adjustment will be rechecked after the current foreground gate run.
+Rebase preserved new N8-2 main recovery logging and both behaviour-change ledger sections. The
+integrated synthetic startup script passed all three corrupt JSON/UTF-8/large-value cases: exit=1,
+safe file+stderr diagnostics and original DB bytes unchanged. Previous pre-alias candidate also passed
+full/differential/proddiff gates; those results are superseded by the post-fix final run below.
 
-Also retain refresh.Loop's original repository validation before its first wait; only its flock
-is removed. This preserves the pre-loop failure boundary while keeping the same main behaviour.
+## Commits
 
-First final acceptance: gofmt/vet and every touched-package race passed (lifecycle3.104s,
-clock1.015s, lockx3.444s, httpx34.934s, cmd43.126s, instance7.747s, repo31.378s,
-metrics6.366s, refresh154.964s, discovery9.960s, monitor290.475s, substore7.277s).
-Proddiff-tag main tests then exposed a fixture mistake: PRODDIFF_ROUTES was cleared, so the
-required tagged manifest helper correctly refused startup. Give every child a private manifest path
-and join subprocess waiters during cleanup; report child logs on readiness failures. Production
-manifest behaviour is unchanged. Full/differential/proddiff stages had not yet run in that attempt.
+- `ad9067ff`: instance core and cross-process locks.
+- `922b4fd5`: ordered startup, main drain/shutdown, request notification, early owner wiring.
+- `e09a2773`: real signal tests, grace validation and startup/Configure regression.
+- `d1255fb0`: developer notes routed into server/design.
+- `c7f7cfca`: joined drain workers and private tagged process fixtures.
+- `4244d85a`: shared data-directory resolver and real alias regressions.
+- `b98e6110`: preserve integrated safe startup diagnostics.
+- `00126bf9`: approved empty fixtures and zero scheduled egress assertions.
 
-Post-audit focused .32 validation passes: refresh instance-owned loop race1.118s,
-real SIGTERM/grace scenarios under proddiff tag6.320s and difftest tag6.324s. Final acceptance
-will rerun fmt/vet, the required runtime/lock/http/cmd race set, both complete tagged test sets,
-full suite, every enabled tagged differential and proddiff on the corrected fixtures.
+## Final `.32` acceptance
 
-Coordinator-approved path-ownership fix: ResolveDataDir shares Open's existing expandUser/resolve;
-main normalizes before Acquire without opening storage. Added a no-I/O resolution unit test plus
-real server-vs-server home alias and symlink cases (each must reject at the 30s lock deadline).
-The earlier gate run still tests the pre-fix snapshot; full final acceptance must be rerun after this.
+Foreground, no background test job; all gates must complete before hand-back:
 
-ResolveDataDir/PrepareConfig/no-storage-creation regressions and main grace compilation pass on
-.63 race (repo1.192s, cmd1.038s). No path helper was copied; Open delegates to the exported resolver.
-Full real alias process cases will run on .32. Production operation-scoped SQLite handles are closed
-by store/traffic/ranking owners; no fake process-wide Close API was introduced.
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'set -euo pipefail
+cd server
+test -z "$(gofmt -l .)"
+go vet ./...
+go test -race -p=4 -timeout=30m -count=1 ./internal/lifecycle/... ./internal/lockx/... ./internal/httpx/... ./cmd/configflow ./internal/instance/... ./internal/repo
+go test -tags=configflow_proddiff -p=4 -timeout=5m -count=1 ./cmd/configflow ./internal/lifecycle/...
+go test -tags=configflow_difftest -p=4 -timeout=5m -count=1 ./cmd/configflow ./internal/lifecycle/...
+go test -p=4 -timeout=30m -count=1 ./...
+mapfile -t o3_diff_packages < <(go list -tags=configflow_difftest ./... | rg "/difftest$")
+CONFIGFLOW_DIFF=1 go test -tags=configflow_difftest -p=4 -timeout=30m -count=1 "${o3_diff_packages[@]}"
+o3_binary=$(mktemp)
+trap "rm -f \"$o3_binary\"" EXIT
+go build -o "$o3_binary" ./cmd/configflow
+cd ..
+PYTHONPATH=. ~/cf-test/.venv/bin/python server/scripts/review-n8-2-startup.py "$o3_binary"
+~/cf-test/.venv/bin/python server/tools/proddiff/test_proddiff.py
+server/scripts/proddiff.sh'
+```
 
-Pre-path-fix candidate finished .32 gates successfully: required race, both full tag test sets,
--p4 full Go suite, all nine enabled tagged differentials (agents123.048s, subscriptions87.185s),
-31 proddiff tool tests and tagged proddiff new=0/stale=0 (4 startup names, 5 suppressed loops).
-These results are superseded by the required post-path-fix final rerun.
+Final candidate command exited 0:
 
-Rebased onto go@f0fb3815 (N8-2 native store/diagnostics review, N2 proxy changes, A16–A18 design).
-Resolved main's new error-boundary logging in favour of preserving safe recovery diagnostics in
-file+console; busy ownership failures only use console. Log destinations use ResolveDataDir as well.
-Merged both behaviour-change ledger sections. Will run the integrated N8-2 synthetic startup script
-against the final production binary to verify the logging conflict did not regress recovery.
+- gofmt/vet: silent, pass.
+- Required + instance/repo race: lifecycle3.139s, clock1.022s, lockx3.550s, httpx40.003s,
+  cmd105.628s, instance7.779s, repo36.563s; all pass.
+- Proddiff-tag main96.745s/lifecycle.064s/clock.010s; difftest-tag main96.563s/lifecycle.050s/
+  clock.006s; all pass, including real signal and path-alias process cases.
+- Full `-p=4`: PASS (cmd96.746s, importer1.502s, installer167.092s, oxidns89.398s,
+  repo3.729s, yamlx1.049s); final package output `ok configflow/internal/yamlx 1.049s`.
+- All nine then-present enabled tagged differentials pass: agents152.501s, subscriptions130.037s,
+  discovery3.185s, health14.601s, httpx1.580s, mosdns2.344s, refresh5.055s,
+  substore11.006s, webdav38.987s.
+- Production binary startup script: `3 synthetic corrupt startup cases: exit=1, safe log+stderr,
+  original database bytes unchanged`.
+- Python proddiff tool tests: `Ran 31 tests in 0.024s`, `OK`.
+- Tagged proddiff: all 23 self-checks PASS, 2831 cases/415 comparisons,
+  coverage_regressions=0, unmapped_routes=0, baseline `new=0 stale=0`; 4 Startup names and 5 suppressed
+  periodic loops. No comparator waiver or baseline rewrite. Existing 11 baseline differences remain.
 
-Real .32 home/symlink server-vs-server rejection and N8-2 diagnostics passed (cmd76.749s,
-repo1.120s; three synthetic corrupt startup cases preserve database bytes and safe file+stderr output).
-Alias fixtures now explicitly remove bundled subscription/rule-library resources before starting
-owners, because they intentionally live past the first scheduler tick; all test work stays loopback.
-Final full rerun follows this fixture isolation adjustment.
+Earlier all-touched-package race also passed metrics/refresh/discovery/monitor/substore. Full oxidns
+race is not requested here; its known default-timeout issue remains owned by another agent.
+Non-test lines: instance0→121, cmd233→393. No dependency added.
 
-After rebasing, main's recovery logger and the no-remote-resource fixture adjustment compile and
-pass .63 vet/focused tests (cmd.020s, repo.059s). Final post-alias-fix acceptance starts now.
-
-Post-alias-fix full attempt: required race packages and repo pass, but cmd's new fixture resource
-removal correctly hit repository reference protection (default profile still references subscribe).
-Fixture now retains IDs, disables entries and clears URLs. No product reference guard changed.
-Probe deadlines are 100ms rather than 1ms to avoid scheduler-dependent pre-expired probes. Recheck
-all real main scenarios before restarting the complete gate sequence.
-
-Coordinator approved a fresh empty fixture via repo.Open(Options{}), explicit empty resources and
-synthetic Agent, read later by the real child OpenDefault. Added a recording/refusing refresh.Env
-covering subscription, rule and userinfo I/O; the real clock and loop delays are unchanged. Alias
-owner asserts zero outbound attempts after its actual 30s exclusion window; a positive test proves
-all three observer boundaries detect an attempt. Parent also rejects any outbound trace in signal
-scenarios. The two failed resource-edit attempts are test setup errors, not product guard changes.
-New coordinator session: bb75f5c0-8c87-410c-84cd-20801944f7e0; task scope is unchanged.
-
-Approved empty fixture + observer passes full real-main .32 race: cmd105.006s, idle1.048s,
-publish1.087s, blocked drain7.010s, force exit1.060s; Python lifetime lock rejection30.16s;
-home and symlink server rejection31.43s/31.44s with outbound count 0. Observer positive test passes.
-No product guard or loop timing was changed to resolve the fixture failures. Full final gates restart now.
+During final acceptance, go integrated N7-2 and its new subs/difftest package. Final rebase will
+preserve both ledger/progress sections; a composition rerun will check the full suite, all ten now
+present enabled tagged differential packages, fmt/vet and proddiff. Required race above remains
+recorded against the tested O3-3 code. Final rebase/clean verification follows this composition check.
