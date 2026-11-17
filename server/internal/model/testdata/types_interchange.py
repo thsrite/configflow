@@ -13,14 +13,13 @@ if mode == 'snapshot':
     copy = sqlite3.connect(private)
     try:
         original.backup(copy)
-        rows = [{'name': name, 'value': json.loads(value)} for name, value in
-                copy.execute('select field,value from fields order by scope,owner,position')]
+        rows = list(copy.execute('select field,value from fields order by scope,owner,position'))
     finally:
         copy.close()
         original.close()
         os.remove(private)
     with open(target, 'w') as handle:
-        json.dump(rows, handle, ensure_ascii=False)
+        handle.write('[' + ','.join('{"name":' + json.dumps(name) + ',"value":' + value + '}' for name, value in rows) + ']')
 elif mode == 'write':
     with open(source) as handle:
         rows = json.load(handle)

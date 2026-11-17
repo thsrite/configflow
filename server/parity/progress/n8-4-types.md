@@ -44,3 +44,18 @@ max-failed-times、disable-udp、hidden、icon、exclude-filter、exclude-type �
 来自快照的持久化编辑器元数据，即使当前 Python 只透传，也明确定义并保留原大小写。
 快照覆盖：60 ProxyGroup、94 RuleConfig、256 proxies_order 引用；chain 未出现，以合成夹具覆盖。
 N8-4b .64 定向验证：model 0.223s / repo 28.280s，Python/快照启用，PASS。
+
+N8-4b 提交：9855a052。
+N8-4c：Mihomo/Surge/Loon/MosDNS、EasyTier（全部 34 个 FIELDS 选项）、DomainDiscovery/history/recheck、
+DeviceNotes=Map[string]、ClientFixedIPs=Map[ClientFixedIP]，OxiDNS=Dynamic。
+字段来源：common/{config,config_repository,mihomo_easytier,device_notes,client_fixed_ip}.py、
+routes/{config,mosdns}.py、converters/{mihomo,surge,loon,mosdns}.py、utils/domain_discovery_service.py。
+custom_config 保持字符串：存储的是可编辑文本（包括未通过 YAML 验证的草稿），本步不解析或填默认；
+Node 树由消费者调用 yamlx 创建。MosDNS matches 的 string/list 用 TextLines 明确联合表示，保留形态。
+旧 api_addr 明确可选；默认地址在 Python 的读/写端还不一致，本步不抹平默认。
+快照覆盖：各引擎 2 行、EasyTier/Options/Keepalive 各 2、MosDNSMatch=4、DiscoveryHistory=10、
+DiscoveryRecheck=6、DeviceNotes=14；ClientFixedIPs 真实行是空对象（1 行），无真实 binding，
+ClientFixedIP 用逐字段合成/Python 双向验证，不能声称真实记录覆盖。
+N8-4c .64：model/repo 0.300s/28.759s PASS；增强后的原始 SQLite 嵌套记录逐个往返+改动隔离
+model 0.320s PASS。私有测试先检查原始 value 文本，再做 Python json 重写后的双向互读。
+新类型未新增运行依赖；未迁移业务调用方，无 Python 功能差异。

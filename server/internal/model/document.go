@@ -7,8 +7,8 @@ import (
 	"slices"
 )
 
-// Profile is the N8-3 profile skeleton. Complex members remain opaque until
-// their owning N8-4 type step; unknown members are retained in Fields.
+// Profile holds typed profile settings; routers remain opaque until N8-4f.
+// Unknown members are retained in Fields.
 type Profile struct {
 	ID              string          `json:"id"`
 	Name            string          `json:"name"`
@@ -18,15 +18,15 @@ type Profile struct {
 	Revision        Int             `json:"_revision"`
 	ProxyGroups     []ProxyGroup    `json:"proxy_groups"`
 	RuleConfigs     []RuleConfig    `json:"rule_configs"`
-	Mihomo          json.RawMessage `json:"mihomo"`
-	Surge           json.RawMessage `json:"surge"`
-	Loon            json.RawMessage `json:"loon"`
-	MosDNS          json.RawMessage `json:"mosdns"`
-	OxiDNS          json.RawMessage `json:"oxidns"`
+	Mihomo          MihomoSettings  `json:"mihomo"`
+	Surge           SurgeSettings   `json:"surge"`
+	Loon            LoonSettings    `json:"loon"`
+	MosDNS          MosDNSSettings  `json:"mosdns"`
+	OxiDNS          Dynamic         `json:"oxidns"`
 	Routers         json.RawMessage `json:"routers"`
-	DomainDiscovery json.RawMessage `json:"domain_discovery"`
-	DeviceNotes     json.RawMessage `json:"device_notes"`
-	ClientFixedIPs  json.RawMessage `json:"client_fixed_ips"`
+	DomainDiscovery DomainDiscovery `json:"domain_discovery"`
+	DeviceNotes     DeviceNotes     `json:"device_notes"`
+	ClientFixedIPs  ClientFixedIPs  `json:"client_fixed_ips"`
 	Fields          Fields
 	raw             Raw
 	// owner is the stored section key and ownerID the ID decoded with it. The

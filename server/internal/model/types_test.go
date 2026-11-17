@@ -18,6 +18,19 @@ func storedRecordTypes() []reflect.Type {
 		reflect.TypeFor[ResourceRef](), reflect.TypeFor[ProviderHealthCheck](),
 		reflect.TypeFor[Node](), reflect.TypeFor[Subscription](),
 		reflect.TypeFor[Aggregation](), reflect.TypeFor[RuleLibraryItem](),
+		reflect.TypeFor[MihomoSettings](),
+		reflect.TypeFor[SurgeSettings](),
+		reflect.TypeFor[SurgeSmartGroup](),
+		reflect.TypeFor[LoonSettings](),
+		reflect.TypeFor[EasyTierSettings](),
+		reflect.TypeFor[EasyTierKeepalive](),
+		reflect.TypeFor[EasyTierOptions](),
+		reflect.TypeFor[MosDNSSettings](),
+		reflect.TypeFor[MosDNSMatch](),
+		reflect.TypeFor[DomainDiscovery](),
+		reflect.TypeFor[DiscoveryHistory](),
+		reflect.TypeFor[DiscoveryRecheck](),
+		reflect.TypeFor[ClientFixedIP](),
 		reflect.TypeFor[ProxyChain](), reflect.TypeFor[ProxyGroup](), reflect.TypeFor[RuleConfig](),
 	}
 }
@@ -27,6 +40,11 @@ func typeJSON(typ reflect.Type, changed bool) []byte {
 		typ = typ.Elem()
 	}
 	switch typ {
+	case reflect.TypeFor[TextLines]():
+		if changed {
+			return []byte(`["qname edited.example.com"]`)
+		}
+		return []byte(`"qname example.com\n!qtype 28"`)
 	case reflect.TypeFor[Dynamic]():
 		return []byte(`{ "engine-extension": [1.0,"\u4f8b",true] }`)
 	case reflect.TypeFor[Int]():
@@ -217,6 +235,7 @@ func TestTypesPrivateSnapshot(t *testing.T) {
 	if json.Unmarshal(data, &rows) != nil {
 		t.Fatal("private rows decode failed")
 	}
+	checkSnapshotTypes(t, rows)
 	runTypesInterchange(t, rows, true)
 }
 
@@ -241,7 +260,15 @@ func runTypesInterchange(t *testing.T, rows []interchangeRow, private bool) {
 		registry[typ.Name()] = typ
 	}
 	rowTypes := map[string]reflect.Type{
-		"proxy_groups": reflect.TypeFor[Profile](), "rule_configs": reflect.TypeFor[Profile](),
+		"mihomo":           reflect.TypeFor[Profile](),
+		"surge":            reflect.TypeFor[Profile](),
+		"loon":             reflect.TypeFor[Profile](),
+		"mosdns":           reflect.TypeFor[Profile](),
+		"domain_discovery": reflect.TypeFor[Profile](),
+		"device_notes":     reflect.TypeFor[Profile](),
+		"client_fixed_ips": reflect.TypeFor[Profile](),
+		"oxidns":           reflect.TypeFor[Profile](),
+		"proxy_groups":     reflect.TypeFor[Profile](), "rule_configs": reflect.TypeFor[Profile](),
 		"nodes": reflect.TypeFor[Shared](), "subscriptions": reflect.TypeFor[Shared](),
 		"subscription_aggregations": reflect.TypeFor[Shared](), "rule_library": reflect.TypeFor[Shared](),
 	}
@@ -327,4 +354,139 @@ func FuzzStoredTypes(f *testing.F) {
 			}
 		}
 	})
+}
+
+func TestMosDNSMatchesForms(t *testing.T) {
+	for _, source := range []string{
+		`{"matches":"qname example.com\n!qtype 28","exec":"return","future": 1.0}`,
+		`{"matches":["qname example.com","!qtype 28"],"exec":"return"}`,
+		`{"matches":null,"exec":"return"}`,
+	} {
+		var value MosDNSMatch
+		if value.UnmarshalJSON([]byte(source)) != nil {
+			t.Fatal("match decode failed")
+		}
+		encoded, err := Marshal(value)
+		if err != nil || !bytes.Equal(encoded, []byte(source)) {
+			t.Fatal("match representation changed")
+		}
+		value.Exec = "reject 3"
+		edited, err := Marshal(value)
+		if err != nil {
+			t.Fatal("match edit failed")
+		}
+		_, before := fuzzMembers(t, []byte(source))
+		_, after := fuzzMembers(t, edited)
+		if !bytes.Equal(before["matches"], after["matches"]) {
+			t.Fatal("match form lost on edit")
+		}
+	}
+}
+
+// checkSnapshotTypes starts from original SQLite value text, before Python's
+// JSON writer normalizes it. Each actual nested record is independently edited
+// so its parent's Raw cannot hide a missing type declaration or child codec.
+func checkSnapshotTypes(t *testing.T, rows []interchangeRow) {
+	t.Helper()
+	counts := map[string]int{}
+	for _, row := range rows {
+		var holder json.Unmarshaler
+		switch row.Name {
+		case "nodes", "subscriptions", "subscription_aggregations", "rule_library":
+			holder = &Shared{}
+		case "proxy_groups", "rule_configs", "mihomo", "surge", "loon", "mosdns", "domain_discovery", "device_notes", "client_fixed_ips", "oxidns":
+			holder = &Profile{}
+		default:
+			continue
+		}
+		key, _ := json.Marshal(row.Name)
+		source := append(append(append([]byte("{"), key...), ':'), row.Value...)
+		source = append(source, '}')
+		if holder.UnmarshalJSON(source) != nil {
+			t.Fatal("snapshot wrapper decode failed")
+		}
+		assertStoredTree(t, source, reflect.ValueOf(holder), counts)
+	}
+	t.Logf("original SQLite nested record coverage (counts only): %v", counts)
+}
+
+func assertStoredTree(t *testing.T, source []byte, value reflect.Value, counts map[string]int) {
+	t.Helper()
+	for value.Kind() == reflect.Pointer {
+		if value.IsNil() {
+			return
+		}
+		value = value.Elem()
+	}
+	if bytes.Equal(bytes.TrimSpace(source), []byte("null")) {
+		return
+	}
+	typ := value.Type()
+	if typ == reflect.TypeFor[Dynamic]() || typ == reflect.TypeFor[TextLines]() {
+		return
+	}
+	switch value.Kind() {
+	case reflect.Slice:
+		var items []json.RawMessage
+		if json.Unmarshal(source, &items) != nil || len(items) != value.Len() {
+			t.Fatal("snapshot array shape changed")
+		}
+		for i, item := range items {
+			assertStoredTree(t, item, value.Index(i), counts)
+		}
+	case reflect.Struct:
+		if _, ok := reflect.Zero(typ).Interface().(interface{ storedValueType() reflect.Type }); ok {
+			order, members := fuzzMembers(t, source)
+			for _, name := range order {
+				child := value.MethodByName("Get").Call([]reflect.Value{reflect.ValueOf(name)})[0]
+				assertStoredTree(t, members[name], child, counts)
+			}
+			return
+		}
+		schema := schemaFor(typ)
+		if schema.raw < 0 {
+			return
+		}
+		fresh := reflect.New(typ)
+		if fresh.Interface().(json.Unmarshaler).UnmarshalJSON(source) != nil {
+			t.Fatal("snapshot nested decode failed")
+		}
+		output, err := Marshal(fresh.Interface())
+		if err != nil || !bytes.Equal(output, source) {
+			t.Fatal("snapshot nested no-op changed bytes")
+		}
+		counts[typ.Name()]++
+		_, members := fuzzMembers(t, source)
+		for _, field := range schema.fields {
+			if original, ok := members[field.name]; ok {
+				assertStoredTree(t, original, value.Field(field.index), counts)
+			}
+		}
+		// Editing a present primitive (or appending the first primitive) must keep
+		// every other actual member byte-identical, including unknown future keys.
+		for _, field := range schema.fields {
+			target := fresh.Elem().Field(field.index)
+			base := target.Type()
+			for base.Kind() == reflect.Pointer {
+				base = base.Elem()
+			}
+			if base.Kind() != reflect.String && base.Kind() != reflect.Bool && base != reflect.TypeFor[Int]() {
+				continue
+			}
+			if json.Unmarshal(typeJSON(target.Type(), true), target.Addr().Interface()) != nil {
+				t.Fatal("snapshot nested edit failed")
+			}
+			edited, err := Marshal(fresh.Interface())
+			if err != nil {
+				t.Fatal("snapshot nested encode failed")
+			}
+			_, after := fuzzMembers(t, edited)
+			for name, original := range members {
+				if name != field.name && !bytes.Equal(original, after[name]) {
+					t.Fatal("snapshot edit changed unrelated bytes")
+				}
+			}
+			break
+		}
+	}
 }
