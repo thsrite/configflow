@@ -70,3 +70,23 @@ ResolveDataDir/PrepareConfig/no-storage-creation regressions and main grace comp
 .63 race (repo1.192s, cmd1.038s). No path helper was copied; Open delegates to the exported resolver.
 Full real alias process cases will run on .32. Production operation-scoped SQLite handles are closed
 by store/traffic/ranking owners; no fake process-wide Close API was introduced.
+
+Pre-path-fix candidate finished .32 gates successfully: required race, both full tag test sets,
+-p4 full Go suite, all nine enabled tagged differentials (agents123.048s, subscriptions87.185s),
+31 proddiff tool tests and tagged proddiff new=0/stale=0 (4 startup names, 5 suppressed loops).
+These results are superseded by the required post-path-fix final rerun.
+
+Rebased onto go@f0fb3815 (N8-2 native store/diagnostics review, N2 proxy changes, A16–A18 design).
+Resolved main's new error-boundary logging in favour of preserving safe recovery diagnostics in
+file+console; busy ownership failures only use console. Log destinations use ResolveDataDir as well.
+Merged both behaviour-change ledger sections. Will run the integrated N8-2 synthetic startup script
+against the final production binary to verify the logging conflict did not regress recovery.
+
+Real .32 home/symlink server-vs-server rejection and N8-2 diagnostics passed (cmd76.749s,
+repo1.120s; three synthetic corrupt startup cases preserve database bytes and safe file+stderr output).
+Alias fixtures now explicitly remove bundled subscription/rule-library resources before starting
+owners, because they intentionally live past the first scheduler tick; all test work stays loopback.
+Final full rerun follows this fixture isolation adjustment.
+
+After rebasing, main's recovery logger and the no-remote-resource fixture adjustment compile and
+pass .63 vet/focused tests (cmd.020s, repo.059s). Final post-alias-fix acceptance starts now.

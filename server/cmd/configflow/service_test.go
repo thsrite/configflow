@@ -23,7 +23,6 @@ import (
 	"configflow/internal/instance"
 	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
-	"configflow/internal/logx"
 	"configflow/internal/repo"
 	"configflow/internal/taskstatus"
 )
@@ -110,7 +109,7 @@ func TestServiceProcess(t *testing.T) {
 	signal.Notify(signals, syscall.SIGTERM, syscall.SIGINT)
 	defer signal.Stop(signals)
 	if err := run(context.Background(), "", signals, opts); err != nil {
-		logx.Get("backend.app").Error(err.Error())
+		reportStartupError(err)
 		os.Exit(1)
 	}
 }
@@ -127,6 +126,16 @@ func startService(t *testing.T, mode string) *serviceProcess {
 	t.Helper()
 	dir := t.TempDir()
 	r, err := repo.OpenDefault(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Alias owners run beyond the first scheduler tick. Remove bundled remote
+	// resources so these real-process fixtures only use loopback networking.
+	_, err = r.UpdateSharedTransaction(context.Background(), func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
+		shared.Set("subscriptions", []any{})
+		shared.Set("rule_library", []any{})
+		return nil, nil
+	})
 	if err != nil {
 		t.Fatal(err)
 	}

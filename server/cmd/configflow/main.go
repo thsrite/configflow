@@ -46,8 +46,12 @@ func main() {
 // sinks. A busy directory is owned by another server: report only to console.
 func reportStartupError(err error) {
 	if !errors.Is(err, instance.ErrInUse) {
-		root, setupErr := logx.Setup(logx.Config{Level: logx.Error, File: logx.DefaultFile(repo.DataDir()), Console: os.Stderr})
-		if setupErr == nil { defer root.Close() }
+		if dataDir, resolveErr := repo.ResolveDataDir(repo.DataDir()); resolveErr == nil {
+			root, setupErr := logx.Setup(logx.Config{Level: logx.Error, File: logx.DefaultFile(dataDir), Console: os.Stderr})
+			if setupErr == nil {
+				defer root.Close()
+			}
+		}
 	}
 	logx.Get("configflow").Error(err.Error())
 }
