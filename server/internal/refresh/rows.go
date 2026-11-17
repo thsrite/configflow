@@ -7,11 +7,8 @@ package refresh
 import (
 	"context"
 	"errors"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"configflow/internal/jsonx"
@@ -231,25 +228,9 @@ func round(ctx context.Context) {
 	}
 }
 
-// Loop is start_loop()'s thread: one scheduler across processes, guarded
-// by an exclusive non-blocking flock on DATA_DIR/.task-scheduler.lock
-// (held until ctx ends); the first round after FirstDelaySeconds, then one
-// every TickSeconds.
+// Loop runs the scheduler after its first delay and pauses after each round.
+// Cross-process exclusion belongs to instance.Acquire, before any loop starts.
 func Loop(ctx context.Context) {
-	r, err := repo.GetRepository(ctx)
-	if err != nil {
-		logger.Exception("Scheduled refresh could not start", err)
-		return
-	}
-	handle, err := os.OpenFile(filepath.Join(r.DataDir(), ".task-scheduler.lock"), os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o666)
-	if err != nil {
-		logger.Exception("Scheduled refresh could not start", err)
-		return
-	}
-	defer handle.Close()
-	if err := syscall.Flock(int(handle.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		return
-	}
 	if !loopSleep(ctx, FirstDelaySeconds*time.Second) {
 		return
 	}

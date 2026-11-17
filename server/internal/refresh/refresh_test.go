@@ -12,13 +12,12 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
 	"testing"
 	"time"
 
+	"configflow/internal/instance"
 	"configflow/internal/jsonx"
 	"configflow/internal/logx"
 	"configflow/internal/repo"
@@ -287,8 +286,6 @@ func TestNextRunBacksOffAfterFailuresButNeverBeyondTheInterval(t *testing.T) {
 }
 
 func ptr[T any](v T) *T { return &v }
-
-func flockNB(f *os.File) error { return syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB) }
 
 // noRules is the policy tests' fixture: no library rules.
 func (f *fixture) noRules() {
@@ -741,10 +738,8 @@ func waitIdle(t *testing.T, key string) {
 	}
 }
 
-// The loop takes DATA_DIR/.task-scheduler.lock; a second loop on the same
-// directory returns without running rounds, the first waits
-// FirstDelaySeconds, then TickSeconds between rounds.
-func TestLoopIsGuardedByTheSchedulerLock(t *testing.T) {
+// Instance ownership must not cause the scheduler to skip its rounds.
+func TestLoopRunsUnderTheInstanceLock(t *testing.T) {
 	f := setup(t, jsonx.Int(0))
 	f.updateShared(func(shared *jsonx.Object) { shared.GetList("rule_library")[0].(*jsonx.Object).Set("enabled", false) })
 	var mu sync.Mutex
@@ -762,18 +757,11 @@ func TestLoopIsGuardedByTheSchedulerLock(t *testing.T) {
 		}
 		return true
 	}
-	held, err := os.OpenFile(filepath.Join(f.repo.DataDir(), ".task-scheduler.lock"), os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o666)
+	owner, err := instance.Acquire(context.Background(), f.repo.DataDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := flockNB(held); err != nil {
-		t.Fatal(err)
-	}
-	Loop(ctx) // another holder: returns at once
-	if len(sleeps) != 0 {
-		t.Fatal(sleeps)
-	}
-	held.Close()
+	defer owner.Release()
 	Loop(ctx)
 	if len(sleeps) != 3 || sleeps[0] != 30*time.Second || sleeps[1] != 30*time.Second {
 		t.Fatal(sleeps)

@@ -147,7 +147,7 @@ func TestBuildingAnAgentManagerDoesNotTouchSavedHistory(t *testing.T) {
 }
 
 // test_service_startup_adopts_old_files_before_loading without the
-// LEGACY_DIRS adoption: init_agent_manager at service start loads and
+// Startup loads and
 // migrates the saved history, once.
 func TestServiceStartupLoadsAndMigratesSavedHistory(t *testing.T) {
 	fresh(t)
@@ -166,14 +166,14 @@ func TestServiceStartupLoadsAndMigratesSavedHistory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	runtime := lifecycle.NewRuntime(lifecycle.Options{Registry: historyStartupRegistry()})
+	runtime.RunStartup(ctx)
 	wantEqual(t, "loaded", get(t, ForManager(m), "agent_1", nil), []any{recent})
 	if got := strings.Join(names(t, metricsDir), ","); got != "agent_1_metrics.jsonl" {
 		t.Fatal(got)
 	}
-	// load_history runs once per service start.
-	if _, err := agents.Init(ctx); err != nil {
-		t.Fatal(err)
-	}
+	// Startup runs once per generation.
+	runtime.RunStartup(ctx)
 	if len(get(t, ForManager(m), "agent_1", nil)) != 1 {
 		t.Fatal("loaded twice")
 	}
@@ -500,7 +500,8 @@ func TestShutdownFailureIsTriedAndRecordedTwiceLikeTheSignalPath(t *testing.T) {
 	appendLines = func(string, []string) error { return full }
 	// the second save rewrites the file (the failed append is not trusted)
 	replaceFile = func(string, string) error { return full }
-	shutdownSave(ctx)
+	shutdownFlush(ctx, true)
+	shutdownFlush(ctx, false)
 	entry, _ := taskstatus.New(srv.DataDir).Get(TaskKey)
 	if entry.Value("last_status") != "failed" || entry.Value("last_trigger") != "shutdown" ||
 		entry.GetInt("run_count") != 2 || entry.GetInt("failure_count") != 2 || entry.GetInt("consecutive_failures") != 2 {
@@ -510,9 +511,16 @@ func TestShutdownFailureIsTriedAndRecordedTwiceLikeTheSignalPath(t *testing.T) {
 		t.Fatal(ForManager(m).PendingCount())
 	}
 	appendLines, replaceFile = previous, previousReplace
-	shutdownSave(ctx)
+	shutdownFlush(ctx, true)
+	shutdownFlush(ctx, false)
 	entry, _ = taskstatus.New(srv.DataDir).Get(TaskKey)
 	if entry.Value("last_status") != "success" || entry.GetInt("run_count") != 3 || entry.GetInt("consecutive_failures") != 0 {
 		t.Fatal(entry)
 	}
+}
+
+func historyStartupRegistry() *lifecycle.Registry {
+	reg := lifecycle.NewRegistry()
+	reg.RegisterStartup(historyStartup())
+	return reg
 }

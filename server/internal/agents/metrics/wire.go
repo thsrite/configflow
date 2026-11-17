@@ -16,9 +16,6 @@ var (
 	// histories holds one History per repository data directory (Python:
 	// one MetricsHistory per AgentManager).
 	histories = map[string]*History{}
-	// loaded marks the data directories whose saved history was read back
-	// (load_history runs once per service start).
-	loaded = map[string]bool{}
 )
 
 // For returns the History of a repository data directory
@@ -41,23 +38,25 @@ func ForManager(m *agents.Manager) *History { return For(m.Repository().DataDir(
 func Reset() {
 	historiesMu.Lock()
 	histories = map[string]*History{}
-	loaded = map[string]bool{}
 	historiesMu.Unlock()
 	ResetFlushState()
 }
 
-// loadOnce is metrics_flush.load_history() at service start, once per data
-// directory: init_agent_manager runs it (the Go server builds the manager
-// at start, before it listens, where app.py loaded the history).
-func loadOnce(ctx context.Context, m *agents.Manager) {
-	dataDir := m.Repository().DataDir()
-	historiesMu.Lock()
-	done := loaded[dataDir]
-	loaded[dataDir] = true
-	historiesMu.Unlock()
-	if !done {
-		LoadHistory(ctx, m)
-	}
+// RegisterStartup registers history loading as a synchronous startup step.
+// Main calls it in startup order; Wire's repeated registration retains its slot.
+func RegisterStartup() {
+	lifecycle.RegisterStartup(historyStartup())
+}
+
+func historyStartup() lifecycle.Startup {
+	return lifecycle.Startup{Name: "metrics-load-history", Run: func(ctx context.Context) error {
+		manager, err := agents.Get(ctx)
+		if err != nil {
+			return err
+		}
+		LoadHistory(ctx, manager) // LoadHistory owns and logs its ordinary failures.
+		return nil
+	}}
 }
 
 func addMetrics(m *agents.Manager, agentID string, metrics any) error {
@@ -77,26 +76,22 @@ var lifecycleOnce sync.Once
 // and the interval edit, the flush loop, and the final save at shutdown.
 func Wire() {
 	agents.RegisterHooks(agents.Hooks{AddMetrics: addMetrics, DeleteMetricsHistory: deleteHistory})
-	agents.OnManagerInit(loadOnce)
+	RegisterStartup()
 	tasks.SetRows(tasks.SlotMetrics, Rows)
 	tasks.SetRunner(TaskKey, runNow)
 	tasks.SetIntervalSetter(TaskKey, SetInterval)
 	lifecycleOnce.Do(func() {
 		lifecycle.Loop("metrics-history-flush", loop)
-		lifecycle.OnShutdown("metrics-history-flush", shutdownSave)
+		lifecycle.RegisterShutdown(lifecycle.ShutdownHook{Name: "metrics-history-flush-first", Phase: lifecycle.PhaseStopSignal, Run: func(ctx context.Context) { shutdownFlush(ctx, true) }})
+		lifecycle.RegisterShutdown(lifecycle.ShutdownHook{Name: "metrics-history-flush-last", Phase: lifecycle.PhaseAfterDrain, Run: func(ctx context.Context) { shutdownFlush(ctx, false) }})
 	})
 }
 
-// shutdownSave is what a stop signal did in app.py: the signal handler's
-// flush_on_shutdown() (record_idle=True: a stop always leaves a "shutdown"
-// run in the task list), then, after the HTTP server returned, app.py's
-// flush_on_shutdown(record_idle=False), which records again only when it
-// wrote something or failed. A save that fails at shutdown (full disk,
-// read-only directory) is therefore tried and recorded twice, as in Python
-// (run_count, failure_count and consecutive_failures go up by two).
-func shutdownSave(ctx context.Context) {
+// shutdownFlush runs one save in its own repository scope. The stop-signal
+// phase records idle shutdowns; the after-drain phase records only new data or
+// failure, matching the two Python signal/application exit saves.
+func shutdownFlush(ctx context.Context, recordIdle bool) {
 	scope := repo.WithScope(ctx)
 	defer repo.ResetConfigContext(scope)
-	FlushOnShutdown(scope, true)
-	FlushOnShutdown(scope, false)
+	FlushOnShutdown(scope, recordIdle)
 }

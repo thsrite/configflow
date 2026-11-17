@@ -16,153 +16,39 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"net"
-	"net/http"
 	"os"
 	"os/signal"
 	"runtime/debug"
 	"strconv"
 	"strings"
 	"syscall"
-	"time"
 
-	apisettings "configflow/internal/api/settings"
-	"configflow/internal/auth"
-	"configflow/internal/httpx"
-	"configflow/internal/lifecycle"
+	"configflow/internal/instance"
 	"configflow/internal/logx"
 	"configflow/internal/repo"
-	"configflow/internal/server"
-	"configflow/internal/version"
-	"configflow/internal/weblistener"
 )
 
 func main() {
 	frontend := flag.String("frontend", os.Getenv("CONFIGFLOW_FRONTEND_DIR"),
 		"frontend build directory served on the web port (empty: API only)")
 	flag.Parse()
-	if err := run(*frontend); err != nil {
-		// run has closed its sinks. Reopen them at the final error boundary
-		// so the same safe recovery diagnostic reaches the log and stderr.
-		root, setupErr := logx.Setup(logx.Config{Level: logx.Error, File: logx.DefaultFile(repo.DataDir()), Console: os.Stderr})
-		if setupErr == nil {
-			logx.Get("configflow").Error(err.Error())
-			root.Close()
-		} else {
-			fmt.Fprintln(os.Stderr, err)
-		}
+	signals := make(chan os.Signal, 2)
+	signal.Notify(signals, syscall.SIGTERM, syscall.SIGINT)
+	defer signal.Stop(signals)
+	if err := run(context.Background(), *frontend, signals, runOptions{}); err != nil {
+		reportStartupError(err)
 		os.Exit(1)
 	}
 }
 
-func run(frontendDir string) error {
-	tuneMemory()
-	dataDir := repo.DataDir()
-	if err := os.MkdirAll(dataDir, 0o777); err != nil {
-		return err
+// reportStartupError preserves storage recovery diagnostics in both configured
+// sinks. A busy directory is owned by another server: report only to console.
+func reportStartupError(err error) {
+	if !errors.Is(err, instance.ErrInUse) {
+		root, setupErr := logx.Setup(logx.Config{Level: logx.Error, File: logx.DefaultFile(repo.DataDir()), Console: os.Stderr})
+		if setupErr == nil { defer root.Close() }
 	}
-	level := logx.LevelFromEnv()
-	root, err := logx.Setup(logx.Config{Level: level, File: logx.DefaultFile(dataDir), Console: os.Stderr})
-	if err != nil {
-		return err
-	}
-	defer root.Close()
-	address, err := server.BackendAddressFromEnv()
-	if err != nil {
-		return err
-	}
-
-	auth.Configure(auth.FromEnv())
-	if !auth.IsAuthEnabled() {
-		printNoAuthBanner()
-	}
-
-	repository, err := repo.OpenDefault(dataDir)
-	if err != nil {
-		return err
-	}
-	repo.SetRepository(repository)
-	app := server.NewApp()
-	app.RegisterLocal()
-	if err := writeTestManifest(app); err != nil {
-		return err
-	}
-	startup := repo.WithScope(context.Background())
-	if _, err := repo.LoadConfig(startup); err != nil {
-		return err
-	}
-	repo.ResetConfigContext(startup)
-
-	levelName := strings.ToUpper(os.Getenv("LOG_LEVEL"))
-	if levelName == "" {
-		levelName = "INFO"
-	}
-	display := address.Host
-	if strings.Contains(display, ":") {
-		display = "[" + display + "]"
-	}
-	line := strings.Repeat("=", 60)
-	fmt.Printf("\n%s\n🚀 Config Flow API Server\n%s\nVersion: %s\nBuild: unknown\nLog Level: %s\n%s\nServer starting on http://%s:%d\nPress Ctrl+C to stop\n%s\n\n",
-		line, line, version.Version, levelName, line, display, address.Port, line)
-
-	backend := newHTTPServer(app)
-	listener, err := net.Listen("tcp", net.JoinHostPort(address.Host, strconv.Itoa(address.Port)))
-	if err != nil {
-		return err
-	}
-	go func() {
-		if err := backend.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			logx.Get("backend.app").Error("API server stopped: " + err.Error())
-		}
-	}()
-
-	var web *http.Server
-	var manager *weblistener.Manager
-	if frontendDir != "" {
-		edge := &httpx.Edge{API: app, Root: frontendDir, AccessLog: os.Stdout}
-		web = newHTTPServer(edge)
-		manager = &weblistener.Manager{DataDir: dataDir, Server: webServer{web, edge}}
-		status, err := manager.Start()
-		if err != nil {
-			return fmt.Errorf("[web-listener] %w", err)
-		}
-		apisettings.SetWebListener(manager)
-		logx.Get("backend.app").Info("Web UI listening on port " + strconv.FormatInt(status.GetInt("port"), 10))
-	}
-
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
-	defer stop()
-	lifecycle.Start(ctx)
-	logx.Get("backend.app").Info("✅ 应用初始化完成")
-	<-ctx.Done()
-
-	shutdown, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	if manager != nil {
-		manager.Close()
-		_ = web.Shutdown(shutdown)
-	}
-	_ = backend.Shutdown(shutdown)
-	lifecycle.Stop(30 * time.Second)
-	return nil
-}
-
-type webServer struct {
-	server *http.Server
-	edge   *httpx.Edge
-}
-
-func (w webServer) Serve(l net.Listener) error    { return w.server.Serve(l) }
-func (w webServer) SetListenerToken(token string) { w.edge.SetListenerToken(token) }
-func (w webServer) ListenerToken() string         { return w.edge.ListenerToken() }
-
-func newHTTPServer(handler http.Handler) *http.Server {
-	return &http.Server{
-		Handler:           handler,
-		ReadHeaderTimeout: 60 * time.Second,
-		// waitress channel_timeout and nginx keepalive.
-		IdleTimeout: 300 * time.Second,
-	}
+	logx.Get("configflow").Error(err.Error())
 }
 
 // printNoAuthBanner is validate_required_env_vars().

@@ -357,6 +357,18 @@ func (r *Runtime) Names() []string
   (`{"t":…,"loop":…,"event":…}`) to `$CONFIGFLOW_LIFECYCLE_EVENTS`, so the black-box difftest can wait for "round
   N of X finished" instead of sleeping. Production builds have neither; no environment variable can switch loops off.
 
+**Clarified in O3-3 (coordinator, 2026-11-17):**
+- Remove the old lifetime flocks from refresh.Loop, discovery.autoLoop and monitor.rankingLoop in
+  O3-3, before Periodic migration. Otherwise the instance's separately opened descriptors exclude
+  its own loops. Preserve first delays, intervals and round behaviour. Cross-process exclusion is
+  tested at instance.Acquire; each Go loop must execute while the instance owns the directory.
+- repo.PrepareConfig(ctx) performs configuration initialization without the manager hook;
+  LoadConfig retains its existing callers' behaviour. Main explicitly orders configuration preparation,
+  the existing prune, agents.Init and metrics history loading as Startup work before listening.
+  The metrics manager-init load hook moves to Startup now; that part of O3-4 is already complete.
+- Omit node-test-dns-migrate. Go refuses legacy storage; users first upgrade to the final Python
+  release, whose startup already performed this retired migration. Do not resurrect it in Go.
+
 ### 2.4 Mapping table (every Python loop/lock → Go construct)
 
 Porters of the missing modules use these names, timings and levels; reviewers check them.
@@ -505,8 +517,8 @@ A port that wants an extra recovery action must record it in the O12 ledger and 
 
 `instance.Acquire` → logx → `repo.OpenDefault` (migrations, corrupt-file handling) → `Startup` steps in this order:
 `load-config` (rule-proxy token rotation), `subscription-cache-prune`, `agent-manager-init` (incl. legacy
-`runtime.sqlite3` import), `node-test-dns-migrate`, `metrics-load-history` → listeners → `Runtime.Start`
-(AtBoot loops; first rounds after their `FirstDelay`). This is Python's import/`__main__` order.
+`runtime.sqlite3` import), `metrics-load-history` → listeners → `Runtime.Start`
+(AtBoot loops; first rounds after their `FirstDelay`). This is Python's import/`__main__` order, omitting the retired node-test DNS migration as clarified in O3-3.
 
 ### 3.7 Storage versions (future data changes)
 
@@ -532,7 +544,7 @@ days of one Codex agent. Until a step lands, new ports follow the transitional r
 | O3-1 | `internal/lockx`: Mutex, Keyed (with clean-up), RWMutex, Flight, level checker + `Violations`; table tests incl. `-race`, try-under-blocking allowed, blocking inversion counted, Keyed map empties after 10k distinct keys. No consumers. | S | – | O3-3 | Codex |
 | O3-2 | `lifecycle` v2: Clock (+ fake in `lifecycle/lifecycletest`), Periodic/Startup/ShutdownHook registry, Runtime (ModeRun/ModeManual), Spawn/Stopping/WaitIdle, `RequestSeen`; `Loop`/`OnShutdown` kept as adapters; build-tag files `mode_proddiff.go` and `events_difftest.go`; `tools/proddiff/build.py` drops the source overlay of `lifecycle.go` (keeps the route-manifest part of main or moves it under the same tag). Tests with the fake clock: first delay, interval re-read each round, wake, no overlap, panic recovery, drain/cancel order. | M | O3-1 | – | Codex; **Opus review with O3-3** |
 | O3-3 | `internal/instance` + main: Acquire before repo open, Startup steps (3.6), shutdown sequence (3.4) with `CONFIGFLOW_SHUTDOWN_GRACE_SECONDS`, second-signal exit, `httpx` calls `lifecycle.RequestSeen()` after the profile + auth gate. Messages in `messages.go`. Tests: a second process (test binary re-exec) gets `ErrInUse`; a held `.task-scheduler.lock` blocks start; `run()` with an injected signal channel shows flush #1 before drain and #2 after. | M | O3-2 for main | O3-1 for instance | Codex |
-| O3-4 | Migrate loops: refresh (drop flock; Periodic 30/30; claims → Keyed; `RunNow` → Spawn), discovery auto (120/600), monitor rankings (60/60), metrics (Periodic + Wake; split shutdown save into the two phases; `metrics-load-history` Startup), substore idle (0/5, conditional), `subscription-cache-prune` → Startup; replace `time.Sleep` in these loops by the Clock. Rows' `running` from `Held`. | M | O3-2, O3-3 | O3-5, O3-6 | Codex |
+| O3-4 | Migrate loops: refresh (drop flock; Periodic 30/30; claims → Keyed; `RunNow` → Spawn), discovery auto (120/600), monitor rankings (60/60), metrics (Periodic + Wake; split shutdown save into the two phases; `metrics-load-history` Startup, **completed in O3-3**), substore idle (0/5, conditional), `subscription-cache-prune` → Startup; replace `time.Sleep` in these loops by the Clock. Rows' `running` from `Held`. | M | O3-2, O3-3 | O3-5, O3-6 | Codex |
 | O3-5 | Detached goroutines → `Spawn`: `tasks.StartBackground`, `discovery/jobs.go`, `webdav.Worker` (+ `WaitIdle` via Runtime), `upgrades.startThread`, `provider.runFlight` (+ `lockx.Flight`), `substore` update, `weblistener.serve` (tracked as a job that ends on Close); `rules/matchercache` timer on the Clock. | M | O3-2 | O3-4, O3-6 | Codex |
 | O3-6 | File locks → in-process (2.4): taskstatus, notifications, weblistener, agents deployments (`preparationRunning` = `Held`), monitor dashboard state (5 s limit), installer ×2, substore runtime leases (RWMutex with Python's limits); repo records `LevelRepository` and serves `JobLock` from a `Keyed` owned by `routers` (fail-closed default stays until routers wire it); move handler-level `WithoutCancel` into owners. Python-written lock files are left alone. | M | O3-1, O3-3 | O3-4, O3-5 | Codex |
 | O3-7 | Gates as a test in `internal/lifecycle/gate_test.go` (go/parser over non-test files): `go` statements only in `lifecycle` and in an explicit allowlist of fan-outs that wait for their goroutines before returning (each entry `file:func` with a one-line reason); `Flock` only in `repo` and `instance`; `time.Sleep`/`time.AfterFunc` only in an allowlist (lock polling in repo, rate limits) — loops use the Clock. Update AGENT-BRIEF/PORTING pointers if needed. | S | O3-4–O3-6 | – | Codex |

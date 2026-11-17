@@ -8,10 +8,11 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"configflow/internal/instance"
 	"configflow/internal/jsonx"
 	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
@@ -193,24 +194,23 @@ func TestReviewRuleUpdateHAActiveFollowsPython(t *testing.T) {
 	}
 }
 
-// The collector thread's own failures before the loop (no repository, the
-// lock file cannot be opened) leave the thread: Python prints them to
-// stderr through threading.excepthook, not to the log.
-func TestReviewRankingLoopStartFailureGoesToStderr(t *testing.T) {
-	dir := t.TempDir()
-	repository, err := repo.OpenDefault(dir)
+func TestReviewRankingLoopRunsUnderInstanceLock(t *testing.T) {
+	repository, err := repo.OpenDefault(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Mkdir(filepath.Join(dir, ".oxidns-rankings.lock"), 0o755); err != nil {
+	ctx := repo.WithRepository(context.Background(), repository)
+	owner, err := instance.Acquire(ctx, repository.DataDir())
+	if err != nil {
 		t.Fatal(err)
 	}
-	var reported []error
-	previous := threadException
-	threadException = func(err error) { reported = append(reported, err) }
-	t.Cleanup(func() { threadException = previous })
-	rankingLoop(repo.WithRepository(context.Background(), repository)) // returns at once
-	if len(reported) != 1 || !strings.Contains(reported[0].Error(), ".oxidns-rankings.lock") {
-		t.Fatal(reported)
+	defer owner.Release()
+	var waits []time.Duration
+	runRankingLoop(ctx, func(_ context.Context, d time.Duration) bool {
+		waits = append(waits, d)
+		return len(waits) == 1
+	})
+	if len(waits) != 2 || waits[0] != 60*time.Second || waits[1] != 60*time.Second {
+		t.Fatalf("collector skipped its round or changed timing: %v", waits)
 	}
 }

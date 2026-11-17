@@ -11,6 +11,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"configflow/internal/lifecycle"
 	"configflow/internal/localhttp"
 	"configflow/internal/logx"
 	"configflow/internal/repo"
@@ -51,7 +52,7 @@ type App struct {
 // authentication gate.
 func New() *App {
 	app := &App{Router: NewRouter(), Logger: logx.Get("backend.app")}
-	app.before = []BeforeFunc{profileContext}
+	app.before = []BeforeFunc{profileContext, requestSeen}
 	app.errorHandlers = []ErrorHandler{RepositoryErrorHandler}
 	return app
 }
@@ -218,6 +219,13 @@ func (a *App) finalize(c *Ctx, r *Response) {
 		*r = *a.internalError(c, err)
 	}
 	cors(c, r)
+}
+
+// requestSeen runs after profile resolution and the auth gate installed at
+// index 1. Public heartbeats count; rejected profiles or credentials do not.
+func requestSeen(_ *Ctx) (*Response, error) {
+	lifecycle.RequestSeen()
+	return nil, nil
 }
 
 // profileContext is install_profile_context's before_request: bind the

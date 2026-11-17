@@ -24,7 +24,7 @@ var ErrRunning = errors.New("lifecycle: runtime is running")
 
 var defaultMu sync.Mutex
 var defaultRuntime = NewRuntime(Options{Mode: defaultMode()})
-var defaultStarting bool
+var defaultStarting int
 
 func currentRuntime() *Runtime { defaultMu.Lock(); defer defaultMu.Unlock(); return defaultRuntime }
 
@@ -37,7 +37,7 @@ func Configure(opts Options) error {
 	r := defaultRuntime
 	r.mu.Lock()
 	g := r.current
-	running := defaultStarting || r.pending > 0 || g != nil && !g.closed && (g.started || g.draining)
+	running := defaultStarting > 0 || r.pending > 0 || g != nil && !g.closed && (g.started || g.draining)
 	r.mu.Unlock()
 	if running {
 		return ErrRunning
@@ -85,14 +85,25 @@ func OnShutdown(name string, run func(context.Context)) {
 	r.registry.hooks = append([]ShutdownHook{h}, r.registry.hooks...)
 }
 
+// RunStartup runs the configured default's synchronous startup steps before
+// listeners are opened. Start will not repeat them in the same generation.
+func RunStartup(ctx context.Context) {
+	defaultMu.Lock()
+	r := defaultRuntime
+	defaultStarting++
+	defaultMu.Unlock()
+	defer func() { defaultMu.Lock(); defaultStarting--; defaultMu.Unlock() }()
+	r.RunStartup(ctx)
+}
+
 // Start runs startup work and starts a default generation; after Stop, another
 // Start restarts all registered loops with fresh cancellation and counters.
 func Start(ctx context.Context) {
 	defaultMu.Lock()
 	r := defaultRuntime
-	defaultStarting = true
+	defaultStarting++
 	defaultMu.Unlock()
-	defer func() { defaultMu.Lock(); defaultStarting = false; defaultMu.Unlock() }()
+	defer func() { defaultMu.Lock(); defaultStarting--; defaultMu.Unlock() }()
 	r.Start(ctx)
 	reportReady(r)
 }

@@ -71,6 +71,12 @@ func Wire() {
 		}
 		service.Runtime.Monitor(ctx)
 	})
+	RegisterStartup()
+}
+
+// RegisterStartup registers cache pruning, allowing main to order it between
+// configuration preparation and Agent initialization before wiring the app.
+func RegisterStartup() {
 	lifecycle.RegisterStartup(lifecycle.Startup{Name: "subscription-cache-prune", Run: func(ctx context.Context) error {
 		// Caches of deleted subscriptions hold node credentials.
 		_, err := PruneOrphanCaches(ctx)

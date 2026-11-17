@@ -120,3 +120,10 @@ document is still refused with the same context (Python: context only); the appe
 Chinese, e.g. `YAML 只能包含一个文档（第 2 行开始第二个文档）`. Whole-document rewrites keep merge keys
 as `<<`, place notes of a removed pair before its listener (as Python did), and never expand aliases. A tag with no type name (`!%21`)
 is refused with `YAML 标签 !! 缺少类型名（第 N 行）` (Python refused it as well, without that text).
+
+## O12 — retired startup migrations
+
+Go 不接受 legacy 存储，不再执行 `node_test_dns_cleanup.migrate` 等一次性旧数据迁移。
+用户必须先升级到最后一个 Python 版本并启动一次，再切换到 Go；这些迁移已在 Python
+启动时完成。O3-3 保留此既定边界，在有序 Startup 中省略 `node-test-dns-migrate`。
+来源：PORTING 的不移植清单、Config Step B 的 O12 决定，以及 O3-3 协调者确认。

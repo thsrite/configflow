@@ -32,7 +32,6 @@ import (
 	"sort"
 	"strconv"
 	"sync"
-	"syscall"
 	"time"
 
 	"configflow/internal/agents"
@@ -1021,39 +1020,27 @@ func CollectRound(ctx context.Context, m RoundManager, store *RankingStore, now 
 // rankingLoop is start_loop()'s thread: one collector across processes,
 // guarded by a file lock in the data directory; a round every
 // ROUND_SECONDS.
-func rankingLoop(ctx context.Context) {
-	repository, err := repo.GetRepository(ctx)
-	if err != nil {
-		threadException(err)
-		return
-	}
-	handle, err := os.OpenFile(filepath.Join(repository.DataDir(), ".oxidns-rankings.lock"),
-		os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o666)
-	if err != nil {
-		threadException(err)
-		return
-	}
-	defer handle.Close()
-	if err := syscall.Flock(int(handle.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		return
-	}
-	for {
-		timer := time.NewTimer(RankingRoundSeconds * time.Second)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return
-		case <-timer.C:
-		}
-		rankingRound(ctx)
+func rankingLoop(ctx context.Context) { runRankingLoop(ctx, rankingPause) }
+
+func rankingPause(ctx context.Context, d time.Duration) bool {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
 	}
 }
 
-// threadException is what Python's thread does when get_repository() or
-// open(lock_path, 'a') raises before the loop: the exception leaves the
-// thread and threading.excepthook prints it to stderr (not to the log).
-var threadException = func(err error) {
-	fmt.Fprintf(os.Stderr, "Exception in thread oxidns-ranking-history:\n%v\n", err)
+func runRankingLoop(ctx context.Context, wait func(context.Context, time.Duration) bool) {
+	if _, err := repo.GetRepository(ctx); err != nil {
+		rankingLogger.Exception("Ranking history could not start", err)
+		return
+	}
+	for wait(ctx, RankingRoundSeconds*time.Second) {
+		rankingRound(ctx)
+	}
 }
 
 func rankingRound(ctx context.Context) {

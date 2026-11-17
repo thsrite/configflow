@@ -3,10 +3,7 @@ package discovery
 import (
 	"context"
 	"errors"
-	"os"
-	"path/filepath"
 	"sync"
-	"syscall"
 	"time"
 
 	"configflow/internal/lifecycle"
@@ -220,27 +217,15 @@ func sleep(ctx context.Context, d time.Duration) bool {
 		return true
 	}
 }
-func autoLoop(ctx context.Context) {
+func autoLoop(ctx context.Context) { runAutoLoop(ctx, sleep) }
+
+func runAutoLoop(ctx context.Context, wait func(context.Context, time.Duration) bool) {
 	r, err := repo.GetRepository(ctx)
 	if err != nil {
 		logger.Exception("Domain discovery could not start", err)
 		return
 	}
-	dir := filepath.Join(r.DataDir(), "probes")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		logger.Exception("Domain discovery could not start", err)
-		return
-	}
-	f, err := os.OpenFile(filepath.Join(dir, ".auto.lock"), os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
-		logger.Exception("Domain discovery could not start", err)
-		return
-	}
-	defer f.Close()
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		return
-	}
-	if !sleep(ctx, 120*time.Second) {
+	if !wait(ctx, 120*time.Second) {
 		return
 	}
 	for {
@@ -265,7 +250,7 @@ func autoLoop(ctx context.Context) {
 				return
 			}
 		}
-		if !sleep(ctx, 600*time.Second) {
+		if !wait(ctx, 600*time.Second) {
 			return
 		}
 	}

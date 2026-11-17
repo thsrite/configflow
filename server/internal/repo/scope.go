@@ -417,10 +417,29 @@ func GetResourceConfig(ctx context.Context, kind string, resourceID *string, pro
 // an empty system_config.server_domain is set from the DefaultServerDomain
 // hook; then the InitAgentManager hook runs and the default view is returned.
 func LoadConfig(ctx context.Context) (*jsonx.Object, error) {
+	if err := prepareConfig(ctx); err != nil {
+		return nil, err
+	}
+	if h := currentHooks(); h.InitAgentManager != nil {
+		h.InitAgentManager()
+	}
+	return GetConfig(ctx, "")
+}
+
+// PrepareConfig performs configuration startup preparation without initializing
+// the Agent manager. The server orders that work as a separate Startup step.
+func PrepareConfig(ctx context.Context) (*jsonx.Object, error) {
+	if err := prepareConfig(ctx); err != nil {
+		return nil, err
+	}
+	return GetConfig(ctx, "")
+}
+
+func prepareConfig(ctx context.Context) error {
 	ResetConfigContext(ctx)
 	repository, err := GetRepository(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	h := currentHooks()
 	_, dockerErr := os.Stat("/.dockerenv")
@@ -428,7 +447,7 @@ func LoadConfig(ctx context.Context) (*jsonx.Object, error) {
 	if dockerErr != nil && podmanErr != nil && h.DefaultServerDomain != nil {
 		system, err := repository.GetSystem(ctx)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if pyStrip(jsonx.Str(system.GetObject("system_config").GetOr("server_domain", ""))) == "" {
 			domain := h.DefaultServerDomain()
@@ -437,14 +456,11 @@ func LoadConfig(ctx context.Context) (*jsonx.Object, error) {
 				return nil, nil
 			})
 			if err != nil {
-				return nil, err
+				return err
 			}
 		}
 	}
-	if h.InitAgentManager != nil {
-		h.InitAgentManager()
-	}
-	return GetConfig(ctx, "")
+	return nil
 }
 
 // SaveConfig is save_config(config, profile_id): store the profile fields

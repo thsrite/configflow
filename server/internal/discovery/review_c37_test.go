@@ -1,12 +1,12 @@
 package discovery
 
 import (
+	"configflow/internal/instance"
 	"configflow/internal/repo"
 	"configflow/internal/rules"
 	"configflow/internal/tasks"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,7 +14,6 @@ import (
 	"slices"
 	"strings"
 	"sync/atomic"
-	"syscall"
 	"testing"
 	"time"
 	"weak"
@@ -351,62 +350,29 @@ func TestReviewJobSnapshotDoesNotShareCompletionPointer(t *testing.T) {
 	}
 }
 
-func TestReviewAutoLoopCancellationReleasesExclusiveFileLock(t *testing.T) {
+func TestReviewAutoLoopRunsUnderInstanceLock(t *testing.T) {
 	ctx := jobFixture(t)
 	r, _ := repo.GetRepository(ctx)
-	running, cancel := context.WithCancel(ctx)
-	done := make(chan struct{})
-	go func() { defer close(done); autoLoop(running) }()
-	defer func() {
-		cancel()
-		select {
-		case <-done:
-		case <-time.After(5 * time.Second):
-			t.Error("auto loop leaked after cancellation")
-		}
-	}()
-	path := filepath.Join(r.DataDir(), "probes", ".auto.lock")
-	deadline := time.Now().Add(5 * time.Second)
-	locked := false
-	for time.Now().Before(deadline) {
-		handle, err := os.OpenFile(path, os.O_WRONLY, 0600)
-		if err == nil {
-			err = syscall.Flock(int(handle.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
-			if err == nil {
-				_ = syscall.Flock(int(handle.Fd()), syscall.LOCK_UN)
-			} else if errors.Is(err, syscall.EWOULDBLOCK) {
-				locked = true
-			}
-			handle.Close()
-		}
-		if locked {
-			break
-		}
-		time.Sleep(time.Millisecond)
-	}
-	if !locked {
-		t.Fatal("auto loop did not acquire its process lock")
-	}
-	second := make(chan struct{})
-	go func() { defer close(second); autoLoop(running) }()
-	select {
-	case <-second:
-	case <-time.After(5 * time.Second):
-		t.Fatal("competing auto loop did not stop")
-	}
-	cancel()
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
-		t.Fatal("first-delay cancellation was ignored")
-	}
-	handle, err := os.OpenFile(path, os.O_WRONLY, 0600)
+	owner, err := instance.Acquire(ctx, r.DataDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer handle.Close()
-	if err = syscall.Flock(int(handle.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		t.Fatalf("shutdown retained auto lock: %v", err)
+	defer owner.Release()
+	var waits []time.Duration
+	runAutoLoop(ctx, func(_ context.Context, d time.Duration) bool {
+		waits = append(waits, d)
+		return len(waits) == 1
+	})
+	if !slices.Equal(waits, []time.Duration{120 * time.Second, 600 * time.Second}) {
+		t.Fatalf("loop skipped its round or changed timing: %v", waits)
 	}
-	_ = syscall.Flock(int(handle.Fd()), syscall.LOCK_UN)
+	cancelled, cancel := context.WithCancel(ctx)
+	cancel()
+	done := make(chan struct{})
+	go func() { defer close(done); autoLoop(cancelled) }()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("first-delay cancellation was ignored")
+	}
 }
