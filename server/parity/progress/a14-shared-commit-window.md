@@ -18,7 +18,7 @@ A14 回归：`internal/deploy/runtime_boundary_test.go::TestShutdownAtSQLiteComm
 RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'cd server && go test -count=1 -v -run "^TestShutdownAtSQLiteCommitKeepsWholeDocument$" ./internal/deploy'
 ```
 
-未加共享修复时：BeforeCommit shutdown 返回 nil，完整 document 已改变；该回归必须失败，不能 skip。
+未加共享修复时：BeforeCommit shutdown 返回 nil，完整 document 已改变。协调者最新决定（2026-11-18）：A14 不等 O3-6c，回归暂用显式 `t.Skip("等 O3-6c…")` 保留完整复现体；O3-6c 合入时必须删除 skip 并通过该回归。此 skip 不表示问题已修复。
 验证过的原型让这个回归通过（0.28s）：
 
 - 新增 Store.CommitContext，检查进入和 SQLite COMMIT 前的 ctx.Err()，后者在 BeforeCommit 回调之后。
