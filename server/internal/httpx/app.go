@@ -80,9 +80,11 @@ func (a *App) HandleError(h ErrorHandler) {
 // callbacks to this server's own /api URLs).
 func (a *App) RegisterLocal() { localhttp.Register(a) }
 
-// ServeHTTP runs one request through the pipeline.
+// ServeHTTP runs one request through the pipeline. The request is bound to the
+// live lifecycle generation, so work an owner detaches from it (PORTING 4b)
+// still stops at the shutdown cancellation phase.
 func (a *App) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	ctx := repo.WithScope(req.Context())
+	ctx := repo.WithScope(lifecycle.BindRequest(req.Context()))
 	defer repo.ResetConfigContext(ctx)
 	c := a.newCtx(ctx, req)
 	r := a.process(c)

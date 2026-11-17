@@ -220,8 +220,7 @@ func (r *Runtime) finishRunner(g *generation, name string, legacy bool) {
 
 func (r *Runtime) runLegacy(g *generation, l loop) {
 	defer r.finishRunner(g, l.name, true)
-	ctx := context.WithValue(g.loops, generationKey{}, g)
-	l.run(ctx)
+	l.run(withGeneration(g.loops, g, g.jobs))
 }
 
 func (r *Runtime) pause(ctx context.Context, d time.Duration, wake *Signal) bool {
@@ -256,7 +255,7 @@ func (r *Runtime) drive(g *generation, p Periodic) {
 		if p.Interval == nil {
 			return
 		}
-		d := p.Interval(context.WithValue(g.root, generationKey{}, g))
+		d := p.Interval(withGeneration(g.root, g, g.jobs))
 		if d <= 0 {
 			logger.Errorf(msgInvalidInterval, p.Name)
 			return
@@ -268,14 +267,19 @@ func (r *Runtime) drive(g *generation, p Periodic) {
 }
 
 // RequestSeen starts AfterFirstRequest loops once per runtime generation.
+// Only the first admitted request of a generation does any work: later
+// registrations and Start make newly eligible loops start by themselves.
 func (r *Runtime) RequestSeen() {
 	r.mu.Lock()
 	g := r.generation(context.Background())
-	if !g.draining && !g.closed {
+	first := !g.requested && !g.draining && !g.closed
+	if first {
 		g.requested = true
 	}
 	r.mu.Unlock()
-	r.startEligible()
+	if first {
+		r.startEligible()
+	}
 }
 
 func (r *Runtime) workContext(ctx context.Context, g *generation, detach bool) (context.Context, func()) {
@@ -284,7 +288,7 @@ func (r *Runtime) workContext(ctx context.Context, g *generation, detach bool) (
 	}
 	work, cancel := context.WithCancel(ctx)
 	stop := context.AfterFunc(g.jobs, cancel)
-	work = repo.WithScope(context.WithValue(work, generationKey{}, g))
+	work = repo.WithScope(withGeneration(work, g, g.jobs))
 	return work, func() { stop(); cancel(); repo.ResetConfigContext(work) }
 }
 
@@ -484,7 +488,10 @@ func (r *Runtime) Shutdown(ctx context.Context) {
 	g.stopLoops()
 	overall, stopOverall := r.clockContext(ctx, r.grace)
 	defer stopOverall()
-	overall = context.WithValue(overall, generationKey{}, g)
+	// Hooks and Drain run across and after the job cancellation phase: owner
+	// code that detaches inside them is bounded by the overall grace, not by
+	// the already cancelled job context.
+	overall = withGeneration(overall, g, overall)
 	hooks := r.registry.snapshot().hooks
 	for _, h := range hooks {
 		if h.Phase == PhaseStopSignal {

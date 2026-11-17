@@ -62,6 +62,7 @@ func TestServiceProcess(t *testing.T) {
 		}
 	}()
 	firstSaved := make(chan struct{})
+	detachedCancelled := make(chan struct{})
 	opts := runOptions{
 		listen: func(network, _ string) (net.Listener, error) {
 			trace("listen")
@@ -88,7 +89,30 @@ func TestServiceProcess(t *testing.T) {
 				trace("first")
 				close(firstSaved)
 			}})
+			if mode == "signal-during-save" {
+				// Registered after metrics' first save and before main's marker: a
+				// slow first save during which a second signal arrives.
+				lifecycle.RegisterShutdown(lifecycle.ShutdownHook{Name: "test-slow-first-save", Phase: lifecycle.PhaseStopSignal, Run: func(context.Context) {
+					trace("save-start")
+					deadline := time.Now().Add(5 * time.Second)
+					for time.Now().Before(deadline) {
+						if _, err := os.Stat(filepath.Join(dir, "test-second-sent")); err == nil {
+							break
+						}
+						time.Sleep(10 * time.Millisecond)
+					}
+					time.Sleep(500 * time.Millisecond) // the signal is delivered while the save runs
+					trace("save-end")
+				}})
+			}
 			lifecycle.RegisterShutdown(lifecycle.ShutdownHook{Name: "test-observe-last", Phase: lifecycle.PhaseAfterDrain, Run: func(context.Context) {
+				if mode == "detached-handler" {
+					select {
+					case <-detachedCancelled:
+					case <-time.After(2 * time.Second):
+						t.Error("shutdown cancellation did not reach work detached from a request")
+					}
+				}
 				want := int64(1)
 				if mode == "publish" {
 					want = 2
@@ -113,6 +137,16 @@ func TestServiceProcess(t *testing.T) {
 					trace("job-done")
 				})
 				return httpx.Empty(202), err
+			})
+			app.Router.GET("/__test/detached", "test.detached", func(c *httpx.Ctx) (*httpx.Response, error) {
+				// An owner entry point detaches (PORTING 4b): client disconnects do
+				// not stop it, the shutdown cancellation phase does.
+				work := lifecycle.Detach(c.Context())
+				trace("handler-start")
+				<-work.Done()
+				trace("detached-cancelled")
+				close(detachedCancelled)
+				return httpx.Empty(200), nil
 			})
 			app.Router.GET("/__test/block", "test.block", func(c *httpx.Ctx) (*httpx.Response, error) {
 				trace("handler-start")
@@ -223,7 +257,7 @@ func waitFor(t *testing.T, condition func() bool) {
 }
 
 func TestRealSIGTERMServiceShutdown(t *testing.T) {
-	for _, mode := range []string{"idle", "publish", "blocked-drain", "second-signal"} {
+	for _, mode := range []string{"idle", "publish", "blocked-drain", "second-signal", "signal-during-save", "detached-handler"} {
 		t.Run(mode, func(t *testing.T) {
 			p := startService(t, mode)
 			var address string
@@ -242,11 +276,15 @@ func TestRealSIGTERMServiceShutdown(t *testing.T) {
 				if resp.StatusCode != 202 {
 					t.Fatal(resp.Status)
 				}
-			} else if mode == "blocked-drain" || mode == "second-signal" {
+			} else if mode == "blocked-drain" || mode == "second-signal" || mode == "detached-handler" {
+				path := "/__test/block"
+				if mode == "detached-handler" {
+					path = "/__test/detached"
+				}
 				requestDone = make(chan struct{})
 				go func() {
 					defer close(requestDone)
-					resp, err := client.Get("http://" + address + "/__test/block")
+					resp, err := client.Get("http://" + address + path)
 					if err == nil {
 						_, _ = io.Copy(io.Discard, resp.Body)
 						_ = resp.Body.Close()
@@ -275,13 +313,31 @@ func TestRealSIGTERMServiceShutdown(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
+			if mode == "signal-during-save" {
+				waitFor(t, func() bool {
+					data, _ := os.ReadFile(filepath.Join(p.dir, "test-events"))
+					return strings.Contains(string(data), "save-start")
+				})
+				if err := p.cmd.Process.Signal(syscall.SIGINT); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(p.dir, "test-second-sent"), nil, 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
 			p.wait(t)
 			elapsed := time.Since(start)
 			if elapsed > 10*time.Second || mode == "second-signal" && elapsed > 3*time.Second {
 				t.Fatalf("shutdown exceeded its grace: %v", elapsed)
 			}
-			if mode == "blocked-drain" && elapsed < 5*time.Second {
+			if (mode == "blocked-drain" || mode == "detached-handler") && elapsed < 5*time.Second {
 				t.Fatalf("shutdown abandoned active HTTP drain: %v", elapsed)
+			}
+			if mode == "signal-during-save" {
+				data, _ := os.ReadFile(p.log)
+				if !strings.Contains(string(data), msgSignalDuringSave) {
+					t.Fatalf("second signal during the first save was not ignored:\n%s", data)
+				}
 			}
 			if requestDone != nil {
 				select {
@@ -300,6 +356,12 @@ func TestRealSIGTERMServiceShutdown(t *testing.T) {
 			}
 			if mode != "second-signal" && !strings.Contains(text, "last") {
 				t.Fatalf("missing final flush: %s", text)
+			}
+			if mode == "signal-during-save" && !(strings.Index(text, "save-start") < strings.Index(text, "save-end") && strings.Index(text, "save-end") < strings.Index(text, "last")) {
+				t.Fatalf("second signal interrupted the first save: %s", text)
+			}
+			if mode == "detached-handler" && !(strings.Index(text, "detached-cancelled") > 0 && strings.Index(text, "detached-cancelled") < strings.Index(text, "last")) {
+				t.Fatalf("detached request work was not cancelled before the final save: %s", text)
 			}
 			if mode == "publish" && !(strings.Index(text, "first") < strings.Index(text, "job-done") && strings.Index(text, "job-done") < strings.Index(text, "last")) {
 				t.Fatalf("publish drain order: %s", text)

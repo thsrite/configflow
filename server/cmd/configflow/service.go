@@ -133,6 +133,13 @@ func run(ctx context.Context, frontendDir string, signals <-chan os.Signal, opts
 	// closed by their owners; there is no process-wide sql.DB to close here.
 	lifecycle.RegisterShutdown(lifecycle.ShutdownHook{Name: "logs-close", Phase: lifecycle.PhaseClose, Run: func(context.Context) { flushLog() }})
 	lifecycle.RegisterShutdown(lifecycle.ShutdownHook{Name: "instance-release", Phase: lifecycle.PhaseClose, Run: func(context.Context) { owner.Release() }})
+	// Registered after every package's stop-signal hook (Wire and opts.register
+	// ran above), so it marks the end of the first shutdown save.
+	firstSaveDone := make(chan struct{})
+	var markFirstSave sync.Once
+	lifecycle.RegisterShutdown(lifecycle.ShutdownHook{Name: "stop-signal-saved", Phase: lifecycle.PhaseStopSignal, Run: func(context.Context) {
+		markFirstSave.Do(func() { close(firstSaveDone) })
+	}})
 	if err := writeTestManifest(app); err != nil {
 		return err
 	}
@@ -192,19 +199,28 @@ func run(ctx context.Context, frontendDir string, signals <-chan os.Signal, opts
 		}()
 		lifecycle.Stop(grace)
 	}()
-	select {
-	case <-signals:
-		// A second stop signal is the explicitly documented force-exit path.
-		os.Exit(0)
-	case err := <-stopped:
-		if err != nil {
-			return err
+	for {
+		select {
+		case <-signals:
+			select {
+			case <-firstSaveDone:
+				// A second stop signal after the first save is the force-exit path.
+				os.Exit(0)
+			default:
+				// Python ignores a repeated signal while the shutdown save runs, so
+				// a double Ctrl+C cannot discard the unsaved monitoring history.
+				logx.Get("backend.app").Info(msgSignalDuringSave)
+			}
+		case err := <-stopped:
+			if err != nil {
+				return err
+			}
+			if errors.Is(serveErr, http.ErrServerClosed) {
+				return nil
+			}
+			return serveErr
 		}
 	}
-	if errors.Is(serveErr, http.ErrServerClosed) {
-		return nil
-	}
-	return serveErr
 }
 
 func drainServers(ctx context.Context, servers ...*http.Server) error {
