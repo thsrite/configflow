@@ -111,7 +111,7 @@
 - **Go**：[logs.go:36](../internal/api/logs/logs.go#L36)把所有Stat错误压成false；[55](../internal/api/logs/logs.go#L55)可能错误回退，[216](../internal/api/logs/logs.go#L216)又返回不存在的成功结果。不是stat本身没报错，而是错误被吞。
 - **派单/验收**：用native `errors.Is(err, fs.ErrNotExist)`区分缺失和权限/其他I/O错误；保留正常fallback约定，EACCES返回失败，既定中文/错误出口与源行为核对。复用[log_stat_fault.py:56](../tools/configdiff/cases/log_stat_fault.py#L56)的非root真实故障，不用单纯chmod文件替代目录遍历拒绝。C07分支当前clearLogs的owner修正不含此处，挂现有任务而非另派C06。
 
-- **C07 修复（待独立复核）**：`006c806ad` 用原生 `fs.ErrNotExist` 区分缺失；日志路径选择返回 error，禁止 EACCES 时选择备用日志或成功返回不存在。真实不可遍历目录/可读 DB 回归覆盖 info、tail、clear，且 clear 不改备用日志。`.64` 的 configdiff `logs-real-stat-permission` 定向复验：`R075-F08 compared, diffs=0`，Python/Go 均500；150个比较器自检和端到端 mutation check 通过，current_open_differences=0。原始失败方向保留在上面，不将其改写为 Python200/Go500。
+- **C07 修复（待独立复核）**：`5b6dcd1f3` 用原生 `fs.ErrNotExist` 区分缺失；日志路径选择返回 error，禁止 EACCES 时选择备用日志或成功返回不存在。真实不可遍历目录/可读 DB 回归覆盖 info、tail、clear，且 clear 不改备用日志。`.64` 的 configdiff `logs-real-stat-permission` 定向复验：`R075-F08 compared, diffs=0`，Python/Go 均500；150个比较器自检和端到端 mutation check 通过，current_open_differences=0。原始失败方向保留在上面，不将其改写为 Python200/Go500。
 
 <a id="cfg-08"></a>
 

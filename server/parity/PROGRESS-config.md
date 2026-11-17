@@ -570,10 +570,10 @@ backend/utils/{notification_store,web_listener}.py. All nine routes now done,
 including immediate registration of the four formerly wip task/notification
 routes. Missing real slots explicitly return 503; no empty production rows.
 
-Commits: 2ffecdce7 tasks readiness/owned interval/stored WebDAV runner/History;
-304ab927c notification context commits/partial observation retention/HEAD;
-a17c70899 logs/stats owners and stats HEAD; 464ff88ea native listener lifetime and
-portable socket/HTTP regression matrix. Acceptance/mapping: 3fc75dc80; follow-up CFG-07: 006c806ad, malformed-history: cb3acb9cf, interval display-order: f62cc6ce0. Final foreground gate did not acquire a slot before the15-minute window (exit75); hand back targeted passes per coordinator. Full integration gate remains due.
+Commits: 62129a294 tasks readiness/owned interval/stored WebDAV runner/History;
+ca6ca9b86 notification context commits/partial observation retention/HEAD;
+4d7b232f5 logs/stats owners and stats HEAD; 8f95515dc native listener lifetime and
+portable socket/HTTP regression matrix. Acceptance/mapping: 82076dcbb; follow-up CFG-07: 5b6dcd1f3, malformed-history: 20d53d55a, interval display-order: a208172e1. Final foreground gate did not acquire a slot before the15-minute window (exit75); hand back targeted passes per coordinator. Full integration gate remains due.
 
 Clarified in C07 (2026-11-18): [design and external owners](../design/c07-status.md),
 [full source-test mapping](progress/c07-mapping.md), [commands/results](progress/c07.md).
@@ -593,7 +593,7 @@ authentication, DB/JSON/log after-state and combined notification redaction run
 against real Flask. Stats adds 48-point/30-minute/corrupt-optional-write/concurrent
 and HEAD tests. Runtime tests use real Start/BindRequest/Shutdown, including
 cancellation after observation/health and before commit. Fuzz target:
-FuzzTaskHistoryCounters (60s PASS,386707 executions). CFG-07 P2 is fixed by006c806ad: real stat EACCES is not missing/fallback; configdiff R075-F08 PASS with zero diffs, Python/Go500/500 (source evidence direction). No Agent registry copy remains (A01 already wired it).
+FuzzTaskHistoryCounters (60s PASS,386707 executions). CFG-07 P2 is fixed by5b6dcd1f3: real stat EACCES is not missing/fallback; configdiff R075-F08 PASS with zero diffs, Python/Go500/500 (source evidence direction). No Agent registry copy remains (A01 already wired it).
 
 External owner items are explicit: R14 router_rule_sync; A16/A17 agent rows and
 DNS-follow runner; A04 metrics already ready; C06 reviewed web-port handler
