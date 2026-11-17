@@ -15,7 +15,6 @@ import (
 	"runtime"
 	"slices"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 	"weak"
@@ -172,8 +171,9 @@ func TestReviewProductionMatcherLimitsAndRelease(t *testing.T) {
 	dir := t.TempDir()
 	opts.RulesDir = func() string { return dir }
 	opts.StoredLibrary = nil
-	var clock atomic.Int64
-	opts.Clock = func() float64 { return float64(clock.Load()) }
+	clock := lifecycletest.NewClock(time.Unix(0, 0))
+	opts.Clock = clock
+	opts.Spawner = nil // This test drives eviction explicitly for deterministic GC.
 	bounded := rules.NewMatcherCache(opts)
 	t.Cleanup(bounded.Clear)
 	config, err := object(map[string]any{"rule_configs": []ruleConfig{{ID: "rule", ItemType: "rule", RuleType: "DOMAIN-SUFFIX", Value: "example.com", Policy: "DIRECT", Enabled: true}}, "rule_library": []libraryItem{}})
@@ -202,12 +202,12 @@ func TestReviewProductionMatcherLimitsAndRelease(t *testing.T) {
 			t.Fatal("evicted matcher still retained")
 		}
 	}
-	clock.Store(299)
+	clock.Advance(299 * time.Second)
 	bounded.EvictIdle(299)
 	if bounded.Size() != 4 {
 		t.Fatal("matchers expired before five minutes")
 	}
-	clock.Store(300)
+	clock.Advance(time.Second)
 	bounded.EvictIdle(300)
 	if bounded.Size() != 0 {
 		t.Fatal("idle matchers remained at five-minute deadline")

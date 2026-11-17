@@ -2,6 +2,7 @@ package rules
 
 import (
 	"container/list"
+	"context"
 	"crypto/sha256"
 	"errors"
 	"io"
@@ -12,7 +13,9 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"configflow/internal/clock"
 	"configflow/internal/jsonx"
+	"configflow/internal/lockx"
 	"configflow/internal/logx"
 )
 
@@ -39,9 +42,12 @@ type MatcherCacheOptions struct {
 	// ValidateRemote checks a url source's cache file against its
 	// declaration; an error marks the file unusable. nil accepts everything.
 	ValidateRemote func(content string, rule *jsonx.Object) error
-	// Clock is a monotonic clock in seconds. nil uses the process clock.
-	Clock  func() float64
-	Logger Logger
+	// Clock supplies scheduling time and timers; nil uses real time.
+	Clock clock.Clock
+	// Spawner tracks cleanup work. When nil, eviction runs only on access or
+	// explicit EvictIdle calls; no background work is started.
+	Spawner lockx.Spawner
+	Logger  Logger
 
 	// Tunables, normally the Default* constants (tests shrink them).
 	MaxMatchers, MaxHostResults                    int
@@ -56,7 +62,9 @@ type MatcherCache struct {
 	mu         sync.Mutex
 	order      *list.List // front = oldest
 	slots      map[cacheSlot]*list.Element
-	timer      *time.Timer
+	timer      clock.Timer
+	cleanup    *cleanupWait
+	origin     time.Time
 	generation int
 }
 
@@ -68,7 +76,7 @@ type cacheEntry struct {
 	matcher   *CachedMatcher
 }
 
-var processStart = time.Now()
+type cleanupWait struct{ stop chan struct{} }
 
 // NewMatcherCache creates a cache.
 func NewMatcherCache(opt MatcherCacheOptions) *MatcherCache {
@@ -88,7 +96,7 @@ func NewMatcherCache(opt MatcherCacheOptions) *MatcherCache {
 		opt.CleanupInterval = DefaultCleanupInterval
 	}
 	if opt.Clock == nil {
-		opt.Clock = func() float64 { return time.Since(processStart).Seconds() }
+		opt.Clock = clock.Real{}
 	}
 	if opt.Logger == nil {
 		opt.Logger = logx.Get("backend.utils.domain_matcher_cache")
@@ -96,7 +104,7 @@ func NewMatcherCache(opt MatcherCacheOptions) *MatcherCache {
 	if opt.StoredLibrary == nil {
 		opt.StoredLibrary = func() []any { return nil }
 	}
-	return &MatcherCache{opt: opt, order: list.New(), slots: map[cacheSlot]*list.Element{}}
+	return &MatcherCache{opt: opt, origin: opt.Clock.Now(), order: list.New(), slots: map[cacheSlot]*list.Element{}}
 }
 
 // readKey names what a load read: a library entry, or the individual item.
@@ -141,7 +149,7 @@ func (s *localSource) retry(item, library *jsonx.Object) {
 	defer s.mu.Unlock()
 	s.failed[readKeyOf(item, library)] = struct{}{}
 	if !s.hasRetry {
-		s.retryAt = s.cache.opt.Clock() + s.cache.opt.ReadRetrySeconds
+		s.retryAt = s.cache.now() + s.cache.opt.ReadRetrySeconds
 		s.hasRetry = true
 	}
 }
@@ -278,12 +286,12 @@ func (m *CachedMatcher) Match(host string) *jsonx.Object {
 	// Never hold the registry lock while waiting for an index or doing I/O.
 	cache.mu.Lock()
 	m.active++
-	m.lastUsed = cache.opt.Clock()
+	m.lastUsed = cache.now()
 	cache.mu.Unlock()
 	defer func() {
 		cache.mu.Lock()
 		m.active--
-		m.lastUsed = cache.opt.Clock()
+		m.lastUsed = cache.now()
 		cache.mu.Unlock()
 	}()
 
@@ -291,7 +299,7 @@ func (m *CachedMatcher) Match(host string) *jsonx.Object {
 	defer m.mu.Unlock()
 	source := m.source
 	source.mu.Lock()
-	due := source.hasRetry && cache.opt.Clock() >= source.retryAt
+	due := source.hasRetry && cache.now() >= source.retryAt
 	failed := source.failed
 	if due {
 		source.failed = map[readKey]struct{}{}
@@ -436,20 +444,46 @@ func (c *MatcherCache) evictIdleLocked(now float64) {
 	}
 }
 
+// now keeps TTL arithmetic monotonic when the injected clock provides it.
+func (c *MatcherCache) now() float64 { return c.opt.Clock.Now().Sub(c.origin).Seconds() }
+
 func (c *MatcherCache) scheduleCleanupLocked() {
-	if c.order.Len() > 0 && c.timer == nil {
-		generation := c.generation
-		// A periodic sweep alone can retain an idle matcher for one extra full
-		// interval. Wake no later than the earliest inactive expiry deadline.
-		delay := c.opt.CleanupInterval
-		now := c.opt.Clock()
-		for e := c.order.Front(); e != nil; e = e.Next() {
-			m := e.Value.(*cacheEntry).matcher
-			if m.active == 0 {
-				delay = min(delay, max(0, c.opt.IdleSeconds-(now-m.lastUsed)))
-			}
+	if c.order.Len() == 0 || c.timer != nil || c.opt.Spawner == nil {
+		return
+	}
+	generation := c.generation
+	// Wake no later than the earliest inactive expiry deadline.
+	delay := c.opt.CleanupInterval
+	now := c.now()
+	for e := c.order.Front(); e != nil; e = e.Next() {
+		m := e.Value.(*cacheEntry).matcher
+		if m.active == 0 {
+			delay = min(delay, max(0, c.opt.IdleSeconds-(now-m.lastUsed)))
 		}
-		c.timer = time.AfterFunc(time.Duration(delay*float64(time.Second)), func() { c.cleanupIdle(generation) })
+	}
+	timer := c.opt.Clock.NewTimer(time.Duration(delay * float64(time.Second)))
+	wait := &cleanupWait{stop: make(chan struct{})}
+	c.timer, c.cleanup = timer, wait
+	err := c.opt.Spawner.Spawn(context.Background(), "matcher-cache-cleanup", func(ctx context.Context) {
+		defer func() {
+			timer.Stop()
+			c.mu.Lock()
+			defer c.mu.Unlock()
+			if c.cleanup == wait {
+				c.timer, c.cleanup = nil, nil
+			}
+		}()
+		select {
+		case <-ctx.Done():
+		case <-wait.stop:
+		case <-timer.C():
+			c.cleanupIdle(generation)
+		}
+	})
+	if err != nil {
+		timer.Stop()
+		c.timer, c.cleanup = nil, nil
+		c.opt.Logger.Warningf("Rule index cleanup admission failed (%T)", err)
 	}
 }
 
@@ -459,8 +493,8 @@ func (c *MatcherCache) cleanupIdle(generation int) {
 	if generation != c.generation {
 		return
 	}
-	c.timer = nil
-	c.evictIdleLocked(c.opt.Clock())
+	c.timer, c.cleanup = nil, nil
+	c.evictIdleLocked(c.now())
 	c.scheduleCleanupLocked()
 }
 
@@ -473,6 +507,10 @@ func (c *MatcherCache) Clear() {
 	if c.timer != nil {
 		c.timer.Stop()
 		c.timer = nil
+	}
+	if c.cleanup != nil {
+		close(c.cleanup.stop)
+		c.cleanup = nil
 	}
 	c.order.Init()
 	c.slots = map[cacheSlot]*list.Element{}
@@ -492,7 +530,8 @@ func (c *MatcherCache) CleanupScheduled() bool {
 	return c.timer != nil
 }
 
-// EvictIdle runs one idle-eviction pass at the given clock reading.
+// EvictIdle runs one idle-eviction pass at elapsed seconds since cache creation.
+// Normal lookups and background sweeps obtain that reading from Clock directly.
 func (c *MatcherCache) EvictIdle(now float64) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -543,7 +582,7 @@ func (c *MatcherCache) LocalMatcher(config *jsonx.Object, profileID string) *Cac
 	snapshot.Set("cache_library", cacheLibrary)
 	signature, stamps, paths := c.signature(snapshot, rulesDir)
 	slot := cacheSlot{rulesDir, profileID}
-	now := c.opt.Clock()
+	now := c.now()
 
 	c.mu.Lock()
 	defer c.mu.Unlock()

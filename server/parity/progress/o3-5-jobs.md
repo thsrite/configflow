@@ -95,3 +95,15 @@ Flight; the pool token is deferred. Preparation detaches through lifecycle; loca
 uninterruptible. Fake-clock tests pin12s/8, fallback/no-cache/read-error reuse and cancellation;
 the existing HTTP isolation tests retain the production ServeProvider entry. .64 gofmt/vet green;
 provider full race count3 passed447.504s, including actual preparation I/O cancellation.
+
+Provider commit: 0baedaef. Matcher cleanup uses the shared Clock and injected Spawner, with private
+stop channels and generation checks. A nil Spawner does only synchronous eviction. Discovery injects
+a non-nil Spawner, clears housekeeping in PhaseStopSignal, refuses new sweeps after Stopping and
+refreshes the cache's Clock in the production autoPeriodic OnStart for each activation. No new
+Startup task or phase was added. Tests pin the production wiring,1800s/60s generic limits and
+discovery4/1024/300s limits, clear/refusal cleanup and cross-activation clocks. Fake-clock T0 shutdown
+finishes without advancing grace. .64 fmt/vet passed; race3 rules13.924s, discovery15.178s;
+focused activation/shutdown race3 passed1.024s.
+
+Implementation is complete; remaining gates: final fmt/vet, related race after integration, full p4,
+both tags, all10 enabled tagged difftest packages, proddiff, final rebase go and clean workspace.

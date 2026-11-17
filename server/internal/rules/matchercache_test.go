@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -8,7 +9,9 @@ import (
 	"testing"
 	"time"
 
+	"configflow/internal/clock"
 	"configflow/internal/jsonx"
+	"configflow/internal/lifecycle/lifecycletest"
 )
 
 // Ported from backend/test_domain_matcher_cache.py. Tests that watched Python
@@ -17,20 +20,24 @@ import (
 // between the signature and the first read).
 
 type testClock struct {
-	mu  sync.Mutex
-	now float64
+	*lifecycletest.Clock
+	origin time.Time
 }
 
-func (c *testClock) get() float64 {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.now
+func newCacheClock() *testClock {
+	origin := time.Unix(0, 0)
+	return &testClock{Clock: lifecycletest.NewClock(origin), origin: origin}
 }
-
+func (c *testClock) get() float64 { return c.Now().Sub(c.origin).Seconds() }
 func (c *testClock) advance(seconds float64) {
-	c.mu.Lock()
-	c.now += seconds
-	c.mu.Unlock()
+	c.Advance(time.Duration(seconds * float64(time.Second)))
+}
+
+type cacheTestSpawner struct{ wg sync.WaitGroup }
+
+func (s *cacheTestSpawner) Spawn(ctx context.Context, _ string, fn func(context.Context)) error {
+	s.wg.Go(func() { fn(ctx) })
+	return nil
 }
 
 type cacheFixture struct {
@@ -44,9 +51,11 @@ type cacheFixture struct {
 
 func newFixture(t *testing.T, tune func(*MatcherCacheOptions)) *cacheFixture {
 	t.Helper()
-	f := &cacheFixture{t: t, root: t.TempDir(), clock: &testClock{now: 1}}
+	f := &cacheFixture{t: t, root: t.TempDir(), clock: newCacheClock()}
 	dir := f.root
-	opt := MatcherCacheOptions{RulesDir: func() string { return dir }, Clock: f.clock.get}
+	spawner := &cacheTestSpawner{}
+	t.Cleanup(spawner.wg.Wait)
+	opt := MatcherCacheOptions{RulesDir: func() string { return dir }, Clock: f.clock, Spawner: spawner}
 	if tune != nil {
 		tune(&opt)
 	}
@@ -288,8 +297,7 @@ func TestIdleEvictionReleasesIndexesAndExistingHandlesRemainUsable(t *testing.T)
 
 func TestBackgroundCleanupRunsWithoutAnotherRequest(t *testing.T) {
 	f := newFixture(t, func(o *MatcherCacheOptions) {
-		start := time.Now()
-		o.Clock = func() float64 { return time.Since(start).Seconds() }
+		o.Clock = clock.Real{}
 		o.IdleSeconds, o.CleanupInterval = 0.025, 0.01
 	})
 	f.matcher(f.config, "default").Match("matched.example")
@@ -689,8 +697,7 @@ func TestConcurrentCacheAccess(t *testing.T) {
 
 func TestReviewCleanupHonorsIdleDeadlineWithLongSweepInterval(t *testing.T) {
 	f := newFixture(t, func(o *MatcherCacheOptions) {
-		start := time.Now()
-		o.Clock = func() float64 { return time.Since(start).Seconds() }
+		o.Clock = clock.Real{}
 		o.IdleSeconds = 0.025
 		o.CleanupInterval = 60
 	})

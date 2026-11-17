@@ -148,19 +148,59 @@ func cachedContent(ctx context.Context, item libraryItem) ([]byte, error) {
 	return b, nil
 }
 
-var matcherOnce sync.Once
+var matcherMu sync.Mutex
 var matcherCache *rules.MatcherCache
 
-func cache() *rules.MatcherCache {
-	matcherOnce.Do(func() {
-		matcherCache = rules.NewMatcherCache(matcherOptions())
-		lifecycle.OnShutdown("domain-discovery-cache", func(context.Context) { matcherCache.Clear() })
-	})
+func activateMatcherCache(ctx context.Context) {
+	matcherMu.Lock()
+	defer matcherMu.Unlock()
+	if matcherCache != nil {
+		matcherCache.Clear()
+	}
+	opts := matcherOptions()
+	opts.Clock = lifecycle.ClockFrom(ctx)
+	matcherCache = rules.NewMatcherCache(opts)
+}
+
+func cache(ctx context.Context) *rules.MatcherCache {
+	matcherMu.Lock()
+	defer matcherMu.Unlock()
+	if matcherCache == nil {
+		opts := matcherOptions()
+		opts.Clock = lifecycle.ClockFrom(ctx)
+		matcherCache = rules.NewMatcherCache(opts)
+	}
 	return matcherCache
+}
+
+func clearMatcherCache() {
+	matcherMu.Lock()
+	defer matcherMu.Unlock()
+	if matcherCache != nil {
+		matcherCache.Clear()
+	}
+}
+
+func matcherShutdown(clear func()) lifecycle.ShutdownHook {
+	return lifecycle.ShutdownHook{Name: "domain-discovery-cache", Phase: lifecycle.PhaseStopSignal, Run: func(context.Context) { clear() }}
+}
+
+// Cleanup is housekeeping: no new timer job is needed once shutdown starts.
+// The hook clears existing waits at T0, including jobs admitted just before it.
+type matcherSpawner struct{}
+
+func (matcherSpawner) Spawn(ctx context.Context, name string, fn func(context.Context)) error {
+	select {
+	case <-lifecycle.Stopping(ctx):
+		return lifecycle.ErrStopping
+	default:
+	}
+	return lifecycle.Spawn(ctx, name, fn)
 }
 
 func matcherOptions() rules.MatcherCacheOptions {
 	return rules.MatcherCacheOptions{
+		Clock: lifecycle.ClockFrom(context.Background()), Spawner: matcherSpawner{},
 		RulesDir: func() string { return filepath.Join(repo.DataDir(), "shared", "rules") },
 		StoredLibrary: func() []any {
 			r, err := repo.GetRepository(context.Background())
@@ -207,7 +247,7 @@ func localMatcher(ctx context.Context, id string) (func(string) *Match, error) {
 	if err != nil {
 		return nil, err
 	}
-	m := cache().LocalMatcher(c, id)
+	m := cache(ctx).LocalMatcher(c, id)
 	return func(host string) *Match {
 		v := m.Match(host)
 		if v == nil {

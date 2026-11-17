@@ -216,6 +216,7 @@ func autoPeriodic() lifecycle.Periodic {
 	return lifecycle.Periodic{
 		Name: "domain-discovery-auto", Start: lifecycle.AtBoot, FirstDelay: 120 * time.Second,
 		Interval: func(context.Context) time.Duration { return 600 * time.Second },
+		OnStart:  activateMatcherCache,
 		Round:    automaticRound,
 	}
 }
@@ -255,7 +256,11 @@ func automaticRound(ctx context.Context) error {
 }
 
 // Wire registers task providers and the automatic discovery periodic.
-func Wire() { wireTasks(); lifecycle.RegisterPeriodic(autoPeriodic()) }
+func Wire() {
+	wireTasks()
+	lifecycle.RegisterPeriodic(autoPeriodic())
+	lifecycle.RegisterShutdown(matcherShutdown(clearMatcherCache))
+}
 
 func autoStopping(ctx context.Context) bool {
 	select {
