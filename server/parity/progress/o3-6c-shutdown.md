@@ -106,3 +106,27 @@ TestO36cExplicitBatchRuntimeBoundaries 对 delete/import/reset/create-rule 分�
 普通BeforeCommit的红/绿回归与marker后成功回归共同区分两种契约。
 审计其余 repo.update callback：均只改候选JSON；ImportClientProfile 的 build/各 Updater 按契约
 返回候选数据。ConfigurationCommitted 在成功DB提交和L3释放后才通知备份owner，不属于事务回滚域。
+
+## C33 合入衔接补充
+
+已读 go-review-c33:review-c33.md 的 F7/F8（协调者提示 tip0ed0be17）。C33 stage→DB→
+L3核验来源→rename/Sync/清marker 是可重放协议；DB后关机允许留下新声明+持久marker，
+读侧fail-closed只交付当前DB inline，不能复活旧cache，因此不加入三处不可中断白名单。
+待C33合入后补重启/下一次编辑恢复回归，保留F7核验与F8外层owner信号，不新增同动作重复检查；
+同时替换其adapter的ForgetContext。C33还新增了rulefetch inline迟到写守卫，rebase冲突必须保留。
+C33报告另列C37/A24自身DB后首次补cache的崩溃协议属各owner后续，不冒称本次共享取消已解决它们整条原子性。
+
+## MosDNS 归档 owner
+
+archive.go 入口早已由6a换成Detach，本步补取消闸门：入口、source处理、调度/等待、最终ZIP交付。
+HTTP下载保留真实生产3s/10s参数；取消直接返回context错误，不再包装成普通ArchiveError。
+关闭Runtime不交付ZIP；仅客户端断开仍完成真实HTTP、缓存、status与ZIP。既有8 worker上限和
+首次失败不等待其他下载的行为不变，仍有原测试验证；没有残留WithoutCancel。
+
+- 最初夹具误把 readZip 的 [][2]string 当map，编译失败已修正，不计为红证据。
+- 红：.64 `go test -count=1 -run '^TestO36cArchive' ./internal/mosdns/` 退出1、0.593s：
+  closed Runtime仍交付172字节ZIP，fetch后关机仍交付329字节ZIP，真实HTTP取消变成普通下载错误。
+- 绿：.64 Archive Runtime + 现有并发上限/首次失败行为 race count3 通过7.718s；
+  mosdns/oxidns/api-oxidns vet通过。三个新测试：TestO36cArchiveClosedRuntime、
+  TestO36cArchiveShutdownAfterFetch、TestO36cArchiveRuntimeIOBoundary；最后一条用真实回环HTTP，
+  验证取消在生产read timeout之前到达I/O、完整DB/files/revision不变，disconnect则生成cache/status和ZIP。

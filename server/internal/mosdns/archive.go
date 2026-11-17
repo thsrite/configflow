@@ -8,7 +8,6 @@ package mosdns
 import (
 	"archive/zip"
 	"bytes"
-	"configflow/internal/lifecycle"
 	"context"
 	"encoding/json"
 	"errors"
@@ -22,6 +21,7 @@ import (
 
 	"configflow/internal/convert"
 	"configflow/internal/jsonx"
+	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
 	"configflow/internal/refresh"
 	"configflow/internal/repo"
@@ -406,9 +406,11 @@ type fetched struct {
 // BuildMosDNSZip packs config.yaml, the custom files and every download
 // into a ZIP. config is the profile snapshot (it is not modified).
 func BuildMosDNSZip(ctx context.Context, config *jsonx.Object, yamlContent string, downloads []Download, custom []File, opts ArchiveOptions) ([]byte, error) {
-	// Downloads, cache writes and task records finish even when the caller
-	// goes away.
+	// Ignore client disconnects while retaining the Runtime's shutdown bound.
 	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	config = config.DeepCopy()
 	var snap snapshot
 	if err := viaJSON(config, &snap); err != nil {
@@ -441,6 +443,9 @@ func BuildMosDNSZip(ctx context.Context, config *jsonx.Object, yamlContent strin
 		return nil, err
 	}
 	for _, file := range custom {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if err := add(file.Path, []byte(file.Content)); err != nil {
 			return nil, err
 		}
@@ -454,6 +459,9 @@ func BuildMosDNSZip(ctx context.Context, config *jsonx.Object, yamlContent strin
 	uses := map[source][]use{}
 	var sources []source
 	for _, d := range downloads {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		path, err := ArchivePath(d.LocalPath)
 		var src source
 		var parts []string
@@ -484,7 +492,7 @@ func BuildMosDNSZip(ctx context.Context, config *jsonx.Object, yamlContent strin
 	results := make(chan fetched, len(sources))
 	next, pending := 0, 0
 	schedule := func() {
-		for ; pending < MaxWorkers && next < len(sources); next, pending = next+1, pending+1 {
+		for ; pending < MaxWorkers && next < len(sources) && ctx.Err() == nil; next, pending = next+1, pending+1 {
 			src := sources[next]
 			go func() {
 				content, err := fetchSource(ctx, fetch, config, src, label(uses[src][0].name))
@@ -494,7 +502,15 @@ func BuildMosDNSZip(ctx context.Context, config *jsonx.Object, yamlContent strin
 	}
 	schedule()
 	for ; pending > 0; pending-- {
-		result := <-results
+		var result fetched
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case result = <-results:
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if result.err != nil {
 			return nil, result.err
 		}
@@ -520,15 +536,25 @@ func BuildMosDNSZip(ctx context.Context, config *jsonx.Object, yamlContent strin
 		}
 		schedule()
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if err := checkReferences(yamlContent, files, opts.SkipReferenceValidation); err != nil {
 		return nil, err
 	}
-	return writeZip(entries, files)
+	data, err := writeZip(entries, files)
+	if cancelled := ctx.Err(); cancelled != nil {
+		return nil, cancelled
+	}
+	return data, err
 }
 
 // fetchSource returns a source's text: inline content, the remote
 // declaration's validated cache or download, or an undeclared URL.
 func fetchSource(ctx context.Context, fetch fetchFunc, config *jsonx.Object, src source, name string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	if src.inline {
 		return src.content, nil
 	}
@@ -556,6 +582,9 @@ func fetchSource(ctx context.Context, fetch fetchFunc, config *jsonx.Object, src
 		}
 		return decodeText(content)
 	}()
+	if cancelled := ctx.Err(); cancelled != nil {
+		return "", cancelled
+	}
 	if err != nil {
 		return "", archiveErr("规则“" + name + "”下载失败：" + detail(err))
 	}

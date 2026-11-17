@@ -503,6 +503,12 @@ Implementation notes: [startup and shutdown](o3-startup-shutdown.md).
   shutdown while waiting or before commit preserves DB/files/revisions; client disconnect alone
   still completes. Preserve red/green evidence. Coordinate repo signatures with N8-5 before edits;
   O3-6c merges first, then N8-5 rebases. Activate A14's skipped regression once A14 is merged.
+- C33's staged-cache protocol is replayable, not another uninterruptible batch: its durable invalid
+  marker keeps readers fail-closed between database commit and guarded rename/Sync/marker removal.
+  Shutdown may retain the new declaration plus marker; reads serve the current database inline bytes,
+  never the old cache. After reopening, the next edit repairs the cache and clears the marker. Test
+  that sequence on the merged C33 tree. Preserve F7's L3 declaration guard and F8's owner-context
+  restoration; do not duplicate checks at the same action. Migrate C33 Forget to ForgetContext.
 
 ### 2.4 Mapping table (every Python loop/lock → Go construct)
 
