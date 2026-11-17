@@ -227,3 +227,5 @@ Counts at the tested implementation; four shared Go files only gain fields/set t
 | `internal/routers/testdata/r09_mutations.py` | 30 |
 | `internal/routers/testdata/r09_reference.py` | 54 |
 | `parity/progress/R09-dns-guard.md` | 227 |
+
+Final gate on ae2e0f59 + R09 is running with the newly required shared gate.sh. Parallel proddiff reported three new aggregation-provider differences (body.proxies length and X-ConfigFlow-Provider on two paths); runtime load 68–70, Python transport retries14, subsequent host load119. Baseline untouched; no provider code modified. A clean detached ae2e0f59 worktree is prepared for reference if needed; waiting for lower load before retry. Full race remains running.
