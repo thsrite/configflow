@@ -1,6 +1,6 @@
 # PROGRESS — domain `agents`
 
-Domain `agents` (WORKFLOW.md): Agent registry/heartbeat, metrics/traffic, OxiDNS/Mihomo monitoring, installers, Docker HA, deployment bundle, push diff, content sync, publishing, upgrades, address follow, rule sync, DNS follow, DNS HA, Linux gateway, gateway onboarding/installation, IPv6 readiness (old packages #20–#31). **69 Python files, 25154 lines, 24 modules** (equal to the `agents` totals in `FILES.md`) — 13 missing, 0 partial, 0 ported, 11 verified (A01, A02, A03, A04, A05, A06, A07, A08, A09, A10, A15). Only reviewers set `verified`.
+Domain `agents` (WORKFLOW.md): Agent registry/heartbeat, metrics/traffic, OxiDNS/Mihomo monitoring, installers, Docker HA, deployment bundle, push diff, content sync, publishing, upgrades, address follow, rule sync, DNS follow, DNS HA, Linux gateway, gateway onboarding/installation, IPv6 readiness (old packages #20–#31). **69 Python files, 25154 lines, 24 modules** (equal to the `agents` totals in `FILES.md`) — 12 missing, 0 partial, 1 ported (A19), 11 verified (A01, A02, A03, A04, A05, A06, A07, A08, A09, A10, A15). Only reviewers set `verified`.
 
 Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 496004d7. The Go code was read directly (`internal/agents`, `internal/api/agents`, `internal/notifications`, `internal/tasks`, `internal/server`); the hand-back in `progress/20-agents.md` was not relied on.
 
@@ -34,7 +34,7 @@ Same as `PROGRESS-config.md`: status `missing` / `partial` (exact list of what i
 | A16 | Agent rule sync, projection, snapshot | 1371 | missing | HR | A07, A14, C25, C27 | 2 | internal/agents/rulesync (new), api/agents |
 | A17 | DNS follow | 760 | missing | HR | A14, C26 | 4 | internal/agents/dnsfollow (new), api/agents |
 | A18 | DNS HA (keepalived pair, handoff, pair publication) | 1529 | missing | HR | A16, A17, C26, routers (`routers/store.py`) | 4 | internal/agents/dnsha (new), api/agents |
-| A19 | Linux gateway core (common/linux_gateway.py) | 518 | missing | HR | C05, C08, routers (`router_split.check_generation`) | – | internal/gateway (new) |
+| A19 | Linux gateway core (common/linux_gateway.py) | 518 | ported | HR | C05, C08, routers (`router_split.check_generation`) | – | internal/gateway (new) |
 | A20 | Agent gateway bridge, gateway draft, gateway routes | 1110 | missing | HR | A19, A06, C18, routers (`router_split`, `routers/store.py`) | 18 | internal/gateway, api/agents, api/linuxgateway (new) |
 | A21 | gateway onboarding | 751 | missing | HR | A19, A20, C18, C22, C23, C24, C05, routers (`router_split`) | 3 | internal/gateway, api/gatewayonboarding (new) |
 | A22 | gateway installation | 809 | missing | HR | A08, A14, A20, A21, C17 | 7 | internal/gateway, api/agents |
@@ -1001,16 +1001,59 @@ Hooks to provide: `agents.RegisterHooks{HAServiceOperation, HADeployment, HAActi
 
 ## A19 — Linux gateway core
 
-**Status: `missing`** · HR · prereqs: C05 (`append_url_query` — missing in C05, port it there or here per coordinator), C08 (`RuleCacheReadPath`, ready), C06 (`auth.IsAuthEnabled`), C32 (`routes.rules.get_ruleset_content`, lazy), routers (`router_split.check_generation`) · Go: internal/gateway (new)
+**Status: `ported`** (Opus porter, 2026-11-17; HR review by a fresh Opus pending) · HR · prereqs: C05 (`append_url_query` = existing `convert.AppendURLQuery`), C08 (`rulefetch.RuleCacheReadPath`), C06 (`auth.IsAuthEnabled`), C32 (`get_ruleset_content`, hook below), routers (`routersplit.CheckGeneration`) · Go: `internal/gateway` (+ existing leaf `internal/gateway/gwbase`)
 
 Files:
-- `backend/common/linux_gateway.py` (518)
+- `backend/common/linux_gateway.py` (518) → `internal/gateway`: `settings.go` (Settings, NormalizeSettings, Error), `config.go` (typed view: Config, Rule, Reason), `extract.go` (content lines, ExtractCIDRs), `fakeip.go`, `provider.go` (ProviderName/Path/Payload/YAML, SourceYAML, ContentLoader), `apply.go` (Apply, RoutingMarkPath), `overlap.go` (DirectOverlapWarnings), `editor.go` (EditorState, ValidateRuleSetIDs, ValidateSelection), `node.go` (value predicates on the shared yamlx node helpers), `adapter.go` (the only jsonx/legacy-yamlx file), `wire.go`, `messages.go`. 1866 non-test lines; tests 754 + `testdata/gen_a19.py` 638.
 
-Tests: none of its own (cases in `test_linux_gateway.py` → A20, config `test_setup_flow.py`, `test_mihomo_base_settings.py`).
+Commits (branch `go-port-a19`): `7511b705` core + `server.wirePackages` line, `a1b7f81f` corpus/boundary tests/fuzz, `fad46113` router_split + base-settings rows, `eba72710` shared yamlx node helpers (N7-1), `bb90a277` downloads rows, plus this PROGRESS commit.
 
-Routes: none.
+Routes: none (A20 owns the 18 gateway routes). Wiring: `gateway.Wire` in `server.wirePackages` registers `convert.MihomoHooks{ApplyLinuxGateway, GatewayEnabled, FakeIPNetworkError}` (C18's declared interface, decision 3); `IsFullTun` stays with routers (`ippresence.Wire`).
 
-Evidence: no Go code. Provides for config C18 (`apply_linux_gateway`, `gateway_settings`, `fake_ip_network`) and routers (`router_split` imports `LinuxGatewayError`, `TUN_FILTER_KEYS`): C18 declares an interface (decision 3) registered here; for routers agree an interface with the routers planner (cycle `router_split` ↔ `linux_gateway`).
+### Public API (for C18, A11, A20–A22, C36, routers)
+
+Documents are `*yaml.Node` (`yamlx` conventions: content nodes, no document wrapper). The profile configuration enters through the adapter until N8:
+
+- `NewConfig(*jsonx.Object) *Config` — repo's compat config (profile + `rule_library` + `system_config` + `nodes`); immutable; `SettingsOf(*jsonx.Object) (Settings, error)` reads only the setting (cheap, for hot paths).
+- `(*Config).Settings() (Settings, error)` = `gateway_settings` (malformed stored value → `*Error`); `Enabled()`; `ProfileID()`; `RuleSet(id) *Rule` = `_rule`; `Library(*Rule) *Rule` = `_library`; `Reason(*Rule) string` = `_reason`; `BaseDocument() (*yaml.Node, error)` = `_base_config`.
+- `NormalizeSettings(json.RawMessage) (Settings, error)` = `normalize_gateway_settings` (A20 request bodies). `Settings{Enabled bool; RuleSetIDs []string}` marshals as `{"enabled", "rule_set_ids"}` (never null).
+- `ParseFakeIPRange(string)`, `FakeIPNetwork(*yaml.Node) (netip.Prefix, error)` = `fake_ip_network`.
+- `ExtractCIDRs(content, behavior) ([]netip.Prefix, error)` = `extract_gateway_cidrs`.
+- `(*Config).ProviderPayload / ProviderYAML / SourceYAML(ctx, ruleID, ContentLoader)` = `gateway_provider_payload/_yaml`, `gateway_source_yaml`. `ContentLoader func(ctx, item, library *Rule) (string, error)`; nil = default reader (below). **A11** passes a loader that reads its own publication snapshot (`Rule.URL()`, `Rule.JSONX()` give the declaration) and maps `*Error` to `DeploymentPreparationError(str)`.
+- `ProviderName(id)`, `(*Config).ProviderPath(id, source bool)` (A11 matches internal callback paths against it), `ProviderPrefix`, `FakeProvider`, `RefreshInterval`, `MarkerKey`, `DefaultFakeIPRange`.
+- `(*Config).Apply(doc *yaml.Node, baseURL)` = `apply_linux_gateway` (runs `routersplit.CheckGeneration` first); `ApplyJSONX(mihomo, config *jsonx.Object, baseURL)` is the convert hook (patches in place only on success; off = no conversion at all).
+- `RoutingMarkPath(*yaml.Node, root)` / `RoutingMarkPathJSONX(any, root)` = `_routing_mark_path` (**A11**'s provider-file check).
+- `(*Config).DirectOverlapWarnings(ctx, ContentLoader)`, `EditorState(includeGuidance) (EditorState, error)` (`Candidate`, JSON = Python's dict; missing selections omit `description`), `ValidateRuleSetIDs(ids, previous []string) error`, `ValidateSelection(json.RawMessage) (Settings, error)` (**A20** draft, **A21** onboarding, **C36** setup flow).
+- Errors: `gateway.Error` = `gwbase.LinuxGatewayError` (user message); `routersplit.RouterSplitError` also matches it with `errors.As` (check RouterSplitError first for its code/status).
+- Hook for **C32**: `SetRulesetContent(func(ctx, item, library, config *jsonx.Object) (string, error))` = `routes.rules.get_ruleset_content(item, library, config_data=config)` ("" when unreadable). Until set, default reads fail closed with `ErrRulesetContentUnavailable` (only provider routes/overlap with remote sets and no loader need it; generation does not). With the reader set, `ProviderPayload/SourceYAML` accept an empty result only when `rulefetch.RuleCacheReadPath` names an existing regular file (Python's `is_file()`), else `*Error` 无法读取.
+- No locks, goroutines or background work (o3-concurrency: nothing to register). Functions that may read rule content take `ctx`; callers that write state detach per PORTING 4b.
+
+### Decisions and findings
+
+- **Typed view instead of dicts.** Stored members are read as absent / string / other (other reads as "" — model rule R5) and flags as absent / JSON truthiness, so `.get(k, default)` and `enabled: null` (= off in Python) behave as in Python. Non-string ids/names/library ids that Python would compare or `str()` are not matched (malformed data only).
+- **Mihomo documents as yaml.Node.** The convert hook converts the generated jsonx document to nodes (only when the gateway is on), patches, and writes back; untouched scalars come back as the original Go values (number forms, timestamps, binary), the TUN/DNS copies share scalars (`cloneShared`). Proven by `TestApplyKeepsUntouchedValues` and exact `jsonx.Compact` equality (order + types) in every `apply` corpus row.
+- **User YAML** (base config, YAML rule sets) is still read with the legacy `yamlx.LoadWith` (PyYAML port, non-string keys and recursive aliases kept) so every reader of the same text agrees until N7-3 migrates readers; provider files are written with `yamlx.SafeDumpUnicode` (PyYAML bytes). Line splitting uses the shared `convert.PySplitlines` (`\v`, `\f` split as in Python — corpus row).
+- **Python bug fixed:** a scoped IPv6 /128 in an original rule set (`fe80::1%eth0`) was written to the source provider as `fe80::1%eth0/128`, which Mihomo cannot parse; Go writes `fe80::1/128` (severity low; only scoped link-local entries).
+- **No longer chased:** IPv6 text forms in source providers (`::ffff:1.2.3.4` vs Python `::ffff:102:304`; same network); `str.strip`/`upper`/`\s` Unicode edge cases; Python crash classes (AttributeError for a non-mapping custom provider, ValueError for a bad bracketed server_domain) are Go errors that are not `*Error` (both 500); invalid UTF-8 content (impossible in Python) is refused as binary.
+- **For A20 (routes):** Python routes return `str(LinuxGatewayError)` as 400 and `RouterSplitError` with its own status/code — map `errors.As` in that order.
+
+### Python tests → coverage
+
+A19 has no test file of its own. Oracle: `testdata/gen_a19.py` runs the real Python functions (7432 rows, synthetic values, loaders instead of the network; `auth` patched) and `TestPythonCorpus` compares every row (Chinese messages exact, RouterSplitError by code, crash classes as "refused but not a gateway error", configs must stay unmodified): normalize 31, fake_ip_range/network 57, routing_mark 14, extract ~1850 (fixed + random), provider payload/yaml/source ~610 each, provider_path/name ~1800, overlap ~310 (with loader call order), editor_state ~310, validate_ids ~270, validate_selection ~290, apply ~380 (byte-exact jsonx), generate 134 (full `generate_mihomo_config` vs `convert.GenerateMihomoConfig` with the real hooks), downloads 134 (`get_mihomo_ruleset_downloads`).
+- `test_linux_gateway.py` (27; file owned by A20): A19 halves covered by corpus rows built from the same inputs — empty-cache rename → `TestDefaultContentReader`; disabled no-op/no mutation → generate/downloads/apply rows + `TestApplyKeepsUntouchedValues`; selective output, fake-only/deleted, rename/disable, classical extraction, unsafe rules, conflicts on the base, candidates/MRS, comments, single IP, classical non-IP, rule mode, TUN filters, disabling after type change, huge sources, auth token, overlap (2), router split markers (2) → the matching fixed rows. Routes/bundle/draft cases (`test_api_*` 2, `test_runtime_tokens_*`, `test_bundle_*` 2, `test_draft_preview_*`) → A20/A11.
+- `test_router_split.py::test_rule_set_id_validation_is_shared_with_gateway_selection` → validate_ids/validate_selection fixed rows.
+- `test_mihomo_base_settings.py` fake-ip-range cases (12) → fake_ip_range rows + `TestHooks` (through `FakeIPNetworkError`); the integer value is C18's own check.
+- `test_setup_flow.py`, `test_linux_gateway_draft.py`, `test_gateway_onboarding.py`, `test_gateway_publish_compatibility.py`, `test_gateway_installation.py` exercise A19 only through A20/A21/A22/C36 → their modules.
+- Extra: `TestSettingsDefaults` (raw JSON forms), `FuzzExtractCIDRs` (capture invariants: IPv4, ≥/8, sorted, disjoint, never all of IPv4). Purpose-broken check: flipping `ipv6`, the /8 limit and the overlap sort made 249 rows differ.
+
+### Only lab batch L4 can prove
+
+The corpus proves the generated Mihomo configuration; it cannot prove what the host does with it: TUN auto-route/auto-redirect nftables rules capturing exactly fake-IP + selected IPv4 networks (and nothing else) on a real Linux gateway; `route-address-set` updates when Mihomo refreshes `/linux-gateway/rules/<id>` every 300 s with the token (and keeps the old provider when the panel answers 503); `routing-mark` conflict relevance; fake-ip DNS on 127.0.0.1:1053 with OxiDNS upstreams via IP DoH not hijacked; IPv6 off end to end; clients on the LAN routed through the gateway (selective, full_tun via router split, legacy) and persistence across reboot — all A20–A22 host operations.
+
+### Commands
+
+- Corpus: `RT_HOST=sunbroke@192.168.0.63 rt --back server/internal/gateway/testdata/a19_corpus.jsonl.gz -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/gateway/testdata/gen_a19.py'`
+- Tests: `rt -- bash -lc 'cd server && go vet ./internal/gateway/ && go test -count=1 -race ./internal/gateway/'`; fuzz `go test -run x -fuzz FuzzExtractCIDRs -fuzztime 60s ./internal/gateway/`.
 
 ## A20 — Agent gateway bridge, gateway draft, gateway routes
 
