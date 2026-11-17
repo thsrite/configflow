@@ -2458,3 +2458,18 @@ current compared6 / Go未实现6；design_errors=[]；exit0
 - 再次rebase到最新go f147cf21（含A24和N8-4e/f），无业务源码改动。工具修正提交当前5ace5b28/622d54d1，精确注释和自检同步更新；历史基线与历史提交引用保留记录。
 - 五类断连最终实跑12变体19.67秒，compared6/未实现6，design_errors=[]；false commit-mapping草稿已删除，未带入canonical finding。N8-6九个批准差异实际接受谓词通过，138项篡改自检通过。
 - 最终完整门禁固定.64、-p4，先官方Go gate，再同一锁槽configdiff all，使用独立final-results.json/final-findings.md保留原始证据，结束后将整份实际报告交回canonical。当前只冻结输入，尚无最终通过结论；不会把旧4d8a665a夹具失败全量算通过。
+
+## 批次 147：自动备份真实提交钩子、合并、失败与恢复
+
+- T16真实首个PUT屏障期间公开提交system/shared/profile，要求恰好首快照和最终快照两次上传。逐端先证明完整JSON与该端只读SQL反解准确相同，再双端比全部DAV请求/认证/路径/对象/目录、完整SQL/files及回执；不只比上传次数。no-op/拒绝事务/runtime-only heartbeat/禁用及禁用后实际新提交均不安排上传，观察窗口3秒明确有限。
+- T17真实507保留已提交配置及200响应，任务失败及无密码WARNING严格相比；3秒无自动重试，新提交后恢复成功、累计失败保留/连续失败清零。仅批准的英文DAV诊断两种值允许，中文/结构/额外日志不放宽。源端超时为夹具前提错误，Go超时保留为差异。完整SQL reader只读且自检验证字节不变；故意改变上传/认证/JSON/对象/目录/日期/SQL/文件均检出。
+- .64 baseline f147cf21，最终16变体全部compared，design_errors=[]，21.70秒、exit0；141项自检及故意错误Go响应检出通过。草稿改为automatic-backup.json及automatic-backup-findings.md，不保留失败草稿。worker启动资源耗尽仍partial。
+- 批次146排队命令尚未取得官方槽位即由本任务停止（exit143、full suite not started），未执行race/proddiff，不算最终门禁。包含本批后重新排队。
+- 黑盒审计透明记录：恢复期间误读了PROGRESS-config.md第172–184行的实现说明，违反“只读模块列表”的限制；已向维护者明确披露。没有读取Go业务实现；本批预期来自Python源和实际运行，未依据该说明推导。后续不再读取此类段落。
+
+```text
+RT_HOST=sunbroke@192.168.0.64 rt --back server/tools/configdiff/testdata/automatic-backup-draft.json --back server/tools/configdiff/testdata/automatic-backup-draft.md -- bash -lc 'server/tools/configdiff/native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups automatic-backup-real-held-upload-coalescing-and-no-op,automatic-backup-real-failure-no-retry-and-new-commit-recovery --baseline f147cf21 --output server/tools/configdiff/testdata/automatic-backup-draft.json --findings server/tools/configdiff/testdata/automatic-backup-draft.md'
+current compared16；design_errors=[]；seconds21.70；exit0
+Ran 141 tests ... OK
+MUTATION-CHECK detected deliberately corrupted Go body.authEnabled
+```

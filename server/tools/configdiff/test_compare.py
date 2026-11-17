@@ -17,6 +17,80 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_automatic_backup_compares_complete_snapshots_wire_objects_auth_and_storage(self):
+        from datetime import datetime, timezone
+        from cases.automatic_backup import snapshots_diffs
+        now = time.time()
+        doc = {'system': {'setting': 'kept'}, 'shared': {'nodes': []},
+            'profiles': {'default': {'updated_at': datetime.fromtimestamp(now, timezone.utc).isoformat(), 'unknown': ['中文🧪']}}}
+        with tempfile.TemporaryDirectory() as root:
+            dirs = [Path(root) / name for name in ('python', 'go')]
+            for directory in dirs:
+                directory.mkdir()
+                with sqlite3.connect(directory / 'configflow.sqlite3') as db:
+                    db.executescript('CREATE TABLE meta(key,value); CREATE TABLE sections(scope,owner,position); '
+                        'CREATE TABLE fields(scope,owner,field,position,value,revision);')
+            snapshots = []
+            for offset in (0, .001):
+                path = '/backup/config_backup_' + datetime.fromtimestamp(now + offset, timezone.utc).strftime('%Y%m%d_%H%M%S_%f') + '.json'
+                snapshots.append({'requests': [{'method': 'PUT', 'path': path, 'authorization': 'Basic synthetic',
+                    'depth': '', 'body': copy.deepcopy(doc)}], 'directories': ['/', '/backup/'], 'objects': {path: copy.deepcopy(doc)}})
+            fakes = [SimpleNamespace(basic='Basic synthetic')] * 2
+            def compare(observed, expected=None):
+                pair = SimpleNamespace(dirs=dirs, policy=Policy(start=now - 2, end=now + 2))
+                return snapshots_diffs(pair, observed, expected or [[doc], [doc]], fakes)
+            self.assertFalse(compare(snapshots))
+            for mutation in ('lost-upload', 'wrong-auth', 'wrong-body', 'extra-body-field', 'extra-object', 'wrong-directory', 'invalid-calendar-name'):
+                bad = copy.deepcopy(snapshots)
+                row = bad[1]['requests'][0]
+                if mutation == 'lost-upload': bad[1]['requests'] = []
+                elif mutation == 'wrong-auth': row['authorization'] = 'Bearer secret'
+                elif mutation == 'wrong-body': row['body']['system']['setting'] = 'lost'
+                elif mutation == 'extra-body-field': row['body']['extra'] = True
+                elif mutation == 'extra-object': bad[1]['objects']['/unexpected.json'] = {'extra': True}
+                elif mutation == 'wrong-directory': bad[1]['directories'] = ['/unexpected/']
+                else: row['path'] = '/backup/config_backup_20261399_990000_000000.json'
+                self.assertTrue(compare(bad), mutation)
+            # Even a wrong Go body that agrees with its wrong own SQL proof
+            # must still fail the complete cross-implementation payload check.
+            bad = copy.deepcopy(snapshots)
+            wrong = copy.deepcopy(doc)
+            wrong['system']['setting'] = 'lost'
+            bad[1]['requests'][0]['body'] = wrong
+            self.assertTrue(compare(bad, [[doc], [wrong]]))
+            with sqlite3.connect(dirs[1] / 'configflow.sqlite3') as db:
+                db.execute('INSERT INTO fields VALUES (?,?,?,?,?,?)', ('root', '', 'unexpected', 0, 'true', 1))
+            self.assertTrue(compare(snapshots), 'unexpected SQL row')
+            with sqlite3.connect(dirs[1] / 'configflow.sqlite3') as db: db.execute('DELETE FROM fields')
+            (dirs[1] / 'unexpected-file').write_bytes(b'changed')
+            self.assertTrue(compare(snapshots), 'unexpected persisted file')
+
+    def test_automatic_backup_SQL_document_reader_preserves_all_rows_and_is_readonly(self):
+        from cases.automatic_backup import document
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root) / 'configflow.sqlite3'
+            with sqlite3.connect(path) as db:
+                db.executescript('CREATE TABLE meta(key,value); CREATE TABLE sections(scope,owner,position); '
+                    'CREATE TABLE fields(scope,owner,field,position,value,revision);')
+                db.execute('INSERT INTO meta VALUES (?,?)', ('root_order', json.dumps(['schema_version', 'system', 'shared', 'profiles', 'unknown'])))
+                db.executemany('INSERT INTO sections VALUES (?,?,?)', [('root', '', 0), ('system', '', 0), ('shared', '', 0), ('profile', 'default', 0)])
+                for scope, owner, field, value in [('root', '', 'schema_version', 5), ('root', '', 'unknown', {'keep': [1, '🧪']}),
+                        ('system', '', 'backup', {'enabled': True}), ('shared', '', 'nodes', []), ('profile', 'default', 'name', '合成')]:
+                    db.execute('INSERT INTO fields VALUES (?,?,?,?,?,?)', (scope, owner, field, 0, json.dumps(value), 7))
+            before = path.read_bytes()
+            self.assertEqual(document(Path(root)), {'schema_version': 5, 'system': {'backup': {'enabled': True}},
+                'shared': {'nodes': []}, 'profiles': {'default': {'name': '合成'}}, 'unknown': {'keep': [1, '🧪']}})
+            self.assertEqual(path.read_bytes(), before)
+
+    def test_automatic_backup_timeout_is_source_premise_only_for_Python(self):
+        from unittest.mock import patch
+        from cases.automatic_backup import wait_for
+        from harness import DesignError
+        with patch('cases.automatic_backup.time.monotonic', side_effect=[0, 20]):
+            self.assertFalse(wait_for(1, lambda: False, 'synthetic missing Go effect'))
+        with patch('cases.automatic_backup.time.monotonic', side_effect=[0, 20]):
+            with self.assertRaises(DesignError): wait_for(0, lambda: False, 'synthetic invalid source fixture')
+
     def test_N8_login_approvals_require_exact_error_envelopes_and_valid_source_JWT(self):
         import jwt
         from harness import SECRET, USERNAME

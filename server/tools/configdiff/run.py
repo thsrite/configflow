@@ -108,6 +108,8 @@ def main():
     groups.update(provider_key_isolation)
     from cases.source_write_disconnect import GROUPS as source_write_disconnect
     groups.update(source_write_disconnect)
+    from cases.automatic_backup import GROUPS as automatic_backup
+    groups.update(automatic_backup)
     from cases.redaction import GROUPS as redaction
     groups.update(redaction)
     from cases.admin_auth import GROUPS as admin_auth
