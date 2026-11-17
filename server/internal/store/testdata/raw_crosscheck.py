@@ -41,6 +41,8 @@ def equivalent(actual, expected):
 
 def main():
     mode, path, other = sys.argv[1:]
+    repository_audit = mode.endswith("-repository")
+    mode = mode.removesuffix("-repository")
     if mode == 'copy':
         # Never open the source read-write, including SQLite journal recovery.
         source = sqlite3.connect(Path(path).resolve().as_uri() + '?mode=ro', uri=True)
@@ -62,6 +64,9 @@ def main():
     if mode == 'audit-final':
         expected['n8_2_python_probe'] = {'written': 'Python', 'number': 1.0}
     equivalent(entry.document, expected)
+    if repository_audit:
+        from backend.common.config_repository import ProfileRepository
+        equivalent(ProfileRepository(Path(path).parent).export_all(), expected)
     # Check object/section/profile order as well as JSON values.
     assert list(entry.document) == list(expected)
     assert list(entry.document.get('profiles', {})) == list(expected.get('profiles', {}))

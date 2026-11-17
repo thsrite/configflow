@@ -153,7 +153,13 @@ func TestStoredRoundTrip(t *testing.T) {
 			t.Fatalf("Python storage boundary failed (%T)", err)
 		}
 	}
-	run := func(t *testing.T, path string) {
+	run := func(t *testing.T, path string, repositoryAudit bool) {
+		auditMode := func(mode string) string {
+			if repositoryAudit {
+				return mode + "-repository"
+			}
+			return mode
+		}
 		s := New(path, func() time.Duration { return 5 * time.Second })
 		if err := s.Check(); err != nil {
 			t.Fatal("store check failed")
@@ -183,7 +189,7 @@ func TestStoredRoundTrip(t *testing.T) {
 		if err := os.WriteFile(expected, data, 0o600); err != nil {
 			t.Fatal("expectation write failed")
 		}
-		python(t, "audit", path, expected)
+		python(t, auditMode("audit"), path, expected)
 		rows := must(documentRows(base.Document))(t)
 		doc, err := buildDocument(rows.rootOrder, rows.sections, rows.fields)
 		if err != nil {
@@ -211,7 +217,7 @@ func TestStoredRoundTrip(t *testing.T) {
 		if err := os.WriteFile(expected, data, 0o600); err != nil {
 			t.Fatal("expectation write failed")
 		}
-		python(t, "audit-edit", path, expected)
+		python(t, auditMode("audit-edit"), path, expected)
 		final, err := s.Load()
 		if err != nil || final.Head.Generation != updated.Head.Generation+1 {
 			t.Fatal("Go cannot read Python commit")
@@ -225,7 +231,7 @@ func TestStoredRoundTrip(t *testing.T) {
 		if !parsed {
 			t.Fatal("Python edit missing or changed")
 		}
-		python(t, "audit-final", path, expected)
+		python(t, auditMode("audit-final"), path, expected)
 		t.Logf("rows=%d: no-op unchanged; Go→Python→Go→Python passed; unrelated rows preserved", len(before))
 	}
 	t.Run("committed-go-fixture", func(t *testing.T) {
@@ -234,25 +240,35 @@ func TestStoredRoundTrip(t *testing.T) {
 		if _, err := s.Create(rawFixture(t), nil); err != nil {
 			t.Fatal(err)
 		}
-		run(t, path)
+		run(t, path, false)
 	})
 	t.Run("committed-python-fixture", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), Filename)
 		python(t, "fixture", path, "testdata/raw_rows.json")
-		run(t, path)
+		run(t, path, false)
 	})
 	if snapshot := os.Getenv("CONFIGFLOW_SNAPSHOT"); snapshot != "" {
-        t.Run("private-snapshot", func(t *testing.T) {
-            home,err:=os.UserHomeDir()
-            if err!=nil{t.Fatal("locate private test directory failed")}
-            runs:=filepath.Join(home,"cf-prod-snapshot","runs")
-            if err:=os.MkdirAll(runs,0o700);err!=nil{t.Fatal("create private test directory failed")}
-            directory,err:=os.MkdirTemp(runs,"n8-2-roundtrip-")
-            if err!=nil{t.Fatal("create private copy directory failed")}
-            t.Cleanup(func(){if err:=os.RemoveAll(directory);err!=nil{t.Error("remove private test copy failed")}})
-            path := filepath.Join(directory, Filename)
+		t.Run("private-snapshot", func(t *testing.T) {
+			home, err := os.UserHomeDir()
+			if err != nil {
+				t.Fatal("locate private test directory failed")
+			}
+			runs := filepath.Join(home, "cf-prod-snapshot", "runs")
+			if err := os.MkdirAll(runs, 0o700); err != nil {
+				t.Fatal("create private test directory failed")
+			}
+			directory, err := os.MkdirTemp(runs, "n8-2-roundtrip-")
+			if err != nil {
+				t.Fatal("create private copy directory failed")
+			}
+			t.Cleanup(func() {
+				if err := os.RemoveAll(directory); err != nil {
+					t.Error("remove private test copy failed")
+				}
+			})
+			path := filepath.Join(directory, Filename)
 			python(t, "copy", filepath.Join(snapshot, Filename), path)
-			run(t, path)
+			run(t, path, true)
 		})
 	}
 }
