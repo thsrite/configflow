@@ -68,3 +68,63 @@ func TestApplyDomainsTransactionGuard(t *testing.T) {
 		})
 	}
 }
+
+func TestApplyDomainsGuardPassMatchesDefault(t *testing.T) {
+	seed := jobFixture(t)
+	if _, err := InitRulesets(seed, "default", []string{"direct"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	source, _ := repo.GetRepository(seed)
+	document, err := source.ExportAll(seed, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var outputs []ApplyResult
+	var histories [][]HistoryEntry
+	var libraries [][]libraryItem
+	for _, guarded := range []bool{false, true} {
+		r, err := repo.Open(t.TempDir(), repo.Options{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx := repo.WithRepository(context.Background(), r)
+		if _, err := r.ImportAll(ctx, document); err != nil {
+			t.Fatal(err)
+		}
+		var options []ApplyOptions
+		if guarded {
+			options = []ApplyOptions{{BeforeWrite: func(context.Context, map[string]*RulesetInfo) error { return nil }}}
+		}
+		out, err := ApplyDomains(ctx, "default", []ApplyEntry{{Value: "example.com", RuleType: "DOMAIN", Target: "direct"}}, "manual", nil, options...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		c, err := loadConfig(ctx, "default")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i := range c.Settings.History {
+			c.Settings.History[i].AppliedAt = "<time>"
+		}
+		outputs = append(outputs, out)
+		histories = append(histories, c.Settings.History)
+		libraries = append(libraries, c.Library)
+	}
+	if !reflect.DeepEqual(outputs[0], outputs[1]) {
+		t.Fatal("guard changed response")
+	}
+	for _, pair := range [][2]any{{histories[0], histories[1]}, {libraries[0], libraries[1]}} {
+		a, _ := json.Marshal(pair[0])
+		b, _ := json.Marshal(pair[1])
+		if string(a) != string(b) {
+			t.Fatalf("guard changed persisted content: %s != %s", a, b)
+		}
+	}
+}
+
+func TestQueryRulesetIgnoresUnrelatedSettings(t *testing.T) {
+	out, err := QueryRuleset(json.RawMessage(`{"domain_discovery":{"direct_ruleset":42},"rule_library":[{"id":"ip","name":"IPs","source_type":"content","behavior":"ipcidr"}],"rule_configs":[{"id":"ref","itemType":"ruleset","library_rule_id":"ip","policy":"DIRECT"}]}`), "ip")
+	if err != nil || out == nil || out.ID != "ip" || len(out.References) != 1 || !out.Active {
+		t.Fatalf("query: %+v %v", out, err)
+	}
+}

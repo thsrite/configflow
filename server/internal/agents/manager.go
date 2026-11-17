@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
 	"configflow/internal/repo"
 	"configflow/internal/taskstatus"
@@ -874,6 +875,7 @@ var testRecordHeartbeat func(m *Manager, agent, payload *jsonx.Object, mark int6
 // SetDomainDiscovery is set_domain_discovery(agent_id, enabled): only mihomo
 // Agents can enable it. Returns the updated live record, nil when unknown.
 func (m *Manager) SetDomainDiscovery(ctx context.Context, agentID string, enabled bool) (*jsonx.Object, error) {
+	ctx = lifecycle.Detach(ctx)
 	result, err := m.UpdateAgents(ctx, "", func(_ context.Context, agents *[]any) (any, error) {
 		agent, _ := findAgent(*agents, agentID)
 		if agent == nil {

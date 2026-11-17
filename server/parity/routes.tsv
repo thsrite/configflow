@@ -6,8 +6,8 @@ GET	/api/agents/<agent_id>	routes.agents.handle_agent_item	24,26	todo
 PUT	/api/agents/<agent_id>	routes.agents.handle_agent_item	api/agents	done
 GET	/api/agents/<agent_id>/address	routes.agents.agent_address	api/agents	done
 PUT	/api/agents/<agent_id>/address	routes.agents.agent_address	api/agents	done
-GET	/api/agents/<agent_id>/client-notes	routes.client_tools.client_notes	38	todo
-PUT	/api/agents/<agent_id>/client-notes	routes.client_tools.client_notes	38	todo
+GET	/api/agents/<agent_id>/client-notes	routes.client_tools.client_notes	internal/api/agents	done
+PUT	/api/agents/<agent_id>/client-notes	routes.client_tools.client_notes	internal/api/agents	done
 GET	/api/agents/<agent_id>/config	routes.agents.get_agent_config	26	todo
 GET	/api/agents/<agent_id>/config/logging	routes.agents.get_logging_config	api/agents	done
 POST	/api/agents/<agent_id>/config/logging	routes.agents.set_logging_config	api/agents	done
@@ -19,8 +19,8 @@ DELETE	/api/agents/<agent_id>/dns-follow	routes.agents.agent_dns_follow	28	todo
 GET	/api/agents/<agent_id>/dns-follow	routes.agents.agent_dns_follow	28	todo
 PUT	/api/agents/<agent_id>/dns-follow	routes.agents.agent_dns_follow	28	todo
 POST	/api/agents/<agent_id>/dns-follow/retry	routes.agents.retry_agent_dns_follow	28	todo
-PUT	/api/agents/<agent_id>/domain-discovery	routes.agents.set_agent_domain_discovery	19	todo
-POST	/api/agents/<agent_id>/domain-discovery/clear	routes.agents.clear_agent_domain_discovery	19	todo
+PUT	/api/agents/<agent_id>/domain-discovery	routes.agents.set_agent_domain_discovery	internal/api/agents	done
+POST	/api/agents/<agent_id>/domain-discovery/clear	routes.agents.clear_agent_domain_discovery	internal/api/agents	done
 POST	/api/agents/<agent_id>/generate-config	routes.agents.generate_final_agent_config	24,26	todo
 GET	/api/agents/<agent_id>/generated-config/<preview_id>/download	routes.agents.download_final_agent_config	24,26	todo
 GET	/api/agents/<agent_id>/generated-config/<preview_id>/file	routes.agents.read_final_agent_file	24,26	todo
@@ -44,8 +44,8 @@ GET	/api/agents/<agent_id>/mihomo/<path:resource>	routes.agents.mihomo_panel	api
 PATCH	/api/agents/<agent_id>/mihomo/<path:resource>	routes.agents.mihomo_panel	api/agents	done
 POST	/api/agents/<agent_id>/mihomo/<path:resource>	routes.agents.mihomo_panel	api/agents	done
 PUT	/api/agents/<agent_id>/mihomo/<path:resource>	routes.agents.mihomo_panel	api/agents	done
-GET	/api/agents/<agent_id>/mihomo/rule-targets	routes.client_tools.rule_targets	38	todo
-POST	/api/agents/<agent_id>/mihomo/rule-targets/apply	routes.client_tools.connection_rule	38	todo
+GET	/api/agents/<agent_id>/mihomo/rule-targets	routes.client_tools.rule_targets	internal/api/agents	done
+POST	/api/agents/<agent_id>/mihomo/rule-targets/apply	routes.client_tools.connection_rule	internal/api/agents	done
 DELETE	/api/agents/<agent_id>/oxidns-ha	routes.agents.agent_oxidns_ha	29	todo
 GET	/api/agents/<agent_id>/oxidns-ha	routes.agents.agent_oxidns_ha	29	todo
 PUT	/api/agents/<agent_id>/oxidns-ha	routes.agents.agent_oxidns_ha	29	todo
@@ -54,8 +54,8 @@ GET	/api/agents/<agent_id>/oxidns/cache	routes.agents.oxidns_cache	api/agents	do
 POST	/api/agents/<agent_id>/oxidns/cache/flush	routes.agents.oxidns_cache	api/agents	done
 GET	/api/agents/<agent_id>/oxidns/clients	routes.agents.get_oxidns_clients	api/agents	done
 POST	/api/agents/<agent_id>/oxidns/dashboard/reset	routes.agents.reset_oxidns_dashboard	api/agents	done
-GET	/api/agents/<agent_id>/oxidns/device-policies	routes.agents.oxidns_device_policies	11	todo
-PUT	/api/agents/<agent_id>/oxidns/device-policies	routes.agents.oxidns_device_policies	11	todo
+GET	/api/agents/<agent_id>/oxidns/device-policies	routes.agents.oxidns_device_policies	internal/api/agents	done
+PUT	/api/agents/<agent_id>/oxidns/device-policies	routes.agents.oxidns_device_policies	internal/api/agents	done
 GET	/api/agents/<agent_id>/oxidns/overview	routes.agents.get_oxidns_overview	api/agents	done
 GET	/api/agents/<agent_id>/oxidns/queries	routes.agents.get_oxidns_queries	api/agents	done
 GET	/api/agents/<agent_id>/oxidns/queries/<record_id>	routes.agents.get_oxidns_query	api/agents	done
