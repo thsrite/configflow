@@ -89,3 +89,11 @@ preserve bytes. Normal Violations=0, timeout/cancel and legacy bytes/inode/mtime
 old four-process reset test is replaced by four independent Store objects in one process (instance
 cross-process exclusion already tested in O3-3); the single-winner CAS assertion remains intact.
 Listener changes (ctx API, shared L1 try, Clock health wait) are in progress on .32. Routers untouched.
+
+Monitor committed1473d985. Listener migration passes .32 gofmt/vet ./... and race3: weblistener1.255s,
+api/settings47.382s. Start/Status/Update now take ctx and detach in the owner; cmd/settings pass
+original contexts. L1 Try admission is keyed by physical dataDir across Manager copies, preserving
+validation-before-busy precedence. Serve Spawn receives the owner context; health I/O keeps300ms
+probes and5s default, waits via Clock and stops on shutdown. Tests pin5s, drive the production wait
+with a fake Clock, prove disconnect survival/shutdown cancellation and timer cleanup, and verify
+legacy bytes/inode/mtime/no new locks. No router changes.

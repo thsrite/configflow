@@ -34,7 +34,7 @@ func TestServeJobsEndOnCloseAndRuntimeCancellation(t *testing.T) {
 			port := freePort(t)
 			m := manager(t, map[string]string{"CONFIGFLOW_WEB_PORT": strconv.Itoa(port)})
 			m.Spawner = runner
-			if _, err := m.Start(); err != nil {
+			if _, err := m.Start(context.Background()); err != nil {
 				t.Fatal(err)
 			}
 			cancelled, cancel := context.WithCancel(context.Background())
@@ -81,7 +81,7 @@ func TestPartialServeAdmissionClosesAllSockets(t *testing.T) {
 		t.Cleanup(func() { l.Close() })
 	}
 	m := &Manager{Server: newTokenServer(), Spawner: &partialSpawner{runner: runner}}
-	if err := m.serve(listeners); !errors.Is(err, lifecycle.ErrStopping) {
+	if err := m.serve(context.Background(), listeners); !errors.Is(err, lifecycle.ErrStopping) {
 		t.Fatal(err)
 	}
 	listenerIdle(t, runner)
@@ -103,7 +103,7 @@ func TestRefusedStartRestoresTokenAndState(t *testing.T) {
 	m := manager(t, map[string]string{"CONFIGFLOW_WEB_PORT": strconv.Itoa(freePort(t))})
 	m.Spawner = refusingListenerSpawner{}
 	m.Server.SetListenerToken("previous")
-	if _, err := m.Start(); !errors.Is(err, lifecycle.ErrStopping) {
+	if _, err := m.Start(context.Background()); !errors.Is(err, lifecycle.ErrStopping) {
 		t.Fatal(err)
 	}
 	if m.active != nil || m.Server.ListenerToken() != "previous" {

@@ -33,6 +33,7 @@ import (
 	"configflow/internal/lifecycle"
 	"configflow/internal/lockx"
 	"configflow/internal/logx"
+	"configflow/internal/repo"
 )
 
 // HealthPath is the listener check path.
@@ -62,7 +63,7 @@ var logger = logx.Get("backend.utils.web_listener")
 
 // Manager owns the web listener sockets.
 type Manager struct {
-	// DataDir holds web-listener.json and web-listener.lock.
+	// DataDir holds web-listener.json. Legacy web-listener.lock is untouched.
 	DataDir string
 	Server  Server
 	// Spawner tracks Serve jobs; nil uses the default lifecycle Runtime.
@@ -115,26 +116,22 @@ func checkPort(value any) (int, error) {
 	return int(v), nil
 }
 
-// lock is _lock: a non-blocking flock on web-listener.lock.
-func (m *Manager) lock() (func(), error) {
-	if err := os.MkdirAll(m.DataDir, 0o777); err != nil {
-		return nil, err
+var listenerLocks = lockx.NewKeyed[string](lockx.LevelJob, "web-listener")
+
+// lock is _lock: try-only admission shared by managers of one physical directory.
+func (m *Manager) lock(ctx context.Context) (context.Context, func(), error) {
+	if err := ctx.Err(); err != nil {
+		return ctx, nil, err
 	}
-	f, err := os.OpenFile(m.lockPath(), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o666)
+	key, err := repo.ResolveDataDir(m.DataDir)
 	if err != nil {
-		return nil, err
+		return ctx, nil, err
 	}
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		f.Close()
-		if errors.Is(err, syscall.EWOULDBLOCK) {
-			return nil, fail("Web 端口正在更新，请稍后重试", 409)
-		}
-		return nil, err
+	held, release, ok := listenerLocks.TryLock(ctx, key)
+	if !ok {
+		return ctx, nil, fail(msgBusy, 409)
 	}
-	return func() {
-		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
-		f.Close()
-	}, nil
+	return held, release, nil
 }
 
 // EnvironmentPort is _environment_port(name, default).
@@ -274,14 +271,14 @@ func randomToken() string {
 	return hex.EncodeToString(b)
 }
 
-func (m *Manager) serve(listeners []net.Listener) error {
+func (m *Manager) serve(ctx context.Context, listeners []net.Listener) error {
 	spawner := m.Spawner
 	if spawner == nil {
 		spawner = lifecycle.DefaultSpawner{}
 	}
 	for _, listener := range listeners {
 		l := listener
-		if err := spawner.Spawn(context.Background(), "web-listener", func(ctx context.Context) {
+		if err := spawner.Spawn(ctx, "web-listener", func(ctx context.Context) {
 			stop := context.AfterFunc(ctx, func() { _ = l.Close() })
 			defer stop()
 			defer l.Close()
@@ -300,8 +297,9 @@ func (m *Manager) serve(listeners []net.Listener) error {
 
 // Start is prepare_listener at startup: open the selected port (IPv4, and
 // IPv6 when the host supports it) and serve on it.
-func (m *Manager) Start() (*jsonx.Object, error) {
-	unlock, err := m.lock()
+func (m *Manager) Start(ctx context.Context) (*jsonx.Object, error) {
+	ctx = lifecycle.Detach(ctx)
+	ctx, unlock, err := m.lock(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -321,7 +319,7 @@ func (m *Manager) Start() (*jsonx.Object, error) {
 	token := randomToken()
 	previousToken := m.Server.ListenerToken()
 	m.Server.SetListenerToken(token)
-	if err := m.serve(listeners); err != nil {
+	if err := m.serve(ctx, listeners); err != nil {
 		m.Server.SetListenerToken(previousToken)
 		return nil, err
 	}
@@ -372,11 +370,12 @@ func Unsupported() *jsonx.Object {
 }
 
 // Status is listener_status(). A nil manager is the unsupported deployment.
-func (m *Manager) Status() (*jsonx.Object, error) {
+func (m *Manager) Status(ctx context.Context) (*jsonx.Object, error) {
+	ctx = lifecycle.Detach(ctx)
 	if m == nil {
 		return Unsupported(), nil
 	}
-	unlock, err := m.lock()
+	ctx, unlock, err := m.lock(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -385,7 +384,8 @@ func (m *Manager) Status() (*jsonx.Object, error) {
 }
 
 // Update is update_listener(port): move the web listener to another port.
-func (m *Manager) Update(value any) (*jsonx.Object, error) {
+func (m *Manager) Update(ctx context.Context, value any) (*jsonx.Object, error) {
+	ctx = lifecycle.Detach(ctx)
 	port, err := checkPort(value)
 	if err != nil {
 		return nil, err
@@ -399,7 +399,7 @@ func (m *Manager) Update(value any) (*jsonx.Object, error) {
 	if err := m.checkReserved(port); err != nil {
 		return nil, err
 	}
-	unlock, err := m.lock()
+	ctx, unlock, err := m.lock(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -424,7 +424,7 @@ func (m *Manager) Update(value any) (*jsonx.Object, error) {
 	}
 	token := randomToken()
 	m.Server.SetListenerToken(token)
-	if err := m.serve(listeners); err != nil {
+	if err := m.serve(ctx, listeners); err != nil {
 		m.Server.SetListenerToken(old.token)
 		return nil, err
 	}
@@ -434,7 +434,7 @@ func (m *Manager) Update(value any) (*jsonx.Object, error) {
 		}
 		m.Server.SetListenerToken(old.token)
 	}
-	if err := m.waitHealthy(port, ipv6, token); err != nil {
+	if err := m.waitHealthy(ctx, port, ipv6, token); err != nil {
 		restore()
 		return nil, err
 	}
@@ -458,29 +458,40 @@ func (m *Manager) healthTimeout() time.Duration {
 	return 5 * time.Second
 }
 
-func (m *Manager) waitHealthy(port int, ipv6 bool, token string) error {
-	timeout := m.healthTimeout()
-	deadline := time.Now().Add(timeout)
+func (m *Manager) waitHealthy(ctx context.Context, port int, ipv6 bool, token string) error {
+	clock := lifecycle.ClockFrom(ctx)
+	deadline := clock.Now().Add(m.healthTimeout())
 	for {
-		if healthy(port, ipv6, token) {
+		if healthy(ctx, port, ipv6, token) {
 			return nil
 		}
-		if time.Now().After(deadline) {
-			return fail("Nginx 未能在新端口提供服务，已尝试恢复原端口", 503)
+		if err := ctx.Err(); err != nil {
+			return err
 		}
-		time.Sleep(100 * time.Millisecond)
+		remaining := deadline.Sub(clock.Now())
+		if remaining <= 0 {
+			return fail(msgHealthFailed, 503)
+		}
+		timer := clock.NewTimer(min(100*time.Millisecond, remaining))
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C():
+		}
+		timer.Stop()
 	}
 }
 
-func healthy(port int, ipv6 bool, token string) bool {
+func healthy(ctx context.Context, port int, ipv6 bool, token string) bool {
 	hosts := []string{"127.0.0.1"}
 	if ipv6 {
 		hosts = append(hosts, "[::1]")
 	}
 	client := &http.Client{Timeout: 300 * time.Millisecond, Transport: &http.Transport{DisableKeepAlives: true, Proxy: nil}}
 	for _, host := range hosts {
-		ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
-		req, _ := http.NewRequestWithContext(ctx, "GET", "http://"+host+":"+strconv.Itoa(port)+HealthPath, nil)
+		probe, cancel := context.WithTimeout(ctx, 300*time.Millisecond)
+		req, _ := http.NewRequestWithContext(probe, "GET", "http://"+host+":"+strconv.Itoa(port)+HealthPath, nil)
 		req.Header.Set("Connection", "close")
 		resp, err := client.Do(req)
 		if err != nil {

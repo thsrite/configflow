@@ -62,7 +62,7 @@ func handleWebPort(c *httpx.Ctx) (*httpx.Response, error) {
 	result, err := func() (*httpx.Response, error) {
 		// Python tests request.method == 'GET': HEAD takes the POST branch.
 		if c.Method() == "GET" {
-			status, err := manager.Status()
+			status, err := manager.Status(c.Context())
 			if err != nil {
 				return nil, err
 			}
@@ -76,7 +76,7 @@ func handleWebPort(c *httpx.Ctx) (*httpx.Response, error) {
 		if !ok {
 			return failure(400, "请提供 Web 监听端口"), nil
 		}
-		status, err := manager.Update(port)
+		status, err := manager.Update(c.Context(), port)
 		if err != nil {
 			return nil, err
 		}
