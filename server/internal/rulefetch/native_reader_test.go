@@ -227,3 +227,57 @@ func TestAppendNeverSwallowsPolicyOrAliasErrors(t *testing.T) {
 		}
 	}
 }
+
+func TestNativeRuleReencodeKeepsScalarTags(t *testing.T) {
+	source := "# header\n{payload: [example.com], when: 2024-01-02, large: !!int 123456789012345678901234567890, binary: !!binary YQ==, custom: !label value, infinity: .inf, nan: .nan, digits: \"0123\"}\n"
+	before, err := yamlx.Parse([]byte(source))
+	if err != nil {
+		t.Fatal(err)
+	}
+	normalized, warnings := NormalizeMihomoYAML(source)
+	after, err := yamlx.Parse([]byte(normalized))
+	if len(warnings) != 0 || err != nil || !yamlx.Equal(before, after) {
+		t.Fatalf("normalization changed tags: %v %v", warnings, err)
+	}
+	_, payload, err := ReadRulePayload(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	appended, err := AppendRuleLines(source, []string{"added.example"}, payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, err = yamlx.Parse([]byte(appended))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"when", "large", "binary", "custom", "infinity", "nan", "digits"} {
+		if !yamlx.Equal(yamlx.Get(before, key), yamlx.Get(after, key)) {
+			t.Fatalf("metadata tag/value changed: %s", key)
+		}
+	}
+	lines, _, err := ReadRulePayload(appended)
+	if err != nil || len(lines) != 2 || lines[0] != "example.com" || lines[1] != "added.example" {
+		t.Fatalf("rule order: %v %v", lines, err)
+	}
+	if strings.Count(appended, "# header") != 1 {
+		t.Fatal("header comment lost")
+	}
+}
+
+func TestNilAppendRecognizesCommentedFlowButKeepsPlaintextOpaque(t *testing.T) {
+	source := "# header\n{payload: [example.com]}\n"
+	appended, err := AppendRuleLines(source, []string{"added.example"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines, payload, err := ReadRulePayload(appended)
+	if err != nil || payload == nil || len(lines) != 2 || lines[0] != "example.com" || lines[1] != "added.example" {
+		t.Fatalf("flow append: %v %v", lines, err)
+	}
+	plain := "DOMAIN-REGEX,foo: bar\nDOMAIN-REGEX,foo: baz\n"
+	appended, err = AppendRuleLines(plain, []string{"DOMAIN,example.com"}, nil)
+	if err != nil || appended != plain+"DOMAIN,example.com\n" {
+		t.Fatalf("plaintext was interpreted as YAML: %v", err)
+	}
+}

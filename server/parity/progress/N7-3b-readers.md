@@ -136,3 +136,20 @@ SyntaxError.Error() intact (Chinese prefix/line), rather than stripping it via
 Problem. The old corpus omitted English-only validation text, so21 additional
 rows now explicitly assert the same failure metadata and exact native Chinese
 cause; total changed boundary rows9,079. Other migration class counts are stable.
+
+Shared closeout: picked4ad822f5 (unbounded decimal int),942e752f (JSON keys),
+and09740db3 (gofmt-equivalent writer fix to ae109f82). Convert now delegates key
+projection entirely to ProjectJSONKeys(StringifyScalarKeys); private key
+conversion/collision handling is removed. Converted-name collisions retain the
+shared last-value/first-position rule, matching the pre-migration JSON boundary.
+The bridge memoizes scalars too: a1MiB string referenced100 times has one shared
+backing value. Big integer precision and existing alias/cache/corpus tests pass.
+Repo's two complex-key native diagnostics now use the shared message.
+
+Writer regression exposed the old shared format hint missing a flow mapping
+behind leading #comments/blank lines/---. Coordinator approved the minimal
+rulesetfmt hint fix and nil-payload Append re-read. No scanner or matcher reader
+changes. Plaintext remains opaque (a valid Classical regex body is not subjected
+to YAML mapping policy). Re-encode regression retains timestamp/bigint/binary/
+custom/.inf/.nan/string tags, all rules and header comments. Four affected package
+suites pass. Deploy regressions are added after rebase to the A11 integration.

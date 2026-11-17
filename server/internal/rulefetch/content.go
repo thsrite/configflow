@@ -873,11 +873,14 @@ func AppendRuleLines(content string, lines []string, payload *yamlx.Node) (strin
 	if len(lines) == 0 {
 		return content, nil
 	}
-	if payload == nil {
-		_, err := yamlx.Parse([]byte(content))
-		if errors.Is(err, yamlx.ErrPolicy) || errors.Is(err, yamlx.ErrAliasRecursion) || errors.Is(err, yamlx.ErrAliasBudget) {
-			return content, payloadEditError(err)
+	if payload == nil && rules.HasYAMLPayload(content) {
+		var err error
+		_, payload, err = ReadRulePayload(content)
+		if err != nil {
+			return content, err
 		}
+	}
+	if payload == nil {
 		separator := ""
 		if content != "" && !strings.HasSuffix(content, "\n") {
 			separator = "\n"

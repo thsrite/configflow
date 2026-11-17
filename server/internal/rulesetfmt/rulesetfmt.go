@@ -36,11 +36,18 @@ func (e *URLParseError) Unwrap() error { return e.Err }
 // mapping, or a line starting with a (quoted) payload key.
 func HasYAMLPayload(content string) bool {
 	probe := strings.TrimPrefix(content, "\ufeff")
-	if strings.HasPrefix(strings.TrimLeftFunc(probe, unicode.IsSpace), "{") {
-		return true
-	}
+	firstContent := true
 	for _, line := range strings.Split(probe, "\n") {
 		rest := strings.TrimLeftFunc(line, unicode.IsSpace)
+		if rest == "" || strings.HasPrefix(rest, "#") || strings.TrimSpace(rest) == "---" {
+			continue
+		}
+		if firstContent {
+			firstContent = false
+			if strings.HasPrefix(rest, "{") {
+				return true
+			}
+		}
 		for _, key := range []string{`payload`, `"payload"`, `'payload'`} {
 			if after, ok := strings.CutPrefix(rest, key); ok && strings.HasPrefix(strings.TrimLeftFunc(after, unicode.IsSpace), ":") {
 				return true
