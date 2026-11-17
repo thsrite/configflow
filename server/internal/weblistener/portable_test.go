@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 )
@@ -161,6 +162,61 @@ func TestHealthyProbeCannotCommitAfterRuntimeShutdown(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestReviewShutdownBetweenSavedStateAndActiveSwitchRestoresSelection(t *testing.T) {
+	m := savedManager(t, map[string]string{})
+	old := m.active
+	before, err := os.ReadFile(m.statePath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime := listenerRuntime(t)
+	checked := make(chan struct{})
+	var unlockOnce sync.Once
+	unlock := func() { unlockOnce.Do(m.mu.Unlock) }
+	m.HealthCheck = func(ctx context.Context, port int, ipv6 bool, token string) bool {
+		if !healthy(ctx, port, ipv6, token) {
+			return false
+		}
+		// The file commit remains real. Hold only the later active-pointer
+		// switch, then stop the owning generation after observing the new file.
+		m.mu.Lock()
+		close(checked)
+		return true
+	}
+	done := make(chan error, 1)
+	port := freePort(t)
+	go func() { _, err := m.Update(runtime.BindRequest(context.Background()), port); done <- err }()
+	select {
+	case <-checked:
+	case <-time.After(5 * time.Second):
+		t.Fatal("new listener never passed health")
+	}
+	t.Cleanup(unlock)
+	committed := false
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); {
+		data, err := os.ReadFile(m.statePath())
+		if err == nil && !bytes.Equal(before, data) {
+			committed = true
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if !committed {
+		t.Fatal("new selection was never committed")
+	}
+	runtime.Shutdown(context.Background())
+	unlock()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatal("active switch ignored shutdown", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("rollback did not finish")
+	}
+	assertOldListener(t, m, old, before)
 }
 
 func TestCustomReservedPortsAtStartupAndUpdate(t *testing.T) {

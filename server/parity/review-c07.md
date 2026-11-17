@@ -58,11 +58,14 @@
   nginx→backend 网络跳或旧镜像 nginx template 替换。其余健康失败旧端口继续可用、真实不可写
   目录回滚、内部端口保留/不能共享、IPv4-only、认证和新端口设置读取均有实际对应测试。
   健康检查后/保存前、rename 前、active 切换前都有取消检查；两次提交间取消会恢复保存状态。
+  新增 `TestReviewShutdownBetweenSavedStateAndActiveSwitchRestoresSelection` 在真实健康成功后
+  只持有 active-pointer mutex，观察新状态文件实际提交，再关闭真实 Runtime 并放行切换；
+  断言取消、旧文件恢复及旧 token/socket 可用，补验确切的两次提交间窗口（.32 race通过）。
 - logs 成功响应继续经过中央 stored-token 脱敏；通知文本使用共享 diag.EventMessage，
   没有私有脱敏器。新增 `TestReviewLogFailuresRedactStoredTokens` 对 tail/info/clear500 的
   原始/一层/两层编码 token，及 `TestReviewRunFailuresUseCentralRedaction` 对四类409/404
   失败逐项验证中央出口；作者组合用例同时核对通知 API 和私有通知文件的 diag 文本。
-- 已读 C29/C32/A24 和 O3-6a 问题类别；当前树缺 C06/C33 报告，从各自复核分支补读，
+- 已读 C29/C32/A24 和 O3-6a 问题类别；初始基底缺 C06/C33 报告，从各自复核分支补读，
   不将未合入的 C06 web-port HEAD/Bind 改动复制到本分支。
 
 ## CFG-07 证据方向

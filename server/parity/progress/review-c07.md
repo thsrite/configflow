@@ -7,9 +7,13 @@
 （low）；listener 健康后旧状态读取失败的恢复消息（low）。三项定向回归已在 .32 通过。
 新增 logs 三个500及 task四类失败的编码 stored-token 脱敏测试。完整证据见 ../review-c07.md。
 
-进行中：.32相关包 vet/race/live；.64 C37手动任务三轮 Runtime 验证。
+变基前 .32 相关包 vet/race/live 全通过（含C35/C15/metrics）；.64 C37手动任务三轮PASS8.544s。
+已无冲突代码变基到本地go@d43cca6e4（C33）；两个文档追加冲突保留双方全文。
+修复提交现为bf8003685；新增真实测试在state已保存、active未切换时关机，断言保存状态/旧监听恢复，
+变基后 .32 weblistener race PASS2.155s。其余C07核心包及真实Flask亦已通过，等待C35/C15/metrics尾部。
 初始 .64 C07包均通过，discovery包在旧N7冻结YAML reader archive解码处长时间执行，已中止诊断，
 另用短timeout/verbose定位；不计整包通过，也不将其未经定位当作C07业务回归。
 
-下一步：完成定向测试；提交；rebase最新本地go；再跑影响包和最终gate（单机一个，排队900秒即停）。
+进行中：.32最新集成树增量验收；.64最终gate（单机一个，900秒排队守卫），07:48:41开始等待。
+下一步：补fuzz/CFG-07；等待gate结果并完成报告；不以已排队门禁冒充检查通过。
 共享repo/taskstatus最终提交窗口沿用O3-6c分派，不复制修复。CFG-07原方向Py500/Go200已核对。
