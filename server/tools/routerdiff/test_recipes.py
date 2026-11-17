@@ -4,6 +4,7 @@ import unittest
 import cases
 import guards
 import workflows
+import fixtures
 from inventory import load
 
 
@@ -11,15 +12,15 @@ class RecipeTests(unittest.TestCase):
     def test_unique_variants_and_real_design_references(self):
         routes, entries = load()
         seen = set()
-        for module in (cases, guards, workflows):
+        for module in (cases, guards, workflows, fixtures):
             for name in module.__dict__:
                 value = getattr(module, name)
                 if not callable(value) or getattr(value, '__module__', '') != module.__name__ or name in (
-                        'Case', 'Ref', 'at', 'resolve', 'concrete', 'invalid'):
+                        'Case', 'Ref', 'at', 'resolve', 'concrete', 'invalid', 'stored_options', 'receipt_file'):
                     continue
                 for case in value():
                     with self.subTest(case=case.ident):
-                        self.assertNotIn(case.ident, seen)
+                        self.assertFalse(case.ident in seen, 'duplicate recipe: ' + case.ident)
                         seen.add(case.ident)
                         self.assertIn(case.route, routes)
                         for reference in case.entries:

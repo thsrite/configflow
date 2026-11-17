@@ -156,3 +156,35 @@ def manual_routes():
                    document={**delete, 'fingerprint': Ref(delete_plan, '/body/plan/fingerprint')},
                    unchanged=False, effect='device-only', foreign=foreign,
                    checks={'success': True, 'result/changed': True, 'result/entry': None})
+
+
+def job_locks():
+    busy = '此路由器正在发布或同步，请稍后重试'
+    endpoints = [('R009', 'DELETE', ''), ('R010', 'PUT', ''), ('R011', 'POST', '/apply'),
+                 ('R015', 'PUT', '/policy-settings'), ('R017', 'POST', '/probe'),
+                 ('R020', 'POST', '/routes/apply'), ('R024', 'PUT', '/rule-sync')]
+    required = tuple(route for route, _, _ in endpoints)
+    for vendor, router_id, peer, path in (('routeros', 'r-ros', 'ros', '/rest/system/resource'),
+                                         ('ikuai', 'r-ik', 'ikuai', '/Action/login')):
+        gate, pending = 'job-' + vendor, 'probe-' + vendor
+        first = True
+        for route, method, suffix in endpoints:
+            prepare = ()
+            if first:
+                body = {'version': '7.24.5', 'board-name': 'synthetic-gated-router'} if vendor == 'routeros' else {
+                    'Result': 10000, 'code': 1005, 'message': 'synthetic gated refusal'}
+                prepare = ({'action': 'fault', 'match': {'peer': peer, 'path': path},
+                            'gate': gate, 'status': 200, 'body': body},
+                           {'rpc': 'begin', 'ident': pending, 'method': 'POST', 'path': '/api/routers/' + router_id + '/probe'},
+                           {'action': 'wait', 'gate': gate})
+                first = False
+            yield Case(route + '/busy-before-body-' + vendor, route, method, '/api/routers/' + router_id + suffix,
+                       409, ('H1278',), document=['invalid-before-lookup'], message=busy,
+                       prepare=prepare, requires=required)
+        if vendor == 'routeros':
+            yield Case('R010/busy-shared-connection-cross-profile', 'R010', 'PUT', '/api/routers/r-ros?profile=beta',
+                       409, ('H1278',), document=[], message=busy, requires=required)
+        yield Case('R017/gated-probe-finish-' + vendor, 'R017', 'POST', '/api/routers/' + router_id + '/probe',
+                   200 if vendor == 'routeros' else 502, ('R017-S01',) if vendor == 'routeros' else ('R017-S90',),
+                   prepare=({'action': 'release', 'gate': gate},), join=pending, unchanged=False, effect='profile-write',
+                   checks={'success': vendor == 'routeros', 'probe/ok': vendor == 'routeros'}, times=('probe/at',), requires=required)

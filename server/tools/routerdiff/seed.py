@@ -4,6 +4,7 @@ Run in a separate test-server process so importing config cannot retain another
 fixture's DATA_DIR. No Go private helper or production snapshot is used.
 """
 import argparse
+import base64
 import copy
 import json
 import os
@@ -81,6 +82,15 @@ def create(directory, options):
     for item in stored['shared']['subscriptions'] + stored['shared']['rule_library']:
         if item.get('enabled', True) and item.get('interval', item.get('update_interval', 0)):
             raise ValueError('refreshable sources require a dedicated scheduler fixture')
+    for relative, encoded in options.get('files', {}).items():
+        path = (directory / relative).resolve()
+        if not path.is_relative_to(directory) or relative.startswith('configflow.sqlite3'):
+            raise ValueError('fixture file must stay inside its owned non-database DATA_DIR')
+        content = base64.b64decode(encoded, validate=True)
+        if len(content) > 4 * 1024 * 1024:
+            raise ValueError('fixture file exceeds reviewed per-file limit')
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
     return {'profiles': list(stored['profiles']), 'default_profile': repository.default_profile_id()}
 
 

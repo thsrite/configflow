@@ -28,6 +28,7 @@ class World:
         self.transcript = []
         self.faults = []
         self.gates = {}
+        self.entered_gates = {}
         self.errors = []
         self.ros = {'/system/resource': {'version': '7.24.5 (stable)', 'board-name': 'synthetic-router'},
                     '/ip/route': [], '/ip/firewall/nat': [], '/ip/firewall/mangle': [],
@@ -108,6 +109,9 @@ class World:
                         self.faults.remove(candidate)
                         fault = candidate
                     break
+            if fault and fault.get('gate'):
+                self.entered_gates[fault['gate']].set()
+                self.condition.notify_all()
         # Never hold the state mutex while waiting for a lock-test gate.
         if fault and fault.get('gate'):
             self.gates.setdefault(fault['gate'], threading.Event()).wait(timeout=90)
@@ -344,12 +348,18 @@ class World:
                 values.setdefault('remaining', 1)
                 if values.get('gate'):
                     self.gates[values['gate']] = threading.Event()
+                    self.entered_gates[values['gate']] = threading.Event()
                 self.faults.append(copy.deepcopy(values))
                 return True
             if action == 'release':
                 self.gates[values['gate']].set()
                 return True
             if action == 'wait':
+                if 'gate' in values:
+                    if not self.condition.wait_for(self.entered_gates[values['gate']].is_set,
+                                                   timeout=values.get('timeout', 10)):
+                        raise TimeoutError('current fake fault gate not reached')
+                    return True
                 match, count = values['match'], values.get('count', 1)
                 def reached():
                     return sum(all(item.get(key) == value for key, value in match.items())

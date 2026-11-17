@@ -108,7 +108,8 @@ class Worker:
                 continue
             relative = str(path.relative_to(ACTIVE / 'data'))
             # Database logical rows above; process logs are separately inspected.
-            if relative.startswith('configflow.sqlite3') or path.name.endswith('.lock') or path.name == 'app.log':
+            if relative in ('configflow.sqlite3', 'configflow.sqlite3-wal', 'configflow.sqlite3-shm',
+                            'configflow.sqlite3-journal', 'app.log') or path.name.endswith('.lock'):
                 continue
             files[relative] = base64.b64encode(path.read_bytes()).decode()
         return {'database': tables, 'files': files, 'fake': self.world.snapshot()}

@@ -28,7 +28,7 @@ class BoundaryTests(unittest.TestCase):
                     body={'version': '7.24.5', 'board-name': 'synthetic-gated-router'})
                 side.rpc('async', ident='probe', method='POST', path='/api/routers/r-ros/probe',
                     headers={'Authorization': 'Bearer ' + side.token}, body=None)
-                side.rpc('fake', action='wait', match={'peer': 'ros', 'path': '/rest/system/resource'})
+                side.rpc('fake', action='wait', gate='probe-started')
                 busy = side.request('PUT', '/api/routers/r-ros', document=[])
                 self.assertEqual(busy['status'], 409, busy['content'])
                 side.rpc('fake', action='release', gate='probe-started')

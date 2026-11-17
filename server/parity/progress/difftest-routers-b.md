@@ -165,3 +165,41 @@ all H reachability/variant audits, findings renderer, final full validation.
 Coordinator update: .64 is now an equal native Hyper-V Arch host, .63 retired;
 .32/.64 both allowed for final gates. Keep this run pinned .32 for continuity.
 N8-3 is merged ported into go; its old branch remains frozen. Final rebase pending.
+
+Stored/error and cross-profile job-lock step:
+- 1288 actual recipes now pass Python preconditions; 397 design entries have
+  attached variants (all 2301 still require final per-entry completion audit).
+- Persistent synthetic receipt seeds at exact required SHA256 filenames cover
+  JSON array/scalar fallback, invalid JSON paused result, version truncation,
+  missing version HTML500, stale running rejection before the real first round,
+  paused message. Source-proven HTML500 cases exclude only HTML prose (X03),
+  retaining status/kind/Content-Type and complete storage/device state.
+- Five persisted manifest types each protect DELETE and both connection/type
+  edits; legacy overlap/default/public-private-field cases, missing-router and
+  wrong-vendor branches, malformed IPv6 URL HTML500, nonempty array/string
+  release body HTML500. No broad exception/HTML normalizer.
+- ROS and iKuai probes hold L1 at a current, named fake request gate; all seven
+  mutating endpoints reject invalid bodies with 409 before handler/type checks.
+  Same-connection alpha/beta contention is exercised; release finishes the
+  actual probe and checks revision+1, including the failed iKuai probe.
+- Fixed a harness race found by these cases: matching an old transcript could
+  falsely claim the current probe had reached its gate. Gates now record an
+  individual entered event and wait for THAT fault activation; no sleeps or
+  historical request counts. A future partial Go HTTP registration skips the
+  complete dependency chain as Go 尚未实现 rather than joining an unstarted job.
+- Findings renderer now produces parity/difftest-routers-findings.md with exact
+  requests/Python/Go/differences and severity/responsible modules. At zero
+  implemented domain routes it explicitly gives no product-defect conclusion.
+- Runner defaults to exit 2 while matrix audit is incomplete. Iteration must
+  explicitly pass --allow-incomplete; the ledger always records complete:false.
+  Atomic per-group reports and errors prevent an old run being mistaken for new.
+
+.32 latest command:
+`RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'set -euo pipefail; cd server/tools/routerdiff; export PYTHONDONTWRITEBYTECODE=1; ~/cf-test/.venv/bin/python -m unittest -v test_recipes; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary /tmp/routerdiff-build.AybfCK/configflow --output /tmp/routerdiff-stored-locks.json --findings /tmp/routerdiff-findings-current.md'`
+→ Ran 2 tests in 0.172s / OK; base/job_locks 1238 cumulative;
+stored/receipts 1245; stored/stored_guards 1288; implemented_routes=0,
+go-unimplemented=1288, referenced_entries=397, complete=false,
+remaining_audits=2301. Findings retrieved from this synthetic owned artifact.
+`RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'set -euo pipefail; cd server; gofmt -l $(git ls-files "*.go" 2>/dev/null || find . -name "*.go"); go vet ./...'`
+→ exit 0, no output. This is an intermediate formatting/vet check, not the final
+rebase/full acceptance. Work continues; 1904 entries have no executed recipe yet.

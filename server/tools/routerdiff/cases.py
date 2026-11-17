@@ -42,6 +42,10 @@ class Case:
     times: tuple = ()
     prepare: tuple = ()
     foreign: tuple = ()
+    absent: tuple = ()
+    html_error: bool = False
+    requires: tuple = ()
+    join: str = ''
 
 
 def at(document, path):
