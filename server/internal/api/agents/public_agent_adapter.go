@@ -42,5 +42,5 @@ func publicAgentWithCredentials(record *agents.Record, secrets redact.Secrets) *
 	if record := public.GetObject("latest_upgrade"); record != nil {
 		public.Set("latest_upgrade", agents.PublicUpgradeState(record))
 	}
-	return redact.SanitizeCredentials(public, secrets)
+	return agents.SanitizePublicMetadata(public, secrets)
 }

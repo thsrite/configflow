@@ -13,15 +13,17 @@ package redact
 
 import (
 	"context"
+	"encoding/json"
+	"math"
 	"net/url"
 	"os"
+	"reflect"
 	"slices"
 	"sort"
 	"strings"
 	"unsafe"
 
 	"configflow/internal/agents/diag"
-	"configflow/internal/jsonx"
 	"configflow/internal/repo"
 	"configflow/internal/weburl"
 )
@@ -65,7 +67,7 @@ func (s Secrets) Equal(other Secrets) bool { return slices.Equal(s, other) }
 // ExternalPayloadSecrets is _external_payload_secrets(system_config): the
 // rule proxy and Agent tokens stored in the repository, plus the sensitive
 // string fields of systemConfig when given (nil: none).
-func ExternalPayloadSecrets(ctx context.Context, systemConfig *jsonx.Object) (Secrets, error) {
+func ExternalPayloadSecrets(ctx context.Context, systemConfig any) (Secrets, error) {
 	repository, err := repo.GetRepository(ctx)
 	if err != nil {
 		return nil, err
@@ -86,7 +88,7 @@ func ExternalPayloadSecrets(ctx context.Context, systemConfig *jsonx.Object) (Se
 		tokens = append(tokens, token)
 	}
 	for field := range SensitiveSystemConfigFields {
-		if text, ok := systemConfig.Value(field).(string); ok && text != "" {
+		if text, ok := fieldValue(systemConfig, field).(string); ok && text != "" {
 			tokens = append(tokens, text)
 		}
 	}
@@ -175,7 +177,7 @@ func ContainsInternalRuleProxyToken(ctx context.Context, value string) (bool, er
 }
 
 // SanitizeExternalPayload is sanitize_external_payload(payload, system_config).
-func SanitizeExternalPayload(ctx context.Context, payload any, systemConfig *jsonx.Object) (any, error) {
+func SanitizeExternalPayload(ctx context.Context, payload any, systemConfig any) (any, error) {
 	secrets, err := ExternalPayloadSecrets(ctx, systemConfig)
 	if err != nil {
 		return nil, err
@@ -200,7 +202,7 @@ func SanitizeWithSecrets(payload any, secrets Secrets, sortKeys bool) any {
 // metadata before public projection can discard their defining fields. It uses
 // the same depth/cycle-bounded visitor as SanitizeCredentials, without mutating
 // the payload or caller seeds, constructing a history copy, or logging values.
-func CollectCredentials(payload *jsonx.Object, seeds Secrets) Secrets {
+func CollectCredentials(payload any, seeds Secrets) Secrets {
 	seeds = NewSecrets(seeds, []string{os.Getenv("AGENT_REGISTRATION_KEY")})
 	s := &sanitizer{secrets: seeds, credentials: true, collectOnly: true, active: map[containerID]bool{}}
 	s.visit(payload, 0)
@@ -212,7 +214,7 @@ func CollectCredentials(payload *jsonx.Object, seeds Secrets) Secrets {
 // also protects legacy/imported credentials not present in the token registry,
 // including references to the server registration key without a field label.
 // Data-keyed configuration documents should use their schema-specific redactor.
-func SanitizeCredentials(payload *jsonx.Object, secrets Secrets) *jsonx.Object {
+func SanitizeCredentials(payload any, secrets Secrets) json.RawMessage {
 	if payload == nil {
 		return nil
 	}
@@ -221,7 +223,7 @@ func SanitizeCredentials(payload *jsonx.Object, secrets Secrets) *jsonx.Object {
 	public := s.visit(payload, 0)
 	// A legacy credential may also occur in a sibling diagnostic, including one
 	// visited before its credential field. A fresh pass covers those references.
-	return SanitizeWithSecrets(public, NewSecrets(secrets, s.discovered), false).(*jsonx.Object)
+	return encodedPublic(SanitizeWithSecrets(public, NewSecrets(secrets, s.discovered), false))
 }
 
 type containerID struct {
@@ -243,11 +245,12 @@ func (s *sanitizer) visit(value any, depth int) any {
 	switch v := value.(type) {
 	case string:
 		return s.str(v)
-	case *jsonx.Object:
-		if v == nil {
+	case objectFields:
+		ptr := reflect.ValueOf(v)
+		if ptr.Kind() == reflect.Pointer && ptr.IsNil() {
 			return nil
 		}
-		id := containerID{unsafe.Pointer(v), -1}
+		id := containerID{ptr.UnsafePointer(), -1}
 		if depth >= maxDepth || s.active[id] {
 			return Redacted
 		}
@@ -258,15 +261,20 @@ func (s *sanitizer) visit(value any, depth int) any {
 			keys = slices.Clone(keys)
 			sort.Strings(keys)
 		}
-		var output *jsonx.Object
+		var output *orderedFields
 		if !s.collectOnly {
-			output = jsonx.NewObject()
+			output = &orderedFields{}
 		}
 		for _, key := range keys {
 			if SensitiveSystemConfigFields[key] {
 				continue
 			}
 			item, _ := v.Get(key)
+			if raw, ok := item.(json.RawMessage); ok {
+				if decoded, err := decodePublic(raw); err == nil {
+					item = decoded
+				}
+			}
 			if s.credentials && diag.IsCredentialKey(key) {
 				if text, ok := item.(string); ok && text != Redacted {
 					s.discovered = append(s.discovered, text)
@@ -285,6 +293,33 @@ func (s *sanitizer) visit(value any, depth int) any {
 			}
 		}
 		return output
+	case json.RawMessage:
+		parsed, err := decodePublic(v)
+		if err != nil {
+			return Redacted
+		}
+		return s.visit(parsed, depth)
+	case map[string]any:
+		if v == nil {
+			return nil
+		}
+		id := containerID{reflect.ValueOf(v).UnsafePointer(), -1}
+		if depth >= maxDepth || s.active[id] {
+			return Redacted
+		}
+		s.active[id] = true
+		defer delete(s.active, id)
+		keys := make([]string, 0, len(v))
+		for key := range v {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		fields := &orderedFields{}
+		for _, key := range keys {
+			fields.Set(key, v[key])
+		}
+		// The wrapper adds no logical depth. Map identity above protects self-links.
+		return s.visit(fields, depth)
 	case []any:
 		if v == nil {
 			return v
@@ -308,6 +343,20 @@ func (s *sanitizer) visit(value any, depth int) any {
 			output[i] = s.visit(item, depth+1)
 		}
 		return output
+	}
+	switch n := value.(type) {
+	case interface{ Float64() float64 }:
+		if f := n.Float64(); math.IsNaN(f) || math.IsInf(f, 0) {
+			return nil
+		}
+	case float64:
+		if math.IsNaN(n) || math.IsInf(n, 0) {
+			return nil
+		}
+	case float32:
+		if math.IsNaN(float64(n)) || math.IsInf(float64(n), 0) {
+			return nil
+		}
 	}
 	return value
 }
