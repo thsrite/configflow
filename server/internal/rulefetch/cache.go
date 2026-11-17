@@ -152,6 +152,11 @@ var errInlineCacheOnly = errors.New("inline cache write without document commit"
 // declaration check with DB edits. A stale caller may finish its request, but
 // must never replace the cache of a newer declaration or an active editor.
 func writeCurrentInline(ctx context.Context, r *repo.Repository, rule *jsonx.Object, target string, data []byte, write func(context.Context) error) error {
+	// A C33 publisher may hold L3 while an independently admitted reader
+	// finishes. Its receipt already forbids this write, so do not wait on L3.
+	if _, err := os.Stat(target + ".invalid"); !errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
 	id := rule.GetString("library_rule_id")
 	if id == "" {
 		id = rule.GetString("id")

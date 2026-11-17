@@ -580,3 +580,11 @@ preview-regex 的 subscriptions/aggregations 空值继续按空选择处理；�
 继续忽略，不阻止其余字符串ID。真值非数组现在400拒绝，避免 Python 把字符串逐字符、对象逐键当作
 来源ID遍历；调用方应传ID数组。这与规则库 cache 的非数组 rule_ids 属于同一验证纠错类别；无数据迁移，
 合法数组和预览结果不变。`TestReviewPreviewSelectionShapes` 对照真实Python并明确断言双方无写入。
+
+## C33 缓存协议的跨 owner 串行化
+
+发布暂存缓存和撤销新建失效标记时，都在现有repo锁内核对来源声明：旧暂存文件不能覆盖另一owner已提交
+的新来源，旧失败请求也不能清除新来源仍需要的失效状态。来源已变时保留marker，交付使用当前DB inline，
+手动缓存或新编辑可修复；名称、interval等非来源编辑不受影响，预备raw字节不重写。Create的实际提交加入
+同ID编辑/清理lease，下载仍在lease前。文件副作用后不提交DB候选，不新增revision/hook/接口或后台恢复。
+这些是已登记DB/cache可靠性修正的并发闭合，不代表其他模块自身DB-first修改来源的整条协议已完成。

@@ -8,7 +8,9 @@ import (
 	"path/filepath"
 	"time"
 
+	"configflow/internal/jsonx"
 	"configflow/internal/lockx"
+	"configflow/internal/repo"
 )
 
 // Editing locks precede the repository lock, and never retain a leaf-cache lock
@@ -43,12 +45,18 @@ func editLease(ctx context.Context, item record) (context.Context, func(), error
 
 type stagedCache struct {
 	path, temp, marker string
+	item               record
+	baseline           record
 	wasInvalid         bool
 	replace            func(context.Context, string, string) error
 }
 
 func stageCache(ctx context.Context, item record, content []byte, replace func(context.Context, string, string) error) (*stagedCache, error) {
 	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	baseline, err := source(ctx, text(item, "id"))
+	if err != nil {
 		return nil, err
 	}
 	path, err := cachePath(ctx, item)
@@ -86,7 +94,7 @@ func stageCache(ctx context.Context, item record, content []byte, replace func(c
 	if err != nil {
 		return nil, err
 	}
-	stage := &stagedCache{path: path, temp: file.Name(), marker: path + ".invalid", replace: replace}
+	stage := &stagedCache{path: path, temp: file.Name(), marker: path + ".invalid", item: item, baseline: baseline, replace: replace}
 	if replace == nil {
 		stage.replace = replaceFile
 	}
@@ -148,9 +156,38 @@ func (s *stagedCache) abort(ctx context.Context) {
 		return
 	}
 	_ = os.Remove(s.temp)
-	if !s.wasInvalid && ctx.Err() == nil {
-		_ = os.Remove(s.marker)
+	if s.wasInvalid || ctx.Err() != nil {
+		return
 	}
+	r, err := repo.GetRepository(ctx)
+	if err != nil {
+		return
+	}
+	clear := func(tx context.Context, catalog *jsonx.Object) {
+		for _, value := range catalog.GetList("rule_library") {
+			current, ok := value.(*jsonx.Object)
+			if !ok || current.GetString("id") != text(s.item, "id") {
+				continue
+			}
+			item, err := native(current)
+			if err == nil && !different(item, s.baseline, declarationFields) && tx.Err() == nil {
+				_ = os.Remove(s.marker)
+			}
+			return
+		}
+	}
+	if r.InTransaction(ctx) {
+		// A staging failure is still inside the original L3 transaction.
+		// Re-entering it would deadlock; its working declaration is the baseline.
+		if catalog, err := r.GetShared(ctx); err == nil {
+			clear(ctx, catalog)
+		}
+		return
+	}
+	_, _ = r.UpdateSharedTransaction(ctx, func(tx context.Context, catalog *jsonx.Object) (*jsonx.Object, error) {
+		clear(tx, catalog)
+		return nil, errCachePublished
+	})
 }
 
 // failClosed is used when the repository cannot establish a failed commit's
@@ -168,6 +205,50 @@ func (s *stagedCache) commit(ctx context.Context) error {
 	if s == nil {
 		return nil
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	r, err := repo.GetRepository(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = r.UpdateSharedTransaction(ctx, func(tx context.Context, catalog *jsonx.Object) (*jsonx.Object, error) {
+		if err := tx.Err(); err != nil {
+			return nil, err
+		}
+		for _, value := range catalog.GetList("rule_library") {
+			current, ok := value.(*jsonx.Object)
+			if !ok || current.GetString("id") != text(s.item, "id") {
+				continue
+			}
+			item, err := native(current)
+			if err != nil {
+				return nil, err
+			}
+			if different(item, s.item, declarationFields) {
+				return nil, errStaleCacheStage
+			}
+			if err = s.publish(tx); err != nil {
+				return nil, err
+			}
+			// Serialize publication with every repository editor, but never
+			// commit this unchanged candidate or advance its revision/hooks.
+			return nil, errCachePublished
+		}
+		return nil, errStaleCacheStage
+	})
+	if errors.Is(err, errCachePublished) {
+		return nil
+	}
+	return err
+}
+
+var (
+	errStaleCacheStage = errors.New("rule declaration changed before cache publication")
+	errCachePublished  = errors.New("rule cache published without document commit")
+)
+
+func (s *stagedCache) publish(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}

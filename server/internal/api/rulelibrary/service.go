@@ -81,6 +81,15 @@ func (s *Service) Create(ctx context.Context, item record) (itemResult, error) {
 	if content == nil {
 		return out, fail(400, msgSource)
 	}
+	// Download before admission so a slow URL creation cannot block an inline
+	// creation of the same ID. Serialize the actual creation with edit/delete
+	// cleanup so a new generation never lands under a previous owner's lease.
+	held, release, err := editLease(ctx, item)
+	if err != nil {
+		return out, err
+	}
+	defer release()
+	ctx = held
 	err = create(ctx, item, content)
 	if err != nil {
 		if errors.Is(err, repo.ErrRuleLibraryCreationUncertain) {

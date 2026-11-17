@@ -2030,71 +2030,25 @@ R08 integration follow-up: rebased `go-port-c32` onto `go=d8f50b00`; preserved e
 
 ## C33 — rule library and proxy group routes
 
-独立复核进行中（`go-review-c33`，已 rebase 到 `go@dda8973d`，含 A13）。已复现并修复两项 high：失效标记 stat 权限错误可回退旧 legacy；无锁 inline writer 的旧快照可覆盖新 draft。普通冷缓存补写保留；一致性守卫收敛到现有 rulefetch writer，在 repo 事务锁内核对当前 content 声明/字节，覆盖 discovery、Agent、compose 的迟到写；内部 sentinel 中止未变 DB 候选，不新增 repo API、不推进 revision。新增真实 SIGKILL 四阶段重启/修复、交错旧 reader 与 draft、冷缓存当前声明及迟到共享 writer 回归；.32 最新定向 race7.476s通过。C32 offline 读优先级 fixture 改为直接构造已有物理缓存（不借用受保护的生产 writer 创建未登记来源），cache→inline/零网络断言保留。reorder 错类型的 medium 修复和扩展鉴权/D2/并发测试待下一提交，最终门禁待执行；完整记录见 review-c33.md。
+**Status: `ported` — 独立代码复核完成，最终 gate 运行中** · prereq: C32 · Go: `internal/api/rulelibrary`、`internal/api/proxygroups`
 
-- Resolved C28 deferral: both `internal/mosdns/difftest` callback cases now run unconditionally through the registered `/api/profiles/<id>/rule-library/content/<id>` route and pass.
+25/25 method/path 已实现且均为 done，无重复键；逐方法成功/失败、落盘比较和 Python 测试归属见 [difftest-c33.md](difftest-c33.md)。作者交回为 `go-port-c33@a4445071`；历史移植及旧 gate 记录见 [C33-HANDOFF.md](C33-HANDOFF.md)，不能代替本轮验收。
 
-复核增量：reorder 两路由真值非对象的 500/空值默认已修；live D2 小写 hex 守卫已补，生产 normalize 无变化。新增23管理方法鉴权白名单、显式 Content-Type 的14入口严格/silent矩阵、27真实 HEAD 的10worker上限/原始报文及 lock-order 断言。最新 .64 scoped race/live：C33 API5.671s/diff17.283s，C32 API21.382s/diff27.551s通过；共享 inline 守卫后的 .32 API rules43.457s/library12.118s通过。现已 rebase 到 go@6e37489ff（L1更新），准备最终完整 gate。共享最终关机提交点仍归O3-6c，不混入C33结论。
+Python：完整两路由 `backend/routes/rule_library.py`（540行）、`proxy_groups.py`（436行）；三项主测试（batch health / regex exclusion / create）及 policy editor 内容半边、DNS follow、scheduled rule source/cache 相关行为均有边界映射。RouterOS editor 和 MCP 自有入口仍属各自 owner，无新增路由或 UI 操作入口。
 
-最新收尾基底：`go@cb5732ec5`，已保留C29 server注册、18条路由done及共享reader。冲突仅server.go import、routes.tsv和behaviour登记；合并后C33仍25/25 done且method/path无重复。新发现F5 medium已切换原生Bind/BindSilent，42项非有限请求按各入口malformed合同对照真实Flask；显式Python接受/Go400控制已补。最新.64合并树C33/代理/C29/server定向race+live全部通过（38.783s/58.310s/5.887s/1.981s/25.788s/1.717s），.32更广C29 reader及C32重叠检查仍在前台。已取消两轮未进入检查的旧门禁队列（分别因协调者要求合入C29、新绑定修复）；新最终gate待启动。5项发现均已修，详见review-c33.md；共享最终关机窗口仍归O3-6c。
+独立复核分支 `go-review-c33`（复核者不是作者）。已从895f基底依次 rebase 到 A13、L1、C29（含复核）及最新本地 `go@28e6e0c12`（R09）。合并保留 C29 的 server 注册、18条 done 路由和共享 reader。完整结论见 [review-c33.md](review-c33.md)。
 
-最终增量：已再次 rebase 到 `go@28e6e0c12`（R09），C29重叠检查全部绿，详见复核报告。最后错类型检查F6 low：预览来源选择保留falsey空值和混合数组未知ID的Python语义；真值非数组400拒绝，登记为与rule_ids同类验证纠错。两来源16组精确差分+4组显式Python200/Go400控制已补。当前6项发现已修，runtime已冻结；新增预览回归正在.32前台跑。上一完整门禁已通过格式/vet/双tag/observer及proddiff new0/stale0/self-check PASS，但为纳入F6主动中止，**不计完整通过**；最终完整门禁将在这一提交树重新跑。
+7项发现均已修：3 high（失效标记权限错误复活 legacy；旧 inline writer 越过缓存提交协议；发布/撤销未与其他owner的DB提交串行化），2 medium（reorder 真值非对象404/500边界；严格输入的非有限 JSON 内部500），2 low（live D2 接受大写hex；预览来源选择默认/混合数组与非数组验证）。前四个修复提交 `e27c9c50c`、`d442f420a`、`1edf24f54`、`808d39374`；协议串行化在本提交补齐，最终ID见报告。
 
-F6后的最终C33定向检查已完成：.32 `CONFIGFLOW_DIFF=1 go test -race -p6 -count=1 ./internal/api/rulelibrary/... ./internal/api/proxygroups/... ./internal/server` 全绿（library92.565s、live144.693s、proxy11.583s、server2.832s）。没有进一步runtime改动；接下来仅最终gate及报告收尾。
+缓存：暂存/Sync → 持久 marker → DB → L3内核对来源声明并rename/目录Sync/清marker；marker只有明确不存在才允许回退。撤销也在L3核对原baseline后才清新marker，原有marker不清。Create在下载后、实际提交前加入同ID编辑/清理lease，保留迟到下载竞争语义。共享 rulefetch inline writer 在repo锁内核对当前声明/字节，过期调用不发布；文件副作用后以内部sentinel中止未变DB候选，不增加API/revision/hook。C32 cold cache、cache→inline优先级与零网络断言保留，无新增后台恢复。
 
-**Status: `ported`** · prereqs: C32 · Go: internal/api/rulelibrary, api/proxygroups (new)
+真实 SIGKILL/reopen 覆盖 staged/committed/renamed/complete 四点及手动修复；真实 Runtime 测试继续覆盖15类 owner（关机拒写、请求断开完成）。共享 taskstatus/repo/rulefetch 的**最终关机取消提交/锁等待窗口**仍归 `O3-6c / 6e5c7760`，不是 C33 发现；声明一致性守卫不代表那项已完成。
 
-Files:
-- `backend/routes/rule_library.py` (540)
-- `backend/routes/proxy_groups.py` (436)
+合并 C29 后 .32 全仓格式/vet、定向 oxidns reader race42.127s，C33 API111.073s/live140.268s、代理14.034s、C32 API120.945s/live254.575s、C29 API4.038s/live83.430s、rules22.663s/rulefetch54.203s、C28live19.904s/C11live25.970s/server2.037s全部通过。新 Bind 后 .64 C33/C29/server race+live通过；最终预览修复后 .32 C33 API92.565s/live144.693s/代理11.583s/server2.832s全绿。
 
-Tests: `test_proxy_group_batch_health.py` (6), `test_proxy_group_regex_exclusion.py` (9), `test_rule_library_create.py` (9)
+协议最终增量：.32 C33 API120.722s/live191.633s、代理14.051s、C32 API127.732s/live325.488s、rulefetch57.092s、server2.774s全部通过；发布/撤销/独立metadata/真实创建lease及慢GET与inline赢家控制的补跑2.928s通过。C37/A24自己DB-first修改来源的崩溃窗口另需协调者分派，不应与O3-6c取消任务混同；本轮只声明C33协议完成，详见报告。
 
-Routes (25, 25 implemented; full gate PASS):
-
-`GET /api/profiles/<profile_id>/proxy-groups`; `POST /api/profiles/<profile_id>/proxy-groups`; `GET /api/profiles/<profile_id>/rule-library/content/<rule_id>`; `GET /api/proxy-groups`; `POST /api/proxy-groups`; `DELETE /api/proxy-groups/<group_id>`; `PUT /api/proxy-groups/<group_id>`; `PUT /api/proxy-groups/batch-health-url`; `GET /api/proxy-groups/health-defaults`; `POST /api/proxy-groups/preview-regex`; `POST /api/proxy-groups/reorder`; `GET /api/rule-library`; `POST /api/rule-library`; `DELETE /api/rule-library/<rule_id>`; `PUT /api/rule-library/<rule_id>`; `GET /api/rule-library/<rule_id>/draft-content`; `PUT /api/rule-library/<rule_id>/draft-content`; `POST /api/rule-library/cache`; `POST /api/rule-library/check-content`; `GET /api/rule-library/content/<rule_id>`; `GET /api/rule-library/proxy-domains`; `POST /api/rule-library/proxy-domains`; `POST /api/rule-library/reorder`; `POST /api/rule-library/test`; `POST /api/rule-library/test-single`
-
-Evidence: `go-port-c33`, stacked on frozen C32 (`c3e4e9ac`). Proxy-group routes and native service implemented; shared candidate, health, listener and DNS owners reused. Targeted race tests and vet pass on .64 (API 2.893s; server 1.275s). Tests cover malformed batches, atomic rejection, profile isolation, references, renames, unknown fields, legacy reorder and preview bucket order/filtering.
-
-Rule-library read/create/check-content/reorder/proxy-domains and both public content aliases implemented. .64 vet + related race pass: library 2.209s, proxygroups 4.029s, server 1.424s. Tests verify atomic creation rejection, raw cache bytes, public delivery, single-field settings edits, check-only writes and display-field-safe reorder. Shared creation uses the existing repo atomic primitive.
-
-Draft GET/PUT implemented with native recursive sorted JSON revision and optimistic guards. Durable `.invalid` cache receipt blocks stable and legacy cache reads until the post-commit rename succeeds; inline local delivery regenerates or uses DB bytes. Targeted .64 vet/race PASS: library 2.180s, rules API 15.702s, rulefetch 15.104s, rules 6.741s, server 1.298s. Tests cover token stability/invalidation, competing submissions (one 200, one 409), post-commit rename failure, restored stale file and legacy fallback denial. More cache durability/fault coverage remains before hand-back.
-
-Live Flask harness compares each response and DB sections/fields/export/files. Proxy-group and library read/create cases PASS (.64 `CONFIGFLOW_DIFF=1 go test -count=1 ./internal/api/rulelibrary/difftest`, 1.447s). Initially found only D1 YAML quoting and permitted native English diagnostic changes; comparisons now narrowly cover those classes. No broad field skips.
-
-C32/R08 context integration completed separately on frozen `go-port-c32` (`d4a77fb6`); C33 resumed. All 25 method handlers now implemented. PUT/DELETE use native profile selection plus C27 rebuild/rebase in the existing combined transaction; cache writes stage and fsync before DB, replace+directory-fsync before clearing durable invalidation. Connectivity checks use ten joined workers and a fresh ID+declaration guard; cache refreshes share the editor lease and resolve fresh declarations. .64 vet/race PASS: library6.013s, server1.396s. HTTP regressions cover replacement/deletion/in-use rollback, interval preservation, pending HEAD versus concurrent PUT, subsequent conditional disable, manual caching and loopback GET status; FuzzEditableContent added.
-
-All 25 handlers have live success/failure coverage; [matrix and Python ownership mapping](difftest-c33.md). Native template/follow/group-default changes, locked-native rollback, shared-source disable/restore/retype parking and listener relink compare real Flask DB/files. Both sides separately prove D2 token stability/invalidation and concurrent submissions200/409; real Flask HEAD draft writes are asserted as a fixed Python bug. C28's two deferred callback cases are now unconditional and pass. Route table and behaviour ledger updated. Unknown commit errors retain durable invalidation, cancellation joins workers, manual cache repairs the receipt; directory fsync/fault and comment-survival tests pass.
-
-Latest .64 commands: `CONFIGFLOW_DIFF=1 go test -race -count=1 ./internal/api/rulelibrary/... ./internal/api/proxygroups/...` PASS API8.318s/diff37.785s/proxy6.271s; final twin/HEAD live diff45.683s. Broader shared-cache gate: `go vet ./internal/api/rulelibrary/... ./internal/api/proxygroups/... && CONFIGFLOW_DIFF=1 go test -race -count=1 ./internal/api/rulelibrary/... ./internal/api/proxygroups/... ./internal/api/rules/... ./internal/rules/... ./internal/rulefetch/... ./internal/mosdns/difftest ./internal/subs/difftest ./internal/server/...` PASS: API7.861s/diff43.144s/proxy7.696s/C32API35.714s/C32diff160.883s/rules16.191s/fetch34.617s/C28diff22.046s/C11diff13.633s/server1.868s. No baseline changes.
-
-Rebased onto merged C32 (`go=76f65828`); native download edits now prove actual inline→URL→new URL rewriting in the saved draft against Python. Last malformed-input sweep fixed falsey previews, non-object probe/cache statuses and mixed unknown cache IDs. A loopback forward proxy compares real GET URI/body/headers and proves manual refresh reads global fetch settings (no origin requests); failed refresh preserves raw cache/preferences. Latest .64 API race5.881s / all C33 diff58.314s, plus vet. Native diagnostics are only compared by approved rejection class/status for the specifically documented malformed legacy cases.
-
-Shutdown audit (fourth standing item) completed for C33-owned code: checks after every Detach, before shared owner calls, at entry/end of each transaction callback, and before temp/receipt/fsync/rename/removal. Cache leaf operations now take ctx explicitly; no ctx is stored. Real Runtime.Start/BindRequest/Shutdown tests cover 15 owner classes, eight stopped retries each (no durable effects or network), and disconnected requests that still finish. Leaf tests stop staging/rename, stop exactly between DB commit and rename, and verify the next admitted generation repairs the marker and its identity-owned temp. .64 vet + race PASS API22.474s/C33diff33.371s/proxy4.259s/server1.435s.
-
-Rebased onto C32 verified review `go=0dace4ae`. Extra malformed JSON keeps Python's protected500 boundaries without copying its diagnostics; standalone legacy malformed bodies/unknown IDs also match. Native cache selection rejects Python's accidental string/container membership (explicit validation bug fix). Latest .64 C33 live race26.351s/30.245s and 36 proddiff harness tests PASS. D2 production normalize is coordinator-approved, exact route+top-level revision+anchored64 lowercasehex, with full positive/negative controls; README/ledger updated, baseline unchanged.
-
-Per coordinator, do not change taskstatus/repo/rulefetch shared commit logic here. Known remaining lock-wait/final-commit window is deferred to O3-6 author `6e5c7760` (O3-6c shared commit points, after O3-6a): add ForgetContext/RecordContext (old API retained), repo final commit and shared cache touch/rename checks. C33 currently checks immediately before these calls; switch to new entries and add shutdown-during-shared-lock-wait tests when that independent step lands. Full gate/fuzz now pass (see final result below); no C33-owned unclosed issue.
-
-Final gate moved to equivalent .32 after confirming a free slot there (.64 still full). Both .64 queued rounds30829/79393 were cancelled before any checks; the first lacked the newly configured disk TMPDIR. .32 initial load19.99/26.98/38.59, slot1 acquired, first gofmt check caught the auto-merged server.go import block; formatting only fixed, all-directory gofmt-l clean. Restart same `gate.sh -p6` below. Python direct/discover each run all36 tests and PASS. Base `go=895f5e21`; production logic stays frozen.
-
-Current command: `RT_HOST=sunbroke@192.168.0.32 rt -e GATE_LOGS=/home/sunbroke/.cache/rt-tmp/c33-gate-20261118-final -- bash -lc 'test -n "$TMPDIR" && cat /proc/loadavg && server/scripts/gate.sh -p 6 FuzzEditableContent:./internal/api/rulelibrary && cat /proc/loadavg'`.
-
-Completed .32 gate session9396, start13.76/23.34/36.29; gofmt/vet/双tag PASS。Proddiff already PASS: 23 self-checks, 89GET/91method-path, 1061actual, new=0 stale=0 coverage_regressions=0, aggregation2/2/bundle3/3. Proddiff load15.10/22.61/35.51→32.58/26.23/35.35; race observation41.89/31.57/33.75. Race and subsequent difftest/fuzz all PASS; final figures below and in C33-HANDOFF.md.
-
-Coordinator confirmed long agents race is expected (613s normal, >20min at load40+); do not intervene. Script already uses race60m/difftest40m, unchanged. Latest go dda8973d includes A13 server/route-table edits; explicit latest instruction is finish this gate and hand back directly, with coordinator handling final rebase and merged cf-gate. Do not add another full run or rebase over this accepted candidate just for A13.
-
-Approved decisions: draft revision uses native sorted encoding/json (D2 one-time stale-page 409). Stage content cache before DB commit, atomically replace afterwards, invalidate stable/legacy cache on failure (Python stale-delivery bug). Bulk testing disables only matching source declarations in a fresh transaction, using PUT native DNS rebuild/parking (Python concurrency bug).
-
-N8-5: draft/content PUT 的 DB+cache 原子性，N8-5 的事务 API 落地后，用正式的原语重写。
-
-Command: `RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'cd server && go vet ./internal/api/proxygroups && go test -race -count=1 ./internal/api/proxygroups ./internal/server'`.
-
-Registered `/api/profiles/<id>/rule-library/content/<rule_id>` and `/proxy-groups`. Proxy-group routes run `subs.RelinkGroupListeners`, resolving C11 listener-lifecycle deferrals.
-
-N7-2 follow-up resolved: real proxy-group HTTP requests compare listener relink and repository rollback with Flask; comments are separately asserted to survive. C11/subs difftest also passes in both targeted race and final live gate.
-
-Final result (.32): `GATE PASS`, exit0. Entire96-package race PASS, all15 live difftest PASS, proddiff new=0/stale=0/coverage_regressions=0, FuzzEditableContent117660 executions/61.056s PASS; gofmt/vet/both build tags PASS. C33 race library69.975s/proxy13.567s, live81.944s; long existing agents1176.346s/ippresence2145.572s passed within script's unchanged60m timeout. Actual load start13.76/23.34/36.29, race observed52.39/42.34/37.59, end38.63/32.24/28.04. No manual stress or extra full round. Tested base895f5e21; coordinator will rebase over A13 and run merged cf-gate. Exact rt command, final output, intentional Python bug fixes and remaining O3-6c shared lock-window ownership: [C33-HANDOFF.md](C33-HANDOFF.md). Status ported, independent review pending.
+60秒独立FuzzEditableContent PASS（39412次）；proddiff harness direct/discover各42测试 PASS。旧树门禁均已取消，不计完整通过；本提交后重新执行最终完整gate，命令与最终日志位置见报告。只允许读测试服务器离线快照，报告只记录new/stale/self-check；不接触生产，不复制快照内容，不push、不使用子agent。
 
 ## C34 — generate, config and profile routes, config export
 
