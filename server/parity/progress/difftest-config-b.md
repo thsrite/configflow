@@ -1421,3 +1421,17 @@ compared=29 request_variants=29 design_errors=[] seconds=39.00；exit=0
 ```
 
 H726体积、H727生产超时、H737忙锁及候选上限仍待补；本组不宣称真实节点RTT或DNS网络通过。
+
+## 批次 82：完整导入的共享目录与资源闭包
+
+- 96新增HTTP变体全部Go尚未实现，新增H746–760共15编号（H757/H758为明确的前置拒绝部分观察）。覆盖并集原R4163、H526、G16，已验证变体并集9045；统一报告仍待新基线全量结束后合并。
+- 完整current备份分别破坏Agent及四类共享目录的list/item/id/重复ID，每个目录均有独立请求；聚合nodes/subscriptions引用的列表与元素类型、重复、排序引用空ID、各类资源不存在、chain双边的形态/引用类型/id/额外字段/缺组、source错误类型、raw dialer空值/错型/缺目标。精确中文、409携带具体profile前缀，所有SQL/files原样、回环HTTP0次。
+- H757/H758指定的后置return被validate_shapes抢先拒绝，matrix errata明确公开400与部分范围。首轮chain另一端用DIRECT却未共享节点解析，提前409；改为存在的group引用，仅让目标错误先于后续拓扑检查，96变体整组重跑design_errors=[]。没有将fixture错误登记为Go差异。
+
+```text
+.32 run.py --groups repository-resource-closure-guards
+go-unimplemented=96 request_variants=96 design_errors=[] seconds=4.13；exit=0
+已有存储/意外请求故意错误自检通过；独立报告/tmp/configdiff-repository-resources.json
+```
+
+继续生产超时恢复、其余helper/路由与长流程；当前H仍差586编号，未完成Step B。

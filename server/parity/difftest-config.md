@@ -1971,3 +1971,7 @@ R024/R031-S04/S05及B91：仍比较相应Host/Forwarded请求的完整响应、�
 - H704与H664相同：格式名由固定Python schema目录决定，公开草稿不能声明新schema；保留未覆盖原因，不用未知plugin warning充作RuntimeError。依据[oxidns_validation.py:152](../../backend/common/oxidns_validation.py#L152)。
 - H719：公开render确实拒绝有error的native草稿，但[oxidns_native.py](../../backend/common/oxidns_native.py)在后续require_valid_document之前已拒绝同一输入，因此HTTP400只证明严格渲染门禁，不能证明H719指定的后置防御return执行。此编号标部分观察。
 - H699–H703的字段按实际schema选择：forward.dial_addr为IP、forward.upstreams[].addr为upstream-address、time.timezone为timezone。ECS、http_request.url与cron.timezone分别由插件约束或nonempty-string处理，不能借它们的相似错误声称对应schema format分支已覆盖。依据[global.json](../../backend/schemas/oxidns/global.json)、[plugins.json](../../backend/schemas/oxidns/plugins.json)。
+
+### Step B 资源闭包前置shape guard
+
+H757/H758的非数组proxies_order与非对象元素已被[validate_shapes](../../backend/utils/dialer_references.py#L35)拒绝，完整import公开400消息为“策略组 proxies_order 必须是含 type/id 字符串的对象数组”，无法证明后续_collect_resource_refs的两个指定return运行。保留相应HTTP拒绝测试并标部分观察，不把相似的拒绝归为该内部return的完整覆盖。

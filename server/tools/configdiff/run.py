@@ -102,6 +102,8 @@ def main():
     groups.update(profiles)
     from cases.node_helpers import GROUPS as node_helpers
     groups.update(node_helpers)
+    from cases.repository_resources import GROUPS as repository_resources
+    groups.update(repository_resources)
     from cases.profile_rebind_helpers import GROUPS as profile_rebind_helpers
     groups.update(profile_rebind_helpers)
     from cases.profile_guards import GROUPS as profile_guards
