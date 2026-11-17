@@ -50,6 +50,60 @@ def pair(python=None, go=None):
 
 
 class RunnerTests(unittest.TestCase):
+    def test_execute_binds_probe_clock_to_storage_and_subsequent_public_list(self):
+        class ProbeSide(ObservationSide):
+            def __init__(self, native=False, corrupt=None):
+                super().__init__()
+                self.native, self.corrupt = native, corrupt
+                self.before['database']['sections'] = {'columns': ['scope', 'owner'], 'rows': []}
+                self.before['database']['fields']['rows'] = [
+                    ['profile', 'alpha', '_revision', 0, 1, 1],
+                    ['profile', 'alpha', 'routers', 1, {'items': [{'id': 'r-ros'}]}, 1]]
+                self.after = copy.deepcopy(self.before)
+
+            def request(self, **values):
+                if values['method'] == 'POST':
+                    now = datetime.now(timezone.utc)
+                    stamp = now.isoformat() if self.native else now.replace(tzinfo=None).isoformat(timespec='seconds')
+                    self.content = {'success': True, 'probe': {'at': stamp, 'ok': True, 'message': 'synthetic'}, 'message': ''}
+                    stored = copy.deepcopy(self.content['probe'])
+                    if self.corrupt:
+                        stored[self.corrupt] = '2000-01-01T00:00:00Z' if self.corrupt == 'at' else 'corrupted stored value'
+                    self.after['database']['fields']['rows'][0][4:] = [2, 2]
+                    self.after['database']['fields']['rows'][1][4]['items'][0]['last_probe'] = stored
+                    self.after['database']['fields']['rows'][1][5] = 2
+                else:
+                    routers = copy.deepcopy(self.after['database']['fields']['rows'][1][4]['items'])
+                    self.content = ({'success': True, 'workspace': {'router': routers[0]}}
+                                    if values['path'].endswith('/policy-settings') else {'success': True, 'routers': routers})
+                return super().request(**values)
+
+        case = Case('persisted-probe', 'R017', 'POST', '/api/routers/r-ros/probe', 200,
+                    times=('probe/at',), unchanged=False, effect='profile-write')
+        available = {('POST', '/api/routers/{}/probe'), ('GET', '/api/routers'), ('GET', '/api/routers/{}/policy-settings')}
+        routes, _ = load()
+        world = pair(ProbeSide(), ProbeSide(True))
+        result = execute(world, case, available, routes)
+        self.assertEqual(result['status'], 'compared')
+        self.assertNotEqual(result['python']['body']['probe']['at'], result['go']['body']['probe']['at'])
+        self.assertEqual(result['go']['body']['probe']['at'], world.go.observations[case.ident]['body']['probe']['at'])
+        read = execute(world, Case('probe-list', 'R007', 'GET', '/api/routers', 200), available, routes)
+        self.assertEqual(read['status'], 'compared')
+        self.assertEqual(read['go']['body']['routers'][0]['last_probe']['at'], result['go']['body']['probe']['at'])
+        workspace = execute(world, Case('probe-workspace', 'R014', 'GET', '/api/routers/r-ros/policy-settings', 200), available, routes)
+        self.assertEqual(workspace['status'], 'compared')
+        self.assertEqual(workspace['go']['body']['workspace']['router']['last_probe']['at'], result['go']['body']['probe']['at'])
+        for field in ('at', 'message'):
+            result = execute(pair(ProbeSide(), ProbeSide(True, field)), case, available, routes)
+            self.assertEqual(result['status'], 'different')
+            if field == 'at':
+                self.assertIn('clock-storage', {item['category'] for item in result['differences']})
+            else:
+                self.assertTrue(any(item['path'].endswith('/last_probe/message') for item in result['differences']))
+        # No native route cannot excuse an invalid reference storage fixture.
+        with self.assertRaisesRegex(ValueError, 'stored last_probe.at differs'):
+            execute(pair(ProbeSide(corrupt='at'), ProbeSide(True)), case, set(), routes)
+
     def test_public_setup_prerequisites_use_explicit_schema_without_inventing_success_member(self):
         class SetupSide(ObservationSide):
             def __init__(self, bad=None):

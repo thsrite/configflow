@@ -911,6 +911,23 @@ def declared():
         audits[ident] = Audit(fixed_source_refs, detail +
             ' Public Python process, real repository and stateful loopback peers only. Every write '
             'compares complete storage/files/device tables; fixtures never replace a driver or Python helper.', required)
+    probe_edits = []
+    for kind, labels in (('clear', ('type', 'endpoint', 'username', 'password', 'verify-tls')),
+                          ('retain', ('name', 'same-type', 'same-username', 'same-endpoint', 'same-tls', 'noop',
+                                      'password-empty', 'password-null', 'password-false', 'password-zero',
+                                      'password-array', 'password-object'))):
+        for label in labels:
+            world = 'probe-edit-' + kind + '-' + label
+            probe_edits += [(world, 'R017/routeros/edit-' + kind + '-' + label, 200),
+                            (world, 'R010/probe-' + kind + '-' + label, 200)]
+    audits['R010-B03'] = Audit(('backend/routes/routers.py:193', 'backend/routers/store.py:65'),
+        'Each edit starts from its OWN actual successful public probe. All five connection members '
+        'type/endpoint/username/password/verify_tls independently remove stored last_probe (not '
+        'merely set null) and return public null. Name edit, same type, normalized same username/'
+        'endpoint/TLS, empty no-op and six ignored empty/non-string passwords preserve the exact '
+        'own response clock in DB and HTTP. Every edit commits one profile revision, keeps unrelated '
+        'DNS/names/bindings and performs zero device I/O. Probe clock comparison is owned/content '
+        'bound, never a last_probe field mask.', tuple(probe_edits))
     return audits
 
 

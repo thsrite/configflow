@@ -15,6 +15,7 @@ import guards
 import workflows
 import fixtures
 import probes
+import probe_workflows
 import releases
 import clients
 import sync
@@ -53,6 +54,7 @@ from bugs import BUGS
 from audits import evaluate
 from identities import RouterIDs
 from temporal import ResponseClocks
+from probe_clocks import ProbeClocks
 
 
 def shape(path):
@@ -133,6 +135,7 @@ def execute(pair, case, available, routes):
                    headers=case.headers, auth=case.auth)
     observations, snapshots, flow_requests, flow_checks, setup_observations = {}, {}, {}, {}, {}
     response_windows = {}
+    resolved_requests = {}
     if case.boundary:
         if case.route or len(case.boundary) != 2 or case.boundary[0] != case.method or not isinstance(case.path, str):
             raise ValueError('external boundary must declare its actual method/path with no routers route ID')
@@ -284,6 +287,7 @@ def execute(pair, case, available, routes):
             blocked_reference = 'Go previous HTTP response lacks a required own-side reference: ' + str(error)
             break
         log_position = side.rpc('log_position') if name == 'python' and case.console_patterns else None
+        resolved_requests[name] = own_request
         age_anchor = wait_age(side, case) if case.age_from else None
         started = side.pending[case.join]['started'] if case.join else time.time()
         request_started = time.monotonic()
@@ -375,6 +379,9 @@ def execute(pair, case, available, routes):
             if not hasattr(pair, 'response_clocks'):
                 pair.response_clocks = ResponseClocks()
             pair.response_clocks.reference(case, observations[name], response_windows[name])
+            if not hasattr(pair, 'probe_clocks'):
+                pair.probe_clocks = ProbeClocks()
+            pair.probe_clocks.reference(case, own_request, observations[name], after, response_windows[name])
             if ended - started < case.elapsed_min:
                 raise RuntimeError(case.ident + ': expected real transport wait did not occur')
             transcript = after['fake']['transcript'][len(before['fake']['transcript']):]
@@ -502,10 +509,14 @@ def execute(pair, case, available, routes):
             pair.response_clocks = ResponseClocks()
         timed_observations, clock_differences = pair.response_clocks.pair(case, observations, response_windows)
         found += clock_differences
-        found += differences(pair.router_ids.response('python', case.profile, case.route, timed_observations['python']),
-                             pair.router_ids.response('go', case.profile, case.route, timed_observations['go']), '/http')
-        found += differences(pair.router_ids.snapshot('python', snapshots['python']['after']),
-                             pair.router_ids.snapshot('go', snapshots['go']['after']), '/state')
+        found += pair.probe_clocks.record(case, resolved_requests, observations, snapshots, response_windows)
+        projected = {side: pair.probe_clocks.response(side, case.profile, case.route, timed_observations[side])
+                     for side in ('python', 'go')}
+        found += differences(pair.router_ids.response('python', case.profile, case.route, projected['python']),
+                             pair.router_ids.response('go', case.profile, case.route, projected['go']), '/http')
+        projected_states = {side: pair.probe_clocks.snapshot(side, snapshots[side]['after']) for side in ('python', 'go')}
+        found += differences(pair.router_ids.snapshot('python', projected_states['python']),
+                             pair.router_ids.snapshot('go', projected_states['go']), '/state')
         if case.unchanged:
             found += differences(snapshots['go']['before'], snapshots['go']['after'], '/go-unexpected-write')
         if case.python_bug == 'NATIVE_SIDE_REFERENCE_PROTOCOL_COLLISION':
@@ -761,6 +772,7 @@ def main():
                     (gateway.reads, gateway.writes, gateway.response_limits, gateway.display_filter, gateway.malformed_filter_bug)),
               ('forwarding-uncertain', fixtures.agent_options(), (gateway.uncertain, gateway.timeouts)),
               ('probe-errors', options, (probes.routeros, probes.ikuai)),
+              ('probe-clock-roundtrip', options, (probe_workflows.roundtrip,)),
               ('probe-tls', probes.tls_options(), (probes.tls,)),
               ('probe-ipv6', probes.ipv6_options(), (probes.ipv6,)),
               ('release-ros', releases.options(), (releases.routeros_basic,)),
@@ -829,6 +841,7 @@ def main():
     worlds += fixed_setup.worlds()
     worlds += fixed_sources.router_worlds()
     worlds += fixed_sources.binding_worlds()
+    worlds += probe_workflows.invalidation_worlds(options)
     worlds += device_policy.invalid_ip_worlds()
     worlds += policy_graph.worlds()
     worlds += policy_owned.worlds()

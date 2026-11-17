@@ -51,7 +51,11 @@ class RouterIDs:
         body = result.get('body')
         if not isinstance(body, dict):
             return result
-        rows = body.get('routers') if route == 'R007' else [body.get('router')] if route in ('R008', 'R010') else []
+        if route in ('R014', 'R015'):
+            workspace = body.get('workspace')
+            rows = [workspace.get('router')] if isinstance(workspace, dict) else []
+        else:
+            rows = body.get('routers') if route == 'R007' else [body.get('router')] if route in ('R008', 'R010') else []
         if isinstance(rows, list):
             for row in rows:
                 if isinstance(row, dict) and isinstance(row.get('id'), str):

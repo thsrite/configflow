@@ -7,6 +7,7 @@ import guards
 import workflows
 import fixtures
 import probes
+import probe_workflows
 import releases
 import clients
 import sync
@@ -36,6 +37,37 @@ from bugs import BUGS
 
 
 class RecipeTests(unittest.TestCase):
+    def test_probe_roundtrip_keeps_raw_own_time_and_editor_revision_references(self):
+        rows = list(probe_workflows.roundtrip())
+        self.assertEqual(len(rows), 10)
+        self.assertEqual(sum(case.route == 'R017' for case in rows), 2)
+        seen = {case.ident: case for case in rows}
+        for case in rows:
+            self.assertTrue(set(case.entries) <= load()[1].keys())
+            if case.route == 'R017':
+                self.assertIn('probe/at', case.times)
+                self.assertEqual(case.effect, 'profile-write')
+        stale = seen['R015/probe-clock-name-edit-invalidates-old-editor']
+        fresh = seen['R015/probe-clock-modern-editor-retains-last-probe']
+        self.assertEqual(stale.expected, 409)
+        self.assertEqual(fresh.expected, 200)
+        self.assertNotEqual(stale.document['revision'].case, fresh.document['revision'].case)
+        self.assertEqual(fresh.checks['workspace/router/last_probe/at'].case, 'R017/routeros/clock-roundtrip')
+        worlds = list(probe_workflows.invalidation_worlds({}))
+        self.assertEqual(len(worlds), 17)
+        self.assertEqual(sum('probe-edit-clear-' in world for world, _, _ in worlds), 5)
+        for world, _, groups in worlds:
+            actual = [case for group in groups for case in group()]
+            self.assertEqual(len(actual), 2)
+            self.assertEqual(actual[0].route, 'R017')
+            edit = actual[1]
+            self.assertEqual(edit.requires, ('R017',))
+            if 'probe-edit-clear-' in world:
+                self.assertEqual(edit.stored_absent, ('routers/items/0/last_probe',))
+                self.assertEqual(edit.checks['router/last_probe'], None)
+            else:
+                self.assertEqual(edit.checks['router/last_probe/at'].case, actual[0].ident)
+
     def test_fixed_sources_use_real_vendor_and_binding_prerequisites(self):
         router_cases = [case for _, _, groups in fixed_sources.router_worlds()
                         for group in groups for case in group()]

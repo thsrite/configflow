@@ -22,9 +22,24 @@ import forwarding_guards
 import fixed_normalization
 import fixed_setup
 import fixed_sources
+import probe_workflows
 
 
 class AuditTests(unittest.TestCase):
+    def test_probe_invalidation_audit_needs_each_actual_probe_and_each_connection_operand(self):
+        actual = {(world, case.ident): case for world, _, groups in probe_workflows.invalidation_worlds({})
+                  for group in groups for case in group()}
+        required = declared()['R010-B03'].requirements
+        self.assertEqual(len(required), 34)
+        for world, name, status in required:
+            case = actual[world, name]
+            self.assertEqual(case.expected, status)
+            self.assertIn('R010-B03', case.entries)
+        evidence = [{'world': world, 'case': name, 'entries': ['R010-B03'], 'python': {'status': status},
+                     'status': 'go-unimplemented'} for world, name, status in required]
+        self.assertEqual(evaluate(evidence)['R010-B03']['audit'], 'variants-audited')
+        self.assertEqual(evaluate(evidence[:-1])['R010-B03']['audit'], 'variants-pending')
+
     def test_fixed_source_audits_require_each_operand_and_both_recovery_transactions(self):
         actual = {(world, case.ident): case for factory in (fixed_sources.router_worlds, fixed_sources.binding_worlds)
                   for world, _, groups in factory() for group in groups for case in group()}
@@ -220,7 +235,7 @@ class AuditTests(unittest.TestCase):
 
     def test_auth_audits_require_every_explicit_real_reference_variant(self):
         audits = declared()
-        self.assertEqual(len(audits), 26 * 7 + 25 * 3 + 5 + 14 + 12 + 5 + 8 + 23 + 1 + 5 + 4 + 6 + 4 + 4 + 10 + 24 + 1 + 13 + 2 + 12 + 9 + 3 + 8)
+        self.assertEqual(len(audits), 26 * 7 + 25 * 3 + 5 + 14 + 12 + 5 + 8 + 23 + 1 + 5 + 4 + 6 + 4 + 4 + 10 + 24 + 1 + 13 + 2 + 12 + 9 + 3 + 8 + 1)
         self.assertFalse(set(audits) - set(load()[1]))
         self.assertEqual({value['audit'] for value in evaluate([]).values()},
                          {'variants-pending', 'source-proof-controls-pending', 'review-proof-controls-pending'})

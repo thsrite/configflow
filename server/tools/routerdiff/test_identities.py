@@ -38,6 +38,14 @@ class IdentityTests(unittest.TestCase):
                                      ids.response('go', 'alpha', 'R007', listing['go'])))
         self.assertTrue(differences(ids.response('python', 'beta', 'R008', views['python']),
                                     ids.response('go', 'beta', 'R008', views['go'])))
+        for route in ('R014', 'R015'):
+            workspaces = {side: {'body': {'workspace': {'router': view['body']['router']}}} for side, view in views.items()}
+            self.assertEqual(differences(ids.response('python', 'alpha', route, workspaces['python']),
+                                         ids.response('go', 'alpha', route, workspaces['go'])), [])
+            for side in workspaces:
+                workspaces[side]['body']['workspace']['source_agents'] = [{'id': views[side]['body']['router']['id']}]
+            self.assertTrue(differences(ids.response('python', 'alpha', route, workspaces['python']),
+                                        ids.response('go', 'alpha', route, workspaces['go'])))
 
     def test_missing_wrong_reused_or_unsafe_persistence_cannot_establish_alias(self):
         mutations = (

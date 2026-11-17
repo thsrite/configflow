@@ -2,8 +2,8 @@
 
 Status: in progress; NOT ready for acceptance hand-back. Branch go-difftest-routers-b.
 Latest clean integration rebase: goa08c4cc27; normal public binary built from it.
-Current declarations:430 executed-variant audits plus5 explicit source-unreachable
-proofs plus2 O6 review-superseded entries;1864 remaining if all increments and
+Current declarations:431 executed-variant audits plus5 explicit source-unreachable
+proofs plus2 O6 review-superseded entries;1863 remaining if all increments and
 controls are composed. Last FULL composition still37937739:3054
 recipes/301 audits. Newer subsets do not replace that full evidence; latest
 large subset2470 recipes/327 audits. All observed26 domain routes remain absent
@@ -1758,3 +1758,47 @@ H0002/H0003 outer version catch source proof:
 subset, no Python bug, complete=false. No command pending. Full report still
 historical3054/301. Next: scoped persisted probe clocks, other dynamic families,
 remaining source/device/background matrix, final composition/gate/rebase.
+
+
+Persisted probe clock binding + invalidation:
+- ProbeClocks first validates an explicitly declared R017 probe/at against its
+  own actual HTTP window, then requires exact equal last_probe.at on exactly the
+  requested router/profile in real storage. Native missing/wrong/duplicate/
+  stale storage produces clock-storage differences, never an alias. Python
+  fixture validation remains active even while the native route is absent.
+- Pairing affects comparison copies only: DB routers.items[].last_probe.at and
+  known public_view slots R007/R008/R010 plus R014/R015 workspace.router.
+  Alias only when raw time still equals the proven own source. No message,
+  raw file, other timestamp, foreign profile, digest, revision, fingerprint or
+  future Ref is changed. Latest valid probe replaces that router's prior clock
+  binding. Invalid native evidence cannot establish a binding.
+- Fully read Python policy_workspace.py: its public_view reuse needs these same
+  narrow slots. Generated RouterIDs mapping now also covers workspace.router.id
+  at R014/R015, leaving source_agents IDs and arbitrary fields untouched.
+- New real10-step roundtrip: fresh workspace→ROS probe→list/workspace→name
+  edit→stale editor409→fresh editor save→iKuai probe→both stored public probes.
+  A probe preserves workspace revision; a name edit invalidates it. Publication
+  invalidation remains pending, so R015-B04 is NOT called complete.
+-17 independent fresh-probe/edit worlds (34 requests) cover all five connection
+  members clearing last_probe, plus name/same type/normalized same username/
+  endpoint/TLS/noop and six ignored empty/non-string passwords retaining it.
+  Clearing means absent stored member and explicit public null. All edits bump
+  profile revision once, preserve unrelated sections and perform zero device I/O.
+  R010-B03 is one new explicit audit;431 variants+5 proofs+2 supersessions,
+  1863 still pending if composed. No new reference bug.
+
+.64 reference probe regression (before adding readback/invalidation recipes):
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY="$HOME/.cache/routerdiff-build-302rx1dg-a08c4cc27/configflow"; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world-prefix probe- --output "$HOME/.cache/routerdiff-reports/302rx1dg/persisted-probe-clocks.json"'`
+=>104 real requests across probe-errors/TLS/IPv6, both successful and failed
+probe clocks validated against actual storage; allGo-unimplemented,32 references,
+no bug, complete=false. Wrong initial --world probes was rejected before process
+start; corrected to the actual --world-prefix probe-.
+Final command for changed comparison and all invalidation controls:
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY="$HOME/.cache/routerdiff-build-302rx1dg-a08c4cc27/configflow"; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python -m unittest -v test_probe_clocks test_temporal test_identities test_runner test_recipes test_audits; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world-prefix probe-edit- --world probe-clock-roundtrip --output "$HOME/.cache/routerdiff-reports/302rx1dg/probe-clock-invalidation.json"'`
+=> Ran80 tests12.902s/OK;44 real recipes/allGo-unimplemented,7 references,
+1 executed audit/2300 pending in this subset, complete=false, no bug. Raw clock
+mismatch and corrupted stored message are purpose-broken oracle controls, not
+native findings. No command pending. Full historical3054/301 remains unchanged.
+Next: main native request transport failure classification, remaining dynamic
+ownership/token/hash/YAML/receipt clocks, device/background matrix; full
+composition, final gate/rebase/clean hand-back still pending.

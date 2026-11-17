@@ -433,3 +433,23 @@ H0002/H0003 _at_least outer catch:
   Any ordinary invalid/old Agent version still has its exact real refusal test.
 - These classifications are reviewable Step B author evidence; no Go package is
   marked verified and no Python exception is simulated or added to Go.
+
+Persisted probe-clock/public-view boundary:
+- R017 creates one probe dict, persists it on its selected router and returns it.
+  A fresh response time is only pairable after exact own DB equality, own
+  profile/router identity and actual HTTP-window validation. Invalid native
+  evidence becomes a contract difference. Reference checks run even without Go.
+- Compare copies project only proven routers.items[].last_probe.at and the same
+  public_view slots in R007/R008/R010 and R014/R015 workspace.router. The Python
+  workspace file was read fully; only these resource ID slots were added to
+  generated-RouterIDs projection. source_agents IDs, arbitrary strings, raw
+  files, messages, other clocks, hashes/revisions/fingerprints and raw Refs remain
+  untouched. Known raw source must still match; external replacement stays strict.
+- Real10-request readback/editor sequence plus17 fresh-probe/edit worlds prove
+  each connection member clears last_probe, normalization/no-op/ignored passwords
+  preserve it, and name edits preserve probe while invalidating the editor.
+  Publication invalidation (remaining R015-B04 part) is not inferred.
+- Existing104 probe protocol/TLS/IPv6 requests validate both success/failure
+  persistence. Comparator negatives cover wrong/duplicate owner, stale/missing
+  time, foreign profile, raw-file/message corruption and actual execute/list/
+  workspace flow. Purpose-broken observations are oracle tests, not product bugs.
