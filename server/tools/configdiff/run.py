@@ -30,6 +30,21 @@ def render_findings(results):
         lines += [f'| `{d["path"]}` | {d["kind"]} | {display(d["python"])} | {display(d["go"])} |'
                   for d in r['differences']]
         lines.append('')
+    connect_wire = {
+        'subscription.source.requests[0].host': ('', 'raw.githubusercontent.com:443'),
+        'subscription.source.requests[0].request_line': ('CONNECT raw.githubusercontent.com:443 HTTP/1.0', 'CONNECT raw.githubusercontent.com:443 HTTP/1.1'),
+        'subscription.source.requests[0].user_agent': ('', 'Go-http-client/1.1'),
+    }
+    transport_only = [r for r in results if r.get('group') == 'rule-proxy-transport' and r['state'] == 'different'
+                      and r.get('python_status') == r.get('go_status') == 200 and r['differences']
+                      and all(d['path'] in connect_wire and (d['python'], d['go']) == connect_wire[d['path']] for d in r['differences'])]
+    if transport_only:
+        lines += ['## S91 CONNECT 传输观察（待兼容性审查）', '',
+                  '仅上述精确字段组合的用例：' + '、'.join(r['case'] for r in transport_only) + '。', '',
+                  '两端都先经fake代理尝试相同GitHub原站CONNECT，拒绝后再GET相同镜像URL；最终200、转换正文与存储一致。'
+                  '记录到的差别是Python使用HTTP/1.0且无Host/User-Agent，Go使用HTTP/1.1及上述标准字段。'
+                  '这里保留原始线级差异供审核，不据此要求Go模仿Python传输栈；没有归一化或吞掉字段。'
+                  '若目标、方法、认证、次数、正文或存储还存在其他差异，不会归入本说明。', '']
     if not any(r['state'] in ('different', 'O12-separate') for r in results):
         lines += ['当前已执行用例未发现差异；不代表尚未实现或未运行的条目通过。', '']
     if any(r.get('group') == 'discovery-mixed-order' for r in results):
@@ -103,6 +118,8 @@ def main():
     groups.update(oxidns_routes)
     from cases.setup import GROUPS as setup
     groups.update(setup)
+    from cases.setup_prepare import GROUPS as setup_prepare
+    groups.update(setup_prepare)
     from cases.config_backup import GROUPS as config_backup
     groups.update(config_backup)
     from cases.custom_config import GROUPS as custom_config

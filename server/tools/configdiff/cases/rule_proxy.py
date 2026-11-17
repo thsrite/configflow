@@ -251,7 +251,10 @@ def proxy_transport(binary, recorder):
                 def after(self, index, reply):
                     super().after(index, reply)
                     if index == 0:
-                        row = self.transcripts[0][0]
+                        connect, row = self.transcripts[0]
+                        require(connect['method'] == 'CONNECT' and connect['path'] == 'raw.githubusercontent.com:443'
+                            and connect['authorization'] == connect['proxy_authorization'] == '',
+                            'original HTTPS origin is attempted through the fake proxy and explicitly refused before the mirror fallback')
                         require(row['request_line'] == 'GET ' + rewritten + ' HTTP/1.1' and row['host'] == 'mirror.example',
                                 'forward proxy receives rewritten absolute URI, without resolving mirror or GitHub externally')
                         require(row['authorization'] == row['proxy_authorization'] == '', 'no panel JWT or internal capability leaks to upstream')
@@ -259,7 +262,7 @@ def proxy_transport(binary, recorder):
             with Pair(binary, recorder, options=opts) as pair:
                 before = database(pair.dirs[0])
                 pair.request(rid + '-S91', route, base + '?' + urlencode({'url': original}), expect=200, writes=True, raw_body=True,
-                             interaction=ProxyExchange(pair, source),
+                             interaction=ProxyExchange(pair, source, expected=2),
                              check=lambda r: require(r.body == b'full:example.com' and database(pair.dirs[0]) == before,
                                                      'proxy conversion returns intended data without configuration commit'))
 

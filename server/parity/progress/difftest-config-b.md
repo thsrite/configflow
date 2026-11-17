@@ -1162,3 +1162,21 @@ R去重3965（S646 F2595 B724），H279，G16
 ```
 
 继续prepare、router-draft、check/finish/abandon及其余H/T，尚未最终验收。
+
+## 批次 66：setup准备方案、DNS边界与真实冲突副作用
+
+- 新增128请求变体均Go尚未实现，原R编号7（S04–07/F18–20）及H编号19。四种DNS/连接漏网组合×router/gateway，每种再重复一次；额外TLS/YAML DNS输入、query_recorder=false、复用已存密码而省略controller_secret、选中内容型域名库并去重引用。逐项检查真实SQL规则/MATCH策略/OxiDNS参数、TUN生成字段（含UDP/TCP两条hijack）、session文件/解锁进度、profile/shared revision与两种ownership digest；响应不泄漏控制器密码。只比较生成计划，不执行TUN/主机网络操作。
+- H1033–H1042、H1030–H1032、H952–H957：未知/错型字段、DNS/traffic值、query recorder类型、域名列表结构/100上限/重复两侧/不可用项、DNS字节上限/YAML/16上游/协议/IPv6/回环/未指定/多播/链路本地/53或1053/认证/代理/缺DoH路径、被删除资源/旧订阅URL缓存/无可用缓存节点，精确状态和原始消息，失败的早期校验以Stable验证全存储不变。
+- 通过公开scoped OxiDNS设置接口模拟其他页面编辑，再真实prepare冲突。发现Python先初始化共享内置规则库再返回409：精确检查新共享行/revision+1，同时profile和session原样保留；第二次同样冲突则全存储不变。已补清单errata，不能用“失败总无写入”误判。所有能初始化内置库的fixture设置回环拒绝代理，完整记录GET/HEAD/CONNECT及意外写入；不解析或访问真实源站。
+- fake曾漏记CONNECT，现补齐并显式拒绝隧道（不伪装支持TLS）。S91重测实际序列为原站CONNECT拒绝后镜像GET，新增两条线级差异：Python CONNECT HTTP/1.0且无Host/User-Agent，Go HTTP/1.1并有标准字段；次数、目标、鉴权、最终200正文与存储相同。findings保留原始差异并明确待兼容性审核，不据此要求Go模仿Python传输栈，没有掩码吞掉这些字段。只有上述精确字段组合才显示该说明；其他业务差异不会归入。
+- 增加fake对CONNECT/POST/PUT/PATCH/DELETE/OPTIONS实际记录的自检，61项通过。清单输入“DNS YAML原文”在prepare被strip首尾空白，检查持久化实际规范值而非假设保留末尾换行。
+
+```text
+.63 run.py --groups setup-prepare-plans,setup-prepare-forms,setup-prepare-guards,rule-proxy-transport
+current go-unimplemented=128 different=2 design_errors=[] seconds=27.65
+cumulative variants=8013 compared=2172 go-unimplemented=5724 dependency=37 different=79 O12-separate=1
+R去重3972（S650 F2598 B724），H298，G16
+61 comparator self-checks + wrong-Go-response check OK；exit=1（两条保留的CONNECT线级差异）
+```
+
+继续router-draft/check/finish/abandon、H1043/1044确定性竞争及其余H/T。go分支已前进到afca350b，下一步rebase并重跑现有全部group更新接通状态；仍非最终验收。

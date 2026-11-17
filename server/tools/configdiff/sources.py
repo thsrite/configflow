@@ -26,7 +26,16 @@ class Source:
             def do_HEAD(self):
                 self.respond(head=True)
 
-            def respond(self, head=False):
+            # Unexpected methods must remain observable, especially CONNECT
+            # when this fixture blocks HTTPS origins as a forward proxy.
+            do_POST = do_PUT = do_PATCH = do_DELETE = do_OPTIONS = do_GET
+
+            def do_CONNECT(self):
+                # This fake never opens a tunnel. Reject it explicitly while
+                # recording it, rather than falsely acknowledging TLS support.
+                self.respond(status_override=owner.status if owner.status >= 400 else 501)
+
+            def respond(self, head=False, status_override=None):
                 owner.requests.append({'method': self.command, 'path': self.path,
                                        'authorization': self.headers.get('Authorization', ''),
                                        'user_agent': self.headers.get('User-Agent', '')})
@@ -35,6 +44,8 @@ class Source:
                                               proxy_authorization=self.headers.get('Proxy-Authorization', ''))
                 owner.before_reply(self.path)
                 status, body, headers = owner.responses.get(self.path, (owner.status, owner.body, owner.headers))
+                if status_override is not None:
+                    status = status_override
                 self.send_response(status)
                 for key, value in headers.items():
                     self.send_header(key, value)

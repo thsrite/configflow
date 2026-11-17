@@ -17,6 +17,22 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_blocking_source_proxy_records_connect_and_every_unexpected_write(self):
+        import http.client
+        from sources import Source
+        with Source(b'synthetic origin blocked') as source:
+            source.status = 503
+            verbs = ('CONNECT', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS')
+            for verb in verbs:
+                client = http.client.HTTPConnection('127.0.0.1', source.server.server_port)
+                client.request(verb, 'origin.example:443' if verb == 'CONNECT' else '/unexpected')
+                reply = client.getresponse()
+                self.assertEqual(reply.status, 503)
+                reply.read()
+                client.close()
+            self.assertEqual([r['method'] for r in source.requests], list(verbs))
+            self.assertEqual(source.requests[0]['path'], 'origin.example:443')
+
     def test_setup_readonly_observer_rejects_timestamp_and_commit_mutations(self):
         from cases.setup import Stable
         observer = Stable(None)

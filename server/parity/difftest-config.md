@@ -1951,3 +1951,7 @@ Totals after review: 5570 original entries + 112 per-route cases + 15 cross-cutt
 ### Step B setup chunked 的生产入口更正
 
 R208/R210/R211-B90保留原输入：线上使用真实chunked、无Content-Length、>32KiB有效JSON；期望按公开生产入口观察。backend.app调用Waitress（[http_server.py:114](../../backend/http_server.py#L114)），其WSGI environ将解码后的字节数提供为CONTENT_LENGTH，故setup._body实际返回413。Step B有原始HTTP收包自检及独立Waitress WSGI回显自检，既验证客户端无CL，也验证路由观察到的长度。原“不触发413”只适用于直接WSGI缺CONTENT_LENGTH的环境，不能据此改变测试服务器入口。
+
+### Step B setup prepare 失败写入边界更正
+
+R211-F20/H1042：首次prepare会先由resolve_domain_rules/ensure_builtin_library初始化共享内置规则库，再检查外部profile修改冲突；即使409，shared.rule_library/shared._revision可能已增加。须检查被编辑profile与session未覆盖，同时完整比较新增共享行；重复同样冲突在内置库已初始化后保持存储不变。不能统一断言失败全库回滚。依据[setup_flow.py:417](../../backend/common/setup_flow.py#L417)、[setup_flow.py:490](../../backend/common/setup_flow.py#L490)、[setup_presets.py:239](../../backend/common/setup_presets.py#L239)。Step B用回环拒绝代理隔离新内置源可能进入的后台下载，不访问其真实源站。

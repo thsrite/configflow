@@ -47,6 +47,16 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 |---|---|---|---|
 | `files.notifications.json` | missing-in-go | {'mode': 384, 'content': {'items': {'task:rule_source:proxy-no-cache': {'source': 'task', 'title': '手写规则🧪 · 规则集更新', 'message': '上游返回 HTTP 503', 'impact': '没有可用缓存', 'status_label': '执行失败', 'severity': 'error', 'profile_id': None, 'scope': 'shared', 'profile_name': None, 'target': {'path': '/rule-library', 'query': {'rule': 'proxy-no-cache', 'section': 'settings'}, 'label': '检查规则集设置'}, 'checked_at': '2026-11-17T00:40:53Z', 'failure_count': 1, 'id': 'task:rule_source:proxy-no-cache', 'state': 'pending', 'read': False, 'version': '2026-11-17T00:40:53.051292+00:00', 'first_seen_at': '2026-11-17T00:40:53.051292+00:00', 'last_seen_at': '2026-11-17T0 | None |
 
+## R087-S91 /
+
+路由：`GET /api/mosdns/rule-proxy`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `subscription.source.requests[0].host` | value | '' | 'raw.githubusercontent.com:443' |
+| `subscription.source.requests[0].request_line` | value | 'CONNECT raw.githubusercontent.com:443 HTTP/1.0' | 'CONNECT raw.githubusercontent.com:443 HTTP/1.1' |
+| `subscription.source.requests[0].user_agent` | value | '' | 'Go-http-client/1.1' |
+
 ## R138-B04 / text/B04
 
 路由：`GET /api/profiles/<profile_id>/mosdns/rule-proxy`；状态：different
@@ -89,6 +99,16 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | 路径 | 类型 | Python | Go |
 |---|---|---|---|
 | `files.notifications.json` | missing-in-go | {'mode': 384, 'content': {'items': {'task:rule_source:proxy-no-cache': {'source': 'task', 'title': '手写规则🧪 · 规则集更新', 'message': '上游返回 HTTP 503', 'impact': '没有可用缓存', 'status_label': '执行失败', 'severity': 'error', 'profile_id': None, 'scope': 'shared', 'profile_name': None, 'target': {'path': '/rule-library', 'query': {'rule': 'proxy-no-cache', 'section': 'settings'}, 'label': '检查规则集设置'}, 'checked_at': '2026-11-17T00:40:59Z', 'failure_count': 1, 'id': 'task:rule_source:proxy-no-cache', 'state': 'pending', 'read': False, 'version': '2026-11-17T00:40:59.988589+00:00', 'first_seen_at': '2026-11-17T00:40:59.988589+00:00', 'last_seen_at': '2026-11-17T0 | None |
+
+## R138-S91 /
+
+路由：`GET /api/profiles/<profile_id>/mosdns/rule-proxy`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `subscription.source.requests[0].host` | value | '' | 'raw.githubusercontent.com:443' |
+| `subscription.source.requests[0].request_line` | value | 'CONNECT raw.githubusercontent.com:443 HTTP/1.0' | 'CONNECT raw.githubusercontent.com:443 HTTP/1.1' |
+| `subscription.source.requests[0].user_agent` | value | '' | 'Go-http-client/1.1' |
 
 ## R154-B03 / ?format=unknown
 
@@ -889,6 +909,12 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | `db.fields.system//system_config.value.node_test_dns_config.servers[0]` | value | 'https://dns.example/dns-query' | '192.0.2.53:15353' |
 | `db.meta.generation` | value | 6 | 4 |
 | `files.notifications.json` | missing-in-go | {'mode': 384, 'content': {'items': {'notice:node-test-dns-managed-removed': {'source': 'notice', 'scope': 'system', 'severity': 'warning', 'status_label': '已自动调整', 'title': '节点测速 DNS 已自动调整', 'message': '节点测速的「OxiDNS 托管」模式已移除。测速 DNS 已改为自定义：https://dns.example/dns-query。原专用入口 192.0.2.53:15353 已从 OxiDNS 配置中去掉，「合成 Agent 🧪」上的监听在下一次发布 OxiDNS 后关闭。', 'impact': '', 'checked_at': '2026-11-17T00:09:26.537479+00:00', 'target': {'path': '/nodes', 'query': {}, 'label': '查看测速设置'}, 'id': 'notice:node-test-dns-managed-removed', 'state': 'pending', 'read': False, 'version': '2026-11-17T00:09:26.537530+00:00', 'first_seen_at': '2026-11-17T00:09:26.537530+00:00' | None |
+
+## S91 CONNECT 传输观察（待兼容性审查）
+
+仅上述精确字段组合的用例：R087-S91、R138-S91。
+
+两端都先经fake代理尝试相同GitHub原站CONNECT，拒绝后再GET相同镜像URL；最终200、转换正文与存储一致。记录到的差别是Python使用HTTP/1.0且无Host/User-Agent，Go使用HTTP/1.1及上述标准字段。这里保留原始线级差异供审核，不据此要求Go模仿Python传输栈；没有归一化或吞掉字段。若目标、方法、认证、次数、正文或存储还存在其他差异，不会归入本说明。
 
 ## Oracle 限制：混合目标采纳的顺序
 
