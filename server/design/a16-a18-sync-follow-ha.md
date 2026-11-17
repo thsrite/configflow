@@ -931,3 +931,11 @@ when a concurrent HA request (e.g. a repeated enable click doing its device prev
 Python's failure; the person enables again.
 
 No other decision is open; everything else follows Python.
+
+**Decided 2026-11-17:** **D-A17-1 → B (Go-native canonical JSON)**, by the maintainer: after the switch every DNS-follow
+binding reports "绑定的上游已被编辑或移动" once at the next Mihomo publish and must be re-bound once by hand; it is stable
+afterwards. This must appear in the O12 ledger, the release notes and the O14 switch plan (step: re-bind DNS-follow
+upstreams after the first Mihomo publish). The A14 note "`settings_digest` changes once at the switch" stays.
+**D-A18-1 → A (retry next round)**, by the coordinator: when keepalived-phase enablement finds the HA lock busy, Go retries
+in the next 2 s round instead of failing the whole enablement; record in O12.
+
