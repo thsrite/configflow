@@ -144,6 +144,10 @@ func ISO(t *time.Time) any {
 var historyKeys = []string{"last_run_at", "last_status", "last_error", "last_duration_ms", "last_trigger",
 	"last_success_at", "run_count", "failure_count", "consecutive_failures", "cache_retained", "cache_updated_at"}
 
+// ErrInvalidHistory identifies malformed saved counters, distinct from I/O or
+// readiness. Notification list reads translate this data failure to HTTP 503.
+var ErrInvalidHistory = errors.New("invalid task history")
+
 // History is _history(entry).
 func History(entry *jsonx.Object) (*jsonx.Object, error) {
 	row := jsonx.NewObject()
@@ -157,7 +161,7 @@ func History(entry *jsonx.Object) (*jsonx.Object, error) {
 		}
 		count, err := historyCount(raw)
 		if err != nil {
-			return nil, fmt.Errorf("task history %s: %w", key, err)
+			return nil, fmt.Errorf("%w: %s: %w", ErrInvalidHistory, key, err)
 		}
 		row.Set(key, jsonx.BigInt(count))
 	}

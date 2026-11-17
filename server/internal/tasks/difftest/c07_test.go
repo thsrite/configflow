@@ -420,3 +420,14 @@ func TestC07ExpectedReadinessDifferenceKeepsUnseenFailures(t *testing.T) {
 		t.Fatal("partial observations deactivated unseen failures", err, string(after))
 	}
 }
+
+func TestC07MalformedHistoryRetainsPythonUnavailableStatus(t *testing.T) {
+	w := newWorld(t)
+	commands := w.commands([]command{{Method: "GET", Path: "/api/notifications", Write: map[string]json.RawMessage{"task-status.json": []byte(`{"subscription:s":{"run_count":"bad"}}`)}}})
+	want := python(t, w, commands)[0]
+	got := send(t, w, commands[0])
+	if want.Status != 503 {
+		t.Fatal("Python malformed-history contract changed", want.Status)
+	}
+	compare(t, w, commands[0], got, want, true)
+}

@@ -95,3 +95,23 @@ func TestReadBindingRejectsMalformedAndWrongShapes(t *testing.T) {
 	}
 	s.Post("/api/notifications/read", httpxtest.Body([]byte(`{"versions":{}}`), "application/json")).WantStatus(200)
 }
+
+func TestInvalidSavedHistoryReturnsUnavailableWithoutReplacingReceipts(t *testing.T) {
+	s := notificationServer(t)
+	t.Cleanup(tasks.SetRows(tasks.SlotSubscriptions, func(context.Context, *jsonx.Object) ([]*jsonx.Object, error) {
+		_, err := tasks.History(jsonx.Obj("run_count", "bad"))
+		return nil, err
+	}))
+	path := filepath.Join(s.DataDir, "notifications.json")
+	before := []byte(`{"items":{"old":{"state":"pending","source":"task","version":"v"}}}`)
+	if err := os.WriteFile(path, before, 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		s.Do(method, "/api/notifications").WantStatus(503)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil || !bytes.Equal(before, after) {
+		t.Fatal("bad history replaced notification state", err)
+	}
+}
