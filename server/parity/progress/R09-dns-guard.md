@@ -2,7 +2,7 @@
 
 Chinese hand-back: [R09-handoff-zh.md](R09-handoff-zh.md).
 
-Status: `ported` (2026-11-18), fresh Opus HR review required before `verified`. Branch `go-port-r09`, R08+C32 integrated; rebased onto `go@e980d402` (initial base `d7c481c7`); final shared gate running below.
+Status: `ported` (2026-11-18), fresh Opus HR review required before `verified`. Branch `go-port-r09`, R08+C32 integrated; final shared gate PASS on `go@c14763b3 + R09@40f419ab` (initial base `d7c481c7`).
 No push, no sub-agent, no production/lab contact; synthetic data and loopback fakes only.
 
 ## Scope / interfaces
@@ -68,7 +68,7 @@ final snapshot or delete ownership read cannot commit; disconnected requests sti
 R09 owners check ctx.Err after Detach, before each perform, and before every manifest commit.
 Focused runtime boundary race PASS2.043s on .64, with routers gofmt and vet PASS; no cancellation/timeout
 substitution. The delete probe observes the real shared driver's Netwatch collection read, not an invented
-single-row endpoint. The earlier full R09 run's failure was in this probe; all final checks run again below.
+single-row endpoint. All final checks pass below.
 
 Additional safety gates: production constructor/client; exact raw body bytes and headers before fake decoding;
 actual 10s unanswered PUT, per-call timeout capture through apply/restore; cancellation after accepted write;
@@ -213,28 +213,64 @@ Only isolated PVE lab guests, driven by coordinator/Opus after review; never rea
 
 ## Commands / final gates
 
-All tests run through rt, never on the Mac. Earlier runs below used `.32`; the final integrated run is on `.64`.
+All tests run through rt, never on the Mac. Earlier runs used `.32`; focused native integration/shutdown tests
+used `.64`. The coordinator moved the final integrated gate to `.32` with default package parallelism.
 
 ### Integrated R08+C32 gate
 
 ```sh
-RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'GATE_LOGS=/tmp/configflow-r09-integrated-20261118 server/internal/routers/testdata/r09_gates.sh'
+RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc '
+set -euo pipefail
+export LANG=en_US.UTF-8 GATE_LOGS=/tmp/configflow-r09-final
+server/scripts/gate.sh FuzzR09DNSGuardManifest:./internal/routers FuzzR09DNSGuardOperation:./internal/routers FuzzR09PolicyEvaluator:./internal/routers
+PYTHONPATH=. "$HOME/cf-test/.venv/bin/python" server/internal/routers/testdata/r09_mutations.py | tee "$GATE_LOGS/mutations.log"
+printf "R09_ALL_GATES_PASS\n"
+'
 ```
 
-Tree: `go@e980d402` + R09 through `cf5a015b`. The wrapper calls the shared gate with `-p 6`, all three
-60-second fuzz targets, then the four compiled mutations (saved to mutations.log). Gate logs stay in
-`.64:/tmp/configflow-r09-integrated-20261118`. First attempt queued at load33.70 behind two gates. It was
-terminated while still queued (no checks/tests ran, rt143) to add the newly published fourth standing item;
-the final run is restarted after the shutdown tests and another rebase.
+Tree: `go@c14763b3` + R09 through `40f419ab`. Direct shared gate, no -p, all three 60-second fuzz targets,
+then four compiled mutations. Logs: `.32:/tmp/configflow-r09-final`; slot1/2 acquired at load12.88.
+Old logs at that path were first moved intact to `/tmp/configflow-r09-final-before-r08-c32-20261118`.
+Both .64 attempts were terminated only while queued (no checks/tests ran, rt143): first to add the fourth
+standing item, second at the coordinator's instruction to switch hosts. No other agent process was touched.
 Focused integrated Python boundary/forward/report/manifest race PASS24.885s; gofmt + routers vet and stricter
-combined-report/manifest race PASS1.124s. Full-gate results will be recorded after completion.
+combined-report/manifest race PASS1.124s. Final gate gofmt/vet/both tagged builds/lifecycle checks PASS.
+Proddiff exit0: every self-check PASS, coverage_regressions0, new0/stale0. **Full race: 93 test packages PASS**:
+
+```text
+ok configflow/internal/agents       1535.269s
+ok configflow/internal/devhttp         3.595s
+ok configflow/internal/installer    1789.598s
+ok configflow/internal/ippresence   1750.202s
+ok configflow/internal/routers      1682.054s
+ok configflow/internal/routersplit    59.157s
+```
+
+All **14 live difftest packages PASS** (api/agents215.945s, api/aggregations86.178s, api/rules128.598s,
+api/subscriptions175.895s, provider54.947s, webdav44.203s; complete output diff.log).
+All three fuzz targets ran at least 60s; all four compiled mutations detected. **rt exit0**; final output:
+
+```text
+FuzzR09DNSGuardManifest ok configflow/internal/routers 60.254s
+FuzzR09DNSGuardOperation ok configflow/internal/routers 61.104s
+FuzzR09PolicyEvaluator ok configflow/internal/routers 61.116s
+GATE PASS
+MUTATION_DETECTED result
+MUTATION_DETECTED journal
+MUTATION_DETECTED request
+MUTATION_DETECTED table
+R09_ALL_GATES_PASS
+```
+
+Logs: race.log, proddiff.log/proddiff.rc, diff.log, tag-*.log, fuzz-FuzzR09*.log, mutations.log.
+No baseline edits. No separate non-race full rerun, as the shared gate's full race executes every test.
 
 ### Earlier standalone gates
 
 1. `rt -- bash -lc 'GATE_LOGS=/tmp/configflow-r09-final server/internal/routers/testdata/r09_gates.sh'`
    uses shared `server/scripts/gate.sh -p 4` with all three R09 fuzz targets. On the ae2e0f59 + R09 tree:
    gofmt empty, vet PASS; full `go test -race -p=4 -count=1 -timeout=60m ./...`: **84 packages PASS**.
-   Log `/tmp/configflow-r09-final/race.log`:
+   Archived log `/tmp/configflow-r09-final-before-r08-c32-20261118/race.log`:
    ```
    ok configflow/internal/routers      567.091s
    ok configflow/internal/routersplit   23.165s
@@ -274,7 +310,8 @@ combined-report/manifest race PASS1.124s. Full-gate results will be recorded aft
 
 ### Inherited proddiff exception — not a pass, baseline untouched
 
-`/tmp/configflow-r09-final/proddiff.log`: self-check PASS, coverage_regressions=0, `new=3 stale=0`:
+`.32:/tmp/configflow-r09-final-before-r08-c32-20261118/proddiff.log`: self-check PASS,
+coverage_regressions=0, `new=3 stale=0`:
 
 - `GET /api/aggregations/<agg_id>/provider`: `body.proxies` length.
 - Same global route: `header.X-ConfigFlow-Provider` missing-in-go.
@@ -293,27 +330,29 @@ on the old provider exception. Fresh Opus R09 review and L5 follow; no push.
 
 ## Added files / line counts
 
-Four shared Go files only gain fields/set tracking; paths below are the R09 additions.
+Three shared Go files only gain fields (R08 already owns the manifest flag/setter); paths below are R09 additions.
 
 | Path under server/ | Lines |
 |---|---:|
 | `internal/routers/dns_guard_messages.go` | 50 |
-| `internal/routers/dns_guard_model.go` | 150 |
+| `internal/routers/dns_guard_model.go` | 148 |
 | `internal/routers/dns_guard_plan.go` | 282 |
 | `internal/routers/dns_guard_spec.go` | 261 |
-| `internal/routers/dns_guard_write.go` | 397 |
-| `internal/routers/forward_hint.go` | 213 |
+| `internal/routers/dns_guard_write.go` | 424 |
+| `internal/routers/forward_hint.go` | 205 |
 | `internal/routers/forward_hint_messages.go` | 8 |
 | `internal/routers/ipv6_policy_eval.go` | 487 |
 | `internal/routers/ipv6_policy_eval_test.go` | 187 |
-| `internal/routers/r09_boundary_test.go` | 370 |
-| `internal/routers/r09_forward_test.go` | 156 |
+| `internal/routers/r09_boundary_test.go` | 373 |
+| `internal/routers/r09_forward_test.go` | 170 |
+| `internal/routers/r09_integration_test.go` | 90 |
+| `internal/routers/r09_runtime_test.go` | 152 |
 | `internal/routers/r09_safety_test.go` | 560 |
 | `internal/routers/routerfake/r09.go` | 9 |
 | `internal/routers/testdata/r09_eval_reference.py` | 19 |
-| `internal/routers/testdata/r09_forward_reference.py` | 23 |
-| `internal/routers/testdata/r09_gates.sh` | 12 |
+| `internal/routers/testdata/r09_forward_reference.py` | 25 |
+| `internal/routers/testdata/r09_gates.sh` | 13 |
 | `internal/routers/testdata/r09_mutations.py` | 30 |
 | `internal/routers/testdata/r09_reference.py` | 54 |
-| `parity/progress/R09-handoff-zh.md` | 110 |
-| `parity/progress/R09-dns-guard.md` | 288 |
+| `parity/progress/R09-handoff-zh.md` | 131 |
+| `parity/progress/R09-dns-guard.md` | 329 |

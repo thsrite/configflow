@@ -79,20 +79,42 @@ R14 baseline、R12/R15 真实 HTTP 发布／指纹／规则同步长流程是其
 
 ## 验证结果
 
-测试机固定 `.32`，命令均通过 rt；日志不包含生产值。
+全部命令通过 rt，无本机测试；历史整体验收在 `.32`，集成／shutdown 定向用例在 `.64`，最终完整门禁按协调者最新指令改到 `.32`，默认并行度。
 
-最终 R08+C32 合并树改用 `.64`，已 rebase `go@e980d402`，R09 代码截至 `cf5a015b`。执行：
+最终 R08+C32 合并树已 rebase `go@c14763b3`，R09 代码截至 `40f419ab`。执行：
 
 ```sh
-RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'GATE_LOGS=/tmp/configflow-r09-integrated-20261118 server/internal/routers/testdata/r09_gates.sh'
+RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc '
+set -euo pipefail
+export LANG=en_US.UTF-8 GATE_LOGS=/tmp/configflow-r09-final
+server/scripts/gate.sh FuzzR09DNSGuardManifest:./internal/routers FuzzR09DNSGuardOperation:./internal/routers FuzzR09PolicyEvaluator:./internal/routers
+PYTHONPATH=. "$HOME/cf-test/.venv/bin/python" server/internal/routers/testdata/r09_mutations.py | tee "$GATE_LOGS/mutations.log"
+printf "R09_ALL_GATES_PASS\n"
+'
 ```
 
-wrapper 调共享 gate.sh，参数 `-p 6`，三个 fuzz 各 60 秒，最后四类编译变异；日志在 `.64:/tmp/configflow-r09-integrated-20261118`。首次排队期间 go 新增第四条常设检查，故仅终止了本任务等待槽位的 gate（尚未执行任何检查，rt143），补 shutdown 提交点防线后重新启动；最终结果待结束后填写。集成后的真实 Python／报告／manifest 定向 race 已通过 24.885s；gofmt、routers vet 和更严格组合用例 race 通过 1.124s。
+直接调共享 gate.sh，不加 -p，三个 fuzz 各 60 秒，最后四类编译变异；日志在 `.32:/tmp/configflow-r09-final`，slot1/2，启动负载12.88，**整条 rt 命令退出 0**。两次 `.64` 排队均由本任务仅终止自己的等待进程（尚未执行任何检查，rt143）：首次补新增第四条，第二次按协调者指令换 `.32`。集成后的真实 Python／报告／manifest 定向 race 已通过 24.885s；gofmt、routers vet 和更严格组合用例 race 通过 1.124s。
+原 `/tmp/configflow-r09-final` 已在新门禁开始前整体归档为 `.32:/tmp/configflow-r09-final-before-r08-c32-20261118`，保留旧 aggregation 差异证据。
+本轮 gofmt、全量 vet、两种 build tag 的构建与 lifecycle 检查通过；proddiff 退出 0，全部 self-check PASS、coverage_regressions=0、new=0 stale=0。**全量 race 93 个测试包全部通过**（routers1682.054s、routersplit59.157s、devhttp3.595s；日志 race.log）。**14 个 live difftest 包全部通过**（api/agents215.945s、api/aggregations86.178s、api/rules128.598s、api/subscriptions175.895s、provider54.947s、webdav44.203s；完整输出 diff.log）。本轮没有依赖历史差异例外，没有改 baseline。
+
+最后几行输出：
+
+```text
+FuzzR09DNSGuardManifest ok configflow/internal/routers 60.254s
+FuzzR09DNSGuardOperation ok configflow/internal/routers 61.104s
+FuzzR09PolicyEvaluator ok configflow/internal/routers 61.116s
+GATE PASS
+MUTATION_DETECTED result
+MUTATION_DETECTED journal
+MUTATION_DETECTED request
+MUTATION_DETECTED table
+R09_ALL_GATES_PASS
+```
 
 - 前两轮：R09 Python 对照、安全测试、routers/routersplit/devhttp race、全量、12 difftest、三个 60 秒 fuzz、四类编译变异通过。
 - 合入 N7-3c 的一轮：84 包全量通过，routers race 506.150s；proddiff `new=0 stale=0`。
-- ae2e0f59 + R09：完整 `-race` **84 包通过**；routers 567.091s、routersplit 23.165s、devhttp 3.764s。日志 `.32:/tmp/configflow-r09-final/race.log`。
-- proddiff 已知例外：`new=3 stale=0`，全部为 aggregation provider；原日志 `.32:/tmp/configflow-r09-final/proddiff.log`。
+- ae2e0f59 + R09：完整 `-race` **84 包通过**；routers 567.091s、routersplit 23.165s、devhttp 3.764s。归档日志 `.32:/tmp/configflow-r09-final-before-r08-c32-20261118/race.log`。
+- proddiff 历史例外：`new=3 stale=0`，全部为 aggregation provider；归档日志 `.32:/tmp/configflow-r09-final-before-r08-c32-20261118/proddiff.log`。
   协调者在未加 R09 的 `go@df6928ae`、`.64` 复现相同三条，并指示 R09 照常交回，另派 `go-fix-agg-provider-load` 排查。
   具体是全局 provider 的 `body.proxies` 长度、全局及 profile provider 的 `header.X-ConfigFlow-Provider` 缺失。未改 baseline。
 - 最终变基到 `go@9a208c6c` 后：两种 tag 的 build/vet/lifecycle 全过；12 difftest 全过；三个 60 秒 fuzz 全过（60.305/61.226/61.308s）；四类编译变异均检出。补跑命令退出 0，日志 `.32:/tmp/configflow-r09-remaining/`。
@@ -105,13 +127,13 @@ RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && test -z "$(gofmt -l i
 
 ## 共享文件与接线
 
-仅最小修改 `desired.go`、`model.go`、`report.go`、`routeros.go` 的字段／manifest set 标志。
+仅最小修改 `desired.go`、`model.go`、`report.go` 的字段。
 ReportParts 链式保留前驱，R08 的 policy report 保留。R09 直接读取 `Desired.ROSPolicy.CIDRs`，已删除临时 `DesiredDNSGuard.PolicyCIDRs`；同口提示直接使用 `state.ROSPolicyPlan.Items`，不再往返报告 JSON。只有启用且无 blocker 的 policy plan 提供提示目标。
 filter 优先读取非 nil 的 R08 snapshot，其次才是 DNS guard snapshot；空列表是有效证据，缺少 filter 时发起新读取，不误退回另一份快照。真实 Python 对照覆盖启用／禁用／被阻断，以及两种快照、优先级、空／缺少 filter。
 R08 的 DNS manifest 标志和 setter 各保留一份，`Manifests()` 完整保留；合并后 R09 对 `routeros.go` 没有额外 diff。R12 获取 `Manifests().DNSGuard` 的值与 set 标志（包括显式 null），保存成功或补偿后的 manifest；`DNSGuardPublication()` 保留为便捷接口。组合测试验证 BuildReport 同时保留两个可发布计划，DNS 冲突直接读取原生 policy CIDR，恢复 DNS 不覆盖 Policy manifest，返回副本不别名共享证明。
 C32 的 ComputeDesired／RulesetContent context 首参及已有调用方 ctx 完整保留；R09 没有这两个函数的新增调用点。R09 和 R08 共享写入／回滚路径均用 lifecycle.Detach。
 跟进 `go@f73983fb` 第四条：R09 自有 owner 在 Detach 后、每个 perform／manifest 提交前显式检查 ctx.Err，避免零 I/O 恢复或最终回读后的快速提交越过 shutdown。测试使用真实 Runtime 的 Start/BindRequest/Shutdown，没有替换取消源、超时或生产 HTTP。
-`.64` 定向验证：gofmt 无输出、routers vet 通过，runtime／shutdown／请求断开测试 race 通过 2.043s。删除前探针按共享驱动真实的 Netwatch 集合回读定位，不假设存在单行端点；原先一次全部 R09 运行的失败来自该探针，最终 gate 将重新运行全套。
+`.64` 定向验证：gofmt 无输出、routers vet 通过，runtime／shutdown／请求断开测试 race 通过 2.043s。删除前探针按共享驱动真实的 Netwatch 集合回读定位，不假设存在单行端点；最终 gate 全套已通过。
 R12/R15 把 ForwardHint 放到 report/warnings，不能作为 fingerprint 输入。
 
 ## L5 与交回
@@ -119,6 +141,6 @@ R12/R15 把 ForwardHint 放到 report/warnings，不能作为 fingerprint 输入
 L5 尚未执行：真实 CHR 接受 payload/scripts、UDP/TCP DNS/hairpin/853、HA VIP 与真实主机豁免、15 秒故障确认、恢复 conntrack 清理、重启撤销、链路丢失、规则顺序及同口命令的实际流量效果。
 只能由协调者在隔离实验网安排，不能把 loopback fake 通过当实流证明。
 
-分支 `go-port-r09`，已 rebase 到包含 R08+C32 与并行化测试／N7-4 writer 的 `go@e980d402`。未 push，临时基线 worktree 已清理；最终提交及门禁结果将在完整 gate 结束后记录。
+分支 `go-port-r09`，完整 gate 验证树为包含 R08+C32、并行化测试／N7-4 writer 及第四条常设检查的 `go@c14763b3 + R09@40f419ab`。未 push，临时基线 worktree 已清理；最后 rebase 与补充检查另记。
 
-独立验收已完成，R08+C32 已整合；最终门禁固定 `.64`、`gate.sh -p 6`，完成后才交回。历史 aggregation proddiff 例外已由独立修复合入 go，最终门禁仍须证明 new=0 stale=0；旧失败保留作为历史记录。L5 和 Netwatch 运行时归属裁定不作通过宣称。
+独立验收及 R08+C32 集成已完成；最终门禁按协调者最新指令在 `.32` 以 gate.sh 默认并行度通过，new=0 stale=0。历史 aggregation 例外由独立修复解决；旧失败已归档。L5 和 Netwatch 运行时归属裁定不作通过宣称。

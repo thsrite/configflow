@@ -629,18 +629,25 @@ ForwardHint uses native `ROSPolicyPlan.Items` and prefers the policy filter snap
 including the distinction between empty and missing filters. R12 uses `Manifests().DNSGuard`; the convenience
 `DNSGuardPublication()` remains. R12/R15 attach ForwardHint to routes and warnings, never operations/checks/fingerprints.
 
-Rebased onto R08+C32 (`go@76f65828`); no R09 callers of ComputeDesired/RulesetContent exist, and their C32 ctx
-signatures and caller contexts are retained. Additional integrated report/manifest/snapshot tests are being
-validated before the final `.64` `gate.sh -p 6` run. Runtime Netwatch scripts still select by comment in Python
+Rebased onto R08+C32 and the fourth standing item (`go@c14763b3`); no R09 callers of ComputeDesired/RulesetContent
+exist, and their C32 ctx signatures and caller contexts are retained. Integrated report/manifest/snapshot tests
+and real Runtime.Start/BindRequest/Shutdown boundaries PASS; R09 explicitly checks ctx.Err after Detach and before
+device/manifest commits. Final gate **PASS on `.32`**, default package parallelism, as the coordinator
+instructed after `.64` remained queued; gofmt/vet/both tagged builds/lifecycle checks PASS.
+Runtime Netwatch scripts still select by comment in Python
 and Go: preview/apply block existing unproven matching NAT, but the full runtime ownership contract is a
 potential high-severity item **deferred to fresh Opus by the coordinator**. See the dedicated Chinese report section.
 
-Final .32: gofmt/vet PASS; **full -race 84 packages PASS** (routers 567.091s, routersplit 23.165s,
-devhttp 3.764s); earlier non-race full suite PASS. After final O3-5 rebase: both build-tag build/vet/lifecycle
-checks PASS; all 12 difftest packages PASS; three parsers fuzzed 60s each; four compiled mutations detected.
-Proddiff **new=3 stale=0**, only the coordinator-confirmed aggregation-provider differences also reproduced on
-unmodified go@df6928ae on .64; assigned `go-fix-agg-provider-load`, explicitly allowed for R09 hand-back.
-No baseline changed. Own log `.32:/tmp/configflow-r09-final/proddiff.log`. Earlier go65 + R09 gates had new=0 stale=0.
+Current merged-tree `.32` gate: gofmt/vet/both tagged builds/lifecycle checks PASS; proddiff exit0,
+all self-checks PASS, coverage_regressions=0, **new=0 stale=0**. **Full race: 93 test packages PASS**
+(routers1682.054s, routersplit59.157s, devhttp3.595s). **All 14 live difftest packages PASS**;
+three 60s fuzz targets PASS (60.254/61.104/61.116s); four compiled mutations all DETECTED.
+Final rt exit0, tail `GATE PASS` / `R09_ALL_GATES_PASS`, gate tree `c14763b3 + 40f419ab`.
+Earlier standalone gates passed 84 full-race packages, scoped routers/routersplit/devhttp race, all 12 difftest
+packages, three 60s fuzz targets and four compiled mutations. The old aggregation-provider new3/stale0 result
+was independently reproduced on unmodified go and fixed separately; it is no longer needed as a gate exception.
+Historical evidence is archived at `.32:/tmp/configflow-r09-final-before-r08-c32-20261118/proddiff.log`.
+Final merged-tree gate logs: `.32:/tmp/configflow-r09-final`. No baseline changed.
 
 Chinese hand-back: [progress/R09-handoff-zh.md](progress/R09-handoff-zh.md). Detailed checklist and Python-test
 mapping are in the linked R09 progress file. Fresh Opus review and L5 remain required; no push.
