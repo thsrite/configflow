@@ -259,5 +259,27 @@ Before the fixes (`.32`, new tests against the ported code rebased on R06):
 no separate "before" run exists for it; `TestR07RedactionHidesOnlyPassword`
 covers it.)
 
-After the fixes, final authoritative run on `.32`: see the R07 section of
-`PROGRESS-routers.md` and `progress/R07-nat-lists.md` (exact commands and tails).
+After the fixes, final authoritative run on `.32` (`RT_HOST=sunbroke@192.168.0.32`,
+tree = go 1e0f7ac3 + R07 + review; go 0b367ae5 adds only HANDOFF/AGENT-BRIEF text):
+
+```
+gofmt -l internal/ tools/                                         GOFMT_PASS (no output)
+go vet ./...                                                      VET_PASS
+go test -race -count=1 ./internal/routers/... ./internal/devhttp/
+  ok  configflow/internal/routers  397.393s
+  ok  configflow/internal/devhttp  3.502s
+go test -count=1 ./...                                            FULL_EXIT 0 (routers 263.514s, installer 221.812s)
+for d in $(go list ./... | grep difftest); do CONFIGFLOW_DIFF=1 go test -count=1 $d; done
+  10 × ok (api/agents 118.563s … webdav 15.970s)                  DIFFTEST_EXIT 0
+go test -run '^$' -fuzz '^FuzzR07DecodeAddressRow$' -fuzztime 60s ./internal/routers/   PASS
+CONFIGFLOW_R07_MUTATE=<result|journal|request|table> go test -run 'TestNATListWriteBoundary/new/1/nat_apply$' ./internal/routers/
+  MUTATION_DETECTED result / journal / request / table
+server/scripts/proddiff.sh                                        self_check PASS, baseline: new=0 stale=0, exit 0
+```
+
+No other fuzz targets exist in the changed package. One earlier full run under
+load average ~33 failed six `internal/installer` `dash` subtests with garbled
+UTF-8 output; the identical installer package passes alone on .32 with this
+branch, plain `go` passes the full suite on .32, and the repeated full run of
+this branch passed — a load-dependent installer flake, unrelated to R07
+(reported to the coordinator).
