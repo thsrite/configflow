@@ -19,6 +19,7 @@ import traceback
 
 from fakes import World
 from filesystem import capture
+from osfaults import Faults
 from inventory import ROOT
 from seed import ADMIN, PASSWORD, JWT_SECRET
 
@@ -52,6 +53,7 @@ class Worker:
         self.open_clients = {}
         self.process = None
         self.log = None
+        self.faults = Faults(ACTIVE / "data")
 
     def start(self):
         if self.process is not None:
@@ -155,6 +157,8 @@ class Worker:
             return self.pending.pop(values['ident']).result(timeout=values.get('timeout', 80))
         if operation == 'snapshot':
             return self.snapshot()
+        if operation == 'filesystem_fault':
+            return self.faults.control(**values)
         if operation == 'fake':
             return self.world.control(**values)
         if operation == 'manifest':

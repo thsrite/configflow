@@ -679,3 +679,57 @@ Exact .64 command:
 policy14(1.17s), methods184(1.05s), localHEAD189(.28s), reserved181-world cumulative
 195(.15s). Final matrix2301/routes26/implemented0/go-unimplemented195,
 referenced_entries22, complete=false, remaining_audits2301. No pending process.
+
+Return routing, actual OS faults and explicit auth audit (2026-11-18):
+- Rebased cleanly onto then-go4d8a665a. HEAD now13d1b194 after rewrite; old
+  pre-rebase hashes above remain historical evidence, not final branch IDs.
+  Rebuilt /tmp/routerdiff-build-302rx1dg/configflow on .64 with -p4. Native
+  public manifest still has0 domain registrations. No Go business code read.
+- Return protocol1 and2 each run public preview/publish/noop/disable/cleanup/noop.
+  Agent fake independently checks its bearer/safety/allocation/protocol; actually
+  creates managed table/ip-rule/spec, preserves foreign rules and removes only
+  owned objects. Real TCP boundary regression proves safety409/no mutation,
+  successful PUT, refused legacy-restore, DELETE cleanup and cross-side isolation.
+  Added offline +55 malformed safety/allocation cases,8 accepted allocation limits/
+  padded mark normalization. Known HTTP400 refusal versus HTTP500 uncertain PUT
+  have separate rollback expectations:500 records uncertain routes rollback failed
+  while cleaning the known completed Agent return stage. No fake relaxation.
+- Real private mount namespace faults: bind/remount only owned DATA_DIR read-only,
+  public valid client draft500/unchanged, restore rw then same draft200; actual
+  receipt destination-directory collision forces os.replace failure after device
+  publication, response stays200, last_release ok persists, no usable baseline.
+  OS state is verified; no Python helper patched and no host/production mount used.
+- Full synthetic frozen-source attempt13d1b194, after real boundary4 tests23.514s,
+  passed through1810 completed recipes and605.85s actual token ageing. It STOPPED
+  on a fixture quiescence error: a terminal rule-sync receipt precedes task-status/
+  notification persistence. Do not count it as a full pass or product finding.
+  Read rule_sync.sync/task_status.record: same L1 lock covers receipt and later
+  notification. Runner now waits through public invalid PUT[]409→400 after terminal
+  R023 polling. It never retries accepted writes; full device/files still compared.
+  Download-failure41 cases then passed repeatedly (9.20s/7.92s/6.86s).
+- Go fake protocol violations now remain actual compared observations, not fixture
+  aborts. Python fixture violations still abort. Negative regression proves both.
+- Added explicit variant audit declarations, initially182 A1–A7 entries only; A1
+  requires all6 query/header/cookie bypass attempts as well as missing header.
+  Every audit names source/rationale and exact world:recipe/status prerequisites.
+  Parsing IDs, another world, omitted cases or wrong outcomes cannot satisfy it;
+  negative tests prove this. Tests-complete and Go-comparison remain distinct.
+  This does not mark the whole fixture, route, X06 or any H completed.
+
+Exact .64 command (20 unit/boundary tests all passed22.360s before HTTP loop;
+that first HTTP attempt exposed a wrong cleanup-log index, fixed below):
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; cd server/tools/routerdiff; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY=/tmp/routerdiff-build-302rx1dg/configflow; ~/cf-test/.venv/bin/python -m unittest -v test_audits test_recipes test_runner test_boundary; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world return-protocol1 --world return-protocol2 --world return-safety --world return-rollback --world persistence-readonly --world persistence-receipt --world rule-sync-download-failures --output /tmp/routerdiff-return-os-sync.json'`
+Authoritative corrected combination:
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; cd server/tools/routerdiff; export PYTHONDONTWRITEBYTECODE=1; ~/cf-test/.venv/bin/python -m unittest -v test_audits test_recipes test_runner; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary /tmp/routerdiff-build-302rx1dg/configflow --world return-protocol1 --world return-protocol2 --world return-safety --world return-rollback --world return-uncertain --world persistence-readonly --world persistence-receipt --world rule-sync-download-failures --output /tmp/routerdiff-return-os-sync.json'`
+→ Ran15 tests0.668s/OK; downloads41(6.86s), ro44(.22s), receipt47(.68s),
+proto1 54(1.24s), proto2 61(1.25s), known rollback63(.58s), uncertain65(.71s),
+safety121(8.09s), limits129(1.52s). matrix2301/routes26/implemented0/
+go-unimplemented129/referenced23/audited0/remaining2301/complete=false.
+
+Still open in test code: expiry's common pause starts after both sequential
+previews. Once Go implements this route, slow Go preview can age the Python
+token past the two-second margin. Replace with own-side request-window anchors
+and validate the measurement window, then repeat the real expiry run. This is
+a fixture risk, not a product finding. Dynamic identity normalization remains
+fail-closed/raw, not yet integrated. Full current composition, all H reachability
+and remaining G/T/D branches still unfinished; no final gate or hand-back yet.

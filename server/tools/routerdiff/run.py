@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 import sys
 import time
+from urllib.parse import urlsplit, urlunsplit
 
 import cases
 import guards
@@ -23,6 +24,8 @@ import gateway
 import disconnect
 import routing
 import policy_view
+import returns
+import persistence
 from compare import differences, logical_snapshot, response_view, timestamp
 from harness import Pair
 from harness import decode_response
@@ -34,6 +37,7 @@ from addresses import report_aliases
 from tokens import inspect_python_token
 from seed import JWT_SECRET
 from bugs import BUGS
+from audits import evaluate
 
 
 def shape(path):
@@ -117,6 +121,8 @@ def execute(pair, case, available, routes):
             if control.get('rpc') == 'restart':
                 side.rpc('stop', kill=control.get('kill', False))
                 side.start()  # Same production entry and fresh public login.
+            elif control.get('rpc') == 'filesystem_fault':
+                side.rpc(**{key: value for key, value in control.items() if key != 'rpc'}, operation='filesystem_fault')
             elif control.get('rpc') == 'http':
                 values = {key: value for key, value in control.items() if key not in ('rpc', 'expected')}
                 reply = side.request(**values)
@@ -171,9 +177,20 @@ def execute(pair, case, available, routes):
                         side.request(**own_request))
         finally:
             for control in case.finalize:
-                side.rpc('fake', **control)
+                if control.get('rpc') == 'filesystem_fault':
+                    side.rpc(**{key: value for key, value in control.items() if key != 'rpc'}, operation='filesystem_fault')
+                else:
+                    side.rpc('fake', **control)
         settled = [response_view(poll(side, {'method': 'GET', 'path': control['path']}, control['expect'],
                                      control.get('seconds', 30), strict=name == 'python')) for control in case.after_poll]
+        if case.route == 'R023' and case.method == 'POST' and case.after_poll:
+            # A terminal receipt precedes task-status/notification persistence.
+            # Python sync() holds the same public L1 lock through both writes.
+            parts = urlsplit(own_request['path'])
+            guard_path = urlunsplit(parts._replace(path=parts.path.removesuffix('/rule-sync')))
+            guard = wait_guard(side, guard_path, 30, strict=name == 'python')
+            flow_checks[name].append({'request': {'method': 'PUT', 'path': guard_path, 'document': []},
+                                      'response': response_view(guard)})
         if case.join:
             del side.pending[case.join]
         ended = time.time()
@@ -185,7 +202,7 @@ def execute(pair, case, available, routes):
             observations[name]['flow_checks'] = flow_checks[name]
         side.observations[case.ident] = observations[name]
         after = logical_snapshot(side.rpc('snapshot'))
-        if after['fake']['errors']:
+        if name == 'python' and after['fake']['errors']:
             raise RuntimeError(case.ident + ': fake contract error: ' + repr(after['fake']['errors']))
         snapshots[name] = {'before': before, 'after': after}
         if name == 'python':
@@ -401,12 +418,16 @@ def report(output, results, available, announce=True, error=None):
                      'recipes': [item.get('world', '<self-check>') + ':' + item['case'] for item in results if ident in item['entries']],
                      'audit': 'variants-in-progress' if ident in referenced else 'pending'}
               for ident, entry in entries.items()}
+    for ident, verdict in evaluate(results).items():
+        ledger[ident].update(verdict)
+    remaining = sum(item['audit'] != 'variants-audited' for item in ledger.values())
     data = {'matrix_entries': len(entries), 'matrix_routes': len(routes),
         'implemented_routes': sum((route.method, shape(route.path)) in available for route in routes.values()),
         'recipe_counts': dict(counts), 'referenced_entries': len(referenced),
         'executed_worlds': sorted({item.get('world', '<self-check>') for item in results}),
         'python_bugs': sorted({item['python_bug'] for item in results if item.get('python_bug')}),
-        'complete': False, 'remaining_audits': len(entries),
+        'complete': remaining == 0 and error is None, 'remaining_audits': remaining,
+        'audited_entries': len(entries) - remaining,
         'ledger': ledger, 'results': results}
     if error:
         data['fixture_error'] = error
@@ -427,7 +448,8 @@ def findings(path, data):
         f'公开 Go 入口实际注册本领域路由：{data["implemented_routes"]} 条。',
         '执行配方统计：`' + json.dumps(data['recipe_counts'], ensure_ascii=False, sort_keys=True) + '`。',
         '实际执行世界（统计仅涵盖这些世界）：`' + ', '.join(data['executed_worlds']) + '`。',
-        f'已有执行配方引用的设计条目：{data["referenced_entries"]}；逐条变体审计仍未完成。', '',
+        f'已有执行配方引用的设计条目：{data["referenced_entries"]}；逐条变体审计仍未完成。',
+        f'本次实际执行满足显式变体审计：{data["audited_entries"]}；其余{data["remaining_audits"]}待补。', '',
         '“Go 尚未实现”单独计数，不算失败，也不算差分通过。路由层 R15/R17 未注册时，',
         '即使底层 R01–R06 已移植，也不能声称 HTTP 行为已比较。', '',
         '仅使用合成数据；两端独立 DATA_DIR、网络命名空间和设备 fake；未访问生产或真实设备。',
@@ -538,6 +560,13 @@ def main():
               ('disconnect-release', releases.options(), (disconnect.release,)),
               ('disconnect-fixed', clients.options(), (disconnect.fixed,)),
               ('disconnect-manual', options, (disconnect.manual,)),
+              ('persistence-readonly', options, (persistence.readonly_store,)),
+              ('persistence-receipt', releases.options(), (persistence.receipt_rename_failure,)),
+              ('return-protocol1', returns.options(), (returns.protocol1,)),
+              ('return-protocol2', returns.options(), (returns.protocol2,)),
+              ('return-rollback', returns.options(), (returns.route_failure_rolls_back_return,)),
+              ('return-uncertain', returns.options(), (returns.uncertain_route_failure,)),
+              ('return-safety', returns.options(), (returns.invalid_safety, returns.valid_allocation_boundaries)),
               ('policy-view', policy_view.options(), (policy_view.reads,)),
               ('routing-methods', options, (routing.options_and_dispatch, routing.local_heads, routing.reserved_agents)),
               ('head-discovery', clients.options(), (routing.discovery_head,)),

@@ -10,6 +10,7 @@ import unittest
 from harness import Pair
 from seed import DEVICE_PASSWORD, router
 from fixtures import agent_peers, agent_options
+import returns
 
 
 @unittest.skipUnless(os.environ.get('ROUTERDIFF_BINARY'), 'requires .32 native public Go binary')
@@ -45,6 +46,36 @@ class BoundaryTests(unittest.TestCase):
             self.assertEqual(call(pair.python, 'POST', '/api/linux-gateway/forwarding', token)[1]['ipv4_forwarding']['current'], '1')
             self.assertTrue(call(pair.python, 'GET', '/api/linux-gateway/status', token)[1]['ipv4_forwarding']['persisted'])
             self.assertEqual(call(pair.go, 'GET', '/api/linux-gateway/status', token)[1]['ipv4_forwarding']['current'], '0')
+
+    def test_return_peer_negotiates_allocation_and_preserves_foreign_resources(self):
+        with Pair(Path(os.environ['ROUTERDIFF_BINARY'])) as pair:
+            for side in pair.sides.values():
+                side.rpc('fake', **returns.peer(returns.status()))
+            side = pair.python
+            headers = {'Host': '10.44.0.2:18083', 'Authorization': 'Bearer ' + returns.peer(returns.status())['agent']['10.44.0.2:18083']['token'],
+                       'Content-Type': 'application/json'}
+            def call(method, path='/api/return-routing', document=None):
+                reply = side.rpc('request', port=18083, method=method, path=path, headers=headers,
+                    body=base64.b64encode(json.dumps(document).encode()).decode() if document is not None else None)
+                return reply['status'], json.loads(base64.b64decode(reply['body']))
+            spec = {'router_ip': '10.44.0.1', 'table': 104, 'priority': 105, 'mark': '0x400000', 'safety_version': 2}
+            self.assertEqual(call('PUT', document={**spec, 'table': 106})[0], 409)
+            self.assertIsNone(call('GET')[1]['managed'])
+            self.assertEqual(call('PUT', document=spec)[0], 200)
+            after = call('GET')[1]
+            self.assertEqual(after['managed']['spec'], {'proxy_dst': None, **spec})
+            self.assertTrue(after['managed']['active'])
+            self.assertEqual(after['return_tables'][0], returns.FOREIGN_TABLE)
+            self.assertEqual(after['fwmark_rules'][0], returns.FOREIGN_RULE)
+            self.assertEqual(after['fwmark_rules'][1], {'priority': '105', 'table': '104', 'mark': '0x400000/0x400000'})
+            self.assertEqual(call('DELETE', '/api/return-routing?restore_legacy=1')[0], 409)
+            self.assertEqual(call('GET')[1], after)
+            self.assertEqual(call('DELETE')[0], 200)
+            cleaned = call('GET')[1]
+            self.assertFalse(cleaned['managed']['active'])
+            self.assertEqual(cleaned['return_tables'], [returns.FOREIGN_TABLE])
+            self.assertEqual(cleaned['fwmark_rules'], [returns.FOREIGN_RULE])
+            self.assertIsNone(pair.go.rpc('snapshot')['fake']['agent']['10.44.0.2:18083']['endpoints']['/api/return-routing']['managed'])
 
     def test_real_startup_independent_stateful_peers_and_transcript_gate(self):
         options = {'alpha': {'routers': {'items': [router()]}}}

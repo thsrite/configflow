@@ -146,6 +146,20 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(world.python.requests[0]['document']['token'], 'python-only')
         self.assertEqual(world.go.requests, [])
 
+    def test_go_protocol_violation_is_a_difference_not_a_fixture_abort(self):
+        routes, _ = load()
+        before = ObservationSide().before
+        broken = copy.deepcopy(before)
+        broken['fake']['errors'].append('synthetic malformed Go device write')
+        world = pair(ObservationSide(200, before, before), ObservationSide(502, before, broken))
+        case = Case('device-protocol-violation', 'R020', 'POST', '/api/routers/test/routes/apply', 200,
+                    unchanged=False, effect='device-only')
+        result = execute(world, case, {('POST', shape(routes['R020'].path))}, routes)
+        self.assertEqual(result['status'], 'different')
+        self.assertTrue(any(item['path'].startswith('/state/fake/errors') for item in result['differences']))
+        with self.assertRaisesRegex(RuntimeError, 'fake contract error'):
+            execute(pair(ObservationSide(200, before, broken)), case, set(), routes)
+
     def test_missing_external_overlap_handler_is_not_a_business_404_oracle(self):
         routes, _ = load()
         world = pair(ObservationSide(status=404), ObservationSide(status=404))

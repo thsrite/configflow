@@ -456,11 +456,42 @@ class World:
                 ipaddress.IPv4Address(spec['router_ip'])
                 if any(type(spec[key]) is not int for key in ('table', 'priority', 'safety_version')):
                     raise ProtocolError('return-routing allocation requires exact integer fields')
-                if spec['safety_version'] not in (1, 2):
-                    return 409, {}, {'success': False, 'message': 'synthetic unsupported return-routing protocol'}
-                entry['managed'] = {**entry.get('managed', {}), 'spec': copy.deepcopy(spec), 'active': True, 'table_present': True}
+                safety = entry.get('safety') or {}
+                allocation = safety.get('allocation') or {}
+                protocol = spec['safety_version']
+                valid = (safety.get('ok') is True and safety.get('version') == 1 and not safety.get('blockers')
+                         and protocol in (1, 2) and (protocol == 1 or 2 in safety.get('protocols', []))
+                         and all(spec[key] == allocation.get(key) for key in ('table', 'priority', 'mark')))
+                if protocol == 1:
+                    if not isinstance(spec.get('proxy_dst'), list) or not all(isinstance(cidr, str) for cidr in spec['proxy_dst']):
+                        raise ProtocolError('return-routing protocol1 requires destination networks')
+                    for cidr in spec['proxy_dst']:
+                        ipaddress.IPv4Network(cidr)
+                elif 'proxy_dst' in spec:
+                    raise ProtocolError('return-routing protocol2 must not carry destination networks')
+                if not valid:
+                    return 409, {}, {'success': False, 'message': 'synthetic return-routing safety or allocation changed'}
+                entry['managed'] = {'spec': {'proxy_dst': None, **copy.deepcopy(spec)}, 'active': True, 'table_present': True}
+                entry['return_tables'] = [table for table in entry.get('return_tables', [])
+                                          if table.get('name') != 'configflow_return']
+                entry['return_tables'].append({'family': 'inet', 'name': 'configflow_return', 'marks': [spec['mark']]})
+                entry['fwmark_rules'] = [rule for rule in entry.get('fwmark_rules', [])
+                                         if str(rule.get('priority')) != str(spec['priority'])]
+                entry['fwmark_rules'].append({'priority': str(spec['priority']), 'mark': spec['mark'] + '/' + spec['mark'],
+                                              'table': str(spec['table'])})
+                entry['safety']['allocation']['reused'] = True
             elif request['method'] == 'DELETE':
-                entry['managed'] = {**entry.get('managed', {}), 'spec': None, 'active': False, 'table_present': False}
+                if urlsplit(request['path']).query:
+                    return 409, {}, {'success': False, 'message': 'synthetic legacy return-routing restore refused'}
+                managed = entry.get('managed') or {}
+                previous = managed.get('spec') or {}
+                entry['return_tables'] = [table for table in entry.get('return_tables', [])
+                                          if table.get('name') != 'configflow_return']
+                entry['fwmark_rules'] = [rule for rule in entry.get('fwmark_rules', [])
+                                         if not (str(rule.get('priority')) == str(previous.get('priority'))
+                                                 and str(rule.get('table')) == str(previous.get('table'))
+                                                 and rule.get('mark') == str(previous.get('mark')) + '/' + str(previous.get('mark')))]
+                entry['managed'] = {**managed, 'spec': None, 'active': False, 'table_present': False}
             elif request['method'] != 'GET':
                 raise ProtocolError('unsupported Agent return-routing method')
         elif request['method'] != 'GET':
