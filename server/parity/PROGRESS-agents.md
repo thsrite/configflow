@@ -956,6 +956,12 @@ The earlier .63-only rulefetch proxy_refused timeout difference did not reproduc
 
 ## A12 — push diff
 
+独立 Codex 复核进行中（分支 `go-review-a12`，从 `02f6a954` 分出）：
+5 项发现已修复（4 中：反斜杠 URL 漏标、provider 锚点丢失导致整份 raw 未标记、深度 64 身份截断漏报、JSON 转义改变分页预算；
+1 低：数字拼写制造多余变更）。独立 Python oracle 77 行/180 分页比较，新增回归与原语料通过；
+共享 yamlx ValueHash/MaterializeAliases 和 jsonresp.EncodeUTF8，无私有 helper 副本。完整记录见 [review-a12.md](review-a12.md)。
+当前仍为 ported，待 rebase 与最终服务器门禁后设置 verified。
+
 **Status: `ported`（N7-3a rebase 复验全通过，待独立复核）** · prereqs: A11 verified · Go: `internal/deploy/pushdiff` · branch `go-port-a12` · 实现提交 `44f409e9`；深层路径修正 `f001fc9f`；空区间修正 `476143c4`；既有验收记录 `659fdb8e` / `ad03c2a4`（本轮先 rebase 到 N7-3a `8303397c`，最终基线 `ac1f2377`）。
 
 范围：`backend/agents/push_diff.py` 全部纯比较能力。实现按 `design/a14-publish.md` A12-1：typed `Diff`/`Page`/`Text`、逐键 YAML、命名/标量列表、带敏感片段的统一 diff、文件排序/计数、节点重复名/未命名配对、规则多重集合、行/字节/文件/条目预算、zlib 压缩分页、搜索、stored-token 局部替换。无 HTTP 注册（A13/A14）、无仓库/网络/设备访问，无 push、无子 agent。

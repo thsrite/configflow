@@ -49,7 +49,7 @@ func pairs(n *yaml.Node) []pair {
 	}
 	return out
 }
-func keyID(p pair) string { return resolve(p.node).ShortTag() + "\x00" + p.key }
+func keyID(p pair) string { return valueID(p.node) }
 func scalar(n *yaml.Node) string {
 	n = resolve(n)
 	if n == nil {
@@ -281,14 +281,8 @@ func identity(items []*yaml.Node) string {
 	return ""
 }
 func valueID(n *yaml.Node) string {
-	// Canonical typed identities are JSON display values with sorted keys.
-	t := show(n, nil, false, true, false)
-	s, _ := t.Unpack()
-	n = resolve(n)
-	if n != nil && n.ShortTag() == "!!str" {
-		return "s" + s
-	}
-	return "j" + s
+	hash := yamlx.ValueHash(n)
+	return string(hash[:])
 }
 func reordered(a, b []string) bool {
 	aset, bset := map[string]bool{}, map[string]bool{}
@@ -531,13 +525,15 @@ func canonicalYAML(n *yaml.Node) ([]byte, error) {
 		}
 		if c.Kind == yaml.ScalarNode {
 			switch c.ShortTag() {
-			case "!!bool", "!!int", "!!float", "!!null":
+			case "!!bool", "!!int", "!!null":
 				c.Value = scalar(n)
 			}
 		}
 		return &c
 	}
-	out, err := yamlx.Marshal(copyNode(n))
+	canonical := copyNode(n)
+	yamlx.MaterializeAliases(canonical)
+	out, err := yamlx.Marshal(canonical)
 	if err != nil {
 		return nil, fmt.Errorf("render config diff: %w", err)
 	}

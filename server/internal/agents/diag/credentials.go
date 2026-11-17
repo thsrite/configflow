@@ -45,7 +45,7 @@ func CredentialSpans(text string) [][2]int {
 		start := offset + strings.Index(text[offset:], word)
 		offset = start + len(word)
 		if strings.Contains(word, "://") {
-			for _, loc := range URLPattern.FindAllStringIndex(word, -1) {
+			for _, loc := range CredentialURLPattern.FindAllStringIndex(word, -1) {
 				for _, r := range urlCredentialSpans(word[loc[0]:loc[1]]) {
 					spans = append(spans, [2]int{start + loc[0] + r[0], start + loc[0] + r[1]})
 				}

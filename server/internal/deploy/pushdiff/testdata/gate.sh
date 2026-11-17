@@ -8,8 +8,8 @@ if [[ -n "$format" ]]; then
   exit 1
 fi
 go vet ./...
-go test -race -count=1 ./internal/deploy/pushdiff ./internal/agents/diag ./internal/yamlx
-go test -count=1 ./...
+go test -race -p=4 -count=1 ./internal/deploy/pushdiff ./internal/agents/diag ./internal/yamlx ./internal/jsonresp
+go test -p=4 -count=1 ./...
 for d in $(go list ./... | grep difftest); do
   CONFIGFLOW_DIFF=1 go test -count=1 "$d"
 done

@@ -6,10 +6,11 @@ import (
 	"unicode/utf8"
 
 	"configflow/internal/agents/diag"
+	"configflow/internal/yamlx"
 )
 
 func FuzzConfig(f *testing.F) {
-	for _, s := range []string{"mode: rule\n", "a: &a [*a]", aliasChain(), scalarAliases(), "a: 1\na: 2", "secret: [a, b]", "proxies: [{name: 香港, uuid: value}]"} {
+	for _, s := range []string{"mode: rule\n", "a: &a [*a]", aliasChain(), scalarAliases(), "a: 1\na: 2", "secret: [a, b]", "proxies: [{name: 香港, uuid: value}]", "proxy-providers: &p {a: {path: ./rules/a.yaml}}\ncopy: *p\n"} {
 		f.Add([]byte("mode: rule\n"), []byte(s))
 	}
 	f.Fuzz(func(t *testing.T, a, b []byte) {
@@ -25,6 +26,23 @@ func FuzzConfig(f *testing.F) {
 		}
 		if _, err := json.Marshal(result); err != nil {
 			t.Fatal(err)
+		}
+		if result.Status != "unparsable" {
+			for _, input := range [][]byte{a, b} {
+				doc, err := yamlx.Parse(input)
+				if err != nil {
+					t.Fatal(err)
+				}
+				want := agentPaths(doc)
+				canonical, err := canonicalYAML(want)
+				if err != nil {
+					t.Fatal(err)
+				}
+				got, err := yamlx.Parse(canonical)
+				if err != nil || !yamlx.Equal(got, want) {
+					t.Fatalf("raw YAML changed meaning: %q (%v)", canonical, err)
+				}
+			}
 		}
 	})
 }
@@ -58,7 +76,7 @@ func FuzzNodeItems(f *testing.F) {
 	})
 }
 func FuzzCredentialSpans(f *testing.F) {
-	for _, s := range []string{"中文 https://u:p@rules.example.com/?key=value", "user:password@192.0.2.1:1080", "https://[::1/broken", "https://rules.example.com/abc1234567890123456789012345"} {
+	for _, s := range []string{"中文 https://u:p@rules.example.com/?key=value", "user:password@192.0.2.1:1080", "https://[::1/broken", "https://rules.example.com/abc1234567890123456789012345", `https://rules.example.com/path\part?token=synthetic\secret`} {
 		f.Add(s)
 	}
 	f.Fuzz(func(t *testing.T, s string) {

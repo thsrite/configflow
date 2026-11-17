@@ -1,27 +1,30 @@
 package pushdiff
 
-import "encoding/json"
+import (
+	"configflow/internal/jsonresp"
+	"encoding/json"
+)
 
 // MarshalJSON omits full-comparison fields when no baseline exists.
 func (d Diff) MarshalJSON() ([]byte, error) {
 	if d.Reason != "" {
-		return json.Marshal(struct {
+		return jsonresp.EncodeUTF8(struct {
 			Status string `json:"status"`
 			Files  []File `json:"files"`
 			Reason string `json:"reason"`
 		}{d.Status, d.Files, d.Reason})
 	}
 	type plain Diff
-	return json.Marshal(plain(d))
+	return jsonresp.EncodeUTF8(plain(d))
 }
 
 // MarshalJSON selects a leaf-value or list row without ambiguous null fields.
 func (r Row) MarshalJSON() ([]byte, error) {
 	if r.List == nil {
 		type leaf Row
-		return json.Marshal(leaf(r))
+		return jsonresp.EncodeUTF8(leaf(r))
 	}
-	return json.Marshal(struct {
+	return jsonresp.EncodeUTF8(struct {
 		Key       string    `json:"key"`
 		Path      *[]string `json:"path,omitempty"`
 		Change    string    `json:"change"`
@@ -33,7 +36,7 @@ func (r Row) MarshalJSON() ([]byte, error) {
 // MarshalJSON distinguishes brief nested fields from full list comparisons.
 func (l ListDiff) MarshalJSON() ([]byte, error) {
 	if !l.brief {
-		return json.Marshal(struct {
+		return jsonresp.EncodeUTF8(struct {
 			Before    int     `json:"before"`
 			After     int     `json:"after"`
 			Added     int     `json:"added"`
@@ -45,7 +48,7 @@ func (l ListDiff) MarshalJSON() ([]byte, error) {
 			Identity  string  `json:"identity,omitempty"`
 		}{l.Before, l.After, l.Added, l.Removed, l.Modified, l.Reordered, l.Entries, l.Omitted, l.Identity})
 	}
-	return json.Marshal(struct {
+	return jsonresp.EncodeUTF8(struct {
 		Before       int    `json:"before"`
 		After        int    `json:"after"`
 		Added        int    `json:"added"`
@@ -60,13 +63,13 @@ func (l ListDiff) MarshalJSON() ([]byte, error) {
 // MarshalJSON reports only the input limit fields when rendering was skipped.
 func (r RawDiff) MarshalJSON() ([]byte, error) {
 	if r.Reason != "" {
-		return json.Marshal(struct {
+		return jsonresp.EncodeUTF8(struct {
 			Lines  []Text `json:"lines"`
 			Reason string `json:"reason"`
 			Total  int    `json:"total_lines"`
 		}{nil, r.Reason, r.TotalLines})
 	}
-	return json.Marshal(struct {
+	return jsonresp.EncodeUTF8(struct {
 		Lines     []Text `json:"lines"`
 		Truncated bool   `json:"truncated"`
 		Omitted   int    `json:"omitted_lines"`

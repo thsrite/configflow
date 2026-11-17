@@ -1,7 +1,6 @@
 package pushdiff
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -9,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	"configflow/internal/agents/diag"
+	"configflow/internal/jsonresp"
 	"configflow/internal/redact"
 )
 
@@ -115,21 +115,21 @@ func (t Text) MarshalJSON() ([]byte, error) {
 	}
 	if !secret {
 		s, _ := t.Unpack()
-		return json.Marshal(s)
+		return jsonresp.EncodeUTF8(s)
 	}
 	pieces := make([]json.RawMessage, 0, len(t.pieces))
 	for _, p := range t.merged() {
 		var b []byte
 		if p.secret {
-			b, _ = json.Marshal(struct {
+			b, _ = jsonresp.EncodeUTF8(struct {
 				Secret string `json:"secret"`
 			}{p.text})
 		} else {
-			b, _ = json.Marshal(p.text)
+			b, _ = jsonresp.EncodeUTF8(p.text)
 		}
 		pieces = append(pieces, b)
 	}
-	return json.Marshal(pieces)
+	return jsonresp.EncodeUTF8(pieces)
 }
 
 // UnmarshalJSON reads a display text without accepting arbitrary JSON objects.
@@ -171,11 +171,8 @@ func (t *Text) UnmarshalJSON(b []byte) error {
 }
 
 func jsonString(s string) string {
-	var b bytes.Buffer
-	e := json.NewEncoder(&b)
-	e.SetEscapeHTML(false)
-	_ = e.Encode(s)
-	return strings.TrimSuffix(b.String(), "\n")
+	b, _ := jsonresp.EncodeUTF8(s)
+	return string(b)
 }
 func escapeJSON(s string) string { s = jsonString(s); return s[1 : len(s)-1] }
 

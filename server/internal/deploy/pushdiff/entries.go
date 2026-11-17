@@ -7,6 +7,7 @@ import (
 	"io"
 	"strings"
 
+	"configflow/internal/jsonresp"
 	"configflow/internal/redact"
 	"golang.org/x/text/cases"
 )
@@ -162,11 +163,7 @@ func searchText(e Entry) string {
 // encodeEntry uses standard JSON; spaced counts include display separators,
 // while storage uses compact JSON lines.
 func encodeEntry(e Entry, spaced bool) []byte {
-	var b bytes.Buffer
-	enc := json.NewEncoder(&b)
-	enc.SetEscapeHTML(false)
-	_ = enc.Encode(e)
-	raw := bytes.TrimSuffix(b.Bytes(), []byte{'\n'})
+	raw, _ := jsonresp.EncodeUTF8(e)
 	if !spaced {
 		return raw
 	}

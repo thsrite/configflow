@@ -147,7 +147,7 @@ func rewriteEdit(src []byte, doc *Node, before editSnapshot) ([]byte, error) {
 	// Verification compares with the document the caller produced, not with
 	// the tree after the preparation steps below rearranged it.
 	want := copyGraph(doc, map[*Node]*Node{})
-	materializeEditAliases(doc)
+	MaterializeAliases(doc)
 	placeRemovedComments(doc, before)
 	keepEditComments(doc, comments)
 	out, err := Marshal(doc)
@@ -194,20 +194,44 @@ func verifyEdit(out []byte, want *Node, comments []string) error {
 	return nil
 }
 
-// A removed or moved anchor definition may still have alias consumers. The
-// first consumer that the emitter reaches becomes the definition (keeping the
-// anchor), so later consumers stay aliases. Nothing is expanded: an expansion
-// could exceed the alias budget and grow the document (review N7-2 F1).
-func materializeEditAliases(doc *Node) {
+// MaterializeAliases repairs anchors displaced by edits in a validated graph,
+// in place. The first remaining consumer becomes the definition; later consumers
+// stay aliases. Anchor names are made unique when an edit copied a definition.
+// Nothing is expanded, preserving alias chains and their budget (N7-2 F1).
+func MaterializeAliases(doc *Node) {
 	emitted := map[*Node]bool{}
+	names := map[*Node]string{}
+	used := map[string]bool{}
+	name := func(n *Node) string {
+		if s := names[n]; s != "" {
+			return s
+		}
+		s := n.Anchor
+		if s == "" {
+			s = "value"
+		}
+		base := s
+		for i := 1; used[s]; i++ {
+			s = fmt.Sprintf("%s_%d", base, i)
+		}
+		used[s] = true
+		names[n] = s
+		return s
+	}
 	var walk func(*Node)
 	walk = func(n *Node) {
 		if n == nil || emitted[n] {
 			return
 		}
-		if n.Kind == yaml.AliasNode && n.Alias != nil && !emitted[n.Alias] {
+		if n.Kind == yaml.AliasNode && n.Alias != nil {
 			target := n.Alias
+			anchor := name(target)
+			if emitted[target] {
+				n.Value = anchor
+				return
+			}
 			definition := *target
+			definition.Anchor = anchor
 			definition.HeadComment = joinComment(n.HeadComment, target.HeadComment)
 			definition.LineComment = joinComment(n.LineComment, target.LineComment)
 			definition.FootComment = joinComment(n.FootComment, target.FootComment)
@@ -218,6 +242,9 @@ func materializeEditAliases(doc *Node) {
 			}
 			*n = definition
 			emitted[target] = true
+			names[n] = anchor
+		} else if n.Anchor != "" {
+			n.Anchor = name(n)
 		}
 		emitted[n] = true
 		for _, child := range n.Content {

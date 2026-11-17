@@ -38,14 +38,20 @@ var (
 
 func foldI(pattern string) string { return strings.ReplaceAll(pattern, "i", "[iİı]") }
 
+const urlStart = `[a-zA-Z][a-zA-Z0-9+.-]*://[^` + PyWS + `<>"'`
+
 // The Python patterns use \b, which is Unicode-aware there and ASCII-only in
 // RE2. The \b of _AUTH and _SECRET stands directly before the keyword (after
 // an optional quote), so it is dropped from the patterns and checked by
 // replaceAtWordStart with Python's definition of a word character.
 var (
 	// URLPattern is diagnostics._URL / operation_events._URL.
-	URLPattern  = regexp.MustCompile(`[a-zA-Z][a-zA-Z0-9+.-]*://[^` + PyWS + `<>"'\\]+`)
-	ansiPattern = regexp.MustCompile(`\x1b\[[0-?]*[ -/]*[@-~]`)
+	URLPattern = regexp.MustCompile(urlStart + `\\]+`)
+	// CredentialURLPattern includes backslashes in literal configuration URLs.
+	// Diagnostics stop at them to avoid swallowing an escaped quote; configuration
+	// strings have already been decoded and their complete credentials must be marked.
+	CredentialURLPattern = regexp.MustCompile(urlStart + `]+`)
+	ansiPattern          = regexp.MustCompile(`\x1b\[[0-?]*[ -/]*[@-~]`)
 	// (?i)\b(Bearer|Basic)\s+[^\s,"'<>]+ without the \b.
 	authPattern = regexp.MustCompile(`(?i)` + bearerOrBasic + `[` + PyWS + `]+[^` + PyWS + `,"'<>]+`)
 	blockSecret = regexp.MustCompile(`(?i)^([ \t]*)(-[` + PyWS + `]+)?["']?` + secretKey + `["']?[` + PyWS + `]*:[ \t]*[|>][0-9+-]*[ \t]*(?:#[^\n]*)?$`)

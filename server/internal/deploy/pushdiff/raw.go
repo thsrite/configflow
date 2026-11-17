@@ -118,6 +118,10 @@ func rawLines(data []byte) []markedLine {
 			}
 		}
 		visit(doc, nil, false, 0)
+	} else {
+		// Never expose unmarked credentials when a future renderer emits YAML
+		// the facade cannot parse. The raw text remains available on reveal.
+		spans = append(spans, [2]int{0, len(text)})
 	}
 	sort.Slice(spans, func(i, j int) bool { return spans[i][0] < spans[j][0] })
 	lines := strings.Split(strings.TrimSuffix(text, "\n"), "\n")
