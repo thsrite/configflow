@@ -90,3 +90,20 @@ baseline: new=0 stale=0
 ```
 
 proddiff 摘要仍有两端各 30 条响应正文中的 connection diagnostic 计数（隔离网络下的既有错误响应）；没有 status=0 的单边/双边 transport failure，未作为成功响应吞掉。所有 self-check 通过，10 个既有差异保留，无新增或过期 baseline 项。服务器高负载下全量 installer 用时约 298s，不改变测试断言。
+
+## 后续：资源探测在全量并行 race 下的误超时
+
+协调者复验发现 `wide` 单跑正常（普通 0.72s、race 6.8s），但全量包并行时可能超过原 30s 墙钟限制；这不是解析器资源失控。修复分支 `go-fix-importer-bounds` 从 `go` 的 `aeff9d75` 创建，仅改测试：
+
+- 子进程启用 `RLIMIT_CPU` 硬上限，普通 3 CPU 秒、race 30 CPU 秒，按实际 user+system CPU 耗用计数，以原墙钟上限作为实际 CPU 预算，不把墙钟放宽转成计算预算放宽。
+- 墙钟只作死锁/I/O 兜底，普通 30s、race 5min（均为原上限 10 倍），允许全量包并行时等待调度。
+- 全部输入和 RSS 限额保持原规模：wide 2 万键、warnings 4 万条、large 32 MiB、deep 2 万层、递归 alias 和指数 merge；96 MiB Go 软内存限制、32 MiB 栈限制、普通/race 峰值 RSS 256/768 MiB 断言保留。CPU 硬限可终止持续展开或内存压力导致的持续 GC，成功返回仍检查实际峰值 RSS。
+- 增加故意无限计算的子进程控制，断言被 CPU 硬限以 SIGKILL 终止且不是墙钟兜底杀死；Getrusage 失败现在明确报错，日志同时输出 CPU 用量。
+
+.63 定向普通/race 均通过（1.520s / 12.520s）；wide 分别耗 440ms / 3.949s CPU，峰值约 61 / 188 MiB；无限计算控制普通/race 均在约 1 CPU 秒被终止。命令：
+
+```sh
+RT_HOST=sunbroke@192.168.0.63 rt -- bash -lc 'cd server && go test -count=1 -v ./internal/importer -run "TestAdversarialImporterResourceBounds|TestImportProbeCPULimit" && go test -race -count=1 -v ./internal/importer -run "TestAdversarialImporterResourceBounds|TestImportProbeCPULimit"'
+```
+
+.32 最终连续两次全量 `go test -race -count=1 ./...` 验证进行中，结果待补。

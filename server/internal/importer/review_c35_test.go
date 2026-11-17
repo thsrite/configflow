@@ -11,6 +11,7 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 
 	"configflow/internal/importer"
 )
@@ -48,8 +49,20 @@ func adversarialImport(name string) (string, string) {
 	}
 	return "mihomo", "invalid: ["
 }
+
+func limitImportProbeCPU(t *testing.T, budget time.Duration) {
+	t.Helper()
+	seconds := uint64(budget / time.Second)
+	// A hard CPU limit counts actual user + system CPU across the child threads,
+	// excluding time waiting to be scheduled during a parallel full-suite run.
+	if err := syscall.Setrlimit(syscall.RLIMIT_CPU, &syscall.Rlimit{Cur: seconds, Max: seconds}); err != nil {
+		t.Fatalf("set import probe CPU limit: %v", err)
+	}
+}
+
 func TestAdversarialImporterResourceBounds(t *testing.T) {
 	if mode := os.Getenv("C35_IMPORT_CHILD"); mode != "" {
+		limitImportProbeCPU(t, importProbeCPU)
 		debug.SetMemoryLimit(96 << 20)
 		debug.SetMaxStack(32 << 20)
 		client, content := adversarialImport(mode)
@@ -58,7 +71,9 @@ func TestAdversarialImporterResourceBounds(t *testing.T) {
 			_, err = importer.Build(plan, importer.Shared{}, importer.BuildOptions{})
 		}
 		var usage syscall.Rusage
-		_ = syscall.Getrusage(syscall.RUSAGE_SELF, &usage)
+		if err := syscall.Getrusage(syscall.RUSAGE_SELF, &usage); err != nil {
+			t.Fatalf("read import probe resource usage: %v", err)
+		}
 		result, _ := json.Marshal(struct {
 			Rejected bool
 			PeakKiB  int64
@@ -74,7 +89,7 @@ func TestAdversarialImporterResourceBounds(t *testing.T) {
 			cmd.Env = append(os.Environ(), "C35_IMPORT_CHILD="+name)
 			out, err := cmd.CombinedOutput()
 			if err != nil {
-				t.Fatalf("import process failed (%v), timed_out=%t: %.300s", err, ctx.Err() != nil, out)
+				t.Fatalf("import process failed (%v), wall_timeout=%t, CPU_limit=%s: %.300s", err, ctx.Err() != nil, importProbeCPU, out)
 			}
 			line, _, _ := bytes.Cut(out, []byte("\n"))
 			var result struct {
@@ -87,7 +102,30 @@ func TestAdversarialImporterResourceBounds(t *testing.T) {
 			if result.PeakKiB > importProbeRSSKiB {
 				t.Errorf("import used %d KiB RSS", result.PeakKiB)
 			}
-			t.Logf("rejected=%t peak_RSS_KiB=%d", result.Rejected, result.PeakKiB)
+			t.Logf("rejected=%t peak_RSS_KiB=%d CPU=%s", result.Rejected, result.PeakKiB, cmd.ProcessState.UserTime()+cmd.ProcessState.SystemTime())
 		})
+	}
+}
+
+func TestImportProbeCPULimit(t *testing.T) {
+	if os.Getenv("C35_IMPORT_CPU_LIMIT_CHILD") != "" {
+		limitImportProbeCPU(t, time.Second)
+		for {
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), importProbeTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestImportProbeCPULimit$")
+	cmd.Env = append(os.Environ(), "C35_IMPORT_CPU_LIMIT_CHILD=1")
+	out, err := cmd.CombinedOutput()
+	if ctx.Err() != nil {
+		t.Fatalf("CPU guard did not stop the child before wall timeout: %v", ctx.Err())
+	}
+	if err == nil || cmd.ProcessState == nil {
+		t.Fatalf("CPU guard did not kill the runaway child: %v %.300s", err, out)
+	}
+	status, ok := cmd.ProcessState.Sys().(syscall.WaitStatus)
+	if !ok || !status.Signaled() || status.Signal() != syscall.SIGKILL {
+		t.Fatalf("unexpected CPU guard exit: %v %.300s", err, out)
 	}
 }
