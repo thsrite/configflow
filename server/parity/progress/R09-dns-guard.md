@@ -1,5 +1,7 @@
 # R09 — DNS guard / IPv4 same-port forward hint
 
+Chinese hand-back: [R09-handoff-zh.md](R09-handoff-zh.md).
+
 Status: in progress, fresh Opus HR review required after `ported`. Branch `go-port-r09`, base `go@d7c481c7`.
 No push, no sub-agent, no production/lab contact; synthetic data and loopback fakes only.
 
