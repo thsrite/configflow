@@ -231,10 +231,15 @@ func (d *Ikuai) confirmAdded(ctx context.Context, added []*ikuaiAddUndo) error {
 	if d.batch != nil {
 		d.batch.rows, d.batch.stale, d.batch.addedSinceRead = rowsByID(listed), map[string]bool{}, false
 	}
-	rows := decodeRows(listed)
+	byName := map[string][]Row{}
+	for _, row := range decodeRows(listed) {
+		if tag, ok := row["tagname"].(string); ok {
+			byName[tag] = append(byName[tag], row)
+		}
+	}
 	var missing []string
 	for _, undo := range added {
-		tagged := taggedRows(rows, undo.Match["tagname"])
+		tagged := byName[undo.Match.text("tagname")]
 		if len(tagged) != 1 || !matchesRow(tagged[0], undo.Match) {
 			missing = append(missing, undo.CIDR)
 			// A complete read without the (unique) name proves nothing was created.
@@ -315,6 +320,11 @@ func (d *Ikuai) row(ctx context.Context, funcName, id string, fresh bool) (Row, 
 // unique name: iKuai refuses a duplicate name (code 3001, 4.0.314), so the
 // name identifies the new object even when its ID is never read back.
 func (d *Ikuai) add(ctx context.Context, funcName string, payload, match Row, timeout float64) (*ikuaiAddUndo, error) {
+	if tag, ok := payload["tagname"].(string); !ok || tag == "" {
+		// Without a name the undo could not find the object again (or would
+		// take a row without a name for it). Python failed here (KeyError).
+		return nil, routerError(messageIkuaiOperationFormat)
+	}
 	undo := &ikuaiAddUndo{Kind: "add_undo", Func: funcName, Match: Row{"tagname": payload["tagname"]}, Confirmed: true}
 	maps.Copy(undo.Match, match)
 	delete(d.absent, absentKey(funcName, undo.Match.text("tagname")))
@@ -350,6 +360,10 @@ func (d *Ikuai) newID(ctx context.Context, funcName string, undo *ikuaiAddUndo) 
 // revertAdd deletes an object this driver added, found by its name, only
 // while every recorded field still matches.
 func (d *Ikuai) revertAdd(ctx context.Context, op ikuaiOp) (any, error) {
+	if tag, ok := op.Match["tagname"].(string); !ok || tag == "" {
+		// Only the unique name proves ownership; never match rows without one.
+		return nil, routerError(messageIkuaiOperationFormat)
+	}
 	var rows []Row
 	if op.Func == "static_rt" && d.batch != nil {
 		snapshot, err := d.snapshot(ctx, true)
@@ -380,6 +394,17 @@ func (d *Ikuai) revertAdd(ctx context.Context, op ikuaiOp) (any, error) {
 	}
 	_, err := d.Write(ctx, op.Func, "del", param, 0)
 	return noUndo, err
+}
+
+// sameObject refuses a restore when the row now holding the record's id is
+// not the object the record was read from: its name changed, or iKuai gave
+// the id of a deleted object to a new one. The before-image is then not
+// written over it (Python wrote it to whatever row had the id).
+func sameObject(funcName string, current, record Row) error {
+	if !jsonEqual(current["tagname"], record["tagname"]) {
+		return routerError(fmt.Sprintf(messageIkuaiRestoreReplaced, funcName, current.text("id")))
+	}
+	return nil
 }
 
 // edit writes a whole rule; a lost reply carries the idempotent undo (the full old row).
@@ -530,7 +555,7 @@ func (d *Ikuai) apply(ctx context.Context, op ikuaiOp) (any, error) {
 		// no undo; the undo is now known before the delete.
 		network, ok := ikuaiNetwork(row)
 		if !ok {
-			return nil, fmt.Errorf("routers: iKuai static_rt id=%s has no readable network; not deleted", op.ID)
+			return nil, routerError(fmt.Sprintf(messageIkuaiRouteNetwork, op.ID))
 		}
 		if err := d.staticWrite(ctx, "del", Row{"id": row["id"]}, nil); err != nil {
 			return nil, err
@@ -549,6 +574,8 @@ func (d *Ikuai) apply(ctx context.Context, op ikuaiOp) (any, error) {
 		payload := IkuaiRoutePayload(op.Record, nil)
 		if op.Kind == "route_comment" {
 			payload = IkuaiRoutePayload(row, Row{"comment": op.Comment})
+		} else if err := sameObject("static_rt", row, op.Record); err != nil {
+			return nil, err
 		}
 		undo := ikuaiRecord{Kind: "route_restore", Record: row}
 		if err := d.staticWrite(ctx, "edit", payload, nil); err != nil {
@@ -593,6 +620,9 @@ func (d *Ikuai) apply(ctx context.Context, op ikuaiOp) (any, error) {
 	case "nat_restore":
 		row, err := d.row(ctx, "nat_rule", op.Record.text("id"), false)
 		if err != nil {
+			return nil, err
+		}
+		if err := sameObject("nat_rule", row, op.Record); err != nil {
 			return nil, err
 		}
 		record, err := d.rebind(ctx, op.Record)
@@ -656,7 +686,7 @@ func (d *Ikuai) deleteRule(ctx context.Context, funcName, undoKind, id string) (
 func (d *Ikuai) addRoute(ctx context.Context, cidr, gateway, comment string) (any, error) {
 	network, ok := netipx.ParseNetwork4(cidr, true)
 	if !ok {
-		return nil, fmt.Errorf("routers: iKuai route_add: invalid IPv4 network %q", cidr)
+		return nil, routerError(messageIkuaiOperationFormat)
 	}
 	address, mask := network.Addr().String(), ipv4Mask(network.Bits())
 	undo, err := d.add(ctx, "static_rt", Row{"enabled": "yes", "tagname": IkuaiTagname("rt", cidr), "ip_type": "4",
@@ -715,6 +745,9 @@ func (d *Ikuai) applyPolicy(ctx context.Context, op ikuaiOp) (any, error) {
 			}
 			payload = ikuaiPolicyPayload(row, ikuaiPolicyTarget(op.Gateway, op.Dst, op.Comment, refs, useRefs))
 		} else {
+			if err := sameObject("stream_ipport", row, op.Record); err != nil {
+				return nil, err
+			}
 			record, err := d.rebind(ctx, op.Record)
 			if err != nil {
 				return nil, err
@@ -903,7 +936,7 @@ func (d *Ikuai) rebind(ctx context.Context, record Row) (Row, error) {
 	}
 	var copied Row
 	if err := devhttp.DecodeJSON(data, &copied); err != nil || copied == nil {
-		return Row{}, nil
+		return nil, routerError(messageIkuaiOperationFormat)
 	}
 	var names []string
 	var refs []map[string]any

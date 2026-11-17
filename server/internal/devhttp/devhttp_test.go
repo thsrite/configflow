@@ -240,6 +240,43 @@ func TestOnlyIdempotentRequestsAreRetried(t *testing.T) {
 	}
 }
 
+// Credentials in the URL are sent as Basic auth when the client has none of
+// its own (requests and http.Client did; R05 review F1: calling the transport
+// directly had dropped them); explicit credentials win; nothing is sent
+// without either.
+func TestURLUserinfoIsBasicAuth(t *testing.T) {
+	var got []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = append(got, r.Header.Get("Authorization"))
+	}))
+	t.Cleanup(srv.Close)
+	withUser := strings.Replace(srv.URL, "http://", "http://proxy%20user:p%40ss@", 1)
+	basic := func(text string) string { return "Basic " + base64.StdEncoding.EncodeToString(credentials(text)) }
+	tests := []struct {
+		name string
+		cfg  Config
+		url  string
+		want string
+	}{
+		{"userinfo", Config{Cookies: true}, withUser + "/Action/login", basic("proxy user:p@ss")},
+		{"explicit wins", Config{BasicAuth: true, Username: "admin", Password: "pw"}, withUser + "/rest", basic("admin:pw")},
+		{"none", Config{}, srv.URL + "/x", ""},
+		{"non-latin-1", Config{}, strings.Replace(srv.URL, "http://", "http://%E7%94%A8:%E5%AF%86@", 1), basic("用:密")},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := New(tt.cfg)
+			defer c.Close()
+			if _, err := c.Do(context.Background(), "POST", tt.url, map[string]any{}, time.Second); err != nil {
+				t.Fatal(err)
+			}
+			if last := got[len(got)-1]; last != tt.want {
+				t.Fatalf("Authorization = %q, want %q", last, tt.want)
+			}
+		})
+	}
+}
+
 // A 3xx is returned whole even when its Location does not parse (the drivers
 // explain redirects themselves), and the cookie jar keeps a login session.
 func TestRedirectReturnedAndCookiesKept(t *testing.T) {

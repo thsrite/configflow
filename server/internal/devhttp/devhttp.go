@@ -286,6 +286,12 @@ func (c *Client) Do(ctx context.Context, method, rawURL string, body any, timeou
 	}
 	if c.auth != "" {
 		req.Header.Set("Authorization", c.auth)
+	} else if user := target.User; user != nil {
+		// Credentials in the management address (a login-protected reverse
+		// proxy in front of iKuai) are sent as Basic auth, as requests and
+		// http.Client do; explicit device credentials take precedence.
+		password, _ := user.Password()
+		req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString(credentials(user.Username()+":"+password)))
 	}
 	// The transport is used directly: redirects are never followed, and
 	// http.Client would fail on a 3xx whose Location does not parse before

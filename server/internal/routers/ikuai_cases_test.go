@@ -220,6 +220,7 @@ func ikuaiCases() []ikuaiCase {
 	cases = append(cases, ikuaiReleaseCases()...)
 	cases = append(cases, ikuaiGroupCases()...)
 	cases = append(cases, ikuaiFixedCases()...)
+	cases = append(cases, ikuaiReviewCases()...)
 	add(ikuaiCase{name: "values_decode_and_tagnames", action: "values", input: map[string]any{
 		"values": [][2]string{{"comment", "a%20b%0Ac%0ad%22%60%24%26%3B%5C%7C%27%3b%5c%2F%2f%25%2522"},
 			{"tagname", "x%0Ay%20z%2520"}, {"comment", "%E4%B8%AD%20文"}, {"", "%%20%2"}},
@@ -817,7 +818,9 @@ func ikuaiFixedCases() []ikuaiCase {
 		check: func(t *testing.T, py, golang ikuaiOutcome, pyState, goState routerfake.IkuaiState) {
 			wantFixed(t, py.Error != nil && py.Error.Class == "ValueError" && len(pyState.Tables["static_rt"]) == 0,
 				"Python crashes after deleting: %s", outcomeText(py))
-			wantFixed(t, golang.Error != nil && len(goState.Tables["static_rt"]) == 1, "Go refuses before deleting: %s", outcomeText(golang))
+			wantFixed(t, golang.Error != nil && golang.Error.Class == "RouterError" &&
+				golang.Error.Message == "iKuai static_rt 中 id=12 的目标网段无法识别，未删除，请检查" &&
+				len(goState.Tables["static_rt"]) == 1, "Go refuses before deleting: %s", outcomeText(golang))
 		}})
 	cases = append(cases, ikuaiCase{name: "fixed_write_reply_without_code_is_uncertain", action: "release",
 		state: routerfake.IkuaiState{Faults: []routerfake.IkuaiFault{{Func: "nat_rule", Action: "add", LoseReply: false,
@@ -848,6 +851,33 @@ func ikuaiFixedCases() []ikuaiCase {
 			wantFixed(t, golang.Error != nil && golang.Error.Message == "iKuai IP 分组 cf_nat_1 不存在，无法恢复规则引用" &&
 				len(goState.Calls) < len(pyState.Calls), "Go refuses without writing: %s", outcomeText(golang))
 		}})
+	return cases
+}
+
+// ikuaiReviewCases are the Python-compared cases of the O4 review of R05
+// (parity/review-r05.md).
+func ikuaiReviewCases() []ikuaiCase {
+	var cases []ikuaiCase
+	// F4: the rule a restore record names was deleted by hand and its id given
+	// to the user's new rule; Python wrote the old rule over the user's.
+	userRule := ikNAT(1, "user", addressField([]string{"198.51.100.0/24"}))
+	userRule["tagname"] = "USER_NEW"
+	ours := ikNAT(1, "cf-mihomo-nat", addressField([]string{"203.0.113.0/24"}))
+	cases = append(cases, ikuaiCase{name: "fixed_restore_refuses_replaced_object", action: "apply",
+		state: routerfake.IkuaiState{Tables: tables("nat_rule", rows{userRule})},
+		input: map[string]any{"op": map[string]any{"kind": "nat_restore", "record": ours}},
+		fixed: "Python restored a record onto whatever row held its id",
+		check: func(t *testing.T, py, golang ikuaiOutcome, pyState, goState routerfake.IkuaiState) {
+			wantFixed(t, py.Error == nil && pyState.Tables["nat_rule"][0]["tagname"] == "NAT_1",
+				"Python overwrites the user's rule: %v", pyState.Tables["nat_rule"][0])
+			wantFixed(t, golang.Error != nil && golang.Error.Message == "iKuai nat_rule 中 id=1 的对象已被替换或改名，未自动恢复，请检查" &&
+				goState.Tables["nat_rule"][0]["tagname"] == "USER_NEW", "Go refuses: %s", outcomeText(golang))
+		}})
+	// The same restore onto the unchanged object still runs (control).
+	edited := ikNAT(1, "cf-mihomo-nat", addressField([]string{"198.51.100.0/24", "203.0.113.0/24"}))
+	cases = append(cases, ikuaiCase{name: "review_restore_same_object_runs", action: "apply",
+		state: routerfake.IkuaiState{Tables: tables("nat_rule", rows{edited})},
+		input: map[string]any{"op": map[string]any{"kind": "nat_restore", "record": ours}}})
 	return cases
 }
 

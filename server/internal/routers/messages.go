@@ -116,6 +116,8 @@ const (
 	messageIkuaiRoutesMissing   = "iKuai static_rt 已提交但读不回新对象："
 	messageIkuaiAddGone         = "iKuai %s 中找不到本次新增的对象（名称 %s），可能已被手动修改或删除，请检查"
 	messageIkuaiAddChanged      = "iKuai %s 中名称为 %s 的对象已被修改，未自动删除，请检查"
+	messageIkuaiRouteNetwork    = "iKuai static_rt 中 id=%s 的目标网段无法识别，未删除，请检查"
+	messageIkuaiRestoreReplaced = "iKuai %s 中 id=%s 的对象已被替换或改名，未自动恢复，请检查"
 
 	messageIkuaiDHCPIncomplete    = "iKuai %s 配置读取不完整，无法安全下发 DHCP DNS"
 	messageIkuaiDHCPFields        = "iKuai DHCP 字段与已验证的 4.x 格式不兼容，无法保留完整配置（缺少：%s；未知：%s）"
