@@ -164,6 +164,28 @@ class Worker:
             # crossed TCP. No application state or clock is patched.
             time.sleep(.25)
             return {ident: future.done() for ident, future in self.pending.items()}
+        if operation == 'await_gate':
+            future = self.pending[values['ident']]
+            timeout = values.get('timeout', 10)
+            if not 0 < timeout <= 90:
+                raise ValueError('device-gate window must be at most90 seconds')
+            deadline = time.monotonic() + timeout
+            with self.world.condition:
+                entered = self.world.entered_gates[values['gate']]
+                while not entered.is_set():
+                    if future.done():
+                        try:
+                            response = future.result()
+                        except Exception as error:
+                            return {'state': 'transport-error', 'error_class': type(error).__name__,
+                                    'exit_code': self.process.poll() if self.process is not None else None}
+                        return {'state': 'http-completed', 'response': response}
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        return {'state': 'gate-deadline', 'seconds': timeout,
+                                'exit_code': self.process.poll() if self.process is not None else None}
+                    self.world.condition.wait(min(.1, remaining))
+                return {'state': 'device-entered'}
         if operation == 'join':
             return self.pending.pop(values['ident']).result(timeout=values.get('timeout', 80))
         if operation == 'snapshot':

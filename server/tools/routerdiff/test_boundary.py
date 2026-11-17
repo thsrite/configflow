@@ -16,6 +16,20 @@ import returns
 
 @unittest.skipUnless(os.environ.get('ROUTERDIFF_BINARY'), 'requires .32 native public Go binary')
 class BoundaryTests(unittest.TestCase):
+    def test_real_http_completion_before_device_gate_is_observed_without_an_invented_status(self):
+        with Pair(Path(os.environ['ROUTERDIFF_BINARY'])) as pair:
+            for side in pair.sides.values():
+                side.rpc('fake', action='fault', match={'peer': 'ros', 'path': '/rest/system/resource'},
+                         gate='never-entered', status=200, body={'version': '7.24.5'})
+                side.rpc('async', ident='early', method='GET', path='/api/auth/status', body=None)
+                outcome = side.rpc('await_gate', ident='early', gate='never-entered', timeout=2)
+                self.assertEqual(outcome['state'], 'http-completed')
+                self.assertEqual(outcome['response']['status'], 200)
+                content = json.loads(base64.b64decode(outcome['response']['body']))
+                self.assertTrue(content['authEnabled'])
+                self.assertEqual(side.rpc('join', ident='early'), outcome['response'])
+                self.assertEqual(side.rpc('snapshot')['fake']['transcript'], [])
+
     def test_broken_native_launch_is_retained_without_a_fake_http_response(self):
         # Deliberately broken launch, only an oracle negative: not a product
         # observation and never part of the domain findings/corpus counts.
@@ -142,7 +156,7 @@ class BoundaryTests(unittest.TestCase):
                     body={'version': '7.24.5', 'board-name': 'synthetic-gated-router'})
                 side.rpc('async', ident='probe', method='POST', path='/api/routers/r-ros/probe',
                     headers={'Authorization': 'Bearer ' + side.token}, body=None)
-                side.rpc('fake', action='wait', gate='probe-started')
+                self.assertEqual(side.rpc('await_gate', ident='probe', gate='probe-started'), {'state': 'device-entered'})
                 busy = side.request('PUT', '/api/routers/r-ros', document=[])
                 self.assertEqual(busy['status'], 409, busy['content'])
                 side.rpc('fake', action='release', gate='probe-started')

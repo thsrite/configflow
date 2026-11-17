@@ -150,7 +150,7 @@ def execute(pair, case, available, routes):
     startup_failure = getattr(pair, 'go_startup_failure', None)
     implemented = not startup_failure and not missing_routes and not pair.go.missing_effects
     prior_failed = getattr(pair.go, 'failed_prerequisites', [])
-    blocked_reference = 'Go prior mutating HTTP prerequisite failed: ' + ', '.join(prior_failed) if prior_failed else None
+    blocked_reference = 'Go prior HTTP/device-gate prerequisite failed: ' + ', '.join(prior_failed) if prior_failed else None
     for name, side in pair.sides.items():
         if name == 'go' and (not implemented or blocked_reference):
             continue
@@ -224,10 +224,31 @@ def execute(pair, case, available, routes):
             elif control.get('rpc') == 'begin':
                 values = {key: value for key, value in control.items() if key != 'rpc'}
                 ident = values['ident']
-                side.pending[ident] = {'before': logical_snapshot(side.rpc('snapshot')), 'started': time.time()}
+                side.pending[ident] = {'before': logical_snapshot(side.rpc('snapshot')), 'started': time.time(),
+                                       'request': {'method': values['method'], 'path': values['path']}}
                 values['headers'] = {'Authorization': 'Bearer ' + side.token, **values.get('headers', {})}
                 values.setdefault('body', None)
                 side.rpc('async', **values)
+            elif control.get('rpc') == 'await_gate':
+                ident = control['ident']
+                reply = side.rpc('await_gate', **{key: value for key, value in control.items() if key != 'rpc'})
+                observation = {'request': side.pending[ident]['request'], 'gate': control['gate'],
+                               'state': reply['state']}
+                if 'response' in reply:
+                    observation['response'] = response_view(decode_response(reply['response']))
+                for key in ('error_class', 'exit_code', 'seconds'):
+                    if key in reply:
+                        observation[key] = reply[key]
+                setup_observations[name].append(observation)
+                if reply['state'] != 'device-entered':
+                    if name == 'python':
+                        raise RuntimeError(case.ident + ': Python asynchronous prerequisite did not reach its device gate: '
+                                           + reply['state'])
+                    blocked_reference = 'Go asynchronous prerequisite did not reach its device gate'
+                    if not hasattr(side, 'failed_prerequisites'):
+                        side.failed_prerequisites = []
+                    side.failed_prerequisites.append(case.ident)
+                    break
             else:
                 side.rpc('fake', **control)
         if name == 'go' and (blocked_reference or startup_failure):
@@ -646,6 +667,7 @@ def findings(path, data):
                   '- Python：`' + json.dumps(result['python'], ensure_ascii=False) + '`',
                   '- Go：`' + json.dumps(result['go'], ensure_ascii=False) + '`',
                   '- Go 公开进程：`' + json.dumps(result.get('go_process'), ensure_ascii=False) + '`',
+                  '- 前序阻断原因：`' + json.dumps(result.get('blocked_reference'), ensure_ascii=False) + '`',
                   '- 前置公开 HTTP 实际响应：`' + json.dumps(result.get('setup_observations', {}), ensure_ascii=False) + '`', '',
                   '| 路径 | Python | Go | 类别 |', '|---|---|---|---|']
         for difference in result['differences']:

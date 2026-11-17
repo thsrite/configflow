@@ -1380,3 +1380,24 @@ Eligibility false-skip fixes (test infrastructure only):
 No active command. Declarations382/remaining1919 unchanged; full composition/
 final gate/final rebase pending. The shared job-lock world's sibling dependencies
 are still a separate open test-infrastructure issue, not silently accepted.
+
+Asynchronous gate prerequisite observation:
+- New worker await_gate observes the actual pending HTTP future and actual fake
+  event together. A real early HTTP completion is retained with status/headers/
+  body; a harness-client transport error or bounded gate deadline retains its
+  category/process exit without inventing HTTP500. Unknown/unregistered gates
+  remain fixture errors. No app state, clocks or Python helpers are patched.
+- execute records both prerequisite observations. Python must reach the device;
+  Go early completion/transport/deadline blocks main/dependent requests and is a
+  compared difference, never an unexplained fake wait error or parity pass.
+  Findings now include the prior blocked-reference reason. Raw bearer headers
+  are not included in async prerequisite metadata.
+- Negative controls exercise early200/503, transport exit7 and live deadline in
+  execute. Real public auth-status HTTP on BOTH servers proves early completion
+  carries its real200; the real gated RouterOS probe proves the ready path.
+  Initial negative test forgot to register its deliberately unentered gate;
+  added a real unused fake fault, keeping the worker's unknown-gate check strict.
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY="$HOME/.cache/routerdiff-build-302rx1dg-current/configflow"; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python -m unittest -v test_runner test_boundary'`
+=> Ran36 tests22.630s/OK after the negative fixture correction. No product domain
+comparison or new finding claimed by these harness checks. No active command.
+Declarations382/remaining1919 unchanged; next split job-lock dependency worlds.

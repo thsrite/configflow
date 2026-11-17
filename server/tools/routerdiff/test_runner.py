@@ -49,6 +49,52 @@ def pair(python=None, go=None):
 
 
 class RunnerTests(unittest.TestCase):
+    def test_early_async_go_response_or_transport_error_is_a_difference_not_a_fake_gate_error(self):
+        class GateSide(ObservationSide):
+            def __init__(self, outcome=None):
+                super().__init__(status=409)
+                self.token = 'synthetic-test-admin'
+                self.outcome = outcome
+
+            def rpc(self, operation, **values):
+                if operation == 'async':
+                    return {'headers_sent': True}
+                if operation == 'await_gate':
+                    return self.outcome or {'state': 'device-entered'}
+                return super().rpc(operation, **values)
+
+            def request(self, **values):
+                if self.outcome:
+                    raise AssertionError('Go main request ran after failed asynchronous prerequisite')
+                return super().request(**values)
+
+        responses = []
+        for status in (200, 503):
+            raw = json.dumps({'success': status == 200, 'message': 'actual synthetic early response'}).encode()
+            responses.append({'state': 'http-completed', 'response': {'status': status,
+                'headers': [('Content-Type', 'application/json'), ('Content-Length', str(len(raw)))],
+                'body': base64.b64encode(raw).decode()}})
+        responses += [{'state': 'transport-error', 'error_class': 'RemoteDisconnected', 'exit_code': 7},
+                      {'state': 'gate-deadline', 'seconds': 10, 'exit_code': None}]
+        case = Case('guarded', 'R010', 'PUT', '/api/routers/r-ros', 409,
+            prepare=({'rpc': 'begin', 'ident': 'probe', 'method': 'POST', 'path': '/api/routers/r-ros/probe'},
+                     {'rpc': 'await_gate', 'ident': 'probe', 'gate': 'actual-device-started'}))
+        available = {('PUT', '/api/routers/{}'), ('POST', '/api/routers/{}/probe')}
+        for outcome in responses:
+            world = pair(GateSide(), GateSide(outcome))
+            result = execute(world, case, available, load()[0])
+            self.assertEqual(result['status'], 'blocked-by-difference')
+            self.assertIsNone(result['go'])
+            self.assertTrue(result['differences'])
+            observed = result['setup_observations']['go'][0]
+            self.assertEqual(observed['state'], outcome['state'])
+            if 'response' in outcome:
+                self.assertEqual(observed['response']['status'], outcome['response']['status'])
+            else:
+                self.assertNotIn('response', observed)
+            later = Case('later', 'R010', 'PUT', '/api/routers/r-ros', 409)
+            self.assertEqual(execute(world, later, available, load()[0])['status'], 'blocked-by-difference')
+
     def test_concrete_manifest_requirement_accepts_an_actual_generic_handler(self):
         routes, _ = load()
         case = Case('generic-prerequisite', 'R002', 'GET', '/api/client-devices', 200,
