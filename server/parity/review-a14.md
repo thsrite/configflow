@@ -113,6 +113,14 @@
 - 能力探测超时 (5,5)、上传 (10,120)、final-preview (30,30)；忙重试仅限精确 busy 409。
 - HA：无 A18 时 `oxidns_ha.enabled` 或未结束的 HA 日志 → `ErrPairPublisherMissing`（500/generate 400），符合设计。
 
+## 与 C34 的交接（2026-11-18 通知）
+
+C34 负责修 A11 `Previews` 的共享提交检查（O3-6c 后在取得叶锁后、不可中断段前检查 `ctx.Err()`；同一 DATA_DIR 的
+多个实例共用 canonical keyed 叶锁）。A14 侧核对：A14 只通过 `previewsFor(m)`（每个 Manager 一个实例）调用
+`Save`/`Load`/`RequireCurrent`，以及 `deploy.LoadPreview`；单例替换期间新旧 Manager 会各有一个实例，正是 C34
+要修的双实例交错，A14 不另做私有锁。只要 Save/Load 业务 API 与冻结产物语义不变，A14 无需改动；C34 合入后 A14
+的 generate/push-by-generation 测试应在合并树上重跑。
+
 ## 第 6 节：A20 合入后的待办（本分支 rebase 后完成）
 
 1. 删除 `deploy.Wire` 中的 `routersplit.SetProfileSessions` 注册，只保留 `setupflow.Wire`。
