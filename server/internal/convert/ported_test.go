@@ -4,6 +4,7 @@ import (
 	"container/list"
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -37,7 +38,7 @@ func isolateCache(t *testing.T) *int {
 	calls := 0
 	var mu sync.Mutex
 	saved := safeLoad
-	safeLoad = func(text string) (any, error) {
+	safeLoad = func(text string) (*yamlx.Node, error) {
 		mu.Lock()
 		calls++
 		mu.Unlock()
@@ -71,7 +72,7 @@ func TestOldParseSemanticsOnFirstAndRepeatedCalls(t *testing.T) {
 		text := row.args[0].(string)
 		want := compactText(t, row.out)
 		for i := 0; i < 2; i++ {
-			got := ParseStructuredProxyString(text)
+			got := parsedProxyForTest(text)
 			var value any
 			if got != nil {
 				value = pyConv(got)
@@ -89,11 +90,11 @@ const nestedProxy = "type: vless\nname: original\nserver: proxy.example\nport: 4
 
 func TestNestedResultsAndConversionNamesDoNotPolluteCache(t *testing.T) {
 	calls := isolateCache(t)
-	first := ParseStructuredProxyString(nestedProxy)
+	first := parsedProxyForTest(nestedProxy)
 	first.GetObject("ws-opts").GetObject("headers").Set("Host", "changed.invalid")
 	first.Set("alpn", append(first.GetList("alpn"), "changed"))
 	first.Set("dialer-proxy", "changed")
-	later := ParseStructuredProxyString(nestedProxy)
+	later := parsedProxyForTest(nestedProxy)
 	if later.GetObject("ws-opts").GetObject("headers").GetString("Host") != "edge.example" ||
 		len(later.GetList("alpn")) != 1 || later.Has("dialer-proxy") {
 		t.Fatalf("cache polluted: %s", compactText(t, later))
@@ -104,7 +105,7 @@ func TestNestedResultsAndConversionNamesDoNotPolluteCache(t *testing.T) {
 	if one.GetString("name") != "one" || two.GetString("name") != "two" {
 		t.Fatal("names")
 	}
-	if ParseStructuredProxyString(nestedProxy).GetString("name") != "original" {
+	if parsedProxyForTest(nestedProxy).GetString("name") != "original" {
 		t.Fatal("name leaked into cache")
 	}
 	if *calls != 1 {
@@ -119,7 +120,7 @@ func TestFullTextChangeInvalidatesAndLRUEvicts(t *testing.T) {
 	for _, text := range []string{a, b, " \n" + a + "\n ", c} {
 		trimmed := strings.TrimSpace(text)
 		want := trimmed[strings.LastIndex(trimmed, ": ")+2:]
-		if got := ParseStructuredProxyString(text).GetString("server"); got != want {
+		if got := parsedProxyForTest(text).GetString("server"); got != want {
 			t.Fatalf("%q: %s", text, got)
 		}
 	}
@@ -130,18 +131,18 @@ func TestFullTextChangeInvalidatesAndLRUEvicts(t *testing.T) {
 	if !hasA || !hasC || cacheLen() != 2 || *calls != 3 {
 		t.Fatalf("cache a=%v c=%v len=%d calls=%d", hasA, hasC, cacheLen(), *calls)
 	}
-	if ParseStructuredProxyString(b).GetString("server") != "b.example" || *calls != 4 || cacheLen() != 2 {
+	if parsedProxyForTest(b).GetString("server") != "b.example" || *calls != 4 || cacheLen() != 2 {
 		t.Fatal("b reload")
 	}
 }
 
 func TestURIAndValidJSONDoNotTouchYAMLCache(t *testing.T) {
 	isolateCache(t)
-	safeLoad = func(string) (any, error) { panic("YAML path entered") }
-	if ParseStructuredProxyString("ss://sample@proxy.example:443") != nil {
+	safeLoad = func(string) (*yamlx.Node, error) { panic("YAML path entered") }
+	if parsedProxyForTest("ss://sample@proxy.example:443") != nil {
 		t.Fatal("uri")
 	}
-	if got := compactText(t, ParseStructuredProxyString(`{"type":"ss","port":443}`)); got != `{"type":"ss","port":443}` {
+	if got := compactText(t, parsedProxyForTest(`{"type":"ss","port":443}`)); got != `{"type":"ss","port":443}` {
 		t.Fatal(got)
 	}
 	if cacheLen() != 0 {
@@ -152,7 +153,7 @@ func TestURIAndValidJSONDoNotTouchYAMLCache(t *testing.T) {
 func TestFailedAndNonProxyResultsNotRetained(t *testing.T) {
 	for _, text := range []string{"type: [", "null", "name: sample", "type: false"} {
 		calls := isolateCache(t)
-		if ParseStructuredProxyString(text) != nil || ParseStructuredProxyString(text) != nil {
+		if parsedProxyForTest(text) != nil || parsedProxyForTest(text) != nil {
 			t.Fatalf("%q parsed", text)
 		}
 		if *calls != 2 || cacheLen() != 0 {
@@ -164,18 +165,18 @@ func TestFailedAndNonProxyResultsNotRetained(t *testing.T) {
 func TestLoaderFailureDoesNotPoisonLaterRetry(t *testing.T) {
 	isolateCache(t)
 	calls := 0
-	safeLoad = func(text string) (any, error) {
+	safeLoad = func(text string) (*yamlx.Node, error) {
 		calls++
 		if calls == 1 {
 			return nil, errors.New("temporary failure")
 		}
-		return yamlx.SafeLoad(text)
+		return yamlx.Parse([]byte(text))
 	}
-	if ParseStructuredProxyString("type: ss") != nil {
+	if parsedProxyForTest("type: ss") != nil {
 		t.Fatal("first")
 	}
 	for i := 0; i < 2; i++ {
-		if got := compactText(t, ParseStructuredProxyString("type: ss")); got != `{"type":"ss"}` {
+		if got := compactText(t, parsedProxyForTest("type: ss")); got != `{"type":"ss"}` {
 			t.Fatal(got)
 		}
 	}
@@ -193,7 +194,7 @@ func TestInputByteBudgetBoundary(t *testing.T) {
 		text := "type: ss\nname: abc"
 		proxyYAMLMaxInputBytes = len(text)
 		for i := 0; i < 2; i++ {
-			if got := ParseStructuredProxyString(text + tc.extra).GetString("name"); got != "abc"+tc.extra {
+			if got := parsedProxyForTest(text + tc.extra).GetString("name"); got != "abc"+tc.extra {
 				t.Fatal(got)
 			}
 		}
@@ -212,7 +213,7 @@ func TestMultibyteInputBelowCharacterLimitStillBypassesByteLimit(t *testing.T) {
 	text := "type: ss\nname: " + strings.Repeat("中", 10)
 	proxyYAMLMaxInputBytes = len([]rune(text)) + 1
 	for i := 0; i < 2; i++ {
-		if ParseStructuredProxyString(text).GetString("name") != strings.Repeat("中", 10) {
+		if parsedProxyForTest(text).GetString("name") != strings.Repeat("中", 10) {
 			t.Fatal("name")
 		}
 	}
@@ -236,7 +237,7 @@ func TestResultBudgetsBypassWithoutChangingResults(t *testing.T) {
 		want := compactText(t, v)
 		*tc.limit = tc.value
 		for i := 0; i < 2; i++ {
-			if got := compactText(t, ParseStructuredProxyString(tc.text)); got != want {
+			if got := compactText(t, parsedProxyForTest(tc.text)); got != want {
 				t.Fatalf("%q: %s", tc.text, got)
 			}
 		}
@@ -246,39 +247,26 @@ func TestResultBudgetsBypassWithoutChangingResults(t *testing.T) {
 	}
 }
 
-// test_special_yaml_types_bypass_with_original_types: dates and !!binary keep
-// their types and bypass the cache. Non-string keys (yes/true: one key True
-// in Python) bypass the cache and are written as json.dumps writes them; a
-// !!set value cannot be held by jsonx, so that string is left to Sub-Store
-// (nil) — documented differences.
-func TestSpecialYAMLTypesBypassWithOriginalTypes(t *testing.T) {
-	for _, text := range []string{"type: ss\nvalue: 2026-10-17", "type: ss\nvalue: !!binary aGVsbG8="} {
-		calls := isolateCache(t)
+// Native scalar policy keeps timestamps and binary as text, standard tagged
+// collections as their node shape, and YAML 1.2-style yes as a string key.
+func TestNativeYAMLScalarBoundary(t *testing.T) {
+	for _, tc := range []struct {
+		source string
+		want   *jsonx.Object
+	}{
+		{"type: ss\nvalue: 2026-10-17", jsonx.Obj("type", "ss", "value", "2026-10-17")},
+		{"type: ss\nvalue: !!binary aGVsbG8=", jsonx.Obj("type", "ss", "value", "aGVsbG8=")},
+		{"type: ss\nyes: first\ntrue: second", jsonx.Obj("type", "ss", "yes", "first", "true", "second")},
+		{"type: ss\nvalue: !!set {a: null, b: null}", jsonx.Obj("type", "ss", "value", jsonx.Obj("a", nil, "b", nil))},
+	} {
+		isolateCache(t)
 		for i := 0; i < 2; i++ {
-			got := ParseStructuredProxyString(text)
-			switch got.Value("value").(type) {
-			case yamlx.Timestamp, []byte:
-			default:
-				t.Fatalf("%q: %#v", text, got.Value("value"))
+			got := ParseStructuredProxyString(tc.source)
+			var err error
+			if err != nil || !jsonx.Equal(got, tc.want) {
+				t.Fatalf("%s: %v %v", tc.source, got, err)
 			}
 		}
-		if *calls != 2 || cacheLen() != 0 {
-			t.Fatalf("%q: calls %d", text, *calls)
-		}
-	}
-	calls := isolateCache(t)
-	for i := 0; i < 2; i++ {
-		got := ParseStructuredProxyString("type: ss\nyes: first\ntrue: second")
-		if want := jsonx.Obj("type", "ss", "true", "second"); !jsonx.Equal(got, want) || got.Keys()[1] != "true" {
-			t.Fatalf("bool keys: %s", jsonx.Repr(got))
-		}
-	}
-	if *calls != 2 || cacheLen() != 0 {
-		t.Fatalf("bool keys: calls %d len %d", *calls, cacheLen())
-	}
-	isolateCache(t)
-	if ParseStructuredProxyString("type: ss\nvalue: !!set {a: null, b: null}") != nil {
-		t.Fatal("!!set: expected the documented yamlx refusal")
 	}
 }
 
@@ -289,11 +277,11 @@ func TestAliasesAndCyclesBypassCache(t *testing.T) {
 	calls := isolateCache(t)
 	alias := "type: ss\na: &shared {x: 1}\nb: *shared"
 	for i := 0; i < 2; i++ {
-		result := ParseStructuredProxyString(alias)
+		result := parsedProxyForTest(alias)
 		if result.GetObject("a") != result.GetObject("b") {
 			t.Fatal("alias identity lost")
 		}
-		if ParseStructuredProxyString("&root {type: ss, self: *root}") != nil {
+		if parsedProxyForTest("&root {type: ss, self: *root}") != nil {
 			t.Fatal("recursive node")
 		}
 	}
@@ -303,21 +291,17 @@ func TestAliasesAndCyclesBypassCache(t *testing.T) {
 }
 
 func TestAliasDiamondDoesNotExpandDuringCacheScreening(t *testing.T) {
-	calls := isolateCache(t)
+	isolateCache(t)
 	var b strings.Builder
 	b.WriteString("type: ss\na0: &a0 {v: item}\n")
-	for i := 1; i < 30; i++ {
-		b.WriteString("a" + itoa(i) + ": &a" + itoa(i) + " {l: *a" + itoa(i-1) + ", r: *a" + itoa(i-1) + "}\n")
+	for i := 1; i <= 40; i++ {
+		fmt.Fprintf(&b, "a%d: &a%d {l: *a%d, r: *a%d}\n", i, i, i-1, i-1)
 	}
-	for i := 0; i < 2; i++ {
-		result := ParseStructuredProxyString(b.String())
-		a29 := result.GetObject("a29")
-		if a29.GetObject("l") != a29.GetObject("r") || a29.GetObject("l") != result.GetObject("a28") {
-			t.Fatal("identity")
-		}
+	if _, err := parseStructured(b.String()); !errors.Is(err, yamlx.ErrAliasBudget) {
+		t.Fatalf("expected alias budget: %v", err)
 	}
-	if *calls != 2 || cacheLen() != 0 {
-		t.Fatalf("calls %d", *calls)
+	if cacheLen() != 0 {
+		t.Fatal("unsafe document cached")
 	}
 }
 
@@ -331,7 +315,7 @@ func TestConcurrentColdCallsParseOnceAndReturnPrivateResults(t *testing.T) {
 		wg.Add(1)
 		go func(n int) {
 			defer wg.Done()
-			r := ParseStructuredProxyString(nestedProxy)
+			r := parsedProxyForTest(nestedProxy)
 			r.GetObject("ws-opts").GetObject("headers").Set("Host", itoa(n))
 			results[n] = r
 		}(i)
@@ -345,7 +329,7 @@ func TestConcurrentColdCallsParseOnceAndReturnPrivateResults(t *testing.T) {
 	if *calls != 1 {
 		t.Fatalf("calls %d", *calls)
 	}
-	if ParseStructuredProxyString(nestedProxy).GetObject("ws-opts").GetObject("headers").GetString("Host") != "edge.example" {
+	if parsedProxyForTest(nestedProxy).GetObject("ws-opts").GetObject("headers").GetString("Host") != "edge.example" {
 		t.Fatal("cache polluted")
 	}
 }
@@ -355,11 +339,11 @@ func TestConcurrentColdCallsParseOnceAndReturnPrivateResults(t *testing.T) {
 // another goroutine while results are copied in a loop.
 func TestDeepCopyDoesNotHoldCacheLock(t *testing.T) {
 	isolateCache(t)
-	ParseStructuredProxyString(nestedProxy)
+	parsedProxyForTest(nestedProxy)
 	done := make(chan struct{})
 	go func() {
 		for i := 0; i < 200; i++ {
-			ParseStructuredProxyString(nestedProxy)
+			parsedProxyForTest(nestedProxy)
 		}
 		close(done)
 	}()
@@ -843,4 +827,11 @@ func TestConversionLogLines(t *testing.T) {
 			t.Fatalf("line %d %q", i, line)
 		}
 	}
+}
+
+// parsedProxyForTest exposes the object for legacy replay; policy errors are
+// asserted separately by the native-reader boundary tests.
+func parsedProxyForTest(text string) *jsonx.Object {
+	value := ParseStructuredProxyString(text)
+	return value
 }

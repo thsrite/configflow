@@ -43,3 +43,11 @@ proxy read path; remove private constructor/resolver/null-sentinel via native
 Nodes. discovery/customPorts assigned to N7-3c. api/subscriptions/providers.go
 reads program-generated JSON; replaced that YAML parser by FromJSON+Marshal.
 Shared third cherry-pick 23196ddd (merge/scalar validation) applied as44f86041.
+
+Native proxy reader step: removed the private resolver/constructor and recursive
+null-sentinel bridge. Parse + AllPairs own policy/merge handling; a memoized Node
+boundary preserves shared containers without repeated JSON serialization. Only
+scalars cross ToJSON. Shared graphs bypass the old cache's copying path. Native
+scalar/tag/alias tests updated; compilation of convert/repo/provider/health passes
+on .32. Error-return API adaptation follows as a separate commit per coordinator.
+Fourth shared pick a7acc788 applied as476adc97 (syntax/policy/alias identities).

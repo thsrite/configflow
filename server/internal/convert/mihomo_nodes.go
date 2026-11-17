@@ -10,6 +10,7 @@ import (
 	"container/list"
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"math/big"
 	"sort"
@@ -554,11 +555,8 @@ var (
 	proxyYAMLOrder = list.New() // front = least recently used; values are *proxyYAMLEntry
 	proxyYAMLIndex = map[string]*list.Element{}
 
-	// safeLoad is yaml.safe_load (a variable so tests can count calls);
-	// a mapping with keys other than strings is a *yamlx.Mapping.
-	safeLoad = func(text string) (any, error) {
-		return yamlx.LoadWith(text, yamlx.LoadOptions{KeepNonStringKeys: true})
-	}
+	// Parse once through the shared reader policies (a seam for cache tests).
+	safeLoad = func(text string) (*yamlx.Node, error) { return yamlx.Parse([]byte(text)) }
 )
 
 type proxyYAMLEntry struct {
@@ -653,19 +651,17 @@ func cacheableProxyYAML(data any) bool {
 	return true
 }
 
-// loadProxyYAML is _load_proxy_yaml: yaml.safe_load with a bounded LRU
-// cache of ordinary proxy dicts. Cached results are private deep copies.
-// Mappings with keys other than strings (`1: a`, `yes: a`) are never cached
-// (as in Python) and come back with the keys as json.dumps writes them, the
-// closest a jsonx object gets to Python's dict (see stringKeys).
+// loadProxyYAML caches bounded ordinary proxy objects. Shared containers and
+// non-string mapping keys are never cached, so no mutable alias is copied once
+// per occurrence or accidentally shared between independent parse calls.
 func loadProxyYAML(text string) (any, error) {
 	if len(text) > proxyYAMLMaxInputBytes {
-		data, err := safeLoad(text)
+		root, err := safeLoad(text)
 		if err != nil {
 			return nil, err
 		}
-		data, _ = stringKeys(data)
-		return data, nil
+		bridge := proxyYAMLValue{containers: map[*yamlx.Node]any{}}
+		return bridge.value(root)
 	}
 	proxyYAMLMu.Lock()
 	if element, ok := proxyYAMLIndex[text]; ok {
@@ -674,14 +670,19 @@ func loadProxyYAML(text string) (any, error) {
 		proxyYAMLMu.Unlock()
 		return data.DeepCopy(), nil
 	}
-	data, err := safeLoad(text)
+	root, err := safeLoad(text)
 	if err != nil {
 		proxyYAMLMu.Unlock()
 		return nil, err
 	}
-	data, converted := stringKeys(data)
+	bridge := proxyYAMLValue{containers: map[*yamlx.Node]any{}}
+	data, err := bridge.value(root)
+	if err != nil {
+		proxyYAMLMu.Unlock()
+		return nil, err
+	}
 	object, ok := data.(*jsonx.Object)
-	if converted || !ok || object == nil || !pyTruthy(object.Value("type")) || !cacheableProxyYAML(object) {
+	if bridge.nonStringKeys || !ok || object == nil || !pyTruthy(object.Value("type")) || !cacheableProxyYAML(object) {
 		proxyYAMLMu.Unlock()
 		return data, nil
 	}
@@ -693,95 +694,6 @@ func loadProxyYAML(text string) (any, error) {
 	}
 	proxyYAMLMu.Unlock()
 	return object.DeepCopy(), nil
-}
-
-// stringKeys replaces every *yamlx.Mapping (a dict with a key that is not a
-// string) in a loaded value by a jsonx object whose keys are the text
-// json.dumps writes for them (1 -> "1", 1.5 -> "1.5", true -> "true", null ->
-// "null"); converted reports whether there was one. Without one the value is
-// returned as loaded (shared alias containers stay shared).
-func stringKeys(value any) (result any, converted bool) {
-	if !containsMapping(value, map[any]bool{}) {
-		return value, false
-	}
-	return rebuildStringKeys(value, map[any]any{}), true
-}
-
-// containerID identifies a loaded container (aliases share it).
-func containerID(value any) (any, bool) {
-	switch v := value.(type) {
-	case *jsonx.Object:
-		return v, v != nil
-	case *yamlx.Mapping:
-		return v, v != nil
-	case []any:
-		if len(v) > 0 {
-			return &v[0], true
-		}
-	}
-	return nil, false
-}
-
-func containsMapping(value any, seen map[any]bool) bool {
-	id, ok := containerID(value)
-	if !ok {
-		return false
-	}
-	if seen[id] {
-		return false
-	}
-	seen[id] = true
-	switch v := value.(type) {
-	case *yamlx.Mapping:
-		return true
-	case *jsonx.Object:
-		for _, child := range v.All() {
-			if containsMapping(child, seen) {
-				return true
-			}
-		}
-	case []any:
-		for _, child := range v {
-			if containsMapping(child, seen) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func rebuildStringKeys(value any, memo map[any]any) any {
-	id, ok := containerID(value)
-	if !ok {
-		return value
-	}
-	if done, ok := memo[id]; ok {
-		return done
-	}
-	switch v := value.(type) {
-	case *yamlx.Mapping:
-		out := jsonx.NewObject()
-		memo[id] = out
-		for _, pair := range v.Pairs {
-			out.Set(jsonKeyText(pair.Key), rebuildStringKeys(pair.Value, memo))
-		}
-		return out
-	case *jsonx.Object:
-		out := jsonx.NewObject()
-		memo[id] = out
-		for key, child := range v.All() {
-			out.Set(key, rebuildStringKeys(child, memo))
-		}
-		return out
-	case []any:
-		out := make([]any, len(v))
-		memo[id] = out
-		for i, child := range v {
-			out[i] = rebuildStringKeys(child, memo)
-		}
-		return out
-	}
-	return value
 }
 
 // jsonKeyText is the text json.dumps writes for a dict key. bytes and dates
@@ -799,8 +711,6 @@ func jsonKeyText(key any) string {
 		return "false"
 	case jsonx.Number:
 		return string(k)
-	case yamlx.Timestamp:
-		return k.String()
 	case []byte:
 		return jsonx.Repr(string(k))
 	}
@@ -815,25 +725,21 @@ func pyTruthy(v any) bool {
 	return jsonx.Truthy(v)
 }
 
-// ParseStructuredProxyString is _parse_structured_proxy_string: a JSON or
-// YAML proxy string with a "type" is parsed locally; nil means Sub-Store has
-// to convert it (URI links, base64). Keys that are not strings are written
-// as json.dumps writes them (see loadProxyYAML); a YAML document jsonx cannot
-// hold at all (a recursive alias, a non-empty !!set/!!omap/!!pairs) is nil.
+// ParseStructuredProxyString parses JSON or YAML locally. A nil result means
+// another parser may handle it. Policy and alias failures are returned instead
+// of being retried through Sub-Store.
 func ParseStructuredProxyString(proxyString string) *jsonx.Object {
-	return parseStructured(proxyString, false)
+	result, _ := parseStructured(proxyString)
+	return result
 }
 
-// InspectStructuredProxyString is _parse_structured_proxy_string for callers
-// that only read fields (raw_dialer, provider delivery, the repository's
-// import rewrite): a YAML document with a recursive alias, which Python
-// parses but jsonx cannot hold, is read by the loose loader instead, which
-// stands in a truthy one-element list for the recursive container.
+// InspectStructuredProxyString applies the same reader policies as generation.
 func InspectStructuredProxyString(proxyString string) *jsonx.Object {
-	return parseStructured(proxyString, true)
+	result, _ := parseStructured(proxyString)
+	return result
 }
 
-func parseStructured(proxyString string, loose bool) *jsonx.Object {
+func parseStructured(proxyString string) (*jsonx.Object, error) {
 	stripped := pystr.Strip(proxyString)
 	firstLine, _, _ := strings.Cut(stripped, "\n")
 	if strings.Contains(firstLine, "://") {
@@ -843,7 +749,7 @@ func parseStructured(proxyString string, loose bool) *jsonx.Object {
 			if !strings.HasSuffix(first, ":") && strings.Contains(first, "://") {
 				scheme, _, _ := strings.Cut(first, "://")
 				if !strings.Contains(scheme, " ") && !strings.Contains(scheme, ":") {
-					return nil
+					return nil, nil
 				}
 			}
 		}
@@ -851,21 +757,20 @@ func parseStructured(proxyString string, loose bool) *jsonx.Object {
 	if strings.HasPrefix(stripped, "{") {
 		if data, err := jsonx.ParseString(stripped); err == nil {
 			if object, ok := data.(*jsonx.Object); ok && object != nil && pyTruthy(object.Value("type")) {
-				return object
+				return object, nil
 			}
 		}
 	}
 	data, err := loadProxyYAML(stripped)
-	var unrepresentable *yamlx.UnrepresentableError
-	if err != nil && loose && errors.As(err, &unrepresentable) && unrepresentable.Kind == "recursive" {
-		data, err = loadProxyYAMLLoose(stripped)
+	if err != nil && !errors.Is(err, yamlx.ErrSyntax) {
+		return nil, fmt.Errorf("%s: %w", msgProxyYAMLInvalid, err)
 	}
 	if err == nil {
 		if object, ok := data.(*jsonx.Object); ok && object != nil && pyTruthy(object.Value("type")) {
-			return object
+			return object, nil
 		}
 	}
-	return nil
+	return nil, nil
 }
 
 // ---- node_conversions / convert_node_to_mihomo ----
