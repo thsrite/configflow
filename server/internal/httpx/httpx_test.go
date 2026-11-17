@@ -250,15 +250,15 @@ func TestRoutingPrefersStaticSegmentsAndMatchesPaths(t *testing.T) {
 	srv.Get("/api/agents/").WantStatus(404)
 }
 
-func TestNotFoundAndMethodNotAllowedPagesAreWerkzeugs(t *testing.T) {
+func TestNotFoundAndMethodNotAllowedAPIErrorsAreJSON(t *testing.T) {
 	srv := routerServer(t, false)
 	res := srv.Get("/api/missing").WantStatus(404)
-	if res.Header.Get("Content-Type") != "text/html; charset=utf-8" || !strings.Contains(res.Text(), "<title>404 Not Found</title>") ||
+	if res.Header.Get("Content-Type") != "application/json" || res.Object().GetBool("success") ||
 		!strings.Contains(res.Text(), httpx.DescNotFound) {
 		t.Fatal(res.Text())
 	}
 	res = srv.Get("/api/thing").WantStatus(405)
-	if res.Header.Get("Allow") != "OPTIONS, POST" || !strings.Contains(res.Text(), "405 Method Not Allowed") {
+	if res.Header.Get("Allow") != "OPTIONS, POST" || res.Object().GetString("message") != httpx.DescMethodNotAllowed {
 		t.Fatal(res.Header, res.Text())
 	}
 	res = srv.Do("OPTIONS", "/api/agents/a1/mihomo/x").WantStatus(200)
@@ -307,7 +307,7 @@ func TestErrorHandlersAndInternalErrors(t *testing.T) {
 		"usages", []any{jsonx.Obj("kind", "x")}))
 	for _, path := range []string{"/api/panic", "/api/none", "/api/fail"} {
 		res := srv.Get(path).WantStatus(500)
-		if !strings.Contains(res.Text(), "500 Internal Server Error") {
+		if res.Object().GetBool("success") || res.Object().GetString("message") != httpx.DescInternal {
 			t.Fatal(res.Text())
 		}
 	}

@@ -32,6 +32,7 @@ import (
 	"time"
 
 	"configflow/internal/auth"
+	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/jsonx"
 	"configflow/internal/logx"
 	"configflow/internal/repo"
@@ -339,11 +340,15 @@ func maskJSON(value any, mask []string) any {
 
 func compare(r request, py, gor response) []string {
 	var diffs []string
+	migrated := httpxtest.MigratedAPIError(r.method, py.status, gor.status, py.header, gor.header, py.body, gor.body)
 	if py.status != gor.status {
 		diffs = append(diffs, fmt.Sprintf("status python %d go %d", py.status, gor.status))
 	}
 	for _, name := range []string{"Content-Type", "Cache-Control", "X-ConfigFlow-Profile", "Access-Control-Allow-Origin",
 		"Access-Control-Allow-Headers", "Access-Control-Allow-Methods", "Vary", "Content-Disposition"} {
+		if migrated && name == "Content-Type" {
+			continue
+		}
 		a, b := strings.Join(py.header.Values(name), ","), strings.Join(gor.header.Values(name), ",")
 		if a != b {
 			diffs = append(diffs, fmt.Sprintf("header %s python %q go %q", name, a, b))
@@ -358,6 +363,8 @@ func compare(r request, py, gor response) []string {
 	pv, perr := jsonx.Parse(py.body)
 	gv, gerr := jsonx.Parse(gor.body)
 	switch {
+	case migrated:
+		// Step B #3/O12: the exact JSON error envelope was verified above.
 	case perr == nil && gerr == nil:
 		if !jsonx.Equal(maskJSON(pv, r.mask), maskJSON(gv, r.mask)) {
 			diffs = append(diffs, fmt.Sprintf("json python %s go %s", py.body, gor.body))

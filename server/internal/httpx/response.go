@@ -142,7 +142,7 @@ func (r *Response) SetBody(body []byte) {
 
 func (r *Response) encodeValue() {
 	if err := writeJSON(nil, r); err != nil {
-		*r = *(&HTTPError{Code: 500, Description: DescInternal}).Page()
+		*r = *(&HTTPError{Code: 500, Description: DescInternal}).response("/api/")
 	}
 }
 

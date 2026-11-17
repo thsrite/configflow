@@ -1,6 +1,7 @@
 package httpx
 
 import (
+	"encoding/json"
 	"errors"
 	"html"
 	"net/http"
@@ -9,6 +10,21 @@ import (
 	"configflow/internal/jsonx"
 	"configflow/internal/repo"
 )
+
+func (e *HTTPError) response(path string) *Response {
+	if e.Code < 400 || !(path == "/api" || strings.HasPrefix(path, "/api/")) {
+		return e.Page()
+	}
+	data, _ := json.Marshal(struct {
+		Success bool   `json:"success"`
+		Message string `json:"message"`
+	}{false, e.Description})
+	r := RawJSON(e.Code, data)
+	if len(e.Allow) > 0 {
+		r.Header().Set("Allow", strings.Join(e.Allow, ", "))
+	}
+	return r
+}
 
 // HTTPError is a werkzeug.exceptions.HTTPException: returned from a handler
 // (or from Ctx.JSON) it becomes Werkzeug's HTML error page. Error() is

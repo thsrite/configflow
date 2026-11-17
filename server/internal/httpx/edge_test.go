@@ -178,7 +178,7 @@ func TestEdgeServesTheFrontendLikeNginx(t *testing.T) {
 	check("/health", 200, "", "healthy\n")
 	check("/_configflow/listener-health", 200, "no-store", "tok123\n")
 	// static extensions under /api go to the API, not to the file system
-	if w := edgeDo(edge, "GET", "/api/missing.js", nil, nil); w.Code != 404 || !strings.Contains(w.Body.String(), "<title>404 Not Found") {
+	if w := edgeDo(edge, "GET", "/api/missing.js", nil, nil); w.Code != 404 || !strings.HasPrefix(w.Header().Get("Content-Type"), "application/json") {
 		t.Fatal(w.Code, w.Body.String())
 	}
 }

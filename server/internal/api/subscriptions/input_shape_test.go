@@ -3,6 +3,8 @@ package subscriptions_test
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -67,4 +69,25 @@ func TestConfigFindingsRejectInvalidRequestShapesWithoutEffects(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestConfigFindingsMalformedCacheFailureIsJSON(t *testing.T) {
+	env := refresh.DefaultEnv()
+	env.FetchSubscription = func(context.Context, string, string, substore.FetchOptions) (*substore.SubscriptionResult, error) {
+		return nil, errors.New("synthetic source failure")
+	}
+	t.Cleanup(refresh.SetEnv(env))
+	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(subscriptions.Register)})
+	_, err := srv.Repo.SaveShared(srv.Context(), jsonx.Obj("subscriptions", []any{jsonx.Obj("id", "s", "name", "Synthetic", "url", "https://feed.example/sub")}), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(srv.DataDir, "shared", "subscribes", "s.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(`{"subscription_id":"s","nodes":[1],"count":1}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	srv.Post("/api/subscriptions/s/fetch", httpxtest.JSON(jsonx.Obj())).WantStatus(500).WantJSON(jsonx.Obj("success", false, "message", "订阅操作失败"))
 }

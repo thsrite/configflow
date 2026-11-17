@@ -59,7 +59,7 @@ func writeFile(w http.ResponseWriter, req *http.Request, r *Response) {
 	if f.options.Path != "" {
 		file, err := os.Open(f.options.Path)
 		if err != nil {
-			page := (&HTTPError{Code: 500, Description: DescInternal}).Page()
+			page := (&HTTPError{Code: 500, Description: DescInternal}).response(req.URL.Path)
 			for key := range h {
 				h.Del(key)
 			}
@@ -68,7 +68,9 @@ func writeFile(w http.ResponseWriter, req *http.Request, r *Response) {
 			}
 			h.Set("Content-Length", strconv.Itoa(len(page.body)))
 			w.WriteHeader(500)
-			_, _ = w.Write(page.body)
+			if req.Method != "HEAD" {
+				_, _ = w.Write(page.body)
+			}
 			return
 		}
 		defer file.Close()
@@ -83,12 +85,14 @@ func writeFile(w http.ResponseWriter, req *http.Request, r *Response) {
 			h.Set("Content-Range", "bytes "+strconv.FormatInt(s, 10)+"-"+strconv.FormatInt(e-1, 10)+"/"+strconv.FormatInt(f.size, 10))
 		} else if s < 0 {
 			h.Set("Content-Range", "bytes */"+strconv.FormatInt(f.size, 10))
-			page := (&HTTPError{Code: 416, Description: "The server cannot provide the requested range."}).Page()
+			page := (&HTTPError{Code: 416, Description: "The server cannot provide the requested range."}).response(req.URL.Path)
 			h.Set("Content-Type", page.Header().Get("Content-Type"))
 			h.Set("Content-Length", strconv.Itoa(len(page.body)))
 			h.Del("Content-Disposition")
 			w.WriteHeader(416)
-			_, _ = w.Write(page.body)
+			if req.Method != "HEAD" {
+				_, _ = w.Write(page.body)
+			}
 			return
 		}
 	}

@@ -311,6 +311,18 @@ func subscriptionNodes(c *httpx.Ctx) (*httpx.Response, error) {
 	return response(200, selected), nil
 }
 func fetchSubscription(c *httpx.Ctx) (*httpx.Response, error) {
+	r, err := fetchSubscriptionData(c)
+	if err != nil {
+		var request *httpx.HTTPError
+		if errors.As(err, &request) || errors.Is(err, repo.ErrRepository) {
+			return nil, err
+		}
+		return httpx.Message(500, false, msgOperationFailed), nil
+	}
+	return r, nil
+}
+
+func fetchSubscriptionData(c *httpx.Ctx) (*httpx.Response, error) {
 	ctx := context.WithoutCancel(c.Context())
 	list, _, err := listShared(ctx)
 	if err != nil {

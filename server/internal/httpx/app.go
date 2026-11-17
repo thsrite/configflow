@@ -173,14 +173,14 @@ func (a *App) handleError(c *Ctx, err error) *Response {
 	}
 	var httpErr *HTTPError
 	if errors.As(err, &httpErr) {
-		return httpErr.Page()
+		return httpErr.response(c.path)
 	}
 	return a.internalError(c, err)
 }
 
 func (a *App) internalError(c *Ctx, err error) *Response {
 	a.Logger.Error("Exception on " + c.path + " [" + c.Request.Method + "]\n" + err.Error())
-	return (&HTTPError{Code: 500, Description: DescInternal}).Page()
+	return (&HTTPError{Code: 500, Description: DescInternal}).response(c.path)
 }
 
 // finalize runs the after-request functions in Flask's order.
@@ -201,6 +201,17 @@ func (a *App) finalize(c *Ctx, r *Response) {
 	repo.ResetConfigContext(c.ctx)
 	if err := writeJSON(c, r); err != nil {
 		*r = *a.internalError(c, err)
+	}
+	if r.Status >= 400 && (c.path == "/api" || strings.HasPrefix(c.path, "/api/")) && !strings.HasPrefix(r.Header().Get("Content-Type"), "application/json") {
+		// API failures always have a JSON envelope, including explicit HTML/text
+		// failures returned by a handler. Do not echo arbitrary diagnostic bodies.
+		failure := (&HTTPError{Code: r.Status, Description: http.StatusText(r.Status)}).response(c.path)
+		for key, values := range r.Header() {
+			if key != "Content-Type" && key != "Content-Length" {
+				failure.Header()[key] = values
+			}
+		}
+		*r = *failure
 	}
 	cors(c, r)
 }
