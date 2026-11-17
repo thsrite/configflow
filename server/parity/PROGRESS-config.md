@@ -2048,7 +2048,11 @@ Evidence: `go-port-c33`, stacked on frozen C32 (`c3e4e9ac`). Proxy-group routes 
 
 Rule-library read/create/check-content/reorder/proxy-domains and both public content aliases implemented. .64 vet + related race pass: library 2.209s, proxygroups 4.029s, server 1.424s. Tests verify atomic creation rejection, raw cache bytes, public delivery, single-field settings edits, check-only writes and display-field-safe reorder. Shared creation uses the existing repo atomic primitive.
 
-Missing / deferred: library PUT/DELETE/draft/cache/connectivity, live Flask differential for all routes, final gate and rebase after C32 merges.
+Draft GET/PUT implemented with native recursive sorted JSON revision and optimistic guards. Durable `.invalid` cache receipt blocks stable and legacy cache reads until the post-commit rename succeeds; inline local delivery regenerates or uses DB bytes. Targeted .64 vet/race PASS: library 2.180s, rules API 15.702s, rulefetch 15.104s, rules 6.741s, server 1.298s. Tests cover token stability/invalidation, competing submissions (one 200, one 409), post-commit rename failure, restored stale file and legacy fallback denial. More cache durability/fault coverage remains before hand-back.
+
+Live Flask harness compares each response and DB sections/fields/export/files. Proxy-group and library read/create cases PASS (.64 `CONFIGFLOW_DIFF=1 go test -count=1 ./internal/api/rulelibrary/difftest`, 1.447s). Initially found only D1 YAML quoting and permitted native English diagnostic changes; comparisons now narrowly cover those classes. No broad field skips.
+
+Paused for C32/R08 context-signature integration. Missing / deferred: library PUT/DELETE/cache/connectivity, remaining live differential and mapping, route table, behaviour ledger, cache directory fsync/fault coverage, final gate and rebase after C32 merges.
 
 Approved decisions: draft revision uses native sorted encoding/json (D2 one-time stale-page 409). Stage content cache before DB commit, atomically replace afterwards, invalidate stable/legacy cache on failure (Python stale-delivery bug). Bulk testing disables only matching source declarations in a fresh transaction, using PUT native DNS rebuild/parking (Python concurrency bug).
 

@@ -45,8 +45,8 @@ func RuleCacheReadPath(ctx context.Context, rule *jsonx.Object, library []any) (
 	}
 	// Python returns an existing current cache before it reads the shared
 	// document (a repository failure then does not matter).
-	if current := filepath.Join(root, rules.RuleCacheFilename(rule)); fileExists(current) {
-		return current, nil
+	if current := filepath.Join(root, rules.RuleCacheFilename(rule)); fileExists(current) || fileExists(current+".invalid") {
+		return rules.RuleCacheReadPath(rule, library, nil, root), nil
 	}
 	shared, err := r.GetShared(ctx)
 	if err != nil {

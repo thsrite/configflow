@@ -13,14 +13,17 @@ import (
 func Register(r *httpx.Router) { RegisterWithOptions(r, Options{}) }
 
 // Options injects loopback-only HTTP transport for boundary tests.
-type Options struct{ Client *rulefetch.Client }
+type Options struct {
+	Client       *rulefetch.Client
+	replaceCache func(string, string) error
+}
 
 // RegisterWithOptions installs the library routes with an injected transport.
 func RegisterWithOptions(r *httpx.Router, options Options) {
 	if options.Client == nil {
 		options.Client = rulefetch.DefaultClient
 	}
-	s := &Service{client: options.Client}
+	s := &Service{client: options.Client, replaceCache: options.replaceCache}
 	r.Handle([]string{"GET", "POST"}, "/api/rule-library", "rule_library.handle_rule_library", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
 		if c.Method() != "POST" {
 			out, err := s.List(c.Context())
@@ -34,6 +37,22 @@ func RegisterWithOptions(r *httpx.Router, options Options) {
 			return respond(nil, fail(400, msgObject))
 		}
 		out, err := s.Create(c.Context(), body)
+		return respond(out, err)
+	}))
+	r.Handle([]string{"GET", "PUT"}, "/api/rule-library/<rule_id>/draft-content", "rule_library.edit_rule_library_content", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
+		if c.Method() != "PUT" {
+			out, err := s.Draft(c.Context(), c.Param("rule_id"))
+			response, err := respond(out, err)
+			if err == nil && response != nil {
+				response.WithHeader("Cache-Control", "no-store")
+			}
+			return response, err
+		}
+		body, _, err := readBody(c)
+		if err != nil {
+			return nil, err
+		}
+		out, err := s.SaveDraft(c.Context(), c.Param("rule_id"), body)
 		return respond(out, err)
 	}))
 	r.POST("/api/rule-library/check-content", "rule_library.check_rule_content", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {

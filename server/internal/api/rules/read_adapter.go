@@ -140,15 +140,14 @@ func (s *Service) local(ctx context.Context, id, name, target, host string) (del
 			return delivery{}, &sourceFailure{Status: 502, Message: weburl.SafeErrorDetails(err), CacheRetained: boolPointer(false)}
 		}
 	} else {
-		content, err = os.ReadFile(filename)
-		if errors.Is(err, os.ErrNotExist) {
-			_, err = rulefetch.SaveRuleToLocal(ctx, source, s.client)
-			if err == nil {
-				filename, err = rulefetch.RuleCacheReadPath(ctx, source, library)
-			}
-			if err == nil {
-				content, err = os.ReadFile(filename)
-			}
+		content, err = rulefetch.ReadValidatedRuleCache(ctx, source, config)
+		if err == nil && content == nil {
+			// The committed inline declaration remains authoritative if an edit
+			// could not replace its stable cache. Never try the legacy cache again.
+			content = []byte(source.GetString("content"))
+			// Cache population is best effort here: delivery already has the
+			// committed bytes and does not need to read another file afterwards.
+			_, _ = rulefetch.SaveRuleToLocal(ctx, source, s.client)
 		}
 	}
 	if err != nil {

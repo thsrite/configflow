@@ -13,7 +13,10 @@ import (
 )
 
 // Service owns shared-library transactions and injectable external transport.
-type Service struct{ client *rulefetch.Client }
+type Service struct {
+	client       *rulefetch.Client
+	replaceCache func(string, string) error
+}
 
 // List annotates shared entries with the shared DNS engine's IP projection.
 func (s *Service) List(ctx context.Context) ([]record, error) {

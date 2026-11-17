@@ -91,6 +91,11 @@ func fileExists(path string) bool {
 // the current shared rule_library from the repository.
 func RuleCacheReadPath(rule *jsonx.Object, library, stored []any, rulesDir string) string {
 	path := filepath.Join(rulesDir, RuleCacheFilename(rule))
+	// A handwritten edit marks its stable cache before committing the DB. A
+	// failed replacement must not resurrect either the stable or legacy bytes.
+	if fileExists(path + ".invalid") {
+		return filepath.Join(path+".invalid", "unavailable")
+	}
 	if fileExists(path) {
 		return path
 	}

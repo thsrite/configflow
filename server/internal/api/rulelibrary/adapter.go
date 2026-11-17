@@ -221,3 +221,23 @@ func missingText(ids []string) string {
 	}
 	return jsonx.Repr(out)
 }
+
+func cachePath(ctx context.Context, item record) (string, error) {
+	r, err := repo.GetRepository(ctx)
+	if err != nil {
+		return "", err
+	}
+	raw, err := legacy(item)
+	if err != nil {
+		return "", err
+	}
+	return r.SharedPath("rules/" + rules.RuleCacheFilename(raw))
+}
+func usage(ctx context.Context, id string) (int, error) {
+	r, err := repo.GetRepository(ctx)
+	if err != nil {
+		return 0, err
+	}
+	refs, err := r.GetResourceUsage(ctx, "rule_library", id)
+	return len(refs), err
+}
