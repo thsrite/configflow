@@ -107,3 +107,15 @@ trip 12.216s, full suite (repo 57.280s, store 6.862s, oxidns 103.646s, installer
 coverage_regressions=0, unmapped_routes=0, new=0 stale=0 (11 existing differences).
 Final post-fix .32 commands/results, 120s fuzz targets, cleanup/rebase/clean
 worktree check still pending; do not treat this as verified.
+
+Additional explicit skeleton coverage retains unknown members at root, System,
+Shared and Profile levels through a typed edit. .32 gofmt/vet + model race PASS
+1.039s; native/legacy-constraint/log-dedup/private round-trip selection PASS
+15.885s. Final post-fix repo race already PASS 319.732s (start uptime load
+0.72/4.60/7.86). A runner-only global umask 077 caused unrelated installer/store
+file-mode assertions to fail; remove that override, retain private logs inside
+a 0700 mktemp directory. Default umask 0022 targeted reruns PASS (store 0.003s,
+installer 2.190s), no implementation or expected-mode change. One prior SSH
+session lost its remote process/result (not counted as passing); .63 subsequently
+became unreachable, so remaining checks run on .32. Final corrected-mask full
+suite, proddiff and post-fix 120s fuzz results are still pending.

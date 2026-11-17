@@ -203,7 +203,7 @@ func TestOrderedMapAndDynamic(t *testing.T) {
 }
 
 func TestSkeletonPreservesOpaqueMembersAndDiagnostics(t *testing.T) {
-	original := []byte(`{ "schema_version":5,"system":{"agents":[{"token":"synthetic","future": { "z":1.0 }}],"_revision":true},"profiles":{"second":{"id":"second","name":7,"_revision":6e1,"proxy_groups":[{"name":"example","future":{"z":1}}]},"first":{}},"shared":{"nodes":[],"_revision":0},"future": { "a":1 } }`)
+	original := []byte(`{ "schema_version":5,"system":{"agents":[{"token":"synthetic","future": { "z":1.0 }}],"_revision":true,"future_system": { "z":1.0 }},"profiles":{"second":{"id":"second","name":7,"_revision":6e1,"proxy_groups":[{"name":"example","future":{"z":1}}],"future_profile": { "n":6e1 }},"first":{}},"shared":{"nodes":[],"_revision":0,"future_shared": [ "\u4f8b",1.0 ]},"future": { "a":1 } }`)
 	document, issues, err := DecodeDocument(original)
 	if err != nil {
 		t.Fatal(err)
@@ -225,6 +225,11 @@ func TestSkeletonPreservesOpaqueMembersAndDiagnostics(t *testing.T) {
 	}
 	if !bytes.Contains(encoded, []byte(`"_revision":6e1`)) || !bytes.Contains(encoded, []byte(`"token":"synthetic","future": { "z":1.0 }`)) {
 		t.Fatal("unrelated field bytes changed")
+	}
+	for _, fragment := range []string{`"future_system": { "z":1.0 }`, `"future_shared": [ "\u4f8b",1.0 ]`, `"future_profile": { "n":6e1 }`, `"future": { "a":1 }`} {
+		if !bytes.Contains(encoded, []byte(fragment)) {
+			t.Fatal("skeleton record lost an unknown member's bytes")
+		}
 	}
 	document.Profiles[0], document.Profiles[1] = document.Profiles[1], document.Profiles[0]
 	encoded, err = Marshal(document)
