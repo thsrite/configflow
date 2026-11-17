@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode"
 )
 
 // test_log_text_neutralizes_line_breaks_and_bounds_length (backend/test_operation_logs.py).
@@ -174,5 +175,18 @@ func TestClientIPHeaderIsLatin1(t *testing.T) {
 	r.Header.Set("X-Real-IP", "\xc3\xa9\x85x")
 	if got, want := ClientIP(r), "Ã©?x"; got != want {
 		t.Errorf("ClientIP = %q, want %q", got, want)
+	}
+}
+
+// Unicode15 Cf additions are verified against the standard's UnicodeData.txt;
+// using current Go tables must never admit format controls as printable text.
+func TestUnicode15FormatControlsRemainInvisible(t *testing.T) {
+	for r := rune(0x13439); r <= 0x1343F; r++ {
+		if !unicode.Is(unicode.Cf, r) {
+			t.Fatalf("%U is not Cf in Unicode %s", r, unicode.Version)
+		}
+		if IsPrintable(r) || LogText("before"+string(r)+"after", 120) != "before?after" {
+			t.Fatalf("%U admitted a format control", r)
+		}
 	}
 }

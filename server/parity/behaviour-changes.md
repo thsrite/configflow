@@ -715,3 +715,11 @@ Python's default 4300-digit integer input limit still applies on an emergency
 rollback: such a new synthetic oversized-integer JSONL point is skipped by the
 Python reader. No real caller input or production snapshot contained these values;
 this is the explicitly accepted native JSON range, not a common stored-file rewrite.
+
+N8-7 Unicode log filtering (PORTING's accepted “CPython 专有 Unicode 范围” rule):
+Go retains newly assigned printable U+31350 (CJK Ext-H) and U+11F00 (Kawi), where
+Python3.11's Unicode14 table removed them. The two original golden rows remain as
+Python evidence; the new full logfields are asserted explicitly and other rows
+remain strict. Unicode15 Cf controls U+13439–U+1343F are still excluded, as are
+existing controls/newlines/bidi overrides. See the authoritative
+[Unicode15 category data](https://www.unicode.org/Public/15.0.0/ucd/UnicodeData.txt).

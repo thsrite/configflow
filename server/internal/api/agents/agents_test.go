@@ -509,11 +509,34 @@ func TestRegistrationLogFieldsMatchPythonGolden(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// N8-7: retain Unicode14 evidence; explicitly accept two newly assigned
+	// printable characters under PORTING's native Unicode-range decision.
+	changed := 0
 	for i, item := range cases.([]any) {
 		c := item.(*jsonx.Object)
-		if got := apiagents.RegistrationLogFields(c.GetObject("input")); !jsonx.Equal(got, c.Value("output")) {
-			t.Errorf("%d: %v → %v, want %v", i, c.GetObject("input").Value("name"), got, c.Value("output"))
+		expected := c.Value("output")
+		switch c.GetObject("input").GetString("name") {
+		case "ext-h \U00031350":
+			old := jsonx.Obj("name", "ext-h ", "host", "ext-h ", "port", "ext-h ", "service_type", "ext-h ", "version", "ext-h ")
+			if !jsonx.Equal(expected, old) {
+				t.Fatal("Unicode14 Ext-H golden changed")
+			}
+			expected = jsonx.Obj("name", "ext-h \U00031350", "host", "ext-h \U00031350", "port", "ext-h \U00031350", "service_type", "ext-h \U00031350", "version", "ext-h \U00031350")
+			changed++
+		case "kawi \U00011F00":
+			old := jsonx.Obj("name", "kawi ", "host", "kawi ", "port", "kawi ", "service_type", "kawi ", "version", "kawi ")
+			if !jsonx.Equal(expected, old) {
+				t.Fatal("Unicode14 Kawi golden changed")
+			}
+			expected = jsonx.Obj("name", "kawi \U00011F00", "host", "kawi \U00011F00", "port", "kawi \U00011F00", "service_type", "kawi \U00011F00", "version", "kawi \U00011F00")
+			changed++
 		}
+		if got := apiagents.RegistrationLogFields(c.GetObject("input")); !jsonx.Equal(got, expected) {
+			t.Errorf("%d: %v → %v, want %v", i, c.GetObject("input").Value("name"), got, expected)
+		}
+	}
+	if changed != 2 {
+		t.Fatalf("native Unicode rows=%d, want exactly2", changed)
 	}
 }
 
@@ -547,5 +570,19 @@ func TestHeartbeatKeepsThePublicationHistory(t *testing.T) {
 		persisted.Value("version") != "1.8.54-go" || persisted.GetObject("deployments").Len() != 5 ||
 		persisted.GetObject("ipv6_verifications").GetObject("release-4").Value("status") != "ok" {
 		t.Fatalf("stored %v", persisted)
+	}
+}
+
+// Unicode15 added Egyptian format controls U+13439–U+1343F (Cf), not
+// printable letters. The registration log still truncates at each control.
+// Source: https://www.unicode.org/Public/15.0.0/ucd/UnicodeData.txt
+func TestRegistrationLogFieldsRejectUnicode15FormatControls(t *testing.T) {
+	expected := jsonx.Obj("name", "safe", "host", "safe", "port", "safe", "service_type", "safe", "version", "safe")
+	for r := rune(0x13439); r <= 0x1343F; r++ {
+		text := "safe" + string(r) + "forged"
+		input := jsonx.Obj("name", text, "host", text, "port", text, "service_type", text, "version", text, "token", "synthetic-secret")
+		if got := apiagents.RegistrationLogFields(input); !jsonx.Equal(got, expected) {
+			t.Fatalf("%U: %v", r, got)
+		}
 	}
 }
