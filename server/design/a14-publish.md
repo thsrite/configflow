@@ -862,3 +862,9 @@ non-finished, submitted task every 30 s: stored states stay current without a br
 writing Agent records concurrently with UI polls and one more Agent request per unfinished task (O12 entry).
 
 **Decided 2026-11-17 by the coordinator (behaviour-preserving default): D-A14-1 → keep Python's poll-driven status advancement; no server-side reconciliation loop.**
+
+**Additions from `a16-a18-sync-follow-ha.md` 1.3 (2026-11-17, additive):** export `RunDetached`, `WriteFileAtomic`,
+`Refusal` (counted by `IsPreparationFailure`), `Source` raw accessors and copy-on-write setters, `CanonicalDigest`;
+`lifecycle.Tracked`. If the maintainer takes D-A17-1 A, `SettingsDigest` uses `CanonicalDigest` (Python's
+`json.dumps(sort_keys=True, ensure_ascii=False)` text) instead of the Go-native encoding of 2.3, and the
+"`settings_digest` differs once" bullet of 7.1 no longer applies.

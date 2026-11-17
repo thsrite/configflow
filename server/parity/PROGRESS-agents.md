@@ -870,6 +870,8 @@ Evidence: no Go code. Port `_public_agent` (A03 lines) here. Extend the existing
 
 **Status: `missing`** · HR · prereqs: A11, A13, A01, C13 (`sub_store_client.get_subscription_proxies_yaml`), C17 (`provider_delivery.prepare/commit_provider_bundle`, `commit_cache_updates`), C18/C19/C20/C21/C22 (generators via `config_generator`), C12 (`node_conversions`), C23 (`oxidns_validation.require_valid_document`), C26 (`oxidns_device_policy.revision`), A19 (`gateway_settings`), routers (`router_split` in `_prepare_transactional_content`) · Go: internal/deploy, api/agents
 
+**Contract additions from `server/design/a16-a18-sync-follow-ha.md` 1.3** (additive, agreed): export `deploy.RunDetached`, `deploy.WriteFileAtomic`, `deploy.Refusal` (counted by `IsPreparationFailure`), `deploy.Source` raw accessors/copy-on-write setters, and `deploy.CanonicalDigest` (decision D-A17-1, which would replace the Go-native `SettingsDigest` encoding); `lifecycle.Tracked`. Whichever of A14-x / A16-0 lands later adds them.
+
 **Design:** `server/design/a14-publish.md` (Opus, 2026-11-17) covers the whole chain A11→A14 — package map, types, Agent protocol, state machine, locks, failure table, steps A14-1…A14-4, acceptance. Port to it; contract changes need the designer's or coordinator's agreement.
 
 Files:
@@ -957,6 +959,8 @@ Review commands (private detached worktree of HEAD because the shared tree did n
 
 **Status: `missing`** · HR · prereqs: A07 (`mihomo_panel.call`, `oxidns_rule_update`), A06 (`MonitorError`), A14 (`rule_sync_store`, transactional content), A11, C18/C22 (generators, `get_oxidns_ruleset_downloads`), C25 (`oxidns_common_routing._analyze/_references/apply_routing`, `dns_watchdog`), C27 (`rule_dns.profile_agents` and projection helpers), C05 (`OxidnsSettingsError`), C14 (`is_internal_rule_url`) · Go: internal/agents/rulesync (new), api/agents
 
+**Design:** `server/design/a16-a18-sync-follow-ha.md` (Opus, 2026-11-17) covers A16, A17 and A18 — package map, stored types, Agent protocol, loops, locks, failure/rollback, steps A16-0…A18-4, acceptance (fake pair, Python transcript differential, F1 closure, L3). Port to it; contract changes need the designer's or coordinator's agreement. Open maintainer decisions: D-A17-1, D-A18-1.
+
 Files:
 - `backend/agents/rule_sync.py` (643)
 - `backend/agents/rule_sync_projection.py` (608)
@@ -975,6 +979,8 @@ Hooks to provide: `agents.SetRuleSyncRow` (`routes/tasks._agent_rows` rule-sync 
 
 **Status: `missing`** · HR · prereqs: A14 (`_prepare_transactional_content`), A11, A02 (IdleRounds, events), C26 (`oxidns_editor.prepare_editor`), C22 (`load_native_yaml`, `generate_oxidns_config`) · Go: internal/agents/dnsfollow (new), api/agents
 
+**Design:** `server/design/a16-a18-sync-follow-ha.md` (Opus, 2026-11-17) covers A16, A17 and A18 — package map, stored types, Agent protocol, loops, locks, failure/rollback, steps A16-0…A18-4, acceptance (fake pair, Python transcript differential, F1 closure, L3). Port to it; contract changes need the designer's or coordinator's agreement. Open maintainer decisions: D-A17-1, D-A18-1.
+
 Files:
 - `backend/agents/dns_follow.py` (730)
 - `backend/routes/agents.py` (30) — lines 162–191
@@ -990,6 +996,8 @@ Hooks to provide: `agents.SetDNSFollowRow` (dns_follow row; with A16's row this 
 ## A18 — DNS HA
 
 **Status: `missing`** · HR · prereqs: A16 (`prepare_candidate`, `settings_for`, `fetch_snapshot`), A17, A14, A11, C26 (`prepare_editor`), C22 (`load_native_yaml`), routers (`routers/store.routers_of`) · Go: internal/agents/dnsha (new), api/agents
+
+**Design:** `server/design/a16-a18-sync-follow-ha.md` (Opus, 2026-11-17) covers A16, A17 and A18 — package map, stored types, Agent protocol, loops, locks, failure/rollback, steps A16-0…A18-4, acceptance (fake pair, Python transcript differential, F1 closure, L3). Port to it; contract changes need the designer's or coordinator's agreement. Open maintainer decisions: D-A17-1, D-A18-1.
 
 Files:
 - `backend/agents/oxidns_ha.py` (625)
