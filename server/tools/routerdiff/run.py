@@ -35,6 +35,7 @@ import policy_invalid
 import split
 import split_onboarding
 import split_state
+import forwarding_guards
 from compare import differences, logical_snapshot, response_view, timestamp
 from harness import Pair, RemoteError, observed_startup_exit
 from harness import decode_response
@@ -774,6 +775,7 @@ def main():
     worlds += split.worlds()
     worlds += split_onboarding.worlds()
     worlds += split_state.worlds()
+    worlds += forwarding_guards.worlds()
     if args.world or args.world_prefix:
         names = {item[0] for item in worlds}
         unknown = set(args.world or ()) - names

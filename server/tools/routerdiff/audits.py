@@ -520,6 +520,149 @@ def declared():
             'Full response/schema, no-store and complete before/after storage/device equality are retained.',
             tuple(('split-state-' + label, 'G23/editor-state-' + label, 200)
                   for label in (*labels, 'valid-full-tun')))
+    forwarding_sources = ('backend/agents/linux_gateway.py:53', 'backend/agents/linux_gateway.py:335',
+                          'backend/agents/linux_gateway.py:654', 'backend/routes/routers.py:130')
+    bad_versions = ('null', 'false', 'number', 'array', 'object', 'empty', 'text', 'no-patch', 'four-parts',
+                    'prefix', 'suffix', 'extra-suffix', 'leading-space', 'trailing-space', 'newline', 'fullwidth', 'negative')
+    old_versions = ('old', 'old-major', 'old-minor')
+    accepted_versions = ('aio-1.8.40', 'standalone-1.8.41', 'suffixless', 'leading-zeroes', 'new-major', 'new-minor')
+    version_ok = tuple(('forwarding-version-accepted-' + label, 'R026/forwarding-version-accepted-' + label, 200)
+                       for label in accepted_versions)
+    version_bad = tuple(('forwarding-version-' + label, route + '/forwarding-guard-version-' + label, status)
+                        for label in bad_versions for route, status in (('R025', 200), ('R026', 409)))
+    audits['H0001'] = Audit(forwarding_sources,
+        'Real imported registry values plus an authenticated empty heartbeat reach the version gate online. '
+        'Five nonstring JSON types, empty/text/part count/prefix/suffix/space/newline/fullwidth/negative '
+        'forms refuse without any Agent request on both GET/POST. Native/public valid version controls '
+        'include exact forwarding/standalone boundaries, suffixless, leading zeroes and newer major/minor. '
+        'Does not claim the later exception catch: H0002/H0003 remain separate reachability work.',
+        version_bad + version_ok)
+    layout_bad = tuple(('forwarding-layout-' + label, 'R026/forwarding-layout-' + label, 409)
+                       for label in ('missing-status', 'unsupported-layout'))
+    audits['H0004'] = Audit(forwarding_sources,
+        'Old1.8.40 actual status read has either no forwarding object or supported=false on a supported '
+        'platform: exact standalone409 and zero forwarding POST. AIO1.8.40 reads once then persists; '
+        '1.8.41/newer short-circuits the status read and really persists, proving both guard operands.',
+        layout_bad + version_ok)
+    basic_guards = (('H0018', 'missing', 404), ('H0019', 'wrong-service', 400),
+                    ('H0020', 'docker', 409), ('H0021', 'offline', 409))
+    for ident, label, status in basic_guards:
+        audits[ident] = Audit(forwarding_sources,
+            'Current-profile router link authorizes the named Agent before the real persist precheck. '
+            'Registry absence, valid OxiDNS service, Docker and genuinely offline/no-heartbeat cases '
+            'return their exact status/code/message and preserve all state with zero Agent requests. '
+            'The corresponding GET has a different precheck and is tracked under R025-F10, not '
+            'mislabelled as reaching this persist helper.',
+            (('forwarding-guard-' + label, 'R026/forwarding-guard-' + label, status),))
+    version_post_bad = tuple(item for item in version_bad if item[1].startswith('R026/'))
+    version_old = tuple(('forwarding-version-' + label, 'R026/forwarding-guard-version-' + label, 409)
+                        for label in old_versions)
+    audits['H0022'] = Audit(forwarding_sources,
+        'Actual persist rejects all malformed versions plus older major/minor/patch versions after '
+        'a real fresh heartbeat. Six actual persisted successes bind the numerical/format boundaries; '
+        'GET responses are not falsely claimed as executing persist_gateway_forwarding.',
+        version_post_bad + version_old + version_ok)
+    audits['R025-F10'] = Audit(forwarding_sources,
+        'Each missing/service/Docker/offline/version precheck is an ordinary200 entry issue with exact '
+        'message, cannot persist and no Agent I/O. Never turn one entry issue into a handler failure.',
+        tuple(('forwarding-guard-' + label, 'R025/forwarding-guard-' + label, 200) for _, label, _ in basic_guards)
+        + tuple(('forwarding-version-' + label, 'R025/forwarding-guard-version-' + label, 200)
+                for label in (*bad_versions, *old_versions)))
+    audits['R026-F12'] = Audit(forwarding_sources,
+        'All persist preconditions through actual HTTP: registry absence/service/Docker/offline, every '
+        'malformed/old version and both old-layout refusals. The current-profile link is present and '
+        'authentication/body guards are valid, so an earlier authorization failure cannot satisfy this.',
+        tuple(('forwarding-guard-' + label, 'R026/forwarding-guard-' + label, status) for _, label, status in basic_guards)
+        + version_post_bad + version_old + layout_bad)
+    transport_sources = ('backend/agents/linux_gateway.py:380', 'backend/agents/linux_gateway.py:535',
+                         'backend/agents/linux_gateway.py:638', 'backend/routes/routers.py:130')
+    def errors(route, labels):
+        return tuple(('forwarding-failures', route + '/agent-' + label, 200 if route == 'R025' else status)
+                     for label, status in labels)
+    size_read = tuple(('forwarding-failures', 'R025/response-byte-limit-' + str(length), 200)
+                      for length in (524288, 524289))
+    size_post = tuple(('forwarding-failures', 'R026/response-byte-limit-' + str(length) + '-' + str(applied), status)
+                      for length, applied, status in ((524288, True, 200), (524289, False, 502), (524289, True, 502)))
+    size_errors = size_read[1:] + size_post[1:]
+    for ident, required in (('H0005', size_read + size_post), ('H0006', size_errors), ('H0007', size_errors)):
+        audits[ident] = Audit(transport_sources,
+            'Actual streamed Agent JSON at524288 bytes is accepted;524289 raises the bridge MonitorError. '
+            'GET and POST limits are checked; overlarge forwarding reply includes not-applied and '
+            'really-persisted variants, one POST only and subsequent public GET confirms actual state. '
+            'The inner MonitorError rethrow is exercised by real streamed oversize responses.', required)
+    transport_errors = (('forwarding-failures', 'R025/agent-lost-response', 200),
+        ('forwarding-uncertain', 'R026/lost-reply-not-applied', 502),
+        ('forwarding-uncertain', 'R026/lost-reply-applied', 502),
+        ('forwarding-uncertain', 'R025-26/real-timeout-status', 200),
+        ('forwarding-uncertain', 'R025-26/real-timeout-forwarding', 502))
+    for ident in ('H0008', 'H0009'):
+        audits[ident] = Audit(transport_sources,
+            'Real disconnected TCP replies and45-second requests timeouts on status and forwarding. '
+            'Write uncertainty is tested before/after actual persistence and confirmed with own public '
+            'GET; no automatic repeat POST. The apply/remove texts belong to other Agent endpoints, '
+            'outside the matrix K01 forwarding-only scope; no synthetic Python exception is raised.', transport_errors)
+    missing_api = errors('R025', (('missing-api', 200),)) + errors('R026', (('missing-api', 409),))
+    auth_errors = errors('R025', tuple(('auth-' + str(code), 200) for code in (401, 403)))
+    auth_errors += errors('R026', tuple(('auth-' + str(code), 502) for code in (401, 403)))
+    audits['H0010'] = Audit(transport_sources, 'Real404 Agent API response, GET entry upgrade and POST409 with operation-specific minimum.', missing_api)
+    audits['H0011'] = Audit(transport_sources, 'Both real401 and403 Agent replies map to exact authentication errors; all other healthy entries survive.', auth_errors)
+    parse_labels = ('invalid-json', 'invalid-utf8', *(('redirect-' + str(code)) for code in (301, 302, 303, 307, 308)))
+    parse_errors = errors('R025', tuple((label, 200) for label in parse_labels))
+    parse_errors += errors('R026', tuple((label, 502) for label in parse_labels))
+    for ident in ('H0012', 'H0013'):
+        audits[ident] = Audit(transport_sources,
+            'Actual malformed JSON, undecodable UTF-8 bytes and five real redirect statuses with HTML. '
+            'Redirect Location points only to the isolated Agent fake; explicit zero requests to that '
+            'path proves no following. Real json.loads errors are caught, not mocked.', parse_errors)
+    object_errors = errors('R025', tuple(('not-object-' + str(index), 200) for index in range(5)))
+    object_errors += errors('R026', tuple(('shape-' + str(index), 502) for index in range(5)))
+    audits['H0014'] = Audit(transport_sources, 'All nonobject JSON root types from real Agent HTTP: array/null/bool/number/string, both operations.', object_errors)
+    message_labels = ('absent', 'nontext-number', 'nontext-true', 'nontext-array', 'nontext-object',
+                      'fallback-null', 'fallback-false', 'fallback-empty', 'fallback-array', 'fallback-object',
+                      'priority', 'unicode-limit')
+    http_read = tuple(('http-' + str(code), 200) for code in (400, 409, 422, 500, 502, 503))
+    http_post = tuple(('http-' + str(code), code if code in (400, 409, 422) else 502) for code in (400, 409, 422, 500, 503))
+    message_read = tuple(('message-' + label, 200) for label in message_labels)
+    message_post = tuple(('message-' + label, 502) for label in message_labels)
+    http_errors = errors('R025', http_read + (('unicode-error-limit', 200),) + message_read)
+    http_errors += errors('R026', http_post + message_post)
+    audits['H0015'] = Audit(transport_sources,
+        'HTTP error status mapping400/409/422 vs502, absent/nontext message fallback, falsy message '
+        'falling back to error, message priority and1000-Unicode-codepoint clipping; actual Agent HTTP '
+        'bodies are processed by Python. Error text is exact and healthy second gateway survives.', http_errors)
+    filter_required = tuple(('forwarding-failures', 'R025/filter-dropped-' + str(index), 200) for index in range(11))
+    filter_required += tuple(('forwarding-failures', 'R025/filter-state-' + state, 200)
+                             for state in ('ok', 'may_drop', 'unknown', 'not_applicable'))
+    filter_required += tuple(('forwarding-failures', 'R025/' + label, 200)
+                             for label in ('filter-safe-display-shape', 'filter-exact-types'))
+    filter_required += tuple(('forwarding-failures', 'R025/filter-bug-' + label, 500)
+                             for label in ('state-array', 'state-object', 'source-kind-array', 'source-kind-object',
+                                           'remedy-source-array', 'remedy-source-object'))
+    audits['H0016'] = Audit(transport_sources,
+        'Outer nonobject/invalid state types, every allowed state, explicit safe output caps/type/command '
+        'filter controls. Unhashable state/source-kind/remedy-source arrays AND objects are real scoped '
+        'traceback-confirmed Python bugs; matching a native crash never passes parity. This audit does '
+        'not claim real host firewall semantics, which remain L5.', filter_required)
+    read_error_requirements = (errors('R025', http_read + (('unicode-error-limit', 200),) + message_read)
+        + errors('R025', tuple((label, 200) for label in parse_labels))
+        + errors('R025', tuple(('not-object-' + str(index), 200) for index in range(5)))
+        + errors('R025', (('auth-401', 200), ('auth-403', 200), ('missing-api', 200), ('lost-response', 200)))
+        + size_read[1:] + transport_errors[3:4])
+    for ident in ('H0017', 'R025-F11'):
+        audits[ident] = Audit(transport_sources,
+            'All public read error families, including streamed size and real timeout, retain healthy '
+            'gateway entries and turn the affected entry into exact error/upgrade state. Four forwarding '
+            'object layout issues and unhashable sanitizer crashes are separate branches, not falsely '
+            'labelled as caught MonitorError.', read_error_requirements)
+    post_error_requirements = errors('R026', http_post + message_post)
+    post_error_requirements += errors('R026', tuple((label, 502) for label in parse_labels))
+    post_error_requirements += errors('R026', tuple(('shape-' + str(index), 502) for index in range(5)))
+    post_error_requirements += errors('R026', (('auth-401', 502), ('auth-403', 502), ('missing-api', 409)))
+    audits['R026-F13'] = Audit(transport_sources,
+        'Every actual forwarding device-response failure family plus exact byte-boundary control, '
+        'real45-second timeout and both lost-reply outcomes. Full device/DB/file state and one POST '
+        'only are compared; no proxy follows a redirect and no generic500 is accepted.',
+        post_error_requirements + size_post + transport_errors[1:3] + transport_errors[4:5])
     return audits
 
 

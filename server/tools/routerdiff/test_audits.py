@@ -17,9 +17,38 @@ import policy_invalid
 import split
 import split_onboarding
 import split_state
+import gateway
+import forwarding_guards
 
 
 class AuditTests(unittest.TestCase):
+    def test_forwarding_guards_and_transport_audits_require_all_real_callers(self):
+        actual = {(world, case.ident): case for world, _, groups in forwarding_guards.worlds()
+                  for group in groups for case in group()}
+        for group in (gateway.reads, gateway.writes, gateway.response_limits,
+                      gateway.display_filter, gateway.malformed_filter_bug):
+            actual.update({('forwarding-failures', case.ident): case for case in group()})
+        for group in (gateway.uncertain, gateway.timeouts):
+            actual.update({('forwarding-uncertain', case.ident): case for case in group()})
+        counts = {'H0001': 40, 'H0004': 8, 'H0005': 5, 'H0006': 3, 'H0007': 3, 'H0008': 5, 'H0009': 5,
+                  'H0010': 2, 'H0011': 4, 'H0012': 14, 'H0013': 14, 'H0014': 10, 'H0015': 36,
+                  'H0016': 23, 'H0017': 37, 'H0018': 1, 'H0019': 1, 'H0020': 1, 'H0021': 1, 'H0022': 26,
+                  'R025-F10': 24, 'R025-F11': 37, 'R026-F12': 26, 'R026-F13': 38}
+        audits = declared()
+        for ident, count in counts.items():
+            self.assertEqual(len(audits[ident].requirements), count, ident)
+            for world, name, status in audits[ident].requirements:
+                with self.subTest(entry=ident, world=world, case=name):
+                    case = actual[world, name]
+                    self.assertIn(ident, case.entries)
+                    self.assertEqual(case.expected, status)
+            evidence = [{'world': world, 'case': name, 'entries': [ident], 'python': {'status': status},
+                         'status': 'go-unimplemented'} for world, name, status in audits[ident].requirements]
+            self.assertEqual(evaluate(evidence)[ident]['audit'], 'variants-audited')
+            self.assertEqual(evaluate(evidence[:-1])[ident]['audit'], 'variants-pending')
+        self.assertNotIn('H0002', audits)
+        self.assertNotIn('H0003', audits)
+
     def test_split_preparation_and_state_guards_require_their_real_distinct_callers(self):
         audits = declared()
         actual = {(world, case.ident): case
@@ -60,7 +89,7 @@ class AuditTests(unittest.TestCase):
 
     def test_auth_audits_require_every_explicit_real_reference_variant(self):
         audits = declared()
-        self.assertEqual(len(audits), 26 * 7 + 25 * 3 + 5 + 14 + 12 + 5 + 8 + 23 + 1 + 5 + 4 + 6 + 4 + 4 + 10)
+        self.assertEqual(len(audits), 26 * 7 + 25 * 3 + 5 + 14 + 12 + 5 + 8 + 23 + 1 + 5 + 4 + 6 + 4 + 4 + 10 + 24)
         self.assertFalse(set(audits) - set(load()[1]))
         self.assertEqual({value['audit'] for value in evaluate([]).values()}, {'variants-pending'})
         ident = 'R005-F01'

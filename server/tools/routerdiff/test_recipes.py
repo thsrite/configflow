@@ -27,11 +27,24 @@ import policy_invalid
 import split
 import split_onboarding
 import split_state
+import forwarding_guards
 from inventory import load
 from bugs import BUGS
 
 
 class RecipeTests(unittest.TestCase):
+    def test_forwarding_guards_use_linked_records_and_real_heartbeat_before_version_checks(self):
+        _, entries = load()
+        seen = set()
+        for world, options, groups in forwarding_guards.worlds():
+            self.assertEqual(options['alpha']['routers']['items'][0]['proxy_gateway_agent_id'], 'm-a')
+            for group in groups:
+                for case in group():
+                    self.assertNotIn(case.ident, seen)
+                    seen.add(case.ident)
+                    self.assertTrue(set(case.entries) <= set(entries))
+                    if world.startswith('forwarding-version-') or world.startswith('forwarding-layout-'):
+                        self.assertTrue(any(control.get('path') == '/api/agents/m-a/heartbeat' for control in case.prepare))
     def test_unique_variants_and_real_design_references(self):
         routes, entries = load()
         seen = set()

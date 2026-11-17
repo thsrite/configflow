@@ -141,3 +141,20 @@ native-side 批次71条请求、6条显式审计通过；Go领域路由仍未注
 - 仅把主监听 tag 改为 client_dns_listener 的独立对照可读、可修改策略并保留旁路字段；没有修改设备 fake。
 - Go 应允许该有效旁路并保留 side_entries 提示；修复结果单列复核，不自动算差分通过。
 
+# 同类补充：过滤信息中的对象值
+
+本节来自独立的169条 forwarding 增量，不改动前面最后一次完整组合的统计。
+严重程度 medium；建议负责模块 A20（网关 Agent 协议）与 R15（路由 HTTP）。
+
+- 用例 `forwarding-failures:R025/filter-bug-source-kind-object`（H0016、R025-F11）。
+  请求 `GET /api/routers/gateway-forwarding`；合成 Agent 的
+  `forward_filter.sources[0].kind` 为对象。Python 实际返回 HTML500，局部日志
+  确认 `TypeError: unhashable type: 'dict'`，使另一个正常网关也无法显示。
+  Go：公开清单未注册 R025，Go尚未实现，尚无对应 HTTP 结果。
+- 用例 `forwarding-failures:R025/filter-bug-remedy-source-object`（H0016、R025-F11）。
+  同一 GET；合成 Agent 的 `forward_filter.remedies[0].source` 为对象。
+  Python 实际 HTML500，同样由局部 traceback 确认不可哈希对象错误，正常网关
+  被隐藏。Go：公开清单未注册 R025，Go尚未实现。
+
+这两项属于已有 `AGENT_FORWARD_FILTER_UNHASHABLE` 类别。未修改产品实现或
+放宽 fake；匹配 Python 崩溃的 Go 结果仍会按安全性差异处理，不能算通过。

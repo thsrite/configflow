@@ -1310,3 +1310,55 @@ No active command. Declarations358/remaining1943 unchanged. Last full compositio
 37937739 remains3054/301, not replaced by subsets. Final composition/gate/rebase
 still pending. Next work continues remaining helper/wrapper/device/background
 coverage and other scoped dynamic comparisons; task remains incomplete.
+
+Integration refresh before forwarding increment:
+- Clean git rebase go succeeded43 commits, onto15173872f. Prior router ID commit
+  is nowfe7347d19, wizard/state2bec6538d, split guardsf9e76cef7. Historical IDs in
+  older command evidence remain source provenance, not current commit IDs.
+- Read updated AGENT-BRIEF in full: gate private snapshot allowance is explicit;
+  final slot queue limit15 minutes, then targeted hand-back/coordinator cf-gate.
+  Temp/build/report files now use home disk, not large /tmp allocations.
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1; uptime; mkdir -p "$HOME/.cache/routerdiff-reports/302rx1dg"; ~/cf-test/.venv/bin/python server/tools/routerdiff/build.py "$HOME/.cache/routerdiff-build-302rx1dg-current" --parallel 4; export ROUTERDIFF_BINARY="$HOME/.cache/routerdiff-build-302rx1dg-current/configflow"; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python -m unittest discover -v; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world router-creations --world runtime-reads --world split-valid-empty --output "$HOME/.cache/routerdiff-reports/302rx1dg/rebase-foundation.json"'`
+=> uptime load15.56/27.52/29.02; public build succeeds; Ran74 tests24.148s/OK;
+92 HTTP recipes, domain missing91/cross-domain missing1/routes0/complete=false.
+
+Forwarding real preconditions and transport increment:
+-56 requests across32 independent registry/version/layout worlds: absent Agent,
+  OxiDNS wrong service, Docker, genuinely offline,17 malformed version classes,
+  old major/minor/patch, exact1.8.40 AIO and1.8.41 standalone boundaries,
+  suffixless/leading-zero/new-major/new-minor controls. Fresh online status comes
+  only from actual authenticated public heartbeat, never a mocked clock/status.
+  Rejected preconditions make zero Agent requests; layout guards read once but
+  do not POST; modern versions short-circuit the old-layout read.
+-109 response/error/filter requests, including invalid UTF-8,301/302/303/307/308
+  HTML redirects with explicit zero redirected requests, absent/nontext/falsy
+  error text and priority/Unicode1000 cap, all JSON root types,524288/524289-byte
+  GET/POST boundaries, both truly-written/not-written overlarge replies. The
+  byte-limit cases confirm terminal state by own public GET and one POST only.
+  Four valid forward_filter states,11 dropped type/state variants, typed/capped
+  safe display, and all6 existing unhashable bug variants retain exact evidence.
+-4 actual uncertainty/timeout cases: before/after real write with lost TCP reply,
+  real45-second status timeout and real45-second forwarding timeout.90.37s, no
+  simulated Python timeout. Devices, storage, complete transcript remain compared.
+-24 explicit audits: H0001/H0004/H0005–H0022 and R025-F10/F11/R026-F12/F13.
+  H0002/H0003 exception catches remain pending reachability analysis, not closed
+  just because a malformed version was refused before them. GET prechecks are
+  not falsely labelled as reaching persist's H0018–H0022 lines.
+  Declarations382/remaining1919 if composed. All169 Go routes unregistered.
+  No new reference bug class; two extra dict variants of the known sanitizer
+  crash added to findings separately, not folded into the last full header.
+
+Pilot16 requests: Ran9 tests0.446s/OK, missing16. First response100 requests:
+Ran9 tests0.432s/OK, missing100, existing unhashable class reproduced. Then
+extended controls and ran the complete increment:
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY="$HOME/.cache/routerdiff-build-302rx1dg-current/configflow"; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python -m unittest -v test_audits test_recipes test_runner test_identities; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world-prefix forwarding- --output "$HOME/.cache/routerdiff-reports/302rx1dg/forwarding-all-audits.json"'`
+=> Ran52 tests4.824s/OK;169 requests, routes0/domain missing169/references28/
+audits24/remaining2277 in this subset/complete=false; known bug class reproduced.
+
+No active command. Last FULL composition remains37937739,3054 recipes/301 audits;
+current source increments have NOT been composed. Main findings statistics stay
+at that full run. Final gate and final rebase remain pending. Next gaps include
+scoped other dynamic families, helpers/wrappers, device compensation/background/
+OS failures, and reviewing unnecessary future/sibling route dependencies in
+recipe eligibility (creation requires future DELETE; job-lock world requires
+every sibling endpoint). Those must not hide an already implemented handler.
