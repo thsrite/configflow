@@ -113,10 +113,33 @@ func TestOrderViolationProcess(t *testing.T) {
 	}
 	_, release := lockMutex(t, NewMutex(LevelRepository, "other-repository"), rh)
 	release()
-	if Violations() != 3 {
-		t.Fatalf("want 3 counted acquisitions, got %d", Violations())
+	k := NewKeyed[string](LevelDevice, "keyed-device")
+	_, release, err := k.Lock(rh, "synthetic-key", time.Second)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if strings.Count(output.String(), " - backend.lockx - ERROR - ") != 2 {
+	release()
+	for _, read := range []bool{false, true} {
+		m := NewRWMutex(LevelDevice, "rw-device")
+		if read {
+			_, release, err = m.RLock(rh, time.Second)
+		} else {
+			_, release, err = m.Lock(rh, time.Second)
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		release()
+		_, release, ok := m.TryRLock(rh)
+		if !ok {
+			t.Fatal("try under repository failed")
+		}
+		release()
+	}
+	if Violations() != 6 {
+		t.Fatalf("want 6 counted acquisitions, got %d", Violations())
+	}
+	if strings.Count(output.String(), " - backend.lockx - ERROR - ") != 4 {
 		t.Fatalf("name pairs not logged once: %s", output.String())
 	}
 }
@@ -415,6 +438,41 @@ func TestRWMutexJobTryOnly(t *testing.T) {
 		}()
 		if err := await(t, done); !errors.Is(err, ErrBusy) {
 			t.Fatalf("job lease waited or wrong error: %v", err)
+		}
+	}
+}
+
+func TestRWMutexNonpositiveLimitsWaitForContext(t *testing.T) {
+	for _, read := range []bool{false, true} {
+		for _, limit := range []time.Duration{0, -time.Second} {
+			t.Run(time.Duration(limit).String()+map[bool]string{false: "/write", true: "/read"}[read], func(t *testing.T) {
+				m := NewRWMutex(LevelDevice, "rw-context")
+				_, held, ok := m.TryLock(context.Background())
+				if !ok {
+					t.Fatal("writer unavailable")
+				}
+				defer held()
+				ctx, cancel := context.WithTimeout(context.Background(), 15*time.Millisecond)
+				defer cancel()
+				var err error
+				if read {
+					_, _, err = m.RLock(ctx, limit)
+				} else {
+					_, _, err = m.Lock(ctx, limit)
+				}
+				if !errors.Is(err, context.DeadlineExceeded) {
+					t.Fatalf("nonpositive limit acted like a try: %v", err)
+				}
+				held()
+				ctx, stop := context.WithCancel(context.Background())
+				stop()
+				if _, _, ok := m.TryLock(ctx); ok {
+					t.Fatal("cancelled writer try succeeded")
+				}
+				if _, _, ok := m.TryRLock(ctx); ok {
+					t.Fatal("cancelled reader try succeeded")
+				}
+			})
 		}
 	}
 }

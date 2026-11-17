@@ -1,6 +1,6 @@
 # O3-1 — in-process lock primitives
 
-Status: implementation in progress, branch `go-o3-1`. No consumers, sub-agents or pushes.
+Status: implemented, final acceptance pending, branch `go-o3-1`. No consumers, sub-agents or pushes.
 
 ## Brief
 
@@ -13,6 +13,13 @@ file changes. Existing callers migrate in O3-6; lifecycle integrates Flight's Sp
 - Mutex, Keyed, RWMutex and order checker implemented; .63 gofmt/vet passed and lockx tests passed
   (`ok configflow/internal/lockx 0.121s`). Negative checker cases run in a child process; main tests assert
   Violations() == 0 without resetting shared production state.
+- Primitive commit `64bbb2db`; focused .63 race passed (`2.284s`). Flight's first race -count=3 passed
+  (`7.832s`); explicit RW nonpositive-limit and cross-type order regressions then passed (`7.992s`),
+  together with full vet and silent gofmt.
+- Flight uses injected Spawner only. Cancellation/deadlines detach with values retained; every caller
+  waits independently; completion/rejection/panic cleans the entry and broadcasts. Tests cover 50-way
+  coalescing, per-key independence, 100 cancelled waiters, ordinary error chains, rejection fan-out,
+  panic wake-up/log-once/payload privacy, reuse, zero value and shutdown context forwarding.
 - Tests cover increasing order, try under L3, released contexts, isolated-process negative order checks,
   immediate L1 contention, wait limits/context cancellation, 10k-key cleanup, shared/exclusive contention,
   writer cancellation/priority, concurrent stress, retained files and bounded waiter goroutines.
@@ -21,9 +28,8 @@ file changes. Existing callers migrate in O3-6; lifecycle integrates Flight's Sp
 
 ## Next
 
-1. Verify/commit the compiling lock primitives on .63; add Flight and its concurrency/lifetime tests.
-2. Final .32 gofmt/vet, `go test -race -count=3 ./internal/lockx/`, full suite, proddiff.
-3. Record results, rebase go, clean worktree; no push.
+1. Rebase current go, then final .32 gofmt/vet, `go test -race -count=3 ./internal/lockx/`, full suite, proddiff.
+2. Record results, rebase go, clean worktree; no push.
 
 ## Commands
 
