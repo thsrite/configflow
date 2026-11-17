@@ -112,3 +112,32 @@ Python 前置条件失败单列为夹具错误，不算 Go 发现；实际比较
 
 后续仍须补齐：其余 H 公开可达性与复合 guard 变体、设备失败/补偿、完整生成形态、
 Agent/备份/代理、后台轮询、断连/重启、动态值内容绑定和 O12 分类。详见进度文件与执行 ledger。
+
+## 新增独立批次证据（不包含于上面的3054条全组合统计）
+
+native-side 批次71条请求、6条显式审计通过；Go领域路由仍未注册。本节仅追加新发现，未将独立批次冒充一次新的全组合。
+
+## Python bug · low · NATIVE_SIDE_REFERENCE_PROTOCOL_COLLISION
+
+- 用例：native-side-protocol-collision:R002/native-side-udp-protocol-collision；矩阵：R002-F12
+- 建议负责模块：C26（OxiDNS 设备策略/引用扫描）及 R17（客户端 HTTP）。
+- 合法 native 配置把主 UDP 监听器命名为 udp，旁路独立转发器使用 udp:// 上游地址时，Python 的引用扫描把 URL 协议名误当插件引用，经主监听器走到 sequence_main，错误地把整份设备策略标为不可编辑；正常模式修改被400拒绝。
+- 请求：`{"method": "GET", "path": "/api/client-devices", "document": null, "raw": null, "headers": {}, "auth": true}`
+- Python：`{"status": 200, "headers": {"access-control-allow-origin": ["*"], "cache-control": ["no-store"], "content-type": ["application/json"], "x-configflow-profile": ["alpha"]}, "kind": "json", "body": {"agents": [], "devices": [{"ip": "10.44.0.21", "mode": "", "name": "现存备注🧪"}], "editable": false, "oxidns_revision": "839ac1ade1e6be6c3a972d314bf3a7cb1972079d0bb87dc100fba80d3c09428f", "profile_id": "alpha", "profile_name": "空间甲🧪", "reason": "监听入口 side_udp（127.0.0.1:5353） 的处理链 side 会间接调用主处理链 sequence_main，看不出设备策略是否生效，无法安全插入设备策略；请在 OxiDNS 完整参数中把它的 entry 直接改为 sequence_main，或让它不再调用主处理链。", "side_entries": [], "success": true}}`
+- Python 设备终态：`{"http_status": 200, "valid_native_edit_incorrectly_blocked": true}`
+- Go：Go 尚未实现（公开路由或前序写入依赖未注册，不能通过 HTTP 检查）：`{"missing_routes": ["R002"], "prior_missing_mutations": []}`
+- 仅把主监听 tag 改为 client_dns_listener 的独立对照可读、可修改策略并保留旁路字段；没有修改设备 fake。
+- Go 应允许该有效旁路并保留 side_entries 提示；修复结果单列复核，不自动算差分通过。
+
+## Python bug · low · NATIVE_SIDE_REFERENCE_PROTOCOL_COLLISION
+
+- 用例：native-side-protocol-collision:R003/native-side-udp-protocol-mode-refused；矩阵：R003-F15
+- 建议负责模块：C26（OxiDNS 设备策略/引用扫描）及 R17（客户端 HTTP）。
+- 合法 native 配置把主 UDP 监听器命名为 udp，旁路独立转发器使用 udp:// 上游地址时，Python 的引用扫描把 URL 协议名误当插件引用，经主监听器走到 sequence_main，错误地把整份设备策略标为不可编辑；正常模式修改被400拒绝。
+- 请求：`{"method": "PUT", "path": "/api/client-devices", "document": {"profile_id": "alpha", "ip": "10.44.0.21", "name": "现存备注🧪", "mode": "direct", "previous_name": "现存备注🧪", "previous_mode": "", "base_url": ""}, "raw": null, "headers": {}, "auth": true}`
+- Python：`{"status": 400, "headers": {"access-control-allow-origin": ["*"], "cache-control": ["no-store"], "content-type": ["application/json"], "x-configflow-profile": ["alpha"]}, "kind": "json", "body": {"message": "监听入口 side_udp（127.0.0.1:5353） 的处理链 side 会间接调用主处理链 sequence_main，看不出设备策略是否生效，无法安全插入设备策略；请在 OxiDNS 完整参数中把它的 entry 直接改为 sequence_main，或让它不再调用主处理链。", "success": false}}`
+- Python 设备终态：`{"http_status": 400, "valid_native_edit_incorrectly_blocked": true}`
+- Go：Go 尚未实现（公开路由或前序写入依赖未注册，不能通过 HTTP 检查）：`{"missing_routes": ["R003"], "prior_missing_mutations": []}`
+- 仅把主监听 tag 改为 client_dns_listener 的独立对照可读、可修改策略并保留旁路字段；没有修改设备 fake。
+- Go 应允许该有效旁路并保留 side_entries 提示；修复结果单列复核，不自动算差分通过。
+

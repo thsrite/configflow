@@ -30,6 +30,7 @@ import ipv6
 import device_policy
 import policy_graph
 import policy_owned
+import policy_side
 from compare import differences, logical_snapshot, response_view, timestamp
 from harness import Pair, RemoteError, observed_startup_exit
 from harness import decode_response
@@ -432,6 +433,25 @@ def execute(pair, case, available, routes):
         found += differences(snapshots['python']['after'], snapshots['go']['after'], '/state')
         if case.unchanged:
             found += differences(snapshots['go']['before'], snapshots['go']['after'], '/go-unexpected-write')
+        if case.python_bug == 'NATIVE_SIDE_REFERENCE_PROTOCOL_COLLISION':
+            body = observations['go']['body']
+            expected_side = [{'tags': ['side_udp'], 'listen': '127.0.0.1:5353', 'entry': 'side'}]
+            usable = (observations['go']['status'] == 200 and isinstance(body, dict)
+                      and body.get('success') is True and body.get('editable') is True
+                      and body.get('reason') == '' and not differences(body.get('side_entries'), expected_side))
+            if case.method == 'PUT':
+                stored = fields(snapshots['go']['after'], 'profile', case.profile).get('oxidns', {})
+                native = stored.get('native_config') if isinstance(stored, dict) else None
+                usable = (usable and isinstance(native, str)
+                          and all(fragment in native for fragment in ('cf_device_policy', 'cf_device_direct',
+                              'jump cf_device_policy', 'side_forward', 'opaque_side_setting', 'side_custom_keep🧪'))
+                          and not differences(stored.get('device_policies'),
+                              [{'ip': '10.44.0.21', 'name': '现存备注🧪', 'mode': 'direct'}]))
+            go_bug_outcome = {'http_status': observations['go']['status'], 'valid_side_listener_editable': usable}
+            if not usable:
+                found.append({'path': '/safety/valid-isolated-side-DNS-must-remain-editable',
+                              'python': 'Go must reject the false URL-scheme reference and preserve the side chain',
+                              'go': go_bug_outcome, 'category': 'safety'})
         if case.python_bug == 'IKUAI_NETMASK_SUFFIX_ROLLBACK':
             before_ids = {row['id'] for row in snapshots['go']['before']['fake']['ikuai']['static_rt']}
             created = [row for row in snapshots['go']['after']['fake']['ikuai']['static_rt'] if row['id'] not in before_ids]
@@ -483,7 +503,9 @@ def execute(pair, case, available, routes):
             ('profile-write', 'profile-write-device', 'router-create', 'router-delete', 'device-only')):
         pair.go.missing_effects.append({'case': case.ident, 'missing_routes': sorted(set(missing_routes))})
     python_bug_outcome = None
-    if case.python_bug == 'IKUAI_NETMASK_SUFFIX_ROLLBACK':
+    if case.python_bug == 'NATIVE_SIDE_REFERENCE_PROTOCOL_COLLISION':
+        python_bug_outcome = {'http_status': observations['python']['status'], 'valid_native_edit_incorrectly_blocked': True}
+    elif case.python_bug == 'IKUAI_NETMASK_SUFFIX_ROLLBACK':
         python_bug_outcome = {'created_static_rows_remaining': len(snapshots['python']['after']['fake']['ikuai']['static_rt']),
                               'static_rt_after': snapshots['python']['after']['fake']['ikuai']['static_rt']}
     elif case.python_bug == 'AGENT_FORWARD_FILTER_UNHASHABLE':
@@ -629,6 +651,7 @@ def main():
               ('client-canonical-names', options, (workflows.client_canonical_names,)),
               ('notes-capacity', fixtures.notes_capacity_options(), (fixtures.notes_capacity,)),
               ('client-mode-notes', options, (workflows.client_mode_notes,)),
+              ('native-side-protocol-collision', policy_side.collision_options(), (policy_side.protocol_collision,)),
               ('native-owned-valid', policy_owned.options(policy_owned.document(), policy_owned.ROWS), (policy_owned.valid,)),
               ('native-policy-valid', policy_graph.options(policy_graph.document()), (policy_graph.valid,)),
               ('stored-policy-legacy', device_policy.legacy_options(), (device_policy.legacy,)),
@@ -716,6 +739,7 @@ def main():
     worlds += device_policy.worlds()
     worlds += policy_graph.worlds()
     worlds += policy_owned.worlds()
+    worlds += policy_side.worlds()
     if args.world or args.world_prefix:
         names = {item[0] for item in worlds}
         unknown = set(args.world or ()) - names

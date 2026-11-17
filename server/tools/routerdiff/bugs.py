@@ -11,6 +11,11 @@ class ReferenceBug:
 
 
 BUGS = {
+    'NATIVE_SIDE_REFERENCE_PROTOCOL_COLLISION': ReferenceBug('C26（OxiDNS 设备策略/引用扫描）及 R17（客户端 HTTP）',
+        '合法 native 配置把主 UDP 监听器命名为 udp，旁路独立转发器使用 udp:// 上游地址时，Python 的引用扫描把 URL 协议名'
+        '误当插件引用，经主监听器走到 sequence_main，错误地把整份设备策略标为不可编辑；正常模式修改被400拒绝。',
+        ('仅把主监听 tag 改为 client_dns_listener 的独立对照可读、可修改策略并保留旁路字段；没有修改设备 fake。',
+         'Go 应允许该有效旁路并保留 side_entries 提示；修复结果单列复核，不自动算差分通过。'), severity='low'),
     'IKUAI_NETMASK_SUFFIX_ROLLBACK': ReferenceBug('R05（iKuai）',
         '默认 fake 保留真实 static_rt netmask 显示后缀。Python 发布返回 502，新增静态路由的回读和补偿均因后缀不匹配失败，'
         '设备留下配置。未修改 fake 来掩盖此问题。',

@@ -1138,3 +1138,32 @@ read-only private-snapshot proddiff. No new synthetic-gate entry is needed. The
 handwritten domain cases/fixtures remain synthetic only. Never copy snapshot
 contents into code, tests, docs or reports; report only proddiff new/stale/
 self-check totals. Keep raw private gate/proddiff logs on the test server.
+
+Native side/legacy listener audit and fifth reference bug:
+-23 valid literal side graphs ×3 public operations=69 requests, plus2 independent
+  collision bug requests. Public system DNS contexts, exact/direct and all3
+  wildcard forms, profile-bound disabled OxiDNS registry, grouped UDP/TCP,
+  HTTP/TLS/multi-entry, nonsequence/nested/foreign/no-forward/shared-forward
+  classification. Actual direct save retains opaque side upstream settings;
+  note-only saves retain complete native bytes. H0090-H0095 six audits proven.
+  Declarations340, remaining1961 if composed; whole matrix still incomplete.
+- First batch failed an honest fixture precondition at editable=false. Real
+  public HTTP probe exposed a source defect, not a fake protocol failure:
+  reference_locations scans URL strings for known plugin names, so main tag udp
+  collides with side forward udp://, falsely reaching main. Neutral-tag counterpart
+  succeeds. Original input remains in a named low Python bug world with actual
+  GET200 readonly and PUT400. Owner C26/R17; no implementation fix by this agent.
+  Matching Go refusal is deliberately a difference; correct Go editor output
+  remains reference-bug-observation requiring review, never a false pass.
+- The19 neutral-tag pilot worlds57 requests passed. Extended authoritative run:
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY=/tmp/routerdiff-build-302rx1dg-latest/configflow; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python -m unittest -v test_audits test_recipes test_runner; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world-prefix native-side- --output /tmp/routerdiff-native-side-audits.json --findings /tmp/routerdiff-native-side-findings.md'`
+=> Ran40 tests1.650s/OK;71 requests, Go routes0/missing71/references9/
+audits6 in this subset/remaining2295/complete=false, new reference bug
+NATIVE_SIDE_REFERENCE_PROTOCOL_COLLISION. No process pending. New bug evidence
+fetched as synthetic temporary report, appended to main findings with an explicit
+separate-batch note, then temporary local file deleted. Existing3054/301 full
+statistics unchanged; they are still the last full composition.
+
+Next work: native normalization/parent diagnostics, remaining HTTP wrapper guard
+closure, G23 external-public-route dispatch, deeper policy/NAT/IPv6/background/
+restart branches and strict scoped dynamic comparison. Final gate/rebase pending.

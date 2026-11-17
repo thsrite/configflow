@@ -22,6 +22,7 @@ import ipv6
 import device_policy
 import policy_graph
 import policy_owned
+import policy_side
 from inventory import load
 from bugs import BUGS
 
@@ -30,7 +31,7 @@ class RecipeTests(unittest.TestCase):
     def test_unique_variants_and_real_design_references(self):
         routes, entries = load()
         seen = set()
-        for module in (cases, guards, workflows, fixtures, probes, releases, clients, sync, upstream, dns, gateway, disconnect, routing, policy_view, returns, persistence, ipv6, device_policy, policy_graph, policy_owned):
+        for module in (cases, guards, workflows, fixtures, probes, releases, clients, sync, upstream, dns, gateway, disconnect, routing, policy_view, returns, persistence, ipv6, device_policy, policy_graph, policy_owned, policy_side):
             for name in module.__dict__:
                 value = getattr(module, name)
                 if not inspect.isgeneratorfunction(value) or getattr(value, '__module__', '') != module.__name__:
@@ -86,6 +87,19 @@ class RecipeTests(unittest.TestCase):
                 self.assertTrue(set(case.entries) <= set(entries))
                 self.assertNotIn('H0086', case.entries)
             self.assertTrue(rows[1].unchanged)
+            self.assertIn('oxidns', rows[2].retained_fields)
+
+    def test_side_listener_variants_use_real_public_import_and_three_http_steps(self):
+        _, entries = load()
+        seen = set()
+        for world, options, groups in policy_side.worlds():
+            rows = [case for group in groups for case in group()]
+            self.assertEqual([case.expected for case in rows], [200, 200, 200])
+            for case in rows:
+                self.assertNotIn(case.ident, seen)
+                seen.add(case.ident)
+                self.assertTrue(set(case.entries) <= set(entries))
+            self.assertIn('oxidns/native_config', rows[1].stored_contains)
             self.assertIn('oxidns', rows[2].retained_fields)
 
     def test_response_references_are_side_local(self):

@@ -212,3 +212,19 @@ T03 现在已完成显式审计：161条具名前提全部由实际公开 HTTP �
 仅profile revision增加不重读）。`audits.py` 中 T03 只代表本条变体完备，
 不是整个 R004/helper 子树或 Go 领域的验收通过。详细命令和165条组合输出见
 progress；H0030/H0031 的 OS 资源故障仍单列待补。
+
+## Native side / legacy node-test 的公开上下文
+
+23个旁路/旧 node-test 输入分别经 GET、真实 direct 保存、只改备注三个步骤。
+包括节点测试 DNS 列表与 custom.servers 中的无效项、直接/不同/缺省53端口、
+三个 wildcard 形式与真实 profile 绑定 Agent 记录、UDP/TCP 共享监听、HTTP/TLS/
+多entry、非sequence入口、嵌套sequence/fallback、插件外/foreign引用、无forward
+和共享forward。H0090–H0095 六条显式审计已完成；旁路未知字段保持，备注编辑
+保留整份 native 字节。不据此推断实际 DNS socket/网络行为（仍属 L5）。
+
+首次尝试用主监听 tag=udp 暴露了一个独立 Python bug：引用扫描在 forward
+上游 `udp://` 里匹配到 udp，再沿该主监听器的 entry 到 sequence_main，误报
+旁路间接进入主链。仅把该 tag 改为 client_dns_listener 就恢复合法旁路编辑。
+因此普通 guard 输入使用中性 tag；原 udp 输入独立保留为 low 级参考缺陷，
+实际 GET200 editable=false、PUT400 与 Go尚未实现均已进入 findings。没有改
+设备 fake，没有删除失败输入，也没有把修复后的 Go 结果自动算作差分通过。

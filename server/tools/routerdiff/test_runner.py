@@ -173,6 +173,18 @@ class RunnerTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'stale stored text evidence remains'):
                 execute(observation(text), case, set(), routes)
 
+    def test_matching_native_protocol_false_reference_is_never_a_parity_pass(self):
+        routes, _ = load()
+        broken = {'success': True, 'editable': False, 'side_entries': [], 'reason': 'false reference'}
+        fixed = {'success': True, 'editable': True, 'reason': '', 'side_entries': [
+            {'tags': ['side_udp'], 'listen': '127.0.0.1:5353', 'entry': 'side'}]}
+        case = Case('protocol-collision', 'R002', 'GET', '/api/client-devices', 200,
+                    python_bug='NATIVE_SIDE_REFERENCE_PROTOCOL_COLLISION')
+        for content, expected in ((broken, 'different'), (fixed, 'reference-bug-observation')):
+            world = pair(ObservationSide(content=broken), ObservationSide(content=content))
+            result = execute(world, case, {('GET', '/api/client-devices')}, routes)
+            self.assertEqual(result['status'], expected)
+
     def test_notification_prerequisites_cannot_pass_missing_or_stale_evidence(self):
         routes, _ = load()
         before = ObservationSide().before

@@ -12,12 +12,13 @@ import clients
 import cases
 import policy_graph
 import policy_owned
+import policy_side
 
 
 class AuditTests(unittest.TestCase):
     def test_auth_audits_require_every_explicit_real_reference_variant(self):
         audits = declared()
-        self.assertEqual(len(audits), 26 * 7 + 25 * 3 + 5 + 14 + 12 + 5 + 8 + 23 + 1 + 5 + 4)
+        self.assertEqual(len(audits), 26 * 7 + 25 * 3 + 5 + 14 + 12 + 5 + 8 + 23 + 1 + 5 + 4 + 6)
         self.assertFalse(set(audits) - set(load()[1]))
         self.assertEqual({value['audit'] for value in evaluate([]).values()}, {'variants-pending'})
         ident = 'R005-F01'
@@ -186,6 +187,20 @@ class AuditTests(unittest.TestCase):
                 self.assertEqual(case.expected, status)
         cleanup = actual['native-owned-valid', 'R003/native-owned-direct-to-smart-withdraws-plugins']
         self.assertEqual(set(cleanup.stored_excludes['oxidns/native_config']), {'cf_device_policy', 'cf_device_direct'})
+    def test_side_listener_audits_require_public_context_and_all_wildcard_controls(self):
+        actual = {(world, case.ident): case for world, _, groups in policy_side.worlds()
+                  for group in groups for case in group()}
+        audits = declared()
+        for number in range(90, 96):
+            ident = 'H' + str(number).zfill(4)
+            for world, name, status in audits[ident].requirements:
+                case = actual[world, name]
+                self.assertIn(ident, case.entries)
+                self.assertEqual(case.expected, status)
+        self.assertEqual(len(audits['H0090'].requirements), 4)
+        self.assertEqual(len(audits['H0091'].requirements), (6 + 5) * 2)
+        self.assertIn(('native-side-legacy-empty-wildcard-agent-host',
+                      'R003/native-side-direct-legacy-empty-wildcard-agent-host', 200), audits['H0091'].requirements)
 
 
 if __name__ == '__main__':

@@ -359,6 +359,35 @@ def declared():
             'reads editable and changing direct to smart removes both markers from actual stored native '
             'text. No generic _refuse attribution: these four errors are direct ownership exceptions. '
             'This does not close node-test listener classification or all native graph parents.', required)
+    side_variants = {
+        'H0090': ('invalid-dns-context-members', 'custom-dns-context-members'),
+        'H0091': ('isolated-side', 'different-host', 'different-port', 'default-node-port-is53',
+                   'wildcard-no-host', 'ipv6-wildcard-no-host'),
+        'H0092': ('http-is-not-legacy', 'multiple-http-entries', 'tls-is-not-legacy'),
+        'H0093': ('entry-not-sequence',),
+        'H0094': ('nested-sequence', 'nested-fallback'),
+        'H0095': ('outside-plugin-reference', 'foreign-plugin-reference'),
+    }
+    legacy_controls = ('legacy-direct-host', 'legacy-wildcard-agent-host', 'legacy-ipv6-wildcard-agent-host',
+                       'legacy-empty-wildcard-agent-host', 'udp-tcp-group-legacy')
+    for ident, labels in side_variants.items():
+        if ident != 'H0090':
+            labels = (*labels, *legacy_controls)
+        required = tuple(('native-side-' + label, route + '/native-side-' + middle + label, 200)
+            for label in labels for route, middle in (('R002', ''), ('R003', 'direct-')))
+        audits[ident] = Audit(
+            ('backend/common/oxidns_device_policy.py:198', 'backend/common/oxidns_device_policy.py:231',
+             'backend/common/oxidns_references.py:27'),
+            'Real native side listeners, public system node-test DNS settings and an optional disabled '
+            'profile-bound OxiDNS registry record; no helper monkeypatch. Literal bad context members '
+            'are skipped in both legacy/custom DNS lists. Empty/different/default53 address contexts, '
+            'wildcard host without a known Agent, HTTP multiple entries/non-UDP-TCP types, non-sequence '
+            'entry, nested sequence/fallback and external owners independently keep side_entries visible. '
+            'Exact/direct and all three wildcard forms with known Agent hosts and grouped UDP/TCP '
+            'listeners are recognized as isolated legacy node-test chains. Applying direct policies '
+            'keeps side upstream/opaque settings; note-only editing keeps complete native bytes. '
+            'Neutral main tags reach these guards; the udp tag/udp:// false reference is a separately '
+            'recorded Python bug, never hidden by changing a device fake.', required)
     return audits
 
 
