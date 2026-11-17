@@ -17,6 +17,15 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_repair_attribution_requires_actual_success_and_keeps_raw_evidence(self):
+        from config_finding_resolutions import annotate
+        item = {'case': 'G13', 'group': 'delivery-graph', 'status': 'closed', 'differences': [{'path': 'provider.comments'}]}
+        original = copy.deepcopy(item['differences'])
+        self.assertEqual(annotate([item])[0]['fix_commits'], ['7b904725'])
+        self.assertEqual(item['differences'], original)
+        for status in ('open', 'pending', 'blocked', 'separate'):
+            self.assertEqual(annotate([{**item, 'status': status}])[0]['fix_commits'], [])
+
     def test_busy_probe_checks_admission_completed_batch_and_concurrent_writes(self):
         from cases.node_concurrency import BusyProbe
         observer = BusyProbe.__new__(BusyProbe)

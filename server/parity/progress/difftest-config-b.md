@@ -1501,3 +1501,18 @@ compared=48 go-unimplemented=66 different=18 design_errors=[] seconds=20.33；ex
 ```
 
 协调者已通知最新go含findings修复/C35/N8-2；本批提交后立即rebase并逐组复验，closed须带修复提交，accepted须链接behaviour-changes条目，未解决继续open。
+
+## 批次 87：rebase至集成修复并记录修复归因
+
+- 86个提交已成功rebase至go aeff9d75，重写后的86批head1626cfdc，rebase后工作区干净；未读Go业务源码。86批人工并集统计少算一个F编号，以实际统一报告为准：原R4245（S678/F2652/B915）、H533、9252变体；新增原R32，剩余原R285编号。
+- 已在.63前台启动全部26个既有差异group复验，基线aeff9d75，覆盖102 different（含新增provider认证18）及O12单列项。此处不预报结果，待命令完成后更新证据。
+- 修复归因从config-findings-fixes.md及git提交标题读取，只在实际closed后添加修复提交；未跑/跳过/仍不同不产生修复结论。provider元数据7b904725、准备上下文cb0cc9fa、通知8f3d36ad、同值PUT e9187b9f、发现UUID 041ab5a6、C35三提交已建对应。refresh_finding_reviews仅重渲染已经记录的复验和归因，不执行或拼接用例、不修改原始case结果与差异。
+
+```text
+git rebase go
+Successfully rebased and updated refs/heads/go-difftest-config-b.
+.32 python -m unittest -v test_compare
+Ran 74 tests in 2.521s / OK
+.63 run.py --groups delivery-graph,delivery-graph-collisions,discovery-init,discovery-region-route,discovery-settings,json-settings-intervals,merged-provider-data,merged-provider-remote,merged-provider-timezone,provider-auth-environments,provider-concurrent-clients,provider-last-good-lifecycle,rule-proxy-declarations,rule-proxy-local-cache,rule-proxy-processing-failure,rule-proxy-transport,scheduler-tick,settings-webdav,startup-migration,subscription-fetch-failures,subscription-provider-formats,subscription-provider-head,subscription-provider-selector,subscription-provider-timezone,subscription-provider-validation,subscriptions-cleanup --baseline aeff9d75
+（仍在运行；最终证据待写入下一批）
+```
