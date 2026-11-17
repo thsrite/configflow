@@ -64,7 +64,7 @@ Same as `PROGRESS-config.md`: status `missing` / `partial` (exact list of what i
 | A21 | gateway onboarding | 751 | missing | HR | A19, A20, C18, C22, C23, C24, C05, routers (`router_split`) | 3 | internal/gateway, api/gatewayonboarding (new) |
 | A22 | gateway installation | 809 | missing | HR | A08, A14, A20, A21, C17 | 7 | internal/gateway, api/agents |
 | A23 | IPv6 readiness, client evidence, verification | 1344 | missing | HR | A06, A13, A14, C16, routers (`ipv6_readiness`, `routeros`, `route_editor`, `rule_sync_store`, `store`, `client_devices`) | 5 | internal/agents/ipv6 (new), api/agents |
-| A24 | client tools, OxiDNS device policies, domain-discovery toggles | 198 | missing | | A05, C09, C26, C31, C37 | 8 | api/agents |
+| A24 | client tools, OxiDNS device policies, domain-discovery toggles | 198 | verified | | A05, C09, C26, C31, C37 | 8 | api/agents |
 
 ¹ A05 needs only `utils/domain_discovery.registrable_domain` (C37's file; a thin wrapper over `subs.ExtractDomain`). Ask the coordinator to have it exported early from the C37 package, or port A05 after C37.
 
@@ -1144,9 +1144,9 @@ Tests: `test_agent_content_sync.py` (42), `test_agent_content_api.py` (10), `tes
 
 Routes (4): `GET /api/agents`; `GET /api/agents/<agent_id>`; `GET /api/agents/<agent_id>/push-diff`; `GET /api/agents/<agent_id>/push-diff/entries`
 
-A24 clarification: reuse the same-package `publicAgent(*agents.Record) *agents.Record` helper in `api/agents/public_agent_adapter.go`; do not add another serializer. It delegates deployment, upgrade and HA sanitization to their existing owners and omits unread history. A24 review additionally uses shared `redact.SanitizeCredentials` to mask legacy credential fields, Basic-auth hosts and references to known tokens. Real Python field-by-field differential: `TestPublicAgentPython` (24 cases); the Python credential leak is a separate security correction, documented in `behaviour-changes.md`.
+A24 clarification: reuse the same-package `publicAgent(*agents.Record) *agents.Record` helper in `api/agents/public_agent_adapter.go`; do not add another serializer. It delegates deployment, upgrade and HA sanitization to their existing owners and omits unread history. A24 review additionally uses shared `redact.SanitizeCredentials` to mask legacy credential fields, Basic-auth hosts and references to known tokens / the environment registration key. Real Python field-by-field differential: `TestPublicAgentPython` (24 cases); the Python credential leak is a separate security correction, documented in `behaviour-changes.md`.
 
-Evidence: no Go code. Port `_public_agent` (A03 lines) here. Extend the existing `createAgent`/`handleAgentItem` handlers with the GET branch (router panics on a second handler for the same endpoint). Provides for config: `content_sync.invalidate_content_sync` used by C13 `subscription_cache` (interface declared in C13, registered here).
+Evidence: A13 content-sync/routes are not ported yet; `_public_agent` is supplied and verified by A24 (reuse the helper above). Extend the existing `createAgent`/`handleAgentItem` handlers with the GET branch (router panics on a second handler for the same endpoint). Provides for config: `content_sync.invalidate_content_sync` used by C13 `subscription_cache` (interface declared in C13, registered here).
 
 ## A14 — publishing: transactional content, push-config, deployments, receipts
 
@@ -1433,9 +1433,9 @@ Hooks to provide: `agents.OnManagerInit` (`ipv6_verification.start_loop`, last);
 
 ## A24 — client tools, OxiDNS device policies, domain-discovery toggles
 
-Review in progress on `go-review-a24` (base `642e84db`): F1 high (legacy/public metadata credentials) and F2 high (shutdown cancellation allowed toggle/cleanup writes) fixed with regressions; final gates pending. See `review-a24.md`. No sub-agents, pushes or production access.
+Independent adversarial review **verified**, **0 open**, branch `go-review-a24`, fix `c106af0d` (base `642e84db`, rebased onto `go@9a208c6c`). F1 high: legacy/public metadata credentials and unlabelled environment registration key leaked; shared redactor now masks them. F2 high: stopped-Runtime toggle/cleanup still wrote; all six write owners now check cancellation after Detach. Seven privacy cases, two HTTP exits, six stopped-Runtime owners, 24 real Python public-Agent records, complete Flask/storage and C37 guard regressions pass. Final `.64` queued `gate.sh -p 4`: gofmt/vet/two tags PASS, full race 85 tested packages / 95 entries PASS, 12 enabled difftest PASS, eight 60-second fuzz PASS, proddiff new=0/stale=0 and bundle 3/3 (no partial). Environment-key delta: `.32` consumer race + real Python PASS. After O3-5 rebase, `.64` C37/deploy/pushdiff/redact race and enabled A24 HTTP/Python regressions PASS. Exact commands, output tails, severities and accepted Python safety correction: [review-a24.md](review-a24.md). No sub-agents, pushes or production access.
 
-**Status: `ported`** · prereqs: A05, C09 (`connection_rules`, ready), C26 (`oxidns_device_policy.read_policies/revision/normalize_client_range`), C31 (`device_notes`), C37 (`domain_discovery_service`, `provider_revisions`), C05 (`OxidnsSettingsError`) · Go: api/agents
+**Status: `verified`** · prereqs: A05, C09 (`connection_rules`, ready), C26 (`oxidns_device_policy.read_policies/revision/normalize_client_range`), C31 (`device_notes`), C37 (`domain_discovery_service`, `provider_revisions`), C05 (`OxidnsSettingsError`) · Go: api/agents
 
 Files:
 - `backend/routes/client_tools.py` (105) — registers on the agents blueprint (`agents.*` endpoints)

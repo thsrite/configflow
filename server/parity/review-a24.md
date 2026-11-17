@@ -1,6 +1,6 @@
 # A24 对抗式复核
 
-状态：复核进行中，两个发现已修复，最终门禁待完成。独立复核者未编写 A24 原实现；
+状态：**verified，两个高严重度发现均已修复，0 未决**。独立复核者未编写 A24 原实现；
 分支 `go-review-a24`，起点 `go-port-a24@642e84db`。无子 agent、无 push、无生产访问。
 
 ## 发现
@@ -105,9 +105,35 @@ discovery difftest 10.346s、deploy 24.984s、pushdiff 48.707s、redact 1.021s�
 RT_HOST=sunbroke@192.168.0.64 rt -e GOMAXPROCS=4 -e GATE_LOGS=/tmp/review-a24-gate-queued -- bash -lc 'set -o pipefail; server/scripts/gate.sh -p 4 FuzzClientConnectionEntries:./internal/api/agents FuzzConvertMosDNSRules:./internal/deploy FuzzSourceExcerpt:./internal/deploy FuzzOpenArchive:./internal/deploy FuzzConfig:./internal/deploy/pushdiff FuzzRuleEntries:./internal/deploy/pushdiff FuzzNodeItems:./internal/deploy/pushdiff FuzzCredentialSpans:./internal/deploy/pushdiff 2>&1 | tee /tmp/review-a24-gate-queued-output.log; result=${PIPESTATUS[0]}; printf "%s\n" "$result" > /tmp/review-a24-gate-queued/exit-code; exit "$result"'
 ```
 
-该脚本还覆盖 configflow_proddiff / configflow_difftest 两个 build tag 的全仓构建、vet 和
-lifecycle 测试。当前已完成 gofmt/vet/tags 和 proddiff（new=0/stale=0）；全仓 race 仍在跑，
-最终结果待补充。
+该脚本退出 **0，GATE PASS**。gofmt 无输出、vet 通过；configflow_proddiff /
+configflow_difftest 两个 build tag 的全仓构建、vet 和 lifecycle 测试全部通过。
+全仓 race：**85 个有测试包通过，95 个包条目全部通过**；12 个 enabled difftest 全通过。
+末行及重点计数：
+
+```text
+baseline: new=0 stale=0
+ok configflow/internal/api/agents/difftest          112.902s
+ok configflow/internal/api/aggregations/difftest    17.090s
+ok configflow/internal/api/subscriptions/difftest   50.745s
+ok configflow/internal/discovery/difftest            1.796s
+ok configflow/internal/webdav/difftest              14.245s
+FuzzClientConnectionEntries ... 60.271s
+FuzzConvertMosDNSRules      ... 61.107s
+FuzzSourceExcerpt          ... 61.156s
+FuzzOpenArchive            ... 61.128s
+FuzzConfig                 ... 61.205s
+FuzzRuleEntries            ... 61.134s
+FuzzNodeItems              ... 61.183s
+FuzzCredentialSpans        ... 61.145s
+GATE PASS
+```
+
+八个 fuzz 各持续至少 60 秒，执行数依次为 314894、123889、48102、439841、195802、
+237027、168106、30386，全部 PASS。没有新失败 corpus。
+
+通过 rt 读取原始 JSON summary 并严格断言：75 条 GET、2831 个案例、self_check=PASS、
+new=0、stale=0、coverage_regressions=0、unmapped_routes=0；aggregation-provider
+cases/success/compared = **2/2/2**，agent-deployment-bundle = **3/3/3**，都没有 partial。
 
 环境注册密钥的最后一项补强只改共享 redactor 的已知密钥快照，没有改变任何 fuzz 解析目标。
 先失败的回归 `legacy_error=old synthetic-env-registration` 已修复；`.32` 共享 redactor race
@@ -117,4 +143,31 @@ lifecycle 测试。当前已完成 gofmt/vet/tags 和 proddiff（new=0/stale=0�
 RT_HOST=sunbroke@192.168.0.32 rt -e GOMAXPROCS=2 -- bash -lc 'set -e; cd server; test -z "$(gofmt -l internal/redact/redact.go internal/redact/credentials_test.go)"; go vet ./internal/redact ./internal/api/agents ./internal/deploy; CONFIGFLOW_DIFF=1 go test -race -p=2 -count=1 -timeout=30m ./internal/redact ./internal/api/agents ./internal/deploy'
 ```
 
-该补验当前 redactor 1.067s 已通过，API/deploy 等待完成。
+该补验退出 0：redactor **1.067s**、API **449.890s**、deploy **101.425s** 全通过。
+随后 `.64` 同一最终 redactor 的真实 Python/API 回归再验通过（2.748s / 0.005s）。
+
+## 最新 go 变基后的集成补验
+
+结束前 `git rebase go` 纳入 `go@9a208c6c` 的 O3-5；无冲突，复核修复提交为 **c106af0d**。
+已补读 O3-5 Clarified：Clock aliases、tracked MatcherCache、Spawn、取消和本地原子提交合同。
+Detach/BindRequest 的契约保持不变。除已单独验证的环境密钥快照外，A24 运行时代码未再改动；
+8 个 fuzz 解析目标也未变化。按变基影响范围补验全部 C37/deploy/pushdiff/redact 和 A24 API：
+
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt -e GOMAXPROCS=4 -- bash -lc 'set -e; cd server; test -z "$(gofmt -l internal/ tools/ cmd/)"; go vet ./internal/api/agents ./internal/discovery/... ./internal/deploy/... ./internal/redact; CONFIGFLOW_DIFF=1 go test -race -p=4 -count=1 -timeout=30m ./internal/discovery/... ./internal/deploy/... ./internal/redact; CONFIGFLOW_DIFF=1 go test -race -count=1 -timeout=30m ./internal/api/agents -run "^(TestPublicAgentPython|TestA24FlaskBoundaries|TestReviewA24.*|TestClient.*)$"; printf "A24_POST_REBASE_PASS\n"'
+```
+
+```text
+ok configflow/internal/discovery           11.131s
+ok configflow/internal/discovery/difftest  11.133s
+ok configflow/internal/deploy              36.711s
+ok configflow/internal/deploy/pushdiff     42.949s
+ok configflow/internal/redact              1.020s
+ok configflow/internal/api/agents          19.449s
+A24_POST_REBASE_PASS
+```
+
+最后只补测试的 Go 文档注释和验收记录，再做格式检查。新增 Go 测试文件为
+`api/agents/review_a24_test.go` **135 行**、`redact/credentials_test.go` **39 行**。
+没有未移植功能、额外依赖或未决问题；独立修复与验收提交分开，最终提交号见交回消息。
+未 push，未创建 PR，未启动子 agent，未访问生产。

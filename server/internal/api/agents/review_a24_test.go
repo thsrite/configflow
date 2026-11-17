@@ -14,6 +14,7 @@ import (
 	"configflow/internal/lifecycle"
 )
 
+// TestReviewA24ShutdownRejectsWrites checks every owner against a stopped Runtime.
 func TestReviewA24ShutdownRejectsWrites(t *testing.T) {
 	for _, kind := range []string{"note", "policy", "domain", "ip", "toggle", "clear"} {
 		t.Run(kind, func(t *testing.T) {
@@ -48,6 +49,7 @@ func TestReviewA24ShutdownRejectsWrites(t *testing.T) {
 	}
 }
 
+// TestReviewA24PublicCredentials checks legacy metadata without mutating its source.
 func TestReviewA24PublicCredentials(t *testing.T) {
 	for _, text := range []string{
 		`{"id":"legacy","host":"operator:secret-password@192.0.2.9","token":"secret-token"}`,
@@ -81,6 +83,7 @@ func TestReviewA24PublicCredentials(t *testing.T) {
 	}
 }
 
+// TestReviewA24PublicHTTPDoesNotExposeLegacyCredentials covers both public HTTP exits.
 func TestReviewA24PublicHTTPDoesNotExposeLegacyCredentials(t *testing.T) {
 	s := a24Fixture(t)
 	_, err := s.Repo.UpdateSystemTransaction(s.Context(), func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
@@ -115,6 +118,7 @@ func TestReviewA24PublicHTTPDoesNotExposeLegacyCredentials(t *testing.T) {
 	}
 }
 
+// TestReviewA24TargetsIgnoreUnrelatedLegacySettings checks normalized legacy settings.
 func TestReviewA24TargetsIgnoreUnrelatedLegacySettings(t *testing.T) {
 	w := newClientWorldSetup(t, func(s *httpxtest.Server) {
 		_, _, err := s.Repo.UpdateProfileTransaction(s.Context(), "office", func(_ context.Context, profile *jsonx.Object) (*jsonx.Object, error) {

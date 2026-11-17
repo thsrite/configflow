@@ -15,6 +15,7 @@ import (
 	"configflow/internal/repo"
 )
 
+// TestPublicAgentPython compares public records with the real Python implementation.
 func TestPublicAgentPython(t *testing.T) {
 	if os.Getenv("CONFIGFLOW_DIFF") != "1" {
 		t.Skip("set CONFIGFLOW_DIFF=1")

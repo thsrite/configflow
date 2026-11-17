@@ -7,6 +7,7 @@ import (
 	"configflow/internal/jsonx"
 )
 
+// TestPublicMetadataCredentials checks opt-in redaction and known registration keys.
 func TestPublicMetadataCredentials(t *testing.T) {
 	t.Setenv("AGENT_REGISTRATION_KEY", "synthetic-env-registration")
 	input := jsonx.Obj("id", "device", "message", "old synthetic-registration",
