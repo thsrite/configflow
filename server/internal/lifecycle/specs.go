@@ -68,6 +68,10 @@ const (
 
 // Periodic describes a loop whose intervals are measured from round completion.
 type Periodic struct {
+	// OnStart initializes owner memory once per activation, before the first wait.
+	// It runs synchronously, must not block or call lifecycle registration methods.
+	// Manual mode never invokes it. Use Startup for one-shot I/O.
+	OnStart    func(context.Context)
 	Name       string
 	Start      StartMode
 	FirstDelay time.Duration

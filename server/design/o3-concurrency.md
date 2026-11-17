@@ -373,6 +373,21 @@ Implementation notes: [startup and shutdown](o3-startup-shutdown.md).
 - Omit node-test-dns-migrate. Go refuses legacy storage; users first upgrade to the final Python
   release, whose startup already performed this retired migration. Do not resurrect it in Go.
 
+**Clarified in O3-4 (coordinator, 2026-11-17):**
+- Export ClockFrom(ctx) Clock: use the originating Runtime's clock, otherwise the real clock.
+  Owner scheduling waits use it; existing owner business timestamp injection stays unchanged.
+- Periodic.OnStart(ctx) is optional, once per actual ModeRun activation before the first wait.
+  Metrics sets its started-at baseline and resets stopping/started state there on each generation.
+  Manual mode never invokes OnStart and must not invent a next-run-at value.
+- Export Detach(ctx) context.Context: retain values, drop request cancellation, retain Runtime job
+  cancellation at grace−2s. Without a Runtime it is context.WithoutCancel. In section 2.5 and future
+  owner migrations use lifecycle.Detach, keeping PORTING 4b request-disconnect semantics unchanged.
+- In O3-4 change refresh.detached, discovery RunAutoTask/automatic rounds and the synchronous
+  startJob(wait=true) Background path only. Async discovery jobs, tasks.StartBackground and metrics
+  manual jobs remain O3-5; remaining handler detach moves remain O3-6. Held rows here mean refresh.
+- Sub-Store work/control leases and lock polling remain O3-6. Migrate only its 0/5 Monitor scheduling;
+  retain the persisted state.json kernel-monotonic clock domain unchanged.
+
 ### 2.4 Mapping table (every Python loop/lock → Go construct)
 
 Porters of the missing modules use these names, timings and levels; reviewers check them.
@@ -413,7 +428,7 @@ Porters of the missing modules use these names, timings and levels; reviewers ch
 ### 2.5 Request handlers (PORTING 4b, made structural)
 
 - **The owner detaches, not the handler.** Every exported entry point that writes state, takes an L1–L3 lock,
-  records task status, starts a job or joins a shared download starts with `ctx = context.WithoutCancel(ctx)`
+  records task status, starts a job or joins a shared download starts with `ctx = lifecycle.Detach(ctx)`
   (repo already does this per n7-n8). Handlers pass `c.Context()` unchanged. Existing handler-level
   `WithoutCancel` calls (29 files) move into the owners in step O3-6; a handler may keep one only where the owner
   is a pure function.

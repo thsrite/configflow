@@ -130,20 +130,37 @@ func (r *Runtime) Start(ctx context.Context) {
 	r.mu.Lock()
 	g.started = true
 	r.mu.Unlock()
-	r.startEligible()
+	r.startEligibleLocked()
 }
 
 func (r *Runtime) startEligible() {
+	// Startup callbacks may register specifications while Start owns opMu.
+	// They become eligible after Startup; avoid re-entering that operation lock.
+	r.mu.Lock()
+	g := r.current
+	eligible := g != nil && g.started && !g.draining && !g.closed
+	r.mu.Unlock()
+	if !eligible {
+		return
+	}
+	r.opMu.Lock()
+	defer r.opMu.Unlock()
+	r.startEligibleLocked()
+}
+
+func (r *Runtime) startEligibleLocked() {
 	if r.mode == ModeManual {
 		return
 	}
 	snapshot := r.registry.snapshot()
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	g := r.current
 	if g == nil || !g.started || g.draining || g.closed {
+		r.mu.Unlock()
 		return
 	}
+	var periodics []Periodic
+	var legacy []loop
 	for _, p := range snapshot.periodics {
 		if g.drivers[p.Name] || p.Start == AfterFirstRequest && !g.requested {
 			continue
@@ -151,7 +168,7 @@ func (r *Runtime) startEligible() {
 		g.drivers[p.Name] = true
 		g.runners++
 		r.pending++
-		go r.drive(g, p)
+		periodics = append(periodics, p)
 	}
 	for _, l := range snapshot.legacy {
 		if g.drivers[l.name] || r.busy[l.name] {
@@ -161,6 +178,25 @@ func (r *Runtime) startEligible() {
 		r.busy[l.name] = true
 		g.runners++
 		r.pending++
+		legacy = append(legacy, l)
+	}
+	r.mu.Unlock()
+	for _, p := range periodics {
+		if p.OnStart != nil {
+			func() {
+				work, finish := r.workContext(g.loops, g, false)
+				defer finish()
+				defer func() {
+					if recover() != nil {
+						logger.Errorf(msgTaskPanic, p.Name)
+					}
+				}()
+				p.OnStart(work)
+			}()
+		}
+		go r.drive(g, p)
+	}
+	for _, l := range legacy {
 		go r.runLegacy(g, l)
 	}
 }

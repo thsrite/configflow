@@ -84,7 +84,7 @@ server/
    file and which boundary test covers its behaviour (or why none is needed).
 4b. **Request cancellation must not abort work Python would finish.** In Flask a request thread runs to
    completion even if the browser disconnects. In Go, `c.Context()` is cancelled when the client goes away.
-   Pass `context.WithoutCancel(ctx)` (keeping the repo Scope) to anything that writes state, takes
+   Pass `lifecycle.Detach(ctx)` (keeping values and shutdown cancellation) to anything that writes state, takes
    repository locks, runs shared/coalesced downloads, spawns workers or records task status; only use the
    cancellable context where Python itself has a timeout. Reviewers check this for every handler (found as
    a high-severity defect in C13, C15 and C16). From O3 on, the owning package's exported entry point detaches,
