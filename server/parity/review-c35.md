@@ -91,37 +91,75 @@ baseline: new=0 stale=0
 
 proddiff 摘要仍有两端各 30 条响应正文中的 connection diagnostic 计数（隔离网络下的既有错误响应）；没有 status=0 的单边/双边 transport failure，未作为成功响应吞掉。所有 self-check 通过，10 个既有差异保留，无新增或过期 baseline 项。服务器高负载下全量 installer 用时约 298s，不改变测试断言。
 
-## 后续：资源探测在全量并行 race 下的误超时
+## 后续：资源探测与 OxiDNS race 预算修复（已完成）
 
-协调者复验发现 `wide` 单跑正常（普通 0.72s、race 6.8s），但全量包并行时可能超过原 30s 墙钟限制；这不是解析器资源失控。修复分支 `go-fix-importer-bounds` 从 `go` 的 `885d1f7c` 创建，随后变基至 `0efddadf`（上游仅文档变化），仅改测试：
+分支 `go-fix-importer-bounds`，2026-11-17。仅改测试和报告，无生产行为变更。修复提交：`12ac1095`（探测预算）、`39d90065`（race 语料/并行）、`fdb2a652`（比较器）；其余为报告提交。最终两遍在 `go` 的 `f0fb3815` 运行代码上验收，交回变基至 `3ae44741`；中间只有设计/HANDOFF 文档变化，已用 git diff 确认 internal/cmd/tools/scripts/go.mod/go.sum 完全一致。
 
-- 子进程启用 `RLIMIT_CPU` 硬上限，普通 3 CPU 秒、race 30 CPU 秒，按实际 user+system CPU 耗用计数，以原墙钟上限作为实际 CPU 预算，不把墙钟放宽转成计算预算放宽。
-- 墙钟只作死锁/I/O 兜底，普通 30s、race 5min（均为原上限 10 倍），允许全量包并行时等待调度。
-- 全部输入和 RSS 限额保持原规模：wide 2 万键、warnings 4 万条、large 32 MiB、deep 2 万层、递归 alias 和指数 merge；96 MiB Go 软内存限制、32 MiB 栈限制、普通/race 峰值 RSS 256/768 MiB 断言保留。CPU 硬限可终止持续展开或内存压力导致的持续 GC，成功返回仍检查实际峰值 RSS。
-- 增加故意无限计算的子进程控制，断言被 CPU 硬限以 SIGKILL 终止且不是墙钟兜底杀死；Getrusage 失败现在明确报错，日志同时输出 CPU 用量。
+### importer：墙钟误超时
 
-.63 定向普通/race 均通过（1.520s / 12.520s）；wide 分别耗 440ms / 3.949s CPU，峰值约 61 / 188 MiB；无限计算控制普通/race 均在约 1 CPU 秒被终止。命令：
+`wide` 单跑普通 0.72s、race 6.8s，全量包并行时原 30s 墙钟可能耗尽，不能作为实际计算失控的判据。
+
+- 子进程启用 RLIMIT_CPU 硬限，普通 3 CPU 秒、race 30 CPU 秒，统计实际 user+system CPU，排除等待调度的时间。
+- 墙钟只作兜底：普通 30s、race 5min，均为原上限 10 倍；计算预算没有随墙钟一起放宽。
+- wide 2 万键、warnings 4 万条、large 32 MiB、deep 2 万层、递归 alias 和指数 merge 规模不变。Go 软内存限额 96 MiB、栈限额 32 MiB、普通/race 峰值 RSS 256/768 MiB 断言均保留；Getrusage 失败明确报错。
+- 新增无限计算子进程控制：约 1 CPU 秒被 SIGKILL 终止，断言不是墙钟超时杀死。日志同时输出 CPU 用量与峰值 RSS。
+
+.63 定向普通/race 均通过（1.520s / 12.520s）；wide 耗 440ms / 3.949s CPU，峰值约 61 / 188 MiB。命令：
 
 ```sh
 RT_HOST=sunbroke@192.168.0.63 rt -- bash -lc 'cd server && go test -count=1 -v ./internal/importer -run "TestAdversarialImporterResourceBounds|TestImportProbeCPULimit" && go test -race -count=1 -v ./internal/importer -run "TestAdversarialImporterResourceBounds|TestImportProbeCPULimit"'
 ```
 
-.32 初次按原命令 `go test -race -count=1 ./...`：importer 通过（65.743s，installer 419.528s），但未改动的 oxidns 包触发 go test 默认 10 分钟包总时限（`TestC27ReviewPublicBoundaries`；`FAIL configflow/internal/oxidns 600.141s`）。没有放宽该包内部断言，后续仅用 `-timeout=30m` 放宽全量测试驱动时限，默认包并行方式保留；importer 子进程自己的 CPU/RSS/墙钟限制不变。初次日志 `.32:/tmp/importer-bounds-race-1.log` 保留。
+### OxiDNS：保留参考覆盖，降低 race 工作量
 
-调查阶段两遍 `go test -race -count=1 -timeout=30m ./...` 均通过（importer 45.031s / 38.513s），但不计入随后追加任务的最终门禁。
+按要求使用 `.32 go test -race -count=1 -json ./internal/oxidns/` 定位：原包 417.361s，最慢为录制生成 80.62s、录制编辑 53.75s、录制归一化 45.42s、存储往返 44.99s、录制 common 41.16s、C27 新参考 31.52s。这些参考全部保留；仅前六项就超过 200s，不能靠丢掉录制内容解决。
 
-OxiDNS 补充任务已接入同分支。此前两遍加 `-timeout=30m` 的全量实际已通过（importer 45.031s / 38.513s），但不计作新任务最终验收；现在要求优化 OxiDNS 并用默认 timeout/default -p 重新连续两遍。OxiDNS 基线 JSON profile 417.361s；第一、二版压力运行断言均通过（283s / 261s），仍未达到 200s 目标。比较器优化及最终验收进行中。
+race 下独立、输入局部的参考套件用 t.Parallel；所有顺序环境/hook 测试先完成并清理。普通构建仍按原顺序完整执行。只在四份随机语料中，按每函数/结果先保留 4 条，再加稳定 1/128 hash 取样；原策略为先保留 8 条加 1/16。选中前只解码小头部，避免为舍弃的随机行复制大参数和输出。
 
+| 随机语料 | 原 race | 新 race | 普通构建 |
+| --- | ---: | ---: | ---: |
+| generation | 2782 | 461 | 41217 |
+| common | 272 | 93 | 3746 |
+| routing | 1028 | 193 | 13404 |
+| editor | 387 | 75 | 4551 |
+| 合计 | 4469 | 822（减少 81.6%） | 62918 |
 
-OxiDNS 最终实现：仅四份随机文件在 race 下抽样（每函数/结果至少 4 条，加 1/128 稳定 hash；普通构建保留完整规模和顺序），生成 2782→461 / 41217、common 272→93 / 3746、routing 1028→193 / 13404、editor 387→75 / 4551。独立纯参考套件 race-only 并行，等待所有顺序环境/hook 测试清理后再启动。录制内容、比较规则、验证语料、Python 参考及存储往返均不裁减。
+验证语料、录制文件、独立 Python 参考、存储往返、回归/fuzz 种子不抽样。前后 JSON 审计确认：原有 3047 个测试/子测试名全部保留，59 组受保护函数的相同/差异/已接受计数一致，6304 份存储文档完整往返。
 
-CPU profile 显示生成录制测试的测试代码 CPU 约 45% 在比较，约 36% 在 canon；比较器现在对表示完全相同的树免去重复 YAML 解析，否则仍执行完整 canonical 比较，映射复制使用索引；6304 次往返的键顺序比较改为 strings.Builder。新增 16 个严格性回归（类型、值、缺键/多键、序列次序/长度、普通文本、YAML 格式/值/类型、重复键），不扩大接受差异。
+CPU profile 显示生成录制测试的测试代码 CPU 约 45% 在比较、约 36% 在 canon。比较器现对表示完全相同的树跳过重复 YAML 解析，否则仍执行完整 canonical 比较；映射复制使用索引，键顺序拼接使用 strings.Builder。新增 16 条类型、值、键、顺序、YAML、重复键回归（父/子测试共新增 17 个名称），不放松任何接受差异。
 
-`.63` 普通完整语料通过（38.293s），`.32` 自然负载完整 race 115.403s（1m 约 8.6–13.1）。前后 JSON 审计：59 组受保护语料函数的相同/差异/已接受计数一致；原有 3047 个测试/子测试名全部保留，新增比较器父/子测试 17 个；全部 6304 份存储往返和 fuzz 回归种子保留。人工 8-worker 压力叠加其他并发任务后负载曾超过 30，三次断言全绿但耗时 283/261/278s；这些不作为约 20 负载目标的通过证明。约 20 负载补测与最终两次默认全量门禁待补。
+最终普通完整语料 .63 38.293s；.32 自然负载 race 115.403s（1m 约 8.6–13.1），均通过。早期三版人工压力实验断言均通过但耗时 283/261/278s，当时叠加其他任务负载升至 30–50；最后一次校准实验主动取消。协调者明确改为保持共享并行、记录真实负载，以两次默认全量全绿且 OxiDNS 远低于 600s 为验收标准；最终验收没有人工压力。
 
+### 最终 .32：连续两遍默认参数全绿
 
-最终 OxiDNS 方案：只在 race 下抽样四份随机文件（每函数/结果先保留 4 条，再取稳定 1/128 hash），生成 2782→461 / 全量 41217、common 272→93 / 3746、routing 1028→193 / 13404、editor 387→75 / 4551，总数 4469→822；普通构建仍跑全部 62918。验证语料、录制、Python 参考、往返和回归种子均不抽样。独立参考套件在 race 下并行，所有顺序环境/hook 测试先完成清理。
+同一次 rt 同步后，由前台 Python 驱动按下列原样 argv 顺序执行，并每 5s 采样 `/proc/loadavg` 与本 worktree 的 OxiDNS 进程状态。没有 `-p`、`-parallel` 或 `-timeout` 参数：
 
-CPU profile 中生成录制测试的测试代码 CPU 约 45% 在比较，约 36% 在 canon。新比较器只对表示完全相同的树免去重复 YAML 解析，否则仍走完整 canonical 比较；映射复制用索引，键顺序拼接用 strings.Builder。新增 16 条严格性回归覆盖类型、值、键、顺序、YAML 和重复键，不放松归一化。`.63` 完整普通语料通过 38.293s；`.32` 自然负载完整 race 115.403s（1m 约 8.6–13.1）。前后 JSON 审计：59 组受保护语料函数统计一致，3047 个原测试/子测试名无缺失（新增 17 个比较器父/子测试），6304 份存储往返和全部 fuzz 回归种子保留。
+```sh
+cd server
+gofmt -l internal/ tools/     # 无输出
+go vet ./...                # 无输出
+go test -race -count=1 ./...
+go test -race -count=1 ./...
+cd ..
+server/scripts/proddiff.sh
+```
 
-人工压力叠加共享任务后负载曾达 30–50，已完成的三次压力实验断言全绿但耗时 283/261/278s；最后一次校准因共享负载约 50 主动终止，非测试断言失败。协调者明确改定验收：保留并行、记录实际负载，以两遍默认参数全量 race 全绿且 OxiDNS 明显低于 600s 为准，115.4s 的自然负载记录作为证据。不再运行人工压力；最终两遍命令为 `go test -race -count=1 ./...`，逐轮采集原始 `/proc/loadavg` 及本 worktree OxiDNS 进程活动窗口。结果待补。
+| 轮次 | 退出码 / 有测试包 | 全量墙钟 | importer | OxiDNS | OxiDNS 活动窗口 1m load |
+| --- | --- | ---: | ---: | ---: | --- |
+| 1 | 0 / 68 全过 | 502.369s | 33.977s | 274.075s | 21.45–40.57 |
+| 2 | 0 / 68 全过 | 537.562s | 40.717s | 283.762s | 19.73–46.70 |
+
+两轮 OxiDNS 均不到默认 600s 的一半。对应窗口首次/末次 `/proc/loadavg` 原文：
+
+```text
+round 1 first: 21.49 20.71 19.64 26/633 1824562
+round 1 last:  24.72 27.56 23.21 17/599 1854970
+round 2 first: 19.73 21.58 21.58 22/619 1962708
+round 2 last:  37.84 30.88 25.64 49/675 2011045
+```
+
+proddiff 退出 0：2831 cases，65 GET routes / 66 total compared，所有 self-check PASS，coverage_regressions=0、unmapped_routes=0、new=0、stale=0，11 个既有差异；transport_retries 两端均 0。没有修改 baseline、coverage 或 normalization。
+
+完整证据在 .32：`/tmp/race-bounds-final-{1,2}.log`、`/tmp/race-bounds-final-{1,2}-load.jsonl`、`/tmp/race-bounds-final-{1,2}-summary.json`、`/tmp/race-bounds-final-{format,vet,proddiff}.log`。调查阶段第一次默认全量因旧 OxiDNS 600s 超时；随后两次 `-timeout=30m` 仅作调查，不计入上表最终验收。原始 profile/压力实验留在 `/tmp/importer-bounds-oxidns-*.json`；不提交这些日志或临时二进制。
+
+最终 git rebase go 完成，工作区干净，未推送。当前两项无未关闭问题。
