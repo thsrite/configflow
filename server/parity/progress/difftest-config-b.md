@@ -1652,3 +1652,18 @@ current compared=10 design_errors=[] seconds=37.89；exit=0
 ```
 
 原R仍差253、H仍差545及partial/长流程；继续真实就绪超时/回滚失败及其余清单，最终.32全量未执行。
+
+## 批次 96：节点引用 blocker、非法拨号与跨空间确认失效
+
+- 新增9变体、原R6（R093-F10/F11、R094-F12、R095-F14/B02、R096-B02）及H2（H796/H799同一次HTTP关联），统一9337变体、原R4283（S686/F2664/B933）、H569、G16。
+- 节点仅被代理链或聚合引用时，单删均409；链的删除预览必须明确给出blocker，提交当前有效confirmation也不能绕过。替换链节点为不存在raw dialer目标在repository闭包校验409，修改前后全SQL/files严格不变；6变体实际Flask↔Go相比通过。
+- 先预览聚合引用节点，再公开创建other空间节点来源组，新的预览必须含other profile用途且confirmation不同，旧confirmation删除准确409、存储不变。创建组尚未接通Go，后两个读取/删除用例按真实前置依赖标记，不能把Go没创建的引用当业务差异。
+- .63独立首次与两次常规runner均跑完，6compared/1Go尚未实现/2依赖未实现、design_errors=[]；83自检与故意错误Go响应检出通过。所有输入来自有效Python seed和公开HTTP，不手改坏库伪造“合法现态”。
+
+```text
+.63 ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups node-reference-blockers,node-cross-profile-confirmation --baseline 045f2485
+current compared=6 go-unimplemented=1 go-unimplemented-dependency=2 design_errors=[]；exit=0
+独立原始报告/tmp/configdiff-node-reference.json
+```
+
+原R仍差247、H仍差543及partial/长流程；依赖超时独立报告已通过、下一批合并，最终.32全量未执行。

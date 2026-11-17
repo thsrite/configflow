@@ -92,6 +92,8 @@ def main():
     groups.update(rule_proxy)
     from cases.nodes import GROUPS as nodes
     groups.update(nodes)
+    from cases.node_reference_edges import GROUPS as node_reference_edges
+    groups.update(node_reference_edges)
     from cases.probes import GROUPS as probes
     groups.update(probes)
     from cases.dns_protocol import GROUPS as dns_protocol

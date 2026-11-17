@@ -6,6 +6,9 @@ Unreachable/earlier-guard branches are deliberately absent.
 """
 
 LINKS = {
+    'R093-F10': ('DELETE /api/nodes/<node_id>', ('H796',)),
+    'R093-F11': ('DELETE /api/nodes/<node_id>', ('H796',)),
+    'R095-F14': ('POST /api/nodes/delete', ('H799',)),
     'R200-F09': ('POST /api/settings/dependencies/sub-store/update', ('H041',)),
     'R200-F10': ('POST /api/settings/dependencies/sub-store/update', ('H040',)),
     **{case: ('POST /api/generate/mosdns', ('H012',)) for case in ('H003', 'H004', 'H005', 'H006', 'H007', 'H008')},
