@@ -24,8 +24,10 @@ type delta struct {
 }
 
 type deltaSet struct {
-	Module   string  `json:"module"`
-	Deltas   []delta `json:"deltas"`
+	Module string  `json:"module"`
+	Deltas []delta `json:"deltas"`
+	// Wrapper holds rendered-script-only changes outside the templates.
+	Wrapper  []delta `json:"rendered"`
 	rendered []delta
 }
 
@@ -38,6 +40,7 @@ var load = sync.OnceValues(func() (deltaSet, error) {
 		d.After = strings.ReplaceAll(d.After, "{agent_install_rollback}", set.Module)
 		set.rendered = append(set.rendered, d)
 	}
+	set.rendered = append(set.rendered, set.Wrapper...)
 	sort.SliceStable(set.Deltas, func(i, j int) bool { return len(set.Deltas[i].After) > len(set.Deltas[j].After) })
 	sort.SliceStable(set.rendered, func(i, j int) bool { return len(set.rendered[i].After) > len(set.rendered[j].After) })
 	return set, nil

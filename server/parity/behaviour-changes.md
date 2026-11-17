@@ -58,6 +58,22 @@ Python 原来就要求普通注册提交 `registration_key`，而现有 Agent/�
 A08 的历史逐字节基线只反向应用 `installertest/l1-rollback-deltas.json` 中的固定
 批准差异；模板、模块完整内容和指纹均有漂移检查，其余字节继续严格比较。
 
+同一修复带来的其他可见变化（独立复核补记，[review-l1-installer.md](review-l1-installer.md)）：
+
+- 单服务安装停止旧 Agent 失败且服务仍在运行时，报「无法停止原 Agent；未替换程序和配置。」
+  并退出（Python 是 `|| true` 后继续覆盖）；AIO 原来停止失败即退出，现在服务确已停止时继续。
+- 全新安装失败时删除本次写入的程序、配置、服务定义、logrotate 与 IPv4 转发启动脚本；
+  AIO 还删除本次新建的 `/opt/configflow-agent/mihomo|oxidns` 目录（含新 Agent 在其中写入的
+  文件）。原已存在的目录和其他文件不删除。Python 会把这些都留下。
+- 单服务和 AIO 安装脚本的外层输出壳增加 `trap ':' HUP INT TERM`：Ctrl-C、SSH 断开或
+  对整组发送 TERM 时，等内层补偿结束后再输出失败摘要和日志位置并以原状态码退出；
+  Python 的外层壳会立即退出，补偿在后台继续且结果只写入日志。核心安装、网关安装不变。
+  对应 Python 基线比较的固定 rendered delta 记录在同一 JSON 的 `rendered` 字段。
+- OpenRC 补偿时用 `setsid` 启动恢复的旧服务，使其 supervise-daemon 不再位于安装器的
+  进程组，避免整组 TERM 再次停止它。
+- 发现以前中断（如断电）或恢复失败留下的 `.agent-install-backup.*` 时输出提醒并列出目录；
+  不自动套用、不删除。
+
 ## L1 D1 — compact Compose 拒绝冒号数据目录
 
 协调者批准修复 Python 遗留缺陷（2026-11-17）：`compose_compact` 与其他安装方式

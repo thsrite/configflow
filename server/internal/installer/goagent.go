@@ -327,7 +327,7 @@ fi
 	if o.InstallCore {
 		text = replaceOnce(text, "#!/bin/sh\n", "#!/bin/sh\n"+AgentCoreInstallInterface+"\n")
 	}
-	rendered := WithInstallOutput(text)
+	rendered := withCompensatingInstallOutput(text)
 	if o.PrepareDNSHA {
 		rendered = WithRootPrivileges(rendered)
 		lines := splitLines(rendered)

@@ -31,6 +31,11 @@ for name in ['install-go.sh', 'install-go-aio.sh']:
             assert not re.search(r'(?<!\$)\{[a-z_]+\}', text), text
         deltas.append(dict(file=name, before=before, after=after))
 
+# L1 review: the single/AIO report wrapper waits for the body's compensation
+# on HUP/INT/TERM. Rendered scripts only; the shared wrapper text is unchanged.
+wrapper = 'cf_init "安装与维护"\n'
+rendered = [dict(before=wrapper + '(\n', after=wrapper + "trap ':' HUP INT TERM\n(\n")]
+
 Path(__file__).with_name('l1-rollback-deltas.json').write_text(json.dumps(
-    dict(decision='L1 D3: restore old installation on failure', module=module, deltas=deltas),
+    dict(decision='L1 D3: restore old installation on failure', module=module, deltas=deltas, rendered=rendered),
     ensure_ascii=False, indent=2) + '\n')

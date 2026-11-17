@@ -43,6 +43,20 @@ class ComparatorTests(unittest.TestCase):
         self.assertTrue(pd.response_diffs(left, right, '/different-script', []))
         self.assertTrue(pd.response_diffs(left, reply(right[2], left[1], 500), route, []))
 
+    def test_installer_compensation_wait_is_reversed_only_with_the_rollback_module(self):
+        approved = json.loads((pd.ROOT / 'server/internal/installer/installertest/l1-rollback-deltas.json').read_text())
+        [wrapper] = approved['rendered']
+        first = approved['deltas'][0]
+        route = '/api/agents/install-script'
+        original = '#!/bin/sh\n' + wrapper['before'] + first['before'] + ')\n'
+        changed = ('#!/bin/sh\n' + wrapper['after'] + first['after'].replace('{agent_install_rollback}', approved['module'])
+                   + ')\n')
+        left = reply(original.encode(), 'text/plain; charset=utf-8')
+        self.assertEqual([], pd.response_diffs(left, reply(changed.encode(), left[1]), route, []))
+        # Without the D3 module (another installer) the wait trap stays a difference.
+        bare = reply(('#!/bin/sh\n' + wrapper['after'] + ')\n').encode(), left[1])
+        self.assertTrue(pd.response_diffs(reply(('#!/bin/sh\n' + wrapper['before'] + ')\n').encode(), left[1]), bare, route, []))
+
     def test_short_link_plain_error_and_attachment_exception_are_strict(self):
         route = '/api/agents/i/<token>'
         for status, message in [(404, '安装链接不存在或已过期，请在面板重新生成。\n'),

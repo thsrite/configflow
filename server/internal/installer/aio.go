@@ -327,5 +327,5 @@ fi`
 	if o.InstallCore {
 		text = replaceOnce(text, "#!/bin/sh\n", "#!/bin/sh\n"+AgentCoreInstallInterface+"\n")
 	}
-	return WithInstallOutput(text), nil
+	return withCompensatingInstallOutput(text), nil
 }

@@ -273,6 +273,7 @@ def installer_rollback_baseline(reply, route):
         return reply
     edits = [(item['after'].replace('{agent_install_rollback}', approved['module']), item['before'])
              for item in approved['deltas']]
+    edits += [(item['after'], item['before']) for item in approved.get('rendered', [])]
     for after, before in sorted(edits, key=lambda item: len(item[0]), reverse=True):
         script = script.replace(after, before)
     return (reply[0], reply[1], script.encode('utf-8'), *reply[3:])

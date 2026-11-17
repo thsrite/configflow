@@ -34,7 +34,22 @@ fi
 
 // WithInstallOutput is with_install_output(script). The original body keeps
 // its own errexit and traps in an unconditional subshell.
-func WithInstallOutput(script string) string {
+func WithInstallOutput(script string) string { return withInstallOutput(script, "") }
+
+// compensationWait keeps the outer report shell of an Agent installer alive on
+// HUP/INT/TERM. A terminal interrupt reaches the whole job; without a trap the
+// outer shell died at once while the body's cleanup kept restoring the previous
+// Agent unseen, its result only in the log. Traps run after the foreground body
+// exits, so the result and the log path are reported first (L1 review).
+const compensationWait = "trap ':' HUP INT TERM\n"
+
+// withCompensatingInstallOutput is WithInstallOutput for installers whose body
+// restores the previous Agent on failure (single-service and AIO).
+func withCompensatingInstallOutput(script string) string {
+	return withInstallOutput(script, compensationWait)
+}
+
+func withInstallOutput(script, beforeBody string) string {
 	lines := splitLines(script)
 	header := ""
 	if len(lines) > 0 {
@@ -51,7 +66,7 @@ func WithInstallOutput(script string) string {
 	return header + "set +e\n" + CLIOutputHelpers + "\n" + InstallOutputHelpers + `
 cf_verbose_options "$@"
 cf_init "安装与维护"
-(
+` + beforeBody + `(
 ` + pyRstrip(body) + `
 )
 cf_installer_exit_status=$?
