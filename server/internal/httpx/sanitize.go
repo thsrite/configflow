@@ -58,7 +58,25 @@ func writeJSON(c *Ctx, r *Response) error {
 		}
 		r.body, r.value, r.hasValue = body, nil, false
 	}
-	if c == nil || !r.IsJSON() || r.passthrough {
+	if c == nil {
+		// Body may be materialized and fed back through SetBody by a hook.
+		// Preserve the provider's original-key sort before that becomes raw JSON.
+		if r.sortValue {
+			d := json.NewDecoder(bytes.NewReader(r.body))
+			d.UseNumber()
+			var value any
+			if err := d.Decode(&value); err != nil {
+				return fmt.Errorf("decode materialized JSON response: %w", err)
+			}
+			body, err := jsonresp.Encode(value)
+			if err != nil {
+				return err
+			}
+			r.body = body
+		}
+		return nil
+	}
+	if !r.IsJSON() || r.passthrough {
 		return nil
 	}
 	if !r.sortValue && jsonDepth(r.body) > maxRawJSONDepth {

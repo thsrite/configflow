@@ -25,7 +25,7 @@ while IFS= read -r match; do
   *) printf 'Unexpected native HTTP encoder: %s\n' "$match"; failed=1 ;;
  esac
 done < <(find internal -type f -name '*.go' ! -name '*_test.go' -exec grep -nHE 'jsonresp\.Encode\(' {} + || true)
-# Within the policy file, both encodings must belong to writeJSON itself.
+# Within the policy file, all encodings must belong to writeJSON itself.
 awk '
  /^func / { in_exit = ($0 ~ /^func writeJSON\(/) }
  /jsonresp\.Encode\(/ && !in_exit { print "JSON encoding outside writeJSON: " FNR ":" $0; bad=1 }

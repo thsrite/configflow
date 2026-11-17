@@ -131,3 +131,15 @@ func TestN8PersistedIdentitiesRemainUnchanged(t *testing.T) {
 		})
 	}
 }
+
+// Flask materializes jsonify with sorted original keys. A hook that merely
+// reassigns those bytes must not change which colliding redacted key wins.
+func TestN8MaterializedBodyKeepsCollisionOrdering(t *testing.T) {
+	payload := jsonx.Obj("private-secret-z", 1, "private-secret-a", 2, "[REDACTED]", 3)
+	srv := jsonServer(t, func() any { return payload }, func(app *httpx.App) {
+		app.AfterRequest(func(_ *httpx.Ctx, r *httpx.Response) { r.SetBody(r.Body()) })
+	})
+	for _, path := range []string{"/static/ordinary", "/static/single"} {
+		srv.Get(path).WantStatus(200).WantJSON(jsonx.Obj("[REDACTED]", 1))
+	}
+}
