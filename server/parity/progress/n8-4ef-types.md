@@ -1,6 +1,6 @@
 # N8-4e/f — HR stored model types
 
-状态：N8-4e/f 均已 ported，两轮完整门禁通过，待 Opus HR 复核；分支 `go-n8-4ef`，从 `go@ae2e0f59` 创建。
+状态：**verified**（Opus HR 复核，[review-n8-4ef.md](../review-n8-4ef.md)，未关闭问题 0）。原交付：N8-4e/f 均已 ported，两轮完整门禁通过；分支 `go-n8-4ef`，从 `go@ae2e0f59` 创建。
 仅类型和编解码；不迁移业务调用方，不改变文件 I/O、路径、归档或身份算法。无新依赖。
 
 ## N8-4e 字段来源与决定
@@ -191,3 +191,11 @@ GATE PASS
 无待修复问题，无已知 Python 功能差异，无新依赖；未迁移调用方、未 push，等待 Opus HR 复核。
 已修正的建模/测试发现：HA leftover members 是 ID 列表；首次 follow 的 after_deployment_id 可 null；
 R5 注入必须定位根成员；Dynamic 的修改夹具必须真正改变值。ownership 的有效性仍由消费者验证。
+
+## Opus HR 复核（2026-11-18）
+
+**verified**。分支 `go-opus-review-n8-4ef`。发现：high 1（R5 回退在 model 包外不可区分 → 新增 `model.Issues`/
+`IssueUnder` 并写入设计）、low 3（`IPv6Verification.error_code`、`DeploymentManifest.final_config`、
+`DNSGuardSpec.exempt` 改 `*[]string`）、medium 1 留给 N8-5（显式 clear 需能删除 null/错误类型原值）。
+新增私有快照普查 `TestHRSnapshotSchema`：HR 类型 issue 0、非指针成员 null 0、未声明成员仅 `Agent.has_update`。
+`.64` 完整门禁 GATE PASS（`/tmp/gate.S3uEen`），详见复核记录。
