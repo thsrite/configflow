@@ -140,16 +140,18 @@ type DhcpDnsState struct {
 
 // RouterState is one readback of the device (later modules add their fields).
 type RouterState struct {
-	IPv6FakeIPPlan *IPv6FakeIPPlan     `json:"-"`
-	IPv6RoutesPlan *IPv6RoutesPlan     `json:"-"`
-	DNSGuard       *DNSGuardSnapshot   `json:"dns_guard,omitempty"`
-	DNSGuardPlan   *DNSGuardPlan       `json:"-"`
-	ROSPolicy      *ROSPolicySnapshot  `json:"ros_policy,omitempty"`
-	ROSPolicyPlan  *ROSPolicyPlan      `json:"-"`
-	Routes         []*RouteEntry       `json:"routes"`
-	NatBypass      []*NatBypassEntry   `json:"nat_bypass"`
-	AddressSets    map[string][]string `json:"address_sets"`
-	DhcpDNS        *DhcpDnsState       `json:"dhcp_dns"`
+	IPv6FakeIPPlan  *IPv6FakeIPPlan     `json:"-"`
+	IPv6DNSPlan     *IPv6DNSPlan        `json:"-"`
+	IPv6PDGuardPlan *IPv6PDGuardPlan    `json:"-"`
+	IPv6RoutesPlan  *IPv6RoutesPlan     `json:"-"`
+	DNSGuard        *DNSGuardSnapshot   `json:"dns_guard,omitempty"`
+	DNSGuardPlan    *DNSGuardPlan       `json:"-"`
+	ROSPolicy       *ROSPolicySnapshot  `json:"ros_policy,omitempty"`
+	ROSPolicyPlan   *ROSPolicyPlan      `json:"-"`
+	Routes          []*RouteEntry       `json:"routes"`
+	NatBypass       []*NatBypassEntry   `json:"nat_bypass"`
+	AddressSets     map[string][]string `json:"address_sets"`
+	DhcpDNS         *DhcpDnsState       `json:"dhcp_dns"`
 	// nil: proxy CIDRs go by static routes; a list: by policy rules.
 	PolicyRoutes []*PolicyRouteEntry `json:"policy_routes"`
 	// Our policy rules being withdrawn (RetirePolicyRoutes).

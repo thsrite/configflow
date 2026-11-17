@@ -88,7 +88,7 @@ type ManifestHolder interface{ Manifests() Manifests }
 
 // Manifests returns independent copies so callers cannot mutate driver proofs.
 func (d *RouterOS) Manifests() Manifests {
-	return Manifests{IPv6FakeIP: Manifest{d.ipv6FakeIPManifestSet, slices.Clone(d.ipv6FakeIPManifest)}, IPv6Routes: Manifest{d.ipv6RoutesManifestSet, slices.Clone(d.ipv6RoutesManifest)}, Policy: Manifest{d.policyManifestSet, slices.Clone(d.policyManifest)}, DNSGuard: Manifest{d.dnsGuardManifestSet, slices.Clone(d.dnsGuardManifest)}}
+	return Manifests{IPv6PDGuard: Manifest{d.ipv6PDGuardManifestSet, slices.Clone(d.ipv6PDGuardManifest)}, IPv6FakeIP: Manifest{d.ipv6FakeIPManifestSet, slices.Clone(d.ipv6FakeIPManifest)}, IPv6Routes: Manifest{d.ipv6RoutesManifestSet, slices.Clone(d.ipv6RoutesManifest)}, Policy: Manifest{d.policyManifestSet, slices.Clone(d.policyManifest)}, DNSGuard: Manifest{d.dnsGuardManifestSet, slices.Clone(d.dnsGuardManifest)}}
 }
 
 // ROSPolicyCheck is the post-release proof, including migrated old objects.

@@ -20,5 +20,23 @@ func ipv6ReportParts(state *RouterState) []ReportPart {
 		}
 		parts = append(parts, ReportPart{Key: "ipv6_routes", Section: p.IPv6RoutesReport, Statuses: statuses, InSync: slices.Contains([]string{"disabled", "synced"}, p.Status) && len(p.Skip) == 0 && len(p.Ops) == 0})
 	}
+	if p := state.IPv6DNSPlan; p != nil {
+		statuses := []string{}
+		if p.Status != "disabled" {
+			statuses = append(statuses, p.Status)
+		}
+		parts = append(parts, ReportPart{Key: "ipv6_dns", Section: p.IPv6DNSReport, Statuses: statuses, InSync: slices.Contains([]string{"disabled", "synced"}, p.Status) && len(p.Blockers) == 0 && len(p.Ops) == 0})
+	}
+	if p := state.IPv6PDGuardPlan; p != nil {
+		statuses := []string{}
+		if p.Status != "disabled" && p.Status != "borrowed" {
+			s := p.Status
+			if s == "blocked" {
+				s = "unknown"
+			}
+			statuses = append(statuses, s)
+		}
+		parts = append(parts, ReportPart{Key: "ipv6_pd_guard", Section: p.IPv6PDGuardReport, Statuses: statuses, InSync: slices.Contains([]string{"disabled", "synced", "borrowed"}, p.Status) && len(p.Blockers) == 0 && len(p.Ops) == 0})
+	}
 	return parts
 }

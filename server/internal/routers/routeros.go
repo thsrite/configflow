@@ -88,19 +88,21 @@ type RouterOS struct {
 	routeBatch int
 	batchMin   int
 
-	forwardFilterRows     []Row
-	natListTouched        bool
-	addressCache          map[string][]Row
-	addressExpected       map[string][]Row
-	addressReads          map[string]addressProof
-	policyManifest        json.RawMessage
-	policyManifestSet     bool
-	dnsGuardManifest      json.RawMessage
-	dnsGuardManifestSet   bool
-	ipv6FakeIPManifest    json.RawMessage
-	ipv6FakeIPManifestSet bool
-	ipv6RoutesManifest    json.RawMessage
-	ipv6RoutesManifestSet bool
+	forwardFilterRows      []Row
+	natListTouched         bool
+	addressCache           map[string][]Row
+	addressExpected        map[string][]Row
+	addressReads           map[string]addressProof
+	policyManifest         json.RawMessage
+	policyManifestSet      bool
+	dnsGuardManifest       json.RawMessage
+	dnsGuardManifestSet    bool
+	ipv6FakeIPManifest     json.RawMessage
+	ipv6FakeIPManifestSet  bool
+	ipv6RoutesManifest     json.RawMessage
+	ipv6RoutesManifestSet  bool
+	ipv6PDGuardManifest    json.RawMessage
+	ipv6PDGuardManifestSet bool
 }
 
 // NewRouterOS constructs a REST driver with requests-compatible device HTTP.
@@ -989,6 +991,9 @@ type rosOperation struct {
 // own timeout.
 func (d *RouterOS) Apply(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
 	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	var head struct {
 		Kind string `json:"kind"`
 	}
@@ -1269,6 +1274,11 @@ func payload(path string, row Row) Row {
 		return nil
 	}
 	if path == "/ipv6/nd" {
+		for _, key := range []string{"disabled", "dynamic", "invalid"} {
+			if _, err := ipv6DNSFlag(row, key); err != nil {
+				return nil
+			}
+		}
 		if rosTruthy(row["invalid"]) {
 			return nil
 		}
@@ -1314,6 +1324,13 @@ func payload(path string, row Row) Row {
 // payloadError is why payload refused row: RouterOS-generated rows (and
 // invalid IPv6 ND entries) are never taken over, changed or removed.
 func payloadError(path string, row Row) error {
+	if path == rosIPv6ND {
+		for _, key := range []string{"disabled", "dynamic", "invalid"} {
+			if _, err := ipv6DNSFlag(row, key); err != nil {
+				return err
+			}
+		}
+	}
 	if path == "/ipv6/nd" && !rosTruthy(row["dynamic"]) && rosTruthy(row["invalid"]) {
 		return routerError(messageInvalidIPv6ND)
 	}
@@ -1397,7 +1414,7 @@ func (d *RouterOS) perform(ctx context.Context, change ROSChange, undo *[]ROSCha
 		if values["place-before"] != nil && findRow(rows, rosText(values["place-before"])) == nil {
 			return rosCheck{}, routerError(messageRollbackNATOrder)
 		}
-		return d.perform(ctx, ROSChange{Method: "PUT", Path: path, Values: values}, undo, restoring)
+		return d.perform(ctx, ROSChange{Method: "PUT", Path: path, Values: values}, undo, restoring, beforeCreate...)
 	}
 
 	if method == "PUT" {

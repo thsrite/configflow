@@ -102,10 +102,8 @@ func CheckForwardHint(ctx context.Context, d *RouterOS, family int, lan string, 
 		return unknown
 	}
 	path := "/ip/firewall/filter"
-	command := "/ip firewall filter"
 	if family == 6 {
 		path = "/ipv6/firewall/filter"
-		command = "/ipv6 firewall filter"
 	}
 	if rows == nil {
 		var err error
@@ -117,6 +115,20 @@ func CheckForwardHint(ctx context.Context, d *RouterOS, family int, lan string, 
 	snapshot, err := forwardSnapshot(ctx, d, family, rows)
 	if err != nil {
 		return unknown
+	}
+	return checkForwardSnapshot(snapshot, family, lan, targets)
+}
+
+// checkForwardSnapshot reuses already-read tables; nil stays unknown rather than
+// triggering another device read. The public R09 reader retains its I/O contract.
+func checkForwardSnapshot(snapshot *PolicySnapshot, family int, lan string, targets []string) ForwardHintCheck {
+	if snapshot == nil || snapshot.Filter == nil || snapshot.Interfaces == nil || snapshot.InterfaceLists == nil || snapshot.InterfaceMembers == nil || snapshot.AddressLists == nil {
+		return ForwardHintCheck{Status: "unknown"}
+	}
+	rows := snapshot.Filter
+	command := "/ip firewall filter"
+	if family == 6 {
+		command = "/ipv6 firewall filter"
 	}
 	destinationSpecific := slices.ContainsFunc(rows, func(row Row) bool {
 		return policyEnabled(row) && (row.set("dst-address") || row.set("dst-address-list"))
