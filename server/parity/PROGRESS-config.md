@@ -49,6 +49,13 @@ encoder issues: document-wrapper comments lost and empty null keys changed to st
 finding; old/new corpus classification and invalid explicit tags (e.g. `!!null [a]`) are explicitly N7-3
 gates (§5.4). Editor is N7-2; consumers/writers migrate in N7-3/N7-4. Independent review pending.
 
+## O3-1 — lockx primitives (in progress, 2026-11-17)
+
+Branch `go-o3-1`: new in-process locks only, no caller migration or new file locks. Mutex/Keyed/RWMutex
+and L1–L3 order checker pass .63 tests/gofmt/vet; Flight and final acceptance in progress. Coordinator's
+API clarifications are in `design/o3-concurrency.md` §2.2; handoff and commands are in
+[progress/o3-1-lockx.md](progress/o3-1-lockx.md). L4/L5 remain sync.Mutex; consumers migrate in O3-6.
+
 ## Known accepted differences (do not rediscover)
 
 - jsonx: lone UTF-16 surrogates cannot be represented in Go strings (documented in `jsonx/doc.go`); `test_json_response.py::test_surrogate_strings_keep_normalization_before_redaction` depends on it.

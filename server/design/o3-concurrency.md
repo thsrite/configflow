@@ -164,6 +164,10 @@ const (
 
 // ErrTimeout is returned by Lock when the wait limit passed.
 var ErrTimeout = errors.New("lock wait timed out")
+// ErrBusy is returned when a LevelJob Lock/RLock attempt finds the lock busy.
+var ErrBusy = errors.New("lock is busy")
+// ErrPanic identifies a shared worker that panicked.
+var ErrPanic = errors.New("lockx: shared work panicked")
 
 // Mutex is a lock that can be tried, waited for with a context, or waited for with a limit. Zero value unusable;
 // use NewMutex. Not reentrant.
@@ -171,7 +175,7 @@ type Mutex struct{ /* chan struct{} + level + name */ }
 
 func NewMutex(level Level, name string) *Mutex
 func (m *Mutex) TryLock(ctx context.Context) (held context.Context, release func(), ok bool)
-func (m *Mutex) Lock(ctx context.Context, limit time.Duration) (held context.Context, release func(), err error) // limit 0 = until ctx ends
+func (m *Mutex) Lock(ctx context.Context, limit time.Duration) (held context.Context, release func(), err error) // limit <= 0 = until ctx ends
 
 // Keyed is a set of Mutexes created on demand per key and dropped when released and unused (a 404 flood leaves
 // nothing behind). Held reports whether a key is locked now (Python's "is running" checks after process death).
@@ -186,11 +190,19 @@ func (k *Keyed[K]) Held(key K) bool
 type RWMutex struct{ /* … */ }
 
 func NewRWMutex(level Level, name string) *RWMutex
+func (m *RWMutex) TryLock(ctx context.Context) (context.Context, func(), bool)
+func (m *RWMutex) TryRLock(ctx context.Context) (context.Context, func(), bool)
 func (m *RWMutex) RLock(ctx context.Context, limit time.Duration) (context.Context, func(), error)
 func (m *RWMutex) Lock(ctx context.Context, limit time.Duration) (context.Context, func(), error)
 
 // Flight runs one call per key at a time; later callers wait for its result (or their own ctx).
 type Flight[K comparable, V any] struct{ /* … */ }
+
+// Spawner supplies a tracked background worker; O3-2 adapts lifecycle.Spawn.
+type Spawner interface {
+    Spawn(ctx context.Context, name string, fn func(context.Context)) error
+}
+func NewFlight[K comparable, V any](spawner Spawner, name string) *Flight[K, V]
 
 func (f *Flight[K, V]) Do(ctx context.Context, key K, fn func(ctx context.Context) (V, error)) (V, error, bool /*shared*/)
 
@@ -199,6 +211,27 @@ func (f *Flight[K, V]) Do(ctx context.Context, key K, fn func(ctx context.Contex
 // pair through logx (backend.lockx, ERROR) and counted. TryLock never violates (it cannot deadlock).
 func Violations() int64
 ```
+
+**Clarified in O3-1 (coordinator, 2026-11-17):**
+- `LevelJob` is always try-only, including calls through `Lock`/`RLock`; contention returns `ErrBusy` for
+  the owner to map to 409. `TryLock`/`TryRLock` explicitly express non-blocking acquisition. On other
+  levels, both Mutex and RWMutex wait until ctx ends when `limit <= 0`, or at most the positive limit.
+  Context cancellation returns `ctx.Err()`; expiration of the explicit wait limit returns `ErrTimeout`.
+- A blocking order violation is logged through `backend.lockx` at ERROR once per held/waiting name pair;
+  each offending acquisition attempt increments `Violations` once and still proceeds. It never panics or
+  returns an order error. Released records in an old held context are ignored. Try acquisitions cannot
+  violate order, even inside L3; active ancestors still matter for subsequent blocking acquisitions.
+- L4 leaf stores and L5 memory guards use `sync.Mutex` directly, with no extra exported level constants.
+  lockx checks L1–L3 and never performs file I/O or creates/removes old per-resource lock files.
+- Flight uses the injected `Spawner` above and generic `NewFlight`. Before spawning it passes
+  `context.WithoutCancel(ctx)`, preserving values; the worker receives the spawner's context (which a
+  later lifecycle adapter may cancel at shutdown). Every caller, including the first, can cancel its
+  own wait without cancelling the work. A zero-value Flight returns the `messages.go` diagnostic
+  `未配置 spawner` rather than starting an unmanaged goroutine.
+- Spawner rejection or a worker panic completes the call and wakes every waiter. Panic is logged once
+  through logx and returned as `ErrPanic`; ordinary fn errors are returned without duplicate logging.
+  `shared` follows singleflight: once a call has a joiner, all of its results are shared. Completed calls
+  are removed, so a later call for the same key starts fresh work.
 
 - Call every `release` exactly once (defer it); a second call is a no-op.
 - `held` contexts must be passed on to everything called while the lock is held, so the checker and repo's
@@ -313,7 +346,7 @@ Porters of the missing modules use these names, timings and levels; reviewers ch
 | P3 domain-discovery-auto | `Periodic{…, 120s, 600s}` | as Python | discovery single-job lock (L1) | `ProbeBusy` skipped in rounds |
 | P4 oxidns-ranking-history | `Periodic{…, 60s, 60s}` | as Python | – | – |
 | P5 metrics-history-flush | `Periodic{…, 30s, 30s, Wake}`; `Startup{"metrics-load-history"}`; shutdown hooks at PhaseStopSignal and PhaseAfterDrain | as Python | run lock (L5 memory) | run now uses the task key |
-| P6 sub-store-idle | `Periodic{…, 0, 5s}` (registered only when built-in Sub-Store exists) | as Python | `work` RWMutex (L2; idle stop = limit 0, i.e. a try; conversions shared with 45 s; maintenance exclusive with 90 s), `control` Mutex (L2) | `正忙` texts |
+| P6 sub-store-idle | `Periodic{…, 0, 5s}` (registered only when built-in Sub-Store exists) | as Python | `work` RWMutex (L2; idle stop = explicit TryLock; conversions shared with 45 s; maintenance exclusive with 90 s), `control` Mutex (L2) | `正忙` texts |
 | P7 dns-follow | `Periodic{…, 0, 5s}` + `agents.IdleRounds` | as Python | `dnsfollow` Mutex (L1, try) for rounds and edits | 409 `DNS 联动正在处理，请稍后重试` |
 | P8 oxidns-ha-publish | `Periodic{…, 0, 2s}` + IdleRounds | as Python | HA Mutex (L1, try); pair then sorted member keys (L1, try) | 409 `DNS 高可用正在处理，请稍后重试`; round skips |
 | P9 ipv6-verification | `Periodic{…, 0, 5s}`; verification jobs via `Spawn` limited by a semaphore of 2 (8 slots) | as Python | per-Agent Keyed (L2) | – |
