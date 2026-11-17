@@ -6,8 +6,6 @@ import (
 	"math/big"
 	"net"
 	"strings"
-
-	"configflow/internal/jsonx"
 )
 
 // Dial is net.Dial, replaceable in tests.
@@ -53,5 +51,12 @@ func GenerateRandomToken(length int) string {
 // StrToBool is str_to_bool(s): str(s).lower() == "true". A bool true is true
 // too (str(True) is "True"); None, numbers and everything else are false.
 func StrToBool(v any) bool {
-	return strings.ToLower(jsonx.Str(v)) == "true"
+	switch v := v.(type) {
+	case bool:
+		return v
+	case string:
+		return strings.EqualFold(v, "true")
+	default:
+		return false
+	}
 }
