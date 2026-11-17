@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"configflow/internal/convert"
+	"configflow/internal/ctxx"
 	"configflow/internal/httpx"
 	"configflow/internal/jsonx"
 	"configflow/internal/oxidns"
@@ -78,6 +79,9 @@ func editShared(ctx context.Context, fn func(context.Context, *record) error) er
 		return err
 	}
 	_, err := repo.UpdateSharedConfigTransaction(ctx, func(tx context.Context, raw *jsonx.Object) (*jsonx.Object, error) {
+		// The repository's SQL batch is atomic; this owner's callback and
+		// file staging still stop with its original work lifetime.
+		tx = ctxx.Detach(ctxx.WithParent(tx, ctx))
 		if err := tx.Err(); err != nil {
 			return nil, err
 		}
@@ -111,6 +115,7 @@ func editSystem(ctx context.Context, fn func(*record) error) error {
 		return err
 	}
 	_, err = r.UpdateSystemTransaction(ctx, func(tx context.Context, raw *jsonx.Object) (*jsonx.Object, error) {
+		tx = ctxx.Detach(ctxx.WithParent(tx, ctx))
 		if err := tx.Err(); err != nil {
 			return nil, err
 		}
@@ -404,6 +409,7 @@ func editWithProfiles(ctx context.Context, changes []sourceChange, edit func(con
 		return nil, err
 	}
 	_, _, err := repo.UpdateSharedAndConfigTransaction(ctx, func(tx context.Context, raw *jsonx.Object) (*jsonx.Object, error) {
+		tx = ctxx.Detach(ctxx.WithParent(tx, ctx))
 		if err := tx.Err(); err != nil {
 			return nil, err
 		}
@@ -423,6 +429,7 @@ func editWithProfiles(ctx context.Context, changes []sourceChange, edit func(con
 		}
 		return next, nil
 	}, func(tx context.Context, id string, old, current *jsonx.Object) (*jsonx.Object, error) {
+		tx = ctxx.Detach(ctxx.WithParent(tx, ctx))
 		if err := tx.Err(); err != nil {
 			return nil, err
 		}

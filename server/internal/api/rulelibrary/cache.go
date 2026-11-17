@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"configflow/internal/ctxx"
 	"configflow/internal/jsonx"
 	"configflow/internal/lockx"
 	"configflow/internal/repo"
@@ -185,6 +186,7 @@ func (s *stagedCache) abort(ctx context.Context) {
 		return
 	}
 	_, _ = r.UpdateSharedTransaction(ctx, func(tx context.Context, catalog *jsonx.Object) (*jsonx.Object, error) {
+		tx = ctxx.Detach(ctxx.WithParent(tx, ctx))
 		clear(tx, catalog)
 		return nil, errCachePublished
 	})
@@ -213,6 +215,9 @@ func (s *stagedCache) commit(ctx context.Context) error {
 		return err
 	}
 	_, err = r.UpdateSharedTransaction(ctx, func(tx context.Context, catalog *jsonx.Object) (*jsonx.Object, error) {
+		// Keep the transaction values and lock tracker, but never let its
+		// uninterruptible SQL view admit file publication after owner shutdown.
+		tx = ctxx.Detach(ctxx.WithParent(tx, ctx))
 		if err := tx.Err(); err != nil {
 			return nil, err
 		}

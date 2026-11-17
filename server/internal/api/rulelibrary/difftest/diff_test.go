@@ -57,6 +57,7 @@ type world struct {
 	stderr  bytes.Buffer
 	cmd     *exec.Cmd
 	token   string
+	pyDir   string
 	ids     map[string]string
 }
 
@@ -90,6 +91,7 @@ func newWorld(t *testing.T, seed func(context.Context, *repo.Repository)) *world
 		seed(w.srv.Context(), w.srv.Repo)
 	}
 	pyDir := t.TempDir()
+	w.pyDir = pyDir
 	if out, err := exec.Command("cp", "-a", w.srv.DataDir+"/.", pyDir).CombinedOutput(); err != nil {
 		t.Fatalf("copy: %v %s", err, out)
 	}

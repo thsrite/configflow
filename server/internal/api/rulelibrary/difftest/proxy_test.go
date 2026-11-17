@@ -5,6 +5,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -12,6 +14,7 @@ import (
 
 	"configflow/internal/jsonx"
 	"configflow/internal/repo"
+	"configflow/internal/rules"
 )
 
 func TestManualCacheUsesGlobalForwardProxy(t *testing.T) {
@@ -66,6 +69,16 @@ func TestUnavailableRefreshKeepsRawCacheAndPreferences(t *testing.T) {
 	defer origin.Close()
 	w := newWorld(t, seed(t))
 	w.call("POST", "/api/rule-library", body(map[string]string{"id": "retained", "name": "Retained", "source_type": "url", "behavior": "domain", "format": "text", "url": origin.URL + "/source"}), true)
+	// Creation runs sequentially on the two real servers. Set the fixture's
+	// physical cache timestamp equally before testing its retained-cache notice.
+	// The notice, raw file bytes and every other stored field still compare exactly.
+	stamp := fixedClock{}.Now()
+	for _, root := range []string{w.srv.DataDir, w.pyDir} {
+		cache := filepath.Join(root, "shared", "rules", rules.RuleCacheFilename(jsonx.Obj("id", "retained", "source_type", "url", "url", origin.URL+"/source", "behavior", "domain", "format", "text")))
+		if err := os.Chtimes(cache, stamp, stamp); err != nil {
+			t.Fatal(err)
+		}
+	}
 	broken.Store(true)
 	reply := w.call("POST", "/api/rule-library/cache", `{"rule_ids":["retained"]}`, true)
 	result := reply.Body.(map[string]any)["results"].([]any)[0].(map[string]any)

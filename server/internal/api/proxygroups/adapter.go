@@ -9,6 +9,7 @@ import (
 	"fmt"
 
 	"configflow/internal/convert"
+	"configflow/internal/ctxx"
 	"configflow/internal/health/check"
 	"configflow/internal/httpx"
 	"configflow/internal/jsonx"
@@ -84,6 +85,7 @@ func edit(ctx context.Context, id string, fn func(context.Context, *object) erro
 		return err
 	}
 	_, err := repo.UpdateConfigTransaction(ctx, func(tx context.Context, raw *jsonx.Object) (*jsonx.Object, error) {
+		tx = ctxx.Detach(ctxx.WithParent(tx, ctx))
 		if err := tx.Err(); err != nil {
 			return nil, err
 		}
