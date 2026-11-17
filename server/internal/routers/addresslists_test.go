@@ -63,11 +63,11 @@ func TestAddressListBoundary(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if !reflect.DeepEqual(jsonComparable(t, py.Result), jsonComparable(t, result)) {
-					t.Fatalf("result %s", jsonDiff(jsonComparable(t, py.Result), jsonComparable(t, result)))
+				if !reflect.DeepEqual(r07Comparable(t, py.Result), r07Comparable(t, result)) {
+					t.Fatalf("result %s", jsonDiff(r07Comparable(t, py.Result), r07Comparable(t, result)))
 				}
-				if !reflect.DeepEqual(jsonComparable(t, pyState.Calls), jsonComparable(t, f.Calls())) {
-					t.Fatalf("calls %s", jsonDiff(jsonComparable(t, pyState.Calls), jsonComparable(t, f.Calls())))
+				if !reflect.DeepEqual(r07Comparable(t, pyState.Calls), r07Comparable(t, f.Calls())) {
+					t.Fatalf("calls %s", jsonDiff(r07Comparable(t, pyState.Calls), r07Comparable(t, f.Calls())))
 				}
 			})
 		}
