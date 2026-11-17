@@ -65,6 +65,8 @@ RT_HOST=sunbroke@192.168.0.32 rt -e GATE_LOGS=/home/sunbroke/.cache/rt-tmp/c33-g
 
 .64 的两次排队均在检查开始前取消：session30829没有后来新增的磁盘TMPDIR；session79393一直等slot，而 .32 有空slot，故转机且不增加并发轮次。.32第一轮gofmt发现自动合并的server.go导入块，纯格式修正后启动上述正式轮次。没有绕过gate限流、调大timeout或人工施压；业务逻辑与 comparator/normalize 冻结。
 
+脚本既有配置为 race60m、difftest40m，未另改参数。协调者确认 agents 包 race 常态约613s、负载40以上可20多分钟；本轮观察 agents17分36秒时仍在执行，CPU约55%，属于已知耗时。协调者最新裁定：go 已到 dda8973d（A13改server.go/routes.tsv），本轮完成后直接交回，不再为它追加完整轮次；由协调者合并时变基并在合并树用 cf-gate 复验。故本报告保留实际验收基底895f5e21。
+
 ## 文件与提交
 
 核心新增：`internal/api/proxygroups/`、`internal/api/rulelibrary/`；注册 `internal/server/server.go`。共享读侧仅为 cache invalid receipt 接入 `rules.RuleCacheReadPath` 和 rulefetch read path；没有擅改共享 write/commit 关机语义。`api/rules/read_adapter.go` 的 inline 缓存失效后从 DB 交付，保留 cache→inline 既有顺序（正常 cache 不受影响）。
