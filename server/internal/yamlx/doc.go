@@ -1,5 +1,10 @@
-// Package yamlx loads and dumps YAML the way PyYAML 6 does, on the jsonx value
-// model (ordered *jsonx.Object, []any, string, jsonx.Number, bool, nil).
+// Package yamlx reads and writes schema-free YAML documents on yaml.v3.
+// Parse, Decode, Encode and Marshal use Node trees and native typed values;
+// FromJSON and ToJSON bridge ordered dynamic JSON documents. The package does
+// no I/O and knows no application document schema.
+//
+// During the N7 migration, the legacy PyYAML APIs below remain alongside the
+// native API on the jsonx value model. Their callers migrate in later steps.
 //
 // # Dump
 //
