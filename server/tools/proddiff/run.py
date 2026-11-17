@@ -21,6 +21,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import threading
 import traceback
 import urllib.error
 import urllib.parse
@@ -304,6 +305,80 @@ def approved_c07_readiness(left, right, route):
                           'missing_slots': ['router_rule_sync', 'agent']})
 
 
+class AgentComparisonIdentities:
+    """Pair independent cache identities, checking format, stability and uniqueness."""
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.pairs = {'checked_at': {}, 'version': {}}
+
+    def pair(self, key, a, b):
+        if not isinstance(a, str) or not isinstance(b, str):
+            return False
+        if key == 'version':
+            if not re.fullmatch('[a-f0-9]{16}', a) or not re.fullmatch('[a-f0-9]{16}', b):
+                return False
+        else:
+            shape = r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{6})?Z'
+            if not re.fullmatch(shape, a) or not re.fullmatch(shape, b):
+                return False
+            try:
+                if abs(datetime.datetime.fromisoformat(a).timestamp() - datetime.datetime.fromisoformat(b).timestamp()) > 600:
+                    return False
+            except ValueError:
+                return False
+        with self.lock:
+            pairs = self.pairs[key]
+            if a in pairs and pairs[a] != b:
+                return False
+            if any(other != a and value == b for other, value in pairs.items()):
+                return False
+            pairs[a] = b
+        return True
+
+    def normalize_result(self, a, b):
+        if isinstance(a, dict) and isinstance(b, dict):
+            for key in ('checked_at', 'version'):
+                if key in a and key in b and self.pair(key, a[key], b[key]):
+                    a[key] = b[key] = '<paired-cache-identity>'
+
+    def normalize(self, a, b, route):
+        if route == '/api/agents/<agent_id>/push-diff':
+            self.normalize_result(a, b)
+        elif route == '/api/agents' and isinstance(a, list) and isinstance(b, list):
+            for left, right in zip(a, b):
+                if isinstance(left, dict) and isinstance(right, dict):
+                    self.normalize_result(left.get('content_sync'), right.get('content_sync'))
+        elif route == '/api/agents/<agent_id>' and isinstance(a, dict) and isinstance(b, dict):
+            self.normalize_result(a.get('content_sync'), b.get('content_sync'))
+
+
+AGENT_COMPARISON_ROUTES = {'/api/agents', '/api/agents/<agent_id>', '/api/agents/<agent_id>/push-diff'}
+
+
+def settled_agent_comparison(fetch, route):
+    """Observe the completed read-only comparison, never mask a checking result."""
+    deadline = time.monotonic() + 30
+    while True:
+        reply = fetch()
+        if reply[0] != 200:
+            return reply
+        try:
+            body = load_json(reply[2])
+        except (ValueError, UnicodeError):
+            return reply
+        if route == '/api/agents':
+            checking = isinstance(body, list) and any(isinstance(a, dict) and isinstance(a.get('content_sync'), dict) and a['content_sync'].get('status') == 'checking' for a in body)
+        elif route == '/api/agents/<agent_id>':
+            checking = isinstance(body, dict) and isinstance(body.get('content_sync'), dict) and body['content_sync'].get('status') == 'checking'
+        else:
+            checking = isinstance(body, dict) and body.get('status') == 'checking'
+        if not checking:
+            return reply
+        if time.monotonic() >= deadline:
+            raise RuntimeError('Agent content comparison did not settle')
+        time.sleep(0.01)
+
+
 def same_agent_transport_target(python_message, go_message):
     """Recognize native offline-Agent exception text, retaining the target proof."""
     if not isinstance(python_message, str) or not isinstance(go_message, str):
@@ -327,6 +402,9 @@ def response_diffs(left, right, route, rules):
         # Compare the approved availability contract instead of exposing a
         # partial task list. Keep both original content types and headers.
         left = (right[0], left[1], right[2], *left[3:])
+
+
+def response_diffs(left, right, route, rules, agent_identities=None):
     right = installer_rollback_baseline(right, route)
     if plain_install_error(left, right, route):
         # Body/status/type already agree exactly. Assert only the approved
@@ -404,6 +482,8 @@ def response_diffs(left, right, route, rules):
             and a['body'].get('success') is False and b['body'].get('success') is False
             and same_agent_transport_target(a['body'].get('message'), b['body'].get('message'))):
         a['body']['message'] = b['body']['message'] = '<same-target-native-transport-error>'
+    if agent_identities is not None and route in AGENT_COMPARISON_ROUTES:
+        agent_identities.normalize(a['body'], b['body'], route)
     apply_rules(rules, route, a, b)
     if len(left) > 3 and len(right) > 3:
         for name in sorted(a['header'].keys() | b['header'].keys()):
@@ -781,19 +861,23 @@ def main():
             http_successes = collections.defaultdict(set)
             all_cases = list(cases(rows, doc, copies[0]))
 
-            def ask(index, method, route, path, body, timeout):
-                from content_policy import REQUEST_SECONDS, ROUTES
-                if method == 'GET' and route in ROUTES:
-                    timeout = max(timeout, REQUEST_SECONDS)
+            agent_identities = AgentComparisonIdentities()
+            def ask(index, method, path, body, timeout):
                 return scrub(send(15001 + index, method, path, tokens[index], body, timeout=timeout), copies[index])
 
             def compare(case):
                 method, route, path, body, no_data = case
                 if (method, route) not in implemented:
                     return case, None, None, 0, [0, 0]
-                python = lambda timeout: ask(0, method, route, path, body, timeout)
-                go = lambda timeout: ask(1, method, route, path, body, timeout)
-                return (case,) + compare_http(python, go, lambda a, b: response_diffs(a, b, route, rules),
+                def one(index, timeout):
+                    from content_policy import REQUEST_SECONDS, ROUTES
+                    if method == 'GET' and route in ROUTES:
+                        timeout = max(timeout, REQUEST_SECONDS)
+                    fetch = lambda: ask(index, method, path, body, timeout)
+                    return settled_agent_comparison(fetch, route) if method == 'GET' and route in AGENT_COMPARISON_ROUTES else fetch()
+                python = lambda timeout: one(0, timeout)
+                go = lambda timeout: one(1, timeout)
+                return (case,) + compare_http(python, go, lambda a, b: response_diffs(a, b, route, rules, agent_identities),
                                               bracket=method == 'GET' and route in bracket)
 
             def results():

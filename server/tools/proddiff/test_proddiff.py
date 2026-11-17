@@ -129,6 +129,35 @@ class ComparatorTests(unittest.TestCase):
         wrong_status = reply({'success': False, 'message': json.loads(native[2])['message']}, status=500)
         self.assertTrue(pd.response_diffs(py, wrong_status, route, []))
 
+    def test_agent_comparison_identity_pairing_has_proofs(self):
+        identities = pd.AgentComparisonIdentities()
+        route = '/api/agents/<agent_id>/push-diff'
+        a = {'status': 'changed', 'checked_at': '2026-01-01T00:00:00.000001Z', 'version': 'a'*16, 'files': []}
+        b = dict(a, checked_at='2026-01-01T00:00:00.000002Z', version='b'*16)
+        compare = lambda left, right: pd.response_diffs(reply(left), reply(right), route, [], identities)
+        self.assertEqual([], compare(a, b))
+        self.assertEqual([], compare(a, b))
+        for changed in (dict(b, version='c'*16), dict(b, version='bad'), dict(b, checked_at='bad'), dict(b, status='synced'), dict(b, files=[{'path': 'missing'}])):
+            self.assertTrue(compare(a, changed))
+        missing = dict(b); missing.pop('checked_at')
+        self.assertTrue(compare(a, missing))
+        collision = dict(a, version='d'*16)
+        self.assertTrue(compare(collision, b))
+        self.assertTrue(pd.response_diffs(reply(a), reply(b), '/api/other', [], identities))
+        for public_route, left, right in (('/api/agents', [{'content_sync': a}], [{'content_sync': b}]), ('/api/agents/<agent_id>', {'content_sync': a}, {'content_sync': b})):
+            self.assertEqual([], pd.response_diffs(reply(left), reply(right), public_route, [], identities))
+        self.assertTrue(pd.response_diffs(reply(a), reply(b), '/api/agents/<agent_id>', [], identities))
+
+    def test_agent_comparison_waits_for_completion_without_changing_result(self):
+        route = '/api/agents/<agent_id>/push-diff'
+        replies = iter([reply({'status': 'checking'}), reply({'status': 'changed', 'counts': {'changed': 1}})])
+        with mock.patch.object(pd.time, 'sleep'):
+            result = pd.settled_agent_comparison(lambda: next(replies), route)
+        self.assertEqual({'status': 'changed', 'counts': {'changed': 1}}, json.loads(result[2]))
+        with mock.patch.object(pd.time, 'monotonic', side_effect=[0, 31]), mock.patch.object(pd.time, 'sleep'):
+            with self.assertRaises(RuntimeError):
+                pd.settled_agent_comparison(lambda: reply({'status': 'checking'}), route)
+
     def test_short_link_plain_error_and_attachment_exception_are_strict(self):
         route = '/api/agents/i/<token>'
         for status, message in [(404, '安装链接不存在或已过期，请在面板重新生成。\n'),

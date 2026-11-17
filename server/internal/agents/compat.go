@@ -122,3 +122,7 @@ func defaultHAActivate(ctx context.Context, m *Manager, agentID, deploymentID st
 	}
 	return m.activateDeployment(ctx, agentID, deploymentID)
 }
+
+// HAActive reports an unfinished authoritative HA publication journal. A past
+// task's public summary alone is not an active pair publication.
+func HAActive(agent *Record) bool { return haActive(agent) }

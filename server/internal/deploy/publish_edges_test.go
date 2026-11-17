@@ -1,7 +1,9 @@
 package deploy
 
 import (
+	"configflow/internal/agents"
 	"configflow/internal/agents/agentfake"
+	"configflow/internal/jsonx"
 	"encoding/json"
 	"testing"
 )
@@ -85,5 +87,30 @@ func TestOxiDNSPublicationAttestsBeforeActivation(t *testing.T) {
 	}
 	if f.agent(t).GetObject("applied_content").GetString("deployed_config_sha256") == "" {
 		t.Fatal("installed YAML digest missing")
+	}
+}
+
+func TestPairGateUsesAuthoritativeActiveJournal(t *testing.T) {
+	for _, tc := range []struct {
+		name, status           string
+		enabled, summary, want bool
+	}{
+		{name: "absent"}, {name: "enabled", enabled: true, want: true}, {name: "active-journal", status: "preparing", want: true}, {name: "completed-journal", status: "succeeded"}, {name: "failed-journal", status: "failed"}, {name: "old-public-summary", summary: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			record := jsonx.Obj("id", "a")
+			if tc.enabled {
+				record.Set("oxidns_ha", jsonx.Obj("enabled", true))
+			}
+			if tc.status != "" {
+				record.Set(agents.HAField, jsonx.Obj("id", "pair", "status", tc.status))
+			}
+			if tc.summary {
+				record.Set("latest_deployment", jsonx.Obj("ha_publication", jsonx.Obj("status", "succeeded")))
+			}
+			if got := pairRequired(NewTarget(record)); got != tc.want {
+				t.Fatal(got, tc.want)
+			}
+		})
 	}
 }

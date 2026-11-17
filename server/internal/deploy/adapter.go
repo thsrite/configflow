@@ -900,7 +900,7 @@ func normalizeUpload(r *agents.Result) *agents.Result {
 	return r
 }
 func pairRequired(t Target) bool {
-	return t.Record.GetObject("oxidns_ha").GetBool("enabled") || t.Record.GetObject("latest_deployment").GetObject("ha_publication").Len() > 0
+	return t.Record.GetObject("oxidns_ha").GetBool("enabled") || agents.HAActive(t.Record)
 }
 func legacyPush(ctx context.Context, m *agents.Manager, id, content string, o PushInput) (*agents.Result, error) {
 	extra := jsonx.NewObject()
