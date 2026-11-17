@@ -14,7 +14,7 @@ def events(pair):
 
 
 @contextmanager
-def managed(binary, recorder, *, fail=False, health_status=None, controller_status='RUNNING', unreadable_version=False, github=None, allow_restart=False, restart_failure='', readiness='ready', stdin_node_check=False):
+def managed(binary, recorder, *, fail=False, health_status=None, controller_status='RUNNING', unreadable_version=False, github=None, allow_restart=False, restart_failure='', readiness='ready', stdin_node_check=False, controller_missing=False):
     require_native_network()
     with Source(json.dumps({'data': {'version': '2.40.0'}}).encode()) as health:
         health.headers = {'Content-Type': 'application/json'}
@@ -108,6 +108,11 @@ print('sub-store ' + os.environ['CONFIGDIFF_SUPERVISOR_STATE'] + ' pid 1, uptime
             'CONFIGDIFF_CONTROLLER_URL': health.url + '/_configdiff/version',
             'CONFIGDIFF_NODE_LOG': str(pair.root / 'node-check-events.jsonl'),
             'CONFIGDIFF_SUPERVISOR_FAIL': '1' if fail else '0'}
+        if controller_missing:
+            # A real exec failure, with no possibility of PATH falling through
+            # to the test host's actual supervisor controller.
+            executable.unlink()
+            pair.options['environment']['PATH'] = str(tools)
         if github is not None:
             pair.options['environment'].update(REQUESTS_CA_BUNDLE=str(github.cert), SSL_CERT_FILE=str(github.cert),
                 HTTP_PROXY=github.url, HTTPS_PROXY=github.url, NO_PROXY='127.0.0.1,::1')

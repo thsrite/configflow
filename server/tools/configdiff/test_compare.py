@@ -1746,6 +1746,61 @@ serve(app, host='127.0.0.1', port=int(sys.argv[1]))
                 bad['files']['migrations/arbitrary/import/configflow.sqlite3'] = bad['files'].pop(path)
             self.assertTrue(rejected_import_errors(before, bad), mutation)
 
+    def test_active_runtime_lease_keeps_primary_and_secondary_protocol_proofs(self):
+        from cases.dependency_active_lease import ActiveConversion
+        observer = ActiveConversion.__new__(ActiveConversion)
+        observer.readonly = None
+        observer.conversion_stable = SimpleNamespace(compare=lambda policy: [])
+        value = {'health': [], 'unexpected_commands': [], 'status_count_valid': True}
+        observer.observed = [copy.deepcopy(value), copy.deepcopy(value)]
+        observer.protocol = [[{'method': 'POST', 'path': '/api/subs'}]] * 2
+        observer.proofs = [{'lease_gate_reached': True, 'lease_gate_timeout': False, 'temporary_subscriptions_cleaned': True}] * 2
+        observer.secondary = [Reply(200, {}, b'{"success":true}'), Reply(200, {}, b'{"success":true}')]
+        self.assertEqual(observer.compare(Policy()), [])
+        for field in ('mode', 'wire', 'proof', 'response'):
+            bad = copy.copy(observer)
+            if field == 'mode':
+                bad.observed = [value, {**value, 'health': [{'method': 'GET'}]}]
+            elif field == 'wire':
+                bad.protocol = [observer.protocol[0], []]
+            elif field == 'proof':
+                bad.proofs = [observer.proofs[0], {**observer.proofs[0], 'temporary_subscriptions_cleaned': False}]
+            else:
+                bad.secondary = [observer.secondary[0], Reply(200, {}, b'{"success":false}')]
+            self.assertTrue(bad.compare(Policy()), field)
+
+    def test_readiness_deadline_retains_all_probes_commands_and_elapsed_proof(self):
+        from cases.dependency_modes import NeverReady
+        observer = NeverReady(None, None)
+        observer.readonly = None
+        observer.observed = [{'health': [{'method': 'GET', 'path': '/api/utils/env'}],
+            'unexpected_commands': [], 'status_count_valid': True}] * 2
+        observer.waits = [{'production_timeout_observed': True}] * 2
+        self.assertEqual(observer.compare(Policy()), [])
+        observer.observed[1] = {**observer.observed[0], 'health': []}
+        self.assertTrue(observer.compare(Policy()))
+        observer.observed[1] = {**observer.observed[0], 'unexpected_commands': [{'args': ['stop']}]}
+        self.assertTrue(observer.compare(Policy()))
+        observer.observed[1] = copy.deepcopy(observer.observed[0])
+        observer.waits[1] = {'production_timeout_observed': False}
+        self.assertTrue(observer.compare(Policy()))
+
+    def test_environment_owned_frontend_ports_are_distinct_and_absent_from_seed(self):
+        from harness import Pair, Recorder
+        pair = Pair('/nonexistent-unexecuted-public-binary', Recorder(), options={'web_frontend': True,
+            'web_listener_ports': (18080, 18081), 'web_port_environment': True})
+        try:
+            left = pair.environment(pair.dirs[0], 19080)
+            right = pair.environment(pair.dirs[1], 19081)
+            seed = pair.environment(pair.root / 'seed', 0)
+            self.assertEqual((left['CONFIGFLOW_WEB_PORT'], right['CONFIGFLOW_WEB_PORT']), ('18080', '18081'))
+            self.assertEqual((left['CONFIGFLOW_BACKEND_PORT'], right['CONFIGFLOW_BACKEND_PORT']), ('19080', '19081'))
+            self.assertNotIn('CONFIGFLOW_WEB_PORT', seed)
+            self.assertEqual(left['CONFIGFLOW_FRONTEND_DIR'], '')
+            self.assertEqual(right['CONFIGFLOW_FRONTEND_DIR'], str(pair.root / 'frontend'))
+        finally:
+            pair.temp.cleanup()
+
     def test_concurrent_rule_creation_reports_every_changed_proof_and_second_response(self):
         from cases.rule_create_race import CreationRace
         observer = CreationRace.__new__(CreationRace)

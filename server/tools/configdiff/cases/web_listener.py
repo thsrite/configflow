@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import re
+import subprocess
 
 from compare import differences
 from dependency_tls import require_native_network
@@ -67,12 +68,13 @@ def require_listener_mount():
 
 
 @contextmanager
-def deployment(binary, recorder):
+def deployment(binary, recorder, *, environment=False):
     require_listener_mount()
     with Source(TOKEN.encode()) as frontend:
         port = free_port()
         ports = (frontend.server.server_port, port)
-        pair = Pair(binary, recorder, options={'web_frontend': True, 'web_listener_ports': ports})
+        pair = Pair(binary, recorder, options={'web_frontend': True, 'web_listener_ports': ports,
+            'web_port_environment': environment})
         pair.port_leases.append(port)
         try:
             with pair:
@@ -110,3 +112,49 @@ def occupied(binary, recorder):
 
 
 GROUPS = {'web-listener-complete-readonly': supported, 'web-listener-complete-occupied': occupied}
+
+
+def environment_locked(binary, recorder):
+    with deployment(binary, recorder, environment=True) as (pair, ports):
+        expected = '端口由 CONFIGFLOW_WEB_PORT 指定；移除该环境变量并重建容器后可在此修改'
+        def status(reply):
+            require(reply.json() == {'supported': True, 'port': ports[0], 'editable': False,
+                'ipv6': True, 'source': 'environment', 'message': expected},
+                'real full frontend honors environment precedence and advertises the exact immutable setting')
+        pair.request('R205-S01', 'GET ' + ROUTE, expect=200, writes=True, check=status,
+            interaction=Readonly(pair, ports), variant='complete-frontend-environment-port-is-readonly')
+        target = free_port()
+        pair.port_leases.append(target)
+        pair.request('H1110', 'POST ' + ROUTE, body=json_body({'port': target}), expect=409, writes=True,
+            interaction=Readonly(pair, ports),
+            check=lambda reply: require(reply.json() == {'success': False, 'message': expected},
+                'changing environment-owned port fails clearly and preserves old live listener'),
+            variant='complete-native-frontend-refuses-environment-owned-port-change')
+
+
+GROUPS['web-listener-real-environment-port-cannot-change'] = environment_locked
+
+
+def privileged_bind_denied(binary, recorder):
+    # ip_unprivileged_port_start is per-netns. Refuse to change it unless the
+    # existing native wrapper has proved this is our isolated loopback namespace.
+    require_listener_mount()
+    require(os.geteuid() != 0, 'public servers run as the original unprivileged test user')
+    key = 'net.ipv4.ip_unprivileged_port_start'
+    original = subprocess.run(['sysctl', '-n', key], check=True, capture_output=True, text=True).stdout.strip()
+    require(original.isascii() and original.isdecimal(), 'original private-netns sysctl is a restorable numeric value')
+    try:
+        subprocess.run(['sudo', 'sysctl', '-w', key + '=1024'], check=True, capture_output=True)
+        with deployment(binary, recorder) as (pair, ports):
+            require(subprocess.run(['sysctl', '-n', key], check=True, capture_output=True, text=True).stdout.strip() == '1024',
+                'the real private kernel enforces privileged low ports')
+            pair.request('R206-B01', 'POST ' + ROUTE, body=json_body({'port': 1}), expect=409, writes=True,
+                interaction=Readonly(pair, ports),
+                check=lambda reply: require(reply.json() == {'success': False,
+                    'message': '无法监听端口 1，请检查权限和网络配置'}, 'actual kernel EACCES keeps the exact public Chinese bind error'),
+                variant='complete-frontend-real-low-port-EACCES')
+    finally:
+        subprocess.run(['sudo', 'sysctl', '-w', key + '=' + original], check=True, capture_output=True)
+
+
+GROUPS['web-listener-real-unprivileged-low-port-bind-failure'] = privileged_bind_denied

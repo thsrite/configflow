@@ -2337,3 +2337,19 @@ GATE PASS
 .32 native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups merged-provider-real-retained-config-generic-failure,oxidns-pull-real-retained-origin-runtime-failure,generator-real-converted-parameter-name-collisions --baseline 4d8a665a --output <独立报告>
 current compared1 / Go未实现7；design_errors=[]；seconds11.81；exit0
 ```
+
+## 批次 138：真实低端口EACCES、环境只读与Sub-Store租约/故障
+
+- H1110完整frontend、每端独立环境端口，验证GET准确source/environment/editable/message和POST409；全SQL/files、旧端口和能力都保留。H1106/R206-B01只在已验证private netns设置真实内核低端口权限，再由非root服务绑定port1得到409，中文和保留状态相比；finally恢复私有sysctl，无宿主修改。
+- H1075为真实并发转换持租约：create屏障已进入，mode写入409且零额外控制/探活，转换随后200并完整cleanup；不是手持Python文件锁。H1076真实exec失败，PATH仅含owned工具目录，无法落到宿主Supervisor。H1078保留原始20秒探活循环，逐端19–65秒窗口，完整探活数组/次数/只读控制命令仍严格比。两错误再用真实GET依赖状态验证failed/error/原on_demand模式，GitHub通过本地受信TLS fake。
+- .32先独立验证五组各自通过；随后合并到独立listener-runtime-boundaries.json，并复跑原完整readonly/occupied、managed-modes及8种Sub-Store parse-lines转换。两类故障加状态轮询最终4变体45.99秒compared，独立报告累计23变体全部compared、design_errors=[]，129项自检及故意错误Go响应检出。新增自检覆盖后端/前端端口环境隔离、完整探活/时限证明、租约与次请求协议/状态的故意变异。
+- canonical仍由.64完整门禁持有，未并发覆盖。三份真实报告按case/variant/route去重为10588变体、原R4490（S712/F2762/B1016）、H934/G16；compared2973/Go未实现7458/依赖107/严格差异49/O12单列1。原R差40/H差178，尚有部分/跨域和未证明条目，未算全清单完成。T12真实进程起停与300秒闲置没有因此计完成。Go 4d8a665a全量门禁仍在.64的race阶段，之后才跑configdiff all；待结束后标准runner定向合并新增报告并复核全部finding状态。
+- 当前go 5680fbb3只比4d8a665a追加HANDOFF文档；本分支自身相对merge-base的206个路径全部在tools/difftest/清单/进度/findings/已批准behaviour-changes范围，未改或阅读Go业务实现。
+
+```text
+.32 --groups web-listener-real-environment-port-cannot-change,web-listener-real-unprivileged-low-port-bind-failure,dependency-real-controller-exec-unavailable,dependency-real-running-process-never-ready,dependency-real-active-conversion-excludes-mode-writer,web-listener-complete-readonly,web-listener-complete-occupied,dependency-managed-modes,nodes-parse-lines-converter --baseline 4d8a665a --output <独立报告>
+Python前提与双端比较全部通过；design_errors=[]；exit0
+.32 --groups dependency-real-controller-exec-unavailable,dependency-real-running-process-never-ready --baseline 4d8a665a --output <同一独立报告>
+current compared4；cumulative compared23；design_errors=[]；seconds45.99；exit0
+129 self-checks + deliberately wrong-Go-response detection OK
+```

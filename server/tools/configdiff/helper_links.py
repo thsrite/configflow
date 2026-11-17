@@ -100,6 +100,7 @@ VARIANT_LINKS.update({
 })
 VARIANT_LINKS.update({
     ('R016-F15', 'real-MKCOL-403-before-PUT', 'POST /api/backup/now'): ('H031',),
+    ('R206-B01', 'complete-frontend-real-low-port-EACCES', 'POST /api/settings/web-port'): ('H1106',),
 })
 VARIANT_LINKS.update({
     ('G10', variant, 'POST /api/generate/oxidns'): labels

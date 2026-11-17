@@ -67,3 +67,65 @@ def modes(binary, recorder):
 
 
 GROUPS = {'dependency-managed-modes': modes}
+
+
+def missing_controller(binary, recorder):
+    from dependency_tls import GitHub
+    with GitHub() as github, managed(binary, recorder, health_status=503, controller_missing=True, github=github) as (pair, health):
+        pair.request('H1076', 'POST /api/settings/dependencies/sub-store/mode', body=json_body({'mode': 'always'}),
+            expect=409, writes=True, check=message('无法管理内置 Sub-Store，请检查容器服务状态'),
+            interaction=ModeProtocol(pair, health, 1, readonly=True), variant='real-exec-failure-with-only-owned-PATH')
+        failed_status(pair, health, github, '无法管理内置 Sub-Store，请检查容器服务状态', 'controller-exec-unavailable')
+
+
+GROUPS['dependency-real-controller-exec-unavailable'] = missing_controller
+
+
+class NeverReady(ModeProtocol):
+    """Observe the unchanged production readiness deadline and complete probes."""
+    def __init__(self, pair, health):
+        super().__init__(pair, health, 0, readonly=True, needs_status=True)
+        self.waits = [None, None]
+
+    def before(self, index):
+        import time
+        super().before(index)
+        self.started = time.monotonic()
+
+    def after(self, index, reply):
+        import time
+        elapsed = time.monotonic() - self.started
+        self.waits[index] = {'production_timeout_observed': 19 <= elapsed <= 65}
+        self.health_count = len(self.health.requests[self.offsets[0]:])
+        if index == 0:
+            require(self.waits[0]['production_timeout_observed'] and self.health_count >= 2,
+                'actual readiness loop retries until its original 20-second deadline, without reducing constants')
+        super().after(index, reply)
+
+    def compare(self, policy):
+        # Complete probe arrays (including count) stay strict. Only elapsed time
+        # is tested as the actual production deadline window on each backend.
+        return super().compare(policy) + differences(*self.waits, 'dependency.readiness-deadline', policy)
+
+
+def never_ready(binary, recorder):
+    from dependency_tls import GitHub
+    with GitHub() as github, managed(binary, recorder, health_status=503, github=github) as (pair, health):
+        pair.request('H1078', 'POST /api/settings/dependencies/sub-store/mode', body=json_body({'mode': 'always'}),
+            expect=409, writes=True, check=message('Sub-Store 启动后未就绪，请稍后重试或检查容器日志'),
+            interaction=NeverReady(pair, health), timeout=70, variant='actual-20-second-readiness-deadline')
+        failed_status(pair, health, github, 'Sub-Store 启动后未就绪，请稍后重试或检查容器日志', 'running-never-ready')
+
+
+GROUPS['dependency-real-running-process-never-ready'] = never_ready
+
+
+def failed_status(pair, health, github, expected, variant):
+    from cases.dependency_status import DependencyRead
+    def check(reply):
+        value = reply.json()['dependencies'][0]
+        require(value['lifecycle'] == {'managed': True, 'mode': 'on_demand', 'state': 'failed',
+            'idle_seconds': 300, 'error': expected} and value['running'] is False and value['updatable'] is True,
+            'public dependency polling retains the failed lifecycle and exact error without changing saved mode')
+    pair.request('R198-S01', 'GET /api/settings/dependencies', expect=200, writes=True, check=check,
+        interaction=DependencyRead(pair, health, github, True), variant='after-real-runtime-failure/' + variant)

@@ -160,6 +160,9 @@ class Pair:
                        CONFIGDIFF_PROBE_INPUT=str(self.root / 'probe-input.jsonl'),
                        CONFIGDIFF_PROBE_CASE=self.options['probe_case'])
         env.update(self.options.get('environment', {}))
+        if (self.options.get('web_frontend') and self.options.get('web_port_environment')
+                and directory in self.dirs):
+            env['CONFIGFLOW_WEB_PORT'] = str(self.options['web_listener_ports'][self.dirs.index(directory)])
         if self.options.get('web_frontend') and directory == self.dirs[1]:
             env['CONFIGFLOW_FRONTEND_DIR'] = str(self.root / 'frontend')
         if 'secret_key' in self.options:

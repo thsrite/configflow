@@ -2171,6 +2171,14 @@ R025/R032-F10先正常启动，再通过公开完整import保存server_domain=1�
 
 H208用逻辑节点名称唯一、params.name却使实际生成名称重复或等于DIRECT的两类保留值；当前Python转换器base.update(params)后实际名称改变，最终validate_emitted才拒绝400，default/scoped各一例。来源[mihomo.py:1162](../../backend/converters/mihomo.py#L1162)、[dialer_references.py:367](../../backend/utils/dialer_references.py#L367)。不能用较早logical names检查代替生成后的名称检查。
 
+### Step B 真实监听权限与Sub-Store运行时（批次138）
+
+H1110的两端各使用自己分配的CONFIGFLOW_WEB_PORT和完整frontend；GET明确environment/不可编辑，POST新端口409，原端口健康能力、全部SQL和保存文件精确不变，见[web_listener.py:271](../../backend/utils/web_listener.py#L271)。R206-B01/H1106只在已有wrapper证明的private netns里设置ip_unprivileged_port_start=1024，再由非root公开服务真正绑定port=1失败409，精确中文提示，原监听/文件不变；finally恢复该私有sysctl，不动宿主网络或进程。来源[web_listener.py:217](../../backend/utils/web_listener.py#L217)。
+
+H1075由真正的parse-lines转换进入临时订阅create屏障并持有runtime租约，此时公开mode写入409且不额外探活/控制进程；放行后转换200，完整create/download/delete及清理、两次HTTP响应和全部SQL/files相比。不是直接持Python flock。H1076使用只包含owned目录的PATH，令supervisorctl真实exec失败，无法退到宿主控制器。H1078保持原始20秒未就绪循环，不缩短常量；逐端验证19–65秒窗口且保留完整探活序列/次数和只读控制命令，见[sub_store_runtime.py:71](../../backend/utils/sub_store_runtime.py#L71)、[sub_store_runtime.py:97](../../backend/utils/sub_store_runtime.py#L97)、[sub_store_runtime.py:124](../../backend/utils/sub_store_runtime.py#L124)。两类失败之后另用真实依赖轮询验证failed状态、准确error和原on_demand模式不变；GitHub查询走受信本地TLS fake，未访问外网。
+
+以上均双端实际compared；T12的真实进程起停/完整300秒闲置停机仍没有因此计完成。这些是公开协议与控制器fake的运行时合同，不代表真实Supervisor/Node进程和容器环境已验收。
+
 R020-B90新增独立公开前置：先真正保存public token，再分别执行缺内部能力/能力冲突/当前有效能力三种完整import（登录/认证关闭），及reset；当前/退役能力不能再保存为public token，失败全SQL/files精确不变。有效schema能力的import保留原值，缺失/冲突与reset才轮换，沿用上文T28 oracle更正。原独立import/reset用例保留，不因新增公开setter的wiring前置而丢掉原先能比较的路径。
 
 R228-B90实际测试未注入公开构建的完整`{"version":"dev"}`响应，检查精确字段形态且所有值仍严格比；没有用shape投影掩掉版本值。Docker发布时对[backend/version.py](../../backend/version.py)的Git tag替换和Go发布构建注入之间的值约定仍属O12/O14部分覆盖，当前dev/dev通过不能外推为发布版本注入已经验收。
