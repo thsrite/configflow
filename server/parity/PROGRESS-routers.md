@@ -1,6 +1,6 @@
 # PROGRESS — domain `routers`
 
-Domain `routers` (WORKFLOW.md): router core, iKuai, RouterOS core/policy, router DNS/IPv6, router publish/rule sync, clients/split (old packages #32–#38). **52 Python files, 17574 lines, 17 modules** (equal to the `routers` totals in `FILES.md`) — 12 missing, 0 partial, 0 ported, 5 verified (R01, R02, R03, R04, R05). Only reviewers set `verified`.
+Domain `routers` (WORKFLOW.md): router core, iKuai, RouterOS core/policy, router DNS/IPv6, router publish/rule sync, clients/split (old packages #32–#38). **52 Python files, 17574 lines, 17 modules** (equal to the `routers` totals in `FILES.md`) — 11 missing, 0 partial, 1 ported, 5 verified (R01, R02, R03, R04, R05). Only reviewers set `verified`.
 
 Planning audit: 2026-11-16, worktree `configflow-go`, branch `go` at 7b1b90b5 (plus uncommitted work of the C24/C25 agent in `internal/oxidns`). The Go tree was searched directly (`grep -ri 'routeros|ikuai|router_split|routers_of|router' server/internal`): **no package ports any routers file**; `internal/server` wires no routers package. What exists is listed under "Go code that already touches this domain" below; nothing from the old `progress/` files covers #32–#38.
 
@@ -42,7 +42,7 @@ Python's `backend/routers` is one big import cycle (most cross-module imports ar
 | R03 | RouterOS NAT assessment, iKuai IP groups, drift report | 1499 | verified | HR | R01 | – | internal/routers |
 | R04 | RouterOS REST driver, batch writes | 1415 | verified | HR | R01, R03; shared requests client³ | – | internal/routers |
 | R05 | iKuai driver | 1179 | verified | HR | R01, R03; shared requests client³ | – | internal/routers |
-| R06 | device route editor (RouterOS/iKuai static routes) | 684 | missing | HR | R04, R05 | – | internal/routers |
+| R06 | device route editor (RouterOS/iKuai static routes) | 684 | ported | HR | R04, R05 | – | internal/routers |
 | R07 | RouterOS NAT address lists, address-list sync, test helpers | 1422 | missing | HR | R03, R04 | – | internal/routers, internal/routers/routerfake |
 | R08 | RouterOS policy routing (plan, write, view) | 1349 | missing | HR | R07, C05, C26 (`normalize_policies`, present) | – | internal/routers |
 | R09 | forced DNS (DNS guard), IPv4 same-port forward hint | 773 | missing | HR | R04, R07 | – | internal/routers |
@@ -403,7 +403,7 @@ Commands (from the worktree root; iterate on .63, final run on .32):
 
 ## R06 — device route editor
 
-**Status: `partial`** · HR · prereqs: R04, R05 · Go: internal/routers
+**Status: `ported`** · HR · prereqs: R04, R05 · Go: internal/routers
 
 Files:
 - `backend/routers/route_editor.py` (164), `backend/routers/routeros_routes.py` (283), `backend/routers/ikuai_routes.py` (237)
@@ -412,18 +412,18 @@ Tests: `test_route_editor.py` (14), `test_routeros_routes.py` (24), `test_ikuai_
 
 Routes: none here (`/routes`, `/routes/plan`, `/routes/apply` handlers are R15).
 
-Implemented: `route_editor.go` (typed intent/preview/result, strict RawMessage request boundary, public snapshot revision, connection/intent fingerprint, detached execute, exported `RouterOperationLock` using lockx L2), `routeros_routes.go` / `ikuai_routes.go` (read-only classification, complete preflight/readback, conservative identity-checked compensation). Implementation commits rebased onto go (O3-1/O3-2 + A19): 53aee7d0, 14bf0cb2, 83d65a4d. No new dependency, jsonx/pystr/urlx, flock or production goroutine.
+Implemented: `route_editor.go` (typed intent/preview/result, strict RawMessage request boundary, public snapshot revision, connection/intent fingerprint, detached execute, exported `RouterOperationLock` using lockx L2), `routeros_routes.go` / `ikuai_routes.go` (read-only classification, complete preflight/readback, conservative identity-checked compensation). Implementation commits rebased onto go (O3-1/O3-2 + A19): 984dc0e8, a797a63c, b20c0cc1. No new dependency, jsonx/pystr/urlx, flock or production goroutine.
 
 Design / every R04, R05 and A19 HR issue class: `design/r06-route-editor.md`. Per-Python-file mapping, matrix coverage, accepted differences and L5-only list: `parity/r06-coverage.md`. `TestR06PythonBoundary`: **171** real Python-vs-Go loopback cases; compare result/errors, full requests, empty external undo records and final tables. `r06_safety_test.go`: cancellation after accepted writes and through compensation, cancelled entry, L2 cross-profile identity, fingerprint/secret/runtime stability, credential echo hiding. Three compiled implementation mutations detected result/request/ownership differences.
 
-After rebase: added duplicate-name zero-write proofs (2 explicit safer-than-Python cases), kept recovery/uncertain status visible when redacting secrets; migrated transitional connection lock to shared `lockx.Keyed` (L2), propagated held context, added scope/order assertions. Remaining: final authoritative .32 format/vet, routers+devhttp race, full suite `-p=4`, all enabled difftests, proddiff; rebase `go`; fresh Opus HR review (only reviewer may set verified). **HTTP/L1-before-validation acceptance is pending R15**: no `internal/api/routers` or R14 job-lock owner exists on this branch. R020 acquires L1 before lookup/type/body checks (busy ->409 before malformed ->400), then L2; R021 L2 waits; R019 Python read is unlocked. Do not count these as completed HTTP comparisons.
+After rebase: added duplicate-name zero-write proofs (2 explicit safer-than-Python cases), kept recovery/uncertain status visible when redacting secrets; migrated transitional connection lock to shared `lockx.Keyed` (L2), propagated held context, added scope/order assertions. Authoritative .32 gates passed before the final rebase (pre-rebase afdeb804, R06/devhttp/lockx trees identical at 3b6b05c6): gofmt empty; `go vet ./...` exit 0; race routers **241.234s** / devhttp **3.542s**; full `go test -p=4 -count=1 ./...` exit 0 (routers **224.946s**, importer **1.602s**); all 9 tagged/enabled difftest packages passed; proddiff self-check PASS, coverage_regressions=0, baseline **new=0 stale=0**. Exact commands/output tails and added-file sizes: `parity/r06-acceptance.md`. Implementation commits: 984dc0e8, a797a63c, b20c0cc1, 3b6b05c6. Post-final-rebase format/vet and all 171 R06 cases passed again (**33.646s**); R06/devhttp/lockx implementation trees match the full-gate version. Fresh Opus HR review remains (only reviewer may set verified). **HTTP/L1-before-validation acceptance is pending R15**: no `internal/api/routers` or R14 job-lock owner exists on this branch. R020 acquires L1 before lookup/type/body checks (busy ->409 before malformed ->400), then L2; R021 L2 waits; R019 Python read is unlocked. Do not count these as completed HTTP comparisons.
 
 Commands (all loopback/network on .32):
 ```
 rt -- bash -lc 'cd server && go test -count=1 -run TestR06 -v ./internal/routers/'
 rt -- bash -lc 'cd server && ~/cf-test/.venv/bin/python internal/routers/testdata/r06_mutations.py'
 ```
-Latest targeted output: `171 real Python boundary cases`, `PASS`, `ok configflow/internal/routers 32.827s`; remote `go vet ./...` passed. Mutation output: result/request/ownership each `DETECTED (compiled, real Python boundary mismatch)`.
+Latest targeted output: `171 real Python boundary cases`, `PASS`, `ok configflow/internal/routers 33.646s`; remote `go vet ./...` passed. Mutation output: result/request/ownership each `DETECTED (compiled, real Python boundary mismatch)`.
 
 
 ## R07 — RouterOS NAT address lists, address-list sync, test helpers
