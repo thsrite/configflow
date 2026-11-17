@@ -52,6 +52,20 @@ func r10ReviewCases() []r10Case {
 		if feature == "routes" {
 			out = append(out, base("shrink", r10StepFor("publish", 5), r10StepFor("publish", 2), r10StepFor("plan", 2)))
 		}
+		if feature == "routes" {
+			// Large replacements and rollbacks go through the console/remove
+			// batches with the per-batch ownership proofs Go adds.
+			swap := r10StepFor("publish", 101)
+			swap.Host.Addresses = []IPv6HostAddress{{Address: "fe80::5"}}
+			back := swap
+			back.Action = "rollback"
+			out = append(out, base("replace_101", r10StepFor("publish", 101), swap, r10StepFor("plan", 101)))
+			out = append(out, base("replace_rollback_101", r10StepFor("publish", 101), back, r10StepFor("plan", 101)))
+			out = append(out, base("rollback_101", r10StepFor("rollback", 101), r10StepFor("plan", 101)))
+			partial := r10StepFor("publish", 3)
+			partial.Mutation = &routerfake.ExternalWrite{Fault: routerfake.Fault{RemoveIDs: map[string][]string{rosIPv6Routes: {"*66"}}}}
+			out = append(out, base("shrink_after_external_delete", r10StepFor("publish", 5), partial, r10StepFor("plan", 3)))
+		}
 		// A disabled foreign route at the destination, enabled after the preview.
 		late := base("late_foreign", r10StepFor("plan", 5), r10StepFor("apply", 5))
 		late.Steps[1].Mutation = &routerfake.ExternalWrite{Fault: routerfake.Fault{ExtraRows: map[string][]routerfake.Row{rosIPv6Routes: {r10Route("*50", cidr, "fe80::9%bridge")}}}}
