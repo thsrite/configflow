@@ -1471,3 +1471,17 @@ H737 compared；T13 compared；design_errors=[]；exit=0
 ```
 
 原R仍差317编号、H仍差579编号，另有多子形态/长流程partial；继续补，不将变体数当完成率。
+
+## 批次 85：go5535931d统一报告与复验基线
+
+- 常规runner在.63重新执行79–84批11个组，336变体全部design_errors=[]：实际相比通过38、Go尚未实现298，91.62s、exit0。统一results.json现9104变体：compared2323/unimplemented6629/dependency67/different84/O12-separate1；原R4213（S678/F2636/B899）、H533、G16。此前独立报告均已真正运行合并，没有手工拼接。
+- 既有84差异及1个O12单列项进入findings复验表，当前均pending；这11个新组不是其原始group，不能据此标closed。原始错误结果和具体Python/Go差异完整保留；待修复合入go后直接重跑相关原group。当前go仍5535931d，尚未合入修复。
+
+```text
+.63 run.py --groups oxidns-reference-helper-constraints,oxidns-schema-helper-constraints,profile-rebind-helper-guards,node-helper-worker-failures,node-helper-settings-guards,repository-resource-closure-guards,node-helper-candidate-guards,node-helper-payload-limit,node-helper-production-deadline,profile-generator-selectors,node-helper-concurrent-busy --baseline 5535931d
+current: go-unimplemented=298 compared=38；design_errors=[] seconds=91.62；exit=0
+cumulative: go-unimplemented=6629 compared=2323 dependency=67 different=84 O12-separate=1
+73 self-checks + deliberate wrong-Go-response detection OK
+```
+
+继续剩余清单；此为迭代报告，最终.32全量未执行。
