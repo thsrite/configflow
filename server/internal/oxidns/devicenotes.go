@@ -1,70 +1,145 @@
 package oxidns
 
-import "fmt"
+import (
+	"configflow/internal/devicenotes"
+	"encoding/json"
+	"maps"
+	"slices"
+)
 
-// Display names of clients (device_notes); policy rows of older versions
-// still carry names, which notes override (an empty note hides one).
+// MaxNotes is the shared limit on stored display names.
+const MaxNotes = devicenotes.MaxNotes
 
-// MaxNotes bounds device_notes.
-const MaxNotes = 2048
-
-// NormalizeName validates one note.
+// NormalizeName validates a name through the shared notes package.
 func NormalizeName(value *Node) (string, error) {
-	if !isStr(value) || len([]rune(value.Value)) > 80 || hasControl(value.Value) || containsRune(value.Value, 0x7f) {
-		return "", fail("设备备注最多 80 个字符，不能包含换行或控制字符。")
+	if !isStr(value) {
+		return "", fail(devicenotes.NameMessage)
 	}
-	return trimSpace(value.Value), nil
+	name, err := devicenotes.NormalizeName(value.Value)
+	if err != nil {
+		return "", fail(err.Error())
+	}
+	return name, nil
 }
 
-// NormalizeNotes validates device_notes (address → name), in order.
-func NormalizeNotes(value *Node) (*Node, error) {
-	if !isMap(value) || mapSize(value) > MaxNotes {
-		return nil, fail(fmt.Sprintf("设备备注必须为对象，最多 %d 条。", MaxNotes))
-	}
+func notesNode(notes devicenotes.Names) *Node {
 	result := M()
-	var err error
-	pairs(value, func(address string, name *Node) bool {
-		var ip, text string
-		if ip, err = NormalizeClientRange(S(address)); err != nil {
-			return false
-		}
-		if has(result, ip) {
-			err = fail("设备备注地址重复：" + ip)
-			return false
-		}
-		if text, err = NormalizeName(name); err != nil {
-			return false
-		}
-		set(result, ip, S(text))
-		return true
-	})
-	return result, err
+	for _, ip := range slices.Sorted(maps.Keys(notes)) {
+		set(result, ip, S(notes[ip]))
+	}
+	return result
 }
-
-// StoredNames is every address with a known name (empty names included).
-func StoredNames(p *Profile) (map[string]string, error) {
-	policies := get(p.Settings(), "device_policies")
+func policyRowsNode(rows []devicenotes.Policy) *Node {
+	result := L()
+	for _, row := range rows {
+		result.Content = append(result.Content, M("ip", row.IP, "name", row.Name, "mode", row.Mode))
+	}
+	return result
+}
+func notesState(p *Profile) (devicenotes.State, error) {
+	notes, policies := p.get("device_notes"), get(p.Settings(), "device_policies")
+	if !has(p.doc, "device_notes") {
+		notes = M()
+	}
 	if !has(p.Settings(), "device_policies") {
 		policies = L()
 	}
-	rows, err := NormalizePolicies(policies)
+	state, err := devicenotes.New(ToJSON(notes), ToJSON(policies))
+	if err != nil {
+		return devicenotes.State{}, fail(err.Error())
+	}
+	return state, nil
+}
+
+// NormalizeNotes validates notes without keeping a second normalization policy.
+func NormalizeNotes(value *Node) (*Node, error) {
+	names, err := devicenotes.Parse(ToJSON(value))
+	if err != nil {
+		return nil, fail(err.Error())
+	}
+	return notesNode(names), nil
+}
+
+// StoredNames includes empty names that hide legacy policy-row names.
+func StoredNames(p *Profile) (map[string]string, error) {
+	state, err := notesState(p)
 	if err != nil {
 		return nil, err
 	}
-	names := map[string]string{}
-	for _, row := range rows.Content {
-		if name := str(get(row, "name")); name != "" {
-			names[str(get(row, "ip"))] = name
-		}
-	}
-	stored := p.get("device_notes")
-	if !has(p.doc, "device_notes") {
-		stored = M()
-	}
-	notes, err := NormalizeNotes(stored)
+	return state.StoredNames(), nil
+}
+
+// ReadNotes returns visible names from notes and legacy policy rows.
+func ReadNotes(p *Profile) (map[string]string, error) {
+	state, err := notesState(p)
 	if err != nil {
 		return nil, err
 	}
-	pairs(notes, func(ip string, name *Node) bool { names[ip] = name.Value; return true })
-	return names, nil
+	return state.ReadNames(), nil
+}
+
+// SetNote changes only display names in the owning profile document.
+func SetNote(p *Profile, ip, name string) error {
+	state, err := notesState(p)
+	if err != nil {
+		return err
+	}
+	notes, err := state.Set(ip, name)
+	if err != nil {
+		return fail(err.Error())
+	}
+	p.setDeviceNotes(notesNode(notes))
+	return nil
+}
+
+// PolicyNamesRevision identifies names without changing policy settings.
+func PolicyNamesRevision(p *Profile) (string, error) {
+	state, err := notesState(p)
+	if err != nil {
+		return "", err
+	}
+	return state.Revision()
+}
+
+// PreparePolicyNotes separates policy edits from the display-name write plan.
+func PreparePolicyNotes(p *Profile, rows *Node) (*Node, *Node, error) {
+	parsed, err := devicenotes.ParsePolicies(ToJSON(rows))
+	if err != nil {
+		return nil, nil, fail(err.Error())
+	}
+	state, err := notesState(p)
+	if err != nil {
+		return nil, nil, err
+	}
+	prepared, notes, err := state.Prepare(parsed)
+	if err != nil {
+		return nil, nil, fail(err.Error())
+	}
+	return policyRowsNode(prepared), notesNode(notes), nil
+}
+
+// SavePolicyRows writes names separately. Name-only edits retain the exact
+// settings object and never regenerate the native draft.
+func SavePolicyRows(p *Profile, settings, rows *Node, baseURL string) (*Node, error) {
+	prepared, notes, err := PreparePolicyNotes(p, rows)
+	if err != nil {
+		return nil, err
+	}
+	p.setDeviceNotes(notes)
+	current := get(settings, "device_policies")
+	if !has(settings, "device_policies") {
+		current = L()
+	}
+	before, err := devicenotes.ParsePolicies(ToJSON(current))
+	if err != nil {
+		return nil, fail(err.Error())
+	}
+	var after []devicenotes.Policy
+	if err := json.Unmarshal(ToJSON(prepared), &after); err != nil {
+		return nil, err
+	}
+	if devicenotes.SameRoutes(before, after) {
+		return settings, nil
+	}
+	return ApplyPolicies(settings, p, prepared, baseURL)
 }

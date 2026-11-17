@@ -7,11 +7,12 @@
 package repo
 
 import (
-	"strconv"
+	"encoding/json"
+	"fmt"
 	"strings"
-	"unicode/utf8"
 
 	"configflow/internal/clientrange"
+	"configflow/internal/devicenotes"
 	"configflow/internal/jsonx"
 	"configflow/internal/routerdoc"
 )
@@ -37,50 +38,25 @@ func normalizeClientRange(raw any) (string, error) {
 	return value, nil
 }
 
-// ---- device_notes.py ----
-
-const maxDeviceNotes = 2048
-
-// normalizeName is normalize_name.
-func normalizeName(value any) (string, error) {
-	text, ok := value.(string)
-	valid := ok && utf8.RuneCountInString(text) <= 80
-	if valid {
-		for _, r := range text {
-			if r < 32 || r == 127 {
-				valid = false
-				break
-			}
-		}
-	}
-	if !valid {
-		return "", oxidnsError("设备备注最多 80 个字符，不能包含换行或控制字符。")
-	}
-	return pyStrip(text), nil
-}
-
-// normalizeNotes is normalize_notes: canonical address -> stripped name.
+// normalizeNotes is the legacy storage boundary to the shared notes validator.
 func normalizeNotes(value any) (*jsonx.Object, error) {
-	object, ok := value.(*jsonx.Object)
-	if !ok || object == nil || object.Len() > maxDeviceNotes {
-		return nil, oxidnsError("设备备注必须为对象，最多 " + strconv.Itoa(maxDeviceNotes) + " 条。")
+	raw, err := jsonx.Compact(value)
+	if err != nil {
+		return nil, oxidnsError(devicenotes.NotesMessage)
 	}
-	result := jsonx.NewObject()
-	for address, name := range object.All() {
-		ip, err := normalizeClientRange(address)
-		if err != nil {
-			return nil, err
-		}
-		if result.Has(ip) {
-			return nil, oxidnsError("设备备注地址重复：" + ip)
-		}
-		normalized, err := normalizeName(name)
-		if err != nil {
-			return nil, err
-		}
-		result.Set(ip, normalized)
+	names, err := devicenotes.Parse(raw)
+	if err != nil {
+		return nil, oxidnsError(err.Error())
 	}
-	return result, nil
+	encoded, err := json.Marshal(names)
+	if err != nil {
+		return nil, fmt.Errorf("encode normalized device notes: %w", err)
+	}
+	value, err = jsonx.Parse(encoded)
+	if err != nil {
+		return nil, err
+	}
+	return value.(*jsonx.Object), nil
 }
 
 // ---- client_fixed_ip.py ----

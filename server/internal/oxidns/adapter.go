@@ -55,6 +55,13 @@ func (p *Profile) get(key string) *Node { return get(p.doc, key) }
 // Settings is config['oxidns'] (nil when absent).
 func (p *Profile) Settings() *Node { return p.get("oxidns") }
 
+func (p *Profile) setDeviceNotes(notes *Node) {
+	set(p.doc, "device_notes", notes)
+	if p.raw != nil {
+		p.raw.Set("device_notes", ToJSONX(notes))
+	}
+}
+
 // ToJSONX converts a node for jsonx consumers (repo).
 func ToJSONX(n *Node) any {
 	switch {

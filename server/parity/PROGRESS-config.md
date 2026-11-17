@@ -138,7 +138,7 @@ Final upstream-only importer/oxidns test fixes were rechecked on .32 (2.477s/73.
 | C28 | MosDNS archive and routes | 838 | verified | C21, C15 | 15 (15 done) |
 | C29 | OxiDNS native apply, archive, routes | 739 | missing | C27, C28 | 18 (0 done) |
 | C30 | subscription and node routes, node deletion | 994 | ported | C17, C16, C19, C20 | 26 (26 done) |
-| C31 | aggregation routes, device notes | 722 | missing | C30, C26 | 11 (0 done) |
+| C31 | aggregation routes, device notes | 722 | wip | C30, C26 | 11 (0 done) |
 | C32 | rule routes | 1107 | missing | C09, C14, C27 | 21 (0 done) |
 | C33 | rule library and proxy group routes | 976 | missing | C32 | 25 (0 done) |
 | C34 | generate, config and profile routes, config export | 1443 | missing | C18, C19, C20, C28, C29, C31, C33 | 59 (0 done) |
@@ -1750,7 +1750,7 @@ Cross-module boundary remaining: a chain graph requiring aggregation materializa
 
 A11 proddiff dependency (coordinator-approved): one production Agent's aggregation provider bytes are frozen from real Python in the test server's private temporary report directory and supplied unchanged as both Build inputs. Its coverage is `partial: A11 packaging only, aggregation provider frozen (C31 pending)`, excluded from end-to-end success. `aggregation-provider` generator remains Go 尚未实现. **C31 task:** register the aggregation provider implementation, remove this frozen input path, and promote that Agent's bundle case to an independent end-to-end comparison (no fixture bytes committed).
 
-**Status: `missing`** · prereqs: C30, C26 · Go: internal/api/aggregations (new); device notes in internal/oxidns or own package
+**Status: `wip`** · prereqs: C30, C26 · Go: internal/api/aggregations (new); device notes in internal/oxidns or own package
 
 Files:
 - `backend/routes/aggregations.py` (617)
@@ -1762,7 +1762,7 @@ Routes (11, 0 done):
 
 `GET /api/aggregations`; `POST /api/aggregations`; `DELETE /api/aggregations/<agg_id>`; `GET /api/aggregations/<agg_id>`; `PUT /api/aggregations/<agg_id>`; `GET /api/aggregations/<agg_id>/count`; `GET /api/aggregations/<agg_id>/preview`; `GET /api/aggregations/<agg_id>/provider`; `GET /api/aggregations/<resource_id>/health-impact`; `POST /api/aggregations/reorder`; `GET /api/profiles/<profile_id>/aggregations/<agg_id>/provider`
 
-Evidence: No Go package; no route registered.
+Work in progress on `go-port-c31`. Shared `internal/devicenotes` now owns note validation, legacy fallback, name edit plans and revision; repo and oxidns delegate to it. First selected reference/race checks pass. Routes/provider/proddiff and final acceptance remain. Restart file: [progress/C31-aggregations.md](progress/C31-aggregations.md).
 
 Missing / deferred: Everything in the files below.
 

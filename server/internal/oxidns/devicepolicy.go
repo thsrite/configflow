@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"configflow/internal/clientrange"
+	"configflow/internal/devicenotes"
 	"configflow/internal/netipx"
 
 	"gopkg.in/yaml.v3"
@@ -46,35 +47,11 @@ func NormalizeClientRange(raw *Node) (string, error) {
 
 // NormalizePolicies validates device policy rows ({ip, name, mode}).
 func NormalizePolicies(value *Node) (*Node, error) {
-	if !isSeq(value) || len(value.Content) > 512 {
-		return nil, fail("设备策略必须为列表，最多 512 条策略。")
+	rows, err := devicenotes.ParsePolicies(ToJSON(value))
+	if err != nil {
+		return nil, fail(err.Error())
 	}
-	result, seen := L(), map[string]bool{}
-	for _, row := range value.Content {
-		if !isMap(row) || len(filter(keyNodes(row), func(k *Node) bool { return !isOneOf(k, "ip", "name", "mode") })) > 0 {
-			return nil, fail("设备策略仅支持 IP / 网段、备注和策略。")
-		}
-		ip, err := NormalizeClientRange(get(row, "ip"))
-		if err != nil {
-			return nil, err
-		}
-		if seen[ip] {
-			return nil, fail("客户端 IP / 网段重复：" + ip)
-		}
-		seen[ip] = true
-		name, mode := get(row, "name"), get(row, "mode")
-		if !has(row, "name") {
-			name = S("")
-		}
-		if !isStr(name) || len([]rune(name.Value)) > 80 || hasControl(name.Value) {
-			return nil, fail("设备备注最多 80 个字符，不能包含换行或控制字符。")
-		}
-		if !isOneOf(mode, "smart", "direct") {
-			return nil, fail("设备策略必须为智能分流或直连。")
-		}
-		result.Content = append(result.Content, M("ip", ip, "name", strings.TrimSpace(strings.ReplaceAll(name.Value, "\x7f", "")), "mode", mode.Value))
-	}
-	return result, nil
+	return policyRowsNode(rows), nil
 }
 
 func keyNodes(m *Node) []*Node {
