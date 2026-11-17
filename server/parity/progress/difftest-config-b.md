@@ -1589,3 +1589,19 @@ compared=6 design_errors=[]；exit=0（独立首次4.44s，随后常规runner合
 ```
 
 继续内置Sub-Store模式/升级和监听器等剩余项；原R仍差265、H仍差551，最终.32全量未执行。
+
+## 批次 92：内置依赖运行模式与本地状态边界
+
+- 6新增变体在.32隔离网络实际相比通过；新增原R5编号，统一9313变体、原R4270（S685/F2655/B930）、H561、G16。R198-S01第二种有效形态复用编号，没有多算。R199 on_demand/always/重复always验证响应、system mode落库及每次revision/generation+1、所有foreign行不变；控制器status失败409验证全SQL/files无变更。
+- fake supervisor默认只允许精确的只读status参数，其他命令以97拒绝，绝不落到宿主supervisor。实际健康HTTP次数、方法、路径、auth/body/TE和CLI未知动作均比较；X08启动monitor最多一次只读status的时序不形成虚假差异，过量status仍拒绝。所有控制临时文件放在owned TMPDIR。
+- R198离线但builtin VERSION可读仍返回当前版本，VERSION为目录的真实OSError状态安全回退；运行Node的--version得到runtime。可信TLS release查询、健康API、全SQL/files仍严格比较。新增mode comparator故意restart、额外健康请求、过量status和失败落库自检，总82项通过。
+
+```text
+RT_HOST=sunbroke@192.168.0.32 rt --back server/tools/configdiff/testdata/results.json --back server/parity/difftest-config-findings.md -- bash -lc 'server/tools/configdiff/native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups dependency-managed-modes,dependency-builtin-status --baseline 0efddadf > /tmp/configdiff-dependency-managed-consolidated.log 2>&1; rc=$?; tail -9 /tmp/configdiff-dependency-managed-consolidated.log | head -8; exit $rc'
+R199-S01/S02/B01/F13、R198-S01/F09：compared=6
+82 self-checks + deliberate wrong-Go-response detection OK
+design_errors=[] seconds=13.54；exit=0
+独立原始报告/tmp/configdiff-dependency-managed.json
+```
+
+原R仍差260、H仍差551及已列partial/长流程；继续升级/监听器等，最终.32全量未执行。

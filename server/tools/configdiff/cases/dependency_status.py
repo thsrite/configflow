@@ -10,9 +10,10 @@ from cases.subscriptions import require
 
 
 class DependencyRead(Stable):
-    def __init__(self, pair, health, github, refresh):
+    def __init__(self, pair, health, github, refresh, health_count=1):
         super().__init__(pair)
         self.health, self.github, self.refresh = health, github, refresh
+        self.health_count = health_count
         self.observed = [None, None]
 
     def before(self, index):
@@ -26,7 +27,7 @@ class DependencyRead(Stable):
         health = [{key: row[key] for key in ('method', 'path', 'authorization', 'body_hex', 'transfer_encoding')}
                   for row in self.health.requests[self.offsets[0]:]]
         self.observed[index] = {'health': health, 'github': self.github.requests[self.offsets[1]:]}
-        expected = {'health': [{'method': 'GET', 'path': '/api/utils/env', 'authorization': '', 'body_hex': '', 'transfer_encoding': ''}],
+        expected = {'health': [{'method': 'GET', 'path': '/api/utils/env', 'authorization': '', 'body_hex': '', 'transfer_encoding': ''}] * self.health_count,
                     'github': release_request() if self.refresh else []}
         if index == 0:
             require(not differences(expected, self.observed[0]), 'dependency status uses exact local version GET and expected cached/forced TLS release query: '
@@ -67,4 +68,23 @@ def status(binary, recorder):
                     variant='isolated-trusted-HTTPS-release-cache')
 
 
-GROUPS = {'dependency-status-protocol': status}
+def builtin_status(binary, recorder):
+    from dependency_control import managed
+    for shape in ('offline-builtin-version', 'unreadable-version-file'):
+        with GitHub() as github, managed(binary, recorder, github=github,
+                health_status=503 if shape == 'offline-builtin-version' else 200,
+                controller_status='STOPPED' if shape == 'offline-builtin-version' else 'RUNNING',
+                unreadable_version=shape == 'unreadable-version-file') as (pair, health):
+            def check(reply):
+                value = reply.json()['dependencies'][0]
+                require(value['current_version'] == '2.40.0' and value['updatable'] is True
+                        and value['builtin_version'] == ('' if shape == 'unreadable-version-file' else '2.40.0'),
+                        'builtin VERSION read errors fall back safely; offline service still reports installed bundle version')
+                require(value['running'] is (shape == 'unreadable-version-file') and value['lifecycle']['managed'] is True
+                        and value['lifecycle']['mode'] == 'on_demand' and value['runtime'].startswith('v'),
+                        'managed lifecycle and actual Node version stay distinct from server readiness')
+            pair.request('R198-S01' if shape == 'offline-builtin-version' else 'R198-F09', 'GET /api/settings/dependencies',
+                expect=200, writes=True, check=check, interaction=DependencyRead(pair, health, github, True), variant=shape)
+
+
+GROUPS = {'dependency-status-protocol': status, 'dependency-builtin-status': builtin_status}

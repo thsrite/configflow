@@ -17,6 +17,28 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_managed_mode_protocol_rejects_mutating_commands_extra_health_reads_and_writes(self):
+        from cases.dependency_modes import ModeProtocol, HEALTH
+        observer = ModeProtocol(None, None, 1)
+        value = {'health': [HEALTH], 'unexpected_commands': [], 'status_count_valid': True}
+        observer.observed = [copy.deepcopy(value), copy.deepcopy(value)]
+        self.assertEqual(observer.compare(Policy()), [])
+        for mutation in ('restart', 'extra-health', 'excess-status'):
+            observer.observed[1] = copy.deepcopy(value)
+            if mutation == 'restart':
+                observer.observed[1]['unexpected_commands'] = [{'args': ['restart', 'sub-store']}]
+            elif mutation == 'extra-health':
+                observer.observed[1]['health'].append(HEALTH)
+            else:
+                observer.observed[1]['status_count_valid'] = False
+            self.assertTrue(observer.compare(Policy()), mutation)
+        observer.observed[1] = copy.deepcopy(value)
+        from cases.setup import Stable
+        observer.readonly = Stable(None)
+        observer.readonly.before_values[1] = {'database': 'same'}
+        observer.readonly.after_values[1] = {'database': 'changed'}
+        self.assertTrue(observer.compare(Policy()), 'failed control must not persist a mode change')
+
     def test_dependency_protocol_and_readonly_observer_detect_storage_method_target_and_body_changes(self):
         from cases.dependency_status import DependencyRead
         from dependency_tls import release_request

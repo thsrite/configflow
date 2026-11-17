@@ -126,6 +126,8 @@ def main():
     groups.update(provider_auth)
     from cases.dependency_status import GROUPS as dependency_status
     groups.update(dependency_status)
+    from cases.dependency_modes import GROUPS as dependency_modes
+    groups.update(dependency_modes)
     from cases.profile_rebind_helpers import GROUPS as profile_rebind_helpers
     groups.update(profile_rebind_helpers)
     from cases.profile_guards import GROUPS as profile_guards
