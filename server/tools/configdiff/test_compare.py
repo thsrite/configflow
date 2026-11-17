@@ -17,6 +17,16 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_cache_permission_observer_detects_inactive_fault_chmod_and_overwritten_old_bytes(self):
+        from cases.rule_cache_faults import CacheFault
+        observer = CacheFault(None)
+        value = {'write_fault_active': True, 'fault_modes_retained': True, 'old_cache_bytes_retained': True}
+        observer.observed = [copy.deepcopy(value), copy.deepcopy(value)]
+        self.assertEqual(observer.compare(Policy()), [])
+        for key in value:
+            observer.observed[1] = {**value, key: False}
+            self.assertTrue(observer.compare(Policy()), key)
+
     def test_real_tail_projection_validates_own_filter_and_counts_without_hiding_extra_rows(self):
         from cases.pull_logging import Tail, MARKER, WARNING_AGENT
         tail = Tail(None)

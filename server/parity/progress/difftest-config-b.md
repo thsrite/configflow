@@ -1798,3 +1798,18 @@ current go-unimplemented=1 go-unimplemented-dependency=1 different=1 open=1 desi
 ```
 
 .63仍因SSH连接超时按brief使用.32。继续缓存I/O失败与剩余清单，最终.32全量未执行。
+
+## 批次 105：真实规则缓存权限失败与前缀保存失败
+
+- 新增7变体、5个原R编号（R165-F16/R166-F10/R167-F14/R169-F18/R174-F10）。普通用户将真实缓存文件设0444、父目录0500，分别执行创建、删除、更新和draft保存；确认错误后权限仍在、旧缓存原字节及全部文件没有被覆盖。创建的失败要求完整数据库不变；删除/更新/draft按Python真实顺序验证已提交的一次shared事务（generation/revision/commit ID与准确规则列表），其余行/元数据不变，未把源端的提交后缓存错误误写成回滚。
+- draft先走公开GET取得各端自己的revision；未接通的前置会阻止后续已接通路由被误比较。GitHub前缀保存用SQLite触发器拒绝实际写入，核对500/ConfigStorageError及全SQL/files不变，再公开GET确认旧前缀仍在，未泄漏未提交内存状态。
+- .32独立草稿及正式runner均7个Go尚未实现、design_errors=[]、90项篡改自检通过；不计为Go通过。统一9431变体、原R4311（S689/F2673/B949）、H599、G16；findings仍closed81/accepted7/open20/O12单列1。原R仍差219、H仍差513及partial/长流程。
+
+```text
+.32 native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups rule-library-real-cache-permissions,rule-library-proxy-save-failure --baseline 7521bb5c
+current go-unimplemented=7 design_errors=[] seconds=9.57；exit=0
+90 self-checks + deliberately wrong-Go-response detection OK
+独立草稿已归档/tmp/configdiff-rule-cache-faults-draft.json，未提交临时报告
+```
+
+继续独立登录日志和并发规则写入；最终.32全量未执行。未读Go业务、未派子agent、未推送。
