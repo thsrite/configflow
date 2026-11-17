@@ -723,7 +723,10 @@ func TestYAMLRemovalCanEmptyAndRefillTheSamePayload(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		content = AppendRulePayload(content, "+.new.test", payload)
+		content, err = AppendRulePayload(content, "+.new.test", payload)
+		if err != nil {
+			t.Fatal(err)
+		}
 		doc := safeLoad(t, content).(*jsonx.Object)
 		if !jsonx.Equal(doc.Value("payload"), []any{"+.new.test"}) {
 			t.Fatal(content)

@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -35,12 +36,12 @@ func connectionDeps() ConnectionDeps {
 		ReadRulePayload: func(content string) ([]string, any, error) {
 			return slices.Collect(lines(content)), nil, nil
 		},
-		AppendRulePayload: func(content, line string, _ any) string {
+		AppendRulePayload: func(content, line string, _ any) (string, error) {
 			separator := "\n"
 			if content == "" || strings.HasSuffix(content, "\n") {
 				separator = ""
 			}
-			return content + separator + line + "\n"
+			return content + separator + line + "\n", nil
 		},
 	}
 }
@@ -210,5 +211,20 @@ func TestNormalizeClientRange(t *testing.T) {
 		if _, err := NormalizeClientRange(in); err == nil {
 			t.Errorf("NormalizeClientRange(%v) accepted", in)
 		}
+	}
+}
+
+func TestApplyAppendFailureKeepsContentAndReturnsNoSuccess(t *testing.T) {
+	config, shared := connectionSetup("ipcidr", "192.0.2.1/32\n", "DIRECT")
+	deps := connectionDeps()
+	failure := errors.New("append failed")
+	deps.AppendRulePayload = func(content, line string, _ any) (string, error) { return content, failure }
+	destination, err := ParseDestination("192.0.2.8", "IP-CIDR")
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := ApplyIPRule(deps, config, shared, "lib", "direct", destination, "IP-CIDR")
+	if result != nil || !errors.Is(err, failure) || contentOf(shared) != "192.0.2.1/32\n" {
+		t.Fatalf("%v %v", result, err)
 	}
 }

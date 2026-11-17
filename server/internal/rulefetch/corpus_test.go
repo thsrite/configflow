@@ -77,7 +77,7 @@ func runCorpusRow(fn string, args []any) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		return AppendRuleLines(str(0), []string{"+.new.test", `x"y`}, payload), nil
+		return AppendRuleLines(str(0), []string{"+.new.test", `x"y`}, payload)
 	case "remove":
 		content, removed, err := RemoveRulePayload(str(0), func(line string) bool {
 			return containsRune(line, 'x') || line == "example.com"

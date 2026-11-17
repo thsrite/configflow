@@ -18,10 +18,10 @@ type ConnectionDeps struct {
 	// behavior and references (each with enabled, after_match and policy).
 	RulesetInfo func(config *jsonx.Object, rulesetID string) *jsonx.Object
 	// ReadRulePayload returns the entries of a rule set plus an opaque
-	// handle for a lossless append.
+	// handle for an append that preserves rule order and values.
 	ReadRulePayload func(content string) (lines []string, payload any, err error)
-	// AppendRulePayload appends one entry to rule set content.
-	AppendRulePayload func(content, line string, payload any) string
+	// AppendRulePayload appends one entry or returns a validation/edit error.
+	AppendRulePayload func(content, line string, payload any) (string, error)
 }
 
 // IPRuleTargets lists the editable content rule sets that can
@@ -185,7 +185,11 @@ func ApplyIPRule(deps ConnectionDeps, config, shared *jsonx.Object, rulesetID, t
 	if info.Value("behavior") == "ipcidr" {
 		line = cidr
 	}
-	item.Set("content", deps.AppendRulePayload(content, line, payload))
+	updated, err := deps.AppendRulePayload(content, line, payload)
+	if err != nil {
+		return nil, err
+	}
+	item.Set("content", updated)
 	result.Updated = append(result.Updated, item)
 	result.Added = append(result.Added, jsonx.Obj(
 		"value", cidr, "rule_type", ruleType, "target", target,

@@ -1,11 +1,13 @@
 package rulefetch
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/repo"
 	"configflow/internal/rules"
 	"configflow/internal/yamlx"
 	"gopkg.in/yaml.v3"
@@ -88,7 +90,10 @@ func TestNativeSequenceEditsKeepSemanticsAndComments(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	appended := AppendRuleLines(source, []string{"+.added.example"}, node)
+	appended, err := AppendRuleLines(source, []string{"+.added.example"}, node)
+	if err != nil {
+		t.Fatal(err)
+	}
 	lines, _, err := ReadRulePayload(appended)
 	if err != nil || !jsonx.Equal(strs(lines), []any{"example.com", "other.example", "+.added.example"}) {
 		t.Fatalf("append: %v %v", lines, err)
@@ -111,6 +116,7 @@ func FuzzRuleYAMLBoundary(f *testing.F) {
 	}
 	f.Fuzz(func(t *testing.T, source string) {
 		_, _ = NormalizeMihomoYAML(source)
+		_, _ = AppendRuleLines(source, []string{"example.com"}, yamlx.Seq())
 		_, _, _ = ReadRulePayload(source)
 		_, _, _ = RemoveRulePayload(source, func(s string) bool { return s == "example.com" })
 		_ = ValidateRemoteRuleContent(source, remoteRule("domain", "yaml"), nil, "")
@@ -130,7 +136,10 @@ func TestNativeEditsFixEmptyAndAliasInsertion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	appended := AppendRuleLines(source, []string{"added.example"}, payload)
+	appended, err := AppendRuleLines(source, []string{"added.example"}, payload)
+	if err != nil {
+		t.Fatal(err)
+	}
 	lines, _, err := ReadRulePayload(appended)
 	if err != nil || !jsonx.Equal(strs(lines), []any{"example.com", "example.com", "added.example"}) {
 		t.Fatalf("alias order changed: %v %v", lines, err)
@@ -183,6 +192,38 @@ func TestQuotedContinuationKeepsRuleMatching(t *testing.T) {
 	for _, query := range []string{"example.com", "other.example", "sub.example.com"} {
 		if rules.MatchQuery(query, kind, value) != rules.MatchQuery(query, "DOMAIN", "example.com") {
 			t.Fatalf("matching changed for %s", query)
+		}
+	}
+}
+
+func TestAppendNeverSwallowsPolicyOrAliasErrors(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("payload: []\na0: &a0 [example.com]\n")
+	for i := 1; i <= 40; i++ {
+		fmt.Fprintf(&b, "a%d: &a%d [*a%d, *a%d]\n", i, i, i-1, i-1)
+	}
+	for _, tc := range []struct {
+		source string
+		kind   error
+	}{
+		{"payload: []\npayload: []", yamlx.ErrPolicy},
+		{"payload: []\nx: !!str [x]", yamlx.ErrPolicy},
+		{"payload: []\nx: &x [*x]", yamlx.ErrAliasRecursion},
+		{b.String(), yamlx.ErrAliasBudget},
+	} {
+		for _, node := range []*yamlx.Node{nil, yamlx.Seq()} {
+			got, err := AppendRuleLines(tc.source, []string{"example.com"}, node)
+			if got != tc.source || !errors.Is(err, tc.kind) || !errors.Is(err, repo.ErrValidation) {
+				t.Fatalf("append lines: %v", err)
+			}
+			got, err = AppendRulePayload(tc.source, "example.com", node)
+			if got != tc.source || !errors.Is(err, tc.kind) || !errors.Is(err, repo.ErrValidation) {
+				t.Fatalf("append payload: %v", err)
+			}
+			got, err = AppendRulePayloadAny(tc.source, "example.com", node)
+			if got != tc.source || !errors.Is(err, tc.kind) || !errors.Is(err, repo.ErrValidation) {
+				t.Fatalf("append adapter: %v", err)
+			}
 		}
 	}
 }

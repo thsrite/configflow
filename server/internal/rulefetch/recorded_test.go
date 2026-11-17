@@ -138,9 +138,9 @@ func replayRecorded(row *jsonx.Object) (any, error) {
 			return nil, err
 		}
 		if row.GetString("fn") == "append_rule_payload" {
-			return AppendRulePayload(str("content"), str("line"), payload), nil
+			return AppendRulePayload(str("content"), str("line"), payload)
 		}
-		return AppendRuleLines(str("content"), jsonx.Strings(args.GetList("lines")), payload), nil
+		return AppendRuleLines(str("content"), jsonx.Strings(args.GetList("lines")), payload)
 	case "remove_rule_payload":
 		answers := row.GetObject("matches")
 		var unknown []string

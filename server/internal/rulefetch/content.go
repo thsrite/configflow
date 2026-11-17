@@ -2,7 +2,7 @@ package rulefetch
 
 // Port of backend/utils/ruleset_content.py: inspect editable providers,
 // normalize safe Classical delivery syntax, validate remote responses and
-// edit payload lists losslessly.
+// edit payload lists with splice-first source preservation.
 
 import (
 	"container/list"
@@ -866,22 +866,26 @@ func ReadRulePayload(content string) ([]string, *yamlx.Node, error) {
 }
 
 // AppendRulePayload is append_rule_payload.
-func AppendRulePayload(content, line string, payload *yamlx.Node) string {
+func AppendRulePayload(content, line string, payload *yamlx.Node) (string, error) {
 	return AppendRuleLines(content, []string{line}, payload)
 }
 
 // AppendRuleLines is append_rule_lines: insert into the existing sequence,
 // preserving comments and surrounding YAML.
-func AppendRuleLines(content string, lines []string, payload *yamlx.Node) string {
+func AppendRuleLines(content string, lines []string, payload *yamlx.Node) (string, error) {
 	if len(lines) == 0 {
-		return content
+		return content, nil
 	}
 	if payload == nil {
+		_, err := yamlx.Parse([]byte(content))
+		if errors.Is(err, yamlx.ErrPolicy) || errors.Is(err, yamlx.ErrAliasRecursion) || errors.Is(err, yamlx.ErrAliasBudget) {
+			return content, payloadEditError(err)
+		}
 		separator := ""
 		if content != "" && !strings.HasSuffix(content, "\n") {
 			separator = "\n"
 		}
-		return content + separator + strings.Join(lines, "\n") + "\n"
+		return content + separator + strings.Join(lines, "\n") + "\n", nil
 	}
 	edited, err := editRuleYAML(content, func(root *yamlx.Node) error {
 		pairs := payloadPairs(root)
@@ -894,9 +898,9 @@ func AppendRuleLines(content string, lines []string, payload *yamlx.Node) string
 		return nil
 	})
 	if err != nil {
-		return content
+		return content, payloadEditError(err)
 	}
-	return string(edited)
+	return string(edited), nil
 }
 
 // RemoveRulePayload is remove_rule_payload: remove matching entries, keeping
@@ -942,7 +946,7 @@ func RemoveRulePayload(content string, matches func(string) bool) (string, []str
 		return nil
 	})
 	if err != nil {
-		return "", nil, err
+		return "", nil, payloadEditError(err)
 	}
 	return string(edited), removed, nil
 }
@@ -959,7 +963,17 @@ func ReadRulePayloadAny(content string) ([]string, any, error) {
 }
 
 // AppendRulePayloadAny: see ReadRulePayloadAny.
-func AppendRulePayloadAny(content, line string, payload any) string {
-	node, _ := payload.(*yamlx.Node)
+func AppendRulePayloadAny(content, line string, payload any) (string, error) {
+	node, ok := payload.(*yamlx.Node)
+	if payload != nil && !ok {
+		return content, validationError(msgUnreadablePayload)
+	}
 	return AppendRulePayload(content, line, node)
+}
+
+func payloadEditError(err error) error {
+	if errors.Is(err, repo.ErrValidation) {
+		return err
+	}
+	return &repo.Error{Kind: repo.ErrValidation, Message: fmt.Sprintf(msgReadPayloadYAML, err), Cause: err}
 }

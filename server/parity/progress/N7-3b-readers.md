@@ -105,3 +105,20 @@ PASS after adapting C09 assertions; all10 CONFIGFLOW_DIFF difftest packages PASS
 three60s fuzz runs PASS (rulefetch563715, refresh98895, convert83684 executions);
 proddiff2831 cases,415 compared, self_check PASS, new=0 stale=0. The fresh-cache
 follow-up is subsequently included in the post-rebase integration run.
+
+Error-channel closeout: AppendRuleLines/AppendRulePayload/AppendRulePayloadAny
+now return(string,error). The old string-only return swallowed Edit failures.
+Rules.ConnectionDeps and discovery's write caller propagate the error before
+claiming a successful append. Policy/alias failures in the plaintext-mode gate
+and YAML edit path retain source text and a typed validation error (400); syntax
+fallback remains only for actual plaintext mode. Remove's editor failures use
+the same typed channel. Direct nil/non-nil payload tests cover D1, tag shape,
+alias40/self; an injected connection append failure returns no success/result
+and preserves the content. Focused .32 race passes, all3 affected packages pass,
+and all recorded migration-class counts remain unchanged. Rulefetch fuzz now
+also exercises append. This internal API/caller adaptation is a separate commit.
+
+Rebased onto go@3c8a1760: only an additive ledger conflict, both sections retained.
+Before the append-channel follow-up, the rebased .32 format/vet,8-package race,
+full p4, all10 difftest packages and proddiff again passed (new=0 stale=0).
+Final acceptance repeats after this last functional correction.

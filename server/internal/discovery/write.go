@@ -154,7 +154,10 @@ func ApplyDomains(ctx context.Context, id string, entries []ApplyEntry, source s
 				out.Added = append(out.Added, AddedEntry{e, item.Name, item.ID})
 			}
 			if len(newLines) > 0 {
-				item.Content = rulefetch.AppendRuleLines(item.Content, newLines, payload)
+				item.Content, err = rulefetch.AppendRuleLines(item.Content, newLines, payload)
+				if err != nil {
+					return err
+				}
 				updated = append(updated, *item)
 			}
 		}
