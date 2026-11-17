@@ -6,6 +6,7 @@ Unsupported device operations fail visibly instead of manufacturing success.
 import base64
 import copy
 import hashlib
+import ipaddress
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import threading
@@ -13,6 +14,7 @@ import time
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from seed import DEVICE_PASSWORD
+from console import execute, UnsupportedScript
 
 
 class ProtocolError(Exception):
@@ -36,6 +38,7 @@ class World:
         self.documents = {}
         self.sequence = {'ros': 16, 'ikuai': 1}
         self.cookie = 'synthetic-session-1'
+        self.nat_pending = set()
         self.servers = []
         world = self
 
@@ -132,6 +135,25 @@ class World:
         if not split.path.startswith('/rest/'):
             raise ProtocolError('ROS request outside /rest')
         method, body = request['method'], request['body']
+        if method == 'POST' and path == '/execute':
+            if not isinstance(body, dict) or set(body) != {'script', 'as-string'} or body['as-string'] != '':
+                raise ProtocolError('execute requires script and as-string empty capability')
+            try:
+                return 200, {}, execute(body['script'], self.ros.get('/ip/firewall/address-list', []), self.ros_add)
+            except UnsupportedScript as error:
+                raise ProtocolError(str(error)) from error
+        if method == 'POST' and path.endswith('/remove'):
+            table = path[:-7]
+            if not isinstance(body, dict) or set(body) != {'.id'} or not isinstance(body['.id'], str):
+                raise ProtocolError('remove needs comma-separated .id')
+            wanted = set(body['.id'].split(','))
+            # Device order, deliberately independent of submitted ID order.
+            for row in list(self.ros.get(table, [])):
+                if row.get('.id') in wanted:
+                    if row.get('dynamic') in ('true', 'yes', True) or row.get('read-only') in ('true', 'yes', True):
+                        return 400, {}, {'message': 'cannot remove dynamic/read-only item'}
+                    self.ros[table].remove(row)
+            return 200, {}, {}
         if method == 'POST' and path == '/ping':
             if not isinstance(body, dict) or body.get('count') != '2' or body.get('interval') != '300ms':
                 raise ProtocolError('unexpected ping form')
@@ -161,7 +183,7 @@ class World:
                 return 404, {}, {'message': 'no such item'}
             if method == 'GET':
                 return 200, {}, copy.deepcopy(row)
-            if row.get('dynamic') == 'true':
+            if row.get('dynamic') in ('true', 'yes', True) or row.get('read-only') in ('true', 'yes', True):
                 return 400, {}, {'message': 'cannot change dynamic item'}
             if method == 'PATCH':
                 row.update(copy.deepcopy(body))
@@ -175,18 +197,19 @@ class World:
                 for key, values in parse_qs(split.query).items():
                     if key != '.proplist':
                         result = [row for row in result if str(row.get(key, '')) == values[0]]
+            if path == '/ip/firewall/nat':
+                # First read can observe a new NAT rule before dependency
+                # resolution; the following read sees it settled.
+                for row in self.ros.get(path, []):
+                    if row.get('.id') in self.nat_pending:
+                        row['invalid'] = 'false'
+                        self.nat_pending.remove(row['.id'])
             return 200, {}, result
         if method == 'PUT':
             if not isinstance(body, dict):
                 raise ProtocolError('ROS PUT needs object')
-            self.sequence['ros'] += 1
-            row = {'.id': '*' + format(self.sequence['ros'], 'X'), **copy.deepcopy(body)}
-            if path == '/ip/firewall/nat':
-                row.update(invalid='false', dynamic='false')
-            if path in ('/ip/route', '/ipv6/route'):
-                row.setdefault('active', 'true')
-            self.ros.setdefault(path, []).append(row)
-            return 201, {}, copy.deepcopy(row)
+            ident = self.ros_add(path, body)
+            return 201, {}, copy.deepcopy(self.ros_row(path, ident))
         raise ProtocolError('unsupported ROS operation: ' + method + ' ' + path)
 
     def ros_row(self, table, ident):
@@ -194,6 +217,20 @@ class World:
             if row.get('.id') == ident:
                 return row
         raise ProtocolError('ROS operation targets missing row')
+
+    def ros_add(self, path, values):
+        self.sequence['ros'] += 1
+        row = {'.id': '*' + format(self.sequence['ros'], 'X'), **copy.deepcopy(values)}
+        if path == '/ip/firewall/nat':
+            row.update(invalid='true', dynamic='false')
+            self.nat_pending.add(row['.id'])
+        if path in ('/ip/route', '/ipv6/route'):
+            row.setdefault('active', 'true')
+        if path == '/ip/firewall/address-list' and row.get('address'):
+            network = ipaddress.ip_network(row['address'], strict=False)
+            row['address'] = str(network.network_address) if network.prefixlen == network.max_prefixlen else str(network)
+        self.ros.setdefault(path, []).append(row)
+        return row['.id']
 
     @staticmethod
     def ros_query(rows, expressions):
@@ -204,11 +241,12 @@ class World:
             stack = []
             for expression in expressions:
                 expression = expression.removeprefix('?')
-                if expression in ('#|', '#&'):
-                    if len(stack) < 2:
-                        raise ProtocolError('ROS query stack underflow')
-                    right, left = stack.pop(), stack.pop()
-                    stack.append(left or right if expression == '#|' else left and right)
+                if expression.startswith('#'):
+                    for operation in expression[1:]:
+                        if operation not in '|&' or len(stack) < 2:
+                            raise ProtocolError('unsupported ROS boolean query/stack underflow')
+                        right, left = stack.pop(), stack.pop()
+                        stack.append(left or right if operation == '|' else left and right)
                 elif '=' in expression:
                     key, value = expression.split('=', 1)
                     stack.append(str(row.get(key, '')) == value)
@@ -219,6 +257,8 @@ class World:
 
     def ikuai_request(self, request):
         body = request['body']
+        if len(base64.b64decode(request['raw'])) > 96 * 1024:
+            return 200, {}, b''
         if request['method'] != 'POST' or not isinstance(body, dict):
             raise ProtocolError('iKuai requires POST JSON object')
         if request['path'] == '/Action/login':
@@ -239,7 +279,15 @@ class World:
                 return self.ik_reply(rows)
             offset, limit = map(int, param.get('limit', '0,1000').split(','))
             prefix = 'static_' if func == 'dhcp_static' else ''
-            return self.ik_reply({prefix + 'total': len(rows), prefix + 'data': copy.deepcopy(rows[offset:offset + limit])})
+            page = copy.deepcopy(rows[offset:offset + limit])
+            for row in page:
+                if func == 'static_rt' and isinstance(row.get('netmask'), str):
+                    row['netmask'] = row['netmask'].split(' ')[0] + ' (synthetic display)'
+                    row.setdefault('status', 1)
+                for key in ('src_addr', 'dst_addr', 'src_port', 'dst_port', 'nat_addr', 'nat_port'):
+                    if row.get(key) == {'custom': [], 'object': []}:
+                        row[key] = {}
+            return self.ik_reply({prefix + 'total': len(rows), prefix + 'data': page})
         rows = self.ikuai.setdefault(func, [])
         if action == 'add':
             if param.get('tagname') and any(row.get('tagname') == param['tagname'] for row in rows):

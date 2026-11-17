@@ -14,6 +14,13 @@ from seed import AGENT_TOKEN, JWT_SECRET
 
 
 @dataclass(frozen=True)
+class Ref:
+    """A prior response from this same side, never copied from the other side."""
+    case: str
+    path: str
+
+
+@dataclass(frozen=True)
 class Case:
     ident: str
     route: str
@@ -28,6 +35,30 @@ class Case:
     unchanged: bool = True
     reason: str = ''
     message: str | None = None
+    checks: dict = field(default_factory=dict)
+    formats: dict = field(default_factory=dict)
+    effect: str = ''
+    profile: str = 'alpha'
+    times: tuple = ()
+    prepare: tuple = ()
+    foreign: tuple = ()
+
+
+def at(document, path):
+    for key in path.strip('/').split('/') if path else ():
+        key = key.replace('~1', '/').replace('~0', '~')
+        document = document[int(key)] if isinstance(document, list) else document[key]
+    return document
+
+
+def resolve(value, observations):
+    if isinstance(value, Ref):
+        return at(observations[value.case], value.path)
+    if isinstance(value, dict):
+        return {key: resolve(item, observations) for key, item in value.items()}
+    if isinstance(value, list):
+        return [resolve(item, observations) for item in value]
+    return value
 
 
 def concrete(path, router_id='r-ros', agent_id='missing-agent'):

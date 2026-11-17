@@ -10,9 +10,11 @@ import time
 
 import cases
 import guards
-from compare import differences, logical_snapshot, response_view
+import workflows
+from compare import differences, logical_snapshot, response_view, timestamp
 from harness import Pair
 from inventory import design_json, load
+from invariants import configuration_only, profile_write
 from seed import router
 
 
@@ -33,10 +35,16 @@ def execute(pair, case, available, routes):
     for name, side in pair.sides.items():
         if name == 'go' and not implemented:
             continue
+        for control in case.prepare:
+            side.rpc('fake', **control)
         before = logical_snapshot(side.rpc('snapshot'))
-        response = side.request(**request)
+        own_request = {**request, 'document': cases.resolve(case.document, side.observations)}
+        started = time.time()
+        response = side.request(**own_request)
+        ended = time.time()
         response['method'] = case.method
         observations[name] = response_view(response)
+        side.observations[case.ident] = observations[name]
         after = logical_snapshot(side.rpc('snapshot'))
         if after['fake']['errors']:
             raise RuntimeError(case.ident + ': fake contract error: ' + repr(after['fake']['errors']))
@@ -47,6 +55,32 @@ def execute(pair, case, available, routes):
                                    f'{response["status"]}: {response["content"]!r}')
             if case.message is not None and response['content'].get('message') != case.message:
                 raise RuntimeError(case.ident + ': wrong Python guard reached: ' + repr(response['content']))
+            for path, expected in case.checks.items():
+                actual = cases.at(response['content'], path)
+                if differences(actual, expected):
+                    raise RuntimeError(case.ident + ': Python precondition at ' + path + ': ' + repr(actual))
+            for path, pattern in case.formats.items():
+                actual = cases.at(response['content'], path)
+                if not isinstance(actual, str) or not re.fullmatch(pattern, actual):
+                    raise RuntimeError(case.ident + ': invalid Python identity/hash at ' + path)
+            for path in case.times:
+                timestamp(cases.at(response['content'], path), started - 1, ended + 1)
+            if case.effect in ('profile-write', 'profile-write-device'):
+                profile_write(before, after, case.profile)
+                if case.effect == 'profile-write':
+                    configuration_only(before, after)
+            if case.effect == 'device-only':
+                if differences(before['database'], after['database']):
+                    raise RuntimeError(case.ident + ': manual device operation modified configuration storage')
+            if case.effect == 'device-read':
+                if differences(before['database'], after['database']):
+                    raise RuntimeError(case.ident + ': device read modified configuration storage')
+                configuration_only(before, after)
+            for peer, table, identity_key, identity in case.foreign:
+                def objects(snapshot):
+                    return [row for row in snapshot['fake'][peer][table] if row.get(identity_key) == identity]
+                if not objects(before) or differences(objects(before), objects(after)):
+                    raise RuntimeError(case.ident + ': foreign device object changed or disappeared')
             if case.unchanged:
                 changed = differences(before, after)
                 if changed:
@@ -59,6 +93,7 @@ def execute(pair, case, available, routes):
         if case.unchanged:
             found += differences(snapshots['go']['before'], snapshots['go']['after'], '/go-unexpected-write')
     # Auth values are synthetic but reports don't need bearer credentials.
+    request['document'] = cases.resolve(case.document, pair.python.observations)
     request['headers'] = {key: '<synthetic credential>' if key.lower() == 'authorization' else value
                           for key, value in request['headers'].items()}
     request['raw'] = request['raw'].decode(errors='replace') if request['raw'] is not None else None
@@ -105,7 +140,9 @@ def main():
         available = registered(pair.go.rpc('manifest'))
         for group in (cases.authentication, cases.profile_selection_failures, cases.body_guards,
                       guards.router_settings, guards.client_draft, guards.fixed_ip_shape,
-                      guards.route_edit_shape, guards.workspace_shape, guards.rule_sync_shape):
+                      guards.route_edit_shape, guards.workspace_shape, guards.rule_sync_shape,
+                      workflows.client_drafts, workflows.workspace_drafts, workflows.router_updates,
+                      workflows.runtime_reads, workflows.sync_settings, workflows.manual_routes):
             started = time.monotonic()
             for case in group():
                 results.append(execute(pair, case, available, routes))

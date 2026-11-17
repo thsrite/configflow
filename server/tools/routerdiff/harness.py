@@ -38,6 +38,7 @@ class Side:
             sys.executable, str(HERE / 'worker.py'), name, str(binary)], cwd=ROOT,
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=self.stderr, text=True, bufsize=1)
         self.token = None
+        self.observations = {}
 
     def rpc(self, operation, **values):
         self.process.stdin.write(json.dumps({'operation': operation, **values}) + '\n')

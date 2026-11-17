@@ -126,3 +126,42 @@ No implementation changed; valid unusual MAC cases remain separate follow-ups.
 "recipe_counts":{"go-unimplemented":1162},"referenced_entries":321}.
 Detailed ledger stays in the synthetic .32 artifact; 1980 matrix entries still
 have no attached executed recipe. No final coverage or completion claimed.
+
+Successful draft/manual sequence step (.32):
+- Same-side Ref objects resolve revision/fingerprint from each server's own prior
+  HTTP response; missing references fail closed. Integrity tests reject duplicate
+  recipe IDs or references to nonexistent design entries.
+- Client name/smart/direct/clear sequences assert actual returned device rows;
+  workspace modern/legacy/no-op save and real stale revision sequences; router
+  rename/empty-password/no-op saves. Every profile write asserts exactly one
+  _revision increment and identical foreign profiles/shared/system rows (including
+  storage field revision/position); draft writes cannot mutate device tables.
+- Manual add/update/no-op/delete for ROS AND iKuai uses actual preview hash and
+  returned entry revision on that same side. Device-only operations must leave
+  all configuration DB rows unchanged, preserve a seeded foreign route, and
+  pass exact editable/normalized values/readback checks. iKuai fake presents the
+  real netmask display suffix/runtime status and retains full underlying forms.
+- Closed RouterOS console grammar now executes route/NAT/address-member adds,
+  digest/page/name reads, OR queries and comma-ID removes against real fake
+  tables. Unsupported syntax fails the fixture; it cannot report invented
+  success. Added tests prove script mutation, escaped Unicode values, IDs and
+  parse-before-execute rejection. No Python production helper called by fake.
+- Read review-r06 Accepted differences: manual route revision/fingerprint hashes
+  are intentionally Go-native opaque tokens. Future comparison must use shape,
+  stability/content-binding/stale rejection and scoped pairing, not assume the
+  Python digest algorithm. Do not silently mask these fields. Full dynamic
+  pairing and all accepted-difference classifications remain to implement.
+
+`.32: RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'set -euo pipefail; cd server/tools/routerdiff; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY=/tmp/routerdiff-build.AybfCK/configflow; ~/cf-test/.venv/bin/python -m unittest -v test_inventory test_seed test_compare test_recipes test_console test_boundary; ~/cf-test/.venv/bin/python run.py --binary "$ROUTERDIFF_BINARY" --output /tmp/routerdiff-draft-runtime.json'`
+→ Ran 13 tests in 8.220s / OK; baseline sequence 1203 recipes.
+Latest manual sequence command:
+`RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'set -euo pipefail; cd server/tools/routerdiff; export PYTHONDONTWRITEBYTECODE=1; ~/cf-test/.venv/bin/python -m unittest -v test_recipes; ~/cf-test/.venv/bin/python run.py --binary /tmp/routerdiff-build.AybfCK/configflow --output /tmp/routerdiff-manual-routes.json'`
+→ Ran 2 tests in 0.080s / OK; manual_routes 1221 cumulative recipes;
+implemented_routes=0, go-unimplemented=1221, referenced_entries=373 of 2301.
+1928 matrix entries remain unattached; none is silently called covered. Task
+continues: full protocol/failure/rollback, generated forms, runtime/concurrency,
+all H reachability/variant audits, findings renderer, final full validation.
+
+Coordinator update: .64 is now an equal native Hyper-V Arch host, .63 retired;
+.32/.64 both allowed for final gates. Keep this run pinned .32 for continuity.
+N8-3 is merged ported into go; its old branch remains frozen. Final rebase pending.
