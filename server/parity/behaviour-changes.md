@@ -1,5 +1,19 @@
 # Deliberate behaviour changes
 
+## A24 review — public Agent/deployment credential safety
+
+复核按任务要求修复 Python 原版同样存在的泄露：旧/导入 Agent 与部署记录中的
+password、private key、API key、registration key 等字段，以及 host 的 Basic-auth
+userinfo、HA/部署诊断中的凭据原本会透传。公共 Agent helper 和共享
+`deploy.PublicDeployment` 现在复用 `redact.SanitizeCredentials`，掩码凭据字段、
+含凭据的文本、已知 Agent token / 环境注册密钥及旧凭据在其他字段中的 URL 编码引用。
+磁盘记录和实际请求凭据保持完整，非敏感未来字段继续保留。全局 response token
+redactor 的既有策略不变。无新接口或 UI 操作变化。
+
+覆盖：`TestReviewA24PublicCredentials`、`TestReviewA24PublicHTTPDoesNotExposeLegacyCredentials`、
+`redact.TestPublicMetadataCredentials`。24 组非泄露类真实 Python 参照继续逐字段相等；
+泄露类单独断言安全结果，不放宽差分比较。见 [A24 复核](review-a24.md)。
+
 ## N8-1 — non-finite JSON response numbers (Python bug fix)
 
 Coordinator decision, 2026-11-17; design/n7-n8.md §2.6 clarification.

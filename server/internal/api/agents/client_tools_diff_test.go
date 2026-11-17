@@ -94,10 +94,18 @@ func a24Fixture(t *testing.T) *httpxtest.Server {
 }
 func newClientWorld(t *testing.T) *clientWorld {
 	t.Helper()
+	return newClientWorldSetup(t, nil)
+}
+
+func newClientWorldSetup(t *testing.T, setup func(*httpxtest.Server)) *clientWorld {
+	t.Helper()
 	if os.Getenv("CONFIGFLOW_DIFF") != "1" {
 		t.Skip("set CONFIGFLOW_DIFF=1")
 	}
 	s := a24Fixture(t)
+	if setup != nil {
+		setup(s)
+	}
 	pyDir := t.TempDir()
 	if output, err := exec.Command("cp", "-a", s.DataDir+"/.", pyDir).CombinedOutput(); err != nil {
 		t.Fatalf("copy: %v %s", err, output)
@@ -380,6 +388,7 @@ func TestA24FlaskBoundaries(t *testing.T) {
 	}
 	notes := "/api/agents/m/client-notes?profile=default"
 	w.call("GET", notes, nil, 200, "admin")
+	w.call("GET", "/api/agents/m/client-notes?profile=missing&profile_id=..", nil, 200, "admin")
 	for _, agent := range []string{"missing", "other"} {
 		w.call("GET", "/api/agents/"+agent+"/client-notes", nil, 400, "admin")
 	}
@@ -406,6 +415,7 @@ func TestA24FlaskBoundaries(t *testing.T) {
 	w.call("PUT", notes, note, 409, "admin")
 	targets := "/api/agents/m/mihomo/rule-targets"
 	w.call("GET", targets+"?profile=default", nil, 200, "admin")
+	w.call("GET", targets+"?profile=missing", nil, 200, "admin")
 	w.call("GET", "/api/agents/d/mihomo/rule-targets", nil, 400, "admin")
 	apply := targets + "/apply"
 	w.call("POST", apply, map[string]any{}, 400, "admin")

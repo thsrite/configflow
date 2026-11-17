@@ -14,11 +14,13 @@ package redact
 import (
 	"context"
 	"net/url"
+	"os"
 	"slices"
 	"sort"
 	"strings"
 	"unsafe"
 
+	"configflow/internal/agents/diag"
 	"configflow/internal/jsonx"
 	"configflow/internal/repo"
 	"configflow/internal/weburl"
@@ -194,16 +196,35 @@ func SanitizeWithSecrets(payload any, secrets Secrets, sortKeys bool) any {
 	return s.visit(payload, 0)
 }
 
+// SanitizeCredentials copies public metadata while masking credential fields,
+// credential-bearing text and known tokens. Unlike the global response hook it
+// also protects legacy/imported credentials not present in the token registry,
+// including references to the server registration key without a field label.
+// Data-keyed configuration documents should use their schema-specific redactor.
+func SanitizeCredentials(payload *jsonx.Object, secrets Secrets) *jsonx.Object {
+	if payload == nil {
+		return nil
+	}
+	secrets = NewSecrets(secrets, []string{os.Getenv("AGENT_REGISTRATION_KEY")})
+	s := &sanitizer{secrets: secrets, credentials: true, active: map[containerID]bool{}}
+	public := s.visit(payload, 0)
+	// A legacy credential may also occur in a sibling diagnostic, including one
+	// visited before its credential field. A fresh pass covers those references.
+	return SanitizeWithSecrets(public, NewSecrets(secrets, s.discovered), false).(*jsonx.Object)
+}
+
 type containerID struct {
 	pointer unsafe.Pointer
 	length  int
 }
 
 type sanitizer struct {
-	secrets  Secrets
-	sortKeys bool
-	active   map[containerID]bool
-	cache    map[string]bool
+	secrets     Secrets
+	credentials bool
+	discovered  []string
+	sortKeys    bool
+	active      map[containerID]bool
+	cache       map[string]bool
 }
 
 func (s *sanitizer) visit(value any, depth int) any {
@@ -232,6 +253,13 @@ func (s *sanitizer) visit(value any, depth int) any {
 			}
 			item, _ := v.Get(key)
 			outKey := s.str(key)
+			if s.credentials && diag.IsCredentialKey(key) {
+				if text, ok := item.(string); ok && text != Redacted {
+					s.discovered = append(s.discovered, text)
+				}
+				output.Set(outKey, Redacted)
+				continue
+			}
 			output.Set(outKey, s.visit(item, depth+1))
 		}
 		return output
@@ -257,6 +285,14 @@ func (s *sanitizer) visit(value any, depth int) any {
 }
 
 func (s *sanitizer) str(value string) string {
+	if s.credentials {
+		if len(diag.CredentialSpans(value)) > 0 {
+			return Redacted
+		}
+		if diag.HasCredentialText(value) {
+			value = diag.FailureText(value, nil, len(value)+128)
+		}
+	}
 	if len(s.secrets) == 0 {
 		return value
 	}

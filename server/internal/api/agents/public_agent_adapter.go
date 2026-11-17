@@ -3,6 +3,7 @@ package agents
 import (
 	"configflow/internal/agents"
 	"configflow/internal/deploy"
+	"configflow/internal/redact"
 	"configflow/internal/repo"
 )
 
@@ -32,5 +33,5 @@ func publicAgent(record *agents.Record) *agents.Record {
 	if record := public.GetObject("latest_upgrade"); record != nil {
 		public.Set("latest_upgrade", agents.PublicUpgradeState(record))
 	}
-	return public
+	return redact.SanitizeCredentials(public, redact.NewSecrets([]string{record.GetString("token")}))
 }

@@ -16,6 +16,8 @@ import (
 // matching server validation receipt (ReceiptMatches false).
 const MessageUncheckedCandidate = "候选配置缺少当前规则的校验证明，已停止激活。请重新推送配置并完成校验。"
 
+const msgDomainDiscoveryMihomo = "域名发现只支持 mihomo Agent"
+
 var (
 	agentReturnedHTTP = regexp.MustCompile(`^Agent returned HTTP \p{Nd}{3}\z`)
 	ruleFailure       = regexp.MustCompile(`^Rule .+: .+\z`)

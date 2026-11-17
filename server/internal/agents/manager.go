@@ -876,13 +876,16 @@ var testRecordHeartbeat func(m *Manager, agent, payload *jsonx.Object, mark int6
 // Agents can enable it. Returns the updated live record, nil when unknown.
 func (m *Manager) SetDomainDiscovery(ctx context.Context, agentID string, enabled bool) (*jsonx.Object, error) {
 	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	result, err := m.UpdateAgents(ctx, "", func(_ context.Context, agents *[]any) (any, error) {
 		agent, _ := findAgent(*agents, agentID)
 		if agent == nil {
 			return nil, nil
 		}
 		if enabled && agent.Value("service_type") != "mihomo" {
-			return nil, &ValueError{Message: "域名发现只支持 mihomo Agent"}
+			return nil, &ValueError{Message: msgDomainDiscoveryMihomo}
 		}
 		agent.Set("domain_discovery_enabled", enabled)
 		agent.Set("updated_at", nowISO())

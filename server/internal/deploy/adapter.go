@@ -12,6 +12,7 @@ import (
 	"configflow/internal/oxidns"
 	"configflow/internal/provider"
 	"configflow/internal/pyyaml"
+	"configflow/internal/redact"
 	"configflow/internal/refresh"
 	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
@@ -389,7 +390,7 @@ func publicDeployment(record *agents.Record) *agents.Record {
 	}
 	out.Delete("prepared_content")
 	out.Delete("oxidns_validation_receipt")
-	return agents.PublicDeploymentMessages(out)
+	return redact.SanitizeCredentials(agents.PublicDeploymentMessages(out), nil)
 }
 
 // AgentIdentity freezes fields that affect target adaptation, including the

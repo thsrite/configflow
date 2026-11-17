@@ -159,7 +159,11 @@ func clientNotes(c *httpx.Ctx) (*httpx.Response, error) {
 
 // SaveNote commits a display-only edit after rechecking the binding and previous name.
 func (clientTools) SaveNote(ctx context.Context, id string, edit noteEdit) error {
-	return updateClientNote(lifecycle.Detach(ctx), id, edit)
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return updateClientNote(ctx, id, edit)
 }
 func clientRuleTargets(c *httpx.Ctx) (*httpx.Response, error) {
 	profile, err := boundClientProfile(c.Context(), c.Param("agent_id"), true)
@@ -204,6 +208,9 @@ func clientConnectionRule(c *httpx.Ctx) (*httpx.Response, error) {
 // ApplyConnection owns guarded shared-rule adoption and its cache/history writes.
 func (clientTools) ApplyConnection(ctx context.Context, id string, edit connectionEdit) (any, error) {
 	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if edit.RuleType == "IP-CIDR" || edit.RuleType == "IP-CIDR6" {
 		dest, err := rules.ParseDestination(rawText(edit.Value), edit.RuleType)
 		if err != nil {
@@ -277,6 +284,9 @@ func clientDiscoveryToggle(c *httpx.Ctx) (*httpx.Response, error) {
 // SetDiscovery updates the switch and returns the live runtime overlay.
 func (clientTools) SetDiscovery(ctx context.Context, id string, enabled bool) (*registry.Record, error) {
 	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	manager, err := registry.Get(ctx)
 	if err != nil {
 		return nil, err
@@ -298,7 +308,11 @@ func clientDiscoveryClear(c *httpx.Ctx) (*httpx.Response, error) {
 
 // ClearDiscovery deletes only collected traffic, probes and regions.
 func (clientTools) ClearDiscovery(ctx context.Context, id string) (bool, error) {
-	return clearClientDiscovery(lifecycle.Detach(ctx), id)
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	return clearClientDiscovery(ctx, id)
 }
 func policyError(status int, message string) *httpx.Response {
 	return httpx.JSONStatus(status, struct {
@@ -354,5 +368,9 @@ func clientPolicies(c *httpx.Ctx) (*httpx.Response, error) {
 
 // SavePolicies commits a draft with binding, settings and notes revision guards.
 func (clientTools) SavePolicies(ctx context.Context, id string, edit policyEdit) error {
-	return updateClientPolicies(lifecycle.Detach(ctx), id, edit)
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return updateClientPolicies(ctx, id, edit)
 }

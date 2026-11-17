@@ -56,6 +56,13 @@ func TestPublicAgentPython(t *testing.T) {
 		`{"oxidns_ha_publication":{"id":"pair","status":"failed","message":"失败","members":["a","b"],"children":{"a":"secret-child"},"private":"secret-private"},"latest_deployment":{"ha_publication":{"status":"failed","message":"同步失败"},"pending":true,"http_status":202,"prepared_content":"secret-content"}}`,
 		`{"deployments":{},"latest_upgrade":{},"oxidns_ha_publication":{}}`,
 		`{"latest_deployment":{"status":"queued","ha_publication":{},"prepared_content":"secret-empty-ha"},"deployments":{"empty":{"status":"ready","ha_publication":{}}}}`,
+		`{}`,
+		`{"id":"legacy","host":"192.0.2.8","port":8080,"version":"1.0.0","name":7,"dns_follow":null,"latest_upgrade":null}`,
+		`{"id":"ha","oxidns_ha_publication":{"id":"pair","status":"succeeded","phase":"done","message":"已同步","owner_agent_id":"a","owner_deployment_id":"d","active_agent_id":"b","members":["a","b"],"warnings":["提示"],"routers":["router"],"children":{"a":"secret-child"},"private_key":"secret-key"}}`,
+		`{"id":"deployment","deployments":{"old":{"status":"failed","message":"校验失败","prepared_content":{"token":"secret-prepared"},"oxidns_validation_receipt":{"token":"secret-receipt"}},"ready":{"status":"ready","message":"已准备","ha_publication":{}}},"latest_deployment":{"status":"ready","success":true,"pending":true,"http_status":202,"ha_publication":{}}}`,
+		`{"id":"upgrade","latest_upgrade":{"status":"rolled_back","message":"Authorization: Bearer hidden","error":"Agent download write failed","events":[{"at":"2026-01-01T00:00:00","status":"failed","message":"password=hidden","unexpected":"secret-event"}]}}`,
+		`{"id":"ha-deployment","latest_deployment":{"status":"ready","http_status":202,"pending":true,"prepared_content":{"password":"secret-password"},"ha_publication":{"status":"rollback_failed","message":"恢复失败","members":["a","b"]}}}`,
+		`{"id":"old","latest_deployment":"legacy scalar","latest_upgrade":false,"future":{"name":"保留","list":[null,{},[]]}}`,
 	}
 	for i, text := range cases {
 		for _, unread := range []bool{false, true} {

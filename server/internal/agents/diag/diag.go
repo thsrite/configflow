@@ -161,6 +161,13 @@ func SecretSpans(text string) [][2]int {
 	return out
 }
 
+// HasCredentialText reports inline credentials, standalone Bearer/Basic values
+// and PEM private keys recognized by FailureText. This keeps public metadata
+// redaction on the same patterns as diagnostic redaction.
+func HasCredentialText(text string) bool {
+	return len(SecretSpans(text)) > 0 || len(matchesAtWordStart(text, authPattern, 0)) > 0 || pemPattern.MatchString(text)
+}
+
 // FailureText is diagnostics.failure_text(value, secrets, limit): ANSI
 // escapes and control characters removed, private keys, YAML secret blocks,
 // the given secrets (also URL-encoded), URL credentials, Authorization values

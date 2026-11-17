@@ -1144,7 +1144,7 @@ Tests: `test_agent_content_sync.py` (42), `test_agent_content_api.py` (10), `tes
 
 Routes (4): `GET /api/agents`; `GET /api/agents/<agent_id>`; `GET /api/agents/<agent_id>/push-diff`; `GET /api/agents/<agent_id>/push-diff/entries`
 
-A24 clarification: reuse the same-package `publicAgent(*agents.Record) *agents.Record` helper in `api/agents/public_agent_adapter.go`; do not add another serializer. It delegates deployment, upgrade and HA sanitization to their existing owners and omits unread history. Real Python field-by-field differential: `TestPublicAgentPython` (10 cases).
+A24 clarification: reuse the same-package `publicAgent(*agents.Record) *agents.Record` helper in `api/agents/public_agent_adapter.go`; do not add another serializer. It delegates deployment, upgrade and HA sanitization to their existing owners and omits unread history. A24 review additionally uses shared `redact.SanitizeCredentials` to mask legacy credential fields, Basic-auth hosts and references to known tokens. Real Python field-by-field differential: `TestPublicAgentPython` (24 cases); the Python credential leak is a separate security correction, documented in `behaviour-changes.md`.
 
 Evidence: no Go code. Port `_public_agent` (A03 lines) here. Extend the existing `createAgent`/`handleAgentItem` handlers with the GET branch (router panics on a second handler for the same endpoint). Provides for config: `content_sync.invalidate_content_sync` used by C13 `subscription_cache` (interface declared in C13, registered here).
 
@@ -1432,6 +1432,8 @@ Evidence: no Go code.
 Hooks to provide: `agents.OnManagerInit` (`ipv6_verification.start_loop`, last); `ipv6_verification.enroll` is called from A14 `_publish_deployment` (A14 declares a hook with a no-op default, registered here). Routers' `routes/routers.py` imports `agents.ipv6_readiness` (interface for the routers domain).
 
 ## A24 — client tools, OxiDNS device policies, domain-discovery toggles
+
+Review in progress on `go-review-a24` (base `642e84db`): F1 high (legacy/public metadata credentials) and F2 high (shutdown cancellation allowed toggle/cleanup writes) fixed with regressions; final gates pending. See `review-a24.md`. No sub-agents, pushes or production access.
 
 **Status: `ported`** · prereqs: A05, C09 (`connection_rules`, ready), C26 (`oxidns_device_policy.read_policies/revision/normalize_client_range`), C31 (`device_notes`), C37 (`domain_discovery_service`, `provider_revisions`), C05 (`OxidnsSettingsError`) · Go: api/agents
 

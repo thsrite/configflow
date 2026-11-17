@@ -8,7 +8,7 @@ import (
 	"unicode"
 )
 
-var credentialKeys = strings.Fields("password passwd uuid private-key privatekey pre-shared-key secret token auth auth-str authentication authorization proxy-authorization psk obfs-password short-id api-key apikey access-token client-secret cookie private-key-passphrase")
+var credentialKeys = strings.Fields("password passwd passphrase uuid private-key privatekey pre-shared-key secret token auth auth-str authentication authorization proxy-authorization psk obfs-password short-id api-key apikey access-key registration-key access-token client-secret cookie private-key-passphrase")
 var credentialSuffixes = []string{"-password", "-passwd", "-passphrase", "-secret", "-token", "-psk", "-private-key"}
 var credentialParams = strings.Fields("token access-token auth auth-token key api-key apikey password passwd pass pwd secret sign signature sig uuid code ticket credential session sid")
 var opaquePart = regexp.MustCompile(`^[A-Za-z0-9_\-=~]{24,}$`)
