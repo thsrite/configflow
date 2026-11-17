@@ -84,6 +84,11 @@ func editSubscriptions(ctx context.Context, mutate func([]object) ([]object, err
 		if err != nil {
 			return nil, err
 		}
+		// Retain the original ordered storage representation for semantic no-ops.
+		// Re-encoding a native map must not turn a repeated PUT into a new revision.
+		if jsonx.Equal(shared.Value("subscriptions"), v) {
+			return nil, nil
+		}
 		shared.Set("subscriptions", v)
 		return nil, nil
 	})
