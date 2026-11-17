@@ -383,3 +383,31 @@ def batch64():
                    stored={('client_fixed_ips/' + row['ip'] + '/mac'): row['mac'] for row in body['devices']}
                           if operation == 'add' else {'client_fixed_ips': {}},
                    stored_absent=() if operation == 'add' else tuple('client_fixed_ips/' + row['ip'] for row in body['devices']))
+
+
+def random_key_options():
+    return {**options(), 'environment': {'JWT_SECRET_KEY': None}}
+
+
+def _restart(stable):
+    label = 'stable-key' if stable else 'random-key'
+    preview = 'R006/restart-' + label
+    return [Case(preview, 'R006', 'POST', '/api/client-devices/fixed-ip/preview', 200, ('T05',),
+                 document=request('add', '10.44.0.22', '02:00:00:00:00:22', 'r-ros', '重启令牌🧪'),
+                 prepare=(device_world(),), unchanged=False, effect='device-read', checks={'success': True}),
+            Case('R005/restart-' + label, 'R005', 'POST', '/api/client-devices/fixed-ip/apply', 200 if stable else 409,
+                 ('R005-B92',) if not stable else ('T05',),
+                 document={'profile_id': 'alpha', 'token': Ref(preview, '/body/token')}, requires=('R006',),
+                 prepare=({'rpc': 'restart'},), unchanged=False,
+                 effect='profile-write-device' if stable else 'device-read', foreign=FOREIGN,
+                 message=None if stable else '固定 IP 预览无效或已过期，请重新预览确认。',
+                 stored={'client_fixed_ips/10.44.0.22/mac': '02:00:00:00:00:22'} if stable else {'client_fixed_ips': {}},
+                 fake_lengths={'ros/~1ip~1dhcp-server~1lease': 3 if stable else 2, 'ikuai/dhcp_static': 1})]
+
+
+def fixed_restart_stable():
+    yield from _restart(True)
+
+
+def fixed_restart_random():
+    yield from _restart(False)

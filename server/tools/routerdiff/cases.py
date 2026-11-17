@@ -58,6 +58,10 @@ class Case:
     python_bug: str = ''
     stored_absent: tuple = ()
     request_order: tuple = ()
+    wait_until: dict = field(default_factory=dict)
+    wait_seconds: float = 30
+    after_poll: tuple = ()
+    file_contents: dict = field(default_factory=dict)
 
 
 def at(document, path):

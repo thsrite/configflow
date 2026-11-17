@@ -384,3 +384,35 @@ Exact .32 command:
 → Ran 7 tests in 0.243s / OK; stale12, uncertain20, mixed rollback22,
 64-device26 cumulative (last group49.82s); go-unimplemented26,
 referenced_entries24, complete=false, remaining_audits2301. No Go defect claim.
+
+Public restart and detached rule-sync iteration (2026-11-17):
+- Rebased onto local go 038b52ae (clean rebase), rebuilt the normal public Go
+  binary with the route-observer-only overlay. No internal Go source was read.
+- Public process restart tests now prove same-key fixed-IP preview survives,
+  random startup signing key invalidates the old preview, and each restarted
+  side obtains/verifies its own fresh login. No clock/token/product patch.
+- Enrolment uses real plan→manual publish→receipt. Three detached HTTP sync
+  jobs cover remote IPv4 delta, unchanged bytes and domain-only edit. They poll
+  the public receipt to its terminal state, check SHA-256 source versions,
+  exact cache bytes, device tables, route counts and unchanged config revisions.
+- Added repeat-GET/after-job polling. Go failure remains a compared observation,
+  not a fixture exception; a negative runner self-check proves this. Captured
+  terminal reads are part of the differential, not silently discarded. The
+  initial 202 response stays exact, including possible phase differences.
+- Runtime global-classification networks are generated only on the test server,
+  never used as network destinations. Exact addresses drive all checks and
+  differences. Report-only aliases redact textual/key/base64 occurrences after
+  comparison; a negative address comparison proves privacy does not turn a
+  changed address into a pass. No generated address is committed/printed.
+- Fake now supplies the actual singleton /routing/settings shape with 7.24.5
+  policy-rules order (D09), required by sync's evidence snapshot; a missing
+  singleton initially caused Python to pause and was a fixture precondition
+  failure, not a product finding. All new workflows now pass real Python.
+
+Exact .32 commands:
+`RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'set -euo pipefail; cd server/tools/routerdiff; export PYTHONDONTWRITEBYTECODE=1; ~/cf-test/.venv/bin/python build.py /tmp/routerdiff-build.AybfCK; ~/cf-test/.venv/bin/python -m unittest -v test_addresses test_recipes test_runner'`
+→ /tmp/routerdiff-build.AybfCK/configflow; Ran 8 tests in 0.511s / OK.
+`RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'set -euo pipefail; cd server/tools/routerdiff; export PYTHONDONTWRITEBYTECODE=1; ~/cf-test/.venv/bin/python -m unittest -v test_addresses test_recipes test_runner; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary /tmp/routerdiff-build.AybfCK/configflow --world rule-sync --world fixed-ip-restart-stable --world fixed-ip-restart-random --output /tmp/routerdiff-sync-restart.json'`
+→ Ran 9 tests in 0.417s / OK; stable2, random4, rule-sync13 cumulative;
+go-unimplemented13, referenced_entries7, complete=false, remaining_audits2301.
+These are iteration subsets, not final combined coverage; task continues.

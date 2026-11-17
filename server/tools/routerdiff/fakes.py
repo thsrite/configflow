@@ -32,6 +32,7 @@ class World:
         self.entered_gates = {}
         self.errors = []
         self.ros = {'/system/resource': {'version': '7.24.5 (stable)', 'board-name': 'synthetic-router'},
+                    '/routing/settings': {'policy-rules': 'mangle,vrf-lookup,vrf-unreach,local,user,main'},
                     '/ip/route': [], '/ip/firewall/nat': [], '/ip/firewall/mangle': [],
                     '/ip/firewall/filter': [], '/ip/firewall/address-list': [],
                     '/routing/table': [{'.id': '*1', 'name': 'main', 'fib': 'true'}]}

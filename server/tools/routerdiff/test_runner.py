@@ -7,7 +7,7 @@ import unittest
 
 from cases import Case, Ref
 from inventory import load
-from run import execute, shape
+from run import execute, poll, shape
 
 
 class ObservationSide:
@@ -39,6 +39,15 @@ def pair(python=None, go=None):
 
 
 class RunnerTests(unittest.TestCase):
+    def test_go_poll_failure_stays_a_compared_observation(self):
+        failed = ObservationSide(status=502)
+        response = poll(failed, {'method': 'GET', 'path': '/api/routers/test/rule-sync'}, {'success': True}, 0, strict=False)
+        self.assertEqual(response['status'], 502)
+        with self.assertRaisesRegex(RuntimeError, 'steady-state wait expired'):
+            poll(failed, {'method': 'GET', 'path': '/api/routers/test/rule-sync'}, {'success': True}, 0)
+        with self.assertRaisesRegex(ValueError, 'only repeat public GETs'):
+            poll(failed, {'method': 'POST', 'path': '/api/routers/test/rule-sync'}, {}, 0)
+
     def test_transaction_order_precondition_rejects_forward_undo(self):
         original = ObservationSide().before
         for actions, valid in ((['add-one', 'add-two', 'undo-two', 'undo-one'], True),

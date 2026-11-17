@@ -9,6 +9,7 @@ import fixtures
 import probes
 import releases
 import clients
+import sync
 from inventory import load
 
 
@@ -16,7 +17,7 @@ class RecipeTests(unittest.TestCase):
     def test_unique_variants_and_real_design_references(self):
         routes, entries = load()
         seen = set()
-        for module in (cases, guards, workflows, fixtures, probes, releases, clients):
+        for module in (cases, guards, workflows, fixtures, probes, releases, clients, sync):
             for name in module.__dict__:
                 value = getattr(module, name)
                 if not inspect.isgeneratorfunction(value) or getattr(value, '__module__', '') != module.__name__:

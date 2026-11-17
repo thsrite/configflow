@@ -16,6 +16,7 @@ import fixtures
 import probes
 import releases
 import clients
+import sync
 from compare import differences, logical_snapshot, response_view, timestamp
 from harness import Pair
 from harness import decode_response
@@ -23,6 +24,7 @@ from inventory import design_json, load
 from invariants import configuration_only, profile_write, fields
 from seed import router, AGENT_TOKEN
 from fakes import World
+from addresses import report_aliases
 
 
 def shape(path):
@@ -32,6 +34,25 @@ def shape(path):
 def registered(manifest):
     return {(method, shape(path)) for method, path in
             (line.split('\t', 1) for line in manifest.splitlines())}
+
+
+def poll(side, values, expected, seconds, strict=True):
+    if values['method'] != 'GET':
+        raise ValueError('eventual assertions may only repeat public GETs')
+    deadline = time.monotonic() + seconds
+    while True:
+        response = side.request(**values)
+        try:
+            ready = all(cases.at(response['content'], path) == value for path, value in expected.items())
+        except (KeyError, IndexError, TypeError):
+            ready = False
+        if response['status'] == 200 and ready:
+            return response
+        if time.monotonic() >= deadline:
+            if strict:
+                raise RuntimeError('public steady-state wait expired: ' + repr(response['content']))
+            return response  # A Go failure is a compared observation, not a fixture error.
+        time.sleep(.1)
 
 
 def execute(pair, case, available, routes):
@@ -46,7 +67,10 @@ def execute(pair, case, available, routes):
         if name == 'go' and not implemented:
             continue
         for control in case.prepare:
-            if control.get('rpc') == 'http':
+            if control.get('rpc') == 'restart':
+                side.rpc('stop', kill=control.get('kill', False))
+                side.start()  # Same production entry and fresh public login.
+            elif control.get('rpc') == 'http':
                 values = {key: value for key, value in control.items() if key not in ('rpc', 'expected')}
                 reply = side.request(**values)
                 if reply['status'] != control['expected'] or reply['content'].get('success') is not True:
@@ -71,15 +95,21 @@ def execute(pair, case, available, routes):
             break
         started = side.pending[case.join]['started'] if case.join else time.time()
         try:
-            response = decode_response(side.rpc('join', ident=case.join)) if case.join else side.request(**own_request)
+            response = (decode_response(side.rpc('join', ident=case.join)) if case.join else
+                        poll(side, own_request, case.wait_until, case.wait_seconds, strict=name == 'python') if case.wait_until else
+                        side.request(**own_request))
         finally:
             for control in case.finalize:
                 side.rpc('fake', **control)
+        settled = [response_view(poll(side, {'method': 'GET', 'path': control['path']}, control['expect'],
+                                     control.get('seconds', 30), strict=name == 'python')) for control in case.after_poll]
         if case.join:
             del side.pending[case.join]
         ended = time.time()
         response['method'] = case.method
         observations[name] = response_view(response)
+        if settled:
+            observations[name]['settled_reads'] = settled
         side.observations[case.ident] = observations[name]
         after = logical_snapshot(side.rpc('snapshot'))
         if after['fake']['errors']:
@@ -151,6 +181,10 @@ def execute(pair, case, available, routes):
             for path, expected in case.fake_lengths.items():
                 if len(cases.at(after['fake'], path)) != expected:
                     raise RuntimeError(case.ident + ': fake device length postcondition failed at ' + path)
+            for pattern, expected in case.file_contents.items():
+                matching = [value for path, value in after['files'].items() if re.fullmatch(pattern, path)]
+                if len(matching) != 1 or base64.b64decode(matching[0]) != expected.encode('utf-8'):
+                    raise RuntimeError(case.ident + ': generated/cache file content postcondition failed: ' + pattern)
             if case.effect == 'router-create':
                 old = fields(before, 'profile', case.profile)['routers']['items']
                 new = fields(after, 'profile', case.profile)['routers']['items']
@@ -250,7 +284,7 @@ def report(output, results, available, announce=True, error=None):
         data['fixture_error'] = error
     output.parent.mkdir(parents=True, exist_ok=True)
     temporary = output.with_suffix(output.suffix + '.tmp')
-    temporary.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n')
+    temporary.write_text(json.dumps(report_aliases(data), ensure_ascii=False, indent=2) + '\n')
     temporary.replace(output)
     if announce:
         print(json.dumps({key: value for key, value in data.items() if key not in ('ledger', 'results')}, ensure_ascii=False))
@@ -258,6 +292,7 @@ def report(output, results, available, announce=True, error=None):
 
 
 def findings(path, data):
+    data = report_aliases(data)
     lines = ['# Routers Step B 黑盒差分发现', '',
         '状态：进行中。矩阵审计尚未完成；不能据此宣称 routers 已通过验收。', '',
         f'矩阵：{data["matrix_routes"]} 条路由、{data["matrix_entries"]} 个设计条目。',
@@ -353,8 +388,11 @@ def main():
               ('fixed-ip-uncertain', clients.options(), (clients.fixed_uncertain,)),
               ('fixed-ip-batch-rollback', clients.options(), (clients.fixed_batch_rollback,)),
               ('fixed-ip-64', clients.batch_options(), (clients.batch64,)),
+              ('fixed-ip-restart-stable', clients.options(), (clients.fixed_restart_stable,)),
+              ('fixed-ip-restart-random', clients.random_key_options(), (clients.fixed_restart_random,)),
               ('discovery', clients.options(), (clients.discovery,)),
               ('discovery-failures', clients.options(), (clients.discovery_failures,)),
+              ('rule-sync', sync.options(), (sync.manual_refresh,)),
               ('stored', fixtures.stored_options(), (fixtures.receipts, fixtures.stored_guards))]
     if args.world:
         unknown = set(args.world) - {name for name, _, _ in worlds}
@@ -381,7 +419,9 @@ def main():
                           + format(time.monotonic() - started, '.2f') + 's', flush=True)
     except Exception as error:
         report(args.output, results, available or set(), error=str(error))
-        raise
+        # Runtime global classification fixtures must not escape through a
+        # diagnostic traceback while their exact values still drive comparisons.
+        raise RuntimeError(report_aliases(str(error))) from None
     data = report(args.output, results, available)
     if args.findings:
         findings(args.findings, data)
