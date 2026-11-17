@@ -22,6 +22,7 @@ import (
 
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/installer"
+	"configflow/internal/installer/installertest"
 	"configflow/internal/jsonx"
 
 	_ "modernc.org/sqlite"
@@ -92,6 +93,15 @@ func compareInstaller(py, gor response, mask []string) []string {
 	} else if strings.HasPrefix(py.header.Get("Content-Type"), "application/json") {
 		a, errA := jsonx.Parse(py.body)
 		b, errB := jsonx.Parse(gor.body)
+		if obj, ok := b.(*jsonx.Object); ok && gor.status == 200 {
+			if script, ok := obj.Value("script").(string); ok {
+				baseline, err := installertest.PythonBaseline(script)
+				if err != nil {
+					return []string{err.Error()}
+				}
+				obj.Set("script", baseline)
+			}
+		}
 		if errA != nil || errB != nil || !jsonx.Equal(maskJSON(a, mask), maskJSON(b, mask)) {
 			diffs = append(diffs, fmt.Sprintf("json python %.400s go %.400s", py.body, gor.body))
 		}
@@ -99,8 +109,18 @@ func compareInstaller(py, gor response, mask []string) []string {
 		if !equalComposeYAML(string(py.body), string(gor.body)) {
 			diffs = append(diffs, "Compose YAML semantics differ")
 		}
-	} else if string(py.body) != string(gor.body) {
-		diffs = append(diffs, fmt.Sprintf("body (%d vs %d bytes) %s", len(py.body), len(gor.body), firstLineDiff(string(py.body), string(gor.body))))
+	} else {
+		body := string(gor.body)
+		if gor.status == 200 && strings.HasPrefix(gor.header.Get("Content-Type"), "text/plain") {
+			var err error
+			body, err = installertest.PythonBaseline(body)
+			if err != nil {
+				return []string{err.Error()}
+			}
+		}
+		if string(py.body) != body {
+			diffs = append(diffs, fmt.Sprintf("body (%d vs %d bytes) %s", len(py.body), len(gor.body), firstLineDiff(string(py.body), body)))
+		}
 	}
 	return diffs
 }
@@ -434,12 +454,14 @@ func TestInstallerDifferentialAgainstFlask(t *testing.T) {
 		scripts[r.name] = [2]string{strings.TrimPrefix(pyPath, "/api/agents/i/"), strings.TrimPrefix(goPath, "/api/agents/i/")}
 	}
 
-	// Stored rows: same scripts and generator on both sides.
+	// L1 D3: exact approved source deltas and each side's own release identity.
 	pyRows, goRows := snapshotRows(t, pyDir), snapshotRows(t, goDir)
 	for name, tokens := range scripts {
 		a, b := pyRows[tokens[0]], goRows[tokens[1]]
-		if a.script != b.script || a.generator != b.generator || a.generator.String != installer.GeneratorFingerprint {
-			t.Errorf("stored row %s: python generator %v go %v, scripts equal %v", name, a.generator, b.generator, a.script == b.script)
+		baseline, err := installertest.PythonBaseline(b.script)
+		if err != nil || a.script != baseline || !a.generator.Valid || !b.generator.Valid ||
+			a.generator.String != installertest.LegacyGeneratorFingerprint || b.generator.String != installer.GeneratorFingerprint {
+			t.Errorf("stored row %s: python generator %v go %v, approved script equal %v (%v)", name, a.generator, b.generator, a.script == baseline, err)
 		}
 	}
 
@@ -447,14 +469,18 @@ func TestInstallerDifferentialAgainstFlask(t *testing.T) {
 	// and an unknown one; each side's own database gets the same rows.
 	now := time.Now().Unix()
 	for _, dir := range []string{pyDir, goDir} {
+		fingerprint := installer.GeneratorFingerprint
+		if dir == pyDir {
+			fingerprint = installertest.LegacyGeneratorFingerprint
+		}
 		execDB(t, dir, "INSERT INTO snapshots (token, script, expires_at, generator) VALUES (?, ?, ?, ?)",
 			"STALEstaleSTALEstale00", "#!/bin/sh\necho old\n", now+3600, "0123456789abcdef0123456789abcdef")
 		execDB(t, dir, "INSERT INTO snapshots (token, script, expires_at, generator) VALUES (?, ?, ?, NULL)",
 			"LEGACYlegacyLEGACY_-01", "#!/bin/sh\necho legacy\n", now+3600)
 		execDB(t, dir, "INSERT INTO snapshots (token, script, expires_at, generator) VALUES (?, ?, ?, ?)",
-			"EXPIREDexpiredEXPIRED0", "#!/bin/sh\necho expired\n", now-1, installer.GeneratorFingerprint)
+			"EXPIREDexpiredEXPIRED0", "#!/bin/sh\necho expired\n", now-1, fingerprint)
 		execDB(t, dir, "INSERT INTO snapshots (token, script, expires_at, generator) VALUES (?, ?, ?, ?)",
-			"CURRENTcurrentCURRENT0", "#!/bin/sh\necho current\n", now+3600, installer.GeneratorFingerprint)
+			"CURRENTcurrentCURRENT0", "#!/bin/sh\necho current\n", now+3600, fingerprint)
 	}
 	for _, token := range []string{"STALEstaleSTALEstale00", "LEGACYlegacyLEGACY_-01", "EXPIREDexpiredEXPIRED0",
 		"CURRENTcurrentCURRENT0", "UNKNOWNunknownUNKNOWN0", "CURRENTcurrentCURRENT", "CURRENTcurrentCURRENT0x"} {
@@ -469,10 +495,14 @@ func TestInstallerDifferentialAgainstFlask(t *testing.T) {
 
 	// A full store keeps existing links valid (503) until links expire.
 	for _, dir := range []string{pyDir, goDir} {
+		fingerprint := installer.GeneratorFingerprint
+		if dir == pyDir {
+			fingerprint = installertest.LegacyGeneratorFingerprint
+		}
 		count := len(snapshotRows(t, dir))
 		for i := count; i < installer.MaxSnapshots; i++ {
 			execDB(t, dir, "INSERT INTO snapshots (token, script, expires_at, generator) VALUES (?, ?, ?, ?)",
-				fmt.Sprintf("FILL%018d", i), "x", now+60, installer.GeneratorFingerprint)
+				fmt.Sprintf("FILL%018d", i), "x", now+60, fingerprint)
 		}
 	}
 	full := commandRequests()[2]

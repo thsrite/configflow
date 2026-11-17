@@ -1,6 +1,7 @@
 package installer
 
 import (
+	"configflow/internal/installer/installertest"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -116,6 +117,11 @@ func withoutUnifiedAgentCleanup(t *testing.T, script string, corePath bool) stri
 // withoutReviewedInstallerDeltas is without_reviewed_installer_deltas(script, core_path).
 func withoutReviewedInstallerDeltas(t *testing.T, script string, corePath bool) string {
 	t.Helper()
+	var err error
+	script, err = installertest.PythonBaseline(script)
+	if err != nil {
+		t.Fatal(err)
+	}
 	d := deltas(t)
 	n := count(script, d.NativeHADependencyCases)
 	require(t, n >= 1, "the reviewed native HA dependency addition changed")

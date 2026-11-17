@@ -77,6 +77,64 @@ ok configflow/internal/installer 3.326s
 Final D1 formatting and full vet passed; focused rerun: installer 11.366s,
 api/agents 0.190s, D1_READY_TO_COMMIT. D1 is complete in this commit.
 
-Next: D3 backup/rollback,
-D4 policy clarification, D5 health/port guards, D6 resolver fallback, D7 Range,
-D8 route-marker exception. No work has started on D3–D8 implementation yet.
+D1 committed as 4c58d0cf.
+
+## D3 — failure compensation (implementation complete, acceptance in progress)
+
+Added shared embedded POSIX agent-install-rollback.sh and inserted it into both
+single/AIO templates. It snapshots service active/enabled state, then stops old
+processes before saving final binary/config/identity bytes. Saves old unit,
+logrotate and any recovery-gate/core dependency files before editing them;
+deduplicates paths. ARMED tracks stopped services, MUTATED tracks actual writes.
+Before mutation, cleanup resumes original services without touching their files.
+After mutation, stops/disables all attempted new services, restores all files
+via same-directory temp+rename, reloads manager, then reenables/restarts only
+prior states. Failed restore keeps private backups and services stopped. Cleanup
+ignores further HUP/INT/TERM; staged new JSON is removed only if this run created it.
+
+New l1_rollback_test.go has stateful Python manager fakes with real filesystem
+unit/config snapshots, and a flag proving the candidate-start fault was reached:
+single old active/inactive × systemd/OpenRC; AIO existing/new × both managers,
+with successful first new AIO process before second fails; additional termination
+during restore; forced restore-copy failure retains original config backup and
+leaves failed service stopped/disabled. Initial main+signal cases passed .32
+(7.123s); all ten strengthened cases, including copy-failure, passed (6.971s).
+
+Fingerprint is f08339646f7d4db4d1cfe14ad314942c, verified from the original
+release identity plus the three owned shell artifacts. Old unsafe links become
+stale. Fixed exact source-delta fixture covers only approved D3 edits; helper
+content, both templates and all remaining rendered bytes remain strict. A08
+20,000 fuzz records + 949 matrix records + templates passed (4.873s), online
+Flask comparison: 293 equal, 0 differ (4.707s), before the final restored-service
+health check (which now verifies OpenRC supervisor has a living child too).
+Latest focused and real-container checks are running on .64. Initial container
+fixture defects were corrected: AIO executable permissions must be 0755;
+OpenRC needs a reaping PID 1 (Docker --init). The hung old fixture was terminated
+and its uniquely named containers removed; no aborted run counts as acceptance.
+All six latest Debian/systemd + Alpine/OpenRC cases passed: single-existing,
+single-new and AIO-existing on each manager (134.163s). Every case proves
+candidate startup was reached; AIO proves both candidates started before failure.
+Old service preconditions and restored bytes/modes/identities/active/enabled
+states are checked against real init managers. No owned containers remain.
+Latest focused regression + fmt/vet passed on .64 (20.375s).
+Docker CLI execution now has bounded pipe-drain time and forwards termination
+through sudo, so a leaked daemon descriptor cannot hang the harness forever. Existing focused old native/AIO tests passed .32
+after the helper (11.746s). No D4–D8 code changed yet.
+
+Next after D3: D4 policy clarification, D5 health/port guards, D6 resolver
+fallback, D7 Range, D8 route-marker exception; then the final gates above.
+
+D3 acceptance commands (.64):
+
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt -- bash -c 'set -eu; cd server; CONFIGFLOW_L1_CONTAINERS=1 go test -count=1 -timeout=25m -v -run TestL1RollbackWithRealInitManagers ./internal/installer > /tmp/configflow-l1-d3-containers.log 2>&1; tail -40 /tmp/configflow-l1-d3-containers.log'
+RT_HOST=sunbroke@192.168.0.64 rt --no-sync -- bash -c 'set -eu; cd server; gofmt -l internal/installer internal/api/agents/difftest/installer_test.go; go vet ./internal/installer/... ./internal/api/agents/...; go test -count=1 -run "Test(ScriptsMatchBackend|GeneratorFingerprint|L1PreRollback|RenderMatrix|FuzzCorpus|L1Single|L1AIOSecond|L1RollbackIgnores|L1FailedRollback)" ./internal/installer; CONFIGFLOW_DIFF=1 go test -count=1 -run TestInstallerDifferentialAgainstFlask ./internal/api/agents/difftest'
+```
+
+```text
+--- PASS: TestL1RollbackWithRealInitManagers (134.14s)
+PASS
+ok configflow/internal/installer 134.163s
+ok configflow/internal/installer 20.375s
+ok configflow/internal/api/agents/difftest 4.736s
+```

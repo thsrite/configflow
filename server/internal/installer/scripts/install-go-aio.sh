@@ -14,19 +14,26 @@ MIHOMO_SERVICE_BINARY={mihomo_service_binary_shell}
 OXIDNS_SERVICE_BINARY={oxidns_service_binary_shell}
 STAGE_DIR=""
 RESTART_ON_FAILURE=""
+{agent_install_rollback}
 {core_phase_state}cleanup() {
     cleanup_status=$?
+    trap '' HUP INT TERM
     {ipv4_forwarding_cleanup}
     if [ "$cleanup_status" -ne 0 ]; then
-{core_cleanup_message}        for stopped_service in $RESTART_ON_FAILURE; do
+{core_cleanup_message}        if [ "$AGENT_ROLLBACK_ARMED" = 1 ]; then
+            agent_rollback_restore || true
+        else
+        for stopped_service in $RESTART_ON_FAILURE; do
             if [ "$INIT_SYSTEM" = systemd ]; then
                 systemctl start "configflow-agent-$stopped_service" || true
             else
                 rc-service "configflow-agent-$stopped_service" start 3>&- 4>&- || true
             fi
         done
+        fi
     fi
     if [ -n "$STAGE_DIR" ]; then rm -rf "$STAGE_DIR"; fi
+    agent_rollback_discard
     return "$cleanup_status"
 }
 trap cleanup EXIT
@@ -90,10 +97,14 @@ stop_existing_agent() {
     [ -f "$CONFIG_FILE" ] || return 0
     if [ "$INIT_SYSTEM" = systemd ]; then
         if systemctl is-active --quiet "$AGENT_UNIT"; then RESTART_ON_FAILURE="$RESTART_ON_FAILURE $SERVICE"; fi
-        systemctl stop "$AGENT_UNIT"
+        if ! systemctl stop "$AGENT_UNIT"; then
+            if systemctl is-active --quiet "$AGENT_UNIT"; then fail "无法停止原 Agent；未替换程序和配置。"; fi
+        fi
     else
         if rc-service "$AGENT_UNIT" status >/dev/null 2>&1; then RESTART_ON_FAILURE="$RESTART_ON_FAILURE $SERVICE"; fi
-        rc-service "$AGENT_UNIT" stop
+        if ! rc-service "$AGENT_UNIT" stop; then
+            if rc-service "$AGENT_UNIT" status >/dev/null 2>&1; then fail "无法停止原 Agent；未替换程序和配置。"; fi
+        fi
     fi
 }
 
@@ -286,9 +297,22 @@ fi
 
 # Both candidates, existing roots and environment passed. No Agent is stopped earlier.
 cf_step "安装并启动 Agent 服务"
+agent_rollback_begin "$AGENT_ROOT"
+for service in mihomo oxidns; do
+    select_service "$service"
+    agent_rollback_service "$AGENT_UNIT"
+done
+AGENT_ROLLBACK_ARMED=1
 for service in mihomo oxidns; do
     select_service "$service"
     stop_existing_agent
+done
+# Both old processes are stopped before snapshotting their final identities.
+for service in mihomo oxidns; do
+    select_service "$service"
+    agent_rollback_save "$AGENT_BINARY"
+    agent_rollback_save "$CONFIG_FILE"
+    agent_rollback_save "/etc/logrotate.d/$AGENT_UNIT"
 done
 # Recheck after stopping: the first checks are snapshots, and stopping an Agent
 # can interrupt a publication begun in the meantime. This is not a publication
@@ -302,6 +326,7 @@ for service in mihomo oxidns; do
     "$BINARY_TMP" -config "$STAGE_DIR/$SERVICE-config.json" -require-clean-deployments
 done
 {ipv4_forwarding_ownership}
+AGENT_ROLLBACK_MUTATED=1
 for service in mihomo oxidns; do
     select_service "$service"
     mkdir -p "$AGENT_DIR"

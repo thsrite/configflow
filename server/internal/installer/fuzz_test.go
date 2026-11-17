@@ -6,6 +6,7 @@ import (
 	"os"
 	"testing"
 
+	"configflow/internal/installer/installertest"
 	"configflow/internal/jsonx"
 )
 
@@ -99,6 +100,10 @@ func TestFuzzCorpusMatchesPython(t *testing.T) {
 			failed++
 			t.Errorf("case %d %s %s: python rendered, go: %v", id, fn, jsonx.Repr(k.Object), err)
 			continue
+		}
+		output, err = installertest.PythonBaseline(output)
+		if err != nil {
+			t.Fatal(err)
 		}
 		matches, oracleErr := writerHashCaseMatches(fn, k.Object, output, record.GetString("sha256"), record.GetInt("length"))
 		if oracleErr != nil {

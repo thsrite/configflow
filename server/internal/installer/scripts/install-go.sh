@@ -16,16 +16,22 @@ fi
 {init_detection}
 BINARY_TMP=""
 RESTART_PREVIOUS_AGENT=0
+CONFIG_STAGED=0
+{agent_install_rollback}
 {core_phase_state}{ipv4_forwarding_state}# One cleanup for every exit: a signal must stop the installer instead of
 # letting it continue without its staged files, and an Agent that was running
 # before a failed upgrade is started again.
 configflow_agent_cleanup() {
     agent_status=$?
-    trap - 0 HUP INT TERM
+    trap - 0
+    trap '' HUP INT TERM
     if [ -n "$BINARY_TMP" ]; then rm -f "$BINARY_TMP" || true; fi
+    if [ "$CONFIG_STAGED" = 1 ]; then rm -f "$CONFIG_FILE.new" || true; fi
 {ipv4_forwarding_cleanup}    if [ "$agent_status" -ne 0 ]; then
-        if [ "$RESTART_PREVIOUS_AGENT" = 1 ]; then
-            echo "安装未完成，正在重新启动原先运行的 Agent。" >&2
+        if [ "$AGENT_ROLLBACK_ARMED" = 1 ]; then
+            agent_rollback_restore || true
+        elif [ "$RESTART_PREVIOUS_AGENT" = 1 ]; then
+            echo "安装未完成，Agent 文件尚未替换，正在恢复原服务。" >&2
             if [ "$INIT_SYSTEM" = "systemd" ]; then
                 systemctl start configflow-agent || true
             else
@@ -33,6 +39,7 @@ configflow_agent_cleanup() {
             fi
         fi
 {core_cleanup_message}    fi
+    agent_rollback_discard
     exit "$agent_status"
 }
 trap configflow_agent_cleanup 0
@@ -63,6 +70,7 @@ esac
 remove_systemd_recovery_dependency() {
     dependency_file=$1
     [ -f "$dependency_file" ] || return 0
+    agent_rollback_save "$dependency_file"
     dependency_tmp=$(mktemp "${dependency_file}.configflow-cleanup.XXXXXX")
     cp -p "$dependency_file" "$dependency_tmp"
     dependency_status=0
@@ -133,6 +141,7 @@ remove_systemd_recovery_dependency() {
 remove_openrc_recovery_dependency() {
     dependency_file=$1
     [ -f "$dependency_file" ] || return 0
+    agent_rollback_save "$dependency_file"
     dependency_tmp=$(mktemp "${dependency_file}.configflow-cleanup.XXXXXX")
     cp -p "$dependency_file" "$dependency_tmp"
     dependency_status=0
@@ -189,6 +198,7 @@ remove_recovery_gate() {
         # Reload the detached units BEFORE deleting the gate. Never stop it:
         # stopping a still-required gate can propagate a stop to a running core.
         systemctl daemon-reload
+        agent_rollback_save "/etc/systemd/system/${RECOVERY_SERVICE}.service"
         rm -f "/etc/systemd/system/${RECOVERY_SERVICE}.service"
         systemctl daemon-reload
     else
@@ -197,6 +207,8 @@ remove_recovery_gate() {
             remove_openrc_recovery_dependency "/etc/init.d/$cleanup_unit"
         done
         rc-update -u
+        agent_rollback_save "$AGENT_ROLLBACK_RUNLEVELS/boot/$RECOVERY_SERVICE"
+        agent_rollback_save "/etc/init.d/$RECOVERY_SERVICE"
         rc-update del "$RECOVERY_SERVICE" boot 2>/dev/null || true
         rm -f "/etc/init.d/$RECOVERY_SERVICE"
         rc-update -u
@@ -303,6 +315,7 @@ for old_config in "$CONFIG_FILE" "$AGENT_DIR/config.json"; do
     fi
 done
 umask 077
+CONFIG_STAGED=1
 cat > "$CONFIG_FILE.new" <<'CONFIGFLOW_JSON_EOF'
 {config_json}
 CONFIGFLOW_JSON_EOF
@@ -326,14 +339,31 @@ else
 fi
 {ipv4_forwarding_environment_end}cf_step_done "核心接管与运行环境检查通过"
 {ipv4_forwarding_prepare}cf_step "安装并启动 Agent 服务"
+agent_rollback_begin "$AGENT_DIR"
+agent_rollback_service configflow-agent
+AGENT_ROLLBACK_ARMED=1
 # Stop the previous Go or legacy Shell Agent before replacing its binary/config.
 if [ "$INIT_SYSTEM" = "systemd" ]; then
     if systemctl is-active --quiet configflow-agent 2>/dev/null; then RESTART_PREVIOUS_AGENT=1; fi
-    systemctl stop configflow-agent 2>/dev/null || true
+    if ! systemctl stop configflow-agent 2>/dev/null; then
+        if systemctl is-active --quiet configflow-agent; then
+            echo "无法停止原 Agent；未替换程序和配置。" >&2
+            exit 1
+        fi
+    fi
 else
     if rc-service configflow-agent status >/dev/null 2>&1; then RESTART_PREVIOUS_AGENT=1; fi
-    rc-service configflow-agent stop 2>/dev/null || true
+    if ! rc-service configflow-agent stop 2>/dev/null; then
+        if rc-service configflow-agent status >/dev/null 2>&1; then
+            echo "无法停止原 Agent；未替换程序和配置。" >&2
+            exit 1
+        fi
+    fi
 fi
+# Capture identity only after the old process has stopped writing its config.
+agent_rollback_save /usr/local/bin/configflow-agent
+agent_rollback_save "$CONFIG_FILE"
+agent_rollback_save /etc/logrotate.d/configflow-agent
 # Existing journals belong to the old config root, which may differ from the
 # newly requested config_path. Report pending work before losing its reference.
 if [ -f "$CONFIG_FILE" ]; then
@@ -341,6 +371,7 @@ if [ -f "$CONFIG_FILE" ]; then
 fi
 # Report interrupted deployments without changing core files or services.
 cf_deployment_check "$BINARY_TMP" -config "$CONFIG_FILE.new" -check-deployments
+AGENT_ROLLBACK_MUTATED=1
 remove_recovery_gate
 mv "$BINARY_TMP" /usr/local/bin/configflow-agent
 mv "$CONFIG_FILE.new" "$CONFIG_FILE"

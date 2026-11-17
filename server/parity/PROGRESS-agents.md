@@ -661,6 +661,16 @@ Open findings: none.
 
 ## A08 — installer script rendering, install command store
 
+L1 D3 follow-up (`go-fix-l1-installer`, ported; independent review pending): native
+single/AIO installers journal old binary/config/identity, service definitions and
+enabled/active state before replacing them. Failure stops/disables candidates,
+restores files before restarting prior services, ignores cancellation during
+rollback, and retains private backups with an explicit failure if compensation
+cannot finish. Fingerprint `f08339646f7d4db4d1cfe14ad314942c` invalidates older
+unsafe links. Fixed approved source deltas preserve strict A08 byte comparisons;
+stateful shell regressions and real Debian/systemd + Alpine/OpenRC failure
+injection are tracked in [L1 repair report](progress/l1-installer-fixes.md).
+
 **Status: `verified`** (review 2026-11-16, commit 8cf0dab8 + this PROGRESS commit; see "Review" below; HR: VM lab test still due after the maintainer agrees) · HR · prereqs: A02 (`LATEST_AGENT_VERSION`), C02 (resource) · Go: internal/installer (new), internal/api/agents/installer.go
 
 Files:

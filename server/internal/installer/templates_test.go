@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"configflow/internal/agents"
+	"configflow/internal/installer/installertest"
 )
 
 const backendAgents = "../../../backend/agents"
@@ -21,13 +22,18 @@ func TestScriptsMatchBackend(t *testing.T) {
 		t.Fatalf("backend/agents/scripts not found: %v", err)
 	}
 	embedded, _ := scriptFiles.ReadDir("scripts")
-	if len(embedded) != len(backend) {
+	if len(embedded) != len(backend)+1 {
 		t.Fatalf("server/internal/installer/scripts has %d files, backend/agents/scripts %d", len(embedded), len(backend))
+	}
+	wantModule, err := installertest.RollbackModule()
+	if err != nil || agentInstallRollback != wantModule {
+		t.Fatalf("L1 D3 rollback helper differs from its approved source delta: %v", err)
 	}
 	for _, path := range backend {
 		want, _ := os.ReadFile(path)
 		got, err := scriptFiles.ReadFile("scripts/" + filepath.Base(path))
-		if err != nil || !bytes.Equal(got, want) {
+		baseline, baselineErr := installertest.TemplateBaseline(filepath.Base(path), string(got))
+		if err != nil || baselineErr != nil || !bytes.Equal([]byte(baseline), want) {
 			t.Errorf("server/internal/installer/scripts/%s differs from backend/agents/scripts", filepath.Base(path))
 		}
 	}
@@ -67,8 +73,26 @@ func pythonFingerprint(t *testing.T, directory string) string {
 	return hex.EncodeToString(digest.Sum(nil))[:32]
 }
 
-func TestGeneratorFingerprintMatchesPython(t *testing.T) {
-	if got := pythonFingerprint(t, backendAgents); got != GeneratorFingerprint {
-		t.Fatalf("generator_fingerprint() of backend/agents is %s; update GeneratorFingerprint (was %s)", got, GeneratorFingerprint)
+func TestGeneratorFingerprintMatchesReleaseInputs(t *testing.T) {
+	if legacyInstallerFingerprint != installertest.LegacyGeneratorFingerprint {
+		t.Fatal("legacy fingerprint reference drift")
+	}
+	if got := pythonFingerprint(t, backendAgents); got != legacyInstallerFingerprint {
+		t.Fatalf("original release inputs changed: got %s, expected %s", got, legacyInstallerFingerprint)
+	}
+	digest := sha256.New()
+	digest.Write([]byte(legacyInstallerFingerprint))
+	for _, name := range []string{"agent-install-rollback.sh", "install-go-aio.sh", "install-go.sh"} {
+		data, err := scriptFiles.ReadFile("scripts/" + name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		digest.Write([]byte{0})
+		digest.Write([]byte(name))
+		digest.Write([]byte{0})
+		digest.Write(data)
+	}
+	if got := hex.EncodeToString(digest.Sum(nil))[:32]; got != GeneratorFingerprint || got == legacyInstallerFingerprint {
+		t.Fatalf("rollback installer fingerprint %s; update GeneratorFingerprint (was %s)", got, GeneratorFingerprint)
 	}
 }

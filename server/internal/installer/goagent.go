@@ -202,6 +202,7 @@ func GenerateGoAgentInstallScript(o GoAgentOptions) (string, error) {
 		coreDependencies = " zoneinfo"
 	}
 	replacements := map[string]string{
+		"agent_install_rollback":     agentInstallRollback,
 		"service_type":               serviceType,
 		"service_unit":               unit,
 		"agent_name":                 o.AgentName,

@@ -25,6 +25,7 @@ func script(name string) string {
 var (
 	cliOutputHelpers           = script("cli-output.sh")
 	installOutputHelpers       = script("install-output.sh")
+	agentInstallRollback       = script("agent-install-rollback.sh")
 	installGoScriptTemplate    = script("install-go.sh")
 	installGoAIOScriptTemplate = script("install-go-aio.sh")
 	installGoAIOForwarding     = script("aio-ipv4-forwarding.sh")

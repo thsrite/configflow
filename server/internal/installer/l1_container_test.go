@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -19,7 +20,12 @@ func l1Docker(t *testing.T, args ...string) ([]byte, error) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	return exec.CommandContext(ctx, "sudo", append([]string{"docker"}, args...)...).CombinedOutput()
+	cmd := exec.CommandContext(ctx, "sudo", append([]string{"-n", "docker"}, args...)...)
+	// Let sudo forward termination to Docker, and bound pipe draining if a
+	// daemonized fixture inherited descriptors. Cleanup removes owned containers.
+	cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
+	cmd.WaitDelay = 2 * time.Second
+	return cmd.CombinedOutput()
 }
 
 func TestL1CompactMountsWithRealCompose(t *testing.T) {

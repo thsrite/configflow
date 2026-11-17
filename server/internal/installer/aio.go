@@ -282,6 +282,7 @@ fi`
 	replacements["installation_action"] = "安装或升级两个独立 Agent"
 	replacements["agent_arch_detection"] = strings.Join(archDetection, "\n")
 	replacements["agent_install_dependencies"] = AgentInstallDependencies
+	replacements["agent_install_rollback"] = agentInstallRollback
 	replacements["core_phase_state"] = ""
 	replacements["core_cleanup_message"] = ""
 	replacements["core_install_phase"] = ""
