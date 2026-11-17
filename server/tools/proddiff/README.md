@@ -42,12 +42,15 @@ Python、Go 和比较程序都在同一个断网命名空间。两端各加载�
 只在断网请求和服务器私有报告中使用。
 
 Python 通过测试启动器在导入 app 之前禁用具名启动函数，正常加载持久历史。
-HTTP 模式的 Go 构建的是 `cmd/configflow`，使用临时 `-overlay` 文件和
-`-tags configflow_proddiff`，仅替换 `lifecycle.Start` 为不启动循环的测试版本，
-并从实际 Router 导出路由清单。测试版 Start 只同步执行 Python 在导入时同样同步执行的
-一次性启动工作（`subscription-cache-prune` ↔ `prune_orphan_caches`），之后写 ready 标记，
-比较程序等到标记后才发请求。临时文件带相同 build tag，不能被普通构建误用。
-仓库中的 Go 业务源码没有改动。直接构建生产入口仍保留全部后台功能。
+HTTP 模式直接构建 `cmd/configflow`，只加 `-tags configflow_proddiff`，不生成 overlay，
+不重写任何 Go 源码。`lifecycle/mode_proddiff.go` 将默认 Runtime 固定为 ModeManual，
+同步执行已注册 Startup；main 的 build-tag helper 从实际 Router 导出路由清单。
+`subscription-cache-prune` 已注册为 Startup（对应 Python 的 `prune_orphan_caches`），
+五个周期循环不启动。Startup 完成后输出 `.loops`、`.startups` 和最后的 `.ready` 标记，
+比较程序等到 ready 才发请求；Startup 清单来自注册表，没有具名工作白名单。
+普通构建的 helper 是 noop，默认 Runtime 固定为 ModeRun，没有环境变量或参数能关闭循环。
+`configflow_difftest` 是另一独立 tag：只向 `CONFIGFLOW_LIFECYCLE_EVENTS` 指定的私有 JSONL
+文件追加 round/job start/end 事件，用于逐轮同步；它不会关闭循环。
 
 当前 Python 禁用 10 项：DNS follow、OxiDNS HA publication、IPv6 verification、
 Agent rule sync、metrics flush、OxiDNS ranking、domain discovery、scheduled refresh、

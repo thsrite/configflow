@@ -341,10 +341,10 @@ func (r *Runtime) WaitIdle(ctx context.Context) error {
 	if g == nil {
 		return nil
 	}
-	return r.wait(ctx, g, false, nil)
+	return r.wait(ctx, g, false, nil, false)
 }
 
-func (r *Runtime) wait(ctx context.Context, g *generation, runners bool, drained <-chan struct{}) error {
+func (r *Runtime) wait(ctx context.Context, g *generation, runners bool, drained <-chan struct{}, seal bool) error {
 	for {
 		drainDone := drained == nil
 		if drained != nil {
@@ -356,6 +356,9 @@ func (r *Runtime) wait(ctx context.Context, g *generation, runners bool, drained
 		}
 		r.mu.Lock()
 		idle := g.active == 0 && (!runners || g.runners == 0)
+		if idle && drainDone && seal {
+			g.admit = false
+		}
 		changed := g.changed
 		r.mu.Unlock()
 		if idle && drainDone {
@@ -430,6 +433,7 @@ func (r *Runtime) Shutdown(ctx context.Context) {
 	g.stopLoops()
 	overall, stopOverall := r.clockContext(ctx, r.grace)
 	defer stopOverall()
+	overall = context.WithValue(overall, generationKey{}, g)
 	hooks := r.registry.snapshot().hooks
 	for _, h := range hooks {
 		if h.Phase == PhaseStopSignal {
@@ -452,14 +456,14 @@ func (r *Runtime) Shutdown(ctx context.Context) {
 			}
 		}()
 	}
-	_ = r.wait(drainCtx, g, true, drained)
+	_ = r.wait(drainCtx, g, true, drained, true)
 	stopDrain()
 	r.mu.Lock()
 	g.admit = false
 	r.mu.Unlock()
 	g.stopJobs()
 	cancelCtx, stopCancel := r.clockContext(overall, 500*time.Millisecond)
-	if err := r.wait(cancelCtx, g, true, nil); err != nil {
+	if err := r.wait(cancelCtx, g, true, nil, false); err != nil {
 		logger.Warning(msgShutdownTimeout)
 	}
 	stopCancel()

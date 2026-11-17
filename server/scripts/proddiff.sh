@@ -19,9 +19,7 @@ mkdir -p "$private/runs"
 chmod 700 "$private" "$private/runs"
 build=$(mktemp -d)
 trap 'rm -rf "$build"' EXIT
-"$python" "$root/server/tools/proddiff/build.py" "$root" "$build"
-gofmt -w "$build/main.go" "$build/lifecycle.go"
-(cd "$root/server" && go build -tags configflow_proddiff -overlay "$build/overlay.json" -o "$build/configflow" ./cmd/configflow && go build -o "$build/generator" ./tools/proddiff/generator)
+(cd "$root/server" && go build -tags configflow_proddiff -o "$build/configflow" ./cmd/configflow && go build -o "$build/generator" ./tools/proddiff/generator)
 # Mount namespace makes the source itself read-only, including to descendants.
 unshare --user --map-root-user --net --mount --pid --fork --kill-child --mount-proc bash -c '
  set -euo pipefail

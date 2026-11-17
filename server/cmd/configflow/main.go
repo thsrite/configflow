@@ -76,6 +76,9 @@ func run(frontendDir string) error {
 	repo.SetRepository(repository)
 	app := server.NewApp()
 	app.RegisterLocal()
+	if err := writeTestManifest(app); err != nil {
+		return err
+	}
 	startup := repo.WithScope(context.Background())
 	if _, err := repo.LoadConfig(startup); err != nil {
 		return err

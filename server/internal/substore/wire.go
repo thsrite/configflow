@@ -74,10 +74,9 @@ func Wire() {
 		}
 		service.Runtime.Monitor(ctx)
 	})
-	lifecycle.Loop("subscription-cache-prune", func(ctx context.Context) {
+	lifecycle.RegisterStartup(lifecycle.Startup{Name: "subscription-cache-prune", Run: func(ctx context.Context) error {
 		// Caches of deleted subscriptions hold node credentials.
-		if _, err := PruneOrphanCaches(ctx); err != nil {
-			appLog.Warning("清理订阅缓存失败: " + err.Error())
-		}
-	})
+		_, err := PruneOrphanCaches(ctx)
+		return err
+	}})
 }

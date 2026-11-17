@@ -337,6 +337,10 @@ func (r *Runtime) Names() []string
   scheduling, Names and readiness after Startup. Normal helpers are no-ops, with no production env or
   flag capable of disabling loops. Delete source overlays/build.py when no longer needed and update
   the proddiff README. Difftest builds append events under their own build tag only.
+- `Configure(opts Options) error` changes the idle/stopped default Runtime, returning `ErrRunning`
+  while active. A nil Registry retains all existing Wire registrations; Clock/Grace/Drain are replaced.
+  The default mode stays fixed by its build (manual in proddiff, run in production). DefaultSpawner's
+  zero value forwards global Spawn to the newly configured instance; *Runtime is also a Spawner.
 
 - `Loop`/`OnShutdown` stay as adapters until step O3-5 removes them.
 - **Busy keys stay with their owner** (different messages and sharing rules): a `lockx.Keyed[string]` at

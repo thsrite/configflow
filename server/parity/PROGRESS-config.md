@@ -61,6 +61,15 @@ child processes. Includes 10k-key cleanup, concurrent stress, explicit limit/try
 waiter drainage and shared-work lifetime tests. Non-test lines 0 → 568, no new dependency. No open
 O3-1 finding; independent review pending. O3-2 integrates Spawner; O3-6 migrates consumers.
 
+## O3-2 — lifecycle v2 (in progress, 2026-11-17)
+
+Branch `go-o3-2` stacks on O3-1: task registry/clock, restartable Runtime, tracked Spawn/scopes/Flight,
+manual rounds, first-request gate, phased bounded shutdown and injected HTTP Drain. Legacy adapters
+remain; only subscription-cache-prune migrates to Startup, five periodic owners stay for O3-4. Proddiff
+uses tagged helpers/mode with no source overlays or work-name whitelist; difftest events are tag-only.
+Full handoff: [progress/o3-2-lifecycle.md](progress/o3-2-lifecycle.md). .63 focused race and both tagged
+builds pass; final .32 full/proddiff/enabled difftests pending. Coordinator clarifications are in design §2.3.
+
 ## Known accepted differences (do not rediscover)
 
 - jsonx: lone UTF-16 surrogates cannot be represented in Go strings (documented in `jsonx/doc.go`); `test_json_response.py::test_surrogate_strings_keep_normalization_before_redaction` depends on it.

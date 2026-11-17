@@ -498,7 +498,6 @@ PY_DISABLED_THREADS = {'dns-follow', 'oxidns-ha-publish', 'ipv6-verification-sch
                        'scheduled-refresh', 'router-rule-sync', 'sub-store-idle'}
 # Go lifecycle loops that are one-shot startup work Python also performs synchronously at import
 # (initialize_app -> prune_orphan_caches); the test lifecycle runs them once before serving.
-GO_STARTUP_ONCE = {'subscription-cache-prune'}
 RULE_FIELDS = {'route', 'path', 'reason', 'pattern', 'tolerance', 'bracket', 'unordered'}
 
 
@@ -682,6 +681,7 @@ def main():
             unmapped = {'UNMAPPED-GO-ROUTE\t' + ' '.join(route) for route in implemented - known}
             unmapped |= {'UNMAPPED-PYTHON-ROUTE\t' + ' '.join(route) for route in python_routes - known}
             go_loops = set((report / 'go-routes.tsv.loops').read_text().split())
+            go_startups = set((report / 'go-routes.tsv.startups').read_text().split())
             found, generator_coverage, generator_samples = run_workers(
                 snapshot, Path(temporary), report, Path(os.environ['PRODDIFF_GENERATOR']),
                 doc, implemented, response_diffs)
@@ -818,8 +818,8 @@ def main():
                        'GET_routes_error_branch_only': sum(key.startswith('GET ') and 0 < row.get('compared', 0) <= row.get('no-snapshot-parameter', 0) for key, row in http_rows.items()),
                        'GET_Go_not_implemented': sum(key.startswith('GET ') and row.get('Go 尚未实现', 0) > 0 for key, row in http_rows.items()),
                        'python_disabled_background': len((report / 'python-loops.txt').read_text().splitlines()),
-                       'go_disabled_background': len(go_loops - GO_STARTUP_ONCE),
-                       'go_startup_once': sorted(go_loops & GO_STARTUP_ONCE),
+                       'go_disabled_background': len(go_loops - go_startups),
+                       'go_startup_once': sorted(go_startups),
                        'python_threads_started': len(started_threads - {''}),
                        'unique_differences_by_domain_type': dict(sorted(unique_counts.items())),
                        'no_snapshot_parameter_cases': sum(row.get('no-snapshot-parameter', 0) for row in http_rows.values()),

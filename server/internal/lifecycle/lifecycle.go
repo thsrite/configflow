@@ -1,30 +1,11 @@
-// Package lifecycle is the registry of background loops and shutdown hooks
-// of the server process (Python started its loops from backend/app.py and
-// saved state from SIGTERM handlers).
-//
-// A package that owns a loop registers it from its wiring function:
-//
-//	lifecycle.Loop("scheduled-refresh", func(ctx context.Context) {
-//	    ticker := time.NewTicker(time.Minute)
-//	    defer ticker.Stop()
-//	    for {
-//	        select {
-//	        case <-ctx.Done():
-//	            return
-//	        case <-ticker.C:
-//	            runOnce(repo.WithScope(ctx))
-//	        }
-//	    }
-//	})
-//	lifecycle.OnShutdown("metrics-flush", func(ctx context.Context) { flush(ctx) })
-//
-// main calls Start once the HTTP listeners are up and Stop on SIGTERM/SIGINT:
-// loops are cancelled and awaited, then the shutdown hooks run in reverse
-// registration order (each within the remaining timeout).
+// Package lifecycle owns startup work, periodic loops, tracked detached jobs
+// and phased shutdown. Production always drives loops; test instrumentation is
+// compiled only under dedicated build tags. Legacy entry points remain adapters.
 package lifecycle
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 
@@ -35,118 +16,115 @@ var logger = logx.Get("backend.app")
 
 type loop struct {
 	name string
-	run  func(ctx context.Context)
+	run  func(context.Context)
 }
 
-type hook struct {
-	name string
-	run  func(ctx context.Context)
-}
+// ErrRunning rejects default runtime reconfiguration while work is active.
+var ErrRunning = errors.New("lifecycle: runtime is running")
 
-var (
-	mu      sync.Mutex
-	loops   []loop
-	hooks   []hook
-	started bool
-	cancel  context.CancelFunc
-	running sync.WaitGroup
-	baseCtx context.Context
-)
+var defaultMu sync.Mutex
+var defaultRuntime = NewRuntime(Options{Mode: defaultMode()})
+var defaultStarting bool
 
-// Loop registers a background loop. Loops registered after Start start
-// immediately.
-func Loop(name string, run func(ctx context.Context)) {
-	mu.Lock()
-	defer mu.Unlock()
-	l := loop{name, run}
-	loops = append(loops, l)
-	if started {
-		launch(baseCtx, l)
+func currentRuntime() *Runtime { defaultMu.Lock(); defer defaultMu.Unlock(); return defaultRuntime }
+
+// Configure replaces an idle/stopped default runtime, preserving registrations
+// when Registry is nil. Its mode is fixed by the build, never by environment or
+// options. Active jobs or Start/Shutdown in progress return ErrRunning.
+func Configure(opts Options) error {
+	defaultMu.Lock()
+	defer defaultMu.Unlock()
+	r := defaultRuntime
+	r.mu.Lock()
+	g := r.current
+	running := defaultStarting || g != nil && !g.closed && (g.started || g.draining || g.active > 0)
+	r.mu.Unlock()
+	if running {
+		return ErrRunning
 	}
+	if opts.Registry == nil {
+		opts.Registry = r.registry
+	}
+	opts.Mode = defaultMode()
+	defaultRuntime = NewRuntime(opts)
+	return nil
 }
 
-// OnShutdown registers a hook that runs after the loops stopped.
-func OnShutdown(name string, run func(ctx context.Context)) {
-	mu.Lock()
-	hooks = append(hooks, hook{name, run})
-	mu.Unlock()
+// RegisterPeriodic adds a default specification and starts a newly named loop if eligible.
+func RegisterPeriodic(p Periodic) {
+	r := currentRuntime()
+	r.registry.RegisterPeriodic(p)
+	r.startEligible()
 }
 
-func launch(ctx context.Context, l loop) {
-	running.Add(1)
-	go func() {
-		defer running.Done()
-		defer func() {
-			if p := recover(); p != nil {
-				logger.Errorf("background loop %s stopped: %v", l.name, p)
-			}
-		}()
-		l.run(ctx)
-	}()
+// RegisterStartup registers synchronous once-per-start work on the default runtime.
+func RegisterStartup(s Startup) { currentRuntime().registry.RegisterStartup(s) }
+
+// RegisterShutdown registers a phased hook on the default runtime.
+func RegisterShutdown(h ShutdownHook) { currentRuntime().registry.RegisterShutdown(h) }
+
+// Loop keeps legacy long-running loops until O3-4 moves their timing to Periodic.
+func Loop(name string, run func(context.Context)) {
+	r := currentRuntime()
+	r.registry.addLegacy(loop{name, run})
+	r.startEligible()
 }
 
-// Start starts every registered loop under ctx.
+// OnShutdown keeps legacy hooks in reverse registration order after drainage.
+func OnShutdown(name string, run func(context.Context)) {
+	r := currentRuntime()
+	r.registry.mu.Lock()
+	defer r.registry.mu.Unlock()
+	h := ShutdownHook{Name: name, Phase: PhaseAfterDrain, Run: run}
+	for i := range r.registry.hooks {
+		if r.registry.hooks[i].Name == name && r.registry.hooks[i].Phase == PhaseAfterDrain {
+			r.registry.hooks[i] = h
+			return
+		}
+	}
+	r.registry.hooks = append([]ShutdownHook{h}, r.registry.hooks...)
+}
+
+// Start runs startup work and starts a default generation; after Stop, another
+// Start restarts all registered loops with fresh cancellation and counters.
 func Start(ctx context.Context) {
-	mu.Lock()
-	defer mu.Unlock()
-	if started {
-		return
-	}
-	baseCtx, cancel = context.WithCancel(ctx)
-	started = true
-	for _, l := range loops {
-		launch(baseCtx, l)
-	}
+	defaultMu.Lock()
+	r := defaultRuntime
+	defaultStarting = true
+	defaultMu.Unlock()
+	defer func() { defaultMu.Lock(); defaultStarting = false; defaultMu.Unlock() }()
+	r.Start(ctx)
+	reportReady(r)
 }
 
-// Stop cancels the loops, waits for them (up to timeout) and runs the
-// shutdown hooks with the rest of the timeout.
+// Stop shuts down the current generation, bounded by timeout and its grace.
 func Stop(timeout time.Duration) {
-	deadline := time.Now().Add(timeout)
-	mu.Lock()
-	stop := cancel
-	registered := append([]hook(nil), hooks...)
-	mu.Unlock()
-	if stop != nil {
-		stop()
-	}
-	done := make(chan struct{})
-	go func() { running.Wait(); close(done) }()
-	stopped := false
-	select {
-	case <-done:
-		stopped = true
-	case <-time.After(time.Until(deadline)):
-		logger.Warning("background loops did not stop in time")
-	}
-	ctx, cancelHooks := context.WithDeadline(context.Background(), deadline)
-	defer cancelHooks()
-	for i := len(registered) - 1; i >= 0; i-- {
-		func() {
-			defer func() {
-				if p := recover(); p != nil {
-					logger.Errorf("shutdown hook %s failed: %v", registered[i].name, p)
-				}
-			}()
-			registered[i].run(ctx)
-		}()
-	}
-	if stopped {
-		// The wait group may be reused only after every previous loop exited.
-		// Keep started true on timeout so a new generation cannot overlap it.
-		mu.Lock()
-		started, cancel, baseCtx = false, nil, nil
-		mu.Unlock()
-	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	currentRuntime().Shutdown(ctx)
 }
 
-// Names lists the registered loops (diagnostics, tests).
-func Names() []string {
-	mu.Lock()
-	defer mu.Unlock()
-	names := make([]string, 0, len(loops))
-	for _, l := range loops {
-		names = append(names, l.name)
-	}
-	return names
+// Names lists registered loops and startup work.
+func Names() []string { return currentRuntime().Names() }
+
+// Spawn starts tracked detached work on the configured default runtime.
+func Spawn(ctx context.Context, name string, fn func(context.Context)) error {
+	defaultMu.Lock()
+	defer defaultMu.Unlock()
+	return defaultRuntime.Spawn(ctx, name, fn)
+}
+
+// Stopping returns ctx's original generation signal, or the current default's.
+func Stopping(ctx context.Context) <-chan struct{} { return currentRuntime().Stopping(ctx) }
+
+// RequestSeen admits the default generation's first-request loops.
+func RequestSeen() { currentRuntime().RequestSeen() }
+
+// DefaultSpawner adapts global Spawn to lockx.Spawner; its zero value is usable.
+// A *Runtime implements the same interface for isolated shared calls.
+type DefaultSpawner struct{}
+
+// Spawn forwards to global Spawn.
+func (DefaultSpawner) Spawn(ctx context.Context, name string, fn func(context.Context)) error {
+	return Spawn(ctx, name, fn)
 }

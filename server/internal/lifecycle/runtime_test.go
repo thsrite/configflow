@@ -181,7 +181,7 @@ func TestAfterFirstRequestAndRepeatedStartStop(t *testing.T) {
 	clock := newClock()
 	reg := lifecycle.NewRegistry()
 	ran := make(chan struct{}, 5)
-	reg.RegisterPeriodic(lifecycle.Periodic{Name: "agent-rule-sync-loop", Start: lifecycle.AfterFirstRequest, FirstDelay: 5 * time.Second, Interval: func(context.Context) time.Duration { return time.Minute }, Round: func(context.Context) error { ran <- struct{}{}; return nil }})
+	reg.RegisterPeriodic(lifecycle.Periodic{Name: "agent-rule-sync-loop", Start: lifecycle.AfterFirstRequest, Interval: func(context.Context) time.Duration { return 5 * time.Second }, Round: func(context.Context) error { ran <- struct{}{}; return nil }})
 	r := setup(t, lifecycle.Options{Clock: clock, Registry: reg})
 	for range 3 {
 		r.Start(context.Background())
@@ -191,8 +191,6 @@ func TestAfterFirstRequestAndRepeatedStartStop(t *testing.T) {
 		}
 		r.RequestSeen()
 		r.RequestSeen()
-		until(t, func() bool { return clock.Pending() == 1 })
-		clock.Advance(5 * time.Second)
 		receive(t, ran)
 		idle(t, r)
 		r.Shutdown(context.Background())
@@ -319,7 +317,14 @@ func TestShutdownDrainDeadlineAndPhases(t *testing.T) {
 		name  string
 		phase lifecycle.Phase
 	}{{"stop", lifecycle.PhaseStopSignal}, {"after", lifecycle.PhaseAfterDrain}, {"close", lifecycle.PhaseClose}} {
-		reg.RegisterShutdown(lifecycle.ShutdownHook{Name: h.name, Phase: h.phase, Run: func(context.Context) { events <- h.name }})
+		reg.RegisterShutdown(lifecycle.ShutdownHook{Name: h.name, Phase: h.phase, Run: func(ctx context.Context) {
+			select {
+			case <-lifecycle.Stopping(ctx):
+			default:
+				t.Error("hook lost generation shutdown signal")
+			}
+			events <- h.name
+		}})
 	}
 	draining := make(chan struct{})
 	r := setup(t, lifecycle.Options{Clock: clock, Registry: reg, Grace: 8 * time.Second, Drain: func(ctx context.Context) error { close(draining); <-ctx.Done(); return ctx.Err() }})
