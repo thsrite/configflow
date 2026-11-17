@@ -118,4 +118,5 @@ proxy-groups route differential is deferred to C33.
 Opus review of N7-2 (2026-11-17, parity/review-n7-2.md): a base config with more than one YAML
 document is still refused with the same context (Python: context only); the appended reason is now
 Chinese, e.g. `YAML 只能包含一个文档（第 2 行开始第二个文档）`. Whole-document rewrites keep merge keys
-as `<<`, place notes of a removed pair before its listener (as Python did), and never expand aliases.
+as `<<`, place notes of a removed pair before its listener (as Python did), and never expand aliases. A tag with no type name (`!%21`)
+is refused with `YAML 标签 !! 缺少类型名（第 N 行）` (Python refused it as well, without that text).

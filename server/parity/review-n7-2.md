@@ -10,7 +10,7 @@ and later fixes purpose-broken (fix removed → test fails).
 
 ## Findings
 
-All fixed; **0 open**.
+All fixed; **0 open** (F1 high, F2 medium, F3–F6 low).
 
 - **F1 — High (fixed): alias expansion in the editor silently replaced user values with `null`.**
   Same class as A19 F1. `yamlx.Clone` replaces an alias expansion beyond the yaml.v3 budget with
@@ -75,6 +75,16 @@ All fixed; **0 open**.
   Python answered 400 with the context only (no reason). Ledger updated.
   Tests: `TestReviewN72MultipleDocumentsDiagnostic`, `TestReviewN72RelinkMultipleDocumentsMessage`.
 
+- **F6 — Low (fixed; found by the final `FuzzNativeRoundTrip` run on .32): a tag without a type
+  name could be read but not written.** `!%21` (also `!<tag:yaml.org,2002:>`) parses as the tag `!!`;
+  yaml.v3's emitter writes it back as a bare `!!`, which is not YAML (its tag analysis accepts an
+  empty suffix after the `!!` prefix). A rewrite of such a document was refused; `Marshal` broke the
+  Parse→Marshal→Parse property. PyYAML refused the input (`could not determine a constructor for
+  the tag '!!'`). Now the shared node validation (Parse, Decode, Marshal) rejects that one tag with
+  `YAML 标签 !! 缺少类型名（第 N 行）` (`ErrSyntax`). Every other tag round-trips, because the emitter
+  %-escapes the rest (`!%21%21` → `!!%21`). Tests: `TestReviewN72EmptyYAMLTagRejected`, fuzz seed
+  `fe71577a44d84ad1`.
+
 ## Checked without findings
 
 - **Splice bounds.** Scalar patches cover exactly the old token: plain tokens must equal the node
@@ -122,7 +132,8 @@ All fixed; **0 open**.
   document can exceed the budget. The corpus oracle `listenerCorpusExpected` still uses `Clone`. It
   agrees with the new code on all 12,479 rows, and the review tests use explicit expectations.
 - Design §2.2 text was updated for the behaviour above (splice fallback, verification target,
-  non-expanding materialisation, removed-pair comment placement, `<<`, multi-document diagnostic).
+  non-expanding materialisation, removed-pair comment placement, `<<`, multi-document diagnostic,
+  empty `!!` tag rejected).
   These are clarifications made in this review; please confirm.
 
 ## Commands (final, .32)

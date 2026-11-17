@@ -548,8 +548,8 @@ and proddiff (new=0 stale=0) PASS. The initial importer 3s resource-probe timeou
 passed both isolated and in the reduced-parallelism full rerun; no limit changed.
 Opus review N7-2 (2026-11-17, review-n7-2.md): F1 high (alias expansion through `Clone`
 silently wrote `null` into relinked listeners/displaced alias consumers), F2 medium (splice failures
-refused instead of rewriting; indentless sequences), F3–F5 low (`!!merge <<`, removed-pair comments
-moved to the document head, English multi-document reason) — all fixed, 0 open; the editor is
+refused instead of rewriting; indentless sequences), F3–F6 low (`!!merge <<`, removed-pair comments
+moved to the document head, English multi-document reason, unwritable `!!` tag) — all fixed, 0 open; the editor is
 verified. C11 stays `partial` only for the deferred generation/route cases above. Proxy-groups route
 difftest → C33 deferred.
 
