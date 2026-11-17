@@ -309,6 +309,12 @@ the Go code.
 
 Even with all of this, the guarantee is "no difference on known paths and on the real data", not "no bugs".
 
+## Model settings (2026-11-17)
+
+- Codex: `codex/gpt-6.1-sol`, thinking `high`, mode `full-access` (maintainer's choice).
+- Opus agents: `claude/claude-opus-5-5`, thinking `high`, mode `bypassPermissions` (maintainer kept the
+  coordinator's choice on 2026-11-17). The coordinator session itself may run at a lower level.
+
 ## Fixed assignment by risk (maintainer, 2026-11-16; supersedes the quota-based rules in "Division of work")
 
 Who does a task depends only on its risk, never on remaining quota (quota cannot be observed and would make
