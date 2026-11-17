@@ -91,13 +91,29 @@ def matrix(binary, recorder):
 
             pair.request('G16', 'POST /api/generate/mihomo/preview', body=json_body({'base_url': 'http://panel.example'}),
                          expect=200, writes=True, projection=project('mihomo'), check=check, variant=scenario + '/preview')
-            observer = Observer(pair)
-            def artifact_check(reply):
-                observer.reference(reply)
-                check(reply)
-            pair.request('G16', 'POST /api/generate/<service>/artifact', '/api/generate/mihomo/artifact',
-                         body=json_body({'base_url': 'http://panel.example'}), expect=200, writes=True, files=False,
-                         check=artifact_check, capture=observer.capture, projection=observer.public, variant=scenario + '/artifact')
+            for rid, template, prefix in [('R062', '/api/generate/<service>/artifact', '/api/generate'),
+                    ('R126', '/api/profiles/<profile_id>/generate/<service>/artifact', '/api/profiles/default/generate')]:
+                observer = Observer(pair)
+                def artifact_check(reply):
+                    observer.reference(reply)
+                    check(reply)
+                    require(reply.json()['subscription_dialers'] is None,
+                            'a cache without chained nodes has no invented dialer report')
+                pair.request(rid + '-S90', 'POST ' + template, prefix + '/mihomo/artifact',
+                             body=json_body({'base_url': 'http://panel.example'}), expect=200, writes=True, files=False,
+                             check=artifact_check, capture=observer.capture, projection=observer.public,
+                             variant=scenario + '/artifact-hosts-report')
+                if scenario == 'absent':
+                    for service in ('surge', 'loon', 'mosdns', 'oxidns'):
+                        observer = Observer(pair)
+                        def no_reports(reply):
+                            observer.reference(reply)
+                            require(reply.json()['subscription_hosts'] is None and reply.json()['subscription_dialers'] is None,
+                                    'both Mihomo-specific report fields are explicitly null for other services')
+                        pair.request(rid + '-S90', 'POST ' + template, prefix + '/' + service + '/artifact',
+                                     body=json_body({'base_url': 'http://panel.example'}), expect=200, writes=True, files=False,
+                                     check=no_reports, capture=observer.capture, projection=observer.public,
+                                     variant=service + '/artifact-report-fields-null')
 
 
 GROUPS = {'subscription-hosts-reports': matrix}

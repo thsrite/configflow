@@ -2035,3 +2035,18 @@ current compared=63 go-unimplemented=19 go-unimplemented-dependency=58 different
 ```
 
 继续生成与其他原路由槽、helper；最终完整all仍未执行。
+
+## 批次 120：artifact 的 hosts 报告、其他服务null与metadata脱敏
+
+- 两种artifact路由各13种Mihomo hosts/DNS场景，含真实公开Agent核心版本上报，逐项断言ignored原因、合并结果、旧核心提示与生成配置；其他四服务在两种路由均要求两个字段为null。缓存不含链式节点时dialer报告必须null，非空dialer报告仍待补。保留原preview/G16及Agent前置，artifact主编号改为R062/R126-S90并关联G16。
+- R062/R126-B90各4种编码：真实附加文件名包含能力，公开path只能精确[REDACTED]，content保留实际生成rule-proxy URL；完整归档路径/正文、SQL/files继续比较。专用比较器先核对完整manifest metadata，只恢复已证明脱敏的单字段以复用通用校验；漏脱敏、误脱敏兄弟、改size/hash/content/profile都有篡改自检。
+- .64草稿及正式57变体：2compared、55Go尚未实现、open0、design_errors=[]，100项自检+故意错误Go响应检出。净增29变体、4原R编号。统一9722变体、原R4371（S694/F2683/B994）、H638/G16；findings仍closed80/accepted7/open21/O12单列1。
+
+```text
+.64 native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups subscription-hosts-reports,artifact-redaction-metadata-boundary --baseline 21dfb92c
+current compared=2 go-unimplemented=55 design_errors=[] seconds=25.06；exit=0
+100 self-checks + deliberately wrong-Go-response detection OK
+独立报告/tmp/configdiff-config-artifact-{reports,redaction}-draft.json
+```
+
+原R仍差159（含N/A）、H仍差474及partial/长流程。继续生成错误/离线缓存；最终完整all仍未执行。

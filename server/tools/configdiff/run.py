@@ -124,6 +124,8 @@ def main():
     groups.update(dns_protocol)
     from cases.artifact import GROUPS as artifact
     groups.update(artifact)
+    from cases.artifact_redaction import GROUPS as artifact_redaction
+    groups.update(artifact_redaction)
     from cases.artifact_frozen import GROUPS as artifact_frozen
     groups.update(artifact_frozen)
     from cases.artifact_eviction import GROUPS as artifact_eviction

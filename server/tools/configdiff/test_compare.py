@@ -17,6 +17,34 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_artifact_path_redaction_does_not_hide_unredacted_paths_or_other_metadata(self):
+        from cases.artifact_redaction import RedactedPath
+        path = 'rules/synthetic-secret.txt'
+        items = [{'path': 'config.yaml', 'size': 5, 'sha256': 'main-hash'},
+                 {'path': path, 'size': 7, 'sha256': 'extra-hash'}]
+        manifest = {'config_path': 'config.yaml', 'files': items}
+        record = {'id': 'a' * 32, 'deployment_id': 'b' * 32, 'agent_id': 'manual',
+                  'profile_id': 'default', 'service_type': 'oxidns', 'expires_at': 12345,
+                  'bundle_meta': {'manifest': manifest}}
+        checked = {'record': record, 'raw': {'files/config.yaml': b'x: 1\n'}}
+        value = {key: record[key] for key in ('id', 'deployment_id', 'agent_id', 'profile_id', 'service_type', 'expires_at')}
+        value.update(config_path='config.yaml', content='x: 1\n', files=copy.deepcopy(items), success=True)
+        value['files'][1]['path'] = '[REDACTED]'
+        observer = RedactedPath(None, path)
+        observer.checked = [checked, checked]
+        expected = observer.public(value, 0)
+        self.assertEqual(differences(expected, observer.public(value, 1)), [])
+        for field, wrong in [('path', path), ('path', 'other.txt'), ('size', 8), ('sha256', 'wrong')]:
+            changed = copy.deepcopy(value)
+            changed['files'][1][field] = wrong
+            self.assertTrue(differences(expected, observer.public(changed, 1)), field)
+        for field, wrong in [('content', '[REDACTED]'), ('profile_id', 'other'), ('config_path', 'other.yaml')]:
+            changed = {**value, field: wrong}
+            self.assertTrue(differences(expected, observer.public(changed, 1)), field)
+        changed = copy.deepcopy(value)
+        changed['files'][0]['path'] = '[REDACTED]'
+        self.assertTrue(differences(expected, observer.public(changed, 1)), 'nonsecret sibling')
+
     def test_large_string_evidence_keeps_full_comparison_and_unequal_digest(self):
         import hashlib
         from harness import Recorder

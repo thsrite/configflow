@@ -2034,6 +2034,10 @@ R051/R054用两个配置空间的不同前置终态错误证明真正选中了�
 
 R062-B04、R063-B03的P3无显式profile URL别名，N/A；R126-B04的URL优先真实可测。其余query/header/default创建用例在两个空间生成worker_threads=2/5的不同内容，artifact自身profile_id、响应header、私有source/manifest及Unicode附加文件均比较。R063的manual record存放于DATA_DIR全局预览目录；已授权管理员切换到另一合法profile上下文仍可读取原预览，不重新生成或按当前profile换内容，见[agents.py:1615](../../backend/routes/agents.py#L1615)。
 
+### Step B artifact O6 专项补充（批次120）
+
+R062/R126-S90均用13种真实hosts缓存/DNS配置和真实Agent核心版本上报，检查报告与生成主文件一致；其他四服务两字段明确null。没有链式节点的缓存要求subscription_dialers为null，有链式节点的非空报告仍需进一步覆盖。R062/R126-B90分别把当前能力的原文/percent/双编码/plus放进真实附加文件路径，content保留真实生成rule-proxy URL，公开files对应path精确为[REDACTED]，其余metadata及完整私有归档不变。比较器只在验证完整预期公开metadata后恢复这一字段以复用归档验证；Go漏脱敏/过度脱敏/改size或hash/改正文均有故意出错自检。源码仍见X01及R062/R126来源行。
+
 冻结比较针对每个端自己的已校验bundle成员原始字节。配置通过公开settings改为另一份后，旧file仍必须等于旧成员，完整SQL/预览文件不变；跨实现的生成主YAML照结构比较。ZIP下载由[generated_preview.download](../../backend/agents/generated_preview.py#L163)每次重打包，ZIP容器自身的时间戳不属于“旧成员内容不变”，不能把整个ZIP字节相等当作冻结条件。TTL仍核对真实expires_at≈创建时刻+3600，过期拒绝另由F11验证，不缩短生产TTL。
 
 ### Step B token保存后的轮换与版本注入边界
