@@ -1,6 +1,6 @@
 # O3-6c — 共享提交点响应关机
 
-状态：implementing。分支 go-o3-6c，从 go@f90a156e 建立，已无冲突变基到 go@97580425b（N7-3d + configdiff测试/工具；后一批无Go生产修改）；不派子 agent、不 push、本机不跑测试。
+状态：实现与定向验证完成，最终 gate 待执行。分支 go-o3-6c，从 go@f90a156e 建立，现已变基到 C33 合入后的 go@9c88c4390；不派子 agent、不 push、本机不跑测试。
 设计裁定见 o3-concurrency.md 的 Clarified in O3-6c。N8-5a 的 24d62bfc 已接受接口与合入顺序，
 在此期间不修改 update/writeLocked/commitStore/files.go。
 
@@ -24,16 +24,15 @@
 
 | 来源/窗口 | 修复提交 | 真实 Runtime 回归 | 状态 |
 |---|---|---|---|
-| A14/C29/C33/C06：普通 repo 锁等待、回调/序列化后最终 COMMIT | 2697f0b1d | TestO36cRepoBeforeCommitRuntimeBoundary / TestO36cRepoLockWaitRuntimeBoundary | 定向红→绿 |
-| C29/C33/C06：规则缓存 touch/replace，普通文件 rename | bd412ed22 | TestO36cAtomicFileRuntimeBoundary / TestO36cRuleTouchLockRuntimeBoundary / TestO36cRuleTouchAfterShutdown / TestO36cFileOwnerLockRuntimeBoundary | 定向红→绿 |
-| C29/C33/C06：taskstatus Record/Forget 锁内提交 | 7a9b43e98 | TestO36cStatusLockWaitRuntimeBoundary / TestO36cStatusShutdownDuringRecord | 定向红→绿；C33 adapter待合入接线 |
-| C29/C06：MosDNS archive 下游 I/O/cache/status 取消与产物交付 | dd8ffe907 | TestO36cArchiveClosedRuntime / TestO36cArchiveShutdownAfterFetch / TestO36cArchiveRuntimeIOBoundary | 定向红→绿 |
-| 多步例外：DeleteProfile、ImportAll/ResetAll、CreateRuleLibraryItem | 2697f0b1d / bb5c00dae | TestO36cExplicitBatchRuntimeBoundaries / TestCommitBatchMarkersMatchDesign | race3绿，保留批处理语义的控制组 |
-| 主 rename 后关机：成功返回且备份完整 | bd412ed22 | TestO36cAtomicFileRuntimeBoundary/shutdown-after-primary | race3绿，保留已提交成功的控制组 |
-| C33 F7/F8：持久marker后重开inline交付、下一次编辑恢复及Forget接线 | 待合入 | 草稿 /tmp/o36c-c33-recovery.patch、/tmp/o36c-c33-forget-context-test.go | 尚未应用、不能算通过 |
+| A14/C29/C33/C06：普通 repo 锁等待、回调/序列化后最终 COMMIT | 5cdddb6c4 | TestO36cRepoBeforeCommitRuntimeBoundary / TestO36cRepoLockWaitRuntimeBoundary | 定向红→绿 |
+| C29/C33/C06：规则缓存 touch/replace，普通文件 rename | 86ff143d8 | TestO36cAtomicFileRuntimeBoundary / TestO36cRuleTouchLockRuntimeBoundary / TestO36cRuleTouchAfterShutdown / TestO36cFileOwnerLockRuntimeBoundary | 定向红→绿 |
+| C29/C33/C06：taskstatus Record/Forget 锁内提交 | 03c4a7859 | TestO36cStatusLockWaitRuntimeBoundary / TestO36cStatusShutdownDuringRecord | 定向红→绿；C33 adapter由7c9f2a9bc接线 |
+| C29/C06：MosDNS archive 下游 I/O/cache/status 取消与产物交付 | a0cb9c018 | TestO36cArchiveClosedRuntime / TestO36cArchiveShutdownAfterFetch / TestO36cArchiveRuntimeIOBoundary | 定向红→绿 |
+| 多步例外：DeleteProfile、ImportAll/ResetAll、CreateRuleLibraryItem | 5cdddb6c4 / 4436d5c1a | TestO36cExplicitBatchRuntimeBoundaries / TestCommitBatchMarkersMatchDesign | race3绿，保留批处理语义的控制组 |
+| 主 rename 后关机：成功返回且备份完整 | 86ff143d8 | TestO36cAtomicFileRuntimeBoundary/shutdown-after-primary | race3绿，保留已提交成功的控制组 |
+| C33 F7/F8：持久marker后重开inline交付、下一次编辑恢复及Forget接线 | 7c9f2a9bc | TestShutdownBetweenDBCommitAndCacheRenameIsFailClosed / TestO36cForgetStatusWhileWaiting | 正式合并树race3通过；Forget旧入口红→绿 |
 
-当前 archive.go 已在 O3-6a 改用 lifecycle.Detach，没有剩余入口 WithoutCancel；仍需共享层修复和
-真实 Runtime 端到端回归，不能据此把窗口标成已修。
+archive.go 在 O3-6a 已改用 lifecycle.Detach；本步进一步关闭共享提交和晚到产物窗口，并用真实 Runtime 端到端回归验证。
 A14 当前未合入，保留其显式 SKIP；若晚于本任务合入，由 A14 收尾移除 skip 并重跑原回归。
 
 ## 验证计划
@@ -48,7 +47,7 @@ BeforeCommit、文件准备/rename、mtime、完整 DB/文件/revision，及请�
 已按 A14 原型接入 Store.CommitContext / commitStore(ctx, ...)，普通 update 不再自动屏蔽取消。
 增加 beginCommitBatch 请求内标记，三个已批准 callback 在首个文件副作用前检查并打标；
 普通提交保留工作 ctx，已标记路径的最终 DB 提交才显式不可中断。旧 Store.Commit 保留兼容入口。
-AST TestCommitBatchMarkersMatchDesign 限定三处 marker 调用；多步路径端到端测试仍待补。
+AST TestCommitBatchMarkersMatchDesign 限定三处 marker 调用；多步路径端到端测试见下文。
 
 真实 Runtime 回归位于 repo/shutdown_commit_test.go（外部 repo_test，避免 lifecycle→repo 测试循环）：
 TestO36cRepoBeforeCommitRuntimeBoundary、TestO36cRepoLockWaitRuntimeBoundary，均有 shutdown 与
@@ -66,7 +65,7 @@ TestO36cRepoBeforeCommitRuntimeBoundary、TestO36cRepoLockWaitRuntimeBoundary，
 新增 RecordContext/ForgetContext，入口用 ctxx.Detach 保留工作父级；锁外及锁内检查，最终
 临时文件 close 后、rename 前再次检查。失败不触发 OnRecord，临时文件清理；旧入口以 Background
 转调，兼容旧测试/调用。迁移当前生产调用：refresh、metrics、discovery、webdav、subscriptions。
-当前分支已无 taskstatus.Store.Record/Forget 的生产调用；C33 尚未合入，其调用方待合入接线。
+当前分支已迁移上述生产调用；C33 adapter 的 ForgetContext 也已在7c9f2a9bc接线。
 
 - 红：先加仅转调旧 Record/Forget 的兼容 Context 入口来观察原持久化行为（未提交占位实现）；
   .64 `go test -count=1 -run '^TestO36cStatus' ./internal/taskstatus/` 退出1、0.283s。
@@ -105,7 +104,7 @@ TestO36cExplicitBatchRuntimeBoundaries 对 delete/import/reset/create-rule 分�
 .64 `go test -race -count=3 -run '^(TestO36cExplicitBatchRuntimeBoundaries|TestCommitBatchMarkersMatchDesign)$' ./internal/repo/`
 退出0，9.904s；repo/store vet通过。这些是保留旧原子批处理语义的控制组，不冒称原实现对此失败。
 普通BeforeCommit的红/绿回归与marker后成功回归共同区分两种契约。
-审计其余 repo.update callback：均只改候选JSON；ImportClientProfile 的 build/各 Updater 按契约
+审计其余 repo.update callback：通常只改候选JSON；C33 guard-only callback在核验后执行文件动作并中止未变候选（见下文可重放协议）；ImportClientProfile 的 build/各 Updater 按契约
 返回候选数据。ConfigurationCommitted 在成功DB提交和L3释放后才通知备份owner，不属于事务回滚域。
 
 ## C33 合入衔接补充
@@ -113,7 +112,7 @@ TestO36cExplicitBatchRuntimeBoundaries 对 delete/import/reset/create-rule 分�
 已读 go-review-c33:review-c33.md 的 F7/F8（协调者提示 tip0ed0be17）。C33 stage→DB→
 L3核验来源→rename/Sync/清marker 是可重放协议；DB后关机允许留下新声明+持久marker，
 读侧fail-closed只交付当前DB inline，不能复活旧cache，因此不加入三处不可中断白名单。
-待C33合入后补重启/下一次编辑恢复回归，保留F7核验与F8外层owner信号，不新增同动作重复检查；
+已在C33合入后的正式树补重启/下一次编辑恢复回归，保留F7核验与F8外层owner信号，不新增同动作重复检查；
 同时替换其adapter的ForgetContext。C33还新增了rulefetch inline迟到写守卫，rebase冲突必须保留。
 C33报告另列C37/A24自身DB后首次补cache的崩溃协议属各owner后续，不冒称本次共享取消已解决它们整条原子性。
 
@@ -134,8 +133,8 @@ HTTP下载保留真实生产3s/10s参数；取消直接返回context错误，不
 
 ## 当前检查点
 
-正式分支当前9f423a7df（代码截止dd8ffe907），均已提交，工作区干净。C33当前仍未合入go，
-正式树未加入C33产品代码；A14原SKIP仍等其合入后移除。N8-5a已避开提交核心，
+正式分支代码检查点7c9f2a9bc，base9c88c4390；C33产品代码来自已合入的go。
+A14原SKIP仍等其合入后移除。N8-5a已避开提交核心，
 N8-7（097eba4e）也确认会等RecordContext/ForgetContext合入才迁移taskstatus，完成后需通知两者。
 
 ### 完整相关包及正常请求差分（base a08c4cc27，.64）
@@ -163,9 +162,9 @@ lifecycle测试通过（0.182s/0.185s）。正常请求live race：
 扩展原TestShutdownBetweenDBCommitAndCacheRenameIsFailClosed：新repo实例+新Runtime三种内容出口
 只交付已提交inline、旧cache不改、marker保留；下一次SaveDraft修复cache并清marker/tmp。
 F2/F7/崩溃恢复控制race1通过8.088s，相关vet通过。临时后续ba796e47e仅包含两个测试改动及
-ForgetContext的单行接线，C33进go后再带入正式6c并重验；当前不能算正式基线已通过。
+ForgetContext的单行接线，现已在正式树cherry-pick成7c9f2a9bc，并重新验证（见下文）。
 
-最终全仓gate尚未开始。等待C33合入通知后rebase、完成上述集成与最终gate；排队15分钟上限不变。
+最终全仓gate待开始；C33合入后的变基和定向验证已完成。每台机器最多1个agent gate，排队15分钟上限不变。
 
 ## SQLite内部锁的额外控制
 
@@ -181,3 +180,18 @@ CFG-09由C14/C28分类层处理，Context持久化保持native错误不归一。
 TestRecordContextPreservesNativeStorageErrors，以真实活跃Runtime+真实文件系统制造rename目标目录
 和不可建目录，验证errors.As穿透*os.LinkError/*os.PathError、错误不误判为取消、tmp清理。
 .64 race count3通过1.153s、taskstatus vet通过。CFG-09路由500/400与CFG-11字段revision仍由其owner联验。
+
+## C33 正式合入后的复核（base9c88c4390，.64）
+
+正式分支只在rulefetch/cache.go发生冲突：保留C33的writeCurrentInline声明/marker守卫，
+其write闭包调用WriteSharedTextIfChanged；未在守卫之前写文件。7c9f2a9bc带入已验证的
+ForgetContext接线、status锁等待测试和重启恢复扩展；未从临时分支混入C33产品历史。
+
+前台session37944退出0，gofmt全目录无输出、全仓vet通过：
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'cd server &&
+ test -z "$(gofmt -l internal tools cmd)" && go vet ./... &&
+ go test -race -p=6 -count=3 -run "TestO36c|TestSharedTextIfChangedFreshness|TestCommitBatchMarkersMatchDesign|TestRecordContextPreservesNativeStorageErrors|TestShutdownBetweenDBCommitAndCacheRenameIsFailClosed|TestReviewTransaction|TestReviewStage|TestReviewAbort|TestReviewOldInline|TestReviewInlineFallback|TestReviewOtherInline|TestReviewColdInline|TestReviewCacheCrashRecovery" ./internal/repo/ ./internal/taskstatus/ ./internal/mosdns/ ./internal/api/rulelibrary/ ./internal/api/proxygroups/'
+```
+最终输出：repo91.083s、taskstatus2.788s、mosdns11.112s、rulelibrary71.721s、proxygroups5.847s全部ok。
+A14原回归文件当前尚未进入go；合入后需移除其显式skip，已有等价共享窗口回归正常运行。
