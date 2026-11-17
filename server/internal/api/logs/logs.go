@@ -6,6 +6,7 @@ package logs
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"os"
@@ -17,6 +18,7 @@ import (
 
 	"configflow/internal/httpx"
 	"configflow/internal/jsonx"
+	"configflow/internal/lifecycle"
 	"configflow/internal/rules"
 )
 
@@ -246,14 +248,25 @@ func isoformat(t time.Time) string {
 }
 
 func clearLogs(c *httpx.Ctx) (*httpx.Response, error) {
+	return clearLog(c.Context())
+}
+
+func clearLog(ctx context.Context) (*httpx.Response, error) {
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	logPath := LogFilePath()
 	if !exists(logPath) {
-		return httpx.Message(200, true, "日志文件不存在"), nil
+		return httpx.Message(200, true, msgMissing), nil
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 	if err := os.WriteFile(logPath, nil, 0o666); err != nil {
 		return errorResponse(err, false), nil
 	}
-	return httpx.Message(200, true, "日志已清空"), nil
+	return httpx.Message(200, true, msgCleared), nil
 }
 
 // pyOSErrorText is str(OSError): "[Errno 2] No such file or directory: 'path'".

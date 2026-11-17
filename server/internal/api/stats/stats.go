@@ -6,12 +6,15 @@ package stats
 import (
 	"context"
 	"math/big"
+	"net/http"
 	"strings"
 	"time"
 	"unicode/utf8"
 
 	"configflow/internal/httpx"
 	"configflow/internal/jsonx"
+	"configflow/internal/lifecycle"
+	"configflow/internal/lockx"
 	"configflow/internal/repo"
 	"configflow/internal/taskstatus"
 )
@@ -107,13 +110,33 @@ func pyInt(v any) (int64, error) {
 	return 0, &errPython{"int() argument must be a string, a bytes-like object or a real number, not '" + httpx.PyTypeName(v) + "'"}
 }
 
-func recordHistory(ctx context.Context, counts *jsonx.Object) (map[string][]any, error) {
+var sampleLocks = lockx.NewLeafKeyed[string]("stats-history")
+
+func recordHistory(ctx context.Context, counts *jsonx.Object, persist bool) (map[string][]any, error) {
+	if persist {
+		ctx = lifecycle.Detach(ctx)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	profileID, err := repo.ResolveProfileID(ctx, "")
 	if err != nil {
 		return nil, err
 	}
 	repository, err := repo.GetRepository(ctx)
 	if err != nil {
+		return nil, err
+	}
+	dir, err := repo.ResolveDataDir(repository.DataDir())
+	if err != nil {
+		return nil, err
+	}
+	_, release, err := sampleLocks.Lock(ctx, dir+"/"+profileID, 5*time.Second)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	var samples []any
@@ -140,7 +163,15 @@ func recordHistory(ctx context.Context, counts *jsonx.Object) (map[string][]any,
 			samples = samples[len(samples)-HistorySize:]
 		}
 		// OSError and repository errors are ignored: the history is optional.
-		_, _ = repository.WriteProfileJSON(ctx, profileID, HistoryFile, jsonx.Obj("samples", samples))
+		if persist {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			_, _ = repository.WriteProfileJSON(ctx, profileID, HistoryFile, jsonx.Obj("samples", samples))
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+		}
 		series = samples
 	} else {
 		series = append(append([]any{}, samples[:len(samples)-1]...), current)
@@ -197,14 +228,20 @@ func profileRevision(ctx context.Context) (any, any) {
 
 func getOverview(c *httpx.Ctx) (*httpx.Response, error) {
 	// Python: except Exception as e → 500 {'success': False, 'error': str(e)}.
-	response, err := overview(c.Context())
+	response, err := overview(c.Context(), c.Request.Method != http.MethodHead)
 	if err != nil {
 		return httpx.JSONStatus(500, jsonx.Obj("success", false, "error", err.Error())), nil
 	}
 	return response, nil
 }
 
-func overview(ctx context.Context) (*httpx.Response, error) {
+func overview(ctx context.Context, persist bool) (*httpx.Response, error) {
+	if persist {
+		ctx = lifecycle.Detach(ctx)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	counts := jsonx.NewObject()
 	for _, item := range [][2]string{{"subscriptions", "subscriptions"}, {"nodes", "nodes"},
 		{"proxyGroups", "proxy_groups"}, {"rules", "rules"}} {
@@ -214,7 +251,7 @@ func overview(ctx context.Context) (*httpx.Response, error) {
 		}
 		counts.Set(item[0], n)
 	}
-	history, err := recordHistory(ctx, counts)
+	history, err := recordHistory(ctx, counts, persist)
 	if err != nil {
 		return nil, err
 	}
