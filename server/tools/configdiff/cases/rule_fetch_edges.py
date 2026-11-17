@@ -47,3 +47,42 @@ def failed_candidates(binary, recorder):
 
 GROUPS = {'rule-fetch-proxy-normalizer-guards': proxy_guards, 'rule-fetch-redirect-without-location': missing_location,
           'rule-fetch-exhausted-candidates': failed_candidates}
+
+
+class InternalRedirectBoundary(SourceStable):
+    def __init__(self, pair, source, destination):
+        super().__init__(pair, source, expected=1)
+        self.source, self.destination = source, destination
+        self.proof = [None, None]
+
+    def before(self, index):
+        super().before(index)
+        self.destination.requests.clear()
+
+    def after(self, index, reply):
+        super().after(index, reply)
+        self.proof[index] = {'destination_requests': list(self.destination.requests),
+            'source_paths': [row['path'] for row in self.exchange.transcripts[index]]}
+        if index == 0:
+            require(self.proof[0] == {'destination_requests': [], 'source_paths': ['/redirect']},
+                'real normalized transport reaches one redirect, then blocks leaving the raw internal API boundary')
+
+    def compare(self, policy):
+        from compare import differences
+        return super().compare(policy) + differences(*self.proof, 'rule.internal-redirect-boundary', policy)
+
+
+def internal_redirect_escape(binary, recorder):
+
+    for _rid, route, base in ROUTES:
+        for target_kind in ('cross-origin', 'same-origin-outside-api'):
+            with Source(b'initial redirect') as source, Source(b'synthetic forbidden destination') as destination:
+                target = (destination if target_kind == 'cross-origin' else source).url + '/landing'
+                source.responses['/redirect'] = (302, b'', {'Location': target})
+                with Pair(binary, recorder, options={'system_config': {'server_domain': source.url}}) as pair:
+                    pair.request('H120', route, base + '?' + urlencode({'url': source.url + '/api/../redirect'}),
+                        expect=400, writes=True, interaction=InternalRedirectBoundary(pair, source, destination),
+                        check=message('Invalid remote URL'), variant='real-dot-segment-network-redirect/' + base + '/' + target_kind)
+
+
+GROUPS['rule-fetch-real-internal-redirect-escape-after-dot-normalization'] = internal_redirect_escape

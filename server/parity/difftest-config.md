@@ -2202,3 +2202,60 @@ R205-F09/H1092在完整部署已经启动后，实际保存文件分别改为坏
 R205-B01用两轮真实换端口让两端都各自实际监听过1和65535，比较POST、后续GET、双栈新端口健康/能力、旧监听关闭与全SQL/files。低端口放开只作用于已校验的私有netns且finally恢复原值，不使用root服务。依据[web_listener.py:35](../../backend/utils/web_listener.py#L35)、[web_listener.py:262](../../backend/utils/web_listener.py#L262)。
 
 R205-F08的旧深层JSON草稿实际是未捕获RecursionError→500，不是[settings.py:29](../../backend/routes/settings.py#L29)的OSError→503，已撤回、不计该槽覆盖。该catch实际还包含Python的Nginx锁文件等I/O边界；不得通过只破坏Python锁路径而制造不等价Go差异，后续存储/容器故障验收保留为partial。H1103的非法backend=SubStore环境也会令Go在完整原生入口启动前拒绝；仅启动Flask绕过Python完整bootstrap的旧草稿已撤回，应在O9/O14真实启动链观察，两端完整部署均不应提供错误内部路由。
+
+### Step B 剩余R/H逐项处置索引
+
+下表是**未执行到指定源码位置**的边界索引，不是通过清单。`coverage_audit.py`只检查每个R/H有真实参考结果或明确处置；不会将partial、较早guard、跨域或Go未实现变为compared。前文逐条源行及errata仍是依据；新增公开配方实际到达时，由标准runner替换结果，审计自动不再列该项。并发/存储故障项没有确定性公开屏障，保留partial，不能声称不可达。
+
+<!-- CONFIGDIFF_PARTIAL_BEGIN -->
+| 编号 | 处置 | 原因及后续验收 |
+|---|---|---|
+| R046-B05,R051-B04,R054-B04,R055-B03,R056-B03,R059-B02,R060-B04,R062-B04,R063-B03,R078-B04,R080-B04,R082-B04,R084-B04,R086-B04,R089-B04,R090-B04 | not-applicable | routes.tsv及原蓝图没有该P3显式profile别名；真实P4–P6已逐请求覆盖，未知URL404不算P3成功。 |
+| R123-F12,R217-F17,R217-F19 | contract-erratum | clone固定path来源，订阅PUT强制path id；任意body clone_from/id/可选字段删除不满足原拒绝条件。见profiles.py:110、subscriptions.py:136及上文实测errata。 |
+| R008-F11,R122-F11 | earlier-invariant | 聚合provider第一段try只访问已验证的集合/record；get_resource_config及鉴权在try外。后续render的异常另有具名输入；不把它们算成此初始列表catch。见aggregations.py:535–551。 |
+| R010-F12,R103-F13,R163-F12 | earlier-invariant | reorder复用原对象，只改变顺序；已有引用图与形态先经仓库验证。nodes未调用validate_dialers；groups虽调用，但仅顺序变化不能构造新的无效引用。见aggregations.py:598、nodes.py:113、proxy_groups.py:409、config_repository.py:1291。 |
+| R024-F09,R031-F09 | earlier-invariant | MosDNS生成不调用validate_rule_policies，规则DNS/转换错误为普通ValueError；现有显式验证失败不能冒充StrategyReferenceError专用catch。见config.py:171、converters/mosdns.py:581及strategy_references.py。 |
+| R150-F03,R172-F03 | earlier-invariant | content handler的get_shared_config在try外，库元素由仓库保证对象/id。保留的非文本content作为返回值后由Flask构造响应失败发生在try外，不是此JSON catch。见rule_library.py:304–325。 |
+| R046-F15,H064 | partial-race | infos检查之后、shared事务内再检查之前需要真实并发改变默认库；该区间无公开外部I/O屏障。普通已有坏库在前一检查先拒绝；现有并发创建/修改不能冒充这一指定窗口。见domain_discovery_service.py:560–582。 |
+| R154-F10,R220-F10 | partial-storage | 初始get_resource_config异常须在前置profile/auth读取之后发生；直接损坏SQLite被前置读取先拒绝。需受控读故障/准确跨读屏障，不能用前置HTML500填此handler JSON catch。见subscriptions.py:418及profile_context.py。 |
+| R158-F13 | earlier-invariant | 删除仍被有效规则/组引用的策略先409；native follow只考虑enabled规则。未证明删除无引用组能改变有效follow路由并独立触发后置DNS重建拒绝，保留partial而不借更新/重命名用例计删除分支。见proxy_groups.py:97–123、245–273。 |
+| R165-F17,H795 | partial-storage | confirmation_required要求COMMIT结果不确定且确认读取也失败。真实EACCES/触发器拒绝证明普通回滚，不能代表post-COMMIT歧义；需受控故障文件系统/SQLite实验。见rule_library.py:135、config_store.py:325。 |
+| R205-F08 | partial-storage | 503 OSError边界涉及部署锁/目录访问，不能只破坏Python的Nginx锁路径而要求Go复制。深层坏JSON实际RecursionError500草稿已撤回；正常坏保存状态由R205-F09/H1092真实覆盖。见settings.py:29。 |
+| R206-F15,H1089 | partial-race | 需要两个真实公开换端口同时进入更新窗口；Python锁文件及Nginx CLI屏障与Go原生绑定机制不同。直接持flock不是等价输入，成功切换/占用/保存失败另已实际比对。见web_listener.py:43–51。 |
+| R206-F17,R206-F18,R206-F19,H1094-H1102,H1107,H1111 | partial-startup | 维护者批准的Nginx退役边界；Go原生失败验证配置不改、中文提示、旧端口仍可访问。Nginx模板/check/reload/探活/回滚专有分支在真实容器/O9/O14验收，见behaviour-changes.md的Go取代Nginx条目。 |
+| H009,H010,H017-H019 | earlier-invariant | 公开MosDNS生成先构造文本/bytes和固定plugins/files列表；_ruleset_layout为单规则与库保留统一唯一命名空间。archive的错类型/冲突/未打包引用须内部调用者破坏这些输出，不可注入Python函数。见mosdns_archive.py:120–139、228及converters/mosdns.py:283。 |
+| H020-H022 | earlier-guard | OxiDNS公开完整包在到archive前已验证资源path、文档mapping及include；可达的H500/H501与native验证有实际请求，不能将这些前置拒绝映射给后置archive guard。见oxidns_archive.py:10–24、oxidns_native.py。 |
+| H032,H1090,H1091,H1103,H1108 | partial-startup | 环境端口解析/后端与SubStore端口相撞/缺Nginx属于完整bootstrap前提。Go原生入口会先拒绝非法环境；仅Flask API启动绕过Python bootstrap的旧HTTP草稿已撤回。由O9/O14完整启动链分别验收，不强行令Go启动后复现Nginx专属检查。见dependencies.py:43、web_listener.py:58、197、248。 |
+| H1093 | partial-runtime | 未知socket错误才抛该分支；正常不支持IPv6被转为false。需真实资源耗尽/内核故障实验；普通坏端口或关闭IPv6不能证明此catch，不能替换socket方法。见web_listener.py:81–89。 |
+| H118 | earlier-invariant | 公开规则下载只构造GET/HEAD，method不取自用户JSON。未知HTTP方法的外壳405不能映射为内部transport的method参数raise。见rule_fetch.py:139–151及各公开调用。 |
+| H122 | cross-domain | max_bytes受限部署下载由Agent发布/materializer使用；普通rule-proxy请求不传此限额。config ZIP另有真实MAX_TOTAL_BYTES等边界，不把它们当此transport分支。见rule_fetch.py:279–308及agents生成下载调用。 |
+| H141,H144 | earlier-invariant | MRS非bytes和普通规则既非str亦非bytes的内部参数类型保护；公开transport按实际bytes读取，再decode为str，类型不由HTTP JSON替换。坏压缩/编码均已有真实字节输入，不能算非bytes保护。见ruleset_content.py:544、630。 |
+| H150 | earlier-invariant | repository启动/导入保证内部规则能力非空并修复旧冲突值；合法公开setter禁止内部能力，T28真实轮换已覆盖。手动破坏当前SQLite在读取前置被拒绝，不是合法无token生成。见mosdns.py:198、config_repository.py:1767。 |
+| H183,H185-H190,H201 | earlier-guard | 共享公开节点禁止managed dialer_ref，ID/资源闭包较早验证；内部managed图只由标准链编译器构造。公开非法managed字段及合法链/端点已有请求，不直接调用内部helper。见config_repository.py:2455、proxy_chains.py:115。 |
+| H195,H196 | earlier-guard | raw名称错误在_collect_resource_refs先拒绝；批次135草稿已实证撤回，不能凭相似提示计validate_dialers的后置重复保护。见config_repository.py:328。 |
+| H207,H209,H214 | earlier-invariant | 名称override来自固定链编译器；公开输入不提供任意regex/replacement。require_providers路径先materialize并验证，候选render_members先按名称去重。逻辑/生成名称冲突等真正可达错误H208/H210等已有实际输入。见dialer_references.py:338–403、proxy_chains.py。 |
+| H223,H230,H232 | earlier-guard | query过滤输入已是字符串，管理组JSON的来源/过滤错类型在字段或normalize_sources先拒绝；旧错型filter被_filter_value忽略。不同入口的前置提示不映射为后置类型raise。见group_candidates.py:20、116、242。 |
+| H256,H258,H259,H266,H267 | earlier-guard | chain端点/形态、follow到chain先经仓库闭包；follow循环在H265先拒绝、builtin clone在H197先拒绝。已有合法链及相应早期拒绝，不能给后置lower helper加通过标签。见proxy_chains.py:61、config_repository.py:270、2536。 |
+| H341,H430,H431,H786,H788 | cross-domain | core_version约束是Agent发布输入；非空previous设备策略及router expected快照回读属于client-devices/routers事务。config生成/向导只读检查不执行这些保存路径。见oxidns.py:487、oxidns_device_policy.py:325–374、config_repository.py:1320–1346。 |
+| H351,H352,H393,H397,H508,H664,H704 | earlier-guard | 各项逐条证明见前文“OxiDNS剩余9个H”：capability/wrapper先拒绝；migration参数固定；未知format来自程序schema定义而非HTTP值。不能改程序schema或借其他400计后置guard。 |
+| H757,H758,H854,H857,H858 | earlier-guard | 排序/组名先validate_shapes，缺共享引用先_collect_resource_refs。完整import已测试真实前置拒绝；后置相同不变量不再重复计覆盖。见config_repository.py:2502–2529。 |
+| H763,H766,H767,H787 | earlier-invariant | document在router commit guard前验证routers；公开normalizer保留id，事务嵌套/非法replacement需要应用回调而非HTTP参数。见config_repository.py:1041、routers/store.py:54。 |
+| H773,H774,H776,H783,H784,H789-H792,H800-H804 | earlier-invariant | 路由先验证name/body，传固定metadata/baseline和应用定义的updater/build回调；HTTP JSON不能指定Python可调用对象或令回调返回错误类型。见profiles.py:42、config_repository.py:1155、1283、1372。 |
+| H805,H822,H827,H831 | earlier-guard | 非对象body在REST wrapper先拒绝；legacy profile在迁移前_scope_legacy_dialers先检查，normalize导入统一schema版本。真实前置请求已有，不借它们给后置重复guard计覆盖。见profiles.py:156、config.py:257、config_repository.py:2093、2186、2263、2418。 |
+| H810-H812,H816 | earlier-guard | id由上下文先验证；generated filename来自固定映射；artifact读取先验证manifest成员。前置恶意URL拒绝不等于内部相对路径/filename参数保护。见config_repository.py:1865、generated_preview.py:179。 |
+| H875-H880 | earlier-invariant | document_rows只接收已验证document，HTTP JSON对象键只能是字符串。无需向底层函数传入非法Python键或非dict以制造“黑盒”覆盖。见config_store.py:104–133、config_repository.py:1043。 |
+| H762,H881-H891,H896-H902 | partial-storage | 坏SQLite结构/JSON/meta/存储版本是启动/恢复边界；需独立拒绝/恢复实验，正常SQL比较器不能读取后宣称写后相等。当前旧schema迁移O12单列，不借任一路由前置HTML500计这些位置。见config_repository.py:900–916、config_store.py:477。 |
+| H761,H768,H892-H895,H813-H815 | partial-storage | 外部commit须介入同一写事务base与commit之间；短写、备份验证、PRAGMA及postcommit确认需真实存储故障。EACCES/触发器用例证明各自合同，不能代表这些指定故障；需受控FS实验，不改业务函数抛假异常。见config_repository.py、config_store.py对应原始逐行条目。 |
+| H903,H908,H915,H921 | earlier-guard | route/action和pinned由公开校验/仓库构造；ruleDNS placement在生成前验证shape，来源非空文本先由read_rule_source_content保证。现有真实非法action/来源/重建输入不算后置相同不变量。见rule_dns.py对应原始逐行条目及ruleset_content.py。 |
+| H944-H951,H958-H967,H971-H986 | cross-domain | gateway onboarding/安装与ready检查在agents域；config R211只复用_local_upstreams/_prepare_mihomo_dns，public latest投影不执行_saved_snapshot。移交agents清单与安装联测，见gateway_installation.py、setup_flow.py:396。 |
+| H968,H1043 | earlier-guard | prepare的_load_base先拒绝非文本；固定首启模板保留组和MATCH，来源不可用先拒绝。不能改随程序发布的模板强造空生成计划。见setup_flow.py:209、setup_presets.py:138。 |
+| H1044 | partial-race | prepare最后生成通过与profile事务revision检查之间无可控外部屏障；已有真实外部修改触发较早owned_digest409，不能冒充此窄窗口。需真正并发冲突复验，见setup_flow.py:490–502。 |
+| H1066,H1069 | cross-domain | 严格拓扑的失败在较早来源检查即拒绝；render_all+allow_transport_fallback完整发布合同由agents执行。config普通provider的回退不等于完整发布，见provider_delivery.py:334。 |
+| H1079,H1086 | earlier-guard | mode非法值由settings wrapper先拒绝；保存的interval非法值由repository先拒绝，批次135导入草稿已实际验证。见settings.py:394、config_repository.py:2442。 |
+<!-- CONFIGDIFF_PARTIAL_END -->
+
+### Step B 内部重定向的真实可达反例（批次143）
+
+H120不能列为防御不可达：存储origin指向owned回环fake，真实rule-proxy请求`<origin>/api/../redirect`。`_internal_rule_base`按原始路径识别internal；[local_http.py:113](../../backend/utils/local_http.py#L113)在Requests点段归一化后发现已离开/api而返回None，随后发生真实网络GET /redirect。fake返回跨origin或同origin的非API目标，实际到达[rule_fetch.py:184](../../backend/utils/rule_fetch.py#L184)。default/scoped×两种目标四例均Python400 `Invalid remote URL`且目标零请求，Go200并继续请求目标；已独立复跑，记open。来源和目标均回环fake，没有真实外网流量。
+
+该反例纠正了“internal只会调固定应用路由，因此没有重定向输入”的初步判断；处置索引已移除H120。比较全部source/目标协议、完整HTTP及SQL/files；故意加目标GET/额外源请求均检出。当前全量canonical尚在.64写入，先将自动生成证据保存在tools/testdata/internal-redirect-findings.md，最终标准runner将统一写入difftest-config-findings.md；不并发覆盖或手改verdict。

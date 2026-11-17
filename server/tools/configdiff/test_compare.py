@@ -17,6 +17,36 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_internal_redirect_observer_detects_extra_destination_and_changed_transport_path(self):
+        from cases.rule_fetch_edges import InternalRedirectBoundary
+        observer = InternalRedirectBoundary.__new__(InternalRedirectBoundary)
+        observer.before_values, observer.after_values = [{}, {}], [{}, {}]
+        observer.exchange = SimpleNamespace(compare=lambda policy: [])
+        observer.proof = [{'destination_requests': [], 'source_paths': ['/redirect']} for _ in range(2)]
+        self.assertEqual(observer.compare(Policy()), [])
+        observer.proof[1]['destination_requests'] = [{'method': 'GET', 'path': '/landing'}]
+        self.assertTrue(observer.compare(Policy()))
+        observer.proof[1]['destination_requests'] = []
+        observer.proof[1]['source_paths'].append('/landing')
+        self.assertTrue(observer.compare(Policy()))
+
+    def test_coverage_accounting_never_turns_dispositions_or_Go_skips_into_passes(self):
+        from coverage_audit import evaluate, dispositions
+        expected = {'R001-S01': {'route': 'GET /synthetic'}, 'R001-F01': {'route': 'GET /synthetic'},
+            'H001': {'route': 'GET /synthetic'}}
+        rows = [{'case': 'R001-S01', 'helper_cases': ['H001'], 'state': 'go-unimplemented'}]
+        declared = {'R001-F01': {'kind': 'partial-race', 'reason': 'requires a real storage barrier'}}
+        value = evaluate(expected, rows, declared)
+        self.assertEqual(value['exercised_reference_recipes'], 2)
+        self.assertEqual(value['not_exercised'], {'R001-F01': {**expected['R001-F01'], **declared['R001-F01']}})
+        self.assertFalse(value['unaccounted'])
+        self.assertEqual(evaluate(expected, rows, {})['unaccounted'], ['R001-F01'])
+        self.assertEqual(evaluate(expected, [], declared)['unaccounted'], ['H001', 'R001-S01'])
+        self.assertEqual(evaluate(expected, rows, {'H999': declared['R001-F01']})['unknown_labels'], ['H999'])
+        block = '<!-- CONFIGDIFF_PARTIAL_BEGIN -->\n| H001-H002 | earlier-guard | synthetic proof |\n<!-- CONFIGDIFF_PARTIAL_END -->'
+        self.assertEqual(set(dispositions(block)), {'H001', 'H002'})
+        with self.assertRaises(ValueError): dispositions(block.replace('<!-- CONFIGDIFF_PARTIAL_END -->', '| H002 | partial | duplicate |\n<!-- CONFIGDIFF_PARTIAL_END -->'))
+
     def test_route_manifest_rejects_tagged_stale_or_mismatched_binary_sidecars(self):
         import hashlib
         from build import route_manifest, manifest_for_server

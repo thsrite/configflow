@@ -2404,3 +2404,18 @@ current compared7；design_errors=[]；exit0
 current compared29 / different1（accepted1）；design_errors=[]；seconds38.49；exit0
 134 self-checks + deliberately wrong-Go-response detection OK
 ```
+
+## 批次 143：剩余编号可核对处置与内部redirect反例
+
+- 新增coverage_audit.py，仅核对原R/H配方是否有真实参考执行或明确partial/前置guard/跨域处置；不将这些边界或Go skip算作通过。228路由均有S和F参考用例。审计自检会拒绝丢失编号、重复处置、未知编号和错误标签；实跑所有剩余R/H均有明确索引，不是无理由空缺。
+- 复核H120发现真正公开可达反例：server_domain为owned回环fake，URL原始/api/../redirect在Requests归一化后绕过本地dispatch进入网络，302离开原API边界。四变体（default/scoped×跨origin/同origin非API）Python400且目标零请求，Go200并继续访问目标；第二次实跑15.88秒一致，design_errors=[]，exit1仅因新增四open。全部目标合成回环，没有生产/公网请求，不改Go代码。
+- 撤回H120防御不可达的初步判断，处置表不再包含它。新观察器比较source/目标全部请求及SQL/files，故意增加目标GET/改源路径均检出；136项自检及错误Go响应检出通过。第一轮只是fixture用了错误transcripts属性，已修复并完整重跑，失败草稿不计覆盖。
+- .32多份实际报告仅在覆盖统计中按真实key去重，未拼写新的case verdict：10617变体，R4492（S712/F2763/B1017）、H936/G16；剩余R38/H176共214，逐项有原因；unaccounted=[]/unknown_labels=[]/路由缺S或F=[]/design_errors=[]。生成coverage-audit.json是覆盖索引，不是全量验收；canonical仍由.64独占，新增4条自动证据暂放internal-redirect-findings.md，最终统一报告将由标准runner重跑。
+
+```text
+.32 native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups rule-fetch-real-internal-redirect-escape-after-dot-normalization --baseline 4d8a665a --output <独立报告>
+current different4；Python400 / Go200；design_errors=[]；seconds15.88；exit1
+.32 python coverage_audit.py --report <七份实际报告，完整列表保存在coverage-audit.json> --output testdata/coverage-audit.json
+routes228 / variants10617 / exercised R-H5428；unaccounted=[] / unknown_labels=[] / routes_missing_source_success_or_failure=[] / runtime_design_errors=[]；exit0
+136 self-checks + deliberately wrong-Go-response detection OK
+```

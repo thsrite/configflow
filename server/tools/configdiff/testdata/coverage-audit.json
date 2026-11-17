@@ -1,0 +1,1274 @@
+{
+  "exercised_reference_recipes": 5428,
+  "not_exercised": {
+    "H009": {
+      "route": "POST /api/generate/mosdns",
+      "source": "../../backend/utils/mosdns_archive.py#L128",
+      "kind": "earlier-invariant",
+      "reason": "公开MosDNS生成先构造文本/bytes和固定plugins/files列表；_ruleset_layout为单规则与库保留统一唯一命名空间。archive的错类型/冲突/未打包引用须内部调用者破坏这些输出，不可注入Python函数。见mosdns_archive.py:120–139、228及converters/mosdns.py:283。"
+    },
+    "H010": {
+      "route": "POST /api/generate/mosdns",
+      "source": "../../backend/utils/mosdns_archive.py#L134",
+      "kind": "earlier-invariant",
+      "reason": "公开MosDNS生成先构造文本/bytes和固定plugins/files列表；_ruleset_layout为单规则与库保留统一唯一命名空间。archive的错类型/冲突/未打包引用须内部调用者破坏这些输出，不可注入Python函数。见mosdns_archive.py:120–139、228及converters/mosdns.py:283。"
+    },
+    "H017": {
+      "route": "POST /api/generate/mosdns",
+      "source": "../../backend/utils/mosdns_archive.py#L228",
+      "kind": "earlier-invariant",
+      "reason": "公开MosDNS生成先构造文本/bytes和固定plugins/files列表；_ruleset_layout为单规则与库保留统一唯一命名空间。archive的错类型/冲突/未打包引用须内部调用者破坏这些输出，不可注入Python函数。见mosdns_archive.py:120–139、228及converters/mosdns.py:283。"
+    },
+    "H018": {
+      "route": "POST /api/generate/mosdns",
+      "source": "../../backend/utils/mosdns_archive.py#L235",
+      "kind": "earlier-invariant",
+      "reason": "公开MosDNS生成先构造文本/bytes和固定plugins/files列表；_ruleset_layout为单规则与库保留统一唯一命名空间。archive的错类型/冲突/未打包引用须内部调用者破坏这些输出，不可注入Python函数。见mosdns_archive.py:120–139、228及converters/mosdns.py:283。"
+    },
+    "H019": {
+      "route": "POST /api/generate/mosdns",
+      "source": "../../backend/utils/mosdns_archive.py#L237",
+      "kind": "earlier-invariant",
+      "reason": "公开MosDNS生成先构造文本/bytes和固定plugins/files列表；_ruleset_layout为单规则与库保留统一唯一命名空间。archive的错类型/冲突/未打包引用须内部调用者破坏这些输出，不可注入Python函数。见mosdns_archive.py:120–139、228及converters/mosdns.py:283。"
+    },
+    "H020": {
+      "route": "POST /api/generate/oxidns",
+      "source": "../../backend/utils/oxidns_archive.py#L16",
+      "kind": "earlier-guard",
+      "reason": "OxiDNS公开完整包在到archive前已验证资源path、文档mapping及include；可达的H500/H501与native验证有实际请求，不能将这些前置拒绝映射给后置archive guard。见oxidns_archive.py:10–24、oxidns_native.py。"
+    },
+    "H021": {
+      "route": "POST /api/generate/oxidns",
+      "source": "../../backend/utils/oxidns_archive.py#L19",
+      "kind": "earlier-guard",
+      "reason": "OxiDNS公开完整包在到archive前已验证资源path、文档mapping及include；可达的H500/H501与native验证有实际请求，不能将这些前置拒绝映射给后置archive guard。见oxidns_archive.py:10–24、oxidns_native.py。"
+    },
+    "H022": {
+      "route": "POST /api/generate/oxidns",
+      "source": "../../backend/utils/oxidns_archive.py#L21",
+      "kind": "earlier-guard",
+      "reason": "OxiDNS公开完整包在到archive前已验证资源path、文档mapping及include；可达的H500/H501与native验证有实际请求，不能将这些前置拒绝映射给后置archive guard。见oxidns_archive.py:10–24、oxidns_native.py。"
+    },
+    "H032": {
+      "route": "POST /api/settings/dependencies/sub-store/update",
+      "source": "../../backend/utils/dependencies.py#L47",
+      "kind": "partial-startup",
+      "reason": "环境端口解析/后端与SubStore端口相撞/缺Nginx属于完整bootstrap前提。Go原生入口会先拒绝非法环境；仅Flask API启动绕过Python bootstrap的旧HTTP草稿已撤回。由O9/O14完整启动链分别验收，不强行令Go启动后复现Nginx专属检查。见dependencies.py:43、web_listener.py:58、197、248。"
+    },
+    "H064": {
+      "route": "POST /api/domain-discovery/apply",
+      "source": "../../backend/utils/domain_discovery_service.py#L582",
+      "kind": "partial-race",
+      "reason": "infos检查之后、shared事务内再检查之前需要真实并发改变默认库；该区间无公开外部I/O屏障。普通已有坏库在前一检查先拒绝；现有并发创建/修改不能冒充这一指定窗口。见domain_discovery_service.py:560–582。"
+    },
+    "H1043": {
+      "route": "POST /api/setup/<session_id>/<operation>",
+      "source": "../../backend/common/setup_flow.py#L496",
+      "kind": "earlier-guard",
+      "reason": "prepare的_load_base先拒绝非文本；固定首启模板保留组和MATCH，来源不可用先拒绝。不能改随程序发布的模板强造空生成计划。见setup_flow.py:209、setup_presets.py:138。"
+    },
+    "H1044": {
+      "route": "POST /api/setup/<session_id>/<operation>",
+      "source": "../../backend/common/setup_flow.py#L500",
+      "kind": "partial-race",
+      "reason": "prepare最后生成通过与profile事务revision检查之间无可控外部屏障；已有真实外部修改触发较早owned_digest409，不能冒充此窄窗口。需真正并发冲突复验，见setup_flow.py:490–502。"
+    },
+    "H1066": {
+      "route": "GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies",
+      "source": "../../backend/utils/provider_delivery.py#L249",
+      "kind": "cross-domain",
+      "reason": "严格拓扑的失败在较早来源检查即拒绝；render_all+allow_transport_fallback完整发布合同由agents执行。config普通provider的回退不等于完整发布，见provider_delivery.py:334。"
+    },
+    "H1069": {
+      "route": "GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies",
+      "source": "../../backend/utils/provider_delivery.py#L379",
+      "kind": "cross-domain",
+      "reason": "严格拓扑的失败在较早来源检查即拒绝；render_all+allow_transport_fallback完整发布合同由agents执行。config普通provider的回退不等于完整发布，见provider_delivery.py:334。"
+    },
+    "H1079": {
+      "route": "GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies",
+      "source": "../../backend/utils/sub_store_runtime.py#L163",
+      "kind": "earlier-guard",
+      "reason": "mode非法值由settings wrapper先拒绝；保存的interval非法值由repository先拒绝，批次135导入草稿已实际验证。见settings.py:394、config_repository.py:2442。"
+    },
+    "H1086": {
+      "route": "GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies",
+      "source": "../../backend/utils/subscription_refresh.py#L110",
+      "kind": "earlier-guard",
+      "reason": "mode非法值由settings wrapper先拒绝；保存的interval非法值由repository先拒绝，批次135导入草稿已实际验证。见settings.py:394、config_repository.py:2442。"
+    },
+    "H1089": {
+      "route": "POST /api/settings/web-port",
+      "source": "../../backend/utils/web_listener.py#L51",
+      "kind": "partial-race",
+      "reason": "需要两个真实公开换端口同时进入更新窗口；Python锁文件及Nginx CLI屏障与Go原生绑定机制不同。直接持flock不是等价输入，成功切换/占用/保存失败另已实际比对。见web_listener.py:43–51。"
+    },
+    "H1090": {
+      "route": "POST /api/settings/web-port",
+      "source": "../../backend/utils/web_listener.py#L61",
+      "kind": "partial-startup",
+      "reason": "环境端口解析/后端与SubStore端口相撞/缺Nginx属于完整bootstrap前提。Go原生入口会先拒绝非法环境；仅Flask API启动绕过Python bootstrap的旧HTTP草稿已撤回。由O9/O14完整启动链分别验收，不强行令Go启动后复现Nginx专属检查。见dependencies.py:43、web_listener.py:58、197、248。"
+    },
+    "H1091": {
+      "route": "POST /api/settings/web-port",
+      "source": "../../backend/utils/web_listener.py#L64",
+      "kind": "partial-startup",
+      "reason": "环境端口解析/后端与SubStore端口相撞/缺Nginx属于完整bootstrap前提。Go原生入口会先拒绝非法环境；仅Flask API启动绕过Python bootstrap的旧HTTP草稿已撤回。由O9/O14完整启动链分别验收，不强行令Go启动后复现Nginx专属检查。见dependencies.py:43、web_listener.py:58、197、248。"
+    },
+    "H1093": {
+      "route": "POST /api/settings/web-port",
+      "source": "../../backend/utils/web_listener.py#L89",
+      "kind": "partial-runtime",
+      "reason": "未知socket错误才抛该分支；正常不支持IPv6被转为false。需真实资源耗尽/内核故障实验；普通坏端口或关闭IPv6不能证明此catch，不能替换socket方法。见web_listener.py:81–89。"
+    },
+    "H1094": {
+      "route": "POST /api/settings/web-port",
+      "source": "../../backend/utils/web_listener.py#L96",
+      "kind": "partial-startup",
+      "reason": "维护者批准的Nginx退役边界；Go原生失败验证配置不改、中文提示、旧端口仍可访问。Nginx模板/check/reload/探活/回滚专有分支在真实容器/O9/O14验收，见behaviour-changes.md的Go取代Nginx条目。"
+    },
+    "H1095": {
+      "route": "POST /api/settings/web-port",
+      "source": "../../backend/utils/web_listener.py#L100",
+      "kind": "partial-startup",
+      "reason": "维护者批准的Nginx退役边界；Go原生失败验证配置不改、中文提示、旧端口仍可访问。Nginx模板/check/reload/探活/回滚专有分支在真实容器/O9/O14验收，见behaviour-changes.md的Go取代Nginx条目。"
+    },
+    "H1096": {
+      "route": "POST /api/settings/web-port",
+      "source": "../../backend/utils/web_listener.py#L103",
+      "kind": "partial-startup",
+      "reason": "维护者批准的Nginx退役边界；Go原生失败验证配置不改、中文提示、旧端口仍可访问。Nginx模板/check/reload/探活/回滚专有分支在真实容器/O9/O14验收，见behaviour-changes.md的Go取代Nginx条目。"
+    },
+    "H1097": {
+      "route": "POST /api/settings/web-port",
+      "source": "../../backend/utils/web_listener.py#L110",
+      "kind": "partial-startup",
+      "reason": "维护者批准的Nginx退役边界；Go原生失败验证配置不改、中文提示、旧端口仍可访问。Nginx模板/check/reload/探活/回滚专有分支在真实容器/O9/O14验收，见behaviour-changes.md的Go取代Nginx条目。"
+    },
+    "H1098": {
+      "route": "POST /api/settings/web-port",
+      "source": "../../backend/utils/web_listener.py#L160",
+      "kind": "partial-startup",
+      "reason": "维护者批准的Nginx退役边界；Go原生失败验证配置不改、中文提示、旧端口仍可访问。Nginx模板/check/reload/探活/回滚专有分支在真实容器/O9/O14验收，见behaviour-changes.md的Go取代Nginx条目。"
+    },
+    "H1099": {
+      "route": "POST /api/settings/web-port",
+      "source": "../../backend/utils/web_listener.py#L164",
+      "kind": "partial-startup",
+      "reason": "维护者批准的Nginx退役边界；Go原生失败验证配置不改、中文提示、旧端口仍可访问。Nginx模板/check/reload/探活/回滚专有分支在真实容器/O9/O14验收，见behaviour-changes.md的Go取代Nginx条目。"
+    },
+    "H1100": {
+      "route": "POST /api/settings/web-port",
+      "source": "../../backend/utils/web_listener.py#L169",
+      "kind": "partial-startup",
+      "reason": "维护者批准的Nginx退役边界；Go原生失败验证配置不改、中文提示、旧端口仍可访问。Nginx模板/check/reload/探活/回滚专有分支在真实容器/O9/O14验收，见behaviour-changes.md的Go取代Nginx条目。"
+    },
+    "H1101": {
+      "route": "POST /api/settings/web-port",
+      "source": "../../backend/utils/web_listener.py#L186",
+      "kind": "partial-startup",
+      "reason": "维护者批准的Nginx退役边界；Go原生失败验证配置不改、中文提示、旧端口仍可访问。Nginx模板/check/reload/探活/回滚专有分支在真实容器/O9/O14验收，见behaviour-changes.md的Go取代Nginx条目。"
+    },
+    "H1102": {
+      "route": "POST /api/settings/web-port",
+      "source": "../../backend/utils/web_listener.py#L190",
+      "kind": "partial-startup",
+      "reason": "维护者批准的Nginx退役边界；Go原生失败验证配置不改、中文提示、旧端口仍可访问。Nginx模板/check/reload/探活/回滚专有分支在真实容器/O9/O14验收，见behaviour-changes.md的Go取代Nginx条目。"
+    },
+    "H1103": {
+      "route": "POST /api/settings/web-port",
+      "source": "../../backend/utils/web_listener.py#L197",
+      "kind": "partial-startup",
+      "reason": "环境端口解析/后端与SubStore端口相撞/缺Nginx属于完整bootstrap前提。Go原生入口会先拒绝非法环境；仅Flask API启动绕过Python bootstrap的旧HTTP草稿已撤回。由O9/O14完整启动链分别验收，不强行令Go启动后复现Nginx专属检查。见dependencies.py:43、web_listener.py:58、197、248。"
+    },
+    "H1107": {
+      "route": "POST /api/settings/web-port",
+      "source": "../../backend/utils/web_listener.py#L241",
+      "kind": "partial-startup",
+      "reason": "维护者批准的Nginx退役边界；Go原生失败验证配置不改、中文提示、旧端口仍可访问。Nginx模板/check/reload/探活/回滚专有分支在真实容器/O9/O14验收，见behaviour-changes.md的Go取代Nginx条目。"
+    },
+    "H1108": {
+      "route": "POST /api/settings/web-port",
+      "source": "../../backend/utils/web_listener.py#L248",
+      "kind": "partial-startup",
+      "reason": "环境端口解析/后端与SubStore端口相撞/缺Nginx属于完整bootstrap前提。Go原生入口会先拒绝非法环境；仅Flask API启动绕过Python bootstrap的旧HTTP草稿已撤回。由O9/O14完整启动链分别验收，不强行令Go启动后复现Nginx专属检查。见dependencies.py:43、web_listener.py:58、197、248。"
+    },
+    "H1111": {
+      "route": "POST /api/settings/web-port",
+      "source": "../../backend/utils/web_listener.py#L294",
+      "kind": "partial-startup",
+      "reason": "维护者批准的Nginx退役边界；Go原生失败验证配置不改、中文提示、旧端口仍可访问。Nginx模板/check/reload/探活/回滚专有分支在真实容器/O9/O14验收，见behaviour-changes.md的Go取代Nginx条目。"
+    },
+    "H118": {
+      "route": "GET /api/mosdns/rule-proxy",
+      "source": "../../backend/utils/rule_fetch.py#L151",
+      "kind": "earlier-invariant",
+      "reason": "公开规则下载只构造GET/HEAD，method不取自用户JSON。未知HTTP方法的外壳405不能映射为内部transport的method参数raise。见rule_fetch.py:139–151及各公开调用。"
+    },
+    "H122": {
+      "route": "GET /api/mosdns/rule-proxy",
+      "source": "../../backend/utils/rule_fetch.py#L292",
+      "kind": "cross-domain",
+      "reason": "max_bytes受限部署下载由Agent发布/materializer使用；普通rule-proxy请求不传此限额。config ZIP另有真实MAX_TOTAL_BYTES等边界，不把它们当此transport分支。见rule_fetch.py:279–308及agents生成下载调用。"
+    },
+    "H141": {
+      "route": "GET /api/mosdns/rule-proxy",
+      "source": "../../backend/utils/ruleset_content.py#L544",
+      "kind": "earlier-invariant",
+      "reason": "MRS非bytes和普通规则既非str亦非bytes的内部参数类型保护；公开transport按实际bytes读取，再decode为str，类型不由HTTP JSON替换。坏压缩/编码均已有真实字节输入，不能算非bytes保护。见ruleset_content.py:544、630。"
+    },
+    "H144": {
+      "route": "GET /api/mosdns/rule-proxy",
+      "source": "../../backend/utils/ruleset_content.py#L630",
+      "kind": "earlier-invariant",
+      "reason": "MRS非bytes和普通规则既非str亦非bytes的内部参数类型保护；公开transport按实际bytes读取，再decode为str，类型不由HTTP JSON替换。坏压缩/编码均已有真实字节输入，不能算非bytes保护。见ruleset_content.py:544、630。"
+    },
+    "H150": {
+      "route": "POST /api/generate/mosdns/preview",
+      "source": "../../backend/converters/mosdns.py#L198",
+      "kind": "earlier-invariant",
+      "reason": "repository启动/导入保证内部规则能力非空并修复旧冲突值；合法公开setter禁止内部能力，T28真实轮换已覆盖。手动破坏当前SQLite在读取前置被拒绝，不是合法无token生成。见mosdns.py:198、config_repository.py:1767。"
+    },
+    "H183": {
+      "route": "POST /api/proxy-groups",
+      "source": "../../backend/utils/dialer_references.py#L53",
+      "kind": "earlier-guard",
+      "reason": "共享公开节点禁止managed dialer_ref，ID/资源闭包较早验证；内部managed图只由标准链编译器构造。公开非法managed字段及合法链/端点已有请求，不直接调用内部helper。见config_repository.py:2455、proxy_chains.py:115。"
+    },
+    "H185": {
+      "route": "POST /api/proxy-groups",
+      "source": "../../backend/utils/dialer_references.py#L66",
+      "kind": "earlier-guard",
+      "reason": "共享公开节点禁止managed dialer_ref，ID/资源闭包较早验证；内部managed图只由标准链编译器构造。公开非法managed字段及合法链/端点已有请求，不直接调用内部helper。见config_repository.py:2455、proxy_chains.py:115。"
+    },
+    "H186": {
+      "route": "POST /api/proxy-groups",
+      "source": "../../backend/utils/dialer_references.py#L70",
+      "kind": "earlier-guard",
+      "reason": "共享公开节点禁止managed dialer_ref，ID/资源闭包较早验证；内部managed图只由标准链编译器构造。公开非法managed字段及合法链/端点已有请求，不直接调用内部helper。见config_repository.py:2455、proxy_chains.py:115。"
+    },
+    "H187": {
+      "route": "POST /api/proxy-groups",
+      "source": "../../backend/utils/dialer_references.py#L72",
+      "kind": "earlier-guard",
+      "reason": "共享公开节点禁止managed dialer_ref，ID/资源闭包较早验证；内部managed图只由标准链编译器构造。公开非法managed字段及合法链/端点已有请求，不直接调用内部helper。见config_repository.py:2455、proxy_chains.py:115。"
+    },
+    "H188": {
+      "route": "POST /api/proxy-groups",
+      "source": "../../backend/utils/dialer_references.py#L94",
+      "kind": "earlier-guard",
+      "reason": "共享公开节点禁止managed dialer_ref，ID/资源闭包较早验证；内部managed图只由标准链编译器构造。公开非法managed字段及合法链/端点已有请求，不直接调用内部helper。见config_repository.py:2455、proxy_chains.py:115。"
+    },
+    "H189": {
+      "route": "POST /api/proxy-groups",
+      "source": "../../backend/utils/dialer_references.py#L96",
+      "kind": "earlier-guard",
+      "reason": "共享公开节点禁止managed dialer_ref，ID/资源闭包较早验证；内部managed图只由标准链编译器构造。公开非法managed字段及合法链/端点已有请求，不直接调用内部helper。见config_repository.py:2455、proxy_chains.py:115。"
+    },
+    "H190": {
+      "route": "POST /api/proxy-groups",
+      "source": "../../backend/utils/dialer_references.py#L98",
+      "kind": "earlier-guard",
+      "reason": "共享公开节点禁止managed dialer_ref，ID/资源闭包较早验证；内部managed图只由标准链编译器构造。公开非法managed字段及合法链/端点已有请求，不直接调用内部helper。见config_repository.py:2455、proxy_chains.py:115。"
+    },
+    "H195": {
+      "route": "POST /api/proxy-groups",
+      "source": "../../backend/utils/dialer_references.py#L175",
+      "kind": "earlier-guard",
+      "reason": "raw名称错误在_collect_resource_refs先拒绝；批次135草稿已实证撤回，不能凭相似提示计validate_dialers的后置重复保护。见config_repository.py:328。"
+    },
+    "H196": {
+      "route": "POST /api/proxy-groups",
+      "source": "../../backend/utils/dialer_references.py#L182",
+      "kind": "earlier-guard",
+      "reason": "raw名称错误在_collect_resource_refs先拒绝；批次135草稿已实证撤回，不能凭相似提示计validate_dialers的后置重复保护。见config_repository.py:328。"
+    },
+    "H201": {
+      "route": "POST /api/proxy-groups",
+      "source": "../../backend/utils/dialer_references.py#L237",
+      "kind": "earlier-guard",
+      "reason": "共享公开节点禁止managed dialer_ref，ID/资源闭包较早验证；内部managed图只由标准链编译器构造。公开非法managed字段及合法链/端点已有请求，不直接调用内部helper。见config_repository.py:2455、proxy_chains.py:115。"
+    },
+    "H207": {
+      "route": "POST /api/proxy-groups",
+      "source": "../../backend/utils/dialer_references.py#L351",
+      "kind": "earlier-invariant",
+      "reason": "名称override来自固定链编译器；公开输入不提供任意regex/replacement。require_providers路径先materialize并验证，候选render_members先按名称去重。逻辑/生成名称冲突等真正可达错误H208/H210等已有实际输入。见dialer_references.py:338–403、proxy_chains.py。"
+    },
+    "H209": {
+      "route": "POST /api/proxy-groups",
+      "source": "../../backend/utils/dialer_references.py#L374",
+      "kind": "earlier-invariant",
+      "reason": "名称override来自固定链编译器；公开输入不提供任意regex/replacement。require_providers路径先materialize并验证，候选render_members先按名称去重。逻辑/生成名称冲突等真正可达错误H208/H210等已有实际输入。见dialer_references.py:338–403、proxy_chains.py。"
+    },
+    "H214": {
+      "route": "POST /api/proxy-groups",
+      "source": "../../backend/utils/dialer_references.py#L403",
+      "kind": "earlier-invariant",
+      "reason": "名称override来自固定链编译器；公开输入不提供任意regex/replacement。require_providers路径先materialize并验证，候选render_members先按名称去重。逻辑/生成名称冲突等真正可达错误H208/H210等已有实际输入。见dialer_references.py:338–403、proxy_chains.py。"
+    },
+    "H223": {
+      "route": "POST /api/proxy-groups",
+      "source": "../../backend/utils/group_candidates.py#L25",
+      "kind": "earlier-guard",
+      "reason": "query过滤输入已是字符串，管理组JSON的来源/过滤错类型在字段或normalize_sources先拒绝；旧错型filter被_filter_value忽略。不同入口的前置提示不映射为后置类型raise。见group_candidates.py:20、116、242。"
+    },
+    "H230": {
+      "route": "POST /api/proxy-groups",
+      "source": "../../backend/utils/group_candidates.py#L256",
+      "kind": "earlier-guard",
+      "reason": "query过滤输入已是字符串，管理组JSON的来源/过滤错类型在字段或normalize_sources先拒绝；旧错型filter被_filter_value忽略。不同入口的前置提示不映射为后置类型raise。见group_candidates.py:20、116、242。"
+    },
+    "H232": {
+      "route": "POST /api/proxy-groups",
+      "source": "../../backend/utils/group_candidates.py#L264",
+      "kind": "earlier-guard",
+      "reason": "query过滤输入已是字符串，管理组JSON的来源/过滤错类型在字段或normalize_sources先拒绝；旧错型filter被_filter_value忽略。不同入口的前置提示不映射为后置类型raise。见group_candidates.py:20、116、242。"
+    },
+    "H256": {
+      "route": "POST /api/proxy-groups",
+      "source": "../../backend/utils/proxy_chains.py#L14",
+      "kind": "earlier-guard",
+      "reason": "chain端点/形态、follow到chain先经仓库闭包；follow循环在H265先拒绝、builtin clone在H197先拒绝。已有合法链及相应早期拒绝，不能给后置lower helper加通过标签。见proxy_chains.py:61、config_repository.py:270、2536。"
+    },
+    "H258": {
+      "route": "POST /api/proxy-groups",
+      "source": "../../backend/utils/proxy_chains.py#L22",
+      "kind": "earlier-guard",
+      "reason": "chain端点/形态、follow到chain先经仓库闭包；follow循环在H265先拒绝、builtin clone在H197先拒绝。已有合法链及相应早期拒绝，不能给后置lower helper加通过标签。见proxy_chains.py:61、config_repository.py:270、2536。"
+    },
+    "H259": {
+      "route": "POST /api/proxy-groups",
+      "source": "../../backend/utils/proxy_chains.py#L28",
+      "kind": "earlier-guard",
+      "reason": "chain端点/形态、follow到chain先经仓库闭包；follow循环在H265先拒绝、builtin clone在H197先拒绝。已有合法链及相应早期拒绝，不能给后置lower helper加通过标签。见proxy_chains.py:61、config_repository.py:270、2536。"
+    },
+    "H266": {
+      "route": "POST /api/proxy-groups",
+      "source": "../../backend/utils/proxy_chains.py#L126",
+      "kind": "earlier-guard",
+      "reason": "chain端点/形态、follow到chain先经仓库闭包；follow循环在H265先拒绝、builtin clone在H197先拒绝。已有合法链及相应早期拒绝，不能给后置lower helper加通过标签。见proxy_chains.py:61、config_repository.py:270、2536。"
+    },
+    "H267": {
+      "route": "POST /api/proxy-groups",
+      "source": "../../backend/utils/proxy_chains.py#L139",
+      "kind": "earlier-guard",
+      "reason": "chain端点/形态、follow到chain先经仓库闭包；follow循环在H265先拒绝、builtin clone在H197先拒绝。已有合法链及相应早期拒绝，不能给后置lower helper加通过标签。见proxy_chains.py:61、config_repository.py:270、2536。"
+    },
+    "H341": {
+      "route": "POST /api/custom-config/mihomo",
+      "source": "../../backend/common/mihomo_easytier.py#L281",
+      "kind": "cross-domain",
+      "reason": "core_version约束是Agent发布输入；非空previous设备策略及router expected快照回读属于client-devices/routers事务。config生成/向导只读检查不执行这些保存路径。见oxidns.py:487、oxidns_device_policy.py:325–374、config_repository.py:1320–1346。"
+    },
+    "H351": {
+      "route": "POST /api/oxidns/common-settings/apply",
+      "source": "../../backend/common/oxidns_common.py#L228",
+      "kind": "earlier-guard",
+      "reason": "各项逐条证明见前文“OxiDNS剩余9个H”：capability/wrapper先拒绝；migration参数固定；未知format来自程序schema定义而非HTTP值。不能改程序schema或借其他400计后置guard。"
+    },
+    "H352": {
+      "route": "POST /api/oxidns/common-settings/apply",
+      "source": "../../backend/common/oxidns_common.py#L418",
+      "kind": "earlier-guard",
+      "reason": "各项逐条证明见前文“OxiDNS剩余9个H”：capability/wrapper先拒绝；migration参数固定；未知format来自程序schema定义而非HTTP值。不能改程序schema或借其他400计后置guard。"
+    },
+    "H393": {
+      "route": "POST /api/oxidns/common-settings/apply",
+      "source": "../../backend/common/oxidns_common_routing.py#L1033",
+      "kind": "earlier-guard",
+      "reason": "各项逐条证明见前文“OxiDNS剩余9个H”：capability/wrapper先拒绝；migration参数固定；未知format来自程序schema定义而非HTTP值。不能改程序schema或借其他400计后置guard。"
+    },
+    "H397": {
+      "route": "POST /api/oxidns/common-settings/apply",
+      "source": "../../backend/common/oxidns_common_routing.py#L1078",
+      "kind": "earlier-guard",
+      "reason": "各项逐条证明见前文“OxiDNS剩余9个H”：capability/wrapper先拒绝；migration参数固定；未知format来自程序schema定义而非HTTP值。不能改程序schema或借其他400计后置guard。"
+    },
+    "H430": {
+      "route": "POST /api/oxidns/common-settings/apply",
+      "source": "../../backend/common/oxidns_device_policy.py#L329",
+      "kind": "cross-domain",
+      "reason": "core_version约束是Agent发布输入；非空previous设备策略及router expected快照回读属于client-devices/routers事务。config生成/向导只读检查不执行这些保存路径。见oxidns.py:487、oxidns_device_policy.py:325–374、config_repository.py:1320–1346。"
+    },
+    "H431": {
+      "route": "POST /api/oxidns/common-settings/apply",
+      "source": "../../backend/common/oxidns_device_policy.py#L333",
+      "kind": "cross-domain",
+      "reason": "core_version约束是Agent发布输入；非空previous设备策略及router expected快照回读属于client-devices/routers事务。config生成/向导只读检查不执行这些保存路径。见oxidns.py:487、oxidns_device_policy.py:325–374、config_repository.py:1320–1346。"
+    },
+    "H508": {
+      "route": "POST /api/oxidns/render",
+      "source": "../../backend/common/oxidns_settings.py#L120",
+      "kind": "earlier-guard",
+      "reason": "各项逐条证明见前文“OxiDNS剩余9个H”：capability/wrapper先拒绝；migration参数固定；未知format来自程序schema定义而非HTTP值。不能改程序schema或借其他400计后置guard。"
+    },
+    "H664": {
+      "route": "POST /api/oxidns/validate",
+      "source": "../../backend/common/oxidns_plugin_constraints.py#L619",
+      "kind": "earlier-guard",
+      "reason": "各项逐条证明见前文“OxiDNS剩余9个H”：capability/wrapper先拒绝；migration参数固定；未知format来自程序schema定义而非HTTP值。不能改程序schema或借其他400计后置guard。"
+    },
+    "H704": {
+      "route": "POST /api/oxidns/validate",
+      "source": "../../backend/common/oxidns_validation.py#L152",
+      "kind": "earlier-guard",
+      "reason": "各项逐条证明见前文“OxiDNS剩余9个H”：capability/wrapper先拒绝；migration参数固定；未知format来自程序schema定义而非HTTP值。不能改程序schema或借其他400计后置guard。"
+    },
+    "H757": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_repository.py#L289",
+      "kind": "earlier-guard",
+      "reason": "排序/组名先validate_shapes，缺共享引用先_collect_resource_refs。完整import已测试真实前置拒绝；后置相同不变量不再重复计覆盖。见config_repository.py:2502–2529。"
+    },
+    "H758": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_repository.py#L292",
+      "kind": "earlier-guard",
+      "reason": "排序/组名先validate_shapes，缺共享引用先_collect_resource_refs。完整import已测试真实前置拒绝；后置相同不变量不再重复计覆盖。见config_repository.py:2502–2529。"
+    },
+    "H761": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_repository.py#L914",
+      "kind": "partial-storage",
+      "reason": "外部commit须介入同一写事务base与commit之间；短写、备份验证、PRAGMA及postcommit确认需真实存储故障。EACCES/触发器用例证明各自合同，不能代表这些指定故障；需受控FS实验，不改业务函数抛假异常。见config_repository.py、config_store.py对应原始逐行条目。"
+    },
+    "H762": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_repository.py#L916",
+      "kind": "partial-storage",
+      "reason": "坏SQLite结构/JSON/meta/存储版本是启动/恢复边界；需独立拒绝/恢复实验，正常SQL比较器不能读取后宣称写后相等。当前旧schema迁移O12单列，不借任一路由前置HTML500计这些位置。见config_repository.py:900–916、config_store.py:477。"
+    },
+    "H763": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_repository.py#L938",
+      "kind": "earlier-invariant",
+      "reason": "document在router commit guard前验证routers；公开normalizer保留id，事务嵌套/非法replacement需要应用回调而非HTTP参数。见config_repository.py:1041、routers/store.py:54。"
+    },
+    "H766": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_repository.py#L996",
+      "kind": "earlier-invariant",
+      "reason": "document在router commit guard前验证routers；公开normalizer保留id，事务嵌套/非法replacement需要应用回调而非HTTP参数。见config_repository.py:1041、routers/store.py:54。"
+    },
+    "H767": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_repository.py#L1034",
+      "kind": "earlier-invariant",
+      "reason": "document在router commit guard前验证routers；公开normalizer保留id，事务嵌套/非法replacement需要应用回调而非HTTP参数。见config_repository.py:1041、routers/store.py:54。"
+    },
+    "H768": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_repository.py#L1048",
+      "kind": "partial-storage",
+      "reason": "外部commit须介入同一写事务base与commit之间；短写、备份验证、PRAGMA及postcommit确认需真实存储故障。EACCES/触发器用例证明各自合同，不能代表这些指定故障；需受控FS实验，不改业务函数抛假异常。见config_repository.py、config_store.py对应原始逐行条目。"
+    },
+    "H773": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_repository.py#L1162",
+      "kind": "earlier-invariant",
+      "reason": "路由先验证name/body，传固定metadata/baseline和应用定义的updater/build回调；HTTP JSON不能指定Python可调用对象或令回调返回错误类型。见profiles.py:42、config_repository.py:1155、1283、1372。"
+    },
+    "H774": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_repository.py#L1166",
+      "kind": "earlier-invariant",
+      "reason": "路由先验证name/body，传固定metadata/baseline和应用定义的updater/build回调；HTTP JSON不能指定Python可调用对象或令回调返回错误类型。见profiles.py:42、config_repository.py:1155、1283、1372。"
+    },
+    "H776": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_repository.py#L1180",
+      "kind": "earlier-invariant",
+      "reason": "路由先验证name/body，传固定metadata/baseline和应用定义的updater/build回调；HTTP JSON不能指定Python可调用对象或令回调返回错误类型。见profiles.py:42、config_repository.py:1155、1283、1372。"
+    },
+    "H783": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_repository.py#L1283",
+      "kind": "earlier-invariant",
+      "reason": "路由先验证name/body，传固定metadata/baseline和应用定义的updater/build回调；HTTP JSON不能指定Python可调用对象或令回调返回错误类型。见profiles.py:42、config_repository.py:1155、1283、1372。"
+    },
+    "H784": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_repository.py#L1287",
+      "kind": "earlier-invariant",
+      "reason": "路由先验证name/body，传固定metadata/baseline和应用定义的updater/build回调；HTTP JSON不能指定Python可调用对象或令回调返回错误类型。见profiles.py:42、config_repository.py:1155、1283、1372。"
+    },
+    "H786": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_repository.py#L1329",
+      "kind": "cross-domain",
+      "reason": "core_version约束是Agent发布输入；非空previous设备策略及router expected快照回读属于client-devices/routers事务。config生成/向导只读检查不执行这些保存路径。见oxidns.py:487、oxidns_device_policy.py:325–374、config_repository.py:1320–1346。"
+    },
+    "H787": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_repository.py#L1331",
+      "kind": "earlier-invariant",
+      "reason": "document在router commit guard前验证routers；公开normalizer保留id，事务嵌套/非法replacement需要应用回调而非HTTP参数。见config_repository.py:1041、routers/store.py:54。"
+    },
+    "H788": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_repository.py#L1357",
+      "kind": "cross-domain",
+      "reason": "core_version约束是Agent发布输入；非空previous设备策略及router expected快照回读属于client-devices/routers事务。config生成/向导只读检查不执行这些保存路径。见oxidns.py:487、oxidns_device_policy.py:325–374、config_repository.py:1320–1346。"
+    },
+    "H789": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_repository.py#L1374",
+      "kind": "earlier-invariant",
+      "reason": "路由先验证name/body，传固定metadata/baseline和应用定义的updater/build回调；HTTP JSON不能指定Python可调用对象或令回调返回错误类型。见profiles.py:42、config_repository.py:1155、1283、1372。"
+    },
+    "H790": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_repository.py#L1376",
+      "kind": "earlier-invariant",
+      "reason": "路由先验证name/body，传固定metadata/baseline和应用定义的updater/build回调；HTTP JSON不能指定Python可调用对象或令回调返回错误类型。见profiles.py:42、config_repository.py:1155、1283、1372。"
+    },
+    "H791": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_repository.py#L1379",
+      "kind": "earlier-invariant",
+      "reason": "路由先验证name/body，传固定metadata/baseline和应用定义的updater/build回调；HTTP JSON不能指定Python可调用对象或令回调返回错误类型。见profiles.py:42、config_repository.py:1155、1283、1372。"
+    },
+    "H792": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_repository.py#L1409",
+      "kind": "earlier-invariant",
+      "reason": "路由先验证name/body，传固定metadata/baseline和应用定义的updater/build回调；HTTP JSON不能指定Python可调用对象或令回调返回错误类型。见profiles.py:42、config_repository.py:1155、1283、1372。"
+    },
+    "H795": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_repository.py#L1447",
+      "kind": "partial-storage",
+      "reason": "confirmation_required要求COMMIT结果不确定且确认读取也失败。真实EACCES/触发器拒绝证明普通回滚，不能代表post-COMMIT歧义；需受控故障文件系统/SQLite实验。见rule_library.py:135、config_store.py:325。"
+    },
+    "H800": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_repository.py#L1535",
+      "kind": "earlier-invariant",
+      "reason": "路由先验证name/body，传固定metadata/baseline和应用定义的updater/build回调；HTTP JSON不能指定Python可调用对象或令回调返回错误类型。见profiles.py:42、config_repository.py:1155、1283、1372。"
+    },
+    "H801": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_repository.py#L1538",
+      "kind": "earlier-invariant",
+      "reason": "路由先验证name/body，传固定metadata/baseline和应用定义的updater/build回调；HTTP JSON不能指定Python可调用对象或令回调返回错误类型。见profiles.py:42、config_repository.py:1155、1283、1372。"
+    },
+    "H802": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_repository.py#L1584",
+      "kind": "earlier-invariant",
+      "reason": "路由先验证name/body，传固定metadata/baseline和应用定义的updater/build回调；HTTP JSON不能指定Python可调用对象或令回调返回错误类型。见profiles.py:42、config_repository.py:1155、1283、1372。"
+    },
+    "H803": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_repository.py#L1587",
+      "kind": "earlier-invariant",
+      "reason": "路由先验证name/body，传固定metadata/baseline和应用定义的updater/build回调；HTTP JSON不能指定Python可调用对象或令回调返回错误类型。见profiles.py:42、config_repository.py:1155、1283、1372。"
+    },
+    "H804": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_repository.py#L1600",
+      "kind": "earlier-invariant",
+      "reason": "路由先验证name/body，传固定metadata/baseline和应用定义的updater/build回调；HTTP JSON不能指定Python可调用对象或令回调返回错误类型。见profiles.py:42、config_repository.py:1155、1283、1372。"
+    },
+    "H805": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_repository.py#L1641",
+      "kind": "earlier-guard",
+      "reason": "非对象body在REST wrapper先拒绝；legacy profile在迁移前_scope_legacy_dialers先检查，normalize导入统一schema版本。真实前置请求已有，不借它们给后置重复guard计覆盖。见profiles.py:156、config.py:257、config_repository.py:2093、2186、2263、2418。"
+    },
+    "H810": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_repository.py#L1869",
+      "kind": "earlier-guard",
+      "reason": "id由上下文先验证；generated filename来自固定映射；artifact读取先验证manifest成员。前置恶意URL拒绝不等于内部相对路径/filename参数保护。见config_repository.py:1865、generated_preview.py:179。"
+    },
+    "H811": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_repository.py#L1874",
+      "kind": "earlier-guard",
+      "reason": "id由上下文先验证；generated filename来自固定映射；artifact读取先验证manifest成员。前置恶意URL拒绝不等于内部相对路径/filename参数保护。见config_repository.py:1865、generated_preview.py:179。"
+    },
+    "H812": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_repository.py#L1880",
+      "kind": "earlier-guard",
+      "reason": "id由上下文先验证；generated filename来自固定映射；artifact读取先验证manifest成员。前置恶意URL拒绝不等于内部相对路径/filename参数保护。见config_repository.py:1865、generated_preview.py:179。"
+    },
+    "H813": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_repository.py#L1937",
+      "kind": "partial-storage",
+      "reason": "外部commit须介入同一写事务base与commit之间；短写、备份验证、PRAGMA及postcommit确认需真实存储故障。EACCES/触发器用例证明各自合同，不能代表这些指定故障；需受控FS实验，不改业务函数抛假异常。见config_repository.py、config_store.py对应原始逐行条目。"
+    },
+    "H814": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_repository.py#L1999",
+      "kind": "partial-storage",
+      "reason": "外部commit须介入同一写事务base与commit之间；短写、备份验证、PRAGMA及postcommit确认需真实存储故障。EACCES/触发器用例证明各自合同，不能代表这些指定故障；需受控FS实验，不改业务函数抛假异常。见config_repository.py、config_store.py对应原始逐行条目。"
+    },
+    "H815": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_repository.py#L2042",
+      "kind": "partial-storage",
+      "reason": "外部commit须介入同一写事务base与commit之间；短写、备份验证、PRAGMA及postcommit确认需真实存储故障。EACCES/触发器用例证明各自合同，不能代表这些指定故障；需受控FS实验，不改业务函数抛假异常。见config_repository.py、config_store.py对应原始逐行条目。"
+    },
+    "H816": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_repository.py#L2059",
+      "kind": "earlier-guard",
+      "reason": "id由上下文先验证；generated filename来自固定映射；artifact读取先验证manifest成员。前置恶意URL拒绝不等于内部相对路径/filename参数保护。见config_repository.py:1865、generated_preview.py:179。"
+    },
+    "H822": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_repository.py#L2187",
+      "kind": "earlier-guard",
+      "reason": "非对象body在REST wrapper先拒绝；legacy profile在迁移前_scope_legacy_dialers先检查，normalize导入统一schema版本。真实前置请求已有，不借它们给后置重复guard计覆盖。见profiles.py:156、config.py:257、config_repository.py:2093、2186、2263、2418。"
+    },
+    "H827": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_repository.py#L2263",
+      "kind": "earlier-guard",
+      "reason": "非对象body在REST wrapper先拒绝；legacy profile在迁移前_scope_legacy_dialers先检查，normalize导入统一schema版本。真实前置请求已有，不借它们给后置重复guard计覆盖。见profiles.py:156、config.py:257、config_repository.py:2093、2186、2263、2418。"
+    },
+    "H831": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_repository.py#L2418",
+      "kind": "earlier-guard",
+      "reason": "非对象body在REST wrapper先拒绝；legacy profile在迁移前_scope_legacy_dialers先检查，normalize导入统一schema版本。真实前置请求已有，不借它们给后置重复guard计覆盖。见profiles.py:156、config.py:257、config_repository.py:2093、2186、2263、2418。"
+    },
+    "H854": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_repository.py#L2510",
+      "kind": "earlier-guard",
+      "reason": "排序/组名先validate_shapes，缺共享引用先_collect_resource_refs。完整import已测试真实前置拒绝；后置相同不变量不再重复计覆盖。见config_repository.py:2502–2529。"
+    },
+    "H857": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_repository.py#L2524",
+      "kind": "earlier-guard",
+      "reason": "排序/组名先validate_shapes，缺共享引用先_collect_resource_refs。完整import已测试真实前置拒绝；后置相同不变量不再重复计覆盖。见config_repository.py:2502–2529。"
+    },
+    "H858": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_repository.py#L2529",
+      "kind": "earlier-guard",
+      "reason": "排序/组名先validate_shapes，缺共享引用先_collect_resource_refs。完整import已测试真实前置拒绝；后置相同不变量不再重复计覆盖。见config_repository.py:2502–2529。"
+    },
+    "H875": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_store.py#L106",
+      "kind": "earlier-invariant",
+      "reason": "document_rows只接收已验证document，HTTP JSON对象键只能是字符串。无需向底层函数传入非法Python键或非dict以制造“黑盒”覆盖。见config_store.py:104–133、config_repository.py:1043。"
+    },
+    "H876": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_store.py#L109",
+      "kind": "earlier-invariant",
+      "reason": "document_rows只接收已验证document，HTTP JSON对象键只能是字符串。无需向底层函数传入非法Python键或非dict以制造“黑盒”覆盖。见config_store.py:104–133、config_repository.py:1043。"
+    },
+    "H877": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_store.py#L116",
+      "kind": "earlier-invariant",
+      "reason": "document_rows只接收已验证document，HTTP JSON对象键只能是字符串。无需向底层函数传入非法Python键或非dict以制造“黑盒”覆盖。见config_store.py:104–133、config_repository.py:1043。"
+    },
+    "H878": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_store.py#L123",
+      "kind": "earlier-invariant",
+      "reason": "document_rows只接收已验证document，HTTP JSON对象键只能是字符串。无需向底层函数传入非法Python键或非dict以制造“黑盒”覆盖。见config_store.py:104–133、config_repository.py:1043。"
+    },
+    "H879": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_store.py#L130",
+      "kind": "earlier-invariant",
+      "reason": "document_rows只接收已验证document，HTTP JSON对象键只能是字符串。无需向底层函数传入非法Python键或非dict以制造“黑盒”覆盖。见config_store.py:104–133、config_repository.py:1043。"
+    },
+    "H880": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_store.py#L133",
+      "kind": "earlier-invariant",
+      "reason": "document_rows只接收已验证document，HTTP JSON对象键只能是字符串。无需向底层函数传入非法Python键或非dict以制造“黑盒”覆盖。见config_store.py:104–133、config_repository.py:1043。"
+    },
+    "H881": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_store.py#L147",
+      "kind": "partial-storage",
+      "reason": "坏SQLite结构/JSON/meta/存储版本是启动/恢复边界；需独立拒绝/恢复实验，正常SQL比较器不能读取后宣称写后相等。当前旧schema迁移O12单列，不借任一路由前置HTML500计这些位置。见config_repository.py:900–916、config_store.py:477。"
+    },
+    "H882": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_store.py#L156",
+      "kind": "partial-storage",
+      "reason": "坏SQLite结构/JSON/meta/存储版本是启动/恢复边界；需独立拒绝/恢复实验，正常SQL比较器不能读取后宣称写后相等。当前旧schema迁移O12单列，不借任一路由前置HTML500计这些位置。见config_repository.py:900–916、config_store.py:477。"
+    },
+    "H883": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_store.py#L159",
+      "kind": "partial-storage",
+      "reason": "坏SQLite结构/JSON/meta/存储版本是启动/恢复边界；需独立拒绝/恢复实验，正常SQL比较器不能读取后宣称写后相等。当前旧schema迁移O12单列，不借任一路由前置HTML500计这些位置。见config_repository.py:900–916、config_store.py:477。"
+    },
+    "H884": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_store.py#L162",
+      "kind": "partial-storage",
+      "reason": "坏SQLite结构/JSON/meta/存储版本是启动/恢复边界；需独立拒绝/恢复实验，正常SQL比较器不能读取后宣称写后相等。当前旧schema迁移O12单列，不借任一路由前置HTML500计这些位置。见config_repository.py:900–916、config_store.py:477。"
+    },
+    "H885": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_store.py#L220",
+      "kind": "partial-storage",
+      "reason": "坏SQLite结构/JSON/meta/存储版本是启动/恢复边界；需独立拒绝/恢复实验，正常SQL比较器不能读取后宣称写后相等。当前旧schema迁移O12单列，不借任一路由前置HTML500计这些位置。见config_repository.py:900–916、config_store.py:477。"
+    },
+    "H886": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_store.py#L221",
+      "kind": "partial-storage",
+      "reason": "坏SQLite结构/JSON/meta/存储版本是启动/恢复边界；需独立拒绝/恢复实验，正常SQL比较器不能读取后宣称写后相等。当前旧schema迁移O12单列，不借任一路由前置HTML500计这些位置。见config_repository.py:900–916、config_store.py:477。"
+    },
+    "H887": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_store.py#L256",
+      "kind": "partial-storage",
+      "reason": "坏SQLite结构/JSON/meta/存储版本是启动/恢复边界；需独立拒绝/恢复实验，正常SQL比较器不能读取后宣称写后相等。当前旧schema迁移O12单列，不借任一路由前置HTML500计这些位置。见config_repository.py:900–916、config_store.py:477。"
+    },
+    "H888": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_store.py#L262",
+      "kind": "partial-storage",
+      "reason": "坏SQLite结构/JSON/meta/存储版本是启动/恢复边界；需独立拒绝/恢复实验，正常SQL比较器不能读取后宣称写后相等。当前旧schema迁移O12单列，不借任一路由前置HTML500计这些位置。见config_repository.py:900–916、config_store.py:477。"
+    },
+    "H889": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_store.py#L264",
+      "kind": "partial-storage",
+      "reason": "坏SQLite结构/JSON/meta/存储版本是启动/恢复边界；需独立拒绝/恢复实验，正常SQL比较器不能读取后宣称写后相等。当前旧schema迁移O12单列，不借任一路由前置HTML500计这些位置。见config_repository.py:900–916、config_store.py:477。"
+    },
+    "H890": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_store.py#L289",
+      "kind": "partial-storage",
+      "reason": "坏SQLite结构/JSON/meta/存储版本是启动/恢复边界；需独立拒绝/恢复实验，正常SQL比较器不能读取后宣称写后相等。当前旧schema迁移O12单列，不借任一路由前置HTML500计这些位置。见config_repository.py:900–916、config_store.py:477。"
+    },
+    "H891": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_store.py#L298",
+      "kind": "partial-storage",
+      "reason": "坏SQLite结构/JSON/meta/存储版本是启动/恢复边界；需独立拒绝/恢复实验，正常SQL比较器不能读取后宣称写后相等。当前旧schema迁移O12单列，不借任一路由前置HTML500计这些位置。见config_repository.py:900–916、config_store.py:477。"
+    },
+    "H892": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_store.py#L342",
+      "kind": "partial-storage",
+      "reason": "外部commit须介入同一写事务base与commit之间；短写、备份验证、PRAGMA及postcommit确认需真实存储故障。EACCES/触发器用例证明各自合同，不能代表这些指定故障；需受控FS实验，不改业务函数抛假异常。见config_repository.py、config_store.py对应原始逐行条目。"
+    },
+    "H893": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_store.py#L426",
+      "kind": "partial-storage",
+      "reason": "外部commit须介入同一写事务base与commit之间；短写、备份验证、PRAGMA及postcommit确认需真实存储故障。EACCES/触发器用例证明各自合同，不能代表这些指定故障；需受控FS实验，不改业务函数抛假异常。见config_repository.py、config_store.py对应原始逐行条目。"
+    },
+    "H894": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_store.py#L444",
+      "kind": "partial-storage",
+      "reason": "外部commit须介入同一写事务base与commit之间；短写、备份验证、PRAGMA及postcommit确认需真实存储故障。EACCES/触发器用例证明各自合同，不能代表这些指定故障；需受控FS实验，不改业务函数抛假异常。见config_repository.py、config_store.py对应原始逐行条目。"
+    },
+    "H895": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_store.py#L450",
+      "kind": "partial-storage",
+      "reason": "外部commit须介入同一写事务base与commit之间；短写、备份验证、PRAGMA及postcommit确认需真实存储故障。EACCES/触发器用例证明各自合同，不能代表这些指定故障；需受控FS实验，不改业务函数抛假异常。见config_repository.py、config_store.py对应原始逐行条目。"
+    },
+    "H896": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_store.py#L483",
+      "kind": "partial-storage",
+      "reason": "坏SQLite结构/JSON/meta/存储版本是启动/恢复边界；需独立拒绝/恢复实验，正常SQL比较器不能读取后宣称写后相等。当前旧schema迁移O12单列，不借任一路由前置HTML500计这些位置。见config_repository.py:900–916、config_store.py:477。"
+    },
+    "H897": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_store.py#L487",
+      "kind": "partial-storage",
+      "reason": "坏SQLite结构/JSON/meta/存储版本是启动/恢复边界；需独立拒绝/恢复实验，正常SQL比较器不能读取后宣称写后相等。当前旧schema迁移O12单列，不借任一路由前置HTML500计这些位置。见config_repository.py:900–916、config_store.py:477。"
+    },
+    "H898": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_store.py#L491",
+      "kind": "partial-storage",
+      "reason": "坏SQLite结构/JSON/meta/存储版本是启动/恢复边界；需独立拒绝/恢复实验，正常SQL比较器不能读取后宣称写后相等。当前旧schema迁移O12单列，不借任一路由前置HTML500计这些位置。见config_repository.py:900–916、config_store.py:477。"
+    },
+    "H899": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_store.py#L494",
+      "kind": "partial-storage",
+      "reason": "坏SQLite结构/JSON/meta/存储版本是启动/恢复边界；需独立拒绝/恢复实验，正常SQL比较器不能读取后宣称写后相等。当前旧schema迁移O12单列，不借任一路由前置HTML500计这些位置。见config_repository.py:900–916、config_store.py:477。"
+    },
+    "H900": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_store.py#L496",
+      "kind": "partial-storage",
+      "reason": "坏SQLite结构/JSON/meta/存储版本是启动/恢复边界；需独立拒绝/恢复实验，正常SQL比较器不能读取后宣称写后相等。当前旧schema迁移O12单列，不借任一路由前置HTML500计这些位置。见config_repository.py:900–916、config_store.py:477。"
+    },
+    "H901": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_store.py#L501",
+      "kind": "partial-storage",
+      "reason": "坏SQLite结构/JSON/meta/存储版本是启动/恢复边界；需独立拒绝/恢复实验，正常SQL比较器不能读取后宣称写后相等。当前旧schema迁移O12单列，不借任一路由前置HTML500计这些位置。见config_repository.py:900–916、config_store.py:477。"
+    },
+    "H902": {
+      "route": "POST /api/config/import",
+      "source": "../../backend/common/config_store.py#L506",
+      "kind": "partial-storage",
+      "reason": "坏SQLite结构/JSON/meta/存储版本是启动/恢复边界；需独立拒绝/恢复实验，正常SQL比较器不能读取后宣称写后相等。当前旧schema迁移O12单列，不借任一路由前置HTML500计这些位置。见config_repository.py:900–916、config_store.py:477。"
+    },
+    "H903": {
+      "route": "POST /api/rules/compose",
+      "source": "../../backend/common/rule_dns.py#L100",
+      "kind": "earlier-guard",
+      "reason": "route/action和pinned由公开校验/仓库构造；ruleDNS placement在生成前验证shape，来源非空文本先由read_rule_source_content保证。现有真实非法action/来源/重建输入不算后置相同不变量。见rule_dns.py对应原始逐行条目及ruleset_content.py。"
+    },
+    "H908": {
+      "route": "POST /api/rules/compose",
+      "source": "../../backend/common/rule_dns.py#L174",
+      "kind": "earlier-guard",
+      "reason": "route/action和pinned由公开校验/仓库构造；ruleDNS placement在生成前验证shape，来源非空文本先由read_rule_source_content保证。现有真实非法action/来源/重建输入不算后置相同不变量。见rule_dns.py对应原始逐行条目及ruleset_content.py。"
+    },
+    "H915": {
+      "route": "POST /api/rules/compose",
+      "source": "../../backend/common/rule_dns.py#L837",
+      "kind": "earlier-guard",
+      "reason": "route/action和pinned由公开校验/仓库构造；ruleDNS placement在生成前验证shape，来源非空文本先由read_rule_source_content保证。现有真实非法action/来源/重建输入不算后置相同不变量。见rule_dns.py对应原始逐行条目及ruleset_content.py。"
+    },
+    "H921": {
+      "route": "POST /api/rules/compose",
+      "source": "../../backend/utils/rule_syntax.py#L50",
+      "kind": "earlier-guard",
+      "reason": "route/action和pinned由公开校验/仓库构造；ruleDNS placement在生成前验证shape，来源非空文本先由read_rule_source_content保证。现有真实非法action/来源/重建输入不算后置相同不变量。见rule_dns.py对应原始逐行条目及ruleset_content.py。"
+    },
+    "H944": {
+      "route": "POST /api/setup/<session_id>/<operation>",
+      "source": "../../backend/common/gateway_onboarding.py#L121",
+      "kind": "cross-domain",
+      "reason": "gateway onboarding/安装与ready检查在agents域；config R211只复用_local_upstreams/_prepare_mihomo_dns，public latest投影不执行_saved_snapshot。移交agents清单与安装联测，见gateway_installation.py、setup_flow.py:396。"
+    },
+    "H945": {
+      "route": "POST /api/setup/<session_id>/<operation>",
+      "source": "../../backend/common/gateway_onboarding.py#L128",
+      "kind": "cross-domain",
+      "reason": "gateway onboarding/安装与ready检查在agents域；config R211只复用_local_upstreams/_prepare_mihomo_dns，public latest投影不执行_saved_snapshot。移交agents清单与安装联测，见gateway_installation.py、setup_flow.py:396。"
+    },
+    "H946": {
+      "route": "POST /api/setup/<session_id>/<operation>",
+      "source": "../../backend/common/gateway_onboarding.py#L136",
+      "kind": "cross-domain",
+      "reason": "gateway onboarding/安装与ready检查在agents域；config R211只复用_local_upstreams/_prepare_mihomo_dns，public latest投影不执行_saved_snapshot。移交agents清单与安装联测，见gateway_installation.py、setup_flow.py:396。"
+    },
+    "H947": {
+      "route": "POST /api/setup/<session_id>/<operation>",
+      "source": "../../backend/common/gateway_onboarding.py#L140",
+      "kind": "cross-domain",
+      "reason": "gateway onboarding/安装与ready检查在agents域；config R211只复用_local_upstreams/_prepare_mihomo_dns，public latest投影不执行_saved_snapshot。移交agents清单与安装联测，见gateway_installation.py、setup_flow.py:396。"
+    },
+    "H948": {
+      "route": "POST /api/setup/<session_id>/<operation>",
+      "source": "../../backend/common/gateway_onboarding.py#L147",
+      "kind": "cross-domain",
+      "reason": "gateway onboarding/安装与ready检查在agents域；config R211只复用_local_upstreams/_prepare_mihomo_dns，public latest投影不执行_saved_snapshot。移交agents清单与安装联测，见gateway_installation.py、setup_flow.py:396。"
+    },
+    "H949": {
+      "route": "POST /api/setup/<session_id>/<operation>",
+      "source": "../../backend/common/gateway_onboarding.py#L161",
+      "kind": "cross-domain",
+      "reason": "gateway onboarding/安装与ready检查在agents域；config R211只复用_local_upstreams/_prepare_mihomo_dns，public latest投影不执行_saved_snapshot。移交agents清单与安装联测，见gateway_installation.py、setup_flow.py:396。"
+    },
+    "H950": {
+      "route": "POST /api/setup/<session_id>/<operation>",
+      "source": "../../backend/common/gateway_onboarding.py#L183",
+      "kind": "cross-domain",
+      "reason": "gateway onboarding/安装与ready检查在agents域；config R211只复用_local_upstreams/_prepare_mihomo_dns，public latest投影不执行_saved_snapshot。移交agents清单与安装联测，见gateway_installation.py、setup_flow.py:396。"
+    },
+    "H951": {
+      "route": "POST /api/setup/<session_id>/<operation>",
+      "source": "../../backend/common/gateway_onboarding.py#L206",
+      "kind": "cross-domain",
+      "reason": "gateway onboarding/安装与ready检查在agents域；config R211只复用_local_upstreams/_prepare_mihomo_dns，public latest投影不执行_saved_snapshot。移交agents清单与安装联测，见gateway_installation.py、setup_flow.py:396。"
+    },
+    "H958": {
+      "route": "POST /api/setup/<session_id>/<operation>",
+      "source": "../../backend/common/gateway_onboarding.py#L246",
+      "kind": "cross-domain",
+      "reason": "gateway onboarding/安装与ready检查在agents域；config R211只复用_local_upstreams/_prepare_mihomo_dns，public latest投影不执行_saved_snapshot。移交agents清单与安装联测，见gateway_installation.py、setup_flow.py:396。"
+    },
+    "H959": {
+      "route": "POST /api/setup/<session_id>/<operation>",
+      "source": "../../backend/common/gateway_onboarding.py#L253",
+      "kind": "cross-domain",
+      "reason": "gateway onboarding/安装与ready检查在agents域；config R211只复用_local_upstreams/_prepare_mihomo_dns，public latest投影不执行_saved_snapshot。移交agents清单与安装联测，见gateway_installation.py、setup_flow.py:396。"
+    },
+    "H960": {
+      "route": "POST /api/setup/<session_id>/<operation>",
+      "source": "../../backend/common/gateway_onboarding.py#L256",
+      "kind": "cross-domain",
+      "reason": "gateway onboarding/安装与ready检查在agents域；config R211只复用_local_upstreams/_prepare_mihomo_dns，public latest投影不执行_saved_snapshot。移交agents清单与安装联测，见gateway_installation.py、setup_flow.py:396。"
+    },
+    "H961": {
+      "route": "POST /api/setup/<session_id>/<operation>",
+      "source": "../../backend/common/gateway_onboarding.py#L259",
+      "kind": "cross-domain",
+      "reason": "gateway onboarding/安装与ready检查在agents域；config R211只复用_local_upstreams/_prepare_mihomo_dns，public latest投影不执行_saved_snapshot。移交agents清单与安装联测，见gateway_installation.py、setup_flow.py:396。"
+    },
+    "H962": {
+      "route": "POST /api/setup/<session_id>/<operation>",
+      "source": "../../backend/common/gateway_onboarding.py#L261",
+      "kind": "cross-domain",
+      "reason": "gateway onboarding/安装与ready检查在agents域；config R211只复用_local_upstreams/_prepare_mihomo_dns，public latest投影不执行_saved_snapshot。移交agents清单与安装联测，见gateway_installation.py、setup_flow.py:396。"
+    },
+    "H963": {
+      "route": "POST /api/setup/<session_id>/<operation>",
+      "source": "../../backend/common/gateway_onboarding.py#L263",
+      "kind": "cross-domain",
+      "reason": "gateway onboarding/安装与ready检查在agents域；config R211只复用_local_upstreams/_prepare_mihomo_dns，public latest投影不执行_saved_snapshot。移交agents清单与安装联测，见gateway_installation.py、setup_flow.py:396。"
+    },
+    "H964": {
+      "route": "POST /api/setup/<session_id>/<operation>",
+      "source": "../../backend/common/gateway_onboarding.py#L265",
+      "kind": "cross-domain",
+      "reason": "gateway onboarding/安装与ready检查在agents域；config R211只复用_local_upstreams/_prepare_mihomo_dns，public latest投影不执行_saved_snapshot。移交agents清单与安装联测，见gateway_installation.py、setup_flow.py:396。"
+    },
+    "H965": {
+      "route": "POST /api/setup/<session_id>/<operation>",
+      "source": "../../backend/common/gateway_onboarding.py#L312",
+      "kind": "cross-domain",
+      "reason": "gateway onboarding/安装与ready检查在agents域；config R211只复用_local_upstreams/_prepare_mihomo_dns，public latest投影不执行_saved_snapshot。移交agents清单与安装联测，见gateway_installation.py、setup_flow.py:396。"
+    },
+    "H966": {
+      "route": "POST /api/setup/<session_id>/<operation>",
+      "source": "../../backend/common/gateway_onboarding.py#L316",
+      "kind": "cross-domain",
+      "reason": "gateway onboarding/安装与ready检查在agents域；config R211只复用_local_upstreams/_prepare_mihomo_dns，public latest投影不执行_saved_snapshot。移交agents清单与安装联测，见gateway_installation.py、setup_flow.py:396。"
+    },
+    "H967": {
+      "route": "POST /api/setup/<session_id>/<operation>",
+      "source": "../../backend/common/gateway_onboarding.py#L441",
+      "kind": "cross-domain",
+      "reason": "gateway onboarding/安装与ready检查在agents域；config R211只复用_local_upstreams/_prepare_mihomo_dns，public latest投影不执行_saved_snapshot。移交agents清单与安装联测，见gateway_installation.py、setup_flow.py:396。"
+    },
+    "H968": {
+      "route": "POST /api/setup/<session_id>/<operation>",
+      "source": "../../backend/common/gateway_onboarding.py#L444",
+      "kind": "earlier-guard",
+      "reason": "prepare的_load_base先拒绝非文本；固定首启模板保留组和MATCH，来源不可用先拒绝。不能改随程序发布的模板强造空生成计划。见setup_flow.py:209、setup_presets.py:138。"
+    },
+    "H971": {
+      "route": "POST /api/setup/<session_id>/<operation>",
+      "source": "../../backend/common/gateway_onboarding.py#L518",
+      "kind": "cross-domain",
+      "reason": "gateway onboarding/安装与ready检查在agents域；config R211只复用_local_upstreams/_prepare_mihomo_dns，public latest投影不执行_saved_snapshot。移交agents清单与安装联测，见gateway_installation.py、setup_flow.py:396。"
+    },
+    "H972": {
+      "route": "POST /api/setup/<session_id>/<operation>",
+      "source": "../../backend/common/gateway_onboarding.py#L531",
+      "kind": "cross-domain",
+      "reason": "gateway onboarding/安装与ready检查在agents域；config R211只复用_local_upstreams/_prepare_mihomo_dns，public latest投影不执行_saved_snapshot。移交agents清单与安装联测，见gateway_installation.py、setup_flow.py:396。"
+    },
+    "H973": {
+      "route": "POST /api/setup/<session_id>/<operation>",
+      "source": "../../backend/common/gateway_onboarding.py#L570",
+      "kind": "cross-domain",
+      "reason": "gateway onboarding/安装与ready检查在agents域；config R211只复用_local_upstreams/_prepare_mihomo_dns，public latest投影不执行_saved_snapshot。移交agents清单与安装联测，见gateway_installation.py、setup_flow.py:396。"
+    },
+    "H974": {
+      "route": "POST /api/setup/<session_id>/<operation>",
+      "source": "../../backend/common/gateway_onboarding.py#L592",
+      "kind": "cross-domain",
+      "reason": "gateway onboarding/安装与ready检查在agents域；config R211只复用_local_upstreams/_prepare_mihomo_dns，public latest投影不执行_saved_snapshot。移交agents清单与安装联测，见gateway_installation.py、setup_flow.py:396。"
+    },
+    "H975": {
+      "route": "POST /api/setup/<session_id>/<operation>",
+      "source": "../../backend/common/gateway_onboarding.py#L597",
+      "kind": "cross-domain",
+      "reason": "gateway onboarding/安装与ready检查在agents域；config R211只复用_local_upstreams/_prepare_mihomo_dns，public latest投影不执行_saved_snapshot。移交agents清单与安装联测，见gateway_installation.py、setup_flow.py:396。"
+    },
+    "H976": {
+      "route": "POST /api/setup/<session_id>/<operation>",
+      "source": "../../backend/common/gateway_onboarding.py#L615",
+      "kind": "cross-domain",
+      "reason": "gateway onboarding/安装与ready检查在agents域；config R211只复用_local_upstreams/_prepare_mihomo_dns，public latest投影不执行_saved_snapshot。移交agents清单与安装联测，见gateway_installation.py、setup_flow.py:396。"
+    },
+    "H977": {
+      "route": "POST /api/setup/<session_id>/<operation>",
+      "source": "../../backend/common/gateway_onboarding.py#L621",
+      "kind": "cross-domain",
+      "reason": "gateway onboarding/安装与ready检查在agents域；config R211只复用_local_upstreams/_prepare_mihomo_dns，public latest投影不执行_saved_snapshot。移交agents清单与安装联测，见gateway_installation.py、setup_flow.py:396。"
+    },
+    "H978": {
+      "route": "POST /api/setup/<session_id>/<operation>",
+      "source": "../../backend/common/gateway_onboarding.py#L623",
+      "kind": "cross-domain",
+      "reason": "gateway onboarding/安装与ready检查在agents域；config R211只复用_local_upstreams/_prepare_mihomo_dns，public latest投影不执行_saved_snapshot。移交agents清单与安装联测，见gateway_installation.py、setup_flow.py:396。"
+    },
+    "H979": {
+      "route": "POST /api/setup/<session_id>/<operation>",
+      "source": "../../backend/common/gateway_onboarding.py#L629",
+      "kind": "cross-domain",
+      "reason": "gateway onboarding/安装与ready检查在agents域；config R211只复用_local_upstreams/_prepare_mihomo_dns，public latest投影不执行_saved_snapshot。移交agents清单与安装联测，见gateway_installation.py、setup_flow.py:396。"
+    },
+    "H980": {
+      "route": "POST /api/setup/<session_id>/<operation>",
+      "source": "../../backend/common/gateway_onboarding.py#L631",
+      "kind": "cross-domain",
+      "reason": "gateway onboarding/安装与ready检查在agents域；config R211只复用_local_upstreams/_prepare_mihomo_dns，public latest投影不执行_saved_snapshot。移交agents清单与安装联测，见gateway_installation.py、setup_flow.py:396。"
+    },
+    "H981": {
+      "route": "POST /api/setup/<session_id>/<operation>",
+      "source": "../../backend/common/gateway_onboarding.py#L637",
+      "kind": "cross-domain",
+      "reason": "gateway onboarding/安装与ready检查在agents域；config R211只复用_local_upstreams/_prepare_mihomo_dns，public latest投影不执行_saved_snapshot。移交agents清单与安装联测，见gateway_installation.py、setup_flow.py:396。"
+    },
+    "H982": {
+      "route": "POST /api/setup/<session_id>/<operation>",
+      "source": "../../backend/common/gateway_onboarding.py#L644",
+      "kind": "cross-domain",
+      "reason": "gateway onboarding/安装与ready检查在agents域；config R211只复用_local_upstreams/_prepare_mihomo_dns，public latest投影不执行_saved_snapshot。移交agents清单与安装联测，见gateway_installation.py、setup_flow.py:396。"
+    },
+    "H983": {
+      "route": "POST /api/setup/<session_id>/<operation>",
+      "source": "../../backend/common/gateway_onboarding.py#L647",
+      "kind": "cross-domain",
+      "reason": "gateway onboarding/安装与ready检查在agents域；config R211只复用_local_upstreams/_prepare_mihomo_dns，public latest投影不执行_saved_snapshot。移交agents清单与安装联测，见gateway_installation.py、setup_flow.py:396。"
+    },
+    "H984": {
+      "route": "POST /api/setup/<session_id>/<operation>",
+      "source": "../../backend/common/gateway_onboarding.py#L652",
+      "kind": "cross-domain",
+      "reason": "gateway onboarding/安装与ready检查在agents域；config R211只复用_local_upstreams/_prepare_mihomo_dns，public latest投影不执行_saved_snapshot。移交agents清单与安装联测，见gateway_installation.py、setup_flow.py:396。"
+    },
+    "H985": {
+      "route": "POST /api/setup/<session_id>/<operation>",
+      "source": "../../backend/common/gateway_onboarding.py#L655",
+      "kind": "cross-domain",
+      "reason": "gateway onboarding/安装与ready检查在agents域；config R211只复用_local_upstreams/_prepare_mihomo_dns，public latest投影不执行_saved_snapshot。移交agents清单与安装联测，见gateway_installation.py、setup_flow.py:396。"
+    },
+    "H986": {
+      "route": "POST /api/setup/<session_id>/<operation>",
+      "source": "../../backend/common/gateway_onboarding.py#L660",
+      "kind": "cross-domain",
+      "reason": "gateway onboarding/安装与ready检查在agents域；config R211只复用_local_upstreams/_prepare_mihomo_dns，public latest投影不执行_saved_snapshot。移交agents清单与安装联测，见gateway_installation.py、setup_flow.py:396。"
+    },
+    "R008-F11": {
+      "route": "GET /api/aggregations/<agg_id>/provider",
+      "kind": "earlier-invariant",
+      "reason": "聚合provider第一段try只访问已验证的集合/record；get_resource_config及鉴权在try外。后续render的异常另有具名输入；不把它们算成此初始列表catch。见aggregations.py:535–551。"
+    },
+    "R010-F12": {
+      "route": "POST /api/aggregations/reorder",
+      "kind": "earlier-invariant",
+      "reason": "reorder复用原对象，只改变顺序；已有引用图与形态先经仓库验证。nodes未调用validate_dialers；groups虽调用，但仅顺序变化不能构造新的无效引用。见aggregations.py:598、nodes.py:113、proxy_groups.py:409、config_repository.py:1291。"
+    },
+    "R024-F09": {
+      "route": "GET /api/config/<profile_id>/mosdns",
+      "kind": "earlier-invariant",
+      "reason": "MosDNS生成不调用validate_rule_policies，规则DNS/转换错误为普通ValueError；现有显式验证失败不能冒充StrategyReferenceError专用catch。见config.py:171、converters/mosdns.py:581及strategy_references.py。"
+    },
+    "R031-F09": {
+      "route": "GET /api/config/mosdns",
+      "kind": "earlier-invariant",
+      "reason": "MosDNS生成不调用validate_rule_policies，规则DNS/转换错误为普通ValueError；现有显式验证失败不能冒充StrategyReferenceError专用catch。见config.py:171、converters/mosdns.py:581及strategy_references.py。"
+    },
+    "R046-B05": {
+      "route": "POST /api/domain-discovery/apply",
+      "kind": "not-applicable",
+      "reason": "routes.tsv及原蓝图没有该P3显式profile别名；真实P4–P6已逐请求覆盖，未知URL404不算P3成功。"
+    },
+    "R046-F15": {
+      "route": "POST /api/domain-discovery/apply",
+      "kind": "partial-race",
+      "reason": "infos检查之后、shared事务内再检查之前需要真实并发改变默认库；该区间无公开外部I/O屏障。普通已有坏库在前一检查先拒绝；现有并发创建/修改不能冒充这一指定窗口。见domain_discovery_service.py:560–582。"
+    },
+    "R051-B04": {
+      "route": "POST /api/domain-discovery/probe",
+      "kind": "not-applicable",
+      "reason": "routes.tsv及原蓝图没有该P3显式profile别名；真实P4–P6已逐请求覆盖，未知URL404不算P3成功。"
+    },
+    "R054-B04": {
+      "route": "POST /api/domain-discovery/region/check",
+      "kind": "not-applicable",
+      "reason": "routes.tsv及原蓝图没有该P3显式profile别名；真实P4–P6已逐请求覆盖，未知URL404不算P3成功。"
+    },
+    "R055-B03": {
+      "route": "POST /api/domain-discovery/region/route",
+      "kind": "not-applicable",
+      "reason": "routes.tsv及原蓝图没有该P3显式profile别名；真实P4–P6已逐请求覆盖，未知URL404不算P3成功。"
+    },
+    "R056-B03": {
+      "route": "POST /api/domain-discovery/rulesets/init",
+      "kind": "not-applicable",
+      "reason": "routes.tsv及原蓝图没有该P3显式profile别名；真实P4–P6已逐请求覆盖，未知URL404不算P3成功。"
+    },
+    "R059-B02": {
+      "route": "POST /api/domain-discovery/undo",
+      "kind": "not-applicable",
+      "reason": "routes.tsv及原蓝图没有该P3显式profile别名；真实P4–P6已逐请求覆盖，未知URL404不算P3成功。"
+    },
+    "R060-B04": {
+      "route": "POST /api/domain-discovery/website/identify",
+      "kind": "not-applicable",
+      "reason": "routes.tsv及原蓝图没有该P3显式profile别名；真实P4–P6已逐请求覆盖，未知URL404不算P3成功。"
+    },
+    "R062-B04": {
+      "route": "POST /api/generate/<service>/artifact",
+      "kind": "not-applicable",
+      "reason": "routes.tsv及原蓝图没有该P3显式profile别名；真实P4–P6已逐请求覆盖，未知URL404不算P3成功。"
+    },
+    "R063-B03": {
+      "route": "GET /api/generate/artifacts/<preview_id>/<action>",
+      "kind": "not-applicable",
+      "reason": "routes.tsv及原蓝图没有该P3显式profile别名；真实P4–P6已逐请求覆盖，未知URL404不算P3成功。"
+    },
+    "R078-B04": {
+      "route": "POST /api/mosdns/api-settings",
+      "kind": "not-applicable",
+      "reason": "routes.tsv及原蓝图没有该P3显式profile别名；真实P4–P6已逐请求覆盖，未知URL404不算P3成功。"
+    },
+    "R080-B04": {
+      "route": "POST /api/mosdns/cache-settings",
+      "kind": "not-applicable",
+      "reason": "routes.tsv及原蓝图没有该P3显式profile别名；真实P4–P6已逐请求覆盖，未知URL404不算P3成功。"
+    },
+    "R082-B04": {
+      "route": "POST /api/mosdns/custom-matches",
+      "kind": "not-applicable",
+      "reason": "routes.tsv及原蓝图没有该P3显式profile别名；真实P4–P6已逐请求覆盖，未知URL404不算P3成功。"
+    },
+    "R084-B04": {
+      "route": "POST /api/mosdns/dns-servers",
+      "kind": "not-applicable",
+      "reason": "routes.tsv及原蓝图没有该P3显式profile别名；真实P4–P6已逐请求覆盖，未知URL404不算P3成功。"
+    },
+    "R086-B04": {
+      "route": "POST /api/mosdns/log-settings",
+      "kind": "not-applicable",
+      "reason": "routes.tsv及原蓝图没有该P3显式profile别名；真实P4–P6已逐请求覆盖，未知URL404不算P3成功。"
+    },
+    "R089-B04": {
+      "route": "POST /api/mosdns/rulesets",
+      "kind": "not-applicable",
+      "reason": "routes.tsv及原蓝图没有该P3显式profile别名；真实P4–P6已逐请求覆盖，未知URL404不算P3成功。"
+    },
+    "R090-B04": {
+      "route": "POST /api/mosdns/settings",
+      "kind": "not-applicable",
+      "reason": "routes.tsv及原蓝图没有该P3显式profile别名；真实P4–P6已逐请求覆盖，未知URL404不算P3成功。"
+    },
+    "R103-F13": {
+      "route": "POST /api/nodes/reorder",
+      "kind": "earlier-invariant",
+      "reason": "reorder复用原对象，只改变顺序；已有引用图与形态先经仓库验证。nodes未调用validate_dialers；groups虽调用，但仅顺序变化不能构造新的无效引用。见aggregations.py:598、nodes.py:113、proxy_groups.py:409、config_repository.py:1291。"
+    },
+    "R122-F11": {
+      "route": "GET /api/profiles/<profile_id>/aggregations/<agg_id>/provider",
+      "kind": "earlier-invariant",
+      "reason": "聚合provider第一段try只访问已验证的集合/record；get_resource_config及鉴权在try外。后续render的异常另有具名输入；不把它们算成此初始列表catch。见aggregations.py:535–551。"
+    },
+    "R123-F12": {
+      "route": "POST /api/profiles/<profile_id>/clone",
+      "kind": "contract-erratum",
+      "reason": "clone固定path来源，订阅PUT强制path id；任意body clone_from/id/可选字段删除不满足原拒绝条件。见profiles.py:110、subscriptions.py:136及上文实测errata。"
+    },
+    "R150-F03": {
+      "route": "GET /api/profiles/<profile_id>/rule-library/content/<rule_id>",
+      "kind": "earlier-invariant",
+      "reason": "content handler的get_shared_config在try外，库元素由仓库保证对象/id。保留的非文本content作为返回值后由Flask构造响应失败发生在try外，不是此JSON catch。见rule_library.py:304–325。"
+    },
+    "R154-F10": {
+      "route": "GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies",
+      "kind": "partial-storage",
+      "reason": "初始get_resource_config异常须在前置profile/auth读取之后发生；直接损坏SQLite被前置读取先拒绝。需受控读故障/准确跨读屏障，不能用前置HTML500填此handler JSON catch。见subscriptions.py:418及profile_context.py。"
+    },
+    "R158-F13": {
+      "route": "DELETE /api/proxy-groups/<group_id>",
+      "kind": "earlier-invariant",
+      "reason": "删除仍被有效规则/组引用的策略先409；native follow只考虑enabled规则。未证明删除无引用组能改变有效follow路由并独立触发后置DNS重建拒绝，保留partial而不借更新/重命名用例计删除分支。见proxy_groups.py:97–123、245–273。"
+    },
+    "R163-F12": {
+      "route": "POST /api/proxy-groups/reorder",
+      "kind": "earlier-invariant",
+      "reason": "reorder复用原对象，只改变顺序；已有引用图与形态先经仓库验证。nodes未调用validate_dialers；groups虽调用，但仅顺序变化不能构造新的无效引用。见aggregations.py:598、nodes.py:113、proxy_groups.py:409、config_repository.py:1291。"
+    },
+    "R165-F17": {
+      "route": "POST /api/rule-library",
+      "kind": "partial-storage",
+      "reason": "confirmation_required要求COMMIT结果不确定且确认读取也失败。真实EACCES/触发器拒绝证明普通回滚，不能代表post-COMMIT歧义；需受控故障文件系统/SQLite实验。见rule_library.py:135、config_store.py:325。"
+    },
+    "R172-F03": {
+      "route": "GET /api/rule-library/content/<rule_id>",
+      "kind": "earlier-invariant",
+      "reason": "content handler的get_shared_config在try外，库元素由仓库保证对象/id。保留的非文本content作为返回值后由Flask构造响应失败发生在try外，不是此JSON catch。见rule_library.py:304–325。"
+    },
+    "R205-F08": {
+      "route": "GET /api/settings/web-port",
+      "kind": "partial-storage",
+      "reason": "503 OSError边界涉及部署锁/目录访问，不能只破坏Python的Nginx锁路径而要求Go复制。深层坏JSON实际RecursionError500草稿已撤回；正常坏保存状态由R205-F09/H1092真实覆盖。见settings.py:29。"
+    },
+    "R206-F15": {
+      "route": "POST /api/settings/web-port",
+      "kind": "partial-race",
+      "reason": "需要两个真实公开换端口同时进入更新窗口；Python锁文件及Nginx CLI屏障与Go原生绑定机制不同。直接持flock不是等价输入，成功切换/占用/保存失败另已实际比对。见web_listener.py:43–51。"
+    },
+    "R206-F17": {
+      "route": "POST /api/settings/web-port",
+      "kind": "partial-startup",
+      "reason": "维护者批准的Nginx退役边界；Go原生失败验证配置不改、中文提示、旧端口仍可访问。Nginx模板/check/reload/探活/回滚专有分支在真实容器/O9/O14验收，见behaviour-changes.md的Go取代Nginx条目。"
+    },
+    "R206-F18": {
+      "route": "POST /api/settings/web-port",
+      "kind": "partial-startup",
+      "reason": "维护者批准的Nginx退役边界；Go原生失败验证配置不改、中文提示、旧端口仍可访问。Nginx模板/check/reload/探活/回滚专有分支在真实容器/O9/O14验收，见behaviour-changes.md的Go取代Nginx条目。"
+    },
+    "R206-F19": {
+      "route": "POST /api/settings/web-port",
+      "kind": "partial-startup",
+      "reason": "维护者批准的Nginx退役边界；Go原生失败验证配置不改、中文提示、旧端口仍可访问。Nginx模板/check/reload/探活/回滚专有分支在真实容器/O9/O14验收，见behaviour-changes.md的Go取代Nginx条目。"
+    },
+    "R217-F17": {
+      "route": "PUT /api/subscriptions/<sub_id>",
+      "kind": "contract-erratum",
+      "reason": "clone固定path来源，订阅PUT强制path id；任意body clone_from/id/可选字段删除不满足原拒绝条件。见profiles.py:110、subscriptions.py:136及上文实测errata。"
+    },
+    "R217-F19": {
+      "route": "PUT /api/subscriptions/<sub_id>",
+      "kind": "contract-erratum",
+      "reason": "clone固定path来源，订阅PUT强制path id；任意body clone_from/id/可选字段删除不满足原拒绝条件。见profiles.py:110、subscriptions.py:136及上文实测errata。"
+    },
+    "R220-F10": {
+      "route": "GET /api/subscriptions/<sub_id>/proxies",
+      "kind": "partial-storage",
+      "reason": "初始get_resource_config异常须在前置profile/auth读取之后发生；直接损坏SQLite被前置读取先拒绝。需受控读故障/准确跨读屏障，不能用前置HTML500填此handler JSON catch。见subscriptions.py:418及profile_context.py。"
+    }
+  },
+  "unaccounted": [],
+  "unknown_labels": [],
+  "routes": 228,
+  "request_variants": 10617,
+  "raw_verdicts": {
+    "compared": 2991,
+    "go-unimplemented": 7462,
+    "different": 53,
+    "go-unimplemented-dependency": 110,
+    "O12-separate": 1
+  },
+  "routes_missing_source_success_or_failure": [],
+  "runtime_design_errors": [],
+  "statement": "Not-exercised recipes are explicit boundaries, never compared/passed. Go skips remain skips.",
+  "source_reports": [
+    "server/tools/configdiff/testdata/results.json",
+    "server/tools/configdiff/testdata/retained-runtime.json",
+    "server/tools/configdiff/testdata/listener-runtime-boundaries.json",
+    "server/tools/configdiff/testdata/concurrent-profile-isolation.json",
+    "server/tools/configdiff/testdata/log-runtime.json",
+    "server/tools/configdiff/testdata/listener-saved-state-and-extremes.json",
+    "server/tools/configdiff/testdata/internal-redirect.json"
+  ]
+}
