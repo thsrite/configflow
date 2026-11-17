@@ -1056,3 +1056,18 @@ Ran 52 tests in 1.354s; OK
 ```
 
 开始在.32跑当前全部group，审核早期批次与seed/比较器变更的兼容性；仍有未实现的设计条目，这不是最终验收，结果与修正将在后续批次提交。
+
+## 批次 60：.32 当前全部 group 审计
+
+- 在.32重新执行全部已注册group，覆盖早期批次与当前seed、严格中文异常比较器的组合。52项比较器自检及故意错误Go响应检查通过；无用例设计错误；新旧67项差异的case/variant集合一致，没有新增业务差异。
+- 当前7316请求变体：实际比较通过1980，Go尚未实现5231，依赖未实现37，业务差异67，O12单列1。原矩阵去重R3666（S562/F2479/B625）、H253、G16；这些是已有实现范围，仍有设计条目未完成，不作为Step B最终验收。
+
+```text
+RT_HOST=sunbroke@192.168.0.32 rt --back server/tools/configdiff/testdata/results.json --back server/parity/difftest-config-findings.md -- bash -lc '~/cf-test/.venv/bin/python server/tools/configdiff/run.py > /tmp/configdiff-config-all-audit.log 2>&1; rc=$?; tail -10 /tmp/configdiff-config-all-audit.log | head -9; exit $rc'
+last request: R192-B08 / P6/all-config-read-selectors / go-unimplemented
+current compared=1980 go-unimplemented=5231 dependency=37 different=67 O12-separate=1
+design_errors=[] seconds=1252.99 end_to_end_mutation_check=true
+exit=1（既有67项差异保留为失败；未实现项不算失败）
+```
+
+继续rule-proxy、其余写入P边界、setup/native OxiDNS与剩余H/T；最终还需在.32完整重跑。
