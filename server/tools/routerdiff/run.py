@@ -85,16 +85,23 @@ def wait_guard(side, path, seconds, strict=True):
         time.sleep(.1)
 
 
+def wait_age(side, case):
+    if not 0 <= case.age_seconds <= 605 or case.age_anchor not in ('started', 'ended'):
+        raise ValueError('age contract exceeds the reviewed real-time fixture bounds')
+    if case.age_from not in side.request_windows:
+        raise RuntimeError(case.ident + ': missing own-side request window: ' + case.age_from)
+    anchor = side.request_windows[case.age_from][case.age_anchor]
+    deadline = anchor + case.age_seconds
+    while (remaining := deadline - time.monotonic()) > 0:
+        time.sleep(min(20, remaining))
+        print(case.ident + ': own-side ageing ' + str(round(time.monotonic() - anchor))
+              + '/' + str(case.age_seconds) + 's', flush=True)
+    if case.age_limit and time.monotonic() - anchor >= case.age_limit:
+        raise RuntimeError(case.ident + ': real-time fixture window missed; rerun at lower server load')
+    return anchor
+
+
 def execute(pair, case, available, routes):
-    if not 0 <= case.pause_before <= 605:
-        raise ValueError('real-time boundary wait exceeds reviewed fixture limit')
-    if case.pause_before:
-        cases.resolve(case.document, pair.python.observations)  # Fail missing prerequisites before a long wait.
-        deadline = time.monotonic() + case.pause_before
-        while (remaining := deadline - time.monotonic()) > 0:
-            time.sleep(min(20, remaining))
-            print(case.ident + ': real-time ageing ' + str(round(case.pause_before - max(0, deadline - time.monotonic())))
-                  + '/' + str(case.pause_before) + 's', flush=True)
     request = dict(method=case.method, path=case.path, document=case.document, raw=case.raw,
                    headers=case.headers, auth=case.auth)
     observations, snapshots, flow_requests, flow_checks = {}, {}, {}, {}
@@ -169,18 +176,24 @@ def execute(pair, case, available, routes):
                 raise
             blocked_reference = 'Go previous HTTP response lacks a required own-side reference: ' + str(error)
             break
-        started = side.pending[case.join]['started'] if case.join else time.time()
         log_position = side.rpc('log_position') if name == 'python' and case.console_patterns else None
+        age_anchor = wait_age(side, case) if case.age_from else None
+        started = side.pending[case.join]['started'] if case.join else time.time()
+        request_started = time.monotonic()
         try:
             response = (decode_response(side.rpc('join', ident=case.join)) if case.join else
                         poll(side, own_request, case.wait_until, case.wait_seconds, strict=name == 'python') if case.wait_until else
                         side.request(**own_request))
+            response_ended = time.monotonic()
         finally:
             for control in case.finalize:
                 if control.get('rpc') == 'filesystem_fault':
                     side.rpc(**{key: value for key, value in control.items() if key != 'rpc'}, operation='filesystem_fault')
                 else:
                     side.rpc('fake', **control)
+        if case.age_limit and response_ended - age_anchor >= case.age_limit:
+            raise RuntimeError(case.ident + ': response exceeded real-time fixture window; rerun at lower server load')
+        side.request_windows[case.ident] = {'started': request_started, 'ended': response_ended}
         settled = [response_view(poll(side, {'method': 'GET', 'path': control['path']}, control['expect'],
                                      control.get('seconds', 30), strict=name == 'python')) for control in case.after_poll]
         if case.route == 'R023' and case.method == 'POST' and case.after_poll:

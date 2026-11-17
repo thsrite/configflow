@@ -43,6 +43,7 @@ class Side:
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=self.stderr, text=True, bufsize=1)
         self.token = None
         self.observations = {}
+        self.request_windows = {}
         self.pending = {}
         self.missing_effects = []
 

@@ -589,6 +589,12 @@ class World:
 
     def close(self):
         self.release_all()
+        # Listener shutdowns are independent; each waits for its own poll loop.
+        # Start them together so fixture teardown does not cost six poll periods.
+        workers = [threading.Thread(target=server.shutdown) for server in self.servers]
+        for worker in workers:
+            worker.start()
+        for worker in workers:
+            worker.join()
         for server in self.servers:
-            server.shutdown()
             server.server_close()

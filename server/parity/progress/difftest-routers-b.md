@@ -733,3 +733,24 @@ and validate the measurement window, then repeat the real expiry run. This is
 a fixture risk, not a product finding. Dynamic identity normalization remains
 fail-closed/raw, not yet integrated. Full current composition, all H reachability
 and remaining G/T/D branches still unfinished; no final gate or hand-back yet.
+
+The guard+tail combination completed on .64 (26 worlds, NOT a full run):
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; cd server/tools/routerdiff; export PYTHONDONTWRITEBYTECODE=1; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary /tmp/routerdiff-build-302rx1dg/configflow --world guards --world rule-sync --world rule-sync-download-failures --world rule-sync-proxy --world upstream-linked --world dns-guard --world dhcp-ikuai-plain --world dns-ha --world disconnect-release --world disconnect-fixed --world disconnect-manual --world policy-view --world routing-methods --world head-discovery --world head-upstream --world head-collection-empty --world head-collection-body --world head-forwarding-empty --world head-forwarding-body --world auth-off-editors --world auth-off-release --world auth-off-fixed --world auth-off-discovery --world auth-off-forwarding --world auth-off-sync --world stored --output /tmp/routerdiff-audited-tail.json --findings /tmp/routerdiff-audited-tail-findings.md'`
+=> stored guards1865 cumulative(1.88s), matrix2301/routes26/implemented0,
+go-unimplemented1865/referenced507/audited182/remaining2119/complete=false.
+Python bugs in this subset: HEAD_CREATES_ROUTER/HEAD_PERSISTS_FORWARDING.
+No current test process from this command. The full frozen attempt failed earlier;
+this successful subset must not replace it with a false full-pass statement.
+
+Own-side age-window refinement (supersedes the fixture risk above):
+- Record monotonic request start/end on each side. Near-expiry apply waits until
+  598s after its OWN preview start and requires the whole response before599.5s.
+  Expired apply waits604s after its OWN preview response end. No clock patch or
+  Python token is supplied to Go. Missing anchors/missed windows are explicit
+  fixture failures; a negative runner test proves no Python-window fallback.
+- Independent fake listener shutdowns now run together, keeping full cleanup
+  joins while avoiding six sequential poll delays; no application lifecycle change.
+- Exact .64 selftest command:
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; cd server/tools/routerdiff; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY=/tmp/routerdiff-build-302rx1dg/configflow; ~/cf-test/.venv/bin/python -m unittest -v test_audits test_runner test_recipes test_boundary test_filesystem test_compare'`
+=> Ran26 tests15.557s / OK. The revised real604s expiry still needs execution,
+and the latest full composition/final rebase/gate remain outstanding.

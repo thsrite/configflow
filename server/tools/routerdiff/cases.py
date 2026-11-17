@@ -64,7 +64,10 @@ class Case:
     wait_seconds: float = 30
     after_poll: tuple = ()
     file_contents: dict = field(default_factory=dict)
-    pause_before: float = 0
+    age_from: str = ''
+    age_seconds: float = 0
+    age_anchor: str = 'started'
+    age_limit: float = 0
     preserved: tuple = ()
     console_patterns: tuple = ()
     capture_before_prepare: bool = False

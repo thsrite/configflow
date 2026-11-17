@@ -2,6 +2,7 @@
 import base64
 import copy
 import json
+import time
 from types import SimpleNamespace
 import unittest
 
@@ -15,6 +16,7 @@ class ObservationSide:
         self.observations, self.pending, self.missing_effects, self.requests = {}, {}, [], []
         self.status, self.snapshots = status, 0
         self.content = content
+        self.request_windows = {}
         self.before = before or {'database': {'fields': {'columns': ['scope', 'owner', 'field', 'position', 'value', 'revision'],
             'rows': []}}, 'files': {}, 'fake': {'ros': {}, 'ikuai': {'static_rt': []}, 'agent': {}, 'transcript': [], 'errors': []}}
         self.after = after or self.before
@@ -107,6 +109,22 @@ class RunnerTests(unittest.TestCase):
                             python_bug='AGENT_FORWARD_FILTER_UNHASHABLE')
                 result = execute(world, case, {('GET', shape(routes['R025'].path))}, routes)
                 self.assertEqual(result['status'], expected)
+
+    def test_age_boundaries_use_own_side_windows_and_fail_closed_when_missed(self):
+        routes, _ = load()
+        for missing in (False, True):
+            world = pair()
+            now = time.monotonic()
+            world.python.request_windows['preview'] = {'started': now, 'ended': now}
+            if not missing:
+                world.go.request_windows['preview'] = {'started': now - 20, 'ended': now - 20}
+            case = Case('age-boundary', 'R001', 'GET', '/api/agents/test/upstream-routers', 200,
+                        age_from='preview', age_seconds=0, age_limit=10)
+            reason = 'missing own-side request window' if missing else 'fixture window missed'
+            with self.assertRaisesRegex(RuntimeError, reason):
+                execute(world, case, {('GET', shape(routes['R001'].path))}, routes)
+            self.assertEqual(len(world.python.requests), 1)
+            self.assertEqual(world.go.requests, [])
 
     def test_go_poll_failure_stays_a_compared_observation(self):
         failed = ObservationSide(status=502)

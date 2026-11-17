@@ -420,13 +420,13 @@ def fixed_expiry():
                prepare=(device_world(),), unchanged=False, effect='device-read', checks={'success': True})
     yield Case('R005/token-near-600-seconds', 'R005', 'POST', '/api/client-devices/fixed-ip/apply', 200,
                ('R005-B07', 'T05'), document={'profile_id': 'alpha', 'token': Ref(preview, '/body/token')},
-               requires=('R006',), pause_before=598, unchanged=False, effect='profile-write-device', foreign=FOREIGN,
+               requires=('R006',), age_from=preview, age_seconds=598, age_limit=599.5, unchanged=False, effect='profile-write-device', foreign=FOREIGN,
                checks={'success': True}, stored={'client_fixed_ips/10.44.0.22/mac': '02:00:00:00:00:22'},
                fake_lengths={'ros/~1ip~1dhcp-server~1lease': 3, 'ikuai/dhcp_static': 1})
     yield Case('R005/token-past-600-seconds', 'R005', 'POST', '/api/client-devices/fixed-ip/apply', 409,
                ('R005-B07', 'R005-F13', 'H0045', 'H0046', 'T05'),
                document={'profile_id': 'alpha', 'token': Ref(preview, '/body/token')}, requires=('R006',),
-               pause_before=6, message='固定 IP 预览无效或已过期，请重新预览确认。',
+               age_from=preview, age_seconds=604, age_anchor='ended', message='固定 IP 预览无效或已过期，请重新预览确认。',
                expected_requests=({'match': {'peer': 'ros'}, 'count': 0}, {'match': {'peer': 'ikuai'}, 'count': 0}))
 
 
