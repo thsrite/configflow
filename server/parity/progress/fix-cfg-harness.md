@@ -1,6 +1,6 @@
 # CFG harness 工单修复
 
-分支`go-fix-cfg-harness`，起点`go@1439e503d`。仅tools/测试证据及文档；业务代码不改，不推送，不派子agent。范围：CFG-05、10、04；CFG-08等待协调者通知C33合入后复验。
+CFG-05/10/04分支`go-fix-cfg-harness`，起点`go@1439e503d`；后续CFG-08分支`go-fix-cfg-08`，起点`go@9c88c4390`。仅tools/测试证据及文档；业务代码不改，不推送，不派子agent。CFG-05/10已实跑关闭13条；CFG-04保持A17依赖未实现；CFG-08现已在C33合入后实跑关闭2条。以下保留各批次当时的等待状态。
 
 ## 第一批：比较器及明确的未实现依赖
 
@@ -44,3 +44,25 @@ R087-S91: compared, diffs0
 R138-S91: compared, diffs0
 current compared3 / different0 / design_errors=[] / seconds15.85 / exit0
 ```
+
+## 第三批：C33合入后CFG-08最终复验
+
+- 接协调者C33已合入通知，从最新go9c88c4390新建go-fix-cfg-08。标准runner在.64真实启动Flask及公开Go入口，原有fixture/比较器均未改。完整rule-proxy-local-cache组20变体140.10秒全部compared，different0、design_errors=[]、exit0；开头154项自检7.578秒OK，并检出故意破坏的Go响应。
+- R087-B91与R138-B91的absolute-query变体均Python200/Go200，正文严格为`full:inline.example`；完整稳定headers/SQLite/files无差异，external fake请求数两端均0。相邻的跨profile相对URL、带query的相对URL和禁用library引用仍按原预期拒绝，未为本次复验放宽安全边界。
+- **最终判定：CFG-08 closed。** 先前Go502是C33公共content路由未接通的依赖前提问题；现在正常派发成功，不是“Go拒绝Python安全漏洞”，不需要新增Go更正确/行为变化批准。
+- 关闭归因4786d7f86（C33 shared-source/content路由及server接线），实跑集成基线9c88c4390。只补有限两条identity、原差异路径及实际200/200/closed的自动归因，避免后续refresh丢失修复来源；没有改比较器、请求fixture或业务实现。归因负控覆盖open/blocked、错误route/group/variant/status及额外SQL路径。
+- 本批报告reviews closed284/accepted257/open50/blocked2/separate1；仅CFG-08两条从open关闭，其他工单不改判定。canonical保留未重跑组的旧基线，历史Go未实现计数不代表C33合入后所有路由仍未接通；本次不宣称完整config全量复验。
+
+| 用例 / variant | 路由 | Python / Go | 正文 / 外部fake / 存储 | 判定 |
+|---|---|---|---|---|
+| R087-B91 / absolute-query-dispatches-internal-content-endpoint | GET /api/mosdns/rule-proxy | 200 / 200 | full:inline.example；0 / 0；无差异 | closed，4786d7f86 |
+| R138-B91 / absolute-query-dispatches-internal-content-endpoint | GET /api/profiles/\<profile_id\>/mosdns/rule-proxy | 200 / 200 | full:inline.example；0 / 0；无差异 | closed，4786d7f86 |
+
+```text
+RT_HOST=sunbroke@192.168.0.64 rt --back server/tools/configdiff/testdata/results.json --back server/parity/difftest-config-findings.md -- bash -lc 'server/tools/configdiff/native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups rule-proxy-local-cache --baseline 9c88c4390'
+R087-B91 absolute-query-dispatches-internal-content-endpoint: compared, diffs0
+R138-B91 absolute-query-dispatches-internal-content-endpoint: compared, diffs0
+groups1 / variants20 / compared20 / different0 / design_errors=[] / seconds140.10 / exit0
+```
+
+关闭归因补齐后，.64全部155项自检10.909秒OK；refresh确认两项closed均带4786d7f86，原始10666个实际case verdict未由注释刷新修改。canonical覆盖索引再次通过，228路由、R/H5428、未知编号/遗漏/缺S-F/运行夹具错误均空。只更新本次两条关闭证据与自动归因，不更改任何HTTP、协议、SQL/files比较条件。

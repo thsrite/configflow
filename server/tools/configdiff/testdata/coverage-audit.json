@@ -1289,9 +1289,9 @@
   "routes": 228,
   "request_variants": 10666,
   "raw_verdicts": {
-    "compared": 5767,
+    "compared": 5769,
     "go-unimplemented": 4476,
-    "different": 309,
+    "different": 307,
     "go-unimplemented-dependency": 113,
     "O12-separate": 1
   },

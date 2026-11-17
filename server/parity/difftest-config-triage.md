@@ -123,6 +123,8 @@
 - **在途Go位置**：`go-port-c33@a4445071c:server/internal/api/rulelibrary/routes.go:123` 已注册两个公共content前缀，`server/internal/server/server.go:65` 已接线，尚未在本证据基线出现。主线文档也有[明确C33 deferred](PROGRESS-config.md#c33--rule-library-and-proxy-group-routes)。
 - **派单/验收**：先标识C33 manifest未接通的隐式依赖，不能当成已完成C28安全拒绝；C33合入后自动启用重跑这2例。若仍502再转为Go bug并定位callback，不能预先宣布关闭。覆盖无query/带query、两个prefix、profile边界和普通鉴权的反例，不为绿灯绕过middleware；**不把这2例批准为“Go拒绝Python安全漏洞”。**
 
+**处理结果更新：closed（Go9c88c4390，.64实跑）。** C33合入后，原fixture/比较器不变，R087-B91与R138-B91的absolute-query均200/200，正文均严格为`full:inline.example`；完整响应/SQL/files及external fake零请求检查通过。所在组20变体全部compared、design_errors=[]，140.10秒exit0。归因C33内容路由及server接线提交4786d7f86；原502不再出现，无须登记“Go更正确”的行为变化。此结果仅更新CFG-08，前文67条分诊表和owner汇总保留当时的快照；最新证据见[修复进度第三批](progress/fix-cfg-harness.md#第三批c33合入后cfg-08最终复验)和findings。
+
 <a id="cfg-09"></a>
 
 ## CFG-09 · 写 task receipt 的 rename 错误被当成非法 URL

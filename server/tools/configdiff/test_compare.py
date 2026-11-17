@@ -17,6 +17,23 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_cfg08_closure_requires_actual_equal_status_and_exact_absolute_query_identity(self):
+        from config_finding_resolutions import annotate
+        for case, route in [('R087-B91', 'GET /api/mosdns/rule-proxy'),
+                ('R138-B91', 'GET /api/profiles/<profile_id>/mosdns/rule-proxy')]:
+            row = {'case': case, 'route': route, 'group': 'rule-proxy-local-cache',
+                'variant': 'absolute-query-dispatches-internal-content-endpoint', 'status': 'closed',
+                'python_status': 200, 'go_status': 200,
+                'differences': [{'path': path} for path in ('status', 'headers.content-type', 'body')]}
+            self.assertEqual(annotate([copy.deepcopy(row)])[0]['fix_commits'], ['4786d7f86'])
+            for mutation in ('open', 'blocked', 'route', 'variant', 'group', 'status', 'SQL'):
+                bad = copy.deepcopy(row)
+                if mutation in ('open', 'blocked'): bad['status'] = mutation
+                elif mutation in ('route', 'variant', 'group'): bad[mutation] += '-wrong'
+                elif mutation == 'status': bad['go_status'] = 502
+                else: bad['differences'].append({'path': 'db.fields.unrelated.revision'})
+                self.assertNotIn('4786d7f86', annotate([bad])[0]['fix_commits'], mutation)
+
     def test_protocol_closure_attribution_requires_an_actual_comparison_and_exact_identity(self):
         from config_finding_resolutions import annotate
         vectors = json.loads((Path(__file__).parent / 'testdata/cfg-harness-repairs.json').read_text())

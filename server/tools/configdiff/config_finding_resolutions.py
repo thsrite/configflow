@@ -331,6 +331,14 @@ def repair_commits(item):
         return []
     group = item['group']
     paths = {difference['path'] for difference in item['differences']}
+    if (group == 'rule-proxy-local-cache'
+            and item.get('variant') == 'absolute-query-dispatches-internal-content-endpoint'
+            and (item.get('case'), item.get('route')) in {
+                ('R087-B91', 'GET /api/mosdns/rule-proxy'),
+                ('R138-B91', 'GET /api/profiles/<profile_id>/mosdns/rule-proxy')}
+            and (item.get('python_status'), item.get('go_status')) == (200, 200)
+            and paths == {'status', 'headers.content-type', 'body'}):
+        return ['4786d7f86']
     for vector in json.loads((Path(__file__).parent / 'testdata/cfg-harness-repairs.json').read_text()):
         if (all(item.get(key) == vector[key] for key in ('case', 'group', 'variant', 'route'))
                 and sorted(paths) == vector['original_paths']):
@@ -387,6 +395,8 @@ def annotate(records):
             item['status'] = 'accepted'
         item['fix_commits'] = repair_commits(item)
         item.pop('closure_note', None)
+        if item['status'] == 'closed' and '4786d7f86' in item['fix_commits']:
+            item['closure_note'] = 'CFG-08：C33公共content路由接线；Go9c88c4390实跑两端200及完整内容/存储相比通过，旧502为依赖未接通，不是安全拒绝'
         if item['status'] == 'closed' and '2896b8d9e' in item['fix_commits']:
             item['closure_note'] = '2896b8d9e为CFG-05/10窄协议比较器修正，不是Go业务修复；已实际重跑，目标/认证/顺序/次数及完整响应/SQL/files继续严格比'
         if item['status'] == 'closed' and 'b93269d6d' in item['fix_commits']:

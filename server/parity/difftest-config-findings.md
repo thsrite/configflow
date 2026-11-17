@@ -211,10 +211,10 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | R058-B03 / stored-legacy-extension | `PUT /api/domain-discovery/settings` | accepted | [behaviour-changes.md · R058-B03](behaviour-changes.md#config-step-b--coordinator-decisions) | 28e6e0c12 | 200 / 200 |
 | R075-F08 / real-stat-EACCES-with-database-still-readable | `GET /api/logs/info` | open | — | a08c4cc27 | 500 / 200 |
 | R087-B04 / text/B04 | `GET /api/mosdns/rule-proxy` | closed | 8f3d36ad | 28e6e0c12 | 422 / 422 |
-| R087-B91 / absolute-query-dispatches-internal-content-endpoint | `GET /api/mosdns/rule-proxy` | open | — | a08c4cc27 | 200 / 502 |
+| R087-B91 / absolute-query-dispatches-internal-content-endpoint | `GET /api/mosdns/rule-proxy` | closed | 4786d7f86；CFG-08：C33公共content路由接线；Go9c88c4390实跑两端200及完整内容/存储相比通过，旧502为依赖未接通，不是安全拒绝 | 9c88c4390 | 200 / 200 |
 | R087-F13 / text/F13 | `GET /api/mosdns/rule-proxy` | closed | 8f3d36ad | 28e6e0c12 | 422 / 422 |
 | R087-F16 / receipt-path-is-directory | `GET /api/mosdns/rule-proxy` | open | — | a08c4cc27 | 500 / 400 |
-| R087-S90 / declared-no-cache-download-failure | `GET /api/mosdns/rule-proxy` | closed | 8f3d36ad | a08c4cc27 | 502 / 502 |
+| R087-S90 / declared-no-cache-download-failure | `GET /api/mosdns/rule-proxy` | closed | 8f3d36ad | 9c88c4390 | 502 / 502 |
 | R087-S91 /  | `GET /api/mosdns/rule-proxy` | closed | 2896b8d9e；2896b8d9e为CFG-05/10窄协议比较器修正，不是Go业务修复；已实际重跑，目标/认证/顺序/次数及完整响应/SQL/files继续严格比 | 1439e503d | 200 / 200 |
 | R090-F10 / SQLite-trigger-rejects-real-editor-commit | `POST /api/mosdns/settings` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | 28e6e0c12 | 500 / 500 |
 | R103-F08 /  | `POST /api/nodes/reorder` | accepted | [behaviour-changes.md · Step B #1](behaviour-changes.md#config-step-b--coordinator-decisions) | 28e6e0c12 | 404 / 400 |
@@ -280,10 +280,10 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | R113-S03 /  | `POST /api/oxidns/template-preview` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 200 / 200 |
 | R122-S05 / failed-source-valid-cache | `GET /api/profiles/<profile_id>/aggregations/<agg_id>/provider` | closed | e4b3fb39f；e4b3fb39f为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 200 / 200 |
 | R138-B04 / text/B04 | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | closed | 8f3d36ad | 28e6e0c12 | 422 / 422 |
-| R138-B91 / absolute-query-dispatches-internal-content-endpoint | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | open | — | a08c4cc27 | 200 / 502 |
+| R138-B91 / absolute-query-dispatches-internal-content-endpoint | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | closed | 4786d7f86；CFG-08：C33公共content路由接线；Go9c88c4390实跑两端200及完整内容/存储相比通过，旧502为依赖未接通，不是安全拒绝 | 9c88c4390 | 200 / 200 |
 | R138-F13 / text/F13 | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | closed | 8f3d36ad | 28e6e0c12 | 422 / 422 |
 | R138-F16 / receipt-path-is-directory | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | open | — | a08c4cc27 | 500 / 400 |
-| R138-S90 / declared-no-cache-download-failure | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | closed | 8f3d36ad | a08c4cc27 | 502 / 502 |
+| R138-S90 / declared-no-cache-download-failure | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | closed | 8f3d36ad | 9c88c4390 | 502 / 502 |
 | R138-S91 /  | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | closed | 2896b8d9e；2896b8d9e为CFG-05/10窄协议比较器修正，不是Go业务修复；已实际重跑，目标/认证/顺序/次数及完整响应/SQL/files继续严格比 | 1439e503d | 200 / 200 |
 | R140-B01 /  | `POST /api/profiles/<profile_id>/oxidns/common-settings/apply` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 200 / 200 |
 | R140-B02 / empty-list | `POST /api/profiles/<profile_id>/oxidns/common-settings/apply` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 200 / 200 |
@@ -853,16 +853,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | `headers.cache-control` | value | '' | 'no-store' |
 | `body` | type | {'message': 'Invalid remote URL', 'success': False} | [] |
 
-## R087-B91 / absolute-query-dispatches-internal-content-endpoint
-
-路由：`GET /api/mosdns/rule-proxy`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `status` | value | 200 | 502 |
-| `headers.content-type` | value | 'text/plain; charset=utf-8' | 'application/json' |
-| `body` | type | ['full:inline.example'] | {'code': 'RULE_SOURCE_UNAVAILABLE', 'message': '规则源暂时不可用，未返回旧缓存；请恢复规则源后重试。', 'success': False} |
-
 ## R087-F16 / receipt-path-is-directory
 
 路由：`GET /api/mosdns/rule-proxy`；状态：different
@@ -913,16 +903,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | `headers.content-type` | value | 'application/json' | 'text/plain; charset=utf-8' |
 | `headers.cache-control` | value | '' | 'no-store' |
 | `body` | type | {'message': 'Invalid remote URL', 'success': False} | [] |
-
-## R138-B91 / absolute-query-dispatches-internal-content-endpoint
-
-路由：`GET /api/profiles/<profile_id>/mosdns/rule-proxy`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `status` | value | 200 | 502 |
-| `headers.content-type` | value | 'text/plain; charset=utf-8' | 'application/json' |
-| `body` | type | ['full:inline.example'] | {'code': 'RULE_SOURCE_UNAVAILABLE', 'message': '规则源暂时不可用，未返回旧缓存；请恢复规则源后重试。', 'success': False} |
 
 ## R138-F16 / receipt-path-is-directory
 
