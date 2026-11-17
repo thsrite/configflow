@@ -2,6 +2,7 @@ package repo_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io/fs"
 	"os"
@@ -29,6 +30,76 @@ func commitRuntime(t *testing.T) (*repo.Repository, *lifecycle.Runtime, context.
 	runtime.Start(ctx)
 	t.Cleanup(func() { runtime.Shutdown(context.Background()) })
 	return r, runtime, ctx
+}
+
+func TestO36cSQLiteLockRuntimeBoundary(t *testing.T) {
+	for _, shutdown := range []bool{true, false} {
+		name := "disconnect"
+		if shutdown {
+			name = "shutdown"
+		}
+		t.Run(name, func(t *testing.T) {
+			r, runtime, base := commitRuntime(t)
+			before, files := commitState(t, r)
+			entry, err := r.Store().Load()
+			if err != nil {
+				t.Fatal(err)
+			}
+			locked, release := make(chan struct{}), make(chan struct{})
+			var once sync.Once
+			unblock := func() { once.Do(func() { close(release) }) }
+			defer unblock()
+			holdError := errors.New("synthetic SQLite holder rollback")
+			r.Store().BeforeCommit = func() error {
+				close(locked)
+				<-release
+				return holdError
+			}
+			defer func() { r.Store().BeforeCommit = nil }()
+			holder := make(chan error, 1)
+			go func() {
+				_, _, err := r.Store().Commit(entry, entry.Document, map[string]json.RawMessage{"o36c_holder": json.RawMessage(`true`)})
+				holder <- err
+			}()
+			select {
+			case <-locked:
+			case <-time.After(10 * time.Second):
+				t.Fatal("holder did not acquire SQLite write lock")
+			}
+			request, disconnect := context.WithCancel(runtime.BindRequest(base))
+			defer disconnect()
+			work := lifecycle.Detach(request)
+			done := make(chan error, 1)
+			go func() {
+				other := store.New(r.Store().Path(), repo.LockTimeout)
+				_, _, err := other.CommitContext(work, entry, entry.Document, map[string]json.RawMessage{"o36c_target": json.RawMessage(`true`)})
+				done <- err
+			}()
+			select {
+			case err := <-done:
+				t.Fatalf("writer escaped SQLite lock: %v", err)
+			case <-time.After(50 * time.Millisecond):
+			}
+			if shutdown {
+				runtime.Shutdown(context.Background())
+			} else {
+				disconnect()
+			}
+			unblock()
+			if err := commitResult(t, holder); !errors.Is(err, holdError) {
+				t.Fatal("SQLite holder rollback", err)
+			}
+			err = commitResult(t, done)
+			after, afterFiles := commitState(t, r)
+			if shutdown {
+				if !errors.Is(err, context.Canceled) || before != after || !reflect.DeepEqual(files, afterFiles) {
+					t.Fatalf("SQLite waiter committed after shutdown: %v", err)
+				}
+			} else if err != nil || before == after || !reflect.DeepEqual(files, afterFiles) {
+				t.Fatalf("disconnected SQLite waiter did not commit: %v", err)
+			}
+		})
+	}
 }
 
 func commitMarker(ctx context.Context, r *repo.Repository, marker string) error {

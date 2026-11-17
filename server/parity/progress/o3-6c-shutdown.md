@@ -166,3 +166,10 @@ F2/F7/崩溃恢复控制race1通过8.088s，相关vet通过。临时后续ba796e
 ForgetContext的单行接线，C33进go后再带入正式6c并重验；当前不能算正式基线已通过。
 
 最终全仓gate尚未开始。等待C33合入通知后rebase、完成上述集成与最终gate；排队15分钟上限不变。
+
+## SQLite内部锁的额外控制
+
+新增TestO36cSQLiteLockRuntimeBoundary，直接在真实SQLite事务的BeforeCommit持写锁，
+另一个Store.CommitContext等待BEGIN IMMEDIATE，区分repo L3与SQLite内部锁。
+Runtime关机后放行holder回滚，候选不提交（Fingerprint/文件不变）；仅请求断开则metadata提交。
+这条是现有修复的额外控制，不冒称新的原实现红证据；.64 race count3通过4.414s，repo/store vet通过。
