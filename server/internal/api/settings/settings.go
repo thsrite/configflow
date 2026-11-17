@@ -185,6 +185,9 @@ func requestJSONObject(c *httpx.Ctx) (*jsonx.Object, error) {
 }
 
 func handleServerDomain(c *httpx.Ctx) (*httpx.Response, error) {
+	if c.Method() == "POST" && invalidUnicode(c) {
+		return failure(400, msgInvalidUnicode), nil
+	}
 	config, err := repo.GetSystemConfig(c.Context())
 	if err != nil {
 		return nil, err
@@ -222,6 +225,9 @@ func handleServerDomain(c *httpx.Ctx) (*httpx.Response, error) {
 }
 
 func handleConfigToken(c *httpx.Ctx) (*httpx.Response, error) {
+	if c.Method() == "POST" && invalidUnicode(c) {
+		return failure(400, msgInvalidUnicode), nil
+	}
 	config, err := repo.GetSystemConfig(c.Context())
 	if err != nil {
 		return nil, err

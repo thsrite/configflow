@@ -5,7 +5,7 @@
 | 项 | 状态/证据 |
 |---|---|
 | 1 非对象/排序字段 | 已修。`.63 go test -run TestConfigFindingsRejectInvalidRequestShapesWithoutEffects ./internal/api/subscriptions/`：修前 `[1]` 500；修后三个接口及非法 legacy/ids 字段均400 JSON，状态不变、零上游调用。nodes/subscriptions/rules 包测试通过。 |
-| 2 孤立代理项 | 待复现 |
+| 2 孤立代理项 | 已修。`.63 TestConfigFindingsRejectUnpairedSurrogatesWithoutCommit` 修前两端点均200并写入U+FFFD；修后高/低/连续孤立项400且存储不变；合法代理对、U+FFFD、转义反斜杠仍200。settings race通过8.953s。 |
 | 3 JSON 错误出口 | 待复现 |
 | 4 失败/退避通知 | 待复现 |
 | 5 同值 PUT revision | 待复现 |
