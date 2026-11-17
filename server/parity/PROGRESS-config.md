@@ -526,18 +526,26 @@ and its generators. The frozen 12,479-row corpus now checks native YAML meaning
 and comment bytes, not ruamel formatting. Scalar tokens use in-place edits when
 positions/metadata are stable and no alias consumer can change; whole-line block
 mapping pair deletions splice when bounds are unambiguous (never first key after
-`- `, never leaving an implicit empty map). New nodes, shared/merged listener
+`- `, never leaving an implicit empty map). Flow values inside a removed pair
+must parse completely on their starting line; multiline flow values rewrite.
+Plain scalars followed by tab-only continuation lines also rewrite. New nodes, shared/merged listener
 copies, flow removals, block/multiline scalar changes, tags/anchors or uncertain
 ranges use whole-document yaml.v3 encoding. Missing annotations are retained;
 undefined/forward aliases expand to their original values. Every result is
 reparsed and Equal-checked; failures keep the source and existing unsafe-edit 400.
 CRLF splice/rewrite regressions pass. Shared Marshal normalises folded values to
-literal style to prevent yaml.v3's extra-newline bug (coordinator approved).
+literal style to prevent yaml.v3's extra-newline bug. Non-scalar-key line comments
+move above the pair, and Tab-containing strings use double quotes retaining tags
+(coordinator-approved shared Marshal corrections).
 
 Splices prove preservation of original comment bytes rather than yaml.v3's
 post-edit annotation count (the scanner may leave an orphan note unattached).
 Whole rewrites restore missing notes and verify each one. Exact classes,
-commands and corpus counts: progress/n7-2.md. Final .32 gates are recorded there; await Opus review;
+commands and corpus counts: progress/n7-2.md. Final .32 formatting/vet/race,
+three 60s fuzz targets, full Go suite (-p=2), all ten CONFIGFLOW_DIFF packages
+and proddiff (new=0 stale=0) PASS. The initial importer 3s resource-probe timeout
+passed both isolated and in the reduced-parallelism full rerun; no limit changed.
+Await Opus review;
 this entry does not mark C11 verified. Proxy-groups route difftest → C33 deferred.
 
 ## C12 — converter common, Mihomo node conversion, dialer references, EasyTier
