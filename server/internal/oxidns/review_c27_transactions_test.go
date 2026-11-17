@@ -165,7 +165,6 @@ func c27Transaction(r *repo.Repository, ctx context.Context, id, choice string) 
 // Shutdown still cancels that admission. Compute using locked before/after
 // snapshots and install settings only after success, as required by C32.
 func TestC27ReviewCanceledTransactionWaitsAndCommits(t *testing.T) {
-	t.Parallel()
 	r, base := c27Repository(t, false)
 	locked, release := make(chan struct{}), make(chan struct{})
 	var releaseOnce sync.Once
