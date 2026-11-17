@@ -73,7 +73,7 @@ Python's `backend/routers` is one big import cycle (most cross-module imports ar
 | R05 | iKuai driver | 1179 | verified | HR | R01, R03; shared requests client³ | – | internal/routers |
 | R06 | device route editor (RouterOS/iKuai static routes) | 684 | verified | HR | R04, R05 | – | internal/routers |
 | R07 | RouterOS NAT address lists, address-list sync, test helpers | 1422 | verified | HR | R03, R04 | – | internal/routers, internal/routers/routerfake |
-| R08 | RouterOS policy routing (plan, write, view) | 1349 | ported | HR | R07, C05, C26 (`normalize_policies`, present) | – | internal/routers |
+| R08 | RouterOS policy routing (plan, write, view) | 1349 | verified | HR | R07, C05, C26 (`normalize_policies`, present) | – | internal/routers |
 | R09 | forced DNS (DNS guard), IPv4 same-port forward hint | 773 | missing | HR | R04, R07 | – | internal/routers |
 | R10 | IPv6 policy, IPv6 fake-IP, IPv6 rule-set routes | 1247 | missing | HR | R04, R09 | – | internal/routers |
 | R11 | IPv6 PD guard, IPv6 DNS, RouterOS IPv6 readiness | 1161 | missing | HR | R10 | – | internal/routers |
@@ -487,7 +487,17 @@ No push. L5 and fresh Opus review remain required before production / `verified`
 
 ## R08 — RouterOS policy routing
 
-**Status: `ported`** · HR · prereqs: R07, C05, C26 (`normalize_policies`, present in `internal/oxidns`) · Go: internal/routers
+**Status: `verified`** (O4 Opus HR review 2026-11-17, [review-r08.md](review-r08.md): 0 high, 1 medium, 5 low, all fixed) · HR · prereqs: R07, C05, C26 (`normalize_policies`, present in `internal/oxidns`) · Go: internal/routers
+
+O4 review summary: Medium F1 the porter's moved-member fix covered only R08's preflight; the shared
+`restoreDeleteAddresses` (R07 `RestoreNATLists`) still skipped a fresh member moved into another list as
+"already deleted" → it now locates missing IDs and keeps/reports them. Low F2 `SubtractNetworks` returned an
+error-fallback empty list on mixed families (now per family); F3 `prepare_static` `[]` dropped by omitempty;
+F4 view role keyed by an empty list name; F5 vanished console-restored route used the uncertain-write text
+instead of Python's read-back mismatch; F6 comments still promised cancellation-proof rollback after the
+whole-driver `WithoutCancel` → `lifecycle.Detach` move (behaviour accepted; R12 §3.3 wording to update).
+Tests `r08_review_test.go` (all five fail on the hand-back). Codex-port quality: no high finding, fallback
+not triggered. R12/R14 requirements, R09 merge overlap and two extra L5 items are in the review file.
 
 Files:
 - `backend/routers/ros_policy.py` (520), `backend/routers/ros_policy_write.py` (782), `backend/routers/ros_policy_view.py` (47)
@@ -530,7 +540,7 @@ Intentional differences / findings for O12:
 1. **Medium, Python bug fixed:** rollback could mistake an address ID moved into another list for an already deleted member and report success. R08 rollback preflight locates missing journal IDs globally, checks complete configs before deletion, preserves the external edit and reports incomplete rollback. TestR08PreviewAndOwnershipGuards proves it.
 2. **Safety corrections:** malformed/missing/duplicate identity is refused instead of Python's KeyError or accidental match; a failed rollback proof stops later deletions and retains dependent replacement protection (shared R07 rule). Route migration guards the whole batch before deleting any row, rather than deleting an earlier prefix before a later guard fails. Existing R04/R07 fresh-ID, dynamic-row, uncertain-write and script-size safety fixes are reused.
 3. **Native opaque revision:** ROSPolicyDigest uses encoding/json (N8 D2), so non-ASCII/number-text hash bytes may differ once; typed fields, user messages, generated device semantics and raw unknown manifest fields are retained. No Python encoder/emulation added.
-4. **No open finding.** The port's own medium report/NAT-retirement wiring error was caught and fixed by the complete BuildReport differential below. Opus HR review is still required; status is ported, never verified.
+4. **No open finding.** The port's own medium report/NAT-retirement wiring error was caught and fixed by the complete BuildReport differential below. (Hand-back state; the O4 review above set `verified`.)
 
 Self-audit follow-up: full BuildReport differential `report_policy_nat_retirement` caught a
 medium integration defect before hand-back: PolicyNATRetiring must be the NAT resources in the
