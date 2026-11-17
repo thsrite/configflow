@@ -49,12 +49,17 @@ encoder issues: document-wrapper comments lost and empty null keys changed to st
 finding; old/new corpus classification and invalid explicit tags (e.g. `!!null [a]`) are explicitly N7-3
 gates (§5.4). Editor is N7-2; consumers/writers migrate in N7-3/N7-4. Independent review pending.
 
-## O3-1 — lockx primitives (in progress, 2026-11-17)
+## O3-1 — lockx primitives (ported, 2026-11-17)
 
-Branch `go-o3-1`: new in-process locks only, no caller migration or new file locks. Mutex/Keyed/RWMutex
-and L1–L3 order checker pass .63 tests/gofmt/vet; Flight and final acceptance in progress. Coordinator's
-API clarifications are in `design/o3-concurrency.md` §2.2; handoff and commands are in
-[progress/o3-1-lockx.md](progress/o3-1-lockx.md). L4/L5 remain sync.Mutex; consumers migrate in O3-6.
+Branch `go-o3-1`, code commits `11d187c8` and `9cae8b68`: new Mutex/Keyed/RWMutex/Flight with L1–L3
+context order checker; no caller migration or file I/O. L4/L5 remain sync.Mutex. Coordinator's API
+clarifications are in `design/o3-concurrency.md` §2.2; full handoff, exact commands and output are in
+[progress/o3-1-lockx.md](progress/o3-1-lockx.md). Final .32 gofmt/vet silent, race-count3 **8.067s**,
+full Go suite passes (lockx 0.332s); proddiff 23 self-checks PASS, 2831 cases/415 comparisons,
+`baseline: new=0 stale=0`. Main tests assert zero violations; negative checker/panic logging tests use
+child processes. Includes 10k-key cleanup, concurrent stress, explicit limit/try semantics, cancelled
+waiter drainage and shared-work lifetime tests. Non-test lines 0 → 568, no new dependency. No open
+O3-1 finding; independent review pending. O3-2 integrates Spawner; O3-6 migrates consumers.
 
 ## Known accepted differences (do not rediscover)
 
