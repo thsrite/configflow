@@ -49,6 +49,36 @@ def pair(python=None, go=None):
 
 
 class RunnerTests(unittest.TestCase):
+    def test_actual_create_comparison_uses_scoped_storage_bound_ids_and_retains_raw_references(self):
+        def created_side(ident, name='合成新路由🧪', wrong_stored_id=False):
+            before = ObservationSide().before
+            before['database']['sections'] = {'columns': ['scope', 'owner'], 'rows': []}
+            before['database']['fields']['rows'] = [
+                ['profile', 'alpha', '_revision', 0, 1, 1],
+                ['profile', 'alpha', 'routers', 1, {'items': [{'id': 'seed'}]}, 1]]
+            after = copy.deepcopy(before)
+            after['database']['fields']['rows'][0][4:] = [2, 2]
+            after['database']['fields']['rows'][1][5] = 2
+            router = {'id': ident, 'name': name}
+            after['database']['fields']['rows'][1][4]['items'].append({**router,
+                **({'id': 'wrong-store'} if wrong_stored_id else {})})
+            return ObservationSide(200, before, after, {'success': True, 'router': router})
+        case = Case('create', 'R008', 'POST', '/api/routers', 200,
+                    unchanged=False, effect='router-create')
+        world = pair(created_side('router_000000000001'), created_side('native-id-1'))
+        result = execute(world, case, {('POST', '/api/routers')}, load()[0])
+        self.assertEqual(result['status'], 'compared')
+        self.assertEqual(result['python']['body']['router']['id'], 'router_000000000001')
+        self.assertEqual(result['go']['body']['router']['id'], 'native-id-1')
+        self.assertEqual(world.go.observations['create']['body']['router']['id'], 'native-id-1')
+        for wrong_name, wrong_id in (('错误名称', False), ('合成新路由🧪', True)):
+            world = pair(created_side('router_000000000001'), created_side('native-id-1', wrong_name, wrong_id))
+            result = execute(world, case, {('POST', '/api/routers')}, load()[0])
+            self.assertEqual(result['status'], 'different')
+            self.assertTrue(result['differences'])
+            if wrong_id:
+                self.assertIn('/safety/generated-router-identity', {row['path'] for row in result['differences']})
+
     def test_retained_profile_fields_reject_note_only_dns_rewrite(self):
         routes, _ = load()
         before = ObservationSide().before

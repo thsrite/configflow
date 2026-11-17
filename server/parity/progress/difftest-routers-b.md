@@ -1277,3 +1277,36 @@ new increments not composed, main findings full header unchanged. Final gate and
 final rebase pending. Next priority remaining wrapper/helper coverage, scoped
 dynamic identities/times/generated content, device failure/compensation and
 background/crash paths. Final gate private snapshot scope was already authorized.
+
+Generated router-ID comparison increment:
+- RouterIDs is now used by the actual execute comparator for successful R008
+  POSTs only. Establishes a per-profile historical injective pair only after
+  each side returns a nonempty URL-safe path segment and appends exactly one
+  stored router with that ID, preserving all previous routers. Go ID format
+  need not copy Python's router_12hex format; existing Python prerequisite keeps
+  checking its actual format. Own-side DELETE references remain raw/unchanged.
+- Projection touches only the explicit R007 routers[].id / R008,R010 router.id
+  response slots and the selected owner's stored routers.items[].id slots.
+  Unknown fields, names, nested last_probe IDs, messages, revision/fingerprint/
+  token, device IDs/scripts and all receipt/file paths stay strict. No regex
+  substitution in strings. Raw result responses and side-local Ref values are
+  kept; projection happens on deep copies for comparison only.
+- Negative controls prove a different native ID with correct persistence can
+  compare, while wrong stored ID, missing/extra/modified records, unsafe/reused
+  identities and altered names fail the real execute comparison. Cross-profile
+  values cannot borrow mappings. Other dynamic families (times/editor revisions/
+  generated configs/device identities) remain pending; no blanket normalizer.
+- Initial comparator self-check fixture omitted the sections table required by
+  the existing profile_write invariant; corrected that fixture, not the invariant.
+  No product request ran after that failed self-check. Then ran the command below.
+
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY=/tmp/routerdiff-build-302rx1dg-latest/configflow; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python -m unittest -v test_identities test_compare test_runner; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world router-creations --output /tmp/routerdiff-create-identities-regression.json'`
+=> Ran32 tests0.749s/OK;80 real Python create/delete HTTP recipes6.15s,
+domain missing80/references4/audits0 in this subset/complete=false. No new bug.
+This is comparator negative-control proof plus Python prerequisite regression;
+native routes remain unregistered, so no actual Go creation parity is claimed.
+
+No active command. Declarations358/remaining1943 unchanged. Last full composition
+37937739 remains3054/301, not replaced by subsets. Final composition/gate/rebase
+still pending. Next work continues remaining helper/wrapper/device/background
+coverage and other scoped dynamic comparisons; task remains incomplete.

@@ -47,6 +47,7 @@ from tokens import inspect_python_token
 from seed import JWT_SECRET
 from bugs import BUGS
 from audits import evaluate
+from identities import RouterIDs
 
 
 def shape(path):
@@ -435,13 +436,25 @@ def execute(pair, case, available, routes):
                       'go': startup_failure, 'category': 'process'})
     go_bug_outcome = None
     if implemented and not blocked_reference:
+        if not hasattr(pair, 'router_ids'):
+            pair.router_ids = RouterIDs()
+        if (case.route == 'R008' and case.method == 'POST' and case.effect == 'router-create'
+                and observations['go']['status'] == observations['python']['status'] == 200):
+            try:
+                pair.router_ids.created(case.profile, observations, snapshots)
+            except ValueError as error:
+                found.append({'path': '/safety/generated-router-identity',
+                              'python': 'fresh URL-safe identity bound to exactly the appended stored router',
+                              'go': str(error), 'category': 'safety'})
         if case.html_error and observations['go']['status'] == 500 and observations['go']['kind'] == 'text':
             # X03 explicitly excludes implementation-specific HTML prose only
             # for these individually named Python uncaught-exception cases.
             for observation in observations.values():
                 observation['body'] = '<HTML 500 body excluded by reviewed X03>'
-        found += differences(observations['python'], observations['go'], '/http')
-        found += differences(snapshots['python']['after'], snapshots['go']['after'], '/state')
+        found += differences(pair.router_ids.response('python', case.profile, case.route, observations['python']),
+                             pair.router_ids.response('go', case.profile, case.route, observations['go']), '/http')
+        found += differences(pair.router_ids.snapshot('python', snapshots['python']['after']),
+                             pair.router_ids.snapshot('go', snapshots['go']['after']), '/state')
         if case.unchanged:
             found += differences(snapshots['go']['before'], snapshots['go']['after'], '/go-unexpected-write')
         if case.python_bug == 'NATIVE_SIDE_REFERENCE_PROTOCOL_COLLISION':
