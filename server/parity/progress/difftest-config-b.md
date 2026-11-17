@@ -2478,3 +2478,9 @@ MUTATION-CHECK detected deliberately corrupted Go body.authEnabled
 
 - rebase到go c14763b3（147个任务提交重放）；behaviour-changes唯一冲突保留集成C32和维护者批准Web退役两节。工具修正归因同步为6a99ee8b/1b280f1a，历史记录不重写。
 - 最终门禁固定.64、-p4，官方gate持槽后同槽运行configdiff all；独立final-results.json/final-findings.md保存本轮实际结果。此处尚未宣称门禁通过。
+
+## 批次 149：首次最终Go门禁I/O失败与磁盘临时目录复验
+
+- .64 c14763b3官方门禁：gofmt/vet/两种tag构建通过，proddiff exit0、baseline new=0 stale=0；完整race执行结束，但agents/monitor两项测试报disk I/O error (4874)，官方Go gate=1，未进入后续Go difftest。原始日志/tmp/gate.rU2HUZ/race.log保留，不能称GATE PASS。失败时检查/tmp尚有1.9GiB，home171GiB；不能仅凭检查时余量断定峰值或根因。
+- 同一官方锁槽内configdiff all继续，基线保持c14763b3，未同步或修改运行中的.64副本。源端真实执行和业务差异仍按原冻结基线记录。
+- go新增895f5e21临时目录调整及ca157bca/0dace4ae规则复核；本地rebase完成，工具归因引用更新为25f1364a/d7e92cf2。准备在.32通过官方gate复验，显式使用home磁盘TMPDIR，复验与原始失败分开记录。全量结束后针对这次规则增量复验相关公开黑盒组，不把旧基线当最新业务结果。
