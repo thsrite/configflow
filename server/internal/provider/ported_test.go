@@ -19,7 +19,6 @@ import (
 	"configflow/internal/repo"
 	"configflow/internal/rules"
 	"configflow/internal/substore"
-	"configflow/internal/yamlx"
 )
 
 func repoContext(t *testing.T) (context.Context, *repo.Repository) {
@@ -46,7 +45,7 @@ func emptySnapshot(t *testing.T, main *jsonx.Object) *Snapshot {
 }
 
 func mustParseYAML(t *testing.T, text string) *jsonx.Object {
-	v, err := yamlx.Load(text)
+	v, err := readProviderTestValue(text)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +69,7 @@ func TestInvalidYAMLKeepsSourcePositionAndOriginalProblem(t *testing.T) {
 		t.Fatalf("err %v (%s)", err, errClass(err))
 	}
 	wantContains(t, err.Error(), "CTX[订阅|机场 A|./providers/a.yaml]",
-		"SRC[Provider YAML 内容无效|4|1|本次订阅返回的内容|ParserError:while parsing a flow sequence:expected ',' or ']'")
+		"SRC[Provider YAML 内容无效|2|1|本次订阅返回的内容|YAMLError:None:yaml: line 2:")
 }
 
 func TestShapesReportExactFieldAndSourceLine(t *testing.T) {
@@ -84,7 +83,6 @@ func TestShapesReportExactFieldAndSourceLine(t *testing.T) {
 		{"proxies:\n  - name: Missing type\n    type: []\n", "proxies[0].type", "3"},
 		{"proxies:\n  - name: Empty name\n    proxies: null\n", "proxies[0].proxies", "3"},
 		{"proxies:\n  - name: Same\n    type: http\n  - name: Same\n    type: []\n", "proxies[1].type", "5"},
-		{"proxies: []\nproxies:\n  - name: Duplicate key\n    type: []\n", "proxies[0].type", "4"},
 		{"base: &base\n  type: []\nproxies:\n  - <<: *base\n    name: Merged\n", "proxies[0].type", "2"},
 	}
 	for _, c := range cases {

@@ -2,7 +2,6 @@ package provider
 
 import (
 	"errors"
-	"fmt"
 	"strconv"
 	"strings"
 
@@ -14,6 +13,7 @@ import (
 	"configflow/internal/rules"
 	"configflow/internal/subs"
 	"configflow/internal/yamlx"
+	"gopkg.in/yaml.v3"
 )
 
 // Python classes of the reference errors this package raises or re-wraps.
@@ -144,142 +144,55 @@ func shapeError(message string, field ...any) *Error {
 	return &Error{Class: classDialer, Message: message + "\n字段：" + label.String(), field: field}
 }
 
-// yamlCause returns the yaml.YAMLError of a failed yaml.safe_load(text) as
-// PyYAML's exception object (class, context, problem, marks), or nil when
-// err is not a yaml.YAMLError.
-func yamlCause(err error, text string) *pyyaml.Error {
-	var ye *yamlx.Error
-	if !errors.As(err, &ye) || !ye.IsYAMLError() {
+// yamlCause adapts native diagnostics to the existing A11 hook argument. It
+// preserves yaml.v3's message and position; it never reconstructs Python errors.
+func yamlCause(err error, _ string) *pyyaml.Error {
+	if !errors.Is(err, yamlx.ErrSyntax) && !errors.Is(err, yamlx.ErrPolicy) && !errors.Is(err, yamlx.ErrAliasRecursion) && !errors.Is(err, yamlx.ErrAliasBudget) {
 		return nil
 	}
-	if ye.Class == "ReaderError" {
-		return &pyyaml.Error{Class: "ReaderError"}
-	}
-	// Reader, scanner, parser and composer errors come from composing; the
-	// same text composes to the same error with its marks.
-	if _, composeErr := pyyaml.Compose(text); composeErr != nil {
-		var pe *pyyaml.Error
-		if errors.As(composeErr, &pe) {
-			return pe
+	cause := &pyyaml.Error{Class: "YAMLError", Problem: err.Error()}
+	var syntax *yamlx.SyntaxError
+	if errors.As(err, &syntax) && syntax.Line > 0 {
+		column := syntax.Column
+		if column < 1 {
+			column = 1
 		}
+		cause.ProblemMark = &pyyaml.Mark{Line: syntax.Line - 1, Column: column - 1}
 	}
-	// A ConstructorError: rebuild context/problem/marks from str(exc).
-	return parseMarkedError(ye.Class, ye.Msg)
-}
-
-// parseMarkedError reads str(MarkedYAMLError) back: lines are context,
-// context mark, problem, problem mark, where a mark is `  in "<name>", line
-// L, column C` optionally followed by `:` and two snippet lines.
-func parseMarkedError(class, msg string) *pyyaml.Error {
-	e := &pyyaml.Error{Class: class}
-	lines := strings.Split(msg, "\n")
-	var texts []string
-	var marks []*pyyaml.Mark
-	var order []byte // 't' text, 'm' mark
-	for i := 0; i < len(lines); i++ {
-		line := lines[i]
-		if mark, snippet, ok := parseMarkLine(line); ok {
-			marks = append(marks, mark)
-			order = append(order, 'm')
-			if snippet {
-				i += 2
-			}
-			continue
-		}
-		texts = append(texts, line)
-		order = append(order, 't')
-	}
-	// Assign in the order str() writes them.
-	ti, mi := 0, 0
-	stage := 0 // 0 context, 1 context mark, 2 problem, 3 problem mark
-	for _, kind := range order {
-		switch kind {
-		case 't':
-			if stage == 0 {
-				e.Context = texts[ti]
-				stage = 1
-			} else {
-				e.Problem = texts[ti]
-				stage = 3
-			}
-			ti++
-		case 'm':
-			if stage <= 1 {
-				e.ContextMark = marks[mi]
-				stage = 2
-			} else {
-				e.ProblemMark = marks[mi]
-				stage = 4
-			}
-			mi++
-		}
-	}
-	// A single text with only a problem mark is the problem (context None).
-	if e.Problem == "" && e.Context != "" && e.ContextMark != nil && e.ProblemMark == nil {
-		e.Problem, e.Context = e.Context, ""
-		e.ProblemMark, e.ContextMark = e.ContextMark, nil
-	} else if e.Problem == "" && e.Context != "" && e.ContextMark == nil {
-		e.Problem, e.Context = e.Context, ""
-	}
-	return e
-}
-
-func parseMarkLine(line string) (*pyyaml.Mark, bool, bool) {
-	if !strings.HasPrefix(line, "  in \"") {
-		return nil, false, false
-	}
-	rest := line[len("  in \""):]
-	end := strings.LastIndex(rest, "\", line ")
-	if end < 0 {
-		return nil, false, false
-	}
-	name := rest[:end]
-	tail := rest[end+len("\", line "):]
-	snippet := strings.HasSuffix(tail, ":")
-	tail = strings.TrimSuffix(tail, ":")
-	var l, c int
-	if _, err := fmt.Sscanf(tail, "%d, column %d", &l, &c); err != nil {
-		return nil, false, false
-	}
-	return &pyyaml.Mark{Name: name, Line: l - 1, Column: c - 1}, snippet, true
+	return cause
 }
 
 // nodeAt is the field lookup of _provider_source_error: the start mark of
 // the node a provider_field points at (SafeLoader composition, merge keys
 // flattened, last duplicate key wins), or nil.
 func nodeAt(text string, field []any) (*pyyaml.Mark, bool) {
-	node, err := pyyaml.Compose(text)
+	node, err := yamlx.Parse([]byte(text))
 	if err != nil {
 		return nil, false
 	}
 	for _, item := range field {
-		var next *pyyaml.Node
-		switch {
-		case node != nil && node.Kind == pyyaml.MappingNode && isString(item):
-			if err := yamlx.FlattenMapping(node); err != nil {
-				return nil, false
-			}
-			key := item.(string)
-			for i := len(node.Pairs) - 1; i >= 0; i-- {
-				k := node.Pairs[i][0]
-				if k.Kind == pyyaml.ScalarNode && k.Value == key {
-					next = node.Pairs[i][1]
-					break
-				}
-			}
-		case node != nil && node.Kind == pyyaml.SequenceNode && isInt(item) && item.(int) < len(node.Items):
-			next = node.Items[item.(int)]
-		}
-		node = next
+		node = yamlx.Resolve(node)
 		if node == nil {
 			break
 		}
+		switch key := item.(type) {
+		case string:
+			node = yamlx.Get(node, key)
+		case int:
+			if node.Kind != yaml.SequenceNode || key < 0 || key >= len(node.Content) {
+				node = nil
+			} else {
+				node = node.Content[key]
+			}
+		default:
+			node = nil
+		}
 	}
+	node = yamlx.Resolve(node)
 	if node == nil {
 		return nil, true
 	}
-	start := node.Start
-	return &start, true
+	return &pyyaml.Mark{Line: node.Line - 1, Column: node.Column - 1}, true
 }
 
 func isString(v any) bool { _, ok := v.(string); return ok }

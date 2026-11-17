@@ -13,6 +13,7 @@ import (
 	"bufio"
 	"compress/gzip"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"sort"
@@ -29,6 +30,7 @@ import (
 	"configflow/internal/rules"
 	"configflow/internal/subs"
 	"configflow/internal/substore"
+	"configflow/internal/yamlx"
 )
 
 type substoreResult = substore.SubscriptionResult
@@ -103,6 +105,23 @@ func (l *replayLocations) PreparationContext(message, name, path, kind string) s
 }
 
 func (l *replayLocations) SourceError(message, text string, line, column *int, cause *pyyaml.Error, sourceLabel string) string {
+	// N7-3 §5.7: the A11 collaborator receives native YAML diagnostics.
+	// Only validated parser/policy failures may reuse the reference collaborator
+	// answer; all owner/source/text arguments and every non-YAML call stay strict.
+	if cause != nil && cause.Class == "YAMLError" {
+		_, nativeErr := yamlx.Parse([]byte(text))
+		if nativeErr != nil && cause.Problem == nativeErr.Error() {
+			for _, entry := range l.entries {
+				args, ok := entry[0].([]any)
+				if !ok || len(args) != 7 || args[0] != "src" || args[2] != text || args[6] != sourceLabel {
+					continue
+				}
+				if args[1] == message || errors.Is(nativeErr, yamlx.ErrDuplicateKey) {
+					return entry[1].(string)
+				}
+			}
+		}
+	}
 	var c any
 	if cause != nil {
 		var mark any

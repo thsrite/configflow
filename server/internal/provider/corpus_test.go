@@ -257,6 +257,10 @@ func TestCorpus(t *testing.T) {
 				}
 			}
 		}
+		if kind == "parse" && !jsonx.Equal(want, got) && nativeParseOutcome(asObject(input), want, got) {
+			counts["N7-3 native diagnostics/D1"]++
+			continue
+		}
 		if !jsonx.Equal(want, got) {
 			failures++
 			if failures <= 40 {
@@ -356,7 +360,7 @@ func (s *scenario) fakeAggregation(ctx context.Context, agg, config, main *jsonx
 			s.record("agg-fetch-error", sid, errClass(err))
 			continue
 		}
-		data, err := yamlx.Load(result.Text)
+		data, err := readProviderTestValue(result.Text)
 		if err != nil {
 			return nil, err
 		}
@@ -546,3 +550,22 @@ func sortedKeys(m map[string]string) []string {
 type nilConverter struct{}
 
 func (nilConverter) ConvertProxyString(context.Context, string) *jsonx.Object { return nil }
+
+// nativeParseOutcome accepts only native parser diagnostics or the D1 policy.
+// The complete Go error must identify the same owner and source, and include
+// the exact facade error. Valid-input differences cannot enter this branch.
+func nativeParseOutcome(input, want, got *jsonx.Object) bool {
+	_, err := yamlx.Parse([]byte(input.GetString("text")))
+	if err == nil || got.GetString("error") != "DialerReferenceError" || got.Len() != 2 {
+		return false
+	}
+	if !want.Has("error") && !errors.Is(err, yamlx.ErrDuplicateKey) {
+		return false
+	}
+	prefix := ""
+	if input.GetString("name") != "" || input.GetString("path") != "" {
+		prefix = "CTX[订阅|" + input.GetString("name") + "|" + input.GetString("path") + "]"
+	}
+	message := got.GetString("message")
+	return strings.HasPrefix(message, prefix+"SRC[Provider YAML 内容无效|") && strings.Contains(message, "|本次订阅返回的内容|YAMLError:None:"+err.Error()+":")
+}

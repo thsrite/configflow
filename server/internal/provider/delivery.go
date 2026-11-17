@@ -15,6 +15,7 @@ import (
 	"configflow/internal/substore"
 	"configflow/internal/weburl"
 	"configflow/internal/yamlx"
+	"gopkg.in/yaml.v3"
 )
 
 // CacheUpdate is one staged node-cache update (sub_id, nodes, metadata),
@@ -207,7 +208,7 @@ func (s *Snapshot) Validate(proxies any, forceChains bool, providerName *string)
 	list := proxies.([]any)
 	var names []any
 	for _, p := range list {
-		name, _ := yamlx.Lookup(p, "name")
+		name, _ := providerMember(p, "name")
 		names = append(names, name)
 	}
 	for _, name := range names {
@@ -348,8 +349,8 @@ func ValidateProxyShapes(proxies any) error {
 		return shapeError("Provider proxies 必须是数组", "proxies")
 	}
 	for index, proxy := range list {
-		isDict := yamlx.IsMapping(proxy)
-		name, hasName := yamlx.Lookup(proxy, "name")
+		isDict := providerMapping(proxy)
+		name, hasName := providerMember(proxy, "name")
 		text, isText := name.(string)
 		if !isDict || !isText || pystr.Strip(text) == "" {
 			if isDict && hasName {
@@ -357,7 +358,7 @@ func ValidateProxyShapes(proxies any) error {
 			}
 			return shapeError("Provider 代理必须是含非空 name 的对象", "proxies", index)
 		}
-		if refs, present := yamlx.Lookup(proxy, "proxies"); present {
+		if refs, present := providerMember(proxy, "proxies"); present {
 			refList, ok := refs.([]any)
 			bad := !ok
 			for _, item := range refList {
@@ -371,7 +372,7 @@ func ValidateProxyShapes(proxies any) error {
 				return shapeError("Provider proxies 引用必须是字符串数组", "proxies", index, "proxies")
 			}
 		}
-		if kind, present := yamlx.Lookup(proxy, "type"); present {
+		if kind, present := providerMember(proxy, "type"); present {
 			if _, ok := kind.(string); !ok {
 				return shapeError("Provider type 必须是字符串", "proxies", index, "type")
 			}
@@ -384,20 +385,28 @@ func ValidateProxyShapes(proxies any) error {
 // source_label=). Content errors carry their source and owner; other load
 // errors (Python: not yaml.YAMLError) are returned unchanged.
 func loadProviderProxies(text string, name, path any, kind, sourceLabel string) ([]any, error) {
-	data, err := yamlx.LoadWith(text, yamlx.LoadOptions{KeepNonStringKeys: true})
+	data, err := yamlx.Parse([]byte(text))
 	if err != nil {
 		if cause := yamlCause(err, text); cause != nil {
 			return nil, providerContext(providerSourceError(err, cause, text, sourceLabel), name, path, kind)
 		}
 		return nil, err
 	}
-	if !yamlx.IsMapping(data) {
+	if data.Kind != yaml.MappingNode {
 		e := dialerErr("Provider 必须是 YAML 对象\n字段：文档根节点")
 		return nil, providerContext(providerSourceError(e, nil, text, sourceLabel), name, path, kind)
 	}
-	proxies, present := yamlx.Lookup(data, "proxies")
-	if !present {
-		proxies = []any{}
+	proxyNode := yamlx.Get(data, "proxies")
+	if proxyNode == nil {
+		return []any{}, nil
+	}
+	encoded, err := yamlx.ToJSON(proxyNode)
+	if err != nil {
+		return nil, providerContext(providerSourceError(err, yamlCause(err, text), text, sourceLabel), name, path, kind)
+	}
+	proxies, err := jsonx.Parse(encoded)
+	if err != nil {
+		return nil, err
 	}
 	if err := ValidateProxyShapes(proxies); err != nil {
 		return nil, providerContext(providerSourceError(err, nil, text, sourceLabel), name, path, kind)
@@ -627,7 +636,7 @@ func ValidateRenderedBundle(snapshot *Snapshot, providers []*Rendered) (bool, er
 				continue
 			}
 			for _, p := range proxies {
-				if v, _ := yamlx.Lookup(p, "dialer-proxy"); v != nil {
+				if v, _ := providerMember(p, "dialer-proxy"); v != nil {
 					chains = true
 					break outer
 				}
@@ -1108,7 +1117,7 @@ func PrepareProviderBundle(ctx context.Context, config, main *jsonx.Object, opts
 				return nil, err
 			}
 			for _, p := range proxies {
-				if v, _ := yamlx.Lookup(p, "dialer-proxy"); v != nil {
+				if v, _ := providerMember(p, "dialer-proxy"); v != nil {
 					active = true
 					break scan
 				}
@@ -1230,4 +1239,17 @@ func urlPath(url string) (string, error) {
 		return "", &pyError{"ValueError", err.Error()}
 	}
 	return parts.Path, nil
+}
+
+func providerMember(value any, key string) (any, bool) {
+	object, ok := value.(*jsonx.Object)
+	if !ok || object == nil {
+		return nil, false
+	}
+	return object.Get(key)
+}
+
+func providerMapping(value any) bool {
+	object, ok := value.(*jsonx.Object)
+	return ok && object != nil
 }
