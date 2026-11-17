@@ -145,3 +145,17 @@ webdav-worker-init, as intended. No baseline or exemption changed.
 During the final gates go integrated N7-3b (d3124353), including the provider preparation chain.
 Rebase next, retaining its new native-reader error handling and the O3-5 Detach changes, then repeat
 composition gates so the latest source is covered rather than reporting old-base results as current.
+
+N7-3b composition on d3124353: related chain race passed (provider136.730s, discovery8.677s,
+rules8.665s, refresh197.650s, API aggregations2.763s/subscriptions2.276s, rulefetch18.408s,
+repo68.894s); full suite COMPOSE_FULL_PASS. Both tags compile the whole tree and pass core tests.
+All12 enabled difftests pass again (agents151.322s, aggregations26.209s, subscriptions86.911s,
+devicenotes1.091s, discovery4.146s, health14.864s, httpx2.602s, mosdns3.369s, refresh5.842s,
+subs2.987s, substore9.833s, webdav27.357s); final proddiff again new=0/stale=0.
+
+Final design audit found the explicit §2.3 requirement to retire Loop/OnShutdown in O3-5. With zero
+production callers remaining, removed both entry points, legacy Registry entries and legacy runner.
+Default mode and automatic cross-generation restart tests now use Periodic; the two original named
+restart regressions and Configure-old-work regression remain. PORTING's live API guide and the expired
+transitional rule now reflect the real API. .64 fmt/vet green, core race3 passes lifecycle7.664s,
+lifecycletest1.008s/clock1.008s/lockx8.035s. Repeat cmd/full/tags/final proddiff after this cleanup.

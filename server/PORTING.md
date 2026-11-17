@@ -318,9 +318,11 @@ interchange). Read `repository.go`, `scope.go`, `hooks.go` doc comments before u
 - **Auth**: `auth.Require(h)` (= `@require_auth`), `auth.ValidateTokenOrJWT(c, systemDoc)` (config pulls),
   `auth.IsAuthEnabled()`. Public endpoints are listed in `internal/auth` (`gate`); adding one means
   editing that list — tell me in the hand-back instead of editing it.
-- **Background loops / shutdown**: `lifecycle.Loop(name, func(ctx context.Context))`,
-  `lifecycle.OnShutdown(name, fn)`, registered from your package's wire function listed in `wirePackages` in
-  `internal/server` (the other line you may add there). Request hooks: `app.BeforeRequest`/`AfterRequest`.
+- **Background work / shutdown**: register `lifecycle.Periodic`, `Startup` and `ShutdownHook` through
+  `RegisterPeriodic`, `RegisterStartup` and `RegisterShutdown` from the package's wire function listed in
+  `wirePackages` in `internal/server`. Detached jobs use `Spawn`; owners use `Detach` to keep shutdown
+  cancellation while ignoring disconnects. The temporary `Loop`/`OnShutdown` adapters are removed in O3-5.
+  Timings and hook phases follow `design/o3-concurrency.md`. Request hooks: `app.BeforeRequest`/`AfterRequest`.
 - **Repo hooks**: `repo.RegisterHooks` from your wire function.
 - **Notifications**: `notifications.RecordAgent`, `RecordRouter`, `RecordRegistrationRejection`,
   `RecordAgentAddress`, `ResolveAgentAddress`, `RecordNotice`; providers via `notifications.SetSources`.

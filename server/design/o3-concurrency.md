@@ -349,7 +349,7 @@ func (r *Runtime) Names() []string
   The default mode stays fixed by its build (manual in proddiff, run in production). DefaultSpawner's
   zero value forwards global Spawn to the newly configured instance; *Runtime is also a Spawner.
 
-- `Loop`/`OnShutdown` stay as adapters until step O3-5 removes them.
+- `Loop`/`OnShutdown` were temporary adapters through O3-4 and are removed in O3-5.
 - **Busy keys stay with their owner** (different messages and sharing rules): a `lockx.Keyed[string]` at
   `LevelJob` per owner. "Run now" = `TryLock(key)` → owner's `*tasks.Busy{Message}` (409) when held, else
   `Spawn` with the release deferred inside the job. A loop that shares a worker with "run now" (P1 per key, P2
@@ -412,6 +412,8 @@ Implementation notes: [startup and shutdown](o3-startup-shutdown.md).
   wait and exits 0 before storage is opened.
 
 **Clarified in O3-5 (coordinator, 2026-11-17):**
+- Retire the now-unused Loop/OnShutdown entry points, legacy Registry entries and legacy runner.
+  Keep the restart regressions on Periodic, including unfinished-round exclusion across generations.
 - Move Clock, Timer and the real implementation to internal/clock. Lifecycle keeps type aliases and
   ClockFrom; fake clocks stay in lifecycletest. MatcherCacheOptions receives Clock/Spawner from discovery.
   Do not duplicate clock interfaces or retain time.AfterFunc (lifecycle → repo → rules forbids a reverse import).
@@ -615,11 +617,15 @@ days of one Codex agent. Until a step lands, new ports follow the transitional r
 | O3-7 | Gates as a test in `internal/lifecycle/gate_test.go` (go/parser over non-test files): `go` statements only in `lifecycle` and in an explicit allowlist of fan-outs that wait for their goroutines before returning (each entry `file:func` with a one-line reason); `Flock` only in `repo` and `instance`; `time.Sleep`/`time.AfterFunc` only in an allowlist (lock polling in repo, rate limits) — loops use the Clock. Update AGENT-BRIEF/PORTING pointers if needed. | S | O3-4–O3-6 | – | Codex |
 | O3-8 | Fault harness `server/tools/faults/` (runs the built binary on .32 in its own DATA_DIR, loopback only): scenarios in section 5 that exist today; HR ports add their device scenarios to it (A14, A16–A18, A22, R12, R14, R17). | M | O3-3 | O3-4–O3-7 | Codex |
 
-**Transitional rule for ports that land before O3-2/O3-6** (R05 onward, A11 onward): no new `Flock`; use
+**Historical transitional rule, expired after O3-5** (R05 onward, A11 onward): no new `Flock`; use
 `sync.Mutex`/maps for busy keys and locks with the level comments of 2.4; register loops with the existing
 `lifecycle.Loop` and implement Python's delays inside; start detached work with a plain `go` wrapped in
 `recover` + `context.WithoutCancel` and mark it `// TODO(O3): lifecycle.Spawn`. Steps O3-4–O3-6 migrate them; the
 gate in O3-7 finds any that were missed.
+
+O3-2 through O3-5 have now landed: new ports use RegisterPeriodic/RegisterStartup/RegisterShutdown,
+Spawn and owner Detach directly. Loop/OnShutdown no longer exist. The remaining old lock and handler
+detach sites are migrated in O3-6; the historical plain-go fallback above is not available to new code.
 
 ## 5. Acceptance
 

@@ -1,6 +1,6 @@
 // Package lifecycle owns startup work, periodic loops, tracked detached jobs
 // and phased shutdown. Production always drives loops; test instrumentation is
-// compiled only under dedicated build tags. Legacy entry points remain adapters.
+// compiled only under dedicated build tags.
 package lifecycle
 
 import (
@@ -13,11 +13,6 @@ import (
 )
 
 var logger = logx.Get("backend.app")
-
-type loop struct {
-	name string
-	run  func(context.Context)
-}
 
 // ErrRunning rejects default runtime reconfiguration while work is active.
 var ErrRunning = errors.New("lifecycle: runtime is running")
@@ -62,28 +57,6 @@ func RegisterStartup(s Startup) { currentRuntime().registry.RegisterStartup(s) }
 
 // RegisterShutdown registers a phased hook on the default runtime.
 func RegisterShutdown(h ShutdownHook) { currentRuntime().registry.RegisterShutdown(h) }
-
-// Loop keeps legacy long-running loops until O3-4 moves their timing to Periodic.
-func Loop(name string, run func(context.Context)) {
-	r := currentRuntime()
-	r.registry.addLegacy(loop{name, run})
-	r.startEligible()
-}
-
-// OnShutdown keeps legacy hooks in reverse registration order after drainage.
-func OnShutdown(name string, run func(context.Context)) {
-	r := currentRuntime()
-	r.registry.mu.Lock()
-	defer r.registry.mu.Unlock()
-	h := ShutdownHook{Name: name, Phase: PhaseAfterDrain, Run: run}
-	for i := range r.registry.hooks {
-		if r.registry.hooks[i].Name == name && r.registry.hooks[i].Phase == PhaseAfterDrain {
-			r.registry.hooks[i] = h
-			return
-		}
-	}
-	r.registry.hooks = append([]ShutdownHook{h}, r.registry.hooks...)
-}
 
 // RunStartup runs the configured default's synchronous startup steps before
 // listeners are opened. Start will not repeat them in the same generation.

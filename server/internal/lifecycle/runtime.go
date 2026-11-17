@@ -160,7 +160,6 @@ func (r *Runtime) startEligibleLocked() {
 		return
 	}
 	var periodics []Periodic
-	var legacy []loop
 	for _, p := range snapshot.periodics {
 		if g.drivers[p.Name] || p.Start == AfterFirstRequest && !g.requested {
 			continue
@@ -169,16 +168,6 @@ func (r *Runtime) startEligibleLocked() {
 		g.runners++
 		r.pending++
 		periodics = append(periodics, p)
-	}
-	for _, l := range snapshot.legacy {
-		if g.drivers[l.name] || r.busy[l.name] {
-			continue
-		}
-		g.drivers[l.name] = true
-		r.busy[l.name] = true
-		g.runners++
-		r.pending++
-		legacy = append(legacy, l)
 	}
 	r.mu.Unlock()
 	for _, p := range periodics {
@@ -196,31 +185,17 @@ func (r *Runtime) startEligibleLocked() {
 		}
 		go r.drive(g, p)
 	}
-	for _, l := range legacy {
-		go r.runLegacy(g, l)
-	}
 }
 
-func (r *Runtime) finishRunner(g *generation, name string, legacy bool) {
+func (r *Runtime) finishRunner(g *generation, name string) {
 	if recover() != nil {
 		logger.Errorf(msgTaskPanic, name)
 	}
 	r.mu.Lock()
 	g.runners--
 	r.pending--
-	if legacy {
-		delete(r.busy, name)
-	}
 	r.notify(g)
 	r.mu.Unlock()
-	if legacy {
-		r.startEligible()
-	}
-}
-
-func (r *Runtime) runLegacy(g *generation, l loop) {
-	defer r.finishRunner(g, l.name, true)
-	l.run(withGeneration(g.loops, g, g.jobs))
 }
 
 func (r *Runtime) pause(ctx context.Context, d time.Duration, wake *Signal) bool {
@@ -243,7 +218,7 @@ func (r *Runtime) pause(ctx context.Context, d time.Duration, wake *Signal) bool
 }
 
 func (r *Runtime) drive(g *generation, p Periodic) {
-	defer r.finishRunner(g, p.Name, false)
+	defer r.finishRunner(g, p.Name)
 	if !r.pause(g.loops, p.FirstDelay, p.Wake) {
 		return
 	}

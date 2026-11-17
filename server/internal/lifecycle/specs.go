@@ -103,14 +103,13 @@ type ShutdownHook struct {
 }
 
 // Registry owns task specifications. Register before starting an isolated Runtime;
-// global registration also supports the legacy late-loop registration adapter.
+// global periodic registration also supports wiring newly named specifications while running.
 // Re-registering a name replaces it in place, allowing repeated application wiring.
 type Registry struct {
 	mu        sync.Mutex
 	periodics []Periodic
 	startups  []Startup
 	hooks     []ShutdownHook
-	legacy    []loop
 }
 
 // NewRegistry creates an independent registry for a Runtime.
@@ -155,29 +154,16 @@ func (r *Registry) RegisterShutdown(h ShutdownHook) {
 	r.hooks = append(r.hooks, h)
 }
 
-func (r *Registry) addLegacy(l loop) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	for i := range r.legacy {
-		if r.legacy[i].name == l.name {
-			r.legacy[i] = l
-			return
-		}
-	}
-	r.legacy = append(r.legacy, l)
-}
-
 type registrySnapshot struct {
 	periodics []Periodic
 	startups  []Startup
 	hooks     []ShutdownHook
-	legacy    []loop
 }
 
 func (r *Registry) snapshot() registrySnapshot {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return registrySnapshot{append([]Periodic(nil), r.periodics...), append([]Startup(nil), r.startups...), append([]ShutdownHook(nil), r.hooks...), append([]loop(nil), r.legacy...)}
+	return registrySnapshot{append([]Periodic(nil), r.periodics...), append([]Startup(nil), r.startups...), append([]ShutdownHook(nil), r.hooks...)}
 }
 
 func (r *Registry) names() []string {
@@ -188,9 +174,6 @@ func (r *Registry) names() []string {
 	}
 	for _, p := range s.startups {
 		seen[p.Name] = true
-	}
-	for _, l := range s.legacy {
-		seen[l.name] = true
 	}
 	names := make([]string, 0, len(seen))
 	for name := range seen {

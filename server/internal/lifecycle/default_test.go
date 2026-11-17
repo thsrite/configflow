@@ -32,7 +32,7 @@ func TestDefaultRuntimeProcess(t *testing.T) {
 	var startups, drains atomic.Int64
 	ran := make(chan struct{}, 4)
 	lifecycle.RegisterStartup(lifecycle.Startup{Name: "once", Run: func(context.Context) error { startups.Add(1); return nil }})
-	lifecycle.Loop("legacy", func(ctx context.Context) { ran <- struct{}{}; <-ctx.Done() })
+	lifecycle.RegisterPeriodic(lifecycle.Periodic{Name: "periodic", Interval: func(context.Context) time.Duration { return time.Hour }, Round: func(context.Context) error { ran <- struct{}{}; return nil }})
 	if err := lifecycle.Configure(lifecycle.Options{Mode: lifecycle.ModeManual}); err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +41,7 @@ func TestDefaultRuntimeProcess(t *testing.T) {
 		if manualDefaultBuild {
 			select {
 			case <-ran:
-				t.Fatal("proddiff launched legacy loop")
+				t.Fatal("proddiff launched periodic loop")
 			default:
 			}
 		} else {
