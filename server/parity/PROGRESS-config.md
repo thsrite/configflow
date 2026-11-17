@@ -1851,7 +1851,9 @@ HTTP differential compares responses and complete exported DB/all data files aft
 Route inventory/dispatch conflict, cancellation and atomic competing If-Match saves have regressions.
 Detailed scope, commands, remaining acceptance and N8-5 adapters: [C29 progress](progress/c29.md).
 
-Missing / deferred: no C29 implementation deferred. Final gate pending; this is ported, not verified.
+Missing / deferred: no C29 implementation deferred; shared in-flight shutdown windows remain assigned to O3-6c below.
+Final .64 gate (-p6) passed: gofmt/vet/tags/full race/all15 difftest, proddiff new=0 stale=0, both specified fuzz60s.
+This is ported, not independently verified. Evidence and exact commands: [C29 hand-back](C29-HANDOFF.md).
 The approved Python HEAD save bug is fixed as read-only with an explicit expected differential;
 N8-6 non-finite JSON rejection has 48 explicit Flask controls across all 16 POST pairs;
 C29 SaveSettings/BuildZIP now check shutdown after Detach and before shared commits; real Runtime

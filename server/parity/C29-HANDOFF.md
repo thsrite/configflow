@@ -1,8 +1,8 @@
 # C29 hand-back
 
-状态：实现完成（ported，未标 verified）；已补第四常设项，完整 gate 待跑，最终结果待填。
+状态：实现完成（ported，未标 verified）；已补第四常设项，.64完整gate已通过；共享已知窗口留给O3-6c。
 范围：Python oxidns_native_apply.py、oxidns_archive.py、routes/oxidns.py 和 profile wrappers，共18路由。
-旧 go-n8-4ef worktree 未修改。本分支 go-port-c29；已 rebase go@e980d402。
+旧 go-n8-4ef worktree 未修改。本分支 go-port-c29；gate基线 go@c14763b3 + C29实现3eac32e7；最后rebase与补测见下。
 
 ## 实现与证据
 
@@ -60,14 +60,26 @@ RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'cd server && CONFIGFLOW_DIFF=1 go 
 reader最终逐行门：`go test -count=1 -run "^TestN73OxidnsReaderInputs$" -v -timeout=15m ./internal/oxidns`，
 末行 `PASS; ok configflow/internal/oxidns 56.795s`。
 
-最终命令：
+最终实际命令（阻塞等slot2避免轮询饥饿，不改gate脚本或2轮上限）：
 
 ```sh
-RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'server/scripts/gate.sh -p 6 FuzzNativeYAMLRoundTrip:./internal/oxidns FuzzZoneValidation:./internal/oxidns'
+RT_HOST=sunbroke@192.168.0.64 rt -e GATE_LOGS=/tmp/c29-gate-shutdown -- bash -lc 'mkdir -p "$HOME/rt/.gate-slots"; exec 9>"$HOME/rt/.gate-slots/2"; echo "C29: blocking until gate slot 2 is released"; flock 9; flock -u 9; exec 9>&-; exec server/scripts/gate.sh -p 6 FuzzNativeYAMLRoundTrip:./internal/oxidns FuzzZoneValidation:./internal/oxidns'
 ```
 
-为避免轮询饥饿，实际rt命令先阻塞等待现有slot 2再立即exec上述gate，完整命令见progress/c29.md。
-待记录：/tmp/c29-gate-e980d402，gofmt/vet/build tags、全量race、proddiff、全部difftest、两fuzz各60秒。
+结果：gofmt无输出、vet、两build tags、全量race、全部15个difftest包通过；proddiff退出0，
+new=0 stale=0，coverage_regressions=0。日志 /tmp/c29-gate-shutdown。
+全量race：model12.529s、repo106.149s、oxidns882.716s、api/oxidns1.754s。
+C29 live Flask difftest4.908s。两个fuzz均fuzztime60s。
+
+```text
+baseline: new=0 stale=0
+... all 15 difftest packages passed ...
+FuzzNativeYAMLRoundTrip ok configflow/internal/oxidns 61.023s
+FuzzZoneValidation ok configflow/internal/oxidns 61.027s
+GATE PASS
+```
+
+最后rebase go并跑受影响的C29/C32包：结果待补。
 
 ## 提交
 

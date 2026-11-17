@@ -1,6 +1,6 @@
 # N7-3d share — oxidns readers to yamlx
 
-状态：ported，业务验证器保持不动；最终完整迁移计数、两个指定 fuzz 和 C29 门禁待记录。
+状态：ported，业务验证器保持不动；最终迁移计数、指定fuzz与完整C29门禁均通过，待复核。
 用户从 N7-3d 分配这两个 reader 给 C29，单独提交；协调者会通知原 owner。
 
 - native.go parseYAML 和 adapter.go safeLoad 统一 yamlx.Parse。
@@ -27,4 +27,6 @@ include 的结构错误包装丢失原因。现在仅补读取层 cause 保留�
 
 最终迁移计数命令（.64）：`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'cd server && go test -count=1 -run "^TestN73OxidnsReaderInputs$" -v -timeout=15m ./internal/oxidns'`。
 末行：`PASS; ok configflow/internal/oxidns 56.795s`。完整核心包较早复验：`ok ... 129.337s`。
-两个指定 fuzz 与最终门禁结果将在 C29 完成时补齐。
+.64完整gate日志 /tmp/c29-gate-shutdown：gofmt/vet/build tags、全量race与全部difftest通过，
+proddiff new=0 stale=0，两个指定fuzztime60s均通过（Native61.023s、Zone61.027s），末行GATE PASS。
+完整核心oxidns -race 882.716s（全语料，不采样）。精确rt命令见progress/c29.md。
