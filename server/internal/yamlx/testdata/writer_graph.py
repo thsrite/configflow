@@ -59,4 +59,3 @@ def graph(value, writer_styles=False):
 
     assert visit(value) == 0
     return nodes
-
