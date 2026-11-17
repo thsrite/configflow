@@ -7,9 +7,17 @@ import (
 )
 
 func TestStartStopStartRunsTheLoopAgain(t *testing.T) {
+	mu.Lock()
+	registered := append([]loop(nil), loops...)
+	mu.Unlock()
+	t.Cleanup(func() {
+		Stop(time.Second)
+		mu.Lock()
+		loops = registered
+		mu.Unlock()
+	})
 	startedLoop := make(chan struct{}, 2)
 	Loop("restart-regression", func(ctx context.Context) { startedLoop <- struct{}{}; <-ctx.Done() })
-	t.Cleanup(func() { Stop(time.Second) })
 	for generation := range 2 {
 		Start(context.Background())
 		select {
