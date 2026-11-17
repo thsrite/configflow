@@ -2000,3 +2000,22 @@ current go-unimplemented=6 design_errors=[] seconds=6.93；exit=0
 ```
 
 原R仍差167（含N/A）、H仍差475及partial/长流程。继续真实体积上限与其他条目；最终完整all仍未执行。
+
+## 批次 118：不修改生产常量的真实512MiB metadata上限
+
+- R062-F10/R126-F10和H025真实到达：先通过公开R044保存>512MiB的ASCII前置注释，R072普通Surge生成必须200且正文<64KiB，再分别默认/scoped artifact。注释被生成器忽略、仍保留在source metadata，两次均500；准确中文上限诊断必须出现在本次真实response/log，DB完整不变、不创建private root，仅按真实顺序新增生成文件前版本.bak。没有减小MAX_BYTES、猴补serializer或用别的500充数。
+- 大fixture/request spool放owned磁盘目录，默认Pair行为不改；前后完整SQL值/文件仍比。首次控制字符seed方案在.64内存不足、同方案在.32无法在ready期限启动Go，均发生在业务请求前，未进入统一报告/不算业务失败；已撤回该草稿，改为小库启动后公开保存ASCII内容，不保留readiness超时修改。失败报告仅在/tmp，.64遗留owned目录已清理。
+- 修正方案在.32独立114.60秒及正式77.92秒完成，均4个Go尚未实现、design_errors=[]（含两个真实公开前置），未计为Go通过。独立user scope限制14GiB/无swap，正式journal峰值8.5GiB；目录退出已清空。README给出完整all同样的资源命令。
+- 巨大字符串只有在完整比较已产生diff后，才像原bytes证据一样记录长度/完整UTF8-surrogatepass SHA/首尾hex，防止未来路由接通后将半GB错误样本写入git。新增自检证明末尾/Unicode/surrogate改动保留different及不等SHA，报告可安全JSON编码且有界；99项自检通过。这一报告修改不改变任何比较判定。
+- 统一9648变体、原R4365（S692/F2683/B990）、H638/G16；findings仍closed80/accepted7/open21/O12单列1。原R仍差165（含N/A）、H仍差474及partial/长流程。
+
+```text
+.32 native_network.sh env XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus systemd-run --user --scope --quiet --collect -p MemoryMax=14G -p MemorySwapMax=0 ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups artifact-real-metadata-size-boundary --baseline 21dfb92c
+current go-unimplemented=4 design_errors=[] seconds=77.92；exit=0
+98 self-checks + deliberately wrong-Go-response detection OK（正式大夹具运行）
+.64 native_network.sh bash -lc 'cd server/tools/configdiff && ~/cf-test/.venv/bin/python -m unittest -v test_compare'
+Ran 99 tests in 3.841s / OK（其后增加有界证据自检）
+独立有效报告/tmp/configdiff-artifact-size-draft.json
+```
+
+继续token轮换与版本等边界，最终完整all仍未执行。

@@ -6,6 +6,8 @@ Unreachable/earlier-guard branches are deliberately absent.
 """
 
 LINKS = {
+    'R062-F10': ('POST /api/generate/<service>/artifact', ('H025',)),
+    'R126-F10': ('POST /api/profiles/<profile_id>/generate/<service>/artifact', ('H025',)),
     'R063-F09': ('GET /api/generate/artifacts/<preview_id>/<action>', ('H026',)),
     'R063-F11': ('GET /api/generate/artifacts/<preview_id>/<action>', ('H027', 'H029')),
     'R063-F12': ('GET /api/generate/artifacts/<preview_id>/<action>', ('H029',)),

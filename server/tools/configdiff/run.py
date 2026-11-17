@@ -130,6 +130,8 @@ def main():
     groups.update(artifact_eviction)
     from cases.artifact_failures import GROUPS as artifact_failures
     groups.update(artifact_failures)
+    from cases.artifact_size import GROUPS as artifact_size
+    groups.update(artifact_size)
     from cases.scheduler import GROUPS as scheduler
     groups.update(scheduler)
     from cases.http_shell import GROUPS as http_shell

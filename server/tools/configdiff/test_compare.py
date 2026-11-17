@@ -17,6 +17,36 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_large_string_evidence_keeps_full_comparison_and_unequal_digest(self):
+        import hashlib
+        from harness import Recorder
+        left, right = '中🧪' * 60_000, '中🧪' * 59_999 + '中x'
+        diffs = differences(left, right, 'body.large')
+        self.assertTrue(diffs)
+        recorder = Recorder()
+        recorder.record('MUTATION-LARGE', '', 'synthetic', 'B', 'different', diffs)
+        result = recorder.results[0]
+        self.assertEqual(result['state'], 'different')
+        a, b = result['differences'][0]['python'], result['differences'][0]['go']
+        self.assertEqual(a['utf8_surrogatepass_sha256'], hashlib.sha256(left.encode()).hexdigest())
+        self.assertNotEqual(a['utf8_surrogatepass_sha256'], b['utf8_surrogatepass_sha256'])
+        self.assertEqual(a['string_characters'], len(left))
+        self.assertLess(len(json.dumps(result)), 3000)
+        recorder.record('MUTATION-LARGE', 'surrogate', 'synthetic', 'B', 'different',
+                        differences('\ud800' + 'x' * 100_001, 'y' * 100_002))
+        json.dumps(recorder.results, ensure_ascii=False).encode('utf-8')
+
+    def test_artifact_real_limit_requires_cause_rows_and_exact_failure_files(self):
+        from cases.artifact_size import MetadataLimit
+        observer = MetadataLimit(None)
+        expected = {'real_limit_diagnostic': True, 'all_database_rows_unchanged': True,
+                    'preview_root_never_created': True, 'only_actual_generated_backup_added': True}
+        observer.observed = [copy.deepcopy(expected), copy.deepcopy(expected)]
+        self.assertEqual(observer.compare(Policy()), [])
+        for key in expected:
+            observer.observed[1] = {**expected, key: False}
+            self.assertTrue(observer.compare(Policy()), key)
+
     def test_artifact_failure_observers_detect_partial_state_and_child_error_changes(self):
         from cases.artifact_failures import PreviewFault, Propagation
         fault = PreviewFault(None)

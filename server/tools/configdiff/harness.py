@@ -89,6 +89,11 @@ class Recorder:
         def evidence(value):
             if isinstance(value, float) and not math.isfinite(value):
                 return {'nonfinite_number': 'NaN' if math.isnan(value) else 'Infinity' if value > 0 else '-Infinity'}
+            if isinstance(value, str) and len(value) > 100_000:
+                raw = value.encode('utf-8', errors='surrogatepass')
+                return {'string_characters': len(value), 'utf8_surrogatepass_bytes': len(raw),
+                        'utf8_surrogatepass_sha256': hashlib.sha256(raw).hexdigest(),
+                        'prefix_utf8_hex': raw[:256].hex(), 'suffix_utf8_hex': raw[-256:].hex()}
             if isinstance(value, str) and any(0xD800 <= ord(c) <= 0xDFFF for c in value):
                 return {'surrogate_string_codepoints': [ord(c) for c in value]}
             if isinstance(value, bytes):
@@ -126,7 +131,7 @@ class Pair:
         self.admin_password = self.options.get('admin_password', PASSWORD) if mode == 'login' else ''
         self.auth_enabled = bool(self.admin_username and self.admin_password)
         self.options.setdefault('config_token', 'synthetic-public-pull-token' if mode == 'token' else '')
-        self.temp = tempfile.TemporaryDirectory(prefix='configdiff-')
+        self.temp = tempfile.TemporaryDirectory(prefix='configdiff-', dir=self.options.get('temporary_root'))
         self.root = Path(self.temp.name)
         self.dirs = [self.root / name for name in ('python', 'go')]
         self.processes, self.handles, self.bases, self.tokens = [], [], [], []

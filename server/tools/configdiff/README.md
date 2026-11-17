@@ -36,3 +36,19 @@ Web用例必须启用公开Go frontend入口，不能用API-only模式代表完�
 `--baseline <公开Go源码提交>`标明本轮基线。`finding_reviews`保留原始差异及实际复验：仅compared能closed，附修复提交；仅精确命中`behaviour-changes.md`明确批准条目能accepted，额外响应/存储差异仍open；未跑pending、未实现/依赖blocked。严格case verdict和全差异不被改写，summary另列本轮accepted/open数。`refresh_finding_reviews.py`只根据已记录本轮组重算注释和Markdown，不执行、拼接或伪造case结果。
 
 `helper_cases`是同一次真实R请求对应的源码H标签，不增加HTTP变体，不改变Go尚未实现等状态；只有审计确认经过指定helper guard才关联。被wrapper先拒绝的重复防御分支写入matrix errata，不能借相似错误计为H覆盖。
+
+`artifact-real-metadata-size-boundary`（默认all包含）真实通过公开Surge设置保存>512MiB的合成注释，再验证普通生成成功而预览metadata超限；生产常量没有改。该夹具及request spool放在服务器磁盘的owned临时目录`~/.cache/configdiff-large`，退出清理，避免撑满/tmp tmpfs。实测峰值约8.5GiB，完整all须给足内存；共享服务器上可像下例使用独立scope，具体主机写入报告。降权会清除user bus环境，所以显式传递调用用户的runtime目录。
+
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc '
+fixture_uid=$(id -u)
+server/tools/configdiff/native_network.sh env \
+  XDG_RUNTIME_DIR=/run/user/$fixture_uid \
+  DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$fixture_uid/bus \
+  systemd-run --user --scope --quiet --collect \
+  -p MemoryMax=14G -p MemorySwapMax=0 \
+  ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --baseline REPLACE_WITH_GO_COMMIT
+'
+```
+
+大字符串/字节在实际完整比较产生diff之后才压缩报告证据：长度、完整SHA256及首尾字节。状态、路径和差异仍保留，不拿摘要替代比较或把超长值视为相等；对应篡改自检覆盖Unicode、末尾改动和surrogate。
