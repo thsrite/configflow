@@ -70,7 +70,7 @@ Same as `PROGRESS-config.md`: status `missing` / `partial` (exact list of what i
 | A17 | DNS follow | 760 | missing | HR | A14, C26 | 4 | internal/agents/dnsfollow (new), api/agents |
 | A18 | DNS HA (keepalived pair, handoff, pair publication) | 1529 | missing | HR | A16, A17, C26, routers (`routers/store.py`) | 4 | internal/agents/dnsha (new), api/agents |
 | A19 | Linux gateway core (common/linux_gateway.py) | 518 | verified | HR | C05, C08, routers (`router_split.check_generation`) | – | internal/gateway (new) |
-| A20 | Agent gateway bridge, gateway draft, gateway routes | 1110 | missing | HR | A19, A06, C18, routers (`router_split`, `routers/store.py`) | 18 | internal/gateway, api/agents, api/linuxgateway (new) |
+| A20 | Agent gateway bridge, gateway draft, gateway routes | 1110 | ported | HR | A19, A06, C18, routers (`router_split`, `routers/store.py`) | 18 | internal/gateway, api/agents, api/linuxgateway (new) |
 | A21 | gateway onboarding | 751 | missing | HR | A19, A20, C18, C22, C23, C24, C05, routers (`router_split`) | 3 | internal/gateway, api/gatewayonboarding (new) |
 | A22 | gateway installation | 809 | missing | HR | A08, A14, A20, A21, C17 | 7 | internal/gateway, api/agents |
 | A23 | IPv6 readiness, client evidence, verification | 1344 | missing | HR | A06, A13, A14, C16, routers (`ipv6_readiness`, `routeros`, `route_editor`, `rule_sync_store`, `store`, `client_devices`) | 5 | internal/agents/ipv6 (new), api/agents |
@@ -1641,7 +1641,7 @@ Python 范围完整读取：`backend/agents/linux_gateway.py`、`backend/routes/
 - `api/linuxgateway/difftest` 启动真实 Python Flask，输入全部是合成数据，requests 只能访问 loopback。18 条路由均有成功/失败；管理员鉴权、token/JWT providers、跨 profile、错误/大 body、版本边界、forwarding 状态、full_tun/invalid/legacy/legacy_full_tun、真实向导记录、旧式和带 guard 的保存/恢复均比较。每次响应后比较完整 export、SQLite sections/fields（含位置/所有成员）与所有普通文件（排除数据库本体/锁/日志；JSON/YAML 结构化，其余字节 SHA-256）。生成配置通过真实公开 Mihomo generator 与 Python 结构比较。仅时间、随机恢复 ID 和不透明 preview identity 归一化；两端各自的 preview token 保存并回传，不能拿固定 token 掩盖校验。
 - `host` 单测使用真实 Agent HTTPClient 的原始 GET 空 body、POST `{}`、Authorization/Accept/Content-Type，并断言生产 `Pair(3,45)`、512 KiB、NoProxy/NoRedirects；fake 不替换这些参数。
 - 真实 Runtime.Start/BindRequest/Shutdown：apply/remove/forwarding/PersistForwarding/底层写请求、草稿 save/restore 在关机后零请求/零 DB 改动；请求断开仍完成。关机发生在状态预检与 Agent POST 之间、发生在 repo 回调内生成预览之后，都拒绝提交。每个写 owner Detach 后与提交点前检查 ctx.Err；无 handler 级 detach。
-- `scripts/a20-mutation-gate.py`：response、完整 storage、wire timeout、forwarding proof、preview input、command whitelist response/storage/wire-timeout/forwarding-proof/preview-input/command-whitelist/credential-knowledge/credential-metadata 八处 **8/8 DETECTED**，源文件 finally 恢复。解析 fuzz：FuzzGatewaySpec、FuzzGatewayForwardFilter、FuzzGatewayBundle、FuzzGatewayDraft、FuzzSetupSession，另保留 A19 FuzzExtractCIDRs。
+- `scripts/a20-mutation-gate.py`：response/storage/wire-timeout/forwarding-proof/preview-input/command-whitelist/credential-knowledge/credential-metadata 八处 **8/8 DETECTED**，源文件 finally 恢复。解析 fuzz：FuzzGatewaySpec、FuzzGatewayForwardFilter、FuzzGatewayBundle、FuzzGatewayDraft、FuzzSetupSession，另保留 A19 FuzzExtractCIDRs。
 
 ### 复核问题类别逐项自查
 
@@ -1667,7 +1667,7 @@ Python 范围完整读取：`backend/agents/linux_gateway.py`、`backend/routes/
 | R05 第1项 / R06 F3 原始协议 | 共享 Agent Client，不修改 shared transport；原始 GET 空 body 与 POST JSON 及 headers 实测，no proxy/no redirect/最大值/超时参数断言。 |
 | R05 第2项 写路径错误 | 用户级拒绝为 monitor.Error / gateway.Error / RouterSplitError，中文 constants；关机错误保留 context.Canceled。无“返回 nil 当成功”回退。 |
 | R06 F1 fake 覆盖生产参数 | 原始生产 Agent HTTPClient 路径测 3/45 与 512 KiB，无 shortHTTP；wire-timeout 变异能检出 45→44。 |
-| R06 F2 / R07 F1 username/共享脱敏回归 | 只复用 redact，用户名 `operator/api/rest-api` 原样，密码/token 被遮盖；未修改 shared driver/redactor，最终全仓门禁也覆盖 R04–R08 既有测试。 |
+| R06 F2 / R07 F1 username/共享脱敏回归 | 只复用 redact，用户名 `operator/api/rest-api` 原样，密码/token 被遮盖；未修改 shared driver/redactor；最终全仓门禁由协调者执行并覆盖 R04–R08 既有测试。 |
 | R06 F4/F5 类型/惯用 Go | DTO 原生字段、exact-case RawMessage 与 httpx.Number；结构化 spec/filter/entries/summaries；无 Python exception/truthiness/dict merge 模拟。 |
 | R07 F2 identity/parser | 网络 spec 使用 strict IPv4 shared parser；不把 range 或错类型当 CIDR/合法 spec；设备 ID/profile 都明确非空；snapshot 版本用 model.Int。 |
 | R07 F3/F4/F5 二次复杂度/alias/set 验证 | 关联一次索引；JSON/Node 不暴露内部缓存可变共享值；candidate 复制配置顶层和编辑 section；完整存储差分/原文不变断言；无按计数证明设备成功。 |
@@ -1720,9 +1720,65 @@ A14 接口补充对齐：其 `gateway/agentversion.go` 也并入 A20，公开函
 
 验收器进一步收窄：时间仅归一化 profile 元数据与真实 restore point，SQL 仅 scope=profile 的元数据行；随机 ID 仅声明的 restore point 路径，preview identity 仅 preview 响应；同名 future/user 字段不忽略。额外断言响应 restore summary 的 id/time 与对应 profile 的真实 DB 快照完全相同。普通文件比较只排除根目录四种 SQLite 主文件/WAL/SHM/journal，`configflow.sqlite3-extra` 仍计入；新增 normalizer 自检。
 
-完整门禁运行（代码 `f2380cf8` / `go@0dace4ae`，`.64`，`/tmp/a20-final-gate-20261118`）：gofmt/vet/双 tag 通过，proddiff self_check PASS、new=0/stale=0、coverage_regressions=0/unmapped_routes=0；A20 gateway 17.892s、draft 2.724s、host 4.257s race 通过，但 ippresence/provider/refresh 多条报 `disk quota exceeded`，repo 报 disk I/O error，故整轮 **不计通过**，也尚未执行后续 difftest/fuzz。环境证据：`findmnt /tmp` = 7.8GB tmpfs + usrquota，home 磁盘余170GB；协调者随后合入 `go@895f5e21` 的临时目录修复。改用 home 上独立 TMPDIR/GOTMPDIR 重跑 gate，不改业务代码、不放宽 baseline。
+完整门禁运行（代码 `f2380cf8` / `go@0dace4ae`，`.64`，`/tmp/a20-final-gate-20261118`）：gofmt/vet/双 tag 通过，proddiff self_check PASS、new=0/stale=0、coverage_regressions=0/unmapped_routes=0；A20 gateway 17.892s、draft 2.724s、host 4.257s race 通过，但 ippresence/provider/refresh 多条报 `disk quota exceeded`，repo 报 disk I/O error，故整轮 **不计通过**，也尚未执行后续 difftest/fuzz。环境证据：`findmnt /tmp` = 7.8GB tmpfs + usrquota，home 磁盘余170GB；协调者随后合入 `go@895f5e21` 的临时目录修复。已改用 home 上独立 TMPDIR/GOTMPDIR；后续 gate 仅排队、未开始测试。不改业务代码、不放宽 baseline。
 
-独立临时目录补验：`RT_HOST=sunbroke@192.168.0.64 rt -e TMPDIR=/home/sunbroke/rt/a20-tmp -- bash -lc 'mkdir -p "$TMPDIR" && chmod 700 "$TMPDIR" && cd server && CONFIGFLOW_DIFF=1 go test -race -count=1 ./internal/api/linuxgateway/difftest && python3 scripts/a20-mutation-gate.py'` → strengthened HTTP/storage race `ok 36.060s`，六处变异均 DETECTED，sources restored。最终 gate / 提交号完成后补录。
+独立临时目录补验：`RT_HOST=sunbroke@192.168.0.64 rt -e TMPDIR=/home/sunbroke/rt/a20-tmp -- bash -lc 'mkdir -p "$TMPDIR" && chmod 700 "$TMPDIR" && cd server && CONFIGFLOW_DIFF=1 go test -race -count=1 ./internal/api/linuxgateway/difftest && python3 scripts/a20-mutation-gate.py'` → strengthened HTTP/storage race `ok 36.060s`，六处变异均 DETECTED，sources restored。这是当时六处变异的历史结果；最新八处结果见下。
+
+### 2026-11-18 交回复核（协调者接管完整门禁）
+
+按协调者明确指示，已终止自己的排队 gate（远端 PID 2184541；前台 rt 收到退出码143，无遗留 A20 gate），不占用共享槽。`git rebase go` 返回 `Current branch go-port-a20 is up to date.`，基线为 `go@dda8973d`。实现提交依次为 `4abc6a5e`、`6b420721`、`c8650670`、`9ea060cc`、`5ed31188`、`bfde483f`、`cde30a1b`。
+
+最新已完成的差分/变异命令（.64，全程前台）：
+
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt -e TMPDIR=/home/sunbroke/rt/a20-tmp -e GOTMPDIR=/home/sunbroke/rt/a20-tmp -- bash -lc 'cd server && go test -race -count=1 ./internal/gateway/draft && CONFIGFLOW_DIFF=1 go test -race -count=1 ./internal/api/linuxgateway/difftest && python3 scripts/a20-mutation-gate.py && go vet ./internal/gateway/draft ./internal/api/linuxgateway/...'
+```
+
+末尾结果：
+
+```text
+ok  configflow/internal/gateway/draft  5.006s
+ok  configflow/internal/api/linuxgateway/difftest  34.530s
+response: DETECTED
+storage: DETECTED
+wire-timeout: DETECTED
+forwarding-proof: DETECTED
+preview-input: DETECTED
+command-whitelist: DETECTED
+credential-knowledge: DETECTED
+credential-metadata: DETECTED
+A20 mutation gate: 8/8 detected; sources restored
+```
+
+最终补验仅执行 gofmt、vet、A20 相关包定向 race，命令及结果如下（不代替完整门禁）：
+
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt -e GOMAXPROCS=6 -e TMPDIR=/home/sunbroke/rt/a20-tmp -e GOTMPDIR=/home/sunbroke/rt/a20-tmp -- bash -lc 'cd server && test -z "$(gofmt -l internal tools)" && go vet -p 6 ./... && go test -race -p 6 -count=1 -timeout=20m ./internal/gateway/... ./internal/api/agents ./internal/api/linuxgateway/... ./internal/setupflow ./internal/server'
+```
+
+退出码0；gofmt 无输出、全树 vet 通过。完整定向输出：
+
+```text
+ok  configflow/internal/gateway  13.233s
+ok  configflow/internal/gateway/draft  6.102s
+?   configflow/internal/gateway/gwbase  [no test files]
+ok  configflow/internal/gateway/host  8.892s
+ok  configflow/internal/api/agents  359.825s
+?   configflow/internal/api/linuxgateway  [no test files]
+ok  configflow/internal/api/linuxgateway/difftest  1.045s
+ok  configflow/internal/setupflow  1.018s
+ok  configflow/internal/server  1.973s
+```
+
+本轮未设置 CONFIGFLOW_DIFF，1.045s 仅为 difftest 包未启用外部参照的常规检查；**启用真实 Flask 的 HTTP/storage race 是上方单独运行并通过的34.530s**。
+
+**完整门禁尚未通过，由协调者预留 cf-gate 后执行**，必须包含全仓 race、全部启用差分、最新 tagged proddiff 与六个 fuzz target 的60s运行；本轮不将排队或先前环境失败记作通过。建议命令：
+
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt -e GOMAXPROCS=6 -- bash -lc 'server/scripts/gate.sh -p 6 FuzzGatewaySpec:./internal/gateway/host FuzzGatewayForwardFilter:./internal/gateway/host FuzzGatewayBundle:./internal/gateway/host FuzzGatewayDraft:./internal/gateway/draft FuzzSetupSession:./internal/setupflow FuzzExtractCIDRs:./internal/gateway'
+```
+
+状态保持 `ported`；新的 Opus 独立复核、A14 合入时的共享 reader/guard wiring 收敛、完整门禁和上述 L4 实机项均明确留给协调者，不标作已完成。
 
 ## A21 — gateway onboarding
 
