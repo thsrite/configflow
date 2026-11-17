@@ -1,8 +1,9 @@
-package convert
+package yamlbridge
 
 import (
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	"configflow/internal/jsonx"
@@ -11,7 +12,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func TestMihomoDocumentNodeLegacyValues(t *testing.T) {
+func TestEncodeLegacyValues(t *testing.T) {
 	for _, source := range []string{
 		"a: !!timestamp 2001-12-14 21:59:43.100000-05:00\nb: 2002-12-14\n",
 		"binary: !!binary |\n  YWJj\n",
@@ -23,7 +24,7 @@ func TestMihomoDocumentNodeLegacyValues(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			n, err := mihomoDocumentNode(value)
+			n, err := Encode(value)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -43,10 +44,10 @@ func TestMihomoDocumentNodeLegacyValues(t *testing.T) {
 	}
 }
 
-func TestMihomoDocumentNodeSharedValues(t *testing.T) {
+func TestEncodeSharedValues(t *testing.T) {
 	shared := jsonx.Obj("name", "shared")
 	list := []any{shared}
-	n, err := mihomoDocumentNode(jsonx.Obj("one", list, "two", list, "three", shared))
+	n, err := Encode(jsonx.Obj("one", list, "two", list, "three", shared))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +67,7 @@ func TestMihomoDocumentNodeSharedValues(t *testing.T) {
 		{"recursive-list", writerRecursiveList(), yamlx.ErrAliasRecursion},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if _, err := mihomoDocumentNode(tc.value); !errors.Is(err, tc.want) {
+			if _, err := Encode(tc.value); !errors.Is(err, tc.want) {
 				t.Fatalf("want %v, got %v", tc.want, err)
 			}
 		})
@@ -93,7 +94,83 @@ func writerRecursiveList() any {
 	return v
 }
 
-func FuzzMihomoWriter(f *testing.F) {
+func TestEncodeNativeGraphs(t *testing.T) {
+	source := "outside: &same {value: one}\nselected: {first: *same, second: *same} # selected\n"
+	doc, err := yamlx.Parse([]byte(source))
+	if err != nil {
+		t.Fatal(err)
+	}
+	selected := yamlx.Get(doc, "selected")
+	before, err := yamlx.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n, err := Encode(selected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, second := yamlx.Get(n, "first"), yamlx.Get(n, "second")
+	if first.Kind != yaml.MappingNode || second.Kind != yaml.AliasNode || second.Alias != first {
+		t.Fatal("orphan anchor was not defined once and shared")
+	}
+	out, err := yamlx.Marshal(n)
+	if err != nil {
+		t.Fatal(err)
+	}
+	again, err := yamlx.Parse(out)
+	if err != nil || !yamlx.Equal(selected, again) || !strings.Contains(string(out), "# selected") {
+		t.Fatalf("selected graph changed: %s: %v", out, err)
+	}
+	after, err := yamlx.Marshal(doc)
+	if err != nil || string(before) != string(after) {
+		t.Fatal("encoding mutated its source")
+	}
+	other, err := yamlx.Parse([]byte("outside: &same {value: two}\nselected: *same\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	n, err = Encode(jsonx.Obj("one", selected, "two", yamlx.Get(other, "selected")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err = yamlx.Marshal(n)
+	if err != nil {
+		t.Fatal(err)
+	}
+	again, err = yamlx.Parse(out)
+	want := yamlx.Map(yamlx.Str("one"), selected, yamlx.Str("two"), yamlx.Get(other, "selected"))
+	if err != nil || !yamlx.Equal(want, again) || strings.Count(string(out), "&same") != 1 {
+		t.Fatalf("colliding source anchors changed values: %s: %v", out, err)
+	}
+}
+
+func TestEncodeNativeGraphLimits(t *testing.T) {
+	shared := yamlx.Seq(yamlx.Str("leaf"))
+	for range 40 {
+		shared = yamlx.Seq(shared, shared)
+	}
+	recursive := yamlx.Seq()
+	recursive.Content = append(recursive.Content, recursive)
+	alias := &yamlx.Node{Kind: yaml.AliasNode, Value: "self"}
+	alias.Alias = alias
+	for _, tc := range []struct {
+		name string
+		node *yamlx.Node
+		want error
+	}{
+		{"shared-physical-depth-40", shared, yamlx.ErrAliasBudget},
+		{"container-recursion", recursive, yamlx.ErrAliasRecursion},
+		{"alias-recursion", alias, yamlx.ErrAliasRecursion},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if n, err := Encode(tc.node); !errors.Is(err, tc.want) || n != nil {
+				t.Fatalf("unsafe graph accepted: %v", err)
+			}
+		})
+	}
+}
+
+func FuzzEncode(f *testing.F) {
 	for _, seed := range []string{`{"name":"香港","port":80}`, `{"large":100000000000000000000,"float":1.0}`, `{"a":[true,null,"yes","2001-01-01","line\nnext\t"]}`} {
 		f.Add(seed)
 	}
@@ -118,7 +195,7 @@ func FuzzMihomoWriter(f *testing.F) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		n, err := mihomoDocumentNode(value)
+		n, err := Encode(value)
 		if err != nil {
 			t.Fatal(err)
 		}

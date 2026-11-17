@@ -11,6 +11,7 @@ import (
 
 	"configflow/internal/convert"
 	"configflow/internal/jsonx"
+	"configflow/internal/yamlbridge"
 	"configflow/internal/yamlx"
 	"configflow/internal/yamlx/yamltest"
 )
@@ -145,7 +146,7 @@ func callRow(fn string, args []any) (out any, err error, ok bool) {
 		var list []any
 		list, err = ParseDNSUpstreams(arg(0))
 		if err == nil {
-			node, derr := documentNode(list)
+			node, derr := yamlbridge.Encode(list)
 			if derr != nil {
 				return nil, derr, true
 			}

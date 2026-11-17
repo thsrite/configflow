@@ -199,3 +199,32 @@ where the old loader still needs them until N7-3d. No loader was removed.
 Full convert/yamlx tests after codec sharing passed (10.589s/1.198s);
 subsequent `.64` gofmt/vet and yamlx tests after the constant move were silent/PASS
 (yamlx 1.300s).
+
+## Unique transition graph bridge after N7-3c
+
+Rebased cleanly onto go@65c0e6d4 (N7-3c merged). The private convert and mosdns
+builders were removed; `internal/yamlbridge.Encode` is the single temporary
+implementation. yamlx's public API was not expanded. All corresponding tests
+moved to the shared package. Its package comment explicitly marks **N7-3d 删除**
+for Timestamp/[]byte/Mapping support; the remaining jsonx boundary is removed
+with N8's consumer migrations.
+
+It traverses each physical input container once, builds explicit shared aliases
+before validation, copies native user Nodes, promotes orphan targets to a first
+definition and disambiguates colliding source anchor names. It preserves source
+annotations and never mutates input graphs. This order also rejects a 40-level
+shared physical graph that has no explicit AliasNodes yet, instead of expanding
+it during an early budget check. Tests cover legacy values, 40-level sharing,
+object/list/native-container/pure-alias recursion, orphan definitions, multiple
+source anchors and source ownership. The former writer fuzz is now
+`yamlbridge.FuzzEncode` and will be rerun in the final gates.
+
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt --back server/internal/yamlbridge --back server/internal/convert/mihomo_generate.go --back server/internal/mosdns/generate.go --back server/internal/mosdns/rows_test.go --back server/internal/mosdns/review_c21_test.go --back server/internal/mosdns/yaml_adapter.go -- bash -lc 'cd server && gofmt -w internal/yamlbridge internal/convert/mihomo_generate.go internal/mosdns/generate.go internal/mosdns/rows_test.go internal/mosdns/review_c21_test.go internal/mosdns/yaml_adapter.go && gofmt -l internal/ tools/ && go vet ./... && go test -count=1 ./internal/yamlbridge ./internal/convert ./internal/mosdns'
+```
+
+Output: fmt/vet silent; yamlbridge **0.014s**, convert **27.593s**, mosdns **96.457s**.
+
+The preceding pre-c-integration race iteration on `.64` passed all six packages:
+convert91.520s/gateway18.656s/yamlx13.508s/rulefetch22.627s/subs42.750s/refresh272.300s.
+It is iteration evidence only; full final race remains pending.

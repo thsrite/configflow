@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/yamlbridge"
 	"configflow/internal/yamlx"
 	"configflow/internal/yamlx/yamltest"
 )
@@ -54,7 +55,7 @@ func TestReviewUnholdableYAMLOutsideTheOutputMatchesPython(t *testing.T) {
 			row.Set("args", args)
 			row.Set("out", want)
 		case "upstreams":
-			node, err := documentNode(want)
+			node, err := yamlbridge.Encode(want)
 			if err != nil {
 				t.Fatal(err)
 			}

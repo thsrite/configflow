@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/yamlx"
 
 	"gopkg.in/yaml.v3"
@@ -16,117 +15,6 @@ func rejectYAML(err error) bool {
 
 func customYAMLError(err error) error {
 	return &UnsupportedYAMLError{Msg: fmt.Sprintf(msgCustomYAML, err), cause: err}
-}
-
-// documentNode is the boundary between existing generated JSON configuration
-// sections and user YAML Nodes. User containers are never expanded into JSON.
-// The final facade copy validates the whole graph, preserving shared targets.
-func documentNode(value any) (*yamlx.Node, error) {
-	type listID struct {
-		first  *any
-		length int
-	}
-	memo := map[any]*yamlx.Node{}
-	var build func(any) (*yamlx.Node, error)
-	build = func(value any) (*yamlx.Node, error) {
-		switch value := value.(type) {
-		case *yamlx.Node:
-			return value, nil
-		case *jsonx.Object:
-			if value == nil {
-				return yamlx.Null(), nil
-			}
-			if node := memo[value]; node != nil {
-				return node, nil
-			}
-			node := yamlx.Map()
-			memo[value] = node
-			for key, item := range value.All() {
-				child, err := build(item)
-				if err != nil {
-					return nil, err
-				}
-				node.Content = append(node.Content, yamlx.Str(key), child)
-			}
-			return node, nil
-		case []any:
-			var id listID
-			if len(value) > 0 {
-				id = listID{&value[0], len(value)}
-				if node := memo[id]; node != nil {
-					return node, nil
-				}
-			}
-			node := yamlx.Seq()
-			if id.first != nil {
-				memo[id] = node
-			}
-			for _, item := range value {
-				child, err := build(item)
-				if err != nil {
-					return nil, err
-				}
-				node.Content = append(node.Content, child)
-			}
-			return node, nil
-		default:
-			data, err := jsonx.Compact(value)
-			if err != nil {
-				return nil, err
-			}
-			return yamlx.FromJSON(data)
-		}
-	}
-	root, err := build(value)
-	if err != nil {
-		return nil, err
-	}
-	root, err = yamlx.Encode(root)
-	if err != nil {
-		return nil, err
-	}
-	// The generated forwarders may reuse an upstream list/map. Give each
-	// physical value one definition and emit aliases for subsequent uses,
-	// including anchor targets whose original definition was outside the
-	// selected user subtree. Separate source documents also get unique names.
-	names := map[*yamlx.Node]string{}
-	claimed := map[*yamlx.Node]bool{}
-	nextAnchor := func(node *yamlx.Node) string {
-		if name := names[node]; name != "" {
-			return name
-		}
-		name := fmt.Sprintf("dns%d", len(names)+1)
-		names[node] = name
-		node.Anchor = name
-		return name
-	}
-	var bind func(*yamlx.Node) *yamlx.Node
-	bind = func(node *yamlx.Node) *yamlx.Node {
-		if node == nil {
-			return nil
-		}
-		if node.Kind == yaml.AliasNode {
-			if !claimed[node.Alias] {
-				return bind(node.Alias)
-			}
-			alias := *node
-			alias.Value = nextAnchor(node.Alias)
-			return &alias
-		}
-		if claimed[node] {
-			return &yamlx.Node{Kind: yaml.AliasNode, Value: nextAnchor(node), Alias: node}
-		}
-		claimed[node] = true
-		if node.Anchor != "" {
-			nextAnchor(node)
-		}
-		for i, child := range node.Content {
-			node.Content[i] = bind(child)
-		}
-		return node
-	}
-	root = bind(root)
-	return root, nil
 }
 
 func hasNonStringKey(root *yamlx.Node) bool {

@@ -14,6 +14,7 @@ import (
 	"configflow/internal/rules"
 	"configflow/internal/subs"
 	"configflow/internal/weburl"
+	"configflow/internal/yamlbridge"
 	"configflow/internal/yamlx"
 )
 
@@ -330,7 +331,7 @@ func GenerateMihomoConfig(ctx context.Context, config *jsonx.Object, opts Genera
 	if err != nil {
 		return "", err
 	}
-	n, err := mihomoDocumentNode(main)
+	n, err := yamlbridge.Encode(main)
 	if err != nil {
 		return "", err
 	}

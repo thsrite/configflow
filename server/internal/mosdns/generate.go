@@ -7,6 +7,7 @@ import (
 	"configflow/internal/convert"
 	"configflow/internal/jsonx"
 	"configflow/internal/pystr"
+	"configflow/internal/yamlbridge"
 	"configflow/internal/yamlx"
 
 	"gopkg.in/yaml.v3"
@@ -145,7 +146,7 @@ func GenerateMosDNSConfig(config *jsonx.Object, baseURL string) (out string, err
 	if err != nil {
 		return "", err
 	}
-	node, err := documentNode(document)
+	node, err := yamlbridge.Encode(document)
 	if err != nil {
 		return "", err
 	}
@@ -501,7 +502,7 @@ func generateDocument(config *jsonx.Object, baseURL string) (any, error) {
 // gone, new keys appended); ordered_config puts log, api and plugins first
 // and drops servers and data_providers.
 func orderedMapping(root *yamlx.Node, base *jsonx.Object) (*yamlx.Node, error) {
-	generated, err := documentNode(base)
+	generated, err := yamlbridge.Encode(base)
 	if err != nil {
 		return nil, err
 	}

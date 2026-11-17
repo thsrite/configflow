@@ -56,8 +56,9 @@ directly through Parse. Old golden files are unchanged. Legacy loaded
 Timestamp/bytes/Mapping branches are explicitly deferred for removal in N7-3d.
 
 The remaining writer inventory and commands are tracked in
-[progress/n7-4-writers.md](progress/n7-4-writers.md). Installer is explicitly waiting
-for N7-3c merge/rebase. Shared old writer deletion and final full gates remain pending;
+[progress/n7-4-writers.md](progress/n7-4-writers.md). N7-3c is now merged at 65c0e6d4;
+convert/mosdns share the sole temporary yamlbridge.Encode, with native alias
+sharing/ownership/budget checks. Installer and remaining writers are in progress. Shared old writer deletion and final full gates remain pending;
 this section does not claim N7-4 acceptance.
 
 ## Step B findings — config boundary repairs (ported, 2026-11-17)
