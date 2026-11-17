@@ -6,7 +6,7 @@
 |---|---|
 | 1 非对象/排序字段 | 已修。`.63 go test -run TestConfigFindingsRejectInvalidRequestShapesWithoutEffects ./internal/api/subscriptions/`：修前 `[1]` 500；修后三个接口及非法 legacy/ids 字段均400 JSON，状态不变、零上游调用。包含null、空数组、false、0、空字符串；fetch在资源查找前验证对象。新回归race1.273s，BOM合法对象差异0.861s。旧C30比较器显式断言第1项400决策，仍逐次比较存储，篡改成功字段/状态/消息会被拒绝；定向Flask差异50.061s。 |
 | 2 孤立代理项 | 已修。`.63 TestConfigFindingsRejectUnpairedSurrogatesWithoutCommit` 修前两端点均200并写入U+FFFD；修后高/低/连续孤立项400且存储不变；合法代理对、U+FFFD、转义反斜杠仍200。settings race通过8.953s。 |
-| 3 JSON 错误出口 | 已修。`.63 TestConfigFindingsEveryAPIErrorUsesJSON` 修前HTML400/404/405/500，修后统一JSON；文件迟发错误与编码失败也走JSON。R218非法缓存回归断言「订阅操作失败」。httpx全包race与真实Flask差异通过；差异仅显式验证HTML→JSON的同status/准确描述，其他头/数据继续比较。 |
+| 3 JSON 错误出口 | 已修。`.63 TestConfigFindingsEveryAPIErrorUsesJSON` 修前HTML400/404/405/500，修后统一JSON；文件迟发错误与编码失败也走JSON。R218非法缓存回归断言「订阅操作失败」。显式公开的text/plain 4xx保留中文消息再转JSON，并经过统一脱敏；不公开任意HTML500正文。httpx race15.500s，安装链接完整差异5.793s；比较器只接受同status/准确公开描述的文本→JSON迁移，其他头/数据继续比较。 |
 | 4 失败/退避通知 | 已修。修前完整NewApp的任务回执投影因缺任务slot返回ErrIncomplete，notifications.json不存在。生产通知改读AvailableTasks（只收集真实已注册模块），任务页面ListTasks仍要求完整。预存backoff三次失败+due完成的回归验证backoff通知pending/failure_count=3，无需浏览器GET。`.63 server race` 1.289s，notifications race 5.049s。refresh整包回放在WSL fsync滞留，已停止诊断，最终在.32复验。 |
 | 5 同值 PUT revision | 已修。修前SQL subscriptions行revision 2→3（连续相同PUT）；修后保留原始有序存储对象，同一行value/revision均不变，包含嵌套未知字段。`.63 subscriptions race` 1.880s。注意证据针对字段revision；Python _apply_shared_locked仍每次推进全局generation/shared._revision，Go保持该事务语义。 |
 | 6 provider 注释 | 已修。修前global/scoped/merged及served文件无注释；修后单源六行、合并源数量/明细、Generated本地微秒时间+Z、Source均恢复。`.63 targeted metadata race` 1.251s；完整C30差异新增逐行注释比较，元数据无差异，只剩第1项已决定4xx需显式更新旧比较器。 |

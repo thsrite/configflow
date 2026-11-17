@@ -11,10 +11,6 @@ package difftest
 
 import (
 	"bytes"
-	"configflow/internal/auth"
-	"configflow/internal/lifecycle"
-	"configflow/internal/logx"
-	"configflow/internal/server"
 	"context"
 	"fmt"
 	"io"
@@ -32,9 +28,13 @@ import (
 	"testing"
 	"time"
 
+	"configflow/internal/auth"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/jsonx"
+	"configflow/internal/lifecycle"
+	"configflow/internal/logx"
 	"configflow/internal/repo"
+	"configflow/internal/server"
 )
 
 const (

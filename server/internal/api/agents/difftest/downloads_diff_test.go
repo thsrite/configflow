@@ -9,8 +9,6 @@ package difftest
 //	rt -- bash -lc 'cd server && CONFIGFLOW_DIFF=1 go test -count=1 -v -run Download ./internal/api/agents/difftest/'
 
 import (
-	"configflow/internal/jsonx"
-	"configflow/internal/httpx/httpxtest"
 	"fmt"
 	"io"
 	"math"
@@ -22,6 +20,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"configflow/internal/httpx/httpxtest"
+	"configflow/internal/jsonx"
 )
 
 var downloadHeaders = []string{"Content-Type", "Content-Disposition", "Cache-Control", "ETag", "Last-Modified",

@@ -27,6 +27,7 @@ import (
 	"configflow/internal/auth"
 	"configflow/internal/discovery"
 	"configflow/internal/httpx"
+	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/jsonx"
 	"configflow/internal/repo"
 )
@@ -90,6 +91,12 @@ func startPython(t *testing.T, dir string) string {
 }
 func call(t *testing.T, base, method, path, body string) (int, any) {
 	t.Helper()
+	status, value, _, _ := callResponse(t, base, method, path, body)
+	return status, value
+}
+
+func callResponse(t *testing.T, base, method, path, body string) (int, any, http.Header, []byte) {
+	t.Helper()
 	req, e := http.NewRequest(method, base+path, strings.NewReader(body))
 	if e != nil {
 		t.Fatal(e)
@@ -108,7 +115,7 @@ func call(t *testing.T, base, method, path, body string) (int, any) {
 	if json.Unmarshal(b, &out) != nil {
 		out = string(b)
 	}
-	return res.StatusCode, out
+	return res.StatusCode, out, res.Header, b
 }
 
 var generated = regexp.MustCompile(`^(?:lib|ruleset)_[0-9a-f-]{32,36}$`)
@@ -351,14 +358,14 @@ func TestHTTPAndStorageParity(t *testing.T) {
 			mu.Lock()
 			before := len(calls)
 			mu.Unlock()
-			pc, pv := call(t, py, q.method, path, q.body)
+			pc, pv, ph, pb := callResponse(t, py, q.method, path, q.body)
 			if pc == 202 {
 				pv = waitJob(t, py, pv, scope)
 			}
 			mu.Lock()
 			middle := len(calls)
 			mu.Unlock()
-			gc, gv := call(t, goServer.URL, q.method, path, q.body)
+			gc, gv, gh, gb := callResponse(t, goServer.URL, q.method, path, q.body)
 			if pc != gc {
 				t.Errorf("status Flask=%d Go=%d", pc, gc)
 			}
@@ -385,7 +392,10 @@ func TestHTTPAndStorageParity(t *testing.T) {
 					}
 				}
 			}
-			equal(t, "response", remap(pv, pyIDs), remap(gv, goIDs))
+			// Step B #3: only the exact public error envelope changes format.
+			if !httpxtest.MigratedAPIError(q.method, pc, gc, ph, gh, pb, gb) {
+				equal(t, "response", remap(pv, pyIDs), remap(gv, goIDs))
+			}
 		})
 	}
 	// Start both jobs without waiting, then compare same-profile and cross-profile conflicts.

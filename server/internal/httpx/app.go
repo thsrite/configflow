@@ -199,19 +199,23 @@ func (a *App) finalize(c *Ctx, r *Response) {
 		r.Header().Set("X-ConfigFlow-Profile", c.ProfileID)
 	}
 	repo.ResetConfigContext(c.ctx)
-	if err := writeJSON(c, r); err != nil {
-		*r = *a.internalError(c, err)
-	}
 	if r.Status >= 400 && (c.path == "/api" || strings.HasPrefix(c.path, "/api/")) && !strings.HasPrefix(r.Header().Get("Content-Type"), "application/json") {
 		// API failures always have a JSON envelope, including explicit HTML/text
 		// failures returned by a handler. Do not echo arbitrary diagnostic bodies.
-		failure := (&HTTPError{Code: r.Status, Description: http.StatusText(r.Status)}).response(c.path)
+		description := http.StatusText(r.Status)
+		if r.Status < 500 && strings.HasPrefix(r.Header().Get("Content-Type"), "text/plain") {
+			description = strings.TrimSuffix(string(r.Body()), "\n")
+		}
+		failure := (&HTTPError{Code: r.Status, Description: description}).response(c.path)
 		for key, values := range r.Header() {
 			if key != "Content-Type" && key != "Content-Length" {
 				failure.Header()[key] = values
 			}
 		}
 		*r = *failure
+	}
+	if err := writeJSON(c, r); err != nil {
+		*r = *a.internalError(c, err)
 	}
 	cors(c, r)
 }

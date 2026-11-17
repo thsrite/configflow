@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"configflow/internal/auth"
+	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/jsonx"
 	"configflow/internal/logx"
 	"configflow/internal/repo"
@@ -162,7 +163,7 @@ type request struct {
 	contains                 string // both bodies must contain it
 }
 
-func send(t *testing.T, base, token string, r request) (int, []byte) {
+func send(t *testing.T, base, token string, r request) (int, []byte, http.Header) {
 	var body io.Reader
 	if r.body != "" {
 		body = strings.NewReader(r.body)
@@ -180,7 +181,7 @@ func send(t *testing.T, base, token string, r request) (int, []byte) {
 	}
 	defer resp.Body.Close()
 	data, _ := io.ReadAll(resp.Body)
-	return resp.StatusCode, data
+	return resp.StatusCode, data, resp.Header
 }
 
 // fakeSubStore answers the version endpoint like a running Sub-Store.
@@ -225,11 +226,12 @@ func runWith(t *testing.T, env map[string]string, prepare func(pyDir, goDir stri
 	pyToken, goToken := login(t, pyBase), login(t, goBase)
 	failed := 0
 	for _, r := range requests {
-		ps, pb := send(t, pyBase, pyToken, r)
-		gs, gb := send(t, goBase, goToken, r)
+		ps, pb, ph := send(t, pyBase, pyToken, r)
+		gs, gb, gh := send(t, goBase, goToken, r)
 		pv, perr := jsonx.Parse(pb)
 		gv, gerr := jsonx.Parse(gb)
-		same := ps == gs && ((perr == nil && gerr == nil && jsonx.Equal(pv, gv)) || bytes.Equal(pb, gb))
+		migrated := httpxtest.MigratedAPIError(r.method, ps, gs, ph, gh, pb, gb)
+		same := migrated || ps == gs && ((perr == nil && gerr == nil && jsonx.Equal(pv, gv)) || bytes.Equal(pb, gb))
 		if r.contains != "" && (!strings.Contains(string(pb), r.contains) || !strings.Contains(string(gb), r.contains)) {
 			failed++
 			t.Errorf("%s: body lacks %q:\n  python %s\n  go     %s", r.name, r.contains, pb, gb)
