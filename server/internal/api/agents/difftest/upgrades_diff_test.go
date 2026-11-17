@@ -626,6 +626,7 @@ func (p *recordingProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	p.mu.Unlock()
 	outgoing, _ := http.NewRequest(r.Method, r.URL.String(), r.Body)
 	outgoing.Header = r.Header.Clone()
+	outgoing.ContentLength = r.ContentLength
 	response, err := (&http.Transport{Proxy: nil}).RoundTrip(outgoing)
 	if err != nil {
 		w.WriteHeader(502)

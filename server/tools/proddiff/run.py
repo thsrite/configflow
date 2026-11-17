@@ -357,7 +357,7 @@ AGENT_COMPARISON_ROUTES = {'/api/agents', '/api/agents/<agent_id>', '/api/agents
 
 def settled_agent_comparison(fetch, route):
     """Observe the completed read-only comparison, never mask a checking result."""
-    deadline = time.monotonic() + 30
+    deadline = time.monotonic() + 120
     while True:
         reply = fetch()
         if reply[0] != 200:
@@ -375,8 +375,8 @@ def settled_agent_comparison(fetch, route):
         if not checking:
             return reply
         if time.monotonic() >= deadline:
-            raise RuntimeError('Agent content comparison did not settle')
-        time.sleep(0.01)
+            raise RuntimeError('Agent content comparison did not settle: ' + route)
+        time.sleep(0.2)
 
 
 def same_agent_transport_target(python_message, go_message):
@@ -873,8 +873,20 @@ def main():
                     from content_policy import REQUEST_SECONDS, ROUTES
                     if method == 'GET' and route in ROUTES:
                         timeout = max(timeout, REQUEST_SECONDS)
-                    fetch = lambda: ask(index, method, path, body, timeout)
-                    return settled_agent_comparison(fetch, route) if method == 'GET' and route in AGENT_COMPARISON_ROUTES else fetch()
+                    last = None
+                    def fetch():
+                        nonlocal last
+                        last = ask(index, method, path, body, timeout)
+                        return last
+                    try:
+                        return settled_agent_comparison(fetch, route) if method == 'GET' and route in AGENT_COMPARISON_ROUTES else fetch()
+                    except RuntimeError:
+                        # Keep diagnostic values in the already protected run directory.
+                        # Route templates and side only appear in the exception itself.
+                        if last is not None:
+                            (report / ('agent-comparison-timeout-' + str(index) + '.json')).write_text(json.dumps(
+                                {'route': route, 'reply': load_json(last[2])}, ensure_ascii=False))
+                        raise
                 python = lambda timeout: one(0, timeout)
                 go = lambda timeout: one(1, timeout)
                 return (case,) + compare_http(python, go, lambda a, b: response_diffs(a, b, route, rules, agent_identities),

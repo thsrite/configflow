@@ -154,7 +154,7 @@ class ComparatorTests(unittest.TestCase):
         with mock.patch.object(pd.time, 'sleep'):
             result = pd.settled_agent_comparison(lambda: next(replies), route)
         self.assertEqual({'status': 'changed', 'counts': {'changed': 1}}, json.loads(result[2]))
-        with mock.patch.object(pd.time, 'monotonic', side_effect=[0, 31]), mock.patch.object(pd.time, 'sleep'):
+        with mock.patch.object(pd.time, 'monotonic', side_effect=[0, 121]), mock.patch.object(pd.time, 'sleep'):
             with self.assertRaises(RuntimeError):
                 pd.settled_agent_comparison(lambda: reply({'status': 'checking'}), route)
 
