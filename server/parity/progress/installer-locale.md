@@ -62,8 +62,13 @@ Done: .64 installer full package passed twice (absent locale 127.809s;
 inherited environment 128.478s). .32 harness regression passed all 18 cases
 (0.033s); .64 regression passed again on the final harness (0.034s).
 .64 gofmt of internal/ and tools/ had no output; `go vet ./...` passed.
-In progress: .32 full installer absent/UTF-8 runs, then rebase and all-package
-suite on .64 with normal UTF-8 environment. No implementation work remains.
+Done: .32 installer passed with absent locale (296.141s) and explicit UTF-8
+(285.065s). Rebased to go at f5258a8b; all-package suite, gofmt and vet passed
+on .64 with explicit UTF-8 environment (installer 160.293s).
+The final rebase picked up N7-3a shared YAML/subscription changes at go=8303397c;
+the all-package/gofmt/vet command passed again on that merged tree (installer
+160.243s). Implementation commit: 30b97400. No task work remains.
+The independent L1 guest check described above remains outside this task.
 
 ## Exact reproduction/probe commands
 
@@ -151,3 +156,58 @@ done
 echo INSTALLER_BOTH_MODES_PASS
 ```
 
+Additional exact commands:
+
+```bash
+RT_HOST=sunbroke@192.168.0.64 rt -- bash -c 'set -eu
+cd server
+command -v dash
+for mode in unset normal; do
+    echo "INSTALLER_MODE=$mode"
+    if [ "$mode" = unset ]; then
+        (
+            for key in ${!LC_@} LANG LANGUAGE; do unset "$key"; done
+            go test -count=1 -timeout=30m ./internal/installer
+        )
+    else
+        go test -count=1 -timeout=30m ./internal/installer
+    fi
+done
+echo INSTALLER_BOTH_MODES_PASS'
+RT_HOST=sunbroke@192.168.0.64 rt -- bash -c 'set -eu; cd server; test -z "$(gofmt -l internal/ tools/)"; echo GOFMT_PASS; go vet ./...; echo VET_PASS; go test -count=1 -run TestRunShellLocaleDoesNotDependOnCaller ./internal/installer'
+RT_HOST=sunbroke@192.168.0.64 rt -- bash -c 'set -eu; export LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8; cd server; test -z "$(gofmt -l internal/ tools/)"; echo GOFMT_PASS; go vet ./...; echo VET_PASS; go test -p=4 -count=1 -timeout=30m ./...; echo ALL_TESTS_PASS'
+```
+
+The initial .64 pair used absent/inherited environment; the final full-suite
+command explicitly supplied UTF-8, including another complete installer run.
+`-p=4` limits shared-server package concurrency; no package is excluded.
+
+```text
+.64 absent locale:  ok configflow/internal/installer 127.809s
+.64 inherited:      ok configflow/internal/installer 128.478s
+INSTALLER_BOTH_MODES_PASS
+.32 absent locale:  ok configflow/internal/installer 296.141s
+.32 UTF-8:          ok configflow/internal/installer 285.065s
+INSTALLER_BOTH_MODES_PASS
+GOFMT_PASS
+VET_PASS
+.64 harness:        ok configflow/internal/installer 0.034s
+.64 full UTF-8:     ok configflow/internal/installer 160.293s
+ok configflow/internal/weburl 0.003s
+ok configflow/internal/yamlx 1.149s
+ok configflow/tools/proddiff/generator 0.012s
+ALL_TESTS_PASS
+```
+
+Final post-rebase repeat of the same full-suite command (.64, exit 0):
+
+```text
+GOFMT_PASS
+VET_PASS
+ok configflow/internal/installer 160.243s
+ok configflow/internal/weburl 0.004s
+ok configflow/internal/yamlx 1.951s
+ok configflow/internal/yamlx/yamlxtest 0.003s
+ok configflow/tools/proddiff/generator 0.010s
+ALL_TESTS_PASS
+```
