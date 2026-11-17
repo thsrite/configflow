@@ -1358,7 +1358,7 @@ space around `payload:` made a classical set's capture silently empty (Python re
 detection takes Unicode white space, 62 corpus rows added (7494). New tests for the content limits,
 all TUN filter keys and scalar tun/dns. Debt: N7-3 (`LoadWith` vs convert's `Load` acceptance),
 N3/N8 (`PySplitlines`, `jsonx.Str`), N9 (`PythonClass` in gwbase); C32 must install
-`SetRulesetContent` before A20's provider routes ship.
+`SetRulesetContent` before A20's provider routes ship. C32 now installs it via `api/rules.Wire` in server startup: validated cache → inline → bounded C14 download, using the passed immutable publish snapshot. `server.TestNewAppWiresRuleContentForGatewayProviders` proves default loader availability and canceled-caller completion; no gateway logic is copied.
 
 ### Only lab batch L4 can prove
 

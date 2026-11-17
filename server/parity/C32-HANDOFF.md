@@ -37,3 +37,5 @@
 2. 先跑改动包测试/差分，随后最终必须用最新 `server/scripts/gate.sh -p 6 FuzzPastedRules:./internal/api/rules`（协调者最新：.64内存20GB+swap，禁止自行并行全量/proddiff；gate自动最多两轮排队）。包括gofmt/vet/tag builds、全race、proddiff、全部difftest和fuzz；记录host/load与末尾输出。已知aggregation provider3条差异由别的agent处理，不擅自baseline。
 3. 若用户明确要求普通全量额外跑，必须同样受gate的slots约束；不要绕队列。
 4. 最终更新PROGRESS为ported（不verified），重写本报告为最终结果，提交后git rebase go、干净、无push，报告hash及所有延期。
+
+变基到go9a208c6c完成，文档追加冲突保留双方。启动接线A19现有SetRulesetContent：api/rules.Wire复用sourceContent和传入publish快照，取消调用仍由owner收尾，server/gateway集成测试通过1.944s/0.057s/1.604s。即将启动gate.sh -p 6。

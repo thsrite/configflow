@@ -13,7 +13,9 @@ import (
 	"unicode/utf8"
 
 	"configflow/internal/convert"
+	"configflow/internal/gateway"
 	"configflow/internal/jsonx"
+	"configflow/internal/lifecycle"
 	"configflow/internal/refresh"
 	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
@@ -238,4 +240,22 @@ func sourceText(content []byte) string {
 		return ""
 	}
 	return strings.TrimPrefix(string(content), "\ufeff")
+}
+
+// Wire installs C32's shared source reader for Linux gateway providers. The
+// gateway passes its immutable publish snapshot; resolving it again could mix
+// revisions. The source/cache owner retains shutdown cancellation.
+func Wire() {
+	s := &Service{client: rulefetch.DefaultClient}
+	gateway.SetRulesetContent(func(ctx context.Context, item, library, config *jsonx.Object) (string, error) {
+		ctx = lifecycle.Detach(ctx)
+		if config == nil {
+			var err error
+			config, err = repo.GetConfig(ctx, "")
+			if err != nil {
+				return "", err
+			}
+		}
+		return s.sourceContent(ctx, config, item, library, "")
+	})
 }
