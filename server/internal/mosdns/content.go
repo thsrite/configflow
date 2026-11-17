@@ -7,6 +7,8 @@ import (
 	"configflow/internal/pystr"
 	"configflow/internal/rules"
 	"configflow/internal/yamlx"
+	"errors"
+	"gopkg.in/yaml.v3"
 )
 
 // Rule file parts (RULE_PART_DOMAIN, RULE_PART_IP, RULE_PARTS).
@@ -179,23 +181,49 @@ func ConvertRuleContentForMosDNS(content string, part ...string) (out string, er
 
 	var ruleLines []any
 	if isYAMLFormat {
-		// Values jsonx cannot hold elsewhere in the document do not matter;
-		// a payload that is itself one (a !!set, iterated in hash order by
-		// Python) is read as text like a YAML failure.
-		data, loadErr := yamlx.LoadWith(content, yamlx.LoadOptions{KeepNonStringKeys: true, KeepUnrepresentable: true})
-		payload, present := any(nil), false
-		if loadErr == nil && yamlx.IsMapping(data) {
-			payload, present = yamlx.Lookup(data, "payload")
-			if _, unholdable := payload.(*yamlx.Unrepresentable); unholdable {
-				payload, present = nil, false
-			}
+		document, loadErr := yamlx.Parse([]byte(content))
+		if loadErr != nil && rejectYAML(loadErr) {
+			return "", customYAMLError(loadErr)
 		}
-		if present {
-			if truthy(payload) {
-				ruleLines = iterate(payload)
-			}
-		} else {
+		var payload *yamlx.Node
+		if loadErr == nil {
+			payload = yamlx.Resolve(yamlx.Get(document, "payload"))
+		}
+		if payload == nil {
 			isYAMLFormat = false
+		} else {
+			addScalar := func(node *yamlx.Node) {
+				node = yamlx.Resolve(node)
+				if node.Kind == yaml.ScalarNode && (node.ShortTag() == "!!str" || node.ShortTag() == "!!timestamp") {
+					ruleLines = append(ruleLines, node.Value)
+				}
+			}
+			switch payload.Kind {
+			case yaml.SequenceNode:
+				for _, node := range payload.Content {
+					addScalar(node)
+				}
+			case yaml.MappingNode:
+				for key := range yamlx.AllPairs(payload) {
+					addScalar(key)
+				}
+			case yaml.ScalarNode:
+				switch payload.ShortTag() {
+				case "!!null":
+				case "!!str", "!!timestamp":
+					for _, character := range payload.Value {
+						ruleLines = append(ruleLines, string(character))
+					}
+				default:
+					var value any
+					if err := yamlx.Decode(payload, &value); err != nil {
+						return "", err
+					}
+					if truthy(value) {
+						return "", errors.New(msgPayloadCollection)
+					}
+				}
+			}
 		}
 	}
 	if !isYAMLFormat {

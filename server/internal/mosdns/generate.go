@@ -8,6 +8,7 @@ import (
 	"configflow/internal/jsonx"
 	"configflow/internal/pystr"
 	"configflow/internal/yamlx"
+	"gopkg.in/yaml.v3"
 )
 
 // UnsupportedYAMLError reports a custom MosDNS base configuration
@@ -18,9 +19,15 @@ import (
 // the Go server refuses instead of writing other bytes. Values only in
 // sections Python drops do not matter; mappings with keys that are not
 // strings are written like PyYAML.
-type UnsupportedYAMLError struct{ Msg string }
+type UnsupportedYAMLError struct {
+	Msg   string
+	cause error
+}
 
 func (e *UnsupportedYAMLError) Error() string { return e.Msg }
+
+// Unwrap retains the facade policy or alias rejection.
+func (e *UnsupportedYAMLError) Unwrap() error { return e.cause }
 
 // effectiveBaseURL is `config['system_config'].get('server_domain',
 // ”).strip() or base_url`.
@@ -133,18 +140,27 @@ func plugin(tag, kind string, args any) *jsonx.Object {
 // (*convert.PyError) and *UnsupportedYAMLError.
 func GenerateMosDNSConfig(config *jsonx.Object, baseURL string) (out string, err error) {
 	defer catch(&err)
-	document := generateDocument(config, baseURL)
-	if err := checkDumpable(document, map[unsafe.Pointer]bool{}); err != nil {
+	document, err := generateDocument(config, baseURL)
+	if err != nil {
 		return "", err
 	}
-	text, dumpErr := yamlx.IndentDump(document)
-	if dumpErr != nil {
-		return "", dumpErr
+	node, err := documentNode(document)
+	if err != nil {
+		return "", err
 	}
-	return text, nil
+	// Edit's verified rewrite retains displaced anchor definitions without
+	// expanding their aliases when generated sections replace user sections.
+	settings, _ := config.Value("mosdns").(*jsonx.Object)
+	custom, _ := settings.Value("custom_config").(string)
+	if original, parseErr := yamlx.Parse([]byte(custom)); parseErr == nil && original.Kind == yaml.MappingNode && original.ShortTag() == "!!map" {
+		data, editErr := yamlx.Edit([]byte(custom), func(root *yamlx.Node) error { *root = *node; return nil })
+		return string(data), editErr
+	}
+	data, err := yamlx.Marshal(node)
+	return string(data), err
 }
 
-func generateDocument(config *jsonx.Object, baseURL string) any {
+func generateDocument(config *jsonx.Object, baseURL string) (any, error) {
 	_, ruleSets := splitRulesAndRulesets(config)
 	sets := buildRulesetMap(ruleSets, true)
 	order := rulesetExecutionOrder(config, ruleSets)
@@ -166,14 +182,16 @@ func generateDocument(config *jsonx.Object, baseURL string) any {
 
 	customConfig := get(settings, "custom_config", "")
 	var base *jsonx.Object
-	var root *yamlx.Mapping // a custom root with keys that are not strings
+	var root *yamlx.Node
 	if truthy(customConfig) && strip(customConfig) != "" {
-		base, root = loadCustomConfig(customConfig.(string))
+		var err error
+		root, err = loadCustomConfig(customConfig.(string))
+		if err != nil {
+			return nil, err
+		}
 	}
-	if base == nil || (base.Len() == 0 && root == nil) {
-		root = nil
-		base = jsonx.Obj("api", jsonx.Obj("http", "0.0.0.0:8338"), "plugins", []any{})
-	}
+	base = jsonx.Obj("api", jsonx.Obj("http", "0.0.0.0:8338"), "plugins", []any{})
+
 	if !base.Has("plugins") {
 		base.Set("plugins", []any{})
 	}
@@ -255,21 +273,30 @@ func generateDocument(config *jsonx.Object, baseURL string) any {
 	}
 
 	// 3-5. Forwarders.
-	localUpstreams := parseDNSUpstreams(get(settings, "local_dns", ""))
+	localUpstreams, err := parseDNSUpstreams(get(settings, "local_dns", ""))
+	if err != nil {
+		return nil, err
+	}
 	if len(localUpstreams) == 0 {
 		localUpstreams = []any{jsonx.Obj("addr", "223.5.5.5"), jsonx.Obj("addr", "119.29.29.29")}
 	}
 	plugins = append(plugins, plugin("forward_local", "forward",
 		jsonx.Obj("concurrent", jsonx.Int(10), "upstreams", localUpstreams)))
 
-	remoteUpstreams := parseDNSUpstreams(get(settings, "remote_dns", ""))
+	remoteUpstreams, err := parseDNSUpstreams(get(settings, "remote_dns", ""))
+	if err != nil {
+		return nil, err
+	}
 	if len(remoteUpstreams) == 0 {
 		remoteUpstreams = []any{jsonx.Obj("addr", "https://1.1.1.1/dns-query"), jsonx.Obj("addr", "https://dns.google/dns-query")}
 	}
 	plugins = append(plugins, plugin("forward_remote", "forward",
 		jsonx.Obj("concurrent", jsonx.Int(5), "upstreams", remoteUpstreams)))
 
-	fallbackUpstreams := parseDNSUpstreams(get(settings, "fallback_dns", ""))
+	fallbackUpstreams, err := parseDNSUpstreams(get(settings, "fallback_dns", ""))
+	if err != nil {
+		return nil, err
+	}
 	if len(fallbackUpstreams) == 0 {
 		// A copy, not a reference: no YAML anchor between the two lists.
 		fallbackUpstreams = deepCopy(localUpstreams, map[unsafe.Pointer]any{}).([]any)
@@ -464,7 +491,7 @@ func generateDocument(config *jsonx.Object, baseURL string) any {
 			ordered.Set(k, v)
 		}
 	}
-	return ordered
+	return ordered, nil
 }
 
 // orderedMapping is the ordered_config of a custom root that has keys other
@@ -472,37 +499,30 @@ func generateDocument(config *jsonx.Object, baseURL string) any {
 // updates. Python's mosdns_config keeps the original key order (deleted keys
 // gone, new keys appended); ordered_config puts log, api and plugins first
 // and drops servers and data_providers.
-func orderedMapping(root *yamlx.Mapping, base *jsonx.Object) *yamlx.Mapping {
-	var pairs []yamlx.Pair
-	original := map[string]bool{}
-	for _, p := range root.Pairs {
-		if k, ok := p.Key.(string); ok {
-			original[k] = true
-			if v, present := base.Get(k); present {
-				pairs = append(pairs, yamlx.Pair{Key: k, Value: v})
+func orderedMapping(root *yamlx.Node, base *jsonx.Object) (*yamlx.Node, error) {
+	generated, err := documentNode(base)
+	if err != nil {
+		return nil, err
+	}
+	out := yamlx.Map()
+	for _, key := range []string{"log", "api", "plugins"} {
+		if value := yamlx.Get(generated, key); value != nil {
+			yamlx.Set(out, key, value)
+		}
+	}
+	// Generated sections have JSON configuration values. All other user nodes,
+	// including non-string keys and aliases, remain YAML nodes.
+	for key, value := range yamlx.AllPairs(root) {
+		resolved := yamlx.Resolve(key)
+		if resolved.Kind == yaml.ScalarNode && resolved.ShortTag() == "!!str" {
+			switch resolved.Value {
+			case "log", "api", "plugins", "servers", "data_providers":
+				continue
 			}
-			continue
 		}
-		pairs = append(pairs, p)
+		out.Content = append(out.Content, key, value)
 	}
-	for k, v := range base.All() {
-		if !original[k] {
-			pairs = append(pairs, yamlx.Pair{Key: k, Value: v})
-		}
-	}
-	out := &yamlx.Mapping{}
-	for _, k := range []string{"log", "api", "plugins"} {
-		if v, ok := base.Get(k); ok {
-			out.Pairs = append(out.Pairs, yamlx.Pair{Key: k, Value: v})
-		}
-	}
-	for _, p := range pairs {
-		if k, ok := p.Key.(string); ok && (k == "log" || k == "api" || k == "plugins" || k == "servers" || k == "data_providers") {
-			continue
-		}
-		out.Pairs = append(out.Pairs, p)
-	}
-	return out
+	return out, nil
 }
 
 // tagDefault is ruleset_tag_map.get(id, rule_set.get('name') or
@@ -541,67 +561,19 @@ func dumpInterval(value any) (n jsonx.Number) {
 	return n
 }
 
-// loadCustomConfig is the custom base configuration: yaml.safe_load, a
-// non-mapping or a YAML error giving the defaults (nil). Values jsonx cannot
-// hold are kept as *yamlx.Unrepresentable: Python drops
-// log/api/plugins/servers/data_providers, so only those that reach the
-// output are refused (checkDumpable). A root with keys that are not strings
-// is also returned as root; base then holds its string keys.
-func loadCustomConfig(text string) (*jsonx.Object, *yamlx.Mapping) {
-	value, err := yamlx.LoadWith(text, yamlx.LoadOptions{KeepNonStringKeys: true, KeepUnrepresentable: true})
+// loadCustomConfig keeps free-form configuration as a graph. Ordinary syntax
+// errors retain the established default-template fallback; policy and unsafe
+// alias errors are never hidden by that fallback.
+func loadCustomConfig(text string) (*yamlx.Node, error) {
+	node, err := yamlx.Parse([]byte(text))
 	if err != nil {
+		if rejectYAML(err) {
+			return nil, customYAMLError(err)
+		}
 		return nil, nil
 	}
-	switch x := value.(type) {
-	case *jsonx.Object:
-		return x, nil
-	case *yamlx.Mapping:
-		base := jsonx.NewObject()
-		for _, p := range x.Pairs {
-			if k, ok := p.Key.(string); ok {
-				base.Set(k, p.Value)
-			}
-		}
-		return base, x
+	if node.Kind != yaml.MappingNode || node.ShortTag() != "!!map" {
+		return nil, nil
 	}
-	// Not a dict (a !!set, !!omap or recursive list root included): defaults.
-	return nil, nil
-}
-
-// checkDumpable rejects values Python's yaml.Dumper would write but jsonx
-// cannot hold (*yamlx.Unrepresentable: !!set, !!omap/!!pairs, recursive
-// aliases). Mappings with keys that are not strings (*yamlx.Mapping) are
-// dumped like PyYAML.
-func checkDumpable(v any, seen map[unsafe.Pointer]bool) error {
-	switch x := v.(type) {
-	case *yamlx.Unrepresentable:
-		return &UnsupportedYAMLError{Msg: "MosDNS configuration: " + x.Msg}
-	case *yamlx.Mapping:
-		if x == nil || seen[unsafe.Pointer(x)] {
-			return nil
-		}
-		seen[unsafe.Pointer(x)] = true
-		for _, p := range x.Pairs {
-			if err := checkDumpable(p.Value, seen); err != nil {
-				return err
-			}
-		}
-	case *jsonx.Object:
-		if x == nil || seen[unsafe.Pointer(x)] {
-			return nil
-		}
-		seen[unsafe.Pointer(x)] = true
-		for _, value := range x.All() {
-			if err := checkDumpable(value, seen); err != nil {
-				return err
-			}
-		}
-	case []any:
-		for _, value := range x {
-			if err := checkDumpable(value, seen); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
+	return node, nil
 }

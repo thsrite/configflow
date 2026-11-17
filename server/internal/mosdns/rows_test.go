@@ -8,7 +8,6 @@ import (
 	"os"
 	"strings"
 	"testing"
-	"unsafe"
 
 	"configflow/internal/convert"
 	"configflow/internal/jsonx"
@@ -145,13 +144,15 @@ func callRow(fn string, args []any) (out any, err error, ok bool) {
 		var list []any
 		list, err = ParseDNSUpstreams(arg(0))
 		if err == nil {
-			if derr := checkDumpable(list, map[unsafe.Pointer]bool{}); derr != nil {
-				return nil, derr, true
-			}
-			text, derr := yamlx.IndentDump(list)
+			node, derr := documentNode(list)
 			if derr != nil {
 				return nil, derr, true
 			}
+			data, derr := yamlx.Marshal(node)
+			if derr != nil {
+				return nil, derr, true
+			}
+			text := string(data)
 			out = jsonx.Obj("dump", text)
 		}
 	case "proxy_url":

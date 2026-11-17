@@ -9,7 +9,6 @@ import (
 	"configflow/internal/convert"
 	"configflow/internal/jsonx"
 	"configflow/internal/pystr"
-	"configflow/internal/yamlx"
 )
 
 // Python-semantics helpers. The converter is written like the Python module
@@ -46,18 +45,13 @@ func typeName(v any) string {
 		return "str"
 	case []any:
 		return "list"
-	case *jsonx.Object, *yamlx.Mapping:
+	case *jsonx.Object:
 		return "dict"
 	case jsonx.Number:
 		if x.IsInt() {
 			return "int"
 		}
 		return "float"
-	case yamlx.Timestamp:
-		if !x.HasTime {
-			return "datetime.date"
-		}
-		return "datetime.datetime"
 	case []byte:
 		return "bytes"
 	}
@@ -78,11 +72,6 @@ func get(v any, key string, def any) any {
 			}
 			return def
 		}
-	case *yamlx.Mapping:
-		if value, ok := x.Get(key); ok {
-			return value
-		}
-		return def
 	}
 	raise(attributeError(v, "get"))
 	return nil
@@ -114,12 +103,6 @@ func iterate(v any) []any {
 			}
 			return out
 		}
-	case *yamlx.Mapping:
-		out := make([]any, 0, x.Len())
-		for _, pair := range x.Pairs {
-			out = append(out, pair.Key)
-		}
-		return out
 	case string:
 		out := []any{}
 		for _, r := range x {
@@ -151,10 +134,6 @@ func truthy(v any) bool {
 	switch x := v.(type) {
 	case []byte:
 		return len(x) > 0
-	case *yamlx.Mapping:
-		return x.Len() > 0
-	case yamlx.Timestamp:
-		return true
 	}
 	return jsonx.Truthy(v)
 }
@@ -164,8 +143,6 @@ func str(v any) string {
 	switch x := v.(type) {
 	case string:
 		return x
-	case yamlx.Timestamp:
-		return x.String()
 	}
 	return jsonx.Str(v)
 }
@@ -196,8 +173,6 @@ func hashKey(v any) string {
 			return "n:" + n.String()
 		}
 		return "f:" + x.String()
-	case yamlx.Timestamp:
-		return "t:" + x.String()
 	case []byte:
 		return "b:" + string(x)
 	}
@@ -240,14 +215,6 @@ func contains(needle, container any) bool {
 			s, ok := needle.(string)
 			return ok && strings.HasPrefix(k, "s:") && c.Has(s)
 		}
-	case *yamlx.Mapping:
-		k := hashKey(needle)
-		for _, pair := range c.Pairs {
-			if hashKey(pair.Key) == k {
-				return true
-			}
-		}
-		return false
 	}
 	raise(pyErr("TypeError", "argument of type '"+typeName(container)+"' is not iterable"))
 	return false
@@ -386,21 +353,6 @@ func deepCopy(v any, memo map[unsafe.Pointer]any) any {
 		memo[p] = clone
 		for i, value := range x {
 			clone[i] = deepCopy(value, memo)
-		}
-		return clone
-	case *yamlx.Mapping:
-		// A dict with keys that are not strings is copied like any dict, so
-		// the copy is not an alias of the original in the dump.
-		if x == nil {
-			return x
-		}
-		if done, ok := memo[unsafe.Pointer(x)]; ok {
-			return done
-		}
-		clone := &yamlx.Mapping{Pairs: make([]yamlx.Pair, len(x.Pairs))}
-		memo[unsafe.Pointer(x)] = clone
-		for i, pair := range x.Pairs {
-			clone.Pairs[i] = yamlx.Pair{Key: pair.Key, Value: deepCopy(pair.Value, memo)}
 		}
 		return clone
 	case []byte:

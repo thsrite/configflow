@@ -24,6 +24,7 @@ import (
 	"configflow/internal/refresh"
 	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
+	"configflow/internal/yamlx"
 
 	"gopkg.in/yaml.v3"
 )
@@ -566,30 +567,39 @@ func decodeText(content []byte) (string, error) {
 // checkReferences verifies that config.yaml is a mapping with a plugin
 // list and (unless skipped) that every plugin's args.files entry is packed.
 func checkReferences(yamlContent string, files map[string][]byte, skip bool) error {
-	var document any
-	if err := yaml.Unmarshal([]byte(yamlContent), &document); err != nil {
+	document, err := yamlx.Parse([]byte(yamlContent))
+	if err != nil {
 		return err
 	}
-	value, present, isMap := lookup(document, "plugins")
-	plugins, isList := value.([]any)
-	if !isMap || present && !isList {
+	plugins := yamlx.Resolve(yamlx.Get(document, "plugins"))
+	if document.Kind != yaml.MappingNode || plugins != nil && plugins.Kind != yaml.SequenceNode {
 		return archiveErr("MosDNS 配置格式无效")
 	}
-	for _, plugin := range plugins {
+	if plugins == nil {
+		return nil
+	}
+	for _, plugin := range plugins.Content {
 		if skip {
 			break
 		}
-		args, _, isMap := lookup(plugin, "args")
-		if !isMap {
+		plugin = yamlx.Resolve(plugin)
+		if plugin.Kind != yaml.MappingNode {
 			return errors.New("MosDNS plugin is not a mapping")
 		}
-		value, present, _ := lookup(args, "files")
-		references, isList := value.([]any)
-		if present && !isList {
+		args := yamlx.Get(plugin, "args")
+		references := yamlx.Resolve(yamlx.Get(args, "files"))
+		if references == nil {
+			continue
+		}
+		if references.Kind != yaml.SequenceNode {
 			return archiveErr("MosDNS 文件引用必须为列表")
 		}
-		for _, reference := range references {
-			text, _ := reference.(string)
+		for _, reference := range references.Content {
+			reference = yamlx.Resolve(reference)
+			text := ""
+			if reference.Kind == yaml.ScalarNode && reference.ShortTag() == "!!str" {
+				text = reference.Value
+			}
 			path, err := ArchivePath(text)
 			if err != nil {
 				return err
@@ -600,20 +610,6 @@ func checkReferences(yamlContent string, files map[string][]byte, skip bool) err
 		}
 	}
 	return nil
-}
-
-// lookup reads key of a YAML mapping (yaml.v3 decodes a mapping with
-// non-string keys as map[any]any).
-func lookup(node any, key string) (value any, present, isMap bool) {
-	switch m := node.(type) {
-	case map[string]any:
-		value, present = m[key]
-		return value, present, true
-	case map[any]any:
-		value, present = m[key]
-		return value, present, true
-	}
-	return nil, false, false
 }
 
 func writeZip(order []string, files map[string][]byte) ([]byte, error) {

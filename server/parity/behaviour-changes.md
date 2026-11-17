@@ -232,3 +232,18 @@ The visible change is correct rule recognition and valid appended YAML. Plaintex
 remains opaque; no YAML mapping policy is applied to ordinary Classical text.
 This also fixes A11's MosDNS/OxiDNS rule-source conversion; no production
 baseline is changed to conceal a difference.
+
+## N7-3c — native YAML reader policies
+
+Coordinator decisions, 2026-11-17; `design/n7-n8.md` §§5.4/5.7.
+
+- MosDNS keeps the existing default-template/line-format fallback for ordinary parser syntax
+  errors. D1 duplicates, invalid tags/merges/explicit scalar contents and recursive or excessive
+  aliases now use its existing rejection path with the facade's Chinese line-number diagnostic;
+  these errors are never hidden by a fallback or replaced with null.
+- Unknown and `!!python/*` tags are kept as Nodes (no Python constructors execute): scalar text and
+  collection structure pass through. Typed fields still validate their native destination type;
+  invalid tagged discovery ports return a Chinese validation error, never an empty/zero port.
+- Router desired reading and router-split base documents use the shared policies. Ordinary generated
+  output remains semantically equivalent; native YAML typing, timestamp text and the approved
+  rejection classes are counted individually in the N7-3c migration gate. No router-write logic changes.

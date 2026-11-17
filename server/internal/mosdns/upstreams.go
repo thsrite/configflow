@@ -6,6 +6,7 @@ import (
 	"configflow/internal/jsonx"
 	"configflow/internal/pystr"
 	"configflow/internal/yamlx"
+	"gopkg.in/yaml.v3"
 )
 
 // ParseDNSUpstreams is parse_dns_upstreams(dns_config): a YAML list of
@@ -16,41 +17,62 @@ import (
 //	tls://8.8.8.8 223.5.5.5
 //	223.5.5.5
 //
-// The items are the loaded YAML values themselves (*jsonx.Object, or
-// *yamlx.Mapping for a mapping with non-string keys; values jsonx cannot
-// hold are *yamlx.Unrepresentable inside them). The error is Python's
-// AttributeError for a truthy value that is not a string.
+// JSON-compatible upstreams retain the existing configuration interface;
+// YAML-only mappings remain Nodes until the generator writes the document.
 func ParseDNSUpstreams(dnsConfig any) (out []any, err error) {
 	defer catch(&err)
-	return parseDNSUpstreams(dnsConfig), nil
+	out, err = parseDNSUpstreams(dnsConfig)
+	if err != nil {
+		return nil, err
+	}
+	for i, value := range out {
+		if node, ok := value.(*yamlx.Node); ok {
+			data, decodeErr := yamlx.ToJSON(node)
+			if decodeErr != nil {
+				if hasNonStringKey(node) {
+					continue
+				}
+				return nil, decodeErr
+			}
+			out[i], err = jsonx.Parse(data)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+	return out, nil
 }
 
-func parseDNSUpstreams(dnsConfig any) []any {
+func parseDNSUpstreams(dnsConfig any) ([]any, error) {
 	if !truthy(dnsConfig) || strip(dnsConfig) == "" {
-		return []any{}
+		return []any{}, nil
 	}
 	text := pystr.Strip(dnsConfig.(string))
 
 	upstreams := []any{}
-	// Every exception inside Python's try falls back to the line format.
-	if parsed, err := yamlx.LoadWith(text, yamlx.LoadOptions{KeepNonStringKeys: true, KeepUnrepresentable: true}); err == nil {
-		switch x := parsed.(type) {
-		case []any:
-			for _, entry := range x {
-				if yamlx.IsMapping(entry) {
-					if _, ok := yamlx.Lookup(entry, "addr"); ok {
-						upstreams = append(upstreams, entry)
-					}
-				} else if s, ok := entry.(string); ok {
-					upstreams = append(upstreams, jsonx.Obj("addr", s))
+	parsed, parseErr := yamlx.Parse([]byte(text))
+	if parseErr != nil && rejectYAML(parseErr) {
+		return nil, customYAMLError(parseErr)
+	}
+	if parseErr == nil {
+		parsed = yamlx.Resolve(parsed)
+		switch parsed.Kind {
+		case yaml.SequenceNode:
+			for _, entry := range parsed.Content {
+				node := yamlx.Resolve(entry)
+				if node.Kind == yaml.MappingNode && node.ShortTag() == "!!map" && yamlx.Get(node, "addr") != nil {
+					upstreams = append(upstreams, entry)
+				}
+				if node.Kind == yaml.ScalarNode && node.ShortTag() == "!!str" {
+					upstreams = append(upstreams, jsonx.Obj("addr", node.Value))
 				}
 			}
 			if len(upstreams) > 0 {
-				return upstreams
+				return upstreams, nil
 			}
-		case *jsonx.Object, *yamlx.Mapping:
-			if _, ok := yamlx.Lookup(x, "addr"); ok {
-				return []any{x}
+		case yaml.MappingNode:
+			if parsed.ShortTag() == "!!map" && yamlx.Get(parsed, "addr") != nil {
+				return []any{parsed}, nil
 			}
 		}
 	}
@@ -92,5 +114,5 @@ func parseDNSUpstreams(dnsConfig any) []any {
 		}
 		upstreams = append(upstreams, upstream)
 	}
-	return upstreams
+	return upstreams, nil
 }
