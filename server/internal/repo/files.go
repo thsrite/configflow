@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 	"syscall"
+	"time"
 
 	"configflow/internal/ctxx"
 	"configflow/internal/jsonx"
@@ -110,6 +112,18 @@ func writeTemp(path string, content []byte) (string, error) {
 // refresh "<path>.bak" with the previous content, also through a temporary
 // file; a failed backup refresh keeps the old backup and is not an error.
 func writeAtomic(path string, content []byte) error {
+	return writeAtomicContext(context.Background(), path, content)
+}
+
+func writeAtomicContext(ctx context.Context, path string, content []byte) error {
+	return writeAtomicUsing(ctx, path, content, writeTemp, os.Rename)
+}
+
+func writeAtomicUsing(ctx context.Context, path string, content []byte,
+	stage func(string, []byte) (string, error), replace func(string, string) error) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o777); err != nil {
 		return err
 	}
@@ -120,11 +134,15 @@ func writeAtomic(path string, content []byte) error {
 			previous, hasPrevious = data, true
 		}
 	}
-	temporary, err := writeTemp(path, content)
+	temporary, err := stage(path, content)
 	if err != nil {
 		return err
 	}
-	if err := os.Rename(temporary, path); err != nil {
+	if err := ctx.Err(); err != nil {
+		os.Remove(temporary)
+		return err
+	}
+	if err := replace(temporary, path); err != nil {
 		os.Remove(temporary)
 		return err
 	}
@@ -135,11 +153,11 @@ func writeAtomic(path string, content []byte) error {
 		return nil
 	}
 	backup := path + ".bak"
-	backupTemporary, err := writeTemp(backup, previous)
+	backupTemporary, err := stage(backup, previous)
 	if err != nil {
 		return nil
 	}
-	if err := os.Rename(backupTemporary, backup); err != nil {
+	if err := replace(backupTemporary, backup); err != nil {
 		os.Remove(backupTemporary)
 		return nil
 	}
@@ -157,11 +175,18 @@ func fileJSON(data any) ([]byte, error) {
 }
 
 func writeJSON(path string, data any) error {
+	return writeJSONContext(context.Background(), path, data)
+}
+
+func writeJSONContext(ctx context.Context, path string, data any) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	text, err := fileJSON(data)
 	if err != nil {
 		return err
 	}
-	return writeAtomic(path, text)
+	return writeAtomicContext(ctx, path, text)
 }
 
 // SharedPath is shared_path: a path below DATA_DIR/shared; a relative path
@@ -225,21 +250,61 @@ func (r *Repository) ReadSharedJSON(ctx context.Context, relativePath string) (r
 // WriteSharedJSON is write_shared_json; it returns the file's path.
 func (r *Repository) WriteSharedJSON(ctx context.Context, relativePath string, data any) (string, error) {
 	ctx = ctxx.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	path, err := r.SharedPath(relativePath)
 	if err != nil {
 		return "", err
 	}
-	return path, withFile(ctx, path, func() error { return writeJSON(path, data) })
+	return path, withFile(ctx, path, func() error { return writeJSONContext(ctx, path, data) })
 }
 
 // WriteSharedText is write_shared_text; it returns the file's path.
 func (r *Repository) WriteSharedText(ctx context.Context, relativePath string, content []byte) (string, error) {
+	return r.writeSharedText(ctx, relativePath, content, false)
+}
+
+// WriteSharedTextIfChanged refreshes mtime when both the file and its backup
+// already match content; otherwise it replaces them like WriteSharedText.
+// Comparison, touch and replacement share the same bounded file leaf lock.
+func (r *Repository) WriteSharedTextIfChanged(ctx context.Context, relativePath string, content []byte) (string, error) {
+	return r.writeSharedText(ctx, relativePath, content, true)
+}
+
+func (r *Repository) writeSharedText(ctx context.Context, relativePath string, content []byte, preferTouch bool) (string, error) {
 	ctx = ctxx.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	path, err := r.SharedPath(relativePath)
 	if err != nil {
 		return "", err
 	}
-	return path, withFile(ctx, path, func() error { return writeAtomic(path, content) })
+	return path, withFile(ctx, path, func() error {
+		if preferTouch {
+			if touched, err := touchUnchangedCache(ctx, path, content); err != nil || touched {
+				return err
+			}
+		}
+		return writeAtomicContext(ctx, path, content)
+	})
+}
+
+// touchUnchangedCache runs under the file leaf lock. A failed touch falls
+// back to replacement, matching the rule-cache freshness behavior.
+func touchUnchangedCache(ctx context.Context, path string, content []byte) (bool, error) {
+	for _, name := range []string{path, path + ".bak"} {
+		existing, err := os.ReadFile(name)
+		if err != nil || !bytes.Equal(existing, content) {
+			return false, nil
+		}
+	}
+	now := time.Now()
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	return os.Chtimes(path, now, now) == nil, nil
 }
 
 // ProfileDir is profile_dir: DATA_DIR/profiles/<id>.
@@ -327,6 +392,9 @@ func (r *Repository) writeProfileFile(ctx context.Context, profileID, path strin
 // the profile's generated directory.
 func (r *Repository) WriteGenerated(ctx context.Context, profileID, filename string, content []byte) (string, error) {
 	ctx = ctxx.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	if filename != "config.yaml" && filename != "config.conf" && filename != "loon.lcf" {
 		return "", validationError("Invalid generated filename")
 	}
@@ -335,17 +403,20 @@ func (r *Repository) WriteGenerated(ctx context.Context, profileID, filename str
 		return "", err
 	}
 	path := filepath.Join(directory, filename)
-	return path, r.writeProfileFile(ctx, profileID, path, func() error { return writeAtomic(path, content) })
+	return path, r.writeProfileFile(ctx, profileID, path, func() error { return writeAtomicContext(ctx, path, content) })
 }
 
 // WriteProfileJSON is write_profile_json.
 func (r *Repository) WriteProfileJSON(ctx context.Context, profileID, relativePath string, data any) (string, error) {
 	ctx = ctxx.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	path, err := r.ProfilePath(profileID, relativePath)
 	if err != nil {
 		return "", err
 	}
-	return path, r.writeProfileFile(ctx, profileID, path, func() error { return writeJSON(path, data) })
+	return path, r.writeProfileFile(ctx, profileID, path, func() error { return writeJSONContext(ctx, path, data) })
 }
 
 // ReadProfileJSON is read_profile_json (no lock).
@@ -360,9 +431,12 @@ func (r *Repository) ReadProfileJSON(profileID, relativePath string) (*jsonx.Obj
 // WriteProfileText is write_profile_text.
 func (r *Repository) WriteProfileText(ctx context.Context, profileID, relativePath string, content []byte) (string, error) {
 	ctx = ctxx.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	path, err := r.ProfilePath(profileID, relativePath)
 	if err != nil {
 		return "", err
 	}
-	return path, r.writeProfileFile(ctx, profileID, path, func() error { return writeAtomic(path, content) })
+	return path, r.writeProfileFile(ctx, profileID, path, func() error { return writeAtomicContext(ctx, path, content) })
 }

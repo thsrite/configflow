@@ -1,14 +1,12 @@
 package rules
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"configflow/internal/jsonx"
 )
@@ -154,18 +152,4 @@ func RuleCacheReadPath(rule *jsonx.Object, library, stored []any, rulesDir strin
 		return legacy
 	}
 	return path
-}
-
-// TouchUnchangedCache: when the file and its .bak
-// copy already hold exactly content, only the modification time moves (the
-// cache refresh time shown in the UI) and true is returned.
-func TouchUnchangedCache(path string, content []byte) bool {
-	for _, name := range []string{path, path + ".bak"} {
-		existing, err := os.ReadFile(name)
-		if err != nil || !bytes.Equal(existing, content) {
-			return false
-		}
-	}
-	now := time.Now()
-	return os.Chtimes(path, now, now) == nil
 }

@@ -4,7 +4,7 @@ package rulefetch
 // (get_rules_dir, read/write_validated_rule_cache, refresh_remote_rule,
 // read_rule_source_content, save_rule_to_local). The pure name/path helpers
 // are in internal/rules (SanitizeRuleName, RuleCacheFilename,
-// RuleCacheReadPath, TouchUnchangedCache).
+// RuleCacheReadPath).
 
 import (
 	"bytes"
@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"configflow/internal/convert"
+	"configflow/internal/ctxx"
 	"configflow/internal/jsonx"
 	"configflow/internal/logx"
 	"configflow/internal/repo"
@@ -112,6 +113,10 @@ func ReadValidatedRuleCache(ctx context.Context, rule, config *jsonx.Object) ([]
 // bytes only get a new modification time). It returns the cache file name
 // relative to the rules directory.
 func WriteValidatedRuleCache(ctx context.Context, rule *jsonx.Object, content any, config *jsonx.Object) (string, error) {
+	ctx = ctxx.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	if rule.GetOr("source_type", "url") == "url" {
 		if err := ValidateRemoteRuleContent(content, rule, config, ""); err != nil {
 			return "", err
@@ -129,11 +134,8 @@ func WriteValidatedRuleCache(ctx context.Context, rule *jsonx.Object, content an
 	}
 	data := contentBytes(content)
 	write := func(locked context.Context) error {
-		if !rules.TouchUnchangedCache(target, data) {
-			_, err := r.WriteSharedText(locked, relative, data)
-			return err
-		}
-		return nil
+		_, err := r.WriteSharedTextIfChanged(locked, relative, data)
+		return err
 	}
 	if rule.GetOr("source_type", "url") == "content" {
 		err = writeCurrentInline(ctx, r, rule, target, data, write)

@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"configflow/internal/jsonx"
 )
@@ -135,32 +134,5 @@ func TestRuleCacheReadPathLegacyNameCaches(t *testing.T) {
 	other := obj("id", "r9", "name", "a?b", "source_type", "content")
 	if got := RuleCacheReadPath(other, seq(a), seq(a), root); got == filepath.Join(root, "a_b.list") {
 		t.Error("an unknown spelling claimed the legacy file")
-	}
-}
-
-func TestTouchUnchangedCache(t *testing.T) {
-	root := t.TempDir()
-	path := writeCache(t, root, "x.list", "same")
-	writeCache(t, root, "x.list.bak", "same")
-	old := time.Now().Add(-time.Hour)
-	if err := os.Chtimes(path, old, old); err != nil {
-		t.Fatal(err)
-	}
-	if !TouchUnchangedCache(path, []byte("same")) {
-		t.Fatal("identical bytes not recognised")
-	}
-	info, _ := os.Stat(path)
-	if time.Since(info.ModTime()) > time.Minute {
-		t.Error("mtime not refreshed")
-	}
-	if TouchUnchangedCache(path, []byte("different")) {
-		t.Error("changed bytes treated as unchanged")
-	}
-	os.WriteFile(path+".bak", []byte("stale"), 0o644)
-	if TouchUnchangedCache(path, []byte("same")) {
-		t.Error("a differing .bak was ignored")
-	}
-	if TouchUnchangedCache(filepath.Join(root, "missing.list"), []byte("x")) {
-		t.Error("missing file touched")
 	}
 }

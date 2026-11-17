@@ -73,3 +73,24 @@ TestO36cRepoBeforeCommitRuntimeBoundary、TestO36cRepoLockWaitRuntimeBoundary，
 - 绿：.64 `go test -race -count=3 ./internal/taskstatus/` 退出0、8.405s；上述六组调用方和
   taskstatus vet 通过。新回归 TestO36cStatusLockWaitRuntimeBoundary 保留实际 sync.Mutex 等待，
   shutdown 零落盘/零通知，disconnect 完成；TestO36cStatusShutdownDuringRecord 验证中途取消及无遗留临时文件。
+
+## 文件 replace 与规则缓存 touch
+
+普通 shared/profile/generated 写入改传工作 ctx 到 writeAtomicContext/writeJSONContext；
+最后检查在主 rename 前，失败删除临时文件。主 rename 成功后继续原有 best-effort .bak，
+不再返回取消。仅把真实 stage/rename 作为私有实现的每调用参数，供 _test 导出桥接；无全局 hook。
+
+新增 WriteSharedTextIfChanged，与 WriteSharedText 共用 owner/叶锁；将旧 rules.TouchUnchangedCache
+移动为 repo 锁内私有实现并添加最终 Chtimes 检查，rulefetch 只调新 owner，旧公开 helper/旧测试已移除。
+旧测试的场景由 TestSharedTextIfChangedFreshness 和现有 rulefetch.TestUnchangedRefreshOnlyTouches
+接住：主+.bak 全匹配才 touch（inode、权限、backup mtime 保留），否则 replace，mtime 前进。
+
+- 红：.64 TestO36cAtomicFileRuntimeBoundary / shutdown-after-stage 复现临时文件完成后关机仍
+  写入新主文件；TestO36cRuleTouchLockRuntimeBoundary 复现锁外 touch；整组退出1，1.072s。
+  为精确 stage/rename 注入先做了等价旧逻辑的参数抽取，未改变原提交行为。
+- 红：TestO36cRuleTouchAfterShutdown，真实 Runtime 已停止后旧函数仍 touch，退出1，0.156s。
+- 绿：.64 文件/mtime 组 race count3 通过11.952s；rulefetch 全包 race1通过15.876s；
+  rules 全包 race1通过6.301s，repo/rulefetch/rules vet通过。
+- 真实 Runtime 还覆盖5类普通文件 owner的叶锁等待、shutdown不写、disconnect完成；
+  TestO36cAtomicFileRuntimeBoundary 的 shutdown-after-primary 保留新主+旧内容backup、返回成功，
+  stage前取消不改主/backup且不留tmp。
