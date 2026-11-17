@@ -196,6 +196,17 @@ func SanitizeWithSecrets(payload any, secrets Secrets, sortKeys bool) any {
 	return s.visit(payload, 0)
 }
 
+// CollectCredentials snapshots known and explicitly named credentials from raw
+// metadata before public projection can discard their defining fields. It uses
+// the same depth/cycle-bounded visitor as SanitizeCredentials, without mutating
+// the payload or caller seeds, constructing a history copy, or logging values.
+func CollectCredentials(payload *jsonx.Object, seeds Secrets) Secrets {
+	seeds = NewSecrets(seeds, []string{os.Getenv("AGENT_REGISTRATION_KEY")})
+	s := &sanitizer{secrets: seeds, credentials: true, collectOnly: true, active: map[containerID]bool{}}
+	s.visit(payload, 0)
+	return NewSecrets(seeds, s.discovered)
+}
+
 // SanitizeCredentials copies public metadata while masking credential fields,
 // credential-bearing text and known tokens. Unlike the global response hook it
 // also protects legacy/imported credentials not present in the token registry,
@@ -221,6 +232,7 @@ type containerID struct {
 type sanitizer struct {
 	secrets     Secrets
 	credentials bool
+	collectOnly bool
 	discovered  []string
 	sortKeys    bool
 	active      map[containerID]bool
@@ -246,21 +258,31 @@ func (s *sanitizer) visit(value any, depth int) any {
 			keys = slices.Clone(keys)
 			sort.Strings(keys)
 		}
-		output := jsonx.NewObject()
+		var output *jsonx.Object
+		if !s.collectOnly {
+			output = jsonx.NewObject()
+		}
 		for _, key := range keys {
 			if SensitiveSystemConfigFields[key] {
 				continue
 			}
 			item, _ := v.Get(key)
-			outKey := s.str(key)
 			if s.credentials && diag.IsCredentialKey(key) {
 				if text, ok := item.(string); ok && text != Redacted {
 					s.discovered = append(s.discovered, text)
+				} else if s.collectOnly {
+					s.visit(item, depth+1)
 				}
-				output.Set(outKey, Redacted)
+				if output != nil {
+					output.Set(s.str(key), Redacted)
+				}
 				continue
 			}
-			output.Set(outKey, s.visit(item, depth+1))
+			if s.collectOnly {
+				s.visit(item, depth+1)
+			} else {
+				output.Set(s.str(key), s.visit(item, depth+1))
+			}
 		}
 		return output
 	case []any:
@@ -275,6 +297,12 @@ func (s *sanitizer) visit(value any, depth int) any {
 			s.active[id] = true
 			defer delete(s.active, id)
 		}
+		if s.collectOnly {
+			for _, item := range v {
+				s.visit(item, depth+1)
+			}
+			return nil
+		}
 		output := make([]any, len(v))
 		for i, item := range v {
 			output[i] = s.visit(item, depth+1)
@@ -285,6 +313,9 @@ func (s *sanitizer) visit(value any, depth int) any {
 }
 
 func (s *sanitizer) str(value string) string {
+	if s.collectOnly {
+		return value
+	}
 	if s.credentials {
 		if len(diag.CredentialSpans(value)) > 0 {
 			return Redacted

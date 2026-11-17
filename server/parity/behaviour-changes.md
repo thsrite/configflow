@@ -339,3 +339,15 @@ remain A04/A05 follow-up. No query/int-string lexical rules change (N3 owns them
 Python 的 `GET/PUT /api/rules/dns` handler 用「不是 GET」选择写分支，因此带合法 JSON body 的授权 HEAD 请求会提交 DNS 设置。Go 明确按 PUT 才写，HEAD 走 GET 并保持数据不变。规则列表和规则集列表的 HEAD 也走读取分支，修复 Python 未返回响应而报500的问题。用户需要修改 DNS 时继续使用 PUT；无需迁移存量数据。
 
 证据：真实 Flask `TestPythonHEADWriteIsFixed` 断言旧行为实际写出 blackhole action，同时断言 Go 完整 SQLite/文件状态不变；`TestHEADCollectionsAndDNSStayReadOnly` 覆盖四个列表/DNS入口。其他方法继续严格差分。
+## A24 shared publicAgent — credential references before projection (A13 review)
+
+Security correction, independently reproduced against real Python: a public Agent's journal or
+HA message could expose a credential defined in an old deployment. Projecting or sanitizing that
+deployment first removed the defining field before the outer sanitizer could learn its value.
+The shared helper now collects named credentials from the raw record before projection and applies
+the existing shared sanitizer to the public result. Full, detail, summary=1 and history=0 reads all
+retain that protection. Summary collects in the same repository read view before omitting history;
+it constructs no history copy and returns no raw history reference. The collector reuses the sole
+bounded/cycle-safe visitor and never logs values. No global JSON-hook policy or revealable user
+configuration credential policy changes.
+

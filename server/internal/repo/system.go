@@ -213,8 +213,22 @@ func AgentHistory(agent *jsonx.Object, field string) (any, error) {
 // history=false the AgentHistoryFields, which outweigh the rest of a record
 // many times over, are not copied and hold AgentHistoryNotRead.
 func (r *Repository) GetAgents(ctx context.Context, history bool) (result []any, err error) {
+	return r.GetAgentsInspect(ctx, history, nil)
+}
+
+// GetAgentsInspect calls inspect on each raw record in the same read view,
+// before omitting history or copying. inspect must neither mutate nor retain
+// the record. This keeps credential snapshots aligned with light reads without
+// copying their history. N8-5 must preserve this inspection capability.
+func (r *Repository) GetAgentsInspect(ctx context.Context, history bool, inspect func(*jsonx.Object)) (result []any, err error) {
 	err = r.view(ctx, func(document *jsonx.Object) error {
 		agents := document.GetObject("system").GetList("agents")
+		if inspect != nil {
+			for _, item := range agents {
+				agent, _ := jsonx.AsObject(item)
+				inspect(agent)
+			}
+		}
 		if history {
 			result, _ = jsonx.DeepCopy(agents).([]any)
 			if result == nil {

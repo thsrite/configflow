@@ -50,6 +50,7 @@ func contentOrigin(record *core.Record) string {
 	return record.GetObject("applied_content").GetString("base_url")
 }
 func publicWithContent(ctx context.Context, m *core.Manager, record *core.Record, cache map[string]contentSnapshot, history bool) (*core.Record, error) {
+	secrets := redact.CollectCredentials(record, nil)
 	view := record
 	if !history {
 		view = record.Clone()
@@ -57,7 +58,7 @@ func publicWithContent(ctx context.Context, m *core.Manager, record *core.Record
 			view.Set(field, repo.AgentHistoryNotRead)
 		}
 	}
-	public := publicAgent(view)
+	public := publicAgentWithCredentials(view, secrets)
 	source, err := loadContentSource(ctx, m, record, cache)
 	if err != nil {
 		var repositoryError *repo.Error
@@ -77,14 +78,19 @@ func listContentAgents(c *httpx.Ctx) (*httpx.Response, error) {
 		return nil, err
 	}
 	summary := c.ArgDefault("summary", "") == "1"
-	records, err := m.GetAllAgents(ctx, !summary)
+	var secrets []redact.Secrets
+	var inspect func(*core.Record)
+	if summary {
+		inspect = func(raw *core.Record) { secrets = append(secrets, redact.CollectCredentials(raw, nil)) }
+	}
+	records, err := m.GetAllAgentsInspect(ctx, !summary, inspect)
 	if err != nil {
 		return nil, err
 	}
 	result := make([]*core.Record, 0, len(records))
 	if summary {
-		for _, record := range records {
-			result = append(result, publicAgent(record))
+		for i, record := range records {
+			result = append(result, publicAgentWithCredentials(record, secrets[i]))
 		}
 		return httpx.JSON(result), nil
 	}

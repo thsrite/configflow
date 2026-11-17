@@ -328,7 +328,11 @@ func (m *Manager) profileOf(ctx context.Context, agent *jsonx.Object) (any, erro
 // agents is _agents(history=...): the records with the heartbeat state laid
 // over them.
 func (m *Manager) agents(ctx context.Context, history bool) ([]*jsonx.Object, error) {
-	list, err := m.repository.GetAgents(ctx, history)
+	return m.agentsInspect(ctx, history, nil)
+}
+
+func (m *Manager) agentsInspect(ctx context.Context, history bool, inspect func(*jsonx.Object)) ([]*jsonx.Object, error) {
+	list, err := m.repository.GetAgentsInspect(ctx, history, inspect)
 	if err != nil {
 		return nil, err
 	}
@@ -585,7 +589,14 @@ func (m *Manager) RegisterAgent(ctx context.Context, data *jsonx.Object, existin
 // derived by the freshness rule (offline after two minutes without a
 // heartbeat). history=false leaves the publication history unread.
 func (m *Manager) GetAllAgents(ctx context.Context, history bool) ([]*jsonx.Object, error) {
-	agents, err := m.agents(ctx, history)
+	return m.GetAllAgentsInspect(ctx, history, nil)
+}
+
+// GetAllAgentsInspect inspects each raw record before history projection,
+// preserving GetAllAgents' runtime overlay and online-status calculation.
+// inspect must not mutate or retain records; N8-5 must keep this capability.
+func (m *Manager) GetAllAgentsInspect(ctx context.Context, history bool, inspect func(*jsonx.Object)) ([]*jsonx.Object, error) {
+	agents, err := m.agentsInspect(ctx, history, inspect)
 	if err != nil {
 		return nil, err
 	}

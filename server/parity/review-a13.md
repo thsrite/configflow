@@ -4,13 +4,9 @@
 范围：content sync Checker、缓存与失效广播、四个 GET 路由；非 HR。
 无子 agent、无 push/PR、无生产访问，测试经 rt 在测试服务器执行。
 
-状态：**复核中**。F1 已修复并经 race 回归；F2 的元数据兜底已修复并经 pushdiff race，
-环境密钥快照等待 A24 共享修复进入 go 后变基接入。
-F3 在 A24 独立 checkout 已复现，等合入后按协调者批准方案在共享 helper 单独修复。
-协调者在 A24 复验排队后批准提前准备：临时分支 `go-review-a13-a24-prep` 基于
-`go-review-a24@3c2e0589`，工作目录为本任务目录的同级 `go-review-a13-a24-prep`。
-其中 CollectCredentials/publicAgent 修复及环境 finder 快照均已实现并通过定向 race，尚无正式提交；
-收到 A24 合入通知后先 rebase，再把两项 own diff 分别整理到正式分支。结束清理临时 worktree/branch 和 rt 副本。
+状态：**复核中**。已 rebase 到 `go@8d716ceb`（A24 复核、N8-6、R08、provider 负载修复）。
+F1/F3 已修复并经 race/HTTP 回归；F2 元数据兜底已修复，环境 finder 快照待正式整理。
+临时 `go-review-a13-a24-prep` 上的预验已完成，结束前清理其 worktree/branch 与 rt 副本。
 
 ## 发现
 
@@ -35,13 +31,24 @@ F3 在 A24 独立 checkout 已复现，等合入后按协调者批准方案在�
   和字典键含已知密钥则整项遮盖。排序确保遮盖后键冲突顺序确定。
   `TestReviewStoredCredentialMetadataFallback` 先失败，随后 pushdiff race 通过（60.471s）；
   普通上下文、用户可 reveal 的 password、隐藏视图和原对象不变均有断言。
-- **F3，高，待修复：A24 publicAgent 投影顺序丢失密钥知识，跨字段引用泄露。**
+- **F3，高，已修复：A24 publicAgent 投影顺序丢失密钥知识，跨字段引用泄露。**
   `deploy.PublicDeployment` 先把 history 中的 api_key 清成 `[REDACTED]`，随后
   外层 SanitizeCredentials 才收集字段，已经看不到原 key。顶层 journal 和 HA.message
   引用该密钥时均透传。隔离的 detached checkout `c106af0d` 两组回归经 rt 均先失败，
   真实 Python 也确认同类泄露。协调者批准新增共享 CollectCredentials(raw, seeds)，
   复用 sanitizer 唯一 visit/depth/cycle 限制；publicAgent 投影前收集，最后对公共记录
-  统一清洗，保持 deploy.PublicDeployment 局部处理不变。要求独立提交并验证日志/错误不泄露。
+  统一清洗，保持 deploy.PublicDeployment 局部处理不变。合并树再次复现后修复。
+  HTTP 回归另发现 summary=1/history=0 在调用 helper 之前已去掉历史，故还需保留更早的快照。
+  history=0 先从原 record Collect，再投影；summary 使用 repo.GetAgentsInspect / Manager 透传，
+  在同一 read view 中、轻读投影前 Collect。callback 不返回/保留原历史；collector 使用唯一
+  visitor 的 collect-only 模式，不构造脱敏历史副本。runtime overlay/online 逻辑未变。
+  所有公共 Agent 输出仍走唯一 publicAgentWithCredentials projector；A24 的 SetDomainDiscovery
+  返回完整记录，原 publicAgent wrapper 可直接 Collect，其他 client-tools DTO 不走轻读 publicAgent。
+  四种读取路径均有 journal→旧 deployment.api_key 的真实 HTTP 回归；另验 HA 引用、原记录不变、
+  四类来源、嵌套 credential 对象、cycle/depth，以及错误和 panic 响应/应用日志不含密钥。
+  repo 并发提交回归证明 seed 与返回 light record 同代、inspection 不阻塞 writer；Manager 回归
+  证明 live overlay 与在线状态不变。**N8-5 迁移时需保留此 inspection 能力**；O3-6a 若先合入，
+  保留其锁结构后把 callback 接回相同 read view。已按协调者要求独立提交。
 
 ## 补充检查
 
@@ -121,5 +128,14 @@ API 对应回归和原真实 Python 边界 race 2.359s。新 `TestReviewRegistra
 先复现三种编码、Unicode 局部区间及环境快照遗漏，补 finder 后 redactor 全包 race 1.163s；
 同时明确断言全局 JSON hook 的 ExternalPayloadSecrets 策略未改变。
 
-剩余：合入 A24 共享修复、修 F2/F3、完成共享脱敏/分页与 20 条 baseline 因果证明复验，
+正式合并树 F3 命令：
+
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'cd server && go vet ./internal/redact ./internal/api/agents ./internal/agents ./internal/repo && CONFIGFLOW_DIFF=1 go test -race -count=1 -run "TestReviewCollect|TestReviewAgentInspection|TestReviewInspection|TestReviewA13Projection|TestReviewA13PublicReads|TestReviewA13CollectedSecrets|TestReviewA24Public|TestPublicAgentPython|TestPublicMetadata" ./internal/redact ./internal/api/agents ./internal/agents ./internal/repo'
+```
+
+redact 1.066s、API 8.507s、Manager 3.839s；初始 repo fixture 缺 profile binding，补上正确的
+默认 profile 后 repo 1.235s，再加入并发提交回归后 1.543s。无 API 或 redactor 未决失败。
+
+剩余：整理 F2 环境 finder、完成共享脱敏/分页与 20 条 baseline 因果证明复验，
 `git rebase go` 后运行 `server/scripts/gate.sh -p 6` 和相关 fuzz；零未决后改 verified。

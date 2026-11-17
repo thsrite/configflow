@@ -1144,19 +1144,17 @@ baseline: new=0 stale=0
 
 **Status: `ported`** · prereqs: A12, A15 (`upgrades.artifacts` for `upgrade_available`) · Go: internal/deploy, api/agents
 
-独立对抗复核进行中（分支 `go-review-a13`，[review-a13.md](review-a13.md)）：F1 中严重度，
-真实 Runtime.Spawn 丢失 reservation cancellation，Close 后仍准备，已修复并通过 contentsync race；
-F2 高严重度，环境注册密钥明文/编码从 diff、entries、搜索泄露，Go 与真实 Python 均已复现。
-下一步等 A24 共享修复合进 go 后变基，在 shared StoredSecretFinder 纳入环境密钥，补 behaviour ledger，
-复验 20 条准确 baseline、最终 gate.sh -p 6 和 fuzz，零未决后 verified。生产 spec 边界和广播注销并发已补回归。
-F2 非显示元数据已在 A12 唯一 mapTexts 加同一 finder 兜底，pushdiff race 60.471s 通过；
-原版 20 条 baseline 因果证明复验也通过（21 HTTP cases / 3 actual bundles）。
-基线合成验收 36 tests 通过：实际 proddiff.main 的 matching/record 成功、new/stale 失败，且精确20条或全部移除。
-原 Python A13 六文件 101 tests 通过。F3 独立 high 已在 A24 c106af0d scratch checkout 复现：
-projection 先清掉 deployment api_key，外层 journal/HA 消息引用泄露；待 A24 合入后在 shared publicAgent 收集原记录密钥再投影，单独提交。
-协调者批准提前在临时 `go-review-a13-a24-prep`（基于 go-review-a24@3c2e0589）准备 F2/F3：
-两处 own diff 已在该 sibling worktree 实现，F3/vet/真实 Python public boundary race 通过；finder 全包 race 1.163s。
-正式分支的 API/collector 测试当前未提交，等 A24 合入后 rebase，先提交 F3共享修复，再提交F2 finder/HTTP防漏，最后完整门禁。
+独立对抗复核进行中（分支 `go-review-a13`，[review-a13.md](review-a13.md)），已 rebase go@8d716ceb。
+F1 中严重度（真实 Spawn 丢失 Close 取消）和 F3 高严重度（公共投影丢失 credential 来源）已修复。
+F3 使用 shared CollectCredentials 和唯一 publicAgentWithCredentials projector；summary 通过
+repo.GetAgentsInspect / Manager 透传在同一 view、轻读前收集独立 Secrets，collector 不构造历史副本。
+四种 GET 读法的 journal→deployment.api_key、HA 引用、HTTP error/panic 日志、cycle/depth、
+同代 snapshot/并发 commit、runtime overlay 均通过定向 race；repo 补验 1.543s，API 8.507s。
+**N8-5 迁移时需保留此 inspection 能力**；若 O3-6a 先合入，保持其锁结构并把 callback 接回原 read view。
+F2 高严重度（环境注册 key 从 diff/entries/search 泄露）：A12 唯一 mapTexts 元数据兜底已修复，
+finder 环境快照在临时分支预验通过，下一步整理到正式分支、完整 HTTP 回归、gate.sh -p 6 + 相关 fuzz。
+基线36 tests、原Python六文件101 tests、三项安全oracle通过；原20项因果证明21 HTTP/3 actual bundles通过。
+当前仍 ported，最终门禁与 F2 回归全部通过后才 verified。临时 worktree/branch/rt副本结束前清理。
 
 **Design:** `server/design/a14-publish.md` (Opus, 2026-11-17) covers the whole chain A11→A14 — package map, types, Agent protocol, state machine, locks, failure table, steps A13-1, A13-2, acceptance. Port to it; contract changes need the designer's or coordinator's agreement.
 
