@@ -235,7 +235,14 @@ type numericCount struct {
 }
 
 func (n *numericCount) add(raw json.RawMessage) error {
-	if len(raw) == 0 || raw[0] == '"' || raw[0] == 't' || raw[0] == 'f' {
+	// Older cache documents may carry a boolean count. Preserve its raw
+	// value in the per-source reply while adding its legacy numeric value.
+	if string(raw) == "true" {
+		raw = json.RawMessage(`1`)
+	} else if string(raw) == "false" {
+		raw = json.RawMessage(`0`)
+	}
+	if len(raw) == 0 || raw[0] == '"' {
 		return errors.New("cache count must be numeric")
 	}
 	var value json.Number

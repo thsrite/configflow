@@ -1766,6 +1766,17 @@ All 11 route methods registered and native aggregation renderer wired into provi
 
 A11 integration: aggregation generator is now registered in proddiff, **2 production provider outputs compared successfully** (`new=0 stale=0`). The A11 Agent's frozen Python aggregation-provider input (partial A11 packaging only) can be removed after C31 is merged; the A11 branch is untouched. proddiff's former `aggregations` catalog lookup was corrected to `subscription_aggregations` in both HTTP and direct generator selectors.
 
+Python test mapping (all functions in the three requested files):
+
+| Python tests | C31 boundary coverage / other owner |
+|---|---|
+| `test_aggregation_reorder.py`: by-ids persistence; unknown-id rejection; legacy-object reorder preserving definitions with stale profile | `difftest.TestCatalogAndReorder`, `TestSharedCatalogSelectionAndProtection`; full document and JSON/YAML files compared after every request. |
+| `test_dialer_rendered_bundle.py`: provider-only chain rejects duplicates globally; no-chain keeps legacy duplicates; one materialization for valid targets; reserved names/content errors | `TestGlobalRenderedBundle` (both aggregation orderings, chain on/off, duplicate and relay/DIRECT targets), `TestDryGeneratorCorpus` (immutable supplied main, reserved/duplicate names and malformed YAML), `TestOneOpaqueMaterializationForMainAndAggregation`. C34's main preview/config download and A14 Agent push route wrappers stay with those owners; shared C31 provider bundle is now real, not a frozen stub. |
+| `test_shared_resource_routes.py`: catalog ignores unrelated profile; referenced delete preserves all profiles; provider output scoped without source mutation | `TestSharedCatalogSelectionAndProtection` (stale selector, cloned Other, 409 delete, other-profile preview), `TestProviderAndPreview` (provider alias), `TestBoundedCollectionDetachesCancellationAndDoesNotMutate` (owned source snapshot), `TestPublishedSnapshotSurvivesArtifactReplacement`; state comparison includes all profiles/files. |
+| Same file: library rename/composition; shared dialer fields/profile-local chains; deleting source referenced by shared aggregation; global stats/local composition; cross-profile raw-dialer rename | Route ownership remains C33 rule-library/proxy-group, C30 nodes/subscriptions, C38 stats respectively. C30 already covers source-dependency and cross-profile guards; no duplicate route implementation here. C31 generation side is covered by the real bundle tests above. |
+
+Notes boundary: `devicenotes/difftest.TestDeviceNotesBoundary` drives all stored/read/set/revision/prepare/save public operations with real Python, including invalid and full-capacity data; name-only saves retain identical settings. `FuzzStoredNotes` and `FuzzAggregationDocument` exercise new parsing paths. Native JSON object key order/YAML indentation are not chased; malformed internal exception wording is native. A11 location-only deferral remains explicitly logged, with status/base Chinese validation/owning label/storage strict.
+
 Pending: final scoped race, full suite, all differentials and post-rebase proddiff; A11's existing location/excerpt hook remains that module's responsibility (400 status/validation/owning label and persisted effects compared strictly, only separately logged location lines deferred).
 
 ## C32 — rule routes

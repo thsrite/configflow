@@ -47,6 +47,10 @@ func TestCatalogAndReorder(t *testing.T) {
 		w.call("POST", "/api/aggregations", b, true)
 		w.call("PUT", "/api/aggregations/a", b, true)
 	}
+	for _, body := range []string{`{}`, `{"name":""}`, `{"name":42}`, `{"name":"Bad","subscriptions":null}`, `{"name":"Bad","nodes":["missing"]}`} {
+		w.call("POST", "/api/aggregations", body, true)
+		w.call("PUT", "/api/aggregations/a", body, true)
+	}
 	w.call("PUT", "/api/aggregations/missing", `{}`, true)
 	w.call("PUT", "/api/aggregations/a", `{`, true)
 	// Full-object replacement, path identity, unknown fields and statistics stripping.
@@ -71,7 +75,7 @@ func TestProviderAndPreview(t *testing.T) {
 	w.call("GET", "/api/aggregations/a/preview", "", true)
 	w.call("GET", "/api/aggregations/missing/preview", "", true)
 	w.call("GET", "/api/aggregations/a/provider", "", true)
-	for _, q := range []string{"format=surge", "format=loon", "format=Mihomo", "regex=Remote", "include=Remote", "exclude=Remote", "include=[", "format=surge&include=manual", "format=loon&exclude=Remote"} {
+	for _, q := range []string{"format=surge", "format=loon", "format=Mihomo", "regex=Remote", "include=Remote", "exclude=Remote", "include=[", "format=surge&include=manual", "format=loon&exclude=Remote", "format=surge&regex=manual", "format=loon&exclude_regex=manual", "format=surge&regex=[", "format=loon&exclude_regex=["} {
 		w.call("GET", "/api/aggregations/a/provider?"+q, "", true)
 	}
 	for _, id := range []string{"missing", "off", "a"} {
@@ -105,6 +109,11 @@ func TestDryGeneratorCorpus(t *testing.T) {
 			w.call("GENERATE", "a", string(raw), true)
 		}
 	}
+	for _, aggregation := range []string{`{}`, `null`, `[]`, `{"id":"a","name":"Aggregate","subscriptions":null,"nodes":null}`, `{"id":"a","name":"Aggregate","subscriptions":false}`, `{"id":"a","name":"Aggregate","subscriptions":"s"}`} {
+		raw, err := jsonx.Compact(jsonx.Obj("config", cfg, "aggregation", parse(t, aggregation), "main", nil))
+		must(t, err)
+		w.call("GENERATE", "a", string(raw), true)
+	}
 	// Immutable actual main decides activation and the valid chain target set.
 	for _, main := range []string{`{"proxies":[],"proxy-groups":[]}`, `{"proxies":[{"name":"relay","type":"http","server":"x.test","port":80}],"proxy-groups":[]}`, `{"proxies":[{"name":"Exit","type":"http","server":"x.test","port":80,"dialer-proxy":"DIRECT"}],"proxy-groups":[]}`} {
 		for _, text := range []string{`proxies: [{name: Chained, type: http, server: r.test, port: 80, dialer-proxy: relay}]`, `proxies: [{name: Same, type: http, server: a.test, port: 80}, {name: Same, type: http, server: b.test, port: 80}]`, `proxies: [{name: DIRECT, type: http, server: a.test, port: 80}]`, `proxies: [null]`, `proxies: [`} {
@@ -126,7 +135,7 @@ func parse(t *testing.T, text string) any {
 func TestGlobalRenderedBundle(t *testing.T) {
 	for _, reverse := range []bool{false, true} {
 		for _, chain := range []bool{false, true} {
-			for sourceIndex, source := range []string{`proxies: [{name: Same, type: http, server: a.test, port: 80}, {name: Same, type: http, server: b.test, port: 80}]`, `proxies: [{name: Remote, type: http, server: good.test, port: 80, dialer-proxy: relay}]`, `proxies: [{name: Remote, type: http, server: good.test, port: 80, dialer-proxy: DIRECT}]`} {
+			for sourceIndex, source := range []string{`proxies: [{name: Same, type: http, server: a.test, port: 80}, {name: Same, type: http, server: b.test, port: 80}]`, `proxies: [{name: Remote, type: http, server: good.test, port: 80, dialer-proxy: relay}]`, `proxies: [{name: Remote, type: http, server: good.test, port: 80, dialer-proxy: DIRECT}]`, `proxies: [{name: Remote, type: http, server: good.test, port: 80, dialer-proxy: Static}]`} {
 				label := fmt.Sprintf("reverse=%t/chain=%t/source=%d", reverse, chain, sourceIndex)
 				t.Run(label, func(t *testing.T) {
 					setup := func(ctx context.Context, r *repo.Repository) {
@@ -139,7 +148,7 @@ func TestGlobalRenderedBundle(t *testing.T) {
 						_, err := r.SaveShared(ctx, jsonx.Obj("nodes", []any{node("relay"), exit}, "subscriptions", []any{jsonx.Obj("id", "s", "name", "Feed", "url", "https://feed.example/s")}, "subscription_aggregations", aggs), nil)
 						must(t, err)
 						_, _, err = r.UpdateProfileTransaction(ctx, "default", func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-							p.Set("proxy_groups", []any{jsonx.Obj("id", "g", "name", "Entry", "type", "select", "manual_nodes", []any{"relay"}, "aggregations", []any{"chain", "other"})})
+							p.Set("proxy_groups", []any{jsonx.Obj("id", "g", "name", "Entry", "type", "select", "manual_nodes", []any{"relay"}, "aggregations", []any{"chain", "other"}), jsonx.Obj("id", "static", "name", "Static", "type", "select", "manual_nodes", []any{"relay"})})
 							return nil, nil
 						})
 						must(t, err)
@@ -172,4 +181,34 @@ func TestSharedCatalogSelectionAndProtection(t *testing.T) {
 	w.call("DELETE", "/api/aggregations/a", "", true)
 	w.extraHeaders = map[string]string{"X-ConfigFlow-Profile": "other"}
 	w.call("GET", "/api/aggregations/a/preview", "", true)
+}
+
+func TestCachedCountsAndFiltering(t *testing.T) {
+	for index, cache := range []string{`{"nodes":[{"name":"Keep"},{"name":"Drop"}]}`, `{"count":7}`, `{"nodes":null,"count":2.5}`, `{"nodes":{},"count":9}`, `{"count":null}`, `{"count":"bad"}`, `{"count":true}`, `{"count":false}`} {
+		t.Run(fmt.Sprint(index), func(t *testing.T) {
+			w := newWorld(t, func(ctx context.Context, r *repo.Repository) {
+				seed(t, false, "Drop")(ctx, r)
+				_, err := r.UpdateSharedTransaction(ctx, func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
+					shared.GetList("subscriptions")[0].(*jsonx.Object).Set("regex_filter", "Keep")
+					return nil, nil
+				})
+				must(t, err)
+				_, err = r.WriteSharedJSON(ctx, "subscribes/s.json", parse(t, cache))
+				must(t, err)
+			}, map[string]string{"s": feed})
+			w.call("GET", "/api/aggregations/a/count", "", true)
+		})
+	}
+}
+
+func TestRejectedSourceDoesNotPublish(t *testing.T) {
+	for i, text := range []string{`proxies: [{name: DIRECT, type: http, server: bad.test, port: 80}]`, `proxies: [{name: null}]`, `proxies: [null]`, `proxies: [`} {
+		t.Run(fmt.Sprint(i), func(t *testing.T) {
+			w := newWorld(t, seed(t, true, ""), map[string]string{"s": text})
+			// The seed has a legacy cache without current-source metadata, so a real
+			// fetch is required. Rejection must preserve it and every provider artifact.
+			w.call("GET", "/api/aggregations/a/preview", "", true)
+			w.call("GET", "/api/profiles/default/aggregations/a/provider?token=c31-pull", "", false)
+		})
+	}
 }

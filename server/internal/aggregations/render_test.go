@@ -145,3 +145,28 @@ func FuzzAggregationDocument(f *testing.F) {
 		}
 	})
 }
+
+func TestPublishedSnapshotSurvivesArtifactReplacement(t *testing.T) {
+	srv := httpxtest.New(t, httpxtest.Options{})
+	aggregations.Wire()
+	mihomoenv.Wire()
+	agg := json.RawMessage(`{"id":"a","name":"Aggregate","nodes":["n"],"subscriptions":[]}`)
+	cfg := json.RawMessage(`{"profile_id":"default","nodes":[{"id":"n","name":"Original","type":"http","server":"original.test","port":80}],"subscriptions":[],"subscription_aggregations":[{"id":"a","name":"Aggregate","nodes":["n"],"subscriptions":[]}],"proxy_groups":[],"rule_configs":[]}`)
+	result, err := aggregations.Generate(srv.Context(), agg, cfg, aggregations.Options{Main: json.RawMessage(`{"proxies":[],"proxy-groups":[]}`), Persist: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.FilePath == nil || result.TotalCount != 1 || len(result.Proxies) != 1 {
+		t.Fatalf("incomplete publication: %+v", result)
+	}
+	before := result.Content
+	_, err = srv.Repo.WriteProfileText(srv.Context(), "default", "providers/a.yaml", []byte("proxies: []\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var name string
+	json.Unmarshal(result.Proxies[0]["name"], &name)
+	if result.Content != before || name != "Original" || result.TotalCount != 1 {
+		t.Fatal("published result re-read a concurrently replaced artifact")
+	}
+}

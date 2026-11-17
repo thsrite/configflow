@@ -407,7 +407,23 @@ func (w *world) call(method, path, body string, authenticated bool) answer {
 	if err != nil {
 		t.Fatalf("decode Go: %v %s", err, got.Body)
 	}
-	if got.Status != py.Status {
+	// Named Python bug: its dry generator iterates a scalar string as IDs.
+	// Public catalog writes reject this schema already. Native generation rejects
+	// it too; compare the exact rejection and continue comparing all stored effects.
+	selectorBug := false
+	if method == "GENERATE" {
+		var args struct {
+			Aggregation struct{ Subscriptions json.RawMessage }
+		}
+		if json.Unmarshal([]byte(body), &args) == nil && string(args.Aggregation.Subscriptions) == `"s"` && py.Status == 200 {
+			selectorBug = true
+			if got.Status != 500 || string(got.Body) != `{"message":"聚合操作失败","success":false}` {
+				t.Errorf("scalar selector rejection: %d %s", got.Status, got.Body)
+			}
+			t.Log("EXPECTED C31 Python bug: scalar subscription selector rejected; storage still compared")
+		}
+	}
+	if got.Status != py.Status && !selectorBug {
 		t.Errorf("%s %s status Python=%d Go=%d body=%s", method, path, py.Status, got.Status, got.Body)
 	}
 	compare := func(label string, a, b any) {
@@ -421,7 +437,9 @@ func (w *world) call(method, path, body string, authenticated bool) answer {
 			t.Errorf("%s %s %s: %s", method, path, label, firstDifference(a, b, ""))
 		}
 	}
-	compare("body", py.Body, gb)
+	if !selectorBug {
+		compare("body", py.Body, gb)
+	}
 	comments := []string{}
 	if strings.Contains(got.Header.Get("Content-Type"), "yaml") {
 		for _, line := range strings.Split(string(got.Body), "\n") {

@@ -111,21 +111,18 @@ func nodeProjections(list []any) ([]node, error) {
 }
 
 func selectedIDs(object *jsonx.Object, key string) ([]string, error) {
-	value := object.GetOr(key, []any{})
-	if !jsonx.Truthy(value) {
+	value, present := object.Get(key)
+	if !present || value == nil && key == "nodes" {
 		return []string{}, nil
 	}
-	items, ok := value.([]any)
-	if !ok {
+	if value == nil {
 		return nil, fmt.Errorf("aggregation %s must be an array", key)
 	}
-	result := []string{}
-	for _, item := range items {
-		if id, ok := item.(string); ok {
-			result = append(result, id)
-		}
+	var ids []string
+	if err := native(value, &ids); err != nil {
+		return nil, fmt.Errorf("decode aggregation %s: %w", key, err)
 	}
-	return result, nil
+	return ids, nil
 }
 
 // Generate validates a frozen main before fetching sources. Persist publishes

@@ -126,7 +126,14 @@ func TestCompatGolden(t *testing.T) {
 				t.Errorf("%s: input %s: unexpected error %v", label, brief, err)
 				continue
 			}
-			if want, have := compatText(t, record.Value("ok")), compatText(t, got); want != have {
+			want, have := compatText(t, record.Value("ok")), compatText(t, got)
+			equal := want == have
+			if fn == "normalize_notes" {
+				// Notes are an object; native encoding sorts its keys. Keep all
+				// keys and string values strict without requiring insertion order.
+				equal = jsonx.Equal(record.Value("ok"), got)
+			}
+			if !equal {
 				t.Errorf("%s: input %s:\n  python %s\n  go     %s", label, brief, want, have)
 			}
 			continue
