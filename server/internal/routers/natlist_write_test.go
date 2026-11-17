@@ -93,8 +93,19 @@ func TestNATListWriteBoundary(t *testing.T) {
 					tc.action = strings.TrimPrefix(action, "nat_")
 					goOut := runGoBoundary(tc, srv.URL)
 					goState := f.Snapshot()
-					if os.Getenv("CONFIGFLOW_R07_MUTATE") == "1" {
+					switch os.Getenv("CONFIGFLOW_R07_MUTATE") {
+					case "1", "result":
 						goOut.Result = map[string]any{"deliberately_wrong": true}
+					case "journal":
+						var undo map[string]any
+						_ = json.Unmarshal(rawValue(goOut.Result), &undo)
+						steps := undo["steps"].([]any)
+						steps[0].(map[string]any)["id"] = "*BAD"
+						goOut.Result = undo
+					case "request":
+						goState.Calls[0].Method = "BROKEN"
+					case "table":
+						goState.Tables["/ip/firewall/nat"][0]["action"] = "BROKEN"
 					}
 					a, b := r07Comparable(t, py), r07Comparable(t, goOut)
 					if !reflect.DeepEqual(a, b) {
