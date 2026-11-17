@@ -225,7 +225,10 @@ func pushConfig(ctx context.Context, m *agents.Manager, id string, r PushRequest
 		}
 		restart := true
 		if raw, has := data["restart"]; has {
-			if e := json.Unmarshal(raw, &restart); e != nil {
+			// A legacy explicit null means no restart, rather than the absent default.
+			if string(raw) == "null" {
+				restart = false
+			} else if e := json.Unmarshal(raw, &restart); e != nil {
 				return fail(preparation(msgRestartInvalid))
 			}
 		}

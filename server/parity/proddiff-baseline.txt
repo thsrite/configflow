@@ -10,3 +10,4 @@ GET /api/logs/tail	body.logs	length	Consequence of F1: Go logs two extra request
 GET /api/logs/tail	body.logs[0]	value	Consequence of F1: Go logs two extra request exceptions; the remaining lines agree
 GET /api/logs/tail	body.logs[1]	value	Consequence of F1: Go logs two extra request exceptions; the remaining lines agree
 GET /api/logs/tail	body.total_lines	value	Consequence of F1: Go logs two extra request exceptions; the remaining lines agree
+POST /api/agents/<agent_id>/generate-config	body.message	value	deferred → A18：HA 最终生成在 A18 接入前按设计拒绝，接入后必须消失

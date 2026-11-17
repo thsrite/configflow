@@ -1,6 +1,7 @@
 """Synthetic regressions for the acceptance gate (run on the test server)."""
 import importlib.util
 import contextlib
+import hashlib
 import io
 import json
 import os
@@ -79,6 +80,54 @@ class ComparatorTests(unittest.TestCase):
         # Without the D3 module (another installer) the wait trap stays a difference.
         bare = reply(('#!/bin/sh\n' + wrapper['after'] + ')\n').encode(), left[1])
         self.assertTrue(pd.response_diffs(reply(('#!/bin/sh\n' + wrapper['before'] + ')\n').encode(), left[1]), bare, route, []))
+
+    def test_agent_pull_yaml_contract_and_mutations(self):
+        route = '/api/agents/<agent_id>/config'
+        left = reply({'content': 'plugins:\n- tag: example\n  type: sequence\n'})
+        reformatted = reply({'content': 'plugins: [{tag: example, type: sequence}]\n'})
+        self.assertEqual([], pd.response_diffs(left, reformatted, route, []))
+        changed = reply({'content': 'plugins: [{tag: changed, type: sequence}]\n'})
+        deleted = reply({'content': 'plugins: [{tag: example}]\n'})
+        self.assertTrue(pd.response_diffs(left, changed, route, []))
+        self.assertTrue(pd.response_diffs(left, deleted, route, []))
+        # Scope: another route retains the previous text policy for this shape.
+        other_left = reply({'content': 'plugins:\n- {tag: example}\n'})
+        other_right = reply({'content': 'plugins: [{tag: example}]\n'})
+        self.assertTrue(pd.response_diffs(other_left, other_right, '/api/other', []))
+        surge = reply({'content': '[General]\nloglevel = warning\n'})
+        changed_surge = reply({'content': '[General]\nloglevel = info\n'})
+        self.assertTrue(pd.response_diffs(surge, changed_surge, route, []))
+
+    def test_agent_pull_digest_is_verified_not_ignored(self):
+        route = '/api/agents/<agent_id>/config'
+        def payload(content):
+            digest = hashlib.md5(content.encode()).hexdigest()
+            return {'content': content, 'md5': digest, 'version': digest[:8]}
+        a = payload('plugins:\n- tag: example\n')
+        b = payload('plugins: [{tag: example}]\n')
+        self.assertEqual([], pd.response_diffs(reply(a), reply(b), route, []))
+        for field in ('md5', 'version'):
+            broken = dict(b, **{field: 'wrong'})
+            self.assertTrue(pd.response_diffs(reply(a), reply(broken), route, []))
+        changed = payload('plugins: [{tag: changed}]\n')
+        removed = payload('plugins: []\n')
+        self.assertTrue(pd.response_diffs(reply(a), reply(changed), route, []))
+        self.assertTrue(pd.response_diffs(reply(a), reply(removed), route, []))
+
+    def test_final_generation_native_transport_requires_same_target(self):
+        route = '/api/agents/<agent_id>/generate-config'
+        py = reply({'success': False, 'message': "HTTPConnectionPool(host='agent.example.com', port=8080): Max retries exceeded with url: /api/capabilities (connection refused)"}, status=400)
+        native = reply({'success': False, 'message': 'Get "http://agent.example.com:8080/api/capabilities": dial tcp: connection refused'}, status=400)
+        self.assertEqual([], pd.response_diffs(py, native, route, []))
+        for message in ('Get "http://other.example.com:8080/api/capabilities": dial tcp: refused',
+                        'Get "http://agent.example.com:8080/api/other": dial tcp: refused',
+                        'deploy: DNS HA pair publication is not available (A18)',
+                        '目标设备配置已改变，请重新生成最终配置后推送。'):
+            changed = reply({'success': False, 'message': message}, status=400)
+            self.assertTrue(pd.response_diffs(py, changed, route, []))
+        self.assertTrue(pd.response_diffs(py, native, '/api/other', []))
+        wrong_status = reply({'success': False, 'message': json.loads(native[2])['message']}, status=500)
+        self.assertTrue(pd.response_diffs(py, wrong_status, route, []))
 
     def test_short_link_plain_error_and_attachment_exception_are_strict(self):
         route = '/api/agents/i/<token>'

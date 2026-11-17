@@ -28,6 +28,7 @@ import (
 	"configflow/internal/routersplit"
 	"configflow/internal/rulefetch"
 	"configflow/internal/rules"
+	"configflow/internal/setupflow"
 	"configflow/internal/subs"
 	"configflow/internal/substore"
 	"configflow/internal/yamlx"
@@ -753,7 +754,7 @@ func preparationFailure(err error) bool {
 	var archive *mosdns.ArchiveError
 	var py *convert.PyError
 	var rs *routersplit.PyError
-	return errors.As(err, &strategy) || errors.As(err, &base) || errors.As(err, &easy) || errors.As(err, &gatewayErr) || errors.As(err, &split) || errors.As(err, &settings) || errors.As(err, &validation) || errors.As(err, &reference) || errors.As(err, &remote) || errors.As(err, &agent) || errors.As(err, &archive) || repo.IsValueError(err) || (errors.As(err, &py) && py.Class == "ValueError") || (errors.As(err, &rs) && rs.Class == "ValueError")
+	return errors.Is(err, setupflow.ErrInvalidSession) || errors.As(err, &strategy) || errors.As(err, &base) || errors.As(err, &easy) || errors.As(err, &gatewayErr) || errors.As(err, &split) || errors.As(err, &settings) || errors.As(err, &validation) || errors.As(err, &reference) || errors.As(err, &remote) || errors.As(err, &agent) || errors.As(err, &archive) || repo.IsValueError(err) || (errors.As(err, &py) && py.Class == "ValueError") || (errors.As(err, &rs) && rs.Class == "ValueError")
 }
 
 // Raw returns an owned JSON snapshot, without exposing mutable legacy documents.
