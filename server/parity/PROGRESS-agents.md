@@ -52,7 +52,7 @@ Same as `PROGRESS-config.md`: status `missing` / `partial` (exact list of what i
 | A09 | Docker HA guide, preflight, enrollment | 1083 | verified | HR | A08, A01 | 2 (2 done) | internal/installer, api/agents |
 | A10 | Docker HA compose variants, installer routes | 1018 | verified | HR | A08, A09 | 9 (9 done) | internal/installer, api/agents |
 | A11 | deployment bundle, locations, Mihomo resources, generated preview | 1264 | ported | HR | A02, A19, C05, C12, C14, C15, C21, C22, C25 | – | internal/deploy (new) |
-| A12 | push diff | 1465 | ported | | A11 | – | internal/deploy/pushdiff |
+| A12 | push diff | 1465 | verified | | A11 | – | internal/deploy/pushdiff |
 | A13 | content sync, Agent list/detail, push-diff routes | 584 | missing | | A12, A15 | 4 | internal/deploy, api/agents |
 | A14 | publishing: transactional content, push-config, deployments, receipts | 1002 | missing | HR | A11, A13, C13, C17, C18, C19, C20, C22, C23 | 9 | internal/deploy, api/agents |
 | A15 | upgrades, Agent operations, address follow | 745 | verified | HR | A01, A02 | 15 (15 done) | internal/agents/upgrades (new), api/agents |
@@ -956,13 +956,23 @@ The earlier .63-only rulefetch proxy_refused timeout difference did not reproduc
 
 ## A12 — push diff
 
-独立 Codex 复核进行中（分支 `go-review-a12`，从 `02f6a954` 分出）：
+**Status: `verified`** · 独立 Codex 复核 2026-11-17（非作者）；**0 未决**。
+复核修复 `eb065a54`，分支 `go-review-a12`，最终 rebase 到 `go` `038b52ae`。
 5 项发现已修复（4 中：反斜杠 URL 漏标、provider 锚点丢失导致整份 raw 未标记、深度 64 身份截断漏报、JSON 转义改变分页预算；
-1 低：数字拼写制造多余变更）。独立 Python oracle 77 行/180 分页比较，新增回归与原语料通过；
-共享 yamlx ValueHash/MaterializeAliases 和 jsonresp.EncodeUTF8，无私有 helper 副本。完整记录见 [review-a12.md](review-a12.md)。
-当前仍为 ported，待 rebase 与最终服务器门禁后设置 verified。
+1 低：数字拼写制造多余变更）。独立 Python oracle 77 行/180 分页比较，新增回归与原语料通过。
+共享 yamlx ValueHash/MaterializeAliases 和 jsonresp.EncodeUTF8；AllPairs 采用 go 的唯一实现，
+ProjectJSONKeys 不用于会丢键类型的身份比较。无私有 helper 副本、无 Python 模拟、无新增依赖。
+完整发现、修复前失败、确切 rt 命令与输出见 [review-a12.md](review-a12.md)。
 
-**Status: `ported`（N7-3a rebase 复验全通过，待独立复核）** · prereqs: A11 verified · Go: `internal/deploy/pushdiff` · branch `go-port-a12` · 实现提交 `44f409e9`；深层路径修正 `f001fc9f`；空区间修正 `476143c4`；既有验收记录 `659fdb8e` / `ad03c2a4`（本轮先 rebase 到 N7-3a `8303397c`，最终基线 `ac1f2377`）。
+最终门禁：`.64`、`GOMAXPROCS=4`，gofmt 空、vet 全仓通过、改动包 `-race -p=4`、
+全量 `go test -p=4 -count=1 ./...`、全部 12 个 CONFIGFLOW_DIFF 包、四个 fuzz 各 60 秒均通过，
+proddiff `self_check=PASS new=0 stale=0`（bundle compared=3 success=3）。
+O3/R07/C31/原版 A12 合入后，在 d7c481c7 合并树再次通过 gofmt/vet、改动包 race、全量、全部 12 difftest 与 proddiff；
+最后 038b52ae 仅增加实验报告，无源码变化。一次 .32 集成补验 SSH 挂起、退出 255，未计为通过；
+所有最终门禁结果均取 .64。早期 .32 的 oracle/installer 交叉检查正常通过。
+无 push/PR、无生产/PVE 访问、无子 agent。A13 的缓存/路由测试仍归 A13。
+
+作者 ported 阶段记录（N7-3a rebase 复验全通过，复核前状态） · prereqs: A11 verified · Go: `internal/deploy/pushdiff` · branch `go-port-a12` · 实现提交 `44f409e9`；深层路径修正 `f001fc9f`；空区间修正 `476143c4`；既有验收记录 `659fdb8e` / `ad03c2a4`（本轮先 rebase 到 N7-3a `8303397c`，最终基线 `ac1f2377`）。
 
 范围：`backend/agents/push_diff.py` 全部纯比较能力。实现按 `design/a14-publish.md` A12-1：typed `Diff`/`Page`/`Text`、逐键 YAML、命名/标量列表、带敏感片段的统一 diff、文件排序/计数、节点重复名/未命名配对、规则多重集合、行/字节/文件/条目预算、zlib 压缩分页、搜索、stored-token 局部替换。无 HTTP 注册（A13/A14）、无仓库/网络/设备访问，无 push、无子 agent。
 

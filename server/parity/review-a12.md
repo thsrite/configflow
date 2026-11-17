@@ -2,9 +2,10 @@
 
 复核者：独立 Codex agent，非作者；2026-11-17。分支 `go-review-a12`，从
 `go-port-a12@02f6a954` 分出。范围为 `backend/agents/push_diff.py` 全部纯函数、
-Go `internal/deploy/pushdiff`、共享 `agents/diag` 、`yamlx` 与 `jsonresp` 的相关路径。
+Go `internal/deploy/pushdiff`、共享 `agents/diag`、`yamlx` 与 `jsonresp` 的相关路径。
 按 AGENT-BRIEF、PORTING 顶部、a14-publish 设计 A12、A11/A12 验收和 A11/R06 问题类别逐项核对。
-当前树没有 `review-r07.md`（R07 仍 missing），已核对 WORKFLOW 尾部收录的 R07 共享路径回归规则。
+开工时 `review-r07.md` 尚未合入；结束前 rebase 已补读其问题类别，重点核对私有脱敏副本、
+用户名误标、共享路径必须在合并树回归的规则。
 无生产访问、无设备写入、无 push/PR、无子 agent，输入全部合成。
 
 方法：逐分支核对 Python，新增独立 `testdata/gen_review_a12.py` 在测试服务器调用真实 Python。
@@ -15,7 +16,7 @@ Go `internal/deploy/pushdiff`、共享 `agents/diag` 、`yamlx` 与 `jsonresp` �
 
 ## 发现
 
-实现问题均已修复；最终门禁进行中，暂不设置 verified。
+5 项发现（4 中、1 低）均已修复，**0 未决**；A12 已设为 **verified**。
 
 ### 中
 
@@ -111,7 +112,7 @@ TestReviewProviderAliasesKeepRawValidAndSecret: unknown anchor 'providers' refer
 ```
 
 修复后迭代：`go test -count=1 ./internal/deploy/pushdiff ./internal/yamlx` 通过；
-`FuzzConfig` 新不变量预跑 10 秒通过（41409 execs）。补充预算 oracle 在 .32 运行（77 行），pushdiff/jsonresp/yamlx 全部通过。完整 .64 门禁通过；最新 O3 合并树的 .32 集成补验进行中。
+`FuzzConfig` 新不变量预跑 10 秒通过（41409 execs）。补充预算 oracle 在 .32 运行（77 行），pushdiff/jsonresp/yamlx 全部通过。完整 .64 门禁通过；最新合并树的 .64 集成补验通过。
 
 
 最终完整门禁命令（worktree 根目录，.64，全部 exit 0）：
@@ -180,8 +181,36 @@ baseline: new=0 stale=0
 
 结束前再次 `git rebase go` 纳入 O3 `197c3c3f`。A12/yamlx/jsonresp 复核实现不变，
 仅新增集成分支的生命周期/HTTP shutdown 变更；四个纯函数 fuzz 不重复。
-在最新合并树补验以下命令（.32；结果待补）：
+该轮 .32 补验的 SSH 连接挂起、始终无输出，远端未找到本 worktree 的 Go 进程；
+已结束本地 SSH，退出码 255，不计为通过。随后基于最新 `go`（`d7c481c7`，包含原版 A12、
+R07/C31 复核、O3）在 .64 重跑相同集成门禁。A12 原作者提交已由 rebase 自动跳过，
+仅保留独立复核提交 `eb065a54`。最新 .64 的确切命令（全部 exit 0）：
 
 ```sh
-RT_HOST=sunbroke@192.168.0.32 rt -e GOMAXPROCS=4 -- bash -lc 'set -euo pipefail; cd server; test -z "$(gofmt -l internal/ tools/)"; go vet ./...; go test -race -p=4 -count=1 ./internal/deploy/pushdiff ./internal/agents/diag ./internal/yamlx ./internal/jsonresp; go test -p=4 -count=1 ./...; for d in $(go list ./... | grep difftest); do CONFIGFLOW_DIFF=1 go test -count=1 "$d"; done; cd ..; server/scripts/proddiff.sh'
+RT_HOST=sunbroke@192.168.0.64 rt -e GOMAXPROCS=4 -- bash -lc 'set -euo pipefail; cd server; test -z "$(gofmt -l internal/ tools/)"; go vet ./...; go test -race -p=4 -count=1 ./internal/deploy/pushdiff ./internal/agents/diag ./internal/yamlx ./internal/jsonresp; go test -p=4 -count=1 ./...; for d in $(go list ./... | grep difftest); do CONFIGFLOW_DIFF=1 go test -count=1 "$d"; done; cd ..; server/scripts/proddiff.sh'
 ```
+
+
+最新 .64 集成补验尾行（基线 d7c481c7）：
+
+```text
+gofmt: no output; go vet: exit 0
+ok configflow/internal/deploy/pushdiff 35.806s (race)
+ok configflow/internal/yamlx 9.630s (race)
+ok configflow/internal/jsonresp 1.008s (race); diag [no test files]
+full go test -p=4 -count=1 ./...: exit 0 (routers 194.854s)
+ok configflow/internal/weburl 0.004s
+ok configflow/internal/yamlx 1.237s
+ok configflow/internal/yamlx/yamlxtest 0.002s
+ok configflow/tools/proddiff/generator 0.010s
+CONFIGFLOW_DIFF all 12: agents 118.901s, aggregations 15.374s, subscriptions 48.579s,
+ devicenotes 0.408s, discovery 1.506s, health 13.302s, httpx 0.816s, mosdns 1.019s,
+ refresh 2.993s, subs 1.180s, substore 4.659s, webdav 13.890s — all ok
+proddiff: self_check=PASS coverage_regressions=0 unmapped_routes=0
+agent-deployment-bundle: compared=3 success=3
+baseline: new=0 stale=0
+```
+
+最后一次 `git rebase go` 纳入 `038b52ae`，相对已验证的 d7c481c7 **只有 L1.md 实验报告**，
+无源码或测试变化，不重复门禁。复核修复提交 `eb065a54`，分支 `go-review-a12`；
+独立复核记录与 verified 状态另作验收提交。没有未移植纯函数或未决问题。
