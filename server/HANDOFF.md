@@ -62,9 +62,7 @@ started them. Re-route them by sending every running agent below a one-line `mcp
 `get_agent_status`; act on any that already finished.
 
 **Pending coordinator actions** (updated 2026-11-17 ~17:10 by coordinator bb75f5c0)
-1. **importer bounds** (`go-fix-importer-bounds`, tests only): .32 verification running on temp branch
-   `tmp-verify-ib` in `~/program/configflow-go-verify-ib` (full `-race` at default -p to prove the fix). Pass →
-   ff go, push, drop the `-p=4` rule below.
+1. importer bounds: merged 601731d3 (full `-race` at default -p passes on .32).
 2. **R06 Opus review** done (`go-opus-review-r06` 31b00538, 1 high/2 medium/2 low, all fixed; <2 high ⇒ Codex keeps
    porting routers HR). Verify on .32 after item 1, then merge. Its two checklist items are in WORKFLOW (6090e113).
 3. When N7-3a/b/c all merged: tell 097eba4e to delete `internal/pyyaml` + old loader (N7-3 final step); then N7-4.
@@ -107,8 +105,8 @@ Idle and reusable: 74bce4a1 (A11 author, context high), 12b84914 (proddiff load 
 
 **Coordinator rules learned today:** integrate/verify on a temp branch copy, never `git merge` in the shared worktree
 before verification, never force-rebase a branch checked out in an agent worktree; always run ALL difftest packages
-and the fuzz targets of changed packages in merge verification (they caught two misses today); full `-race` with
-`-p=4` to avoid the importer timeout flake until go-fix-importer-bounds lands.
+and the fuzz targets of changed packages in merge verification (they caught two misses today); full `-race` at the default
+`-p` (go-fix-importer-bounds merged 2026-11-17; the `-p=4` workaround is no longer needed).
 
 State 2026-11-17 ~15:00: Claude quota hit ~09:00–13:50 (Opus A19/R05 errored, resumed after reset); four Codex sessions were closed and resumed via send_agent_prompt (sessions persist). Merged since 08:00: N7-1, N8-1, and (integration of cherry-picks, verified on .32) C27 review, N8-2, C35 review, proddiff one-sided-retry, go-fix-config-findings (all difftest packages now green incl. api/agents). Known: importer resource-bounds test times out under full parallel -race → 0d31fb93 fixing (branch go-fix-importer-bounds); `internal/agents` TestProxyDifferentialAgainstRequests (CONFIGFLOW_DIFF) reported failing on go by the R05 porter — needs an owner. In progress — Opus: 53661fec R05 HR review (branch go-opus-review-r05 off go-port-r05), b9a2a95d A19 HR review (go-opus-review-a19 off go-port-a19). Codex: 097eba4e N7-2, 6e5c7760 O3-2 (rebasing onto go, conflicts with the lifecycle restart fix), e46d698f config Step B, 19338c67/c5332a35 idle. Coordinator lesson: build integrations in a separate worktree (never `git merge` inside ~/program/configflow-go before verification).
 State 2026-11-17 ~08:00: O3 design merged (server/design/o3-concurrency.md; M1 decided: keep 10 s stop). Routers matrix O6 merged (all three matrices reviewed). Opus now: edd7e708 R05 iKuai port, ece3fa7f A19 Linux gateway core port (root of the agents publish chain A11→A12→A13→A14→A16–A18). Codex queue when one frees: O3-1 lockx, O3-2 lifecycle v2 (Opus review O3-2+O3-3 together), Step B for agents/routers (writer e46d698f after config Step B), A24 (non-HR). .32 load ~40 with many authoritative runs; consider a third native Linux test server if it persists.
