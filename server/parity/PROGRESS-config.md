@@ -30,7 +30,7 @@ Flask differential packages pass, including agents twice (229.828s). Proddiff
 HTML-to-JSON errors are explicitly verified; existing A18/F1 remains recorded,
 with only its error representation fingerprint updated. No route coverage was removed.
 
-## N7-3a — native subs/substore YAML readers (ported; final gates pending)
+## N7-3a — native subs/substore YAML readers (ported; final gates passed)
 
 All YAML reader sites in subs/parser/compat/hosts/dialers and substore/client use Parse/Get/AllPairs
 and the one shared ProjectJSONKeys boundary. No legacy Load*/Mapping/Lookup/Timestamp/Compose in
@@ -45,6 +45,42 @@ convert29/29 out of34697 (authorized corpus-only extension; product code unchang
 all eight shared yamlx commits, approved native behavior, exact commands and final gates are recorded
 in [progress/n7-3a.md](progress/n7-3a.md). Non-YAML golden assertions remain strict. Old loaders and
 pyyaml stay until a/b/c/d integration cleanup; no public route added. Independent review pending.
+
+Final `.64`: gofmt/vet silent; yamlx/subs/substore/convert race and full `-p=4` pass;
+all ten enabled difftest packages pass; six fuzz targets ×60s pass; proddiff 2831 cases/415 comparisons,
+23 self-checks PASS, coverage_regressions=0, `new=0 stale=0`. Rebased onto local go; no push.
+
+Per-category input counts (overlap allowed; callers=4845, core=2326, unknown=0):
+
+| Category | Caller sources | Core sources |
+|---|---:|---:|
+| D1-duplicate | 74 | 138 |
+| alias-recursion | 1 | 6 |
+| binary-text | 8 | 51 |
+| equal | 3960 | 632 |
+| explicit-scalar-native | 0 | 5 |
+| explicit-scalar-validation | 2 | 131 |
+| implicit-schema | 96 | 153 |
+| merge-source | 2 | 5 |
+| multiple-documents | 7 | 17 |
+| native-diagnostics | 573 | 631 |
+| native-format | 9 | 49 |
+| native-json-key-policy | 18 | 0 |
+| native-parser-A | 0 | 6 |
+| native-parser-B | 0 | 7 |
+| native-parser-C | 0 | 2 |
+| native-parser-surrogate | 57 | 0 |
+| native-parser-tab | 3 | 3 |
+| non-json-tags | 8 | 140 |
+| non-string-keys | 9 | 102 |
+| nonfinite-text | 10 | 41 |
+| tag-shape | 0 | 243 |
+| timestamp-text | 10 | 67 |
+
+The separate surrogate syntax class is non-JSON YAML flow only: standard JSON paired UTF-16 escapes
+retain emoji through encoding/json first. Read-only production snapshot high-surrogate occurrences=0
+across all scanned categories; no stored texts were rewritten. Expected changes / classified remain
+subs209/209, substore14/14, convert29/29. API and non-YAML golden behavior remains strict.
 
 ## N7-1 — native yamlx core (ported, 2026-11-17)
 
