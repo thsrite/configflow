@@ -68,7 +68,10 @@ N7-3b also owns convert/proxyyaml_loose.go + convert API error returns; N7-3c al
 1. importer bounds: merged 601731d3 (full `-race` at default -p passes on .32).
 2. R06 Opus review merged (bd8a6a92 rebased; 1 high/2 medium/2 low; Codex keeps routers HR ports). R07 handed back →
    Opus review 64c0ec9d (`go-opus-review-r07`); after it: R08/R09 (fresh Codex; 66833acf context ~409k).
-3. When N7-3a/b/c all merged: tell 097eba4e to delete `internal/pyyaml` + old loader (N7-3 final step); then N7-4.
+3. When N7-3a/b/c all merged: **N7-3d** to 097eba4e — (i) migrate the remaining bare yaml.v3 decoders found by
+   N7-3b's sweep to yamlx.Parse (D1/tag/merge/alias policy): internal/importer/parse.go:255, internal/rules/matcher.go:222,
+   internal/oxidns/adapter.go:136, internal/oxidns/native.go:103; (ii) delete `internal/pyyaml` + old loader; (iii) add
+   the grep gate as a test (no yaml.Unmarshal/NewDecoder on user text outside yamlx). Then N7-4.
 4. A11 handed back (ported, `go-port-a11` 49b51bc1) → Opus review 7ea2310a running. After it: A12 (author 74bce4a1
    is idle, context ~385k/475k — consider a fresh Codex).
 5. User owes: IP of a **third native-Linux test server** (Windows Hyper-V VM OK if always-on, bridged, Arch, 8+ cores,
