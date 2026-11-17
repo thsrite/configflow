@@ -1853,6 +1853,7 @@ Detailed scope, commands, remaining acceptance and N8-5 adapters: [C29 progress]
 
 Missing / deferred: no C29 implementation deferred. Final gate pending; this is ported, not verified.
 The approved Python HEAD save bug is fixed as read-only with an explicit expected differential;
+N8-6 non-finite JSON rejection has 48 explicit Flask controls across all 16 POST pairs;
 reader policies follow N7-3d §5.7 (unknown=0). No new dependency or Python compatibility hash adapter.
 
 N8-5 follow-up: settings_store.go storedSettings and the transaction assignment bridge, the render

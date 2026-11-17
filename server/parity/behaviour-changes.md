@@ -470,3 +470,11 @@ C29 的 Python settings 路由自动接受 HEAD，但把非 GET 请求都当作�
 形状、无效 merge 源、自引用和超预算 alias 不回退。native 的原 builder 与所有业务校验不变，
 include 的 source/path 诊断保留 reader cause。真实输入逐行旧/新对照 unknown=0，计数与安全回归
 见 [reader 迁移报告](progress/n7-3d-oxidns.md)。普通接受输入与 C29 行为严格比较，无额外差异。
+
+
+C29 / N8-6 非有限 JSON 请求：两个 OxiDNS 前缀的 16 个 POST method/path pair 使用 BindSilent，
+在绑定阶段拒绝 NaN、Infinity、-Infinity，返回对应路由现有的 malformed-body 400 完整响应。
+Python 对 worker_threads 的非有限数原本进入整数校验（仍400，但错误消息不同）；草稿请求中
+未使用的顶层成员含非有限数时原本可返回200。`TestC29ExpectedDifferenceNonFinite` 为每个 POST
+各列三条显式预期差异（48条），真实 Flask malformed-body 作为完整 Go 响应控制，并严格比较
+headers、完整 DB 和所有文件不变。合法 JSON、普通数字和原有业务错误继续严格差分。

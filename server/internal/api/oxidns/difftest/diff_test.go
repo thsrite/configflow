@@ -361,15 +361,17 @@ func TestC29FlaskRoutes(t *testing.T) {
 			for _, action := range []string{"render", "validate", "editor", "template-preview", "common-settings", "common-settings/apply", "native-settings/apply"} {
 				t.Run(action, func(t *testing.T) {
 					w.t = t
-					settings := draft("runtime: {worker_threads: 4}\nplugins: []\nfuture: {empty: [], null: null, flag: false}\n")
-					value := map[string]any{"settings": settings, "base_url": "http://config.example"}
+					settings := draft("runtime: {worker_threads: 4}\nplugins: []\nfuture: {empty: [], nil_value: null, flag: false}\n")
+					value := map[string]any{"settings": settings, "base_url": "http://config.example", "template_settings": map[string]any{"local_dns": "192.0.2.53", "remote_dns": "192.0.2.54"}}
 					if action == "native-settings/apply" {
-						value["native_config"] = "runtime: {worker_threads: 6}\nplugins: []\nfuture: {empty: [], null: null, flag: false}\n"
+						value["native_config"] = "runtime: {worker_threads: 6}\nplugins: []\nfuture: {empty: [], nil_value: null, flag: false}\n"
 					}
 					if action == "common-settings/apply" {
 						value["changes"] = map[string]any{"worker_threads": 6}
 					}
-					w.check(post(prefix+"/"+action, value))
+					if result := w.check(post(prefix+"/"+action, value)); result.Status != 200 {
+						t.Fatalf("successful route rejected: %#v", result.Body)
+					}
 					w.check(post(prefix+"/"+action, map[string]any{}))
 					w.check(post(prefix+"/"+action, map[string]any{"settings": settings, "base_url": false}))
 					w.check(request{Method: "POST", Path: prefix + "/" + action, Body: raw(`{"settings":`)})
@@ -486,4 +488,48 @@ func TestC29EditorWorkflowAndValidation(t *testing.T) {
 	}
 	// DTO fields retain whole-value last-member semantics at the binding boundary.
 	w.check(request{Method: "POST", Path: "/api/oxidns/validate", Body: raw(`{"settings":{"config_mode":"invalid"},"settings":{"config_mode":"native","native_config":"plugins: []"}}`)})
+}
+
+// N8-6/§5.7 deliberately reject non-finite JSON at binding. These are named
+// expected differences, derived from real Flask malformed-body controls;
+// unrelated fields, headers and all persisted state remain strict.
+func TestC29ExpectedDifferenceNonFinite(t *testing.T) {
+	w := newWorld(t)
+	for _, prefix := range []string{"/api/oxidns", "/api/profiles/office/oxidns"} {
+		for _, action := range []string{"settings", "render", "validate", "editor", "template-preview", "common-settings", "common-settings/apply", "native-settings/apply"} {
+			t.Run(prefix+"/"+action, func(t *testing.T) {
+				path := prefix + "/" + action
+				requestHeaders := map[string]string{"Authorization": w.token, "Content-Type": "application/json"}
+				malformed := w.py.send(t, request{Method: "POST", Path: path, Body: raw("{"), Headers: requestHeaders})
+				if malformed.Status != 400 {
+					t.Fatal("missing malformed-body control")
+				}
+				for _, token := range []string{"NaN", "Infinity", "-Infinity"} {
+					t.Run(token, func(t *testing.T) {
+						text := `{"settings":{"config_mode":"native","native_config":"plugins: []","additional_files":[]},"native_config":"plugins: []","changes":{"worker_threads":6},"template_settings":{"local_dns":"192.0.2.53","remote_dns":"192.0.2.54"},"future":` + token + `}`
+						if action == "settings" {
+							text = `{"worker_threads":` + token + `}`
+						}
+						r := request{Method: "POST", Path: path, Body: raw(text), Headers: requestHeaders}
+						before := snapshot(t, w.srv)
+						py := w.py.send(t, r)
+						got := sendGo(t, w.srv, r)
+						if action == "settings" {
+							control := w.py.send(t, request{Method: "POST", Path: path, Body: raw(`{"worker_threads":1.5}`), Headers: requestHeaders})
+							compare(t, "Python non-finite reaches existing integer validator", py.Status, control.Status)
+							compare(t, "Python integer failure", py.Body, control.Body)
+						} else if py.Status != 200 {
+							t.Fatalf("Python ignored-member control rejected: %#v", py)
+						}
+						compare(t, "native malformed-body status", got.Status, malformed.Status)
+						compare(t, "native malformed-body fields", got.Body, malformed.Body)
+						compare(t, "native malformed-body headers", headers(got), headers(malformed))
+						compare(t, "non-finite Go request cannot write", got.State, before)
+						compare(t, "Python control cannot write", py.State, malformed.State)
+					})
+				}
+			})
+		}
+	}
+	t.Log("expected_difference=nonfinite_json: all 16 POST method/path pairs reject NaN/Infinity/-Infinity before validation; complete DB/files unchanged")
 }
