@@ -8,13 +8,31 @@ from pathlib import Path
 import unittest
 
 from harness import Pair
-from seed import DEVICE_PASSWORD, router
-from fixtures import agent_peers, agent_options
+from seed import DEVICE_PASSWORD, router, AGENT_TOKEN
+from fixtures import agent_peers, agent_options, authentication_options
+from run import registered, shape
 import returns
 
 
 @unittest.skipUnless(os.environ.get('ROUTERDIFF_BINARY'), 'requires .32 native public Go binary')
 class BoundaryTests(unittest.TestCase):
+    def test_registry_agent_capability_does_not_authenticate_router_admin(self):
+        with Pair(Path(os.environ['ROUTERDIFF_BINARY']), authentication_options()) as pair:
+            available = registered(pair.go.rpc('manifest'))
+            heartbeat = ('POST', shape('/api/agents/<agent_id>/heartbeat'))
+            routers = ('GET', '/api/routers')
+            for name, side in pair.sides.items():
+                if name == 'go' and heartbeat not in available:
+                    continue  # Missing external API is not inferred from a business404.
+                for token, status in (('synthetic-wrong-agent-credential-0123456789', 401), (AGENT_TOKEN, 200)):
+                    reply = side.request('POST', '/api/agents/auth-agent/heartbeat', document={}, auth=False,
+                                         headers={'Authorization': 'Bearer ' + token})
+                    self.assertEqual(reply['status'], status)
+                if name == 'python' or routers in available:
+                    reply = side.request('GET', '/api/routers', auth=False,
+                                         headers={'Authorization': 'Bearer ' + AGENT_TOKEN})
+                    self.assertEqual(reply['status'], 401)
+
     def test_routeros_refuses_runtime_fields_and_connected_row_writes(self):
         with Pair(Path(os.environ['ROUTERDIFF_BINARY'])) as pair:
             side = pair.python

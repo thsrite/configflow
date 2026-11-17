@@ -1,5 +1,6 @@
 """Field-by-field HTTP guard recipes; exact Python messages prove reachability."""
 import copy
+from dataclasses import replace
 
 from cases import Case
 from seed import router
@@ -35,18 +36,20 @@ def router_settings():
                   '按来源策略路由仅支持 RouterOS', ('H1240',)),
                  ('ikuai-auto', {**base, 'type': 'ikuai', 'auto_rule_sync': True},
                   '远程规则自动同步仅支持 RouterOS，开关必须为布尔值', ('H1236',))]
-    add('dns_guard', [False, 1, '', [], {'unknown': True}], '强制 DNS 设置格式无效', 'H1243', 'H1244')
+    add('dns_guard', [False, 1, '', [], {'unknown': True}], '强制 DNS 设置格式无效', 'H1243', 'H1244', 'H0154')
     for field in ('enabled', 'block_dot', 'failover'):
         add('dns_guard', [{field: value} for value in (None, 0, 1, 'false', [], {})],
-            '强制 DNS 的开关必须为布尔值', 'H1243', 'H1244')
-    add('dns_guard', [{'bypass': value} for value in (None, 1, 'ip', {}, [1], [None], [[]])],
-        '放行设备必须是 IPv4 地址或网段列表', 'H1243', 'H1244')
-    for value in ('bad', '::1', '10.44.0.1/33'):
-        add('dns_guard', [{'bypass': [value]}], f'放行设备「{value}」不是有效的 IPv4 地址或网段', 'H1243', 'H1244')
-    add('dns_guard', [{'bypass': ['10.44.0.2'] * 65}], '放行设备最多 64 项', 'H1243', 'H1244')
-    add('dns_guard', [{'enabled': True}], '请先选择 DHCP DNS 服务器（OxiDNS Agent），强制 DNS 使用同一台设备', 'H1243', 'H1244')
+            '强制 DNS 的开关必须为布尔值', 'H1243', 'H1244', 'H0155')
+    add('dns_guard', [{'bypass': value} for value in (None, 1, 'ip', {}, [1], [None], [[]], [True], [1.5], [{}])],
+        '放行设备必须是 IPv4 地址或网段列表', 'H1243', 'H1244', 'H0156')
+    for value in ('bad', '::1', '10.44.0.1/33', '', '  ', '地址🧪', '１９２．０．２．１'):
+        add('dns_guard', [{'bypass': [value]}], f'放行设备「{value}」不是有效的 IPv4 地址或网段',
+            'H1243', 'H1244', 'H0157', 'H0158')
+    add('dns_guard', [{'bypass': ['10.44.0.2'] * 65}], '放行设备最多 64 项', 'H1243', 'H1244', 'H0159')
+    add('dns_guard', [{'enabled': True}], '请先选择 DHCP DNS 服务器（OxiDNS Agent），强制 DNS 使用同一台设备',
+        'H1243', 'H1244', 'H0161')
     add('ipv6_pd_guard', [True, 0, [], '', {'unknown': False}, {'enabled': None}, {'enabled': 1}, {'enabled': 'true'}],
-        'IPv6 前缀变化保护的开关必须为布尔值', 'H1246', 'H1247')
+        'IPv6 前缀变化保护的开关必须为布尔值', 'H1246', 'H1247', 'H0491')
     for route, method, path in [('R008', 'POST', '/api/routers'), ('R010', 'PUT', '/api/routers/r-ros')]:
         for index, (label, body, message, entries) in enumerate(variants):
             yield invalid(route, method, path, str(index) + "-" + label, body, message, entries)
@@ -55,6 +58,84 @@ def router_settings():
             for index, value in enumerate((None, '', 0, True, [], {})):
                 yield invalid(route, method, path, 'password-' + str(index), {**base, 'password': value},
                               '请填写密码', ('H1255',))
+
+
+def guard_vendor_support():
+    for route, method, path in (('R008', 'POST', '/api/routers'), ('R010', 'PUT', '/api/routers/r-ros'),
+                                ('R010', 'PUT', '/api/routers/r-ik')):
+        base = router(type='ikuai')
+        base.pop('id')
+        suffix = '-existing-iKuai' if path.endswith('/r-ik') else ''
+        yield invalid(route, method, path, 'iKuai-cannot-enable-DNS-guard' + suffix,
+            {**base, 'dns_guard': {'enabled': True}}, '强制局域网 DNS 走 OxiDNS 仅支持 RouterOS',
+            ('H0160', 'H1243', 'H1244'))
+        yield invalid(route, method, path, 'iKuai-cannot-enable-PD-guard' + suffix,
+            {**base, 'ipv6_pd_guard': {'enabled': True}}, 'IPv6 前缀变化保护仅支持 RouterOS',
+            ('H0492', 'H1246', 'H1247'))
+        yield invalid(route, method, path, 'iKuai-overlap-stops-at-vendor-check' + suffix,
+            {**base, 'ip_rule_sets': ['same'], 'ros_policy_rule_sets': ['same']},
+            '按来源策略路由仅支持 RouterOS', ('H1240', 'H1241'))
+
+
+def router_settings_ikuai():
+    # Exercise common guards on an actual existing iKuai record as well as
+    # creation. A valid vendor does not exist for a create's invalid type value.
+    for case in router_settings():
+        vendor = case.document['type']
+        if vendor != 'routeros' and case.route == 'R008':
+            continue
+        if 'H1241' in case.entries or 'H0161' in case.entries:
+            # Both need enabled RouterOS-only policy/guard settings. iKuai is
+            # stopped earlier; the explicit vendor cases prove that predecessor.
+            continue
+        document = {**case.document, **({'type': 'ikuai'} if vendor == 'routeros' else {})}
+        path = '/api/routers/r-ik' if case.route == 'R010' else case.path
+        yield replace(case, ident=case.route + '/iKuai-shared-' + case.ident.split('/', 1)[1],
+                      document=document, path=path)
+
+
+def normalized_router_guards():
+    defaults = {'enabled': False, 'block_dot': False, 'failover': True, 'bypass': []}
+    for ident, index in (('r-ros', 0), ('r-ik', 1)):
+        path = '/api/routers/' + ident
+        values = [' 10.44.0.21/24 ', '10.44.0.0/24', '10.44.0.2', '10.44.0.2/32']
+        normalized = {**defaults, 'bypass': ['10.44.0.0/24', '10.44.0.2/32']}
+        yield Case('R010/guard-trim-mask-and-stable-dedup-' + ident, 'R010', 'PUT', path, 200,
+            ('G14',), document={'dns_guard': {'bypass': values}}, unchanged=False, effect='profile-write',
+            checks={'router/dns_guard': normalized}, stored={'routers/items/' + str(index) + '/dns_guard': normalized})
+        for label, values in (('64-duplicates', ['10.44.0.2'] * 64),
+                              ('64-unique', ['10.44.1.' + str(number) for number in range(1, 65)])):
+            normalized = {**defaults, 'bypass': list(dict.fromkeys(value + '/32' for value in values))}
+            yield Case('R010/guard-exact-' + label + '-' + ident, 'R010', 'PUT', path, 200,
+                ('G14',), document={'dns_guard': {'bypass': values}}, unchanged=False, effect='profile-write',
+                checks={'router/dns_guard': normalized})
+        yield Case('R010/guard-null-restores-defaults-' + ident, 'R010', 'PUT', path, 200,
+            ('G14',), document={'dns_guard': None, 'ipv6_pd_guard': None}, unchanged=False, effect='profile-write',
+            checks={'router/dns_guard': defaults, 'router/ipv6_pd_guard': {'enabled': False}},
+            stored={'routers/items/' + str(index) + '/dns_guard': defaults,
+                    'routers/items/' + str(index) + '/ipv6_pd_guard': {'enabled': False}})
+
+
+def rejected_draft_readback():
+    # Extra sequence controls: DB snapshots alone cannot observe a Go handler
+    # accidentally mutating a cached in-memory record before returning400.
+    expected = {}
+    for index, vendor in enumerate(('routeros', 'ikuai')):
+        prefix = 'routers/' + str(index)
+        expected.update({prefix + '/id': 'r-ros' if index == 0 else 'r-ik',
+                         prefix + '/name': '合成路由器🧪 ' + vendor,
+                         prefix + '/username': 'test-admin', prefix + '/verify_tls': True,
+                         prefix + '/manage_return_routing': False, prefix + '/auto_rule_sync': False,
+                         prefix + '/rule_sync_interval': 60, prefix + '/ip_rule_sets': [],
+                         prefix + '/ros_policy_rule_sets': [], prefix + '/has_password': True})
+    yield Case('R007/after-all-rejected-drafts-runtime-records-unchanged', 'R007', 'GET', '/api/routers', 200,
+        checks=expected)
+    yield Case('R002/after-all-rejected-drafts-runtime-devices-unchanged', 'R002', 'GET', '/api/client-devices', 200,
+        checks={'devices': [], 'profile_id': 'alpha'})
+    yield Case('R014/after-all-rejected-drafts-runtime-workspace-unchanged', 'R014', 'GET',
+        '/api/routers/r-ros/policy-settings', 200,
+        checks={'workspace/router/ip_rule_sets': [], 'workspace/router/ros_policy_rule_sets': [],
+                'workspace/router/proxy_gateway_agent_id': ''})
 
 
 def client_draft():

@@ -1,11 +1,12 @@
 """Stored-state public boundary fixtures, never imported product internals."""
 import base64
+import copy
 import hashlib
 import json
 
 from cases import Case, concrete
 from inventory import load
-from seed import router, AGENT_TOKEN
+from seed import router, AGENT_TOKEN, DEVICE_PASSWORD, CONFIG_TOKEN
 
 
 MANIFESTS = (
@@ -21,10 +22,51 @@ MANIFESTS = (
      '请先关闭 IPv6 前缀变化保护并发布撤回，再修改路由器类型或管理地址'))
 
 
+def authentication_options(base=None):
+    value = copy.deepcopy(base or {})
+    value['system'] = {'agents': [{'id': 'auth-agent', 'name': '合成鉴权 Agent',
+        'service_type': 'oxidns', 'profile_id': 'alpha', 'host': '10.44.0.53', 'port': 18083,
+        'version': '1.99.0-go', 'status': 'offline', 'enabled': True, 'token': AGENT_TOKEN}],
+        'system_config': {'config_token': CONFIG_TOKEN}}
+    return value
+
+
 def receipt_file(ident):
     # The on-disk name is a public storage contract, not an opaque hash mask.
     payload = json.dumps(['alpha', ident], ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode()
     return 'router-rule-sync/' + hashlib.sha256(payload).hexdigest() + '.json'
+
+
+def legacy_credentials_options():
+    items = []
+    for vendor in ('routeros', 'ikuai'):
+        for form in ('empty', 'missing'):
+            value = router('legacy-' + vendor + '-' + form, vendor, password='',
+                           name='legacy credential repair', legacy_hint='keep synthetic unknown field')
+            if form == 'missing':
+                value.pop('password')
+            items.append(value)
+    return {'alpha': {'routers': {'items': items}}}
+
+
+def legacy_credentials():
+    items = legacy_credentials_options()['alpha']['routers']['items']
+    yield Case('R007/legacy-empty-and-missing-credentials-open', 'R007', 'GET', '/api/routers', 200,
+        ('H1255',), checks={'routers/' + str(index) + '/has_password': False for index in range(4)},
+        absent=tuple('routers/' + str(index) + '/password' for index in range(4)))
+    for index, item in enumerate(items):
+        ident = item['id']
+        path = '/api/routers/' + ident
+        for label, document in (('rename', {'name': 'must not persist'}), ('null', {'password': None}),
+                                ('empty', {'password': ''})):
+            yield Case('R010/legacy-no-password-' + ident + '-' + label, 'R010', 'PUT', path, 400,
+                ('H1255',), document=document, message='请填写密码')
+        yield Case('R010/legacy-credential-repaired-' + ident, 'R010', 'PUT', path, 200,
+            ('R010-S02',), document={'password': DEVICE_PASSWORD}, unchanged=False, effect='profile-write',
+            checks={'router/has_password': True, 'router/name': 'legacy credential repair'}, absent=('router/password',),
+            stored={'routers/items/' + str(index) + '/password': DEVICE_PASSWORD,
+                    'routers/items/' + str(index) + '/legacy_hint': 'keep synthetic unknown field'},
+            expected_requests=({'match': {'peer': 'ros'}, 'count': 0}, {'match': {'peer': 'ikuai'}, 'count': 0}))
 
 
 def stored_options():

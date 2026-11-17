@@ -109,12 +109,9 @@ def authentication():
         for index, credential in enumerate(credentials, 1):
             ident = route.ident + '-F' + format(index, '02')
             headers = {} if credential is None else {'Authorization': 'Bearer ' + credential}
-            prepare = ({'rpc': 'http', 'method': 'POST', 'path': '/api/agents/auth-agent/heartbeat',
-                        'document': {}, 'auth': False, 'headers': {'Authorization': 'Bearer ' + AGENT_TOKEN},
-                        'expected': 200},) if route.ident == 'R001' and index == 1 else ()
             yield Case(ident + '/A' + str(index), route.ident, route.method, concrete(route.path),
                        401, (ident,), headers=headers, auth=False,
-                       reason='A1–A7 must reject before any handler/device mutation', prepare=prepare)
+                       reason='A1–A7 must reject before any handler/device mutation')
 
 
 def profile_selection_failures():

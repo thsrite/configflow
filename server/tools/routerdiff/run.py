@@ -32,7 +32,7 @@ from harness import Pair
 from harness import decode_response
 from inventory import design_json, load
 from invariants import configuration_only, profile_write, fields
-from seed import router, AGENT_TOKEN, CONFIG_TOKEN
+from seed import router
 from fakes import World
 from addresses import report_aliases
 from tokens import inspect_python_token
@@ -542,14 +542,14 @@ def main():
     results = []
     options = {'alpha': {'routers': {'items': [router(), router('r-ik', 'ikuai')]}},
                'beta': {'routers': {'items': [router()]}}}
-    guard_options = {**options, 'system': {'agents': [{'id': 'auth-agent', 'name': '合成鉴权 Agent',
-        'service_type': 'oxidns', 'profile_id': 'alpha', 'host': '10.44.0.53', 'port': 18083,
-        'version': '1.99.0-go', 'status': 'offline', 'enabled': True, 'token': AGENT_TOKEN}],
-        'system_config': {'config_token': CONFIG_TOKEN}}}
+    guard_options = fixtures.authentication_options(options)
     worlds = [('guards', guard_options, (cases.authentication, cases.query_credentials, cases.profile_selection_failures, cases.body_guards,
-                      guards.router_settings, guards.client_draft, guards.fixed_ip_shape,
-                      guards.route_edit_shape, guards.workspace_shape, guards.rule_sync_shape)),
+                      guards.router_settings, guards.router_settings_ikuai, guards.guard_vendor_support,
+                      guards.client_draft, guards.fixed_ip_shape,
+                      guards.route_edit_shape, guards.workspace_shape, guards.rule_sync_shape, guards.rejected_draft_readback)),
               ('client-drafts', options, (workflows.client_drafts,)),
+              ('legacy-credentials', fixtures.legacy_credentials_options(), (fixtures.legacy_credentials,)),
+              ('router-guard-normalization', options, (guards.normalized_router_guards,)),
               ('workspace-drafts', options, (workflows.workspace_drafts, workflows.router_updates)),
               ('runtime-reads', options, (workflows.runtime_reads,)),
               ('sync-settings', options, (workflows.sync_settings,)),

@@ -128,3 +128,23 @@ Allow 仅按方法排列顺序归一化，保留大小写、重复、缺失和�
 同名 foreign 行不计 owned。GET 另验证记录顺序、source/destination 角色、外部
 改名/改地址、缺失、runtime 字段不改变归属状态、未知配置字段改变归属但不泄露、
 fib 空flag显示true、beta隔离、同空间 source_agents 和真实设备失败502。
+
+## H0154–H0161 / H0491–H0492：校验器的真实公开入口
+
+全仓 Python 调用点查找证明：DNS guard 的 normalize_settings 只有
+backend/routers/store.py:105 调用；PD 的 normalize_settings 只有同文件:114
+调用。H 表的路由范围列漏掉了 R008/R010，不能把该列当作“report/plan 必能
+触发该异常”的证明。创建、编辑正常公开 HTTP 可以直接进入这些校验器；本轮
+给已有真实错误配方补准确的 H 编号，并增加缺失的条件输入，不调用私有函数。
+
+已分别执行结构错误、三个布尔字段、各类非字符串 bypass 成员、空/空白/中文/
+全角/IPv6/错误 prefix 地址、65 项（去重前）上限、DNS 目标缺失、iKuai 不支持
+开启、PD 结构/开关/iKuai。共同校验同时覆盖创建和已有 iKuai/RouterOS 的编辑。
+H0161 缺 DNS 目标只在 RouterOS 可达：iKuai 已被前面的 H0160 厂商检查拦下。
+政策集合的重叠检查同理：iKuai 先返回“不支持按来源策略路由”，另有公开反例
+锁定这个前置条件，不伪造一个能走到后面检查的 iKuai 成功夹具。
+
+14 条显式审计覆盖子校验与父级 catch/rethrow；每个声明都列出具体 world:case。
+固定输入位置或字段循环变化会让一致性自检失败，不能因为某个 H 有任意一条
+400 就自动通过。正常64项、稳定去重、空值恢复默认是独立成功控制；未把这些
+设置成功请求当作 PD 事件脚本/真实 DNS 转发的覆盖。

@@ -832,3 +832,43 @@ Matrix2301/routes26/implemented0/go-unimplemented1341/referenced341/
 audited262/remaining2039/complete=false. No Python bugs in this selected subset.
 The last full composition remains cb95c4562435 recipes/611 referenced/182 then
 audited; this new audit subset proves80 more, not a new full composition.
+
+Settings/caller audit and legacy credential repair:
+- Source-call search corrected H0154-H0161/H0491-H0492 scope: only store.normalize
+  calls these validators, so actual public R008/R010 cases provide their error
+  evidence; report/plan cannot be assumed to reach them. Added exact H attachments,
+  missing JSON member types/blank/CJK/fullwidth input, iKuai unsupported enabling,
+  actual existing-iKuai edits and shared field guards on both vendors. iKuai stops
+  at its preceding vendor check before overlap/missing-DNS guards; explicit HTTP
+  counterexamples retain that source proof. No product implementation changed.
+- Added8 successful settings controls: trim/mask/stable dedup,64 duplicate vs64
+  unique items and whole-field null default restoration on both vendors. Removed
+  an over-broad G21 attachment: a settings reset does not prove PD event scripts.
+- 17 real legacy cases load four empty/missing-password records through the public
+  Python import fixture; GET opens them, rename/null/empty credential edits refuse
+  with the correct password message, public repair succeeds and preserves name/
+  unknown stored fields. This differs from the un-loadable missing Agent profile
+  fixture; never bypassed validation or injected Go private state.
+- Three readbacks after the rejection batch guard against an implementation that
+  mutates in-memory router/device/workspace state before returning400; DB-only
+  snapshots would miss it. They are extra controls, no fake coverage ID added.
+- Removed the auth batch's preparatory heartbeat: Agent capabilities are valid in
+  the registry while offline. A separate real public HTTP boundary test proves
+  valid/wrong heartbeat tokens and admin refusal; Go checked only for routes in its
+  actual public manifest. This avoids unmatched heartbeat timestamps or a missing
+  R001 cascading into skipped otherwise-implemented auth routes. The auth world
+  now has no preparatory mutation; updated audit rationale accordingly.
+- Explicit14 child/parent settings audits require all named shape/loop/vendor
+  variants. Integrity selftest checks every requirement exists with the intended
+  H attachment/status; not derived by simply selecting whatever claims that H.
+
+Earlier legacy/default control subset on .64: Ran4 tests0.448s/OK, legacy17(.26s)
+and defaults25 cumulative(.19s), report /tmp/routerdiff-legacy-settings.json.
+Authoritative expanded run:
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; cd server/tools/routerdiff; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY=/tmp/routerdiff-build-302rx1dg/configflow; ~/cf-test/.venv/bin/python -m unittest -v test_audits test_recipes test_boundary; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world guards --world legacy-credentials --world router-guard-normalization --world runtime-reads --world upstream-linked --output /tmp/routerdiff-settings-guard-audit.json'`
+=> Ran12 tests45.048s/OK; guards1573 including readbacks(.94s), legacy1590(1.23s),
+defaults1598(1.39s), runtime1609(1.18s), upstream1620(3.16s). Matrix2301/routes26/
+implemented0/go-unimplemented1620/referenced353/audited276/remaining2025/
+complete=false, no new Python bugs. No pending test process. Last full composition
+is still cb95c4562435 recipes/611 references, before these additions. Final full
+composition, gate and rebase remain pending; task is not ready for hand-back.
