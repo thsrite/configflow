@@ -7,8 +7,8 @@ import (
 	"slices"
 	"strings"
 
-	"configflow/internal/devhttp"
 	"configflow/internal/ctxx"
+	"configflow/internal/devhttp"
 )
 
 func ipv6ValidSpec(spec *IPv6RouteSpec) bool {

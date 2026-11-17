@@ -213,3 +213,8 @@ ipv6_settings_test.go 86、repo/r10_ipv6_safety_test.go 155；Python 三个合�
 
 旧基底 gate 在 race/proddiff 阶段因协调者通知暂停，并确认专属进程树退出；无完整 PASS 声明。
 最终门禁只以后续 O3-6a 合并树的执行结果为准。
+
+O3-6a 合并树定向结果（`.64`）：
+`RT_HOST=sunbroke@192.168.0.64 rt --back server/internal/routers/ipv6_write.go --back server/internal/repo/r10_ipv6_safety_test.go -- bash -lc 'cd server && gofmt -w internal/routers/ipv6_write.go internal/repo/r10_ipv6_safety_test.go && go test -p 6 -count=1 -run "TestR10|TestR09SharedEvaluatorPython" ./internal/routers ./internal/repo && go vet ./internal/routers/... ./internal/repo/...'`
+→ routers `11.532s`、repo `29.859s`，相关 vet clean。随后本机对齐 ctxx/devhttp import 排序，
+仅格式；新一轮 `.32` 合并树全相关包 race + fuzz 与全仓 vet 前台执行中。
