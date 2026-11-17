@@ -24,6 +24,7 @@ import (
 	apiagents "configflow/internal/api/agents"
 	apiaggregations "configflow/internal/api/aggregations"
 	apiauth "configflow/internal/api/auth"
+	apiconfig "configflow/internal/api/config"
 	apidiscovery "configflow/internal/api/domaindiscovery"
 	apilinuxgateway "configflow/internal/api/linuxgateway"
 	apilogs "configflow/internal/api/logs"
@@ -39,6 +40,7 @@ import (
 	apisubscriptions "configflow/internal/api/subscriptions"
 	apitasks "configflow/internal/api/tasks"
 	"configflow/internal/auth"
+	"configflow/internal/configexport"
 	"configflow/internal/convert"
 	"configflow/internal/convert/mihomoenv"
 	"configflow/internal/deploy"
@@ -69,6 +71,7 @@ var routePackages = []func(*httpx.Router){
 	apiproxygroups.Register,
 	apiagents.Register,
 	apilinuxgateway.Register,
+	apiconfig.Register,
 	apisettings.Register,
 	apilogs.Register,
 	apistats.Register,
@@ -87,6 +90,7 @@ var lateRoutePackages = []func(*httpx.Router){
 // providers).
 var wirePackages = []func(){
 	deploy.Wire,
+	configexport.Wire,
 	apiagents.WireContentSync,
 	wireCore,
 	webdav.Wire,
