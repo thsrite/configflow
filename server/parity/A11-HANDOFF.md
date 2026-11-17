@@ -1,6 +1,6 @@
 # A11 — deployment preparation hand-back
 
-Branch `go-port-a11`. Scope: `design/a14-publish.md` A11-1–4 only. HR status is **ported**, never verified until a fresh Opus review. No subagents, pushes or production access. Final acceptance results are recorded in PROGRESS-agents A11.
+Branch `go-port-a11`. Scope: `design/a14-publish.md` A11-1–4 only. HR status was **ported** at hand-back; the fresh-Opus review ([review-a11.md](review-a11.md), branch `go-opus-review-a11`) fixed 9 findings (0 high) and set **verified**. Where this hand-back's checklist claims differ from the review, the review's "Author's per-class claims checked" section is authoritative. No subagents, pushes or production access. Final acceptance results are recorded in PROGRESS-agents A11.
 
 ## Design mapping
 

@@ -59,7 +59,7 @@ for text, files in geo_cases:
 base = dict(protocol_version=1, deployment_id='a11-review', agent_id='agent-example', profile_id='profile-example',
             service_type='mosdns', config_path='config.yaml')
 fingerprints = []
-for path in ['rules/a b.txt', 'rules/a b.txt', 'rules/<a>&"b\'.txt', 'rules/é\U0001F600.txt']:
+for path in ['rules/a\u2028b.txt', 'rules/a\u2029b.txt', 'rules/<a>&"b\'.txt', 'rules/é\U0001F600.txt']:
     manifest = copy.deepcopy(base)
     manifest['files'] = [dict(path='config.yaml', size=3, sha256=hashlib.sha256(b'a:1').hexdigest(), role='config'),
                          dict(path=path, size=1, sha256=hashlib.sha256(b'x').hexdigest(), role='rule')]

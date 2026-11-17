@@ -817,7 +817,38 @@ Review commands (shared worktree builds): `rt -- bash -lc 'cd server && go vet .
 
 ## A11 — deployment bundle, locations, Mihomo resources, generated preview
 
-**Status: `ported`** · HR · Codex port complete; fresh Opus review required before `verified`. Branch `go-port-a11`, rebased onto `go` `3ae44741` (contains verified A19). No push, subagent or production access. Scope is design A11-1–4; A12/A13/A14 orchestration/routes remain their owners.
+**Status: `verified`** · HR · Codex port; fresh-Opus HR review 2026-11-17 (**[review-a11.md](review-a11.md)**): 9 findings fixed (0 high, 2 medium: JSON/quoted-key rule sources emptied by a private payload detector, credentials continuing on an excerpted line shown; 7 low), **0 open**. Branch `go-opus-review-a11` (author branch `go-port-a11`), rebased onto `go` `62427c41`. No push, subagent or production access. Scope is design A11-1–4; A12/A13/A14 orchestration/routes remain their owners.
+
+HR review (2026-11-17): fixes `e47a4baf` (F1–F8) and `cadcdbc3` (F9 `RuleDownloadError` unwraps to its `*PreparationError` — A14 classification); Python oracle `testdata/gen_a11_review.py` → `review.json` (24 conversions, 19 excerpts, 10 Geo, 4 fingerprints, 9 Build cases), `review_test.go`, fuzz targets `FuzzConvertMosDNSRules`, `FuzzSourceExcerpt`, `FuzzOpenArchive`. Codex-port quality: 0 high → the "≥ 2 high" fallback is not triggered. Requirements for A12/A14/A16 and the added L2 item are in review-a11.md. Final `.32` acceptance after the review (exit 0 throughout):
+```sh
+# one nohup'd shell on .32 in the rt copy (cd server):
+gofmt -l internal/ tools/; go vet ./...
+go test -race -count=1 ./internal/deploy ./internal/agents ./internal/agents/diag
+CONFIGFLOW_DIFF=1 go test -race -count=1 ./internal/api/subscriptions/difftest
+go test -p=4 -count=1 ./...
+CONFIGFLOW_DIFF=1 go test -p=4 -count=1 $(go list ./... | grep difftest)
+for f in FuzzConvertMosDNSRules FuzzSourceExcerpt FuzzOpenArchive; do go test -run '^$' -fuzz "^$f\$" -fuzztime 60s ./internal/deploy/; done
+(cd ../backend/agents/go-agent && CONFIGFLOW_SERVER_ARCHIVES=$PWD/../../../server/internal/deploy/testdata/archives go test -count=1 -run ServerArchive ./routes/)
+(cd .. && ~/cf-test/.venv/bin/python -m unittest server/tools/proddiff/test_proddiff.py && server/scripts/proddiff.sh)
+```
+```text
+gofmt-output:[]   vet-exit-0
+ok configflow/internal/deploy 8.392s (race)   ok configflow/internal/agents 28.497s (race)   race-exit 0
+ok configflow/internal/api/subscriptions/difftest 102.104s (race, CONFIGFLOW_DIFF=1)
+full-exit 0 (go test -p=4 -count=1 ./...)
+difftest-exit 0: api/agents 120.731s, api/subscriptions 97.836s, discovery 2.165s, health 13.759s, httpx 1.145s,
+  mosdns 1.505s, refresh 3.627s, subs 1.857s, substore 6.246s, webdav 20.407s
+fuzz 60 s: FuzzConvertMosDNSRules 319878 execs PASS; FuzzSourceExcerpt 263886 PASS; FuzzOpenArchive 420480 PASS
+ok agent/routes 1.074s (ServerArchive)   proddiff unit: Ran 32 tests OK
+proddiff.sh exit 0: self_check PASS, coverage_regressions 0, unmapped_routes 0,
+  agent-deployment-bundle compared=3 success=2 partial=1 (C31 frozen aggregation provider), baseline: new=0 stale=0
+```
+The run above was on `go` `a44b343b`; after the rebase onto `62427c41` (only `internal/routers` and docs changed)
+`.32` repeated gofmt (empty), `go vet ./...` (ok), race deploy 9.753s / agents 38.067s, `go test -p=4 -count=1 ./...`
+(exit 0), all ten CONFIGFLOW_DIFF packages (exit 0) and proddiff.sh (exit 0; self_check PASS, coverage_regressions 0,
+unmapped_routes 0, agent-deployment-bundle compared=3 success=2 partial=1, new=0 stale=0).
+
+Port hand-back (author) follows.
 
 Design: `server/design/a14-publish.md`. Complete design map, **one row per HR issue class for every step**, Python test-file mapping and L2-only list: **[A11-HANDOFF.md](A11-HANDOFF.md)**.
 
