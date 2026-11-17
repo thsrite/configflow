@@ -24,6 +24,8 @@
 package metrics
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -40,6 +42,7 @@ import (
 	"unicode/utf8"
 
 	"configflow/internal/agents"
+	"configflow/internal/jsonresp"
 	"configflow/internal/jsonx"
 	"configflow/internal/logx"
 	"configflow/internal/taskstatus"
@@ -310,27 +313,19 @@ func parseLines(lines []string, limit time.Time) ([]point, int) {
 			continue
 		}
 		count++
-		value, err := jsonx.ParseString(raw)
-		if err != nil {
+		var object map[string]json.RawMessage
+		if err := jsonresp.DecodeStored([]byte(raw), &object); err != nil || object == nil {
 			continue
 		}
-		object, ok := value.(*jsonx.Object)
-		if !ok || object == nil {
-			continue
-		}
-		stamp, present := object.Get("timestamp")
-		if !present {
-			continue
-		}
-		text, ok := stamp.(string)
-		if !ok {
+		var text string
+		if err := json.Unmarshal(object["timestamp"], &text); err != nil {
 			continue
 		}
 		at, aware, ok := parseNaiveISO(text)
 		if !ok || aware || at.Before(limit) || seen[text] {
 			continue
 		}
-		line, err := jsonx.Compact(object)
+		line, err := jsonresp.Encode(object)
 		if err != nil {
 			continue
 		}
@@ -348,12 +343,25 @@ func decodeReplace(data []byte) string {
 }
 
 func (h *History) readFile(agentID string, limit time.Time) ([]point, int, error) {
+	points, count, _, err := h.readFileState(agentID, limit)
+	return points, count, err
+}
+
+func (h *History) readFileState(agentID string, limit time.Time) ([]point, int, bool, error) {
 	data, err := os.ReadFile(h.agentFile(agentID))
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, false, err
 	}
-	points, count := parseLines(splitUniversal(decodeReplace(data)), limit)
-	return points, count, nil
+	lines := splitUniversal(decodeReplace(data))
+	repaired := false
+	for _, line := range lines {
+		if _, changed := jsonresp.NormalizeNonFinite([]byte(line)); changed {
+			repaired = true
+			break
+		}
+	}
+	points, count := parseLines(lines, limit)
+	return points, count, repaired, nil
 }
 
 // legacyFormatError is a ValueError (json or UTF-8) of _read_legacy.
@@ -399,41 +407,32 @@ func (h *History) readLegacy(agentID string, limit time.Time) ([]point, error) {
 	if !isValidUTF8(data) {
 		return nil, legacyFormatError{errors.New("invalid utf-8")}
 	}
-	value, err := jsonx.Parse(data)
-	if err != nil {
+	var document json.RawMessage
+	if err := jsonresp.DecodeStored(data, &document); err != nil {
 		return nil, legacyFormatError{err}
 	}
-	var metrics any = []any{}
-	if object, ok := value.(*jsonx.Object); ok && object != nil {
-		if v, present := object.Get("metrics"); present {
-			metrics = v
+	var root map[string]json.RawMessage
+	_ = json.Unmarshal(document, &root)
+	var items []json.RawMessage
+	if raw, ok := root["metrics"]; ok {
+		raw = bytes.TrimSpace(raw)
+		if len(raw) > 0 && raw[0] != '{' && raw[0] != '"' {
+			if len(raw) == 0 || raw[0] != '[' {
+				return nil, &TypeError{Message: msgSavedMetricsArray}
+			}
+			if err := json.Unmarshal(raw, &items); err != nil {
+				return nil, legacyFormatError{err}
+			}
 		}
-	}
-	var items []any
-	switch v := metrics.(type) {
-	case []any:
-		items = v
-	case *jsonx.Object:
-		if v == nil {
-			return nil, &TypeError{"'NoneType' object is not iterable"}
-		}
-		// iterating a dict gives its keys (strings): none is a point
-	case string:
-		// iterating a string gives characters: none is a point
-	default:
-		// Python's TypeError is not caught by load(): it ends the whole load.
-		return nil, &TypeError{fmt.Sprintf("'%s' object is not iterable", pyTypeName(metrics))}
 	}
 	var lines []string
 	for _, item := range items {
-		if object, ok := item.(*jsonx.Object); ok && object != nil {
-			line, err := jsonx.Compact(object)
-			if err != nil {
-				continue
-			}
-			lines = append(lines, string(line))
+		raw := bytes.TrimSpace(item)
+		if len(raw) > 0 && raw[0] == '{' {
+			lines = append(lines, string(raw))
 		}
 	}
+
 	points, _ := parseLines(lines, limit)
 	return points, nil
 }
@@ -515,9 +514,9 @@ func (h *History) Load(agentIDs []string) (LoadResult, error) {
 		}
 		var points []point
 		lines := 0
-		migrated := false
+		migrated, repaired := false, false
 		if k.file {
-			points, lines, err = h.readFile(agentID, limit)
+			points, lines, repaired, err = h.readFileState(agentID, limit)
 			if err != nil {
 				historyLogger.Warningf("读取 Agent %s 的监控历史失败：%s", agentID, DescribeOSError(err))
 				continue
@@ -557,6 +556,9 @@ func (h *History) Load(agentIDs []string) (LoadResult, error) {
 		}
 		h.points[agentID] = merged
 		h.fileLines[agentID] = lines
+		if repaired {
+			h.rewrite[agentID] = true
+		}
 		if migrated {
 			h.pending[agentID] = len(merged)
 			h.legacy[agentID] = h.legacyFile(agentID)
@@ -602,7 +604,7 @@ func (h *History) AddMetrics(agentID string, systemMetrics any) (bool, error) {
 	dataPoint := jsonx.Obj("timestamp", isoformat(at), "cpu", get("cpu"), "memory", get("memory"),
 		"disk", get("disk"), "network", get("network"))
 	// 查询时解析这一行，结果与以前从文件读回的一致，也不与心跳数据共享可变对象
-	line, err := jsonx.Compact(dataPoint)
+	line, err := jsonresp.Encode(dataPoint)
 	if err != nil {
 		historyLogger.Warningf("Agent %s 的监控数据无法保存：%s", agentID, err)
 		return false, nil
@@ -650,7 +652,8 @@ func (h *History) GetMetrics(agentID string, hours *big.Int) ([]any, error) {
 	h.mu.Unlock()
 	out := make([]any, 0, len(lines))
 	for _, line := range lines {
-		value, err := jsonx.ParseString(line)
+		var value *jsonx.Object
+		err := jsonresp.DecodeStored([]byte(line), &value)
 		if err != nil {
 			return nil, err
 		}

@@ -760,7 +760,7 @@ func normalizedFiles(t *testing.T, dir string, values map[string]string) map[str
 }
 
 // compareAfterStop compares the files under DATA_DIR after a graceful
-// stop: the same names, the metrics files byte for byte except the
+// stop: the same names, metrics JSONL records structurally except the
 // heartbeat timestamps, and the metrics_history_flush run in task-status.json.
 func compareAfterStop(t *testing.T, pyDir, goDir string, pyValues, goValues map[string]string) int {
 	failed := 0
@@ -788,7 +788,7 @@ func compareAfterStop(t *testing.T, pyDir, goDir string, pyValues, goValues map[
 		pyText := timestampField.ReplaceAllString(string(pyData), `"timestamp":"<t>"`)
 		goText := timestampField.ReplaceAllString(string(goData), `"timestamp":"<t>"`)
 		compared++
-		if pyText != goText {
+		if !equalSavedMetricLines(t, name, pyText, goText) {
 			failed++
 			t.Errorf("DIFF %s:\n  python %q\n  go     %q", name, pyData, goData)
 		} else {
@@ -849,7 +849,17 @@ func compareNonFiniteMetrics(r request, python, native any) []string {
 		}
 	} else if strings.HasPrefix(r.path, "/api/agents/agent-odd/metrics/summary") {
 		ps, gs := pd.GetObject("summary"), gd.GetObject("summary")
-		check("data.summary.cpu.avg", ps.GetObject("cpu"), gs.GetObject("cpu"), "avg", "NaN")
+		cpu := ps.GetObject("cpu")
+		if n, ok := cpu.Value("avg").(jsonx.Number); !ok || string(n) != "NaN" {
+			diffs = append(diffs, "Python seeded CPU average must be NaN")
+		} else {
+			count++
+			expected := jsonx.Float(2.5625) // (1+3+4.25+2)/4; the missing sample is ignored.
+			if !jsonx.Equal(gs.GetObject("cpu").Value("avg"), expected) {
+				diffs = append(diffs, "Go seeded CPU average must be 2.5625 over valid samples")
+			}
+			cpu.Set("avg", expected)
+		}
 		check("data.summary.network_sent.avg", ps.GetObject("network_sent"), gs.GetObject("network_sent"), "avg", "Infinity")
 	} else {
 		return []string{"non-finite metrics exception enabled for an unexpected route"}
@@ -880,4 +890,35 @@ func compareNonFinitePanel(python, native any) []string {
 		pd.Set(field.key, nil)
 	}
 	return diffs
+}
+
+// equalSavedMetricLines compares every complete stored record. The single
+// synthetic agent-odd CPU NaN is explicitly repaired; no other value is normalized.
+func equalSavedMetricLines(t *testing.T, name, python, native string) bool {
+	t.Helper()
+	pl, gl := strings.Split(strings.TrimSpace(python), "\n"), strings.Split(strings.TrimSpace(native), "\n")
+	if len(pl) != len(gl) {
+		return false
+	}
+	for i := range pl {
+		pv, pe := jsonx.ParseString(pl[i])
+		gv, ge := jsonx.ParseString(gl[i])
+		if pe != nil || ge != nil {
+			return false
+		}
+		if name == "metrics/agent-odd_metrics.jsonl" {
+			p, _ := pv.(*jsonx.Object)
+			g, _ := gv.(*jsonx.Object)
+			if n, ok := p.GetObject("cpu").Value("usage_percent").(jsonx.Number); ok && string(n) == "NaN" {
+				if value, present := g.GetObject("cpu").Get("usage_percent"); !present || value != nil {
+					return false
+				}
+				p.GetObject("cpu").Set("usage_percent", nil)
+			}
+		}
+		if !jsonx.Equal(pv, gv) {
+			return false
+		}
+	}
+	return true
 }

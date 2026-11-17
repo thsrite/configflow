@@ -5,6 +5,7 @@ package metrics
 // (A05).
 
 import (
+	"math"
 	"math/big"
 	"time"
 
@@ -18,6 +19,19 @@ func calcStats(values []any) (*jsonx.Object, error) {
 	if len(values) == 0 {
 		return zeroStats(), nil
 	}
+	valid := make([]any, 0, len(values))
+	for _, value := range values {
+		if value != nil {
+			if n, ok := value.(jsonx.Number); ok && (math.IsInf(n.Float64(), 0) || math.IsNaN(n.Float64())) {
+				continue
+			}
+			valid = append(valid, value)
+		}
+	}
+	if len(valid) == 0 {
+		return jsonx.Obj("avg", nil, "max", nil, "min", nil), nil
+	}
+	values = valid
 	avg, err := pyMean(values)
 	if err != nil {
 		return nil, err
@@ -147,6 +161,13 @@ func (h *History) GetTrafficStats(agentID, period string) (*jsonx.Object, error)
 			filtered = append(filtered, item.(*jsonx.Object))
 		}
 	}
+	kept := filtered[:0]
+	for _, metric := range filtered {
+		if !missingTrafficCounter(metric) {
+			kept = append(kept, metric)
+		}
+	}
+	filtered = kept
 	if len(filtered) == 0 {
 		return emptyTrafficStats(period), nil
 	}
@@ -217,6 +238,9 @@ func (h *History) GetTrafficTrend(agentID string, hours, intervalMinutes *big.In
 	get := func(section any, key string) (any, error) { return pyGet(section, key, jsonx.Int(0)) }
 	for _, item := range metrics {
 		metric := item.(*jsonx.Object)
+		if missingTrafficCounter(metric) {
+			continue
+		}
 		timestamp := pointTime(metric)
 		network, _ := pyGet(metric, "network", jsonx.NewObject())
 		if prevMetric == nil {
@@ -289,6 +313,9 @@ func (h *History) GetTrafficTrend(agentID string, hours, intervalMinutes *big.In
 		}
 		prevMetric, prevTime = metric, timestamp
 	}
+	if prevMetric == nil {
+		return trend, nil
+	}
 	network, _ := pyGet(prevMetric, "network", jsonx.NewObject())
 	last := jsonx.Obj("timestamp", isoformat(prevTime))
 	for _, key := range []string{"bytes_sent", "bytes_recv", "speed_sent", "speed_recv"} {
@@ -299,4 +326,27 @@ func (h *History) GetTrafficTrend(agentID string, hours, intervalMinutes *big.In
 		last.Set(key, value)
 	}
 	return append(trend, last), nil
+}
+
+// missingTrafficCounter distinguishes an explicit null counter from an absent
+// field, whose established default remains zero. Raw history is never changed.
+func missingTrafficCounter(metric *jsonx.Object) bool {
+	network, ok := metric.Value("network").(*jsonx.Object)
+	if !ok {
+		return false
+	}
+	for _, key := range []string{"bytes_sent", "bytes_recv"} {
+		if value, present := network.Get(key); present && missingCounterValue(value) {
+			return true
+		}
+	}
+	return false
+}
+
+func missingCounterValue(value any) bool {
+	if value == nil {
+		return true
+	}
+	number, ok := value.(jsonx.Number)
+	return ok && (math.IsInf(number.Float64(), 0) || math.IsNaN(number.Float64()))
 }

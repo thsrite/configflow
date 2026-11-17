@@ -371,7 +371,7 @@ func TestOldJSONFilesMigrateOnceAndDeletedAgentsAreRemoved(t *testing.T) {
 		t.Fatal(got)
 	}
 	// Same points, same shape as the old file served before.
-	if dumps(t, get(t, h, "a1", 24)) != dumps(t, recent) {
+	if !jsonx.Equal(get(t, h, "a1", 24), recent) {
 		t.Fatal(dumps(t, get(t, h, "a1", 24)))
 	}
 	wantEqual(t, "file", parsedLines(t, filepath.Join(dir, "a1_metrics.jsonl")), recent)
@@ -520,7 +520,7 @@ func TestOldFileWhoseMetricsAreNotIterableEndsTheLoad(t *testing.T) {
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "a1_metrics.json"), []byte(`{"metrics": 5}`), 0o644)
 	_, err := NewHistory(dir, MaxPointsPerAgent).Load([]string{"a1"})
-	if err == nil || err.Error() != "'int' object is not iterable" {
+	if err == nil || err.Error() != msgSavedMetricsArray {
 		t.Fatal(err)
 	}
 	// Broken JSON is only ignored (and the file removed).
