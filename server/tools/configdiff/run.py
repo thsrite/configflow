@@ -258,6 +258,12 @@ def main():
     groups.update(task_router_retry)
     from cases.setup_managed_router import GROUPS as setup_managed_router
     groups.update(setup_managed_router)
+    from cases.setup_base_guards import GROUPS as setup_base_guards
+    groups.update(setup_base_guards)
+    from cases.scan_disconnect import GROUPS as scan_disconnect
+    groups.update(scan_disconnect)
+    from cases.oxidns_routing_guards import GROUPS as oxidns_routing_guards
+    groups.update(oxidns_routing_guards)
     from cases.groups import GROUPS as managed_groups
     groups.update(managed_groups)
     from cases.rule_library import GROUPS as rule_library

@@ -59,6 +59,14 @@ def guards(binary, recorder):
                  'OxiDNS ' + field + ' 中规则 r-a 的 DNS 处理无效：规则 DNS 处理「拒绝」不能包含其他参数', variant=field)
         call('H874', {'surge': {'custom_config': '', 'smart_groups': [{'group_id': 'missing'}]}},
              '配置 ' + name + ': Surge Smart 设置引用的策略组不存在', status=409)
+        for value in (1, 'x' * 81, '备注\n🧪', '备注\x7f'):
+            call('H346', {'device_notes': {'192.0.2.8': value}}, '设备备注最多 80 个字符，不能包含换行或控制字符。',
+                 variant='device-name/' + repr(value))
+        for value in ([], {'2001:db8::' + format(i, 'x'): '合成' for i in range(1, 2050)}):
+            call('H347', {'device_notes': value}, '设备备注必须为对象，最多 2048 条。',
+                 variant='device-notes/' + ('list' if isinstance(value, list) else '2049-real-entries'))
+        call('H348', {'device_notes': {'192.0.2.8': '原始', '::ffff:192.0.2.8': '映射'}},
+             '设备备注地址重复：192.0.2.8', variant='device-notes-normalized-address-collision')
 
 
 GROUPS = {'repository-complete-import-edge-invariants': guards}

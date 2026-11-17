@@ -2231,3 +2231,17 @@ current Go未实现2；design_errors=[]；exit0
 Python前提全部通过；Go未实现/依赖未实现；design_errors=[]；exit0
 118 self-checks + deliberately wrong-Go-response detection OK
 ```
+
+## 批次 131：保留基础YAML、长扫描真实断连和OxiDNS后置校验
+
+- 向导H1016–1022共12个具体输入、首次/重复两形态：坏根对象、dns对象/回环、密码、tun类型、完整TUN和Linux网关过滤、1053/53/9199端口冲突。首次prepare确实先初始化内置规则库，完整SQL/files比较保留此副作用；重复拒绝必须全部精确不变。原始“GET已初始化”的草稿前提撤回。
+- R190-B04实际60002行规则，在下载HTTP已进入且被门阻塞时shutdown真实浏览器socket，未读取首响应；放行后完整新缓存落盘，再实际扫描得到唯一重复域及准确计数，零第二次下载，配置不变。原先要求初次写入必有.bak的草稿撤回；依据原子写来源，首次只新增主缓存。119项自检逐项篡改断连证明、存储和网络请求均检出。不得把后续扫描200归给断开的首响应。
+- OxiDNS default/scoped逐项驱动20个新增H：非法selectors/action/follow、自定义匹配、已有action与新selector冲突、停用parked与follow冲突、default/aggregate/position后置空值和template-preview参数。特意用null越过较早可选类型检查；aggregate配置两条真实相邻同策略规则，自定义执行顺序先具备真实custom match。缺这两个前提会被capability拒绝，早期拒绝的草稿不计后置覆盖。另经完整import驱动device_notes H346–348，含2049条真实备注和IPv4/mapped IPv6重复。
+- .64独立及.32正式四组均通过Python前提；正式10267变体、原R4487（S712/F2759/B1016）、H783/G16；累计compared2938/Go未实现7177/依赖102/严格差异49/O12单列1，design_errors=[]。findings仍closed122/accepted29/open20/O12单列1。原R差43（含N/A）、H差329，最终最新go全量未完成。
+- 另尝试R154/R220-F10、R222-F12的外部SQLite共享集合错型；实际先触发整体仓库/公开前置故障，得到HTML500，没进入目标JSON错误分支。该草稿代码已删、报告移/tmp、无H/R覆盖计数；不能据此编造路由内异常证据。继续按可达性审计，不注入内部函数异常。
+
+```text
+.32 native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups setup-prepare-retained-base-guards,rule-duplicates-real-browser-disconnect,oxidns-common-late-routing-guards,repository-complete-import-edge-invariants --baseline 038b52ae
+Python前提全部通过；Go未实现；design_errors=[]；exit0
+119 self-checks + deliberately wrong-Go-response detection OK
+```

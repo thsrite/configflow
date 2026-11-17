@@ -2076,6 +2076,10 @@ R227-S07用合成历史runtime receipt加当前有效IP规则选择验证真实�
 
 R211-S12及H1005–1007由真实managed finish驱动：仅在private netns的lo添加合成客户端LAN地址，fake RouterOS返回完整只读表，真实Mihomo Agent HTTP返回完整TUN状态及return-routing状态；要求空计划后完成。首读401→502、非空漂移计划→409、首读被阻塞期间另一公开PUT真实修改router→409逐项验证，不替换`_inspect`或内部函数。逐条比较所有设备方法/路径/Basic、Agent请求正文/头、零规则源访问、全SQL/files；并发PUT只允许准确的单一router名称事务，含revision、commit与时间窗验证。来源[setup_completion.py:204](../../backend/common/setup_completion.py#L204)、[routers.py:160](../../backend/routes/routers.py#L160)。合成安装发布回执仍只作为向导边界前提，不代表真实安装、转发或L5设备验收。
 
+H1016–1022用真实prepare和合法导入保留的基础YAML进入[setup_flow.py:205](../../backend/common/setup_flow.py#L205)。首次失败可能先由[setup_presets.py:239](../../backend/common/setup_presets.py#L239)初始化内置规则库，仍完整比较；第二次相同请求则要求全SQL/files不变。不能先用GET清单假定内置库已保存。R190-B04用60002行远端规则，在真实源响应门处shutdown浏览器socket后放行；完整新缓存落盘、原SQL不变、后续实际扫描只复用缓存并返回准确重复项，见[rules.py:1035](../../backend/routes/rules.py#L1035)。中断的首响应未读取，不假定200或正文；记录的200来自后续真实扫描。首次写入没有.bak，不能凭空要求它。
+
+H378–392、H398/H401/H402及H435/H436逐项通过default/scoped editor请求驱动，见[oxidns_common_routing.py:904](../../backend/common/oxidns_common_routing.py#L904)、[oxidns_editor.py:270](../../backend/common/oxidns_editor.py#L270)。H389/H398/H401/H402特用null越过可选值前置；aggregate需两条真实相邻同策略规则，custom_match_position需已有真实自定义匹配，否则早期capability拒绝只能算H371，不能算后置guard。H386先通过真实apply创建现存action，H388选择已停用且存在parked action的规则。H346–348由完整备份import进入device_notes验证（原R107驱动建议不适用）：[device_notes.py:18](../../backend/common/device_notes.py#L18)、[config_repository.py:2561](../../backend/common/config_repository.py#L2561)。准确中文、所有原行/文件不变且零网络。
+
 冻结比较针对每个端自己的已校验bundle成员原始字节。配置通过公开settings改为另一份后，旧file仍必须等于旧成员，完整SQL/预览文件不变；跨实现的生成主YAML照结构比较。ZIP下载由[generated_preview.download](../../backend/agents/generated_preview.py#L163)每次重打包，ZIP容器自身的时间戳不属于“旧成员内容不变”，不能把整个ZIP字节相等当作冻结条件。TTL仍核对真实expires_at≈创建时刻+3600，过期拒绝另由F11验证，不缩短生产TTL。
 
 ### Step B token保存后的轮换与版本注入边界

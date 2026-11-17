@@ -17,6 +17,22 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_cancelled_scan_compares_source_and_every_persistence_proof(self):
+        from cases.scan_disconnect import CancelledScan
+        observer = CancelledScan(SimpleNamespace(), None, {})
+        observer.transcripts = [[], []]
+        observer.observed = [{'held_source_reached': True, 'socket_closed': True,
+            'complete_new_cache_without_invented_backup': True, 'gate_errors': [], 'configuration_unchanged': True,
+            'only_exact_rule_caches_written': True} for _ in range(2)]
+        self.assertEqual(observer.compare(Policy()), [])
+        for field in observer.observed[1]:
+            previous = observer.observed[1][field]
+            observer.observed[1][field] = ['timeout'] if field == 'gate_errors' else False
+            self.assertTrue(observer.compare(Policy()), field)
+            observer.observed[1][field] = previous
+        observer.transcripts[1] = [{'method': 'POST', 'path': '/unexpected'}]
+        self.assertTrue(observer.compare(Policy()), 'unexpected extra download')
+
     def test_managed_setup_race_retains_secondary_HTTP_and_every_commit_proof(self):
         from cases.setup_managed_router import ChangedDuringInspection
         observer = ChangedDuringInspection(SimpleNamespace(), [], None, set())
