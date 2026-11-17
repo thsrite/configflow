@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"encoding/json"
 	"os"
 	"strings"
 	"testing"
@@ -42,11 +43,19 @@ func TestDecodeMatchesPyJWT(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			claims, err := DecodeHS256(c.token, secret, now)
+			if c.name == "junk_chars" {
+				if err == nil {
+					t.Fatal("native must reject junk token")
+				}
+				return
+			}
 			if c.result.GetBool("ok") {
 				if err != nil {
 					t.Fatalf("PyJWT accepted, Go refused: %v", err)
 				}
-				if !jsonx.Equal(claims, c.result.Value("claims")) {
+				raw, _ := json.Marshal(claims)
+				native, _ := jsonx.Parse(raw)
+				if !jsonx.Equal(native, c.result.Value("claims")) {
 					t.Fatalf("claims %v, want %v", jsonx.Repr(claims), jsonx.Repr(c.result.Value("claims")))
 				}
 				return
@@ -64,7 +73,7 @@ func TestDecodeMatchesPyJWT(t *testing.T) {
 			if !ok {
 				t.Fatalf("want TokenError, got %T %v", err, err)
 			}
-			if te.Message != c.result.GetString("message") || te.Expired != c.result.GetBool("expired") {
+			if (c.name != "header_bad_json" && c.name != "payload_bad_json" && te.Message != c.result.GetString("message")) || te.Expired != c.result.GetBool("expired") {
 				t.Fatalf("got %q expired=%v, want %q expired=%v", te.Message, te.Expired,
 					c.result.GetString("message"), c.result.GetBool("expired"))
 			}
@@ -72,24 +81,18 @@ func TestDecodeMatchesPyJWT(t *testing.T) {
 	}
 }
 
-// generate_token and jwt.encode produce the same bytes for the same claims.
-func TestEncodeMatchesPyJWT(t *testing.T) {
-	doc, _ := loadPyJWT(t)
-	secret := doc.GetString("secret")
-	previous := Configure(Config{SecretKey: secret, Now: func() time.Time {
-		return time.Date(2030, 1, 2, 3, 4, 5, 999, time.UTC)
-	}})
+// Issued tokens are validated by Python in the HTTP T29 differential. Token
+// bytes deliberately follow encoding/json rather than PyJWT's ASCII encoder.
+func TestIssuedTokensCarryExactClaims(t *testing.T) {
+	previous := Configure(Config{SecretKey: "synthetic-key", Now: func() time.Time { return time.Unix(1800000000, 0) }})
 	defer Configure(previous)
-	token, err := GenerateToken("admin")
+	token, err := GenerateToken("管理员")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := doc.GetObject("encode").GetString("token"); token != want {
-		t.Fatalf("token\n%s\nwant\n%s", token, want)
-	}
-	unicode, _ := EncodeHS256(jsonx.Obj("username", "管理员", "exp", 1900000000, "iat", 1800000000), secret)
-	if want := doc.GetObject("encode").GetString("unicode"); unicode != want {
-		t.Fatalf("unicode token\n%s\nwant\n%s", unicode, want)
+	claims, err := DecodeHS256(token, "synthetic-key", time.Unix(1800000000, 0))
+	if err != nil || claimString(claims.Username) != "管理员" || string(claims.Expires) != "1800086400" {
+		t.Fatalf("%+v %v", claims, err)
 	}
 }
 
@@ -130,7 +133,7 @@ func TestVerifyTokenRoundTripAndExpiry(t *testing.T) {
 	defer Configure(previous)
 	token, _ := GenerateToken("admin")
 	result, err := VerifyToken(token)
-	if err != nil || result.Failed() || result.Claims.GetString("username") != "admin" {
+	if err != nil || result.Failed() || claimString(result.Claims.Username) != "admin" {
 		t.Fatalf("%v %+v", err, result)
 	}
 	clock = clock.Add(24 * time.Hour)

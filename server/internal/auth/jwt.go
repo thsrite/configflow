@@ -1,18 +1,18 @@
 package auth
 
 import (
+	"bytes"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
-	"fmt"
 	"math"
 	"math/big"
 	"strings"
 	"time"
-	"unicode/utf8"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/jsonresp"
 )
 
 // The JWT code is a port of the parts of PyJWT 2.8.0 the backend uses:
@@ -41,9 +41,9 @@ func decodeError(message string) error { return &TokenError{Message: message} }
 // EncodeHS256 is jwt.encode(claims, key, algorithm="HS256"): header
 // {"alg":"HS256","typ":"JWT"} (sorted), the claims as compact ASCII JSON in
 // their order, unpadded base64url segments, HMAC-SHA256 signature.
-func EncodeHS256(claims *jsonx.Object, key string) (string, error) {
+func EncodeHS256(claims any, key string) (string, error) {
 	header := `{"alg":"HS256","typ":"JWT"}`
-	payload, err := jsonx.Encode(claims, jsonx.Options{EnsureASCII: true, Compact: true})
+	payload, err := jsonresp.Encode(claims)
 	if err != nil {
 		return "", err
 	}
@@ -58,7 +58,7 @@ func b64(s string) string { return base64.RawURLEncoding.EncodeToString([]byte(s
 // DecodeHS256 is jwt.decode(token, key, algorithms=["HS256"]) with leeway 0
 // at time now. It returns the claims, a *TokenError (Expired for
 // ExpiredSignatureError), or a *ClaimTypeError.
-func DecodeHS256(token, key string, now time.Time) (*jsonx.Object, error) {
+func DecodeHS256(token, key string, now time.Time) (*Claims, error) {
 	signingInput, cryptoSegment, ok := cutLast(token, ".")
 	if !ok {
 		return nil, decodeError("Not enough segments")
@@ -71,12 +71,15 @@ func DecodeHS256(token, key string, now time.Time) (*jsonx.Object, error) {
 	if err != nil {
 		return nil, decodeError("Invalid header padding")
 	}
-	header, err := pyJSONLoads(headerData)
+	if bytes.HasPrefix(bytes.TrimSpace(headerData), []byte("[")) {
+		return nil, decodeError("Invalid header string: must be a json object")
+	}
+	var header map[string]json.RawMessage
+	err = json.Unmarshal(headerData, &header)
 	if err != nil {
 		return nil, decodeError("Invalid header string: " + err.Error())
 	}
-	headerObject, ok := header.(*jsonx.Object)
-	if !ok || headerObject == nil {
+	if header == nil {
 		return nil, decodeError("Invalid header string: must be a json object")
 	}
 	payloadData, err := base64urlDecode(payloadSegment)
@@ -87,11 +90,11 @@ func DecodeHS256(token, key string, now time.Time) (*jsonx.Object, error) {
 	if err != nil {
 		return nil, decodeError("Invalid crypto padding")
 	}
-	alg, present := headerObject.Get("alg")
+	alg, present := header["alg"]
 	if !present {
 		return nil, decodeError("Algorithm not specified")
 	}
-	if !jsonx.Truthy(alg) || alg != "HS256" {
+	if claimString(alg) != "HS256" {
 		return nil, decodeError("The specified alg value is not allowed")
 	}
 	mac := hmac.New(sha256.New, []byte(key))
@@ -99,12 +102,15 @@ func DecodeHS256(token, key string, now time.Time) (*jsonx.Object, error) {
 	if !hmac.Equal(mac.Sum(nil), signature) {
 		return nil, decodeError("Signature verification failed")
 	}
-	payload, err := pyJSONLoads(payloadData)
+	if bytes.HasPrefix(bytes.TrimSpace(payloadData), []byte("[")) {
+		return nil, decodeError("Invalid payload string: must be a json object")
+	}
+	var claims *Claims
+	err = json.Unmarshal(payloadData, &claims)
 	if err != nil {
 		return nil, decodeError("Invalid payload string: " + err.Error())
 	}
-	claims, ok := payload.(*jsonx.Object)
-	if !ok || claims == nil {
+	if claims == nil {
 		return nil, decodeError("Invalid payload string: must be a json object")
 	}
 	if err := validateClaims(claims, now); err != nil {
@@ -121,27 +127,11 @@ func cutLast(s, sep string) (before, after string, ok bool) {
 	return s[:i], s[i+len(sep):], true
 }
 
-func pyJSONLoads(data []byte) (any, error) {
-	if len(data) >= 3 && data[0] == 0xEF && data[1] == 0xBB && data[2] == 0xBF {
-		data = data[3:]
-	}
-	if !utf8.Valid(data) {
-		for i := 0; i < len(data); {
-			r, size := utf8.DecodeRune(data[i:])
-			if r == utf8.RuneError && size <= 1 {
-				return nil, fmt.Errorf("'utf-8' codec can't decode byte 0x%02x in position %d: invalid start byte", data[i], i)
-			}
-			i += size
-		}
-	}
-	return jsonx.Parse(data)
-}
-
 // validateClaims is PyJWT 2.8.0 _validate_claims with default options and no
 // audience or issuer: iat, nbf, exp in that order, then aud.
-func validateClaims(claims *jsonx.Object, now time.Time) error {
+func validateClaims(claims *Claims, now time.Time) error {
 	nowSeconds := float64(now.UnixNano()) / 1e9
-	if value, ok := claims.Get("iat"); ok {
+	if value := claims.IssuedAt; value != nil {
 		iat, err := claimInt(value)
 		if err != nil {
 			if errors.Is(err, errClaimValue) {
@@ -153,7 +143,7 @@ func validateClaims(claims *jsonx.Object, now time.Time) error {
 			return decodeError("The token is not yet valid (iat)")
 		}
 	}
-	if value, ok := claims.Get("nbf"); ok {
+	if value := claims.NotBefore; value != nil {
 		nbf, err := claimInt(value)
 		if err != nil {
 			if errors.Is(err, errClaimValue) {
@@ -165,7 +155,7 @@ func validateClaims(claims *jsonx.Object, now time.Time) error {
 			return decodeError("The token is not yet valid (nbf)")
 		}
 	}
-	if value, ok := claims.Get("exp"); ok {
+	if value := claims.Expires; value != nil {
 		exp, err := claimInt(value)
 		if err != nil {
 			if errors.Is(err, errClaimValue) {
@@ -177,7 +167,7 @@ func validateClaims(claims *jsonx.Object, now time.Time) error {
 			return &TokenError{Expired: true, Message: "Signature has expired"}
 		}
 	}
-	if value, ok := claims.Get("aud"); ok && jsonx.Truthy(value) {
+	if value := claims.Audience; value != nil && string(value) != "null" && string(value) != `""` && string(value) != "[]" && string(value) != "{}" && string(value) != "false" && string(value) != "0" {
 		return decodeError("Invalid audience")
 	}
 	return nil
@@ -188,21 +178,27 @@ var errClaimValue = errors.New("ValueError")
 // claimInt is Python's int(value) for a decoded claim: ValueError for text
 // that is not an integer and for NaN, TypeError (and OverflowError for
 // infinity) for the rest.
-func claimInt(value any) (*big.Int, error) {
+func claimInt(raw json.RawMessage) (*big.Int, error) {
+	var value any
+	d := json.NewDecoder(bytes.NewReader(raw))
+	d.UseNumber()
+	if err := d.Decode(&value); err != nil {
+		return nil, errClaimValue
+	}
 	switch v := value.(type) {
 	case bool:
 		if v {
 			return big.NewInt(1), nil
 		}
 		return big.NewInt(0), nil
-	case jsonx.Number:
-		if v.IsInt() {
+	case json.Number:
+		if !strings.ContainsAny(string(v), ".eE") {
 			n, ok := new(big.Int).SetString(v.String(), 10)
 			if ok {
 				return n, nil
 			}
 		}
-		f := v.Float64()
+		f, _ := v.Float64()
 		if math.IsNaN(f) {
 			return nil, errClaimValue
 		}
@@ -226,69 +222,16 @@ func compareFloat(n *big.Int, f float64) int {
 	return new(big.Float).SetInt(n).Cmp(big.NewFloat(f))
 }
 
-// base64urlDecode is PyJWT's base64url_decode: pad to a multiple of four,
-// then base64.urlsafe_b64decode, which ignores characters outside the
-// alphabet and stops at the end padding (binascii.a2b_base64, not strict).
+// base64urlDecode accepts URL-safe JWT segments, with optional final padding.
+// Signatures are always verified over the original received segment bytes.
 func base64urlDecode(segment string) ([]byte, error) {
-	if rem := len(segment) % 4; rem > 0 {
-		segment += strings.Repeat("=", 4-rem)
-	}
-	segment = strings.NewReplacer("-", "+", "_", "/").Replace(segment)
-	var out []byte
-	quadPos, pads := 0, 0
-	var leftchar uint32
-	for i := 0; i < len(segment); i++ {
-		ch := segment[i]
-		if ch == '=' {
-			pads++
-			if quadPos >= 2 && quadPos+pads >= 4 {
-				return out, nil
-			}
-			continue
-		}
-		value := b64Value(ch)
-		if value < 0 {
-			continue
-		}
-		pads = 0
-		switch quadPos {
-		case 0:
-			quadPos, leftchar = 1, uint32(value)
-		case 1:
-			quadPos = 2
-			out = append(out, byte(leftchar<<2|uint32(value)>>4))
-			leftchar = uint32(value) & 0x0f
-		case 2:
-			quadPos = 3
-			out = append(out, byte(leftchar<<4|uint32(value)>>2))
-			leftchar = uint32(value) & 0x03
-		case 3:
-			quadPos = 0
-			out = append(out, byte(leftchar<<6|uint32(value)))
-			leftchar = 0
+	for _, ch := range segment {
+		if !(ch >= 'A' && ch <= 'Z' || ch >= 'a' && ch <= 'z' || ch >= '0' && ch <= '9' || ch == '-' || ch == '_' || ch == '=') {
+			return nil, errors.New("invalid base64url character")
 		}
 	}
-	if quadPos != 0 {
-		if quadPos == 1 {
-			return nil, errors.New("Invalid base64-encoded string")
-		}
-		return nil, errors.New("Incorrect padding")
+	if strings.Contains(segment, "=") {
+		return base64.URLEncoding.DecodeString(segment)
 	}
-	return out, nil
-}
-
-func b64Value(c byte) int {
-	switch {
-	case c >= 'A' && c <= 'Z':
-		return int(c - 'A')
-	case c >= 'a' && c <= 'z':
-		return int(c-'a') + 26
-	case c >= '0' && c <= '9':
-		return int(c-'0') + 52
-	case c == '+':
-		return 62
-	case c == '/':
-		return 63
-	}
-	return -1
+	return base64.RawURLEncoding.DecodeString(segment)
 }

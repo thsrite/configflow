@@ -13,6 +13,8 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
+	"encoding/json"
+	"fmt"
 	"math/big"
 	"os"
 	"regexp"
@@ -21,8 +23,6 @@ import (
 	"time"
 
 	"configflow/internal/httpx"
-	"configflow/internal/jsonx"
-	"configflow/internal/repo"
 )
 
 // Constants of common/auth.py.
@@ -125,18 +125,18 @@ func IsTokenWithinLength(token string) bool {
 // "iat": now} as integer UTC seconds.
 func GenerateToken(username string) (string, error) {
 	t := now().UTC()
-	claims := jsonx.Obj(
-		"username", username,
-		"exp", t.Add(ExpirationHours*time.Hour).Unix(),
-		"iat", t.Unix(),
-	)
+	claims := struct {
+		Username string `json:"username"`
+		Expires  int64  `json:"exp"`
+		IssuedAt int64  `json:"iat"`
+	}{username, t.Add(ExpirationHours * time.Hour).Unix(), t.Unix()}
 	return EncodeHS256(claims, current.Load().SecretKey)
 }
 
 // Verification is the result of verify_token: the claims, or Python's
 // {'error': 'expired'} / {'error': 'invalid', 'detail': str(exc)}.
 type Verification struct {
-	Claims *jsonx.Object
+	Claims *Claims
 	// Error is "" (decoded), "expired" or "invalid".
 	Error string
 	// Detail is str(exc) for "invalid".
@@ -147,11 +147,10 @@ type Verification struct {
 // a decoding error, or claims that themselves carry an "error" key (Python
 // cannot tell those from its own error dict).
 func (v Verification) Failed() bool {
-	if v.Error != "" || !jsonx.Truthy(v.Claims) {
+	if v.Error != "" || v.Claims.empty() {
 		return true
 	}
-	_, hasError := v.Claims.Get("error")
-	return hasError
+	return v.Claims.Error != nil
 }
 
 // errorCode and detail are payload['error'] and payload.get('detail', ...).
@@ -159,8 +158,7 @@ func (v Verification) errorCode() any {
 	if v.Error != "" {
 		return v.Error
 	}
-	value, _ := v.Claims.Get("error")
-	return value
+	return claimString(v.Claims.Error)
 }
 
 func (v Verification) detail() string {
@@ -170,8 +168,11 @@ func (v Verification) detail() string {
 		}
 		return "unknown error"
 	}
-	if value, ok := v.Claims.Get("detail"); ok {
-		return jsonx.Str(value)
+	if v.Claims.Detail != nil {
+		var value any
+		if json.Unmarshal(v.Claims.Detail, &value) == nil {
+			return fmt.Sprint(value)
+		}
 	}
 	return "unknown error"
 }
@@ -206,21 +207,20 @@ func Require(next httpx.HandlerFunc) httpx.HandlerFunc {
 		}
 		token, ok := bearerOf(c)
 		if !ok {
-			return httpx.Message(401, false, "缺少有效的登录凭据，请重新登录。"), nil
+			return httpx.Message(401, false, msgMissingCredentials), nil
 		}
 		result, err := VerifyToken(token)
 		if err != nil {
 			return nil, err
 		}
-		if !jsonx.Truthy(result.Claims) && result.Error == "" {
-			return httpx.Message(401, false, "登录已失效，请重新登录。"), nil
+		if result.Claims.empty() && result.Error == "" {
+			return httpx.Message(401, false, msgSessionInvalid), nil
 		}
 		if result.Failed() {
 			if result.errorCode() == "expired" {
-				return httpx.JSONStatus(401, jsonx.Obj("success", false, "message", "登录已过期，请重新登录。", "error", "token_expired")), nil
+				return httpx.JSONStatus(401, failure{Message: msgExpired, Error: "token_expired"}), nil
 			}
-			return httpx.JSONStatus(401, jsonx.Obj("success", false,
-				"message", "登录凭据无效，请重新登录。原始错误："+result.detail(), "error", "token_invalid")), nil
+			return httpx.JSONStatus(401, failure{Message: msgInvalid + result.detail(), Error: "token_invalid"}), nil
 		}
 		return next(c)
 	}
@@ -231,62 +231,6 @@ func Require(next httpx.HandlerFunc) httpx.HandlerFunc {
 type ValidateResult struct {
 	Valid   bool
 	Message string
-}
-
-// ValidateTokenOrJWT is validate_token_or_jwt(request, config): accept an
-// internal call, a valid Bearer JWT, or ?token= equal to the configured
-// config token; with auth disabled and no config token everything passes.
-// The internal rule proxy tokens (current and retired) never authenticate.
-// config is the system document (get_system_config()); nil reads it.
-func ValidateTokenOrJWT(c *httpx.Ctx, config *jsonx.Object) (ValidateResult, error) {
-	if c.IsInternalCall() {
-		return ValidateResult{Valid: true}, nil
-	}
-	if config == nil {
-		var err error
-		if config, err = repo.GetSystemConfig(c.Context()); err != nil {
-			return ValidateResult{}, err
-		}
-	}
-	systemConfig, _ := config.GetOr("system_config", jsonx.NewObject()).(*jsonx.Object)
-	if !jsonx.Truthy(systemConfig) {
-		systemConfig = jsonx.NewObject()
-	}
-	configToken := systemConfig.GetOr("config_token", "")
-	ruleProxyToken := systemConfig.GetOr("rule_proxy_token", "")
-	retired, _ := systemConfig.GetOr("retired_rule_proxy_tokens", []any{}).([]any)
-	bearer, hasBearer := bearerOf(c)
-	urlToken, _ := c.Arg("token")
-	if !IsTokenWithinLength(urlToken) {
-		urlToken = ""
-	}
-	internalMatch := 0
-	for _, token := range append([]any{ruleProxyToken}, retired...) {
-		if text, ok := token.(string); ok && text != "" {
-			// Compare fixed-size digests so credential contents and lengths do not
-			// short-circuit secret comparisons. Check every retired capability.
-			internalMatch |= equalCredential(bearer, text) | equalCredential(urlToken, text)
-		}
-	}
-	if internalMatch != 0 {
-		return ValidateResult{Message: invalidOrMissingMsg}, nil
-	}
-	if !IsAuthEnabled() && !jsonx.Truthy(configToken) {
-		return ValidateResult{Valid: true}, nil
-	}
-	if hasBearer {
-		result, err := VerifyToken(bearer)
-		if err != nil {
-			return ValidateResult{}, err
-		}
-		if !result.Failed() {
-			return ValidateResult{Valid: true}, nil
-		}
-	}
-	if expected, ok := configToken.(string); ok && urlToken != "" && equalCredential(urlToken, expected) == 1 {
-		return ValidateResult{Valid: true}, nil
-	}
-	return ValidateResult{Message: invalidOrMissingMsg}, nil
 }
 
 // equalCredential compares secrets without leaking their matching prefix or length.
@@ -362,14 +306,14 @@ func Gate(c *httpx.Ctx) (*httpx.Response, error) {
 	}
 	token, ok := bearerOf(c)
 	if !ok {
-		return httpx.Message(401, false, "请先登录后再操作。"), nil
+		return httpx.Message(401, false, msgLoginRequired), nil
 	}
 	result, err := VerifyToken(token)
 	if err != nil {
 		return nil, err
 	}
 	if result.Failed() {
-		return httpx.Message(401, false, "登录已失效，请重新登录。"), nil
+		return httpx.Message(401, false, msgSessionInvalid), nil
 	}
 	return nil, nil
 }

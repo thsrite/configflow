@@ -677,3 +677,28 @@ Runtime；请求断开继续完成。共享提交点仍由已分派的 O3-6c 补
 proddiff 只识别这两个精确列表入口、原 Python 成功形状及精确 Go 503 body/缺失的
 router_rule_sync、agent 两项，不放宽其他 503；content type 和全部原 headers 仍严格比较。
 对应的合成变异回归会拒绝错消息、错 slot、多字段、其他路由和丢失 no-store。
+
+### N8-7 — native early-consumer codecs
+
+- JWT: legal Python/Go HS256 sessions remain interchangeable, including tokens
+  without exp and fractional numeric dates. Illegal base64url alphabet is now
+  rejected with 401; Python's permissive decoder sometimes ignored junk. Unknown
+  claims remain opaque. Parser diagnostic details use native JSON errors.
+- Internal log formatting uses Go fmt for generic values (`nil` displays `<nil>`
+  instead of `None`); visible text and anti-log-forging filtering remain intact.
+  localhttp URL errors use Go quoted strings instead of Python repr.
+- Existing metrics JSON/JSONL and JSON stores (traffic, probe and region) read
+  NaN/Infinity/-Infinity as null only at the individual value. Finite fields and
+  complete points survive; strings containing those words are unchanged. Rewriting
+  produces valid JSON. This fixes invalid Python JSON that browsers could not read.
+  New migrated request callers reject non-finite JSON with 400.
+- Metrics summaries omit missing/null samples; an all-null sample set returns null.
+  Traffic derived projections skip missing-counter points; raw points remain.
+  Explicit HTTP differential changes are enumerated in progress/n8-7.md.
+
+O14 emergency rollback caution (N8-7): Python can load and save the null-bearing
+metrics files but its calc_stats/get_traffic_stats arithmetic can throw TypeError.
+Summary and traffic endpoints can return 500 until affected points expire from the
+24-hour metrics history. Remove null-bearing points from the corresponding Agent
+metrics JSON/JSONL file or wait for retention; no migration tool is needed for this
+emergency path. Go handles the missing values directly.
