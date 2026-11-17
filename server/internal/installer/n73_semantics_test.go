@@ -110,7 +110,7 @@ func nativeOutcomeEqual(want, got any, key string) bool {
 	if key == "compose" {
 		a, aok := want.(string)
 		b, bok := got.(string)
-		return aok && bok && yamltest.SemanticEqual(a, b)
+		return aok && bok && writerYAMLEqual(a, b)
 	}
 	switch expected := want.(type) {
 	case *jsonx.Object:
@@ -124,22 +124,23 @@ func nativeOutcomeEqual(want, got any, key string) bool {
 			if err != nil {
 				return false
 			}
-			manifest, err := nativeZipValue(actual.GetString("content_base64"))
-			if err != nil || canonical(reference) != canonical(manifest) {
+			manifest, text, err := yamltest.ComposeArchive(actual.GetString("content_base64"))
+			references, referenceErr := nativeArtifactReferences()
+			if err != nil || referenceErr != nil || !writerYAMLEqual(references["yaml:"+hash], text) || canonical(reference) != canonical(manifest) {
 				return false
 			}
 			expected.Delete("content_sha256")
 			actual.Delete("content_base64")
 		} else if expected.Has("content_base64") && actual.Has("content_base64") {
-			a, err := nativeZipValue(expected.GetString("content_base64"))
+			a, aText, err := yamltest.ComposeArchive(expected.GetString("content_base64"))
 			if err != nil {
 				return false
 			}
-			b, err := nativeZipValue(actual.GetString("content_base64"))
+			b, bText, err := yamltest.ComposeArchive(actual.GetString("content_base64"))
 			if err != nil {
 				return false
 			}
-			if canonical(a) != canonical(b) {
+			if !writerYAMLEqual(aText, bText) || canonical(a) != canonical(b) {
 				return false
 			}
 			expected.Delete("content_base64")

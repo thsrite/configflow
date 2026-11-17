@@ -56,6 +56,16 @@ Mihomo 旧语料中逐行确认 111 项：字符串误读 56、超大整数误�
 输出仍直接解析后比较。来源、生成命令和全部行号见
 [writer oracle](../internal/convert/testdata/mihomo_writer_oracle.md)。
 
+修复 Python bug：Docker HA 的 PyYAML 输出经过注释、`splitlines` 或中间重读时，
+会在 U+0085（NEL）、U+2028、U+2029 处断开，破坏路径等字段。原生 writer 转义
+这三个字符，Compose（同样使用 yaml.v3）重新解析后保留输入值。这类路径以前可能
+无法使用，现在按原值工作；镜像字段的原有业务校验不变。8,623 行 writer oracle
+中，字符串类型修复 21 行，Unicode 修复 436 行；分别涉及 NEL 345 行、U+2028
+53 行、U+2029 47 行（有交叠）。其余 8,127 行仅布局变化，39 行输出未变，
+unknown=0。每行来源、完整类型图和分类见
+[installer writer oracle](../internal/installer/testdata/n74_writer_oracle.md)。
+旧 golden 未改；配置字节变化合并在上述一次切换推送中。
+
 ## D2 — 上游持久化标识的 Go 原生编码
 
 C27：上游 `tag` 等字符串元数据包含真实 U+2028/U+2029 时，Go `encoding/json` 的

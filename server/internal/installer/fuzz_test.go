@@ -3,8 +3,6 @@ package installer
 import (
 	"bufio"
 	"compress/gzip"
-	"crypto/sha256"
-	"encoding/hex"
 	"os"
 	"testing"
 
@@ -102,8 +100,11 @@ func TestFuzzCorpusMatchesPython(t *testing.T) {
 			t.Errorf("case %d %s %s: python rendered, go: %v", id, fn, jsonx.Repr(k.Object), err)
 			continue
 		}
-		digest := sha256.Sum256([]byte(output))
-		if hex.EncodeToString(digest[:]) != record.GetString("sha256") || int64(len(output)) != record.GetInt("length") {
+		matches, oracleErr := writerHashCaseMatches(fn, k.Object, output, record.GetString("sha256"), record.GetInt("length"))
+		if oracleErr != nil {
+			t.Fatal(oracleErr)
+		}
+		if !matches {
 			failed++
 			t.Errorf("case %d %s %s: output differs", id, fn, jsonx.Repr(k.Object))
 		}

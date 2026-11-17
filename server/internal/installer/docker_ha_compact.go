@@ -11,6 +11,7 @@ import (
 
 	"configflow/internal/jsonx"
 	"configflow/internal/pystr"
+	"configflow/internal/yamlbridge"
 	"configflow/internal/yamlx"
 
 	"gopkg.in/yaml.v3"
@@ -58,7 +59,12 @@ func GenerateCompact(params, request *jsonx.Object, enrollment *Enrollment) (str
 		return "", nil, err
 	}
 	imageText, _ := requestImage(request).(string)
-	image := &yamlx.SharedString{Value: imageText, Anchor: "agent_image"}
+	image := yamlx.Str(imageText)
+	image.Anchor = "agent_image"
+	flow := func(node *yamlx.Node) *yamlx.Node {
+		node.Style |= yaml.FlowStyle
+		return node
+	}
 	agentName, err := pyConcat(params.Value("agent_name"))
 	if err != nil {
 		return "", nil, err
@@ -96,7 +102,7 @@ func GenerateCompact(params, request *jsonx.Object, enrollment *Enrollment) (str
 
 	kernelMount := func(source, target string) *jsonx.Object {
 		return jsonx.Obj("type", "bind", "source", source, "target", target, "read_only", true,
-			"bind", yamlx.FlowMap{Object: jsonx.Obj("create_host_path", false)})
+			"bind", flow(yamlx.Map(yamlx.Str("create_host_path"), yamlx.Bool(false))))
 	}
 	directories := func(readonly bool) []any {
 		targets := [][2]string{{"agent", "/opt/configflow-agent"}, {"oxidns", "/etc/oxidns"}, {"ha", "/var/lib/configflow-ha"}}
@@ -104,7 +110,7 @@ func GenerateCompact(params, request *jsonx.Object, enrollment *Enrollment) (str
 		if strings.Contains(data, ":") {
 			for _, item := range targets {
 				out = append(out, jsonx.Obj("type", "bind", "source", data+"/"+item[0], "target", item[1],
-					"read_only", readonly && item[0] != "ha", "bind", yamlx.FlowMap{Object: jsonx.Obj("create_host_path", true)}))
+					"read_only", readonly && item[0] != "ha", "bind", flow(yamlx.Map(yamlx.Str("create_host_path"), yamlx.Bool(true)))))
 			}
 			return out
 		}
@@ -127,17 +133,17 @@ func GenerateCompact(params, request *jsonx.Object, enrollment *Enrollment) (str
 		"AGENT_IP", params.Value("agent_ip"), "AGENT_PORT", portText, "INSTALL_KEY", key))
 	main.Set("volumes", append(directories(false), kernelMount("/proc/sys/kernel/random/boot_id", "/run/configflow-host-boot-id")))
 	main.Set("stop_grace_period", "30s")
-	main.Set("logging", jsonx.Obj("driver", "json-file", "options", yamlx.FlowMap{Object: jsonx.Obj("max-size", "10m", "max-file", "3")}))
+	main.Set("logging", jsonx.Obj("driver", "json-file", "options", flow(yamlx.Map(yamlx.Str("max-size"), yamlx.Str("10m"), yamlx.Str("max-file"), yamlx.Str("3")))))
 	services := jsonx.Obj("agent", main)
 	if host {
 		main.Set("volumes", append(main.GetList("volumes"), kernelMount("/proc/1/ns/net", "/run/configflow-host-netns")))
 		services.Set("ha-companion", jsonx.Obj("image", image, "container_name", name+"-ha", "restart", "unless-stopped",
 			"network_mode", "host", "environment", jsonx.Obj("SERVICE_TYPE", "ha-companion-compact", "INSTALL_SCOPE", session),
-			"cap_add", yamlx.FlowList{"NET_ADMIN", "NET_RAW"}, "volumes", directories(true),
+			"cap_add", flow(yamlx.Seq(yamlx.Str("NET_ADMIN"), yamlx.Str("NET_RAW"))), "volumes", directories(true),
 			"stop_grace_period", "30s",
-			"logging", jsonx.Obj("driver", "json-file", "options", yamlx.FlowMap{Object: jsonx.Obj("max-size", "5m", "max-file", "2")})))
+			"logging", jsonx.Obj("driver", "json-file", "options", flow(yamlx.Map(yamlx.Str("max-size"), yamlx.Str("5m"), yamlx.Str("max-file"), yamlx.Str("2"))))))
 	} else {
-		main.Set("cap_add", yamlx.FlowList{"NET_ADMIN", "NET_RAW"})
+		main.Set("cap_add", flow(yamlx.Seq(yamlx.Str("NET_ADMIN"), yamlx.Str("NET_RAW"))))
 	}
 	compose := jsonx.Obj("name", project, "services", services)
 	if !host {
@@ -147,7 +153,12 @@ func GenerateCompact(params, request *jsonx.Object, enrollment *Enrollment) (str
 			value.(*jsonx.Object).Set("name", project+"-dns-ha")
 		}
 	}
-	text, err := yamlx.Dump(compose, yamlx.DumpOptions{AllowUnicode: true, Width: 1000})
+	node, err := yamlbridge.Encode(compose)
+	if err != nil {
+		return "", nil, err
+	}
+	encoded, err := yamlx.Marshal(node)
+	text := string(encoded)
 	if err != nil {
 		return "", nil, err
 	}

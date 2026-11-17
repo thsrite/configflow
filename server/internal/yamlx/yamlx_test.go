@@ -2,7 +2,6 @@ package yamlx
 
 import (
 	"errors"
-	"strings"
 	"testing"
 
 	"configflow/internal/jsonx"
@@ -178,47 +177,21 @@ func TestNonStringKeysAreReported(t *testing.T) {
 	}
 }
 
-func TestLoadAndDumpTimestamps(t *testing.T) {
+// The old loader remains until N7-3d. Native timestamp writing is exercised
+// by yamlbridge's legacy-value regression and the native reference corpus.
+func TestLegacyTimestampValues(t *testing.T) {
 	v, err := Load("a: 2001-12-14 21:59:43.10 -5\nb: 2002-12-14\n")
 	if err != nil {
 		t.Fatal(err)
 	}
-	out, err := SafeDumpUnicode(v)
-	if err != nil {
-		t.Fatal(err)
+	o := v.(*jsonx.Object)
+	if a, ok := o.Value("a").(Timestamp); !ok || a.String() != "2001-12-14 21:59:43.100000-05:00" {
+		t.Fatalf("timestamp value: %v", o.Value("a"))
 	}
-	if out != "a: 2001-12-14 21:59:43.100000-05:00\nb: 2002-12-14\n" {
-		t.Errorf("got %q", out)
+	if b, ok := o.Value("b").(Timestamp); !ok || b.String() != "2002-12-14" {
+		t.Fatalf("date value: %v", o.Value("b"))
 	}
 	if _, err := jsonx.Compact(v); err == nil {
-		t.Error("jsonx encoded a Timestamp; json.dumps raises TypeError for datetime")
-	}
-}
-
-func TestOnMarkedReportsScalarRanges(t *testing.T) {
-	doc := jsonx.Obj("a", Marked{Value: "secret", Mark: 1}, "b", []any{Marked{Value: "x y", Mark: 2}})
-	text, err := Dump(doc, DumpOptions{})
-	if err != nil || text != "a: secret\nb:\n- x y\n" {
-		t.Fatalf("%q %v", text, err)
-	}
-	var ranges [][3]int
-	_, _ = Dump(doc, DumpOptions{OnMarked: func(m Marked, style byte, start, end int) {
-		ranges = append(ranges, [3]int{int(style), start, end})
-	}})
-	rs := []rune(text)
-	for i, r := range ranges {
-		piece := strings.TrimSpace(string(rs[r[1]:r[2]])) // the range starts at the separating space, as in the Python marking dumper
-		want := []string{"secret", "x y"}[i]
-		if piece != want {
-			t.Errorf("range %d covers %q, want %q", i, piece, want)
-		}
-	}
-}
-
-func TestDumpErrorsOnForeignTypes(t *testing.T) {
-	for _, v := range []any{map[string]any{"a": 1}, struct{}{}, []string{"a"}, make(chan int)} {
-		if _, err := SafeDump(v); err == nil {
-			t.Errorf("%T was written", v)
-		}
+		t.Error("jsonx encoded a legacy Timestamp")
 	}
 }

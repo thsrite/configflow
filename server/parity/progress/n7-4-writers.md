@@ -43,7 +43,7 @@ the entire repository buildable. Counts are static call sites, not run counts.
 |---|---:|---|
 | convert | 1 (`GenerateMihomoConfig`) | `IndentDumperOptions` removed (no callers); two strict-byte generation corpora |
 | agents/deploy/pushdiff | 0 legacy; A12 already uses Marshal | transition regression added above |
-| installer | 3 (Docker compose, compact HA, HA guide) | SharedString, FlowMap, FlowList; wait for N7-3c |
+| installer | 3 (Docker compose, compact HA, HA guide) | now native Nodes after N7-3c rebase |
 | provider | 1 (`prepareSubscriptionProvider`) | corpus helper |
 | mosdns | 1 (`GenerateMosDNSConfig`) | rows helper |
 | rulefetch | 1 (YAML normalization fallback) | two test helpers |
@@ -56,12 +56,11 @@ the entire repository buildable. Counts are static call sites, not run counts.
 
 ## Remaining work
 
-- Mihomo implementation/structural corpus comparison completed together; final acceptance remains pending.
-- Coordinator approved every remaining writer listed below for N7-4; wait for N7-3c before overlapping mosdns/provider/routersplit/installer changes.
-- Installer compose/guide: explicitly deferred until the coordinator announces
-  that N7-3c is merged, then rebase first.
-- Record the one-time generation byte change (D2/O14); no baseline updates.
-- Final gofmt/vet, full race, all tests/difftests, relevant fuzz and proddiff.
+Implementation, oracle recording and deletion are complete. Final latest-go
+rebase and gate.sh full acceptance remain. The package notes below preserve the
+implementation/iteration evidence; references to earlier private bridges and
+waiting for N7-3c describe those stages, superseded by the shared bridge and
+installer migration sections at the end.
 
 ## Unused convert wrapper removed
 
@@ -288,3 +287,55 @@ fixtures keep their original codec behavior when writer_styles is false.
 `go test -p=2 -count=1 ./tools/yamlwriteroracle ./internal/yamlx/yamlxtest`
 (tool0.007s, yamlxtest0.005s). Installer fixture generation and full acceptance
 remain in progress.
+
+
+## Installer migration and legacy emitter removal
+
+The three installer emission sites now use the shared bridge and Marshal.
+Compact Compose uses Node flow styles and the existing agent_image anchor,
+without changing its annotation or business validation. No old writer API calls
+remain; dump.go/emitter.go/types.go are deleted. The old loader is intentionally
+retained for N7-3d. The native core semantic reference corpus replaces the removed
+writer-option byte matrix in the same change.
+
+The complete installer writer-only oracle is documented beside its generator:
+[fixture provenance](../../internal/installer/testdata/n74_writer_oracle.md).
+It verifies 8,623 original rows before injection; 8,584 changed rows are fully
+classified (8,127 layout,21 string type,436 Unicode),39 unchanged,unknown=0.
+The 8,368 unique changed calls retain source rows/digests, 12,870 physical typed
+graphs and native bytes; 1,635 semantic/hash-only cases include complete results.
+Layout-only multi-field cases reuse the unchanged complete old semantic
+expectation, with strict non-YAML fields. Source/graph/case/result digests and
+every graph's re-rendered bytes have a dedicated provenance test.
+
+NEL/LS/PS are counted separately by row, changed field and restored occurrence:
+U+0085 345/1856/2020; U+2028 53/255/285; U+2029 47/213/231 (rows overlap).
+The writer preserves these values through unchanged Python postprocessing and
+native Compose parsing. Regression inputs exercise all three generation modes.
+Numeric-looking image strings retain strings and sharing. Raw Compose and ZIP
+comparisons now check Parse/Equal including scalar tags; metadata, member names,
+permissions and non-YAML bytes stay strict. Negative tests cover timestamp,
+binary, nonfinite float, custom tag and large integer versus string.
+
+Generation command (.64, exit0):
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt -e GOMAXPROCS=2 -- bash -lc 'set -e; cd server; go build -o /tmp/n74-yamlwriter ./tools/yamlwriteroracle; cd ..; ~/cf-test/.venv/bin/python server/internal/installer/testdata/n74_writer_oracle.py /tmp/n74-yamlwriter'
+```
+Output: checked8623,unique_expected8368,full_expected1635,graphs12870,unknown0.
+
+The first affected-corpus/provenance/Unicode iteration used:
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt -e GOMAXPROCS=2 -- bash -lc 'cd server; go vet ./internal/installer; go test -json -count=1 ./internal/installer -run "^(TestComposeCorpusMatchesPython|TestDockerHAReviewCorpusMatchesPython|TestFuzzCorpusMatchesPython|TestRenderMatrixMatchesPython|TestN73ComposeHashOnlyReviewCases|TestComposeReviewCorpusMatchesPython|TestComposeWriterPreserves.*|TestWriterOracleProvenance)$"'
+```
+Output: installer PASS33.825s, vet silent. Strict tag-comparator iteration and
+final merge gates follow below. No golden/baseline edits.
+
+
+Final pre-rebase scoped validation (.64, exit0):
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt -e GOMAXPROCS=2 -- bash -lc 'set -e; cd server; gofmt -l internal/ tools/; go vet ./internal/yamlx/... ./internal/yamlbridge ./internal/installer ./tools/yamlwriteroracle; go test -p=2 -count=1 ./internal/yamlx/... ./internal/yamlbridge ./tools/yamlwriteroracle'
+```
+Output: fmt/vet silent; yamlx1.332s/yamltest0.119s/yamlxtest0.002s/
+yamlbridge0.005s/yamlwriteroracle0.004s PASS. The second strict installer
+comparison run (same affected-corpus regex plus DockerHACorpus/recorded and tag
+negative tests, JSON log `/tmp/n74-installer-strict.jsonl`) passed16.702s.

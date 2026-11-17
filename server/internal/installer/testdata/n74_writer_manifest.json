@@ -1,0 +1,46 @@
+{
+  "checked": {
+    "docker_ha.jsonl.gz": 608,
+    "docker_ha_compose.jsonl.gz": 3402,
+    "docker_ha_compose_recorded.jsonl.gz": 115,
+    "docker_ha_compose_review.jsonl.gz": 1334,
+    "docker_ha_recorded.jsonl.gz": 137,
+    "docker_ha_review.jsonl.gz": 1840,
+    "fuzz.jsonl.gz": 1104,
+    "matrix.jsonl": 83
+  },
+  "classifications": {
+    "layout": 8127,
+    "string-type-preservation": 21,
+    "unicode-line-separator-preservation": 436
+  },
+  "full_expected": 1635,
+  "graphs": 12870,
+  "source_sha256": {
+    "docker_ha.jsonl.gz": "d4490307073df7d7bd2aee2afa379a384194d857e7297b48699bee99c5c2af4f",
+    "docker_ha_compose.jsonl.gz": "6a2c53d737caba2de2f34b4e8999530df5e6409af420b75f04dc40b3d5002742",
+    "docker_ha_compose_recorded.jsonl.gz": "252f29e056aceebaf9b5cc27a875240c07bfc12e0a70a488189bbfab1c2a183e",
+    "docker_ha_compose_review.jsonl.gz": "7e57b18a725e6fd2f1f0521cbba10aea8d7d306cbff89f534160f024241dbfa4",
+    "docker_ha_recorded.jsonl.gz": "3b19cd0313502b0b4f9daa00b6bf59532445106be0e07ce1d930cf5b0092c1d8",
+    "docker_ha_review.jsonl.gz": "9c743c767102b016f8123d0ca9d5ed938ad6d41e940eb1e9e90a1cf30663ae3b",
+    "fuzz.jsonl.gz": "4376abc5694ac8f7c18a6cba3e45adff95b7584b6a2bb3f2e9d26198d1234e3b",
+    "matrix.jsonl": "63f7f62af0cfeb38ab0ea5606eee8b516b6205574c66328105570d67415df0b1"
+  },
+  "unicode_fields": {
+    "U+0085": 1856,
+    "U+2028": 255,
+    "U+2029": 213
+  },
+  "unicode_occurrences": {
+    "U+0085": 2020,
+    "U+2028": 285,
+    "U+2029": 231
+  },
+  "unicode_rows": {
+    "U+0085": 345,
+    "U+2028": 53,
+    "U+2029": 47
+  },
+  "unique_expected": 8368,
+  "unknown": 0
+}

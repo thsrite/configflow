@@ -22,7 +22,13 @@ func TestN73ComposeHashOnlyReviewCases(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !nativeOutcomeEqual(row.GetObject("out"), result, "") {
+		expected := row.Value("out")
+		if value, present, oracleErr := writerExpected("generate_guide", row.Value("args")); oracleErr != nil {
+			t.Fatal(oracleErr)
+		} else if present {
+			expected = value
+		}
+		if !nativeOutcomeEqual(expected, result, "") {
 			t.Errorf("%s: generated guide/bundle changed meaning", name)
 		}
 		checked++

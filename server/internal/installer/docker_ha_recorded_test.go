@@ -170,8 +170,14 @@ func compareOutcome(entry *jsonx.Object, got any, err error) (string, string) {
 	if err != nil {
 		return "answer", fmt.Sprintf("python answered, go error %T %v", err, err)
 	}
-	want, have := canonical(entry.Value("out")), canonical(digestRecordedBundle(entry.Value("out"), got))
-	if want != have && !nativeOutcomeEqual(entry.Value("out"), got, "") {
+	expected := entry.Value("out")
+	if value, present, oracleErr := writerExpected(entry.GetString("fn"), entry.Value("args")); oracleErr != nil {
+		return "oracle", oracleErr.Error()
+	} else if present {
+		expected = value
+	}
+	want, have := canonical(expected), canonical(digestRecordedBundle(expected, got))
+	if want != have && !nativeOutcomeEqual(expected, got, "") {
 		return "answer", recordedDifference(want, have)
 	}
 	return "answer", ""

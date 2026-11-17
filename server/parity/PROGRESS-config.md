@@ -42,24 +42,33 @@ diagnosis and strict other fields/storage; no aggregation runtime code changes. 
 - Python lazily imports in cycles (e.g. converters ↔ provider delivery ↔ route files, the whole OxiDNS cluster). Go needs a DAG: the prerequisite order below breaks the cycles; when a module needs a function of a later module, put a `compat.go` copy (`TODO(port)`) or an interface/hook and list it here.
 - Cross-domain calls (config → agents/routers code) are listed per module; they are the main blockers for C18, C27, C34, C36, C37.
 
-## N7-4 — native YAML writers (in progress)
+## N7-4 — native YAML writers (final gates pending)
 
-Agent push diff already uses native Nodes and `yamlx.Marshal` after A12. A transition
-regression checks that writer-only changes produce no semantic edits/canonical patch
-and that subsequent credential edits retain redaction. `.64` package tests, full vet
-and 60-second pushdiff fuzz pass. Removed the unused convert `IndentDumperOptions`
-wrapper. Mihomo now builds a physical Node graph and calls Marshal; the corpus
-comparators switched to Parse/Equal in the same implementation step. 111 old
-writer schema bugs use separately recorded real Python safe_load graphs
-(strings56/large integers22/timestamps33, unknown=0); the other outputs compare
-directly through Parse. Old golden files are unchanged. Legacy loaded
-Timestamp/bytes/Mapping branches are explicitly deferred for removal in N7-3d.
+All runtime writer callers now construct Nodes/typed values and call Marshal:
+convert, installer, gateway, provider, refresh, routersplit and the proddiff
+adapter. MosDNS/rulefetch/pushdiff already used native emission; their shared
+adapter and regressions are covered. Removed dump.go/emitter.go/types.go and all
+old writer API calls. convert/mosdns share the sole temporary yamlbridge.Encode;
+legacy Timestamp/bytes/Mapping loader values remain only until N7-3d.
 
-The remaining writer inventory and commands are tracked in
-[progress/n7-4-writers.md](progress/n7-4-writers.md). N7-3c is now merged at 65c0e6d4;
-convert/mosdns share the sole temporary yamlbridge.Encode, with native alias
-sharing/ownership/budget checks. Installer and remaining writers are in progress. Shared old writer deletion and final full gates remain pending;
-this section does not claim N7-4 acceptance.
+Core writer coverage is 1,395 independent Python semantic references. Mihomo's
+111 old writer type bugs use real Python safe_load graphs (strings56/large
+integers22/timestamps33); all other outputs compare Parse/Equal. Installer's
+writer-only oracle reruns unchanged Python business code, replacing only
+`yaml.dump`/`safe_dump`, with persisted typed input graphs and injection bytes.
+8,623 verified source rows: layout8,127/string21/Unicode436/unchanged39,
+unknown=0; Unicode row counts NEL345/LS53/PS47 overlap. All three characters
+round-trip through generated Compose with exact bind sources. Complete results
+remain strict outside YAML, including shell strings and archive members.
+
+Agent push diff has no semantic edit for writer-only changes; later credential
+edits stay redacted. The A19 16-level binary graph now explicitly fails the
+shared alias budget with empty output; small shared graphs succeed. Approved
+Python bug fixes and the single D2/O14 generation byte change are in the ledger.
+Old golden files remain unchanged. Installer provenance and affected corpus
+iteration pass on .64. Final latest-go rebase and gate.sh full race, difftests,
+fuzz and proddiff are pending; see
+[progress/n7-4-writers.md](progress/n7-4-writers.md) for commands and results.
 
 ## Step B findings — config boundary repairs (ported, 2026-11-17)
 

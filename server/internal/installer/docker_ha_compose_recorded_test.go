@@ -12,7 +12,6 @@ import (
 	"testing"
 
 	"configflow/internal/jsonx"
-	"configflow/internal/yamlx/yamltest"
 )
 
 func readComposeLines(t *testing.T, path string) []*jsonx.Object {
@@ -91,7 +90,16 @@ func replayGenerator(row *jsonx.Object, digestBundle bool) (string, string) {
 		return "differ", fmt.Sprintf("python answered, go error %v", err)
 	}
 	out := row.GetList("out")
-	if text != out[0] && !yamltest.SemanticEqual(out[0].(string), text) {
+	if value, present, oracleErr := writerExpected(fn, row.Value("args")); oracleErr != nil {
+		return "oracle", oracleErr.Error()
+	} else if present {
+		var ok bool
+		out, ok = value.([]any)
+		if !ok || len(out) != 2 {
+			return "oracle", "invalid generator reference shape"
+		}
+	}
+	if text != out[0] && !writerYAMLEqual(out[0].(string), text) {
 		return "differ", "text differs: " + firstDifference(out[0].(string), text)
 	}
 

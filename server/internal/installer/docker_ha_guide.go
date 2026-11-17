@@ -9,6 +9,7 @@ import (
 	"configflow/internal/jsonx"
 	"configflow/internal/pystr"
 	"configflow/internal/weburl"
+	"configflow/internal/yamlbridge"
 	"configflow/internal/yamlx"
 )
 
@@ -484,10 +485,14 @@ func haSHA256Hex(data []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// haDumpCompose is yaml.safe_dump(compose, sort_keys=False,
-// allow_unicode=True).replace('$', '$$').
+// haDumpCompose renders the compose graph and escapes Compose interpolation.
 func haDumpCompose(compose *jsonx.Object) (string, error) {
-	text, err := yamlx.SafeDumpUnicode(compose)
+	node, err := yamlbridge.Encode(compose)
+	if err != nil {
+		return "", err
+	}
+	data, err := yamlx.Marshal(node)
+	text := string(data)
 	if err != nil {
 		return "", err
 	}

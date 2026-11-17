@@ -147,7 +147,21 @@ func TestDockerHACorpusMatchesPython(t *testing.T) {
 			fail("python %v, go answered", record.Value("error"))
 			continue
 		}
-		if digests := record.GetObject("digests"); digests != nil {
+		var writerReference any
+		var writerReferencePresent bool
+		if record.GetString("kind") == "guide" {
+			var oracleErr error
+			writerReference, writerReferencePresent, oracleErr = writerExpected("generate_guide", []any{input.Value("request"), input.Value("enrollment")})
+			if oracleErr != nil {
+				t.Fatal(oracleErr)
+			}
+		}
+		if writerReferencePresent {
+			if !nativeOutcomeEqual(writerReference, result, "") {
+				fail("native writer reference differs")
+				continue
+			}
+		} else if digests := record.GetObject("digests"); digests != nil {
 			var keys []string
 			for key := range result.All() {
 				keys = append(keys, key)

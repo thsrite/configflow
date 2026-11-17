@@ -18,7 +18,7 @@ Go code or business functions. Row and old-output SHA256 are saved per reference
 
 The native writer test independently reconstructs these reference Nodes, marshals
 them, parses the output and compares Equal. It verifies every source digest,
-rejects duplicate references and checks exact corpus counts. Old loader and old
-writer byte tests remain until their respective migration deletion commits.
+rejects duplicate references and checks exact corpus counts. Old writer option/byte tests are replaced in N7-4 by these semantic references;
+old loader tests remain until N7-3d.
 
 Core corpus SHA256: `587c768ddfb2750367979ff31c15cb5ad535d87ac0a72c497860c1234dfdf01f`.

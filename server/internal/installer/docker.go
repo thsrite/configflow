@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/yamlbridge"
 	"configflow/internal/yamlx"
 )
 
@@ -293,7 +294,12 @@ func GenerateDockerAgentCompose(o DockerOptions) (string, error) {
 			"logging", logging,
 		))
 	}
-	return yamlx.Dump(compose, yamlx.DumpOptions{AllowUnicode: true})
+	node, err := yamlbridge.Encode(compose)
+	if err != nil {
+		return "", err
+	}
+	data, err := yamlx.Marshal(node)
+	return string(data), err
 }
 
 // shellWord is _shell_word(value, plain): ordinary values keep their form.

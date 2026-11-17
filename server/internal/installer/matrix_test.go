@@ -2,8 +2,6 @@ package installer
 
 import (
 	"bufio"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"math/big"
@@ -228,9 +226,11 @@ func TestRenderMatrixMatchesPython(t *testing.T) {
 			t.Errorf("case %d %s %s: python rendered, go: %v", id, fn, jsonx.Repr(k.Object), err)
 			continue
 		}
-		digest := sha256.Sum256([]byte(output))
-		length := record.GetInt("length")
-		if hex.EncodeToString(digest[:]) != record.GetString("sha256") || int64(len(output)) != length {
+		matches, oracleErr := writerHashCaseMatches(fn, k.Object, output, record.GetString("sha256"), record.GetInt("length"))
+		if oracleErr != nil {
+			t.Fatal(oracleErr)
+		}
+		if !matches {
 			detail := "(set INSTALLER_MATRIX_FULL for the first differing line)"
 			if py, ok := full[id]; ok {
 				detail = firstDifference(py, output)
