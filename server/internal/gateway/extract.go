@@ -6,6 +6,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"configflow/internal/convert"
 	"configflow/internal/netipx"
 )
 
@@ -36,24 +37,12 @@ func contentLines(content string) ([]string, error) {
 			return nil, err
 		}
 	} else {
-		values = splitLines(stripped)
+		values = convert.PySplitlines(stripped)
 	}
 	if len(values) > maxRules {
 		return nil, gatewayError(msgTooManyRules)
 	}
 	return values, nil
-}
-
-// splitLines splits text at LF, CRLF and CR; a final line break does not
-// start another line.
-func splitLines(text string) []string {
-	text = strings.ReplaceAll(text, "\r\n", "\n")
-	text = strings.ReplaceAll(text, "\r", "\n")
-	text = strings.TrimSuffix(text, "\n")
-	if text == "" {
-		return nil
-	}
-	return strings.Split(text, "\n")
 }
 
 // withoutComment is a line up to its first "#", trimmed.
