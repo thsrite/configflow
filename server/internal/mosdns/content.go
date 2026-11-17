@@ -194,7 +194,7 @@ func ConvertRuleContentForMosDNS(content string, part ...string) (out string, er
 		} else {
 			addScalar := func(node *yamlx.Node) {
 				node = yamlx.Resolve(node)
-				if node.Kind == yaml.ScalarNode && (node.ShortTag() == "!!str" || node.ShortTag() == "!!timestamp") {
+				if textScalar(node) {
 					ruleLines = append(ruleLines, node.Value)
 				}
 			}
@@ -208,6 +208,12 @@ func ConvertRuleContentForMosDNS(content string, part ...string) (out string, er
 					addScalar(key)
 				}
 			case yaml.ScalarNode:
+				if textScalar(payload) {
+					for _, character := range payload.Value {
+						ruleLines = append(ruleLines, string(character))
+					}
+					break
+				}
 				switch payload.ShortTag() {
 				case "!!null":
 				case "!!str", "!!timestamp":

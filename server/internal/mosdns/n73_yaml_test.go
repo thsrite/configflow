@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"configflow/internal/jsonx"
 	"configflow/internal/yamlx"
+	"configflow/internal/yamlx/yamltest"
 )
 
 func TestN73YAMLReadGraphs(t *testing.T) {
@@ -69,4 +71,72 @@ func FuzzMosDNSYAML(f *testing.F) {
 		_, _ = ConvertRuleContentForMosDNS(text)
 		_ = checkReferences(text, nil, false)
 	})
+}
+
+// Plain nesting has no alias limit; test the native limit without extrapolating
+// Python's recursion ceiling. Durations are logged, not compared to wall time.
+func TestN73PlainDepthBoundary(t *testing.T) {
+	for _, depth := range []int{1000, 4000, 10000, 10001} {
+		t.Run(fmt.Sprint(depth), func(t *testing.T) {
+			nested := strings.Repeat("[", depth) + "0" + strings.Repeat("]", depth)
+			started := time.Now()
+			source := "extra: " + nested
+			out, err := GenerateMosDNSConfig(jsonx.Obj("mosdns", jsonx.Obj("custom_config", source)), "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err = yamlx.Parse([]byte(out)); err != nil {
+				t.Fatal(err)
+			}
+			_, err = ParseDNSUpstreams("addr: https://dns.example/dns-query\nextra: " + nested)
+			if depth < 10000 && err != nil {
+				t.Fatal(err)
+			}
+			_, err = ConvertRuleContentForMosDNS("extra: " + nested + "\npayload: [example.com]\n")
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = checkReferences(source+"\nplugins: []\n", nil, false)
+			if (err == nil) != (depth <= 10000) {
+				t.Fatalf("archive reader: %v", err)
+			}
+			t.Logf("depth=%d bytes=%d elapsed=%s", depth, len(nested), time.Since(started))
+		})
+	}
+}
+
+func TestN73UpstreamTimestampSurvivesVerifiedGeneration(t *testing.T) {
+	config := jsonx.Obj("mosdns", jsonx.Obj("custom_config", "extra: null\n", "local_dns", "- {addr: x, when: 2001-01-01 10:00:00}\n"))
+	if _, err := GenerateMosDNSConfig(config, ""); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestN73CompositeKeysFollowEachMosDNSSchema(t *testing.T) {
+	if err := checkReferences("? [a,b]\n: ignored\nplugins: []\n", nil, false); err != nil {
+		t.Fatal(err)
+	}
+	out, err := ConvertRuleContentForMosDNS("payload: {? [a,b]: ignored, example.com: null}\n")
+	if err != nil || out != "full:example.com" {
+		t.Fatalf("payload keys: %q %v", out, err)
+	}
+	upstreams, err := ParseDNSUpstreams("addr: https://dns.example/dns-query\n? [a,b]\n: preserved\n")
+	if err != nil || len(upstreams) != 1 {
+		t.Fatalf("upstream composite metadata: %v", err)
+	}
+	if _, ok := upstreams[0].(*yamlx.Node); !ok {
+		t.Fatal("non-JSON metadata must remain a Node")
+	}
+}
+
+func TestN73SharedUpstreamMetadataMatchesPython(t *testing.T) {
+	row := loadRows(t, "testdata/corpus.jsonl.gz")[14912]
+	if row.GetString("fn") != "generate" {
+		t.Fatal("synthetic regression fixture changed")
+	}
+	output, err, _ := callRow("generate", row.GetList("args"))
+	oracle := yamltest.NewOracle(t, "server/internal/mosdns/testdata/n73_reference.py")
+	if !nativeMosDNSOutcome(t, oracle, row, output, err) {
+		t.Fatalf("shared metadata output: %v", err)
+	}
 }

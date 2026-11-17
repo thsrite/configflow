@@ -85,33 +85,47 @@ func documentNode(value any) (*yamlx.Node, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Separate input documents may use the same anchor names. Assign unique
-	// names by target identity before combining them in the generated document.
-	seen := map[*yamlx.Node]bool{}
-	var aliases []*yamlx.Node
-	index := 0
-	var visit func(*yamlx.Node)
-	visit = func(node *yamlx.Node) {
-		if node == nil || seen[node] {
-			return
+	// The generated forwarders may reuse an upstream list/map. Give each
+	// physical value one definition and emit aliases for subsequent uses,
+	// including anchor targets whose original definition was outside the
+	// selected user subtree. Separate source documents also get unique names.
+	names := map[*yamlx.Node]string{}
+	claimed := map[*yamlx.Node]bool{}
+	nextAnchor := func(node *yamlx.Node) string {
+		if name := names[node]; name != "" {
+			return name
 		}
-		seen[node] = true
-		if node.Anchor != "" {
-			index++
-			node.Anchor = fmt.Sprintf("dns%d", index)
+		name := fmt.Sprintf("dns%d", len(names)+1)
+		names[node] = name
+		node.Anchor = name
+		return name
+	}
+	var bind func(*yamlx.Node) *yamlx.Node
+	bind = func(node *yamlx.Node) *yamlx.Node {
+		if node == nil {
+			return nil
 		}
 		if node.Kind == yaml.AliasNode {
-			aliases = append(aliases, node)
+			if !claimed[node.Alias] {
+				return bind(node.Alias)
+			}
+			alias := *node
+			alias.Value = nextAnchor(node.Alias)
+			return &alias
 		}
-		for _, child := range node.Content {
-			visit(child)
+		if claimed[node] {
+			return &yamlx.Node{Kind: yaml.AliasNode, Value: nextAnchor(node), Alias: node}
 		}
-		visit(node.Alias)
+		claimed[node] = true
+		if node.Anchor != "" {
+			nextAnchor(node)
+		}
+		for i, child := range node.Content {
+			node.Content[i] = bind(child)
+		}
+		return node
 	}
-	visit(root)
-	for _, node := range aliases {
-		node.Value = node.Alias.Anchor
-	}
+	root = bind(root)
 	return root, nil
 }
 
@@ -140,4 +154,18 @@ func hasNonStringKey(root *yamlx.Node) bool {
 		return false
 	}
 	return visit(root)
+}
+
+// textScalar is the schema for string-valued free-form YAML fields. Native
+// non-JSON tags carry scalar text; numeric/bool/null tags keep their own type.
+func textScalar(node *yamlx.Node) bool {
+	node = yamlx.Resolve(node)
+	if node == nil || node.Kind != yaml.ScalarNode {
+		return false
+	}
+	switch node.ShortTag() {
+	case "!!int", "!!float", "!!bool", "!!null":
+		return false
+	}
+	return true
 }

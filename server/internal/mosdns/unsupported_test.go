@@ -1,32 +1,46 @@
 package mosdns
 
 import (
+	"configflow/internal/jsonx"
+	"configflow/internal/yamlx"
 	"errors"
 	"testing"
-
-	"configflow/internal/jsonx"
 )
 
-// Custom base YAML values that jsonx cannot hold and that reach the output
-// are refused (Python would dump them with yaml.Dumper), but only after every
-// error Python raises first.
-func TestUnholdableCustomConfigIsRefusedAfterPythonErrors(t *testing.T) {
-	for _, text := range []string{"s: !!set {a}", "r: &r [*r]", "{1: x, extra: !!omap [{a: 1}]}"} {
+func TestN73YAMLOnlyValuesRemainNodes(t *testing.T) {
+	for _, text := range []string{"s: !!set {a}", "{1: x, extra: !!omap [{a: 1}]}", "? [a,b]\n: c"} {
 		config := jsonx.Obj("mosdns", jsonx.Obj("custom_config", text))
-		_, err := GenerateMosDNSConfig(config, "")
-		var u *UnsupportedYAMLError
-		if !errors.As(err, &u) {
-			t.Errorf("%q: want UnsupportedYAMLError, got %v", text, err)
+		output, err := GenerateMosDNSConfig(config, "")
+		if err != nil {
+			t.Fatal(err)
 		}
-		config.GetObject("mosdns").Set("cache_size", "abc")
-		_, err = GenerateMosDNSConfig(config, "")
-		if errClass(err) != "ValueError" {
-			t.Errorf("%q: Python's ValueError must come first, got %v", text, err)
+		source, err := yamlx.Parse([]byte(text))
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := yamlx.Parse([]byte(output))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for key, value := range yamlx.AllPairs(source) {
+			found := false
+			for k, v := range yamlx.AllPairs(got) {
+				if yamlx.Equal(k, key) && yamlx.Equal(v, value) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Fatal("free-form key/value was lost")
+			}
 		}
 	}
-	// Non-string keys only inside a replaced section are fine.
+	_, err := GenerateMosDNSConfig(jsonx.Obj("mosdns", jsonx.Obj("custom_config", "r: &r [*r]")), "")
+	if !errors.Is(err, yamlx.ErrAliasRecursion) {
+		t.Fatalf("recursive user graph: %v", err)
+	}
 	config := jsonx.Obj("mosdns", jsonx.Obj("custom_config", "plugins: {1: x}\nextra: 1"))
 	if _, err := GenerateMosDNSConfig(config, ""); err != nil {
-		t.Errorf("plugins with a non-string key is replaced, got %v", err)
+		t.Fatal(err)
 	}
 }

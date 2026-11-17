@@ -1,6 +1,7 @@
 package mosdns
 
 import (
+	"configflow/internal/yamlx/yamltest"
 	"fmt"
 	"strings"
 	"testing"
@@ -12,6 +13,7 @@ import (
 // Python test that made the call; Go must give the same bytes, values and
 // errors.
 func TestRecordedPythonTests(t *testing.T) {
+	oracle := yamltest.NewOracle(t, "server/internal/mosdns/testdata/n73_reference.py")
 	rows := loadRows(t, "testdata/recorded.jsonl.gz")
 	failures, accepted, unsupported, notExpressible := 0, 0, 0, 0
 	counts := map[string]int{}
@@ -25,7 +27,7 @@ func TestRecordedPythonTests(t *testing.T) {
 			unsupported++
 			continue
 		}
-		msg, acc, ok := compareRow(entry)
+		msg, acc, ok := compareRow(t, oracle, entry)
 		switch {
 		case !ok:
 			notExpressible++

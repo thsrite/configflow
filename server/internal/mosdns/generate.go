@@ -152,7 +152,7 @@ func GenerateMosDNSConfig(config *jsonx.Object, baseURL string) (out string, err
 	// expanding their aliases when generated sections replace user sections.
 	settings, _ := config.Value("mosdns").(*jsonx.Object)
 	custom, _ := settings.Value("custom_config").(string)
-	if original, parseErr := yamlx.Parse([]byte(custom)); parseErr == nil && original.Kind == yaml.MappingNode && original.ShortTag() == "!!map" {
+	if original, parseErr := yamlx.Parse([]byte(custom)); parseErr == nil && original.Kind == yaml.MappingNode {
 		data, editErr := yamlx.Edit([]byte(custom), func(root *yamlx.Node) error { *root = *node; return nil })
 		return string(data), editErr
 	}
@@ -572,7 +572,7 @@ func loadCustomConfig(text string) (*yamlx.Node, error) {
 		}
 		return nil, nil
 	}
-	if node.Kind != yaml.MappingNode || node.ShortTag() != "!!map" {
+	if node.Kind != yaml.MappingNode || node.ShortTag() == "!!set" {
 		return nil, nil
 	}
 	return node, nil

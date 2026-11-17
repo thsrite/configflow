@@ -34,10 +34,13 @@ func ParseDNSUpstreams(dnsConfig any) (out []any, err error) {
 				}
 				return nil, decodeErr
 			}
-			out[i], err = jsonx.Parse(data)
-			if err != nil {
-				return nil, err
+			value, decodeErr := jsonx.Parse(data)
+			if decodeErr == nil {
+				out[i] = value
 			}
+			// A native graph may exceed the legacy JSON parser's nesting
+			// representation. Retain that graph instead of losing its data.
+
 		}
 	}
 	return out, nil
@@ -60,10 +63,10 @@ func parseDNSUpstreams(dnsConfig any) ([]any, error) {
 		case yaml.SequenceNode:
 			for _, entry := range parsed.Content {
 				node := yamlx.Resolve(entry)
-				if node.Kind == yaml.MappingNode && node.ShortTag() == "!!map" && yamlx.Get(node, "addr") != nil {
+				if node.Kind == yaml.MappingNode && yamlx.Get(node, "addr") != nil {
 					upstreams = append(upstreams, entry)
 				}
-				if node.Kind == yaml.ScalarNode && node.ShortTag() == "!!str" {
+				if textScalar(node) {
 					upstreams = append(upstreams, jsonx.Obj("addr", node.Value))
 				}
 			}
@@ -71,7 +74,7 @@ func parseDNSUpstreams(dnsConfig any) ([]any, error) {
 				return upstreams, nil
 			}
 		case yaml.MappingNode:
-			if parsed.ShortTag() == "!!map" && yamlx.Get(parsed, "addr") != nil {
+			if yamlx.Get(parsed, "addr") != nil {
 				return []any{parsed}, nil
 			}
 		}

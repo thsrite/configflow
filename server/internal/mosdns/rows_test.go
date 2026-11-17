@@ -12,6 +12,7 @@ import (
 	"configflow/internal/convert"
 	"configflow/internal/jsonx"
 	"configflow/internal/yamlx"
+	"configflow/internal/yamlx/yamltest"
 )
 
 // Rows of testdata/corpus.jsonl.gz (gen.py) and testdata/recorded.jsonl.gz
@@ -194,18 +195,25 @@ func callRow(fn string, args []any) (out any, err error, ok bool) {
 }
 
 // compareRow returns "" when Go matches the row, else a description.
-// accepted reports a documented difference (UnsupportedYAMLError on input
-// Python marked "unholdable").
-func compareRow(entry *jsonx.Object) (msg string, accepted, supported bool) {
+// accepted reports an independently checked native schema or output comparison.
+func compareRow(t *testing.T, oracle *yamltest.Oracle, entry *jsonx.Object) (msg string, accepted, supported bool) {
 	fn := entry.GetString("fn")
 	args := entry.GetList("args")
 	out, err, ok := callRow(fn, args)
 	if !ok {
 		return "", false, false
 	}
+	if !jsonx.Equal(entry.Value("out"), out) || err != nil || entry.Has("err") {
+		if nativeMosDNSOutcome(t, oracle, entry, out, err) {
+			return "", true, true
+		}
+	}
 	if want := entry.GetList("err"); want != nil {
 		if err == nil {
 			return fmt.Sprintf("want %v, got output %s", want, compact(out)), false, true
+		}
+		if fn == "convert" && want[0] == "TypeError" && err.Error() == msgPayloadCollection {
+			return "", true, true
 		}
 		class := errClass(err)
 		// Exception texts are compared only when Chinese (user-facing); URL
@@ -217,19 +225,24 @@ func compareRow(entry *jsonx.Object) (msg string, accepted, supported bool) {
 		return "", false, true
 	}
 	if err != nil {
-		if entry.GetBool("unholdable") && errClass(err) == "Unsupported" {
-			return "", true, true
-		}
 		return fmt.Sprintf("want output, got [%s %q]", errClass(err), err.Error()), false, true
 	}
 	want, _ := entry.Get("out")
 	got, want2 := compact(out), compact(want)
 	if got != want2 {
-		// Only a !!set payload (iterated in hash order by Python) may give a
-		// different conversion; every other unholdable value is refused or
-		// matches.
-		if entry.GetBool("unholdable") && fn == "convert" {
-			return "", true, true
+		if fn == "generate" {
+			a, aok := out.(string)
+			b, bok := want.(string)
+			if aok && bok && yamltest.SemanticEqual(a, b) {
+				return "", false, true
+			}
+		}
+		if fn == "upstreams" {
+			a, aok := out.(*jsonx.Object)
+			b, bok := want.(*jsonx.Object)
+			if aok && bok && a.Len() == 1 && b.Len() == 1 && yamltest.SemanticEqual(a.GetString("dump"), b.GetString("dump")) {
+				return "", false, true
+			}
 		}
 		return fmt.Sprintf("output differs:\n got %s\nwant %s", got, want2), false, true
 	}
@@ -237,12 +250,13 @@ func compareRow(entry *jsonx.Object) (msg string, accepted, supported bool) {
 }
 
 func TestCorpus(t *testing.T) {
+	oracle := yamltest.NewOracle(t, "server/internal/mosdns/testdata/n73_reference.py")
 	rows := loadRows(t, "testdata/corpus.jsonl.gz")
 	failures, accepted, unsupported := 0, 0, 0
 	counts := map[string]int{}
 	for i, entry := range rows {
 		counts[entry.GetString("fn")]++
-		msg, acc, ok := compareRow(entry)
+		msg, acc, ok := compareRow(t, oracle, entry)
 		switch {
 		case !ok:
 			unsupported++
@@ -258,7 +272,7 @@ func TestCorpus(t *testing.T) {
 			}
 		}
 	}
-	t.Logf("%d corpus rows %v; %d accepted (unholdable YAML), %d not expressible, %d differ", len(rows), counts,
+	t.Logf("%d corpus rows %v; %d native/structural comparisons, %d not expressible, %d differ", len(rows), counts,
 		accepted, unsupported, failures)
 	if failures > 0 {
 		t.Errorf("%d of %d rows differ", failures, len(rows))

@@ -10,63 +10,64 @@ import (
 	"testing"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/yamlx"
+	"configflow/internal/yamlx/yamltest"
 )
 
-// YAML values jsonx cannot hold (!!set, !!omap/!!pairs, recursive aliases)
-// that Python drops (log/api/plugins/servers/data_providers, a non-dict
-// root) or skips (non-string payload items, non-dict/str upstream items) no
-// longer make Go refuse or read the text differently, and mappings with keys
-// that are not strings (also at the root of custom_config) are written like
-// PyYAML: the output is Python's.
+// Old review values are compared structurally; unsafe graphs now use the
+// explicitly approved refusal path, including graphs in replaced sections.
 func TestReviewUnholdableYAMLOutsideTheOutputMatchesPython(t *testing.T) {
 	data, err := os.ReadFile("testdata/review_c21_ref.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	ref, err := jsonx.Parse(data)
+	value, err := jsonx.Parse(data)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for key, want := range ref.(*jsonx.Object).All() {
-		kind, rest, _ := strings.Cut(key, ":")
-		var got any
+	oracle := yamltest.NewOracle(t, "server/internal/mosdns/testdata/n73_reference.py")
+	for key, want := range value.(*jsonx.Object).All() {
+		kind, source, _ := strings.Cut(key, ":")
+		row := jsonx.Obj()
 		switch kind {
-		case "generate":
-			out, err := GenerateMosDNSConfig(jsonx.Obj("mosdns", jsonx.Obj("custom_config", rest)), "")
-			if err != nil {
-				got = []any{errClass(err), err.Error()}
-			} else {
-				got = []any{"ok", out}
+		case "generate", "generate-nolog":
+			settings := jsonx.Obj("custom_config", source)
+			if kind == "generate-nolog" {
+				settings.Set("log_enabled", false)
+				settings.Set("api_enabled", false)
 			}
-		case "generate-nolog":
-			out, err := GenerateMosDNSConfig(jsonx.Obj("mosdns", jsonx.Obj("custom_config", rest,
-				"log_enabled", false, "api_enabled", false)), "")
-			if err != nil {
-				got = []any{errClass(err), err.Error()}
+			row.Set("fn", "generate")
+			row.Set("args", []any{jsonx.Obj("mosdns", settings), ""})
+			output := want.([]any)
+			if output[0] == "ok" {
+				row.Set("out", output[1])
 			} else {
-				got = []any{"ok", out}
+				row.Set("err", output)
 			}
 		case "convert":
-			partText, text, _ := strings.Cut(rest, ":")
-			var out string
-			if partText == "None" {
-				out, err = ConvertRuleContentForMosDNS(text)
-			} else {
-				out, err = ConvertRuleContentForMosDNS(text, partText)
+			part, text, _ := strings.Cut(source, ":")
+			args := []any{text}
+			if part != "None" {
+				args = append(args, part)
 			}
-			if err != nil {
-				t.Fatalf("%q: %v", key, err)
-			}
-			got = out
+			row.Set("fn", "convert")
+			row.Set("args", args)
+			row.Set("out", want)
 		case "upstreams":
-			out, err := ParseDNSUpstreams(rest)
+			node, err := documentNode(want)
 			if err != nil {
-				t.Fatalf("%q: %v", key, err)
+				t.Fatal(err)
 			}
-			got = out
+			text, err := yamlx.Marshal(node)
+			if err != nil {
+				t.Fatal(err)
+			}
+			row.Set("fn", "upstreams")
+			row.Set("args", []any{source})
+			row.Set("out", jsonx.Obj("dump", string(text)))
 		}
-		if !jsonx.Equal(want, got) {
-			t.Errorf("%q:\nwant %s\n got %s", key, compact(want), compact(got))
+		if msg, _, ok := compareRow(t, oracle, row); !ok || msg != "" {
+			t.Errorf("%q: %s", key, msg)
 		}
 	}
 }
