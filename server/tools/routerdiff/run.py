@@ -123,8 +123,15 @@ def execute(pair, case, available, routes):
     request = dict(method=case.method, path=case.path, document=case.document, raw=case.raw,
                    headers=case.headers, auth=case.auth)
     observations, snapshots, flow_requests, flow_checks, setup_observations = {}, {}, {}, {}, {}
-    missing_routes = [ident for ident in (case.route, *case.requires)
-                      if (routes[ident].method, shape(routes[ident].path)) not in available]
+    if case.boundary:
+        if case.route or len(case.boundary) != 2 or case.boundary[0] != case.method or not isinstance(case.path, str):
+            raise ValueError('external boundary must declare its actual method/path with no routers route ID')
+        method, template = case.boundary
+        missing_routes = [] if registered_request(method, case.path, available) else [method + ' ' + template]
+    else:
+        missing_routes = [case.route] if (routes[case.route].method, shape(routes[case.route].path)) not in available else []
+    missing_routes += [ident for ident in case.requires
+                       if (routes[ident].method, shape(routes[ident].path)) not in available]
     missing_routes += [method + ' ' + path for method, path in case.manifest_requires
                        if (method, shape(path)) not in available]
     for control in case.prepare:
@@ -518,7 +525,8 @@ def execute(pair, case, available, routes):
             'configuration_changed': bool(differences(before['database'], after['database'])),
             'agent_post_requests': sum(item['method'] == 'POST' and item['peer'] == 'agent' for item in transcript),
             'agent_get_requests': sum(item['method'] == 'GET' and item['peer'] == 'agent' for item in transcript)}
-    return {'case': case.ident, 'route': case.route, 'entries': list(case.entries), 'request': request,
+    return {'case': case.ident, 'route': case.route, 'boundary': list(case.boundary), 'owner': case.owner,
+            'scope': 'cross-domain' if case.boundary else 'routers', 'entries': list(case.entries), 'request': request,
             'status': status,
             'unimplemented_reason': unimplemented_reason if not implemented else None,
             'blocked_reference': blocked_reference,
@@ -549,7 +557,10 @@ def report(output, results, available, announce=True, error=None):
         'implemented_routes': (sum((route.method, shape(route.path)) in available for route in routes.values())
                                if available is not None else None),
         'native_inventory_observed': available is not None,
-        'recipe_counts': dict(counts), 'referenced_entries': len(referenced),
+        'recipe_counts': dict(counts),
+        'domain_recipe_counts': dict(Counter(item['status'] for item in results if item.get('scope', 'routers') == 'routers')),
+        'cross_domain_recipe_counts': dict(Counter(item['status'] for item in results if item.get('scope') == 'cross-domain')),
+        'referenced_entries': len(referenced),
         'executed_worlds': sorted({item.get('world', '<self-check>') for item in results}),
         'python_bugs': sorted({item['python_bug'] for item in results if item.get('python_bug')}),
         'complete': remaining == 0 and error is None, 'remaining_audits': remaining,
@@ -573,6 +584,8 @@ def findings(path, data):
         f'矩阵：{data["matrix_routes"]} 条路由、{data["matrix_entries"]} 个设计条目。',
         f'公开 Go 入口实际注册本领域路由：{data["implemented_routes"]} 条。',
         '执行配方统计：`' + json.dumps(data['recipe_counts'], ensure_ascii=False, sort_keys=True) + '`。',
+        '领域配方：`' + json.dumps(data.get('domain_recipe_counts', {}), ensure_ascii=False) + '`；跨域G23配方：`'
+        + json.dumps(data.get('cross_domain_recipe_counts', {}), ensure_ascii=False) + '`（不算26条领域路由已实现/通过）。',
         '实际执行世界（统计仅涵盖这些世界）：`' + ', '.join(data['executed_worlds']) + '`。',
         f'已有执行配方引用的设计条目：{data["referenced_entries"]}；逐条变体审计仍未完成。',
         f'本次实际执行满足显式变体审计：{data["audited_entries"]}；其余{data["remaining_audits"]}待补。', '',
@@ -604,7 +617,7 @@ def findings(path, data):
                   *['- ' + item for item in bug.followups], '']
     for index, result in enumerate(changed, 1):
         severity = 'P1' if result['request']['method'] != 'GET' else 'P2'
-        owner = 'R17（客户端 HTTP）' if result['route'] in ('R002', 'R003', 'R004', 'R005', 'R006') else 'R15（路由 HTTP）'
+        owner = result.get('owner') or ('R17（客户端 HTTP）' if result['route'] in ('R002', 'R003', 'R004', 'R005', 'R006') else 'R15（路由 HTTP）')
         if result.get('python_bug'):
             owner = BUGS[result['python_bug']].owner
         if result['python']['status'] == 401 and result['go'] and result['go']['status'] < 400:

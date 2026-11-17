@@ -41,7 +41,13 @@ class RecipeTests(unittest.TestCase):
                     with self.subTest(case=case.ident):
                         self.assertFalse(case.ident in seen, 'duplicate recipe: ' + case.ident)
                         seen.add(case.ident)
-                        self.assertTrue(case.route in routes, 'unknown public route ID: ' + case.route)
+                        if case.boundary:
+                            self.assertEqual(case.route, '')
+                            self.assertEqual(case.boundary[0], case.method)
+                            self.assertIn('G23', case.entries)
+                            self.assertTrue(case.owner)
+                        else:
+                            self.assertTrue(case.route in routes, 'unknown public route ID: ' + case.route)
                         for reference in case.entries:
                             self.assertTrue(reference in entries, 'unknown matrix ID: ' + reference)
                         if case.python_bug:

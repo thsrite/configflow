@@ -48,6 +48,8 @@ class Case:
     html_error: bool = False
     requires: tuple = ()
     manifest_requires: tuple = ()
+    boundary: tuple = ()
+    owner: str = ''
     join: str = ''
     stored: dict = field(default_factory=dict)
     header_checks: dict = field(default_factory=dict)

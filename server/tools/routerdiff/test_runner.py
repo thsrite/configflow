@@ -185,6 +185,26 @@ class RunnerTests(unittest.TestCase):
             result = execute(world, case, {('GET', '/api/client-devices')}, routes)
             self.assertEqual(result['status'], expected)
 
+    def test_external_generator_uses_its_own_manifest_without_claiming_a_router_route(self):
+        routes, _ = load()
+        case = Case('G23/external', '', 'POST', '/api/generate/mihomo/preview', 200, ('G23',),
+                    document={}, boundary=('POST', '/api/generate/mihomo/preview'), owner='R02/config generator')
+        world = pair(ObservationSide(), ObservationSide(status=500))
+        actual = {('POST', '/api/generate/{}/preview')}
+        result = execute(world, case, actual, routes)
+        self.assertEqual(result['status'], 'different')
+        self.assertEqual(result['scope'], 'cross-domain')
+        self.assertEqual(result['route'], '')
+        self.assertEqual(result['owner'], 'R02/config generator')
+        self.assertEqual(len(world.go.requests), 1)
+        missing = pair()
+        result = execute(missing, case, {('POST', '/api/routers/{}/plan')}, routes)
+        self.assertEqual(result['status'], 'go-unimplemented')
+        self.assertEqual(missing.go.requests, [])
+        contradictory = Case('G23/bad-meta', 'R012', 'POST', case.path, 200, boundary=case.boundary)
+        with self.assertRaisesRegex(ValueError, 'external boundary must declare'):
+            execute(pair(), contradictory, actual, routes)
+
     def test_notification_prerequisites_cannot_pass_missing_or_stale_evidence(self):
         routes, _ = load()
         before = ObservationSide().before

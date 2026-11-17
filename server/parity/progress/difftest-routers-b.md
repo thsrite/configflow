@@ -1192,3 +1192,20 @@ Last full remains379377393054 recipes/301 audits; newer independent batches do
 not replace it. Next priority G23's real external-public-route oracle and simple
 config/Agent generation guards, alongside remaining wrapper/device/background
 coverage and dynamic-value comparison. Final gate/rebase still pending.
+
+G23 external boundary oracle foundation:
+- Case.boundary declares an actual external public method/template with empty
+  routers route ID and explicit owner. Registered concrete requests match the
+  real Go manifest (including a generic service segment), independent of missing
+  R012/etc. Contradictory metadata is a fixture error. No business404 inference.
+- Results/report separate routers and cross-domain recipe counts. Cross-domain
+  comparison cannot inflate26 routers routes or claim a domain route covered.
+  Findings carry the explicit external owner. Main26 inventory unchanged.
+- Deliberately wrong500 external response produces an actual difference even
+  with every router route absent; absent external manifest skips without sending
+  Go HTTP. Existing runtime-read regression still uses the original domain oracle.
+
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY=/tmp/routerdiff-build-302rx1dg-latest/configflow; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python -m unittest -v test_runner test_recipes; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world runtime-reads --output /tmp/routerdiff-external-oracle-regression.json'`
+=> Ran31 tests0.635s/OK;11 runtime requests, domain missing11, cross-domain{},
+complete=false. No process pending. Actual external G23 input recipes are next;
+no new comparison/coverage claim yet. Declarations344/remaining1957 unchanged.
