@@ -50,6 +50,9 @@ type contentHTTP struct {
 
 func newContentHTTP(t *testing.T, baseline bool, authenticated bool) *contentHTTP {
 	t.Helper()
+	// Earlier API tests can activate O3's lazy shared workers. End that
+	// generation before installing this fixture's isolated registry.
+	lifecycle.Stop(8 * time.Second)
 	if err := lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry()}); err != nil {
 		t.Fatal(err)
 	}
