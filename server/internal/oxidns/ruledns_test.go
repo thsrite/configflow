@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -31,7 +32,8 @@ func TestRuleDNSPublicBoundary(t *testing.T) {
 	}
 	defer reader.Close()
 	decoder := json.NewDecoder(reader)
-	count, generated := 0, 0
+	count := 0
+	var generated atomic.Int32
 	for {
 		var reference ruleDNSReference
 		if err := decoder.Decode(&reference); err == io.EOF {
@@ -41,6 +43,7 @@ func TestRuleDNSPublicBoundary(t *testing.T) {
 		}
 		count++
 		t.Run(reference.Fn+"/"+reference.Test, func(t *testing.T) {
+			t.Parallel()
 			args := reference.args(t)
 			original := make([][]byte, len(args))
 			for i, arg := range args {
@@ -74,14 +77,17 @@ func TestRuleDNSPublicBoundary(t *testing.T) {
 				t.Fatal(difference)
 			}
 			if reference.Fn == "apply_rule_dns_boundary" && err == nil && !isTrue(get(got, "generation_rejected")) {
-				generated++
+				generated.Add(1)
 			}
 		})
 	}
-	if count < 282 || generated < 148 {
-		t.Fatalf("incomplete public boundary: %d rows, %d generated outputs", count, generated)
-	}
-	t.Logf("%d public references; %d final generated OxiDNS configurations compared", count, generated)
+	// Cleanup runs after all reference subtests have joined.
+	t.Cleanup(func() {
+		if count < 282 || generated.Load() < 148 {
+			t.Fatalf("incomplete public boundary: %d rows, %d generated outputs", count, generated.Load())
+		}
+		t.Logf("%d public references; %d final generated OxiDNS configurations compared", count, generated.Load())
+	})
 }
 
 func callRuleDNSReference(t *testing.T, operation string, args []*Node) (*Node, error) {

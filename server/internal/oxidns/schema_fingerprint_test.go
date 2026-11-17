@@ -9,6 +9,7 @@ import (
 )
 
 func TestSchemaFingerprintCoversEmbeddedFiles(t *testing.T) {
+	t.Parallel()
 	names, err := fs.Glob(schemaFS, "schemas/*.json")
 	if err != nil || len(names) == 0 {
 		t.Fatal(names, err)

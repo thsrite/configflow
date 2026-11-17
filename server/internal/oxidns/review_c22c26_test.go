@@ -17,6 +17,7 @@ func TestC22C26ReviewReferences(t *testing.T) {
 	}
 	for _, r := range rows {
 		t.Run(r.Fn+"/"+r.Test, func(t *testing.T) {
+			t.Parallel()
 			args := r.args(t)
 			got, err, supported := call(t, r, args)
 			if !supported {

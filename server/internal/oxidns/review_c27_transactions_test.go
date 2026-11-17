@@ -36,6 +36,7 @@ func c27Snapshot(t *testing.T, native bool) *Profile {
 }
 
 func TestC27ReviewConcurrentSnapshots(t *testing.T) {
+	t.Parallel()
 	for _, native := range []bool{false, true} {
 		t.Run(fmt.Sprint(native), func(t *testing.T) {
 			p := c27Snapshot(t, native)
@@ -82,6 +83,7 @@ func TestC27ReviewConcurrentSnapshots(t *testing.T) {
 }
 
 func TestC27ReviewNativeIdentitiesRemainEditable(t *testing.T) {
+	t.Parallel()
 	for _, separator := range []string{"\u2028", "\u2029"} {
 		for _, source := range []string{"local", "remote", "fallback"} {
 			t.Run(fmt.Sprintf("%U/%s", []rune(separator)[0], source), func(t *testing.T) {
@@ -158,6 +160,7 @@ func c27Transaction(r *repo.Repository, ctx context.Context, id, choice string) 
 // detach the request before taking the transaction lock, compute using the
 // locked before/after snapshots, and install settings only after success.
 func TestC27ReviewCanceledTransactionWaitsAndCommits(t *testing.T) {
+	t.Parallel()
 	r, base := c27Repository(t, false)
 	locked, release := make(chan struct{}), make(chan struct{})
 	var releaseOnce sync.Once
@@ -218,6 +221,7 @@ func TestC27ReviewCanceledTransactionWaitsAndCommits(t *testing.T) {
 }
 
 func TestC27ReviewConcurrentTransactionsMerge(t *testing.T) {
+	t.Parallel()
 	r, base := c27Repository(t, false)
 	original, err := r.GetProfile(base, "default")
 	if err != nil {
@@ -271,6 +275,7 @@ func TestC27ReviewConcurrentTransactionsMerge(t *testing.T) {
 }
 
 func TestC27ReviewLockedTransactionRollsBack(t *testing.T) {
+	t.Parallel()
 	r, base := c27Repository(t, true)
 	_, _, err := r.UpdateProfileTransaction(base, "default", func(_ context.Context, current *jsonx.Object) (*jsonx.Object, error) {
 		document, err := LoadNativeYAML(current.GetObject("oxidns").GetString("native_config"), NativeLabel)
@@ -318,6 +323,7 @@ func TestC27ReviewLockedTransactionRollsBack(t *testing.T) {
 }
 
 func TestC27ReviewIssueKeysAndRuleClassification(t *testing.T) {
+	t.Parallel()
 	a := Issue{Code: "code", Message: "first\x00second"}
 	b := Issue{Code: "code\x00first", Message: "second"}
 	if validationIssueKey(a) == validationIssueKey(b) {

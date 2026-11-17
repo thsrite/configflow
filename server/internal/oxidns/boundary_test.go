@@ -10,17 +10,18 @@ package oxidns
 import (
 	"bufio"
 	"compress/gzip"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"gopkg.in/yaml.v3"
-	"hash/crc32"
 	"os"
 	"reflect"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"unicode"
 
@@ -28,6 +29,9 @@ import (
 )
 
 const testdataDir = "testdata/"
+
+// Seven avoids lining shards up with the corpus generator's four-call cycles.
+const boundaryShards = 7
 
 func TestMain(m *testing.M) {
 	if os.Getenv("CONFIGFLOW_ROOT") == "" {
@@ -51,79 +55,78 @@ type row struct {
 
 func readRows(t *testing.T, name string, fns map[string]bool) []row {
 	t.Helper()
-	file, err := os.Open(testdataDir + name)
+	var rows []row
+	checked, total, err := scanRows(t.Context(), name, fns, func(r row) error {
+		rows = append(rows, r)
+		return nil
+	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	t.Logf("%s: %d matching rows of %d input lines", name, checked, total)
+	return rows
+}
+
+// scanRows reads every input line once, without race-only sampling. The visitor
+// lets parallel suites bound their queue instead of retaining the entire corpus.
+func scanRows(ctx context.Context, name string, fns map[string]bool, visit func(row) error) (checked, total int, err error) {
+	file, err := os.Open(testdataDir + name)
+	if err != nil {
+		return 0, 0, fmt.Errorf("open %s: %w", name, err)
 	}
 	defer file.Close()
 	reader, err := gzip.NewReader(file)
 	if err != nil {
-		t.Fatal(err)
+		return 0, 0, fmt.Errorf("read gzip %s: %w", name, err)
 	}
+	defer reader.Close()
 	scanner := bufio.NewScanner(reader)
 	scanner.Buffer(make([]byte, 1<<20), 1<<28)
-	var rows []row
-	var sample raceCorpusSelector
-	if raceEnabled && randomizedCorpus(name) {
-		sample = make(raceCorpusSelector)
-	}
-	original := 0
 	for scanner.Scan() {
-		if sample != nil {
-			// Discard random rows before copying large argument/output payloads.
-			// Only this small header is decoded for rows that will not execute.
-			var header struct {
-				Fn  string   `json:"fn"`
-				Err []string `json:"err"`
-			}
-			if err := json.Unmarshal(scanner.Bytes(), &header); err != nil {
-				t.Fatal(err)
-			}
-			if !fns[header.Fn] {
-				continue
-			}
-			original++
-			if !sample.keep(header.Fn, header.Err, scanner.Bytes()) {
-				continue
-			}
+		index := total
+		total++
+		if err := ctx.Err(); err != nil {
+			return checked, total, err
 		}
 		var r row
 		if err := json.Unmarshal(scanner.Bytes(), &r); err != nil {
-			t.Fatal(err)
+			return checked, total, fmt.Errorf("%s row %d: %w", name, index, err)
 		}
 		if fns[r.Fn] {
-			if sample == nil {
-				original++
+			if err := visit(r); err != nil {
+				return checked, total, err
 			}
-			rows = append(rows, r)
+			checked++
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		t.Fatal(err)
+		return checked, total, fmt.Errorf("scan %s: %w", name, err)
 	}
-	if sample != nil {
-		t.Logf("race randomized corpus %s: %d/%d rows; recorded, validation, storage and regression suites retained in full", name, len(rows), original)
-	}
-	return rows
+	return checked, total, nil
 }
 
-// parallelBoundary only schedules independent, input-local reference suites.
-// Sequential tests (including Setenv and repository-hook tests) finish before
-// Go releases these parallel tests. Ordinary builds retain their original order.
+// parallelBoundary schedules input-local suites after sequential Setenv tests.
 func parallelBoundary(t *testing.T) {
 	t.Helper()
-	if raceEnabled {
-		t.Parallel()
-	}
+	t.Parallel()
 }
 
 // args decodes the arguments and restores recorded shared objects.
 func (r row) args(t *testing.T) []*Node {
+	t.Helper()
+	out, err := r.decodeArgs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+func (r row) decodeArgs() ([]*Node, error) {
 	out := make([]*Node, len(r.Args))
 	for i, raw := range r.Args {
 		n, err := FromJSON(raw)
 		if err != nil {
-			t.Fatal(err)
+			return nil, err
 		}
 		out[i] = n
 	}
@@ -154,7 +157,7 @@ func (r row) args(t *testing.T) []*Node {
 			}
 		}
 	}
-	return out
+	return out, nil
 }
 
 func profileOf(n *Node) *Profile {
@@ -638,11 +641,50 @@ func runBoundary(t *testing.T, file string, fns ...string) {
 	for _, fn := range fns {
 		wanted[fn] = true
 	}
-	rows := readRows(t, file, wanted)
+	ctx, cancel := context.WithCancel(t.Context())
+	rows := make(chan row, boundaryShards)
+	done := make(chan struct{})
+	var checked, total int
+	var readErr error
+	go func() {
+		defer close(done)
+		defer close(rows)
+		checked, total, readErr = scanRows(ctx, file, wanted, func(r row) error {
+			select {
+			case rows <- r:
+				return nil
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		})
+	}()
+	// Even Fatal/panic in a worker must cancel and join the producer. In the
+	// successful case it has already closed the queue after the final row.
+	defer func() { cancel(); <-done }()
+	// Internal workers preserve the original externally reported test tree.
+	var workers sync.WaitGroup
+	for range boundaryShards {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			runBoundaryRows(t, file, rows)
+		}()
+	}
+	workers.Wait()
+	cancel()
+	<-done
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	t.Logf("%s: %d matching rows of %d input lines", file, checked, total)
+}
+
+func runBoundaryRows(t *testing.T, file string, rows <-chan row) {
+	t.Helper()
 	type stat struct{ same, differ, accepted int }
 	stats := map[string]*stat{}
 	shown := map[string]int{}
-	for _, r := range rows {
+	for r := range rows {
 		s := stats[r.Fn]
 		if s == nil {
 			s = &stat{}
@@ -650,16 +692,17 @@ func runBoundary(t *testing.T, file string, fns ...string) {
 		}
 		var got *Node
 		var err error
-		var args, before []*Node
-		_ = before
+		args, decodeErr := r.decodeArgs()
+		if decodeErr != nil {
+			t.Errorf("%s %s: decode arguments: %v", file, r.Test, decodeErr)
+			continue
+		}
 		func() {
 			defer func() {
 				if p := recover(); p != nil {
 					got, err = nil, fmt.Errorf("panic: %v", p)
 				}
 			}()
-			args = r.args(t)
-			before = append([]*Node{}, args...)
 			got, err, _ = call(t, r, args)
 		}()
 		diff := compare(r, got, err)
@@ -710,32 +753,6 @@ func runBoundary(t *testing.T, file string, fns ...string) {
 	for _, fn := range names {
 		t.Logf("%s %-28s identical %6d differ %5d accepted %4d", file, fn, stats[fn].same, stats[fn].differ, stats[fn].accepted)
 	}
-}
-
-func randomizedCorpus(file string) bool {
-	switch file {
-	case "corpus.jsonl.gz", "c24_corpus.jsonl.gz", "c25_corpus.jsonl.gz", "c26_corpus.jsonl.gz":
-		return true
-	}
-	return false
-}
-
-// raceCorpusSelector retains four examples of every function/outcome and a
-// stable 1/128 sample spread over each randomized corpus. Selection during input
-// loading avoids retaining all discarded rows while parallel suites run.
-// Recorded references, the validator corpus and regression seeds are never sampled.
-type raceCorpusSelector map[string]int
-
-func (s raceCorpusSelector) keep(fn string, rejection []string, raw []byte) bool {
-	outcome := "success"
-	if len(rejection) > 0 {
-		outcome = rejection[0]
-	}
-	key := fn + "/" + outcome
-	hash := crc32.ChecksumIEEE(raw)
-	keep := s[key] < 4 || hash%128 == 0
-	s[key]++
-	return keep
 }
 
 var (

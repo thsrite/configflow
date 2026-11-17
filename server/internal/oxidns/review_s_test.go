@@ -17,6 +17,7 @@ func TestReviewSReferences(t *testing.T) {
 }
 
 func TestReviewNativeRevision(t *testing.T) {
+	t.Parallel()
 	a, _ := FromJSON([]byte(`{"a":1,"b":[true,"中文",1.0],"large":18446744073709551616}`))
 	b, _ := FromJSON([]byte(`{"large":18446744073709551616,"b":[true,"中文",1.0],"a":1}`))
 	if Revision(a) != Revision(b) {
@@ -51,6 +52,7 @@ func TestReviewNativeRevision(t *testing.T) {
 }
 
 func TestReviewYAMLEditRoundTrip(t *testing.T) {
+	t.Parallel()
 	raw := `# document comment
 log: # log comment
   level: info # level comment
@@ -127,6 +129,7 @@ plugins: [] # plugins comment
 }
 
 func TestReviewUnicodeWaiver(t *testing.T) {
+	t.Parallel()
 	for _, name := range []string{"打印机.例子.", "bücher.example.", "שלום.example."} {
 		r := row{Fn: "zone_records_error", Args: []json.RawMessage{json.RawMessage(strconv.Quote(name + " A 192.0.2.1")), json.RawMessage("false")}}
 		if unicodeEdge(r) {
@@ -145,6 +148,7 @@ func reviewDump(t *testing.T, n *Node) string {
 }
 
 func TestReviewYAMLScalarAndMergeForms(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name, text string
 		want       *Node
@@ -181,6 +185,7 @@ func TestReviewYAMLScalarAndMergeForms(t *testing.T) {
 }
 
 func TestReviewEmbeddedSchemas(t *testing.T) {
+	// Sequential: changes CONFIGFLOW_ROOT to prove schemas are embedded.
 	for _, name := range []string{"global.json", "plugins.json", "dns-codes.json"} {
 		embedded, err := schemaFS.ReadFile("schemas/" + name)
 		if err != nil {
@@ -198,6 +203,7 @@ func TestReviewEmbeddedSchemas(t *testing.T) {
 }
 
 func TestReviewExpandedWithoutSources(t *testing.T) {
+	t.Parallel()
 	doc := M("plugins", L(M("tag", "test", "type", "cache", "args", M("size", -1))))
 	issues := ValidateExpandedDocument(doc, nil)
 	if !hasError(issues) {
@@ -211,6 +217,7 @@ func TestReviewExpandedWithoutSources(t *testing.T) {
 }
 
 func TestReviewPublicEditorsPreserveYAML(t *testing.T) {
+	t.Parallel()
 	p := NewProfile(nil)
 	draft, err := PrepareEditor(M("local_dns", "udp://192.0.2.53", "remote_dns", "https://dns.example/q"), p, "")
 	if err != nil {
@@ -252,6 +259,7 @@ func TestReviewPublicEditorsPreserveYAML(t *testing.T) {
 }
 
 func TestReviewMergeEffectiveFields(t *testing.T) {
+	t.Parallel()
 	doc, err := LoadNativeYAML("action: {<<: {action: upstream, source: remote}, upstream: {addr: 'https://dns.example/q'}}\nrefs: {<<: {exec: '$old'}, exec: '$new'}\n", NativeLabel)
 	if err != nil {
 		t.Fatal(err)
@@ -265,6 +273,7 @@ func TestReviewMergeEffectiveFields(t *testing.T) {
 }
 
 func TestReviewGeneratedMergesAreExplicit(t *testing.T) {
+	t.Parallel()
 	p := profileOf(M("oxidns", M("config_mode", "native", "native_config", "defaults: &d {value: 1}\ncopy: {<<: *d, other: retained}\nplugins: []\n")))
 	text, err := Generate(p, "")
 	if err != nil {
@@ -280,6 +289,7 @@ func TestReviewGeneratedMergesAreExplicit(t *testing.T) {
 }
 
 func TestReviewLeadingBlankBlockScalar(t *testing.T) {
+	t.Parallel()
 	tests := []struct{ name, text, want string }{
 		{"fuzz regression", "A: |\n \n 行", "\n行"},
 		{"ASCII", "A: |-\n\n  text", "\ntext"},

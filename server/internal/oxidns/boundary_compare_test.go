@@ -3,6 +3,7 @@ package oxidns
 import "testing"
 
 func TestBoundaryComparisonRemainsStrict(t *testing.T) {
+	t.Parallel()
 	duplicate := M("a", I(1))
 	duplicate.Content = append(duplicate.Content, S("a"), I(2))
 	tests := []struct {

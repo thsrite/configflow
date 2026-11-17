@@ -7,10 +7,12 @@ import (
 	"errors"
 	"io"
 	"os"
+	"sync/atomic"
 	"testing"
 )
 
 func TestC27ReviewHelperOwnership(t *testing.T) {
+	t.Parallel()
 	features := M("cache_enabled", true, "cache_lazy_ttl", 300)
 	action := M("action", "upstream", "source", "local", "upstream", M("addr", "udp://192.0.2.53"))
 	before := ToJSON(features)
@@ -71,9 +73,10 @@ func c27ReviewReferences(t *testing.T) []c27ReviewReference {
 func TestC27ReviewPublicBoundaries(t *testing.T) {
 	parallelBoundary(t)
 	rows := c27ReviewReferences(t)
-	generated, d2 := 0, 0
+	var generated, d2 atomic.Int32
 	for _, reference := range rows {
 		t.Run(reference.Fn+"/"+reference.Test, func(t *testing.T) {
+			t.Parallel()
 			args := reference.args(t)
 			original := make([][]byte, len(args))
 			for i, arg := range args {
@@ -81,7 +84,7 @@ func TestC27ReviewPublicBoundaries(t *testing.T) {
 			}
 			got, err := callRuleDNSReference(t, reference.Fn, args)
 			if reference.D2 != nil {
-				d2++
+				d2.Add(1)
 				c27AssertD2(t, reference, args, original, got, err)
 				return
 			}
@@ -110,14 +113,17 @@ func TestC27ReviewPublicBoundaries(t *testing.T) {
 				t.Fatal(difference)
 			}
 			if reference.Fn == "apply_rule_dns_boundary" && err == nil && !isTrue(get(got, "generation_rejected")) {
-				generated++
+				generated.Add(1)
 			}
 		})
 	}
-	if len(rows) != 505 || d2 != 36 || generated != 314 {
-		t.Fatalf("unexpected D2 scope: %d/%d, generated %d", d2, len(rows), generated)
-	}
-	t.Logf("%d strict references; %d final generated documents; %d explicit D2 outcomes", len(rows)-d2, generated, d2)
+	// Cleanup runs after all reference subtests have joined.
+	t.Cleanup(func() {
+		if len(rows) != 505 || d2.Load() != 36 || generated.Load() != 314 {
+			t.Fatalf("unexpected D2 scope: %d/%d, generated %d", d2.Load(), len(rows), generated.Load())
+		}
+		t.Logf("%d strict references; %d final generated documents; %d explicit D2 outcomes", len(rows)-int(d2.Load()), generated.Load(), d2.Load())
+	})
 }
 
 func c27AssertD2(t *testing.T, reference c27ReviewReference, args []*Node, original [][]byte, got *Node, err error) {

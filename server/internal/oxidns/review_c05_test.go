@@ -1,6 +1,7 @@
 package oxidns
 
 import (
+	"sync"
 	"testing"
 
 	"configflow/internal/jsonx"
@@ -17,6 +18,7 @@ func TestC05ReviewSettingsReferences(t *testing.T) {
 	}
 	for _, r := range rows {
 		t.Run(r.Test, func(t *testing.T) {
+			t.Parallel()
 			args := r.args(t)
 			var result *Node
 			var err error
@@ -47,6 +49,7 @@ func TestC05ReviewSettingsReferences(t *testing.T) {
 }
 
 func TestC05ReviewDefaultsAndNormalizationAreIndependent(t *testing.T) {
+	t.Parallel()
 	want := clone(DefaultSettings())
 	repositoryDefaults := repo.GetDefaultOxidnsSettings()
 	encoded, err := jsonx.Compact(repositoryDefaults)
@@ -99,12 +102,25 @@ func TestC05ReviewRecordedNormalization(t *testing.T) {
 	if len(rows) < 1400 {
 		t.Fatalf("incomplete normalize recordings: %d", len(rows))
 	}
-	for i, r := range rows {
-		args := r.args(t)
-		got, err := NormalizeSettings(args[0], len(args) < 2 || boolArg(args[1]))
-		if difference := compare(r, got, err); difference != "" {
-			t.Errorf("row %d (%s): %s", i, r.Test, difference)
-		}
+	var workers sync.WaitGroup
+	for shard := range boundaryShards {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			for i := shard; i < len(rows); i += boundaryShards {
+				r := rows[i]
+				args, err := r.decodeArgs()
+				if err != nil {
+					t.Errorf("row %d: decode arguments: %v", i, err)
+					continue
+				}
+				got, err := NormalizeSettings(args[0], len(args) < 2 || boolArg(args[1]))
+				if difference := compare(r, got, err); difference != "" {
+					t.Errorf("row %d (%s): %s", i, r.Test, difference)
+				}
+			}
+		}()
 	}
+	workers.Wait()
 	t.Logf("%d recorded normalizations checked without pending rows or waivers", len(rows))
 }
