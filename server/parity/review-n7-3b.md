@@ -1,7 +1,9 @@
 # N7-3b：YAML reader 迁移与边界复核
 
 分支：`go-n7-3b`。完整源码验收点：`03f521b5`，基于 `go@6b50151c`；
-最终集成基点：`go@8303397c`，集成补验源码：`c4392d47`。
+N7-3a 集成补验基点：`go@8303397c`，补验源码：`c4392d47`；
+最终补验基点：`go@197c3c3f`，补验源码：`5acf98f7`；
+交回前最后 rebase 到 `go@aaf5f0dc`，无冲突。
 测试固定 `RT_HOST=sunbroke@192.168.0.32`；未在 Mac 跑测试、构建或检查。
 未派子 agent，未推送，未改生产差分基线。最终输出见下文。
 
@@ -239,3 +241,54 @@ ok configflow/tools/proddiff/generator 0.010s
 原先的集成待办已关闭：refresh 委托的 hosts、dialer、proxy-list 读取已经在
 a 合入后复验，策略/alias 拒绝不写缓存的边界也通过。当前没有未关闭的本分支
 功能问题。其余裸 decoder 与旧加载器删除仍按既定分工由 N7-3d 完成。
+
+## O3 合入后的最终补验
+
+`go@197c3c3f` 新增 installer 测试及 O3 生命周期修复后再次无冲突 rebase。
+考虑 Detach/请求绑定影响刷新入口，在 `.32` 补跑以下命令；两组独立检查在
+同一个前台 shell 中并行，分别等待并核对退出码，结果均为 exit 0。
+
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'set -euo pipefail
+cd server
+gofmt -l internal/ tools/ > /tmp/n73b-final-format.log
+test ! -s /tmp/n73b-final-format.log
+go vet ./... > /tmp/n73b-final-vet.log 2>&1
+(go test -race -count=1 -timeout=30m ./internal/refresh > /tmp/n73b-final-refresh.log 2>&1) &
+refresh_pid=$!
+(for d in $(go list ./... | rg difftest); do CONFIGFLOW_DIFF=1 go test -count=1 "$d" || exit; done > /tmp/n73b-final-difftests.log 2>&1
+cd ..
+server/scripts/proddiff.sh > /tmp/n73b-final-proddiff.log 2>&1) &
+diff_pid=$!
+result=0
+wait "$refresh_pid" || result=1
+wait "$diff_pid" || result=1
+tail -n5 /tmp/n73b-final-refresh.log
+tail -n16 /tmp/n73b-final-difftests.log
+test ! -f /tmp/n73b-final-proddiff.log || tail -n1 /tmp/n73b-final-proddiff.log
+exit "$result"'
+```
+
+```text
+gofmt: 无输出；go vet: 无输出
+ok configflow/internal/refresh 393.973s
+ok configflow/internal/api/agents/difftest 161.325s
+ok configflow/internal/api/aggregations/difftest 51.464s
+ok configflow/internal/api/subscriptions/difftest 154.841s
+ok configflow/internal/devicenotes/difftest 1.157s
+ok configflow/internal/discovery/difftest 5.101s
+ok configflow/internal/health/difftest 15.447s
+ok configflow/internal/httpx/difftest 2.904s
+ok configflow/internal/mosdns/difftest 3.506s
+ok configflow/internal/refresh/difftest 6.246s
+ok configflow/internal/subs/difftest 3.119s
+ok configflow/internal/substore/difftest 10.482s
+ok configflow/internal/webdav/difftest 29.358s
+proddiff: cases=2831 compared=435 self_check=PASS new=0 stale=0
+baseline: new=0 stale=0
+```
+
+验收结束后的收尾 rebase 额外带入 C31 复核提交 `aaf5f0dc`（aggregations/
+devicenotes 及其测试/文档），无冲突，未改变 b 或共享 yamlx 的实现。以上最终
+补验结果对应 `197c3c3f`，不冒充已覆盖这个随后新增的 C31 提交；交由协调者
+合并前在集成分支复验。没有推送。

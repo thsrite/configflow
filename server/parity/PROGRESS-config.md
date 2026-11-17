@@ -2220,6 +2220,11 @@ Remaining bare decoders in
 importer/rules/oxidns are assigned to N7-3d; legacy loaders/pyyaml remain until
 that follow-up, as instructed.
 
+Final supplement after O3 merged at go@197c3c3f: pinned .32 format/vet empty,
+refresh -race393.973s PASS; all12 CONFIGFLOW_DIFF difftest packages PASS;
+proddiff2831 cases/435 compared, self_check PASS, new=0 stale=0. No new b code
+changes or production baseline adjustments. Commands/tails: review-n7-3b.md.
+
 C09 consumer follow-up: `rules.TestReviewC09ApplyIPRule` replays1536 rows;
 198 changed YAML layouts compare structurally and36 malformed-YAML rows retain
 the Chinese context with the exact native parser suffix. All result/status/rule

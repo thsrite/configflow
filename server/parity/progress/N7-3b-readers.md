@@ -184,3 +184,14 @@ integration dependency; legacy loader/decoder cleanup remains N7-3d scope.
 Stable-source post-a full `go test -p=4 -count=1 ./...` also PASS, exit0.
 Tail: subs8.019s, substore2.734s, yamlx1.948s, yamlxtest0.002s,
 tools/proddiff/generator0.010s. Full log: /tmp/n73b-after-a-full.log on.32.
+
+Final rebase to go@197c3c3f also picked up O3 lifecycle changes, so repeated
+format/vet, refresh race, all12 differential packages and proddiff on.32.
+All PASS: refresh393.973s; proddiff2831/435, self_check PASS, new=0 stale=0.
+Logs /tmp/n73b-final-*.log; exact commands/tails in review-n7-3b.md. Source at
+this acceptance was5acf98f7; subsequent report edits do not change runtime code.
+
+Hand-back rebase to go@aaf5f0dc is conflict-free. That post-acceptance C31 review
+touches aggregations/devicenotes, not b/yamlx; the final supplement above remains
+explicitly tied to197c3c3f. Coordinator rechecks the integration branch before
+merging. No push.
