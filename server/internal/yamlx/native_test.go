@@ -261,10 +261,37 @@ func TestNativeAliasSafety(t *testing.T) {
 	if !errors.As(err, &e) || e.Problem != fmt.Sprintf(msgExcessiveAliases, e.Line) {
 		t.Fatalf("alias bomb: %v", err)
 	}
+	var manual Node
+	if err := yaml.Unmarshal([]byte(b.String()), &manual); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Marshal(&manual); !errors.Is(err, ErrSyntax) {
+		t.Fatalf("manual alias bomb: %v", err)
+	}
+	cloned := Clone(manual.Content[0])
+	nulls := 0
+	var countNulls func(*Node)
+	countNulls = func(n *Node) {
+		if n.Tag == "!!null" {
+			nulls++
+		}
+		for _, child := range n.Content {
+			countNulls(child)
+		}
+	}
+	countNulls(cloned)
+	if nulls == 0 {
+		t.Fatal("Clone did not truncate an over-budget manual alias expansion")
+	}
 	var rules strings.Builder
 	rules.WriteString("rules:\n")
 	for i := range 60000 {
 		fmt.Fprintf(&rules, "  - DOMAIN,rule-%d.example.com,DIRECT\n", i)
+	}
+	// Over 100k ordinary nodes, but zero alias expansion: no size gate applies.
+	rules.WriteString("additional-rules:\n")
+	for i := range 60000 {
+		fmt.Fprintf(&rules, "  - DOMAIN,extra-%d.example.com,DIRECT\n", i)
 	}
 	n := parseNative(t, rules.String())
 	if len(Get(n, "rules").Content) != 60000 {
@@ -272,5 +299,47 @@ func TestNativeAliasSafety(t *testing.T) {
 	}
 	if _, err := Marshal(n); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestNativeTimestampAliasesAndInline(t *testing.T) {
+	// One alias can have different destination types, including a merged date
+	// in a typed struct and a generic timestamp elsewhere in the same document.
+	var dst struct {
+		Stamp any       `yaml:"stamp"`
+		Date  time.Time `yaml:"date"`
+		Use   struct {
+			Date  time.Time `yaml:"date"`
+			Other any       `yaml:"other"`
+		} `yaml:"use"`
+		Dates map[string]time.Time `yaml:"dates"`
+	}
+	src := "stamp: &stamp 2001-12-14\ndate: *stamp\nbase: &base {date: *stamp, other: *stamp}\nuse: {<<: [*base]}\ndates: {first: *stamp}\n"
+	if err := Unmarshal([]byte(src), &dst); err != nil {
+		t.Fatal(err)
+	}
+	if dst.Stamp != "2001-12-14" || dst.Date.IsZero() || dst.Use.Date != dst.Date || dst.Use.Other != dst.Stamp || dst.Dates["first"] != dst.Date {
+		t.Fatalf("typed alias decode: %#v", dst)
+	}
+	var inline struct {
+		Extra map[string]any `yaml:",inline"`
+		Date  time.Time      `yaml:"date"`
+	}
+	if err := Unmarshal([]byte("date: 2001-12-14\nother: 2001-12-14\n"), &inline); err != nil {
+		t.Fatal(err)
+	}
+	if inline.Date.IsZero() || inline.Extra["other"] != "2001-12-14" {
+		t.Fatalf("inline decode: %#v", inline)
+	}
+}
+
+func TestNativeRejectsMalformedManualNodes(t *testing.T) {
+	for _, n := range []*Node{Map(Str("odd")), {Kind: yaml.AliasNode}, {Kind: 99}, {Kind: yaml.DocumentNode}, {Kind: yaml.SequenceNode, Content: []*Node{nil}}} {
+		var dst any
+		for _, check := range []func() error{func() error { return Decode(n, &dst) }, func() error { _, err := Marshal(n); return err }, func() error { _, err := ToJSON(n); return err }} {
+			if err := check(); !errors.Is(err, ErrSyntax) {
+				t.Fatalf("manual node %#v: %v", n, err)
+			}
+		}
 	}
 }

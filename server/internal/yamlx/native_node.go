@@ -342,7 +342,10 @@ func equalNode(a, b *Node, path map[[2]*Node]bool) bool {
 		case "!!int":
 			x, xok := yamlInteger(a.Value)
 			y, yok := yamlInteger(b.Value)
-			return xok && yok && x.Cmp(y) == 0
+			if !xok || !yok {
+				return a.Value == b.Value
+			}
+			return x.Cmp(y) == 0
 		case "!!float":
 			return floatKey(a.Value) == floatKey(b.Value)
 		}

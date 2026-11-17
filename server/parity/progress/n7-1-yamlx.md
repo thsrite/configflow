@@ -1,6 +1,6 @@
 # N7-1 — yamlx native core
 
-Status: implementation in progress; branch `go-n7-1` (from `go`). No sub-agents, pushes or caller migration.
+Status: core implemented; final acceptance pending. Branch `go-n7-1` (from `go`). No sub-agents, pushes or caller migration.
 
 ## Brief
 
@@ -16,12 +16,19 @@ and native builders/navigation/clone/equality. Editor and reader/writer migratio
 - Coordinator clarified recursive references, alias budget, merge semantics and timestamp decoding in §2.2.
 - Regression tests: realistic commented Mihomo CRLF/Chinese/anchors, ambiguity quoting, native typing,
   duplicate key messages/positions, clone isolation/manual cycles, alias bomb, 60k ordinary rules.
+- First compiling step: `beb5c56e`; .63 yamlx tests and full `go vet ./...` passed.
+- FromJSON/ToJSON keep object order, duplicate-last semantics and exact number text; JSON strings use
+  encoding/json without HTML escaping. Non-string keys and non-finite floats return errors.
+- Live PyYAML reference: 257 synthetic YAML documents agree on semantic values or rejection; 15 string
+  round trips stay strings in PyYAML. Explicit differences: YAML 1.1 bool/sexagesimal typing and D1.
+- Two fuzz targets cover YAML round trips, arbitrary-input safety and exact JSON round trips. .63 short
+  runs (15s each) passed after fixing the discovered empty-null-key encoder issue; its seed is committed.
+- Typed timestamp tests cover aliases to different destination types, merge sequences and inline maps.
 
 ## Next
 
-1. Add FromJSON/ToJSON, JSON tests, synthetic PyYAML comparison and fuzz targets.
-2. Iterate on .63; commit every compiling step with this handoff.
-3. Final .32 gofmt/vet, yamlx race, full suite, fuzz targets 60s each, proddiff; rebase onto go, clean tree.
+1. Final .32 gofmt/vet, yamlx race, full suite, fuzz targets 60s each, proddiff.
+2. Record exact results/counts, rebase onto go, confirm clean tree.
 
 ## Decisions/findings
 
@@ -30,6 +37,8 @@ and native builders/navigation/clone/equality. Editor and reader/writer migratio
 - Node encoding bypasses yaml.v3's string encoder's YAML 1.1 ambiguity quoting; Marshal asks its typed string
   encoder for the style on potentially ambiguous text. It also preserves leading newline/Unicode separators.
 - No new dependencies. Full non-test before/after counts and final acceptance results pending.
+- yaml.v3 emits an empty null mapping key as a quoted empty string, changing its type. Marshal now spells
+  that null as `null`; also moves document-wrapper comments onto the returned content node.
 
 ## Commands
 

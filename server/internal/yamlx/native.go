@@ -176,6 +176,11 @@ func prepareStrings(n *Node, seen map[*Node]bool) {
 		return
 	}
 	seen[n] = true
+	// yaml.v3 quotes an empty scalar in key position, which would change an
+	// implicit empty null key into a string. Spell its null value explicitly.
+	if n.Kind == yaml.ScalarNode && n.ShortTag() == "!!null" && n.Value == "" {
+		n.Value = "null"
+	}
 	protectString(n)
 	// The Node encoder bypasses yaml.v3's string encoder's YAML 1.1 quoting.
 	// Ask that encoder for the style instead of introducing another resolver.
@@ -243,14 +248,30 @@ func decodeTree(n *Node, t reflect.Type) *Node {
 		}
 		// Merge sources are mappings decoded into the enclosing destination.
 		if n.Kind == yaml.MappingNode && i%2 == 1 && n.Content[i-1].ShortTag() == "!!merge" {
-			target = t
+			c.Content = append(c.Content, decodeMergeTree(child, t))
+			continue
 		}
 		c.Content = append(c.Content, decodeTree(child, target))
 	}
 	return &c
 }
 
+func decodeMergeTree(n *Node, t reflect.Type) *Node {
+	n = Resolve(n)
+	if n.Kind != yaml.SequenceNode {
+		return decodeTree(n, t)
+	}
+	c := *n
+	c.Anchor = ""
+	c.Content = make([]*Node, len(n.Content))
+	for i, source := range n.Content {
+		c.Content[i] = decodeTree(source, t)
+	}
+	return &c
+}
+
 func yamlFieldType(t reflect.Type, key string) reflect.Type {
+	var inlineMap reflect.Type
 	for i := 0; i < t.NumField(); i++ {
 		f := t.Field(i)
 		if !f.IsExported() {
@@ -271,7 +292,7 @@ func yamlFieldType(t reflect.Type, key string) reflect.Type {
 				}
 			}
 			if ft.Kind() == reflect.Map {
-				return ft.Elem()
+				inlineMap = ft.Elem()
 			}
 			continue
 		}
@@ -282,5 +303,5 @@ func yamlFieldType(t reflect.Type, key string) reflect.Type {
 			return f.Type
 		}
 	}
-	return nil
+	return inlineMap
 }
