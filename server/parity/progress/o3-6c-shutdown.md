@@ -94,3 +94,15 @@ TestO36cRepoBeforeCommitRuntimeBoundary、TestO36cRepoLockWaitRuntimeBoundary，
 - 真实 Runtime 还覆盖5类普通文件 owner的叶锁等待、shutdown不写、disconnect完成；
   TestO36cAtomicFileRuntimeBoundary 的 shutdown-after-primary 保留新主+旧内容backup、返回成功，
   stage前取消不改主/backup且不留tmp。
+
+## 显式多步批处理的完整性
+
+TestO36cExplicitBatchRuntimeBoundaries 对 delete/import/reset/create-rule 分别验证三个边界：
+实际 L3 锁等待期间关机（marker前）DB/文件/revision全不变；BeforeCommit期间关机（marker后）
+一次完整DB提交（generation恰好+1），目录移动+导出、旧DB备份、新缓存分别与最终DB一致；
+仅请求断开也完整完成。使用真实默认Runtime，无缩短生产参数或替代取消实现。
+.64 `go test -race -count=3 -run '^(TestO36cExplicitBatchRuntimeBoundaries|TestCommitBatchMarkersMatchDesign)$' ./internal/repo/`
+退出0，9.904s；repo/store vet通过。这些是保留旧原子批处理语义的控制组，不冒称原实现对此失败。
+普通BeforeCommit的红/绿回归与marker后成功回归共同区分两种契约。
+审计其余 repo.update callback：均只改候选JSON；ImportClientProfile 的 build/各 Updater 按契约
+返回候选数据。ConfigurationCommitted 在成功DB提交和L3释放后才通知备份owner，不属于事务回滚域。

@@ -555,6 +555,8 @@ func beginCommitBatch(ctx context.Context, started *bool) error {
 // transaction under .config.lock. fn mutates document; a nil return commits,
 // an error discards everything. After the commit and the lock release the
 // ConfigurationCommitted hook runs when auto backup is on.
+// Callbacks otherwise edit only the candidate; the three approved filesystem
+// batches must mark their first side effect with beginCommitBatch.
 func (r *Repository) update(ctx context.Context, options writeOptions, fn func(ctx context.Context, document *jsonx.Object) error) error {
 	ctx = ctxx.Detach(ctx)
 	if err := ctx.Err(); err != nil {
