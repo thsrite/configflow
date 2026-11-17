@@ -113,3 +113,14 @@ caught additive-message alignment and a same-size import whitespace edit missed 
 copy-back; reformatted both on .64 and forced a later timestamp before copy-back. Full gofmt-l is
 empty and vet green. No tests ran in the two early formatting-gate exits. Current integration has
 an additional devicenotes differential: enumerate with tagged go list, do not hardcode10 packages.
+
+Final related race on .64 passed: lifecycle3.254s/clock1.007s/lockx3.492s/tasks1.098s,
+discovery7.936s/webdav3.311s/upgrades26.628s/metrics5.857s/substore14.556s/listener1.023s,
+provider143.423s/rules7.758s/httpx29.545s/cmd117.178s, API tasks1.637s/settings8.349s/
+agents103.723s/subscriptions2.367s. Full suite then exposed two newly integrated C31 fixture assumptions:
+cancelled Surge waiters still expected200, and provider shutdown closed an isolated Runtime although
+DefaultSpawner runs on the configured global Runtime. Updated the tests to the approved cancellable
+wait contract (render still starts and finishes, live Surge waiter receives its own format) and actual
+Configure/Start/Stop wiring (I/O cancelled, no publication). No lifecycle/Spawner API changed, and no
+production assertion was dropped. All other full-suite packages passed. Focused API aggregations
+race count3 now passes5.593s, with vet green. Repeat full suite and continue remaining gates.

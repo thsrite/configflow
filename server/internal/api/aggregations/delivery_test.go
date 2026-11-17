@@ -2,6 +2,7 @@ package aggregations_test
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -16,9 +17,32 @@ import (
 	"configflow/internal/convert/mihomoenv"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/jsonx"
+	"configflow/internal/lifecycle"
 	"configflow/internal/provider"
 	"configflow/internal/substore"
 )
+
+func startDeliveryRuntime(t *testing.T, ctx context.Context) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		err := lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry(), Grace: 2 * time.Second})
+		if err == nil {
+			break
+		}
+		if !errors.Is(err, lifecycle.ErrRunning) || time.Now().After(deadline) {
+			t.Fatal(err)
+		}
+		time.Sleep(time.Millisecond)
+	}
+	lifecycle.Start(ctx)
+	t.Cleanup(func() {
+		lifecycle.Stop(3 * time.Second)
+		if err := lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry()}); err != nil {
+			t.Error(err)
+		}
+	})
+}
 
 func TestRouteFallbackCoalescesAndFinishesAfterCancellation(t *testing.T) {
 	generation.Wire()
@@ -29,16 +53,19 @@ func TestRouteFallbackCoalescesAndFinishesAfterCancellation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	startDeliveryRuntime(t, ctx)
 	// Before any served copy exists, fallback must use the aggregation artifact.
 	_, err = srv.Repo.WriteProfileText(ctx, "default", "providers/a.yaml", []byte("proxies: [{name: LastGood}]\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	started, release := make(chan struct{}), make(chan struct{})
+	started, secondStarted, release := make(chan struct{}), make(chan struct{}), make(chan struct{})
 	var once, releaseOnce sync.Once
 	var calls atomic.Int32
 	fetch := func(ctx context.Context, id, url string) (*substore.SubscriptionResult, error) {
-		calls.Add(1)
+		if calls.Add(1) == 2 {
+			close(secondStarted)
+		}
 		once.Do(func() { close(started) })
 		<-release
 		if ctx.Err() != nil {
@@ -69,8 +96,8 @@ func TestRouteFallbackCoalescesAndFinishesAfterCancellation(t *testing.T) {
 	if calls.Load() != 1 {
 		t.Fatalf("same delivery fetched %d times", calls.Load())
 	}
-	// A format-specific waiter must wait for the render, even with a cancelled
-	// client context. It must not receive a Mihomo-format last-good response.
+	// A disconnected waiter stops waiting without cancelling its render or
+	// receiving a Mihomo-format last-good response for the Surge key.
 	request := httptest.NewRequest(http.MethodGet, "/api/aggregations/a/provider?format=surge", nil)
 	login(request)
 	cancelled, cancel := context.WithCancel(request.Context())
@@ -79,14 +106,23 @@ func TestRouteFallbackCoalescesAndFinishesAfterCancellation(t *testing.T) {
 	response := httptest.NewRecorder()
 	done := make(chan struct{})
 	go func() { defer close(done); srv.Handler().ServeHTTP(response, request) }()
-	releaseOnce.Do(func() { close(release) })
 	select {
 	case <-done:
 	case <-time.After(10 * time.Second):
 		t.Fatal("cancelled waiter did not finish")
 	}
-	if response.Code != 200 || !strings.Contains(response.Body.String(), "Remote") || response.Header().Get("X-ConfigFlow-Provider") == "last-good" {
+	if response.Code != 500 || response.Header().Get("X-ConfigFlow-Provider") == "last-good" {
 		t.Fatalf("cancelled Surge response: %d %s", response.Code, response.Body.String())
+	}
+	select {
+	case <-secondStarted:
+	case <-time.After(10 * time.Second):
+		t.Fatal("cancelled waiter prevented its render")
+	}
+	releaseOnce.Do(func() { close(release) })
+	surge := srv.Get("/api/aggregations/a/provider?format=surge", login)
+	if surge.Status != 200 || !strings.Contains(surge.Text(), "Remote") || surge.Header.Get("X-ConfigFlow-Provider") != "" {
+		t.Fatalf("live Surge waiter: %d %s", surge.Status, surge.Body)
 	}
 	// Await background publication before restoring collaborators or removing data.
 	path, err := srv.Repo.ProfilePath("default", "providers/served/aggregation-a.yaml")
