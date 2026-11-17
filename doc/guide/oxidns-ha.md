@@ -364,6 +364,11 @@ Host + macvlan：先按一种模式为第一台生成并保存文件，再切换
 <a id="clients"></a>
 ## 把客户端 DNS 接到 VIP
 
+页面生成的验证命令会依次选择 dig、nslookup 或 BusyBox nslookup，并明确查询
+所填 VIP。最小系统没有这些工具时，命令会提示安装：Debian/Ubuntu 用 dnsutils，
+Alpine 用 bind-tools。安装后重新执行验证命令；不要用只查询系统默认 DNS 的结果
+代替对 VIP 的验证。
+
 1. 配对成功后，点 **生成 VIP DNS 验证命令**。页面使用已经保存的 VIP 生成命令。
 2. 把命令放到**第三台局域网设备**执行，确认 DNS 有实际结果。不能只在持有 VIP 的本机检查，也不能把“已复制”当成验证通过。
 3. 使用 ConfigFlow 管理上游路由时，到“上游路由”重新发布 DHCP DNS 与 DNS 劫持设置。路由器选择这组任意一个 OxiDNS 成员后，满足 HA 条件时实际下发的是 VIP。

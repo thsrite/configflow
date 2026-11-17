@@ -235,3 +235,31 @@ Initial comparison failures exposed duplicate command_blocks and a separate
 Python→Go Compose-generator comparison path; both now apply the same fixed
 approved delta. They were comparison coverage gaps, not runtime failures, and
 are not counted as successful acceptance runs. Full gate remains outstanding.
+
+## D6 — portable VIP verification
+
+Generated command selects dig → nslookup → BusyBox nslookup, explicitly queries
+the validated VIP and propagates client errors. Missing clients exit127 with
+Debian/Ubuntu dnsutils and Alpine bind-tools instructions. getent is deliberately
+not used because it cannot choose a DNS server. Tests include all branches,
+missing clients despite getent being present, and failing selected client.
+Frozen verification source is compared exactly and inverse-normalized only when
+complete command + canonical IPv4 match the approved template.
+
+Real .64 Alpine image: each real dig/nslookup/BusyBox client resolved example.com
+through synthetic VIP192.0.2.53 to fixture A192.0.2.123, entirely inside an owned
+network-none container's loopback interface. Actual minimal debian:12 produced
+the clear missing-client hint. No server host network changes or public DNS.
+
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt --back server/internal/installer/installertest/ha.go --back server/internal/installer/l1_ha_verify_test.go -- bash -c 'set -eu; cd server; gofmt -w internal/installer/installertest/ha.go internal/installer/l1_ha_verify_test.go; go test -count=1 -v -run "Test(L1HAVerification|Verification|DockerHA.*(Corpus|Recorded))" ./internal/installer > /tmp/configflow-l1-d6-focus.log 2>&1; tail -12 /tmp/configflow-l1-d6-focus.log; CONFIGFLOW_DIFF=1 go test -count=1 -v -run TestDockerHADifferentialAgainstFlask ./internal/api/agents/difftest > /tmp/configflow-l1-d6-diff.log 2>&1; tail -5 /tmp/configflow-l1-d6-diff.log'
+RT_HOST=sunbroke@192.168.0.64 rt --back server/internal/installer/l1_ha_verify_container_test.go -- bash -c 'set -eu; cd server; gofmt -w internal/installer/l1_ha_verify_container_test.go; CONFIGFLOW_L1_CONTAINERS=1 go test -count=1 -timeout=10m -v -run TestL1HAVerificationWithRealDNSClients ./internal/installer > /tmp/configflow-l1-d6-real.log 2>&1; tail -14 /tmp/configflow-l1-d6-real.log; go vet ./internal/installer/... ./internal/api/agents/...'
+```
+
+```text
+ok configflow/internal/installer 5.705s
+docker HA routes: 239 comparisons equal, 0 differ
+ok configflow/internal/api/agents/difftest 4.442s
+--- PASS: TestL1HAVerificationWithRealDNSClients (7.06s)
+ok configflow/internal/installer 7.067s
+```

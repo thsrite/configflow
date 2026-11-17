@@ -172,7 +172,7 @@ func TestVerificationRejectsInvalidVIP(t *testing.T) {
 
 func TestVerificationUsesLiteralIPv4(t *testing.T) {
 	got := mustGuide(t, jsonx.Obj("action", "verify", "vip", "192.168.10.8"), nil).GetString("verification_command")
-	if got != "nslookup example.com 192.168.10.8\n" {
+	if got != strings.ReplaceAll(haVerification, "{{VIP}}", "192.168.10.8") {
 		t.Fatalf("%q", got)
 	}
 }

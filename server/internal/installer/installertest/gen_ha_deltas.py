@@ -13,5 +13,6 @@ for fn, variable in [('haPortCheck', 'image'), ('haNewReadiness', 'name')]:
     before, after = text.split(' + q(' + variable + ') + ')
     parts[fn] = ast.literal_eval(before) + '{{' + variable.upper() + '}}' + ast.literal_eval(after)
 parts['module'] = module
+parts['verification'] = (root / 'server/internal/installer/ha-verify.sh').read_text()
 parts['migration'] = ast.literal_eval(re.search(r'const haMigrationReadiness = (.*)', source)[1])
 Path(__file__).with_name('l1-ha-deltas.json').write_text(json.dumps(parts, ensure_ascii=False, indent=2) + '\n')

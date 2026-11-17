@@ -2,6 +2,9 @@ package installer
 
 import _ "embed"
 
+//go:embed ha-verify.sh
+var haVerification string
+
 //go:embed ha-startup-checks.sh
 var haStartupChecks string
 

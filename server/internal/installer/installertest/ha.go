@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"net/netip"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -13,10 +14,11 @@ import (
 var haJSON []byte
 
 type haDeltas struct {
-	Module    string `json:"module"`
-	Port      string `json:"haPortCheck"`
-	Ready     string `json:"haNewReadiness"`
-	Migration string `json:"migration"`
+	Module       string `json:"module"`
+	Port         string `json:"haPortCheck"`
+	Ready        string `json:"haNewReadiness"`
+	Migration    string `json:"migration"`
+	Verification string `json:"verification"`
 }
 
 // HAStartupModule returns the exact approved L1 D5 startup checks.
@@ -24,6 +26,13 @@ func HAStartupModule() (string, error) {
 	var d haDeltas
 	err := json.Unmarshal(haJSON, &d)
 	return d.Module, err
+}
+
+// HAVerificationModule returns the exact approved L1 D6 tool-selection script.
+func HAVerificationModule() (string, error) {
+	var d haDeltas
+	err := json.Unmarshal(haJSON, &d)
+	return d.Verification, err
 }
 
 func shellWord(s string) string {
@@ -41,13 +50,25 @@ func GuideBaseline(data []byte) ([]byte, error) {
 	if err := json.Unmarshal(data, &answer); err != nil {
 		return nil, err
 	}
-	var command string
-	if json.Unmarshal(answer["install_command"], &command) != nil {
-		return data, nil
-	}
 	var d haDeltas
 	if err := json.Unmarshal(haJSON, &d); err != nil {
 		return nil, err
+	}
+	var verification string
+	if json.Unmarshal(answer["verification_command"], &verification) == nil {
+		line, _, _ := strings.Cut(verification, "\n")
+		if vip, ok := strings.CutPrefix(line, "cf_dns_vip="); ok {
+			ip, err := netip.ParseAddr(vip)
+			if err == nil && ip.Is4() && verification == strings.ReplaceAll(d.Verification, "{{VIP}}", vip) {
+				answer["verification_command"], _ = json.Marshal("nslookup example.com " + vip + "\n")
+				return json.Marshal(answer)
+			}
+		}
+		return data, nil
+	}
+	var command string
+	if json.Unmarshal(answer["install_command"], &command) != nil {
+		return data, nil
 	}
 	if !strings.Contains(command, d.Module) {
 		return data, nil

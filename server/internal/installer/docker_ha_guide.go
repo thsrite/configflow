@@ -990,7 +990,7 @@ func GenerateGuide(value any, enrollment *Enrollment) (*jsonx.Object, error) {
 		if !valid || !usableAddress(vip) {
 			return nil, valueError("请填写有效的虚拟 IPv4 地址")
 		}
-		return jsonx.Obj("success", true, "verification_command", "nslookup example.com "+ipv4Text(vip)+"\n"), nil
+		return jsonx.Obj("success", true, "verification_command", strings.ReplaceAll(haVerification, "{{VIP}}", ipv4Text(vip))), nil
 	}
 	mode := request.GetOr("mode", "new")
 	if action != "generate" || (mode != "new" && mode != "migrate") {

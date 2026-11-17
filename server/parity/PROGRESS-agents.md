@@ -768,6 +768,12 @@ that as a separate defect.
 
 ## A09 — Docker HA guide, preflight, enrollment
 
+L1 D6 follow-up: verification selects dig/nslookup/BusyBox nslookup, always
+queries the validated VIP, preserves query failures; missing tools gives an
+explicit dnsutils/bind-tools hint and exit127. No getent fallback to a different
+resolver. Unit/corpus + Flask239/0 pass. Real clients each resolved an isolated
+fixture VIP; actual minimal Debian12 gave the tool-install hint (.64,7.067s).
+
 L1 D5 follow-up (ported, review pending): Host script probes UDP/TCP53 in daemon
 namespace before starting a new/stopped installation, skips already-running owned
 main container on retry; all new/migration scripts verify actual OxiDNS supervisor

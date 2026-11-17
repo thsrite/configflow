@@ -14,6 +14,14 @@ redactor 的既有策略不变。无新接口或 UI 操作变化。
 `redact.TestPublicMetadataCredentials`。24 组非泄露类真实 Python 参照继续逐字段相等；
 泄露类单独断言安全结果，不放宽差分比较。见 [A24 复核](review-a24.md)。
 
+## L1 D6 — HA 验证命令选择可用的 DNS 工具
+
+不再无条件依赖 nslookup。生成命令按 dig、nslookup、BusyBox nslookup 的顺序
+选择当前可用工具，始终查询指定的已校验 IPv4 VIP；不使用无法指定 DNS 服务器的
+getent。缺少工具时以 127 退出，明确提示 Debian/Ubuntu 的 dnsutils 与 Alpine 的
+bind-tools；查询本身失败保留非零状态，不偷偷改用系统默认 DNS。固定批准的命令
+模板用于历史语料/Flask 差分，其余字段与非法 VIP 校验继续严格比较。
+
 ## L1 D5 — HA 安装检查端口和核心状态
 
 修复 Python 遗留缺陷：新 HA Host 安装在启动容器前通过临时 Python socket 探针
