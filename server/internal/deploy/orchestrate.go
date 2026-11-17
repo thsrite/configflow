@@ -3,6 +3,7 @@ package deploy
 import (
 	"bytes"
 	"configflow/internal/agents"
+	"configflow/internal/logx"
 	"configflow/internal/oxidns"
 	"configflow/internal/provider"
 	"configflow/internal/repo"
@@ -34,6 +35,9 @@ type Response struct {
 	NoStore bool
 	Err     error
 }
+
+// routeLogger is the Python route module's logger for owner-level route events.
+var routeLogger = logx.Get("backend.routes.agents")
 
 func rejected(status int, message string) Response {
 	return Response{Status: status, Body: map[string]any{"success": false, "message": message}}
@@ -92,6 +96,8 @@ func pushConfig(ctx context.Context, m *agents.Manager, id string, r PushRequest
 			status = 400
 			message = firstLine(details, 300)
 		} else {
+			// Python's route logs only the exception class, never its text.
+			routeLogger.Errorf("Agent deployment preparation failed (%T)", err)
 			details = safeFailure(fmt.Errorf("%T: %w", err, err), t.Token)
 		}
 		body := map[string]any{"success": false, "status": "failed", "failed_stage": "preparing", "message": message, "error_details": details}
