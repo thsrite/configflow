@@ -251,6 +251,10 @@ func findAgent(agents []any, agentID any) (*jsonx.Object, int) {
 
 // Manager is AgentManager: the registry of one repository.
 type Manager struct {
+	closeMu    sync.Mutex
+	closed     bool
+	closeHooks []func()
+
 	repository *repo.Repository
 	runtime    *RuntimeState
 	client     Client

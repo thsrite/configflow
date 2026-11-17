@@ -26,15 +26,20 @@ func Get(ctx context.Context) (*Manager, error) {
 		return nil, err
 	}
 	singletonMu.Lock()
-	defer singletonMu.Unlock()
+	var old *Manager
 	if singleton == nil || singleton.repository != repository {
 		manager, err := New(ctx, repository)
 		if err != nil {
+			singletonMu.Unlock()
 			return nil, err
 		}
+		old = singleton
 		singleton = manager
 	}
-	return singleton, nil
+	current := singleton
+	singletonMu.Unlock()
+	old.Close()
+	return current, nil
 }
 
 // Init is init_agent_manager(): a fresh manager, then the OnManagerInit work
@@ -50,8 +55,10 @@ func Init(ctx context.Context) (*Manager, error) {
 		return nil, err
 	}
 	singletonMu.Lock()
+	old := singleton
 	singleton = manager
 	singletonMu.Unlock()
+	old.Close()
 	for _, fn := range managerInitHooks() {
 		fn(ctx, manager)
 	}

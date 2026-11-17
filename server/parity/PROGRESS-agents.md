@@ -1142,7 +1142,7 @@ baseline: new=0 stale=0
 
 ## A13 — content sync, Agent list/detail, push-diff routes
 
-**Status: `missing`** · prereqs: A12, A15 (`upgrades.artifacts` for `upgrade_available`) · Go: internal/deploy, api/agents
+**Status: `in progress`** · prereqs: A12, A15 (`upgrades.artifacts` for `upgrade_available`) · Go: internal/deploy, api/agents
 
 **Design:** `server/design/a14-publish.md` (Opus, 2026-11-17) covers the whole chain A11→A14 — package map, types, Agent protocol, state machine, locks, failure table, steps A13-1, A13-2, acceptance. Port to it; contract changes need the designer's or coordinator's agreement.
 
@@ -1157,6 +1157,73 @@ Routes (4): `GET /api/agents`; `GET /api/agents/<agent_id>`; `GET /api/agents/<a
 A24 clarification: reuse the same-package `publicAgent(*agents.Record) *agents.Record` helper in `api/agents/public_agent_adapter.go`; do not add another serializer. It delegates deployment, upgrade and HA sanitization to their existing owners and omits unread history. A24 review additionally uses shared `redact.SanitizeCredentials` to mask legacy credential fields, Basic-auth hosts and references to known tokens / the environment registration key. Real Python field-by-field differential: `TestPublicAgentPython` (24 cases); the Python credential leak is a separate security correction, documented in `behaviour-changes.md`.
 
 Evidence: A13 content-sync/routes are not ported yet; `_public_agent` is supplied and verified by A24 (reuse the helper above). Extend the existing `createAgent`/`handleAgentItem` handlers with the GET branch (router panics on a second handler for the same endpoint). Provides for config: `content_sync.invalidate_content_sync` used by C13 `subscription_cache` (interface declared in C13, registered here).
+
+Branch `go-port-a13`, base `631a4815`. Coordinator decisions are recorded in design/a14-publish.md “Clarified in A13”. A13-1 implemented: opaque input keys, bounded Checker, Manager lifetime cleanup, and api/agents dispatcher wiring. Production PrepareFunc remains injected for A14. A13-2 will cherry-pick A24 helper 78b796af; A14 production preparation remains injected. All tests run through rt; no subagents, pushes or production access.
+
+
+A13-1 decisions and evidence:
+- api/agents owns one Checker per Manager, avoiding deploy→contentsync cycles. Manager.Close/OnClose unregisters the Checker; singleton replacement closes the old owner outside singletonMu; PhaseClose closes composition-owned Managers.
+- Shared Source projection has two explicit Python policies: content-sync includes profile_name; preview additionally ignores it (generated_preview.py:33). No legacy object escapes the adapter. Existing Source snapshots are immutable; targets are copied only for admitted workers.
+- Default 2 workers, 900s/30s TTL, 512 statuses, 8 details and 48MiB are exercised with fake clocks. Keys/slots release exactly once on rejection, panic, completion, cancellation and Close. Invalidate replaces active entry identity while keeping its slot; CompareNow checks generation.
+- Preparation runs in a fresh task Scope; Detach is in owners, keeping Runtime shutdown cancellation. The shutdown test advances the default eight-second grace to its six-second job-cancellation phase, without shortening production parameters.
+- Real Python corpus: 9 histories / 2001 observations. Status/reason, timestamp presence, version stability/replacement, job count, preparation count and cache sizes compare strictly. Random IDs and wall-clock timestamps are compared by relationships/presence.
+- Python repository-object switching is replaced by Manager/Checker ownership and cleanup. SystemExit/deepcopy classes are not emulated: Go uses typed snapshots and panic-safe cleanup.
+- First shutdown-test attempt blocked because the fake clock was not advanced; corrected the test driver, retained production grace. No unresolved implementation issue.
+
+Commands (worktree root; all through rt):
+```sh
+rt --back server/internal/deploy/contentsync/testdata/checker.json -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/deploy/contentsync/testdata/gen_a13.py'
+rt -- bash -lc 'cd server && go test -count=1 ./internal/deploy/contentsync ./internal/deploy && go test -race -count=1 ./internal/deploy/contentsync && go vet ./internal/deploy/... ./internal/api/agents ./internal/agents'
+rt -- bash -lc 'cd server && go test -race -count=1 -run "TestContent|TestManagerClose|TestSingletonReplacement" ./internal/agents ./internal/api/agents'
+```
+`.64`: Python Checker 9 histories / 2001 observations; contentsync unit+corpus PASS (0.083s), race PASS (1.804s), deploy PASS (1.552s), vet PASS. Manager/pool lifetime tests PASS. A13-2 follows as the next buildable step; use helper cherry-pick 96164399 if A24 has not merged.
+
+Python test_agent_content_sync.py mapping (42 functions):
+
+| Python | Go |
+|---|---|
+| `test_list_only_schedules_and_repeated_polls_share_one_preparation` | TestInputProjectionAndPreconditions; TestProductionTTLsAndNoQueue; TestPythonCheckerHistories |
+| `test_only_rule_file_change_is_detected_with_unchanged_main_config` | TestInputProjectionAndPreconditions; TestProductionTTLsAndNoQueue; TestPythonCheckerHistories |
+| `test_runtime_metadata_and_heartbeat_do_not_invalidate_cache` | TestInputProjectionAndPreconditions; TestProductionTTLsAndNoQueue; TestPythonCheckerHistories |
+| `test_nested_config_fields_are_not_silently_removed_from_cache_key` | TestInputProjectionAndPreconditions; TestProductionTTLsAndNoQueue; TestPythonCheckerHistories |
+| `test_remote_changes_are_rechecked_only_after_success_ttl` | TestInputProjectionAndPreconditions; TestProductionTTLsAndNoQueue; TestPythonCheckerHistories |
+| `test_changed_input_never_publishes_old_worker_result` | TestOldWorkersInvalidationAndReturnToOriginal; TestInputProjectionAndPreconditions; TestPythonCheckerHistories |
+| `test_new_successful_baseline_invalidates_in_flight_comparison` | TestInputProjectionAndPreconditions; TestProductionTTLsAndNoQueue; TestPythonCheckerHistories |
+| `test_returning_to_original_input_still_discards_obsolete_worker` | TestOldWorkersInvalidationAndReturnToOriginal; TestInputProjectionAndPreconditions; TestPythonCheckerHistories |
+| `test_generation_system_settings_and_base_url_invalidate_cached_result` | TestInputProjectionAndPreconditions; TestProductionTTLsAndNoQueue; TestPythonCheckerHistories |
+| `test_incomplete_deployment_invalidates_in_flight_success` | TestInputProjectionAndPreconditions; TestProductionTTLsAndNoQueue; TestPythonCheckerHistories |
+| `test_failed_deployment_can_still_compare_confirmed_prior_baseline` | TestInputProjectionAndPreconditions; TestProductionTTLsAndNoQueue; TestPythonCheckerHistories |
+| `test_invalid_baseline_fingerprint_never_starts_preparation` | TestInputProjectionAndPreconditions; TestProductionTTLsAndNoQueue; TestPythonCheckerHistories |
+| `test_binding_service_or_reported_version_mismatch_is_unknown` | TestInputProjectionAndPreconditions; TestProductionTTLsAndNoQueue; TestPythonCheckerHistories |
+| `test_missing_baseline_is_not_backfilled_from_current_config` | TestInputProjectionAndPreconditions; TestProductionTTLsAndNoQueue; TestPythonCheckerHistories |
+| `test_error_is_secret_free_and_uses_short_ttl` | TestErrorTTLRejectPanicAndCancellation; TestRuntimeShutdownCancelsAdmittedJobAndReleasesSlot |
+| `test_workers_are_bounded_without_queued_jobs` | TestProductionTTLsAndNoQueue; TestConcurrentPollsAndIsolatedScopes; TestRuntimeShutdownCancelsAdmittedJobAndReleasesSlot |
+| `test_repository_scope_isolates_identical_agent_ids` | TestConcurrentPollsAndIsolatedScopes; TestSingletonReplacementClosesOldManager; TestContentPoolFollowsManagerLifetime (owner isolation replaces process-global repository switching) |
+| `test_repository_change_before_worker_starts_skips_preparation` | TestConcurrentPollsAndIsolatedScopes; TestSingletonReplacementClosesOldManager; TestContentPoolFollowsManagerLifetime (owner isolation replaces process-global repository switching) |
+| `test_repository_change_during_preparation_never_publishes_success` | TestConcurrentPollsAndIsolatedScopes; TestSingletonReplacementClosesOldManager; TestContentPoolFollowsManagerLifetime (owner isolation replaces process-global repository switching) |
+| `test_same_scope_does_not_reuse_another_repository_object_result` | TestConcurrentPollsAndIsolatedScopes; TestSingletonReplacementClosesOldManager; TestContentPoolFollowsManagerLifetime (owner isolation replaces process-global repository switching) |
+| `test_uninitialized_repository_is_not_created_for_standalone_checker` | TestConcurrentPollsAndIsolatedScopes; TestSingletonReplacementClosesOldManager; TestContentPoolFollowsManagerLifetime (owner isolation replaces process-global repository switching) |
+| `test_stale_request_repository_is_rejected_before_scheduling` | TestConcurrentPollsAndIsolatedScopes; TestSingletonReplacementClosesOldManager; TestContentPoolFollowsManagerLifetime (owner isolation replaces process-global repository switching) |
+| `test_custom_installed_filename_has_same_content_fingerprint` | TestInputProjectionAndPreconditions; TestProductionTTLsAndNoQueue; TestPythonCheckerHistories |
+| `test_worker_resets_reused_config_context_before_and_after` | TestClockFromBoundRequestAndFreshPreparationScope |
+| `test_system_exit_is_not_converted_to_unknown_and_releases_slot` | TestErrorTTLRejectPanicAndCancellation; TestRuntimeShutdownCancelsAdmittedJobAndReleasesSlot |
+| `test_rejected_executor_submission_does_not_leak_error_or_slot` | TestErrorTTLRejectPanicAndCancellation; TestRuntimeShutdownCancelsAdmittedJobAndReleasesSlot |
+| `test_real_executor_runs_preparation_off_request_thread` | TestProductionTTLsAndNoQueue; TestConcurrentPollsAndIsolatedScopes; TestRuntimeShutdownCancelsAdmittedJobAndReleasesSlot |
+| `test_concurrent_list_requests_schedule_one_job` | TestProductionTTLsAndNoQueue; TestConcurrentPollsAndIsolatedScopes; TestRuntimeShutdownCancelsAdmittedJobAndReleasesSlot |
+| `test_compare_now_answers_in_the_callers_thread_and_shares_the_cache` | TestSynchronousCompareCacheAndGeneration; TestCompareNowReusesListAndDoesNotCachePreparationErrors; TestPythonCheckerHistories |
+| `test_compare_now_reuses_a_fresh_list_result_until_it_expires` | TestSynchronousCompareCacheAndGeneration; TestCompareNowReusesListAndDoesNotCachePreparationErrors; TestPythonCheckerHistories |
+| `test_compare_now_metadata_alone_is_still_synced` | TestSynchronousCompareCacheAndGeneration; TestCompareNowReusesListAndDoesNotCachePreparationErrors; TestPythonCheckerHistories |
+| `test_compare_now_never_claims_a_match_without_a_confirmed_baseline` | TestSynchronousCompareCacheAndGeneration; TestCompareNowReusesListAndDoesNotCachePreparationErrors; TestPythonCheckerHistories |
+| `test_compare_now_preparation_failure_is_secret_free_unknown` | TestSynchronousCompareCacheAndGeneration; TestCompareNowReusesListAndDoesNotCachePreparationErrors; TestPythonCheckerHistories |
+| `test_compare_now_rejects_another_repository` | TestConcurrentPollsAndIsolatedScopes; TestSingletonReplacementClosesOldManager; TestContentPoolFollowsManagerLifetime (owner isolation replaces process-global repository switching) |
+| `test_a_kept_answer_and_a_running_check_copy_nothing` | TestRequestSnapshotsAndRetarget; TestContentInputProjection; TestConcurrentPollsAndIsolatedScopes (typed immutable snapshots replace Python deepcopy) |
+| `test_an_unavailable_comparison_copies_nothing` | TestRequestSnapshotsAndRetarget; TestContentInputProjection; TestConcurrentPollsAndIsolatedScopes (typed immutable snapshots replace Python deepcopy) |
+| `test_the_list_never_changes_what_it_was_given` | TestRequestSnapshotsAndRetarget; TestContentInputProjection; TestConcurrentPollsAndIsolatedScopes (typed immutable snapshots replace Python deepcopy) |
+| `test_the_worker_keeps_the_values_of_the_request_that_started_it` | TestRequestSnapshotsAndRetarget; TestContentInputProjection; TestConcurrentPollsAndIsolatedScopes (typed immutable snapshots replace Python deepcopy) |
+| `test_devices_of_one_profile_get_separate_copies_of_it` | TestRequestSnapshotsAndRetarget; TestContentInputProjection; TestConcurrentPollsAndIsolatedScopes (typed immutable snapshots replace Python deepcopy) |
+| `test_inputs_that_cannot_be_copied_start_no_worker_and_keep_no_slot` | TestRequestSnapshotsAndRetarget; TestContentInputProjection; TestConcurrentPollsAndIsolatedScopes (typed immutable snapshots replace Python deepcopy) |
+| `test_requests_arriving_while_the_copies_are_made_start_no_second_worker` | TestRequestSnapshotsAndRetarget; TestContentInputProjection; TestConcurrentPollsAndIsolatedScopes (typed immutable snapshots replace Python deepcopy) |
+| `test_random_histories_answer_as_when_every_request_copied_first` | TestRequestSnapshotsAndRetarget; TestContentInputProjection; TestConcurrentPollsAndIsolatedScopes (typed immutable snapshots replace Python deepcopy) |
 
 ## A14 — publishing: transactional content, push-config, deployments, receipts
 

@@ -23,13 +23,17 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
 // Source is an immutable profile snapshot until the typed repository lands.
 type Source struct {
-	legacy   *jsonx.Object
-	revision *int64
+	legacy    *jsonx.Object
+	revision  *int64
+	inputOnce sync.Once
+	inputKey  InputKey
+	inputErr  error
 }
 
 // NewSource captures a legacy profile and its optional revision.
@@ -216,21 +220,8 @@ func (s *Source) snapshotJSON() (json.RawMessage, error) {
 	cfg.Delete("agents")
 	return encodeJSON(cfg)
 }
-func (s *Source) inputDigest() string {
-	cfg := s.config().DeepCopy()
-	for _, key := range []string{"agents", "_revision", "updated_at", "created_at", "profile_name", "name", "description", "backup"} {
-		cfg.Delete(key)
-	}
-	raw, err := encodeJSON(cfg)
-	if err != nil {
-		return ""
-	}
-	canonical, err := nativeCanonical(raw)
-	if err != nil {
-		return ""
-	}
-	return digest(canonical)
-}
+func (s *Source) inputDigest() string { return s.contentDigest() }
+
 func nativeCanonical(raw []byte) ([]byte, error) {
 	d := json.NewDecoder(bytes.NewReader(raw))
 	d.UseNumber()

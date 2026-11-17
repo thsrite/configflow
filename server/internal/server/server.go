@@ -78,6 +78,7 @@ var lateRoutePackages = []func(*httpx.Router){
 // providers).
 var wirePackages = []func(){
 	deploy.Wire,
+	apiagents.WireContentSync,
 	wireCore,
 	webdav.Wire,
 	apinodes.Wire,

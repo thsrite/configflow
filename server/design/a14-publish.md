@@ -377,6 +377,36 @@ ownership (tests build their own checker; there is no process-global repository 
 released in the job's defer; results land only if the entry is still the same object (Python's token rule).
 `Status` answers within the request; it never waits for a worker.
 
+### Clarified in A13 (coordinator, 2026-11-17)
+
+These decisions supersede the A13 wiring sentence above; no `deploy` → `contentsync` import is added.
+
+- `api/agents` is the composition owner: its routes consume Checker results and it already depends on deploy.
+  It holds one Checker per `*agents.Manager`. `WireContentSync` is registered from server.wirePackages;
+  `SetContentPrepare(contentsync.PrepareFunc)` is the composition seam A14 will populate. Until A14, preparation
+  fails closed with `unknown/check_failed`; tests inject real synthetic bundles through the same seam.
+- `deploy.Source.InputKey() (deploy.InputKey, error)` returns an opaque comparable digest, for memory only.
+  It removes exactly Python's top-level `agents`, `backup`, `_revision`, `updated_at`, `created_at`, `name`,
+  `description`. **profile_name is included**, as are arbitrary nested metadata-named values. The existing
+  private preview digest shares the projection implementation but additionally ignores profile_name, as
+  Python generated_preview.input_digest explicitly does. The content-sync digest is not D2/persisted identity.
+  The combined input key additionally includes Python's Agent identity fields (`id`, `profile_id`,
+  `service_type`, `config_version`, complete `applied_content`) and `base_url`. Legacy reads stay inside
+  deploy's adapter, exposing only typed comparison state and opaque digests to contentsync.
+- A shared Dispatcher broadcasts Sub-Store invalidation to every registered Checker. Registration returns
+  an idempotent unregister function. `Manager.OnClose` registers cleanup, `Manager.Close` runs it once;
+  singleton replacement closes its old Manager. Shutdown closes composition-owned Checkers and removes
+  their registrations; late workers cannot repopulate closed/invalidated entries. Broadcast/unregister
+  ordering is synchronized, and tests prove delivery to every live registration and none after unregister.
+- Owner entry points detach via lifecycle.Detach. Jobs use lifecycle.Spawn (an injectable Spawner in tests),
+  take one of two slots before spawning and a lockx.Keyed LevelJob identity reservation; every rejection,
+  panic, close, cancellation and completion releases both exactly once. Cache guards stay memory-only.
+  Default clocks come from lifecycle.ClockFrom; fake-clock tests retain the production 900 s / 30 s defaults.
+- A13-1 and A13-2 share branch go-port-a13 and are separate buildable commits. A13-1 owns all Checker cache,
+  quota, invalidation and synchronous comparison rules; A13-2 owns the four GET routes and consumes A24's
+  publicAgent helper by cherry-picking **78b796af**. Do not duplicate that helper. A14 supplies production
+  PrepareFunc later; routes and Checker are tested with injected preparation now.
+
 **A14 (`deploy`)**
 
 ```go
