@@ -1289,10 +1289,10 @@
   "routes": 228,
   "request_variants": 10666,
   "raw_verdicts": {
-    "compared": 5754,
+    "compared": 5767,
     "go-unimplemented": 4476,
-    "different": 324,
-    "go-unimplemented-dependency": 111,
+    "different": 309,
+    "go-unimplemented-dependency": 113,
     "O12-separate": 1
   },
   "routes_missing_source_success_or_failure": [],

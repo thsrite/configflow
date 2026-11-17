@@ -3,6 +3,7 @@ import copy
 import ipaddress
 import re
 import xml.etree.ElementTree as ET
+from urllib.parse import urlsplit
 
 from compare import Difference, differences
 
@@ -43,18 +44,23 @@ def dav_differences(left, right, policy=None):
 
 def authority(value):
     """Validate a CONNECT authority with an explicit port; preserve target bytes."""
-    if not isinstance(value, str):
+    if (not isinstance(value, str) or any(ord(char) <= 32 or ord(char) == 127 for char in value)
+            or any(char in value for char in '/?#@\\')):
         return None
-    match = re.fullmatch(r'(\[[0-9a-fA-F:.]+\]|[a-zA-Z0-9.-]+):([0-9]+)', value)
-    if not match or len(match[2]) > 5 or not 1 <= int(match[2]) <= 65535:
+    try:
+        parsed = urlsplit('//' + value)
+        host, port = parsed.hostname, parsed.port
+    except ValueError:
         return None
-    host = match[1]
-    if host.startswith('['):
+    if not host or port is None or not 1 <= port <= 65535:
+        return None
+    if value.startswith('['):
         try:
-            host = str(ipaddress.IPv6Address(host[1:-1]))
+            host = str(ipaddress.IPv6Address(host))
         except ValueError:
             return None
-    return host.lower(), int(match[2])
+        return host, port  # Zone identifiers are case-sensitive.
+    return host.lower(), port
 
 
 def connect_error(row):

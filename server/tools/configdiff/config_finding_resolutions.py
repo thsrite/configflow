@@ -331,6 +331,10 @@ def repair_commits(item):
         return []
     group = item['group']
     paths = {difference['path'] for difference in item['differences']}
+    for vector in json.loads((Path(__file__).parent / 'testdata/cfg-harness-repairs.json').read_text()):
+        if (all(item.get(key) == vector[key] for key in ('case', 'group', 'variant', 'route'))
+                and sorted(paths) == vector['original_paths']):
+            return ['2896b8d9e']
     if ((group == 'rule-DNS-real-new-native-validation-issue'
             and paths == {'db.fields.profile/default/updated_at.value'})
             or (group == 'oxidns-control-output' and item['case'] == 'G11'
@@ -383,6 +387,8 @@ def annotate(records):
             item['status'] = 'accepted'
         item['fix_commits'] = repair_commits(item)
         item.pop('closure_note', None)
+        if item['status'] == 'closed' and '2896b8d9e' in item['fix_commits']:
+            item['closure_note'] = '2896b8d9e为CFG-05/10窄协议比较器修正，不是Go业务修复；已实际重跑，目标/认证/顺序/次数及完整响应/SQL/files继续严格比'
         if item['status'] == 'closed' and 'b93269d6d' in item['fix_commits']:
             item['closure_note'] = 'b93269d6d为测试夹具的限定时间窗/生成log.level文本读取纠正，不是Go修复；已实际重跑，其他字段严格比'
         if item['status'] == 'closed' and 'fd6355ce0' in item['fix_commits']:

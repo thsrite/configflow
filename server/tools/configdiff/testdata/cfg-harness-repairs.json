@@ -1,0 +1,123 @@
+[
+  {
+    "case": "H123",
+    "group": "rule-fetch-exhausted-candidates",
+    "variant": "original-and-mirror-both-fail-through-loopback-proxy",
+    "route": "GET /api/mosdns/rule-proxy",
+    "original_paths": [
+      "subscription.source.requests[0].user_agent"
+    ]
+  },
+  {
+    "case": "R016-B02",
+    "group": "settings-webdav",
+    "variant": "",
+    "route": "POST /api/backup/now",
+    "original_paths": [
+      "dav.requests[4].body"
+    ]
+  },
+  {
+    "case": "R016-B03",
+    "group": "settings-webdav",
+    "variant": "",
+    "route": "POST /api/backup/now",
+    "original_paths": [
+      "dav.requests[10].body"
+    ]
+  },
+  {
+    "case": "R016-B90",
+    "group": "settings-webdav",
+    "variant": "",
+    "route": "POST /api/backup/now",
+    "original_paths": [
+      "dav.requests[10].body"
+    ]
+  },
+  {
+    "case": "R016-B91",
+    "group": "webdav-local-day-retention-boundary",
+    "variant": "Asia/Shanghai/previous-local-day-crosses-UTC-midnight",
+    "route": "POST /api/backup/now",
+    "original_paths": [
+      "dav.requests[4].body"
+    ]
+  },
+  {
+    "case": "R016-B91",
+    "group": "webdav-local-day-retention-boundary",
+    "variant": "Etc/GMT+12/previous-local-day-crosses-UTC-midnight",
+    "route": "POST /api/backup/now",
+    "original_paths": [
+      "dav.requests[4].body"
+    ]
+  },
+  {
+    "case": "R016-B91",
+    "group": "webdav-local-day-retention-boundary",
+    "variant": "Etc/GMT-14/previous-local-day-crosses-UTC-midnight",
+    "route": "POST /api/backup/now",
+    "original_paths": [
+      "dav.requests[4].body"
+    ]
+  },
+  {
+    "case": "R016-F16",
+    "group": "settings-webdav",
+    "variant": "",
+    "route": "POST /api/backup/now",
+    "original_paths": [
+      "dav.requests[4].body"
+    ]
+  },
+  {
+    "case": "R016-S01",
+    "group": "settings-webdav",
+    "variant": "",
+    "route": "POST /api/backup/now",
+    "original_paths": [
+      "dav.requests[4].body"
+    ]
+  },
+  {
+    "case": "R016-S02",
+    "group": "settings-webdav",
+    "variant": "",
+    "route": "POST /api/backup/now",
+    "original_paths": [
+      "dav.requests[4].body"
+    ]
+  },
+  {
+    "case": "R016-S03",
+    "group": "settings-webdav",
+    "variant": "",
+    "route": "POST /api/backup/now",
+    "original_paths": [
+      "dav.requests[4].body"
+    ]
+  },
+  {
+    "case": "R087-S91",
+    "group": "rule-proxy-transport",
+    "variant": "",
+    "route": "GET /api/mosdns/rule-proxy",
+    "original_paths": [
+      "subscription.source.requests[0].host",
+      "subscription.source.requests[0].request_line",
+      "subscription.source.requests[0].user_agent"
+    ]
+  },
+  {
+    "case": "R138-S91",
+    "group": "rule-proxy-transport",
+    "variant": "",
+    "route": "GET /api/profiles/<profile_id>/mosdns/rule-proxy",
+    "original_paths": [
+      "subscription.source.requests[0].host",
+      "subscription.source.requests[0].request_line",
+      "subscription.source.requests[0].user_agent"
+    ]
+  }
+]

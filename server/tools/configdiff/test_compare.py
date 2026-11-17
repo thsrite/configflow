@@ -17,6 +17,20 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_protocol_closure_attribution_requires_an_actual_comparison_and_exact_identity(self):
+        from config_finding_resolutions import annotate
+        vectors = json.loads((Path(__file__).parent / 'testdata/cfg-harness-repairs.json').read_text())
+        for vector in vectors:
+            row = {key: vector[key] for key in ('case', 'group', 'variant', 'route')}
+            row.update(status='closed', differences=[{'path': path} for path in vector['original_paths']])
+            self.assertEqual(annotate([copy.deepcopy(row)])[0]['fix_commits'], ['2896b8d9e'])
+            for mutation in ('open', 'blocked', 'wrong-case', 'SQL-path'):
+                bad = copy.deepcopy(row)
+                if mutation in ('open', 'blocked'): bad['status'] = mutation
+                elif mutation == 'wrong-case': bad['case'] += '-wrong'
+                else: bad['differences'].append({'path': 'db.fields.unrelated.revision'})
+                self.assertNotIn('2896b8d9e', annotate([bad])[0]['fix_commits'], mutation)
+
     def test_propfind_equivalence_preserves_auth_depth_methods_objects_and_invalid_xml(self):
         from protocol_compare import dav_differences
         source = {'requests': [{'method': 'PROPFIND', 'path': '/backup/', 'depth': '1',
@@ -62,6 +76,15 @@ class Comparators(unittest.TestCase):
             user_agent='Go-http-client/1.1')
         self.assertFalse(source_differences(source, target, Policy()))
         self.assertEqual(target[0]['host'], 'ORIGIN.EXAMPLE:443', 'raw wire data must not mutate')
+        for address in ('[::1]:443', '[fe80::1%25scopeA]:443', 'legacy_name.example:443'):
+            a, b = copy.deepcopy(source), copy.deepcopy(target)
+            a[0].update(path=address, request_line='CONNECT ' + address + ' HTTP/1.0')
+            b[0].update(path=address, request_line='CONNECT ' + address + ' HTTP/1.1', host=address)
+            self.assertFalse(source_differences(a, b, Policy()), address)
+        address = '[fe80::1%25scopeA]:443'
+        a[0].update(path=address, request_line='CONNECT ' + address + ' HTTP/1.0')
+        b[0].update(path=address, request_line='CONNECT ' + address + ' HTTP/1.1', host='[fe80::1%25scopeB]:443')
+        self.assertTrue(source_differences(a, b, Policy()), 'different IPv6 scope/authority is not equivalent')
         for field, value in [('path', 'other.example:443'), ('host', 'other.example:443'), ('host', ''),
                 ('proxy_authorization', 'Basic wrong'), ('authorization', 'Bearer unexpected'),
                 ('request_line', 'CONNECT other.example:443 HTTP/1.1'),

@@ -53,7 +53,7 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | H120 / real-dot-segment-network-redirect//api/mosdns/rule-proxy/same-origin-outside-api | `GET /api/mosdns/rule-proxy` | open | — | a08c4cc27 | 400 / 200 |
 | H120 / real-dot-segment-network-redirect//api/profiles/default/mosdns/rule-proxy/cross-origin | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | open | — | a08c4cc27 | 400 / 200 |
 | H120 / real-dot-segment-network-redirect//api/profiles/default/mosdns/rule-proxy/same-origin-outside-api | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | open | — | a08c4cc27 | 400 / 200 |
-| H123 / original-and-mirror-both-fail-through-loopback-proxy | `GET /api/mosdns/rule-proxy` | open | — | a08c4cc27 | 502 / 502 |
+| H123 / original-and-mirror-both-fail-through-loopback-proxy | `GET /api/mosdns/rule-proxy` | closed | 2896b8d9e；2896b8d9e为CFG-05/10窄协议比较器修正，不是Go业务修复；已实际重跑，目标/认证/顺序/次数及完整响应/SQL/files继续严格比 | 1439e503d | 502 / 502 |
 | H128 / sequence-root | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | a08c4cc27 | 200 / 200 |
 | H128 / sequence-root | `GET /api/rules/local/<name>` | open | — | a08c4cc27 | 200 / 200 |
 | H129 / duplicate-payload | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | a08c4cc27 | 200 / 200 |
@@ -140,7 +140,7 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | H511 / /api/profiles/<profile_id>/oxidns/ros_route.args.max_ttl/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
 | H511 / /api/profiles/<profile_id>/oxidns/ros_route.args.min_ttl/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
 | H511 / /api/profiles/<profile_id>/oxidns/worker_threads/nan | `POST /api/profiles/<profile_id>/oxidns/render` | accepted | [behaviour-changes.md · C29 / N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | a08c4cc27 | 400 / 400 |
-| H911 / actual-public-catalog-key-is-bound-to-DNS-follow | `PUT /api/rules/dns` | open | — | a08c4cc27 | 400 / 400 |
+| H911 / actual-public-catalog-key-is-bound-to-DNS-follow | `PUT /api/rules/dns` | blocked | 依赖未实现：CFG-04 / A17: complete DNS-follow binding and background owner pending; restore fixture after A17 | 1439e503d | 400 / None |
 | H916 / retained-native-issue-moves-after-removing-real-pinned-helpers | `PUT /api/rules/<rule_id>` | closed | b93269d6d；b93269d6d为测试夹具的限定时间窗/生成log.level文本读取纠正，不是Go修复；已实际重跑，其他字段严格比 | a08c4cc27 | 409 / 409 |
 | R007-S02 /  | `GET /api/aggregations/<agg_id>/preview` | closed | e4b3fb39f；e4b3fb39f为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 200 / 200 |
 | R008-S05 / failed-source-valid-cache | `GET /api/aggregations/<agg_id>/provider` | closed | e4b3fb39f；e4b3fb39f为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 200 / 200 |
@@ -162,12 +162,12 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | R015-F15 / daily-large | `POST /api/backup/config` | closed | e4b3fb39f；e4b3fb39f为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
 | R015-F16 / keep-bool | `POST /api/backup/config` | closed | e4b3fb39f；e4b3fb39f为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
 | R015-S04 /  | `POST /api/backup/config` | accepted | [behaviour-changes.md · C35空密码保留](behaviour-changes.md#c35webdav-凭据安全与表单密码保留) | 28e6e0c12 | 200 / 200 |
-| R016-B02 /  | `POST /api/backup/now` | open | — | a08c4cc27 | 200 / 200 |
-| R016-B03 /  | `POST /api/backup/now` | open | — | a08c4cc27 | 200 / 200 |
-| R016-B90 /  | `POST /api/backup/now` | open | — | a08c4cc27 | 200 / 200 |
-| R016-B91 / Asia/Shanghai/previous-local-day-crosses-UTC-midnight | `POST /api/backup/now` | open | — | a08c4cc27 | 200 / 200 |
-| R016-B91 / Etc/GMT+12/previous-local-day-crosses-UTC-midnight | `POST /api/backup/now` | open | — | a08c4cc27 | 200 / 200 |
-| R016-B91 / Etc/GMT-14/previous-local-day-crosses-UTC-midnight | `POST /api/backup/now` | open | — | a08c4cc27 | 200 / 200 |
+| R016-B02 /  | `POST /api/backup/now` | closed | 2896b8d9e；2896b8d9e为CFG-05/10窄协议比较器修正，不是Go业务修复；已实际重跑，目标/认证/顺序/次数及完整响应/SQL/files继续严格比 | 1439e503d | 200 / 200 |
+| R016-B03 /  | `POST /api/backup/now` | closed | 2896b8d9e；2896b8d9e为CFG-05/10窄协议比较器修正，不是Go业务修复；已实际重跑，目标/认证/顺序/次数及完整响应/SQL/files继续严格比 | 1439e503d | 200 / 200 |
+| R016-B90 /  | `POST /api/backup/now` | closed | 2896b8d9e；2896b8d9e为CFG-05/10窄协议比较器修正，不是Go业务修复；已实际重跑，目标/认证/顺序/次数及完整响应/SQL/files继续严格比 | 1439e503d | 200 / 200 |
+| R016-B91 / Asia/Shanghai/previous-local-day-crosses-UTC-midnight | `POST /api/backup/now` | closed | 2896b8d9e；2896b8d9e为CFG-05/10窄协议比较器修正，不是Go业务修复；已实际重跑，目标/认证/顺序/次数及完整响应/SQL/files继续严格比 | 1439e503d | 200 / 200 |
+| R016-B91 / Etc/GMT+12/previous-local-day-crosses-UTC-midnight | `POST /api/backup/now` | closed | 2896b8d9e；2896b8d9e为CFG-05/10窄协议比较器修正，不是Go业务修复；已实际重跑，目标/认证/顺序/次数及完整响应/SQL/files继续严格比 | 1439e503d | 200 / 200 |
+| R016-B91 / Etc/GMT-14/previous-local-day-crosses-UTC-midnight | `POST /api/backup/now` | closed | 2896b8d9e；2896b8d9e为CFG-05/10窄协议比较器修正，不是Go业务修复；已实际重跑，目标/认证/顺序/次数及完整响应/SQL/files继续严格比 | 1439e503d | 200 / 200 |
 | R016-F08 / array | `POST /api/backup/now` | closed | e4b3fb39f；e4b3fb39f为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
 | R016-F09 / empty | `POST /api/backup/now` | closed | e4b3fb39f；e4b3fb39f为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
 | R016-F10 / unknown | `POST /api/backup/now` | closed | e4b3fb39f；e4b3fb39f为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
@@ -177,12 +177,12 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | R016-F13 / keep-bool | `POST /api/backup/now` | closed | e4b3fb39f；e4b3fb39f为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
 | R016-F13 / keep-large | `POST /api/backup/now` | closed | e4b3fb39f；e4b3fb39f为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
 | R016-F13 / keep-negative | `POST /api/backup/now` | closed | e4b3fb39f；e4b3fb39f为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
-| R016-F15 /  | `POST /api/backup/now` | closed | abdf47ef, d01fdf32, f9963a7f, 0b760d9cb；0b760d9cb为O6英文内部诊断比较器纠正，不是Go业务修复；中文/HTTP数字/副作用继续严格比较 | a08c4cc27 | 500 / 500 |
-| R016-F15 / real-MKCOL-403-before-PUT | `POST /api/backup/now` | closed | 0b760d9cb；0b760d9cb为O6英文内部诊断比较器纠正，不是Go业务修复；中文/HTTP数字/副作用继续严格比较 | 28e6e0c12 | 400 / 400 |
-| R016-F16 /  | `POST /api/backup/now` | open | — | a08c4cc27 | 200 / 200 |
-| R016-S01 /  | `POST /api/backup/now` | open | — | a08c4cc27 | 200 / 200 |
-| R016-S02 /  | `POST /api/backup/now` | open | — | a08c4cc27 | 200 / 200 |
-| R016-S03 /  | `POST /api/backup/now` | open | — | a08c4cc27 | 200 / 200 |
+| R016-F15 /  | `POST /api/backup/now` | closed | abdf47ef, d01fdf32, f9963a7f, 0b760d9cb；0b760d9cb为O6英文内部诊断比较器纠正，不是Go业务修复；中文/HTTP数字/副作用继续严格比较 | 1439e503d | 500 / 500 |
+| R016-F15 / real-MKCOL-403-before-PUT | `POST /api/backup/now` | closed | 0b760d9cb；0b760d9cb为O6英文内部诊断比较器纠正，不是Go业务修复；中文/HTTP数字/副作用继续严格比较 | 1439e503d | 400 / 400 |
+| R016-F16 /  | `POST /api/backup/now` | closed | 2896b8d9e；2896b8d9e为CFG-05/10窄协议比较器修正，不是Go业务修复；已实际重跑，目标/认证/顺序/次数及完整响应/SQL/files继续严格比 | 1439e503d | 200 / 200 |
+| R016-S01 /  | `POST /api/backup/now` | closed | 2896b8d9e；2896b8d9e为CFG-05/10窄协议比较器修正，不是Go业务修复；已实际重跑，目标/认证/顺序/次数及完整响应/SQL/files继续严格比 | 1439e503d | 200 / 200 |
+| R016-S02 /  | `POST /api/backup/now` | closed | 2896b8d9e；2896b8d9e为CFG-05/10窄协议比较器修正，不是Go业务修复；已实际重跑，目标/认证/顺序/次数及完整响应/SQL/files继续严格比 | 1439e503d | 200 / 200 |
+| R016-S03 /  | `POST /api/backup/now` | closed | 2896b8d9e；2896b8d9e为CFG-05/10窄协议比较器修正，不是Go业务修复；已实际重跑，目标/认证/顺序/次数及完整响应/SQL/files继续严格比 | 1439e503d | 200 / 200 |
 | R017-F08 / array | `POST /api/backup/test` | closed | e4b3fb39f；e4b3fb39f为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
 | R017-F09 / empty | `POST /api/backup/test` | closed | e4b3fb39f；e4b3fb39f为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
 | R017-F10 / unknown | `POST /api/backup/test` | closed | e4b3fb39f；e4b3fb39f为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
@@ -195,8 +195,8 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | R017-F14 /  | `POST /api/backup/test` | closed | e4b3fb39f；e4b3fb39f为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
 | R017-F15 /  | `POST /api/backup/test` | closed | e4b3fb39f；e4b3fb39f为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
 | R017-F16 /  | `POST /api/backup/test` | closed | e4b3fb39f；e4b3fb39f为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | 28e6e0c12 | 400 / 400 |
-| R017-F18 /  | `POST /api/backup/test` | closed | abdf47ef, d01fdf32, f9963a7f, 0b760d9cb；0b760d9cb为O6英文内部诊断比较器纠正，不是Go业务修复；中文/HTTP数字/副作用继续严格比较 | a08c4cc27 | 400 / 400 |
-| R017-F19 /  | `POST /api/backup/test` | closed | abdf47ef, d01fdf32, f9963a7f, 0b760d9cb；0b760d9cb为O6英文内部诊断比较器纠正，不是Go业务修复；中文/HTTP数字/副作用继续严格比较 | a08c4cc27 | 500 / 500 |
+| R017-F18 /  | `POST /api/backup/test` | closed | abdf47ef, d01fdf32, f9963a7f, 0b760d9cb；0b760d9cb为O6英文内部诊断比较器纠正，不是Go业务修复；中文/HTTP数字/副作用继续严格比较 | 1439e503d | 400 / 400 |
+| R017-F19 /  | `POST /api/backup/test` | closed | abdf47ef, d01fdf32, f9963a7f, 0b760d9cb；0b760d9cb为O6英文内部诊断比较器纠正，不是Go业务修复；中文/HTTP数字/副作用继续严格比较 | 1439e503d | 500 / 500 |
 | R055-B01 / disabled/domain/example.com | `POST /api/domain-discovery/region/route` | closed | 041ab5a6 | 28e6e0c12 | 200 / 200 |
 | R055-S02 / new/domain/example.com | `POST /api/domain-discovery/region/route` | closed | 041ab5a6 | 28e6e0c12 | 200 / 200 |
 | R056-B01 / name-collision/0 | `POST /api/domain-discovery/rulesets/init` | closed | 041ab5a6 | a08c4cc27 | 200 / 200 |
@@ -215,7 +215,7 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | R087-F13 / text/F13 | `GET /api/mosdns/rule-proxy` | closed | 8f3d36ad | 28e6e0c12 | 422 / 422 |
 | R087-F16 / receipt-path-is-directory | `GET /api/mosdns/rule-proxy` | open | — | a08c4cc27 | 500 / 400 |
 | R087-S90 / declared-no-cache-download-failure | `GET /api/mosdns/rule-proxy` | closed | 8f3d36ad | a08c4cc27 | 502 / 502 |
-| R087-S91 /  | `GET /api/mosdns/rule-proxy` | open | — | a08c4cc27 | 200 / 200 |
+| R087-S91 /  | `GET /api/mosdns/rule-proxy` | closed | 2896b8d9e；2896b8d9e为CFG-05/10窄协议比较器修正，不是Go业务修复；已实际重跑，目标/认证/顺序/次数及完整响应/SQL/files继续严格比 | 1439e503d | 200 / 200 |
 | R090-F10 / SQLite-trigger-rejects-real-editor-commit | `POST /api/mosdns/settings` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | 28e6e0c12 | 500 / 500 |
 | R103-F08 /  | `POST /api/nodes/reorder` | accepted | [behaviour-changes.md · Step B #1](behaviour-changes.md#config-step-b--coordinator-decisions) | 28e6e0c12 | 404 / 400 |
 | R103-F09 /  | `POST /api/nodes/reorder` | accepted | [behaviour-changes.md · Step B #1](behaviour-changes.md#config-step-b--coordinator-decisions) | 28e6e0c12 | 404 / 400 |
@@ -284,7 +284,7 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | R138-F13 / text/F13 | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | closed | 8f3d36ad | 28e6e0c12 | 422 / 422 |
 | R138-F16 / receipt-path-is-directory | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | open | — | a08c4cc27 | 500 / 400 |
 | R138-S90 / declared-no-cache-download-failure | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | closed | 8f3d36ad | a08c4cc27 | 502 / 502 |
-| R138-S91 /  | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | open | — | a08c4cc27 | 200 / 200 |
+| R138-S91 /  | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | closed | 2896b8d9e；2896b8d9e为CFG-05/10窄协议比较器修正，不是Go业务修复；已实际重跑，目标/认证/顺序/次数及完整响应/SQL/files继续严格比 | 1439e503d | 200 / 200 |
 | R140-B01 /  | `POST /api/profiles/<profile_id>/oxidns/common-settings/apply` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 200 / 200 |
 | R140-B02 / empty-list | `POST /api/profiles/<profile_id>/oxidns/common-settings/apply` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 200 / 200 |
 | R140-B03 / draft-only | `POST /api/profiles/<profile_id>/oxidns/common-settings/apply` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 200 / 200 |
@@ -452,7 +452,7 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | R187-S04 /  | `POST /api/rules/compose` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
 | R187-S05 /  | `POST /api/rules/compose` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
 | R187-S06 /  | `POST /api/rules/compose` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
-| R188-S01 / real-DNS-follow-binding-catalog | `GET /api/rules/dns` | open | — | a08c4cc27 | 200 / 200 |
+| R188-S01 / real-DNS-follow-binding-catalog | `GET /api/rules/dns` | blocked | 依赖未实现：CFG-04 / A17: complete DNS-follow binding and background owner pending; restore fixture after A17 | 1439e503d | 200 / None |
 | R189-B01 /  | `PUT /api/rules/dns` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
 | R189-B02 / native | `PUT /api/rules/dns` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 28e6e0c12 | 200 / 200 |
 | R189-B02 / template | `PUT /api/rules/dns` | closed | fd6355ce0；fd6355ce0为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 28e6e0c12 | 200 / 200 |
@@ -853,14 +853,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | `headers.cache-control` | value | '' | 'no-store' |
 | `body` | type | {'message': 'Invalid remote URL', 'success': False} | [] |
 
-## H123 / original-and-mirror-both-fail-through-loopback-proxy
-
-路由：`GET /api/mosdns/rule-proxy`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `subscription.source.requests[0].user_agent` | value | '' | 'Go-http-client/1.1' |
-
 ## R087-B91 / absolute-query-dispatches-internal-content-endpoint
 
 路由：`GET /api/mosdns/rule-proxy`；状态：different
@@ -879,16 +871,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 |---|---|---|---|
 | `status` | value | 500 | 400 |
 | `body.message` | value | 'Failed to process rule proxy request' | 'Invalid remote URL' |
-
-## R087-S91 /
-
-路由：`GET /api/mosdns/rule-proxy`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `subscription.source.requests[0].host` | value | '' | 'raw.githubusercontent.com:443' |
-| `subscription.source.requests[0].request_line` | value | 'CONNECT raw.githubusercontent.com:443 HTTP/1.0' | 'CONNECT raw.githubusercontent.com:443 HTTP/1.1' |
-| `subscription.source.requests[0].user_agent` | value | '' | 'Go-http-client/1.1' |
 
 ## X06 / head//api/nodes
 
@@ -950,16 +932,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 |---|---|---|---|
 | `status` | value | 500 | 400 |
 | `body.message` | value | 'Failed to process rule proxy request' | 'Invalid remote URL' |
-
-## R138-S91 /
-
-路由：`GET /api/profiles/<profile_id>/mosdns/rule-proxy`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `subscription.source.requests[0].host` | value | '' | 'raw.githubusercontent.com:443' |
-| `subscription.source.requests[0].request_line` | value | 'CONNECT raw.githubusercontent.com:443 HTTP/1.0' | 'CONNECT raw.githubusercontent.com:443 HTTP/1.1' |
-| `subscription.source.requests[0].user_agent` | value | '' | 'Go-http-client/1.1' |
 
 ## H128 / sequence-root
 
@@ -1093,20 +1065,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 |---|---|---|---|
 | `status` | value | 500 | 200 |
 | `headers.content-type` | value | 'text/html; charset=utf-8' | 'application/json' |
-
-## R188-S01 / real-DNS-follow-binding-catalog
-
-路由：`GET /api/rules/dns`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.system//_revision.revision` | value | 5 | 4 |
-| `db.fields.system//_revision.value` | value | 3 | 2 |
-| `db.fields.system//agents.revision` | value | 5 | 4 |
-| `db.fields.system//agents.value[0].dns_follow_state` | missing-in-go | {'status': 'failed', 'message': 'DNS 联动暂不可用：联动处理异常，请检查 Agent 连接后重试', 'updated_at': '2026-11-17T22:46:33.590994Z', 'events': [{'at': '2026-11-17T22:46:33.590913Z', 'status': 'failed', 'message': 'DNS 联动暂不可用：联动处理异常，请检查 Agent 连接后重试'}]} | None |
-| `db.meta.generation` | value | 5 | 4 |
-| `files.notifications.json` | missing-in-go | {'mode': 384, 'content': {'items': {'task:dns_follow:agent-synthetic': {'source': 'task', 'title': '合成 Agent 🧪 · DNS 联动', 'message': 'DNS 联动暂不可用：联动处理异常，请检查 Agent 连接后重试', 'impact': '', 'status_label': '执行失败', 'severity': 'error', 'profile_id': 'default', 'scope': 'profile', 'profile_name': '默认配置', 'target': {'path': '/agents', 'query': {'agent': 'agent-synthetic', 'profile': 'default', 'section': 'dns-follow'}, 'label': '查看同步设置'}, 'checked_at': '2026-11-17T22:46:33Z', 'failure_count': 1, 'id': 'task:dns_follow:agent-synthetic', 'state': 'pending', 'read': False, 'version': '2026-11-17T22:46:33.870655+00:00', 'first_seen_at': '2026-11-17T22:46: | None |
-| `files.task-status.json` | missing-in-go | {'mode': 384, 'content': {'dns_follow:agent-synthetic': {'last_run_at': '2026-11-17T22:46:33Z', 'last_finished_at': '2026-11-17T22:46:33Z', 'last_status': 'failed', 'last_duration_ms': 0, 'last_trigger': 'event', 'last_error': 'DNS 联动暂不可用：联动处理异常，请检查 Agent 连接后重试', 'run_count': 1, 'failure_count': 1, 'consecutive_failures': 1}}} | None |
 
 ## H128 / sequence-root
 
@@ -1397,86 +1355,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 |---|---|---|---|
 | `db.fields.system//backup.revision` | value | 8 | 6 |
 | `db.fields.system//backup.value.webdav_password` | value | '' | 'synthetic-pass' |
-
-## R016-B02 /
-
-路由：`POST /api/backup/now`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `dav.requests[4].body` | value | '' | '<?xml version="1.0"?><propfind xmlns="DAV:"><allprop/></propfind>' |
-
-## R016-B03 /
-
-路由：`POST /api/backup/now`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `dav.requests[10].body` | value | '' | '<?xml version="1.0"?><propfind xmlns="DAV:"><allprop/></propfind>' |
-
-## R016-B90 /
-
-路由：`POST /api/backup/now`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `dav.requests[10].body` | value | '' | '<?xml version="1.0"?><propfind xmlns="DAV:"><allprop/></propfind>' |
-
-## R016-B91 / Asia/Shanghai/previous-local-day-crosses-UTC-midnight
-
-路由：`POST /api/backup/now`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `dav.requests[4].body` | value | '' | '<?xml version="1.0"?><propfind xmlns="DAV:"><allprop/></propfind>' |
-
-## R016-B91 / Etc/GMT+12/previous-local-day-crosses-UTC-midnight
-
-路由：`POST /api/backup/now`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `dav.requests[4].body` | value | '' | '<?xml version="1.0"?><propfind xmlns="DAV:"><allprop/></propfind>' |
-
-## R016-B91 / Etc/GMT-14/previous-local-day-crosses-UTC-midnight
-
-路由：`POST /api/backup/now`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `dav.requests[4].body` | value | '' | '<?xml version="1.0"?><propfind xmlns="DAV:"><allprop/></propfind>' |
-
-## R016-F16 /
-
-路由：`POST /api/backup/now`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `dav.requests[4].body` | value | '' | '<?xml version="1.0"?><propfind xmlns="DAV:"><allprop/></propfind>' |
-
-## R016-S01 /
-
-路由：`POST /api/backup/now`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `dav.requests[4].body` | value | '' | '<?xml version="1.0"?><propfind xmlns="DAV:"><allprop/></propfind>' |
-
-## R016-S02 /
-
-路由：`POST /api/backup/now`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `dav.requests[4].body` | value | '' | '<?xml version="1.0"?><propfind xmlns="DAV:"><allprop/></propfind>' |
-
-## R016-S03 /
-
-路由：`POST /api/backup/now`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `dav.requests[4].body` | value | '' | '<?xml version="1.0"?><propfind xmlns="DAV:"><allprop/></propfind>' |
 
 ## X04 / token/literal/"\ud800"
 
@@ -3232,20 +3110,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | `headers.content-type` | value | 'text/html; charset=utf-8' | 'application/json' |
 | `body` | type | ['<!doctype html>', '<html lang=en>', '<title>404 Not Found</title>', '<h1>Not Found</h1>', '<p>Rule not found</p>'] | {'message': 'Rule not found', 'success': False} |
 
-## H911 / actual-public-catalog-key-is-bound-to-DNS-follow
-
-路由：`PUT /api/rules/dns`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.system//_revision.revision` | value | 5 | 4 |
-| `db.fields.system//_revision.value` | value | 3 | 2 |
-| `db.fields.system//agents.revision` | value | 5 | 4 |
-| `db.fields.system//agents.value[0].dns_follow_state` | missing-in-go | {'status': 'failed', 'message': 'DNS 联动暂不可用：联动处理异常，请检查 Agent 连接后重试', 'updated_at': '2026-11-17T22:46:33.590994Z', 'events': [{'at': '2026-11-17T22:46:33.590913Z', 'status': 'failed', 'message': 'DNS 联动暂不可用：联动处理异常，请检查 Agent 连接后重试'}]} | None |
-| `db.meta.generation` | value | 5 | 4 |
-| `files.notifications.json` | missing-in-go | {'mode': 384, 'content': {'items': {'task:dns_follow:agent-synthetic': {'source': 'task', 'title': '合成 Agent 🧪 · DNS 联动', 'message': 'DNS 联动暂不可用：联动处理异常，请检查 Agent 连接后重试', 'impact': '', 'status_label': '执行失败', 'severity': 'error', 'profile_id': 'default', 'scope': 'profile', 'profile_name': '默认配置', 'target': {'path': '/agents', 'query': {'agent': 'agent-synthetic', 'profile': 'default', 'section': 'dns-follow'}, 'label': '查看同步设置'}, 'checked_at': '2026-11-17T22:46:33Z', 'failure_count': 1, 'id': 'task:dns_follow:agent-synthetic', 'state': 'pending', 'read': False, 'version': '2026-11-17T22:46:33.870655+00:00', 'first_seen_at': '2026-11-17T22:46: | None |
-| `files.task-status.json` | missing-in-go | {'mode': 384, 'content': {'dns_follow:agent-synthetic': {'last_run_at': '2026-11-17T22:46:33Z', 'last_finished_at': '2026-11-17T22:46:33Z', 'last_status': 'failed', 'last_duration_ms': 0, 'last_trigger': 'event', 'last_error': 'DNS 联动暂不可用：联动处理异常，请检查 Agent 连接后重试', 'run_count': 1, 'failure_count': 1, 'consecutive_failures': 1}}} | None |
-
 ## R189-B02 / native
 
 路由：`PUT /api/rules/dns`；状态：different
@@ -3417,12 +3281,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | `db.fields.system//system_config.value.node_test_dns_config.servers[0]` | value | 'https://dns.example/dns-query' | '192.0.2.53:15353' |
 | `db.meta.generation` | value | 6 | 4 |
 | `files.notifications.json` | missing-in-go | {'mode': 384, 'content': {'items': {'notice:node-test-dns-managed-removed': {'source': 'notice', 'scope': 'system', 'severity': 'warning', 'status_label': '已自动调整', 'title': '节点测速 DNS 已自动调整', 'message': '节点测速的「OxiDNS 托管」模式已移除。测速 DNS 已改为自定义：https://dns.example/dns-query。原专用入口 192.0.2.53:15353 已从 OxiDNS 配置中去掉，「合成 Agent 🧪」上的监听在下一次发布 OxiDNS 后关闭。', 'impact': '', 'checked_at': '2026-11-17T21:28:57.462534+00:00', 'target': {'path': '/nodes', 'query': {}, 'label': '查看测速设置'}, 'id': 'notice:node-test-dns-managed-removed', 'state': 'pending', 'read': False, 'version': '2026-11-17T21:28:57.462585+00:00', 'first_seen_at': '2026-11-17T21:28:57.462585+00:00' | None |
-
-## S91 CONNECT 传输观察（待兼容性审查）
-
-仅上述精确字段组合的用例：R087-S91、R138-S91。
-
-两端都先经fake代理尝试相同GitHub原站CONNECT，拒绝后再GET相同镜像URL；最终200、转换正文与存储一致。记录到的差别是Python使用HTTP/1.0且无Host/User-Agent，Go使用HTTP/1.1及上述标准字段。这里保留原始线级差异供审核，不据此要求Go模仿Python传输栈；没有归一化或吞掉字段。若目标、方法、认证、次数、正文或存储还存在其他差异，不会归入本说明。
 
 ## Oracle 限制：混合目标采纳的顺序
 

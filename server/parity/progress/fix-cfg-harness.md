@@ -14,3 +14,33 @@ RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'cd server/tools/configdiff && ~/cf
 Ran 153 tests in 10.831s
 OK
 ```
+
+## 第二批：真实定向复验与finding归因
+
+- .64固定Go源码基线1439e503d，6组43个实际变体126.01秒，compared41 / go-unimplemented-dependency2 / different0，design_errors=[]，exit0。标准runner开头154项自检5.624秒OK，实际故意破坏Go body.authEnabled已被检出。
+- CFG-05的10条与CFG-10的3条全部真实双端相比关闭；13项归因2896b8d9e，并明确是测试比较器修正，不是Go业务修复。原始历史差异保留；归因只匹配有限case/group/route/variant和原始差异路径，open/blocked、额外SQL或其他身份不会获得此归因，另有自检。
+- CFG-04两项真实执行Python catalog/guard及自身无写入检查，Go未发送请求/未相比；记录go-unimplemented-dependency，finding保持blocked并显示具体A17/完整binding恢复前提。不是closed，也不算规则接口回归或Go通过。
+- 当前全局10666变体：compared5767、Go未实现4476、原始different309（accepted257/open52）、未实现依赖113、O12单列1。reviews closed282/accepted257/open52/blocked2/separate1。未重跑的其他工单保持原基线与状态，不宣称被本修复关闭。
+- CFG-08尚待协调者C33合入通知；2条absolute-query仍保留open及a08c4cc27原证据。本批没有重跑该组或将502批准为安全差异。接到通知后再rebase、实跑rule-proxy-local-cache并给最终判定。
+
+```text
+RT_HOST=sunbroke@192.168.0.64 rt --back server/tools/configdiff/testdata/results.json --back server/parity/difftest-config-findings.md -- bash -lc 'server/tools/configdiff/native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups settings-webdav,webdav-local-day-retention-boundary,webdav-named-preflight-and-directory-failure,rule-fetch-exhausted-candidates,rule-proxy-transport,rule-dns-extra-guard-branches --baseline 1439e503d'
+Ran 154 tests in 5.624s
+OK
+MUTATION-CHECK detected deliberately corrupted Go body.authEnabled
+R188-S01 real-DNS-follow-binding-catalog: go-unimplemented-dependency
+H911 actual-public-catalog-key-is-bound-to-DNS-follow: go-unimplemented-dependency
+groups6 / variants43 / compared41 / dependency2 / different0 / design_errors=[] / seconds126.01 / exit0
+```
+
+最终补充：CONNECT authority由标准urlsplit解析，保留精确目标字节，只把Host与目标做语义一致性检查；补了合法IPv6、带scope的IPv6及旧式下划线主机名正控，错误scope负控。避免手写DNS字符白名单把合法CONNECT当成错误。最终代码再跑全部154项自检及CONNECT两组3变体，compared3/different0、design_errors=[]、15.85秒exit0；全局finding状态未变。最终覆盖索引更新通过：228路由、10666变体、R/H5428、unaccounted/unknown/missing S-F均空，T observed22/partial-mapped8且无遗漏。所有命令均已结束，没有后台测试等待。
+
+```text
+RT_HOST=sunbroke@192.168.0.64 rt --back server/tools/configdiff/testdata/results.json --back server/parity/difftest-config-findings.md -- bash -lc 'server/tools/configdiff/native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups rule-fetch-exhausted-candidates,rule-proxy-transport --baseline 1439e503d'
+Ran 154 tests in 4.995s
+OK
+H123: compared, diffs0
+R087-S91: compared, diffs0
+R138-S91: compared, diffs0
+current compared3 / different0 / design_errors=[] / seconds15.85 / exit0
+```
