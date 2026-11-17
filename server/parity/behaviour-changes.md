@@ -56,3 +56,10 @@ C27：上游 `tag` 等字符串元数据包含真实 U+2028/U+2029 时，Go `enc
 安全修正，经协调者裁定（2026-11-17）：WebDAV 地址和备份路径中的 `.`、`..` 路径段（含 `%2e`、`%2E%2E`、多层编码及编码分隔符变体）在保存设置、测试连接、执行备份入口统一返回 400，且不发送网络请求。中文提示统一为「WebDAV 地址和备份路径不能包含 . 或 .. 路径段，请改用不含 . 或 .. 的普通目录」。Python webdav3 会展开这些路径，可能创建 `/a/`、`/a/b/` 等意外目录；Go 不模拟该行为。
 
 用户应将地址和备份路径改为不含 `.`、`..` 的普通目录，例如 `/backups/configflow/`。旧设置不会被静默改写；自动备份遇到这种路径时，任务状态记录同一条提示，配置提交仍然保留。重复斜杠仍归一为单斜杠，例如 `one//two` 对应 `one/two`，与 Python 一致。
+## Config Step B — coordinator decisions
+
+本表记录维护者明确决定的行为；Python 的崩溃不作为 Go 的接口契约。
+
+| 条目 | Python | Go 决定及验证 |
+|---|---|---|
+| Step B #1，nodes/reorder、subscriptions/reorder、subscriptions/<id>/fetch 非对象/非法排序字段 | 500，或错误信息混入缺失 ID 列表 | 400 JSON，准确中文；排序形状在提交前校验，fetch 不访问上游、不写状态。`api/subscriptions/input_shape_test.go`。真实未知 ID 保持 404。 |

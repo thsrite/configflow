@@ -187,7 +187,11 @@ func reorderSubscriptions(c *httpx.Ctx) (*httpx.Response, error) {
 	ctx := context.WithoutCancel(c.Context())
 	body, err := readOptionalBody(c)
 	if err != nil {
-		return httpx.Message(500, false, msgOperationFailed), nil
+		var bad *httpx.HTTPError
+		if errors.As(err, &bad) && bad.Code == 400 {
+			return httpx.Message(400, false, bad.Description), nil
+		}
+		return nil, err
 	}
 	if body == nil {
 		body = object{}
@@ -208,6 +212,10 @@ func reorderSubscriptions(c *httpx.Ctx) (*httpx.Response, error) {
 	})
 	if err != nil {
 		var missing *reorderError
+		var bad *httpx.HTTPError
+		if errors.As(err, &bad) && bad.Code == 400 {
+			return httpx.Message(400, false, bad.Description), nil
+		}
 		if errors.As(err, &missing) {
 			return httpx.Message(404, false, err.Error()), nil
 		}
@@ -314,6 +322,10 @@ func fetchSubscription(c *httpx.Ctx) (*httpx.Response, error) {
 	}
 	body, err := readOptionalBody(c)
 	if err != nil {
+		var bad *httpx.HTTPError
+		if errors.As(err, &bad) && bad.Code == 400 {
+			return httpx.Message(400, false, bad.Description), nil
+		}
 		return nil, err
 	}
 	nodes, cached, err := refreshSubscription(ctx, sub)

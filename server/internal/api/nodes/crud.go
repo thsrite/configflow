@@ -225,11 +225,15 @@ func reorderNodes(c *httpx.Ctx) (*httpx.Response, error) {
 			return nil, err
 		}
 		if nonempty(compact.Bytes()) {
-			return httpx.Message(500, false, "request body must be a JSON object"), nil
+			return httpx.Message(400, false, msgBodyObject), nil
 		}
 		body = record{}
 	}
 	order, _, err := reorderNodesStored(context.WithoutCancel(c.Context()), body)
+	var bad *httpx.HTTPError
+	if errors.As(err, &bad) && bad.Code == 400 {
+		return httpx.Message(400, false, bad.Description), nil
+	}
 	var missing *missingOrderError
 	if errors.As(err, &missing) {
 		return httpx.Message(404, false, missing.Error()), nil

@@ -1,6 +1,7 @@
 package subscriptions
 
 const (
+	msgBodyObject         = "请求体必须是 JSON 对象"
 	msgSubscriptionObject = "订阅请求必须是对象"
 	msgRequiredField      = "订阅 %s 不能为空"
 	msgOperationFailed    = "订阅操作失败"

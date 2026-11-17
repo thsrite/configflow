@@ -4,7 +4,6 @@ package subscriptions
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -62,7 +61,7 @@ func readOptionalBody(c *httpx.Ctx) (object, error) {
 		return nil, err
 	}
 	if nonempty(compact.Bytes()) {
-		return nil, errors.New("request body must be a JSON object")
+		return nil, httpx.BadRequest(msgBodyObject)
 	}
 	return object{}, nil
 }

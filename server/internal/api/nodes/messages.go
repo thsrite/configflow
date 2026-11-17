@@ -1,6 +1,7 @@
 package nodes
 
 const (
+	msgBodyObject       = "请求体必须是 JSON 对象"
 	msgNodeObject       = "节点请求必须是 JSON 对象"
 	msgNodeNonNull      = "节点请求必须为非 null JSON 对象"
 	msgSharedDialer     = "共享节点不保存拨号引用，请在策略组中创建代理链"

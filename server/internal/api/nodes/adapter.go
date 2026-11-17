@@ -68,6 +68,9 @@ func mutateNodes(ctx context.Context, mutate func([]record) ([]record, error)) e
 	return err
 }
 func reorderNodesStored(ctx context.Context, body record) ([]string, []string, error) {
+	if _, err := rules.OrderIDs(body, "nodes"); err != nil {
+		return nil, nil, httpx.BadRequest(err.Error())
+	}
 	var order, missing []string
 	err := mutateNodes(ctx, func(nodes []record) ([]record, error) {
 		v, err := stored(nodes)

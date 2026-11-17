@@ -228,6 +228,9 @@ func refreshSubscription(ctx context.Context, sub object) ([]object, *cache, err
 	return list, &c, err
 }
 func reorder(current []object, body object) ([]object, []string, error) {
+	if _, err := rules.OrderIDs(body, "subscriptions"); err != nil {
+		return nil, nil, httpx.BadRequest(err.Error())
+	}
 	v, err := legacy(current)
 	if err != nil {
 		return nil, nil, err
