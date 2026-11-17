@@ -860,3 +860,5 @@ page and the generate studio poll, a 409 "unfinished deployment" carries the ID 
 loops poll their own tasks; no extra writer, no new recovery action. (B) add a background reconciler that polls every
 non-finished, submitted task every 30 s: stored states stay current without a browser, at the cost of a new loop
 writing Agent records concurrently with UI polls and one more Agent request per unfinished task (O12 entry).
+
+**Decided 2026-11-17 by the coordinator (behaviour-preserving default): D-A14-1 → keep Python's poll-driven status advancement; no server-side reconciliation loop.**
