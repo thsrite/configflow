@@ -2168,11 +2168,11 @@ Questions for the maintainer (from this audit):
 
 ## N7-3b — rulefetch / refresh / structured proxy YAML readers
 
-Status: b implementation and pinned `.32` acceptance complete; final rebase/integration run pending.
+Status: b implementation and pinned `.32` full acceptance complete; final go composition in progress.
 Branch `go-n7-3b`; detailed inventory/results: [progress/N7-3b-readers.md](progress/N7-3b-readers.md).
 Scope added by coordinator: convert structured proxy reader and api/subscriptions'
 program-generated JSON→YAML helper; minimal convert error-return caller adapters
-in repo/provider/health are a separate commit (`e76be2c7`). Shared yamlx validation
+in repo/provider/health and rule append-error caller adapters are separate commits. Shared yamlx validation
 comes from N7-3a's four commits, without private policy/merge implementations.
 
 Migration gate replays actual caller inputs from the existing Python corpora and
@@ -2222,3 +2222,15 @@ C09 consumer follow-up: `rules.TestReviewC09ApplyIPRule` replays1536 rows;
 the Chinese context with the exact native parser suffix. All result/status/rule
 fields remain exact, and all other comparisons/previous allowances remain.
 Only this consumer test changed; rules' runtime reader remains N7-3d scope.
+
+Final shared integration: all8 yamlx fixes are present (writer uses09740db3,
+logical equivalent of ae109f82). Proxy keys use shared ProjectJSONKeys; container
+and immutable-scalar alias sharing is retained. Native large decimal precision,
+1MiB scalar ×100 alias backing-data identity, tagged metadata re-encoding, and
+all splice/no-op checks pass. The shared HasYAMLPayload hint now recognizes
+comments/BOM/CRLF/--- before a flow payload; nil-payload append re-reads hinted
+YAML, and opaque Classical text is preserved. Deploy's two A11 review tests plus
+a new nonempty exact-output regression pass with race. This is the same
+format-hint bug in Python/old Go, recorded in behaviour-changes.md. Production
+baseline remains unchanged. Lenient cached proxy policy/alias skips now emit
+index/category-only warnings and a local skipped=N summary; strict returns400.

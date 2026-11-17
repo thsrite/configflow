@@ -160,3 +160,12 @@ TestN73CommentedFlowRuleSourceIsNotEmpty pass with -race (.32 deploy3.665s).
 The new source forms include #header and BOM/CRLF/--- before a flow payload;
 conversion yields the two exact domain rules, never an empty file. No production
 baseline is edited. The writer tag/append regressions pass with -race1.053s.
+
+
+All-shared acceptance at03f521b5/go@6b50151c on pinned.32: format/vet empty;
+all12 affected/shared packages race PASS; full p4 PASS; all10 difftest packages
+PASS; all10 fuzz targets each60s PASS (two independent jobs, two workers each);
+proddiff2831 cases/415 compared, self_check PASS, new=0 stale=0. No production
+baseline changes. Full final command/tail/count tables are in review-n7-3b.md.
+Final rebase includes the freshly integrated C31 modules and records composition
+checks separately; do not confuse that with the still-pending N7-3a runtime gate.

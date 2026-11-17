@@ -1,200 +1,184 @@
-# N7-3b — Node reader migration and adversarial boundary review
+# N7-3b：YAML reader 迁移与边界复核
 
-Branch: `go-n7-3b`, originally based on `go@6090e113`. No sub-agents, production
-access, push or private-input commits. Final acceptance host is explicitly
-`RT_HOST=sunbroke@192.168.0.32`; .63 was unavailable. Rebase/integration results
-and final command tails are recorded below when complete.
+分支：`go-n7-3b`。本轮源码验收点：`03f521b5`，基于 `go@6b50151c`。
+测试固定 `RT_HOST=sunbroke@192.168.0.32`；未在 Mac 跑测试、构建或检查。
+未派子 agent，未推送，未改生产差分基线。最终输出见下文。
 
-## Migrated call sites
+## 迁移调用点
 
-| Package / entry | Old boundary | Native boundary |
-|---|---|---|
-| rulefetch.normalizeMihomoYAML | Compose/Scan/LoadWith, private source spans | Parse/Node, shared Edit splice then D3 |
-| rulefetch.domainEntries / InspectDomainContent | Compose and scalar marks | Parse, direct payload scalar Nodes; Edit |
-| rulefetch.remoteTextEntries / ValidateRemoteRuleContent | Compose + token anchor scan | Parse, physical Node anchor/alias visits |
-| rulefetch.ReadRulePayload | LoadWith + Compose | Parse, payload-only scalar access |
-| rulefetch.AppendRulePayload/AppendRuleLines/RemoveRulePayload | private marks/insertion/removal | shared Edit, Node sequence edits |
-| rulefetch.pyerrors | recursion exception probe | removed unused emulated probe |
-| refresh health/cache tests | SafeLoad | Parse/typed Unmarshal |
-| refresh.SourceCacheMetadata / RememberSourceDownload | delegated reads / write before policy check | shared Parse policy admission before metadata/cache writes |
-| refresh.DownloadSubscriptionNodes / FetchSubscriptionSource | remember downloaded text before parsing | same admission gate through RememberSourceDownload |
-| convert.loadProxyYAML / ParseStructuredProxyString / InspectStructuredProxyString | legacy LoadWith; private yaml.v3 decoder/resolver/constructor, recursive placeholder | shared Parse + AllPairs; memoized containers; scalar-only ToJSON |
-| api/subscriptions.yamlContent | yaml.Unmarshal on own generated JSON | FromJSON + Marshal, no YAML parser |
+| 调用点 | 最终实现 |
+|---|---|
+| rulefetch.normalizeMihomoYAML | Parse/Node；共享 Edit 先 splice，必要时 D3 重编码 |
+| rulefetch.domainEntries / InspectDomainContent | 直接读取 payload 标量 Node；共享 Edit 修改 |
+| rulefetch.remoteTextEntries / ValidateRemoteRuleContent | Parse；按物理 Node 报 anchor/alias 位置 |
+| rulefetch.ReadRulePayload | Parse；只读取 payload，不把整个文档转成 any/JSON |
+| rulefetch.AppendRulePayload/AppendRuleLines/RemoveRulePayload | Node sequence 编辑；失败返回 typed validation error |
+| rulefetch.pyerrors | 删除纯递归异常模拟探针 |
+| refresh 的两处测试读取 | Parse/类型化 Unmarshal，移除旧 SafeLoad |
+| refresh.SourceCacheMetadata/RememberSourceDownload | 元数据读取和写缓存前执行共享策略门 |
+| refresh.DownloadSubscriptionNodes/FetchSubscriptionSource | 新下载和历史下载缓存复用均经过策略门 |
+| convert.loadProxyYAML / 两个 structured-proxy API | Parse + ProjectJSONKeys；所有 Node 只转换一次 |
+| api/subscriptions.yamlContent | 程序生成的 JSON 通过 FromJSON + Marshal；不再读成 YAML |
+| api/subscriptions.cachedProxies | lenient 的新 YAML 错误按序号/类别警告并累计 skipped |
+| rulesetfmt.HasYAMLPayload | 修正前置注释/空行/--- 后的 flow-root 探测；不写 scanner |
 
-The old convert/proxyyaml_loose.go was deleted, including custom scalar typing,
-merge flattening, CPython character checking and recursive null-sentinel path.
-The cache admission estimate now accounts for Go values; it no longer imitates
-CPython allocations. Cache admission never refuses otherwise valid input.
-Legacy yamlx loaders and internal/pyyaml are intentionally retained for the other
-N7-3 migrations and N7-3d cleanup.
+删除 `convert/proxyyaml_loose.go` 的私有 resolver/constructor/merge 展开和递归
+placeholder。键转换统一使用共享 `ProjectJSONKeys(StringifyScalarKeys)`；转换后
+重名沿用最后值、首次位置的既有 JSON 边界语义。复杂/不支持的键明确拒绝。
+缓存占用估算改为 Go 值，不再模拟 CPython 分配；它只影响缓存准入，不拒绝输入。
 
-Shared changes cherry-picked from N7-3a: 0b98b42e (tag shape), dc3f339c (AllPairs),
-23196ddd (merge/scalar validation), a7acc788 (error identities), a5f553d0 (Chinese syntax diagnostics),
-4ad822f5 (unbounded decimal ints),942e752f (JSON key projection),09740db3
-(writer tag preservation; logical equivalent of ae109f82). No duplicate
-policy/merge implementation. Remaining bare yaml.v3 readers outside this scope
-(importer, rules, OxiDNS) were reported and assigned to N7-3d by the coordinator.
+共享提交全部接入：`0b98b42e`、`dc3f339c`、`23196ddd`、`a7acc788`、
+`a5f553d0`、`4ad822f5`、`942e752f`、`09740db3`（最后一个与 `ae109f82`
+逻辑相同，只是 gofmt）。没有私写标签、merge 或键投影规则。
+旧加载器和 internal/pyyaml 按分工保留，最后由 N7-3d 清理。
 
-## Findings and resolutions
+## 发现的问题与修复
 
-- High: the private proxy decoder/constructor path bypassed the facade's D1,
-  tag/merge and alias protections, and manufactured recursive placeholder values.
-  Every YAML path now enters Parse; aliases are preserved by memoized container
-  translation or refused by the shared recursion/amplification checks. Containers
-  are never JSON-serialized once per occurrence. Shared results bypass cache
-  DeepCopy; ordinary cached results remain isolated between requests.
-- High: proxy policy failures were indistinguishable from URI/base64 and could
-  fall through to Sub-Store. Both internal public readers now return an error;
-  only true ErrSyntax/no structured result retains fallback. ProxyYAMLError keeps
-  the yamlx cause and the existing strategy validation channel. No bad input is
-  silently retried, selected, or written as null.
-- Medium: refresh remembered downloaded text before the graph was validated.
-  Metadata extraction and transport cache admission now refuse ErrPolicy and
-  alias errors before writes. Four entry tests preserve both old cache values. Fresh historical transport
-  cache reuse also validates before returning text and retains refused bytes.
-- Medium (Python bugs fixed): clearing an unindented list emitted invalid YAML;
-  alias-containing flow append could insert before an existing item. Native
-  sequence edits emit a valid empty list and append after all old rules.
-- Shared JSON boundary: private key conversion is gone. ProjectJSONKeys handles
-  StringifyScalarKeys, including last-value/first-position converted-name
-  collisions as in the original boundary; unsupported/complex keys fail clearly.
-  Scalars are memoized as well as containers, so a1MiB scalar with100 aliases
-  shares its backing storage instead of being serialized/copied per occurrence.
-- Python/old-Go bug: a leading comment or document marker hid a flow-root
-  payload from the shared format hint. That could append invalid YAML or yield
-  empty DNS rule sets. The minimal shared hint fix and nil-payload re-read
-  recognize it correctly; plaintext remains opaque. No matcher reader changed.
+- **高：代理私有加载路径绕过统一策略，并可能制造递归占位值。** 改成共享 Parse；
+  D1、标签/merge 校验、递归/放大预算统一执行，不产生 null 替代。
+- **高：策略错误被当作 URI/base64 继续请求 Sub-Store。** 两个内部公开读取 API
+  返回 error；只有真正 ErrSyntax/非结构化输入保持原来的尝试其他解析器分支。
+  策略/alias 回归断言 Sub-Store 调用为零、代理缓存为零。
+- **高：下载文本在安全校验前可能替换缓存。** 新下载、元数据和历史缓存复用
+  先校验；失败不替换 transport cache 或 validated-node cache，也不改原缓存字节。
+- **中：Append 仅返回 string，Edit 失败会被吞掉。** 三个 Append API 和
+  ConnectionDeps 回调改为 `(string,error)`；rules/connection 和 discovery/write
+  最小适配，错误时不宣称添加成功。Remove 的编辑错误也进入 typed 400 通道。
+- **中：旧 Python/Go 编辑器的两个 bug。** 清空无缩进 sequence 曾写出无效
+  `payload:\n[]`；flow 列表含 alias 时追加可能插到旧条目前。现在输出合法空列表，
+  新项始终位于旧项之后。
+- **中：Python 与旧 Go 同源的格式 hint bug。** `# header`/空行/单独 `---`
+  后接 flow payload 曾被当纯文本，可能追加出无效 YAML 或生成空 DNS 规则集。
+  现在正确识别；nil payload 的追加重新 Read 校验，普通 Classical 文本仍保持不透明。
+  未修改 rules/matcher 的裸 decoder。
+- **迁移内存风险：标量 alias 重复序列化。** 容器和标量均 memo；1MiB 字符串被
+  100 个 alias 引用时共用 backing data，避免按出现次数复制大值。
 
-Append-channel closeout (`423dea5d`): the three Append internal APIs and
-Rules.ConnectionDeps callback now return(string,error), rather than silently
-returning source on Edit failure. Rules/connection and discovery/write propagate
-errors before claiming success; direct nil/non-nil payload tests preserve source
-and assert native policy/alias identities plus the typed400 channel. Remove edit
-errors use the same validation wrapper. Plaintext syntax fallback remains;
-policy/alias failures never fall back. Rulefetch fuzz also covers append.
+## 每个错误调用点的选择
 
-## Error-return caller choices
+生成器、convert/repo rawDialer、repo 导入改写和 provider delivery 使用现有 error
+通道。ProxyYAMLError 保留 yamlx cause，并可识别为策略校验错误；repo 适配为
+ValueError/400。health 对失败节点返回既有 `error_code=config`，不会错误地算作
+需要远端转换或测量成功。
 
-`74c9e28d` isolates the signature/caller adaptation as requested. Generation
-(ConvertNodeToMihomo), convert/repo rawDialer, repo import dialer rewrite and
-provider delivery use their existing error-return paths. Repo maps native proxy
-validation to its ValueError channel (400), rather than an unintended TypeError.
-health.needsSubStore does not count a policy-refused string as remote conversion;
-health.proxyOf uses its existing failed-probe result after conversion fails.
-The existing api/subscriptions.cachedProxies lenient batch is handled explicitly:
-ProxyYAMLError skips one node, logs only its index and error category, and increments
-a local skipped count reported by one summary warning. Other nodes still return;
-strict mode returns the typed validation error without logging it. HTTP fields
-are unchanged. The regression checks both paths and confirms no node text, names,
-passwords or tokens appear in warnings. Dedicated tests assert
-zero fake Sub-Store calls and zero cache entries for each policy/alias class.
+cachedProxies 的 strict 模式返回 typed 400，不同时记录错误；lenient 模式跳过
+该节点，只记录 `node_index` 和 `error_kind`，本地累计后记录 `skipped=N`。
+HTTP 字段不变，其他节点照常、按原顺序返回。回归包含带合成密码的 alias/policy
+错误，断言日志中没有节点名、节点内容、密码或 token。
 
-## Migration gate and accepted differences
+## 迁移门与分类数量
 
-The unchanged Python corpora/whole-suite records remain the old boundary oracle.
-Every row runs the migrated consumer, preserving response fields and exact rule
-values. Only generated YAML text is compared as Nodes; independent exact CRLF/
-BOM/quote/comment/no-op assertions constrain splice behavior. Refused policy
-inputs must retain the original text or return the existing validation class and
-the exact shared diagnostic. Special outcomes use exact native result/error
-fingerprints keyed to the original suite/function/input, rather than blanket
-function skips. No candidate-recording bypass remains in tests.
+旧 Python 语料/整套测试录制作为旧边界 oracle，逐行运行新调用方。所有结果字段、
+状态/校验通道和规则值保持严格比较；只有生成/编辑后的 YAML 文本改为 Node 结构比较。
+另有独立的精确 splice/no-op/CRLF/BOM/引号/注释边界断言。策略拒绝必须保留原文或
+返回同一校验类别和精确共享诊断。特殊结果按原 suite/function/input 的指纹固定
+完整新输出/错误指纹，不按函数整体放行。没有新增 skip；原有 URL/录制键标记差异
+沿用原测试的登记规则。
 
-Rulefetch changed rows: **9,079**; classes and per-corpus counts are in
-PROGRESS-config's N7-3b table. Total by class: D1 100; §5.4 39; diagnostics 6,460;
-D3 layout 2,431; D3 quoted folding 11; alias diagnostic collation 6; Node mapping
-keys 5; binary text 1; the two Python fixes 25+1. The final49 exceptional calls
-were reviewed individually (44 distinct input fingerprints).
+rulefetch：三个语料共 190415 行，本轮改变 **9079 行**，全部分类：
 
-Convert: **48 distinct changed inputs**: native schema28, D1 4, §5.4 7, alias
-recursion5, native JSON numeric spelling2, mapping order2. Both cached repeats
-assert the same native expectation. Repo caller golden: **30 explicit cases**:
-schema18, D1 3, §5.4 6, complex-key JSON refusal2, mapping order1. Earlier
-non-string-key recorder markers/URL allowances remain separate; other rows keep
-strict comparisons.
+| 类别 | corpus | whole-suite | C14 review |
+|---|---:|---:|---:|
+| D1 重复键拒绝 | 63 | 20 | 17 |
+| §5.4 标签/merge/文档校验 | 21 | 0 | 18 |
+| 原生诊断/位置 | 6417 | 32 | 11 |
+| D3 排版、Node 语义相等 | 2327 | 68 | 36 |
+| D3 跨行引号折叠 | 9 | 2 | 0 |
+| alias 拒绝的诊断汇总 | 4 | 2 | 0 |
+| 原生 Node 映射键 | 0 | 0 | 5 |
+| binary 标量文本 | 0 | 0 | 1 |
+| 修正清空 sequence 的 Python bug | 25 | 0 | 0 |
+| 修正 alias 追加位置的 Python bug | 1 | 0 | 0 |
 
-Accepted §5.7/D3 details are in behaviour-changes.md. In particular, physical
-multiline quoted scalars follow native YAML folding; an illegal folded domain is
-still rejected. Splice keeps every untouched byte. Sequence/layout fallback can
-normalize formatting once during an actual rule edit, while preserving comments,
-order and values. No-op/read-only paths keep original text and fingerprints.
+其中特殊边界 49 次调用逐条复核，固定为 44 个不同输入的精确预期。
+第五个共享补丁使 21 行原先被 oracle 省略的英文诊断变成可见中文；这些行额外
+断言错误的其余元数据完全一致，且诊断恰为原生 cause。
 
-C09 consumer: all1536 apply rows pass;198 native edit layouts compare as equal
-Nodes, and36 malformed-YAML responses keep the original Chinese context plus
-the exact native diagnostic. Other result fields remain exact. The first full
-run exposed only these stale consumer assertions; they were adapted without
-changing the rules runtime reader, then the full acceptance was repeated.
+convert：48 个不同改变输入：原生标量 schema 28、D1 4、§5.4 7、递归拒绝 5、
+原生 JSON 数字写法 2、成员顺序 2。缓存重复读取使用同一精确预期。
+repo 调用方 golden：30 个显式原生预期，分别为 schema 18、D1 3、§5.4 6、
+JSON 键边界拒绝 2、成员顺序 1。
+C09 消费者 1536 行：198 行排版结构比较、36 行保留中文上下文并附精确原生诊断；
+其他结果字段仍严格比较。
 
-## Alias and fuzz coverage
+## alias、重编码和接受的差异
 
-Rule inspection, normalization, payload read/remove, remote validation and both
-proxy readers cover depth40 shared diamonds and self-reference. Linear alias40
-coverage proves either a refusal with original bytes retained or shared container
-identity (no per-occurrence copying/nulls). Refresh metadata/remember/download/
-preview tests reject unsafe input without modifying either cache. Fuzz targets
-cover rule read/edit/validation, source policy admission, and structured proxies.
-Runtime yamlx.Clone callers: zero; no private scanner or Python span emulation.
+各读取/检查/规范化/编辑/远端校验入口覆盖共享 diamond40、线性 alias40、自引用。
+要求在预算内拒绝且保留原文，或保持共享；没有指数展开、栈溢出或静默 null。
+代理标量还覆盖 1MiB×100 的 backing-data 共享。运行时 yamlx.Clone 调用为零。
 
-## Acceptance commands and final tails
+跨行引号按 YAML 折叠；含空格的非法域名仍被规则校验拒绝，合法 escaped continuation
+与一行域名的匹配结果完全一致。重编码回归保留 timestamp、大整数、binary、custom
+标签、.inf/.nan、像数字的字符串，以及原有规则顺序和头部注释。
+splice 路径逐字节保留未改动部分；只读/无实际改动保持原文。需要重编码时保留
+语义和注释，存储文本只在实际编辑时发生一次格式规范化。delivery-only 的排版
+属于 §5.7 生成字节差异，不写回源内容/缓存，也不改变其指纹。
+完整差异说明和三个 Python bug 见 behaviour-changes.md。
 
-All commands below run with `RT_HOST=sunbroke@192.168.0.32` (the updated rt
-otherwise balances .32/.64). Before final rebase, format/vet, race, full, all10
-differential packages, fuzz and proddiff passed. The historical-cache reuse
-follow-up then passed its focused race test and is included in the post-rebase
-integration check below. No completed fuzz target's implementation changed.
+## 验收命令和最后输出
+
+所有命令固定 `.32`，从仓库根目录运行。完整日志在测试机 `/tmp/n73b-complete-*.log`。
 
 ```sh
 RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && gofmt -l internal/ tools/'
 RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && go vet ./...'
-RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && go test -race -p=4 -count=1 -timeout=30m ./internal/rulefetch ./internal/refresh ./internal/convert ./internal/repo ./internal/provider ./internal/health ./internal/api/subscriptions'
-RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && go test -race -count=1 -timeout=30m ./internal/rulefetch ./internal/rules'
+RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && go test -race -p=4 -count=1 -timeout=30m ./internal/rulefetch ./internal/refresh ./internal/convert ./internal/repo ./internal/provider ./internal/health ./internal/rules ./internal/api/subscriptions ./internal/discovery ./internal/rulesetfmt ./internal/deploy ./internal/yamlx'
 RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && go test -p=4 -count=1 ./...'
 RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && for d in $(go list ./... | rg difftest); do CONFIGFLOW_DIFF=1 go test -count=1 "$d" || exit; done'
-RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && go test -run "^$" -fuzz "^FuzzRuleYAMLBoundary$" -fuzztime=60s -parallel=2 ./internal/rulefetch'
-RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && go test -run "^$" -fuzz "^FuzzSourceYAMLPolicy$" -fuzztime=60s -parallel=2 ./internal/refresh'
-RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && go test -run "^$" -fuzz "^FuzzStructuredProxyYAML$" -fuzztime=60s -parallel=2 ./internal/convert'
 RT_HOST=sunbroke@192.168.0.32 rt -- server/scripts/proddiff.sh
 ```
 
-Final lines (full logs retained privately on .32 as `/tmp/n73b-*.log`):
+Fuzz 每个目标使用相同命令模板，实际由远端 Python 调度、最多两个独立任务并行：
 
-```text
-format: 0 bytes; vet: 0 bytes, exit 0
-ok configflow/internal/rulefetch 34.100s   # seven-package race
-ok configflow/internal/refresh 159.536s
-ok configflow/internal/convert 98.750s
-ok configflow/internal/repo 39.227s
-ok configflow/internal/provider 109.079s
-ok configflow/internal/health 138.710s
-ok configflow/internal/api/subscriptions 2.648s
-ok configflow/internal/rulefetch 17.619s   # consumer follow-up race
-ok configflow/internal/rules 8.246s
-ok configflow/internal/yamlx 2.144s        # full p4 tail, exit 0
-?  configflow/tools/proddiff/generator [no test files]
-ok configflow/internal/api/agents/difftest 115.703s
-ok configflow/internal/api/subscriptions/difftest 81.517s
-ok configflow/internal/discovery/difftest 1.974s
-ok configflow/internal/health/difftest 13.660s
-ok configflow/internal/httpx/difftest 1.106s
-ok configflow/internal/mosdns/difftest 1.472s
-ok configflow/internal/refresh/difftest 3.395s
-ok configflow/internal/subs/difftest 1.582s
-ok configflow/internal/substore/difftest 5.474s
-ok configflow/internal/webdav/difftest 17.892s
-fuzz rulefetch: 563715 executions, PASS, 61.011s
-fuzz refresh: 98895 executions, PASS, 61.011s
-fuzz convert: 83684 executions, PASS, 61.014s
-proddiff: cases=2831 compared=415 self_check=PASS new=0 stale=0
-baseline: new=0 stale=0
-ok configflow/internal/refresh 1.261s       # historical-cache focused race
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && go test -run "^$" -fuzz "^<目标>$" -fuzztime=60s -parallel=2 ./internal/<包>'
 ```
 
-Post-rebase results pending; no test-server dependency on a is being hidden.
+目标：rulefetch/FuzzRuleYAMLBoundary、refresh/FuzzSourceYAMLPolicy、
+convert/FuzzStructuredProxyYAML；deploy/FuzzConvertMosDNSRules、FuzzSourceExcerpt、
+FuzzOpenArchive；yamlx/FuzzNativeRoundTrip、FuzzNativeNoPanic、FuzzEditScalar、
+FuzzEditDeletePair。共 10 项，各 60 秒。
 
-## Integration follow-up explicitly retained
+本基点最终输出（exit 0）：
 
-N7-3a is not yet merged at this review's base. Per coordinator instruction, do not
-wait for it: hand back this completed b implementation/acceptance, then rebase
-once a lands and rerun refresh-related tests, **all** difftest packages and
-proddiff. Delegated subs/substore host/dialer/proxy-list integration is not marked
-verified until that run. No known open local functional finding.
+```text
+gofmt: 无输出；go vet: 无输出
+race: rulefetch39.323s refresh306.831s convert101.891s repo123.765s
+race: provider211.211s health257.519s rules12.785s subscriptions3.345s
+race: discovery9.970s rulesetfmt1.017s deploy28.660s yamlx16.699s
+ok configflow/internal/yamlx 4.468s
+?  configflow/tools/proddiff/generator [no test files]
+```
+
+全部10个 difftest 包均通过：api/agents120.217s、api/subscriptions77.972s、
+discovery2.366s、health13.810s、httpx1.420s、mosdns1.798s、refresh4.423s、
+subs3.050s、substore7.595s、webdav24.182s。
+
+| Fuzz 目标 | executions | 结果/耗时 |
+|---|---:|---|
+| FuzzRuleYAMLBoundary | 21139 | PASS61.061s |
+| FuzzSourceYAMLPolicy | 37924 | PASS61.034s |
+| FuzzStructuredProxyYAML | 26857 | PASS61.029s |
+| FuzzConvertMosDNSRules | 82132 | PASS61.191s |
+| FuzzSourceExcerpt | 51113 | PASS61.083s |
+| FuzzOpenArchive | 343607 | PASS61.049s |
+| FuzzEditScalar | 50980 | PASS61.105s |
+| FuzzEditDeletePair | 49183 | PASS61.089s |
+| FuzzNativeRoundTrip | 119231 | PASS61.054s |
+| FuzzNativeNoPanic | 20959 | PASS61.026s |
+
+```text
+fuzz_targets=10 failed=False
+proddiff: cases=2831 compared=415 self_check=PASS new=0 stale=0
+baseline: new=0 stale=0
+```
+
+生产快照没有触发新增差异，未调整基线。验收后 go 新合入 C31，最后 rebase
+和该集成点的编译/差分/生产差分结果另行追加。
+
+## 明确保留的集成待办
+
+N7-3a runtime 尚未合并，refresh 委托的 subs/substore hosts、dialer、proxy-list
+读取在 a 合入后仍需复验。按协调者指示，本轮不等待；a 合入后 rebase，补跑
+refresh 相关测试、全部 difftest 包和 proddiff。此项未冒充已 verified。
+其余裸 decoder 已由协调者登记为 N7-3d。当前无未关闭的本分支功能问题。
