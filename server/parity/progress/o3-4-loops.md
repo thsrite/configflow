@@ -69,3 +69,33 @@ channel drain, use it in metrics OnStart and ResetFlushState, add a Signal regre
 approved extension and run metrics/lifecycle tests. Then repeat the complete final gate on the complete
 O3-4 tree (race, both tags, full, all enabled difftests, proddiff), rebase go and hand back clean.
 The current checked-in metrics loop remains legacy until that decision; this is not an O3-4 completion claim.
+
+## Clean partial hand-back (awaiting API decision)
+
+Rebased onto go@3c8a1760 without conflicts. Current implementation commits:
+- 32edd0db: framework ClockFrom/Detach/OnStart, context lifetime/activation tests and agreed design.
+- b7a2b658: refresh/discovery/ranking Periodics and L1/tracked refresh jobs.
+- 629d066e: conditional Sub-Store idle Periodic, stored monotonic domain unchanged.
+- 03dce773: activation panic/disconnect completion regressions and explicit scope/status.
+
+Checks completed on .32; no local heavy commands, no pushes or sub-agents:
+
+```sh
+# Full changed-owner race (before the final test-only additions; these additions passed focused race3):
+RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && go test -race -p=4 -timeout=30m -count=1 ./internal/lifecycle/... ./internal/lockx/... ./internal/refresh/... ./internal/discovery/... ./internal/agents/monitor/... ./internal/substore/... > /tmp/o34-owner-full-race.log 2>&1; code=$?; tail -n 20 /tmp/o34-owner-full-race.log; exit "$code"'
+# All enabled differential packages, on the draft tree before metrics was saved out:
+RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'set -e; cd server; for pkg in $(go list ./... | rg "/difftest$"); do CONFIGFLOW_DIFF=1 go test -tags=configflow_difftest -p=4 -count=1 -timeout=30m "$pkg"; done > /tmp/o34-difftest.log 2>&1; tail -n 16 /tmp/o34-difftest.log'
+# Clean partial tree after rebase, metrics still legacy:
+RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'set -e; cd server; test -z "$(gofmt -l internal/ tools/ cmd/)"; go vet ./...; go test -p=4 -timeout=30m -count=1 ./... > /tmp/o34-partial-full.log 2>&1; tail -n 12 /tmp/o34-partial-full.log; for tag in configflow_proddiff configflow_difftest; do go test -tags="$tag" -count=1 ./internal/lifecycle/...; done; cd ..; server/scripts/proddiff.sh > /tmp/o34-partial-proddiff.log 2>&1; grep -E "^self-check:|^baseline:|^proddiff:" /tmp/o34-partial-proddiff.log'
+```
+
+Final command exited0: gofmt empty, vet/full all green; both lifecycle tags0.044s (lifecycletest0.003s).
+Proddiff: all23 self-checks PASS,2831 cases, coverage_regressions0, unmapped_routes0,
+new=0/stale=0. go_disabled_background4 is expected: no builtin Sub-Store exists in this test image,
+so sub-store-idle is not registered; no proddiff exemption/name whitelist was added.
+
+The only remaining scope is metrics Periodic+Signal migration and complete-tree final verification after
+Signal reset approval. The preserved patch path is
+`/Users/sunbroke/program/configflow/.git/worktrees/go-n7-1/o3-4-metrics-pending.patch`.
+Apply from the git root with `git apply "$(git rev-parse --git-path o3-4-metrics-pending.patch)"`.
+It has not been applied to the clean hand-back tree. Do not merge this branch as completed O3-4 yet.
