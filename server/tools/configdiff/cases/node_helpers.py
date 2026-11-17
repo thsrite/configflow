@@ -81,7 +81,7 @@ def candidate_guards(binary, recorder):
     nodes = [{**NODE, 'id': 'uri-' + str(i), 'name': 'URI-' + str(i),
               'proxy_string': 'synthetic://opaque-uri-' + str(i)} for i in range(6)]
     with Pair(binary, recorder, options={'shared': {'nodes': nodes}, 'probe_case': 'valid'}) as pair:
-        pair.request('H741', ROUTE, body='{}', expect=400, writes=True,
+        pair.request('R098-F17', ROUTE, body='{}', expect=400, writes=True,
                      check=message('单次最多测试 5 个需要 Sub-Store 转换的节点，请分批测试'),
                      interaction=WorkerStable(pair, 0), variant='six-opaque-URI-nodes-before-conversion')
 

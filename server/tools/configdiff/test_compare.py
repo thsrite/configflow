@@ -990,6 +990,34 @@ serve(app, host='127.0.0.1', port=int(sys.argv[1]))
                         [records[0], records[1], {**records[2], 'path': '/api/sub/wrong'}]):
             with self.assertRaises(ProtocolError):
                 normalized_node(changed, content)
+    def test_concurrent_node_conversions_validate_cycles_before_ignoring_interleaving(self):
+        from substore import normalized_node_batch, ProtocolError
+        from urllib.parse import quote
+        contents = ['snell-A 中文🧪', 'snell-B %+']
+        cycles = []
+        for i, content in enumerate(contents):
+            name = '_cf_tmp_node_convert_' + format(i, '08x')
+            cycles.append([{'method': 'POST', 'path': '/api/subs', 'body': {'name': name, 'url': 'https://example.com#noFlow', 'noFlow': True}},
+                {'method': 'GET', 'path': '/download/' + name + '/ClashMeta?content=' + quote(content, safe=''), 'body': None},
+                {'method': 'DELETE', 'path': '/api/sub/' + name, 'body': None}])
+        serial = cycles[0] + cycles[1]
+        mixed = [cycles[0][0], cycles[1][0], cycles[1][1], cycles[0][1], cycles[1][2], cycles[0][2]]
+        self.assertEqual(normalized_node_batch(serial, contents), normalized_node_batch(mixed, contents))
+        bad = [mixed[:-1], mixed + [cycles[0][0]], [cycles[0][1], *mixed],
+               cycles[0] + cycles[0], [cycles[0][0], cycles[0][2], cycles[0][1]] + cycles[1]]
+        for field, value in [('method', 'POST'), ('path', '/unexpected')]:
+            changed = copy.deepcopy(mixed)
+            changed[2][field] = value
+            bad.append(changed)
+        changed = copy.deepcopy(mixed)
+        changed[1]['body']['noFlow'] = False
+        bad.append(changed)
+        changed = copy.deepcopy(mixed)
+        changed[1]['body'] = [1]
+        bad.append(changed)
+        for changed in bad:
+            with self.assertRaises(ProtocolError):
+                normalized_node_batch(changed, contents)
     def test_elapsed_milliseconds_are_finite_bounded_and_two_decimal_places(self):
         policy = Policy(start=100, end=101, elapsed_ms={'body.elapsed_time'})
         self.assertEqual(differences({'elapsed_time': 1.23}, {'elapsed_time': 900}, policy=policy), [])

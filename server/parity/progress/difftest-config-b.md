@@ -1875,3 +1875,19 @@ current compared=11 different=1 open=1 design_errors=[] seconds=46.50；exit=1
 ```
 
 .63不可达继续按brief回退.32。余下node边界和OxiDNS helper草稿继续，最终.32完整all仍未执行。
+
+## 批次 110：节点来源身份、真实批次上限与损坏历史
+
+- 新增6个HTTP变体：R097-B01的坏JSON/数组root/旧method记录均返回空results、原文件与全SQL不变；R098-B01同中文emoji显示名的两个手动节点按两个来源key独立测速；R098-B02真实20个结构化节点与5个并发Sub-Store转换边界，检查全量结果、每项一次history、完整落盘results与响应相同、SQL无修改。
+- 五转换逐个证明随机临时名唯一、create/download/content/delete精确且无泄漏，只在每条cycle通过后按输入关联不同cycle的交错。原worker stdin继续完整比较所有节点/认证/DNS参数；没有删掉协议记录或把不同内容当成随机值。新增篡改自检覆盖缺少cleanup、重复cycle、先用后建、错误方法/路径/noFlow及非对象create body；非法Go协议成为真实diff而非比较器异常。93项自检通过。
+- 原H737/H741真实busy/六转换拒绝请求改用R098-F12/F17主编号，再关联同次H标签；旧group复跑替换旧结果，不增加请求或丢失H覆盖。连同其余candidate guards与锁释放复验共12变体，.32草稿及正式均compared12、design_errors=[]，没有新差异。
+- 统一9450变体、原R4323（S691/F2677/B955）、H599/G16；findings保持closed80/accepted7/open21/O12单列1。原R仍差207、H仍差513及partial/N/A/长流程。
+
+```text
+.32 native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups node-history-corruption,node-selection-bounds,node-five-conversion-boundary,node-helper-candidate-guards,node-helper-concurrent-busy --baseline 3c8a1760
+current compared=12 design_errors=[]；exit=0
+93 self-checks + deliberately wrong-Go-response detection OK
+独立报告/tmp/configdiff-node-bounds-draft.json
+```
+
+继续OxiDNS common/client策略helper与规则交付YAML分支；最终.32全量未执行。

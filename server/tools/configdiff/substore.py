@@ -21,7 +21,8 @@ def normalized_node(records, content):
     out, names = [], set()
     for offset in range(0, len(records), 3):
         create, download, delete = records[offset:offset + 3]
-        name = (create.get('body') or {}).get('name')
+        body = create.get('body')
+        name = body.get('name') if isinstance(body, dict) else None
         if not isinstance(name, str) or not re.fullmatch(r'_cf_tmp_node_convert_[0-9a-f]{8}', name) or name in names:
             raise ProtocolError('node temporary name format/reuse is invalid')
         names.add(name)
@@ -63,6 +64,51 @@ class NodeExchange:
 
     def compare(self, policy):
         return differences(*self.transcripts, 'substore.node', policy)
+
+
+def normalized_node_batch(records, contents):
+    """Validate each complete cycle before comparing independent interleavings."""
+    cycles, assigned = {}, {}
+    for row in records:
+        method, path = row.get('method'), row.get('path', '')
+        if method == 'POST' and path == '/api/subs':
+            body = row.get('body')
+            name = body.get('name') if isinstance(body, dict) else None
+            if not isinstance(name, str) or name in cycles:
+                raise ProtocolError('duplicate or missing concurrent temporary name')
+            cycles[name] = [row]
+            continue
+        parts = urlsplit(path)
+        if method == 'GET' and parts.path.startswith('/download/'):
+            name = parts.path.split('/')[2]
+            content = parse_qs(parts.query, keep_blank_values=True).get('content')
+            if not isinstance(content, list) or len(content) != 1:
+                raise ProtocolError('concurrent conversion has missing/duplicate content')
+            assigned[name] = content[0]
+        elif method == 'DELETE' and parts.path.startswith('/api/sub/'):
+            name = parts.path.removeprefix('/api/sub/')
+        else:
+            raise ProtocolError('unexpected concurrent conversion request')
+        if name not in cycles:
+            raise ProtocolError('conversion request preceded its own create')
+        cycles[name].append(row)
+    if sorted(assigned.values()) != sorted(contents) or len(cycles) != len(contents):
+        raise ProtocolError('concurrent conversion does not visit each assigned input exactly once')
+    return [normalized_node(cycles[name], content) for name, content in sorted(assigned.items(), key=lambda item: item[1])]
+
+
+class NodeBatchExchange(NodeExchange):
+    def after(self, index, reply):
+        errors, records = [], copy.deepcopy(self.store.requests)
+        try:
+            records = normalized_node_batch(records, self.content)
+        except ProtocolError as error:
+            errors.append(str(error))
+        if self.store.created:
+            errors.append('concurrent node temporary subscriptions leaked')
+        self.transcripts[index] = {'requests': records, 'errors': errors}
+        if index == 0 and errors:
+            raise DesignError('Python concurrent node conversion protocol invalid: ' + repr(errors))
 
 
 class SubStore:

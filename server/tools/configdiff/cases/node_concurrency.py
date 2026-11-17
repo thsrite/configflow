@@ -60,7 +60,7 @@ def busy(binary, recorder):
     with Pair(binary, recorder, options={'shared': {'nodes': [NODE]}, 'probe_case': 'gate'}) as pair:
         policy_for(pair, ['["node","node-a"]'])
         pair.policy.times.add('files.shared/node_latency.json.bak.content.["node","node-a"].tested_at')
-        pair.request('H737', ROUTE, body='{}', expect=409, writes=True,
+        pair.request('R098-F12', ROUTE, body='{}', expect=409, writes=True,
                      check=message('已有节点测速正在进行，请稍后重试'), interaction=BusyProbe(pair),
                      variant='first-worker-held-second-public-request')
         pair.request('T13', ROUTE, body=json_body({'keys': []}), expect=200, writes=True,

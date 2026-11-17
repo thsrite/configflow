@@ -6,6 +6,8 @@ Unreachable/earlier-guard branches are deliberately absent.
 """
 
 LINKS = {
+    'R098-F12': ('POST /api/nodes/latency', ('H737',)),
+    'R098-F17': ('POST /api/nodes/latency', ('H741',)),
     **{case: ('POST /api/rule-library/check-content', ('H149',)) for case in ('H146', 'H147', 'H148')},
     'H116': ('POST /api/settings/rule-fetch-proxy', ('H117',)),
     'R087-F11': ('GET /api/mosdns/rule-proxy', ('H121',)),
