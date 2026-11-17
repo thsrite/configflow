@@ -2259,3 +2259,9 @@ R205-F08的旧深层JSON草稿实际是未捕获RecursionError→500，不是[se
 H120不能列为防御不可达：存储origin指向owned回环fake，真实rule-proxy请求`<origin>/api/../redirect`。`_internal_rule_base`按原始路径识别internal；[local_http.py:113](../../backend/utils/local_http.py#L113)在Requests点段归一化后发现已离开/api而返回None，随后发生真实网络GET /redirect。fake返回跨origin或同origin的非API目标，实际到达[rule_fetch.py:184](../../backend/utils/rule_fetch.py#L184)。default/scoped×两种目标四例均Python400 `Invalid remote URL`且目标零请求，Go200并继续请求目标；已独立复跑，记open。来源和目标均回环fake，没有真实外网流量。
 
 该反例纠正了“internal只会调固定应用路由，因此没有重定向输入”的初步判断；处置索引已移除H120。比较全部source/目标协议、完整HTTP及SQL/files；故意加目标GET/额外源请求均检出。当前全量canonical尚在.64写入，先将自动生成证据保存在tools/testdata/internal-redirect-findings.md，最终标准runner将统一写入difftest-config-findings.md；不并发覆盖或手改verdict。
+
+### Step B Provider并发输出键隔离（批次144）
+
+T07每端真实Barrier同时启动八客户端，交叉default/other、Surge/Loon、regex/exclude_regex和冲突profile header；使用两客户端都支持的SS节点，使两类过滤都可观察。逐请求完整响应与准确节点名单、所有SQL/files和零来源请求比较。随后公开PUT真正改变共享过滤设置（config digest改变），同样八键再次并发请求，只能得到新过滤结果。三个命名序列均双端compared（16个并发GET及一次PUT），不是给同一请求贴八个标签。前置Socks5草稿在Python Surge转换中被省略，不能验证筛选，已改用SS后重跑。
+
+此项验证公开并发输出隔离和真实配置改变后的结果，不读取私有flight map，不声称强制命中了“旧flight完成与新flight登记同时发生”的内部窄窗口。该清理竞争仍需领域Go并发测试/长期压力验证；T06已有真实source屏障下20客户端只一次fetch，及原始12秒fallback后台完成。

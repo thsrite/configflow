@@ -2419,3 +2419,15 @@ current different4；Python400 / Go200；design_errors=[]；seconds15.88；exit1
 routes228 / variants10617 / exercised R-H5428；unaccounted=[] / unknown_labels=[] / routes_missing_source_success_or_failure=[] / runtime_design_errors=[]；exit0
 136 self-checks + deliberately wrong-Go-response detection OK
 ```
+
+## 批次 144：Provider八键并发与真实digest变化
+
+- T07两轮每端八真实客户端并发GET，覆盖profile/Surge/Loon/regex/exclude_regex、冲突header；中间公开PUT改变共享过滤，第二轮必须返回新名单。全部响应/SQL/files严格比，源端要求精确名单、零上游和全部状态不变。SS使两个客户端格式都有实际输出；原Socks5在Surge被省略的草稿撤回，不能拿空输出证明过滤。
+- .32 baseline4d8a665a，三序列（16 GET+1 PUT）全部compared，design_errors=[]，exit0；136项自检及故意错误Go响应检出。完整异步key-map清理竞争没有因此计通过；源码私有窄窗口不能由客户端Barrier本身证明。
+- gate包装器支持CONFIGDIFF_REPORT/CONFIGDIFF_FINDINGS独立输出，用于保护仍在另一主机回传的旧快照。已有四种退出码/锁槽保留自检新增核对两个输出参数，实跑通过。默认输出和同一FD8锁槽不变，没有绕开官方gate。
+
+```text
+.32 native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups provider-real-concurrent-profile-format-filter-and-digest-isolation --baseline 4d8a665a --output testdata/provider-key-isolation.json
+current compared3；design_errors=[]；exit0
+136 self-checks + deliberately wrong-Go-response detection OK
+```

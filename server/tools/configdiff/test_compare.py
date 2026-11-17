@@ -2027,12 +2027,17 @@ serve(app, host='127.0.0.1', port=int(sys.argv[1]))
                 env = {**os.environ, 'CONFIGDIFF_GATE_LOGS': str(logs),
                     'CONFIGDIFF_TEST_SLOT': str(root / 'slot'), 'CONFIGDIFF_TEST_ARGUMENTS': str(root / 'arguments'),
                     'CONFIGDIFF_TEST_EXIT': str(config_rc)}
+                if config_rc:
+                    env.update(CONFIGDIFF_REPORT='testdata/isolated-result.json', CONFIGDIFF_FINDINGS='testdata/isolated-findings.md')
                 result = subprocess.run(['bash', str(folder / 'gate.sh'), 'synthetic-baseline', '-p', '4'],
                     env=env, capture_output=True, text=True, timeout=10)
                 self.assertEqual(result.returncode, go_rc or config_rc, result.stdout + result.stderr)
                 self.assertEqual((logs / 'go-exit.txt').read_text().strip(), str(go_rc))
                 self.assertEqual((logs / 'configdiff-exit.txt').read_text().strip(), str(config_rc))
                 self.assertIn('--groups all --baseline synthetic-baseline', (root / 'arguments').read_text())
+                if config_rc:
+                    self.assertIn('--output testdata/isolated-result.json --findings testdata/isolated-findings.md',
+                        (root / 'arguments').read_text())
                 self.assertEqual(subprocess.run(['flock', '-n', str(root / 'slot'), 'true']).returncode, 0)
 
     def test_import_snapshot_must_contain_previous_rows(self):

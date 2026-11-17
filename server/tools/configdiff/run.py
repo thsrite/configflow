@@ -104,6 +104,8 @@ def main():
     groups.update(log_rotation)
     from cases.log_sequence import GROUPS as log_sequence
     groups.update(log_sequence)
+    from cases.provider_key_isolation import GROUPS as provider_key_isolation
+    groups.update(provider_key_isolation)
     from cases.redaction import GROUPS as redaction
     groups.update(redaction)
     from cases.admin_auth import GROUPS as admin_auth
