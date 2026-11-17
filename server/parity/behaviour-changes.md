@@ -110,6 +110,7 @@ CRLF documents with comments no longer have the old C11 refusal. Folded scalars
 are emitted in literal style by the shared Marshal API to preserve their actual
 value, avoiding yaml.v3's extra-newline emitter bug. Sequence/mapping-key line
 comments move above their pair so yaml.v3 cannot emit an invalid colon layout;
-scalar-key comments keep their position. Native YAML schema policies
+scalar-key comments keep their position. Tab-containing strings use double quotes
+(with explicit tags retained), since literal/folded Tab lines can be unparsable. Native YAML schema policies
 from N7-1 remain in force. No new application route is added in N7-2; actual
 proxy-groups route differential is deferred to C33.

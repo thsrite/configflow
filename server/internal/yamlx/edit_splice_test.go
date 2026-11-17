@@ -89,3 +89,15 @@ func TestEditRewritesUnsafeSpliceShapes(t *testing.T) {
 		})
 	}
 }
+
+func TestEditPlainScalarWithTabOnlyContinuation(t *testing.T) {
+	source := []byte("A\r\t")
+	out, err := Edit(source, func(n *Node) error { n.Value = "0"; return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := mustEditParse(t, string(out))
+	if n.ShortTag() != "!!str" || n.Value != "0" {
+		t.Fatalf("wrong edited scalar: %q", out)
+	}
+}

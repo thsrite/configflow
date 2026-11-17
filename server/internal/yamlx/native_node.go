@@ -34,7 +34,7 @@ func nodeItems(items []*Node) []*Node {
 	return out
 }
 
-// Str builds a string scalar, protecting line separators from YAML normalisation.
+// Str builds a string scalar, protecting tabs and line separators during output.
 func Str(s string) *Node {
 	n := &Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: s}
 	protectString(n)
@@ -42,7 +42,7 @@ func Str(s string) *Node {
 }
 
 func protectString(n *Node) {
-	if n.Kind == yaml.ScalarNode && n.ShortTag() == "!!str" && (strings.HasPrefix(n.Value, "\n") || strings.ContainsAny(n.Value, "\r\u0085\u2028\u2029")) {
+	if n.Kind == yaml.ScalarNode && n.ShortTag() == "!!str" && (strings.HasPrefix(n.Value, "\n") || strings.ContainsAny(n.Value, "\t\r\u0085\u2028\u2029")) {
 		n.Style = n.Style&yaml.TaggedStyle | yaml.DoubleQuotedStyle
 	}
 }

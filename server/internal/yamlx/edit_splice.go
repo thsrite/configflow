@@ -198,6 +198,19 @@ func (p *editSplicer) scalarEnd(n *Node, start int, flow, isKey bool) (int, bool
 		}
 		return 0, false
 	}
+	// yaml.v3 accepts a tab-only continuation after a plain scalar, but the
+	// same continuation after a quoted replacement is invalid. Such whitespace
+	// belongs to the scalar's lexical context and needs whole-document encoding.
+	for i := n.Line; i < len(p.lines); i++ {
+		line := p.lines[i]
+		text := p.source[line.start:line.end]
+		if len(bytes.Trim(text, " \t")) != 0 {
+			break
+		}
+		if bytes.IndexByte(text, '\t') >= 0 {
+			return 0, false
+		}
+	}
 	end := len(text)
 	for i, b := range text {
 		if b == '#' && (i == 0 || text[i-1] == ' ' || text[i-1] == '\t') || flow && bytes.IndexByte([]byte(",]}"), b) >= 0 || isKey && b == ':' {
