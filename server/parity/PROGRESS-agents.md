@@ -1144,6 +1144,12 @@ baseline: new=0 stale=0
 
 **Status: `ported`** · prereqs: A12, A15 (`upgrades.artifacts` for `upgrade_available`) · Go: internal/deploy, api/agents
 
+独立对抗复核进行中（分支 `go-review-a13`，[review-a13.md](review-a13.md)）：F1 中严重度，
+真实 Runtime.Spawn 丢失 reservation cancellation，Close 后仍准备，已修复并通过 contentsync race；
+F2 高严重度，环境注册密钥明文/编码从 diff、entries、搜索泄露，Go 与真实 Python 均已复现。
+下一步等 A24 共享修复合进 go 后变基，在 shared StoredSecretFinder 纳入环境密钥，补 behaviour ledger，
+复验 20 条准确 baseline、最终 gate.sh -p 6 和 fuzz，零未决后 verified。生产 spec 边界和广播注销并发已补回归。
+
 **Design:** `server/design/a14-publish.md` (Opus, 2026-11-17) covers the whole chain A11→A14 — package map, types, Agent protocol, state machine, locks, failure table, steps A13-1, A13-2, acceptance. Port to it; contract changes need the designer's or coordinator's agreement.
 
 Files:

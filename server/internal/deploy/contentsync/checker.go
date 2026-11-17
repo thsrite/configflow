@@ -236,7 +236,19 @@ func (c *Checker) release(id string, token *reservation) {
 }
 func (c *Checker) submit(ctx context.Context, t deploy.Target, s *deploy.Source, url string, state deploy.ContentState, e *entry, token *reservation, detailRequest bool) Result {
 	t = deploy.SnapshotTarget(t)
-	err := c.opts.Spawner.Spawn(ctx, "agent-content-sync", func(work context.Context) { c.check(work, t, s, url, state, e, token) })
+	err := c.opts.Spawner.Spawn(ctx, "agent-content-sync", func(work context.Context) {
+		// Spawn deliberately detaches its input cancellation. Reattach this
+		// owner's reservation cancellation to the supplied task context, keeping
+		// the Runtime's fresh scope, clock and shutdown cancellation as well.
+		work, cancel := context.WithCancel(work)
+		stop := context.AfterFunc(ctx, cancel)
+		defer stop()
+		defer cancel()
+		if ctx.Err() != nil {
+			cancel() // Close may have run before the admitted callback started.
+		}
+		c.check(work, t, s, url, state, e, token)
+	})
 	if err != nil {
 		c.mu.Lock()
 		c.release(t.ID, token)
