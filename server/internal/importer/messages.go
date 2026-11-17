@@ -3,7 +3,7 @@ package importer
 const (
 	msgUnsupportedClient   = "不支持的配置类型：%s"
 	msgEmpty               = "配置内容不能为空"
-	msgYAML                = "YAML 解析失败：%s"
+	msgYAML                = "YAML 解析失败：%w"
 	msgMihomoObject        = "Mihomo 配置必须是 YAML 对象"
 	msgNoSections          = "未找到任何 [Section]，请确认配置类型是否正确"
 	msgNoItems             = "未从配置中解析到节点、策略组或规则，请确认配置类型是否正确"

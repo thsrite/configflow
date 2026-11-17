@@ -54,7 +54,10 @@ positions are audited and any deltas counted separately.
 First buildable step: rules matcher now uses Parse with unchanged payload/source
 selection; real native-reader comparison equal940/native-diagnostics41,unknown0.
 The complete rules tests pass (.64 1.755s), including depth40 and self-alias
-rejection through both extraction and public Match. Other implementation and
+rejection through both extraction and public Match. Importer's reader now uses
+Parse/ToJSON and preserves retained Node sharing instead of recursive expansion;
+real14-input gate equal12/native-diagnostics2,unknown0. Original importer corpus
+and extracted-subtree budget regressions pass (1.499s). Other implementation and
 final acceptance remain pending. See [progress/n7-3d.md](progress/n7-3d.md).
 
 ## N7-4 — native YAML writers (complete; coordinator verification pending)

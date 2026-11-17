@@ -2,10 +2,11 @@ package importer
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
 	"strings"
+
+	"configflow/internal/yamlbridge"
+	"configflow/internal/yamlx"
 
 	"gopkg.in/yaml.v3"
 )
@@ -95,85 +96,22 @@ func parseRule(line string, w *warnings) *Rule {
 
 type yamlEntry struct{ key, value *yaml.Node }
 
-func dereference(node *yaml.Node) *yaml.Node {
-	for node != nil && node.Kind == yaml.AliasNode {
-		node = node.Alias
-	}
-	return node
-}
+func dereference(node *yaml.Node) *yaml.Node { return yamlx.Resolve(node) }
+
 func mappingEntries(node *yaml.Node) []yamlEntry {
-	node = dereference(node)
-	if node == nil || node.Kind != yaml.MappingNode {
-		return nil
-	}
-	out := []yamlEntry{}
-	indices := map[string]int{}
-	add := func(entry yamlEntry) {
-		key := entry.key.Value
-		if i, exists := indices[key]; exists {
-			out[i] = entry
-		} else {
-			indices[key] = len(out)
-			out = append(out, entry)
-		}
-	}
-	for i := 0; i+1 < len(node.Content); i += 2 {
-		if node.Content[i].Tag != "!!merge" {
-			continue
-		}
-		value := dereference(node.Content[i+1])
-		if value.Kind == yaml.SequenceNode {
-			for j := len(value.Content) - 1; j >= 0; j-- {
-				for _, entry := range mappingEntries(value.Content[j]) {
-					add(entry)
-				}
-			}
-		} else {
-			for _, entry := range mappingEntries(value) {
-				add(entry)
-			}
-		}
-	}
-	for i := 0; i+1 < len(node.Content); i += 2 {
-		if node.Content[i].Tag != "!!merge" {
-			add(yamlEntry{node.Content[i], node.Content[i+1]})
-		}
+	var out []yamlEntry
+	for key, value := range yamlx.AllPairs(node) {
+		out = append(out, yamlEntry{key, value})
 	}
 	return out
 }
-func field(node *yaml.Node, key string) *yaml.Node {
-	for _, entry := range mappingEntries(node) {
-		if entry.key.Value == key {
-			return entry.value
-		}
-	}
-	return nil
-}
-func expandedNode(node *yaml.Node) *yaml.Node {
-	node = dereference(node)
-	if node == nil {
-		return nil
-	}
-	out := *node
-	out.Anchor = ""
-	out.Alias = nil
-	out.Content = nil
-	if node.Kind == yaml.MappingNode {
-		for _, entry := range mappingEntries(node) {
-			out.Content = append(out.Content, expandedNode(entry.key), expandedNode(entry.value))
-		}
-	} else {
-		for _, child := range node.Content {
-			out.Content = append(out.Content, expandedNode(child))
-		}
-	}
-	return &out
-}
+func field(node *yaml.Node, key string) *yaml.Node { return yamlx.Get(node, key) }
+
 func nodeInteger(node *yaml.Node) *int {
 	node = dereference(node)
 	if node != nil && node.Tag == "!!int" {
 		var value int
-		if node.Decode(&value) == nil {
+		if yamlx.Decode(node, &value) == nil {
 			return &value
 		}
 	}
@@ -189,7 +127,7 @@ func missingScalar(node *yaml.Node) bool {
 	}
 	if node.Tag == "!!int" || node.Tag == "!!float" {
 		var value float64
-		if node.Decode(&value) == nil && value == 0 {
+		if yamlx.Decode(node, &value) == nil && value == 0 {
 			return true
 		}
 	}
@@ -224,7 +162,7 @@ func nodeBool(node *yaml.Node) bool {
 		return false
 	}
 	var out bool
-	_ = node.Decode(&out)
+	_ = yamlx.Decode(node, &out)
 	return out
 }
 func nodeStrings(node *yaml.Node) []string {
@@ -235,13 +173,7 @@ func nodeStrings(node *yaml.Node) []string {
 	return out
 }
 func nodeJSON(node *yaml.Node) (json.RawMessage, error) {
-	var value any
-	if node != nil {
-		if err := node.Decode(&value); err != nil {
-			return nil, err
-		}
-	}
-	return json.Marshal(value)
+	return yamlx.ToJSON(node)
 }
 func jsonValue(value any) json.RawMessage { data, _ := json.Marshal(value); return data }
 func (p *Proxy) set(key string, value any) {
@@ -251,27 +183,12 @@ func (p *Proxy) set(key string, value any) {
 	p.Options[key] = jsonValue(value)
 }
 func parseMihomo(content string, plan *Plan) error {
-	var doc yaml.Node
-	decoder := yaml.NewDecoder(strings.NewReader(content))
-	if err := decoder.Decode(&doc); err != nil && err != io.EOF {
+	root, err := yamlx.Parse([]byte(content))
+	if err != nil {
 		return fmt.Errorf(msgYAML, err)
 	}
-	var trailing yaml.Node
-	if err := decoder.Decode(&trailing); err != io.EOF {
-		if err == nil {
-			err = errors.New("multiple YAML documents are not supported")
-		}
-		return fmt.Errorf(msgYAML, err)
-	}
-	if len(doc.Content) == 0 || doc.Content[0].Kind != yaml.MappingNode {
+	if root.Kind != yaml.MappingNode {
 		return fmt.Errorf(msgMihomoObject)
-	}
-	root := doc.Content[0]
-	// yaml.v3 validates duplicate keys and alias cycles consistently before any
-	// generated section is removed from the retained custom YAML.
-	var checked any
-	if err := root.Decode(&checked); err != nil {
-		return fmt.Errorf(msgYAML, err)
 	}
 	for _, node := range sequence(field(root, "proxies")) {
 		node = dereference(node)
@@ -394,13 +311,19 @@ func parseMihomo(content string, plan *Plan) error {
 	custom.Content = nil
 	for _, entry := range mappingEntries(root) {
 		if !generatedKeys[entry.key.Value] {
-			custom.Content = append(custom.Content, expandedNode(entry.key), expandedNode(entry.value))
+			custom.Content = append(custom.Content, entry.key, entry.value)
 		}
 	}
 	if len(custom.Content) > 0 {
-		data, err := yaml.Marshal(&custom)
+		// Keep physical sharing and define anchors removed with generated
+		// sections; the shared bridge validates the retained subtree budget.
+		n, err := yamlbridge.Encode(&custom)
 		if err != nil {
-			return err
+			return fmt.Errorf(msgYAML, err)
+		}
+		data, err := yamlx.Marshal(n)
+		if err != nil {
+			return fmt.Errorf(msgYAML, err)
 		}
 		plan.Custom = &CustomConfig{"mihomo", string(data)}
 	}

@@ -51,10 +51,10 @@ func CompareNativeReader(source string, mode NativeReaderMode) (string, error) {
 		return "unsafe-alias", nil
 	case errors.Is(err, yamlx.ErrDuplicateKey):
 		return "D1-duplicate", nil
-	case errors.Is(err, yamlx.ErrPolicy):
-		return "reader-policy", nil
 	case oldErr != nil && err != nil:
 		return "native-diagnostics", nil
+	case errors.Is(err, yamlx.ErrPolicy):
+		return "reader-policy", nil
 	case oldErr == nil && err == nil && yamlx.Equal(old, native):
 		return "equal", nil
 	default:
