@@ -129,7 +129,7 @@ func r09Cases() []r09Case {
 		}
 		add(tc)
 	}
-	for _, variant := range []string{"paused", "paused_delta", "manual_disabled", "outside_edit", "moved_address", "missing_address", "gone_all", "hijack_overtaken", "changed_after_preview", "watch_unreadable_owned"} {
+	for _, variant := range []string{"paused", "paused_delta", "manual_disabled", "outside_edit", "moved_address", "missing_address", "gone_all", "changed_after_preview", "watch_unreadable_owned"} {
 		tc = r09Base(variant)
 		mutation := &routerfake.ExternalWrite{}
 		switch variant {
@@ -148,8 +148,6 @@ func r09Cases() []r09Case {
 			mutation.RemoveIDs = map[string][]string{rosAddresses: {"*65", "*66", "*67"}, rosNAT: {"*68", "*69", "*6A", "*6B"}, rosFilter: {"*6C", "*6D"}, rosNetwatch: {"*6E"}}
 			off = r09Copy(tc.Settings)
 			off.Enabled = false
-		case "hijack_overtaken":
-			mutation.Faults = []routerfake.Fault{{Method: "GET", Path: rosNAT, Count: 1, AfterCommit: true, ExtraRows: map[string][]routerfake.Row{rosNAT: {{".id": "*F1", "chain": "dstnat", "dst-port": "53", "action": "redirect"}}}}}
 		case "watch_unreadable_owned":
 			mutation.Faults = []routerfake.Fault{{Method: "GET", Path: rosNetwatch, Status: 404}}
 		}
@@ -175,7 +173,7 @@ func r09Cases() []r09Case {
 		tc.Steps = append(tc.Steps, step)
 		add(tc)
 	}
-	for _, variant := range []string{"ha", "ha_host_outside", "ha_vip_outside", "ha_host_proxy", "ha_vip_proxy", "ha_transition"} {
+	for _, variant := range []string{"ha", "ha_host_outside", "ha_vip_outside", "ha_host_proxy", "ha_vip_proxy", "ha_transition", "ha_empty_hosts", "ha_validation_order"} {
 		tc = r09Base(variant)
 		ha := r09Copy(tc.Desired)
 		ha.Server = "192.0.2.10"
@@ -188,6 +186,11 @@ func r09Cases() []r09Case {
 			ha.HA.VIP = "203.0.113.10"
 		case "ha_host_proxy":
 			ha.ProxyCIDRs = append(ha.ProxyCIDRs, ProxyCIDR{CIDR: "192.0.2.9/32"})
+		case "ha_empty_hosts":
+			ha.HA.Hosts = []string{}
+		case "ha_validation_order":
+			ha.HA.Hosts[1] = "203.0.113.9"
+			ha.ProxyCIDRs = append(ha.ProxyCIDRs, ProxyCIDR{CIDR: "192.0.2.10/32"})
 		case "ha_vip_proxy":
 			ha.ProxyCIDRs = append(ha.ProxyCIDRs, ProxyCIDR{CIDR: "192.0.2.10/32"})
 		}

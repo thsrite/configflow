@@ -142,7 +142,7 @@ func TestR09ForwardHintPython(t *testing.T) {
 				t.Fatal(err)
 			}
 			snapshot := f.Snapshot()
-			got := r09JSON(t, map[string]any{"check": check, "hint": hint, "calls": snapshot.Calls, "tables": snapshot.Tables})
+			got := r09JSON(t, map[string]any{"warning4": ForwardDropWarning(4), "warning6": ForwardDropWarning(6), "check": check, "hint": hint, "calls": snapshot.Calls, "tables": snapshot.Tables})
 			if !reflect.DeepEqual(want, got) {
 				t.Fatalf("hint boundary differs\nPython %s\nGo %s", r09Raw(want), r09Raw(got))
 			}

@@ -63,7 +63,7 @@ func guardDesiredSpec(settings DNSGuard, desired *Desired, state *RouterState) (
 	singles := []netip.Addr{}
 	if dns.HA != nil {
 		address, ok = netipx.ParseAddr4(dns.HA.VIP)
-		if !ok || len(dns.HA.Hosts) == 0 {
+		if !ok || dns.HA.Hosts == nil {
 			return nil, routerError(messageGuardHA)
 		}
 		singles = append(singles, address)
@@ -95,6 +95,8 @@ func guardDesiredSpec(settings DNSGuard, desired *Desired, state *RouterState) (
 				return nil, routerError(fmt.Sprintf(messageGuardHAConnected, a, address, network))
 			}
 		}
+	}
+	for _, a := range singles {
 		for _, target := range targets {
 			n, valid := netipx.ParseNetwork4(target.CIDR, false)
 			if !valid {

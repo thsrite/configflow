@@ -155,3 +155,20 @@ func FuzzR09DNSGuardManifest(f *testing.F) {
 		}
 	})
 }
+
+func FuzzR09DNSGuardOperation(f *testing.F) {
+	spec := &DNSGuardSpec{Agent: "192.0.2.2", Interface: "bridge", Network: "192.0.2.0/24", Bypass: []string{"192.0.2.2/32"}, Failover: true}
+	f.Add([]byte(r09Raw(DNSGuardReplace{OpHead: OpHead{Kind: "dns_guard_replace"}, Spec: spec, Previous: json.RawMessage("null"), Owned: []DNSGuardResource{}, Create: DNSGuardResources(spec)})))
+	f.Add([]byte(`{"kind":"dns_guard_replace","spec":null,"owned":[],"create":[]}`))
+	f.Fuzz(func(t *testing.T, data []byte) {
+		if len(data) > 1<<20 {
+			return
+		}
+		var op DNSGuardReplace
+		if json.Unmarshal(data, &op) != nil {
+			return
+		}
+		_ = guardValidateOp(op)
+		_, _ = parseDNSGuardManifest(op.Previous)
+	})
+}

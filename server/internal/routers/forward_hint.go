@@ -28,6 +28,15 @@ type ForwardHintCheck struct {
 	Rule    Row    `json:"rule"`
 }
 
+// ForwardDropWarning explains same-port drops for the supplied IPv4/IPv6 family.
+// Both families share wording; IPv6 also names its two protected route classes.
+func ForwardDropWarning(family int) string {
+	if family == 6 {
+		return messageForwardIPv6Drop
+	}
+	return messageForwardIPv4Drop
+}
+
 var forwardBareValue = regexp.MustCompile(`^[A-Za-z0-9._\-]+$`)
 
 func forwardQuote(value string) string {

@@ -47,7 +47,7 @@ actual 10s unanswered PUT, per-call timeout capture through apply/restore; cance
 paused incremental IDs and zero NAT/filter writes; post-preview collision/order/ID/ownership drift;
 unknown PUT preserved, lost DELETE compensated, ID reuse and edited undo refused; unknown stored fields.
 
-Parser fuzz targets: FuzzR09DNSGuardManifest and FuzzR09PolicyEvaluator. No YAML is parsed by R09; it neither
+Parser fuzz targets: FuzzR09DNSGuardManifest, FuzzR09DNSGuardOperation and FuzzR09PolicyEvaluator. No YAML is parsed by R09; it neither
 bypasses yamlx nor catches an alias/policy failure as syntax. R10 must keep D1/alias-budget/ErrSyntax-only fallback
 when integrating its own configuration parsing.
 
@@ -96,7 +96,7 @@ new R09 full HTTP release test.
 | Python test | Go coverage |
 |---|---|
 | default_firewall_drops_the_same_port_path_and_gets_one_command | default, exact command/message/check/read/table comparison |
-| ipv4_and_ipv6_share_one_explanation_without_a_fixed_delay | IPv4 exact message; IPv6 full readiness warning is R11, shared IPv6 check tested |
+| ipv4_and_ipv6_share_one_explanation_without_a_fixed_delay | both exact Python messages through ForwardDropWarning; shared IPv6 check tested |
 | hint_changes_no_operation_or_fingerprint | TestR09HintDoesNotEnterPlan; no fingerprint/stage builder in R09 (R12 integration required) |
 | same_port_accept_before_the_drop_silences_the_hint | early_accept, late_accept |
 | place_before_follows_the_rule_that_actually_drops_whatever_its_comment | renamed, custom_drop, jump, default_deny |

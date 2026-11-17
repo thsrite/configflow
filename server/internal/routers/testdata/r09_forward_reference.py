@@ -20,4 +20,4 @@ try:
 finally:
     driver.close()
 snapshot = requests.get(endpoint + '/__r04/state', timeout=5).json()
-print(json.dumps({'check': result, 'hint': hint, 'calls': snapshot['calls'], 'tables': snapshot['tables']}, ensure_ascii=False))
+print(json.dumps({'warning4': forward_hint.drop_warning(4), 'warning6': forward_hint.drop_warning(6), 'check': result, 'hint': hint, 'calls': snapshot['calls'], 'tables': snapshot['tables']}, ensure_ascii=False))
