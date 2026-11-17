@@ -1,9 +1,37 @@
 # O3-6a — 进程内资源锁与 owner 取消边界
 
-分支 `go-o3-6`，基于 `go@dda8973d`（含 R08、C32、TMPDIR 调整和 A13/复核）。
-代码与测试提交截止 `1bd4ae10`。非 routers 范围及两项 test-only 时序修正已完成。
-实现与定向复核完成；最终完整门禁尚待协调者使用 cf-gate 复验，当前不标记全绿。
-本机只做编辑和 Git；没有子 agent、push 或本机测试。变基均无冲突，routers 相对 go 无代码改动。
+分支 `go-o3-6`，当前基线 `go@28e6e0c1`（含 L1 复核、C29、R09）。无冲突变基。
+本轮 test-only 提交 `49b95db20`；工作区交回前核对干净，不 push、不派子 agent、不在本机测试。
+完整合入门禁仍由协调者重跑。
+
+## L1 / O12 集成跟进（2026-11-18）
+
+协调者在变基后的 `14cf7ee8` 上复验：gofmt、vet、两种 tag、全量 race、proddiff
+（new=0/stale=0）均通过，只有 L1 compact-colon 的差分失败。
+原因已确认：共享 `installationFiles` 按 O12 排除了 `.issue.lock`，L1 新测试却仍断言
+快照有四项且包含这个锁。没有产品代码故障，也没有改生产实现。
+
+修正仅在 `l1_installer_diff_test.go`：
+- Python 快照必须恰有目录、一个 session JSON、一个 index，不再包含退休锁。
+- 在原始文件系统单独断言 Python 的 `.issue.lock` 是已存在的普通文件。
+- 在原始文件系统单独断言 Go 没有创建 `.issue.lock`，原有 Go 拒绝后无文件断言也保留。
+- 目录权限严格为 0700，session/index 均严格为 0600；响应、Compose 和 Agent 注册断言未改。
+
+以 `git diff --name-only dda8973d 28e6e0c1 -- server` 限定 L1/C29/R09 合入范围，
+用 rg 检查其中 58 个测试及 testdata 文件的退休锁、flock、锁路径与文件快照引用。
+除本次 L1 外，没有另一处要求退休锁存在的断言；另一处 `.issue.lock` 命中是
+`installer/docker_ha_recorded_test.go` 已有的 O12 排除处理。`.config.lock` 和目标机锁未改。
+
+本轮在 .64 前台执行：
+
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'cd server && test -z "$(gofmt -l internal/api/agents/difftest/l1_installer_diff_test.go)" && CONFIGFLOW_DIFF=1 go test -count=1 ./internal/api/agents/difftest/ && go vet ./...'
+```
+
+退出 0；gofmt 无输出，difftest 输出 `ok configflow/internal/api/agents/difftest 200.487s`，
+随后全仓 vet 无输出并通过。依协调者要求，本轮不重跑完整 gate。
+
+以下保留首次交回（基于 dda8973d）的实现范围及验证历史，不把旧结果视为当前基线的最终全绿。
 
 ## 已交付
 
@@ -45,7 +73,7 @@ profile 删除和 reset；新建 router 或只改非保护显示字段，不会�
 真实 routers Keyed 的接线留给 O3-6b，未放宽 fail-closed。
 非测试 Go 文件本轮新增 878 行、移除 498 行，净增 380 行。
 
-当前 router HTTP 路由仍有 todo；proddiff 排除设备 apply/route-apply 写入和 config import，
+首次交回时 router HTTP 路由仍有 todo；当时 proddiff 排除设备 apply/route-apply 写入和 config import，
 router-script generator 也明确尚未实现。因此绿色 proddiff 不代表这些写路径已覆盖。
 已跑过的 proddiff 和差分未发现 JobLock 引起的失败；但最终基线的全部启用 difftest 尚未重跑，
 不能从排除范围推断覆盖，协调者的完整 gate 仍是合入门禁。
@@ -131,7 +159,7 @@ RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && test -z "$(gofmt -l i
 
 ## 后续边界
 
-**O3-6b**：等 R09 合入后另开分支，接 routers 按物理连接共享的 L1 Keyed → repo.JobLock，
+**O3-6b**：R09 已随 28e6e0c1 合入；后续按协调者安排另开分支，接 routers 按物理连接共享的 L1 Keyed → repo.JobLock，
 审计 R04–R07/R09 写入、读回、回滚 owner Detach。R08 已迁移多数 RouterOS 设备 I/O；
 剩余当前点包含 route_editor ExecuteRoutePlan/RouterOperationLock(write)、routeros_routes、
 iKuai write/confirm。保留只读操作取消与写入 10 分钟上限，补真实共享 key/busy/CAS 边界测试。
@@ -142,10 +170,10 @@ iKuai write/confirm。保留只读操作取消与写入 10 分钟上限，补真
 增加 taskstatus RecordContext/ForgetContext（锁内写前检查，旧入口保留）、repo 最终提交 ctx 检查、
 rulefetch touch/rename 前检查，并处理 BuildMosDNSZip 若仍有 WithoutCancel。沿用本次锁分层。
 
-## 当前提交
+## 当前基线上的提交
 
-e83ca4ac 设计；8bb67ca6 叶锁/子顺序；e87c02cc ctxx/本地批处理；484e97b8 taskstatus；
-789cac1e repo；006a94d1 notifications；f97e1a96 monitor；3cdff3ea listener；5e0314df installer；
-7047df75 Sub-Store；7e8bf84a deployment；bd4ab9a8 owners；9a24e3f5 拆分范围；
-2f0948c4 C27 取消契约；bc3fbdad 退休锁差分；0645c11f Latin1 test-only；1bd4ae10 C27 调度 test-only。
-最终验证记录提交见本文件的 git log。
+23908f728 设计；9089fcc05 叶锁/子顺序；55db73bec ctxx/本地批处理；7fd0dbf18 taskstatus；
+53ccc09bb repo；a9d62a492 notifications；49343cbd8 monitor；98ea91c60 listener；5c4b6ab77 installer；
+5a20d9fd3 Sub-Store；c65154ee0 deployment；bef2fbec0 owners；6ebabfc35 拆分范围；
+b8c1ddf50 C27 取消契约；614bab184 退休锁差分；fe18846d0 Latin1 test-only；358911a19 C27 调度 test-only；
+b8be9043a 首次交回记录；49b95db20 L1/O12 test-only。最新验证记录提交见本文件的 git log。
