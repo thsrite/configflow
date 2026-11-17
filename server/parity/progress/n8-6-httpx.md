@@ -88,3 +88,8 @@ Options.Auth配置凭据；当前示范提交已修订为可编译。R226在http
 已在 .64 完成 rebase 到最新 go（含N7-3a/C31）；只发生文档追加冲突，双方记录均保留。
 严格比较下最新httpx差分：118 requests，0 unexpected differences，PASS1.470s。
 最终全门禁随后在同一台 .64 执行；不将阶段结果当最终全量结果。
+
+最终门禁首轮 .64：gofmt/vet静默，race httpx35.426s、api/auth1.237s、api/tasks2.267s全过；
+全量发现internal/auth/http_test.go仍要求登录畸形请求500，这是本步已批准的旧预期。
+该测试改为400/415及精确错误体，.32 auth0.096s、api/auth0.019s通过（无产品变更）。
+新版本最终完整门禁改固定 .32 运行；不将旧预期失败的 .64 全量当作通过。

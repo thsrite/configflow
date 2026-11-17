@@ -139,20 +139,18 @@ func TestAuthDisabledLetsEverythingThroughAndLoginIsRefused(t *testing.T) {
 		WantStatus(400).WantJSON(jsonx.Obj("success", false, "message", "当前未开启登录验证。"))
 }
 
-func TestLoginErrorsKeepPythonMessages(t *testing.T) {
+func TestLoginBindingErrorsUseClientStatuses(t *testing.T) {
 	srv := httpxtest.New(t, httpxtest.Options{Auth: true})
-	res := srv.Post("/api/auth/login", httpxtest.Body([]byte(`{"username":`), "application/json")).WantStatus(500)
-	if got := res.Object().GetString("message"); got != "登录失败。原始错误：400 Bad Request: "+httpx.DescBadRequest {
+	// N8-6 fixes Python's caught 500 responses to 400/415. The HTTP
+	// differential separately asserts Python's full old body and this envelope.
+	srv.Post("/api/auth/login", httpxtest.Body([]byte(`{"username":`), "application/json")).WantStatus(400).
+		WantJSON(jsonx.Obj("success", false, "message", httpx.DescBadRequest))
+	res := srv.Post("/api/auth/login", httpxtest.Body([]byte(`{}`), "text/plain")).WantStatus(415)
+	if got := res.Object().GetString("message"); got != "Did not attempt to load JSON data because the request Content-Type was not 'application/json'." {
 		t.Fatal(got)
 	}
-	res = srv.Post("/api/auth/login", httpxtest.Body([]byte(`{}`), "text/plain")).WantStatus(500)
-	if got := res.Object().GetString("message"); !strings.HasPrefix(got, "登录失败。原始错误：415 Unsupported Media Type: Did not attempt") {
-		t.Fatal(got)
-	}
-	res = srv.Post("/api/auth/login", httpxtest.JSON([]any{1})).WantStatus(500)
-	if got := res.Object().GetString("message"); got != "登录失败。原始错误：'list' object has no attribute 'get'" {
-		t.Fatal(got)
-	}
+	srv.Post("/api/auth/login", httpxtest.JSON([]any{1})).WantStatus(400).
+		WantJSON(jsonx.Obj("success", false, "message", httpx.DescBadRequest))
 	ok := srv.Post("/api/auth/login", httpxtest.JSON(jsonx.Obj("username", httpxtest.Username, "password", httpxtest.Password)))
 	body := ok.WantStatus(200).Object()
 	if body.GetString("username") != httpxtest.Username || body.GetInt("expiresIn") != 86400 || body.GetString("token") == "" {
