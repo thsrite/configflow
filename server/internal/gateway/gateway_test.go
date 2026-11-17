@@ -218,3 +218,41 @@ func FuzzExtractCIDRs(f *testing.F) {
 		}
 	})
 }
+
+// TestHooks covers the convert hooks Wire registers: the base settings'
+// fake-ip-range check (test_mihomo_base_settings.py values) and the gateway
+// switch read by takeover_mode / get_mihomo_ruleset_downloads.
+func TestHooks(t *testing.T) {
+	hooks := gateway.Hooks()
+	for _, value := range []string{"10.10.0.1/16", "198.18.0.1/15", "100.64.0.0/10"} {
+		if err := hooks.FakeIPNetworkError(value); err != nil {
+			t.Errorf("%s refused: %v", value, err)
+		}
+	}
+	for _, value := range []string{"198.18.0.1/31", "10.0.0.0/7", "127.0.0.1/16", "224.0.0.1/8", "169.254.0.1/16",
+		"0.0.0.0/8", "fc00::1/64", " 198.18.0.1/16"} {
+		if err := hooks.FakeIPNetworkError(value); err == nil {
+			t.Errorf("%s accepted", value)
+		}
+	}
+	tests := []struct {
+		name    string
+		config  *jsonx.Object
+		enabled bool
+		wantErr bool
+	}{
+		{"absent", jsonx.Obj("mihomo", jsonx.NewObject()), false, false},
+		{"no mihomo", jsonx.NewObject(), false, false},
+		{"on", snapshot(true), true, false},
+		{"off", snapshot(false), false, false},
+		{"malformed", jsonx.Obj("mihomo", jsonx.Obj("linux_gateway", jsonx.Obj("enabled", "yes"))), false, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			enabled, err := hooks.GatewayEnabled(tt.config)
+			if enabled != tt.enabled || (err != nil) != tt.wantErr {
+				t.Fatalf("got %v, %v", enabled, err)
+			}
+		})
+	}
+}

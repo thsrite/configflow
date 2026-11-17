@@ -103,6 +103,9 @@ FAKE_RANGES = [
     '198.18.0.0/255.255.0.0', '198.18.0.0/0.0.255.255', '198.18.0.0/255.0.255.0', '198.018.0.0/16',
     '198.18.0.0/016', ' 198.18.0.0/16', '198.18.0.0/16 ', '198.18.0.0/ 16', '198.18.0.0/', '/16',
     '100.64.0.0/10', '240.0.0.0/4', '255.255.255.0/30', '1.2.3.4/29', '198.18.0.0/16/1',
+    # test_mihomo_base_settings.py (through the FakeIPNetworkError hook)
+    '10.10.0.1/16', '198.18.0.1/15', '198.18.0.1/31', '127.0.0.1/16', '224.0.0.1/8', '169.254.0.1/16',
+    'fc00::1/64', ' 198.18.0.1/16',
 ]
 
 
@@ -458,6 +461,14 @@ def gen_editor(count):
 
 def gen_validation(count):
     cases = []
+    # test_router_split.py::test_rule_set_id_validation_is_shared_with_gateway_selection
+    profile = {'mihomo': {'custom_config': 'mixed-port: 7890\n'}, 'rule_configs': [
+        {'id': 'ip', 'itemType': 'ruleset', 'behavior': 'ipcidr', 'source_type': 'content', 'content': '1.1.1.0/24'},
+        {'id': 'domain', 'itemType': 'ruleset', 'behavior': 'domain'}]}
+    for ids, previous in ((['ip'], []), (['domain', 'gone'], ['domain', 'gone']), (['domain'], []), (['gone'], [])):
+        record('validate_ids', {'config': profile, 'ids': ids, 'previous': previous},
+               lambda: lg.validate_rule_set_ids(profile, ids, set(previous)))
+        cases.append((profile, {'enabled': True, 'rule_set_ids': ids}))
     config = snapshot()
     config['rule_library'][0]['url'] = 'https://rules.test/ip.mrs?foo=1'
     config['mihomo']['linux_gateway']['rule_set_ids'] = []
