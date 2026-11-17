@@ -1,6 +1,6 @@
 # R07 — NAT address lists
 
-Status: in progress; HR, must remain `ported` until fresh Opus review. Branch go-port-r07 from go.
+Status: **ported**; fresh Opus HR review required before `verified`. Branch go-port-r07, rebased on go.
 Scope: routeros_nat_list.py, ros_address_lists.py, routeros_test_helpers.py. No routes, no subagents, no push.
 
 Design follows R03 typed rows and R04 driver/handler registry. Typed list plan, resource/check and journal structs; open RouterOS rows retain unknown fields. No jsonx, new dependencies, locks or goroutines. Driver owned by one operation; outer R12/R14 owns L1/L2 locks. Read context cancellable; exported writes detach and each device request retains 10s timeout. Cache proof lives only in one explicit reuse scope, invalidated before any destructive operation.
@@ -18,11 +18,11 @@ R04 issue-class prevention:
 - F10: reuse configROSRow/payload/sameRow/ScriptString/putNAT, no private emulation helpers.
 
 Done: address proof/read layer and stateful fake scripts; 24 Python boundary comparisons (digest/fetch/reuse across 0/1/499/500/501/2000/2001/4500 members), content-mutation check. .32 go vet ./... and existing routers/devhttp tests pass.
-Done step 1: 96e096bf. Typed NAT planner/read integration: 135 boundary scenarios compare real Python plans and exact request sequences, all pass on .32. Covers no-list paths, adopt/unknown, merge/stale/retained, foreign/dynamic/disabled/reference/shape/order blockers and grow/shrink/unchanged membership.
-Done step 2: e6cd7b3f. Address batches + NAT apply/restore implemented; .32 vet all and 30 successful apply/roundtrip + 24 NAT failure + 31 address-write boundary cases pass, comparing outcomes/journal/full requests/final tables. Batches cover 200/201/450/3000 members and 560 legacy rules. Digest/fetch/names script text is exact. Address/NAT add parameter order is immaterial: full grammar and all values/address order/anchors are compared, with independent Python interpreter checks. Redact password/URL-encoded password from device diagnostics; accepted security correction vs Python (O9/O12).
+Done step 1: 9df951e5. Typed NAT planner/read integration: 135 boundary scenarios compare real Python plans and exact request sequences, all pass on .32. Covers no-list paths, adopt/unknown, merge/stale/retained, foreign/dynamic/disabled/reference/shape/order blockers and grow/shrink/unchanged membership.
+Done step 2: 2f1d0ee6. Address batches + NAT apply/restore implemented; .32 vet all and 30 successful apply/roundtrip + 24 NAT failure + 31 address-write boundary cases pass, comparing outcomes/journal/full requests/final tables. Batches cover 200/201/450/3000 members and 560 legacy rules. Digest/fetch/names script text is exact. Address/NAT add parameter order is immaterial: full grammar and all values/address order/anchors are compared, with independent Python interpreter checks. Redact password/URL-encoded password from device diagnostics; accepted security correction vs Python (O9/O12).
 Done: helper boundary cases (removals-first, restrict egress, enrolled member-only update, nested migration, policy address split, baseline, locate and occupied-name reservation) and 5 external-mutation/restore fault cases pass on .32. Fake mutations preserve allocated IDs and transcript. No open differential mismatch.
 Done: independent Python script-interpreter cross-check; request-cancelled apply and rollback; UTF-8 script byte limits; all-member delete guard; partial address recreation preserves new IDs; deep-copy proof cache; ambiguous/dynamic sweep refusal; wrong-table undo rejection; secret diagnostics; malformed proof/page fallbacks; 600-member pruning/withdrawal and narrowed-rule roundtrips. Deliberately wrong Go result was detected (expected test failure). A fault fixture initially reused *F1 at 200 members; corrected to *F0001, with duplicate-ID behaviour covered explicitly as fail closed.
-Next: authoritative .32 race/all/difftest/proddiff on rebased go, final evidence and clean-tree rebase.
+Next: fresh Opus HR review; R08 typed adapter replacement; R12/R14 integration and L5 lab acceptance.
 Commands: `rt -- bash -lc 'cd server && gofmt -w internal/routers/addresslists.go internal/routers/routerfake/addresslists.go internal/routers/routeros.go internal/routers/routerfake/fake.go internal/routers/messages.go && go vet ./internal/routers/... && go test -count=1 ./internal/routers/ ./internal/devhttp/'`.
 
 ## Coverage and acceptance
@@ -109,36 +109,59 @@ JSON copies and composite-valued rows use REST instead of lossy digest coercion;
 | `internal/routers/testdata/r07_reference.py` | 64 |
 
 
-## Authoritative validation before final upstream sync
+## Final authoritative validation (.32)
 
-On .32, typed R12 contract implementation (through 0820b904):
+All gates pass after the N8-2/storage/proxy upstream sync (base 3ae44741; R07 implementation unchanged by the
+subsequent final rebase). Exact commands, run from this worktree:
 
-```text
-gofmt -l internal/ tools/                                   (empty)
-go vet ./...                                               exit 0
-CONFIGFLOW_R07_MUTATE={result,journal,request,table}          all 4 deliberately fail the Python comparison
-go test -race -timeout=30m -count=1 ./internal/routers/ ./internal/devhttp/
-  ok configflow/internal/routers 431.162s
-  ok configflow/internal/devhttp 3.486s
-go test -p=2 -timeout=30m -count=1 ./...                     exit 0
-  ok configflow/internal/webdav/difftest 0.013s
-  ok configflow/internal/weblistener 0.011s
-  ok configflow/internal/weburl 0.008s
-  ok configflow/internal/yamlx 2.470s
-  ?  configflow/tools/proddiff/generator [no test files]
-CONFIGFLOW_DIFF=1 go test -tags=configflow_difftest -p=2 -timeout=30m -count=1 <all 9 /difftest packages>
-  ok api/agents/difftest 153.505s; api/subscriptions/difftest 121.245s
-  ok discovery 2.987s; health 14.132s; httpx 1.580s; mosdns 1.847s
-  ok refresh 3.702s; substore 5.525s; webdav 19.982s
-server/scripts/proddiff.sh                                  baseline: new=0 stale=0
-strict null/missing comparison + R12 typed contract          ok routers 26.572s
+```bash
+rt -- bash -lc 'cd server && test -z "$(gofmt -l internal/ tools/)" && go vet ./...'
+rt -- bash -lc 'cd server && go test -race -timeout=30m -count=1 ./internal/routers/ ./internal/devhttp/'
+rt -- bash -lc 'cd server && go test -p=2 -timeout=30m -count=1 ./...'
+rt -- bash -lc 'cd server; mapfile -t r07_difftest_packages < <(go list -tags=configflow_difftest ./... | rg "/difftest$"); CONFIGFLOW_DIFF=1 go test -tags=configflow_difftest -p=2 -timeout=30m -count=1 "${r07_difftest_packages[@]}"'
+rt -- server/scripts/proddiff.sh
 ```
 
-Commands use `rt -- bash -lc 'cd server && …'` from this worktree. Difftest package list:
-`mapfile -t r07_difftest_packages < <(go list -tags=configflow_difftest ./... | rg "/difftest$")`.
-Mutation filter: `TestNATListWriteBoundary/new/1/nat_apply$`; each nonzero result is checked for an actual
-outcome/wire/table difference, not a build failure. `-p=2` bounds package concurrency on the shared server,
-without skipping tests. Proddiff has no public router plan exporter yet (R12/R15); device semantics are proven
-by the R07 loopback corpus, not claimed from the production generator comparison.
+Final tails:
 
-Final upstream sync found new N8-2 storage/proxy code on go (3ae44741); rebase + final checks are being repeated.
+```text
+GOFMT_PASS                       (gofmt -l had no output)
+VET_PASS
+ok configflow/internal/routers   391.762s  (-race)
+ok configflow/internal/devhttp   3.471s    (-race)
+RACE_PASS
+ok configflow/internal/webdav/difftest 0.007s
+ok configflow/internal/weblistener 0.011s
+ok configflow/internal/weburl 0.005s
+ok configflow/internal/yamlx 1.359s
+?  configflow/tools/proddiff/generator [no test files]
+ALL_TESTS_PASS
+ok api/agents/difftest 120.276s; api/subscriptions/difftest 92.282s
+ok discovery/difftest 4.276s; health/difftest 14.846s; httpx/difftest 2.027s
+ok mosdns/difftest 2.246s; refresh/difftest 3.783s
+ok substore/difftest 5.851s; webdav/difftest 20.618s
+DIFFTEST_PASS
+baseline: new=0 stale=0
+PRODDIFF_EXIT_0
+MUTATION_DETECTED result
+MUTATION_DETECTED journal
+MUTATION_DETECTED request
+MUTATION_DETECTED table
+```
+
+Strict null/missing plan/list comparison + TestR12TypedNATContract additionally passed (`ok routers 26.572s`).
+Mutation command (each must exit nonzero **and** report an outcome/wire/table difference, not a build failure):
+`CONFIGFLOW_R07_MUTATE=<result|journal|request|table> go test -count=1 -run 'TestNATListWriteBoundary/new/1/nat_apply$' ./internal/routers/` through `rt` on .32. All four were repeated on the final implementation.
+
+The combined final run's local SSH process remained after the remote command disappeared; all test logs were
+complete. The stale client was closed after a fresh keepalive-enabled SSH invocation confirmed proddiff again:
+`ssh -o BatchMode=yes -o ConnectTimeout=5 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 sunbroke@192.168.0.32 'cd ~/rt/.paseo__worktrees__302rx1dg__go-port-r07 && server/scripts/proddiff.sh > /tmp/r07-proddiff-confirmed.log 2>&1; r07_code=$?; tail -1 /tmp/r07-proddiff-confirmed.log; echo PRODDIFF_EXIT_$r07_code; exit "$r07_code"'`.
+This confirmation exited 0 with `baseline: new=0 stale=0`; it was a transport cleanup, not a failed test.
+
+`-p=2` bounds package concurrency without skipping tests. Proddiff has no public router plan exporter yet
+(R12/R15); R07 device semantics are proven by its real-Python loopback boundary corpus and independent helper
+interpreter. No production or lab device was contacted. No R07 feature is skipped; the integration and lab
+items in the coverage map remain with their owning modules.
+
+Final rebase check on .32: gofmt empty, `go vet ./...` pass, strict plan/list + R12 contract tests pass
+(`ok configflow/internal/routers 27.750s`, `FINAL_REBASE_CHECK_PASS`). Final rebase also includes the coordinator-verified importer bounds change; R07 implementation files are unchanged.

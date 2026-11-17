@@ -430,17 +430,22 @@ Latest targeted output: `171 real Python boundary cases`, `PASS`, `ok configflow
 
 ## R07 — RouterOS NAT address lists, address-list sync, test helpers
 
-**Status: implementation complete, final gates running; HR review pending** · HR · prereqs: R03, R04 · Go: internal/routers, internal/routers/routerfake
+**Status: `ported`** (fresh Opus HR review pending; final .32 gates pass) · HR · prereqs: R03, R04 · Go: internal/routers, internal/routers/routerfake
 
 Files: `backend/routers/routeros_nat_list.py` (1016), `ros_address_lists.py` (297), `backend/routeros_test_helpers.py` (109).
 
-Commits: 96e096bf (scoped reads/proofs/fake), e6cd7b3f (typed plan, lazy state reads), e7113b3b (bounded address writes, NAT migration/compensation), aed7ba20 (sync helpers, external-write/restore boundaries). No push; fresh Opus must review before `verified`.
+Commits: 9df951e5 (scoped reads/proofs/fake), 2f1d0ee6 (typed plan, lazy state reads), fa66e0e2 (bounded address writes, NAT migration/compensation), 8ee4afe7 (sync helpers, external-write/restore boundaries), b335a09e (ownership/cancellation/script safety), 8e35b49a (R12 typed contract), bb73aee3 (four mutation classes), 4261591f (strict null fields). No push; fresh Opus must review before `verified`.
 
 Full handoff, R04 F1–F10 prevention, Python test-file mapping, safety corrections and L5 list: [progress/R07-nat-lists.md](progress/R07-nat-lists.md).
 
 Typed API: `PlanNATLists`, `NATRemovalsFirst`, `RestrictNATEgress`, `NATPolicyMigrations`, `VerifyNATLists`; `RouterOS.NATResources`, `NATMemberUpdate`, `NATMigration`; registered `nat_list_sync` / `nat_list_restore` handlers. Shared `ReadAddresses`/`FetchAddresses`/`RememberAddresses`/`ExpectAddresses`/`ReuseAddressReads`/`LocateAddresses`/`OccupiedAddressNames`; address batching `CreateAddresses`/`DeleteAddresses`, `ROSResource`/`NATStep`/`ROSIDs`. No new dependency or jsonx. R08 fills typed `NATPolicyEvidence`; R12/R14 own serialized release/worker orchestration and the existing L1/L2 locks. R07 has no route or loop.
 
 Acceptance: real Python driver against the same loopback fake; compare plans, Chinese errors, undo journals, requests and final ordered tables. Independent Python test-helper interpreter verifies captured scripts. Negative mutation test deliberately changes Go result and must fail. All network fakes and final checks on .32; no real device contacted.
+
+Final .32: gofmt empty, vet pass; race routers 391.762s / devhttp 3.471s; full suite and all 9 CONFIGFLOW_DIFF=1
+packages pass; proddiff confirmed exit 0 (`new=0 stale=0`); four deliberate mutations detected. Strict null vs
+missing fields are retained in comparisons. Detailed commands/tails and the R12 §2.4 mapping are in the handoff.
+No push. L5 and fresh Opus review remain required before production / `verified`.
 
 ## R08 — RouterOS policy routing
 
