@@ -28,6 +28,13 @@ asked in; the maintainer reads Chinese.
   gate.sh runs at most 2 full gates per server at once and queues the rest. Never run a full `-race` or proddiff
   outside gate.sh; while iterating, test only the packages you changed. A proddiff difference seen only under high
   load (check `/proc/loadavg`) is re-run at a quieter time before it is reported as a finding.
+  **gate.sh reading the prod snapshot is always allowed**, even when your task says "synthetic data only": proddiff
+  reads the offline `~/cf-prod-snapshot` on the test server and never connects to production. That rule is about
+  what *you* write: your fixtures and test cases stay synthetic, and nothing from the snapshot is copied into code,
+  tests, docs or reports (report only the proddiff summary: new / stale / self-check).
+  **Queue limit:** if your final gate waits for a slot more than 15 minutes, stop it and hand back with the targeted
+  runs you did; the coordinator runs the full gate (`cf-gate`) on the merged tree. Long gates may be moved to the
+  background by your tool; keep following them in the foreground (poll the log) and do not end the turn early.
 - **Temp space:** `/tmp` on both servers is a small tmpfs (7.8 GB on .64) that concurrent Go builds filled
   ("disk quota exceeded"). `rt` now sources `~/.rt-env`, which sets `TMPDIR`/`GOTMPDIR` to `~/.cache/rt-tmp` on the
   home disk; do not write large files to `/tmp` yourself.
