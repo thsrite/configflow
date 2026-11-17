@@ -15,22 +15,26 @@ import (
 // freely; nothing it does reaches the repository unless it is written through
 // a write transaction.
 //
-// View hands fn the shared decoded document instead, without copying. Every
-// committed generation (identified by its store head) is decoded once and then
-// shared by all readers of that generation, so View is the read for hot paths.
+// View hands fn the decoded document instead, without copying. Cache hits share
+// the snapshot identified by its store head, so View is the read for hot paths.
+// Oversized documents are not cached, and concurrent cold loads may decode the
+// same head independently; snapshot pointer identity is not an API guarantee.
 // The document is a read-only snapshot:
 //
 //   - fn must not modify it, nor keep it or anything reachable from it after
 //     returning. Model containers (Map, Fields, Dynamic) copy on write, but
 //     slices and records do not: a modification would be seen by every reader
 //     of the generation and could be written back by none.
-//   - It is immutable for its lifetime: a commit by this or another process
+//   - A committed snapshot is immutable for its lifetime: a commit by this or another process
 //     publishes a new generation and never touches the snapshot, so fn sees
 //     one consistent generation without holding any lock.
-//   - View takes no lock. With the context of a write transaction it sees that
+//   - View holds no lock across fn itself (failed loads may retry under L3).
+//     With the context of a write transaction it sees that
 //     transaction's working copy (uncommitted changes included); with the
 //     context of WithReadSnapshot it sees that locked generation. Neither may
 //     be modified through View either.
+//   - model.Issues reports decoding diagnostics, not validation of later field
+//     assignments. Clear removes the cleared member's diagnostic.
 //   - It honours cancellation: a cancelled ctx returns ctx.Err() before reading.
 //
 // Values from View are never handed to a writer; writers read inside their

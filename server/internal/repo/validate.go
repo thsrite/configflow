@@ -578,7 +578,8 @@ func asValidation(err error, classes ...string) error {
 }
 
 // ValidateDocument is ProfileRepository._validate_document, run on every
-// commit and on every load that misses the cache.
+// commit. Startup also uses it to decide whether optional token maintenance is
+// safe; a business validation failure never rejects an otherwise readable load.
 func ValidateDocument(document *jsonx.Object) error {
 	if !isSchemaVersion(document.Value("schema_version")) {
 		return validationError(msgSchemaMismatch)

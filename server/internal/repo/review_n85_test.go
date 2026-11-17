@@ -6,12 +6,74 @@ import (
 	"encoding/json"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"testing"
 
+	"configflow/internal/jsonx"
 	"configflow/internal/model"
 )
+
+func TestReviewN85PythonFullStorageDifferential(t *testing.T) {
+	interpreter, root := os.Getenv("CONFIGFLOW_PY"), os.Getenv("CONFIGFLOW_REPO")
+	if interpreter == "" || root == "" {
+		t.Skip("CONFIGFLOW_PY and CONFIGFLOW_REPO are required")
+	}
+	python := func(directory, action string) *jsonx.Object {
+		t.Helper()
+		output := filepath.Join(t.TempDir(), "snapshot.json")
+		command := exec.Command(interpreter, "testdata/review_n85_storage.py", directory, output, action)
+		command.Env = append(os.Environ(), "CONFIGFLOW_REPO="+root, "PYTHONDONTWRITEBYTECODE=1")
+		if data, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("Python action %s: %v\n%s", action, err, data)
+		}
+		return must(jsonx.Parse(must(os.ReadFile(output))(t)))(t).(*jsonx.Object)
+	}
+	pyDir, goDir := t.TempDir(), t.TempDir()
+	python(pyDir, "seed")
+	xcCopyTree(t, pyDir, goDir)
+	r := openRepo(t, goDir)
+	for _, action := range []string{"rename", "same-row", "replace", "clear"} {
+		t.Run(action, func(t *testing.T) {
+			want := python(pyDir, action)
+			noError(t, r.Update(bg, func(_ context.Context, d *model.Document) error {
+				switch action {
+				case "rename":
+					profileByKey(d, DefaultProfileID).Name = "review renamed"
+				case "same-row":
+					d.System.SystemConfig.ServerDomain = "cf.example.com"
+					path := "/review"
+					d.System.Backup.WebDAVPath = &path
+				case "replace":
+					profileByKey(d, DefaultProfileID).Description = "repaired"
+				case "clear":
+					if err := d.System.SystemConfig.Clear("default_profile_id"); err != nil {
+						return err
+					}
+					return d.System.Backup.Clear("auto_backup")
+				}
+				return nil
+			}))
+			gotTables, wantTables := xcDump(t, goDir), want.GetObject("tables")
+			// JSON value spelling is not a cross-language formatting contract.
+			// Compare every table column, parsing only fields.value.
+			for _, tables := range []*jsonx.Object{gotTables, wantTables} {
+				for _, value := range tables.GetList("fields") {
+					row := value.([]any)
+					row[4] = must(jsonx.Parse([]byte(row[4].(string))))(t)
+				}
+			}
+			xcSame(t, "all database tables", gotTables, wantTables)
+			data := must(json.Marshal(n85Files(t, goDir)))(t)
+			xcSame(t, "complete file contents", must(jsonx.Parse(data))(t), want.Value("files"))
+			xcSame(t, "complete exported document", must(r.ExportAll(bg, false))(t), want.Value("export"))
+		})
+		if t.Failed() {
+			return
+		}
+	}
+}
 
 func n85Files(t *testing.T, directory string) map[string]string {
 	t.Helper()
@@ -155,4 +217,53 @@ func TestReviewN85MergeTypedEqualityAndConflicts(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestReviewN85ViewRespectsCacheLimit(t *testing.T) {
+	r := newRepo(t)
+	r.cacheMaxBytes = 0
+	r.dropCache()
+	start := ccCounts(r)
+	for range 2 {
+		noError(t, r.View(bg, func(d *model.Document) error {
+			if profileByKey(d, DefaultProfileID) == nil {
+				t.Fatal("missing profile in uncached snapshot")
+			}
+			return nil
+		}))
+	}
+	if got := ccSince(r, start); got != [2]int64{2, 2} || r.cached() != nil {
+		t.Fatalf("uncached View loads/validations=%v cached=%v", got, r.cached() != nil)
+	}
+}
+
+func FuzzMergeJSON(f *testing.F) {
+	f.Add([]byte(`{"v":1.0}`), []byte(`{"v":1e0}`), []byte(`{"v":1.00}`))
+	f.Add([]byte(`[{"id":"a","v":2}]`), []byte(`[{"id":"a","v":1}]`), []byte(`[]`))
+	f.Add([]byte(`{"unknown":{"v":9007199254740993.0}}`), []byte(`{}`), []byte(`{"new":null}`))
+	f.Fuzz(func(t *testing.T, current, baseline, proposed []byte) {
+		if !json.Valid(current) || !json.Valid(baseline) || !json.Valid(proposed) {
+			return
+		}
+		copies := [3][]byte{bytes.Clone(current), bytes.Clone(baseline), bytes.Clone(proposed)}
+		got, changed, err := MergeJSON(current, baseline, proposed)
+		// Native node depth/shape validation may reject arbitrary JSON trees.
+		if err == nil {
+			if !json.Valid(got) || (!changed && !bytes.Equal(got, current)) {
+				t.Fatal("merge result violates JSON/current-byte contract")
+			}
+		}
+		for i, value := range [3][]byte{current, baseline, proposed} {
+			if !bytes.Equal(value, copies[i]) {
+				t.Fatal("merge mutated an input")
+			}
+		}
+		// A caller that did not edit its baseline must preserve a valid
+		// current value byte for byte, even if current changed concurrently.
+		got, changed, err = MergeJSON(current, baseline, baseline)
+		noError(t, err)
+		if changed || !bytes.Equal(got, current) {
+			t.Fatal("unchanged caller rewrote current")
+		}
+	})
 }
