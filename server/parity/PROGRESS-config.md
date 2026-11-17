@@ -42,6 +42,19 @@ diagnosis and strict other fields/storage; no aggregation runtime code changes. 
 - Python lazily imports in cycles (e.g. converters ↔ provider delivery ↔ route files, the whole OxiDNS cluster). Go needs a DAG: the prerequisite order below breaks the cycles; when a module needs a function of a later module, put a `compat.go` copy (`TODO(port)`) or an interface/hook and list it here.
 - Cross-domain calls (config → agents/routers code) are listed per module; they are the main blockers for C18, C27, C34, C36, C37.
 
+## N7-4 — native YAML writers (in progress)
+
+Agent push diff already uses native Nodes and `yamlx.Marshal` after A12. A transition
+regression checks that writer-only changes produce no semantic edits/canonical patch
+and that subsequent credential edits retain redaction. `.64` package tests, full vet
+and 60-second pushdiff fuzz pass. Removed the unused convert `IndentDumperOptions`
+wrapper; the Mihomo writer and its corpus comparator will switch together.
+
+The remaining writer inventory and commands are tracked in
+[progress/n7-4-writers.md](progress/n7-4-writers.md). Installer is explicitly waiting
+for N7-3c merge/rebase. Shared old writer deletion and final full gates remain pending;
+this section does not claim N7-4 acceptance.
+
 ## Step B findings — config boundary repairs (ported, 2026-11-17)
 
 The coordinator's twelve decisions are tracked individually in
@@ -691,7 +704,7 @@ difftest → C33 deferred.
 
 Files → Go:
 - `backend/converters/common.py` (118) → `convert/common.go` (`UDPFallback`, `NTPDirect`, `EmittedRules`, `NTPDirectRule`, `AfterMatchComment`, `NetworkAsProtocol`, `HasPortList`, `SetGeneralOption`, `RulesetFormat`, `ParseHostsPairs`); `compat.go` = `_has_yaml_payload` via `rules.HasYAMLPayload`
-- `backend/converters/mihomo.py` node group → `convert/mihomo_nodes.go`: `IndentDumperOptions`, `ApplyGithubProxyDomain`, `MihomoUsedPorts`, `MihomoListenPorts` (+ `pySet`, CPython set order), proxy YAML LRU cache (`loadProxyYAML`, `stringKeys`), `ParseStructuredProxyString`, `InspectStructuredProxyString`, `WithNodeConversions` + `ConversionResults`, `ConvertNodeToMihomo`; region-probe constants
+- `backend/converters/mihomo.py` node group → `convert/mihomo_nodes.go`: `ApplyGithubProxyDomain`, `MihomoUsedPorts`, `MihomoListenPorts` (+ `pySet`, CPython set order), proxy YAML LRU cache (`loadProxyYAML`, `stringKeys`), `ParseStructuredProxyString`, `InspectStructuredProxyString`, `WithNodeConversions` + `ConversionResults`, `ConvertNodeToMihomo`; region-probe constants
 - `backend/utils/proxy_utils.py` → `FixProxyFields`
 - `backend/utils/dialer_references.py` → `convert/dialers.go`, `convert/dialers_api.go` (`ValidateShapes`, `ValidateDialers`, `DependencyGraph`, `GroupMembers`, `GroupDependencies`, `RawDialer`, `DialerTarget`, `CheckCycles`, `IncomingDialers`, `ResolveDialer`, `OverlayDialer`, `FilterProviderCandidates`, `ProviderProxyName`, `ValidateEmitted`, `RejectSurgeDialers`, `DependencyNodeIDs`)
 - `backend/common/mihomo_easytier.py` → `convert/easytier.go` (+ `ipaddr.go`)

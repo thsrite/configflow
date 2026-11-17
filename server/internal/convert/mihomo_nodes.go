@@ -25,15 +25,6 @@ import (
 
 var mihomoLog = logx.Get("backend.converters.mihomo")
 
-// IndentDumperOptions is Dumper=IndentDumper: the only change from
-// yaml.Dumper is that list items are indented under their key. Pass the
-// other yaml.dump arguments of the call site in opts (yamlx.IndentDump is the
-// common allow_unicode/sort_keys=False/indent=2 preset).
-func IndentDumperOptions(opts yamlx.DumpOptions) yamlx.DumpOptions {
-	opts.IndentSequences = true
-	return opts
-}
-
 // FixProxyFields is proxy_utils.fix_proxy_fields: fill in fields Mihomo
 // requires (VLESS encryption: none, reality-opts short-id) in place.
 func FixProxyFields(proxy *jsonx.Object) {
