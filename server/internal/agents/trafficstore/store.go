@@ -424,7 +424,13 @@ type Store struct {
 // New is TrafficStore(data_dir).
 func New(dataDir string) *Store {
 	s := &Store{files: jsonstore.New(dataDir)}
-	s.ReadJSON = s.files.Read
+	s.ReadJSON = func(agentID string) *jsonx.Object {
+		var data *jsonx.Object
+		if !s.files.Read(agentID, &data) {
+			return nil
+		}
+		return data
+	}
 	s.WriteJSON = func(agentID string, data *jsonx.Object) (*jsonstore.Signature, error) {
 		return s.files.Write(agentID, data, true)
 	}

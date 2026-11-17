@@ -222,8 +222,8 @@ func NewProbeStore(dir string) *ProbeStore { return &ProbeStore{jsonstore.New(di
 func (s *ProbeStore) Path(agentID string) string { return s.files.Path(agentID) }
 
 func (s *ProbeStore) read(agentID string) *jsonx.Object {
-	data := s.files.Read(agentID)
-	if data == nil {
+	var data *jsonx.Object
+	if !s.files.Read(agentID, &data) {
 		return jsonx.Obj("hosts", jsonx.NewObject())
 	}
 	if _, ok := data.Value("hosts").(*jsonx.Object); !ok {

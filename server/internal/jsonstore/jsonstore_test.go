@@ -1,6 +1,7 @@
 package jsonstore
 
 import (
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -32,7 +33,7 @@ func TestWriteBytesEqualPythonsAndReadBack(t *testing.T) {
 	if string(data) != want {
 		t.Errorf("got %q", data)
 	}
-	if !jsonx.Equal(store.Read("a"), sample()) {
+	if !jsonx.Equal(readObject(store, "a"), sample()) {
 		t.Error("read back differs")
 	}
 	if _, err := os.Stat(store.Path("a") + ".tmp"); !os.IsNotExist(err) {
@@ -46,7 +47,7 @@ func TestOtherStoresKeepCloseBeforeReplaceWithoutSignature(t *testing.T) {
 	if sig != nil || err != nil {
 		t.Fatalf("%v %v", sig, err)
 	}
-	if got := store.Read("a").GetObject("hosts").GetObject("example.test").GetString("value"); got != "unchanged" {
+	if got := readObject(store, "a").GetObject("hosts").GetObject("example.test").GetString("value"); got != "unchanged" {
 		t.Errorf("got %q", got)
 	}
 }
@@ -60,21 +61,21 @@ func TestPathSanitisesSeparators(t *testing.T) {
 
 func TestMissingAndDamagedFilesReadAsNil(t *testing.T) {
 	store := New(t.TempDir())
-	if store.Read("missing") != nil {
+	if readObject(store, "missing") != nil {
 		t.Error("missing file")
 	}
 	for name, content := range map[string]string{"bad": "{", "list": "[]", "str": `"x"`, "empty": "", "bom": "\ufeff{}", "latin": "{\"a\":\"\xe9\"}"} {
 		if err := os.WriteFile(store.Path(name), []byte(content), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		if store.Read(name) != nil {
+		if readObject(store, name) != nil {
 			t.Errorf("%s should read as nil", name)
 		}
 	}
 	if err := os.WriteFile(store.Path("ok"), []byte("{}"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if got := store.Read("ok"); got == nil || got.Len() != 0 {
+	if got := readObject(store, "ok"); got == nil || got.Len() != 0 {
 		t.Errorf("ok: %v", got)
 	}
 }
@@ -90,7 +91,7 @@ func TestRemoveIgnoresMissingFiles(t *testing.T) {
 	if err := store.Remove("a"); err != nil {
 		t.Fatal(err)
 	}
-	if store.Read("a") != nil {
+	if readObject(store, "a") != nil {
 		t.Error("file still readable")
 	}
 }
@@ -124,7 +125,7 @@ func TestExternalReplacementDuringVerifiedWriteDoesNotChangeWrittenIdentity(t *t
 	if sig == nil || *sig == signatureOf(info) {
 		t.Errorf("signature must describe the old inode: %v vs %v", sig, signatureOf(info))
 	}
-	if got := store.Read("a").GetObject("status").GetString("value"); got != "unreachable" {
+	if got := readObject(store, "a").GetObject("status").GetString("value"); got != "unreachable" {
 		t.Errorf("got %q", got)
 	}
 }
@@ -154,7 +155,7 @@ func TestExternalInPlaceEditDuringVerifiedWriteIsNotSigned(t *testing.T) {
 		if sig != nil {
 			t.Errorf("preserveMtime=%v: an edited file got a signature", preserveMtime)
 		}
-		if got := store.Read("a").GetObject("status").GetString("value"); got == "running" {
+		if got := readObject(store, "a").GetObject("status").GetString("value"); got == "running" {
 			t.Errorf("edit not applied: %q", got)
 		}
 	}
@@ -165,10 +166,18 @@ func TestWriteFailureLeavesTheOldFile(t *testing.T) {
 	if _, err := store.Write("a", sample(), false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Write("a", map[string]any{"x": 1}, false); err == nil {
-		t.Fatal("a value outside the jsonx model was written")
+	if _, err := store.Write("a", map[string]any{"x": math.NaN()}, false); err == nil {
+		t.Fatal("a non-JSON value was written")
 	}
-	if !jsonx.Equal(store.Read("a"), sample()) {
+	if !jsonx.Equal(readObject(store, "a"), sample()) {
 		t.Error("the old file changed")
 	}
+}
+
+func readObject(s *Store, id string) *jsonx.Object {
+	var value *jsonx.Object
+	if !s.Read(id, &value) {
+		return nil
+	}
+	return value
 }

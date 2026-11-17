@@ -7,7 +7,9 @@
 package jsonstore
 
 import (
+	"bytes"
 	"crypto/sha256"
+
 	"errors"
 	"io"
 	"io/fs"
@@ -16,7 +18,8 @@ import (
 	"strings"
 	"syscall"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/jsonresp"
+	"configflow/internal/logx"
 )
 
 // Store keeps one `<id>.json` file per id in DataDir.
@@ -48,22 +51,33 @@ func (s *Store) Path(id string) string {
 
 // Read is _read_json: the object stored for id, or nil when the file is
 // missing, unreadable, not valid JSON or not an object.
-func (s *Store) Read(id string) *jsonx.Object {
+func (s *Store) Read(id string, dst any) bool {
 	data, err := os.ReadFile(s.Path(id))
 	if err != nil {
-		return nil
+		if !errors.Is(err, os.ErrNotExist) {
+			logx.Get("backend.utils.json_store").Warningf("%s: %s", msgReadFailed, readErrorCategory(err))
+		}
+		return false
 	}
-	value, err := jsonx.Parse(data)
-	if err != nil {
-		return nil
+	data = bytes.TrimSpace(data)
+	if len(data) == 0 || data[0] != '{' {
+		return false
 	}
-	object, _ := value.(*jsonx.Object)
-	return object
+	return jsonresp.DecodeStored(data, dst) == nil
+}
+
+func readErrorCategory(err error) string {
+	switch {
+	case errors.Is(err, os.ErrPermission):
+		return "permission"
+	default:
+		return "io"
+	}
 }
 
 // Write is _write_json: json.dump(data, ensure_ascii=False,
 // separators=(',', ':')) to `<path>.tmp`, then rename over the file. Bytes
-// equal Python's, with no trailing newline.
+// use native JSON, with no trailing newline.
 //
 // With verifySignature the descriptor stays open across the rename and the
 // bytes are compared before and after it, so that a signature is only
@@ -75,7 +89,7 @@ func (s *Store) Write(id string, data any, verifySignature bool) (*Signature, er
 	if err := os.MkdirAll(s.DataDir, 0o777); err != nil {
 		return nil, err
 	}
-	encoded, err := jsonx.Compact(data)
+	encoded, err := jsonresp.Encode(data)
 	if err != nil {
 		return nil, err
 	}

@@ -655,8 +655,8 @@ func NewRegionStore(dir string) *RegionStore { return &RegionStore{jsonstore.New
 func (s *RegionStore) Path(agentID string) string { return s.files.Path(agentID) }
 
 func (s *RegionStore) read(agentID string) *jsonx.Object {
-	data := s.files.Read(agentID)
-	if data == nil {
+	var data *jsonx.Object
+	if !s.files.Read(agentID, &data) {
 		data = jsonx.NewObject()
 	}
 	data.SetDefault("services", nil)
