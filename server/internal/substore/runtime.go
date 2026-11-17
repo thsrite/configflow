@@ -11,11 +11,13 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
+	"sync/atomic"
 	"time"
 
+	"configflow/internal/clock"
 	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
+	"configflow/internal/lockx"
 	"configflow/internal/logx"
 	"configflow/internal/repo"
 )
@@ -85,11 +87,10 @@ func saveMode(ctx context.Context, mode string) error {
 }
 
 // Runtime is SubStoreRuntime: the lifecycle of the bundled Sub-Store.
-// Conversions hold a shared file lock ("work") through temporary
-// subscription cleanup; stopping and updating take it exclusively; a second
-// lock ("control") serialises state changes and startup. The lock files and
-// state.json live in a directory derived from DATA_DIR under the temporary
-// directory, exactly as in Python. External Sub-Store instances are never
+// Conversions hold a shared in-process work lease through subscription cleanup;
+// stopping/updating take it exclusively. A second control lease serializes
+// state/startup. Runtime copies of one physical root share both locks.
+// state.json keeps Python's location; legacy lock files remain untouched. External Sub-Store instances are never
 // started or stopped.
 type Runtime struct {
 	env         *Env
@@ -101,6 +102,8 @@ type Runtime struct {
 	saveMode func(ctx context.Context, mode string) error
 	ready    func(ctx context.Context) (bool, error)
 	command  func(ctx context.Context, action string) (string, error)
+	// clock preserves the owner test clock seam; production uses ClockFrom(ctx).
+	clock clock.Clock
 }
 
 // NewRuntime returns a runtime on env (directory "" = default root).
@@ -167,43 +170,160 @@ func (r *Runtime) Root() string {
 	return pyJoin(gettempdir(), "configflow-sub-store-"+hex.EncodeToString(sum[:])[:12])
 }
 
-// lock is _lock(name, exclusive, timeout): flock on <root>/<name>.lock,
-// polled every 50 ms; after timeout seconds RuntimeUnavailable. Other OS
-// errors are returned as they are.
-func (r *Runtime) lock(name string, exclusive bool, timeout float64, fn func() error) (err error) {
-	root := r.Root()
-	if err := os.MkdirAll(root, 0o700); err != nil {
+const (
+	workWait        = 45 * time.Second
+	maintenanceWait = 90 * time.Second
+	controlWait     = 45 * time.Second
+	startupWait     = 20 * time.Second
+	startupPoll     = 200 * time.Millisecond
+)
+
+type runtimeLeases struct {
+	work    *lockx.RWMutex
+	control *lockx.Mutex
+	refs    int
+}
+
+var leaseOwners = struct {
+	sync.Mutex
+	entries map[string]*runtimeLeases
+}{entries: make(map[string]*runtimeLeases)}
+
+func (r *Runtime) pinLeases() (string, *runtimeLeases, func(), error) {
+	root, err := repo.ResolveDataDir(r.Root())
+	if err != nil {
+		return "", nil, nil, err
+	}
+	leaseOwners.Lock()
+	leases := leaseOwners.entries[root]
+	if leases == nil {
+		leases = &runtimeLeases{work: lockx.NewRWMutex(lockx.LevelDevice, "sub-store-work"), control: lockx.NewMutex(lockx.LevelDeviceControl, "sub-store-control")}
+		leaseOwners.entries[root] = leases
+	}
+	leases.refs++
+	leaseOwners.Unlock()
+	return root, leases, func() {
+		leaseOwners.Lock()
+		leases.refs--
+		if leases.refs == 0 {
+			delete(leaseOwners.entries, root)
+		}
+		leaseOwners.Unlock()
+	}, nil
+}
+
+type workLeaseKey struct{}
+type workLease struct {
+	root      string
+	exclusive bool
+	active    atomic.Bool
+}
+
+func (r *Runtime) heldWork(ctx context.Context) *workLease {
+	lease, _ := ctx.Value(workLeaseKey{}).(*workLease)
+	if lease == nil || !lease.active.Load() {
+		return nil
+	}
+	root, err := repo.ResolveDataDir(r.Root())
+	if err != nil || lease.root != root {
+		return nil
+	}
+	return lease
+}
+
+func runtimeLockError(err error) error {
+	if errors.Is(err, lockx.ErrTimeout) || errors.Is(err, lockx.ErrBusy) {
+		return unavailable(msgRuntimeBusy)
+	}
+	return err
+}
+
+func (r *Runtime) withWork(ctx context.Context, exclusive bool, limit time.Duration, fn func(context.Context) error) error {
+	if lease := r.heldWork(ctx); lease != nil {
+		if exclusive && !lease.exclusive {
+			return unavailable(msgRuntimeBusy)
+		}
+		return fn(ctx)
+	}
+	root, leases, unpin, err := r.pinLeases()
+	if err != nil {
+		return err
+	}
+	defer unpin()
+	var held context.Context
+	var release func()
+	if exclusive {
+		held, release, err = leases.work.Lock(ctx, limit)
+	} else {
+		held, release, err = leases.work.RLock(ctx, limit)
+	}
+	if err != nil {
+		return runtimeLockError(err)
+	}
+	defer release()
+	return r.runWork(held, root, exclusive, fn)
+}
+
+func (r *Runtime) tryWork(ctx context.Context, fn func(context.Context) error) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	root, leases, unpin, err := r.pinLeases()
+	if err != nil {
+		return err
+	}
+	defer unpin()
+	held, release, ok := leases.work.TryLock(ctx)
+	if !ok {
+		return unavailable(msgRuntimeBusy)
+	}
+	defer release()
+	return r.runWork(held, root, true, fn)
+}
+
+func (r *Runtime) runWork(ctx context.Context, root string, exclusive bool, fn func(context.Context) error) error {
+	if err := os.MkdirAll(root, 0700); err != nil {
 		return osError(err, root)
 	}
-	path := pyJoin(root, name+".lock")
-	handle, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o666)
+	lease := &workLease{root: root, exclusive: exclusive}
+	lease.active.Store(true)
+	defer lease.active.Store(false)
+	return fn(context.WithValue(ctx, workLeaseKey{}, lease))
+}
+
+func (r *Runtime) withControl(ctx context.Context, fn func(context.Context) error) error {
+	root, leases, unpin, err := r.pinLeases()
 	if err != nil {
-		return osError(err, path)
+		return err
 	}
-	defer handle.Close()
-	deadline := time.Now().Add(time.Duration(timeout * float64(time.Second)))
-	operation := syscall.LOCK_EX
-	if !exclusive {
-		operation = syscall.LOCK_SH
+	defer unpin()
+	held, release, err := leases.control.Lock(ctx, controlWait)
+	if err != nil {
+		return runtimeLockError(err)
 	}
-	for {
-		err := syscall.Flock(int(handle.Fd()), operation|syscall.LOCK_NB)
-		if err == nil {
-			break
-		}
-		if errors.Is(err, syscall.EINTR) {
-			continue // PEP 475: fcntl.flock retries an interrupted call
-		}
-		if !errors.Is(err, syscall.EWOULDBLOCK) {
-			return osError(err, path)
-		}
-		if !time.Now().Before(deadline) {
-			return unavailable("Sub-Store 正忙或正在更新，请稍后重试")
-		}
-		time.Sleep(50 * time.Millisecond)
+	defer release()
+	if err := os.MkdirAll(root, 0700); err != nil {
+		return osError(err, root)
 	}
-	defer syscall.Flock(int(handle.Fd()), syscall.LOCK_UN)
-	return fn()
+	return fn(held)
+}
+
+func (r *Runtime) scheduler(ctx context.Context) clock.Clock {
+	if r.clock != nil {
+		return r.clock
+	}
+	return lifecycle.ClockFrom(ctx)
+}
+
+func (r *Runtime) wait(ctx context.Context, d time.Duration) error {
+	timer := r.scheduler(ctx).NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C():
+		return nil
+	}
 }
 
 // read is _read: the JSON value of state.json, or an empty state when it
@@ -326,8 +446,9 @@ func (r *Runtime) ensureRunning(ctx context.Context) error {
 				return err
 			}
 		}
-		deadline := r.env.Clock.Monotonic() + 20
-		for r.env.Clock.Monotonic() < deadline {
+		clock := r.scheduler(ctx)
+		deadline := clock.Now().Add(startupWait)
+		for clock.Now().Before(deadline) {
 			ready, err := r.isReady(ctx)
 			if err != nil {
 				return err
@@ -335,7 +456,9 @@ func (r *Runtime) ensureRunning(ctx context.Context) error {
 			if ready {
 				return r.write("state", "running", "error", "")
 			}
-			r.env.Clock.Sleep(200 * time.Millisecond)
+			if err := r.wait(ctx, min(startupPoll, deadline.Sub(clock.Now()))); err != nil {
+				return err
+			}
 		}
 		return unavailable("Sub-Store 启动后未就绪，请稍后重试或检查容器日志")
 	}()
@@ -351,35 +474,40 @@ func (r *Runtime) ensureRunning(ctx context.Context) error {
 // Use is the use() context manager: fn runs while the bundled Sub-Store is
 // running and cannot be stopped; idle time counts from fn's completion
 // (also after a failure). Without the bundle fn just runs.
-func (r *Runtime) Use(ctx context.Context, fn func() error) error {
-	if !r.env.IsBuiltinAvailable() {
-		return fn()
+func (r *Runtime) Use(ctx context.Context, fn func(context.Context) error) error {
+	ctx = lifecycle.Detach(ctx)
+	if lease := r.heldWork(ctx); lease != nil {
+		return fn(ctx)
 	}
-	return r.lock("work", false, 45, func() error {
-		if err := r.lock("control", true, 45, func() error { return r.ensureRunning(ctx) }); err != nil {
+	if !r.env.IsBuiltinAvailable() {
+		return fn(ctx)
+	}
+	return r.withWork(ctx, false, workWait, func(ctx context.Context) error {
+		if err := r.withControl(ctx, func(ctx context.Context) error { return r.ensureRunning(ctx) }); err != nil {
 			return err
 		}
 		return func() (err error) {
 			defer func() {
-				if ferr := r.lock("control", true, 45, func() error { return r.write("last_used", r.monotonic()) }); ferr != nil {
+				if ferr := r.withControl(ctx, func(ctx context.Context) error { return r.write("last_used", r.monotonic()) }); ferr != nil {
 					err = ferr
 				}
 			}()
-			return fn()
+			return fn(ctx)
 		}()
 	})
 }
 
 // Maintenance is maintenance(): fn (an update) runs with the work lock held
 // exclusively; afterwards the state says whether Sub-Store answers.
-func (r *Runtime) Maintenance(ctx context.Context, fn func() error) error {
-	return r.lock("work", true, 90, func() error {
-		if err := r.lock("control", true, 45, func() error { return r.write("state", "updating", "error", "") }); err != nil {
+func (r *Runtime) Maintenance(ctx context.Context, fn func(context.Context) error) error {
+	ctx = lifecycle.Detach(ctx)
+	return r.withWork(ctx, true, maintenanceWait, func(ctx context.Context) error {
+		if err := r.withControl(ctx, func(ctx context.Context) error { return r.write("state", "updating", "error", "") }); err != nil {
 			return err
 		}
 		return func() (err error) {
 			defer func() {
-				ferr := r.lock("control", true, 45, func() error {
+				ferr := r.withControl(ctx, func(ctx context.Context) error {
 					ready, err := r.isReady(ctx)
 					if err != nil {
 						return err
@@ -394,7 +522,7 @@ func (r *Runtime) Maintenance(ctx context.Context, fn func() error) error {
 					err = ferr
 				}
 			}()
-			return fn()
+			return fn(ctx)
 		}()
 	})
 }
@@ -402,14 +530,15 @@ func (r *Runtime) Maintenance(ctx context.Context, fn func() error) error {
 // SetMode is set_mode(mode): "always" starts Sub-Store now; the mode is
 // saved in system_config.
 func (r *Runtime) SetMode(ctx context.Context, mode string) error {
+	ctx = lifecycle.Detach(ctx)
 	if mode != "on_demand" && mode != "always" {
 		return pyErr("ValueError", "运行模式必须是 on_demand 或 always")
 	}
 	if !r.env.IsBuiltinAvailable() {
 		return unavailable("外部 Sub-Store 的运行模式由其部署环境管理")
 	}
-	return r.lock("work", true, 0, func() error {
-		return r.lock("control", true, 45, func() error {
+	return r.tryWork(ctx, func(ctx context.Context) error {
+		return r.withControl(ctx, func(ctx context.Context) error {
 			if mode == "always" {
 				if err := r.ensureRunning(ctx); err != nil {
 					return err
@@ -432,11 +561,12 @@ func (r *Runtime) SetMode(ctx context.Context, mode string) error {
 // Errors that are not RuntimeUnavailable are returned (the monitor logs
 // them).
 func (r *Runtime) Tick(ctx context.Context) error {
+	ctx = lifecycle.Detach(ctx)
 	if !r.env.IsBuiltinAvailable() {
 		return nil
 	}
-	err := r.lock("work", true, 0, func() error {
-		return r.lock("control", true, 45, func() error {
+	err := r.tryWork(ctx, func(ctx context.Context) error {
+		return r.withControl(ctx, func(ctx context.Context) error {
 			mode, err := r.mode(ctx)
 			if err != nil {
 				return err

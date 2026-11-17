@@ -109,3 +109,19 @@ accepted and replaced by the successful boundary test above; no corpus is regene
 caught a syscall import also used for non-lock errno handling; retained it, then checks passed.
 Agents deployment Held leases and cleanup are now being validated on .32; Sub-Store and remaining
 owner/handler migration follow. Routers wait for R08/R09.
+
+Sub-Store runtime migration passes .64 gofmt/vet ./... and full substore race1:25.380s. Shared physical
+root owners use work RWMutex L2 and control L2 suborder, reference-counted through holders/waiters.
+Use/Maintenance receive held ctx callbacks; try-only Tick/SetMode have explicit entry points. Nested
+Use reuses its active lease so queued writers cannot deadlock a recursive RLock; read→write upgrades
+return the existing busy response. Tests pin45/90/45s and20s/200ms, check writer preference/nested
+Use, Runtime copies, ctx cancellation, short-limit error, forward0/reverse1 violations and legacy
+sentinels. Startup waits use the scheduler Clock; persisted env.Clock.Monotonic remains unchanged;
+the owner fake-clock seam remains available. The obsolete cross-process work test now exercises
+independent Runtime objects, with cross-process exclusion covered by O3-3 instance tests.
+Cache cleanup no longer deletes Python .lock files. Both explicit deletion/pruning have sentinel
+regressions. Cache file-list fixtures expect no newly created lock. The first run surfaced those
+fixtures plus an independent-request test accidentally inheriting the held callback ctx; fixed the
+fixture and asserted startup elapsed time in its scheduler domain, then the complete suite passed.
+Agent deployment full race is still running on .32 (no failure output). Owner/handler migration and
+routers remain; wait for R08/R09 before routers. No full gate has been run yet.

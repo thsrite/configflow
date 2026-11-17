@@ -177,7 +177,7 @@ func TestReviewRuntimeMalformedState(t *testing.T) {
 				got = status
 			}
 		default:
-			err = r.Use(context.Background(), func() error { return nil })
+			err = r.Use(context.Background(), func(ctx context.Context) error { return nil })
 		}
 		label := action + " " + jsonx.Repr(state) + " running=" + jsonx.Repr(running)
 		checkOutcome(t, label, row, got, err, true)

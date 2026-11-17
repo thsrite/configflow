@@ -414,7 +414,7 @@ func TestClientHoldsLeaseUntilCleanupEvenOnFailure(t *testing.T) {
 			}
 			leased := false
 			h.store.onDelete = func() {
-				err := rt.lock("work", true, 0, func() error { return nil })
+				err := rt.tryWork(context.Background(), func(context.Context) error { return nil })
 				leased = IsRuntimeUnavailable(err)
 			}
 			ctx := context.Background()
@@ -437,7 +437,7 @@ func TestClientHoldsLeaseUntilCleanupEvenOnFailure(t *testing.T) {
 			if !leased {
 				t.Fatal("lease released before cleanup")
 			}
-			if err := rt.lock("work", true, 0, func() error { return nil }); err != nil {
+			if err := rt.tryWork(context.Background(), func(context.Context) error { return nil }); err != nil {
 				t.Fatalf("lease kept after cleanup: %v", err)
 			}
 			if stateOf(rt).Value("last_used") == nil {

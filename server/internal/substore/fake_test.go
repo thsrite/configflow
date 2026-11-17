@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	schedclock "configflow/internal/clock"
 	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
@@ -389,6 +390,9 @@ func newHarness(t *testing.T, opts harnessOptions) *harness {
 	}
 	h.service = NewService(env)
 	h.service.Runtime.Directory = filepath.Join(base, "runtime")
+	if !opts.realClock {
+		h.service.Runtime.clock = advancingScheduler{h.clock}
+	}
 	runner := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry(), Grace: 20 * time.Millisecond})
 	runner.Start(context.Background())
 	t.Cleanup(func() { runner.Shutdown(context.Background()) })
@@ -458,3 +462,15 @@ func (s completingUpdateSpawner) Spawn(ctx context.Context, name string, fn func
 	<-done
 	return nil
 }
+
+type advancingScheduler struct{ *fakeClock }
+type immediateTimer struct{ ch chan time.Time }
+
+func (c advancingScheduler) NewTimer(d time.Duration) schedclock.Timer {
+	c.advance(d.Seconds())
+	ch := make(chan time.Time, 1)
+	ch <- c.Now()
+	return immediateTimer{ch}
+}
+func (t immediateTimer) C() <-chan time.Time { return t.ch }
+func (t immediateTimer) Stop() bool          { return false }

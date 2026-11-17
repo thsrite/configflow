@@ -11,7 +11,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -65,7 +64,7 @@ func TestConcurrentConversionsShareStartAndCannotBeStopped(t *testing.T) {
 	ready, release := make(chan struct{}), make(chan struct{})
 	var once sync.Once
 	convert := func() error {
-		return rt.Use(ctx, func() error {
+		return rt.Use(ctx, func(ctx context.Context) error {
 			once.Do(func() { close(ready) })
 			if !waitFor(t, release, 3*time.Second) {
 				return errors.New("not released")
@@ -96,7 +95,7 @@ func TestConcurrentConversionsShareStartAndCannotBeStopped(t *testing.T) {
 	if _, _, stops := process(h); stops != 1 {
 		t.Fatalf("stops = %d", stops)
 	}
-	rt.Use(ctx, func() error {
+	rt.Use(ctx, func(ctx context.Context) error {
 		if _, starts, _ := process(h); starts != 2 {
 			t.Errorf("starts = %d", starts)
 		}
@@ -114,7 +113,7 @@ func TestPollingNeverStartsOrExtendsIdleTime(t *testing.T) {
 	if _, starts, _ := process(h); starts != 0 {
 		t.Fatal("polling started Sub-Store")
 	}
-	rt.Use(ctx, func() error { return nil })
+	rt.Use(ctx, func(ctx context.Context) error { return nil })
 	completed := stateOf(rt).Value("last_used")
 	for i := 0; i < 5; i++ {
 		if must[*jsonx.Object](t)(rt.Status(ctx, true)).GetString("state") != "running" {
@@ -139,8 +138,10 @@ func TestIdleTimeBeginsAfterFailedTaskFinishes(t *testing.T) {
 	ctx := context.Background()
 	rt.IdleSeconds = 300
 	failure := errors.New("conversion failed")
-	err := rt.Use(ctx, func() error {
-		rt.lock("control", true, 45, func() error { return rt.write("last_used", jsonx.Float(SystemClock.Monotonic()-400)) })
+	err := rt.Use(ctx, func(ctx context.Context) error {
+		rt.withControl(ctx, func(ctx context.Context) error {
+			return rt.write("last_used", jsonx.Float(SystemClock.Monotonic()-400))
+		})
 		rt.Tick(ctx)
 		if !h.store.running() {
 			t.Error("stopped during work")
@@ -165,9 +166,11 @@ func TestUpdateWaitsForConversionAndBlocksNewWorkAndStop(t *testing.T) {
 	ctx := context.Background()
 	updating, finish, converted := make(chan struct{}), make(chan struct{}), make(chan struct{})
 	updateDone, convertDone := make(chan error, 1), make(chan error, 1)
-	rt.Use(ctx, func() error {
+	rt.Use(ctx, func(ctx context.Context) error {
 		go func() {
-			updateDone <- rt.Maintenance(ctx, func() error {
+			// This is an independent maintenance request, not a nested lease
+			// upgrade by the conversion that is still holding its shared lease.
+			updateDone <- rt.Maintenance(context.Background(), func(ctx context.Context) error {
 				close(updating)
 				if !waitFor(t, finish, 3*time.Second) {
 					return errors.New("not finished")
@@ -186,7 +189,7 @@ func TestUpdateWaitsForConversionAndBlocksNewWorkAndStop(t *testing.T) {
 	if must[*jsonx.Object](t)(rt.Status(ctx, true)).GetString("state") != "updating" {
 		t.Fatal("state is not updating")
 	}
-	go func() { convertDone <- rt.Use(ctx, func() error { close(converted); return nil }) }()
+	go func() { convertDone <- rt.Use(ctx, func(ctx context.Context) error { close(converted); return nil }) }()
 	if waitFor(t, converted, 150*time.Millisecond) {
 		t.Fatal("new work ran during the update")
 	}
@@ -215,7 +218,7 @@ func TestStartFailureCanRetryAndIsNotShownAsSleeping(t *testing.T) {
 	ctx := context.Background()
 	rt.command = func(context.Context, string) (string, error) { return "", unavailable("启动失败") }
 	ran := false
-	err := rt.Use(ctx, func() error { ran = true; return nil })
+	err := rt.Use(ctx, func(ctx context.Context) error { ran = true; return nil })
 	if !IsRuntimeUnavailable(err) || ran {
 		t.Fatalf("err=%v ran=%v (work must not run before readiness)", err, ran)
 	}
@@ -223,7 +226,7 @@ func TestStartFailureCanRetryAndIsNotShownAsSleeping(t *testing.T) {
 		t.Fatal("not failed")
 	}
 	rt.command = nil
-	rt.Use(ctx, func() error {
+	rt.Use(ctx, func(ctx context.Context) error {
 		if !h.store.running() {
 			t.Error("not running")
 		}
@@ -268,7 +271,7 @@ func TestExternalServerIsNeverManaged(t *testing.T) {
 	h, rt, _ := lifecycleService(t)
 	ctx := context.Background()
 	os.Remove(filepath.Join(h.builtin, SubStoreAsset))
-	rt.Use(ctx, func() error { return nil })
+	rt.Use(ctx, func(ctx context.Context) error { return nil })
 	rt.Tick(ctx)
 	if _, starts, stops := process(h); starts != 0 || stops != 0 {
 		t.Fatal("external Sub-Store managed")
@@ -282,79 +285,33 @@ func TestExternalServerIsNeverManaged(t *testing.T) {
 }
 
 // test_sub_store_runtime.py::test_lock_protects_work_in_another_process: a
-// second process (this test binary) holds the shared work lock.
-func TestLockProtectsWorkInAnotherProcess(t *testing.T) {
+// Runtime objects for one physical root share work leases; server process
+// exclusion is checked by internal/instance's real cross-process tests.
+func TestRuntimeCopiesShareWorkLease(t *testing.T) {
 	h, rt, _ := lifecycleService(t)
-	ctx := context.Background()
-	rt.Use(ctx, func() error { return nil }) // started, idle time 0
-	dir := t.TempDir()
-	cmd := exec.Command(os.Args[0], "-test.run=^TestHelperProcessHoldsWorkLock$")
-	cmd.Env = append(os.Environ(), "SUBSTORE_HELPER=1", "SUBSTORE_HELPER_ROOT="+rt.Root(),
-		"SUBSTORE_HELPER_BUILTIN="+h.builtin, "SUBSTORE_HELPER_DIR="+dir)
-	if err := cmd.Start(); err != nil {
+	other := NewRuntime(rt.env, rt.Root(), 0)
+	other.ready = func(context.Context) (bool, error) { return true, nil }
+	entered, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	defer once.Do(func() { close(release) })
+	done := make(chan error, 1)
+	go func() {
+		done <- other.Use(context.Background(), func(context.Context) error { close(entered); <-release; return nil })
+	}()
+	if !waitFor(t, entered, 5*time.Second) {
+		t.Fatal("conversion did not enter")
+	}
+	if err := rt.Tick(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	finished := false
-	defer func() {
-		if !finished {
-			cmd.Process.Kill()
-			cmd.Wait()
-		}
-	}()
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		if _, err := os.Stat(filepath.Join(dir, "entered")); err == nil {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("child did not enter")
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	rt.Tick(ctx)
 	if _, stops := h.commands.counts(); stops != 0 {
-		t.Fatal("stopped while another process works")
+		t.Fatal("stopped while another runtime works")
 	}
-	err := rt.lock("work", true, 0, func() error { t.Error("exclusive lock acquired while child works"); return nil })
-	if !IsRuntimeUnavailable(err) {
-		t.Fatalf("err = %v", err)
+	if err := rt.tryWork(context.Background(), func(context.Context) error { t.Error("exclusive admission during conversion"); return nil }); !IsRuntimeUnavailable(err) {
+		t.Fatal(err)
 	}
-	os.WriteFile(filepath.Join(dir, "finish"), nil, 0o644)
-	err = cmd.Wait()
-	finished = true
-	if err != nil {
-		t.Fatalf("child: %v", err)
-	}
-}
-
-// TestHelperProcessHoldsWorkLock is the child of
-// TestLockProtectsWorkInAnotherProcess.
-func TestHelperProcessHoldsWorkLock(t *testing.T) {
-	if os.Getenv("SUBSTORE_HELPER") != "1" {
-		t.Skip("helper process")
-	}
-	builtin := os.Getenv("SUBSTORE_HELPER_BUILTIN")
-	env := &Env{LookupEnv: func(key string) (string, bool) {
-		if key == "SUB_STORE_BUILTIN_DIR" {
-			return builtin, true
-		}
-		return "", false
-	}, DataDir: func() string { return "." }, HTTP: RequestsClient{}, Commands: &fakeCommands{}, Clock: SystemClock}
-	rt := NewRuntime(env, os.Getenv("SUBSTORE_HELPER_ROOT"), 0)
-	rt.ready = func(context.Context) (bool, error) { return true, nil }
-	dir := os.Getenv("SUBSTORE_HELPER_DIR")
-	err := rt.Use(context.Background(), func() error {
-		os.WriteFile(filepath.Join(dir, "entered"), nil, 0o644)
-		deadline := time.Now().Add(3 * time.Second)
-		for time.Now().Before(deadline) {
-			if _, err := os.Stat(filepath.Join(dir, "finish")); err == nil {
-				return nil
-			}
-			time.Sleep(20 * time.Millisecond)
-		}
-		return errors.New("not finished")
-	})
-	if err != nil {
+	once.Do(func() { close(release) })
+	if err := <-done; err != nil {
 		t.Fatal(err)
 	}
 }
@@ -436,7 +393,7 @@ func TestSaveModeChangesOnlyTheMode(t *testing.T) {
 // The state file is json.dumps of the merged state (Python's _write).
 func TestStateFileBytes(t *testing.T) {
 	_, rt, _ := lifecycleService(t)
-	rt.lock("control", true, 45, func() error {
+	rt.withControl(context.Background(), func(ctx context.Context) error {
 		rt.write("state", "running", "error", "")
 		return rt.write("last_used", jsonx.Float(12.5), "state", "sleeping")
 	})
@@ -445,8 +402,8 @@ func TestStateFileBytes(t *testing.T) {
 		t.Fatalf("state.json %s", data)
 	}
 	for _, name := range []string{"work.lock", "control.lock"} {
-		if _, err := os.Stat(filepath.Join(rt.Root(), name)); name == "control.lock" && err != nil {
-			t.Fatal(err)
+		if _, err := os.Stat(filepath.Join(rt.Root(), name)); !os.IsNotExist(err) {
+			t.Fatal("created legacy lock", err)
 		}
 	}
 }
@@ -506,7 +463,8 @@ func TestStartTimesOutWhenNeverReady(t *testing.T) {
 	rt := h.service.Runtime
 	h.commands.runVersion = "" // the process starts but never answers
 	h.store.setVersion("")
-	err := rt.Use(context.Background(), func() error { t.Error("work ran"); return nil })
+	started := rt.scheduler(context.Background()).Now()
+	err := rt.Use(context.Background(), func(ctx context.Context) error { t.Error("work ran"); return nil })
 	if !IsRuntimeUnavailable(err) || err.Error() != "Sub-Store 启动后未就绪，请稍后重试或检查容器日志" {
 		t.Fatalf("err %v", err)
 	}
@@ -514,7 +472,7 @@ func TestStartTimesOutWhenNeverReady(t *testing.T) {
 	if state.GetString("state") != "failed" || state.GetString("error") != err.Error() {
 		t.Fatalf("state %s", jsonx.Repr(state))
 	}
-	if h.clock.Monotonic() < 20 {
+	if elapsed := rt.scheduler(context.Background()).Now().Sub(started); elapsed != startupWait {
 		t.Fatal("did not wait 20 s")
 	}
 }

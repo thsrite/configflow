@@ -10,3 +10,5 @@ const (
 	msgPreparingUpdate   = "准备更新到 %s…"
 	msgStartingUpdate    = "开始更新到 %s"
 )
+
+const msgRuntimeBusy = "Sub-Store 正忙或正在更新，请稍后重试"

@@ -426,7 +426,7 @@ func (c *Client) fetchSubscription(ctx context.Context, subID, url, target strin
 	// nor with concurrent requests for the same subscription.
 	tempName := "_cf_tmp_" + subID + "_" + c.env.RandomHex()
 	var result *SubscriptionResult
-	subStoreErr := c.runtime.Use(ctx, func() error {
+	subStoreErr := c.runtime.Use(ctx, func(ctx context.Context) error {
 		c.createSubscription(ctx, base, tempName, url, rawText)
 		defer c.deleteSubscription(ctx, base, tempName)
 		downloadURL := base + "/download/" + QuotePath(tempName) + "/" + target
@@ -541,7 +541,7 @@ func (c *Client) convertProxyString(ctx context.Context, proxyString, target str
 
 	tempName := "_cf_tmp_node_convert_" + c.env.RandomHex()
 	var converted *jsonx.Object
-	err = c.runtime.Use(ctx, func() error {
+	err = c.runtime.Use(ctx, func(ctx context.Context) error {
 		c.createSubscription(ctx, base, tempName, "https://example.com", nil)
 		defer c.deleteSubscription(ctx, base, tempName)
 		// The content parameter carries the node instead of the subscription URL.

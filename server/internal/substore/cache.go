@@ -12,6 +12,7 @@ import (
 	"syscall"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
 	"configflow/internal/repo"
 	"configflow/internal/store"
@@ -136,26 +137,20 @@ func removeFile(path string) error {
 	return nil
 }
 
-// removeCacheFile is _remove_cache_file: the cache and its lock file;
-// true when the cache itself was removed.
+// removeCacheFile removes only the cache. Python's legacy lock file is no
+// longer used and must remain untouched, including during cache pruning.
 func removeCacheFile(path string) (bool, error) {
-	removed := false
-	for _, target := range []string{path, path + ".lock"} {
-		err := removeFile(target)
-		if err == nil {
-			removed = removed || target == path
-			continue
-		}
-		if !errors.Is(err, syscall.ENOENT) {
-			return removed, err
-		}
+	err := removeFile(path)
+	if errors.Is(err, syscall.ENOENT) {
+		return false, nil
 	}
-	return removed, nil
+	return err == nil, err
 }
 
 // DeleteSubscriptionCache is delete_subscription_cache: remove the node
 // cache (node addresses and credentials) of a deleted subscription.
 func DeleteSubscriptionCache(ctx context.Context, subID string) (bool, error) {
+	ctx = lifecycle.Detach(ctx)
 	path, err := CachePath(ctx, subID)
 	if err != nil {
 		return false, err
@@ -174,6 +169,7 @@ func DeleteSubscriptionCache(ctx context.Context, subID string) (bool, error) {
 // is not a string fails like Python (AttributeError of str.replace); the
 // startup caller logs it.
 func PruneOrphanCaches(ctx context.Context) ([]string, error) {
+	ctx = lifecycle.Detach(ctx)
 	cacheDir, names, err := func() (string, []string, error) {
 		r, err := repo.GetRepository(ctx)
 		if err != nil {
@@ -298,6 +294,7 @@ func iterate(value any) ([]any, error) {
 // the file system is logged and the payload returned anyway; repository
 // errors are returned.
 func SaveSubscriptionNodes(ctx context.Context, subID string, nodes any, metadata *jsonx.Object) (*jsonx.Object, error) {
+	ctx = lifecycle.Detach(ctx)
 	cachePath, err := CachePath(ctx, subID)
 	if err != nil {
 		return nil, err

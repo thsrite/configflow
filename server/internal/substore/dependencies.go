@@ -407,7 +407,7 @@ func (d *Dependencies) runUpdate(ctx context.Context, release *jsonx.Object, unl
 				err = pyErr("Exception", "")
 			}
 		}()
-		return d.runtime.Maintenance(ctx, func() error { return d.installRelease(ctx, release) })
+		return d.runtime.Maintenance(ctx, func(ctx context.Context) error { return d.installRelease(ctx, release) })
 	}()
 	if err != nil {
 		depsLog.Warning("Sub-Store 更新等待失败: " + safeExceptionDetails(err))

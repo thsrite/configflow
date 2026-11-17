@@ -63,7 +63,7 @@ func TestDeletingASubscriptionRemovesItsNodeCache(t *testing.T) {
 	if must[*jsonx.Object](t)(LoadSubscriptionCache(ctx, "drop")) != nil {
 		t.Fatal("cache still readable")
 	}
-	if got := strings.Join(cacheFiles(t, r), ","); got != "keep.json,keep.json.lock" {
+	if got := strings.Join(cacheFiles(t, r), ","); got != "keep.json" {
 		t.Fatalf("files %s", got)
 	}
 	if !jsonx.Equal(must[*jsonx.Object](t)(LoadSubscriptionCache(ctx, "keep")).Value("nodes"), []any{cacheNode}) {
@@ -97,7 +97,7 @@ func TestStartupPrunesOnlyCachesWithoutASubscription(t *testing.T) {
 	if strings.Join(removed, ",") != "drop.json,removed_earlier.json" {
 		t.Fatalf("removed %v", removed)
 	}
-	if got := strings.Join(cacheFiles(t, r), ","); got != "keep.json,keep.json.lock,notes.txt" {
+	if got := strings.Join(cacheFiles(t, r), ","); got != "keep.json,notes.txt" {
 		t.Fatalf("files %s", got)
 	}
 	if again := must[[]string](t)(PruneOrphanCaches(ctx)); len(again) != 0 {
