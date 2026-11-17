@@ -11,8 +11,8 @@ Driver through ReadRoutes/MutateRoute. NormalizeRouteRequest accepts RawMessage
 at the HTTP boundary; no Python dynamic calling conventions. BuildRoutePlan is
 pure; ExecuteRoutePlan and each vendor MutateRoute detach cancellation themselves.
 RouterOperationLock exports the L2 per-(type, endpoint without trailing slash)
-lock. Until lockx lands it uses the O3 transitional in-process lock map; waiters
-count as references and unused keys disappear. Write waits are limited to 10 min;
+lock. It uses `lockx.Keyed[[2]string]` at `LevelDevice`, including
+order tracking in the returned context and cleanup of unused keys. Write waits are limited to 10 min;
 reads retain cancellation. Callers acquire once, never recursively, and take L1
 before validation where Python does. No goroutine, flock or new dependency.
 
@@ -86,3 +86,17 @@ remain in snapshots and are read-only but display empty instead of Python repr;
 add identity fields accept absent/null/empty strings, rejecting falsy wrong types
 that Python accepted. Device errors echoing credentials are replaced with a Chinese
 redacted diagnostic instead of exposing the text (matrix X01/O9 security fix).
+
+
+Rebase onto O3-1/O3-2: removed transitional lock map and use the shared Keyed;
+read cancellation/write detachment/ten-minute wait semantics stay the same.
+`TestR06ConnectionLock` checks scope preservation and zero new order violations.
+Review-A19 issue classes: R06 consumes native JSON, not shared/cyclic YAML graphs,
+so it never recursively expands YAML aliases (F1). Typed request/action/driver
+checks reject unsupported shapes instead of reporting an unperformed edit (F2).
+There is no regex-based provider extraction or empty-capture fallback; IPv4 parsing
+fails explicitly, and user whitespace uses strings.TrimSpace (F3).
+
+Initial iKuai update/delete and write-back compensation require a unique nonempty
+tagname as well as the complete snapshot/ID proof. Duplicate names from a malformed
+device list are refused (Python writes anyway); two boundary cases prove no write.

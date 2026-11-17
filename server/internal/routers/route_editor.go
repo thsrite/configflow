@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/lockx"
 	"configflow/internal/redact"
 	"context"
 	"crypto/sha256"
@@ -13,7 +14,6 @@ import (
 	"net/url"
 	"reflect"
 	"strings"
-	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -329,61 +329,24 @@ func routeIdentityEqual(a, b *EditableRoute) bool {
 	return a != nil && b != nil && a.ID == b.ID && a.CIDR == b.CIDR && a.Gateway == b.Gateway && a.Enabled == b.Enabled && a.Comment == b.Comment && a.Table == b.Table && reflect.DeepEqual(a.Snapshot, b.Snapshot)
 }
 
-// L2 device locks. TODO(O3): replace the transitional map with lockx.Keyed.
-// References include waiters, so unused connection keys do not accumulate.
-var routeLocks = struct {
-	sync.Mutex
-	entries map[[2]string]*routeLock
-}{entries: map[[2]string]*routeLock{}}
-
-type routeLock struct {
-	token chan struct{}
-	refs  int
-}
+// L2: shared by publish, manual edits, previews and fixed-IP operations.
+var routeLocks = lockx.NewKeyed[[2]string](lockx.LevelDevice, "router-operation")
 
 // RouterOperationLock serializes read-modify-write operations on a connection.
 // Read callers retain cancellation; write callers detach and wait at most ten minutes.
 // Do not acquire recursively: pass the returned context down under the same lock.
 func RouterOperationLock(ctx context.Context, router Router, write bool) (context.Context, func(), error) {
+	limit := time.Duration(0)
 	if write {
 		ctx = context.WithoutCancel(ctx)
-	} else if err := ctx.Err(); err != nil {
-		return ctx, nil, err
+		limit = 10 * time.Minute
 	}
 	key := [2]string{router.Type, strings.TrimRight(router.Endpoint, "/")}
-	routeLocks.Lock()
-	entry := routeLocks.entries[key]
-	if entry == nil {
-		entry = &routeLock{token: make(chan struct{}, 1)}
-		routeLocks.entries[key] = entry
+	held, release, err := routeLocks.Lock(ctx, key, limit)
+	if err != nil && write {
+		return ctx, nil, rosError(KindConflict, messageEditBusy)
 	}
-	entry.refs++
-	routeLocks.Unlock()
-	drop := func() {
-		routeLocks.Lock()
-		entry.refs--
-		if entry.refs == 0 {
-			delete(routeLocks.entries, key)
-		}
-		routeLocks.Unlock()
-	}
-	wait := ctx
-	cancel := func() {}
-	if write {
-		wait, cancel = context.WithTimeout(ctx, 10*time.Minute)
-	}
-	defer cancel()
-	select {
-	case entry.token <- struct{}{}:
-		var once sync.Once
-		return ctx, func() { once.Do(func() { <-entry.token; drop() }) }, nil
-	case <-wait.Done():
-		drop()
-		if write {
-			return ctx, nil, rosError(KindConflict, messageEditBusy)
-		}
-		return ctx, nil, wait.Err()
-	}
+	return held, release, err
 }
 
 // A device may echo supplied credentials in its own error text. Keep the error
@@ -405,5 +368,12 @@ func routeSafeError(err error, endpoint string, secrets ...string) error {
 	if e, ok := errors.AsType[*RouterError](err); ok {
 		kind = e.Kind
 	}
-	return rosError(kind, messageEditSecret)
+	message := messageEditSecret
+	if kind == KindRollback {
+		message = messageEditSecretRollback
+	}
+	if kind == KindUncertainWrite {
+		message = messageEditSecretUncertain
+	}
+	return rosError(kind, message)
 }

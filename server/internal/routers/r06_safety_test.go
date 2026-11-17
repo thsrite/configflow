@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"configflow/internal/devhttp"
+	"configflow/internal/lockx"
 	"configflow/internal/routers/routerfake"
 )
 
@@ -137,14 +138,20 @@ func TestR06CancelledEntryStillWrites(t *testing.T) {
 
 func TestR06ConnectionLock(t *testing.T) {
 	tc := r06Base("routeros", "read")
-	ctx, release, err := RouterOperationLock(context.Background(), tc.Router, true)
+	violations := lockx.Violations()
+	type scopeKey struct{}
+	root := context.WithValue(context.Background(), scopeKey{}, "repo-scope")
+	ctx, release, err := RouterOperationLock(root, tc.Router, true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	other := tc.Router
 	other.Endpoint += "///"
 	other.ID = "other-profile-router"
-	read, cancel := context.WithCancel(ctx)
+	if ctx.Value(scopeKey{}) != "repo-scope" {
+		t.Fatal("scope was lost")
+	}
+	read, cancel := context.WithCancel(root)
 	cancel()
 	if _, unlock, err := RouterOperationLock(read, other, false); !errors.Is(err, context.Canceled) {
 		if unlock != nil {
@@ -176,10 +183,11 @@ func TestR06ConnectionLock(t *testing.T) {
 		t.Fatal(err)
 	}
 	release() // release is idempotent
-	routeLocks.Lock()
-	defer routeLocks.Unlock()
-	if len(routeLocks.entries) != 0 {
-		t.Fatal("unused lock keys leaked")
+	if routeLocks.Held([2]string{tc.Router.Type, tc.Router.Endpoint}) {
+		t.Fatal("connection lock still held")
+	}
+	if lockx.Violations() != violations {
+		t.Fatal("router lock order violation")
 	}
 }
 
@@ -263,5 +271,21 @@ func TestR06DeviceCredentialEchoIsHidden(t *testing.T) {
 				t.Fatalf("device echo leaked: %v", err)
 			}
 		})
+	}
+}
+
+func TestR06SecretRedactionKeepsRecoveryStatus(t *testing.T) {
+	for _, kind := range []ErrorKind{KindRollback, KindUncertainWrite} {
+		err := routeSafeError(rosError(kind, "device echoes synthetic-secret"), "http://example.com", "synthetic-secret")
+		e, ok := errors.AsType[*RouterError](err)
+		if !ok || e.Kind != kind || strings.Contains(e.Message, "synthetic-secret") {
+			t.Fatal("unsafe redaction", err)
+		}
+		if kind == KindRollback && !strings.Contains(e.Message, "补偿未完成") {
+			t.Fatal("redaction hid failed compensation")
+		}
+		if kind == KindUncertainWrite && !strings.Contains(e.Message, "无法确认") {
+			t.Fatal("redaction hid uncertain write")
+		}
 	}
 }

@@ -20,6 +20,7 @@ import (
 )
 
 type r06Case struct {
+	DuplicateName  bool                  `json:"-"`
 	Timeout        bool                  `json:"timeout,omitempty"`
 	Name           string                `json:"-"`
 	Vendor         string                `json:"vendor"`
@@ -258,6 +259,30 @@ func TestR06PythonBoundary(t *testing.T) {
 			reset()
 			goResult := r06Run(tc, endpoint)
 			goCalls, goTables := snapshot()
+			if tc.DuplicateName {
+				if goResult.Error == nil || goResult.Error.Class != "RouterConflictError" || goResult.Error.Message != messageEditIKUniqueName {
+					t.Fatalf("duplicate-name safety difference not observed: Python=%#v Go=%#v", py.Error, goResult.Error)
+				}
+				pythonWrote := false
+				for _, call := range pyCalls.([]routerfake.IkuaiCall) {
+					if body, ok := call.Body.(map[string]any); ok && body["action"] != nil && body["action"] != "show" {
+						pythonWrote = true
+					}
+				}
+				if !pythonWrote {
+					t.Fatal("Python no longer attempts the ambiguous mutation")
+				}
+				state := ik.Snapshot()
+				for _, call := range state.Calls {
+					if body, ok := call.Body.(map[string]any); ok && body["action"] != nil && body["action"] != "show" {
+						t.Fatal("ambiguous identity wrote to device")
+					}
+				}
+				if len(state.Tables["static_rt"]) != 2 || !r06Equivalent(state.Tables["static_rt"], tc.IK.Tables["static_rt"]) {
+					t.Fatal("ambiguous identity changed the scene")
+				}
+				return
+			}
 			a, b := r06Normalize(py), r06Normalize(goResult)
 			r06StripHashes(a)
 			r06StripHashes(b)
@@ -544,6 +569,18 @@ func r06ReconciliationCases() []r06Case {
 	tc.IK.Mutations = []routerfake.IkuaiMutation{{Func: "static_rt", Action: "del", Count: 1, OnWrite: true, Table: "static_rt", Append: row}}
 	tc.IK.Faults = []routerfake.IkuaiFault{{Func: "static_rt", Action: "del", Count: 1, LoseReply: true}}
 	add(tc, "delete/restoration_name_occupied")
+	for _, action := range []string{"update", "delete"} {
+		tc := r06Base("ikuai", action)
+		tc.DuplicateName = true
+		row := routerfake.Row{}
+		for k, v := range tc.IK.Tables["static_rt"][0] {
+			row[k] = v
+		}
+		row["id"], row["dst_addr"] = 99, "192.0.2.0"
+		tc.IK.Tables["static_rt"] = append(tc.IK.Tables["static_rt"], row)
+		add(tc, action+"/duplicate_name_fails_closed")
+	}
+
 	return cases
 }
 

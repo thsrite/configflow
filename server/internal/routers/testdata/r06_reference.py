@@ -10,7 +10,8 @@ from backend.routers.ikuai import IKuaiDriver
 
 case = json.load(sys.stdin)
 endpoint = os.environ['R06_ENDPOINT']
-# Only randomness is replaced: every request and compensation uses the real editor.
+# Deterministic UUID; timeout cases shorten only the real transport deadline.
+# Every request and compensation still uses the real editor.
 ikuai_routes.uuid = type('FixedUUID', (), {'uuid4': staticmethod(lambda: uuid.UUID('0123456789abcdef0123456789abcdef'))})
 vendor = case['vendor']
 driver = (RouterOSDriver(endpoint, 'synthetic-admin', 'synthetic-secret', verify_tls=False)

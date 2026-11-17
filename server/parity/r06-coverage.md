@@ -4,7 +4,7 @@ Status: implementation ported, pending fresh Opus HR review. No lab claim.
 
 `internal/routers/r06_boundary_test.go::TestR06PythonBoundary` runs real Python
 editors (`testdata/r06_reference.py`) and Go against the same loopback RouterOS
-and iKuai fakes, resetting identical tables/faults before each side. 169 cases:
+and iKuai fakes, resetting identical tables/faults before each side. 171 cases:
 results (including complete entry snapshots), Chinese errors/classes, complete
 parsed request sequences and final device tables. Manual editors do not emit
 release undo records: the corpus asserts `records: []` on both sides and compares
@@ -29,7 +29,7 @@ Counts below are test functions, matching PROGRESS; parameterized cases expand.
 `r06_safety_test.go` adds cancellation after an accepted write (successful readback
 and compensation, both vendors), already-cancelled entry, L2 cross-profile same
 endpoint serialization/trailing slash identity/read cancellation/write detachment
-and key cleanup, no-op without driver, and credential echoes. All tests use
+and the shared lockx cleanup contract, no-op without driver, and credential echoes. All tests use
 loopback or injected `DeviceHTTP`; no production host or lab guest is contacted.
 
 ## Matrix coverage and outstanding HTTP work
@@ -78,5 +78,10 @@ boundary and **must exit 1 with a mismatch**; a compile failure does not count.
   RouterError kind and a Chinese message; Python exposes them (matrix X01).
 - RouterOS recreation additionally demands a valid fresh *hex ID; malformed
   recreation reply IDs never count as a verified restore.
-- Write L2 wait limited to ten minutes per O3 (Python waits forever); unused
-  connection lock keys are removed. No per-resource flock or background work.
+- Write L2 wait limited to ten minutes per O3 (Python waits forever); shared lockx removes unused
+  connection lock keys. No per-resource flock or background work.
+
+Two explicit Python-bug cases seed duplicate iKuai tagnames with distinct IDs: Python
+attempts edits/deletes by ID; Go refuses before writing, checks a Chinese conflict message,
+zero write requests and the unchanged two-row table. Restoring an edit also requires
+the name to remain unique. This strengthens the HR ownership rule.

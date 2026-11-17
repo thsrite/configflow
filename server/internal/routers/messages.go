@@ -279,3 +279,10 @@ const (
 )
 
 const messageEditSecret = "路由操作失败：设备回复包含凭据，已隐藏详情，请检查路由器"
+
+const messageEditIKUniqueName = "路由名称不唯一，无法确认对象归属，请刷新后检查"
+
+const (
+	messageEditSecretRollback  = "路由变更失败且安全补偿未完成：设备回复包含凭据，已隐藏详情，请检查路由器"
+	messageEditSecretUncertain = "路由写入结果无法确认：设备回复包含凭据，已隐藏详情，请检查路由器"
+)

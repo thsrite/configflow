@@ -205,6 +205,9 @@ func (d *Ikuai) mutateRoute(ctx context.Context, action string, expected *Editab
 		if !before.Editable {
 			return nil, rosError(KindConflict, firstNonEmpty(before.Reason, messageEditIKReadonly))
 		}
+		if err := editIKUniqueName(previous, before); err != nil {
+			return nil, err
+		}
 	}
 	id := ""
 	if before != nil {
@@ -313,6 +316,9 @@ func (d *Ikuai) editIKRestoreUpdate(ctx context.Context, before *EditableRoute, 
 	if !editIKSnapshot(current, desired) {
 		return routerError(messageEditIKUpdateChanged)
 	}
+	if err := editIKUniqueName(rows, current); err != nil {
+		return err
+	}
 	if err := editIKNoDuplicate(rows, before.CIDR, before.ID); err != nil {
 		return err
 	}
@@ -388,6 +394,23 @@ func (d *Ikuai) editIKRestoreAdd(ctx context.Context, previous []*EditableRoute,
 			return writeErr
 		}
 		return routerError(messageEditIKUndoRead)
+	}
+	return nil
+}
+
+func editIKUniqueName(rows []*EditableRoute, entry *EditableRoute) error {
+	name, ok := entry.Snapshot["tagname"].(string)
+	if !ok || name == "" {
+		return rosError(KindConflict, messageEditIKName)
+	}
+	count := 0
+	for _, r := range rows {
+		if r.Snapshot["tagname"] == name {
+			count++
+		}
+	}
+	if count != 1 {
+		return rosError(KindConflict, messageEditIKUniqueName)
 	}
 	return nil
 }

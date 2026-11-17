@@ -412,18 +412,18 @@ Tests: `test_route_editor.py` (14), `test_routeros_routes.py` (24), `test_ikuai_
 
 Routes: none here (`/routes`, `/routes/plan`, `/routes/apply` handlers are R15).
 
-Implemented: `route_editor.go` (typed intent/preview/result, strict RawMessage request boundary, public snapshot revision, connection/intent fingerprint, detached execute, exported `RouterOperationLock` L2), `routeros_routes.go` / `ikuai_routes.go` (read-only classification, complete preflight/readback, conservative identity-checked compensation). Commits: a8235a07, 2a0edbf0; acceptance/hardening commit follows. No new dependency, jsonx/pystr/urlx, flock or production goroutine.
+Implemented: `route_editor.go` (typed intent/preview/result, strict RawMessage request boundary, public snapshot revision, connection/intent fingerprint, detached execute, exported `RouterOperationLock` using lockx L2), `routeros_routes.go` / `ikuai_routes.go` (read-only classification, complete preflight/readback, conservative identity-checked compensation). Implementation commits rebased onto go (O3-1/O3-2 + A19): 53aee7d0, 14bf0cb2, 83d65a4d. No new dependency, jsonx/pystr/urlx, flock or production goroutine.
 
-Design / every R04 and R05 HR issue class: `design/r06-route-editor.md`. Per-Python-file mapping, matrix coverage, accepted differences and L5-only list: `parity/r06-coverage.md`. `TestR06PythonBoundary`: **169** real Python-vs-Go loopback cases; compare result/errors, full requests, empty external undo records and final tables. `r06_safety_test.go`: cancellation after accepted writes and through compensation, cancelled entry, L2 cross-profile identity, fingerprint/secret/runtime stability, credential echo hiding. Three compiled implementation mutations detected result/request/ownership differences.
+Design / every R04, R05 and A19 HR issue class: `design/r06-route-editor.md`. Per-Python-file mapping, matrix coverage, accepted differences and L5-only list: `parity/r06-coverage.md`. `TestR06PythonBoundary`: **171** real Python-vs-Go loopback cases; compare result/errors, full requests, empty external undo records and final tables. `r06_safety_test.go`: cancellation after accepted writes and through compensation, cancelled entry, L2 cross-profile identity, fingerprint/secret/runtime stability, credential echo hiding. Three compiled implementation mutations detected result/request/ownership differences.
 
-Remaining: final authoritative .32 format/vet, routers+devhttp race, full suite `-p=4`, all enabled difftests, proddiff; rebase `go`; fresh Opus HR review (only reviewer may set verified). **HTTP/L1-before-validation acceptance is pending R15**: no `internal/api/routers` or R14 job-lock owner exists on this branch. R020 acquires L1 before lookup/type/body checks (busy ->409 before malformed ->400), then L2; R021 L2 waits; R019 Python read is unlocked. Do not count these as completed HTTP comparisons.
+After rebase: added duplicate-name zero-write proofs (2 explicit safer-than-Python cases), kept recovery/uncertain status visible when redacting secrets; migrated transitional connection lock to shared `lockx.Keyed` (L2), propagated held context, added scope/order assertions. Remaining: final authoritative .32 format/vet, routers+devhttp race, full suite `-p=4`, all enabled difftests, proddiff; rebase `go`; fresh Opus HR review (only reviewer may set verified). **HTTP/L1-before-validation acceptance is pending R15**: no `internal/api/routers` or R14 job-lock owner exists on this branch. R020 acquires L1 before lookup/type/body checks (busy ->409 before malformed ->400), then L2; R021 L2 waits; R019 Python read is unlocked. Do not count these as completed HTTP comparisons.
 
 Commands (all loopback/network on .32):
 ```
 rt -- bash -lc 'cd server && go test -count=1 -run TestR06 -v ./internal/routers/'
 rt -- bash -lc 'cd server && ~/cf-test/.venv/bin/python internal/routers/testdata/r06_mutations.py'
 ```
-Latest targeted output: `169 real Python boundary cases`, `PASS`, `ok configflow/internal/routers 28.660s`; remote `go vet ./...` passed. Mutation output: result/request/ownership each `DETECTED (compiled, real Python boundary mismatch)`.
+Latest targeted output: `171 real Python boundary cases`, `PASS`, `ok configflow/internal/routers 32.827s`; remote `go vet ./...` passed. Mutation output: result/request/ownership each `DETECTED (compiled, real Python boundary mismatch)`.
 
 
 ## R07 — RouterOS NAT address lists, address-list sync, test helpers
