@@ -1,0 +1,25 @@
+{
+  "changed": {
+    "mihomo_corpus.jsonl.gz": 276,
+    "review_mihomo.jsonl.gz": 2
+  },
+  "checked": {
+    "mihomo_corpus.jsonl.gz": 7487,
+    "review_mihomo.jsonl.gz": 474
+  },
+  "classes": {
+    "YAML1.1/timestamp": 182,
+    "native-diagnostics": 34,
+    "nonfinite-scalar-text": 31,
+    "tagged-collections": 31
+  },
+  "classified": {
+    "mihomo_corpus.jsonl.gz": 276,
+    "review_mihomo.jsonl.gz": 2
+  },
+  "modes": {
+    "convert-document": 3837
+  },
+  "sources": 3837,
+  "unknown": 0
+}

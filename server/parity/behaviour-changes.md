@@ -529,3 +529,12 @@ Python 对 worker_threads 的非有限数原本进入整数校验（仍400，但
 未使用的顶层成员含非有限数时原本可返回200。`TestC29ExpectedDifferenceNonFinite` 为每个 POST
 各列三条显式预期差异（48条），真实 Flask malformed-body 作为完整 Go 响应控制，并严格比较
 headers、完整 DB 和所有文件不变。合法 JSON、普通数字和原有业务错误继续严格差分。
+
+
+- N7-3d convert readers apply the approved native scalar/text policy at their
+  temporary JSON boundary (N8-8 replaces it). Real caller corpus audit:278
+  classified expected changes, unknown0; non-JSON scalar metadata has no Mihomo
+  numeric/time field occurrence. Custom YAML failures keep their Chinese context
+  and report native reasons;34 diagnostic rows change displayed positions
+  (32 primary lines,34 unavailable columns omitted), recorded in
+  `internal/convert/testdata/n73d_diagnostic_positions.json` under5.7「诊断位置」.

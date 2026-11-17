@@ -27,9 +27,15 @@ import (
 
 // CustomConfigYAMLError is mihomo.CustomConfigYAMLError: the custom base
 // YAML cannot be parsed or validated (routes answer 500; nothing is written).
-type CustomConfigYAMLError struct{ Message string }
+type CustomConfigYAMLError struct {
+	Message string
+	cause   error
+}
 
 func (e *CustomConfigYAMLError) Error() string { return e.Message }
+
+// Unwrap retains the native reader failure for policy and alias classification.
+func (e *CustomConfigYAMLError) Unwrap() error { return e.cause }
 
 // ValidateIPv6Flags is validate_ipv6_flags: ipv6 and dns.ipv6 must be YAML
 // booleans when present.
@@ -40,13 +46,13 @@ func ValidateIPv6Flags(document any) error {
 	}
 	if value, present := obj.Get("ipv6"); present {
 		if _, isBool := value.(bool); !isBool {
-			return &CustomConfigYAMLError{"ipv6 必须为 true 或 false，不能是字符串或拼写错误的值"}
+			return &CustomConfigYAMLError{Message: msgIPv6Boolean}
 		}
 	}
 	if dns, ok := obj.Value("dns").(*jsonx.Object); ok {
 		if value, present := dns.Get("ipv6"); present {
 			if _, isBool := value.(bool); !isBool {
-				return &CustomConfigYAMLError{"dns 下的 ipv6 必须为 true 或 false，不能是字符串或拼写错误的值"}
+				return &CustomConfigYAMLError{Message: msgDNSIPv6Boolean}
 			}
 		}
 	}
@@ -347,7 +353,7 @@ func GenerateMihomoDocument(ctx context.Context, config *jsonx.Object, opts Gene
 	if err != nil {
 		return nil, err
 	}
-	value, err := yamlx.Load(text)
+	value, err := readDocumentYAML(text)
 	if err != nil {
 		return nil, err
 	}
@@ -366,20 +372,16 @@ func loadCustomConfig(custom any) *jsonx.Object {
 	if !isString {
 		raise(attributeError(custom, "strip"))
 	}
-	value, err := yamlx.Load(text)
+	value, err := readDocumentYAML(text)
 	if err != nil {
-		var yerr *yamlx.Error
-		if errors.As(err, &yerr) && yerr.IsYAMLError() {
-			// Parser errors contain excerpts of user YAML, including credentials.
-			// Return the diagnostic to the caller without duplicating it in logs.
-			raise(&CustomConfigYAMLError{"mihomo.custom_config YAML 解析失败: " + yerr.Error()})
-		}
-		raise(err)
+		// Parser diagnostics can contain credentials; return them only to the
+		// caller under the existing context, without duplicating them in logs.
+		raise(&CustomConfigYAMLError{Message: msgCustomYAMLInvalid + err.Error(), cause: err})
 	}
 	obj, ok := value.(*jsonx.Object)
 	if !ok {
 		name := typeName(value)
-		raise(&CustomConfigYAMLError{"mihomo.custom_config 不是 mapping，得到 " + name})
+		raise(&CustomConfigYAMLError{Message: msgCustomYAMLMapping + name})
 	}
 	return obj
 }

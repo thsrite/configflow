@@ -90,7 +90,7 @@ func CheckReaderFixtures(t testing.TB, valuesPath, expectedPath string, projecto
 		}
 		n, err := yamlx.Parse([]byte(source))
 		if err == nil {
-			checkParseAudit(t, n, record.GetList("parse_nodes"))
+			CheckParseAudit(t, n, record.GetList("parse_nodes"))
 			project, ok := projectors[mode]
 			if !ok {
 				t.Fatalf("unknown reader mode %s", mode)
@@ -149,7 +149,8 @@ func CheckReaderFixtures(t testing.TB, valuesPath, expectedPath string, projecto
 	t.Logf("business rows=%v expected changes=%v classified=%v unknown=0", totals, changed, classified)
 }
 
-func checkParseAudit(t testing.TB, root *yamlx.Node, records []any) {
+// CheckParseAudit verifies the original physical tags, positions and sharing.
+func CheckParseAudit(t testing.TB, root *yamlx.Node, records []any) {
 	t.Helper()
 	seen := map[*yamlx.Node]int{}
 	var walk func(*yamlx.Node, int)

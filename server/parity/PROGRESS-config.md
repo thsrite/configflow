@@ -2405,3 +2405,10 @@ a new nonempty exact-output regression pass with race. This is the same
 format-hint bug in Python/old Go, recorded in behaviour-changes.md. Production
 baseline remains unchanged. Lenient cached proxy policy/alias skips now emit
 index/category-only warnings and a local skipped=N summary; strict returns400.
+
+N7-3d convert reader iteration:7487+474 real Python reader-relevant rows,
+expected changes276+2=classified278,unknown0;YAML1.1/timestamp182,
+native-diagnostics34,nonfinite text31,binary/tagged31;3837 document-mode sources.
+Diagnostic position subclass:32 primary lines/34 missing native columns,
+per-row record in convert/testdata/n73d_diagnostic_positions.json. Native
+Node→jsonx preserves physical sharing; N8-8 replaces this temporary boundary.

@@ -18,6 +18,7 @@ import (
 	"configflow/internal/pyyaml"
 	"configflow/internal/subs"
 	"configflow/internal/yamlx"
+	"configflow/internal/yamlx/yamlxtest"
 	"gopkg.in/yaml.v3"
 )
 
@@ -29,13 +30,13 @@ type wire struct {
 	Pairs [][2]wire `json:"pairs"`
 }
 type record struct {
-	Mode     string      `json:"mode"`
-	Audit    []auditNode `json:"parse_nodes"`
-	Source   string      `json:"source"`
-	Native   *wire       `json:"native"`
-	Error    string      `json:"error"`
-	OldError string      `json:"old_error"`
-	Classes  []string    `json:"classes"`
+	Mode     string                `json:"mode"`
+	Audit    []yamlxtest.ParseNode `json:"parse_nodes"`
+	Source   string                `json:"source"`
+	Native   *wire                 `json:"native"`
+	Error    string                `json:"error"`
+	OldError string                `json:"old_error"`
+	Classes  []string              `json:"classes"`
 }
 
 func native(n *yamlx.Node, isKey bool) (wire, error) {
@@ -270,7 +271,7 @@ func main() {
 		node, newErr := yamlx.Parse([]byte(source))
 		classes := map[string]bool{}
 		if newErr == nil {
-			rec.Audit = audit(node)
+			rec.Audit = yamlxtest.ParseAudit(node)
 			switch entry.Mode {
 			case "parser", "dialers":
 				mode := yamlx.RejectNonStringKeys
@@ -389,41 +390,4 @@ func main() {
 	if unknown != 0 {
 		os.Exit(1)
 	}
-}
-
-type auditNode struct {
-	ID           int       `json:"id"`
-	Kind         yaml.Kind `json:"kind"`
-	Tag          string    `json:"tag"`
-	Value        string    `json:"value"`
-	Line, Column int
-	Content      []int `json:"content"`
-	Alias        int   `json:"alias"`
-}
-
-func audit(root *yamlx.Node) []auditNode {
-	ids := map[*yamlx.Node]int{}
-	var result []auditNode
-	var visit func(*yamlx.Node) int
-	visit = func(n *yamlx.Node) int {
-		if n == nil {
-			return 0
-		}
-		if id := ids[n]; id != 0 {
-			return id
-		}
-		id := len(result) + 1
-		ids[n] = id
-		result = append(result, auditNode{ID: id, Kind: n.Kind, Tag: n.Tag, Value: n.Value, Line: n.Line, Column: n.Column})
-		var children []int
-		for _, child := range n.Content {
-			children = append(children, visit(child))
-		}
-		alias := visit(n.Alias)
-		result[id-1].Content = children
-		result[id-1].Alias = alias
-		return id
-	}
-	visit(root)
-	return result
 }

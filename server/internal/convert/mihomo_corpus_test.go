@@ -423,12 +423,14 @@ func firstDiff(want, got string) string {
 // generated YAML semantics, reports, mutated profiles, download lists, base
 // settings checks and helpers must equal Python's.
 func TestMihomoCorpus(t *testing.T) {
+	readers := loadMihomoReaderOracle(t)
 	rows := loadMihomoCorpus(t)
 	oracle := loadWriterOracle(t)
 	counts := map[string]int{}
 	failures := 0
 	generated := 0
 	for i, row := range rows {
+		row = readers.row(t, "mihomo_corpus.jsonl.gz", i, row)
 		counts[row.fn]++
 		if row.fn == "generate" && row.errClass == "" {
 			generated++

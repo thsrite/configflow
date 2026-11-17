@@ -22,6 +22,7 @@ import (
 	"configflow/internal/server"
 	"configflow/internal/subs"
 	"configflow/internal/substore"
+	"configflow/internal/yamlbridge"
 	"configflow/internal/yamlx"
 )
 
@@ -110,7 +111,14 @@ func providerContent(ctx context.Context, config *jsonx.Object, j job) (string, 
 	if j.Kind == "subscription-mihomo" {
 		return rendered.Content, nil
 	}
-	parsed, err := yamlx.Load(rendered.Content)
+	node, err := yamlx.Parse([]byte(rendered.Content))
+	if err != nil {
+		return "", err
+	}
+	if err := yamlx.ProjectJSONKeys(node, yamlx.RejectNonStringKeys); err != nil {
+		return "", err
+	}
+	parsed, err := yamlbridge.Value(node)
 	if err != nil {
 		return "", err
 	}

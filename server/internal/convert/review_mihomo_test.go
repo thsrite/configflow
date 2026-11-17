@@ -10,6 +10,7 @@ import (
 	"configflow/internal/convert"
 	"configflow/internal/jsonx"
 	"configflow/internal/logx"
+	"configflow/internal/yamlx"
 )
 
 func TestMihomoReviewYAMLFailureLogOmitsConfiguration(t *testing.T) {
@@ -32,8 +33,11 @@ func TestMihomoReviewYAMLFailureLogOmitsConfiguration(t *testing.T) {
 			if !errors.As(err, &custom) {
 				t.Fatalf("expected custom YAML rejection, got %v", err)
 			}
-			if !strings.Contains(err.Error(), secret) {
-				t.Fatal("fixture did not exercise an error carrying the source text")
+			if !strings.Contains(err.Error(), "mihomo.custom_config YAML 解析失败: ") {
+				t.Fatal("missing existing custom YAML context")
+			}
+			if !errors.Is(err, yamlx.ErrSyntax) {
+				t.Fatalf("native syntax cause lost: %v", err)
 			}
 			if strings.Contains(logs.String(), secret) {
 				t.Fatal("ERROR log exposed custom YAML content")
@@ -73,11 +77,12 @@ func TestMihomoReviewEmptyLibraryURLUsesRuleFormat(t *testing.T) {
 }
 
 func TestMihomoReviewBoundaryReferences(t *testing.T) {
+	readers := loadMihomoReaderOracle(t)
 	rows := loadJSONLines(t, "testdata/review_mihomo.jsonl.gz")
 	oracle := loadWriterOracle(t)
-	for _, entry := range rows {
+	for index, entry := range rows {
 		t.Run(entry.GetString("case")+"/"+entry.GetString("fn"), func(t *testing.T) {
-			if msg := runMihomoReviewBoundary(t, rowOf(entry), oracle); msg != "" {
+			if msg := runMihomoReviewBoundary(t, readers.row(t, "review_mihomo.jsonl.gz", index, rowOf(entry)), oracle); msg != "" {
 				t.Fatal(msg)
 			}
 		})

@@ -15,7 +15,6 @@ import (
 	"configflow/internal/jsonx"
 	"configflow/internal/repo"
 	"configflow/internal/rules"
-	"configflow/internal/yamlx"
 )
 
 // snapshot is test_linux_gateway.py's snapshot(): one selected inline rule set.
@@ -98,10 +97,7 @@ func TestDefaultContentReader(t *testing.T) {
 // integers), and a disabled gateway leaves the document untouched.
 func TestApplyKeepsUntouchedValues(t *testing.T) {
 	big, _ := new(big.Int).SetString("123456789012345678901234567890", 10)
-	stamp, err := yamlx.Load("2024-01-02 03:04:05")
-	if err != nil {
-		t.Fatal(err)
-	}
+	stamp := "2024-01-02 03:04:05"
 	proxies := []any{jsonx.Obj("name", "p", "port", jsonx.Int(80), "ratio", jsonx.Float(1.0),
 		"big", jsonx.BigInt(big), "when", stamp, "raw", []byte("x"), "none", nil, "中文", "值")}
 	tun := jsonx.Obj("mtu", jsonx.Int(1400), "route-address", []any{"198.18.0.0/16"})

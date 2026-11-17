@@ -12,6 +12,7 @@ import (
 	"configflow/internal/convert"
 	"configflow/internal/gateway"
 	"configflow/internal/jsonx"
+	"configflow/internal/yamlbridge"
 	"configflow/internal/yamlx"
 
 	"gopkg.in/yaml.v3"
@@ -54,11 +55,22 @@ func sharedNodeChain(depth int, leaf *yaml.Node) *yaml.Node {
 
 func parseNode(t *testing.T, text string) *yaml.Node {
 	t.Helper()
-	var doc yaml.Node
-	if err := yaml.Unmarshal([]byte(text), &doc); err != nil {
+	root, err := yamlx.Parse([]byte(text))
+	if err != nil {
 		t.Fatal(err)
 	}
-	return &doc // a document wrapper, as yaml.v3 returns it
+	return &yaml.Node{Kind: yaml.DocumentNode, Content: []*yaml.Node{root}}
+}
+
+// routingCycle constructs an intentionally invalid graph to exercise the
+// defensive traversal independently of the validated public reader.
+func routingCycle(mark bool) *yaml.Node {
+	list := yamlx.Seq(yamlx.Str("x"))
+	list.Content = append(list.Content, &yaml.Node{Kind: yaml.AliasNode, Alias: list})
+	if mark {
+		list.Content = append(list.Content, yamlx.Map(yamlx.Str("routing-mark"), yamlx.Int(3)))
+	}
+	return yamlx.Map(yamlx.Str("a"), list)
 }
 
 // F1/F2: Python's _routing_mark_path visits each container once (seen), so
@@ -72,9 +84,9 @@ func TestRoutingMarkPathGraphs(t *testing.T) {
 		node func(t *testing.T) *yaml.Node
 		want string
 	}{
-		{"cycle", func(t *testing.T) *yaml.Node { return parseNode(t, "a: &a [x, *a]\n").Content[0] }, ""},
+		{"cycle", func(t *testing.T) *yaml.Node { return routingCycle(false) }, ""},
 		{"cycle with mark", func(t *testing.T) *yaml.Node {
-			return parseNode(t, "a: &a [x, *a, {routing-mark: 3}]\n").Content[0]
+			return routingCycle(true)
 		}, "R.a.2.routing-mark"},
 		{"document wrapper", func(t *testing.T) *yaml.Node {
 			return parseNode(t, "proxies: [{name: p}, {name: q, routing-mark: 1}]\n")
@@ -117,9 +129,13 @@ func TestSharedContainersStayShared(t *testing.T) {
 		t.Fatal("a list and its prefix were merged")
 	}
 
-	loaded, err := yamlx.Load("mixed-port: 7890\n" +
+	root, err := yamlx.Parse([]byte("mixed-port: 7890\n" +
 		"x-shared: {l0: &l0 [a, b], l1: &l1 [*l0, *l0]}\n" +
-		"tun: {mtu: 1400, include: &t [x], again: *t}\n")
+		"tun: {mtu: 1400, include: &t [x], again: *t}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := yamlbridge.Value(root)
 	if err != nil {
 		t.Fatal(err)
 	}
