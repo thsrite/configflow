@@ -300,6 +300,8 @@ func valueIssues(value reflect.Value, prefix string) []FieldIssue {
 }
 
 // storedType enforces R6/R8/R9 at record declarations, before data is decoded.
+// Fixed-size arrays are not stored types: encoding/json silently drops extra
+// stored elements, so a later edit would lose them.
 func storedType(typ reflect.Type) error {
 	for typ.Kind() == reflect.Pointer {
 		typ = typ.Elem()
@@ -310,7 +312,7 @@ func storedType(typ reflect.Type) error {
 	switch typ.Kind() {
 	case reflect.Bool, reflect.String, reflect.Float64:
 		return nil
-	case reflect.Array, reflect.Slice:
+	case reflect.Slice:
 		return storedType(typ.Elem())
 	case reflect.Struct:
 		if !typ.Implements(marshalerType) || !reflect.PointerTo(typ).Implements(unmarshalerType) {
@@ -326,20 +328,61 @@ func storedType(typ reflect.Type) error {
 }
 
 func decodeValue(data []byte, target any) error {
-	typ := reflect.TypeOf(target).Elem()
-	nullable := false
+	return decodeInto(data, reflect.ValueOf(target).Elem())
+}
+
+// decodeInto decodes into an addressable destination. encoding/json accepts a
+// quoted numeric string for json.Number, so exact-number members and lists
+// holding them are checked element by element: a string is never a number (R8).
+func decodeInto(data []byte, destination reflect.Value) error {
+	typ := destination.Type()
+	pointers := 0
 	for typ.Kind() == reflect.Pointer {
-		nullable = true
+		pointers++
 		typ = typ.Elem()
 	}
-	if typ == jsonNumberType {
-		text := bytes.TrimSpace(data)
-		if nullable && bytes.Equal(text, []byte("null")) {
-			return json.Unmarshal(data, target)
-		}
+	text := bytes.TrimSpace(data)
+	if pointers > 0 && bytes.Equal(text, []byte("null")) {
+		destination.SetZero()
+		return nil
+	}
+	switch {
+	case typ == jsonNumberType:
 		if len(text) == 0 || (text[0] != '-' && (text[0] < '0' || text[0] > '9')) {
 			return ErrType
 		}
+	case typ.Kind() == reflect.Slice && typ != rawMessageType && holdsNumber(typ.Elem()):
+		var items []json.RawMessage
+		if err := json.Unmarshal(data, &items); err != nil {
+			return err
+		}
+		if items == nil {
+			destination.SetZero()
+			return nil
+		}
+		value := reflect.MakeSlice(typ, len(items), len(items))
+		for i, item := range items {
+			if err := decodeInto(item, value.Index(i)); err != nil {
+				return err
+			}
+		}
+		for range pointers {
+			wrapped := reflect.New(value.Type())
+			wrapped.Elem().Set(value)
+			value = wrapped
+		}
+		destination.Set(value)
+		return nil
 	}
-	return json.Unmarshal(data, target)
+	return json.Unmarshal(data, destination.Addr().Interface())
+}
+
+func holdsNumber(typ reflect.Type) bool {
+	for typ.Kind() == reflect.Pointer {
+		typ = typ.Elem()
+	}
+	if typ == jsonNumberType {
+		return true
+	}
+	return typ.Kind() == reflect.Slice && typ != rawMessageType && holdsNumber(typ.Elem())
 }

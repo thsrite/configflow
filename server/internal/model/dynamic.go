@@ -37,10 +37,19 @@ func (d Dynamic) Node() (*yamlx.Node, error) {
 }
 
 // SetNode replaces the JSON with a validated encoding of the caller's tree.
+// Under R2 a tree that encodes like the stored value keeps the stored bytes,
+// so reading a Node and saving it back unchanged is a no-op.
 func (d *Dynamic) SetNode(node *yamlx.Node) error {
 	data, err := yamlx.ToJSON(node)
 	if err != nil {
 		return err
+	}
+	if d.raw != nil {
+		if original, err := yamlx.FromJSON(d.raw); err == nil {
+			if baseline, err := yamlx.ToJSON(original); err == nil && bytes.Equal(baseline, data) {
+				return nil
+			}
+		}
 	}
 	return d.UnmarshalJSON(data)
 }

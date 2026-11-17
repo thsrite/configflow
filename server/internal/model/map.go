@@ -140,8 +140,13 @@ func (m *Map[V]) UnmarshalJSON(data []byte) error {
 }
 
 // MarshalJSON writes keys in order and retains unchanged original fragments.
+// A zero Map is an empty object; only a stored null that was not modified
+// stays null.
 func (m Map[V]) MarshalJSON() ([]byte, error) {
-	if m.state == nil || m.state.null {
+	if m.state == nil {
+		return []byte("{}"), nil
+	}
+	if m.state.null {
 		return []byte("null"), nil
 	}
 	originals := map[string]jsonMember{}

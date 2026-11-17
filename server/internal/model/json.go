@@ -215,6 +215,8 @@ var marshalerType = reflect.TypeFor[json.Marshaler]()
 
 // Marshal writes model records, raw JSON and containers without compacting
 // preserved fragments. New scalar values use encoding/json without HTML escapes.
+// Nil slices and zero Maps are written as [] and {} (never null), like
+// encoding/json/v2; a nil pointer or RawMessage is null.
 // The complete output must be valid UTF-8 JSON with no duplicate object keys.
 func Marshal(v any) ([]byte, error) {
 	if err := acyclic(reflect.ValueOf(v), map[visitKey]bool{}); err != nil {
@@ -316,6 +318,12 @@ func marshalValue(v reflect.Value, active map[visitKey]bool) ([]byte, error) {
 			return []byte("null"), nil
 		}
 		return marshalValue(v.Elem(), active)
+	}
+	// A nil list is an empty list in Go; stored lists are always written as
+	// arrays (as Python did), so `var kept []T` filtered to nothing stays [].
+	// R2 still keeps a stored null: its baseline encodes the same way.
+	if v.Kind() == reflect.Slice && v.IsNil() && v.Type() != rawMessageType && v.Type().Elem().Kind() != reflect.Uint8 {
+		return []byte("[]"), nil
 	}
 	if (v.Kind() == reflect.Pointer || v.Kind() == reflect.Map || v.Kind() == reflect.Slice) && v.IsNil() {
 		return []byte("null"), nil

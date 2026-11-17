@@ -29,8 +29,12 @@ type Profile struct {
 	ClientFixedIPs  json.RawMessage `json:"client_fixed_ips"`
 	Fields          Fields
 	raw             Raw
-	owner           string
-	hasOwner        bool
+	// owner is the stored section key and ownerID the ID decoded with it. The
+	// key follows a changed ID, so a copied profile with a new ID becomes its
+	// own section; an untouched (possibly malformed) ID keeps the stored key.
+	owner    string
+	ownerID  string
+	hasOwner bool
 }
 
 // UnmarshalJSON decodes a profile with R1–R9 preservation and type fallback.
@@ -126,6 +130,7 @@ func DecodeDocument(data []byte) (*Document, []FieldIssue, error) {
 		}
 		index++
 		profile.owner = name
+		profile.ownerID = profile.ID
 		profile.hasOwner = true
 		document.Profiles = append(document.Profiles, profile)
 	}
@@ -157,7 +162,8 @@ func (d *Document) UnmarshalJSON(data []byte) error {
 }
 
 // MarshalJSON preserves the root record and profile object layout. Source owner
-// keys identify loaded sections even if their stored id member is malformed.
+// keys identify loaded sections even if their stored id member is malformed;
+// a profile whose ID was changed (for example a copy) is keyed by its new ID.
 func (d Document) MarshalJSON() ([]byte, error) {
 	profiles := d.profiles
 	if profiles.state != nil || d.Profiles != nil {
@@ -179,7 +185,7 @@ func (d Document) MarshalJSON() ([]byte, error) {
 				return nil, fmt.Errorf("%w: nil profile record", ErrType)
 			}
 			owner := profile.ID
-			if profile.hasOwner {
+			if profile.hasOwner && profile.ID == profile.ownerID {
 				owner = profile.owner
 			}
 			if seen[owner] {
