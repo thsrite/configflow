@@ -203,3 +203,48 @@ remaining_audits=2301. Findings retrieved from this synthetic owned artifact.
 `RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'set -euo pipefail; cd server; gofmt -l $(git ls-files "*.go" 2>/dev/null || find . -name "*.go"); go vet ./...'`
 → exit 0, no output. This is an intermediate formatting/vet check, not the final
 rebase/full acceptance. Work continues; 1904 entries have no executed recipe yet.
+
+Creation/inspection/Agent scope step:
+- 40 real creates followed by selected-record deletion: coercion, literal-false
+  TLS, falsy rule sets, stable deduplication, unvalidated port/query-fragment,
+  unknown input ignored; returned ID format/uniqueness, exact stored fields,
+  retained password and absence from public view. Creates append exactly one
+  record; deletes remove exactly the selected record; all foreign rows/device
+  state remain unchanged and each write bumps revision once.
+- Successful unlinked report/plan/policy and target-empty preview. Early blocked
+  plan explicitly has empty fingerprint/script/stages (not a valid 16-char hash).
+- Each cohesive write sequence now gets a NEW pair/database: a missing Go R17
+  write cannot contaminate a later implemented R15 scenario's revisions/state.
+  --world selects isolated iteration groups; default still runs every world.
+- Actual alpha/beta OxiDNS query pinning, request-profile response headers,
+  deleted-header-before-agent lookup, HEAD ignoring invalid agent on R002,
+  empty-profile discovery, all-profile Mihomo gateways vs profile-local sources.
+- Real public heartbeats establish online status; authenticated independent
+  Agent fakes GET forwarding state, POST persist, re-read after persist and
+  idempotent persist. Shared-router refs deduplicate in source order; an Agent
+  bound to beta is authorized by an explicit router link in alpha. No OS/L5
+  forwarding/reboot claim. Fake validates the correct host-specific bearer.
+- Auth A7 now uses a token that actually belongs to a seeded Agent; a real
+  heartbeat first proves it is valid before all 26 admin endpoints reject it.
+- Added exact Agent missing-profile audit: actual public import rejects it;
+  stopping the real Python process, deleting only that field in owned synthetic
+  SQLite and restarting also fails before handlers. No Python helper patched.
+  R002-B02 stays pending (proposal in difftest-routers-audit.md); no bogus HTTP
+  success counted. Failed fixture roots are now cleaned even before side startup.
+- Fake protocol refinements: catch unexpected fake errors as fixture errors;
+  nested JSON matchers target iKuai actions; IDs advance beyond seeded foreign
+  IDs; correct DHCP static_ vs lease view; group IDs/ref_count with hidden refs;
+  mutable Agent forwarding/return state and basic owned WebDAV writes. Deeper
+  vendor branches still require their own cases, not claimed covered here.
+
+Full .32 phase command:
+`RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'set -euo pipefail; cd server/tools/routerdiff; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY=/tmp/routerdiff-build.AybfCK/configflow; ~/cf-test/.venv/bin/python -m unittest -v test_inventory test_seed test_compare test_recipes test_console test_boundary; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --output /tmp/routerdiff-phase-agent.json --findings /tmp/routerdiff-phase-agent-findings.md; cd ../..; gofmt -l $(rg --files -g "*.go"); go vet ./...'`
+→ Ran 16 tests in 14.650s / OK; forwarding 1348; receipts 1355; stored guards
+1398; implemented_routes=0, go-unimplemented=1398, referenced_entries=426,
+complete=false, remaining_audits=2301. gofmt/vet exit 0, no output.
+After the ID/ref-count helper refinement, targeted fresh .32 validation:
+`RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'set -euo pipefail; cd server/tools/routerdiff; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY=/tmp/routerdiff-build.AybfCK/configflow; ~/cf-test/.venv/bin/python -m unittest -v test_recipes test_boundary; ~/cf-test/.venv/bin/python run.py --allow-incomplete --world manual-routes --world router-creations --world forwarding --binary "$ROUTERDIFF_BINARY" --output /tmp/routerdiff-peer-counter.json'`
+→ Ran 6 tests in 11.629s / OK; manual 18, creations 98, forwarding 105 cumulative;
+0 implemented, 105 Go 尚未实现. This filtered run is not the full coverage count.
+Still 1875 design entries without an attached executed recipe; ALL entries need
+final variant/reachability audit. Work continues; no final hand-back/rebase yet.

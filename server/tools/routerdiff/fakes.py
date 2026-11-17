@@ -9,6 +9,7 @@ import hashlib
 import ipaddress
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+import re
 import threading
 import time
 from urllib.parse import parse_qs, unquote, urlsplit
@@ -37,6 +38,8 @@ class World:
         self.ikuai = {'sysstat': {'verinfo': {'version': '4.0.314', 'verstring': 'synthetic-router'}}}
         self.agent = {}
         self.documents = {}
+        self.webdav = {'files': {}, 'collections': []}
+        self.hidden_refs = {}
         self.sequence = {'ros': 16, 'ikuai': 1}
         self.cookie = 'synthetic-session-1'
         self.nat_pending = set()
@@ -56,6 +59,9 @@ class World:
             do_PUT = do_GET
             do_PATCH = do_GET
             do_DELETE = do_GET
+            do_HEAD = do_GET
+            do_MKCOL = do_GET
+            do_PROPFIND = do_GET
 
             def serve(self):
                 raw = self.rfile.read(int(self.headers.get('Content-Length', '0')))
@@ -68,9 +74,9 @@ class World:
                           'headers': {key.lower(): value for key, value in self.headers.items()}}
                 try:
                     status, headers, content = world.handle(record)
-                except ProtocolError as error:
+                except Exception as error:
                     with world.lock:
-                        world.errors.append(str(error))
+                        world.errors.append(type(error).__name__ + ': ' + str(error))
                     status, headers, content = 599, {}, {'fixture_error': str(error)}
                 if content is None:  # Deliberate lost acknowledgement.
                     self.close_connection = True
@@ -84,7 +90,8 @@ class World:
                 self.send_header('Content-Length', str(len(content)))
                 self.end_headers()
                 try:
-                    self.wfile.write(content)
+                    if self.command != 'HEAD':
+                        self.wfile.write(content)
                 except (BrokenPipeError, ConnectionResetError):
                     pass
 
@@ -103,7 +110,7 @@ class World:
             self.condition.notify_all()
             fault = None
             for candidate in self.faults:
-                if all(request.get(key) == value for key, value in candidate['match'].items()):
+                if self.matches(request, candidate['match']):
                     candidate['remaining'] -= 1
                     if candidate['remaining'] <= 0:
                         self.faults.remove(candidate)
@@ -114,12 +121,25 @@ class World:
                 self.condition.notify_all()
         # Never hold the state mutex while waiting for a lock-test gate.
         if fault and fault.get('gate'):
-            self.gates.setdefault(fault['gate'], threading.Event()).wait(timeout=90)
+            if not self.gates[fault['gate']].wait(timeout=90):
+                raise ProtocolError('test controller failed to release current request gate')
         with self.lock:
             if fault and not fault.get('apply', False):
                 return self.fault_response(fault)
             response = getattr(self, request['peer'] + '_request')(request)
             return self.fault_response(fault) if fault else response
+
+    @staticmethod
+    def matches(request, match):
+        for key, expected in match.items():
+            value = request
+            for part in key.strip('/').split('/') if key.startswith('/') else (key,):
+                if not isinstance(value, dict) or part not in value:
+                    return False
+                value = value[part]
+            if value != expected:
+                return False
+        return True
 
     @staticmethod
     def fault_response(fault):
@@ -282,12 +302,19 @@ class World:
             if isinstance(rows, dict):
                 return self.ik_reply(rows)
             offset, limit = map(int, param.get('limit', '0,1000').split(','))
-            prefix = 'static_' if func == 'dhcp_static' else ''
+            prefix = 'static_' if func == 'dhcp_static' and param.get('TYPE') == 'static_total,static_data' else ''
+            if func == 'dhcp_static' and not prefix:
+                # The real plain TYPE selects a different view, without DNS or
+                # ownership fields. A caller forgetting static_ must fail.
+                rows = self.ikuai.get('dhcp_lease', [])
             page = copy.deepcopy(rows[offset:offset + limit])
             for row in page:
                 if func == 'static_rt' and isinstance(row.get('netmask'), str):
                     row['netmask'] = row['netmask'].split(' ')[0] + ' (synthetic display)'
                     row.setdefault('status', 1)
+                if func == 'route_object':
+                    row['tagname'] = row.get('group_name', '')
+                    row['ref_count'] = self.group_refs(row)
                 for key in ('src_addr', 'dst_addr', 'src_port', 'dst_port', 'nat_addr', 'nat_port'):
                     if row.get(key) == {'custom': [], 'object': []}:
                         row[key] = {}
@@ -300,6 +327,7 @@ class World:
             row = {'id': self.sequence['ikuai'], **copy.deepcopy(param)}
             if func == 'route_object':
                 row.pop('tagname', None)
+                row['group_id'] = 'IPGP' + str(row['id'])
             rows.append(row)
             return self.ik_reply({})
         row = next((row for row in rows if row.get('id') == param.get('id')), None)
@@ -308,10 +336,26 @@ class World:
         if action == 'edit':
             row.update(copy.deepcopy(param))
         elif action == 'del':
+            if func == 'route_object' and self.group_refs(row):
+                return self.ik_reply(code=3001)
             rows.remove(row)
         else:
             raise ProtocolError('unsupported iKuai action: ' + str(action))
         return self.ik_reply({})
+
+    def group_refs(self, group):
+        count = self.hidden_refs.get(group.get('group_id'), 0)
+        for table in ('nat_rule', 'stream_ipport'):
+            for row in self.ikuai.get(table, []):
+                referenced = False
+                for field in ('src_addr', 'dst_addr'):
+                    value = row.get(field, {})
+                    objects = value.get('object') if isinstance(value, dict) else None
+                    if isinstance(objects, list) and any(isinstance(ref, dict) and ref.get('gid') == group.get('group_id')
+                                                         for ref in objects):
+                        referenced = True
+                count += int(referenced)
+        return count
 
     @staticmethod
     def ik_reply(results=None, code=0):
@@ -319,13 +363,44 @@ class World:
 
     def agent_request(self, request):
         path = urlsplit(request['path']).path
-        if path not in self.agent:
+        host = request['headers'].get('host', '')
+        agent = self.agent.get(host)
+        if agent is None:
             return 404, {}, {'success': False, 'message': 'synthetic Agent endpoint unavailable'}
-        entry = self.agent[path]
-        if request['method'] == 'PUT':
-            entry.update(copy.deepcopy(request['body']))
-        elif request['method'] == 'DELETE':
-            entry.clear()
+        if request['headers'].get('authorization') != 'Bearer ' + agent['token']:
+            return 401, {}, {'success': False, 'message': 'synthetic Agent credential refused'}
+        endpoints = agent['endpoints']
+        if path == '/api/linux-gateway/forwarding' and request['method'] == 'POST':
+            if request['body'] != {}:
+                raise ProtocolError('forwarding persist requires an empty object')
+            status = endpoints['/api/linux-gateway/status']
+            value = status['ipv4_forwarding']
+            if value.get('config') in ('foreign', 'symlink') or value.get('hook_script') == 'modified':
+                return 409, {}, {'success': False, 'message': 'synthetic external forwarding file must be preserved'}
+            value.update(current='1', persisted=True, config='owned', hook_script='owned')
+            return 200, {}, {'success': True, 'ipv4_forwarding': copy.deepcopy(value),
+                             'managed': copy.deepcopy(status.get('managed', {}))}
+        if path not in endpoints:
+            return 404, {}, {'success': False, 'message': 'synthetic Agent endpoint unavailable'}
+        entry = endpoints[path]
+        if path == '/api/return-routing':
+            if request['method'] == 'PUT':
+                spec = request['body']
+                required = {'router_ip', 'table', 'priority', 'mark', 'safety_version'}
+                if not isinstance(spec, dict) or not required <= spec.keys() or spec.keys() - required - {'proxy_dst'}:
+                    raise ProtocolError('invalid Agent return-routing capability payload')
+                ipaddress.IPv4Address(spec['router_ip'])
+                if any(type(spec[key]) is not int for key in ('table', 'priority', 'safety_version')):
+                    raise ProtocolError('return-routing allocation requires exact integer fields')
+                if spec['safety_version'] not in (1, 2):
+                    return 409, {}, {'success': False, 'message': 'synthetic unsupported return-routing protocol'}
+                entry['managed'] = {**entry.get('managed', {}), 'spec': copy.deepcopy(spec), 'active': True, 'table_present': True}
+            elif request['method'] == 'DELETE':
+                entry['managed'] = {**entry.get('managed', {}), 'spec': None, 'active': False, 'table_present': False}
+            elif request['method'] != 'GET':
+                raise ProtocolError('unsupported Agent return-routing method')
+        elif request['method'] != 'GET':
+            raise ProtocolError('unsupported Agent endpoint mutation')
         return 200, {}, copy.deepcopy(entry)
 
     def rules_request(self, request):
@@ -335,14 +410,42 @@ class World:
         return entry.get('status', 200), entry.get('headers', {}), base64.b64decode(entry['body'])
 
     proxy_request = rules_request
-    webdav_request = rules_request
+
+    def webdav_request(self, request):
+        path, method = request['path'], request['method']
+        if method == 'MKCOL':
+            if path in self.webdav['collections']:
+                return 405, {}, b''
+            self.webdav['collections'].append(path)
+            return 201, {}, b''
+        if method == 'PUT':
+            self.webdav['files'][path] = request['raw']
+            return 201, {}, b''
+        if method in ('GET', 'HEAD'):
+            if path not in self.webdav['files']:
+                return 404, {}, b''
+            return 200, {}, base64.b64decode(self.webdav['files'][path])
+        if method == 'DELETE':
+            self.webdav['files'].pop(path, None)
+            return 204, {}, b''
+        raise ProtocolError('WebDAV method not yet implemented: ' + method)
 
     def control(self, action, **values):
         with self.condition:
             if action == 'seed':
-                for key in ('ros', 'ikuai', 'agent', 'documents'):
+                for key in ('ros', 'ikuai', 'agent', 'documents', 'hidden_refs'):
                     if key in values:
                         getattr(self, key).update(copy.deepcopy(values[key]))
+                for rows in self.ros.values():
+                    for row in rows if isinstance(rows, list) else ():
+                        ident = row.get('.id') if isinstance(row, dict) else None
+                        if isinstance(ident, str) and re.fullmatch(r'\*[0-9a-fA-F]+', ident):
+                            self.sequence['ros'] = max(self.sequence['ros'], int(ident[1:], 16))
+                for rows in self.ikuai.values():
+                    for row in rows if isinstance(rows, list) else ():
+                        ident = row.get('id') if isinstance(row, dict) else None
+                        if type(ident) is int:
+                            self.sequence['ikuai'] = max(self.sequence['ikuai'], ident)
                 return True
             if action == 'fault':
                 values.setdefault('remaining', 1)
@@ -362,8 +465,7 @@ class World:
                     return True
                 match, count = values['match'], values.get('count', 1)
                 def reached():
-                    return sum(all(item.get(key) == value for key, value in match.items())
-                               for item in self.transcript) >= count
+                    return sum(self.matches(item, match) for item in self.transcript) >= count
                 if not self.condition.wait_for(reached, timeout=values.get('timeout', 10)):
                     raise TimeoutError('fake transcript gate not reached')
                 return True
@@ -375,6 +477,7 @@ class World:
     def snapshot(self):
         with self.lock:
             return copy.deepcopy({'ros': self.ros, 'ikuai': self.ikuai, 'agent': self.agent,
+                                  'webdav': self.webdav,
                                   'transcript': self.transcript, 'errors': self.errors})
 
     def release_all(self):

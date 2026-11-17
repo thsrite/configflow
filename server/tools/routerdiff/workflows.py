@@ -1,5 +1,6 @@
 """Public editor/write sequences using each side's own previous HTTP response."""
 from cases import Case, Ref
+from seed import router, DEVICE_PASSWORD
 
 
 def client_drafts():
@@ -164,6 +165,8 @@ def job_locks():
                  ('R015', 'PUT', '/policy-settings'), ('R017', 'POST', '/probe'),
                  ('R020', 'POST', '/routes/apply'), ('R024', 'PUT', '/rule-sync')]
     required = tuple(route for route, _, _ in endpoints)
+    yield Case('R019/job-lock-prior-login', 'R019', 'GET', '/api/routers/r-ik/routes', 200,
+               (), unchanged=False, effect='device-read', checks={'success': True, 'routes': []})
     for vendor, router_id, peer, path in (('routeros', 'r-ros', 'ros', '/rest/system/resource'),
                                          ('ikuai', 'r-ik', 'ikuai', '/Action/login')):
         gate, pending = 'job-' + vendor, 'probe-' + vendor
@@ -188,3 +191,62 @@ def job_locks():
                    200 if vendor == 'routeros' else 502, ('R017-S01',) if vendor == 'routeros' else ('R017-S90',),
                    prepare=({'action': 'release', 'gate': gate},), join=pending, unchanged=False, effect='profile-write',
                    checks={'success': vendor == 'routeros', 'probe/ok': vendor == 'routeros'}, times=('probe/at',), requires=required)
+
+
+def router_creates():
+    base = router()
+    base.pop('id')
+    variants = [('ros-minimal', {}, {}, 'R008-S01'), ('ikuai-minimal', {'type': 'ikuai'}, {'type': 'ikuai'}, 'R008-S02')]
+    for field, pairs in (
+        ('name', [(True, 'True'), (123, '123'), (['x'], "['x']"), ({'k': 1}, "{'k': 1}"), ('  中文🧪  ', '中文🧪')]),
+        ('username', [(True, 'True'), (123, '123'), (['x'], "['x']"), ({'k': 1}, "{'k': 1}")]),
+        ('verify_tls', [(False, False), (None, True), (0, True), ('false', True), ([], True), ({}, True)]),
+        ('dns_agent_id', [(None, ''), (0, ''), (False, ''), (123, '123')]),
+        ('proxy_gateway_agent_id', [(None, ''), (0, ''), (False, ''), (123, '123')]),
+        ('ip_rule_sets', [(None, []), (False, []), (0, []), ('', []), ({}, []), (['b', 'a', 'b'], ['b', 'a'])]),
+        ('ros_policy_rule_sets', [(None, []), (False, []), (0, []), ('', []), ({}, []), (['b', 'a', 'b'], ['b', 'a'])])):
+        for index, (value, expected) in enumerate(pairs):
+            variants.append((field + '-' + str(index), {field: value}, {field: expected}, 'R008-B90'))
+    variants += [('unvalidated-port', {'endpoint': 'http://10.44.0.1:not-a-port'},
+                  {'endpoint': 'http://10.44.0.1:not-a-port'}, 'R008-B90'),
+                 ('query-fragment', {'endpoint': 'http://10.44.0.1/?q=synthetic#fragment'},
+                  {'endpoint': 'http://10.44.0.1/?q=synthetic#fragment'}, 'R008-B90'),
+                 ('unknown-ignored', {'unknown': {'opaque': 'synthetic'}}, {}, 'R008-B90')]
+    for label, patch, expected, entry in variants:
+        ident = 'R008/create-' + label
+        checks = {'success': True, 'router/has_password': True,
+                  **{'router/' + field: value for field, value in expected.items()}}
+        stored = {'routers/items/-1/password': DEVICE_PASSWORD,
+                  **{'routers/items/-1/' + field: value for field, value in expected.items()}}
+        yield Case(ident, 'R008', 'POST', '/api/routers', 200, (entry,), document={**base, **patch},
+                   unchanged=False, effect='router-create', checks=checks, stored=stored,
+                   absent=('router/password', 'router/unknown'), formats={'router/id': r'router_[0-9a-f]{12}'},
+                   requires=('R009',))
+        yield Case('R009/delete-' + label, 'R009', 'DELETE', Ref(ident, '/body/router/id', prefix='/api/routers/'),
+                   200, ('R009-S01',), unchanged=False, effect='router-delete', checks={'success': True}, requires=('R008',))
+
+
+def unlinked_inspection():
+    yield Case('R013-S02/no-manifest', 'R013', 'GET', '/api/routers/r-ros/policy', 200,
+               ('R013-S02', 'R013-B01'), checks={'success': True, 'policy/objects': [], 'policy/source_agents': []},
+               times=('generated_at',))
+    for vendor, router_id in (('routeros', 'r-ros'), ('ikuai', 'r-ik')):
+        entry = 'S01' if vendor == 'routeros' else 'S02'
+        root = '/api/routers/' + router_id
+        yield Case('R018-' + entry + '/unlinked-' + vendor, 'R018', 'GET', root + '/report', 200,
+                   ('R018-' + entry,), unchanged=False, effect='device-read',
+                   checks={'success': True, 'report/return_routing/status': 'disabled'}, times=('generated_at',))
+        plan = 'R012/unlinked-plan-' + vendor
+        yield Case(plan, 'R012', 'POST', root + '/plan', 200, (), unchanged=False, effect='device-read',
+                   checks={'success': True, 'plan/blockers/0': '未关联 mihomo Agent，无法确定代理路由的下一跳',
+                           'plan/fingerprint': '', 'plan/stages': [], 'plan/script': ''}, absent=('plan/sync_baseline',))
+        yield Case('R011/unlinked-blocked-' + vendor, 'R011', 'POST', root + '/apply', 409, ('H1308',),
+                   document={'fingerprint': Ref(plan, '/body/plan/fingerprint')}, unchanged=False, effect='device-read',
+                   checks={'success': False, 'plan/blockers/0': '未关联 mihomo Agent，无法确定代理路由的下一跳'}, requires=('R012',))
+    yield Case('R014/preview-current', 'R014', 'GET', '/api/routers/r-ros/policy-settings', 200,
+               ('R014-S01',), checks={'success': True}, formats={'workspace/revision': r'[0-9a-f]{64}'})
+    yield Case('R016-S01/no-targets', 'R016', 'POST', '/api/routers/r-ros/policy-settings/preview', 200,
+               ('R016-S01', 'R016-B01', 'R016-B05'), document={
+                   'revision': Ref('R014/preview-current', '/body/workspace/revision'), 'targets': [], 'base_url': ''},
+               unchanged=False, effect='device-read', checks={'success': True, 'preview/dns_content': '', 'preview/targets': []},
+               requires=('R014',))

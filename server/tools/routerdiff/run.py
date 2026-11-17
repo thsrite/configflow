@@ -17,8 +17,8 @@ from compare import differences, logical_snapshot, response_view, timestamp
 from harness import Pair
 from harness import decode_response
 from inventory import design_json, load
-from invariants import configuration_only, profile_write
-from seed import router
+from invariants import configuration_only, profile_write, fields
+from seed import router, AGENT_TOKEN
 
 
 def shape(path):
@@ -40,7 +40,12 @@ def execute(pair, case, available, routes):
         if name == 'go' and not implemented:
             continue
         for control in case.prepare:
-            if control.get('rpc') == 'begin':
+            if control.get('rpc') == 'http':
+                values = {key: value for key, value in control.items() if key not in ('rpc', 'expected')}
+                reply = side.request(**values)
+                if reply['status'] != control['expected'] or reply['content'].get('success') is not True:
+                    raise RuntimeError(case.ident + ': public HTTP fixture setup failed on ' + name)
+            elif control.get('rpc') == 'begin':
                 values = {key: value for key, value in control.items() if key != 'rpc'}
                 ident = values['ident']
                 side.pending[ident] = {'before': logical_snapshot(side.rpc('snapshot')), 'started': time.time()}
@@ -50,7 +55,8 @@ def execute(pair, case, available, routes):
             else:
                 side.rpc('fake', **control)
         before = side.pending[case.join]['before'] if case.join else logical_snapshot(side.rpc('snapshot'))
-        own_request = {**request, 'document': cases.resolve(case.document, side.observations)}
+        own_request = {**request, 'document': cases.resolve(case.document, side.observations),
+                       'path': cases.resolve(case.path, side.observations)}
         started = side.pending[case.join]['started'] if case.join else time.time()
         response = decode_response(side.rpc('join', ident=case.join)) if case.join else side.request(**own_request)
         if case.join:
@@ -67,6 +73,10 @@ def execute(pair, case, available, routes):
             if response['status'] != case.expected:
                 raise RuntimeError(f'{case.ident}: Python precondition expected {case.expected}, got '
                                    f'{response["status"]}: {response["content"]!r}')
+            actual_headers = {key.lower(): value for key, value in response['headers']}
+            for key, expected in case.header_checks.items():
+                if actual_headers.get(key.lower()) != expected:
+                    raise RuntimeError(case.ident + ': Python header precondition failed: ' + key)
             if case.message is not None and response['content'].get('message') != case.message:
                 raise RuntimeError(case.ident + ': wrong Python guard reached: ' + repr(response['content']))
             for path in case.absent:
@@ -82,7 +92,7 @@ def execute(pair, case, available, routes):
                     raise RuntimeError(case.ident + ': expected the actual uncaught HTML error boundary')
             for path, expected in case.checks.items():
                 actual = cases.at(response['content'], path)
-                if differences(actual, expected):
+                if differences(actual, cases.resolve(expected, side.observations)):
                     raise RuntimeError(case.ident + ': Python precondition at ' + path + ': ' + repr(actual))
             for path, pattern in case.formats.items():
                 actual = cases.at(response['content'], path)
@@ -90,10 +100,27 @@ def execute(pair, case, available, routes):
                     raise RuntimeError(case.ident + ': invalid Python identity/hash at ' + path)
             for path in case.times:
                 timestamp(cases.at(response['content'], path), started - 1, ended + 1)
-            if case.effect in ('profile-write', 'profile-write-device'):
+            if case.effect in ('profile-write', 'profile-write-device', 'router-create', 'router-delete'):
                 profile_write(before, after, case.profile)
-                if case.effect == 'profile-write':
+                if case.effect != 'profile-write-device':
                     configuration_only(before, after)
+            for path, expected in case.stored.items():
+                actual = cases.at(fields(after, 'profile', case.profile), path)
+                if differences(actual, cases.resolve(expected, side.observations)):
+                    raise RuntimeError(case.ident + ': stored precondition failed at ' + path + ': ' + repr(actual))
+            if case.effect == 'router-create':
+                old = fields(before, 'profile', case.profile)['routers']['items']
+                new = fields(after, 'profile', case.profile)['routers']['items']
+                if len(new) != len(old) + 1 or differences(new[:-1], old) or new[-1]['id'] != response['content']['router']['id']:
+                    raise RuntimeError(case.ident + ': create did not append exactly the returned router')
+                if len({row['id'] for row in new}) != len(new):
+                    raise RuntimeError(case.ident + ': create generated duplicate router identity')
+            if case.effect == 'router-delete':
+                old = fields(before, 'profile', case.profile)['routers']['items']
+                new = fields(after, 'profile', case.profile)['routers']['items']
+                removed = own_request['path'].split('?')[0].rsplit('/', 1)[-1]
+                if len(old) != len(new) + 1 or differences([row for row in old if row['id'] != removed], new):
+                    raise RuntimeError(case.ident + ': delete did not remove exactly the selected record')
             if case.effect == 'device-only':
                 if differences(before['database'], after['database']):
                     raise RuntimeError(case.ident + ': manual device operation modified configuration storage')
@@ -124,6 +151,7 @@ def execute(pair, case, available, routes):
             found += differences(snapshots['go']['before'], snapshots['go']['after'], '/go-unexpected-write')
     # Auth values are synthetic but reports don't need bearer credentials.
     request['document'] = cases.resolve(case.document, pair.python.observations)
+    request['path'] = cases.resolve(case.path, pair.python.observations)
     request['headers'] = {key: '<synthetic credential>' if key.lower() == 'authorization' else value
                           for key, value in request['headers'].items()}
     request['raw'] = request['raw'].decode(errors='replace') if request['raw'] is not None else None
@@ -205,17 +233,34 @@ def main():
     parser.add_argument('--findings', type=Path)
     parser.add_argument('--allow-incomplete', action='store_true',
                         help='iteration only: allow pending coverage audits; default gate exits 2')
+    parser.add_argument('--world', action='append', help='iteration only: run these named isolated worlds')
     args = parser.parse_args()
     routes, _ = load()
     results = []
     options = {'alpha': {'routers': {'items': [router(), router('r-ik', 'ikuai')]}},
                'beta': {'routers': {'items': [router()]}}}
-    worlds = [('base', options, (cases.authentication, cases.profile_selection_failures, cases.body_guards,
+    guard_options = {**options, 'system': {'agents': [{'id': 'auth-agent', 'name': '合成鉴权 Agent',
+        'service_type': 'oxidns', 'profile_id': 'alpha', 'host': '10.44.0.53', 'port': 18083,
+        'version': '1.99.0-go', 'status': 'offline', 'enabled': True, 'token': AGENT_TOKEN}]}}
+    worlds = [('guards', guard_options, (cases.authentication, cases.profile_selection_failures, cases.body_guards,
                       guards.router_settings, guards.client_draft, guards.fixed_ip_shape,
-                      guards.route_edit_shape, guards.workspace_shape, guards.rule_sync_shape,
-                      workflows.client_drafts, workflows.workspace_drafts, workflows.router_updates,
-                      workflows.runtime_reads, workflows.sync_settings, workflows.manual_routes, workflows.job_locks)),
+                      guards.route_edit_shape, guards.workspace_shape, guards.rule_sync_shape)),
+              ('client-drafts', options, (workflows.client_drafts,)),
+              ('workspace-drafts', options, (workflows.workspace_drafts, workflows.router_updates)),
+              ('runtime-reads', options, (workflows.runtime_reads,)),
+              ('sync-settings', options, (workflows.sync_settings,)),
+              ('manual-routes', options, (workflows.manual_routes,)),
+              ('job-locks', options, (workflows.job_locks,)),
+              ('router-creations', options, (workflows.router_creates,)),
+              ('unlinked-inspection', options, (workflows.unlinked_inspection,)),
+              ('agent-scope', fixtures.agent_options(), (fixtures.agent_scope,)),
+              ('forwarding', fixtures.agent_options(), (fixtures.forwarding,)),
               ('stored', fixtures.stored_options(), (fixtures.receipts, fixtures.stored_guards))]
+    if args.world:
+        unknown = set(args.world) - {name for name, _, _ in worlds}
+        if unknown:
+            parser.error('unknown isolated world: ' + ', '.join(sorted(unknown)))
+        worlds = [item for item in worlds if item[0] in args.world]
     available = None
     try:
         for name, options, groups in worlds:
@@ -228,7 +273,9 @@ def main():
                 for group in groups:
                     started = time.monotonic()
                     for case in group():
-                        results.append(execute(pair, case, available, routes))
+                        result = execute(pair, case, available, routes)
+                        result['world'] = name
+                        results.append(result)
                     report(args.output, results, available, announce=False)
                     print(name + '/' + group.__name__ + ': ' + str(len(results)) + ' cumulative recipes, '
                           + format(time.monotonic() - started, '.2f') + 's', flush=True)

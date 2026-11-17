@@ -12,6 +12,23 @@ from inventory import ROOT
 
 
 class SeedTests(unittest.TestCase):
+    def test_missing_agent_profile_does_not_reach_public_http_fixture(self):
+        # A matrix legacy fallback is not reachable by merely omitting this
+        # field: real public import validation rejects it first. Keep this
+        # observation separate from any HTTP success/Go parity count.
+        with tempfile.TemporaryDirectory(prefix='routerdiff-legacy-audit-') as directory:
+            root = Path(directory)
+            options = root / 'options.json'
+            options.write_text(json.dumps({'system': {'agents': [{
+                'id': 'legacy-missing-profile', 'name': '合成旧 Agent', 'service_type': 'oxidns',
+                'host': '10.44.0.53', 'port': 18083, 'token': 'synthetic-long-legacy-token-0123456789'}]}}))
+            result = subprocess.run([sys.executable, str(Path(__file__).with_name('seed.py')), str(root / 'data'),
+                '--options', str(options)], cwd=ROOT, env={**os.environ, 'PYTHONDONTWRITEBYTECODE': '1'},
+                capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('ProfileValidationError', result.stderr)
+            self.assertIn('绑定的配置不存在', result.stderr)
+
     def test_public_python_import_and_independent_snapshot(self):
         with tempfile.TemporaryDirectory(prefix='routerdiff-seed-test-') as directory:
             data = Path(directory) / 'data'

@@ -2,16 +2,50 @@
 import base64
 import hashlib
 import json
+import sqlite3
 import os
 from pathlib import Path
 import unittest
 
 from harness import Pair
 from seed import DEVICE_PASSWORD, router
+from fixtures import agent_peers, agent_options
 
 
 @unittest.skipUnless(os.environ.get('ROUTERDIFF_BINARY'), 'requires .32 native public Go binary')
 class BoundaryTests(unittest.TestCase):
+    def test_stored_legacy_missing_profile_is_rejected_before_handlers(self):
+        with Pair(Path(os.environ['ROUTERDIFF_BINARY']), agent_options()) as pair:
+            side = pair.python
+            side.rpc('stop')
+            # Owned synthetic bytes only. This models a legacy/corrupt stored
+            # row without bypassing validation or patching application helpers.
+            with sqlite3.connect(side.directory / 'data/configflow.sqlite3') as database:
+                raw = database.execute("SELECT value FROM fields WHERE scope='system' AND owner='' AND field='agents'").fetchone()[0]
+                agents = json.loads(raw)
+                agents[0].pop('profile_id')
+                database.execute("UPDATE fields SET value=? WHERE scope='system' AND owner='' AND field='agents'",
+                                 (json.dumps(agents, ensure_ascii=False),))
+            with self.assertRaisesRegex(RuntimeError, 'python exited'):
+                side.rpc('start')
+            self.assertIn('绑定的配置不存在', side.rpc('logs', limit=6000))
+
+    def test_agent_peer_requires_own_bearer_and_persists_its_own_state(self):
+        with Pair(Path(os.environ['ROUTERDIFF_BINARY'])) as pair:
+            for side in pair.sides.values():
+                side.rpc('fake', action='seed', agent=agent_peers())
+            def call(side, method, path, token):
+                raw = b'{}' if method == 'POST' else None
+                reply = side.rpc('request', port=18083, method=method, path=path,
+                    headers={'Host': '10.44.0.2:18083', 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'},
+                    body=base64.b64encode(raw).decode() if raw is not None else None)
+                return reply, json.loads(base64.b64decode(reply['body']))
+            token = agent_peers()['10.44.0.2:18083']['token']
+            self.assertEqual(call(pair.python, 'GET', '/api/linux-gateway/status', 'wrong-token')[0]['status'], 401)
+            self.assertEqual(call(pair.python, 'POST', '/api/linux-gateway/forwarding', token)[1]['ipv4_forwarding']['current'], '1')
+            self.assertTrue(call(pair.python, 'GET', '/api/linux-gateway/status', token)[1]['ipv4_forwarding']['persisted'])
+            self.assertEqual(call(pair.go, 'GET', '/api/linux-gateway/status', token)[1]['ipv4_forwarding']['current'], '0')
+
     def test_real_startup_independent_stateful_peers_and_transcript_gate(self):
         options = {'alpha': {'routers': {'items': [router()]}}}
         with Pair(Path(os.environ['ROUTERDIFF_BINARY']), options) as pair:

@@ -96,9 +96,9 @@ class Pair:
         seed_dir = self.root / 'seed'
         option_path = self.root / 'options.json'
         option_path.write_text(json.dumps(options))
-        subprocess.run([sys.executable, str(HERE / 'seed.py'), str(seed_dir), '--options', str(option_path)],
-                       cwd=ROOT, check=True, stdout=subprocess.DEVNULL)
         try:
+            subprocess.run([sys.executable, str(HERE / 'seed.py'), str(seed_dir), '--options', str(option_path)],
+                           cwd=ROOT, check=True, stdout=subprocess.DEVNULL)
             for name in ('python', 'go'):
                 directory = self.root / name
                 directory.mkdir()

@@ -5,7 +5,7 @@ import json
 
 from cases import Case, concrete
 from inventory import load
-from seed import router
+from seed import router, AGENT_TOKEN
 
 
 MANIFESTS = (
@@ -109,3 +109,82 @@ def stored_guards():
     for body in (['nonempty'], 'nonempty'):
         yield Case('R011/structural-body-' + type(body).__name__, 'R011', 'POST', '/api/routers/r-ros/apply', 500,
                    (), document=body, html_error=True)
+
+
+def agent_options():
+    agents = []
+    for ident, service, profile, host in (
+        ('m-a', 'mihomo', 'alpha', '10.44.0.2'), ('m-b', 'mihomo', 'beta', '10.44.0.3'),
+        ('o-a', 'oxidns', 'alpha', '10.44.0.53'), ('o-b', 'oxidns', 'beta', '10.44.0.54')):
+        agent = {'id': ident, 'name': '合成设备🧪 ' + ident, 'service_type': service, 'host': host, 'port': 18083,
+                 'token': AGENT_TOKEN + '-' + ident, 'enabled': True, 'status': 'offline',
+                 'version': '1.99.0-go', 'deployment_method': 'shell'}
+        if profile is not None:
+            agent['profile_id'] = profile
+        agents.append(agent)
+    return {'system': {'agents': agents}, 'alpha': {'routers': {'items': [router(proxy_gateway_agent_id='m-a'),
+            router('r-ik', 'ikuai', proxy_gateway_agent_id='m-a'), router('r-cross', proxy_gateway_agent_id='m-b')]}},
+            'beta': {'routers': {'items': []}}}
+
+
+def agent_peers():
+    peers = {}
+    for ident, host in (('m-a', '10.44.0.2'), ('m-b', '10.44.0.3')):
+        peers[host + ':18083'] = {'token': AGENT_TOKEN + '-' + ident, 'endpoints': {
+            '/api/linux-gateway/status': {'success': True, 'supported': True,
+                'ipv4_forwarding': {'supported': True, 'current': '0', 'persisted': False, 'config': 'absent',
+                                    'hook_script': 'absent', 'startup_hook': '', 'layout': 'standalone'},
+                'managed': {'active': False, 'preserves_forwarding': False}}}}
+    return peers
+
+
+def heartbeat(ident):
+    return {'rpc': 'http', 'method': 'POST', 'path': '/api/agents/' + ident + '/heartbeat', 'document': {},
+            'headers': {'Authorization': 'Bearer ' + AGENT_TOKEN + '-' + ident}, 'expected': 200, 'auth': False}
+
+
+def agent_scope():
+    for agent_id, profile in (('o-a', 'alpha'), ('o-b', 'beta')):
+        yield Case('R002-S03/' + agent_id, 'R002', 'GET', '/api/client-devices?agent=' + agent_id, 200,
+                   ('R002-S03',) + (('R002-B91',) if profile == 'beta' else ()), checks={'success': True, 'profile_id': profile},
+                   header_checks={'X-ConfigFlow-Profile': 'alpha', 'Cache-Control': 'no-store'})
+    yield Case('R002-B90/agent-header-missing', 'R002', 'GET', '/api/client-devices?agent=o-b', 404,
+               ('R002-B90',), headers={'X-ConfigFlow-Profile': 'missing-profile'},
+               message='Profile not found: missing-profile')
+    for route, path in (('R002', '/api/client-devices'), ('R004', '/api/client-devices/discovery')):
+        for agent_id in ('missing-agent', '', 'm-a'):
+            yield Case(route + '/invalid-agent-' + agent_id, route, 'GET', path + '?agent=' + agent_id, 404,
+                       ('H1256',), message='这台 OxiDNS Agent 已不存在，请返回 Agent 页刷新。')
+    yield Case('R002-B92/head-ignores-missing-agent', 'R002', 'HEAD', '/api/client-devices?agent=missing-agent',
+               200, ('R002-B92',), header_checks={'X-ConfigFlow-Profile': 'alpha', 'Cache-Control': 'no-store'})
+    yield Case('R004-S04/pinned-empty-profile', 'R004', 'GET', '/api/client-devices/discovery?agent=o-b', 200,
+               ('R004-S04',), checks={'success': True, 'profile_id': 'beta', 'state': 'unsupported', 'sources': [],
+                                      'devices': [], 'discovered': []}, header_checks={'X-ConfigFlow-Profile': 'alpha'},
+               times=('checked_at',))
+    yield Case('R004/agent-header-missing', 'R004', 'GET', '/api/client-devices/discovery?agent=o-b', 404,
+               ('X02',), headers={'X-ConfigFlow-Profile': 'missing-profile'},
+               message='Profile not found: missing-profile')
+    yield Case('R014-B90/all-gateways-profile-sources', 'R014', 'GET', '/api/routers/r-ros/policy-settings', 200,
+               ('R014-B90', 'R014-S02', 'R014-S03'), checks={
+                   'workspace/gateways': [{'id': ident, 'name': '合成设备🧪 ' + ident, 'host': host}
+                                         for ident, host in (('m-a', '10.44.0.2'), ('m-b', '10.44.0.3'))],
+                   'workspace/source_agents': [{'id': ident, 'name': '合成设备🧪 ' + ident, 'host': host, 'status': 'offline'}
+                                              for ident, host in (('o-a', '10.44.0.53'),)]})
+
+
+def forwarding():
+    yield Case('R025-S01/live-status', 'R025', 'GET', '/api/routers/gateway-forwarding', 200,
+               ('R025-S01', 'R025-S02', 'R025-S05', 'R025-B02'), unchanged=False, effect='device-read',
+               prepare=({'action': 'seed', 'agent': agent_peers()}, heartbeat('m-a'), heartbeat('m-b')),
+               checks={'success': True, 'gateways/0/agent_id': 'm-a', 'gateways/0/state': 'needs_persist',
+                       'gateways/0/can_persist': True, 'gateways/0/routers': [
+                           {'id': 'r-ros', 'name': '合成路由器🧪 routeros'}, {'id': 'r-ik', 'name': '合成路由器🧪 ikuai'}],
+                       'gateways/1/agent_id': 'm-b', 'gateways/1/state': 'needs_persist'})
+    for index, (ident, entry) in enumerate((('m-a', 'S01'), ('m-a', 'S02'), ('m-b', 'S03'))):
+        yield Case('R026-' + entry + '/persist-' + ident, 'R026', 'POST', '/api/routers/gateway-forwarding', 200,
+                   ('R026-' + entry,), document={'agent_id': ident}, unchanged=False, effect='device-only',
+                   checks={'success': True, 'gateway/agent_id': ident, 'gateway/state': 'persisted',
+                           'gateway/current': '1', 'gateway/persisted': True}, requires=('R025',))
+        yield Case('R025/confirm-persist-' + str(index), 'R025', 'GET', '/api/routers/gateway-forwarding', 200,
+                   (), unchanged=False, effect='device-read',
+                   checks={'gateways/' + ('0' if ident == 'm-a' else '1') + '/state': 'persisted'})

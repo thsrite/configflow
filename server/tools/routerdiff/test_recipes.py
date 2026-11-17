@@ -1,5 +1,6 @@
 """Recipe integrity checks, distinct from actual product coverage."""
 import unittest
+import inspect
 
 import cases
 import guards
@@ -15,8 +16,7 @@ class RecipeTests(unittest.TestCase):
         for module in (cases, guards, workflows, fixtures):
             for name in module.__dict__:
                 value = getattr(module, name)
-                if not callable(value) or getattr(value, '__module__', '') != module.__name__ or name in (
-                        'Case', 'Ref', 'at', 'resolve', 'concrete', 'invalid', 'stored_options', 'receipt_file'):
+                if not inspect.isgeneratorfunction(value) or getattr(value, '__module__', '') != module.__name__:
                     continue
                 for case in value():
                     with self.subTest(case=case.ident):

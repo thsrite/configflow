@@ -81,7 +81,8 @@ class Worker:
     def stop(self, kill=False):
         if self.process is None:
             return None
-        os.killpg(self.process.pid, signal.SIGKILL if kill else signal.SIGTERM)
+        if self.process.poll() is None:
+            os.killpg(self.process.pid, signal.SIGKILL if kill else signal.SIGTERM)
         try:
             self.process.wait(timeout=12)
         except subprocess.TimeoutExpired:

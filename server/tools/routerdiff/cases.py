@@ -18,6 +18,8 @@ class Ref:
     """A prior response from this same side, never copied from the other side."""
     case: str
     path: str
+    prefix: str = ''
+    suffix: str = ''
 
 
 @dataclass(frozen=True)
@@ -46,6 +48,8 @@ class Case:
     html_error: bool = False
     requires: tuple = ()
     join: str = ''
+    stored: dict = field(default_factory=dict)
+    header_checks: dict = field(default_factory=dict)
 
 
 def at(document, path):
@@ -57,7 +61,8 @@ def at(document, path):
 
 def resolve(value, observations):
     if isinstance(value, Ref):
-        return at(observations[value.case], value.path)
+        result = at(observations[value.case], value.path)
+        return value.prefix + str(result) + value.suffix if value.prefix or value.suffix else result
     if isinstance(value, dict):
         return {key: resolve(item, observations) for key, item in value.items()}
     if isinstance(value, list):
@@ -81,9 +86,12 @@ def authentication():
         for index, credential in enumerate(credentials, 1):
             ident = route.ident + '-F' + format(index, '02')
             headers = {} if credential is None else {'Authorization': 'Bearer ' + credential}
+            prepare = ({'rpc': 'http', 'method': 'POST', 'path': '/api/agents/auth-agent/heartbeat',
+                        'document': {}, 'auth': False, 'headers': {'Authorization': 'Bearer ' + AGENT_TOKEN},
+                        'expected': 200},) if route.ident == 'R001' and index == 1 else ()
             yield Case(ident + '/A' + str(index), route.ident, route.method, concrete(route.path),
                        401, (ident,), headers=headers, auth=False,
-                       reason='A1–A7 must reject before any handler/device mutation')
+                       reason='A1–A7 must reject before any handler/device mutation', prepare=prepare)
 
 
 def profile_selection_failures():
