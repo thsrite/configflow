@@ -18,6 +18,7 @@ separate N8-6 contract; this decision does not change requests or persisted data
 
 Follow-up: A04/A05 should reject or discard a non-finite metric point at
 report ingestion, so it cannot enter newly stored history. Not part of N8-1.
+
 本表记录维护者明确接受、需要在切换说明中告知用户的行为。设计决定见
 [N7/N8 第 6 节](../design/n7-n8.md)。不以兼容层模拟 Python 的编码。
 
