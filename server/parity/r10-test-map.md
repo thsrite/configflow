@@ -100,3 +100,5 @@
 | `test_settings_cannot_replace_receipt_and_exports_do_not_disclose_it` | 已有 R01 Normalize/Public/RedactRouters corpus；R10 ownership tests | R01 已有私有字段列表含 ipv6_fakeip_state/ipv6_routes_state；R10 不新增公开元数据 |
 | `test_settings_require_withdrawal_before_changing_router_identity` | 已有 R01 Normalize；repo `TestR10EveryWriterPreservesIPv6Ownership` | endpoint/type 丢 ownership 拒绝 |
 
+
+额外 Python bug 修正回归：`TestR10FailedApplyRetainsProvenCreationWhenDeleteRefused`（fake/routes）验证初次部分 apply 的补偿 DELETE 拒绝后保留 birth config/可信 ID；mutation gate 的 recovery 破坏必须触发该测试失败。

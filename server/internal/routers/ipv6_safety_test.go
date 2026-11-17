@@ -512,3 +512,50 @@ func TestR10RestoreFailureKeepsPublishedOwnership(t *testing.T) {
 		})
 	}
 }
+
+func TestR10FailedApplyRetainsProvenCreationWhenDeleteRefused(t *testing.T) {
+	for _, feature := range []string{"fake", "routes"} {
+		t.Run(feature, func(t *testing.T) {
+			d, f := r10Driver(t)
+			faults := []routerfake.Fault{{Method: "DELETE", Path: rosIPv6Routes + "/*65", Status: 403}}
+			if feature == "fake" {
+				faults = append(faults, routerfake.Fault{Method: "PUT", Path: rosIPv6Routes, Count: 1, AfterCommit: true, PatchRows: map[string]map[string]routerfake.Row{rosIPv6Routes: {"*65": {"active": "false"}}}})
+			} else {
+				faults = append(faults, routerfake.Fault{Method: "POST", Path: "/execute", Count: 1, AfterCommit: true, PatchCreated: map[int]routerfake.Row{0: {"active": "false"}}})
+			}
+			f.ApplyExternal(routerfake.ExternalWrite{Faults: faults})
+			var err error
+			if feature == "fake" {
+				p := r10FakePlan(t, d)
+				_, err = d.ApplyIPv6FakeIP(t.Context(), *p.Ops[0].(*IPv6FakeIPReplace))
+			} else {
+				p := r10RoutesPlan(t, d, 4)
+				_, err = d.ApplyIPv6Routes(t.Context(), *p.Ops[0].(*IPv6RoutesReplace))
+			}
+			if err == nil || routerErrorKind(err) != KindRollback {
+				t.Fatalf("expected incomplete rollback, got %v", err)
+			}
+			live, e := SnapshotIPv6(t.Context(), d, false)
+			if e != nil {
+				t.Fatal(e)
+			}
+			raw := d.ipv6FakeIPManifest
+			if feature == "routes" {
+				raw = d.ipv6RoutesManifest
+			}
+			owned, e := ipv6Owned(raw, live, feature == "fake")
+			if e != nil || len(owned) == 0 {
+				t.Fatalf("trusted new object abandoned: manifest=%s err=%v", raw, e)
+			}
+			for _, row := range live["routes"] {
+				found := false
+				for _, entry := range owned {
+					found = found || entry.ID == row.id()
+				}
+				if !found {
+					t.Fatalf("unowned residual route %s", row.id())
+				}
+			}
+		})
+	}
+}

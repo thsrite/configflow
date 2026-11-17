@@ -950,10 +950,11 @@ type ROSUndo struct {
 }
 
 type rosCheck struct {
-	Path   string `json:"path"`
-	ID     string `json:"id"`
-	Values Row    `json:"values,omitempty"`
-	Absent bool   `json:"absent,omitempty"`
+	created Row    // response-proven configuration; private, never part of an undo wire record
+	Path    string `json:"path"`
+	ID      string `json:"id"`
+	Values  Row    `json:"values,omitempty"`
+	Absent  bool   `json:"absent,omitempty"`
 }
 
 type rosScope struct {
@@ -1434,7 +1435,7 @@ func (d *RouterOS) perform(ctx context.Context, change ROSChange, undo *[]ROSCha
 		}
 		expected := d.ownershipSnapshot(path, mergeRows(values, newRow))
 		*undo = append(*undo, ROSChange{Method: "DELETE", Path: path, ID: rowID, Expected: marshalRow(expected)})
-		return rosCheck{Path: path, ID: rowID, Values: values}, nil
+		return rosCheck{Path: path, ID: rowID, Values: values, created: cloneRow(newRow)}, nil
 	}
 
 	id := change.ID

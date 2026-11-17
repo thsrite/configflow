@@ -49,6 +49,9 @@ readiness 读表服务仍属于各自模块；这里只提供实际可调用的�
 2. 写前出现同目标外部路由时停止创建，包含共享 console/scoped single 的最终读表守卫。
    不从一个旧的空预览推断现在仍空，不盲目重试不确定 PUT。
 3. 回滚只用成功恢复响应证明的新 ID，取消 Python `_rebuild` 按相同配置查找并收养对象的路径。
+   新对象在创建响应/console 证明时保留完整 birth config；若补偿 DELETE 拒绝或回读失败，
+   将这些本次已证明的新 ID 与原配置登记为恢复 receipt（即使现在缺失也只是 stale），
+   不在失败之后重新读取/收养当前配置。下一次预览能核对/修复残留，不留下明确已知 ID 的孤儿。
    部分成功恢复也更新新 ID；重映射只改 ID，保持原 stable config，避免刷新时顺手认可外部修改。
    规则集整体回滚不完整时保留两代原始证明（缺失 ID 仍是 stale，绝不成为删除/收养的依据）；
    Fake-IP 整体回滚未恢复旧对象时保持当前已发布证明。失败恢复后跳过后续替代路由删除以保留保护。
@@ -95,7 +98,8 @@ R09 既有 matcher/jump/list/budget 差分继续运行；没有把 unknown 当�
 `TestR10OwnershipAndFreshnessGuards`、`TestR10PartialRollbackKeepsTrustedRestoredIDs`、
 `TestR10RollbackNeverAdoptsMatchingForeignRoute`、`TestR10RollbackRemapDoesNotBlessExternalEdit`、
 `TestR10HostDiagnosticsRedactCredentials`、`TestR10ManifestSpecAndUnknownFields`、
-`TestR10RestoreFailureKeepsPublishedOwnership`：外部编辑、ID reuse、connect/dynamic、malformed manifest、
+`TestR10RestoreFailureKeepsPublishedOwnership`、
+`TestR10FailedApplyRetainsProvenCreationWhenDeleteRefused`：外部编辑、ID reuse、connect/dynamic、malformed manifest、
 R5 fallback、部分恢复、新 ID、同配置外部路由与脱敏。`TestR10ManifestCopies` 防输入/输出别名。
 
 repo 的四个 `TestR10...`：84 个子场景，五种 writer 的 IPv6 ownership 丢失保护、
@@ -106,7 +110,7 @@ publication remap/显式 clear/并发 metadata、连接变更拒绝/凭据修复
 
 新 fuzz：`FuzzR10IPv6Input`；共享 `FuzzR09PolicyEvaluator` 等一并纳入 gate。
 `scripts/r10-mutation-gate.py`：result/journal/request/device-table 四种编译成功的破坏均被真实 Python 边界捕获；
-编译失败不算检测，finally 还原源码。
+编译失败不算检测，finally 还原源码；另加 recovery 第五类破坏，明确证明补偿 DELETE 拒绝后的归属回归能失败。
 
 逐个 Python named test 的映射与 R11/R12/R14 边界见 [../r10-test-map.md](../r10-test-map.md)。
 
@@ -186,3 +190,8 @@ ipv6_settings_test.go 86、repo/r10_ipv6_safety_test.go 155；Python 三个合�
 → `ok configflow/internal/routers 8.505s`，vet clean；
 `go test -p 6 -count=1 -run "TestR10IPv6AddressMathPython|TestR10ManifestSpecAndUnknownFields|TestR10RestoreFailureKeepsPublishedOwnership" ./internal/routers`
 → `ok configflow/internal/routers 0.129s`。均经 RT_HOST=.64 rt 运行，gofmt 通过 --back 带回。
+
+最后自查修正：初次 apply 部分成功、回滚 DELETE 拒绝时保留创建时的完整配置证明，
+不只修复已成功发布后 Restore 的记录。`.64` 定向全 R10 + R09 evaluator `8.142s`，vet clean。
+原完整 gate 已在 race/proddiff 阶段停止并确认其私有进程树退出；该轮不算 PASS。
+最终 gate 将在此修正提交后重新前台运行，沿用槽位限制。

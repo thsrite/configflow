@@ -17,6 +17,7 @@ mutations = [
     ('device-table', 'ipv6_boundary_test.go', r'gotState := f.Snapshot\(\)',
      'gotState := f.Snapshot(); gotState.Tables[rosIPv6Routes][0]["gateway"]="fe80::dead%bridge"'),
 ]
+mutations.append(('recovery', 'ipv6_write.go', r'if rollback != nil && len\(created\) > 0', 'if false && rollback != nil && len(created) > 0'))
 for name, filename, pattern, replacement in mutations:
     path = server / 'internal/routers' / filename
     original = path.read_text()
@@ -25,15 +26,15 @@ for name, filename, pattern, replacement in mutations:
         raise SystemExit(f'{name}: mutation anchor missing')
     try:
         path.write_text(changed)
-        result = subprocess.run(['go', 'test', '-p', '6', '-count=1', '-run',
-            '^TestR10PythonBoundary/fake/publish_idempotent$', './internal/routers'],
+        target = '^TestR10FailedApplyRetainsProvenCreationWhenDeleteRefused/fake$' if name == 'recovery' else '^TestR10PythonBoundary/fake/publish_idempotent$'
+        result = subprocess.run(['go', 'test', '-p', '6', '-count=1', '-run', target, './internal/routers'],
             cwd=server, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         detected = any(marker in result.stdout for marker in
-                       ('R10 result differs:', 'R10 device tables differ:', 'R10 write sequence differs:'))
+                       ('R10 result differs:', 'R10 device tables differ:', 'R10 write sequence differs:', 'trusted new object abandoned:'))
         if result.returncode == 0 or not detected or '[build failed]' in result.stdout:
             print(result.stdout[-4000:])
             raise SystemExit(f'{name}: NOT DETECTED')
         print(f'{name}: DETECTED (compiled, real Python boundary mismatch)', flush=True)
     finally:
         path.write_text(original)
-print('R10 mutation gate: 4/4 detected; sources restored')
+print('R10 mutation gate: 5/5 detected; sources restored')

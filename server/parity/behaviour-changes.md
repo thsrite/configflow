@@ -729,7 +729,10 @@ existing controls/newlines/bidi overrides. See the authoritative
 Python 的 IPv6 规则集批量删除只核对 ID/目标地址，Go 在每个批次提交前核对完整 stable config，
 拒绝预览后外部修改/ID 复用；创建也在最后 scoped/console 读表拒绝新出现的同目标外部路由。
 Python `_rebuild` 可按相同配置猜测新的 owner ID，Go 只接受本次恢复响应证明的新 ID，
-部分成功也重映射；保持原配置证明，避免重映射时把外部编辑刷新为“自己的配置”。
+部分成功也重映射；若初次 apply 已创建对象但补偿 DELETE 拒绝或回读失败，
+保留创建响应/console 证明时的完整 config 与可信新 ID，登记恢复 receipt，
+下一次预览逐项核对，避免已知归属对象成为孤儿；不会在失败后按当前相似配置补认领。
+保持原配置证明，避免重映射时把外部编辑刷新为“自己的配置”。
 规则集整体回滚不完整时保存两代原始证明；Fake-IP 旧对象未恢复时保留当前已发布证明；
 失败恢复后不继续删除仍能保护流量的替代路由。见 R10 部分回滚/外部同配置/重映射回归。
 

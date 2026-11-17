@@ -517,8 +517,15 @@ func checkWritten(check rosCheck, row Row, rows []Row) error {
 	return nil
 }
 
+// routeCreateProof carries R10's complete creation proof without changing the
+// serialized shared undo contract. Other route callers omit it.
+type routeCreateProof struct {
+	guard   func([]Row) error
+	created map[string]Row
+}
+
 func (d *RouterOS) addRoutes(ctx context.Context, rawOps []json.RawMessage, batch []int,
-	record func(json.RawMessage, json.RawMessage), path string, beforeWrite ...func([]Row) error) ([]int, error) {
+	record func(json.RawMessage, json.RawMessage), path string, options ...routeCreateProof) ([]int, error) {
 	ops := make([]rosOperation, len(batch))
 	values := make([]Row, len(batch))
 	for i, index := range batch {
@@ -527,7 +534,13 @@ func (d *RouterOS) addRoutes(ctx context.Context, rawOps []json.RawMessage, batc
 		}
 		values[i] = routeAddValues(ops[i])
 	}
-	added, err := d.consoleAdd(ctx, values, nil, false, path, beforeWrite...)
+	guards := []func([]Row) error{}
+	for _, option := range options {
+		if option.guard != nil {
+			guards = append(guards, option.guard)
+		}
+	}
+	added, err := d.consoleAdd(ctx, values, nil, false, path, guards...)
 	if err != nil {
 		return nil, err
 	}
@@ -560,6 +573,11 @@ func (d *RouterOS) addRoutes(ctx context.Context, rawOps []json.RawMessage, batc
 		encoded, marshalErr := json.Marshal(undo)
 		if marshalErr != nil {
 			return nil, marshalErr
+		}
+		for _, option := range options {
+			if option.created != nil {
+				option.created[row.id()] = StableIPv6Row(*row)
+			}
 		}
 		owned = append(owned, provenRoute{index: index, row: *row, undo: encoded})
 	}
