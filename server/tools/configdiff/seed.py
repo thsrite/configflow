@@ -71,6 +71,18 @@ def create(directory, options):
         document['shared']['subscriptions'] = [{'id': 'sub-synthetic', 'name': payload,
             'url': 'http://source.example/sub', 'enabled': True, 'interval': 0}]
     document['shared'].update(options.get('shared', {}))
+    if options.get('setup_shadow_builtin_names'):
+        # The wizard does not add an unselected builtin when its display name
+        # is already owned by different rules. Reserve names with synthetic,
+        # interval-zero content so a long Agent-timeout fixture has no new
+        # background library downloads. Actual builtin creation is tested by
+        # setup-prepare-* using the ordinary, empty library fixture.
+        from backend.common.setup_presets import builtin_rule_catalog
+        document['shared']['rule_library'].extend(
+            {'id': 'setup-catalog-shadow-' + str(index), 'name': wanted['name'],
+             'source_type': 'content', 'behavior': 'domain', 'format': 'text',
+             'content': '+.synthetic-shadow.example\n', 'enabled': True, 'update_interval': 0}
+            for index, wanted in enumerate(builtin_rule_catalog().values()))
     for field, value in options.get('profile', {}).items():
         if isinstance(value, dict) and isinstance(profile.get(field), dict):
             profile[field].update(value)

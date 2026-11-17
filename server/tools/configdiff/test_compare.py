@@ -17,6 +17,20 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_setup_timeout_window_rejects_fast_errors_and_unbounded_waits(self):
+        from cases.setup_concurrency import TimedStatus
+        observer = TimedStatus(None, [])
+        observer.stable = None
+        observer.observed = [[], []]
+        observer.elapsed = [45.01, 45.02]
+        self.assertEqual(observer.compare(Policy()), [])
+        for wrong in (0, 30, 43.9, 50.1, True, '45', None, float('nan'), float('inf')):
+            observer.elapsed[1] = wrong
+            self.assertTrue(observer.compare(Policy()), repr(wrong))
+        observer.elapsed[1] = 45
+        observer.outbound[1] = [{'method': 'GET', 'path': '/unexpected-rule-refresh'}]
+        self.assertTrue(observer.compare(Policy()), 'unsolicited fetch during timeout')
+
     def test_selected_write_isolation_detects_foreign_row_and_revision_mutations(self):
         from cases.profile_writes import isolation_errors, SelectedWrite
         before = {'meta': {'generation': 10}, 'sections': [['profile', 'default', 0], ['profile', 'other', 1]],

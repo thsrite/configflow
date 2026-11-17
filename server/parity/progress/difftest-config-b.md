@@ -1245,3 +1245,20 @@ current go-unimplemented=70 request_variants=70 design_errors=[] seconds=91.87�
 ```
 
 剩余生成/发现/设置等其他写入P3–P6及其业务分支继续实现；最终.32全量仍待执行。
+
+## 批次 71：setup同session串行、客户端断连和生产超时
+
+- 22新增请求/序列变体（16 Go尚未实现、6心跳依赖），新增原B编号2：R211-B01/B02。覆盖并集原R4055（S656/F2601/B798）、H322；独立报告/tmp/configdiff-setup-concurrency.json待与统一全量合并。
+- 真实check在Agent响应屏障中挂起，再提交同session PATCH；独立auth状态请求仍可处理，PATCH须等待屏障释放后才返回。核对check的step=4、随后PATCH的step=2/max_step=4、单次Agent请求及最终session，全SQL不改。不是用单线程服务器饥饿冒充session锁。
+- 浏览器发送check、确定Agent已收到请求后，不读响应直接关闭socket，再释放Agent。必须仍写成已检查step/max_step=4并保留安装收据，随后新浏览器GET读回成功。原响应在断连后不可见，明确只比较协议、真实落盘和后续公开响应，不伪造响应相等。
+- 使用生产45秒Agent读取超时，fake仅延迟46秒；浏览器单例请求预算60秒，以免原默认30秒先截断。返回502准确中文，实际耗时必须44–50秒、一次准确状态请求、无OxiDNS请求、无SQL/files变化。新增耗时/意外规则拉取故意出错自检；66项通过。
+- 首次长请求被严格只读断言拒绝，诊断确认30秒扫描后新增notifications.json和task-status.json（内置rule_source刷新）。未掩码这些文件；长超时fixture在Python备份阶段用相同名称、不同合成内容、interval=0占用内置库名，使未选择的内置URL无需新建。真实创建内置库仍由setup-prepare-*独立覆盖。核实长请求所有库均content/interval=0，整个45秒期间回环上游0请求。源码和生产时钟/循环均未改。
+
+```text
+.32 run.py --groups setup-same-session-serial,setup-browser-disconnect,setup-agent-status-timeout
+current go-unimplemented=16 dependency=6 request_variants=22 design_errors=[] seconds=61.83；exit=0
+.32 python -m unittest discover -s server/tools/configdiff -p test_compare.py
+66 self-checks OK
+```
+
+剩余setup managed报告门禁、其他H/helper、其余profile选择和长流程继续；仍非最终验收。

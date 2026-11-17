@@ -42,6 +42,7 @@ class GatewayAgent:
         self.value = healthy_status() if value is None else value
         self.status, self.calls, self.errors = status, [], []
         self.before_reply = None
+        self.expected_disconnect = False
         self.lock = threading.Lock()
         owner = self
 
@@ -66,7 +67,8 @@ class GatewayAgent:
                 try:
                     self.wfile.write(content)
                 except (BrokenPipeError, ConnectionResetError):
-                    owner.errors.append('panel disconnected before status response')
+                    if not owner.expected_disconnect:
+                        owner.errors.append('panel disconnected before status response')
 
             do_GET = do_POST = do_PUT = do_DELETE = do_PATCH = do_HEAD = request
 
@@ -140,11 +142,12 @@ def publication(pair, agents, **changes):
 
 
 @contextmanager
-def prepared(binary, recorder, goal, variant, *, heartbeat=True, version='1.8.60-go', disabled=False):
+def prepared(binary, recorder, goal, variant, *, heartbeat=True, version='1.8.60-go', disabled=False, quiet_library=False):
     with GatewayAgent(healthy_status(goal)) as mihomo, GatewayAgent() as oxidns, Source(b'synthetic blocked upstream') as outbound:
         outbound.status = 503
         agents = (mihomo, oxidns)
         fixture = {'config_token': PULL, 'shared': {'nodes': [NODE]},
+                   'setup_shadow_builtin_names': quiet_library,
                    'system_config': {'rule_fetch_proxy': outbound.url},
                    'agents': [{'id': ident, 'name': INSTALL_NAME + '-' + service, 'service_type': service,
                        'token': TOKENS[index], 'profile_id': 'default', 'host': '127.0.0.1', 'port': agent.port,

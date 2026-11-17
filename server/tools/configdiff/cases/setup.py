@@ -89,17 +89,19 @@ class Stable:
     def after(self, index, reply):
         self.after_values[index] = self.snapshot(index)
         if index == 0:
-            require(self.before_values[0] == self.after_values[0], 'read/rejected request keeps every SQL field and persisted file exact')
+            violations = differences(self.before_values[0], self.after_values[0], 'setup.reference-readonly')
+            require(not violations, 'read/rejected request keeps every SQL field and persisted file exact: '
+                    + repr([(item.path, item.kind) for item in violations[:6]]))
 
     def compare(self, policy):
         # Intra-server values need no cross-server timestamp/identity allowance.
         return differences(self.before_values[1], self.after_values[1], 'setup.readonly-go')
 
 
-def call(pair, case, route, path=None, *, body=None, expect=200, check=None, variant='', headers=None, readonly=False, interaction=None, capture=None):
+def call(pair, case, route, path=None, *, body=None, expect=200, check=None, variant='', headers=None, readonly=False, interaction=None, capture=None, timeout=30):
     return pair.request(case, route, path, body=json_body(body) if isinstance(body, (dict, list)) else body, expect=expect,
                         writes=True, check=check, capture=capture or profile_capture(pair), variant=variant, headers=headers,
-                        interaction=Stable(pair) if readonly else interaction)
+                        interaction=Stable(pair) if readonly else interaction, timeout=timeout)
 
 
 def creates(binary, recorder):

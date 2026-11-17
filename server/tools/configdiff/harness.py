@@ -285,7 +285,7 @@ class Pair:
 
     def request(self, case_id, route, path=None, *, method=None, body=None, auth='admin', headers=None,
                 variant='', expect=None, check=None, writes=False, files=True, policy=None, capture=None,
-                interaction=None, bodies=None, paths=None, projection=None, filename='', raw_body=False, runtime_writes=False):
+                interaction=None, bodies=None, paths=None, projection=None, filename='', raw_body=False, runtime_writes=False, timeout=30):
         nominal_method, nominal_path = route.split(' ', 1)
         method, path = method or nominal_method, path or nominal_path
         policy = policy or self.policy
@@ -308,7 +308,7 @@ class Pair:
             if interaction:
                 interaction.before(index)
             replies.append(send(base, method, paths[index] if paths is not None else path,
-                                bodies[index] if bodies is not None else body, local_headers))
+                                bodies[index] if bodies is not None else body, local_headers, timeout=timeout))
             if interaction:
                 interaction.after(index, replies[-1])
         policy.end = time.time()

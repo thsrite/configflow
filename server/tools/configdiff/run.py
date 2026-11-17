@@ -124,6 +124,8 @@ def main():
     groups.update(setup_lifecycle)
     from cases.setup_completion import GROUPS as setup_completion
     groups.update(setup_completion)
+    from cases.setup_concurrency import GROUPS as setup_concurrency
+    groups.update(setup_concurrency)
     from cases.config_backup import GROUPS as config_backup
     groups.update(config_backup)
     from cases.custom_config import GROUPS as custom_config
