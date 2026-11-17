@@ -28,6 +28,8 @@ def require(condition, message):
 def validate(directory, key, start, end):
     require(isinstance(key, str) and re.fullmatch('[a-f0-9]{32}', key), 'invalid preview id')
     folder = Path(directory) / '.generated-previews' / key
+    require(folder.stat().st_mode & 0o777 == 0o700 and folder.parent.stat().st_mode & 0o777 == 0o700,
+            'private preview directory mode')
     record = json.loads((folder / 'record.json').read_bytes())
     archive = (folder / 'bundle.tar.gz').read_bytes()
     require(record['id'] == key and re.fullmatch('[a-f0-9]{32}', record['deployment_id']), 'record identity')
@@ -68,6 +70,7 @@ def validate(directory, key, start, end):
     extras = {p.relative_to(folder).as_posix(): structure(p.read_bytes(), filename=p.name)
               for p in folder.rglob('*') if p.is_file() and p.name not in ('record.json', 'bundle.tar.gz')}
     return {'record': record, 'raw': raw, 'projection': {'record': normalized, 'members': parsed,
+            'directory_modes': {'preview': folder.stat().st_mode & 0o777, 'root': folder.parent.stat().st_mode & 0o777},
             'modes': modes, 'unexpected_files': extras}}
 
 

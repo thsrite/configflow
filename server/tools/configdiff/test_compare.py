@@ -1508,6 +1508,8 @@ serve(app, host='127.0.0.1', port=int(sys.argv[1]))
             def fixture(name, content):
                 folder = Path(tmp, name, '.generated-previews', 'a' * 32)
                 folder.mkdir(parents=True, exist_ok=True)
+                folder.chmod(0o700)
+                folder.parent.chmod(0o700)
                 digest = hashlib.sha256(content).hexdigest()
                 manifest = {'agent_id': 'manual', 'deployment_id': 'b' * 32, 'profile_id': 'default',
                     'service_type': 'mihomo', 'config_path': 'config.yaml', 'files': [
@@ -1529,6 +1531,11 @@ serve(app, host='127.0.0.1', port=int(sys.argv[1]))
             right, folder = fixture('right', b'port: 8080\n')
             self.assertEqual(differences(validate(left, 'a'*32, 100, 100)['projection'],
                                         validate(right, 'a'*32, 100, 100)['projection']), [])
+            for private in (folder, folder.parent):
+                private.chmod(0o755)
+                with self.assertRaises(ArtifactError):
+                    validate(right, 'a'*32, 100, 100)
+                private.chmod(0o700)
             fixture('right', b'port: 8081\n')
             self.assertTrue(differences(validate(left, 'a'*32, 100, 100)['projection'],
                                        validate(right, 'a'*32, 100, 100)['projection']))

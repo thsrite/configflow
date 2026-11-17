@@ -1970,3 +1970,18 @@ current compared=9 different=1 open=1 design_errors=[]；exit=1
 ```
 
 继续artifact驱逐/错误落盘及剩余条目；最终完整all仍未执行。
+
+## 批次 116：真实第25份预览驱逐与私有目录权限
+
+- R062-B01/R126-B01分别实际创建25份预览，逐次要求目录集合精确为最新24个真实ID；第25份后以公开download确认第一份409明确要求重新生成，再读最后一份成员仍200/原始字节，SQL和文件不变。每次只短暂停20ms分隔真实filesystem mtime，未改生产TTL、计数上限或业务函数。
+- 完整artifact比较器校验每份真实bundle/metadata/成员及保留集合，未来Go接通后多留/误删/重渲染都能发现。现增加私有root与preview目录700验证及投影，和原file/member mode一起比较；已有篡改自检新增root或folder变755均必须失败，96项自检通过。
+- 新增54变体、2原R编号，连同上批27变体回归共81。 .32草稿及正式均Go尚未实现81、design_errors=[]；Python参考前提真实执行，不计为Go通过。统一9638变体、原R4359（S692/F2677/B990）、H637/G16；findings仍closed80/accepted7/open21/O12单列1。
+
+```text
+.32 native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups artifact-real-count-eviction,artifact-extra-frozen-profile-lifecycle,generated-frozen-reads --baseline 21dfb92c
+current go-unimplemented=81 design_errors=[] seconds=13.73；exit=0
+96 self-checks + deliberately wrong-Go-response detection OK
+独立报告/tmp/configdiff-artifact-eviction-draft.json
+```
+
+原R仍差171（含N/A）、H仍差475及partial/长流程。继续真实preview写失败和生成错误等，最终完整all仍未执行。
