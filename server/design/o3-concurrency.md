@@ -540,6 +540,8 @@ at the signal.
 
 For the maintainer:
 
+**Decided 2026-11-17 by the maintainer: M1 → keep the default 10 s stop (Go drains ~6 s, then cancels; recovery after restart as designed). Do not raise stopwaitsecs / stop_grace_period in the image.**
+
 **M1 — shutdown grace in the image.** Default Docker/supervisord give 10 s, so Go drains for ~6 s and then cancels
 in-flight work (a router apply or Agent publish can be interrupted, like Python, which killed it at once; recovery
 on restart is unchanged). Option A (**recommended**): raise it in the official image and compose files to 30 s
