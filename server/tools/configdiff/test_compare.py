@@ -17,6 +17,52 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_port_leases_retire_between_fixtures_but_survive_restart(self):
+        from unittest.mock import patch
+        import harness
+        port = 12345
+        class RecycledSocket:
+            def __enter__(self):
+                return self
+            def __exit__(self, *_args):
+                pass
+            def bind(self, address):
+                pass
+            def getsockname(self):
+                return '127.0.0.1', port
+        def fixture():
+            value = harness.Pair.__new__(harness.Pair)
+            value.processes, value.handles, value.port_leases = [], [], []
+            return value
+        with patch('harness.socket.socket', side_effect=lambda *_args, **_kwargs: RecycledSocket()):
+            try:
+                # A kernel with one free recycled candidate must still support
+                # more fixture lifetimes than .63's entire 4096-port range.
+                for _ in range(5000):
+                    pair = fixture()
+                    pair.port_leases.append(harness.free_port())
+                    pair.close()
+                pair = fixture()
+                pair.port_leases.append(harness.free_port())
+                pair.close(release_ports=False)
+                with self.assertRaises(harness.DesignError):
+                    harness.free_port()
+                pair.close()
+                other = fixture()
+                other.port_leases.append(harness.free_port())
+                pair.close()  # Idempotent cleanup cannot retire another owner.
+                with self.assertRaises(harness.DesignError):
+                    harness.free_port()
+                other.close()
+                closing = fixture()
+                closing.port_leases.append(harness.free_port())
+                closing.processes = [SimpleNamespace(poll=lambda: 0,
+                    wait=lambda **_kwargs: self.assertIn(port, harness._used_ports))]
+                closing.close()
+                self.assertNotIn(port, harness._used_ports)
+            finally:
+                harness.release_port(port)
+
     def test_blocking_source_proxy_records_connect_and_every_unexpected_write(self):
         import http.client
         from sources import Source
@@ -49,7 +95,7 @@ class Comparators(unittest.TestCase):
     def test_production_waitress_reconstructs_chunked_wsgi_content_length(self):
         import subprocess
         import sys
-        from harness import free_port, send
+        from harness import free_port, release_port, send
         port = free_port()
         script = """import json, sys
 from waitress import serve
@@ -79,6 +125,7 @@ serve(app, host='127.0.0.1', port=int(sys.argv[1]))
         finally:
             process.terminate()
             process.wait(timeout=5)
+            release_port(port)
 
     def test_setup_initial_state_observer_rejects_wrong_profile_and_progress(self):
         from cases.setup import SID, PID, NAME, initial_session_errors

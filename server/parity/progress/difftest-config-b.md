@@ -1180,3 +1180,19 @@ R去重3972（S650 F2598 B724），H298，G16
 ```
 
 继续router-draft/check/finish/abandon、H1043/1044确定性竞争及其余H/T。go分支已前进到afca350b，下一步rebase并重跑现有全部group更新接通状态；仍非最终验收。
+
+## 批次 67：rebase后端口分配器修正（无新增R/H）
+
+- 66批已rebase到go afca350b，批次66的新head为107b3747；范围检查107个改动路径均在授权目录。随后.63全量跑到7081变体时，有36个组出现同一基础设施错误：could not allocate a distinct loopback port。该次用时1392.09s、退出2，不能作为有效全量。中间结果已保留在本机/tmp/configdiff-rebase-port-exhaustion-{results.json,findings.md}，恢复此前已提交报告后按组验证修复。
+- 原因：.63的ip_local_port_range是43255–47350（4096个），harness把整个运行中每个已关闭fixture的端口永远加入全局used集合，最终与内核回收分配冲突。现在每个Pair记录自己的端口租约，等待全部进程退出后释放；restart期间保留原租约直到整个fixture结束，重复close不释放其他owner后来取得的租约。独立Waitress回显自检也明确释放自己的租约。
+- 复用自检模拟内核反复返回同一个空闲端口，5000个生命周期必须成功；活动/重启保留时重复申请必须拒绝，另一owner持有时旧fixture重复close不可误释放，process.wait时租约仍保留。62项自检通过。未修改服务端口范围或Go业务代码。
+- 重跑precedence、137个profile读取选择器、真实自动备份，夹具错误0。最新go上的T16 event备份现在通过，已从findings移除；其他组的累计记录仍含此前基线，必须再做同一HEAD全量刷新。
+
+```text
+.63 run.py --groups precedence,profile-read-selectors,settings-auto-backup
+exit=0 design_errors=[]
+.63 python -m unittest discover -s server/tools/configdiff -p test_compare.py
+62 self-checks OK
+```
+
+下一步先验证工作区尚未注册的setup_lifecycle.py（router-draft/abandon）及setup.call的capture扩展，再启动当前全部group的新全量；当前报告不宣称Step B完成或新Go全量通过。

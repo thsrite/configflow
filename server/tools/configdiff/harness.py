@@ -47,7 +47,13 @@ def free_port():
             if port not in _used_ports:
                 _used_ports.add(port)
                 return port
-    raise DesignError('could not allocate a distinct loopback port')
+    raise DesignError('could not allocate a distinct loopback port; active reservations=' + str(len(_used_ports)))
+
+
+def release_port(port):
+    """Release a stopped fixture's reservation so the kernel may reuse it."""
+    with _port_guard:
+        _used_ports.discard(port)
 
 
 def send(base, method, path, body=None, headers=None, timeout=30):
@@ -124,6 +130,7 @@ class Pair:
         self.root = Path(self.temp.name)
         self.dirs = [self.root / name for name in ('python', 'go')]
         self.processes, self.handles, self.bases, self.tokens = [], [], [], []
+        self.port_leases = []
         self.policy = Policy(start=time.time(), tz=self.tz)
         self.registered = set()
         self.declared = declared_states()
@@ -203,6 +210,7 @@ class Pair:
     def start_servers(self):
         for index, directory in enumerate(self.dirs):
             port = free_port()
+            self.port_leases.append(port)
             command = [PYTHON, '-m', 'backend.app'] if index == 0 else [self.binary]
             handle = open(self.root / f'{index}.log', 'wb')
             self.handles.append(handle)
@@ -239,7 +247,7 @@ class Pair:
             self.registered.add((method, path))
         return self
 
-    def close(self):
+    def close(self, *, release_ports=True):
         for process in self.processes:
             if process.poll() is None:
                 os.killpg(process.pid, signal.SIGTERM)
@@ -251,9 +259,15 @@ class Pair:
                 process.wait()
         for handle in self.handles:
             handle.close()
+        if release_ports:
+            for port in self.port_leases:
+                release_port(port)
+            self.port_leases.clear()
 
     def restart(self):
-        self.close()
+        # A restarted fixture still references its old endpoint identities.
+        # Keep those reserved until the whole fixture has finished.
+        self.close(release_ports=False)
         self.processes, self.handles, self.bases, self.tokens = [], [], [], []
         return self.start_servers()
 
