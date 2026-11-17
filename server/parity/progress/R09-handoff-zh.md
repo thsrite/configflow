@@ -53,7 +53,7 @@ R09 不新增锁、后台线程或循环；L1/L2 和 lock-before-validation 的�
 
 - 中：Python 在预览后出现同名 foreign 对象／前插 53 端口规则时，apply 的保留检查仍可能通过。Go 写前拒绝，要求重新预览。
 - 中：Python 删除前从新读取的行建立 expected、最终直接刷新 config，可能删除或吸收中途外部修改。Go 对照已记录的证明，保留被改对象。
-- 低：Python 回滚只按 ID 重映射，可能跨 RouterOS 表混淆；Go 按 path+ID。
+- 低：Python 回滚只按 ID 重映射，可能跨 RouterOS 表混淆；Go 按 path+ID。新增 TestR09TableLocalIDsSurviveRestore 在四张表使用重复旧 ID，真实 Python 复现错误，Go 恢复与公开 VerifyDNSGuard 均通过；`.32` race 1.568s。
 - 低：畸形／重复 manifest 身份明确拒绝，恢复保留未知字段。
 - 低：接口引用增加资源预算；空／错型动作、错型 include 保持未知。
 - 仅格式：Go 使用紧凑 JSON，Python requests 有空格／不同键顺序；解析后相同，原始字节分别检查。

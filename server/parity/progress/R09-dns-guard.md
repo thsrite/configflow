@@ -166,7 +166,7 @@ and exact Chinese boundary checks. Shared YAML D1 and disjoint ErrSyntax/policy/
 - Medium Python safety defect fixed: Python rebuilds DELETE's expected proof from an immediately fresh row and
   refreshes manifest configs at the end without comparing the recorded image. An intervening edit could be
   deleted or absorbed into ownership. Go compares previous/create proofs again; edited rows are preserved.
-- Low Python defect fixed: rollback remap keyed only by ID can cross table-local RouterOS IDs; Go keys by path+ID.
+- Low Python defect fixed: rollback remap keyed only by ID can cross table-local RouterOS IDs; Go keys by path+ID. TestR09TableLocalIDsSurviveRestore seeds overlapping IDs in all four tables, proves the real Python failure, and verifies successful Go restore through VerifyDNSGuard; race PASS 1.568s on .32.
 - Low malformed-record correction: missing/duplicate role/path/ID/config fails closed instead of Python crashes
   or missing-identity matches. Unknown stored manifest fields survive rollback refresh.
 - Low resource-bound correction: cyclic/deep interface includes stop at 12 levels/256 visits (Python has no

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -437,5 +438,72 @@ func TestR09RemapPreservesUnknownStoredFields(t *testing.T) {
 	}
 	if !reflect.DeepEqual(r09JSON(t, original), r09JSON(t, d.dnsGuardManifest)) {
 		t.Fatal("unknown manifest members lost")
+	}
+}
+
+// RouterOS IDs are table-local. Seed overlapping IDs instead of relying on the
+// fake allocator's globally fresh IDs, then prove restored ownership at the
+// exported verification boundary. Python's ID-only remap addresses the wrong table.
+func TestR09TableLocalIDsSurviveRestore(t *testing.T) {
+	f, srv, _, previous := r09Seed(t)
+	tc := r09Base("table_local_ids")
+	tc.State.Tables = f.Snapshot().Tables
+	manifest, err := parseDNSGuardManifest(previous)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := map[[2]string]string{}
+	for _, path := range dnsGuardPaths {
+		next := 1
+		for _, row := range tc.State.Tables[path] {
+			if !strings.HasPrefix(Row(row).text("comment"), dnsGuardPrefix) {
+				continue
+			}
+			old := Row(row).id()
+			id := fmt.Sprintf("*%X", next)
+			next++
+			ids[[2]string{path, old}] = id
+			row[".id"] = id
+		}
+	}
+	roles := []string{}
+	for i, e := range manifest.Resources {
+		manifest.Resources[i].ID = ids[[2]string{e.Path, e.ID}]
+		roles = append(roles, e.Role)
+	}
+	tc.Previous = r09Raw(manifest)
+	tc.Settings.Enabled = false
+	tc.Steps = []r09Step{{Action: "roundtrip"}}
+	var python struct {
+		Steps []struct {
+			Error *r09Error `json:"error"`
+		} `json:"steps"`
+	}
+	if err = json.Unmarshal(r09Python(t, "r09_reference.py", tc, srv.URL), &python); err != nil {
+		t.Fatal(err)
+	}
+	if len(python.Steps) != 1 || python.Steps[0].Error == nil || python.Steps[0].Error.Class != "RouterError" || !strings.Contains(python.Steps[0].Error.Message, rosAddresses) {
+		t.Fatalf("expected the real Python cross-table remap defect, got %s", r09Raw(python))
+	}
+	got := r09Go(t, tc, f, srv.URL)
+	if len(got.Steps) != 1 || got.Steps[0].Error != nil {
+		t.Fatalf("Go restore: %s", r09Raw(got))
+	}
+	d := NewRouterOS(srv.URL, "synthetic-user", "synthetic-password", false)
+	defer d.Close()
+	d.SetDNSGuardManifest(got.Steps[0].Manifest)
+	if err = VerifyDNSGuard(context.Background(), d, &DNSGuardCheck{Roles: roles}); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"*20", "*21"} {
+		present := false
+		for _, row := range got.Tables[rosNAT] {
+			if Row(row).id() == id {
+				present = true
+			}
+		}
+		if !present {
+			t.Fatalf("foreign NAT %s removed", id)
+		}
 	}
 }
