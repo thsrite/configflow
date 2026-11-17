@@ -50,6 +50,9 @@ func checkGraph(n *Node, path, done map[*Node]bool) error {
 	if n.Tag == "!!" || n.Tag == "tag:yaml.org,2002:" {
 		return nodeError(n, fmt.Sprintf(msgEmptyTag, n.Line))
 	}
+	if err := checkTagShape(n); err != nil {
+		return err
+	}
 	switch n.Kind {
 	case yaml.DocumentNode:
 		if len(n.Content) != 1 {
@@ -114,6 +117,31 @@ func checkGraph(n *Node, path, done map[*Node]bool) error {
 		}
 	}
 	done[n] = true
+	return nil
+}
+
+// checkTagShape checks syntax-level shape only. Scalar contents and destination
+// types belong to Decode; parsing an AST must not run a typed constructor.
+func checkTagShape(n *Node) error {
+	if n.Kind == yaml.AliasNode || n.Kind == yaml.DocumentNode || n.IsZero() {
+		// ShortTag follows aliases; their target is checked by checkGraph.
+		return nil
+	}
+	var want yaml.Kind
+	var shape string
+	switch n.ShortTag() {
+	case "!!null", "!!bool", "!!int", "!!float", "!!str", "!!timestamp", "!!binary", "!!merge":
+		want, shape = yaml.ScalarNode, msgScalarShape
+	case "!!seq", "!!omap", "!!pairs":
+		want, shape = yaml.SequenceNode, msgSequenceShape
+	case "!!map", "!!set":
+		want, shape = yaml.MappingNode, msgMappingShape
+	default:
+		return nil
+	}
+	if n.Kind != want {
+		return nodeError(n, fmt.Sprintf(msgTagShape, n.ShortTag(), shape, n.Line))
+	}
 	return nil
 }
 
