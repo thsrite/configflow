@@ -754,3 +754,64 @@ Own-side age-window refinement (supersedes the fixture risk above):
 `RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; cd server/tools/routerdiff; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY=/tmp/routerdiff-build-302rx1dg/configflow; ~/cf-test/.venv/bin/python -m unittest -v test_audits test_runner test_recipes test_boundary test_filesystem test_compare'`
 => Ran26 tests15.557s / OK. The revised real604s expiry still needs execution,
 and the latest full composition/final rebase/gate remain outstanding.
+
+Fresh complete CURRENT-RECIPE composition, source cb95c456 (.64):
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY=/tmp/routerdiff-build-302rx1dg/configflow; uptime; frozen_root=$(mktemp -d /tmp/routerdiff-composition.XXXXXX); rsync -a --exclude .git ./ "$frozen_root/"; printf "frozen synthetic source: %s\n" "$frozen_root"; trap '\''rm -rf "$frozen_root"'\'' EXIT; cd "$frozen_root/server/tools/routerdiff"; ~/cf-test/.venv/bin/python -m unittest -v test_inventory test_seed test_console test_addresses test_tokens; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --output /tmp/routerdiff-composition-cb95c456.json --findings /tmp/routerdiff-composition-cb95c456-findings.md'`
+=> load28.26/28.39/24.39; Ran9 tests0.836s/OK; own-side real expiry605.27s
+passed. Final stored guards2435 cumulative1.48s. Matrix2301/routes26/implemented0,
+go-unimplemented2435/referenced611/audited182/remaining2119/complete=false.
+All four known Python bugs reproduced; actual Go HTTP comparisons0. This is a
+successful composition of the recipes THEN WRITTEN, not a completed matrix.
+Frozen synthetic copy was deleted by EXIT trap; remote reports stay under /tmp.
+Main findings replaced with this fresh full report (all4 classes, no old subset
+totals presented as fresh full totals). No final Go gate was run.
+
+IPv6 Fake-IP / notification / additional OS iterations after cb95c456:
+- Read all ipv6_fakeip.py, its _lan/_gateway/_same_gateway helpers and real Agent
+  request boundary, public custom-Mihomo save route and publication manifest write.
+  28 initial recipes prove LLA creation/manifest, owned synced state, lifetime/
+  counters leaving the old fingerprint valid, DNS IPv6 mode switch without route
+  replacement, owned-only withdrawal, borrowed LLA and existing ULA retained,
+  nine route-conflict flags and five unusable host flags. Actual public config
+  POST supplies mode changes; no private product helper performs mutations.
+- Added2 stronger R018 HEAD notification cases: a real IPv6 blocker creates a
+  pending notification, then recovery removes that exact key while retaining
+  the separate unpublished-changes notification. The earlier unlinked empty
+  report HEAD proves device I/O only, not a pending notification. File JSON
+  path prerequisites/absence are asserted WITHOUT masking raw file comparison;
+  negative runner tests reject missing/wrong/stale notification evidence.
+- External SQLite BEGIN IMMEDIATE lock is an OS fixture, with no data updates.
+  Both normal public processes receive the documented
+  CONFIGFLOW_LOCK_TIMEOUT_SECONDS=0.25 in dedicated worlds (default300s would
+  exceed the harness transport window). Draft500 leaves DB unchanged; release
+ 500 occurs AFTER device writes, leaves one new route, no last_release/baseline;
+  releasing the external writer restores normal saves. No simulated SQLite error.
+- Fake ROS now refuses identity/runtime fields in PUT/PATCH and connected-row
+  mutation instead of accepting them silently. Closed console writes use the
+  same device guard. Real TCP negative fixture checks six bad payload/row cases
+  all400, state unchanged and no fixture errors. Unknown writable matchers stay.
+- Missing mutating HTTP fixture setup blocks later comparisons even when its
+  main request was a GET/plan. Explicit external route requirements prevent a
+  missing custom-config route from being treated as a business response.
+
+Initial IPv6 .64 command:
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; cd server/tools/routerdiff; export PYTHONDONTWRITEBYTECODE=1; ~/cf-test/.venv/bin/python -m unittest -v test_recipes test_runner; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary /tmp/routerdiff-build-302rx1dg/configflow --world ipv6-fakeip-owned --world ipv6-fakeip-borrow-lla --world ipv6-fakeip-borrow-ula --world ipv6-fakeip-conflicts --output /tmp/routerdiff-ipv6-fakeip.json'`
+=> Ran16 tests0.459s/OK; owned10(4.96s), LLA12(1.26s), ULA14(1.28s),
+conflicts28(4.78s); referenced3, go-unimplemented28, no new Python bugs.
+
+Authoritative current combination on .64 (including tightened ROS fake):
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; cd server/tools/routerdiff; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY=/tmp/routerdiff-build-302rx1dg/configflow; ~/cf-test/.venv/bin/python -m unittest -v test_recipes test_runner test_boundary; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world ipv6-fakeip-owned --world ipv6-fakeip-borrow-lla --world ipv6-fakeip-borrow-ula --world ipv6-fakeip-conflicts --world head-report-notifications --world persistence-sqlite-busy --world persistence-publication-busy --world dns-guard --world fixed-ip --world fixed-ip-batch-rollback --world fixed-ip-uncertain --world return-protocol1 --world rule-sync --world policy-view --output /tmp/routerdiff-ipv6-os-readonly-regression.json'`
+=> Ran23 tests13.458s/OK; fixed13(3.06s), uncertain21(3.22s), rollback23(2.34s),
+sync32(3.38s), DNS51(25.47s), owned61(5.02s), LLA63(1.31s), ULA65(1.30s),
+conflicts79(4.76s), HEAD81(.77s), SQLite84(.48s), publication87(.93s), return94(1.27s),
+policy102(1.26s). Matrix2301/routes26/implemented0/go-unimplemented102/
+referenced62/audited0/remaining2301/complete=false. No pending test process.
+
+Still open: audit the remaining2119 design entries and write their remaining
+variants, native dynamic identity/time/token handling, concurrent R001 read
+transcript interleavings (do NOT sort mutation order), startup failure vs fixture
+failure classification, policy bundle and NAT-list scale/migration/rollback,
+IPv6 public rule routes/RA/PD scripts and failures, background scheduler rounds,
+backup/proxy, SIGTERM/KILL mid-write and Nginx ingress boundaries. Then fresh full
+composition, final gate through gate.sh (never standalone full race/proddiff),
+latest git rebase go/build/recheck/clean. Task is actively continuing, no hand-back.

@@ -4,8 +4,10 @@
 
 矩阵：26 条路由、2301 个设计条目。
 公开 Go 入口实际注册本领域路由：0 条。
-旧版最近一次完整成功组合统计：`{"go-unimplemented": 1629}`；后续专项见下文。
-该旧版组合引用设计条目533；逐条变体审计仍未完成。
+执行配方统计：`{"go-unimplemented": 2435}`。
+实际执行世界（统计仅涵盖这些世界）：`agent-scope, auth-off-discovery, auth-off-editors, auth-off-fixed, auth-off-forwarding, auth-off-release, auth-off-sync, client-drafts, dhcp-ikuai-plain, disconnect-fixed, disconnect-manual, disconnect-release, discovery, discovery-failures, dns-guard, dns-ha, fixed-ip, fixed-ip-64, fixed-ip-batch-rollback, fixed-ip-binding-cap, fixed-ip-expiry, fixed-ip-guards, fixed-ip-long-id, fixed-ip-restart-random, fixed-ip-restart-stable, fixed-ip-stale, fixed-ip-uncertain, forwarding, forwarding-failures, forwarding-uncertain, guards, head-collection-body, head-collection-empty, head-discovery, head-forwarding-body, head-forwarding-empty, head-upstream, job-locks, manual-routes, persistence-readonly, persistence-receipt, policy-view, probe-errors, probe-ipv6, probe-tls, release-ik-plain, release-ik-suffix, release-ros, return-protocol1, return-protocol2, return-rollback, return-safety, return-uncertain, router-creations, routing-methods, rule-sync, rule-sync-download-failures, rule-sync-proxy, runtime-reads, stored, sync-settings, unlinked-inspection, upstream-linked, workspace-drafts`。
+已有执行配方引用的设计条目：611；逐条变体审计仍未完成。
+本次实际执行满足显式变体审计：182；其余2119待补。
 
 “Go 尚未实现”单独计数，不算失败，也不算差分通过。路由层 R15/R17 未注册时，
 即使底层 R01–R06 已移植，也不能声称 HTTP 行为已比较。
@@ -16,78 +18,97 @@ Python 前置条件失败单列为夹具错误，不算 Go 发现；实际比较
 
 目前没有已比较的 Go 缺陷结论。Python 参考异常单独记录；“Go 尚未实现”不算差分通过。
 
+## Python bug · medium · AGENT_FORWARD_FILTER_UNHASHABLE
+
+- 用例：forwarding-failures:R025/filter-bug-state-array；矩阵：H0016, R025-F11
+- 建议负责模块：A20（Linux gateway）及 R15（forwarding HTTP）。
+- 一个 Agent 的 forward_filter.state/source.kind/remedy.source 返回数组或对象时，Python 用不可哈希值查 frozenset，抛出未捕获 TypeError，整个 GET 返回 HTML 500，另一台健康网关的信息也丢失。应隔离这份不可信报告并保留健康条目。
+- 请求：`{"method": "GET", "path": "/api/routers/gateway-forwarding", "document": null, "raw": null, "headers": {}, "auth": true}`
+- Python：`{"status": 500, "headers": {"access-control-allow-origin": ["*"], "content-type": ["text/html; charset=utf-8"], "x-configflow-profile": ["alpha"]}, "kind": "text", "body": "<!doctype html>\n<html lang=en>\n<title>500 Internal Server Error</title>\n<h1>Internal Server Error</h1>\n<p>The server encountered an internal error and was unable to complete your request. Either the server is overloaded or there is an error in the application.</p>\n"}`
+- Python 设备终态：`{"http_status": 500, "unaffected_gateway_hidden": true}`
+- Go：Go 尚未实现（公开路由或前序写入依赖未注册，不能通过 HTTP 检查）：`{"missing_routes": ["R025"], "prior_missing_mutations": []}`
+
+## Python bug · medium · AGENT_FORWARD_FILTER_UNHASHABLE
+
+- 用例：forwarding-failures:R025/filter-bug-state-object；矩阵：H0016, R025-F11
+- 建议负责模块：A20（Linux gateway）及 R15（forwarding HTTP）。
+- 一个 Agent 的 forward_filter.state/source.kind/remedy.source 返回数组或对象时，Python 用不可哈希值查 frozenset，抛出未捕获 TypeError，整个 GET 返回 HTML 500，另一台健康网关的信息也丢失。应隔离这份不可信报告并保留健康条目。
+- 请求：`{"method": "GET", "path": "/api/routers/gateway-forwarding", "document": null, "raw": null, "headers": {}, "auth": true}`
+- Python：`{"status": 500, "headers": {"access-control-allow-origin": ["*"], "content-type": ["text/html; charset=utf-8"], "x-configflow-profile": ["alpha"]}, "kind": "text", "body": "<!doctype html>\n<html lang=en>\n<title>500 Internal Server Error</title>\n<h1>Internal Server Error</h1>\n<p>The server encountered an internal error and was unable to complete your request. Either the server is overloaded or there is an error in the application.</p>\n"}`
+- Python 设备终态：`{"http_status": 500, "unaffected_gateway_hidden": true}`
+- Go：Go 尚未实现（公开路由或前序写入依赖未注册，不能通过 HTTP 检查）：`{"missing_routes": ["R025"], "prior_missing_mutations": []}`
+
+## Python bug · medium · AGENT_FORWARD_FILTER_UNHASHABLE
+
+- 用例：forwarding-failures:R025/filter-bug-source-kind-array；矩阵：H0016, R025-F11
+- 建议负责模块：A20（Linux gateway）及 R15（forwarding HTTP）。
+- 一个 Agent 的 forward_filter.state/source.kind/remedy.source 返回数组或对象时，Python 用不可哈希值查 frozenset，抛出未捕获 TypeError，整个 GET 返回 HTML 500，另一台健康网关的信息也丢失。应隔离这份不可信报告并保留健康条目。
+- 请求：`{"method": "GET", "path": "/api/routers/gateway-forwarding", "document": null, "raw": null, "headers": {}, "auth": true}`
+- Python：`{"status": 500, "headers": {"access-control-allow-origin": ["*"], "content-type": ["text/html; charset=utf-8"], "x-configflow-profile": ["alpha"]}, "kind": "text", "body": "<!doctype html>\n<html lang=en>\n<title>500 Internal Server Error</title>\n<h1>Internal Server Error</h1>\n<p>The server encountered an internal error and was unable to complete your request. Either the server is overloaded or there is an error in the application.</p>\n"}`
+- Python 设备终态：`{"http_status": 500, "unaffected_gateway_hidden": true}`
+- Go：Go 尚未实现（公开路由或前序写入依赖未注册，不能通过 HTTP 检查）：`{"missing_routes": ["R025"], "prior_missing_mutations": []}`
+
+## Python bug · medium · AGENT_FORWARD_FILTER_UNHASHABLE
+
+- 用例：forwarding-failures:R025/filter-bug-remedy-source-array；矩阵：H0016, R025-F11
+- 建议负责模块：A20（Linux gateway）及 R15（forwarding HTTP）。
+- 一个 Agent 的 forward_filter.state/source.kind/remedy.source 返回数组或对象时，Python 用不可哈希值查 frozenset，抛出未捕获 TypeError，整个 GET 返回 HTML 500，另一台健康网关的信息也丢失。应隔离这份不可信报告并保留健康条目。
+- 请求：`{"method": "GET", "path": "/api/routers/gateway-forwarding", "document": null, "raw": null, "headers": {}, "auth": true}`
+- Python：`{"status": 500, "headers": {"access-control-allow-origin": ["*"], "content-type": ["text/html; charset=utf-8"], "x-configflow-profile": ["alpha"]}, "kind": "text", "body": "<!doctype html>\n<html lang=en>\n<title>500 Internal Server Error</title>\n<h1>Internal Server Error</h1>\n<p>The server encountered an internal error and was unable to complete your request. Either the server is overloaded or there is an error in the application.</p>\n"}`
+- Python 设备终态：`{"http_status": 500, "unaffected_gateway_hidden": true}`
+- Go：Go 尚未实现（公开路由或前序写入依赖未注册，不能通过 HTTP 检查）：`{"missing_routes": ["R025"], "prior_missing_mutations": []}`
+
 ## Python bug · medium · IKUAI_NETMASK_SUFFIX_ROLLBACK
 
-- 用例：R011-S02/real-suffix-python-bug；矩阵：R011-S02
+- 用例：release-ik-suffix:R011-S02/real-suffix-python-bug；矩阵：R011-S02
 - 建议负责模块：R05（iKuai）。
-- 默认 fake 保留真实 static_rt netmask 显示后缀。Python 发布返回 502，
-  新增静态路由的回读和补偿均因后缀不匹配失败，设备留下配置。未修改 fake 来掩盖此问题。
+- 默认 fake 保留真实 static_rt netmask 显示后缀。Python 发布返回 502，新增静态路由的回读和补偿均因后缀不匹配失败，设备留下配置。未修改 fake 来掩盖此问题。
 - 请求：`{"method": "POST", "path": "/api/routers/r-ik/apply", "document": {"fingerprint": "bfba4a58e875bf6e"}, "raw": null, "headers": {}, "auth": true}`
 - Python：`{"status": 502, "headers": {"access-control-allow-origin": ["*"], "content-type": ["application/json"], "x-configflow-profile": ["alpha"]}, "kind": "json", "body": {"message": "阶段「routes」失败，回滚未完成，请检查发布记录", "plan": {"blockers": [], "checks": {"gateway": "10.44.0.2", "ikuai_groups": {"nat_bypass": {"groups": {"cf_nat_1": "a2c2c8777b491796"}, "removed": [], "rules": [{"comment": "cf-mihomo", "func": "nat_rule", "groups": ["cf_nat_1"], "id": null, "keep_foreign": true}]}, "routes": {"groups": {}, "removed": [], "rules": []}}, "nat_bypass": ["198.18.0.0/16"], "nat_not_required": [], "removed_routes": [], "routes": [{"cidr": "198.18.0.0/16", "gateway": "10.44.0.2"}]}, "empty": false, "fingerprint": "bfba4a58e875bf6e", "script": "", "stages": [{"enabled": false, "key": "return_routing", "manual": false, "note": "未启用自动配置回流：本次跳过，已有回流规则保留，不新增、修改或删除。", "ops": [], "title": "mihomo 回流规则"}, {"key": "routes", "manual": false, "ops": [{"cidr": "198.18.0.0/16", "comment": "cf-fake-ip", "gateway": "10.44.0.2", "kind": "route_add", "summary": "新增路由 198.18.0.0/16 → 10.44.0.2（备注 cf-fake-ip）"}], "title": "主路由代理路由"}, {"key": "nat_bypass", "manual": false, "ops": [{"comment": "cf-mihomo-nat", "kind": "ikuai_group_add", "name": "cf_nat_1", "role": "nat", "summary": "新建 IP 分组「cf_nat_1」（NAT 免转换使用，1 个网段）", "values": ["198.18.0.0/16"]}, {"comment": "cf-mihomo", "dst": ["198.18.0.0/16"], "groups": ["cf_nat_1"], "kind": "nat_add", "src": ["10.44.0.1-10.44.0.1", "10.44.0.3-10.44.0.254"], "summary": "新增 NAT 免转换规则：源 10.44.0.1-10.44.0.1, 10.44.0.3-10.44.0.254，目的 IP 分组 cf_nat_1（共 1 个网段）"}], "title": "主路由 NAT 免转换"}, {"enabled": false, "key": "dhcp_dns", "manual": false, "note": "未选择 DHCP DNS 服务器：本次保留现有 DNS 配置。", "ops": [], "title": "DHCP DNS"}], "warnings": []}, "result": {"failed_stage": "routes", "log": [{"stage": "routes", "status": "ok", "summary": "新增路由 198.18.0.0/16 → 10.44.0.2（备注 cf-fake-ip）"}, {"stage": "routes", "status": "failed", "summary": "iKuai static_rt 已提交但读不回新对象：198.18.0.0/16"}], "ok": false, "rollback": [{"stage": "routes", "status": "failed", "summary": "撤销失败：新增路由 198.18.0.0/16 → 10.44.0.2（备注 cf-fake-ip）（iKuai static_rt 中名称为 cf_rt_a2c2c8777 的对象已被修改，未自动删除，请检查）"}]}, "success": false}}`
 - Python 设备终态：`{"created_static_rows_remaining": 1, "static_rt_after": [{"id": 2, "enabled": "yes", "tagname": "cf_rt_a2c2c8777", "ip_type": "4", "interface": "auto", "dst_addr": "198.18.0.0", "gateway": "10.44.0.2", "netmask": "255.255.0.0", "prio": 1, "comment": "cf-fake-ip"}]}`
-- Go：Go 尚未实现（公开路由或前序写入依赖未注册，不能通过 HTTP 检查 R05）：`{"missing_routes": ["R011", "R012"], "prior_missing_mutations": []}`
+- Go：Go 尚未实现（公开路由或前序写入依赖未注册，不能通过 HTTP 检查）：`{"missing_routes": ["R011", "R012"], "prior_missing_mutations": []}`
 - 普通 netmask 的独立变体覆盖 R011-S02 成功路径；默认后缀变体记录这个 Python bug。
 - L5 待核：真实固件 static_rt 的 netmask 后缀形态，以及失败后设备补偿是否干净。
 
+## Python bug · medium · HEAD_CREATES_ROUTER
+
+- 用例：head-collection-empty:R007/HEAD-without-body-is-not-GET；矩阵：X06
+- 建议负责模块：R15（router HTTP）。
+- GET/POST 共用的路由器集合处理函数只按 method==GET 分支；HEAD 落入创建分支。无 body 返回400，合法 body 会新增路由器并递增配置 revision，响应 body 被 HEAD 协议隐藏。Go HEAD 必须只读且按 GET 返回200。
+- 请求：`{"method": "HEAD", "path": "/api/routers", "document": null, "raw": null, "headers": {}, "auth": true}`
+- Python：`{"status": 400, "headers": {"access-control-allow-origin": ["*"], "content-type": ["application/json"], "x-configflow-profile": ["alpha"]}, "kind": "text", "body": ""}`
+- Python 设备终态：`{"http_status": 400, "configuration_changed": false, "agent_post_requests": 0, "agent_get_requests": 0}`
+- Go：Go 尚未实现（公开路由或前序写入依赖未注册，不能通过 HTTP 检查）：`{"missing_routes": ["R007"], "prior_missing_mutations": []}`
+
+## Python bug · medium · HEAD_CREATES_ROUTER
+
+- 用例：head-collection-body:R007/HEAD-creates-router；矩阵：X06
+- 建议负责模块：R15（router HTTP）。
+- GET/POST 共用的路由器集合处理函数只按 method==GET 分支；HEAD 落入创建分支。无 body 返回400，合法 body 会新增路由器并递增配置 revision，响应 body 被 HEAD 协议隐藏。Go HEAD 必须只读且按 GET 返回200。
+- 请求：`{"method": "HEAD", "path": "/api/routers", "document": {"name": "HEAD 不应创建🧪", "type": "routeros", "endpoint": "http://10.44.0.1:18081", "username": "test-admin", "password": "synthetic-device-password-0123456789"}, "raw": null, "headers": {}, "auth": true}`
+- Python：`{"status": 200, "headers": {"access-control-allow-origin": ["*"], "content-type": ["application/json"], "x-configflow-profile": ["alpha"]}, "kind": "text", "body": ""}`
+- Python 设备终态：`{"http_status": 200, "configuration_changed": true, "agent_post_requests": 0, "agent_get_requests": 0}`
+- Go：Go 尚未实现（公开路由或前序写入依赖未注册，不能通过 HTTP 检查）：`{"missing_routes": ["R007"], "prior_missing_mutations": []}`
+
+## Python bug · medium · HEAD_PERSISTS_FORWARDING
+
+- 用例：head-forwarding-empty:R025/HEAD-without-body-is-not-GET；矩阵：X06, R025-B90
+- 建议负责模块：R15（forwarding HTTP）及 A20（Linux gateway）。
+- GET/POST 共用的 forwarding 处理函数只按 method==GET 分支；HEAD 落入持久化分支。无 body 返回400且不读 Agent，合法 agent_id 会向设备 POST 并开启持久化转发。Go HEAD 必须执行只读 GET，不得写设备。
+- 请求：`{"method": "HEAD", "path": "/api/routers/gateway-forwarding", "document": null, "raw": null, "headers": {}, "auth": true}`
+- Python：`{"status": 400, "headers": {"access-control-allow-origin": ["*"], "cache-control": ["no-store"], "content-type": ["application/json"], "x-configflow-profile": ["alpha"]}, "kind": "text", "body": ""}`
+- Python 设备终态：`{"http_status": 400, "configuration_changed": false, "agent_post_requests": 0, "agent_get_requests": 0}`
+- Go：Go 尚未实现（公开路由或前序写入依赖未注册，不能通过 HTTP 检查）：`{"missing_routes": ["R025"], "prior_missing_mutations": []}`
+
+## Python bug · medium · HEAD_PERSISTS_FORWARDING
+
+- 用例：head-forwarding-body:R025/HEAD-persists-forwarding；矩阵：X06, R025-B90
+- 建议负责模块：R15（forwarding HTTP）及 A20（Linux gateway）。
+- GET/POST 共用的 forwarding 处理函数只按 method==GET 分支；HEAD 落入持久化分支。无 body 返回400且不读 Agent，合法 agent_id 会向设备 POST 并开启持久化转发。Go HEAD 必须执行只读 GET，不得写设备。
+- 请求：`{"method": "HEAD", "path": "/api/routers/gateway-forwarding", "document": {"agent_id": "m-a"}, "raw": null, "headers": {}, "auth": true}`
+- Python：`{"status": 200, "headers": {"access-control-allow-origin": ["*"], "cache-control": ["no-store"], "content-type": ["application/json"], "x-configflow-profile": ["alpha"]}, "kind": "text", "body": ""}`
+- Python 设备终态：`{"http_status": 200, "configuration_changed": false, "agent_post_requests": 1, "agent_get_requests": 0}`
+- Go：Go 尚未实现（公开路由或前序写入依赖未注册，不能通过 HTTP 检查）：`{"missing_routes": ["R025"], "prior_missing_mutations": []}`
+
 后续仍须补齐：其余 H 公开可达性与复合 guard 变体、设备失败/补偿、完整生成形态、
 Agent/备份/代理、后台轮询、断连/重启、动态值内容绑定和 O12 分类。详见进度文件与执行 ledger。
-
-## 后续独立迭代新增：Python bug · medium · AGENT_FORWARD_FILTER_UNHASHABLE
-
-此节来自后续50配方的 forwarding 专项迭代，不并入上方1629配方的全量统计。
-建议负责模块：A20（`backend/agents/linux_gateway.py`）及 R15（forwarding HTTP）。
-
-四条用例均为有效管理员请求 `GET /api/routers/gateway-forwarding`。m-a、m-b 都
-已真实心跳在线；只令 m-a 的 fake `GET /api/linux-gateway/status` 返回下表字段。
-m-b 的正常报告保持不变，设备/配置没有写入。
-
-| 用例 | m-a 的 forward_filter | Python 实际结果 | Go 实际结果 |
-|---|---|---|---|
-| R025/filter-bug-state-array | `{"state":[]}` | HTML500；本次日志 `TypeError: unhashable type: 'list'` | Go 尚未实现：实际公开路由未注册 |
-| R025/filter-bug-state-object | `{"state":{}}` | HTML500；本次日志 `TypeError: unhashable type: 'dict'` | 同上 |
-| R025/filter-bug-source-kind-array | `{"state":"may_drop","sources":[{"kind":[]}]}` | HTML500；本次日志 `TypeError: unhashable type: 'list'` | 同上 |
-| R025/filter-bug-remedy-source-array | `{"state":"may_drop","remedies":[{"source":[]}]}` | HTML500；本次日志 `TypeError: unhashable type: 'list'` | 同上 |
-
-根因：`sanitize_forward_filter`、`_forward_filter_source` 和
-`_forward_filter_remedy` 用未经类型检查的 `state` / `kind` / `source` 查询
-frozenset；数组、对象不可哈希。异常没有转成单 Agent 的降级条目，而是让整个
-列表500，健康 m-b 也被隐藏。medium 的依据是一个不可信 Agent 的显示元数据
-就能破坏整个网关列表；本用例没有设备写入或配置残留。
-
-配方分别记录请求、HTML响应、类型/响应头和设备/DB终态，并从每次请求之前
-记录的日志字节偏移核对本次异常，不能借用上一条的 traceback。Go 实现后必须
-通过 HTTP 观察其实际结果：同样整体500或丢掉健康条目会明确失败；安全地隔离
-异常、保留健康列表的差异单列参考 bug 观察，须审核，不自动算通过。
-
-## HEAD 路由分派：两条 Python bug · medium
-
-以下来自随后独立的71配方组合（7个世界、15个设计条目），不并入上方1629
-配方的旧全量统计。7个世界为 forwarding-failures、release-ik-suffix、
-release-ik-plain 和下列4个独立 HEAD 世界。71条均完成真实 Python HTTP；
-Go 公开路由仍为0，71条单列「Go 尚未实现」，实际差分比较0。
-
-| 缺陷／用例 | 请求 | Python 实际结果 | Go 实际结果 | 建议负责模块 |
-|---|---|---|---|---|
-| HEAD_CREATES_ROUTER / R007/HEAD-without-body-is-not-GET | HEAD /api/routers，无请求体 | 400，空响应体，无配置写入 | Go 尚未实现 | R15 |
-| HEAD_CREATES_ROUTER / R007/HEAD-creates-router | HEAD /api/routers，合法合成 name/type/endpoint/username/password | 200，空响应体，新增路由器，配置 revision +1 | Go 尚未实现 | R15 |
-| HEAD_PERSISTS_FORWARDING / R025/HEAD-without-body-is-not-GET | HEAD /api/routers/gateway-forwarding，无请求体 | 400，空响应体，Agent GET/POST 均0次 | Go 尚未实现 | R15、A20 |
-| HEAD_PERSISTS_FORWARDING / R025/HEAD-persists-forwarding | HEAD /api/routers/gateway-forwarding，JSON {"agent_id":"m-a"} | 200，空响应体，Agent POST forwarding 1次、GET 0次，persisted=true | Go 尚未实现 | R15、A20 |
-
-两条缺陷分别为 medium：HEAD 是只读方法，实际却能新增配置或改变设备转发
-持久化状态。根因是 GET/POST 共用函数只判断 method==GET；Flask 自动注册的
-HEAD 落入 POST 分支。4条配方分别隔离状态，核对完整 DB/文件/设备、请求计数，
-不把 HEAD 改写成 GET。Go 同样发生写入时明确失败，即使与 Python 一致；
-正确的只读200结果列为参考 bug 观察并保留差异，不自动判通过。
-
-原始合成创建请求由 routing.head_collection_body 定义，使用命名空间中的
-10.44.0.1:18081 与 seed.DEVICE_PASSWORD；未访问真实设备。
-
-## 当前补测统计（部分世界，不冒充全量）
-
-最新 guard 与尾部26个独立世界的组合：1865配方，引用507条矩阵条目；
-公开 Go 领域路由0，实际差分比较0，「Go 尚未实现」1865。A1–A7 的182条
-显式变体审计在本次真实 Python 执行中满足；剩余2119条仍待审计。
-本组复现两条 HEAD bug；上文 iKuai 后缀残留和 Agent 元数据崩溃是先前
-专项的实际结果，本次未重跑它们，不删除，也不并入本组统计。
-回流及 OS 故障另一个129配方组合已通过 Python 前置检查，引用23条、
-审计0条，Go均尚未实现。没有新的产品缺陷结论。

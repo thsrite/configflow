@@ -2,6 +2,7 @@
 import os
 from pathlib import Path
 import re
+import sqlite3
 import subprocess
 
 
@@ -9,10 +10,30 @@ class Faults:
     def __init__(self, root):
         self.root = Path(root)
         self.bound = False
+        self.database = None
 
     def control(self, action, **values):
         if os.environ.get('ROUTERDIFF_ISOLATED') != '1' or str(self.root) != '/tmp/routerdiff-active/data':
             raise RuntimeError('OS fault controller requires the private worker mount namespace')
+        if action == 'sqlite-busy':
+            enabled = values['enabled']
+            if type(enabled) is not bool:
+                raise ValueError('SQLite fault state must be bool')
+            if enabled:
+                if self.database is not None:
+                    raise RuntimeError('synthetic SQLite writer already held')
+                path = self.root / 'configflow.sqlite3'
+                database = sqlite3.connect(path.absolute().as_uri() + '?mode=rw', uri=True,
+                                           timeout=2, isolation_level=None)
+                try:
+                    database.execute('BEGIN IMMEDIATE')
+                except BaseException:
+                    database.close()
+                    raise
+                self.database = database
+            else:
+                self.close()
+            return {'writer_held': self.database is not None and self.database.in_transaction}
         if action == 'readonly':
             enabled = values['enabled']
             if type(enabled) is not bool:
@@ -50,6 +71,12 @@ class Faults:
                 os.close(root)
             return {'injected_directory': action == 'receipt-directory'}
         raise ValueError('unsupported private filesystem fault')
+
+    def close(self):
+        if self.database is not None:
+            self.database.rollback()
+            self.database.close()
+            self.database = None
 
     @staticmethod
     def mount(*arguments):

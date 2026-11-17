@@ -26,6 +26,7 @@ import routing
 import policy_view
 import returns
 import persistence
+import ipv6
 from compare import differences, logical_snapshot, response_view, timestamp
 from harness import Pair
 from harness import decode_response
@@ -302,6 +303,20 @@ def execute(pair, case, available, routes):
                 matching = [value for path, value in after['files'].items() if re.fullmatch(pattern, path)]
                 if len(matching) != 1 or base64.b64decode(matching[0]) != expected.encode('utf-8'):
                     raise RuntimeError(case.ident + ': generated/cache file content postcondition failed: ' + pattern)
+            for filename, requirements in case.file_checks.items():
+                document = json.loads(base64.b64decode(after['files'][filename]))
+                for path, expected in requirements.items():
+                    if differences(cases.at(document, path), expected):
+                        raise RuntimeError(case.ident + ': generated JSON file postcondition failed: ' + filename + ':' + path)
+            for filename, paths in case.file_absent.items():
+                document = json.loads(base64.b64decode(after['files'][filename]))
+                for path in paths:
+                    try:
+                        cases.at(document, path)
+                    except (KeyError, IndexError):
+                        pass
+                    else:
+                        raise RuntimeError(case.ident + ': stale generated JSON member remains: ' + filename + ':' + path)
             if case.effect == 'router-create':
                 old = fields(before, 'profile', case.profile)['routers']['items']
                 new = fields(after, 'profile', case.profile)['routers']['items']
@@ -394,7 +409,10 @@ def execute(pair, case, available, routes):
               'reference-bug-observation' if case.python_bug else 'different' if found else 'compared')
     unimplemented_reason = {'missing_routes': sorted(set(missing_routes)),
                             'prior_missing_mutations': [item['case'] for item in pair.go.missing_effects]}
-    if not implemented and case.effect in ('profile-write', 'profile-write-device', 'router-create', 'router-delete', 'device-only'):
+    mutating_setup = any(control.get('rpc') in ('http', 'open_request')
+                         and control.get('method', 'GET') not in ('GET', 'HEAD', 'OPTIONS') for control in case.prepare)
+    if not implemented and (mutating_setup or case.effect in
+            ('profile-write', 'profile-write-device', 'router-create', 'router-delete', 'device-only')):
         pair.go.missing_effects.append({'case': case.ident, 'missing_routes': sorted(set(missing_routes))})
     python_bug_outcome = None
     if case.python_bug == 'IKUAI_NETMASK_SUFFIX_ROLLBACK':
@@ -573,6 +591,13 @@ def main():
               ('disconnect-release', releases.options(), (disconnect.release,)),
               ('disconnect-fixed', clients.options(), (disconnect.fixed,)),
               ('disconnect-manual', options, (disconnect.manual,)),
+              ('ipv6-fakeip-owned', ipv6.options(), (ipv6.owned,)),
+              ('ipv6-fakeip-borrow-lla', ipv6.options(), (ipv6.borrowed_lla,)),
+              ('ipv6-fakeip-borrow-ula', ipv6.options(), (ipv6.borrowed_ula,)),
+              ('ipv6-fakeip-conflicts', ipv6.options(), (ipv6.conflicts,)),
+              ('head-report-notifications', ipv6.options(), (ipv6.head_notifications,)),
+              ('persistence-sqlite-busy', persistence.busy_options(), (persistence.sqlite_busy,)),
+              ('persistence-publication-busy', persistence.busy_options(), (persistence.sqlite_publication_busy,)),
               ('persistence-readonly', options, (persistence.readonly_store,)),
               ('persistence-receipt', releases.options(), (persistence.receipt_rename_failure,)),
               ('return-protocol1', returns.options(), (returns.protocol1,)),

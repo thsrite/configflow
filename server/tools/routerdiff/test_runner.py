@@ -48,6 +48,27 @@ def pair(python=None, go=None):
 
 
 class RunnerTests(unittest.TestCase):
+    def test_notification_prerequisites_cannot_pass_missing_or_stale_evidence(self):
+        routes, _ = load()
+        before = ObservationSide().before
+        def observed(items):
+            after = copy.deepcopy(before)
+            after['files']['notifications.json'] = base64.b64encode(json.dumps({'items': items}).encode()).decode()
+            return pair(ObservationSide(200, before, after))
+        pending = Case('HEAD-notification-proof', 'R018', 'GET', '/api/routers/test/report', 200,
+                       unchanged=False, effect='device-read',
+                       file_checks={'notifications.json': {'items/check/state': 'pending'}})
+        self.assertEqual(execute(observed({'check': {'state': 'pending'}}), pending, set(), routes)['status'], 'go-unimplemented')
+        with self.assertRaisesRegex(RuntimeError, 'file postcondition failed'):
+            execute(observed({'check': {'state': 'resolved'}}), pending, set(), routes)
+        recovered = Case('notification-clear-proof', 'R018', 'GET', '/api/routers/test/report', 200,
+                         unchanged=False, effect='device-read',
+                         file_checks={'notifications.json': {'items/other/state': 'pending'}},
+                         file_absent={'notifications.json': ('items/check',)})
+        self.assertEqual(execute(observed({'other': {'state': 'pending'}}), recovered, set(), routes)['status'], 'go-unimplemented')
+        with self.assertRaisesRegex(RuntimeError, 'stale generated JSON member remains'):
+            execute(observed({'other': {'state': 'pending'}, 'check': {'state': 'pending'}}), recovered, set(), routes)
+
     def test_matching_HEAD_mutations_never_pass_as_parity(self):
         routes, _ = load()
         for route, bug in [('R007', 'HEAD_CREATES_ROUTER'), ('R025', 'HEAD_PERSISTS_FORWARDING')]:
@@ -177,6 +198,21 @@ class RunnerTests(unittest.TestCase):
         self.assertTrue(any(item['path'].startswith('/state/fake/errors') for item in result['differences']))
         with self.assertRaisesRegex(RuntimeError, 'fake contract error'):
             execute(pair(ObservationSide(200, before, broken)), case, set(), routes)
+
+    def test_missing_mutating_setup_blocks_later_reads_even_when_main_request_is_GET(self):
+        routes, _ = load()
+        world = pair()
+        case = Case('read-after-missing-save', 'R001', 'GET', '/api/agents/test/upstream-routers', 200,
+                    prepare=({'rpc': 'http', 'method': 'POST', 'path': '/api/custom-config/mihomo',
+                              'document': {}, 'expected': 200},), effect='device-read', unchanged=False,
+                    manifest_requires=(('POST', '/api/custom-config/mihomo'),))
+        available = {('GET', shape(routes['R001'].path)), ('GET', shape(routes['R007'].path))}
+        self.assertEqual(execute(world, case, available, routes)['status'], 'go-unimplemented')
+        later = Case('later', 'R007', 'GET', '/api/routers', 200)
+        result = execute(world, later, available, routes)
+        self.assertEqual(result['status'], 'go-unimplemented')
+        self.assertEqual(result['unimplemented_reason']['prior_missing_mutations'], ['read-after-missing-save'])
+        self.assertEqual(world.go.requests, [])
 
     def test_missing_external_overlap_handler_is_not_a_business_404_oracle(self):
         routes, _ = load()

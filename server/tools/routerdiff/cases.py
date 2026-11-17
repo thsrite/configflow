@@ -64,6 +64,8 @@ class Case:
     wait_seconds: float = 30
     after_poll: tuple = ()
     file_contents: dict = field(default_factory=dict)
+    file_checks: dict = field(default_factory=dict)
+    file_absent: dict = field(default_factory=dict)
     age_from: str = ''
     age_seconds: float = 0
     age_anchor: str = 'started'

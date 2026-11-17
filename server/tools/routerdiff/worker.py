@@ -173,6 +173,7 @@ class Worker:
 
     def close(self):
         self.world.release_all()
+        self.faults.close()
         for connection in self.open_clients.values():
             connection.close()
         self.stop()

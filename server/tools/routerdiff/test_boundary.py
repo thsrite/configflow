@@ -15,6 +15,29 @@ import returns
 
 @unittest.skipUnless(os.environ.get('ROUTERDIFF_BINARY'), 'requires .32 native public Go binary')
 class BoundaryTests(unittest.TestCase):
+    def test_routeros_refuses_runtime_fields_and_connected_row_writes(self):
+        with Pair(Path(os.environ['ROUTERDIFF_BINARY'])) as pair:
+            side = pair.python
+            headers = {'Authorization': 'Basic ' + base64.b64encode(('test-admin:' + DEVICE_PASSWORD).encode()).decode(),
+                       'Content-Type': 'application/json'}
+            row = {'.id': '*D0', 'dst-address': '10.44.0.0/24', 'gateway': 'bridge-lan',
+                   'connect': 'true', 'active': 'true'}
+            side.rpc('fake', action='seed', ros={'/ip/route': [row]})
+            before = side.rpc('snapshot')['fake']['ros']
+            for method, path, payload in (
+                ('PUT', '/rest/ip/route', {'dst-address': '10.55.0.0/24', '.id': '*D1'}),
+                ('PUT', '/rest/ip/route', {'dst-address': '10.55.0.0/24', 'active': 'true'}),
+                ('PUT', '/rest/ip/firewall/nat', {'chain': 'srcnat', 'action': 'accept', 'bytes': '42'}),
+                ('PUT', '/rest/ip/dhcp-server/lease', {'address': '10.44.0.21', 'status': 'bound'}),
+                ('PATCH', '/rest/ip/route/*D0', {'disabled': 'true'}),
+                ('DELETE', '/rest/ip/route/*D0', None),
+            ):
+                response = side.rpc('request', port=18081, method=method, path=path, headers=headers,
+                    body=base64.b64encode(json.dumps(payload).encode()).decode() if payload is not None else None)
+                self.assertEqual(response['status'], 400)
+                self.assertEqual(side.rpc('snapshot')['fake']['ros'], before)
+            self.assertEqual(side.rpc('snapshot')['fake']['errors'], [])
+
     def test_stored_legacy_missing_profile_is_rejected_before_handlers(self):
         with Pair(Path(os.environ['ROUTERDIFF_BINARY']), agent_options()) as pair:
             side = pair.python

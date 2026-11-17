@@ -247,9 +247,12 @@ class World:
                 return 404, {}, {'message': 'no such item'}
             if method == 'GET':
                 return 200, {}, copy.deepcopy(row)
-            if row.get('dynamic') in ('true', 'yes', True) or row.get('read-only') in ('true', 'yes', True):
+            if any(row.get(key) in ('true', 'yes', True) for key in ('dynamic', 'connect', 'read-only')):
                 return 400, {}, {'message': 'cannot change dynamic item'}
             if method == 'PATCH':
+                refused = self.ros_readonly_field(table, body)
+                if refused:
+                    return 400, {}, {'message': 'cannot set read-only field ' + refused}
                 row.update(copy.deepcopy(body))
                 return 200, {}, copy.deepcopy(row)
             if method == 'DELETE':
@@ -272,6 +275,9 @@ class World:
         if method == 'PUT':
             if not isinstance(body, dict):
                 raise ProtocolError('ROS PUT needs object')
+            refused = self.ros_readonly_field(path, body)
+            if refused:
+                return 400, {}, {'message': 'cannot set read-only field ' + refused}
             if 'place-before' in body and not any(row.get('.id') == body['place-before'] for row in self.ros.get(path, [])):
                 return 400, {}, {'message': 'no such item for place-before'}
             ident = self.ros_add(path, body)
@@ -285,6 +291,9 @@ class World:
         raise ProtocolError('ROS operation targets missing row')
 
     def ros_add(self, path, values):
+        refused = self.ros_readonly_field(path, values)
+        if refused:
+            raise ProtocolError('console add attempts read-only field ' + refused)
         self.sequence['ros'] += 1
         values = copy.deepcopy(values)
         before = values.pop('place-before', None)
@@ -306,6 +315,22 @@ class World:
                 raise ProtocolError('console add references missing place-before item')
             rows.insert(position, row)
         return row['.id']
+
+    @staticmethod
+    def ros_readonly_field(path, values):
+        # Device protocol guard, independently asserted over real TCP. Keep
+        # unknown writable matchers; only proven runtime/identity fields refuse.
+        readonly = {'.id', 'dynamic', 'invalid', 'bytes', 'packets', 'creation-time'}
+        if path in ('/ip/route', '/ipv6/route'):
+            readonly.update(('active', 'inactive', 'immediate-gw', 'connect', 'ecmp', 'belongs-to', 'hw-offloaded'))
+        if path == '/ip/dhcp-server/lease':
+            readonly.update(('status', 'last-seen', 'expires-after', 'host-name', 'age', 'class-id',
+                             'active-address', 'active-mac-address', 'active-client-id', 'active-server',
+                             'active-agent-circuit-id', 'active-agent-remote-id',
+                             'agent-circuit-id', 'agent-remote-id', 'radius', 'blocked'))
+        if not isinstance(values, dict):
+            return '<non-object>'
+        return next((key for key in values if key.startswith('.') or key in readonly), '')
 
     @staticmethod
     def ros_query(rows, expressions):
