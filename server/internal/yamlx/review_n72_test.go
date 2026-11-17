@@ -142,3 +142,46 @@ func TestReviewN72EmptyYAMLTagRejected(t *testing.T) {
 		t.Errorf("unwritable tag marshalled as %q: %v", out, err)
 	}
 }
+
+// Every string scalar must read back as the same string after Marshal, in
+// every position. yaml.v3's encoder decides quoting with its resolver, which
+// does not know `<<`, while its parser reads a plain `<<` as a merge key.
+func TestReviewN72StringsSurviveMarshal(t *testing.T) {
+	special := []string{"", " ", "~", "<<", "<", "=", "-", "- a", "?", "? a", ":", "a: b", "#", "a #b",
+		"!a", "&a", "*a", "%a", "@a", "`a", "|", ">", "'", "\"", "[", "]", "{", "}", ",", "a,b",
+		"null", "Null", "NULL", "true", "True", "FALSE", "yes", "No", "on", "OFF", "y", "n",
+		"0", "-0", "+1", "0x1F", "0o17", "017", "0b101", "1_000", "1e3", "1.5", ".5", "1.",
+		".inf", "-.Inf", ".NaN", "1:30", "2001-12-14", "2001-12-14 21:59:43.10 -5", "=", "!!",
+		"a\tb", "\t", "a\nb", "a\n", "\n", " a", "a ", "a  \nb", "\u0085", "\u2028", "\ufeffa"}
+	alphabet := []rune("<>=~-?:#!&*%@`|'\",[]{}.01xeEyYnNoO_+ \tab")
+	var values []string
+	values = append(values, special...)
+	for _, a := range alphabet {
+		values = append(values, string(a))
+		for _, b := range alphabet {
+			values = append(values, string([]rune{a, b}))
+		}
+	}
+	for _, value := range values {
+		for _, build := range []func(*Node) *Node{
+			func(s *Node) *Node { return s },
+			func(s *Node) *Node { return Map(Str("k"), s) },
+			func(s *Node) *Node { return Map(s, Str("v")) },
+			func(s *Node) *Node { n := Seq(s); n.Style = yaml.FlowStyle; return n },
+			func(s *Node) *Node { n := Map(s, Str("v")); n.Style = yaml.FlowStyle; return n },
+		} {
+			for _, style := range []yaml.Style{0, yaml.SingleQuotedStyle, yaml.LiteralStyle, yaml.FoldedStyle} {
+				s := &Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: value, Style: style}
+				n := build(s)
+				out, err := Marshal(n)
+				if err != nil {
+					t.Errorf("%q style %v: %v", value, style, err)
+					continue
+				}
+				if got, err := Parse(out); err != nil || !Equal(got, n) {
+					t.Errorf("%q style %v changed: %q (%v)", value, style, out, err)
+				}
+			}
+		}
+	}
+}

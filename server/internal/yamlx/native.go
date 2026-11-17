@@ -205,10 +205,21 @@ func prepareStrings(n *Node, seen map[*Node]bool) {
 			}
 		}
 	}
-	// yaml.v3's resolver does not know `<<`, so its encoder spells an implicit
-	// merge key as `!!merge <<`. A plain `<<` reads back as the same merge key.
-	if n.Kind == yaml.ScalarNode && n.Style == 0 && n.Value == "<<" && n.ShortTag() == "!!merge" {
-		n.Tag = ""
+	// yaml.v3's resolver does not know `<<`, while its parser reads every plain
+	// `<<` as a merge key. Its encoder therefore spells a merge key `!!merge <<`
+	// and a string `<<` plain (which reads back as a merge key). Write merge keys
+	// as plain `<<` and quote the string.
+	if n.Kind == yaml.ScalarNode && n.Value == "<<" {
+		switch n.ShortTag() {
+		case "!!merge":
+			if n.Style == 0 {
+				n.Tag = ""
+			}
+		case "!!str":
+			if n.Style&(yaml.DoubleQuotedStyle|yaml.SingleQuotedStyle|yaml.LiteralStyle|yaml.FoldedStyle) == 0 {
+				n.Style |= yaml.DoubleQuotedStyle
+			}
+		}
 	}
 	protectString(n)
 	// The Node encoder bypasses yaml.v3's string encoder's YAML 1.1 quoting.

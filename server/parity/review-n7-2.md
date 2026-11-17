@@ -56,6 +56,15 @@ All fixed; **0 open** (F1 high, F2 medium, F3–F6 low).
   same for yaml.v3 readers. Fix in the shared `Marshal`: an untagged, plain merge key is written as
   `<<`, which reads back as the same merge key. A source that spelled `!!merge` explicitly keeps it.
   Test: `TestReviewN72MergeKeysStayImplicit` (block, flow, explicit tag).
+  **Follow-up (coordinator's .32 fuzz, `FuzzEditScalar` seed `4d82c85ec5bc765e`):** the same
+  resolver gap made a *string* `<<` come out plain, which reads back as a merge key, so editing a
+  value to the text `<<` was refused (safe 400, but a valid edit). This predates the review: the
+  property test below fails identically on the pre-review commit aaaf0fcf, and F3 only touches nodes
+  tagged `!!merge`. Now `Marshal` quotes a plain string `<<`; merge keys stay plain `<<`. Property test
+  `TestReviewN72StringsSurviveMarshal`: about 1,700 strings (YAML 1.1/1.2 special plain scalars,
+  indicators, numbers, timestamps, white space and line separators, every one- and two-character
+  string over a 41-character alphabet) × 5 positions (root, value, key, flow item, flow key) × 4
+  styles must read back as the same string. `<<` was the only failure.
 - **F4 — Low (fixed): comments of removed pairs and alias items moved to the top of the document.**
   On the rewrite path every orphaned note went to the document head. Python's editor put a removed
   `proxy`'s notes before its listener. In the frozen corpora 335 of 11,309 accepted edits moved a
