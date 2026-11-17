@@ -260,6 +260,12 @@ func ListTasks(ctx context.Context) ([]*jsonx.Object, error) {
 	if !Complete() {
 		return nil, ErrIncomplete
 	}
+	return AvailableTasks(ctx)
+}
+
+// AvailableTasks projects receipts for registered task owners. Notifications use
+// this while the full task-page route still waits for every owner to be ported.
+func AvailableTasks(ctx context.Context) ([]*jsonx.Object, error) {
 	repository, err := repo.GetRepository(ctx)
 	if err != nil {
 		return nil, err
@@ -271,7 +277,9 @@ func ListTasks(ctx context.Context) ([]*jsonx.Object, error) {
 	mu.Lock()
 	builders := make([]RowsFunc, 0, len(slotOrder))
 	for _, slot := range slotOrder {
-		builders = append(builders, rows[slot])
+		if build := rows[slot]; build != nil {
+			builders = append(builders, build)
+		}
 	}
 	mu.Unlock()
 	result := []*jsonx.Object{}

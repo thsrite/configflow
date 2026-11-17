@@ -88,7 +88,7 @@ var wirePackages = []func(){
 }
 
 func wireCore() {
-	notifications.SetSources(notifications.Sources{ListTasks: tasks.ListTasks})
+	notifications.SetSources(notifications.Sources{ListTasks: tasks.AvailableTasks})
 	repo.RegisterHooks(repo.Hooks{DefaultServerDomain: defaultServerDomain})
 	// Desensitized export of EasyTier settings (repo cannot import convert).
 	repo.RegisterHooks(repo.Hooks{RedactEasytierSettings: convert.RedactEasyTierSettings})
