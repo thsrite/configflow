@@ -21,6 +21,10 @@ asked in; the maintainer reads Chinese.
   the same copy (e.g. `rt -- …` then `rt --no-sync -- …` while another agent shares the worktree), pin it with
   `RT_HOST=sunbroke@192.168.0.32` (or `.64`). A timing-sensitive failure seen on one host only is re-checked on the
   other before you call it a bug.
+- **Full gate script:** `server/scripts/gate.sh [-p N] [FuzzName:./pkg ...]` runs gofmt+vet, full `-race` and proddiff in
+  parallel, all difftest packages in one `go test`, and the given fuzz targets concurrently (60 s each). Use it for your
+  final hand-back run: `rt -- bash -lc 'server/scripts/gate.sh -p 4 FuzzX:./internal/x'` (`-p 4` on .64). The separate
+  non-race full run is no longer required (the race run executes every test).
 - **Memory:** `.64` has 15 GB (`.32` 31 GB). Several full `-race` runs at once got test binaries OOM-killed on .64
   (2026-11-17: `signal: killed` in convert = OOM, not a test failure — check `sudo dmesg -T | grep -i oom`). On .64
   run full `-race` with `-p=4`; if a package dies with `signal: killed`, re-run it before reporting anything.
