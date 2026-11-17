@@ -67,10 +67,12 @@
 
 ## 已提交的可编译步骤
 
-- e6fcfff4（原763843a0）：绑定核心/Number/原生性质fuzz。
-- a0a86f26（原044fd3b6）：R226与login示范DTO及HTTP单元回归。
-- f18ee230（原ca0e31bb）：HTTP差分/设计说明及局部非有限请求切换约束。
-- 严格JSON比较与最终验收提交待补。
+- d623c7a2（原763843a0）：绑定核心/Number/原生性质fuzz。
+- 6d61b978（原044fd3b6）：R226与login示范DTO及HTTP单元回归。
+- 0a5fee27（原ca0e31bb）：HTTP差分/设计说明及局部非有限请求切换约束。
+- 009d61b6：严格JSON比较/反例及API注释格式。
+- 082bdd6a：受影响core auth旧500预期改为已批准4xx（只改测试）。
+- 834d9745：完整验收记录；交回前另有末尾文档提交。
 
 测试全在rt远端（.64）：
 ```sh
@@ -115,3 +117,22 @@ proddiff：23项self-check PASS，2831 cases / 435 compared，coverage_regressio
 unmapped_routes=0，11项既有差异，最后 `baseline: new=0 stale=0`。正式组合命令 exit0。
 无baseline变更、无未批准的行为变化。API生产迁移仅两个示范，legacy接口/Agent ingestion/
 字符串int词法均按裁定保留到各自后续步骤。
+
+## 最后rebase与整合复验（.32）
+
+最后rebase go=d7c481c7（含期间合入的O3 review/C31 review/R07/A12）；工作区干净。
+N8绑定/示范/差分代码与完整门禁的ab18eb10逐字节一致（git diff这些路径为空），
+只上游httpx.App新增生命周期scope绑定。因此不无故重复完整套件及同一解析器fuzz，
+补跑绑定相关race、真实HTTP差分及全生产快照差分，确认组合：
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'set -euo pipefail; cd server; test -z "$(gofmt -l internal/ tools/)"; go vet ./...; go test -race -count=1 ./internal/httpx/... ./internal/auth/... ./internal/api/auth/... ./internal/api/tasks/...; CONFIGFLOW_DIFF=1 go test -count=1 ./internal/httpx/difftest ./internal/refresh/difftest; cd ..; server/scripts/proddiff.sh'
+```
+退出码0；gofmt/vet静默。race：httpx36.152s、core auth2.191s、api/auth1.299s、tasks2.509s。
+启用差分：httpx1.890s（118向量）、refresh3.989s（含成功保存/文件/数据库验证）。
+proddiff再次23 self-check PASS，2831 cases / 435 compared，coverage_regressions=0、
+unmapped_routes=0，最后 `baseline: new=0 stale=0`。无baseline变更。
+
+设计2.6/5.6/N8-6和协调者Clarified全部对应；API行为差异仅已批准的login 500→4xx及
+两个示范调用方的非法JSON非有限请求拒绝。没有其它API产品迁移；不是所有legacy入口
+已全局拒绝非有限数。A04/A05治理清单及N8-7渐进切换要求已同步。
+最后仅提交验收文档，再执行git rebase go，确认干净；未push，未开子agent。
