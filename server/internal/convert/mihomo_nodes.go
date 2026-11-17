@@ -10,7 +10,6 @@ import (
 	"container/list"
 	"context"
 	"errors"
-	"fmt"
 	"math"
 	"math/big"
 	"sort"
@@ -556,7 +555,7 @@ var (
 	proxyYAMLIndex = map[string]*list.Element{}
 
 	// Parse once through the shared reader policies (a seam for cache tests).
-	safeLoad = func(text string) (*yamlx.Node, error) { return yamlx.Parse([]byte(text)) }
+	parseProxyYAML = func(text string) (*yamlx.Node, error) { return yamlx.Parse([]byte(text)) }
 )
 
 type proxyYAMLEntry struct {
@@ -564,42 +563,19 @@ type proxyYAMLEntry struct {
 	data *jsonx.Object
 }
 
-// sizeOf approximates sys.getsizeof for the cache budget (CPython 3.11 on
-// 64-bit); the budget only decides whether a result is cached.
-func sizeOf(v any) int {
-	switch value := v.(type) {
-	case nil:
-		return 16
-	case bool:
-		return 28
+// proxyValueBytes conservatively accounts for retained Go values. This is a
+// cache admission estimate, never an input limit or a parsing decision.
+func proxyValueBytes(v any) int {
+	switch v := v.(type) {
 	case string:
-		if isASCII(value) {
-			return 49 + len(value)
-		}
-		return 74 + 2*len([]rune(value))
-	case jsonx.Number:
-		if value.IsInt() {
-			return 28
-		}
-		return 24
+		return 16 + len(v)
 	case []any:
-		return 56 + 8*len(value)
+		return 24 + 16*len(v)
 	case *jsonx.Object:
-		n := value.Len()
-		switch {
-		case n == 0:
-			return 64
-		case n <= 5:
-			return 232
-		case n <= 10:
-			return 360
-		case n <= 21:
-			return 640
-		default:
-			return 1176 + 48*(n-42)
-		}
+		return 8 + 32*v.Len()
+	default:
+		return 16
 	}
-	return 0
 }
 
 // cacheableProxyYAML is _cacheable_proxy_yaml: bound ordinary result trees;
@@ -643,7 +619,7 @@ func cacheableProxyYAML(data any) bool {
 			return false
 		}
 		count++
-		size += sizeOf(current.value)
+		size += proxyValueBytes(current.value)
 		if count > proxyYAMLMaxObjects || size > proxyYAMLMaxResultBytes {
 			return false
 		}
@@ -656,7 +632,7 @@ func cacheableProxyYAML(data any) bool {
 // per occurrence or accidentally shared between independent parse calls.
 func loadProxyYAML(text string) (any, error) {
 	if len(text) > proxyYAMLMaxInputBytes {
-		root, err := safeLoad(text)
+		root, err := parseProxyYAML(text)
 		if err != nil {
 			return nil, err
 		}
@@ -670,7 +646,7 @@ func loadProxyYAML(text string) (any, error) {
 		proxyYAMLMu.Unlock()
 		return data.DeepCopy(), nil
 	}
-	root, err := safeLoad(text)
+	root, err := parseProxyYAML(text)
 	if err != nil {
 		proxyYAMLMu.Unlock()
 		return nil, err
@@ -761,7 +737,7 @@ func parseStructured(proxyString string) (*jsonx.Object, error) {
 	}
 	data, err := loadProxyYAML(stripped)
 	if err != nil && !errors.Is(err, yamlx.ErrSyntax) {
-		return nil, fmt.Errorf("%s: %w", msgProxyYAMLInvalid, err)
+		return nil, &ProxyYAMLError{Cause: err}
 	}
 	if err == nil {
 		if object, ok := data.(*jsonx.Object); ok && object != nil && pyTruthy(object.Value("type")) {

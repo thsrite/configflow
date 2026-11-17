@@ -1,0 +1,242 @@
+[
+  {
+    "ID": "6ef3adb8534ac78e5f558039e9fcae85e022f7289e9f75d414405f365d480694",
+    "Category": "5.7 native scalar schema",
+    "Native": "ed1f6ac635a9774ebea64a977c9c0aa45f9421c88324a49a8ddb051b8fbc6ce2"
+  },
+  {
+    "ID": "1592787af14f9a3497d61503ad9978396ab6ad565d180becdb64ca7098b893c7",
+    "Category": "5.7 native scalar schema",
+    "Native": "09cae766e91b35d91bc765ededaca4fe26c4e2e16f4f7e3d3d3cdb2310c88356"
+  },
+  {
+    "ID": "a8f079117f9f262e26fd6c8852ecd5cf4c398624c0a29654ebca72a7ba3da937",
+    "Category": "5.7 native scalar schema",
+    "Native": "6e6136d6bff44f4e47ae2612b62c46d238f1162c7bf47eb45d3bf281484a2026"
+  },
+  {
+    "ID": "d7f647f3c432ef9241fb661f0a622569025287db820ee806ec0c87e02cd83e06",
+    "Category": "5.7 native scalar schema",
+    "Native": "928e7363b69396ee3aee102d709c772e83b6547fb39d13d9b5031f7863317446"
+  },
+  {
+    "ID": "c6508e55d57bb9aa7b4ae75acd985a883e3fc0ce5cd54f1951916278e4c03ca8",
+    "Category": "5.7 native scalar schema",
+    "Native": "8c84b07ee92c41a548dcbba2c3c07884c2b07cfbe4e164ce154e162a3fa22d67"
+  },
+  {
+    "ID": "a3c57530164dc78438776a64cb726b2abfce104cebdf7675fab13b3602f28710",
+    "Category": "5.7 native scalar schema",
+    "Native": "5a2bb1cd7bb99ee98c35ef2c0b6e039707e6f6c428fdcdadbb57faebc29e33dc"
+  },
+  {
+    "ID": "dc7d323885ae4db06e7009e3084e7fdff7022a76a90e643c84464aaa4d8d5205",
+    "Category": "D1 duplicate",
+    "Native": "b8c951cf52c3fd6a0f0ad60e59ecf58cd8cb398c6ef1fe856ef922b0bb55113e"
+  },
+  {
+    "ID": "cea6759d5152339fbb9764b3b1c98c7fbb5fbd36c281f98f6138ddad217527f2",
+    "Category": "5.4 validation policy",
+    "Native": "1101573d049c7ca010b1fa95535e22b4efc8ded69353413a673b4f69b809b792"
+  },
+  {
+    "ID": "956ca13749c76e9f67aa072ac7920e3c722bb31e4a3bb6fa57412cfbe7c135c1",
+    "Category": "5.7 native scalar schema",
+    "Native": "bdda096515a1d34b09bac3632de69575e2f7de4f51dd3f008ea3ac0143068057"
+  },
+  {
+    "ID": "a4f1542448999e5deb5188447c1765bf47ec7160d82fb4a4339237b44dd4a988",
+    "Category": "5.7 native scalar schema",
+    "Native": "ace5d944a869522e995fec465aae6e794c43ffdbf5376ca6ad2e2de0a1bf40f7"
+  },
+  {
+    "ID": "d83d6778bd6255b9608e9b300b4eda6e7fd3a12145d81417f9a53b2120b9ece5",
+    "Category": "5.7 native scalar schema",
+    "Native": "ec22bddf490cb460814ef5d88defe1724a9fc79f61b5da69f51bbea9d24028e4"
+  },
+  {
+    "ID": "b2a582fd380cf70a875db2c07a305907dc2431a3da21fb08f78f2fed09011de9",
+    "Category": "5.7 native scalar schema",
+    "Native": "15cfba9f61aacf0fbc168bce1884744c3463c8f98bc9654eea75984cae716340"
+  },
+  {
+    "ID": "3fd2e3d45ea5308c8d33bd2675f4e37803d82e2b0f47e8cff3ad3ab92140264e",
+    "Category": "alias recursion refusal",
+    "Native": "505d1201c2c05bf48f7fa36fc9a4d47693706eb9eab8ccf31ef2f5f57ac0ee05"
+  },
+  {
+    "ID": "b3c635cc72e7a7a8c90770ea0786a3f45d3e2ca5b45aae8d12b2f3f3d1f19378",
+    "Category": "5.7 native scalar schema",
+    "Native": "75eb11939fcbdf671437d9e5db7788bd0114ebc4898ef944c86ef6c21a93369a"
+  },
+  {
+    "ID": "bdf436547c192bae5a8e7ea0d3e05b5d151c24097808265a0e53f1a0a310dc24",
+    "Category": "5.7 native scalar schema",
+    "Native": "ae8037e499b2d28828aca25ddc086b27d8711857a0dfdf628dcd3e866d182244"
+  },
+  {
+    "ID": "0c91230c459d70e9f81eded5aea70d107c2e3282b70954265a7e7599a2ba2865",
+    "Category": "5.7 native scalar schema",
+    "Native": "eb2fd50f85310a47e4e3c98951033d7076b8e4046d54f11160eae6ddc349d769"
+  },
+  {
+    "ID": "64af1d40a47c73400877c6337e5d1da79dd5334e62ba541ade81300af9ff182e",
+    "Category": "5.7 native scalar schema",
+    "Native": "375d6b8ba90ff4b86fcd087e9380be9b32e6be7e127b8acef2af821753bfbad5"
+  },
+  {
+    "ID": "7291b751448993f196531d1c994dbcb1de358ab154f96133b9817dea634a8645",
+    "Category": "5.7 native scalar schema",
+    "Native": "00218ea6ec7d7acc6f079f2538e91a642aa8606b8d3f2c5f81bea4af913ddafa"
+  },
+  {
+    "ID": "99203105f292c22d12de5656ebb8ed205e452d3a2c12e816203faadefdeb9209",
+    "Category": "5.7 native scalar schema",
+    "Native": "97a8713fbc3c20993de96476f2c53a8e267383b7495a6c9ecaa4e11c0e34b4e2"
+  },
+  {
+    "ID": "1df8c79475bbd1f8a565b98a750a20e3791adb6ab7571d21e9d0d2d306d70ef8",
+    "Category": "5.7 native scalar schema",
+    "Native": "5db0f1859c5e5f425933b261336f6003a6c69cdb015261f55e9f666b321d1571"
+  },
+  {
+    "ID": "7c728500fd948fe2175daab35adffad93fb054fe6a0243db44e91d81421e9fb4",
+    "Category": "5.7 native scalar schema",
+    "Native": "0c0da92b795dcd9aa4d8f320b2355012adbdfb403f0b4ff77aa6744c14987ca2"
+  },
+  {
+    "ID": "8d270e1dcab40f49c945ed6d7df81a9fb2edd90561554835607da4811402ecd0",
+    "Category": "5.7 native scalar schema",
+    "Native": "034328b4e8b2f1073d26c259a4b0ffad70f90cfb84b1d927fb74eaeff946e736"
+  },
+  {
+    "ID": "fef564a0a45c582dd1c31a9c65abea567b9218d9323035c8c30adf8bf9e9ca1c",
+    "Category": "5.7 native scalar schema",
+    "Native": "660b9bd20970b1c03d9a4467b6abef5530eaa15261d3f3660aa4cd110b4eb28b"
+  },
+  {
+    "ID": "165f003e861cf0e5b3d9121a15ccde7bb614f723323dbe7d5d7ad2a1c0a8226e",
+    "Category": "5.7 native scalar schema",
+    "Native": "1ba97f0b723550e0d7831d64adcb62a5a8d1342a25f63265c6a3eab6c8b3dc95"
+  },
+  {
+    "ID": "6aced3a20421c59c926ea68550b871ee089591601ce401be3acecc1f2039d1a7",
+    "Category": "5.7 native scalar schema",
+    "Native": "9ee8c95914a0418abbf99a67eb15106b13e724d0c9a83f60b1d383709cc44873"
+  },
+  {
+    "ID": "1dafa5a61549bb96631885768ae65143c83d6988d9e4f1aa5473af57dcbc4f21",
+    "Category": "5.7 native scalar schema",
+    "Native": "eb25cad67cfb067a93c036c20dbb14e3de0d5ae33df05339156c4540d1ca33cd"
+  },
+  {
+    "ID": "7009f1967727c01c79d8fdb9bf3c27a8a50918dafb73a3806e06affae7b9f1b6",
+    "Category": "5.7 native scalar schema",
+    "Native": "bbc4deff596dad097eeaae755dd505a0d4dd962db13b4b29835aff3829f3d78a"
+  },
+  {
+    "ID": "10abbd8b428555b6cf5f9a184ec4eca42d89cfb7a584d2e34656a39ffe8c6b20",
+    "Category": "5.4 validation policy",
+    "Native": "1101573d049c7ca010b1fa95535e22b4efc8ded69353413a673b4f69b809b792"
+  },
+  {
+    "ID": "f801a8d355bc772c2ad2ad9816913764a8d24068a505549da9efd2b56ae907bf",
+    "Category": "5.4 validation policy",
+    "Native": "1101573d049c7ca010b1fa95535e22b4efc8ded69353413a673b4f69b809b792"
+  },
+  {
+    "ID": "74abe15207006421f44dc571090187e68f0e1ce9cb4fc6f1abae61d8ab7ecc6d",
+    "Category": "5.4 validation policy",
+    "Native": "1101573d049c7ca010b1fa95535e22b4efc8ded69353413a673b4f69b809b792"
+  },
+  {
+    "ID": "651afa1f70ee0ba25e2bb53ce452b6fdbed6e0ef8e47d64b821a48950d59f9e9",
+    "Category": "5.7 native JSON number",
+    "Native": "16e9823a4d89afaf587401b6e8eeed7fdea6259c4186a16901e50226aaa33fd2"
+  },
+  {
+    "ID": "e775372733aea1eb227c0b7354fe5dba682f4fb3e8ac03441b2bc99d2e8cb0b8",
+    "Category": "5.7 native JSON number",
+    "Native": "6de1535766f50ac40ecde7c205ff1d5ed96568047c64901de399ce4371504c3e"
+  },
+  {
+    "ID": "89f4ee6eb34d388dcffaf4d05e1f2187c31a9bb3dc4224d41d27e56269ab1908",
+    "Category": "5.4 validation policy",
+    "Native": "08ca0b858c76dce0f602a0e0ebe196a705cee094f091401d00bb8074b31b9bec"
+  },
+  {
+    "ID": "0d4bf25d25ff2f15c41a07fabcafc2a1cc6661fa4f240d0cc2ad9a833fb43f9d",
+    "Category": "5.4 validation policy",
+    "Native": "08ca0b858c76dce0f602a0e0ebe196a705cee094f091401d00bb8074b31b9bec"
+  },
+  {
+    "ID": "b2bb654d418259ad25144791cd4d7b054736f380cebdd651d89185e74e952a1f",
+    "Category": "5.4 validation policy",
+    "Native": "08ca0b858c76dce0f602a0e0ebe196a705cee094f091401d00bb8074b31b9bec"
+  },
+  {
+    "ID": "036fd2b02c9a350d213230b56b47e879b5b479aedc0485d6b1b00b8b6526b00f",
+    "Category": "5.7 native mapping order",
+    "Native": "05c8cf0c8be212d5e25067b6ec6948fbe80d6eda599e6105b9474414bd58163b"
+  },
+  {
+    "ID": "f37d158c53fbede7afeb82ecde8a96d8e8151ab6d93cc144d36b08d81dd8d4be",
+    "Category": "5.7 native mapping order",
+    "Native": "2871debde4d8ce7e29f1426aa906a78b345908a7496b65fd881241fee0cd1eab"
+  },
+  {
+    "ID": "80cb07edadcb9bf874ab9b7872fb123b77bf33c816c2b9ac4ddb305ec9ea45a5",
+    "Category": "5.7 native scalar schema",
+    "Native": "1c67ac6c33f6425b4a77ef0695d0f3e55a3f2cc183ac7672451a429bc4a6c54b"
+  },
+  {
+    "ID": "4ecb88b8ffb67e979bec5539c1c732577a569cb3ecacf4de80d241df7138b7f9",
+    "Category": "5.7 native scalar schema",
+    "Native": "fa309b95b6e730ff11c1e7c61e56d3320550fb028654e22c52bdb566b88970c9"
+  },
+  {
+    "ID": "c12ef4ea93c289ba5b9c9b4cea4faf6d966746f4e1aa0bc13746649a29b14e21",
+    "Category": "5.7 native scalar schema",
+    "Native": "cab62a140b31cd0da969d1507d60f8c0aee46b370088e9a37ba2185a51ddf2cb"
+  },
+  {
+    "ID": "45200da0e80847c017df4d5250f6c8781566ef5c0a641ac1cad027adc44521d6",
+    "Category": "5.7 native scalar schema",
+    "Native": "1a9e5fe391e49344903f128f7d97b152959727661581b7bd2490d8e3d41ac769"
+  },
+  {
+    "ID": "bc7d7b5d332dc856b2ae15cde7351fa5296254ca6bd12676b78370a6f2b42edc",
+    "Category": "D1 duplicate",
+    "Native": "677614af78530598bc5b204fc4121ef71cd5831f2c798ed214f6d7c6083ff853"
+  },
+  {
+    "ID": "f47ce120e3f72d222d56928f6c9eb627ded933579ec7863c8ed7fe9186f3f50a",
+    "Category": "D1 duplicate",
+    "Native": "677614af78530598bc5b204fc4121ef71cd5831f2c798ed214f6d7c6083ff853"
+  },
+  {
+    "ID": "e98814b884504f6f1089d51d5637f4d4730c3f1f37b30f181fff6ec035ff1d51",
+    "Category": "D1 duplicate",
+    "Native": "677614af78530598bc5b204fc4121ef71cd5831f2c798ed214f6d7c6083ff853"
+  },
+  {
+    "ID": "3fbd468880ee365f073e8c417b22e545028ce4123a57cddda62a5b9207ac1f9e",
+    "Category": "alias recursion refusal",
+    "Native": "2b83286453446241ce4ed06a85e850edbc0589e89c2ca6c98504b895ca3f6f12"
+  },
+  {
+    "ID": "e227df1b9b9fa7b3f77256d9023fc5191c22531390c776e6b5e575007118a722",
+    "Category": "alias recursion refusal",
+    "Native": "2b83286453446241ce4ed06a85e850edbc0589e89c2ca6c98504b895ca3f6f12"
+  },
+  {
+    "ID": "f74441204cbeca0f44eb515768b5b44ffe3a02e9d6e843428c2899d3e38b7f6e",
+    "Category": "alias recursion refusal",
+    "Native": "44252937ea49ffb46fbf6c5a3b538798c23c6308d958672976a00259fbfffcee"
+  },
+  {
+    "ID": "fe56dbd86c0b74ddc81be857c744910190a4412ebbdce8f7b8d93676f5b9d0c4",
+    "Category": "alias recursion refusal",
+    "Native": "82550d166d46db1d2f3c22ebbd88ca01160f2ece95102a00767b0bb3a1660ae3"
+  }
+]

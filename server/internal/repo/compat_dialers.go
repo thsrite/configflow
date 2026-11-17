@@ -183,6 +183,10 @@ func fromConvert(err error) error {
 	if err == nil {
 		return nil
 	}
+	var yamlError *convert.ProxyYAMLError
+	if errors.As(err, &yamlError) {
+		return helperError(ClassValueError, err.Error())
+	}
 	var d *convert.DialerReferenceError
 	if errors.As(err, &d) {
 		return helperError(ClassDialerReference, d.Message)

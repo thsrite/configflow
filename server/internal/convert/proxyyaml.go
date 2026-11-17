@@ -52,6 +52,9 @@ func (c *proxyYAMLValue) value(n *yamlx.Node) (any, error) {
 					name = string(encoded)
 				}
 			}
+			if out.Has(name) {
+				return nil, &proxyYAMLKeyCollision{line: key.Line}
+			}
 			child, err := c.value(value)
 			if err != nil {
 				return nil, err
@@ -86,3 +89,8 @@ func (c *proxyYAMLValue) value(n *yamlx.Node) (any, error) {
 		return nil, errors.New(msgProxyYAMLNode)
 	}
 }
+
+type proxyYAMLKeyCollision struct{ line int }
+
+func (e *proxyYAMLKeyCollision) Error() string { return fmt.Sprintf(msgProxyYAMLKeyCollision, e.line) }
+func (e *proxyYAMLKeyCollision) Unwrap() error { return yamlx.ErrPolicy }

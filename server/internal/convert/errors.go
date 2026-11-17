@@ -2,6 +2,7 @@ package convert
 
 import (
 	"errors"
+	"fmt"
 
 	"configflow/internal/rules"
 	"configflow/internal/subs"
@@ -66,4 +67,19 @@ func fromSubs(err error) error {
 		return dialerError(d.Message)
 	}
 	return pyError("Exception", err.Error())
+}
+
+// ProxyYAMLError is a structured proxy validation failure. The underlying
+// yamlx identity remains available, and API callers can use the existing
+// strategy-validation channel instead of treating malformed YAML as a 500.
+type ProxyYAMLError struct {
+	// Cause is the native reader or proxy-shape validation error.
+	Cause error
+}
+
+func (e *ProxyYAMLError) Error() string { return fmt.Sprintf("%s: %v", msgProxyYAMLInvalid, e.Cause) }
+
+// Unwrap retains both the reader cause and the public validation category.
+func (e *ProxyYAMLError) Unwrap() []error {
+	return []error{e.Cause, &rules.StrategyReferenceError{Message: e.Error()}}
 }

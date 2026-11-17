@@ -37,8 +37,8 @@ func isolateCache(t *testing.T) *int {
 	clearCache()
 	calls := 0
 	var mu sync.Mutex
-	saved := safeLoad
-	safeLoad = func(text string) (*yamlx.Node, error) {
+	saved := parseProxyYAML
+	parseProxyYAML = func(text string) (*yamlx.Node, error) {
 		mu.Lock()
 		calls++
 		mu.Unlock()
@@ -47,7 +47,7 @@ func isolateCache(t *testing.T) *int {
 	savedSize, savedInput, savedResult, savedObjects, savedDepth :=
 		proxyYAMLCacheSize, proxyYAMLMaxInputBytes, proxyYAMLMaxResultBytes, proxyYAMLMaxObjects, proxyYAMLMaxDepth
 	t.Cleanup(func() {
-		safeLoad = saved
+		parseProxyYAML = saved
 		proxyYAMLCacheSize, proxyYAMLMaxInputBytes, proxyYAMLMaxResultBytes, proxyYAMLMaxObjects, proxyYAMLMaxDepth =
 			savedSize, savedInput, savedResult, savedObjects, savedDepth
 		clearCache()
@@ -72,7 +72,10 @@ func TestOldParseSemanticsOnFirstAndRepeatedCalls(t *testing.T) {
 		text := row.args[0].(string)
 		want := compactText(t, row.out)
 		for i := 0; i < 2; i++ {
-			got := parsedProxyForTest(text)
+			got, err := ParseStructuredProxyString(text)
+			if nativeProxyReplay(t, "corpus", row, got, nil, err) {
+				continue
+			}
 			var value any
 			if got != nil {
 				value = pyConv(got)
@@ -138,7 +141,7 @@ func TestFullTextChangeInvalidatesAndLRUEvicts(t *testing.T) {
 
 func TestURIAndValidJSONDoNotTouchYAMLCache(t *testing.T) {
 	isolateCache(t)
-	safeLoad = func(string) (*yamlx.Node, error) { panic("YAML path entered") }
+	parseProxyYAML = func(string) (*yamlx.Node, error) { panic("YAML path entered") }
 	if parsedProxyForTest("ss://sample@proxy.example:443") != nil {
 		t.Fatal("uri")
 	}
@@ -165,7 +168,7 @@ func TestFailedAndNonProxyResultsNotRetained(t *testing.T) {
 func TestLoaderFailureDoesNotPoisonLaterRetry(t *testing.T) {
 	isolateCache(t)
 	calls := 0
-	safeLoad = func(text string) (*yamlx.Node, error) {
+	parseProxyYAML = func(text string) (*yamlx.Node, error) {
 		calls++
 		if calls == 1 {
 			return nil, errors.New("temporary failure")
@@ -227,14 +230,14 @@ func TestResultBudgetsBypassWithoutChangingResults(t *testing.T) {
 		limit *int
 		value int
 		text  string
+		want  any
 	}{
-		{&proxyYAMLMaxResultBytes, 100, "type: ss\ntext: " + strings.Repeat("x", 200)},
-		{&proxyYAMLMaxObjects, 5, "type: ss\nvalues: [a, b, c, d, e, f]"},
-		{&proxyYAMLMaxDepth, 2, "type: ss\nvalues: [[[item]]]"},
+		{&proxyYAMLMaxResultBytes, 100, "type: ss\ntext: " + strings.Repeat("x", 200), jsonx.Obj("type", "ss", "text", strings.Repeat("x", 200))},
+		{&proxyYAMLMaxObjects, 5, "type: ss\nvalues: [a, b, c, d, e, f]", jsonx.Obj("type", "ss", "values", []any{"a", "b", "c", "d", "e", "f"})},
+		{&proxyYAMLMaxDepth, 2, "type: ss\nvalues: [[[item]]]", jsonx.Obj("type", "ss", "values", []any{[]any{[]any{"item"}}})},
 	} {
 		calls := isolateCache(t)
-		v, _ := yamlx.SafeLoad(tc.text)
-		want := compactText(t, v)
+		want := compactText(t, tc.want)
 		*tc.limit = tc.value
 		for i := 0; i < 2; i++ {
 			if got := compactText(t, parsedProxyForTest(tc.text)); got != want {

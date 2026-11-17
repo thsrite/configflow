@@ -234,6 +234,9 @@ func TestReviewC12References(t *testing.T) {
 			continue
 		}
 		result, mutated, err := runReviewRow(row)
+		if nativeProxyReplay(t, "review", row, result, mutated, err) {
+			continue
+		}
 		label := func() string { return row.fn + " " + compactText(t, row.args) }
 		fail := func(format string, args ...any) {
 			failures++

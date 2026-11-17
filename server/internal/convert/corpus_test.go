@@ -375,6 +375,9 @@ func TestCorpus(t *testing.T) {
 	for i, row := range rows {
 		counts[row.fn]++
 		result, mutated, err := runCorpusRow(row)
+		if nativeProxyReplay(t, "corpus", row, result, mutated, err) {
+			continue
+		}
 		label := func() string { return row.fn + " " + compactText(t, row.args) }
 		if row.errClass != "" {
 			if err == nil {

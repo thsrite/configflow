@@ -21,6 +21,7 @@ func TestNativeProxyPolicyErrorsDoNotReachSubStore(t *testing.T) {
 		name, source string
 		kind         error
 	}{
+		{"converted key collision", "type: ss\n1: first\n\"1\": second", yamlx.ErrPolicy},
 		{"duplicate", "type: ss\nport: 80\nport: 443", yamlx.ErrPolicy},
 		{"shape", "type: ss\nx: !!str [x]", yamlx.ErrPolicy},
 		{"merge", "type: ss\n<<: 7", yamlx.ErrPolicy},
@@ -66,4 +67,25 @@ func FuzzStructuredProxyYAML(f *testing.F) {
 		// independently expand aliases and is outside this reader's contract.
 		_, _ = ParseStructuredProxyString(source)
 	})
+}
+
+func TestNativeProxyLinearAlias40PreservesSharing(t *testing.T) {
+	isolateCache(t)
+	var b strings.Builder
+	b.WriteString("type: ss\na0: &a0 {v: example.com}\n")
+	for i := 1; i <= 40; i++ {
+		fmt.Fprintf(&b, "a%d: &a%d {child: *a%d}\n", i, i, i-1)
+	}
+	value, err := ParseStructuredProxyString(b.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 1; i <= 40; i++ {
+		if value.GetObject(fmt.Sprintf("a%d", i)).GetObject("child") != value.GetObject(fmt.Sprintf("a%d", i-1)) {
+			t.Fatalf("alias %d copied or replaced", i)
+		}
+	}
+	if cacheLen() != 0 {
+		t.Fatal("shared containers reached the cache copy path")
+	}
 }

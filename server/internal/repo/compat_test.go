@@ -30,7 +30,11 @@ func compatCall(t *testing.T, fn string, input any) (any, error) {
 	case "raw_dialer":
 		return rawDialer(object)
 	case "parse_proxy_string":
-		if parsed := proxyObjectForTest(input.(string)); parsed != nil {
+		parsed, err := parseStructuredProxyString(input.(string))
+		if err != nil {
+			return nil, fromConvert(err)
+		}
+		if parsed != nil {
 			return goldenDefault(parsed), nil
 		}
 		return nil, nil
@@ -117,6 +121,9 @@ func TestCompatGolden(t *testing.T) {
 		got, err := compatCall(t, fn, input)
 		if after := compatText(t, input); after != before {
 			t.Errorf("%s modified its input %s", label, brief)
+		}
+		if nativeCompatReplay(t, index, record, got, err) {
+			continue
 		}
 		if !record.GetBool("raised") {
 			if err != nil && refusedByNetURL(input) {
@@ -218,32 +225,19 @@ func goldenDefault(v any) any {
 	return v
 }
 
-// A YAML timestamp is a datetime in Python: truthy as a type, not a string
-// as a dialer. The golden writes it as [text], which is what Go returns.
+// Native YAML keeps a timestamp's spelling; cycles are validation errors.
 func TestCompatProxyStringTimestamp(t *testing.T) {
-	parsed := proxyObjectForTest("type: ss\ndialer-proxy: 2024-01-02")
-	if parsed == nil {
-		t.Fatal("not parsed")
+	parsed, err := parseStructuredProxyString("type: ss\ndialer-proxy: 2024-01-02")
+	if err != nil || parsed.GetString("dialer-proxy") != "2024-01-02" {
+		t.Fatalf("%v %v", parsed, err)
 	}
-	if _, isString := parsed.Value("dialer-proxy").(string); isString {
-		t.Fatal("a timestamp must not be a string")
-	}
-	profile := jsonx.Obj("nodes", []any{jsonx.Obj("id", "a", "name", "a", "proxy_string", "type: ss\ndialer-proxy: 2024-01-02")})
-	err := validateDialers(profile)
-	if !isHelperClass(err, ClassDialerReference) || err.Error() != "原始 dialer-proxy 必须是非空名称" {
-		t.Fatalf("got %v", err)
-	}
-	if proxyObjectForTest("type: 2024-13-45") != nil {
-		t.Fatal("an impossible date must make the string unparsable")
-	}
-	// bytes and self-referencing containers are truthy non-strings in Python too
-	for _, text := range []string{"type: !!binary YWJj", "a: &a [*a]\ntype: x", "type: &t [*t]", "type: ss\nself: &s {me: *s}"} {
-		if proxyObjectForTest(text) == nil {
-			t.Errorf("%q: not parsed", text)
+	for _, source := range []string{"a: &a [*a]\ntype: x", "type: &t [*t]", "type: ss\nself: &s {me: *s}"} {
+		if value, err := parseStructuredProxyString(source); value != nil || err == nil {
+			t.Fatalf("cycle: %v %v", value, err)
 		}
-	}
-	if proxyObjectForTest("type: !!binary '***'") != nil {
-		t.Error("invalid base64 must make the string unparsable")
+		if _, err := rawDialer(jsonx.Obj("proxy_string", source)); !IsValueError(err) {
+			t.Fatalf("cycle lost validation channel: %v", err)
+		}
 	}
 }
 
