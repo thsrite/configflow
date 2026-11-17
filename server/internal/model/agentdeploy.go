@@ -14,6 +14,10 @@ type OperationEvent struct {
 // UnmarshalJSON decodes OperationEvent with stored-member preservation and R5 fallback.
 func (r *OperationEvent) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
 
+// Clear drops a declared member (by JSON name) when OperationEvent is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *OperationEvent) Clear(member string) error { return ClearMember(r, &r.raw, member) }
+
 // MarshalJSON preserves unknown and unchanged OperationEvent members.
 func (r OperationEvent) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
@@ -58,6 +62,10 @@ type Deployment struct {
 // UnmarshalJSON decodes Deployment with stored-member preservation and R5 fallback.
 func (r *Deployment) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
 
+// Clear drops a declared member (by JSON name) when Deployment is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *Deployment) Clear(member string) error { return ClearMember(r, &r.raw, member) }
+
 // MarshalJSON preserves unknown and unchanged Deployment members.
 func (r Deployment) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
@@ -73,6 +81,10 @@ type DeploymentDNSCheck struct {
 
 // UnmarshalJSON decodes DeploymentDNSCheck with stored-member preservation and R5 fallback.
 func (r *DeploymentDNSCheck) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
+
+// Clear drops a declared member (by JSON name) when DeploymentDNSCheck is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *DeploymentDNSCheck) Clear(member string) error { return ClearMember(r, &r.raw, member) }
 
 // MarshalJSON preserves unknown and unchanged DeploymentDNSCheck members.
 func (r DeploymentDNSCheck) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
@@ -93,6 +105,10 @@ type PreparedContent struct {
 
 // UnmarshalJSON decodes PreparedContent with stored-member preservation and R5 fallback.
 func (r *PreparedContent) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
+
+// Clear drops a declared member (by JSON name) when PreparedContent is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *PreparedContent) Clear(member string) error { return ClearMember(r, &r.raw, member) }
 
 // MarshalJSON preserves unknown and unchanged PreparedContent members.
 func (r PreparedContent) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
@@ -116,6 +132,10 @@ type AppliedContent struct {
 // UnmarshalJSON decodes AppliedContent with stored-member preservation and R5 fallback.
 func (r *AppliedContent) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
 
+// Clear drops a declared member (by JSON name) when AppliedContent is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *AppliedContent) Clear(member string) error { return ClearMember(r, &r.raw, member) }
+
 // MarshalJSON preserves unknown and unchanged AppliedContent members.
 func (r AppliedContent) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
@@ -137,6 +157,10 @@ type OxiDNSValidationReceipt struct {
 func (r *OxiDNSValidationReceipt) UnmarshalJSON(data []byte) error {
 	return DecodeRecord(data, r, &r.raw)
 }
+
+// Clear drops a declared member (by JSON name) when OxiDNSValidationReceipt is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *OxiDNSValidationReceipt) Clear(member string) error { return ClearMember(r, &r.raw, member) }
 
 // MarshalJSON preserves unknown and unchanged OxiDNSValidationReceipt members.
 func (r OxiDNSValidationReceipt) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
@@ -164,6 +188,10 @@ type AgentUpgrade struct {
 // UnmarshalJSON decodes AgentUpgrade with stored-member preservation and R5 fallback.
 func (r *AgentUpgrade) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
 
+// Clear drops a declared member (by JSON name) when AgentUpgrade is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *AgentUpgrade) Clear(member string) error { return ClearMember(r, &r.raw, member) }
+
 // MarshalJSON preserves unknown and unchanged AgentUpgrade members.
 func (r AgentUpgrade) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
@@ -177,6 +205,10 @@ type UpgradeArtifact struct {
 
 // UnmarshalJSON decodes UpgradeArtifact with stored-member preservation and R5 fallback.
 func (r *UpgradeArtifact) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
+
+// Clear drops a declared member (by JSON name) when UpgradeArtifact is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *UpgradeArtifact) Clear(member string) error { return ClearMember(r, &r.raw, member) }
 
 // MarshalJSON preserves unknown and unchanged UpgradeArtifact members.
 func (r UpgradeArtifact) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
@@ -193,6 +225,10 @@ type IPv6VerificationSettings struct {
 func (r *IPv6VerificationSettings) UnmarshalJSON(data []byte) error {
 	return DecodeRecord(data, r, &r.raw)
 }
+
+// Clear drops a declared member (by JSON name) when IPv6VerificationSettings is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *IPv6VerificationSettings) Clear(member string) error { return ClearMember(r, &r.raw, member) }
 
 // MarshalJSON preserves unknown and unchanged IPv6VerificationSettings members.
 func (r IPv6VerificationSettings) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
@@ -222,6 +258,10 @@ type IPv6Verification struct {
 // UnmarshalJSON decodes IPv6Verification with stored-member preservation and R5 fallback.
 func (r *IPv6Verification) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
 
+// Clear drops a declared member (by JSON name) when IPv6Verification is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *IPv6Verification) Clear(member string) error { return ClearMember(r, &r.raw, member) }
+
 // MarshalJSON preserves unknown and unchanged IPv6Verification members.
 func (r IPv6Verification) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
@@ -242,6 +282,10 @@ func (r *IPv6VerificationCheck) UnmarshalJSON(data []byte) error {
 	return DecodeRecord(data, r, &r.raw)
 }
 
+// Clear drops a declared member (by JSON name) when IPv6VerificationCheck is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *IPv6VerificationCheck) Clear(member string) error { return ClearMember(r, &r.raw, member) }
+
 // MarshalJSON preserves unknown and unchanged IPv6VerificationCheck members.
 func (r IPv6VerificationCheck) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
@@ -258,6 +302,10 @@ type DeploymentFile struct {
 
 // UnmarshalJSON decodes DeploymentFile with stored-member preservation and R5 fallback.
 func (r *DeploymentFile) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
+
+// Clear drops a declared member (by JSON name) when DeploymentFile is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *DeploymentFile) Clear(member string) error { return ClearMember(r, &r.raw, member) }
 
 // MarshalJSON preserves unknown and unchanged DeploymentFile members.
 func (r DeploymentFile) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
@@ -280,6 +328,10 @@ type DeploymentManifest struct {
 // UnmarshalJSON decodes DeploymentManifest with stored-member preservation and R5 fallback.
 func (r *DeploymentManifest) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
 
+// Clear drops a declared member (by JSON name) when DeploymentManifest is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *DeploymentManifest) Clear(member string) error { return ClearMember(r, &r.raw, member) }
+
 // MarshalJSON preserves unknown and unchanged DeploymentManifest members.
 func (r DeploymentManifest) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
@@ -297,6 +349,10 @@ type AgentRuleSyncReceipt struct {
 
 // UnmarshalJSON decodes AgentRuleSyncReceipt with stored-member preservation and R5 fallback.
 func (r *AgentRuleSyncReceipt) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
+
+// Clear drops a declared member (by JSON name) when AgentRuleSyncReceipt is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *AgentRuleSyncReceipt) Clear(member string) error { return ClearMember(r, &r.raw, member) }
 
 // MarshalJSON preserves unknown and unchanged AgentRuleSyncReceipt members.
 func (r AgentRuleSyncReceipt) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }

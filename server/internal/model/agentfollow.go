@@ -19,6 +19,10 @@ type DNSFollowBinding struct {
 // UnmarshalJSON decodes DNSFollowBinding with stored-member preservation and R5 fallback.
 func (r *DNSFollowBinding) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
 
+// Clear drops a declared member (by JSON name) when DNSFollowBinding is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *DNSFollowBinding) Clear(member string) error { return ClearMember(r, &r.raw, member) }
+
 // MarshalJSON preserves unknown and unchanged DNSFollowBinding members.
 func (r DNSFollowBinding) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
@@ -41,6 +45,10 @@ type DNSFollowState struct {
 // UnmarshalJSON decodes DNSFollowState with stored-member preservation and R5 fallback.
 func (r *DNSFollowState) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
 
+// Clear drops a declared member (by JSON name) when DNSFollowState is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *DNSFollowState) Clear(member string) error { return ClearMember(r, &r.raw, member) }
+
 // MarshalJSON preserves unknown and unchanged DNSFollowState members.
 func (r DNSFollowState) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
@@ -57,6 +65,10 @@ type DNSFollowJob struct {
 
 // UnmarshalJSON decodes DNSFollowJob with stored-member preservation and R5 fallback.
 func (r *DNSFollowJob) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
+
+// Clear drops a declared member (by JSON name) when DNSFollowJob is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *DNSFollowJob) Clear(member string) error { return ClearMember(r, &r.raw, member) }
 
 // MarshalJSON preserves unknown and unchanged DNSFollowJob members.
 func (r DNSFollowJob) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }

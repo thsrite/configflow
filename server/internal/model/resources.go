@@ -11,6 +11,10 @@ type ResourceRef struct {
 // UnmarshalJSON decodes ResourceRef with stored-member preservation and R5 fallback.
 func (r *ResourceRef) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
 
+// Clear drops a declared member (by JSON name) when ResourceRef is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *ResourceRef) Clear(member string) error { return ClearMember(r, &r.raw, member) }
+
 // MarshalJSON preserves unknown and unchanged ResourceRef members.
 func (r ResourceRef) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
@@ -28,6 +32,10 @@ type ProviderHealthCheck struct {
 
 // UnmarshalJSON decodes ProviderHealthCheck with stored-member preservation and R5 fallback.
 func (r *ProviderHealthCheck) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
+
+// Clear drops a declared member (by JSON name) when ProviderHealthCheck is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *ProviderHealthCheck) Clear(member string) error { return ClearMember(r, &r.raw, member) }
 
 // MarshalJSON preserves unknown and unchanged ProviderHealthCheck members.
 func (r ProviderHealthCheck) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
@@ -54,6 +62,10 @@ type Node struct {
 // UnmarshalJSON decodes Node with stored-member preservation and R5 fallback.
 func (r *Node) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
 
+// Clear drops a declared member (by JSON name) when Node is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *Node) Clear(member string) error { return ClearMember(r, &r.raw, member) }
+
 // MarshalJSON preserves unknown and unchanged Node members.
 func (r Node) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
@@ -75,6 +87,10 @@ type Subscription struct {
 
 // UnmarshalJSON decodes Subscription with stored-member preservation and R5 fallback.
 func (r *Subscription) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
+
+// Clear drops a declared member (by JSON name) when Subscription is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *Subscription) Clear(member string) error { return ClearMember(r, &r.raw, member) }
 
 // MarshalJSON preserves unknown and unchanged Subscription members.
 func (r Subscription) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
@@ -99,6 +115,10 @@ type Aggregation struct {
 // UnmarshalJSON decodes Aggregation with stored-member preservation and R5 fallback.
 func (r *Aggregation) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
 
+// Clear drops a declared member (by JSON name) when Aggregation is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *Aggregation) Clear(member string) error { return ClearMember(r, &r.raw, member) }
+
 // MarshalJSON preserves unknown and unchanged Aggregation members.
 func (r Aggregation) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
@@ -119,6 +139,10 @@ type RuleLibraryItem struct {
 
 // UnmarshalJSON decodes RuleLibraryItem with stored-member preservation and R5 fallback.
 func (r *RuleLibraryItem) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
+
+// Clear drops a declared member (by JSON name) when RuleLibraryItem is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *RuleLibraryItem) Clear(member string) error { return ClearMember(r, &r.raw, member) }
 
 // MarshalJSON preserves unknown and unchanged RuleLibraryItem members.
 func (r RuleLibraryItem) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }

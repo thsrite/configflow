@@ -11,6 +11,10 @@ type ProxyChain struct {
 // UnmarshalJSON decodes ProxyChain with stored-member preservation and R5 fallback.
 func (r *ProxyChain) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
 
+// Clear drops a declared member (by JSON name) when ProxyChain is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *ProxyChain) Clear(member string) error { return ClearMember(r, &r.raw, member) }
+
 // MarshalJSON preserves unknown and unchanged ProxyChain members.
 func (r ProxyChain) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
@@ -62,6 +66,10 @@ type ProxyGroup struct {
 // UnmarshalJSON decodes ProxyGroup with stored-member preservation and R5 fallback.
 func (r *ProxyGroup) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
 
+// Clear drops a declared member (by JSON name) when ProxyGroup is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *ProxyGroup) Clear(member string) error { return ClearMember(r, &r.raw, member) }
+
 // MarshalJSON preserves unknown and unchanged ProxyGroup members.
 func (r ProxyGroup) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
@@ -99,6 +107,10 @@ type RuleConfig struct {
 
 // UnmarshalJSON decodes RuleConfig with stored-member preservation and R5 fallback.
 func (r *RuleConfig) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
+
+// Clear drops a declared member (by JSON name) when RuleConfig is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *RuleConfig) Clear(member string) error { return ClearMember(r, &r.raw, member) }
 
 // MarshalJSON preserves unknown and unchanged RuleConfig members.
 func (r RuleConfig) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }

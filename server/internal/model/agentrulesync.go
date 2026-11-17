@@ -11,6 +11,10 @@ type RuleSyncSettings struct {
 // UnmarshalJSON decodes RuleSyncSettings with stored-member preservation and R5 fallback.
 func (r *RuleSyncSettings) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
 
+// Clear drops a declared member (by JSON name) when RuleSyncSettings is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *RuleSyncSettings) Clear(member string) error { return ClearMember(r, &r.raw, member) }
+
 // MarshalJSON preserves unknown and unchanged RuleSyncSettings members.
 func (r RuleSyncSettings) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
@@ -24,6 +28,10 @@ type AgentRuleSync struct {
 
 // UnmarshalJSON decodes AgentRuleSync with stored-member preservation and R5 fallback.
 func (r *AgentRuleSync) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
+
+// Clear drops a declared member (by JSON name) when AgentRuleSync is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *AgentRuleSync) Clear(member string) error { return ClearMember(r, &r.raw, member) }
 
 // MarshalJSON preserves unknown and unchanged AgentRuleSync members.
 func (r AgentRuleSync) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
@@ -45,6 +53,10 @@ type RuleSyncState struct {
 
 // UnmarshalJSON decodes RuleSyncState with stored-member preservation and R5 fallback.
 func (r *RuleSyncState) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
+
+// Clear drops a declared member (by JSON name) when RuleSyncState is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *RuleSyncState) Clear(member string) error { return ClearMember(r, &r.raw, member) }
 
 // MarshalJSON preserves unknown and unchanged RuleSyncState members.
 func (r RuleSyncState) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }

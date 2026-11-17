@@ -10,6 +10,10 @@ type Routers struct {
 // UnmarshalJSON decodes Routers with stored-member preservation and R5 fallback.
 func (r *Routers) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
 
+// Clear drops a declared member (by JSON name) when Routers is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *Routers) Clear(member string) error { return ClearMember(r, &r.raw, member) }
+
 // MarshalJSON preserves unknown and unchanged Routers members.
 func (r Routers) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
@@ -45,6 +49,10 @@ type Router struct {
 // UnmarshalJSON decodes Router with stored-member preservation and R5 fallback.
 func (r *Router) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
 
+// Clear drops a declared member (by JSON name) when Router is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *Router) Clear(member string) error { return ClearMember(r, &r.raw, member) }
+
 // MarshalJSON preserves unknown and unchanged Router members.
 func (r Router) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
@@ -61,6 +69,10 @@ type RouterDNSGuard struct {
 // UnmarshalJSON decodes RouterDNSGuard with stored-member preservation and R5 fallback.
 func (r *RouterDNSGuard) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
 
+// Clear drops a declared member (by JSON name) when RouterDNSGuard is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *RouterDNSGuard) Clear(member string) error { return ClearMember(r, &r.raw, member) }
+
 // MarshalJSON preserves unknown and unchanged RouterDNSGuard members.
 func (r RouterDNSGuard) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
@@ -73,6 +85,10 @@ type RouterPDGuard struct {
 
 // UnmarshalJSON decodes RouterPDGuard with stored-member preservation and R5 fallback.
 func (r *RouterPDGuard) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
+
+// Clear drops a declared member (by JSON name) when RouterPDGuard is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *RouterPDGuard) Clear(member string) error { return ClearMember(r, &r.raw, member) }
 
 // MarshalJSON preserves unknown and unchanged RouterPDGuard members.
 func (r RouterPDGuard) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
@@ -93,6 +109,10 @@ type RouterProbe struct {
 // UnmarshalJSON decodes RouterProbe with stored-member preservation and R5 fallback.
 func (r *RouterProbe) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
 
+// Clear drops a declared member (by JSON name) when RouterProbe is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *RouterProbe) Clear(member string) error { return ClearMember(r, &r.raw, member) }
+
 // MarshalJSON preserves unknown and unchanged RouterProbe members.
 func (r RouterProbe) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
@@ -109,6 +129,10 @@ type RouterRelease struct {
 
 // UnmarshalJSON decodes RouterRelease with stored-member preservation and R5 fallback.
 func (r *RouterRelease) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
+
+// Clear drops a declared member (by JSON name) when RouterRelease is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *RouterRelease) Clear(member string) error { return ClearMember(r, &r.raw, member) }
 
 // MarshalJSON preserves unknown and unchanged RouterRelease members.
 func (r RouterRelease) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }

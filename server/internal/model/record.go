@@ -14,10 +14,14 @@ type rawMember struct {
 	jsonMember
 	baseline       []byte
 	known, invalid bool
+	// cleared records ClearMember: written only if the field is non-zero.
+	cleared bool
 }
 
 // Raw is immutable record provenance: original bytes, order, typed baselines
-// and invalid-field diagnostics. Copying a record may safely share its Raw.
+// and invalid-field diagnostics. Copying a record may safely share its Raw:
+// nothing it references is modified in place (ClearMember gives the record
+// a new member list).
 type Raw struct {
 	typ     reflect.Type
 	source  jsonObject
@@ -190,6 +194,47 @@ func DecodeRecord(data []byte, rec any, raw *Raw) error {
 	return nil
 }
 
+// ClearMember records the explicit intent to drop a declared member of rec
+// (its JSON name) and sets the field to its zero value: Python's pop. Assigning a Go zero value or nil cannot
+// express it (design n7-n8 2.3, Clarified in N8-4f): an unchanged stored null
+// stays null under R2 and a wrong-typed member keeps its bytes under R5. After
+// ClearMember the member is omitted when rec is written while the field still
+// holds its zero value; a non-zero value assigned later is written in the
+// member's stored position (replace). The member's FieldIssues are dropped. A member
+// that is not stored needs no clearing. Opaque members use Fields.Delete.
+// Copies of rec made earlier are not affected.
+func ClearMember(rec any, raw *Raw, member string) error {
+	value, schema, err := recordValue(rec)
+	if err != nil {
+		return err
+	}
+	if err := ownRaw(value, schema, raw); err != nil {
+		return err
+	}
+	field, known := schema.byName[member]
+	if !known {
+		return fmt.Errorf("%w: clear of an undeclared member %q", ErrType, member)
+	}
+	value.Field(field.index).SetZero()
+	for index := range raw.members {
+		if raw.members[index].name != member {
+			continue
+		}
+		members := slices.Clone(raw.members)
+		members[index].cleared = true
+		raw.members = members
+		issues := make([]FieldIssue, 0, len(raw.issues))
+		for _, issue := range raw.issues {
+			if issue.Path != member {
+				issues = append(issues, issue)
+			}
+		}
+		raw.issues = issues
+		return nil
+	}
+	return nil
+}
+
 // EncodeRecord preserves existing member positions and original bytes whenever
 // their typed value is unchanged. Existing non-pointer zero values stay present;
 // changed pointers set to nil are removed. New non-zero fields append in struct
@@ -220,11 +265,14 @@ func EncodeRecord(rec any, raw *Raw) ([]byte, error) {
 		member := original.jsonMember
 		if field, known := schema.byName[member.name]; known {
 			current := value.Field(field.index)
+			if original.cleared && isZero(current) {
+				continue
+			}
 			encoded, err := Marshal(current.Interface())
 			if err != nil {
 				return nil, err
 			}
-			unchanged := (original.invalid && isZero(current)) || (!original.invalid && bytes.Equal(encoded, original.baseline))
+			unchanged := !original.cleared && ((original.invalid && isZero(current)) || (!original.invalid && bytes.Equal(encoded, original.baseline)))
 			if !unchanged {
 				if current.Kind() == reflect.Pointer && current.IsNil() {
 					continue

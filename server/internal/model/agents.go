@@ -51,6 +51,10 @@ type Agent struct {
 // UnmarshalJSON decodes Agent with stored-member preservation and R5 fallback.
 func (r *Agent) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
 
+// Clear drops a declared member (by JSON name) when Agent is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *Agent) Clear(member string) error { return ClearMember(r, &r.raw, member) }
+
 // MarshalJSON preserves unknown and unchanged Agent members.
 func (r Agent) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
@@ -68,6 +72,10 @@ type AgentMetrics struct {
 // UnmarshalJSON decodes AgentMetrics with stored-member preservation and R5 fallback.
 func (r *AgentMetrics) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
 
+// Clear drops a declared member (by JSON name) when AgentMetrics is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *AgentMetrics) Clear(member string) error { return ClearMember(r, &r.raw, member) }
+
 // MarshalJSON preserves unknown and unchanged AgentMetrics members.
 func (r AgentMetrics) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
@@ -81,6 +89,10 @@ type AgentCPU struct {
 
 // UnmarshalJSON decodes AgentCPU with stored-member preservation and R5 fallback.
 func (r *AgentCPU) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
+
+// Clear drops a declared member (by JSON name) when AgentCPU is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *AgentCPU) Clear(member string) error { return ClearMember(r, &r.raw, member) }
 
 // MarshalJSON preserves unknown and unchanged AgentCPU members.
 func (r AgentCPU) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
@@ -98,6 +110,10 @@ type AgentMemory struct {
 // UnmarshalJSON decodes AgentMemory with stored-member preservation and R5 fallback.
 func (r *AgentMemory) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
 
+// Clear drops a declared member (by JSON name) when AgentMemory is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *AgentMemory) Clear(member string) error { return ClearMember(r, &r.raw, member) }
+
 // MarshalJSON preserves unknown and unchanged AgentMemory members.
 func (r AgentMemory) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
@@ -113,6 +129,10 @@ type AgentDisk struct {
 
 // UnmarshalJSON decodes AgentDisk with stored-member preservation and R5 fallback.
 func (r *AgentDisk) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
+
+// Clear drops a declared member (by JSON name) when AgentDisk is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *AgentDisk) Clear(member string) error { return ClearMember(r, &r.raw, member) }
 
 // MarshalJSON preserves unknown and unchanged AgentDisk members.
 func (r AgentDisk) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
@@ -130,6 +150,10 @@ type AgentNetwork struct {
 // UnmarshalJSON decodes AgentNetwork with stored-member preservation and R5 fallback.
 func (r *AgentNetwork) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
 
+// Clear drops a declared member (by JSON name) when AgentNetwork is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *AgentNetwork) Clear(member string) error { return ClearMember(r, &r.raw, member) }
+
 // MarshalJSON preserves unknown and unchanged AgentNetwork members.
 func (r AgentNetwork) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
@@ -146,6 +170,10 @@ type LegacyDNSEndpoint struct {
 
 // UnmarshalJSON decodes LegacyDNSEndpoint with stored-member preservation and R5 fallback.
 func (r *LegacyDNSEndpoint) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
+
+// Clear drops a declared member (by JSON name) when LegacyDNSEndpoint is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *LegacyDNSEndpoint) Clear(member string) error { return ClearMember(r, &r.raw, member) }
 
 // MarshalJSON preserves unknown and unchanged LegacyDNSEndpoint members.
 func (r LegacyDNSEndpoint) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }

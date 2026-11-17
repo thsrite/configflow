@@ -21,6 +21,10 @@ func (r *RouterRuleSyncReceipt) UnmarshalJSON(data []byte) error {
 	return DecodeRecord(data, r, &r.raw)
 }
 
+// Clear drops a declared member (by JSON name) when RouterRuleSyncReceipt is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *RouterRuleSyncReceipt) Clear(member string) error { return ClearMember(r, &r.raw, member) }
+
 // MarshalJSON preserves unknown and unchanged RouterRuleSyncReceipt members.
 func (r RouterRuleSyncReceipt) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
@@ -34,6 +38,10 @@ type RouterSyncLog struct {
 
 // UnmarshalJSON decodes RouterSyncLog with stored-member preservation and R5 fallback.
 func (r *RouterSyncLog) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
+
+// Clear drops a declared member (by JSON name) when RouterSyncLog is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *RouterSyncLog) Clear(member string) error { return ClearMember(r, &r.raw, member) }
 
 // MarshalJSON preserves unknown and unchanged RouterSyncLog members.
 func (r RouterSyncLog) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
@@ -58,6 +66,10 @@ type RouterSyncRule struct {
 // UnmarshalJSON decodes RouterSyncRule with stored-member preservation and R5 fallback.
 func (r *RouterSyncRule) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
 
+// Clear drops a declared member (by JSON name) when RouterSyncRule is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *RouterSyncRule) Clear(member string) error { return ClearMember(r, &r.raw, member) }
+
 // MarshalJSON preserves unknown and unchanged RouterSyncRule members.
 func (r RouterSyncRule) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
@@ -78,6 +90,10 @@ func (r *RouterRuleSyncBaseline) UnmarshalJSON(data []byte) error {
 	return DecodeRecord(data, r, &r.raw)
 }
 
+// Clear drops a declared member (by JSON name) when RouterRuleSyncBaseline is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *RouterRuleSyncBaseline) Clear(member string) error { return ClearMember(r, &r.raw, member) }
+
 // MarshalJSON preserves unknown and unchanged RouterRuleSyncBaseline members.
 func (r RouterRuleSyncBaseline) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
@@ -96,6 +112,10 @@ type RouterSyncDesired struct {
 // UnmarshalJSON decodes RouterSyncDesired with stored-member preservation and R5 fallback.
 func (r *RouterSyncDesired) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
 
+// Clear drops a declared member (by JSON name) when RouterSyncDesired is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *RouterSyncDesired) Clear(member string) error { return ClearMember(r, &r.raw, member) }
+
 // MarshalJSON preserves unknown and unchanged RouterSyncDesired members.
 func (r RouterSyncDesired) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
@@ -110,6 +130,10 @@ type RouterCIDR struct {
 // UnmarshalJSON decodes RouterCIDR with stored-member preservation and R5 fallback.
 func (r *RouterCIDR) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
 
+// Clear drops a declared member (by JSON name) when RouterCIDR is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *RouterCIDR) Clear(member string) error { return ClearMember(r, &r.raw, member) }
+
 // MarshalJSON preserves unknown and unchanged RouterCIDR members.
 func (r RouterCIDR) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
@@ -123,6 +147,10 @@ type RouterSyncNAT struct {
 
 // UnmarshalJSON decodes RouterSyncNAT with stored-member preservation and R5 fallback.
 func (r *RouterSyncNAT) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
+
+// Clear drops a declared member (by JSON name) when RouterSyncNAT is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *RouterSyncNAT) Clear(member string) error { return ClearMember(r, &r.raw, member) }
 
 // MarshalJSON preserves unknown and unchanged RouterSyncNAT members.
 func (r RouterSyncNAT) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }

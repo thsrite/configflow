@@ -39,8 +39,22 @@ type Profile struct {
 // UnmarshalJSON decodes a profile with R1–R9 preservation and type fallback.
 func (p *Profile) UnmarshalJSON(data []byte) error { return DecodeRecord(data, p, &p.raw) }
 
+// Clear drops a declared member (by JSON name) when Profile is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (p *Profile) Clear(member string) error { return ClearMember(p, &p.raw, member) }
+
 // MarshalJSON preserves the profile's unknown and unchanged members.
 func (p Profile) MarshalJSON() ([]byte, error) { return EncodeRecord(&p, &p.raw) }
+
+// Key returns the profile's section key in the stored document: the key it
+// was decoded under while ID is unchanged (even if the stored id member is
+// malformed), otherwise ID.
+func (p *Profile) Key() string {
+	if p.hasOwner && p.ID == p.ownerID {
+		return p.owner
+	}
+	return p.ID
+}
 
 // Shared holds the resources shared by all profiles.
 type Shared struct {
@@ -55,6 +69,10 @@ type Shared struct {
 
 // UnmarshalJSON decodes the shared record with type fallback.
 func (s *Shared) UnmarshalJSON(data []byte) error { return DecodeRecord(data, s, &s.raw) }
+
+// Clear drops a declared member (by JSON name) when Shared is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (s *Shared) Clear(member string) error { return ClearMember(s, &s.raw, member) }
 
 // MarshalJSON preserves unknown and unchanged shared members.
 func (s Shared) MarshalJSON() ([]byte, error) { return EncodeRecord(&s, &s.raw) }
@@ -71,6 +89,10 @@ type System struct {
 
 // UnmarshalJSON decodes the system record with type fallback.
 func (s *System) UnmarshalJSON(data []byte) error { return DecodeRecord(data, s, &s.raw) }
+
+// Clear drops a declared member (by JSON name) when System is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (s *System) Clear(member string) error { return ClearMember(s, &s.raw, member) }
 
 // MarshalJSON preserves unknown and unchanged system members.
 func (s System) MarshalJSON() ([]byte, error) { return EncodeRecord(&s, &s.raw) }
@@ -183,10 +205,7 @@ func (d Document) MarshalJSON() ([]byte, error) {
 			if profile == nil {
 				return nil, fmt.Errorf("%w: nil profile record", ErrType)
 			}
-			owner := profile.ID
-			if profile.hasOwner && profile.ID == profile.ownerID {
-				owner = profile.owner
-			}
+			owner := profile.Key()
 			if seen[owner] {
 				return nil, fmt.Errorf("%w: duplicate profile owner", ErrJSON)
 			}

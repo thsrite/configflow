@@ -24,6 +24,10 @@ type SystemConfig struct {
 // UnmarshalJSON decodes SystemConfig with stored-member preservation and R5 fallback.
 func (r *SystemConfig) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
 
+// Clear drops a declared member (by JSON name) when SystemConfig is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *SystemConfig) Clear(member string) error { return ClearMember(r, &r.raw, member) }
+
 // MarshalJSON preserves unknown and unchanged SystemConfig members.
 func (r SystemConfig) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
@@ -40,6 +44,10 @@ type NodeTestDNSConfig struct {
 // UnmarshalJSON decodes NodeTestDNSConfig with stored-member preservation and R5 fallback.
 func (r *NodeTestDNSConfig) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
 
+// Clear drops a declared member (by JSON name) when NodeTestDNSConfig is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *NodeTestDNSConfig) Clear(member string) error { return ClearMember(r, &r.raw, member) }
+
 // MarshalJSON preserves unknown and unchanged NodeTestDNSConfig members.
 func (r NodeTestDNSConfig) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
@@ -53,6 +61,10 @@ type ManagedDNSBinding struct {
 
 // UnmarshalJSON decodes ManagedDNSBinding with stored-member preservation and R5 fallback.
 func (r *ManagedDNSBinding) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
+
+// Clear drops a declared member (by JSON name) when ManagedDNSBinding is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *ManagedDNSBinding) Clear(member string) error { return ClearMember(r, &r.raw, member) }
 
 // MarshalJSON preserves unknown and unchanged ManagedDNSBinding members.
 func (r ManagedDNSBinding) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
@@ -72,6 +84,10 @@ type Backup struct {
 
 // UnmarshalJSON decodes Backup with stored-member preservation and R5 fallback.
 func (r *Backup) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
+
+// Clear drops a declared member (by JSON name) when Backup is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *Backup) Clear(member string) error { return ClearMember(r, &r.raw, member) }
 
 // MarshalJSON preserves unknown and unchanged Backup members.
 func (r Backup) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }

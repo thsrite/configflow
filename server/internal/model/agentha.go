@@ -17,6 +17,10 @@ type HASettings struct {
 // UnmarshalJSON decodes HASettings with stored-member preservation and R5 fallback.
 func (r *HASettings) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
 
+// Clear drops a declared member (by JSON name) when HASettings is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *HASettings) Clear(member string) error { return ClearMember(r, &r.raw, member) }
+
 // MarshalJSON preserves unknown and unchanged HASettings members.
 func (r HASettings) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
@@ -33,6 +37,10 @@ type HAState struct {
 // UnmarshalJSON decodes HAState with stored-member preservation and R5 fallback.
 func (r *HAState) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
 
+// Clear drops a declared member (by JSON name) when HAState is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *HAState) Clear(member string) error { return ClearMember(r, &r.raw, member) }
+
 // MarshalJSON preserves unknown and unchanged HAState members.
 func (r HAState) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
@@ -48,6 +56,10 @@ type HAMember struct {
 
 // UnmarshalJSON decodes HAMember with stored-member preservation and R5 fallback.
 func (r *HAMember) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
+
+// Clear drops a declared member (by JSON name) when HAMember is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *HAMember) Clear(member string) error { return ClearMember(r, &r.raw, member) }
 
 // MarshalJSON preserves unknown and unchanged HAMember members.
 func (r HAMember) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
@@ -66,6 +78,10 @@ type HAIdentity struct {
 // UnmarshalJSON decodes HAIdentity with stored-member preservation and R5 fallback.
 func (r *HAIdentity) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
 
+// Clear drops a declared member (by JSON name) when HAIdentity is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *HAIdentity) Clear(member string) error { return ClearMember(r, &r.raw, member) }
+
 // MarshalJSON preserves unknown and unchanged HAIdentity members.
 func (r HAIdentity) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
@@ -81,6 +97,10 @@ type HAEnable struct {
 // UnmarshalJSON decodes HAEnable with stored-member preservation and R5 fallback.
 func (r *HAEnable) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
 
+// Clear drops a declared member (by JSON name) when HAEnable is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *HAEnable) Clear(member string) error { return ClearMember(r, &r.raw, member) }
+
 // MarshalJSON preserves unknown and unchanged HAEnable members.
 func (r HAEnable) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
@@ -95,6 +115,10 @@ type HARouter struct {
 
 // UnmarshalJSON decodes HARouter with stored-member preservation and R5 fallback.
 func (r *HARouter) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
+
+// Clear drops a declared member (by JSON name) when HARouter is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *HARouter) Clear(member string) error { return ClearMember(r, &r.raw, member) }
 
 // MarshalJSON preserves unknown and unchanged HARouter members.
 func (r HARouter) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
@@ -116,6 +140,10 @@ type HAHandoff struct {
 // UnmarshalJSON decodes HAHandoff with stored-member preservation and R5 fallback.
 func (r *HAHandoff) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
 
+// Clear drops a declared member (by JSON name) when HAHandoff is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *HAHandoff) Clear(member string) error { return ClearMember(r, &r.raw, member) }
+
 // MarshalJSON preserves unknown and unchanged HAHandoff members.
 func (r HAHandoff) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
@@ -129,6 +157,10 @@ type HAHandoffFailure struct {
 
 // UnmarshalJSON decodes HAHandoffFailure with stored-member preservation and R5 fallback.
 func (r *HAHandoffFailure) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
+
+// Clear drops a declared member (by JSON name) when HAHandoffFailure is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *HAHandoffFailure) Clear(member string) error { return ClearMember(r, &r.raw, member) }
 
 // MarshalJSON preserves unknown and unchanged HAHandoffFailure members.
 func (r HAHandoffFailure) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
@@ -164,6 +196,10 @@ type HAJournal struct {
 // UnmarshalJSON decodes HAJournal with stored-member preservation and R5 fallback.
 func (r *HAJournal) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
 
+// Clear drops a declared member (by JSON name) when HAJournal is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *HAJournal) Clear(member string) error { return ClearMember(r, &r.raw, member) }
+
 // MarshalJSON preserves unknown and unchanged HAJournal members.
 func (r HAJournal) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
@@ -187,6 +223,10 @@ type HAPublicationSummary struct {
 // UnmarshalJSON decodes HAPublicationSummary with stored-member preservation and R5 fallback.
 func (r *HAPublicationSummary) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
 
+// Clear drops a declared member (by JSON name) when HAPublicationSummary is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *HAPublicationSummary) Clear(member string) error { return ClearMember(r, &r.raw, member) }
+
 // MarshalJSON preserves unknown and unchanged HAPublicationSummary members.
 func (r HAPublicationSummary) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
@@ -202,6 +242,10 @@ type HABundle struct {
 
 // UnmarshalJSON decodes HABundle with stored-member preservation and R5 fallback.
 func (r *HABundle) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
+
+// Clear drops a declared member (by JSON name) when HABundle is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *HABundle) Clear(member string) error { return ClearMember(r, &r.raw, member) }
 
 // MarshalJSON preserves unknown and unchanged HABundle members.
 func (r HABundle) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
@@ -220,6 +264,10 @@ type HAPayload struct {
 
 // UnmarshalJSON decodes HAPayload with stored-member preservation and R5 fallback.
 func (r *HAPayload) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
+
+// Clear drops a declared member (by JSON name) when HAPayload is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *HAPayload) Clear(member string) error { return ClearMember(r, &r.raw, member) }
 
 // MarshalJSON preserves unknown and unchanged HAPayload members.
 func (r HAPayload) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
