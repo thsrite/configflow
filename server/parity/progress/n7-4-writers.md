@@ -154,3 +154,21 @@ RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'bash server/scripts/proddiff.sh'
 
 2831 cases / 435 comparisons, all 23 self-checks PASS;
 **new=0 stale=0 coverage_regressions=0**. No baseline changes.
+
+## Remaining non-overlapping test writers
+
+After N7-3b rebase, rulefetch's runtime normalization already uses the verified
+Edit/Marshal path. Its string-payload test helper now marshals a typed record;
+subs listener tests use the existing JSON→Node API then Marshal; refresh's
+synthetic subscription feeds build Nodes and Marshal. No third runtime value
+bridge was introduced. The refresh helper now reports failures through t.Fatal
+instead of panicking.
+
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt --back server/internal/rulefetch/content_test.go --back server/internal/subs/listeners_test.go --back server/internal/refresh/refresh_test.go --back server/internal/refresh/review_c15_test.go --back server/internal/refresh/native_reader_test.go --back server/internal/refresh/routes_test.go -- bash -lc 'cd server && gofmt -w internal/rulefetch/content_test.go internal/subs/listeners_test.go internal/refresh/refresh_test.go internal/refresh/review_c15_test.go internal/refresh/native_reader_test.go internal/refresh/routes_test.go && gofmt -l internal/ tools/ && go vet ./... && go test -count=1 ./internal/rulefetch ./internal/subs ./internal/refresh'
+```
+
+Output: gofmt/vet silent; rulefetch **2.984s**, subs **3.703s**, refresh **11.941s**.
+Remaining refresh runtime writer awaits the shared transition boundary after
+N7-3c integration, alongside mosdns/provider/routersplit/installer and deletion
+of the old yamlx emitter.

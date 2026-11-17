@@ -30,7 +30,7 @@ func TestUnsafeSourceYAMLNeverWritesCaches(t *testing.T) {
 			f := setup(t, jsonx.Int(86400))
 			sub := f.sub()
 			f.cacheSource(0, subURL)
-			good := &substore.SubscriptionResult{Text: proxiesYAML(), Source: "download"}
+			good := &substore.SubscriptionResult{Text: proxiesYAML(t), Source: "download"}
 			if _, err := RememberSourceDownload(f.ctx, sub, good); err != nil {
 				t.Fatal(err)
 			}

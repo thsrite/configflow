@@ -40,12 +40,15 @@ func asRemote(t *testing.T, err error) *RemoteRuleValidationError {
 
 func firstProblem(e *RemoteRuleValidationError) *jsonx.Object { return e.Errors[0].(*jsonx.Object) }
 
-func safeDump(t *testing.T, v any) string {
-	out, err := yamlx.SafeDump(v)
+func rulePayloadYAML(t *testing.T, lines ...string) string {
+	t.Helper()
+	out, err := yamlx.Marshal(struct {
+		Payload []string `yaml:"payload"`
+	}{Payload: lines})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return out
+	return string(out)
 }
 
 func safeLoad(t *testing.T, text string) any {
@@ -79,8 +82,7 @@ func TestValidSourcesPreserveContentAndMetadata(t *testing.T) {
 			if format == "text" {
 				source = "# source\r\n\r\n" + strings.Join(lines, "\r\n") + "\r\n"
 			} else {
-				out, _ := yamlx.Dump(jsonx.Obj("payload", strs(lines)), yamlx.DumpOptions{})
-				source = out
+				source = rulePayloadYAML(t, lines...)
 			}
 			source = "\uFEFF" + source
 			for _, asBytes := range []bool{false, true} {
@@ -753,7 +755,7 @@ func TestRuleSyntaxThroughRulesetContent(t *testing.T) {
 		for _, asYAML := range []bool{false, true} {
 			s := source
 			if asYAML {
-				s = safeDump(t, jsonx.Obj("payload", []any{source}))
+				s = rulePayloadYAML(t, source)
 			}
 			checked, _ := InspectDomainContent(s, "ipcidr", nil)
 			if len(checked.GetList("errors")) == 0 || checked.GetString("content") != s || len(checked.GetList("changes")) != 0 {
@@ -873,7 +875,7 @@ func TestRuleSyntaxThroughRulesetContent(t *testing.T) {
 		for _, asYAML := range []bool{false, true} {
 			s := "DOMAIN-REGEX," + expression
 			if asYAML {
-				s = safeDump(t, jsonx.Obj("payload", []any{s}))
+				s = rulePayloadYAML(t, s)
 			}
 			checked, _ := InspectDomainContent(s, "classical", nil)
 			if len(checked.GetList("errors")) != 0 || len(checked.GetList("warnings")) != 0 || checked.GetString("content") != s || validateContent("classical", s) != nil {

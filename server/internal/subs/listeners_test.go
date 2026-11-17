@@ -1,6 +1,7 @@
 package subs
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -197,11 +198,19 @@ func listenerDocument(t *testing.T, target any) *jsonx.Object {
 		"sub-rules", jsonx.Obj("lan-rules", []any{"MATCH,DIRECT"}),
 		"proxy-groups", []any{jsonx.Obj("name", "Pinned", "type", "select", "proxies", []any{"DIRECT"})})
 	// a YAML round trip, as the converter reads the base config
-	text, err := yamlx.SafeDump(doc)
+	data, err := json.Marshal(doc)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return mustLoad(t, text).(*jsonx.Object)
+	node, err := yamlx.FromJSON(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text, err := yamlx.Marshal(node)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return mustLoad(t, string(text)).(*jsonx.Object)
 }
 
 // The validation part of test_generation_rejects_missing_listener_target_without_dialer_topology.

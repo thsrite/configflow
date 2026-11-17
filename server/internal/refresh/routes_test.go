@@ -60,8 +60,14 @@ func rows(t *testing.T, srv *httpxtest.Server) map[string]*jsonx.Object {
 // test_scheduled_tasks.py::test_run_now_refreshes_in_background_and_rejects_unknown_sources
 func TestRunNowRefreshesInBackgroundAndRejectsUnknownSources(t *testing.T) {
 	srv := server(t)
-	text, _ := yamlx.SafeDump(jsonx.Obj("proxies", []any{jsonx.Obj("name", "Remote", "type", "ss", "server", "example.test",
-		"port", jsonx.Int(443), "cipher", "aes-128-gcm", "password", "p")}))
+	data, err := yamlx.Marshal(yamlx.Map(yamlx.Str("proxies"), yamlx.Seq(yamlx.Map(
+		yamlx.Str("name"), yamlx.Str("Remote"), yamlx.Str("type"), yamlx.Str("ss"),
+		yamlx.Str("server"), yamlx.Str("example.test"), yamlx.Str("port"), yamlx.Int(443),
+		yamlx.Str("cipher"), yamlx.Str("aes-128-gcm"), yamlx.Str("password"), yamlx.Str("p")))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
 	t.Cleanup(refresh.SetEnv(&refresh.Env{Clock: substore.SystemClock, RandomHex: func() string { return "abcdef01" },
 		FetchSubscription: func(context.Context, string, string, substore.FetchOptions) (*substore.SubscriptionResult, error) {
 			return &substore.SubscriptionResult{Text: text, Source: "direct_yaml"}, nil

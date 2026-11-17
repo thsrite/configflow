@@ -17,7 +17,7 @@ import (
 // cancelled context fail at random, so the run is repeated.
 func TestReviewCancelledRequestContextFinishesTheRefresh(t *testing.T) {
 	f := setup(t, jsonx.Int(86400))
-	f.download(proxiesYAML(), "direct_yaml", nil)
+	f.download(proxiesYAML(t), "direct_yaml", nil)
 	for i := 0; i < 20; i++ {
 		ctx, cancel := context.WithCancel(f.ctx)
 		cancel()
@@ -47,7 +47,7 @@ func TestReviewCancelledRequestContextFinishesTheRefresh(t *testing.T) {
 		ctx, cancel := context.WithCancel(f.ctx)
 		cancel()
 		result, err := FetchSubscriptionSource(ctx, f.sub(), func(context.Context, string, string) (*substore.SubscriptionResult, error) {
-			return &substore.SubscriptionResult{Text: proxiesYAML(), Source: "direct_yaml"}, nil
+			return &substore.SubscriptionResult{Text: proxiesYAML(t), Source: "direct_yaml"}, nil
 		})
 		if err != nil {
 			t.Fatalf("round %d: %v", i, err)

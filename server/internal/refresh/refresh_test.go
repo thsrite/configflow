@@ -46,13 +46,16 @@ const (
 	ruleURL = "https://rules.test/list.txt?key=private"
 )
 
-func proxiesYAML() string {
-	text, err := yamlx.SafeDump(jsonx.Obj("proxies", []any{jsonx.Obj("name", "Remote", "type", "ss",
-		"server", "example.test", "port", jsonx.Int(443), "cipher", "aes-128-gcm", "password", "p")}))
+func proxiesYAML(t *testing.T) string {
+	t.Helper()
+	text, err := yamlx.Marshal(yamlx.Map(yamlx.Str("proxies"), yamlx.Seq(yamlx.Map(
+		yamlx.Str("name"), yamlx.Str("Remote"), yamlx.Str("type"), yamlx.Str("ss"),
+		yamlx.Str("server"), yamlx.Str("example.test"), yamlx.Str("port"), yamlx.Int(443),
+		yamlx.Str("cipher"), yamlx.Str("aes-128-gcm"), yamlx.Str("password"), yamlx.Str("p")))))
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
-	return text
+	return string(text)
 }
 
 func ruleDecl() *jsonx.Object {
@@ -205,7 +208,7 @@ func (f *fixture) sub() *jsonx.Object {
 // cacheSource is test_subscription_refresh_policy.cache_source: stored
 // nodes of url whose updated_at is age seconds ago.
 func (f *fixture) cacheSource(age time.Duration, url string) *jsonx.Object {
-	proxies, err := substore.ParseProxiesFromYAML(proxiesYAML())
+	proxies, err := substore.ParseProxiesFromYAML(proxiesYAML(f.t))
 	if err != nil {
 		f.t.Fatal(err)
 	}
@@ -533,7 +536,7 @@ func TestExpiredCacheIsServedAndTheScheduledTaskRefreshesIt(t *testing.T) {
 	if err != nil || result.Source != "cache" || !jsonx.Equal(f.cache(), before) {
 		t.Fatal(result, err)
 	}
-	f.download(proxiesYAML(), "direct_yaml", nil)
+	f.download(proxiesYAML(t), "direct_yaml", nil)
 	f.clock.advance(time.Second)
 	if n, err := RunRound(f.ctx, nil); n != 1 || err != nil {
 		t.Fatal(n, err)
@@ -583,7 +586,7 @@ func TestDryPreviewsShareDownloadAcrossRestartWithoutChangingValidatedNodes(t *t
 	calls := 0
 	fetch := func(context.Context, string, string) (*substore.SubscriptionResult, error) {
 		calls++
-		return &substore.SubscriptionResult{Text: proxiesYAML(), Source: "direct_yaml"}, nil
+		return &substore.SubscriptionResult{Text: proxiesYAML(t), Source: "direct_yaml"}, nil
 	}
 	first, err := FetchSubscriptionSource(f.ctx, f.sub(), fetch)
 	if err != nil {
@@ -609,7 +612,7 @@ func TestExpiredDownloadIsRefetchedAndManualModeNeverUsesItWithoutNodes(t *testi
 	calls := 0
 	fetch := func(context.Context, string, string) (*substore.SubscriptionResult, error) {
 		calls++
-		return &substore.SubscriptionResult{Text: proxiesYAML(), Source: "direct_yaml"}, nil
+		return &substore.SubscriptionResult{Text: proxiesYAML(t), Source: "direct_yaml"}, nil
 	}
 	sub := f.sub()
 	if _, err := FetchSubscriptionSource(f.ctx, sub, fetch); err != nil {
@@ -686,7 +689,7 @@ func TestRefreshSubscriptionRecordsHealthAndStatus(t *testing.T) {
 		t.Fatal(jsonx.Repr(health))
 	}
 	f.env.FetchSubscription = func(context.Context, string, string, substore.FetchOptions) (*substore.SubscriptionResult, error) {
-		return &substore.SubscriptionResult{Text: proxiesYAML(), Source: "direct_yaml",
+		return &substore.SubscriptionResult{Text: proxiesYAML(t), Source: "direct_yaml",
 			Traffic: jsonx.Obj("upload", jsonx.Int(1), "total", jsonx.Int(5))}, nil
 	}
 	nodes, result, cache, err := RefreshSubscription(f.ctx, f.sub(), "schedule")
@@ -708,7 +711,7 @@ func TestRefreshSubscriptionRecordsHealthAndStatus(t *testing.T) {
 		t.Fatal(jsonx.Repr(got))
 	}
 	downloaded, err := f.repo.ReadSharedJSON(f.ctx, DownloadCachePath(subURL))
-	if err != nil || downloaded.Value("text") != proxiesYAML() || downloaded.Value("fetched_at") != result.FetchedAt {
+	if err != nil || downloaded.Value("text") != proxiesYAML(t) || downloaded.Value("fetched_at") != result.FetchedAt {
 		t.Fatal(downloaded, err)
 	}
 }
@@ -723,7 +726,7 @@ func TestRunNowClaimsTheTask(t *testing.T) {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		return &substore.SubscriptionResult{Text: proxiesYAML(), Source: "direct_yaml"}, nil
+		return &substore.SubscriptionResult{Text: proxiesYAML(t), Source: "direct_yaml"}, nil
 	}
 	request, cancel := context.WithCancel(f.ctx)
 	defer cancel()
@@ -768,7 +771,7 @@ func waitIdle(t *testing.T, key string) {
 func TestLoopRunsUnderTheInstanceLock(t *testing.T) {
 	f := setup(t, jsonx.Int(60))
 	f.updateShared(func(shared *jsonx.Object) { shared.GetList("rule_library")[0].(*jsonx.Object).Set("enabled", false) })
-	f.download(proxiesYAML(), "direct_yaml", nil)
+	f.download(proxiesYAML(t), "direct_yaml", nil)
 	owner, err := instance.Acquire(context.Background(), f.repo.DataDir())
 	if err != nil {
 		t.Fatal(err)
