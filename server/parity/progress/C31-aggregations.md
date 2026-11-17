@@ -1,6 +1,6 @@
 # C31 — aggregations and device notes
 
-Branch `go-port-c31`, private worktree `go-review-c30`. Final base `go` at `8bf1b189` includes A11, N8-3 and O3-4. Do not touch `go-fix-importer-bounds` or `go-port-a11`. No subagents/pushes. Chinese hand-back.
+Branch `go-port-c31`, private worktree `go-review-c30`. Final base `go` at `6b50151c` includes A11, O3-4 and N8-3 review fixes. Do not touch `go-fix-importer-bounds` or `go-port-a11`. No subagents/pushes. Chinese hand-back.
 
 ## Current state
 
@@ -9,7 +9,7 @@ Branch `go-port-c31`, private worktree `go-review-c30`. Final base `go` at `8bf1
 - Real Flask HTTP response/storage/file comparison covers all methods, errors, auth, HEAD body/no-body, reorder/clone guards, preview/provider formats/filters, source errors and global bundle activation. Real Python dry provider and device-notes comparisons pass. Scalars/unknown protocol fields and full-capacity notes included. Python test mapping is in PROGRESS-config C31.
 - Post-A11 integration, full error diagnostics compare strictly with real deploy.Locations; the old location-only deferral is deleted.
 - Proddiff independently generates all providers: aggregation 2/2 and Agent bundles 3/3, no frozen/partial inputs. Manifest size/hash verified against each side's real bytes before structured main/provider YAML comparison; other artifacts byte-exact. Raised only observed output/route coverage floors; no difference baseline or normalization-rule changes.
-- Complete: final .64 combined gates and final .32 cache differential race pass. Status ported, never self-verified. Full Chinese report and exact commands: C31-HANDOFF.md. Only final docs commit/rebase/clean check remains.
+- Complete: final .64 combined gates and final .32 cache differential race pass. Status ported, never self-verified. Full Chinese report and exact commands: C31-HANDOFF.md. Final docs/rebase/clean check completed; coordinator can independently review and merge.
 
 ## Findings and decisions
 
@@ -34,3 +34,5 @@ Final .64 all green: race (C31 diff 70.150s, repo 102.580s, oxidns 103.729s, pro
 Final rebase brought in O3-4 lifecycle/round changes. Repeating whole vet, all changed-package race, full ordinary suite, all 12 differentials and proddiff against that combined tree on .64 before hand-back. Parser/runtime code in C31 remains unchanged; sustained fuzz evidence above remains applicable.
 
 O3-4 combined tree at 8bf1b189 passes the complete repeat: all relevant race (C31 diff69.600s, repo100.403s, oxidns103.228s, provider176.581s), full suite, every enabled differential and proddiff new=0 stale=0. C31_REBASE_PASS observed. Integration go then received N8-3 review fixes; perform final rebase and storage-composition checks before hand-back.
+
+Final 6b50151c composition gate passed on .64: whole gofmt/vet, all relevant race including model/repo (C31 diff57.662s, repo95.353s, oxidns95.014s, provider173.792s), full ordinary suite, all 12 enabled differentials, proddiff new=0 stale=0. C31_MODEL_PASS observed. Final report C31-HANDOFF.md includes exact commands/results and current commit list. No remaining feature work; ported, pending independent review. No pushes.
