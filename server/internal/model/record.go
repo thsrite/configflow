@@ -56,6 +56,10 @@ func schemaFor(typ reflect.Type) *recordSchema {
 	for i := 0; i < typ.NumField(); i++ {
 		field := typ.Field(i)
 		if field.Type == rawType {
+			if schema.raw >= 0 {
+				schema.err = fmt.Errorf("%w: multiple Raw members", ErrType)
+				break
+			}
 			schema.raw = i
 			continue
 		}
@@ -70,7 +74,19 @@ func schemaFor(typ reflect.Type) *recordSchema {
 			schema.extra = i
 			continue
 		}
-		tag := strings.Split(field.Tag.Get("json"), ",")[0]
+		options := strings.Split(field.Tag.Get("json"), ",")
+		tag := options[0]
+		// R3 decides presence; any other option (",string") would be ignored
+		// silently, so it is a declaration error.
+		for _, option := range options[1:] {
+			if option != "omitempty" && option != "omitzero" {
+				schema.err = fmt.Errorf("%w: unsupported json tag option", ErrType)
+				break
+			}
+		}
+		if schema.err != nil {
+			break
+		}
 		if tag == "-" {
 			continue
 		}
@@ -107,7 +123,22 @@ func recordValue(rec any) (reflect.Value, *recordSchema, error) {
 	if schema.err != nil {
 		return reflect.Value{}, nil, schema.err
 	}
+	if schema.raw < 0 {
+		return reflect.Value{}, nil, fmt.Errorf("%w: record must declare a Raw member", ErrType)
+	}
 	return value, schema, nil
+}
+
+// ownRaw requires the record's own Raw member, so diagnostics stay reachable
+// for DecodeDocument and provenance cannot be borrowed from another value.
+func ownRaw(value reflect.Value, schema *recordSchema, raw *Raw) error {
+	if raw == nil {
+		return fmt.Errorf("%w: missing record provenance", ErrType)
+	}
+	if value.Field(schema.raw).Addr().Pointer() != reflect.ValueOf(raw).Pointer() {
+		return fmt.Errorf("%w: provenance must be the record's own Raw member", ErrType)
+	}
+	return nil
 }
 
 func isZero(value reflect.Value) bool { return !value.IsValid() || value.IsZero() }
@@ -116,11 +147,11 @@ func isZero(value reflect.Value) bool { return !value.IsValid() || value.IsZero(
 // plus FieldIssues; their original bytes remain in Raw. Syntax/shape errors are
 // fatal and leave rec and raw untouched. It performs no logging or I/O.
 func DecodeRecord(data []byte, rec any, raw *Raw) error {
-	if raw == nil {
-		return fmt.Errorf("%w: missing record provenance", ErrType)
-	}
 	destination, schema, err := recordValue(rec)
 	if err != nil {
+		return err
+	}
+	if err := ownRaw(destination, schema, raw); err != nil {
 		return err
 	}
 	source, err := parseObject(data)
@@ -168,8 +199,8 @@ func EncodeRecord(rec any, raw *Raw) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if raw == nil {
-		return nil, fmt.Errorf("%w: missing record provenance", ErrType)
+	if err := ownRaw(value, schema, raw); err != nil {
+		return nil, err
 	}
 	if raw.typ != nil && raw.typ != value.Type() {
 		return nil, fmt.Errorf("%w: record provenance type mismatch", ErrType)

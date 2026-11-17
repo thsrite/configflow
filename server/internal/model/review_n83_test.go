@@ -369,3 +369,48 @@ func TestReviewN83EmptyContainersStayContainers(t *testing.T) {
 		t.Fatalf("nil raw: %s %v", encoded, err)
 	}
 }
+
+// Declaration guards for the N8-4 record types: mistakes that would silently
+// drop R5 diagnostics or tag semantics are refused before any data is read.
+func TestReviewN83RecordDeclarationGuards(t *testing.T) {
+	type twoRaws struct {
+		Name string `json:"name"`
+		raw  Raw
+		also Raw
+	}
+	var two twoRaws
+	if err := DecodeRecord([]byte(`{}`), &two, &two.raw); !errors.Is(err, ErrType) {
+		t.Fatalf("multiple Raw members: %v", err)
+	}
+	type stringOption struct {
+		Count Int `json:"count,string"`
+		raw   Raw
+	}
+	var option stringOption
+	if err := DecodeRecord([]byte(`{"count":"1"}`), &option, &option.raw); !errors.Is(err, ErrType) {
+		t.Fatalf("ignored ,string option: %v", err)
+	}
+	type omit struct {
+		Name string `json:"name,omitempty"`
+		raw  Raw
+	}
+	var omitted omit
+	if err := DecodeRecord([]byte(`{"name":"x"}`), &omitted, &omitted.raw); err != nil || omitted.Name != "x" {
+		t.Fatalf("omitempty: %v", err)
+	}
+	type noRaw struct {
+		Name string `json:"name"`
+	}
+	var external Raw
+	var missing noRaw
+	if err := DecodeRecord([]byte(`{"name":7}`), &missing, &external); !errors.Is(err, ErrType) {
+		t.Fatalf("record without Raw member: %v", err)
+	}
+	var first, second reviewRecord
+	if err := DecodeRecord([]byte(`{"name":7}`), &first, &second.raw); !errors.Is(err, ErrType) {
+		t.Fatalf("borrowed provenance on decode: %v", err)
+	}
+	if _, err := EncodeRecord(&first, &second.raw); !errors.Is(err, ErrType) {
+		t.Fatalf("borrowed provenance on encode: %v", err)
+	}
+}
