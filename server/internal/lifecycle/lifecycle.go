@@ -112,8 +112,10 @@ func Stop(timeout time.Duration) {
 	}
 	done := make(chan struct{})
 	go func() { running.Wait(); close(done) }()
+	stopped := false
 	select {
 	case <-done:
+		stopped = true
 	case <-time.After(time.Until(deadline)):
 		logger.Warning("background loops did not stop in time")
 	}
@@ -128,6 +130,13 @@ func Stop(timeout time.Duration) {
 			}()
 			registered[i].run(ctx)
 		}()
+	}
+	if stopped {
+		// The wait group may be reused only after every previous loop exited.
+		// Keep started true on timeout so a new generation cannot overlap it.
+		mu.Lock()
+		started, cancel, baseCtx = false, nil, nil
+		mu.Unlock()
 	}
 }
 

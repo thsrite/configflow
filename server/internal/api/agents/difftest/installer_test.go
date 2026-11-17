@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/installer"
 	"configflow/internal/jsonx"
 
@@ -67,22 +68,28 @@ func sendInstaller(t *testing.T, base string, r installerRequest, token string) 
 	}
 	defer resp.Body.Close()
 	data, _ := io.ReadAll(resp.Body)
-	return response{resp.StatusCode, resp.Header, data}
+	return response{r.method, resp.StatusCode, resp.Header, data}
 }
 
 var installerHeaders = []string{"Content-Type", "Content-Disposition", "Cache-Control", "X-Content-Type-Options"}
 
 func compareInstaller(py, gor response, mask []string) []string {
 	var diffs []string
+	migrated := httpxtest.MigratedAPIError(py.method, py.status, gor.status, py.header, gor.header, py.body, gor.body)
 	if py.status != gor.status {
 		diffs = append(diffs, fmt.Sprintf("status python %d go %d", py.status, gor.status))
 	}
 	for _, name := range installerHeaders {
+		if migrated && name == "Content-Type" {
+			continue
+		}
 		if a, b := py.header.Get(name), gor.header.Get(name); a != b {
 			diffs = append(diffs, fmt.Sprintf("header %s python %q go %q", name, a, b))
 		}
 	}
-	if strings.HasPrefix(py.header.Get("Content-Type"), "application/json") {
+	if migrated {
+		// Step B #3: exact error-envelope migration only.
+	} else if strings.HasPrefix(py.header.Get("Content-Type"), "application/json") {
 		a, errA := jsonx.Parse(py.body)
 		b, errB := jsonx.Parse(gor.body)
 		if errA != nil || errB != nil || !jsonx.Equal(maskJSON(a, mask), maskJSON(b, mask)) {

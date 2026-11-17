@@ -10,6 +10,7 @@ package difftest
 
 import (
 	"configflow/internal/jsonx"
+	"configflow/internal/httpx/httpxtest"
 	"fmt"
 	"io"
 	"math"
@@ -50,7 +51,7 @@ func sendDownload(t *testing.T, base string, r downloadRequest) response {
 	}
 	defer resp.Body.Close()
 	data, _ := io.ReadAll(resp.Body)
-	return response{resp.StatusCode, resp.Header, data}
+	return response{r.method, resp.StatusCode, resp.Header, data}
 }
 
 func compareDownload(py, gor response) []string {
@@ -60,18 +61,21 @@ func compareDownload(py, gor response) []string {
 	jsonType := strings.HasPrefix(py.header.Get("Content-Type"), "application/json")
 	jsonBody := jsonType && perr == nil && gerr == nil
 	jsonHead := jsonType && len(py.body) == 0 && len(gor.body) == 0
+	migrated := httpxtest.MigratedAPIError(py.method, py.status, gor.status, py.header, gor.header, py.body, gor.body)
 	if py.status != gor.status {
 		diffs = append(diffs, fmt.Sprintf("status python %d go %d", py.status, gor.status))
 	}
 	for _, name := range downloadHeaders {
-		if (jsonBody || jsonHead) && name == "Content-Length" {
+		if ((jsonBody || jsonHead) && name == "Content-Length") || (migrated && (name == "Content-Type" || name == "Content-Length")) {
 			continue
 		}
 		if a, b := py.header.Get(name), gor.header.Get(name); a != b {
 			diffs = append(diffs, fmt.Sprintf("header %s python %q go %q", name, a, b))
 		}
 	}
-	if jsonBody {
+	if migrated {
+		// Step B #3: exact JSON error envelope checked above.
+	} else if jsonBody {
 		if !jsonx.Equal(pv, gv) {
 			diffs = append(diffs, fmt.Sprintf("json python %s go %s", py.body, gor.body))
 		}

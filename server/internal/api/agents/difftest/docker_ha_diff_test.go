@@ -214,7 +214,29 @@ func withPairs(o *jsonx.Object, pairs ...any) *jsonx.Object {
 func compareHA(t *testing.T, name string, py, gor response, same, failed *int, mask ...string) {
 	t.Helper()
 	pyNorm, gorNorm := py, gor
-	pyNorm.body, _ = normalizeHA(py.body)
+	if name == "generate refused [server_url http://[bad]" {
+		p, pe := jsonx.Parse(py.body)
+		g, ge := jsonx.Parse(gor.body)
+		if pe != nil || ge != nil || py.status != 400 || gor.status != 400 {
+			*failed++
+			t.Errorf("invalid IPv6 refusal changed")
+			return
+		}
+		po, pok := p.(*jsonx.Object)
+		goObject, gok := g.(*jsonx.Object)
+		if !pok || !gok || po.GetBool("success") || goObject.GetBool("success") || po.GetString("message") != "Invalid IPv6 URL" || !strings.HasPrefix(goObject.GetString("message"), `parse "http://[bad":`) {
+			*failed++
+			t.Errorf("unexpected IPv6 diagnostics: %s / %s", py.body, gor.body)
+			return
+		}
+		// O12/Step B #12a: urllib and net/url have different English errors.
+		// Only this named input's diagnostic text differs; other fields/headers
+		// are still compared by the normal comparator below.
+		po.Set("message", goObject.GetString("message"))
+		pyNorm.body, _ = jsonx.Response(po)
+		t.Log("EXPECTED invalid IPv6 URL: native net/url diagnostic")
+	}
+	pyNorm.body, _ = normalizeHA(pyNorm.body)
 	gorNorm.body, _ = normalizeHA(gor.body)
 	if diffs := compareInstaller(pyNorm, gorNorm, append([]string{"enrollment_expires_at"}, mask...)); len(diffs) > 0 {
 		*failed++

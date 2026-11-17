@@ -11,6 +11,10 @@ package difftest
 
 import (
 	"bytes"
+	"configflow/internal/auth"
+	"configflow/internal/lifecycle"
+	"configflow/internal/logx"
+	"configflow/internal/server"
 	"context"
 	"fmt"
 	"io"
@@ -28,12 +32,9 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/auth"
+	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/jsonx"
-	"configflow/internal/lifecycle"
-	"configflow/internal/logx"
 	"configflow/internal/repo"
-	"configflow/internal/server"
 )
 
 const (
@@ -267,6 +268,7 @@ type request struct {
 }
 
 type response struct {
+	method string
 	status int
 	header http.Header
 	body   []byte
@@ -303,7 +305,7 @@ func send(t *testing.T, base string, r request, token string, values map[string]
 	}
 	defer resp.Body.Close()
 	data, _ := io.ReadAll(resp.Body)
-	return response{resp.StatusCode, resp.Header, data}
+	return response{r.method, resp.StatusCode, resp.Header, data}
 }
 
 func login(t *testing.T, base string) string {
@@ -365,17 +367,23 @@ func maskPath(value any, parts []string) {
 
 func compare(r request, py, gor response) []string {
 	var diffs []string
+	migrated := httpxtest.MigratedAPIError(r.method, py.status, gor.status, py.header, gor.header, py.body, gor.body)
 	if py.status != gor.status {
 		diffs = append(diffs, fmt.Sprintf("status python %d go %d", py.status, gor.status))
 	}
 	for _, name := range []string{"Content-Type", "Cache-Control", "X-ConfigFlow-Profile"} {
+		if migrated && name == "Content-Type" {
+			continue
+		}
 		if a, b := strings.Join(py.header.Values(name), ","), strings.Join(gor.header.Values(name), ","); a != b {
 			diffs = append(diffs, fmt.Sprintf("header %s python %q go %q", name, a, b))
 		}
 	}
 	pv, perr := jsonx.Parse(py.body)
 	gv, gerr := jsonx.Parse(gor.body)
-	if perr == nil && gerr == nil {
+	if migrated {
+		// Step B #3: the exact error envelope was checked above.
+	} else if perr == nil && gerr == nil {
 		if r.name == "panel NaN reply" && r.method == "GET" && r.path == "/api/agents/gw/mihomo/version" {
 			diffs = append(diffs, compareNonFinitePanel(pv, gv)...)
 		}

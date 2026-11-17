@@ -319,7 +319,20 @@ func TestInstallerFuzzAgainstFlask(t *testing.T) {
 	check := func(kind string, r installerRequest, mask ...string) (response, response) {
 		py, gor := sendInstaller(t, pyBase, r, pyToken), sendInstaller(t, goBase, r, goToken)
 		counts[fmt.Sprintf("%s %d", kind, py.status)]++
-		if diffs := compareInstaller(py, gor, mask); len(diffs) > 0 {
+		diffs := compareInstaller(py, gor, mask)
+		if len(diffs) > 0 && r.method == "GET" && py.status == 200 && gor.status == 200 {
+			if canonical, changed := nativeQueryVariant(r.path); changed {
+				alternative := r
+				alternative.path = canonical
+				expected := sendInstaller(t, pyBase, alternative, pyToken)
+				assertNativeOutputSyntax(t, kind, gor.body)
+				diffs = compareInstaller(expected, gor, mask)
+				if len(diffs) == 0 {
+					counts["EXPECTED native invalid UTF-8 "+kind]++
+				}
+			}
+		}
+		if len(diffs) > 0 {
 			failed++
 			if failed <= 30 {
 				t.Errorf("DIFF %s %s %q:\n  %s", kind, r.path, r.body, strings.Join(diffs, "\n  "))
