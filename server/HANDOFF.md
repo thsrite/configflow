@@ -85,10 +85,11 @@ Chinese error (PyYAML rejects them too; same direction as D1 and N7-2 F6) — im
 **Running agents** (Paseo project prj_b0033e1859522497; worktrees ~/.paseo/worktrees/302rx1dg/<slug>)
 | agent | kind | task | branch |
 |---|---|---|---|
-| 7ea2310a-f0cc-4b00-8c28-f822d575bb57 | Opus | A11 HR review | go-opus-review-a11 |
 | 64c0ec9d-4e6e-4d7b-8e11-8fd4f97b4f3d | Opus | R07 HR review | go-opus-review-r07 |
-| 6e5c7760-36eb-4e1d-a5f0-1c378a081b14 | Codex | O3-3 instance lock/startup/shutdown (+ ResolveDataDir path fix) | go-o3-3 |
-| c5332a35-f886-4d2d-90e2-f48496728a68 | Codex | N8-3 model skeleton + byte-preserving codec (→ Opus review) | go-n8-3 |
+| 38e6f0a7-ac7b-484e-be98-c5e51af310f3 | Opus | N8-3 structural review | go-opus-review-n8-3 |
+| e4c12b68-f030-4c50-8cb2-a7a86b73f6bc | Codex | A12 push diff (non-HR) | go-port-a12 |
+| 6e5c7760-36eb-4e1d-a5f0-1c378a081b14 | Codex | O3-4 loops (Signal.Clear approved) | go-o3-4 |
+| c5332a35-f886-4d2d-90e2-f48496728a68 | Codex | routers black-box Step B (findings → difftest-routers-findings.md) | go-difftest-routers-b |
 | e46d698f-6345-41b9-8a38-06d61b6622d3 | Codex | config black-box Step B (findings file) | go-difftest-config-b |
 | 0d31fb93-a16c-48f8-8e5e-9c2756fb0e6f | Codex | C31 aggregation routes + device notes; register aggregation-provider in proddiff | go-port-c31 |
 | 097eba4e-3a43-4bf8-9920-6e970f43faa7 | Codex | N7-3a subs+substore readers → new yamlx | go-n7-3a |
