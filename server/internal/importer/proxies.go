@@ -50,7 +50,7 @@ func surgeTransport(proxy *Proxy, options map[string]string) {
 				headers[key] = unquote(value)
 			}
 		}
-		if options["obfs-host"] != "" && headers["Host"] == "" {
+		if _, supplied := headers["Host"]; options["obfs-host"] != "" && !supplied {
 			headers["Host"] = options["obfs-host"]
 		}
 		ws := struct {

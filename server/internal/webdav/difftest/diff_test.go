@@ -384,6 +384,12 @@ func firstDifference(a, b any, path string) string {
 	return path
 }
 func (w *world) call(method, path, body string, admin, wait bool) answer {
+	return w.callApproved(method, path, body, admin, wait, nil)
+}
+
+// callApproved compares all effects while spelling out one approved Python bug
+// correction. The callback must assert the original Python value before editing it.
+func (w *world) callApproved(method, path, body string, admin, wait bool, approved func(*answer)) answer {
 	t := w.t
 	t.Helper()
 	headers := map[string]string{}
@@ -417,6 +423,9 @@ func (w *world) call(method, path, body string, admin, wait bool) answer {
 	}
 	if py.Error != "" {
 		t.Fatal(py.Error)
+	}
+	if approved != nil {
+		approved(&py)
 	}
 
 	var value any

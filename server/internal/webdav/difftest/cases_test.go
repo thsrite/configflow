@@ -97,3 +97,36 @@ func TestImportedRetentionFallbackMatchesFlask(t *testing.T) {
 	w.call("GET", "/api/backup/config", "", true, false)
 	w.call("POST", "/api/backup/now", connection, true, false)
 }
+
+func TestApprovedEditorSecurityCorrections(t *testing.T) {
+	t.Run("URL userinfo", func(t *testing.T) {
+		w := newWorld(t)
+		w.call("POST", "/api/backup/config", `{"webdav_url":"https://uri-user:uri-private-secret@example.com/dav/"}`, true, false)
+		w.callApproved("GET", "/api/backup/config", "", true, false, func(py *answer) {
+			body := py.Body.(map[string]any)
+			if body["webdav_url"] != "https://uri-user:uri-private-secret@example.com/dav/" {
+				t.Fatal("Python credential exposure contract changed; revisit approved correction")
+			}
+			body["webdav_url"] = "https://example.com/dav/"
+		})
+	})
+	t.Run("blank password", func(t *testing.T) {
+		w := newWorld(t)
+		w.call("POST", "/api/backup/config", `{"webdav_password":"******"}`, true, false)
+		w.callApproved("POST", "/api/backup/config", `{"webdav_password":""}`, true, false, func(py *answer) {
+			state := py.State.(map[string]any)
+			doc := state["document"].(map[string]any)
+			backup := doc["system"].(map[string]any)["backup"].(map[string]any)
+			if backup["webdav_password"] != "" {
+				t.Fatal("Python blank-password behavior changed; revisit approved correction")
+			}
+			backup["webdav_password"] = "fixture-password"
+		})
+	})
+}
+
+func TestManualRequestOverridesMalformedSavedConnection(t *testing.T) {
+	w := newWorldSaved(t, jsonx.Obj("webdav_username", 42, "webdav_path", 17))
+	body := `{"webdav_url":"<DAV>","webdav_username":"fixture-user","webdav_password":"fixture-password","webdav_path":"one/two"}`
+	w.call("POST", "/api/backup/now", body, true, false)
+}

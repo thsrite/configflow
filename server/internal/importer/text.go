@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -11,14 +12,18 @@ import (
 type warningBucket struct {
 	category string
 	details  []string
+	seen     map[string]struct{}
 }
 type warnings struct{ buckets []warningBucket }
 
 func (w *warnings) add(category, detail string) {
 	for i := range w.buckets {
 		if w.buckets[i].category == category {
-			if detail != "" && !contains(w.buckets[i].details, detail) {
-				w.buckets[i].details = append(w.buckets[i].details, detail)
+			if _, exists := w.buckets[i].seen[detail]; detail != "" && !exists {
+				w.buckets[i].seen[detail] = struct{}{}
+				if len(w.buckets[i].details) < 8 {
+					w.buckets[i].details = append(w.buckets[i].details, detail)
+				}
 			}
 			return
 		}
@@ -27,7 +32,11 @@ func (w *warnings) add(category, detail string) {
 	if detail != "" {
 		details = append(details, detail)
 	}
-	w.buckets = append(w.buckets, warningBucket{category, details})
+	seen := map[string]struct{}{}
+	if detail != "" {
+		seen[detail] = struct{}{}
+	}
+	w.buckets = append(w.buckets, warningBucket{category, details, seen})
 }
 func (w warnings) list() []string {
 	out := []string{}
@@ -35,24 +44,16 @@ func (w warnings) list() []string {
 		line := b.category
 		if len(b.details) > 0 {
 			line += "：" + strings.Join(b.details[:min(8, len(b.details))], "、")
-			if len(b.details) > 8 {
-				line += fmt.Sprintf(msgMore, len(b.details))
+			if len(b.seen) > 8 {
+				line += fmt.Sprintf(msgMore, len(b.seen))
 			}
 		}
 		out = append(out, line)
 	}
 	return out
 }
-func contains(items []string, value string) bool {
-	for _, item := range items {
-		if item == value {
-			return true
-		}
-	}
-	return false
-}
 func appendUnique(items []string, value string) []string {
-	if !contains(items, value) {
+	if !slices.Contains(items, value) {
 		return append(items, value)
 	}
 	return items
@@ -183,20 +184,17 @@ type sections []section
 
 func parseSections(text string) sections {
 	out := sections{}
+	indices := map[string]int{}
 	index := -1
 	for _, raw := range strings.Split(strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\r", "\n"), "\n") {
 		clean := strings.TrimSpace(raw)
 		if strings.HasPrefix(clean, "[") && strings.HasSuffix(clean, "]") && !strings.Contains(clean[1:len(clean)-1], "]") && len(clean) > 2 {
 			name := strings.TrimSpace(clean[1 : len(clean)-1])
-			index = -1
-			for i, s := range out {
-				if s.name == name {
-					index = i
-					break
-				}
-			}
-			if index < 0 {
+			var exists bool
+			index, exists = indices[name]
+			if !exists {
 				index = len(out)
+				indices[name] = index
 				out = append(out, section{name: name})
 			}
 			continue

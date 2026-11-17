@@ -249,7 +249,7 @@ func (c *client) safePath(value string) string {
 				redacted = true
 			}
 		}
-		decoded, err := url.PathUnescape(value)
+		decoded, err := url.QueryUnescape(value)
 		if err != nil {
 			return "[REDACTED]"
 		}

@@ -188,6 +188,20 @@ for value in (9007199254740992, 9007199254740993):
         catalog={'nodes': [{'id': 'existing', 'name': 'Large', 'type': 'http', 'server': 'example.com', 'port': 80,
                             'params': {'opaque': 9007199254740992}, 'enabled': True}]})
 
+# Independent review: explicit empty Host must not be replaced by fallback obfs-host.
+add('review-empty-websocket-host', 'surge', '[Proxy]\nN=vmess,example.com,443,username=id,ws=true,ws-headers="Host:",obfs-host=cdn.example.com\n[Proxy Group]\nPool=select,N\n[Rule]\nFINAL,Pool', catalog={})
+add('review-path-like-names', 'mihomo', """
+proxies: [{name: '../../node', type: http, server: example.com, port: 80}]
+proxy-groups: [{name: Pool, type: select, proxies: ['../../node']}]
+rule-providers:
+  '../../outside': {type: inline, behavior: domain, payload: [example.com]}
+rules: ['RULE-SET,../../outside,Pool', 'MATCH,Pool']
+""", catalog={})
+add('review-unicode-url-ruleset', 'surge', '[Proxy Group]\nPool=select,DIRECT\n[Rule]\nRULE-SET,https://rules.example/%E8%A7%84%E5%88%99.list,Pool\nFINAL,Pool', catalog={})
+add('review-empty-group-value', 'loon', '[Proxy Group]\nEmpty=\nSafe=select,DIRECT\n[Rule]\nFINAL,Safe', catalog={})
+
+add('review-warning-dedup-order-count', 'surge', '[Proxy]\n' + '\n'.join(f'Bad{i}=unsupported,example.com,80' for i in range(64)) + '\nBad0=unsupported,example.com,80\n[Proxy Group]\nPool=select,DIRECT\n[Rule]\nFINAL,Pool', catalog={})
+
 output = Path(__file__).with_name('corpus.jsonl')
 with output.open('w') as stream:
     for row in rows:

@@ -46,11 +46,7 @@ type Snapshot struct {
 type repositorySource struct{ repository *repo.Repository }
 
 func (s repositorySource) Snapshot(ctx context.Context) (Snapshot, error) {
-	document, err := s.repository.ExportAll(context.WithoutCancel(ctx), false)
-	if err != nil {
-		return Snapshot{}, err
-	}
-	data, err := jsonx.Indent2(document)
+	snapshot, document, err := captureDocument(ctx, s.repository)
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -62,16 +58,31 @@ func (s repositorySource) Snapshot(ctx context.Context) (Snapshot, error) {
 	if err := json.Unmarshal(backup, &settings); err != nil {
 		return Snapshot{}, err
 	}
-	return Snapshot{Document: data, Settings: settings, DataDir: s.repository.DataDir(), repository: s.repository}, nil
+	snapshot.Settings = settings
+	return snapshot, nil
 }
 
-// Capture exports the complete configuration for a manual backup.
+func captureDocument(ctx context.Context, r *repo.Repository) (Snapshot, *jsonx.Object, error) {
+	document, err := r.ExportAll(context.WithoutCancel(ctx), false)
+	if err != nil {
+		return Snapshot{}, nil, err
+	}
+	data, err := jsonx.Indent2(document)
+	if err != nil {
+		return Snapshot{}, nil, err
+	}
+	return Snapshot{Document: data, DataDir: r.DataDir(), repository: r}, document, nil
+}
+
+// Capture exports the complete configuration for a manual backup. The caller
+// supplies request settings; unrelated malformed saved settings cannot block it.
 func Capture(ctx context.Context) (Snapshot, error) {
 	r, err := repo.GetRepository(ctx)
 	if err != nil {
 		return Snapshot{}, err
 	}
-	return repositorySource{r}.Snapshot(ctx)
+	snapshot, _, err := captureDocument(ctx, r)
+	return snapshot, err
 }
 
 // Run records one manual or automatic upload in the shared task receipt store.

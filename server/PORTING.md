@@ -375,7 +375,10 @@ proxy chains, commented Mihomo YAML edits (`subs/commented`), listeners, proxy-s
   cross-origin redirects. `Service.Test(ctx, Settings)` checks/creates directories; `Service.Upload`
   takes an in-memory json.RawMessage full export and returns filename/removed count. Each HTTP operation
   has a 30s timeout. `DescribeError` emits only safe categories/status; never echo raw transport errors.
-- `Capture(ctx)` obtains the originating repository's full Snapshot. `Run(ctx, snapshot, automatic)`
+- `Capture(ctx)` obtains the originating repository's full document Snapshot for a manual backup;
+  the caller supplies `snapshot.Settings` from validated request fields. It does not validate ignored
+  saved connection fields. Automatic Source snapshots load their own saved settings.
+  `Run(ctx, snapshot, automatic)`
   uploads and records task receipts/notifications. Its repository association survives request exit.
 - `Wire()` registers ConfigurationCommitted and shutdown handling (already listed by server.NewApp).
   The lazy worker debounces for 1s, retaining only the latest Source reference; snapshots are loaded

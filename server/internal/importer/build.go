@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"reflect"
+	"slices"
 	"strings"
 
 	"configflow/internal/rules"
@@ -55,7 +57,7 @@ func Build(plan *Plan, shared Shared, options BuildOptions) (*Result, error) {
 	result := &Result{Shared: Shared{Subscriptions: []Subscription{}, Nodes: []Node{}, RuleLibrary: []LibraryItem{}}, Profile: Profile{Groups: []ProxyGroup{}, Rules: []RuleConfig{}}}
 	warn := warnings{}
 	for _, bucket := range plan.warnings.buckets {
-		warn.buckets = append(warn.buckets, warningBucket{bucket.category, append([]string{}, bucket.details...)})
+		warn.buckets = append(warn.buckets, warningBucket{bucket.category, append([]string{}, bucket.details...), maps.Clone(bucket.seen)})
 	}
 	defaults := []string{}
 	for _, id := range options.DefaultSubscriptionIDs {
@@ -166,14 +168,14 @@ func Build(plan *Plan, shared Shared, options BuildOptions) (*Result, error) {
 		builtGroups[id] = true
 		out := ProxyGroup{ID: id, Name: group.Name, Type: group.Type, Enabled: true, Subscriptions: []string{}, ManualNodes: []string{}, Aggregations: []string{}, IncludeGroups: []string{}, Order: []OrderItem{}, Extra: group.Extra}
 		addNode := func(id string) {
-			if !contains(out.ManualNodes, id) {
+			if !slices.Contains(out.ManualNodes, id) {
 				out.ManualNodes = append(out.ManualNodes, id)
 				out.Order = append(out.Order, OrderItem{"node", id})
 			}
 		}
 		for _, member := range group.Members {
 			if target, exists := groupIDs[member]; exists && member != group.Name {
-				if !contains(out.IncludeGroups, target) {
+				if !slices.Contains(out.IncludeGroups, target) {
 					out.IncludeGroups = append(out.IncludeGroups, target)
 					out.Order = append(out.Order, OrderItem{"strategy", target})
 				}
