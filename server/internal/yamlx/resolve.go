@@ -5,6 +5,24 @@ import (
 	"strings"
 )
 
+// Legacy loader tags stay with the loader until N7-3d removes it.
+const (
+	tagStr       = "tag:yaml.org,2002:str"
+	tagNull      = "tag:yaml.org,2002:null"
+	tagBool      = "tag:yaml.org,2002:bool"
+	tagInt       = "tag:yaml.org,2002:int"
+	tagFloat     = "tag:yaml.org,2002:float"
+	tagSeq       = "tag:yaml.org,2002:seq"
+	tagMap       = "tag:yaml.org,2002:map"
+	tagBinary    = "tag:yaml.org,2002:binary"
+	tagTimestamp = "tag:yaml.org,2002:timestamp"
+	tagMerge     = "tag:yaml.org,2002:merge"
+	tagValue     = "tag:yaml.org,2002:value"
+	tagSet       = "tag:yaml.org,2002:set"
+	tagOmap      = "tag:yaml.org,2002:omap"
+	tagPairs     = "tag:yaml.org,2002:pairs"
+)
+
 // The implicit scalar resolvers of PyYAML's Resolver (YAML 1.1), in the order
 // PyYAML registers them. A value is tested against the resolvers registered for
 // its first character; the first match decides the tag.

@@ -108,23 +108,6 @@ const (
 	mappingNode
 )
 
-const (
-	tagStr       = "tag:yaml.org,2002:str"
-	tagNull      = "tag:yaml.org,2002:null"
-	tagBool      = "tag:yaml.org,2002:bool"
-	tagInt       = "tag:yaml.org,2002:int"
-	tagFloat     = "tag:yaml.org,2002:float"
-	tagSeq       = "tag:yaml.org,2002:seq"
-	tagMap       = "tag:yaml.org,2002:map"
-	tagBinary    = "tag:yaml.org,2002:binary"
-	tagTimestamp = "tag:yaml.org,2002:timestamp"
-	tagMerge     = "tag:yaml.org,2002:merge"
-	tagValue     = "tag:yaml.org,2002:value"
-	tagSet       = "tag:yaml.org,2002:set"
-	tagOmap      = "tag:yaml.org,2002:omap"
-	tagPairs     = "tag:yaml.org,2002:pairs"
-)
-
 type node struct {
 	kind  nodeKind
 	tag   string

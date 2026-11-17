@@ -172,3 +172,30 @@ Output: gofmt/vet silent; rulefetch **2.984s**, subs **3.703s**, refresh **11.94
 Remaining refresh runtime writer awaits the shared transition boundary after
 N7-3c integration, alongside mosdns/provider/routersplit/installer and deletion
 of the old yamlx emitter.
+
+## Core native writer references prepared
+
+Independent real Python safe_load references cover 1374 old dump values and 21
+shared/flow spec values (1395 total), preserving complete typed physical graphs.
+Native Marshal→Parse→Equal passes every one; sources/digests are checked. This
+prepares the semantic replacement for the old byte option matrix when dump.go/
+emitter.go are deleted. The old byte tests remain until that deletion commit.
+
+The Python graph codec is shared by the core and Mihomo fixture generators;
+refactoring it preserved the entire 5408-line Mihomo raw recording byte-for-byte
+(`cmp` passed). It is fixture tooling, not another runtime value bridge.
+
+`.64` commands:
+
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt --back server/internal/yamlx/testdata/writer_reference.json.gz -- bash -lc 'cd server && ~/cf-test/.venv/bin/python internal/yamlx/testdata/gen_writer_reference.py && ~/cf-test/.venv/bin/python internal/convert/testdata/gen_writer_oracle.py > /tmp/n74-writer-graphs-refactored.jsonl && cmp /tmp/n74-writer-graphs.jsonl /tmp/n74-writer-graphs-refactored.jsonl'
+RT_HOST=sunbroke@192.168.0.64 rt --back server/internal/yamlx/writer_reference_test.go -- bash -lc 'cd server && gofmt -w internal/yamlx/writer_reference_test.go && go test -count=1 ./internal/yamlx -run "^TestNativeWriterPythonReferences$" && go vet ./...'
+```
+
+Output: `{dump:1374,spec:21,rows:1395}`, cmp silent; yamlx **0.159s**, vet silent.
+
+Preparation also moved the legacy tag constants from dump.go to resolve.go,
+where the old loader still needs them until N7-3d. No loader was removed.
+Full convert/yamlx tests after codec sharing passed (10.589s/1.198s);
+subsequent `.64` gofmt/vet and yamlx tests after the constant move were silent/PASS
+(yamlx 1.300s).
