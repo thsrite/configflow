@@ -5,6 +5,7 @@ import (
 	"net/netip"
 	"strings"
 	"testing"
+	"time"
 
 	"configflow/internal/yamlx"
 )
@@ -38,4 +39,24 @@ func FuzzFakeIPYAML(f *testing.F) {
 			t.Fatal("invalid desired prefix")
 		}
 	})
+}
+
+// Plain nesting has no alias limit; test the native limit without extrapolating
+// Python's recursion ceiling. Durations are logged, not compared to wall time.
+func TestN73PlainDepthBoundary(t *testing.T) {
+	for _, depth := range []int{1000, 4000, 10000, 10001} {
+		t.Run(fmt.Sprint(depth), func(t *testing.T) {
+			nested := strings.Repeat("[", depth) + "0" + strings.Repeat("]", depth)
+			started := time.Now()
+			got := FakeIPNetwork("dns: {fake-ip-range: 198.19.0.0/16}\nextra: " + nested).String()
+			want := "198.19.0.0/16"
+			if depth > 10000 {
+				want = "198.18.0.0/16"
+			}
+			if got != want {
+				t.Fatalf("prefix %s want %s", got, want)
+			}
+			t.Logf("depth=%d bytes=%d elapsed=%s", depth, len(nested), time.Since(started))
+		})
+	}
 }
