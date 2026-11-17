@@ -11,9 +11,10 @@ from run import execute, poll, shape
 
 
 class ObservationSide:
-    def __init__(self, status=200, before=None, after=None):
+    def __init__(self, status=200, before=None, after=None, content=None):
         self.observations, self.pending, self.missing_effects, self.requests = {}, {}, [], []
         self.status, self.snapshots = status, 0
+        self.content = content
         self.before = before or {'database': {'fields': {'columns': ['scope', 'owner', 'field', 'position', 'value', 'revision'],
             'rows': []}}, 'files': {}, 'fake': {'ros': {}, 'ikuai': {'static_rt': []}, 'agent': {}, 'transcript': [], 'errors': []}}
         self.after = after or self.before
@@ -27,7 +28,7 @@ class ObservationSide:
 
     def request(self, **values):
         self.requests.append(values)
-        content = {'success': self.status < 400}
+        content = self.content if self.content is not None else {'success': self.status < 400}
         raw = json.dumps(content).encode()
         return {'status': self.status, 'headers': [('Content-Type', 'application/json'), ('Content-Length', str(len(raw)))],
                 'body': base64.b64encode(raw).decode(), 'content': content, 'kind': 'json'}
@@ -39,6 +40,20 @@ def pair(python=None, go=None):
 
 
 class RunnerTests(unittest.TestCase):
+    def test_matching_reference_metadata_crash_is_not_a_pass(self):
+        routes, _ = load()
+        healthy = {'success': True, 'gateways': [{'agent_id': 'm-a', 'state': 'needs_persist', 'forward_filter': None},
+                                                {'agent_id': 'm-b', 'state': 'needs_persist'}]}
+        for status, content, expected in [(500, None, 'different'),
+                (200, {'success': True, 'gateways': [None, None]}, 'different'),
+                (200, healthy, 'reference-bug-observation')]:
+            with self.subTest(status=status, expected=expected):
+                world = pair(ObservationSide(status=500), ObservationSide(status=status, content=content))
+                case = Case('bad-Agent-metadata', 'R025', 'GET', '/api/routers/gateway-forwarding', 500,
+                            python_bug='AGENT_FORWARD_FILTER_UNHASHABLE')
+                result = execute(world, case, {('GET', shape(routes['R025'].path))}, routes)
+                self.assertEqual(result['status'], expected)
+
     def test_go_poll_failure_stays_a_compared_observation(self):
         failed = ObservationSide(status=502)
         response = poll(failed, {'method': 'GET', 'path': '/api/routers/test/rule-sync'}, {'success': True}, 0, strict=False)

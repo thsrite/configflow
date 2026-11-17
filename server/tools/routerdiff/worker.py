@@ -141,8 +141,12 @@ class Worker:
             return self.world.control(**values)
         if operation == 'manifest':
             return (ACTIVE / 'manifest.tsv').read_text() if self.side == 'go' else ''
+        if operation == 'log_position':
+            return (ACTIVE / 'console.log').stat().st_size
         if operation == 'logs':
-            return (ACTIVE / 'console.log').read_text(errors='replace')[-values.get('limit', 4000):]
+            with (ACTIVE / 'console.log').open('rb') as handle:
+                handle.seek(values.get('start', 0))
+                return handle.read().decode(errors='replace')[-values.get('limit', 4000):]
         raise ValueError('unknown RPC operation')
 
     def close(self):

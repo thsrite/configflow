@@ -542,3 +542,30 @@ remaining_audits2301. A separate read-only remote JSON audit of this report:
 `{"auth_off_recipes":198,"auth_off_routes_with_success":26,"missing_success_routes":[]}`.
 The198 auth-off recipes and156 new guards passed; this is a subset run, not the
 full latest composition or final matrix audit. No pending test process.
+
+Forwarding failure/display metadata iteration:
+- Added46 public Agent boundary recipes: HTTP400/409/422/5xx status/code/message
+  mapping,401/403/404, malformed/null/nonobject JSON, lost connection, Unicode
+  diagnostic1000-codepoint limit, supported/blocked/persisted/system-persisted/
+  notice states, bool-vs-string/int-vs-bool, exact512KiB/+1 response limits.
+  Healthy second Agent survives ordinary first-Agent errors. Reads/refused writes
+  assert storage and Agent state unchanged; HTTP headers no-store stay checked.
+- Found a second actual Python bug, medium: unhashable forward_filter state or
+  source kind/remedy source causes uncaught TypeError and whole-list HTML500.
+  Four real HTTP cases and current-request log-offset checks prove the source
+  path; no monkeypatch or private helper. A20/R15 owner, recorded separately in
+  difftest-routers-findings.md. Go domain routes remain unregistered, so no claim
+  that native Go has or fixes it. Same Go500/missing healthy entry will explicitly
+  fail; safe changed outcome is reference-bug-observation for review, never pass.
+  Runner negative checks cover both same-crash false-pass and malformed Go data.
+- Fixed overly verbose integrity failure output: missing matrix IDs now report
+  only that ID, not the entire2301-entry dictionary. Earlier incorrect F labels
+  were caught before any HTTP recipe ran and corrected to reviewed F11/F13.
+- Only difftest/docs changed; no Python or Go implementation repair.
+
+Exact .32 command:
+`RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'set -euo pipefail; cd server/tools/routerdiff; export PYTHONDONTWRITEBYTECODE=1; ~/cf-test/.venv/bin/python -m unittest -v test_recipes test_runner; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary /tmp/routerdiff-build.AybfCK/configflow --world forwarding-failures --output /tmp/routerdiff-forwarding-filter.json --findings /tmp/routerdiff-forwarding-filter-findings.md'`
+→ Ran9 tests in0.624s / OK; reads31, writes44, byte limits46, malformed filter50
+cumulative; go-unimplemented50, referenced_entries7,
+python_bugs=[AGENT_FORWARD_FILTER_UNHASHABLE], complete=false,
+remaining_audits2301. No pending process. Task continues.

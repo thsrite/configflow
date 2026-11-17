@@ -12,6 +12,7 @@ import clients
 import sync
 import upstream
 import dns
+import gateway
 from inventory import load
 
 
@@ -19,7 +20,7 @@ class RecipeTests(unittest.TestCase):
     def test_unique_variants_and_real_design_references(self):
         routes, entries = load()
         seen = set()
-        for module in (cases, guards, workflows, fixtures, probes, releases, clients, sync, upstream, dns):
+        for module in (cases, guards, workflows, fixtures, probes, releases, clients, sync, upstream, dns, gateway):
             for name in module.__dict__:
                 value = getattr(module, name)
                 if not inspect.isgeneratorfunction(value) or getattr(value, '__module__', '') != module.__name__:
@@ -28,9 +29,9 @@ class RecipeTests(unittest.TestCase):
                     with self.subTest(case=case.ident):
                         self.assertFalse(case.ident in seen, 'duplicate recipe: ' + case.ident)
                         seen.add(case.ident)
-                        self.assertIn(case.route, routes)
+                        self.assertTrue(case.route in routes, 'unknown public route ID: ' + case.route)
                         for reference in case.entries:
-                            self.assertIn(reference, entries)
+                            self.assertTrue(reference in entries, 'unknown matrix ID: ' + reference)
 
     def test_response_references_are_side_local(self):
         value = {'revision': cases.Ref('first', '/body/own')}

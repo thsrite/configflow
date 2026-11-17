@@ -19,6 +19,7 @@ import clients
 import sync
 import upstream
 import dns
+import gateway
 from compare import differences, logical_snapshot, response_view, timestamp
 from harness import Pair
 from harness import decode_response
@@ -111,6 +112,7 @@ def execute(pair, case, available, routes):
             blocked_reference = 'Go previous HTTP response lacks a required own-side reference: ' + str(error)
             break
         started = side.pending[case.join]['started'] if case.join else time.time()
+        log_position = side.rpc('log_position') if name == 'python' and case.console_patterns else None
         try:
             response = (decode_response(side.rpc('join', ident=case.join)) if case.join else
                         poll(side, own_request, case.wait_until, case.wait_seconds, strict=name == 'python') if case.wait_until else
@@ -136,6 +138,10 @@ def execute(pair, case, available, routes):
             if response['status'] != case.expected:
                 raise RuntimeError(f'{case.ident}: Python precondition expected {case.expected}, got '
                                    f'{response["status"]}: {response["content"]!r}')
+            if case.console_patterns:
+                output = side.rpc('logs', start=log_position, limit=8192)
+                if not all(re.search(pattern, output) for pattern in case.console_patterns):
+                    raise RuntimeError(case.ident + ': current reference exception does not match its expected source guard')
             actual_headers = {key.lower(): value for key, value in response['headers']}
             for key, expected in case.header_checks.items():
                 if actual_headers.get(key.lower()) != expected:
@@ -259,6 +265,18 @@ def execute(pair, case, available, routes):
             if observations['go']['status'] >= 400 and created:
                 found.append({'path': '/safety/failed-release-created-static-routes', 'python': 'Go failure must compensate cleanly',
                               'go': len(created), 'category': 'safety'})
+        if case.python_bug == 'AGENT_FORWARD_FILTER_UNHASHABLE':
+            body = observations['go']['body']
+            gateways = body.get('gateways') if isinstance(body, dict) else None
+            usable = (observations['go']['status'] == 200 and isinstance(gateways, list) and len(gateways) == 2
+                      and body.get('success') is True and all(isinstance(entry, dict) for entry in gateways)
+                      and gateways[0].get('agent_id') == 'm-a' and gateways[1].get('agent_id') == 'm-b'
+                      and gateways[1].get('state') == 'needs_persist')
+            go_bug_outcome = {'http_status': observations['go']['status'], 'unaffected_gateway_preserved': usable}
+            if not usable:
+                found.append({'path': '/safety/malformed-Agent-metadata-hides-unaffected-gateway',
+                              'python': 'Go must contain one malformed Agent reply and preserve the healthy gateway',
+                              'go': observations['go']['status'], 'category': 'safety'})
     # Auth values are synthetic but reports don't need bearer credentials.
     request['document'] = cases.resolve(case.document, pair.python.observations)
     request['path'] = cases.resolve(case.path, pair.python.observations)
@@ -276,6 +294,8 @@ def execute(pair, case, available, routes):
     if case.python_bug == 'IKUAI_NETMASK_SUFFIX_ROLLBACK':
         python_bug_outcome = {'created_static_rows_remaining': len(snapshots['python']['after']['fake']['ikuai']['static_rt']),
                               'static_rt_after': snapshots['python']['after']['fake']['ikuai']['static_rt']}
+    elif case.python_bug == 'AGENT_FORWARD_FILTER_UNHASHABLE':
+        python_bug_outcome = {'http_status': observations['python']['status'], 'unaffected_gateway_hidden': True}
     return {'case': case.ident, 'route': case.route, 'entries': list(case.entries), 'request': request,
             'status': status,
             'unimplemented_reason': unimplemented_reason if not implemented else None,
@@ -333,27 +353,35 @@ def findings(path, data):
     if not changed:
         lines += ['目前没有已比较的 Go 缺陷结论。Python 参考异常单独记录；“Go 尚未实现”不算差分通过。', '']
     for result in (item for item in data['results'] if item.get('python_bug')):
+        suffix_bug = result['python_bug'] == 'IKUAI_NETMASK_SUFFIX_ROLLBACK'
+        owner = 'R05（iKuai）' if suffix_bug else 'A20（Linux gateway）及 R15（forwarding HTTP）'
+        description = ('默认 fake 保留真实 static_rt netmask 显示后缀。Python 发布返回 502，'
+                       '新增静态路由的回读和补偿均因后缀不匹配失败，设备留下配置。未修改 fake 来掩盖此问题。'
+                       if suffix_bug else
+                       '一个 Agent 的 forward_filter.state/source.kind/remedy.source 返回数组或对象时，'
+                       'Python 用不可哈希值查 frozenset，抛出未捕获 TypeError，整个 GET 返回 HTML 500，'
+                       '另一台健康网关的信息也丢失。应隔离这份不可信报告并保留健康条目。')
         lines += ['## Python bug · medium · ' + result['python_bug'], '',
                   '- 用例：' + result.get('world', '<self-check>') + ':' + result['case'] + '；矩阵：' + ', '.join(result['entries']),
-                  '- 建议负责模块：R05（iKuai）。',
-                  '- 默认 fake 保留真实 static_rt netmask 显示后缀。Python 发布返回 502，',
-                  '  新增静态路由的回读和补偿均因后缀不匹配失败，设备留下配置。未修改 fake 来掩盖此问题。',
+                  '- 建议负责模块：' + owner + '。', '- ' + description,
                   '- 请求：`' + json.dumps(result['request'], ensure_ascii=False) + '`',
                   '- Python：`' + json.dumps(result['python'], ensure_ascii=False) + '`',
                   '- Python 设备终态：`' + json.dumps(result['python_bug_outcome'], ensure_ascii=False) + '`',
-                  '- Go：' + (('Go 尚未实现（公开路由或前序写入依赖未注册，不能通过 HTTP 检查 R05）：`' +
+                  '- Go：' + (('Go 尚未实现（公开路由或前序写入依赖未注册，不能通过 HTTP 检查）：`' +
                               json.dumps(result.get('unimplemented_reason'), ensure_ascii=False) + '`')
                              if result['status'] == 'go-unimplemented' else
                              '前置 Go 响应差异阻止后续请求，未使用 Python 的值代替 Go：`' + str(result['blocked_reference']) + '`'
                              if result['go'] is None else
                              '`' + json.dumps({'response': result['go'], 'outcome': result['go_bug_outcome']}, ensure_ascii=False) + '`'),
-                  '- 普通 netmask 的独立变体覆盖 R011-S02 成功路径；默认后缀变体记录这个 Python bug。',
-                  '- L5 待核：真实固件 static_rt 的 netmask 后缀形态，以及失败后设备补偿是否干净。', '']
+                  *(['- 普通 netmask 的独立变体覆盖 R011-S02 成功路径；默认后缀变体记录这个 Python bug。',
+                     '- L5 待核：真实固件 static_rt 的 netmask 后缀形态，以及失败后设备补偿是否干净。'] if suffix_bug else []), '']
     for index, result in enumerate(changed, 1):
         severity = 'P1' if result['request']['method'] != 'GET' else 'P2'
         owner = 'R17（客户端 HTTP）' if result['route'] in ('R002', 'R003', 'R004', 'R005', 'R006') else 'R15（路由 HTTP）'
         if result.get('python_bug') == 'IKUAI_NETMASK_SUFFIX_ROLLBACK':
             owner = 'R05（iKuai）'
+        elif result.get('python_bug') == 'AGENT_FORWARD_FILTER_UNHASHABLE':
+            owner = 'A20（Linux gateway）及 R15（forwarding HTTP）'
         if result['python']['status'] == 401 and result['go'] and result['go']['status'] < 400:
             severity = 'P1'
         lines += [f'## F{index:03} · {severity} · ' + result.get('world', '<self-check>') + ':' + result['case'], '',
@@ -404,6 +432,8 @@ def main():
               ('unlinked-inspection', options, (workflows.unlinked_inspection,)),
               ('agent-scope', fixtures.agent_options(), (fixtures.agent_scope,)),
               ('forwarding', fixtures.agent_options(), (fixtures.forwarding,)),
+              ('forwarding-failures', fixtures.agent_options(),
+                    (gateway.reads, gateway.writes, gateway.response_limits, gateway.malformed_filter_bug)),
               ('probe-errors', options, (probes.routeros, probes.ikuai)),
               ('probe-tls', probes.tls_options(), (probes.tls,)),
               ('probe-ipv6', probes.ipv6_options(), (probes.ipv6,)),

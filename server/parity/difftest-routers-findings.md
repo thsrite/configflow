@@ -31,3 +31,30 @@ Python 前置条件失败单列为夹具错误，不算 Go 发现；实际比较
 
 后续仍须补齐：其余 H 公开可达性与复合 guard 变体、设备失败/补偿、完整生成形态、
 Agent/备份/代理、后台轮询、断连/重启、动态值内容绑定和 O12 分类。详见进度文件与执行 ledger。
+
+## 后续独立迭代新增：Python bug · medium · AGENT_FORWARD_FILTER_UNHASHABLE
+
+此节来自后续50配方的 forwarding 专项迭代，不并入上方1629配方的全量统计。
+建议负责模块：A20（`backend/agents/linux_gateway.py`）及 R15（forwarding HTTP）。
+
+四条用例均为有效管理员请求 `GET /api/routers/gateway-forwarding`。m-a、m-b 都
+已真实心跳在线；只令 m-a 的 fake `GET /api/linux-gateway/status` 返回下表字段。
+m-b 的正常报告保持不变，设备/配置没有写入。
+
+| 用例 | m-a 的 forward_filter | Python 实际结果 | Go 实际结果 |
+|---|---|---|---|
+| R025/filter-bug-state-array | `{"state":[]}` | HTML500；本次日志 `TypeError: unhashable type: 'list'` | Go 尚未实现：实际公开路由未注册 |
+| R025/filter-bug-state-object | `{"state":{}}` | HTML500；本次日志 `TypeError: unhashable type: 'dict'` | 同上 |
+| R025/filter-bug-source-kind-array | `{"state":"may_drop","sources":[{"kind":[]}]}` | HTML500；本次日志 `TypeError: unhashable type: 'list'` | 同上 |
+| R025/filter-bug-remedy-source-array | `{"state":"may_drop","remedies":[{"source":[]}]}` | HTML500；本次日志 `TypeError: unhashable type: 'list'` | 同上 |
+
+根因：`sanitize_forward_filter`、`_forward_filter_source` 和
+`_forward_filter_remedy` 用未经类型检查的 `state` / `kind` / `source` 查询
+frozenset；数组、对象不可哈希。异常没有转成单 Agent 的降级条目，而是让整个
+列表500，健康 m-b 也被隐藏。medium 的依据是一个不可信 Agent 的显示元数据
+就能破坏整个网关列表；本用例没有设备写入或配置残留。
+
+配方分别记录请求、HTML响应、类型/响应头和设备/DB终态，并从每次请求之前
+记录的日志字节偏移核对本次异常，不能借用上一条的 traceback。Go 实现后必须
+通过 HTTP 观察其实际结果：同样整体500或丢掉健康条目会明确失败；安全地隔离
+异常、保留健康列表的差异单列参考 bug 观察，须审核，不自动算通过。

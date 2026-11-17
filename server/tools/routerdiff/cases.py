@@ -64,6 +64,7 @@ class Case:
     file_contents: dict = field(default_factory=dict)
     pause_before: float = 0
     preserved: tuple = ()
+    console_patterns: tuple = ()
 
 
 def at(document, path):
