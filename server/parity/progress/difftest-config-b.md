@@ -2353,3 +2353,16 @@ Python前提与双端比较全部通过；design_errors=[]；exit0
 current compared4；cumulative compared23；design_errors=[]；seconds45.99；exit0
 129 self-checks + deliberately wrong-Go-response detection OK
 ```
+
+## 批次 139：双profile规则/设置真实并发与生成URL
+
+- 新增T02两阶段并发，每端两个真实HTTP线程，URL/query/header冲突；相同局部规则ID在default/other保存不同值，随后不同Mihomo设置，完整SQL/files防串线。新比较器只接受两个准确串行提交顺序，不mask其他行；10类故意变异均检出，130项自检及错误Go响应检出通过。
+- .32 baseline4d8a665a，四变体Python前提全部通过；Go未实现2/依赖2，design_errors=[]，exit0。生成URL原草稿路径断言错误已修正为源码真实rules/local路径，不计失败草稿。独立concurrent-profile-isolation.json保留实际报告，待.64 canonical writer结束后标准runner合并，未手工拼case verdict。
+- .64官方Go门禁已GATE PASS（race/proddiff基线/全部Go difftest），同一锁槽的configdiff all正在运行，尚无全量Python结论。go新增0f943623为其他agent的provider负载修正；运行中的基线仍4d8a665a，最终rebase和验证会明确区分。
+
+```text
+.32 native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups profiles-real-concurrent-rules-settings-and-provider-URLs --baseline 4d8a665a --output <独立报告>
+current Go未实现2 / 依赖2；design_errors=[]；exit0
+130 self-checks + deliberately wrong-Go-response detection OK
+.64 official gate: GATE PASS; configdiff all still running
+```

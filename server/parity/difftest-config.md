@@ -2161,7 +2161,7 @@ H142用合法完整备份允许保留的坏远端metadata，经真实下载进�
 | H1066/H1069、H1079/H1086 | URL fallback在严格拓扑下由较早来源失败拒绝，render_all+allow_transport_fallback的完整发布合同另在agents；公开Provider定义由当前资源构造；mode非法值和保存的interval非法值在wrapper/仓库先拒绝。H1086草稿已证明import先400，不计后置分支，见[provider_delivery.py:334](../../backend/utils/provider_delivery.py#L334)、[settings.py:394](../../backend/routes/settings.py#L394)、[config_repository.py:2442](../../backend/common/config_repository.py#L2442)。 |
 | R206-F17/F18/F19及H1094–1102/H1107/H1111 | 维护者已批准的Nginx退役边界：Go验证原生监听对应失败、配置不改、中文提示和旧端口仍可访问；Nginx自己的模板/CLI/重载/探活失败不要求Go复刻。真实Nginx+Flask叠加属于容器/O9/O14，见behaviour-changes.md。普通成功、占用、保存EACCES回滚已有实际完整部署双端测试。 |
 
-R222-F12、R025/R032-F10和H208随后由批次137实际补到，见下节。H1075/H1076/H1078的公开Sub-Store运行时租约/命令启动/20秒未就绪仍待定向构造。其余尚未在本表给出充分证据的H继续保持未覆盖；本表不构成全清单完成声明。
+R222-F12、R025/R032-F10和H208随后由批次137实际补到，见下节；H1075/H1076/H1078由批次138的真实租约/exec/20秒循环补到。其余尚未在本表给出充分证据的H继续保持未覆盖；本表不构成全清单完成声明。
 
 ### Step B 保留值的实际运行时错误（批次137）
 
@@ -2182,3 +2182,9 @@ H1075由真正的parse-lines转换进入临时订阅create屏障并持有runtime
 R020-B90新增独立公开前置：先真正保存public token，再分别执行缺内部能力/能力冲突/当前有效能力三种完整import（登录/认证关闭），及reset；当前/退役能力不能再保存为public token，失败全SQL/files精确不变。有效schema能力的import保留原值，缺失/冲突与reset才轮换，沿用上文T28 oracle更正。原独立import/reset用例保留，不因新增公开setter的wiring前置而丢掉原先能比较的路径。
 
 R228-B90实际测试未注入公开构建的完整`{"version":"dev"}`响应，检查精确字段形态且所有值仍严格比；没有用shape投影掩掉版本值。Docker发布时对[backend/version.py](../../backend/version.py)的Git tag替换和Go发布构建注入之间的值约定仍属O12/O14部分覆盖，当前dev/dev通过不能外推为发布版本注入已经验收。
+
+### Step B 双配置空间真实并发隔离（批次139）
+
+T02先用两个真实HTTP线程/Barrier同时给default和other新增相同局部ID、不同值的规则，再同时保存不同Mihomo文本；query/header/显式URL故意相互冲突。每阶段完整比较SQL及文件：两profile各自_revision恰增1、全局generation恰增2，只允许两个合法提交顺序，未改字段/位置/其他行精确不变。各修改行必须属于该profile的同一次提交，提交ID必须是新hex32，时间在本轮窗口；经这些验证后才归一化两种独立提交先后。故意篡改值、generation、重复事务号、旧commit/时间、无关/缺失/额外行和位置均检出。
+
+最后通过真实scoped Mihomo pull验证只生成所选profile的`/api/profiles/<id>/rules/local/<name>`，对侧URL不得泄漏。原草稿错误地要求rule-library/content路径，已撤回；实际生成合同来自[mihomo.py:767](../../backend/converters/mihomo.py#L767)。选择器依据[profile_context.py:52](../../backend/common/profile_context.py#L52)，事务依据[config_repository.py:995](../../backend/common/config_repository.py#L995)。当前Go对应写入/拉取未接通，四变体保留未实现/依赖；Python确实执行两次并发写和两次生成，未计双端通过。路由接通后自动启用同样双端请求。

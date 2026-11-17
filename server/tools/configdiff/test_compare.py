@@ -17,6 +17,45 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_concurrent_profile_commits_allow_only_exact_independent_serial_orders(self):
+        from cases.profile_concurrent_isolation import canonical_profile_writes
+        from datetime import datetime, timezone
+        now = time.time()
+        policy = Policy(start=now - 1, end=now + 1)
+        before = {'meta': {'generation': 4, 'commit_id': 'a' * 32}, 'fields': {}, 'sections': {}}
+        for pid in ('default', 'other'):
+            for field, value in (('_revision', 1), ('updated_at', '2020-01-01T00:00:00Z'), ('rule_configs', []), ('unchanged', 'keep')):
+                before['fields']['profile/' + pid + '/' + field] = {'value': value, 'revision': 4, 'position': 0}
+        changes = {pid: {'rule_configs': [{'id': pid}]} for pid in ('default', 'other')}
+        def committed(order):
+            after = copy.deepcopy(before)
+            after['meta'].update(generation=6, commit_id='b' * 32)
+            for revision, pid in enumerate(order, 5):
+                for field, value in {**changes[pid], '_revision': 2, 'updated_at': datetime.fromtimestamp(now, timezone.utc).isoformat()}.items():
+                    after['fields']['profile/' + pid + '/' + field].update(value=value, revision=revision)
+            return after
+        valid = committed(('default', 'other'))
+        first, errors = canonical_profile_writes(before, valid, changes, policy)
+        second, reverse_errors = canonical_profile_writes(before, committed(('other', 'default')), changes, policy)
+        self.assertFalse(errors)
+        self.assertFalse(reverse_errors)
+        self.assertEqual(first, second)
+        for mutation in ('wrong-value', 'wrong-generation', 'duplicate-generation', 'old-commit', 'old-time', 'unrelated-row', 'missing-row', 'extra-row', 'bad-generation-type', 'wrong-position'):
+            bad = copy.deepcopy(valid)
+            key = 'profile/default/rule_configs'
+            if mutation == 'wrong-value': bad['fields'][key]['value'] = []
+            elif mutation == 'wrong-generation': bad['meta']['generation'] = 5
+            elif mutation == 'duplicate-generation':
+                for field in ('rule_configs', '_revision', 'updated_at'): bad['fields']['profile/other/' + field]['revision'] = 5
+            elif mutation == 'old-commit': bad['meta']['commit_id'] = before['meta']['commit_id']
+            elif mutation == 'old-time': bad['fields']['profile/default/updated_at']['value'] = '2020-01-01T00:00:00Z'
+            elif mutation == 'unrelated-row': bad['fields']['profile/other/unchanged']['value'] = 'lost'
+            elif mutation == 'missing-row': del bad['fields'][key]
+            elif mutation == 'extra-row': bad['fields']['unexpected'] = {'value': 'extra'}
+            elif mutation == 'bad-generation-type': bad['fields']['profile/default/_revision']['revision'] = []
+            else: bad['fields'][key]['position'] = 1
+            self.assertTrue(canonical_profile_writes(before, bad, changes, policy)[1], mutation)
+
     def test_forwarded_rule_finish_compares_SQL_file_agent_and_source_proofs(self):
         from cases.setup_forwarded_rules import ForwardedRead
         observer = ForwardedRead(SimpleNamespace(), [], None)
