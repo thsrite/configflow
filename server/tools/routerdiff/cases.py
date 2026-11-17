@@ -50,6 +50,7 @@ class Case:
     join: str = ''
     stored: dict = field(default_factory=dict)
     header_checks: dict = field(default_factory=dict)
+    allow_methods: tuple = ()
     finalize: tuple = ()
     expected_requests: tuple = ()
     elapsed_min: float = 0

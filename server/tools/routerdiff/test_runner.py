@@ -29,9 +29,15 @@ class ObservationSide:
     def request(self, **values):
         self.requests.append(values)
         content = self.content if self.content is not None else {'success': self.status < 400}
-        raw = json.dumps(content).encode()
+        if values.get('method') == 'HEAD':
+            content = ''
+            raw = b''
+            kind = 'text'
+        else:
+            raw = json.dumps(content).encode()
+            kind = 'json'
         return {'status': self.status, 'headers': [('Content-Type', 'application/json'), ('Content-Length', str(len(raw)))],
-                'body': base64.b64encode(raw).decode(), 'content': content, 'kind': 'json'}
+                'body': base64.b64encode(raw).decode(), 'content': content, 'kind': kind}
 
 
 def pair(python=None, go=None):

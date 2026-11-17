@@ -15,6 +15,7 @@ import dns
 import gateway
 import disconnect
 import routing
+import policy_view
 from inventory import load
 from bugs import BUGS
 
@@ -23,7 +24,7 @@ class RecipeTests(unittest.TestCase):
     def test_unique_variants_and_real_design_references(self):
         routes, entries = load()
         seen = set()
-        for module in (cases, guards, workflows, fixtures, probes, releases, clients, sync, upstream, dns, gateway, disconnect, routing):
+        for module in (cases, guards, workflows, fixtures, probes, releases, clients, sync, upstream, dns, gateway, disconnect, routing, policy_view):
             for name in module.__dict__:
                 value = getattr(module, name)
                 if not inspect.isgeneratorfunction(value) or getattr(value, '__module__', '') != module.__name__:

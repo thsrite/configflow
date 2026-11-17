@@ -44,6 +44,18 @@ class CompareTests(unittest.TestCase):
             mutate(broken)
             self.assertTrue(differences(original, broken))
 
+    def test_allow_order_only_normalization(self):
+        def view(value):
+            return response_view({'status': 405, 'headers': [('Allow', value)],
+                                  'body': '', 'kind': 'text', 'content': ''})
+        original = view('GET, HEAD, OPTIONS, POST')
+        self.assertEqual(differences(original, view('POST, OPTIONS, GET, HEAD')), [])
+        for broken in ('GET, HEAD, OPTIONS', 'get, HEAD, OPTIONS, POST',
+                       'GET, GET, HEAD, OPTIONS, POST', 'GET, HEAD, OPTIONS, PUT'):
+            self.assertTrue(differences(original, view(broken)))
+        with self.assertRaises(ValueError):
+            view('GET, , POST')
+
     def test_bijection_rejects_invalid_or_colliding_ids(self):
         identities = Bijection(r'router_[0-9a-f]{12}')
         identities.pair('router_000000000001', 'router_000000000002')

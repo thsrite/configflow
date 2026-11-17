@@ -111,3 +111,20 @@ HEAD 无 body 均400；合法 body 分别新增路由器（revision +1）、向 
 不成立。保留原矩阵，增加4个独立世界变体锁定实际行为，按两条 Python bug
 报告 R15/A20。正常 GET 读取仍单独执行；不能让 fake 重写 HEAD 或虚构 GET。
 Go 应执行只读 HEAD；matching reference mutation 是失败，不是兼容性成功。
+
+## X06 / X09：OPTIONS 与路由重叠的真实前置条件
+
+Python 全局 before_request_auth 同样检查 OPTIONS。合成合法空间无 bearer
+返回401；已登录返回自动 OPTIONS200。非法/不存在 profile 对非全局领域路由
+仍在鉴权前400/404；全局 R001 未登录401，不进入 handler 显式 profile 校验。
+`OPTIONS /api/routers/gateway-forwarding` 的 Allow 包含 GET/HEAD/POST/OPTIONS
+以及重叠 `/<router_id>` 的 PUT/DELETE。PUT/DELETE 本身先取 job 锁，再返回
+路由器不存在404。错误方法/尾斜杠未登录也先401；登录后405/404。
+Allow 仅按方法排列顺序归一化，保留大小写、重复、缺失和未知方法。负面比较器
+测试证明缺方法、重复、大小写和替换方法仍失败，未忽略整个响应头。
+
+策略查看 HEAD 的设备读取前提是有记录的 manifest resources；空 manifest 不读
+任何设备。policy-view 世界用公开导入的6条合成资源证明5张表各实际GET1次；
+同名 foreign 行不计 owned。GET 另验证记录顺序、source/destination 角色、外部
+改名/改地址、缺失、runtime 字段不改变归属状态、未知配置字段改变归属但不泄露、
+fib 空flag显示true、beta隔离、同空间 source_agents 和真实设备失败502。

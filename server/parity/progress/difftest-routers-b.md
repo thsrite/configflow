@@ -638,3 +638,23 @@ HEAD_PERSISTS_FORWARDING,IKUAI_NETMASK_SUFFIX_ROLLBACK], complete=false,
 remaining_audits2301. Earlier HEAD-only run: Ran12 tests0.538s/OK; 4 HTTP recipes
 passed. Combined command output was truncated by the tool; final report verified
 read-only on remote. Final full matrix audit and latest composition still pending.
+
+Method dispatch and recorded policy-read iteration:
+- 170 OPTIONS/dispatch recipes,5 local/live HEADs,2 discovery HEAD/cache,2 upstream
+  HEAD/cache,8 recorded-policy reads/HEAD/failure. Actual Python401 OPTIONS guard
+  and six-method forwarding Allow corrected fixture assumptions; not product bugs.
+- Read policy_view/ros_values/config_row Python sources;6 synthetic manifest
+  resources publicly imported, live table order differs and foreign same-name row
+  preserved. Unknown config change affects status without leaking private fields.
+- Source-exact Allow order normalization retains duplicates/membership/case,
+  selftest deliberately breaks each. Fixed token inspection to apply to R006 POST
+  only; OPTIONS200 has no fixed-IP token. HEAD runner selfchecks now model real
+  empty HEAD bodies; no business implementation changed.
+
+Exact .64 command:
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; cd server/tools/routerdiff; export PYTHONDONTWRITEBYTECODE=1; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary /tmp/routerdiff-build-302rx1dg/configflow --world policy-view --world routing-methods --world head-discovery --world head-upstream --output /tmp/routerdiff-head-policy.json'`
+→ policy8(1.16s), methods178(1.06s), localHEAD183(.29s), discovery185(.53s),
+upstream187(.38s); matrix2301/routes26/implemented0/go-unimplemented187,
+referenced_entries22, complete=false, remaining_audits2301. Earlier relevant
+`python -m unittest -v test_recipes test_runner test_compare`: Ran16 tests0.447s/OK.
+No pending test process; full current composition and audit remain unfinished.

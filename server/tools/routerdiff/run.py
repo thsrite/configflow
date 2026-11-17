@@ -22,6 +22,7 @@ import dns
 import gateway
 import disconnect
 import routing
+import policy_view
 from compare import differences, logical_snapshot, response_view, timestamp
 from harness import Pair
 from harness import decode_response
@@ -197,9 +198,16 @@ def execute(pair, case, available, routes):
             for key, expected in case.header_checks.items():
                 if actual_headers.get(key.lower()) != expected:
                     raise RuntimeError(case.ident + ': Python header precondition failed: ' + key)
+            if case.allow_methods:
+                actual = observations[name]['headers'].get('allow')
+                expected = [', '.join(sorted(case.allow_methods))]
+                if actual != expected:
+                    raise RuntimeError(case.ident + ': Python Allow method set differs: ' + repr(actual))
+            if case.method == 'HEAD' and response['content'] != '':
+                raise RuntimeError(case.ident + ': HEAD unexpectedly returned a response body')
             if case.message is not None and response['content'].get('message') != case.message:
                 raise RuntimeError(case.ident + ': wrong Python guard reached: ' + repr(response['content']))
-            if case.route == 'R006' and response['status'] == 200:
+            if case.route == 'R006' and case.method == 'POST' and response['status'] == 200:
                 inspect_python_token(response['content']['token'], own_request['document']['profile_id'],
                                      side.options.get('environment', {}).get('JWT_SECRET_KEY', JWT_SECRET))
             for path in case.absent:
@@ -528,6 +536,10 @@ def main():
               ('disconnect-release', releases.options(), (disconnect.release,)),
               ('disconnect-fixed', clients.options(), (disconnect.fixed,)),
               ('disconnect-manual', options, (disconnect.manual,)),
+              ('policy-view', policy_view.options(), (policy_view.reads,)),
+              ('routing-methods', options, (routing.options_and_dispatch, routing.local_heads)),
+              ('head-discovery', clients.options(), (routing.discovery_head,)),
+              ('head-upstream', upstream.options(), (routing.upstream_head,)),
               ('head-collection-empty', options, (routing.head_collection_empty,)),
               ('head-collection-body', options, (routing.head_collection_body,)),
               ('head-forwarding-empty', fixtures.agent_options(), (routing.head_forwarding_empty,)),

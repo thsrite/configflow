@@ -53,6 +53,13 @@ def headers(response):
         if key == 'content-length' and response.get('method') != 'HEAD':
             if int(value) != len(base64.b64decode(response['body'])):
                 raise ValueError('invalid HTTP Content-Length')
+    if 'allow' in result:
+        # Werkzeug builds Allow from a set: iteration order varies per process.
+        # Retain every case-sensitive method and duplicate, normalize order only.
+        methods = [part.strip() for value in result['allow'] for part in value.split(',')]
+        if any(not re.fullmatch(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+", method) for method in methods):
+            raise ValueError('invalid HTTP Allow method')
+        result['allow'] = [', '.join(sorted(methods))]
     return result
 
 
