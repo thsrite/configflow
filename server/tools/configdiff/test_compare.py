@@ -17,6 +17,22 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_recursion_limit_saved_JSON_keeps_all_original_bytes_and_mode(self):
+        from compare import files
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root) / 'web-listener.json'
+            content = ('[' * 2000 + ']' * 2000).encode()
+            path.write_bytes(content)
+            path.chmod(0o600)
+            valid = files(root)
+            self.assertEqual(valid, {'web-listener.json': {'mode': 0o600,
+                'content': {'invalid_structured_file_bytes': content}}})
+            path.write_bytes(content + b'changed')
+            self.assertTrue(differences(valid, files(root)), 'corrupt data is not dropped or treated as equal')
+            path.write_bytes(content)
+            path.chmod(0o644)
+            self.assertTrue(differences(valid, files(root)), 'corrupt file permissions still compare')
+
     def test_log_poll_normalization_preserves_extra_fields_counts_events_and_invalid_identities(self):
         from cases.log_sequence import poll_value
         marker = '合成日志：'

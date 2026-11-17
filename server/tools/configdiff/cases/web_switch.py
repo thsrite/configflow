@@ -166,11 +166,11 @@ def save_failure(binary, recorder):
     switch(binary, recorder, readonly=True)
 
 
-def switch(binary, recorder, *, readonly=False):
+def switch(binary, recorder, *, readonly=False, targets=None):
     require_listener_mount()
     with Peer() as peer:
         go_port = free_port()
-        target = free_port(), free_port()
+        target = targets or (free_port(), free_port())
         old = peer.initial_port, go_port
         pair = Pair(binary, recorder, options={'web_frontend': True, 'web_listener_ports': old,
             'environment': {'CONFIGDIFF_NGINX_CONTROL': peer.controller.url + '/_configdiff/nginx'}})
@@ -192,9 +192,17 @@ def switch(binary, recorder, *, readonly=False):
                 else:
                     pair.request('R206-S01', 'POST ' + ROUTE, body='{}', bodies=[json_body({'port': port}) for port in target],
                         expect=200, writes=True, interaction=Switch(pair, peer, old, target),
-                        variant='native-frontend-and-recorded-nginx-peer-successful-switch',
+                        variant='native-frontend-and-recorded-nginx-peer-successful-switch' + ('/boundary-' + '-'.join(map(str, target)) if targets else ''),
                         check=lambda reply: require(reply.json() == {'success': True, 'supported': True, 'port': target[0],
                             'editable': True, 'ipv6': True, 'source': 'saved'}, 'public switch response agrees with saved new listener'))
+                    if targets:
+                        from cases.web_listener import Readonly
+                        pair.request('R205-B01', 'GET ' + ROUTE, expect=200, writes=True,
+                            interaction=Readonly(pair, target),
+                            check=lambda reply: require(reply.json() == {'supported': True, 'port': target[0],
+                                'editable': True, 'ipv6': True, 'source': 'saved'},
+                                'actual live listener reports exact boundary port after a successful public switch'),
+                            variant='complete-frontend-actual-boundary-port/' + '-'.join(map(str, target)))
         finally:
             for directory in pair.dirs:
                 if directory.exists():
@@ -204,3 +212,22 @@ def switch(binary, recorder, *, readonly=False):
 
 
 GROUPS = {'web-listener-complete-switch': success, 'web-listener-real-save-failure': save_failure}
+
+
+def boundary_ports(binary, recorder):
+    import os
+    import subprocess
+    require_listener_mount()
+    require(os.geteuid() != 0, 'public servers remain unprivileged')
+    key = 'net.ipv4.ip_unprivileged_port_start'
+    original = subprocess.run(['sysctl', '-n', key], check=True, capture_output=True, text=True).stdout.strip()
+    require(original.isascii() and original.isdecimal(), 'private-netns low-port setting can be restored')
+    try:
+        subprocess.run(['sudo', 'sysctl', '-w', key + '=0'], check=True, capture_output=True)
+        for target in ((1, 65535), (65535, 1)):
+            switch(binary, recorder, targets=target)
+    finally:
+        subprocess.run(['sudo', 'sysctl', '-w', key + '=' + original], check=True, capture_output=True)
+
+
+GROUPS['web-listener-real-live-port-one-and-65535-status'] = boundary_ports

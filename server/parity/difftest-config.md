@@ -2194,3 +2194,11 @@ T02先用两个真实HTTP线程/Barrier同时给default和other新增相同局�
 X07固定序列真实执行登录失败、带token配置拉取、带密码DAV上传507、带token来源403、独立profile导入，然后实际GET logs/tail逐事件以search+level过滤。要求每个源事件恰好一次、原中文/等级/顺序和完整响应结构；total_lines须等于各端真实文件行数、log_file须是该端owned路径，验证后才替换成标记。仅asctime/logger行前缀属于O12格式边界；原始日志不得包含密码/JWT/public token/来源秘密和完整链接。DAV错误仅允许既有O6精确的NotEnoughSpace/HTTP507两种英文诊断，中文和其他字段不放宽。当前拉取/导入路由尚未接通，整个五事件双端序列保留依赖未实现，Python前提实际通过；其他三请求本身已双端相比。
 
 轮转由七次公开server-domain保存各产生>6MiB的完整日志事件，不外部填充日志、不强制roll、不替换logger、不缩小生产10MiB/five-backup常量。第七次之后必须只有app.log及.1–.5，准确保留最新六个事件、淘汰最旧事件；逐文件比名称/模式/完整消息/等级/顺序/额外行，七次HTTP与全部SQL/files也比较。双端八变体实际compared。源码为[settings.py:95](../../backend/routes/settings.py#L95)、[app.py:59](../../backend/app.py#L59)。新增自检故意改归档名/消息/等级/顺序/额外行/权限及tail envelope身份/计数/额外字段，均检出；没有用哈希替代实际正文比较。
+
+### Step B 保存状态损坏和真实极值端口（批次141）
+
+R205-F09/H1092在完整部署已经启动后，实际保存文件分别改为坏JSON、缺port和port65536，source均503且明确中文；所有SQL、损坏文件原始内容和旧端口健康/能力不动，两端实际相比。此时不能继续套用合法已分配端口规范化，保留65536原值精确比。依据[web_listener.py:69](../../backend/utils/web_listener.py#L69)。
+
+R205-B01用两轮真实换端口让两端都各自实际监听过1和65535，比较POST、后续GET、双栈新端口健康/能力、旧监听关闭与全SQL/files。低端口放开只作用于已校验的私有netns且finally恢复原值，不使用root服务。依据[web_listener.py:35](../../backend/utils/web_listener.py#L35)、[web_listener.py:262](../../backend/utils/web_listener.py#L262)。
+
+R205-F08的旧深层JSON草稿实际是未捕获RecursionError→500，不是[settings.py:29](../../backend/routes/settings.py#L29)的OSError→503，已撤回、不计该槽覆盖。该catch实际还包含Python的Nginx锁文件等I/O边界；不得通过只破坏Python锁路径而制造不等价Go差异，后续存储/容器故障验收保留为partial。H1103的非法backend=SubStore环境也会令Go在完整原生入口启动前拒绝；仅启动Flask绕过Python完整bootstrap的旧草稿已撤回，应在O9/O14真实启动链观察，两端完整部署均不应提供错误内部路由。

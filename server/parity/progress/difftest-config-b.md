@@ -2371,10 +2371,23 @@ current Go未实现2 / 依赖2；design_errors=[]；exit0
 
 - X07新增固定五操作及真实logs/tail的search/level轮询。Python实际各事件恰好一次且原日志无密码/JWT/token/完整来源链接；tail计数/路径逐端验证后才规范化，中文等级与事件值完整比，格式前缀按O12边界。拉取和profile import未接通时五事件序列为依赖，不伪称Go日志相比通过。
 - 真实七次公开server-domain写入各>6MiB，未改生产10MiB/5份常量、未填充/强制roll/替换logger；完整比较SQL/HTTP，最终两端都准确保留最新六段、淘汰第一段。八变体compared；归档文件名称/权限/完整消息/等级/顺序和额外行都参与，故意变异全部检出。
-- .32 baseline4d8a665a，两个组14变体26.76秒：compared11/Go未实现2/依赖1，design_errors=[]、exit0；132项自检及故意错误Go响应检出。有效报告独立log-runtime.json，不与.64运行中的canonical竞争。首轮草稿两个编号不在matrix槽内，已修正为R011-F02/R030-S02并实际重跑，未保留失败草稿。
+- .32 baseline4d8a665a，两个组14变体21.23秒：compared11/Go未实现2/依赖1，design_errors=[]、exit0；132项自检及故意错误Go响应检出。有效报告独立log-runtime.json，不与.64运行中的canonical竞争。首轮草稿两个编号不在matrix槽内，已修正为R011-F02/R030-S02并实际重跑，未保留失败草稿。
 
 ```text
 .32 native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups logs-real-five-event-sequence-and-level-filter-polling,logs-real-public-write-driven-10MiB-five-backup-rotation --baseline 4d8a665a --output <独立报告>
 current compared11 / Go未实现2 / 依赖1；design_errors=[]；exit0
 132 self-checks + deliberately wrong-Go-response detection OK
+```
+
+## 批次 141：保存状态真实损坏和两端极值端口
+
+- R205-F09/H1092在完整部署启动后实际损坏web-listener.json为非法JSON/缺port/65536，均503且准确中文、全SQL/files和旧端口能力不动。损坏文件不再使用“已分配有效端口”的规范化，原假差异已撤回并实际重跑。
+- R205-B01两轮真实POST换端口：Python1/Go65535以及反向；随后GET、双栈健康、旧监听关闭、全SQL/files、能力轮换都相比。只在私有netns临时放开低端口权限，非root服务实际绑定，finally恢复。R206-S01记录相应边界变体。
+- R205-F08旧深层JSON草稿实际为RecursionError→500而非OSError→503，已撤回、不计覆盖/产品差异。比较器保留深层坏JSON准确原始字节，故意改末尾和权限均检出。F08仍列独立等价I/O故障partial，不用Nginx锁路径冒充原生Go故障。非法backend=SubStore环境的Go启动拒绝也不能与绕过完整Python bootstrap的Flask peer作等价HTTP比较，草稿撤回。
+- .32 baseline4d8a665a，两个组7变体全部compared，design_errors=[]，16.81秒，exit0；133项自检及故意错误Go响应检出。独立报告listener-saved-state-and-extremes.json，H1092标签在随后标准runner正式运行生效。批次140耗时已按实际JSON修正为21.23秒。
+
+```text
+.32 native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups web-listener-real-damaged-saved-state,web-listener-real-live-port-one-and-65535-status --baseline 4d8a665a --output <独立报告>
+current compared7；design_errors=[]；exit0
+133 self-checks + deliberately wrong-Go-response detection OK
 ```

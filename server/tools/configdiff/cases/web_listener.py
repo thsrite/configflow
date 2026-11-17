@@ -158,3 +158,21 @@ def privileged_bind_denied(binary, recorder):
 
 
 GROUPS['web-listener-real-unprivileged-low-port-bind-failure'] = privileged_bind_denied
+
+
+def damaged_saved_state(binary, recorder):
+    for case, variant, content, expected in [
+            ('R205-F09', 'malformed-JSON', '{', '无法读取已保存的 Web 端口；可设置 CONFIGFLOW_WEB_PORT 恢复访问'),
+            ('R205-F09', 'missing-port', '{}', '无法读取已保存的 Web 端口；可设置 CONFIGFLOW_WEB_PORT 恢复访问'),
+            ('R205-F09', 'out-of-range-port', '{"port":65536}', '无法读取已保存的 Web 端口；可设置 CONFIGFLOW_WEB_PORT 恢复访问')]:
+        with deployment(binary, recorder) as (pair, ports):
+            pair.policy.allocated_ports.pop('files.web-listener.json.content.port')
+            for directory in pair.dirs:
+                (directory / 'web-listener.json').write_text(content)
+            pair.request(case, 'GET ' + ROUTE, expect=503, writes=True, interaction=Readonly(pair, ports),
+                check=lambda reply: require(reply.json() == {'success': False, 'message': expected},
+                    'damaged actual saved-state file reaches the intended public failure without modifying it or losing the live listener'),
+                variant='complete-frontend-damaged-saved-state/' + variant)
+
+
+GROUPS['web-listener-real-damaged-saved-state'] = damaged_saved_state
