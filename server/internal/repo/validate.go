@@ -2,6 +2,7 @@ package repo
 
 import (
 	"errors"
+	"math"
 	"strings"
 
 	"configflow/internal/jsonx"
@@ -19,17 +20,6 @@ var systemFields = map[string]bool{"system_config": true, "backup": true, "agent
 func isSchemaVersion(value any) bool {
 	number, ok := value.(jsonx.Number)
 	return ok && jsonx.Equal(number, jsonx.Int(SchemaVersion))
-}
-
-// isPyInt is isinstance(v, int): integers and booleans.
-func isPyInt(v any) bool {
-	switch value := v.(type) {
-	case bool:
-		return true
-	case jsonx.Number:
-		return value.IsInt()
-	}
-	return false
 }
 
 // revisionOf is int(section.get('_revision', 0)) for validated sections.
@@ -591,11 +581,11 @@ func asValidation(err error, classes ...string) error {
 // commit and on every load that misses the cache.
 func ValidateDocument(document *jsonx.Object) error {
 	if !isSchemaVersion(document.Value("schema_version")) {
-		return validationError("配置存储版本不匹配")
+		return validationError(msgSchemaMismatch)
 	}
 	for _, key := range []string{"system", "shared", "profiles"} {
 		if _, ok := jsonx.AsObject(document.Value(key)); !ok {
-			return validationError("缺少配置节：" + key)
+			return validationError(msgSectionMissing + key)
 		}
 	}
 	system := document.GetObject("system")
@@ -610,7 +600,7 @@ func ValidateDocument(document *jsonx.Object) error {
 	}
 	profiles := document.GetObject("profiles")
 	if !profiles.Has(defaultProfileIDOf(document)) {
-		return validationError("必须保留默认配置")
+		return validationError(msgDefaultProfileRequired)
 	}
 	for key := range system.All() {
 		if !systemFields[key] {
@@ -695,7 +685,7 @@ func ValidateDocument(document *jsonx.Object) error {
 		}
 		profile, ok := jsonx.AsObject(value)
 		if !ok || profile.Value("id") != profileID {
-			return validationError("配置内容与 ID 不一致")
+			return validationError(msgProfileIDMismatch)
 		}
 		if err := validateProfileInDocument(document, profileID, profile, catalogs); err != nil {
 			var failure *Error
@@ -726,15 +716,31 @@ func ValidateDocument(document *jsonx.Object) error {
 		sections = append(sections, value.(*jsonx.Object))
 	}
 	for _, section := range sections {
-		revision := section.Value("_revision")
-		if !isPyInt(revision) {
-			return validationError("配置修订号无效")
-		}
-		if number, ok := revision.(jsonx.Number); ok && strings.HasPrefix(number.String(), "-") {
-			return validationError("配置修订号无效")
+		if !validRevision(section.Value("_revision")) {
+			return validationError(msgRevisionInvalid)
 		}
 	}
 	return nil
+}
+
+// validRevision is the write rule for a section's _revision: a non-negative
+// integer (R8: an integral JSON number in any notation, e.g. 60.0) or, as
+// Python's isinstance(x, int) accepted, a boolean.
+func validRevision(value any) bool {
+	switch revision := value.(type) {
+	case bool:
+		return true
+	case jsonx.Number:
+		if strings.HasPrefix(revision.String(), "-") {
+			return false
+		}
+		if revision.IsInt() {
+			return true
+		}
+		number := revision.Float64()
+		return number == math.Trunc(number) && !math.IsInf(number, 0)
+	}
+	return false
 }
 
 func validateProfileInDocument(document *jsonx.Object, profileID string, profile *jsonx.Object, catalogs map[string]*objectMap) error {

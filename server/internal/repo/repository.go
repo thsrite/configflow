@@ -89,6 +89,9 @@ type Repository struct {
 	loads, validations, metadataReads atomic.Int64
 	afterLoad                         func()
 	cacheMaxBytes                     int64
+	// viewGuard, when set, is called if a View callback modified the
+	// shared snapshot (tests set it to fail).
+	viewGuard func()
 }
 
 // Open is ProfileRepository(data_dir, default_config_factory,
@@ -457,7 +460,7 @@ func (r *Repository) loadEntry() (storedEntry, error) {
 	}
 	r.reportModelIssues(entry)
 	r.validations.Add(1)
-	if err := ValidateDocument(entry.Document); err != nil {
+	if err := validateStored(entry.Model); err != nil {
 		return storedEntry{}, err
 	}
 	r.setCache(entry)

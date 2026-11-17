@@ -149,11 +149,30 @@ func refBase(t *testing.T) *jsonx.Object {
 }
 
 func TestReferenceThreeWayMerge(t *testing.T) {
-	for index, item := range refLoad(t).GetList("three_way") {
+	// Python compared with ==, so 1, 1.0 and True were one value. The Go merge
+	// compares JSON values by type (yamlx.Equal); these Python answers change.
+	goAnswers := map[int]string{
+		6:  `{"a":true}`,
+		7:  `{"a":1.0}`,
+		16: `[{"id":1,"v":"x"}]`,
+	}
+	cases := refLoad(t).GetList("three_way")
+	if len(cases) != 30 {
+		t.Fatalf("reference corpus has %d cases", len(cases))
+	}
+	for index, item := range cases {
 		values := item.([]any)
-		got := ThreeWayMerge(jsonx.DeepCopy(values[0]), jsonx.DeepCopy(values[1]), jsonx.DeepCopy(values[2]))
-		if left, right := refText(t, got), refText(t, values[3]); left != right {
-			t.Errorf("case %d %s: go %s py %s", index, refText(t, values[:3]), left, right)
+		got, err := threeWayMerge(jsonx.DeepCopy(values[0]), jsonx.DeepCopy(values[1]), jsonx.DeepCopy(values[2]))
+		noError(t, err)
+		want := refText(t, values[3])
+		if answer, changed := goAnswers[index]; changed {
+			want = refText(t, must(jsonx.ParseString(answer))(t))
+			if want == refText(t, values[3]) {
+				t.Fatalf("case %d: listed as changed but Python agrees", index)
+			}
+		}
+		if left := refText(t, got); left != want {
+			t.Errorf("case %d %s: go %s want %s", index, refText(t, values[:3]), left, want)
 		}
 	}
 }
@@ -197,11 +216,22 @@ func TestReferenceLegacyDefaults(t *testing.T) {
 }
 
 func TestReferenceValidateDocument(t *testing.T) {
+	// R8 (design n7-n8 2.3): an integral JSON number in any notation is a
+	// stored integer, so Go accepts the revision 1.0 that Python refused.
+	acceptedByGo := map[string]bool{"revision float": true}
 	for _, item := range refLoad(t).GetList("validate") {
 		record := item.(*jsonx.Object)
 		document := refBase(t)
 		refPatch(t, document, record.GetList("patch"))
-		refOutcome(t, record.GetString("label"), record, nil, ValidateDocument(document))
+		label := record.GetString("label")
+		if acceptedByGo[label] {
+			if !record.Has("error") {
+				t.Fatalf("%s: Python accepted it too", label)
+			}
+			noError(t, ValidateDocument(document))
+			continue
+		}
+		refOutcome(t, label, record, nil, ValidateDocument(document))
 	}
 }
 

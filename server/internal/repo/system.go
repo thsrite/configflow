@@ -342,7 +342,11 @@ func (r *Repository) SaveSystem(ctx context.Context, snapshot, baseline *jsonx.O
 			currentObject, isCurrentObject := jsonx.AsObject(current.Value(key))
 			valueObject, isValueObject := jsonx.AsObject(value)
 			if base, ok := baseline.Get(key); ok {
-				current.Set(key, ThreeWayMerge(current.Value(key), base, value))
+				merged, err := threeWayMerge(current.Value(key), base, value)
+				if err != nil {
+					return nil, err
+				}
+				current.Set(key, merged)
 			} else if isCurrentObject && isValueObject {
 				current.Set(key, DeepMerge(currentObject, valueObject))
 			} else {

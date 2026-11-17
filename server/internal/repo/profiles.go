@@ -693,7 +693,11 @@ func (r *Repository) UpdateProfileFields(ctx context.Context, profileID string, 
 				continue
 			}
 			if base, ok := baseline.Get(key); ok {
-				current.Set(key, ThreeWayMerge(current.Value(key), base, value))
+				merged, err := threeWayMerge(current.Value(key), base, value)
+				if err != nil {
+					return nil, err
+				}
+				current.Set(key, merged)
 			} else {
 				current.Set(key, jsonx.DeepCopy(value))
 			}

@@ -135,11 +135,25 @@ func TestNewerStorageVersionFailsWithoutRenaming(t *testing.T) {
 	}
 }
 
-func TestInvalidRowsFailValidationWithoutRebuilding(t *testing.T) {
+// Business rules are write validation (N8-5): a stored document that breaks
+// one still opens, unchanged, and writes are refused until it is repaired.
+// Structural damage (here: no default profile) still refuses loading.
+func TestInvalidRowsLoadButRefuseWritesWithoutRebuilding(t *testing.T) {
 	r := newRepo(t)
 	rcSQL(t, r.DatabasePath(), `UPDATE fields SET value = '[{"id": "a", "profile_id": "missing"}]' WHERE scope = 'system' AND field = 'agents'`)
 	fingerprint := must(r.Store().Fingerprint())(t)
-	_, err := Open(r.DataDir(), Options{})
+	opened := must(Open(r.DataDir(), Options{}))(t)
+	if must(r.Store().Fingerprint())(t) != fingerprint {
+		t.Fatal("database changed")
+	}
+	_, err := opened.UpdateSharedTransaction(bg, func(context.Context, *jsonx.Object) (*jsonx.Object, error) { return nil, nil })
+	wantError(t, err, ErrValidation, "绑定的配置不存在")
+	if must(r.Store().Fingerprint())(t) != fingerprint {
+		t.Fatal("database changed")
+	}
+	rcSQL(t, r.DatabasePath(), `UPDATE fields SET value = '"other"' WHERE scope = 'profile' AND owner = 'default' AND field = 'id'`)
+	fingerprint = must(r.Store().Fingerprint())(t)
+	_, err = Open(r.DataDir(), Options{})
 	wantError(t, err, ErrRepository, "无法加载配置数据库")
 	if must(r.Store().Fingerprint())(t) != fingerprint {
 		t.Fatal("database changed")

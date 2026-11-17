@@ -11,3 +11,12 @@ const (
 )
 
 const msgRouterJobBusy = "路由器正在发布或同步，不能替换连接或删除记录，请稍后重试"
+
+// Stored-document checks shared by load and write validation.
+const (
+	msgSchemaMismatch         = "配置存储版本不匹配"
+	msgSectionMissing         = "缺少配置节："
+	msgDefaultProfileRequired = "必须保留默认配置"
+	msgProfileIDMismatch      = "配置内容与 ID 不一致"
+	msgRevisionInvalid        = "配置修订号无效"
+)
