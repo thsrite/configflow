@@ -113,6 +113,9 @@ def timestamp(value, start, end):
     """Validate an explicit source-proven runtime timestamp before pairing it."""
     if not isinstance(value, str):
         raise ValueError('timestamp must be text')
+    if not re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2}[T ][0-9]{2}:[0-9]{2}:[0-9]{2}'
+                        r'(?:\.[0-9]+)?(?:Z|[+-][0-9]{2}:[0-9]{2})?', value):
+        raise ValueError('timestamp must contain an ISO date and time')
     parsed = datetime.fromisoformat(value.replace('Z', '+00:00'))
     parsed = parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed
     if not start <= parsed.timestamp() <= end:

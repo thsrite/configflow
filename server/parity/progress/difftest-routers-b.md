@@ -1487,3 +1487,27 @@ Client settings-error transitive contexts / atomic capacity:
 references384/audits327/remaining1974 in this subset/complete=false. No new bug.
 No active command. Last full composition3054/301 remains unchanged. Final
 composition/gate/rebase pending; still1903 matrix entries without complete audits.
+
+Fresh HTTP clock comparison increment:
+- Case.times is an explicit response-member allowlist, not a key/regex mask.
+  Each Go value must be an ISO date+time inside that side's actual HTTP send/
+  response window (one-second source precision allowance), then only that member
+  is paired on deep comparison copies. Python uses the same stricter shape/
+  response-end window. Polling after the response does not extend its clock bound.
+- Raw report bodies and own-side Ref observations remain untouched. Wrong type,
+  missing/malformed/stale/future Go values produce clock differences rather than
+  fixture aborts. A bad Python prerequisite still aborts. Adjacent array members,
+  escaped-key siblings, unlisted ISO-like text,64hex revision/fingerprint and
+  opaque tokens remain strict. Real execute negative controls exercise the path.
+- This deliberately does not normalize cached clocks, persisted last_probe/
+  receipt/task timestamps or general dynamic strings. Those need their own
+  content/provenance proof; no claim of complete dynamic comparison yet.
+
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY="$HOME/.cache/routerdiff-build-302rx1dg-current/configflow"; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python -m unittest -v test_temporal test_compare test_runner; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world runtime-reads --world unlinked-inspection --world discovery --output "$HOME/.cache/routerdiff-reports/302rx1dg/fresh-clock-regression.json"'`
+=> Ran34 tests1.492s/OK;25 real Python HTTP prerequisites, domain missing25/
+references28/audits0/complete=false. Then added escaped array-pointer control and
+strengthened the64hex/token negative values:
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python -m unittest -v test_temporal test_runner'`
+=> Ran31 tests0.688s/OK. No actual Go domain handler comparison or new bug claimed.
+No active command; declarations398/remaining1903 unchanged. Full composition,
+final gate/rebase and all remaining matrix/dynamic work still pending.

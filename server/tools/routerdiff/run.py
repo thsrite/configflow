@@ -49,6 +49,7 @@ from seed import JWT_SECRET
 from bugs import BUGS
 from audits import evaluate
 from identities import RouterIDs
+from temporal import fresh_pair
 
 
 def shape(path):
@@ -128,6 +129,7 @@ def execute(pair, case, available, routes):
     request = dict(method=case.method, path=case.path, document=case.document, raw=case.raw,
                    headers=case.headers, auth=case.auth)
     observations, snapshots, flow_requests, flow_checks, setup_observations = {}, {}, {}, {}, {}
+    response_windows = {}
     if case.boundary:
         if case.route or len(case.boundary) != 2 or case.boundary[0] != case.method or not isinstance(case.path, str):
             raise ValueError('external boundary must declare its actual method/path with no routers route ID')
@@ -272,6 +274,7 @@ def execute(pair, case, available, routes):
                         poll(side, own_request, case.wait_until, case.wait_seconds, strict=name == 'python') if case.wait_until else
                         side.request(**own_request))
             response_ended = time.monotonic()
+            response_received_wall = time.time()
         finally:
             for control in case.finalize:
                 if control.get('rpc') == 'filesystem_fault':
@@ -281,6 +284,7 @@ def execute(pair, case, available, routes):
         if case.age_limit and response_ended - age_anchor >= case.age_limit:
             raise RuntimeError(case.ident + ': response exceeded real-time fixture window; rerun at lower server load')
         side.request_windows[case.ident] = {'started': request_started, 'ended': response_ended}
+        response_windows[name] = (started, response_received_wall)
         settled = [response_view(poll(side, {'method': 'GET', 'path': control['path']}, control['expect'],
                                      control.get('seconds', 30), strict=name == 'python')) for control in case.after_poll]
         if case.route == 'R023' and case.method == 'POST' and case.after_poll:
@@ -349,7 +353,7 @@ def execute(pair, case, available, routes):
                 if not isinstance(actual, str) or not re.fullmatch(pattern, actual):
                     raise RuntimeError(case.ident + ': invalid Python identity/hash at ' + path)
             for path in case.times:
-                timestamp(cases.at(response['content'], path), started - 1, ended + 1)
+                timestamp(cases.at(response['content'], path), started - 1, response_received_wall + 1)
             if ended - started < case.elapsed_min:
                 raise RuntimeError(case.ident + ': expected real transport wait did not occur')
             transcript = after['fake']['transcript'][len(before['fake']['transcript']):]
@@ -473,8 +477,10 @@ def execute(pair, case, available, routes):
             # for these individually named Python uncaught-exception cases.
             for observation in observations.values():
                 observation['body'] = '<HTML 500 body excluded by reviewed X03>'
-        found += differences(pair.router_ids.response('python', case.profile, case.route, observations['python']),
-                             pair.router_ids.response('go', case.profile, case.route, observations['go']), '/http')
+        timed_observations, clock_differences = fresh_pair(observations, response_windows, case.times)
+        found += clock_differences
+        found += differences(pair.router_ids.response('python', case.profile, case.route, timed_observations['python']),
+                             pair.router_ids.response('go', case.profile, case.route, timed_observations['go']), '/http')
         found += differences(pair.router_ids.snapshot('python', snapshots['python']['after']),
                              pair.router_ids.snapshot('go', snapshots['go']['after']), '/state')
         if case.unchanged:

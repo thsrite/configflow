@@ -3,6 +3,7 @@ import base64
 import copy
 import json
 import time
+from datetime import datetime, timezone
 from types import SimpleNamespace
 import unittest
 
@@ -49,6 +50,46 @@ def pair(python=None, go=None):
 
 
 class RunnerTests(unittest.TestCase):
+    def test_fresh_clock_validation_is_used_by_execute_without_rewriting_raw_references(self):
+        fresh = object()
+
+        class ClockSide(ObservationSide):
+            def __init__(self, native=False, value=fresh, omit=False, altered=None):
+                super().__init__()
+                self.native, self.value, self.omit, self.altered = native, value, omit, altered
+
+            def request(self, **values):
+                now = datetime.now(timezone.utc)
+                stamp = now.isoformat() if self.native else now.replace(tzinfo=None).isoformat(timespec='seconds')
+                self.content = {'success': True, 'generated_at': stamp if self.value is fresh else self.value,
+                                'literal_time': '2026-01-01T00:00:00Z', 'revision': 'a' * 64,
+                                'fingerprint': 'b' * 64, 'token': 'synthetic-token'}
+                if self.omit:
+                    self.content.pop('generated_at')
+                if self.altered:
+                    self.content[self.altered] = ('c' * 64 if self.altered == 'fingerprint' else
+                        'd' * 64 if self.altered == 'revision' else
+                        'synthetic-other-token' if self.altered == 'token' else stamp)
+                return super().request(**values)
+
+        routes, _ = load()
+        case = Case('clock', 'R013', 'GET', '/api/routers/r-ros/policy', 200, times=('generated_at',))
+        available = {('GET', shape(routes['R013'].path))}
+        world = pair(ClockSide(), ClockSide(native=True))
+        result = execute(world, case, available, routes)
+        self.assertEqual(result['status'], 'compared')
+        self.assertNotEqual(result['python']['body']['generated_at'], result['go']['body']['generated_at'])
+        self.assertEqual(world.go.observations['clock']['body']['generated_at'], result['go']['body']['generated_at'])
+        for value, omit in (('2000-01-01T00:00:00Z', False), ('2999-01-01T00:00:00Z', False),
+                            ('malformed', False), (None, False), (True, False), (fresh, True)):
+            result = execute(pair(ClockSide(), ClockSide(True, value, omit)), case, available, routes)
+            self.assertEqual(result['status'], 'different')
+            self.assertTrue(any(row['category'] == 'clock' for row in result['differences']))
+        for field in ('literal_time', 'revision', 'fingerprint', 'token'):
+            result = execute(pair(ClockSide(), ClockSide(True, altered=field)), case, available, routes)
+            self.assertEqual(result['status'], 'different')
+            self.assertIn('/http/body/' + field, {row['path'] for row in result['differences']})
+
     def test_early_async_go_response_or_transport_error_is_a_difference_not_a_fake_gate_error(self):
         class GateSide(ObservationSide):
             def __init__(self, outcome=None):
