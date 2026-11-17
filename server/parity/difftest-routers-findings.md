@@ -58,3 +58,26 @@ frozenset；数组、对象不可哈希。异常没有转成单 Agent 的降级�
 记录的日志字节偏移核对本次异常，不能借用上一条的 traceback。Go 实现后必须
 通过 HTTP 观察其实际结果：同样整体500或丢掉健康条目会明确失败；安全地隔离
 异常、保留健康列表的差异单列参考 bug 观察，须审核，不自动算通过。
+
+## HEAD 路由分派：两条 Python bug · medium
+
+以下来自随后独立的71配方组合（7个世界、15个设计条目），不并入上方1629
+配方的旧全量统计。7个世界为 forwarding-failures、release-ik-suffix、
+release-ik-plain 和下列4个独立 HEAD 世界。71条均完成真实 Python HTTP；
+Go 公开路由仍为0，71条单列「Go 尚未实现」，实际差分比较0。
+
+| 缺陷／用例 | 请求 | Python 实际结果 | Go 实际结果 | 建议负责模块 |
+|---|---|---|---|---|
+| HEAD_CREATES_ROUTER / R007/HEAD-without-body-is-not-GET | HEAD /api/routers，无请求体 | 400，空响应体，无配置写入 | Go 尚未实现 | R15 |
+| HEAD_CREATES_ROUTER / R007/HEAD-creates-router | HEAD /api/routers，合法合成 name/type/endpoint/username/password | 200，空响应体，新增路由器，配置 revision +1 | Go 尚未实现 | R15 |
+| HEAD_PERSISTS_FORWARDING / R025/HEAD-without-body-is-not-GET | HEAD /api/routers/gateway-forwarding，无请求体 | 400，空响应体，Agent GET/POST 均0次 | Go 尚未实现 | R15、A20 |
+| HEAD_PERSISTS_FORWARDING / R025/HEAD-persists-forwarding | HEAD /api/routers/gateway-forwarding，JSON {"agent_id":"m-a"} | 200，空响应体，Agent POST forwarding 1次、GET 0次，persisted=true | Go 尚未实现 | R15、A20 |
+
+两条缺陷分别为 medium：HEAD 是只读方法，实际却能新增配置或改变设备转发
+持久化状态。根因是 GET/POST 共用函数只判断 method==GET；Flask 自动注册的
+HEAD 落入 POST 分支。4条配方分别隔离状态，核对完整 DB/文件/设备、请求计数，
+不把 HEAD 改写成 GET。Go 同样发生写入时明确失败，即使与 Python 一致；
+正确的只读200结果列为参考 bug 观察并保留差异，不自动判通过。
+
+原始合成创建请求由 routing.head_collection_body 定义，使用命名空间中的
+10.44.0.1:18081 与 seed.DEVICE_PASSWORD；未访问真实设备。

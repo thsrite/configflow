@@ -40,6 +40,26 @@ def pair(python=None, go=None):
 
 
 class RunnerTests(unittest.TestCase):
+    def test_matching_HEAD_mutations_never_pass_as_parity(self):
+        routes, _ = load()
+        for route, bug in [('R007', 'HEAD_CREATES_ROUTER'), ('R025', 'HEAD_PERSISTS_FORWARDING')]:
+            before = ObservationSide().before
+            after = copy.deepcopy(before)
+            if route == 'R007':
+                after['database']['fields']['rows'] = [['profile', 'alpha', 'routers', 0, '{"items":[{"id":"new"}]}', 1]]
+            else:
+                after['fake']['agent'] = {'persisted': True}
+            case = Case('unsafe-HEAD', route, 'HEAD', routes[route].path, 200, unchanged=False, python_bug=bug)
+            available = {('GET', shape(routes[route].path))}
+            copied = pair(ObservationSide(200, before, after), ObservationSide(200, before, after))
+            self.assertEqual(execute(copied, case, available, routes)['status'], 'different')
+            safe = copy.deepcopy(before)
+            if route == 'R025':
+                safe['fake']['transcript'] = [{'peer': 'agent', 'method': 'GET', 'path': '/api/linux-gateway/status',
+                    'headers': {}, 'body': None, 'raw': ''} for _ in range(2)]
+            fixed = pair(ObservationSide(200, before, after), ObservationSide(200, before, safe))
+            self.assertEqual(execute(fixed, case, available, routes)['status'], 'reference-bug-observation')
+
     def test_guard_wait_never_retries_an_accepted_write(self):
         side = ObservationSide(status=200)
         self.assertEqual(wait_guard(side, '/api/routers/test', 0, strict=False)['status'], 200)

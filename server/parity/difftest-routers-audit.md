@@ -101,3 +101,13 @@ pass through real R006→R005:502 generic storage-save message, exact DB unchang
 new reservation compensated; dynamic undo removes the static lease and warns of
 possible renewal/IP change. No private Python/Go helper is invoked. This proves
 reachability for the count and ID-length variants only, not all H0033 conjuncts.
+
+## X06 / R025-B90：HEAD 不是 GET 的可靠替身
+
+公开 Python 路由表允许 HEAD，但集合与 forwarding 的 GET/POST 共用函数
+仅以 request.method == 'GET' 进入读取分支。真实公开 HTTP 已证明：
+HEAD 无 body 均400；合法 body 分别新增路由器（revision +1）、向 Agent POST
+持久化 forwarding。故矩阵 O6 中“R025 HEAD 读取每台 Agent 状态”的前提
+不成立。保留原矩阵，增加4个独立世界变体锁定实际行为，按两条 Python bug
+报告 R15/A20。正常 GET 读取仍单独执行；不能让 fake 重写 HEAD 或虚构 GET。
+Go 应执行只读 HEAD；matching reference mutation 是失败，不是兼容性成功。

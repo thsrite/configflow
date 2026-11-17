@@ -21,6 +21,7 @@ import upstream
 import dns
 import gateway
 import disconnect
+import routing
 from compare import differences, logical_snapshot, response_view, timestamp
 from harness import Pair
 from harness import decode_response
@@ -31,6 +32,7 @@ from fakes import World
 from addresses import report_aliases
 from tokens import inspect_python_token
 from seed import JWT_SECRET
+from bugs import BUGS
 
 
 def shape(path):
@@ -326,6 +328,19 @@ def execute(pair, case, available, routes):
                 found.append({'path': '/safety/malformed-Agent-metadata-hides-unaffected-gateway',
                               'python': 'Go must contain one malformed Agent reply and preserve the healthy gateway',
                               'go': observations['go']['status'], 'category': 'safety'})
+        if case.python_bug in ('HEAD_CREATES_ROUTER', 'HEAD_PERSISTS_FORWARDING'):
+            before, after = snapshots['go']['before'], snapshots['go']['after']
+            changed = bool(differences(before['database'], after['database'])) or any(
+                differences(before['fake'][key], after['fake'][key]) for key in ('ros', 'ikuai', 'agent'))
+            transcript = after['fake']['transcript'][len(before['fake']['transcript']):]
+            posts = sum(item['method'] == 'POST' and item['peer'] == 'agent' for item in transcript)
+            reads = sum(item['method'] == 'GET' and item['peer'] == 'agent' for item in transcript)
+            go_bug_outcome = {'http_status': observations['go']['status'], 'configuration_or_device_changed': changed,
+                              'agent_post_requests': posts, 'agent_get_requests': reads}
+            if changed or observations['go']['status'] != 200 or posts or (case.route == 'R025' and reads != 2):
+                found.append({'path': '/safety/HEAD-must-execute-read-only-GET',
+                              'python': 'Go HEAD must read, never execute the POST branch',
+                              'go': go_bug_outcome, 'category': 'safety'})
     # Auth values are synthetic but reports don't need bearer credentials.
     request['document'] = cases.resolve(case.document, pair.python.observations)
     request['path'] = cases.resolve(case.path, pair.python.observations)
@@ -347,6 +362,13 @@ def execute(pair, case, available, routes):
                               'static_rt_after': snapshots['python']['after']['fake']['ikuai']['static_rt']}
     elif case.python_bug == 'AGENT_FORWARD_FILTER_UNHASHABLE':
         python_bug_outcome = {'http_status': observations['python']['status'], 'unaffected_gateway_hidden': True}
+    elif case.python_bug in ('HEAD_CREATES_ROUTER', 'HEAD_PERSISTS_FORWARDING'):
+        before, after = snapshots['python']['before'], snapshots['python']['after']
+        transcript = after['fake']['transcript'][len(before['fake']['transcript']):]
+        python_bug_outcome = {'http_status': observations['python']['status'],
+            'configuration_changed': bool(differences(before['database'], after['database'])),
+            'agent_post_requests': sum(item['method'] == 'POST' and item['peer'] == 'agent' for item in transcript),
+            'agent_get_requests': sum(item['method'] == 'GET' and item['peer'] == 'agent' for item in transcript)}
     return {'case': case.ident, 'route': case.route, 'entries': list(case.entries), 'request': request,
             'status': status,
             'unimplemented_reason': unimplemented_reason if not implemented else None,
@@ -394,6 +416,7 @@ def findings(path, data):
         f'矩阵：{data["matrix_routes"]} 条路由、{data["matrix_entries"]} 个设计条目。',
         f'公开 Go 入口实际注册本领域路由：{data["implemented_routes"]} 条。',
         '执行配方统计：`' + json.dumps(data['recipe_counts'], ensure_ascii=False, sort_keys=True) + '`。',
+        '实际执行世界（统计仅涵盖这些世界）：`' + ', '.join(data['executed_worlds']) + '`。',
         f'已有执行配方引用的设计条目：{data["referenced_entries"]}；逐条变体审计仍未完成。', '',
         '“Go 尚未实现”单独计数，不算失败，也不算差分通过。路由层 R15/R17 未注册时，',
         '即使底层 R01–R06 已移植，也不能声称 HTTP 行为已比较。', '',
@@ -404,17 +427,10 @@ def findings(path, data):
     if not changed:
         lines += ['目前没有已比较的 Go 缺陷结论。Python 参考异常单独记录；“Go 尚未实现”不算差分通过。', '']
     for result in (item for item in data['results'] if item.get('python_bug')):
-        suffix_bug = result['python_bug'] == 'IKUAI_NETMASK_SUFFIX_ROLLBACK'
-        owner = 'R05（iKuai）' if suffix_bug else 'A20（Linux gateway）及 R15（forwarding HTTP）'
-        description = ('默认 fake 保留真实 static_rt netmask 显示后缀。Python 发布返回 502，'
-                       '新增静态路由的回读和补偿均因后缀不匹配失败，设备留下配置。未修改 fake 来掩盖此问题。'
-                       if suffix_bug else
-                       '一个 Agent 的 forward_filter.state/source.kind/remedy.source 返回数组或对象时，'
-                       'Python 用不可哈希值查 frozenset，抛出未捕获 TypeError，整个 GET 返回 HTML 500，'
-                       '另一台健康网关的信息也丢失。应隔离这份不可信报告并保留健康条目。')
-        lines += ['## Python bug · medium · ' + result['python_bug'], '',
+        bug = BUGS[result['python_bug']]
+        lines += ['## Python bug · ' + bug.severity + ' · ' + result['python_bug'], '',
                   '- 用例：' + result.get('world', '<self-check>') + ':' + result['case'] + '；矩阵：' + ', '.join(result['entries']),
-                  '- 建议负责模块：' + owner + '。', '- ' + description,
+                  '- 建议负责模块：' + bug.owner + '。', '- ' + bug.summary,
                   '- 请求：`' + json.dumps(result['request'], ensure_ascii=False) + '`',
                   '- Python：`' + json.dumps(result['python'], ensure_ascii=False) + '`',
                   '- Python 设备终态：`' + json.dumps(result['python_bug_outcome'], ensure_ascii=False) + '`',
@@ -424,15 +440,12 @@ def findings(path, data):
                              '前置 Go 响应差异阻止后续请求，未使用 Python 的值代替 Go：`' + str(result['blocked_reference']) + '`'
                              if result['go'] is None else
                              '`' + json.dumps({'response': result['go'], 'outcome': result['go_bug_outcome']}, ensure_ascii=False) + '`'),
-                  *(['- 普通 netmask 的独立变体覆盖 R011-S02 成功路径；默认后缀变体记录这个 Python bug。',
-                     '- L5 待核：真实固件 static_rt 的 netmask 后缀形态，以及失败后设备补偿是否干净。'] if suffix_bug else []), '']
+                  *['- ' + item for item in bug.followups], '']
     for index, result in enumerate(changed, 1):
         severity = 'P1' if result['request']['method'] != 'GET' else 'P2'
         owner = 'R17（客户端 HTTP）' if result['route'] in ('R002', 'R003', 'R004', 'R005', 'R006') else 'R15（路由 HTTP）'
-        if result.get('python_bug') == 'IKUAI_NETMASK_SUFFIX_ROLLBACK':
-            owner = 'R05（iKuai）'
-        elif result.get('python_bug') == 'AGENT_FORWARD_FILTER_UNHASHABLE':
-            owner = 'A20（Linux gateway）及 R15（forwarding HTTP）'
+        if result.get('python_bug'):
+            owner = BUGS[result['python_bug']].owner
         if result['python']['status'] == 401 and result['go'] and result['go']['status'] < 400:
             severity = 'P1'
         lines += [f'## F{index:03} · {severity} · ' + result.get('world', '<self-check>') + ':' + result['case'], '',
@@ -515,6 +528,10 @@ def main():
               ('disconnect-release', releases.options(), (disconnect.release,)),
               ('disconnect-fixed', clients.options(), (disconnect.fixed,)),
               ('disconnect-manual', options, (disconnect.manual,)),
+              ('head-collection-empty', options, (routing.head_collection_empty,)),
+              ('head-collection-body', options, (routing.head_collection_body,)),
+              ('head-forwarding-empty', fixtures.agent_options(), (routing.head_forwarding_empty,)),
+              ('head-forwarding-body', fixtures.agent_options(), (routing.head_forwarding_body,)),
               ('auth-off-editors', auth_off(options), (workflows.client_drafts, workflows.workspace_drafts,
                     workflows.router_updates, workflows.runtime_reads, workflows.sync_settings,
                     workflows.manual_routes, workflows.router_creates, workflows.unlinked_inspection, probes.auth_disabled)),

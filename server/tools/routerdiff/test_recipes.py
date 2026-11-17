@@ -14,14 +14,16 @@ import upstream
 import dns
 import gateway
 import disconnect
+import routing
 from inventory import load
+from bugs import BUGS
 
 
 class RecipeTests(unittest.TestCase):
     def test_unique_variants_and_real_design_references(self):
         routes, entries = load()
         seen = set()
-        for module in (cases, guards, workflows, fixtures, probes, releases, clients, sync, upstream, dns, gateway, disconnect):
+        for module in (cases, guards, workflows, fixtures, probes, releases, clients, sync, upstream, dns, gateway, disconnect, routing):
             for name in module.__dict__:
                 value = getattr(module, name)
                 if not inspect.isgeneratorfunction(value) or getattr(value, '__module__', '') != module.__name__:
@@ -33,6 +35,8 @@ class RecipeTests(unittest.TestCase):
                         self.assertTrue(case.route in routes, 'unknown public route ID: ' + case.route)
                         for reference in case.entries:
                             self.assertTrue(reference in entries, 'unknown matrix ID: ' + reference)
+                        if case.python_bug:
+                            self.assertTrue(case.python_bug in BUGS, 'unknown reference-bug ID: ' + case.python_bug)
 
     def test_response_references_are_side_local(self):
         value = {'revision': cases.Ref('first', '/body/own')}

@@ -616,3 +616,25 @@ go-unimplemented6, referenced_entries3, complete=false, remaining_audits2301.
 timeouts63 cumulative in90.38s; go-unimplemented63, referenced_entries9,
 python_bugs includes AGENT_FORWARD_FILTER_UNHASHABLE; complete=false,
 remaining_audits2301. No pending processes; latest full composition still pending.
+
+HEAD dispatch iteration (2026-11-18):
+- Added four independent real HTTP worlds: collection and forwarding HEAD, each
+  with absent vs valid body. Two medium Python bugs: HEAD_CREATES_ROUTER and
+  HEAD_PERSISTS_FORWARDING, owners R15 / R15+A20. DB revision and Agent POST
+  assertions prove side effects. Original matrix retained; audit corrects R025
+  HEAD read-only prerequisite. No product implementation changed.
+- Named reference-bug registry renders every bug with its own owner/description.
+  Safe Go differences are review observations; same unsafe mutation is failure.
+  Negative runner regression exercises both DB and device mutation.
+- Report now prints executed worlds, so subset statistics cannot look like a
+  fresh full composition. Latest FULL composition remains the older1629 run.
+
+Exact .64 command:
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; cd server/tools/routerdiff; export PYTHONDONTWRITEBYTECODE=1; ~/cf-test/.venv/bin/python -m unittest -v test_recipes test_runner test_compare test_tokens; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary /tmp/routerdiff-build-302rx1dg/configflow --world release-ik-suffix --world release-ik-plain --world forwarding-failures --world head-collection-empty --world head-collection-body --world head-forwarding-empty --world head-forwarding-body --output /tmp/routerdiff-reference-bugs.json --findings /tmp/routerdiff-reference-bugs-findings.md'`
+Remote final report exists, completed2026-11-18 00:18:07+08:00:
+matrix_entries2301, routes26, implemented0, go-unimplemented71, referenced_entries15,
+python_bugs=[AGENT_FORWARD_FILTER_UNHASHABLE,HEAD_CREATES_ROUTER,
+HEAD_PERSISTS_FORWARDING,IKUAI_NETMASK_SUFFIX_ROLLBACK], complete=false,
+remaining_audits2301. Earlier HEAD-only run: Ran12 tests0.538s/OK; 4 HTTP recipes
+passed. Combined command output was truncated by the tool; final report verified
+read-only on remote. Final full matrix audit and latest composition still pending.
