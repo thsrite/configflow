@@ -7,24 +7,128 @@ package repo
 
 import (
 	"context"
+	"encoding/json"
 
 	"configflow/internal/jsonx"
 	"configflow/internal/model"
+	"configflow/internal/store"
 )
 
-// workingModel returns a typed copy of the working document of the write
-// transaction ctx belongs to; ok is false outside a transaction.
+// workingModel returns the typed working document of the write transaction
+// ctx belongs to (a fresh conversion while a legacy updater runs); ok is false
+// outside a transaction.
 func (r *Repository) workingModel(ctx context.Context) (document *model.Document, ok bool, err error) {
-	legacy := r.working(ctx)
-	if legacy == nil {
+	tx := r.transactionOf(ctx)
+	if tx == nil {
 		return nil, false, nil
 	}
-	rows, err := legacyIntentRows(legacy, nil)
-	if err != nil {
-		return nil, true, err
+	if tx.legacy == nil {
+		return tx.document, true, nil
 	}
-	document, _, err = decodeModelRows(rows)
+	document, err = modelFromLegacy(tx.legacy, tx.base.Entry.Document)
 	return document, true, err
+}
+
+// working returns the legacy view of the working document of the write
+// transaction ctx belongs to, or nil: the legacy updater's own copy while one
+// runs, else a fresh conversion of the typed working copy.
+func (r *Repository) working(ctx context.Context) (*jsonx.Object, error) {
+	tx := r.transactionOf(ctx)
+	if tx == nil {
+		return nil, nil
+	}
+	if tx.legacy != nil {
+		return tx.legacy, nil
+	}
+	return legacyModelDocument(tx.document)
+}
+
+// modelFromLegacy converts a legacy document into the typed one. Rows whose
+// legacy value is unchanged keep the bytes of base (legacyIntentRows).
+func modelFromLegacy(legacy *jsonx.Object, base *store.Document) (*model.Document, error) {
+	rows, err := legacyIntentRows(legacy, base)
+	if err != nil {
+		return nil, err
+	}
+	document, _, err := decodeModelRows(rows)
+	if err != nil {
+		return nil, &store.Error{Kind: store.ErrDocument, Message: err.Error(), Cause: err}
+	}
+	return document, nil
+}
+
+// update is the legacy write transaction: fn mutates a *jsonx.Object view of
+// the working document, which is converted back afterwards. Members fn did
+// not change keep their stored bytes (row level, legacyIntentRows).
+func (r *Repository) update(ctx context.Context, options writeOptions, fn func(ctx context.Context, document *jsonx.Object) error) error {
+	return r.transact(ctx, options, func(ctx context.Context, tx *transaction) error {
+		legacy, err := legacyModelDocument(tx.document)
+		if err != nil {
+			return err
+		}
+		rows, err := encodeModelRows(tx.document, tx.base.Entry.Document)
+		if err != nil {
+			return err
+		}
+		tx.legacy = legacy
+		err = fn(ctx, legacy)
+		tx.legacy = nil
+		if err != nil {
+			return err
+		}
+		tx.document, err = modelFromLegacy(legacy, rows)
+		return err
+	})
+}
+
+// view is `with self._document() as document`: fn reads the transaction's
+// working copy when ctx is inside one, the committed generation otherwise.
+// fn must not modify the document or keep references to it.
+func (r *Repository) view(ctx context.Context, fn func(document *jsonx.Object) error) error {
+	document, _, err := r.committedSource(ctx)
+	if err != nil {
+		return err
+	}
+	return fn(document)
+}
+
+// committedSource is _committed_source: the document and whether it is a
+// committed generation (which is never mutated and may be kept as the source
+// of a three-way merge baseline) rather than a transaction's working copy.
+func (r *Repository) committedSource(ctx context.Context) (document *jsonx.Object, committed bool, err error) {
+	if r.InTransaction(ctx) {
+		document, err := r.working(ctx)
+		return document, false, err
+	}
+	entry, err := r.readEntry(ctx, false)
+	if err != nil {
+		return nil, false, err
+	}
+	return entry.Document, true, nil
+}
+
+// ensureLegacyRuleProxyToken runs ensureRuleProxyToken on the legacy view of
+// the proposed document and, when it changed the settings, stores them in the
+// typed working copy too (N8-5c migrates it to the typed system section).
+func ensureLegacyRuleProxyToken(tx *transaction, legacy *jsonx.Object) error {
+	system, err := compatObject(legacy.Value("system"))
+	if err != nil {
+		return err
+	}
+	changed, err := ensureRuleProxyToken(system)
+	if err != nil || !changed {
+		return err
+	}
+	encoded, err := jsonx.Compact(system.Value("system_config"))
+	if err != nil {
+		return err
+	}
+	var settings model.SystemConfig
+	if err := json.Unmarshal(encoded, &settings); err != nil {
+		return err
+	}
+	tx.document.System.SystemConfig = settings
+	return nil
 }
 
 // threeWayMerge is MergeJSON for jsonx values (nil = absent).

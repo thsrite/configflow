@@ -412,7 +412,8 @@ func TestRestartAtomicallyRotatesRuleProxyTokenEqualToConfigToken(t *testing.T) 
 	document := must(repository.ExportAll(bg, false))(t)
 	document.Set("system", system)
 	// Persist a raw document that skips the repository's token rule.
-	if _, _, err := repository.commitStore(context.Background(), must(decodeEntry(must(repository.Store().Load())(t)))(t), document, nil); err != nil {
+	base := must(decodeEntry(must(repository.Store().Load())(t)))(t)
+	if _, _, err := repository.commitStore(context.Background(), base, must(modelFromLegacy(document, base.Entry.Document))(t), nil); err != nil {
 		t.Fatal(err)
 	}
 	mpFixedToken(t, "rotated-internal-token")

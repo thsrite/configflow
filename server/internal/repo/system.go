@@ -147,7 +147,11 @@ func SanitizationTokensOf(system *jsonx.Object) (ruleProxy, agents TokenSet) {
 // generation, remembered by store head. Inside a transaction the working
 // copy is read and nothing is cached.
 func (r *Repository) sanitizationTokensNow(ctx context.Context) (TokenSet, TokenSet, error) {
-	if document := r.working(ctx); document != nil {
+	if r.InTransaction(ctx) {
+		document, err := r.working(ctx)
+		if err != nil {
+			return nil, nil, err
+		}
 		ruleProxy, agents := SanitizationTokensOf(document.GetObject("system"))
 		return ruleProxy, agents, nil
 	}

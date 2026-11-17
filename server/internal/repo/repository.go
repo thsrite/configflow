@@ -31,7 +31,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"configflow/internal/ctxx"
 	"configflow/internal/jsonx"
 	"configflow/internal/logx"
 	"configflow/internal/store"
@@ -353,7 +352,7 @@ func (r *Repository) openLocked(ctx context.Context) error {
 	if changed, err := ensureRuleProxyToken(system); err != nil {
 		return err
 	} else if changed {
-		return r.writeLocked(ctx, writeOptions{}, func(context.Context, *jsonx.Object, *jsonx.Object) error { return nil })
+		return r.transactLocked(ctx, writeOptions{}, func(context.Context, *transaction) error { return nil })
 	}
 	return nil
 }
@@ -493,155 +492,6 @@ func (r *Repository) readEntry(ctx context.Context, locked bool) (storedEntry, e
 		return storedEntry{}, &Error{Kind: ErrRepository, Message: "配置数据库内容无效：" + err.Error(), Cause: err}
 	}
 	return storedEntry{}, err
-}
-
-type txKey struct{ repository *Repository }
-
-// working returns the working copy of the write transaction ctx belongs to.
-func (r *Repository) working(ctx context.Context) *jsonx.Object {
-	document, _ := ctx.Value(txKey{r}).(*jsonx.Object)
-	return document
-}
-
-// InTransaction reports whether ctx belongs to an open write transaction of
-// this repository (Python: repository._local.document is not None).
-func (r *Repository) InTransaction(ctx context.Context) bool { return r.working(ctx) != nil }
-
-const nestedWriteMessage = "不能在配置事务中再次开启写事务"
-
-// view is `with self._document() as document`: fn reads the transaction's
-// working copy when ctx is inside one, the committed generation otherwise.
-// fn must not modify the document or keep references to it.
-func (r *Repository) view(ctx context.Context, fn func(document *jsonx.Object) error) error {
-	if document := r.working(ctx); document != nil {
-		return fn(document)
-	}
-	entry, err := r.readEntry(ctx, false)
-	if err != nil {
-		return err
-	}
-	return fn(entry.Document)
-}
-
-// committedSource is _committed_source: the document and whether it is a
-// committed generation (which is never mutated and may be kept as the source
-// of a three-way merge baseline) rather than a transaction's working copy.
-func (r *Repository) committedSource(ctx context.Context) (document *jsonx.Object, committed bool, err error) {
-	if document := r.working(ctx); document != nil {
-		return document, false, nil
-	}
-	entry, err := r.readEntry(ctx, false)
-	if err != nil {
-		return nil, false, err
-	}
-	return entry.Document, true, nil
-}
-
-type writeOptions struct {
-	lockedRouters map[routerKey]bool
-	policyRouter  *routerKey
-	meta          *jsonx.Object
-	batch         *bool // marked immediately before an approved filesystem + DB batch
-}
-
-// beginCommitBatch is restricted to the three paths listed in Clarified in
-// O3-6c. Once filesystem effects start, their final database commit must finish.
-func beginCommitBatch(ctx context.Context, started *bool) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	*started = true
-	return nil
-}
-
-// update is `with self._document(write=True, ...) as document`: one write
-// transaction under .config.lock. fn mutates document; a nil return commits,
-// an error discards everything. After the commit and the lock release the
-// ConfigurationCommitted hook runs when auto backup is on.
-// Callbacks otherwise edit only the candidate. A guard-only callback may commit
-// a checked file action and abort its unchanged candidate (C33's replayable
-// marker protocol). Filesystem + DB batches use beginCommitBatch only on the
-// three approved paths; guard-only callbacks never mark a database batch.
-func (r *Repository) update(ctx context.Context, options writeOptions, fn func(ctx context.Context, document *jsonx.Object) error) error {
-	ctx = ctxx.Detach(ctx)
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	if readSnapshotActive(ctx) {
-		return ErrReadOnlySnapshot
-	}
-	if r.working(ctx) != nil {
-		return inUse(nestedWriteMessage)
-	}
-	var previous, current *jsonx.Object
-	err := withLock(ctx, r.lockFile, func(ctx context.Context) error {
-		return r.writeLocked(ctx, options, func(ctx context.Context, before, document *jsonx.Object) error {
-			previous, current = before, document
-			return fn(ctx, document)
-		})
-	})
-	if err != nil {
-		return err
-	}
-	if jsonx.Truthy(current.GetObject("system").GetObject("backup").Value("auto_backup")) {
-		if committed := currentHooks().ConfigurationCommitted; committed != nil {
-			committed(r, previous, current)
-		}
-	}
-	return nil
-}
-
-// writeLocked is _write_locked: one write transaction; the caller holds
-// .config.lock. fn receives the committed generation and the copy to
-// mutate. Only rows that changed are written, in one SQLite transaction.
-func (r *Repository) writeLocked(ctx context.Context, options writeOptions,
-	fn func(ctx context.Context, previous, document *jsonx.Object) error) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	if r.working(ctx) != nil {
-		return inUse(nestedWriteMessage)
-	}
-	base, err := r.readEntry(ctx, true)
-	if err != nil {
-		return err
-	}
-	previous := base.Document
-	document := previous.DeepCopy()
-	if err := fn(context.WithValue(ctx, txKey{r}, document), previous, document); err != nil {
-		return err
-	}
-	if options.batch != nil && *options.batch {
-		ctx = ctxx.Uninterruptible(ctx)
-	}
-	system, err := compatObject(document.Value("system"))
-	if err != nil {
-		return err
-	}
-	if _, err := ensureRuleProxyToken(system); err != nil {
-		return err
-	}
-	if err := ValidateDocument(document); err != nil {
-		return err
-	}
-	release, err := r.routerCommitGuard(ctx, previous, document, options.lockedRouters, options.policyRouter)
-	if err != nil {
-		return err
-	}
-	defer release()
-	committed, changed, err := r.commitStore(ctx, base, document, options.meta)
-	if err != nil {
-		r.dropCache()
-		if errors.Is(err, store.ErrConflict) {
-			return &Error{Kind: ErrRepository, Message: conflictMessage, Cause: err}
-		}
-		return err
-	}
-	if changed {
-		r.setCache(committed)
-		r.commitCount.Add(1)
-	}
-	return nil
 }
 
 var manifestLabels = [][2]string{{"ros_policy_state", "策略路由"}, {"dns_guard_state", "强制 DNS 规则"},

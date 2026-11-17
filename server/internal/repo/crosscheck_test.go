@@ -154,9 +154,22 @@ func xcMask(text string) string {
 	})
 }
 
-func xcMaskedLayout(t testing.TB, record any) []any {
+// xcRetiredLock matches the lock files Python creates besides .config.lock:
+// per-profile operation locks and per-file "<file>.lock" (profile files and
+// shared caches). Go serialises these in process since O3-6a and never
+// creates them (O12 ledger), so they are dropped from Python's layout and
+// refused in Go's.
+var xcRetiredLock = regexp.MustCompile(`^(profiles/\.[^/]+\.operation\.lock|(profiles|shared)/.+[^/]\.lock)$`)
+
+func xcMaskedLayout(t testing.TB, record any, python bool) []any {
 	var entries []string
 	for _, entry := range record.(*jsonx.Object).GetList("result") {
+		if xcRetiredLock.MatchString(entry.(string)) {
+			if !python {
+				t.Fatalf("Go created the retired lock file %s", entry)
+			}
+			continue
+		}
 		entries = append(entries, xcOrdinal.ReplaceAllString(xcMask(entry.(string)), "<random>"))
 	}
 	sort.Strings(entries)
@@ -488,7 +501,7 @@ func xcOperationsFile(t *testing.T, file string) (goDir, pyDir string) {
 	// The layout holds random directory names in sorted order: compare it
 	// as a sorted list of masked names, apart from the cumulative comparison.
 	last := len(golang) - 1
-	xcSame(t, "layout", xcMaskedLayout(t, golang[last]), xcMaskedLayout(t, python[last]))
+	xcSame(t, "layout", xcMaskedLayout(t, golang[last], false), xcMaskedLayout(t, python[last], true))
 	golang, python = golang[:last], python[:last]
 	// Random values are numbered in order of first appearance over the
 	// whole run, so the records are compared cumulatively: the whole run at

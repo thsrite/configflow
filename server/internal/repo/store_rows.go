@@ -191,8 +191,8 @@ func (r *Repository) createStore(doc, meta *jsonx.Object) (storedEntry, error) {
 	return decodeEntry(entry)
 }
 
-func (r *Repository) commitStore(ctx context.Context, base storedEntry, doc, meta *jsonx.Object) (storedEntry, bool, error) {
-	raw, err := encodeRows(doc, base.Entry.Document)
+func (r *Repository) commitStore(ctx context.Context, base storedEntry, doc *model.Document, meta *jsonx.Object) (storedEntry, bool, error) {
+	raw, err := encodeModelRows(doc, base.Entry.Document)
 	if err != nil {
 		return storedEntry{}, false, err
 	}
