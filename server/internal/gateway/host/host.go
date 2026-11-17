@@ -103,8 +103,10 @@ func checkAgent(a *model.Agent) error {
 
 // HasRecord counts unreadable and pending journals as records too.
 func HasRecord(status Reply) bool {
-	raw, exists := status["managed"]
-	if !exists || string(raw) == "null" {
+	// An empty value is an absent member (PersistForwarding copies the reply's
+	// members, present or not); Python reads both as None, i.e. no record.
+	raw := status["managed"]
+	if len(raw) == 0 || string(raw) == "null" {
 		return false
 	}
 	managed := object(raw)
