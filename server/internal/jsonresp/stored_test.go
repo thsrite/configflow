@@ -20,7 +20,7 @@ func TestDecodeStoredPreservesRecordsAndOnlyRepairsNumbers(t *testing.T) {
 	if err := DecodeStored([]byte(`{"values":[NaN,Infinity,-Infinity,1.25,null],"text":"NaN Infinity \"NaN","exact":100000000000000000001}`), &got); err != nil {
 		t.Fatal(err)
 	}
-	if len(got.Values) != 5 || string(got.Values[0]) != "null" || string(got.Values[1]) != "null" || string(got.Values[2]) != "null" || string(got.Values[3]) != "1.25" || string(got.Exact) != "100000000000000000001" {
+	if got.Text != "NaN Infinity \"NaN" || len(got.Values) != 5 || string(got.Values[0]) != "null" || string(got.Values[1]) != "null" || string(got.Values[2]) != "null" || string(got.Values[3]) != "1.25" || string(got.Exact) != "100000000000000000001" {
 		t.Fatalf("%+v", got)
 	}
 	for _, bad := range []string{`{"x":NotNaN}`, `{"x":Infinity1}`, `{"x":+Infinity}`, `{"x":NaN} {}`} {
@@ -50,6 +50,9 @@ func TestRequestPackagesDoNotRepairStoredJSON(t *testing.T) {
 					alias := "jsonresp"
 					if imp.Name != nil {
 						alias = imp.Name.Name
+						if alias == "." {
+							t.Errorf("dot import can bypass request repair guard: %s", path)
+						}
 					}
 					aliases[alias] = true
 				}
