@@ -3,6 +3,7 @@ package agents
 import (
 	"configflow/internal/jsonx"
 	"configflow/internal/redact"
+	"encoding/json"
 )
 
 // SanitizePublicMetadata adapts native redacted JSON for the remaining legacy
@@ -11,10 +12,10 @@ func SanitizePublicMetadata(record *jsonx.Object, secrets redact.Secrets) *jsonx
 	if record == nil {
 		return nil
 	}
-	value, err := jsonx.Parse(redact.SanitizeCredentials(record, secrets))
+	var object *jsonx.Object
+	err := json.Unmarshal(redact.SanitizeCredentials(record, secrets), &object)
 	if err != nil {
 		return nil
 	}
-	object, _ := value.(*jsonx.Object)
 	return object
 }
