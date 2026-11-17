@@ -22,6 +22,7 @@ import (
 )
 
 func TestParseUserinfo(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		header string
 		want   any
@@ -58,6 +59,7 @@ func (f *fakeHTTP) Do(_ context.Context, req *substore.Request) (*substore.Respo
 }
 
 func TestFetchUserinfoSkipsNonHTTP(t *testing.T) {
+	// Sequential: replaces the process-wide HTTP Env.
 	client := &fakeHTTP{reply: func(*substore.Request) (*substore.Response, error) {
 		t.Error("unexpected request")
 		return nil, errors.New("no")
@@ -73,6 +75,7 @@ func TestFetchUserinfoSkipsNonHTTP(t *testing.T) {
 // fetch_userinfo reads the header with the Clash user agent; HTTP errors
 // and request failures are nil.
 func TestFetchUserinfoReadsTheHeader(t *testing.T) {
+	// Sequential: replaces the process-wide HTTP Env.
 	status := 200
 	var failure error
 	client := &fakeHTTP{reply: func(req *substore.Request) (*substore.Response, error) {
@@ -197,6 +200,7 @@ func airSub() *jsonx.Object {
 
 // test_subscription_hosts.py::test_only_downloaded_bodies_carry_hosts_into_the_cache_metadata
 func TestOnlyDownloadedBodiesCarryHostsIntoTheCacheMetadata(t *testing.T) {
+	// Sequential: missing fetched_at values use the process-wide Env clock.
 	feed := airSub()
 	metadata, err := SourceCacheMetadata(feed, &substore.SubscriptionResult{Text: airport, Source: "direct_yaml", FetchedAt: "x"})
 	if err != nil || metadata.GetObject("hosts").GetInt("total") != 3 {

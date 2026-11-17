@@ -61,6 +61,7 @@ func TestReviewCancelledRequestContextFinishesTheRefresh(t *testing.T) {
 // is_library_source / find_resource use next(): the search stops at the
 // first match, so an item that is not an object after it does not fail.
 func TestReviewNextStopsAtTheFirstMatch(t *testing.T) {
+	t.Parallel()
 	match := func(item *jsonx.Object) bool { return item.Value("id") == "a" }
 	found, err := nextObject([]any{jsonx.Obj("id", "a"), "junk"}, match)
 	if err != nil || found == nil {

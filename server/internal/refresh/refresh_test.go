@@ -120,7 +120,10 @@ type fixture struct {
 
 // setup is the Python fixture: one subscription (interval 86400) and one
 // library rule; downloads fail loudly unless a test installs a reply.
+// Tests using setup stay sequential: Env, task claims and lifecycle wiring are
+// process-wide. The recorded replay also keeps Env calls sequential.
 func setup(t *testing.T, subInterval any) *fixture {
+	t.Helper()
 	r, err := repo.Open(t.TempDir(), repo.Options{})
 	if err != nil {
 		t.Fatal(err)
@@ -265,6 +268,7 @@ func mustTime(t *testing.T, text string) time.Time {
 
 // test_scheduled_tasks.py::test_next_run_backs_off_after_failures_but_never_beyond_the_interval
 func TestNextRunBacksOffAfterFailuresButNeverBeyondTheInterval(t *testing.T) {
+	t.Parallel()
 	start := mustTime(t, "2026-10-24T00:00:00Z")
 	base := func(kv ...any) *jsonx.Object {
 		return jsonx.Obj(append([]any{"last_run_at", "2026-10-24T00:00:00Z"}, kv...)...)
@@ -302,6 +306,7 @@ func (f *fixture) noRules() {
 
 // test_scheduled_tasks.py::test_failure_reasons_are_readable_and_never_render_the_address
 func TestFailureReasonsAreReadableAndNeverRenderTheAddress(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		err  error
 		want string

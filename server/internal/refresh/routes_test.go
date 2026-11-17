@@ -24,7 +24,9 @@ import (
 
 func none(context.Context, *jsonx.Object) ([]*jsonx.Object, error) { return nil, nil }
 
+// server mutates process-wide task slots; its callers must stay sequential.
 func server(t *testing.T) *httpxtest.Server {
+	t.Helper()
 	refresh.Wire()
 	for _, slot := range []string{tasks.SlotRouters, tasks.SlotAgents, tasks.SlotDomains, tasks.SlotMetrics} {
 		tasks.SetRows(slot, none)

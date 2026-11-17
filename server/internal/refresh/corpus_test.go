@@ -107,6 +107,7 @@ func buildError(spec any) error {
 }
 
 func TestReferenceCorpus(t *testing.T) {
+	// Sequential: all rows share a frozen clock through the process-wide Env.
 	clock := &fakeClock{now: corpusNow}
 	t.Cleanup(SetEnv(&Env{Clock: clock}))
 	given := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
@@ -297,6 +298,7 @@ func readHealth(t *testing.T, r *repo.Repository) any {
 // (compat_health.go; repo cannot import this package). Both must agree on
 // repo's golden rows from Python.
 func TestValidateRefreshIntervalMatchesTheRepoCopyGolden(t *testing.T) {
+	t.Parallel()
 	data, err := os.ReadFile("../repo/testdata/compat_golden.json")
 	if err != nil {
 		t.Fatal(err)

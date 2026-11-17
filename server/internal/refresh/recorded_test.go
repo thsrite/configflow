@@ -34,6 +34,7 @@ func (c frozenClock) Monotonic() float64  { return 1000 }
 func (c frozenClock) Sleep(time.Duration) {}
 
 func loadRecorded(t *testing.T, name string) []*jsonx.Object {
+	t.Helper()
 	handle, err := os.Open(name)
 	if err != nil {
 		t.Fatal(err)
@@ -108,6 +109,7 @@ func recordedClassOf(err error) string {
 
 // seedFiles writes the files the call read (null: absent).
 func seedFiles(t *testing.T, ctx context.Context, r *repo.Repository, files *jsonx.Object) {
+	t.Helper()
 	for label, value := range files.All() {
 		text, ok := value.(string)
 		if !ok {
@@ -130,6 +132,7 @@ func seedFiles(t *testing.T, ctx context.Context, r *repo.Repository, files *jso
 }
 
 func readFiles(t *testing.T, r *repo.Repository, files *jsonx.Object) *jsonx.Object {
+	t.Helper()
 	out := jsonx.NewObject()
 	for _, label := range files.Keys() {
 		path := filepath.Join(r.DataDir(), label)
@@ -268,6 +271,20 @@ func (c *replayCall) replay() (any, error) {
 
 func TestRecordedPythonSuite(t *testing.T) {
 	rows := loadRecorded(t, "testdata/c15_recorded.jsonl.gz")
+	// Build the unchanged production defaults once. Each stateful row copies
+	// the closed SQLite database and directory layout, then opens its own
+	// repository normally; no writable files or Repository objects are shared.
+	template := t.TempDir()
+	if _, err := repo.Open(template, repo.Options{}); err != nil {
+		t.Fatal(err)
+	}
+	// Sequential: the replay changes the process-wide Env. Keep the original
+	// test tree and all rows; reuse only the immutable default database image.
+	replayRecordedRows(t, rows, template)
+}
+
+func replayRecordedRows(t *testing.T, rows []*jsonx.Object, template string) {
+	t.Helper()
 	counts := map[string]int{}
 	failures := 0
 	for i, row := range rows {
@@ -282,11 +299,25 @@ func TestRecordedPythonSuite(t *testing.T) {
 		if !ok {
 			t.Fatalf("row %d: now %q", i, row.GetString("now"))
 		}
-		r, err := repo.Open(t.TempDir(), repo.Options{})
-		if err != nil {
-			t.Fatal(err)
+		var r *repo.Repository
+		var err error
+		ctx := context.Background()
+		// Pure/clock-only calls never consult the repository. Keep every stateful
+		// row's database and before/after files private to that row.
+		switch fn {
+		case "validate_refresh_interval", "source_cache_metadata", "_is_fresh", "_download_cache_path",
+			"parse_userinfo", "describe_failure", "rule_interval", "subscription_interval", "next_run_at", "_history", "_host":
+		default:
+			dir := t.TempDir()
+			if err := os.CopyFS(dir, os.DirFS(template)); err != nil {
+				t.Fatal(err)
+			}
+			r, err = repo.Open(dir, repo.Options{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx = repo.WithScope(repo.WithRepository(ctx, r))
 		}
-		ctx := repo.WithScope(repo.WithRepository(context.Background(), r))
 		if before := row.GetObject("before"); before != nil {
 			seedFiles(t, ctx, r, before)
 		}
@@ -310,7 +341,7 @@ func TestRecordedPythonSuite(t *testing.T) {
 			conversions[proxy] = answer
 		}
 		nextUUID, nextDownload := 0, 0
-		restore := SetEnv(&Env{
+		env := &Env{
 			Clock: frozenClock{now: now},
 			RandomHex: func() string {
 				if nextUUID >= len(uuids) {
@@ -331,10 +362,13 @@ func TestRecordedPythonSuite(t *testing.T) {
 				return resultFromRecord(answer.Value("ok")), nil
 			},
 			Converter: replayConverter{answers: conversions},
-		})
+		}
 		call := &replayCall{row: row, ctx: ctx, r: r}
-		value, err := call.replay()
-		restore()
+		var value any
+		func() {
+			defer SetEnv(env)()
+			value, err = call.replay()
+		}()
 		var got, want *jsonx.Object
 		if err != nil {
 			got = jsonx.Obj("err", jsonx.Obj("class", recordedClassOf(err), "text", err.Error()))
