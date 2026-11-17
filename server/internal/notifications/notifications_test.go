@@ -504,6 +504,37 @@ func TestSameRouterIDInDifferentProfilesDoesNotMerge(t *testing.T) {
 	}
 }
 
+// The routers owner confirms the empty release and writes its success receipt.
+// C07 projects that persisted fact; planning/apply itself remains a routers test.
+func TestConfirmedRouterReleaseRemovesPreviousFailure(t *testing.T) {
+	f := setup(t)
+	f.seedRouter("default")
+	setRelease := func(ok bool) {
+		f.t.Helper()
+		_, _, err := f.srv.Repo.UpdateProfileTransaction(f.srv.Context(), "default", func(_ context.Context, config *jsonx.Object) (*jsonx.Object, error) {
+			router := config.GetObject("routers").GetList("items")[0].(*jsonx.Object)
+			router.Set("last_release", jsonx.Obj("ok", ok, "at", notifications.Now(), "message", "回读失败"))
+			return nil, nil
+		})
+		if err != nil {
+			f.t.Fatal(err)
+		}
+	}
+	key := "router:default:r:release"
+	setRelease(false)
+	if f.items()[key].GetString("state") != "pending" {
+		t.Fatal("old release failure missing")
+	}
+	setRelease(true)
+	if _, exists := f.items()[key]; exists {
+		t.Fatal("confirmed release retained old failure")
+	}
+	data, err := os.ReadFile(filepath.Join(f.srv.DataDir, "notifications.json"))
+	if err != nil || strings.Contains(string(data), key) {
+		t.Fatal("resolved release still persisted", err)
+	}
+}
+
 // test_router_read_is_not_replayed_by_repeated_checks_and_marker_clears_on_removal
 func TestRouterReadIsNotReplayedByRepeatedChecksAndMarkerClearsOnRemoval(t *testing.T) {
 	f := setup(t)

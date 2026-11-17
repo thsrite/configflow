@@ -563,30 +563,45 @@ Clarified in: [design/c06-http-settings.md](../design/c06-http-settings.md). HEA
 
 ## C07 — logs, stats, tasks, notifications, web listener
 
-**Status: `partial`** · prereqs: C06 · Go: internal/api/logs, api/stats, api/tasks, api/notifications, tasks, notifications, weblistener
+**Status: `ported` — independent review pending; final gate result in progress** · prereqs: C06 · Go: internal/api/logs, api/stats, api/tasks, api/notifications, tasks, notifications, weblistener
 
-Files:
-- `backend/routes/logs.py` (179)
-- `backend/routes/stats.py` (109)
-- `backend/routes/tasks.py` (365)
-- `backend/routes/notifications.py` (33)
-- `backend/notifications.py` (296)
-- `backend/utils/notification_store.py` (103)
-- `backend/utils/web_listener.py` (308)
+Scope: backend/routes/{logs,stats,tasks,notifications}.py, backend/notifications.py,
+backend/utils/{notification_store,web_listener}.py. All nine routes now done,
+including immediate registration of the four formerly wip task/notification
+routes. Missing real slots explicitly return 503; no empty production rows.
 
-Tests: `test_logs_tail.py` (7), `test_notifications.py` (16), `test_web_listener.py` (21)
+Commits: 6110cc469 tasks readiness/owned interval/stored WebDAV runner/History;
+7273168de notification context commits/partial observation retention/HEAD;
+d38311548 logs/stats owners and stats HEAD; 72c33e8b6 native listener lifetime and
+portable socket/HTTP regression matrix. Acceptance/mapping commit follows.
 
-Routes (9, 5 done):
+Clarified in C07 (2026-11-18): [design and external owners](../design/c07-status.md),
+[full source-test mapping](progress/c07-mapping.md), [commands/results](progress/c07.md).
+Coordinator approved 503 with missing slot names until real rows exist, ready
+commands independent of missing rows, 503 for known unported owners and 400 for
+unknown keys, no post-commit interval presentation 500, safe partial background
+notification refresh, read-only stats/notification HEAD, ctx-aware leaf commits,
+BindSilent and real Runtime shutdown/disconnect tests. C37 retains work ctx and
+its Runtime generation. All non-nginx listener contracts are retained: existing
+seven plus eleven completed; exactly three nginx-only mechanics retired by design.
 
-`POST /api/logs/clear` [done]; `GET /api/logs/info` [done]; `GET /api/logs/tail` [done]; `GET /api/notifications` [wip]; `POST /api/notifications/read` [done]; `GET /api/stats/overview` [done]; `GET /api/tasks` [wip]; `PUT /api/tasks/interval` [wip]; `POST /api/tasks/run` [wip]
+Acceptance: notifications 15 original contracts plus the successful-release
+projection of the sixteenth; actual confirmed-empty /api/routers/r/apply remains
+routers-owned. Logs seven original contracts retained. Task run/read malformed,
+non-object and non-finite bodies, complete-ready rows/interval writes, nine-route
+authentication, DB/JSON/log after-state and combined notification redaction run
+against real Flask. Stats adds 48-point/30-minute/corrupt-optional-write/concurrent
+and HEAD tests. Runtime tests use real Start/BindRequest/Shutdown, including
+cancellation after observation/health and before commit. Fuzz target:
+FuzzTaskHistoryCounters. No Agent registry copy remains (A01 already wired it).
 
-Evidence: Go: `api/logs` (3/3 routes, `test_logs_tail.py` 7/7), `api/stats` (1/1), `notifications` + `api/notifications` (`test_notifications.py` 15/16), `tasks` + `api/tasks`, `weblistener` (redesign: Go serves the SPA itself instead of rewriting nginx; `test_web_listener.py` 7/21).
-
-Missing / deferred: Missing: `GET /api/notifications` and the three `/api/tasks` routes are `wip` — they register only when every `tasks` slot is provided: subscription + rule_source (C15), domain_discovery (C37), router_rule_sync (routers), agent + metrics_history (agents); backup row is here. The row builders `_subscription_rows`, `_rule_rows`, `_domain_rows` of `routes/tasks.py` are ported by C15/C37, `_router_rows`/`_metrics_row` by routers/agents. `test_notifications.py::test_confirmed_empty_router_release_clears_previous_failure` → routers. `internal/tasks` (315 lines) and `api/notifications` have no tests of their own. `notifications/compat.go` holds an agent-registry copy (switch when agents #20 lands).
-
-Reviewer notes: Web listener: 14 Python cases are nginx-specific (reload failure restore, nginx validation, docker backend address unreachable by nginx, source update template) or route-level (`test_get_and_post_require_authentication`, `test_success_api_returns_active_settings`, `test_missing_port_is_rejected`, custom Sub-Store/backend port reservation, internal services sharing a port, IPv4-only kernel). Reviewer must classify each as obsolete-by-design (document) or missing (port); the reserved-port and IPv4-only cases look portable.
-
-Clarified in C07 (2026-11-18): coordinator approved immediate four-route registration with explicit missing-slot 503; ready owner commands remain usable, no production empty-slot placeholders; backup runner is C07; R14 and A16/A17 remain external. Native HEAD projections, owner shutdown checks, ctx-aware notification leaf commits, BindSilent, portable listener rollback/IPv4/reserved-port contracts, test provider cleanup and History string-counter correction are in scope. Only nginx validation/reachability/old-template mechanics are retired. C07 owns the overlapping packages before N8-7; O3-6c retains shared taskstatus/repo/rulefetch commits. See [progress/c07.md](progress/c07.md) for full decisions and acceptance.
+External owner items are explicit: R14 router_rule_sync; A16/A17 agent rows and
+DNS-follow runner; A04 metrics already ready; C06 reviewed web-port handler
+HEAD/Bind changes are not duplicated. O3-6c (6e5c7760) owns remaining shared
+repo/taskstatus/rulefetch commit windows; adapt RecordContext/ForgetContext on
+rebase when available. N8-7 defers overlapping packages until C07 release.
+No production device access or production fixtures; no pushes. Only a different
+reviewer can mark verified.
 
 ## C08 — rule syntax, matcher, rule utils
 

@@ -308,3 +308,13 @@ Go 按 D2 使用原生 encoding/json 排序编码后取 SHA-256；Python 的 ASC
 包括嵌套的存储 `_revision`。`C33EditorRevisionTests` 有对应正负控。
 C33 的真实 Flask/Go 测试独立断言每侧 token 稳定、内容变化后失效、并发相同 token
 只成功一条（200/409）；生产比较不修改快照来验证乐观锁。
+
+C07 transitional task readiness: the two exact GET templates /api/tasks and
+/api/notifications may return the coordinator-approved 503 while R14/A16/A17
+have not supplied router_rule_sync and agent. The comparator recognizes only
+that exact Chinese body and those two missing slots against the exact successful
+Python list shape; original headers/content types still compare. It rejects any
+other 503, missing slot, extra field or message. The branch stops applying when
+real owners register their rows. Synthetic mutations live in test_proddiff.py;
+C07's Flask differential separately proves this intended difference and retention
+of unseen old failures.

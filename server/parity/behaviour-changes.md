@@ -509,7 +509,7 @@ their hidden view stays secret-free. Global ExternalPayloadSecrets / JSON-hook p
 
 
 
-## HEAD 只读（C29 / C31 / C32）
+## HEAD 只读（C07 / C29 / C31 / C32）
 
 协调者确认的共同类别：HEAD 按 GET 的只读语义处理，沿用 GET 的状态和 headers，不返回 body。
 C29 的 Python settings 路由自动接受 HEAD，但把非 GET 请求都当作保存；携带 JSON 的 HEAD
@@ -656,3 +656,24 @@ Python接受。Go按本次安全修复要求统一拒绝这些歧义，保留Inv
   Python device write and Go's zero writes and unchanged storage.
 
 See PROGRESS-agents A20 for per-class checks, commands and the L4 boundary.
+
+## C07 — 状态列表就绪与只读 HEAD
+
+协调者批准：tasks 和 notifications 的四条入口立即注册。真实 task slot 尚未齐备时，
+两个列表 GET 返回 503、中文说明与 missing_slots；不会把缺失行当作空任务列表。后台刷新仍更新
+已经观察到的失败，保留尚未观察到的 router/agent 旧通知。已就绪 owner 的运行/间隔修改仍可用，
+已知未移植 owner 返回 503，未知 key 返回 400；已提交的间隔不会因展示查询失败再报 500。
+R14、A16/A17 提供真实行后列表自然恢复成功，不安装空占位。
+
+同属上面的「HEAD 只读」类别：stats HEAD 不写 stats_history.json；notifications HEAD 不刷新、
+迁移或替换 notifications.json，沿用 GET 的状态码及 headers，不返回正文。真实 Flask 差分
+TestC07ExpectedHEADReadOnlyDifference 明确证明 Python 原写入和 Go 完整 DB/revision 不变。
+
+run/read 使用 N8-6 BindSilent，只有合法且有限的 JSON 能进入 owner。Python 允许忽略成员中的
+NaN/Infinity 并继续执行；Go 返回 400，差分 TestC07ExpectedNonFiniteBindingDifference 明确列出。
+其余畸形及非对象 body 的状态码和中文信息逐个与真实 Flask 比较。关机后的写入拒绝保留原
+Runtime；请求断开继续完成。共享提交点仍由已分派的 O3-6c 补齐。
+
+proddiff 只识别这两个精确列表入口、原 Python 成功形状及精确 Go 503 body/缺失的
+router_rule_sync、agent 两项，不放宽其他 503；content type 和全部原 headers 仍严格比较。
+对应的合成变异回归会拒绝错消息、错 slot、多字段、其他路由和丢失 no-store。

@@ -1882,7 +1882,7 @@ Config modules that call agents code — each declares an interface in its own p
 
 | Config module | Calls | Provided by |
 |---|---|---|
-| C07 notifications | `operation_events.event_message`, `diagnostics.failure_text` (copies in `notifications/compat.go`), `get_all_agents` (`notifications.SetSources{Agents}`, done by `agents.Wire`) | A02 (decide leaf package vs. copy, see A02), A01 |
+| C07 notifications | `operation_events.event_message`, `diagnostics.failure_text` (shared `agents/diag`, no copies), `get_all_agents` (`notifications.SetSources{Agents}`, done by `agents.Wire`) | A02 (decide leaf package vs. copy, see A02), A01 |
 | C07 tasks | `_agent_rows` (slot `agent`), `_metrics_row` (slot `metrics_history`), runners `dns_follow`, `metrics_history_flush`, interval `metrics_history_flush` | A16 + A17 (`SetRuleSyncRow`, `SetDNSFollowRow`), A04 |
 | C13 subscription cache | `content_sync.invalidate_content_sync` | A13 |
 | C16 domain probe / region check | delete stores on Agent delete (`agents.OnAgentDeleted`), `agents.config_generator` in region check | C16 registers; A14 |
@@ -1897,9 +1897,9 @@ Agents ↔ routers (routers has no PROGRESS file yet; names are Python files): a
 
 Registry extension points (already in `internal/agents`, defaults documented in `hooks.go`): `AddMetrics`/`DeleteMetricsHistory` (A04), `DeleteTrafficHistory` (A05), `PublicationComplete`/`PublicationCheckpoint` (A07), `AddressFollow`/`AddressConfirmed` (A15), `ReceiptMatches` (A14), `HAServiceOperation`/`HADeployment`/`HAActivate` (A18), `PublishDeployment` (A14, wrapped by A18), `InstallationProfile`/`InstallationRegister` (A22); `OnAgentDeleted` (A05 then C16); `OnManagerInit` (A17, A18, A23 in that order); `SetRuleSyncRow` (A16), `SetDNSFollowRow` (A17). Loops (`lifecycle.Loop`): rule sync (A16), metrics flush (A04), OxiDNS ranking history (A07), DNS follow / HA publication / IPv6 verification via `OnManagerInit`. Every module that adds routes to `internal/api/agents` adds its own file there and one line to `Register`.
 
-## Open item from the registry port (owned by C07)
+## C07 registry/task integration (clarified 2026-11-18)
 
-`GET /api/notifications` must not register before every task-row slot exists. `notifications.Complete()` checks only `ListTasks` and `Agents`; `agents.Wire` works around it by installing the `Agents` source only if `tasks.Complete()` is already true **at wire time**. Because `wirePackages` currently runs `agents.Wire` before any task-row provider exists, the `Agents` source is never installed, and it stays uninstalled even after A04/A16/A17/C15/C37/routers provide their slots unless `agents.Wire` happens to be listed last. **Intended fix (C07):** add `tasks.Complete()` to the notifications route gate (`notifications.Complete() && tasks.Complete()`); then `agents.Wire` installs the `Agents` source unconditionally (remove the workaround and its doc comment in `singleton.go`). Until then GET `/api/notifications` cannot register at all.
+A01 already installs the real Agent registry source unconditionally; notifications no longer has an Agent registry copy. C07 supersedes the old registration gate: GET /api/notifications and all task routes now always register. Missing real rows return explicit 503; background refresh retains unseen old failures. Metrics-history rows/runner/interval are already supplied by A04, independently of A16/A17. Remaining external providers: A16 SetRuleSyncRow and A17 SetDNSFollowRow together supply slot agent and DNS-follow run; R14 supplies router_rule_sync. No production empty rows. See [C07 design](../design/c07-status.md) and [coverage mapping](progress/c07-mapping.md). C07's ctx-aware notification producer signatures are forwarded by existing registration/address owners; shared taskstatus/repo final commits remain assigned to O3-6c.
 
 ## Next steps (coordinator; at most 2 agents in this domain at a time)
 

@@ -279,7 +279,36 @@ def installer_rollback_baseline(reply, route):
     return (reply[0], reply[1], script.encode('utf-8'), *reply[3:])
 
 
+def approved_c07_readiness(left, right, route):
+    """Recognize only C07's approved, temporary missing-owner list response.
+
+    Headers still compare normally. Once R14/A16/A17 wire their real rows this
+    branch stops applying automatically; no generic 503/error waiver is used.
+    """
+    templates = {'/api/tasks': ('tasks', '任务模块尚未就绪：'),
+                 '/api/notifications': ('items', '通知模块尚未就绪：')}
+    if route not in templates or left[0] != 200 or right[0] != 503:
+        return False
+    if 'application/json' not in left[1] or 'application/json' not in right[1]:
+        return False
+    try:
+        before, after = load_json(left[2]), load_json(right[2])
+    except (ValueError, UnicodeError):
+        return False
+    field, message = templates[route]
+    keys = {'success', field} | ({'checked_at'} if field == 'items' else set())
+    return (isinstance(before, dict) and set(before) == keys and before.get('success') is True
+            and isinstance(before.get(field), list)
+            and (field != 'items' or isinstance(before.get('checked_at'), str))
+            and after == {'success': False, 'message': message + 'router_rule_sync、agent',
+                          'missing_slots': ['router_rule_sync', 'agent']})
+
+
 def response_diffs(left, right, route, rules):
+    if approved_c07_readiness(left, right, route):
+        # Compare the approved availability contract instead of exposing a
+        # partial task list. Keep both original content types and headers.
+        left = (right[0], left[1], right[2], *left[3:])
     right = installer_rollback_baseline(right, route)
     if plain_install_error(left, right, route):
         # Body/status/type already agree exactly. Assert only the approved

@@ -218,7 +218,7 @@ GET	/api/nodes/latency/settings	routes.nodes.node_latency_settings	api/nodes	don
 POST	/api/nodes/latency/settings	routes.nodes.node_latency_settings	api/nodes	done
 POST	/api/nodes/parse-lines	routes.nodes.parse_node_lines	api/nodes	done
 POST	/api/nodes/reorder	routes.nodes.reorder_nodes	api/nodes	done
-GET	/api/notifications	routes.notifications.list_notifications	internal/api/notifications	wip
+GET	/api/notifications	routes.notifications.list_notifications	internal/api/notifications	done
 POST	/api/notifications/read	routes.notifications.read_notifications	internal/api/notifications	done
 POST	/api/oxidns/common-settings	routes.oxidns.read_oxidns_common_settings	internal/api/oxidns	done
 POST	/api/oxidns/common-settings/apply	routes.oxidns.apply_oxidns_common_settings	internal/api/oxidns	done
@@ -369,9 +369,9 @@ GET	/api/subscriptions/health	routes.subscriptions.subscriptions_health	api/subs
 GET	/api/subscriptions/proxies	routes.subscriptions.get_all_subscription_proxies	api/subscriptions	done
 POST	/api/subscriptions/reorder	routes.subscriptions.reorder_subscriptions	api/subscriptions	done
 GET	/api/subscriptions/test	routes.subscriptions.test_subscription_route	api/subscriptions	done
-GET	/api/tasks	routes.tasks.get_tasks	internal/api/tasks	wip
-PUT	/api/tasks/interval	routes.tasks.set_interval	internal/api/tasks	wip
-POST	/api/tasks/run	routes.tasks.run_task	internal/api/tasks	wip
+GET	/api/tasks	routes.tasks.get_tasks	internal/api/tasks	done
+PUT	/api/tasks/interval	routes.tasks.set_interval	internal/api/tasks	done
+POST	/api/tasks/run	routes.tasks.run_task	internal/api/tasks	done
 GET	/api/version	routes.settings.get_version	internal/api/settings	done
 DELETE	/mcp	mcp_server.server.unsupported_transport		todo
 GET	/mcp	mcp_server.server.unsupported_transport		todo

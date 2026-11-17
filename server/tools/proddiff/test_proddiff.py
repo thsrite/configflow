@@ -26,6 +26,25 @@ def reply(body, content_type=JSON, status=200, headers=None):
 
 
 class ComparatorTests(unittest.TestCase):
+    def test_c07_readiness_exception_is_exact_and_preserves_headers(self):
+        for route, field, message in [('/api/tasks', 'tasks', '任务模块尚未就绪：'),
+                                       ('/api/notifications', 'items', '通知模块尚未就绪：')]:
+            before = {'success': True, field: []}
+            if field == 'items':
+                before['checked_at'] = '2026-11-18T12:00:00+00:00'
+            after = {'success': False, 'message': message + 'router_rule_sync、agent',
+                     'missing_slots': ['router_rule_sync', 'agent']}
+            left = reply(before, headers={'cache-control': 'no-store'})
+            right = reply(after, status=503, headers={'cache-control': 'no-store'})
+            self.assertEqual([], pd.response_diffs(left, right, route, []))
+            self.assertTrue(pd.response_diffs(left, reply(after, status=503), route, []))
+            for mutation in [dict(after, success=True), dict(after, message='wrong'),
+                             dict(after, missing_slots=[]), dict(after, future='extra'),
+                             dict(after, missing_slots=['router_rule_sync', 'agent', 'metrics_history'])]:
+                self.assertTrue(pd.response_diffs(left, reply(mutation, status=503), route, []))
+            self.assertTrue(pd.response_diffs(left, right, '/api/other', []))
+            self.assertTrue(pd.response_diffs(reply(before, status=500), right, route, []))
+
     def test_installer_rollback_delta_is_fixed_and_other_script_bytes_stay_strict(self):
         approved = json.loads((pd.ROOT / 'server/internal/installer/installertest/l1-rollback-deltas.json').read_text())
         first, trap = approved['deltas'][:2]

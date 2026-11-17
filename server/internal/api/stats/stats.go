@@ -14,7 +14,6 @@ import (
 	"configflow/internal/httpx"
 	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
-	"configflow/internal/lockx"
 	"configflow/internal/repo"
 	"configflow/internal/taskstatus"
 )
@@ -110,8 +109,6 @@ func pyInt(v any) (int64, error) {
 	return 0, &errPython{"int() argument must be a string, a bytes-like object or a real number, not '" + httpx.PyTypeName(v) + "'"}
 }
 
-var sampleLocks = lockx.NewLeafKeyed[string]("stats-history")
-
 func recordHistory(ctx context.Context, counts *jsonx.Object, persist bool) (map[string][]any, error) {
 	if persist {
 		ctx = lifecycle.Detach(ctx)
@@ -127,18 +124,9 @@ func recordHistory(ctx context.Context, counts *jsonx.Object, persist bool) (map
 	if err != nil {
 		return nil, err
 	}
-	dir, err := repo.ResolveDataDir(repository.DataDir())
-	if err != nil {
-		return nil, err
-	}
-	_, release, err := sampleLocks.Lock(ctx, dir+"/"+profileID, 5*time.Second)
-	if err != nil {
-		return nil, err
-	}
-	defer release()
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
+	// The repository owns profile-operation and atomic file replacement locks.
+	// Keep optional sampling's last-commit-wins semantics without acquiring a
+	// leaf lock before entering those higher-level repository operations.
 	var samples []any
 	if data, err := repository.ReadProfileJSON(profileID, HistoryFile); err == nil {
 		samples, _ = data.Value("samples").([]any)
