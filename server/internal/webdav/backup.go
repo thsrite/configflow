@@ -1,6 +1,7 @@
 package webdav
 
 import (
+	"configflow/internal/lifecycle"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -74,7 +75,7 @@ func ExpiredBackups(names []string, latest, daily int, today time.Time) []string
 // Upload sends an in-memory JSON snapshot and cleans old backups only after PUT
 // succeeds. Remote cleanup failures never invalidate a successful new backup.
 func (s *Service) Upload(ctx context.Context, snapshot json.RawMessage, settings Settings, automatic bool) (Result, error) {
-	ctx = context.WithoutCancel(ctx)
+	ctx = lifecycle.Detach(ctx)
 	c, err := s.client(settings)
 	if err != nil {
 		return Result{}, err

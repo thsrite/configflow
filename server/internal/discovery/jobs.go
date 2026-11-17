@@ -116,6 +116,10 @@ func startJob(ctx context.Context, profile, kind string, wait bool, run func(con
 }
 
 func startJobOn(ctx context.Context, profile, kind string, wait bool, run func(context.Context, func(int, int)) (outcome, error), spawner lockx.Spawner) (*Job, map[string]Probe, error) {
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
 	// Async workers retain the repository and their held lock, not request
 	// values/Scope. The spawner supplies Runtime lifetime and a fresh Scope.
 	base := context.Background()

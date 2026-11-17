@@ -17,7 +17,7 @@ package tasks
 import (
 	"context"
 	"errors"
- "fmt"
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -200,6 +200,9 @@ func StartBackground(ctx context.Context, key string, work func(ctx context.Cont
 
 func startBackground(ctx context.Context, key string, work func(context.Context) error, spawner lockx.Spawner) error {
 	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	held, release, ok := background.TryLock(ctx, key)
 	if !ok {
 		return &Busy{Message: msgBusy}

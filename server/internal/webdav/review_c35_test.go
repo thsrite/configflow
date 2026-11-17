@@ -107,7 +107,7 @@ func TestDisabledCommitNeverStartsOrReschedulesWorker(t *testing.T) {
 	}
 	previous := repo.SetHooks(repo.Hooks{})
 	t.Cleanup(func() { repo.SetHooks(previous) })
-	worker := NewWorker(time.Hour, func(context.Context, Snapshot) error { return nil })
+	worker := testWorker(t, time.Hour, func(context.Context, Snapshot) error { return nil })
 	registerHook(worker)
 	t.Cleanup(func() { _ = worker.Close(context.Background()) })
 	update := func(enabled bool) {
@@ -122,18 +122,18 @@ func TestDisabledCommitNeverStartsOrReschedulesWorker(t *testing.T) {
 	}
 	update(false)
 	worker.mu.Lock()
-	active := worker.active
+	active := worker.generation.active != nil
 	worker.mu.Unlock()
 	if active {
 		t.Error("disabled commit started a worker unlike Python")
 	}
 	update(true)
 	worker.mu.Lock()
-	deadline := worker.deadline
+	deadline := worker.generation.deadline
 	worker.mu.Unlock()
 	update(false)
 	worker.mu.Lock()
-	changed := !worker.deadline.Equal(deadline)
+	changed := !worker.generation.deadline.Equal(deadline)
 	worker.mu.Unlock()
 	if changed {
 		t.Error("disable commit restarted pending debounce unlike Python")
@@ -160,7 +160,7 @@ func completedSource(t *testing.T) (*Worker, weak.Pointer[memorySource]) {
 	source := &memorySource{}
 	source.set(strings.Repeat("x", 8<<20), true)
 	reference := weak.Make(source)
-	worker := NewWorker(0, func(context.Context, Snapshot) error { return nil })
+	worker := testWorker(t, 0, func(context.Context, Snapshot) error { return nil })
 	worker.Schedule(source)
 	waitWorker(t, worker)
 	return worker, reference
@@ -230,7 +230,7 @@ func TestNonRuntimeAgentCommitsUploadAndRuntimeDoesNot(t *testing.T) {
 	}
 	previous := repo.SetHooks(repo.Hooks{})
 	t.Cleanup(func() { repo.SetHooks(previous) })
-	worker := NewWorker(10*time.Millisecond, func(ctx context.Context, snapshot Snapshot) error { _, err := Run(ctx, snapshot, true); return err })
+	worker := testWorker(t, 10*time.Millisecond, func(ctx context.Context, snapshot Snapshot) error { _, err := Run(ctx, snapshot, true); return err })
 	registerHook(worker)
 	t.Cleanup(func() { _ = worker.Close(context.Background()) })
 	_, err = r.UpdateSystemTransaction(context.Background(), func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
@@ -294,7 +294,7 @@ func TestStoredDotPathAutomaticFailureHasClearTaskMessage(t *testing.T) {
 	}
 	previous := repo.SetHooks(repo.Hooks{})
 	t.Cleanup(func() { repo.SetHooks(previous) })
-	worker := NewWorker(0, func(ctx context.Context, snapshot Snapshot) error { _, err := Run(ctx, snapshot, true); return err })
+	worker := testWorker(t, 0, func(ctx context.Context, snapshot Snapshot) error { _, err := Run(ctx, snapshot, true); return err })
 	registerHook(worker)
 	t.Cleanup(func() { _ = worker.Close(context.Background()) })
 	// Seed a legacy/imported setting directly, bypassing the newly secured form.

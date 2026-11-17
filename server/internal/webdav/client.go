@@ -2,6 +2,7 @@ package webdav
 
 import (
 	"bytes"
+	"configflow/internal/lifecycle"
 	"context"
 	"encoding/xml"
 	"errors"
@@ -60,7 +61,7 @@ func (c *client) request(ctx context.Context, method, remote string, data []byte
 	target := *c.base
 	target.Path = c.remotePath(remote)
 	target.RawPath = ""
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	ctx, cancel := context.WithTimeout(lifecycle.Detach(ctx), 30*time.Second)
 	req, err := http.NewRequestWithContext(ctx, method, target.String(), bytes.NewReader(data))
 	if err != nil {
 		cancel()

@@ -4,6 +4,9 @@ import (
 	"context"
 	"sync"
 	"time"
+
+	"configflow/internal/lifecycle"
+	"configflow/internal/lockx"
 )
 
 // Source loads a snapshot after the debounce period, outside repository locks.
@@ -14,93 +17,211 @@ type Source interface {
 // UploadFunc performs and records one automatic upload.
 type UploadFunc func(context.Context, Snapshot) error
 
-// Worker serializes uploads and retains only the most recently scheduled source.
-// It never retains a request context or one document per configuration save.
-type Worker struct {
-	mu             sync.Mutex
-	delay          time.Duration
-	upload         UploadFunc
-	pending        Source
-	deadline       time.Time
-	wake           chan struct{}
-	idle           chan struct{}
-	active, closed bool
+type workerOptions struct {
+	Clock   lifecycle.Clock
+	Spawner lockx.Spawner
+}
+type workerRun struct{ finished bool }
+type workerGeneration struct {
+	options    workerOptions
+	pending    Source
+	deadline   time.Time
+	wake, stop chan struct{}
+	stopped    bool
+	active     *workerRun
 }
 
-// NewWorker creates an idle worker; the first Schedule starts its goroutine.
+// Worker coalesces pending sources and serializes uploads across all activation
+// generations. It stores no request context or per-save configuration document.
+type Worker struct {
+	mu         sync.Mutex
+	delay      time.Duration
+	upload     UploadFunc
+	generation *workerGeneration
+	gate       chan struct{}
+	idle       chan struct{}
+	workers    int
+	closed     bool
+}
+
+// NewWorker creates an idle worker using the default tracked spawner. Explicit
+// Close is terminal; Runtime startup activates the automatic worker each generation.
 func NewWorker(delay time.Duration, upload UploadFunc) *Worker {
+	return newWorker(delay, upload, workerOptions{})
+}
+func newWorker(delay time.Duration, upload UploadFunc, options workerOptions) *Worker {
 	idle := make(chan struct{})
 	close(idle)
-	return &Worker{delay: delay, upload: upload, wake: make(chan struct{}, 1), idle: idle}
+	w := &Worker{delay: delay, upload: upload, gate: make(chan struct{}, 1), idle: idle}
+	w.activate(options)
+	return w
 }
-
-// Schedule replaces pending work and restarts its debounce deadline. It never
-// waits for network I/O and refuses new work after Close.
-func (w *Worker) Schedule(source Source) bool {
+func (w *Worker) activate(options workerOptions) *workerGeneration {
+	if options.Clock == nil {
+		options.Clock = lifecycle.ClockFrom(context.Background())
+	}
+	if options.Spawner == nil {
+		options.Spawner = lifecycle.DefaultSpawner{}
+	}
 	w.mu.Lock()
-	defer w.mu.Unlock()
 	if w.closed {
-		return false
+		w.mu.Unlock()
+		return nil
 	}
-	w.pending = source
-	w.deadline = time.Now().Add(w.delay)
-	if !w.active {
-		w.active = true
+	var pending Source
+	if old := w.generation; old != nil {
+		if !old.stopped {
+			pending = old.pending
+		}
+		w.stopLocked(old)
+	}
+	g := &workerGeneration{options: options, wake: make(chan struct{}, 1), stop: make(chan struct{}), pending: pending}
+	w.generation = g
+	var run *workerRun
+	if pending != nil {
+		g.deadline = options.Clock.Now().Add(w.delay)
+		run = w.startLocked(g)
+	}
+	w.mu.Unlock()
+	if run != nil {
+		w.spawn(g, run)
+	}
+	return g
+}
+func (w *Worker) startLocked(g *workerGeneration) *workerRun {
+	run := new(workerRun)
+	g.active = run
+	if w.workers == 0 {
 		w.idle = make(chan struct{})
-		go w.run()
 	}
-	select {
-	case w.wake <- struct{}{}:
-	default:
+	w.workers++
+	return run
+}
+func (w *Worker) finishLocked(g *workerGeneration, run *workerRun) {
+	if run.finished {
+		return
+	}
+	run.finished = true
+	if g.active == run {
+		g.active = nil
+	}
+	w.workers--
+	if w.workers == 0 {
+		close(w.idle)
+	}
+}
+func (w *Worker) stopLocked(g *workerGeneration) {
+	if !g.stopped {
+		g.stopped = true
+		close(g.stop)
+	}
+	g.pending = nil
+}
+func (w *Worker) spawn(g *workerGeneration, run *workerRun) bool {
+	if err := g.options.Spawner.Spawn(context.Background(), "webdav-auto-backup", func(ctx context.Context) { w.run(ctx, g, run) }); err != nil {
+		w.mu.Lock()
+		g.pending = nil
+		w.finishLocked(g, run)
+		w.mu.Unlock()
+		return false
 	}
 	return true
 }
-func (w *Worker) run() {
-	defer func() {
-		if recover() != nil {
-			w.mu.Lock()
-			w.active = false
-			w.pending = nil
-			close(w.idle)
-			w.mu.Unlock()
-			logger.Warning(msgUnexpected)
+
+// Schedule retains only the latest pending source and restarts its debounce.
+// False means the worker is stopped/closed or the Runtime refused admission.
+func (w *Worker) Schedule(source Source) bool {
+	w.mu.Lock()
+	g := w.generation
+	if w.closed || g.stopped {
+		w.mu.Unlock()
+		return false
+	}
+	g.pending = source
+	g.deadline = g.options.Clock.Now().Add(w.delay)
+	var run *workerRun
+	if g.active == nil {
+		run = w.startLocked(g)
+	} else {
+		select {
+		case g.wake <- struct{}{}:
+		default:
 		}
+	}
+	w.mu.Unlock()
+	if run != nil {
+		return w.spawn(g, run)
+	}
+	return true
+}
+func (w *Worker) run(ctx context.Context, g *workerGeneration, run *workerRun) {
+	// Runtime logs panics. This defer repairs admission before that recovery;
+	// gate release belongs to each upload attempt, including panic paths.
+	defer func() {
+		w.mu.Lock()
+		if !run.finished {
+			g.pending = nil
+			w.finishLocked(g, run)
+		}
+		w.mu.Unlock()
 	}()
 	for {
 		w.mu.Lock()
-		if w.closed || w.pending == nil {
-			w.active = false
-			close(w.idle)
+		if g.stopped || g.pending == nil || ctx.Err() != nil {
+			g.pending = nil
+			w.finishLocked(g, run)
 			w.mu.Unlock()
 			return
 		}
-		delay := time.Until(w.deadline)
+		select {
+		case <-g.wake:
+		default:
+		}
+		delay := g.deadline.Sub(g.options.Clock.Now())
+		w.mu.Unlock()
 		if delay > 0 {
-			w.mu.Unlock()
-			timer := time.NewTimer(delay)
+			timer := g.options.Clock.NewTimer(delay)
 			select {
-			case <-timer.C:
-			case <-w.wake:
+			case <-timer.C():
+			case <-g.wake:
+			case <-g.stop:
+			case <-ctx.Done():
 			}
 			timer.Stop()
 			continue
 		}
-		source := w.pending
-		w.pending = nil
-		w.mu.Unlock()
-		snapshot, err := source.Snapshot(context.Background())
-		if err == nil && snapshot.Settings.Auto {
-			err = w.upload(context.Background(), snapshot)
+		select {
+		case w.gate <- struct{}{}:
+		case <-g.stop:
+			return
+		case <-ctx.Done():
+			return
 		}
-		if err != nil {
-			logger.Warningf(msgAutoFailed, DescribeError(err))
-		}
-		// No retries. Changes committed during upload are represented by one pending
-		// source/deadline and read afresh on the next loop iteration.
+		func() {
+			defer func() { <-w.gate }()
+			// Pending work may have changed while an older generation held the gate.
+			// Re-read its source/deadline before taking a fresh configuration snapshot.
+			w.mu.Lock()
+			if g.stopped || ctx.Err() != nil || g.pending == nil || g.deadline.After(g.options.Clock.Now()) {
+				w.mu.Unlock()
+				return
+			}
+			source := g.pending
+			g.pending = nil
+			w.mu.Unlock()
+			snapshot, err := source.Snapshot(ctx)
+			if err == nil && snapshot.Settings.Auto {
+				err = w.upload(ctx, snapshot)
+			}
+			if err != nil && ctx.Err() == nil {
+				logger.Warningf(msgAutoFailed, DescribeError(err))
+			}
+		}()
 	}
 }
 
-// WaitIdle waits for the current worker generation; it does not cancel uploads.
+// WaitIdle waits only for this owner's jobs, across activation generations.
+// Cancelling the wait never cancels a committed upload.
 func (w *Worker) WaitIdle(ctx context.Context) error {
 	w.mu.Lock()
 	idle := w.idle
@@ -112,17 +233,19 @@ func (w *Worker) WaitIdle(ctx context.Context) error {
 		return ctx.Err()
 	}
 }
+func (w *Worker) stopGeneration(ctx context.Context, g *workerGeneration) error {
+	w.mu.Lock()
+	w.stopLocked(g)
+	w.mu.Unlock()
+	return w.WaitIdle(ctx)
+}
 
-// Close discards pending work and waits within ctx for an in-flight upload to
-// finish under its own I/O timeouts. Request cancellation never aborts a backup.
+// Close permanently refuses scheduling, discards pending work and waits within
+// ctx. In-flight uploads retain their Runtime cancellation and own I/O timeouts.
 func (w *Worker) Close(ctx context.Context) error {
 	w.mu.Lock()
 	w.closed = true
-	w.pending = nil
-	select {
-	case w.wake <- struct{}{}:
-	default:
-	}
+	w.stopLocked(w.generation)
 	w.mu.Unlock()
 	return w.WaitIdle(ctx)
 }

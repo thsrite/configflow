@@ -17,13 +17,13 @@ func TestCloseDropsPendingButWaitCancellationDoesNotAbortUpload(t *testing.T) {
 	source := &memorySource{}
 	source.set(`{}`, true)
 	var uploads atomic.Int32
-	pending := NewWorker(time.Hour, func(context.Context, Snapshot) error { uploads.Add(1); return nil })
+	pending := testWorker(t, time.Hour, func(context.Context, Snapshot) error { uploads.Add(1); return nil })
 	pending.Schedule(source)
 	if err := pending.Close(context.Background()); err != nil || pending.Schedule(source) || uploads.Load() != 0 {
 		t.Fatal("closed worker accepted or uploaded pending work")
 	}
 	started, release := make(chan struct{}), make(chan struct{})
-	worker := NewWorker(0, func(ctx context.Context, _ Snapshot) error {
+	worker := testWorker(t, 0, func(ctx context.Context, _ Snapshot) error {
 		close(started)
 		<-release
 		if ctx.Err() != nil {
@@ -54,7 +54,7 @@ func TestSnapshotFailureIsNotRetriedAndLaterScheduleWorks(t *testing.T) {
 	source := &memorySource{err: errors.New("synthetic snapshot failure")}
 	source.set(`{}`, true)
 	uploads := 0
-	worker := NewWorker(0, func(context.Context, Snapshot) error { uploads++; return nil })
+	worker := testWorker(t, 0, func(context.Context, Snapshot) error { uploads++; return nil })
 	worker.Schedule(source)
 	waitWorker(t, worker)
 	if uploads != 0 || source.reads != 1 {
@@ -102,7 +102,7 @@ func TestReadsDisabledAndFailedCommitsDoNotSchedule(t *testing.T) {
 	previous := repo.SetHooks(repo.Hooks{})
 	t.Cleanup(func() { repo.SetHooks(previous) })
 	uploads := 0
-	worker := NewWorker(0, func(context.Context, Snapshot) error { uploads++; return nil })
+	worker := testWorker(t, 0, func(context.Context, Snapshot) error { uploads++; return nil })
 	registerHook(worker)
 	t.Cleanup(func() { _ = worker.Close(context.Background()) })
 	ctx := repo.WithRepository(context.Background(), r)

@@ -24,3 +24,20 @@ remain inspectable; ordinary sync errors return for caller handling, async failu
 .32 gofmt/vet pass; discovery full race count3 19.913s, nested package1.020s, API4.242s. Further
 cause/panic-sentinel and cleanup regressions pass focused race count3 2.445s. C37 scope/weak-reference,
 cross-profile privacy, metadata snapshot and bounded-history tests remain green.
+
+Discovery commit: 470a0360. Read go-opus-review-o3:server/parity/review-o3.md section Rules for
+O3-5..O3-8 and inspected F1/F2 context changes; awaiting its merge notification before touching core.
+Entry guards now Detach and reject already-cancelled Runtime work before claiming new jobs.
+
+WebDAV now uses tracked per-activation workers, injected Clock/Spawner, the production1s automatic-worker
+factory and Startup activation. A shared upload semaphore survives all activations, and owner WaitIdle
+counts only this owner's jobs across generations. Explicit Close is terminal; runtime hooks stop their
+captured activation only, so a late old hook cannot stop a new generation. No request context is stored.
+Snapshot/export, Run, Upload and HTTP request paths use Detach to preserve shutdown cancellation.
+
+Tests: existing WebDAV suite first passed race1 3.504s, then all new lifetime tests passed race3 7.388s.
+The loopback HTTP cancellation test keeps the production30s timeout; it passed with all WebDAV tests
+race3 10.974s and enabled tagged difftest27.918s. Fake-clock startup tests use newAutomaticWorker
+(the production1s debounce, not a replacement interval); cover restart, owner-scoped WaitIdle,
+refusal/panic cleanup, cross-generation gate and late hooks. Last shared-context guard/factory rerun:
+gofmt-l empty, vet ./... green, race3 tasks1.320s/discovery28.089s/metrics24.076s/webdav10.422s.

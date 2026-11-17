@@ -6,12 +6,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"sync"
 	"sync/atomic"
 	"time"
 
 	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
+	"configflow/internal/lockx"
 	"configflow/internal/notifications"
 	"configflow/internal/repo"
 	"configflow/internal/taskstatus"
@@ -63,7 +63,7 @@ func (s repositorySource) Snapshot(ctx context.Context) (Snapshot, error) {
 }
 
 func captureDocument(ctx context.Context, r *repo.Repository) (Snapshot, *jsonx.Object, error) {
-	document, err := r.ExportAll(context.WithoutCancel(ctx), false)
+	document, err := r.ExportAll(lifecycle.Detach(ctx), false)
 	if err != nil {
 		return Snapshot{}, nil, err
 	}
@@ -87,7 +87,7 @@ func Capture(ctx context.Context) (Snapshot, error) {
 
 // Run records one manual or automatic upload in the shared task receipt store.
 func Run(ctx context.Context, snapshot Snapshot, automatic bool) (Result, error) {
-	ctx = context.WithoutCancel(ctx)
+	ctx = lifecycle.Detach(ctx)
 	if snapshot.repository != nil {
 		ctx = repo.WithRepository(ctx, snapshot.repository)
 	}
@@ -116,16 +116,29 @@ func Run(ctx context.Context, snapshot Snapshot, automatic bool) (Result, error)
 	return result, recordErr
 }
 
-var automaticWorker = NewWorker(time.Second, func(ctx context.Context, snapshot Snapshot) error { _, err := Run(ctx, snapshot, true); return err })
-var wireOnce sync.Once
+func newAutomaticWorker(upload UploadFunc) *Worker { return NewWorker(time.Second, upload) }
+
+var automaticWorker = newAutomaticWorker(func(ctx context.Context, snapshot Snapshot) error { _, err := Run(ctx, snapshot, true); return err })
 
 // Wire installs the post-commit hook and bounded shutdown handling.
 func Wire() {
 	registerHook(automaticWorker)
-	wireOnce.Do(func() {
-		lifecycle.OnShutdown("webdav-auto-backup", func(ctx context.Context) { _ = automaticWorker.Close(ctx) })
-	})
+	lifecycle.RegisterStartup(workerStartup(automaticWorker, lifecycle.DefaultSpawner{}, lifecycle.RegisterShutdown))
 }
+
+func workerStartup(worker *Worker, spawner lockx.Spawner, register func(lifecycle.ShutdownHook)) lifecycle.Startup {
+	return lifecycle.Startup{Name: "webdav-worker-init", Run: func(ctx context.Context) error {
+		g := worker.activate(workerOptions{Clock: lifecycle.ClockFrom(ctx), Spawner: spawner})
+		if g != nil {
+			// Bind the hook to this activation. A late old hook cannot stop a
+			// new generation after the old Runtime's grace period elapsed.
+			register(lifecycle.ShutdownHook{Name: "webdav-auto-backup", Phase: lifecycle.PhaseAfterDrain,
+				Run: func(ctx context.Context) { _ = worker.stopGeneration(ctx, g) }})
+		}
+		return nil
+	}}
+}
+
 func registerHook(worker *Worker) {
 	repo.RegisterHooks(repo.Hooks{ConfigurationCommitted: func(r *repo.Repository, previous, current *jsonx.Object) {
 		// A failed scheduling/serialization step must never change commit success.

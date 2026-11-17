@@ -11,9 +11,24 @@ import (
 	"time"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/lifecycle"
 	"configflow/internal/notifications"
 	"configflow/internal/repo"
 )
+
+func testWorker(t *testing.T, delay time.Duration, upload UploadFunc) *Worker {
+	t.Helper()
+	r := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry(), Grace: 20 * time.Millisecond})
+	r.Start(context.Background())
+	w := newWorker(delay, upload, workerOptions{Spawner: r})
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		_ = w.Close(ctx)
+		r.Shutdown(context.Background())
+	})
+	return w
+}
 
 type memorySource struct {
 	mu    sync.Mutex
@@ -48,7 +63,7 @@ func TestWorkerDebounceReadsLatestAndDisablingCancelsPending(t *testing.T) {
 			source := &memorySource{}
 			source.set(`{"save":0}`, true)
 			uploaded := []string{}
-			worker := NewWorker(30*time.Millisecond, func(_ context.Context, snapshot Snapshot) error {
+			worker := testWorker(t, 30*time.Millisecond, func(_ context.Context, snapshot Snapshot) error {
 				uploaded = append(uploaded, string(snapshot.Document))
 				return nil
 			})
@@ -78,7 +93,7 @@ func TestWorkerCoalescesChangesDuringSlowUploadAndCanRestartAfterFailure(t *test
 	source.set(`{"save":0}`, true)
 	started, release := make(chan struct{}), make(chan struct{})
 	uploaded := []string{}
-	worker := NewWorker(15*time.Millisecond, func(_ context.Context, snapshot Snapshot) error {
+	worker := testWorker(t, 15*time.Millisecond, func(_ context.Context, snapshot Snapshot) error {
 		uploaded = append(uploaded, string(snapshot.Document))
 		if len(uploaded) == 1 {
 			close(started)
@@ -134,7 +149,7 @@ func TestCommitHookRunsOutsideLockAndUploadFailureCannotRollback(t *testing.T) {
 	}
 	previous := repo.SetHooks(repo.Hooks{})
 	t.Cleanup(func() { repo.SetHooks(previous) })
-	worker := NewWorker(35*time.Millisecond, func(ctx context.Context, snapshot Snapshot) error {
+	worker := testWorker(t, 35*time.Millisecond, func(ctx context.Context, snapshot Snapshot) error {
 		_, err := Run(repo.WithRepository(ctx, r), snapshot, true)
 		return err
 	})
