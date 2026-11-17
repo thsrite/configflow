@@ -12,6 +12,7 @@ class Source:
         self.status = 200
         self.omit_content_length = False
         self.record_wire = False
+        self.record_body = False
         self.headers = {'Content-Type': 'text/yaml; charset=utf-8'}
         self.responses = {}
         self.before_reply = lambda _path: None
@@ -39,6 +40,10 @@ class Source:
                 owner.requests.append({'method': self.command, 'path': self.path,
                                        'authorization': self.headers.get('Authorization', ''),
                                        'user_agent': self.headers.get('User-Agent', '')})
+                if owner.record_body:
+                    length = int(self.headers.get('Content-Length', '0'))
+                    owner.requests[-1].update(body_hex=self.rfile.read(length).hex(),
+                        transfer_encoding=self.headers.get('Transfer-Encoding', ''))
                 if owner.record_wire:
                     owner.requests[-1].update(request_line=self.requestline, host=self.headers.get('Host', ''),
                                               proxy_authorization=self.headers.get('Proxy-Authorization', ''))

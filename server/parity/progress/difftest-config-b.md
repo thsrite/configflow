@@ -1574,3 +1574,18 @@ go-unimplemented=8 design_errors=[]；exit=0；统一新增5（导出3为重跑�
 ```
 
 原R仍差271编号、H仍差551编号，已标partial/不可观察分支另计；继续依赖/监听器与其余清单，最终.32全量未执行。
+
+## 批次 91：隔离网络中的依赖状态、可信HTTPS与缓存
+
+- 6新增原R编号（R198 S01/S02/S03/B01/B02/F08）在.32实际Flask↔Go比较通过，覆盖本地运行版本、refresh=1/true强制查询、refresh=TRUE沿用缓存、已最新、503时保留上次release并给check_error。全SQL/files保持原样。统一9307变体、原R4265（S683/F2653/B929）、H561、G16；findings既有closed81/accepted5/open18/O12单列1不变。
+- 新native_network.sh只在原生Linux创建仅lo的网络命名空间，然后降回原用户跑测试；不改变宿主网络/服务。命名空间无外网路由，GitHub CONNECT无论目标都不出进程；fake内生成一日CA证书，Python与Go通过正常信任配置验证TLS，未关闭证书验证。WSL/非隔离环境在启动TLS fixture前拒绝，README的最终all命令已改用.32 wrapper。工具链缓存需在外部先就绪，命名空间内不下载依赖。
+- 比较Sub-Store真实HTTP GET的method/path/auth/原始body hex，以及CONNECT精确目标和GitHub API明示Accept/User-Agent、请求数；健康API的默认传输User-Agent无接口约定，不声称是业务字段。native源录包开关默认关闭，不改变旧fixtures；新增真实非UTF8 GET body录包自检，以及方法/目标/正文/UA/次数/存储故意错误自检。共81自检通过。
+
+```text
+RT_HOST=sunbroke@192.168.0.32 rt --back server/tools/configdiff/testdata/results.json --back server/parity/difftest-config-findings.md -- bash -lc 'server/tools/configdiff/native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups dependency-status-protocol --baseline 0efddadf > /tmp/configdiff-dependency-status-consolidated.log 2>&1; rc=$?; tail -9 /tmp/configdiff-dependency-status-consolidated.log | head -8; exit $rc'
+R198-S01 compared；R198-S02 compared；R198-S03 compared；R198-B02 compared；R198-B01 compared；R198-F08 compared
+compared=6 design_errors=[]；exit=0（独立首次4.44s，随后常规runner合并）
+81 self-checks + deliberate wrong-Go-response detection OK
+```
+
+继续内置Sub-Store模式/升级和监听器等剩余项；原R仍差265、H仍差551，最终.32全量未执行。

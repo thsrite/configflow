@@ -17,6 +17,40 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_dependency_protocol_and_readonly_observer_detect_storage_method_target_and_body_changes(self):
+        from cases.dependency_status import DependencyRead
+        from dependency_tls import release_request
+        observer = DependencyRead(None, None, None, True)
+        observer.before_values[1] = {'database': 'unchanged'}
+        observer.after_values[1] = {'database': 'unchanged'}
+        expected = {'health': [{'method': 'GET', 'path': '/api/utils/env', 'authorization': '', 'body_hex': '', 'transfer_encoding': ''}],
+                    'github': release_request()}
+        observer.observed = [copy.deepcopy(expected), copy.deepcopy(expected)]
+        self.assertEqual(observer.compare(Policy()), [])
+        for mutation in ('storage', 'method', 'body', 'target', 'UA', 'call-count'):
+            observer.after_values[1] = {'database': 'wrong' if mutation == 'storage' else 'unchanged'}
+            observer.observed[1] = copy.deepcopy(expected)
+            if mutation == 'method':
+                observer.observed[1]['health'][0]['method'] = 'POST'
+            elif mutation == 'body':
+                observer.observed[1]['health'][0]['body_hex'] = '78'
+            elif mutation == 'target':
+                observer.observed[1]['github'][0]['target'] = 'wrong.example:443'
+            elif mutation == 'UA':
+                observer.observed[1]['github'][1]['user_agent'] = 'wrong'
+            elif mutation == 'call-count':
+                observer.observed[1]['github'] = []
+            self.assertTrue(observer.compare(Policy()), mutation)
+
+    def test_optional_source_body_recorder_observes_actual_request_bytes(self):
+        from sources import Source
+        from harness import send
+        with Source(b'ok') as source:
+            source.record_body = True
+            reply = send(source.url, 'GET', '/synthetic-body', b'\x00\xff')
+            self.assertEqual(reply.status, 200)
+            self.assertEqual(source.requests[0]['body_hex'], '00ff')
+
     def test_concurrent_metadata_accepts_only_two_legal_serial_histories(self):
         from cases.profile_concurrency import metadata_batch_errors
         initial = {'id': 'other', 'name': 'old', 'description': 'old-description', 'created_at': 'fixed'}

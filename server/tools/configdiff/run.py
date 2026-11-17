@@ -124,6 +124,8 @@ def main():
     groups.update(profile_concurrency)
     from cases.provider_auth import GROUPS as provider_auth
     groups.update(provider_auth)
+    from cases.dependency_status import GROUPS as dependency_status
+    groups.update(dependency_status)
     from cases.profile_rebind_helpers import GROUPS as profile_rebind_helpers
     groups.update(profile_rebind_helpers)
     from cases.profile_guards import GROUPS as profile_guards
