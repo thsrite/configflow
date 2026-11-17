@@ -1,7 +1,7 @@
 package substore
 
 const (
-	msgInvalidYAML = "订阅 YAML 无法解析：%w"
+	msgInvalidYAML       = "订阅 YAML 无法解析：%w"
 	msgUpdateNoBuiltin   = "当前环境没有内置 Sub-Store，无法在线更新"
 	msgUpdateBusy        = "已有更新任务在进行中"
 	msgUpdateUnavailable = "Sub-Store 正忙或服务不可用，请稍后重试"

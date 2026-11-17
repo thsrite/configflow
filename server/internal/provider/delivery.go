@@ -8,7 +8,7 @@ import (
 	"configflow/internal/agents/diag"
 	"configflow/internal/convert"
 	"configflow/internal/jsonx"
- "configflow/internal/lifecycle"
+	"configflow/internal/lifecycle"
 	"configflow/internal/pystr"
 	"configflow/internal/refresh"
 	"configflow/internal/repo"

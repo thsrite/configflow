@@ -107,3 +107,9 @@ focused activation/shutdown race3 passed1.024s.
 
 Implementation is complete; remaining gates: final fmt/vet, related race after integration, full p4,
 both tags, all10 enabled tagged difftest packages, proddiff, final rebase go and clean workspace.
+
+Second composition rebase: go@d7c481c7 (A12/R07/C31) is now underneath the branch. Final gate setup
+caught additive-message alignment and a same-size import whitespace edit missed by rsync's timestamp
+copy-back; reformatted both on .64 and forced a later timestamp before copy-back. Full gofmt-l is
+empty and vet green. No tests ran in the two early formatting-gate exits. Current integration has
+an additional devicenotes differential: enumerate with tagged go list, do not hardcode10 packages.
