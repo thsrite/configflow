@@ -401,3 +401,20 @@ the switch. After a refresh, new differences are expected to surface; triage the
 baseline with a reason). Keep the previous snapshot until the new baseline is settled, then delete it. The
 harness proves egress isolation at start (only lo, no host sockets, DNS fails, TEST-NET unreachable) — never
 weaken that check.
+
+## HR modules: Codex ports, Opus reviews (maintainer, 2026-11-17; supersedes "HR module ports by Opus" in "Fixed assignment by risk" and O5)
+
+Reason: R04 (Codex port + Opus review) showed the review catches what Codex misses (10 findings, 2 high, all fixed);
+the issue classes are now written down; porting is the most token-heavy step and HR ports were the bottleneck.
+
+- **Codex ports HR modules.** The brief must include: the issue-class checklists from `server/parity/review-r04.md`,
+  `review-r05.md` and `review-a19.md` (when present), `server/design/o3-concurrency.md` (locks, Spawn, cancellation /
+  PORTING 4b) and `server/design/n7-n8.md` (typed model rules), the relevant rows and lab items of the domain's
+  difftest matrix, and the requirement to state for each checklist class how it is avoided.
+- **Opus first writes a short design** (interface, state transitions, failure/rollback, buildable steps, acceptance;
+  template in "Design docs, hand-offs and escalation") for the most complex HR modules: **A14 publishing, A18 DNS HA,
+  R12 router publish**. Codex implements to it.
+- **Every HR module gets a fresh-Opus review** (never the author); it stays `ported` until that review sets `verified`.
+- **Fallback:** if a review finds **two or more high-severity findings** in a module, the remaining HR modules of that
+  area go back to Opus porting until the coordinator decides otherwise.
+- R05 and A19 (already ported by Opus) finish their Opus reviews as started.

@@ -90,6 +90,7 @@ Codex first + "Opus review pending" if Claude quota is out).
    resolve the precedence explicitly (and test it).
 4. **Blocked until 1 exists:** N7 (YAML → yaml.v3 behind yamlx) and N8 (remove jsonx) Opus designs and their
    implementation, S passes of convert/subs/agents/repo, and any other large refactor of accepted code.
+**HR modules since 2026-11-17: Codex ports, fresh Opus reviews** (WORKFLOW last section; Opus designs first for A14, A18, R12).
 **Opus task list O1–O15 with triggers:** WORKFLOW.md "Complete Opus task list" — start each on its trigger without asking.
 **Fixed assignment by risk:** see WORKFLOW.md last section — Opus always does designs, HR ports, HR reviews,
 matrix/spot/refactor reviews; Codex everything else; quota only sets when Opus tasks run (never handed to Codex). Max 2 Opus agents.
