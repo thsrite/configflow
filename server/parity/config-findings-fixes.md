@@ -11,7 +11,7 @@
 | 5 同值 PUT revision | 已修。修前SQL subscriptions行revision 2→3（连续相同PUT）；修后保留原始有序存储对象，同一行value/revision均不变，包含嵌套未知字段。`.63 subscriptions race` 1.880s。注意证据针对字段revision；Python _apply_shared_locked仍每次推进全局generation/shared._revision，Go保持该事务语义。 |
 | 6 provider 注释 | 已修。修前global/scoped/merged及served文件无注释；修后单源六行、合并源数量/明细、Generated本地微秒时间+Z、Source均恢复。`.63 targeted metadata race` 1.251s；完整C30差异新增逐行注释比较，元数据无差异，只剩第1项已决定4xx需显式更新旧比较器。 |
 | 7 准备失败上下文 | 已修。`.63 TestConfigFindingsPreparationContextWithoutA11Positions` 修前缺订阅前缀和来源，修后默认provider上下文保留「订阅…准备失败」及内容来源。provider整包race通过169.005s。C30差异仅延后文件/坐标/摘录，前缀和来源严格比较；A11记录已缩小范围。 |
-| 8 ruleset UUID4 | 待复现 |
+| 8 ruleset UUID4 | 已修。`.63`真实POST rulesets/init修前ruleset_32hex，修后存储/返回规则引用采用带横线UUID4并验证版本/variant；lib_32hex保持。使用既有google/uuid模块的NewRandom（返回错误、不panic），未增加依赖版本。discovery/API race 5.962s/1.761s。 |
 | 9 auto_backup | 待确认 C35 |
 | 10 BOM | 待确认 C30 复核 |
 | 11 未知字段保留 | 待验证并登记接受差异 |

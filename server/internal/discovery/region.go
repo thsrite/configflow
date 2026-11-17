@@ -418,7 +418,11 @@ func ensurePolicy(ctx context.Context, id, policy string, values []string) error
 					break
 				}
 			}
-			c.Rules = insertRules(c.Rules, pos, newReference(rid, policy))
+			ref, err := newReference(rid, policy)
+			if err != nil {
+				return err
+			}
+			c.Rules = insertRules(c.Rules, pos, ref)
 		}
 		c.Settings.RegionalRulesets[policy] = rid
 		return nil

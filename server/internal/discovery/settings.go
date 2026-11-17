@@ -12,6 +12,7 @@ import (
 
 	"configflow/internal/repo"
 	"configflow/internal/rules"
+	"github.com/google/uuid"
 )
 
 // SettingsPayload returns the selected rulesets and valid candidates.
@@ -153,8 +154,12 @@ func uniqueName(items []libraryItem, base string) string {
 func newLibrary(items []libraryItem, name string) libraryItem {
 	return libraryItem{ID: uniqueID("lib_"), Name: uniqueName(items, name), SourceType: "content", Behavior: "classical", Extra: map[string]json.RawMessage{"enabled": json.RawMessage("true")}}
 }
-func newReference(id, policy string) ruleConfig {
-	return ruleConfig{ID: uniqueID("ruleset_"), ItemType: "ruleset", LibraryID: id, Policy: policy, Enabled: true, Extra: map[string]json.RawMessage{"no_resolve": json.RawMessage("false")}}
+func newReference(id, policy string) (ruleConfig, error) {
+	identity, err := uuid.NewRandom()
+	if err != nil {
+		return ruleConfig{}, fmt.Errorf("create ruleset ID: %w", err)
+	}
+	return ruleConfig{ID: "ruleset_" + identity.String(), ItemType: "ruleset", LibraryID: id, Policy: policy, Enabled: true, Extra: map[string]json.RawMessage{"no_resolve": json.RawMessage("false")}}, nil
 }
 func insertRules(rules []ruleConfig, index int, added ...ruleConfig) []ruleConfig {
 	out := make([]ruleConfig, 0, len(rules)+len(added))
@@ -219,7 +224,11 @@ func InitRulesets(ctx context.Context, id string, targets []string, proxyPolicy 
 			} else {
 				c.Settings.DirectRuleset = ptr(item.ID)
 			}
-			refs = append(refs, newReference(item.ID, policy))
+			ref, err := newReference(item.ID, policy)
+			if err != nil {
+				return err
+			}
+			refs = append(refs, ref)
 		}
 		c.Rules = insertRules(c.Rules, pos, refs...)
 		return nil
