@@ -1991,3 +1991,9 @@ H738的同时指定names/keys在[nodes.py:163](../../backend/routes/nodes.py#L16
 ### Step B 旧Agent绑定与当前schema边界
 
 R120-S02/R121-B01：当前schema5直接塞入无profile_id的Agent会使repository读取失败，不能假装是合法现态；旧schema2完整备份允许缺失并在公开import时补成default。Step B实际执行该旧备份导入、读取默认绑定再公开改绑，验证目标显式绑定、禁用状态保留和零设备推送。R121内部`agent.get('profile_id') or default`的fallback并未由有效schema5现态证明执行，记部分覆盖；不能把手改坏库造成的500当作该合法fallback的输入。依据[config_repository.py:2390](../../backend/common/config_repository.py#L2390)、[config_repository.py:2487](../../backend/common/config_repository.py#L2487)。
+
+### Step B dependency native fixture与可观察边界
+
+R198–R200现已有.32仅lo命名空间中的可信CA/MITM GitHub API及下载fake，保留真实公开双端服务、HTTPS证书校验和node --check，满足O6的网络前提。R199成功形态目前是已经就绪的回环服务，不会执行start/stop；R200的supervisorctl restart仅由白名单fixture子进程模拟，并以每端DATA_DIR的真实VERSION通知回环fake。成功终态、完整SQL/文件及HTTP/CLI协议可差分，真实Node服务启动、真实supervisord接管、容器端口生命周期仍为L1部分覆盖。下载中busy使用真实worker持锁与TLS响应门，未修改生产定时器或业务函数。
+
+R200-F12“外部服务”与F11“无内置目录”在Python公开update入口都由`is_builtin_available()`同一早期分支拒绝（[dependencies.py:336](../../backend/utils/dependencies.py#L336)）；没有另一个专用external guard。F12显式设置可用回环SUB_STORE_URL但没有builtin bundle，验证仍409且不探测外部服务、不查release、不写SQL/files，不能据此声称覆盖一个不存在的额外内部判定。

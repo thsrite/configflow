@@ -1622,3 +1622,19 @@ design_errors=[]；exit=0；统一报告常规runner合并完成
 ```
 
 原R仍差257、H仍差548及partial/长流程；继续下载中冲突/升级回滚和其余清单，最终.32全量未执行。
+
+## 批次 94：真实在途更新冲突与下载验证失败
+
+- 新增6变体，原R新增4（R200-F08/B01/F12、R199-F12）、H新增2（H035/H036）；统一9324变体、原R4277（S686/F2660/B931）、H566、G16。升级相关四组共11变体常规runner重跑，全部compared、design_errors=[]、34.51s。
+- TLS bundle响应暂停时先确认真实第一个POST202及worker已进入下载门，再发第二个POST或mode切换；准确409与中文比较，拒绝请求前后该端全SQL/files不变。释放后轮询第一个worker真正完成，再比较一份下载、一次restart和完整终态/落盘；没有直接操作业务锁。首次没进门/拒绝请求有写入的故意错误会被自检捕获。
+- 真正下载19字节和SHA256不匹配各自产生failed终态；两个业务健康请求（另加实际轮询）、无restart、runtime不留下文件，所有SQL和原文件不动，消息逐字相比。202异步入口统一runtime_writes=True，避免仅内存状态变化被误认为后续Go独立可比。
+- F12设置回环外部服务但无builtin，仍按同一Python可用性分支拒绝，HTTP/TLS0次；matrix明确F11/F12等价前置判定。L1真实进程接管仍partial，未扩大fake结论。
+
+```text
+.32 native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups dependency-update-preflight,dependency-update-success,dependency-update-conflicts,dependency-update-invalid-downloads --baseline 045f2485
+current compared=11 design_errors=[] seconds=34.51；exit=0
+83 self-checks + deliberate wrong-Go-response detection OK
+独立原始报告/tmp/configdiff-dependency-conflicts.json、/tmp/configdiff-dependency-invalid.json
+```
+
+原R仍差253、H仍差546及partial/长流程；继续升级回滚和其余清单，最终.32全量未执行。
