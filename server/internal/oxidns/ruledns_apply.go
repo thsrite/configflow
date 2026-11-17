@@ -200,13 +200,17 @@ func resolveDNSChoice(choice string, item, values *Node, catalog []UpstreamCandi
 	return nil, fail(messageDNSStaleUpstream)
 }
 
-func validationIssueKey(issue Issue) string {
+type validationKey struct {
+	path, code, message string
+}
+
+func validationIssueKey(issue Issue) validationKey {
 	path, _ := json.Marshal(issue.Path)
-	return string(path) + "\x00" + issue.Code + "\x00" + issue.Message
+	return validationKey{string(path), issue.Code, issue.Message}
 }
 
 func newValidationIssue(before, after *Node) *Issue {
-	existing := map[string]bool{}
+	existing := map[validationKey]bool{}
 	for _, issue := range ValidateNativeConfig(before) {
 		if issue.Severity == "" || issue.Severity == "error" {
 			existing[validationIssueKey(issue)] = true

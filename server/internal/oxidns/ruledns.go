@@ -132,7 +132,7 @@ func upstreamChain(action, features *Node) []*Node {
 	if truthy(get(features, "cache_enabled")) {
 		cache := M("size", upstreamCacheSize)
 		if lazy, ok := ratOf(get(features, "cache_lazy_ttl")); ok && lazy.Sign() > 0 {
-			set(cache, "lazy_cache_ttl", get(features, "cache_lazy_ttl"))
+			set(cache, "lazy_cache_ttl", clone(get(features, "cache_lazy_ttl")))
 		}
 		set(cache, "short_circuit", B(true))
 		plugins = append(plugins, M("tag", CachePrefix+key, "type", "cache", "args", cache))

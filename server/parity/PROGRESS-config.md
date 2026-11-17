@@ -1445,7 +1445,7 @@ Progress: (updated at each milestone)
 
 ## C27 — rule DNS actions
 
-**Status: `ported`** (author port, final .32 checks passed, 2026-11-17; independent review pending) · prereqs: C26 verified · Go: `internal/oxidns`
+**Status: `ported`** (independent review in progress; final reviewer `.32` acceptance pending) · prereqs: C26 verified · Go: `internal/oxidns`
 
 Files:
 - `backend/common/rule_dns.py` (885)
@@ -1468,6 +1468,7 @@ Cross-domain contracts:
 
 Step 1 implemented in `ruledns_state.go` (typed JSON engine/rule/Agent/upstream views):
 - `ReadRuleDNS(p *Profile, options RuleDNSReadOptions) (RuleDNSState, error)`; `RuleDNSEntries(p *Profile, ids []string, options RuleDNSReadOptions) (map[string]RuleDNSRule, error)`; `ExplicitRuleDNS(p *Profile, id string) (string, error)`. Empty route means no route; JSON uses null where the Python read model does. Unsupported rows omit route fields. Read options: nil Agents selects ProfileAgents, nonnil empty selects none; optional SyncSettings adapter returns `{Library, Rules bool}`.
+- Reviewer API correction approved by coordinator: `RuleDNSAgent.ID`, `.Name`, `.ServiceType` are **`*string`**, with unchanged JSON keys `id`, `name`, `service_type`. Missing/null legacy metadata encodes JSON null; present empty strings remain empty strings. C32 must handle nullable values. Pointers are independent values, not aliases into the caller's YAML nodes.
 - `ProfileAgents(p *Profile) []*Node` (copies); `PolicyDNSRoutes(p *Profile) map[string]string`; `FollowRoute(item *Node, p *Profile) string` (empty route = no DNS route).
 - `UpstreamCatalog(settings, document *Node, bindings []DNSBinding) ([]UpstreamCandidate, error)`; nil document parses the template lists or saved native YAML. Candidate includes key/source/addr/label/linked and `Entry json.RawMessage`; the read model hides Entry. Bindings contain UpstreamTag and UpstreamIndex.
 - `HydrateRuleset(item, library *Node, profileID string) *Node` returns a copy; C32 assigns the returned reference. It clears old library source fields, retains rule-owned fields/unknown metadata and uses a profile content URL for inline sources.
@@ -1511,7 +1512,9 @@ Final verification on native .32 (tested integration base **e6c87cc1**):
 - Uptime start `17:52:35 up 2:51, 3 users, load average: 1.64, 4.28, 5.23`; end `18:01:53 up 3:00, 4 users, load average: 16.34, 8.97, 6.76`.
 - Final polish only renamed the Go view field to InUse (wire JSON tag unchanged) and documented Error/Unwrap. Follow-up `rt -- bash -lc 'cd server && test -z "$(gofmt -l .)" && go vet ./... && go test -race -count=1 -run "^TestRuleDNS" ./internal/oxidns/'` → exit 0, **16.902s**. All 282 references / 148 generated results and the ordered-assignment/input/comment checks still pass.
 
-No implementation remains in C27; no dependency, Python emulation, new jsonx/pystr/urlx import, route registration or repository write was added. Go APIs deliberately return replacement drafts/references rather than mutating caller objects; callers install those results as documented. Module source/test features are retained; optional core execution and route/transaction/auth behavior remain with the owners above. Branch **go-port-c27**; rebased onto current local go, clean committed hand-back, no push or production access. Independent review is pending; this author does not mark verified.
+Author hand-back: no implementation remained; no dependency, Python emulation, new jsonx/pystr/urlx import, route registration or repository write was added. Go APIs deliberately return replacement drafts/references rather than mutating caller objects; callers install those results as documented. Module source/test features are retained; optional core execution and route/transaction/auth behavior remain with the owners above. Author branch **go-port-c27**; independent review follows below.
+
+Reviewer checkpoint (`go-review-c27`): [review-c27.md](review-c27.md). Read all Python function branches against `ruledns.go`, `ruledns_state.go`, `ruledns_apply.go` and their native collaborators. Added an independent **451-row** public-boundary corpus including **305** additional final generated documents; 93 expected rejections. All generated structures/writes match. Found/fixed medium ownership bug: `HelperPlugins` returned the caller's mutable lazy-TTL scalar; now clones it. Low JSON-contract bug: legacy null/missing Agent metadata became empty strings; nullable pointers fix it (coordinator-approved API correction above). Replaced NUL-concatenated validator issue keys with a Go struct key; no claim of a reachable collision in current fixed validator codes. New tests reproduced both Agent JSON failures and helper-input mutation before fixing. Concurrency/WithoutCancel/transaction rollback checks and final `.32` acceptance remain in progress; status is not yet verified.
 
 ## C28 — MosDNS archive and routes
 

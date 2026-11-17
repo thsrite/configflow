@@ -19,12 +19,21 @@ type RuleDNSReadOptions struct {
 	SyncSettings func(agent *Node) SyncSettings
 }
 
-// RuleDNSAgent describes an Agent shown by the rules page.
+// RuleDNSAgent describes an Agent shown by the rules page. Missing or null
+// identity, name and service type remain null in JSON for legacy records.
 type RuleDNSAgent struct {
-	ID          string       `json:"id"`
-	Name        string       `json:"name"`
-	ServiceType string       `json:"service_type"`
+	ID          *string      `json:"id"`
+	Name        *string      `json:"name"`
+	ServiceType *string      `json:"service_type"`
 	AutoSync    SyncSettings `json:"auto_sync"`
+}
+
+func agentText(value *Node) *string {
+	if !isStr(value) {
+		return nil
+	}
+	text := value.Value
+	return &text
 }
 
 // RuleDNSEngine describes the active profile's DNS routing capabilities.
@@ -454,7 +463,7 @@ func ReadRuleDNS(p *Profile, options RuleDNSReadOptions) (RuleDNSState, error) {
 		if options.SyncSettings != nil {
 			sync = options.SyncSettings(agent)
 		}
-		engine.Agents = append(engine.Agents, RuleDNSAgent{str(get(agent, "id")), str(orDefault(agent, "name", get(agent, "id"))), str(get(agent, "service_type")), sync})
+		engine.Agents = append(engine.Agents, RuleDNSAgent{agentText(get(agent, "id")), agentText(orDefault(agent, "name", get(agent, "id"))), agentText(get(agent, "service_type")), sync})
 		engine.InUse = engine.InUse || isOneOf(get(agent, "service_type"), "oxidns")
 	}
 	candidates, err := viewUpstreams(settings, view, agents)
