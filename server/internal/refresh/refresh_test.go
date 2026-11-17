@@ -34,7 +34,8 @@ import (
 func TestMain(m *testing.M) {
 	logx.Setup(logx.Config{Level: logx.Info, Console: io.Discard})
 	code := m.Run()
-	if lockx.Violations() != 0 {
+	if violations := lockx.Violations(); violations != 0 {
+		logger.Errorf("Lock order violations: %d", violations)
 		code = 1
 	}
 	os.Exit(code)
@@ -705,19 +706,25 @@ func TestRefreshSubscriptionRecordsHealthAndStatus(t *testing.T) {
 func TestRunNowClaimsTheTask(t *testing.T) {
 	f := setup(t, jsonx.Int(86400))
 	gate := make(chan struct{})
-	f.env.FetchSubscription = func(context.Context, string, string, substore.FetchOptions) (*substore.SubscriptionResult, error) {
+	f.env.FetchSubscription = func(ctx context.Context, _ string, _ string, _ substore.FetchOptions) (*substore.SubscriptionResult, error) {
 		<-gate
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		return &substore.SubscriptionResult{Text: proxiesYAML(), Source: "direct_yaml"}, nil
 	}
-	key, err := RunNow(f.ctx, "subscription", "s")
+	request, cancel := context.WithCancel(f.ctx)
+	defer cancel()
+	key, err := RunNow(request, "subscription", "s")
+	cancel()
 	if err != nil || key != "subscription:s" || !IsRunning(key) {
 		t.Fatal(key, err)
 	}
 	var busy *TaskBusy
-	if _, err := RunNow(f.ctx, "subscription", "s"); !errors.As(err, &busy) || err.Error() != "这个任务正在运行，请稍后查看结果" {
+	if _, err := RunNow(f.ctx, "subscription", "s"); !errors.As(err, &busy) || err.Error() != msgTaskBusy {
 		t.Fatal(err)
 	}
-	if err := runTask(f.ctx, "subscription:s", "s"); err == nil || err.Error() != "这个任务正在运行，请稍后查看结果" {
+	if err := runTask(f.ctx, "subscription:s", "s"); err == nil || err.Error() != msgTaskBusy {
 		t.Fatal(err)
 	}
 	close(gate)

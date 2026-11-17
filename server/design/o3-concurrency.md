@@ -263,6 +263,7 @@ const (
 
 // Periodic is one background loop. Rounds of one loop never overlap.
 type Periodic struct {
+ OnStart func(ctx context.Context) // optional, synchronous memory setup once per ModeRun activation, before first wait
 	Name       string                                  // stable kebab-case id = Python thread name; logs, tests, task rows
 	Start      StartMode
 	FirstDelay time.Duration                           // before the first round
@@ -293,6 +294,12 @@ func RegisterShutdown(h ShutdownHook)
 // tracked for the shutdown drain. fn's context is cancelled only at the drain deadline; it should poll Stopping
 // between units of work. Returns ErrStopping once the drain deadline passed.
 func Spawn(ctx context.Context, name string, fn func(ctx context.Context)) error
+
+// ClockFrom returns the originating Runtime clock, otherwise real time.
+func ClockFrom(ctx context.Context) Clock
+
+// Detach drops request cancellation but keeps the originating Runtime job cancellation.
+func Detach(ctx context.Context) context.Context
 
 // Stopping is closed when shutdown starts (SIGTERM). Loops and jobs check it between units of work.
 func Stopping(ctx context.Context) <-chan struct{}
@@ -563,7 +570,7 @@ days of one Codex agent. Until a step lands, new ports follow the transitional r
 | O3-1 | `internal/lockx`: Mutex, Keyed (with clean-up), RWMutex, Flight, level checker + `Violations`; table tests incl. `-race`, try-under-blocking allowed, blocking inversion counted, Keyed map empties after 10k distinct keys. No consumers. | S | – | O3-3 | Codex |
 | O3-2 | `lifecycle` v2: Clock (+ fake in `lifecycle/lifecycletest`), Periodic/Startup/ShutdownHook registry, Runtime (ModeRun/ModeManual), Spawn/Stopping/WaitIdle, `RequestSeen`; `Loop`/`OnShutdown` kept as adapters; build-tag files `mode_proddiff.go` and `events_difftest.go`; `tools/proddiff/build.py` drops the source overlay of `lifecycle.go` (keeps the route-manifest part of main or moves it under the same tag). Tests with the fake clock: first delay, interval re-read each round, wake, no overlap, panic recovery, drain/cancel order. | M | O3-1 | – | Codex; **Opus review with O3-3** |
 | O3-3 | `internal/instance` + main: Acquire before repo open, Startup steps (3.6), shutdown sequence (3.4) with `CONFIGFLOW_SHUTDOWN_GRACE_SECONDS`, second-signal exit, `httpx` calls `lifecycle.RequestSeen()` after the profile + auth gate. Messages in `messages.go`. Tests: a second process (test binary re-exec) gets `ErrInUse`; a held `.task-scheduler.lock` blocks start; `run()` with an injected signal channel shows flush #1 before drain and #2 after. | M | O3-2 for main | O3-1 for instance | Codex |
-| O3-4 | Migrate loops: refresh (lifetime flock removed in O3-3; Periodic 30/30; claims → Keyed; `RunNow` → Spawn), discovery auto (120/600), monitor rankings (60/60), metrics (Periodic + Wake; two-phase shutdown save and `metrics-load-history` Startup **completed in O3-3**), substore idle (0/5, conditional), `subscription-cache-prune` → Startup; replace `time.Sleep` in these loops by the Clock. Rows' `running` from `Held`. | M | O3-2, O3-3 | O3-5, O3-6 | Codex |
+| O3-4 | Migrate loops: refresh (lifetime flock removed in O3-3; Periodic 30/30; claims → Keyed; `RunNow` → Spawn), discovery auto (120/600), monitor rankings (60/60), metrics (Periodic + Wake; two-phase shutdown save and `metrics-load-history` Startup **completed in O3-3**), substore idle (0/5, conditional), `subscription-cache-prune` → Startup (**completed in O3-2**); replace `time.Sleep` in these loops by the Clock. Rows' `running` from `Held`. | M | O3-2, O3-3 | O3-5, O3-6 | Codex |
 | O3-5 | Detached goroutines → `Spawn`: `tasks.StartBackground`, `discovery/jobs.go`, `webdav.Worker` (+ `WaitIdle` via Runtime), `upgrades.startThread`, `provider.runFlight` (+ `lockx.Flight`), `substore` update, `weblistener.serve` (tracked as a job that ends on Close); `rules/matchercache` timer on the Clock. | M | O3-2 | O3-4, O3-6 | Codex |
 | O3-6 | File locks → in-process (2.4): taskstatus, notifications, weblistener, agents deployments (`preparationRunning` = `Held`), monitor dashboard state (5 s limit), installer ×2, substore runtime leases (RWMutex with Python's limits); repo records `LevelRepository` and serves `JobLock` from a `Keyed` owned by `routers` (fail-closed default stays until routers wire it); move handler-level `WithoutCancel` into owners. Python-written lock files are left alone. | M | O3-1, O3-3 | O3-4, O3-5 | Codex |
 | O3-7 | Gates as a test in `internal/lifecycle/gate_test.go` (go/parser over non-test files): `go` statements only in `lifecycle` and in an explicit allowlist of fan-outs that wait for their goroutines before returning (each entry `file:func` with a one-line reason); `Flock` only in `repo` and `instance`; `time.Sleep`/`time.AfterFunc` only in an allowlist (lock polling in repo, rate limits) — loops use the Clock. Update AGENT-BRIEF/PORTING pointers if needed. | S | O3-4–O3-6 | – | Codex |

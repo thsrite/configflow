@@ -21,3 +21,20 @@ func TestStartupCanRegisterPeriodicBeforeActivation(t *testing.T) {
 	}
 	r.Shutdown(context.Background())
 }
+
+func TestActivationPanicDoesNotStrandRunner(t *testing.T) {
+	reg := NewRegistry()
+	ran := make(chan struct{})
+	reg.RegisterPeriodic(Periodic{Name: "activation-panic", OnStart: func(context.Context) { panic("synthetic") }, Round: func(context.Context) error { close(ran); return nil }})
+	runner := NewRuntime(Options{Registry: reg})
+	runner.Start(context.Background())
+	defer runner.Shutdown(context.Background())
+	select {
+	case <-ran:
+	case <-time.After(time.Second):
+		t.Fatal("activation panic stranded the driver")
+	}
+	if err := runner.WaitIdle(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
