@@ -110,6 +110,8 @@ def main():
     groups.update(log_stat_fault)
     from cases.nodes import GROUPS as nodes
     groups.update(nodes)
+    from cases.node_parse_lines import GROUPS as node_parse_lines
+    groups.update(node_parse_lines)
     from cases.node_reference_edges import GROUPS as node_reference_edges
     groups.update(node_reference_edges)
     from cases.probes import GROUPS as probes

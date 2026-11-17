@@ -1843,3 +1843,18 @@ current go-unimplemented=2 design_errors=[]；exit=0
 ```
 
 原R仍差217、H仍差513及partial/N/A/长流程。继续parse-lines与其余条目；最终.32全量未执行。
+
+## 批次 108：parse-lines的Sub-Store协议与逐项失败
+
+- R102-S01/S02/B03/B90/F13共9新变体，真实Surge Snell/Loon行、中文emoji名称、首尾空白trim经同一个回环fake转换。逐次验证随机临时名称格式/唯一性、POST创建的noFlow字段、GET content解码后精确输入及ClashMeta路径、DELETE清理，无遗留临时订阅；完整SQL/files保持不变。复用已有严格NodeExchange与篡改自检，不直接调用converter。
+- HTML、空proxies、坏YAML、下载503均返回HTTP200中的逐项中文error，且下载失败照样DELETE。独立不可用回环runtime场景含两种合法文本和空白行，准确得到3个逐项error，无持久化写入。fake只证明协议与结果处理；真实Sub-Store对这些客户端语法的转换正确性仍属于对应集成边界。
+- .32独立及正式均compared9、design_errors=[]，92项自检通过，无新差异。统一9444变体、原R4318（S691/F2675/B952）、H599/G16；findings仍closed81/accepted7/open20/O12单列1。
+
+```text
+.32 native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups nodes-parse-lines-converter,nodes-parse-lines-unavailable --baseline 7521bb5c
+current compared=9 design_errors=[]；exit=0
+92 self-checks + deliberately wrong-Go-response detection OK
+独立报告/tmp/configdiff-node-lines-draft.json
+```
+
+原R仍差212、H仍差513及partial/N/A/长流程。继续node边界与剩余条目；最终.32全量未执行。
