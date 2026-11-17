@@ -490,6 +490,8 @@ Tests: `test_router_release.py` (24), `test_routeros_release_safety.py` (12), `t
 
 Routes: none.
 
+**Design: `server/design/r12-release.md` (Opus, 2026-11-17) — port to it.** Re-scoped there (D-R12-1): R12 also owns the inspection service of `routes/routers.py` (`_agent`, `_dns_settings`, `_inspect`, `_inspect_state`, `_ipv6_host`, `_return_cleanup`, `_return_routing`), `ros_return_advisory.py` (+ `test_ros_return_advisory.py`) and the apply-route body as `Publish`/`StartPublish`; R12-1…R12-4 can run in parallel with R08–R11, R12-5a/b after them; section 2.4 is the contract R07–R11 porters must follow.
+
 Notes for porter: `build_plan` (stages, ops, blockers, warnings, `STAGE_TITLES`, fingerprint), `execute`/`_execute`/`_verify`/`verify_nat`, `AgentReturnRouting` (Agent allocation contract, hex normalisation), rollback in reverse order. A01 manager provides `ReturnRoutingStatus/Apply/Remove`. Also used by C36 setup completion (`build_plan`) and A18 (`execute` in `test_oxidns_ha.py`).
 
 ## R13 — inspection service, return advisory, pending reminders
@@ -505,7 +507,9 @@ Tests: `test_ros_return_advisory.py` (13), `test_upstream_router_pending.py` (17
 
 Routes: none (the `upstream-routers` handler is R15).
 
-Notes for porter: `Driver(router)`, `Inspect(ctx, config, router, driver, contentLoader)` (returns gateway agent, desired, state, report), `Agent`, `ReturnRouting`, `ReturnCleanup` are exported for R14, R15, R16, C36 (setup completion) — Python imports these private helpers across modules. `_ipv6_host` → hook `IPv6HostRequest` (A23). `pending.summarize` registers `notifications.SetSources{Summarize}`; `agent_routers` reads routers concurrently (ThreadPoolExecutor + `FutureTimeout` → 504 in R15) with a keyed `PendingCache` — hand-port the concurrency/timeout tests. `safely(record_router, …)` after reads: must run with `context.WithoutCancel` (rule 4b).
+**Re-scoped by `design/r12-release.md` (D-R12-1):** the inspection service and `ros_return_advisory.py` (+ its test file) moved to R12; R13 keeps `pending.py` and calls R12's `Inspect` + `BuildPlan` with an explicit profile id (fixes T27).
+
+Notes for porter (pre-design, superseded where they conflict): `Driver(router)`, `Inspect(ctx, config, router, driver, contentLoader)` (returns gateway agent, desired, state, report), `Agent`, `ReturnRouting`, `ReturnCleanup` are exported for R14, R15, R16, C36 (setup completion) — Python imports these private helpers across modules. `_ipv6_host` → hook `IPv6HostRequest` (A23). `pending.summarize` registers `notifications.SetSources{Summarize}`; `agent_routers` reads routers concurrently (ThreadPoolExecutor + `FutureTimeout` → 504 in R15) with a keyed `PendingCache` — hand-port the concurrency/timeout tests. `safely(record_router, …)` after reads: must run with `context.WithoutCancel` (rule 4b).
 
 ## R14 — automatic rule sync
 
