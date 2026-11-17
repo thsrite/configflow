@@ -155,6 +155,14 @@ def repair_commits(item):
     if (group == 'webdav-named-preflight-and-directory-failure' and item['case'] == 'R016-F15'
             and item['route'] == 'POST /api/backup/now' and item['variant'] == 'real-MKCOL-403-before-PUT'):
         return ['bd7363fd']
+    if (group == 'settings-backup-validation' and item['case'] != 'R015-S04'
+            and paths == {'db.fields.system//backup.value.webdav_password'}):
+        return ['3dc6e7bf']
+    if (group == 'aggregation-provider-refresh'
+            and paths == {'files.shared/subscribes/sub-a.json.content.updated_at'} and (
+            (item['case'] == 'R007-S02' and item['variant'] == '') or
+            (item['case'] in ('R008-S05', 'R122-S05') and item['variant'] == 'failed-source-valid-cache'))):
+        return ['3dc6e7bf']
     return []
 
 
@@ -171,4 +179,6 @@ def annotate(records):
         item.pop('closure_note', None)
         if item['status'] == 'closed' and 'bd7363fd' in item['fix_commits']:
             item['closure_note'] = 'bd7363fd为O6英文内部诊断比较器纠正，不是Go业务修复；中文/HTTP数字/副作用继续严格比较'
+        if item['status'] == 'closed' and '3dc6e7bf' in item['fix_commits']:
+            item['closure_note'] = '3dc6e7bf为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复'
     return records

@@ -2168,3 +2168,20 @@ SSH returned255（长连接reset）；报告通过rt --no-sync --back取回，�
 ```
 
 现有全量已完成一次，但新增内容及最终最新go完整门禁尚未完成，任务继续。
+
+## 批次 127：正式合并新覆盖、精确批准归类与真实路由器发布互斥
+
+- .64用普通runner正式运行20组、344变体：273compared、51Go未实现、20strict different/20accepted/open0、design_errors=[]，177.50秒。没有手工合并verdict；上一批新用例与H726缺失报告均由实际重跑进入统一JSON。
+- C35空密码单例保留实际密码及backup行revision差异，按已批准C35精确accepted；不接受额外存储变化。其后真实B01同时恢复共同密码前提和改变keep_latest，34条传播差异实际closed。三条固定缓存日期假差异也实际closed。37条关闭均标3dc6e7bf并注明夹具修正，不冒充Go业务修复；所有closed都有提交依据。
+- 19条原有批准类新发现只按有限用例集接受：nodes/subscriptions非法排序400精确中文与对应Python404/500、auth错误方法405、未知API404、失败HEAD的Content-Type；仍保留完整raw differences。额外头、SQL、文件或不同status/消息不能匹配。114项自检和故意错误Go响应检出。
+- 此时统一10114变体、原R4475（S710/F2750/B1015）、H742/G16；累计compared2903、Go未实现7061、依赖未实现100、strict different49（accepted29/open20）、O12单列1。finding review为closed122/accepted29/open20/O12单列1。20个open均为先前真实差异，T27仍open，未因生命周期提交自行关闭。
+- 再补R117-F13：真实公开router apply已进入fake RouterOS首个GET /rest/ip/route且阻塞响应时，另一真实HTTP客户端删除其profile必须409、准确中文、全SQL/files不变；放行401后apply必须502，完整次请求响应和唯一GET一并比较，不能模拟内存job锁或Go内部状态。普通runner在.32合并；Go profile入口仍未接通。新增115项自检验证次响应、设备写入和SQL变化不能被漏掉。
+
+```text
+.64 native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups node-helper-payload-limit,rule-library-native-warning-commit,rule-library-real-HEAD-exception,rule-library-bulk-enabled-save-failure,rule-library-two-source-native-enable-rebuild,tasks-DNS-follow-retry-intent,provider-downloaded-shape-guards,provider-manual-mode-missing-cache-guard,subscriptions-validation,provider-real-stale-cache,generated-download-real-client-disconnect,aggregation-out-of-order-source-completion,aggregation-validation,settings-backup-validation,aggregation-provider-refresh,auth-routes,http-head,http-options-routing,nodes-reorder,subscriptions-reorder --baseline ac1f2377
+current compared273 / Go未实现51 / different20 / accepted20 / open0；design_errors=[]；seconds177.50；exit0
+.32 --groups profile-delete-real-router-publication-busy --baseline ac1f2377
+源真实发布阻塞前提与115项自检通过；Go未实现1；design_errors=[]；exit0
+```
+
+合并R117后10115变体、原R4476（S710/F2751/B1015），原R仍差54（含N/A）、H差370；最终最新go全量仍待完成。

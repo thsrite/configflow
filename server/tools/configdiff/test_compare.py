@@ -17,6 +17,43 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_router_publication_busy_comparison_detects_secondary_HTTP_wire_and_storage_changes(self):
+        from cases.profile_router_busy import Busy
+        observer = Busy(SimpleNamespace(), None)
+        observer.before_values = [None, {'SQL': 'kept'}]
+        observer.after_values = [None, {'SQL': 'kept'}]
+        observer.exchange.transcripts = [[], []]
+        response = Reply(502, {'content-type': 'application/json'}, b'{"success":false,"message":"synthetic"}')
+        observer.secondary = [response, response]
+        self.assertEqual(observer.compare(Policy()), [])
+        observer.secondary[1] = Reply(200, response.headers, response.body)
+        self.assertTrue(observer.compare(Policy()), 'secondary HTTP status')
+        observer.secondary[1] = response
+        observer.exchange.transcripts[1] = [{'method': 'PATCH', 'path': '/rest/ip/route'}]
+        self.assertTrue(observer.compare(Policy()), 'unexpected device mutation')
+        observer.exchange.transcripts[1] = []
+        observer.after_values[1]['SQL'] = 'changed'
+        self.assertTrue(observer.compare(Policy()), 'primary deletion changed storage')
+
+    def test_fixture_rechecks_attribute_only_exact_old_false_difference_paths(self):
+        from config_finding_resolutions import annotate
+        rows = [('settings-backup-validation', 'R015-B01', '', 'POST /api/backup/config',
+                 'db.fields.system//backup.value.webdav_password'),
+                ('aggregation-provider-refresh', 'R008-S05', 'failed-source-valid-cache',
+                 'GET /api/aggregations/<agg_id>/provider', 'files.shared/subscribes/sub-a.json.content.updated_at')]
+        for group, case, variant, route, path in rows:
+            item = {'group': group, 'case': case, 'variant': variant, 'route': route, 'status': 'closed',
+                    'differences': [{'path': path}], 'remaining_differences': []}
+            closed = annotate([copy.deepcopy(item)])[0]
+            self.assertEqual(closed['fix_commits'], ['3dc6e7bf'])
+            self.assertIn('不是Go业务修复', closed['closure_note'])
+            wrong = copy.deepcopy(item)
+            wrong['differences'].append({'path': 'db.genuine-regression'})
+            self.assertNotIn('3dc6e7bf', annotate([wrong])[0]['fix_commits'])
+            wrong = copy.deepcopy(item)
+            wrong['status'] = 'open'
+            self.assertNotIn('3dc6e7bf', annotate([wrong])[0]['fix_commits'])
+
     def test_source_completion_gate_observes_fast_body_before_slow_response(self):
         import threading
         import urllib.request

@@ -246,6 +246,8 @@ def main():
     groups.update(download_disconnect)
     from cases.aggregation_edges import GROUPS as aggregation_edges
     groups.update(aggregation_edges)
+    from cases.profile_router_busy import GROUPS as profile_router_busy
+    groups.update(profile_router_busy)
     from cases.groups import GROUPS as managed_groups
     groups.update(managed_groups)
     from cases.rule_library import GROUPS as rule_library

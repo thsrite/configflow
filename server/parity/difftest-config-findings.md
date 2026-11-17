@@ -25,56 +25,56 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | G13 / same-name-different-definition/merged | `GET /api/subscriptions/proxies` | closed | 7b904725 | ac1f2377 | 200 / 200 |
 | G13 / same-name-identical/merged | `GET /api/subscriptions/proxies` | closed | 7b904725 | ac1f2377 | 200 / 200 |
 | H123 / original-and-mirror-both-fail-through-loopback-proxy | `GET /api/mosdns/rule-proxy` | open | — | ac1f2377 | 502 / 502 |
-| R007-S02 /  | `GET /api/aggregations/<agg_id>/preview` | open | — | ac1f2377 | 200 / 200 |
-| R008-S05 / failed-source-valid-cache | `GET /api/aggregations/<agg_id>/provider` | open | — | ac1f2377 | 200 / 200 |
-| R012-F01 /  | `GET /api/auth/status` | open | — | ac1f2377 | 405 / 405 |
-| R015-B01 /  | `POST /api/backup/config` | open | — | ac1f2377 | 200 / 200 |
-| R015-B02 /  | `POST /api/backup/config` | open | — | ac1f2377 | 200 / 200 |
-| R015-B03 /  | `POST /api/backup/config` | open | — | ac1f2377 | 200 / 200 |
-| R015-B04 /  | `POST /api/backup/config` | open | — | ac1f2377 | 200 / 200 |
-| R015-F08 / empty | `POST /api/backup/config` | open | — | ac1f2377 | 400 / 400 |
-| R015-F09 / array | `POST /api/backup/config` | open | — | ac1f2377 | 400 / 400 |
-| R015-F10 / unknown | `POST /api/backup/config` | open | — | ac1f2377 | 400 / 400 |
-| R015-F11 / text-type | `POST /api/backup/config` | open | — | ac1f2377 | 400 / 400 |
-| R015-F12 / auto-type | `POST /api/backup/config` | open | — | ac1f2377 | 400 / 400 |
-| R015-F13 / keep-negative | `POST /api/backup/config` | open | — | ac1f2377 | 400 / 400 |
-| R015-F14 / keep-large | `POST /api/backup/config` | open | — | ac1f2377 | 400 / 400 |
-| R015-F15 / daily-large | `POST /api/backup/config` | open | — | ac1f2377 | 400 / 400 |
-| R015-F16 / keep-bool | `POST /api/backup/config` | open | — | ac1f2377 | 400 / 400 |
-| R015-S04 /  | `POST /api/backup/config` | open | — | ac1f2377 | 200 / 200 |
+| R007-S02 /  | `GET /api/aggregations/<agg_id>/preview` | closed | 3dc6e7bf；3dc6e7bf为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | ac1f2377 | 200 / 200 |
+| R008-S05 / failed-source-valid-cache | `GET /api/aggregations/<agg_id>/provider` | closed | 3dc6e7bf；3dc6e7bf为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | ac1f2377 | 200 / 200 |
+| R012-F01 /  | `GET /api/auth/status` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | ac1f2377 | 405 / 405 |
+| R015-B01 /  | `POST /api/backup/config` | closed | 3dc6e7bf；3dc6e7bf为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | ac1f2377 | 200 / 200 |
+| R015-B02 /  | `POST /api/backup/config` | closed | 3dc6e7bf；3dc6e7bf为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | ac1f2377 | 200 / 200 |
+| R015-B03 /  | `POST /api/backup/config` | closed | 3dc6e7bf；3dc6e7bf为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | ac1f2377 | 200 / 200 |
+| R015-B04 /  | `POST /api/backup/config` | closed | 3dc6e7bf；3dc6e7bf为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | ac1f2377 | 200 / 200 |
+| R015-F08 / empty | `POST /api/backup/config` | closed | 3dc6e7bf；3dc6e7bf为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | ac1f2377 | 400 / 400 |
+| R015-F09 / array | `POST /api/backup/config` | closed | 3dc6e7bf；3dc6e7bf为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | ac1f2377 | 400 / 400 |
+| R015-F10 / unknown | `POST /api/backup/config` | closed | 3dc6e7bf；3dc6e7bf为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | ac1f2377 | 400 / 400 |
+| R015-F11 / text-type | `POST /api/backup/config` | closed | 3dc6e7bf；3dc6e7bf为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | ac1f2377 | 400 / 400 |
+| R015-F12 / auto-type | `POST /api/backup/config` | closed | 3dc6e7bf；3dc6e7bf为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | ac1f2377 | 400 / 400 |
+| R015-F13 / keep-negative | `POST /api/backup/config` | closed | 3dc6e7bf；3dc6e7bf为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | ac1f2377 | 400 / 400 |
+| R015-F14 / keep-large | `POST /api/backup/config` | closed | 3dc6e7bf；3dc6e7bf为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | ac1f2377 | 400 / 400 |
+| R015-F15 / daily-large | `POST /api/backup/config` | closed | 3dc6e7bf；3dc6e7bf为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | ac1f2377 | 400 / 400 |
+| R015-F16 / keep-bool | `POST /api/backup/config` | closed | 3dc6e7bf；3dc6e7bf为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | ac1f2377 | 400 / 400 |
+| R015-S04 /  | `POST /api/backup/config` | accepted | [behaviour-changes.md · C35空密码保留](behaviour-changes.md#c35webdav-凭据安全与表单密码保留) | ac1f2377 | 200 / 200 |
 | R016-B02 /  | `POST /api/backup/now` | open | — | ac1f2377 | 200 / 200 |
 | R016-B03 /  | `POST /api/backup/now` | open | — | ac1f2377 | 200 / 200 |
 | R016-B90 /  | `POST /api/backup/now` | open | — | ac1f2377 | 200 / 200 |
 | R016-B91 / Asia/Shanghai/previous-local-day-crosses-UTC-midnight | `POST /api/backup/now` | open | — | ac1f2377 | 200 / 200 |
 | R016-B91 / Etc/GMT+12/previous-local-day-crosses-UTC-midnight | `POST /api/backup/now` | open | — | ac1f2377 | 200 / 200 |
 | R016-B91 / Etc/GMT-14/previous-local-day-crosses-UTC-midnight | `POST /api/backup/now` | open | — | ac1f2377 | 200 / 200 |
-| R016-F08 / array | `POST /api/backup/now` | open | — | ac1f2377 | 400 / 400 |
-| R016-F09 / empty | `POST /api/backup/now` | open | — | ac1f2377 | 400 / 400 |
-| R016-F10 / unknown | `POST /api/backup/now` | open | — | ac1f2377 | 400 / 400 |
-| R016-F11 / text-type | `POST /api/backup/now` | open | — | ac1f2377 | 400 / 400 |
-| R016-F12 / auto-type | `POST /api/backup/now` | open | — | ac1f2377 | 400 / 400 |
-| R016-F13 / daily-large | `POST /api/backup/now` | open | — | ac1f2377 | 400 / 400 |
-| R016-F13 / keep-bool | `POST /api/backup/now` | open | — | ac1f2377 | 400 / 400 |
-| R016-F13 / keep-large | `POST /api/backup/now` | open | — | ac1f2377 | 400 / 400 |
-| R016-F13 / keep-negative | `POST /api/backup/now` | open | — | ac1f2377 | 400 / 400 |
+| R016-F08 / array | `POST /api/backup/now` | closed | 3dc6e7bf；3dc6e7bf为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | ac1f2377 | 400 / 400 |
+| R016-F09 / empty | `POST /api/backup/now` | closed | 3dc6e7bf；3dc6e7bf为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | ac1f2377 | 400 / 400 |
+| R016-F10 / unknown | `POST /api/backup/now` | closed | 3dc6e7bf；3dc6e7bf为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | ac1f2377 | 400 / 400 |
+| R016-F11 / text-type | `POST /api/backup/now` | closed | 3dc6e7bf；3dc6e7bf为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | ac1f2377 | 400 / 400 |
+| R016-F12 / auto-type | `POST /api/backup/now` | closed | 3dc6e7bf；3dc6e7bf为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | ac1f2377 | 400 / 400 |
+| R016-F13 / daily-large | `POST /api/backup/now` | closed | 3dc6e7bf；3dc6e7bf为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | ac1f2377 | 400 / 400 |
+| R016-F13 / keep-bool | `POST /api/backup/now` | closed | 3dc6e7bf；3dc6e7bf为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | ac1f2377 | 400 / 400 |
+| R016-F13 / keep-large | `POST /api/backup/now` | closed | 3dc6e7bf；3dc6e7bf为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | ac1f2377 | 400 / 400 |
+| R016-F13 / keep-negative | `POST /api/backup/now` | closed | 3dc6e7bf；3dc6e7bf为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | ac1f2377 | 400 / 400 |
 | R016-F15 /  | `POST /api/backup/now` | closed | abdf47ef, d01fdf32, f9963a7f, bd7363fd；bd7363fd为O6英文内部诊断比较器纠正，不是Go业务修复；中文/HTTP数字/副作用继续严格比较 | ac1f2377 | 500 / 500 |
 | R016-F15 / real-MKCOL-403-before-PUT | `POST /api/backup/now` | closed | bd7363fd；bd7363fd为O6英文内部诊断比较器纠正，不是Go业务修复；中文/HTTP数字/副作用继续严格比较 | ac1f2377 | 400 / 400 |
 | R016-F16 /  | `POST /api/backup/now` | open | — | ac1f2377 | 200 / 200 |
 | R016-S01 /  | `POST /api/backup/now` | open | — | ac1f2377 | 200 / 200 |
 | R016-S02 /  | `POST /api/backup/now` | open | — | ac1f2377 | 200 / 200 |
 | R016-S03 /  | `POST /api/backup/now` | open | — | ac1f2377 | 200 / 200 |
-| R017-F08 / array | `POST /api/backup/test` | open | — | ac1f2377 | 400 / 400 |
-| R017-F09 / empty | `POST /api/backup/test` | open | — | ac1f2377 | 400 / 400 |
-| R017-F10 / unknown | `POST /api/backup/test` | open | — | ac1f2377 | 400 / 400 |
-| R017-F11 / text-type | `POST /api/backup/test` | open | — | ac1f2377 | 400 / 400 |
-| R017-F12 / auto-type | `POST /api/backup/test` | open | — | ac1f2377 | 400 / 400 |
-| R017-F13 / daily-large | `POST /api/backup/test` | open | — | ac1f2377 | 400 / 400 |
-| R017-F13 / keep-bool | `POST /api/backup/test` | open | — | ac1f2377 | 400 / 400 |
-| R017-F13 / keep-large | `POST /api/backup/test` | open | — | ac1f2377 | 400 / 400 |
-| R017-F13 / keep-negative | `POST /api/backup/test` | open | — | ac1f2377 | 400 / 400 |
-| R017-F14 /  | `POST /api/backup/test` | open | — | ac1f2377 | 400 / 400 |
-| R017-F15 /  | `POST /api/backup/test` | open | — | ac1f2377 | 400 / 400 |
-| R017-F16 /  | `POST /api/backup/test` | open | — | ac1f2377 | 400 / 400 |
+| R017-F08 / array | `POST /api/backup/test` | closed | 3dc6e7bf；3dc6e7bf为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | ac1f2377 | 400 / 400 |
+| R017-F09 / empty | `POST /api/backup/test` | closed | 3dc6e7bf；3dc6e7bf为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | ac1f2377 | 400 / 400 |
+| R017-F10 / unknown | `POST /api/backup/test` | closed | 3dc6e7bf；3dc6e7bf为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | ac1f2377 | 400 / 400 |
+| R017-F11 / text-type | `POST /api/backup/test` | closed | 3dc6e7bf；3dc6e7bf为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | ac1f2377 | 400 / 400 |
+| R017-F12 / auto-type | `POST /api/backup/test` | closed | 3dc6e7bf；3dc6e7bf为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | ac1f2377 | 400 / 400 |
+| R017-F13 / daily-large | `POST /api/backup/test` | closed | 3dc6e7bf；3dc6e7bf为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | ac1f2377 | 400 / 400 |
+| R017-F13 / keep-bool | `POST /api/backup/test` | closed | 3dc6e7bf；3dc6e7bf为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | ac1f2377 | 400 / 400 |
+| R017-F13 / keep-large | `POST /api/backup/test` | closed | 3dc6e7bf；3dc6e7bf为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | ac1f2377 | 400 / 400 |
+| R017-F13 / keep-negative | `POST /api/backup/test` | closed | 3dc6e7bf；3dc6e7bf为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | ac1f2377 | 400 / 400 |
+| R017-F14 /  | `POST /api/backup/test` | closed | 3dc6e7bf；3dc6e7bf为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | ac1f2377 | 400 / 400 |
+| R017-F15 /  | `POST /api/backup/test` | closed | 3dc6e7bf；3dc6e7bf为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | ac1f2377 | 400 / 400 |
+| R017-F16 /  | `POST /api/backup/test` | closed | 3dc6e7bf；3dc6e7bf为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | ac1f2377 | 400 / 400 |
 | R017-F18 /  | `POST /api/backup/test` | closed | abdf47ef, d01fdf32, f9963a7f, bd7363fd；bd7363fd为O6英文内部诊断比较器纠正，不是Go业务修复；中文/HTTP数字/副作用继续严格比较 | ac1f2377 | 400 / 400 |
 | R017-F19 /  | `POST /api/backup/test` | closed | abdf47ef, d01fdf32, f9963a7f, bd7363fd；bd7363fd为O6英文内部诊断比较器纠正，不是Go业务修复；中文/HTTP数字/副作用继续严格比较 | ac1f2377 | 500 / 500 |
 | R055-B01 / disabled/domain/example.com | `POST /api/domain-discovery/region/route` | closed | 041ab5a6 | ac1f2377 | 200 / 200 |
@@ -97,12 +97,12 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | R087-S90 / declared-no-cache-download-failure | `GET /api/mosdns/rule-proxy` | closed | 8f3d36ad | ac1f2377 | 502 / 502 |
 | R087-S91 /  | `GET /api/mosdns/rule-proxy` | open | — | ac1f2377 | 200 / 200 |
 | R090-F10 / SQLite-trigger-rejects-real-editor-commit | `POST /api/mosdns/settings` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | ac1f2377 | 500 / 500 |
-| R103-F08 /  | `POST /api/nodes/reorder` | open | — | ac1f2377 | 404 / 400 |
-| R103-F09 /  | `POST /api/nodes/reorder` | open | — | ac1f2377 | 404 / 400 |
-| R103-F10 /  | `POST /api/nodes/reorder` | open | — | ac1f2377 | 404 / 400 |
-| R103-F11 /  | `POST /api/nodes/reorder` | open | — | ac1f2377 | 404 / 400 |
-| R103-F14 /  | `POST /api/nodes/reorder` | open | — | ac1f2377 | 500 / 400 |
-| R122-S05 / failed-source-valid-cache | `GET /api/profiles/<profile_id>/aggregations/<agg_id>/provider` | open | — | ac1f2377 | 200 / 200 |
+| R103-F08 /  | `POST /api/nodes/reorder` | accepted | [behaviour-changes.md · Step B #1](behaviour-changes.md#config-step-b--coordinator-decisions) | ac1f2377 | 404 / 400 |
+| R103-F09 /  | `POST /api/nodes/reorder` | accepted | [behaviour-changes.md · Step B #1](behaviour-changes.md#config-step-b--coordinator-decisions) | ac1f2377 | 404 / 400 |
+| R103-F10 /  | `POST /api/nodes/reorder` | accepted | [behaviour-changes.md · Step B #1](behaviour-changes.md#config-step-b--coordinator-decisions) | ac1f2377 | 404 / 400 |
+| R103-F11 /  | `POST /api/nodes/reorder` | accepted | [behaviour-changes.md · Step B #1](behaviour-changes.md#config-step-b--coordinator-decisions) | ac1f2377 | 404 / 400 |
+| R103-F14 /  | `POST /api/nodes/reorder` | accepted | [behaviour-changes.md · Step B #1](behaviour-changes.md#config-step-b--coordinator-decisions) | ac1f2377 | 500 / 400 |
+| R122-S05 / failed-source-valid-cache | `GET /api/profiles/<profile_id>/aggregations/<agg_id>/provider` | closed | 3dc6e7bf；3dc6e7bf为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | ac1f2377 | 200 / 200 |
 | R138-B04 / text/B04 | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | closed | 8f3d36ad | ac1f2377 | 422 / 422 |
 | R138-B91 / absolute-query-dispatches-internal-content-endpoint | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | open | — | ac1f2377 | 200 / 502 |
 | R138-F13 / text/F13 | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | closed | 8f3d36ad | ac1f2377 | 422 / 422 |
@@ -161,10 +161,10 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | R222-S02 / disabled | `GET /api/subscriptions/proxies` | closed | 7b904725 | ac1f2377 | 200 / 200 |
 | R222-S03 / http403-cache-fallback | `GET /api/subscriptions/proxies` | closed | 7b904725 | ac1f2377 | 200 / 200 |
 | R222-S04 / none | `GET /api/subscriptions/proxies` | closed | 7b904725 | ac1f2377 | 200 / 200 |
-| R223-F08 /  | `POST /api/subscriptions/reorder` | open | — | ac1f2377 | 404 / 400 |
-| R223-F09 /  | `POST /api/subscriptions/reorder` | open | — | ac1f2377 | 404 / 400 |
-| R223-F10 /  | `POST /api/subscriptions/reorder` | open | — | ac1f2377 | 404 / 400 |
-| R223-F12 /  | `POST /api/subscriptions/reorder` | open | — | ac1f2377 | 500 / 400 |
+| R223-F08 /  | `POST /api/subscriptions/reorder` | accepted | [behaviour-changes.md · Step B #1](behaviour-changes.md#config-step-b--coordinator-decisions) | ac1f2377 | 404 / 400 |
+| R223-F09 /  | `POST /api/subscriptions/reorder` | accepted | [behaviour-changes.md · Step B #1](behaviour-changes.md#config-step-b--coordinator-decisions) | ac1f2377 | 404 / 400 |
+| R223-F10 /  | `POST /api/subscriptions/reorder` | accepted | [behaviour-changes.md · Step B #1](behaviour-changes.md#config-step-b--coordinator-decisions) | ac1f2377 | 404 / 400 |
+| R223-F12 /  | `POST /api/subscriptions/reorder` | accepted | [behaviour-changes.md · Step B #1](behaviour-changes.md#config-step-b--coordinator-decisions) | ac1f2377 | 500 / 400 |
 | R228-F01 /  | `GET /api/version` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | ac1f2377 | 405 / 405 |
 | T06 / 12-second-last-good-and-background-finish | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | ac1f2377 | 200 / 200 |
 | T06 / 20-clients-one-flight | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | ac1f2377 | [200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200] / [200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200] |
@@ -172,15 +172,15 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | T27 / real-tick/due-and-backoff | `startup` | open | — | ac1f2377 | None / None |
 | X04 / new_domain/literal/"\ud800" | `POST /api/server-domain` | accepted | [behaviour-changes.md · Step B #2](behaviour-changes.md#config-step-b--coordinator-decisions) | ac1f2377 | 500 / 400 |
 | X04 / token/literal/"\ud800" | `POST /api/config-token` | accepted | [behaviour-changes.md · Step B #2](behaviour-changes.md#config-step-b--coordinator-decisions) | ac1f2377 | 500 / 400 |
-| X06 / head//api/aggregations | `GET /api/aggregations` | open | — | ac1f2377 | 500 / 500 |
-| X06 / head//api/mosdns/api-settings | `GET /api/mosdns/api-settings` | open | — | ac1f2377 | 500 / 500 |
-| X06 / head//api/nodes | `GET /api/nodes` | open | — | ac1f2377 | 500 / 500 |
-| X06 / head//api/subscriptions | `GET /api/subscriptions` | open | — | ac1f2377 | 500 / 500 |
-| X06 / login/trailing-slash | `GET /api/subscriptions` | open | — | ac1f2377 | 404 / 404 |
-| X06 / login/unknown-admin | `GET /api/subscriptions` | open | — | ac1f2377 | 404 / 404 |
-| X06 / open/trailing-slash | `GET /api/subscriptions` | open | — | ac1f2377 | 404 / 404 |
-| X06 / open/unknown-admin | `GET /api/subscriptions` | open | — | ac1f2377 | 404 / 404 |
-| X06 / open/unknown-anonymous | `GET /api/subscriptions` | open | — | ac1f2377 | 404 / 404 |
+| X06 / head//api/aggregations | `GET /api/aggregations` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | ac1f2377 | 500 / 500 |
+| X06 / head//api/mosdns/api-settings | `GET /api/mosdns/api-settings` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | ac1f2377 | 500 / 500 |
+| X06 / head//api/nodes | `GET /api/nodes` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | ac1f2377 | 500 / 500 |
+| X06 / head//api/subscriptions | `GET /api/subscriptions` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | ac1f2377 | 500 / 500 |
+| X06 / login/trailing-slash | `GET /api/subscriptions` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | ac1f2377 | 404 / 404 |
+| X06 / login/unknown-admin | `GET /api/subscriptions` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | ac1f2377 | 404 / 404 |
+| X06 / open/trailing-slash | `GET /api/subscriptions` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | ac1f2377 | 404 / 404 |
+| X06 / open/unknown-admin | `GET /api/subscriptions` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | ac1f2377 | 404 / 404 |
+| X06 / open/unknown-anonymous | `GET /api/subscriptions` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | ac1f2377 | 404 / 404 |
 | X08 / retired-node-test-dns-migration | `startup` | separate | — | ac1f2377 | None / None |
 
 ## X06 / head//api/aggregations
@@ -190,22 +190,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | 路径 | 类型 | Python | Go |
 |---|---|---|---|
 | `headers.content-type` | value | 'text/html; charset=utf-8' | 'application/json' |
-
-## R007-S02 /
-
-路由：`GET /api/aggregations/<agg_id>/preview`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `files.shared/subscribes/sub-a.json.content.updated_at` | invalid-time-window | '2026-01-01T00:00:00Z' | '2026-01-01T00:00:00Z' |
-
-## R008-S05 / failed-source-valid-cache
-
-路由：`GET /api/aggregations/<agg_id>/provider`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `files.shared/subscribes/sub-a.json.content.updated_at` | invalid-time-window | '2026-01-01T00:00:00Z' | '2026-01-01T00:00:00Z' |
 
 ## R012-F01 /
 
@@ -282,14 +266,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | 路径 | 类型 | Python | Go |
 |---|---|---|---|
 | `headers.content-type` | value | 'text/html; charset=utf-8' | 'application/json' |
-
-## R122-S05 / failed-source-valid-cache
-
-路由：`GET /api/profiles/<profile_id>/aggregations/<agg_id>/provider`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `files.shared/subscribes/sub-a.json.content.updated_at` | invalid-time-window | '2026-01-01T00:00:00Z' | '2026-01-01T00:00:00Z' |
 
 ## R138-B91 / absolute-query-dispatches-internal-content-endpoint
 
@@ -400,110 +376,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | `headers.content-type` | value | 'text/html; charset=utf-8' | 'application/json' |
 | `body` | type | ['<!doctype html>', '<html lang=en>', '<title>405 Method Not Allowed</title>', '<h1>Method Not Allowed</h1>', '<p>The method is not allowed for the requested URL.</p>'] | {'message': 'The method is not allowed for the requested URL.', 'success': False} |
 
-## R015-B01 /
-
-路由：`POST /api/backup/config`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.system//backup.value.webdav_password` | value | '' | 'synthetic-pass' |
-
-## R015-B02 /
-
-路由：`POST /api/backup/config`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.system//backup.value.webdav_password` | value | '' | 'synthetic-pass' |
-
-## R015-B03 /
-
-路由：`POST /api/backup/config`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.system//backup.value.webdav_password` | value | '' | 'synthetic-pass' |
-
-## R015-B04 /
-
-路由：`POST /api/backup/config`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.system//backup.value.webdav_password` | value | '' | 'synthetic-pass' |
-
-## R015-F08 / empty
-
-路由：`POST /api/backup/config`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.system//backup.value.webdav_password` | value | '' | 'synthetic-pass' |
-
-## R015-F09 / array
-
-路由：`POST /api/backup/config`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.system//backup.value.webdav_password` | value | '' | 'synthetic-pass' |
-
-## R015-F10 / unknown
-
-路由：`POST /api/backup/config`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.system//backup.value.webdav_password` | value | '' | 'synthetic-pass' |
-
-## R015-F11 / text-type
-
-路由：`POST /api/backup/config`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.system//backup.value.webdav_password` | value | '' | 'synthetic-pass' |
-
-## R015-F12 / auto-type
-
-路由：`POST /api/backup/config`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.system//backup.value.webdav_password` | value | '' | 'synthetic-pass' |
-
-## R015-F13 / keep-negative
-
-路由：`POST /api/backup/config`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.system//backup.value.webdav_password` | value | '' | 'synthetic-pass' |
-
-## R015-F14 / keep-large
-
-路由：`POST /api/backup/config`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.system//backup.value.webdav_password` | value | '' | 'synthetic-pass' |
-
-## R015-F15 / daily-large
-
-路由：`POST /api/backup/config`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.system//backup.value.webdav_password` | value | '' | 'synthetic-pass' |
-
-## R015-F16 / keep-bool
-
-路由：`POST /api/backup/config`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.system//backup.value.webdav_password` | value | '' | 'synthetic-pass' |
-
 ## R015-S04 /
 
 路由：`POST /api/backup/config`；状态：different
@@ -561,78 +433,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 |---|---|---|---|
 | `dav.requests[4].body` | value | '' | '<?xml version="1.0"?><propfind xmlns="DAV:"><allprop/></propfind>' |
 
-## R016-F08 / array
-
-路由：`POST /api/backup/now`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.system//backup.value.webdav_password` | value | '' | 'synthetic-pass' |
-
-## R016-F09 / empty
-
-路由：`POST /api/backup/now`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.system//backup.value.webdav_password` | value | '' | 'synthetic-pass' |
-
-## R016-F10 / unknown
-
-路由：`POST /api/backup/now`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.system//backup.value.webdav_password` | value | '' | 'synthetic-pass' |
-
-## R016-F11 / text-type
-
-路由：`POST /api/backup/now`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.system//backup.value.webdav_password` | value | '' | 'synthetic-pass' |
-
-## R016-F12 / auto-type
-
-路由：`POST /api/backup/now`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.system//backup.value.webdav_password` | value | '' | 'synthetic-pass' |
-
-## R016-F13 / daily-large
-
-路由：`POST /api/backup/now`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.system//backup.value.webdav_password` | value | '' | 'synthetic-pass' |
-
-## R016-F13 / keep-bool
-
-路由：`POST /api/backup/now`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.system//backup.value.webdav_password` | value | '' | 'synthetic-pass' |
-
-## R016-F13 / keep-large
-
-路由：`POST /api/backup/now`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.system//backup.value.webdav_password` | value | '' | 'synthetic-pass' |
-
-## R016-F13 / keep-negative
-
-路由：`POST /api/backup/now`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.system//backup.value.webdav_password` | value | '' | 'synthetic-pass' |
-
 ## R016-F16 /
 
 路由：`POST /api/backup/now`；状态：different
@@ -664,102 +464,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | 路径 | 类型 | Python | Go |
 |---|---|---|---|
 | `dav.requests[4].body` | value | '' | '<?xml version="1.0"?><propfind xmlns="DAV:"><allprop/></propfind>' |
-
-## R017-F08 / array
-
-路由：`POST /api/backup/test`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.system//backup.value.webdav_password` | value | '' | 'synthetic-pass' |
-
-## R017-F09 / empty
-
-路由：`POST /api/backup/test`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.system//backup.value.webdav_password` | value | '' | 'synthetic-pass' |
-
-## R017-F10 / unknown
-
-路由：`POST /api/backup/test`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.system//backup.value.webdav_password` | value | '' | 'synthetic-pass' |
-
-## R017-F11 / text-type
-
-路由：`POST /api/backup/test`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.system//backup.value.webdav_password` | value | '' | 'synthetic-pass' |
-
-## R017-F12 / auto-type
-
-路由：`POST /api/backup/test`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.system//backup.value.webdav_password` | value | '' | 'synthetic-pass' |
-
-## R017-F13 / daily-large
-
-路由：`POST /api/backup/test`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.system//backup.value.webdav_password` | value | '' | 'synthetic-pass' |
-
-## R017-F13 / keep-bool
-
-路由：`POST /api/backup/test`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.system//backup.value.webdav_password` | value | '' | 'synthetic-pass' |
-
-## R017-F13 / keep-large
-
-路由：`POST /api/backup/test`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.system//backup.value.webdav_password` | value | '' | 'synthetic-pass' |
-
-## R017-F13 / keep-negative
-
-路由：`POST /api/backup/test`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.system//backup.value.webdav_password` | value | '' | 'synthetic-pass' |
-
-## R017-F14 /
-
-路由：`POST /api/backup/test`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.system//backup.value.webdav_password` | value | '' | 'synthetic-pass' |
-
-## R017-F15 /
-
-路由：`POST /api/backup/test`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.system//backup.value.webdav_password` | value | '' | 'synthetic-pass' |
-
-## R017-F16 /
-
-路由：`POST /api/backup/test`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `db.fields.system//backup.value.webdav_password` | value | '' | 'synthetic-pass' |
 
 ## X04 / token/literal/"\ud800"
 
