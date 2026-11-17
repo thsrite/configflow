@@ -45,14 +45,26 @@ func TestL1CompactColonDifferentialAgainstFlask(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	compose, err := yamlx.Load(pyBody.(*jsonx.Object).GetString("compose"))
-	if err != nil {
+	var compose struct {
+		Services map[string]struct {
+			Volumes []struct {
+				Source string `yaml:"source"`
+				Bind   struct {
+					CreateHostPath bool `yaml:"create_host_path"`
+				} `yaml:"bind"`
+			} `yaml:"volumes"`
+		} `yaml:"services"`
+	}
+	if err := yamlx.Unmarshal([]byte(pyBody.(*jsonx.Object).GetString("compose")), &compose); err != nil {
 		t.Fatal(err)
 	}
-	volumes := jsonx.Path(compose, "services", "agent", "volumes").([]any)
-	mount := volumes[0].(*jsonx.Object)
-	if mount.GetString("source") != "/srv/cf:compact/agent" || jsonx.Path(mount, "bind", "create_host_path") != true {
-		t.Fatalf("Python no longer emits the known invalid mount: %v", mount)
+	agent, ok := compose.Services["agent"]
+	if !ok || len(agent.Volumes) == 0 {
+		t.Fatal("Python Compose lost agent volume")
+	}
+	mount := agent.Volumes[0]
+	if mount.Source != "/srv/cf:compact/agent" || !mount.Bind.CreateHostPath {
+		t.Fatalf("Python no longer emits the known invalid mount: %#v", mount)
 	}
 	if files := installationFiles(t, goDir); len(files) != 0 {
 		t.Fatalf("Go refusal wrote files: %v", files)

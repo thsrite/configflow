@@ -42,9 +42,13 @@ diagnosis and strict other fields/storage; no aggregation runtime code changes. 
 - Python lazily imports in cycles (e.g. converters ↔ provider delivery ↔ route files, the whole OxiDNS cluster). Go needs a DAG: the prerequisite order below breaks the cycles; when a module needs a function of a later module, put a `compat.go` copy (`TODO(port)`) or an interface/hook and list it here.
 - Cross-domain calls (config → agents/routers code) are listed per module; they are the main blockers for C18, C27, C34, C36, C37.
 
-## N7-3d — final reader/legacy cleanup (in progress)
+## N7-3d — final reader/legacy cleanup (complete; coordinator verification pending)
 
-Branch go-n7-3d stacks on frozen N7-4@a6277937. Scope includes convert readers,
+Branch go-n7-3d was initially stacked on N7-4; now rebased onto go@28e6e0c12
+(includes cb5732ec C29/L1/A13). Full .32 gate PASS:91 race packages,14 difftest
+packages,13 fuzz targets60s,proddiff new0/stale0/coverage0,aggregation-provider2/2.
+Coordinator requested only fmt/vet/targeted YAML race after this rebase; all
+passed on .64, including the new L1 boundary regression. Scope includes convert readers,
 importer/rules bare decoders, gateway's remaining legacy readers/Mapping codec,
 the proddiff loader and provider/deploy diagnostic interfaces, then removal of
 all old loader/pyyaml references and test-helper consolidation/grep gate.

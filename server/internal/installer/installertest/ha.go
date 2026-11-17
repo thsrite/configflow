@@ -7,7 +7,7 @@ import (
 	"net/netip"
 	"strings"
 
-	"gopkg.in/yaml.v3"
+	"configflow/internal/yamlx"
 )
 
 //go:embed l1-ha-deltas.json
@@ -83,7 +83,7 @@ func GuideBaseline(data []byte) ([]byte, error) {
 	if err := json.Unmarshal(answer["compose"], &compose); err != nil {
 		return nil, err
 	}
-	if err := yaml.Unmarshal([]byte(compose), &document); err != nil {
+	if err := yamlx.Unmarshal([]byte(compose), &document); err != nil {
 		return nil, err
 	}
 	main, ok := document.Services["agent"]
