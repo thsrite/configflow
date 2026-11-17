@@ -9,6 +9,7 @@
 package taskstatus
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"math/big"
@@ -19,6 +20,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"configflow/internal/ctxx"
 	"configflow/internal/jsonx"
 	"configflow/internal/pystr"
 )
@@ -74,8 +76,18 @@ func (s *Store) path() string { return filepath.Join(s.DataDir, Filename) }
 
 // locked runs local file work under the process-wide leaf mutex.
 func (s *Store) locked(fn func(path string) error) error {
+	return s.lockedContext(context.Background(), fn)
+}
+
+func (s *Store) lockedContext(ctx context.Context, fn func(path string) error) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	guard.Lock()
 	defer guard.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	path := s.path()
 	if err := os.MkdirAll(filepath.Dir(path), 0o777); err != nil {
 		return err
@@ -103,6 +115,13 @@ func read(path string) *jsonx.Object {
 // write is _write: temp file in the same directory (mode 0600 like
 // tempfile.mkstemp), compact JSON, fsync, rename over the file.
 func write(path string, value *jsonx.Object) error {
+	return writeContext(context.Background(), path, value)
+}
+
+func writeContext(ctx context.Context, path string, value *jsonx.Object) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	encoded, err := jsonx.Compact(value)
 	if err != nil {
 		return err
@@ -126,6 +145,9 @@ func write(path string, value *jsonx.Object) error {
 		return err
 	}
 	if err := temp.Close(); err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
 		return err
 	}
 	return os.Rename(name, path)
@@ -237,8 +259,15 @@ func increment(entry *jsonx.Object, key string) error {
 // Record is record(key, ...): append one finished run and return the updated
 // entry (a copy).
 func (s *Store) Record(key string, r Result) (*jsonx.Object, error) {
+	return s.RecordContext(context.Background(), key, r)
+}
+
+// RecordContext records a result independently of client disconnects, while
+// respecting its work lifetime under the leaf lock and before replacement.
+func (s *Store) RecordContext(ctx context.Context, key string, r Result) (*jsonx.Object, error) {
+	ctx = ctxx.Detach(ctx)
 	var result *jsonx.Object
-	err := s.locked(func(path string) error {
+	err := s.lockedContext(ctx, func(path string) error {
 		data := read(path)
 		entry, ok := data.Value(key).(*jsonx.Object)
 		if !ok {
@@ -302,7 +331,7 @@ func (s *Store) Record(key string, r Result) (*jsonx.Object, error) {
 			entry.Set("cache_updated_at", r.CacheUpdatedAt)
 		}
 		data.Set(key, entry)
-		if err := write(path, data); err != nil {
+		if err := writeContext(ctx, path, data); err != nil {
 			return err
 		}
 		result = entry.Clone()
@@ -319,7 +348,14 @@ func (s *Store) Record(key string, r Result) (*jsonx.Object, error) {
 
 // Forget is forget(*keys): drop the entries of the given tasks.
 func (s *Store) Forget(keys ...string) error {
-	return s.locked(func(path string) error {
+	return s.ForgetContext(context.Background(), keys...)
+}
+
+// ForgetContext removes results independently of client disconnects, while
+// respecting its work lifetime under the leaf lock and before replacement.
+func (s *Store) ForgetContext(ctx context.Context, keys ...string) error {
+	ctx = ctxx.Detach(ctx)
+	return s.lockedContext(ctx, func(path string) error {
 		data := read(path)
 		removed := false
 		for _, key := range keys {
@@ -328,7 +364,7 @@ func (s *Store) Forget(keys ...string) error {
 			}
 		}
 		if removed {
-			return write(path, data)
+			return writeContext(ctx, path, data)
 		}
 		return nil
 	})

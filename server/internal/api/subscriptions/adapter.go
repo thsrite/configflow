@@ -208,7 +208,7 @@ func forgetTask(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	return notifications.TaskStatus(ctx, r.DataDir()).Forget(refresh.SubscriptionKey(id))
+	return notifications.TaskStatus(ctx, r.DataDir()).ForgetContext(ctx, refresh.SubscriptionKey(id))
 }
 func forgetSubscription(ctx context.Context, id string) error {
 	ctx = lifecycle.Detach(ctx)

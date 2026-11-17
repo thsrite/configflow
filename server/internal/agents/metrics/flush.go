@@ -249,7 +249,7 @@ func (e *TrafficHistoryFlushError) Unwrap() error { return e.Err }
 
 // recordStatus is task_status.record (tests replace it).
 var recordStatus = func(ctx context.Context, dataDir string, result taskstatus.Result) error {
-	_, err := notifications.TaskStatus(ctx, dataDir).Record(TaskKey, result)
+	_, err := notifications.TaskStatus(ctx, dataDir).RecordContext(ctx, TaskKey, result)
 	return err
 }
 

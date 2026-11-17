@@ -397,7 +397,7 @@ func recordStatus(ctx context.Context, key string, result taskstatus.Result) err
 	}
 	store := notifications.TaskStatus(ctx, r.DataDir())
 	store.Now = currentEnv().Clock.Now
-	_, err = store.Record(key, result)
+	_, err = store.RecordContext(ctx, key, result)
 	return err
 }
 

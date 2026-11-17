@@ -59,3 +59,17 @@ TestO36cRepoBeforeCommitRuntimeBoundary、TestO36cRepoLockWaitRuntimeBoundary，
   退出0，5.593s；随后 repo/store vet 通过。
 - AST 与已有显式 Uninterruptible 契约 race count1 通过1.515s，repo/store vet通过。
   该次 anchored run 只选择 AST 和既有 owner 测试；不冒称它重复运行了前缀 TestO36cRepo。
+
+## taskstatus Context 入口
+
+新增 RecordContext/ForgetContext，入口用 ctxx.Detach 保留工作父级；锁外及锁内检查，最终
+临时文件 close 后、rename 前再次检查。失败不触发 OnRecord，临时文件清理；旧入口以 Background
+转调，兼容旧测试/调用。迁移当前生产调用：refresh、metrics、discovery、webdav、subscriptions。
+当前分支已无 taskstatus.Store.Record/Forget 的生产调用；C33 尚未合入，其调用方待合入接线。
+
+- 红：先加仅转调旧 Record/Forget 的兼容 Context 入口来观察原持久化行为（未提交占位实现）；
+  .64 `go test -count=1 -run '^TestO36cStatus' ./internal/taskstatus/` 退出1、0.283s。
+  Record/Forget 在真实 Runtime Shutdown 后取得叶锁仍提交，Record 的 Now 回调关机后也提交。
+- 绿：.64 `go test -race -count=3 ./internal/taskstatus/` 退出0、8.405s；上述六组调用方和
+  taskstatus vet 通过。新回归 TestO36cStatusLockWaitRuntimeBoundary 保留实际 sync.Mutex 等待，
+  shutdown 零落盘/零通知，disconnect 完成；TestO36cStatusShutdownDuringRecord 验证中途取消及无遗留临时文件。
