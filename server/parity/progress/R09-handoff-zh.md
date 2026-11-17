@@ -111,6 +111,19 @@ MUTATION_DETECTED table
 R09_ALL_GATES_PASS
 ```
 
+结束前再次 `git rebase go`，最终基底 `895f5e21`，实现截至 `e76e79ba`。新合入的是 C32 已复核的 API 改动及 TMPDIR 默认值；`git diff --exit-code 40f419ab HEAD -- server/internal/routers server/internal/routersplit server/internal/devhttp` 无输出，确认 R04–R09／HTTP 源码与完整 gate 验证树逐字一致。
+补验命令（`.32`、rt）及完整管道见英文报告的 Final rebase supplement；其检查为：
+
+```sh
+test -z "$(gofmt -l internal/routers/ internal/api/rules/)"
+go vet ./internal/routers/... ./internal/api/rules/...
+go test -race -count=1 -timeout=10m -run '^TestR09' ./internal/routers
+go test -race -count=1 -timeout=10m ./internal/api/rules
+CONFIGFLOW_DIFF=1 go test -count=1 -timeout=10m ./internal/api/rules/difftest
+```
+
+整条 rt 退出 0，末行分别是 routers41.089s、api/rules74.155s、api/rules/difftest94.837s、`R09_POST_REBASE_PASS`；日志 `.32:/tmp/configflow-r09-post-rebase.log`。最终实现之后只改文档。
+
 - 前两轮：R09 Python 对照、安全测试、routers/routersplit/devhttp race、全量、12 difftest、三个 60 秒 fuzz、四类编译变异通过。
 - 合入 N7-3c 的一轮：84 包全量通过，routers race 506.150s；proddiff `new=0 stale=0`。
 - ae2e0f59 + R09：完整 `-race` **84 包通过**；routers 567.091s、routersplit 23.165s、devhttp 3.764s。归档日志 `.32:/tmp/configflow-r09-final-before-r08-c32-20261118/race.log`。
@@ -141,6 +154,6 @@ R12/R15 把 ForwardHint 放到 report/warnings，不能作为 fingerprint 输入
 L5 尚未执行：真实 CHR 接受 payload/scripts、UDP/TCP DNS/hairpin/853、HA VIP 与真实主机豁免、15 秒故障确认、恢复 conntrack 清理、重启撤销、链路丢失、规则顺序及同口命令的实际流量效果。
 只能由协调者在隔离实验网安排，不能把 loopback fake 通过当实流证明。
 
-分支 `go-port-r09`，完整 gate 验证树为包含 R08+C32、并行化测试／N7-4 writer 及第四条常设检查的 `go@c14763b3 + R09@40f419ab`。未 push，临时基线 worktree 已清理；最后 rebase 与补充检查另记。
+分支 `go-port-r09`，已最终 rebase `go@895f5e21`；核心 `646f3dd7`、边界补齐 `8db6dc80`、未知匹配器修正 `6ba9f3dd`、表内 ID 恢复证明 `33179dea`、foreign comment 阻断 `a69d675b`、R08 原生集成 `c84bb456`、shutdown 提交点 `e76e79ba`，其后仅验收文档提交。完整 gate 验证树为 `c14763b3 + 40f419ab`，最终源码一致性及变基补验如上。未 push，临时基线 worktree 已清理，工作区将在最终报告提交后保持干净。
 
 独立验收及 R08+C32 集成已完成；最终门禁按协调者最新指令在 `.32` 以 gate.sh 默认并行度通过，new=0 stale=0。历史 aggregation 例外由独立修复解决；旧失败已归档。L5 和 Netwatch 运行时归属裁定不作通过宣称。

@@ -649,6 +649,12 @@ was independently reproduced on unmodified go and fixed separately; it is no lon
 Historical evidence is archived at `.32:/tmp/configflow-r09-final-before-r08-c32-20261118/proddiff.log`.
 Final merged-tree gate logs: `.32:/tmp/configflow-r09-final`. No baseline changed.
 
+Final `git rebase go`: `895f5e21`, implementation tip `e76e79ba`. Routers/routersplit/devhttp directories
+are byte-identical to the full-gate tree (`git diff 40f419ab HEAD -- <those paths>` empty). New base changes only
+C32 API review and gate TMPDIR. Post-rebase .32 gofmt/vet PASS; R09 race41.089s, api/rules race74.155s,
+api/rules live differential94.837s PASS, rt exit0 / `R09_POST_REBASE_PASS`.
+Log `.32:/tmp/configflow-r09-post-rebase.log`; exact commands in the linked progress file.
+
 Chinese hand-back: [progress/R09-handoff-zh.md](progress/R09-handoff-zh.md). Detailed checklist and Python-test
 mapping are in the linked R09 progress file. Fresh Opus review and L5 remain required; no push.
 

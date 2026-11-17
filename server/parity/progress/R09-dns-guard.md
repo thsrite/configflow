@@ -2,7 +2,7 @@
 
 Chinese hand-back: [R09-handoff-zh.md](R09-handoff-zh.md).
 
-Status: `ported` (2026-11-18), fresh Opus HR review required before `verified`. Branch `go-port-r09`, R08+C32 integrated; final shared gate PASS on `go@c14763b3 + R09@40f419ab` (initial base `d7c481c7`).
+Status: `ported` (2026-11-18), fresh Opus HR review required before `verified`. Branch `go-port-r09`, final rebase `go@895f5e21`, implementation tip `e76e79ba`; initial base `d7c481c7`. R08+C32 integrated; full shared gate PASS on `c14763b3 + 40f419ab`, with identical routers/routersplit/devhttp sources after the last rebase.
 No push, no sub-agent, no production/lab contact; synthetic data and loopback fakes only.
 
 ## Scope / interfaces
@@ -265,6 +265,32 @@ R09_ALL_GATES_PASS
 Logs: race.log, proddiff.log/proddiff.rc, diff.log, tag-*.log, fuzz-FuzzR09*.log, mutations.log.
 No baseline edits. No separate non-race full rerun, as the shared gate's full race executes every test.
 
+### Final rebase supplement
+
+After gate completion, `git rebase go` incorporated C32's independently verified API review and the gate's
+TMPDIR default (`go@895f5e21`). `git diff --exit-code 40f419ab HEAD -- server/internal/routers
+server/internal/routersplit server/internal/devhttp` is empty: all R04–R09/HTTP sources remain exactly those
+tested by the full gate. Additional verification of the newly combined tree:
+
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc '
+set -euo pipefail
+cd server
+{
+  test -z "$(gofmt -l internal/routers/ internal/api/rules/)"
+  go vet ./internal/routers/... ./internal/api/rules/...
+  go test -race -count=1 -timeout=10m -run "^TestR09" ./internal/routers
+  go test -race -count=1 -timeout=10m ./internal/api/rules
+  CONFIGFLOW_DIFF=1 go test -count=1 -timeout=10m ./internal/api/rules/difftest
+  printf "R09_POST_REBASE_PASS\n"
+} 2>&1 | tee /tmp/configflow-r09-post-rebase.log
+'
+```
+
+rt exit0; final lines: routers41.089s, api/rules74.155s, api/rules/difftest94.837s,
+`R09_POST_REBASE_PASS`. Shared edits after integration are only four field declarations across desired.go,
+model.go and report.go; no routeros.go diff. No code changes follow the implementation tip, only this report.
+
 ### Earlier standalone gates
 
 1. `rt -- bash -lc 'GATE_LOGS=/tmp/configflow-r09-final server/internal/routers/testdata/r09_gates.sh'`
@@ -325,7 +351,7 @@ reference worktree was removed unused after the coordinator supplied the indepen
 
 The aggregation-oracle root cause was Python returning a last-good provider render under load; its independent
 fix is now merged in go. R08+C32 integration is complete, transitional projections removed, Manifests retained,
-and Detach retained throughout shared/device rollback I/O. The integrated gate above must pass without relying
+and Detach retained throughout shared/device rollback I/O. The integrated gate above passed without relying
 on the old provider exception. Fresh Opus R09 review and L5 follow; no push.
 
 ## Added files / line counts
@@ -354,5 +380,5 @@ Three shared Go files only gain fields (R08 already owns the manifest flag/sette
 | `internal/routers/testdata/r09_gates.sh` | 13 |
 | `internal/routers/testdata/r09_mutations.py` | 30 |
 | `internal/routers/testdata/r09_reference.py` | 54 |
-| `parity/progress/R09-handoff-zh.md` | 131 |
-| `parity/progress/R09-dns-guard.md` | 329 |
+| `parity/progress/R09-handoff-zh.md` | 159 |
+| `parity/progress/R09-dns-guard.md` | 384 |
