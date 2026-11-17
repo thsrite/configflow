@@ -14,7 +14,7 @@ def events(pair):
 
 
 @contextmanager
-def managed(binary, recorder, *, fail=False, health_status=None, controller_status='RUNNING', unreadable_version=False, github=None, allow_restart=False):
+def managed(binary, recorder, *, fail=False, health_status=None, controller_status='RUNNING', unreadable_version=False, github=None, allow_restart=False, restart_failure=''):
     require_native_network()
     with Source(json.dumps({'data': {'version': '2.40.0'}}).encode()) as health:
         health.headers = {'Content-Type': 'application/json'}
@@ -29,7 +29,7 @@ def managed(binary, recorder, *, fail=False, health_status=None, controller_stat
                 value = None
             if (not allow_restart or row['method'] != 'POST'
                     or row['authorization'] != 'Bearer synthetic-controller-capability'
-                    or value not in ({'version': '2.40.0'}, {'version': '2.42.1'})):
+                    or value not in ({'version': '2.40.0'}, {'version': '2.41.0'}, {'version': '2.42.1'})):
                 health.responses[path] = (403, b'controller fixture rejected', {})
                 return
             health.body = json.dumps({'data': value}).encode()
@@ -60,6 +60,16 @@ finally:
     os.close(fd)
 prefix = ['-c', '/etc/supervisor/conf.d/supervisord.conf']
 if args == prefix + ['restart', 'sub-store'] and os.environ.get('CONFIGDIFF_ALLOW_RESTART') == '1':
+    import hashlib
+    marker = Path(os.environ['TMPDIR']) / ('restart-' + hashlib.sha256(os.environ['DATA_DIR'].encode()).hexdigest())
+    failure = os.environ.get('CONFIGDIFF_RESTART_FAILURE', '')
+    if failure and not marker.exists():
+        marker.write_text('first restart attempted')
+        if failure == 'stdout':
+            print('synthetic-controller-rejected')
+        elif failure == 'stderr':
+            print('synthetic-controller-rejected', file=sys.stderr)
+        sys.exit(1)
     from urllib.request import Request, build_opener, ProxyHandler
     version_file = Path(os.environ['DATA_DIR']) / 'sub-store/runtime/VERSION'
     if not version_file.is_file():
@@ -89,6 +99,7 @@ print('sub-store ' + os.environ['CONFIGDIFF_SUPERVISOR_STATE'] + ' pid 1, uptime
             'CONFIGDIFF_SUPERVISOR_LOG': str(pair.root / 'supervisor-events.jsonl'),
             'CONFIGDIFF_SUPERVISOR_STATE': controller_status,
             'CONFIGDIFF_ALLOW_RESTART': '1' if allow_restart else '0',
+            'CONFIGDIFF_RESTART_FAILURE': restart_failure,
             'CONFIGDIFF_CONTROLLER_URL': health.url + '/_configdiff/version',
             'CONFIGDIFF_SUPERVISOR_FAIL': '1' if fail else '0'}
         if github is not None:

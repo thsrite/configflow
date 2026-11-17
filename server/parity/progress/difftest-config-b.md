@@ -1638,3 +1638,17 @@ current compared=11 design_errors=[] seconds=34.51；exit=0
 ```
 
 原R仍差253、H仍差546及partial/长流程；继续升级回滚和其余清单，最终.32全量未执行。
+
+## 批次 95：重启错误与旧在线 bundle 的真实文件回滚
+
+- H034新增4变体：fake supervisor首次restart分别stdout诊断/stderr诊断/空诊断后exit1，及已有2.41.0在线bundle时同样失败。实际worker进行两次restart、第二次向回环fake恢复原VERSION，公开轮询得到精确failed+已回滚中文消息。四变体均实际相比通过。
+- 有旧在线版本时，真实runtime目录先包含VERSION/bundle和未知JSON状态；生产更新代码自己copytree备份并在失败时替换恢复，测试不替它回滚。最终全SQL/文件、原bundle/VERSION字节digest及未知状态均与请求前相同，没有.download.js/.bak残留。没有旧在线版本时恢复builtin2.40.0，runtime不残留文件。每端restart拒绝标记置于owned TMPDIR，不进入DATA_DIR或宿主supervisor。
+- 升级相关四组（成功、并发、下载校验、回滚）合计10变体复跑，design_errors=[]、37.89s；83项自检和故意错误Go响应检出通过。统一9328变体、原R仍4277（S686/F2660/B931）、H567、G16，既有findings状态未新增差异。
+
+```text
+.32 native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups dependency-update-success,dependency-update-conflicts,dependency-update-invalid-downloads,dependency-update-restart-rollback --baseline 045f2485
+current compared=10 design_errors=[] seconds=37.89；exit=0
+独立原始报告/tmp/configdiff-dependency-rollback.json
+```
+
+原R仍差253、H仍差545及partial/长流程；继续真实就绪超时/回滚失败及其余清单，最终.32全量未执行。

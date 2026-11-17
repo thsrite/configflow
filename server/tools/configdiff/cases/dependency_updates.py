@@ -34,18 +34,29 @@ def terminal_diffs(left, right, policy):
 
 
 class Update:
-    def __init__(self, pair, health, github, *, failure_message=''):
+    def __init__(self, pair, health, github, *, failure_message='', initial_version='2.40.0', restart_count=None,
+                 controller_versions=None, worker_health_count=None):
         self.pair, self.health, self.github = pair, health, github
         self.failure_message = failure_message
+        self.initial_version = initial_version
+        self.restart_count = (0 if failure_message else 1) if restart_count is None else restart_count
+        self.controller_versions = ([] if failure_message else ['2.42.1']) if controller_versions is None else controller_versions
+        self.worker_health_count = (2 if failure_message else 3) if worker_health_count is None else worker_health_count
         self.observed, self.terminal = [None, None], [None, None]
         self.terminal_http = [None, None]
 
     def before(self, index):
         # Each backend runs its entire worker before the shared fake is reset.
-        self.health.body = json.dumps({'data': {'version': '2.40.0'}}).encode()
+        self.health.body = json.dumps({'data': {'version': self.initial_version}}).encode()
         self.offsets = len(self.health.requests), len(self.github.requests), len(events(self.pair))
         self.before_db = database(self.pair.dirs[index])
         self.before_files = files(self.pair.dirs[index])
+        self.before_installed = self.installed(index)
+
+    def installed(self, index):
+        directory = self.pair.dirs[index] / 'sub-store/runtime'
+        return {name: hashlib.sha256((directory / name).read_bytes()).hexdigest()
+                for name in ('VERSION', 'sub-store.bundle.js') if (directory / name).is_file()}
 
     def after(self, index, reply):
         polls, invalid_progress = 0, []
@@ -82,11 +93,11 @@ class Update:
             'github': self.github.requests[self.offsets[1]:], 'invalid_progress': invalid_progress,
             'terminal_reached': terminal is not None}
         if index == 0:
-            expected = {'database_unchanged': True, 'health_protocol_valid': True, 'worker_health_count': 2 if self.failure_message else 3,
-                'controller': [] if self.failure_message else [{**HEALTH, 'method': 'POST', 'path': '/_configdiff/version',
+            expected = {'database_unchanged': True, 'health_protocol_valid': True, 'worker_health_count': self.worker_health_count,
+                'controller': [{**HEALTH, 'method': 'POST', 'path': '/_configdiff/version',
                     'authorization': 'Bearer synthetic-controller-capability',
-                    'body_hex': json.dumps({'version': '2.42.1'}).encode().hex()}],
-                'commands': [] if self.failure_message else [{'args': RESTART}], 'status_count_valid': True,
+                    'body_hex': json.dumps({'version': version}).encode().hex()} for version in self.controller_versions],
+                'commands': [{'args': RESTART}] * self.restart_count, 'status_count_valid': True,
                 'github': release_request() + [{'method': 'CONNECT', 'target': 'downloads.example:443'},
                     {'method': 'GET', 'path': '/sub-store.bundle.js', 'authorization': '', 'body': ''}],
                 'invalid_progress': [], 'terminal_reached': True}
@@ -96,8 +107,8 @@ class Update:
             failed = bool(self.failure_message)
             require(value['update']['state'] == ('failed' if failed else 'success')
                     and value['update']['message'] == (self.failure_message if failed else 'Sub-Store 已更新到 2.42.1')
-                    and value['current_version'] == ('2.40.0' if failed else '2.42.1')
-                    and value['running'] is True and value['online_updated'] is (not failed)
+                    and value['current_version'] == (self.initial_version if failed else '2.42.1')
+                    and value['running'] is True and value['online_updated'] is (not failed or self.initial_version == '2.41.0')
                     and value['has_update'] is failed and value['lifecycle']['state'] == 'running',
                     'public polling reaches exact terminal result and installed lifecycle')
             expected_files = self.before_files if failed else {**self.before_files,
@@ -105,11 +116,9 @@ class Update:
                 'sub-store/runtime/sub-store.bundle.js': {'mode': 0o644, 'content': self.github.bundle.decode().splitlines()}}
             require(not differences(expected_files, files(self.pair.dirs[0])),
                     'only final VERSION and exact downloaded JavaScript are retained; no temp/backup remains')
-        directory = self.pair.dirs[index] / 'sub-store/runtime'
-        self.observed[index]['installed_bytes'] = {name: hashlib.sha256((directory / name).read_bytes()).hexdigest()
-            for name in ('VERSION', 'sub-store.bundle.js') if (directory / name).is_file()}
+        self.observed[index]['installed_bytes'] = self.installed(index)
         if index == 0:
-            require(self.observed[0]['installed_bytes'] == ({} if self.failure_message else {
+            require(self.observed[0]['installed_bytes'] == (self.before_installed if self.failure_message else {
                 'VERSION': hashlib.sha256(b'2.42.1\n').hexdigest(),
                 'sub-store.bundle.js': hashlib.sha256(self.github.bundle).hexdigest()}),
                 'installed runtime bytes retain exact line endings and final newline')
@@ -223,3 +232,24 @@ def invalid_downloads(binary, recorder):
 
 
 GROUPS['dependency-update-invalid-downloads'] = invalid_downloads
+
+
+def restart_rollback(binary, recorder):
+    for failure, previous in [('stdout', '2.40.0'), ('stderr', '2.40.0'), ('empty', '2.40.0'), ('stdout', '2.41.0')]:
+        with GitHub() as github, managed(binary, recorder, github=github, allow_restart=True,
+                restart_failure=failure) as (pair, health):
+            if previous == '2.41.0':
+                for directory in pair.dirs:
+                    root = directory / 'sub-store/runtime'
+                    root.mkdir(parents=True)
+                    (root / 'VERSION').write_bytes(b'2.41.0\n')
+                    (root / 'sub-store.bundle.js').write_bytes(b'// synthetic previous online bundle\n')
+                    (root / 'preserved-state.json').write_text('{"synthetic":false,"values":[]}\n')
+            expected = '更新失败：exception_type=RuntimeError；已回滚到 ' + previous
+            pair.request('H034', UPDATE, body=json_body({}), expect=202, writes=True, runtime_writes=True,
+                check=message('开始更新到 2.42.1'), interaction=Update(pair, health, github, failure_message=expected,
+                    initial_version=previous, restart_count=2, controller_versions=[previous], worker_health_count=3),
+                variant=failure + '/rollback-' + previous)
+
+
+GROUPS['dependency-update-restart-rollback'] = restart_rollback
