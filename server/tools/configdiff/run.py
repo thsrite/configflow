@@ -112,6 +112,8 @@ def main():
     groups.update(generate)
     from cases.pulls import GROUPS as pulls
     groups.update(pulls)
+    from cases.pull_routes import GROUPS as pull_routes
+    groups.update(pull_routes)
     from cases.oxidns import GROUPS as oxidns
     groups.update(oxidns)
     from cases.oxidns_routes import GROUPS as oxidns_routes

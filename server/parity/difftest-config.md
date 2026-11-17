@@ -1955,3 +1955,7 @@ R208/R210/R211-B90保留原输入：线上使用真实chunked、无Content-Lengt
 ### Step B setup prepare 失败写入边界更正
 
 R211-F20/H1042：首次prepare会先由resolve_domain_rules/ensure_builtin_library初始化共享内置规则库，再检查外部profile修改冲突；即使409，shared.rule_library/shared._revision可能已增加。须检查被编辑profile与session未覆盖，同时完整比较新增共享行；重复同样冲突在内置库已初始化后保持存储不变。不能统一断言失败全库回滚。依据[setup_flow.py:417](../../backend/common/setup_flow.py#L417)、[setup_flow.py:490](../../backend/common/setup_flow.py#L490)、[setup_presets.py:239](../../backend/common/setup_presets.py#L239)。Step B用回环拒绝代理隔离新内置源可能进入的后台下载，不访问其真实源站。
+
+### Step B MosDNS live YAML 的来源可观察性
+
+R024/R031-S04/S05及B91：仍比较相应Host/Forwarded请求的完整响应、规则集本地文件路径和存储；该live YAML本身不输出下载URL，不能据此证明Host改变了下载地址。`generate_mosdns_config`只把URL临时加入局部ruleset_downloads，配置插件只保留files路径（[mosdns.py:803](../../backend/converters/mosdns.py#L803)、[mosdns.py:821](../../backend/converters/mosdns.py#L821)）；下载清单另由[get_mosdns_ruleset_downloads](../../backend/converters/mosdns.py#L581)生成。此处origin选择标部分覆盖，不能用“输出含API URL”的错误断言或把相同本地路径当作origin证明。其他客户端及OxiDNS的具名测试用真实生成的provider/规则URL观察优先级。

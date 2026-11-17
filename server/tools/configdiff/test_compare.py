@@ -17,6 +17,19 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_pull_read_observer_detects_both_storage_and_source_side_effects(self):
+        from cases.pull_routes import SourceStable
+        observer = SourceStable(None, None)
+        observer.before_values[1] = {'value': 'unchanged'}
+        observer.after_values[1] = {'value': 'unchanged'}
+        observer.exchange.transcripts = [[], []]
+        self.assertEqual(observer.compare(Policy()), [])
+        observer.after_values[1]['value'] = 'wrong'
+        self.assertTrue(observer.compare(Policy()))
+        observer.after_values[1]['value'] = 'unchanged'
+        observer.exchange.transcripts[1] = [{'method': 'GET', 'path': '/unnecessary-fetch'}]
+        self.assertTrue(observer.compare(Policy()))
+
     def test_setup_timeout_window_rejects_fast_errors_and_unbounded_waits(self):
         from cases.setup_concurrency import TimedStatus
         observer = TimedStatus(None, [])

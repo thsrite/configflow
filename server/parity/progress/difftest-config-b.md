@@ -1290,3 +1290,20 @@ request_variants=8091 design_errors=[] seconds=1632.85；exit=1
 ```
 
 下一步把新组通过常规runner合并刷新到统一结果；仍有大量matrix/H条目和最终.32全量，Step B未完成。
+
+## 批次 74：config.py live pull有名输入、鉴权优先级和生成拒绝
+
+- 119请求变体均Go尚未实现，新增原R编号88（S22/F33/B33）；覆盖并集原R4159（S678/F2634/B847）、H322。独立报告/tmp/configdiff-pull-routes.json，待常规runner合并统一结果。
+- 所有11个live pull入口逐条发送proxy Host/Proto与默认Host；Mihomo额外query base_url和GET JSON body base_url。空持久origin是明确兼容SQLite边界fixture，两端用相同generation/合法commit_id刷新，不调用Go cache API。provider缓存和真实回环规则源保持存活，实际生成URL必须全以对应origin开头，精确比较完整输出及零下载/零存储写入。中文emoji profile、空资源与IPv6 Host逐入口。
+- 未登录带missing/invalid profile各入口404/400先于401；无效query token命中各入口F08。Mihomo/Surge/Loon的真实无效策略引用400中文逐字；OxiDNS坏native YAML400，Mihomo基础YAML未捕获异常500。没有拿别的异常充作尚不可达的MosDNS StrategyReferenceError或OxiDNS非ValueError分支。
+- MosDNS YAML只引用本地规则文件，不输出下载URL；两次错误的“应有API URL”夹具假设已按Python源码修正并在matrix errata明确origin不可观察部分。最终forms整组55变体design_errors=[]；保留完整本地路径结构/响应/SQL/files比较，未伪造Host效果。B91目前只有IPv6 Host；逗号串和HTTP/1.0无Host待补。
+- SourceStable组合真实源请求与逐端只读快照，故意改Go存储和意外上游请求均能检出；67项自检通过。
+
+```text
+.32 run.py --groups config-pull-named-forms,config-pull-named-guards,config-pull-named-failures（首轮forms夹具错误，不作通过）
+.63 run.py --groups config-pull-named-forms（修正后）
+current go-unimplemented=55；独立累计=119 request_variants design_errors=[] seconds=4.58；exit=0
+.32 runner self-checks: Ran 67 tests / OK
+```
+
+继续B90日志/HEAD、多值Forwarded/无Host及其余未覆盖分支；当前既不是所有子形态覆盖，也不是最终.32全量。
