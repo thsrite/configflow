@@ -111,6 +111,45 @@ def declared():
             'unsupported-vendor guard. Vendor tests cover creation, type-changing edit and existing iKuai edit. '
             'The parent catch/rethrow entries require every callee error family, not merely one400.',
             required)
+    # Client guard evidence uses exact source-reviewed values rather than
+    # collecting every recipe that happens to claim a helper identifier.
+    invalid_ranges = {
+        'H0071': (None, 0, False, [], {}),
+        'H0072': ('', 'bad', '10.44.0.1/1/2', '10.44.0.1%lo', '地址', '１０.４４.０.１'),
+        'H0073': ('10.44.0.1/', '10.44.0.1/-1', '10.44.0.1/+1', '10.44.0.1/3a',
+                  '10.44.0.1/0001', '10.44.0.1/ 24', '10.44.0.1/２４'),
+        'H0074': ('10.44.0.1/33', 'fd42:cf::1/129'),
+        'H0075': ('::ffff:10.44.0.1/95',),
+        'H0076': ('224.0.0.1', '224.0.0.1/24', 'ff02::1', 'ff02::1/64'),
+        'H0077': ('0.0.0.0', '0.0.0.0/32', '::', '::/128'),
+    }
+    client_requirements = {
+        ident: tuple(('guards', 'R003/ip-' + repr(value), 400) for value in values)
+        for ident, values in invalid_ranges.items()}
+    translated = tuple(requirement for required in client_requirements.values() for requirement in required)
+    translated += tuple(('guards', 'R003/ip-' + repr(value), 400)
+                        for value in ('10.44.0.999', '1:2:3:4:5:6:7:8:9'))
+    client_requirements['H0078'] = client_requirements['H0079'] = translated
+    names = [None, 0, False, [], {}, 'x' * 81, '行🧪' * 40 + '尾', ' ' * 81]
+    names += ['control' + chr(number) for number in range(32)] + ['del\x7f']
+    client_requirements['H0068'] = tuple(('guards', 'R003/' + field + '-' + repr(value), 400)
+        for field in ('name', 'previous_name') for value in names)
+    client_requirements['H0023'] = tuple(('guards', 'R003/' + field + '-' + repr(value), 400)
+        for field in ('mode', 'previous_mode') for value in (None, 0, False, [], {}, 'SMART', 'proxy'))
+    client_requirements['H0024'] = (('guards', 'R003/previous_name-stale', 409),
+                                   ('guards', 'R003/previous_mode-stale', 409))
+    for ident, required in client_requirements.items():
+        audits[ident] = Audit(
+            ('backend/common/client_devices.py:28', 'backend/common/device_notes.py:18',
+             'backend/common/oxidns_device_policy.py:22', 'backend/routes/client_devices.py:55'),
+            'R003 public draft update reaches these helpers before transaction writes. Each compound type/length/'
+            'character condition, both name fields, both mode fields, IPv4/IPv6 prefix limits, mapped-prefix lower '
+            'bound, host/network multicast, unspecified hosts and actual ipaddress parse errors are required. '
+            'The outer ValueError translation requires every family. Stale name and mode are separate409 variants. '
+            'Name length is checked before trim; all32 C0 controls and DEL are individually rejected. '
+            'Canonical accepted host/network/mapped forms and Unicode80 limits are separate positive controls; '
+            'these guard audits do not claim policy graph rewriting, device I/O or all client route coverage.',
+            required)
     return audits
 
 

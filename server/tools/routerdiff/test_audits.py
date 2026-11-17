@@ -10,7 +10,7 @@ import guards
 class AuditTests(unittest.TestCase):
     def test_auth_audits_require_every_explicit_real_reference_variant(self):
         audits = declared()
-        self.assertEqual(len(audits), 26 * 7 + 25 * 3 + 5 + 14)
+        self.assertEqual(len(audits), 26 * 7 + 25 * 3 + 5 + 14 + 12)
         self.assertFalse(set(audits) - set(load()[1]))
         self.assertEqual({value['audit'] for value in evaluate([]).values()}, {'variants-pending'})
         ident = 'R005-F01'
@@ -60,6 +60,23 @@ class AuditTests(unittest.TestCase):
         self.assertEqual(len(audits['H0161'].requirements), 2)
         self.assertEqual(len(audits['H0160'].requirements), 3)
         self.assertGreater(len(audits['H1243'].requirements), len(audits['H0155'].requirements))
+
+    def test_client_normalizers_require_each_reviewed_input_and_translation(self):
+        audits = declared()
+        actual = {case.ident: case for case in guards.client_draft()}
+        identifiers = ['H0023', 'H0024', 'H0068']
+        identifiers += ['H' + str(number).zfill(4) for number in range(71, 80)]
+        for ident in identifiers:
+            for world, name, status in audits[ident].requirements:
+                with self.subTest(entry=ident, case=name):
+                    self.assertEqual(world, 'guards')
+                    self.assertIn(name, actual)
+                    self.assertIn(ident, actual[name].entries)
+                    self.assertEqual(actual[name].expected, status)
+        self.assertEqual(len(audits['H0068'].requirements), 82)
+        self.assertEqual(len(audits['H0023'].requirements), 14)
+        self.assertEqual(len(audits['H0024'].requirements), 2)
+        self.assertGreater(len(audits['H0078'].requirements), len(audits['H0073'].requirements))
 
 
 if __name__ == '__main__':

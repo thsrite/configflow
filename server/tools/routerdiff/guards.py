@@ -153,21 +153,38 @@ def client_draft():
     for value in ('beta', '', None, 0):
         yield case('profile-' + repr(value), {**base, 'profile_id': value},
                    '配置空间已切换，请重新载入。', 'R003-F11', status=409)
-    for value in (None, 0, False, [], {}, '', 'bad', '0.0.0.0', '224.0.0.1',
-                  '10.44.0.1/33', '10.44.0.1/1/2', '::', 'ff02::1', '::ffff:10.44.0.1/95'):
-        yield case('ip-' + repr(value), {**base, 'ip': value},
-                   '请输入有效的客户端 IPv4、IPv6 或 CIDR 网段，例如 192.168.50.0/24。', 'R003-F12')
+    # Each normalizer guard is attached only to values that reach it. The
+    # enclosing ValueError translation is a separate, all-families audit.
+    ranges = [
+        (('H0071',), (None, 0, False, [], {})),
+        (('H0072',), ('', 'bad', '10.44.0.1/1/2', '10.44.0.1%lo', '地址', '１０.４４.０.１')),
+        (('H0073',), ('10.44.0.1/', '10.44.0.1/-1', '10.44.0.1/+1', '10.44.0.1/3a',
+                       '10.44.0.1/0001', '10.44.0.1/ 24', '10.44.0.1/２４')),
+        (('H0074',), ('10.44.0.1/33', 'fd42:cf::1/129')),
+        (('H0075',), ('::ffff:10.44.0.1/95',)),
+        (('H0076',), ('224.0.0.1', '224.0.0.1/24', 'ff02::1', 'ff02::1/64')),
+        (('H0077',), ('0.0.0.0', '0.0.0.0/32', '::', '::/128')),
+        ((), ('10.44.0.999', '1:2:3:4:5:6:7:8:9')),
+    ]
+    for helpers, values in ranges:
+        for value in values:
+            yield case('ip-' + repr(value), {**base, 'ip': value},
+                '请输入有效的客户端 IPv4、IPv6 或 CIDR 网段，例如 192.168.50.0/24。',
+                'R003-F12', *helpers, 'H0078', 'H0079')
     for field in ('name', 'previous_name'):
-        for value in (None, 0, False, [], {}, 'x' * 81, 'line\n', 'line\r', 'line\t', 'nul\x00', 'del\x7f'):
+        values = [None, 0, False, [], {}, 'x' * 81, '行🧪' * 40 + '尾', ' ' * 81]
+        values += ['control' + chr(number) for number in range(32)] + ['del\x7f']
+        for value in values:
             yield case(field + '-' + repr(value), {**base, field: value},
-                       '设备备注最多 80 个字符，不能包含换行或控制字符。', 'R003-F12')
+                       '设备备注最多 80 个字符，不能包含换行或控制字符。', 'R003-F12', 'H0068')
     for field in ('mode', 'previous_mode'):
         for value in (None, 0, False, [], {}, 'SMART', 'proxy'):
             yield case(field + '-' + repr(value), {**base, field: value},
                        'DNS 策略只能是默认、智能分流或直连。', 'R003-F12', 'H0023')
-    for field, value in (('previous_name', 'old-name'), ('previous_mode', 'direct')):
+    for field, value, entry in (('previous_name', 'old-name', 'R003-F13'),
+                                ('previous_mode', 'direct', 'R003-F14')):
         yield case(field + '-stale', {**base, field: value},
-                   '此设备已在其他页面修改，请重新载入后再保存。', 'R003-F13', 'H0024', status=409)
+                   '此设备已在其他页面修改，请重新载入后再保存。', entry, 'H0024', status=409)
 
 
 def fixed_ip_shape():

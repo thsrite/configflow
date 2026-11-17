@@ -548,6 +548,7 @@ def main():
                       guards.client_draft, guards.fixed_ip_shape,
                       guards.route_edit_shape, guards.workspace_shape, guards.rule_sync_shape, guards.rejected_draft_readback)),
               ('client-drafts', options, (workflows.client_drafts,)),
+              ('client-canonical-names', options, (workflows.client_canonical_names,)),
               ('legacy-credentials', fixtures.legacy_credentials_options(), (fixtures.legacy_credentials,)),
               ('router-guard-normalization', options, (guards.normalized_router_guards,)),
               ('workspace-drafts', options, (workflows.workspace_drafts, workflows.router_updates)),

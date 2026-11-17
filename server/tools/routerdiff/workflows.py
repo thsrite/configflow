@@ -25,6 +25,46 @@ def client_drafts():
                ('R002-S02',), checks={'profile_id': 'beta', 'devices': []})
 
 
+def client_canonical_names():
+    # No policy-mode change: canonical address and display-only names must not
+    # regenerate native_config or touch router reservations.
+    base = {'profile_id': 'alpha', 'name': '', 'mode': '', 'previous_name': '',
+            'previous_mode': '', 'base_url': ''}
+    values = (
+        ('ipv4-host-prefix', ' 10.44.0.21/32 ', '10.44.0.21'),
+        ('ipv4-cidr-mask', '10.44.0.42/24', '10.44.0.0/24'),
+        ('ipv6-host-prefix', 'FD42:CF:0000::21/128', 'fd42:cf::21'),
+        ('ipv6-cidr-mask', 'fd42:cf::abcd/64', 'fd42:cf::/64'),
+        ('mapped-host', '::ffff:10.44.0.22/128', '10.44.0.22'),
+        ('mapped-range', '::ffff:10.45.0.42/120', '10.45.0.0/24'),
+        ('mapped-default', '::ffff:10.44.0.21/96', '0.0.0.0/0'),
+        ('ipv6-default', '::/0', '::/0'),
+        ('padded-prefix', '10.46.0.21/032', '10.46.0.21'),
+    )
+    rows = []
+    for label, raw, normalized in values:
+        name = '行🧪' * 40  # Exactly80 Unicode characters, deliberately >80 bytes.
+        rows.append({'ip': normalized, 'name': name, 'mode': ''})
+        yield Case('R003/canonical-' + label, 'R003', 'PUT', '/api/client-devices', 200,
+            ('R003-B01', 'R003-B02', 'R003-B03', 'R003-B04'), document={**base, 'ip': raw, 'name': name},
+            unchanged=False, effect='profile-write', checks={'devices': list(rows)},
+            stored={'device_notes/' + normalized.replace('~', '~0').replace('/', '~1'): name},
+            expected_requests=({'match': {'peer': 'ros'}, 'count': 0}, {'match': {'peer': 'ikuai'}, 'count': 0}))
+    trimmed = '备注 "引号" 🧪'
+    rows[0] = {**rows[0], 'name': trimmed}
+    yield Case('R003/name-trim-and-own-previous', 'R003', 'PUT', '/api/client-devices', 200,
+        ('R003-B01',), document={**base, 'ip': '10.44.0.21', 'name': '  ' + trimmed + '  ',
+                                'previous_name': '行🧪' * 40},
+        unchanged=False, effect='profile-write', checks={'devices': list(rows)})
+    rows.pop(0)
+    yield Case('R003/remove-note-with-normalized-previous', 'R003', 'PUT', '/api/client-devices', 200,
+        ('R003-S07',), document={**base, 'ip': '::ffff:10.44.0.21', 'previous_name': trimmed + '  '},
+        unchanged=False, effect='profile-write', checks={'devices': list(rows)},
+        stored_absent=('device_notes/10.44.0.21',))
+    yield Case('R002/canonical-names-beta-isolation', 'R002', 'GET', '/api/client-devices?profile=beta', 200,
+        ('R002-S02', 'R003-B07'), checks={'devices': [], 'profile_id': 'beta'})
+
+
 def workspace_drafts():
     yield Case('R014-S01/initial', 'R014', 'GET', '/api/routers/r-ros/policy-settings', 200,
                ('R014-S01', 'R014-B01'), checks={'success': True, 'workspace/profile_id': 'alpha',

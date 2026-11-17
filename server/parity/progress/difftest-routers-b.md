@@ -872,3 +872,31 @@ implemented0/go-unimplemented1620/referenced353/audited276/remaining2025/
 complete=false, no new Python bugs. No pending test process. Last full composition
 is still cb95c4562435 recipes/611 references, before these additions. Final full
 composition, gate and rebase remain pending; task is not ready for hand-back.
+
+Client normalizer branch audit (next incremental step):
+- Read full client_devices.py/device_notes.py/client_discovery_cache.py and range/
+  policy normalization in oxidns_device_policy.py. Added explicit12 H audits:
+  H0023/H0024/H0068/H0071-H0079. Every requirement names the exact guard world,
+  case and HTTP status, with integrity checks on attachment. No H was closed by
+  collecting arbitrary cases with a matching label.
+- R003 guard batch now146 cases: every non-string address family, malformed
+  multiple slash/zone/CJK/fullwidth address, empty/signed/mixed/overlong/space/
+  fullwidth prefix, v4/v6 overflow, mapped prefix<96, host/network multicast,
+  unspecified hosts and actual address parse errors. Name and previous_name each
+  cover non-string,81 ASCII/Unicode/whitespace chars, every C0 codepoint and DEL.
+  Both stale previous-name and previous-mode409 are separate; corrected the
+  latter's route attachment from F13 to F14.
+-12 independent accepted public controls cover canonical host/CIDR/mapped forms,
+  mapped /96 and IPv6 /0, zero-padded prefix, exact80 Unicode chars (>80 bytes),
+  quotes/trim, normalized previous name/address removal and beta isolation.
+  Notes-only controls currently assert exact response/stored note/no device I/O;
+  an explicit unrelated-OxiDNS-field retention oracle remains to add.
+- No product files or Go implementation read/changed. Reports remain incomplete;
+  latest full composition is still cb95c456, not this subset.
+
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; cd server/tools/routerdiff; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY=/tmp/routerdiff-build-302rx1dg/configflow; ~/cf-test/.venv/bin/python -m unittest -v test_audits test_recipes; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world guards --world client-canonical-names --world client-drafts --output /tmp/routerdiff-client-normalizer-audits.json'`
+=> Ran6 tests0.894s/OK; guards1650, client-drafts1661(1.34s), canonical1673(1.21s).
+Matrix2301/routes26/implemented0/go-unimplemented1673/referenced360/
+audited287/remaining2014/complete=false. This subset lacks R001-F91's linked
+world; all existing+new declarations total288, so the full remaining count is2013
+if those already-proven worlds are composed. No new Python bug in this subset.
