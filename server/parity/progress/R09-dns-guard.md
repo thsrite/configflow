@@ -197,7 +197,7 @@ All use `RT_HOST=sunbroke@192.168.0.32`, foreground via rt. Exact results update
 - `rt -- bash -lc 'cd server && go test -run "^$" -fuzz "^FuzzR09PolicyEvaluator$" -fuzztime 60s ./internal/routers'`
 - `rt -- bash -lc 'server/scripts/proddiff.sh'`
 
-Validation checkpoint c0d4f10d on .32: gofmt/vet; full routers/routersplit/devhttp race; 83-package full suite; 12 enabled difftest packages; three 60s fuzz targets; four compiled mutations; proddiff new=0 stale=0 all passed. The final conservative malformed-selector correction is being revalidated.
+Validation checkpoint c0d4f10d on .32: gofmt/vet; full routers/routersplit/devhttp race; 83-package full suite; 12 enabled difftest packages; three 60s fuzz targets; four compiled mutations; proddiff new=0 stale=0 all passed. The conservative malformed-selector correction also passed the complete second run at go@65c0e6d4 (.32 logs /tmp/configflow-r09-gates.MLAxV3): 84 full packages, 12 difftests, race routers 506.150s, 3 fuzz targets, 4 mutations, proddiff new=0 stale=0. Its local SSH wrapper stayed open after remote completion; a separate rt --no-sync log audit returned 0. Latest go now requires the shared gate script; final rebased acceptance uses that script.
 
 Next: finish final gates, record results, commit explicit paths with `go(routers): R09 …`, rebase local go,
 re-run any checks affected by rebase, hand back commit IDs for a fresh Opus review. Do not push.
