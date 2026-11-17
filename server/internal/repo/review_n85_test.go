@@ -165,7 +165,7 @@ func TestReviewN85TokenMaintenancePreservesUntouchedMembers(t *testing.T) {
 					return nil
 				}))
 			} else {
-				_, err = r.UpdateProfile(bg, DefaultProfileID, parse(t, `{"name":"unrelated edit"}`))
+				_, err = r.UpdateProfileMetadata(bg, DefaultProfileID, parse(t, `{"name":"unrelated edit"}`))
 				noError(t, err)
 			}
 			after := must(r.store.Load())(t)
