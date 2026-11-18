@@ -355,8 +355,6 @@ Rules for O3-5..O3-8 are in the review's last section.
 | C33 | rule library and proxy group routes | 976 | verified | C32 | 25 (25 done) |
 | C34 | generate, config and profile routes, config export | 1443 | verified | C18, C19, C20, C28, C29, C31, C33 | 59 (0 done) |
 | C35 | config importer, WebDAV backup | 1375 | verified | C04, C06 | – |
-| C36 | setup flow | 1372 | ported | C34, C35 | 5 (0 done) |
-
 | C36 | setup flow | 1372 | verified | C34, C35 | 5 (5 done) |
 | C37 | domain discovery | 1658 | verified | C14, C16 | 17 (17 done) |
 
