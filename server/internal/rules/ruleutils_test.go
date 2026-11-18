@@ -59,9 +59,12 @@ func TestRuleCacheFilenameNamespaces(t *testing.T) {
 		{obj("id", "r1", "url", "https://x.test/例"), "by-source/" + hexOf(`["r1", "https://x.test/例", "domain", ""]`) + ".list"},
 		{obj("id", "r1", "source_type", "url"), "by-id/" + hexOf("r1") + ".list"},
 	}
-	for _, c := range cases {
-		if got := RuleCacheFilename(c.rule); got != c.want {
-			t.Errorf("RuleCacheFilename(%s) = %s, want %s", jsonx.Repr(c.rule), got, c.want)
+	reference := cacheReference(t)
+	for i, c := range cases {
+		expected := reference.Namespace[i]
+		assertCacheReferenceInput(t, expected, c.rule, c.want)
+		if got := RuleCacheFilename(c.rule); got != expected.Native {
+			t.Errorf("RuleCacheFilename(%s) = %s, want %s", jsonx.Repr(c.rule), got, expected.Native)
 		}
 	}
 }

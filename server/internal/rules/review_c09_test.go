@@ -166,26 +166,37 @@ func TestReviewC09ResolveNewOrder(t *testing.T) {
 }
 
 func TestReviewC09ValidateRulePolicies(t *testing.T) {
-	for _, entry := range loadReviewC09(t).GetList("policies") {
+	reference := cacheReference(t)
+	rows := loadReviewC09(t).GetList("policies")
+	if len(rows) != len(reference.Policies) {
+		t.Fatal("policy reference row count drift")
+	}
+	for i, entry := range rows {
 		record := entry.(*jsonx.Object)
+		expected := reference.Policies[i]
+		input, err := jsonx.Parse(expected.Input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !jsonx.Equal(input, record) {
+			t.Fatalf("policy reference row %d drift", i)
+		}
+		if expected.Class != "R5" && expected.Class != "unchanged" {
+			t.Fatalf("unknown policy class %q", expected.Class)
+		}
+		if expected.Class == "unchanged" && record.Value("result") != expected.Native {
+			t.Fatal("unchanged policy expected drift")
+		}
 		var names []string
 		for _, name := range record.GetList("names") {
 			names = append(names, name.(string))
-		}
-		want := record.Value("result")
-		if object, ok := want.(*jsonx.Object); ok {
-			// Python TypeError (unhashable policy) → handled error in Go.
-			if !strings.Contains(object.GetString("message"), "unhashable") {
-				t.Errorf("unexpected Python exception %s", compact(t, object))
-			}
-			continue
 		}
 		got := ""
 		if err := ValidateRulePolicies(record.GetObject("config"), names, record.GetString("format")); err != nil {
 			got = err.Error()
 		}
-		if got != want {
-			t.Errorf("validate_rule_policies(%s, %s) = %q, want %q", compact(t, record.Value("config")), record.GetString("format"), got, want)
+		if got != expected.Native {
+			t.Errorf("policy reference row %d (%s): got %q want %q", i, expected.Class, got, expected.Native)
 		}
 	}
 }

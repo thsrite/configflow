@@ -1,19 +1,21 @@
 package rules
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 )
 
 // Rule cache file names under DATA_DIR/shared/rules/{by-id,by-source,by-name}/
 // (backend/utils/rule_utils.py) and the read-side path resolution. The names
-// must stay those Python wrote, so existing caches are found. Fetching and
+// retain unambiguous identity/name cache fallbacks. Fetching and
 // writing caches is in internal/rulefetch.
 
 // SanitizeRuleName is a file-system safe file name (without extension) for
@@ -38,43 +40,35 @@ func SanitizeRuleName(name string) string {
 	return safe
 }
 
-func sanitizeAny(name any) string {
-	text, _ := name.(string)
-	return SanitizeRuleName(text)
-}
-
 func sha256Hex(text string) string {
 	sum := sha256.Sum256([]byte(text))
 	return hex.EncodeToString(sum[:])
 }
 
-// RuleCacheFilename is the stable, resource-identity
-// based cache file name relative to the rules directory.
-func RuleCacheFilename(rule *jsonx.Object) string {
-	identity := rule.Value("library_rule_id")
-	if !jsonx.Truthy(identity) {
-		identity = rule.Value("id")
+// CacheFilename binds remote bytes to both the resource and its declaration.
+// D2 uses native JSON for the declaration digest; old identity caches remain
+// readable only when the current stored declaration proves ownership.
+func CacheFilename(rule model.RuleConfig) string {
+	identity := rule.LibraryRuleID
+	if identity == "" {
+		identity = rule.ID
 	}
-	namespace := "by-id"
-	var text string
-	if identity != nil {
-		text = jsonx.Str(identity)
-	} else {
-		namespace = "by-name"
-		text = jsonx.Str(rule.GetOr("name", ""))
-	}
-	sourceType := rule.GetOr("source_type", "url")
-	if sourceType == "url" && jsonx.Truthy(rule.Value("url")) {
-		// Bind remote bytes to the declaration as well as the resource ID: a
-		// delayed refresh of an old URL/type cannot replace the current cache.
-		namespace = "by-source"
-		format := rule.Value("format")
-		if !jsonx.Truthy(format) {
-			format = ""
+	namespace, text := "by-id", identity
+	if identity == "" {
+		// An explicitly stored empty ID remains an identity; an absent or
+		// null ID uses the name. Invalid typed IDs follow R5.
+		data, _ := model.Marshal(rule)
+		var members map[string]json.RawMessage
+		_ = json.Unmarshal(data, &members)
+		raw, present := members["id"]
+		if !present || string(raw) == "null" || model.IssueUnder(model.Issues(rule), "id") {
+			namespace, text = "by-name", rule.Name
 		}
-		// The JSON text (json.dumps spacing, non-ASCII kept) is part of the name.
-		encoded, _ := jsonx.Encode([]any{text, rule.Value("url"), rule.GetOr("behavior", "domain"), format}, jsonx.Options{})
-		text = string(encoded)
+	}
+	if valueOr(rule.SourceType, "url") == "url" && valueOr(rule.URL, "") != "" {
+		namespace = "by-source"
+		data, _ := json.Marshal([4]string{text, *rule.URL, valueOr(rule.Behavior, "domain"), valueOr(rule.Format, "")})
+		text = string(data)
 	}
 	return namespace + "/" + sha256Hex(text) + ".list"
 }
@@ -84,12 +78,12 @@ func fileExists(path string) bool {
 	return err == nil
 }
 
-// RuleCacheReadPath is the cache file to read: new caches first, retaining
+// CacheReadPath is the cache file to read: new caches first, retaining
 // unambiguous legacy caches offline. library is the library to disambiguate
 // legacy names against (nil: use stored); stored is
 // the current shared rule_library from the repository.
-func RuleCacheReadPath(rule *jsonx.Object, library, stored []any, rulesDir string) string {
-	path := filepath.Join(rulesDir, RuleCacheFilename(rule))
+func CacheReadPath(rule model.RuleConfig, library, stored []model.RuleLibraryItem, rulesDir string) string {
+	path := filepath.Join(rulesDir, CacheFilename(rule))
 	// A handwritten edit marks its stable cache before committing the DB. A
 	// failed replacement must not resurrect either the stable or legacy bytes.
 	// Only a confirmed absence permits fallback. A permission/I/O failure while
@@ -105,46 +99,51 @@ func RuleCacheReadPath(rule *jsonx.Object, library, stored []any, rulesDir strin
 	}
 	// Migrate pre-validation identity caches only for the stored declaration;
 	// proposed edits and stale publication snapshots cannot claim these bytes.
-	var current *jsonx.Object
-	for _, entry := range stored {
-		if item, ok := entry.(*jsonx.Object); ok && jsonx.Equal(item.Value("id"), rule.Value("id")) {
-			current = item
+	var current *model.RuleLibraryItem
+	for i := range stored {
+		if stored[i].ID == rule.ID {
+			current = &stored[i]
 			break
 		}
 	}
-	fields := []string{"url", "behavior", "format", "source_type"}
 	same := func() bool {
-		for _, key := range fields {
-			if !jsonx.Equal(current.Value(key), rule.Value(key)) {
-				return false
-			}
-		}
-		return true
+		return sameOptional(current.URL, rule.URL) && sameOptional(current.Behavior, rule.Behavior) && sameOptional(current.Format, rule.Format) && sameOptional(current.SourceType, rule.SourceType)
 	}
 	if current != nil && same() {
-		identity := rule.Value("library_rule_id")
-		if !jsonx.Truthy(identity) {
-			identity = rule.Value("id")
+		// This fixed-schema digest is read-only migration metadata, never a
+		// writer's filename. Do not attribute an old declaration to a new one.
+		if oldName, ok := LegacyCacheFilename(rule); ok {
+			old := filepath.Join(rulesDir, oldName)
+			if _, err := os.Stat(old + ".invalid"); !errors.Is(err, os.ErrNotExist) {
+				return filepath.Join(old+".invalid", "unavailable")
+			}
+			if fileExists(old) {
+				return old
+			}
 		}
-		old := filepath.Join(rulesDir, "by-id", sha256Hex(jsonx.Str(identity))+".list")
+		identity := rule.LibraryRuleID
+		if identity == "" {
+			identity = rule.ID
+		}
+		old := filepath.Join(rulesDir, "by-id", sha256Hex(identity)+".list")
 		if fileExists(old) {
 			return old
 		}
 	}
-	if rule.GetOr("source_type", "url") == "url" && jsonx.Truthy(rule.Value("url")) && (current == nil || !same()) {
+	if valueOr(rule.SourceType, "url") == "url" && valueOr(rule.URL, "") != "" && (current == nil || !same()) {
 		return path
 	}
-	name := rule.GetOr("name", "")
-	legacyName := sanitizeAny(name)
-	var matches []*jsonx.Object
-	for _, entry := range library {
-		if item, ok := entry.(*jsonx.Object); ok && sanitizeAny(item.GetOr("name", "")) == legacyName {
-			matches = append(matches, item)
+	name := rule.Name
+	legacyName := SanitizeRuleName(name)
+	matches := 0
+	matchedName := ""
+	for _, item := range library {
+		if SanitizeRuleName(item.Name) == legacyName {
+			matches++
+			matchedName = item.Name
 		}
 	}
-	// A legacy file has no identity receipt. Never attribute a shared filename
-	// to either of two resources, or to an unknown spelling of a known name.
-	if len(matches) > 1 || (len(matches) == 1 && !jsonx.Equal(matches[0].Value("name"), name)) {
+	if matches > 1 || (matches == 1 && matchedName != name) {
 		return path
 	}
 	legacy := filepath.Join(rulesDir, legacyName+".list")
@@ -152,4 +151,67 @@ func RuleCacheReadPath(rule *jsonx.Object, library, stored []any, rulesDir strin
 		return legacy
 	}
 	return path
+}
+
+func sameOptional(a, b *string) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
+}
+
+// LibraryRule projects the declaration fields used by cache and fetch into a
+// rule reference, retaining opaque extension fields without dynamic values.
+func LibraryRule(item model.RuleLibraryItem) model.RuleConfig {
+	return model.RuleConfig{ID: item.ID, Name: item.Name, Enabled: item.Enabled, SourceType: item.SourceType, Behavior: item.Behavior, Format: item.Format, URL: item.URL, Content: item.Content, Fields: item.Fields}
+}
+
+// LegacyCacheFilename recognizes the previous fixed-schema cache key solely
+// for one-time migration. Writers always use CacheFilename. Stored invalid
+// declaration types are never eligible to claim an older file.
+func LegacyCacheFilename(rule model.RuleConfig) (string, bool) {
+	for _, field := range []string{"id", "library_rule_id", "url", "behavior", "format", "source_type"} {
+		if model.IssueUnder(model.Issues(rule), field) {
+			return "", false
+		}
+	}
+	if valueOr(rule.SourceType, "url") != "url" || valueOr(rule.URL, "") == "" {
+		return "", false
+	}
+	data, err := model.Marshal(rule)
+	if err != nil {
+		return "", false
+	}
+	var members map[string]json.RawMessage
+	if json.Unmarshal(data, &members) != nil {
+		return "", false
+	}
+	// Preserve explicit nulls in old declarations. Only the current stored
+	// declaration may use this read-side address (see CacheReadPath).
+	if raw, ok := members["source_type"]; ok && string(raw) != "\"url\"" {
+		return "", false
+	}
+	id := rule.LibraryRuleID
+	if id == "" {
+		id = rule.ID
+	}
+	if id == "" {
+		id = rule.Name
+	}
+	behavior := members["behavior"]
+	if len(behavior) == 0 {
+		behavior = json.RawMessage(`"domain"`)
+	}
+	format := valueOr(rule.Format, "")
+	quote := func(value string) string {
+		var b bytes.Buffer
+		encoder := json.NewEncoder(&b)
+		encoder.SetEscapeHTML(false)
+		_ = encoder.Encode(value)
+		return strings.TrimSuffix(b.String(), "\n")
+	}
+	// Native scalar encoders plus the historical four-field separators; this
+	// is not a general legacy JSON serializer and is never used for new writes.
+	text := "[" + quote(id) + ", " + quote(*rule.URL) + ", " + string(behavior) + ", " + quote(format) + "]"
+	return "by-source/" + sha256Hex(text) + ".list", true
 }

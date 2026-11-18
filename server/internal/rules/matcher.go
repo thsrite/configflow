@@ -8,8 +8,9 @@ import (
 	"strings"
 	"sync"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/logx"
+	"configflow/internal/model"
+	"configflow/internal/rulesetfmt"
 	"configflow/internal/weburl"
 	"configflow/internal/yamlx"
 
@@ -482,30 +483,30 @@ func (index *ruleIndex) matchIP(ip netip.Addr) (string, bool) {
 	return index.line(best)
 }
 
-// LoadContent returns the text of a rule set: the reference item and its
+// ContentLoader returns the text of a rule set: the reference item and its
 // library entry (nil when unbound). An error is logged and treated as empty.
-type LoadContent func(item, library *jsonx.Object) (string, error)
+type ContentLoader func(item *model.RuleConfig, library *model.RuleLibraryItem) (string, error)
 
-// IndexKey opts a loader into index reuse across references that share one
+// SourceKey opts a loader into index reuse across references that share one
 // library entry; ok=false keeps a per-item index.
-type IndexKey func(item, library *jsonx.Object) (key string, ok bool)
+type SourceKey func(item *model.RuleConfig, library *model.RuleLibraryItem) (key string, ok bool)
 
 type indexSlot struct {
-	source   string // IndexKey's key, or "" with the item position
+	source   string // SourceKey's key, or "" with the item position
 	position int
 	behavior string
 	format   string
 }
 
-// RuleConfigMatcher matches a domain or IP against rule_configs in order and
+// Matcher matches a domain or IP against rule_configs in order and
 // returns the first hit. Each rule set is loaded and indexed on first use;
 // domains are looked up by label and IPs by prefix length.
-type RuleConfigMatcher struct {
+type Matcher struct {
 	items    []matcherItem
-	library  map[string]*jsonx.Object
+	library  map[string]*model.RuleLibraryItem
 	formats  map[int]string
-	load     LoadContent
-	indexKey IndexKey
+	load     ContentLoader
+	indexKey SourceKey
 	logger   Logger
 
 	mu      sync.RWMutex
@@ -514,69 +515,69 @@ type RuleConfigMatcher struct {
 
 type matcherItem struct {
 	position int // 1-based over all rules, disabled ones included (the rule list's row numbers)
-	item     *jsonx.Object
+	item     *model.RuleConfig
 }
 
-// NewRuleConfigMatcher builds a matcher over rule_configs and rule_library
+// NewMatcher builds a matcher over rule_configs and rule_library
 // (lists of objects). indexKey and logger may be nil.
-func NewRuleConfigMatcher(ruleConfigs, ruleLibrary []any, load LoadContent, indexKey IndexKey, logger Logger) *RuleConfigMatcher {
+func NewMatcher(ruleConfigs []model.RuleConfig, ruleLibrary []model.RuleLibraryItem, load ContentLoader, indexKey SourceKey, logger Logger) *Matcher {
 	if logger == nil {
 		logger = matcherLogger
 	}
-	m := &RuleConfigMatcher{
-		library: map[string]*jsonx.Object{}, formats: map[int]string{}, load: load,
-		indexKey: indexKey, logger: logger, indexes: map[indexSlot]*ruleIndex{},
-	}
-	for i, entry := range ruleConfigs {
-		if item, ok := entry.(*jsonx.Object); ok && enabled(item) {
+	m := &Matcher{library: map[string]*model.RuleLibraryItem{}, formats: map[int]string{}, load: load,
+		indexKey: indexKey, logger: logger, indexes: map[indexSlot]*ruleIndex{}}
+	for i := range ruleConfigs {
+		item := &ruleConfigs[i]
+		if ruleEnabled(item) {
 			m.items = append(m.items, matcherItem{i + 1, item})
-			if itemType(item) == "ruleset" {
-				// The format the converter emits: a declared text provider
-				// does not gain YAML rules because its body has a payload.
-				m.formats[i+1] = RulesetFormat(item, ruleLibrary, "")
+			if ruleKind(item) == "ruleset" {
+				result, _ := rulesetfmt.RuleFormat(*item, ruleLibrary, "")
+				if result == "" {
+					result = "text"
+				}
+				m.formats[i+1] = result
 			}
 		}
 	}
-	for _, entry := range ruleLibrary {
-		if item, ok := entry.(*jsonx.Object); ok && item.GetString("id") != "" {
-			m.library[item.GetString("id")] = item
+	for i := range ruleLibrary {
+		item := &ruleLibrary[i]
+		if item.ID != "" {
+			m.library[item.ID] = item
 		}
 	}
 	return m
 }
 
-// enabled: rules and their library entries are on unless switched off.
-func enabled(item *jsonx.Object) bool {
-	return jsonx.Truthy(item.GetOr("enabled", true)) && jsonx.Truthy(item.GetOr("library_enabled", true))
+func ruleEnabled(item *model.RuleConfig) bool {
+	return (item.Enabled == nil || *item.Enabled) && (item.LibraryEnabled == nil || *item.LibraryEnabled)
 }
-
-func itemType(item *jsonx.Object) string {
-	kind, _ := item.GetOr("itemType", "rule").(string)
-	return kind
-}
-
-func (m *RuleConfigMatcher) libraryOf(item *jsonx.Object) *jsonx.Object {
-	return m.library[item.GetString("library_rule_id")]
-}
-
-// rulesetBehavior is the reference's behavior, else the library entry's,
-// else "domain".
-func rulesetBehavior(item, library *jsonx.Object) string {
-	if value, ok := item.Get("behavior"); ok {
-		text, _ := value.(string)
-		return text
+func ruleKind(item *model.RuleConfig) string {
+	if item.ItemType == "" {
+		return "rule"
 	}
-	if library != nil {
-		if value, ok := library.Get("behavior"); ok {
-			text, _ := value.(string)
-			return text
-		}
+	return item.ItemType
+}
+func valueOr(value *string, fallback string) string {
+	if value == nil {
+		return fallback
+	}
+	return *value
+}
+func (m *Matcher) libraryOf(item *model.RuleConfig) *model.RuleLibraryItem {
+	return m.library[item.LibraryRuleID]
+}
+func ruleBehavior(item *model.RuleConfig, library *model.RuleLibraryItem) string {
+	if item.Behavior != nil {
+		return *item.Behavior
+	}
+	if library != nil && library.Behavior != nil {
+		return *library.Behavior
 	}
 	return "domain"
 }
 
-func (m *RuleConfigMatcher) slot(position int, item, library *jsonx.Object) indexSlot {
-	slot := indexSlot{position: position, behavior: rulesetBehavior(item, library), format: m.formats[position]}
+func (m *Matcher) slot(position int, item *model.RuleConfig, library *model.RuleLibraryItem) indexSlot {
+	slot := indexSlot{position: position, behavior: ruleBehavior(item, library), format: m.formats[position]}
 	if m.indexKey != nil {
 		if key, ok := m.indexKey(item, library); ok {
 			slot.source, slot.position = key, 0
@@ -588,12 +589,12 @@ func (m *RuleConfigMatcher) slot(position int, item, library *jsonx.Object) inde
 // InvalidateRulesets discards the indexes of the selected references,
 // including every reference sharing the same source, and returns how many
 // were dropped. Callers own retry policy and cached host results.
-func (m *RuleConfigMatcher) InvalidateRulesets(selected func(item, library *jsonx.Object) bool) int {
+func (m *Matcher) InvalidateRulesets(selected func(item *model.RuleConfig, library *model.RuleLibraryItem) bool) int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	dropped := 0
 	for _, it := range m.items {
-		if itemType(it.item) != "ruleset" {
+		if ruleKind(it.item) != "ruleset" {
 			continue
 		}
 		library := m.libraryOf(it.item)
@@ -607,13 +608,13 @@ func (m *RuleConfigMatcher) InvalidateRulesets(selected func(item, library *json
 }
 
 // IndexCount is the number of built rule-set indexes (diagnostics and tests).
-func (m *RuleConfigMatcher) IndexCount() int {
+func (m *Matcher) IndexCount() int {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return len(m.indexes)
 }
 
-func (m *RuleConfigMatcher) rulesetIndex(position int, item, library *jsonx.Object) *ruleIndex {
+func (m *Matcher) rulesetIndex(position int, item *model.RuleConfig, library *model.RuleLibraryItem) *ruleIndex {
 	slot := m.slot(position, item, library)
 	m.mu.RLock()
 	index := m.indexes[slot]
@@ -626,8 +627,15 @@ func (m *RuleConfigMatcher) rulesetIndex(position int, item, library *jsonx.Obje
 	if index = m.indexes[slot]; index != nil {
 		return index
 	}
-	name := jsonx.Str(item.GetOr("name", "规则集"))
-	content, err := m.load(item, library)
+	name := item.Name
+	if name == "" {
+		name = msgRulesetName
+	}
+	var content string
+	var err error
+	if m.load != nil {
+		content, err = m.load(item, library)
+	}
 	if err != nil {
 		m.logger.Errorf("Error processing ruleset \"%s\": %s", name, weburl.SafeErrorDetails(err))
 		content = ""
@@ -650,7 +658,7 @@ func (m *RuleConfigMatcher) rulesetIndex(position int, item, library *jsonx.Obje
 // Match returns the first rule or rule set that hits the query (a domain or
 // an IP), or nil: rule_name, rule_type, matched_line, policy, source,
 // priority, rule_id, item_type, behavior.
-func (m *RuleConfigMatcher) Match(query string) *jsonx.Object {
+func (m *Matcher) Match(query string) *Hit {
 	query = NormalizeMatchQuery(query)
 	ip, isIP := parseAddr(query)
 	if !isIP && !IsValidDomain(query, true) {
@@ -659,10 +667,10 @@ func (m *RuleConfigMatcher) Match(query string) *jsonx.Object {
 	domain := strings.ToLower(query)
 	for _, it := range m.items {
 		item := it.item
-		policy := item.GetOr("policy", "DIRECT")
-		switch itemType(item) {
+		policy := valueOr(item.Policy, "DIRECT")
+		switch ruleKind(item) {
 		case "rule":
-			ruleType, ruleValue := item.GetString("rule_type"), item.GetString("value")
+			ruleType, ruleValue := item.RuleType, item.Value
 			matched := false
 			if isIP {
 				matched = matchAddr(ip, ruleType, ruleValue)
@@ -670,15 +678,14 @@ func (m *RuleConfigMatcher) Match(query string) *jsonx.Object {
 				matched = MatchDomain(domain, ruleType, ruleValue)
 			}
 			if matched {
-				return jsonx.Obj(
-					"rule_name", ruleType+" 规则", "rule_type", "rule",
-					"matched_line", ruleType+","+ruleValue, "policy", policy,
-					"source", "直接配置的规则", "priority", jsonx.Int(it.position),
-					"rule_id", item.Value("id"), "item_type", "rule", "behavior", "classical",
-				)
+				return &Hit{RuleName: ruleType + msgRuleSuffix, RuleType: "rule", MatchedLine: ruleType + "," + ruleValue,
+					Policy: policy, Source: msgDirectRuleSource, Priority: it.position, RuleID: optionalID(item.ID), ItemType: "rule", Behavior: "classical"}
 			}
 		case "ruleset":
-			name := item.GetOr("name", "规则集")
+			name := item.Name
+			if name == "" {
+				name = msgRulesetName
+			}
 			library := m.libraryOf(item)
 			index := m.rulesetIndex(it.position, item, library)
 			var line string
@@ -689,14 +696,30 @@ func (m *RuleConfigMatcher) Match(query string) *jsonx.Object {
 				line, found = index.matchDomain(domain)
 			}
 			if found {
-				return jsonx.Obj(
-					"rule_name", name, "rule_type", "ruleset", "matched_line", line,
-					"policy", policy, "source", "规则集: "+jsonx.Str(name),
-					"priority", jsonx.Int(it.position), "rule_id", item.Value("id"),
-					"item_type", "ruleset", "behavior", rulesetBehavior(item, library),
-				)
+				return &Hit{RuleName: name, RuleType: "ruleset", MatchedLine: line, Policy: policy,
+					Source: msgRulesetSource + name, Priority: it.position, RuleID: optionalID(item.ID), ItemType: "ruleset", Behavior: ruleBehavior(item, library)}
 			}
 		}
 	}
 	return nil
+}
+
+// Hit is the first matching rule returned by discovery and the connection page.
+type Hit struct {
+	RuleName    string  `json:"rule_name"`
+	RuleType    string  `json:"rule_type"`
+	MatchedLine string  `json:"matched_line"`
+	Policy      string  `json:"policy"`
+	Source      string  `json:"source"`
+	Priority    int     `json:"priority"`
+	RuleID      *string `json:"rule_id"`
+	ItemType    string  `json:"item_type"`
+	Behavior    string  `json:"behavior"`
+}
+
+func optionalID(id string) *string {
+	if id == "" {
+		return nil
+	}
+	return &id
 }

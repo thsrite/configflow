@@ -18,7 +18,7 @@ func TestN73MatcherReaderMigration(t *testing.T) {
 			if matcher.formats[item.position] != "yaml" {
 				continue
 			}
-			source := contents.GetString(item.item.GetString("id"))
+			source := contents.GetString(item.item.ID)
 			category, err := yamlxtest.CompareNativeReader(source, yamlxtest.NativeAST)
 			if err != nil {
 				t.Fatalf("real matcher source row %d: %v", row, err)

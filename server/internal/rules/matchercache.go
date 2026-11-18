@@ -4,6 +4,7 @@ import (
 	"container/list"
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"io"
 	"io/fs"
@@ -14,9 +15,9 @@ import (
 	"unicode/utf8"
 
 	"configflow/internal/clock"
-	"configflow/internal/jsonx"
 	"configflow/internal/lockx"
 	"configflow/internal/logx"
+	"configflow/internal/model"
 )
 
 // Bounded, idle-evicted local rule indexes (backend/utils/domain_matcher_cache.py)
@@ -31,17 +32,17 @@ const (
 	DefaultCleanupInterval = 60
 )
 
-// MatcherCacheOptions wires the cache to its environment. Every field except
+// CacheOptions wires the cache to its environment. Every field except
 // RulesDir is optional.
-type MatcherCacheOptions struct {
+type CacheOptions struct {
 	// RulesDir is the shared rule cache directory (DATA_DIR/shared/rules).
 	RulesDir func() string
 	// StoredLibrary returns the current shared rule_library from the
 	// repository (RuleCacheReadPath consults it for legacy cache names).
-	StoredLibrary func() []any
+	StoredLibrary func() []model.RuleLibraryItem
 	// ValidateRemote checks a url source's cache file against its
 	// declaration; an error marks the file unusable. nil accepts everything.
-	ValidateRemote func(content string, rule *jsonx.Object) error
+	ValidateRemote func(content string, rule model.RuleConfig) error
 	// Clock supplies scheduling time and timers; nil uses real time.
 	Clock clock.Clock
 	// Spawner tracks cleanup work. When nil, eviction runs only on access or
@@ -54,10 +55,10 @@ type MatcherCacheOptions struct {
 	IdleSeconds, ReadRetrySeconds, CleanupInterval float64
 }
 
-// MatcherCache is the process-wide registry of CachedMatcher values, keyed by
+// Cache is the process-wide registry of Cached values, keyed by
 // (rules directory, profile id).
-type MatcherCache struct {
-	opt MatcherCacheOptions
+type Cache struct {
+	opt CacheOptions
 
 	mu         sync.Mutex
 	order      *list.List // front = oldest
@@ -73,13 +74,13 @@ type cacheSlot struct{ rulesDir, profile string }
 type cacheEntry struct {
 	slot      cacheSlot
 	signature [32]byte
-	matcher   *CachedMatcher
+	matcher   *Cached
 }
 
 type cleanupWait struct{ stop chan struct{} }
 
-// NewMatcherCache creates a cache.
-func NewMatcherCache(opt MatcherCacheOptions) *MatcherCache {
+// NewCache creates a cache.
+func NewCache(opt CacheOptions) *Cache {
 	if opt.MaxMatchers == 0 {
 		opt.MaxMatchers = DefaultMaxMatchers
 	}
@@ -102,27 +103,27 @@ func NewMatcherCache(opt MatcherCacheOptions) *MatcherCache {
 		opt.Logger = logx.Get("backend.utils.domain_matcher_cache")
 	}
 	if opt.StoredLibrary == nil {
-		opt.StoredLibrary = func() []any { return nil }
+		opt.StoredLibrary = func() []model.RuleLibraryItem { return nil }
 	}
-	return &MatcherCache{opt: opt, origin: opt.Clock.Now(), order: list.New(), slots: map[cacheSlot]*list.Element{}}
+	return &Cache{opt: opt, origin: opt.Clock.Now(), order: list.New(), slots: map[cacheSlot]*list.Element{}}
 }
 
 // readKey names what a load read: a library entry, or the individual item.
 type readKey struct {
 	library string
-	item    *jsonx.Object
+	item    *model.RuleConfig
 }
 
 // libraryKey opts into a shared index only when loading is wholly decided
 // by the library entry (a missing name falls back to the item's name).
-func libraryKey(library *jsonx.Object) (string, bool) {
-	if library != nil && library.GetString("id") != "" && library.GetString("name") != "" {
-		return library.GetString("id"), true
+func libraryKey(library *model.RuleLibraryItem) (string, bool) {
+	if library != nil && library.ID != "" && library.Name != "" {
+		return library.ID, true
 	}
 	return "", false
 }
 
-func readKeyOf(item, library *jsonx.Object) readKey {
+func readKeyOf(item *model.RuleConfig, library *model.RuleLibraryItem) readKey {
 	if key, ok := libraryKey(library); ok {
 		return readKey{library: key}
 	}
@@ -132,10 +133,10 @@ func readKeyOf(item, library *jsonx.Object) readKey {
 // localSource loads rule text from the local cache files or inline content,
 // with retry state and no reference back to its owner.
 type localSource struct {
-	cache    *MatcherCache
+	cache    *Cache
 	rulesDir string
 	stamps   map[string]*fileStamp
-	library  []any
+	library  []model.RuleLibraryItem
 	paths    map[readKey]string
 
 	mu       sync.Mutex // guards failed, retryAt
@@ -144,7 +145,7 @@ type localSource struct {
 	hasRetry bool
 }
 
-func (s *localSource) retry(item, library *jsonx.Object) {
+func (s *localSource) retry(item *model.RuleConfig, library *model.RuleLibraryItem) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.failed[readKeyOf(item, library)] = struct{}{}
@@ -195,13 +196,13 @@ func stampsEqual(a, b *fileStamp) bool {
 	return *a == *b
 }
 
-func (s *localSource) load(item, library *jsonx.Object) (string, error) {
-	source := item
+func (s *localSource) load(item *model.RuleConfig, library *model.RuleLibraryItem) (string, error) {
+	source := *item
 	if library != nil {
-		source = library
+		source = LibraryRule(*library)
 	}
 	if nameOf(library, item) != "" {
-		path := RuleCacheReadPath(source, s.library, s.cache.opt.StoredLibrary(), s.rulesDir)
+		path := CacheReadPath(source, s.library, s.cache.opt.StoredLibrary(), s.rulesDir)
 		key := readKeyOf(item, library)
 		if previous, ok := s.paths[key]; ok && previous != path {
 			s.retry(item, library)
@@ -226,7 +227,7 @@ func (s *localSource) load(item, library *jsonx.Object) (string, error) {
 					// Keep an old handle's retry bounded after a stable read.
 					s.stamps[path] = after
 				}
-				if source.GetOr("source_type", "url") == "url" && s.cache.opt.ValidateRemote != nil {
+				if valueOr(source.SourceType, "url") == "url" && s.cache.opt.ValidateRemote != nil {
 					err = s.cache.opt.ValidateRemote(content, source)
 				}
 				if err == nil {
@@ -242,8 +243,8 @@ func (s *localSource) load(item, library *jsonx.Object) (string, error) {
 			s.retry(item, library)
 		}
 	}
-	if library != nil && library.GetOr("source_type", "url") == "content" {
-		content, _ := library.GetOr("content", "").(string)
+	if library != nil && valueOr(library.SourceType, "url") == "content" {
+		content := valueOr(library.Content, "")
 		return content, nil
 	}
 	// Unavailable URL sources never fetch from the network on this path.
@@ -252,17 +253,17 @@ func (s *localSource) load(item, library *jsonx.Object) (string, error) {
 }
 
 // nameOf is the library entry's name, else the item's.
-func nameOf(library, item *jsonx.Object) string {
-	if library != nil && library.GetString("name") != "" {
-		return library.GetString("name")
+func nameOf(library *model.RuleLibraryItem, item *model.RuleConfig) string {
+	if library != nil && library.Name != "" {
+		return library.Name
 	}
-	return item.GetString("name")
+	return item.Name
 }
 
-// CachedMatcher is a RuleConfigMatcher with a bounded host result cache and
+// Cached is a RuleConfigMatcher with a bounded host result cache and
 // retry handling for unavailable sources.
-type CachedMatcher struct {
-	cache *MatcherCache
+type Cached struct {
+	cache *Cache
 	// guarded by cache.mu
 	lastUsed float64
 	active   int
@@ -271,17 +272,17 @@ type CachedMatcher struct {
 	results map[string]*list.Element
 	order   *list.List // front = oldest; values are *hostResult
 	source  *localSource
-	matcher *RuleConfigMatcher
+	matcher *Matcher
 }
 
 type hostResult struct {
 	host   string
-	result *jsonx.Object
+	result *Hit
 }
 
 // Match is the first hit for host, cached per host (also
 // negative results). The returned object is a private copy.
-func (m *CachedMatcher) Match(host string) *jsonx.Object {
+func (m *Cached) Match(host string) *Hit {
 	cache := m.cache
 	// Never hold the registry lock while waiting for an index or doing I/O.
 	cache.mu.Lock()
@@ -307,7 +308,7 @@ func (m *CachedMatcher) Match(host string) *jsonx.Object {
 	}
 	source.mu.Unlock()
 	if due {
-		removed := m.matcher.InvalidateRulesets(func(item, library *jsonx.Object) bool {
+		removed := m.matcher.InvalidateRulesets(func(item *model.RuleConfig, library *model.RuleLibraryItem) bool {
 			_, bad := failed[readKeyOf(item, library)]
 			return bad
 		})
@@ -329,13 +330,18 @@ func (m *CachedMatcher) Match(host string) *jsonx.Object {
 	}
 	m.order.MoveToBack(element)
 	if result := element.Value.(*hostResult).result; result != nil {
-		return result.DeepCopy()
+		copy := *result
+		if result.RuleID != nil {
+			id := *result.RuleID
+			copy.RuleID = &id
+		}
+		return &copy
 	}
 	return nil
 }
 
 // HostResultKeys lists cached hosts, oldest first (diagnostics and tests).
-func (m *CachedMatcher) HostResultKeys() []string {
+func (m *Cached) HostResultKeys() []string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var keys []string
@@ -346,86 +352,81 @@ func (m *CachedMatcher) HostResultKeys() []string {
 }
 
 // RetryPending reports whether an unavailable source is waiting for a retry.
-func (m *CachedMatcher) RetryPending() bool {
+func (m *Cached) RetryPending() bool {
 	m.source.mu.Lock()
 	defer m.source.mu.Unlock()
 	return m.source.hasRetry
 }
 
 // Matcher exposes the underlying matcher (index counts in tests).
-func (m *CachedMatcher) Matcher() *RuleConfigMatcher { return m.matcher }
+func (m *Cached) Matcher() *Matcher { return m.matcher }
 
-func (c *MatcherCache) newCachedMatcher(config *jsonx.Object, rulesDir string, stamps map[string]*fileStamp, paths map[readKey]string, now float64) *CachedMatcher {
-	library := config.GetList("cache_library")
-	if !config.Has("cache_library") {
-		library = config.GetList("rule_library")
-	}
-	source := &localSource{
-		cache: c, rulesDir: rulesDir, stamps: stamps, library: library,
-		paths: paths, failed: map[readKey]struct{}{},
-	}
-	cm := &CachedMatcher{
-		cache: c, lastUsed: now, results: map[string]*list.Element{}, order: list.New(), source: source,
-	}
-	cm.matcher = NewRuleConfigMatcher(config.GetList("rule_configs"), config.GetList("rule_library"),
-		source.load, func(item, library *jsonx.Object) (string, bool) { return libraryKey(library) }, nil)
-	return cm
+// MatcherInput is the narrow projection consumed by matching and cache keys.
+// CacheLibrary contains only IDs/names for legacy filename disambiguation.
+type MatcherInput struct {
+	Rules        []model.RuleConfig
+	Library      []model.RuleLibraryItem
+	CacheLibrary []model.RuleLibraryItem
 }
 
-// signature is a digest of everything the matcher depends on
-// (rules, referenced library entries, cache file stamps) plus the stamps and
-// resolved paths the lazy loader will use.
-func (c *MatcherCache) signature(config *jsonx.Object, rulesDir string) ([32]byte, map[string]*fileStamp, map[readKey]string) {
-	rules := config.GetList("rule_configs")
-	library := map[string]*jsonx.Object{}
-	for _, entry := range config.GetList("rule_library") {
-		if item, ok := entry.(*jsonx.Object); ok {
-			library[item.GetString("id")] = item
-		}
+func (c *Cache) newCached(input MatcherInput, rulesDir string, stamps map[string]*fileStamp, paths map[readKey]string, now float64) *Cached {
+	source := &localSource{cache: c, rulesDir: rulesDir, stamps: stamps, library: input.CacheLibrary, paths: paths, failed: map[readKey]struct{}{}}
+	cm := &Cached{cache: c, lastUsed: now, results: map[string]*list.Element{}, order: list.New(), source: source}
+	cm.matcher = NewMatcher(input.Rules, input.Library, source.load, func(item *model.RuleConfig, library *model.RuleLibraryItem) (string, bool) {
+		return libraryKey(library)
+	}, nil)
+	return cm
+}
+func (c *Cache) signature(input MatcherInput, rulesDir string) ([32]byte, map[string]*fileStamp, map[readKey]string) {
+	library := make(map[string]*model.RuleLibraryItem, len(input.Library))
+	for i := range input.Library {
+		library[input.Library[i].ID] = &input.Library[i]
 	}
-	cacheLibrary := config.GetList("cache_library")
-	if !config.Has("cache_library") {
-		cacheLibrary = config.GetList("rule_library")
-	}
-	referenced := []any{}
+	referenced := make([]*model.RuleLibraryItem, 0)
 	stamps := map[string]*fileStamp{}
-	stampDoc := jsonx.NewObject()
 	paths := map[readKey]string{}
-	for _, entry := range rules {
-		item, ok := entry.(*jsonx.Object)
-		if !ok || item.Value("itemType") != "ruleset" || !enabled(item) {
+	stored := c.opt.StoredLibrary()
+	for i := range input.Rules {
+		item := &input.Rules[i]
+		if ruleKind(item) != "ruleset" || !ruleEnabled(item) {
 			continue
 		}
-		source := library[item.GetString("library_rule_id")]
-		if source != nil {
-			referenced = append(referenced, source)
-		} else {
-			referenced = append(referenced, nil)
-		}
+		source := library[item.LibraryRuleID]
+		referenced = append(referenced, source)
 		if nameOf(source, item) == "" {
 			continue
 		}
-		target := item
+		target := *item
 		if source != nil {
-			target = source
+			target = LibraryRule(*source)
 		}
-		path := RuleCacheReadPath(target, cacheLibrary, c.opt.StoredLibrary(), rulesDir)
+		path := CacheReadPath(target, input.CacheLibrary, stored, rulesDir)
 		paths[readKeyOf(item, source)] = path
 		info, err := os.Stat(path)
 		if err != nil {
 			stamps[path] = nil
-			stampDoc.Set(path, nil)
 		} else {
-			stamp := stampOf(info)
-			stamps[path] = stamp
-			stampDoc.Set(path, []any{jsonx.Int(stamp.ino), jsonx.Int(stamp.size), jsonx.Int(stamp.mtime), jsonx.Int(stamp.ctime)})
+			stamps[path] = stampOf(info)
 		}
 	}
-	payload, _ := jsonx.Sorted([]any{rules, referenced, stampDoc})
+	// Native JSON hashes are process-private (D2); no persisted Python encoder.
+	stampDoc := make(map[string]*[4]int64, len(stamps))
+	for path, stamp := range stamps {
+		if stamp == nil {
+			stampDoc[path] = nil
+		} else {
+			stampDoc[path] = &[4]int64{int64(stamp.ino), int64(stamp.size), stamp.mtime, stamp.ctime}
+		}
+	}
+	payload, _ := json.Marshal(struct {
+		Rules   []model.RuleConfig
+		Library []*model.RuleLibraryItem
+		Stamps  map[string]*[4]int64
+	}{input.Rules, referenced, stampDoc})
 	return sha256.Sum256(payload), stamps, paths
 }
 
-func (c *MatcherCache) evictIdleLocked(now float64) {
+func (c *Cache) evictIdleLocked(now float64) {
 	var stale []*list.Element
 	for e := c.order.Front(); e != nil; e = e.Next() {
 		m := e.Value.(*cacheEntry).matcher
@@ -445,9 +446,9 @@ func (c *MatcherCache) evictIdleLocked(now float64) {
 }
 
 // now keeps TTL arithmetic monotonic when the injected clock provides it.
-func (c *MatcherCache) now() float64 { return c.opt.Clock.Now().Sub(c.origin).Seconds() }
+func (c *Cache) now() float64 { return c.opt.Clock.Now().Sub(c.origin).Seconds() }
 
-func (c *MatcherCache) scheduleCleanupLocked() {
+func (c *Cache) scheduleCleanupLocked() {
 	if c.order.Len() == 0 || c.timer != nil || c.opt.Spawner == nil {
 		return
 	}
@@ -487,7 +488,7 @@ func (c *MatcherCache) scheduleCleanupLocked() {
 	}
 }
 
-func (c *MatcherCache) cleanupIdle(generation int) {
+func (c *Cache) cleanupIdle(generation int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if generation != c.generation {
@@ -500,7 +501,7 @@ func (c *MatcherCache) cleanupIdle(generation int) {
 
 // Clear releases cache ownership and cancels the cleanup timer (shutdown and
 // test isolation).
-func (c *MatcherCache) Clear() {
+func (c *Cache) Clear() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.generation++
@@ -517,14 +518,14 @@ func (c *MatcherCache) Clear() {
 }
 
 // Size is the number of registered matchers.
-func (c *MatcherCache) Size() int {
+func (c *Cache) Size() int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.order.Len()
 }
 
 // CleanupScheduled reports whether the idle-eviction timer is armed.
-func (c *MatcherCache) CleanupScheduled() bool {
+func (c *Cache) CleanupScheduled() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.timer != nil
@@ -532,7 +533,7 @@ func (c *MatcherCache) CleanupScheduled() bool {
 
 // EvictIdle runs one idle-eviction pass at elapsed seconds since cache creation.
 // Normal lookups and background sweeps obtain that reading from Clock directly.
-func (c *MatcherCache) EvictIdle(now float64) {
+func (c *Cache) EvictIdle(now float64) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.evictIdleLocked(now)
@@ -542,44 +543,17 @@ func (c *MatcherCache) EvictIdle(now float64) {
 // profile's rules, reused while rules, referenced library entries and cache
 // file stamps are unchanged. config is a profile document merged with the
 // shared one (rule_configs, rule_library).
-func (c *MatcherCache) LocalMatcher(config *jsonx.Object, profileID string) *CachedMatcher {
+func (c *Cache) LocalMatcher(input MatcherInput, profileID string) *Cached {
 	rulesDir := c.opt.RulesDir()
 	if real, err := filepath.EvalSymlinks(rulesDir); err == nil {
 		rulesDir = real
 	} else if abs, err := filepath.Abs(rulesDir); err == nil {
 		rulesDir = abs
 	}
-	// A request may mutate its config after returning this handle. Keep only
-	// matcher inputs, using the same snapshot for the signature and lazy loads.
-	rules := config.GetList("rule_configs")
-	referenced := map[string]struct{}{}
-	for _, entry := range rules {
-		if item, ok := entry.(*jsonx.Object); ok && item.Value("itemType") == "ruleset" {
-			referenced[item.GetString("library_rule_id")] = struct{}{}
-		}
-	}
-	snapshot := jsonx.NewObject()
-	snapshot.Set("rule_configs", jsonx.DeepCopy(rules))
-	var kept, cacheLibrary []any
-	for _, entry := range config.GetList("rule_library") {
-		item, ok := entry.(*jsonx.Object)
-		if !ok {
-			continue
-		}
-		if _, hit := referenced[item.GetString("id")]; hit {
-			kept = append(kept, item.DeepCopy())
-		}
-		// Only names/IDs are needed to disambiguate old caches.
-		cacheLibrary = append(cacheLibrary, jsonx.Obj("id", item.Value("id"), "name", item.GetOr("name", "")))
-	}
-	if kept == nil {
-		kept = []any{}
-	}
-	if cacheLibrary == nil {
-		cacheLibrary = []any{}
-	}
-	snapshot.Set("rule_library", kept)
-	snapshot.Set("cache_library", cacheLibrary)
+	// Clone only consumed records, never nodes/subscriptions or a full Config.
+	snapshot := MatcherInput{}
+	data, _ := json.Marshal(input)
+	_ = json.Unmarshal(data, &snapshot)
 	signature, stamps, paths := c.signature(snapshot, rulesDir)
 	slot := cacheSlot{rulesDir, profileID}
 	now := c.now()
@@ -598,7 +572,7 @@ func (c *MatcherCache) LocalMatcher(config *jsonx.Object, profileID string) *Cac
 			c.order.Remove(c.slots[slot])
 			delete(c.slots, slot)
 		}
-		entry = &cacheEntry{slot: slot, signature: signature, matcher: c.newCachedMatcher(snapshot, rulesDir, stamps, paths, now)}
+		entry = &cacheEntry{slot: slot, signature: signature, matcher: c.newCached(snapshot, rulesDir, stamps, paths, now)}
 		c.slots[slot] = c.order.PushBack(entry)
 		c.opt.Logger.Debugf("Rule index cache created matcher (%s)", reason)
 	}

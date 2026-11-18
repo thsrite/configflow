@@ -35,7 +35,8 @@ func TestTypedEntryMatchesPythonFormatCorpus(t *testing.T) {
 			Output   string            `json:"out"`
 			Error    json.RawMessage   `json:"err"`
 		}
-		// Most rows belong to unrelated functions and have non-string outputs.
+		// The archive contains non-JSON NaN in unrelated parser rows.
+		// Read only its discriminator through the archive's legacy reader.
 		kind, err := jsonx.Parse(s.Bytes())
 		if err != nil {
 			t.Fatal(err)
@@ -73,22 +74,13 @@ func TestTypedEntryMatchesPythonFormatCorpus(t *testing.T) {
 		if !valid {
 			continue
 		}
-		oldRule, err := jsonx.Parse(row.Args[0])
-		if err != nil {
-			t.Fatal(err)
-		}
-		oldConfig, err := jsonx.Parse(row.Args[1])
-		if err != nil {
-			t.Fatal(err)
-		}
-		legacy, legacyErr := Format(oldRule.(*jsonx.Object), oldConfig.(*jsonx.Object).GetList("rule_library"), source)
 		native, nativeErr := RuleFormat(rule, config.Library, source)
 		var parseErr *URLParseError
 		if nativeErr != nil && !errors.As(nativeErr, &parseErr) {
 			t.Fatal(nativeErr)
 		}
-		if (legacyErr == nil) != (nativeErr == nil) || legacy != native || native != row.Output {
-			t.Fatalf("row %d: legacy %q/%v native %q/%v Python %q", checked, legacy, legacyErr, native, nativeErr, row.Output)
+		if native != row.Output {
+			t.Fatalf("row %d: native %q/%v Python %q", checked, native, nativeErr, row.Output)
 		}
 		checked++
 	}
@@ -98,10 +90,10 @@ func TestTypedEntryMatchesPythonFormatCorpus(t *testing.T) {
 	if checked < 200 {
 		t.Fatalf("only %d normal rows", checked)
 	}
-	t.Logf("normal Python/legacy/typed byte comparisons: %d", checked)
+	t.Logf("normal Python/typed byte comparisons: %d", checked)
 }
 
-func TestTypedEntryMatchesLegacyBytes(t *testing.T) {
+func TestTypedEntryExpectedBytes(t *testing.T) {
 	tests := []struct{ rule, library, source, want string }{
 		{`{}`, `[]`, "", "text"},
 		{`{"url":"https://example.com/a.YML?download=1"}`, `[]`, "", "yaml"},
@@ -123,18 +115,9 @@ func TestTypedEntryMatchesLegacyBytes(t *testing.T) {
 			if err := json.Unmarshal([]byte(tt.library), &library); err != nil {
 				t.Fatal(err)
 			}
-			oldRule, err := jsonx.ParseString(tt.rule)
-			if err != nil {
-				t.Fatal(err)
-			}
-			oldLibrary, err := jsonx.ParseString(tt.library)
-			if err != nil {
-				t.Fatal(err)
-			}
-			legacy, legacyErr := Format(oldRule.(*jsonx.Object), oldLibrary.([]any), tt.source)
 			native, nativeErr := RuleFormat(rule, library, tt.source)
-			if legacyErr != nil || nativeErr != nil || legacy != native || native != tt.want {
-				t.Fatalf("legacy=%q/%v native=%q/%v want=%q", legacy, legacyErr, native, nativeErr, tt.want)
+			if nativeErr != nil || native != tt.want {
+				t.Fatalf("native=%q/%v want=%q", native, nativeErr, tt.want)
 			}
 		})
 	}
@@ -149,11 +132,7 @@ func TestMalformedMembersUseTypedValidation(t *testing.T) {
 		if _, err := RuleFormat(rule, nil, ""); !errors.Is(err, ErrURLType) {
 			t.Fatalf("%s: %v", raw, err)
 		}
-		old, _ := jsonx.ParseString(raw)
-		var urlType *URLTypeError
-		if _, err := Format(old.(*jsonx.Object), nil, ""); !errors.As(err, &urlType) {
-			t.Fatalf("legacy URL type category: %v", err)
-		}
+
 	}
 	for _, raw := range []string{`{"library_rule_id":false}`, `{"name":false}`} {
 		var rule model.RuleConfig
@@ -164,11 +143,7 @@ func TestMalformedMembersUseTypedValidation(t *testing.T) {
 			t.Fatal("invalid reference accepted")
 		}
 	}
-	value, _ := jsonx.ParseString(`{}`)
-	var entryType *LibraryEntryTypeError
-	if _, err := Format(value.(*jsonx.Object), []any{jsonx.Int(1)}, ""); !errors.As(err, &entryType) {
-		t.Fatalf("entry category: %v", err)
-	}
+
 }
 
 func TestLibraryIndexStopsAfterFirstMatch(t *testing.T) {

@@ -11,7 +11,6 @@ import (
 	"unicode"
 
 	"configflow/internal/clientrange"
-	"configflow/internal/jsonx"
 	"configflow/internal/rulesetfmt"
 )
 
@@ -125,14 +124,6 @@ func ClassicalLineError(value string) string {
 // mapping, or a line starting with a (quoted) payload key.
 func HasYAMLPayload(content string) bool {
 	return rulesetfmt.HasYAMLPayload(content)
-}
-
-// RulesetFormat is the format of a rule set reference ("yaml", "text" or
-// "mrs"): the declared one, else inferred from inline content or the URL
-// path. library is the rule_library list; sourceURL overrides the rule's
-// URL when the library entry has none.
-func RulesetFormat(rule *jsonx.Object, library []any, sourceURL string) string {
-	return rulesetfmt.FormatSkippingInvalidEntries(rule, library, sourceURL)
 }
 
 // ErrClientRange: not a usable client address or range.

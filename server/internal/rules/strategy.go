@@ -3,7 +3,7 @@ package rules
 import (
 	"fmt"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 )
 
 // Rule policies are checked against the policies a converter actually emits
@@ -25,15 +25,15 @@ var builtinPolicies = map[string][]string{
 	"loon": {"DIRECT", "REJECT", "REJECT-DROP", "REJECT-IMG", "REJECT-DICT", "REJECT-ARRAY"},
 }
 
-// ValidateRulePolicies: every enabled rule or rule
+// ValidatePolicies: every enabled rule or rule
 // set (rule_configs of config) must target an available policy name or a
 // built-in of the format ("mihomo", "surge" or "loon"). It returns
 // *StrategyReferenceError for the first offender. An unknown format is a
-// programming error and panics.
-func ValidateRulePolicies(config *jsonx.Object, availableNames []string, format string) error {
+// validation error.
+func ValidatePolicies(configs []model.RuleConfig, availableNames []string, format string) error {
 	builtins, ok := builtinPolicies[format]
 	if !ok {
-		panic(fmt.Sprintf("unknown policy format %q", format))
+		return fmt.Errorf("unknown policy format %q", format)
 	}
 	available := map[string]struct{}{}
 	for _, name := range availableNames {
@@ -46,31 +46,25 @@ func ValidateRulePolicies(config *jsonx.Object, availableNames []string, format 
 	if format == "mihomo" {
 		defaultPolicy = "PROXY"
 	}
-	for _, entry := range config.GetList("rule_configs") {
-		rule, ok := entry.(*jsonx.Object)
-		if !ok {
+	for _, rule := range configs {
+		if !ruleEnabled(&rule) {
 			continue
 		}
-		if !enabled(rule) {
-			continue
-		}
-		kind, _ := rule.Value("itemType").(string)
+		kind := rule.ItemType
 		if kind != "rule" && kind != "ruleset" {
 			continue
 		}
-		var policy any
-		if value, has := rule.Get("policy"); has {
-			policy = value
-		} else if kind == "ruleset" {
-			policy = defaultPolicy
-		} else {
-			policy = ""
+		fallback := ""
+		if kind == "ruleset" {
+			fallback = defaultPolicy
 		}
-		name, isStr := policy.(string)
-		if _, found := available[name]; !isStr || !found {
-			id := rule.GetOr("id", rule.GetOr("name", ""))
-			return &StrategyReferenceError{Message: fmt.Sprintf(
-				"规则 %s 引用了不存在或未启用的策略 '%s'，请修改策略引用", jsonx.Str(id), jsonx.Str(policy))}
+		policy := valueOr(rule.Policy, fallback)
+		if _, found := available[policy]; !found {
+			id := rule.ID
+			if id == "" {
+				id = rule.Name
+			}
+			return &StrategyReferenceError{Message: fmt.Sprintf(msgPolicyReference, id, policy)}
 		}
 	}
 	return nil

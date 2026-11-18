@@ -1512,3 +1512,14 @@ port/interval 使用 model.Int；不再保留私有数字文本解码或待接�
 精确 baseline 仅登记旧验收报告的 message、checks[0].details 长度/首项，以及通知 items 长度；
 没有扩大到其他字段。回归见 `TestD2VerificationReportMigration`、
 `TestNativeD2DismissalReappearsOnceAndRouterStateIsPreserved` 和 subscription 专项迁移用例。
+### N8-9 rules — R5 / D2（协调者，2026-11-18）
+
+规则匹配、policy验证和缓存声明使用model typed读取。错误类型字段按R5回退，
+不再仿真Python的容器truthiness、None/True等显示文本；正常输入的输出继续逐字比较。
+规则远端缓存摘要改用D2原生JSON；600条原始缓存名档案及114条policy档案保持不变，
+另有真实Python typed-input投影和逐行独立D2预期，未空跳过差异类别。
+
+O12发布说明：远端规则缓存参与生成时的离线兜底。切换不能仅丢弃旧摘要文件；
+旧摘要只作一次性兼容读取地址，在当前声明认领且内容通过校验后迁入native名称。
+拟议编辑、旧声明或invalid receipt均不得借用该旧文件。实现及回归闭环见
+`progress/n8-9-rules.md`（本项实施中，最终交回需补齐验证）。

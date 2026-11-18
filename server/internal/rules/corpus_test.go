@@ -269,6 +269,8 @@ func TestCorpusRuleValueError(t *testing.T) {
 const regexInvalid = "正则表达式格式无效："
 
 func TestCorpusCacheNames(t *testing.T) {
+	reference := cacheReference(t)
+	checked := 0
 	for _, record := range corpus(t)["cache"] {
 		want := record.Value("result")
 		if isException(want) {
@@ -282,10 +284,16 @@ func TestCorpusCacheNames(t *testing.T) {
 			}
 		case "filename":
 			rule := record.GetObject("rule")
-			if got := RuleCacheFilename(rule); got != want {
-				t.Errorf("rule_cache_filename(%s) = %q, want %q", compact(t, rule), got, want)
+			expected := reference.Rows[checked]
+			checked++
+			assertCacheReferenceInput(t, expected, rule, want)
+			if got := RuleCacheFilename(rule); got != expected.Native {
+				t.Errorf("rule_cache_filename(%s) = %q, want %q (%s)", compact(t, rule), got, expected.Native, expected.Class)
 			}
 		}
+	}
+	if checked != len(reference.Rows) {
+		t.Fatalf("reference coverage %d/%d", checked, len(reference.Rows))
 	}
 }
 
