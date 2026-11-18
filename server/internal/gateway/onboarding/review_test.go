@@ -174,3 +174,59 @@ func TestShortCredentialDoesNotCorruptWizardFields(t *testing.T) {
 		t.Fatalf("diagnostic error leaked: %s %v", message, err)
 	}
 }
+
+func TestMappingEditsKeepAliasGraphAndInput(t *testing.T) {
+	leaf := yamlx.Seq(yamlx.Str("kept"))
+	// A very small physical graph with exponentially many expanded values.
+	// Editing its parent must neither visit nor expand the shared children.
+	for range 40 {
+		leaf = yamlx.Seq(leaf, leaf)
+	}
+	source := yamlx.Map(yamlx.Str("graph"), leaf, yamlx.Str("enabled"), yamlx.Bool(false))
+	candidate := editMapping(source)
+	yamlx.Set(candidate, "enabled", yamlx.Bool(true))
+	if field(candidate, "graph") != leaf || field(source, "graph") != leaf || boolean(field(source, "enabled")) {
+		t.Fatal("mapping edit expanded, truncated or mutated the source graph")
+	}
+}
+
+func TestConversionBackupKeepsOriginalNestedSettings(t *testing.T) {
+	config, _ := nativeProfile(t, func(document *yamlx.Node) {
+		dropPlugins(document, "forward_fallback", "fallback_dns", "fallback", "server_udp", "server_tcp")
+		yamlx.Set(pluginIndex(document)["proxy_dns_seq"], "args", yamlx.Seq(step("goto remote_dns")))
+	})
+	settings, err := yamlx.FromJSON(config["oxidns"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	yamlx.Set(settings, "api", yamlx.Map(yamlx.Str("enabled"), yamlx.Bool(false), yamlx.Str("username"), yamlx.Str("synthetic-user")))
+	yamlx.Set(settings, "query_recorder", yamlx.Map(yamlx.Str("enabled"), yamlx.Bool(false)))
+	config["oxidns"], err = yamlx.ToJSON(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectedBackup, err := oxidns.NormalizeSettings(settings, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := string(encode(config))
+	form, err := ParseRequest(encode(map[string]any{"rule_set_ids": []string{}, "direct_rule_set_ids": []string{}, "proxy_rule_set_ids": []string{}, "local_dns": "https://192.0.2.53/dns-query", "confirm_template_conversion": true, "query_recorder": true}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate, _, err := Prepare(context.Background(), config, form, Options{DNSLoop: noLoop})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := yamlx.FromJSON(candidate["oxidns"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	backup := field(result, "gateway_onboarding_native_backup")
+	if backup == nil || !yamlx.Equal(field(backup, "api"), field(expectedBackup, "api")) || !yamlx.Equal(field(backup, "query_recorder"), field(expectedBackup, "query_recorder")) {
+		t.Fatal("template API/recorder edits modified the retained native backup")
+	}
+	if !boolean(field(result, "api", "enabled")) || !boolean(field(result, "query_recorder", "enabled")) || string(encode(config)) != before {
+		t.Fatal("candidate did not change independently of its input")
+	}
+}

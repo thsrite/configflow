@@ -127,7 +127,7 @@ func loopbackListen(listen string) bool {
 	return err == nil && ip.IsLoopback()
 }
 func enableAPI(api *yamlx.Node, warnings *[]string) *yamlx.Node {
-	api = yamlx.Clone(api)
+	api = editMapping(api)
 	if api == nil || api.Kind != yaml.MappingNode {
 		api = yamlx.Map()
 	}
@@ -204,7 +204,7 @@ func prepare(ctx context.Context, config, candidate Document, form Request, opti
 		if !form.ConfirmTemplateConversion {
 			return invalid(msgReadNative + err.Error() + msgConfirmRead)
 		}
-		replacement := yamlx.Clone(raw)
+		replacement := editMapping(raw)
 		yamlx.Set(replacement, "config_mode", yamlx.Str("template"))
 		yamlx.Set(replacement, "native_config", yamlx.Str(""))
 		settings, err = oxidns.NormalizeSettings(replacement, true)
@@ -283,7 +283,7 @@ func prepare(ctx context.Context, config, candidate Document, form Request, opti
 		if err != nil {
 			return err
 		}
-		nativeChanges := yamlx.Clone(changes)
+		nativeChanges := editMapping(changes)
 		for _, key := range []string{"local_dns", "remote_dns", "fallback_dns"} {
 			upstreams, err := oxidns.ForwardUpstreams(text(field(changes, key)), nil)
 			if err != nil {
@@ -332,8 +332,8 @@ func prepare(ctx context.Context, config, candidate Document, form Request, opti
 				report.TemplateConversionAvailable = true
 				return invalid(msgUpdateNative + err.Error() + msgConfirmUpdate)
 			}
-			backup := yamlx.Clone(settings)
-			settings = yamlx.Clone(settings)
+			backup := settings
+			settings = editMapping(settings)
 			yamlx.Set(settings, "gateway_onboarding_native_backup", backup)
 			yamlx.Set(settings, "config_mode", yamlx.Str("template"))
 			yamlx.Set(settings, "native_config", yamlx.Str(""))
@@ -350,7 +350,7 @@ func prepare(ctx context.Context, config, candidate Document, form Request, opti
 	if text(field(settings, "config_mode")) == "template" {
 		yamlx.Set(settings, "api", enableAPI(field(settings, "api"), &report.Warnings))
 		if form.QueryRecorder != nil {
-			recorder := field(settings, "query_recorder")
+			recorder := editMapping(field(settings, "query_recorder"))
 			if recorder == nil {
 				recorder = yamlx.Map()
 			}

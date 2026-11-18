@@ -1,10 +1,26 @@
 package onboarding
 
 import (
+	"slices"
+
 	"configflow/internal/oxidns"
 	"configflow/internal/yamlx"
 	"gopkg.in/yaml.v3"
 )
+
+// editMapping detaches only the mapping container being edited. Its keys and
+// values remain shared; callers replace fields or detach the next container
+// before editing it. Never expand a user document's aliases into a value tree.
+func editMapping(n *yamlx.Node) *yamlx.Node {
+	n = yamlx.Resolve(n)
+	if n == nil || n.Kind != yaml.MappingNode {
+		return nil
+	}
+	out := *n
+	out.Anchor = ""
+	out.Content = slices.Clone(n.Content)
+	return &out
+}
 
 func text(n *yamlx.Node) string {
 	n = yamlx.Resolve(n)
@@ -126,9 +142,17 @@ func PrepareNativeFallback(settings *yamlx.Node) (*yamlx.Node, error) {
 		}
 		restored[tag] = item
 	}
-	remaining := yamlx.Clone(document)
-	if nodes := field(remaining, "plugins"); nodes != nil {
-		for _, item := range nodes.Content {
+	remaining := editMapping(document)
+	if nodes := field(document, "plugins"); nodes != nil {
+		masked := yamlx.Seq()
+		yamlx.Set(remaining, "plugins", masked)
+		for _, original := range nodes.Content {
+			item := editMapping(original)
+			if item == nil {
+				masked.Content = append(masked.Content, original)
+				continue
+			}
+			masked.Content = append(masked.Content, item)
 			tag := text(field(item, "tag"))
 			yamlx.Delete(item, "tag")
 			yamlx.Delete(item, "type")
@@ -136,8 +160,10 @@ func PrepareNativeFallback(settings *yamlx.Node) (*yamlx.Node, error) {
 			case "proxy_dns_seq", "fallback_dns":
 				yamlx.Delete(item, "args")
 			case "fallback":
-				yamlx.Delete(field(item, "args"), "primary")
-				yamlx.Delete(field(item, "args"), "secondary")
+				args := editMapping(field(item, "args"))
+				yamlx.Set(item, "args", args)
+				yamlx.Delete(args, "primary")
+				yamlx.Delete(args, "secondary")
 			}
 		}
 	}
@@ -162,7 +188,7 @@ func PrepareNativeFallback(settings *yamlx.Node) (*yamlx.Node, error) {
 	if err != nil {
 		return nil, err
 	}
-	result := yamlx.Clone(settings)
+	result := editMapping(settings)
 	yamlx.Set(result, "native_config", yamlx.Str(string(encoded)))
 	return result, nil
 }
