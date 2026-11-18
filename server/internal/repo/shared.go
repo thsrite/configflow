@@ -18,9 +18,9 @@ import (
 // GetShared is get_shared(): a copy of the shared section (subscriptions,
 // nodes, subscription_aggregations, rule_library, _revision).
 func (r *Repository) GetShared(ctx context.Context) (result *jsonx.Object, err error) {
-	err = r.view(ctx, func(document *jsonx.Object) error {
-		result = document.GetObject("shared").DeepCopy()
-		return nil
+	err = r.View(ctx, func(document *model.Document) error {
+		result, err = legacyObject(&document.Shared)
+		return err
 	})
 	return result, err
 }

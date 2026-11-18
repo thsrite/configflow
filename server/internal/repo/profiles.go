@@ -2,6 +2,7 @@ package repo
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -25,11 +26,25 @@ func metadataOf(profile *jsonx.Object) *jsonx.Object {
 // DefaultProfileID is default_profile_id(): system_config.default_profile_id,
 // "default" when it was never switched.
 func (r *Repository) DefaultProfileID(ctx context.Context) (result string, err error) {
-	err = r.view(ctx, func(document *jsonx.Object) error {
-		result = defaultProfileIDOf(document)
+	err = r.View(ctx, func(document *model.Document) error {
+		result = defaultProfileIn(document)
 		return nil
 	})
 	return result, err
+}
+
+// defaultProfileIn is the default profile id of a typed document.
+func defaultProfileIn(document *model.Document) string {
+	if id := document.System.SystemConfig.DefaultProfileID; id != nil && *id != "" {
+		return *id
+	}
+	return DefaultProfileID
+}
+
+// profileMetadata is _metadata(profile) of a typed profile.
+func profileMetadata(profile *model.Profile) *jsonx.Object {
+	return jsonx.Obj("id", profile.ID, "name", profile.Name, "description", profile.Description,
+		"created_at", profile.CreatedAt, "updated_at", profile.UpdatedAt)
 }
 
 // AgentBindingSummary is agent_binding_summary: device identity only, never
@@ -112,12 +127,12 @@ func (r *Repository) GetProfileAgentBindings(ctx context.Context, profileID stri
 // existence check (ErrNotFound, or ErrValidation for a malformed id).
 func (r *Repository) ProfileMetadata(ctx context.Context, profileID string) (result *jsonx.Object, err error) {
 	r.metadataReads.Add(1)
-	err = r.view(ctx, func(document *jsonx.Object) error {
-		profile, err := profileOf(document, profileID)
+	err = r.View(ctx, func(document *model.Document) error {
+		profile, err := profileFor(document, profileID)
 		if err != nil {
 			return err
 		}
-		result = metadataOf(profile)
+		result = profileMetadata(profile)
 		return nil
 	})
 	return result, err
@@ -126,13 +141,13 @@ func (r *Repository) ProfileMetadata(ctx context.Context, profileID string) (res
 // GetProfile is get_profile(): a copy of the stored profile (references
 // only, no shared resources).
 func (r *Repository) GetProfile(ctx context.Context, profileID string) (result *jsonx.Object, err error) {
-	err = r.view(ctx, func(document *jsonx.Object) error {
-		profile, err := profileOf(document, profileID)
+	err = r.View(ctx, func(document *model.Document) error {
+		profile, err := profileFor(document, profileID)
 		if err != nil {
 			return err
 		}
-		result = profile.DeepCopy()
-		return nil
+		result, err = legacyObject(profile)
+		return err
 	})
 	return result, err
 }
@@ -146,12 +161,12 @@ func (r *Repository) ExportProfile(ctx context.Context, profileID string) (*json
 // configuration; it grows when the profile or the shared resources change
 // and tells whether an Agent is out of date.
 func (r *Repository) ConfigRevision(ctx context.Context, profileID string) (result int64, err error) {
-	err = r.view(ctx, func(document *jsonx.Object) error {
-		profile, err := profileOf(document, profileID)
+	err = r.View(ctx, func(document *model.Document) error {
+		profile, err := profileFor(document, profileID)
 		if err != nil {
 			return err
 		}
-		result = revisionOf(profile) + revisionOf(document.GetObject("shared"))
+		result = int64(profile.Revision) + int64(document.Shared.Revision)
 		return nil
 	})
 	return result, err
@@ -285,37 +300,53 @@ func (r *Repository) CreateProfile(ctx context.Context, metadata *jsonx.Object, 
 	if !ok || pyStrip(name) == "" {
 		return nil, validationError("配置名称不能为空")
 	}
-	var profile *jsonx.Object
-	err = r.update(ctx, writeOptions{}, func(_ context.Context, document *jsonx.Object) error {
-		profiles := document.GetObject("profiles")
-		if profiles.Has(profileID) {
+	var profile *model.Profile
+	err = r.Update(ctx, func(_ context.Context, document *model.Document) error {
+		if profileByKey(document, profileID) != nil {
 			return exists(profileID)
 		}
+		var err error
 		if cloneFrom != "" {
-			source, err := profileOf(document, cloneFrom)
+			source, err := profileFor(document, cloneFrom)
 			if err != nil {
 				return err
 			}
-			profile = source.DeepCopy()
+			if profile, err = copyRecord(source); err != nil {
+				return err
+			}
 			// Router credentials, sync settings and ownership belong to the source devices.
-			profile.Set("routers", jsonx.Obj("items", []any{}))
-			profile.Set("client_fixed_ips", jsonx.NewObject())
-		} else {
-			profile = r.emptyProfile(profileID, name, "")
+			if err := profile.SetJSON("routers", []byte(`{"items":[]}`)); err != nil {
+				return err
+			}
+			if err := profile.SetJSON("client_fixed_ips", []byte(`{}`)); err != nil {
+				return err
+			}
+		} else if profile, err = r.newProfileRecord(r.emptyProfile(profileID, name, "")); err != nil {
+			return err
 		}
-		profile.Set("id", profileID)
-		profile.Set("name", pyStrip(name))
-		profile.Set("description", descriptionOf(metadata))
-		profile.Set("created_at", nowISO())
-		profile.Set("updated_at", nowISO())
-		profile.Set("_revision", jsonx.Int(0))
-		profiles.Set(profileID, profile)
+		now := nowISO()
+		profile.ID, profile.Name, profile.Description = profileID, pyStrip(name), descriptionOf(metadata)
+		profile.CreatedAt, profile.UpdatedAt, profile.Revision = now, now, 0
+		document.Profiles = append(document.Profiles, profile)
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	return metadataOf(profile), nil
+	return profileMetadata(profile), nil
+}
+
+// newProfileRecord decodes a profile built as jsonx (defaults, imports).
+func (r *Repository) newProfileRecord(profile *jsonx.Object) (*model.Profile, error) {
+	data, err := jsonx.Compact(profile)
+	if err != nil {
+		return nil, err
+	}
+	var result model.Profile
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
 }
 
 // CloneProfile is clone_profile(source_id, metadata).
@@ -343,15 +374,17 @@ func (r *Repository) ImportClientProfile(ctx context.Context, metadata *jsonx.Ob
 	if !ok || pyStrip(name) == "" {
 		return nil, validationError("配置名称不能为空")
 	}
-	var result, profile *jsonx.Object
-	err = r.update(ctx, writeOptions{}, func(ctx context.Context, document *jsonx.Object) error {
-		profiles := document.GetObject("profiles")
-		if profiles.Has(profileID) {
+	var result *jsonx.Object
+	var profile *model.Profile
+	err = r.Update(ctx, func(ctx context.Context, document *model.Document) error {
+		if profileByKey(document, profileID) != nil {
 			return exists(profileID)
 		}
-		shared := document.GetObject("shared")
-		var err error
-		if result, err = build(ctx, shared.DeepCopy()); err != nil {
+		shared, err := legacyObject(&document.Shared)
+		if err != nil {
+			return err
+		}
+		if result, err = build(ctx, shared); err != nil {
 			return err
 		}
 		if result == nil {
@@ -366,16 +399,26 @@ func (r *Repository) ImportClientProfile(ctx context.Context, metadata *jsonx.Ob
 			adds = adds || jsonx.Truthy(additions.Value(field))
 		}
 		if adds {
+			current, err := legacyObject(&document.Shared)
+			if err != nil {
+				return err
+			}
 			for _, field := range SharedFields {
 				extra, err := compatList(jsonx.DeepCopy(additions.GetOr(field, []any{})))
 				if err != nil {
 					return err
 				}
-				shared.Set(field, append(append([]any{}, shared.GetList(field)...), extra...))
+				if len(extra) == 0 {
+					continue
+				}
+				combined := append(append([]any{}, current.GetList(field)...), extra...)
+				if err := setLegacy(document.Shared.SetJSON, field, combined); err != nil {
+					return err
+				}
 			}
-			bumpRevision(shared)
+			document.Shared.Revision++
 		}
-		profile = r.emptyProfile(profileID, pyStrip(name), "")
+		built := r.emptyProfile(profileID, pyStrip(name), "")
 		profileValue := result.GetOr("profile", jsonx.NewObject())
 		fields, ok := profileValue.(*jsonx.Object)
 		if !ok || fields == nil {
@@ -385,29 +428,32 @@ func (r *Repository) ImportClientProfile(ctx context.Context, metadata *jsonx.Ob
 			if !IsProfileField(key) {
 				return validationError("导入结果包含未知字段：" + key)
 			}
-			if current, ok := jsonx.AsObject(profile.Value(key)); ok {
+			if current, ok := jsonx.AsObject(built.Value(key)); ok {
 				override, err := compatObject(value)
 				if err != nil {
 					return helperError(ClassAttributeError, "'"+pyTypeName(value)+"' object has no attribute 'items'")
 				}
-				profile.Set(key, DeepMerge(current, override))
+				built.Set(key, DeepMerge(current, override))
 			} else {
-				profile.Set(key, jsonx.DeepCopy(value))
+				built.Set(key, jsonx.DeepCopy(value))
 			}
 		}
-		profile.Set("description", descriptionOf(metadata))
-		profiles.Set(profileID, profile)
+		built.Set("description", descriptionOf(metadata))
+		if profile, err = r.newProfileRecord(built); err != nil {
+			return err
+		}
+		document.Profiles = append(document.Profiles, profile)
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
 	output := result.Clone()
-	output.Set("profile", metadataOf(profile))
+	output.Set("profile", profileMetadata(profile))
 	return output, nil
 }
 
-// UpdateProfile is update_profile(profile_id, updates): rename or describe a
+// UpdateProfileMetadata is update_profile(profile_id, updates): rename or describe a
 // profile; updates may only hold "name" and "description".
 func (r *Repository) UpdateProfileMetadata(ctx context.Context, profileID string, updates *jsonx.Object) (*jsonx.Object, error) {
 	ctx = ctxx.Detach(ctx)
@@ -419,10 +465,10 @@ func (r *Repository) UpdateProfileMetadata(ctx context.Context, profileID string
 			return nil, validationError("只能修改配置名称和说明")
 		}
 	}
-	var profile *jsonx.Object
-	err := r.update(ctx, writeOptions{}, func(_ context.Context, document *jsonx.Object) error {
+	var profile *model.Profile
+	err := r.Update(ctx, func(_ context.Context, document *model.Document) error {
 		var err error
-		if profile, err = profileOf(document, profileID); err != nil {
+		if profile, err = profileFor(document, profileID); err != nil {
 			return err
 		}
 		for key, value := range updates.All() {
@@ -431,34 +477,36 @@ func (r *Repository) UpdateProfileMetadata(ctx context.Context, profileID string
 				return validationError("配置名称和说明必须是字符串，名称不能为空")
 			}
 			if key == "name" {
-				text = pyStrip(text)
+				profile.Name = pyStrip(text)
+			} else {
+				profile.Description = text
 			}
-			profile.Set(key, text)
 		}
-		bumpRevision(profile)
-		profile.Set("updated_at", nowISO())
+		profile.Revision++
+		profile.UpdatedAt = nowISO()
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	return metadataOf(profile), nil
+	return profileMetadata(profile), nil
 }
 
 // SetDefaultProfile is set_default_profile: make another profile the
 // default; it reports whether anything changed. Stored Agents always name
 // their profile, so no device moves.
 func (r *Repository) SetDefaultProfile(ctx context.Context, profileID string) (changed bool, err error) {
-	err = r.update(ctx, writeOptions{}, func(_ context.Context, document *jsonx.Object) error {
-		if _, err := profileOf(document, profileID); err != nil {
+	ctx = ctxx.Detach(ctx)
+	err = r.Update(ctx, func(_ context.Context, document *model.Document) error {
+		if _, err := profileFor(document, profileID); err != nil {
 			return err
 		}
-		if defaultProfileIDOf(document) == profileID {
+		if defaultProfileIn(document) == profileID {
 			return nil
 		}
-		system := document.GetObject("system")
-		system.GetObject("system_config").Set("default_profile_id", profileID)
-		bumpRevision(system)
+		id := profileID
+		document.System.SystemConfig.DefaultProfileID = &id
+		document.System.Revision++
 		changed = true
 		return nil
 	})
