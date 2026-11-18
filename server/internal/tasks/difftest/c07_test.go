@@ -114,7 +114,7 @@ func (w *world) commands(commands []command) []command {
 	return commands
 }
 
-func python(t *testing.T, w *world, commands []command) []answer {
+func pythonOutput(t *testing.T, w *world, commands []command) []byte {
 	t.Helper()
 	root, _ := filepath.Abs("../../../..")
 	script, _ := filepath.Abs("testdata/reference.py")
@@ -131,6 +131,12 @@ func python(t *testing.T, w *world, commands []command) []answer {
 	if err != nil {
 		t.Fatalf("Flask oracle: %v %s %s", err, diagnostics.String(), out)
 	}
+	return out
+}
+
+func python(t *testing.T, w *world, commands []command) []answer {
+	t.Helper()
+	out := pythonOutput(t, w, commands)
 	var answers []answer
 	if err := json.Unmarshal(out, &answers); err != nil {
 		t.Fatalf("oracle output: %v %s", err, out)
@@ -383,9 +389,11 @@ func TestC07NotificationReadAndCombinedRedaction(t *testing.T) {
 		{Method: "POST", Path: "/api/notifications/read", Body: `{"versions":{"task:subscription:s":"stale"}}`},
 	})
 	answers := python(t, w, commands)
+	nativeID := nativeIncidentReference(t, answers[1].State)
 	for i, c := range commands {
 		got := send(t, w, c)
-		compare(t, w, c, got, answers[i], true)
+		expected := withNativeDismissal(t, got, answers[i], nativeID)
+		compare(t, w, c, got, expected, true)
 		for _, secret := range []string{"fixture-password", "fixture-capability", "fixture-local-secret"} {
 			if bytes.Contains(got.Body, []byte(secret)) {
 				t.Fatal("public response leaked stored credential", c.Path, secret)

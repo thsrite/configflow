@@ -1,9 +1,11 @@
 package notifications
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -11,9 +13,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/jsonresp"
 	"configflow/internal/lifecycle"
 	"configflow/internal/lockx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 )
 
@@ -41,48 +44,55 @@ func Now() string {
 // {"items": {...}}.
 var ErrInvalidStore = errors.New("Invalid notification store")
 
-// Fingerprint identifies an incident, not a polling result.
-func Fingerprint(key string, item *jsonx.Object) string {
-	var fields []string
-	if item.Value("source") == "router-check" && strings.HasSuffix(key, ":changes") {
-		fields = []string{"signature"}
+var errInvalidItem = errors.New(msgItemShape)
+
+// IncidentFingerprint identifies an incident using native JSON (D2 policy B).
+func IncidentFingerprint(key string, item *Item) (string, error) {
+	fields := map[string]json.RawMessage{}
+	raw, err := json.Marshal(item)
+	if err != nil {
+		return "", err
+	}
+	var members map[string]json.RawMessage
+	if err = json.Unmarshal(raw, &members); err != nil {
+		return "", err
+	}
+	keys := []string{"title", "message", "severity", "status_label", "target"}
+	if item.Source == "router-check" && strings.HasSuffix(key, ":changes") {
+		keys = []string{"signature"}
+	} else if item.Source == "router-check" {
+		keys = append(keys, "signature")
 	} else {
-		fields = []string{"title", "message", "severity", "status_label", "target"}
-		if item.Value("source") == "router-check" {
-			fields = append(fields, "signature")
-		} else {
-			fields = append(fields, "evidence")
-		}
+		keys = append(keys, "evidence")
 	}
-	value := jsonx.NewObject()
-	for _, field := range fields {
-		value.Set(field, item.Value(field))
+	for _, field := range keys {
+		fields[field] = members[field]
 	}
-	data, _ := jsonx.Encode(value, jsonx.Options{SortKeys: true})
+	data, err := json.Marshal(fields)
+	if err != nil {
+		return "", err
+	}
+	data, err = jsonresp.Canonical(data)
+	if err != nil {
+		return "", err
+	}
 	sum := sha256.Sum256(data)
-	return hex.EncodeToString(sum[:])
+	return hex.EncodeToString(sum[:]), nil
+}
+func dismissedItem(key string, item *Item) (*Item, error) {
+	identity, err := IncidentFingerprint(key, item)
+	if err != nil {
+		return nil, err
+	}
+	return &Item{State: "dismissed", Fingerprint: &identity, Source: item.Source}, nil
 }
 
-// dismissed keeps only what avoids replaying an acknowledged receipt.
-func dismissed(key string, item *jsonx.Object) *jsonx.Object {
-	return jsonx.Obj("state", "dismissed", "fingerprint", Fingerprint(key, item), "source", item.Value("source"))
+// UpdateItems owns a shutdown-aware store transaction independently of a client disconnect.
+func UpdateItems(ctx context.Context, dataDir string, fn func(*Items) error) error {
+	return transaction(lifecycle.Detach(ctx), dataDir, 0, true, func(items *Items, _ bool) error { return fn(items) })
 }
 
-// Transaction is notification_store.transaction(data_dir): fn receives the
-// items (key → item) and may change them; the file is rewritten when the
-// document changed. Old read or resolved records are migrated on first
-// access. A file that does not decode returns the decoder error (ValueError).
-func Transaction(dataDir string, fn func(items *jsonx.Object) error) error {
-	return TransactionContext(context.Background(), dataDir, fn)
-}
-
-// TransactionContext owns a notification leaf update. Request cancellation is
-// detached, but the originating Runtime still cancels admission and replacement.
-func TransactionContext(ctx context.Context, dataDir string, fn func(items *jsonx.Object) error) error {
-	return transaction(lifecycle.Detach(ctx), dataDir, 0, true, func(items *jsonx.Object, _ bool) error { return fn(items) })
-}
-
-func transaction(ctx context.Context, dataDir string, ticket uint64, persist bool, fn func(items *jsonx.Object, apply bool) error) error {
+func transaction(ctx context.Context, dataDir string, ticket uint64, persist bool, fn func(items *Items, apply bool) error) error {
 	key, err := repo.ResolveDataDir(dataDir)
 	if err != nil {
 		return err
@@ -102,46 +112,41 @@ func transaction(ctx context.Context, dataDir string, ticket uint64, persist boo
 		}
 	}
 
-	var data *jsonx.Object
+	var data storeDocument
 	raw, err := os.ReadFile(path)
 	switch {
 	case errors.Is(err, os.ErrNotExist):
-		data = jsonx.Obj("items", jsonx.NewObject())
+		data.Items = newItems()
 	case err != nil:
 		return err
 	default:
-		value, err := jsonx.Parse(raw)
-		if err != nil {
+		if err := jsonresp.DecodeStored(raw, &data); err != nil {
 			return err
 		}
-		object, ok := value.(*jsonx.Object)
-		if !ok {
-			return ErrInvalidStore
-		}
-		if _, ok := object.Value("items").(*jsonx.Object); !ok {
-			return ErrInvalidStore
-		}
-		data = object
 	}
-	before := jsonx.DeepCopy(data)
-	items := data.GetObject("items")
-	migrated := jsonx.NewObject()
-	for key, value := range items.All() {
-		item, ok := value.(*jsonx.Object)
-		if !ok {
-			return errors.New("'" + pyTypeName(value) + "' object has no attribute 'get'")
+	before, err := json.Marshal(data)
+	if err != nil {
+		return err
+	}
+	migrated := newItems()
+	for key, item := range data.Items.All() {
+		if item == nil {
+			return ErrInvalidStore
 		}
-		state := item.Value("state")
-		if state != "pending" && state != "dismissed" {
+		if item.State != "pending" && item.State != "dismissed" {
 			continue
 		}
-		if jsonx.Truthy(item.Value("read")) {
-			migrated.Set(key, dismissed(key, item))
+		if item.Read != nil && *item.Read {
+			value, err := dismissedItem(key, item)
+			if err != nil {
+				return err
+			}
+			migrated.Set(key, value)
 		} else {
 			migrated.Set(key, item)
 		}
 	}
-	data.Set("items", migrated)
+	data.Items = migrated
 	apply := ticket == 0 || ticket >= appliedVersions[key]
 	if err := fn(migrated, apply); err != nil {
 		return err
@@ -152,15 +157,15 @@ func transaction(ctx context.Context, dataDir string, ticket uint64, persist boo
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if jsonx.Equal(data, before) {
+	encoded, err := json.Marshal(data)
+	if err != nil {
+		return err
+	}
+	if bytes.Equal(encoded, before) {
 		if ticket != 0 && apply {
 			appliedVersions[key] = ticket
 		}
 		return nil
-	}
-	encoded, err := jsonx.Compact(data)
-	if err != nil {
-		return err
 	}
 	temporary, err := os.CreateTemp(dataDir, ".notifications-")
 	if err != nil {
@@ -193,84 +198,133 @@ func transaction(ctx context.Context, dataDir string, ticket uint64, persist boo
 	return nil
 }
 
-// Observe is notification_store.observe: keep unread incidents; "unknown"
-// does not count as recovery, "resolved"/"inactive" remove the item. The
-// observation's "state" and "evidence" are consumed.
-func Observe(items *jsonx.Object, key string, observation *jsonx.Object) {
-	status, _ := observation.Pop("state")
-	previous, _ := items.Value(key).(*jsonx.Object)
-	if status == "unknown" {
-		return
+// ObserveItem applies a typed incident observation. It never mutates its input.
+func ObserveItem(items *Items, key string, observation *Item) error {
+	if observation == nil {
+		return ErrInvalidStore
 	}
-	if status == "resolved" || status == "inactive" {
+	switch observation.State {
+	case "unknown":
+		return nil
+	case "resolved", "inactive":
 		items.Delete(key)
-		return
+		return nil
 	}
-	identity := Fingerprint(key, observation)
-	if previous != nil && previous.Value("state") == "dismissed" && previous.Value("fingerprint") == identity {
-		return
+	previous, _ := items.Get(key)
+	identity, err := IncidentFingerprint(key, observation)
+	if err != nil {
+		return err
+	}
+	if previous != nil && previous.State == "dismissed" && stringValue(previous.Fingerprint) == identity {
+		return nil
 	}
 	stamp := Now()
-	evidence, ok := observation.Pop("evidence")
-	if !ok {
-		evidence = ""
+	evidence := observation.Evidence
+	if len(evidence) == 0 {
+		evidence = jsonString("")
 	}
-	seen := observation.Value("checked_at")
-	if !jsonx.Truthy(seen) {
-		seen = stamp
-	}
-	if previous != nil && previous.Value("state") == "pending" {
-		changed := Fingerprint(key, previous) != identity
-		previous.Update(observation)
-		if !jsonx.Equal(evidence, previous.Value("evidence")) {
-			occurrences, _ := jsonx.AsInt(previous.Value("occurrences"))
-			previous.Set("occurrences", occurrences+1)
-			previous.Set("last_seen_at", seen)
+	seen := stamp
+	if len(observation.CheckedAt) > 0 && string(observation.CheckedAt) != "null" && string(observation.CheckedAt) != `""` {
+		var value string
+		if json.Unmarshal(observation.CheckedAt, &value) == nil {
+			seen = value
 		}
-		if changed {
-			previous.Set("read", false)
-			previous.Set("version", stamp)
-		}
-		previous.Set("evidence", evidence)
-		return
 	}
-	item := observation.Clone()
-	item.Update(jsonx.Obj("id", key, "state", "pending", "read", false, "version", stamp,
-		"first_seen_at", stamp, "last_seen_at", seen, "occurrences", 1, "evidence", evidence))
-	items.Set(key, item)
+	// JSON member overlays retain the old receipt's unowned fields. State and
+	// evidence are managed by the store, not copied from an observation.
+	raw, err := json.Marshal(observation)
+	if err != nil {
+		return err
+	}
+	var patch map[string]json.RawMessage
+	if err = json.Unmarshal(raw, &patch); err != nil {
+		return err
+	}
+	delete(patch, "state")
+	delete(patch, "evidence")
+	result := &Item{}
+	if previous != nil && previous.State == "pending" {
+		changed, err := IncidentFingerprint(key, previous)
+		if err != nil {
+			return err
+		}
+		baseRaw, err := json.Marshal(previous)
+		if err != nil {
+			return err
+		}
+		var fields map[string]json.RawMessage
+		if err = json.Unmarshal(baseRaw, &fields); err != nil {
+			return err
+		}
+		for field, value := range patch {
+			fields[field] = value
+		}
+		data, err := json.Marshal(fields)
+		if err != nil {
+			return err
+		}
+		if err = json.Unmarshal(data, result); err != nil {
+			return err
+		}
+		if !equalEvidence(evidence, previous.Evidence) {
+			count := model.Int(0)
+			if previous.Occurrences != nil {
+				count = *previous.Occurrences
+			}
+			count++
+			result.Occurrences = &count
+			result.LastSeenAt = new(seen)
+		}
+		if changed != identity {
+			result.Read = new(false)
+			result.Version = new(stamp)
+		}
+	} else {
+		data, err := json.Marshal(patch)
+		if err != nil {
+			return err
+		}
+		if err = json.Unmarshal(data, result); err != nil {
+			return err
+		}
+		result.ID = key
+		result.State = "pending"
+		result.Read = new(false)
+		result.Version = new(stamp)
+		result.FirstSeenAt = new(stamp)
+		result.LastSeenAt = new(seen)
+		result.Occurrences = new(model.Int(1))
+	}
+	result.Evidence = evidence
+	items.Set(key, result)
+	return nil
 }
 
-// MarkRead is notification_store.mark_read: dismiss the items whose version
-// is the one the user saw.
-func MarkRead(dataDir string, versions *jsonx.Object) error {
-	return MarkReadContext(context.Background(), dataDir, versions)
-}
-
-// MarkReadContext dismisses matching versions in a shutdown-aware transaction.
-func MarkReadContext(ctx context.Context, dataDir string, versions *jsonx.Object) error {
-	return TransactionContext(ctx, dataDir, func(items *jsonx.Object) error {
-		for key, version := range versions.All() {
-			item, ok := items.Value(key).(*jsonx.Object)
-			if ok && jsonx.Equal(item.Value("version"), version) {
-				items.Set(key, dismissed(key, item))
+// Dismiss marks only the exact versions displayed to the user as read.
+func Dismiss(ctx context.Context, dataDir string, versions map[string]string) error {
+	return UpdateItems(ctx, dataDir, func(items *Items) error {
+		for key, version := range versions {
+			item, _ := items.Get(key)
+			if item != nil && item.Version != nil && *item.Version == version {
+				value, err := dismissedItem(key, item)
+				if err != nil {
+					return err
+				}
+				items.Set(key, value)
 			}
 		}
 		return nil
 	})
 }
 
-func pyTypeName(v any) string {
-	switch v.(type) {
-	case nil:
-		return "NoneType"
-	case string:
-		return "str"
-	case bool:
-		return "bool"
-	case []any:
-		return "list"
-	case jsonx.Number:
-		return "int"
+func equalEvidence(a, b json.RawMessage) bool {
+	if len(a) == 0 || len(b) == 0 {
+		return len(a) == 0 && len(b) == 0
 	}
-	return "object"
+	left, err := jsonresp.Canonical(a)
+	if err != nil {
+		return false
+	}
+	right, err := jsonresp.Canonical(b)
+	return err == nil && bytes.Equal(left, right)
 }

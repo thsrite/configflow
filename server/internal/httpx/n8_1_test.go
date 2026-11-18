@@ -115,13 +115,14 @@ func TestN8ResponseEncodingFailureReturns500(t *testing.T) {
 	}
 }
 
-// N8-1 must not activate D2's one-time identity changes. These goldens were
-// independently calculated with Python's existing json.dumps/hashlib forms.
-func TestN8PersistedIdentitiesRemainUnchanged(t *testing.T) {
+// N8-1 originally locked Python identities until each consumer migrates.
+// N8-7 activates D2 for notification identities only; the historical hashes
+// remain in the table as evidence. Other consumers retain their old hashes.
+func TestN8PersistedIdentitiesAtConsumerMigration(t *testing.T) {
 	item := jsonx.Obj("source", "notice", "title", "中文", "message", "message", "severity", "warning", "status_label", "pending", "target", jsonx.Obj("id", "router"), "evidence", []any{"a", "b"})
 	tests := []struct{ name, got, want string }{
-		{"notification fingerprint", notifications.Fingerprint("notice", item), "796d41c65fccf7be4c1f6905927f38f7f68e19ff85cd21bbda74bc5b0b851228"},
-		{"router signature", notifications.RouterSignature(jsonx.Obj("z", "中文", "a", 1), jsonx.Obj("id", "router")), "7d96d6c8c83a86b93be94139573ba2f7dd84d73d69229b31d424e377f9e38239"},
+		{"notification fingerprint", notifications.Fingerprint("notice", item), "0267bf46778074b7eeb98037dc5d72c1d23748a3309dd1832c5d53fac18f1ebe" /* Python: 796d41c65fccf7be4c1f6905927f38f7f68e19ff85cd21bbda74bc5b0b851228 */},
+		{"router signature", notifications.RouterSignature(jsonx.Obj("z", "中文", "a", 1), jsonx.Obj("id", "router")), "17da2ce6aa800a88b9437370d51348e25d8ec354edcc9a68f494a480f401cbfa" /* Python: 7d96d6c8c83a86b93be94139573ba2f7dd84d73d69229b31d424e377f9e38239 */},
 		{"rule cache filename", rules.RuleCacheFilename(jsonx.Obj("id", "rule-中文", "url", "https://example.com/rules", "behavior", "domain", "format", "yaml")), "by-source/4426c62b307f4cf12000498eb551a75eb9f77bec2df4f934d1069ff52488381b.list"},
 		{"hosts digest", subs.HostsDigest(jsonx.Obj("entries", jsonx.Obj("z.example.com", []any{"192.0.2.1"}, "a.example.com", []any{"2001:db8::1"}))), "b8cb494707314c3de1a4489ad0b63c0dfbdfe553d368ebcd7bfa7446c9919d48"},
 	}
