@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"strings"
 
 	"configflow/internal/agents"
 	apirules "configflow/internal/api/rules"
@@ -101,13 +102,7 @@ func wireSetupInstallation() {
 			if e != nil {
 				return setup.GatewayStatus{}, ownerError(ctx, s, e)
 			}
-			b, e := json.Marshal(reply)
-			if e != nil {
-				return setup.GatewayStatus{}, e
-			}
-			var status setup.GatewayStatus
-			e = json.Unmarshal(b, &status)
-			return status, e
+			return gatewayStatus(reply), nil
 		},
 	}})
 }
@@ -145,4 +140,67 @@ func installationState(view json.RawMessage) (*setup.InstallationState, error) {
 		return a
 	}
 	return &setup.InstallationState{ID: v.ID, Phase: v.Phase, ConfigChanged: v.ConfigChanged, TargetChanged: v.TargetChanged, Agents: setup.AgentPair{Mihomo: agent(v.Agents["mihomo"]), OxiDNS: agent(v.Agents["oxidns"])}}, nil
+}
+
+// gatewayStatus reads an Agent status reply with the checks' own tests:
+// truthiness for records and markers, "is True" for confirmations and the
+// text "1" for forwarding. A member of another type is never a decoding error,
+// and an unreadable journal counts as a remaining record (A20 HasRecord).
+func gatewayStatus(reply host.Reply) setup.GatewayStatus {
+	object := func(b json.RawMessage) map[string]json.RawMessage {
+		var o map[string]json.RawMessage
+		_ = json.Unmarshal(b, &o)
+		return o
+	}
+	truthy := func(b json.RawMessage) bool {
+		var v any
+		if json.Unmarshal(b, &v) != nil {
+			return false
+		}
+		switch v := v.(type) {
+		case bool:
+			return v
+		case float64:
+			return v != 0
+		case string:
+			return v != ""
+		case []any:
+			return len(v) > 0
+		case map[string]any:
+			return len(v) > 0
+		}
+		return false
+	}
+	isTrue := func(b json.RawMessage) *bool {
+		if strings.TrimSpace(string(b)) != "true" {
+			return nil
+		}
+		v := true
+		return &v
+	}
+	text := func(b json.RawMessage) string {
+		var s string
+		_ = json.Unmarshal(b, &s)
+		return s
+	}
+	var status setup.GatewayStatus
+	if f := object(reply["ipv4_forwarding"]); f != nil {
+		status.IPv4Forwarding = &setup.ForwardingStatus{Current: text(f["current"]), Persisted: isTrue(f["persisted"])}
+	}
+	if t := object(reply["tun"]); t != nil {
+		status.TUN = &setup.TUNStatus{Configured: isTrue(t["configured"]), Present: isTrue(t["present"]), GatewayMarker: truthy(t["gateway_marker"]), Device: text(t["device"])}
+	}
+	if m := object(reply["managed"]); m != nil {
+		status.Managed = setup.ManagedStatus{Active: truthy(m["active"]), Pending: truthy(m["pending"]), Healthy: isTrue(m["healthy"])}
+		if truthy(m["error"]) {
+			status.Managed.Error = text(m["error"])
+			if status.Managed.Error == "" {
+				status.Managed.Error = "unreadable"
+			}
+		}
+	} else if truthy(reply["managed"]) {
+		status.Managed = setup.ManagedStatus{Active: true, Error: "unreadable"}
+	}
+	status.EnabledInConfig = truthy(reply["enabled_in_config"])
+	return status
 }

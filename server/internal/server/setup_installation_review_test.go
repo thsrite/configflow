@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"configflow/internal/gateway/host"
 	"configflow/internal/setup"
 )
 
@@ -31,5 +32,38 @@ func TestInstallationStateReadsRawAgentMembersLikePython(t *testing.T) {
 	}
 	if none, err := installationState(json.RawMessage(`null`)); err != nil || none != nil {
 		t.Fatal("no installation", none, err)
+	}
+}
+
+// The status reply is the Agent's own JSON. Python's check reads it with
+// truthiness, "is True" and == '1'; other member types must give the same
+// refusal (409 in the check), never a decoding error.
+func TestGatewayStatusReadsAgentReplyLikePython(t *testing.T) {
+	reply := host.Reply{
+		"ipv4_forwarding":   json.RawMessage(`{"current":1,"persisted":"yes"}`),
+		"tun":               json.RawMessage(`{"configured":true,"present":1,"gateway_marker":"set","device":7}`),
+		"managed":           json.RawMessage(`{"active":0,"pending":null,"healthy":true,"error":{"code":"journal"}}`),
+		"enabled_in_config": json.RawMessage(`"no"`),
+	}
+	b, _ := json.Marshal(reply)
+	var strict setup.GatewayStatus
+	if json.Unmarshal(b, &strict) == nil {
+		t.Fatal("control: the typed decode no longer rejects this reply")
+	}
+	got := gatewayStatus(reply)
+	if got.IPv4Forwarding == nil || got.IPv4Forwarding.Current == "1" || got.IPv4Forwarding.Persisted != nil {
+		t.Fatalf("forwarding %+v", got.IPv4Forwarding)
+	}
+	if got.TUN == nil || got.TUN.Configured == nil || got.TUN.Present != nil || !got.TUN.GatewayMarker || got.TUN.Device != "" {
+		t.Fatalf("tun %+v", got.TUN)
+	}
+	if got.Managed.Active || got.Managed.Pending || got.Managed.Healthy == nil || got.Managed.Error == "" || !got.EnabledInConfig {
+		t.Fatalf("managed %+v", got.Managed)
+	}
+	// An unreadable journal is a remaining record (A20 HasRecord), and an old
+	// Agent without the forwarding/TUN objects keeps the update hint.
+	got = gatewayStatus(host.Reply{"managed": json.RawMessage(`"broken"`), "tun": json.RawMessage(`[]`)})
+	if !got.Managed.Active || got.Managed.Error == "" || got.TUN != nil || got.IPv4Forwarding != nil {
+		t.Fatalf("unreadable journal %+v", got)
 	}
 }
