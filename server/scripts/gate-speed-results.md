@@ -29,9 +29,19 @@ vet/lifecycle tests, full race package selection and all three fuzz targets.
 All nine fuzz executions passed (~61s each, concurrent within each call):
 `FuzzNativeRoundTrip`, `FuzzNativeNoPanic`, `FuzzClientImport`.
 
-Compare: still running at the time of this checkpoint. Final acceptance requires
-live proddiff, all 16 difftest packages, then the 23-entry synthetic-live manifest
-with no missing/skip event. No unrelated heavy task is started during acceptance.
+Compare also **PASS in 506.25s** on the same .64 tree:
+
+- live proddiff: `new=0 stale=0`, self-check PASS;
+- all **16 difftest packages PASS**, all fresh (`-count=1`);
+- synthetic live: **23/23 required entries ran and passed, 0 skips**, including
+  repo's Python-written subtest and successful WebDAV Python TLS exec evidence;
+- final line: `GATE STAGE PASS: compare`.
+
+Compare did not refresh the full-core stamp. No unrelated heavy task was started
+during acceptance. With two hosts running the lanes concurrently, these measured
+lane times imply about17m28s for full verification, or8m26s with a warm core,
+plus orchestration/queue time; these combined two-host figures are an inference,
+not a separately timed parallel run.
 
 ## Exact setup and commands
 
@@ -118,3 +128,20 @@ relaxed. Targeted retries passed: installer31.209s, store1.009s, routersplit2.02
 An early compare wrapper waiting on rt's project lock was cancelled before any
 compare test began when the response-cache proposal was withdrawn. It is not an
 acceptance result. Final proddiff is always live, with no new flag/dependency.
+
+
+## Hand-back
+
+Executable scripts in the submitted branch were diffed against the acceptance
+tree: identical. Subsequent edits were documentation only. Worktree is clean,
+rebased to go, no push. Coordinator must integrate **go-fix-repo-crosscheck**
+with this gate: the newly mandatory repo live checks intentionally reject the
+retired-lock layout until that approved test repair is present. Pyref remains
+conditional until speed-a is integrated; the real-entry path was verified in
+the dependency tree without copying its code into this branch.
+
+All logs remain on .64 at `~/rt/gate-speed-accept/`; failed initial trial is kept
+separately from the three successful matrix calls. No raw snapshot content or
+proddiff response body is copied into this report. Temporary local worktrees can
+be reconstructed from `go-gate-speed-check@33f69dec2` and the retained speed-a
+commit; removal does not delete the remote logs.
