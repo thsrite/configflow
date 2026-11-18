@@ -5,29 +5,28 @@ import (
 	"fmt"
 	"strings"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
-	"configflow/internal/refresh"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/tasks"
 	"configflow/internal/weburl"
 )
 
-func findRow(ctx context.Context, key, slot string) (*jsonx.Object, error) {
-	rows, err := tasks.RowsFor(ctx, slot)
+func findRow(ctx context.Context, key, slot string) (*tasks.Task, error) {
+	rows, err := tasks.ForSlot(ctx, slot)
 	if err != nil {
 		return nil, err
 	}
 	for _, row := range rows {
-		if row.GetString("key") == key {
+		if row.Key == key {
 			return row, nil
 		}
 	}
 	return nil, nil
 }
 
-func updateInterval(ctx context.Context, body intervalRequest) (*jsonx.Object, error) {
+func updateInterval(ctx context.Context, body intervalRequest) (*tasks.Task, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -47,40 +46,50 @@ func updateInterval(ctx context.Context, body intervalRequest) (*jsonx.Object, e
 		return nil, &tasks.Invalid{Message: msgIntervalUnsupported}
 	}
 	if body.Key == tasks.MetricsTaskKey {
-		setter := tasks.IntervalSetter(body.Key)
+		setter := tasks.IntervalEditorFor(body.Key)
 		if setter == nil {
 			return nil, &tasks.Unavailable{Slots: []string{tasks.SlotMetrics}}
 		}
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		if err := setter(ctx, body.intervalValue()); err != nil {
+		if err := setter(ctx, body.interval()); err != nil {
 			return nil, err
 		}
 	} else {
-		interval, err := refresh.ValidateRefreshInterval(body.intervalValue(), msgIntervalLabel)
+		interval, err := validateInterval(body.interval())
 		if err != nil {
 			return nil, &tasks.Invalid{Message: err.Error()}
-		}
-		field, listName := "update_interval", "rule_library"
-		if category == tasks.SlotSubscriptions {
-			field, listName = "interval", "subscriptions"
 		}
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		_, err = repo.UpdateSharedConfigTransaction(ctx, func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
+		repository, err := repo.GetRepository(ctx)
+		if err != nil {
+			return nil, err
+		}
+		err = repository.UpdateShared(ctx, func(ctx context.Context, shared *model.Shared) error {
 			if err := ctx.Err(); err != nil {
-				return nil, err
+				return err
 			}
-			for _, value := range shared.GetList(listName) {
-				item, ok := value.(*jsonx.Object)
-				if ok && item.GetString("id") == resource {
-					item.Set(field, interval)
-					return nil, nil
+			if category == tasks.SlotSubscriptions {
+				for i := range shared.Subscriptions {
+					item := &shared.Subscriptions[i]
+					if item.ID == resource {
+						item.Interval = new(model.Int(interval))
+						return nil
+					}
+				}
+			} else {
+				for i := range shared.RuleLibrary {
+					item := &shared.RuleLibrary[i]
+					if item.ID == resource {
+						item.UpdateInterval = new(model.Int(interval))
+						return nil
+					}
 				}
 			}
-			return nil, &tasks.NotFound{Message: msgSourceMissing}
+			return &tasks.NotFound{Message: msgSourceMissing}
 		})
 		if err != nil {
 			return nil, err

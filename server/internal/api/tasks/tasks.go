@@ -7,7 +7,6 @@ import (
 
 	"configflow/internal/auth"
 	"configflow/internal/httpx"
-	"configflow/internal/jsonx"
 	"configflow/internal/tasks"
 )
 
@@ -27,15 +26,18 @@ func getTasks(c *httpx.Ctx) (*httpx.Response, error) {
 	if missing := tasks.Missing(); len(missing) > 0 {
 		return unavailable(missing), nil
 	}
-	list, err := tasks.ListTasks(c.Context())
+	list, err := tasks.List(c.Context())
 	if err != nil {
 		return nil, err
 	}
-	return httpx.JSON(jsonx.Obj("success", true, "tasks", jsonx.ListOf(list))).NoStore(), nil
+	return httpx.JSON(struct {
+		Success bool          `json:"success"`
+		Tasks   []*tasks.Task `json:"tasks"`
+	}{true, list}).NoStore(), nil
 }
 
 func message(status int, text string) *httpx.Response {
-	return httpx.JSONStatus(status, jsonx.Obj("message", text, "success", false))
+	return httpx.Message(status, false, text)
 }
 
 func runTask(c *httpx.Ctx) (*httpx.Response, error) {
@@ -58,7 +60,7 @@ func runTask(c *httpx.Ctx) (*httpx.Response, error) {
 	var conflict *tasks.Conflict
 	switch {
 	case err == nil:
-		return httpx.JSONStatus(202, jsonx.Obj("message", "已开始运行，结果会显示在列表中", "success", true)), nil
+		return httpx.Message(202, true, msgStarted), nil
 	case errors.As(err, &conflict):
 		return message(409, conflict.Message), nil
 	case errors.As(err, &busy):
@@ -91,8 +93,8 @@ func setInterval(c *httpx.Ctx) (*httpx.Response, error) {
 		return nil, err
 	}
 	return httpx.JSON(struct {
-		Success bool          `json:"success"`
-		Task    *jsonx.Object `json:"task"`
+		Success bool        `json:"success"`
+		Task    *tasks.Task `json:"task"`
 	}{true, row}), nil
 }
 

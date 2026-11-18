@@ -1,6 +1,7 @@
 package tasks
 
 const (
+	msgStarted             = "已开始运行，结果会显示在列表中"
 	msgSpecifyTask         = "请指定任务"
 	msgRowReadFailed       = "更新间隔已保存，但任务行暂时无法读取：%s"
 	msgSpecifyTaskInterval = "请指定任务和更新间隔"

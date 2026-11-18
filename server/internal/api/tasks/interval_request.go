@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 
 	"configflow/internal/httpx"
-	"configflow/internal/jsonx"
 )
 
 // intervalRequest keeps field presence and exact names independently of values.
@@ -36,13 +35,11 @@ func (r *intervalRequest) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// intervalValue is the temporary adapter for the existing refresh/metrics
-// validators, which migrate in later consumer steps. No coercion occurs here:
-// only native integer literals in the signed range become legacy integers.
-func (r intervalRequest) intervalValue() any {
+// interval keeps lexical validation at the HTTP boundary.
+func (r intervalRequest) interval() *int64 {
 	if r.Interval.IsIntegerLiteral() {
 		if value, err := r.Interval.Int64(); err == nil {
-			return jsonx.Int(value)
+			return &value
 		}
 	}
 	return nil
