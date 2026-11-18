@@ -326,6 +326,9 @@ Even with all of this, the guarantee is "no difference on known paths and on the
 - Opus agents: `claude/claude-opus-5-5`, thinking **`medium`** since 2026-11-18 (maintainer: Claude quota too
   small; applies to every Opus task incl. HR reviews and designs, and to the coordinator), mode `bypassPermissions`.
   Was `high` 2026-11-17 → 2026-11-18.
+- Non-HR independent reviews: `antigravity/gemini-4-carbon-high` (mode `full-access`) since 2026-11-18
+  (maintainer). HR reviews stay on Opus medium until Gemini's trial (N8-9 health, agent 5cf838eb) is judged;
+  then the maintainer decides whether HR reviews move too. Antigravity's Opus models are NOT used.
 
 ## Fixed assignment by risk (maintainer, 2026-11-16; supersedes the quota-based rules in "Division of work")
 
