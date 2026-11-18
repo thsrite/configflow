@@ -27,7 +27,7 @@ import (
 	apiagents "configflow/internal/api/agents"
 	apiaggregations "configflow/internal/api/aggregations"
 	apiauth "configflow/internal/api/auth"
- apiclientdevices "configflow/internal/api/clientdevices"
+	apiclientdevices "configflow/internal/api/clientdevices"
 	apiconfig "configflow/internal/api/config"
 	apidiscovery "configflow/internal/api/domaindiscovery"
 	apigatewayonboarding "configflow/internal/api/gatewayonboarding"
@@ -73,7 +73,7 @@ import (
 // routePackages are the Register functions of the ported blueprints.
 var routePackages = []func(*httpx.Router){
 	apiauth.Register,
- apiclientdevices.Register,
+	apiclientdevices.Register,
 	apinodes.Register,
 	apisubscriptions.Register,
 	apiaggregations.Register,

@@ -381,7 +381,12 @@ func (d *Ikuai) Call(ctx context.Context, funcName string, param map[string]any)
 // disconnects (o3-concurrency 2.5); Runtime shutdown still cancels it. The
 // device request keeps its own timeout.
 func (d *Ikuai) Write(ctx context.Context, funcName, action string, param any, timeout float64) (Row, error) {
-	ctx = lifecycle.Detach(ctx)
+ return d.writeForm(lifecycle.Detach(ctx),funcName,action,param,timeout)
+}
+
+// writeForm shares wire encoding and refusal classification. Write and R17
+// supply detached Runtime contexts so shutdown can cancel an in-flight write.
+func(d *Ikuai)writeForm(ctx context.Context,funcName,action string,param any,timeout float64)(Row,error){
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}

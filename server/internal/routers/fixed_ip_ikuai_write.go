@@ -70,7 +70,7 @@ func (d *Ikuai) removeFixedAllocation(ctx context.Context, b *FixedIPBinding, ex
 	if !strings.HasPrefix(b.Comment, fixedIPPrefix) || !fixedIKMatches(current, b) || !sameRow(fields, expected) {
 		return rosError(KindConflict, messageFixedIKExternal)
 	}
-	if _, err = d.Write(ctx, "dhcp_static", "del", Row{"id": b.ID}, 0); err != nil {
+	if _, err = d.writeForm(ctx, "dhcp_static", "del", Row{"id": b.ID}, 0); err != nil {
 		if routerErrorKind(err) == KindRejected {
 			return err
 		}
@@ -154,7 +154,7 @@ func (d *Ikuai) ApplyFixedIP(ctx context.Context, op *FixedIPOperation) (binding
 			err = rollbackError(fmt.Sprintf(messageFixedIKRollback, err, e))
 		}
 	}()
-	if _, err = d.Write(ctx, "dhcp_static", "add", payload, 0); err != nil {
+	if _, err = d.writeForm(ctx, "dhcp_static", "add", payload, 0); err != nil {
 		return nil, err
 	}
 	acquired, err = d.fixedNewAllocation(ctx, known, payload)
@@ -186,7 +186,7 @@ func (d *Ikuai) ApplyFixedIP(ctx context.Context, op *FixedIPOperation) (binding
 // RollbackFixedIP deletes only the unchanged allocation proved by this job.
 func (d *Ikuai) RollbackFixedIP(ctx context.Context, b *FixedIPBinding) error {
 	ctx = lifecycle.Detach(ctx)
-	if b == nil || b.Undo == nil {
+	if b == nil || b.Undo == nil || b.Undo.Expected == nil {
 		return routerError(messageFixedIKProof)
 	}
 	return d.removeFixedAllocation(ctx, b, b.Undo.Expected)
@@ -250,7 +250,7 @@ func (d *Ikuai) RestoreDeletedFixedIP(ctx context.Context, b *FixedIPBinding) (*
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if b == nil || b.Undo == nil || b.Undo.Kind != "delete" || !strings.HasPrefix(b.Comment, fixedIPPrefix) {
+	if b == nil || b.Undo == nil || b.Undo.Expected == nil || b.Undo.Kind != "delete" || !strings.HasPrefix(b.Comment, fixedIPPrefix) {
 		return nil, routerError(messageFixedIKRestoreProof)
 	}
 	rows, err := d.fixedStatic(ctx)
@@ -279,7 +279,7 @@ func (d *Ikuai) RestoreDeletedFixedIP(ctx context.Context, b *FixedIPBinding) (*
 	}
 	payload := maps.Clone(b.Undo.Expected)
 	payload["hostname"] = ""
-	_, err = d.Write(ctx, "dhcp_static", "add", payload, 0)
+	_, err = d.writeForm(ctx, "dhcp_static", "add", payload, 0)
 	if routerErrorKind(err) == KindRejected || ctx.Err() != nil {
 		return nil, err
 	}

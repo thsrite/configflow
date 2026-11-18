@@ -1378,3 +1378,13 @@ batch-6 codec 窄化：格式查询只解规则库，继续使用 model.Shared �
 - 修复 F-R12-3：Python `rule_sync_write._apply_delta` 未捕获最终 `_verify` 的 `ReleaseError`，设备目的更新可能残留；Go 对所有回读错误补偿自己的增删，并保留外部编辑。`TestR14DeltaPython/verify_failure` 同时证明 Python 残留与 Go 补偿。
 - 30 秒下载总预算从请求前开始，包含连接、共享客户端重试和响应读取；Python 在收到响应后才开始该总预算。连接/单次读取仍分别为 5 秒/10 秒，超时或超限不成为空路由意图。收到响应前预算用完（含重试）与 Python 的连接/读超时一样记为下载失败（failed，按间隔重试）；只有读响应体时超时或超过 4 MiB 才是「超过大小或时间限制」并暂停（R14 复核 M2）。
 - 使用 O3 的进程内单实例/L1/L2，不创建每设备 flock。关机取消停止设备和本地提交；已保存的 running 回执在重启后按既有规则暂停人工确认，不新增不可中断提交。
+
+
+## R17 — 客户端固定 IP 与 HTTP
+
+- HEAD `/api/client-devices?agent=...` 与 GET 使用同一 Agent 绑定空间，保持只读；Python HEAD 原先按全局空间读取。
+- 完整公开 HTTP 投影复用共享 redact，设备名称/发现/错误中引用其他路由器密码或已知 Agent 凭据时脱敏。私有存储与 CAS 证据保留原值。沿用 R16 坏行隔离，不把无效整张表当作空表。
+- signed preview token 的签名、压缩、时钟仍与 itsdangerous 双向互验，但 payload 中的完整设备操作改成 Go 原生 JSON + SHA-256 摘要。签名不是加密：Python 把 DHCP before-image 写入可解码 token，可能泄露 client-id/备注等私有字段；Go 在服务端重新读取并按完整摘要比较。旧 Python preview token 在切换后需要重做（本来仅存活 600 秒；连接指纹也按 D2 改用原生编码）。解压上限 8 MiB，token 上限 1 MB。
+- DHCP 归属证明要求 RouterOS server、iKuai interface/gateway 非空，且补偿 receipt 的完整 expected 存在。Python 的空 scope 相等不能作为 Go 删除外部对象的证明。异常设备响应仍可能使固定 IP 控件 fail closed，但健康发现设备保留。
+- R17 iKuai 新路径保留 Runtime 关机取消，通过共用 writeForm 编码/错误分类发请求；浏览器断连由 owner Detach 后完成。旧公共 Write 单操作完成语义不变。关机后不补偿/不提交本地 metadata；中止前设备可能已落下的独特 marker 保留，需重新发现确认。未增加不可中断提交或套用仅 R12 获批的 D-R12-3 例外。
+- JSON/YAML 原生表示与 D2 摘要不追逐 Python 字节。短随机 tag/nonce、validated updated_at/checked_at 是差分的精确归一化项，其余响应、revision、完整 profile 和设备表逐值比较。

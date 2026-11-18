@@ -247,7 +247,7 @@ func (d *RouterOS) ApplyFixedIP(ctx context.Context, op *FixedIPOperation) (bind
 // RollbackFixedIP removes only the proven reservation created by this job.
 func (d *RouterOS) RollbackFixedIP(ctx context.Context, b *FixedIPBinding) error {
 	ctx = lifecycle.Detach(ctx)
-	if b == nil || !strings.HasPrefix(b.Comment, fixedIPPrefix) || b.Undo == nil {
+	if b == nil || !strings.HasPrefix(b.Comment, fixedIPPrefix) || b.Undo == nil || b.Undo.Expected == nil {
 		return routerError(messageFixedROSProof)
 	}
 	return d.removeFixedLease(ctx, b, b.Undo.Expected)
@@ -298,7 +298,7 @@ func (d *RouterOS) RestoreDeletedFixedIP(ctx context.Context, b *FixedIPBinding)
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if b == nil || b.Undo == nil || b.Undo.Kind != "delete" || !strings.HasPrefix(b.Comment, fixedIPPrefix) {
+	if b == nil || b.Undo == nil || b.Undo.Expected == nil || b.Undo.Kind != "delete" || !strings.HasPrefix(b.Comment, fixedIPPrefix) {
 		return nil, routerError(messageFixedROSRestoreProof)
 	}
 	current, err := d.fixedLease(ctx, b.ID)

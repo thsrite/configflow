@@ -2016,3 +2016,16 @@ native-side 批次71条请求、6条显式审计通过；Go领域路由仍未注
 | fake-download | [矩阵 L259](difftest-routers.md#L259) | U-P |
 | fake-ikuai | [矩阵 L257](difftest-routers.md#L257) | U-P |
 | fake-routeros | [矩阵 L258](difftest-routers.md#L258) | U-P |
+
+
+## R17 port 回填（不改变上文历史 Step B 覆盖统计）
+
+`NATIVE_SIDE_REFERENCE_PROTOCOL_COLLISION`：C26 已修，R17 的
+`internal/api/clientdevices/handlers_test.go:TestR17UDPProtocolSideEntryHTTP`
+通过正式 GET/PUT：主监听 tag=udp、独立旁路的 udp:// 上游不被当成引用，
+页面投影可编辑，保存策略后旁路插件仍保留。产品未再复制协议解析规则。
+
+R17 自身另有 `TestR17FlaskHTTPAndStoredState` 的 15 请求真实 Flask↔Go 差分，
+覆盖五路由成功与代表性失败，比较每步完整 profile、HTTP 状态/JSON/no-store 与最终设备表；
+单独回归 HEAD 只读、Agent pinning、跨设备凭据引用和坏发现行隔离。
+这是作者定向证据，不能替代独立 Step B 全部未覆盖项、fresh Opus HR 复核或 L5。

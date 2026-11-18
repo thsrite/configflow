@@ -56,7 +56,7 @@ func fixedROSBinding(row Row) (*FixedIPBinding, error) {
 	return &FixedIPBinding{Vendor: "routeros", ID: row.id(), IP: routerdoc.IPv4(row.text("address")), MAC: fixedMAC(row.text("mac-address")), Comment: row.text("comment"), Server: fixedPointer(row.text("server"))}, nil
 }
 func fixedROSMatches(row Row, b *FixedIPBinding) bool {
-	return row != nil && b != nil && b.ID != "" && row.id() == b.ID && !row.flag("dynamic") && routerdoc.IPv4(row.text("address")) == b.IP && fixedMAC(row.text("mac-address")) == b.MAC && row.text("comment") == b.Comment && row.text("server") == fixedText(b.Server)
+	return row != nil && b != nil && b.ID != "" && b.IP != "" && b.MAC != "" && b.Server != nil && *b.Server != "" && row.id() == b.ID && !row.flag("dynamic") && routerdoc.IPv4(row.text("address")) == b.IP && fixedMAC(row.text("mac-address")) == b.MAC && row.text("comment") == b.Comment && row.text("server") == fixedText(b.Server)
 }
 func fixedROSCheck(row Row, b *FixedIPBinding, disabled bool) error {
 	if !fixedROSMatches(row, b) || row.flag("disabled") != disabled {
@@ -183,7 +183,7 @@ func InspectFixedIP(s *FixedIPSnapshot, ip, mac string) FixedIPState {
 			out.Fixed = !row.flag("disabled")
 		}
 		out.Lease = maps.Clone(row)
-		out.Owned = len(exact) > 0 && len(sameMAC) == 1 && strings.HasPrefix(row.text("comment"), fixedIPPrefix)
+		out.Owned = len(exact) > 0 && len(sameMAC) == 1 && row.text("server") != "" && strings.HasPrefix(row.text("comment"), fixedIPPrefix)
 		if out.Owned {
 			out.Binding, _ = fixedROSBinding(row)
 		}
@@ -378,7 +378,7 @@ func fixedIKBinding(row Row) *FixedIPBinding {
 	return &FixedIPBinding{Vendor: "ikuai", ID: fixedIKIDText(row["id"]), IP: row.text("ip_addr"), MAC: fixedMAC(row.text("mac")), Comment: row.text("comment"), Interface: fixedPointer(row.text("interface")), Gateway: fixedPointer(row.text("gateway"))}
 }
 func fixedIKMatches(row Row, b *FixedIPBinding) bool {
-	return row != nil && b != nil && b.ID != "" && jsonEqual(fixedIKBinding(row), &FixedIPBinding{Vendor: b.Vendor, ID: b.ID, IP: b.IP, MAC: b.MAC, Comment: b.Comment, Interface: b.Interface, Gateway: b.Gateway})
+	return row != nil && b != nil && b.ID != "" && b.IP != "" && b.MAC != "" && fixedText(b.Interface) != "" && fixedText(b.Gateway) != "" && jsonEqual(fixedIKBinding(row), &FixedIPBinding{Vendor: b.Vendor, ID: b.ID, IP: b.IP, MAC: b.MAC, Comment: b.Comment, Interface: b.Interface, Gateway: b.Gateway})
 }
 func inspectFixedIK(s *FixedIPSnapshot, ip, mac string) FixedIPState {
 	out := FixedIPState{}
@@ -396,7 +396,7 @@ func inspectFixedIK(s *FixedIPSnapshot, ip, mac string) FixedIPState {
 		for _, row := range sameMAC {
 			if routerdoc.IPv4(row.text("ip_addr")) == ip {
 				out.Fixed = out.Fixed || row.is("enabled", "yes")
-				if len(sameMAC) == 1 && strings.HasPrefix(row.text("comment"), fixedIPPrefix) {
+				if len(sameMAC) == 1 && row.text("interface") != "" && row.text("gateway") != "" && strings.HasPrefix(row.text("comment"), fixedIPPrefix) {
 					out.Owned = true
 					out.Binding = fixedIKBinding(row)
 				}

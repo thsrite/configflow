@@ -82,7 +82,7 @@ Python's `backend/routers` is one big import cycle (most cross-module imports ar
 | R14 | automatic rule sync | 1043 | verified | HR | R13, C14 (ready), C07 (`tasks`, ready) | – (handlers in R15) | internal/routers |
 | R15 | router HTTP routes, policy workspace, upstream-router reminder route | 656 | missing | HR | R14, C06, C22 (ready), C31, C34; A20⁵ | 21 (0 done) | internal/api/routers, internal/routers |
 | R16 | client devices and discovery | 786 | verified | | R13, A01, C26, C31 | – | internal/clients, internal/routers |
-| R17 | client fixed IP and client-device routes | 1077 | missing | HR | R16, R06, R14, C06 (JWT secret), C36², A13⁶ | 5 (0 done) | internal/clients, internal/routers, internal/api/clientdevices |
+| R17 | client fixed IP and client-device routes | 1077 | ported | HR | R16, R06, R14, C06 (JWT secret), C36², A13⁶ | 5 (5 done) | internal/clients, internal/routers, internal/api/clientdevices |
 
 ¹ `desired.compute_desired` loads rule content through `routes.rules.get_ruleset_content` (C32, a route file). Until C32 exists, a collaborator variable; C32 should export the function from a non-API package (also needed by agents A19). ² `setup_flow.profile_sessions` (C36 imports routers, so routers declares a hook; see contract). ³ Coordinator decision needed before R04/R05 (see questions). ⁴ `_inspect_state` → `agents.ipv6_readiness._request` (A23 imports routers → hook). ⁵ `/api/routers/gateway-forwarding` calls `agents.linux_gateway.gateway_forwarding_entry/persist_gateway_forwarding` (A20). ⁶ `routes.agents._public_deployment` (A13; collaborator variable until then).
 
@@ -907,16 +907,18 @@ unregistered production route. No R16-owned Step B finding remains.
 
 ## R17 — client fixed IP and client-device routes
 
-**Status: `missing`** · HR · prereqs: R16, R06 (`router_operation_lock`), R14 (`job_lock`), C06 (JWT secret), C36 hook, A13 collaborator · Go: internal/clients, internal/routers, internal/api/clientdevices, internal/routerdoc (`ValidateBindings`)
+**Status: `ported`** · HR，待新的 Opus 独立复核 · Go: `internal/clients`, `internal/routers`, `internal/api/clientdevices`。分支 `go-port-r17`，临时基底 `go-r17-base-v2@673851659`，已按协调者要求用 `--onto` 换掉旧 R16；待通知后再 rebase go。
 
-Files:
-- `backend/common/client_fixed_ip.py` (281), `backend/routers/routeros_fixed_ip.py` (382), `backend/routers/ikuai_fixed_ip.py` (261), `backend/routes/client_devices.py` (153)
+Files: `backend/common/client_fixed_ip.py` (281), `backend/routers/routeros_fixed_ip.py` (382), `backend/routers/ikuai_fixed_ip.py` (261), `backend/routes/client_devices.py` (153)。`routerdoc.ValidateBindings` 已在 R01 提供且 repo 已调用，无新增副本。
 
-Tests: `test_client_fixed_ip.py` (17), `test_ikuai_fixed_ip.py` (14), `test_routeros_fixed_ip.py` (23)
+Routes (5, 5 done): `GET /api/client-devices`; `PUT /api/client-devices`; `GET /api/client-devices/discovery`; `POST /api/client-devices/fixed-ip/preview`; `POST /api/client-devices/fixed-ip/apply`。HEAD 走只读 GET，包括 Agent profile pinning。
 
-Routes (5, 0 done): `GET /api/client-devices`; `PUT /api/client-devices`; `GET /api/client-devices/discovery`; `POST /api/client-devices/fixed-ip/preview`; `POST /api/client-devices/fixed-ip/apply`
-
-Notes for porter: preview tokens are `itsdangerous.URLSafeTimedSerializer(JWT_SECRET_KEY, salt='client-fixed-ip-v1')` (itsdangerous 2.2.0: compact JSON, zlib only when shorter, base64url, int timestamp, HMAC-SHA1 with django-concat key derivation) — port by hand (no new dependency) and cross-check both ways (a token minted by Python must verify in Go and the reverse, same secret). Writes DHCP static leases (HR). `validate_bindings` moves to `routerdoc.ValidateBindings` so `repo` drops its copy. `routes.agents._public_deployment` (A13) → collaborator variable until A13. Rule 4b for apply.
+- C36 接真实 `setupflow.ProfileSessions`，缺 collaborator fail closed；A13 用 `deploy.PublicDeployment`；JWT secret 读 `auth.Current`。复用 R06 L2/批量 try-only helper、R14 L1、R12 共用 driver，不另建发布器或设备锁。O3-6b 尚未在此临时基底合入，`routers.JobLock` 的临时唯一入口由其后续替换。
+- 两厂商静态租约新增/动态转静态（RouterOS）、删除、失败逆序补偿、删除恢复新 ID 与 metadata CAS；完整稳定字段/非空 scope/唯一随机 marker 证明归属。真实 Runtime：浏览器断连继续；关机取消设备 I/O，本地事务前检查 ctx。R17 iKuai 复用私有 `writeForm`，旧 `Write` 的既有语义不变。
+- 600 秒 timed token 与真实 itsdangerous 双向互验（压缩、Unicode、600/601 秒/未来时间）。签名内只存原生编码的完整 operation 摘要；不向可解码 token 暴露 DHCP before-image，执行前重新读取全部私有字段比较。D2 指纹不同，旧 Python preview 需重做。
+- R16 复核规则延伸到正式 HTTP：坏发现行不隐藏健康设备，公开最终投影用共享 redact 和 repository token hook，跨设备凭据引用脱敏；私有乐观快照不改。Step B 的 UDP 协议/tag 同名通过实际 GET/PUT HTTP 入口回归（C26 已修）。
+- Python tests 对照：`test_client_fixed_ip.py` → clients runtime/事务/批次/恢复/token + HTTP Flask oracle；`test_routeros_fixed_ip.py`、`test_ikuai_fixed_ip.py` → 15 个真实 Python vendor 边界用例、两厂商完整生命周期和原始 wire/生产超时检查；`test_client_devices.py` HTTP 半部 → 15 请求 Flask/Go 响应/完整存储与设备终态差分，业务半部沿用 R16。详见 [R17-handoff-zh.md](progress/R17-handoff-zh.md)。
+- 仅定向远端 gofmt/vet/race 与新 fuzz 60 秒；未跑完整 gate/proddiff 或真实设备。HR 实机仍属 L5；全量 gate 由协调者批次执行。精确命令/输出、检查类别、差异及复核重点见交接。
 
 ## Cross-domain contract (coordinator decision 3: interfaces/hooks, no copies)
 
