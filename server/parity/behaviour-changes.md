@@ -695,9 +695,11 @@ Go 的共享引用扫描通过 `net/url` 识别紧接 `://` 的 scheme，只排�
 Go 的私有 router draft 和未知凭据字段继续只保存在 session 文件里。公开响应在完整组装后，
 还使用共享 `redact` 和原始会话凭据清洗字符串引用，包括默认配置摘要、集合的来源/规则名称和
 放弃计划。Python 只投影 router draft；原 Go 也漏掉了这些在会话投影之外组装的元数据。
+公开失败消息同样清洗私有会话凭据引用，保留原状态码和错误链；固定的 owner 就绪 503 文案不变。
 普通用户名和 `has_password` 布尔值保留，存储中的可恢复密码不变。
 证据：`setup.TestReviewC36ResponsesRedactPrivateSessionCredentials` 的 GET、PATCH、集合和
-abandon dry-run 四条修复前失败/修复后通过回归。不会修改 Python 或差分比较规则。
+abandon dry-run 四条回归，以及 `TestReviewC36PublicOwnerFailureRedactsSessionCredential` 的
+公开 409 失败回归，均先失败、修复后通过。不会修改 Python 或差分比较规则。
 
 ## C07 — 状态列表就绪与只读 HEAD
 

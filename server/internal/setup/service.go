@@ -246,6 +246,45 @@ func publicResponse(value any, records ...*Record) (json.RawMessage, error) {
 	return json.Marshal(redact.SanitizeWithSecrets(json.RawMessage(raw), secrets, false))
 }
 
+// publicError keeps public status and owner causes while applying the same
+// private-session string policy as successful responses. Internal errors keep
+// using the server's generic error boundary.
+func publicError(err error, record *Record) error {
+	if err == nil {
+		return nil
+	}
+	var wizard *Error
+	status, message := 0, err.Error()
+	switch {
+	case errors.As(err, &wizard):
+		status, message = wizard.Status, wizard.Message
+		// This fixed readiness message contains no external data. Preserve its
+		// exact contract even if a weak password happens to equal the text.
+		if status == 503 && message == msgAwaitOwner {
+			return err
+		}
+	case errors.Is(err, repo.ErrInUse), errors.Is(err, repo.ErrValidation):
+		status = 409
+	default:
+		return err
+	}
+	var public struct {
+		Message string `json:"message"`
+	}
+	public.Message = message
+	raw, redactErr := publicResponse(public, record)
+	if redactErr != nil {
+		return fmt.Errorf("sanitize setup error: %w", redactErr)
+	}
+	if decodeErr := json.Unmarshal(raw, &public); decodeErr != nil {
+		return fmt.Errorf("decode sanitized setup error: %w", decodeErr)
+	}
+	if public.Message == message {
+		return err
+	}
+	return &Error{Status: status, Message: public.Message, Cause: err}
+}
+
 func publicRecord(record *Record) (json.RawMessage, error) {
 	raw, err := json.Marshal(record)
 	if err != nil {
@@ -297,11 +336,12 @@ func publicRecord(record *Record) (json.RawMessage, error) {
 func (s *Service) Get(ctx context.Context, id string) (json.RawMessage, error) {
 	store := storeFor(s.repository)
 	var result json.RawMessage
-	err := store.locked(ctx, id, func(held context.Context) error {
+	err := store.locked(ctx, id, func(held context.Context) (err error) {
 		record, err := store.read(held, id)
 		if err != nil {
 			return err
 		}
+		defer func() { err = publicError(err, record) }()
 		if _, err := s.repository.ProfileMetadata(held, record.ProfileID); err != nil {
 			return err
 		}
@@ -319,11 +359,12 @@ func (s *Service) Patch(ctx context.Context, id string, raw json.RawMessage) (js
 	}
 	store := storeFor(s.repository)
 	var result json.RawMessage
-	err := store.locked(ctx, id, func(held context.Context) error {
+	err := store.locked(ctx, id, func(held context.Context) (err error) {
 		record, err := store.read(held, id)
 		if err != nil {
 			return err
 		}
+		defer func() { err = publicError(err, record) }()
 		profile, err := s.repository.GetProfile(held, record.ProfileID)
 		if err != nil {
 			return err

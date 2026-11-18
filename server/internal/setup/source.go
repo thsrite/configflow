@@ -167,11 +167,12 @@ func (s *Service) change(ctx context.Context, id string, raw json.RawMessage, ap
 	}
 	store := storeFor(s.repository)
 	var result json.RawMessage
-	err := store.locked(ctx, id, func(held context.Context) error {
+	err := store.locked(ctx, id, func(held context.Context) (err error) {
 		record, err := store.read(held, id)
 		if err != nil {
 			return err
 		}
+		defer func() { err = publicError(err, record) }()
 		if _, err := s.repository.ProfileMetadata(held, record.ProfileID); err != nil {
 			return err
 		}

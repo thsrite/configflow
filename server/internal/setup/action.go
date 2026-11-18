@@ -27,11 +27,12 @@ func (s *Service) Action(ctx context.Context, id, operation string, raw json.Raw
 	}
 	store := storeFor(s.repository)
 	var result json.RawMessage
-	err := store.locked(ctx, id, func(held context.Context) error {
+	err := store.locked(ctx, id, func(held context.Context) (err error) {
 		record, err := store.read(held, id)
 		if err != nil {
 			return err
 		}
+		defer func() { err = publicError(err, record) }()
 		if _, err := s.repository.ProfileMetadata(held, record.ProfileID); err != nil {
 			return err
 		}

@@ -152,6 +152,12 @@ func TestReviewC36MissingOwnersReturn503WithoutCommit(t *testing.T) {
 				t.Fatal(err)
 			}
 			record.Prepared = pointer(true)
+			// Static readiness text must not change when it coincides with a
+			// private password; the message contains no device/user evidence.
+			record.RouterDraft, err = json.Marshal(map[string]string{"password": msgAwaitOwner})
+			if err != nil {
+				t.Fatal(err)
+			}
 			if err := store.write(ctx, record); err != nil {
 				t.Fatal(err)
 			}
@@ -179,6 +185,48 @@ func TestReviewC36MissingOwnersReturn503WithoutCommit(t *testing.T) {
 				t.Fatal("unavailable owner changed session or DB", readErr, fingerprintErr)
 			}
 		})
+	}
+}
+
+func TestReviewC36PublicOwnerFailureRedactsSessionCredential(t *testing.T) {
+	s, ctx := preparedFixture(t, "router")
+	if _, err := s.Prepare(ctx, testSessionID, json.RawMessage(`{"domain_rules":{"direct":[],"proxy":[]}}`), "http://localhost"); err != nil {
+		t.Fatal(err)
+	}
+	store := storeFor(s.repository)
+	record, err := store.read(ctx, testSessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const secret = "synthetic-c36-private-password"
+	record.RouterDraft = json.RawMessage(`{"password":"` + secret + `"}`)
+	if err := store.write(ctx, record); err != nil {
+		t.Fatal(err)
+	}
+	path, _ := store.path(testSessionID)
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := &Error{Status: 409, Message: "synthetic owner diagnostic: " + secret}
+	s.owners.Installation = installedOwner()
+	s.owners.Installation.GatewayStatus = func(context.Context, *repo.Repository, string, string) (GatewayStatus, error) {
+		return GatewayStatus{}, original
+	}
+	s.owners.ReadRouteContent = func(context.Context, json.RawMessage, routers.RuleSet, *routers.LibraryRule, RouteReadOptions) (string, error) {
+		return "", nil
+	}
+	_, err = s.Action(ctx, testSessionID, "check", json.RawMessage(`{}`), "")
+	var public *Error
+	if !errors.As(err, &public) || public.Status != 409 || bytes.Contains([]byte(public.Message), []byte(secret)) {
+		t.Fatalf("public owner error leaked a credential or changed status: %v", err)
+	}
+	if !errors.Is(err, original) {
+		t.Fatal("owner error chain was lost")
+	}
+	after, readErr := os.ReadFile(path)
+	if readErr != nil || !bytes.Equal(before, after) {
+		t.Fatal("failed check rewrote its private session", readErr)
 	}
 }
 
