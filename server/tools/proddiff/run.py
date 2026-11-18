@@ -294,6 +294,33 @@ def plain_install_error(left, right, route):
             and 'content-disposition' not in right[3])
 
 
+def bootstrap_installer_baseline(reply, route):
+    """O9-H2: only the four installer routes and exact added bearer env fields."""
+    if (route not in ('/api/agents/install-script', '/api/agents/core-install-script', '/api/agents/docker-agent-compose', '/api/agents/docker-agent-run')
+            or reply[0] != 200 or not reply[1].startswith(('text/plain', 'text/yaml'))):
+        return reply
+    try:
+        text = reply[2].decode('utf-8')
+    except UnicodeError:
+        return reply
+    token = r'[A-Za-z0-9_-]{43}'
+    if route == '/api/agents/install-script':
+        text = re.sub(r',\n  "registration_token": "' + token + r'"\n', '\n', text)
+    elif route == '/api/agents/docker-agent-compose':
+        text = re.sub(r'(?m)^      - AGENT_(?:MIHOMO|MOSDNS|OXIDNS)_REGISTRATION_TOKEN=' + token + r'\n', '', text)
+    elif route == '/api/agents/docker-agent-run':
+        text = re.sub(r"(?m)^  -e (?:AGENT_(?:MIHOMO|MOSDNS|OXIDNS)_REGISTRATION_TOKEN=" + token + r"|'AGENT_OXIDNS_REGISTRATION_TOKEN=" + token + r"') \\\n", '', text)
+    proof_added = text != reply[2].decode('utf-8')
+    text = text.replace('token|installation_token|registration_token|registration_key|secret|password',
+                        'token|installation_token|secret|password')
+    text = text.replace('token|installation_token|registration_token|registration_key|password',
+                        'token|installation_token|password')
+    headers = dict(reply[3]) if len(reply) > 3 else {}
+    if proof_added and headers.get('cache-control') == 'no-store':
+        del headers['cache-control']
+    return (reply[0], reply[1], text.encode('utf-8'), headers)
+
+
 def installer_rollback_baseline(reply, route):
     """Reverse only the fixed approved D3 source edits for the public script."""
     if route != '/api/agents/install-script' or reply[0] != 200 or not reply[1].startswith('text/plain'):
@@ -418,6 +445,7 @@ def response_diffs(left, right, route, rules, agent_identities=None, artifact_pr
     # O9-H1/L5: exact security-header delta; no response/body/status masks.
     if len(left) > 3 and len(right) > 3:
         left = (*left[:3], expected_headers(left[3], right[3], right[1]))
+    right = bootstrap_installer_baseline(right, route)
     right = installer_rollback_baseline(right, route)
     if plain_install_error(left, right, route):
         # Body/status/type already agree exactly. Assert only the approved

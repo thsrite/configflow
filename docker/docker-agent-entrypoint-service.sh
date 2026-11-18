@@ -201,6 +201,9 @@ cfg = {
     "deployment_health_timeout": int(os.environ.get("DEPLOYMENT_HEALTH_TIMEOUT", "30")),
     "heartbeat_interval": int(os.environ.get("HEARTBEAT_INTERVAL", "60")),
 }
+if not existing.get("token"):
+    cfg["registration_token"] = os.environ.get("AGENT_" + prefix + "_REGISTRATION_TOKEN", "")
+    cfg["registration_key"] = os.environ.get("AGENT_REGISTRATION_KEY", "")
 for key in ("agent_id", "token"):
     if existing.get(key):
         cfg[key] = existing[key]

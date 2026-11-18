@@ -11,6 +11,9 @@ package difftest
 //	rt -- bash -lc 'cd server && CONFIGFLOW_DIFF=1 go test -count=1 -v -run InstallerFuzz ./internal/api/agents/difftest/'
 
 import (
+	"configflow/internal/model"
+	"configflow/internal/repo"
+	"context"
 	"fmt"
 	"math/rand/v2"
 	"net/url"
@@ -317,6 +320,15 @@ func TestInstallerFuzzAgainstFlask(t *testing.T) {
 	counts := map[string]int{}
 	failed, same := 0, 0
 	check := func(kind string, r installerRequest, mask ...string) (response, response) {
+		// Each random generator request is independent. O9-H2 caps live service
+		// proofs at 100; its real capacity contract is tested by TestO9RegistrationCapacity.
+		repository, err := repo.GetRepository(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := repository.UpdateSystem(context.Background(), func(_ context.Context, system *model.System) error { system.RegistrationSessions = nil; return nil }); err != nil {
+			t.Fatal(err)
+		}
 		py, gor := sendInstaller(t, pyBase, r, pyToken), sendInstaller(t, goBase, r, goToken)
 		counts[fmt.Sprintf("%s %d", kind, py.status)]++
 		diffs := compareInstaller(py, gor, mask)

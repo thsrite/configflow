@@ -14,6 +14,8 @@ import (
 // *Set flags tell an explicit value from the Python default; NewAIOOptions
 // fills the defaults.
 type AIOOptions struct {
+	RegistrationTokens      map[string]string
+	RegistrationKey         string
 	ServerURL               string
 	AgentName               string
 	AgentIP                 string
@@ -242,6 +244,12 @@ cf_step_done "TUN 准备完成（具体处理结果见日志）"`),
 			"heartbeat_interval", 30, "deployment_health_timeout", 30,
 			"agent_id", "__CONFIGFLOW_AGENT_ID__", "token", "__CONFIGFLOW_TOKEN__",
 		)
+		if token := o.RegistrationTokens[s.name]; token != "" {
+			cfg.Set("registration_token", token)
+		}
+		if o.RegistrationKey != "" {
+			cfg.Set("registration_key", o.RegistrationKey)
+		}
 		if o.InstallationID != "" {
 			cfg.Set("installation_id", o.InstallationID)
 			cfg.Set("installation_token", o.InstallationToken)

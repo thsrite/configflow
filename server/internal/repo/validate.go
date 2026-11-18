@@ -14,7 +14,7 @@ const SchemaVersion = 5
 // DefaultProfileID is ProfileRepository.DEFAULT_PROFILE_ID.
 const DefaultProfileID = "default"
 
-var systemFields = map[string]bool{"system_config": true, "backup": true, "agents": true, "_revision": true}
+var systemFields = map[string]bool{"system_config": true, "backup": true, "agents": true, "agent_registration_sessions": true, "_revision": true}
 
 // isSchemaVersion is value == SCHEMA_VERSION (5 and 5.0, nothing else).
 func isSchemaVersion(value any) bool {

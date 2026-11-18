@@ -8,6 +8,7 @@ import (
 	apiagents "configflow/internal/api/agents"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/installer"
+	"configflow/internal/installer/installertest"
 	"configflow/internal/jsonx"
 )
 
@@ -45,7 +46,7 @@ func TestAPIOptOutMatchesTheGeneratorOptOut(t *testing.T) {
 	want, err := installer.GenerateGoAgentInstallScript(installer.GoAgentOptions{ServerURL: "https://config.test/panel", AgentName: "gateway",
 		ServiceType: "mihomo", AgentIP: "192.0.2.20", ConfigPath: "/etc/mihomo/config.yaml", RestartCommand: "systemctl restart mihomo",
 		BinaryDownloadURL: "https://config.test/panel/api/agents/download"})
-	if err != nil || script != want {
+	if err != nil || installertest.BootstrapBaseline(script) != installertest.BootstrapBaseline(want) {
 		t.Fatalf("API script differs from the generator (%v)", err)
 	}
 }

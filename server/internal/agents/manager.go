@@ -11,6 +11,7 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -21,6 +22,7 @@ import (
 	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/taskstatus"
 )
@@ -380,6 +382,11 @@ func (m *Manager) saveReportedFields(ctx context.Context, changes map[string]*js
 // or replace through the pointer). profileID, when given, must still exist
 // at commit. ProfileInUse becomes *DeploymentConflict.
 func (m *Manager) UpdateAgents(ctx context.Context, profileID string, updater func(ctx context.Context, agents *[]any) (any, error)) (any, error) {
+	return m.updateRegistry(ctx, profileID, func(ctx context.Context, list *[]any, _ *model.System) (any, error) { return updater(ctx, list) })
+}
+
+func (m *Manager) updateRegistry(ctx context.Context, profileID string, updater func(context.Context, *[]any, *model.System) (any, error)) (any, error) {
+	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -389,26 +396,36 @@ func (m *Manager) UpdateAgents(ctx context.Context, profileID string, updater fu
 		}
 	}
 	var result any
-	_, err := m.repository.UpdateSystemTransaction(ctx, func(ctx context.Context, system *jsonx.Object) (*jsonx.Object, error) {
+	err := m.repository.UpdateSystem(ctx, func(ctx context.Context, system *model.System) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if profileID != "" {
 			if _, err := m.repository.ProfileMetadata(ctx, profileID); err != nil {
-				return nil, err
+				return err
 			}
 		}
-		if !system.Has("agents") {
-			system.Set("agents", []any{})
-		}
-		list, _ := system.Value("agents").([]any)
-		value, err := updater(ctx, &list)
+		raw, err := json.Marshal(system.Agents)
 		if err != nil {
-			return nil, err
+			return err
+		}
+		value, err := jsonx.Parse(raw)
+		if err != nil {
+			return err
+		}
+		list, _ := value.([]any)
+		result, err = updater(ctx, &list, system)
+		if err != nil {
+			return err
+		}
+		raw, err = jsonx.Compact(list)
+		if err != nil {
+			return err
 		}
 		if err := ctx.Err(); err != nil {
-			return nil, err
+			return err
 		}
-		system.Set("agents", list)
-		result = value
-		return nil, nil
+		return system.SetJSON("agents", raw)
 	})
 	if err != nil {
 		if errors.Is(err, repo.ErrInUse) {
@@ -451,7 +468,7 @@ func objOr(value any) *jsonx.Object {
 // created and its token returned once. existingToken and installationID are
 // nil when absent.
 func (m *Manager) RegisterAgent(ctx context.Context, data *jsonx.Object, existingToken, installationID any) (*jsonx.Object, error) {
-	return m.registerAgent(ctx, data, existingToken, installationID, false)
+	return m.registerAgent(ctx, data, existingToken, installationID, false, nil)
 }
 
 // RegisterInstallationAgent permits credential replay only for the exact trusted
@@ -461,10 +478,14 @@ func (m *Manager) RegisterInstallationAgent(ctx context.Context, data *Record, e
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	return m.registerAgent(ctx, data, existingToken, installationID, true)
+	return m.registerAgent(ctx, data, existingToken, installationID, true, nil)
 }
 
-func (m *Manager) registerAgent(ctx context.Context, data *jsonx.Object, existingToken, installationID any, replay bool) (*jsonx.Object, error) {
+func (m *Manager) registerAgent(ctx context.Context, data *jsonx.Object, existingToken, installationID any, replay bool, admission *RegistrationAuthorization) (*jsonx.Object, error) {
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	name := data.GetOr("name", "Unnamed Agent")
 	host := data.GetOr("host", "")
 	requested := data.Value("profile_id")
@@ -477,7 +498,7 @@ func (m *Manager) registerAgent(ctx context.Context, data *jsonx.Object, existin
 	}
 	serviceType := data.GetOr("service_type", "mihomo")
 	port := data.GetOr("port", jsonx.Int(8080))
-	result, err := m.UpdateAgents(ctx, profileArg, func(ctx context.Context, agents *[]any) (any, error) {
+	result, err := m.updateRegistry(ctx, profileArg, func(ctx context.Context, agents *[]any, system *model.System) (any, error) {
 		list := *agents
 		existingIndex := -1
 		for i, item := range list {
@@ -575,6 +596,12 @@ func (m *Manager) registerAgent(ctx context.Context, data *jsonx.Object, existin
 			return answer, nil
 		}
 
+		if admission != nil {
+			if err := m.admitRegistration(ctx, system, data, admission); err != nil {
+				return nil, err
+			}
+			requested = data.Value("profile_id")
+		}
 		agentID := fmt.Sprintf("agent_%d_%s", int64(math.Floor(pyTimestamp(clock())*1000)), tokenHex(3))
 		token := tokenURLSafe(24)
 		profile := requested

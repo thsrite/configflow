@@ -34,6 +34,8 @@ type RegisterRequest struct {
 	Version           string `json:"version"`
 	InstallationID    string `json:"installation_id,omitempty"`
 	InstallationToken string `json:"installation_token,omitempty"`
+	RegistrationToken string `json:"registration_token,omitempty"`
+	RegistrationKey   string `json:"registration_key,omitempty"`
 }
 
 type RegisterResponse struct {
@@ -110,6 +112,7 @@ func (c *Config) handleRegisterResponse(regResp *RegisterResponse) error {
 		return fmt.Errorf("registration response is missing Agent credentials")
 	}
 	previousID, previousToken := c.AgentID, c.Token
+	previousRegistrationToken, previousRegistrationKey := c.RegistrationToken, c.RegistrationKey
 	previousInstallationID, previousInstallationToken := c.InstallationID, c.InstallationToken
 
 	log.Printf("Registration successful! Agent ID: %s", regResp.ID)
@@ -122,10 +125,12 @@ func (c *Config) handleRegisterResponse(regResp *RegisterResponse) error {
 	// expired one-time installation capability block a later re-registration.
 	c.InstallationID = ""
 	c.InstallationToken = ""
+	c.RegistrationToken, c.RegistrationKey = "", ""
 
 	log.Printf("Saving configuration...")
 	if err := c.Save(); err != nil {
 		c.AgentID, c.Token = previousID, previousToken
+		c.RegistrationToken, c.RegistrationKey = previousRegistrationToken, previousRegistrationKey
 		c.InstallationID, c.InstallationToken = previousInstallationID, previousInstallationToken
 		log.Printf("Failed to save configuration: %v", err)
 		return fmt.Errorf("failed to save configuration: %w", err)
@@ -167,6 +172,7 @@ func (c *Config) RegisterAgent() error {
 		Version:           AgentVersion,
 		InstallationID:    c.InstallationID,
 		InstallationToken: c.InstallationToken,
+		RegistrationToken: c.RegistrationToken, RegistrationKey: c.RegistrationKey,
 	}
 
 	// 发送注册请求

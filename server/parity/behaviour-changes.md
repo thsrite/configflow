@@ -1605,3 +1605,28 @@ MosDNS 的经典规则关键字、域名模式、规则内容不再导入 pystr�
 - **O9-L6**：开启登录的受保护请求先认证，再解析 profile；未登录时一律 401，无 `X-ConfigFlow-Profile`。Python 对不存在/非法 profile 原先先返回 404/400；已登录、公开入口和关闭登录时仍按原规则校验 profile。
 - **O9-L5**：Edge 响应与 App 的文本响应统一增加精确的 `X-Content-Type-Options: nosniff`，防止浏览器把文本下载猜成可执行内容。差分仅允许该头从缺失变为 `nosniff`；其他头和内容继续比较。
 - **O9-M1/L1/L3**：后端监听保留默认地址，共用 Edge 的 1 MiB/96 MiB 请求体上限；已知长度和 chunked 超限均 413。访问日志 URL/Referer 脱敏；内部调用头改用常量时间比较。
+
+
+
+## O9-H2 / O12 — 开启登录后的 Agent 首次注册授权
+
+开启登录后，手工拼接的安装命令不能再注册，需要用面板生成的命令或设置注册密钥。
+首次注册必须带注册密钥、面板 JWT 或面板生成的一次性注册凭据。普通 Shell、AIO、Docker
+安装 API 自动生成每个服务独立的 24h 凭据，绑定名称、服务、端口、部署方式、profile；
+指定 Agent IP 时还绑定 host。成功注册与消费在同一 repo system 事务提交，重启、并发、
+删除 Agent 后都不能再次兑现；最多 100 个未消费身份，生成/成功注册时清过期项。
+缺少、错误、过期、重放或身份不匹配均明确提示“请在面板重新生成安装命令或设置注册密钥”。
+已有 Agent 仍须出示自己的 token；JWT/注册密钥不能接管已有身份。未开登录且未设注册密钥时
+保留匿名首次注册。网关与 HA 的现有独立安装会话保持各自身份校验。
+
+D2：`system.agent_registration_sessions` 是 Go 原生新字段，Python 没有；使用 typed
+`model.AgentRegistrationSession`，仅存 SHA-256 hash、绑定身份和 expires，不存明文凭据。
+按协调者裁定复用仓库事务，替代网关会话的独立 JSON 文件，以消除跨文件消费/注册窗口。
+不改变既有数据 schema version；旧数据无该字段可读，备份导入不恢复一次性注册会话。
+安装预览/下载脚本含明文凭据，响应 no-store；日志和通知只记录字段白名单与固定拒绝原因。
+未指定 IP 时仍属于一次性 bearer capability，不能防止首次使用前凭据被盗且身份被完整冒用；
+文档要求保密并尽快使用。指定 IP 的不同地址和首次成功后第二台机器均拒绝。
+
+Flask 差分只为安装脚本 JSON 的 `registration_token` 与 Docker 的
+`AGENT_<SERVICE>_REGISTRATION_TOKEN` 字段增加严格 43 字符 base64url 精确规则；
+注册差分的旧匿名成功样例改为两侧都带 JWT，匿名拒绝单独回归，不宽泛忽略状态或响应。

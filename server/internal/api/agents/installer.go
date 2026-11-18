@@ -4,13 +4,17 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"os"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
+	"configflow/internal/agents"
 	"configflow/internal/auth"
 	"configflow/internal/httpx"
 	"configflow/internal/installer"
 	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/pystr"
 	"configflow/internal/repo"
 	"configflow/internal/utilx"
@@ -277,6 +281,8 @@ func renderInstallScript(c *httpx.Ctx, params installParams) (string, error) {
 	if serviceType == "aio" {
 		o := installer.NewAIOOptions(serverURL, agentName)
 		o.AgentIP = agentIP
+		o.RegistrationTokens = map[string]string{"mihomo": paramDefault(params, "registration_token_mihomo", ""), "oxidns": paramDefault(params, "registration_token_oxidns", "")}
+		o.RegistrationKey = paramDefault(params, "registration_key", "")
 		o.BinaryDownloadURL = serverURL + "/api/agents/download"
 		o.MihomoAgentPort = paramDefault(params, "mihomo_agent_port", "8080")
 		o.OxidnsAgentPort = paramDefault(params, "oxidns_agent_port", "8082")
@@ -302,7 +308,8 @@ func renderInstallScript(c *httpx.Ctx, params installParams) (string, error) {
 			StopCommand: strip("stop_command"), StartCommand: strip("start_command"), StatusCommand: strip("status_command"),
 			HealthURL: strip("health_url"), HealthDNSAddress: strip("health_dns_address"), HealthDNSName: strip("health_dns_name"),
 			DeploymentHealthTimeout: paramInt(params, "deployment_health_timeout", 30),
-			InstallCore:             installCore, ManageIPv4Forwarding: forwarding, PrepareDNSHA: prepareDNSHA,
+			RegistrationToken:       paramDefault(params, "registration_token_"+serviceType, paramDefault(params, "registration_token", "")), RegistrationKey: paramDefault(params, "registration_key", ""),
+			InstallCore: installCore, ManageIPv4Forwarding: forwarding, PrepareDNSHA: prepareDNSHA,
 		})
 	}
 	if err != nil {
@@ -313,9 +320,31 @@ func renderInstallScript(c *httpx.Ctx, params installParams) (string, error) {
 }
 
 func getInstallScript(c *httpx.Ctx) (*httpx.Response, error) {
-	script, failed := installScriptResponse(c, queryParams{c})
+	params := mapParams{}
+	for key, values := range c.Request.URL.Query() {
+		if len(values) > 0 {
+			params[key] = values[0]
+		}
+	}
+	script, failed := installScriptResponse(c, params)
 	if failed != nil {
 		return failed, nil
+	}
+	// Anonymous script downloads remain templates. Only an authenticated panel
+	// request may mint a capability; a public URL can never become a proof oracle.
+	if (auth.IsAuthEnabled() || os.Getenv("AGENT_REGISTRATION_KEY") != "") && validPanelJWT(c) {
+		tokens, failed := issueRegistration(c, shellRegistrationIdentities(params))
+		if failed != nil {
+			return failed, nil
+		}
+		for service, token := range tokens {
+			params["registration_token_"+service] = token
+		}
+		script, failed = installScriptResponse(c, params)
+		if failed != nil {
+			return failed, nil
+		}
+		return httpx.Text(200, script).NoStore(), nil
 	}
 	return httpx.Text(200, script), nil
 }
@@ -357,6 +386,20 @@ func createInstallCommand(c *httpx.Ctx) (*httpx.Response, error) {
 	script, failed := installScriptResponse(c, params)
 	if failed != nil {
 		return failed, nil
+	}
+	if auth.IsAuthEnabled() || os.Getenv("AGENT_REGISTRATION_KEY") != "" {
+		identities := shellRegistrationIdentities(params)
+		tokens, failed := issueRegistration(c, identities)
+		if failed != nil {
+			return failed, nil
+		}
+		for service, token := range tokens {
+			params["registration_token_"+service] = token
+		}
+		script, failed = installScriptResponse(c, params)
+		if failed != nil {
+			return failed, nil
+		}
 	}
 	return saveInstallCommand(c, script), nil
 }
@@ -438,11 +481,73 @@ func dockerResponse(text string, err error, contentType string) *httpx.Response 
 }
 
 func getDockerAgentCompose(c *httpx.Ctx) (*httpx.Response, error) {
-	text, err := installer.GenerateDockerAgentCompose(dockerOptions(c))
-	return dockerResponse(text, err, "text/yaml; charset=utf-8"), nil
+	return dockerAgentResponse(c, installer.GenerateDockerAgentCompose, "text/yaml; charset=utf-8")
+}
+func getDockerAgentRun(c *httpx.Ctx) (*httpx.Response, error) {
+	return dockerAgentResponse(c, installer.GenerateDockerAgentRun, "text/plain; charset=utf-8")
+}
+func dockerAgentResponse(c *httpx.Ctx, render func(installer.DockerOptions) (string, error), contentType string) (*httpx.Response, error) {
+	options := dockerOptions(c)
+	text, err := render(options)
+	if err != nil {
+		return dockerResponse(text, err, contentType), nil
+	}
+	if auth.IsAuthEnabled() || os.Getenv("AGENT_REGISTRATION_KEY") != "" {
+		var identities []model.AgentRegistrationSession
+		for _, service := range []struct {
+			name    string
+			enabled bool
+			port    any
+		}{
+			{"mihomo", options.EnableMihomo, options.MihomoPort}, {"mosdns", options.EnableMosdns, options.MosdnsPort}, {"oxidns", options.EnableOxidns, options.OxidnsPort},
+		} {
+			if !service.enabled {
+				continue
+			}
+			port, _ := strconv.Atoi(installer.PyStr(service.port))
+			identities = append(identities, model.AgentRegistrationSession{Name: options.AgentName + "-" + service.name, Host: strings.TrimSpace(options.AgentIP), Port: model.Int(port), ServiceType: service.name, DeploymentMethod: "docker"})
+		}
+		tokens, failed := issueRegistration(c, identities)
+		if failed != nil {
+			return failed, nil
+		}
+		options.RegistrationTokens = tokens
+		text, err = render(options)
+	}
+	if len(options.RegistrationTokens) > 0 {
+		return dockerResponse(text, err, contentType).NoStore(), nil
+	}
+	return dockerResponse(text, err, contentType), nil
 }
 
-func getDockerAgentRun(c *httpx.Ctx) (*httpx.Response, error) {
-	text, err := installer.GenerateDockerAgentRun(dockerOptions(c))
-	return dockerResponse(text, err, "text/plain; charset=utf-8"), nil
+func shellRegistrationIdentities(params installParams) []model.AgentRegistrationSession {
+	service := paramDefault(params, "type", "mihomo")
+	name := paramDefault(params, "name", "My-Agent")
+	host := installer.PyStrip(paramDefault(params, "agent_ip", ""))
+	if service == "aio" {
+		return []model.AgentRegistrationSession{
+			{Name: name + "-mihomo", Host: host, Port: registrationPort(params, "mihomo_agent_port", 8080), ServiceType: "mihomo", DeploymentMethod: "shell"},
+			{Name: name + "-oxidns", Host: host, Port: registrationPort(params, "oxidns_agent_port", 8082), ServiceType: "oxidns", DeploymentMethod: "shell"},
+		}
+	}
+	return []model.AgentRegistrationSession{{Name: name, Host: host, Port: registrationPort(params, "port", 8080), ServiceType: service, DeploymentMethod: "shell"}}
+}
+func registrationPort(params installParams, name string, fallback int) model.Int {
+	// Use the renderer's converter, including accepted surrounding whitespace.
+	return model.Int(paramInt(params, name, int64(fallback)).Int64())
+}
+
+func issueRegistration(c *httpx.Ctx, identities []model.AgentRegistrationSession) (map[string]string, *httpx.Response) {
+	manager, err := agents.Get(c.Context())
+	if err != nil {
+		return nil, failure(500, msgRegistrationStore)
+	}
+	tokens, err := manager.CreateRegistrationCredentials(c.Context(), identities)
+	if errors.Is(err, agents.ErrRegistrationSessionsFull) {
+		return nil, failure(503, msgRegistrationCapacity)
+	}
+	if err != nil {
+		return nil, failure(500, msgRegistrationStore)
+	}
+	return tokens, nil
 }

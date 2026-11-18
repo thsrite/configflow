@@ -691,6 +691,11 @@ func TestDifferentialAgainstFlask(t *testing.T) {
 	pyValues, goValues := map[string]string{}, map[string]string{}
 	failed := 0
 	for _, r := range requests() {
+		// O9-H2: exercise the legacy successful registration corpus with the same
+		// panel JWT on both sides. Anonymous rejection has its own security regression.
+		if r.path == "/api/agents/register" && r.headers["Authorization"] == "" {
+			r.admin = true
+		}
 		py := send(t, pyBase, r, pyToken, pyValues)
 		gor := send(t, goBase, r, goToken, goValues)
 		for name, path := range r.capture {

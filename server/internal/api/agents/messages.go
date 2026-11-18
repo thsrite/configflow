@@ -16,9 +16,10 @@ const (
 	msgPolicyConflict     = "配置或设备绑定已更新，请重新载入后再保存。"
 )
 
-// RegistrationLocked explains why ordinary installers cannot register while
-// the panel's optional global registration-key policy is enabled.
-const RegistrationLocked = "Invalid registration key：面板已启用注册锁定，普通 Shell 和 Docker Agent 安装不支持传入注册密钥。请使用 OxiDNS HA enrollment 安装，或联系管理员调整 AGENT_REGISTRATION_KEY 注册策略后重试。"
+// RegistrationLocked gives the recovery path for missing or invalid bootstrap proof.
+const RegistrationLocked = "Agent 注册凭据无效、已使用或已过期，请在面板重新生成安装命令或设置注册密钥。"
+const msgRegistrationCapacity = "未使用的 Agent 注册凭据已达 100 个，请使用已有安装命令或等待 24 小时后重新生成。"
+const msgRegistrationStore = "无法保存 Agent 注册凭据，请检查数据目录后重新生成安装命令。"
 const msgGeneratedFileMissing = "生成结果中没有这个文件。"
 
 const msgRuleSyncRequest = "规则同步设置无效"

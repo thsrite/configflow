@@ -48,6 +48,8 @@ type GoAgentOptions struct {
 	InstallCore             bool
 	ManageIPv4Forwarding    Forwarding
 	PrepareDNSHA            bool
+	RegistrationToken       string
+	RegistrationKey         string
 }
 
 // standaloneForwardingFunctions is _standalone_forwarding_functions().
@@ -192,6 +194,12 @@ func GenerateGoAgentInstallScript(o GoAgentOptions) (string, error) {
 		"agent_id", "__CONFIGFLOW_AGENT_ID__",
 		"token", "__CONFIGFLOW_TOKEN__",
 	)
+	if o.RegistrationToken != "" {
+		cfg.Set("registration_token", o.RegistrationToken)
+	}
+	if o.RegistrationKey != "" {
+		cfg.Set("registration_key", o.RegistrationKey)
+	}
 	configJSON, err := jsonx.Encode(cfg, jsonx.Options{EnsureASCII: true, Indent: 2})
 	if err != nil {
 		return "", err

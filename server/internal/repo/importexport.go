@@ -42,8 +42,14 @@ func (r *Repository) exportAll(ctx context.Context, desensitize bool) (result *j
 		result = document.DeepCopy()
 		return nil
 	})
-	if err != nil || !desensitize {
-		return result, err
+	if err != nil {
+		return nil, err
+	}
+	// Short-lived bootstrap sessions are process-independent but never portable:
+	// a backup restore must not resurrect an already-consumed installation proof.
+	result.GetObject("system").Pop("agent_registration_sessions")
+	if !desensitize {
+		return result, nil
 	}
 	h := currentHooks()
 	if h.SanitizeExternalPayload == nil || h.RedactOxidnsSettings == nil || h.RedactRouters == nil || h.RedactEasytierSettings == nil {
@@ -540,6 +546,7 @@ func (r *Repository) convertImport(source *jsonx.Object, resourceRemaps Resource
 	version := source.Value("schema_version")
 	if isSchemaVersion(version) {
 		document := source.DeepCopy()
+		document.GetObject("system").Pop("agent_registration_sessions")
 		if err := validateLegacyDocument(document); err != nil {
 			return nil, err
 		}

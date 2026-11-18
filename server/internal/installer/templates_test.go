@@ -82,7 +82,7 @@ func TestGeneratorFingerprintMatchesReleaseInputs(t *testing.T) {
 	}
 	digest := sha256.New()
 	digest.Write([]byte(legacyInstallerFingerprint))
-	for _, name := range []string{"agent-install-rollback.sh", "install-go-aio.sh", "install-go.sh"} {
+	for _, name := range []string{"agent-install-rollback.sh", "cli-output.sh", "install-go-aio.sh", "install-go.sh"} {
 		data, err := scriptFiles.ReadFile("scripts/" + name)
 		if err != nil {
 			t.Fatal(err)

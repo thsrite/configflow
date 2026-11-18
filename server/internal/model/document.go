@@ -90,12 +90,13 @@ func (s *Shared) SetJSON(member string, data json.RawMessage) error {
 
 // System holds global settings, backup preferences and registered Agents.
 type System struct {
-	SystemConfig SystemConfig `json:"system_config"`
-	Backup       Backup       `json:"backup"`
-	Agents       []Agent      `json:"agents"`
-	Revision     Int          `json:"_revision"`
-	Fields       Fields
-	raw          Raw
+	SystemConfig         SystemConfig               `json:"system_config"`
+	Backup               Backup                     `json:"backup"`
+	Agents               []Agent                    `json:"agents"`
+	RegistrationSessions []AgentRegistrationSession `json:"agent_registration_sessions"`
+	Revision             Int                        `json:"_revision"`
+	Fields               Fields
+	raw                  Raw
 }
 
 // UnmarshalJSON decodes the system record with type fallback.

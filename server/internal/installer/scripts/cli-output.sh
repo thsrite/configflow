@@ -58,7 +58,7 @@ cf_mark_read() {
 
 cf_redact() {
     if command -v sed >/dev/null 2>&1; then
-        LC_ALL=C sed -E 's/(Authorization:[[:space:]]*(Bearer|Basic)[[:space:]]+)[^[:space:]]+/\1[REDACTED]/g; s/("(token|installation_token|secret|password)"[[:space:]]*:[[:space:]]*")[^"]*/\1[REDACTED]/g; s/((token|installation_token|password)=)[^&[:space:]]+/\1[REDACTED]/g'
+        LC_ALL=C sed -E 's/(Authorization:[[:space:]]*(Bearer|Basic)[[:space:]]+)[^[:space:]]+/\1[REDACTED]/g; s/("(token|installation_token|registration_token|registration_key|secret|password)"[[:space:]]*:[[:space:]]*")[^"]*/\1[REDACTED]/g; s/((token|installation_token|registration_token|registration_key|password)=)[^&[:space:]]+/\1[REDACTED]/g'
     else
         # Callers never log config bodies, enrollment headers or credentials.
         while IFS= read -r cf_redact_line || [ -n "$cf_redact_line" ]; do printf '%s\n' "$cf_redact_line"; done

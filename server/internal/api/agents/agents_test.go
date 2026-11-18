@@ -125,7 +125,7 @@ func TestRegistrationKeyDoesNotBypassExistingAgentToken(t *testing.T) {
 		t.Fatal("mutated")
 	}
 	s.Post("/api/agents/register", httpxtest.JSON(payload("name", "other", "registration_key", "wrong"))).
-		WantStatus(403).WantJSON(jsonx.Obj("success", false, "message", "Invalid registration key"))
+		WantStatus(403).WantJSON(jsonx.Obj("success", false, "message", apiagents.RegistrationLocked))
 	if before[0].(*jsonx.Object).Has("registration_key") {
 		t.Fatal("key stored")
 	}

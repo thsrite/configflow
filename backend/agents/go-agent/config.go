@@ -38,6 +38,8 @@ type Config struct {
 	Token                   string `json:"token,omitempty"`
 	InstallationID          string `json:"installation_id,omitempty"`
 	InstallationToken       string `json:"installation_token,omitempty"`
+	RegistrationToken       string `json:"registration_token,omitempty"`
+	RegistrationKey         string `json:"registration_key,omitempty"`
 
 	// 监控功能配置（使用指针以区分未设置和 false）
 	EnableMetrics *bool `json:"enable_metrics,omitempty"` // 是否启用系统监控，默认 true
@@ -110,6 +112,12 @@ func (c *Config) Save() error {
 	}
 	if c.InstallationToken == "" {
 		delete(values, "installation_token")
+	}
+	if c.RegistrationToken == "" {
+		delete(values, "registration_token")
+	}
+	if c.RegistrationKey == "" {
+		delete(values, "registration_key")
 	}
 	data, err := json.MarshalIndent(values, "", "  ")
 	if err != nil {

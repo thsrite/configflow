@@ -3,6 +3,7 @@ package difftest
 import (
 	"testing"
 
+	"configflow/internal/installer/installertest"
 	"configflow/internal/jsonx"
 	"configflow/internal/yamlx"
 	"configflow/internal/yamlx/yamlxtest"
@@ -13,7 +14,7 @@ func equalComposeYAML(left, right string) bool {
 	if err != nil {
 		return false
 	}
-	b, err := yamlx.Parse([]byte(right))
+	b, err := yamlx.Parse([]byte(installertest.BootstrapBaseline(right)))
 	return err == nil && yamlx.Equal(a, b)
 }
 

@@ -6,6 +6,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -54,13 +55,13 @@ func RollbackModule() (string, error) {
 
 // TemplateBaseline reverses only the approved changes to one shell template.
 func TemplateBaseline(file, text string) (string, error) {
-	return baseline(file, text, false)
+	return baseline(file, BootstrapBaseline(text), false)
 }
 
 // PythonBaseline reverses the approved D3 additions in fully rendered scripts.
 // All other bytes remain available for strict Python-reference comparisons.
 func PythonBaseline(text string) (string, error) {
-	return baseline("", text, true)
+	return baseline("", BootstrapBaseline(text), true)
 }
 
 func baseline(file, text string, rendered bool) (string, error) {
@@ -84,4 +85,24 @@ func baseline(file, text string, rendered bool) (string, error) {
 		text = strings.ReplaceAll(text, d.After, d.Before)
 	}
 	return text, nil
+}
+
+var bootstrapJSON = regexp.MustCompile(`,
+  "registration_token": "[A-Za-z0-9_-]{43}"
+`)
+var bootstrapCompose = regexp.MustCompile(`(?m)^      - AGENT_(?:MIHOMO|MOSDNS|OXIDNS)_REGISTRATION_TOKEN=[A-Za-z0-9_-]{43}
+`)
+var bootstrapRun = regexp.MustCompile(`(?m)^  -e AGENT_(?:MIHOMO|MOSDNS|OXIDNS)_REGISTRATION_TOKEN=[A-Za-z0-9_-]{43} ` + regexp.QuoteMeta("\\") + "\n")
+var bootstrapHARun = regexp.MustCompile(`(?m)^  -e 'AGENT_OXIDNS_REGISTRATION_TOKEN=[A-Za-z0-9_-]{43}' ` + regexp.QuoteMeta("\\") + "\n")
+
+// BootstrapBaseline removes only the approved O9-H2 credential fields of their
+// exact rendered shapes; malformed proofs and every other script byte remain.
+func BootstrapBaseline(text string) string {
+	text = bootstrapJSON.ReplaceAllString(text, "\n")
+	text = bootstrapCompose.ReplaceAllString(text, "")
+	text = bootstrapRun.ReplaceAllString(text, "")
+	text = bootstrapHARun.ReplaceAllString(text, "")
+	text = strings.ReplaceAll(text, "token|installation_token|registration_token|registration_key|secret|password", "token|installation_token|secret|password")
+	text = strings.ReplaceAll(text, "token|installation_token|registration_token|registration_key|password", "token|installation_token|password")
+	return text
 }

@@ -92,6 +92,10 @@ func compareInstaller(py, gor response, mask []string) []string {
 		if migrated && name == "Content-Type" {
 			continue
 		}
+		if name == "Cache-Control" && py.status == 200 && gor.status == 200 && py.header.Get(name) == "" && gor.header.Get(name) == "no-store" &&
+			strings.Contains(string(gor.body), "REGISTRATION_TOKEN=") {
+			continue
+		}
 		if a, b := py.header.Get(name), gor.header.Get(name); a != b {
 			diffs = append(diffs, fmt.Sprintf("header %s python %q go %q", name, a, b))
 		}

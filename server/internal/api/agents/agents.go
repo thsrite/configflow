@@ -8,6 +8,8 @@ package agents
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"crypto/subtle"
 	"errors"
 	"io"
 	"math"
@@ -21,6 +23,7 @@ import (
 	"configflow/internal/jsonx"
 	"configflow/internal/logx"
 	"configflow/internal/notifications"
+	"configflow/internal/redact"
 	"configflow/internal/repo"
 )
 
@@ -128,7 +131,8 @@ const unauthorizedReason = "面板里已有同名同地址的 Agent，但这次�
 
 func registerAgent(c *httpx.Ctx) (*httpx.Response, error) {
 	var data *jsonx.Object
-	response, err := doRegister(c, &data)
+	secrets := redact.NewSecrets([]string{os.Getenv("AGENT_REGISTRATION_KEY")})
+	response, err := doRegister(c, &data, &secrets)
 	if err == nil {
 		return response, nil
 	}
@@ -136,6 +140,9 @@ func registerAgent(c *httpx.Ctx) (*httpx.Response, error) {
 	var permission *agents.PermissionError
 	var installation *agents.InstallationError
 	switch {
+	case errors.Is(err, agents.ErrRegistrationAuthorization):
+		registrationRejected(c.Context(), data, RegistrationLocked)
+		return failure(403, RegistrationLocked), nil
 	case errors.As(err, &conflict):
 		registrationRejected(c.Context(), data, conflict.Message)
 		return failure(409, conflict.Message), nil
@@ -145,12 +152,13 @@ func registerAgent(c *httpx.Ctx) (*httpx.Response, error) {
 	case errors.As(err, &installation):
 		return failure(installation.Status, installation.Message), nil
 	}
-	logger.Errorf("Agent注册失败: %s", err)
-	logger.Errorf("错误详情: %s", err)
-	return failure(500, err.Error()), nil
+	message, _ := redact.SanitizeWithSecrets(err.Error(), secrets, false).(string)
+	logger.Errorf("Agent注册失败: %s", message)
+	logger.Errorf("错误详情: %s", message)
+	return failure(500, message), nil
 }
 
-func doRegister(c *httpx.Ctx, out **jsonx.Object) (*httpx.Response, error) {
+func doRegister(c *httpx.Ctx, out **jsonx.Object, secrets *redact.Secrets) (*httpx.Response, error) {
 	ctx := c.Context()
 	manager, err := agents.Get(ctx)
 	if err != nil {
@@ -173,7 +181,14 @@ func doRegister(c *httpx.Ctx, out **jsonx.Object) (*httpx.Response, error) {
 		}
 		return nil, errors.New("'" + httpx.PyTypeName(value) + "' object has no attribute 'pop'")
 	}
-	*out = data
+	requestSecrets := []string{data.GetString("registration_token"), data.GetString("registration_key"), data.GetString("installation_token"), os.Getenv("AGENT_REGISTRATION_KEY")}
+	if header, present := c.Header("Authorization"); present {
+		if token, ok := auth.ParseBearerToken(header, present); ok {
+			requestSecrets = append(requestSecrets, token)
+		}
+	}
+	*secrets = redact.NewSecrets(requestSecrets)
+	*out = safeRegistrationLogFields(data, *secrets)
 	// A gateway installer gets a short-lived capability for exactly these two
 	// service identities. Never reveal the global registration key.
 	installationID, _ := data.Pop("installation_id")
@@ -192,19 +207,21 @@ func doRegister(c *httpx.Ctx, out **jsonx.Object) (*httpx.Response, error) {
 		installationProfile = profile
 		data.Set("profile_id", profile)
 	}
-	if key := os.Getenv("AGENT_REGISTRATION_KEY"); key != "" && installationProfile == nil {
-		if !jsonx.Equal(data.GetOr("registration_key", ""), key) {
-			logger.Warning("Agent 注册被拒绝：注册密钥不匹配")
-			if data.GetOr("registration_key", "") == "" {
-				return failure(403, RegistrationLocked), nil
-			}
-			return failure(403, "Invalid registration key"), nil
-		}
+	registrationKey, _ := data.Pop("registration_key")
+	registrationToken, _ := data.Pop("registration_token")
+	key := os.Getenv("AGENT_REGISTRATION_KEY")
+	admission := agents.RegistrationAuthorization{AllowNew: !auth.IsAuthEnabled() && key == ""}
+	if candidate, ok := registrationKey.(string); ok && key != "" {
+		left, right := sha256.Sum256([]byte(candidate)), sha256.Sum256([]byte(key))
+		admission.AllowNew = subtle.ConstantTimeCompare(left[:], right[:]) == 1
 	}
-	// 移除注册密钥（不存入配置，并先于日志记录以防止泄露）
-	data.Pop("registration_key")
+	if validPanelJWT(c) {
+		admission.AllowNew = true
+	}
+	admission.Credential, _ = registrationToken.(string)
 
 	host := data.GetOr("host", "")
+	admission.ReportedHost, _ = host.(string)
 	// WSGI header values are latin-1 decoded: every byte is one character.
 	clientIP := c.RemoteAddr()
 	if forwarded, ok := c.Header("X-Forwarded-For"); ok {
@@ -232,7 +249,8 @@ func doRegister(c *httpx.Ctx, out **jsonx.Object) (*httpx.Response, error) {
 	if installationProfile == nil && (!jsonx.Truthy(host) || dockerIP) {
 		data.Set("host", clientIP)
 	}
-	logger.Infof("Agent注册字段: %s", jsonx.Repr(RegistrationLogFields(data)))
+	*out = safeRegistrationLogFields(data, *secrets)
+	logger.Infof("Agent注册字段: %s", jsonx.Repr(*out))
 
 	header, present := c.Header("Authorization")
 	var existingToken any
@@ -246,14 +264,14 @@ func doRegister(c *httpx.Ctx, out **jsonx.Object) (*httpx.Response, error) {
 		}
 		result, err = hooks.InstallationRegister(ctx, manager, installationID, installationToken, data, existingToken)
 	} else {
-		result, err = manager.RegisterAgent(ctx, data, existingToken, nil)
+		result, err = manager.RegisterAuthorizedAgent(ctx, data, existingToken, admission)
 	}
 	if err != nil {
 		return nil, err
 	}
 	body := jsonx.Obj("success", true)
 	body.Update(result)
-	logged := RegistrationLogFields(data)
+	logged := RegistrationLogFields(*out)
 	label := "Agent 重新注册"
 	if jsonx.Truthy(result.Value("is_new")) {
 		label = "新 Agent 注册成功"
@@ -621,4 +639,37 @@ func handleAgentItem(c *httpx.Ctx) (*httpx.Response, error) {
 		return failure(500, err.Error()), nil
 	}
 	return failure(404, "Agent not found"), nil
+}
+
+// validPanelJWT recognizes only a panel-issued JWT, never an Agent token.
+func validPanelJWT(c *httpx.Ctx) bool {
+	if c.IsInternalCall() {
+		return true
+	}
+	header, present := c.Header("Authorization")
+	token, ok := auth.ParseBearerToken(header, present)
+	if !ok {
+		return false
+	}
+	verification, err := auth.VerifyToken(token)
+	return err == nil && !verification.Failed()
+}
+
+func safeRegistrationLogFields(data *jsonx.Object, secrets redact.Secrets) *jsonx.Object {
+	fields := jsonx.NewObject()
+	for _, field := range registrationLogFields {
+		value, present := data.Get(field)
+		if !present {
+			continue
+		}
+		switch value := value.(type) {
+		case string:
+			// Redact before truncating: a long key must not leave a matching prefix.
+			sanitized, _ := redact.SanitizeWithSecrets(value, secrets, false).(string)
+			fields.Set(field, sanitized)
+		case jsonx.Number:
+			fields.Set(field, value)
+		}
+	}
+	return RegistrationLogFields(fields)
 }

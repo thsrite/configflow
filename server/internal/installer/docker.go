@@ -15,22 +15,23 @@ import (
 // generate_docker_agent_run. Ports hold Python ints (int, int64, *big.Int);
 // NewDockerOptions fills the Python defaults.
 type DockerOptions struct {
-	ServerURL    string
-	AgentName    string
-	AgentIP      string
-	DataDir      string
-	NetworkMode  string
-	EnableMihomo bool
-	EnableMosdns bool
-	MihomoPort   any
-	MosdnsPort   any
-	EnableOxidns bool
-	OxidnsPort   any
-	EnableDNSHA  bool
-	HAParent     string
-	HASubnet     string
-	HAGateway    string
-	HAHostIDPath string
+	RegistrationTokens map[string]string
+	ServerURL          string
+	AgentName          string
+	AgentIP            string
+	DataDir            string
+	NetworkMode        string
+	EnableMihomo       bool
+	EnableMosdns       bool
+	MihomoPort         any
+	MosdnsPort         any
+	EnableOxidns       bool
+	OxidnsPort         any
+	EnableDNSHA        bool
+	HAParent           string
+	HASubnet           string
+	HAGateway          string
+	HAHostIDPath       string
 }
 
 // NewDockerOptions returns the Python defaults.
@@ -197,6 +198,11 @@ func GenerateDockerAgentCompose(o DockerOptions) (string, error) {
 		"ENABLE_MIHOMO=" + boolText(o.EnableMihomo),
 		"ENABLE_MOSDNS=" + boolText(o.EnableMosdns),
 		"ENABLE_OXIDNS=" + boolText(o.EnableOxidns),
+	}
+	for _, service := range []string{"mihomo", "mosdns", "oxidns"} {
+		if token := o.RegistrationTokens[service]; token != "" {
+			environment = append(environment, "AGENT_"+strings.ToUpper(service)+"_REGISTRATION_TOKEN="+token)
+		}
 	}
 	if o.AgentIP != "" {
 		environment = append(environment, "AGENT_IP="+o.AgentIP)
@@ -415,6 +421,11 @@ func GenerateDockerAgentRun(o DockerOptions) (string, error) {
 	cmd += "\n  -e SERVER_URL=" + shellWord(o.ServerURL, false) + " \\\n" +
 		"  -e ENABLE_MIHOMO=\"" + boolText(o.EnableMihomo) + "\" \\\n" +
 		"  -e ENABLE_MOSDNS=\"" + boolText(o.EnableMosdns) + "\" \\"
+	for _, service := range []string{"mihomo", "mosdns", "oxidns"} {
+		if token := o.RegistrationTokens[service]; token != "" {
+			cmd += "\n  -e " + shellWord("AGENT_"+strings.ToUpper(service)+"_REGISTRATION_TOKEN="+token, true) + " \\"
+		}
+	}
 	if o.AgentIP != "" {
 		cmd += "\n  -e AGENT_IP=" + shellWord(o.AgentIP, true) + " \\"
 	}
@@ -466,6 +477,9 @@ func generateDockerHARun(o DockerOptions, port string, network *haNetwork) strin
 		{"CONFIGFLOW_DNS_HA", "1"}, {"AGENT_IP", o.AgentIP},
 		{"CONFIGFLOW_DNS_HA_NETWORK", networkMode},
 		{"AGENT_OXIDNS_NAME", o.AgentName + "-oxidns"}, {"AGENT_OXIDNS_PORT", port},
+	}
+	if token := o.RegistrationTokens["oxidns"]; token != "" {
+		env = append(env, [2]string{"AGENT_OXIDNS_REGISTRATION_TOKEN", token})
 	}
 	identity := "--mount " + quote("type=bind,src="+o.HAHostIDPath+",dst=/run/configflow-host-machine-id,readonly")
 	run := []string{

@@ -42,6 +42,30 @@ class ComparatorTests(unittest.TestCase):
                 self.assertTrue(pd.response_diffs(left, bad, '/api/rules/local/<name>', []))
         self.assertTrue(pd.response_diffs(left, reply(b'wrong', left[1], headers=target), '/api/rules/local/<name>', []))
         self.assertTrue(pd.response_diffs(left, reply(left[2], left[1], status=403, headers=target), '/api/rules/local/<name>', []))
+    def test_o9_bootstrap_installer_fields_are_exact(self):
+        token = 'x' * 43
+        for route, before, after in [
+            ('/api/agents/docker-agent-compose', b'services:\n',
+             ('services:\n      - AGENT_MIHOMO_REGISTRATION_TOKEN=' + token + '\n').encode()),
+            ('/api/agents/docker-agent-run', b'docker run\n',
+             ('docker run\n  -e AGENT_MIHOMO_REGISTRATION_TOKEN=' + token + ' ' + chr(92) + '\n').encode()),
+        ]:
+            left = reply(before, 'text/plain; charset=utf-8')
+            right = reply(after, 'text/plain; charset=utf-8', headers={'cache-control': 'no-store'})
+            self.assertEqual([], pd.response_diffs(left, right, route, []))
+            self.assertTrue(pd.response_diffs(left, right, '/api/other', []))
+            self.assertTrue(pd.response_diffs(left, reply(after.replace(token.encode(), b'short'), 'text/plain; charset=utf-8'), route, []))
+            self.assertTrue(pd.response_diffs(left, reply(after.replace(b'REGISTRATION_TOKEN', b'UNKNOWN_TOKEN'), 'text/plain; charset=utf-8'), route, []))
+            self.assertTrue(pd.response_diffs(left, reply(after + b'changed', 'text/plain; charset=utf-8'), route, []))
+
+    def test_o9_core_redactor_delta_preserves_existing_no_store(self):
+        before = b'token|installation_token|secret|password'
+        after = b'token|installation_token|registration_token|registration_key|secret|password'
+        left = reply(before, 'text/plain; charset=utf-8', headers={'cache-control': 'no-store'})
+        right = reply(after, 'text/plain; charset=utf-8', headers={'cache-control': 'no-store'})
+        self.assertEqual([], pd.response_diffs(left, right, '/api/agents/core-install-script', []))
+        self.assertTrue(pd.response_diffs(left, right, '/api/other', []))
+        self.assertTrue(pd.response_diffs(left, reply(after, 'text/plain; charset=utf-8'), '/api/agents/core-install-script', []))
 
     def test_public_generated_file_schema_names_are_exact(self):
         for name in ('ETag', 'Last-Modified', 'Accept-Ranges'):
