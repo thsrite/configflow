@@ -278,5 +278,55 @@
     "guard": "CONFIGFLOW_PY and CONFIGFLOW_REPO explicitly set and CONFIGFLOW_SNAPSHOT (not enabled by speed tests)",
     "kind": "cross-language",
     "reason": "显式私人快照互通测试，保留原现场Python读取/写入合同；本任务未运行私人快照。"
+  },
+  {
+    "id": "B-029",
+    "file": "server/internal/agents/metrics/native_files_test.go",
+    "function": "TestPythonLoadsAndSavesNativeNullFilesButLegacyMathFails",
+    "callee": "exec.Command",
+    "count": 1,
+    "guard": "Always-on storage round trip; synthetic null-bearing JSONL/legacy files under t.TempDir (no environment opt-in)",
+    "kind": "cross-language",
+    "reason": "Real Python loads Go-written metric files, verifies legacy None arithmetic rejection and flushes JSONL; Go reads the actual rewritten files and checks retained null-bearing points. Static stdout cannot prove this bidirectional file compatibility."
+  },
+  {
+    "id": "B-030",
+    "file": "server/internal/agents/trafficstore/native_files_test.go",
+    "function": "TestTrafficFilesInteroperateWithPython",
+    "callee": "exec.Command",
+    "count": 1,
+    "guard": "Always-on storage round trip; synthetic traffic files under t.TempDir (no environment opt-in)",
+    "kind": "cross-language",
+    "reason": "Real Python TrafficStore reads Go-written data and writes another file; Go reopens that actual file and compares the complete value including unknown/null members. Preserve live file-format interoperability."
+  },
+  {
+    "id": "B-031",
+    "file": "server/internal/repo/review_n85_test.go",
+    "function": "TestReviewN85PythonFullStorageDifferential",
+    "callee": "exec.Command",
+    "count": 1,
+    "guard": "CONFIGFLOW_PY and CONFIGFLOW_REPO explicitly set",
+    "kind": "cross-language",
+    "reason": "Real Python seeds and mutates a temporary repository alongside Go; compare all SQLite table columns, complete file contents and exported documents after each storage action. Preserve live persistence semantics rather than a fixed reference response."
+  },
+  {
+    "id": "B-032",
+    "file": "server/internal/repo/sections_roundtrip_test.go",
+    "function": "TestSectionWritesStoredRoundTrip",
+    "callee": "exec.Command",
+    "count": 1,
+    "guard": "Python audit callback runs only with CONFIGFLOW_PY and CONFIGFLOW_REPO; native section assertions always run",
+    "kind": "cross-language",
+    "reason": "Real Python opens each Go-written SQLite repository and audits the actual stored document after typed/legacy section writes, including untouched unknown/null/wrong-typed members. Native row ownership and refusal assertions remain active without Python."
+  },
+  {
+    "id": "B-033",
+    "file": "server/internal/repo/typed_roundtrip_test.go",
+    "function": "TestTypedUpdateStoredRoundTrip",
+    "callee": "exec.Command",
+    "count": 1,
+    "guard": "Python audit callback runs only with CONFIGFLOW_PY and CONFIGFLOW_REPO; native typed-update assertions always run",
+    "kind": "cross-language",
+    "reason": "Real Python opens the actual Go-written SQLite state after typed updates and checks the stored document; retain generation, per-row revision and untouched byte preservation checks. This is storage interoperability, not a pure Python calculation."
   }
 ]

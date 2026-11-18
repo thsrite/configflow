@@ -27,6 +27,16 @@
     "reason": "Go child isolates alias-bomb input and retains original 10s guard."
   },
   {
+    "id": "A-GO-4",
+    "file": "server/internal/deploy/crash_test.go",
+    "function": "TestPublishProcessRecovery",
+    "callee": "exec.Command",
+    "count": 1,
+    "kind": "go-subprocess",
+    "guard": "os.Args[0], -test.run=^TestPublishChild$, A14_CHILD_DATA/A14_CHILD_PHASE",
+    "reason": "Re-execute the Go test binary for SIGTERM/SIGKILL during preparation, upload and acceptance; compare persisted journal state and recoverability, then Wait/reap the child. No Python oracle."
+  },
+  {
     "id": "A-DIFF-1",
     "file": "server/internal/mosdns/difftest/diff_test.go",
     "function": "startPython",
@@ -88,5 +98,15 @@
     "kind": "differential",
     "guard": "CONFIGFLOW_DIFF=1; argv[0]=cp",
     "reason": "Copy the same CFG-06 duplicate-target seed to separate Flask/Go data directories; live HTTP and durable state assertions remain active."
+  },
+  {
+    "id": "A-DIFF-8",
+    "file": "server/internal/deploy/publish_oracle_test.go",
+    "function": "TestPythonPublishTranscripts",
+    "callee": "exec.Command",
+    "count": 1,
+    "kind": "differential",
+    "guard": "Always-on live differential; synthetic inputs, separate temporary repositories and independent loopback agentfake instances (no CONFIGFLOW_DIFF guard)",
+    "reason": "Real Python AgentManager publishes, polls, activates, rolls back and recovers against a live fake Agent. Compare Go/Python HTTP sequences, headers, uploaded manifest/file digests, persisted Agent state and receipt files. A static pure-oracle golden cannot produce the Python-side HTTP journal, so keep the existing live execution and all eleven scenarios."
   }
 ]
