@@ -2,6 +2,8 @@ package onboarding
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"net/url"
 	"strings"
 
@@ -31,7 +33,7 @@ type State struct {
 	Takeover                    string              `json:"takeover"`
 	DomainCandidates            []DomainCandidate   `json:"domain_candidates"`
 	FakeIPRange                 string              `json:"fake_ip_range"`
-	OxiDNSMode                  string              `json:"oxidns_mode"`
+	OxiDNSMode                  json.RawMessage     `json:"oxidns_mode"`
 	Warnings                    []string            `json:"warnings"`
 	FieldWarnings               map[string]string   `json:"field_warnings"`
 	Blockers                    []string            `json:"blockers"`
@@ -113,11 +115,15 @@ func ReadState(config Document, revision int64, options Options) (State, error) 
 	if _, err := LocalUpstreams(local); err != nil {
 		out.FieldWarnings["local_dns"] = msgLocalWarning
 	}
-	out.OxiDNSMode = text(field(settings, "config_mode"))
-	if out.OxiDNSMode == "" {
-		out.OxiDNSMode = "template"
+	// Python settings.get('config_mode', 'template'): an unreadable stored mode,
+	// including null, is projected as stored rather than as a valid default.
+	out.OxiDNSMode = encode("template")
+	if mode := field(settings, "config_mode"); mode != nil {
+		if out.OxiDNSMode, err = yamlx.ToJSON(mode); err != nil {
+			return out, err
+		}
 	}
-	if out.OxiDNSMode == "native" && len(out.Blockers) == 0 {
+	if text(field(settings, "config_mode")) == "native" && len(out.Blockers) == 0 {
 		check := func() error {
 			if err := CheckNativeDNSPath(settings, true); err != nil {
 				return err
@@ -173,7 +179,24 @@ type Readiness struct {
 
 // AssertReady rejects incomplete saved drafts without repairing or writing them.
 // A22 passes the target host's addresses through Options.LocalAddresses.
+// Every user-fixable failure (OxiDNS settings, YAML, generator validation) is a
+// *gateway.Error keeping its cause, so IsInputError identifies it for HTTP 400.
 func AssertReady(ctx context.Context, config Document, options Options) (Readiness, error) {
+	out, err := assertReady(ctx, config, options)
+	if err == nil || ctx.Err() != nil {
+		return out, err
+	}
+	var user *gateway.Error
+	if errors.As(err, &user) {
+		return out, err
+	}
+	if message, ok := validationMessage(err); ok {
+		return out, &gateway.Error{Message: message, Cause: err}
+	}
+	return out, err
+}
+
+func assertReady(ctx context.Context, config Document, options Options) (Readiness, error) {
 	out := Readiness{}
 	gw, err := gatewayConfig(config)
 	if err != nil {

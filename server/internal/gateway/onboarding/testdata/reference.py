@@ -150,3 +150,12 @@ if __name__=='__main__':
         c=snapshot();c['rule_configs'][1]['enabled']=switch;c['nodes'][0]['enabled']=switch
         emit('disabled-switch-'+str(switch),c,form())
     emit('large-integer-revision',snapshot(),form(expected_config_revision=10**40))
+    # Review A21 F3: stored nulls are projected as stored, never as defaults.
+    c=snapshot();c['rule_configs'][2]['policy']=None
+    emit('null-policy',c,form())
+    c=snapshot();c['rule_library'][1]['behavior']=None
+    emit('null-library-behavior',c,form())
+    c=snapshot();c['oxidns'].update(default_forward=None,local_dns=None,query_recorder={'enabled':None})
+    emit('null-oxidns-values',c,form())
+    c=snapshot();c['oxidns']['config_mode']=None
+    emit('null-config-mode',c,form())

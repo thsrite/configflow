@@ -8,6 +8,7 @@ import (
 	"errors"
 	"math/big"
 	"net/netip"
+	"os"
 	"sync"
 
 	"configflow/internal/convert"
@@ -151,17 +152,41 @@ func overlapWarnings(ctx context.Context, config Document) ([]string, error) {
 	}
 	return gw.DirectOverlapWarnings(ctx, nil)
 }
+
+// diagnosticFields are the free-text parts of a state/report that may echo
+// user configuration (generator, YAML and OxiDNS validation messages).
+var diagnosticFields = []string{"blockers", "warnings", "message", "validation", "field_warnings"}
+
+// sanitize masks system secrets everywhere and configuration credentials in
+// diagnostics. Credentials discovered in the profile (node passwords, UUIDs,
+// short IDs) are user-chosen and may be short common words; masking every key
+// and value containing them would corrupt the wizard's own fields (review A21
+// F4), which Python returns verbatim. A bare JSON string is a diagnostic.
 func sanitize(raw json.RawMessage, config Document) (json.RawMessage, error) {
 	var system model.System
 	if err := json.Unmarshal(encode(config), &system); err != nil {
 		return nil, err
 	}
-	tokens := append([]string{system.SystemConfig.RuleProxyToken, system.SystemConfig.ConfigToken, system.SystemConfig.RuleFetchProxy}, system.SystemConfig.RetiredRuleProxyTokens...)
+	tokens := append([]string{system.SystemConfig.RuleProxyToken, system.SystemConfig.ConfigToken, system.SystemConfig.RuleFetchProxy, os.Getenv("AGENT_REGISTRATION_KEY")}, system.SystemConfig.RetiredRuleProxyTokens...)
 	for _, agent := range system.Agents {
 		tokens = append(tokens, agent.Token)
 	}
-	seeds := redact.CollectCredentials(map[string]any{"config": json.RawMessage(encode(config)), "proxy": system.SystemConfig.RuleFetchProxy}, redact.NewSecrets(tokens))
-	return json.Marshal(redact.SanitizeWithSecrets(raw, seeds, true))
+	secrets := redact.NewSecrets(tokens)
+	credentials := redact.CollectCredentials(map[string]any{"config": json.RawMessage(encode(config)), "proxy": system.SystemConfig.RuleFetchProxy}, secrets)
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) != nil || fields == nil {
+		return json.Marshal(redact.SanitizeWithSecrets(raw, credentials, true))
+	}
+	for _, key := range diagnosticFields {
+		if value, ok := fields[key]; ok {
+			masked, err := json.Marshal(redact.SanitizeWithSecrets(value, credentials, true))
+			if err != nil {
+				return nil, err
+			}
+			fields[key] = masked
+		}
+	}
+	return json.Marshal(redact.SanitizeWithSecrets(encode(fields), secrets, true))
 }
 func safeError(err error, config Document) error {
 	var user *gateway.Error

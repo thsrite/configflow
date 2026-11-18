@@ -113,14 +113,14 @@ func storedFlags(raw json.RawMessage, key string, count int) []*bool {
 
 // DomainCandidate exposes DNS selections without the IP editor's selected field.
 type DomainCandidate struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Behavior    string `json:"behavior"`
-	Policy      string `json:"policy"`
-	Enabled     bool   `json:"enabled"`
-	Available   bool   `json:"available"`
-	Reason      string `json:"reason"`
-	Description string `json:"description,omitempty"`
+	ID          string  `json:"id"`
+	Name        string  `json:"name"`
+	Behavior    string  `json:"behavior"`
+	Policy      *string `json:"policy"` // nil: stored null, as Python item.get('policy', '')
+	Enabled     bool    `json:"enabled"`
+	Available   bool    `json:"available"`
+	Reason      string  `json:"reason"`
+	Description string  `json:"description,omitempty"`
 }
 
 func domainCandidates(config Document, selections []string) ([]DomainCandidate, error) {
@@ -183,15 +183,20 @@ func domainCandidates(config Document, selections []string) ([]DomainCandidate, 
 		case !enabled:
 			reason = msgDisabled
 		}
+		rulePolicy := new(string)
+		*rulePolicy = policy(rule)
+		if _, present := ruleFields["policy"]; present && rule.Policy == nil {
+			rulePolicy = nil
+		}
 		description := msgDomain
 		if behavior == "classical" {
 			description = msgClassic
 		}
-		result = append(result, DomainCandidate{ID: rule.ID, Name: name, Behavior: behavior, Policy: policy(rule), Enabled: enabled, Available: reason == "", Reason: reason, Description: description})
+		result = append(result, DomainCandidate{ID: rule.ID, Name: name, Behavior: behavior, Policy: rulePolicy, Enabled: enabled, Available: reason == "", Reason: reason, Description: description})
 	}
 	for _, id := range selections {
 		if !seen[id] {
-			result = append(result, DomainCandidate{ID: id, Name: id, Reason: msgMissing})
+			result = append(result, DomainCandidate{ID: id, Name: id, Policy: new(string), Reason: msgMissing})
 		}
 	}
 	return result, nil

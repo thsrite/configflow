@@ -1184,4 +1184,6 @@ new D2 signature transition and do not change the documented null rollback risk.
 
 - 同属「HEAD 只读」类别。Python `gateway_onboarding` 只区分 GET 与其他方法，带合法 JSON 的 HEAD 会保存 Mihomo/OxiDNS 草稿并增加 revision。Go HEAD 走 GET，只返回相同状态与 headers，不返回 body，DB、业务文件、revision 不变。`api/gatewayonboarding.TestHEADIsReadOnlyAndMatchesGET` 与真实 Flask 的 `TestFlaskHEADExpectedReadOnlyDifference` 显式验证。
 
+- Python bug（复核 A21 F2）：原生 OxiDNS 的备用链已停用、`_prepare_native_gateway_fallback` 已恢复成功，但随后 `apply_common_settings` 仍拒绝（例如监听入口缺失）且用户明确确认转换模板时，Python 在 `settings` 被重新赋值为「已恢复」投影之后才写 `gateway_onboarding_native_backup`，备份里是被改过的 native_config（补回 fallback 插件、改写 proxy_dns_seq），并非用户原始文档，与提示「原生配置……保存在 backup 中，可从配置导出恢复」不符。Go 的恢复结果只在 apply 成功时替换 settings，备份始终是原始原生文档。`gateway/onboarding.TestConversionBackupKeepsOriginalNative` 固定此修复；真实 Python 复现见 review-a21.md。
+
 A21 的临时 C36 依赖缺失503豁免已撤销：batch-5 合入后 server 注册真实 DNS/adopt owner，真实 Flask 保存与 revision 条件一致。独立未注册的 package 防线不列为生产差分。

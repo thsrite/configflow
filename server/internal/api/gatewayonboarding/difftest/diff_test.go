@@ -237,7 +237,14 @@ func TestFlaskHTTP(t *testing.T) {
 	authorization := request.Header.Get("Authorization")
 	o := newOracle(t, s)
 	path := "/api/profiles/default/gateway-onboarding"
-	cases := []struct{ method, path, body string }{{"GET", path, ""}, {"POST", path + "/preview", validForm}, {"POST", path, validForm}, {"POST", path + "/preview", validForm}, {"POST", path, validForm}, {"POST", path, `{"bad":"body"}`}, {"POST", path + "/preview", "{"}, {"POST", path, "null"}, {"POST", path + "/preview", "[]"}, {"POST", path + "/preview", `{"rule_set_ids":[],"direct_rule_set_ids":[],"proxy_rule_set_ids":[],"local_dns":"udp://192.0.2.53"}`}, {"POST", path, strings.Repeat("x", 262145)}}
+	cases := []struct{ method, path, body string }{{"GET", path, ""}, {"POST", path + "/preview", validForm}, {"POST", path, validForm}, {"POST", path + "/preview", validForm}, {"POST", path, validForm}, {"POST", path, `{"bad":"body"}`}, {"POST", path + "/preview", "{"}, {"POST", path, "null"}, {"POST", path + "/preview", "[]"}, {"POST", path + "/preview", `{"rule_set_ids":[],"direct_rule_set_ids":[],"proxy_rule_set_ids":[],"local_dns":"udp://192.0.2.53"}`}, {"POST", path, strings.Repeat("x", 262145)},
+		// Review A21: one representative per remaining error class (stale guard,
+		// pre-schema revision comparison, blocked save report, missing profile).
+		{"POST", path, `{"rule_set_ids":[],"direct_rule_set_ids":[],"proxy_rule_set_ids":[],"local_dns":"https://192.0.2.53/dns-query","expected_config_revision":999999}`},
+		{"POST", path, `{"rule_set_ids":[],"direct_rule_set_ids":[],"proxy_rule_set_ids":[],"local_dns":"https://192.0.2.53/dns-query","expected_config_revision":"7"}`},
+		{"POST", path, `{"rule_set_ids":[],"direct_rule_set_ids":["missing-rule"],"proxy_rule_set_ids":[],"local_dns":"https://192.0.2.53/dns-query"}`},
+		{"GET", "/api/profiles/missing-profile/gateway-onboarding", ""},
+		{"POST", "/api/profiles/missing-profile/gateway-onboarding", validForm}}
 	for i, tc := range cases {
 		t.Run(tc.method+tc.path+string(rune('a'+i)), func(t *testing.T) {
 			py := o.call(t, tc.method, tc.path, tc.body, authorization)
