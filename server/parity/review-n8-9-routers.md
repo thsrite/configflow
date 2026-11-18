@@ -208,3 +208,18 @@ TestZZReviewUnrelatedMalformedLink: marker/plain ModeFromContext 和 LegacyGatew
 
 F1–F9 都已关闭（F6 由本节关闭）。修复复核和接线复核中的剩余意见都是低严重度，不阻塞。
 本复核同意把 N8-9 routers/routersplit 标为 **verified**，前提是作者自己的收尾检查通过：cross-corpus、定向 HTTP、新 fuzz 60s、gofmt/vet，以及把 native 接线提交。
+
+## 最终产品树确认（提交 434cacd69，只读）
+
+- **剩余意见 1 已收口**：原来第 409 行之后的缓存写循环原样抽成 `writeSyncSources`（rule_sync_sources.go 末尾），逻辑等价：
+  每个 URL 源只写一次，`syncCacheWrite` 在写之前检查 `ctx.Err()`。新的分配测试直接测这个写循环，
+  作者在 .32 的结果为 16 条规则 delta 3.70 MB < 6 MiB，和读路径「每次操作构建一次环境」的数量级一致。
+- **剩余意见 2 已收口**：`withSyncEnvironment` 的注释写明了前提（一次操作绑定一个不可变快照，派生的 ctx 不跨轮次、不跨 profile 共享）。
+  `sync()` 在控制摘要和 policy 核对之后、loadSyncSources 之前建立环境，读、下载、写缓存共用同一个 ctx，
+  而且都使用同一个 `config` 快照。版本门控的复核读到的是另一个变量 `latest`，只用于比较，不会混进环境。
+  环境只作为 ctx 的值，不影响取消或 shutdown 语义。
+- 只读 legacy cache 回归（内容一致、mtime 和 DB revision 不变、不生成 native 缓存）按作者结果记录，本复核没有重跑。
+- 工作区里还有一个未跟踪文件 `internal/routersplit/n89_identity_test.go`，不在 434cacd69 中。如果它是验收的一部分，请提交；否则删除。
+
+**最终确认**：产品树 434cacd69 没有遗留的复核发现。作者完成自己的收尾验证（定向 race、cross-corpus、fuzz 60s、gofmt/vet）后，
+N8-9 routers/routersplit 可以标为 **verified**。

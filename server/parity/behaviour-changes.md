@@ -1956,6 +1956,7 @@ world 保留旧文件。原 archive 不改；独立 Python 参考绑定完整 ar
 ### N8-9 routers / routersplit typed boundary
 
 - 用户写入的 type/endpoint/username/password/Agent引用必须为文本，verify_tls 必须为 bool；name 使用共享 model.String（数值保真文本，bool/容器按 R5 缺省），存储检查间隔使用 model.Int，HTTP 请求仍严格要求 JSON 整数（字符串或60.0均拒绝）。规则选择是身份列表，不能用数值自动造出规则 ID。原 R01 冻结输入/答案不改，另列725条完整逐行SHA绑定的独立 Python 期望；原生变化不复用 Go 输出。
+- 请求中的 `ip_rule_sets` / `ros_policy_rule_sets` 为 `false`、`0` 或 `""` 时返回400；Python原先按空列表处理。存储同类错型也必须显式修复，避免无关编辑清空设备路由选择。坏守卫配置存在原启用开关或所有权 state 时，probe/routes/fixed-IP/IPv6 等设备操作也会提示修复后再执行（保守拒绝）。
 - 存储读取使用共享 model；坏选择列表在无关改名时明确400而不是写空，校正后的PUT和DELETE仍可用；损坏守卫有所有权记录或原启用开关时阻止设备操作，不能退化为撤除。运行时默认不将无关的缺失字段物化，显式赋默认仍写入。旧未知字段、错型成员和大整数在无关编辑后保留，Extra 删除显式使用 Clear/Fields.Delete。已发布 manifest 的坏值仍作为不透明所有权证据，不能用 R5 默认去掉保护。
 - routersplit 不再生成 Python AttributeError/TypeError 或做 str/list/hashable 仿真；错型 record/list/bool 遵循 shared model，原始标记仍严格验证 version 的整数 token1 和所有字符串身份。实际使用的拓扑/绑定数值、容器、空必需身份 fail-closed，用 RouterSplitError/ROUTER_SPLIT_INVALID/409；可选非文本/null链接视为没有链接，不阻塞无关路由器；marker路径不读取旧拓扑证明。Python 的 None/空 ID、数值/bool相等不再制造关系。
 - 会话 completed=1 不再被 Python truthiness 当成 true；仅 bool true 表示完成。旧 hook 单测仍使用同一数字输入，独立 fixture 同时固定真实 Python 旧答案和 R5 投影后的完整答案。没有把输入改成 true 来躲过差异。
