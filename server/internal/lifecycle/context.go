@@ -45,7 +45,7 @@ func (r *Runtime) BindRequest(ctx context.Context) context.Context {
 	if !live {
 		return ctx
 	}
-	return withGeneration(ctx, g, g.jobs)
+	return withGeneration(ctx, g, g.detached)
 }
 
 // withGeneration records g for Stopping/ClockFrom and the cancellation parent

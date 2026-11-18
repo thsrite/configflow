@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"configflow/internal/ctxx"
 	"configflow/internal/lockx"
 	"configflow/internal/repo"
 	"configflow/internal/weburl"
@@ -20,12 +21,17 @@ var ErrPanic = errors.New("lifecycle: task panicked")
 
 type generationKey struct{}
 type generation struct {
-	runtime                              *Runtime
-	root                                 context.Context
-	loops                                context.Context
-	stopLoops                            context.CancelFunc
-	jobs                                 context.Context
-	stopJobs                             context.CancelFunc
+	runtime   *Runtime
+	root      context.Context
+	loops     context.Context
+	stopLoops context.CancelFunc
+	jobs      context.Context
+	stopJobs  context.CancelFunc
+	// detached is the cancellation parent Detach keeps. Shutdown cancels it
+	// only after stopJobs has synchronously cancelled every detached job, so a
+	// job never sees its detached child cancelled while its own Err is nil.
+	detached                             context.Context
+	stopDetached                         context.CancelFunc
 	stopping                             chan struct{}
 	changed                              chan struct{}
 	started, requested, draining, closed bool
@@ -70,7 +76,9 @@ func (r *Runtime) generation(ctx context.Context) *generation {
 	if r.current == nil {
 		loops, stopLoops := context.WithCancel(ctx)
 		jobs, stopJobs := context.WithCancel(context.Background())
+		detached, stopDetached := context.WithCancel(context.Background())
 		r.current = &generation{runtime: r, root: ctx, loops: loops, stopLoops: stopLoops, jobs: jobs, stopJobs: stopJobs,
+			detached: detached, stopDetached: stopDetached,
 			stopping: make(chan struct{}), changed: make(chan struct{}), admit: true,
 			drivers: map[string]bool{}, startups: map[string]bool{}}
 	}
@@ -230,7 +238,7 @@ func (r *Runtime) drive(g *generation, p Periodic) {
 		if p.Interval == nil {
 			return
 		}
-		d := p.Interval(withGeneration(g.root, g, g.jobs))
+		d := p.Interval(withGeneration(g.root, g, g.detached))
 		if d <= 0 {
 			logger.Errorf(msgInvalidInterval, p.Name)
 			return
@@ -258,12 +266,21 @@ func (r *Runtime) RequestSeen() {
 }
 
 func (r *Runtime) workContext(ctx context.Context, g *generation, detach bool) (context.Context, func()) {
+	var work context.Context
+	var cancel context.CancelFunc
+	stop := func() bool { return true }
 	if detach {
-		ctx = context.WithoutCancel(ctx)
+		// A direct child of g.jobs: stopJobs cancels it before it returns, and
+		// Shutdown cancels g.detached (what Detach(work) keeps) only after that.
+		// The former AfterFunc relay let an owner see its detached leaf write
+		// fail with Canceled while work.Err() was still nil, and then report
+		// success or pass its next pre-commit check after shutdown.
+		work, cancel = context.WithCancel(ctxx.Detach(ctxx.WithParent(ctx, g.jobs)))
+	} else {
+		work, cancel = context.WithCancel(ctx)
+		stop = context.AfterFunc(g.jobs, cancel)
 	}
-	work, cancel := context.WithCancel(ctx)
-	stop := context.AfterFunc(g.jobs, cancel)
-	work = repo.WithScope(context.WithValue(withGeneration(work, g, g.jobs), trackedKey{}, true))
+	work = repo.WithScope(context.WithValue(withGeneration(work, g, g.detached), trackedKey{}, true))
 	return work, func() { stop(); cancel(); repo.ResetConfigContext(work) }
 }
 
@@ -495,6 +512,7 @@ func (r *Runtime) Shutdown(ctx context.Context) {
 	g.admit = false
 	r.mu.Unlock()
 	g.stopJobs()
+	g.stopDetached()
 	cancelCtx, stopCancel := r.clockContext(overall, 500*time.Millisecond)
 	if err := r.wait(cancelCtx, g, true, nil, false); err != nil {
 		logger.Warning(msgShutdownTimeout)
