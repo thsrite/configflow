@@ -134,4 +134,3 @@ source fingerprints described above, all now replay-green. No new dependency,
 flock, periodic loop, hidden loop switch or unapproved job API was added. Wait for
 batch-6 merge notice before rebase; do not rebase onto the still-older go or copy
 other branches. Final hand-back names the branch tip; do not push.
-

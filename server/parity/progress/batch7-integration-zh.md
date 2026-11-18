@@ -1,5 +1,68 @@
 # batch-7 集成交接
 
+## 最终交回
+
+**batch-7 已完成集成，可交协调者执行完整 core/race 门禁。**
+最终基底为 `go@55c9794a0`，已确认是本分支祖先；源码、测试、文档均提交，未 push。
+最初基底为 batch-6 f9f3105ee；下方分支区间表保留原始叠入边界和去重依据，后续均 rebase。
+
+| 最终检查 | 结果 |
+|---|---|
+| 全树 gofmt | 无输出 |
+| 指定 preflight（两组 vet、全量非 race） | `PREFLIGHT PASS` |
+| 完整 compare | `GATE STAGE PASS: compare` |
+| proddiff | `baseline: new=0 stale=0`，self_check PASS，Python/Go retries 0/0 |
+| difftest | 全部23包通过 |
+| synthetic live | 23 required entries全部执行通过，0 skips，Python子测试/WebDAV exec已验证 |
+| 最终树 O3-8 关机故障 | `FAULTS PASS: 16/16` |
+| 128节点＋512规则公开生成基准 | 约76.0–76.1 MB/op，低于batch-6约77.2 MB/op |
+| pyref | 10份transcript的2916条exact输入/输出字节未变，仅来源metadata更新 |
+
+检查固定运行在用户指定的主测试服务器，未运行完整core/race门禁。
+预检/故障/基准的产品源码树为bb6cb1b00；之后只有测试oracle、harness和文档收尾，产品代码未变。
+完整compare通过树为6c6b46ff5；最终文档提交不影响任何已验证产品或测试代码。
+
+五项指定集成分别提交：
+
+| 集成项 | 提交 |
+|---|---|
+| 1 唯一RouterJobLock、删除过渡锁/钩子 | a65fbccf4 |
+| 2 A22真实注册与路由优先级/NewApp | 524ceec4a |
+| 3 删除全部R14/A18 deferred baseline | feb6e94da |
+| 4 O3-8 16场景 | 749f8257c；最终基底重跑 bb6cb1b00 |
+| 5 A14无真实时间依赖的节流回归 | 3b44e7687 |
+
+协调者批准的D2后果：切换后需重新做一次IPv6验收；已忽略通知会重新出现一次。
+已记入behaviour-changes并标注O12发布说明；仅4个精确baseline字段，无宽豁免。
+另有5条精确、格式/120秒受限的请求或采集时钟规则；缓存标志和全部业务证据仍严格比较。
+本批指定功能与集成项均已完成，未增加依赖。完整门禁由协调者在此分支继续执行。
+
+### 集成收尾提交（最终 rebase 后，不含本交接文档提交）
+
+```
+a65fbccf4 go(routers): integrate one job lock across sync and publication owners
+feb6e94da go(proddiff): retire integrated R14 and A18 deferred differences
+524ceec4a go(server): verify A22 route priorities through real registration
+3b44e7687 go(deploy): make progress throttle regression use an injected clock
+749f8257c go(lifecycle): verify integrated shutdown ordering with sixteen fault scenarios
+203e73891 go(pyref): bind stacked native dependencies without changing oracle outputs
+3c88b9846 go(integration): resolve native conversion and audit preflight failures
+bddef4062 go(pyref): refresh conversion provenance after preflight repairs
+860e68666 go(parity): record clean batch-7 non-race preflight
+b78a2a32b go(integration): preserve native generators over batch-6 performance repairs
+7319e4569 go(parity): record clean preflight after batch-6 repair rebase
+959d26895 go(integration): close live compare differences at new route boundaries
+268c43cdf go(integration): format the remaining stacked source files
+d1b2aa3cc go(proddiff): require exact wire formats for request clocks
+6f81db009 go(convert): keep stacked native collaborator codecs narrow
+d80e7a24a go(integration): compare setup abandonment after full A22 wiring
+bb6cb1b00 go(integration): verify final-base allocations and sixteen shutdown scenarios
+43a791799 go(integration): enable real A23 enrollment in the publication oracle
+6c6b46ff5 go(proddiff): align discovery cold-cache comparison ordering
+```
+
+## 叠入与过程证据
+
 任务：以 batch-6 f9f3105ee 为基底叠入已复核分支，完成五项集成，交协调者跑 core/race 门禁。
 仅在新 worktree/branch batch-7 工作；原分支和 batch-6 worktree 未修改。
 
@@ -55,10 +118,10 @@
 5. A14 节流：集成树初次独立 race count=3 通过（14.714s）；为消除慢磁盘/负载造成的真实时间依赖，
    仅测试接入既有生命周期 fake Clock（race count=3 验证通过，17.059s），验证 999ms 不写、1000ms 写及强制阶段写，不修改生产阈值。
 
-## 验证及剩余工作
+## 验证范围
 
-定向检查、预检与 compare 证据将在每项完成时更新。尚未跑完整 core/race 门禁；由协调者执行。
-batch-6 若追加日志修复，需要在最终预检前再 rebase 到其最新 tip。
+定向检查、最终基底预检、完整compare及16场景均已完成，证据见上方最终结论和下方各轮记录。
+完整core/race门禁由协调者执行。
 
 ### 集成 1 验证
 
@@ -331,3 +394,20 @@ checked_at确由首次采集请求的时钟产生，命中时保留该采集时�
 实际执行同一调度函数，验证冷→命中、日志最后，并证明缓存标志/错误/设备变化仍被检测。
 `python -m unittest discover -s server/tools/proddiff -p test_proddiff.py` →55 tests，0.324s，OK。
 本轮修复仍只有harness/规则/测试，已验证的产品树bb6cb1b00没有变化。
+
+
+### 完整 compare 最终结果
+
+固定主测试服务器：
+`RT_HOST="$BATCH_TEST_HOST" rt -e GATE_ONLY=compare -- bash -lc 'server/scripts/gate.sh -p 6'`
+
+最终运行退出0，完整执行proddiff、23个difftest包和synthetic live，最终输出：
+```
+baseline: new=0 stale=0
+SYNTHETIC LIVE PASS: 23 required entries ran and passed; 0 skips; repo Python subtest and WebDAV Python exec verified
+GATE STAGE PASS: compare
+```
+proddiff self_check PASS，Python/Go transport_retries均0；coverage_regressions=0、unmapped_routes=0。
+全部23个difftest包均ok，其中api/agents/difftest 283.736s；没有跳过A23 enrollment字段。
+本次gate的私有日志目录后缀为gate.TAy2Wm，数据未复制入仓库。
+最终提交前确认go@55c9794a0为祖先、无R14/A18 deferred残留，git差异空白检查通过。
