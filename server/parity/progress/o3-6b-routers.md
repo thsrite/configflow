@@ -136,3 +136,15 @@ Publish先Detach/检查，读取快照选key但在404/参数错误返回前try L
 再取L2并下传held ctx；driver/ReturnAgent/rollback不重入L1，SaveRouterPublication沿用caller-held约定。
 忙为KindConflict/messageEditBusy，Runtime取消保留原生ctx.Err，不能改成busy或继续补偿写。
 6c的合并复验旧preparation测试已在独立分支go-o3-6c@426f6edd0 test-only修正交回；不把它误当成正式go合入。
+
+### R12 D-R12-3 获批本地提交例外
+
+R12 owner转达协调者裁定：已至少一次设备写入后drain取消，Execute Aborted不补偿，Publish保留Result；
+仅一次本地publication（失败记录+manifest+revision）显式ctxx.Uninterruptible，写设备前取消仍零提交。
+该裁定覆盖此前针对普通取消路径“不再提交”的笼统表述，不允许恢复设备写/补偿或整个Publish不可中断。
+
+已回复现有AST稳定来源为go-o3-6c@426f6edd0的repo/batch_paths_test.go。当前测试只扫描repo里的
+beginCommitBatch三处，不能直接往map加Publish而谎称覆盖routers SelectorExpr。R12正式集成时沿用同一canonical测试，
+扩为package:FuncDecl:callee精确条目（各恰好一次），保留三个repo marker并扫描routers所有ctxx.Uninterruptible，
+第四项登记实际本地Aborted publication私有函数，记录Clarified in R12；未登记调用失败。
+R12负责将条件/结果/零补偿I/O/单次提交/锁释放的真实Runtime回归与AST扩展一起交回，6b后续整合保留。
