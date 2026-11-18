@@ -356,6 +356,8 @@ Rules for O3-5..O3-8 are in the review's last section.
 | C34 | generate, config and profile routes, config export | 1443 | verified | C18, C19, C20, C28, C29, C31, C33 | 59 (0 done) |
 | C35 | config importer, WebDAV backup | 1375 | verified | C04, C06 | – |
 | C36 | setup flow | 1372 | ported | C34, C35 | 5 (0 done) |
+
+| C36 | setup flow | 1372 | verified | C34, C35 | 5 (5 done) |
 | C37 | domain discovery | 1658 | verified | C14, C16 | 17 (17 done) |
 
 Routes in config modules: 228 of the 380 rows in routes.tsv.
@@ -2186,7 +2188,7 @@ Exact commands/tails, native differences and added-file counts: [C35-HANDOFF.md]
 
 A20/A14 已提供共享只读 reader：`internal/setupflow.ProfileSessions(ctx, dataDir, profileID)`（首版来自 `go-port-a14`，A20 复用并补强类型错误的 fail-closed 中文提示，服务器 `setupflow.Wire` 注入 routersplit）。C36 在此基础上实现写入与流程，不另建第二套 reader。会话是 `setup-sessions/*.json` 的原子替换文件；读取在 repo 写事务外，绑定 Agent/配置取 repo 一致快照。
 
-**Status: `ported` (independent review pending; rebased after batch-4)** · prereqs: C34, C35 · Go: `internal/setup`, `internal/api/setup`
+**Status: `verified` (independent Codex review, 2026-11-18; C36-owned scope)** · prereqs: C34, C35 · Go: `internal/setup`, `internal/api/setup`
 
 Sources: `setup_flow.py`, `setup_presets.py`, `setup_completion.py`, `setup_abandon.py`,
 `routes/setup.py` (1372 lines); Python `test_setup_flow.py` 76 families mapped in
@@ -2213,6 +2215,15 @@ gateway status; real router Driver/Inspect/BuildPlan callback. Formal A21 server
 must prove registered callbacks remove503. Current tests prove callback dispatch,
 independent orchestration and genuine Python boundary parity with synthetic data.
 See [进度与精确命令](progress/c36.md) and [接线与验证映射](progress/C36-handoff-zh.md).
+
+Independent review: [review-c36.md](review-c36.md). High 0, medium 1 (fixed), low 0;
+no open C36-owned findings. Complete responses and public failures now retain private-session
+credential seeds through final redaction; usernames/password-presence flags, stored credentials,
+HTTP statuses and owner error chains are preserved. Added explicit revision+1/idempotence/digest,
+post-external-read Runtime shutdown and exact503/zero-write regressions; targeted .32 race,
+normal/error Flask boundary, reader/lock/C32 timeout checks and vet pass. Approved external owner
+registration and real A21 embedded-save precondition integration remain deferred as listed above.
+Fixes: `1fe46a78f`, `3defa2895`; exact commands and fail-before/pass-after evidence are in the review.
 
 ## C37 — domain discovery
 
