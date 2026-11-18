@@ -81,7 +81,7 @@ Python's `backend/routers` is one big import cycle (most cross-module imports ar
 | R13 | inspection service, return advisory, pending reminders | 713 | verified | HR | R12, C07 (`RecordRouter`, ready), A01, A06 (ready); A23⁴ | – | internal/routers |
 | R14 | automatic rule sync | 1043 | verified | HR | R13, C14 (ready), C07 (`tasks`, ready) | – (handlers in R15) | internal/routers |
 | R15 | router HTTP routes, policy workspace, upstream-router reminder route | 656 | missing | HR | R14, C06, C22 (ready), C31, C34; A20⁵ | 21 (0 done) | internal/api/routers, internal/routers |
-| R16 | client devices and discovery | 786 | missing | | R13, A01, C26, C31 | – | internal/clients, internal/routers |
+| R16 | client devices and discovery | 786 | ported | | R13, A01, C26, C31 | – | internal/clients, internal/routers |
 | R17 | client fixed IP and client-device routes | 1077 | missing | HR | R16, R06, R14, C06 (JWT secret), C36², A13⁶ | 5 (0 done) | internal/clients, internal/routers, internal/api/clientdevices |
 
 ¹ `desired.compute_desired` loads rule content through `routes.rules.get_ruleset_content` (C32, a route file). Until C32 exists, a collaborator variable; C32 should export the function from a non-API package (also needed by agents A19). ² `setup_flow.profile_sessions` (C36 imports routers, so routers declares a hook; see contract). ³ Coordinator decision needed before R04/R05 (see questions). ⁴ `_inspect_state` → `agents.ipv6_readiness._request` (A23 imports routers → hook). ⁵ `/api/routers/gateway-forwarding` calls `agents.linux_gateway.gateway_forwarding_entry/persist_gateway_forwarding` (A20). ⁶ `routes.agents._public_deployment` (A13; collaborator variable until then).
@@ -877,7 +877,7 @@ Notes for porter: **rule 4b is critical here**: probe, apply, routes/apply, rule
 
 ## R16 — client devices and discovery
 
-**Status: `missing`** · prereqs: R13 (`Driver`), R04, R05, A01, C26 (`apply_policies`, `read_policies`, `normalize_client_range`), C31 (`device_notes`) · Go: internal/clients, internal/routers
+**Status: `ported`** · prereqs: R13 (`Driver`), R04, R05, A01, C26 (`apply_policies`, `read_policies`, `normalize_client_range`), C31 (`device_notes`) · Go: internal/clients, internal/routers
 
 Files:
 - `backend/common/client_devices.py` (63), `client_discovery.py` (204), `client_discovery_cache.py` (88)
@@ -888,6 +888,14 @@ Tests: `test_client_devices.py` (11; route half → R17), `test_client_discovery
 Routes: none (the `/api/client-devices*` handlers are R17).
 
 Notes for porter: RouterOS ARP/lease/ping readers (`PingNotPermitted`, `TIMEOUT`), iKuai client readers, `Sighting`/`Reading`/`better` from routerdoc, `DiscoveryCache` snapshot timing (hand-port the time-based cases). `list_devices` is used by agents A23 — export it. Read-only: not HR.
+
+Ported on `go-port-r16` (2026-11-18), implementation and evidence committed with
+[progress/R16-handoff-zh.md](progress/R16-handoff-zh.md). Typed client identity edits,
+RouterOS/iKuai client readers, ordered merge and app-owned snapshot cache are implemented.
+Real Flask/vendor-driver HTTP comparisons verify the R16 boundary through a test-only Go
+adapter; production HTTP registration and fixed-IP enrichment are explicitly R17.
+Targeted race, gofmt/vet, 60 s duration fuzz and 71 Python reference tests passed.
+No R16-owned Step B finding remains; independent Codex review is pending.
 
 ## R17 — client fixed IP and client-device routes
 
