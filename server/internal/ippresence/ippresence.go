@@ -22,6 +22,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"os"
 	"strings"
@@ -30,10 +31,12 @@ import (
 
 	"configflow/internal/convert"
 	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/mosdns"
 	"configflow/internal/pystr"
 	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
+	"configflow/internal/rulesetfmt"
 	"configflow/internal/store"
 )
 
@@ -172,6 +175,9 @@ func pyClass(err error) string {
 // caught reports whether Python's `except (OSError, TypeError, ValueError)`
 // around ruleset_format / rule_cache_read_path / os.stat catches err.
 func caught(err error) bool {
+	if errors.Is(err, rulesetfmt.ErrURLType) || errors.Is(err, rulesetfmt.ErrReferenceIDType) || errors.Is(err, rulesetfmt.ErrReferenceNameType) {
+		return true
+	}
 	if errors.Is(err, store.ErrStorage) || repo.IsValueError(err) {
 		return true
 	}
@@ -183,6 +189,57 @@ func caught(err error) bool {
 	}
 	var pathErr *os.PathError
 	return errors.As(err, &pathErr)
+}
+
+// presenceLibraryContext preserves lazy declaration lookup: an unused malformed
+// tail cannot erase a matching prefix. Null and unresolved malformed contexts
+// remain unknown; legacy empty containers denote an empty library.
+func presenceLibraryContext(item, config *jsonx.Object) (*jsonx.Object, error) {
+	library, present := config.Get("rule_library")
+	if !present {
+		return config, nil
+	}
+	switch entries := library.(type) {
+	case []any:
+		for index, entry := range entries {
+			if object, ok := entry.(*jsonx.Object); ok && object != nil {
+				continue
+			}
+			data, err := json.Marshal(item)
+			if err != nil {
+				return nil, err
+			}
+			var rule model.RuleConfig
+			if err := json.Unmarshal(data, &rule); err != nil {
+				return nil, err
+			}
+			data, err = json.Marshal(entries[:index])
+			if err != nil {
+				return nil, err
+			}
+			var prefix []model.RuleLibraryItem
+			if err := json.Unmarshal(data, &prefix); err != nil {
+				return nil, err
+			}
+			match, err := rulesetfmt.LibraryIndex(rule, prefix)
+			if err != nil || match < 0 {
+				return nil, err
+			}
+			probe := config.DeepCopy()
+			probe.Set("rule_library", probe.GetList("rule_library")[:index])
+			return probe, nil
+		}
+		return config, nil
+	case string:
+		if entries == "" {
+			return config, nil
+		}
+	case *jsonx.Object:
+		if entries != nil && entries.Len() == 0 {
+			return config, nil
+		}
+	}
+	return nil, nil
 }
 
 // ClassicalIPLines is classical_ip_lines(item, config): true or false for a
@@ -229,6 +286,16 @@ func ClassicalIPLines(ctx context.Context, itemValue, configValue any) (any, err
 		if config, err = asDict(configValue); err != nil {
 			return nil, err
 		}
+	}
+	config, err = presenceLibraryContext(item, config)
+	if err != nil {
+		if caught(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if config == nil {
+		return nil, nil
 	}
 	format, err := convert.RulesetFormat(item, config, "")
 	if err != nil {

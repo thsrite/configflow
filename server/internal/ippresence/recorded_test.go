@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"os"
@@ -58,6 +59,7 @@ func replay(t *testing.T, path string) {
 	scanner := bufio.NewScanner(gz)
 	scanner.Buffer(make([]byte, 1<<20), 64<<20)
 	identical, differ, notExpressible := 0, 0, 0
+	native, applied := nativePresenceExpectations(t, filepath.Base(path)), 0
 	tests, files := map[string]bool{}, map[string]bool{}
 	outcomes := map[string]int{}
 	for scanner.Scan() {
@@ -90,6 +92,19 @@ func replay(t *testing.T, path string) {
 		ClearMemo()
 		args := row.GetObject("args")
 		out, err := ClassicalIPLines(ctx, args.Value("item"), args.Value("config"))
+		if fixture := native[test]; fixture != nil {
+			if fmt.Sprintf("%x", sha256.Sum256(scanner.Bytes())) != fixture.GetString("sha256") || !jsonx.Equal(row.Value("err"), fixture.Value("python_error")) {
+				t.Fatalf("native presence row %s changed", test)
+			}
+			if out != nil || err != nil || !fixture.Has("native_output") || fixture.Value("native_output") != nil {
+				t.Errorf("native presence row %s: want unknown, got %v / %v", test, out, err)
+				differ++
+			} else {
+				identical++
+			}
+			applied++
+			continue
+		}
 		var problems []string
 		if want := row.GetObject("err"); want != nil {
 			class := pyClass(err)
@@ -123,8 +138,39 @@ func replay(t *testing.T, path string) {
 	if err := scanner.Err(); err != nil {
 		t.Fatal(err)
 	}
+	if applied != len(native) {
+		t.Fatalf("applied %d of %d native presence rows", applied, len(native))
+	}
 	t.Logf("%s classical_ip_lines: %d identical, %d differ, %d not expressible; from %d tests in %d files; outcomes %v",
 		path, identical, differ, notExpressible, len(tests), len(files), outcomes)
+}
+
+func nativePresenceExpectations(t *testing.T, file string) map[string]*jsonx.Object {
+	t.Helper()
+	data, err := os.ReadFile("testdata/n88a-native.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, err := jsonx.Parse(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := map[string]*jsonx.Object{}
+	for _, entry := range value.([]any) {
+		fixture := entry.(*jsonx.Object)
+		if fixture.GetString("file") == file {
+			key := fixture.GetString("test")
+			if result[key] != nil || fixture.GetObject("python_error").GetString("class") != "AttributeError" {
+				t.Fatalf("invalid native presence fixture %s", key)
+			}
+			result[key] = fixture
+		}
+	}
+	counts := map[string]int{"r02_corpus.jsonl.gz": 14, "r02_edge.jsonl.gz": 8}
+	if len(result) != counts[file] {
+		t.Fatalf("native presence fixture count for %s changed", file)
+	}
+	return result
 }
 
 // replayRepository shares only schema/default initialization. Each recorded

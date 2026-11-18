@@ -47,35 +47,47 @@ func HasYAMLPayload(content string) bool {
 	return false
 }
 
-// RuleFormat determines format using typed stored records. Malformed members
-// either follow model R5 or produce a typed validation error when inspected.
-func RuleFormat(rule model.RuleConfig, library []model.RuleLibraryItem, sourceURL string) (string, error) {
-	var found *model.RuleLibraryItem
+// LibraryIndex returns the first matching declaration or -1. It validates
+// reference metadata only as far as the first match, including an empty record.
+func LibraryIndex(rule model.RuleConfig, library []model.RuleLibraryItem) (int, error) {
 	if len(library) > 0 && model.IssueUnder(model.Issues(rule), "library_rule_id") {
-		return "", errors.New(msgReferenceIDType)
+		return -1, ErrReferenceIDType
 	}
 	for i := range library {
 		item := &library[i]
 		if rule.LibraryRuleID != "" {
 			if model.IssueUnder(model.Issues(item), "id") {
-				return "", errors.New(msgReferenceIDType)
+				return -1, ErrReferenceIDType
 			}
 		} else if model.IssueUnder(model.Issues(item), "name") || model.IssueUnder(model.Issues(rule), "name") {
-			return "", errors.New(msgReferenceNameType)
+			return -1, ErrReferenceNameType
 		}
 		if rule.LibraryRuleID != "" && item.ID == rule.LibraryRuleID || rule.LibraryRuleID == "" && item.Name == rule.Name {
-			data, err := model.Marshal(item)
-			if err != nil {
-				return "", err
-			}
-			var members map[string]json.RawMessage
-			if err := json.Unmarshal(data, &members); err != nil {
-				return "", err
-			}
-			if len(members) != 0 {
-				found = item
-			}
-			break
+			return i, nil
+		}
+	}
+	return -1, nil
+}
+
+// RuleFormat determines format using typed stored records. Malformed members
+// either follow model R5 or produce a typed validation error when inspected.
+func RuleFormat(rule model.RuleConfig, library []model.RuleLibraryItem, sourceURL string) (string, error) {
+	index, err := LibraryIndex(rule, library)
+	if err != nil {
+		return "", err
+	}
+	var found *model.RuleLibraryItem
+	if index >= 0 {
+		data, err := model.Marshal(library[index])
+		if err != nil {
+			return "", err
+		}
+		var members map[string]json.RawMessage
+		if err := json.Unmarshal(data, &members); err != nil {
+			return "", err
+		}
+		if len(members) != 0 {
+			found = &library[index]
 		}
 	}
 	if found != nil && validFormat(text(found.Format)) {
@@ -135,6 +147,12 @@ func validFormat(value string) bool { return value == "yaml" || value == "text" 
 
 // ErrURLType identifies a non-string URL encountered during format inference.
 var ErrURLType = errors.New(msgURLType)
+
+// ErrReferenceIDType identifies invalid stored rule-library reference IDs.
+var ErrReferenceIDType = errors.New(msgReferenceIDType)
+
+// ErrReferenceNameType identifies invalid stored rule-library names.
+var ErrReferenceNameType = errors.New(msgReferenceNameType)
 
 // URLValueError preserves opaque invalid-field evidence for a legacy boundary.
 type URLValueError struct{ Raw json.RawMessage }

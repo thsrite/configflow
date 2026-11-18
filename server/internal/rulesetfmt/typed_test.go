@@ -141,7 +141,7 @@ func TestTypedEntryMatchesLegacyBytes(t *testing.T) {
 }
 
 func TestMalformedMembersUseTypedValidation(t *testing.T) {
-	for _, raw := range []string{`{"url":0}`, `{"url":false}`, `{"url":[]}`, `{"url":{}}`, `{"url":5}`} {
+	for _, raw := range []string{`{"url":false}`, `{"url":[]}`, `{"url":{}}`} {
 		var rule model.RuleConfig
 		if err := json.Unmarshal([]byte(raw), &rule); err != nil {
 			t.Fatal(err)
@@ -155,7 +155,7 @@ func TestMalformedMembersUseTypedValidation(t *testing.T) {
 			t.Fatalf("legacy URL type category: %v", err)
 		}
 	}
-	for _, raw := range []string{`{"library_rule_id":5}`, `{"name":false}`} {
+	for _, raw := range []string{`{"library_rule_id":false}`, `{"name":false}`} {
 		var rule model.RuleConfig
 		if err := json.Unmarshal([]byte(raw), &rule); err != nil {
 			t.Fatal(err)
@@ -168,6 +168,23 @@ func TestMalformedMembersUseTypedValidation(t *testing.T) {
 	var entryType *LibraryEntryTypeError
 	if _, err := Format(value.(*jsonx.Object), []any{jsonx.Int(1)}, ""); !errors.As(err, &entryType) {
 		t.Fatalf("entry category: %v", err)
+	}
+}
+
+func TestLibraryIndexStopsAfterFirstMatch(t *testing.T) {
+	var invalid model.RuleLibraryItem
+	if err := json.Unmarshal([]byte(`{"id":false}`), &invalid); err != nil {
+		t.Fatal(err)
+	}
+	valid := model.RuleLibraryItem{ID: "a"}
+	if index, err := LibraryIndex(model.RuleConfig{LibraryRuleID: "a"}, []model.RuleLibraryItem{valid, invalid}); index != 0 || err != nil {
+		t.Fatalf("unused tail inspected: %d / %v", index, err)
+	}
+	if _, err := LibraryIndex(model.RuleConfig{LibraryRuleID: "a"}, []model.RuleLibraryItem{invalid, valid}); !errors.Is(err, ErrReferenceIDType) {
+		t.Fatalf("invalid prefix ignored: %v", err)
+	}
+	if index, err := LibraryIndex(model.RuleConfig{}, []model.RuleLibraryItem{{}, invalid}); index != 0 || err != nil {
+		t.Fatalf("empty first match lost: %d / %v", index, err)
 	}
 }
 

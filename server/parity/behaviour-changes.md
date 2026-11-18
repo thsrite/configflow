@@ -1187,3 +1187,95 @@ new D2 signature transition and do not change the documented null rollback risk.
 - Python bug（复核 A21 F2）：原生 OxiDNS 的备用链已停用、`_prepare_native_gateway_fallback` 已恢复成功，但随后 `apply_common_settings` 仍拒绝（例如监听入口缺失）且用户明确确认转换模板时，Python 在 `settings` 被重新赋值为「已恢复」投影之后才写 `gateway_onboarding_native_backup`，备份里是被改过的 native_config（补回 fallback 插件、改写 proxy_dns_seq），并非用户原始文档，与提示「原生配置……保存在 backup 中，可从配置导出恢复」不符。Go 的恢复结果只在 apply 成功时替换 settings，备份始终是原始原生文档。`gateway/onboarding.TestConversionBackupKeepsOriginalNative` 固定此修复；真实 Python 复现见 review-a21.md。
 
 A21 的临时 C36 依赖缺失503豁免已撤销：batch-5 合入后 server 注册真实 DNS/adopt owner，真实 Flask 保存与 revision 条件一致。独立未注册的 package 防线不列为生产差分。
+### N8-8a provider 调用方 — 畸形 definition / override 明确拒绝
+
+Provider snapshot 调用 typed `ValidateTopology` 时，非对象的 Provider definition 或
+`override` 不再泄漏 Python `AttributeError`，改为现有 `DialerReferenceError` 通道，
+中文消息为「拨号拓扑字段类型无效」。这属于已批准的 N8-8 明确类型校验边界，不能返回成功。
+修复 typed 迁移漏检：`yamlx.Get` 对非对象返回 nil，曾把这种坏数据静默当成没有 override。
+保留先发生的名称冲突、缺失 dialer 目标、重复名称等业务校验及其消息，正常输出不变。
+
+原始 Python corpus 保持不变。`internal/provider/testdata/n88a-snapshot-native.json`
+固定下列四行的完整输入及全部 152 个 outcome；索引均从 0 起，唯一变更为
+`{"error":"AttributeError"}` →
+`{"error":"DialerReferenceError","message":"拨号拓扑字段类型无效"}`：
+
+| row | 显式变更的 outcome 索引（闭区间） | 项数 |
+|---|---|---|
+| 366 | 2–21、32–41、82–101、132–151 | 70 |
+| 369 | 2–41、82–101、132–151 | 80 |
+| 375 | 2–21、32–41、82–101、132–151 | 70 |
+| 378 | 2–41、82–101、132–151 | 80 |
+
+其余 300 个业务拒绝逐项严格比较，包括 366/375 的 outcome 22–31
+「Provider 节点名称与代理链出口冲突」及四行的 outcome 42–71、122–131
+「生成的 dialer-proxy 引用了不存在的代理或策略组」；8 个头部结果也不变。
+测试验证每一项变更的原始/原生完整结果、每行输入和变更项数，禁止把其他错误改成成功。
+
+### N8-8a provider dialer-proxy — 诊断保留畸形原值
+
+非字符串的 Provider `dialer-proxy` 仍拒绝；错误消息不再把列表、对象、数字或布尔显示成
+空字符串。使用 yamlx 的紧凑 JSON 表示原值（大整数保留精度），字符串保持原样。
+例如 Python 的 `dialer-proxy「['relay']」` 在 Go 中显示为 `dialer-proxy「["relay"]」`，
+其余中文、节点名、HTTP 400、响应字段和持久化效果不变。这是已批准的原生诊断边界，
+不是允许畸形引用。
+
+`api/subscriptions/difftest.TestProviderDeliveryGraphs` 只在
+`{none,managed,raw,uri}/single/malformed` 四个用例指定完整的 Python/native body，
+两边分别严格匹配；没有改 normalize，也没有对其他消息做替换或放宽比较。
+
+### N8-8a 通用 R5 标量兼容（协调者最终裁定）
+
+共享入口为 `model.String.UnmarshalJSON`、`model.Int.UnmarshalJSON`；
+`model.DecodeRecord` / `model.SetMemberJSON` 使用同一解码规则，普通 string、指针、
+字符串/整数列表及 Map 值一致。移除了先前 Node 专用的 number-text 标记。
+
+- 所有声明字符串的 typed 字段接受 int/float：姓名、标签、server、密码、资源/引用 ID、
+  URL 和状态等均读为无损 JSON 数值文本。`123` → `"123"`、`1.25` → `"1.25"`、
+  `1e3` → `"1e3"`；大整数/高精度小数不经 float64。null 按缺失文本处理，bool 不变成文本。
+- 所有 `model.Int` 字段接受严格 ASCII 十进制整数字符串：节点 port `"443"` → 443、
+  策略组 interval `"300"` → 300；可有一个前导负号及前导零。带空格、加号、小数点、指数、
+  Unicode 数字或超出 int64 范围仍按 R5/验证错误处理。`json.Number` 仍不接受引号数字。
+- 原始字节、未知字段、未修改成员继续按 R2 保留；没有把这些兼容读取写回存储。
+  JSON 请求绑定仍遵守各路由自己的契约，后续业务检查不会因标量兼容而被跳过。
+- 开放的 Mihomo Params / proxy_string YAML 继续保留原值和 tag，不强制把密码数字转字符串。
+  数字 password 两条来源仍输出 `password: 123`；存储的引号 port 原样生成，引号未被删掉，
+  但 typed Node.Port 正确为 443。原冻结字节门的 quoted-port 类型边界仍单独用 native 回归。
+
+回归：`model.TestGenericNumericTextAndQuotedIntegers`、
+`model.TestScalarTextBoundariesAndPreservation`、`model.TestNodeNumericText`、
+`convert.TestMihomoNumericServer`、`convert.TestMihomoNumericPasswordPreservesTag`、
+`convert.TestMihomoQuotedPort`、`convert.TestTypedNumericResourceText`。
+
+浮点字符串化按协调者确认保留 token 写法，不把数值等价的拼法合并：
+`123.0` → `"123.0"`、`1e3` → `"1e3"`、`123.50` → `"123.50"`。
+这与 Python 的 `str(float)` 有意不同（如 `1e3` 在 Python 成为 `"1000.0"`），
+避免密码等文本字段丢掉用户给出的数值拼法。
+
+通用标量规则带来两条系统设置差异：convert 原冻结 corpus row 2021、2103 中
+GitHub 代理域名的数值 `5` 现在读成 `"5"`，不再忽略，因此启用相应代理前缀。
+`convert/testdata/n88_scalar_native.json` 逐行固定 fn、完整输入、Python 输出和完整 native
+输出的 SHA-256；不复制归档 URL，不做字符串替换或通用比较器放宽。
+
+### N8-8a 调用方补查 — 明确类型拒绝及 unknown 保留
+
+- 类型错误的 `dialer_ref` 不再因 R5 读作 nil 而从拓扑消失；ConfigDialers、NodeDialer、
+  NodeDialerTarget 和 ResolveNodeDialer 在使用前拒绝，消息带原存储 JSON：
+  `dialer_ref 必须是 {type: node|group, id: 非空字符串}，当前值："b"`。
+  原业务错误类型仍为 DialerReferenceError；repo compat row 57 固定此完整结果。
+- ippresence 的显式 null/无法解析的 rule_library 不能建立缓存声明的归属，返回
+  unknown(null)，不借 R5 零值继续读缓存。空字符串/空对象保持 legacy 空库语义；
+  已匹配声明之后的损坏尾项不影响有效前缀，保留已选格式和正常缓存结果。URL/引用 ID/名称的原生校验错误通过 errors.Is
+  接入原来的“无法判断”分类。正常有据的缓存仍照常返回 true/false。
+- 原 Python AttributeError 的兼容读取在此 advisory 层改为 unknown。精确白名单为
+  `ippresence/testdata/n88a-native.json`，每项固定完整原行 SHA-256、Python 错误和 native null。
+  corpus 行号：287、537、697、965、1010、1013、1239、1288、1302、1527、1596、1611、1773、1975；
+  edge 行号：2385、2387、2393、2505、2507、2509、2511、2512。其余结果不豁免。
+- repo 的已批准 native 结果固定在 `compat_native_yaml.json`：11/18/23/30/139/155 为
+  标量文本读取；13 为 CPython U+001C 空白差异；64 为 include-all:1 按严格 bool 的边界；
+  91/92/93 为无关畸形来源 metadata；145/146 为 params null/[]。
+  structured type 的数值拒绝逐项为 175、198、199、200、201、202、203、204、207、208、209、210、
+  211、212、213、218、219、220、222、223，完整中文消息/ValueError 均固定。
+- `repo/testdata/reference_native_scalars.json` 逐项固定完整 Python record 和 native 结果：
+  node name int、node proxy_string int、node subscription zero、group name int、group manual int、
+  order id int。兼容解码不会绕过后续的来源归属、legacy 结构约束和资源存在性验证。

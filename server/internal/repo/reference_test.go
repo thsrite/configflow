@@ -241,6 +241,9 @@ func TestReferenceValidateDocument(t *testing.T) {
 		if err == nil {
 			err = validateDocument(typed)
 		}
+		if nativeReferenceScalar(t, record, err) {
+			continue
+		}
 		if acceptedByGo[label] {
 			if !record.Has("error") {
 				t.Fatalf("%s: Python accepted it too", label)

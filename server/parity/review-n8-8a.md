@@ -124,3 +124,10 @@ RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && go test -race -count=
 
 未访问生产/真实设备，所有输入为现有合成语料和最小合成 YAML；未 push，未开子 agent。
 提交号见本报告所在的复核提交。正式合并树的完整 gate 由协调者执行。
+
+## 合并树调用方补查
+
+原复核漏跑了 provider 及订阅 HTTP 的调用方对照，未发现畸形 Provider 的误成功和
+畸形 dialer-proxy 值的空诊断。本次补上产品校验、逐行逐项 native 期望及回归；
+数字节点字段也按协调者的新裁定补齐。判定、修复前失败证据和最终跨包检查见
+[Provider 调用方补漏](progress/n8-8a-provider-fix-zh.md)。原始 Python corpus 和通用比较器未放宽。
