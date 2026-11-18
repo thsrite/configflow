@@ -1933,7 +1933,7 @@ RT_HOST=sunbroke@192.168.0.64 rt -e GOMAXPROCS=6 -- bash -lc 'server/scripts/gat
 
 ## A21 — gateway onboarding
 
-**Status: `missing`** · HR · prereqs: A19, A20, C05 (`normalize_oxidns_settings`), C18 (`generate_mihomo_config`, `_default_mihomo_template`), C22 (`_forward`, `generate_oxidns_config`, `native_document`, `load_native_yaml`), C23 (`validate_settings`), C24 (`apply/read_common_settings`), C25 (`_references`), C36 (`setup_flow.adopt_owned_write`, lazy in the route), routers (`router_split`) · Go: internal/gateway, api/gatewayonboarding (new; endpoint `profiles.gateway_onboarding`)
+**Status: `wip`** · HR · prereqs: A19, A20, C05 (`normalize_oxidns_settings`), C18 (`generate_mihomo_config`, `_default_mihomo_template`), C22 (`_forward`, `generate_oxidns_config`, `native_document`, `load_native_yaml`), C23 (`validate_settings`), C24 (`apply/read_common_settings`), C25 (`_references`), C36 (`setup_flow.adopt_owned_write`, lazy in the route), routers (`router_split`) · Go: internal/gateway, api/gatewayonboarding (new; endpoint `profiles.gateway_onboarding`)
 
 Files:
 - `backend/common/gateway_onboarding.py` (660)
@@ -1943,7 +1943,14 @@ Tests: `test_gateway_onboarding.py` (50); deferred from config `test_mihomo_base
 
 Routes (3): `GET|POST /api/profiles/<profile_id>/gateway-onboarding`; `POST /api/profiles/<profile_id>/gateway-onboarding/preview`
 
-Evidence: no Go code. Provides for config: `mihomo_dns_loop` (C18 `mihomo_base_settings`), `assert_gateway_onboarding_ready` (A22), setup flow helpers (C36) — via interfaces declared in C18/C36. The route's lazy call into C36 `setup_flow.adopt_owned_write` needs an interface here (C36 comes later).
+实现与定向证据见 [A21-handoff-zh.md](progress/A21-handoff-zh.md)。原生 request/report、model 读取、候选双服务验证、原生链投影、原子 owner 和 HTTP 已实现；DNSLoop 等 C34 复核合入后接线，不能标 ported。A22 复用 `onboarding.AssertReady`，C36 复用 hook。
+
+### Clarified in A21（协调者，2026-11-18）
+
+- DNSLoop 不 cherry-pick、不重写；C34 复核可能改共享函数。合入后 rebase 再接线，保留 TODO(C34)。当前缺省 checker 拒绝准备；非回环独立测试注入明确的 seam，不冒充完整接线测试。
+- C36 仅有 `setupflow.ProfileSessions` 只读 reader。保留 `SetAdoptOwnedWrite` hook；无未完成 session 的正常保存不受阻。存在未完成 session 或 reader 失败/损坏时，profile 提交前返回 503「等待首次使用向导模块」，不改变 DB、文件或 revision。GET/preview 不走这个保存就绪分支。不计算 digest、不创建替代会话。
+- C36 实现 hook 后须对照 Python 的 `_revision+1` 条件和会话 ownership digest；session 文件锁及写入归 C36 owner，A21 在调用前检查 shutdown。
+- HEAD 按 GET 只读，忽略 body，不改 DB、业务文件或 revision；真实 Flask 显式复现旧版 HEAD 进入保存事务，属于已有 HEAD 只读类别。
 
 **Clarified in C34 (2026-11-18):** `gateway_onboarding.mihomo_dns_loop` is a pure function of the supplied DNS tree and host-address list (standard URL/IP parsing only; no repository, device, session, probe or onboarding runtime state). C34 provides `gateway.MihomoDNSLoop` and wires `convert.MihomoHooks.MihomoDNSLoop` through gateway.Hooks. A21 must reuse this function, not rewrite it. Real Python direct comparisons cover ordinary/local/host IPv4 and IPv6, domains, ports, udp/tcp/tls/https/quic and malformed addresses. Other A21 functions/routes remain this module's responsibility.
 

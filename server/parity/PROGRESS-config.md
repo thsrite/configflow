@@ -2194,6 +2194,8 @@ Exact commands/tails, native differences and added-file counts: [C35-HANDOFF.md]
 
 ## C36 — setup flow
 
+Clarified in A21：C36 须实现 `adopt_owned_write` 并注册 A21 hook，补 `_revision+1` 条件和 Python ownership digest 对照。此前 A21 对未完成 session 或 reader 失败在 profile 提交前返回 503「等待首次使用向导模块」；无未完成 session 的保存正常，GET/preview 正常。不计算替代 digest，不制造状态。
+
 A20/A14 已提供共享只读 reader：`internal/setupflow.ProfileSessions(ctx, dataDir, profileID)`（首版来自 `go-port-a14`，A20 复用并补强类型错误的 fail-closed 中文提示，服务器 `setupflow.Wire` 注入 routersplit）。C36 在此基础上实现写入与流程，不另建第二套 reader。会话是 `setup-sessions/*.json` 的原子替换文件；读取在 repo 写事务外，绑定 Agent/配置取 repo 一致快照。
 
 **Status: `verified` (independent Codex review, 2026-11-18; C36-owned scope)** · prereqs: C34, C35 · Go: `internal/setup`, `internal/api/setup`

@@ -238,16 +238,16 @@ GET	/api/profiles/<profile_id>/agents	routes.profiles.profile_agent_bindings	int
 POST	/api/profiles/<profile_id>/agents/rebind	routes.profiles.rebind_profile_agents	internal/api/profiles	done
 GET	/api/profiles/<profile_id>/aggregations/<agg_id>/provider	routes.profiles.profile_aggregation_provider	internal/api/aggregations	done
 POST	/api/profiles/<profile_id>/clone	routes.profiles.clone_profile	internal/api/profiles	done
-GET	/api/profiles/<profile_id>/custom-config/linux-gateway	routes.linux_gateway.linux_gateway_settings		todo
-POST	/api/profiles/<profile_id>/custom-config/linux-gateway	routes.linux_gateway.linux_gateway_settings		todo
-POST	/api/profiles/<profile_id>/custom-config/linux-gateway/preview	routes.linux_gateway.linux_gateway_settings		todo
-POST	/api/profiles/<profile_id>/custom-config/linux-gateway/restore	routes.linux_gateway.linux_gateway_settings		todo
-POST	/api/profiles/<profile_id>/custom-config/linux-gateway/restore/preview	routes.linux_gateway.linux_gateway_settings		todo
+GET	/api/profiles/<profile_id>/custom-config/linux-gateway	routes.linux_gateway.linux_gateway_settings	internal/api/linuxgateway	done
+POST	/api/profiles/<profile_id>/custom-config/linux-gateway	routes.linux_gateway.linux_gateway_settings	internal/api/linuxgateway	done
+POST	/api/profiles/<profile_id>/custom-config/linux-gateway/preview	routes.linux_gateway.linux_gateway_settings	internal/api/linuxgateway	done
+POST	/api/profiles/<profile_id>/custom-config/linux-gateway/restore	routes.linux_gateway.linux_gateway_settings	internal/api/linuxgateway	done
+POST	/api/profiles/<profile_id>/custom-config/linux-gateway/restore/preview	routes.linux_gateway.linux_gateway_settings	internal/api/linuxgateway	done
 POST	/api/profiles/<profile_id>/default	routes.profiles.set_default_profile	internal/api/profiles	done
 GET	/api/profiles/<profile_id>/export	routes.profiles.export_profile	internal/api/profiles	done
-GET	/api/profiles/<profile_id>/gateway-onboarding	routes.gateway_onboarding.gateway_onboarding		todo
-POST	/api/profiles/<profile_id>/gateway-onboarding	routes.gateway_onboarding.gateway_onboarding		todo
-POST	/api/profiles/<profile_id>/gateway-onboarding/preview	routes.gateway_onboarding.gateway_onboarding		todo
+GET	/api/profiles/<profile_id>/gateway-onboarding	routes.gateway_onboarding.gateway_onboarding	internal/api/gatewayonboarding	wip
+POST	/api/profiles/<profile_id>/gateway-onboarding	routes.gateway_onboarding.gateway_onboarding	internal/api/gatewayonboarding	wip
+POST	/api/profiles/<profile_id>/gateway-onboarding/preview	routes.gateway_onboarding.gateway_onboarding	internal/api/gatewayonboarding	wip
 POST	/api/profiles/<profile_id>/generate/<service>/artifact	routes.profiles.profile_generate_artifact	internal/api/generate	wip
 POST	/api/profiles/<profile_id>/generate/loon	routes.profiles.profile_generate_loon	internal/api/generate	done
 POST	/api/profiles/<profile_id>/generate/loon/preview	routes.profiles.profile_preview_loon	internal/api/generate	done
@@ -260,8 +260,8 @@ POST	/api/profiles/<profile_id>/generate/oxidns/preview	routes.profiles.profile_
 POST	/api/profiles/<profile_id>/generate/surge	routes.profiles.profile_generate_surge	internal/api/generate	done
 POST	/api/profiles/<profile_id>/generate/surge/preview	routes.profiles.profile_preview_surge	internal/api/generate	done
 POST	/api/profiles/<profile_id>/import	routes.profiles.import_profile	internal/api/profiles	done
-GET	/api/profiles/<profile_id>/linux-gateway/rules/<path:rule_id>	routes.linux_gateway.linux_gateway_rule_provider		todo
-GET	/api/profiles/<profile_id>/linux-gateway/source/<path:rule_id>	routes.linux_gateway.linux_gateway_source_provider		todo
+GET	/api/profiles/<profile_id>/linux-gateway/rules/<path:rule_id>	routes.linux_gateway.linux_gateway_rule_provider	internal/api/linuxgateway	done
+GET	/api/profiles/<profile_id>/linux-gateway/source/<path:rule_id>	routes.linux_gateway.linux_gateway_source_provider	internal/api/linuxgateway	done
 GET	/api/profiles/<profile_id>/mosdns/rule-proxy	routes.profiles.profile_mosdns_rule_proxy	api/mosdns	done
 POST	/api/profiles/<profile_id>/oxidns/common-settings	routes.profiles.profile_read_oxidns_common_settings	internal/api/oxidns	done
 POST	/api/profiles/<profile_id>/oxidns/common-settings/apply	routes.profiles.profile_apply_oxidns_common_settings	internal/api/oxidns	done

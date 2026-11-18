@@ -30,6 +30,7 @@ import (
 	apiconfig "configflow/internal/api/config"
 	apidiscovery "configflow/internal/api/domaindiscovery"
 	apigenerate "configflow/internal/api/generate"
+	apigatewayonboarding "configflow/internal/api/gatewayonboarding"
 	apilinuxgateway "configflow/internal/api/linuxgateway"
 	apilogs "configflow/internal/api/logs"
 	apimosdns "configflow/internal/api/mosdns"
@@ -81,6 +82,7 @@ var routePackages = []func(*httpx.Router){
 	apiconfig.Register,
 	apigenerate.Register,
 	apiprofiles.Register,
+	apigatewayonboarding.Register,
 	apisettings.Register,
 	apisetup.Register,
 	apilogs.Register,

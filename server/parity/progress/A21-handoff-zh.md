@@ -41,7 +41,7 @@ ok configflow/internal/gateway/onboarding       61.022s
 RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'cd server && gofmt -w internal/gateway/onboarding && gofmt -l internal/ tools/ cmd/ && go vet ./internal/gateway/onboarding ./internal/api/gatewayonboarding ./internal/server && CONFIGFLOW_DIFF=1 go test -race -count=1 -timeout 3m ./internal/gateway/onboarding ./internal/api/gatewayonboarding ./internal/server && go test -run "^$" -fuzz "^FuzzGatewayOnboarding$" -fuzztime 60s -parallel 2 ./internal/gateway/onboarding'
 ```
 
-最终 leaf 抽取结果待本轮命令返回后补末行。另将 HTTP 中文常量移到 messages.go 后，`gofmt -l internal/ tools/ cmd/` 无输出、`go vet ./internal/api/gatewayonboarding` 通过。
+最终 leaf 抽取结果见文末。另将 HTTP 中文常量移到 messages.go 后，`gofmt -l internal/ tools/ cmd/` 无输出、`go vet ./internal/api/gatewayonboarding` 通过。
 
 Python HTTP 对照复用 A20 的 Flask oracle；SQLite 字段/位置由独立短生命周期 sqlite3 reader 读取，所有真实 Python 调用都只在 rt 测试服务器上。所有数据为合成。
 
@@ -111,3 +111,24 @@ Mihomo leaf 不 I/O、不写 repo；输入是 caller 独占、经 yamlx 解析�
 - 作者自查修复：域名候选独立 DTO，避免多出 IP editor 的 selected 字段；显式 null 开关/行为不用于有效来源证明；退役凭据种子在投影前收集；default_forward=null 拒绝；损坏的非对象 Mihomo 段不被修成可保存的空配置。
 - 仍未完成/未复核：C34 checker 接线，batch-1 合入后的 rebase，O3-6c 共享提交点的合并态复验，C36 真实 adoption owner，以及独立 Opus HR 复核。
 - N8-5 后续迁移位置：`onboarding/adapter.go` 的 legacy repo/generator/router-split 桥、`service.go` 的 GetPublishSnapshot/GetProfile/UpdateProfileTransaction callback；业务 request/report、DNS/原生图算法不应随之重写。
+
+## 最终 leaf / difftest 定向复验
+
+公开 C36 复用 leaf、将 HTTP 对照整理到标准 difftest 目录之后，精确命令：
+
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt --back server/internal/gateway/onboarding --back server/internal/api/gatewayonboarding -- bash -lc 'cd server && gofmt -w internal/gateway/onboarding internal/api/gatewayonboarding && gofmt -l internal/ tools/ cmd/ && go vet ./internal/gateway/onboarding ./internal/api/gatewayonboarding/... ./internal/server && CONFIGFLOW_DIFF=1 go test -race -count=1 -timeout 3m ./internal/gateway/onboarding ./internal/api/gatewayonboarding/... ./internal/server && go test -run "^$" -fuzz "^FuzzGatewayOnboarding$" -fuzztime 60s -parallel 2 ./internal/gateway/onboarding'
+```
+
+```text
+ok configflow/internal/gateway/onboarding                  20.667s
+ok configflow/internal/api/gatewayonboarding                5.839s
+ok configflow/internal/api/gatewayonboarding/difftest        6.210s
+ok configflow/internal/server                               2.075s
+PASS
+ok configflow/internal/gateway/onboarding                  61.027s
+```
+
+最终 fuzz 225 个缓存 baseline，15334 次执行，新发现 16 个 interesting inputs，无失败。早期完整直接调用方的命令展示省略了仅取回 gofmt 文件的 --back 参数；这里的最终命令包含它们。
+
+共享 OxiDNS helper 提交：`7129d0ef4`。主实现提交见本分支随后的一条 `go(gateway): A21 ...` 提交。

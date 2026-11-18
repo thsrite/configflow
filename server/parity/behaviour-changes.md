@@ -1179,3 +1179,8 @@ inherited Go int64 wrap/reset at large finite values; Python integer increments
 already preserve these counts. Unchanged numeric notation, invalid-field R5
 provenance and finite/unknown siblings remain intact. These corrections add no
 new D2 signature transition and do not change the documented null rollback risk.
+
+## A21 — gateway onboarding
+
+- 同属「HEAD 只读」类别。Python `gateway_onboarding` 只区分 GET 与其他方法，带合法 JSON 的 HEAD 会保存 Mihomo/OxiDNS 草稿并增加 revision。Go HEAD 走 GET，只返回相同状态与 headers，不返回 body，DB、业务文件、revision 不变。`api/gatewayonboarding.TestHEADIsReadOnlyAndMatchesGET` 与真实 Flask 的 `TestFlaskHEADExpectedReadOnlyDifference` 显式验证。
+- 外部 owner 暂未就绪的已裁定契约：C36 未注册 `adopt_owned_write` 时，未完成首次使用 session 或 reader 失败/损坏导致保存返回中文 503「等待首次使用向导模块」，profile 提交前零写入；没有未完成 session 则正常保存，GET/preview 不因该写入就绪检查而拒绝。`TestSetupUnavailableReturns503BeforeCommit`、`TestSetupReadinessContract`、真实 Flask `TestFlaskSetupExpectedDependencyDifference` 分别覆盖。C36 接线后移除依赖缺失分支，不把它当作永久业务差异。
