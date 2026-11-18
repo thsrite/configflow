@@ -61,6 +61,9 @@ func readinessTables() []readinessTable {
 // InspectIPv6Readiness exports the RouterOS reader used by Agent readiness.
 // It never resolves a hostname, writes the router or reads unreferenced lists.
 func InspectIPv6Readiness(ctx context.Context, d *RouterOS, r *Router, agent *model.Agent, host IPv6Host, configuration IPv6ReadinessConfiguration, dnsTarget string, policyContext PolicyContext) (*IPv6Readiness, error) {
+	if err := r.ValidateForDevice(); err != nil {
+		return nil, err
+	}
 	snapshot := IPv6Snapshot{}
 	failed := []string{}
 	checks := []IPv6ReadinessCheck{}

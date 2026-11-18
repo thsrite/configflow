@@ -61,20 +61,20 @@ func TestProfileSessionsHookFailsClosedUntilRegistered(t *testing.T) {
 	if source, err := PublishLegacySource(ctx, r, "", gateway, "a"); err != nil || source != nil {
 		t.Fatalf("no profile: %v %v", source, err)
 	}
+	session := jsonx.Obj("id", "s1", "goal", "router", "completed", 1)
 	SetProfileSessions(func(_ context.Context, got *repo.Repository, profileID string) ([]*jsonx.Object, error) {
 		if got != r || profileID != "home" {
 			t.Errorf("hook got %p %q", got, profileID)
 		}
-		return []*jsonx.Object{jsonx.Obj("id", "s1", "goal", "router", "completed", 1)}, nil
+		return []*jsonx.Object{session}, nil
 	})
 	legacy, err := LegacyContext(ctx, r, "home")
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := `{"session_goal":"router","session_id":"s1","session_completed":true,"has_gateway_session":false,"mihomo_agent_ids":[]}`
-	if got := encode(legacy); got != want {
-		t.Fatalf("context %s", got)
-	}
+	n89SessionPolicy(t, []*jsonx.Object{session}, want, legacy)
+
 	state, err := RouterSplitState(ctx, r, "home", gateway, nil)
 	if err != nil || state.Value("mode") != "legacy" || state.Value("source") != "setup" {
 		t.Fatalf("state %s %v", encode(state), err)

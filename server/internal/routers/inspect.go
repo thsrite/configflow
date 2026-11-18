@@ -43,7 +43,7 @@ func Inspect(ctx context.Context, req InspectRequest) (*Inspection, error) {
 	}
 	r, d := req.Router, req.Driver
 	if r != nil {
-		if err := r.validateIdentity(); err != nil {
+		if err := r.ValidateForDevice(); err != nil {
 			return nil, err
 		}
 	}
@@ -348,7 +348,7 @@ func returnCleanup(ctx context.Context, req InspectRequest, r *Router, a *Gatewa
 	shared := []string{}
 	for _, p := range profiles {
 		for _, other := range p.Routers {
-			if (p.ID != req.ProfileID || other.ID != r.ID) && other.ManageReturnRouting && other.ProxyGatewayAgentID == a.ID {
+			if (p.ID != req.ProfileID || other.ID != r.ID) && other.ManageReturnRouting && other.LinkID("proxy_gateway_agent_id") == a.ID {
 				shared = append(shared, orText(other.Name, other.ID))
 			}
 		}

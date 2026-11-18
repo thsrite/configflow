@@ -1,0 +1,138 @@
+package routers_test
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"path/filepath"
+	"testing"
+
+	api "configflow/internal/api/routers"
+	"configflow/internal/httpx/httpxtest"
+	"configflow/internal/model"
+	core "configflow/internal/routers"
+)
+
+// Native request differences are separate from the frozen R15 workflows. Each
+// rejects a whole original Flask response class and proves zero Go DB writes;
+// request integers retain their strict JSON type contract.
+func TestN89NativeRequestBoundary(t *testing.T) {
+	tests := []struct {
+		name, key        string
+		value            any
+		python, goStatus int
+		message          string
+	}{
+		{"numeric-user", "username", 12, 200, 400, "路由器身份和凭据字段必须是文本"},
+		{"numeric-agent", "proxy_gateway_agent_id", 12, 200, 400, "路由器身份和凭据字段必须是文本"},
+		{"container-password", "password", []string{"x"}, 400, 400, "路由器身份和凭据字段必须是文本"},
+		{"null-tls", "verify_tls", nil, 200, 400, "路由器身份和凭据字段必须是文本"},
+		{"bool-name", "name", true, 200, 400, "请填写名称"},
+		{"false-selection", "ip_rule_sets", false, 200, 400, "IP 路由规则集必须是规则集 ID 列表"},
+		{"ascii-interval", "rule_sync_interval", "60", 400, 400, "请选择有效的规则检查间隔"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body := routerBody("http://127.0.0.1:9")
+			body[tt.key] = tt.value
+			config := map[string]any{"routers": map[string]any{"items": []any{}}}
+			dir := t.TempDir()
+			oracle := r15Python(t, dir, map[string]any{"config": config, "system": map[string]any{}, "requests": []boundaryRequest{{Method: "POST", Path: "/api/routers", Body: body}}})
+			if len(oracle.Responses) != 1 || oracle.Responses[0].Status != tt.python {
+				t.Fatalf("Flask boundary changed: %+v", oracle.Responses)
+			}
+			s := httpxtest.New(t, httpxtest.Options{DataDir: filepath.Join(dir, "go"), Register: httpxtest.Routes(api.Register)})
+			core.Wire()
+			before, err := s.Repo.Profile(s.Context(), "default")
+			if err != nil {
+				t.Fatal(err)
+			}
+			beforeBytes, err := model.Marshal(before)
+			if err != nil {
+				t.Fatal(err)
+			}
+			response := s.Post("/api/routers", httpxtest.JSON(body))
+			response.WantStatus(tt.goStatus)
+			after, err := s.Repo.Profile(s.Context(), "default")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tt.goStatus == 400 {
+				want, _ := json.Marshal(map[string]any{"success": false, "message": tt.message})
+				if !sameBoundaryJSON(response.Body, want) {
+					t.Fatalf("whole native rejection differs: %s", response.Body)
+				}
+				afterBytes, err := model.Marshal(after)
+				if err != nil || !bytes.Equal(beforeBytes, afterBytes) {
+					t.Fatal("rejected request changed DB profile/revision", err)
+				}
+
+			}
+		})
+	}
+}
+func sameBoundaryJSON(left, right []byte) bool {
+	var a, b any
+	if json.Unmarshal(left, &a) != nil || json.Unmarshal(right, &b) != nil {
+		return false
+	}
+	aa, _ := json.Marshal(a)
+	bb, _ := json.Marshal(b)
+	return bytes.Equal(aa, bb)
+}
+
+// Corrupt storage must block device access while keeping settings repair and
+// deletion available. The malformed value is persisted with the real model API.
+func TestN89CorruptIdentityRemainsRepairable(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		bad    json.RawMessage
+		repair any
+	}{
+		{"username", json.RawMessage(`12345`), "repaired-user"},
+		{"ip_rule_sets", json.RawMessage(`["r1",2]`), []string{}},
+		{"ros_policy_rule_sets", json.RawMessage(`["r1",2]`), []string{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := fixture(t)
+			login := s.Login()
+			created := s.Post("/api/routers", login, httpxtest.JSON(routerBody("http://127.0.0.1:9")))
+			created.WantStatus(200)
+			id := created.Object().GetObject("router").GetString("id")
+			path := "/api/routers/" + id
+			corrupt := func() {
+				_, err := s.Repo.UpdateProfile(s.Context(), "default", func(_ context.Context, p *model.Profile) error { return p.Routers.Items[0].SetJSON(tc.name, tc.bad) })
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			corrupt()
+			s.Post(path+"/probe", login).WantStatus(400)
+			s.Get(path+"/routes", login).WantStatus(400)
+			if tc.name != "username" {
+				before, _ := s.Repo.Profile(s.Context(), "default")
+				rawBefore, _ := model.Marshal(before)
+				s.Put(path, login, httpxtest.JSON(map[string]string{"name": "renamed"})).WantStatus(400)
+				after, _ := s.Repo.Profile(s.Context(), "default")
+				rawAfter, _ := model.Marshal(after)
+				if !bytes.Equal(rawBefore, rawAfter) {
+					t.Fatal("unrelated rename rewrote malformed selection")
+				}
+			}
+			s.Put(path, login, httpxtest.JSON(map[string]any{tc.name: tc.repair})).WantStatus(200)
+			stored, err := s.Repo.Profile(s.Context(), "default")
+			if err != nil {
+				t.Fatal(err)
+			}
+			raw, _ := model.Marshal(&stored.Routers.Items[0])
+			var fields map[string]json.RawMessage
+			_ = json.Unmarshal(raw, &fields)
+			want, _ := json.Marshal(tc.repair)
+			if !sameBoundaryJSON(fields[tc.name], want) {
+				t.Fatalf("repair not committed: %s", raw)
+			}
+			corrupt()
+			s.Delete(path, login).WantStatus(200)
+		})
+	}
+}

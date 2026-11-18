@@ -56,8 +56,9 @@ var (
 // string ("" or absent when unset, flags "true"/"false" or "yes"/"no");
 // iKuai sends numbers for ids and counters.
 
-// text is the field as text: a string, or a JSON number (iKuai ids); "" for
-// anything else.
+// text reads an external device field, retaining numeric iKuai IDs and
+// RouterOS string replies. It deliberately tolerates vendor encoding variants;
+// stored user identities use strict validation instead. Other values are absent.
 func (r Row) text(key string) string {
 	switch v := r[key].(type) {
 	case string:

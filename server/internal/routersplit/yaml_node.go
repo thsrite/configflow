@@ -8,7 +8,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func nodeTruthy(node *yamlx.Node) bool {
+// nodeFilterActive interprets a user TUN exclusion: only empty/zero values
+// disable it. Opaque tagged scalars remain active so takeover fails closed.
+func nodeFilterActive(node *yamlx.Node) bool {
 	node = yamlx.Resolve(node)
 	if node == nil {
 		return false
@@ -47,7 +49,7 @@ func nodeTruthy(node *yamlx.Node) bool {
 func nodeTunFilters(tun *yamlx.Node) []string {
 	filters := []string{}
 	for _, key := range gwbase.TUNFilterKeys {
-		if nodeTruthy(yamlx.Get(tun, key)) {
+		if nodeFilterActive(yamlx.Get(tun, key)) {
 			filters = append(filters, key)
 		}
 	}

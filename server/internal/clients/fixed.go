@@ -214,6 +214,10 @@ func (s *FixedIPService) open(config json.RawMessage, intent FixedIPIntent) (map
 			close()
 			return nil, nil, err
 		}
+		if err := r.ValidateForDevice(); err != nil {
+			close()
+			return nil, nil, fixedError(routers.KindConflict, err.Error())
+		}
 		var d routers.FixedIPDriver
 		if s.Open != nil {
 			d = s.Open(r)

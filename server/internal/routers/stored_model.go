@@ -150,3 +150,60 @@ func pendingProfiles(ctx context.Context, db *repo.Repository) ([]pendingProfile
 	})
 	return out, err
 }
+
+// ValidateForDevice checks original consumed identities and active guard settings.
+// Settings PUT/DELETE deliberately do not call it: corrupt fields must remain
+// repairable and removable through the UI under the normal job lock.
+func (r *Router) ValidateForDevice() error {
+	if r == nil {
+		return invalid(messageRouterFieldType)
+	}
+	if err := r.validateIdentity(); err != nil {
+		return err
+	}
+	if r.stored == nil {
+		return nil
+	}
+	issues := model.Issues(r.stored)
+	for _, guard := range []struct{ setting, state string }{{"dns_guard", "dns_guard_state"}, {"ipv6_pd_guard", "ipv6_pd_guard_state"}} {
+		if !model.IssueUnder(issues, guard.setting) {
+			continue
+		}
+		var fields map[string]json.RawMessage
+		_ = json.Unmarshal(r.source, &fields)
+		var switches struct {
+			Enabled bool `json:"enabled"`
+		}
+		_ = json.Unmarshal(fields[guard.setting], &switches)
+		if switches.Enabled || hasStoredState(r.Extra[guard.state]) {
+			return invalid(messageStoredGuardInvalid)
+		}
+	}
+	return nil
+}
+
+// LinkID returns a stored Agent link only when its original token is text.
+// Optional missing/null/malformed links are absent, never fabricated text IDs.
+func (r *Router) LinkID(member string) string {
+	if r == nil {
+		return ""
+	}
+	fallback := ""
+	switch member {
+	case "proxy_gateway_agent_id":
+		fallback = r.ProxyGatewayAgentID
+	case "dns_agent_id":
+		fallback = r.DNSAgentID
+	default:
+		return ""
+	}
+	if len(r.source) == 0 || r.explicit[member] {
+		return fallback
+	}
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(r.source, &fields) != nil {
+		return ""
+	}
+	text, _ := requestString(fields[member])
+	return text
+}

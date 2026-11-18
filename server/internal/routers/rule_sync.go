@@ -343,6 +343,9 @@ func (s *RuleSyncService) sync(ctx context.Context, profile, id, trigger string)
 		if err = ensure(false); err != nil {
 			return err
 		}
+		if err = r.ValidateForDevice(); err != nil {
+			return err
+		}
 		d = s.driver(r)
 		inspection, err := Inspect(ctx, InspectRequest{ProfileID: profile, Config: config, Router: r, Driver: d, Loader: syncIPLoader(records), Agents: s.Agents, Repo: s.Repo})
 		if err != nil {

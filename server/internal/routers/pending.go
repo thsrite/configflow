@@ -101,7 +101,7 @@ func pendingTargets(ctx context.Context, req PendingRequest) ([]pendingTarget, s
 		for _, r := range routersOf(data) {
 			// An empty Agent ID is a missing identity, never a match against
 			// routers without a proxy gateway.
-			if req.AgentID == "" || r.ProxyGatewayAgentID != req.AgentID {
+			if req.AgentID == "" || r.LinkID("proxy_gateway_agent_id") != req.AgentID {
 				continue
 			}
 			original, err := releaseRouterRecord(r)

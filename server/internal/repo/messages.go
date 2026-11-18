@@ -37,3 +37,8 @@ const msgRouterIDInvalid = "路由器 ID 无效"
 
 // msgImportResultShape refuses an import builder result of the wrong shape.
 const msgImportResultShape = "导入结果格式无效"
+
+const (
+	msgRouterIDImmutable     = "不能修改路由器 ID"
+	msgRouterSettingsChanged = "路由器设置已变化，请刷新后重试"
+)

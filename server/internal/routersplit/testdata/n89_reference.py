@@ -19,7 +19,10 @@ from backend.common.linux_gateway import LinuxGatewayError
 
 _original_router_ids=split._router_ids
 # Empty identities never prove a forwarding relationship (R13 fail-closed rule).
-split._router_ids=lambda config,ids:_original_router_ids(config,[x for x in ids if x])
+def native_router_ids(config,ids):
+    routers=[r for r in record(config.get('routers')).get('items',[]) if isinstance(r.get('_n89_raw_id'),str) and r['_n89_raw_id']]
+    return _original_router_ids({**config,'routers':{'items':routers}},[x for x in ids if x])
+split._router_ids=native_router_ids
 
 
 def text(v, default=''):
@@ -53,10 +56,11 @@ def profile(v):
         if link is not None and not isinstance(link,str): bad=True
         # Required router IDs are checked only when a matching binding is consumed.
         item['_n89_raw_id']=item.get('id')
+        if not isinstance(link,str): item['proxy_gateway_agent_id']=''
         for k in ('id', 'proxy_gateway_agent_id'):
             item[k] = text(item.get(k))
         routers['items'].append(item)
-    p['_n89_bad_identity']=bad
+    p['_n89_bad_identity']=False
     return p
 
 
@@ -66,15 +70,15 @@ def context(v):
     bad=ids is not None and (not isinstance(ids,list) or any(not isinstance(x,str) or not x for x in ids))
     bad=bad or (v.get('session_id') is not None and not isinstance(v['session_id'],str))
     return {'_n89_bad_identity':bad,'session_goal': text(v.get('session_goal'), None),
-            'session_id': text(v.get('session_id'), None),
+            'session_id': v.get('session_id') if isinstance(v.get('session_id'),str) else None,
             'session_completed': v.get('session_completed') is True,
             'has_gateway_session': v.get('has_gateway_session') is True,
-            'mihomo_agent_ids': strings(v.get('mihomo_agent_ids'))}
+            'mihomo_agent_ids': [] if ids is not None and (not isinstance(ids,list) or any(not isinstance(x,str) or not x for x in ids)) else strings(ids)}
 
 
 def session(v):
     v = record(v)
-    return {'id': text(v.get('id'), None), 'goal': text(v.get('goal'), None),
+    return {'_n89_bad_id':v.get('id') is not None and not isinstance(v.get('id'),str),'id':v.get('id') if isinstance(v.get('id'),str) else None, 'goal': text(v.get('goal'), None),
             'abandoned': v.get('abandoned') is True, 'completed': v.get('completed') is True}
 
 
@@ -99,11 +103,15 @@ class Repository:
         if entry.get('err'): raise ReplayError(entry['err'])
         out=decode(entry.get('out'))
         if name=='get_profile': return profile(out)
-        if name=='profile_sessions': return [session(x) for x in out]
+        if name=='profile_sessions':
+            sessions=[session(x) for x in out]
+            latest=next((s for s in sessions if not s['abandoned']),None)
+            if latest and latest['_n89_bad_id']:raise split.RouterSplitError('主路由分流的拓扑身份必须是非空文本','ROUTER_SPLIT_INVALID',409)
+            return sessions
         if name=='get_profile_agent_bindings':
             agents=record(out).get('agents')
-            if not isinstance(agents,list) or any(not isinstance(x,dict) for x in agents): raise ValueError('主路由分流的 Agent 绑定身份无效')
-            if any(x.get('service_type')=='mihomo' and (not isinstance(x.get('id'),str) or not x['id']) for x in agents): raise ValueError('主路由分流的 Agent 绑定身份无效')
+            if not isinstance(agents,list) or any(not isinstance(x,dict) for x in agents): raise split.RouterSplitError('主路由分流的 Agent 绑定身份无效','ROUTER_SPLIT_INVALID',409)
+            if any(x.get('service_type')=='mihomo' and (not isinstance(x.get('id'),str) or not x['id']) for x in agents): raise split.RouterSplitError('主路由分流的 Agent 绑定身份无效','ROUTER_SPLIT_INVALID',409)
             return {'agents':[{'id':text(x.get('id')), 'service_type':text(x.get('service_type'))} for x in agents if text(x.get('id'))]}
         raise AssertionError(name)
     def get_profile(self, id): return self.take('get_profile',id)
@@ -123,7 +131,7 @@ def run(row):
     if 'config' in args and args['config'] is not None: args['config']=profile(args['config'])
     elif 'config' in args and name!='router_split_state': args['config']=profile(None)
     if 'context' in args and (args['context'] is not None or name!='router_split_state'): args['context']=context(args['context'])
-    if name=='gateway_was_used': args['agent']={'gateway_installation_id':text(record(args.get('agent')).get('gateway_installation_id'))}
+    if name=='gateway_was_used': args['agent']={'gateway_installation_id':record(args.get('agent')).get('gateway_installation_id') if isinstance(record(args.get('agent')).get('gateway_installation_id'),str) else ''}
     
     setup_flow.profile_sessions=lambda _,id:r.take('profile_sessions',id)
     try:
@@ -132,7 +140,7 @@ def run(row):
             args['repository']=r
         if name=='publish_legacy_source' and split.read_marker(args['config'])[0]=='absent' and args.get('profile_id') and (not isinstance(args.get('agent_id'),str) or not args['agent_id']):
             split._session_context(r,args['profile_id'])
-            raise ValueError('主路由分流的拓扑身份必须是非空文本')
+            raise split.RouterSplitError('主路由分流的拓扑身份必须是非空文本','ROUTER_SPLIT_INVALID',409)
         answer={'out':getattr(split,name)(**args)}
     except Exception as e:
         answer={'err':error(e)}
@@ -141,13 +149,14 @@ def run(row):
 
 
 def validate(p,c):
+    if split.read_marker(p)[0]!='absent':return
     if p.get('_n89_bad_identity') or c.get('_n89_bad_identity'):
-        raise ValueError('主路由分流的拓扑身份必须是非空文本')
+        raise split.RouterSplitError('主路由分流的拓扑身份必须是非空文本','ROUTER_SPLIT_INVALID',409)
     ids=c.get('mihomo_agent_ids') or []
     for r in p['routers']['items']:
         if r.get('proxy_gateway_agent_id') and r['proxy_gateway_agent_id'] in ids:
             if not isinstance(r.get('_n89_raw_id'),str) or not r['_n89_raw_id']:
-                raise ValueError('主路由分流的拓扑身份必须是非空文本')
+                raise split.RouterSplitError('主路由分流的拓扑身份必须是非空文本','ROUTER_SPLIT_INVALID',409)
 
 _original_source=split.legacy_source
 _original_ids=split.legacy_gateway_agent_ids
@@ -171,6 +180,16 @@ split._state=checked_state
 
 def main():
     root=Path(__file__).parent
+    # The one old Go hook test also used a Python-truthy integer completion.
+    # Bind its unchanged input and both real Python answers separately.
+    original_sessions=[{'id':'s1','goal':'router','completed':1}]
+    class SessionRepository:
+        def get_profile_agent_bindings(self,_):return {'agents':[]}
+    setup_flow.profile_sessions=lambda _,id:copy.deepcopy(original_sessions)
+    original=split.legacy_context(SessionRepository(),'home')
+    setup_flow.profile_sessions=lambda _,id:[session(x) for x in original_sessions]
+    native=split.legacy_context(SessionRepository(),'home')
+    (root/'n89_session_expectation.json').write_text(json.dumps({'input':original_sessions,'original':original,'native':native},ensure_ascii=False,indent=2)+'\n')
     result=[]
     for file in ('r02_recorded.jsonl.gz','r02_corpus.jsonl.gz','r02_edge.jsonl.gz'):
         for line_index,line in enumerate(gzip.open(root/file,'rt')):
@@ -183,7 +202,7 @@ def main():
             if answer!=old:
                 result.append({'file':file,'line':line_index,'input_sha256':hashlib.sha256(line.rstrip('\n').encode()).hexdigest(),'fn':row['fn'],'answer':answer})
     out=root/'n89_expectations.json'
-    out.write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n')
+    out.write_text('[\n'+',\n'.join(json.dumps(row,ensure_ascii=False,separators=(',',':')) for row in result)+'\n]\n')
     print(f'{len(result)} independent row expectations -> {out}')
 
 if __name__=='__main__':main()

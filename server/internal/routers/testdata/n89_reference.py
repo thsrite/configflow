@@ -25,14 +25,6 @@ def run(args):
         if key in payload and not isinstance(payload[key],str):raise RouterValidationError(TYPE_MESSAGE)
     if 'name' in payload:payload['name']=native_text(payload['name'])
     if 'verify_tls' in payload and type(payload['verify_tls']) is not bool:raise RouterValidationError(TYPE_MESSAGE)
-    if 'rule_sync_interval' in payload:
-        v=payload['rule_sync_interval']
-        if type(v) is int:pass
-        elif type(v) is float and v.is_integer():v=int(v)
-        elif isinstance(v,str) and re.fullmatch('[+-]?[0-9]+',v.strip(' \t\r\n')):v=int(v)
-        else:v=0
-        if not -(1<<63)<=v<(1<<63):v=0
-        payload['rule_sync_interval']=v
     for key in ('ip_rule_sets','ros_policy_rule_sets'):
         if key in payload and payload[key] is not None and not isinstance(payload[key],list):payload[key]=['']
     result=normalize(payload,existing)
@@ -55,6 +47,6 @@ def main():
         except Exception as e:answer={'err':[type(e).__name__,str(e)]}
         original={'err':row['err']} if 'err' in row else {'out':row['out']}
         if answer!=original:out.append({'line':index,'input_sha256':hashlib.sha256(line.rstrip('\n').encode()).hexdigest(),'answer':answer})
-    (root/'n89_expectations.json').write_text(json.dumps(out,ensure_ascii=False,indent=2)+'\n')
+    (root/'n89_expectations.json').write_text('[\n'+',\n'.join(json.dumps(row,ensure_ascii=False,separators=(',',':')) for row in out)+'\n]\n')
     print(f'{len(out)} R01 independent row expectations')
 if __name__=='__main__':main()

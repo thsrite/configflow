@@ -1952,3 +1952,12 @@ world 保留旧文件。原 archive 不改；独立 Python 参考绑定完整 ar
   rather than silently substituting null and reporting success. DNS rejection leaves its source
   document unchanged. The shared alias budget and all ordinary generation expectations stay intact.
 - Evidence, failures before each fix and targeted checks: `review-n8-9-subs.md`.
+
+### N8-9 routers / routersplit typed boundary
+
+- 用户写入的 type/endpoint/username/password/Agent引用必须为文本，verify_tls 必须为 bool；name 使用共享 model.String（数值保真文本，bool/容器按 R5 缺省），存储检查间隔使用 model.Int，HTTP 请求仍严格要求 JSON 整数（字符串或60.0均拒绝）。规则选择是身份列表，不能用数值自动造出规则 ID。原 R01 冻结输入/答案不改，另列725条完整逐行SHA绑定的独立 Python 期望；原生变化不复用 Go 输出。
+- 存储读取使用共享 model；坏选择列表在无关改名时明确400而不是写空，校正后的PUT和DELETE仍可用；损坏守卫有所有权记录或原启用开关时阻止设备操作，不能退化为撤除。运行时默认不将无关的缺失字段物化，显式赋默认仍写入。旧未知字段、错型成员和大整数在无关编辑后保留，Extra 删除显式使用 Clear/Fields.Delete。已发布 manifest 的坏值仍作为不透明所有权证据，不能用 R5 默认去掉保护。
+- routersplit 不再生成 Python AttributeError/TypeError 或做 str/list/hashable 仿真；错型 record/list/bool 遵循 shared model，原始标记仍严格验证 version 的整数 token1 和所有字符串身份。实际使用的拓扑/绑定数值、容器、空必需身份 fail-closed，用 RouterSplitError/ROUTER_SPLIT_INVALID/409；可选非文本/null链接视为没有链接，不阻塞无关路由器；marker路径不读取旧拓扑证明。Python 的 None/空 ID、数值/bool相等不再制造关系。
+- 会话 completed=1 不再被 Python truthiness 当成 true；仅 bool true 表示完成。旧 hook 单测仍使用同一数字输入，独立 fixture 同时固定真实 Python 旧答案和 R5 投影后的完整答案。没有把输入改成 true 来躲过差异。
+- RouterOS/iKuai 回包属于外部输入：既有 Row.text/flag/number 的厂商字符串/数值兼容保留，设备请求编码、顺序、超时及 raw body/header 断言不改；日志/错误凭据继续用 internal/redact。导出脱敏沿既有出口合同。
+- 本组没有新增 D2 设备身份/缓存签名变更；通知继续使用 N8-7 已切换的 native RouterDigest，规则同步控制摘要沿 R14 已批准 canonicalReleaseJSON。YAML 的原 N7 oracle 与列出的差异类别不变。

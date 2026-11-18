@@ -43,6 +43,9 @@ func pdEvidence(live pdLive, spec *IPv6PDSpec, owned map[string]Row) *IPv6PDEvid
 // InspectIPv6PDGuard reads one guard installation. Ambiguity blocks this stage
 // alone; the release planner decides how to skip it and report its warnings.
 func InspectIPv6PDGuard(ctx context.Context, r *Router, gateway string, d *RouterOS) (*IPv6PDGuardPlan, error) {
+	if err := r.ValidateForDevice(); err != nil {
+		return nil, err
+	}
 	p := &IPv6PDGuardPlan{IPv6PDGuardReport: IPv6PDGuardReport{Enabled: pdSettings(r).Enabled, Status: "disabled", Hold: pdHold, Items: []IPv6PDItem{}, Blockers: []string{}, Warnings: []string{}}, Ops: []Op{}}
 	var previous json.RawMessage
 	if r != nil {

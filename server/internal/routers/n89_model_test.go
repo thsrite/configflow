@@ -103,13 +103,11 @@ func TestN89StoredRouterPreservesWrongTypesAndOpaqueFields(t *testing.T) {
 	}
 }
 
-func TestN89StoredIdentityCannotSelectDevice(t *testing.T) {
+func TestN89StoredIdentityCannotOpenDevice(t *testing.T) {
 	for _, field := range []string{"id", "type", "endpoint", "username", "password", "proxy_gateway_agent_id", "dns_agent_id"} {
 		for _, value := range []string{`12`, `true`, `[]`, `{}`, `null`} {
 			t.Run(field+value, func(t *testing.T) {
-				if (field == "proxy_gateway_agent_id" || field == "dns_agent_id") && value == `null` {
-					return
-				}
+				optionalNull := (field == "proxy_gateway_agent_id" || field == "dns_agent_id") && value == `null`
 				fields := map[string]json.RawMessage{"id": json.RawMessage(`"r"`), "type": json.RawMessage(`"routeros"`), "endpoint": json.RawMessage(`"http://192.0.2.1"`)}
 				fields[field] = json.RawMessage(value)
 				raw, _ := json.Marshal(fields)
@@ -117,12 +115,13 @@ func TestN89StoredIdentityCannotSelectDevice(t *testing.T) {
 				if err := json.Unmarshal(raw, &r); err != nil {
 					t.Fatal(err)
 				}
-				_, release, err := RouterJobLock(t.Context(), "p", "r", &r)
-				if release != nil {
-					release()
-				}
-				if err == nil {
-					t.Fatal("invalid identity obtained device write lock")
+				err := r.ValidateForDevice()
+				if optionalNull {
+					if err != nil {
+						t.Fatal("null optional link rejected", err)
+					}
+				} else if err == nil {
+					t.Fatal("invalid identity allowed device access")
 				}
 			})
 		}
@@ -208,5 +207,58 @@ func TestN89SyncEnvironmentAllocations(t *testing.T) {
 		if large-small > 32<<10 {
 			t.Fatalf("full config decoded per rule: delta=%d", large-small)
 		}
+	}
+}
+
+func TestN89UnknownEditsAndStateRemoval(t *testing.T) {
+	source := []byte(`{"id":"r","future":1,"last_probe":{"ok":true},"opaque":9223372036854775808123}`)
+	for _, tc := range []struct {
+		name string
+		edit func(*Router)
+		key  string
+		want string
+	}{
+		{"modify", func(r *Router) { r.Extra["future"] = json.RawMessage(`2`) }, "future", `2`},
+		{"add", func(r *Router) { r.Extra["new_field"] = json.RawMessage(`{"x":true}`) }, "new_field", `{"x":true}`},
+		{"drop-state", func(r *Router) { delete(r.Extra, "last_probe") }, "last_probe", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var r Router
+			if err := json.Unmarshal(source, &r); err != nil {
+				t.Fatal(err)
+			}
+			tc.edit(&r)
+			out, err := r.MarshalJSON()
+			if err != nil {
+				t.Fatal(err)
+			}
+			var fields map[string]json.RawMessage
+			_ = json.Unmarshal(out, &fields)
+			if string(fields[tc.key]) != tc.want || string(fields["opaque"]) != `9223372036854775808123` {
+				t.Fatalf("bad edit: %s", out)
+			}
+			unchanged, err := model.Marshal(r.stored)
+			if err != nil || !bytes.Equal(unchanged, source) {
+				t.Fatal("edit mutated shared provenance")
+			}
+		})
+	}
+}
+
+func TestN89MalformedActiveGuardBlocksDeviceAccess(t *testing.T) {
+	for _, raw := range []string{
+		`{"dns_guard":{"enabled":true,"bypass":"x"}}`,
+		`{"dns_guard":{"enabled":false,"bypass":"x"},"dns_guard_state":{"resources":[]}}`,
+		`{"ipv6_pd_guard":{"enabled":"x"},"ipv6_pd_guard_state":{"resources":[]}}`,
+	} {
+		t.Run(raw, func(t *testing.T) {
+			var r Router
+			if err := json.Unmarshal([]byte(raw), &r); err != nil {
+				t.Fatal(err)
+			}
+			if err := r.ValidateForDevice(); err == nil || err.Error() != messageStoredGuardInvalid {
+				t.Fatalf("malformed guard could be withdrawn: %v", err)
+			}
+		})
 	}
 }

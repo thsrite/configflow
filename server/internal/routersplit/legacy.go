@@ -193,11 +193,11 @@ func GatewayWasUsed(config, agent, source any) (bool, error) {
 		return true, nil
 	}
 	var a struct {
-		InstallationID model.String `json:"gateway_installation_id"`
+		InstallationID *string `json:"gateway_installation_id"`
 	}
 	b, _ := json.Marshal(agent)
 	_ = json.Unmarshal(b, &a)
-	return a.InstallationID != "", nil
+	return a.InstallationID != nil && *a.InstallationID != "", nil
 }
 
 // HookMissingError means the setup-session provider was not registered.
@@ -251,7 +251,7 @@ func sessionContext(ctx context.Context, r *repo.Repository, id string) (*Contex
 	if err = json.Unmarshal(encoded, &sessions); err != nil {
 		return nil, err
 	}
-	return SessionContext(sessions), nil
+	return SessionContext(sessions)
 }
 
 // LegacyContext reads collaborators before any profile transaction begins.
@@ -266,22 +266,22 @@ func LegacyContext(ctx context.Context, r *repo.Repository, id string) (*jsonx.O
 		return nil, err
 	}
 	if err = json.Unmarshal(encoded, &fields); err != nil {
-		return nil, &ValidationError{messageBindingsInvalid}
+		return nil, identityError(messageBindingsInvalid)
 	}
 	var agents []map[string]json.RawMessage
 	if raw, ok := fields["agents"]; !ok || json.Unmarshal(raw, &agents) != nil || agents == nil {
-		return nil, &ValidationError{messageBindingsInvalid}
+		return nil, identityError(messageBindingsInvalid)
 	}
 	for _, a := range agents {
 		if a == nil {
-			return nil, &ValidationError{messageBindingsInvalid}
+			return nil, identityError(messageBindingsInvalid)
 		}
 		var service string
 		_ = json.Unmarshal(a["service_type"], &service)
 		if service == "mihomo" {
 			var identity *string
 			if json.Unmarshal(a["id"], &identity) != nil || identity == nil || *identity == "" {
-				return nil, &ValidationError{messageBindingsInvalid}
+				return nil, identityError(messageBindingsInvalid)
 			}
 		}
 	}
@@ -329,7 +329,7 @@ func PublishLegacySource(ctx context.Context, r *repo.Repository, id string, con
 	var a string
 	b, _ := json.Marshal(agentID)
 	if json.Unmarshal(b, &a) != nil || a == "" {
-		return nil, &ValidationError{messageTopologyIdentity}
+		return nil, identityError(messageTopologyIdentity)
 	}
 	c.MihomoAgentIDs = []string{a}
 	source, err := LegacyProfileSource(p, c)

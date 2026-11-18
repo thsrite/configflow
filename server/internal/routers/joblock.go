@@ -44,11 +44,6 @@ func RouterJobLock(ctx context.Context, profileID, routerID string, router *Rout
 		release()
 		return held, nil, err
 	}
-	if router != nil {
-		if err := router.validateIdentity(); err != nil {
-			release()
-			return held, nil, err
-		}
-	}
+
 	return held, release, nil
 }

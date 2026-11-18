@@ -208,10 +208,12 @@ func (c *Context) UnmarshalJSON(b []byte) error {
 		var ids []*string
 		if json.Unmarshal(raw, &ids) != nil {
 			c.invalidIdentity = true
+			c.MihomoAgentIDs = nil
 		} else {
 			for _, id := range ids {
 				if id == nil || *id == "" {
 					c.invalidIdentity = true
+					c.MihomoAgentIDs = nil
 				}
 			}
 		}
@@ -220,6 +222,7 @@ func (c *Context) UnmarshalJSON(b []byte) error {
 		var id string
 		if json.Unmarshal(raw, &id) != nil {
 			c.invalidIdentity = true
+			c.SessionID = nil
 		}
 	}
 	return nil
@@ -232,13 +235,28 @@ type Session struct {
 	Abandoned bool          `json:"abandoned"`
 	Completed bool          `json:"completed"`
 	Raw       model.Raw
+	invalidID bool
 }
 
 // UnmarshalJSON uses shared stored rules for the setup-session view.
-func (s *Session) UnmarshalJSON(b []byte) error { return model.DecodeRecord(b, s, &s.Raw) }
+func (s *Session) UnmarshalJSON(b []byte) error {
+	if err := model.DecodeRecord(b, s, &s.Raw); err != nil {
+		return err
+	}
+	var fields map[string]json.RawMessage
+	_ = json.Unmarshal(b, &fields)
+	if raw, present := fields["id"]; present && string(raw) != "null" {
+		var id string
+		if json.Unmarshal(raw, &id) != nil {
+			s.invalidID = true
+			s.ID = nil
+		}
+	}
+	return nil
+}
 
 // SessionContext selects the newest non-abandoned session and historical gateway purpose.
-func SessionContext(rows []Session) *Context {
+func SessionContext(rows []Session) (*Context, error) {
 	out := &Context{MihomoAgentIDs: []string{}}
 	found := false
 	for _, s := range rows {
@@ -246,6 +264,9 @@ func SessionContext(rows []Session) *Context {
 			continue
 		}
 		if !found {
+			if s.invalidID {
+				return nil, identityError(messageTopologyIdentity)
+			}
 			out.SessionGoal, out.SessionID, out.SessionCompleted = s.Goal, s.ID, s.Completed
 			found = true
 		}
@@ -253,7 +274,7 @@ func SessionContext(rows []Session) *Context {
 			out.HasGatewaySession = true
 		}
 	}
-	return out
+	return out, nil
 }
 
 // LegacyProfileSource recognizes a wizard purpose or a router bound to a Mihomo Agent.
@@ -279,8 +300,8 @@ func profileRouterIDs(p *model.Profile, ids []string) []string {
 	out := []string{}
 	if p != nil {
 		for _, r := range p.Routers.Items {
-			if r.ProxyGatewayAgentID != "" && slices.Contains(ids, r.ProxyGatewayAgentID) {
-				out = append(out, r.ID)
+			if id, link, valid := topologyRouter(r); valid && link != "" && slices.Contains(ids, link) {
+				out = append(out, id)
 			}
 		}
 	}
@@ -299,8 +320,8 @@ func legacyAgentIDs(p *model.Profile, c *Context) []string {
 	case "topology":
 		proxies := map[string]bool{}
 		for _, r := range p.Routers.Items {
-			if r.ProxyGatewayAgentID != "" {
-				proxies[r.ProxyGatewayAgentID] = true
+			if _, link, _ := topologyRouter(r); link != "" {
+				proxies[link] = true
 			}
 		}
 		for _, id := range c.MihomoAgentIDs {
@@ -354,37 +375,43 @@ func profileState(p *model.Profile, c *Context) SplitState {
 	return out
 }
 
-// ValidateTopology checks original identity tokens before recognizing a takeover.
-// A numeric or container ID must never match a real string identifier after R5.
-func ValidateTopology(p *model.Profile, c *Context) error {
-	if c != nil && c.invalidIdentity {
-		return &ValidationError{messageTopologyIdentity}
+// topologyRouter reads only the original router identity/link tokens. Invalid
+// optional links are absent, so an unrelated record cannot block a whole profile.
+func topologyRouter(r model.Router) (id, link string, validID bool) {
+	raw, err := model.Marshal(&r)
+	if err != nil {
+		return "", "", false
 	}
-	if p == nil {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) != nil {
+		return "", "", false
+	}
+	var identity, connection *string
+	if json.Unmarshal(fields["proxy_gateway_agent_id"], &connection) != nil || connection == nil {
+		return "", "", false
+	}
+	if json.Unmarshal(fields["id"], &identity) == nil && identity != nil && *identity != "" {
+		id, validID = *identity, true
+	}
+	return id, *connection, validID
+}
+
+// ValidateTopology checks only identities actually used for legacy recognition.
+// A valid/invalid marker takes its own path and never requires legacy topology.
+func ValidateTopology(p *model.Profile, c *Context) error {
+	if state, _ := ReadMarkerProfile(p); state != StateAbsent {
+		return nil
+	}
+	if c != nil && c.invalidIdentity {
+		return identityError(messageTopologyIdentity)
+	}
+	if p == nil || c == nil {
 		return nil
 	}
 	for _, r := range p.Routers.Items {
-		raw, err := model.Marshal(&r)
-		if err != nil {
-			return err
-		}
-		var fields map[string]json.RawMessage
-		if err = json.Unmarshal(raw, &fields); err != nil {
-			return err
-		}
-		proxy := fields["proxy_gateway_agent_id"]
-		if len(proxy) == 0 || string(proxy) == "null" {
-			continue
-		}
-		var id *string
-		if json.Unmarshal(proxy, &id) != nil || id == nil {
-			return &ValidationError{messageTopologyIdentity}
-		}
-		if *id != "" && c != nil && slices.Contains(c.MihomoAgentIDs, *id) {
-			var router *string
-			if json.Unmarshal(fields["id"], &router) != nil || router == nil || *router == "" {
-				return &ValidationError{messageTopologyIdentity}
-			}
+		_, link, validID := topologyRouter(r)
+		if link != "" && slices.Contains(c.MihomoAgentIDs, link) && !validID {
+			return identityError(messageTopologyIdentity)
 		}
 	}
 	return nil
@@ -413,3 +440,5 @@ func ProfileState(p *model.Profile, c *Context) (SplitState, error) {
 	}
 	return profileState(p, c), nil
 }
+
+func identityError(message string) error { return NewRouterSplitError(message, CodeInvalid, 409) }

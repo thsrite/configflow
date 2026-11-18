@@ -14,6 +14,7 @@ import (
 
 	"configflow/internal/model"
 	"configflow/internal/netipx"
+	"configflow/internal/repo"
 )
 
 // RouterTypes are the supported vendors.
@@ -130,7 +131,12 @@ func (r Router) MarshalJSON() ([]byte, error) {
 		}
 		for key, value := range r.Extra {
 			if !jsonEqual(value, original[key]) {
-				if err = stored.SetJSON(key, value); err != nil {
+				if stored.Fields.Has(key) || !slices.Contains(append([]string{"last_probe", "last_release"}, repo.RouterManifestFields...), key) {
+					err = stored.Fields.Set(key, value)
+				} else {
+					err = stored.SetJSON(key, value)
+				}
+				if err != nil {
 					return nil, err
 				}
 			}
@@ -336,6 +342,20 @@ func Normalize(body []byte, existing *Router) (*Router, error) {
 		_ = json.Unmarshal(data, &m)
 		m["ip_rule_sets"], _ = json.Marshal(existing.StaticRuleSets())
 	}
+	if existing != nil && len(existing.source) > 0 {
+		var fields map[string]json.RawMessage
+		_ = json.Unmarshal(existing.source, &fields)
+		for _, selection := range []struct{ key, message string }{{"ip_rule_sets", messageIPSelectionType}, {"ros_policy_rule_sets", messagePolicySelectionType}} {
+			if _, repaired := payload[selection.key]; repaired {
+				continue
+			}
+			if raw, present := fields[selection.key]; present {
+				if _, valid := idList(raw); !valid {
+					return nil, invalid(selection.message)
+				}
+			}
+		}
+	}
 	r.explicit = map[string]bool{}
 	for _, key := range EditableFields {
 		if v, ok := payload[key]; ok {
@@ -371,9 +391,9 @@ func Normalize(body []byte, existing *Router) (*Router, error) {
 	r.AutoRuleSync, autoOK = boolField(m, "auto_rule_sync", false)
 	r.RuleSyncInterval = 60
 	if v, present := m["rule_sync_interval"]; present {
-		var interval model.Int
-		if json.Unmarshal(v, &interval) == nil {
-			r.RuleSyncInterval = int(interval)
+		var interval *int
+		if json.Unmarshal(v, &interval) == nil && interval != nil {
+			r.RuleSyncInterval = *interval
 		} else {
 			r.RuleSyncInterval = 0
 		}

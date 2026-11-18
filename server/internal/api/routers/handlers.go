@@ -253,6 +253,9 @@ func inspect(c *httpx.Ctx, db *repo.Repository, cfg json.RawMessage, r *core.Rou
 	if err != nil {
 		return nil, nil, err
 	}
+	if err := r.ValidateForDevice(); err != nil {
+		return nil, nil, err
+	}
 	d := core.NewDriver(r)
 	if d == nil {
 		return nil, nil, &core.RouterError{Message: messageMissing}
@@ -351,6 +354,9 @@ func (h *handler) routes(c *httpx.Ctx) (*httpx.Response, error) {
 	}
 	if r == nil {
 		return notFound()
+	}
+	if err := r.ValidateForDevice(); err != nil {
+		return failure(c, cfg, err, 0, false)
 	}
 	d := core.NewDriver(r)
 	if d == nil {

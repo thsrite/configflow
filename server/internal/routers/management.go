@@ -37,7 +37,7 @@ func (s *ManagementService) Records(ctx context.Context, profile string) (json.R
 	return raw, routersOf(raw), nil
 }
 func (s *ManagementService) open(r *Router) (Driver, error) {
-	if err := r.validateIdentity(); err != nil {
+	if err := r.ValidateForDevice(); err != nil {
 		return nil, err
 	}
 	factory := s.NewDriver

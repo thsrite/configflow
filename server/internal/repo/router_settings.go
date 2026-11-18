@@ -22,18 +22,7 @@ func (r *Repository) SaveRouterSettingsJSON(ctx context.Context, profileID strin
 		return validationError(msgRouterIDInvalid)
 	}
 	key := routerKey{profileID, id}
-	var next model.Router
-	if replacement != nil {
-		v := viewOfJSON(replacement)
-		raw, _ := v.get("id")
-		other, ok := jsonString(raw)
-		if !ok || other != id {
-			return validationError("不能修改路由器 ID")
-		}
-		if err := json.Unmarshal(replacement, &next); err != nil {
-			return err
-		}
-	}
+
 	return r.transact(ctx, writeOptions{lockedRouters: map[routerKey]bool{key: true}}, func(work context.Context, tx *transaction) error {
 		if err := work.Err(); err != nil {
 			return err
@@ -48,7 +37,20 @@ func (r *Repository) SaveRouterSettingsJSON(ctx context.Context, profileID strin
 		}
 		current, found := records.values[key]
 		if !valid || !found || !sameStoredObject(current, old) {
-			return inUse("路由器设置已变化，请刷新后重试")
+			return inUse(msgRouterSettingsChanged)
+		}
+
+		var next model.Router
+		if replacement != nil {
+			v := viewOfJSON(replacement)
+			raw, _ := v.get("id")
+			other, ok := jsonString(raw)
+			if !ok || other != id {
+				return validationError(msgRouterIDImmutable)
+			}
+			if err := json.Unmarshal(replacement, &next); err != nil {
+				return err
+			}
 		}
 		items := make([]model.Router, 0, len(p.Routers.Items))
 		for _, item := range p.Routers.Items {

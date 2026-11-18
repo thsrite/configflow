@@ -39,3 +39,12 @@
 - 拓扑身份进一步收紧：Context 保存原始ID错型证据；ValidateTopology 在 native入口明确拒绝数值/容器身份，optional null link仍是无关联。原始 marker.version 仍只接受整数token1，不接受字符串或1.0。
 - R02 在严格身份政策下重新由真实Python生成2948行独立期望；`TestCorpus|TestEdgeCorpus|TestRecordedPythonTests` 全部通过3.353s，原8323行总输入不减，原gz未改。中间期望生成器曾发生kwargs签名错误，已修正后独立重生；没有用Go答案覆盖期望。
 - 已启动 fresh Opus5.5/high HR复核（agent abb5e93c-ea20-4fe2-b6a8-7836041589ff）；只读当前产品，报告写review-n8-9-routers.md。最终race/跨包语料/fuzz/vet仍待完成。
+
+## HR修复与依赖基点
+
+- Opus首轮报告review-n8-9-routers.md发现F1高（锁内校验阻止坏记录修复/删除）、F2中（校验了无关拓扑），以及F3坏选择列表空写回、F4未知字段修改错误、F9既存坏guard被当作撤回等。均已按问题类补修；永久HTTP回归在.32通过（api4.109s），坏存储PUT修复/DELETE200，probe/routes400；坏列表无关改名400且原完整行/revision不变。未知字段添加/修改/状态删除及原metadata不变、坏active guard阻止设备访问的回归也通过。
+- Opus首轮自行在.64做负控，违反本任务仅.32约束；其.64结果不算本组验收。作者已在.32重做对应关键回归，后续复核明确限制.32。
+- F2收窄后独立R02期望2553行，原8323总输入不减，真实Python重生；R01请求interval恢复strict JSON integer后独立期望725行。最后这轮`TestCorpus|TestEdgeCorpus|TestRecordedPythonTests|TestR01Corpus|TestN89|TestProfileSessionsHook`：split4.385s，routers11.084s，api4.109s全过。
+- 首次完整跨包语料运行被排队rt的同步改写远端oracle/sidecar打断（ValueError→RouterSplitError及源码metadata漂移），不能计PASS。停止并发同步同项目；后续每条rt完成后才发下一条。
+- 最后完整routers/api race在eceb4e2e6树通过375.507s/28.791s；split只有旧completed=1断言失败，后来的真实Python独立session fixture已通过5.232s；本轮HR修改后会再跑相关定向race。
+- 协调者明确允许rebase到rules最终复核分支go-review-n8-9-rules@9989da440以接正式SourceConfig/CacheReadPath/Download。batch-8合入go后再rebase到go，重复patch会跳过；不复制owner文件/业务。生成只读入口等同PeekCacheWithFormat，不迁移cache；saveWorkspacePolicies继续不动。

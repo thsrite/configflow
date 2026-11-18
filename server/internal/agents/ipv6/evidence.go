@@ -161,7 +161,7 @@ func observe(ctx context.Context, config, source Document, testURL string, ready
 		if ctx.Err() != nil {
 			break
 		}
-		if r.Type != "routeros" {
+		if r.Type != "routeros" || r.ValidateForDevice() != nil {
 			continue
 		}
 		s := &scan{id: r.ID, driver: routers.NewRouterOS(r.Endpoint, r.Username, r.Password, r.VerifyTLS), rows: map[string]routers.Row{}}
@@ -309,7 +309,7 @@ func evaluate(ctx context.Context, config, source, report, trace Document, testU
 		if ctx.Err() != nil {
 			break
 		}
-		if r.Type != "routeros" {
+		if r.Type != "routeros" || r.ValidateForDevice() != nil {
 			continue
 		}
 		d := routers.NewRouterOS(r.Endpoint, r.Username, r.Password, r.VerifyTLS)

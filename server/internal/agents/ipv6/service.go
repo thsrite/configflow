@@ -54,7 +54,7 @@ func digest(v any) string          { return deploy.CanonicalDigest(raw(v)) }
 func linked(config Document, id string) []*routers.Router {
 	out := []*routers.Router{}
 	for _, r := range routers.FromConfig(raw(config)) {
-		if r.ProxyGatewayAgentID == id {
+		if id != "" && r.LinkID("proxy_gateway_agent_id") == id {
 			out = append(out, r)
 		}
 	}
@@ -234,6 +234,9 @@ func (s *Service) inspect(ctx context.Context, a Document, profile string, confi
 	var agent model.Agent
 	_ = json.Unmarshal(raw(a), &agent)
 	for _, r := range rs {
+		if err := r.ValidateForDevice(); err != nil {
+			return nil, failure("ROUTER_SETTINGS_INVALID", 409, err.Error())
+		}
 		if r.Type != "routeros" {
 			report.Routers = append(report.Routers, &RouterReport{IPv6Readiness: &routers.IPv6Readiness{ID: r.ID, Name: routerName(r), Status: "warning", Checks: []Check{check("manual", msgRouterIPv6, "unknown", msgManualRouter)}}, manual: true})
 			continue
