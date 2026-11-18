@@ -659,3 +659,11 @@ values must not be assumed typed. Focused .64 evidence:354 requests/8 executed
 plus5 source proofs, then53 requests/13 executed (10 prior+3 new) plus1 proof.
 No new reference bug and still0/26 native domain routes. These focused reports
 are not a complete matrix composition or a Go parity claim.
+
+RouterOS HTTP extension H0826–H0834:31 actual public probe/fixed-IP observations
+require read/write error-class distinctions and ordinary writable controls.
+Ambiguous applied PUT replies must recover and remove only the new lease;
+definite refusals issue no DELETE. GET404 and PUT404 remain distinct, full foreign
+leases/DB/files retained. .64 focused evidence has9 new execution audits and no
+new reference bug; native domain routes still absent. Higher-level undo and
+firmware acceptance are not inferred from these transport/error-class checks.

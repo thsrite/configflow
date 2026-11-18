@@ -25,6 +25,7 @@ import fixed_sources
 import probe_workflows
 import probe_guards
 import probes
+import ros_http_guards
 import router_lifecycle
 import dhcp_guards
 import ikuai_dhcp_guards
@@ -34,6 +35,23 @@ import dns_targets
 
 
 class AuditTests(unittest.TestCase):
+    def test_routeros_http_audits_require_error_class_and_write_safety_not_just_probe(self):
+        actual = {(world, case.ident): case for world, group in (
+            ('ros-http-reads', ros_http_guards.reads), ('ros-http-writes', ros_http_guards.writes),
+            ('ros-http-normal', ros_http_guards.normal)) for case in group()}
+        counts = {'H0826': 5, 'H0827': 5, 'H0828': 4, 'H0829': 4, 'H0830': 3,
+                  'H0831': 4, 'H0832': 11, 'H0833': 4, 'H0834': 4}
+        for ident, count in counts.items():
+            required = declared()[ident].requirements
+            self.assertEqual(len(required), count, ident)
+            for world, name, status in required:
+                self.assertEqual(actual[world, name].expected, status)
+                self.assertIn(ident, actual[world, name].entries)
+            observations = [{'world': world, 'case': name, 'entries': [ident], 'python': {'status': status},
+                             'status': 'go-unimplemented'} for world, name, status in required]
+            self.assertEqual(evaluate(observations)[ident]['audit'], 'variants-audited')
+            self.assertEqual(evaluate(observations[:-1])[ident]['audit'], 'variants-pending')
+
     def test_dns_target_audits_need_every_json_kind_and_both_sides_of_address_boundaries(self):
         actual = {(world, case.ident): case for world, _, groups in dns_targets.worlds()
                   for group in groups for case in group()}
@@ -387,7 +405,7 @@ class AuditTests(unittest.TestCase):
 
     def test_auth_audits_require_every_explicit_real_reference_variant(self):
         audits = declared()
-        self.assertEqual(len(audits), 522)  # Named declarations; matrix parsing grants no coverage.
+        self.assertEqual(len(audits), 531)  # Named declarations; matrix parsing grants no coverage.
         self.assertFalse(set(audits) - set(load()[1]))
         self.assertEqual({value['audit'] for value in evaluate([]).values()},
                          {'variants-pending', 'source-proof-controls-pending', 'review-proof-controls-pending'})

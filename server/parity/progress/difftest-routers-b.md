@@ -2,8 +2,8 @@
 
 Status: in progress; NOT ready for acceptance hand-back. Branch go-difftest-routers-b.
 Latest clean integration rebase: goe0e9d9d45; normal public binary built from it.
-Current declarations:522 executed-variant audits plus14 explicit source-unreachable
-proofs plus2 O6 review-superseded entries;1763 remaining if all increments and
+Current declarations:531 executed-variant audits plus14 explicit source-unreachable
+proofs plus2 O6 review-superseded entries;1754 remaining if all increments and
 controls are composed. Last FULL composition still37937739:3054
 recipes/301 audits. Newer subsets do not replace that full evidence; latest
 large subset2470 recipes/327 audits. All observed26 domain routes remain absent
@@ -2259,3 +2259,27 @@ boundary test2.378s/OK;34 actual recipes/allGo-unimplemented,50 references,
 routes in actual native public manifest; no broad duplicate suite was rerun.
 No active command; work remains (1763 matrix entries pending if increments
 compose), full composition/final verification/rebase still not done.
+
+RouterOS HTTP error-class increment:
+- Read actual RouterOSDriver._request and fixed-IP recovery/rollback producers.
+  New ros_http_guards.py selects11 real probe controls and18 preview/confirm
+  requests, plus an independent ordinary successful preview/new lease write.
+- Nine new audits H0826–H0834 distinguish GET refusal from uncertain non-GET
+  writes. Closed TCP and real read timeout,401/403,GET404 vs ordinary PUT404,
+  error JSON/HTML/non-object content, permission detail and2xx malformed JSON
+  have exact public outcomes. Not every status is multiplied by every method.
+- Applied ambiguous replies must recover and remove the uniquely owned new
+  lease; definite4xx refusals issue no DELETE. Both original leases and the
+  unrelated iKuai binding survive, no local fixed-IP binding is committed.
+  The ordinary success proves the fixture is writable; full snapshots remain
+  strict. Does not claim all higher-level undo, cancellation or firmware paths.
+- Initial29 requests passed. Final focused .64 command:
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY="$HOME/.cache/routerdiff-build-302rx1dg-e0e9d9d45/configflow"; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python -m unittest -q test_recipes test_audits; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world-prefix ros-http- --output "$HOME/.cache/routerdiff-reports/302rx1dg/ros-http-audits.json"'`
+=> Ran53 tests12.325s/OK;31 cumulative actual recipes/allGo-unimplemented,
+20 references/9 new audits,2292 pending in this subset,complete=false/no bug,
+0/26 actual native domain registrations. No active command.
+Current531+14+2/1754 remaining if increments compose. No full composition or
+native parity claim. Continue pending helper/route/background boundaries using
+one representative per distinct behaviour class, retaining literal unproven
+signatures/fingerprints and full raw evidence. No private snapshot has been read
+by these synthetic domain runs; final verification/rebase/clean hand-back open.

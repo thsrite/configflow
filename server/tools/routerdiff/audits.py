@@ -1304,6 +1304,35 @@ def declared():
             'compared. Separate ordinary successful DHCP publication is mandatory.',
             tuple(('dhcp-ikuai-write-' + label, 'R011/ikuai-dhcp-write-' + label, 502) for label in labels)
             + (('dhcp-ikuai-plain', 'R011/iKuai-dhcp-plain-mask', 200),))
+    ros_healthy = (('ros-http-reads', 'R017/routeros/version-success-0', 200),
+                   ('ros-http-normal', 'R005/fixed-add-new', 200))
+    ros_http = {
+        'H0826': (('connection-closed', 'real-read-timeout'), ('closed-after-write',)),
+        'H0827': (('connection-closed', 'real-read-timeout'), ('closed-after-write',)),
+        'H0828': (('http-401',), ('unauthorized',)),
+        'H0829': (('http-403',), ('forbidden',)),
+        'H0830': (('http-404',), ()),
+        'H0831': (('not-json-500',), ('not-json-server-error',)),
+        'H0832': (('http-detail-400', 'http-detail-500', 'permissions-detail', 'not-json-500'),
+                  ('client-error-array', 'server-error-detail', 'permission-detail', 'missing-write', 'not-json-server-error')),
+        'H0833': (('not-json-200',), ('not-json-success',)),
+        'H0834': (('not-json-200',), ('not-json-success',)),
+    }
+    for ident, (read_labels, write_labels) in ros_http.items():
+        audits[ident] = Audit(('backend/routers/routeros.py:83', 'backend/routers/routeros_fixed_ip.py:279',
+                              'backend/common/client_fixed_ip.py:170', 'backend/routes/client_devices.py:126'),
+            'Public failed probe vs fixed-IP confirmation distinguish read refusal from uncertain '
+            'write. Real read timeout/closed TCP and applied lost acknowledgement, successful '
+            'non-JSON vs failed non-JSON response,4xx definite refusal vs5xx applied error, '
+            'permission diagnostics and non-object detail are represented by distinct relevant '
+            'cases, without multiplying every method by every status. GET404 is MissingResource; '
+            'PUT404 remains a normal error (separately required by H0832). Applied writes must '
+            'recover and remove only the newly owned lease; definite refusals issue no DELETE. '
+            'Full foreign leases, binding storage and DB/files remain checked. Positive ordinary '
+            'GET and confirmed new-lease PUT are mandatory. Does not claim all higher-level '
+            'driver undo branches, cancellation or real firmware behaviour.',
+            tuple(('ros-http-reads', 'R017/routeros/' + label, 502) for label in read_labels)
+            + tuple(('ros-http-writes', 'R005/ros-http-' + label, 502) for label in write_labels) + ros_healthy)
     return audits
 
 

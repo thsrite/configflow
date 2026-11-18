@@ -7,6 +7,7 @@ import guards
 import workflows
 import fixtures
 import probes
+import ros_http_guards
 import probe_workflows
 import probe_guards
 import releases
@@ -43,6 +44,24 @@ from bugs import BUGS
 
 
 class RecipeTests(unittest.TestCase):
+    def test_routeros_http_vectors_distinguish_refusal_and_applied_uncertain_write(self):
+        reads = list(ros_http_guards.reads())
+        writes = list(ros_http_guards.writes())
+        self.assertEqual(len(reads), 11)
+        self.assertEqual(len(writes), 18)
+        self.assertEqual(sum(case.elapsed_min == 9 for case in reads), 1)
+        self.assertEqual(sum(case.expected == 200 for case in reads), 1)
+        for preview, confirmation in zip(writes[::2], writes[1::2]):
+            self.assertEqual(confirmation.document['token'], cases.Ref(preview.ident, '/body/token'))
+            self.assertEqual(confirmation.expected, 502)
+            self.assertEqual(confirmation.stored, {'client_fixed_ips': {}})
+            fault = confirmation.prepare[0]
+            self.assertEqual(confirmation.expected_requests[1]['count'], int(fault.get('apply', False)))
+            self.assertEqual(confirmation.effect, 'device-only')
+            self.assertEqual(confirmation.fake_lengths['ros/~1ip~1dhcp-server~1lease'], 2)
+        missing = next(case for case in writes if case.ident == 'R005/ros-http-missing-write')
+        self.assertNotIn('H0830', missing.entries)  # GET404 and PUT404 differ.
+
     def test_dns_target_guards_separate_single_and_every_ha_address_position(self):
         worlds = dns_targets.worlds()
         self.assertEqual(len(worlds), 112)

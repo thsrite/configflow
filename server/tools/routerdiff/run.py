@@ -15,6 +15,7 @@ import guards
 import workflows
 import fixtures
 import probes
+import ros_http_guards
 import probe_workflows
 import probe_guards
 import probe_schemas
@@ -927,6 +928,9 @@ def main():
               ('dhcp-evidence-guards', dns.options(), (dhcp_guards.cases,)),
               ('dhcp-ikuai-evidence', dns.ikuai_options(), (ikuai_dhcp_guards.cases,)),
               ('dhcp-ikuai-plain', dns.ikuai_options(), (dns.ikuai_dhcp,)),
+              ('ros-http-reads', clients.options(), (ros_http_guards.reads,)),
+              ('ros-http-writes', clients.options(), (ros_http_guards.writes,)),
+              ('ros-http-normal', clients.options(), (ros_http_guards.normal,)),
               ('dns-matching-failures', dns_targets.matching_options(), (dns_targets.matching_cases,)),
               ('dns-ha', dns.ha_options(), (dns.ha,)),
               ('disconnect-release', releases.options(), (disconnect.release,)),
