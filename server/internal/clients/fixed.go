@@ -33,48 +33,52 @@ type FixedIPIntent struct {
 }
 
 // NormalizeFixedIPRequest validates exact JSON keys before contacting any router.
-func NormalizeFixedIPRequest(raw json.RawMessage) (string, FixedIPIntent, error) {
+// The submitted profile_id is returned undecoded: its type is not a batch
+// format error, and the caller rejects any non-matching value as a profile switch.
+func NormalizeFixedIPRequest(raw json.RawMessage) (json.RawMessage, FixedIPIntent, error) {
 	var fields map[string]json.RawMessage
 	if json.Unmarshal(raw, &fields) != nil || len(fields) != 3 || fields["profile_id"] == nil || fields["operation"] == nil || fields["devices"] == nil {
-		return "", FixedIPIntent{}, settingsError(messageFixedSelect)
+		return nil, FixedIPIntent{}, settingsError(messageFixedSelect)
 	}
-	var profile, operation string
+	var operation string
 	var rows []json.RawMessage
-	if json.Unmarshal(fields["profile_id"], &profile) != nil || json.Unmarshal(fields["operation"], &operation) != nil || (operation != "add" && operation != "delete") || json.Unmarshal(fields["devices"], &rows) != nil || len(rows) < 1 || len(rows) > 64 {
-		return "", FixedIPIntent{}, settingsError(messageFixedSelect)
+	if json.Unmarshal(fields["operation"], &operation) != nil || (operation != "add" && operation != "delete") || json.Unmarshal(fields["devices"], &rows) != nil || len(rows) < 1 || len(rows) > 64 {
+		return nil, FixedIPIntent{}, settingsError(messageFixedSelect)
 	}
+	profile := fields["profile_id"]
 	intent := FixedIPIntent{Operation: operation, Devices: []FixedIPDevice{}}
 	ips, macs := map[string]bool{}, map[string]bool{}
 	for _, raw := range rows {
 		var row map[string]json.RawMessage
 		if json.Unmarshal(raw, &row) != nil || len(row) != 4 || row["ip"] == nil || row["mac"] == nil || row["router_id"] == nil || row["name"] == nil {
-			return "", intent, settingsError(messageFixedFields)
+			return nil, intent, settingsError(messageFixedFields)
 		}
+		// Identity and duplicates are reported before the name, as the page
+		// shows the first rule a row breaks.
 		var item FixedIPDevice
 		for _, v := range []struct {
 			key    string
 			target *string
-		}{{"ip", &item.IP}, {"mac", &item.MAC}, {"router_id", &item.RouterID}, {"name", &item.Name}} {
+		}{{"ip", &item.IP}, {"mac", &item.MAC}, {"router_id", &item.RouterID}} {
 			if string(row[v.key]) == "null" || json.Unmarshal(row[v.key], v.target) != nil {
-				message := messageFixedIdentity
-				if v.key == "name" {
-					message = devicenotes.NameMessage
-				}
-				return "", intent, settingsError(message)
+				return nil, intent, settingsError(messageFixedIdentity)
 			}
 		}
 		item.IP = routerdoc.IPv4(item.IP)
 		item.MAC = routerdoc.NormalizeMAC(item.MAC)
 		if item.IP == "" || item.MAC == "" || item.RouterID == "" || ips[item.IP] {
-			return "", intent, settingsError(messageFixedIdentity)
+			return nil, intent, settingsError(messageFixedIdentity)
 		}
 		key := item.RouterID + "\n" + item.MAC
 		if macs[key] {
-			return "", intent, settingsError(messageFixedDuplicateMAC)
+			return nil, intent, settingsError(messageFixedDuplicateMAC)
+		}
+		if string(row["name"]) == "null" || json.Unmarshal(row["name"], &item.Name) != nil {
+			return nil, intent, settingsError(devicenotes.NameMessage)
 		}
 		change, err := NormalizeChange(Change{IP: item.IP, Name: item.Name})
 		if err != nil {
-			return "", intent, err
+			return nil, intent, err
 		}
 		item.Name = change.Name
 		ips[item.IP] = true

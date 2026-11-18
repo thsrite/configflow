@@ -9,6 +9,7 @@ import (
 
 	"configflow/internal/agents"
 	"configflow/internal/auth"
+	"configflow/internal/clientrange"
 	"configflow/internal/clients"
 	"configflow/internal/deploy"
 	"configflow/internal/devicenotes"
@@ -230,24 +231,7 @@ func (h *handler) devices(c *httpx.Ctx) (*httpx.Response, error) {
 		if !ok || submitted != id {
 			return httpx.Message(409, false, messageProfileChanged).NoStore(), nil
 		}
-		change := clients.Change{}
-		for _, field := range []struct {
-			key    string
-			target *string
-		}{{"ip", &change.IP}, {"name", &change.Name}, {"mode", &change.Mode}, {"previous_name", &change.PreviousName}, {"previous_mode", &change.PreviousMode}} {
-			value, ok := text(fields[field.key])
-			if !ok {
-				message := messageDeviceMode
-				if field.key == "ip" {
-					message = devicenotes.AddressMessage
-				} else if field.key == "name" || field.key == "previous_name" {
-					message = devicenotes.NameMessage
-				}
-				return httpx.Message(400, false, message).NoStore(), nil
-			}
-			*field.target = value
-		}
-		change, err = clients.NormalizeChange(change)
+		change, err := deviceChange(fields)
 		if err != nil {
 			return failure(c.Context(), cfg, err)
 		}
@@ -279,6 +263,33 @@ func (h *handler) devices(c *httpx.Ctx) (*httpx.Response, error) {
 		return failure(c.Context(), cfg, err)
 	}
 	return public(c.Context(), cfg, value, 200)
+}
+
+// deviceChange reports the first invalid field in the page's order: address,
+// name, previous name, then both modes. A value of the wrong JSON type fails
+// the same rule as an invalid value of that field.
+func deviceChange(fields map[string]json.RawMessage) (clients.Change, error) {
+	change := clients.Change{}
+	rules := []struct {
+		key     string
+		target  *string
+		message string
+		check   func(string) bool
+	}{
+		{"ip", &change.IP, devicenotes.AddressMessage, func(v string) bool { _, ok := clientrange.Normalize(v); return ok }},
+		{"name", &change.Name, devicenotes.NameMessage, func(v string) bool { _, err := devicenotes.NormalizeName(v); return err == nil }},
+		{"previous_name", &change.PreviousName, devicenotes.NameMessage, func(v string) bool { _, err := devicenotes.NormalizeName(v); return err == nil }},
+		{"mode", &change.Mode, messageDeviceMode, nil},
+		{"previous_mode", &change.PreviousMode, messageDeviceMode, nil},
+	}
+	for _, rule := range rules {
+		value, ok := text(fields[rule.key])
+		if !ok || rule.check != nil && !rule.check(value) {
+			return clients.Change{}, &oxidns.SettingsError{Msg: rule.message}
+		}
+		*rule.target = value
+	}
+	return clients.NormalizeChange(change)
 }
 func setupGuard(ctx context.Context, db *repo.Repository, id string) error {
 	sessions, err := setupflow.ProfileSessions(ctx, db.DataDir(), id)
@@ -365,11 +376,11 @@ func (h *handler) preview(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	submitted, intent, err := clients.NormalizeFixedIPRequest(body(c))
+	raw, intent, err := clients.NormalizeFixedIPRequest(body(c))
 	if err != nil {
 		return failure(c.Context(), cfg, err)
 	}
-	if submitted != id {
+	if submitted, ok := text(raw); !ok || submitted != id {
 		return httpx.Message(409, false, messageProfileChanged).NoStore(), nil
 	}
 	value, err := h.fixed(db).Preview(c.Context(), id, intent)
