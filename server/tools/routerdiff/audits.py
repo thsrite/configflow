@@ -1333,6 +1333,54 @@ def declared():
             'driver undo branches, cancellation or real firmware behaviour.',
             tuple(('ros-http-reads', 'R017/routeros/' + label, 502) for label in read_labels)
             + tuple(('ros-http-writes', 'R005/ros-http-' + label, 502) for label in write_labels) + ros_healthy)
+    ik_http_specs = {
+        'H0211': ('redirect-301-other-origin',),
+        'H0212': ('redirect-301-relative',),
+        'H0213': tuple('http-' + str(status) for status in (401, 403, 404, 405, 408, 429, 502, 503, 504, 418, 500))
+                  + ('http-guard-created-status-refused',),
+        'H0214': ('call-code-0',), 'H0215': ('call-code-1',),
+        'H0216': ('call-code-2', 'http-guard-unsupported-no-message'),
+        'H0217': ('session-retry-still-expired', 'session-relogin-once'),
+        'H0218': ('http-guard-missing-code', 'http-guard-null-code'),
+        'H0219': ('call-code-3', 'http-guard-missing-message', 'http-guard-wrong-results'),
+        'H0224': ('real-read-timeout',), 'H0225': ('real-read-timeout',),
+        'H0226': ('connection-closed',), 'H0227': ('connection-closed',),
+        'H0230': tuple('http-' + str(status) for status in (401, 403, 404, 405, 408, 429, 502, 503, 504, 418, 500))
+                  + ('redirect-301-relative', 'redirect-301-other-origin', 'http-guard-created-status-refused'),
+        'H0231': ('not-json-0', 'not-json-2'), 'H0232': ('not-json-0',), 'H0233': ('not-json-2',),
+        'H0234': ('login-shape-0', 'login-shape-1'),
+        'H0235': ('result-success-code-refusal', 'login-missing-code-old-result-refused', 'http-guard-login-errmsg'),
+        'H0236': ('old-call-Data', 'old-call-Result'),
+        'H0237': tuple('call-code-' + str(number) for number in range(4)) + ('session-retry-still-expired',)
+                  + tuple('http-guard-' + label for label in ('missing-code', 'null-code', 'missing-message',
+                                                           'wrong-results', 'unsupported-no-message')),
+    }
+    for ident, labels in ik_http_specs.items():
+        audits[ident] = Audit(('backend/routers/ikuai.py:123', 'backend/routers/ikuai.py:155',
+                              'backend/routers/ikuai.py:202', 'backend/routers/ikuai.py:237',
+                              'backend/routers/ikuai.py:255', 'backend/routes/routers.py:206'),
+            'Real public probe with actual requests transport/JSON/TLS handling. Distinct HTTP '
+            'reason classes, refusal of non200 success-like status, same/other-origin redirects '
+            'without following, empty vs invalid JSON, non-object JSON,4.x login code vs legacy '
+            'Result/ErrMsg, call code/label/message fallbacks and malformed success result are '
+            'explicitly scoped to their named relevant vectors. Read timeout is an actual10s '
+            'peer gate; closed TCP is an actual lost connection.1008 retries require exactly '
+            'two real logins, with success and persistent-expiry outcomes; injected1008 does not '
+            'claim actual firmware session invalidation. Every failed probe persists last_probe '
+            'and increments only its profile. Healthy normal probe remains required. These '
+            'audits do not cover connect-SYN timeout, generic RequestException or malformed '
+            'redirect parser catches, which remain open.',
+            tuple(('ikuai-http-reads', 'R017/ikuai/' + label, 200 if label == 'session-relogin-once' else 502)
+                  for label in labels) + (('ikuai-http-reads', 'R017/ikuai/http-guard-healthy', 200),))
+    for ident in ('H0220', 'H0221'):
+        audits[ident] = Audit(('backend/routers/ikuai.py:208', 'backend/routes/routers.py:206'),
+            'An actual self-signed TLS peer is refused with verify_tls=True, succeeds only when '
+            'the public connection setting explicitly disables verification, then is refused '
+            'again after re-enabling. Refused handshakes send no fake HTTP request. Real public '
+            'settings/probe writes, persisted probe/time and full state are compared; no SSL '
+            'exception is injected or helper patched.',
+            tuple(('ikuai-http-tls', 'R017/ikuai/self-signed-' + label + '-' + str(index), status)
+                  for index, label, status in ((0, 'verified', 502), (1, 'unverified', 200), (2, 'verified', 502))))
     return audits
 
 

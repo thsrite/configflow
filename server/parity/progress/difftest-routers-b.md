@@ -2,8 +2,8 @@
 
 Status: in progress; NOT ready for acceptance hand-back. Branch go-difftest-routers-b.
 Latest clean integration rebase: goe0e9d9d45; normal public binary built from it.
-Current declarations:531 executed-variant audits plus14 explicit source-unreachable
-proofs plus2 O6 review-superseded entries;1754 remaining if all increments and
+Current declarations:554 executed-variant audits plus14 explicit source-unreachable
+proofs plus2 O6 review-superseded entries;1731 remaining if all increments and
 controls are composed. Last FULL composition still37937739:3054
 recipes/301 audits. Newer subsets do not replace that full evidence; latest
 large subset2470 recipes/327 audits. All observed26 domain routes remain absent
@@ -2283,3 +2283,25 @@ native parity claim. Continue pending helper/route/background boundaries using
 one representative per distinct behaviour class, retaining literal unproven
 signatures/fingerprints and full raw evidence. No private snapshot has been read
 by these synthetic domain runs; final verification/rebase/clean hand-back open.
+
+iKuai HTTP/authentication/TLS diagnostic increment:
+- Read the real iKuai origin/http/call/login/post implementations. New focused
+  ikuai_http_guards.py selects existing public probes plus normal/error fallback
+  controls; no helpers or exceptions are patched. Distinct HTTP reason messages,
+ 201 refusal, same/other-origin redirect without following, empty/non-JSON and
+  non-object body, login code/legacy Result/ErrMsg, missing/null call code,
+  missing message, malformed successful results and1008 retry are all explicit.
+- Real self-signed TLS True/False/True, actual10s read timeout and closed TCP
+  retain ordinary probe persistence/profile revision and complete snapshots.
+ 1008 requires two real logins for both recovery and repeated expiry; fake
+  response injection still does not claim real firmware session expiry.
+-23 audits H0211–H0219/H0220–H0221/H0224–H0227/H0230–H0237, with ordinary
+  healthy controls. H0209/H0210 malformed redirect catches, H0222/H0223 actual
+  connect-SYN timeout and H0228/H0229 generic RequestException stay OPEN; do not
+  invent library exceptions to obtain coverage. First40 real requests passed.
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY="$HOME/.cache/routerdiff-build-302rx1dg-e0e9d9d45/configflow"; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python -m unittest -q test_recipes test_audits; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world ikuai-http-reads --world ikuai-http-tls --output "$HOME/.cache/routerdiff-reports/302rx1dg/ikuai-http-audits.json"'`
+=> Ran55 tests17.408s/OK;40 actual recipes/allGo-unimplemented,26 references,
+23 new audits,2278 pending in subset,complete=false/no bug,0/26 actual native
+registrations. No active command. Current554+14+2/1731 pending if increments
+compose. Remaining matrix/ownership/runtime/YAML/background/concurrency and
+full composition/final verification/rebase/clean hand-back remain open.

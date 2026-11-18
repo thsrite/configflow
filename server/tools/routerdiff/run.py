@@ -16,6 +16,7 @@ import workflows
 import fixtures
 import probes
 import ros_http_guards
+import ikuai_http_guards
 import probe_workflows
 import probe_guards
 import probe_schemas
@@ -931,6 +932,8 @@ def main():
               ('ros-http-reads', clients.options(), (ros_http_guards.reads,)),
               ('ros-http-writes', clients.options(), (ros_http_guards.writes,)),
               ('ros-http-normal', clients.options(), (ros_http_guards.normal,)),
+              ('ikuai-http-reads', clients.options(), (ikuai_http_guards.reads,)),
+              ('ikuai-http-tls', probes.tls_options(), (ikuai_http_guards.tls,)),
               ('dns-matching-failures', dns_targets.matching_options(), (dns_targets.matching_cases,)),
               ('dns-ha', dns.ha_options(), (dns.ha,)),
               ('disconnect-release', releases.options(), (disconnect.release,)),

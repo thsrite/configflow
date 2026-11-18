@@ -8,6 +8,7 @@ import workflows
 import fixtures
 import probes
 import ros_http_guards
+import ikuai_http_guards
 import probe_workflows
 import probe_guards
 import releases
@@ -44,6 +45,24 @@ from bugs import BUGS
 
 
 class RecipeTests(unittest.TestCase):
+    def test_ikuai_http_vectors_keep_actual_retry_and_tls_verification_contracts(self):
+        rows = list(ikuai_http_guards.reads())
+        self.assertEqual(len(rows), 37)
+        self.assertEqual(sum(case.expected == 200 for case in rows), 2)
+        self.assertEqual(sum(case.elapsed_min == 9 for case in rows), 1)
+        tls = list(ikuai_http_guards.tls())
+        self.assertEqual([case.expected for case in tls], [502, 200, 502])
+        self.assertEqual([case.prepare[0]['document']['verify_tls'] for case in tls], [True, False, True])
+        _, entries = load()
+        for case in rows + tls:
+            self.assertTrue(set(case.entries) <= set(entries))
+            self.assertEqual(len(case.entries), len(set(case.entries)))
+            self.assertEqual(case.effect, 'profile-write')
+        for case in rows:
+            if 'session-' in case.ident:
+                self.assertEqual(case.expected_requests,
+                    ({'match': {'peer': 'ikuai', 'path': '/Action/login'}, 'count': 2},))
+
     def test_routeros_http_vectors_distinguish_refusal_and_applied_uncertain_write(self):
         reads = list(ros_http_guards.reads())
         writes = list(ros_http_guards.writes())

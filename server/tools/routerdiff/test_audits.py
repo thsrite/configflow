@@ -26,6 +26,7 @@ import probe_workflows
 import probe_guards
 import probes
 import ros_http_guards
+import ikuai_http_guards
 import router_lifecycle
 import dhcp_guards
 import ikuai_dhcp_guards
@@ -35,6 +36,26 @@ import dns_targets
 
 
 class AuditTests(unittest.TestCase):
+    def test_ikuai_http_audits_need_each_distinct_diagnostic_and_real_tls_retry_controls(self):
+        actual = {(world, case.ident): case for world, group in (
+            ('ikuai-http-reads', ikuai_http_guards.reads), ('ikuai-http-tls', ikuai_http_guards.tls)) for case in group()}
+        counts = {'H0211': 2, 'H0212': 2, 'H0213': 13, 'H0214': 2, 'H0215': 2, 'H0216': 3,
+                  'H0217': 3, 'H0218': 3, 'H0219': 4, 'H0220': 3, 'H0221': 3,
+                  'H0224': 2, 'H0225': 2, 'H0226': 2, 'H0227': 2, 'H0230': 15,
+                  'H0231': 3, 'H0232': 2, 'H0233': 2, 'H0234': 3, 'H0235': 4, 'H0236': 3, 'H0237': 11}
+        for ident, count in counts.items():
+            required = declared()[ident].requirements
+            self.assertEqual(len(required), count, ident)
+            for world, name, status in required:
+                self.assertEqual(actual[world, name].expected, status)
+                self.assertIn(ident, actual[world, name].entries)
+            observations = [{'world': world, 'case': name, 'entries': [ident], 'python': {'status': status},
+                             'status': 'go-unimplemented'} for world, name, status in required]
+            self.assertEqual(evaluate(observations)[ident]['audit'], 'variants-audited')
+            self.assertEqual(evaluate(observations[:-1])[ident]['audit'], 'variants-pending')
+        for ident in ('H0209', 'H0210', 'H0222', 'H0223', 'H0228', 'H0229'):
+            self.assertNotIn(ident, declared())
+
     def test_routeros_http_audits_require_error_class_and_write_safety_not_just_probe(self):
         actual = {(world, case.ident): case for world, group in (
             ('ros-http-reads', ros_http_guards.reads), ('ros-http-writes', ros_http_guards.writes),
@@ -405,7 +426,7 @@ class AuditTests(unittest.TestCase):
 
     def test_auth_audits_require_every_explicit_real_reference_variant(self):
         audits = declared()
-        self.assertEqual(len(audits), 531)  # Named declarations; matrix parsing grants no coverage.
+        self.assertEqual(len(audits), 554)  # Named declarations; matrix parsing grants no coverage.
         self.assertFalse(set(audits) - set(load()[1]))
         self.assertEqual({value['audit'] for value in evaluate([]).values()},
                          {'variants-pending', 'source-proof-controls-pending', 'review-proof-controls-pending'})

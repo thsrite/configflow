@@ -667,3 +667,11 @@ definite refusals issue no DELETE. GET404 and PUT404 remain distinct, full forei
 leases/DB/files retained. .64 focused evidence has9 new execution audits and no
 new reference bug; native domain routes still absent. Higher-level undo and
 firmware acceptance are not inferred from these transport/error-class checks.
+
+iKuai HTTP diagnostic extension:40 actual public probes complete23 execution
+audits with normal and TLS verification controls. Error-class boundaries include
+non200201, redirect origin privacy/no-follow, real timeout/closed connection,
+JSON/login/call fallbacks and one1008 retry. Failed probes persist only their own
+profile as required. Malformed redirect parser catches, connect-SYN timeout and
+generic transport exceptions remain explicitly open; no exception injection or
+firmware session-expiry claim. Native domain registrations remain0/26.
