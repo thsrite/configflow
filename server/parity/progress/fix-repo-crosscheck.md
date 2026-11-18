@@ -54,4 +54,17 @@ C04重验命令：
 ```sh
 RT_HOST=sunbroke@192.168.0.64 rt --back server/internal/repo/crosscheck_layout_test.go -- bash -lc 'cd server && gofmt -w internal/repo/crosscheck_layout_test.go && CONFIGFLOW_PY=$HOME/cf-test/.venv/bin/python CONFIGFLOW_REPO=$(dirname "$PWD") go test -race -count=1 -run "^TestCrossCheck(RetiredLock.*|C04Operations)$" -timeout=15m ./internal/repo/'
 ```
-主序列与其余合成互通/锁等待/旧锁哨兵最后一轮检查正在前台运行；明确unset CONFIGFLOW_SNAPSHOT。
+主序列与其余合成互通/锁等待/旧锁哨兵最后一轮已退出0；明确unset CONFIGFLOW_SNAPSHOT。
+
+最终定向命令（.64）：
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'cd server && unset CONFIGFLOW_SNAPSHOT; export CONFIGFLOW_PY=$HOME/cf-test/.venv/bin/python CONFIGFLOW_REPO=$(dirname "$PWD") PYTHONDONTWRITEBYTECODE=1; test -z "$(gofmt -l internal tools cmd)" && go vet ./... && go test -race -count=1 -timeout=20m -run "^(TestCrossCheck(Operations|Interchange|FreshInit|LockExcludesPythonAndGo|PythonWriterKilledBeforeCommit|RetiredLock.*)|TestConfigTemplateMatchesBackend|TestWriteFromAnotherProcessIsSeen|TestStoredRoundTrip|TestResourceLeafWaitAndLegacyFiles)$" ./internal/repo/'
+```
+结果：gofmt全目录无输出、全仓vet通过，`ok configflow/internal/repo 71.440s`。
+结合C04独立346.929s通过，覆盖原两条失败、80/254语料完整SQL/结果/布局、fresh-init、双向互通、
+Python/Go跨进程锁、writer kill recovery、live合成model roundtrip、旧锁真实inode/mtime哨兵及30+6负控。
+没有运行私人snapshot、容器、全仓race/proddiff/gate，也没有声称表中所有未覆盖任务已复验。
+
+结论：此处分诊为已批准O12布局变化后的测试缺口（已修），未发现本组语料的产品/存储语义回归。
+默认gate漏掉live与普通包DIFF条件测试是中等验证缺口，脚本修正留协调者；报告给出明确stage/命令及skip审计建议。
+两个历史detached worktree确认干净后已删除；引用commit仍可重建。未push、无子agent。
