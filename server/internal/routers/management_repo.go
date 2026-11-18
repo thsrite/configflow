@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/oxidns"
 	"configflow/internal/repo"
+	"configflow/internal/yamlx"
 )
 
 // managementTransaction is the legacy C03 boundary; the business callback gets
@@ -60,26 +62,50 @@ func saveWorkspacePolicies(config json.RawMessage, rows json.RawMessage, base st
 	if rows == nil {
 		return config, nil
 	}
-	var doc jsonx.Object
-	if err := json.Unmarshal(config, &doc); err != nil {
-		return nil, err
-	}
-	p := oxidns.NewProfile(&doc)
-	view, err := oxidns.ReadPolicies(p.Settings(), p)
+	profile, err := oxidns.ProfileFromJSON(config)
 	if err != nil {
 		return nil, err
 	}
-	if jsonEqual(rows, oxidns.ToJSON(view.Policies)) {
+	view, err := oxidns.ReadPolicies(profile.Settings(), profile)
+	if err != nil {
+		return nil, err
+	}
+	current, err := yamlx.ToJSON(view.Policies)
+	if err != nil {
+		return nil, err
+	}
+	if jsonEqual(rows, current) {
 		return config, nil
 	}
-	node, err := oxidns.FromJSON(rows)
+	node, err := yamlx.FromJSON(rows)
 	if err != nil {
 		return nil, err
 	}
-	settings, err := oxidns.SavePolicyRows(p, p.Settings(), node, base)
+	_, notes, err := oxidns.PreparePolicyNotes(profile, node)
 	if err != nil {
 		return nil, err
 	}
-	doc.Set("oxidns", oxidns.ToJSONX(settings))
-	return json.Marshal(&doc)
+	settings, err := oxidns.SavePolicyRows(profile, profile.Settings(), node, base)
+	if err != nil {
+		return nil, err
+	}
+	replacement, err := yamlx.ToJSON(settings)
+	if err != nil {
+		return nil, err
+	}
+	var doc model.Fields
+	if err = json.Unmarshal(config, &doc); err != nil {
+		return nil, err
+	}
+	if err = doc.Set("oxidns", json.RawMessage(replacement)); err != nil {
+		return nil, err
+	}
+	names, err := yamlx.ToJSON(notes)
+	if err != nil {
+		return nil, err
+	}
+	if err = doc.Set("device_notes", json.RawMessage(names)); err != nil {
+		return nil, err
+	}
+	return doc.MarshalJSON()
 }
