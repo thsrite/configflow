@@ -216,3 +216,43 @@ RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'set -e; cd server; export CONFIGFL
 最终已变基go@fbbe382ec。c939a5f61→fbbe382ec只有routerdiff Python工具/报告与HANDOFF增量，
 没有server内部或cmd的Go源码变化；已验证的应用/库和本步可执行改动未变，不重复定向测试。
 当前新矩阵提交因变基重写为e8840f23f（原86714de27），完整交回结果随最后文档提交提供。
+
+## Batch-5 / R12 最终接线（2026-11-18）
+
+已 rebase 到 go@c5f5ff349（含 R12/R13、N8-5c）。冲突处理保留 R13 的
+pendingSummaryHook/recordPendingNotice，同时 Wire 注册唯一 JobLock；R11 的
+RouterOperationLock 入口取消检查保留。首轮编译定位到一次漏删的冲突标记，已修正并
+合回原提交，最终检查全绿，无未解决的产品发现。
+
+**临时 stub 核实：** R12 作者 694df9d0 已只读核对并确认，早期 typed collaborator
+只是计划，最终 R12 没有实现它，也没有第二张 Keyed 表可删。保留其 caller-held L1
+契约：调用方 RouterJobLock → Publish 的 L2 → repo L3，StartPublish 转移 release。
+不在 Publish 内重入 L1，也不删除仍属于 R14 的 CaptureManual fail-closed hook。
+
+新增/加强回归：
+- TestO36bR12TrackedPublicationUsesSharedJobLock：真实 Runtime + StartPublish +
+  loopback RouterOS；发布持 L2 时 24 次同设备别名发布被立即拒绝，repo 改密码被
+  ErrInUse 拒绝；发布只增加一次 revision，交付结果时 L1/L2 都已释放。
+- TestR12RuntimePublicationBoundaries：原断开、写前关机、写后关机三例现在真正持
+  同一张 RouterJobLock 的 held ctx，新增 BeforeCommit 内关机/断开两例。关机时
+  普通 COMMIT 被拒、仅一次获批的 Aborted&&Wrote 本地事务提交，revision 只加1；
+  写前关机零提交；断开正常完成。五类 manifest 的 Set/unset 与存储一一核对；
+  失败记录、结果、零补偿/零关机后设备 I/O、锁释放和 Violations==0 全保留。
+- 合并树上的 TestCommitBatchMarkersMatchDesign 已通过：三个 repo marker +
+  routers:saveAbortedPublication:ctxx.Uninterruptible 正好四项，无重复应用旧 patch。
+  该例外仍只包一个本地 SaveRouterPublicationJSON，不扩大普通事务不可中断范围。
+
+### 定向验证（固定 .32）
+
+首轮小集合：race/count1 的 O36bR12、R12RuntimePublicationBoundaries、canonical AST
+通过：routers4.693s，repo1.319s。随后加强五类 manifest 断言后执行最终命令：
+
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt --back server/internal/routers/r12_runtime_test.go -- bash -lc 'set -e; cd server; gofmt -w internal/routers/r12_runtime_test.go; test -z "$(gofmt -l internal tools cmd)"; go vet ./...; export CONFIGFLOW_PY=$HOME/cf-test/.venv/bin/python CONFIGFLOW_REPO=$(dirname "$PWD") CONFIGFLOW_DIFF_PYTHON=$HOME/cf-test/.venv/bin/python PYTHONDONTWRITEBYTECODE=1; unset CONFIGFLOW_SNAPSHOT CONFIGFLOW_DIFF; task_logs=$(mktemp -d "$HOME/.cache/o36b-r12.XXXXXX"); echo "O36B_R12_LOGS=$task_logs"; go test -race -p=4 -count=1 -timeout=45m ./internal/routers/ ./internal/devhttp/ ./internal/routersplit/ ./internal/server/ ./internal/api/rules/ >"$task_logs/race.log" 2>&1 || { tail -100 "$task_logs/race.log"; exit 1; }; cat "$task_logs/race.log"; go test -race -count=1 -run "^Test(O36c.*|R10.*|R11.*|CommitBatchMarkersMatchDesign|.*Router.*|.*Publication.*|.*SettingsCommit.*)$" -timeout=15m ./internal/repo/ >"$task_logs/repo.log" 2>&1 || { tail -80 "$task_logs/repo.log"; exit 1; }; cat "$task_logs/repo.log"; CONFIGFLOW_DIFF=1 go test -json -p=2 -count=1 -timeout=20m ./internal/api/rules/difftest/ ./internal/api/rulelibrary/difftest/ >"$task_logs/diff.json" 2>&1 || { tail -50 "$task_logs/diff.json"; exit 1; }; "$CONFIGFLOW_PY" -c '\''import json,sys; es=[json.loads(l) for l in open(sys.argv[1])]; assert not [e for e in es if e["Action"] in ("skip","fail")]; ps=[e for e in es if e["Action"]=="pass" and "Test" not in e]; assert len(ps)==2; print("DIFF PASS: 2 packages, 0 skip"); [print(e["Package"],e.get("Elapsed")) for e in ps]'\'' "$task_logs/diff.json"; echo "O36B R12 TARGETED PASS"'
+```
+
+最终退出0；gofmt 无输出、全仓 vet 通过。race：routers567.057s、devhttp3.515s、
+routersplit12.321s、server4.955s、api/rules83.031s；repo160.749s。
+两组实际 Flask difftest：rules91.655s、rulelibrary38.400s；JSON 核验2包全通过、零skip。
+末行 `O36B R12 TARGETED PASS`。日志 `.32:~/.cache/o36b-r12.esnJRN/`。
+无新 fuzz 目标，不跑 full gate/proddiff。工作区提交干净，不 push；交回进 batch-6。

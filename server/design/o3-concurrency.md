@@ -511,6 +511,13 @@ Implementation notes: [startup and shutdown](o3-startup-shutdown.md).
   restoration; do not duplicate checks at the same action. Migrate C33 Forget to ForgetContext.
 
 **Clarified in O3-6b (coordinator, 2026-11-18):**
+R12 integration on batch-5 uses the unique `RouterJobLock` held context at the caller
+boundary, then `Publish` acquires only L2. `StartPublish` transfers the L1 release and
+delivers its result after releasing both locks. The proposed temporary collaborator
+was never implemented in R12; there is no stub or second lock table to remove.
+The R12 local `Aborted && Wrote` exception and the four-entry canonical AST gate
+remain unchanged; ordinary publication commits remain cancellable.
+
 - R04 ApplyMany checks its detached work context at batch boundaries (section 2.5 / PORTING 4b).
   A browser disconnect completes all 150/150 routes in the former review regression; intentionally
   change that old test. A real Runtime shutdown after the 100th proven record leaves 100/100

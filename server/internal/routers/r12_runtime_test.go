@@ -10,6 +10,7 @@ import (
 
 	"configflow/internal/agents"
 	"configflow/internal/lifecycle"
+	"configflow/internal/lockx"
 	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/routers/routerfake"
@@ -71,7 +72,7 @@ func TestR12RuntimePublicationBoundaries(t *testing.T) {
 	originalHost := IPv6HostRequest
 	IPv6HostRequest = func(context.Context, *GatewayAgent) (IPv6Host, error) { return r10Host(), nil }
 	defer func() { IPv6HostRequest = originalHost }()
-	for _, mode := range []string{"disconnect", "shutdown_before_write", "shutdown_after_write"} {
+	for _, mode := range []string{"disconnect", "shutdown_before_write", "shutdown_after_write", "shutdown_in_commit", "disconnect_in_commit"} {
 		t.Run(mode, func(t *testing.T) {
 			f := routerfake.New(nil)
 			f.Reset(r11State())
@@ -107,8 +108,10 @@ func TestR12RuntimePublicationBoundaries(t *testing.T) {
 			ctx := runtime.BindRequest(request)
 			triggered := false
 			callsAtShutdown := 0
+			var publicationDriver *RouterOS
 			req := PublishRequest{ProfileID: "default", RouterID: r.ID, Expected: plan.Fingerprint, Router: r, Repo: db, Agents: source, NewDriver: func(r *Router) Driver {
 				d := NewRouterOS(server.URL, r.Username, r.Password, false)
+				publicationDriver = d
 				d.client = &r09AfterReadHTTP{DeviceHTTP: d.client, after: func(method, url string) {
 					if triggered {
 						return
@@ -132,13 +135,37 @@ func TestR12RuntimePublicationBoundaries(t *testing.T) {
 				}}
 				return d
 			}}
-			outcome := Publish(ctx, req)
+			previous := repo.SetHooks(repo.Hooks{})
+			defer repo.SetHooks(previous)
+			Wire()
+			held, unlock, e := RouterJobLock(repo.WithRepository(ctx, db), "default", r.ID, r)
+			if e != nil {
+				t.Fatal(e)
+			}
+			defer unlock()
+			commits := 0
+			db.Store().BeforeCommit = func() error {
+				commits++
+				if !triggered && (mode == "shutdown_in_commit" || mode == "disconnect_in_commit") {
+					triggered = true
+					if mode == "shutdown_in_commit" {
+						runtime.Shutdown(t.Context())
+						callsAtShutdown = len(f.Calls())
+					} else {
+						cancel()
+					}
+				}
+				return nil
+			}
+			defer func() { db.Store().BeforeCommit = nil }()
+			outcome := Publish(held, req)
+			unlock()
 			_, stored, after := r12Config(t, db)
 			if !triggered {
 				t.Fatal("cancellation boundary not exercised")
 			}
 			switch mode {
-			case "disconnect":
+			case "disconnect", "disconnect_in_commit":
 				if outcome.Err != nil || outcome.Result == nil || !outcome.Result.OK || after.Revision != before.Revision+1 {
 					t.Fatalf("disconnect %+v revision %d -> %d", outcome, before.Revision, after.Revision)
 				}
@@ -146,7 +173,7 @@ func TestR12RuntimePublicationBoundaries(t *testing.T) {
 				if !errors.Is(outcome.Err, context.Canceled) || after.Revision != before.Revision || len(stored.Extra["last_release"]) > 0 {
 					t.Fatalf("write-before-side-effect %+v revision %d -> %d", outcome, before.Revision, after.Revision)
 				}
-			case "shutdown_after_write":
+			case "shutdown_after_write", "shutdown_in_commit":
 				if outcome.Err != nil || outcome.Result == nil || !outcome.Result.Aborted || !outcome.Result.Wrote || outcome.Status != PublishFailed || len(outcome.Result.Rollback) > 0 {
 					t.Fatalf("abort lost result %+v result %+v", outcome, outcome.Result)
 				}
@@ -168,6 +195,40 @@ func TestR12RuntimePublicationBoundaries(t *testing.T) {
 					t.Fatalf("restart lost ownership %+v", p)
 				}
 			}
+			if after.Revision == before.Revision+1 {
+				manifests := publicationDriver.Manifests()
+				for name, slot := range map[string]Manifest{"ros_policy_state": manifests.Policy, "dns_guard_state": manifests.DNSGuard, "ipv6_fakeip_state": manifests.IPv6FakeIP, "ipv6_routes_state": manifests.IPv6Routes, "ipv6_pd_guard_state": manifests.IPv6PDGuard} {
+					expected := r.State(name)
+					if slot.Set {
+						expected = slot.Value
+					}
+					actual := stored.State(name)
+					if len(actual) == 0 && len(expected) == 0 {
+						continue
+					}
+					if !jsonEqual(actual, expected) {
+						t.Fatalf("manifest %s: got %s want %s", name, actual, expected)
+					}
+				}
+			}
+			wantAttempts := 1
+			if mode == "shutdown_before_write" {
+				wantAttempts = 0
+			}
+			if mode == "shutdown_in_commit" {
+				wantAttempts = 2
+			} // First COMMIT rejected; one local exception lands.
+			if commits != wantAttempts {
+				t.Fatalf("commit attempts=%d, want %d", commits, wantAttempts)
+			}
+			if lockx.Violations() != 0 {
+				t.Fatalf("lock order violations: %d", lockx.Violations())
+			}
+			_, free, e := RouterJobLock(t.Context(), "alias-profile", "alias-router", r)
+			if e != nil {
+				t.Fatal("L1 leaked", e)
+			}
+			free()
 			held, release, e := RouterOperationLock(t.Context(), *r, false)
 			_ = held
 			if e != nil {
