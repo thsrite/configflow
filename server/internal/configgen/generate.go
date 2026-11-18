@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 
+	"configflow/internal/faultprobe"
 	"configflow/internal/agents/trafficstore"
 	"configflow/internal/convert"
 	"configflow/internal/jsonx"
@@ -94,6 +95,7 @@ func Build(ctx context.Context, id string, engine Engine, baseURL string) (Downl
 	if err := ctx.Err(); err != nil {
 		return Download{}, err
 	}
+	faultprobe.Point(ctx, faultprobe.GenerateBuild)
 	config, err := repo.GetConfig(ctx, id)
 	if err != nil {
 		return Download{}, err

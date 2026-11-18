@@ -837,3 +837,37 @@ ProfileSessions 不取得操作锁；未来若需要取得，必须复用 C36 �
   loops/retry scheduling use Clock. Non-periodic device inactivity timers, the
   existing injected Sub-Store real-clock adapter, SQLite backup busy polling and
   wall-clock fault delays in loopback test helpers remain explicit exceptions.
+
+### Clarified in O3-8 (coordinator, 2026-11-18)
+
+- `internal/faultprobe` centralizes the test-build instrumentation without a
+  store→lifecycle import cycle. Point(ctx, Phase) is an empty, inlineable,
+  allocation-free function in production; only `configflow_difftest` includes
+  observers/barriers. The original Store.BeforeCommit signature stays unchanged:
+  StoreBeforeCommit is observed after its hooks and immediately before the
+  existing ctx.Err()/COMMIT boundary. MetricsFlush precedes history file flush.
+- GenerateBuild (manual materialization after Detach) and ProviderRender (after
+  admission to the render pool) are also approved observation points. They make
+  disconnect scenarios deterministic even when rendering hits a cache and has
+  no blocking network operation. All names are constants in faultprobe's Catalog;
+  the harness reads that compiled registry and refuses unknown names.
+- Barriers poll with the shared Clock, honour ctx and have an independent 30s
+  maximum. A timed-out barrier releases the work and records timeout; it cannot
+  stall a process forever if the harness dies. O3-7 scans these tagged files too;
+  no Sleep exemption is granted.
+- Only the difftest main helper can register /__faults/state. It requires the
+  actual peer to be loopback plus a random harness token read from a regular
+  mode-0600 file under a mode-0700 directory. The response contains only goroutine
+  counts and registered phase names, never configuration or credentials.
+  Production route-table tests and AST/build-tag tests protect this boundary;
+  a production Point benchmark and compiler inlining check protect zero overhead.
+- The Python standard-library harness in tools/faults drives built binaries in
+  fresh marked synthetic DATA_DIRs. A loopback-only network namespace, hidden host
+  resolver sockets and dropped capabilities isolate the process. No production
+  data/device endpoint or loop-disable switch is accepted. Faults are actual
+  signals, external flock holders, read-only DB/cache permissions and registered
+  observation barriers. HR device recovery scenarios extend the same registry;
+  they are explicitly not claimed until their owners implement them.
+- Shutdown scenarios must use the integrated lifecycle semantics, including R14
+  M1 (264ffbb5): detached work is cancelled at stopJobs, not at shutdown entry.
+  After batch-6 merges, rebase and repeat the black-box scenarios on that tree.

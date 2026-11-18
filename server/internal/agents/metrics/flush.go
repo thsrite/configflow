@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"configflow/internal/agents"
+	"configflow/internal/faultprobe"
 	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/lockx"
@@ -317,6 +318,7 @@ func Run(ctx context.Context, trigger string, recordIdle bool) (*jsonx.Object, e
 		// 导入、恢复或重置配置后已不存在的 Agent，不再保存它们的历史
 		history := ForManager(manager)
 		history.RetainAgents(agentIDs)
+		faultprobe.Point(ctx, faultprobe.MetricsFlush)
 		counts, err := history.Flush()
 		if err != nil {
 			failures = append(failures, err)

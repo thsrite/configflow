@@ -1,4 +1,4 @@
-//go:build !configflow_proddiff
+//go:build !configflow_proddiff && !configflow_difftest
 
 package main
 

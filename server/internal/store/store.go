@@ -36,6 +36,8 @@ import (
 	"unicode/utf8"
 
 	"modernc.org/sqlite"
+
+	"configflow/internal/faultprobe"
 )
 
 const (
@@ -343,6 +345,7 @@ func (s *Store) CommitContext(ctx context.Context, base Entry, document *Documen
 				return err
 			}
 		}
+		faultprobe.Point(ctx, faultprobe.StoreBeforeCommit)
 		if err := ctx.Err(); err != nil {
 			return err
 		}
