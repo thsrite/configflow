@@ -895,7 +895,7 @@ RouterOS/iKuai client readers, ordered merge and app-owned snapshot cache are im
 Real Flask/vendor-driver HTTP comparisons verify the R16 boundary through a test-only Go
 adapter; production HTTP registration and fixed-IP enrichment are explicitly R17.
 Targeted race, gofmt/vet, 60 s duration fuzz and 71 Python reference tests passed.
-Independent review on `go-review-r16` found and fixed two medium issues:
+Independent review on `go-review-r16` (fix `43acd1791`) found and fixed two medium issues:
 cross-router credential references in discovery metadata, and one malformed
 RouterOS table row hiding healthy peers. Both have fail-before/pass-after
 regressions; malformed containers still fail and incomplete scans cannot prove

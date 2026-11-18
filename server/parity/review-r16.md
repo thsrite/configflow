@@ -19,7 +19,7 @@ high 0、medium 2（均修复）、low 0。生产 HTTP 五条路由及固定 IP 
 - 修复：`DiscoveryService.Discover` 在完整响应投影之后调用共享 redact，凭据种子
   从原始配置收集，覆盖 URL 编码引用、sources、devices/discovered 与 refresh_error。
   不改私有输入、缓存及乐观更新依据；正常用户名保留。无私有 redaction 实现。
-- 修复提交：本报告首次随附的产品修复提交。
+- 修复提交：`43acd1791`。
 
 ### M2：RouterOS 混合列表中的坏行隐藏健康行
 
@@ -32,7 +32,7 @@ high 0、medium 2（均修复）、low 0。生产 HTTP 五条路由及固定 IP 
   保留正常客户端、路由器自身地址和租约名称；未出现的已保存客户端为 unknown。
   未放宽共有写操作或所有权校验。`TestReviewR16InvalidARPContainerRemainsFailure`
   是负对照：整个回复为 null/对象/布尔时仍 failed，不能伪装成成功空扫描。
-- 修复提交：本报告首次随附的产品修复提交。
+- 修复提交：`43acd1791`。
 
 两项行为变化已登记 `behaviour-changes.md`。
 
