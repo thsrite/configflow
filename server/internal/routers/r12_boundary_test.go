@@ -24,12 +24,13 @@ type r12BoundaryCase struct {
 	DHCP    bool          `json:"dhcp"`
 }
 type r12BoundaryOutput struct {
+	Report     json.RawMessage   `json:"report"`
 	Plan       json.RawMessage   `json:"plan"`
 	Result     *Result           `json:"result"`
 	AgentCalls []json.RawMessage `json:"agent_calls"`
 }
 
-func r12Python(t *testing.T, endpoint string, tc r12BoundaryCase) r12BoundaryOutput {
+func r12Python(t *testing.T, endpoint string, tc any) r12BoundaryOutput {
 	t.Helper()
 	home, e := os.UserHomeDir()
 	if e != nil {
@@ -108,9 +109,7 @@ func r12Compare(t *testing.T, label string, a, b any) {
 	t.Helper()
 	left, right := r08Comparable(t, a), r08Comparable(t, b)
 	if !reflect.DeepEqual(left, right) {
-		l, _ := json.Marshal(left)
-		r, _ := json.Marshal(right)
-		t.Errorf("%s differ\nPython %s\nGo %s", label, l, r)
+		t.Errorf("%s differ: %s", label, r08Difference(left, right, "$"))
 	}
 }
 func r12PlanComparable(t *testing.T, p any) any {

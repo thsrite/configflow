@@ -820,3 +820,32 @@ PD 恢复 PUT 回复已经证明新 ID、但紧接着的 GET 失败时，Go 仍�
 - **共享资源写入保留 shared 节的未知成员。** Python 每次 `update_shared_transaction` 只写回四类资源和 `_revision`，
   会丢掉 shared 节里其他成员；Go 按 R1 保留。
 - **按类型读取的名称。** 资源被引用时的提示与 usages 中，名称存为 `null` 或错误类型时显示资源 ID（Python 原样返回该值）。
+
+### R12 — release ownership and negotiated return routing
+
+- Canonical native JSON (sorted keys at every depth, no HTML escaping) gives the
+  opaque release fingerprint. It is stable across processes and retains exact
+  integer evidence, but intentionally differs from Python JSON whitespace hashes.
+- F-R12-1: a transport failure after Agent apply/remove retains compensation for
+  the potentially committed write. Reverse compensation runs through the same
+  ownership-aware safety handshake. A lost compensation reply is accepted only
+  after a GET proves removal or the complete expected raw spec (including unknown
+  fields); unavailable readback does not prove success. A definite A01 RemoteError
+  remains a rejection, without speculative compensation.
+- F-R12-2: return cleanup excludes the explicit (profileID, routerID) pair while
+  searching all profiles. A background inspection no longer accidentally excludes
+  a same-ID router in the default profile or marks its own router as shared.
+- F-R12-3: all Verify failures use native errors/RouterError so callers, including
+  R14, can compensate uniformly; no Python ReleaseError exception category is
+  needed. R14's delta owner must handle every error (its own acceptance).
+- D-R12-3 / Clarified in R12: after Runtime shutdown interrupts a release with a
+  proven device write, stop device I/O and compensation, retain Result, and record
+  one local failure+manifest+revision transaction using the explicitly approved
+  ctxx.Uninterruptible boundary. Before the first write, cancellation commits
+  nothing. R04–R11 interruption before a lower owner records its manifest remains
+  an O14 follow-up; R12 does not guess ownership of an unproven create.
+- New iKuai NAT group checks now include the Python contract's explicit `id:null`;
+  policy group checks continue to omit `id`. Public desired reports omit internal
+  DNS guard inputs, as Python does. Skipped IPv6 DNS retains `checks.ipv6_dns:{}`.
+- Agent errors use shared diag credential redaction without hiding the username;
+  raw successful Agent status preserves unknown fields and numeric literals.

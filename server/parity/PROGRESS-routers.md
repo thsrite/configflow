@@ -750,7 +750,7 @@ PD 保护既不能更新也不能撤回（改池名后还会静默失效）；�
 
 ## R12 — release plan and staged execution
 
-**Status: `missing`** · HR · prereqs: R03–R11, A01 (ready) · Go: internal/routers
+**Status: `ported`**（待独立 Opus HR 复核；AST 白名单见下） · HR · prereqs: R03–R11, A01 (ready) · Go: internal/routers
 
 Files:
 - `backend/routers/plan.py` (807), `backend/routers/release.py` (413)
@@ -762,6 +762,26 @@ Routes: none.
 **Design: `server/design/r12-release.md` (Opus, 2026-11-17) — port to it.** Re-scoped there (D-R12-1): R12 also owns the inspection service of `routes/routers.py` (`_agent`, `_dns_settings`, `_inspect`, `_inspect_state`, `_ipv6_host`, `_return_cleanup`, `_return_routing`), `ros_return_advisory.py` (+ `test_ros_return_advisory.py`) and the apply-route body as `Publish`/`StartPublish`; R12-1…R12-4 can run in parallel with R08–R11, R12-5a/b after them; section 2.4 is the contract R07–R11 porters must follow.
 
 Notes for porter: `build_plan` (stages, ops, blockers, warnings, `STAGE_TITLES`, fingerprint), `execute`/`_execute`/`_verify`/`verify_nat`, `AgentReturnRouting` (Agent allocation contract, hex normalisation), rollback in reverse order. A01 manager provides `ReturnRoutingStatus/Apply/Remove`. Also used by C36 setup completion (`build_plan`) and A18 (`execute` in `test_oxidns_ha.py`).
+
+移植：`go-port-r12`，从 `go-opus-review-r11` 建立；首实现 `c145c31d8`，后续修正见分支 HEAD。
+Inspect/BuildPlan/Execute/Verify/Publish/StartPublish、typed ops/checks、return/advisory、R03–R11 接线及
+三态 publication native 边界齐全，无新 HTTP 路由。22 组完整 Python 对照保留；9 个完整阶段/失败代表、
+5 个 policy 替代准备代表均与真实 Python 的计划/结果/写序列/最终表一致。按 Leaner 收口，不扩组合、
+不做变异门禁，不跑 agent gate。raw ROS/A01、生产 10s、不猜 ID、丢补偿回复 GET 确认、跨进程指纹、
+profile 清理、真实 Runtime/SQLite 三态与连接 CAS、原缺省字段的 CAS 已验。
+
+D-R12-3 依协调者裁定：Aborted 且 Wrote 后仅一次本地失败记录+五类 manifest+revision 用
+`ctxx.Uninterruptible`，设备和补偿不在例外内；写前取消零提交。两份设计已标 Clarified in R12。
+**当前基底无 O3-6c canonical 测试，四条 AST 白名单尚未在本树验证。** 按协调者批准随交接提交
+`progress/r12-batch-allowlist.patch`，6c/R10/R11 合入后在同一 canonical 测试应用、变基并跑绿；若本 agent
+已交回，由协调者在 batch 树执行。不复制公共产品，不提前变基丢依赖。O14 后续是 R04–R11 F6 下层
+owner 尚未登记可信 manifest 即被关机打断的统一修复。
+
+最终 .64 定向 race：routers 188.076s、repo 79.536s；缺省字段/Runtime 等修正后 race
+routers 4.477s、repo 2.008s，全仓 vet clean；新 fuzz 60s PASS（884644 次）。最后 proof/测试隔离修正后
+定向 race 3.303s，gofmt/vet clean。R06 timeout/raw/脱敏、R07 缓存副本/索引/set、R08 presence/验证错误、
+R09 remap/多表、R10 补偿证明、R11 用户 hook 部分归属、A24 凭据与真实 Runtime、N8 raw/三态等类别逐项
+说明见 [中文交接](progress/R12-handoff-zh.md)，Python 修复见 behaviour-changes。未 push，未开子 agent。
 
 ## R13 — inspection service, return advisory, pending reminders
 

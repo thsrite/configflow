@@ -283,7 +283,7 @@ func applyRelease(ctx context.Context, raw json.RawMessage, d Driver, a ReturnAg
 			}
 			if op.Kind == "return_routing_apply" && live.Managed != nil && live.Managed.TablePresent {
 				var s ReturnSpec
-				if json.Unmarshal(op.Spec, &s) == nil && sameReturnSpec(live.Managed.Spec, &s) {
+				if json.Unmarshal(op.Spec, &s) == nil && sameReturnSpec(live.Managed.Spec, &s) && returnSpecProof(live.Managed.Spec, op.Spec) {
 					return undo, nil
 				}
 			}
@@ -305,11 +305,12 @@ func Execute(ctx context.Context, plan *Plan, d Driver, a ReturnAgent) *Result {
 	record := func(summary, status string) { result.Log = append(result.Log, ReleaseEntry{current, summary, status}) }
 	fail := func(err error) *Result {
 		result.FailedStage = &current
-		record(releaseErrorText(err), "failed")
 		if work.Err() != nil {
 			result.Aborted = true
+			record(messageReleaseAborted, "failed")
 			return result
 		}
+		record(releaseErrorText(err), "failed")
 		var re *RouterError
 		if errors.As(err, &re) && re.Kind == KindRollback {
 			result.Rollback = append(result.Rollback, ReleaseEntry{current, re.Error(), "failed"})
@@ -601,4 +602,14 @@ func emptyStageReadback(stage Stage, c *Checks) (string, string, bool) {
 		return releaseEmptyMessages[stage.Key], "verified", true
 	}
 	return "", "", false
+}
+
+func returnSpecProof(live, expected json.RawMessage) bool {
+	var have, want map[string]json.RawMessage
+	if json.Unmarshal(live, &have) != nil || json.Unmarshal(expected, &want) != nil {
+		return false
+	}
+	delete(have, "proxy_dst")
+	delete(want, "proxy_dst")
+	return jsonEqual(have, want)
 }

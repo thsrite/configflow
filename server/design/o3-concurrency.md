@@ -762,3 +762,20 @@ on restart is unchanged). Option A (**recommended**): raise it in the official i
 (`stopwaitsecs=30` in supervisord / `stop_grace_period: 35s`, `CONFIGFLOW_SHUTDOWN_GRACE_SECONDS=28`), so
 publishes usually finish; `docker stop` can then take up to 30 s. Option B: keep 10 s. Users with their own compose
 files keep 10 s either way. This only affects packaging (finish domain / O14), not the steps above.
+
+**Clarified in R12 (coordinator, 2026-11-18):** The fourth domain commit exception
+(after O3-6c's `repo:DeleteProfile:beginCommitBatch`, `repo:ImportAll:beginCommitBatch`,
+`repo:CreateRuleLibraryItem:beginCommitBatch`) is
+`routers:saveAbortedPublication:ctxx.Uninterruptible`, in `internal/routers/publish.go`.
+Only after `Result.Aborted && Result.Wrote`, one local `SaveRouterPublicationJSON` →
+`SaveRouterPublication` transaction must store the failed release, the five explicit
+manifest updates, and the required profile revision. This retains the ownership and
+recovery evidence for writes already landed on the device. No device I/O, compensation,
+or follow-up read is in the uninterruptible region. Cancellation before the first device
+write still rejects the transaction. An ordinary publication rejected by the repository's
+cancellation guard may enter this one local transaction only if it has not committed.
+This does not restore automatic uninterruptibility for ordinary repository writers.
+The canonical `TestCommitBatchMarkersMatchDesign` checks both packages and both callees,
+resolving ctxx import aliases; each approved package/function/callee appears exactly once.
+Runtime tests establish the side-effect condition, one revision, complete evidence, no
+post-cancellation device I/O, and lock release; AST alone cannot prove these semantics.

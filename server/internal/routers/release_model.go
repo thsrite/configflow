@@ -24,6 +24,8 @@ type PolicyRouteCheck struct {
 // Checks carries exactly the checks applicable to this release. Pointers to
 // slices preserve the difference between absent and a present empty array.
 type Checks struct {
+	ipv6DNSPresent   bool
+	rosPolicyPresent bool
 	NATChecks
 	Routes              []CIDRGateway              `json:"routes"`
 	RemovedRoutes       []string                   `json:"removed_routes"`
@@ -143,4 +145,28 @@ type Result struct {
 	Rollback    []ReleaseEntry `json:"rollback"`
 	Aborted     bool           `json:"-"`
 	Wrote       bool           `json:"-"`
+}
+
+// MarshalJSON preserves explicit empty and null feature checks independently
+// of the native verifier pointer used at execution time.
+func (c Checks) MarshalJSON() ([]byte, error) {
+	type plain Checks
+	b, err := json.Marshal(plain(c))
+	if err != nil {
+		return nil, err
+	}
+	if !(c.ipv6DNSPresent && c.IPv6DNS == nil) && !(c.rosPolicyPresent && c.ROSPolicy == nil) {
+		return b, nil
+	}
+	var fields map[string]json.RawMessage
+	if err = json.Unmarshal(b, &fields); err != nil {
+		return nil, err
+	}
+	if c.ipv6DNSPresent && c.IPv6DNS == nil {
+		fields["ipv6_dns"] = json.RawMessage(`{}`)
+	}
+	if c.rosPolicyPresent && c.ROSPolicy == nil {
+		fields["ros_policy"] = json.RawMessage(`null`)
+	}
+	return json.Marshal(fields)
 }

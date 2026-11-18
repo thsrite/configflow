@@ -447,6 +447,7 @@ func BuildPlan(ctx context.Context, r *Router, in *Inspection, d Driver) (*Plan,
 	}
 	if rosPolicy != nil {
 		checks.ROSPolicy = rosPolicy.Check
+		checks.rosPolicyPresent = true
 	}
 	checks.ReturnRouting = spec
 	for _, op := range routeOps {
@@ -516,6 +517,7 @@ func BuildPlan(ctx context.Context, r *Router, in *Inspection, d Driver) (*Plan,
 		}
 		stages = append(stages, stage)
 		checks.IPv6DNS = v.Check
+		checks.ipv6DNSPresent = true
 	}
 	if v := state.DNSGuardPlan; v != nil {
 		*blockers = append(*blockers, v.Blockers...)

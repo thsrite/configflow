@@ -85,6 +85,22 @@ func (s ReturnStatus) MarshalJSON() ([]byte, error) {
 	if err = json.Unmarshal(b, &out); err != nil {
 		return nil, err
 	}
+	for _, key := range []string{"managed", "fwmark_rules", "cleanup"} {
+		if _, present := s.rest[key]; !present {
+			continue
+		}
+		switch key {
+		case "managed":
+			out[key], err = json.Marshal(s.Managed)
+		case "fwmark_rules":
+			out[key], err = json.Marshal(s.FWMarkRules)
+		case "cleanup":
+			out[key], err = json.Marshal(s.Cleanup)
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
 	for k, v := range s.rest {
 		if _, ok := out[k]; !ok {
 			out[k] = v
@@ -140,6 +156,9 @@ func ReturnProtocol(s *ReturnStatus) int {
 	var values []json.RawMessage
 	_ = json.Unmarshal(returnSafety(s)["protocols"], &values)
 	for _, v := range values {
+		if len(v) == 0 || v[0] == '"' {
+			continue
+		}
 		var n json.Number
 		if json.Unmarshal(v, &n) == nil {
 			f, e := n.Float64()

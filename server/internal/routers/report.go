@@ -192,6 +192,7 @@ func (r Report) MarshalJSON() ([]byte, error) {
 	if r.Desired != nil {
 		desired := *r.Desired
 		desired.ROSPolicy = nil
+		desired.DNSGuard = nil
 		r.Desired = &desired
 	}
 	data, err := json.Marshal(plain(r))

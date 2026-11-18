@@ -65,6 +65,7 @@ type RouterSettings struct {
 // field (last_probe, last_release, ros_policy_state, dns_guard_state,
 // ipv6_*_state, unknown ones) is kept in Extra and written back unchanged.
 type Router struct {
+	source json.RawMessage // original stored member presence for publication CAS
 	RouterSettings
 	Password string                     `json:"password"`
 	Extra    map[string]json.RawMessage `json:"-"`
@@ -85,6 +86,7 @@ func (r *Router) UnmarshalJSON(data []byte) error {
 		delete(p.Extra, key)
 	}
 	*r = Router(p)
+	r.source = bytes.Clone(data)
 	return nil
 }
 

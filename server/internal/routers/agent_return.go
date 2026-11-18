@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	"configflow/internal/agents"
+	"configflow/internal/agents/diag"
 	"configflow/internal/model"
 )
 
@@ -67,7 +68,7 @@ func (a *managerReturnAgent) Status(ctx context.Context) (*ReturnStatus, error) 
 	}
 	result, err := a.manager.ReturnRoutingStatus(ctx, a.agent.Record)
 	if err != nil {
-		return nil, err
+		return nil, a.safeError(err)
 	}
 	b, err := json.Marshal(result)
 	if err != nil {
@@ -88,12 +89,30 @@ func (a *managerReturnAgent) Apply(ctx context.Context, spec json.RawMessage) er
 		return err
 	}
 	_, err := a.manager.ReturnRoutingApply(ctx, a.agent.Record, &payload)
-	return err
+	return a.safeError(err)
 }
 func (a *managerReturnAgent) Remove(ctx context.Context, restore bool) error {
 	if a.agent == nil || a.agent.Record == nil {
 		return routerError(messageNoReturnAgent)
 	}
 	_, err := a.manager.ReturnRoutingRemove(ctx, a.agent.Record, restore)
-	return err
+	return a.safeError(err)
+}
+
+type returnAgentError struct {
+	cause   error
+	message string
+}
+
+func (e *returnAgentError) Error() string { return e.message }
+func (e *returnAgentError) Unwrap() error { return e.cause }
+func (a *managerReturnAgent) safeError(err error) error {
+	if err == nil {
+		return nil
+	}
+	secrets := []any{}
+	if a.agent != nil && a.agent.Agent != nil {
+		secrets = append(secrets, a.agent.Token)
+	}
+	return &returnAgentError{err, diag.FailureText(err.Error(), secrets, 0)}
 }

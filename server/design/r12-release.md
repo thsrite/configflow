@@ -993,3 +993,22 @@ D-R12-2 accepted (Go-native fingerprints; previews opened before the switch need
 D-R12-3 accepted (shutdown past the drain deadline stops after the current operation, writes the failure record and
 ownership list, no rollback; all other errors roll back) — record in O12 and in the O14 switch plan.
 
+
+**Clarified in R12 (coordinator, 2026-11-18):** D-R12-3 remains approved.
+`internal/routers/publish.go:saveAbortedPublication` is the sole R12 call to
+`ctxx.Uninterruptible`. It is entered only for `Result.Aborted && Result.Wrote` and wraps
+one local `SaveRouterPublicationJSON` → `SaveRouterPublication` transaction: failure record,
+five three-state manifest slots, and necessary revision. Device I/O, compensation, and
+further device reads remain cancellable and are excluded. Before any device write,
+shutdown rejects persistence. If cancellation arrives in the ordinary repository commit
+guard, that rejected transaction has no commit; Publish marks the retained Result Aborted
+and performs the one approved local publication instead. The same canonical repo AST
+whitelist used by O3-6c registers `routers:saveAbortedPublication:ctxx.Uninterruptible`
+as the fourth domain exception. No second routers whitelist is maintained.
+R15 takes L1 before 404/validation and transfers held ctx/unlock to StartPublish; Publish
+only takes L2, and delivers its outcome after driver/L2/L1 cleanup.
+
+O14 follow-up: apply the same bounded local ownership-recording pattern to R04–R11 F6
+where shutdown can interrupt a feature owner before it registers the landed device
+objects in its in-memory manifest. R12 records every available proven manifest; it does
+not invent ownership evidence for incomplete lower-level operations.

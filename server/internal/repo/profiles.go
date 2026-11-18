@@ -919,6 +919,7 @@ type RouterPublicationJSON struct {
 // SaveRouterPublicationJSON decodes only at the legacy repository boundary and
 // delegates the single guarded publication transaction, including its revision.
 func (r *Repository) SaveRouterPublicationJSON(ctx context.Context, profileID string, expected json.RawMessage, p RouterPublicationJSON) error {
+	ctx = ctxx.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return err
 	}

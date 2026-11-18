@@ -84,6 +84,11 @@ func StartPublish(ctx context.Context, req PublishRequest, unlock func()) (<-cha
 			if unlock != nil {
 				defer unlock()
 			}
+			defer func() {
+				if recover() != nil {
+					result = PublishOutcome{Err: lifecycle.ErrPanic}
+				}
+			}()
 			return Publish(work, req)
 		}()
 		out <- outcome
@@ -164,7 +169,7 @@ func Publish(ctx context.Context, req PublishRequest) PublishOutcome {
 			break
 		}
 	}
-	if current == nil || !jsonEqual(current, req.Router) {
+	if current == nil || !sameReleaseRouter(current, req.Router) {
 		return PublishOutcome{Status: PublishRouterChanged, Message: messageRouterChangedWaiting}
 	}
 	factory := req.NewDriver
@@ -218,13 +223,16 @@ func Publish(ctx context.Context, req PublishRequest) PublishOutcome {
 		result = Execute(work, plan, driver, agent)
 		logRelease(current, count, result)
 	}
+	if work.Err() != nil && result.Wrote {
+		abortPublicationResult(result, work.Err())
+	}
 	outcome := PublishOutcome{Status: PublishOK, Plan: plan, Result: result}
 	publication, err := releasePublication(work, current, plan, result, driver)
 	if err != nil {
 		outcome.Err = err
 		return outcome
 	}
-	expected, err := json.Marshal(current)
+	expected, err := releaseRouterRecord(current)
 	if err != nil {
 		outcome.Err = err
 		return outcome
@@ -235,11 +243,22 @@ func Publish(ctx context.Context, req PublishRequest) PublishOutcome {
 		if err = work.Err(); err == nil {
 			err = req.Repo.SaveRouterPublicationJSON(work, req.ProfileID, expected, publication)
 		}
+		// Cancellation may arrive inside the repository's pre-commit guard.
+		// A rejected ordinary transaction committed nothing; preserve the
+		// landed device state in the one approved local transaction instead.
+		if err != nil && work.Err() != nil && result.Wrote && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
+			abortPublicationResult(result, work.Err())
+			publication, err = releasePublication(work, current, plan, result, driver)
+			if err == nil {
+				err = saveAbortedPublication(work, req.Repo, req.ProfileID, expected, publication)
+			}
+		}
 	}
 	if err != nil {
 		outcome.Err = err
 		return outcome
 	}
+	repo.ResetConfigContext(work)
 	refreshRelease(work)
 	if plan.Empty {
 		releaseLogger.Infof(messagePublishEmpty, label)
@@ -330,4 +349,41 @@ func logRelease(r *Router, count int, result *Result) {
 	} else if len(result.Rollback) > 0 {
 		releaseLogger.Warningf(messagePublishRolledBack, label, len(result.Rollback))
 	}
+}
+
+func abortPublicationResult(result *Result, err error) {
+	if result.Aborted {
+		return
+	}
+	stage := ""
+	if len(result.Log) > 0 {
+		stage = result.Log[len(result.Log)-1].Stage
+	}
+	result.OK = false
+	result.Aborted = true
+	result.FailedStage = &stage
+	result.Log = append(result.Log, ReleaseEntry{Stage: stage, Summary: messageReleaseAborted, Status: "failed"})
+}
+
+// releaseRouterRecord preserves missing stored connection fields for the repo
+// CAS. Native defaults are runtime values, not an edit to the stored record.
+func releaseRouterRecord(r *Router) (json.RawMessage, error) {
+	if len(r.source) > 0 {
+		var original Router
+		if err := json.Unmarshal(r.source, &original); err != nil {
+			return nil, err
+		}
+		if jsonEqual(r, &original) {
+			return slices.Clone(r.source), nil
+		}
+	}
+	return json.Marshal(r)
+}
+func sameReleaseRouter(a, b *Router) bool {
+	left, e := releaseRouterRecord(a)
+	if e != nil {
+		return false
+	}
+	right, e := releaseRouterRecord(b)
+	return e == nil && jsonEqual(left, right)
 }
