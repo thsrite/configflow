@@ -1677,3 +1677,19 @@ C28 的两个原冻结 world 不含 captured 来源的当前声明，按协调�
 拒绝（Timeout）、无 ZIP 和无缓存改动；另七条 D2 写入/迁移仅改变原生缓存地址并按原
 world 保留旧文件。原 archive 不改；独立 Python 参考绑定完整 archive 和每条原行摘要，
 正常 ZIP 的完整内容和全部 cache bytes 仍比较，没有通配 baseline。
+
+### N8-9 subs/substore — 缓存边界（协调者裁定）
+
+- 数字订阅 ID `5` 经共享 model.String/record codec 读作 `"5"`，清理时归属文件为
+  `5.json`；移除仅为了复刻 CPython `AttributeError` 的旧断言。原始存储值不改写。
+  `substore/testdata/n89_cache_reference.py` 对精确 model 消费投影调用真实 Python
+  `prune_orphan_caches`，生成完整删除列表与剩余文件内容；实际入口负控改变一个期望文件名
+  必须失败。不是从 Go 输出反推期望，也没有修改原 corpus/比较器。
+- 损坏缓存 JSON 使用原生解析器；日志固定业务前缀 `读取订阅缓存失败 (<id>): ` 不变，
+  后面的 CPython parser 内部原文改为共享原生 DecodeStored 的错误。原来“返回无缓存、文件
+  保留”的行为不变。订阅列表/ID 损坏仍以 `检查订阅缓存失败，跳过清理: ` 开头，
+  不从 R5 的 nil 列表推断“全部缓存都是孤立文件”。
+- 缓存保存、删除、清理在真实 Runtime 关机后拒绝副作用；请求断开仍完成。新共享删除入口
+  使用 repo 现有文件叶锁，取得锁后/最后 unlink 前检查取消；不删除 Python 遗留 lock 文件。
+  主文件、备份、未知字段和有效原始缓存字节的既有测试保持。作废内容核对的 panic 日志
+  只输出固定业务文本，避免回显任意 panic 值中的节点凭据。

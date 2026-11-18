@@ -6,6 +6,7 @@ package substore
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"sort"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/subs"
 )
@@ -110,7 +112,7 @@ func TestPruningDeletesNothingWhenSubscriptionsCannotBeRead(t *testing.T) {
 	ctx, r := sharedRepo(t)
 	logs := captureLogs(t)
 	previous := getShared
-	getShared = func(context.Context, *repo.Repository) (*jsonx.Object, error) {
+	getShared = func(context.Context, *repo.Repository) (*model.Shared, error) {
 		return nil, repo.NewValidationError("unreadable")
 	}
 	defer func() { getShared = previous }()
@@ -126,38 +128,31 @@ func TestPruningDeletesNothingWhenSubscriptionsCannotBeRead(t *testing.T) {
 	}
 }
 
-// A subscription id that is not a string makes Python's prune raise
-// (AttributeError of str.replace), which app.py logs.
-func TestPruneWithNonStringIDFailsLikePython(t *testing.T) {
-	ctx, _ := sharedRepo(t)
-	previous := getShared
-	getShared = func(context.Context, *repo.Repository) (*jsonx.Object, error) {
-		return jsonx.Obj("subscriptions", []any{jsonx.Obj("id", jsonx.Int(5))}), nil
-	}
-	defer func() { getShared = previous }()
-	_, err := PruneOrphanCaches(ctx)
-	if err == nil || err.Error() != "'int' object has no attribute 'replace'" {
-		t.Fatalf("err %v", err)
-	}
-	for _, c := range []struct {
-		value any
-		log   string
-	}{
-		{nil, "'NoneType' object is not iterable"},
-		{[]any{"x"}, "string indices must be integers, not 'str'"},
-		{[]any{jsonx.Obj("name", "x")}, "'id'"},
-	} {
-		value := c.value
-		getShared = func(context.Context, *repo.Repository) (*jsonx.Object, error) {
-			return jsonx.Obj("subscriptions", value), nil
-		}
-		logs := captureLogs(t)
-		if removed, err := PruneOrphanCaches(ctx); err != nil || len(removed) != 0 {
-			t.Fatalf("%v: removed %v err %v", value, removed, err)
-		}
-		if !strings.Contains(logs.text(), "检查订阅缓存失败，跳过清理: "+c.log) {
-			t.Fatalf("log:\n%s", logs.text())
-		}
+// Invalid model identities/list shapes must not prove that every cache is orphaned.
+func TestPruneInvalidStoredIdentityKeepsFiles(t *testing.T) {
+	for _, raw := range []string{`{"subscriptions":null}`, `{"subscriptions":"bad"}`, `{"subscriptions":["x"]}`, `{"subscriptions":[{"id":false}]}`, `{"subscriptions":[{"name":"x"}]}`} {
+		t.Run(raw, func(t *testing.T) {
+			ctx, r := sharedRepo(t)
+			before := strings.Join(cacheFiles(t, r), ",")
+			previous := getShared
+			getShared = func(context.Context, *repo.Repository) (*model.Shared, error) {
+				var shared model.Shared
+				err := json.Unmarshal([]byte(raw), &shared)
+				return &shared, err
+			}
+			defer func() { getShared = previous }()
+			logs := captureLogs(t)
+			removed, err := PruneOrphanCaches(ctx)
+			if err != nil || len(removed) != 0 {
+				t.Fatalf("removed %v err %v", removed, err)
+			}
+			if got := strings.Join(cacheFiles(t, r), ","); got != before {
+				t.Fatalf("files changed: %s", got)
+			}
+			if !strings.Contains(logs.text(), "检查订阅缓存失败，跳过清理: ") {
+				t.Fatalf("missing business prefix: %s", logs.text())
+			}
+		})
 	}
 }
 
@@ -210,7 +205,7 @@ func TestLoadSubscriptionCacheLegacyAndBroken(t *testing.T) {
 	if must[*jsonx.Object](t)(LoadSubscriptionCache(ctx, "broken")) != nil {
 		t.Fatal("broken cache read")
 	}
-	if !strings.Contains(logs.text(), "读取订阅缓存失败 (broken): Cannot read configuration broken.json: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)") {
+	if !strings.Contains(logs.text(), "读取订阅缓存失败 (broken): decode stored JSON:") {
 		t.Fatalf("log:\n%s", logs.text())
 	}
 	os.WriteFile(filepath.Join(dir, "list.json"), []byte(`[1]`), 0o644)

@@ -1,0 +1,49 @@
+# N8-9 subs/substore
+
+分支 `go-n8-9-subs`，基于 `go@03257978f`。仅在主测试服务器通过 rt 定向验证，不 push、不起子 agent、不跑完整门禁。
+
+## 范围与设计
+
+- subs：URI/开放 YAML 解析、筛选、hosts、dialer 元数据、代理链、监听器、节点 DNS；固定配置消费 model.Config / model.Node，开放引擎图保留 yamlx.Node。
+- substore：类型化协议/响应、缓存、runtime 状态、依赖更新及其仓储接线；旧入口仅在 legacy.go 转码。
+- 解决 subs→convert 校验私有副本：由 convert 接线 typed collaborator，调用现有共享实现，不复制业务；必要 convert 文件单列在最终清单中。
+- 配置只在请求/旧 API 边界投影一次；节点/订阅循环直接访问 typed 记录。新增分配量基准及回归约束。
+- 共享 String/Int codec、严格身份字段、Name 数字文本兼容；不加私有标量规则，不改已有 corpus 迎合实现。
+- 所有写 owner Detach 后、锁后、提交点前检查取消；真实 Runtime 关机/请求断开测试。已有叶锁、observation、原子替换及清理行为保持。
+
+## 状态
+
+已读 AGENT-BRIEF、PORTING/WORKFLOW、N8-9 与 R5/R8、discovery 交接、health 独立复核。
+缓存及 DTO 已迁移；六条有效缓存原测试、原始文件字节/hosts/日志断言保留。
+已补真实 Runtime 的保存/删除/清理 × 关机/断开六条，以及 repo 实际叶锁后取消两条。
+数字 ID 真实 Python 精确参照已生成，改变一个完整期待删除项的实际测试负控确实失败。
+客户端/runtime/dependencies、subs 核心尚未迁移；legacy.go 中 iterate/pyMakedirs 是旧 dependency
+owner 暂时仍调用的原有 helper，后续必须一起删除，不能据此声称 legacy 已纯转码。
+后续完成这些核心及分配基准、所有定向检查。
+
+## 验证（待填写）
+
+固定 RT_HOST=sunbroke@192.168.0.32，GOMAXPROCS=4，-p 4。
+受影响包 race，跨包 Corpus|Reference|Golden，相关 HTTP difftest，60s fuzz；不跑完整门禁。
+
+
+### 缓存阶段验证
+
+全部固定主测试服务器、GOMAXPROCS=4、-p 4：
+
+- `PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/substore/testdata/n89_cache_reference.py`
+  → `native cache reference: 1 exact projected Python case`。
+- `cd server && go test -race -p 4 -count=1 -timeout=5m ./internal/substore -run "TestN89|TestPruneInvalid|TestLoadSubscriptionCacheLegacyAndBroken|TestSavedCacheBytes|TestStartupPrunes|TestDeletingA|TestPruningDeletes|TestHostsChange|TestNodeCount"`
+  → `ok configflow/internal/substore 7.142s`。
+- 同一远端副本 finally 恢复精确 fixture 的负控：只在 python.removed 加一个合成文件名，
+  实际 `TestN89NumericCacheIDReference` 必须报 `native cache reference mismatch`；已通过此负控。
+- `go test -p 4 -run "^$" -bench "^BenchmarkN89CacheRecord$" -benchtime=1x -benchmem ./internal/substore`
+  → 32/256/2048 节点分别 787768/6007016/47830936 B/op、10090/78970/631010 allocs/op；
+  节点量每增8倍，分配约增8倍，没有每节点重解整个缓存的平方增长；32→128 的分配上限回归通过。
+  完整配置协作者的公开路径基准待后续 subs 迁移完成后补，不冒充已经验证。
+- `go test -race -p 4 -count=1 -timeout=5m ./internal/repo -run "^TestN89NativeSharedDeleteCommitLifetime$"`
+  → `ok configflow/internal/repo 1.529s`。
+
+本阶段未跑全量 corpus/HTTP/fuzz，留给全部迁移后的最终定向验证。
+
+缓存阶段受影响三包 `go vet -p 4 ./internal/substore ./internal/subs ./internal/repo` 和本阶段 gofmt 检查退出0、无输出。
