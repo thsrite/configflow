@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"gopkg.in/yaml.v3"
+	"net/netip"
 
 	"configflow/internal/jsonx"
 	"configflow/internal/model"
@@ -736,4 +737,152 @@ func DependencyNodeIDs(value *jsonx.Object, selected []string, includeRoots bool
 	}
 	result, err := RequiredNodes(config, selected, includeRoots)
 	return result, dialerLegacyError(err)
+}
+
+// ValidateBaseSettings transcodes the old form boundary to native YAML nodes.
+func ValidateBaseSettings(document, previous any, reserved map[int]string, localAddresses []any) error {
+	root, err := yamlbridge.Encode(document)
+	if err != nil {
+		return err
+	}
+	var before *yamlx.Node
+	if previous != nil {
+		before, err = yamlbridge.Encode(previous)
+		if err != nil {
+			return err
+		}
+	}
+	hosts := []netip.Addr{}
+	for _, raw := range localAddresses {
+		value, ok := raw.(string)
+		if !ok {
+			continue
+		}
+		address, err := netip.ParseAddr(value)
+		if err == nil {
+			hosts = append(hosts, address)
+		}
+	}
+	return ValidateBaseNode(root, before, reserved, hosts)
+}
+
+// SplitHostPort adapts optional legacy listener text.
+func SplitHostPort(value any) (string, int, bool, error) {
+	text, err := decodeLegacy[string](value)
+	if err != nil {
+		return "", 0, false, nil
+	}
+	host, port, ok := ParseListener(text)
+	return host, port, ok, nil
+}
+
+// SniffPortError transcodes a legacy scalar to the native port validator.
+func SniffPortError(value any) (bool, error) {
+	node, err := yamlbridge.Encode(value)
+	if err != nil {
+		return true, err
+	}
+	return SniffPortInvalid(node), nil
+}
+
+// TakeoverMode adapts a resolved legacy configuration.
+func TakeoverMode(value *jsonx.Object) (string, error) {
+	config, err := configFromLegacy(value)
+	if err != nil {
+		return "", err
+	}
+	return GatewayMode(config)
+}
+
+// AgentSource is the legacy inventory interface, removed when callers migrate.
+type AgentSource interface {
+	ProfileAgentIDs(string) ([]any, error)
+	AgentByID(any) *jsonx.Object
+}
+
+// AgentContext transcodes the selected old inventory to typed Agents.
+func AgentContext(source AgentSource, profileID string) (map[int]string, []int, []any) {
+	ids, err := source.ProfileAgentIDs(profileID)
+	if err != nil {
+		return map[int]string{}, nil, []any{}
+	}
+	records := []model.Agent{}
+	for _, id := range ids {
+		record := source.AgentByID(id)
+		if record == nil {
+			continue
+		}
+		agent, err := decodeLegacy[model.Agent](record)
+		if err == nil {
+			records = append(records, agent)
+		}
+	}
+	reserved, order, hosts := AgentPorts(records)
+	values := make([]any, len(hosts))
+	for i, host := range hosts {
+		values[i] = host
+	}
+	return reserved, order, values
+}
+func registerLegacyMihomoHooks(hooks MihomoHooks) func() {
+	native := MihomoIntegrations{FakeIPNetworkError: hooks.FakeIPNetworkError}
+	if hooks.ApplyLinuxGateway != nil {
+		native.ApplyGateway = func(document *yamlx.Node, config *model.Config, url string) error {
+			value, err := encodeLegacy(config)
+			if err != nil {
+				return err
+			}
+			logical, _ := value.(*jsonx.Object)
+			raw, err := yamlbridge.Value(document)
+			if err != nil {
+				return err
+			}
+			main, _ := raw.(*jsonx.Object)
+			if err = hooks.ApplyLinuxGateway(main, logical, url); err != nil {
+				return err
+			}
+			result, err := yamlbridge.Encode(main)
+			if err != nil {
+				return err
+			}
+			*document = *result
+			return nil
+		}
+	}
+	if hooks.GatewayEnabled != nil {
+		native.GatewayEnabled = func(config *model.Config) (bool, error) {
+			value, err := encodeLegacy(config)
+			if err != nil {
+				return false, err
+			}
+			wire, _ := value.(*jsonx.Object)
+			return hooks.GatewayEnabled(wire)
+		}
+	}
+	if hooks.IsFullTun != nil {
+		native.FullTun = func(config *model.Config) (bool, error) {
+			value, err := encodeLegacy(config)
+			if err != nil {
+				return false, err
+			}
+			wire, _ := value.(*jsonx.Object)
+			return hooks.IsFullTun(wire)
+		}
+	}
+	if hooks.MihomoDNSLoop != nil {
+		native.DNSLoop = func(dns *yamlx.Node, addresses []netip.Addr) (string, string, bool, error) {
+			value, err := yamlbridge.Value(dns)
+			if err != nil {
+				return "", "", false, err
+			}
+			wire, _ := value.(*jsonx.Object)
+			key, upstream, found, err := hooks.MihomoDNSLoop(wire, addresses)
+			if err != nil {
+				return "", "", found, err
+			}
+			text, err := decodeLegacy[string](upstream)
+			return key, text, found, err
+		}
+	}
+	return SetMihomoIntegrations(native)
 }

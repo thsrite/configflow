@@ -1397,3 +1397,11 @@ batch-6 codec 窄化：格式查询只解规则库，继续使用 model.Shared �
 - 策略工作区 revision 按 D2 使用 Go native JSON；router 的 last_probe 不影响 draft revision，名字由独立 C31 revision 保护。旧 preview/draft 在切换后需重新载入。C22 生成/保存的 native_config、template_base_config 和 dns_content 按 YAML 结构兼容，格式及其派生 opaque revision 可不同。
 - R15 的规则同步 HTTP 差分也验证了已有 R14 私有 receipt 的表示差异：Go _rule_order 是对规则集合的顺序索引，公开 rules 数组仍按序严格比较；成功 delta 后 Python 省略的零值 Desired/added/removed/log，按明确缺省值核对，不丢弃非缺省数据。202 返回可以处于 queued/running/synced 的合法阶段；每个阶段中文消息须匹配，任务结束后完整 DB/文件/公开状态仍严格比较。
 - 设备锁沿用 R06 的有界 write wait，mutation preflight 与 owner 都保持 Runtime cancellation；仅 R12 已获批 publication 例外在设备尝试写入后记录中止。未增加不可中断区或新的后台调度器。
+
+## N8-8b — typed Mihomo base settings
+
+- 原生监听地址/端口解析不模拟 CPython 数字字符：sniffer 的全角数字范围和
+  上标数字返回明确的 BaseSettingsError；旧 reference 保留，两条差异单独断言。
+  这是 PORTING 已批准的 CPython-only Unicode 边界。正常 ASCII 端口不变。
+- Agent 上下文只读取 typed Agent 字段；错型/无效的 Agent 端口与地址按 R5
+  处理，不再模拟 Python 的“整数作为 IP 地址”等动态调用语义。

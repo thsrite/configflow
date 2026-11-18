@@ -1,12 +1,20 @@
 package convert
 
 import (
+	"errors"
+	"fmt"
+	"net"
 	"net/netip"
+	"slices"
+	"strconv"
 	"strings"
+	"unicode/utf8"
 
-	"configflow/internal/jsonx"
-	"configflow/internal/pystr"
+	"configflow/internal/model"
 	"configflow/internal/weburl"
+	"configflow/internal/yamlx"
+
+	"gopkg.in/yaml.v3"
 )
 
 // Port of backend/common/mihomo_base_settings.py (C18): the server-side
@@ -113,613 +121,480 @@ type BaseSettingsError struct{ Message string }
 
 func (e *BaseSettingsError) Error() string { return e.Message }
 
-func baseError(message string) { raise(&BaseSettingsError{message}) }
-
-// missing is _MISSING.
-type missingValue struct{}
-
-var missing any = missingValue{}
-
-func getPath(document any, path []string) any {
-	value := document
-	for _, k := range path {
-		obj, ok := value.(*jsonx.Object)
-		if !ok || obj == nil {
-			return missing
+func baseFailure(message string) error { return &BaseSettingsError{Message: message} }
+func basePath(document *yamlx.Node, path []string) *yamlx.Node {
+	node := document
+	for _, key := range path {
+		node = yamlx.Get(node, key)
+		if node == nil {
+			return nil
 		}
-		next, present := obj.Get(k)
-		if !present {
-			return missing
-		}
-		value = next
 	}
-	return value
+	return yamlx.Resolve(node)
+}
+func textNode(node *yamlx.Node) (string, bool) {
+	node = yamlx.Resolve(node)
+	if node == nil || node.Kind != yaml.ScalarNode || node.ShortTag() != "!!str" {
+		return "", false
+	}
+	return node.Value, true
+}
+func boolNode(node *yamlx.Node) (bool, bool) {
+	node = yamlx.Resolve(node)
+	if node == nil || node.Kind != yaml.ScalarNode || node.ShortTag() != "!!bool" {
+		return false, false
+	}
+	var value bool
+	if yamlx.Decode(node, &value) != nil {
+		return false, false
+	}
+	return value, true
+}
+func sequenceNode(node *yamlx.Node) ([]*yamlx.Node, bool) {
+	node = yamlx.Resolve(node)
+	if node == nil || node.Kind != yaml.SequenceNode {
+		return nil, false
+	}
+	return node.Content, true
+}
+func nullNode(node *yamlx.Node) bool {
+	node = yamlx.Resolve(node)
+	return node != nil && node.ShortTag() == "!!null"
 }
 
-// exactType is type(v) for _same: int and float, date and datetime and
-// bool are distinct types.
-func exactType(v any) string {
-	switch v.(type) {
-	case missingValue:
-		return "missing"
-	case []byte:
-		return "bytes"
-	}
-	return pyTypeName(v)
-}
-
-// same is _same: equal values of the same Python types (True is not 1, a
-// quoted "7890" is not 7890; dict key order does not matter).
-func same(left, right any) bool {
-	if exactType(left) != exactType(right) {
-		return false
-	}
-	switch l := left.(type) {
-	case missingValue:
-		return true
-	case []any:
-		r := right.([]any)
-		if len(l) != len(r) {
-			return false
-		}
-		for i := range l {
-			if !same(l[i], r[i]) {
-				return false
-			}
-		}
-		return true
-	case *jsonx.Object:
-		r := right.(*jsonx.Object)
-		if l.Len() != r.Len() {
-			return false
-		}
-		for k := range l.All() {
-			if !r.Has(k) {
-				return false
-			}
-		}
-		for k, v := range l.All() {
-			if !same(v, r.Value(k)) {
-				return false
-			}
-		}
-		return true
-	case []byte:
-		return string(l) == string(right.([]byte))
-	case jsonx.Number:
-		r := right.(jsonx.Number)
-		if l.IsFloat() {
-			return l.Float64() == r.Float64()
-		}
-		return jsonx.Equal(l, r)
-	}
-	return jsonx.Equal(left, right)
-}
-
-// SplitHostPort is split_host_port: (host, port) of `host:port`, brackets
-// removed; ok false when malformed. A port of Unicode digits that int()
-// rejects is Python's ValueError (err).
-func SplitHostPort(value any) (host string, port int, ok bool, err error) {
-	defer catch(&err)
-	host, port, ok = splitHostPort(value)
-	return
-}
-
-func splitHostPort(value any) (string, int, bool) {
-	text, isString := value.(string)
-	if !isString {
+// ParseListener parses an explicitly textual host:port using native addresses.
+func ParseListener(value string) (string, int, bool) {
+	host, port, err := net.SplitHostPort(strings.TrimSpace(value))
+	if err != nil || port == "" {
 		return "", 0, false
 	}
-	stripped := pystr.Strip(text)
-	i := strings.LastIndexByte(stripped, ':')
-	if i < 0 {
-		return "", 0, false
-	}
-	host, port := stripped[:i], stripped[i+1:]
-	if !pyIsDigit(port) {
-		return "", 0, false
-	}
-	n := pyIntOf(port)
-	value64, fits := n.Int64()
-	if !fits || value64 < 1 || value64 > 65535 {
-		return "", 0, false
-	}
-	if strings.HasPrefix(host, "[") {
-		if !strings.HasSuffix(host, "]") {
+	for _, digit := range port {
+		if digit < '0' || digit > '9' {
 			return "", 0, false
 		}
-		host = host[1 : len(host)-1]
-	} else if strings.Contains(host, ":") {
+	}
+	number, err := strconv.ParseUint(port, 10, 16)
+	if err != nil || number == 0 {
 		return "", 0, false
 	}
-	return host, int(value64), true
+	return host, int(number), true
 }
 
-// ControllerScope is controller_scope: "lan" for a wildcard listener,
-// "local" for loopback, otherwise "other".
+// ControllerScope classifies wildcard, loopback and other listener addresses.
 func ControllerScope(host string) string {
 	if host == "" || host == "0.0.0.0" || host == "::" {
 		return "lan"
 	}
-	if pystr.Lower(host) == "localhost" {
+	if strings.EqualFold(host, "localhost") {
 		return "local"
 	}
-	addr, ok := pyIPAddress(host)
-	if !ok {
+	address, err := netip.ParseAddr(host)
+	if err != nil {
 		return "other"
 	}
-	// Python 3.11.17's IPv6Address.is_loopback also checks an IPv4-mapped address.
-	plain := addr.WithZone("")
-	if plain.Is4In6() {
-		plain = plain.Unmap()
-	}
-	if plain.Is4() && plain.As4()[0] == 127 || plain == netip.IPv6Loopback() {
+	if address.WithZone("").Unmap().IsLoopback() {
 		return "local"
 	}
 	return "other"
 }
 
-// pyIPAddress is ipaddress.ip_address(text) for a string (zone kept).
-func pyIPAddress(text string) (netip.Addr, bool) {
-	if addr, ok := parseIPv4(text); ok {
-		return addr, true
+// SniffPortInvalid validates a scalar port or textual inclusive port range.
+func SniffPortInvalid(node *yamlx.Node) bool {
+	if value, ok := integerPort(node); ok {
+		return value < 1 || value > 65535
 	}
-	addr, ok := parseIPv6(text)
-	if !ok {
-		return netip.Addr{}, false
-	}
-	if i := strings.IndexByte(text, '%'); i >= 0 {
-		addr = addr.WithZone(text[i+1:])
-	}
-	return addr, true
-}
-
-// pyIPAddressValue is ipaddress.ip_address(value) for any value; ok false
-// for Python's TypeError/ValueError.
-func pyIPAddressValue(value any) (netip.Addr, bool) {
-	switch x := value.(type) {
-	case string:
-		return pyIPAddress(x)
-	case bool:
-		if x {
-			return netip.AddrFrom4([4]byte{0, 0, 0, 1}), true
-		}
-		return netip.AddrFrom4([4]byte{}), true
-	case jsonx.Number:
-		if !x.IsInt() {
-			return netip.Addr{}, false
-		}
-		n, _ := x.BigInt()
-		if n.Sign() < 0 {
-			return netip.Addr{}, false
-		}
-		if n.BitLen() <= 32 {
-			v := n.Uint64()
-			return netip.AddrFrom4([4]byte{byte(v >> 24), byte(v >> 16), byte(v >> 8), byte(v)}), true
-		}
-		if n.BitLen() <= 128 {
-			var b [16]byte
-			n.FillBytes(b[:])
-			return netip.AddrFrom16(b), true
-		}
-	}
-	return netip.Addr{}, false
-}
-
-func listenPort(value any) int {
-	_, port, ok := splitHostPort(value)
-	if !ok {
-		return 0
-	}
-	return port
-}
-
-type portOwner struct {
-	port  string // canonical int text
-	owner string
-}
-
-func isExactInt(v any) (jsonx.Number, bool) {
-	n, ok := v.(jsonx.Number)
-	return n, ok && n.IsInt()
-}
-
-func intBetween(n jsonx.Number, low, high int64) bool {
-	v, ok := n.Int64()
-	return ok && v >= low && v <= high
-}
-
-func portOwners(document *jsonx.Object) []portOwner {
-	var owners []portOwner
-	for _, k := range BaseInboundPortKeys {
-		if n, ok := isExactInt(document.Value(k)); ok && intBetween(n, 1, 65535) {
-			owners = append(owners, portOwner{n.String(), k})
-		}
-	}
-	if port := listenPort(document.Value("external-controller")); port != 0 {
-		owners = append(owners, portOwner{jsonx.Int(port).String(), "external-controller"})
-	}
-	if dns, ok := document.Value("dns").(*jsonx.Object); ok && dns.GetOr("enable", true) != false {
-		if port := listenPort(dns.Value("listen")); port != 0 {
-			owners = append(owners, portOwner{jsonx.Int(port).String(), "dns.listen"})
-		}
-	}
-	if listeners, ok := document.Value("listeners").([]any); ok {
-		for _, item := range listeners {
-			obj, ok := item.(*jsonx.Object)
-			if !ok || jsonx.Equal(obj.Value("name"), RegionProbeListener) {
-				continue
-			}
-			n, ok := isExactInt(obj.Value("port"))
-			if !ok {
-				continue
-			}
-			name := obj.Value("name")
-			if !jsonx.Truthy(name) {
-				name = "未命名"
-			}
-			owners = append(owners, portOwner{n.String(), "listeners（" + fstr(name) + "）"})
-		}
-	}
-	return owners
-}
-
-func checkTypes(document *jsonx.Object, changed func([]string) bool) {
-	for _, b := range baseBooleans {
-		value := getPath(document, b.path)
-		if _, isBool := value.(bool); changed(b.path) && value != missing && !isBool {
-			baseError(b.label + " 只能填写 true 或 false，不要加引号")
-		}
-	}
-	for _, s := range baseIntegers {
-		value := getPath(document, s.path)
-		if changed(s.path) && value != missing {
-			if n, ok := isExactInt(value); !ok || !intBetween(n, s.low, s.high) {
-				baseError(s.label + " 需为 " + jsonx.Int(s.low).String() + "–" + jsonx.Int(s.high).String() + " 的整数")
-			}
-		}
-	}
-	fingerprint := []string{"global-client-fingerprint"}
-	if changed(fingerprint) && getPath(document, fingerprint) != missing {
-		baseError(RemovedFingerprint)
-	}
-	for _, e := range baseEnums {
-		value := getPath(document, e.path)
-		if !changed(e.path) || value == missing {
-			continue
-		}
-		if _, isBool := value.(bool); isBool && e.path[0] == "find-process-mode" {
-			continue
-		}
-		text, ok := value.(string)
-		if !ok || !inStrings(pystr.Lower(pystr.Strip(text)), e.options...) {
-			baseError(e.label + " 只能是 " + strings.Join(e.options, " / ") + " 之一")
-		}
-	}
-	for _, l := range baseStringLists {
-		value := getPath(document, l.path)
-		if changed(l.path) && value != missing && value != nil {
-			list, ok := value.([]any)
-			valid := ok
-			if ok {
-				for _, item := range list {
-					s, isString := item.(string)
-					if !isString || pystr.Strip(s) == "" {
-						valid = false
-						break
-					}
-				}
-			}
-			if !valid {
-				baseError(l.label + " 需为文本列表，每行一项，不能有空项")
-			}
-		}
-	}
-	for _, t := range baseTexts {
-		value := getPath(document, t.path)
-		if changed(t.path) && value != missing {
-			s, ok := value.(string)
-			if !ok || pystr.Strip(s) == "" {
-				baseError(t.label + " 需为非空文本；不需要时删除该项")
-			}
-		}
-	}
-}
-
-// SniffPortError is sniff_port_error: true unless value is a port (80) or a
-// range ("8080-8880") of ports 1–65535.
-func SniffPortError(value any) (bad bool, err error) {
-	defer catch(&err)
-	return sniffPortError(value), nil
-}
-
-func sniffPortError(value any) bool {
-	if n, ok := isExactInt(value); ok {
-		return !intBetween(n, 1, 65535)
-	}
-	text, ok := value.(string)
+	text, ok := textNode(node)
 	if !ok {
 		return true
 	}
-	low, high, separator := strings.Cut(pystr.Strip(text), "-")
-	low = pystr.Strip(low)
-	if separator {
-		high = pystr.Strip(high)
-	} else {
+	low, high, found := strings.Cut(strings.TrimSpace(text), "-")
+	if !found {
 		high = low
 	}
-	if !pyIsDigit(low) || !pyIsDigit(high) {
+	parse := func(text string) (uint64, error) {
+		text = strings.TrimSpace(text)
+		if text == "" {
+			return 0, fmt.Errorf("empty port")
+		}
+		for _, r := range text {
+			if r < '0' || r > '9' {
+				return 0, fmt.Errorf("invalid port")
+			}
+		}
+		return strconv.ParseUint(text, 10, 16)
+	}
+	first, err := parse(low)
+	if err != nil {
 		return true
 	}
-	l, lowFits := pyIntOf(low).Int64()
-	h, highFits := pyIntOf(high).Int64()
-	return !(lowFits && highFits && 1 <= l && l <= h && h <= 65535)
+	last, err := parse(high)
+	return err != nil || first < 1 || last < first
 }
-
-func checkFakeRange(document *jsonx.Object, changed func([]string) bool) {
-	path := []string{"dns", "fake-ip-range"}
-	value := getPath(document, path)
-	if !changed(path) || value == missing {
-		return
-	}
-	invalid := false
-	if text, ok := value.(string); !ok {
-		invalid = true
-	} else {
-		hook := currentHooks().FakeIPNetworkError
-		if hook == nil {
-			raise(&HookMissingError{Hook: "fake_ip_network", Provider: gatewayProvider})
+func checkBaseTypes(doc *yamlx.Node, changed func([]string) bool) error {
+	for _, setting := range baseBooleans {
+		value := basePath(doc, setting.path)
+		if value != nil && changed(setting.path) {
+			if _, ok := boolNode(value); !ok {
+				return baseFailure(fmt.Sprintf(msgBaseBoolean, setting.label))
+			}
 		}
-		invalid = hook(text) != nil
 	}
-	if invalid {
-		baseError("dns.fake-ip-range 需为 IPv4 网段（/8 至 /30），例如 198.18.0.1/16，" +
-			"不能是回环、多播或链路本地地址")
+	for _, setting := range baseIntegers {
+		value := basePath(doc, setting.path)
+		if value != nil && changed(setting.path) {
+			n, ok := integerPort(value)
+			if !ok || n < setting.low || n > setting.high {
+				return baseFailure(fmt.Sprintf(msgBaseInteger, setting.label, setting.low, setting.high))
+			}
+		}
 	}
+	path := []string{"global-client-fingerprint"}
+	if changed(path) && basePath(doc, path) != nil {
+		return baseFailure(RemovedFingerprint)
+	}
+	for _, setting := range baseEnums {
+		value := basePath(doc, setting.path)
+		if !changed(setting.path) || value == nil {
+			continue
+		}
+		if setting.path[0] == "find-process-mode" {
+			if _, ok := boolNode(value); ok {
+				continue
+			}
+		}
+		text, ok := textNode(value)
+		if !ok || !slices.Contains(setting.options, strings.ToLower(strings.TrimSpace(text))) {
+			return baseFailure(fmt.Sprintf(msgBaseEnum, setting.label, strings.Join(setting.options, " / ")))
+		}
+	}
+	for _, setting := range baseStringLists {
+		value := basePath(doc, setting.path)
+		if !changed(setting.path) || value == nil || nullNode(value) {
+			continue
+		}
+		items, ok := sequenceNode(value)
+		if !ok {
+			return baseFailure(fmt.Sprintf(msgBaseList, setting.label))
+		}
+		for _, item := range items {
+			text, ok := textNode(item)
+			if !ok || strings.TrimSpace(text) == "" {
+				return baseFailure(fmt.Sprintf(msgBaseList, setting.label))
+			}
+		}
+	}
+	for _, setting := range baseTexts {
+		value := basePath(doc, setting.path)
+		if changed(setting.path) && value != nil {
+			text, ok := textNode(value)
+			if !ok || strings.TrimSpace(text) == "" {
+				return baseFailure(fmt.Sprintf(msgBaseText, setting.label))
+			}
+		}
+	}
+	return nil
 }
-
-func checkSniff(document *jsonx.Object, changed func([]string) bool) {
-	sniff := getPath(document, []string{"sniffer", "sniff"})
-	if sniff == missing || sniff == nil {
-		return
+func checkBaseSniff(doc *yamlx.Node, changed func([]string) bool) error {
+	path := []string{"sniffer", "sniff"}
+	node := basePath(doc, path)
+	if node == nil || nullNode(node) {
+		return nil
 	}
-	obj, ok := sniff.(*jsonx.Object)
-	if !ok {
-		if changed([]string{"sniffer", "sniff"}) {
-			baseError("sniffer.sniff 需为对象，按协议 HTTP / TLS / QUIC 分别填写")
+	if node.Kind != yaml.MappingNode {
+		if changed(path) {
+			return baseFailure(msgBaseSniffObject)
 		}
-		return
+		return nil
 	}
-	for k, item := range obj.All() {
-		if !inStrings(pystr.Upper(k), SniffProtocols...) {
-			if changed([]string{"sniffer", "sniff"}) {
-				baseError("sniffer.sniff 只支持 HTTP / TLS / QUIC，「" + k + "」无法识别，Mihomo 会拒绝加载")
+	for key, item := range yamlx.Pairs(node) {
+		if !slices.Contains(SniffProtocols, strings.ToUpper(key)) {
+			if changed(path) {
+				return baseFailure(fmt.Sprintf(msgBaseSniffProtocol, key))
 			}
 			continue
 		}
-		if !changed([]string{"sniffer", "sniff", k}) {
+		if !changed([]string{"sniffer", "sniff", key}) {
 			continue
 		}
-		var ports any
-		itemObj, isObj := item.(*jsonx.Object)
-		if isObj {
-			ports = itemObj.Value("ports")
+		ports, ok := sequenceNode(yamlx.Get(item, "ports"))
+		if !ok || len(ports) == 0 {
+			return baseFailure(fmt.Sprintf(msgBaseSniffPorts, key, SniffPortsHint))
 		}
-		list, isList := ports.([]any)
-		bad := !isList || len(list) == 0
-		if !bad {
-			for _, port := range list {
-				if sniffPortError(port) {
-					bad = true
-					break
-				}
+		for _, port := range ports {
+			if SniffPortInvalid(port) {
+				return baseFailure(fmt.Sprintf(msgBaseSniffPorts, key, SniffPortsHint))
 			}
 		}
-		if bad {
-			baseError("sniffer.sniff." + k + ".ports：" + SniffPortsHint)
-		}
-		override := missing
-		if isObj {
-			if v, present := itemObj.Get("override-destination"); present {
-				override = v
+		if value := yamlx.Get(item, "override-destination"); value != nil {
+			if _, ok := boolNode(value); !ok {
+				return baseFailure(fmt.Sprintf(msgBaseSniffOverride, key))
 			}
 		}
-		if _, isBool := override.(bool); override != missing && !isBool {
-			baseError("sniffer.sniff." + k + ".override-destination 只能填写 true 或 false，不要加引号")
-		}
 	}
+	return nil
 }
-
-func checkController(document *jsonx.Object, changed func([]string) bool) {
-	controllerPath := []string{"external-controller"}
-	secretPath := []string{"secret"}
-	controller := getPath(document, controllerPath)
-	exposed := false
-	if controller != missing && controller != nil {
-		host, _, parsed := splitHostPort(controller)
-		if changed(controllerPath) && !parsed {
-			baseError("external-controller 需写成「地址:端口」，例如 0.0.0.0:9090 或 127.0.0.1:9090，端口 1–65535")
-		}
-		scope := "other"
-		if parsed {
-			scope = ControllerScope(host)
-		}
-		if changed(controllerPath) && scope == "other" {
-			baseError("external-controller 只能监听 0.0.0.0 / ::（局域网可访问）或 127.0.0.1 / ::1（仅本机）：" +
-				"Agent 经本机回环地址读取连接、流量并热重载配置，监听其他地址时这些功能不可用")
-		}
-		exposed = scope != "local"
+func controllerSecretMessage(secret string) string {
+	if secret == "123456" {
+		return msgTemplateSecret
 	}
-	secret := getPath(document, secretPath)
-	if _, isString := secret.(string); secret != missing && secret != nil && !isString {
-		if changed(secretPath) {
-			baseError("控制面板密码（secret）必须是文本，纯数字等请加引号")
-		}
-		secret = missing
-	}
-	if !(changed(secretPath) || changed(controllerPath)) {
-		return
-	}
-	empty := secret == missing || secret == nil || secret == ""
-	if exposed {
-		if empty {
-			baseError("控制面板对局域网开放（external-controller 监听所有地址）时必须设置控制面板密码（secret）")
-		}
-		if message := controllerSecretError(secret); message != "" {
-			baseError(message)
-		}
-	} else if changed(secretPath) && !empty {
-		if message := controllerSecretError(secret); message != "" {
-			baseError(message)
-		}
-	}
-}
-
-func checkAccess(document *jsonx.Object, changed func([]string) bool) {
-	urlPath := []string{"external-ui-url"}
-	url := getPath(document, urlPath)
-	if changed(urlPath) && url != missing {
-		valid := false
-		if text, ok := url.(string); ok {
-			if parts, err := weburl.Parse(text); err == nil {
-				valid = (parts.Scheme == "http" || parts.Scheme == "https") && parts.Hostname() != ""
-			}
-		}
-		if !valid {
-			baseError("external-ui-url 需为 http(s) 下载地址，例如 https://github.com/…/gh-pages.zip")
-		}
-	}
-	bindPath := []string{"bind-address"}
-	bind := getPath(document, bindPath)
-	if changed(bindPath) && bind != missing {
-		text := ""
-		if s, ok := bind.(string); ok {
-			text = strings.Trim(pystr.Strip(s), "[]")
-		}
-		valid := text == "*"
-		if !valid {
-			_, valid = pyIPAddress(text)
-		}
-		if !valid {
-			baseError("bind-address 只能填写 *（所有地址）或本机的一个 IP 地址")
-		}
-	}
-}
-
-func checkPorts(document *jsonx.Object, changed func([]string) bool, reserved map[int]string) {
-	paths := [][]string{}
-	for _, k := range BaseInboundPortKeys {
-		paths = append(paths, []string{k})
-	}
-	paths = append(paths, []string{"external-controller"}, []string{"dns", "listen"}, []string{"dns", "enable"}, []string{"listeners"})
-	pathChanged := false
-	for _, p := range paths {
-		if changed(p) {
-			pathChanged = true
+	valid := utf8.RuneCountInString(secret) >= 8 && utf8.RuneCountInString(secret) <= 64
+	for _, r := range secret {
+		if r < '!' || r > '~' {
+			valid = false
 			break
 		}
 	}
-	if !pathChanged {
-		return
+	if !valid {
+		return msgControllerSecret
 	}
-	seen := map[string]string{}
-	for _, item := range portOwners(document) {
-		if owner, ok := seen[item.port]; ok {
-			baseError("端口 " + item.port + " 同时被 " + owner + " 和 " + item.owner + " 使用，请改用不同端口")
+	return ""
+}
+func checkBaseController(doc *yamlx.Node, changed func([]string) bool) error {
+	cp, sp := []string{"external-controller"}, []string{"secret"}
+	controller := basePath(doc, cp)
+	secret := basePath(doc, sp)
+	exposed := false
+	if controller != nil && !nullNode(controller) {
+		text, _ := textNode(controller)
+		host, _, ok := ParseListener(text)
+		if changed(cp) && !ok {
+			return baseFailure(msgBaseController)
 		}
-		seen[item.port] = item.owner
-		n, _ := jsonx.ParseNumber(item.port)
-		if v, ok := n.Int64(); ok {
-			if description, ok := reserved[int(v)]; ok {
-				baseError(item.owner + " 使用端口 " + item.port + "，与" + description + "冲突，请改用其他端口")
+		scope := "other"
+		if ok {
+			scope = ControllerScope(host)
+		}
+		if changed(cp) && scope == "other" {
+			return baseFailure(msgBaseControllerScope)
+		}
+		exposed = scope != "local"
+	}
+	text, isText := textNode(secret)
+	if secret != nil && !nullNode(secret) && !isText {
+		if changed(sp) {
+			return baseFailure(msgBaseSecretType)
+		}
+		secret = nil
+	}
+	if !changed(sp) && !changed(cp) {
+		return nil
+	}
+	empty := secret == nil || nullNode(secret) || text == ""
+	if exposed && empty {
+		return baseFailure(msgBaseSecretRequired)
+	}
+	if exposed || (changed(sp) && !empty) {
+		if message := controllerSecretMessage(text); message != "" {
+			return baseFailure(message)
+		}
+	}
+	return nil
+}
+func checkBaseAccess(doc *yamlx.Node, changed func([]string) bool) error {
+	path := []string{"external-ui-url"}
+	node := basePath(doc, path)
+	if changed(path) && node != nil {
+		value, ok := textNode(node)
+		if !ok {
+			return baseFailure(msgBaseUIURL)
+		}
+		url, err := weburl.Parse(value)
+		if err != nil || (url.Scheme != "http" && url.Scheme != "https") || url.Hostname() == "" {
+			return baseFailure(msgBaseUIURL)
+		}
+	}
+	path = []string{"bind-address"}
+	node = basePath(doc, path)
+	if changed(path) && node != nil {
+		value, ok := textNode(node)
+		value = strings.Trim(strings.TrimSpace(value), "[]")
+		_, err := netip.ParseAddr(value)
+		if !ok || (value != "*" && err != nil) {
+			return baseFailure(msgBaseBind)
+		}
+	}
+	return nil
+}
+
+type basePortOwner struct {
+	port  int64
+	owner string
+}
+
+func basePorts(doc *yamlx.Node) []basePortOwner {
+	var result []basePortOwner
+	for _, key := range BaseInboundPortKeys {
+		if value, ok := integerPort(yamlx.Get(doc, key)); ok && value >= 1 && value <= 65535 {
+			result = append(result, basePortOwner{value, key})
+		}
+	}
+	appendListener := func(node *yamlx.Node, owner string) {
+		text, _ := textNode(node)
+		if _, port, ok := ParseListener(text); ok {
+			result = append(result, basePortOwner{int64(port), owner})
+		}
+	}
+	appendListener(yamlx.Get(doc, "external-controller"), "external-controller")
+	dns := yamlx.Get(doc, "dns")
+	enable, valid := boolNode(yamlx.Get(dns, "enable"))
+	if !valid || enable {
+		appendListener(yamlx.Get(dns, "listen"), "dns.listen")
+	}
+	if listeners, ok := sequenceNode(yamlx.Get(doc, "listeners")); ok {
+		for _, listener := range listeners {
+			name, _ := textNode(yamlx.Get(listener, "name"))
+			if name == RegionProbeListener {
+				continue
+			}
+			if port, ok := integerPort(yamlx.Get(listener, "port")); ok {
+				if name == "" {
+					name = msgBaseUnnamed
+				}
+				result = append(result, basePortOwner{port, fmt.Sprintf(msgBaseListener, name)})
 			}
 		}
 	}
+	return result
 }
-
-func checkDNS(document *jsonx.Object, changed func([]string) bool, hostAddresses []netip.Addr) {
-	dns, ok := document.Value("dns").(*jsonx.Object)
-	if !ok {
-		return
+func checkBasePorts(doc *yamlx.Node, changed func([]string) bool, reserved map[int]string) error {
+	paths := [][]string{{"external-controller"}, {"dns", "listen"}, {"dns", "enable"}, {"listeners"}}
+	for _, key := range BaseInboundPortKeys {
+		paths = append(paths, []string{key})
+	}
+	edited := false
+	for _, path := range paths {
+		if changed(path) {
+			edited = true
+			break
+		}
+	}
+	if !edited {
+		return nil
+	}
+	seen := map[int64]string{}
+	for _, item := range basePorts(doc) {
+		if owner, ok := seen[item.port]; ok {
+			return baseFailure(fmt.Sprintf(msgBasePortDuplicate, item.port, owner, item.owner))
+		}
+		seen[item.port] = item.owner
+		if item.port >= 0 && uint64(item.port) <= uint64(^uint(0)>>1) {
+			if description, ok := reserved[int(item.port)]; ok {
+				return baseFailure(fmt.Sprintf(msgBasePortReserved, item.owner, item.port, description))
+			}
+		}
+	}
+	return nil
+}
+func checkBaseDNS(doc *yamlx.Node, changed func([]string) bool, hosts []netip.Addr) error {
+	dns := yamlx.Resolve(yamlx.Get(doc, "dns"))
+	if dns == nil || dns.Kind != yaml.MappingNode {
+		return nil
 	}
 	upstreamChanged := false
-	for _, p := range DNSUpstreamPaths {
-		if changed(p) {
+	for _, path := range DNSUpstreamPaths {
+		if changed(path) {
 			upstreamChanged = true
 			break
 		}
 	}
 	if upstreamChanged {
-		hook := currentHooks().MihomoDNSLoop
+		hook := currentIntegrations().DNSLoop
 		if hook == nil {
-			raise(&HookMissingError{Hook: "mihomo_dns_loop", Provider: onboardingProvide})
+			return &HookMissingError{Hook: "mihomo_dns_loop", Provider: onboardingProvide}
 		}
-		k, upstream, found, err := hook(dns, hostAddresses)
-		must(err)
+		key, upstream, found, err := hook(dns, hosts)
+		if err != nil {
+			return err
+		}
 		if found {
-			baseError("dns." + k + " 中的 " + fstr(upstream) + " 指向本机或系统 DNS，会形成解析循环；" +
-				"请改用外部 DNS，例如 https://223.5.5.5/dns-query")
+			return baseFailure(fmt.Sprintf(msgBaseDNSLoop, key, upstream))
 		}
 	}
-	if changed([]string{"dns", "nameserver"}) && dns.Value("enable") == true && !jsonx.Truthy(dns.Value("nameserver")) {
-		baseError("dns.nameserver 至少填写一个上游")
+	isEmpty := func(node *yamlx.Node) bool {
+		if node == nil || nullNode(node) {
+			return true
+		}
+		node = yamlx.Resolve(node)
+		if node.Kind == yaml.SequenceNode || node.Kind == yaml.MappingNode {
+			return len(node.Content) == 0
+		}
+		text, ok := textNode(node)
+		return ok && text == ""
 	}
-	if (changed([]string{"dns", "respect-rules"}) || changed([]string{"dns", "proxy-server-nameserver"})) &&
-		dns.Value("respect-rules") == true && !jsonx.Truthy(dns.Value("proxy-server-nameserver")) {
-		baseError("开启 dns.respect-rules 时必须填写 dns.proxy-server-nameserver，否则 Mihomo 无法启动")
-	}
-}
-
-// ValidateBaseSettings is validate_base_settings(document, previous,
-// reserved_ports=, local_addresses=): *BaseSettingsError for a value this
-// save changes that the form would reject. previous nil (or not a dict)
-// checks every value. reserved maps Agent ports to their description;
-// localAddresses are values passed to ipaddress.ip_address (invalid ones are
-// skipped).
-func ValidateBaseSettings(document, previous any, reserved map[int]string, localAddresses []any) (err error) {
-	defer catch(&err)
-	doc, ok := document.(*jsonx.Object)
-	if !ok || doc == nil {
-		return nil
-	}
-	prev, _ := previous.(*jsonx.Object)
-	changed := func(path []string) bool {
-		return prev == nil || !same(getPath(doc, path), getPath(prev, path))
-	}
-	var hosts []netip.Addr
-	seen := map[netip.Addr]bool{}
-	for _, value := range localAddresses {
-		if addr, ok := pyIPAddressValue(value); ok && !seen[addr] {
-			seen[addr] = true
-			hosts = append(hosts, addr)
+	if changed([]string{"dns", "nameserver"}) {
+		if enable, ok := boolNode(yamlx.Get(dns, "enable")); ok && enable && isEmpty(yamlx.Get(dns, "nameserver")) {
+			return baseFailure(msgBaseDNSRequired)
 		}
 	}
-	checkTypes(doc, changed)
-	checkFakeRange(doc, changed)
-	checkSniff(doc, changed)
-	checkController(doc, changed)
-	checkAccess(doc, changed)
-	if reserved == nil {
-		reserved = map[int]string{}
+	if changed([]string{"dns", "respect-rules"}) || changed([]string{"dns", "proxy-server-nameserver"}) {
+		if respect, ok := boolNode(yamlx.Get(dns, "respect-rules")); ok && respect && isEmpty(yamlx.Get(dns, "proxy-server-nameserver")) {
+			return baseFailure(msgBaseProxyDNSRequired)
+		}
 	}
-	checkPorts(doc, changed, reserved)
-	checkDNS(doc, changed, hosts)
 	return nil
 }
 
-// TakeoverMode is takeover_mode(config): who rewrites the TUN on publish —
-// "linux_gateway", "full_tun" (router split) or "" (None). A malformed
-// gateway setting is ignored (generation reports it); a missing hook fails
-// closed.
-func TakeoverMode(config *jsonx.Object) (string, error) {
-	enabled, err := gatewayEnabled(config)
-	if _, missingHook := err.(*HookMissingError); missingHook {
+// ValidateBaseNode checks changed editable settings, preserving existing invalid
+// fields until the user actually edits that field. All diagnostics are ordinary errors.
+func ValidateBaseNode(document, previous *yamlx.Node, reserved map[int]string, hosts []netip.Addr) error {
+	doc := yamlx.Resolve(document)
+	if doc == nil || doc.Kind != yaml.MappingNode {
+		return nil
+	}
+	if _, err := yamlx.Encode(doc); err != nil {
+		return err
+	}
+	if previous != nil {
+		if _, err := yamlx.Encode(previous); err != nil {
+			return err
+		}
+	}
+	changed := func(path []string) bool {
+		return previous == nil || !yamlx.Equal(basePath(doc, path), basePath(previous, path))
+	}
+	if err := checkBaseTypes(doc, changed); err != nil {
+		return err
+	}
+	path := []string{"dns", "fake-ip-range"}
+	if value := basePath(doc, path); value != nil && changed(path) {
+		text, ok := textNode(value)
+		if !ok {
+			return baseFailure(msgBaseFakeRange)
+		}
+		hook := currentIntegrations().FakeIPNetworkError
+		if hook == nil {
+			return &HookMissingError{Hook: "fake_ip_network", Provider: gatewayProvider}
+		}
+		if hook(text) != nil {
+			return baseFailure(msgBaseFakeRange)
+		}
+	}
+	if err := checkBaseSniff(doc, changed); err != nil {
+		return err
+	}
+	if err := checkBaseController(doc, changed); err != nil {
+		return err
+	}
+	if err := checkBaseAccess(doc, changed); err != nil {
+		return err
+	}
+	if err := checkBasePorts(doc, changed, reserved); err != nil {
+		return err
+	}
+	return checkBaseDNS(doc, changed, hosts)
+}
+
+// GatewayMode identifies gateway/full-TUN ownership of base settings.
+func GatewayMode(config *model.Config) (string, error) {
+	on, err := gatewayActive(config)
+	var missing *HookMissingError
+	if errors.As(err, &missing) {
 		return "", err
 	}
-	if err == nil && enabled {
+	if err == nil && on {
 		return "linux_gateway", nil
 	}
-	full, err := isFullTun(config)
+	full, err := fullTunActive(config)
 	if err != nil {
 		return "", err
 	}
@@ -729,109 +604,44 @@ func TakeoverMode(config *jsonx.Object) (string, error) {
 	return "", nil
 }
 
-// AgentSource is what agent_context reads: the repository's profile Agent
-// bindings and the Agent manager's records.
-type AgentSource interface {
-	// ProfileAgentIDs is [item['id'] for item in
-	// repository.get_profile_agent_bindings(profile_id)['agents']]; an error
-	// makes agent_context return nothing (Python catches every exception).
-	ProfileAgentIDs(profileID string) ([]any, error)
-	// AgentByID is manager.get_agent_by_id(id); nil for None.
-	AgentByID(id any) *jsonx.Object
-}
-
-// AgentContext is agent_context(repository, manager, profile_id): the ports
-// (port → description) and host addresses of the Agents next to this
-// profile's Mihomo. Docker Agents are skipped. Port keys are the int ports
-// that fit an int; hosts keep Python's values (strings).
-func AgentContext(source AgentSource, profileID string) (reserved map[int]string, order []int, hosts []any) {
-	reserved = map[int]string{}
-	ids, err := source.ProfileAgentIDs(profileID)
-	if err != nil {
-		return map[int]string{}, nil, []any{}
-	}
-	var agents []*jsonx.Object
-	for _, id := range ids {
-		agent := source.AgentByID(id)
-		if agent == nil || agent.Len() == 0 {
-			agent = jsonx.NewObject()
+// AgentPorts projects colocated non-Docker Agent listener ports and hosts.
+func AgentPorts(agents []model.Agent) (map[int]string, []int, []string) {
+	reserved := map[int]string{}
+	var order []int
+	hosts := []string{}
+	local := map[string]bool{}
+	for _, agent := range agents {
+		if agent.DeploymentMethod != "docker" && (agent.ServiceType == "" || agent.ServiceType == "mihomo") {
+			local[agent.Host] = true
 		}
-		if jsonx.Equal(agent.Value("deployment_method"), "docker") {
+	}
+	for _, agent := range agents {
+		if agent.DeploymentMethod == "docker" {
 			continue
 		}
-		agents = append(agents, agent)
-	}
-	serviceOf := func(agent *jsonx.Object) any {
-		if s := agent.Value("service_type"); jsonx.Truthy(s) {
-			return s
+		service := agent.ServiceType
+		if service == "" {
+			service = "mihomo"
 		}
-		return "mihomo"
-	}
-	var mihomoHosts []any
-	for _, agent := range agents {
-		if jsonx.Equal(serviceOf(agent), "mihomo") {
-			mihomoHosts = append(mihomoHosts, agent.Value("host"))
-		}
-	}
-	inList := func(list []any, v any) bool {
-		for _, item := range list {
-			if jsonx.Equal(item, v) {
-				return true
-			}
-		}
-		return false
-	}
-	hosts = []any{}
-	for _, agent := range agents {
-		service := serviceOf(agent)
-		if !jsonx.Equal(service, "mihomo") && !inList(mihomoHosts, agent.Value("host")) {
+		if service != "mihomo" && !local[agent.Host] {
 			continue
 		}
-		if n, ok := isExactInt(agent.Value("port")); ok {
-			name := agent.Value("name")
-			if !jsonx.Truthy(name) {
-				name = agent.Value("id")
-			}
+		port := int(agent.Port)
+		if _, ok := reserved[port]; !ok && port > 0 {
 			kind := "OxiDNS"
-			if jsonx.Equal(service, "mihomo") {
+			if service == "mihomo" {
 				kind = "Mihomo"
 			}
-			if v, fits := n.Int64(); fits {
-				if _, exists := reserved[int(v)]; !exists {
-					reserved[int(v)] = kind + " Agent「" + fstr(name) + "」的端口"
-					order = append(order, int(v))
-				}
+			name := agent.Name
+			if name == "" {
+				name = agent.ID
 			}
+			reserved[port] = fmt.Sprintf(msgBaseAgentPort, kind, name)
+			order = append(order, port)
 		}
-		if jsonx.Equal(service, "mihomo") && jsonx.Truthy(agent.Value("host")) && !inList(hosts, agent.Value("host")) {
-			hosts = append(hosts, agent.Value("host"))
+		if service == "mihomo" && agent.Host != "" && !slices.Contains(hosts, agent.Host) {
+			hosts = append(hosts, agent.Host)
 		}
 	}
 	return reserved, order, hosts
-}
-
-// templateSecret is setup_flow.TEMPLATE_SECRET.
-const templateSecret = "123456"
-
-// controllerSecretError is setup_flow.controller_secret_error (C36).
-// TODO(port): replace with the C36 setup_flow export when it lands.
-func controllerSecretError(value any) string {
-	if value == templateSecret {
-		return "不能使用初始模板的默认密码 123456，请自己设置一个"
-	}
-	text, ok := value.(string)
-	if ok {
-		runes := []rune(text)
-		ok = len(runes) >= 8 && len(runes) <= 64
-		for _, r := range runes {
-			if r < '!' || r > '~' {
-				ok = false
-				break
-			}
-		}
-	}
-	if !ok {
-		return "控制面板密码需为 8–64 个字母、数字或符号，不含空格"
-	}
-	return ""
 }

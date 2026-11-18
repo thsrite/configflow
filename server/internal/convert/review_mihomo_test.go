@@ -102,6 +102,17 @@ func TestMihomoReviewBoundaryReferences(t *testing.T) {
 					return
 				}
 			}
+			// PORTING: CPython-only decimal digit spellings are not reimplemented.
+			if name := entry.GetString("case"); name == "sniff-ports-['１-６５５３５']" || name == "sniff-ports-['²']" {
+				args := entry.GetList("args")
+				err := convert.ValidateBaseSettings(args[0], args[1], nil, nil)
+				var validation *convert.BaseSettingsError
+				want := "sniffer.sniff.HTTP.ports：" + convert.SniffPortsHint
+				if !errors.As(err, &validation) || err.Error() != want {
+					t.Fatalf("native port validation: %v", err)
+				}
+				return
+			}
 			if msg := runMihomoReviewBoundary(t, readers.row(t, "review_mihomo.jsonl.gz", index, rowOf(entry)), oracle); msg != "" {
 				t.Fatal(msg)
 			}

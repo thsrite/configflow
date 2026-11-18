@@ -110,7 +110,8 @@ func CurrentMihomoEnv() MihomoEnv {
 
 // RegisterMihomoHooks sets the non-nil fields of hooks and returns a function
 // that restores the previous hooks (for tests).
-func RegisterMihomoHooks(hooks MihomoHooks) (restore func()) {
+func RegisterMihomoHooks(hooks MihomoHooks) func() {
+	restoreNative := registerLegacyMihomoHooks(hooks)
 	mihomoMu.Lock()
 	previous := mihomoHooks
 	if hooks.ApplyLinuxGateway != nil {
@@ -129,11 +130,7 @@ func RegisterMihomoHooks(hooks MihomoHooks) (restore func()) {
 		mihomoHooks.IsFullTun = hooks.IsFullTun
 	}
 	mihomoMu.Unlock()
-	return func() {
-		mihomoMu.Lock()
-		mihomoHooks = previous
-		mihomoMu.Unlock()
-	}
+	return func() { restoreNative(); mihomoMu.Lock(); mihomoHooks = previous; mihomoMu.Unlock() }
 }
 
 func currentHooks() MihomoHooks {
