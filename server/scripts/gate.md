@@ -73,3 +73,22 @@ cd server
 PYTHONDONTWRITEBYTECODE=1 python scripts/test-gate-live.py
 bash -n scripts/gate.sh scripts/gate-test-exec.sh
 ```
+
+## Cache concurrency verification
+
+The installed server toolchain (`go1.27.4-X:nodwarf5 linux/amd64`) was inspected:
+`src/cmd/go/internal/clean/clean.go` uses `lockedfile.Edit(testexpire.txt)` and
+only advances its nanosecond expiration value. `src/cmd/go/internal/test/test.go`
+uses `lockedfile.Read` of that file and treats older entries as misses. Cleaning
+neither removes test binaries nor mutates another test's working directory.
+This confirms the intended concurrency effect: extra misses/re-execution, not a
+corrupted result or cancellation of another gate. The shared-cache consequence
+is deliberate and approved; slots still bound expensive gate execution.
+
+Routing regression controls additionally cover missing/stale/future timestamps,
+forced full, real shell stage selection, no timestamp on failure, fingerprint
+propagation/failure/fallback, compare's response-cache bypass, and invalid stages:
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 python scripts/test-gate-routing.py
+```
