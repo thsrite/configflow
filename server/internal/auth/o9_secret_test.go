@@ -9,6 +9,8 @@ import (
 )
 
 func TestO9FromEnvReplacesUnsafeSigningKeys(t *testing.T) {
+	t.Setenv("ADMIN_USERNAME", "synthetic-admin")
+	t.Setenv("ADMIN_PASSWORD", "synthetic-password")
 	tests := []struct{ name, value, reason string }{
 		{"unset", "", msgJWTSecretUnset},
 		{"compose-placeholder", "your-unique-secret-key-at-least-32-chars", msgJWTSecretPlaceholder},
@@ -62,5 +64,47 @@ func TestO9FromEnvReplacesUnsafeSigningKeys(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestO9SigningKeyWarningOnlyWhenLoginEnabled(t *testing.T) {
+	for _, credentials := range []struct {
+		name, username, password string
+		warning                  bool
+	}{
+		{"disabled", "", "", false},
+		{"username-only", "synthetic-admin", "", false},
+		{"password-only", "", "synthetic-password", false},
+		{"enabled", "synthetic-admin", "synthetic-password", true},
+	} {
+		for _, key := range []struct{ name, value string }{
+			{"unset", ""}, {"placeholder", "your-unique-secret-key-at-least-32-chars"}, {"short", "synthetic-short-key"},
+		} {
+			t.Run(credentials.name+"/"+key.name, func(t *testing.T) {
+				t.Setenv("ADMIN_USERNAME", credentials.username)
+				t.Setenv("ADMIN_PASSWORD", credentials.password)
+				t.Setenv("JWT_SECRET_KEY", key.value)
+				var output bytes.Buffer
+				root, err := logx.Setup(logx.Config{Level: logx.Warning, Console: &output})
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer root.Close()
+				first, second := FromEnv(), FromEnv()
+				if len(first.SecretKey) < 32 || first.SecretKey == key.value || first.SecretKey == second.SecretKey {
+					t.Fatal("unsafe key policy changed when logging was disabled")
+				}
+				if credentials.warning {
+					if !strings.Contains(output.String(), "WARNING") {
+						t.Fatal("enabled login must warn about a temporary signing key")
+					}
+				} else if output.Len() != 0 {
+					t.Fatalf("disabled login emitted a misleading login warning: %s", output.String())
+				}
+				if first.AdminUsername != credentials.username || first.AdminPassword != credentials.password {
+					t.Fatal("login settings changed")
+				}
+			})
+		}
 	}
 }

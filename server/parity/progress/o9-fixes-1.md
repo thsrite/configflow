@@ -14,7 +14,7 @@
 - L5：Edge 响应及 App 的 `text/*` 响应增加 `X-Content-Type-Options: nosniff`，覆盖静态错误、规则/规则库文本、配置订阅和 HEAD。
 - L6：认证门禁从 profile hook 之后移到之前。匿名受保护请求统一 401、不带 profile 回显；已登录/公开/关闭认证时 profile 校验不变。冻结 Python corpus 不改，通过明确的新 401 期望核对；live HTTP 差分独立断言 Python 原 404 与 Go 新 401 的完整 JSON。
 - H1：只向自身 scheme/host/port 的 Origin 添加 CORS；无 Origin、foreign、null、格式错误时没有 CORS 头。Edge 用进程内 context 保存改写前来源，不使用客户端 X-Forwarded-*。CORS 不拒绝请求、不改变状态码/正文；反代改写 Host/终止 TLS 的 POST/PUT 仍按原 handler 返回。
-- M3：未设置、compose/安装文档占位值、少于 32 字节的 JWT_SECRET_KEY 均换为随机密钥并 WARNING（原因、正式密钥设置办法，不含密钥）。恰好 32 字节、Unicode 字节长度、正常密钥均覆盖；旧 token 对临时密钥重启失效，对固定正式密钥重启仍有效。
+- M3：未设置、compose/安装文档占位值、少于 32 字节的 JWT_SECRET_KEY 均换为随机密钥，仅在用户名和密码都已设置、开启登录时 WARNING（原因、正式密钥设置办法，不含密钥；复核 R5）。恰好 32 字节、Unicode 字节长度、正常密钥均覆盖；旧 token 对临时密钥重启失效，对固定正式密钥重启仍有效。
 - `behaviour-changes.md` 已登记 O12；`doc/guide/install.md` 与 compose 注释说明随机正式密钥和重启登录影响。没有 UI 改动，无需新截图。
 
 ## 新增文件
@@ -25,7 +25,7 @@
 | `internal/httpx/o9_fixes_test.go` | 236 |
 | `internal/httpx/httpxtest/security.go` | 59 |
 | `internal/httpx/httpxtest/security_test.go` | 45 |
-| `internal/auth/o9_secret_test.go` | 66 |
+| `internal/auth/o9_secret_test.go` | 110 |
 | `cmd/configflow/o9_body_limit_test.go` | 49 |
 | `tools/security_headers.py` | 22 |
 
@@ -79,4 +79,20 @@ RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && go test -race -count=
 
 ## 交回
 
-分支 `go-fix-o9-medium`；提交为本报告所在的 `go(httpx): harden O9 request and authentication boundaries`（最终回信提供完整提交 ID）。无新依赖、无未完成事项。协调者负责集成与推送。
+分支 `go-fix-o9-medium`；初次提交为 `70e08ff998bc243e771847cabc3813505c4c4bc0`；复核 R5/R6 在此基础上追加，见下节（交回消息提供追加提交 ID）。无新依赖、无未完成事项。协调者负责集成与推送。
+
+
+## O9 修复复核 R5/R6 追加
+
+- 在原分支、原提交 `70e08ff998bc243e771847cabc3813505c4c4bc0` 上追加。
+- R5：`FromEnv` 使用本次环境中的用户名和密码判断是否开启登录；均非空时才打印临时签名密钥警告。未开启登录/只设置用户名/只设置密码时不打印，生成随机密钥的安全策略不变。新增 4 种认证配置 × 3 种不安全密钥（未设置/占位值/短值）的 12 个用例；原密钥轮换测试明确启用登录。
+- 修复前：`.32` 的 `go test -race -count=1 -run "^TestO9SigningKeyWarningOnlyWhenLoginEnabled$" ./internal/auth` 退出 1，未登录和单项凭据的 9 个用例均打印了误导 warning。
+- R6：已核对 `clients.FixedIPService.signer`、`FixedIPToken.Verify`、`Apply` 和前端预览/确认流程：这是 10 分钟操作确认令牌，不是持久 DHCP 绑定。轮换密钥后旧预览提交为 409，消息为「固定 IP 预览无效或已过期，请重新预览确认。」；校验先于路由器写入，已应用绑定、设备记录和客户端联网不受影响。恢复方法是设置并保留正式随机密钥，重启后按需重新登录，重新载入来源设备并重新预览、确认。安装文档、compose 注释及 O12 均已补充，未修改固定 IP 业务代码。
+- 追加验证（均 `.32`）：
+
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && test -z "$(gofmt -l internal/auth)" && go vet ./... && go test -race -count=1 ./internal/auth ./internal/api/auth && go test -race -count=1 -run "^TestR17HTTPRoutes$|^TestR17.*Expired" ./internal/api/clientdevices'
+RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && go test -race -count=1 -run "^TestR17SetupGuardAndExpiry$" ./internal/api/clientdevices'
+```
+
+gofmt 无输出、vet 通过；`ok configflow/internal/auth 3.454s`、`ok configflow/internal/api/auth 1.317s`、`ok configflow/internal/api/clientdevices 2.590s`（真实 HTTP 新增/删除绑定流程）。第二条精确选取预览过期/向导门禁回归，`ok configflow/internal/api/clientdevices 1.536s`。未重跑完整门禁或 compare。

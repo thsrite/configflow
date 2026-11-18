@@ -51,8 +51,10 @@ var current atomic.Pointer[Config]
 func init() { current.Store(&Config{SecretKey: randomSecret()}) }
 
 // FromEnv reads login settings, replacing missing, example or short signing
-// keys with a fresh per-process secret and a warning that never includes the key.
+// keys with a fresh per-process secret. Login-enabled deployments receive a
+// warning that never includes the key.
 func FromEnv() Config {
+	username, password := os.Getenv("ADMIN_USERNAME"), os.Getenv("ADMIN_PASSWORD")
 	secret := os.Getenv("JWT_SECRET_KEY")
 	reason := ""
 	switch {
@@ -65,11 +67,13 @@ func FromEnv() Config {
 	}
 	if reason != "" {
 		secret = randomSecret()
-		logx.Get("backend.common.auth").Warningf(msgJWTSecretRandom, reason)
+		if username != "" && password != "" {
+			logx.Get("backend.common.auth").Warningf(msgJWTSecretRandom, reason)
+		}
 	}
 	return Config{
-		AdminUsername: os.Getenv("ADMIN_USERNAME"),
-		AdminPassword: os.Getenv("ADMIN_PASSWORD"),
+		AdminUsername: username,
+		AdminPassword: password,
 		SecretKey:     secret,
 	}
 }
