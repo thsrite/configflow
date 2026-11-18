@@ -82,14 +82,36 @@ func fileExists(path string) bool {
 // unambiguous legacy caches offline. library is the library to disambiguate
 // legacy names against (nil: use stored); stored is
 // the current shared rule_library from the repository.
-func CacheReadPath(rule model.RuleConfig, library, stored []model.RuleLibraryItem, rulesDir string) string {
+// An empty result means a receipt or path boundary forbids reading the cache.
+func CacheReadPath(rule model.RuleConfig, library, stored []model.RuleLibraryItem, rulesDir string) (selected string) {
+	defer func() {
+		// Names are sanitized/hashes, but an existing cache or namespace can
+		// still be a symlink. Never lend bytes from outside the rules root to
+		// a matcher or to the one-time migration writer.
+		resolved, err := filepath.EvalSymlinks(selected)
+		if err != nil {
+			if !errors.Is(err, os.ErrNotExist) {
+				selected = ""
+			}
+			return
+		}
+		root, err := filepath.EvalSymlinks(rulesDir)
+		if err != nil {
+			selected = ""
+			return
+		}
+		relative, err := filepath.Rel(root, resolved)
+		if err != nil || !filepath.IsLocal(relative) {
+			selected = ""
+		}
+	}()
 	path := filepath.Join(rulesDir, CacheFilename(rule))
 	// A handwritten edit marks its stable cache before committing the DB. A
 	// failed replacement must not resurrect either the stable or legacy bytes.
 	// Only a confirmed absence permits fallback. A permission/I/O failure while
 	// inspecting the receipt cannot establish that the old bytes are current.
-	if _, err := os.Stat(path + ".invalid"); !errors.Is(err, os.ErrNotExist) {
-		return filepath.Join(path+".invalid", "unavailable")
+	if _, err := os.Lstat(path + ".invalid"); !errors.Is(err, os.ErrNotExist) {
+		return ""
 	}
 	if fileExists(path) {
 		return path
@@ -113,8 +135,8 @@ func CacheReadPath(rule model.RuleConfig, library, stored []model.RuleLibraryIte
 		// writer's filename. Do not attribute an old declaration to a new one.
 		if oldName, ok := LegacyCacheFilename(rule); ok {
 			old := filepath.Join(rulesDir, oldName)
-			if _, err := os.Stat(old + ".invalid"); !errors.Is(err, os.ErrNotExist) {
-				return filepath.Join(old+".invalid", "unavailable")
+			if _, err := os.Lstat(old + ".invalid"); !errors.Is(err, os.ErrNotExist) {
+				return ""
 			}
 			if fileExists(old) {
 				return old
@@ -125,6 +147,9 @@ func CacheReadPath(rule model.RuleConfig, library, stored []model.RuleLibraryIte
 			identity = rule.ID
 		}
 		old := filepath.Join(rulesDir, "by-id", sha256Hex(identity)+".list")
+		if _, err := os.Lstat(old + ".invalid"); !errors.Is(err, os.ErrNotExist) {
+			return ""
+		}
 		if fileExists(old) {
 			return old
 		}
@@ -146,6 +171,9 @@ func CacheReadPath(rule model.RuleConfig, library, stored []model.RuleLibraryIte
 		return path
 	}
 	legacy := filepath.Join(rulesDir, legacyName+".list")
+	if _, err := os.Lstat(legacy + ".invalid"); !errors.Is(err, os.ErrNotExist) {
+		return ""
+	}
 	if fileExists(legacy) {
 		return legacy
 	}

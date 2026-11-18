@@ -71,12 +71,11 @@ func nativeMatcherOptions() rules.CacheOptions {
 // every stable ruleset would otherwise decode the whole configuration again.
 func matcherCachePath(ctx context.Context, rule model.RuleConfig, library []model.RuleLibraryItem, directory string, read func(context.Context, func(*model.Document) error) error) string {
 	native := filepath.Join(directory, rules.CacheFilename(rule))
-	unavailable := filepath.Join(native+".invalid", "unavailable")
 	if ctx.Err() != nil {
-		return unavailable
+		return ""
 	}
 	_, fileErr := os.Stat(native)
-	_, receiptErr := os.Stat(native + ".invalid")
+	_, receiptErr := os.Lstat(native + ".invalid")
 	if fileErr == nil || !errors.Is(receiptErr, os.ErrNotExist) {
 		return rules.CacheReadPath(rule, library, nil, directory)
 	}
@@ -87,7 +86,7 @@ func matcherCachePath(ctx context.Context, rule model.RuleConfig, library []mode
 		return nil
 	})
 	if err != nil {
-		return unavailable
+		return ""
 	}
 	return selected
 }

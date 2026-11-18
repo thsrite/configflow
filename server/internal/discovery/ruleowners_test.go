@@ -30,9 +30,18 @@ func TestStableMatcherPathNeverLoadsConfiguration(t *testing.T) {
 	if err := os.WriteFile(filename+".invalid", []byte("pending"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	blocked := filepath.Join(filename+".invalid", "unavailable")
+	blocked := ""
 	if actual := matcherCachePath(context.Background(), rule, nil, directory, read); actual != blocked {
 		t.Fatal("receipt was bypassed", actual)
+	}
+	if err := os.Remove(filename + ".invalid"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(directory, "missing"), filename+".invalid"); err != nil {
+		t.Fatal(err)
+	}
+	if actual := matcherCachePath(context.Background(), rule, nil, directory, read); actual != blocked {
+		t.Fatal("dangling receipt was bypassed", actual)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -47,7 +56,7 @@ func TestMatcherLegacyPathUsesOnlyCurrentBorrowedDeclaration(t *testing.T) {
 	calls := 0
 	read := func(ctx context.Context, visit func(*model.Document) error) error { calls++; return failure }
 	actual := matcherCachePath(context.Background(), rule, nil, directory, read)
-	if calls != 1 || actual != filepath.Join(directory, rules.CacheFilename(rule)+".invalid", "unavailable") {
+	if calls != 1 || actual != "" {
 		t.Fatal("legacy read failure did not fail closed", calls, actual)
 	}
 }

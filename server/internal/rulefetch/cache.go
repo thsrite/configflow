@@ -53,7 +53,7 @@ func cacheReadPath(ctx context.Context, rule model.RuleConfig, library func() []
 		return "", err
 	}
 	current := filepath.Join(root, rules.CacheFilename(rule))
-	_, receiptErr := os.Stat(current + ".invalid")
+	_, receiptErr := os.Lstat(current + ".invalid")
 	if fileExists(current) || !errors.Is(receiptErr, os.ErrNotExist) {
 		return rules.CacheReadPath(rule, nil, nil, root), nil
 	}
@@ -188,7 +188,7 @@ var errInlineCacheOnly = errors.New("inline cache write without document commit"
 func writeCurrentInline(ctx context.Context, r *repo.Repository, rule model.RuleConfig, target string, data []byte, write func(context.Context) error) error {
 	// A C33 publisher may hold L3 while an independently admitted reader
 	// finishes. Its receipt already forbids this write, so do not wait on L3.
-	if _, err := os.Stat(target + ".invalid"); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Lstat(target + ".invalid"); !errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
 	id := rule.LibraryRuleID
@@ -202,7 +202,7 @@ func writeCurrentInline(ctx context.Context, r *repo.Repository, rule model.Rule
 		if err := tx.Err(); err != nil {
 			return err
 		}
-		if _, err := os.Stat(target + ".invalid"); !errors.Is(err, os.ErrNotExist) {
+		if _, err := os.Lstat(target + ".invalid"); !errors.Is(err, os.ErrNotExist) {
 			return errInlineCacheOnly
 		}
 		for _, current := range catalog.RuleLibrary {

@@ -1,6 +1,12 @@
 # N8-9 rules / rulefetch / refresh / rulesetfmt
 
-完成，待独立复核。分支 `go-n8-9-rules`，已变基到 `go@d4fab6441`。
+独立复核已由非作者 Codex 完成，分支 `go-review-n8-9-rules`；新增 1 medium（旧地址／
+异常 invalid receipt 未完全 fail-closed）、1 low（符号链接越出规则目录），均有修复前
+失败证据和回归，已修复。独立参考重录、alias／分配阈值负控及八条生成样本通过；
+测试仅 `.32`、`-p 4` 定向，未跑完整 gate／push。详见
+[review-n8-9-rules.md](../review-n8-9-rules.md)。完整批次验证由协调者执行。
+
+以下为作者交回记录。分支 `go-n8-9-rules`，已变基到 `go@d4fab6441`。
 产品主体收口 `fcc671d9d`；共享字段证据/迁移文件 API 为 `55f13acb7`。
 最终提交另补稳定matcher路径不打开View及已知format的bytes/op自动阈值。
 前置分段提交：`378791c18`、`64415feec`、`64bf4f22a`、`f343883b8`。
