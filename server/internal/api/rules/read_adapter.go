@@ -215,8 +215,13 @@ func localLogName(ctx context.Context, config *jsonx.Object, name string) string
 	if err != nil {
 		return redact.Redacted
 	}
-	public := redact.SanitizeCredentials(jsonx.Obj("name", name), secrets)
-	return logx.LogText(public.GetString("name"), 120)
+	var public struct {
+		Name string `json:"name"`
+	}
+	if json.Unmarshal(redact.SanitizeCredentials(jsonx.Obj("name", name), secrets), &public) != nil {
+		return redact.Redacted
+	}
+	return logx.LogText(public.Name, 120)
 }
 func boolPointer(value bool) *bool { return &value }
 func remoteFault(err error) *sourceFailure {
