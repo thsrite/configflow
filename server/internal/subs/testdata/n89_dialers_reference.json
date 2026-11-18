@@ -1,0 +1,97 @@
+{
+  "sources": {
+    "dialers": "250e38f52edf0219e6cbc0e61337984f79790cb72407897baaeb82ff6953ad65",
+    "review_c10": "30665c4387a143bbf2ec4ab8a06ecddc69df4fab9f7f56c462e70d6a7bc47e85"
+  },
+  "native_loader_sha256": "683164a4d6e2853673af481fde72d91f8364c4b877854eea8fdd2f1c925323e2",
+  "cases": {
+    "dialers/256": {
+      "input_sha256": "a7df5f578ca63231d279322c9389a042a53399214b7f046804c1c39597de8fba",
+      "reason": "native typed array/reference consumption",
+      "expected": {
+        "error": "订阅 proxy-groups[\"中转\"].proxies 必须是列表",
+        "class": "SubscriptionShapeError"
+      }
+    },
+    "dialers/504": {
+      "input_sha256": "0625223872465c9db327aab75e1e15126ec5b46a2fd9ba97b84edcbe8460740d",
+      "reason": "native typed array/reference consumption",
+      "expected": {
+        "error": "订阅 proxy-groups[\"proxy\"].proxies 必须是列表",
+        "class": "SubscriptionShapeError"
+      }
+    },
+    "dialers/533": {
+      "input_sha256": "f6ac93ce3b9a6d3f4982ff14906271a14e686fcc0032663c4f2f76a0e75366ec",
+      "reason": "native typed array/reference consumption",
+      "expected": {
+        "error": "订阅 proxy-groups[\"Hidden\"].proxies 必须是列表",
+        "class": "SubscriptionShapeError"
+      }
+    },
+    "dialers/538": {
+      "input_sha256": "7df94a0a0b48ac593441af09beee52ea879a2bb825ba10fb141f47a258e7b504",
+      "reason": "native typed array/reference consumption",
+      "expected": {
+        "error": "订阅 proxy-groups[\"a`b\"].proxies 必须是列表",
+        "class": "SubscriptionShapeError"
+      }
+    },
+    "dialers/606": {
+      "input_sha256": "97511ba343b594f2a776f688120ce6cbc54277f812951f1157a9ac66dd1173c4",
+      "reason": "native typed array/reference consumption",
+      "expected": {
+        "error": "订阅 proxy-groups[\"中转\"].proxies 必须是列表",
+        "class": "SubscriptionShapeError"
+      }
+    },
+    "dialers/633": {
+      "input_sha256": "6a8ec521b38433169756c4cc26483b732717d145d0b5831af1847d2ef51a1795",
+      "reason": "native typed array/reference consumption",
+      "expected": {
+        "error": "订阅 proxy-groups[\"proxy\"].proxies 必须是列表",
+        "class": "SubscriptionShapeError"
+      }
+    },
+    "review_c10/1891": {
+      "input_sha256": "00501778ee2e2a7e66d24d9c171ce5a1bca11bf2aa8282418993f434401e55c4",
+      "reason": "native typed array/reference consumption",
+      "expected": {
+        "error": "订阅 proxy-groups[\"R\"].proxies 必须是列表",
+        "class": "SubscriptionShapeError"
+      }
+    },
+    "review_c10/1892": {
+      "input_sha256": "0bbeb5e9f86b9688cf1a4c91ec77f6c579bedf1c515f5d35189d65b781bcbb1d",
+      "reason": "native typed array/reference consumption",
+      "expected": {
+        "error": "订阅 proxy-groups[\"R\"].proxies 必须是列表",
+        "class": "SubscriptionShapeError"
+      }
+    },
+    "review_c10/1893": {
+      "input_sha256": "b800f1ef95daca564c03d9c30aa19fdd26f74344be8840c34abb8940d2b5de6e",
+      "reason": "native typed array/reference consumption",
+      "expected": {
+        "error": "订阅 proxies 必须是列表",
+        "class": "SubscriptionShapeError"
+      }
+    },
+    "review_c10/1894": {
+      "input_sha256": "2f7f267d91bb3109e9fecfadc68e6fa551741488cff45b90f187bb15012c7d1e",
+      "reason": "native typed array/reference consumption",
+      "expected": {
+        "error": "订阅 proxies 必须是列表",
+        "class": "SubscriptionShapeError"
+      }
+    },
+    "review_c10/1895": {
+      "input_sha256": "ac3881833ecb2de2967caf62d61153d2ad2977877e6a3cbee06680312e38be07",
+      "reason": "native typed array/reference consumption",
+      "expected": {
+        "error": "订阅 proxy-groups 必须是列表",
+        "class": "SubscriptionShapeError"
+      }
+    }
+  }
+}

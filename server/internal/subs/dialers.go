@@ -1,14 +1,11 @@
 package subs
 
 import (
-	"errors"
 	"regexp"
-	"sort"
 	"strings"
 
 	"configflow/internal/jsonx"
 	"configflow/internal/logx"
-	"configflow/internal/yamlx"
 )
 
 var dialersLogger = logx.Get("backend.utils.subscription_dialers")
@@ -61,147 +58,6 @@ func isScalarSetting(v any) bool {
 		return true
 	}
 	return false
-}
-
-// ExtractSubscriptionDialers is extract_subscription_dialers: the airport
-// groups the body's own dialer-proxy values name, or nil without any.
-// Result: {"targets": {group: {"type","members",...}}, "unresolved": [group]}.
-func ExtractSubscriptionDialers(text string) (*jsonx.Object, error) {
-	if !strings.Contains(text, "dialer-proxy") {
-		return nil, nil
-	}
-	data, err := readSubscriptionYAML(text, true)
-	if err != nil {
-		if errors.Is(err, yamlx.ErrAliasBudget) || errors.Is(err, yamlx.ErrAliasRecursion) {
-			return nil, err
-		}
-		return nil, nil
-	}
-	document, ok := data.(*jsonx.Object)
-	if !ok {
-		return nil, nil
-	}
-	proxyItems, ok := iterate(document.Value("proxies"))
-	if !ok {
-		return nil, notIterable(document.Value("proxies"))
-	}
-	var listed []*jsonx.Object
-	for _, item := range proxyItems {
-		if o, ok := item.(*jsonx.Object); ok {
-			listed = append(listed, o)
-		}
-	}
-	proxies := map[string]bool{}
-	for _, item := range listed {
-		if n, ok := item.Value("name").(string); ok {
-			proxies[n] = true
-		}
-	}
-	groups := map[string]*jsonx.Object{}
-	groupItems, ok := iterate(document.Value("proxy-groups"))
-	if !ok {
-		return nil, notIterable(document.Value("proxy-groups"))
-	}
-	for _, item := range groupItems {
-		o, ok := item.(*jsonx.Object)
-		if !ok {
-			continue
-		}
-		if n, ok := o.Value("name").(string); ok && !proxies[n] {
-			groups[n] = o
-		}
-	}
-	wantedSet := map[string]bool{}
-	for _, item := range listed {
-		if t, ok := item.Value("dialer-proxy").(string); ok && groups[t] != nil {
-			wantedSet[t] = true
-		}
-	}
-	if len(wantedSet) == 0 {
-		return nil, nil
-	}
-	wanted := make([]string, 0, len(wantedSet))
-	for t := range wantedSet {
-		wanted = append(wanted, t)
-	}
-	sort.Strings(wanted)
-
-	var leaves func(name string, seen map[string]bool) ([]string, error)
-	leaves = func(name string, seen map[string]bool) ([]string, error) {
-		if proxies[name] {
-			return []string{name}, nil
-		}
-		group := groups[name]
-		if group == nil || seen[name] {
-			return nil, nil
-		}
-		next := map[string]bool{name: true}
-		for k := range seen {
-			next[k] = true
-		}
-		var found []string
-		members, ok := iterate(group.Value("proxies"))
-		if !ok {
-			return nil, notIterable(group.Value("proxies"))
-		}
-		for _, m := range members {
-			if s, ok := m.(string); ok {
-				sub, err := leaves(s, next)
-				if err != nil {
-					return nil, err
-				}
-				found = append(found, sub...)
-			}
-		}
-		return found, nil
-	}
-
-	targets := jsonx.NewObject()
-	unresolved := []any{}
-	if len(wanted) > MaxTargets {
-		for _, t := range wanted[MaxTargets:] {
-			unresolved = append(unresolved, t)
-		}
-		wanted = wanted[:MaxTargets]
-	}
-	for _, target := range wanted {
-		var members []any
-		seen := map[string]bool{}
-		leafNames, err := leaves(target, map[string]bool{})
-		if err != nil {
-			return nil, err
-		}
-		for _, m := range leafNames {
-			if !seen[m] {
-				seen[m] = true
-				members = append(members, m)
-			}
-		}
-		if len(members) > MaxMembers {
-			members = members[:MaxMembers]
-		}
-		if len(members) == 0 {
-			unresolved = append(unresolved, target)
-			continue
-		}
-		source := groups[target]
-		typ := "select"
-		if t, ok := source.Value("type").(string); ok {
-			for _, g := range groupTypes {
-				if t == g {
-					typ = t
-				}
-			}
-		}
-		entry := jsonx.Obj("type", typ, "members", members)
-		for _, key := range groupKeys {
-			if v := source.Value(key); isScalarSetting(v) {
-				entry.Set(key, v)
-			}
-		}
-		targets.Set(target, entry)
-	}
-	return jsonx.Obj("targets", targets, "unresolved", unresolved), nil
 }
 
 func notIterable(v any) error {
@@ -545,57 +401,4 @@ func AddDialerGroups(main, config *jsonx.Object, deps DialerDeps) (*jsonx.Object
 		dialersLogger.Warningf("订阅链式节点：%d 个节点的中转分组未能补上（%s）", len(skipped), strings.Join(parts, "；"))
 	}
 	return report, nil
-}
-
-// AdaptSubscriptionProxies is adapt_subscription_proxies: the subscription's
-// proxies as delivered with main. chains=false (Surge, Loon) leaves chained
-// nodes out. main may be nil.
-func AdaptSubscriptionProxies(subscription string, proxies []any, main, record *jsonx.Object, chains bool) []any {
-	airport := airportGroups(record)
-	if len(airport) == 0 {
-		return proxies
-	}
-	names := map[string]bool{}
-	for _, key := range []string{"proxies", "proxy-groups"} {
-		for _, item := range main.GetList(key) {
-			if o, ok := item.(*jsonx.Object); ok {
-				// Only a string name can equal a (string) dialer target.
-				if name, ok := o.Value("name").(string); ok {
-					names[name] = true
-				}
-			}
-		}
-	}
-	adapted := []any{}
-	var dropped []string
-	for _, p := range proxies {
-		proxy, isDict := p.(*jsonx.Object)
-		var target string
-		isTarget := false
-		if isDict {
-			target, isTarget = proxy.Value("dialer-proxy").(string)
-		}
-		switch {
-		case !isTarget || !airport[target]:
-			adapted = append(adapted, p)
-		case !chains:
-			dropped = append(dropped, jsonx.Str(proxy.Value("name")))
-		case names[GroupName(subscription, target)]:
-			c := proxy.Clone()
-			c.Set("dialer-proxy", GroupName(subscription, target))
-			adapted = append(adapted, c)
-		case names[target]:
-			adapted = append(adapted, p)
-		default:
-			dropped = append(dropped, jsonx.Str(proxy.Value("name")))
-		}
-	}
-	if len(dropped) > 0 {
-		shown := dropped
-		if len(shown) > 5 {
-			shown = shown[:5]
-		}
-		dialersLogger.Infof("订阅「%s」跳过 %d 个链式节点：%s", subscription, len(dropped), strings.Join(shown, "、"))
-	}
-	return adapted
 }

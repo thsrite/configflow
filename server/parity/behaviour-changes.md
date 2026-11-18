@@ -1836,3 +1836,20 @@ world 保留旧文件。原 archive 不改；独立 Python 参考绑定完整 ar
 - MergeHosts 直接消费 model.Config、typed source index 和开放 YAML 图；每个订阅只取一次索引，
   不在节点/订阅循环重解整个配置。只克隆并替换拥有的 hosts 容器，不修改其他 alias。缺失
   必需 owner 明确报 CollaborationError，而非把没检查的数据当成不需要合并。
+
+### N8-9 subs — 外部 dialer 元数据与交付（2026-11-19）
+
+- **有意保留兼容规则，非行为变化**（协调者明确裁定）：外部机场 proxy-groups.type 只接受
+  select/url-test/fallback/load-balance，其他值（含数字/未知类型）通过 airportGroupType 回退
+  select，确保可用中转仍能选择；这不放宽用户存储的 model.ProxyGroup.Type 或 Node.Type。
+  新回归同时证明机场数字 type 可用、用户存储数字 type 仍被唯一共享校验器明确拒绝。
+- ExtractDialers 直接读取 YAML 图，节点名称使用共享 model.String。proxies/proxy-groups 及
+  实际访问的组成员必须为列表/null，不再把错误字符串逐字符、错误映射按键迭代。11条原有
+  畸形输入由真实 Python 业务+已审核 N7 loader值的 typed 消费投影生成精确原生期待，绑定
+  source/row/loader SHA；明确 SubscriptionShapeError 类型和中文字段路径，不回显整份含
+  凭据的订阅。原语料及比较函数不变；独立回归逐条核对原生类型和完整错误消息。
+- 实际组遍历每个 target 只访问各子组一次；重复 DAG 边不再造成指数展开，保留首次叶节点
+  发现顺序、去重、50 targets/100 members 上限及 unresolved。30层重复子组回归通过。
+- AdaptProxies 返回原始开放图节点，只在需要拥有 dialer-proxy 替换时克隆该节点。使用共享
+  yamlx.Encode 检查图/alias预算而非把整个开放参数强制转 JSON，保留合法非字符串 YAML键。
+  同样调整已迁移 hosts/DNS 克隆前的图验证；新增非字符串开放参数和原记录不变回归。

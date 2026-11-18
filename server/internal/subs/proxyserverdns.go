@@ -638,7 +638,7 @@ func ApplyDNS(main, merged *yamlx.Node, coreVersion string) (*DNSReport, error) 
 		return report, nil
 	}
 	// Validate before Clone: Clone deliberately returns null for invalid graphs.
-	if _, err := yamlx.ToJSON(dns); err != nil {
+	if _, err := yamlx.Encode(dns); err != nil {
 		return nil, err
 	}
 	policy := yamlx.Clone(written)

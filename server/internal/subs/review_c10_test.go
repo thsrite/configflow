@@ -36,6 +36,7 @@ func TestReviewC10References(t *testing.T) {
 	oracle := nativeReaderCases(t)
 	native := nativeParserExpectations(t)
 	hostsNative := nativeHostsExpectations(t)
+	dialersNative := nativeDialersExpectations(t)
 	compared, unrepresentable, known, acceptedUTF8 := 0, 0, 0, 0
 	for i, row := range rows {
 		if expected, changed := changedNativeCase(t, oracle, fmt.Sprintf("subs/review_c10/%d", i)); changed {
@@ -47,6 +48,14 @@ func TestReviewC10References(t *testing.T) {
 		}
 		if expected := hostsNative.GetObject(fmt.Sprintf("review_c10/%d", i)); expected != nil {
 			row.Out = expected.Value("output")
+		}
+		if entry := dialersNative.GetObject(fmt.Sprintf("review_c10/%d", i)); entry != nil {
+			expected := entry.GetObject("expected")
+			if expected.Has("error") {
+				row.Out = jsonx.Obj("error", expected.Value("error"))
+			} else {
+				row.Out = expected.Value("value")
+			}
 		}
 		if row.Fn == "parse_uri_list" {
 			if expected := native.GetObject(fmt.Sprintf("review_c10/%d", i)); expected != nil {

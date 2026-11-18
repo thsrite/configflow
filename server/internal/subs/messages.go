@@ -37,3 +37,8 @@ const (
 	msgHostsInvalidEntry        = "条目无效"
 	msgHostsLog                 = "订阅 hosts：合并 %d 条（其中域名映射 %d 条），忽略 %d 条%s"
 )
+
+const (
+	msgSubscriptionList = "订阅 %s 必须是列表"
+	msgDialerSkipped    = "订阅「%s」跳过 %d 个链式节点：%s"
+)

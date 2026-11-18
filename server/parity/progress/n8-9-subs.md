@@ -220,3 +220,25 @@ owner 暂时仍调用的原有 helper，后续必须一起删除，不能据此�
   `go test -p 4 -count=1 -timeout 8m ./internal/convert -run
   "^(TestMihomoCorpus|TestNativeMihomoOriginalInputsUnchanged)$"`
   → `ok configflow/internal/convert 32.770s`。2353正常生成仍走原exact-count字节门。
+
+## dialer 元数据及交付阶段（尚未全部完成）
+
+- ExtractDialers / AdaptProxies 使用 model 与 YAML图；旧两个入口只转码。外部机场 type 的
+  白名单/default-select 按协调者裁定有意保留，函数 airportGroupType 注释写明原因，不扩大
+  到用户存储的 ProxyGroup.Type/Node.Type；真实生产共享校验器的 strict 回归同时通过。
+- 11条既有 malformed-array 边界用真实 Python 业务+N7独立loader值精确投影，source/row/
+  loader SHA绑定，类型/错误消息逐项核对。正常四种组类型、开放 binary/timestamp标量字段、
+  原 metadata 字段/值/顺序与交付副作用保持。原 corpus 和比较函数不改。
+- 修复重复子组 DAG 展开复杂度：每个 target 每组只访问一次，首次发现顺序、去重及原上限
+  不变。新30层重复 DAG 回归不会进行原先的指数叶展开。
+- 已建立 SharedDialers typed协作者与 convert 唯一实现接线，外部 test package 导入实际
+  注册。尚未将所有链降级/组生成迁到这些接口；compat.go/legacy_pending.go/pyconv.go 的
+  旧私有副本仍要随下一阶段删除，当前不能交回完成。
+- 在主服务器，GOMAXPROCS=4、-p4：
+  `go test -race -p 4 -count=1 -timeout 5m ./internal/subs ./internal/convert -run
+  "TestN89Dialer|TestN89Airport|TestN89Adapt|TestDialersCorpus|TestReviewC10References|TestN89DNS|TestN89HostMerge"`
+  → subs7.518s / convert1.043s（convert该pattern无测试）；subs/substore/convert vet同次退出0。
+- 克隆前验证改用 yamlx.Encode（只验证当前拥有子树），保留开放 YAML 合法非字符串键；
+  未修改共享 yamlx 产品代码。新增交付开放键/原节点不变、原生错误精确消息、实际共享
+  identity校验及 bounded DAG 回归。剩余：AddDialerGroups、LowerProxyChains、LowerChainProviders、
+  删除私有copy与 Python模拟helper、最终完整管线分配基准及跨包Corpus/HTTP/fuzz。

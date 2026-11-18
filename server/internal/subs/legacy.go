@@ -436,3 +436,42 @@ func LogReport(id string, value *jsonx.Object) {
 		_ = LogHostReport(id, report)
 	}
 }
+
+// ExtractSubscriptionDialers transcodes typed source metadata for unported refresh.
+func ExtractSubscriptionDialers(text string) (*jsonx.Object, error) {
+	record, err := ExtractDialers(text)
+	if err != nil || record == nil {
+		return nil, err
+	}
+	return encodeLegacy(record)
+}
+
+// AdaptSubscriptionProxies transcodes a complete batch once, without config decoding.
+func AdaptSubscriptionProxies(subscription string, proxies []any, main, record *jsonx.Object, chains bool) []any {
+	graph, err := legacyNode(proxies)
+	if err != nil {
+		return nil
+	}
+	document, err := legacyNode(main)
+	if err != nil {
+		return nil
+	}
+	metadata, err := decodeLegacy[*DialersData](record)
+	if err != nil {
+		return nil
+	}
+	selected, err := AdaptProxies(subscription, graph.Content, document, metadata, chains)
+	if err != nil {
+		return nil
+	}
+	data, err := yamlx.ToJSON(yamlx.Seq(selected...))
+	if err != nil {
+		return nil
+	}
+	value, err := jsonx.Parse(data)
+	if err != nil {
+		return nil
+	}
+	out, _ := value.([]any)
+	return out
+}

@@ -23,6 +23,7 @@ func corpusConvert(node *jsonx.Object) *jsonx.Object {
 
 func TestDialersCorpus(t *testing.T) {
 	rows := loadCorpus(t, "dialers.jsonl.gz")
+	native := nativeDialersExpectations(t)
 	oracle := nativeReaderCases(t)
 	kinds := map[string]int{}
 	errorsSeen := 0
@@ -33,6 +34,14 @@ func TestDialersCorpus(t *testing.T) {
 			if expected, changed := changedNativeCase(t, oracle, fmt.Sprintf("subs/dialers/%d", i)); changed {
 				if expected.Has("error") {
 					row.Out = jsonx.Obj("error", expected.GetString("message"))
+				} else {
+					row.Out = expected.Value("value")
+				}
+			}
+			if entry := native.GetObject(fmt.Sprintf("dialers/%d", i)); entry != nil {
+				expected := entry.GetObject("expected")
+				if expected.Has("error") {
+					row.Out = jsonx.Obj("error", expected.Value("error"))
 				} else {
 					row.Out = expected.Value("value")
 				}

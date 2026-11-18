@@ -355,7 +355,7 @@ func MergeHosts(main *yamlx.Node, config *model.Config, userKeys, mosdnsKeys []s
 	old := yamlx.Get(main, "hosts")
 	hosts := yamlx.Map()
 	if old != nil {
-		if _, err := yamlx.ToJSON(old); err != nil {
+		if _, err := yamlx.Encode(old); err != nil {
 			return nil, nil, err
 		}
 		if resolved := yamlx.Resolve(old); resolved != nil && resolved.Kind == yaml.MappingNode {
