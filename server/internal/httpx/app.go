@@ -78,7 +78,7 @@ func (a *App) HandleError(h ErrorHandler) {
 
 // RegisterLocal makes the app the target of localhttp.Do (in-process
 // callbacks to this server's own /api URLs).
-func (a *App) RegisterLocal() { localhttp.Register(a) }
+func (a *App) RegisterLocal() { localhttp.Register(a, lifecycle.DefaultSpawner{}) }
 
 // ServeHTTP runs one request through the pipeline. The request is bound to the
 // live lifecycle generation, so work an owner detaches from it (PORTING 4b)

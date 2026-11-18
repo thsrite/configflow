@@ -82,8 +82,8 @@ func newFixture(t *testing.T) *fixture {
 			_, _ = w.Write(content)
 		}
 	})
-	Register(f.mux)
-	t.Cleanup(func() { Register(nil) })
+	Register(f.mux, testSpawner{})
+	t.Cleanup(func() { Register(nil, nil) })
 	return f
 }
 
@@ -274,7 +274,7 @@ func TestNestedCallbacksStopAtEightLevels(t *testing.T) {
 }
 
 func TestWithoutRegisteredAppNothingIsDispatched(t *testing.T) {
-	Register(nil)
+	Register(nil, nil)
 	if response, err := Do(context.Background(), Request{Method: "get", URL: "http://config.test/api/rules"}); response != nil || err != nil {
 		t.Errorf("%v %v", response, err)
 	}
@@ -334,4 +334,13 @@ func TestPreparedURLLikeRequests(t *testing.T) {
 		}
 		response.Body.Close()
 	}
+}
+
+// testSpawner is used only by isolated adapter fixtures; Runtime integration is
+// tested externally to avoid lifecycle -> repo -> rulefetch -> localhttp cycles.
+type testSpawner struct{}
+
+func (testSpawner) Spawn(ctx context.Context, _ string, fn func(context.Context)) error {
+	go fn(context.WithoutCancel(ctx))
+	return nil
 }

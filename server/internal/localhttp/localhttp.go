@@ -13,7 +13,7 @@
 //
 // Differences from the Python module: there are no thread-local repository
 // transactions to isolate (the repository is passed explicitly in Go); the
-// handler runs in its own goroutine, connected to the caller by a pipe, which
+// handler runs as an injected Spawner job, connected to the caller by a pipe, which
 // gives the same lazy, back-pressured streaming the WSGI iterator had; and the
 // nested request's User-Agent is empty, where Werkzeug's test client sent
 // "Werkzeug/x.y".
@@ -34,7 +34,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"configflow/internal/ctxx"
 	"configflow/internal/jsonresp"
+	"configflow/internal/lockx"
 	"configflow/internal/weburl"
 )
 
@@ -47,18 +49,24 @@ var ErrTooManyRedirects = errors.New("Too many nested ConfigFlow API callbacks")
 // ErrReadTimeout is requests.ReadTimeout for a response that took too long.
 var ErrReadTimeout = errors.New("ConfigFlow API callback exceeded its read timeout")
 
-type holder struct{ handler http.Handler }
+type holder struct {
+	handler http.Handler
+	spawner lockx.Spawner
+}
+
+// ErrMissingSpawner rejects dispatch without a tracked job owner.
+var ErrMissingSpawner = errors.New("localhttp: spawner is not configured")
 
 var application atomic.Pointer[holder]
 
 // Register is register_application: the handler callbacks are dispatched to.
-// nil unregisters.
-func Register(handler http.Handler) {
+// nil unregisters. A non-nil handler requires a spawner; Do fails closed without it.
+func Register(handler http.Handler, spawner lockx.Spawner) {
 	if handler == nil {
 		application.Store(nil)
 		return
 	}
-	application.Store(&holder{handler})
+	application.Store(&holder{handler: handler, spawner: spawner})
 }
 
 type ctxKey int
@@ -154,7 +162,13 @@ func Do(ctx context.Context, r Request) (*Response, error) {
 		target += "?" + prepared.query
 	}
 
+	if app.spawner == nil {
+		return nil, ErrMissingSpawner
+	}
 	inner, cancel := context.WithCancel(context.Background())
+	// Only this fresh request's cancellation is exposed to nested Detach.
+	// Work values (including repository transactions and credentials) stay out.
+	inner = ctxx.WithParent(inner, inner)
 	inner = context.WithValue(inner, depthKey, depth+1)
 	inner = context.WithValue(inner, scriptRootKey, r.Prefix)
 
@@ -187,7 +201,13 @@ func Do(ctx context.Context, r Request) (*Response, error) {
 	pr, pw := io.Pipe()
 	rw := &responseWriter{header: http.Header{}, ready: make(chan struct{}), pw: pw, head: method == "HEAD"}
 	done := make(chan struct{})
-	go func() {
+	err = app.spawner.Spawn(ctxx.Detach(ctx), "local-http-callback", func(work context.Context) {
+		stopWork := func() { cancel(); _ = pw.CloseWithError(work.Err()) }
+		stop := context.AfterFunc(work, stopWork)
+		defer stop()
+		if work.Err() != nil {
+			stopWork()
+		}
 		defer close(done)
 		defer func() {
 			if recovered := recover(); recovered != nil {
@@ -196,7 +216,13 @@ func Do(ctx context.Context, r Request) (*Response, error) {
 		}()
 		app.handler.ServeHTTP(rw, req)
 		rw.finish()
-	}()
+	})
+	if err != nil {
+		cancel()
+		pr.Close()
+		pw.Close()
+		return nil, err
+	}
 
 	<-rw.ready
 	body := &responseBody{reader: pr, cancel: cancel, done: done, timeout: r.ReadTimeout}

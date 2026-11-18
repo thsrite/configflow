@@ -25,8 +25,8 @@ func TestLocalDispatchAndRedirectBoundary(t *testing.T) {
 		default:
 			w.Write([]byte("local " + r.URL.Path))
 		}
-	}))
-	t.Cleanup(func() { localhttp.Register(nil) })
+	}), localTestSpawner{})
+	t.Cleanup(func() { localhttp.Register(nil, nil) })
 	fake := &fakeTransport{reply: func(int, TransportRequest) (*Response, error) { return reply(200, "network"), nil }}
 	client := &Client{Transport: fake, Local: localhttp.Do, Sleep: func(time.Duration) {}}
 	config := sysConfig("server_domain", "http://config.test", "rule_fetch_proxy", "http://proxy.test:1")
@@ -61,4 +61,11 @@ func TestLocalDispatchAndRedirectBoundary(t *testing.T) {
 	if body, err := get("http://h.test/api/x", Request{Config: sysConfig(), HostURL: "http://h.test/"}); err != nil || body != "local /api/x" || len(fake.calls) != 0 {
 		t.Fatal(body, err)
 	}
+}
+
+type localTestSpawner struct{}
+
+func (localTestSpawner) Spawn(ctx context.Context, _ string, fn func(context.Context)) error {
+	go fn(context.WithoutCancel(ctx))
+	return nil
 }

@@ -182,7 +182,7 @@ func startGo(t *testing.T, dataDir string) string {
 	// main registers the in-process dispatch of the server's own API
 	// (callback URLs of the rule proxy).
 	app.RegisterLocal()
-	t.Cleanup(func() { localhttp.Register(nil) })
+	t.Cleanup(func() { localhttp.Register(nil, nil) })
 	if _, err := repo.LoadConfig(repo.WithScope(context.Background())); err != nil {
 		t.Fatal(err)
 	}
