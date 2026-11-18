@@ -502,7 +502,7 @@ func reports(ctx context.Context, as []Agent, selected string) ([]struct {
 }
 
 // AgentsPayload reads only small collection statuses, without rule indexes.
-func AgentsPayload(ctx context.Context, id string) (map[string]any, error) {
+func AgentsPayload(ctx context.Context, id string) (*AgentsView, error) {
 	as, err := profileAgents(ctx, id)
 	if err != nil {
 		return nil, err
@@ -515,7 +515,7 @@ func AgentsPayload(ctx context.Context, id string) (map[string]any, error) {
 	for _, r := range rs {
 		out = append(out, statusOf(r.agent, r.data.Status))
 	}
-	return map[string]any{"agents": out, "min_agent_version": minAgentVersion, "min_probe_agent_version": minProbeVersion}, nil
+	return &AgentsView{out, minAgentVersion, minProbeVersion}, nil
 }
 
 // LoadDomains aggregates selected traffic while retaining every Agent status.

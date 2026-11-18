@@ -136,7 +136,7 @@ func TestJobOutlivesCancelledRequestAndDoesNotRetainScope(t *testing.T) {
 	if !errors.As(err, &busy) || busy.JobID != j.ID {
 		t.Fatalf("exclusive job: %v", err)
 	}
-	if payload := BusyPayload(busy, "other"); payload["job"] != (*Job)(nil) || payload["message"] != msgOtherBusy {
+	if payload := BusyPayload(busy, "other"); payload.Job != nil || payload.Message != msgOtherBusy {
 		t.Fatalf("cross-profile job disclosed: %v", payload)
 	}
 	close(release)

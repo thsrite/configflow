@@ -1,7 +1,7 @@
 package discovery
 
 import (
-	"bytes"
+	"configflow/internal/model"
 	"encoding/json"
 	"strings"
 )
@@ -24,45 +24,36 @@ type Settings struct {
 
 // UnmarshalJSON reads persisted settings while retaining future fields.
 func (s *Settings) UnmarshalJSON(b []byte) error {
-	type plain Settings
-	p := plain(defaultSettings())
+	var record model.DomainDiscovery
+	if err := json.Unmarshal(b, &record); err != nil {
+		return err
+	}
+	p := defaultSettings()
+	p.DirectRuleset, p.ProxyRuleset = record.DirectRuleset, record.ProxyRuleset
+	if record.AutoProbe != nil {
+		p.AutoProbe = *record.AutoProbe
+	}
+	if record.AutoApply != nil {
+		p.AutoApply = *record.AutoApply
+	}
+	if record.RegionCheckEnabled != nil {
+		p.RegionEnabled = *record.RegionCheckEnabled
+	}
+	if record.AutoApplyMinConfidence != nil {
+		p.Confidence = int(*record.AutoApplyMinConfidence)
+	}
+	if record.RegionProbePort != nil {
+		p.RegionPort = int(*record.RegionProbePort)
+	}
+	for key, value := range record.RegionalRulesets.All() {
+		p.RegionalRulesets[key] = value
+	}
+	for key, value := range record.WebsiteNotes.All() {
+		p.WebsiteNotes[key] = value
+	}
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(b, &fields); err != nil {
 		return err
-	}
-	// Saved lists are tolerant at the storage boundary: malformed members do
-	// not make the whole discovery screen unreadable. HTTP writes stay strict.
-	remaining := make(map[string]json.RawMessage, len(fields))
-	for k, v := range fields {
-		remaining[k] = v
-	}
-	for _, key := range []string{"ignored", "history", "auto_apply_min_confidence", "region_probe_port", "auto_probe", "auto_apply", "region_check_enabled", "regional_rulesets", "website_notes", "direct_ruleset", "proxy_ruleset"} {
-		delete(remaining, key)
-	}
-	known, err := json.Marshal(remaining)
-	if err != nil {
-		return err
-	}
-	if err := json.Unmarshal(known, &p); err != nil {
-		return err
-	}
-	p.AutoProbe = JSONOptionEnabled(fields["auto_probe"])
-	p.AutoApply = JSONOptionEnabled(fields["auto_apply"])
-	p.RegionEnabled = JSONOptionEnabled(fields["region_check_enabled"])
-	for key, destination := range map[string]**string{"direct_ruleset": &p.DirectRuleset, "proxy_ruleset": &p.ProxyRuleset} {
-		if JSONOptionEnabled(fields[key]) {
-			if err := json.Unmarshal(fields[key], destination); err != nil {
-				return err
-			}
-		}
-	}
-	for key, destination := range map[string]*map[string]string{"regional_rulesets": &p.RegionalRulesets, "website_notes": &p.WebsiteNotes} {
-		raw := fields[key]
-		if len(raw) > 0 && bytes.TrimSpace(raw)[0] == '{' {
-			if err := json.Unmarshal(raw, destination); err != nil {
-				return err
-			}
-		}
 	}
 	var ignored, history []json.RawMessage
 	_ = json.Unmarshal(fields["ignored"], &ignored)
@@ -84,16 +75,8 @@ func (s *Settings) UnmarshalJSON(b []byte) error {
 		}
 		p.History = append(p.History, entry)
 	}
-	var confidence float64
-	if json.Unmarshal(fields["auto_apply_min_confidence"], &confidence) == nil && (confidence == 80 || confidence == 90 || confidence == 95) {
-		p.Confidence = int(confidence)
-	}
-	var port int
-	if json.Unmarshal(fields["region_probe_port"], &port) == nil && port >= 1024 && port <= 65535 {
-		p.RegionPort = port
-	}
-
-	*s = Settings(p)
+	p.normalize()
+	*s = p
 	return capture(b, &s.Extra, "direct_ruleset", "proxy_ruleset", "ignored", "auto_probe", "auto_apply", "auto_apply_min_confidence", "history", "region_check_enabled", "region_probe_port", "regional_rulesets", "website_notes")
 }
 
@@ -203,14 +186,15 @@ type libraryItem struct {
 
 // UnmarshalJSON decodes the known fields while retaining the original data.
 func (v *libraryItem) UnmarshalJSON(b []byte) error {
-	type plain libraryItem
-	p := plain{SourceType: "url", Behavior: "classical"}
-	if err := json.Unmarshal(b, &p); err != nil {
+	var record model.RuleLibraryItem
+	if err := json.Unmarshal(b, &record); err != nil {
 		return err
 	}
-	*v = libraryItem(p)
-	v.original = append(json.RawMessage(nil), b...)
-	v.originalContent = v.Content
+	item, err := libraryFromModel(record)
+	if err != nil {
+		return err
+	}
+	*v = item
 	return capture(b, &v.Extra, "id", "name", "source_type", "behavior", "content")
 }
 
@@ -248,13 +232,15 @@ type ruleConfig struct {
 
 // UnmarshalJSON decodes the known fields while retaining the original data.
 func (v *ruleConfig) UnmarshalJSON(b []byte) error {
-	type plain ruleConfig
-	p := plain{Enabled: true}
-	if err := json.Unmarshal(b, &p); err != nil {
+	var record model.RuleConfig
+	if err := json.Unmarshal(b, &record); err != nil {
 		return err
 	}
-	*v = ruleConfig(p)
-	v.original = append(json.RawMessage(nil), b...)
+	item, err := ruleFromModel(record)
+	if err != nil {
+		return err
+	}
+	*v = item
 	return capture(b, &v.Extra, "id", "itemType", "rule_type", "value", "library_rule_id", "policy", "enabled")
 }
 
@@ -275,7 +261,7 @@ func capture(b []byte, extra *map[string]json.RawMessage, keys ...string) error 
 	}
 	return nil
 }
-func preserve(v any, extra map[string]json.RawMessage) ([]byte, error) {
+func preserve[T any](v T, extra map[string]json.RawMessage) ([]byte, error) {
 	b, err := json.Marshal(v)
 	if err != nil {
 		return nil, err
@@ -290,14 +276,16 @@ func preserve(v any, extra map[string]json.RawMessage) ([]byte, error) {
 	return json.Marshal(fields)
 }
 
+type policyGroup struct {
+	Name string `json:"name"`
+}
+
 type config struct {
 	Settings Settings      `json:"domain_discovery"`
 	Library  []libraryItem `json:"rule_library"`
 	Rules    []ruleConfig  `json:"rule_configs"`
-	Groups   []struct {
-		Name string `json:"name"`
-	} `json:"proxy_groups"`
-	Mihomo struct {
+	Groups   []policyGroup `json:"proxy_groups"`
+	Mihomo   struct {
 		Custom string `json:"custom_config"`
 	} `json:"mihomo"`
 }

@@ -3,17 +3,14 @@ package discovery
 // This file is the boundary to the pre-N8 repository, matcher and health APIs.
 // Business logic uses native structs; these conversions disappear with N8.
 import (
-	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"path/filepath"
 	"sync"
 
 	"configflow/internal/agents"
 	"configflow/internal/agents/trafficstore"
-	"configflow/internal/convert"
 	"configflow/internal/health"
 	"configflow/internal/health/check"
 	"configflow/internal/jsonx"
@@ -21,9 +18,6 @@ import (
 	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
 	"configflow/internal/rules"
-	"configflow/internal/yamlx"
-
-	"gopkg.in/yaml.v3"
 )
 
 func decode(v any, out any) error {
@@ -50,73 +44,6 @@ func object(v any) (*jsonx.Object, error) {
 		return nil, fmt.Errorf("expected JSON object")
 	}
 	return o, nil
-}
-func loadConfig(ctx context.Context, id string) (config, error) {
-	v, err := repo.GetConfig(ctx, id)
-	c := config{Settings: defaultSettings()}
-	if err == nil {
-		err = decode(v, &c)
-	}
-	c.Settings.normalize()
-	return c, err
-}
-func editProfile(ctx context.Context, id string, edit func(*config) error) error {
-	_, err := repo.UpdateConfigTransaction(lifecycle.Detach(ctx), func(ctx context.Context, o *jsonx.Object) (*jsonx.Object, error) {
-		c := config{Settings: defaultSettings()}
-		if err := decode(o, &c); err != nil {
-			return nil, err
-		}
-		c.Settings.normalize()
-		before, err := json.Marshal(c.Rules)
-		if err != nil {
-			return nil, err
-		}
-		if err := edit(&c); err != nil {
-			return nil, err
-		}
-		s, err := legacy(c.Settings)
-		if err != nil {
-			return nil, err
-		}
-		r, err := legacy(c.Rules)
-		if err != nil {
-			return nil, err
-		}
-		o.Set("domain_discovery", s)
-		after, err := json.Marshal(c.Rules)
-		if err != nil {
-			return nil, err
-		}
-		if !bytes.Equal(before, after) {
-			o.Set("rule_configs", r)
-		}
-		return nil, nil
-	}, id)
-	return err
-}
-func editSettings(ctx context.Context, id string, edit func(*Settings) error) error {
-	return editProfile(ctx, id, func(c *config) error { return edit(&c.Settings) })
-}
-func editLibrary(ctx context.Context, edit func(*[]libraryItem) error) error {
-	return editLibraryContext(ctx, func(_ context.Context, items *[]libraryItem) error { return edit(items) })
-}
-func editLibraryContext(ctx context.Context, edit func(context.Context, *[]libraryItem) error) error {
-	_, err := repo.UpdateSharedConfigTransaction(lifecycle.Detach(ctx), func(ctx context.Context, o *jsonx.Object) (*jsonx.Object, error) {
-		var items []libraryItem
-		if err := decode(o.GetOr("rule_library", []any{}), &items); err != nil {
-			return nil, err
-		}
-		if err := edit(ctx, &items); err != nil {
-			return nil, err
-		}
-		v, err := legacy(items)
-		if err != nil {
-			return nil, err
-		}
-		o.Set("rule_library", v)
-		return nil, nil
-	})
-	return err
 }
 func saveRule(ctx context.Context, item libraryItem) error {
 	v, err := object(item)
@@ -272,40 +199,6 @@ type Agent struct {
 	Heartbeat   string `json:"last_heartbeat"`
 }
 
-func profileAgents(ctx context.Context, id string) ([]Agent, error) {
-	m, err := agents.Get(ctx)
-	if err != nil {
-		return nil, err
-	}
-	all, err := m.GetAllAgents(ctx, false)
-	if err != nil {
-		return nil, err
-	}
-	def, err := repo.GetDefaultProfileID(ctx)
-	if err != nil {
-		return nil, err
-	}
-	out := []Agent{}
-	for _, v := range all {
-		var a Agent
-		view := jsonx.NewObject()
-		for _, key := range []string{"id", "name", "profile_id", "service_type", "domain_discovery_enabled", "version", "last_heartbeat"} {
-			if field, ok := v.Get(key); ok {
-				view.Set(key, field)
-			}
-		}
-		if err := decode(view, &a); err != nil {
-			return nil, err
-		}
-		if a.ProfileID == "" {
-			a.ProfileID = def
-		}
-		if a.ProfileID == id && a.ServiceType == "mihomo" {
-			out = append(out, a)
-		}
-	}
-	return out, nil
-}
 func supported(version, minimum string) bool {
 	return version != "" && agents.CompareVersions(version, minimum) >= 0
 }
@@ -611,106 +504,4 @@ func websiteMarkers() map[string]string {
 		out[m.Key] = m.Pattern
 	}
 	return out
-}
-
-type profile struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-}
-
-func listProfiles(ctx context.Context) ([]profile, error) {
-	r, err := repo.GetRepository(ctx)
-	if err != nil {
-		return nil, err
-	}
-	v, err := r.ListProfiles(ctx)
-	if err != nil {
-		return nil, err
-	}
-	var out []profile
-	err = decode(v, &out)
-	return out, err
-}
-
-func customPorts(text string) (map[int]bool, error) {
-	out := map[int]bool{}
-	parsed, parseErr := yamlx.Parse([]byte(text))
-	if parseErr != nil {
-		if errors.Is(parseErr, yamlx.ErrPolicy) || errors.Is(parseErr, yamlx.ErrAliasRecursion) || errors.Is(parseErr, yamlx.ErrAliasBudget) {
-			return out, customPortYAMLError(parseErr)
-		}
-		return out, nil
-	}
-	if parsed.Kind != yaml.MappingNode {
-		return out, nil
-	}
-	projection := yamlx.Map()
-	for _, key := range convert.InboundPortKeys {
-		if node := yamlx.Get(parsed, key); node != nil {
-			value, err := customTaggedPort(node, key)
-			if err != nil {
-				return out, err
-			}
-			yamlx.Set(projection, key, value)
-		}
-	}
-	if listeners := yamlx.Resolve(yamlx.Get(parsed, "listeners")); listeners != nil && listeners.Kind == yaml.SequenceNode {
-		selected := yamlx.Seq()
-		for _, listener := range listeners.Content {
-			entry := yamlx.Map()
-			if name := yamlx.Resolve(yamlx.Get(listener, "name")); name != nil && name.Kind == yaml.ScalarNode {
-				yamlx.Set(entry, "name", name)
-			}
-			if node := yamlx.Get(listener, "port"); node != nil {
-				value, err := customTaggedPort(node, "listeners.port")
-				if err != nil {
-					return out, err
-				}
-				yamlx.Set(entry, "port", value)
-			}
-			selected.Content = append(selected.Content, entry)
-		}
-		yamlx.Set(projection, "listeners", selected)
-	}
-
-	data, err := yamlx.ToJSON(projection)
-	if err != nil {
-		return out, err
-	}
-	value, err := jsonx.Parse(data)
-	if err != nil {
-		return out, err
-	}
-	v, _ := value.(*jsonx.Object)
-	ports, err := convert.MihomoUsedPorts(v)
-	if err != nil {
-		return out, err
-	}
-	for n := range ports {
-		if v, ok := n.Int64(); ok {
-			out[int(v)] = true
-		}
-	}
-	return out, nil
-}
-
-// customTaggedPort applies the existing validation-error path when an unknown
-// tag cannot decode to this field's integer type; failure is never a zero port.
-func customTaggedPort(node *yamlx.Node, field string) (*yamlx.Node, error) {
-	resolved := yamlx.Resolve(node)
-	switch resolved.ShortTag() {
-	case "!!str", "!!int", "!!float", "!!bool", "!!null", "!!timestamp", "!!binary", "!!seq", "!!map":
-		return node, nil
-	}
-	var port int
-	if err := yamlx.Decode(resolved, &port); err != nil {
-		return nil, invalid(fmt.Sprintf(msgCustomPort, field))
-	}
-	return yamlx.Int(int64(port)), nil
-}
-
-func customPortYAMLError(cause error) error {
-	failure := repo.NewValidationError(fmt.Sprintf(msgCustomPortYAML, cause))
-	failure.Cause = cause
-	return failure
 }

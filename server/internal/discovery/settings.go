@@ -17,7 +17,7 @@ import (
 )
 
 // SettingsPayload returns the selected rulesets and valid candidates.
-func SettingsPayload(ctx context.Context, id string) (map[string]any, error) {
+func SettingsPayload(ctx context.Context, id string) (*SettingsView, error) {
 	c, err := loadConfig(ctx, id)
 	if err != nil {
 		return nil, err
@@ -29,12 +29,12 @@ func SettingsPayload(ctx context.Context, id string) (map[string]any, error) {
 			candidates = append(candidates, map[string]string{"id": item.ID, "name": item.Name, "behavior": item.Behavior})
 		}
 	}
-	return map[string]any{"direct": info(c, s.DirectRuleset), "proxy": info(c, s.ProxyRuleset), "ignored": s.Ignored, "auto_probe": s.AutoProbe, "auto_apply": s.AutoApply, "auto_apply_min_confidence": s.Confidence, "confidence_choices": []int{80, 90, 95}, "probe_path": proxyPath(c), "region_check_enabled": s.RegionEnabled, "region_probe_port": s.RegionPort, "candidates": candidates, "policies": c.policies()}, nil
+	return &SettingsView{Direct: info(c, s.DirectRuleset), Proxy: info(c, s.ProxyRuleset), Ignored: s.Ignored, AutoProbe: s.AutoProbe, AutoApply: s.AutoApply, Confidence: s.Confidence, ConfidenceChoices: []int{80, 90, 95}, ProbePath: proxyPath(c), RegionEnabled: s.RegionEnabled, RegionPort: s.RegionPort, Candidates: candidates, Policies: c.policies()}, nil
 }
 func invalid(msg string) error { return repo.NewValidationError(msg) }
 
 // UpdateSettings validates and saves a partial settings object.
-func UpdateSettings(ctx context.Context, id string, payload json.RawMessage) (map[string]any, error) {
+func UpdateSettings(ctx context.Context, id string, payload json.RawMessage) (*SettingsView, error) {
 	ctx = lifecycle.Detach(ctx)
 	var fields map[string]json.RawMessage
 	if json.Unmarshal(payload, &fields) != nil || fields == nil {
@@ -171,7 +171,7 @@ func insertRules(rules []ruleConfig, index int, added ...ruleConfig) []ruleConfi
 }
 
 // InitRulesets creates new discovery libraries and references before MATCH.
-func InitRulesets(ctx context.Context, id string, targets []string, proxyPolicy string) (map[string]any, error) {
+func InitRulesets(ctx context.Context, id string, targets []string, proxyPolicy string) (*SettingsView, error) {
 	ctx = lifecycle.Detach(ctx)
 	if len(targets) == 0 {
 		targets = []string{"direct", "proxy"}

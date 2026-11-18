@@ -147,8 +147,8 @@ func TestReviewTypedSettingsDefaultsAndLegacyNumber(t *testing.T) {
 				t.Fatalf("read-time defaults rejected persisted settings: %v", err)
 			}
 			settings.normalize()
-			if strings.Contains(raw, "auto_probe") && (!settings.AutoProbe || settings.AutoApply || settings.RegionEnabled || len(settings.RegionalRulesets) != 0 || len(settings.WebsiteNotes) != 0) {
-				t.Fatal("legacy defaults changed")
+			if strings.Contains(raw, "auto_probe") && (settings.AutoProbe || settings.AutoApply || settings.RegionEnabled || len(settings.RegionalRulesets) != 0 || len(settings.WebsiteNotes) != 0) {
+				t.Fatal("R5 stored bool defaults changed")
 			}
 			if strings.Contains(raw, "80.0") && settings.Confidence != 80 {
 				t.Fatal("lost supported confidence")

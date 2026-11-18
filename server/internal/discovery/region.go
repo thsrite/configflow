@@ -291,7 +291,7 @@ func StartRegion(ctx context.Context, id string, services bool, values []string)
 }
 
 // RegionPayload merges the newest persisted results of the current profile.
-func RegionPayload(ctx context.Context, id string) (map[string]any, error) {
+func RegionPayload(ctx context.Context, id string) (*RegionView, error) {
 	c, err := loadConfig(ctx, id)
 	if err != nil {
 		return nil, err
@@ -321,15 +321,15 @@ func RegionPayload(ctx context.Context, id string) (map[string]any, error) {
 			}
 		}
 	}
-	var agent any
+	var agent *AgentIdentity
 	if chosen != nil {
-		agent = map[string]string{"id": chosen.ID, "name": chosen.Name}
+		agent = &AgentIdentity{ID: chosen.ID, Name: chosen.Name}
 	}
 	regional := map[string]*RulesetInfo{}
 	for policy, rid := range c.Settings.RegionalRulesets {
 		regional[policy] = info(c, ptr(rid))
 	}
-	return map[string]any{"enabled": c.Settings.RegionEnabled, "port": c.Settings.RegionPort, "services": publicServices(), "result": result, "agent": agent, "domains": domains, "policies": c.policies(), "ready": len(capable(as, minRegionVersion)) > 0, "min_agent_version": minRegionVersion, "job": runningJob(id), "regional_rulesets": regional}, nil
+	return &RegionView{Enabled: c.Settings.RegionEnabled, Port: c.Settings.RegionPort, Services: publicServices(), Result: result, Agent: agent, Domains: domains, Policies: c.policies(), Ready: len(capable(as, minRegionVersion)) > 0, MinAgentVersion: minRegionVersion, Job: runningJob(id), RegionalRulesets: regional}, nil
 }
 func checkedAt(raw json.RawMessage) string {
 	var v struct {

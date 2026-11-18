@@ -1,6 +1,8 @@
 package discovery
 
 const (
+	msgMissingProfile = "域名发现缺少配置"
+	msgStoredString   = "%s %s 的 %s 必须是字符串，当前值：%s"
 	msgObject         = "请求必须是 JSON 对象"
 	msgRuleset        = "默认规则集必须是内容型、classical 或 domain 格式的规则库条目"
 	msgConfidence     = "自动采纳阈值只能是 80、90 或 95"

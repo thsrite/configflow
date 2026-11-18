@@ -91,13 +91,13 @@ func GetJob(id, profile string) *Job {
 }
 
 // BusyPayload prevents disclosure of a different profile's running job.
-func BusyPayload(b *Busy, profile string) map[string]any {
+func BusyPayload(b *Busy, profile string) BusyView {
 	j := GetJob(b.JobID, profile)
 	msg := msgBusy
 	if j == nil {
 		msg = msgOtherBusy
 	}
-	return map[string]any{"success": false, "message": msg, "job": j}
+	return BusyView{Message: msg, Job: j}
 }
 
 var jobLock = lockx.NewMutex(lockx.LevelJob, "domain-discovery")

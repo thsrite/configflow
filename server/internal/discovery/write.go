@@ -381,25 +381,28 @@ func UndoDomain(ctx context.Context, id, value, target string) ([]string, error)
 }
 
 // HistoryPayload adds current library names to the newest-first history.
-func HistoryPayload(ctx context.Context, id string) ([]map[string]any, error) {
+func HistoryPayload(ctx context.Context, id string) ([]map[string]json.RawMessage, error) {
 	c, err := loadConfig(ctx, id)
 	if err != nil {
 		return nil, err
 	}
 	sort.SliceStable(c.Settings.History, func(i, j int) bool { return c.Settings.History[i].AppliedAt > c.Settings.History[j].AppliedAt })
-	out := []map[string]any{}
+	out := []map[string]json.RawMessage{}
 	for _, h := range c.Settings.History {
 		b, err := json.Marshal(h)
 		if err != nil {
 			return nil, err
 		}
-		var item map[string]any
+		var item map[string]json.RawMessage
 		if err = json.Unmarshal(b, &item); err != nil {
 			return nil, err
 		}
-		item["ruleset"] = nil
+		item["ruleset"] = json.RawMessage("null")
 		if lib := c.library(h.RulesetID); lib != nil {
-			item["ruleset"] = lib.Name
+			item["ruleset"], err = json.Marshal(lib.Name)
+			if err != nil {
+				return nil, err
+			}
 		}
 		out = append(out, item)
 	}

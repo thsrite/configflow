@@ -4,15 +4,15 @@ import (
 	"context"
 	"time"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/repo"
 	"configflow/internal/tasks"
 	"configflow/internal/taskstatus"
+	"encoding/json"
 )
 
 func wireTasks() {
-	tasks.SetRows(tasks.SlotDomains, domainRows)
+	tasks.SetRowBuilder(tasks.SlotDomains, domainRows)
 	tasks.SetRunner(tasks.SlotDomains, func(ctx context.Context, key, resource string) error {
 		ctx = lifecycle.Detach(ctx)
 		c, err := loadConfig(ctx, resource)
@@ -30,26 +30,28 @@ func wireTasks() {
 		return tasks.StartBackground(worker, key, func(ctx context.Context) error { _, err := RunAutoTask(ctx, resource, "manual"); return err })
 	})
 }
-func domainRows(ctx context.Context, statuses *jsonx.Object) ([]*jsonx.Object, error) {
+func domainRows(ctx context.Context, statuses taskstatus.Snapshot) ([]*tasks.Task, error) {
 	profiles, err := listProfiles(ctx)
 	if err != nil {
 		return nil, err
 	}
-	out := []*jsonx.Object{}
+	out := []*tasks.Task{}
 	for _, p := range profiles {
 		key := "domain_discovery:" + p.ID
 		c, err := loadConfig(ctx, p.ID)
 		if err != nil {
 			return nil, err
 		}
-		entry, exists := statuses.Get(key)
+		_, exists := statuses[key]
 		if !c.Settings.AutoProbe && !exists {
 			continue
 		}
-		e, _ := entry.(*jsonx.Object)
+		e := statuses.Entry(key)
 		var due *time.Time
-		if last, ok := taskstatus.ParseTime(e.Value("last_run_at")); ok && c.Settings.AutoProbe {
-			due = ptr(last.Add(600 * time.Second))
+		if e.LastRunAt != nil {
+			if last, ok := taskstatus.ParseTimestamp(*e.LastRunAt); ok && c.Settings.AutoProbe {
+				due = ptr(last.Add(600 * time.Second))
+			}
 		}
 		hint := ""
 		if !c.Settings.AutoProbe {
@@ -59,13 +61,11 @@ func domainRows(ctx context.Context, statuses *jsonx.Object) ([]*jsonx.Object, e
 		if name == "" {
 			name = p.ID
 		}
-		fields := []any{"resource_id", p.ID, "profile_id", p.ID, "profile_name", name, "enabled", c.Settings.AutoProbe, "interval_seconds", 600, "can_run", c.Settings.AutoProbe, "run_hint", hint, "running", tasks.IsBackground(key), "next_run_at", tasks.ISO(due), "link", "/domain-discovery"}
-		history, err := tasks.History(e)
+		history, err := tasks.ProjectHistory(e)
 		if err != nil {
 			return nil, err
 		}
-		fields = append(fields, tasks.Spread(history)...)
-		out = append(out, tasks.Row(key, tasks.SlotDomains, msgAutoName, fields...))
+		out = append(out, &tasks.Task{Key: key, Category: tasks.SlotDomains, Name: msgAutoName, ResourceID: p.ID, ProfileID: ptr(p.ID), ProfileName: ptr(name), Enabled: c.Settings.AutoProbe, IntervalSeconds: json.RawMessage("600"), CanRun: c.Settings.AutoProbe, RunHint: hint, Running: tasks.IsBackground(key), NextRunAt: tasks.Timestamp(due), Link: ptr("/domain-discovery"), HistoryData: history})
 	}
 	return out, nil
 }
