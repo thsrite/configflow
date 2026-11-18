@@ -11,6 +11,7 @@ import (
 
 	"configflow/internal/convert"
 	"configflow/internal/jsonx"
+	"configflow/internal/testgolden"
 	"configflow/internal/yamlbridge"
 	"configflow/internal/yamlx"
 	"configflow/internal/yamlx/yamlxtest"
@@ -21,7 +22,7 @@ import (
 
 func loadRows(t *testing.T, path string) []*jsonx.Object {
 	t.Helper()
-	file, err := os.Open(path)
+	file, err := testgolden.Open(t, path)
 	if err != nil {
 		t.Fatal(err)
 	}

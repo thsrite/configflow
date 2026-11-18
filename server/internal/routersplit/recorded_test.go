@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 	"testing"
@@ -14,6 +13,7 @@ import (
 	"configflow/internal/gateway/gwbase"
 	"configflow/internal/jsonx"
 	"configflow/internal/repo"
+	"configflow/internal/testgolden"
 	"configflow/internal/yamlx"
 	"configflow/internal/yamlx/yamlxtest"
 )
@@ -37,7 +37,7 @@ type recordedRow struct {
 
 func loadRecorded(t testing.TB, path string) []recordedRow {
 	t.Helper()
-	f, err := os.Open(path)
+	f, err := testgolden.Open(t, path)
 	if err != nil {
 		t.Fatal(err)
 	}

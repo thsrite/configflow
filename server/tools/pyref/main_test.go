@@ -1,6 +1,7 @@
 package main
 
 import (
+	"configflow/internal/testgolden"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -111,6 +112,9 @@ func TestAuditRepository(t *testing.T) {
 			t.Fatal(err)
 		}
 		if err = audit(root, scopes, rows); err != nil {
+			t.Fatal(err)
+		}
+		if err = testgolden.AuditSources(root, scopes); err != nil {
 			t.Fatal(err)
 		}
 	}

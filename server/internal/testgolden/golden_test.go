@@ -64,12 +64,16 @@ func TestGoldenHelperProcess(t *testing.T) {
 	if err := os.Chdir(dir); err != nil {
 		t.Fatal(err)
 	}
-	value := New(t, Spec{Name: "control", Sources: []string{filepath.Join(dir, "source.py")}, Input: []byte(os.Getenv("PYREF_SELFTEST_INPUT")), Compress: true, Run: func() ([]byte, error) {
+	reference := New(t, Spec{Name: "control", Sources: []string{filepath.Join(dir, "source.py"), filepath.Join(dir, "driver_test.go"), filepath.Join(dir, "helper.go"), filepath.Join(dir, "input.fixture")}, Input: []byte(os.Getenv("PYREF_SELFTEST_INPUT")), Compress: true, Run: func() ([]byte, error) {
 		if err := os.WriteFile("executed", []byte("yes"), 0600); err != nil {
 			return nil, err
 		}
 		return []byte(os.Getenv("PYREF_SELFTEST_OUTPUT")), nil
-	}}).Output(t)
+	}})
+	if os.Getenv("PYREF_SELFTEST_SKIP") == "1" {
+		return
+	}
+	value := reference.Output(t)
 	if string(value) != os.Getenv("PYREF_SELFTEST_WANT") {
 		t.Fatalf("original assertion: %q", value)
 	}
@@ -88,6 +92,11 @@ func TestRecordingAndReplayNegativeControls(t *testing.T) {
 	source := filepath.Join(dir, "source.py")
 	if err = os.WriteFile(source, []byte("original"), 0600); err != nil {
 		t.Fatal(err)
+	}
+	for _, name := range []string{"driver_test.go", "helper.go", "input.fixture"} {
+		if err = os.WriteFile(filepath.Join(dir, name), []byte("original"), 0600); err != nil {
+			t.Fatal(err)
+		}
 	}
 	metadataPath := filepath.Join(dir, "venv/lib/python3.11/site-packages/example.dist-info/METADATA")
 	if err = os.MkdirAll(filepath.Dir(metadataPath), 0755); err != nil {
@@ -124,6 +133,28 @@ func TestRecordingAndReplayNegativeControls(t *testing.T) {
 		t.Fatal("ordinary mode executed callback")
 	}
 	run("check", "", "input", "answer", "answer", true)
+	t.Setenv("PYREF_SELFTEST_SKIP", "1")
+	if text := run("", "", "input", "unreachable", "answer", false); !strings.Contains(text, "unconsumed exact input") {
+		t.Fatal("reference coverage silently shrank", text)
+	}
+	t.Setenv("PYREF_SELFTEST_SKIP", "")
+	if err = os.WriteFile(filepath.Join(dir, "unrelated_test.go"), []byte("unrelated"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	run("", "", "input", "unreachable", "answer", true)
+	for _, name := range []string{"driver_test.go", "helper.go", "input.fixture"} {
+		path := filepath.Join(dir, name)
+		if err = os.WriteFile(path, []byte("changed"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		text := run("", "", "input", "unreachable", "answer", false)
+		if !strings.Contains(text, "Python 参考已变化，请重新录制") {
+			t.Fatalf("declared %s mutation did not invalidate golden", name)
+		}
+		if err = os.WriteFile(path, []byte("original"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
 	for _, mode := range []string{"check", "record"} {
 		text := run(mode, "", "input", "changed", "changed", false)
 		if !strings.Contains(text, "PYREF DIFF") {

@@ -28,11 +28,11 @@ type Lines struct {
 }
 
 // NewLines opens a transcript. Sources include the script and all Python backend
-// files conservatively; the consuming package's test files are added by New.
+// files conservatively; Sources audits the explicitly declared harness files.
 func NewLines(t *testing.T, script string) *Lines {
 	t.Helper()
 	lines := &Lines{script: script, owner: t}
-	lines.reference = New(t, Spec{Sources: []string{"backend", script}, Compress: true})
+	lines.reference = New(t, Spec{Sources: Sources(t, "backend", script), Compress: true})
 	return lines
 }
 

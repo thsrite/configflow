@@ -228,7 +228,7 @@ func TestReviewConditionalMatchesWerkzeug(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := testgolden.New(t, testgolden.Spec{
-		Sources: []string{"backend", "server/internal/api/agents/testdata/review_a10_conditional.py"},
+		Sources: testgolden.Sources(t, "backend", "server/internal/api/agents/testdata/review_a10_conditional.py"),
 		Input:   payload,
 		Run: func() ([]byte, error) {
 			cmd := exec.Command(testgolden.Python(), "testdata/review_a10_conditional.py", file)

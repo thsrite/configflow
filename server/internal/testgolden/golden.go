@@ -124,16 +124,6 @@ func sourceMetadata(spec Spec) (metadata, error) {
 	if len(sources) == 0 {
 		sources = []string{"backend"}
 	}
-	// The consuming test source and fixtures define inputs just as the oracle does.
-	cwd, err := os.Getwd()
-	if err != nil {
-		return metadata{}, err
-	}
-	tests, err := filepath.Glob(filepath.Join(cwd, "*_test.go"))
-	if err != nil {
-		return metadata{}, err
-	}
-	sources = append(sources, tests...)
 	files := map[string]string{}
 	for _, source := range sources {
 		if !filepath.IsAbs(source) {
@@ -282,6 +272,11 @@ func (r *Reference) finish(t *testing.T) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.mode == "" {
+		for key := range r.old.Entries {
+			if !r.seen[key] {
+				t.Errorf("%s: unconsumed exact input %s; reference coverage changed, review and re-record", r.path, key)
+			}
+		}
 		return
 	}
 	old, _ := json.Marshal(r.old)

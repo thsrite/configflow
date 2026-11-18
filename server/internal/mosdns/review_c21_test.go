@@ -5,11 +5,11 @@ package mosdns
 // testdata/review_c21_ref.json.
 
 import (
-	"os"
 	"strings"
 	"testing"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/testgolden"
 	"configflow/internal/yamlbridge"
 	"configflow/internal/yamlx"
 )
@@ -18,7 +18,7 @@ import (
 // explicitly approved refusal path, including graphs in replaced sections.
 func TestReviewUnholdableYAMLOutsideTheOutputMatchesPython(t *testing.T) {
 	t.Parallel()
-	data, err := os.ReadFile("testdata/review_c21_ref.json")
+	data, err := testgolden.ReadFile(t, "testdata/review_c21_ref.json")
 	if err != nil {
 		t.Fatal(err)
 	}

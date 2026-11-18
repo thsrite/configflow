@@ -186,10 +186,20 @@ func audit(root string, scopes []string, registry []exception) error {
 }
 func main() {
 	fingerprintFlag := flag.Bool("fingerprint", false, "print native backend+venv fingerprint for gate integration")
+	sourcePlanFlag := flag.Bool("suggest-sources", false, "print source declaration suggestions for review; never write")
 	testFlag := flag.Bool("test", false, "run go test with native external-input cache fingerprint; arguments after --")
 	scopesFlag := flag.String("scopes", "server/internal/mosdns,server/internal/oxidns,server/internal/provider,server/internal/deploy,server/internal/discovery,server/internal/routersplit", "comma-separated repository-relative scopes")
 	root := flag.String("root", "..", "repository root (run from server)")
 	flag.Parse()
+	if *sourcePlanFlag {
+		data, err := testgolden.SuggestedSources(*root)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		fmt.Println(string(data))
+		return
+	}
 	if *fingerprintFlag || *testFlag {
 		fingerprint, err := testgolden.Fingerprint()
 		if err != nil {
@@ -232,6 +242,10 @@ func main() {
 		registry = append(registry, rows...)
 	}
 	if err = audit(*root, strings.Split(*scopesFlag, ","), registry); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	if err = testgolden.AuditSources(*root, strings.Split(*scopesFlag, ",")); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

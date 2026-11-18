@@ -17,11 +17,59 @@ remain live.
   the actual Go request/side effects; never normalize arbitrary paths or values.
 
 Normal `go test` starts no Python for these references. Every golden hashes its
-backend sources, oracle script, consuming package's test source and declared
-input, plus the venv's sorted dist-info METADATA/RECORD/WHEEL files. Dependency
+explicit sources, oracle script and declared input, plus the venv's sorted
+dist-info METADATA/RECORD/WHEEL files. Dependency
 checking reads files directly; it does not execute Python or pip. `NewLines`
 conservatively fingerprints all backend Python sources (including transitive
 imports). A changed hash fails with `Python 参考已变化，请重新录制`.
+
+## Explicit sources and missing-dependency enforcement
+
+`tools/pyref/sources.json` declares every reference's entry test, source files,
+fixtures, and reviewed product boundaries. `NewLines` loads it automatically;
+one-shot references use `Spec{Sources: testgolden.Sources(t, "backend", script)}`.
+There is no package-wide `*_test.go` inclusion in golden metadata.
+
+The native audit follows entry-test functions, referenced package declarations,
+test methods, init/TestMain and non-pure initialization. Imported harness
+packages include their ordinary Go files, transitive imports and embedded data.
+Fixtures named in reachable source are checked too. Module dependencies are
+pinned by go.mod/go.sum; backend/venv checks and the cache fingerprint stay intact.
+Declaration paths are repository-relative. The list is conservative at file and
+imported-helper-package granularity, rather than a dynamic coverage sample.
+
+Product code being tested is a separate, explicitly reviewed boundary: local
+symbols plus imported packages **and their used members** are listed. A new
+ordinary helper or imported member is rejected until its helper source is
+declared or its product role is reviewed. It is never automatically exempted as
+product code. This lets ordinary product fixes run against the existing Python
+answer. Changing a declared harness/helper/fixture invalidates the golden.
+
+Test-side file reads use `testgolden.Open/ReadFile`. Actual repository reads must
+be declared, including dynamically assembled paths and symlink targets; generated
+temporary inputs remain covered by exact input bytes. Unwrapped os/io/ioutil/fs
+reads in reachable local harness declarations are rejected, including aliases and
+function values. Shared loaders retain ordinary I/O for non-golden tests.
+
+`Sources` checks dependencies during each consumer's execution, and
+`TestAuditRepository` checks all registered groups plus undeclared/indirect golden
+constructors. No Python or Go subprocess is used by this source audit. To obtain
+source suggestions for **manual review**, without writing or recording:
+
+```sh
+go run ./tools/pyref -suggest-sources > /path/to/reviewed-source-plan.json
+```
+
+The command refuses to classify unknown local symbols/imported product members.
+Declare real input helpers as sources; do not add them to product boundaries.
+Review suggestions before replacing the manifest. Only then run read-only live
+check, explicitly accept a metadata refresh, and check again. Adding a standalone
+unrelated test file neither changes the declaration nor invalidates the golden;
+actual initialization/hooks remain dependencies.
+
+Ordinary replay also requires every recorded exact input to be consumed. A
+branch change that silently stops comparing a previously recorded case fails
+even when all remaining responses match.
 
 Run on the test server with the same interpreter/dependencies as the original
 reference (`CONFIGFLOW_DIFF_PYTHON`, default `~/cf-test/.venv/bin/python`):

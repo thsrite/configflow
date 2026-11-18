@@ -186,7 +186,7 @@ func TestReviewDeflateAndZipMatchPython(t *testing.T) {
 	}
 	hash.Write(manifest)
 	out := testgolden.New(t, testgolden.Spec{
-		Sources: []string{"backend", "server/internal/installer/testdata/review_a10_deflate.py"},
+		Sources: testgolden.Sources(t, "backend", "server/internal/installer/testdata/review_a10_deflate.py"),
 		Input:   hash.Sum(nil),
 		Run: func() ([]byte, error) {
 			cmd := exec.Command(testgolden.Python(), "testdata/review_a10_deflate.py", dir)
