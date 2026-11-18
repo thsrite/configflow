@@ -64,11 +64,7 @@ func TestR15JobLockPrecedesValidation(t *testing.T) {
 	}
 }
 func TestR15FlaskRoutePriorities(t *testing.T) {
-	s := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(apiagents.Register, api.Register, func(r *httpx.Router) {
-		// A22 is not on this temporary base yet. Register its real Flask pattern
-		// as a dispatch contract; all already-ported handlers remain production ones.
-		r.GET("/api/agents/gateway-installations/<session_id>", "agents.gateway_installation_status", func(c *httpx.Ctx) (*httpx.Response, error) { return httpx.Empty(404), nil })
-	}), Setup: func(app *httpx.App) {
+	s := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(apiagents.Register, api.Register), Setup: func(app *httpx.App) {
 		app.BeforeRequest(func(c *httpx.Ctx) (*httpx.Response, error) {
 			if c.Endpoint != "" {
 				return httpx.JSON(map[string]string{"endpoint": c.Endpoint}), nil

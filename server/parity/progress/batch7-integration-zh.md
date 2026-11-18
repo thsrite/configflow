@@ -49,7 +49,7 @@
 1. 唯一路由器任务锁：实现及定向 race 验证通过。R14/R17/R15/A23 全部调用 RouterJobLock，
    删除 syncJobs 与 R14 hook；KindConflict 保持各入口原中文提示，关停/取消错误原样传播。
    有记录按连接、无记录按 profile+id；HTTP 继续先取锁再执行 404/请求体校验。
-2. A22 完整注册：待真实路由优先级及 NewApp 验证。
+2. A22 完整注册：真实 apiagents 注册替换 R15 过渡 shim，Flask/Go 路由优先级和 NewApp 注册验证通过。
 3. baseline：已删除 11 条 deferred→R14 和 12 条 deferred→A18；其余分类保留。最终 compare 检验 new/stale。
 4. O3-8：待跑 16 个 scenarios，验证已包含 R14 M1 的关停次序。
 5. A14 节流：集成树初次独立 race count=3 通过（14.714s）；为消除慢磁盘/负载造成的真实时间依赖，
@@ -74,3 +74,11 @@ batch-6 若追加日志修复，需要在最终预检前再 rebase 到其最新 
 按 baseline 原理由精确删除 23 行，没有扩大正则或增加新豁免；A14/A21/C34 的其他 deferred
 条目仍保留，必须由最终 compare 判断是否还有效。A18 原分支的删除在 rebase 冲突中暂缓，
 现在与 R14 一起集中记录，避免漏删旧 logs 路由的 A18 后果行。
+
+### 集成 2 验证
+
+移除 R15 优先级测试中的假 A22 route，使用 apiagents.Register 的真实安装处理器；
+NewApp endpoint 清单增加全部六个 A22 endpoint（index 同时承载 GET/POST）。
+`go test -count=1 -timeout=15m ./internal/api/routers ./internal/server -run "^TestR15(FlaskRoutePriorities|RealFlaskRoutePriorities)$|^TestNewAppRegistersImplementedRoutes$"`
+末行 api/routers 0.566s、server 0.013s 均 ok。
+同时回归 batch-6 R5：`go test -count=1 ./internal/convert -run "TestBatch6|TestMihomo.*Identit"` → ok 0.011s。
