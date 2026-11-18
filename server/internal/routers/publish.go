@@ -188,12 +188,8 @@ func Publish(ctx context.Context, req PublishRequest) PublishOutcome {
 	if err != nil {
 		return PublishOutcome{Err: err}
 	}
-	routers, err := releaseRoutersOf(config)
-	if err != nil {
-		return PublishOutcome{Err: err}
-	}
 	current := (*Router)(nil)
-	for _, r := range routers {
+	for _, r := range routersOf(config) {
 		if r.ID == req.RouterID {
 			current = r
 			break

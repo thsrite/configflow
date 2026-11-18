@@ -50,9 +50,9 @@ func r12Config(t *testing.T, db *repo.Repository) (json.RawMessage, *Router, mod
 	if e != nil {
 		t.Fatal(e)
 	}
-	items, e := releaseRoutersOf(raw)
-	if e != nil || len(items) != 1 {
-		t.Fatal(e, string(raw))
+	items := routersOf(raw)
+	if len(items) != 1 {
+		t.Fatal(string(raw))
 	}
 	var profile model.Profile
 	if e = json.Unmarshal(raw, &profile); e != nil {

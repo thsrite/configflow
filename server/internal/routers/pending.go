@@ -43,10 +43,6 @@ type pendingTarget struct {
 	profile pendingProfile
 	config  json.RawMessage
 	router  *Router
-	// broken marks a linked record the typed router model cannot decode; it
-	// reads as unknown instead of failing every other router (Python reads
-	// raw dicts, so such a record never hid the others).
-	broken bool
 }
 type pendingSignatureProfile struct {
 	ID       string            `json:"id"`
@@ -110,21 +106,18 @@ func pendingTargets(ctx context.Context, req PendingRequest) ([]pendingTarget, s
 			return nil, "", "", err
 		}
 		linked := []json.RawMessage{}
-		for _, item := range pendingLinkedRecords(data, req.AgentID) {
-			target := pendingTarget{profile: profile, config: data}
-			var r Router
-			if json.Unmarshal(item, &r) != nil {
-				target.router, target.broken = pendingIdentity(item), true
-				linked = append(linked, item)
-			} else {
-				original, err := releaseRouterRecord(&r)
-				if err != nil {
-					return nil, "", "", err
-				}
-				target.router = &r
-				linked = append(linked, original)
+		for _, r := range routersOf(data) {
+			// An empty Agent ID is a missing identity, never a match against
+			// routers without a proxy gateway.
+			if req.AgentID == "" || r.ProxyGatewayAgentID != req.AgentID {
+				continue
 			}
-			targets = append(targets, target)
+			original, err := releaseRouterRecord(r)
+			if err != nil {
+				return nil, "", "", err
+			}
+			linked = append(linked, original)
+			targets = append(targets, pendingTarget{profile, data, r})
 		}
 		if len(linked) > 0 {
 			signature.Profiles = append(signature.Profiles, pendingSignatureProfile{profile.ID, profile.Name, profile.Revision, linked})
@@ -195,10 +188,6 @@ func readPendingRouter(ctx context.Context, req PendingRequest, target pendingTa
 			pendingLogger.Error("Upstream router status failed: worker panic")
 		}
 	}()
-	if target.broken {
-		pendingLogger.Warningf("Upstream router status failed for router %s: stored record cannot be decoded", target.router.ID)
-		return out
-	}
 	factory := req.NewDriver
 	if factory == nil {
 		factory = NewDriver
@@ -230,50 +219,6 @@ func readPendingRouter(ctx context.Context, req PendingRequest, target pendingTa
 	return out
 }
 
-// pendingLinkedRecords is routers_of(config) filtered to one Agent: a missing
-// or malformed routers member means no routers, non-object items are skipped,
-// and only a string proxy_gateway_agent_id equal to a non-empty agentID links
-// (an empty ID never matches routers without a gateway).
-func pendingLinkedRecords(config json.RawMessage, agentID string) []json.RawMessage {
-	if agentID == "" {
-		return nil
-	}
-	var cfg struct {
-		Routers json.RawMessage `json:"routers"`
-	}
-	var routers struct {
-		Items json.RawMessage `json:"items"`
-	}
-	var items []json.RawMessage
-	if json.Unmarshal(config, &cfg) != nil || json.Unmarshal(cfg.Routers, &routers) != nil || json.Unmarshal(routers.Items, &items) != nil {
-		return nil
-	}
-	linked := []json.RawMessage{}
-	for _, item := range items {
-		var fields map[string]json.RawMessage
-		var link string
-		if json.Unmarshal(item, &fields) != nil || fields == nil || json.Unmarshal(fields["proxy_gateway_agent_id"], &link) != nil || link != agentID {
-			continue
-		}
-		linked = append(linked, item)
-	}
-	return linked
-}
-
-// pendingIdentity keeps the string id, name and type of an undecodable record
-// for its reminder row; other values read as empty.
-func pendingIdentity(item json.RawMessage) *Router {
-	var fields map[string]json.RawMessage
-	_ = json.Unmarshal(item, &fields)
-	text := func(key string) string {
-		var v string
-		_ = json.Unmarshal(fields[key], &v)
-		return v
-	}
-	r := &Router{}
-	r.ID, r.Name, r.Type = text("id"), text("name"), text("type")
-	return r
-}
 func unknownPending(message string) PendingSummary {
 	return PendingSummary{State: "unknown", Items: []PendingItem{}, Message: message}
 }

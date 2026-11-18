@@ -360,11 +360,7 @@ func returnCleanup(ctx context.Context, req InspectRequest, r *Router, a *Gatewa
 		if err != nil {
 			return nil, err
 		}
-		items, err := releaseRoutersOf(b)
-		if err != nil {
-			return nil, err
-		}
-		for _, other := range items {
+		for _, other := range routersOf(b) {
 			if (p.ID != req.ProfileID || other.ID != r.ID) && other.ManageReturnRouting && other.ProxyGatewayAgentID == a.ID {
 				shared = append(shared, orText(other.Name, other.ID))
 			}
@@ -378,12 +374,33 @@ func dnsGuardSettings(r *Router) DNSGuard {
 	}
 	return *r.DNSGuard
 }
-func releaseRoutersOf(config json.RawMessage) ([]*Router, error) {
+
+// routersOf is Python's routers_of: a missing or non-object routers member or
+// a non-list items member means no routers, and non-object items (null
+// included) are skipped. Records decode with Router's R5 fallback, so one
+// malformed record only affects its own row.
+func routersOf(config json.RawMessage) []*Router {
 	var cfg struct {
-		Routers struct {
-			Items []*Router `json:"items"`
-		} `json:"routers"`
+		Routers json.RawMessage `json:"routers"`
 	}
-	err := json.Unmarshal(config, &cfg)
-	return cfg.Routers.Items, err
+	var routers struct {
+		Items json.RawMessage `json:"items"`
+	}
+	var items []json.RawMessage
+	if json.Unmarshal(config, &cfg) != nil || json.Unmarshal(cfg.Routers, &routers) != nil || json.Unmarshal(routers.Items, &items) != nil {
+		return nil
+	}
+	out := make([]*Router, 0, len(items))
+	for _, item := range items {
+		var fields map[string]json.RawMessage
+		if json.Unmarshal(item, &fields) != nil || fields == nil {
+			continue
+		}
+		r := &Router{}
+		if json.Unmarshal(item, r) != nil {
+			continue
+		}
+		out = append(out, r)
+	}
+	return out
 }

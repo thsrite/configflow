@@ -2,6 +2,7 @@ package routers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -18,7 +19,8 @@ import (
 // TestR13ReviewMalformedRouterIsolated: Python reads routers_of(config) as raw
 // dicts, so a stored router whose fields have unexpected types only affects
 // that router (and only when it is linked). One such record must not turn the
-// reminder of every Agent into an error.
+// reminder of every Agent into an error; a linked one is read like Python
+// (the mismatched member falls back to its default, R5).
 func TestR13ReviewMalformedRouterIsolated(t *testing.T) {
 	for _, linked := range []bool{false, true} {
 		t.Run(fmt.Sprintf("linked=%v", linked), func(t *testing.T) {
@@ -27,14 +29,16 @@ func TestR13ReviewMalformedRouterIsolated(t *testing.T) {
 			if linked {
 				agent = "gateway"
 			}
-			bad := map[string]any{"id": "bad", "name": "synthetic malformed", "type": "routeros", "endpoint": "https://192.0.2.9",
-				"username": "synthetic-user", "password": "synthetic-password", "rule_sync_interval": "sixty",
-				"proxy_gateway_agent_id": agent}
+			bad := map[string]any{}
+			if e := json.Unmarshal(mustPolicyJSON(l.router), &bad); e != nil {
+				t.Fatal(e)
+			}
+			bad["id"], bad["name"], bad["rule_sync_interval"], bad["proxy_gateway_agent_id"] = "bad", "synthetic malformed", "sixty", agent
 			if _, e := l.db.CreateProfile(t.Context(), r12Record(t, map[string]string{"id": "legacy", "name": "Synthetic legacy"}), ""); e != nil {
 				t.Fatal(e)
 			}
 			if _, _, e := l.db.SaveProfile(t.Context(), "legacy", r12Record(t, map[string]any{"mihomo": map[string]string{"custom_config": "{}"}, "routers": map[string]any{"items": []any{bad}}}), nil); e != nil {
-				t.Skip("repository rejects the malformed record:", e)
+				t.Fatal("repository rejects the malformed record:", e)
 			}
 			out, e := AgentRouters(t.Context(), l.request(t))
 			if e != nil {
@@ -49,8 +53,8 @@ func TestR13ReviewMalformedRouterIsolated(t *testing.T) {
 			}
 			if linked {
 				got := out.Routers[2]
-				if got.ID != "bad" || got.Name != "synthetic malformed" || got.Type != "routeros" || got.ProfileID != "legacy" || got.State != "unknown" || got.Message == "" {
-					t.Fatalf("malformed linked router %+v", got)
+				if got.ID != "bad" || got.Name != "synthetic malformed" || got.ProfileID != "legacy" || got.State != "pending" {
+					t.Fatalf("malformed linked router not read like Python %+v", got)
 				}
 				if strings.Contains(string(mustPolicyJSON(out)), "synthetic-password") {
 					t.Fatal("credential leaked")

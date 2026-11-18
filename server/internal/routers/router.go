@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"slices"
@@ -72,12 +73,37 @@ type Router struct {
 }
 
 // UnmarshalJSON reads a stored record; absent settings take the defaults
-// the Python reader used (verify_tls on, 60-minute interval).
+// the Python reader used (verify_tls on, 60-minute interval). Like the
+// repository's R5 rule, a member of the wrong type reads as absent (its
+// default) instead of failing the record; the repository already logs
+// 「配置字段类型不匹配，已按缺省值解码」 for it on load. The stored bytes stay in
+// source, so an unchanged record is written back as it was.
 func (r *Router) UnmarshalJSON(data []byte) error {
 	type plain Router
-	p := plain{RouterSettings: RouterSettings{VerifyTLS: true, RuleSyncInterval: 60}}
+	defaults := func() plain { return plain{RouterSettings: RouterSettings{VerifyTLS: true, RuleSyncInterval: 60}} }
+	p := defaults()
 	if err := json.Unmarshal(data, &p); err != nil {
-		return err
+		var typeErr *json.UnmarshalTypeError
+		var members map[string]json.RawMessage
+		if !errors.As(err, &typeErr) || json.Unmarshal(data, &members) != nil {
+			return err
+		}
+		valid := map[string]json.RawMessage{}
+		for name, value := range members {
+			probe := defaults()
+			one, err := json.Marshal(map[string]json.RawMessage{name: value})
+			if err == nil && json.Unmarshal(one, &probe) == nil {
+				valid[name] = value
+			}
+		}
+		cleaned, err := json.Marshal(valid)
+		if err != nil {
+			return err
+		}
+		p = defaults()
+		if err := json.Unmarshal(cleaned, &p); err != nil {
+			return err
+		}
 	}
 	if err := json.Unmarshal(data, &p.Extra); err != nil {
 		return err
