@@ -158,3 +158,15 @@ owner 暂时仍调用的原有 helper，后续必须一起删除，不能据此�
   TestParserCorpus在同一row失败，finally恢复原始gzip字节。该条不是沿用旧987条的证据。
 - 对解析error传播的小整理之后，subs/convert相关定向race再次通过3.712s/4.130s；
   同次三包vet退出0。
+
+
+## DNS/hosts 基础（进行中）
+
+- 新 addresses.go 使用 netip 与 x/text，删除原手写 IPv6压缩/IPv4-mapped formatter。
+  原pyIPAddress暂为未迁移调用方的薄视图，解析/文本/属性均调用native owner；映射地址的
+  可用性判断使用Unmap，zone仅保留在地址文本、不影响地址属性。
+- 新 HostResolver 对只读YAML图构建一次索引，exact为O(1)、fallback只扫描wildcard键；
+  用于后续ApplyDNS复用，避免每个映射域名重建整份hosts映射。当前尚未接线，不提前声称
+  已解决该生成路径的分配问题。
+- 主服务器旧HostsCorpus3186条、DNSCorpus4769条、映射地址专例及新resolver的定向race
+  → `ok configflow/internal/subs 3.347s`；旧期待未改。

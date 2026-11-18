@@ -1,10 +1,8 @@
 package subs
 
 import (
-	"fmt"
 	"math"
 	"math/big"
-	"net/netip"
 	"sort"
 	"strings"
 	"unicode"
@@ -282,95 +280,15 @@ type ipInfo struct {
 	loopback    bool
 }
 
-// pyIPAddress is ipaddress.ip_address(s) (Python 3.11): a canonical string
-// and the flags the callers use, or false when Python raises ValueError.
-func pyIPAddress(s string) (ipInfo, bool) {
-	if s == "" {
+// pyIPAddress is the temporary old view for unported callers. Parsing,
+// canonical text and address flags all come from the native address owner.
+func pyIPAddress(text string) (ipInfo, bool) {
+	addr, ok := parseHostIP(text)
+	if !ok {
 		return ipInfo{}, false
 	}
-	if strings.Contains(s, ":") {
-		addr, scope, hasScope := strings.Cut(s, "%")
-		if hasScope && (scope == "" || strings.Contains(scope, "%")) {
-			return ipInfo{}, false
-		}
-		a, err := netip.ParseAddr(addr)
-		if err != nil || !a.Is6() || a.Zone() != "" {
-			return ipInfo{}, false
-		}
-		// Python rejects IPv4-in-IPv6 suffixes only when the dotted part is bad;
-		// netip agrees, so the syntax check is shared.
-		b := a.As16()
-		text := formatV6(b)
-		if hasScope {
-			text += "%" + scope
-		}
-		info := ipInfo{text: text, unspecified: a.IsUnspecified(), multicast: b[0] == 0xff, v6: true, loopback: a.IsLoopback()}
-		if a.Is4In6() {
-			// CPython 3.11.17: is_unspecified/is_multicast/is_loopback of an
-			// IPv4-mapped address are those of the IPv4 address.
-			v4 := a.Unmap()
-			info.unspecified, info.multicast, info.loopback = v4.IsUnspecified(), v4.IsMulticast(), v4.IsLoopback()
-		}
-		return info, true
-	}
-	a, err := netip.ParseAddr(s)
-	if err != nil || !a.Is4() {
-		return ipInfo{}, false
-	}
-	return ipInfo{text: a.String(), unspecified: a.IsUnspecified(), multicast: a.IsMulticast(), loopback: a.IsLoopback()}, true
-}
-
-// formatV6 is str(IPv6Address) of Python 3.11 (IPv4-mapped addresses keep the dotted tail).
-func formatV6(b [16]byte) string {
-	mapped := true
-	for i := 0; i < 10; i++ {
-		if b[i] != 0 {
-			mapped = false
-		}
-	}
-	if mapped && b[10] == 0xff && b[11] == 0xff {
-		return fmt.Sprintf("::ffff:%d.%d.%d.%d", b[12], b[13], b[14], b[15])
-	}
-	h := make([]uint16, 8)
-	for i := range h {
-		h[i] = uint16(b[2*i])<<8 | uint16(b[2*i+1])
-	}
-	bestStart, bestLen, curStart, curLen := -1, 0, -1, 0
-	for i, v := range h {
-		if v == 0 {
-			if curStart < 0 {
-				curStart, curLen = i, 0
-			}
-			curLen++
-			if curLen > bestLen {
-				bestStart, bestLen = curStart, curLen
-			}
-		} else {
-			curStart = -1
-		}
-	}
-	hex := func(v uint16) string {
-		const digits = "0123456789abcdef"
-		if v == 0 {
-			return "0"
-		}
-		var out []byte
-		for ; v > 0; v >>= 4 {
-			out = append([]byte{digits[v&15]}, out...)
-		}
-		return string(out)
-	}
-	join := func(items []uint16) string {
-		parts := make([]string, len(items))
-		for i, v := range items {
-			parts[i] = hex(v)
-		}
-		return strings.Join(parts, ":")
-	}
-	if bestLen > 1 {
-		return join(h[:bestStart]) + "::" + join(h[bestStart+bestLen:])
-	}
-	return join(h)
+	flags := addr.WithZone("").Unmap()
+	return ipInfo{text: addr.String(), unspecified: flags.IsUnspecified(), multicast: flags.IsMulticast(), v6: addr.Is6(), loopback: flags.IsLoopback()}, true
 }
 
 func sortStrings(s []string) { sort.Strings(s) }
