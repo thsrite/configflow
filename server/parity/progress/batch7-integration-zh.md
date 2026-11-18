@@ -136,3 +136,11 @@ production-isolation、SIGTERM/SIGKILL、锁等待、写故障和所有断连收
 
 首次定向修复回归：lifecycle 0.751s、yamlx 1.168s、clients 8.925s、routers 0.829s、
 importer 0.005s、convert 原 R5/身份校验相关 0.032s 均 ok。后续整树 preflight/compare 仍待完成。
+
+后续定向结果：Mihomo 13908 行 corpus / review boundary / shared scalar / follow override / YAML
+比较器全部通过（39.296s），pyref repository audit 通过（0.554s）。
+修复 follow override 后 live check：MosDNS 47072 corpus、5436 recorded 仍 0 differ，
+失败仅为三个来源指纹；router-split 只读 check 通过 1.039s。显式 record 后三个 goldens
+仅 metadata 更新；全十份 2916 exact input/output 的哈希再次证明完全不变。
+`go test -race -count=1 -timeout=15m ./internal/convert ./internal/importer -run "TestBatch6|TestN88bReview|TestMihomoFollowKeepsLocalQuotedInterval|TestSharedScalarMihomoOutputBoundaries|TestTypedMihomoProviderInterval|TestSnell"`
+→ convert 1.292s、importer 1.023s 均 ok。
