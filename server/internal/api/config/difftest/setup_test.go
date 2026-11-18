@@ -49,15 +49,23 @@ func TestSetupFlaskHTTPStateAndAuthentication(t *testing.T) {
 	if !reflect.DeepEqual(before, snapshot(t, w.srv)) {
 		t.Fatal("HEAD changed DB, revisions or files")
 	}
-	// Native owner readiness is an explicit migration boundary. Unlike Python,
-	// Go must not invent a negative installation result while A22 is absent.
-	for _, operation := range []string{"prepare", "abandon"} {
-		response := sendGo(t, w.srv, request{Method: "POST", Path: path + "/" + operation, Body: body(map[string]any{}), Headers: map[string]string{"Authorization": w.token, "Content-Type": "application/json"}})
-		if response.Status != 503 || response.Body.(map[string]any)["message"] != "等待首次使用向导模块" {
-			t.Fatalf("missing owner %s: %+v", operation, response)
-		}
-		if !reflect.DeepEqual(before, snapshot(t, w.srv)) {
-			t.Fatal("unavailable owner changed state")
-		}
+	// A21 now wires the real DNS preparation owner. As in Python, validate
+	// sources before generating: this subscription has no cached nodes. A22's
+	// missing installation owner does not block preparation.
+	prepared := w.check(request{Method: "POST", Path: path + "/prepare", Body: body(map[string]any{})})
+	if prepared.Status != 400 || prepared.Body.(map[string]any)["message"] != "当前没有可用节点，请先读取订阅或选择支持的节点" {
+		t.Fatalf("empty source prepare: %+v", prepared)
+	}
+	if !reflect.DeepEqual(before, snapshot(t, w.srv)) {
+		t.Fatal("failed preparation changed state")
+	}
+	// Abandon still needs A22's installation evidence to decide whether this
+	// profile can be removed. Keep its fail-closed owner check.
+	response := sendGo(t, w.srv, request{Method: "POST", Path: path + "/abandon", Body: body(map[string]any{}), Headers: map[string]string{"Authorization": w.token, "Content-Type": "application/json"}})
+	if response.Status != 503 || response.Body.(map[string]any)["message"] != "等待首次使用向导模块" {
+		t.Fatalf("missing installation owner: %+v", response)
+	}
+	if !reflect.DeepEqual(before, snapshot(t, w.srv)) {
+		t.Fatal("unavailable owner changed state")
 	}
 }

@@ -103,7 +103,16 @@ func TestSetupReadinessContract(t *testing.T) {
 	for _, tc := range []struct {
 		name, session string
 		blocked       bool
-	}{{"none", "", false}, {"unfinished", `{"profile_id":"default","goal":"gateway","completed":false}`, true}, {"corrupt", "{", true}, {"wrong-evidence", `{"profile_id":"default","completed":[]}`, true}, {"complete", `{"profile_id":"default","completed":true}`, false}, {"abandoned", `{"profile_id":"default","abandoned":true}`, false}} {
+		body          string
+	}{
+		{"none", "", false, ""},
+		{"unfinished", `{"profile_id":"default","goal":"gateway","completed":false}`, true, ""},
+		{"unfinished before form validation", `{"profile_id":"default","goal":"gateway","completed":false}`, true, `{"rule_set_ids":false}`},
+		{"corrupt", "{", true, ""},
+		{"wrong-evidence", `{"profile_id":"default","completed":[]}`, true, ""},
+		{"complete", `{"profile_id":"default","completed":true}`, false, ""},
+		{"abandoned", `{"profile_id":"default","abandoned":true}`, false, ""},
+	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s := testService(t)
 			t.Cleanup(SetAdoptOwnedWrite(nil))
@@ -113,7 +122,11 @@ func TestSetupReadinessContract(t *testing.T) {
 			before := stored(t, s)
 			beforeFiles := encode(files(t, s))
 			revision, _ := s.Repository.ConfigRevision(context.Background(), "default")
-			_, err := s.Execute(context.Background(), testOperation())
+			op := testOperation()
+			if tc.body != "" {
+				op.Body = json.RawMessage(tc.body)
+			}
+			_, err := s.Execute(context.Background(), op)
 			if tc.blocked {
 				afterRevision, _ := s.Repository.ConfigRevision(context.Background(), "default")
 				if !errors.Is(err, ErrSetupUnavailable) || stored(t, s) != before || !bytes.Equal(beforeFiles, encode(files(t, s))) || afterRevision != revision {

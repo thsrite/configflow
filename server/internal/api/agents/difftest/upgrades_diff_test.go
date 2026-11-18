@@ -234,6 +234,21 @@ func upgradesSeed(t *testing.T, dir string, port, closed int, lan string) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Keep the real runtime and explicit upgrade/address workers. Automatic
+	// source downloads are not A15 operations: disable them in the identical
+	// seed, otherwise a test lasting over the scheduler's first round changes
+	// unrelated caches/task evidence while the two servers are compared.
+	if _, err = r.UpdateSharedTransaction(context.Background(), func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
+		for _, entry := range shared.GetList("subscriptions") {
+			entry.(*jsonx.Object).Set("interval", jsonx.Int(0))
+		}
+		for _, entry := range shared.GetList("rule_library") {
+			entry.(*jsonx.Object).Set("update_interval", jsonx.Int(0))
+		}
+		return nil, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
 	agent := func(id, service string, p int) *jsonx.Object {
 		return jsonx.Obj("id", id, "name", id, "token", "tok-"+id, "profile_id", "default", "service_type", service,
 			"host", "127.0.0.1", "port", p, "version", "1.1.0-go", "config_version", "0", "enabled", true,
@@ -490,13 +505,15 @@ func upgradeAgents(t *testing.T, dir string) any {
 
 // notificationItems is notifications.json with times masked.
 func notificationItems(t *testing.T, dir string) string {
+	t.Helper()
 	data, err := os.ReadFile(filepath.Join(dir, "notifications.json"))
 	if err != nil {
 		return err.Error()
 	}
 	text := regexp.MustCompile(`"(checked_at|first_seen_at|last_seen_at|updated_at|seen_at|fingerprint|version)":"[^"]*"`).
 		ReplaceAllString(string(data), `"$1":"<t>"`)
-	return regexp.MustCompile(`"evidence":"\d+"`).ReplaceAllString(text, `"evidence":"<n>"`)
+	text = regexp.MustCompile(`"evidence":"\d+"`).ReplaceAllString(text, `"evidence":"<n>"`)
+	return notificationStoreComparison(t, []byte(text))
 }
 
 func artifactsDir(t *testing.T) string {
