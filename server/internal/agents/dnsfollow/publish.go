@@ -413,10 +413,13 @@ func (s *Service) finalize(ctx context.Context, target *agent, st model.DNSFollo
 	if _, e = s.finalOwnership(ctx, list, target.ID, st, job); e != nil {
 		return e
 	}
-	candidate, e := job.CandidateSettings.MarshalJSON()
+	encoded, e := job.CandidateSettings.MarshalJSON()
 	if e != nil {
 		return e
 	}
+	// RawMessage, not []byte: json.Marshal turns a []byte into base64 text,
+	// and the repeat check below must compare the settings themselves.
+	candidate := json.RawMessage(encoded)
 	warning := ""
 	e = s.saveDraft(ctx, job.ProfileID, func(tx context.Context, src *deploy.Source) (*deploy.Source, error) {
 		// Recheck ownership in the same L3 transaction that authorizes the CAS.

@@ -3,15 +3,19 @@ package dnsfollow
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"configflow/internal/agents"
 	"configflow/internal/agents/agentfake"
 	"configflow/internal/deploy"
 	"configflow/internal/jsonx"
+	"configflow/internal/lifecycle"
 	"configflow/internal/repo"
 	"configflow/internal/yamlx"
 )
@@ -249,5 +253,72 @@ func TestCorruptJobCandidateNeverReplacesDraft(t *testing.T) {
 				t.Fatalf("kept draft reported as synchronized: %q %q", st.Status, st.Message)
 			}
 		})
+	}
+}
+
+// Design 3.7 row "draft written, state not yet succeeded" on a real Runtime:
+// shutdown right after the draft commit records nothing more; after a
+// restart the next round finalizes without uploading again and rebinds.
+func TestShutdownAfterDraftCommitResumesWithoutSecondUpload(t *testing.T) {
+	f := newFixture(t, Options{}, agentfake.Options{})
+	f.bind(t)
+	_, err := f.r.UpdateSystemTransaction(f.ctx, func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
+		system.Set("backup", jsonx.Obj("auto_backup", true))
+		return nil, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.publishSource(t, "source-next")
+	startRuntime(t, f.ctx)
+	arrived, release := make(chan struct{}), make(chan struct{})
+	fired := false
+	draft := func(document *jsonx.Object) string {
+		return document.GetObject("profiles").GetObject("default").GetObject("oxidns").GetString("native_config")
+	}
+	previous := repo.SetHooks(repo.Hooks{ConfigurationCommitted: func(_ *repo.Repository, before, after *jsonx.Object) {
+		if fired || draft(before) == draft(after) || !strings.Contains(draft(after), "127.0.0.1:2053") {
+			return
+		}
+		fired = true
+		close(arrived)
+		<-release
+	}})
+	defer repo.SetHooks(previous)
+	done := make(chan error, 1)
+	go func() { done <- f.s.Tick(lifecycle.BindRequest(f.ctx)) }()
+	select {
+	case <-arrived:
+	case <-time.After(30 * time.Second):
+		t.Fatal("follow never committed the draft")
+	}
+	lifecycle.Stop(20 * time.Millisecond)
+	before := durable(t, f)
+	close(release)
+	if e := <-done; !errors.Is(e, context.Canceled) {
+		t.Fatal(e)
+	}
+	if !reflect.DeepEqual(before, durable(t, f)) {
+		t.Fatal("late commit after shutdown")
+	}
+	a := f.agent(t)
+	if st := state(a); st.Status != "publishing" || a.DNSFollow.UpstreamSignature == a.DNSFollowJob.CandidateSignature {
+		t.Fatalf("unexpected stored stage %q %q", st.Status, st.Message)
+	}
+	// Restart: fresh Runtime, Manager and owner over the same data directory.
+	startRuntime(t, f.ctx)
+	f.m.Close()
+	m, err := agents.New(f.ctx, f.r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	f.m, f.s = m, New(m, Options{})
+	if err = f.s.Tick(lifecycle.BindRequest(f.ctx)); err != nil {
+		t.Fatal(err)
+	}
+	a = f.agent(t)
+	if st := state(a); st.Status != "succeeded" || st.Message != msgSucceeded || !value(st.DraftSynced) || a.DNSFollow.UpstreamSignature != a.DNSFollowJob.CandidateSignature || f.target.uploads() != 2 {
+		t.Fatalf("restart did not finish: %q %q uploads %d", st.Status, st.Message, f.target.uploads())
 	}
 }
