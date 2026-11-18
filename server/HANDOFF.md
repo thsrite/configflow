@@ -54,7 +54,47 @@ the hand-back. If no notification arrives within ~3 h, check status once more.
 | 19338c67-c336-40c7-98a9-b4532a66af68 | C19/C20 Surge/Loon adversarial review | wks_0d8cd06808daac1f, branch `go-review-c19c20` |
 | 3112fbeb-e43a-4d16-ad1a-bc88670b1099 | C37 domain discovery port | wks_0dcc037efd16c502, branch `go-port-c37` |
 | e46d698f-6345-41b9-8a38-06d61b6622d3 | config black-box difftest, Step A coverage matrix (→ Opus O6 review) | wks_223d2a53f6e7abbb, branch `go-difftest-config` |
-## >>> CURRENT STATE — 2026-11-18 ~12:10 CST (coordinator f8801d39; read this first) <<<
+## >>> CURRENT STATE — 2026-11-18 ~18:30 CST (coordinator f8801d39 → handing off; read this first) <<<
+
+**go = 30caa723** (pushed). batch-5 merged 14:45 (A14, R12, R13+X1, C34, C36, N8-5c, go-gate-speed, speed A/B,
+Step B fixes). Verified 67/78 on go; 7 more verified and waiting (A16 A17 A21 in batch-6; A22 R14 R16 R17 for
+batch-7); in HR review: A18 (1f3a87d6), A23 (e8737927); porting: R15 (4e136761, from go-opus-review-r14). C07 partial.
+
+**batch-6** = local branch `batch-6@8ec68fd4` in ~/program/configflow-go-batch-6 (75 commits over go@c5f5ff34;
+go since gained only docs commits): A16 integrate, A17 integrate, N8-8a review, N8-7b review, O3-6b, A21 review,
+gate fuzz tmp/jobs fix, lifecycle race fix 264ffbb5 (R14 review M1). PROGRESS dup rows already cleaned.
+**Blocked on** 694df9d0 rebasing `go-fix-n8-8a-provider` (3 commits: model.String/Int shared scalar decode,
+provider topology rejection + diagnostics, ippresence unknown states) onto batch-6 — conflicts because N8-5c
+deleted repo/compat_dialers.go and changed provider/corpus_test.go. Then: stack it, quick Codex review of that fix
+(model-layer rule change; I promised the maintainer), pre-flight (/tmp/preflight6.sh on .32: vet both tags,
+compile all tests, `go test -run 'Corpus|Reference|Golden' ./internal/...`), then split gate: core on .64
+(`GATE_FULL=1 GATE_ONLY=core gate.sh -p 6 <fuzz targets>`), compare on .32, both launched with `setsid nohup`
+ON THE SERVER (session restarts kill rt-attached gates). Merge, push, notify.
+**batch-7 candidates:** go-opus-review-a22@9791bc8d (on A21), go-opus-review-r14@a08a120b (integration with O3-6b:
+map conflict error, delete R14 repo hook + syncJobs, rerun TestR14ReviewRepositoryHookSharesJobLock),
+go-review-r16@1b28b662, go-opus-review-r17@b78bbb38 (swap routers.JobLock → RouterJobLock, delete syncJobs, rerun
+TestReviewR17RepositoryHookSharesJobLock), go-o3-7@a1d3e1b7, go-pyref-narrow@06a25922 (golden fingerprints narrowed),
+N8-8b go-opus-review-n8-8b@fbd9993c, N8-8c go-n8-8c@fd61ff3f (needs the 8a fix entry; two positive tests skipped).
+Build R17/R14/R16 order carefully (go-r17-base-v2 = go + R14 author + reviewed R16 was a temp base).
+**In flight:** 6e5c7760 O3-8 fault harness (faultprobe pkg; prod no-op; /__faults/state difftest-only + token);
+097eba4e N8-9 discovery (from batch-6); 5cf838eb Gemini trial N8-9 health (let it finish; then Codex review; no
+more Antigravity work); e46d698f A/B speed timing after 23:00 on .64 (fixed before/after refs).
+
+**Decisions today (also in design Clarified / behaviour-changes):** speed options rejected; all Opus at thinking
+medium; non-HR reviews Codex, HR reviews Opus (Gemini switch withdrawn — quota); PD-1 proddiff Last-Modified
+normalization (6 routes, HTTP-date, 600 s) + exact ETag baseline; typed decode: declared string fields accept
+numeric literals as their exact token text (123.0 → "123.0"), declared int fields accept strict ASCII decimal
+quoted integers ("443"), bool strict, open Params (Mihomo) pass through; wrong-typed identity fields (provider
+names, rule value/type, group type…) fail with explicit "<field> 必须是字符串，当前值：<JSON>"; Surge alpn list:
+1 element → value, else omit + warning; Surge url/interval None → defaults; WireGuard reserved list → 1/2/3;
+locks: LevelSetupSession=18, LevelAgentOperation=19, device 20, RouterOperationLocks sorted/deduped group;
+lifecycle.SpawnerFrom(ctx); localhttp injected Spawner; yamlx Marshal static Node checks (no runtime reparse).
+**Lessons:** pre-flight before every full gate caught 4 integration bugs; golden fingerprints were too broad
+(fixed in go-pyref-narrow); .64 /tmp tmpfs fills with concurrent fuzz (fixed in batch-6 gate.sh); `pgrep -f`
+watchers match themselves; GATE_ONLY=difftest skips fuzz; review agents' targeted runs miss cross-package corpora —
+always run cross-package Corpus|Reference|Golden on stacked trees.
+
+## (history) CURRENT STATE — 2026-11-18 ~12:10 CST (coordinator f8801d39; read this first) <<<
 
 **go = 566af4bd** (pushed): batch-4 merged (A20 review, C07 review, N8-7 batch 1, R10/R11 reviews, O3-6c,
 N8-5(a)(b), 3 integration fixes) + routers Step B (tooling/docs only). Verified modules ≈61/78.
