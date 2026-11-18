@@ -1753,7 +1753,7 @@ world 保留旧文件。原 archive 不改；独立 Python 参考绑定完整 ar
   更新内部 panic 不回显内容，保留“更新失败：”并给固定中文内部错误；原重启失败诊断类别
   从 RuntimeError 改成 native errors.errorString，回滚效果及后缀不变。
 - 原 malformed node 参考三项精确列入 native fixture：review parse row21 的0节点明确拒绝，
-  不再把空对象当成功结果缓存；review nodes row18 的 name:1/server:2→文本、port:"x"→0；
+  不再把空对象当成功结果缓存；review nodes row18 的 name:1/server:2→文本，port:"x" 的 typed 读值为0但保留原始类型证据；
   row19 的 type:null 按字段不存在处理，输出空 type。有效输出五个字段及 Params 不改。
 - 取消闸门覆盖写下载文件、复制备份、替换 bundle、写 VERSION、文件 mode/time、重启、
   回滚。关机后停止后续修改，不扩大不可中断范围；仅清理本次临时下载文件并更新进程内
@@ -1778,3 +1778,29 @@ world 保留旧文件。原 archive 不改；独立 Python 参考绑定完整 ar
   完成末尾量子的多余 padding，完整 padding 后停止；非 ASCII 和不完整末尾仍失败。
   前置清洗后由 encoding/base64 完成解码，删除旧手写 bit decoder。2500条原 helper 语料
   及3714条实际 URI 语料保持原期待，不改为 strict、不扩展无 padding 编码的接受范围。
+
+
+### N8-9 subs — typed 订阅解析及类型证据（2026-11-19）
+
+- 新 ParseList/ParsedProxy：URI 导出 model.Node；结构化对象保留 yamlx 图及 typed 读视图。
+  Base64 保持明确批准的宽松兼容，原2500条 helper 语料不变。订阅不读任何全局配置；
+  VMess 只用标准 JSON 选取十个协议字段，再进共享 model codec，重复字段继续取最后一个，
+  原始 null 根不是对象、不生成节点。未知的开放参数不因 typed 迁移变成空值。
+- VMess port/aid 是外部协议整数：标准数字、共享严格带引号整数和整数字值的浮点数可用；
+  bool、fraction、overflow、错误容器/文本均拒绝该条 URI，不把坏端口悄悄当0成功。字段缺失
+  使用原来的0。原始 URI 的端口使用 strconv 十进制，保留原有正负号、前后标准空白和前导0；
+  CPython 下划线/Unicode 数字以及超过int64的端口不再接受。整数范围外的端口也无法用于网络。
+- Node 的 name/server 使用共享文本读法：有效数字无损转文本，null 按字段不存在处理。
+  **错型 bool/容器的原 token 和 FieldIssue 保留**，让 Surge/Loon 继续按所属 Node ID 明确拒绝，
+  不把已有业务错误改成生成空 server 的“成功”。开放 Params 中 uuid/cipher/network/path/host
+  等值不在解析器里强制转字符串或替换 null；下游 typed option owner 使用自己的 schema。
+- 同样修复 substore.ProxyNodes 的重构问题：原来新建记录会丢掉 server:[] 的 FieldIssue，
+  让已有 `skip-failing-node` 分类和拒绝失效。现在 name/server/port 的错误 token 保留；
+  有效 name/server 兼容文本及 port:"443"→443仍保持，Params 原 tag 不变。既有8c的306条
+  boundary reference及其分类索引原样通过，未修改任何8c期待或比较器。
+- `n89_parser_reference.py` 对冻结输入调用真实 Python 业务，仅注入已审核的共享整数/文本
+  消费和原生 URI 数字规则；YAML复用原N7独立 loader值，不取Go业务结果。795条已有输入的
+  变化有逐行SHA、具体field/class、完整输出，21条旧私有 int helper 转为实际 URI 整数边界。
+  这不是扩充输入矩阵。冻结 corpus、N7资料和比较器未改；一次完整输出负控确实失败。
+- 开放 JSON 的 `1e400` 和大整数 token 仍保留，typed Port 溢出为0并保留问题证据；
+  JSON不接受的 NaN 文本按既有开放 YAML 原生规则成为字符串“NaN”。独立回归固定完整原文。

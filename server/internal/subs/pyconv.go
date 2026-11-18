@@ -374,3 +374,11 @@ func formatV6(b [16]byte) string {
 }
 
 func sortStrings(s []string) { sort.Strings(s) }
+
+func getOr(o *jsonx.Object, key string, fallback any) any {
+	if v, ok := o.Get(key); ok {
+		return v
+	}
+	return fallback
+}
+func isString(v any) bool { _, ok := v.(string); return ok }

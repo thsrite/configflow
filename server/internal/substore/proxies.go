@@ -92,13 +92,38 @@ func ProxyNodes(proxies []*yamlx.Node) ([]model.Node, error) {
 		if err := dynamic.SetNode(params); err != nil {
 			return nil, err
 		}
+		nameJSON, err := jsonresp.Encode(source.Name)
+		if err != nil {
+			return nil, err
+		}
+		serverJSON, err := jsonresp.Encode(source.Server)
+		if err != nil {
+			return nil, err
+		}
+		portJSON, err := jsonresp.Encode(source.Port)
+		if err != nil {
+			return nil, err
+		}
+		issues := model.Issues(&source)
+		for _, field := range []struct {
+			name   string
+			target *[]byte
+		}{{"name", &nameJSON}, {"server", &serverJSON}, {"port", &portJSON}} {
+			if model.IssueUnder(issues, field.name) {
+				raw, err := yamlx.ToJSON(yamlx.Get(proxy, field.name))
+				if err != nil {
+					return nil, err
+				}
+				*field.target = raw
+			}
+		}
 		encoded, err := jsonresp.Encode(struct {
-			Name   string        `json:"name"`
-			Type   string        `json:"type"`
-			Server string        `json:"server"`
-			Port   model.Int     `json:"port"`
-			Params model.Dynamic `json:"params"`
-		}{source.Name, strings.ToLower(source.Type), source.Server, source.Port, dynamic})
+			Name   json.RawMessage `json:"name"`
+			Type   string          `json:"type"`
+			Server json.RawMessage `json:"server"`
+			Port   json.RawMessage `json:"port"`
+			Params model.Dynamic   `json:"params"`
+		}{nameJSON, strings.ToLower(source.Type), serverJSON, portJSON, dynamic})
 		if err != nil {
 			return nil, err
 		}

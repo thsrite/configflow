@@ -12,6 +12,7 @@ import (
 func TestParserCorpus(t *testing.T) {
 	rows := loadCorpus(t, "parser.jsonl.gz")
 	oracle := nativeReaderCases(t)
+	native := nativeParserExpectations(t)
 	counts := map[string]int{}
 	for i, row := range rows {
 		counts[row.Fn]++
@@ -22,6 +23,9 @@ func TestParserCorpus(t *testing.T) {
 					t.Fatalf("unexpected native oracle rejection %d", i)
 				}
 				row.Out = expected.Value("value")
+			}
+			if expected := native.GetObject(fmt.Sprintf("parser/%d", i)); expected != nil {
+				row.Out = expected.Value("output")
 			}
 			nodes := ParseURIList(row.In.(string))
 			got := make([]any, len(nodes))
@@ -42,13 +46,17 @@ func TestParserCorpus(t *testing.T) {
 				t.Fatalf("row %d decodeSubscriptionBase64(%q): got %x (%v), want %s", i, row.In, b, err, out.GetString("hex"))
 			}
 		case "int":
-			n, err := pyIntStr(row.In.(string))
-			if msg, isErr := isErrorOut(row.Out); isErr {
+			n, err := parseURIPort(row.In.(string))
+			expected := native.GetObject(fmt.Sprintf("parser/%d", i))
+			if expected == nil {
+				t.Fatalf("missing native URI port helper %d", i)
+			}
+			if expected.GetBool("reject") {
 				if err == nil {
-					t.Fatalf("row %d int(%q): want %s, got %s", i, row.In, msg, n)
+					t.Fatalf("native URI port %d accepted invalid text", i)
 				}
-			} else if err != nil || compact(t, n) != compact(t, row.Out) {
-				t.Fatalf("row %d int(%q): got %s (%v), want %s", i, row.In, n, err, compact(t, row.Out))
+			} else if err != nil || !jsonx.Equal(jsonx.Int(int64(n)), expected.Value("output")) {
+				t.Fatalf("native URI port %d got %d %v want %v", i, n, err, expected.Value("output"))
 			}
 		}
 	}

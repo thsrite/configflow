@@ -16,7 +16,7 @@ with contextlib.redirect_stdout(io.StringIO()):
 
 root = pathlib.Path(__file__).parent
 source = (root / "filter.jsonl.gz").read_bytes()
-rows = gzip.decompress(source).decode().splitlines()
+rows = gzip.decompress(source).decode().rstrip("\n").split("\n")
 
 
 class Number(str):

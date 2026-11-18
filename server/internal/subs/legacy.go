@@ -110,3 +110,52 @@ func FilterSubscriptionItems(value any, items []any) []any {
 	out, _ := decoded.([]any)
 	return out
 }
+
+// ParseURIList transcodes a parsed batch for unported node consumers.
+func ParseURIList(source string) []*jsonx.Object {
+	parsed := ParseList(source)
+	result := make([]*jsonx.Object, 0, len(parsed))
+	for _, item := range parsed {
+		if item.Raw != nil {
+			data, err := yamlx.ToJSON(item.Raw)
+			if err != nil {
+				continue
+			}
+			decoded, err := jsonx.Parse(data)
+			if err != nil {
+				continue
+			}
+			if object, ok := decoded.(*jsonx.Object); ok {
+				object.Set("_raw_object", true)
+				result = append(result, object)
+			}
+		} else {
+			value, err := encodeLegacy(item.Node)
+			if err == nil {
+				result = append(result, value)
+			}
+		}
+	}
+	return result
+}
+
+// ParseYAMLObject adapts one open structured node at the old boundary.
+func ParseYAMLObject(source string) *jsonx.Object {
+	graph := ParseObject(source)
+	if graph == nil {
+		return nil
+	}
+	data, err := yamlx.ToJSON(graph)
+	if err != nil {
+		return nil
+	}
+	value, err := jsonx.Parse(data)
+	if err != nil {
+		return nil
+	}
+	object, _ := value.(*jsonx.Object)
+	if object != nil {
+		object.Set("_raw_object", true)
+	}
+	return object
+}

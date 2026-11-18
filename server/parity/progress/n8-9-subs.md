@@ -128,3 +128,33 @@ owner 暂时仍调用的原有 helper，后续必须一起删除，不能据此�
 - 主服务器 GOMAXPROCS=4、-p4：parser+listener正常/安全编辑/别名的定向 race 2.431s；
   filter+新R5原始记录保留回归定向 race 1.169s。下一阶段清理剩余 parser、hosts、dialers、
   chains、proxy DNS 及 compat 私有副本，之后再做跨包/HTTP/fuzz/完整配置分配基准。
+
+
+## typed parser 及8c接线阶段
+
+- ParseList/ParseObject/ParsedProxy、协议DTO与共享codec已接入。legacy旧解析入口只转码；
+  pyconv 中剩余 getOr/isString 等仍供未迁移 hosts/chains/dialers/DNS 使用，待一起删除。
+- 必要 convert 改动只有新增 subscription_nodes.go 的 typed 接线和 legacyClientCallbacks
+  的 ParseNodes 回调替换；没有改 Surge/Loon/Mihomo 生成业务。后续 chain/hosts等也用现有
+  typed environment 回调接线，避免复制业务或每node重新转整份配置。
+- 自检修复两条实际回归：VMess字符串重建丢server类型证据、开放UUID/NULL被强制规范化；
+  以及先前substore.ProxyNodes重建丢相同证据。新增 subs provenance 和 convert owner/error
+  测试在修复前真实失败（输出空server却nil error），修复后通过。8c原 `skip-failing-node`
+  reference曾失败，修复后原期待/索引恢复，无改动。
+- 新parser reference在真实Python既有业务上注入消费规则，复用原N7 loader值；795条精确
+  新边界（含21条私有整数helper换成真实URI整数协议）都有source/row SHA和field/class。
+  原6235条parser corpus、C10 reference及比较器不改；实际更改parser/17完整期待为[]的
+  负控被拒绝（该负控在本阶段早期987条临时参考上执行，最终795条会再核对一次）。
+- 最新主服务器 GOMAXPROCS=4、-p4：
+  `go test -race -p 4 -count=1 -timeout=5m ./internal/subs ./internal/substore ./internal/convert -run
+  "TestN89|TestParserCorpus|TestReviewC10References|TestTypedClient|TestClientReviewBoundaryReferences|TestReviewParseProxiesFromYAML"`
+  → subs5.420s / substore17.882s / convert4.731s，全绿。
+- 另一次误带整份SurgeLoonCorpus的race在8分钟超时；当时也捕获上述类型证据回归。它不是
+  PASS，不拿它作为验收。后续固定只跑明确typed边界race，最终按要求跑跨包非race语料。
+- 本阶段未完成全部subs；剩余 hosts/dialers/chains/proxy DNS/私有compat副本及完整配置
+  分配基准、跨包语料/相关HTTP/fuzz。没有提前交回“完成”。
+
+- 最终795条参考的实际负控再次完成：把 parser/22 的完整非空输出改成[]，实际
+  TestParserCorpus在同一row失败，finally恢复原始gzip字节。该条不是沿用旧987条的证据。
+- 对解析error传播的小整理之后，subs/convert相关定向race再次通过3.712s/4.130s；
+  同次三包vet退出0。

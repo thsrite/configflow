@@ -1633,27 +1633,7 @@ func ConvertNodeToLoon(value *jsonx.Object) (string, error) {
 }
 func legacyClientCallbacks() ClientCollaborators {
 	return ClientCollaborators{
-		ParseNodes: func(text string) ([]ClientSource, error) {
-			var result []ClientSource
-			for _, value := range subs.ParseURIList(text) {
-				node, err := decodeLegacy[model.Node](value)
-				if err != nil {
-					return nil, err
-				}
-				parameters := value.Value("params")
-				if value.Value("_raw_object") == true {
-					copy := value.Clone()
-					copy.Delete("_raw_object")
-					parameters = copy
-				}
-				params, err := yamlbridge.Encode(parameters)
-				if err != nil {
-					return nil, err
-				}
-				result = append(result, ClientSource{Node: node, Params: params})
-			}
-			return result, nil
-		},
+		ParseNodes: subscriptionSources,
 		FilterNodes: func(nodes []model.Node, include, exclude *string) ([]model.Node, error) {
 			return rules.Filter(nodes, include, exclude, func(node model.Node) string { return node.Name })
 		},

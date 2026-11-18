@@ -1,129 +1,207 @@
 package subs
 
 import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"strconv"
 	"strings"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/jsonresp"
+	"configflow/internal/model"
+	"configflow/internal/yamlx"
+	"gopkg.in/yaml.v3"
 )
 
-// getOr is dict.get(key, fallback): the fallback only for a missing key.
-func getOr(o *jsonx.Object, key string, fallback any) any {
-	if v, ok := o.Get(key); ok {
-		return v
-	}
-	return fallback
+// ParsedProxy contains one typed URI node or an open engine object. Raw is nil
+// for URI nodes; a structured object's physical graph remains independently owned.
+type ParsedProxy struct {
+	Node model.Node
+	Raw  *yamlx.Node
 }
 
-// ParseURIList is parse_uri_list: share links, YAML/JSON proxy objects.
-func ParseURIList(content string) []*jsonx.Object {
-	content = pyStrip(content)
-	head := content
-	if r := []rune(content); len(r) > 50 {
-		head = string(r[:50])
-	}
-	if strings.HasPrefix(content, "{") || strings.HasPrefix(content, "name:") ||
-		strings.HasPrefix(content, "type:") || strings.Contains(head, "name:") {
-		if node := ParseYAMLObject(content); node != nil {
-			return []*jsonx.Object{node}
+// ParseList reads subscription share links and structured engine objects.
+// Invalid individual entries are skipped; valid entries retain source order.
+func ParseList(content string) []ParsedProxy {
+	content = strings.TrimSpace(content)
+	head := textPrefix(content, 50)
+	if strings.HasPrefix(content, "{") || strings.HasPrefix(content, "name:") || strings.HasPrefix(content, "type:") || strings.Contains(head, "name:") {
+		if object := ParseObject(content); object != nil {
+			if parsed, err := parsedObject(object); err == nil {
+				return []ParsedProxy{parsed}
+			}
 		}
 	}
 	if strings.HasPrefix(content, "- name:") || strings.HasPrefix(content, "- type:") {
-		if data, err := readSubscriptionYAML(content, false); err == nil {
-			if list, ok := data.([]any); ok {
-				nodes := []*jsonx.Object{}
-				for _, item := range list {
-					if obj, ok := item.(*jsonx.Object); ok {
-						obj.Set("_raw_object", true)
-						nodes = append(nodes, obj)
+		graph, err := subscriptionGraph(content)
+		if err == nil && graph.Kind == yaml.SequenceNode {
+			result := []ParsedProxy{}
+			for _, item := range graph.Content {
+				resolved := yamlx.Resolve(item)
+				if resolved != nil && resolved.Kind == yaml.MappingNode {
+					if _, err := yamlx.ToJSON(item); err != nil {
+						continue
+					}
+					if parsed, err := parsedObject(yamlx.Clone(item)); err == nil {
+						result = append(result, parsed)
 					}
 				}
-				return nodes
 			}
+			return result
 		}
 	}
-	nodes := []*jsonx.Object{}
+	result := []ParsedProxy{}
 	for _, line := range strings.Split(content, "\n") {
-		line = pyStrip(line)
-		if line == "" {
-			continue
-		}
+		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "- ") {
-			line = pyStrip(line[2:])
+			line = strings.TrimSpace(line[2:])
 		}
-		var node *jsonx.Object
+		var node *model.Node
 		var err error
 		switch {
 		case strings.HasPrefix(line, "ss://"):
-			node, err = parseShadowsocks(line)
+			node, err = parseSS(line)
 		case strings.HasPrefix(line, "ssr://"):
-			node, err = parseShadowsocksR(line)
+			node, err = parseSSR(line)
 		case strings.HasPrefix(line, "vmess://"):
-			node, err = parseVMess(line)
+			node, err = parseVMessNode(line)
 		case strings.HasPrefix(line, "vless://"):
-			node, err = parseVless(line)
+			node, err = parseVlessNode(line)
 		case strings.HasPrefix(line, "trojan://"):
-			node, err = parseTrojan(line)
+			node, err = parseTrojanNode(line)
 		case strings.HasPrefix(line, "hysteria://") || strings.HasPrefix(line, "hysteria2://"):
-			node, err = parseHysteria(line)
+			node, err = parseHysteriaNode(line)
 		case strings.HasPrefix(line, "{") && strings.HasSuffix(line, "}"):
-			node = ParseYAMLObject(line)
-		default:
-			continue
+			if object := ParseObject(line); object != nil {
+				if parsed, err := parsedObject(object); err == nil {
+					result = append(result, parsed)
+				}
+			}
 		}
 		if err == nil && node != nil {
-			nodes = append(nodes, node)
+			result = append(result, ParsedProxy{Node: *node})
 		}
 	}
-	return nodes
+	return result
 }
 
-// ParseYAMLObject is parse_yaml_object: a JSON or YAML mapping marked with
-// `_raw_object: true`, or nil.
-func ParseYAMLObject(line string) *jsonx.Object {
-	if v, err := readSubscriptionJSON(line); err == nil {
-		if obj, ok := v.(*jsonx.Object); ok {
-			obj.Set("_raw_object", true)
-			return obj
-		}
+// ParseObject reads an open JSON/YAML mapping with the shared graph policy.
+func ParseObject(source string) *yamlx.Node {
+	graph, err := subscriptionGraph(source)
+	if err != nil || graph.Kind != yaml.MappingNode {
+		return nil
 	}
-	v, err := readSubscriptionYAML(line, false)
+	return graph
+}
+
+func subscriptionGraph(source string) (*yamlx.Node, error) {
+	var graph *yamlx.Node
+	var err error
+	if json.Valid([]byte(source)) {
+		graph, err = yamlx.FromJSON([]byte(source))
+	} else {
+		graph, err = yamlx.Parse([]byte(source))
+	}
 	if err != nil {
-		return nil
+		return nil, err
 	}
-	obj, ok := v.(*jsonx.Object)
+	if err := yamlx.ProjectJSONKeys(graph, yamlx.RejectNonStringKeys); err != nil {
+		return nil, err
+	}
+	// Validate the entire selected graph before any alias-expanding clone.
+	if _, err := yamlx.ToJSON(graph); err != nil {
+		return nil, err
+	}
+	return yamlx.Resolve(graph), nil
+}
+func parsedObject(graph *yamlx.Node) (ParsedProxy, error) {
+	data, err := yamlx.ToJSON(graph)
+	if err != nil {
+		return ParsedProxy{}, err
+	}
+	var node model.Node
+	if err := json.Unmarshal(data, &node); err != nil {
+		return ParsedProxy{}, err
+	}
+	return ParsedProxy{Node: node, Raw: graph}, nil
+}
+
+func textPrefix(text string, count int) string {
+	n := 0
+	for i := range text {
+		if n == count {
+			return text[:i]
+		}
+		n++
+	}
+	return text
+}
+
+func makeNode(name, kind, server string, port model.Int, params *yamlx.Node) (*model.Node, error) {
+	var dynamic model.Dynamic
+	if err := dynamic.SetNode(params); err != nil {
+		return nil, err
+	}
+	// Materialize the declared zero fields too, preserving the stored node shape.
+	data, err := jsonresp.Encode(struct {
+		Name   string        `json:"name"`
+		Type   string        `json:"type"`
+		Server string        `json:"server"`
+		Port   model.Int     `json:"port"`
+		Params model.Dynamic `json:"params"`
+	}{name, kind, server, port, dynamic})
+	if err != nil {
+		return nil, err
+	}
+	var node model.Node
+	if err := json.Unmarshal(data, &node); err != nil {
+		return nil, err
+	}
+	return &node, nil
+}
+
+// parseURIPort parses the raw URI protocol token. Structured JSON fields use
+// the shared model.Int codec instead; URI tokens retain ordinary Go signs and
+// surrounding whitespace accepted by existing subscription sources.
+func parseURIPort(text string) (model.Int, error) {
+	value, err := strconv.ParseInt(strings.TrimSpace(text), 10, 64)
+	return model.Int(value), err
+}
+func splitPair(text, sep string) (string, string, error) {
+	a, b, ok := strings.Cut(text, sep)
 	if !ok {
-		return nil
+		return "", "", errShareLink
 	}
-	obj.Set("_raw_object", true)
-	return obj
+	return a, b, nil
 }
 
-func mkNode(name any, typ, server string, port jsonx.Number, params *jsonx.Object) *jsonx.Object {
-	return jsonx.Obj("name", name, "type", typ, "server", server, "port", port, "params", params)
+var errShareLink = errors.New("invalid subscription share link")
+
+func fragment(text, fallback string) (string, string) {
+	if uri, name, ok := strings.Cut(text, "#"); ok {
+		return uri, name
+	}
+	return text, fallback
 }
 
-func parseShadowsocks(uri string) (*jsonx.Object, error) {
-	uri = uri[len("ss://"):]
+func parseSS(uri string) (*model.Node, error) {
+	uri = strings.TrimPrefix(uri, "ss://")
 	if !strings.Contains(uri, "@") {
 		return nil, nil
 	}
-	name := "SS Node"
-	if u, n, ok := strings.Cut(uri, "#"); ok {
-		uri, name = u, n
-	}
+	uri, name := fragment(uri, "SS Node")
 	var method, password, serverInfo string
 	if strings.Count(uri, "@") == 1 {
-		var userInfo string
-		userInfo, serverInfo, _ = strings.Cut(uri, "@")
-		ok := false
-		if decoded, err := decodeSubscriptionText(userInfo); err == nil {
-			if m, p, found := strings.Cut(decoded, ":"); found {
-				method, password, ok = m, p, true
-			}
+		user, server, _ := strings.Cut(uri, "@")
+		serverInfo = server
+		decoded, err := decodeSubscriptionText(user)
+		if err == nil {
+			method, password, _ = strings.Cut(decoded, ":")
 		}
-		if !ok {
+		if err != nil || !strings.Contains(decoded, ":") {
 			var err error
-			if method, password, err = unpack2(userInfo, ":"); err != nil {
+			method, password, err = splitPair(user, ":")
+			if err != nil {
 				return nil, err
 			}
 		}
@@ -132,296 +210,354 @@ func parseShadowsocks(uri string) (*jsonx.Object, error) {
 		if err != nil {
 			return nil, err
 		}
-		userInfo, si, err := unpack2(decoded, "@")
+		user, server, err := splitPair(decoded, "@")
 		if err != nil {
 			return nil, err
 		}
-		serverInfo = si
-		if method, password, err = unpack2(userInfo, ":"); err != nil {
+		serverInfo = server
+		method, password, err = splitPair(user, ":")
+		if err != nil {
 			return nil, err
 		}
-		if s, n, ok := strings.Cut(serverInfo, "#"); ok {
-			serverInfo, name = s, n
-		}
+		serverInfo, name = fragment(serverInfo, name)
 	}
-	server, port, err := unpack2(serverInfo, ":")
+	server, port, err := splitPair(serverInfo, ":")
 	if err != nil {
 		return nil, err
 	}
-	portNumber, err := pyIntStr(port)
+	number, err := parseURIPort(port)
 	if err != nil {
 		return nil, err
 	}
-	return mkNode(name, "ss", server, portNumber, jsonx.Obj("cipher", method, "password", password)), nil
+	return makeNode(name, "ss", server, number, yamlx.Map(yamlx.Str("cipher"), yamlx.Str(method), yamlx.Str("password"), yamlx.Str(password)))
 }
-
-func parseShadowsocksR(uri string) (*jsonx.Object, error) {
-	uri = uri[len("ssr://"):]
-	decoded, err := decodeSubscriptionText(uri)
+func parseSSR(uri string) (*model.Node, error) {
+	decoded, err := decodeSubscriptionText(strings.TrimPrefix(uri, "ssr://"))
 	if err != nil {
 		return nil, err
 	}
 	parts := strings.Split(decoded, "/")
-	mainPart := parts[0]
-	paramsPart := ""
-	if len(parts) > 1 {
-		paramsPart = parts[1]
-	}
-	fields := strings.SplitN(mainPart, ":", 6)
+	fields := strings.SplitN(parts[0], ":", 6)
 	if len(fields) != 6 {
-		return nil, errValue
+		return nil, errShareLink
 	}
-	server, port, protocol, method, obfs, passwordB64 := fields[0], fields[1], fields[2], fields[3], fields[4], fields[5]
-	password, err := decodeSubscriptionText(passwordB64)
+	password, err := decodeSubscriptionText(fields[5])
 	if err != nil {
 		return nil, err
 	}
-	params := map[string]string{}
-	if _, query, ok := strings.Cut(paramsPart, "?"); ok {
-		for _, item := range strings.Split(query, "&") {
-			if key, value, ok := strings.Cut(item, "="); ok {
-				if params[key], err = decodeSubscriptionText(value); err != nil {
-					return nil, err
+	options := map[string]string{}
+	if len(parts) > 1 {
+		if _, query, ok := strings.Cut(parts[1], "?"); ok {
+			for _, item := range strings.Split(query, "&") {
+				if key, value, ok := strings.Cut(item, "="); ok {
+					decoded, err := decodeSubscriptionText(value)
+					if err != nil {
+						return nil, err
+					}
+					options[key] = decoded
 				}
 			}
 		}
 	}
 	pick := func(key, fallback string) string {
-		if v, ok := params[key]; ok {
-			return v
+		if value, ok := options[key]; ok {
+			return value
 		}
 		return fallback
 	}
-	portNumber, err := pyIntStr(port)
+	port, err := parseURIPort(fields[1])
 	if err != nil {
 		return nil, err
 	}
-	return mkNode(pick("remarks", "SSR Node"), "ssr", server, portNumber, jsonx.Obj(
-		"cipher", method,
-		"password", password,
-		"protocol", protocol,
-		"obfs", obfs,
-		"protocol-param", pick("protoparam", ""),
-		"obfs-param", pick("obfsparam", ""),
-	)), nil
+	return makeNode(pick("remarks", "SSR Node"), "ssr", fields[0], port, yamlx.Map(
+		yamlx.Str("cipher"), yamlx.Str(fields[3]), yamlx.Str("password"), yamlx.Str(password),
+		yamlx.Str("protocol"), yamlx.Str(fields[2]), yamlx.Str("obfs"), yamlx.Str(fields[4]),
+		yamlx.Str("protocol-param"), yamlx.Str(pick("protoparam", "")), yamlx.Str("obfs-param"), yamlx.Str(pick("obfsparam", ""))))
 }
 
-func parseVMess(uri string) (*jsonx.Object, error) {
-	uri = uri[len("vmess://"):]
-	decoded, err := decodeSubscriptionText(uri)
-	if err != nil {
-		return nil, err
-	}
-	value, err := jsonx.ParseString(decoded)
-	if err != nil {
-		return nil, err
-	}
-	data, ok := value.(*jsonx.Object)
-	if !ok {
-		return nil, pyErr("'" + pyTypeName(value) + "' object has no attribute 'get'")
-	}
-	port, err := pyInt(getOr(data, "port", jsonx.Int(0)))
-	if err != nil {
-		return nil, err
-	}
-	aid, err := pyInt(getOr(data, "aid", jsonx.Int(0)))
-	if err != nil {
-		return nil, err
-	}
-	tls, _ := getOr(data, "tls", "").(string)
-	wsOpts := jsonx.NewObject()
-	if net, _ := data.Get("net"); net == "ws" {
-		wsOpts = jsonx.Obj("path", getOr(data, "path", "/"),
-			"headers", jsonx.Obj("Host", getOr(data, "host", "")))
-	}
-	node := jsonx.Obj(
-		"name", getOr(data, "ps", "VMess Node"),
-		"type", "vmess",
-		"server", getOr(data, "add", ""),
-		"port", port,
-		"params", jsonx.Obj(
-			"uuid", getOr(data, "id", ""),
-			"alterId", aid,
-			"cipher", getOr(data, "scy", "auto"),
-			"network", getOr(data, "net", "tcp"),
-			"tls", tls == "tls" && isString(getOr(data, "tls", "")),
-			"ws-opts", wsOpts,
-		),
-	)
-	return node, nil
+// vmessWire selects only protocol fields using standard JSON last-member-wins
+// semantics. Its bounded projection then enters the shared model codec; no
+// private scalar decoding or whole-config projection is needed per node.
+type vmessWire struct {
+	Name    json.RawMessage `json:"ps"`
+	Server  json.RawMessage `json:"add"`
+	Port    json.RawMessage `json:"port"`
+	UUID    json.RawMessage `json:"id"`
+	AlterID json.RawMessage `json:"aid"`
+	Cipher  json.RawMessage `json:"scy"`
+	Network json.RawMessage `json:"net"`
+	TLS     json.RawMessage `json:"tls"`
+	Path    json.RawMessage `json:"path"`
+	Host    json.RawMessage `json:"host"`
 }
 
-func isString(v any) bool { _, ok := v.(string); return ok }
+type vmessFields struct {
+	Name    *string   `json:"ps"`
+	Server  string    `json:"add"`
+	Port    model.Int `json:"port"`
+	AlterID model.Int `json:"aid"`
+	Fields  model.Fields
+	Raw     model.Raw
+}
 
-// qsParams are the dict(parse_qs) of vless/trojan: a string for one value, a
-// list of strings for repeated keys.
-type qsParams map[string]any
+func (r *vmessFields) UnmarshalJSON(data []byte) error { return model.DecodeRecord(data, r, &r.Raw) }
+func (r vmessFields) MarshalJSON() ([]byte, error)     { return model.EncodeRecord(&r, &r.Raw) }
 
-func newQSParams(query string) qsParams {
-	keys, values := ParseQS(query)
-	params := qsParams{}
-	for _, k := range keys {
-		v := values[k]
-		if len(v) == 1 {
-			params[k] = v[0]
-		} else {
-			params[k] = jsonx.ListOf(v)
+func wireValue(raw json.RawMessage, fallback *yamlx.Node) (*yamlx.Node, error) {
+	if len(raw) == 0 {
+		return fallback, nil
+	}
+	return yamlx.FromJSON(raw)
+}
+func parseVMessNode(uri string) (*model.Node, error) {
+	decoded, err := decodeSubscriptionText(strings.TrimPrefix(uri, "vmess://"))
+	if err != nil {
+		return nil, err
+	}
+	payload := bytes.TrimSpace([]byte(decoded))
+	if len(payload) == 0 || payload[0] != '{' {
+		return nil, errShareLink
+	}
+	var wire vmessWire
+	if err := json.Unmarshal(payload, &wire); err != nil {
+		return nil, err
+	}
+	if len(wire.Port) == 0 {
+		wire.Port = json.RawMessage("0")
+	}
+	if len(wire.AlterID) == 0 {
+		wire.AlterID = json.RawMessage("0")
+	}
+	projected, err := jsonresp.Encode(wire)
+	if err != nil {
+		return nil, err
+	}
+	var source vmessFields
+	if err := json.Unmarshal(projected, &source); err != nil {
+		return nil, err
+	}
+	if issues := model.Issues(&source); model.IssueUnder(issues, "port") || model.IssueUnder(issues, "aid") {
+		return nil, errShareLink
+	}
+	params := yamlx.Map()
+	for _, field := range []struct {
+		key      string
+		raw      json.RawMessage
+		fallback *yamlx.Node
+	}{
+		{"uuid", wire.UUID, yamlx.Str("")}, {"cipher", wire.Cipher, yamlx.Str("auto")}, {"network", wire.Network, yamlx.Str("tcp")},
+	} {
+		value, err := wireValue(field.raw, field.fallback)
+		if err != nil {
+			return nil, err
 		}
+		yamlx.Set(params, field.key, value)
 	}
-	return params
+	// Only these two protocol numbers are normalized. Opaque engine parameters
+	// keep their source tags; downstream typed clients own their option schema.
+	ordered := yamlx.Map(yamlx.Str("uuid"), yamlx.Get(params, "uuid"), yamlx.Str("alterId"), yamlx.Int(int64(source.AlterID)),
+		yamlx.Str("cipher"), yamlx.Get(params, "cipher"), yamlx.Str("network"), yamlx.Get(params, "network"))
+	tls, err := wireValue(wire.TLS, yamlx.Str(""))
+	if err != nil {
+		return nil, err
+	}
+	yamlx.Set(ordered, "tls", yamlx.Bool(tls.Kind == yaml.ScalarNode && tls.ShortTag() == "!!str" && tls.Value == "tls"))
+	ws := yamlx.Map()
+	network := yamlx.Get(params, "network")
+	if network.Kind == yaml.ScalarNode && network.ShortTag() == "!!str" && network.Value == "ws" {
+		path, err := wireValue(wire.Path, yamlx.Str("/"))
+		if err != nil {
+			return nil, err
+		}
+		host, err := wireValue(wire.Host, yamlx.Str(""))
+		if err != nil {
+			return nil, err
+		}
+		ws = yamlx.Map(yamlx.Str("path"), path, yamlx.Str("headers"), yamlx.Map(yamlx.Str("Host"), host))
+	}
+	yamlx.Set(ordered, "ws-opts", ws)
+	var dynamic model.Dynamic
+	if err := dynamic.SetNode(ordered); err != nil {
+		return nil, err
+	}
+	// Preserve original type evidence for declared Node text fields, so client
+	// validation can fail closed with the stored value and caller's owner ID.
+	nameText := "VMess Node"
+	if source.Name != nil {
+		nameText = *source.Name
+	}
+	name, err := jsonresp.Encode(nameText)
+	if err != nil {
+		return nil, err
+	}
+	server, err := jsonresp.Encode(source.Server)
+	if err != nil {
+		return nil, err
+	}
+	issues := model.Issues(&source)
+	if model.IssueUnder(issues, "ps") {
+		name = wire.Name
+	}
+	if model.IssueUnder(issues, "add") {
+		server = wire.Server
+	}
+	data, err := jsonresp.Encode(struct {
+		Name   json.RawMessage `json:"name"`
+		Type   string          `json:"type"`
+		Server json.RawMessage `json:"server"`
+		Port   model.Int       `json:"port"`
+		Params model.Dynamic   `json:"params"`
+	}{name, "vmess", server, source.Port, dynamic})
+	if err != nil {
+		return nil, err
+	}
+	var node model.Node
+	if err := json.Unmarshal(data, &node); err != nil {
+		return nil, err
+	}
+	return &node, nil
 }
 
-func (p qsParams) get(key string, fallback any) any {
-	if v, ok := p[key]; ok {
-		return v
-	}
-	return fallback
-}
+type queryOptions map[string][]string
 
-// eq is `p.get(key) == s`.
-func (p qsParams) eq(key, s string) bool {
-	v, ok := p[key].(string)
-	return ok && v == s
-}
-
-func parseVless(uri string) (*jsonx.Object, error) {
-	uri = uri[len("vless://"):]
-	name := "VLESS Node"
-	if u, n, ok := strings.Cut(uri, "#"); ok {
-		uri, name = u, n
+func queryValues(query string) queryOptions { _, values := ParseQS(query); return queryOptions(values) }
+func (q queryOptions) one(key string) (string, bool) {
+	values, ok := q[key]
+	if !ok || len(values) != 1 {
+		return "", false
 	}
-	uuidPart, serverInfo, ok := strings.Cut(uri, "@")
+	return values[0], true
+}
+func (q queryOptions) value(key, fallback string) *yamlx.Node {
+	values, ok := q[key]
+	if !ok {
+		return yamlx.Str(fallback)
+	}
+	if len(values) == 1 {
+		return yamlx.Str(values[0])
+	}
+	items := make([]*yamlx.Node, 0, len(values))
+	for _, value := range values {
+		items = append(items, yamlx.Str(value))
+	}
+	return yamlx.Seq(items...)
+}
+func parseVlessNode(uri string) (*model.Node, error) {
+	uri, name := fragment(strings.TrimPrefix(uri, "vless://"), "VLESS Node")
+	uuid, serverInfo, ok := strings.Cut(uri, "@")
 	if !ok {
 		return nil, nil
 	}
 	serverPort := serverInfo
-	params := qsParams{}
-	if sp, query, ok := strings.Cut(serverInfo, "?"); ok {
-		serverPort = sp
-		params = newQSParams(query)
+	options := queryOptions{}
+	if address, query, ok := strings.Cut(serverInfo, "?"); ok {
+		serverPort = address
+		options = queryValues(query)
 	}
-	i := strings.LastIndex(serverPort, ":")
-	if i < 0 {
+	at := strings.LastIndex(serverPort, ":")
+	if at < 0 {
 		return nil, nil
 	}
-	server, port := serverPort[:i], serverPort[i+1:]
-
-	p := jsonx.Obj(
-		"uuid", uuidPart,
-		"encryption", params.get("encryption", "none"),
-		"security", params.get("security", "none"),
-		"type", params.get("type", "tcp"),
-	)
-	security, _ := params["security"].(string)
+	port, err := parseURIPort(serverPort[at+1:])
+	if err != nil {
+		return nil, err
+	}
+	params := yamlx.Map(yamlx.Str("uuid"), yamlx.Str(uuid), yamlx.Str("encryption"), options.value("encryption", "none"), yamlx.Str("security"), options.value("security", "none"), yamlx.Str("type"), options.value("type", "tcp"))
+	security, _ := options.one("security")
 	if security == "tls" || security == "reality" {
-		p.Set("sni", params.get("sni", ""))
-		p.Set("fp", params.get("fp", ""))
+		yamlx.Set(params, "sni", options.value("sni", ""))
+		yamlx.Set(params, "fp", options.value("fp", ""))
 	}
 	if security == "reality" {
-		p.Set("pbk", params.get("pbk", ""))
-		p.Set("sid", params.get("sid", ""))
-		p.Set("spx", params.get("spx", ""))
+		for _, key := range []string{"pbk", "sid", "spx"} {
+			yamlx.Set(params, key, options.value(key, ""))
+		}
 	}
 	if security == "tls" {
-		if ech := params.get("ech", ""); jsonx.Truthy(ech) {
-			p.Set("ech", ech)
+		if values := options["ech"]; len(values) > 0 {
+			yamlx.Set(params, "ech", options.value("ech", ""))
 		}
 	}
-	switch {
-	case params.eq("type", "ws"):
-		p.Set("ws-opts", jsonx.Obj("path", params.get("path", "/"),
-			"headers", jsonx.Obj("Host", params.get("host", ""))))
-	case params.eq("type", "grpc"):
-		p.Set("grpc-opts", jsonx.Obj("grpc-service-name", params.get("serviceName", "")))
-	case params.eq("type", "tcp"):
-		header := params.get("headerType", "none")
-		if h, isStr := header.(string); !isStr || h != "none" {
-			p.Set("network", "tcp")
-			p.Set("tcp-opts", jsonx.Obj("header", jsonx.Obj("type", header)))
+	kind, _ := options.one("type")
+	switch kind {
+	case "ws":
+		yamlx.Set(params, "ws-opts", yamlx.Map(yamlx.Str("path"), options.value("path", "/"), yamlx.Str("headers"), yamlx.Map(yamlx.Str("Host"), options.value("host", ""))))
+	case "grpc":
+		yamlx.Set(params, "grpc-opts", yamlx.Map(yamlx.Str("grpc-service-name"), options.value("serviceName", "")))
+	case "tcp":
+		if header, single := options.one("headerType"); (!single && len(options["headerType"]) > 0) || single && header != "none" {
+			yamlx.Set(params, "network", yamlx.Str("tcp"))
+			yamlx.Set(params, "tcp-opts", yamlx.Map(yamlx.Str("header"), yamlx.Map(yamlx.Str("type"), options.value("headerType", "none"))))
 		}
 	}
-	if flow := params.get("flow", nil); jsonx.Truthy(flow) {
-		p.Set("flow", flow)
+	if len(options["flow"]) > 0 {
+		yamlx.Set(params, "flow", options.value("flow", ""))
 	}
-	if alpn := params.get("alpn", nil); jsonx.Truthy(alpn) {
-		s, isStr := alpn.(string)
-		if !isStr {
-			return nil, pyErr("'list' object has no attribute 'split'")
+	if values := options["alpn"]; len(values) > 0 {
+		if len(values) != 1 {
+			return nil, errShareLink
 		}
-		p.Set("alpn", jsonx.ListOf(strings.Split(s, ",")))
+		parts := strings.Split(values[0], ",")
+		items := make([]*yamlx.Node, 0, len(parts))
+		for _, part := range parts {
+			items = append(items, yamlx.Str(part))
+		}
+		yamlx.Set(params, "alpn", yamlx.Seq(items...))
 	}
-	portNumber, err := pyIntStr(port)
-	if err != nil {
-		return nil, err
-	}
-	return mkNode(name, "vless", server, portNumber, p), nil
+	return makeNode(name, "vless", serverPort[:at], port, params)
 }
-
-func parseTrojan(uri string) (*jsonx.Object, error) {
-	uri = uri[len("trojan://"):]
-	name := "Trojan Node"
-	if u, n, ok := strings.Cut(uri, "#"); ok {
-		uri, name = u, n
-	}
-	password, serverInfo, err := unpack2(uri, "@")
+func parseTrojanNode(uri string) (*model.Node, error) {
+	uri, name := fragment(strings.TrimPrefix(uri, "trojan://"), "Trojan Node")
+	password, serverInfo, err := splitPair(uri, "@")
 	if err != nil {
 		return nil, err
 	}
-	server, port, err := unpack2(serverInfo, ":")
+	server, portText, err := splitPair(serverInfo, ":")
 	if err != nil {
 		return nil, err
 	}
-	params := qsParams{}
-	if p, query, ok := strings.Cut(port, "?"); ok {
-		port = p
-		params = newQSParams(query)
+	options := queryOptions{}
+	if port, query, ok := strings.Cut(portText, "?"); ok {
+		portText = port
+		options = queryValues(query)
 	}
-	portNumber, err := pyIntStr(port)
+	port, err := parseURIPort(portText)
 	if err != nil {
 		return nil, err
 	}
-	return mkNode(name, "trojan", server, portNumber, jsonx.Obj(
-		"password", password,
-		"sni", params.get("sni", ""),
-		"skip-cert-verify", params.eq("allowInsecure", "true"),
-	)), nil
+	insecure, _ := options.one("allowInsecure")
+	return makeNode(name, "trojan", server, port, yamlx.Map(yamlx.Str("password"), yamlx.Str(password), yamlx.Str("sni"), options.value("sni", ""), yamlx.Str("skip-cert-verify"), yamlx.Bool(insecure == "true")))
 }
-
-func parseHysteria(uri string) (*jsonx.Object, error) {
-	isV2 := strings.HasPrefix(uri, "hysteria2://")
-	if isV2 {
-		uri = uri[12:]
-	} else {
-		uri = uri[11:]
-	}
+func parseHysteriaNode(uri string) (*model.Node, error) {
+	kind := "hysteria"
 	name := "Hysteria Node"
-	if isV2 {
+	if strings.HasPrefix(uri, "hysteria2://") {
+		kind = "hysteria2"
 		name = "Hysteria2 Node"
 	}
-	if u, n, ok := strings.Cut(uri, "#"); ok {
-		uri, name = u, n
-	}
+	uri, name = fragment(strings.TrimPrefix(uri, kind+"://"), name)
 	auth, serverInfo := "", uri
-	if a, s, ok := strings.Cut(uri, "@"); ok {
-		auth, serverInfo = a, s
+	if user, server, ok := strings.Cut(uri, "@"); ok {
+		auth = user
+		serverInfo = server
 	}
 	serverPort := serverInfo
-	values := map[string][]string{}
-	if sp, query, ok := strings.Cut(serverInfo, "?"); ok {
-		serverPort = sp
-		_, values = ParseQS(query)
+	options := queryOptions{}
+	if server, query, ok := strings.Cut(serverInfo, "?"); ok {
+		serverPort = server
+		options = queryValues(query)
 	}
 	first := func(key string) string {
-		if v := values[key]; len(v) > 0 {
-			return v[0]
+		if values := options[key]; len(values) > 0 {
+			return values[0]
 		}
 		return ""
 	}
-	server, port, err := unpack2(serverPort, ":")
+	server, portText, err := splitPair(serverPort, ":")
 	if err != nil {
 		return nil, err
 	}
-	portNumber, err := pyIntStr(port)
+	port, err := parseURIPort(portText)
 	if err != nil {
 		return nil, err
 	}
@@ -429,18 +565,5 @@ func parseHysteria(uri string) (*jsonx.Object, error) {
 	if sni == "" {
 		sni = first("sni")
 	}
-	typ := "hysteria"
-	if isV2 {
-		typ = "hysteria2"
-	}
-	insecure := "0"
-	if v := values["insecure"]; len(v) > 0 {
-		insecure = v[0]
-	}
-	return mkNode(name, typ, server, portNumber, jsonx.Obj(
-		"password", auth,
-		"obfs", first("obfs"),
-		"sni", sni,
-		"skip-cert-verify", insecure == "1",
-	)), nil
+	return makeNode(name, kind, server, port, yamlx.Map(yamlx.Str("password"), yamlx.Str(auth), yamlx.Str("obfs"), yamlx.Str(first("obfs")), yamlx.Str("sni"), yamlx.Str(sni), yamlx.Str("skip-cert-verify"), yamlx.Bool(first("insecure") == "1")))
 }

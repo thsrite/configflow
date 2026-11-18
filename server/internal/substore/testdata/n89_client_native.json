@@ -138,7 +138,7 @@
           "name": "1",
           "type": "ss",
           "server": "2",
-          "port": 0,
+          "port": "x",
           "params": {}
         }
       ]
