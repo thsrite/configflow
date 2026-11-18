@@ -38,9 +38,8 @@ the timestamp. Compare-only never updates it.
 `race.log` retains every package line. `race-cached.txt` and console output list
 all `(cached)` packages and the hit count. Changes to tests, flags, Python input
 fingerprint, or observed inputs legitimately reduce hits. Difftest, observer and
-synthetic live tests use `-count=1`; proddiff runs its oracle each time unless
-its own response cache is enabled. FULL appends `--no-cache` when proddiff.sh
-supports it (older scripts have no response cache to bypass).
+synthetic live tests use `-count=1`; proddiff always runs its oracle live. The proposed Python response cache was
+withdrawn by the coordinator; no `--no-cache` interface or dependency is needed.
 
 ## Synthetic live: required execution evidence
 
@@ -87,7 +86,7 @@ is deliberate and approved; slots still bound expensive gate execution.
 
 Routing regression controls additionally cover missing/stale/future timestamps,
 forced full, real shell stage selection, no timestamp on failure, fingerprint
-propagation/failure/fallback, compare's response-cache bypass, and invalid stages:
+propagation/failure/fallback, compare's live proddiff invocation, and invalid stages:
 
 ```sh
 PYTHONDONTWRITEBYTECODE=1 python scripts/test-gate-routing.py

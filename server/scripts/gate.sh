@@ -99,14 +99,8 @@ run_proddiff() {
   go test -tags configflow_proddiff -count=1 -run '^TestProddiff(Content|WaitsForFreshProvider)' \
     ./internal/api/agents ./cmd/configflow >"$logs/observer.log" 2>&1 \
     || { cat "$logs/observer.log"; fail 'proddiff observer self-checks'; }
-  local args=()
-  if ((full)); then
-    # Older proddiff has no cache at all. Once the cache interface lands, bypass it.
-    if grep -q -- '--no-cache' scripts/proddiff.sh; then args+=(--no-cache)
-    else echo 'gate: proddiff response cache not integrated; already runs live'; fi
-  fi
-  echo "== proddiff ${args[*]}"
-  (cd .. && server/scripts/proddiff.sh "${args[@]}") >"$logs/proddiff.log" 2>&1 \
+  echo '== proddiff (live; no response cache)'
+  (cd .. && server/scripts/proddiff.sh) >"$logs/proddiff.log" 2>&1 \
     || { tail -30 "$logs/proddiff.log"; fail proddiff; }
   tail -30 "$logs/proddiff.log"
 }

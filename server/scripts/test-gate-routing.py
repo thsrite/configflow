@@ -37,7 +37,7 @@ class RoutingTests(unittest.TestCase):
         scripts = self.server / "scripts"
         scripts.mkdir(parents=True)
         shutil.copy(SOURCE, scripts / "gate.sh")
-        (scripts / "proddiff.sh").write_text('#!/bin/bash\n# --no-cache\necho "proddiff $*"\n')
+        (scripts / "proddiff.sh").write_text('#!/bin/bash\necho "proddiff $*"\n')
         (scripts / "proddiff.sh").chmod(0o755)
         (scripts / "gate-live.py").write_text('print("synthetic live fake")\n')
         (self.server / "tools/pyref").mkdir(parents=True)
@@ -102,10 +102,11 @@ class RoutingTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("entry not integrated", result.stdout)
 
-    def test_compare_only_keeps_stamp_and_bypasses_response_cache(self):
+    def test_compare_only_keeps_stamp_and_runs_live_proddiff(self):
         result = self.run_gate(GATE_ONLY="compare", GATE_FULL="1")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("proddiff --no-cache", result.stdout)
+        self.assertIn("proddiff (live; no response cache)", result.stdout)
+        self.assertNotIn("--no-cache", result.stdout)
         self.assertIn("synthetic live fake", result.stdout)
         self.assertNotIn("== race", result.stdout)
         self.assertFalse((self.root / "rt/.gate-last-full").exists())
