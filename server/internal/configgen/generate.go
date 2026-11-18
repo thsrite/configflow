@@ -110,6 +110,7 @@ func Build(ctx context.Context, id string, engine Engine, baseURL string) (Downl
 	case Mihomo, Surge, Loon:
 		name := map[Engine]string{Mihomo: "config.yaml", Surge: "config.conf", Loon: "loon.lcf"}[engine]
 		result.Name = map[Engine]string{Mihomo: "mihomo.yaml", Surge: "surge.conf", Loon: "loon.lcf"}[engine]
+		result.MIME = map[Engine]string{Mihomo: "application/octet-stream", Surge: "text/plain; charset=utf-8", Loon: "application/octet-stream"}[engine]
 		r, err := repo.GetRepository(ctx)
 		if err != nil {
 			return Download{}, err

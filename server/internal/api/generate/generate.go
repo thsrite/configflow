@@ -19,6 +19,7 @@ import (
 	"configflow/internal/repo"
 	"configflow/internal/rules"
 	"configflow/internal/weburl"
+	"configflow/internal/yamlbridge"
 	"configflow/internal/yamlx"
 	"fmt"
 )
@@ -116,7 +117,11 @@ func generate(c *httpx.Ctx, engine configgen.Engine, preview bool) (*httpx.Respo
 		if err != nil {
 			return nil, err
 		}
-		text, err := yamlx.Marshal(value)
+		sanitized, err := yamlbridge.Encode(value)
+		if err != nil {
+			return nil, err
+		}
+		text, err := yamlx.Marshal(sanitized)
 		if err != nil {
 			return nil, err
 		}

@@ -12,6 +12,7 @@ import (
 	"configflow/internal/convert/mihomoenv"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/jsonx"
+	"configflow/internal/yamlx"
 )
 
 func TestGeneratedDownloadsPreviewsAndProfileIsolation(t *testing.T) {
@@ -30,6 +31,12 @@ func TestGeneratedDownloadsPreviewsAndProfileIsolation(t *testing.T) {
 				}
 				if err := json.Unmarshal(preview.Body, &content); err != nil || content.Content == "" {
 					t.Fatalf("empty preview %s", preview.Body)
+				}
+				if engine == "oxidns" {
+					node, err := yamlx.Parse([]byte(content.Content))
+					if err != nil || yamlx.Get(node, "plugins") == nil {
+						t.Fatal("OxiDNS preview lost its native document", err)
+					}
 				}
 				download := s.Post(prefix+"/"+engine, httpxtest.JSON(map[string]string{}))
 				download.WantStatus(200)

@@ -137,3 +137,24 @@ func TestEveryCustomOwnerRuntime(t *testing.T) {
 		}
 	}
 }
+
+func TestMihomoFormDefaultTemplateAndNullableTakeover(t *testing.T) {
+	s := exportApp(t)
+	result := s.Get("/api/custom-config/mihomo")
+	result.WantStatus(200)
+	var form struct {
+		DefaultConfig string `json:"default_config"`
+		Base          struct {
+			Takeover *string `json:"takeover"`
+		} `json:"base_settings"`
+	}
+	if err := json.Unmarshal(result.Body, &form); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(form.DefaultConfig, "mixed-port:") || !strings.Contains(form.DefaultConfig, "nameserver:") {
+		t.Fatal("default template was lost at legacy/native YAML boundary")
+	}
+	if form.Base.Takeover != nil {
+		t.Fatal("absent takeover must be null")
+	}
+}

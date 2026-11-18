@@ -16,6 +16,7 @@ import (
 	"configflow/internal/oxidns"
 	"configflow/internal/refresh"
 	"configflow/internal/repo"
+	"configflow/internal/yamlbridge"
 	"configflow/internal/yamlx"
 	"gopkg.in/yaml.v3"
 )
@@ -103,7 +104,11 @@ func readCustom(ctx context.Context, id, engine string) (*jsonx.Object, error) {
 			easytier = convert.EasyTierDefaultSettings()
 		}
 		out.Set("easytier", easytier)
-		raw, err := yamlx.Marshal(convert.DefaultMihomoTemplate())
+		template, err := yamlbridge.Encode(convert.DefaultMihomoTemplate())
+		if err != nil {
+			return nil, err
+		}
+		raw, err := yamlx.Marshal(template)
 		if err != nil {
 			return nil, err
 		}
@@ -126,7 +131,11 @@ func readCustom(ctx context.Context, id, engine string) (*jsonx.Object, error) {
 		if err != nil {
 			return nil, err
 		}
-		out.Set("base_settings", jsonx.Obj("takeover", mode, "reserved_ports", list, "local_addresses", hosts))
+		var takeover any
+		if mode != "" {
+			takeover = mode
+		}
+		out.Set("base_settings", jsonx.Obj("takeover", takeover, "reserved_ports", list, "local_addresses", hosts))
 	}
 	return out, nil
 }
