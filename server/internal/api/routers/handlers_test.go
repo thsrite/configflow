@@ -1,0 +1,112 @@
+package routers_test
+
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+
+	apiagents "configflow/internal/api/agents"
+	api "configflow/internal/api/routers"
+	"configflow/internal/httpx"
+	"configflow/internal/httpx/httpxtest"
+	"configflow/internal/jsonx"
+	"configflow/internal/repo"
+	core "configflow/internal/routers"
+)
+
+func fixture(t *testing.T) *httpxtest.Server {
+	t.Helper()
+	s := httpxtest.New(t, httpxtest.Options{Auth: true, Register: httpxtest.Routes(api.Register)})
+	core.Wire()
+	return s
+}
+func routerBody(endpoint string) map[string]any {
+	return map[string]any{"name": "Synthetic", "type": "routeros", "endpoint": endpoint, "username": "synthetic-user", "password": "synthetic-password"}
+}
+func TestR15CRUDHeadAndAuth(t *testing.T) {
+	s := fixture(t)
+	login := s.Login()
+	s.Get("/api/routers").WantStatus(401)
+	before, _ := s.Repo.ConfigRevision(s.Context(), "default")
+	head := s.Do("HEAD", "/api/routers", login, httpxtest.JSON(routerBody("http://192.0.2.1")))
+	head.WantStatus(200)
+	after, _ := s.Repo.ConfigRevision(s.Context(), "default")
+	if len(head.Body) != 0 || before != after {
+		t.Fatal("HEAD created a router")
+	}
+	created := s.Post("/api/routers", login, httpxtest.JSON(routerBody("http://192.0.2.1")))
+	created.WantStatus(200)
+	if strings.Contains(created.Text(), "synthetic-password") {
+		t.Fatal("password exposed")
+	}
+	id := created.Object().GetObject("router").GetString("id")
+	s.Put("/api/routers/"+id, login, httpxtest.JSON(map[string]string{"name": "Renamed"})).WantStatus(200)
+	s.Delete("/api/routers/"+id, login).WantStatus(200)
+	s.Get("/api/routers").WantStatus(401)
+	s.Post("/api/routers/missing/probe", login).WantStatus(404)
+}
+func TestR15JobLockPrecedesValidation(t *testing.T) {
+	s := fixture(t)
+	login := s.Login()
+	created := s.Post("/api/routers", login, httpxtest.JSON(routerBody("http://192.0.2.1")))
+	created.WantStatus(200)
+	id := created.Object().GetObject("router").GetString("id")
+	cfg, _ := s.Repo.GetCompatConfig(s.Context(), "default", repo.ResourceRoots{})
+	raw, _ := json.Marshal(cfg)
+	r := core.ManagementRouters(raw)[0]
+	_, release, ok := core.JobLock(s.Context(), "default", id, r)
+	if !ok {
+		t.Fatal("lock")
+	}
+	defer release()
+	for _, tc := range []struct{ method, path string }{{"PUT", ""}, {"DELETE", ""}, {"POST", "/probe"}, {"POST", "/apply"}, {"POST", "/routes/apply"}, {"PUT", "/policy-settings"}, {"PUT", "/rule-sync"}} {
+		s.Do(tc.method, "/api/routers/"+id+tc.path, login, httpxtest.JSON([]any{})).WantStatus(409)
+	}
+}
+func TestR15FlaskRoutePriorities(t *testing.T) {
+	s := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(apiagents.Register, api.Register, func(r *httpx.Router) {
+		// A22 is not on this temporary base yet. Register its real Flask pattern
+		// as a dispatch contract; all already-ported handlers remain production ones.
+		r.GET("/api/agents/gateway-installations/<session_id>", "agents.gateway_installation_state", func(c *httpx.Ctx) (*httpx.Response, error) { return httpx.Empty(404), nil })
+	}), Setup: func(app *httpx.App) {
+		app.BeforeRequest(func(c *httpx.Ctx) (*httpx.Response, error) {
+			if c.Endpoint != "" {
+				return httpx.JSON(map[string]string{"endpoint": c.Endpoint}), nil
+			}
+			return nil, nil
+		})
+	}})
+	for _, tc := range []struct{ method, path, endpoint string }{{"GET", "/api/agents/gateway-installations/upstream-routers", "agents.gateway_installation_state"}, {"GET", "/api/agents/i/status", "agents.download_install_command"}, {"POST", "/api/agents/one/mihomo/rule-targets", "agents.mihomo_panel"}, {"GET", "/api/agents/one/mihomo/rule-targets", "agents.rule_targets"}, {"GET", "/api/agents/one/upstream-routers", "agents.upstream_router_pending"}} {
+		result := s.Do(tc.method, tc.path)
+		result.WantStatus(200)
+		if result.Object().GetString("endpoint") != tc.endpoint {
+			t.Fatalf("%s => %s", tc.path, result.Text())
+		}
+	}
+}
+
+func TestR15WorkspaceDraftIsOfflineAndAtomic(t *testing.T) {
+	s := fixture(t)
+	login := s.Login()
+	created := s.Post("/api/routers", login, httpxtest.JSON(routerBody("http://192.0.2.1")))
+	created.WantStatus(200)
+	id := created.Object().GetObject("router").GetString("id")
+	path := "/api/routers/" + id + "/policy-settings"
+	state := s.Get(path, login)
+	state.WantStatus(200)
+	workspace := state.Object().GetObject("workspace")
+	request := map[string]any{"revision": workspace.GetString("revision"), "base_url": "", "router": map[string]any{"ip_rule_sets": []string{}, "ros_policy_rule_sets": []string{}, "proxy_gateway_agent_id": "gateway"}}
+	saved := s.Put(path, login, httpxtest.JSON(request))
+	saved.WantStatus(200)
+	s.Put(path, login, httpxtest.JSON(request)).WantStatus(409)
+	stored, _ := s.Repo.GetProfile(s.Context(), "default")
+	if stored.GetObject("routers").GetList("items")[0].(*jsonx.Object).GetString("proxy_gateway_agent_id") != "gateway" {
+		t.Fatal("draft not saved")
+	}
+	before, _ := s.Repo.ConfigRevision(s.Context(), "default")
+	s.Do("HEAD", path, login, httpxtest.JSON(request)).WantStatus(200)
+	after, _ := s.Repo.ConfigRevision(s.Context(), "default")
+	if before != after {
+		t.Fatal("workspace HEAD wrote")
+	}
+}
