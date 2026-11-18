@@ -95,7 +95,13 @@ func authorized(cfg snapshot, request AuthRequest, internalTokens repo.TokenSet)
 		return true, nil
 	}
 	current := cfg.SystemConfig.RuleProxyToken
-	retired := func(token string) bool { return token != current && internalTokens.Has(token) }
+	retired := func(token string) bool {
+		matched := 0
+		for candidate := range internalTokens {
+			matched |= credentialMatch(token, candidate)
+		}
+		return matched == 1 && !sameCredential(token, current)
+	}
 	bearer, _ := auth.ParseBearerToken(request.Authorization, request.Authorization != "")
 	if retired(bearer) {
 		return false, nil
@@ -326,6 +332,10 @@ func ruleProxy(ctx context.Context, request RuleProxyRequest) (*RuleProxyRespons
 }
 
 func sameCredential(a, b string) bool {
+	return credentialMatch(a, b) == 1
+}
+
+func credentialMatch(a, b string) int {
 	left, right := sha256.Sum256([]byte(a)), sha256.Sum256([]byte(b))
-	return subtle.ConstantTimeCompare(left[:], right[:]) == 1
+	return subtle.ConstantTimeCompare(left[:], right[:])
 }
