@@ -11,6 +11,11 @@ class ReferenceBug:
 
 
 BUGS = {
+    'IKUAI_PROBE_REDIRECT_PARSE_CRASH': ReferenceBug('R05（iKuai）及 R15（probe HTTP）',
+        '合成 iKuai 登录返回301和不完整 IPv6 Location。requests 即使关闭跟随跳转也预解析下一跳，'
+        '抛出未捕获 ValueError，Python 探测返回 HTML500且未保存失败探测。',
+        ('异常必须由真实 Python 局部 traceback 确认；不替换 requests、不模拟异常。',
+         'Go 应有界拒绝并保留设备及其他配置；安全修复结果单列 O12 复核，不自动算通过。'), severity='low'),
     'IKUAI_PROBE_NESTED_SCHEMA_CRASH': ReferenceBug('R05（iKuai）及 R15（probe HTTP）',
         'iKuai sysstat 的 verinfo 为非空数组或标量时，Python 未先校验对象类型就调用 .get，'
         '抛出 AttributeError，探测返回 HTML 500且未保存失败探测。空容器/空值则走正常502版本拒绝。',

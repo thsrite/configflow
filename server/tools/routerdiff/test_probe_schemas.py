@@ -1,6 +1,7 @@
 """Probe-schema recipe and deliberately broken native outcome controls."""
 import base64
 import copy
+from dataclasses import replace
 from datetime import datetime, timezone
 import unittest
 
@@ -47,6 +48,13 @@ class SchemaTests(unittest.TestCase):
         self.assertTrue(result['go_bug_outcome']['structured_refusal'])
         self.assertFalse(result['python_bug_outcome']['database_changed'])
         self.assertTrue(result['differences'])  # Corrected outcome is review, never equality/pass.
+        redirect = replace(case, ident='redirect-oracle', python_bug='IKUAI_PROBE_REDIRECT_PARSE_CRASH')
+        corrected = execute(pair(Crash(), native), redirect, available, routes)
+        self.assertEqual(corrected['status'], 'reference-bug-observation')
+        self.assertTrue(corrected['go_bug_outcome']['structured_refusal'])
+        unsafe = execute(pair(Crash(), Crash()), redirect, available, routes)
+        self.assertEqual(unsafe['status'], 'different')
+        self.assertIn('safety', {item['category'] for item in unsafe['differences']})
         for native in (Crash(), ObservationSide(content={'success': False, 'message': 'wrong success status'}),
                        ObservationSide(status=502, content={'success': 0, 'message': 'wrong bool type'}),
                        ObservationSide(status=502, content={'success': False, 'message': ''})):

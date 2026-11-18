@@ -18,6 +18,7 @@ import probes
 import ros_http_guards
 import ikuai_http_guards
 import connect_timeout
+import redirect_errors
 import probe_workflows
 import probe_guards
 import probe_schemas
@@ -619,7 +620,7 @@ def execute(pair, case, available, routes):
         found += differences(projected_states['python'], projected_states['go'], '/state')
         if case.unchanged:
             found += differences(snapshots['go']['before'], snapshots['go']['after'], '/go-unexpected-write')
-        if case.python_bug == 'IKUAI_PROBE_NESTED_SCHEMA_CRASH':
+        if case.python_bug in ('IKUAI_PROBE_NESTED_SCHEMA_CRASH', 'IKUAI_PROBE_REDIRECT_PARSE_CRASH'):
             body = observations['go']['body']
             before, after = snapshots['go']['before'], snapshots['go']['after']
             reply = observations['go']
@@ -713,7 +714,7 @@ def execute(pair, case, available, routes):
             ('profile-write', 'profile-write-device', 'router-create', 'router-delete', 'device-only')):
         pair.go.missing_effects.append({'case': case.ident, 'missing_routes': sorted(set(missing_routes))})
     python_bug_outcome = None
-    if case.python_bug == 'IKUAI_PROBE_NESTED_SCHEMA_CRASH':
+    if case.python_bug in ('IKUAI_PROBE_NESTED_SCHEMA_CRASH', 'IKUAI_PROBE_REDIRECT_PARSE_CRASH'):
         before, after = snapshots['python']['before'], snapshots['python']['after']
         python_bug_outcome = {'http_status': observations['python']['status'],
                               'database_changed': bool(differences(before['database'], after['database'])),
@@ -946,6 +947,7 @@ def main():
               ('ikuai-http-reads', clients.options(), (ikuai_http_guards.reads,)),
               ('ikuai-http-tls', probes.tls_options(), (ikuai_http_guards.tls,)),
               ('ikuai-connect-timeout', clients.options(), (connect_timeout.cases,)),
+              ('ikuai-redirect-errors', clients.options(), (redirect_errors.cases,)),
               ('dns-matching-failures', dns_targets.matching_options(), (dns_targets.matching_cases,)),
               ('dns-ha', dns.ha_options(), (dns.ha,)),
               ('disconnect-release', releases.options(), (disconnect.release,)),

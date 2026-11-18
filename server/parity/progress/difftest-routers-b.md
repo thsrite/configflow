@@ -1,6 +1,6 @@
 # Routers Step B — independent public HTTP differential
 
-Status: in progress; NOT ready for acceptance hand-back. Branch go-difftest-routers-b.
+Status: coordinator-requested close-out; PARTIAL coverage hand-back, NOT acceptance verified. Branch go-difftest-routers-b.
 Latest clean integration rebase: goe0e9d9d45; normal public binary built from it.
 Current declarations:556 executed-variant audits plus14 explicit source-unreachable
 proofs plus2 O6 review-superseded entries;1729 remaining if all increments and
@@ -8,11 +8,10 @@ controls are composed. Last FULL composition still37937739:3054
 recipes/301 audits. Newer subsets do not replace that full evidence; latest
 large subset2470 recipes/327 audits. All observed26 domain routes remain absent
 from the actual Go public manifest, so no native domain parity is claimed.
-Final composition, targeted hand-back checks and final rebase are pending; coordinator runs the batch gate. History follows below.
+No further audit directions or full composition per coordinator. Final targeted checks and clean rebase only; coordinator runs the batch gate. History follows below.
 Previous task go-n8-3 is frozen; do not modify that branch. No subagents/push.
 Latest coordinator instruction: pin all new runs to .32 through rt; .64 is reserved for timing. Domain
-fixtures are synthetic only; authorized final gate.sh may read the offline
-private snapshot but reports only proddiff new/stale/self-check summaries.
+fixtures are synthetic only. Author does not run gate.sh or proddiff; coordinator owns the batch gate. No private snapshot content was read/copied by these domain runs.
 Isolated loopback
 RouterOS/iKuai/Agent/rule URL/proxy/WebDAV fakes; separate namespaces/fake state
 and DATA_DIR per public Python/Go server. Do not read Go implementation in
@@ -2337,3 +2336,39 @@ No active command. Current556+14+2/1729 pending if increments compose. Next
 investigate actual malformed-redirect transport outcomes (H0209/H0210/H0228/
 H0229), then remaining matrix/ownership/runtime/YAML/background/concurrency.
 No gate or snapshot read was performed; coordinator batch gate at hand-back.
+
+COORDINATOR CLOSE-OUT (latest instruction, supersedes all historical next steps):
+Stop expanding audits. Commit the pending redirect code if targeted .32 checks
+pass; otherwise WIP. List all uncompleted matrix rows and reasons in findings.
+Hand back branch/last commit and only dispatch-needed findings grouped by owner.
+No complete gate/full composition; coordinator runs the merge batch gate.
+
+Pending redirect code passed, so it is a normal tested commit, not WIP:
+`RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY="$HOME/.cache/routerdiff-build-302rx1dg-e0e9d9d45/configflow"; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python -m unittest -q test_probe_schemas test_runner test_recipes; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world ikuai-redirect-errors --output "$HOME/.cache/routerdiff-reports/302rx1dg/redirect-errors-closeout.json"'`
+=> Ran61 tests4.238s/OK;6 actual requests0.88s/allGo-unimplemented,7 references,
+no new formal audit declarations,complete=false. Actual Python bug registry adds
+IKUAI_PROBE_REDIRECT_PARSE_CRASH: real traceback from requests/sessions.py,
+ValueError Invalid IPv6 URL,HTML500,no DB/device change,no failed probe saved;
+subsequent healthy recovery200. O12 safe/unsafe native outcome oracle added to
+existing test_probe_schemas; rerun of that module=>Ran3 tests0.235s/OK.
+This extends an existing probe failure family; no new audit direction opened.
+
+Findings close-out:
+- Seven deduplicated dispatch classes grouped by R05/R15/A20/C26/R17 at the
+  top of parity/difftest-routers-findings.md, each with severity. All are Python
+  reference defects; native domain handlers absent, so no proven Go regression.
+- Exact complement of audits.declared + reachability.declared lists1729 IDs:
+  route517,helper1112,device30,generated24,sequence26,crosscutting14,fixture3,
+  fake-contract3. Every row has a matrix source link and explicit shared reason
+  code. H0209/H0228/H0229 have new actual observations but no completed audit
+  definition, so stay in this conservative uncovered list.
+-556 executed-variant definitions+14 source proofs+2 explicit O6 supersessions
+  are a distributed evidence inventory, not a freshly composed pass count.
+  Last complete historical run remains3054 requests/301 audits; no report
+  concatenation or native parity claim. All observed26 native routes absent.
+- Unclosed token/fingerprint/ownership/YAML/runtime-clock/concurrency/firmware
+  comparison contracts are separately disclosed as test limitations, not product
+  findings. No product or Go business implementation was read/changed.
+- Latest target host .32 only. No full gate/proddiff/private snapshot, no push.
+Next ONLY commit, git rebase go, final bounded targeted checks, record tails and
+clean status, then hand back. Do not resume the historical expansion plans.
