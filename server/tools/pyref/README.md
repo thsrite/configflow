@@ -85,3 +85,9 @@ per-golden source/input/dependency checks. Bare cache-enabled `go test` without
 the variable fails with instructions. An explicitly supplied positive `-count`
 disables Go caching and is allowed without a fingerprint (including the current
 gate's `-count=1`). This branch does **not** edit gate.sh.
+
+`measure-a.sh BASELINE_REPOSITORY_ROOT OUTPUT_DIRECTORY` runs the exact same
+uncached race command sequentially on A's eight packages in the baseline and
+current trees. It records JSON timings and host/load/start/end metadata. Run only
+on a test server, after the independently owned N7-3 fixture optimization has
+been integrated into the baseline. It does not run full gate/proddiff.

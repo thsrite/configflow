@@ -217,3 +217,21 @@ CACHE CONTROL PASS: cached -> backend mutation reruns and fails -> restored cach
 
 Evidence logs on .64: `~/.cache/pyref-cache-control/{first,cached,mutated,restored}.log`.
 Shared race selfchecks/vet passed (`testgolden 4.359s`, `tools/pyref 1.296s`).
+
+## Ordinary-path process tracing
+
+.64 actual `strace -f -e execve` of all three transformed reference suites passed
+(count=1, no record/check mode). Observed **zero Python exec**; the deliberately
+executed Python control was detected by the exact same exec filter. No ordinary
+Go reference callbacks were allowed through. Logs:
+`~/.cache/speed-a-ordinary-exec.log`, `~/.cache/speed-a-exec-negative.log`.
+
+```
+strace -f -e execve -s 4096 -o "$HOME/.cache/speed-a-ordinary-exec.log" go test -count=1 -timeout=30m ./internal/mosdns ./internal/oxidns ./internal/routersplit -run '^(TestRecordedPythonTests|TestCorpus|TestN73SharedUpstreamMetadataMatchesPython|TestReviewUnholdableYAMLOutsideTheOutputMatchesPython|TestC29ArchivePythonBoundary)$'
+ok configflow/internal/mosdns 19.600s
+ok configflow/internal/oxidns 3.113s
+ok configflow/internal/routersplit 11.156s
+EXEC TRACE PASS: ordinary tests start zero Python; deliberate Python negative control detected
+```
+
+Those elapsed values include ptrace overhead and are **not** speed comparisons.
