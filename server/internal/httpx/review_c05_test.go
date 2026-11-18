@@ -161,6 +161,16 @@ func TestC05ReviewProfileHTTPReferences(t *testing.T) {
 				options = append(options, httpxtest.Bearer(token))
 			}
 			response := server.Get(row.Path, options...)
+			// O9-L6: the frozen Python reference resolves profiles first. Only anonymous
+			// protected requests migrate to the exact login-required envelope, no profile header.
+			parsed, err := url.Parse(row.Path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !row.JWT && !auth.IsPublicPath(parsed.Path) {
+				row.Status, row.ProfileHeader = 401, ""
+				row.Out = json.RawMessage(`{"success":false,"message":"请先登录后再操作。"}`)
+			}
 			if response.Status != row.Status {
 				t.Fatalf("status %d, want %d; body %s", response.Status, row.Status, response.Body)
 			}

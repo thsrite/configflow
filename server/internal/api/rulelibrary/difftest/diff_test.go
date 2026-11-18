@@ -598,8 +598,12 @@ func (w *world) callHeaders(method, path, body, goBody string, headers map[strin
 		if key == "Content-Type" && migrated {
 			continue
 		}
-		if py.Headers[key] != got.Header.Get(key) {
-			t.Errorf("header %s Python=%q Go=%q", key, py.Headers[key], got.Header.Get(key))
+		expected := py.Headers[key]
+		if key == "X-ConfigFlow-Profile" {
+			expected = httpxtest.O9ExpectedProfileHeader(expected, py.Status, got.Status, pyBytes, got.Body)
+		}
+		if expected != got.Header.Get(key) {
+			t.Errorf("header %s Python=%q Go=%q", key, expected, got.Header.Get(key))
 		}
 	}
 	compare("state", py.State, snapshot(t, w.srv))

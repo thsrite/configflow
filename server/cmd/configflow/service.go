@@ -124,7 +124,7 @@ func run(ctx context.Context, frontendDir string, signals <-chan os.Signal, opts
 	registerStartup()
 	app := server.NewApp()
 	app.RegisterLocal()
-	backend.Handler = app
+	backend.Handler = httpx.LimitRequestBody(app)
 	if opts.register != nil {
 		opts.register(app)
 	}

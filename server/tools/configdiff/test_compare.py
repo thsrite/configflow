@@ -17,6 +17,18 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_o9_security_header_delta_is_exact(self):
+        left = Reply(200, {'content-type': 'text/plain', 'access-control-allow-origin': '*',
+                          'vary': 'Origin, Accept-Encoding'}, b'rule text')
+        target = {'content-type': 'text/plain', 'x-content-type-options': 'nosniff', 'vary': 'Accept-Encoding'}
+        self.assertEqual([], response_diffs(left, Reply(200, target, left.body)))
+        for name, value in [('access-control-allow-origin', '*'), ('x-content-type-options', 'unsafe'),
+                            ('cache-control', 'private'), ('vary', 'Accept-Encoding, Cookie')]:
+            with self.subTest(name=name):
+                self.assertTrue(response_diffs(left, Reply(200, {**target, name: value}, left.body)))
+        self.assertTrue(response_diffs(left, Reply(403, target, left.body)))
+        self.assertTrue(response_diffs(left, Reply(200, target, b'wrong')))
+
     def test_cfg08_closure_requires_actual_equal_status_and_exact_absolute_query_identity(self):
         from config_finding_resolutions import annotate
         for case, route in [('R087-B91', 'GET /api/mosdns/rule-proxy'),

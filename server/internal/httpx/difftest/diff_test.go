@@ -16,6 +16,7 @@ package difftest
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -372,6 +373,20 @@ func compare(r request, py, gor response) []string {
 	if r.c06Difference != "" {
 		return c06ExpectedDifference(r, py, gor)
 	}
+	// O9-H1/L5: compare the exact approved security headers, retaining all others.
+	py.header = httpxtest.O9ExpectedHeaders(py.header, gor.header)
+	if r.name == "stats overview missing profile anonymous" {
+		// O9-L6: verify the original 404 and the new exact 401 independently.
+		var oldBody, newBody map[string]any
+		if py.status != 404 || gor.status != 401 || json.Unmarshal(py.body, &oldBody) != nil || json.Unmarshal(gor.body, &newBody) != nil || len(oldBody) != 2 || oldBody["success"] != false || oldBody["message"] != "Profile not found: missing" || len(newBody) != 2 || newBody["success"] != false || newBody["message"] != "请先登录后再操作。" || gor.header.Get("X-ConfigFlow-Profile") != "" {
+			return []string{"O9-L6 profile-before-auth migration mismatch"}
+		}
+		py.status, py.body = gor.status, gor.body
+	}
+	// O9-L6 also removes the old profile echo from the existing-profile 401.
+	if r.name == "stats no token" && py.status == 401 && gor.status == 401 && py.header.Get("X-ConfigFlow-Profile") == "default" {
+		py.header.Del("X-ConfigFlow-Profile")
+	}
 	var diffs []string
 	if r.binding != nil {
 		py, diffs = bindingDifference(r, py, gor)
@@ -381,7 +396,7 @@ func compare(r request, py, gor response) []string {
 		diffs = append(diffs, fmt.Sprintf("status python %d go %d", py.status, gor.status))
 	}
 	for _, name := range []string{"Content-Type", "Cache-Control", "X-ConfigFlow-Profile", "Access-Control-Allow-Origin",
-		"Access-Control-Allow-Headers", "Access-Control-Allow-Methods", "Vary", "Content-Disposition"} {
+		"Access-Control-Allow-Headers", "Access-Control-Allow-Methods", "Vary", "Content-Disposition", "X-Content-Type-Options"} {
 		if migrated && name == "Content-Type" {
 			continue
 		}

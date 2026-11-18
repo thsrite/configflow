@@ -432,6 +432,7 @@ func (w *world) callWithNativeBody(method, path, body string, authenticated bool
 		}
 	}
 	compare("provider comments", py.Comments, comments)
+	pyBytes, _ := json.Marshal(py.Body)
 	for _, key := range []string{"Content-Type", "Cache-Control", "X-ConfigFlow-Profile", "X-ConfigFlow-Provider", "Content-Disposition"} {
 		if approvedShape && key == "Content-Type" {
 			if !strings.HasPrefix(got.Header.Get(key), "application/json") {
@@ -440,6 +441,9 @@ func (w *world) callWithNativeBody(method, path, body string, authenticated bool
 			continue
 		}
 		a, b := py.Headers[key], got.Header.Get(key)
+		if key == "X-ConfigFlow-Profile" {
+			a = httpxtest.O9ExpectedProfileHeader(a, py.Status, got.Status, pyBytes, got.Body)
+		}
 		if key == "Content-Disposition" {
 			a = dispositionTime.ReplaceAllString(a, "_<time>.yaml")
 			b = dispositionTime.ReplaceAllString(b, "_<time>.yaml")

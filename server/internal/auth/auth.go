@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"configflow/internal/httpx"
+	"configflow/internal/logx"
 )
 
 // Constants of common/auth.py.
@@ -49,11 +50,22 @@ var current atomic.Pointer[Config]
 
 func init() { current.Store(&Config{SecretKey: randomSecret()}) }
 
-// FromEnv reads ADMIN_USERNAME, ADMIN_PASSWORD and JWT_SECRET_KEY.
+// FromEnv reads login settings, replacing missing, example or short signing
+// keys with a fresh per-process secret and a warning that never includes the key.
 func FromEnv() Config {
 	secret := os.Getenv("JWT_SECRET_KEY")
-	if secret == "" {
+	reason := ""
+	switch {
+	case secret == "":
+		reason = msgJWTSecretUnset
+	case secret == "your-unique-secret-key-at-least-32-chars" || secret == "replace-with-at-least-32-random-characters":
+		reason = msgJWTSecretPlaceholder
+	case len(secret) < 32:
+		reason = msgJWTSecretShort
+	}
+	if reason != "" {
 		secret = randomSecret()
+		logx.Get("backend.common.auth").Warningf(msgJWTSecretRandom, reason)
 	}
 	return Config{
 		AdminUsername: os.Getenv("ADMIN_USERNAME"),
@@ -318,9 +330,9 @@ func Gate(c *httpx.Ctx) (*httpx.Response, error) {
 	return nil, nil
 }
 
-// Install adds the gate to the app, right after the profile context (the
-// position of setup_before_request in backend/app.py).
-func Install(app *httpx.App) { app.InsertBeforeRequest(1, Gate) }
+// Install adds the gate before profile resolution so unauthenticated requests
+// cannot distinguish missing profiles from existing ones (O9-L6).
+func Install(app *httpx.App) { app.InsertBeforeRequest(0, Gate) }
 
 // pyParseInt and pyTypeName forward to httpx's Python conversions.
 func pyParseInt(s string) (*big.Int, bool) { return httpx.PyParseInt(s) }

@@ -27,6 +27,22 @@ def reply(body, content_type=JSON, status=200, headers=None):
 
 
 class ComparatorTests(unittest.TestCase):
+    def test_o9_security_header_delta_is_exact(self):
+        source = {'access-control-allow-origin': '*', 'access-control-allow-methods': 'GET, POST',
+                  'access-control-allow-headers': 'Authorization', 'vary': 'Origin, Accept-Encoding',
+                  'cache-control': 'no-cache'}
+        target = {'vary': 'Accept-Encoding', 'cache-control': 'no-cache', 'x-content-type-options': 'nosniff'}
+        left = reply(b'rule text', 'text/plain; charset=utf-8', headers=source)
+        right = reply(left[2], left[1], headers=target)
+        self.assertEqual([], pd.response_diffs(left, right, '/api/rules/local/<name>', []))
+        for name, value in [('access-control-allow-origin', '*'), ('x-content-type-options', 'unsafe'),
+                            ('cache-control', 'private'), ('vary', 'Accept-Encoding, Cookie')]:
+            with self.subTest(name=name):
+                bad = reply(left[2], left[1], headers={**target, name: value})
+                self.assertTrue(pd.response_diffs(left, bad, '/api/rules/local/<name>', []))
+        self.assertTrue(pd.response_diffs(left, reply(b'wrong', left[1], headers=target), '/api/rules/local/<name>', []))
+        self.assertTrue(pd.response_diffs(left, reply(left[2], left[1], status=403, headers=target), '/api/rules/local/<name>', []))
+
     def test_public_generated_file_schema_names_are_exact(self):
         for name in ('ETag', 'Last-Modified', 'Accept-Ranges'):
             self.assertEqual(name, pd.safe_header(name.lower()))

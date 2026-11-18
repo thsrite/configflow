@@ -109,6 +109,6 @@ func TestReviewC29AdminBoundary(t *testing.T) {
 			}
 		}
 	}
-	// Profile binding precedes auth in both frameworks, including failures.
+	// O9-L6: Python resolves this missing profile first; Go authenticates first.
 	w.check(request{Method: "GET", Path: "/api/profiles/missing/oxidns/settings", Headers: map[string]string{"Authorization": ""}})
 }

@@ -12,10 +12,14 @@ import math
 from pathlib import Path
 import re
 import sqlite3
+import sys
 import tarfile
 import zipfile
 import yaml
 from zoneinfo import ZoneInfo
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from security_headers import expected_headers
 
 
 @dataclass
@@ -233,8 +237,10 @@ HEADERS = ('content-type', 'content-disposition', 'cache-control', 'etag', 'x-co
 def response_diffs(left, right, policy=None, *, method='GET', filename='', projection=None, raw_body=False):
     policy = policy or Policy()
     out = differences(left.status, right.status, 'status', policy)
+    # O9-H1/L5: normalize only approved header fields, never status/body/storage.
+    source_headers = expected_headers(left.headers, right.headers, right.headers.get('content-type', ''))
     for key in HEADERS:
-        a, b = left.headers.get(key, ''), right.headers.get(key, '')
+        a, b = source_headers.get(key, ''), right.headers.get(key, '')
         if key in ('allow', 'access-control-allow-methods', 'access-control-allow-headers', 'vary'):
             # HTTP token-list order is not semantic; keep duplicates and missing tokens observable.
             a, b = [sorted(part.strip() for part in v.split(',')) if v else [] for v in (a, b)]

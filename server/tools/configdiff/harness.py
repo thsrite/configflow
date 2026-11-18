@@ -23,7 +23,7 @@ from compare import Policy, Difference, response_diffs, database_diffs, file_dif
 from inventory import declared_states
 
 ROOT = Path(__file__).resolve().parents[3]
-USERNAME, PASSWORD, SECRET = 'diff-admin', 'diff-password', 'synthetic-shared-jwt-secret'
+USERNAME, PASSWORD, SECRET = 'diff-admin', 'diff-password', 'synthetic-shared-jwt-secret-0123456789'
 PYTHON = os.environ.get('CONFIGFLOW_DIFF_PYTHON', str(Path.home() / 'cf-test/.venv/bin/python'))
 _port_guard, _used_ports = threading.Lock(), set()
 

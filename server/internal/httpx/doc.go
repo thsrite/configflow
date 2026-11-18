@@ -1,7 +1,7 @@
 // Package httpx is the HTTP layer every route package plugs into: a
 // Werkzeug-compatible URL map, Flask's request object and responses, and
-// the request pipeline of backend/app.py (CORS, profile selection,
-// authentication, error handlers, the global JSON token redaction,
+// the request pipeline of backend/app.py (same-origin CORS, authentication
+// before profile selection, error handlers, the global JSON token redaction,
 // X-ConfigFlow-Profile). It also contains Edge, the built-in replacement of
 // docker/nginx.conf, and Invoke, the in-process REST call used by MCP.
 //

@@ -75,6 +75,7 @@ func sendInstaller(t *testing.T, base string, r installerRequest, token string) 
 var installerHeaders = []string{"Content-Type", "Content-Disposition", "Cache-Control", "X-Content-Type-Options"}
 
 func compareInstaller(py, gor response, mask []string) []string {
+	py.header = httpxtest.O9ExpectedHeaders(py.header, gor.header)
 	var diffs []string
 	migrated := httpxtest.MigratedAPIError(py.method, py.status, gor.status, py.header, gor.header, py.body, gor.body)
 	if py.status != gor.status {

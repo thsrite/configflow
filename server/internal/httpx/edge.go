@@ -2,6 +2,7 @@ package httpx
 
 import (
 	"compress/gzip"
+	"context"
 	"fmt"
 	"io"
 	"net"
@@ -15,6 +16,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"configflow/internal/weburl"
 )
 
 // Edge is the web front end that docker/nginx.conf provided: it serves the
@@ -72,6 +75,7 @@ var (
 
 // ServeHTTP dispatches like nginx's location matching.
 func (e *Edge) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	logged := &statusWriter{ResponseWriter: w, status: 200}
 	defer e.logAccess(logged, req)
 	uri := normalizeURI(req.URL.Path)
@@ -137,12 +141,11 @@ func normalizeURI(p string) string {
 
 // proxy passes the request to the App as nginx's proxy_pass did.
 func (e *Edge) proxy(w http.ResponseWriter, req *http.Request, limit int64) {
-	if req.ContentLength > limit {
-		e.nginxError(w, req, http.StatusRequestEntityTooLarge)
+	if !limitRequestBody(w, req, limit) {
 		return
 	}
 	host := nginxHost(req)
-	out := req.Clone(req.Context())
+	out := req.Clone(context.WithValue(req.Context(), edgeOriginKey{}, requestOrigin(req)))
 	out.Host = host
 	out.Header.Set("Host", host)
 	client := remoteIP(req.RemoteAddr)
@@ -161,9 +164,6 @@ func (e *Edge) proxy(w http.ResponseWriter, req *http.Request, limit int64) {
 	out.Header.Del("Connection")
 	out.RemoteAddr = "127.0.0.1:0"
 	out.TLS = nil
-	if req.Body != nil {
-		out.Body = http.MaxBytesReader(w, req.Body, limit)
-	}
 	gz := newGzipWriter(w, req)
 	defer gz.Close()
 	e.API.ServeHTTP(gz, out)
@@ -223,7 +223,7 @@ func (e *Edge) spa(w http.ResponseWriter, req *http.Request, uri string) {
 			return
 		}
 		w.Header().Set("Cache-Control", "no-cache")
-		e.nginxError(w, req, http.StatusForbidden)
+		nginxError(w, req, http.StatusForbidden)
 		return
 	}
 	if err == nil && info.Mode().IsRegular() {
@@ -236,7 +236,7 @@ func (e *Edge) spa(w http.ResponseWriter, req *http.Request, uri string) {
 		return
 	}
 	w.Header().Set("Cache-Control", "no-cache")
-	e.nginxError(w, req, http.StatusInternalServerError)
+	nginxError(w, req, http.StatusInternalServerError)
 }
 
 func (e *Edge) resolve(uri string) string {
@@ -277,7 +277,7 @@ func (e *Edge) serveFile(w http.ResponseWriter, req *http.Request, file string, 
 	}
 	f, err := os.Open(file)
 	if err != nil {
-		e.nginxError(w, req, http.StatusForbidden)
+		nginxError(w, req, http.StatusForbidden)
 		return
 	}
 	defer f.Close()
@@ -296,7 +296,7 @@ func (e *Edge) serveCompressed(w http.ResponseWriter, req *http.Request, file st
 	}
 	f, err := os.Open(file)
 	if err != nil {
-		e.nginxError(w, req, http.StatusForbidden)
+		nginxError(w, req, http.StatusForbidden)
 		return
 	}
 	defer f.Close()
@@ -311,7 +311,7 @@ func (e *Edge) serveCompressed(w http.ResponseWriter, req *http.Request, file st
 }
 
 // nginxError writes nginx's default error page.
-func (e *Edge) nginxError(w http.ResponseWriter, req *http.Request, status int) {
+func nginxError(w http.ResponseWriter, req *http.Request, status int) {
 	title := strconv.Itoa(status) + " " + reasonPhrase(status)
 	body := "<html>\r\n<head><title>" + title + "</title></head>\r\n<body>\r\n<center><h1>" + title +
 		"</h1></center>\r\n<hr><center>nginx</center>\r\n</body>\r\n</html>\r\n"
@@ -477,8 +477,8 @@ func (e *Edge) logAccess(s *statusWriter, req *http.Request) {
 		return v
 	}
 	line := fmt.Sprintf("%s - - [%s] \"%s %s %s\" %d %d \"%s\" \"%s\" \"%s\"\n",
-		remoteIP(req.RemoteAddr), time.Now().Format("02/Jan/2006:15:04:05 -0700"), req.Method, req.RequestURI,
-		req.Proto, s.status, s.bytes, dash(req.Referer()), dash(req.UserAgent()),
+		remoteIP(req.RemoteAddr), time.Now().Format("02/Jan/2006:15:04:05 -0700"), req.Method, weburl.SafeForLog(req.RequestURI),
+		req.Proto, s.status, s.bytes, dash(weburl.SafeForLog(req.Referer())), dash(req.UserAgent()),
 		dash(req.Header.Get("X-Forwarded-For")))
 	_, _ = io.WriteString(e.AccessLog, line)
 }

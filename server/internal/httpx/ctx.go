@@ -3,6 +3,7 @@ package httpx
 import (
 	"bytes"
 	"context"
+	"crypto/subtle"
 	"errors"
 	"io"
 	"math/big"
@@ -479,5 +480,5 @@ func (c *Ctx) Get(key string) (any, bool) {
 // authenticated the caller itself.
 func (c *Ctx) IsInternalCall() bool {
 	value, ok := c.Header(InternalCallHeader)
-	return ok && value == InternalCallToken()
+	return ok && subtle.ConstantTimeCompare([]byte(value), []byte(InternalCallToken())) == 1
 }

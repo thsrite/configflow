@@ -57,6 +57,7 @@ func sendDownload(t *testing.T, base string, r downloadRequest) response {
 }
 
 func compareDownload(py, gor response) []string {
+	py.header = httpxtest.O9ExpectedHeaders(py.header, gor.header)
 	// L1 D7 fixes Flask's catch-all 500 for unsatisfiable ranges. Accept only
 	// the identical JSON error (or HEAD body), corrected status and size header.
 	if py.status == 500 && gor.status == 416 && strings.Contains(py.header.Get("Content-Type"), "application/json") {

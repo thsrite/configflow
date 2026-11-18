@@ -336,6 +336,12 @@ func (w *world) check(r request) answer {
 	}
 	py := w.py.send(w.t, r)
 	goAnswer := sendGo(w.t, w.srv, r)
+	if r.Method == "GET" && r.Path == "/api/profiles/missing/oxidns/settings" && r.Headers["Authorization"] == "" {
+		// O9-L6: pin both complete boundary responses, without changing the oracle.
+		compare(w.t, "Python original missing profile status", py.Status, 404)
+		compare(w.t, "Python original missing profile body", py.Body, map[string]any{"success": false, "message": "Profile not found: missing"})
+		py.Status, py.Body = 401, map[string]any{"success": false, "message": "请先登录后再操作。"}
+	}
 	compare(w.t, "status", goAnswer.Status, py.Status)
 	compare(w.t, "headers", headers(goAnswer), headers(py))
 	compare(w.t, "body", goAnswer.Body, py.Body)

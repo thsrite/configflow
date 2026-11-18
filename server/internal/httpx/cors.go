@@ -1,6 +1,8 @@
 package httpx
 
 import (
+	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 )
@@ -9,25 +11,53 @@ import (
 // joined with ", ").
 const corsMethods = "DELETE, GET, HEAD, OPTIONS, PATCH, POST, PUT"
 
-// cors is the after-request function of `CORS(app)` (Flask-CORS 4.0 with
-// default options: every origin, every header, credentials not supported,
-// resources "/*", applied to error responses too).
+// edgeOriginKey carries only the Edge's pre-proxy origin, never forwarded
+// headers supplied by a client. Edge otherwise rewrites Host and TLS like nginx.
+type edgeOriginKey struct{}
+
+func requestOrigin(req *http.Request) string {
+	if origin, ok := req.Context().Value(edgeOriginKey{}).(string); ok {
+		return origin
+	}
+	scheme := "http"
+	if req.TLS != nil {
+		scheme = "https"
+	}
+	return scheme + "://" + req.Host
+}
+
+func canonicalOrigin(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.User != nil || u.Opaque != "" || u.Host == "" || u.Path != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || strings.Contains(raw, "#") {
+		return ""
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return ""
+	}
+	host := strings.ToLower(u.Host)
+	if u.Scheme == "http" {
+		host = strings.TrimSuffix(host, ":80")
+	} else {
+		host = strings.TrimSuffix(host, ":443")
+	}
+	return u.Scheme + "://" + host
+}
+
+// cors permits only the request's own scheme, hostname and port (O9-H1).
+// Requests without an Origin or with a foreign/invalid Origin get no CORS headers.
 func cors(c *Ctx, r *Response) {
 	h := r.Header()
-	if h.Get("Access-Control-Allow-Origin") != "" {
+	origin, _ := c.Header("Origin")
+	own := canonicalOrigin(requestOrigin(c.Request))
+	if own == "" || canonicalOrigin(origin) != own {
+		for name := range h {
+			if strings.HasPrefix(strings.ToLower(name), "access-control-") {
+				h.Del(name)
+			}
+		}
 		return
 	}
-	// resources r'/*' matches every path.
-	origin, _ := c.Header("Origin")
-	var allowOrigin string
-	vary := false
-	if origin != "" {
-		allowOrigin = origin
-		vary = true // ".*" is "probably a regex"
-	} else {
-		allowOrigin = "*" // always_send with the wildcard origin
-	}
-	h.Add("Access-Control-Allow-Origin", allowOrigin)
+	h.Set("Access-Control-Allow-Origin", origin)
 	if c.Request.Method == "OPTIONS" {
 		requested, _ := c.Header("Access-Control-Request-Method")
 		requested = strings.ToUpper(requested)
@@ -46,7 +76,5 @@ func cors(c *Ctx, r *Response) {
 			h.Set("Access-Control-Allow-Methods", corsMethods)
 		}
 	}
-	if vary {
-		h.Add("Vary", "Origin")
-	}
+	h.Add("Vary", "Origin")
 }

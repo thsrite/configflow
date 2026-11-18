@@ -25,9 +25,9 @@ type BeforeFunc func(c *Ctx) (*Response, error)
 type AfterFunc func(c *Ctx, r *Response)
 
 // App is the Flask application: the URL map plus the request pipeline of
-// backend/app.py, in Flask's order:
+// backend/app.py, with authentication moved before profile resolution (O9-L6):
 //
-//	before: profile context → (auth gate, added by auth.Install) → extra BeforeRequest functions
+//	before: (auth gate, added by auth.Install) → profile context → extra BeforeRequest functions
 //	view (or the routing error, or Flask's automatic OPTIONS response)
 //	errors: registered ErrorHandlers (repository errors first), HTTPError pages, else 500
 //	after:  extra AfterRequest functions → config pull log → X-ConfigFlow-Profile
@@ -57,12 +57,12 @@ func New() *App {
 	return app
 }
 
-// BeforeRequest appends a before_request function (runs after the profile
-// context and the authentication gate).
+// BeforeRequest appends a before_request function (runs after the
+// authentication gate and the profile context).
 func (a *App) BeforeRequest(f BeforeFunc) { a.before = append(a.before, f) }
 
 // InsertBeforeRequest adds a before_request function at position i (auth
-// uses 1: right after the profile context).
+// uses 0: before the profile context).
 func (a *App) InsertBeforeRequest(i int, f BeforeFunc) {
 	a.before = append(a.before[:i], append([]BeforeFunc{f}, a.before[i:]...)...)
 }
@@ -113,6 +113,12 @@ func (a *App) process(c *Ctx) (response *Response) {
 		c.params = map[string]string{}
 	}
 	response = a.dispatch(c, match)
+	// Bind/JSONSilent may consume a limited body and return a fallback response.
+	// The transport limit must still win, including for chunked uploads (O9-M1).
+	var oversized *http.MaxBytesError
+	if errors.As(c.bodyErr, &oversized) || bodyLimitExceeded(c.Request) {
+		response = (&HTTPError{Code: http.StatusRequestEntityTooLarge}).response(c.path)
+	}
 	a.finalize(c, response)
 	return response
 }
@@ -169,6 +175,10 @@ func containsMethod(methods []string, m string) bool {
 }
 
 func (a *App) handleError(c *Ctx, err error) *Response {
+	var oversized *http.MaxBytesError
+	if errors.As(err, &oversized) {
+		return (&HTTPError{Code: http.StatusRequestEntityTooLarge}).response(c.path)
+	}
 	for _, h := range a.errorHandlers {
 		if r := h(c, err); r != nil {
 			return r
@@ -229,11 +239,14 @@ func (a *App) finalize(c *Ctx, r *Response) {
 	if err := writeJSON(c, r); err != nil {
 		*r = *a.internalError(c, err)
 	}
+	if strings.HasPrefix(r.Header().Get("Content-Type"), "text/") {
+		r.Header().Set("X-Content-Type-Options", "nosniff")
+	}
 	cors(c, r)
 }
 
 // requestSeen runs after profile resolution and the auth gate installed at
-// index 1. Public heartbeats count; rejected profiles or credentials do not.
+// index 0. Public heartbeats count; rejected profiles or credentials do not.
 func requestSeen(_ *Ctx) (*Response, error) {
 	lifecycle.RequestSeen()
 	return nil, nil

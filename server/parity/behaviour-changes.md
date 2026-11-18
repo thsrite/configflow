@@ -1595,3 +1595,12 @@ MosDNS 的经典规则关键字、域名模式、规则内容不再导入 pystr�
 - 路由段ID拒绝分隔符和点目录；Oxi对象递归merge最多128层。正常工具、profile、权限、
   partial/reorder/事务和内部凭据脱敏合同不变。详细边界与真实Flask证据见
   [MCP交回](progress/mcp.md)，待Opus HR复核。
+
+
+## O9 第一轮安全修复（O12 发布说明）
+
+- **O9-H1**：跨域请求不再被接受（不提供 CORS 许可头），同源前端不变。只对 Origin 与请求自身 scheme、host、端口一致的请求添加 CORS 头；没有 Origin 时也不再发送 `*`。这只改变响应头，不拒绝请求、不改变状态码或响应体。反代终止 TLS/改写 Host 时，面板继续正常处理请求；不信任 `X-Forwarded-*` 来放宽 CORS。
+- **O9-M3**：`JWT_SECRET_KEY` 未设置、等于 compose/安装文档示例占位值或少于 32 字节时，启动生成随机密钥并记录不含密钥的 WARNING。使用占位值或过短密钥时每次重启都需要重新登录；至少 32 字节的正式密钥行为不变。安装说明要求生成并保留正式随机密钥。
+- **O9-L6**：开启登录的受保护请求先认证，再解析 profile；未登录时一律 401，无 `X-ConfigFlow-Profile`。Python 对不存在/非法 profile 原先先返回 404/400；已登录、公开入口和关闭登录时仍按原规则校验 profile。
+- **O9-L5**：Edge 响应与 App 的文本响应统一增加精确的 `X-Content-Type-Options: nosniff`，防止浏览器把文本下载猜成可执行内容。差分仅允许该头从缺失变为 `nosniff`；其他头和内容继续比较。
+- **O9-M1/L1/L3**：后端监听保留默认地址，共用 Edge 的 1 MiB/96 MiB 请求体上限；已知长度和 chunked 超限均 413。访问日志 URL/Referer 脱敏；内部调用头改用常量时间比较。

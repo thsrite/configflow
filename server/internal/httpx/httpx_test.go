@@ -283,11 +283,11 @@ func TestUnauthenticatedUnknownPathsGet401BeforeRouting(t *testing.T) {
 	srv.Get("/api/missing", admin).WantStatus(404)
 }
 
-func TestProfileContextRunsBeforeAuthAndEchoesTheProfile(t *testing.T) {
+func TestAuthenticationRunsBeforeProfileContext(t *testing.T) {
 	srv := routerServer(t, true)
-	res := srv.Get("/api/scoped", httpxtest.Header("X-ConfigFlow-Profile", "missing")).WantStatus(404)
-	res.WantJSON(jsonx.Obj("success", false, "message", "Profile not found: missing"))
-	srv.Get("/api/scoped", httpxtest.Query("profile", "bad id!")).WantStatus(400)
+	res := srv.Get("/api/scoped", httpxtest.Header("X-ConfigFlow-Profile", "missing")).WantStatus(401)
+	res.WantJSON(jsonx.Obj("success", false, "message", "请先登录后再操作。"))
+	srv.Get("/api/scoped", httpxtest.Query("profile", "bad id!")).WantStatus(401)
 	srv.Get("/api/scoped").WantStatus(401)
 	admin := srv.Login()
 	ok := srv.Get("/api/scoped", admin).WantStatus(200)
@@ -317,21 +317,21 @@ func TestErrorHandlersAndInternalErrors(t *testing.T) {
 func TestCORSHeaders(t *testing.T) {
 	srv := routerServer(t, false)
 	res := srv.Get("/api/agents/a1")
-	if res.Header.Get("Access-Control-Allow-Origin") != "*" || res.Header.Get("Vary") != "" {
+	if res.Header.Get("Access-Control-Allow-Origin") != "" || res.Header.Get("Vary") != "" {
 		t.Fatal(res.Header)
 	}
-	res = srv.Do("OPTIONS", "/api/thing", httpxtest.Header("Origin", "https://client.example"),
+	res = srv.Do("OPTIONS", "/api/thing", httpxtest.Header("Origin", "http://localhost"),
 		httpxtest.Header("Access-Control-Request-Method", "POST"),
 		httpxtest.Header("Access-Control-Request-Headers", "X-B, authorization")).WantStatus(200)
 	h := res.Header
-	if h.Get("Access-Control-Allow-Origin") != "https://client.example" || h.Get("Vary") != "Origin" ||
+	if h.Get("Access-Control-Allow-Origin") != "http://localhost" || h.Get("Vary") != "Origin" ||
 		h.Get("Access-Control-Allow-Headers") != "X-B, authorization" ||
 		h.Get("Access-Control-Allow-Methods") != "DELETE, GET, HEAD, OPTIONS, PATCH, POST, PUT" {
 		t.Fatal(h)
 	}
 	missing := srv.Get("/api/missing", httpxtest.Header("Origin", "https://o.example"))
-	if missing.Header.Get("Access-Control-Allow-Origin") != "https://o.example" {
-		t.Fatal("error responses carry CORS headers too")
+	if missing.Header.Get("Access-Control-Allow-Origin") != "" {
+		t.Fatal("foreign error responses must not carry CORS headers")
 	}
 }
 
@@ -339,9 +339,9 @@ func TestCORSHeaders(t *testing.T) {
 // before_request functions for OPTIONS too), with CORS headers.
 func TestPreflightPassesThroughTheGate(t *testing.T) {
 	srv := routerServer(t, true)
-	res := srv.Do("OPTIONS", "/api/thing", httpxtest.Header("Origin", "https://client.example"),
+	res := srv.Do("OPTIONS", "/api/thing", httpxtest.Header("Origin", "http://localhost"),
 		httpxtest.Header("Access-Control-Request-Method", "POST")).WantStatus(401)
-	if res.Header.Get("Access-Control-Allow-Origin") != "https://client.example" {
+	if res.Header.Get("Access-Control-Allow-Origin") != "http://localhost" {
 		t.Fatal(res.Header)
 	}
 }

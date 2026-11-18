@@ -32,6 +32,9 @@ import yaml
 from generators import run_workers, self_check, successful_output_regressions
 from artifact_policy import ArtifactProofs, ROUTES as ARTIFACT_ROUTES
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from security_headers import expected_headers
+
 ROOT = Path.cwd()
 PARITY = ROOT / 'server/parity'
 PARAM = re.compile(r'<(?:[^:>]+:)?([^>]+)>')
@@ -55,7 +58,7 @@ def safe_key(key):
 
 KEYS.add('config.yaml')  # Public main-entry name, not a snapshot-derived key.
 HEADER_KEYS = {key.lower(): key for key in KEYS}
-HEADER_KEYS.update({name.lower(): name for name in ('ETag', 'Last-Modified', 'Accept-Ranges')})
+HEADER_KEYS.update({name.lower(): name for name in ('ETag', 'Last-Modified', 'Accept-Ranges', 'X-Content-Type-Options', 'Access-Control-Allow-Origin', 'Access-Control-Allow-Headers', 'Access-Control-Allow-Methods', 'Vary')})
 # Transport/framing headers of two different HTTP servers; everything else is compared.
 IGNORED_HEADERS = {'date', 'server', 'content-length', 'connection', 'keep-alive', 'transfer-encoding', 'content-type'}
 
@@ -412,6 +415,9 @@ def response_diffs(left, right, route, rules, agent_identities=None, artifact_pr
         # Compare the approved availability contract instead of exposing a
         # partial task list. Keep both original content types and headers.
         left = (right[0], left[1], right[2], *left[3:])
+    # O9-H1/L5: exact security-header delta; no response/body/status masks.
+    if len(left) > 3 and len(right) > 3:
+        left = (*left[:3], expected_headers(left[3], right[3], right[1]))
     right = installer_rollback_baseline(right, route)
     if plain_install_error(left, right, route):
         # Body/status/type already agree exactly. Assert only the approved
@@ -922,7 +928,7 @@ def main():
             for index, data in enumerate(copies):
                 env = dict(os.environ, DATA_DIR=str(data), LOG_FILE=str(data / 'app.log'), LOG_LEVEL='ERROR',
                            ADMIN_USERNAME='proddiff-admin', ADMIN_PASSWORD='proddiff-test-password',
-                           JWT_SECRET_KEY='proddiff-test-only-shared-secret', CONFIGFLOW_BACKEND_HOST='127.0.0.1',
+                           JWT_SECRET_KEY='proddiff-test-only-shared-secret-0123456789', CONFIGFLOW_BACKEND_HOST='127.0.0.1',
                            CONFIGFLOW_BACKEND_PORT=str(15001 + index), CONFIGFLOW_FRONTEND_DIR='',
                            SUB_STORE_BUILTIN_DIR='/nonexistent', PRODDIFF_ROUTES=str(report / 'go-routes.tsv'),
                            PRODDIFF_PY_ROUTES=str(report / 'python-routes.tsv'),

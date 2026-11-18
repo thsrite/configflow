@@ -63,7 +63,7 @@ func TestRequestSeenAfterProfileAndAuth(t *testing.T) {
 			t.Fatalf("%s: status=%d body=%s", path, w.Code, w.Body.String())
 		}
 	}
-	request("GET", "/api/profiles/missing/protected", "", 404)
+	request("GET", "/api/profiles/missing/protected", "", 401)
 	request("GET", "/api/profiles/default/protected", "", 401)
 	request("GET", "/api/profiles/default/protected", "invalid-token", 401)
 	select {
