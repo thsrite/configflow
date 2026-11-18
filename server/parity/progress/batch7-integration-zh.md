@@ -169,3 +169,13 @@ importer 0.005s、convert 原 R5/身份校验相关 0.032s 均 ok。后续整树
 追加修复叠入后：定向 race convert 3.066s、httpx 1.967s、api/subscriptions 1.025s 均 ok。
 只读 live check 再次确认 MosDNS 47072 / recorded 5436 零差异、router-split ok 1.316s，
 仅 legacy.go 来源指纹变化；显式 record 53.397s 通过。十份记录2916 exact entries 哈希未变。
+
+rebase 的 range-diff 核对：原75提交全部保留，74个补丁相同；唯一改变是 N8-8b 替换已优化旧生成器
+时的上述冲突补丁。没有额外删除/重复源分支提交，原始 source boundary 表继续适用。
+
+### 追加修复后的预检
+
+同一主测试服务器，按原命令先 `rt sync` 再执行
+`bash /tmp/preflight.sh program__configflow-go-batch-7 -p 6`，两组 vet 和全量非 race 全通过，
+最终输出 `PREFLIGHT PASS`（退出码 0）。验证产品树 1f610a0ea，包含 f2666fd23 的全部已提交修复。
+没有运行完整 core/race 门禁。开始重新执行 `GATE_ONLY=compare server/scripts/gate.sh -p 6`。
