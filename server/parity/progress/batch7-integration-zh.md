@@ -51,7 +51,7 @@
    有记录按连接、无记录按 profile+id；HTTP 继续先取锁再执行 404/请求体校验。
 2. A22 完整注册：真实 apiagents 注册替换 R15 过渡 shim，Flask/Go 路由优先级和 NewApp 注册验证通过。
 3. baseline：已删除 11 条 deferred→R14 和 12 条 deferred→A18；其余分类保留。最终 compare 检验 new/stale。
-4. O3-8：待跑 16 个 scenarios，验证已包含 R14 M1 的关停次序。
+4. O3-8：16/16 scenarios 全部通过；包括 R14 M1 的 drain→stopJobs→取消 detached I/O 次序。
 5. A14 节流：集成树初次独立 race count=3 通过（14.714s）；为消除慢磁盘/负载造成的真实时间依赖，
    仅测试接入既有生命周期 fake Clock（race count=3 验证通过，17.059s），验证 999ms 不写、1000ms 写及强制阶段写，不修改生产阈值。
 
@@ -89,3 +89,12 @@ NewApp endpoint 清单增加全部六个 A22 endpoint（index 同时承载 GET/P
 测试改用 publishProgress 已支持的 lifecycle.ClockFrom，严格检查 999ms/1000ms 边界及同一刻 forced phase。
 `go test -race -count=3 ./internal/deploy -run "^TestReviewA14UnforcedProgressIsThrottled$"` → ok 17.059s。
 没有修改生产节流逻辑、持续时间、阈值或放宽断言。
+
+### 集成 4 验证
+
+`RT_HOST="$BATCH_TEST_HOST" rt -- bash -lc 'server/tools/faults/run.sh'`，主测试服务器，退出码 0。
+runner 当前登记恰好 16 项，实际输出 `FAULTS PASS: 16/16`，没有运行额外 HR 场景。
+`sigterm-cancel-deadline` 证明 detached I/O 持续经过 drain，在 stopJobs 后约 6.006s 取消；
+取消下载无配置变更，SQLite/已提交前缀可读。1000 请求（100 断连）后 goroutine 14→14。
+production-isolation、SIGTERM/SIGKILL、锁等待、写故障和所有断连收敛对照均通过。
+报告位于本次 runner 打印的测试服务器私有 cache 目录；未复制设备/生产数据到仓库。
