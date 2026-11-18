@@ -1,0 +1,16 @@
+[
+  {
+    "row": 2021,
+    "fn": "apply_github_proxy_domain",
+    "input_sha256": "7242b6ebda5b41e8f4309f342480ec72857a013f13f0c6f401850d46f8d073d2",
+    "python_sha256": "86f8d26929407606aaa78d5a159b9281deaa33d0d2592d5c0f87892256fb060b",
+    "native_sha256": "8d00685f8699d58d0e62cb56dd8c6d6f230199b9ea2e61a2bc1532ba6776918a"
+  },
+  {
+    "row": 2103,
+    "fn": "apply_github_proxy_domain",
+    "input_sha256": "72d6128601b1f4b5f266ba4f8e0e46f887159476a483d7d92cd4cd87c107612d",
+    "python_sha256": "8e0354061d2db3c13741778b48e751ab960bb32cd9164985ed9c5bb9037644bb",
+    "native_sha256": "a8dc247041359935d5cf4490378cb612bdeb80b0b936d74a19006f2ca4e45ed2"
+  }
+]

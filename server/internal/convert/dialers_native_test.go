@@ -58,13 +58,11 @@ func TestTypedDialerCore(t *testing.T) {
 }
 func TestTypedDialerMalformedValues(t *testing.T) {
 	for _, tt := range []struct{ source, message string }{
-		{`{"nodes":[{"id":5,"name":"N"}]}`, fmt.Sprintf(msgResourceField, "id")},
 		{`{"nodes":[{"id":"n","name":"N","params":[]}]}`, msgNodeParamsObject},
 		{`{"nodes":[{"id":"n","name":"N","dialer_ref":{"type":"node"}}]}`, msgDialerRef},
 		{`{"nodes":[{"id":"n","name":"N","params":{"dialer-proxy":5}}]}`, msgRawDialerName},
 		{`{"nodes":[{"id":"n","name":"N","dialer_ref":{"type":"node","id":"missing"}}]}`, msgDialerRefMissing},
-		{`{"proxy_groups":[{"id":"g","name":"G","manual_nodes":[5]}]}`, fmt.Sprintf(msgGroupStringList, "manual_nodes")},
-		{`{"nodes":[{"id":"n","name":"N","dialer_ref":{"type":"group","id":"g"}}],"proxy_groups":[{"id":"g","name":"G","use":["S"]}],"subscriptions":[{"id":5,"name":"S"}]}`, msgGroupSourceMissing},
+		{`{"proxy_groups":[{"id":"g","name":"G","manual_nodes":[false]}]}`, fmt.Sprintf(msgGroupStringList, "manual_nodes")},
 	} {
 		t.Run(tt.source, func(t *testing.T) {
 			err := ConfigDialers(typedDialerConfig(t, tt.source))
@@ -81,6 +79,87 @@ func TestTypedDialerMalformedValues(t *testing.T) {
 		if err != nil || name != tt.want {
 			t.Fatalf("%s: %q %v", tt.target, name, err)
 		}
+	}
+}
+
+func TestTypedNumericResourceText(t *testing.T) {
+	for _, source := range []string{
+		`{"nodes":[{"id":5,"name":"N"}]}`,
+		`{"nodes":[{"id":5,"name":"N"}],"proxy_groups":[{"id":"g","name":"G","manual_nodes":[5]}]}`,
+		`{"nodes":[{"id":"n","name":"N","dialer_ref":{"type":"group","id":"g"}}],"proxy_groups":[{"id":"g","name":"G","use":["S"]}],"subscriptions":[{"id":5,"name":"S"}]}`,
+	} {
+		if err := ConfigDialers(typedDialerConfig(t, source)); err != nil {
+			t.Fatalf("numeric string field rejected: %s / %v", source, err)
+		}
+	}
+}
+
+func TestTypedTopologyMalformedProvider(t *testing.T) {
+	for _, definition := range []string{`1`, `{"override":1}`} {
+		for _, forced := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/forced=%t", definition, forced), func(t *testing.T) {
+				document, err := yamlx.FromJSON([]byte(fmt.Sprintf(`{"proxy-providers":{"F":%s}}`, definition)))
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, payloads := range []map[string][]*yamlx.Node{nil, {"F": {yamlx.Map(yamlx.Str("name"), yamlx.Str("P"))}}} {
+					err := ValidateTopology(document, TopologyOptions{ForceChains: forced, ProviderProxies: payloads})
+					if err == nil || err.Error() != msgTopologyShape {
+						t.Fatalf("payload present=%t: want %q, got %v", payloads != nil, msgTopologyShape, err)
+					}
+				}
+			})
+		}
+	}
+	// Malformed unused providers must not hide an earlier business rejection.
+	for _, definition := range []string{`1`, `{"override":1}`} {
+		document, err := yamlx.FromJSON([]byte(fmt.Sprintf(`{"proxies":[{"name":"P","dialer-proxy":"Missing"}],"proxy-providers":{"F":%s}}`, definition)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := ValidateTopology(document, TopologyOptions{ForceChains: true}); err == nil || err.Error() != msgEmittedTargetMissing {
+			t.Fatalf("business rejection changed: %v", err)
+		}
+	}
+	valid, err := yamlx.FromJSON([]byte(`{"proxy-providers":{"F":{"override":{}}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateTopology(valid, TopologyOptions{ForceChains: true}); err != nil {
+		t.Fatalf("valid unused provider rejected: %v", err)
+	}
+}
+
+func TestTypedTopologyTargetDiagnostic(t *testing.T) {
+	for _, raw := range []string{`["relay"]`, `{"relay":[1,false]}`, `9007199254740993`, `false`, `"missing"`} {
+		t.Run(raw, func(t *testing.T) {
+			document, err := yamlx.FromJSON([]byte(`{"proxy-providers":{"F":{}}}`))
+			if err != nil {
+				t.Fatal(err)
+			}
+			proxy, err := yamlx.FromJSON([]byte(`{"name":"Remote","type":"http","dialer-proxy":` + raw + `}`))
+			if err != nil {
+				t.Fatal(err)
+			}
+			diagnostic := raw
+			if raw == `"missing"` {
+				diagnostic = "missing"
+			}
+			err = ValidateTopology(document, TopologyOptions{ForceChains: true, ProviderProxies: map[string][]*yamlx.Node{"F": {proxy}}})
+			if want := fmt.Sprintf(msgProviderTarget, "Remote", diagnostic); err == nil || err.Error() != want {
+				t.Fatalf("want %q, got %v", want, err)
+			}
+		})
+	}
+}
+
+func TestTypedMalformedStoredReference(t *testing.T) {
+	config := typedDialerConfig(t, `{"nodes":[{"id":"a","name":"A","dialer_ref":"b"},{"id":"b","name":"B"}]}`)
+	if err := ConfigDialers(config); err == nil || err.Error() != fmt.Sprintf(msgStoredDialerRef, `"b"`) {
+		t.Fatalf("malformed stable reference silently removed: %v", err)
+	}
+	if _, err := ResolveNodeDialer(config, config.Nodes[0]); err == nil || err.Error() != fmt.Sprintf(msgStoredDialerRef, `"b"`) {
+		t.Fatalf("malformed reference resolved as absent: %v", err)
 	}
 }
 func FuzzTypedDialerGraph(f *testing.F) {

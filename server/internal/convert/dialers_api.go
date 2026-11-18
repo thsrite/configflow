@@ -65,6 +65,9 @@ func IncomingRefs(config *model.Config, kind, id string) ([]Ref, error) {
 
 // ResolveNodeDialer returns the stored target name for a managed reference.
 func ResolveNodeDialer(config *model.Config, node model.Node) (*string, error) {
+	if err := validateStoredNodeReference(node); err != nil {
+		return nil, err
+	}
 	if node.DialerRef == nil {
 		return nil, nil
 	}
@@ -349,13 +352,24 @@ func presentTarget(node *yamlx.Node) (*yamlx.Node, bool) {
 	}
 	return value, true
 }
-func emittedOverride(node *yamlx.Node) (*yamlx.Node, NameOverride, error) {
+func emittedProviderOverride(node *yamlx.Node) (*yamlx.Node, error) {
+	node = yamlx.Resolve(node)
+	if node == nil || node.Kind != yaml.MappingNode {
+		return nil, errors.New(msgTopologyShape)
+	}
 	value := yamlx.Resolve(yamlx.Get(node, "override"))
 	if value == nil {
 		value = yamlx.Map()
 	}
 	if value.Kind != yaml.MappingNode {
-		return nil, NameOverride{}, errors.New(msgTopologyShape)
+		return nil, errors.New(msgTopologyShape)
+	}
+	return value, nil
+}
+func emittedOverride(node *yamlx.Node) (*yamlx.Node, NameOverride, error) {
+	value, err := emittedProviderOverride(node)
+	if err != nil {
+		return nil, NameOverride{}, err
 	}
 	result, err := nameOverrideFromNode(value)
 	return value, result, err
@@ -435,7 +449,13 @@ func ValidateTopology(document *yamlx.Node, opts TopologyOptions) error {
 		}
 	}
 	for _, definition := range yamlx.Pairs(definitions) {
-		override := yamlx.Get(definition, "override")
+		if active {
+			break
+		}
+		override, err := emittedProviderOverride(definition)
+		if err != nil {
+			return err
+		}
 		if target, _ := presentTarget(override); target != nil && scalarText(target) != "" {
 			active = true
 		}
@@ -487,6 +507,10 @@ func ValidateTopology(document *yamlx.Node, opts TopologyOptions) error {
 			}
 			seen[candidate.name] = true
 		}
+		definition = yamlx.Resolve(definition)
+		if definition == nil || definition.Kind != yaml.MappingNode {
+			return errors.New(msgTopologyShape)
+		}
 		spec, err := emittedFilter(definition)
 		if err != nil {
 			return err
@@ -526,6 +550,13 @@ func ValidateTopology(document *yamlx.Node, opts TopologyOptions) error {
 			if target != nil {
 				value := scalarText(target)
 				if target.ShortTag() != "!!str" || !available[value] {
+					if target.ShortTag() != "!!str" {
+						raw, err := yamlx.ToJSON(target)
+						if err != nil {
+							return err
+						}
+						value = string(raw)
+					}
 					return fmt.Errorf(msgProviderTarget, candidate.name, value)
 				}
 				children = []Ref{{"name", value}}
@@ -639,7 +670,14 @@ func ValidateTopology(document *yamlx.Node, opts TopologyOptions) error {
 		}
 	}
 	for _, definition := range yamlx.Pairs(definitions) {
-		if target, _ := presentTarget(yamlx.Get(definition, "override")); target != nil && scalarText(target) != "" {
+		// Unused providers still participate in the reachability scan. Check
+		// their shape here, after graph business checks, rather than treating
+		// a scalar definition/override as an absent dialer-proxy.
+		override, err := emittedProviderOverride(definition)
+		if err != nil {
+			return err
+		}
+		if target, _ := presentTarget(override); target != nil && scalarText(target) != "" {
 			pending = append(pending, Ref{"name", target.Value})
 		}
 	}

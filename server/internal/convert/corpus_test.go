@@ -389,6 +389,9 @@ func TestCorpus(t *testing.T) {
 			continue
 		}
 		result, mutated, err := runCorpusRow(row)
+		if nativeScalarReplay(t, i, row, result, err) {
+			continue
+		}
 		if nativeProviderBoundary(t, row, result, err) || nativeProviderReplay(t, row, result, err) {
 			continue
 		}

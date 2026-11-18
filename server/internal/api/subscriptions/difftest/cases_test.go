@@ -194,7 +194,20 @@ func TestProviderDeliveryGraphs(t *testing.T) {
 					if consumer == "combined" {
 						path = "/api/subscriptions/proxies"
 					}
-					w.call("GET", path, "", true)
+					if consumer == "single" && c.name == "malformed" {
+						expected := &nativeBodyExpectation{
+							Python: map[string]any{"success": false, "message": `Provider 节点「Remote」的 dialer-proxy「['relay']」引用了不存在的代理或策略组；若它是机场订阅自带的中转分组，在「订阅来源」刷新该订阅后 ConfigFlow 会自动补上`},
+							Native: map[string]any{"success": false, "message": `Provider 节点「Remote」的 dialer-proxy「["relay"]」引用了不存在的代理或策略组；若它是机场订阅自带的中转分组，在「订阅来源」刷新该订阅后 ConfigFlow 会自动补上`},
+						}
+						if chain != "none" {
+							for _, body := range []map[string]any{expected.Python, expected.Native} {
+								body["message"] = "订阅「Feed」准备失败：" + body["message"].(string) + "\n文件：./providers/Feed.yaml"
+							}
+						}
+						w.callWithNativeBody("GET", path, "", true, expected)
+					} else {
+						w.call("GET", path, "", true)
+					}
 				})
 			}
 		}

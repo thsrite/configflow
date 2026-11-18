@@ -339,6 +339,17 @@ func normalize(value any) any {
 	return value
 }
 func (w *world) call(method, path, body string, authenticated bool) answer {
+	return w.callWithNativeBody(method, path, body, authenticated, nil)
+}
+
+type nativeBodyExpectation struct {
+	Python map[string]any
+	Native map[string]any
+}
+
+// callWithNativeBody pins both complete bodies for a single approved boundary;
+// status, headers, comments and stored effects keep the ordinary comparison.
+func (w *world) callWithNativeBody(method, path, body string, authenticated bool, expected *nativeBodyExpectation) answer {
 	t := w.t
 	t.Helper()
 	headers := map[string]string{}
@@ -398,7 +409,10 @@ func (w *world) call(method, path, body string, authenticated bool) answer {
 			t.Errorf("%s %s %s: %s", method, path, label, firstDifference(a, b, ""))
 		}
 	}
-	if approvedShape {
+	if expected != nil {
+		compare("Python boundary body", expected.Python, py.Body)
+		compare("native boundary body", expected.Native, gb)
+	} else if approvedShape {
 		t.Log("EXPECTED Step B #1: invalid input returns accurate 400 JSON; stored effects still compared")
 	} else {
 		compare("body", py.Body, gb)

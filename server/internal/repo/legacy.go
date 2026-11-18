@@ -16,6 +16,7 @@ import (
 	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/store"
+	"configflow/internal/yamlbridge"
 )
 
 // workingModel returns the typed working document of the write transaction
@@ -240,35 +241,29 @@ func applySharedLegacy(ctx context.Context, document *model.Document, updater Up
 	})
 }
 
-// nodeRawDialer is dialer_references.raw_dialer of a typed node, through
-// the jsonx converter until convert reads typed nodes (N8-8a).
+// nodeRawDialer reads a typed node through the shared native converter.
 func nodeRawDialer(node *model.Node) (any, error) {
-	object, err := legacyObject(node)
+	target, err := convert.NodeDialer(*node)
+	if err != nil {
+		return nil, &Error{Kind: ErrValidation, Message: err.Error(), Cause: err}
+	}
+	if target == nil {
+		return nil, nil
+	}
+	return yamlbridge.Value(target)
+}
+
+// legacyRawDialer only transcodes old-format import nodes to the typed entry.
+func legacyRawDialer(node *jsonx.Object) (any, error) {
+	data, err := json.Marshal(node)
 	if err != nil {
 		return nil, err
 	}
-	return legacyRawDialer(object)
-}
-
-// legacyRawDialer is dialer_references.raw_dialer: the dialer-proxy of a
-// structured proxy_string, else of the node's own fields.
-func legacyRawDialer(node *jsonx.Object) (any, error) {
-	if proxyString := node.Value("proxy_string"); jsonx.Truthy(proxyString) {
-		text, ok := proxyString.(string)
-		if !ok {
-			return nil, validationError("节点 proxy_string 必须是字符串")
-		}
-		parsed, err := convert.InspectStructuredProxyString(text)
-		if err != nil {
-			return nil, convertFailure(err)
-		}
-		if parsed == nil || parsed.Len() == 0 {
-			return nil, nil
-		}
-		return parsed.Value("dialer-proxy"), nil
+	var typed model.Node
+	if err := json.Unmarshal(data, &typed); err != nil {
+		return nil, err
 	}
-	value, err := convert.RawDialer(node)
-	return value, convertFailure(err)
+	return nodeRawDialer(&typed)
 }
 
 // convertFailure maps the converter's input errors to validation errors.
@@ -324,16 +319,15 @@ func checkProfileShapes(profile *model.Profile) error {
 // checkDialers is dialer_references.validate_dialers of a resolved profile:
 // a broken reference is ErrInUse.
 func checkDialers(config *model.Config) error {
-	object, err := legacyObject(config)
-	if err != nil {
+	err := convert.ConfigDialers(config)
+	if err == nil {
+		return nil
+	}
+	var yamlFailure *convert.ProxyYAMLError
+	if errors.As(err, &yamlFailure) {
 		return err
 	}
-	err = convert.ValidateDialers(object)
-	var reference *convert.DialerReferenceError
-	if errors.As(err, &reference) {
-		return &Error{Kind: ErrInUse, Message: reference.Message, Usages: []any{}, Cause: err}
-	}
-	return err
+	return &Error{Kind: ErrInUse, Message: err.Error(), Usages: []any{}, Cause: err}
 }
 
 func dialerValidation(err error) error {

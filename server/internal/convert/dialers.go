@@ -141,7 +141,7 @@ func ConfigShapes(config *model.Config, requireIDs bool) error {
 			}
 		}
 		if raw, present := members["proxy_string"]; present {
-			var value *string
+			var value *model.String
 			if json.Unmarshal(raw, &value) != nil {
 				return errors.New(msgProxyStringType)
 			}
@@ -165,12 +165,12 @@ func ConfigShapes(config *model.Config, requireIDs bool) error {
 		}
 		for _, key := range []string{"manual_nodes", "include_groups", "proxies", "subscriptions", "aggregations", "use"} {
 			if raw, present := members[key]; present {
-				var values []*string
+				var values []*model.String
 				if json.Unmarshal(raw, &values) != nil || values == nil {
 					return fmt.Errorf(msgGroupStringList, key)
 				}
 				for _, value := range values {
-					if value == nil || strings.TrimSpace(*value) == "" {
+					if value == nil || strings.TrimSpace(string(*value)) == "" {
 						return fmt.Errorf(msgGroupStringList, key)
 					}
 				}
@@ -183,7 +183,7 @@ func ConfigShapes(config *model.Config, requireIDs bool) error {
 			}
 			for _, entry := range entries {
 				for _, key := range []string{"type", "id"} {
-					var value *string
+					var value *model.String
 					if json.Unmarshal(entry[key], &value) != nil || value == nil {
 						return errors.New(msgGroupOrder)
 					}
@@ -292,8 +292,30 @@ func (s *dialerScope) groupSources(group model.ProxyGroup) ([]Ref, error) {
 	return result, nil
 }
 
+func validateStoredNodeReference(node model.Node) error {
+	if !model.IssueUnder(model.Issues(node), "dialer_ref") {
+		return nil
+	}
+	data, err := model.Marshal(node)
+	if err != nil {
+		return err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	raw, err := json.Marshal(fields["dialer_ref"])
+	if err != nil {
+		return err
+	}
+	return fmt.Errorf(msgStoredDialerRef, raw)
+}
+
 // NodeDialer reads a node's own dialer-proxy without contacting a converter.
 func NodeDialer(node model.Node) (*yamlx.Node, error) {
+	if err := validateStoredNodeReference(node); err != nil {
+		return nil, err
+	}
 	if node.ProxyString != nil && *node.ProxyString != "" {
 		proxy, err := StructuredProxy(*node.ProxyString)
 		if err != nil {
@@ -327,6 +349,9 @@ func NodeDialerTarget(config *model.Config, node model.Node) (*Ref, error) {
 	return newDialerScope(config).nodeTarget(node)
 }
 func (s *dialerScope) nodeTarget(node model.Node) (*Ref, error) {
+	if err := validateStoredNodeReference(node); err != nil {
+		return nil, err
+	}
 	if node.DialerRef != nil {
 		if !stableRef(node.DialerRef) {
 			return nil, errors.New(msgDialerRef)
@@ -610,6 +635,13 @@ func checkCycles(graph *Graph) error {
 func ConfigDialers(config *model.Config) error {
 	if err := ConfigShapes(config, true); err != nil {
 		return err
+	}
+	if config != nil {
+		for _, node := range config.Nodes {
+			if err := validateStoredNodeReference(node); err != nil {
+				return err
+			}
+		}
 	}
 	s := newDialerScope(config)
 	if err := s.validateChains(); err != nil {

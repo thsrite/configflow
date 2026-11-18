@@ -19,6 +19,62 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+func TestMihomoNumericPasswordPreservesTag(t *testing.T) {
+	for _, source := range []string{
+		`{"name":"N","type":"ss","server":"example.com","port":443,"params":{"cipher":"aes-128-gcm","password":123}}`,
+		`{"name":"N","proxy_string":"type: ss\nserver: example.com\nport: 443\ncipher: aes-128-gcm\npassword: 123\n"}`,
+	} {
+		t.Run(source, func(t *testing.T) {
+			var node model.Node
+			if err := json.Unmarshal([]byte(source), &node); err != nil {
+				t.Fatal(err)
+			}
+			proxy, err := NodeProxy(context.Background(), node, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			password := yamlx.Get(proxy, "password")
+			if password == nil || password.ShortTag() != "!!int" || password.Value != "123" {
+				t.Fatalf("password lost or tag changed: %+v", password)
+			}
+			output, err := yamlx.Marshal(proxy)
+			if err != nil || !bytes.Contains(output, []byte("password: 123\n")) {
+				t.Fatalf("Mihomo output lost password: %s %v", output, err)
+			}
+		})
+	}
+}
+
+func TestMihomoNumericServer(t *testing.T) {
+	var node model.Node
+	if err := json.Unmarshal([]byte(`{"name":"N","type":"http","server":123,"port":80}`), &node); err != nil {
+		t.Fatal(err)
+	}
+	proxy, err := NodeProxy(context.Background(), node, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := yamlx.Get(proxy, "server")
+	if server == nil || server.ShortTag() != "!!str" || server.Value != "123" {
+		t.Fatalf("numeric server lost: %+v", server)
+	}
+}
+
+func TestMihomoQuotedPort(t *testing.T) {
+	var node model.Node
+	if err := json.Unmarshal([]byte(`{"name":"N","type":"http","server":"example.com","port":"443"}`), &node); err != nil || node.Port != 443 || model.IssueUnder(model.Issues(node), "port") {
+		t.Fatalf("port lost during typed decode: %d %v", node.Port, err)
+	}
+	proxy, err := NodeProxy(context.Background(), node, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := yamlx.Get(proxy, "port")
+	if port == nil || port.Value != "443" || port.ShortTag() != "!!str" {
+		t.Fatalf("original Mihomo port spelling changed: %+v", port)
+	}
+}
+
 // Remaining archived helper rows use these test-only adapters. Runtime code
 // no longer models CPython set layout or Python's bool/integer key equality.
 func sortPorts(values []jsonx.Number) {
@@ -50,6 +106,9 @@ func NodeReplayIssue(node *jsonx.Object) string {
 	}
 	if value, present := node.Get("port"); present && value == nil {
 		return "node.port integer"
+	}
+	if _, text := node.Value("port").(string); text {
+		return "node.port quoted integer native boundary"
 	}
 	data, err := json.Marshal(node)
 	if err != nil {

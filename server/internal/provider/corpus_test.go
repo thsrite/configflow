@@ -214,6 +214,7 @@ func TestCorpus(t *testing.T) {
 	defer SetLocations(fakeLocations{})()
 	rows := loadCorpus(t)
 	repository := corpusRepositoryFactory(t)
+	nativeSnapshots := nativeSnapshotExpectations(t, rows)
 	counts := map[string]int{}
 	failures := 0
 	for i, row := range rows {
@@ -252,6 +253,9 @@ func TestCorpus(t *testing.T) {
 		}
 		counts[kind]++
 		want := expectedOf(row)
+		if native, ok := nativeSnapshots[i]; ok {
+			want = native
+		}
 		if reason := knownDifference(kind, input); reason != "" {
 			if jsonx.Equal(want, got) {
 				t.Errorf("row %d: known difference (%s) no longer differs", i, reason)
