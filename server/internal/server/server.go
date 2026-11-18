@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"configflow/internal/agents"
+	"configflow/internal/agents/dnsfollow"
 	"configflow/internal/agents/metrics"
 	"configflow/internal/agents/monitor"
 	"configflow/internal/agents/rulesync"
@@ -107,6 +108,7 @@ var wirePackages = []func(){
 	apinodes.Wire,
 	aggregations.Wire,
 	agents.Wire,
+	dnsfollow.Register,
 	metrics.Wire,
 	metrics.WireTraffic,
 	monitor.Wire,

@@ -15,10 +15,10 @@ GET	/api/agents/<agent_id>/deployments/<deployment_id>	routes.agents.get_agent_d
 POST	/api/agents/<agent_id>/deployments/<deployment_id>/activate	routes.agents.activate_agent_deployment	internal/api/agents	done
 POST	/api/agents/<agent_id>/deployments/<deployment_id>/recover	routes.agents.recover_agent_deployment	internal/api/agents	done
 POST	/api/agents/<agent_id>/deployments/<deployment_id>/rollback	routes.agents.rollback_agent_deployment	internal/api/agents	done
-DELETE	/api/agents/<agent_id>/dns-follow	routes.agents.agent_dns_follow	28	todo
-GET	/api/agents/<agent_id>/dns-follow	routes.agents.agent_dns_follow	28	todo
-PUT	/api/agents/<agent_id>/dns-follow	routes.agents.agent_dns_follow	28	todo
-POST	/api/agents/<agent_id>/dns-follow/retry	routes.agents.retry_agent_dns_follow	28	todo
+DELETE	/api/agents/<agent_id>/dns-follow	routes.agents.agent_dns_follow	internal/api/agents	done
+GET	/api/agents/<agent_id>/dns-follow	routes.agents.agent_dns_follow	internal/api/agents	done
+PUT	/api/agents/<agent_id>/dns-follow	routes.agents.agent_dns_follow	internal/api/agents	done
+POST	/api/agents/<agent_id>/dns-follow/retry	routes.agents.retry_agent_dns_follow	internal/api/agents	done
 PUT	/api/agents/<agent_id>/domain-discovery	routes.agents.set_agent_domain_discovery	internal/api/agents	done
 POST	/api/agents/<agent_id>/domain-discovery/clear	routes.agents.clear_agent_domain_discovery	internal/api/agents	done
 POST	/api/agents/<agent_id>/generate-config	routes.agents.generate_final_agent_config	internal/api/agents	done

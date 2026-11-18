@@ -46,6 +46,7 @@ func Register(r *httpx.Router) {
 	r.POST("/api/agents/<agent_id>/heartbeat", "agents.agent_heartbeat", agentHeartbeat)
 	r.Handle([]string{"GET", "POST"}, "/api/agents", "agents.handle_agents", auth.Require(createAgent))
 	r.Handle([]string{"GET", "PUT", "DELETE"}, "/api/agents/<agent_id>", "agents.handle_agent_item", auth.Require(handleAgentItem))
+	registerDNSFollowRoutes(r)
 	registerContentRoutes(r)
 	registerDeployRoutes(r)
 	registerRuleSync(r)

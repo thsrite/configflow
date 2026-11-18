@@ -1642,7 +1642,7 @@ Original author product tip: `c241f2938`; original .64 targeted checks: rulesync
 
 ## A17 — DNS follow
 
-**Status: `missing`** · HR · prereqs: A14 (`_prepare_transactional_content`), A11, A02 (IdleRounds, events), C26 (`oxidns_editor.prepare_editor`), C22 (`load_native_yaml`, `generate_oxidns_config`) · Go: internal/agents/dnsfollow (new), api/agents
+**Status: `partial` — Codex移植中** · HR · prereqs: A14 (`_prepare_transactional_content`), A11, A02 (IdleRounds, events), C26 (`oxidns_editor.prepare_editor`), C22 (`load_native_yaml`, `generate_oxidns_config`) · Go: internal/agents/dnsfollow (new), api/agents
 
 **Design:** `server/design/a16-a18-sync-follow-ha.md` (Opus, 2026-11-17) covers A16, A17 and A18 — package map, stored types, Agent protocol, loops, locks, failure/rollback, steps A16-0…A18-4, acceptance (fake pair, Python transcript differential, F1 closure, L3). Port to it; contract changes need the designer's or coordinator's agreement. Open maintainer decisions: D-A17-1, D-A18-1.
 
@@ -1654,7 +1654,7 @@ Tests: `test_dns_follow.py` (70)
 
 Routes (4): `GET|PUT|DELETE /api/agents/<agent_id>/dns-follow`; `POST /api/agents/<agent_id>/dns-follow/retry`
 
-Evidence: no Go code.
+Evidence: go-port-a17 从 go-opus-review-a14@b6ce4ac29 起步；已实现owner、4条auth路由、C07 row/runner和boot loop，真实SQLite/回环Agent/A14 prepare/publish初轮2用例race通过51.915s。A16接口已通过Paseo对齐；真实Python差分、Runtime/恢复/脱敏及最终检查尚在进行，不能标ported。进度与后续验收见 [A17-handoff-zh.md](progress/A17-handoff-zh.md)。
 
 Hooks to provide: `agents.SetDNSFollowRow` (dns_follow row; with A16's row this completes the `agent` task slot), `tasks.SetRunner("dns_follow", dns_follow.retry)`, `agents.OnManagerInit` (`dns_follow.start_loop`, registered first: Python order dns_follow → HA publication → IPv6 verification). `settings_digest` is used by A14 `_remember_deployment_content` (export it; A14 needs it → port the digest helper in A14 or give A14 a hook).
 
