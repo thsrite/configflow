@@ -185,3 +185,22 @@ const (
 	msgClientOptions = "节点参数必须为对象"
 	msgClientBoolean = "节点布尔字段 %s 类型错误，已使用缺省值"
 )
+
+const (
+	msgSurgePortList  = "# Surge 不支持一条规则写多个端口，已忽略: "
+	msgLoonPortList   = "# Loon 不支持一条规则写多个端口，已忽略: "
+	msgLoonRuleType   = "# Loon 不支持的规则类型，已忽略: "
+	msgLoonRuleFormat = "# Loon 不支持 YAML/MRS 规则集，已忽略: "
+)
+
+const (
+	msgClientConfig        = "客户端配置必须包含有效的配置空间"
+	msgLoonUnsupportedNode = "Loon 不支持该节点类型，已跳过: "
+)
+
+const (
+	msgSurgeDeliveryDialer = "Surge policy-path 暂不支持 dialer-proxy，不能静默移除拨号配置"
+	msgLoonDeliveryDialer  = "Loon 订阅暂不支持 dialer-proxy，不能静默移除拨号配置"
+	msgSurgeNodeFailure    = "转换节点到 Surge 格式失败: %s, 错误: %v"
+	msgLoonNodeFailure     = "转换节点到 Loon 格式失败: %s, 错误: %v"
+)

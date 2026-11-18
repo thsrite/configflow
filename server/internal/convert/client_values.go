@@ -73,6 +73,31 @@ func (s clientTextList) strings() []string {
 	return result
 }
 
+// clientReserved accepts the two documented WireGuard forms without formatting
+// arbitrary containers: a preformatted client ID or an ordered numeric list.
+type clientReserved struct {
+	Text    string
+	Numbers []json.Number
+}
+
+func (r *clientReserved) UnmarshalJSON(data []byte) error {
+	data = bytes.TrimSpace(data)
+	if bytes.Equal(data, []byte("null")) {
+		*r = clientReserved{}
+		return nil
+	}
+	if len(data) > 0 && data[0] == '"' {
+		return json.Unmarshal(data, &r.Text)
+	}
+	return json.Unmarshal(data, &r.Numbers)
+}
+func (r clientReserved) MarshalJSON() ([]byte, error) {
+	if r.Numbers != nil {
+		return json.Marshal(r.Numbers)
+	}
+	return json.Marshal(r.Text)
+}
+
 // clientOptions is the protocol schema shared by Surge and Loon. Bool options
 // follow R5; a null pointer is absent. The source remains read-only in Node.Params.
 type clientOptions struct {
@@ -114,7 +139,7 @@ type clientOptions struct {
 	PreSharedKey        *clientText             `json:"pre-shared-key"`
 	PresharedKeyAlt     *clientText             `json:"presharedKey"`
 	ClientID            *clientText             `json:"client-id"`
-	Reserved            []json.Number           `json:"reserved"`
+	Reserved            clientReserved          `json:"reserved"`
 	Obfs                *clientText             `json:"obfs"`
 	ObfsHost            *clientText             `json:"obfs-host"`
 	ObfsParam           *clientText             `json:"obfs-param"`

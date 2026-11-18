@@ -1694,3 +1694,143 @@ func legacyClientCallbacks() ClientCollaborators {
 		},
 	}
 }
+
+// ConvertProxyGroupToSurge transcodes the old group and resolved snapshot.
+func ConvertProxyGroupToSurge(value any, source *jsonx.Object, base string, smart *jsonx.Object) (string, error) {
+	group, err := decodeLegacy[model.ProxyGroup](value)
+	if err != nil {
+		return "", err
+	}
+	config, err := configFromLegacy(source)
+	if err != nil {
+		return "", err
+	}
+	priorities, err := decodeLegacy[map[string]string](smart)
+	if err != nil {
+		return "", err
+	}
+	return SurgeGroup(group, config, base, priorities)
+}
+
+// ConvertProxyGroupToLoon transcodes the old group to LoonGroup.
+func ConvertProxyGroupToLoon(value any, members []string) (string, error) {
+	group, err := decodeLegacy[model.ProxyGroup](value)
+	if err != nil {
+		return "", err
+	}
+	return LoonGroup(group, members)
+}
+
+// BuildLoonRules transcodes the old resolved view to LoonRules.
+func BuildLoonRules(value *jsonx.Object, base string) ([]string, []string, error) {
+	config, err := configFromLegacy(value)
+	if err != nil {
+		return nil, nil, err
+	}
+	return LoonRules(config, base)
+}
+
+// GenerateSurgeConfig transcodes to the typed Surge generator.
+func GenerateSurgeConfig(ctx context.Context, value *jsonx.Object, base string) (string, error) {
+	config, err := configFromLegacy(value)
+	if err != nil {
+		return "", err
+	}
+	return SurgeConfig(ctx, config, base)
+}
+
+// GenerateLoonConfig transcodes to the typed Loon generator.
+func GenerateLoonConfig(ctx context.Context, value *jsonx.Object, base string) (string, error) {
+	config, err := configFromLegacy(value)
+	if err != nil {
+		return "", err
+	}
+	return LoonConfig(ctx, config, base)
+}
+
+// SanitizeLoonName transcodes an old string entry to the native name formatter.
+func SanitizeLoonName(value any) (string, error) {
+	text, err := decodeLegacy[string](value)
+	if err != nil {
+		return "", err
+	}
+	return clientSanitizeName(text), nil
+}
+
+// GetProxyGroupNodes transcodes stored group membership to the typed filter.
+func GetProxyGroupNodes(value any, source *jsonx.Object) ([]any, error) {
+	group, err := decodeLegacy[model.ProxyGroup](value)
+	if err != nil {
+		return nil, err
+	}
+	config, err := configFromLegacy(source)
+	if err != nil {
+		return nil, err
+	}
+	names, err := ClientGroupNodes(group, config)
+	if err != nil {
+		return nil, err
+	}
+	result, err := encodeLegacy(names)
+	if err != nil {
+		return nil, err
+	}
+	return result.([]any), nil
+}
+func legacyClientDecoder(decode func([]any) ([]any, error)) ClientNodeDecoder {
+	if decode == nil {
+		return nil
+	}
+	return func(proxies []*yamlx.Node) ([]model.Node, error) {
+		values := make([]any, len(proxies))
+		for i, proxy := range proxies {
+			value, err := legacyProxy(proxy)
+			if err != nil {
+				return nil, err
+			}
+			values[i] = value
+		}
+		nodes, err := decode(values)
+		if err != nil {
+			return nil, err
+		}
+		return decodeLegacy[[]model.Node](nodes)
+	}
+}
+func legacyClientProxies(proxies []any) ([]*yamlx.Node, error) {
+	result := make([]*yamlx.Node, len(proxies))
+	for i, value := range proxies {
+		node, err := yamlbridge.Encode(value)
+		if err != nil {
+			return nil, err
+		}
+		result[i] = node
+	}
+	return result, nil
+}
+
+// ConvertProxiesToSurgeText transcodes the N8-9 substore callback in one place.
+func ConvertProxiesToSurgeText(proxies []any, decode func([]any) ([]any, error)) (string, error) {
+	nodes, err := legacyClientProxies(proxies)
+	if err != nil {
+		return "", err
+	}
+	return ClientProxyText(nodes, legacyClientDecoder(decode), "surge")
+}
+
+// ConvertProxiesToLoonText transcodes the N8-9 substore callback in one place.
+func ConvertProxiesToLoonText(proxies []any, decode func([]any) ([]any, error)) (string, error) {
+	nodes, err := legacyClientProxies(proxies)
+	if err != nil {
+		return "", err
+	}
+	return ClientProxyText(nodes, legacyClientDecoder(decode), "loon")
+}
+
+// missingConverter preserves the old no-error collaborator signature until N8-9.
+type missingConverter struct{}
+
+func (missingConverter) ConvertProxyString(context.Context, string) *jsonx.Object {
+	raise(&HookMissingError{Hook: "convert_proxy_string", Provider: "convert/mihomoenv (C13 substore)"})
+	return nil
+}

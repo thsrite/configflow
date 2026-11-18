@@ -234,7 +234,7 @@ func SurgeNode(input model.Node) (string, string, error) {
 			parts = append(parts, "token="+token)
 		}
 		alpn := "h3"
-		if len(o.ALPN) > 0 {
+		if o.ALPN != nil {
 			alpn = strings.Join(o.ALPN.strings(), ",")
 		}
 		if alpn != "" {
@@ -312,7 +312,7 @@ func SurgeNode(input model.Node) (string, string, error) {
 		if len(dns) == 0 {
 			dns = o.DNSServer
 		}
-		if len(dns) > 0 {
+		if len(dns) > 0 && strings.Join(dns.strings(), "") != "" {
 			section = append(section, "dns-server = "+strings.Join(dns.strings(), ", "))
 		}
 		if clientQuantity(o.MTU) {
@@ -324,15 +324,15 @@ func SurgeNode(input model.Node) (string, string, error) {
 				endpoint = n.server + ":" + n.port
 			}
 			allowed := o.AllowedIPs
-			if len(allowed) == 0 {
+			if len(allowed) == 0 || strings.Join(allowed.strings(), "") == "" {
 				allowed = o.AllowedIPsAlt
 			}
 			allowedText := "0.0.0.0/0, ::/0"
-			if len(allowed) > 0 {
+			if len(allowed) > 0 && strings.Join(allowed.strings(), "") != "" {
 				allowedText = strings.Join(allowed.strings(), ", ")
 			}
 			peer := []string{"public-key = " + key, "endpoint = " + endpoint, `allowed-ips = "` + allowedText + `"`}
-			if value := firstClientText(o.Keepalive, o.PersistentKeepalive); value != "" {
+			if value := clientKeepalive(o.Keepalive, o.PersistentKeepalive); value != "" {
 				peer = append(peer, "keepalive = "+value)
 			}
 			if value := firstClientText(o.PresharedKey, o.PresharedKeyAlt); value != "" {
@@ -340,12 +340,14 @@ func SurgeNode(input model.Node) (string, string, error) {
 			}
 			if value := clientOption(o.ClientID, ""); value != "" {
 				peer = append(peer, "client-id = "+value)
-			} else if len(o.Reserved) > 0 {
-				values := make([]string, len(o.Reserved))
-				for i, n := range o.Reserved {
+			} else if o.Reserved.Text != "" {
+				peer = append(peer, "client-id = "+o.Reserved.Text)
+			} else if len(o.Reserved.Numbers) > 0 {
+				values := make([]string, len(o.Reserved.Numbers))
+				for i, n := range o.Reserved.Numbers {
 					values[i] = n.String()
 				}
-				peer = append(peer, "client-id = "+strings.Join(values, ","))
+				peer = append(peer, "client-id = "+strings.Join(values, "/"))
 			}
 			section = append(section, "peer = ("+strings.Join(peer, ", ")+")")
 		}
@@ -400,7 +402,7 @@ func clientTLS(o clientOptions) []string {
 		parts = append(parts, "sni="+clientValue(sni))
 	}
 	parts = append(parts, "skip-cert-verify="+flagText(clientFlag(o.SkipCertVerify)))
-	if len(o.ALPN) > 0 {
+	if len(o.ALPN) > 0 && strings.Join(o.ALPN.strings(), "") != "" {
 		parts = append(parts, "alpn="+clientQuote(strings.Join(o.ALPN.strings(), ",")))
 	}
 	if o.Reality != nil && clientOption(o.Reality.PublicKey, "") != "" {
@@ -490,7 +492,7 @@ func LoonNode(input model.Node) (string, error) {
 			if flow != "" && flow != "xtls-rprx-vision" {
 				return "", nil
 			}
-			tls = tls || slices.Contains([]string{"tls", "reality"}, clientOption(o.Security, "")) || o.Reality != nil
+			tls = tls || slices.Contains([]string{"tls", "reality"}, clientOption(o.Security, "")) || (o.Reality != nil && (clientOption(o.Reality.PublicKey, "") != "" || clientOption(o.Reality.ShortID, "") != "" || o.Reality.Fields.Len() > 0))
 			parts = []string{name + " = VLESS", n.server, n.port, clientQuote(clientOption(o.UUID, ""))}
 			parts = append(parts, transport...)
 			if flow != "" {
@@ -596,15 +598,15 @@ func LoonNode(input model.Node) (string, error) {
 				break
 			}
 		}
-		if value := firstClientText(o.PersistentKeepalive, o.Keepalive); value != "" {
+		if value := clientKeepalive(o.PersistentKeepalive, o.Keepalive); value != "" {
 			parts = append(parts, "keepalive="+value)
 		}
 		allowed := o.AllowedIPs
-		if len(allowed) == 0 {
+		if len(allowed) == 0 || strings.Join(allowed.strings(), "") == "" {
 			allowed = o.AllowedIPsAlt
 		}
 		allowedText := "0.0.0.0/0"
-		if len(allowed) > 0 {
+		if len(allowed) > 0 && strings.Join(allowed.strings(), "") != "" {
 			allowedText = strings.Join(allowed.strings(), ",")
 		}
 		endpoint := clientOption(o.Endpoint, "")
@@ -618,9 +620,9 @@ func LoonNode(input model.Node) (string, error) {
 		if value := firstClientText(o.PreSharedKey, o.PresharedKey, o.PresharedKeyAlt); value != "" {
 			peer = append(peer, "preshared-key="+clientQuote(value))
 		}
-		if len(o.Reserved) > 0 {
-			values := make([]string, len(o.Reserved))
-			for i, n := range o.Reserved {
+		if len(o.Reserved.Numbers) > 0 {
+			values := make([]string, len(o.Reserved.Numbers))
+			for i, n := range o.Reserved.Numbers {
 				values[i] = n.String()
 			}
 			peer = append(peer, "reserved=["+strings.Join(values, ",")+"]")
@@ -634,4 +636,13 @@ func LoonNode(input model.Node) (string, error) {
 }
 func clientSanitizeName(text string) string {
 	return strings.TrimSpace(strings.NewReplacer(",", " ", "=", " ").Replace(text))
+}
+
+func clientKeepalive(values ...*clientText) string {
+	for _, value := range values {
+		if clientQuantity(value) {
+			return string(*value)
+		}
+	}
+	return ""
 }
