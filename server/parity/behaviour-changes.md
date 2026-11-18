@@ -1039,3 +1039,11 @@ upstream 0 的写入。finalization 在同一 profile 事务内重新核对来�
 核验后再写的归属变化窗口；用户在发布期间编辑的新草稿仍保留，报告成功但 draft_synced=false。
 公共 options、状态、事件、任务错误和日志 label 扩展使用 A24 的共享凭据脱敏合同，磁盘私有 job
 保留。见 [A17 交回](progress/A17-handoff-zh.md)。
+
+A17 复核（2026-11-18，[review-a17.md](review-a17.md)）补充：
+
+- 草稿已写入后的签名重绑只认 binding id（与 Python 相同）；草稿事务内的归属重查保留。重复 finalize 正确识别
+  已写入的候选草稿，不再误报「草稿有新修改」。
+- 失败 child 的 `error_details` 先用全部 Agent 凭据脱敏再交给 A01（Python 只用目标自己的 token，属 Python 漏洞）。
+- DNS 接口回复逐成员解码：类型不对的成员按缺失处理，给出与 Python 相同的具体拒绝文本；非字符串的 `message`
+  按缺失处理（落到「请升级 Agent…」默认文本），不复刻 Python 的 `str()` 表示。

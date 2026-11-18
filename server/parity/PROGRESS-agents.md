@@ -1645,7 +1645,9 @@ Original author product tip: `c241f2938`; original .64 targeted checks: rulesync
 
 ## A17 — DNS follow
 
-**Status: `ported` — 待独立 Opus HR 与依赖合并复验** · HR · prereqs: A14 (`_prepare_transactional_content`), A11, A02 (IdleRounds, events), C26 (`oxidns_editor.prepare_editor`), C22 (`load_native_yaml`, `generate_oxidns_config`) · Go: internal/agents/dnsfollow (new), api/agents
+**Status: `ported` — Opus HR 复核完成（0 high），待 A14 合入后 rebase 复验再标 `verified`** · HR · prereqs: A14 (`_prepare_transactional_content`), A11, A02 (IdleRounds, events), C26 (`oxidns_editor.prepare_editor`), C22 (`load_native_yaml`, `generate_oxidns_config`) · Go: internal/agents/dnsfollow (new), api/agents
+
+**Opus HR review (2026-11-18, branch `go-opus-review-a17`):** [review-a17.md](review-a17.md)。high **0**（未达回退门槛）；medium 2 已修：M1 重复 finalize 因 `[]byte` 被编码成 base64 永远认不出自己写的草稿，关机落在草稿提交后时重启误报「草稿有新修改」并留下旧签名（`2a14b8ea7`）；M2 草稿提交后的签名重绑重跑完整归属，来源此刻开始新发布即留下旧签名（`64c9ceafc`）——两者都会让绑定在下一次 Mihomo 发布时永久失效，Python 无此问题。low 3 已修：失败 child 的 `error_details` 只按目标 token 脱敏（`a265d0d5d`）、DNS 回复整体解码不容忍错类型（`64c9ceafc`/`49bbe1c0d`）、设备名/来源名缺省值（`49bbe1c0d`）；另补原始请求 query 断言与 `TestMain` 锁序断言。.32：本包 race 555.914s、live difftest 95.263s、api/agents 1.378s 通过。**不能标 verified 的原因**：A17 叠在尚未进 go 的 A14 上；A14 与 batch-4 合入后需 rebase，把 `recordOutcome` 切到 `taskstatus.RecordContext(owner ctx)`（O3-6c），在合并树补跑本包 race、关机后 taskstatus 不写与 live difftest，通过后即可标 `verified`。L3 实机项见复核报告第 4 节。
 
 **Design:** `server/design/a16-a18-sync-follow-ha.md` (Opus, 2026-11-17) covers A16, A17 and A18 — package map, stored types, Agent protocol, loops, locks, failure/rollback, steps A16-0…A18-4, acceptance (fake pair, Python transcript differential, F1 closure, L3). Port to it; contract changes need the designer's or coordinator's agreement. D-A17-1 已裁定 B（Go-native canonical JSON，切换后重新选择 binding）；D-A18-1 属于 A18。
 
