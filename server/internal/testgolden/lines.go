@@ -17,6 +17,7 @@ import (
 // explicit recording/check mode, and is always reaped before the test ends.
 type Lines struct {
 	reference *Reference
+	owner     *testing.T
 	script    string
 	env       []string
 	input     io.WriteCloser
@@ -30,8 +31,8 @@ type Lines struct {
 // files conservatively; the consuming package's test files are added by New.
 func NewLines(t *testing.T, script string) *Lines {
 	t.Helper()
-	lines := &Lines{script: script}
-	lines.reference = New(t, Spec{Sources: []string{"backend", script}})
+	lines := &Lines{script: script, owner: t}
+	lines.reference = New(t, Spec{Sources: []string{"backend", script}, Compress: true})
 	return lines
 }
 
@@ -57,7 +58,7 @@ func (l *Lines) Call(t *testing.T, input, keyInput []byte) []byte {
 			l.cmd = exec.CommandContext(ctx, Python(), "-u", l.script)
 			l.cmd.Dir = root
 			l.cmd.WaitDelay = 5 * time.Second
-			l.cmd.Env = append(os.Environ(), "PYTHONPATH="+root, "DATA_DIR="+t.TempDir(), "PYTHONDONTWRITEBYTECODE=1")
+			l.cmd.Env = append(os.Environ(), "PYTHONPATH="+root, "DATA_DIR="+l.owner.TempDir(), "PYTHONDONTWRITEBYTECODE=1")
 			l.cmd.Env = append(l.cmd.Env, l.env...)
 			l.cmd.Stderr = &l.stderr
 			l.input, err = l.cmd.StdinPipe()
@@ -78,12 +79,12 @@ func (l *Lines) Call(t *testing.T, input, keyInput []byte) []byte {
 			l.output.Buffer(make([]byte, 65536), 1<<27)
 			// This cleanup is registered after Reference's cleanup: reap first, then
 			// decide whether a successful recording may be saved.
-			t.Cleanup(func() {
+			l.owner.Cleanup(func() {
 				_ = l.input.Close()
 				err := l.cmd.Wait()
 				cancel()
 				if err != nil {
-					t.Errorf("reference shutdown: %v: %s", err, l.stderr.String())
+					l.owner.Errorf("reference shutdown: %v: %s", err, l.stderr.String())
 				}
 			})
 		}

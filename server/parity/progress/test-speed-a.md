@@ -31,3 +31,22 @@ RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'mkdir -p server/parity/test-speed;
 
 Pending: baseline results/hotspots; integrate and record each package; zero-diff
 live checks; ordinary-test process audit; after timings; final gate/rebase.
+
+Shared-tool follow-up: compressed transcripts supported; JSON-lines process
+cleanup belongs to the creating test (so multiple child subtests share one live
+oracle). Actual child-Go negative controls verify source/input/venv drift,
+changed expected outputs, unaccepted first recordings and failed original
+assertions all fail without overwriting. Alias-aware AST inventory checks exact
+file/function/callee/count exceptions; new or stale process sites fail.
+
+The original .64 baseline was stopped after coordinator identified concurrent
+`go-n73-gate-perf` ownership of the frozen YAML hotspot. It is **not** a valid
+before/after measurement. Re-measure after that branch is integrated. No frozen
+archive, index, Classify implementation or yamlxtest file is modified here.
+
+Latest process policy: targeted checks only; coordinator runs batch full gates.
+
+Shared follow-up targeted validation (.64):
+`go test -race -count=1 ./internal/testgolden ./tools/pyref` passed
+(`4.129s`, `1.012s`); targeted vet passed. Negative controls use child Go test
+processes and a synthetic venv directory; they execute no Python themselves.

@@ -38,3 +38,19 @@ metadata-only or removed-input changes. It never writes. `record` without accept
 also never writes. New recordings require the same explicit acceptance. Updates
 are atomic; goldens are normal tracked `testdata/pyref/*.json` files. Never set the
 accept flag in gate/CI. Record, review the git diff, and run `check` once more.
+
+## Process audit and explicit live exceptions
+
+`go run ./tools/pyref` audits A scopes by default. `-scopes` selects migrated
+packages; it also inspects their children. Every process constructor (including
+aliased imports and calls in callbacks) and old `yamlxtest.NewOracle` call must
+have an exact file/function/callee registration in `live-exceptions-a.json` or
+`live-exceptions-b.json`. `count` defaults to one; an added call or stale entry
+fails the audit. Each registration states its guard, kind and reason. No whole
+package exemption exists. Product scripts, Go self-process tests and explicit
+cross-language integration tests are kept and identified separately.
+
+This AST inventory complements a runtime exec trace of **ordinary** tests. A
+registration alone is not proof of a recording guard: ordinary runs must show no
+Python oracle exec, and live modes must reap all child processes. `NewLines`
+transcripts use gzip-compressed JSON; one-shot `Spec` may also set `Compress`.

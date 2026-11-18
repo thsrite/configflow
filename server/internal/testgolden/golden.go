@@ -4,10 +4,12 @@ package testgolden
 
 import (
 	"bytes"
+	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -21,10 +23,11 @@ import (
 // Sources are repository-relative files or directories (directories include .py
 // files). Run is never called in ordinary tests. Names must be safe filenames.
 type Spec struct {
-	Name    string
-	Sources []string
-	Input   []byte
-	Run     func() ([]byte, error)
+	Name     string
+	Sources  []string
+	Input    []byte
+	Run      func() ([]byte, error)
+	Compress bool
 }
 
 type metadata struct {
@@ -198,10 +201,25 @@ func New(t *testing.T, spec Spec) *Reference {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := &Reference{spec: spec, path: filepath.Join("testdata", "pyref", name+".json"), mode: mode, seen: map[string]bool{}}
+	suffix := ".json"
+	if spec.Compress {
+		suffix += ".gz"
+	}
+	r := &Reference{spec: spec, path: filepath.Join("testdata", "pyref", name+suffix), mode: mode, seen: map[string]bool{}}
 	r.next = document{Version: 1, Metadata: meta, Entries: map[string]entry{}}
 	data, err := os.ReadFile(r.path)
 	if err == nil {
+		if spec.Compress {
+			reader, e := gzip.NewReader(bytes.NewReader(data))
+			if e != nil {
+				t.Fatal(e)
+			}
+			data, err = io.ReadAll(reader)
+			reader.Close()
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
 		if err = json.Unmarshal(data, &r.old); err != nil {
 			t.Fatal(err)
 		}
@@ -311,7 +329,17 @@ func (r *Reference) finish(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer os.Remove(temp.Name())
-	if _, err = temp.Write(append(data, '\n')); err != nil {
+	if r.spec.Compress {
+		writer := gzip.NewWriter(temp)
+		if _, err = writer.Write(append(data, '\n')); err != nil {
+			temp.Close()
+			t.Fatal(err)
+		}
+		if err = writer.Close(); err != nil {
+			temp.Close()
+			t.Fatal(err)
+		}
+	} else if _, err = temp.Write(append(data, '\n')); err != nil {
 		temp.Close()
 		t.Fatal(err)
 	}
