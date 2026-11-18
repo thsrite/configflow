@@ -265,3 +265,26 @@ SetExternalOwners(empty)验证503且DB/文件不变，恢复真实A22后再与Fl
 `CONFIGFLOW_DIFF=1 go test -race -count=1 -timeout=20m ./internal/api/config/difftest ./internal/api/agents/difftest ./internal/gateway/onboarding -run "^(TestSetupFlaskHTTPStateAndAuthentication|TestNotificationStoreComparisonPreservesDisplayAndData|TestUpgradesDifferentialAgainstFlask|TestSetupReadinessContract)$"`
 → config/difftest 8.217s、agents/difftest 30.781s、gateway/onboarding 6.931s 均 ok。
 本次没有重跑全量 preflight 或 compare；仍等待协调者确认最终代码基底。
+
+### 最终基底确认
+
+协调者确认 batch-6 已合入并推送，指定 `go@55c9794a0`。batch-7 已执行
+`git rebase --onto 55c9794a0 259efd4da batch-7`，82个提交全部无冲突重放；该基底是当前
+分支真实祖先。与上一次定向验证树相比只有WORKFLOW及batch-6报告变化，产品文件相同。
+按最新要求，最终树重跑128节点基准、O3-8恰好16个关机场景，然后只跑一次preflight和完整compare。
+
+最终只读live check：MosDNS 47072 corpus、5436 recorded 调用仍0 differ，router-split ok 1.007s；
+仅三个golden的legacy.go来源指纹过期，未出现输出变化。显式record之后继续核对2916 entries。
+
+最终树检查（主测试服务器，GOMAXPROCS=4）：全树gofmt -l无输出；来源metadata显式record
+`ok configflow/internal/mosdns 48.903s`。十份transcript、2916 exact输入/输出再次哈希完全不变。
+最终基准128节点/512规则三次：
+- 67,310,973 ns/op，75,977,992 B/op，710,390 allocs/op。
+- 64,800,863 ns/op，76,036,272 B/op，710,434 allocs/op。
+- 63,907,876 ns/op，76,097,896 B/op，710,407 allocs/op。
+
+最终产品树 d80e7a24a，`server/tools/faults/run.sh`（仅当前16场景）退出0：
+`FAULTS PASS: 16/16`。sigterm-cancel-deadline 的 scheduled refresh首轮等待约30.076s；
+detached I/O贯穿drain、stopJobs后6.004s取消；取消下载无配置变更。1000请求/100断连后
+14→14 goroutines，所有SQLite/JSON/metrics已提交前缀可读且重启后可再次工作。
+未增加或跳过场景，报告保留在runner打印的私有cache路径中。
