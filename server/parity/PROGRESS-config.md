@@ -2113,7 +2113,7 @@ Python：完整两路由 `backend/routes/rule_library.py`（540行）、`proxy_g
 
 ## C34 — generate, config and profile routes, config export
 
-**独立复核（2026-11-18）**：2 high / 2 medium 全部修复，56个常规方法通过；3个artifact保持已约定503/wip。逐引擎null/空body裁定、凭据出口、dry_run及请求默认修复，59方法认证与18个外部别名分派证据见 [review-c34.md](review-c34.md)。A14/Previews/O3-6c外部分工不变；只跑定向race/vet/真实Flask，无完整gate。
+**独立复核（2026-11-18，修复 `da3883a33`）**：2 high / 2 medium 全部修复，56个常规方法通过；3个artifact保持已约定503/wip。逐引擎null/空body裁定、凭据出口、dry_run及请求默认修复，59方法认证与18个外部别名分派证据见 [review-c34.md](review-c34.md)。A14/Previews/O3-6c外部分工不变；只跑定向race/vet/真实Flask，无完整gate。
 
 **Status: `partial`** · prereqs: C18, C19, C20, C28, C29, C31, C33 · Go: internal/api/generate, api/config, api/profiles, internal/configexport (new; internal/redact exists)
 

@@ -15,7 +15,7 @@
   message 也原样泄露。新增 `TestReviewC34BindingCredentials` 修复前四个出口均失败。
   修复复用 `redact.SanitizeCredentials` 处理这些公共元数据及 DeploymentConflict JSON；
   不改变仓库中的连接信息，回归同时证明原 host 保留、拒绝改绑时 DB/revision 不变。
-  修复提交：本次代码修复提交（最终 SHA 见文末）。
+  修复提交：`da3883a33`。
 
 - **F2，high：非布尔的有效 dry_run 变成真实导入。**
   Python 对 `dry_run: "yes"`、1、非空列表/对象均只解析并返回200，不修改 DB。
@@ -23,7 +23,7 @@
   `TestReviewC34ClientImportDryRunShapes` 通过真实 Flask 证明修复前该差异。
   修复在既有 legacy repo adapter 中复用现成布尔判定，不新增 Python 模拟 helper；
   五类有效 dry_run 均对照完整响应及完整 DB/revision/文件，必须无写入。
-  修复提交：本次代码修复提交（最终 SHA 见文末）。
+  修复提交：`da3883a33`。
 
 - **F3，medium：null/缺失 body 被五引擎统一提交，违背本次维护者澄清。**
   原专门 Noop 分支对五个引擎一律200、revision+1。维护者本次明确撤销统一语义，
@@ -33,7 +33,7 @@
   移除 Noop 分支；Surge/Loon null 使用原来的正常空补丁，其余按下表返回失败且不写入。
   `TestReviewC34CustomEmptyBodies` 修复前失败31.454s，修复后通过33.480s。
   已同步 PROGRESS-config 的 C34 Clarified、作者交回文件的补充说明和 behaviour-changes。
-  修复提交：本次代码修复提交（最终 SHA 见文末）。
+  修复提交：`da3883a33`。
 
 - **F4，medium：profile 空值默认及导入订阅选择被意外收窄。**
   `objectBody` 只列举字面量0/0.0，合法零值 `-0`、`-0.00`、`0e0`、`0.0e5`
@@ -43,7 +43,7 @@
   `TestReviewC34ProfileEmptyAlternatives` 修复前用真实 Flask 复现状态及 revision 差异。
   零值使用原生 json.Number/strconv 判断；复用已有默认判定并过滤不可能匹配的成员，
   importer 的 Parse/Build 及仓库原子提交协议不变。
-  修复提交：本次代码修复提交（最终 SHA 见文末）。
+  修复提交：`da3883a33`。
 
 low：未发现需单独修复的低严重度功能问题。另补强认证与别名分派覆盖，见下。
 
@@ -188,5 +188,6 @@ ok configflow/internal/api/profiles        7.491s
 ok configflow/internal/api/config/difftest 10.881s
 ```
 
-新增测试文件：config/difftest/review_test.go、generate/review_test.go、profiles/review_test.go。
-修复提交与最终变基记录在交回提交补齐。
+新增测试文件：config/difftest/review_test.go（121行）、generate/review_test.go（121行）、profiles/review_test.go（62行）。
+
+代码与测试修复提交：`da3883a33`。结束前执行 `git rebase go`，输出 `Current branch go-review-c34 is up to date.`；本地go仍为 `215ab6b049`，代码未变化。分支 `go-review-c34`；无push，交回时工作树干净。
