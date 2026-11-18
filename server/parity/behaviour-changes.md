@@ -1060,3 +1060,21 @@ legacy 边界先解码整份规则库，因此匹配项之后的非 object 也�
 - `SetGeneralOption` 只用 Unicode 空白集合清理段落末尾；U+001C/U+001D 不再被当作空白删除。
   5 条旧语料显式断言原生输出，属于 PORTING 已批准的 CPython 专有范围；正常 INI 字节不变。
   大写转换改用原生 `x/text/cases`，10 条完整 Unicode 一对多映射结果保持原样。
+
+## N8-8a — 生成不再改动输入副本
+
+节点转换只读 typed Node/Params，在独立输出图中补齐 VLESS 的 encryption 和 reality short-id。
+不再重现 Python 浅拷贝导致的输入工作副本被偷偷加上 `short-id: ""` 的副作用。
+31 条原始语料用独立行号/路径夹具明确断言输入保持原文，其他 mutated 字段仍严格比较；
+正常生成配置字节不变，也没有存储或 API 响应变化。
+
+- 节点名、server 等错误类型字段按 R5 读取；非对象 params、非字符串的结构化 type 明确校验失败。
+  原生整数端口集合不接收布尔、浮点字面量、溢出的端口，也不保留 CPython 集合迭代顺序。
+- 非法 JSON 中的 NaN/Infinity 裸词经原生 YAML 解析为字符串；合法 JSON 仍优先使用 JSON 解析，
+  包括 surrogate pair。不恢复 Python 的非标准 JSON 扩展。
+
+## N7 shared writer — 拒绝无法读回的显式标量
+
+JSON 的超大指数（如 1e400）仍按原文保留并能 JSON 读回，但 yaml.v3 无法按 float 标签解析它。
+Marshal 会返回中文 ErrPolicy，不再成功输出一份自己 Parse 不了的 YAML。
+正常有限 float、下溢数和大整数的读写闭合不变。

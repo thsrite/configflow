@@ -420,6 +420,8 @@ func TestMihomoCorpus(t *testing.T) {
 	readers := loadMihomoReaderOracle(t)
 	rows := loadMihomoCorpus(t)
 	oracle := loadWriterOracle(t)
+	inputPatches := loadInputPatches(t)
+	patched := 0
 	counts := map[string]int{}
 	typedStorage := map[string]int{}
 	failures := 0
@@ -434,7 +436,15 @@ func TestMihomoCorpus(t *testing.T) {
 			}
 		}
 		if row.fn == "generate" && row.errClass == "" {
+			if issue := convert.NodeProfileReplayIssue(row.entry.GetObject("args").GetObject("profile")); issue != "" {
+				typedStorage[issue]++
+				continue
+			}
 			generated++
+		}
+		if paths := inputPatches[i]; len(paths) > 0 {
+			row = keepOriginalInput(t, row, paths)
+			patched++
 		}
 		if msg := runMihomoRow(t, row, oracle); msg != "" {
 			failures++
@@ -446,6 +456,9 @@ func TestMihomoCorpus(t *testing.T) {
 	t.Logf("%d rows (%d generated configurations), %v; %d differ; typed storage classes %v", len(rows), generated, counts, failures, typedStorage)
 	if failures > 0 {
 		t.Errorf("%d of %d rows differ", failures, len(rows))
+	}
+	if patched != 31 {
+		t.Fatalf("only %d explicit input side-effect cases checked", patched)
 	}
 }
 

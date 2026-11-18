@@ -1,0 +1,193 @@
+{
+  "source": "mihomo_corpus.jsonl.gz",
+  "source_sha256": "5e207c0aa54ac716a6b39acb2f363d39bb0be8e77337623c9bb0016e478b3ef7",
+  "reader_sha256": "ec2cf8205d3f55e3bd98ba4ff8caef94468e67c3bce96acd62d44d1af6863a18",
+  "cases": [
+    {
+      "row": 1059,
+      "paths": [
+        "/nodes/3/params/reality-opts/short-id"
+      ]
+    },
+    {
+      "row": 1267,
+      "paths": [
+        "/nodes/2/params/reality-opts/short-id"
+      ]
+    },
+    {
+      "row": 1806,
+      "paths": [
+        "/nodes/4/params/reality-opts/short-id"
+      ]
+    },
+    {
+      "row": 2285,
+      "paths": [
+        "/nodes/4/params/reality-opts/short-id"
+      ]
+    },
+    {
+      "row": 2487,
+      "paths": [
+        "/nodes/6/params/reality-opts/short-id"
+      ]
+    },
+    {
+      "row": 2548,
+      "paths": [
+        "/nodes/0/params/reality-opts/short-id"
+      ]
+    },
+    {
+      "row": 2670,
+      "paths": [
+        "/nodes/1/params/reality-opts/short-id"
+      ]
+    },
+    {
+      "row": 2879,
+      "paths": [
+        "/nodes/0/params/reality-opts/short-id"
+      ]
+    },
+    {
+      "row": 3219,
+      "paths": [
+        "/nodes/0/params/reality-opts/short-id"
+      ]
+    },
+    {
+      "row": 3557,
+      "paths": [
+        "/nodes/1/params/reality-opts/short-id"
+      ]
+    },
+    {
+      "row": 3560,
+      "paths": [
+        "/nodes/1/params/reality-opts/short-id"
+      ]
+    },
+    {
+      "row": 4030,
+      "paths": [
+        "/nodes/0/params/reality-opts/short-id"
+      ]
+    },
+    {
+      "row": 4174,
+      "paths": [
+        "/nodes/1/params/reality-opts/short-id"
+      ]
+    },
+    {
+      "row": 4231,
+      "paths": [
+        "/nodes/2/params/reality-opts/short-id"
+      ]
+    },
+    {
+      "row": 4526,
+      "paths": [
+        "/nodes/3/params/reality-opts/short-id"
+      ]
+    },
+    {
+      "row": 4860,
+      "paths": [
+        "/nodes/0/params/reality-opts/short-id"
+      ]
+    },
+    {
+      "row": 5383,
+      "paths": [
+        "/nodes/3/params/reality-opts/short-id"
+      ]
+    },
+    {
+      "row": 5409,
+      "paths": [
+        "/nodes/3/params/reality-opts/short-id"
+      ]
+    },
+    {
+      "row": 5531,
+      "paths": [
+        "/nodes/2/params/reality-opts/short-id"
+      ]
+    },
+    {
+      "row": 5828,
+      "paths": [
+        "/nodes/3/params/reality-opts/short-id"
+      ]
+    },
+    {
+      "row": 5938,
+      "paths": [
+        "/nodes/0/params/reality-opts/short-id"
+      ]
+    },
+    {
+      "row": 5949,
+      "paths": [
+        "/nodes/3/params/reality-opts/short-id"
+      ]
+    },
+    {
+      "row": 6058,
+      "paths": [
+        "/nodes/4/params/reality-opts/short-id"
+      ]
+    },
+    {
+      "row": 6097,
+      "paths": [
+        "/nodes/1/params/reality-opts/short-id"
+      ]
+    },
+    {
+      "row": 6262,
+      "paths": [
+        "/nodes/0/params/reality-opts/short-id"
+      ]
+    },
+    {
+      "row": 6773,
+      "paths": [
+        "/nodes/1/params/reality-opts/short-id"
+      ]
+    },
+    {
+      "row": 7607,
+      "paths": [
+        "/nodes/2/params/reality-opts/short-id"
+      ]
+    },
+    {
+      "row": 7648,
+      "paths": [
+        "/nodes/2/params/reality-opts/short-id"
+      ]
+    },
+    {
+      "row": 7727,
+      "paths": [
+        "/nodes/2/params/reality-opts/short-id"
+      ]
+    },
+    {
+      "row": 7749,
+      "paths": [
+        "/nodes/0/params/reality-opts/short-id"
+      ]
+    },
+    {
+      "row": 7773,
+      "paths": [
+        "/nodes/2/params/reality-opts/short-id"
+      ]
+    }
+  ]
+}

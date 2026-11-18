@@ -253,3 +253,20 @@ func pySplitlines(s string) []string {
 	}
 	return lines
 }
+
+func hashable(v any) error {
+	switch v.(type) {
+	case []any:
+		return pyError("TypeError", "unhashable type: 'list'")
+	case *jsonx.Object:
+		return pyError("TypeError", "unhashable type: 'dict'")
+	}
+	return nil
+}
+
+func pyTruthy(v any) bool {
+	if b, ok := v.([]byte); ok {
+		return len(b) > 0
+	}
+	return jsonx.Truthy(v)
+}

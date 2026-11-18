@@ -1,0 +1,44 @@
+// Fixture producer, run only on the test server; it calls no Go business function.
+package convert_test
+
+import (
+ "encoding/json"
+ "fmt"
+ "os"
+ "testing"
+ "configflow/internal/convert"
+ "configflow/internal/jsonx"
+)
+
+func TestRecordN88InputPatches(t *testing.T) {
+ fixture:=inputPatchFixture{Source:"mihomo_corpus.jsonl.gz",SourceSHA256:inputSourceDigest(t,"testdata/mihomo_corpus.jsonl.gz"),ReaderSHA256:inputSourceDigest(t,"testdata/n73d_expected.json.gz")}
+ readers:=loadMihomoReaderOracle(t)
+ for index,row:=range loadMihomoCorpus(t) {
+  row=readers.row(t,fixture.Source,index,row)
+  if row.fn!="generate" { continue }
+  input:=row.entry.GetObject("args").GetObject("profile")
+  if convert.CommonReplayIssue(input)!="" || row.errClass=="" && convert.NodeProfileReplayIssue(input)!="" { continue }
+  expected:=row.entry.GetObject("mutated")
+  if expected==nil { continue }
+  var paths []string
+  for i,raw:=range input.GetList("nodes") {
+   node,ok:=raw.(*jsonx.Object);if !ok { continue }
+   params:=node.GetObject("params");if params==nil { continue }
+   before:=params.GetObject("reality-opts");if before==nil || before.Has("short-id") { continue }
+   if i>=len(expected.GetList("nodes")) { t.Fatal("source node order changed") }
+   afterNode:=expected.GetList("nodes")[i].(*jsonx.Object)
+   afterParams:=afterNode.GetObject("params");if afterParams==nil { continue }
+   after:=afterParams.GetObject("reality-opts")
+   if after==nil || !after.Has("short-id") { continue }
+   if after.Value("short-id")!="" { t.Fatal("unknown old side effect") }
+   remainder:=after.DeepCopy();remainder.Delete("short-id")
+   if encode(before)!=encode(remainder) { t.Fatal("unknown sibling mutation") }
+   paths=append(paths,fmt.Sprintf("/nodes/%d/params/reality-opts/short-id",i))
+  }
+  if len(paths)>0 { fixture.Cases=append(fixture.Cases,inputPatchCase{index,paths}) }
+ }
+ if len(fixture.Cases)!=31 { t.Fatalf("got %d affected rows, want 31",len(fixture.Cases)) }
+ data,err:=json.MarshalIndent(fixture,"","  ");if err!=nil { t.Fatal(err) }
+ if err:=os.WriteFile("testdata/n88_input_patches.json",append(data,'\n'),0600);err!=nil { t.Fatal(err) }
+ t.Logf("recorded %d old shallow-copy source mutations",len(fixture.Cases))
+}

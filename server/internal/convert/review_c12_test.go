@@ -235,11 +235,25 @@ func TestReviewC12References(t *testing.T) {
 			known++
 			continue
 		}
+		if nodeRowIssue(row) != "" {
+			known++
+			continue
+		}
 		if reason := reviewKnown(t, row); reason != "" {
 			known++
 			continue
 		}
 		result, mutated, err := runReviewRow(row)
+		if nativePortReplay(t, row, result, err) {
+			known++
+			continue
+		}
+		if row.fn == "apply_github_proxy_domain" && row.errClass == "ValueError" {
+			if err == nil {
+				t.Fatal("invalid URL accepted")
+			}
+			continue
+		}
 		if nativeGeneralReplay(t, row, result, mutated, err) {
 			known++
 			continue
@@ -312,7 +326,7 @@ func TestReviewC12References(t *testing.T) {
 func TestCorpusExceptionMessages(t *testing.T) {
 	failures := 0
 	for i, row := range loadCorpus(t) {
-		if commonRowIssue(row) != "" {
+		if commonRowIssue(row) != "" || nodeRowIssue(row) != "" {
 			continue
 		}
 		if row.errClass == "" || intentional(row.errClass) {

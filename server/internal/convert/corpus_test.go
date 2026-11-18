@@ -376,6 +376,10 @@ func TestCorpus(t *testing.T) {
 			typedStorage[issue]++
 			continue
 		} // malformed storage: explicit typed tests, not a Python oracle
+		if issue := nodeRowIssue(row); issue != "" {
+			typedStorage[issue]++
+			continue
+		}
 		result, mutated, err := runCorpusRow(row)
 		if nativeProxyReplay(t, "corpus", row, result, mutated, err) {
 			continue

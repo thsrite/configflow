@@ -74,7 +74,7 @@ func nativeProxyReplay(t *testing.T, suite string, row corpusRow, result, mutate
 	for _, c := range cases {
 		if c.ID == id {
 			if c.Native != digest {
-				t.Errorf("native proxy replay changed: %s/%s %s", suite, row.fn, id)
+				t.Errorf("native proxy replay changed: %s/%s %s args=%s native=%s", suite, row.fn, id, compactText(t, row.args), native)
 				return false
 			}
 			return true

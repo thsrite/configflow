@@ -221,6 +221,12 @@ func TestSurgeLoonCorpus(t *testing.T) {
 				continue
 			}
 		}
+		if profile != nil {
+			if issue := convert.NodeProfileReplayIssue(profile); issue != "" {
+				typedStorage[issue]++
+				continue
+			}
+		}
 		if row.errClass == "" && (row.fn == "surge" || row.fn == "loon") {
 			generated[row.fn]++
 		}

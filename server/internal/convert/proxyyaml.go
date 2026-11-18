@@ -1,13 +1,15 @@
 package convert
 
 import (
-	"configflow/internal/yamlbridge"
 	"configflow/internal/yamlx"
+
+	"gopkg.in/yaml.v3"
 )
 
-// readProxyYAML keeps shared policy and key projection ahead of the temporary
-// jsonx boundary. ProjectJSONKeys mutates only this request-owned parsed graph.
-func readProxyYAML(text string) (any, error) {
+// readProxyNode projects the reader's physical graph once. Scalar values use
+// the same native JSON scalar policy as the former transition, without ever
+// expanding each occurrence of a shared container into a JSON document.
+func readProxyNode(text string) (*yamlx.Node, error) {
 	root, err := parseProxyYAML(text)
 	if err != nil {
 		return nil, err
@@ -15,18 +17,40 @@ func readProxyYAML(text string) (any, error) {
 	if err := yamlx.ProjectJSONKeys(root, yamlx.StringifyScalarKeys); err != nil {
 		return nil, err
 	}
-	return yamlbridge.Value(root)
-}
-
-// readDocumentYAML preserves convert's string-key restriction and graph sharing.
-// This JSON-value boundary is replaced by a typed model in N8-8.
-func readDocumentYAML(text string) (any, error) {
-	root, err := yamlx.Parse([]byte(text))
-	if err != nil {
-		return nil, err
+	pending := []*yamlx.Node{root}
+	seen := map[*yamlx.Node]bool{}
+	for len(pending) > 0 {
+		n := pending[len(pending)-1]
+		pending = pending[:len(pending)-1]
+		if n == nil || seen[n] {
+			continue
+		}
+		seen[n] = true
+		n.HeadComment, n.LineComment, n.FootComment = "", "", ""
+		if n.Kind == yaml.AliasNode {
+			pending = append(pending, n.Alias)
+			continue
+		}
+		if n.Kind == yaml.MappingNode {
+			n.Tag = "!!map"
+			n.Style = 0
+		}
+		if n.Kind == yaml.SequenceNode {
+			n.Tag = "!!seq"
+			n.Style = 0
+		}
+		if n.Kind == yaml.ScalarNode && n.ShortTag() != "!!merge" {
+			data, err := yamlx.ToJSON(n)
+			if err != nil {
+				return nil, err
+			}
+			value, err := yamlx.FromJSON(data)
+			if err != nil {
+				return nil, err
+			}
+			n.Kind, n.Tag, n.Value, n.Style = value.Kind, value.Tag, value.Value, value.Style
+		}
+		pending = append(pending, n.Content...)
 	}
-	if err := yamlx.ProjectJSONKeys(root, yamlx.RejectNonStringKeys); err != nil {
-		return nil, err
-	}
-	return yamlbridge.Value(root)
+	return root, nil
 }

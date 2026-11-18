@@ -147,22 +147,24 @@ func TestCommonTypedDefaultsAndMalformedStorage(t *testing.T) {
 }
 
 func TestCommonCoreHasNoLegacyDependency(t *testing.T) {
-	file, err := parser.ParseFile(token.NewFileSet(), "common.go", nil, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, imp := range file.Imports {
-		if strings.Contains(imp.Path.Value, "jsonx") {
-			t.Fatal("core imports jsonx")
+	for _, name := range []string{"common.go", "mihomo_nodes.go", "proxyyaml.go"} {
+		file, err := parser.ParseFile(token.NewFileSet(), name, nil, 0)
+		if err != nil {
+			t.Fatal(err)
 		}
-	}
-	forbidden := map[string]bool{"any": true, "dictGet": true, "raise": true, "catch": true, "must": true, "pyError": true, "decodeLegacy": true, "configFromLegacy": true, "encodeLegacy": true}
-	ast.Inspect(file, func(n ast.Node) bool {
-		if id, ok := n.(*ast.Ident); ok && forbidden[id.Name] {
-			t.Errorf("core references %s", id.Name)
+		for _, imp := range file.Imports {
+			if strings.Contains(imp.Path.Value, "jsonx") || strings.Contains(imp.Path.Value, "pystr") {
+				t.Errorf("%s imports legacy %s", name, imp.Path.Value)
+			}
 		}
-		return true
-	})
+		forbidden := map[string]bool{"any": true, "dictGet": true, "raise": true, "catch": true, "must": true, "pyError": true, "decodeLegacy": true, "configFromLegacy": true, "encodeLegacy": true, "FixProxyFields": true, "ApplyGithubProxyDomain": true, "MihomoUsedPorts": true, "MihomoListenPorts": true, "ParseStructuredProxyString": true, "InspectStructuredProxyString": true, "ConvertNodeToMihomo": true, "ProxyStringConverter": true, "ConversionResults": true, "WithNodeConversions": true, "EnsureNodeConversions": true, "readDocumentYAML": true}
+		ast.Inspect(file, func(n ast.Node) bool {
+			if id, ok := n.(*ast.Ident); ok && forbidden[id.Name] {
+				t.Errorf("%s references %s", name, id.Name)
+			}
+			return true
+		})
+	}
 }
 
 func TestCommonLegacyOnlyCallsTypedEntries(t *testing.T) {
