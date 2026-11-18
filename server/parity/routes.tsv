@@ -176,8 +176,8 @@ PUT	/api/domain-discovery/settings	routes.domain_discovery.update_settings	inter
 POST	/api/domain-discovery/undo	routes.domain_discovery.undo	internal/api/domaindiscovery	done
 POST	/api/domain-discovery/website/identify	routes.domain_discovery.identify_website	internal/api/domaindiscovery	done
 PUT	/api/domain-discovery/website/note	routes.domain_discovery.website_note	internal/api/domaindiscovery	done
-POST	/api/generate/<service>/artifact	routes.generate.generate_artifact	internal/api/generate	wip
-GET	/api/generate/artifacts/<preview_id>/<action>	routes.generate.read_artifact	internal/api/generate	wip
+POST	/api/generate/<service>/artifact	routes.generate.generate_artifact	internal/api/generate	done
+GET	/api/generate/artifacts/<preview_id>/<action>	routes.generate.read_artifact	internal/api/generate	done
 POST	/api/generate/loon	routes.generate.generate_loon	internal/api/generate	done
 POST	/api/generate/loon/preview	routes.generate.preview_loon	internal/api/generate	done
 POST	/api/generate/mihomo	routes.generate.generate_mihomo	internal/api/generate	done
@@ -248,7 +248,7 @@ GET	/api/profiles/<profile_id>/export	routes.profiles.export_profile	internal/ap
 GET	/api/profiles/<profile_id>/gateway-onboarding	routes.gateway_onboarding.gateway_onboarding	internal/api/gatewayonboarding	done
 POST	/api/profiles/<profile_id>/gateway-onboarding	routes.gateway_onboarding.gateway_onboarding	internal/api/gatewayonboarding	done
 POST	/api/profiles/<profile_id>/gateway-onboarding/preview	routes.gateway_onboarding.gateway_onboarding	internal/api/gatewayonboarding	done
-POST	/api/profiles/<profile_id>/generate/<service>/artifact	routes.profiles.profile_generate_artifact	internal/api/generate	wip
+POST	/api/profiles/<profile_id>/generate/<service>/artifact	routes.profiles.profile_generate_artifact	internal/api/generate	done
 POST	/api/profiles/<profile_id>/generate/loon	routes.profiles.profile_generate_loon	internal/api/generate	done
 POST	/api/profiles/<profile_id>/generate/loon/preview	routes.profiles.profile_preview_loon	internal/api/generate	done
 POST	/api/profiles/<profile_id>/generate/mihomo	routes.profiles.profile_generate_mihomo	internal/api/generate	done

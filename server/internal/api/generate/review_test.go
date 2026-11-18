@@ -72,8 +72,11 @@ func TestReviewC34AuthenticationMatrix(t *testing.T) {
 			if response.Status == 401 || response.Status == 403 {
 				t.Fatalf("valid JWT rejected: %s %s: %s", method, path, response.Body)
 			}
-			if route.Endpoint == "generate.generate_artifact" || route.Endpoint == "profiles.profile_generate_artifact" || route.Endpoint == "generate.read_artifact" {
-				response.WantStatus(503)
+			if route.Endpoint == "generate.generate_artifact" || route.Endpoint == "profiles.profile_generate_artifact" {
+				response.WantStatus(200)
+			}
+			if route.Endpoint == "generate.read_artifact" {
+				response.WantStatus(409)
 			}
 		}
 	}

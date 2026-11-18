@@ -291,8 +291,14 @@ func (p *Previews) load(id, agentID string) (*Preview, error) {
 		return nil, &PreviewChanged{msgPreviewInvalid}
 	}
 	failure := func() (*Preview, error) { return nil, &PreviewChanged{msgPreviewUnavailable} }
+	// The store root is not an artifact capability: following a replaced root
+	// could import another repository's otherwise valid manual preview.
+	info, err := os.Lstat(p.root())
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return failure()
+	}
 	folder := filepath.Join(p.root(), id)
-	info, err := os.Lstat(folder)
+	info, err = os.Lstat(folder)
 	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		return failure()
 	}

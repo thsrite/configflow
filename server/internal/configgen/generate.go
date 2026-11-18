@@ -135,7 +135,35 @@ func Build(ctx context.Context, id string, engine Engine, baseURL string) (Downl
 	if err != nil {
 		return Download{}, err
 	}
-	if err = ctx.Err(); err != nil {
+	return materialize(ctx, config, native, out, engine, baseURL)
+}
+
+// build uses a frozen legacy snapshot supplied by the artifact owner. Ordinary
+// Build keeps its direct typed repository path; neither path reloads a snapshot.
+func build(ctx context.Context, config *jsonx.Object, engine Engine, baseURL string) (Download, error) {
+	if err := ctx.Err(); err != nil {
+		return Download{}, err
+	}
+	out, err := Render(ctx, config, engine, baseURL)
+	if err != nil {
+		return Download{}, err
+	}
+	var native *model.Config
+	if engine == MosDNS {
+		data, e := jsonx.Compact(config)
+		if e != nil {
+			return Download{}, e
+		}
+		native, err = mosdns.ConfigFromJSON(data)
+		if err != nil {
+			return Download{}, err
+		}
+	}
+	return materialize(ctx, config, native, out, engine, baseURL)
+}
+
+func materialize(ctx context.Context, config *jsonx.Object, native *model.Config, out Output, engine Engine, baseURL string) (Download, error) {
+	if err := ctx.Err(); err != nil {
 		return Download{}, err
 	}
 	result := Download{Output: out}
@@ -174,7 +202,13 @@ func Build(ctx context.Context, id string, engine Engine, baseURL string) (Downl
 		result.Name = "mosdns-config.zip"
 		result.MIME = "application/zip"
 	case OxiDNS:
-		profile, err := oxidns.NewTypedProfile(native)
+		var profile *oxidns.Profile
+		var err error
+		if native != nil {
+			profile, err = oxidns.NewTypedProfile(native)
+		} else {
+			profile, err = dnsProfile(config)
+		}
 		if err != nil {
 			return Download{}, err
 		}
@@ -197,7 +231,11 @@ func Build(ctx context.Context, id string, engine Engine, baseURL string) (Downl
 		if err := ctx.Err(); err != nil {
 			return Download{}, err
 		}
-		result.Data, err = oxidns.BuildTypedZIP(ctx, native, out.Content, downloads, files, baseURL)
+		if native != nil {
+			result.Data, err = oxidns.BuildTypedZIP(ctx, native, out.Content, downloads, files, baseURL)
+		} else {
+			result.Data, err = oxidns.BuildZIP(ctx, config, out.Content, downloads, files, baseURL)
+		}
 		if err != nil {
 			return Download{}, err
 		}
