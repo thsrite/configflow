@@ -1,0 +1,1620 @@
+[
+  {
+    "name": "reorder_items",
+    "description": "调整集合内条目的顺序。ids 里的条目按给定顺序整体移到最前（position=top，默认）或最后（position=bottom），未列出的条目保持原有相对顺序。规则顺序即匹配优先级，策略组顺序即客户端里的展示顺序。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "collection": {
+          "type": "string",
+          "description": "目标集合",
+          "enum": [
+            "subscriptions",
+            "nodes",
+            "rules",
+            "rule_library",
+            "proxy_groups"
+          ]
+        },
+        "ids": {
+          "type": "array",
+          "description": "要移动的条目 id，按目标先后顺序排列",
+          "items": {
+            "type": "string"
+          }
+        },
+        "position": {
+          "type": "string",
+          "description": "移动到集合的哪一端，默认 top",
+          "enum": [
+            "top",
+            "bottom"
+          ]
+        },
+        "profile_id": {
+          "type": "string",
+          "description": "独立配置的目标 id；省略时使用当前默认配置空间，不读取浏览器选择。全局资源和系统设置不受此参数限制。"
+        }
+      },
+      "required": [
+        "collection",
+        "ids"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "list_profiles",
+    "description": "列出所有配置 profile。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "profile_id": {
+          "type": "string",
+          "description": "独立配置的目标 id；省略时使用当前默认配置空间，不读取浏览器选择。全局资源和系统设置不受此参数限制。"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "get_profile",
+    "description": "获取一个 profile 的元数据。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "profile id"
+        },
+        "profile_id": {
+          "type": "string",
+          "description": "独立配置的目标 id；省略时使用当前默认配置空间，不读取浏览器选择。全局资源和系统设置不受此参数限制。"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "manage_profile",
+    "description": "创建、更新或删除 profile。默认 profile 不可删除；配置选择仅保存在各浏览器会话中。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "description": "操作类型",
+          "enum": [
+            "create",
+            "update",
+            "delete"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "description": "profile id，update / delete 时必填"
+        },
+        "data": {
+          "type": "object",
+          "description": "profile 元数据；create 时至少包含 id 或 name",
+          "additionalProperties": true
+        },
+        "profile_id": {
+          "type": "string",
+          "description": "独立配置的目标 id；省略时使用当前默认配置空间，不读取浏览器选择。全局资源和系统设置不受此参数限制。"
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "clone_profile",
+    "description": "从一个 profile 克隆出新的 profile。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "source_profile_id": {
+          "type": "string",
+          "description": "源 profile id"
+        },
+        "data": {
+          "type": "object",
+          "description": "目标 profile 元数据，至少包含 id 或 name",
+          "additionalProperties": true
+        },
+        "profile_id": {
+          "type": "string",
+          "description": "独立配置的目标 id；省略时使用当前默认配置空间，不读取浏览器选择。全局资源和系统设置不受此参数限制。"
+        }
+      },
+      "required": [
+        "source_profile_id",
+        "data"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "import_client_config",
+    "description": "把 Mihomo / Surge / Loon / Shadowrocket 配置文件导入为新的 profile：节点、订阅和规则集写入共享资源（相同定义复用），策略组与规则写入新 profile。dry_run=true 时只返回解析摘要与提示。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "client_type": {
+          "type": "string",
+          "description": "配置类型",
+          "enum": [
+            "mihomo",
+            "surge",
+            "loon",
+            "shadowrocket"
+          ]
+        },
+        "content": {
+          "type": "string",
+          "description": "配置文件全文"
+        },
+        "name": {
+          "type": "string",
+          "description": "新 profile 名称"
+        },
+        "id": {
+          "type": "string",
+          "description": "新 profile id，可选"
+        },
+        "description": {
+          "type": "string",
+          "description": "说明，可选"
+        },
+        "default_subscription_ids": {
+          "type": "array",
+          "description": "仅含筛选条件（include-all / 正则）的策略组额外关联的已有订阅 id",
+          "items": {
+            "type": "string"
+          }
+        },
+        "dry_run": {
+          "type": "boolean",
+          "description": "只解析不写入"
+        },
+        "profile_id": {
+          "type": "string",
+          "description": "独立配置的目标 id；省略时使用当前默认配置空间，不读取浏览器选择。全局资源和系统设置不受此参数限制。"
+        }
+      },
+      "required": [
+        "client_type",
+        "content",
+        "name"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "bind_agent_profile",
+    "description": "把 Agent 绑定到指定 profile；后续配置读取和推送都使用该 profile。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Agent id"
+        },
+        "profile_id": {
+          "type": "string",
+          "description": "目标 profile id"
+        }
+      },
+      "required": [
+        "id",
+        "profile_id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "list_subscriptions",
+    "description": "列出所有订阅源，含名称、URL、启用状态和缓存的节点数。需要订阅 id 时先调用本工具。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "profile_id": {
+          "type": "string",
+          "description": "独立配置的目标 id；省略时使用当前默认配置空间，不读取浏览器选择。全局资源和系统设置不受此参数限制。"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "manage_subscription",
+    "description": "创建、更新或删除一个订阅源。create 时 data 至少包含 name 和 url；update 只需给出要改的字段，其余字段自动保留。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "description": "操作类型",
+          "enum": [
+            "create",
+            "update",
+            "delete"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "description": "订阅 id，update / delete 时必填"
+        },
+        "data": {
+          "type": "object",
+          "description": "订阅字段：name（名称）、url（订阅链接）、type（mihomo / surge / general）、enabled（是否启用）、interval（更新间隔秒）、regex_filter（节点名筛选正则，只保留匹配的节点）、health_check_url（健康检查地址，留空用默认）",
+          "additionalProperties": true,
+          "properties": {
+            "health_check": {
+              "type": "object",
+              "properties": {
+                "enable": {
+                  "type": "boolean",
+                  "description": "enable",
+                  "default": true
+                },
+                "url": {
+                  "type": "string",
+                  "description": "url",
+                  "default": "https://www.gstatic.com/generate_204"
+                },
+                "interval": {
+                  "type": "integer",
+                  "description": "interval（秒）",
+                  "default": 300,
+                  "minimum": 1,
+                  "maximum": 86400
+                },
+                "timeout": {
+                  "type": "integer",
+                  "description": "timeout（毫秒）",
+                  "default": 5000,
+                  "minimum": 1,
+                  "maximum": 600000
+                },
+                "lazy": {
+                  "type": "boolean",
+                  "description": "lazy",
+                  "default": true
+                },
+                "expected-status": {
+                  "type": "string",
+                  "description": "expected-status",
+                  "default": "204"
+                }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        "profile_id": {
+          "type": "string",
+          "description": "独立配置的目标 id；省略时使用当前默认配置空间，不读取浏览器选择。全局资源和系统设置不受此参数限制。"
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "fetch_subscription",
+    "description": "拉取指定订阅的最新内容并刷新节点缓存。preview=true 时只解析不写入缓存。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "订阅 id"
+        },
+        "preview": {
+          "type": "boolean",
+          "description": "仅预览，不更新缓存，默认 false"
+        },
+        "profile_id": {
+          "type": "string",
+          "description": "独立配置的目标 id；省略时使用当前默认配置空间，不读取浏览器选择。全局资源和系统设置不受此参数限制。"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "get_subscription_nodes",
+    "description": "获取指定订阅下已解析的节点列表。不传 id 时返回全部订阅的节点。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "订阅 id，留空表示全部订阅"
+        },
+        "profile_id": {
+          "type": "string",
+          "description": "独立配置的目标 id；省略时使用当前默认配置空间，不读取浏览器选择。全局资源和系统设置不受此参数限制。"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "list_aggregations",
+    "description": "列出所有订阅聚合（把多个订阅与手动节点合并成一个节点池）。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "profile_id": {
+          "type": "string",
+          "description": "独立配置的目标 id；省略时使用当前默认配置空间，不读取浏览器选择。全局资源和系统设置不受此参数限制。"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "manage_aggregation",
+    "description": "创建、更新或删除订阅聚合。create 时 data 至少包含 name；subscriptions 为订阅 id 列表，nodes 为手动节点 id 列表；筛选正则字段名是 regex_filter。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "description": "操作类型",
+          "enum": [
+            "create",
+            "update",
+            "delete"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "description": "聚合 id，update / delete 时必填"
+        },
+        "data": {
+          "type": "object",
+          "description": "聚合字段：name、subscriptions（订阅 id 数组）、nodes（手动节点 id 数组）、regex_filter（节点名筛选正则）、description、enabled、health_check_url",
+          "additionalProperties": true,
+          "properties": {
+            "health_check": {
+              "type": "object",
+              "properties": {
+                "enable": {
+                  "type": "boolean",
+                  "description": "enable",
+                  "default": true
+                },
+                "url": {
+                  "type": "string",
+                  "description": "url",
+                  "default": "https://www.gstatic.com/generate_204"
+                },
+                "interval": {
+                  "type": "integer",
+                  "description": "interval（秒）",
+                  "default": 300,
+                  "minimum": 1,
+                  "maximum": 86400
+                },
+                "timeout": {
+                  "type": "integer",
+                  "description": "timeout（毫秒）",
+                  "default": 5000,
+                  "minimum": 1,
+                  "maximum": 600000
+                },
+                "lazy": {
+                  "type": "boolean",
+                  "description": "lazy",
+                  "default": true
+                },
+                "expected-status": {
+                  "type": "string",
+                  "description": "expected-status",
+                  "default": "204"
+                }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        "profile_id": {
+          "type": "string",
+          "description": "独立配置的目标 id；省略时使用当前默认配置空间，不读取浏览器选择。全局资源和系统设置不受此参数限制。"
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "preview_aggregation",
+    "description": "预览聚合最终产出的节点列表与节点数，用于确认筛选规则是否符合预期。mode=count 只返回节点数量，mode=provider 返回给客户端用的 provider YAML 文本。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "聚合 id"
+        },
+        "mode": {
+          "type": "string",
+          "description": "返回内容，默认 nodes",
+          "enum": [
+            "nodes",
+            "count",
+            "provider"
+          ]
+        },
+        "count_only": {
+          "type": "boolean",
+          "description": "等价于 mode=count，保留兼容"
+        },
+        "profile_id": {
+          "type": "string",
+          "description": "独立配置的目标 id；省略时使用当前默认配置空间，不读取浏览器选择。全局资源和系统设置不受此参数限制。"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "list_nodes",
+    "description": "列出所有手动添加的代理节点（不含从订阅解析出的节点）。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "profile_id": {
+          "type": "string",
+          "description": "独立配置的目标 id；省略时使用当前默认配置空间，不读取浏览器选择。全局资源和系统设置不受此参数限制。"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "manage_node",
+    "description": "创建、更新或删除手动节点。create 时 data 至少包含 name 和 proxy_string；proxy_string 是完整的节点链接（ss:// / vmess:// / trojan:// / hysteria2:// 等），也可以是 mihomo 的结构化 proxy（YAML / JSON 文本）。协议、服务器、端口都从中解析，不要拆成 server / port / password 之类的独立字段。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "description": "操作类型",
+          "enum": [
+            "create",
+            "update",
+            "delete"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "description": "节点 id，update / delete 时必填"
+        },
+        "data": {
+          "type": "object",
+          "description": "节点字段：name（节点名）、proxy_string（节点链接或结构化 proxy 文本）、enabled、remark（备注）。共享节点不能保存 dialer_ref；配置独立代理链请使用 manage_proxy_group 的 chain 类型。",
+          "additionalProperties": true
+        },
+        "profile_id": {
+          "type": "string",
+          "description": "独立配置的目标 id；省略时使用当前默认配置空间，不读取浏览器选择。全局资源和系统设置不受此参数限制。"
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "list_rules",
+    "description": "列出规则配置列表（含直接规则与规则集，通过 itemType 区分：rule / ruleset），顺序即匹配优先级。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "profile_id": {
+          "type": "string",
+          "description": "独立配置的目标 id；省略时使用当前默认配置空间，不读取浏览器选择。全局资源和系统设置不受此参数限制。"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "manage_rule",
+    "description": "创建、更新或删除一条规则或规则集。itemType=rule 时 data 需含 rule_type（如 DOMAIN-SUFFIX / IP-CIDR）、value、policy；itemType=ruleset 时 data 需含 name、policy，以及 url 或 library_rule_id。新建的规则默认插在列表最前（优先级最高），要放到最后传 position=bottom。update 时可在 data.dns 中同时修改这条规则的 OxiDNS DNS 处理；新建并设置 DNS 请用 compose_rule，它在一次写入中完成。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "description": "操作类型",
+          "enum": [
+            "create",
+            "update",
+            "delete"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "description": "规则 id，update / delete 时必填"
+        },
+        "data": {
+          "type": "object",
+          "description": "规则字段：itemType（rule / ruleset）、rule_type、value、policy（目标策略组名）、enabled、no_resolve、remark、group_name；ruleset 另有 name、url、behavior、library_rule_id。dns（仅 update）：OxiDNS DNS 处理，取值同 set_rule_dns；省略则不变，跟随策略的规则会随 policy 自动调整",
+          "additionalProperties": true
+        },
+        "position": {
+          "type": "string",
+          "description": "create 时新规则放在列表哪一端，默认 top（优先级最高）",
+          "enum": [
+            "top",
+            "bottom"
+          ]
+        },
+        "profile_id": {
+          "type": "string",
+          "description": "独立配置的目标 id；省略时使用当前默认配置空间，不读取浏览器选择。全局资源和系统设置不受此参数限制。"
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "compose_rule",
+    "description": "一次写入新建规则或规则集引用，并设置它们的 OxiDNS DNS 处理；任何一步失败都不保存。source.kind=values：text 每行一条（可写 TYPE,value；+.x / *.x 为 DOMAIN-SUFFIX，full:x 为 DOMAIN），无前缀的行按 source.rule_type，最多 200 行，已存在的行会跳过；source.kind=library：library_rule_ids 引用规则仓库条目；source.kind=new_library：library 为新规则仓库条目（name，source_type=url 给 url，content 给 content；enabled 缺省为 true）。id 由服务端生成。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "type": "object",
+          "description": "规则来源：{kind: values | library | new_library, ...}",
+          "additionalProperties": true
+        },
+        "rule": {
+          "type": "object",
+          "description": "规则字段：policy（必填，策略组名或 DIRECT / REJECT 等）、position（top / bottom，默认 top）、enabled、no_resolve、remark、group_name",
+          "additionalProperties": true
+        },
+        "dns": {
+          "type": "string",
+          "description": "OxiDNS DNS 处理（只对 OxiDNS 生效）：follow（跟随策略）、default（默认上游）、direct（直连 DNS）、proxy（代理 DNS）、upstream:<key>（指定上游，key 取自 get_rule_dns 的 upstreams）、refused（拒绝）、nxdomain（不存在）、nodata（空应答）、blackhole（黑洞）"
+        },
+        "dns_ip": {
+          "type": "string",
+          "description": "粘贴内容里 IP-CIDR / IP-CIDR6 行的 DNS 处理；省略时与 dns 相同。取值同 dns"
+        },
+        "profile_id": {
+          "type": "string",
+          "description": "独立配置的目标 id；省略时使用当前默认配置空间，不读取浏览器选择。全局资源和系统设置不受此参数限制。"
+        }
+      },
+      "required": [
+        "source",
+        "rule"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "get_rule_dns",
+    "description": "读取每条规则的 OxiDNS DNS 处理：engine（模式、是否可编辑及原因、开启规则自动同步的设备）、upstreams（可固定的上游及其 key）和 rules（未列出的规则为默认上游）。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "profile_id": {
+          "type": "string",
+          "description": "独立配置的目标 id；省略时使用当前默认配置空间，不读取浏览器选择。全局资源和系统设置不受此参数限制。"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "set_rule_dns",
+    "description": "批量修改规则的 OxiDNS DNS 处理，一次最多 200 条，在一次写入中完成。修改规则 DNS 请优先使用本工具，而不是 update_oxidns_settings。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "routes": {
+          "type": "object",
+          "description": "规则 id → DNS 处理。OxiDNS DNS 处理（只对 OxiDNS 生效）：follow（跟随策略）、default（默认上游）、direct（直连 DNS）、proxy（代理 DNS）、upstream:<key>（指定上游，key 取自 get_rule_dns 的 upstreams）、refused（拒绝）、nxdomain（不存在）、nodata（空应答）、blackhole（黑洞）",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "skip_unsupported": {
+          "type": "boolean",
+          "description": "为 true 时跳过不参与 DNS 分流的规则（如 GEOIP），否则报错"
+        },
+        "profile_id": {
+          "type": "string",
+          "description": "独立配置的目标 id；省略时使用当前默认配置空间，不读取浏览器选择。全局资源和系统设置不受此参数限制。"
+        }
+      },
+      "required": [
+        "routes"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "batch_add_rules",
+    "description": "按同一规则类型和策略批量添加多条规则，适合一次导入大量域名。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "rule_type": {
+          "type": "string",
+          "description": "规则类型，如 DOMAIN-SUFFIX、DOMAIN、DOMAIN-KEYWORD、IP-CIDR"
+        },
+        "domains": {
+          "type": "array",
+          "description": "规则值列表，每项一个域名或 IP 段",
+          "items": {
+            "type": "string"
+          }
+        },
+        "policy": {
+          "type": "string",
+          "description": "目标策略组名称"
+        },
+        "profile_id": {
+          "type": "string",
+          "description": "独立配置的目标 id；省略时使用当前默认配置空间，不读取浏览器选择。全局资源和系统设置不受此参数限制。"
+        }
+      },
+      "required": [
+        "rule_type",
+        "domains",
+        "policy"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "test_rule_match",
+    "description": "测试一个域名或 IP 会命中哪条规则、走哪个策略组，用于排查分流问题。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "待测试的域名或 IP"
+        },
+        "profile_id": {
+          "type": "string",
+          "description": "独立配置的目标 id；省略时使用当前默认配置空间，不读取浏览器选择。全局资源和系统设置不受此参数限制。"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "find_duplicate_rules",
+    "description": "扫描直接规则与规则集内容，找出重复的规则条目（重复会让后面的规则永不生效）。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "profile_id": {
+          "type": "string",
+          "description": "独立配置的目标 id；省略时使用当前默认配置空间，不读取浏览器选择。全局资源和系统设置不受此参数限制。"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "list_rule_library",
+    "description": "列出规则仓库中集中管理的规则集（rule-providers），含名称、来源 URL 和启用状态。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "profile_id": {
+          "type": "string",
+          "description": "独立配置的目标 id；省略时使用当前默认配置空间，不读取浏览器选择。全局资源和系统设置不受此参数限制。"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "manage_rule_library",
+    "description": "创建、更新或删除规则仓库条目。create 时 data 至少包含 name；source_type=url 时需给 url，source_type=content 时需给 content。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "description": "操作类型",
+          "enum": [
+            "create",
+            "update",
+            "delete"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "description": "规则仓库条目 id，update / delete 时必填"
+        },
+        "data": {
+          "type": "object",
+          "description": "条目字段：name、source_type（url / content）、url、content、behavior（domain / ipcidr / classical）、enabled",
+          "additionalProperties": true
+        },
+        "profile_id": {
+          "type": "string",
+          "description": "独立配置的目标 id；省略时使用当前默认配置空间，不读取浏览器选择。全局资源和系统设置不受此参数限制。"
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "get_rule_library_content",
+    "description": "读取规则仓库中 source_type=content 的条目正文（URL 类型的条目没有正文）。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "规则仓库条目 id"
+        },
+        "profile_id": {
+          "type": "string",
+          "description": "独立配置的目标 id；省略时使用当前默认配置空间，不读取浏览器选择。全局资源和系统设置不受此参数限制。"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "cache_rule_library",
+    "description": "把指定的 URL 类型规则仓库条目拉取并缓存到本地，之后生成配置可离线引用。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "ids": {
+          "type": "array",
+          "description": "要缓存的规则仓库条目 id 列表",
+          "items": {
+            "type": "string"
+          }
+        },
+        "profile_id": {
+          "type": "string",
+          "description": "独立配置的目标 id；省略时使用当前默认配置空间，不读取浏览器选择。全局资源和系统设置不受此参数限制。"
+        }
+      },
+      "required": [
+        "ids"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "test_rule_library",
+    "description": "测试规则仓库条目的连通性。给 url 时只测这一个地址；不给 url 时批量测试仓库中所有 URL 类型的条目（不支持只测其中几条）。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "description": "只测试某个 URL 是否可访问；留空则批量测试全部条目"
+        },
+        "profile_id": {
+          "type": "string",
+          "description": "独立配置的目标 id；省略时使用当前默认配置空间，不读取浏览器选择。全局资源和系统设置不受此参数限制。"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "list_proxy_groups",
+    "description": "列出所有策略组，含类型、包含的节点/订阅/聚合以及筛选规则。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "profile_id": {
+          "type": "string",
+          "description": "独立配置的目标 id；省略时使用当前默认配置空间，不读取浏览器选择。全局资源和系统设置不受此参数限制。"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "manage_proxy_group",
+    "description": "创建、更新或删除策略组。create 时 data 至少包含 name 和 type；type 支持 select（手动选择）、url-test（自动测速）、fallback（故障转移）、load-balance（负载均衡）、chain（Mihomo 代理链）。普通组可直接引用共享订阅（subscriptions + regex）、聚合（aggregations + aggregation_regex）、手动节点（manual_nodes）或当前配置其它策略组/代理链（include_groups），无需资源预选；follow_group 可整体跟随普通策略组，不能跟随代理链。chain 类型使用 chain={entry:{type:\"node\"|\"group\",id:稳定ID},exit:{type:\"node\"|\"group\",id:稳定ID}}。节点引用仅支持手动节点；订阅和聚合通过策略组使用。前置直接引用原组，落地生成独立的链内节点/组，保留来源、筛选、测速和选路参数，不改变原资源；Provider 刷新可更新候选。Surge 拒绝启用链。引用类字段填的都是 id，不是名称。update 为事务内 partial merge，type 不代表替换；delete_fields 显式删除健康字段（仅 update，不能同时赋值）。精确排序项须与已选来源一致。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "description": "操作类型",
+          "enum": [
+            "create",
+            "update",
+            "delete"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "description": "策略组 id，update / delete 时必填"
+        },
+        "data": {
+          "type": "object",
+          "description": "策略组字段：name、type、enabled、subscriptions（订阅 id 数组）、regex（订阅节点名筛选正则）、aggregations（聚合 id 数组）、aggregation_regex（聚合节点名筛选正则）、manual_nodes（节点 id 数组，DIRECT / REJECT 直接用名称）、include_groups（引用的其他策略组 id 数组）、follow_group（跟随的策略组 id）、proxies_order（节点顺序）、url（测试地址）、interval（测试间隔秒）、strategy（load-balance 的 round-robin / consistent-hashing / sticky-sessions）、lazy（懒加载）、chain（代理链的 entry 与 exit；不与普通来源字段混用）",
+          "additionalProperties": true,
+          "properties": {
+            "url": {
+              "type": "string",
+              "description": "url",
+              "default": "https://www.gstatic.com/generate_204"
+            },
+            "interval": {
+              "type": "integer",
+              "description": "interval（秒）",
+              "default": 60,
+              "minimum": 1,
+              "maximum": 86400
+            },
+            "timeout": {
+              "type": "integer",
+              "description": "timeout（毫秒）",
+              "default": 5000,
+              "minimum": 1,
+              "maximum": 600000
+            },
+            "lazy": {
+              "type": "boolean",
+              "description": "lazy",
+              "default": false
+            },
+            "expected-status": {
+              "type": "string",
+              "description": "expected-status",
+              "default": "204"
+            },
+            "tolerance": {
+              "type": "integer",
+              "description": "tolerance（毫秒）",
+              "default": 50,
+              "minimum": 0,
+              "maximum": 600000
+            },
+            "delete_fields": {
+              "type": "array",
+              "description": "策略组 PUT/MCP 部分更新显式删除健康字段；不能同时赋值",
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "enum": [
+                  "url",
+                  "interval",
+                  "timeout",
+                  "lazy",
+                  "expected-status",
+                  "tolerance"
+                ]
+              }
+            }
+          }
+        },
+        "profile_id": {
+          "type": "string",
+          "description": "独立配置的目标 id；省略时使用当前默认配置空间，不读取浏览器选择。全局资源和系统设置不受此参数限制。"
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "preview_proxy_group_regex",
+    "description": "预览一个筛选正则在指定节点来源下会匹配到哪些节点，用于在保存策略组前验证筛选规则。source=subscription 时按 subscriptions 里的订阅取节点，source=aggregation 时按 aggregations 里的聚合取节点（含聚合内的手动节点）。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "regex": {
+          "type": "string",
+          "description": "节点名筛选正则"
+        },
+        "source": {
+          "type": "string",
+          "description": "节点来源",
+          "enum": [
+            "subscription",
+            "aggregation"
+          ]
+        },
+        "subscriptions": {
+          "type": "array",
+          "description": "source=subscription 时参与筛选的订阅 id 列表",
+          "items": {
+            "type": "string"
+          }
+        },
+        "aggregations": {
+          "type": "array",
+          "description": "source=aggregation 时参与筛选的聚合 id 列表",
+          "items": {
+            "type": "string"
+          }
+        },
+        "profile_id": {
+          "type": "string",
+          "description": "独立配置的目标 id；省略时使用当前默认配置空间，不读取浏览器选择。全局资源和系统设置不受此参数限制。"
+        }
+      },
+      "required": [
+        "regex",
+        "source"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "preview_config",
+    "description": "根据当前的订阅、节点、规则和策略组生成配置内容并直接返回文本，不写入磁盘。用于在正式生成前检查配置。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "target": {
+          "type": "string",
+          "description": "目标格式",
+          "enum": [
+            "mihomo",
+            "surge",
+            "mosdns",
+            "oxidns"
+          ]
+        },
+        "base_url": {
+          "type": "string",
+          "description": "生成规则引用链接时使用的服务地址，留空则用系统设置"
+        },
+        "profile_id": {
+          "type": "string",
+          "description": "独立配置的目标 id；省略时使用当前默认配置空间，不读取浏览器选择。全局资源和系统设置不受此参数限制。"
+        }
+      },
+      "required": [
+        "target"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "generate_config",
+    "description": "Mihomo / Surge：生成配置并保存到服务端数据目录（config.yaml / config.conf）。MosDNS / OxiDNS：打包成含规则文件的 zip 供界面下载，不落盘；订阅链接实时生成。只返回结果摘要，需要查看配置内容请用 preview_config。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "target": {
+          "type": "string",
+          "description": "目标格式",
+          "enum": [
+            "mihomo",
+            "surge",
+            "mosdns",
+            "oxidns"
+          ]
+        },
+        "base_url": {
+          "type": "string",
+          "description": "生成规则引用链接时使用的服务地址，留空则用系统设置"
+        },
+        "profile_id": {
+          "type": "string",
+          "description": "独立配置的目标 id；省略时使用当前默认配置空间，不读取浏览器选择。全局资源和系统设置不受此参数限制。"
+        }
+      },
+      "required": [
+        "target"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "manage_config_backup",
+    "description": "导出、导入或重置 ConfigFlow 配置。export 返回配置 JSON；import 用 data 覆盖；reset 恢复出厂设置。scope=system（默认）作用于系统设置、共享资源及全部配置；scope=profile 只导入导出资源引用和独立参数。MCP 返回会移除内部凭据；完整恢复备份请在系统设置下载。profile 粒度不支持 reset。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "description": "操作类型",
+          "enum": [
+            "export",
+            "import",
+            "reset"
+          ]
+        },
+        "scope": {
+          "type": "string",
+          "description": "作用范围，默认 system",
+          "enum": [
+            "system",
+            "profile"
+          ]
+        },
+        "data": {
+          "type": "object",
+          "description": "import 时要导入的配置 JSON",
+          "additionalProperties": true
+        },
+        "desensitize": {
+          "type": "boolean",
+          "description": "export 时脱敏订阅 URL 与节点凭证，默认 false"
+        },
+        "profile_id": {
+          "type": "string",
+          "description": "独立配置的目标 id；省略时使用当前默认配置空间，不读取浏览器选择。全局资源和系统设置不受此参数限制。"
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "list_agents",
+    "description": "列出所有已注册的远程 Agent，含在线状态、版本和最后心跳时间。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "profile_id": {
+          "type": "string",
+          "description": "独立配置的目标 id；省略时使用当前默认配置空间，不读取浏览器选择。全局资源和系统设置不受此参数限制。"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "get_agent",
+    "description": "获取单个 Agent 的详细信息。include_status=true 时附带实时运行状态。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Agent id"
+        },
+        "include_status": {
+          "type": "boolean",
+          "description": "是否附带实时运行状态，默认 false"
+        },
+        "profile_id": {
+          "type": "string",
+          "description": "独立配置的目标 id；省略时使用当前默认配置空间，不读取浏览器选择。全局资源和系统设置不受此参数限制。"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "manage_agent",
+    "description": "对 Agent 执行管理操作：update（修改配置字段）、delete（从列表移除）、restart（重启被管服务）、push_config（把最新配置推送到 Agent）、uninstall（远程卸载）、upgrade（升级 Agent 到最新版本）、clear_log（清空指定日志文件，需 log_path）、validate_log_path（校验日志路径，需 log_path）、get_logging（读取日志采集开关）、set_logging（开关日志采集，需 enabled）。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "description": "操作类型",
+          "enum": [
+            "update",
+            "delete",
+            "restart",
+            "push_config",
+            "uninstall",
+            "upgrade",
+            "clear_log",
+            "validate_log_path",
+            "get_logging",
+            "set_logging"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "description": "Agent id"
+        },
+        "data": {
+          "type": "object",
+          "description": "update 时要修改的字段，仅 name、host、port、enabled、service_type 生效；配置路径、重启命令等属于 Agent 端的安装参数，需在 Agent 侧调整",
+          "additionalProperties": true
+        },
+        "base_url": {
+          "type": "string",
+          "description": "push_config 时 Agent 回取配置用的服务地址，留空自动推断"
+        },
+        "log_path": {
+          "type": "string",
+          "description": "clear_log / validate_log_path 时的日志文件路径"
+        },
+        "enabled": {
+          "type": "boolean",
+          "description": "set_logging 时是否启用日志采集"
+        },
+        "profile_id": {
+          "type": "string",
+          "description": "独立配置的目标 id；省略时使用当前默认配置空间，不读取浏览器选择。全局资源和系统设置不受此参数限制。"
+        }
+      },
+      "required": [
+        "action",
+        "id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "get_agent_logs",
+    "description": "读取 Agent 所管服务的日志尾部，用于排查节点或 DNS 异常。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Agent id"
+        },
+        "lines": {
+          "type": "integer",
+          "description": "读取的行数，默认 100"
+        },
+        "log_path": {
+          "type": "string",
+          "description": "自定义日志路径，留空使用 Agent 的默认配置"
+        },
+        "profile_id": {
+          "type": "string",
+          "description": "独立配置的目标 id；省略时使用当前默认配置空间，不读取浏览器选择。全局资源和系统设置不受此参数限制。"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "get_agent_metrics",
+    "description": "Agent 的监控数据。scope=current 取实时指标，summary 取汇总，history 取历史序列，traffic 取流量统计，traffic_trend 取流量趋势。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Agent id"
+        },
+        "scope": {
+          "type": "string",
+          "description": "数据范围",
+          "enum": [
+            "current",
+            "summary",
+            "history",
+            "traffic",
+            "traffic_trend"
+          ]
+        },
+        "hours": {
+          "type": "integer",
+          "description": "history / traffic_trend 的时间跨度（小时），默认 24"
+        },
+        "profile_id": {
+          "type": "string",
+          "description": "独立配置的目标 id；省略时使用当前默认配置空间，不读取浏览器选择。全局资源和系统设置不受此参数限制。"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "get_agent_install_info",
+    "description": "获取新增 Agent 所需的安装物料：install_script（一键安装脚本）、docker_compose（compose 文件）、docker_run（docker run 命令）、latest_version（最新 Agent 版本号）。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "method": {
+          "type": "string",
+          "description": "要获取的物料",
+          "enum": [
+            "install_script",
+            "docker_compose",
+            "docker_run",
+            "latest_version"
+          ]
+        },
+        "params": {
+          "type": "object",
+          "description": "生成参数（作为 query 传给后端），如 server_url、name / agent_name、type（mihomo / mosdns / oxidns）、port、agent_ip、config_path、restart_command、data_dir、network_mode、enable_mihomo、enable_mosdns、enable_oxidns",
+          "additionalProperties": true
+        },
+        "profile_id": {
+          "type": "string",
+          "description": "独立配置的目标 id；省略时使用当前默认配置空间，不读取浏览器选择。全局资源和系统设置不受此参数限制。"
+        }
+      },
+      "required": [
+        "method"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "get_mosdns_settings",
+    "description": "读取 MosDNS 配置。section 分别对应：rulesets（分流规则集）、custom_matches（自定义匹配）、dns_servers（上游 DNS 与 hosts）、log（日志）、api（API 监听）、cache（缓存）。留空则返回全部。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "section": {
+          "type": "string",
+          "description": "配置分区，留空返回全部",
+          "enum": [
+            "rulesets",
+            "custom_matches",
+            "dns_servers",
+            "log",
+            "api",
+            "cache"
+          ]
+        },
+        "profile_id": {
+          "type": "string",
+          "description": "独立配置的目标 id；省略时使用当前默认配置空间，不读取浏览器选择。全局资源和系统设置不受此参数限制。"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "update_mosdns_settings",
+    "description": "更新 MosDNS 某个配置分区。只需给出要改的字段，同分区其余字段自动保留。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "section": {
+          "type": "string",
+          "description": "配置分区",
+          "enum": [
+            "rulesets",
+            "custom_matches",
+            "dns_servers",
+            "log",
+            "api",
+            "cache"
+          ]
+        },
+        "data": {
+          "type": "object",
+          "description": "该分区的字段，例如 dns_servers 分区支持 local_dns、remote_dns、fallback_dns、default_forward、custom_hosts；cache 分区支持 cache_enabled、cache_size、cache_lazy_ttl、cache_dump_enabled",
+          "additionalProperties": true
+        },
+        "profile_id": {
+          "type": "string",
+          "description": "独立配置的目标 id；省略时使用当前默认配置空间，不读取浏览器选择。全局资源和系统设置不受此参数限制。"
+        }
+      },
+      "required": [
+        "section",
+        "data"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "convert_mosdns_rule",
+    "description": "把一个远程规则文件（Clash / list 格式）转换成 MosDNS 域名规则格式并返回文本，用于确认某个规则源能否被 MosDNS 正确解析。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "description": "规则文件地址"
+        },
+        "profile_id": {
+          "type": "string",
+          "description": "独立配置的目标 id；省略时使用当前默认配置空间，不读取浏览器选择。全局资源和系统设置不受此参数限制。"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "get_oxidns_settings",
+    "description": "读取当前配置空间的 OxiDNS 参数：分流、上游、缓存、探测缓存、线程、API、日志和高级插件。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "profile_id": {
+          "type": "string",
+          "description": "独立配置的目标 id；省略时使用当前默认配置空间，不读取浏览器选择。全局资源和系统设置不受此参数限制。"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "update_oxidns_settings",
+    "description": "更新独立的 OxiDNS 参数。仅需提交修改字段，嵌套对象会合并，列表整体替换；不影响 MosDNS。高级插件以 enabled 开关和 args 原生参数配置，生成后可通过 preview_config 检查。规则的 DNS 处理请用 set_rule_dns；在这里只能用 rule_actions.<规则 id>: null 删除一条。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "object",
+          "description": "OxiDNS 参数，例如 worker_threads、cache_lazy_ttl、probe_cache_size、api 或 query_recorder",
+          "additionalProperties": true
+        },
+        "profile_id": {
+          "type": "string",
+          "description": "独立配置的目标 id；省略时使用当前默认配置空间，不读取浏览器选择。全局资源和系统设置不受此参数限制。"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "get_overview",
+    "description": "获取系统概览统计：订阅数、节点数、规则数、策略组数、在线 Agent 数等。适合作为了解当前状态的第一个调用。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "profile_id": {
+          "type": "string",
+          "description": "独立配置的目标 id；省略时使用当前默认配置空间，不读取浏览器选择。全局资源和系统设置不受此参数限制。"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "get_settings",
+    "description": "读取系统设置。section 对应：server_domain（对外域名）、config_token（订阅链接令牌）、subscription_aggregation（聚合功能开关）、backup（WebDAV 备份配置）、github_proxy（GitHub 规则源加速域名）、version（版本信息）。留空返回全部。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "section": {
+          "type": "string",
+          "description": "设置分区，留空返回全部",
+          "enum": [
+            "server_domain",
+            "config_token",
+            "subscription_aggregation",
+            "backup",
+            "github_proxy",
+            "version"
+          ]
+        },
+        "profile_id": {
+          "type": "string",
+          "description": "独立配置的目标 id；省略时使用当前默认配置空间，不读取浏览器选择。全局资源和系统设置不受此参数限制。"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "update_settings",
+    "description": "更新系统设置。server_domain 传 {\"server_domain\": \"...\"}；config_token 传 {\"config_token\": \"...\"} 或 {\"generate\": true} 生成随机令牌；subscription_aggregation 传 {\"enabled\": true/false}；backup 传 webdav_url / webdav_username / webdav_password / webdav_path / auto_backup / keep_latest（保留最近份数，0 不清理）/ keep_daily（另保留最近几天每天最后一份）；github_proxy 传 {\"proxy_domains\": \"https://ghproxy.example.com/\"}，传空字符串表示关闭。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "section": {
+          "type": "string",
+          "description": "设置分区",
+          "enum": [
+            "server_domain",
+            "config_token",
+            "subscription_aggregation",
+            "backup",
+            "github_proxy"
+          ]
+        },
+        "data": {
+          "type": "object",
+          "description": "该分区的字段",
+          "additionalProperties": true
+        },
+        "profile_id": {
+          "type": "string",
+          "description": "独立配置的目标 id；省略时使用当前默认配置空间，不读取浏览器选择。全局资源和系统设置不受此参数限制。"
+        }
+      },
+      "required": [
+        "section",
+        "data"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "run_backup",
+    "description": "立即执行一次 WebDAV 备份，或仅测试 WebDAV 连通性。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "description": "操作类型",
+          "enum": [
+            "backup_now",
+            "test_connection"
+          ]
+        },
+        "profile_id": {
+          "type": "string",
+          "description": "独立配置的目标 id；省略时使用当前默认配置空间，不读取浏览器选择。全局资源和系统设置不受此参数限制。"
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "get_app_logs",
+    "description": "读取 ConfigFlow 服务端日志尾部，支持关键字与日志级别过滤，用于排查后端错误。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "lines": {
+          "type": "integer",
+          "description": "读取行数，默认 100"
+        },
+        "search": {
+          "type": "string",
+          "description": "关键字过滤"
+        },
+        "level": {
+          "type": "string",
+          "description": "日志级别过滤",
+          "enum": [
+            "DEBUG",
+            "INFO",
+            "WARNING",
+            "ERROR",
+            "CRITICAL"
+          ]
+        },
+        "profile_id": {
+          "type": "string",
+          "description": "独立配置的目标 id；省略时使用当前默认配置空间，不读取浏览器选择。全局资源和系统设置不受此参数限制。"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "manage_app_logs",
+    "description": "查看服务端日志文件信息（大小、修改时间）或清空日志文件。读日志内容用 get_app_logs。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "description": "操作类型",
+          "enum": [
+            "info",
+            "clear"
+          ]
+        },
+        "profile_id": {
+          "type": "string",
+          "description": "独立配置的目标 id；省略时使用当前默认配置空间，不读取浏览器选择。全局资源和系统设置不受此参数限制。"
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "manage_custom_config",
+    "description": "读取或写入自定义配置片段。这段内容会被合并进生成的配置，用于放入 ConfigFlow 界面未覆盖的原生字段（如 Mihomo 的 tun、dns 段）。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "target": {
+          "type": "string",
+          "description": "目标格式",
+          "enum": [
+            "mihomo",
+            "surge",
+            "mosdns",
+            "oxidns"
+          ]
+        },
+        "action": {
+          "type": "string",
+          "description": "操作类型",
+          "enum": [
+            "get",
+            "set"
+          ]
+        },
+        "content": {
+          "type": "string",
+          "description": "action=set 时要写入的配置片段文本；传空字符串表示清空"
+        },
+        "profile_id": {
+          "type": "string",
+          "description": "独立配置的目标 id；省略时使用当前默认配置空间，不读取浏览器选择。全局资源和系统设置不受此参数限制。"
+        }
+      },
+      "required": [
+        "target",
+        "action"
+      ],
+      "additionalProperties": false
+    }
+  }
+]

@@ -373,9 +373,9 @@ GET	/api/tasks	routes.tasks.get_tasks	internal/api/tasks	done
 PUT	/api/tasks/interval	routes.tasks.set_interval	internal/api/tasks	done
 POST	/api/tasks/run	routes.tasks.run_task	internal/api/tasks	done
 GET	/api/version	routes.settings.get_version	internal/api/settings	done
-DELETE	/mcp	mcp_server.server.unsupported_transport		todo
-GET	/mcp	mcp_server.server.unsupported_transport		todo
-POST	/mcp	mcp_server.server.handle_mcp		todo
-DELETE	/mcp/	mcp_server.server.unsupported_transport		todo
-GET	/mcp/	mcp_server.server.unsupported_transport		todo
-POST	/mcp/	mcp_server.server.handle_mcp		todo
+DELETE	/mcp	mcp_server.server.unsupported_transport	internal/mcp	done
+GET	/mcp	mcp_server.server.unsupported_transport	internal/mcp	done
+POST	/mcp	mcp_server.server.handle_mcp	internal/mcp	done
+DELETE	/mcp/	mcp_server.server.unsupported_transport	internal/mcp	done
+GET	/mcp/	mcp_server.server.unsupported_transport	internal/mcp	done
+POST	/mcp/	mcp_server.server.handle_mcp	internal/mcp	done
