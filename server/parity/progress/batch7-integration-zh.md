@@ -152,3 +152,20 @@ importer 0.005s、convert 原 R5/身份校验相关 0.032s 均 ok。后续整树
 
 最终输出：`== vet`、`== full non-race tests (-p 6)`、`PREFLIGHT PASS`（退出码 0）。
 本次产品树为 ae3ad5077。batch-6 后续日志/性能修复尚待其最终 tip，rebase 后需再确认预检与 compare。
+
+### batch-6 追加修复 rebase
+
+第一次 compare 在槽位队列中尚未执行，主动终止自己排队的 gate（exit 143），没有读取或修改
+其他任务。为避免对旧基底重复比较，预先 rebase 到 batch-6 修复支线已提交的 f2666fd23：
+包含 3aa7c917b（客户端取消日志）、d74eb1dc2（schema-only 传输诊断）、af7315893/f2666fd23
+（旧生成器复用 typed render view）。最终 batch-6 正式 tip 到位后仍核对祖先关系。
+
+仅 N8-8b 替换旧生成器时发生两个代码冲突：mihomo_generate.go、mihomo_downloads.go。
+保留已迁移的 native typed 实现；它直接调用 ApplyNodeDialer/RuleFormat/RulesForOutput，
+不再逐节点/逐规则集解码整份配置。追加修复的 legacy codec 入口、精确调用审计和 128 节点
+公共生成路径不变性回归同时保留。与 rebase 前比较，这两个原生产品文件完全未变；
+总差异仅为追加日志/诊断、legacy helper 和测试，不重新引入旧生成器。
+
+追加修复叠入后：定向 race convert 3.066s、httpx 1.967s、api/subscriptions 1.025s 均 ok。
+只读 live check 再次确认 MosDNS 47072 / recorded 5436 零差异、router-split ok 1.316s，
+仅 legacy.go 来源指纹变化；显式 record 53.397s 通过。十份记录2916 exact entries 哈希未变。
