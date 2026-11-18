@@ -102,15 +102,18 @@ func FilterSubscriptionItems(value any, items []any) []any {
 	if selected == nil {
 		return nil
 	}
-	data, err := yamlx.ToJSON(yamlx.Seq(selected...))
-	if err != nil {
-		return nil
+	// Preserve the native selector's source identities at this codec boundary.
+	// Callers may add owned cache fields through the selected original objects.
+	// Selection stays entirely in FilterProxies; this only maps its references.
+	out := make([]any, 0, len(selected))
+	next := 0
+	for index, node := range graph.Content {
+		if next < len(selected) && node == selected[next] {
+			out = append(out, items[index])
+			next++
+		}
 	}
-	decoded, err := jsonx.Parse(data)
-	if err != nil {
-		return nil
-	}
-	out, _ := decoded.([]any)
+
 	return out
 }
 

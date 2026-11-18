@@ -87,3 +87,20 @@ func TestN89NativeFilterRetainsRawItems(t *testing.T) {
 		t.Fatal(typed)
 	}
 }
+
+func TestN89LegacyFilterRetainsSourceIdentityForCacheUpdates(t *testing.T) {
+	first := jsonx.Obj("name", "keep", "future", jsonx.Number("9007199254740993"))
+	other := jsonx.Obj("name", "other")
+	nodes := []any{first, other, first}
+	selected := FilterSubscriptionItems(jsonx.Obj("regex_filter", "^keep$"), nodes)
+	if len(selected) != 2 || selected[0] != first || selected[1] != first {
+		t.Fatal("codec copied selected source records")
+	}
+	selected[0].(*jsonx.Object).Set("enabled", true)
+	if !nodes[0].(*jsonx.Object).GetBool("enabled") || !nodes[2].(*jsonx.Object).GetBool("enabled") || other.Has("enabled") {
+		t.Fatal("selected cache mutation did not reach original batch")
+	}
+	if first.Value("future") != jsonx.Number("9007199254740993") {
+		t.Fatal("unowned cache field changed")
+	}
+}

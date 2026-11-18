@@ -1932,3 +1932,8 @@ world 保留旧文件。原 archive 不改；独立 Python 参考绑定完整 ar
 - 生产mihomoenv.NativeEnv直接接substore.LoadCache与NativeConverter，移除这两条已迁移owner
   的JSONx往返。活跃Default仍按调用时解析；Runtime关机错误不会在旧无error转换签名中丢失。
   provider/refresh未迁移的回调仍只走原owner薄codec，不复制其业务。
+
+- N8-9 最终HTTP对照修复迁移回归：旧筛选facade曾把选中节点重新编码成副本，打断聚合待
+  提交缓存与所选节点的引用，导致后加的enabled字段未落入缓存。现在只映射native选择结果
+  回原始对象，保留重复引用、原顺序与未知字段；原聚合缓存字段/副作用期待不改。
+  专用身份/未知字段回归与原聚合HTTP用例修复前失败、修复后通过；六组最终HTTP全绿。
