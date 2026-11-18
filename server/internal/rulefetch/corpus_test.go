@@ -111,7 +111,7 @@ func runCorpusRow(fn string, args []any) (any, error) {
 	case "normalize_proxy":
 		return NormalizeRuleFetchProxy(args[0])
 	case "urljoin":
-		joined, err := joinURL(str(0), str(1))
+		joined, _, err := joinURL(str(0), str(1))
 		return requestedForm(joined), err
 	}
 	panic("unknown fn " + fn)

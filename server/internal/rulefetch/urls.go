@@ -17,16 +17,28 @@ import (
 func parseRuleURL(raw string) (*url.URL, error) { return weburl.Prepare(raw, nil) }
 
 // joinURL resolves a redirect's Location against the URL that was requested.
-func joinURL(base, location string) (string, error) {
+// written is the target as the Location spells it when it names a host
+// ("scheme://host/..." or "//host/..."): its dot segments are not resolved
+// yet, so the API classification sees the path as written, as it does for an
+// initial URL. For any other Location written is the resolved target.
+func joinURL(base, location string) (target, written string, err error) {
 	b, err := parseRuleURL(base)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	ref, err := weburl.Prepare(location, nil)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
-	return b.ResolveReference(ref).String(), nil
+	target = b.ResolveReference(ref).String()
+	written = target
+	if asWritten, err := weburl.Parse(location); err == nil && asWritten.Host != "" {
+		if asWritten.Scheme == "" {
+			asWritten.Scheme = b.Scheme
+		}
+		written = asWritten.String()
+	}
+	return target, written, nil
 }
 
 // ErrInvalidURL is the ValueError of validate_rule_url.
@@ -43,20 +55,25 @@ type internalBoundary struct {
 	prefix string
 }
 
-func prepareRuleTarget(raw string, config *jsonx.Object, hostURL string, boundary *internalBoundary) (*url.URL, *url.URL, *internalBoundary, error) {
+// prepareRuleTarget validates raw (the URL about to be requested) and applies
+// the internal API boundary. written is the same URL as the caller or a
+// redirect spelled it (raw itself, or an absolute Location before its dot
+// segments were resolved). A chain enters the API when written, raw or the
+// prepared URL addresses it; from then on every hop must stay inside.
+func prepareRuleTarget(raw, written string, config *jsonx.Object, hostURL string, boundary *internalBoundary) (*url.URL, *url.URL, *internalBoundary, error) {
 	prepared, err := ValidateRuleURL(raw)
 	if err != nil {
 		return nil, nil, boundary, err
 	}
 	if boundary == nil {
-		base, internal, err := internalRuleBase(raw, config, hostURL)
-		if err != nil {
-			return nil, nil, boundary, err
-		}
-		if !internal {
-			base, internal, err = internalRuleBase(prepared.String(), config, hostURL)
-			if err != nil {
+		var base *url.URL
+		internal := false
+		for _, candidate := range []string{written, raw, prepared.String()} {
+			if base, internal, err = internalRuleBase(candidate, config, hostURL); err != nil {
 				return nil, nil, boundary, err
+			}
+			if internal {
+				break
 			}
 		}
 		if internal {

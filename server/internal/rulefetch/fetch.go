@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"configflow/internal/agents/diag"
 	"configflow/internal/convert"
@@ -23,6 +24,8 @@ import (
 	"configflow/internal/pystr"
 	"configflow/internal/repo"
 	"configflow/internal/weburl"
+
+	"golang.org/x/net/idna"
 )
 
 var logger = logx.Get("backend.utils.rule_fetch")
@@ -93,7 +96,24 @@ func originOf(u *url.URL) (origin, error) {
 			port = 443
 		}
 	}
-	return origin{u.Scheme, weburl.Hostname(u), port}, nil
+	return origin{u.Scheme, originHost(u), port}, nil
+}
+
+// originHost is the host name as the transport dials it: ASCII letters
+// lower-cased, and a non-ASCII name in its IDNA lookup form (net/http
+// converts it the same way), so "BÜCHER.example" and "bücher.example" are one
+// origin. A name IDNA refuses is compared as written.
+func originHost(u *url.URL) string {
+	host := weburl.Hostname(u)
+	for i := 0; i < len(host); i++ {
+		if host[i] >= utf8.RuneSelf {
+			if ascii, err := idna.Lookup.ToASCII(host); err == nil {
+				return ascii
+			}
+			break
+		}
+	}
+	return host
 }
 
 // internalRuleBase is _internal_rule_base: the server origin whose API the
@@ -302,7 +322,7 @@ func (c *Client) requestOnce(ctx context.Context, url string, r *Request, config
 	current := url
 	var boundary *internalBoundary
 	for hop := 0; hop <= maxRedirects; hop++ {
-		parsed, base, nextBoundary, err := prepareRuleTarget(current, config, r.HostURL, boundary)
+		parsed, base, nextBoundary, err := prepareRuleTarget(current, current, config, r.HostURL, boundary)
 		if err != nil {
 			return nil, err
 		}
@@ -361,11 +381,11 @@ func (c *Client) requestOnce(ctx context.Context, url string, r *Request, config
 			if location == "" {
 				return "", errors.New("Redirect without Location")
 			}
-			target, err := joinURL(current, location)
+			target, written, err := joinURL(current, location)
 			if err != nil {
 				return "", err
 			}
-			targetParts, _, nextBoundary, err := prepareRuleTarget(target, config, r.HostURL, boundary)
+			targetParts, _, nextBoundary, err := prepareRuleTarget(target, written, config, r.HostURL, boundary)
 			if err != nil {
 				return "", err
 			}
