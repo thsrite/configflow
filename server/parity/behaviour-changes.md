@@ -892,3 +892,5 @@ PD 恢复 PUT 回复已经证明新 ID、但紧接着的 GET 失败时，Go 仍�
   marshalled Report/Plan reach the hook, so this path is not reachable in practice.
 
 C34 同类修复：`/api/profiles` 的 HEAD 不再创建 profile，`/api/profiles/<profile_id>` 的 HEAD 不再删除；全部 profile GET 路径走读取分支。回归 `api/profiles.TestProfileHEADIsReadOnly` 比较 GET headers，并断言 DB、revision、业务文件和生成缓存不变。真实 Flask 预期差异另见 C34 差分测试。
+
+C34 自定义配置五条路径同样将 HEAD 分派给 GET：Mihomo、Surge、MosDNS 不再因无返回值而 500；Loon/OxiDNS 不再落入保存分支。`api/config.TestCustomHEADAndBodyBinding` 逐条验证全部 GET headers、无 body，以及 DB、revision、业务文件和生成缓存不变。严格请求绑定的畸形 JSON/媒体类型沿用 N8-6 的 400/415 修正；不把捕获后的 Python 内部 500 作为合法输入契约。
