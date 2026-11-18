@@ -1797,7 +1797,7 @@ Scope / implementation plan:
 
 Cross-domain contracts:
 - The existing classical-IP hook stays the one installed by ippresence; unknown content remains conservative. No private rule_ip_presence copy.
-- A16 is missing. The read model decodes the saved library/rules booleans from agent.rule_sync.settings into a typed SyncSettings; read options allow an agent settings adapter when A16 supplies its own type. No workers, HTTP or repository calls are introduced.
+- A16 的 go-port-a16 已提供共享 SettingsFor（待 HR/依赖合入）。The read model decodes the saved library/rules booleans from agent.rule_sync.settings into a typed SyncSettings; read options allow an agent settings adapter when A16 supplies its own type. No workers, HTTP or repository calls are introduced.
 - C27 has no routes or repository writes. C32 owns HTTP/auth/transaction/cancellation semantics and converts choice/setting errors to 400 and RoutingLockedError to 409 with usages. C29 owns invalidate-follow at whole-settings replacement; group writers also call the same C27 update API.
 
 Step 1 implemented in `ruledns_state.go` (typed JSON engine/rule/Agent/upstream views):
@@ -2069,7 +2069,7 @@ Routes (21, 21 done):
 
 `GET /api/profiles/<profile_id>/rules`; `POST /api/profiles/<profile_id>/rules`; `GET /api/profiles/<profile_id>/rules/local/<name>`; `GET /api/rule-sets`; `POST /api/rule-sets`; `DELETE /api/rule-sets/<rule_set_id>`; `PUT /api/rule-sets/<rule_set_id>`; `GET /api/rules`; `POST /api/rules`; `DELETE /api/rules/<rule_id>`; `PUT /api/rules/<rule_id>`; `POST /api/rules/batch`; `POST /api/rules/compose`; `GET /api/rules/dns`; `PUT /api/rules/dns`; `POST /api/rules/find-duplicates`; `POST /api/rules/group-name`; `GET /api/rules/local/<name>`; `POST /api/rules/match-test`; `PUT /api/rules/policy`; `POST /api/rules/reorder`
 
-**延期仅 deferred → A16**：A16 必须注册 agents.Hooks.PinnedWithheld。无符合条件的auto-sync OxiDNS确定false；需要projection但hook nil/error，单条脱敏warning、省略字段、不回滚保存。nil/error/true/false/no-device都有测试，不豁免其他字段。PROGRESS-agents A16 已明确合同。
+**原延期 deferred → A16，已由 A16 接线**：go-port-a16 的 Wire 注册 agents.Hooks.PinnedWithheld，随 A16 合并恢复该字段。原降级合同保留：无符合条件的auto-sync OxiDNS确定false；需要projection但hook nil/error，单条脱敏warning、省略字段、不回滚保存。nil/error/true/false/no-device都有测试，不豁免其他字段。PROGRESS-agents A16 已明确合同。
 
 问题已修：中等 C27 legacy Agent 数字/数组名称丢为null → 独立json.RawMessage（数字/数组/null真实Python及字节隔离回归）；中等 Python HEAD DNS意外写入 → 仅PUT写、HEAD只读（真实Python旧写入/Go全状态不变断言及behaviour-changes记录）。C32 reorder保持旧对象数组/异常ID和position的Python合同；11种已接受文本行分隔通过C14 RuleLines适配matcher，不改raw缓存。
 

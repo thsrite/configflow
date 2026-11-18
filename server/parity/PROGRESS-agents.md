@@ -66,7 +66,7 @@ Same as `PROGRESS-config.md`: status `missing` / `partial` (exact list of what i
 | A13 | content sync, Agent list/detail, push-diff routes | 584 | verified | | A12, A15 | 4 | internal/deploy, api/agents |
 | A14 | publishing: transactional content, push-config, deployments, receipts | 1002 | verified | HR | A11, A13, C13, C17, C18, C19, C20, C22, C23 | 9 | internal/deploy, api/agents |
 | A15 | upgrades, Agent operations, address follow | 745 | verified | HR | A01, A02 | 15 (15 done) | internal/agents/upgrades (new), api/agents |
-| A16 | Agent rule sync, projection, snapshot | 1371 | missing | HR | A07, A14, C25, C27 | 2 | internal/agents/rulesync (new), api/agents |
+| A16 | Agent rule sync, projection, snapshot | 1371 | ported | HR | A07, A14, C25, C27 | 2 | internal/agents/rulesync (new), api/agents |
 | A17 | DNS follow | 760 | missing | HR | A14, C26 | 4 | internal/agents/dnsfollow (new), api/agents |
 | A18 | DNS HA (keepalived pair, handoff, pair publication) | 1529 | missing | HR | A16, A17, C26, routers (`routers/store.py`) | 4 | internal/agents/dnsha (new), api/agents |
 | A19 | Linux gateway core (common/linux_gateway.py) | 518 | verified | HR | C05, C08, routers (`router_split.check_generation`) | – | internal/gateway (new) |
@@ -1615,9 +1615,9 @@ Review commands (private detached worktree of HEAD because the shared tree did n
 
 ## A16 — Agent rule sync, projection, snapshot
 
-**C32 hook contract (coordinator approved): A16 必须注册 PinnedWithheld hook，注册后 C32 的 pinned_withheld 字段恢复。** `agents.Hooks.PinnedWithheld(ctx, profileID, ruleIDs) (bool,error)` owns the baseline/projection calculation. C32 returns false when no eligible auto-syncing OxiDNS exists; when projection is required but unavailable/fails, it logs one redacted warning and omits only this best-effort field after the save. Deferred → A16; do not copy projection into config routes.
+**C32 hook contract (coordinator approved): A16 必须注册 PinnedWithheld hook，注册后 C32 的 pinned_withheld 字段恢复。** `agents.Hooks.PinnedWithheld(ctx, profileID, ruleIDs) (bool,error)` owns the baseline/projection calculation. C32 returns false when no eligible auto-syncing OxiDNS exists; when projection is required but unavailable/fails, it logs one redacted warning and omits only this best-effort field after the save. A16 Wire 已注册实际 hook，合并后恢复此字段；不复制 projection 到 config routes。
 
-**Status: `missing`** · HR · prereqs: A07 (`mihomo_panel.call`, `oxidns_rule_update`), A06 (`MonitorError`), A14 (`rule_sync_store`, transactional content), A11, C18/C22 (generators, `get_oxidns_ruleset_downloads`), C25 (`oxidns_common_routing._analyze/_references/apply_routing`, `dns_watchdog`), C27 (`rule_dns.profile_agents` and projection helpers), C05 (`OxidnsSettingsError`), C14 (`is_internal_rule_url`) · Go: internal/agents/rulesync (new), api/agents
+**Status: `ported`** · HR · prereqs: A07 (`mihomo_panel.call`, `oxidns_rule_update`), A06 (`MonitorError`), A14 (`rule_sync_store`, transactional content), A11, C18/C22 (generators, `get_oxidns_ruleset_downloads`), C25 (`oxidns_common_routing._analyze/_references/apply_routing`, `dns_watchdog`), C27 (`rule_dns.profile_agents` and projection helpers), C05 (`OxidnsSettingsError`), C14 (`is_internal_rule_url`) · Go: internal/agents/rulesync (new), api/agents
 
 **Design:** `server/design/a16-a18-sync-follow-ha.md` (Opus, 2026-11-17) covers A16, A17 and A18 — package map, stored types, Agent protocol, loops, locks, failure/rollback, steps A16-0…A18-4, acceptance (fake pair, Python transcript differential, F1 closure, L3). Port to it; contract changes need the designer's or coordinator's agreement. Open maintainer decisions: D-A17-1, D-A18-1.
 
@@ -1631,9 +1631,12 @@ Tests: `test_agent_rule_sync.py` (51), `test_rule_sync_projection.py` (35), `tes
 
 Routes (2): `GET|PUT /api/agents/<agent_id>/rule-sync`
 
-Evidence: no Go code.
+Evidence: internal/agents/rulesync、两条 HTTP 路由、C07 row、C32 PinnedWithheld 接线已完成；待独立 Opus HR。交回：[progress/A16-handoff-zh.md](progress/A16-handoff-zh.md)。仅 .64 定向验收，完整 gate/proddiff 由协调者批次树跑。依赖 A14@53d43b577；A14/O3-6c 未合入前，共享最终提交窗口如实保留。
 
 Hooks to provide: `agents.SetRuleSyncRow` (`routes/tasks._agent_rows` rule-sync row), `lifecycle.Loop` for `rule_sync.start_loop` (app.py `start_agent_rule_sync`; heartbeats also start it lazily — keep that behaviour), C27's interface for `rule_sync.settings_for` (decision 3). Note the idle-CPU history (5 s loop, IdleRounds): keep the idle-round gating exactly.
+
+
+Final product tip: `c241f2938`; final targeted checks on .64: rulesync race + real Python 69.567s, HTTP/DB/files differential 5.690s, server race 1.337s; native HA predicate increment 4.743s/8.930s. Archive fuzz 60s/599521 executions. No full agent gate; shared O3-6c window remains explicitly assigned.
 
 ## A17 — DNS follow
 

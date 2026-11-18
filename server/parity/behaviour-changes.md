@@ -1018,3 +1018,12 @@ JSON 类型比较保存 0。`TestC34ObjectFieldValues` 对四个宽松引擎分�
   这些 owner 正式接线后条目必须 stale 并删除，不能作为永久豁免。
 - logs 路由 owner 是 C06；既有 A18 F1 产生的异常日志后果随 A18 延期，未批准忽略
   普通日志内容。
+
+## A16 — 自动规则同步的提交与日志安全修正
+
+- Python `_publish` 在异常时无条件记录 failed；Go 使用已有 A01 OnlyUnsubmitted，已提交的部署交由原轮询确认，避免将可能已生效的部署误标终态。
+- A16 的状态、任务记录及调用共享 presence owner 的日志字段先经过共享凭据快照/diagnostics/weburl；不保留 Python 将 URL userinfo、token 或密码写进设备名称日志的行为。正常文字保留，URI userinfo 按共享日志策略移除，原 Agent 数据不变。
+- 按既定 D2，rule_sync.state.key 使用 Go 原生 CanonicalDigest；切换时一次重建防抖键。旧 accepted native task 仍先查询确认，键不同只触发重新检查/刷新，不提前接受来源，也不回滚已提交工作。
+- 按 O12 不再创建 worker.lock 或仅供加锁的目录；实际 receipt/归档路径仍兼容。共享 SQLite/taskstatus 最终取消窗口尚待 O3-6c，不计作本条已修。
+
+A16 收尾的两条并发可靠性修正：HA enable 在初次检查之后才提交时，settings 事务仍会拒绝并整批回滚；OxiDNS GET 状态期间绑定/设置变化时，首次及回退 POST 前重新校验，不继续发起旧来源下载。Python 的这两个检查只在较早位置，分别有修复前失败的 SQLite/loopback 回归，见 A16-handoff-zh.md。
