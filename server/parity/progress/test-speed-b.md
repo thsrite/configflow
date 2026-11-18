@@ -52,3 +52,12 @@ copyinglogs and preservingtrialdiff/untrackedfiles inignored.ci-results.
 Final latestgo37aad7f65 change isprogress/proddiffdocs only; source-identical to5264 validated
 tree, no duplicaterun. Reportscommitted, treecleanafterfinalamend. Finalhandoff
 tocoordinatorandA;6e alreadyreceivedexactlegacyfailureprovenance.
+
+Coordinator changed to f8801d39; implementation68945125c handoff/context sent.
+A formalpair isrunning on.64 (beforee0e9d9d45,afterb2cf3e6b4); BmustwaitforA's
+explicit release. Bhasnorunningtests/measurement. Preparedmeasure-b.sh withthe
+same sequentialuncachedmethodasA, Bpackagearray/original60mtimeout. No syncinside
+pair; both immutable snapshots mustbeprepared first, logsoutsidebothroots.
+Thispreparationdoesnotstartmeasurement or reserveA'swindow. Formaldata remains
+pendingafterAwindow+bothload<10. Next:remote syntaxcheckafterwindow, rebase latestgo,
+prepareimmutable before/after snapshotsandrunoneblockingpair, appendreportdocs.
