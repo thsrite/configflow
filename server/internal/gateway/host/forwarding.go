@@ -219,6 +219,9 @@ func (b *Bridge) Forwarding(ctx context.Context, id string, refs []RouterRef) (F
 		}
 		return entry(id, a, refs, "error", e.Message, nil, false), nil
 	}
+	if !validForwardFilter(s["forward_filter"]) {
+		return entry(id, a, refs, "error", msgShape, nil, false), nil
+	}
 	return statusEntry(id, a, refs, s), nil
 }
 

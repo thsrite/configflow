@@ -123,6 +123,24 @@ func selected(raw json.RawMessage, order ...string) []string {
 	return out
 }
 
+// validForwardFilter checks the report labels before sanitization can erase
+// malformed evidence. An absent report is supported for older Agents.
+func validForwardFilter(raw json.RawMessage) bool {
+	if len(raw) == 0 {
+		return true
+	}
+	var labels struct {
+		State   string `json:"state"`
+		Sources []struct {
+			Kind string `json:"kind"`
+		} `json:"sources"`
+		Remedies []struct {
+			Source string `json:"source"`
+		} `json:"remedies"`
+	}
+	return json.Unmarshal(raw, &labels) == nil
+}
+
 // SanitizeForwardFilter drops unknown fields, command syntax and unusable reports.
 func SanitizeForwardFilter(raw json.RawMessage) *ForwardFilter {
 	o := object(raw)

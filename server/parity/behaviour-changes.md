@@ -638,6 +638,13 @@ Python接受。Go按本次安全修复要求统一拒绝这些歧义，保留Inv
   gateway record. Wrong-typed wizard routing evidence fails closed with a
   Chinese diagnostic and zero writes. The shared A14/C36 reader refuses a
   session over 16 MiB rather than treating it as absent.
+- A malformed Agent `forward_filter` report affects only that gateway's list
+  item: wrong-typed `state`, source `kind` or remedy `source` yields `error`,
+  a fixed diagnostic and `can_persist:false`. Healthy gateways remain visible.
+  Python's set membership could raise TypeError and fail the whole list; the
+  previous Go sanitizer instead silently discarded the malformed evidence.
+  `TestStepBA20MalformedReportOnlyAffectsItsGateway` checks all three fields
+  with arrays/objects through the authenticated HTTP boundary and two Agents.
 - Wrong-typed Mihomo/OxiDNS draft sections refuse with Chinese 400 rather than
   becoming empty recovery snapshots (Python could crash or create an unusable
   snapshot). The original stored value is preserved.
@@ -653,7 +660,11 @@ Python接受。Go按本次安全修复要求统一拒绝这些歧义，保留Inv
   POST branch, so an authorised HEAD with `{"agent_id":…}` persisted IPv4
   forwarding on the device. Go serves HEAD from the GET branch; POST is
   unchanged. Real Flask `TestA20PythonHEADForwardingWriteIsFixed` asserts the
-  Python device write and Go's zero writes and unchanged storage.
+  Python device write and Go's zero writes and unchanged storage. Step B
+  strengthens `TestReviewA20HeadGatewayForwardingIsReadOnly`: empty/valid/
+  malformed/non-object bodies retain all GET headers and status, have no body,
+  never enter a save transaction, and leave SQLite fingerprint, revision,
+  ordinary file bytes/modes/mtimes and Agent state unchanged (POST control writes).
 
 See PROGRESS-agents A20 for per-class checks, commands and the L4 boundary.
 
