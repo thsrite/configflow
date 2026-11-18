@@ -1,79 +1,89 @@
-// Package stats holds the route of backend/routes/stats.py (blueprint
-// "stats", prefix /api/stats): the overview counts with their per-profile
-// history.
+// Package stats exposes overview counts and optional per-profile history.
 package stats
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"fmt"
+	"math"
 	"math/big"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"configflow/internal/httpx"
-	"configflow/internal/jsonx"
+	"configflow/internal/jsonstore"
 	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/taskstatus"
 )
 
-// Register adds the stats blueprint.
-func Register(r *httpx.Router) {
-	r.GET("/api/stats/overview", "stats.get_overview", getOverview)
-}
+// Register adds the overview route.
+func Register(r *httpx.Router) { r.GET("/api/stats/overview", "stats.get_overview", getOverview) }
 
-// Constants of stats.py.
+// Sampling and retention constants.
 const (
 	HistoryFile    = "stats_history.json"
 	HistorySize    = 48
 	SampleInterval = 30 * time.Minute
 )
 
-// Keys are STATS_KEYS.
+// Keys is the order of overview series.
 var Keys = []string{"subscriptions", "nodes", "proxyGroups", "rules"}
 
-// Now is the clock; tests replace it.
+// Now is the sampling clock.
 var Now = time.Now
 
-// errPython marks a failure where Python raised an unexpected exception
-// (TypeError, AttributeError) inside the handler's try block.
-type errPython struct{ message string }
-
-func (e *errPython) Error() string { return e.message }
-
-func pyLen(v any) (int, error) {
-	switch value := v.(type) {
-	case []any:
-		return len(value), nil
-	case *jsonx.Object:
-		return value.Len(), nil
-	case string:
-		return utf8.RuneCountInString(value), nil
-	}
-	return 0, &errPython{"object of type '" + httpx.PyTypeName(v) + "' has no len()"}
+// Counts is the current typed catalog projection.
+type Counts struct {
+	Subscriptions int `json:"subscriptions"`
+	Nodes         int `json:"nodes"`
+	ProxyGroups   int `json:"proxyGroups"`
+	Rules         int `json:"rules"`
 }
 
-func getDataCount(ctx context.Context, dataType string) (int, error) {
-	var config *jsonx.Object
-	var err error
-	if dataType == "subscriptions" || dataType == "nodes" {
-		config, err = repo.GetSharedConfig(ctx)
-	} else {
-		config, err = repo.GetConfig(ctx, "")
-	}
+type historyDocument struct {
+	Samples []json.RawMessage `json:"samples"`
+	Extra   model.Fields
+	Raw     model.Raw
+}
+
+func (d *historyDocument) UnmarshalJSON(data []byte) error {
+	return model.DecodeRecord(data, d, &d.Raw)
+}
+func (d historyDocument) MarshalJSON() ([]byte, error) { return model.EncodeRecord(&d, &d.Raw) }
+
+type sample struct {
+	At            string          `json:"at"`
+	Subscriptions json.RawMessage `json:"subscriptions"`
+	Nodes         json.RawMessage `json:"nodes"`
+	ProxyGroups   json.RawMessage `json:"proxyGroups"`
+	Rules         json.RawMessage `json:"rules"`
+}
+
+func currentCounts(ctx context.Context) (Counts, error) {
+	repository, err := repo.GetRepository(ctx)
 	if err != nil {
-		return 0, err
+		return Counts{}, err
 	}
-	field := map[string]string{"subscriptions": "subscriptions", "nodes": "nodes", "rules": "rule_configs",
-		"proxy_groups": "proxy_groups"}[dataType]
-	if field == "" {
-		return 0, nil
+	shared, err := repository.Shared(ctx)
+	if err != nil {
+		return Counts{}, err
 	}
-	return pyLen(config.GetOr(field, []any{}))
+	profileID, err := repo.ResolveProfileID(ctx, "")
+	if err != nil {
+		return Counts{}, err
+	}
+	profile, err := repository.Profile(ctx, profileID)
+	if err != nil {
+		return Counts{}, err
+	}
+	return Counts{len(shared.Subscriptions), len(shared.Nodes), len(profile.ProxyGroups), len(profile.RuleConfigs)}, nil
 }
 
-// isoformatZ is datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z').
 func isoformatZ(t time.Time) string {
 	t = t.UTC()
 	if t.Nanosecond()/1000 == 0 {
@@ -81,35 +91,7 @@ func isoformatZ(t time.Time) string {
 	}
 	return t.Format("2006-01-02T15:04:05.000000") + "Z"
 }
-
-func pyInt(v any) (int64, error) {
-	if !jsonx.Truthy(v) {
-		return 0, nil
-	}
-	switch value := v.(type) {
-	case bool:
-		return 1, nil
-	case jsonx.Number:
-		if v, fits := value.Int64(); fits {
-			return v, nil
-		}
-		f := value.Float64()
-		n, _ := big.NewFloat(f).Int(nil)
-		if n == nil {
-			return 0, &errPython{"cannot convert float to integer"}
-		}
-		return n.Int64(), nil
-	case string:
-		n, ok := httpx.PyParseInt(value)
-		if !ok {
-			return 0, &errPython{"invalid literal for int() with base 10: " + jsonx.Repr(value)}
-		}
-		return n.Int64(), nil
-	}
-	return 0, &errPython{"int() argument must be a string, a bytes-like object or a real number, not '" + httpx.PyTypeName(v) + "'"}
-}
-
-func recordHistory(ctx context.Context, counts *jsonx.Object, persist bool) (map[string][]any, error) {
+func recordHistory(ctx context.Context, counts Counts, persist bool) (map[string][]*json.Number, error) {
 	if persist {
 		ctx = lifecycle.Detach(ctx)
 	}
@@ -124,68 +106,77 @@ func recordHistory(ctx context.Context, counts *jsonx.Object, persist bool) (map
 	if err != nil {
 		return nil, err
 	}
-	// The repository owns profile-operation and atomic file replacement locks.
-	// Keep optional sampling's last-commit-wins semantics without acquiring a
-	// leaf lock before entering those higher-level repository operations.
-	var samples []any
-	if data, err := repository.ReadProfileJSON(profileID, HistoryFile); err == nil {
-		samples, _ = data.Value("samples").([]any)
+	// The repository retains profile-operation locking and replacement checks.
+	path, err := repository.ProfilePath(profileID, HistoryFile)
+	if err != nil {
+		return nil, err
 	}
+	var document historyDocument
+	_ = jsonstore.New(filepath.Dir(path)).Read(strings.TrimSuffix(HistoryFile, ".json"), &document)
+	samples := document.Samples
 	now := Now().UTC()
 	var lastAt *time.Time
 	if len(samples) > 0 {
-		last, ok := samples[len(samples)-1].(*jsonx.Object)
-		if !ok {
-			return nil, &errPython{httpx.NoAttributeGet(samples[len(samples)-1])}
+		var last sample
+		if err := json.Unmarshal(samples[len(samples)-1], &last); err != nil || string(samples[len(samples)-1]) == "null" {
+			return nil, fmt.Errorf("%s", msgSample)
 		}
-		if t, ok := taskstatus.FromISOFormat(replaceZ(jsonx.Str(last.GetOr("at", "")))); ok {
-			lastAt = &t
+		if stamp, ok := taskstatus.ParseTimestamp(last.At); ok {
+			lastAt = &stamp
 		}
 	}
-	current := jsonx.Obj("at", isoformatZ(now))
-	current.Update(counts)
-	var series []any
+	current, err := json.Marshal(struct {
+		At string `json:"at"`
+		Counts
+	}{isoformatZ(now), counts})
+	if err != nil {
+		return nil, err
+	}
+	var series []json.RawMessage
 	if lastAt == nil || now.Sub(*lastAt) >= SampleInterval {
-		samples = append(append([]any{}, samples...), current)
+		samples = append(samples, current)
 		if len(samples) > HistorySize {
 			samples = samples[len(samples)-HistorySize:]
 		}
-		// OSError and repository errors are ignored: the history is optional.
 		if persist {
 			if err := ctx.Err(); err != nil {
 				return nil, err
 			}
-			_, _ = repository.WriteProfileJSON(ctx, profileID, HistoryFile, jsonx.Obj("samples", samples))
+			document.Samples = samples
+			data, err := json.Marshal(document)
+			if err != nil {
+				return nil, err
+			}
+			_, _ = repository.WriteProfileText(ctx, profileID, HistoryFile, data)
 			if err := ctx.Err(); err != nil {
 				return nil, err
 			}
 		}
 		series = samples
 	} else {
-		series = append(append([]any{}, samples[:len(samples)-1]...), current)
+		series = append(append([]json.RawMessage{}, samples[:len(samples)-1]...), current)
 	}
-	result := map[string][]any{}
+	result := map[string][]*json.Number{}
 	for _, key := range Keys {
-		values := []any{}
-		for _, sample := range series {
-			object, ok := sample.(*jsonx.Object)
-			if !ok {
-				return nil, &errPython{httpx.NoAttributeGet(sample)}
-			}
-			n, err := pyInt(object.Value(key))
-			if err != nil {
-				return nil, err
-			}
-			values = append(values, n)
+		result[key] = []*json.Number{}
+	}
+	for _, raw := range series {
+		var row sample
+		if err := json.Unmarshal(raw, &row); err != nil || string(raw) == "null" {
+			return nil, fmt.Errorf("%s", msgSample)
 		}
-		result[key] = values
+		values := []json.RawMessage{row.Subscriptions, row.Nodes, row.ProxyGroups, row.Rules}
+		for i, key := range Keys {
+			count, err := historyNumber(values[i])
+			if err != nil {
+				return nil, fmt.Errorf(msgCounter, err)
+			}
+			result[key] = append(result[key], count)
+		}
 	}
 	return result, nil
 }
-
-func replaceZ(s string) string { return strings.ReplaceAll(s, "Z", "+00:00") }
-
-func profileRevision(ctx context.Context) (any, any) {
+func profileRevision(ctx context.Context) (int64, *string) {
 	profileID, err := repo.ResolveProfileID(ctx, "")
 	if err != nil {
 		return 0, nil
@@ -194,33 +185,44 @@ func profileRevision(ctx context.Context) (any, any) {
 	if err != nil {
 		return 0, nil
 	}
-	profiles, err := repository.ListProfiles(ctx)
+	profile, err := repository.Profile(ctx, profileID)
 	if err != nil {
 		return 0, nil
 	}
-	for _, item := range profiles {
-		metadata, _ := item.(*jsonx.Object)
-		if metadata.Value("id") == profileID {
-			if !jsonx.Truthy(metadata) {
-				break
-			}
-			revision, err := repository.ConfigRevision(ctx, profileID)
-			if err != nil {
-				return 0, nil
-			}
-			return revision, metadata.Value("updated_at")
-		}
+	revision, err := repository.ConfigRevision(ctx, profileID)
+	if err != nil {
+		return 0, nil
 	}
-	return 0, nil
+	var updated *string
+	if profile.UpdatedAt != "" {
+		updated = new(profile.UpdatedAt)
+	}
+	return revision, updated
+}
+func getOverview(c *httpx.Ctx) (*httpx.Response, error) {
+	result, err := overview(c.Context(), c.Request.Method != http.MethodHead)
+	if err != nil {
+		return httpx.JSONStatus(500, struct {
+			Success bool   `json:"success"`
+			Error   string `json:"error"`
+		}{false, err.Error()}), nil
+	}
+	return result, nil
 }
 
-func getOverview(c *httpx.Ctx) (*httpx.Response, error) {
-	// Python: except Exception as e → 500 {'success': False, 'error': str(e)}.
-	response, err := overview(c.Context(), c.Request.Method != http.MethodHead)
-	if err != nil {
-		return httpx.JSONStatus(500, jsonx.Obj("success", false, "error", err.Error())), nil
-	}
-	return response, nil
+type overviewSeries struct {
+	Total   int            `json:"total"`
+	History []*json.Number `json:"history"`
+}
+type overviewData struct {
+	Subscriptions overviewSeries `json:"subscriptions"`
+	Nodes         overviewSeries `json:"nodes"`
+	ProxyGroups   overviewSeries `json:"proxyGroups"`
+	Rules         overviewSeries `json:"rules"`
+	Profile       struct {
+		Revision  int64   `json:"revision"`
+		UpdatedAt *string `json:"updated_at"`
+	} `json:"profile"`
 }
 
 func overview(ctx context.Context, persist bool) (*httpx.Response, error) {
@@ -230,24 +232,47 @@ func overview(ctx context.Context, persist bool) (*httpx.Response, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	counts := jsonx.NewObject()
-	for _, item := range [][2]string{{"subscriptions", "subscriptions"}, {"nodes", "nodes"},
-		{"proxyGroups", "proxy_groups"}, {"rules", "rules"}} {
-		n, err := getDataCount(ctx, item[1])
-		if err != nil {
-			return nil, err
-		}
-		counts.Set(item[0], n)
+	counts, err := currentCounts(ctx)
+	if err != nil {
+		return nil, err
 	}
 	history, err := recordHistory(ctx, counts, persist)
 	if err != nil {
 		return nil, err
 	}
-	revision, updatedAt := profileRevision(ctx)
-	data := jsonx.NewObject()
-	for _, key := range Keys {
-		data.Set(key, jsonx.Obj("total", counts.Value(key), "history", history[key]))
+	data := overviewData{
+		Subscriptions: overviewSeries{counts.Subscriptions, history["subscriptions"]},
+		Nodes:         overviewSeries{counts.Nodes, history["nodes"]},
+		ProxyGroups:   overviewSeries{counts.ProxyGroups, history["proxyGroups"]},
+		Rules:         overviewSeries{counts.Rules, history["rules"]},
 	}
-	data.Set("profile", jsonx.Obj("revision", revision, "updated_at", updatedAt))
-	return httpx.JSON(jsonx.Obj("success", true, "data", data)), nil
+	data.Profile.Revision, data.Profile.UpdatedAt = profileRevision(ctx)
+	return httpx.JSON(struct {
+		Success bool         `json:"success"`
+		Data    overviewData `json:"data"`
+	}{true, data}), nil
+}
+
+// historyNumber keeps display arithmetic inside the finite range. The original
+// sample literal remains untouched in the file; null marks an unplottable point.
+func historyNumber(raw json.RawMessage) (*json.Number, error) {
+	count, err := taskstatus.Count(raw)
+	if err != nil {
+		text := bytes.TrimSpace(raw)
+		if len(text) > 0 && (text[0] == '-' || (text[0] >= '0' && text[0] <= '9')) {
+			var number json.Number
+			if json.Unmarshal(text, &number) == nil {
+				value, _ := number.Float64()
+				if math.IsInf(value, 0) {
+					return nil, nil
+				}
+			}
+		}
+		return nil, err
+	}
+	value, _ := new(big.Float).SetInt(count).Float64()
+	if math.IsInf(value, 0) {
+		return nil, nil
+	}
+	return new(json.Number(count.String())), nil
 }
