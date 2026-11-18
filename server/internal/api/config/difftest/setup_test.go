@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	apisetup "configflow/internal/api/setup"
+	"configflow/internal/setup"
 )
 
 func TestSetupFlaskHTTPStateAndAuthentication(t *testing.T) {
@@ -50,8 +51,8 @@ func TestSetupFlaskHTTPStateAndAuthentication(t *testing.T) {
 		t.Fatal("HEAD changed DB, revisions or files")
 	}
 	// A21 now wires the real DNS preparation owner. As in Python, validate
-	// sources before generating: this subscription has no cached nodes. A22's
-	// missing installation owner does not block preparation.
+	// sources before generating: this subscription has no cached nodes.
+	// Installation evidence does not block preparation source validation.
 	prepared := w.check(request{Method: "POST", Path: path + "/prepare", Body: body(map[string]any{})})
 	if prepared.Status != 400 || prepared.Body.(map[string]any)["message"] != "当前没有可用节点，请先读取订阅或选择支持的节点" {
 		t.Fatalf("empty source prepare: %+v", prepared)
@@ -59,13 +60,21 @@ func TestSetupFlaskHTTPStateAndAuthentication(t *testing.T) {
 	if !reflect.DeepEqual(before, snapshot(t, w.srv)) {
 		t.Fatal("failed preparation changed state")
 	}
-	// Abandon still needs A22's installation evidence to decide whether this
-	// profile can be removed. Keep its fail-closed owner check.
-	response := sendGo(t, w.srv, request{Method: "POST", Path: path + "/abandon", Body: body(map[string]any{}), Headers: map[string]string{"Authorization": w.token, "Content-Type": "application/json"}})
-	if response.Status != 503 || response.Body.(map[string]any)["message"] != "等待首次使用向导模块" {
-		t.Fatalf("missing installation owner: %+v", response)
-	}
-	if !reflect.DeepEqual(before, snapshot(t, w.srv)) {
-		t.Fatal("unavailable owner changed state")
+	// Keep the fail-closed dependency contract explicitly isolated. The full
+	// batch tree now wires A22, so it also exercises real abandonment below.
+	func() {
+		restore := setup.SetExternalOwners(setup.ExternalOwners{})
+		defer restore()
+		response := sendGo(t, w.srv, request{Method: "POST", Path: path + "/abandon", Body: body(map[string]any{}), Headers: map[string]string{"Authorization": w.token, "Content-Type": "application/json"}})
+		if response.Status != 503 || response.Body.(map[string]any)["message"] != "等待首次使用向导模块" {
+			t.Fatalf("missing installation owner: %+v", response)
+		}
+		if !reflect.DeepEqual(before, snapshot(t, w.srv)) {
+			t.Fatal("unavailable owner changed state")
+		}
+	}()
+	abandoned := w.check(request{Method: "POST", Path: path + "/abandon", Body: body(map[string]any{})})
+	if abandoned.Status != 200 {
+		t.Fatalf("wired A22 abandonment: %+v", abandoned)
 	}
 }

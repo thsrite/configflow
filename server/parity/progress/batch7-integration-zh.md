@@ -250,3 +250,18 @@ record 把同一完整 view 都当 unknown fields 保留。没有复制 owner �
 → `ok configflow/internal/convert 74.484s`，包含完整512规则输出回归。
 最终来源指纹更新留到协调者交付固定基底后，避免对不断变化的 legacy.go 重复录制；所有
 原始 oracle 输入/输出继续保持，下一次只允许 metadata 变化且须先确认 live 输出0差异。
+
+### batch-6 difftest 修复叠入
+
+预先 rebase 到259efd4da（含a16a9fc99文档及两项测试修复，产品基底仍e5）。
+.md冲突继续同时保留两边。upgrades_diff_test.go 的 notificationItems 与A18旧修复冲突：
+保留最新 notificationStoreComparison（结构比较对象、保留可见列表顺序及字段），同时保留
+A18的真实配对集成，未回退到旧字符串/对象排序实现。
+
+A22 已在本批完整安装，新的setup差分测试仍硬编码abandon缺owner的503。集成树明确隔离
+SetExternalOwners(empty)验证503且DB/文件不变，恢复真实A22后再与Flask做正常abandon并
+完整比较DB/文件，避免通过删除依赖守卫断言来适应完整注册。
+
+`CONFIGFLOW_DIFF=1 go test -race -count=1 -timeout=20m ./internal/api/config/difftest ./internal/api/agents/difftest ./internal/gateway/onboarding -run "^(TestSetupFlaskHTTPStateAndAuthentication|TestNotificationStoreComparisonPreservesDisplayAndData|TestUpgradesDifferentialAgainstFlask|TestSetupReadinessContract)$"`
+→ config/difftest 8.217s、agents/difftest 30.781s、gateway/onboarding 6.931s 均 ok。
+本次没有重跑全量 preflight 或 compare；仍等待协调者确认最终代码基底。
