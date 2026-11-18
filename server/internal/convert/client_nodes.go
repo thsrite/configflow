@@ -1,11 +1,12 @@
 package convert
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
-	"math/big"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -44,15 +45,20 @@ type clientNode struct {
 
 func resolveClientNode(input model.Node) (*clientNode, error) {
 	node := input
-	params, err := node.Params.Node()
-	if err != nil {
+	if err := clientNodeText(input, "name"); err != nil {
 		return nil, err
 	}
+	var params *yamlx.Node
+	var err error
 	if input.ProxyString != nil {
 		// Syntax remains the URI owner's concern. Native graph policy failures
 		// cannot fall through a legacy parser that would silently drop them.
-		if _, err := yamlx.Parse([]byte(*input.ProxyString)); errors.Is(err, yamlx.ErrAliasBudget) || errors.Is(err, yamlx.ErrAliasRecursion) || errors.Is(err, yamlx.ErrPolicy) {
-			return nil, err
+		// JSON has no aliases and owns duplicate-key/surrogate semantics. Only
+		// non-JSON text is subject to the YAML graph policy before URI parsing.
+		if !json.Valid([]byte(*input.ProxyString)) {
+			if _, err := yamlx.Parse([]byte(*input.ProxyString)); errors.Is(err, yamlx.ErrAliasBudget) || errors.Is(err, yamlx.ErrAliasRecursion) || errors.Is(err, yamlx.ErrPolicy) {
+				return nil, err
+			}
 		}
 		parse := CurrentMihomoEnvironment().Clients.ParseNodes
 		if parse == nil {
@@ -67,6 +73,17 @@ func resolveClientNode(input model.Node) (*clientNode, error) {
 		}
 		node, params = nodes[0].Node, nodes[0].Params
 		node.Name = input.Name
+		if input.ID != "" {
+			node.ID = input.ID
+		}
+	} else {
+		params, err = node.Params.Node()
+		if err != nil {
+			return nil, err
+		}
+	}
+	if err := clientNodeText(node, "type", "server"); err != nil {
+		return nil, err
 	}
 	options, err := decodeClientOptions(params)
 	if err != nil {
@@ -95,8 +112,14 @@ func clientQuantity(value *clientText) bool {
 		return false
 	}
 	// Numeric quantities such as MTU/keepalive use zero to disable an option.
-	if number, ok := new(big.Rat).SetString(string(*value)); ok {
-		return number.Sign() != 0
+	text := string(*value)
+	if number, err := strconv.ParseFloat(text, 64); err == nil && number == 0 {
+		// ParseFloat owns the syntax. Inspect only the decimal significand to
+		// distinguish exact zero from underflow without allocating 10^exponent.
+		if end := strings.IndexAny(text, "eE"); end >= 0 {
+			text = text[:end]
+		}
+		return strings.ContainsAny(text, "123456789")
 	}
 	return true
 }
@@ -233,10 +256,7 @@ func SurgeNode(input model.Node) (string, string, error) {
 		} else if token := clientOption(o.Token, ""); token != "" {
 			parts = append(parts, "token="+token)
 		}
-		alpn := "h3"
-		if o.ALPN != nil {
-			alpn = strings.Join(o.ALPN.strings(), ",")
-		}
+		alpn := surgeALPN(o, n.name)
 		if alpn != "" {
 			parts = append(parts, "alpn="+alpn)
 		}
@@ -645,4 +665,13 @@ func clientKeepalive(values ...*clientText) string {
 		}
 	}
 	return ""
+}
+
+func clientNodeText(node model.Node, members ...string) error {
+	for _, member := range members {
+		if err := storedText(&node, kindNode, node.ID, member); err != nil {
+			return err
+		}
+	}
+	return nil
 }

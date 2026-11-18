@@ -3,6 +3,7 @@ package convert
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -16,7 +17,7 @@ func TestClientTypedProtocolScalars(t *testing.T) {
 		source, want string
 		valid        bool
 	}{
-		{`"123"`, "123", true}, {`123`, "123", true}, {`1.2500`, "1.2500", true}, {`100000000000000000000000000000001`, "100000000000000000000000000000001", true}, {`1e400`, "1e400", true},
+		{`"123"`, "123", true}, {`123`, "123", true}, {`0`, "0", true}, {`1.2500`, "1.2500", true}, {`100000000000000000000000000000001`, "100000000000000000000000000000001", true}, {`1e400`, "1e400", true},
 		{`true`, "", false}, {`[]`, "", false}, {`{}`, "", false},
 	} {
 		t.Run(tt.source, func(t *testing.T) {
@@ -56,7 +57,7 @@ func TestClientTypedOptionsR5AndNull(t *testing.T) {
 	if strings.Join(options.ALPN.strings(), ",") != "h2,http/1.1" || options.WS == nil || options.WS.Headers.Host[0] != "example.com" {
 		t.Fatal("nested options")
 	}
-	if strings.Count(logs.String(), "节点布尔字段") != 2 {
+	if !strings.Contains(logs.String(), fmt.Sprintf(msgClientBoolean, "udp")) || !strings.Contains(logs.String(), fmt.Sprintf(msgClientBoolean, "tls")) {
 		t.Fatal("invalid booleans were not warned", logs.String())
 	}
 	after, _ := yamlx.ToJSON(node)
@@ -72,5 +73,23 @@ func TestClientSectionsAndURL(t *testing.T) {
 	config := &model.Config{ProfileID: "p", SystemConfig: model.SystemConfig{ServerDomain: " https://example.com "}}
 	if clientBaseURL(config, "fallback") != "https://example.com" || clientAPIPath(config, "loon") != "/api/config/p/loon" {
 		t.Fatal("URL projection")
+	}
+}
+
+func TestClientTypedSurgeALPNWarnings(t *testing.T) {
+	var logs bytes.Buffer
+	root, err := logx.Setup(logx.Config{Level: logx.Warning, Console: &logs})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { root.Close(); _, _ = logx.Setup(logx.Config{Level: logx.Critical}) })
+	for _, raw := range []string{`["h2","http/1.1"]`, `["h3",1]`} {
+		options := clientOptions{ALPNRaw: json.RawMessage(raw)}
+		if value := surgeALPN(options, "Synthetic node"); value != "" {
+			t.Fatal(value)
+		}
+		if !strings.Contains(logs.String(), fmt.Sprintf(msgSurgeALPN, "Synthetic node", raw)) {
+			t.Fatal("missing named/original ALPN warning", logs.String())
+		}
 	}
 }

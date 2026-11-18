@@ -2589,3 +2589,44 @@ selected real-Flask cases. No repeat of the author's full suites. Report:
   no provider product/test/baseline change here. Rebase when that fix is ready.
 - Scope, temporary adapter removal owners, approved R5/native differences and
   exact targeted evidence: [progress/n8-8b.md](progress/n8-8b.md).
+
+## N8-8c — typed Surge/Loon (own work ready; shared model coercion pending)
+
+Branch `go-n8-8c`, based on Opus8b review `fbd9993c8` via --onto. Native typed
+Config/Node/options now own protocol rendering, ordered INI sections, group/member
+selection, remote-source tuple caches, rule generation and subscription text.
+`clients.go` and the old protocol/main implementations are removed; legacy.go
+only transcodes/delegates. AST checks forbid dynamic helpers/legacy reverse calls
+in all client cores and require legacy entries to reach the sole typed body.
+
+Exact gate remains2353 Mihomo/1064 Loon/1131 Surge. All4548 execute; C typed/old
+entry results are byte-equal.107 approved exact per-row patches (source SHA,
+old lines/offsets, classes and native SHA) leave old manifests/goldens unchanged.
+A read-only34697-row helper gate has10864 strict rows and23833 input-only indexed
+classifications, including5103 explicitly pending shared integer-string rows.
+The306 extra boundary rows have257 strict/49 classified;128 recorded Python calls
+remain entirely strict. Family counts and the107-row overlapping field counts
+are in [progress/n8-8c.md](progress/n8-8c.md), together with the124 source rows
+containing numeric Node.Name/Server (126 fields). No pending shared coercion is
+accepted as an output exception.
+
+Approved changes: strict bool+warnings; null absent/default health settings;
+Surge numeric WG reserved→slash client-id; ALPN string/one-string-list retention
+and other-list omission with named/original-list warning; native non-ASCII
+bandwidth recognition; typed stored-text diagnostics using8b F1. Mihomo Params
+are untouched. These are separately recorded in behaviour-changes.md.
+
+Remaining dependency:694df9d0's model-layer common lossless integer/string readers.
+No private port/name/server conversion is added. Two explicit dependency tests
+skip until that repair lands, then assert quoted port443/group interval300 and
+numeric Name/Server. Integrate the shared string codec into clientText too,
+remove/reclassify pending index rows and rerun strict cases in a small follow-up.
+Coordinator authorized returning the otherwise completed portion first. Batch6
+and shared8a repair rebase await coordinator notification; no full gate/proddiff
+or push is run by this agent.
+
+Commands/results, schema/audit provenance and every temporary callback's deletion
+owner (N8-8d/N8-9/N8-11) are in the linked progress file and
+`internal/convert/testdata/n88c_cases.md`. Direct-callers race and three HTTP diff
+packages passed on .32; only the previously reproduced8a provider corpus and four
+subscription malformed graphs are excluded, with exact exclusions documented.

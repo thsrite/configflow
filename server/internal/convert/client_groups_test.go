@@ -35,7 +35,7 @@ func TestClientStoredTextGuards(t *testing.T) {
 			}
 			var rule model.RuleConfig
 			source := fmt.Sprintf(`{"id":"r","itemType":%q,"rule_type":"DOMAIN","value":"example.com","policy":"DIRECT","name":"RS","behavior":"domain"}`, itemType)
-			source = strings.Replace(source, `"`+field+`":"`+map[string]string{"rule_type": "DOMAIN", "value": "example.com", "policy": "DIRECT", "name": "RS", "behavior": "domain"}[field]+`"`, `"`+field+`":123`, 1)
+			source = strings.Replace(source, `"`+field+`":"`+map[string]string{"rule_type": "DOMAIN", "value": "example.com", "policy": "DIRECT", "name": "RS", "behavior": "domain"}[field]+`"`, `"`+field+`":false`, 1)
 			if err := json.Unmarshal([]byte(source), &rule); err != nil {
 				t.Fatal(err)
 			}
@@ -47,9 +47,37 @@ func TestClientStoredTextGuards(t *testing.T) {
 				} else {
 					_, _, err = LoonRules(config, "")
 				}
-				if err == nil || !strings.Contains(err.Error(), fmt.Sprintf(msgMihomoStoredText, kind, "r", field, "123")) {
+				if err == nil || !strings.Contains(err.Error(), fmt.Sprintf(msgMihomoStoredText, kind, "r", field, "false")) {
 					t.Fatalf("%s: %v", target, err)
 				}
+			}
+		})
+	}
+}
+
+func TestClientResourceTextGuards(t *testing.T) {
+	for _, kind := range []string{"subscription", "aggregation"} {
+		t.Run(kind, func(t *testing.T) {
+			var config model.Config
+			config.Profile = &model.Profile{}
+			field := kindSubscription
+			if kind == "subscription" {
+				var value model.Subscription
+				if err := json.Unmarshal([]byte(`{"id":"s","name":false}`), &value); err != nil {
+					t.Fatal(err)
+				}
+				config.Subscriptions = []model.Subscription{value}
+			} else {
+				field = kindAggregation
+				var value model.Aggregation
+				if err := json.Unmarshal([]byte(`{"id":"s","name":false}`), &value); err != nil {
+					t.Fatal(err)
+				}
+				config.Aggregations = []model.Aggregation{value}
+			}
+			_, _, err := clientResourceName(&config, kind, "s")
+			if err == nil || err.Error() != fmt.Sprintf(msgMihomoStoredText, field, "s", "name", "false") {
+				t.Fatal(err)
 			}
 		})
 	}

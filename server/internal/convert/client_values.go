@@ -101,6 +101,7 @@ func (r clientReserved) MarshalJSON() ([]byte, error) {
 // clientOptions is the protocol schema shared by Surge and Loon. Bool options
 // follow R5; a null pointer is absent. The source remains read-only in Node.Params.
 type clientOptions struct {
+	ALPNRaw             json.RawMessage         `json:"-"`
 	Cipher              *clientText             `json:"cipher"`
 	Password            *clientText             `json:"password"`
 	UUID                *clientText             `json:"uuid"`
@@ -232,6 +233,11 @@ func decodeClientOptions(node *yamlx.Node) (clientOptions, error) {
 	if err := json.Unmarshal(data, &result); err != nil {
 		return result, fmt.Errorf("%s: %w", msgClientOptions, err)
 	}
+	var members map[string]json.RawMessage
+	if err := json.Unmarshal(data, &members); err != nil {
+		return result, err
+	}
+	result.ALPNRaw = bytes.Clone(members["alpn"])
 	for _, issue := range model.Issues(result) {
 		switch issue.Path {
 		case "udp", "udp-relay", "tls", "skip-cert-verify", "reuse", "tfo", "udp-over-tcp":
@@ -253,5 +259,22 @@ func firstClientText(values ...*clientText) string {
 			return string(*value)
 		}
 	}
+	return ""
+}
+
+func surgeALPN(options clientOptions, name string) string {
+	raw := bytes.TrimSpace(options.ALPNRaw)
+	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
+		return "h3"
+	}
+	var scalar string
+	if json.Unmarshal(raw, &scalar) == nil {
+		return scalar
+	}
+	var values []string
+	if json.Unmarshal(raw, &values) == nil && len(values) == 1 {
+		return values[0]
+	}
+	logx.Get("backend.converters.surge").Warningf(msgSurgeALPN, name, string(raw))
 	return ""
 }

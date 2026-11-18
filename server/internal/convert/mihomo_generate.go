@@ -222,7 +222,7 @@ func decodeRuleList(data json.RawMessage, output *[]model.RuleConfig) error {
 
 // storedRecord lists the stored records whose text members storedText checks.
 type storedRecord interface {
-	model.Subscription | model.Aggregation | model.ProxyGroup | model.RuleConfig
+	model.Subscription | model.Aggregation | model.ProxyGroup | model.RuleConfig | model.Node
 }
 
 // storedText rejects a wrong-typed stored member that becomes generated text.

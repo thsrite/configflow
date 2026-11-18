@@ -12,6 +12,7 @@ import (
 // allowed to grow back into these boundaries during N8-8c/d and N8-9 removal.
 func TestNativeMihomoLegacyAdaptersOnlyTranscode(t *testing.T) {
 	entries := map[string]string{
+		"GenerateSurgeConfig": "SurgeConfig", "GenerateLoonConfig": "LoonConfig", "ConvertNodeToSurge": "SurgeNode", "ConvertNodeToLoon": "LoonNode", "ConvertProxyGroupToSurge": "SurgeGroup", "ConvertProxyGroupToLoon": "LoonGroup", "BuildLoonRules": "LoonRules", "GetProxyGroupNodes": "ClientGroupNodes", "ConvertProxiesToSurgeText": "ClientProxyText", "ConvertProxiesToLoonText": "ClientProxyText",
 		"ValidateBaseSettings": "ValidateBaseNode", "SplitHostPort": "ParseListener", "SniffPortError": "SniffPortInvalid", "TakeoverMode": "GatewayMode", "AgentContext": "AgentPorts",
 		"GenerateMihomoConfig": "MihomoConfig", "GenerateMihomoDocument": "MihomoConfig", "DefaultMihomoTemplate": "MihomoTemplate",
 		"ValidateIPv6Flags": "ValidateIPv6Node", "NormalizeFindProcessMode": "NormalizeProcessMode", "ParseMosdnsCustomHosts": "mosdnsHosts", "SyncMosdnsHosts": "syncMihomoHosts", "InjectRegionProbe": "addRegionProbe", "BuildProviderHealthCheck": "providerHealthNode", "SplitRulesAndRulesets": "MihomoRuleLists", "GetMihomoProviderDownloads": "MihomoProviderDownloads", "GetMihomoRulesetDownloads": "MihomoRulesetDownloads",

@@ -1560,27 +1560,6 @@ func GetMihomoRulesetDownloads(ctx context.Context, value *jsonx.Object, baseURL
 }
 
 // nativeClientConverter is removed with the Surge/Loon adapters in N8-8c.
-// Both client families read the same typed production registration.
-type nativeClientConverter struct{ converter NodeConverter }
-
-func (c nativeClientConverter) ConvertProxyString(ctx context.Context, text string) *jsonx.Object {
-	node, err := c.converter.ConvertProxy(ctx, text)
-	if err != nil {
-		raise(err)
-	}
-	result, err := legacyProxy(node)
-	if err != nil {
-		raise(err)
-	}
-	return result
-}
-func clientConverter() ProxyStringConverter {
-	if converter := CurrentMihomoEnvironment().Converter; converter != nil {
-		return nativeClientConverter{converter}
-	}
-	return missingConverter{}
-}
-
 func subsError(err error) error {
 	var reference *subs.DialerReferenceError
 	if errors.As(err, &reference) {
@@ -1627,13 +1606,6 @@ func ConvertNodeToSurge(value *jsonx.Object) (string, string, error) {
 	}
 	return SurgeNode(node)
 }
-func convertNodeToSurge(value *jsonx.Object) (string, string) {
-	line, section, err := ConvertNodeToSurge(value)
-	if err != nil {
-		raise(err)
-	}
-	return line, section
-}
 
 // ConvertNodeToLoon is the single codec for the old node entry.
 func ConvertNodeToLoon(value *jsonx.Object) (string, error) {
@@ -1642,13 +1614,6 @@ func ConvertNodeToLoon(value *jsonx.Object) (string, error) {
 		return "", err
 	}
 	return LoonNode(node)
-}
-func convertNodeToLoon(value *jsonx.Object) string {
-	line, err := ConvertNodeToLoon(value)
-	if err != nil {
-		raise(err)
-	}
-	return line
 }
 func legacyClientCallbacks() ClientCollaborators {
 	return ClientCollaborators{
@@ -1732,7 +1697,7 @@ func BuildLoonRules(value *jsonx.Object, base string) ([]string, []string, error
 
 // GenerateSurgeConfig transcodes to the typed Surge generator.
 func GenerateSurgeConfig(ctx context.Context, value *jsonx.Object, base string) (string, error) {
-	config, err := configFromLegacy(value)
+	config, err := shapeConfigFromLegacy(value)
 	if err != nil {
 		return "", err
 	}
@@ -1741,7 +1706,7 @@ func GenerateSurgeConfig(ctx context.Context, value *jsonx.Object, base string) 
 
 // GenerateLoonConfig transcodes to the typed Loon generator.
 func GenerateLoonConfig(ctx context.Context, value *jsonx.Object, base string) (string, error) {
-	config, err := configFromLegacy(value)
+	config, err := shapeConfigFromLegacy(value)
 	if err != nil {
 		return "", err
 	}
@@ -1825,12 +1790,4 @@ func ConvertProxiesToLoonText(proxies []any, decode func([]any) ([]any, error)) 
 		return "", err
 	}
 	return ClientProxyText(nodes, legacyClientDecoder(decode), "loon")
-}
-
-// missingConverter preserves the old no-error collaborator signature until N8-9.
-type missingConverter struct{}
-
-func (missingConverter) ConvertProxyString(context.Context, string) *jsonx.Object {
-	raise(&HookMissingError{Hook: "convert_proxy_string", Provider: "convert/mihomoenv (C13 substore)"})
-	return nil
 }

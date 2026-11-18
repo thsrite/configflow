@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strings"
 	"testing"
 
 	"configflow/internal/convert"
@@ -186,6 +185,9 @@ func TestSurgeLoonCorpus(t *testing.T) {
 	typedStorage := map[string]int{}
 	generated := map[string]int{}
 	failures := 0
+	index := readClientClassifications(t, "surge_loon_corpus.jsonl.gz", clientIndexPath)
+	var classifications []clientClassification
+	usedIndex := map[int]bool{}
 	for i, entry := range rows {
 		recorded := native.GetObject(fmt.Sprintf("convert/surge_loon/%d", i))
 		if recorded == nil {
@@ -210,54 +212,36 @@ func TestSurgeLoonCorpus(t *testing.T) {
 		}
 		row := rowOf(entry)
 		counts[row.fn]++
-		var profile *jsonx.Object
-		if row.fn == "surge" || row.fn == "loon" {
-			profile = entry.GetObject("args").GetObject("profile")
-		} else if row.fn == "build_rules" {
-			profile, _ = entry.GetList("args")[0].(*jsonx.Object)
+		// Existing typed decoder cases remain classified, but every representable
+		// row still executes its public entry below before an oracle decision.
+		issue := clientEntryIssue(t, entry)
+		classification := clientClassification{Row: i, Fn: row.fn, InputSHA: generationDigest([]byte(encode(entry.Value("args")))), Field: issue, Family: clientIssueFamily(issue)}
+		if issue != "" {
+			classifications = append(classifications, classification)
 		}
-		if profile != nil {
-			if issue := convert.CommonReplayIssue(profile); issue != "" {
-				typedStorage[issue]++
-				continue
+		if os.Getenv("CONFIGFLOW_RECORD_CLIENT_INDEX") != "1" {
+			expected, found := index[i]
+			if found {
+				usedIndex[i] = true
 			}
-		}
-		if profile != nil {
-			if issue := convert.NodeProfileReplayIssue(profile); issue != "" {
-				typedStorage[issue]++
-				continue
-			}
-		}
-		if profile != nil && (row.fn == "surge" || row.fn == "loon") {
-			if issue := convert.DialerProfileReplayIssue(profile); issue != "" {
-				typedStorage[issue]++
-				continue
+			if (issue != "") != found || (found && classification != expected) {
+				t.Errorf("row %d: helper input classification changed: %s", i, issue)
 			}
 		}
 		if row.errClass == "" && (row.fn == "surge" || row.fn == "loon") {
 			generated[row.fn]++
 		}
-		// The shared N8-8b typed rules/URL boundaries also serve these two
-		// malformed client rows. Keep every other byte under the old oracle.
-		if i == 5230 {
-			args := entry.GetObject("args")
-			if row.fn != "surge" || args.GetObject("profile").Value("rule_sets") != false {
-				t.Fatal("rule-list type fixture moved")
+		if issue != "" {
+			typedStorage[issue]++
+			// Non-object nodes cannot enter the *Object compatibility signature;
+			// they have already been rejected by the actual typed record decoder.
+			if row.fn == "node_loon" || row.fn == "node_surge" {
+				if _, ok := entry.GetList("args")[0].(*jsonx.Object); !ok {
+					continue
+				}
 			}
-			out, err := convert.GenerateSurgeConfig(context.Background(), args.GetObject("profile").DeepCopy(), args.GetString("base_url"))
-			if out != "" || err == nil || !strings.HasPrefix(err.Error(), convert.NativeMihomoRulesMessage+": ") {
-				t.Fatalf("explicit typed rule-list rejection: %q %v", out, err)
-			}
-			typedStorage["explicit R5 legacy rule-list bool"]++
+			_, _ = executeClientBoundary(t, entry)
 			continue
-		}
-		if i == 31468 {
-			if row.fn != "group_surge" || strings.Count(entry.GetString("out"), "/api/profiles/['a', 'b']") != 1 {
-				t.Fatal("profile-ID type fixture moved")
-			}
-			row.entry = entry.DeepCopy()
-			row.entry.Set("out", strings.Replace(entry.GetString("out"), "/api/profiles/['a', 'b']", "", 1))
-			typedStorage["explicit R5 group URL profile ID"]++
 		}
 		if msg := runSurgeLoonRow(t, row); msg != "" {
 			failures++
@@ -266,7 +250,19 @@ func TestSurgeLoonCorpus(t *testing.T) {
 			}
 		}
 	}
-	t.Logf("%d rows %v; generated configurations %v; %d differ; typed storage classes %v", len(rows), counts, generated, failures, typedStorage)
+	if os.Getenv("CONFIGFLOW_RECORD_CLIENT_INDEX") != "1" && len(usedIndex) != len(index) {
+		t.Fatal("unused helper classification rows")
+	}
+	if failures == 0 {
+		writeClientClassifications(t, "surge_loon_corpus.jsonl.gz", clientIndexPath, classifications)
+	}
+	pending := 0
+	for _, entry := range classifications {
+		if entry.Family == "pending shared integer-string" {
+			pending++
+		}
+	}
+	t.Logf("%d rows %v; generated configurations %v; strict=%d classified=%d field_classes=%d pending_shared=%d unknown=%d", len(rows), counts, generated, len(rows)-len(classifications), len(classifications), len(typedStorage), pending, failures)
 	if failures > 0 {
 		t.Errorf("%d of %d rows differ", failures, len(rows))
 	}

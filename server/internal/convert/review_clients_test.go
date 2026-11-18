@@ -2,6 +2,7 @@ package convert_test
 
 import (
 	"bytes"
+	"os"
 	"strings"
 	"testing"
 
@@ -12,6 +13,7 @@ import (
 // A delimiter inside an ID must not shift into the exclusion dimension of
 // the remote cache key. The two Python tuple keys are distinct.
 func TestLoonRemoteCacheKeepsSourceAndExclusionSeparate(t *testing.T) {
+	withFakeSubStore(t)
 	config := jsonx.Obj(
 		"subscriptions", []any{
 			jsonx.Obj("id", "a", "name", "First"),
@@ -40,6 +42,7 @@ func TestLoonRemoteCacheKeepsSourceAndExclusionSeparate(t *testing.T) {
 }
 
 func TestSurgeDebugLogOmitsSubscriptionURLsAndTokens(t *testing.T) {
+	withFakeSubStore(t)
 	var logs bytes.Buffer
 	root, err := logx.Setup(logx.Config{Level: logx.Debug, Console: &logs})
 	if err != nil {
@@ -72,12 +75,37 @@ func TestSurgeDebugLogOmitsSubscriptionURLsAndTokens(t *testing.T) {
 func TestClientReviewBoundaryReferences(t *testing.T) {
 	withFakeSubStore(t)
 	rows := loadJSONLines(t, "testdata/review_clients.jsonl.gz")
-	for _, entry := range rows {
+	const indexPath = "testdata/n88c_review_classifications.json.gz"
+	index := readClientClassifications(t, "review_clients.jsonl.gz", indexPath)
+	var classifications []clientClassification
+	used := map[int]bool{}
+	for i, entry := range rows {
 		t.Run(entry.GetString("case")+"/"+entry.GetString("fn"), func(t *testing.T) {
-			if msg := runSurgeLoonRow(t, rowOf(entry)); msg != "" {
+			issue := clientEntryIssue(t, entry)
+			classification := clientClassification{Row: i, Fn: entry.GetString("fn"), InputSHA: generationDigest([]byte(encode(entry.Value("args")))), Field: issue, Family: clientIssueFamily(issue)}
+			if issue != "" {
+				classifications = append(classifications, classification)
+			}
+			if os.Getenv("CONFIGFLOW_RECORD_CLIENT_INDEX") != "1" {
+				expected, found := index[i]
+				if found {
+					used[i] = true
+				}
+				if (issue != "") != found || (found && expected != classification) {
+					t.Fatalf("review helper classification changed: %s", issue)
+				}
+			}
+			msg := runSurgeLoonRow(t, rowOf(entry))
+			if issue == "" && msg != "" {
 				t.Fatal(msg)
 			}
 		})
 	}
-	t.Logf("%d Python-derived config/subscription boundaries", len(rows))
+	if os.Getenv("CONFIGFLOW_RECORD_CLIENT_INDEX") != "1" && len(used) != len(index) {
+		t.Fatal("unused review classifications")
+	}
+	if !t.Failed() {
+		writeClientClassifications(t, "review_clients.jsonl.gz", indexPath, classifications)
+	}
+	t.Logf("%d Python-derived config/subscription boundaries; classified %d", len(rows), len(classifications))
 }

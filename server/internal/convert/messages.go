@@ -204,3 +204,9 @@ const (
 	msgSurgeNodeFailure    = "转换节点到 Surge 格式失败: %s, 错误: %v"
 	msgLoonNodeFailure     = "转换节点到 Loon 格式失败: %s, 错误: %v"
 )
+
+const msgSurgeALPN = "节点 %s 的 Surge ALPN 列表无法表达，已省略 alpn 参数：%s"
+
+const msgClientProxyObject = "代理节点必须为对象"
+
+const kindNode = "节点"

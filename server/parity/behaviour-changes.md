@@ -1438,3 +1438,22 @@ R8 接受整数字值的浮点表示（Agent port、provider_update_interval）�
 provider URL 不带 token；策略组引擎选项（`timeout`/`lazy`/`strategy` 等）错型时不写入输出；
 `region_probe_port` 为超出 1–65535 的整数时返回「区域检测端口必须为 1–65535 的整数」
 （Python 原样注入，Mihomo 加载时失败）。
+
+## N8-8(c) — Surge/Loon typed option and health boundaries
+
+- 节点文本协议字段的数字字面量无损读成文本，数字密码保留；null 按字段缺失处理。
+  只有 bool 才作为 udp/tls/skip-cert-verify 等布尔参数，错型值按 R5 使用缺省值并警告；
+  不再把字符串 `"false"` 当 true。Mihomo 开放 Params 仍原样透传。
+- **修复 Python bug**：Surge WireGuard 数字列表 reserved 输出官方的 `1/2/3`
+  client-id，不再输出 Python 列表 repr；字符串 reserved/client-id 保留原文。
+- **修复 Python bug**：Surge TUIC 的字符串 ALPN 保留；单字符串列表展开；多元素或含
+  非字符串元素的列表省略 alpn 并记录带节点名、原列表的生成警告，让 Surge 使用默认值。
+  不再输出 Python 列表 repr。Loon 的列表 ALPN 格式不变。
+- **修复 Python bug**：Surge 策略组 url/interval 为 null，或 follow_group 继承时缺失，
+  使用默认测速 URL 和300秒，不再生成 Surge 无法使用的 `None`。
+- 已批准的 CPython-only Unicode 范围：down 的非 ASCII 数字前缀不识别、不输出带宽。
+- 和8b复核 F1一致，会变成输出标识或规则文本的存储字段错型时明确拒绝；诊断包含资源、
+  id、字段和存储 JSON，只有模型记录了类型问题才触发。正常字段保留旧字节。
+
+冻结字节门仍执行2353份Mihomo、1064份Loon、1131份Surge。107条已批准差异在独立的
+`internal/convert/testdata/n88c_byte_exceptions.json` 中逐行记录；旧 golden/manifest 未改。

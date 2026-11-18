@@ -69,6 +69,7 @@ func wantLines(t *testing.T, got, want []string) {
 
 func surgeExport(t *testing.T, proxy string) string {
 	t.Helper()
+	withFakeSubStore(t)
 	node := mustJSON(t, proxy)
 	yaml := jsonx.Obj("name", node.Value("name"), "proxy_string", proxyYAML(t, node))
 	line, _, err := convert.ConvertNodeToSurge(yaml)
@@ -198,6 +199,7 @@ func TestSurgeFollowInheritsExclusionOnlyForBothSources(t *testing.T) {
 }
 
 func TestSurgeLegacyMembersFilterBeforeAddingExplicitNodes(t *testing.T) {
+	withFakeSubStore(t)
 	config := mustJSON(t, `{"nodes": [{"name": "HK 01", "subscription_id": "sub"}, {"name": "HK 到期", "subscription_id": "sub"},
 		{"name": "JP 01", "subscription_id": "sub"}]}`)
 	group := mustJSON(t, `{"subscriptions": ["sub"], "regex": "HK", "exclude_regex": "到期", "proxies": ["HK 到期"]}`)

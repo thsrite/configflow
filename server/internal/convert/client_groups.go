@@ -33,10 +33,11 @@ func effectiveClientGroup(group model.ProxyGroup, config *model.Config) (*model.
 	if stringValue(group.FollowGroup) == "" {
 		return &group, nil
 	}
-	result := *source
-	result.ID, result.Name, result.Enabled = group.ID, group.Name, group.Enabled
-	// Follow replaces only membership and health settings; retain local legacy source.
-	result.Source, result.Proxies = group.Source, group.Proxies
+	result := group
+	result.Type = source.Type
+	result.ManualNodes, result.Aggregations, result.IncludeGroups, result.Subscriptions = source.ManualNodes, source.Aggregations, source.IncludeGroups, source.Subscriptions
+	result.Regex, result.ExcludeRegex, result.AggregationRegex, result.AggregationExcludeRegex = source.Regex, source.ExcludeRegex, source.AggregationRegex, source.AggregationExcludeRegex
+	result.ProxiesOrder, result.ProxyOrder, result.URL, result.Interval, result.Strategy = source.ProxiesOrder, source.ProxyOrder, source.URL, source.Interval, source.Strategy
 	return &result, nil
 }
 func clientGroupSources(group model.ProxyGroup) (manual, aggregations, groups, subscriptions []string) {
@@ -227,6 +228,7 @@ func SurgeGroup(group model.ProxyGroup, config *model.Config, base string, smart
 	for _, path := range paths {
 		line += ", policy-path = " + path + ", update-interval = 86400"
 	}
+	surgeLog.Debug("Generated Surge proxy group")
 	return line, nil
 }
 

@@ -255,9 +255,9 @@ func (c *wireNativeConverter) ConvertProxy(context.Context, string) (*yamlx.Node
 func TestNativeMihomoClientsShareRegistration(t *testing.T) {
 	converter := &wireNativeConverter{}
 	t.Cleanup(SetMihomoEnvironment(MihomoEnvironment{Converter: converter}))
-	result := clientConverter().ConvertProxyString(context.Background(), "http://example.com")
-	if result.GetString("name") != "test" || converter.calls != 1 {
-		t.Fatal("unported client did not use typed registration")
+	result, err := CurrentMihomoEnvironment().Converter.ConvertProxy(context.Background(), "http://example.com")
+	if err != nil || yamlx.Get(result, "name").Value != "test" || converter.calls != 1 {
+		t.Fatal("client did not use typed registration")
 	}
 	var missing *HookMissingError
 	if result, err := (legacyNodeConverter{}).ConvertProxy(context.Background(), "http://example.com"); result != nil || !errors.As(err, &missing) {

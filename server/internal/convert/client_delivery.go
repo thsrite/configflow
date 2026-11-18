@@ -1,7 +1,9 @@
 package convert
 
 import (
+	"bytes"
 	"fmt"
+	"gopkg.in/yaml.v3"
 	"strings"
 
 	"configflow/internal/model"
@@ -14,11 +16,25 @@ type ClientNodeDecoder func([]*yamlx.Node) ([]model.Node, error)
 // ClientProxyText renders subscription responses for Surge or Loon.
 func ClientProxyText(proxies []*yamlx.Node, decode ClientNodeDecoder, target string) (string, error) {
 	for _, proxy := range proxies {
+		if proxy == nil {
+			return "", fmt.Errorf("%s", msgClientProxyObject)
+		}
+		if proxy.Kind == yaml.AliasNode {
+			data, err := yamlx.ToJSON(proxy)
+			if err != nil {
+				return "", err
+			}
+			if data = bytes.TrimSpace(data); len(data) == 0 || data[0] != '{' {
+				return "", fmt.Errorf("%s", msgClientProxyObject)
+			}
+		} else if proxy.Kind != yaml.MappingNode {
+			return "", fmt.Errorf("%s", msgClientProxyObject)
+		}
 		if dialer := yamlx.Get(proxy, "dialer-proxy"); dialer != nil && !nullNode(dialer) {
 			if target == "surge" {
-				return "", fmt.Errorf("%s", msgSurgeDeliveryDialer)
+				return "", dialerError(msgSurgeDeliveryDialer)
 			}
-			return "", fmt.Errorf("%s", msgLoonDeliveryDialer)
+			return "", dialerError(msgLoonDeliveryDialer)
 		}
 	}
 	if decode == nil {
