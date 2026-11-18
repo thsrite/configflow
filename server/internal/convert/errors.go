@@ -5,18 +5,20 @@ import (
 	"fmt"
 
 	"configflow/internal/rules"
-	"configflow/internal/subs"
 )
 
 // DialerReferenceError is dialer_references.DialerReferenceError, a
 // StrategyReferenceError (and so a ValueError).
-type DialerReferenceError struct{ Message string }
+type DialerReferenceError struct {
+	Message string
+	cause   error
+}
 
 func (e *DialerReferenceError) Error() string { return e.Message }
 
 // Unwrap lets errors.As find the StrategyReferenceError base class.
 func (e *DialerReferenceError) Unwrap() error {
-	return &rules.StrategyReferenceError{Message: e.Message}
+	return errors.Join(e.cause, &rules.StrategyReferenceError{Message: e.Message})
 }
 
 func dialerError(message string) error { return &DialerReferenceError{Message: message} }
@@ -54,19 +56,6 @@ func PyErrorClass(err error) string {
 
 func attributeError(v any, attribute string) error {
 	return pyError("AttributeError", "'"+pyTypeName(v)+"' object has no attribute '"+attribute+"'")
-}
-
-// fromSubs converts the errors of subs.ValidateProxyChains (a private copy of
-// DialerReferenceError there) to this package's types.
-func fromSubs(err error) error {
-	if err == nil {
-		return nil
-	}
-	var d *subs.DialerReferenceError
-	if errors.As(err, &d) {
-		return dialerError(d.Message)
-	}
-	return pyError("Exception", err.Error())
 }
 
 // ProxyYAMLError is a structured proxy validation failure. The underlying

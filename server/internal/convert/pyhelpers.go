@@ -270,3 +270,27 @@ func pyTruthy(v any) bool {
 	}
 	return jsonx.Truthy(v)
 }
+
+// TODO(N8-8b/c): remove this unported generator key codec with its callers.
+func hashID(v any) (string, error) {
+	switch value := v.(type) {
+	case string:
+		return value, nil
+	case []any:
+		return "", pyError("TypeError", "unhashable type: 'list'")
+	case *jsonx.Object:
+		return "", pyError("TypeError", "unhashable type: 'dict'")
+	case jsonx.Number:
+		if value.IsFloat() {
+			if f := value.Float64(); f == float64(int64(f)) {
+				return "\x00" + jsonx.Repr(jsonx.Int(int64(f))), nil
+			}
+		}
+	case bool:
+		if value {
+			return "\x001", nil
+		}
+		return "\x000", nil
+	}
+	return "\x00" + jsonx.Repr(v), nil
+}

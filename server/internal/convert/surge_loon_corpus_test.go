@@ -227,6 +227,12 @@ func TestSurgeLoonCorpus(t *testing.T) {
 				continue
 			}
 		}
+		if profile != nil && (row.fn == "surge" || row.fn == "loon") {
+			if issue := convert.DialerProfileReplayIssue(profile); issue != "" {
+				typedStorage[issue]++
+				continue
+			}
+		}
 		if row.errClass == "" && (row.fn == "surge" || row.fn == "loon") {
 			generated[row.fn]++
 		}

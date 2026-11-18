@@ -243,11 +243,19 @@ func TestReviewC12References(t *testing.T) {
 			known++
 			continue
 		}
-		if easyTierRowIssue(row) != "" {
+		if easyTierRowIssue(row) != "" || dialerRowIssue(row) != "" {
+			known++
+			continue
+		}
+		if dialerRowIssue(row) != "" {
 			known++
 			continue
 		}
 		result, mutated, err := runReviewRow(row)
+		if nativeProviderBoundary(t, row, result, err) || nativeProviderReplay(t, row, result, err) {
+			known++
+			continue
+		}
 		if nativePortReplay(t, row, result, err) {
 			known++
 			continue
@@ -330,13 +338,16 @@ func TestReviewC12References(t *testing.T) {
 func TestCorpusExceptionMessages(t *testing.T) {
 	failures := 0
 	for i, row := range loadCorpus(t) {
-		if commonRowIssue(row) != "" || nodeRowIssue(row) != "" || easyTierRowIssue(row) != "" {
+		if commonRowIssue(row) != "" || nodeRowIssue(row) != "" || easyTierRowIssue(row) != "" || dialerRowIssue(row) != "" {
 			continue
 		}
 		if row.errClass == "" || intentional(row.errClass) {
 			continue
 		}
 		_, _, err := runCorpusRow(row)
+		if nativeProviderBoundary(t, row, nil, err) {
+			continue
+		}
 		if err != nil && err.Error() != row.errMsg && (chineseText(row.errMsg) || !strings.Contains(row.fn, "url") && row.fn != "ruleset_format" && row.fn != "apply_github_proxy_domain") {
 			// URL parse errors carry net/url's text since N2.
 			failures++

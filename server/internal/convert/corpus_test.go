@@ -384,7 +384,14 @@ func TestCorpus(t *testing.T) {
 			typedStorage[issue]++
 			continue
 		}
+		if issue := dialerRowIssue(row); issue != "" {
+			typedStorage[issue]++
+			continue
+		}
 		result, mutated, err := runCorpusRow(row)
+		if nativeProviderBoundary(t, row, result, err) || nativeProviderReplay(t, row, result, err) {
+			continue
+		}
 		if nativeProxyReplay(t, "corpus", row, result, mutated, err) {
 			continue
 		}

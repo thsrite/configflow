@@ -5,6 +5,9 @@ package convert
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"gopkg.in/yaml.v3"
 
 	"configflow/internal/jsonx"
 	"configflow/internal/model"
@@ -391,4 +394,292 @@ func RedactEasyTierSettings(value any) any {
 		return value
 	}
 	return encoded
+}
+
+// dialerLegacyError preserves only the old caller's validation category.
+func dialerLegacyError(err error) error {
+	if err == nil {
+		return nil
+	}
+	var yamlErr *ProxyYAMLError
+	if errors.As(err, &yamlErr) {
+		return err
+	}
+	return &DialerReferenceError{Message: err.Error(), cause: err}
+}
+
+// IDValue adapts a native string resource ID for old serialization callers.
+func (r Ref) IDValue() any { return r.ID }
+
+// shapeConfigFromLegacy decodes non-null resource arrays strictly at the old
+// untyped boundary; model.Config itself can only contain typed resource slices.
+func shapeConfigFromLegacy(value *jsonx.Object) (*model.Config, error) {
+	for _, key := range []string{"nodes", "proxy_groups"} {
+		if raw, present := value.Get(key); present {
+			items, err := decodeLegacy[[]json.RawMessage](raw)
+			if err != nil || items == nil {
+				return nil, &DialerReferenceError{Message: fmt.Sprintf(msgResourceArray, key), cause: err}
+			}
+			for _, item := range items {
+				var object map[string]json.RawMessage
+				if err := json.Unmarshal(item, &object); err != nil || object == nil {
+					return nil, &DialerReferenceError{Message: msgResourceObject, cause: err}
+				}
+			}
+		}
+	}
+	return configFromLegacy(value)
+}
+
+// ValidateShapes transcodes the old resolved view to ConfigShapes.
+func ValidateShapes(value *jsonx.Object, requireIDs bool) error {
+	config, err := shapeConfigFromLegacy(value)
+	if err != nil {
+		return err
+	}
+	return dialerLegacyError(ConfigShapes(config, requireIDs))
+}
+
+// ValidateDialers transcodes the old resolved view to ConfigDialers.
+func ValidateDialers(value *jsonx.Object) error {
+	config, err := shapeConfigFromLegacy(value)
+	if err != nil {
+		return err
+	}
+	return dialerLegacyError(ConfigDialers(config))
+}
+
+// DependencyGraph transcodes the old resolved view to BuildDialerGraph.
+func DependencyGraph(value *jsonx.Object) (*Graph, error) {
+	config, err := shapeConfigFromLegacy(value)
+	if err != nil {
+		return nil, err
+	}
+	graph, err := BuildDialerGraph(config)
+	return graph, dialerLegacyError(err)
+}
+
+// RawDialer transcodes a typed node's declared dialer.
+func RawDialer(value *jsonx.Object) (any, error) {
+	node, err := decodeLegacy[model.Node](value)
+	if err != nil {
+		return nil, err
+	}
+	target, err := NodeDialer(node)
+	if err != nil {
+		return nil, dialerLegacyError(err)
+	}
+	if target == nil {
+		return nil, nil
+	}
+	return yamlbridge.Value(target)
+}
+
+// DialerTarget transcodes the view and node to NodeDialerTarget.
+func DialerTarget(value, nodeValue *jsonx.Object) (*Ref, error) {
+	config, err := configFromLegacy(value)
+	if err != nil {
+		return nil, err
+	}
+	node, err := decodeLegacy[model.Node](nodeValue)
+	if err != nil {
+		return nil, err
+	}
+	ref, err := NodeDialerTarget(config, node)
+	return ref, dialerLegacyError(err)
+}
+
+// GroupMembers transcodes an old group to GroupRefs.
+func GroupMembers(value *jsonx.Object) ([]Ref, error) {
+	group, err := decodeLegacy[model.ProxyGroup](value)
+	if err != nil {
+		return nil, err
+	}
+	return GroupRefs(group), nil
+}
+func groupMembers(value *jsonx.Object) ([]Ref, error) {
+	group, err := decodeLegacy[model.ProxyGroup](value)
+	if err != nil {
+		return nil, err
+	}
+	return GroupRefs(group), nil
+}
+
+// GroupDependencies transcodes a logical group to GroupSources.
+func GroupDependencies(value, groupValue *jsonx.Object) ([]Ref, error) {
+	config, err := configFromLegacy(value)
+	if err != nil {
+		return nil, err
+	}
+	group, err := decodeLegacy[model.ProxyGroup](groupValue)
+	if err != nil {
+		return nil, err
+	}
+	refs, err := GroupSources(config, group)
+	return refs, dialerLegacyError(err)
+}
+
+// CheckCycles adapts the graph validation category.
+func CheckCycles(graph *Graph) error { return dialerLegacyError(CycleCheck(graph)) }
+
+// IncomingDialers transcodes the old view to IncomingRefs.
+func IncomingDialers(value *jsonx.Object, kind, id string) ([]Ref, error) {
+	config, err := shapeConfigFromLegacy(value)
+	if err != nil {
+		return nil, err
+	}
+	refs, err := IncomingRefs(config, kind, id)
+	return refs, dialerLegacyError(err)
+}
+
+// ResolveDialer transcodes the old view/node to ResolveNodeDialer.
+func ResolveDialer(value, nodeValue *jsonx.Object) (any, error) {
+	config, err := configFromLegacy(value)
+	if err != nil {
+		return nil, err
+	}
+	node, err := decodeLegacy[model.Node](nodeValue)
+	if err != nil {
+		return nil, err
+	}
+	name, err := ResolveNodeDialer(config, node)
+	if name == nil {
+		return nil, dialerLegacyError(err)
+	}
+	return *name, dialerLegacyError(err)
+}
+
+// OverlayDialer preserves the old in-place result at the codec boundary.
+func OverlayDialer(value, nodeValue, proxyValue *jsonx.Object) (*jsonx.Object, error) {
+	config, err := configFromLegacy(value)
+	if err != nil {
+		return nil, err
+	}
+	node, err := decodeLegacy[model.Node](nodeValue)
+	if err != nil {
+		return nil, err
+	}
+	var proxy *yamlx.Node
+	if proxyValue != nil {
+		proxy, err = yamlbridge.Encode(proxyValue)
+		if err != nil {
+			return nil, err
+		}
+	}
+	result, err := ApplyNodeDialer(config, node, proxy)
+	if result != nil && proxyValue != nil {
+		if writeErr := replaceLegacyProxy(proxyValue, result); writeErr != nil {
+			return nil, writeErr
+		}
+	}
+	return proxyValue, dialerLegacyError(err)
+}
+
+// FilterProviderCandidates decodes the obsolete dynamically typed filter arguments.
+func FilterProviderCandidates(values []*jsonx.Object, include, exclude, excludeType any) ([]*jsonx.Object, error) {
+	spec, err := decodeLegacy[FilterSpec](jsonx.Obj("Include", include, "Exclude", exclude, "ExcludeType", excludeType))
+	if err != nil {
+		return nil, dialerLegacyError(errors.New(msgTopologyShape))
+	}
+	nodes := make([]*yamlx.Node, 0, len(values))
+	for _, value := range values {
+		node, err := yamlbridge.Encode(value)
+		if err != nil {
+			return nil, err
+		}
+		nodes = append(nodes, node)
+	}
+	selected, err := FilterProxyNodes(nodes, spec)
+	if err != nil {
+		return nil, dialerLegacyError(err)
+	}
+	result := make([]*jsonx.Object, 0, len(selected))
+	for _, node := range selected {
+		value, err := legacyProxy(node)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, value)
+	}
+	return result, nil
+}
+
+// ProviderProxyName transcodes native typed name overrides.
+func ProviderProxyName(proxy, override *jsonx.Object) (string, error) {
+	proxyNode, err := yamlbridge.Encode(proxy)
+	if err != nil {
+		return "", err
+	}
+	name, err := requiredEmittedString(proxyNode, "name")
+	if err != nil {
+		return "", dialerLegacyError(errors.New(msgProviderNameRule))
+	}
+	overrideNode, err := yamlbridge.Encode(override)
+	if err != nil {
+		return "", err
+	}
+	naming, err := nameOverrideFromNode(overrideNode)
+	if err != nil {
+		return "", dialerLegacyError(errors.New(msgProviderNameRule))
+	}
+	result, err := ProviderName(name, naming)
+	return result, dialerLegacyError(err)
+}
+
+// EmitOptions is the remaining legacy topology caller's payload representation.
+type EmitOptions struct {
+	ForceChains      bool
+	ProviderProxies  *jsonx.Object
+	RequireProviders bool
+}
+
+func providerPayloadsFromLegacy(value *jsonx.Object) (map[string][]*yamlx.Node, error) {
+	result := map[string][]*yamlx.Node{}
+	if value == nil {
+		return result, nil
+	}
+	root, err := yamlbridge.Encode(value)
+	if err != nil {
+		return nil, err
+	}
+	for key, source := range yamlx.Pairs(root) {
+		source = yamlx.Resolve(source)
+		if source == nil || source.Kind != yaml.SequenceNode {
+			return nil, errors.New(msgTopologyShape)
+		}
+		result[key] = source.Content
+	}
+	return result, nil
+}
+
+// ValidateEmitted transcodes generated legacy documents and payloads.
+func ValidateEmitted(value *jsonx.Object, opts EmitOptions) error {
+	node, err := yamlbridge.Encode(value)
+	if err != nil {
+		return err
+	}
+	payloads, err := providerPayloadsFromLegacy(opts.ProviderProxies)
+	if err != nil {
+		return dialerLegacyError(err)
+	}
+	return dialerLegacyError(ValidateTopology(node, TopologyOptions{ForceChains: opts.ForceChains, RequireProviders: opts.RequireProviders, ProviderProxies: payloads}))
+}
+
+// RejectSurgeDialers adapts old collaborators to RejectUnsupportedDialers.
+func RejectSurgeDialers(ctx context.Context, value *jsonx.Object, client string, converter ProxyStringConverter) error {
+	config, err := configFromLegacy(value)
+	if err != nil {
+		return err
+	}
+	return dialerLegacyError(RejectUnsupportedDialers(ctx, config, client, legacyNodeConverter{converter}))
+}
+
+// DependencyNodeIDs transcodes a resolved view to RequiredNodes.
+func DependencyNodeIDs(value *jsonx.Object, selected []string, includeRoots bool) (map[string]bool, error) {
+	config, err := shapeConfigFromLegacy(value)
+	if err != nil {
+		return nil, err
+	}
+	result, err := RequiredNodes(config, selected, includeRoots)
+	return result, dialerLegacyError(err)
 }

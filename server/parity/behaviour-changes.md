@@ -1087,3 +1087,16 @@ EasyTier 字段按 R5 缺省，避免重建 Python truthiness 和容器遍历异
 整数选项和保活 interval 按 R8 接受整数字面量的浮点写法（如 1500.0、6e1）。
 保留标准 IPv4 net/host mask 和带前导零的前缀长度支持；不会替换成私有 IP 解析器。
 导出时 secret 成员即使存成错误类型也会脱敏（非 null、非空字符串），不再按动态 truthiness 决定。
+
+## N8-8a — typed dialer validation
+
+拨号资源只使用字符串 ID 和 typed 引用。畸形存储字段按 R5 或明确中文类型校验处理，
+不重建数字/布尔 ID 相等、Python truthiness、StopIteration/KeyError 等内部异常。
+缺失目标或目标名称返回明确验证错误；错误类型的 enabled（包括 null）按 typed 默认值读取。
+整份资源数组和策略组列表的既有中文校验仍保留，避免把坏类型传进尚未迁移的生成器。
+非法或超出原生正则能力的过滤/改名规则统一走原有中文业务验证通道。
+
+Provider 改名规则里的非 ASCII 分组序号（如 `<$١>`、`<$１>`）保留为字面量，
+属于 PORTING 已批准的 CPython 专有 Unicode 范围。旧 golden 不改；两条 review 行和
+含 `$1$0$١` 的八条旧语料各有完整 native 期望。ASCII `$1`、`$01`、`$0` 及越界仍按原业务验证。
+override 和改名规则按精确大小写键读取，未知大小写拼法继续忽略。

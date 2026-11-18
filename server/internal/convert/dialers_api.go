@@ -1,1061 +1,714 @@
 package convert
 
-// The rest of backend/utils/dialer_references.py (incoming_dialers,
-// resolve_dialer, overlay_dialer, filter_provider_candidates,
-// provider_proxy_name, validate_emitted, reject_surge_dialers,
-// dependency_node_ids) and the exported entry points.
-
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"regexp"
+	"slices"
+	"strconv"
 	"strings"
 
-	"configflow/internal/jsonx"
-	"configflow/internal/pystr"
+	"configflow/internal/model"
 	"configflow/internal/rules"
-	"configflow/internal/subs"
+	"configflow/internal/yamlx"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
+	"gopkg.in/yaml.v3"
 )
 
-// IDValue is the id as Python holds it: ids that are not strings are kept
-// in Ref.ID as "\x00" + repr(id) (so that 1, 1.0 and True collide as in a
-// dict); IDValue turns numbers and None back into values (a bool id comes
-// back as 1 or 0).
-func (r Ref) IDValue() any {
-	text, found := strings.CutPrefix(r.ID, "\x00")
-	if !found {
-		return r.ID
-	}
-	if text == "None" {
-		return nil
-	}
-	if n, err := jsonx.ParseNumber(text); err == nil {
-		return n
-	}
-	return text
-}
-
-// Keys lists the graph's keys in insertion order (dict order).
-func (g *Graph) Keys() []Ref { return append([]Ref(nil), g.keys...) }
-
-// Children returns graph[key]; ok is false when key is not in the graph.
-func (g *Graph) Children(key Ref) ([]Ref, bool) {
-	children, ok := g.children[key]
-	return children, ok
-}
-
-// Has is `key in graph`.
-func (g *Graph) Has(key Ref) bool { return g.has(key) }
-
-// validateProxyChains is proxy_chains.validate_proxy_chains (owned by C11,
-// subs.ValidateProxyChains). Python's first loop runs `group.get(
-// 'follow_group') in chains` over the groups by id, which raises TypeError
-// for an unhashable follow_group; subs does not check that, so the loop is
-// walked here up to the first group that raises either way. Callers have
-// passed validate_shapes (ids are strings).
-func validateProxyChains(profile *jsonx.Object) error {
-	list, _ := profile.GetOr("proxy_groups", []any{}).([]any)
-	groups := newObjectMap()
-	for _, item := range list {
-		if group, ok := item.(*jsonx.Object); ok && group != nil {
-			groups.set(group.GetString("id"), group)
-		}
-	}
-	chains := map[string]bool{}
-	for _, id := range groups.keys {
-		if jsonx.Equal(groups.values[id].Value("type"), "chain") {
-			chains[id] = true
-		}
-	}
-walk:
-	for _, id := range groups.keys {
-		group := groups.values[id]
-		follow := group.Value("follow_group")
-		if err := hashable(follow); err != nil {
-			return err
-		}
-		if text, ok := follow.(string); ok && chains[text] {
-			break
-		}
-		if len(chains) > 0 && compatEnabled(group) && !jsonx.Equal(group.Value("type"), "chain") {
-			members, err := groupMembers(group)
-			if err != nil {
-				break
-			}
-			for _, member := range members {
-				if member.Kind != "group" {
-					continue
-				}
-				target := groups.values[member.ID]
-				if target == nil || !compatEnabled(target) {
-					break walk
-				}
-			}
-		}
-	}
-	return fromSubs(subs.ValidateProxyChains(profile))
-}
-
-// ValidateShapes is validate_shapes(profile, require_ids=...): metadata is
-// checked before attribute access, hashing or string parsing.
-func ValidateShapes(profile *jsonx.Object, requireIDs bool) error {
-	return validateShapes(profile, requireIDs)
-}
-
-// ValidateDialers is validate_dialers.
-func ValidateDialers(profile *jsonx.Object) error { return validateDialers(profile) }
-
-// DependencyGraph is dependency_graph.
-func DependencyGraph(profile *jsonx.Object) (*Graph, error) { return dependencyGraph(profile) }
-
-// RawDialer is raw_dialer: the dialer-proxy a node names itself (from a
-// structured proxy string or its params), never asking Sub-Store.
-func RawDialer(node *jsonx.Object) (any, error) { return rawDialer(node) }
-
-// DialerTarget is dialer_target; nil is None.
-func DialerTarget(profile, node *jsonx.Object) (*Ref, error) { return dialerTarget(profile, node) }
-
-// GroupMembers is group_members.
-func GroupMembers(group *jsonx.Object) ([]Ref, error) { return groupMembers(group) }
-
-// GroupDependencies is group_dependencies.
-func GroupDependencies(profile, group *jsonx.Object) ([]Ref, error) {
-	return groupDependencies(profile, group)
-}
-
-// CheckCycles is check_cycles.
-func CheckCycles(graph *Graph) error { return checkCycles(graph) }
-
-// pyContains is `needle in haystack` for the containers a profile holds.
-func pyContains(haystack, needle any) (bool, error) {
-	switch value := haystack.(type) {
-	case []any:
-		for _, item := range value {
-			if jsonx.Equal(item, needle) {
-				return true, nil
-			}
-		}
-		return false, nil
-	case string:
-		text, ok := needle.(string)
-		if !ok {
-			return false, pyError("TypeError", "'in <string>' requires string as left operand, not "+pyTypeName(needle))
-		}
-		return strings.Contains(value, text), nil
-	case *jsonx.Object:
-		if err := hashable(needle); err != nil {
-			return false, err
-		}
-		text, ok := needle.(string)
-		return ok && value.Has(text), nil
-	}
-	return false, pyError("TypeError", "argument of type '"+pyTypeName(haystack)+"' is not iterable")
-}
-
-func refObject(kind, id string) *jsonx.Object { return jsonx.Obj("type", kind, "id", id) }
-
-// IncomingDialers is incoming_dialers: logical dependents of (kind, id),
-// including inactive metadata retained by users, without duplicates.
-func IncomingDialers(profile *jsonx.Object, kind, id string) ([]Ref, error) {
+// IncomingRefs returns stable metadata users followed by active graph dependents.
+func IncomingRefs(config *model.Config, kind, id string) ([]Ref, error) {
 	target := Ref{kind, id}
-	want := refObject(kind, id)
-	nodes, err := profileList(profile, "nodes")
-	if err != nil {
-		return nil, err
-	}
-	// Ids are hashed only by dict.fromkeys at the end, after
-	// dependency_graph has validated the shapes.
-	type rawRef struct {
-		kind string
-		id   any
-	}
-	var direct []rawRef
-	for _, node := range nodes {
-		if !jsonx.Equal(node.Value("dialer_ref"), want) {
-			continue
+	var direct []Ref
+	if config != nil {
+		for _, node := range config.Nodes {
+			if node.DialerRef != nil && stableRef(node.DialerRef) && resourceRef(*node.DialerRef) == target {
+				direct = append(direct, Ref{"node", node.ID})
+			}
 		}
-		value, err := compatItem(node, "id")
-		if err != nil {
-			return nil, err
-		}
-		direct = append(direct, rawRef{"node", value})
 	}
-	groups, err := profileList(profile, "proxy_groups")
-	if err != nil {
-		return nil, err
-	}
-	for _, group := range groups {
-		var matches bool
-		if jsonx.Equal(group.Value("type"), "chain") {
-			value, err := compatItem(group, "chain")
-			if err != nil {
-				return nil, err
-			}
-			chain, ok := value.(*jsonx.Object)
-			if !ok {
-				return nil, attributeError(value, "values")
-			}
-			for _, ref := range chain.Values() {
-				if jsonx.Equal(ref, want) {
-					matches = true
-					break
-				}
-			}
+	for _, group := range configGroups(config) {
+		matches := false
+		if group.Type == "chain" {
+			matches = group.Chain != nil && (resourceRef(group.Chain.Entry) == target || resourceRef(group.Chain.Exit) == target)
 		} else {
-			members, err := groupMembers(group)
-			if err != nil {
-				return nil, err
-			}
-			for _, member := range members {
-				if member == target {
-					matches = true
-					break
-				}
-			}
+			matches = slices.Contains(GroupRefs(group), target)
 			if !matches && kind == "group" {
-				if matches, err = pyContains(group.GetOr("include_groups", []any{}), id); err != nil {
-					return nil, err
-				}
-				if !matches {
-					matches = jsonx.Equal(group.Value("follow_group"), id)
-				}
+				matches = slices.Contains(stringList(group.IncludeGroups), id) || stringValue(group.FollowGroup) == id
 			}
 		}
 		if matches {
-			value, err := compatItem(group, "id")
-			if err != nil {
-				return nil, err
-			}
-			direct = append(direct, rawRef{"group", value})
+			direct = append(direct, Ref{"group", group.ID})
 		}
 	}
-	graph, err := dependencyGraph(profile)
+	graph, err := BuildDialerGraph(config)
 	if err != nil {
 		return nil, err
 	}
-	var keys []Ref
-	for _, raw := range direct {
-		key, err := hashID(raw.id)
-		if err != nil {
-			return nil, err
-		}
-		keys = append(keys, Ref{raw.kind, key})
-	}
 	for _, key := range graph.keys {
-		for _, child := range graph.children[key] {
-			if child == target {
-				keys = append(keys, key)
-				break
-			}
+		if slices.Contains(graph.children[key], target) {
+			direct = append(direct, key)
 		}
 	}
-	seen := map[Ref]bool{}
 	result := []Ref{}
-	for _, key := range keys {
-		if !seen[key] {
-			seen[key] = true
-			result = append(result, key)
+	seen := map[Ref]bool{}
+	for _, ref := range direct {
+		if !seen[ref] {
+			seen[ref] = true
+			result = append(result, ref)
 		}
 	}
 	return result, nil
 }
 
-// ResolveDialer is resolve_dialer: the name of the node's dialer_ref target
-// (nil when the node has none). A dangling reference is Python's
-// StopIteration; ref['id'] is read per candidate, as the generator does.
-func ResolveDialer(profile, node *jsonx.Object) (any, error) {
-	ref := node.Value("dialer_ref")
-	if ref == nil {
+// ResolveNodeDialer returns the stored target name for a managed reference.
+func ResolveNodeDialer(config *model.Config, node model.Node) (*string, error) {
+	if node.DialerRef == nil {
 		return nil, nil
 	}
-	kind, err := compatItem(ref, "type")
-	if err != nil {
-		return nil, err
+	if !stableRef(node.DialerRef) {
+		return nil, errors.New(msgDialerRef)
 	}
-	key := "proxy_groups"
-	if jsonx.Equal(kind, "node") {
-		key = "nodes"
-	}
-	targets, err := compatList(profile.GetOr(key, []any{}))
-	if err != nil {
-		return nil, err
-	}
-	for _, item := range targets {
-		target, err := compatObject(item)
-		if err != nil {
-			return nil, err
-		}
-		id, err := compatItem(ref, "id")
-		if err != nil {
-			return nil, err
-		}
-		if jsonx.Equal(target.Value("id"), id) {
-			return compatItem(target, "name")
+	if config != nil {
+		if node.DialerRef.Type == "node" {
+			for _, target := range config.Nodes {
+				if target.ID == node.DialerRef.ID {
+					name := target.Name
+					return &name, nil
+				}
+			}
+		} else {
+			for _, target := range configGroups(config) {
+				if target.ID == node.DialerRef.ID {
+					name := target.Name
+					return &name, nil
+				}
+			}
 		}
 	}
-	return nil, pyError("StopIteration", "")
+	return nil, errors.New(msgDialerRefMissing)
 }
 
-// OverlayDialer is overlay_dialer: put the resolved dialer on a converted
-// proxy, refusing to drop a node that takes part in the dialer topology.
-func OverlayDialer(profile, node, proxy *jsonx.Object) (*jsonx.Object, error) {
-	if proxy == nil || proxy.Len() == 0 {
-		graph, err := dependencyGraph(profile)
+// ApplyNodeDialer attaches stable metadata to an owned converted proxy.
+func ApplyNodeDialer(config *model.Config, node model.Node, proxy *yamlx.Node) (*yamlx.Node, error) {
+	if proxy == nil || proxy.Kind == yaml.MappingNode && len(proxy.Content) == 0 {
+		graph, err := BuildDialerGraph(config)
 		if err != nil {
 			return nil, err
 		}
-		id, err := hashID(node.Value("id"))
-		if err != nil {
-			return nil, err
-		}
-		if graph.has(Ref{"node", id}) {
-			return nil, dialerError("拨号拓扑参与节点转换失败，不能省略节点")
+		if graph.has(Ref{"node", node.ID}) {
+			return nil, errors.New(msgDialerConversion)
 		}
 		return proxy, nil
 	}
-	if node.Value("dialer_ref") != nil {
-		if jsonx.Truthy(node.Value("_proxy_chain_id")) {
-			name, err := compatItem(node, "name")
-			if err != nil {
-				return nil, err
-			}
-			proxy.Set("name", name)
+	if node.DialerRef != nil {
+		raw, _ := node.Fields.Get("_proxy_chain_id")
+		var chainID string
+		if json.Unmarshal(raw, &chainID) == nil && chainID != "" {
+			yamlx.Set(proxy, "name", yamlx.Str(node.Name))
 		}
-		name, err := ResolveDialer(profile, node)
+		name, err := ResolveNodeDialer(config, node)
 		if err != nil {
 			return nil, err
 		}
-		proxy.Set("dialer-proxy", name)
+		yamlx.Set(proxy, "dialer-proxy", yamlx.Str(*name))
 	}
 	return proxy, nil
 }
 
-// splitText is value.split(sep) on a str argument; anything else is the
-// AttributeError Python raises.
-func splitText(value any, sep string) ([]string, error) {
-	text, ok := value.(string)
-	if !ok {
-		return nil, attributeError(value, "split")
-	}
-	return strings.Split(text, sep), nil
+// FilterSpec describes original-name filtering, in backtick pattern order.
+type FilterSpec struct{ Include, Exclude, ExcludeType string }
+
+// NameRule is one native Provider name substitution.
+type NameRule struct {
+	Pattern string `json:"pattern"`
+	Target  string `json:"target"`
 }
 
-// regexCrash is the Python class of a compile error that is not re.error
-// (RecursionError, OverflowError for a repeat count >= MAXREPEAT); "" for
-// re.error and patterns only this implementation cannot run.
-func regexCrash(err error) string {
-	switch err.Error() {
-	case "the repetition number is too large":
-		return "OverflowError"
-	case "maximum recursion depth exceeded":
-		return "RecursionError"
-	}
-	return ""
+// NameOverride defines Provider names independently of the payload node shape.
+type NameOverride struct {
+	Rules  []NameRule `json:"proxy-name"`
+	Prefix string     `json:"additional-prefix"`
+	Suffix string     `json:"additional-suffix"`
 }
 
-// compileFilter is re.compile(value) inside filter_provider_candidates'
-// `except re.error`. A pattern only this implementation cannot run (\N{...},
-// repeat counts beyond int32) is refused with the same message (domain
-// decision: such patterns are not applied).
-func compileFilter(value string) (*rules.PyRegex, error) {
-	re, err := rules.CompilePyRegex(value, false)
-	if err == nil {
+type providerCandidate struct {
+	name, kind string
+	node       *yamlx.Node
+	ref        Ref
+}
+
+func candidateFromNode(node *yamlx.Node) (providerCandidate, error) {
+	node = yamlx.Resolve(node)
+	if node == nil || node.Kind != yaml.MappingNode {
+		return providerCandidate{}, errors.New(msgTopologyShape)
+	}
+	name, err := requiredEmittedString(node, "name")
+	if err != nil {
+		return providerCandidate{}, err
+	}
+	kind, err := emittedString(node, "type")
+	if err != nil {
+		return providerCandidate{}, err
+	}
+	return providerCandidate{name: name, kind: kind, node: node}, nil
+}
+func filterCandidates(proxies []providerCandidate, spec FilterSpec) ([]providerCandidate, error) {
+	var exclusions, filters []*rules.PyRegex
+	compile := func(pattern string) (*rules.PyRegex, error) {
+		re, err := rules.CompilePyRegex(pattern, false)
+		if err != nil {
+			return nil, errors.New(msgProviderFilter)
+		}
 		return re, nil
 	}
-	if class := regexCrash(err); class != "" {
-		return nil, pyError(class, err.Error())
-	}
-	return nil, dialerError("Provider 正则过滤无效或不受支持")
-}
-
-// FilterProviderCandidates is filter_provider_candidates(proxies, include,
-// exclude, exclude_type): match original names, preserving Mihomo's
-// backtick filter ordering. The arguments are the values Python receives
-// (normally strings; "" is the default).
-func FilterProviderCandidates(proxies []*jsonx.Object, include, exclude, excludeType any) ([]*jsonx.Object, error) {
-	excludeParts, err := splitText(exclude, "`")
-	if err != nil {
-		return nil, err
-	}
-	var exclusions, filters []*rules.PyRegex
-	for _, value := range excludeParts {
-		if value == "" {
-			continue
+	for _, pattern := range strings.Split(spec.Exclude, "`") {
+		if pattern != "" {
+			re, err := compile(pattern)
+			if err != nil {
+				return nil, err
+			}
+			exclusions = append(exclusions, re)
 		}
-		re, err := compileFilter(value)
-		if err != nil {
-			return nil, err
-		}
-		exclusions = append(exclusions, re)
 	}
-	includeParts, err := splitText(include, "`")
-	if err != nil {
-		return nil, err
-	}
-	for _, value := range includeParts {
-		re, err := compileFilter(value)
+	for _, pattern := range strings.Split(spec.Include, "`") {
+		re, err := compile(pattern)
 		if err != nil {
 			return nil, err
 		}
 		filters = append(filters, re)
 	}
-	typeParts, err := splitText(excludeType, "|")
-	if err != nil {
-		return nil, err
-	}
 	excludedTypes := map[string]bool{}
-	for _, value := range typeParts {
-		if value != "" {
-			excludedTypes[pystr.Lower(value)] = true
+	for _, kind := range strings.Split(spec.ExcludeType, "|") {
+		if kind != "" {
+			excludedTypes[cases.Lower(language.Und).String(kind)] = true
 		}
 	}
-	selected := []*jsonx.Object{}
+	selected := []providerCandidate{}
 	seen := map[string]bool{}
 	for _, pattern := range filters {
 		for _, proxy := range proxies {
-			nameValue, err := compatItem(proxy, "name")
-			if err != nil {
-				return nil, err
-			}
-			typeValue := proxy.GetOr("type", "")
-			typeText, ok := typeValue.(string)
-			if !ok {
-				return nil, attributeError(typeValue, "lower")
-			}
-			if excludedTypes[pystr.Lower(typeText)] {
-				continue
-			}
-			key, err := hashID(nameValue)
-			if err != nil {
-				return nil, err
-			}
-			if seen[key] {
-				continue
-			}
-			name, ok := nameValue.(string)
-			if !ok {
-				return nil, pyError("TypeError", "expected string or bytes-like object, got '"+pyTypeName(nameValue)+"'")
-			}
-			if !pattern.Search(name) {
+			if seen[proxy.name] || excludedTypes[cases.Lower(language.Und).String(proxy.kind)] || !pattern.Search(proxy.name) {
 				continue
 			}
 			excluded := false
-			for _, e := range exclusions {
-				if e.Search(name) {
+			for _, exclude := range exclusions {
+				if exclude.Search(proxy.name) {
 					excluded = true
 					break
 				}
 			}
 			if !excluded {
 				selected = append(selected, proxy)
-				seen[key] = true
+				seen[proxy.name] = true
 			}
 		}
 	}
 	return selected, nil
 }
 
-// expandTarget is re.sub(r'\$(\d+)', repl, target) with repl returning
-// match.group(int(part[1])) or the empty string.
-func expandTarget(target string, groups []string) (string, error) {
-	var b strings.Builder
-	runes := []rune(target)
-	for i := 0; i < len(runes); i++ {
-		if runes[i] != '$' {
-			b.WriteRune(runes[i])
-			continue
-		}
-		j, number, overflow := i+1, 0, false
-		for j < len(runes) {
-			d := pystr.Decimal(runes[j])
-			if d < 0 {
-				break
-			}
-			if number > 1<<40 {
-				overflow = true
-			} else {
-				number = number*10 + d
-			}
-			j++
-		}
-		if j == i+1 {
-			b.WriteRune('$')
-			continue
-		}
-		if overflow || number >= len(groups) {
-			return "", pyError("IndexError", "no such group")
-		}
-		b.WriteString(groups[number])
-		i = j - 1
-	}
-	return b.String(), nil
-}
-
-// pyFirstItem is value[0] for a truthy value: a list's first item, a str's
-// first character, KeyError for a dict, TypeError for anything else.
-func pyFirstItem(value any) (any, error) {
-	switch v := value.(type) {
-	case []any:
-		return v[0], nil
-	case string:
-		for _, r := range v {
-			return string(r), nil
-		}
-	case *jsonx.Object:
-		return nil, pyError("KeyError", "0")
-	}
-	return nil, pyError("TypeError", "'"+pyTypeName(value)+"' object is not subscriptable")
-}
-
-// ProviderProxyName is provider_proxy_name: project the native name
-// overrides emitted by the chain compiler onto an original provider name.
-func ProviderProxyName(proxy, override *jsonx.Object) (string, error) {
-	nameValue, err := compatItem(proxy, "name")
-	if err != nil {
-		return "", err
-	}
-	rulesValue := override.GetOr("proxy-name", []any{})
-	name, isName := nameValue.(string)
-	if jsonx.Truthy(rulesValue) {
-		first, err := pyFirstItem(rulesValue)
-		if err != nil {
-			return "", err
-		}
-		targetValue, err := compatItem(first, "target")
-		if err != nil {
-			return "", err
-		}
-		target, isText := targetValue.(string)
-		if !isText {
-			return "", attributeError(targetValue, "rsplit")
-		}
-		if !isName {
-			return "", attributeError(nameValue, "startswith")
-		}
-		if strings.HasPrefix(name, pyRsplitFirst(target, "_", 2)+"_") {
-			return "", dialerError("Provider 原始节点名称与代理链私有排序标记冲突")
-		}
-	}
-	ruleList, err := compatList(override.GetOr("proxy-name", []any{}))
-	if err != nil {
-		return "", err
-	}
-	invalid := dialerError("Provider 名称转换规则无效")
-	for _, ruleValue := range ruleList {
-		patternValue, err := compatItem(ruleValue, "pattern")
-		if err != nil {
-			return "", err
-		}
-		pattern, isText := patternValue.(string)
-		if !isText {
-			return "", pyError("TypeError", "first argument must be string or compiled pattern")
-		}
-		// re.sub compiles the pattern before it looks at the string.
-		re, err := rules.CompilePyRegex(pattern, false)
-		if err != nil {
-			if class := regexCrash(err); class != "" {
-				return "", pyError(class, err.Error())
-			}
-			return "", invalid
-		}
-		if !isName {
-			return "", pyError("TypeError", "expected string or bytes-like object, got '"+pyTypeName(nameValue)+"'")
-		}
-		rule := ruleValue.(*jsonx.Object)
-		name, err = re.Sub(name, func(m *rules.Match) (string, error) {
-			targetValue, err := compatItem(rule, "target")
-			if err != nil {
-				return "", err
-			}
-			target, isText := targetValue.(string)
-			if !isText {
-				return "", pyError("TypeError", "expected string or bytes-like object, got '"+pyTypeName(targetValue)+"'")
-			}
-			groups := make([]string, m.Groups()+1)
-			for i := range groups {
-				groups[i], _ = m.Group(i)
-			}
-			return expandTarget(target, groups)
-		}, 0)
-		if err != nil {
-			if errors.Is(err, rules.ErrMatchTimeout) || PyErrorClass(err) == "IndexError" {
-				return "", invalid
-			}
-			return "", err
-		}
-	}
-	prefix, suffix := override.GetOr("additional-prefix", ""), override.GetOr("additional-suffix", "")
-	prefixText, ok1 := prefix.(string)
-	suffixText, ok2 := suffix.(string)
-	switch {
-	case !ok1:
-		return "", pyError("TypeError", "unsupported operand type(s) for +: '"+pyTypeName(prefix)+"' and '"+pyTypeName(nameValue)+"'")
-	case !isName:
-		return "", pyError("TypeError", "can only concatenate str (not \""+pyTypeName(nameValue)+"\") to str")
-	case !ok2:
-		return "", pyError("TypeError", "can only concatenate str (not \""+pyTypeName(suffix)+"\") to str")
-	}
-	return prefixText + name + suffixText, nil
-}
-
-// pyRsplitFirst is s.rsplit(sep, maxsplit)[0].
-func pyRsplitFirst(s, sep string, maxsplit int) string {
-	for ; maxsplit > 0; maxsplit-- {
-		i := strings.LastIndex(s, sep)
-		if i < 0 {
-			break
-		}
-		s = s[:i]
-	}
-	return s
-}
-
-// EmitOptions are the keyword arguments of validate_emitted.
-type EmitOptions struct {
-	ForceChains bool
-	// ProviderProxies is provider_proxies: {provider name: [proxy, ...]}.
-	ProviderProxies  *jsonx.Object
-	RequireProviders bool
-}
-
-func nameKey(v any) (Ref, error) {
-	key, err := hashID(v)
-	return Ref{"name", key}, err
-}
-
-func objectsOf(v any) ([]*jsonx.Object, error) {
-	list, err := compatList(v)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]*jsonx.Object, 0, len(list))
-	for _, item := range list {
-		obj, err := compatObject(item)
+// FilterProxyNodes selects original provider nodes without copying or expanding them.
+func FilterProxyNodes(proxies []*yamlx.Node, spec FilterSpec) ([]*yamlx.Node, error) {
+	candidates := make([]providerCandidate, 0, len(proxies))
+	for _, proxy := range proxies {
+		candidate, err := candidateFromNode(proxy)
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, obj)
+		candidates = append(candidates, candidate)
 	}
-	return out, nil
+	selected, err := filterCandidates(candidates, spec)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]*yamlx.Node, 0, len(selected))
+	for _, candidate := range selected {
+		result = append(result, candidate.node)
+	}
+	return result, nil
 }
 
-var builtinNames = []string{"DIRECT", "REJECT", "REJECT-DROP", "PASS", "PASS-RULE", "COMPATIBLE"}
+var providerGroupPlaceholder = regexp.MustCompile(`\$([\p{Nd}]+)`)
 
-// ValidateEmitted is validate_emitted: the dialer topology of a generated
-// Mihomo document (with provider payloads when known) has no dangling
-// names, duplicates, cycles or empty dialer groups. Values are read in
-// Python's order, so a malformed provider definition or payload entry raises
-// where Python first touches it.
-func ValidateEmitted(config *jsonx.Object, opts EmitOptions) error {
-	proxiesValue, groupsValue := config.GetOr("proxies", []any{}), config.GetOr("proxy-groups", []any{})
-	proxyList, ok1 := proxiesValue.([]any)
-	groupList, ok2 := groupsValue.([]any)
-	if !ok1 || !ok2 {
-		return pyError("TypeError", "can only concatenate list to list")
-	}
-	all := append(append([]any{}, proxyList...), groupList...)
-	definitionsValue := config.GetOr("proxy-providers", jsonx.NewObject())
-	definitions, definitionsOK := definitionsValue.(*jsonx.Object)
-	if definitions == nil {
-		definitionsOK = false
-	}
-	definitionsError := func(method string) error { return attributeError(definitionsValue, method) }
-	payloads := opts.ProviderProxies
-	if payloads == nil {
-		payloads = jsonx.NewObject()
-	}
+func expandProviderTarget(target string, match *rules.Match) (string, error) {
+	var failure error
+	result := providerGroupPlaceholder.ReplaceAllStringFunc(target, func(part string) string {
+		// Native group ordinals are ASCII. Preserve the entire spelling of a
+		// non-ASCII ordinal, including a mixed ordinal, as literal text.
+		if strings.ContainsFunc(part[1:], func(r rune) bool { return r < '0' || r > '9' }) {
+			return part
+		}
+		index, err := strconv.Atoi(part[1:])
+		if err != nil || index > match.Groups() {
+			failure = errors.New(msgProviderNameRule)
+			return ""
+		}
+		value, _ := match.Group(index)
+		return value
+	})
+	return result, failure
+}
 
-	active := opts.ForceChains
-	for _, item := range all {
-		if active {
-			break
-		}
-		obj, err := compatObject(item)
-		if err != nil {
-			return err
-		}
-		active = obj.Value("dialer-proxy") != nil
-	}
-	if !active {
-		if !definitionsOK {
-			return definitionsError("values")
-		}
-		for _, value := range definitions.Values() {
-			definition, err := compatObject(value)
-			if err != nil {
-				return err
-			}
-			override, err := compatObject(definition.GetOr("override", jsonx.NewObject()))
-			if err != nil {
-				return err
-			}
-			if active = jsonx.Truthy(override.Value("dialer-proxy")); active {
+// ProviderName applies the typed chain-name override to one original name.
+func ProviderName(name string, override NameOverride) (string, error) {
+	if len(override.Rules) > 0 {
+		marker := override.Rules[0].Target
+		for range 2 {
+			if index := strings.LastIndexByte(marker, '_'); index >= 0 {
+				marker = marker[:index]
+			} else {
 				break
 			}
 		}
+		if strings.HasPrefix(name, marker+"_") {
+			return "", errors.New(msgProviderMarker)
+		}
 	}
-	if !active {
-	payloadScan:
-		for _, value := range payloads.Values() {
-			list, err := compatList(value)
-			if err != nil {
-				return err
-			}
-			for _, item := range list {
-				p, err := compatObject(item)
-				if err != nil {
-					return err
-				}
-				if p.Value("dialer-proxy") != nil {
-					active = true
-					break payloadScan
-				}
+	for _, rule := range override.Rules {
+		pattern, err := rules.CompilePyRegex(rule.Pattern, false)
+		if err != nil {
+			return "", errors.New(msgProviderNameRule)
+		}
+		name, err = pattern.Sub(name, func(match *rules.Match) (string, error) { return expandProviderTarget(rule.Target, match) }, 0)
+		if err != nil {
+			return "", errors.New(msgProviderNameRule)
+		}
+	}
+	return override.Prefix + name + override.Suffix, nil
+}
+
+// TopologyOptions supplies optional verified Provider payloads.
+type TopologyOptions struct {
+	ForceChains, RequireProviders bool
+	ProviderProxies               map[string][]*yamlx.Node
+}
+
+func emittedString(node *yamlx.Node, key string) (string, error) {
+	value := yamlx.Resolve(yamlx.Get(node, key))
+	if value == nil {
+		return "", nil
+	}
+	if value.Kind != yaml.ScalarNode || value.ShortTag() != "!!str" {
+		return "", errors.New(msgTopologyShape)
+	}
+	return value.Value, nil
+}
+
+func requiredEmittedString(node *yamlx.Node, key string) (string, error) {
+	if yamlx.Get(node, key) == nil {
+		return "", errors.New(msgTopologyShape)
+	}
+	return emittedString(node, key)
+}
+func emittedList(node *yamlx.Node, key string) ([]*yamlx.Node, error) {
+	value := yamlx.Resolve(yamlx.Get(node, key))
+	if value == nil {
+		return nil, nil
+	}
+	if value.Kind != yaml.SequenceNode {
+		return nil, errors.New(msgTopologyShape)
+	}
+	return value.Content, nil
+}
+func emittedNames(node *yamlx.Node, key string) ([]string, error) {
+	items, err := emittedList(node, key)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]string, 0, len(items))
+	for _, item := range items {
+		item = yamlx.Resolve(item)
+		if item == nil || item.Kind != yaml.ScalarNode || item.ShortTag() != "!!str" {
+			return nil, errors.New(msgTopologyShape)
+		}
+		result = append(result, item.Value)
+	}
+	return result, nil
+}
+func emittedFilter(node *yamlx.Node) (FilterSpec, error) {
+	include, err := emittedString(node, "filter")
+	if err != nil {
+		return FilterSpec{}, err
+	}
+	exclude, err := emittedString(node, "exclude-filter")
+	if err != nil {
+		return FilterSpec{}, err
+	}
+	kind, err := emittedString(node, "exclude-type")
+	return FilterSpec{include, exclude, kind}, err
+}
+func presentTarget(node *yamlx.Node) (*yamlx.Node, bool) {
+	value := yamlx.Resolve(yamlx.Get(node, "dialer-proxy"))
+	if value == nil {
+		return nil, false
+	}
+	if value.ShortTag() == "!!null" {
+		return nil, true
+	}
+	return value, true
+}
+func emittedOverride(node *yamlx.Node) (*yamlx.Node, NameOverride, error) {
+	value := yamlx.Resolve(yamlx.Get(node, "override"))
+	if value == nil {
+		value = yamlx.Map()
+	}
+	if value.Kind != yaml.MappingNode {
+		return nil, NameOverride{}, errors.New(msgTopologyShape)
+	}
+	result, err := nameOverrideFromNode(value)
+	return value, result, err
+}
+
+// nameOverrideFromNode uses the engine's exact, case-sensitive keys. A plain
+// encoding/json struct decoder would also accept "Additional-Prefix", which
+// the engine and the old exact-key reader intentionally ignore.
+func nameOverrideFromNode(node *yamlx.Node) (NameOverride, error) {
+	var result NameOverride
+	node = yamlx.Resolve(node)
+	if node == nil || node.ShortTag() == "!!null" {
+		return result, nil
+	}
+	if node.Kind != yaml.MappingNode {
+		return result, errors.New(msgProviderNameRule)
+	}
+	var err error
+	result.Prefix, err = emittedString(node, "additional-prefix")
+	if err != nil {
+		return result, errors.New(msgProviderNameRule)
+	}
+	result.Suffix, err = emittedString(node, "additional-suffix")
+	if err != nil {
+		return result, errors.New(msgProviderNameRule)
+	}
+	items, err := emittedList(node, "proxy-name")
+	if err != nil {
+		return result, errors.New(msgProviderNameRule)
+	}
+	for _, item := range items {
+		item = yamlx.Resolve(item)
+		if item == nil || item.Kind != yaml.MappingNode || yamlx.Get(item, "pattern") == nil || yamlx.Get(item, "target") == nil {
+			return result, errors.New(msgProviderNameRule)
+		}
+		pattern, err := emittedString(item, "pattern")
+		if err != nil {
+			return result, errors.New(msgProviderNameRule)
+		}
+		target, err := emittedString(item, "target")
+		if err != nil {
+			return result, errors.New(msgProviderNameRule)
+		}
+		result.Rules = append(result.Rules, NameRule{Pattern: pattern, Target: target})
+	}
+	return result, nil
+}
+
+// ValidateTopology checks a generated document and its verified provider candidates.
+func ValidateTopology(document *yamlx.Node, opts TopologyOptions) error {
+	if _, err := yamlx.Encode(document); err != nil {
+		return err
+	}
+	if root := yamlx.Resolve(document); root == nil || root.Kind != yaml.MappingNode {
+		return errors.New(msgTopologyShape)
+	}
+	proxies, err := emittedList(document, "proxies")
+	if err != nil {
+		return err
+	}
+	groupNodes, err := emittedList(document, "proxy-groups")
+	if err != nil {
+		return err
+	}
+	objects := append(slices.Clone(proxies), groupNodes...)
+	definitions := yamlx.Resolve(yamlx.Get(document, "proxy-providers"))
+	if definitions == nil {
+		definitions = yamlx.Map()
+	}
+	if definitions.Kind != yaml.MappingNode {
+		return errors.New(msgTopologyShape)
+	}
+	active := opts.ForceChains
+	for _, node := range objects {
+		if target, _ := presentTarget(node); target != nil {
+			active = true
+		}
+	}
+	for _, definition := range yamlx.Pairs(definitions) {
+		override := yamlx.Get(definition, "override")
+		if target, _ := presentTarget(override); target != nil && scalarText(target) != "" {
+			active = true
+		}
+	}
+	for _, payload := range opts.ProviderProxies {
+		for _, proxy := range payload {
+			if target, _ := presentTarget(proxy); target != nil {
+				active = true
 			}
 		}
 	}
 	if !active {
 		return nil
 	}
-
-	objects, err := objectsOf(all)
-	if err != nil {
-		return err
-	}
-	builtins := map[Ref]bool{}
-	for _, name := range builtinNames {
-		builtins[Ref{"name", name}] = true
-	}
-	available := map[Ref]bool{}
-	invalidNames := false
-	for _, obj := range objects {
-		key, err := nameKey(obj.Value("name"))
+	available := map[string]bool{}
+	byName := map[string]providerCandidate{}
+	for _, node := range objects {
+		candidate, err := candidateFromNode(node)
 		if err != nil {
 			return err
 		}
-		if available[key] {
-			invalidNames = true
+		if candidate.name == "" || available[candidate.name] || dialerBuiltinNames[candidate.name] {
+			return errors.New(msgEmittedNames)
 		}
-		available[key] = true
+		available[candidate.name] = true
+		byName[candidate.name] = candidate
 	}
-	for _, obj := range objects {
-		name := obj.Value("name")
-		key, _ := nameKey(name)
-		if !jsonx.Truthy(name) || builtins[key] {
-			invalidNames = true
-		}
-	}
-	if invalidNames {
-		return dialerError("生成的代理/策略组名称重复或与内置策略冲突")
-	}
-	for key := range builtins {
-		available[key] = true
-	}
-	if !definitionsOK {
-		return definitionsError("items")
+	for name := range dialerBuiltinNames {
+		available[name] = true
 	}
 	graph := newRefGraph()
-	candidates := map[string][]*jsonx.Object{}
-	for _, name := range definitions.Keys() {
-		definitionValue := definitions.Value(name)
-		if !payloads.Has(name) {
+	candidates := map[string][]providerCandidate{}
+	for name, definition := range yamlx.Pairs(definitions) {
+		payload, ok := opts.ProviderProxies[name]
+		if !ok {
 			if opts.RequireProviders {
-				return dialerError("拨号拓扑缺少已验证的 Provider 内容")
+				return errors.New(msgProviderPayloadMissing)
 			}
 			continue
 		}
-		payload, err := compatList(payloads.Value(name))
-		if err != nil {
-			return err
-		}
-		rawNames := make([]any, 0, len(payload))
-		for _, p := range payload {
-			value, err := compatItem(p, "name")
+		seen := map[string]bool{}
+		for _, node := range payload {
+			candidate, err := candidateFromNode(node)
 			if err != nil {
 				return err
 			}
-			rawNames = append(rawNames, value)
+			if seen[candidate.name] {
+				return errors.New(msgProviderDuplicate)
+			}
+			seen[candidate.name] = true
 		}
-		seenNames := map[Ref]bool{}
-		for _, value := range rawNames {
-			key, err := nameKey(value)
+		spec, err := emittedFilter(definition)
+		if err != nil {
+			return err
+		}
+		selected, err := FilterProxyNodes(payload, spec)
+		if err != nil {
+			return err
+		}
+		if len(selected) == 0 {
+			return errors.New(msgProviderFilteredEmpty)
+		}
+		override, naming, err := emittedOverride(definition)
+		if err != nil {
+			return err
+		}
+		for _, proxy := range selected {
+			candidate, err := candidateFromNode(proxy)
 			if err != nil {
 				return err
 			}
-			if seenNames[key] {
-				return dialerError("Provider 节点名称重复")
-			}
-			seenNames[key] = true
-		}
-		definition, err := compatObject(definitionValue)
-		if err != nil {
-			return err
-		}
-		proxies, err := objectsOf(payload)
-		if err != nil {
-			return err
-		}
-		proxies, err = FilterProviderCandidates(proxies, definition.GetOr("filter", ""),
-			definition.GetOr("exclude-filter", ""), definition.GetOr("exclude-type", ""))
-		if err != nil {
-			return err
-		}
-		if len(proxies) == 0 {
-			return dialerError("拨号拓扑 Provider 过滤后不能为空")
-		}
-		override, err := compatObject(definition.GetOr("override", jsonx.NewObject()))
-		if err != nil {
-			return err
-		}
-		candidates[name] = []*jsonx.Object{}
-		for _, proxy := range proxies {
-			emitted, err := ProviderProxyName(proxy, override)
+			candidate.name, err = ProviderName(candidate.name, naming)
 			if err != nil {
 				return err
 			}
-			key := Ref{"provider", name + "\x00" + emitted}
-			if builtins[Ref{"name", emitted}] ||
-				(available[Ref{"name", emitted}] && jsonx.Truthy(override.Value("additional-prefix"))) {
-				return dialerError("Provider 节点名称与代理拓扑冲突")
+			candidate.ref = Ref{"provider", name + "\x00" + candidate.name}
+			if dialerBuiltinNames[candidate.name] || available[candidate.name] && naming.Prefix != "" {
+				return errors.New(msgProviderConflict)
 			}
-			var target any
-			if v, ok := override.Get("dialer-proxy"); ok {
-				target = v
-			} else if v, ok := definition.Get("dialer-proxy"); ok {
-				target = v
-			} else {
-				target = proxy.Value("dialer-proxy")
+			target, present := presentTarget(override)
+			if !present {
+				target, present = presentTarget(definition)
+			}
+			if !present {
+				target, _ = presentTarget(proxy)
 			}
 			var children []Ref
 			if target != nil {
-				text, isText := target.(string)
-				if !isText || !available[Ref{"name", text}] {
-					return dialerError("Provider 节点「" + emitted + "」的 dialer-proxy「" + jsonx.Str(target) +
-						"」引用了不存在的代理或策略组；若它是机场订阅自带的中转分组，在「订阅来源」刷新该订阅后 ConfigFlow 会自动补上")
+				value := scalarText(target)
+				if target.ShortTag() != "!!str" || !available[value] {
+					return fmt.Errorf(msgProviderTarget, candidate.name, value)
 				}
-				children = []Ref{{"name", text}}
+				children = []Ref{{"name", value}}
 			}
-			graph.set(key, children)
-			typeValue := proxy.GetOr("type", "")
-			candidates[name] = append(candidates[name], jsonx.Obj("name", emitted, "key", key, "type", typeValue))
+			graph.set(candidate.ref, children)
+			candidates[name] = append(candidates[name], candidate)
 		}
 	}
-	groups := map[Ref]*jsonx.Object{}
+	groups := map[string]*yamlx.Node{}
 	var groupOrder []Ref
-	groupObjects, _ := objectsOf(groupList)
-	for _, g := range groupObjects {
-		value, err := compatItem(g, "name")
+	for _, node := range groupNodes {
+		name, err := emittedString(node, "name")
 		if err != nil {
 			return err
 		}
-		key, _ := nameKey(value)
-		if _, ok := groups[key]; !ok {
-			groupOrder = append(groupOrder, key)
+		if _, ok := groups[name]; !ok {
+			groupOrder = append(groupOrder, Ref{"name", name})
 		}
-		groups[key] = g
+		groups[name] = node
 	}
-	byName := map[Ref]*jsonx.Object{}
-	for _, o := range objects {
-		value, err := compatItem(o, "name")
+	for _, node := range objects {
+		name, err := emittedString(node, "name")
 		if err != nil {
 			return err
 		}
-		key, _ := nameKey(value)
-		byName[key] = o
-	}
-	for _, obj := range objects {
-		childValue := obj.GetOr("proxies", []any{})
-		childList, ok := childValue.([]any)
-		if !ok {
-			return pyError("TypeError", "'"+pyTypeName(childValue)+"' object is not a list")
+		names, err := emittedNames(node, "proxies")
+		if err != nil {
+			return err
 		}
-		var children []Ref
-		var childNames []any
-		seen := map[Ref]bool{}
-		duplicate := false
-		for _, n := range childList {
-			key, err := nameKey(n)
+		children := []Ref{}
+		seen := map[string]bool{}
+		for _, child := range names {
+			if seen[child] {
+				return errors.New(msgGroupCandidatesDuplicate)
+			}
+			seen[child] = true
+			children = append(children, Ref{"name", child})
+		}
+		for _, child := range names {
+			if !available[child] {
+				return errors.New(msgEmittedCandidateMissing)
+			}
+		}
+		if _, isGroup := groups[name]; isGroup {
+			static := make([]providerCandidate, 0, len(names))
+			for _, child := range names {
+				candidate, ok := byName[child]
+				if !ok {
+					candidate = providerCandidate{name: child, kind: child}
+				}
+				static = append(static, candidate)
+			}
+			spec, err := emittedFilter(node)
 			if err != nil {
 				return err
 			}
-			if seen[key] {
-				duplicate = true
-			}
-			seen[key] = true
-			children = append(children, key)
-			childNames = append(childNames, n)
-		}
-		if duplicate {
-			return dialerError("策略组候选名称重复")
-		}
-		for _, key := range children {
-			if !available[key] {
-				return dialerError("拨号拓扑中的策略组引用了未生成的代理或策略组")
-			}
-		}
-		objKey, _ := nameKey(obj.Value("name"))
-		if _, isGroup := groups[objKey]; isGroup {
-			static := make([]*jsonx.Object, 0, len(childNames))
-			for i, n := range childNames {
-				if o, ok := byName[children[i]]; ok {
-					static = append(static, o)
-				} else {
-					static = append(static, jsonx.Obj("name", n, "type", n))
-				}
-			}
-			kept, err := FilterProviderCandidates(static, "", obj.GetOr("exclude-filter", ""), obj.GetOr("exclude-type", ""))
+			spec.Include = ""
+			kept, err := filterCandidates(static, spec)
 			if err != nil {
 				return err
 			}
-			children = children[:0:0]
-			for _, p := range kept {
-				key, _ := nameKey(p.Value("name"))
-				children = append(children, key)
+			children = nil
+			for _, candidate := range kept {
+				children = append(children, Ref{"name", candidate.name})
 			}
 		}
-		candidateNames := map[Ref]bool{}
-		for _, key := range children {
-			candidateNames[key] = true
+		candidateNames := map[string]bool{}
+		for _, child := range children {
+			candidateNames[child.ID] = true
 		}
-		if target := obj.Value("dialer-proxy"); target != nil {
-			text, isText := target.(string)
-			if !isText || !available[Ref{"name", text}] {
-				return dialerError("生成的 dialer-proxy 引用了不存在的代理或策略组")
+		if target, _ := presentTarget(node); target != nil {
+			value := scalarText(target)
+			if target.ShortTag() != "!!str" || !available[value] {
+				return errors.New(msgEmittedTargetMissing)
 			}
-			children = append(children, Ref{"name", text})
+			children = append(children, Ref{"name", value})
 		}
-		useList, err := compatList(obj.GetOr("use", []any{}))
+		use, err := emittedNames(node, "use")
 		if err != nil {
 			return err
 		}
-		for _, providerValue := range useList {
-			provider, isText := providerValue.(string)
-			if !isText || !definitions.Has(provider) {
-				if err := hashable(providerValue); err != nil {
-					return err
-				}
-				return dialerError("策略组引用了未生成的 Provider")
+		for _, provider := range use {
+			if yamlx.Get(definitions, provider) == nil {
+				return errors.New(msgEmittedProviderMissing)
 			}
-			selected, err := FilterProviderCandidates(candidates[provider], obj.GetOr("filter", ""),
-				obj.GetOr("exclude-filter", ""), obj.GetOr("exclude-type", ""))
+			spec, err := emittedFilter(node)
+			if err != nil {
+				return err
+			}
+			selected, err := filterCandidates(candidates[provider], spec)
 			if err != nil {
 				return err
 			}
 			for _, candidate := range selected {
-				key := Ref{"name", candidate.GetString("name")}
-				if candidateNames[key] {
-					return dialerError("策略组候选名称重复")
+				if candidateNames[candidate.name] {
+					return errors.New(msgGroupCandidatesDuplicate)
 				}
-				candidateNames[key] = true
-				children = append(children, candidate.Value("key").(Ref))
+				candidateNames[candidate.name] = true
+				children = append(children, candidate.ref)
 			}
 		}
-		graph.set(objKey, children)
+		graph.set(Ref{"name", name}, children)
 	}
 	if err := checkCycles(graph); err != nil {
 		return err
 	}
-	// Empty group auto-DIRECT must never be a dialer or an independently lowered exit.
 	var pending []Ref
-	for _, o := range objects {
-		if target := o.Value("dialer-proxy"); jsonx.Truthy(target) {
-			key, err := nameKey(target)
-			if err != nil {
-				return err
-			}
-			pending = append(pending, key)
+	for _, node := range objects {
+		if target, _ := presentTarget(node); target != nil && scalarText(target) != "" {
+			pending = append(pending, Ref{"name", target.Value})
 		}
 	}
-	for _, value := range definitions.Values() {
-		definition, err := compatObject(value)
-		if err != nil {
-			return err
-		}
-		override, err := compatObject(definition.GetOr("override", jsonx.NewObject()))
-		if err != nil {
-			return err
-		}
-		if target := override.Value("dialer-proxy"); jsonx.Truthy(target) {
-			key, err := nameKey(target)
-			if err != nil {
-				return err
-			}
-			pending = append(pending, key)
+	for _, definition := range yamlx.Pairs(definitions) {
+		if target, _ := presentTarget(yamlx.Get(definition, "override")); target != nil && scalarText(target) != "" {
+			pending = append(pending, Ref{"name", target.Value})
 		}
 	}
 	if opts.RequireProviders {
 		pending = append(pending, groupOrder...)
 	}
-	visited := map[Ref]bool{}
+	seen := map[Ref]bool{}
 	for len(pending) > 0 {
 		key := pending[len(pending)-1]
 		pending = pending[:len(pending)-1]
-		if visited[key] {
+		if seen[key] {
 			continue
 		}
-		visited[key] = true
-		if group, ok := groups[key]; ok && len(graph.children[key]) == 0 &&
-			(opts.RequireProviders || !jsonx.Truthy(group.Value("use"))) {
-			return dialerError("拨号策略组过滤后没有可用候选")
+		seen[key] = true
+		if group, ok := groups[key.ID]; key.Kind == "name" && ok && len(graph.children[key]) == 0 {
+			use, err := emittedNames(group, "use")
+			if err != nil {
+				return err
+			}
+			if opts.RequireProviders || len(use) == 0 {
+				return errors.New(msgEmittedGroupEmpty)
+			}
 		}
 		pending = append(pending, graph.children[key]...)
 	}
 	return nil
 }
 
-// RejectSurgeDialers is reject_surge_dialers(profile, client): Surge and
-// Loon cannot express proxy chains or dialer-proxy. Groups and nodes are
-// read one at a time, as Python's any() and loop do.
-func RejectSurgeDialers(ctx context.Context, profile *jsonx.Object, client string, converter ProxyStringConverter) error {
-	groups, err := compatList(profile.GetOr("proxy_groups", []any{}))
-	if err != nil {
-		return err
-	}
-	for _, item := range groups {
-		g, err := compatObject(item)
-		if err != nil {
-			return err
-		}
-		if jsonx.Equal(g.Value("type"), "chain") && compatEnabled(g) {
-			return dialerError(client + " 暂不支持代理链，请使用 Mihomo 或禁用代理链")
+// RejectUnsupportedDialers refuses topology the target client cannot represent.
+func RejectUnsupportedDialers(ctx context.Context, config *model.Config, client string, converter NodeConverter) error {
+	for _, group := range configGroups(config) {
+		if group.Type == "chain" && enabled(group.Enabled) {
+			return fmt.Errorf(msgClientChain, client)
 		}
 	}
-	nodes, err := compatList(profile.GetOr("nodes", []any{}))
-	if err != nil {
-		return err
+	if config == nil {
+		return nil
 	}
-	for _, item := range nodes {
-		node, err := compatObject(item)
-		if err != nil {
-			return err
-		}
-		if !compatEnabled(node) {
+	for _, node := range config.Nodes {
+		if !enabled(node.Enabled) {
 			continue
 		}
-		raw := any(nil)
-		if node.Value("dialer_ref") == nil {
-			if raw, err = rawDialer(node); err != nil {
-				return err
-			}
-		}
-		if node.Value("dialer_ref") != nil || raw != nil {
-			return dialerError(client + " 暂不支持 Mihomo 拨号代理拓扑，请使用 Mihomo 或显式移除拨号配置")
-		}
-		if jsonx.Truthy(node.Value("proxy_string")) {
-			proxy, err := ConvertNodeToMihomo(ctx, node, converter)
+		var raw *yamlx.Node
+		var err error
+		if node.DialerRef == nil {
+			raw, err = NodeDialer(node)
 			if err != nil {
 				return err
 			}
-			if proxy != nil && proxy.Len() > 0 && proxy.Value("dialer-proxy") != nil {
-				return dialerError(client + " 暂不支持转换结果中的 dialer-proxy")
+		}
+		if node.DialerRef != nil || raw != nil {
+			return fmt.Errorf(msgClientDialer, client)
+		}
+		if node.ProxyString != nil && *node.ProxyString != "" {
+			proxy, err := NodeProxy(ctx, node, converter)
+			if err != nil {
+				return err
+			}
+			if target, _ := presentTarget(proxy); target != nil {
+				return fmt.Errorf(msgClientConvertedDialer, client)
 			}
 		}
 	}
 	return nil
 }
 
-// DependencyNodeIDs is dependency_node_ids: the node ids in the dependency
-// closure of the selected manual nodes.
-func DependencyNodeIDs(profile *jsonx.Object, selected []string, includeRoots bool) (map[string]bool, error) {
-	graph, err := dependencyGraph(profile)
+// RequiredNodes returns manual node IDs in the selected dependency closures.
+func RequiredNodes(config *model.Config, selected []string, includeRoots bool) (map[string]bool, error) {
+	graph, err := BuildDialerGraph(config)
 	if err != nil {
 		return nil, err
 	}
@@ -1070,14 +723,14 @@ func DependencyNodeIDs(profile *jsonx.Object, selected []string, includeRoots bo
 			pending = append(pending, graph.children[root]...)
 		}
 	}
-	visited := map[Ref]bool{}
+	seen := map[Ref]bool{}
 	for len(pending) > 0 {
 		key := pending[len(pending)-1]
 		pending = pending[:len(pending)-1]
-		if visited[key] {
+		if seen[key] {
 			continue
 		}
-		visited[key] = true
+		seen[key] = true
 		if key.Kind == "node" {
 			result[key.ID] = true
 		}

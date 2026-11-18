@@ -147,7 +147,7 @@ func TestCommonTypedDefaultsAndMalformedStorage(t *testing.T) {
 }
 
 func TestCommonCoreHasNoLegacyDependency(t *testing.T) {
-	for _, name := range []string{"common.go", "mihomo_nodes.go", "proxyyaml.go", "easytier.go"} {
+	for _, name := range []string{"common.go", "mihomo_nodes.go", "proxyyaml.go", "easytier.go", "dialers.go", "dialers_api.go"} {
 		file, err := parser.ParseFile(token.NewFileSet(), name, nil, 0)
 		if err != nil {
 			t.Fatal(err)
@@ -157,7 +157,7 @@ func TestCommonCoreHasNoLegacyDependency(t *testing.T) {
 				t.Errorf("%s imports legacy %s", name, imp.Path.Value)
 			}
 		}
-		forbidden := map[string]bool{"any": true, "dictGet": true, "raise": true, "catch": true, "must": true, "pyError": true, "decodeLegacy": true, "configFromLegacy": true, "encodeLegacy": true, "FixProxyFields": true, "ApplyGithubProxyDomain": true, "MihomoUsedPorts": true, "MihomoListenPorts": true, "ParseStructuredProxyString": true, "InspectStructuredProxyString": true, "ConvertNodeToMihomo": true, "ProxyStringConverter": true, "ConversionResults": true, "WithNodeConversions": true, "EnsureNodeConversions": true, "readDocumentYAML": true}
+		forbidden := map[string]bool{"any": true, "dictGet": true, "raise": true, "catch": true, "must": true, "pyError": true, "decodeLegacy": true, "configFromLegacy": true, "encodeLegacy": true, "FixProxyFields": true, "ApplyGithubProxyDomain": true, "MihomoUsedPorts": true, "MihomoListenPorts": true, "ParseStructuredProxyString": true, "InspectStructuredProxyString": true, "ConvertNodeToMihomo": true, "ProxyStringConverter": true, "ConversionResults": true, "WithNodeConversions": true, "EnsureNodeConversions": true, "readDocumentYAML": true, "ValidateShapes": true, "ValidateDialers": true, "DependencyGraph": true, "RawDialer": true, "DialerTarget": true, "GroupMembers": true, "GroupDependencies": true, "CheckCycles": true, "IncomingDialers": true, "ResolveDialer": true, "OverlayDialer": true, "FilterProviderCandidates": true, "ProviderProxyName": true, "ValidateEmitted": true, "RejectSurgeDialers": true, "DependencyNodeIDs": true}
 		ast.Inspect(file, func(n ast.Node) bool {
 			if id, ok := n.(*ast.Ident); ok && forbidden[id.Name] {
 				t.Errorf("%s references %s", name, id.Name)

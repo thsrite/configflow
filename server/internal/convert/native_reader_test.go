@@ -9,6 +9,7 @@ import (
 	"unsafe"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/yamlx"
 )
 
@@ -43,7 +44,7 @@ func TestNativeProxyPolicyErrorsDoNotReachSubStore(t *testing.T) {
 			if len(converter.calls) != 0 || cacheLen() != 0 {
 				t.Fatal("invalid document was retried or cached")
 			}
-			if _, err := rawDialer(jsonx.Obj("proxy_string", tc.source)); !errors.Is(err, tc.kind) {
+			if _, err := NodeDialer(model.Node{ProxyString: &tc.source}); !errors.Is(err, tc.kind) {
 				t.Fatalf("dialer: %v", err)
 			}
 		})
