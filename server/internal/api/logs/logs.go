@@ -8,17 +8,16 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 	"unicode/utf8"
 
 	"configflow/internal/httpx"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/rules"
 )
@@ -106,12 +105,27 @@ func pathStr(p string) string {
 func pathJoin(dir, name string) string { return pathStr(dir + "/" + name) }
 
 func errorResponse(err error, withLogs bool) *httpx.Response {
-	payload := jsonx.Obj("success", false, "error", pyOSErrorText(err))
 	if withLogs {
-		payload.Set("logs", []any{})
-		payload.Set("total_lines", 0)
+		return httpx.JSONStatus(500, struct {
+			Success bool     `json:"success"`
+			Error   string   `json:"error"`
+			Logs    []string `json:"logs"`
+			Total   int      `json:"total_lines"`
+		}{false, err.Error(), []string{}, 0})
 	}
-	return httpx.JSONStatus(500, payload)
+	return httpx.JSONStatus(500, struct {
+		Success bool   `json:"success"`
+		Error   string `json:"error"`
+	}{false, err.Error()})
+}
+
+type tailResponse struct {
+	Success  bool     `json:"success"`
+	Logs     []string `json:"logs"`
+	Total    int      `json:"total_lines"`
+	Filtered *int     `json:"filtered_lines,omitempty"`
+	File     string   `json:"log_file,omitempty"`
+	Message  string   `json:"message,omitempty"`
 }
 
 func getLogs(c *httpx.Ctx) (*httpx.Response, error) {
@@ -128,8 +142,7 @@ func getLogs(c *httpx.Ctx) (*httpx.Response, error) {
 		return errorResponse(err, true), nil
 	}
 	if !present {
-		return httpx.JSON(jsonx.Obj("success", true, "logs", []any{}, "total_lines", 0,
-			"message", "日志文件不存在: "+logPath)), nil
+		return httpx.JSON(tailResponse{Success: true, Logs: []string{}, Message: fmt.Sprintf(msgMissingPath, logPath)}), nil
 	}
 	file, err := openFile(logPath)
 	if err != nil {
@@ -156,7 +169,7 @@ func getLogs(c *httpx.Ctx) (*httpx.Response, error) {
 		}
 	}
 	searchLower := pyLower(search)
-	filtered := []any{}
+	filtered := []string{}
 	for _, line := range logLines {
 		if search != "" && !strings.Contains(pyLower(line), searchLower) {
 			continue
@@ -166,8 +179,7 @@ func getLogs(c *httpx.Ctx) (*httpx.Response, error) {
 		}
 		filtered = append(filtered, strings.TrimRight(line, "\n"))
 	}
-	return httpx.JSON(jsonx.Obj("success", true, "logs", filtered, "total_lines", total,
-		"filtered_lines", len(filtered), "log_file", logPath)), nil
+	return httpx.JSON(tailResponse{Success: true, Logs: filtered, Total: total, Filtered: new(len(filtered)), File: logPath}), nil
 }
 
 // readLines iterates a text file like Python's text mode with
@@ -241,16 +253,26 @@ func getLogInfo(c *httpx.Ctx) (*httpx.Response, error) {
 	}
 	info, err := os.Stat(logPath)
 	if errors.Is(err, fs.ErrNotExist) {
-		return httpx.JSON(jsonx.Obj("success", true, "exists", false, "path", logPath)), nil
+		return httpx.JSON(struct {
+			Success bool   `json:"success"`
+			Exists  bool   `json:"exists"`
+			Path    string `json:"path"`
+		}{true, false, logPath}), nil
 	}
 	if err != nil {
 		return errorResponse(err, false), nil
 	}
 	size := info.Size()
 	modified, created := fileTimes(info)
-	return httpx.JSON(jsonx.Obj("success", true, "exists", true, "path", logPath, "size", size,
-		"size_mb", jsonx.Float(pyRound2(float64(size)/(1024*1024))),
-		"modified", isoformat(modified), "created", isoformat(created))), nil
+	return httpx.JSON(struct {
+		Success  bool    `json:"success"`
+		Exists   bool    `json:"exists"`
+		Path     string  `json:"path"`
+		Size     int64   `json:"size"`
+		SizeMB   float64 `json:"size_mb"`
+		Modified string  `json:"modified"`
+		Created  string  `json:"created"`
+	}{true, true, logPath, size, pyRound2(float64(size) / (1024 * 1024)), isoformat(modified), isoformat(created)}), nil
 }
 
 // pyRound2 is round(x, 2): correctly rounded, ties to even.
@@ -296,20 +318,4 @@ func clearLog(ctx context.Context) (*httpx.Response, error) {
 		return errorResponse(err, false), nil
 	}
 	return httpx.Message(200, true, msgCleared), nil
-}
-
-// pyOSErrorText is str(OSError): "[Errno 2] No such file or directory: 'path'".
-func pyOSErrorText(err error) string {
-	var pe *os.PathError
-	if errors.As(err, &pe) {
-		var errno syscall.Errno
-		if errors.As(pe.Err, &errno) {
-			message := errno.Error()
-			if message != "" {
-				message = strings.ToUpper(message[:1]) + message[1:]
-			}
-			return "[Errno " + strconv.Itoa(int(errno)) + "] " + message + ": " + jsonx.Repr(pe.Path)
-		}
-	}
-	return err.Error()
 }

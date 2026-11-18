@@ -58,7 +58,7 @@ func TestLogStatPermissionFailureDoesNotBecomeMissingOrFallback(t *testing.T) {
 			t.Fatal(err)
 		}
 		body := value.(*jsonx.Object)
-		if res.Status != 500 || body.GetBool("success") || !strings.Contains(body.GetString("error"), "Permission denied") || !strings.Contains(body.GetString("error"), path) {
+		if res.Status != 500 || body.GetBool("success") || !strings.Contains(body.GetString("error"), "permission denied") || !strings.Contains(body.GetString("error"), path) {
 			t.Fatal("permission failure hidden", endpoint, res.Status, string(res.Body))
 		}
 	}
