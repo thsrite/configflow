@@ -1,6 +1,6 @@
 # Test speed A — Python reference recording and slow package analysis
 
-**本轮状态：实现交回；正式 race 前后耗时「待测」。** 协调者于
+**当前状态：已在 batch-2 上完成 metadata 刷新与定向验证；正式 race 前后耗时「待测」。** 协调者于
 2026-11-18 明确批准计时不作为本轮合入前提。当前两机负载 31–43，
 四轮批次门禁并行；本轮停止追加测试。batch-2（N73 优化）合入后再通知
 续做：rebase、实际重录/核对因消费者测试变化而失效的元数据，低负载时在
@@ -18,8 +18,8 @@
 | internal/discovery | 待测 | 待测 | parallel pure YAML/domain checks |
 | internal/routersplit | 待测 | 待测 | normalized-input transcript; global hook replays stay sequential |
 
-本轮验收：7 个 transcript（两个回退会话为空），实际 live oracle
-**2892 个不同输入，diff 0**。所有原 corpus 行和断言保留。普通执行
+当前验收：8 个 transcript（两个回退会话为空），实际 live oracle
+**2914 个不同输入，diff 0**（含本次补录的 routersplit edge 22 条）。所有原 corpus 行和断言保留。普通执行
 strace 零 Python，故意 Python exec 负控检出；live 子进程正常退出且无
 残留/僵尸；源码/输入/venv 漂移、未批准覆盖、原断言失败、实际缓存命中后
 修改 backend 的负控均通过。定向 race、全仓 vet、改动路径 gofmt 均通过，
@@ -379,3 +379,9 @@ Exact wrapper used for this repair:
 All eight A packages plus shared selfchecks now pass their relevant race runs;
 Go vet/gofmt and actual-repository process audit also pass. Formal timings remain
 待测 until **both** servers' one-minute load is below 10.
+
+
+Current timing readiness check at 2026-11-18 02:08:05 UTC: one-minute load
+`.32=10.54`, `.64=26.59`; both-under-10 condition not met. No formal measurement
+started. Refreshed implementation and the edge-fixture repair were handed back
+at `6fad06fcf`; all original package cases now execute with source-checked goldens.
