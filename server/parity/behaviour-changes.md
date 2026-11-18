@@ -1457,3 +1457,12 @@ provider URL 不带 token；策略组引擎选项（`timeout`/`lazy`/`strategy` 
 
 冻结字节门仍执行2353份Mihomo、1064份Loon、1131份Surge。107条已批准差异在独立的
 `internal/convert/testdata/n88c_byte_exceptions.json` 中逐行记录；旧 golden/manifest 未改。
+
+8a 共享标量修复接入后，8c 的名字、server、协议文本及 custom_config 都使用 model.String，
+port/interval 使用 model.Int；不再保留私有数字文本解码或待接入例外。正常数字文本继续严格
+比较旧输出。helper 的六条原 Python 类型异常输入（6630、13526、16441、16555、18393、20243）
+按已批准的无损文本规则读取，逐行 source SHA 和字段保存在输入分类索引中；6630 随后仍由
+正常业务校验拒绝其不存在的策略，未把错误配置改为成功。数值协议 type 是判别枚举，明确
+返回包含节点、id、字段和原 JSON 的类型错误，不再静默省略该节点；原 Python 也因类型错误
+失败（15488/15489）。遗留 rule_sets=false（5230）按已有类型化规则列表校验拒绝，保留中文
+「规则列表必须为规则对象数组」上下文。上述 malformed/native 边界均不修改旧 golden。
