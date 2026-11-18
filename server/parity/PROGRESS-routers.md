@@ -78,7 +78,7 @@ Python's `backend/routers` is one big import cycle (most cross-module imports ar
 | R10 | IPv6 policy, IPv6 fake-IP, IPv6 rule-set routes | 1247 | verified | HR | R04, R09 | – | internal/routers |
 | R11 | IPv6 PD guard, IPv6 DNS, RouterOS IPv6 readiness | 1161 | verified | HR | R10 | – | internal/routers |
 | R12 | release plan and staged execution | 1220 | verified | HR | R03–R11, A01 (return routing calls, ready) | – | internal/routers |
-| R13 | inspection service, return advisory, pending reminders | 713 | ported | HR | R12, C07 (`RecordRouter`, ready), A01, A06 (ready); A23⁴ | – | internal/routers |
+| R13 | inspection service, return advisory, pending reminders | 713 | verified | HR | R12, C07 (`RecordRouter`, ready), A01, A06 (ready); A23⁴ | – | internal/routers |
 | R14 | automatic rule sync | 1043 | missing | HR | R13, C14 (ready), C07 (`tasks`, ready) | – (handlers in R15) | internal/routers |
 | R15 | router HTTP routes, policy workspace, upstream-router reminder route | 656 | missing | HR | R14, C06, C22 (ready), C31, C34; A20⁵ | 21 (0 done) | internal/api/routers, internal/routers |
 | R16 | client devices and discovery | 786 | missing | | R13, A01, C26, C31 | – | internal/clients, internal/routers |
@@ -785,7 +785,13 @@ R09 remap/多表、R10 补偿证明、R11 用户 hook 部分归属、A24 凭据�
 
 ## R13 — inspection service, return advisory, pending reminders
 
-**Status: `ported`** · HR · prereqs: R12, C05, C07 (ready), A01, A06 (ready); A23 hook · Go: internal/routers
+**Status: `verified`** · HR · prereqs: R12, C05, C07 (ready), A01, A06 (ready); A23 hook · Go: internal/routers
+
+**Opus 复核（2026-11-18，[review-r13.md](review-r13.md)）：** 0 high、1 medium、1 low 已修（`9573b1705`：
+一条类型不符的路由器记录不再让所有 Agent 的提醒整体失败；空 Agent ID 不再匹配未设网关的路由器），2 条 low 补记
+behaviour-changes。**待复验 P1：** batch-1 合入 go 后 rebase，在共享树上用真实 Runtime 复验 C07 `RecordRouter` 的
+leaf 锁/Rename 取消窗口与 O3-6b Wire hook 合并。**交协调者 X1：** R12 `returnCleanup`/`Publish` 仍用严格的
+`releaseRoutersOf`，建议在 `Router.UnmarshalJSON` 统一按 R5 回退。L5 项见复核报告。
 
 R13 实现位于 `pending.go`、`pending_cache.go`、`pending_summary.go`；交接见
 [progress/R13-handoff-zh.md](progress/R13-handoff-zh.md)。已叠入 R12 复核产品修复
