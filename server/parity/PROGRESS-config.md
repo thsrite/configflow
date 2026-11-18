@@ -2520,3 +2520,27 @@ C29 shared bb1dac8d consumed as e10291f5. Native old/new reader gate on .32:
 native53364 (equal52544/D1547/policy177/alias96), template324455
 (equal324190/D1132/alias133),unknown0. Shared old native decoder is test-only,
 centralized within yamlxtest; the empty-stream contract has a regression test.
+
+## N8-8a — typed convert foundations (2026-11-18)
+
+Completed on `go-n8-8a`, rebased onto `go@fbbe382ec` (batch-4 included).
+Common rules, node conversion/caches, dialer resource graphs/Provider topology and
+EasyTier consume typed model records and native Nodes; old signatures are codecs
+in `convert/legacy.go`. Core AST checks forbid jsonx/any/dynamic exceptions and
+reverse calls into legacy. N8-5(c) is not required. Normal generated output remains
+byte-identical: 4548 original Go results (2353 Mihomo/1064 Loon/1131 Surge).
+Old Python goldens remain unchanged; approved R5/validation, Unicode ordinals and
+31 input-immutability rows have narrow explicit assertions and ledger entries.
+
+N8-9 prerequisite: the single typed rulesetfmt implementation landed early in
+`a633babfe`; N8-9 migrates remaining consumers and deletes its thin legacy adapter.
+Shared yamlx-only fixes: `2aee129ab` rejects unparseable tagged scalar output;
+`e11becd23` statically validates manual kinds/anchor bindings and keeps Parse/Equal
+closure checks in tests. No runtime output Parse/Equal pass was added.
+
+Targeted .64 checks passed: convert full non-race, changed-entry race, yamlx and
+rulesetfmt race, repo consumers, gofmt/vet, all converter archives/306 client
+boundaries and nine 60-second fuzz targets. Coordinator runs full gate/proddiff
+on its batch tree under Leaner verification. Exact commands, output, commit map,
+class counts and remaining (b)/(c)/(d)/N8-9 adapters:
+[`progress/n8-8a.md`](progress/n8-8a.md).
