@@ -10,6 +10,7 @@ shift
 test -d "$owned_root/data"
 # This empty mount point contains no data outside the private mount namespaces.
 mkdir -p /tmp/routerdiff-active
+parent_netns=$(readlink /proc/self/ns/net)
 exec sudo unshare --net --mount --pid --fork --kill-child --mount-proc bash -ceu '
   mount --make-rprivate /
   mount --bind "$2" /tmp/routerdiff-active
@@ -24,5 +25,5 @@ exec sudo unshare --net --mount --pid --fork --kill-child --mount-proc bash -ceu
   # A private resolver cannot contact host DNS even if a negative case uses a name.
   printf "nameserver 127.0.0.1\noptions attempts:1 timeout:1\n" > /tmp/routerdiff-active/resolv.conf
   mount --bind /tmp/routerdiff-active/resolv.conf /etc/resolv.conf
-  exec runuser -u "$1" -- env ROUTERDIFF_ISOLATED=1 "${@:3}"
-' routerdiff-world "$(id -un)" "$owned_root" "$@"
+  exec runuser -u "$1" -- env ROUTERDIFF_ISOLATED=1 ROUTERDIFF_PARENT_NETNS="$3" "${@:4}"
+' routerdiff-world "$(id -un)" "$owned_root" "$parent_netns" "$@"

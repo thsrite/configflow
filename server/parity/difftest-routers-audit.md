@@ -675,3 +675,11 @@ JSON/login/call fallbacks and one1008 retry. Failed probes persist only their ow
 profile as required. Malformed redirect parser catches, connect-SYN timeout and
 generic transport exceptions remain explicitly open; no exception injection or
 firmware session-expiry claim. Native domain registrations remain0/26.
+
+Connect-timeout extension H0222/H0223 uses actual namespace-local nft SYN drops,
+a fresh public endpoint to defeat legitimate connection reuse, kernel packet
+presence and real10s TCP connect timeout. Before/after public probes succeed.
+No HTTP reaches the fake during the fault; failed probe still persists normally.
+A host-namespace negative guard and native no-packet oracle prevent vacuous
+coverage. .32 actual3-request report completes both audits, native0/26. The
+coordinator now owns full gates; all future agent runs are fixed to .32.

@@ -2,15 +2,15 @@
 
 Status: in progress; NOT ready for acceptance hand-back. Branch go-difftest-routers-b.
 Latest clean integration rebase: goe0e9d9d45; normal public binary built from it.
-Current declarations:554 executed-variant audits plus14 explicit source-unreachable
-proofs plus2 O6 review-superseded entries;1731 remaining if all increments and
+Current declarations:556 executed-variant audits plus14 explicit source-unreachable
+proofs plus2 O6 review-superseded entries;1729 remaining if all increments and
 controls are composed. Last FULL composition still37937739:3054
 recipes/301 audits. Newer subsets do not replace that full evidence; latest
 large subset2470 recipes/327 audits. All observed26 domain routes remain absent
 from the actual Go public manifest, so no native domain parity is claimed.
-Final composition, gate.sh and final rebase are pending. History follows below.
+Final composition, targeted hand-back checks and final rebase are pending; coordinator runs the batch gate. History follows below.
 Previous task go-n8-3 is frozen; do not modify that branch. No subagents/push.
-.32 and .64 are equivalent; runs currently pinned to .64 through rt. Domain
+Latest coordinator instruction: pin all new runs to .32 through rt; .64 is reserved for timing. Domain
 fixtures are synthetic only; authorized final gate.sh may read the offline
 private snapshot but reports only proddiff new/stale/self-check summaries.
 Isolated loopback
@@ -2305,3 +2305,35 @@ iKuai HTTP/authentication/TLS diagnostic increment:
 registrations. No active command. Current554+14+2/1731 pending if increments
 compose. Remaining matrix/ownership/runtime/YAML/background/concurrency and
 full composition/final verification/rebase/clean hand-back remain open.
+
+Coordinator changed again; task unchanged. Latest explicit instruction supersedes
+older final-gate plans: ALL new rt commands pin sunbroke@192.168.0.32; no agent
+full gate. Coordinator runs batch gate after hand-back. Final findings group by
+suggested owner and include ONLY items requiring dispatch (no accepted changes).
+
+Actual connect-SYN timeout increment H0222/H0223:
+- New network_faults.py permits only a fixed SYN-drop rule in a distinct
+  loopback-only namespace, checked against its parent network identity saved
+  before unshare. No caller-controlled host/port/command/nft syntax. Worker
+  cleanup removes its table; namespace destruction is an additional boundary.
+- Baseline public probe succeeds. Public draft edit switches to unused owned
+ 10.44.0.3:18082 before the rule is installed, so legitimate native connection
+  pooling cannot bypass the fault. Kernel counter proves a SYN was attempted,
+  fake HTTP count stays0, actual10s ConnectTimeout gets the exact public error
+  and saved failed probe. Rule removal is followed by successful public probe.
+- Packet-presence booleans are retained as flow observations, not fabricated
+  device replies. A native response with no SYN is a comparison difference;
+  an oracle keeps its completed HTTP visible. Host namespace is actually refused
+  before privileged commands. Retransmission counts are not an API contract.
+- First .64 three-request smoke passed; a94-test targeted run20.662s/OK plus
+ 3 observations/2 audits10.51s was already running before the host switch and
+  finished. No further .64 commands were started after the instruction.
+- Fresh-endpoint variant verified on .32 with normal public observer rebuilt:
+`RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1; uptime; ~/cf-test/.venv/bin/python server/tools/routerdiff/build.py "$HOME/.cache/routerdiff-build-302rx1dg-e0e9d9d45" --parallel 4; export ROUTERDIFF_BINARY="$HOME/.cache/routerdiff-build-302rx1dg-e0e9d9d45/configflow"; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python -m unittest -q test_network_faults test_audits.AuditTests.test_connect_timeout_audits_require_both_recovery_controls_and_real_packet_evidence test_boundary.BoundaryTests.test_real_healthy_native_boundary_compares_complete_observations; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world ikuai-connect-timeout --output "$HOME/.cache/routerdiff-reports/302rx1dg/connect-timeout-audits-32.json"'`
+=> load3.66/7.62/9.40;normal public binary build success;Ran4 tests2.787s/OK;
+3 actual recipes10.55s/allGo-unimplemented,5 references/2 new audits,
+remaining_audits=2299 in subset,complete=false/no bug,0/26 native registrations.
+No active command. Current556+14+2/1729 pending if increments compose. Next
+investigate actual malformed-redirect transport outcomes (H0209/H0210/H0228/
+H0229), then remaining matrix/ownership/runtime/YAML/background/concurrency.
+No gate or snapshot read was performed; coordinator batch gate at hand-back.

@@ -27,6 +27,7 @@ import probe_guards
 import probes
 import ros_http_guards
 import ikuai_http_guards
+import connect_timeout
 import router_lifecycle
 import dhcp_guards
 import ikuai_dhcp_guards
@@ -36,6 +37,26 @@ import dns_targets
 
 
 class AuditTests(unittest.TestCase):
+    def test_connect_timeout_audits_require_both_recovery_controls_and_real_packet_evidence(self):
+        cases = list(connect_timeout.cases())
+        actual = {case.ident: case for case in cases}
+        self.assertEqual([case.expected for case in cases], [200, 502, 200])
+        self.assertEqual(cases[1].elapsed_min, 9)
+        self.assertEqual(cases[1].prepare[0]['document'], {'endpoint': 'http://10.44.0.3:18082'})
+        self.assertEqual(cases[1].prepare[1]['expected'], {'enabled': True, 'saw_syn': False})
+        self.assertEqual(cases[1].finalize[0]['expected'], {'enabled': False, 'saw_syn': True})
+        for ident in ('H0222', 'H0223'):
+            required = declared()[ident].requirements
+            self.assertEqual(len(required), 3)
+            for world, name, status in required:
+                self.assertEqual(world, 'ikuai-connect-timeout')
+                self.assertEqual(actual[name].expected, status)
+                self.assertIn(ident, actual[name].entries)
+            observations = [{'world': world, 'case': name, 'entries': [ident], 'python': {'status': status},
+                             'status': 'go-unimplemented'} for world, name, status in required]
+            self.assertEqual(evaluate(observations)[ident]['audit'], 'variants-audited')
+            self.assertEqual(evaluate(observations[:-1])[ident]['audit'], 'variants-pending')
+
     def test_ikuai_http_audits_need_each_distinct_diagnostic_and_real_tls_retry_controls(self):
         actual = {(world, case.ident): case for world, group in (
             ('ikuai-http-reads', ikuai_http_guards.reads), ('ikuai-http-tls', ikuai_http_guards.tls)) for case in group()}
@@ -53,7 +74,7 @@ class AuditTests(unittest.TestCase):
                              'status': 'go-unimplemented'} for world, name, status in required]
             self.assertEqual(evaluate(observations)[ident]['audit'], 'variants-audited')
             self.assertEqual(evaluate(observations[:-1])[ident]['audit'], 'variants-pending')
-        for ident in ('H0209', 'H0210', 'H0222', 'H0223', 'H0228', 'H0229'):
+        for ident in ('H0209', 'H0210', 'H0228', 'H0229'):
             self.assertNotIn(ident, declared())
 
     def test_routeros_http_audits_require_error_class_and_write_safety_not_just_probe(self):
@@ -426,7 +447,7 @@ class AuditTests(unittest.TestCase):
 
     def test_auth_audits_require_every_explicit_real_reference_variant(self):
         audits = declared()
-        self.assertEqual(len(audits), 554)  # Named declarations; matrix parsing grants no coverage.
+        self.assertEqual(len(audits), 556)  # Named declarations; matrix parsing grants no coverage.
         self.assertFalse(set(audits) - set(load()[1]))
         self.assertEqual({value['audit'] for value in evaluate([]).values()},
                          {'variants-pending', 'source-proof-controls-pending', 'review-proof-controls-pending'})

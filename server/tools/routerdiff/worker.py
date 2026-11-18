@@ -21,6 +21,7 @@ import traceback
 from fakes import World
 from filesystem import capture
 from osfaults import Faults
+from network_faults import NetworkFaults
 from inventory import ROOT
 from seed import ADMIN, PASSWORD, JWT_SECRET
 
@@ -58,6 +59,7 @@ class Worker:
         self.last_exit_code = None
         self.log = None
         self.faults = Faults(ACTIVE / "data")
+        self.network = NetworkFaults()
 
     def start(self):
         if self.process is not None:
@@ -195,6 +197,8 @@ class Worker:
             return self.snapshot()
         if operation == 'filesystem_fault':
             return self.faults.control(**values)
+        if operation == 'network_fault':
+            return self.network.control(**values)
         if operation == 'fake':
             return self.world.control(**values)
         if operation == 'process_status':
@@ -212,6 +216,7 @@ class Worker:
 
     def close(self):
         self.world.release_all()
+        self.network.close()
         self.faults.close()
         for connection in self.open_clients.values():
             connection.close()

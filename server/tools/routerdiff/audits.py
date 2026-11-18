@@ -1381,6 +1381,20 @@ def declared():
             'exception is injected or helper patched.',
             tuple(('ikuai-http-tls', 'R017/ikuai/self-signed-' + label + '-' + str(index), status)
                   for index, label, status in ((0, 'verified', 502), (1, 'unverified', 200), (2, 'verified', 502))))
+    for ident in ('H0222', 'H0223'):
+        audits[ident] = Audit(('backend/routers/ikuai.py:211', 'backend/routes/routers.py:206',
+                              'server/tools/routerdiff/network_faults.py'),
+            'An actual nft output rule drops only TCP SYN to the owned loopback iKuai port. '
+            'Distinct parent/current namespace identity and loopback-only interface inventory '
+            'are mandatory before any privileged operation. Kernel counter proves a SYN was '
+            'sent; the fake receives no HTTP request, real connect wait lasts at least9s and '
+            'the public probe persists its precise connect-timeout failure. Before/after ordinary '
+            'probes succeed, proving restoration and a live peer. No Python exception, clock or '
+            'HTTP response is simulated. Native missing SYN is a retained boundary difference, '
+            'not a fixture failure or fake pass; packet counts are represented only as observed '
+            'presence because retransmission counts vary by kernel/timing.',
+            tuple(('ikuai-connect-timeout', 'R017/ikuai/' + label, status) for label, status in (
+                ('connect-before-drop', 200), ('connect-syn-dropped', 502), ('connect-after-drop-removed', 200))))
     return audits
 
 

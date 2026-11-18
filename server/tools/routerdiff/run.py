@@ -17,6 +17,7 @@ import fixtures
 import probes
 import ros_http_guards
 import ikuai_http_guards
+import connect_timeout
 import probe_workflows
 import probe_guards
 import probe_schemas
@@ -217,6 +218,11 @@ def execute(pair, case, available, routes):
                         break
                 elif control.get('rpc') == 'filesystem_fault':
                     side.rpc(**{key: value for key, value in control.items() if key != 'rpc'}, operation='filesystem_fault')
+                elif control.get('rpc') == 'network_fault':
+                    observed = side.rpc('network_fault', enabled=control['enabled'])
+                    flow_checks[name].append({'network_fault': observed})
+                    if name == 'python' and differences(observed, control['expected']):
+                        raise RuntimeError(case.ident + ': reference network fault did not reach its initial packet state')
                 elif control.get('rpc') == 'http':
                     checks = control.get('checks', {'success': True})
                     if not isinstance(checks, dict) or not checks:
@@ -351,6 +357,11 @@ def execute(pair, case, available, routes):
             for control in case.finalize:
                 if control.get('rpc') == 'filesystem_fault':
                     side.rpc(**{key: value for key, value in control.items() if key != 'rpc'}, operation='filesystem_fault')
+                elif control.get('rpc') == 'network_fault':
+                    observed = side.rpc('network_fault', enabled=control['enabled'])
+                    flow_checks[name].append({'network_fault': observed})
+                    if name == 'python' and differences(observed, control['expected']):
+                        raise RuntimeError(case.ident + ': reference network fault did not observe the owned SYN')
                 else:
                     side.rpc('fake', **control)
         if request_failure:
@@ -934,6 +945,7 @@ def main():
               ('ros-http-normal', clients.options(), (ros_http_guards.normal,)),
               ('ikuai-http-reads', clients.options(), (ikuai_http_guards.reads,)),
               ('ikuai-http-tls', probes.tls_options(), (ikuai_http_guards.tls,)),
+              ('ikuai-connect-timeout', clients.options(), (connect_timeout.cases,)),
               ('dns-matching-failures', dns_targets.matching_options(), (dns_targets.matching_cases,)),
               ('dns-ha', dns.ha_options(), (dns.ha,)),
               ('disconnect-release', releases.options(), (disconnect.release,)),
