@@ -26,7 +26,7 @@ func advancePair(ctx context.Context, m *agents.Manager, id string) error {
 	fn := pairAdvance.fn
 	pairAdvance.RUnlock()
 	if fn == nil {
-		return deploy.ErrPairPublisherMissing
+		return nil
 	}
 	if e := ctx.Err(); e != nil {
 		return e

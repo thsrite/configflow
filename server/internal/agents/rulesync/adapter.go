@@ -246,7 +246,7 @@ func taskRow(ctx context.Context, record *agents.Record, statuses *jsonx.Object)
 func nativeCall(ctx context.Context, m *agents.Manager, id, method string, paths []string) (nativeTask, error) {
 	var selected any
 	if len(paths) > 0 {
-		selected = paths
+		selected = jsonx.ListOf(paths)
 	}
 	answer, _, err := monitor.RuleUpdateCall(ctx, monitor.FromAgents(m), id, method, selected)
 	if err != nil {
@@ -265,7 +265,7 @@ func nativeCall(ctx context.Context, m *agents.Manager, id, method string, paths
 	return view.Task, nil
 }
 func refreshProvider(ctx context.Context, m *agents.Manager, id, name string) error {
-	_, err := monitor.PanelCall(ctx, monitor.FromAgents(m), id, "providers/rule", "PUT", nil, jsonx.Obj("name", name), "")
+	_, err := monitor.PanelCall(ctx, monitor.FromAgents(m), id, "providers/rule", "PUT", [][2]string{{"name", name}}, nil, "")
 	return err
 }
 func resultStatus(r *agents.Result) string { return r.GetString("status") }
@@ -329,4 +329,12 @@ func repositorySource(ctx context.Context, r *repo.Repository, profileID string)
 		return nil, e
 	}
 	return deploy.NewSource(raw, &revision), nil
+}
+
+func snapshotVersion(record *agents.Record) string {
+	applied := record.GetObject("applied_content")
+	if applied != nil && applied.Has("config_version") {
+		return applied.GetString("config_version")
+	}
+	return record.GetString("config_version")
 }

@@ -43,3 +43,6 @@ type Error struct{ Message string }
 
 func (e *Error) Error() string    { return e.Message }
 func refuse(message string) error { return &Error{Message: message} }
+
+// Unwrap classifies an isolation refusal for the shared publishing owner.
+func (e *Error) Unwrap() error { return &deploy.Refusal{Message: e.Message} }

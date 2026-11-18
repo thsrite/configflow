@@ -192,3 +192,48 @@ func TestHASettingsPairAtomicity(t *testing.T) {
 		t.Fatal("partial pair write")
 	}
 }
+
+func TestTaskRowAndPinnedWithheld(t *testing.T) {
+	f := newWorkerFixture(t, "oxidns")
+	ctx := f.ctx
+	record, e := f.s.m.GetAgentByID(ctx, "device", false)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if e = f.s.saveState(ctx, "device", model.RuleSyncState{Status: "blocked", Message: msgBaseline}); e != nil {
+		t.Fatal(e)
+	}
+	record, e = f.s.m.GetAgentByID(ctx, "device", false)
+	if e != nil {
+		t.Fatal(e)
+	}
+	row, e := taskRow(ctx, record, jsonx.NewObject())
+	if e != nil {
+		t.Fatal(e)
+	}
+	if row == nil || row.GetString("key") != "agent_rule_sync:device" || row.GetString("last_status") != "skipped" || row.GetString("last_error") != msgBaseline {
+		t.Fatal(row)
+	}
+	_, _, e = f.s.m.Repository().UpdateProfileTransaction(ctx, "default", func(_ context.Context, doc *jsonx.Object) (*jsonx.Object, error) {
+		doc.GetObject("oxidns").Set("rule_actions", jsonx.Obj("set-a", jsonx.Obj("action", "upstream", "source", "local", "upstream", jsonx.Obj("addr", "udp://192.0.2.99"))))
+		return nil, nil
+	})
+	if e != nil {
+		t.Fatal(e)
+	}
+	held, e := PinnedWithheld(ctx, f.s.m.Repository(), f.s.receipts, "default", []string{"set-a"})
+	if e != nil || !held {
+		t.Fatalf("held %v %v", held, e)
+	}
+	held, e = PinnedWithheld(ctx, f.s.m.Repository(), f.s.receipts, "default", []string{"single"})
+	if e != nil || held {
+		t.Fatalf("unrelated held %v %v", held, e)
+	}
+	if _, e = f.s.Configure(ctx, "device", []byte(`{"library":false,"rules":false}`)); e != nil {
+		t.Fatal(e)
+	}
+	held, e = PinnedWithheld(ctx, f.s.m.Repository(), f.s.receipts, "default", []string{"set-a"})
+	if e != nil || held {
+		t.Fatal("disabled scopes still withheld", e)
+	}
+}

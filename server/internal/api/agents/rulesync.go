@@ -9,9 +9,6 @@ import (
 	"errors"
 )
 
-const msgRuleSyncRequest = "规则同步设置无效"
-const msgRuleSyncNotFound = "未找到这台 Agent"
-
 func registerRuleSync(r *httpx.Router) {
 	r.Handle([]string{"GET", "PUT"}, "/api/agents/<agent_id>/rule-sync", "agents.agent_rule_sync", auth.Require(agentRuleSync))
 }

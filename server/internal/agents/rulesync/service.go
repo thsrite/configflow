@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"path/filepath"
 	"slices"
 	"sync"
 	"time"
@@ -187,7 +188,14 @@ var workerLocks = lockx.NewKeyed[string](lockx.LevelJob, "agent-rule-sync")
 // Run executes one non-overlapping worker and contains failures at its owner boundary.
 func (s *Service) Run(ctx context.Context, id string) error {
 	return deploy.RunDetached(ctx, "agent-rule-sync-"+id, func(ctx context.Context) (err error) {
-		held, release, ok := workerLocks.TryLock(ctx, s.m.Repository().DataDir()+"\x00"+id)
+		root, e := filepath.EvalSymlinks(s.m.Repository().DataDir())
+		if e != nil {
+			return e
+		}
+		if e = ctx.Err(); e != nil {
+			return e
+		}
+		held, release, ok := workerLocks.TryLock(ctx, root+"\x00"+id)
 		if !ok {
 			return ctx.Err()
 		}

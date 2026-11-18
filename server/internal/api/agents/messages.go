@@ -20,3 +20,6 @@ const (
 // the panel's optional global registration-key policy is enabled.
 const RegistrationLocked = "Invalid registration key：面板已启用注册锁定，普通 Shell 和 Docker Agent 安装不支持传入注册密钥。请使用 OxiDNS HA enrollment 安装，或联系管理员调整 AGENT_REGISTRATION_KEY 注册策略后重试。"
 const msgGeneratedFileMissing = "生成结果中没有这个文件。"
+
+const msgRuleSyncRequest = "规则同步设置无效"
+const msgRuleSyncNotFound = "未找到这台 Agent"

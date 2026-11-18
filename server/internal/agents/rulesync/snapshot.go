@@ -64,10 +64,7 @@ func FetchSnapshot(ctx context.Context, m *agents.Manager, agent *agents.Record,
 	if res.BodyError != nil {
 		return nil, refuse(msgSnapshotVerify)
 	}
-	version := a.ConfigVersion
-	if a.AppliedContent != nil && a.AppliedContent.ConfigVersion != "" {
-		version = a.AppliedContent.ConfigVersion
-	}
+	version := snapshotVersion(agent)
 	return parseSnapshot(ctx, res.Body, previous.Manifest(), expected, version)
 }
 
