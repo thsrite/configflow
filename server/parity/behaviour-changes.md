@@ -1109,3 +1109,11 @@ physical occurrence loses its duplicate Anchor; later aliases keep their exact
 binding. This restores valid Edit behavior without weakening Marshal policy or
 adding a production Parse/Equal pass. Normal converter byte expectations and the
 31 explicit input-immutability paths are unchanged.
+
+## N8-7 second batch — native early consumers
+
+- Web listener environment values use native Unicode whitespace: U+001C/U+001D
+  surrounding a port no longer count as spaces (PORTING CPython-only scope).
+  Normal integer ports and saved files are unchanged.
+- Log I/O failures retain the Chinese context, status and selected path; the
+  OS detail uses Go's native error text rather than Python's errno/repr format.

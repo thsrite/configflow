@@ -30,11 +30,12 @@ import (
 	"time"
 
 	"configflow/internal/ctxx"
-	"configflow/internal/jsonx"
+	"configflow/internal/jsonresp"
 	"configflow/internal/lifecycle"
 	"configflow/internal/lockx"
 	"configflow/internal/logx"
 	"configflow/internal/repo"
+	"encoding/json"
 )
 
 // HealthPath is the listener check path.
@@ -108,17 +109,22 @@ func (m *Manager) lookupEnv(name string) (string, bool) {
 func (m *Manager) statePath() string { return filepath.Join(m.DataDir, "web-listener.json") }
 func (m *Manager) lockPath() string  { return filepath.Join(m.DataDir, "web-listener.lock") }
 
-// checkPort is _port: an int (not a bool) in 1..65535.
-func checkPort(value any) (int, error) {
-	n, ok := value.(jsonx.Number)
-	v, fits := n.Int64()
-	if !ok || !fits || v < 1 || v > 65535 {
-		if i, isInt := value.(int); isInt && i >= 1 && i <= 65535 {
-			return i, nil
-		}
-		return 0, fail("Web 端口须为 1–65535 的整数", 400)
+// validPort validates a native integer supplied by a decoded DTO.
+func validPort(port int) (int, error) {
+	if port < 1 || port > 65535 {
+		return 0, fail(msgPort, 400)
 	}
-	return int(v), nil
+	return port, nil
+}
+
+// Information is the listener status projected to the web UI.
+type Information struct {
+	Supported bool   `json:"supported"`
+	Port      *int   `json:"port"`
+	Editable  bool   `json:"editable"`
+	IPv6      bool   `json:"ipv6"`
+	Source    string `json:"source"`
+	Message   string `json:"message,omitempty"`
 }
 
 var listenerLocks = lockx.NewKeyed[string](lockx.LevelJob, "web-listener")
@@ -145,13 +151,13 @@ func (m *Manager) EnvironmentPort(name string, def int) (int, error) {
 	if !ok {
 		raw = strconv.Itoa(def)
 	}
-	raw = strings.TrimFunc(raw, isPySpace)
+	raw = strings.TrimSpace(raw)
 	if len([]rune(raw)) > 5 || !isASCIIDecimal(raw) {
-		return 0, fail(name+" 须为 1–65535 的整数", 400)
+		return 0, fail(fmt.Sprintf(msgEnvironmentPort, name), 400)
 	}
 	value, _ := strconv.Atoi(raw)
 	if value < 1 || value > 65535 {
-		return 0, fail(name+" 须为 1–65535 的整数", 400)
+		return 0, fail(fmt.Sprintf(msgEnvironmentPort, name), 400)
 	}
 	return value, nil
 }
@@ -168,14 +174,6 @@ func isASCIIDecimal(s string) bool {
 	return true
 }
 
-func isPySpace(r rune) bool {
-	switch r {
-	case ' ', '\t', '\n', '\v', '\f', '\r', 0x1c, 0x1d, 0x1e, 0x1f, 0x85, 0xa0, 0x1680, 0x2028, 0x2029, 0x202f, 0x205f, 0x3000:
-		return true
-	}
-	return r >= 0x2000 && r <= 0x200a
-}
-
 // selection is _selection: the port and where it comes from.
 func (m *Manager) selection() (int, string, error) {
 	if _, ok := m.lookupEnv("CONFIGFLOW_WEB_PORT"); ok {
@@ -186,21 +184,19 @@ func (m *Manager) selection() (int, string, error) {
 	if errors.Is(err, os.ErrNotExist) {
 		return 80, "default", nil
 	}
-	unreadable := fail("无法读取已保存的 Web 端口；可设置 CONFIGFLOW_WEB_PORT 恢复访问", 503)
+	unreadable := fail(msgUnreadable, 503)
 	if err != nil {
 		return 0, "", unreadable
 	}
-	saved, err := jsonx.Parse(data)
-	object, ok := saved.(*jsonx.Object)
-	if err != nil || !ok {
+	var saved map[string]json.RawMessage
+	if err := jsonresp.DecodeStored(data, &saved); err != nil || saved == nil {
 		return 0, "", unreadable
 	}
-	value, present := object.Get("port")
-	if !present {
+	var port int
+	if json.Unmarshal(saved["port"], &port) != nil {
 		return 0, "", unreadable
 	}
-	port, err := checkPort(value)
-	if err != nil {
+	if _, err := validPort(port); err != nil {
 		return 0, "", unreadable
 	}
 	return port, "saved", nil
@@ -222,14 +218,14 @@ func (m *Manager) checkReserved(port int) error {
 		return err
 	}
 	if backend == subStore {
-		return fail("ConfigFlow 后端与 Sub-Store 须使用不同的端口", 409)
+		return fail(msgReservedConflict, 409)
 	}
 	if port == backend || port == subStore {
 		service := "Sub-Store"
 		if port == backend {
 			service = "ConfigFlow 后端"
 		}
-		return fail("端口 "+strconv.Itoa(port)+" 已保留给 "+service+"，请选择其他端口", 409)
+		return fail(fmt.Sprintf(msgReserved, port, service), 409)
 	}
 	return nil
 }
@@ -258,9 +254,9 @@ func listen(port int, ipv6 bool) ([]net.Listener, error) {
 				open.Close()
 			}
 			if errors.Is(err, syscall.EADDRINUSE) {
-				return nil, fail("端口 "+strconv.Itoa(port)+" 已被占用，请选择其他端口", 409)
+				return nil, fail(fmt.Sprintf(msgOccupied, port), 409)
 			}
-			return nil, fail("无法监听端口 "+strconv.Itoa(port)+"，请检查权限和网络配置", 409)
+			return nil, fail(fmt.Sprintf(msgListenFailed, port), 409)
 		}
 		listeners = append(listeners, l)
 	}
@@ -307,9 +303,9 @@ func (m *Manager) serve(ctx context.Context, listeners []net.Listener) error {
 	return nil
 }
 
-// Start is prepare_listener at startup: open the selected port (IPv4, and
+// Listen is prepare_listener at startup: open the selected port (IPv4, and
 // IPv6 when the host supports it) and serve on it.
-func (m *Manager) Start(ctx context.Context) (*jsonx.Object, error) {
+func (m *Manager) Listen(ctx context.Context) (*Information, error) {
 	ctx = lifecycle.Detach(ctx)
 	ctx, unlock, err := m.lock(ctx)
 	if err != nil {
@@ -369,7 +365,7 @@ func (m *Manager) Close() {
 	}
 }
 
-func (m *Manager) status() (*jsonx.Object, error) {
+func (m *Manager) status() (*Information, error) {
 	port, source, err := m.selection()
 	if err != nil {
 		return nil, err
@@ -378,31 +374,28 @@ func (m *Manager) status() (*jsonx.Object, error) {
 	current := m.active
 	m.mu.Unlock()
 	if current == nil {
-		return nil, fail("Web 监听配置尚未初始化，请重启容器", 503)
+		return nil, fail(msgUninitialized, 503)
 	}
 	if current.port != port {
-		return nil, fail("Web 监听配置与保存的端口不一致，请重启容器", 503)
+		return nil, fail(msgInconsistent, 503)
 	}
-	status := jsonx.Obj("supported", true, "port", port, "editable", source != "environment",
-		"ipv6", current.ipv6, "source", source)
+	status := &Information{Supported: true, Port: &port, Editable: source != "environment", IPv6: current.ipv6, Source: source}
 	if source == "environment" {
-		status.Set("message", "端口由 CONFIGFLOW_WEB_PORT 指定；移除该环境变量并重建容器后可在此修改")
+		status.Message = msgEnvironment
 	}
 	return status, nil
 }
 
-// Unsupported is listener_status() of a deployment whose web front end is
-// not served by this process.
-func Unsupported() *jsonx.Object {
-	return jsonx.Obj("supported", false, "port", nil, "editable", false, "ipv6", false, "source", "default",
-		"message", "当前部署不支持在 Web 中修改监听端口，请通过部署配置调整")
+// UnsupportedInformation describes a deployment managed by another front end.
+func UnsupportedInformation() *Information {
+	return &Information{Source: "default", Message: msgUnsupported}
 }
 
-// Status is listener_status(). A nil manager is the unsupported deployment.
-func (m *Manager) Status(ctx context.Context) (*jsonx.Object, error) {
+// InformationFor is listener_status(). A nil manager is the unsupported deployment.
+func (m *Manager) InformationFor(ctx context.Context) (*Information, error) {
 	ctx = lifecycle.Detach(ctx)
 	if m == nil {
-		return Unsupported(), nil
+		return UnsupportedInformation(), nil
 	}
 	ctx, unlock, err := m.lock(ctx)
 	if err != nil {
@@ -412,10 +405,10 @@ func (m *Manager) Status(ctx context.Context) (*jsonx.Object, error) {
 	return m.status()
 }
 
-// Update is update_listener(port): move the web listener to another port.
-func (m *Manager) Update(ctx context.Context, value any) (*jsonx.Object, error) {
+// ChangePort is update_listener(port): move the web listener to another port.
+func (m *Manager) ChangePort(ctx context.Context, value int) (*Information, error) {
 	ctx = lifecycle.Detach(ctx)
-	port, err := checkPort(value)
+	port, err := validPort(value)
 	if err != nil {
 		return nil, err
 	}
@@ -423,7 +416,7 @@ func (m *Manager) Update(ctx context.Context, value any) (*jsonx.Object, error) 
 		if err := (&Manager{}).checkReserved(port); err != nil {
 			return nil, err
 		}
-		return nil, fail("当前部署不支持在 Web 中修改监听端口", 503)
+		return nil, fail(msgUnsupportedUpdate, 503)
 	}
 	if err := m.checkReserved(port); err != nil {
 		return nil, err
@@ -437,10 +430,10 @@ func (m *Manager) Update(ctx context.Context, value any) (*jsonx.Object, error) 
 	if err != nil {
 		return nil, err
 	}
-	if editable, _ := status.Value("editable").(bool); !editable {
-		return nil, fail(status.GetString("message"), 409)
+	if !status.Editable {
+		return nil, fail(status.Message, 409)
 	}
-	if port == int(status.GetInt("port")) {
+	if port == *status.Port {
 		return status, nil
 	}
 	m.mu.Lock()
