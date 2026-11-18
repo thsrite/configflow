@@ -347,6 +347,25 @@ func TestPresenceUsesSharedCredentialRedaction(t *testing.T) {
 	if record.GetString("name") != "alice https://uri-user:presence-password@example.com/?token=synthetic-rule-token" {
 		t.Fatal("presence mutated registry")
 	}
+	// N8's shared redactor returns native JSON; the adapter must still handle
+	// historical non-string metadata without exposing nested credentials.
+	logs.Reset()
+	nested := jsonx.Obj("id", "a16-nested-presence", "name", jsonx.Obj("label", "alice", "token", "synthetic-rule-token"), "token", "synthetic-rule-token", "status", "online")
+	before, e := json.Marshal(nested)
+	if e != nil {
+		t.Fatal(e)
+	}
+	observePresence(ctx, s.m, []*agents.Record{nested})
+	nested.Set("status", "offline")
+	observePresence(ctx, s.m, []*agents.Record{nested})
+	if output := logs.String(); !strings.Contains(output, "已离线") || !strings.Contains(output, "alice") || strings.Contains(output, "synthetic-rule-token") {
+		t.Fatal("nested presence metadata was lost or leaked", output)
+	}
+	nested.Set("status", "online")
+	after, e := json.Marshal(nested)
+	if e != nil || !bytes.Equal(before, after) {
+		t.Fatal("nested presence metadata mutated registry", e)
+	}
 }
 
 func TestProfileFilteringKeepsLiteralDefaultAndDisabledAgents(t *testing.T) {

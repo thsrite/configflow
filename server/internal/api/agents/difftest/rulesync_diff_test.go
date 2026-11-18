@@ -5,6 +5,7 @@ import (
 	"configflow/internal/lifecycle"
 	"configflow/internal/repo"
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,6 +20,37 @@ func TestRuleSyncHTTPAgainstFlask(t *testing.T) {
 	root := t.TempDir()
 	pyDir, goDir := filepath.Join(root, "python"), filepath.Join(root, "go")
 	seed(t, pyDir)
+	// A04 separately verifies legacy metrics migration structurally. Keep
+	// nonempty monitoring history here in its current JSONL format, so the A16
+	// complete-file comparison still detects every unrelated byte mutation
+	// without conflating startup migration's native JSON layout with this API.
+	metricsPath := filepath.Join(pyDir, "metrics", "agent-busy_metrics.json")
+	rawMetrics, e := os.ReadFile(metricsPath)
+	if e != nil {
+		t.Fatal(e)
+	}
+	var metrics struct {
+		Points []json.RawMessage `json:"metrics"`
+	}
+	if e := json.Unmarshal(rawMetrics, &metrics); e != nil {
+		t.Fatal(e)
+	}
+	var jsonl []byte
+	for _, point := range metrics.Points {
+		if len(point) > 0 && point[0] == '{' {
+			jsonl = append(jsonl, point...)
+			jsonl = append(jsonl, '\n')
+		}
+	}
+	if len(jsonl) == 0 {
+		t.Fatal("missing synthetic metrics history")
+	}
+	if e := os.WriteFile(strings.TrimSuffix(metricsPath, ".json")+".jsonl", jsonl, 0600); e != nil {
+		t.Fatal(e)
+	}
+	if e := os.Remove(metricsPath); e != nil {
+		t.Fatal(e)
+	}
 	r, e := repo.Open(pyDir, repo.Options{})
 	if e != nil {
 		t.Fatal(e)

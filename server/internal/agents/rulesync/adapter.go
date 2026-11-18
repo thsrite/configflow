@@ -243,7 +243,10 @@ func taskRow(ctx context.Context, record *agents.Record, statuses *jsonx.Object)
 		return nil, e
 	}
 	state := stateOf(a)
-	history := tasks.History(statuses.GetObject(key))
+	history, e := tasks.History(statuses.GetObject(key))
+	if e != nil {
+		return nil, e
+	}
 	message := state.Message
 	m, e := agents.Get(ctx)
 	if e != nil {
@@ -425,8 +428,12 @@ func observePresence(ctx context.Context, m *agents.Manager, records []*agents.R
 				if value, ok := fields.Value(key).(string); ok {
 					fields.Set(key, safeDisplay(value, secrets))
 				} else {
-					single := redact.SanitizeCredentials(jsonx.Obj("value", fields.Value(key)), secrets)
-					fields.Set(key, single.Value("value"))
+					single := agents.SanitizePublicMetadata(jsonx.Obj("value", fields.Value(key)), secrets)
+					if single == nil {
+						fields.Set(key, redact.Redacted)
+					} else {
+						fields.Set(key, single.Value("value"))
+					}
 				}
 			}
 		}

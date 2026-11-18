@@ -340,7 +340,7 @@ func (s *Service) saveState(ctx context.Context, id string, next model.RuleSyncS
 		if e = ctx.Err(); e != nil {
 			return e
 		}
-		_, e = notifications.TaskStatus(ctx, s.m.Repository().DataDir()).Record("agent_rule_sync:"+id, taskstatus.Result{OK: next.Status == "succeeded", Trigger: "event", Error: next.Message})
+		_, e = notifications.TaskStatus(ctx, s.m.Repository().DataDir()).RecordContext(ctx, "agent_rule_sync:"+id, taskstatus.Result{OK: next.Status == "succeeded", Trigger: "event", Error: next.Message})
 	}
 	return e
 }

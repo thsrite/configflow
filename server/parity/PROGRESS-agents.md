@@ -1617,9 +1617,9 @@ Review commands (private detached worktree of HEAD because the shared tree did n
 
 **C32 hook contract (coordinator approved): A16 必须注册 PinnedWithheld hook，注册后 C32 的 pinned_withheld 字段恢复。** `agents.Hooks.PinnedWithheld(ctx, profileID, ruleIDs) (bool,error)` owns the baseline/projection calculation. C32 returns false when no eligible auto-syncing OxiDNS exists; when projection is required but unavailable/fails, it logs one redacted warning and omits only this best-effort field after the save. A16 Wire 已注册实际 hook，合并后恢复此字段；不复制 projection 到 config routes。
 
-**Status: `ported` — Opus HR 复核完成（0 high），待 A14 合入后 rebase 复验再标 `verified`** · HR · prereqs: A07 (`mihomo_panel.call`, `oxidns_rule_update`), A06 (`MonitorError`), A14 (`rule_sync_store`, transactional content), A11, C18/C22 (generators, `get_oxidns_ruleset_downloads`), C25 (`oxidns_common_routing._analyze/_references/apply_routing`, `dns_watchdog`), C27 (`rule_dns.profile_agents` and projection helpers), C05 (`OxidnsSettingsError`), C14 (`is_internal_rule_url`) · Go: internal/agents/rulesync (new), api/agents
+**Status: `verified` — Opus HR 复核完成（0 high），batch-5 集成与 owner ctx 提交窗口复验通过** · HR · prereqs: A07 (`mihomo_panel.call`, `oxidns_rule_update`), A06 (`MonitorError`), A14 (`rule_sync_store`, transactional content), A11, C18/C22 (generators, `get_oxidns_ruleset_downloads`), C25 (`oxidns_common_routing._analyze/_references/apply_routing`, `dns_watchdog`), C27 (`rule_dns.profile_agents` and projection helpers), C05 (`OxidnsSettingsError`), C14 (`is_internal_rule_url`) · Go: internal/agents/rulesync (new), api/agents
 
-**Opus HR review (2026-11-18, branch `go-opus-review-a16`):** [review-a16.md](review-a16.md)。high **0**（未达回退门槛）；medium 1 已修：M1 结构发布把失败留下的 `force_refresh` 传给候选生成（Python 从不传），只开「设备规则」的设备在任何一次失败后会重新下载规则库文件、越过关闭的作用域，Mihomo 还用 OxiDNS 下载表算 forced 路径（`83fe462db`）。low 1 已修：规则签名只把 JSON `false` 当停用，R5 假值 `enabled` 触发无意义发布（`83fe462db`）。另补：withheld 的 Python 差分（原来只比长度且无用例）、`TestMain` 锁序、结构发布中途关机的真实 Runtime 收敛、R5 形状、5 个路由差分场景。作者修的 3 个 Python 问题确认正确且完整。.32：rulesync race 87.674s、HTTP 差分 8.506s、server 1.434s。**不能标 verified 的原因**：A16 叠在尚未进 go 的 A14 上；A14 与 batch-4 合入后 rebase，把 task-status 写切到 `RecordContext(owner ctx)`（O3-6c），在合并树补跑本包 race、关机后 task-status 不写与 Flask 差分，通过后即可标 `verified`。L3 实机项见复核报告第 5 节。
+**Opus HR review (2026-11-18, branch `go-opus-review-a16`):** [review-a16.md](review-a16.md)。high **0**（未达回退门槛）；medium 1 已修：M1 结构发布把失败留下的 `force_refresh` 传给候选生成（Python 从不传），只开「设备规则」的设备在任何一次失败后会重新下载规则库文件、越过关闭的作用域，Mihomo 还用 OxiDNS 下载表算 forced 路径（`83fe462db`）。low 1 已修：规则签名只把 JSON `false` 当停用，R5 假值 `enabled` 触发无意义发布（`83fe462db`）。另补：withheld 的 Python 差分（原来只比长度且无用例）、`TestMain` 锁序、结构发布中途关机的真实 Runtime 收敛、R5 形状、5 个路由差分场景。作者修的 3 个 Python 问题确认正确且完整。.32：rulesync race 87.674s、HTTP 差分 8.506s、server 1.434s。**集成复验已完成**：`go-a16-integrate` 从 HR tip 创建，以 `--onto batch-5@0d43e3f1 53d43b577` 仅重放 16 个 A16 提交，不重复旧 A14；task-status 已切到 `RecordContext(owner ctx)`。新增真实 Runtime 锁等待回归：关机不写任务状态/notifications，断连仍恰好记录一次（成功和失败均覆盖）；旧 Record 负控的两个 shutdown 子例均失败。固定 .32：rulesync 全包 race+真实 Python 172.908s、20 场景 HTTP/DB/文件差分 16.187s、共享 taskstatus 1.266s/repo 1.669s、CFG-11 未改 DNS 行 revision 6.907s、server race 4.324s；vet 与 gofmt 通过。适配 tasks.History 错误返回及共享 native JSON 脱敏接口；A16 夹具预先使用现行 metrics JSONL，避免无关启动迁移的 JSON 排版差异，比较器未改。完整门禁由协调者在 batch-6 执行。L3 实机项见复核报告第 5 节。
 
 **Design:** `server/design/a16-a18-sync-follow-ha.md` (Opus, 2026-11-17) covers A16, A17 and A18 — package map, stored types, Agent protocol, loops, locks, failure/rollback, steps A16-0…A18-4, acceptance (fake pair, Python transcript differential, F1 closure, L3). Port to it; contract changes need the designer's or coordinator's agreement. Open maintainer decisions: D-A17-1, D-A18-1.
 
@@ -1633,12 +1633,12 @@ Tests: `test_agent_rule_sync.py` (51), `test_rule_sync_projection.py` (35), `tes
 
 Routes (2): `GET|PUT /api/agents/<agent_id>/rule-sync`
 
-Evidence: internal/agents/rulesync、两条 HTTP 路由、C07 row、C32 PinnedWithheld 接线已完成；待独立 Opus HR。交回：[progress/A16-handoff-zh.md](progress/A16-handoff-zh.md)。仅 .64 定向验收，完整 gate/proddiff 由协调者批次树跑。依赖 A14@53d43b577；A14/O3-6c 未合入前，共享最终提交窗口如实保留。
+Evidence: internal/agents/rulesync、两条 HTTP 路由、C07 row、C32 PinnedWithheld 接线已完成，Opus HR 与 batch-5 集成复验通过。交回：[progress/A16-handoff-zh.md](progress/A16-handoff-zh.md)（末尾集成增量更新了原依赖与提交窗口状态）。完整 gate/proddiff 由协调者批次树跑。
 
 Hooks to provide: `agents.SetRuleSyncRow` (`routes/tasks._agent_rows` rule-sync row), `lifecycle.Loop` for `rule_sync.start_loop` (app.py `start_agent_rule_sync`; heartbeats also start it lazily — keep that behaviour), C27's interface for `rule_sync.settings_for` (decision 3). Note the idle-CPU history (5 s loop, IdleRounds): keep the idle-round gating exactly.
 
 
-Final product tip: `c241f2938`; final targeted checks on .64: rulesync race + real Python 69.567s, HTTP/DB/files differential 5.690s, server race 1.337s; native HA predicate increment 4.743s/8.930s. Archive fuzz 60s/599521 executions. No full agent gate; shared O3-6c window remains explicitly assigned.
+Original author product tip: `c241f2938`; original .64 targeted checks: rulesync race + real Python 69.567s, HTTP/DB/files differential 5.690s, server race 1.337s; native HA predicate increment 4.743s/8.930s. Archive fuzz 60s/599521 executions. HR and .32 integration evidence above supersede the original pending O3-6c window.
 
 ## A17 — DNS follow
 

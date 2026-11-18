@@ -15,7 +15,7 @@
 - medium 1 条（候选生成被错误地强制下载，越过「规则库」关闭的作用域），已修。
 - low 1 条（R5 假值 `enabled` 进入规则签名），已修；测试覆盖补充 5 项。
 - 作者修的 3 个 Python 问题（`_publish` 已提交仍标 failed、GET 期间重绑定后仍 POST、HA enable 并发）均确认正确且完整。
-- 共享最终提交窗口（O3-6c）登记为**待复验**，见第 4 节。
+- 共享最终提交窗口（O3-6c）初次 HR 时登记为待复验；现已在 batch-5 集成树接入并通过 .32 复验，见第 4 节和交回报告末尾。
 
 ## 1. 发现
 
@@ -95,12 +95,14 @@
 - HA 配对的规则同步（`_refresh`/`_publish` → 配对发布）在 A18 注册 pair publisher 之前按 A14 默认 fail closed，会周期性
   记为 failed；属 A18 依赖，不在本次范围。
 
-## 4. 待复验（不计入本次发现）
+## 4. 集成复验（初次 HR 待办，现已完成）
 
 - **O3-6c 共享最终提交窗口**：`notifications.TaskStatus(...).Record` 无 ctx，SQLite 最终提交前的 ctx 检查由共享层负责。A14 与
   batch-4 合入 go 后 rebase，把 `saveState` 的 task-status 写换成 `RecordContext(owner ctx)`，在合并树补跑：本包定向 race（含
   `TestMain` 锁序）、关机后 task-status 不写、`TestRuleSyncHTTPAgainstFlask`，并确认 CFG-11 行 revision 保真。
 - A14 合入后同时复验 T3（依赖 A14 的 `PublishDirect`/A01 中断分类）与 M1 用例。
+
+2026-11-18 集成补记（作者 Codex，独立 HR 结论不变）：`go-a16-integrate` 已叠到 `batch-5@0d43e3f1`，没有重复旧 A14 提交；终态写入传 owner ctx 给共享 `RecordContext`。真实 Runtime 在 task-status 锁等待期间关机后不写任务状态/notifications；断连后成功和失败终态均完整记录一次。负控旧 Record 两个 shutdown 子例失败。完整 rulesync race（含 M1/T3/Python）172.908s；20 场景 Flask HTTP/DB/文件差分16.187s；O3-6c taskstatus/repo、CFG-11 行 revision、server race 与 vet/gofmt 均通过。A16 可标 `verified`；L3 实机依赖仍留给后续批次。确切命令与原始最后输出见 [A16-handoff-zh.md](progress/A16-handoff-zh.md) 的 batch-6 集成增量。
 
 ## 5. 需要 L3 实机验证的项目（设计 §6.7 细化）
 

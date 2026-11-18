@@ -131,3 +131,61 @@ c241f2938 keep HA pair predicates on native record identities
 ```
 
 最终报告提交的tip以交回消息为准。工作区交回前确认干净；不push。A14未合入go时不擅自重放整条依赖链到go；待通知后再做指定的rebase和共享提交接口增量。
+
+
+## batch-6 集成增量（2026-11-18）
+
+按协调者指定，从 `go-opus-review-a16@6464cd7c8` 新建 `go-a16-integrate`，执行：
+
+```sh
+git rebase --onto 0d43e3f1 53d43b577
+```
+
+`53d43b577` 是原 A16 的 A14 parent；仅重放 A16 作者与独立 HR 的 16 个提交，旧 A14 提交没有重复带入。新基点是 `batch-5@0d43e3f15`，保留其 `configexport.Wire` 并增加 `rulesync.Wire`。behaviour-changes 的两侧新增条目均保留。
+
+本次生产改动：终态任务记录使用 `notifications.TaskStatus(owner ctx, dataDir).RecordContext(owner ctx, ...)`，沿用共享 O3-6c 在 leaf 锁内、替换前的取消检查，不复制锁或提交逻辑。适配 batch-5 的 `tasks.History` 双返回值并传播错误；共享脱敏返回值已改为 native JSON，复用现有 `agents.SanitizePublicMetadata` 桥接历史非字符串 presence 字段，转换失败时隐藏该字段。字符串字段的处理不变。
+
+新增 `TestStateTaskStatusLockWaitRuntimeBoundary`：succeeded/failed × shutdown/disconnect 四个用例。用另一 Store 的现有 Now seam 持有真实 process-wide leaf mutex；通过 goroutine 栈确认实际 `saveState → lockedContext → Mutex.Lock` 等待后，才取消。真实 Runtime.Start/BindRequest/Spawn/Shutdown：关机后解除锁不得写 task-status.json/notifications.json、不得继续改 DB；请求断连后写入一次终态记录。DB 的终态更新在等待任务状态锁之前已经提交，测试不要求关机回滚之前的提交。另补历史对象型 presence 名称的脱敏与原记录不变断言。
+
+负控：保留旧 `Record` 的定向 race 在 .32 运行，11.445s，两个 shutdown 子例均失败 `shutdown task-status write returned <nil>`，两个 disconnect 子例通过。这证明回归实际命中旧共享窗口。初次集成编译遇到上述两个已变更的共享签名，适配后再取得该负控结果。
+
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt -e GOMAXPROCS=4 --back server/internal/agents/rulesync/adapter.go --back server/internal/agents/rulesync/service_commit_test.go -- bash -lc 'cd server && gofmt -w internal/agents/rulesync/adapter.go internal/agents/rulesync/service_commit_test.go && go test -race -count=1 -timeout=5m -run "^TestStateTaskStatusLockWaitRuntimeBoundary$" ./internal/agents/rulesync'
+```
+
+本轮仅定向验证；完整门禁交由协调者在 batch-6 上执行。无 push、无子 agent、只用合成数据与回环 fake。
+
+### .32 合并树验收
+
+第一轮（固定 .32；开始 `/proc/loadavg`: `4.14 4.03 5.16 4/364 3217602`）：
+
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt -e GOMAXPROCS=4 -e CONFIGFLOW_DIFF=1 --back server/internal/agents/rulesync/adapter.go --back server/internal/agents/rulesync/service.go --back server/internal/agents/rulesync/service_test.go --back server/internal/agents/rulesync/service_commit_test.go -- bash -lc 'set -e; cat /proc/loadavg; cd server; gofmt -w internal/agents/rulesync/adapter.go internal/agents/rulesync/service.go internal/agents/rulesync/service_test.go internal/agents/rulesync/service_commit_test.go; go vet ./internal/agents/rulesync ./internal/api/agents/... ./internal/server; go test -race -count=1 -timeout=20m ./internal/agents/rulesync; go test -race -count=1 -timeout=10m -run "^TestRuleSyncHTTPAgainstFlask$" ./internal/api/agents/difftest; go test -race -count=1 -timeout=10m -run "^(TestO36cStatusLockWaitRuntimeBoundary|TestO36cStatusShutdownDuringRecord|TestO36cRepoBeforeCommitRuntimeBoundary|TestRuleWritesPreserveUntouchedDNSRows)$" ./internal/taskstatus ./internal/repo ./internal/api/rules; go test -race -count=1 -timeout=10m ./internal/server; test -z "$(gofmt -l internal/agents/rulesync internal/api/agents/rulesync.go)"; cat /proc/loadavg'
+```
+
+```text
+ok  configflow/internal/agents/rulesync 172.908s
+FAIL configflow/internal/api/agents/difftest 14.158s
+```
+
+本包已包含新增锁等待 shutdown/disconnect、原有结构发布关机 T3、M1、真实 Python projection/isolation/snapshot/worker 对照；TestMain 的锁序断言通过。该轮在 HTTP 差分处停止，后面的包没有执行。HTTP 响应与完整 DB 均未报差异；文件差异仅为 A04 旧 `agent-busy_metrics.json` 启动迁移产生的 JSONL 排版：相同字段/值的成员次序与 `speed_recv: 2.5` / `2.50`。A16 专用夹具在复制到两侧之前将这一个旧文件换成当前 JSONL 格式，保留非空历史点以及其他监控文件，完整逐文件比较继续执行。A04 原有迁移用例、生产迁移实现、共享比较器和 baseline 均未修改。
+
+只补跑受夹具修正影响的差分及前轮未执行的定向检查，不重复已通过的 rulesync 全包：
+
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt -e GOMAXPROCS=4 -e CONFIGFLOW_DIFF=1 --back server/internal/api/agents/difftest/rulesync_diff_test.go -- bash -lc 'set -e; cat /proc/loadavg; cd server; gofmt -w internal/api/agents/difftest/rulesync_diff_test.go; go vet ./internal/agents/rulesync ./internal/api/agents/... ./internal/server; go test -race -count=1 -timeout=10m -run "^TestRuleSyncHTTPAgainstFlask$" ./internal/api/agents/difftest; go test -race -count=1 -timeout=10m -run "^(TestO36cStatusLockWaitRuntimeBoundary|TestO36cStatusShutdownDuringRecord|TestO36cRepoBeforeCommitRuntimeBoundary|TestRuleWritesPreserveUntouchedDNSRows)$" ./internal/taskstatus ./internal/repo ./internal/api/rules; go test -race -count=1 -timeout=10m ./internal/server; test -z "$(gofmt -l internal/agents/rulesync internal/api/agents/rulesync.go internal/api/agents/difftest/rulesync_diff_test.go)"; cat /proc/loadavg'
+```
+
+退出 0；vet 通过、gofmt 检查无输出：
+
+```text
+3.12 3.89 4.88 4/371 3221591
+ok  configflow/internal/api/agents/difftest 16.187s
+ok  configflow/internal/taskstatus 1.266s
+ok  configflow/internal/repo 1.669s
+ok  configflow/internal/api/rules 6.907s
+ok  configflow/internal/server 4.324s
+3.36 3.87 4.83 3/354 3222142
+```
+
+HTTP 的 20 场景逐次比较完整 DB 和 DATA_DIR 文件；CFG-11 检查确认未改动 DNS 行的原始值和 revision 不变。A16 已按协调者要求标 `verified`；原报告中的 A14/O3-6c 阻塞由本节关闭，独立 HR 的 M1/L1 修复完整保留。没有新增未关闭的 A16 问题；A18 配对发布依赖与 L3 实机验证仍按原计划在对应批次执行。分支 `go-a16-integrate`，最终提交号随交回消息提供，进入 batch-6；未跑完整门禁、未 push。
