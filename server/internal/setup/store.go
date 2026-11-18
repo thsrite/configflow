@@ -22,8 +22,8 @@ const maxRecordBytes = 16 << 20 // Same limit as the existing setupflow reader.
 var validID = regexp.MustCompile(`^[a-f0-9]{32}$`)
 
 // Session operations span repository transactions and installation reads, so
-// they are L2 operation locks, before L3. All Store instances share these keys.
-var sessionLocks = lockx.NewKeyed[string](lockx.LevelDevice, "setup-session")
+// they are the first L2 suborder, before device/profile operations and L3. All Store instances share these keys.
+var sessionLocks = lockx.NewKeyed[string](lockx.LevelSetupSession, "setup-session")
 
 type recordStore struct{ root string }
 

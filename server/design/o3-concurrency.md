@@ -779,3 +779,15 @@ The canonical `TestCommitBatchMarkersMatchDesign` checks both packages and both 
 resolving ctxx import aliases; each approved package/function/callee appears exactly once.
 Runtime tests establish the side-effect condition, one revision, complete evidence, no
 post-cancellation device I/O, and lock release; AST alone cannot prove these semantics.
+
+### Clarified in C36 — setup session L2 suborder
+
+`lockx.LevelSetupSession = LevelDevice - 1` 是 L2 的前序：
+setup session → device/profile operation → repository。反向阻塞取得 session
+锁算违规，try-only 保持既有规则。首次向导 abandon 必须一直持有同一把 keyed
+session 操作锁，直到 profile 和 session 都删除完成，避免并发 prepare 重写；
+repo.DeleteProfile 自带 profile-operation（LevelDevice）锁，因此不能给两者
+同一数值，也不能把跨 repo/I/O 的 session 操作伪装成 L4 叶提交区。C36 的
+AdoptOwnedWrite 与自身流程共用该锁；A21 在释放 L3 后才调用它。只读 A20
+ProfileSessions 不取得操作锁；未来若需要取得，必须复用 C36 的同一锁与级别，
+不得另造一把相同资源、不同级别的锁。

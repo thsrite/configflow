@@ -15,6 +15,9 @@ type Level int
 const (
 	// LevelJob is L1, the try-only operation/409 lock level.
 	LevelJob Level = 10
+	// LevelSetupSession is the first L2 suborder: setup session → device/profile
+	// operation → repository. Reverse blocking nesting is a violation.
+	LevelSetupSession Level = LevelDevice - 1
 	// LevelDevice is L2, blocking device/session read-modify-write locks.
 	LevelDevice Level = 20
 	// LevelDeviceControl is the second L2 suborder: Sub-Store work leases
