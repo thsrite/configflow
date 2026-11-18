@@ -20,7 +20,8 @@
 refresh 合并、深拷贝、显式 profile scope、请求断开（进入前与读取中）后任务完成、关机后不提交缓存与通知（在 R13 自己的
 提交点上）、凭据不进公开结果、摘要与 Python 逐分支一致，均已核对。问题集中在「从存储读取关联路由器」这一步。
 
-修复提交：`9573b1705`（F1、F2 及测试、behaviour-changes）；本报告所在提交（报告、PROGRESS）。
+修复提交（rebase 到 go `c939a5f6` + `go-r12-r03fix@c2a9361c` 之后）：`a1dfaa325`（F1、F2）、`28b765753`（报告）、
+`bd749392a`（P1 复验用例）、`8380f5a3a`（X1）、本次文档提交。P1 已复验通过，X1 已按协调者裁定完成。
 
 ## 发现
 
@@ -60,23 +61,33 @@ refresh 合并、深拷贝、显式 profile scope、请求断开（进入前与�
   只有 Go 自己序列化的 Report/Plan 会进入 hook，实际不可达。我加了 `TestR13ReviewNoticeMatchesReminder`：用真实
   Inspect/BuildPlan 结果经 hook 写出的回执文字等于原生摘要的 `有 N 项配置差异待发布。`（通过，作为回归保护）。
 
-## 待复验（batch-1 合入后在共享树上做）
+## P1 复验（batch-1 合入后，已完成）
 
-- **P1 — 通知写入的最后一段取消窗口。** `recordPendingNotice` 在 Detach 之后、调用 `notifications.RecordRouter` 之前检查
-  `ctx.Err()`；当前基线的 `RecordRouter` 进入 `notifications.Transaction(dataDir, fn)`，没有 ctx，在等待通知 guard、
-  Rename 之前不再看取消。因此「检查通过 → 关机 → 等到 guard 后提交」这一窗口在当前树上存在。作者与前协调者的裁定是由 C07
-  batch-1 的 `TransactionContext`（leaf 锁内与 Rename 前检查）统一修复，R13 不复制。batch-1/batch-4 合入 go 后，rebase
-  本分支并补一条真实 Runtime 用例：先占住通知事务（另一个 `Transaction` 阻塞在 fn 内），让 `AgentRouters` 的 owner 走到
-  `RecordRouter`，再 `Shutdown`，然后放开 guard，断言 `notifications.json` 没有本次回执、缓存未提交；同一用例的断开分支
-  断言回执照常写入。O3-6b 的 Wire hook 合并（`routers.Wire` 同时注册 RedactRouters 与 Summarize）在同一次复验中确认。
+- **P1 — 通知写入的最后一段取消窗口：已关闭。** batch-1 的 `RecordRouter` 先 Detach，再进入
+  `notifications.TransactionContext`：等 leaf 锁时响应取消，拿到锁后、写临时文件后、Rename 前各检查一次 `ctx.Err()`。
+  新用例 `TestR13ReviewNoticeWaitingForLeafLock`（真实 Runtime）：另一个事务占住通知 leaf 锁，`AgentRouters` 的 owner 读完设备后
+  在锁上等待；`shutdown` 分支关机后放开锁，`notifications.json` 不存在、请求得到取消错误；`disconnect` 分支断开请求后放开锁，
+  回执照常写入。`-race -count=3` 通过。变异对照：把 `TransactionContext` 改成 `context.WithoutCancel` 后 `shutdown` 分支失败
+  （`receipt written after shutdown`）。
+- **Wire hook 合并：确认。** `repo.RegisterHooks` 与 `notifications.SetSources` 都只安装非 nil 字段，`routers.Wire` 同时注册
+  RedactRouters 与 Summarize，不会覆盖 O3-6b 或其他包注册的 hook。
 
-## 交协调者（R12 同类问题，不在本分支修）
+## X1 — 路由器记录按 R5 容错解码（协调者裁定 2026-11-18，已完成）
 
-- **X1 — `releaseRoutersOf` 的严格解码在 R12 里还有两处。** `returnCleanup`（`inspect.go`，遍历所有配置空间找共用回流的
-  路由器）和 `Publish`（`publish.go`，在目标配置空间中按 ID 找路由器）都用它：同一配置空间或任一配置空间里一条类型不符的
-  记录，会让回流清理检查（Agent 有生效的受管回流时）或另一台正常路由器的发布直接失败；`items` 中的 `null` 会 panic。
-  Python 两处都按原始 dict 读取。建议由 `routers.Router` 的所有者（R01/n8 类型化模型规则）让 `Router.UnmarshalJSON`
-  按 R5 缺省值回退并记录问题（与 `model.Router` 一致），而不是在每个调用点各写一份容错；R14/R15/R16 接入前完成。
+原发现：R12 的 `returnCleanup`（遍历所有配置空间找共用回流的路由器）和 `Publish`（在目标配置空间按 ID 找路由器）都用严格的
+`releaseRoutersOf`：一条类型不符的记录会让回流清理检查或另一台正常路由器的发布直接失败，`items` 中的 `null` 会 panic。
+修复（`8380f5a3a`，「R01 share: tolerant router decode (R5) for R12/R13 callers」）：
+- `Router.UnmarshalJSON`：整条解码遇到 `json.UnmarshalTypeError` 时逐成员试解，类型不符的成员按缺失处理（取 Python 读取时的缺省值，
+  如 `verify_tls` 开、间隔 60），其余成员和未知字段照常保留；原始字节仍存在 `source`，未改动的记录在发布 CAS 和写回时保持原样。
+  「配置字段类型不匹配，已按缺省值解码」警告仍由仓库在加载时记录（未重复记录）。语法错误仍返回错误。
+- `routersOf` 取代 `releaseRoutersOf`，语义同 Python `routers_of`：`routers` 非对象或 `items` 非列表 → 无路由器，`null` 与非对象项跳过。
+  R12 `returnCleanup`、`Publish` 和 R13 pending 都走它；R13 自己的 `pendingLinkedRecords`/`pendingIdentity`/`broken` 已删除，
+  关联的坏记录现在像 Python 一样正常读取（原 F1 修复里显示为 unknown 的行为随之取消），空 Agent ID 规则（F2）保留在 pending 中。
+- 测试（修复前全部失败、修复后通过）：`TestX1PublishWithMalformedNeighbour`（同一配置空间有坏记录，另一台照常发布；修复前
+  `Err: json: cannot unmarshal …`）、`TestX1ReturnCleanupWithMalformedProfile`（其他配置空间有坏记录，回流清理检查仍列出全部共用者；
+  修复前同样报错）、`TestX1RoutersOfLikePython`（null/非对象项跳过等 5 个子用例；修复前 nil 解引用 panic）、
+  `TestX1RouterDecodeFallsBackPerMember`（逐成员回退、未知字段与原始字节保留）、`TestR13ReviewMalformedRouterIsolated`
+  （关联的坏记录读成 pending；修复前为 unknown）。修复前的对照用一个只包装旧 `releaseRoutersOf` 的临时 shim 运行。
 
 ## 重点核对（未发现其他问题）
 
@@ -112,7 +123,7 @@ refresh 合并、深拷贝、显式 profile scope、请求断开（进入前与�
 2. 让其中一台丢包不可达：25 s 后该行为读取超时，另一台正常；读取进行中再发一个普通请求和一个 `refresh=1` 请求，都加入同一次读取。
 3. 同一台 iKuai 在两个配置空间里以克隆 ID 关联同一 Agent：两路并发登录读取都成功（确认 iKuai 不会因同账号并发登录踢掉前一个会话）；
    25 s 取消的 iKuai 读取不残留会话。
-4. batch-1 合入后：读取中向面板发 SIGTERM，宽限期内退出，重启后通知列表里没有关机之后写入的回执（P1）。
+4. 读取中向面板发 SIGTERM，宽限期内退出，重启后通知列表里没有关机之后写入的回执（P1 的实机对应项）。
 
 ## 验证命令与输出（均在测试服务器 .32，RT_HOST 固定）
 
@@ -131,9 +142,22 @@ rt -- bash -lc 'cd server && test -z "$(gofmt -l internal/routers)" && go vet ./
 # gofmt-clean；ok configflow/internal/routers 13.194s；ok configflow/internal/notifications 4.588s
 ```
 
+```sh
+# rebase 后：P1
+rt -- bash -lc 'cd server && go vet ./internal/routers && go test -race -count=3 ./internal/routers -run TestR13ReviewNoticeWaitingForLeafLock'
+# ok 5.797s；TransactionContext 改为 WithoutCancel 的变异：shutdown 子用例 FAIL
+
+# X1 修复后，routers 包全部（Router 解码为本包共用）
+rt -- bash -lc 'cd server && test -z "$(gofmt -l internal/routers)" && go vet ./internal/routers/... && go test -race -count=1 -p 4 ./internal/routers/... -timeout 40m'
+# fmt-ok；ok configflow/internal/routers 513.444s
+```
+
 未跑完整 gate、proddiff、全仓 race（按简报由协调者在批次树执行）。
 
 ## 提交
 
-- `9573b1705` go(routers): R13 review — isolate undecodable router records, empty Agent links nothing
-- 本报告所在提交：本报告、PROGRESS R13 状态。
+- `a1dfaa325`（rebase 前 `9573b1705`）go(routers): R13 review — isolate undecodable router records, empty Agent links nothing
+- `28b765753` go(parity): R13 Opus review — report and verified status
+- `bd749392a` go(routers): R13 review P1 — receipt waiting for the notification leaf lock honours shutdown
+- `8380f5a3a` R01 share: tolerant router decode (R5) for R12/R13 callers
+- 本次文档提交：P1/X1 结果、behaviour-changes、PROGRESS。

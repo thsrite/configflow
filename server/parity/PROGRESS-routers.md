@@ -787,11 +787,10 @@ R09 remap/多表、R10 补偿证明、R11 用户 hook 部分归属、A24 凭据�
 
 **Status: `verified`** · HR · prereqs: R12, C05, C07 (ready), A01, A06 (ready); A23 hook · Go: internal/routers
 
-**Opus 复核（2026-11-18，[review-r13.md](review-r13.md)）：** 0 high、1 medium、1 low 已修（`9573b1705`：
-一条类型不符的路由器记录不再让所有 Agent 的提醒整体失败；空 Agent ID 不再匹配未设网关的路由器），2 条 low 补记
-behaviour-changes。**待复验 P1：** batch-1 合入 go 后 rebase，在共享树上用真实 Runtime 复验 C07 `RecordRouter` 的
-leaf 锁/Rename 取消窗口与 O3-6b Wire hook 合并。**交协调者 X1：** R12 `returnCleanup`/`Publish` 仍用严格的
-`releaseRoutersOf`，建议在 `Router.UnmarshalJSON` 统一按 R5 回退。L5 项见复核报告。
+**Opus 复核（2026-11-18，[review-r13.md](review-r13.md)）：** 0 high、1 medium、1 low 已修（`a1dfaa325`），2 条 low 补记
+behaviour-changes。rebase 到 go `c939a5f6` + R12（`c2a9361c`）后：P1（C07 leaf 锁/Rename 取消窗口、Wire hook 合并）已在合并树上
+用真实 Runtime 复验通过（`bd749392a`）；X1 按协调者裁定完成（`8380f5a3a`，`Router` 按 R5 容错解码，R12/R13 统一走 `routersOf`）。
+L5 项见复核报告。
 
 R13 实现位于 `pending.go`、`pending_cache.go`、`pending_summary.go`；交接见
 [progress/R13-handoff-zh.md](progress/R13-handoff-zh.md)。已叠入 R12 复核产品修复
