@@ -223,3 +223,27 @@ F1–F9 都已关闭（F6 由本节关闭）。修复复核和接线复核中的
 
 **最终确认**：产品树 434cacd69 没有遗留的复核发现。作者完成自己的收尾验证（定向 race、cross-corpus、fuzz 60s、gofmt/vet）后，
 N8-9 routers/routersplit 可以标为 **verified**。
+
+## batch-8 rebase 接线复核（go@690e97995，工作区未提交改动，只读）
+
+改动只有两处：`rule_sync_sources.go` 的 `syncCacheRead` 改用 `rulefetch.PeekCacheWithFormat(ctx, rule, cfg, "")`；
+`management_repo.go` 删掉了未使用的 jsonx import。saveWorkspacePolicies 没有改动。
+
+- **锁**：Peek 只读，未命中时用 `repo.View` 读快照，不取写锁，也不进入 L1/L2/L3。
+  这和旧版 CacheReadPath 用的是同一个 `cacheReadPath`，所以锁顺序没有变化。
+- **取消**：Peek 在入口和 `cacheReadPath` 中都会检查 `ctx.Err()`，比旧实现多了取消检查。
+  写缓存仍由 `writeSyncSources` → `syncCacheWrite` 在写之前检查 `ctx.Err()`。
+- **不写缓存**：调用时 `migrate=false`，只用 `os.ReadFile`，不迁移旧文件名，不改 mtime，也不生成 native 缓存文件。
+  生成路径没有改用会迁移的 ReadCache。
+- **每次操作一个环境**：`cfg` 仍然来自 ctx 中的 `syncEnvironment`（同一个 `*SourceConfig`）。cacheLibrary 为 nil 时用的是 `cfg.Library`，
+  所以既不会逐规则重解配置，也不会逐规则读 shared。inline content 在缺缓存时的兜底、`syncMaxBytes` 上限和 UTF-8 检查都保留着。
+
+低（只记录，不阻塞）：
+1. Peek 用 `os.ReadFile` 读全文件，长度检查从「读的时候就限长」变成「读完再检查」，内存上限不再是 syncMaxBytes+1。
+   缓存文件只由 ConfigFlow 写入，而且写入时已经限长，所以实际风险很小。
+2. 在 cache 模式下（目前只有 Capture，也就是下载器为 nil 的情况），URL 源的缓存如果校验失败或读取出错（非 ENOENT），
+   以前会以 `messageSyncSourceError` 报错，现在会被当作缺失，读到的内容为空。这和 rules owner 在 9989da440 中「坏缓存按缺失处理」的
+   fail-closed 约定一致，也和发布阶段生成配置时对同一个缓存的看法一致。
+
+**结论**：Peek 接线不影响已批准的锁顺序、取消、「读缓存不写不迁移」和「每次操作一个环境」这四项。
+routers/routersplit 维持 **verified**，前提是作者正在跑的跨包语料核对（若只有元数据差异，重录后逐值核对）通过。

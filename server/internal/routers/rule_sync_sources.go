@@ -7,10 +7,7 @@ import (
 	"configflow/internal/rulefetch"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
-	"os"
 	"strings"
 	"unicode/utf8"
 )
@@ -68,9 +65,8 @@ func syncValidate(ctx context.Context, content string, source syncSource, config
 	return rulefetch.ValidateRemote(rulefetch.Content{Data: []byte(content), Text: true}, rule, cfg.Library, "")
 }
 
-// syncCacheRead is a bounded, read-only cache peek: it never migrates a legacy
-// path or changes mtime. Batch-8 may provide PeekCacheWithFormat with this
-// ownership contract; do not substitute the migrating ReadCache API here.
+// syncCacheRead uses the rule owner's validated, read-only peek. It never
+// migrates a legacy path or changes mtime; keep generation off ReadCache.
 func syncCacheRead(ctx context.Context, source syncSource, config json.RawMessage) (string, error) {
 	rule, err := syncRule(source.Library.Raw)
 	if err != nil {
@@ -80,24 +76,12 @@ func syncCacheRead(ctx context.Context, source syncSource, config json.RawMessag
 	if err != nil {
 		return "", err
 	}
-	path, err := rulefetch.CacheReadPath(ctx, rule, cfg.Library)
+	raw, err := rulefetch.PeekCacheWithFormat(ctx, rule, cfg, "")
 	if err != nil {
 		return "", err
 	}
-	file, err := os.Open(path)
-	if errors.Is(err, os.ErrNotExist) {
-		if source.Source.SourceType == "content" {
-			return source.Source.Content, nil
-		}
-		return "", nil
-	}
-	if err != nil {
-		return "", err
-	}
-	defer file.Close()
-	raw, err := io.ReadAll(io.LimitReader(file, syncMaxBytes+1))
-	if err != nil {
-		return "", err
+	if raw == nil && source.Source.SourceType == "content" {
+		return source.Source.Content, nil
 	}
 	if len(raw) > syncMaxBytes {
 		return "", routerError(fmt.Sprintf(messageSyncSourceLarge, orText(source.Source.Name, source.Item.ID)))

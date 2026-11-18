@@ -1,8 +1,8 @@
 # N8-9 routers / routersplit S pass
 
-状态：S pass本体完成，Opus HR **verified**，F1–F9全部关闭；作者本组定向race/HTTP、fuzz、gofmt/vet和审计均通过。**依赖 batch-8 集成，跨包 corpus 待 batch-8 合入后复验**。分支 `go-n8-9-routers`。
-起点 `go@d4fab6441`；按协调者授权叠在 rules 最终复核基点 `9989da440`。
-本组产品提交：`c8b4ab7cc`、`117cf39c0`、`434cacd69`，最终验收提交见分支 HEAD。
+状态：S pass本体完成，Opus HR **verified**，F1–F9全部关闭；作者本组定向race/HTTP、fuzz、gofmt/vet和审计均通过。已rebase至batch-8 `go@690e97995`，跨包 `Corpus|Reference|Golden` 全部通过。分支 `go-n8-9-routers`。
+起点 `go@d4fab6441`；曾按协调者授权叠rules@9989da440，现已rebase至batch-8 go@690e97995，重复rules提交自动跳过。
+首次rebase至690e97995后本组提交：`2c3d2b188`、`a7d2fc54e`、`457da1e89`、`04e4ddc2f`；新增batch-8接线及最终验收提交见分支HEAD。旧hash保留在复核记录中便于追溯。
 不 push、不跑完整门禁。作者所有测试均固定 `.32`。
 
 ## 交付与保留边界
@@ -10,9 +10,9 @@
 - routersplit 删除 `pyhelpers.go`；Profile/Marker/Context/Session/SplitState 与 yaml.Node 为业务边界，删除 Python str/list/dict/hash/异常模拟。原 N7 YAML oracle 保留。`PythonClass` 只在测试中标注冻结答案；产品错误使用原生 ValidationError 或 RouterSplitError。
 - routers 存储接共享 `model.Router`、`model.String`/`model.Int`；窄运行时投影保留原始成员及显式编辑意图。未知字段添加/修改用 Fields.Set，删除用 Fields.Delete/Clear；无关编辑保留错型、缺失成员、大整数及所有权证据，不物化运行时默认。
 - 管理读写接 repo.Config/UpdateProfile，设置 CAS 接唯一 SaveRouterSettingsJSON；通知接 native Inputs/SaveRouter，task slot 接 SetRowBuilder。定时扫描只读路由器子树。repo.SaveRouterSettings 的旧签名仅做 codec。
-- rules 正式接 SourceConfig/ValidateRemote/CacheReadPath/WriteCache/DownloadRequest，已删除 `legacy_rulefetch.go` 和 `syncTransportKey`。一次操作建立一次不可变配置环境，读取、下载及最终写缓存循环共用；transport 摘要只算一次，逐源缓存键只拼摘要和 URL。
-- 生成缓存读取是有界、UTF-8 校验的只读 peek，不能迁移、触碰 mtime 或 DB/revision。授权基点尚无 PeekCacheWithFormat，故用 typed CacheReadPath 加只读文件读取实现相同语义；batch-8 提供正式入口后以 owner 为准。
-- 生产 jsonx 只余 routersplit/legacy.go、routers/legacy_wire.go 的旧调用者 codec，以及协调者明确暂留的 management_repo.go:saveWorkspacePolicies OxiDNS 转码。后者对 `d4fab6441` 逐字不变；没有抢改 DNS owner 区段。
+- rules 正式接 SourceConfig/ValidateRemote/PeekCacheWithFormat/WriteCache/DownloadRequest，已删除 `legacy_rulefetch.go` 和 `syncTransportKey`。一次操作建立一次不可变配置环境，读取、下载及最终写缓存循环共用；transport 摘要只算一次，逐源缓存键只拼摘要和 URL。
+- 生成缓存读取现调用batch-8正式 PeekCacheWithFormat，统一声明/receipt/内容校验；读取后保留4MiB及UTF-8校验。peek不迁移、不触碰mtime或DB/revision，不调用迁移reader。
+- 生产 jsonx 只余 routersplit/legacy.go、routers/legacy_wire.go 的旧调用者codec。saveWorkspacePolicies现接DNS组的ProfileFromJSON/ReadPolicies/SavePolicyRows及yamlx/model.Fields原生转码，函数与690e97995逐字一致；移除了该文件最后一个jsonx import。
 
 ## 常设问题类
 
@@ -74,7 +74,7 @@
 
 无关配置大小没有成为每台/每条循环的额外分配成本；settings的大成员另由上面的正负控守住。
 
-## 最终定向验证（全部固定 .32）
+## 首轮定向验证（全部固定 .32，batch-8前）
 
 公共前缀：`RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && export GOMAXPROCS=4 PYREF_MODE=check && <command>'`。
 没有运行完整 gate、全库race或proddiff。
@@ -94,5 +94,16 @@
 初次race暴露CAS显式默认、坏选择列表/guard和probe保真问题，均修产品代码，原断言保留；新peek fixture曾缺子目录或误把文档网段期望计作IP，修的是新测试自身，没有改冻结答案。
 一次早期cross-corpus被排队rt同步改写远端oracle/metadata，属于无效执行不计PASS；最终按一条rt完成后再同步下一条执行。
 
-本分支已按授权叠rules@9989da440；交回前已执行 `git rebase go`（up to date）。本地go仍为d4fab6441，协调者明确先交回本组，batch-8（尚无最终tip）合入go后再通知本组rebase及复验跨包corpus，重复rules patch自动跳过。
-DNS的saveWorkspacePolicies区段以及新增PeekCacheWithFormat所有权以batch-8为准。
+首轮交回时按协调者要求暂留batch-8跨包复验。收到后续通知后已rebase到go@690e97995，重复rules提交跳过；行为登记的双方追加均保留。二进制routersplit参考冲突保留本组独立native期望，随后对跨包check发现的源metadata做单独核对，不修改原输入或答案。
+
+## batch-8 接线与复验（2026-11-19）
+
+- 正式接入 `rulefetch.PeekCacheWithFormat`；删掉自有CacheReadPath+文件读取。inline缺cache兜底、内容长度/UTF-8检查及一次config环境不变。
+- saveWorkspacePolicies与batch-8函数逐字相同（脚本核对True），保留DNS原生Profile/Node/Fields转码。management_repo只移除unused jsonx import，现两包生产jsonx仅在各自legacy codec。
+- Opus对新接线只读复核，未跑测试/rt；锁/取消/只读/单环境均保持，维持verified（跨包check通过为前提）。共享Peek先os.ReadFile后检查长度，坏缓存或非取消读取错误按缺失处理，遵循rules owner合同；这两点已记录为低严重度，不影响通过。
+- `.32`：`go test -race -p 4 -count=1 -timeout=12m ./internal/routers ./internal/api/routers -run "TestN89|TestR14|TestR15FlaskWorkspaceSourcesAndDNSPreview|TestR15WorkspaceDraftIsOfflineAndAtomic|TestR15FlaskManualRuleSyncAcceptedAndSettled"` 全通过，routers55.262s、api14.517s。包括真实逐规则分配正负控/写缓存循环、legacy peek无迁移以及DNS工作区HTTP边界。
+- 第一次batch-8跨包复验：ippresence1.161s、MosDNS62.921s通过，原237+30条旧缓存差异消失；routers66.793s通过。仅routersplit源metadata过期：go.mod哈希及新增yamlx/copy.go；6000/2323语料零差异。明确record命令：`RT_HOST=sunbroke@192.168.0.32 rt --back server/internal/routersplit/testdata/pyref -- bash -lc 'cd server && GOMAXPROCS=4 PYREF_MODE=record PYREF_ACCEPT=1 go test -p 4 -count=1 -timeout=12m ./internal/routersplit -run "^Test(Corpus|EdgeCorpus|RecordedPythonTests)$"'`，3.303s通过。取回后三份解压JSON的entries与重录前逐值完全相同（5/22/0），仅metadata更新。
+- 最后只读跨包check：`RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && export GOMAXPROCS=4 PYREF_MODE=check && go test -p 4 -count=1 -timeout=20m -run "Corpus|Reference|Golden" ./internal/...'` 全部通过（退出码0）。最后输出含ippresence1.230s、MosDNS68.487s、routers72.905s、routersplit1.697s、rulefetch3.232s、rules3.101s；原先两处依赖失败消失。R04/R05 HTTP语料亦在此命令内通过。
+- batch-8后 `.32` 最终 `gofmt -l .` 无输出，`go vet -p 4 ./...` 通过，`go test -p 4 -count=1 ./tools/pyref -run "^TestAuditRepository$"` 通过（0.783s）。
+
+交回前另随最新本地go rebase至bcbb6e573；该提交仅更新server/HANDOFF.md，产品相对已验证的690e97995基点不变，不重复测试。最终重写后的提交以分支HEAD历史为准。

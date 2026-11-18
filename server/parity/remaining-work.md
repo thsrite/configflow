@@ -160,7 +160,7 @@ GET `/api/stats/overview`、POST `/api/notifications/read`；九条 TSV 当前�
 | oxidns adapter removal | 部分完成：原生内核已存在，typed adapter未删除 | 已完成S-oxidns/N7；oxidns/adapter.go仍接jsonx，3个文件import | M；依赖typed repo/8d、规则/生成器消费者；不能重写已验证的Node内核 |
 | health(+check) | 在 batch-7，核心完成、跨模块F1明确未做 | `96777211a`、`a6850d650`、`0f595aab7`；各只有legacy文件import jsonx | S批次验收 + **M F1**：jsonstore最终Write/Remove ctx，并接discovery两adapter；其他旧协作者由subs/rules/agents迁移后删除 |
 | discovery | 在 batch-7，核心完成、协作者迁移部分完成 | `10c34d4ba`、`a7dc8a3fe`、`9deb29e4e`、`cebf31b3f`；仅legacy.go import | M 独立复核证据待核；F1与health共M；legacy中的rules/rulefetch/health/Agent回调分别等相邻组/N8-10，不能今天删 |
-| routersplit/routers | S pass本体完成，Opus HR verified；跨包复验待batch-8 | `c8b4ab7cc`、`117cf39c0`、`434cacd69`；progress/n8-9-routers、review-n8-9-routers；只余legacy codec与协调者暂留OxiDNS转码 | S批次集成：依赖batch-8缓存/参考修复，合入go后rebase并复验跨包Corpus；typed Agent迁移后删薄legacy |
+| routersplit/routers | S pass完成，Opus HR verified；batch-8跨包复验通过 | 分支go-n8-9-routers；progress/n8-9-routers、review-n8-9-routers；仅各自legacy codec | S批次集成：已叠go@690e97995，正式PeekCache/原生DNS转码；typed Agent迁移后删薄legacy |
 
 批次验收S不按行重复累计；F1是同一个跨模块任务。新建空分支不是“已经开始实现”的证据。
 
