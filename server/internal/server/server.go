@@ -38,6 +38,7 @@ import (
 	apirulelibrary "configflow/internal/api/rulelibrary"
 	apirules "configflow/internal/api/rules"
 	apisettings "configflow/internal/api/settings"
+	apisetup "configflow/internal/api/setup"
 	apistats "configflow/internal/api/stats"
 	apisubscriptions "configflow/internal/api/subscriptions"
 	apitasks "configflow/internal/api/tasks"
@@ -77,6 +78,7 @@ var routePackages = []func(*httpx.Router){
 	apigenerate.Register,
 	apiprofiles.Register,
 	apisettings.Register,
+	apisetup.Register,
 	apilogs.Register,
 	apistats.Register,
 	apimosdns.Register,
@@ -112,6 +114,7 @@ var wirePackages = []func(){
 	mihomoenv.Wire,
 	ippresence.Wire, // routers R02: convert.MihomoHooks.IsFullTun, oxidns classical_ip_lines
 	routers.Wire,    // routers R01: repo.Hooks.RedactRouters
+	wireSetupContent,
 	apirules.Wire,   // config C32: shared source loader for gateway providers
 	gateway.Wire,    // agents A19: convert.MihomoHooks Linux gateway
 	setupflow.Wire,  // agents A20 / config C36: routersplit setup-session reader

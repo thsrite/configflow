@@ -1,0 +1,175 @@
+package setup
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"os"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"configflow/internal/jsonx"
+	"configflow/internal/lifecycle"
+	"configflow/internal/repo"
+	"configflow/internal/routers"
+)
+
+func installedOwner() *InstallationOwner {
+	return &InstallationOwner{Latest: func(context.Context, *repo.Repository, string) (*InstallationState, error) {
+		return &InstallationState{ID: "synthetic-installation", Phase: "published", Agents: AgentPair{Mihomo: InstalledAgent{ID: "synthetic-mihomo", Name: "Mihomo", Host: "192.0.2.10", Status: "online"}, OxiDNS: InstalledAgent{ID: "synthetic-oxidns", Name: "OxiDNS", Host: "192.0.2.11", Status: "online"}}}, nil
+	}, HasInstallation: func(context.Context, *repo.Repository, string) (bool, error) { return false, nil }, GatewayStatus: func(context.Context, *repo.Repository, string, string) (GatewayStatus, error) {
+		return GatewayStatus{IPv4Forwarding: &ForwardingStatus{Current: "1", Persisted: pointer(true)}, TUN: &TUNStatus{Configured: pointer(true), Present: pointer(true)}, Managed: ManagedStatus{Active: true, Healthy: pointer(true)}}, nil
+	}}
+}
+func TestCoreFingerprintMatchesPython(t *testing.T) {
+	raw := json.RawMessage(`{"proxy_groups":[],"mihomo":{"custom_config":"dns: {}\n"},"rule_configs":[{"id":"synthetic","number":1234567890123456789}],"system_config":{"future":"中文"},"_revision":123,"routers":{"items":[]}}`)
+	want := pythonSetup(t, `import json,sys;from backend.common.setup_completion import core_fingerprint;json.dump(core_fingerprint(json.load(sys.stdin)),sys.stdout)`, raw)
+	got, err := CoreFingerprint(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, _ := json.Marshal(got)
+	equalJSON(t, encoded, want)
+}
+func TestCompletionChecksAndPublicationContentGuards(t *testing.T) {
+	s, ctx := preparedFixture(t, "gateway")
+	body := json.RawMessage(`{"domain_rules":{"direct":[],"proxy":[]},"local_dns":"https://192.0.2.53/dns-query"}`)
+	if _, err := s.Prepare(ctx, testSessionID, body, "http://localhost"); err != nil {
+		t.Fatal(err)
+	}
+	path, _ := storeFor(s.repository).path(testSessionID)
+	before, _ := os.ReadFile(path)
+	commits := s.repository.CommitCount()
+	if _, err := s.Action(ctx, testSessionID, "check", json.RawMessage(`{}`), ""); err == nil || err.Error() != msgAwaitOwner {
+		t.Fatal(err)
+	}
+	after, _ := os.ReadFile(path)
+	if !bytes.Equal(before, after) || s.repository.CommitCount() != commits {
+		t.Fatal("missing owner committed")
+	}
+	s.owners.Installation = installedOwner()
+	if _, err := s.Action(ctx, testSessionID, "check", json.RawMessage(`{}`), ""); err != nil {
+		t.Fatal(err)
+	}
+	record, _ := storeFor(s.repository).read(ctx, testSessionID)
+	if record.Step != 4 {
+		t.Fatal("check did not advance")
+	}
+	for _, body := range []string{`{"make_default":1}`, `{"make_default":null}`} {
+		if _, err := s.Action(ctx, testSessionID, "finish", json.RawMessage(body), ""); err == nil || err.Error() != msgMakeDefault {
+			t.Fatal(err)
+		}
+	}
+	// Receipts and router edits may increase revision without requiring republish.
+	s.owners.Installation.Latest = func(context.Context, *repo.Repository, string) (*InstallationState, error) {
+		owner := installedOwner()
+		state, _ := owner.Latest(ctx, s.repository, record.ProfileID)
+		state.ConfigChanged = true
+		return state, nil
+	}
+	if _, err := s.Action(ctx, testSessionID, "finish", json.RawMessage(`{"make_default":true}`), ""); err != nil {
+		t.Fatal(err)
+	}
+	record, _ = storeFor(s.repository).read(ctx, testSessionID)
+	defaultID, _ := s.repository.DefaultProfileID(ctx)
+	if !enabled(record.Completed) || record.MaxStep != 5 || defaultID != record.ProfileID || text(record.PreviousDefault) != "default" {
+		t.Fatal("finish did not preserve default choice")
+	}
+	_, _, err := s.repository.UpdateProfileTransaction(ctx, record.ProfileID, func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
+		p.GetObject("oxidns").GetObject("query_recorder").Set("enabled", false)
+		return nil, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Action(ctx, testSessionID, "check", json.RawMessage(`{}`), ""); err == nil || err.Error() != msgNeedPublish {
+		t.Fatal("changed published content accepted", err)
+	}
+}
+func TestFullTUNStatusFailures(t *testing.T) {
+	valid := func() GatewayStatus {
+		return GatewayStatus{IPv4Forwarding: &ForwardingStatus{Current: "1", Persisted: pointer(true)}, TUN: &TUNStatus{Configured: pointer(true), Present: pointer(true)}}
+	}
+	tests := []struct {
+		name, message string
+		change        func(*GatewayStatus)
+	}{
+		{"old-agent", msgOldAgent, func(s *GatewayStatus) { s.TUN = nil }},
+		{"forwarding", msgForwardingOff, func(s *GatewayStatus) { s.IPv4Forwarding.Current = "0" }},
+		{"persist", msgForwardingNotPersisted, func(s *GatewayStatus) { s.IPv4Forwarding.Persisted = pointer(false) }},
+		{"managed", msgGatewayRemaining, func(s *GatewayStatus) { s.Managed.Pending = true }},
+		{"gateway", msgPublishedGateway, func(s *GatewayStatus) { s.TUN.GatewayMarker = true }},
+		{"configured", msgTUNNotConfigured, func(s *GatewayStatus) { s.TUN.Configured = pointer(false) }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			status := valid()
+			test.change(&status)
+			err := checkFullTUN(status)
+			if err == nil || err.Error() != test.message {
+				t.Fatal(err)
+			}
+		})
+	}
+	if err := checkFullTUN(valid()); err != nil {
+		t.Fatal(err)
+	}
+}
+func TestRouteWarmupBudgetAndOriginShutdown(t *testing.T) {
+	s, base := serviceFixture(t, "router")
+	runtime := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry(), Grace: 2 * time.Second})
+	runtime.Start(t.Context())
+	defer runtime.Shutdown(t.Context())
+	s.spawner = runtime
+	s.routeBudget = 40 * time.Millisecond
+	origin := lifecycle.Detach(runtime.BindRequest(base))
+	var network, offline atomic.Int32
+	entered := make(chan struct{}, 1)
+	stopped := make(chan struct{}, 1)
+	s.owners.ReadRouteContent = func(ctx context.Context, _ json.RawMessage, _ routers.RuleSet, _ *routers.LibraryRule, opts RouteReadOptions) (string, error) {
+		if !opts.AllowNetwork {
+			offline.Add(1)
+			return "", nil
+		}
+		network.Add(1)
+		if opts.ConnectTimeout > s.routeBudget || opts.ReadTimeout > s.routeBudget {
+			t.Error("timeouts exceeded total budget")
+		}
+		entered <- struct{}{}
+		<-ctx.Done()
+		stopped <- struct{}{}
+		return "", ctx.Err()
+	}
+	missing := []string{}
+	load := s.routeLoader(origin, json.RawMessage(`{}`), &missing)
+	if text, err := load(routers.RuleSet{ID: "synthetic"}, nil); err != nil || text != "" {
+		t.Fatal(err)
+	}
+	<-entered
+	<-stopped
+	if _, err := load(routers.RuleSet{ID: "other"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if network.Load() != 1 || offline.Load() != 1 || len(missing) != 2 {
+		t.Fatal("budget allowed another network request")
+	}
+	// A real shutdown cancels the generation retained by the worker.
+	s.routeBudget = time.Second
+	stopped = make(chan struct{}, 1)
+	done := make(chan error, 1)
+	if err := runtime.Spawn(origin, "synthetic-check", func(job context.Context) {
+		missing := []string{}
+		_, err := s.routeLoader(origin, json.RawMessage(`{}`), &missing)(routers.RuleSet{ID: "shutdown"}, nil)
+		done <- err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	<-entered
+	runtime.Shutdown(t.Context())
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatal("worker escaped origin shutdown", err)
+	}
+	<-stopped
+}

@@ -147,3 +147,31 @@ func externalOwners() ExternalOwners {
 }
 
 func unavailable() error { return failure(msgAwaitOwner, 503) }
+
+// RegisterExternalOwners installs only the non-nil owners in a server wiring
+// step, retaining callbacks registered by earlier modules. SetExternalOwners is
+// available to isolate tests or replace the entire configuration explicitly.
+func RegisterExternalOwners(owners ExternalOwners) func() {
+	ownersState.Lock()
+	previous := ownersState.value
+	next := copyOwners(previous)
+	if owners.DNS != nil {
+		next.DNS = owners.DNS
+	}
+	if owners.Installation != nil {
+		next.Installation = owners.Installation
+	}
+	if owners.ReadRouteContent != nil {
+		next.ReadRouteContent = owners.ReadRouteContent
+	}
+	if owners.VerifyRouter != nil {
+		next.VerifyRouter = owners.VerifyRouter
+	}
+	ownersState.value = copyOwners(next)
+	ownersState.Unlock()
+	return func() { ownersState.Lock(); ownersState.value = previous; ownersState.Unlock() }
+}
+
+// ownerValidation preserves a pure owner's error chain and the wizard's 400
+// boundary. Transport/status callbacks return *Error for their public status.
+func ownerValidation(err error) error { return &Error{Message: err.Error(), Status: 400, Cause: err} }

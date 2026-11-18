@@ -47,3 +47,33 @@ func OwnedDigest(profile json.RawMessage, withoutBase bool) (string, error) {
 	digest := sha256.Sum256(raw)
 	return hex.EncodeToString(digest[:]), nil
 }
+
+// CoreFingerprint identifies the published core content, excluding routers and
+// release receipts that may advance revisions without changing generated cores.
+func CoreFingerprint(config json.RawMessage) (string, error) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(config, &fields); err != nil || fields == nil {
+		return "", ErrCorruptRecord
+	}
+	selected := map[string]json.RawMessage{}
+	for _, key := range []string{"proxy_groups", "rule_configs", "mihomo", "oxidns", "subscriptions", "nodes", "subscription_aggregations", "rule_library", "system_config"} {
+		selected[key] = fields[key]
+		if len(selected[key]) == 0 {
+			selected[key] = json.RawMessage(`null`)
+		}
+	}
+	raw, err := json.Marshal(selected)
+	if err != nil {
+		return "", err
+	}
+	value, err := jsonx.Parse(raw)
+	if err != nil {
+		return "", err
+	}
+	raw, err = jsonx.Encode(value, jsonx.Options{SortKeys: true, Compact: true})
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:]), nil
+}

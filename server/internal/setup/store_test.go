@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
@@ -174,6 +175,54 @@ func TestSessionOwnerRuntimeCancellation(t *testing.T) {
 				}
 			} else if err != nil || bytes.Equal(original, actual) {
 				t.Fatal("disconnect interrupted committed owner", err)
+			}
+		})
+	}
+}
+
+func TestWriteOwnerRechecksGenerationAfterSessionWait(t *testing.T) {
+	for _, shutdown := range []bool{false, true} {
+		t.Run(map[bool]string{false: "disconnect", true: "shutdown"}[shutdown], func(t *testing.T) {
+			s, base := serviceFixture(t, "gateway")
+			store := storeFor(s.repository)
+			path, _ := store.path(testSessionID)
+			before, _ := os.ReadFile(path)
+			commits := s.repository.CommitCount()
+			runtime := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry(), Grace: 2 * time.Second})
+			runtime.Start(t.Context())
+			defer runtime.Shutdown(t.Context())
+			request, cancel := context.WithCancel(base)
+			defer cancel()
+			origin := runtime.BindRequest(request)
+			_, release, err := sessionLocks.Lock(base, path, time.Second)
+			if err != nil {
+				t.Fatal(err)
+			}
+			entered := make(chan struct{})
+			done := make(chan error, 1)
+			if err := runtime.Spawn(origin, "synthetic-wizard-wait", func(context.Context) {
+				close(entered)
+				_, err := s.Patch(origin, testSessionID, json.RawMessage(`{"step":0}`))
+				done <- err
+			}); err != nil {
+				release()
+				t.Fatal(err)
+			}
+			<-entered
+			if shutdown {
+				runtime.Shutdown(t.Context())
+			} else {
+				cancel()
+			}
+			release()
+			err = <-done
+			after, _ := os.ReadFile(path)
+			if shutdown {
+				if !errors.Is(err, context.Canceled) || !bytes.Equal(before, after) || commits != s.repository.CommitCount() {
+					t.Fatal("waiting owner committed after shutdown", err)
+				}
+			} else if err != nil || bytes.Equal(before, after) {
+				t.Fatal("disconnect canceled detached waiting owner", err)
 			}
 		})
 	}

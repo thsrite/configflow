@@ -16,6 +16,7 @@ import (
 	"configflow/internal/gateway"
 	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
+	"configflow/internal/lockx"
 	"configflow/internal/model"
 	"configflow/internal/redact"
 	"configflow/internal/repo"
@@ -26,9 +27,11 @@ import (
 // Service owns wizard state for one repository. Construct a service per request;
 // operation locks are shared across services for the same data directory.
 type Service struct {
-	repository *repo.Repository
-	catalog    *catalog
-	owners     ExternalOwners
+	repository  *repo.Repository
+	catalog     *catalog
+	owners      ExternalOwners
+	spawner     lockx.Spawner
+	routeBudget time.Duration
 }
 
 // New constructs the wizard using the bundled first-start template.
@@ -287,16 +290,9 @@ func (s *Service) Patch(ctx context.Context, id string, raw json.RawMessage) (js
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	fields, err := bodyFields(raw)
-	if err != nil {
-		return nil, err
-	}
-	if !allowed(fields, "step", "router_id", "router_mode") {
-		return nil, failure(msgProgressFields, 400)
-	}
 	store := storeFor(s.repository)
 	var result json.RawMessage
-	err = store.locked(ctx, id, func(held context.Context) error {
+	err := store.locked(ctx, id, func(held context.Context) error {
 		record, err := store.read(held, id)
 		if err != nil {
 			return err
@@ -304,6 +300,13 @@ func (s *Service) Patch(ctx context.Context, id string, raw json.RawMessage) (js
 		profile, err := s.repository.GetProfile(held, record.ProfileID)
 		if err != nil {
 			return err
+		}
+		fields, err := bodyFields(raw)
+		if err != nil {
+			return err
+		}
+		if !allowed(fields, "step", "router_id", "router_mode") {
+			return failure(msgProgressFields, 400)
 		}
 		if value, ok := fields["step"]; ok {
 			var step int64
