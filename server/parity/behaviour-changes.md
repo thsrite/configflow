@@ -690,6 +690,15 @@ Go 的共享引用扫描通过 `net/url` 识别紧接 `://` 的 scheme，只排�
 使用 udp 上游时，添加/修改/撤销设备策略均成功，保留 side_entries、旁路配置和注释。
 加入真实 `$udp` 引用的负控仍不允许编辑和保存。Python 源码和原比较规则不变。
 
+## C36 — 完整向导响应保护私有会话凭据
+
+Go 的私有 router draft 和未知凭据字段继续只保存在 session 文件里。公开响应在完整组装后，
+还使用共享 `redact` 和原始会话凭据清洗字符串引用，包括默认配置摘要、集合的来源/规则名称和
+放弃计划。Python 只投影 router draft；原 Go 也漏掉了这些在会话投影之外组装的元数据。
+普通用户名和 `has_password` 布尔值保留，存储中的可恢复密码不变。
+证据：`setup.TestReviewC36ResponsesRedactPrivateSessionCredentials` 的 GET、PATCH、集合和
+abandon dry-run 四条修复前失败/修复后通过回归。不会修改 Python 或差分比较规则。
+
 ## C07 — 状态列表就绪与只读 HEAD
 
 协调者批准：tasks 和 notifications 的四条入口立即注册。真实 task slot 尚未齐备时，

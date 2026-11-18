@@ -53,7 +53,7 @@ func (s *Service) Action(ctx context.Context, id, operation string, raw json.Raw
 					return err
 				}
 			}
-			result, err = json.Marshal(plan)
+			result, err = publicResponse(plan, record)
 			return err
 		}
 		if operation != "check" {

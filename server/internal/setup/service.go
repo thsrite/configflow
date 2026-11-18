@@ -218,7 +218,32 @@ func (s *Service) Index(ctx context.Context) (Index, error) {
 	}
 	out.DomainRules = s.catalog.options(shared)
 	out.RecommendedDomainRules = s.catalog.recommended(out.DomainRules)
-	return out, nil
+	public, err := publicResponse(out, records...)
+	if err != nil {
+		return out, err
+	}
+	err = json.Unmarshal(public, &out)
+	return out, err
+}
+
+// publicResponse applies the session's credential references to the complete
+// response, including metadata added after the private record was projected.
+// Keep presence booleans such as has_password intact: credential fields were
+// already removed by publicRecord; this final pass masks string references.
+func publicResponse(value any, records ...*Record) (json.RawMessage, error) {
+	var secrets redact.Secrets
+	for _, record := range records {
+		raw, err := json.Marshal(record)
+		if err != nil {
+			return nil, err
+		}
+		secrets = redact.CollectCredentials(json.RawMessage(raw), secrets)
+	}
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(redact.SanitizeWithSecrets(json.RawMessage(raw), secrets, false))
 }
 
 func publicRecord(record *Record) (json.RawMessage, error) {
@@ -385,7 +410,7 @@ func (s *Service) described(ctx context.Context, record *Record) (json.RawMessag
 			}
 		}
 	}
-	return json.Marshal(fields)
+	return publicResponse(fields, record)
 }
 
 type defaultSummary struct {
