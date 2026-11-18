@@ -54,7 +54,32 @@ the hand-back. If no notification arrives within ~3 h, check status once more.
 | 19338c67-c336-40c7-98a9-b4532a66af68 | C19/C20 Surge/Loon adversarial review | wks_0d8cd06808daac1f, branch `go-review-c19c20` |
 | 3112fbeb-e43a-4d16-ad1a-bc88670b1099 | C37 domain discovery port | wks_0dcc037efd16c502, branch `go-port-c37` |
 | e46d698f-6345-41b9-8a38-06d61b6622d3 | config black-box difftest, Step A coverage matrix (→ Opus O6 review) | wks_223d2a53f6e7abbb, branch `go-difftest-config` |
-## >>> CURRENT STATE — 2026-11-18 ~22:30 CST (coordinator 94c212e6; read this first) <<<
+## >>> CURRENT STATE — 2026-11-19 (coordinator 94c212e6; read this first) <<<
+
+**go = 690e97995** (pushed). batch-7 merged 2026-11-18 night (R14–R17, A18/A22/A23, N8-8b/c, N8-9 health+discovery,
+O3-7/8; fuzz found quoted "<<" merge-key bug, fixed). **batch-8 merged 2026-11-19**: N8-9 rules + dns, MCP #39
+(6 routes, Opus HR verified), artifact 3 routes (Opus HR verified, 34 deferred rows removed), O9 round 1 (Go 1.26.11
+toolchain, all-routes auth test), O9 fixes H1 CORS same-origin only (never rejects; reverse proxy OK), H2 Agent
+registration needs key/JWT/one-time 24 h credential (hash only, cap 100 evicting oldest), M1 backend body limits,
+M2 rule download decoded cap, M3 placeholder/short JWT key → random key + warning, L1/L3/L5/L6. Allocation:
+Mihomo 128 nodes ~65 MB, OxiDNS cold cache ~43 MB. Full route parity reached (MCP + artifact were the last gaps).
+**Inventory:** server/parity/remaining-work.md (what is left, with sizes).
+**batch-9 candidates:** go-review-n8-9-subs@9be6977cb (subs/substore + review: 64 MiB caps, per-subtree alias
+budget), go-review-jsonstore-ctx@2fac52248 (F1), go-n8-9-routers (61078038 rebasing onto 690e97995; HR review done
+by an Opus the author spawned — accepted, but HR reviews are coordinator-dispatched from now on).
+**In flight:** 8019dda1 N8-10 agents core (Codex; then Opus HR review), b455468c C37/A24 crash gap (Codex).
+**Next:** N8-10 monitor/upgrades/installer/api-agents after core; N8-8d after subs merges; N8-11 deletion last;
+then O10, O12, O13, O15, O17, labs L2–L6, O9 round 2 (MCP/artifact + full tree), O14.
+**Decisions 2026-11-19 (maintainer):** O9-H1/H2/M3 as above. Coordinator rulings: external subscription base64 stays
+tolerant (named Go decoder); airport group type whitelist → select; user-stored identity fields strict; non-ASCII
+Agent coreVersion fails closed at EasyTier gate; temp dir = TMPDIR/TEMP/TMP or os.TempDir with clear diagnostics;
+legacy rule caches claimable by stored shared library or stored profile-local rules only (prod snapshot: 0 claims);
+generation paths read caches via PeekCacheWithFormat (never migrate); Python 500 → proper 4xx.
+**Paseo:** create agents with `paseo run --new-workspace worktree --worktree-mode checkout-branch` so they show in the
+sidebar; then send one MCP prompt with notifyOnFinish so completions reach the coordinator. Never delete an agent's
+cwd worktree (see memory).
+
+## (history) CURRENT STATE — 2026-11-18 ~22:30 CST (coordinator 94c212e6) <<<
 
 **go = 55c9794a0** (pushed): **batch-6 merged** (A16, A17, A21, N8-8a review, N8-7b review, O3-6b, lifecycle race
 fix, 8a provider fix 694df9d0 + Codex review fix 38ad5156, R5 stale-expectation/identity fixes, integration fixes
