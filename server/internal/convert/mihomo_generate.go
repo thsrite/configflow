@@ -3,7 +3,6 @@ package convert
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -291,13 +290,6 @@ func followed(groups []model.ProxyGroup, id string) *model.ProxyGroup {
 		}
 	}
 	return nil
-}
-func subsError(err error) error {
-	var reference *subs.DialerReferenceError
-	if errors.As(err, &reference) {
-		return &DialerReferenceError{Message: reference.Message, cause: err}
-	}
-	return err
 }
 
 type mihomoSelection struct{ nodes, subscriptions, aggregations, direct, aggregationRoots map[string]bool }

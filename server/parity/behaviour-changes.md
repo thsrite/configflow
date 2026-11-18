@@ -1418,3 +1418,7 @@ R8 接受整数字值的浮点表示（Agent port、provider_update_interval）�
 端口解析使用 net.SplitHostPort 和 ASCII 整数：全角/阿拉伯数字及上标数字不再作为
 端口，非法的 `a]:1` 不再作为监听地址。16 条基础设置及5 条 helper 归档显式断言
 原生结果（旧 golden 不改）；基础设置仍返回既有中文提示，未改字段的校验规则不变。
+
+共享的 typed URL/rules 边界也覆盖两条 Surge helper 畸形值：非数组 rule_sets
+返回明确中文类型错误；非字符串 profile_id 按 R5 缺省，生成 URL 不再拼进 Python 的
+列表 repr。各有一条原始 source row 的显式 native 期望；其他输出字节保持严格比较。

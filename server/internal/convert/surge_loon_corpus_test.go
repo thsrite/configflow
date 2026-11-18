@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 
 	"configflow/internal/convert"
@@ -235,6 +236,28 @@ func TestSurgeLoonCorpus(t *testing.T) {
 		}
 		if row.errClass == "" && (row.fn == "surge" || row.fn == "loon") {
 			generated[row.fn]++
+		}
+		// The shared N8-8b typed rules/URL boundaries also serve these two
+		// malformed client rows. Keep every other byte under the old oracle.
+		if i == 5230 {
+			args := entry.GetObject("args")
+			if row.fn != "surge" || args.GetObject("profile").Value("rule_sets") != false {
+				t.Fatal("rule-list type fixture moved")
+			}
+			out, err := convert.GenerateSurgeConfig(context.Background(), args.GetObject("profile").DeepCopy(), args.GetString("base_url"))
+			if out != "" || err == nil || !strings.HasPrefix(err.Error(), convert.NativeMihomoRulesMessage+": ") {
+				t.Fatalf("explicit typed rule-list rejection: %q %v", out, err)
+			}
+			typedStorage["explicit R5 legacy rule-list bool"]++
+			continue
+		}
+		if i == 31468 {
+			if row.fn != "group_surge" || strings.Count(entry.GetString("out"), "/api/profiles/['a', 'b']") != 1 {
+				t.Fatal("profile-ID type fixture moved")
+			}
+			row.entry = entry.DeepCopy()
+			row.entry.Set("out", strings.Replace(entry.GetString("out"), "/api/profiles/['a', 'b']", "", 1))
+			typedStorage["explicit R5 group URL profile ID"]++
 		}
 		if msg := runSurgeLoonRow(t, row); msg != "" {
 			failures++

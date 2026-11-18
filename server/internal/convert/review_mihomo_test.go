@@ -15,6 +15,7 @@ import (
 )
 
 func TestMihomoReviewYAMLFailureLogOmitsConfiguration(t *testing.T) {
+	withFakeSubStore(t)
 	for _, secret := range []string{"synthetic-controller-secret", "https://dns.example.com/query?token=synthetic-token"} {
 		t.Run(secret, func(t *testing.T) {
 			var logs bytes.Buffer
@@ -112,6 +113,22 @@ func TestMihomoReviewBoundaryReferences(t *testing.T) {
 					t.Fatalf("native port validation: %v", err)
 				}
 				return
+			}
+			// R5: the archived string probe port is not a number. Keep its source
+			// bytes, explicitly expect the typed default at this one output path.
+			if entry.GetString("case") == "probe-18001" && entry.GetString("fn") == "generate" {
+				entry = entry.DeepCopy()
+				count := 0
+				for _, item := range entry.GetObject("document").GetList("listeners") {
+					listener := item.(*jsonx.Object)
+					if listener.GetString("name") == convert.RegionProbeListener {
+						listener.Set("port", jsonx.Int(convert.DefaultRegionProbePort))
+						count++
+					}
+				}
+				if count != 1 {
+					t.Fatal("probe-port fixture path moved")
+				}
 			}
 			if msg := runMihomoReviewBoundary(t, readers.row(t, "review_mihomo.jsonl.gz", index, rowOf(entry)), oracle); msg != "" {
 				t.Fatal(msg)

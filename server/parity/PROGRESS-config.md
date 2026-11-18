@@ -2573,3 +2573,19 @@ Agent codecs), all fixed, zero open. Runtime/leaf/observation-ticket/HEAD audit
 and native precision/D2 call graph verified with targeted .32 checks and two
 selected real-Flask cases. No repeat of the author's full suites. Report:
 [review-n8-7b.md](review-n8-7b.md).
+
+## N8-8b — typed Mihomo generator (ported; Opus spot review pending)
+
+- Core consumes model.Config/model.Node and emits yamlx.Node/typed downloads and
+  reports. Base validation and environment/hook signatures are native; only
+  legacy.go transcodes remaining owners. No second business implementation.
+- Original byte gate4548/4548 (Mihomo2353,Loon1064,Surge1131), paired typed/legacy
+  Mihomo entry bytes;13908 Mihomo and34697 client archive rows classify without
+  unknown differences;1566 recorded Python calls preserve normal behavior.
+- Callback completeness, missing-callback rejection, alias recursion/budget and
+  successful linear sharing, immutable input, AST boundaries and60s fuzz covered.
+- Provider4 snapshot failures and api/subscriptions4 malformed-target HTTP cases
+  reproduce unchanged on8a@6e9d0b738. Coordinator assigned8a fixes to694df9d0;
+  no provider product/test/baseline change here. Rebase when that fix is ready.
+- Scope, temporary adapter removal owners, approved R5/native differences and
+  exact targeted evidence: [progress/n8-8b.md](progress/n8-8b.md).

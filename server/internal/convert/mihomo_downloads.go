@@ -32,8 +32,12 @@ func MihomoProviderDownloads(ctx context.Context, config *model.Config, baseURL 
 	return documentDownloads(main, "proxy-providers", false)
 }
 func documentDownloads(main *yamlx.Node, key string, httpOnly bool) ([]ResourceDownload, error) {
-	if _, err := yamlx.Encode(main); err != nil {
+	root, err := yamlx.Encode(main)
+	if err != nil {
 		return nil, err
+	}
+	if root.Kind != yaml.MappingNode {
+		return nil, fmt.Errorf(msgMihomoDownloadObject, key)
 	}
 	out := []ResourceDownload{}
 	providers := yamlx.Resolve(yamlx.Get(main, key))
@@ -41,9 +45,12 @@ func documentDownloads(main *yamlx.Node, key string, httpOnly bool) ([]ResourceD
 		return out, nil
 	}
 	if providers.Kind != yaml.MappingNode {
-		return nil, fmt.Errorf(msgMihomoDownload, key)
+		return nil, fmt.Errorf(msgMihomoDownloadObject, key)
 	}
 	for name, provider := range yamlx.Pairs(providers) {
+		if provider = yamlx.Resolve(provider); provider == nil || provider.Kind != yaml.MappingNode {
+			return nil, fmt.Errorf(msgMihomoDownloadObject, name)
+		}
 		kind, _ := textNode(yamlx.Get(provider, "type"))
 		if httpOnly && kind != "http" {
 			continue

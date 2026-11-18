@@ -154,7 +154,6 @@ const (
 )
 
 const (
-	msgMihomoMapping  = "基础 YAML 必须为 mapping，得到 %s"
 	msgMihomoConfig   = "Mihomo 配置必须包含有效的配置空间"
 	msgMihomoRules    = "规则列表必须为规则对象数组"
 	msgMihomoHosts    = "订阅 hosts 协作未返回有效结果"
@@ -165,3 +164,5 @@ const (
 	msgRegionPort     = "区域检测端口必须为 1–65535 的整数"
 	msgRegionConflict = "区域检测入口端口 %d 与已有入站冲突，本次未注入"
 )
+
+const msgMihomoDownloadObject = "Mihomo 下载节 %s 必须为对象"

@@ -12,6 +12,7 @@ import (
 )
 
 func TestN73CustomReaderAliasBoundaries(t *testing.T) {
+	t.Cleanup(SetMihomoEnvironment(nativeGenerationEnv(t)))
 	var diamond, linear strings.Builder
 	diamond.WriteString("mixed-port: 7890\na0: &a0 [leaf]\n")
 	linear.WriteString("mixed-port: 7890\na0: &a0 {v: leaf}\n")
@@ -33,13 +34,13 @@ func TestN73CustomReaderAliasBoundaries(t *testing.T) {
 			}
 		})
 	}
-	value, err := readDocumentYAML(linear.String())
+	value, err := readMihomoBase(linear.String())
 	if err != nil {
 		t.Fatal(err)
 	}
-	object := value.(*jsonx.Object)
+	object := value
 	for i := 1; i <= 40; i++ {
-		if object.GetObject(fmt.Sprintf("a%d", i)).GetObject("child") != object.GetObject(fmt.Sprintf("a%d", i-1)) {
+		if yamlx.Resolve(yamlx.Get(yamlx.Get(object, fmt.Sprintf("a%d", i)), "child")) != yamlx.Get(object, fmt.Sprintf("a%d", i-1)) {
 			t.Fatalf("linear alias %d expanded", i)
 		}
 	}
@@ -49,5 +50,5 @@ func FuzzCustomConfigYAML(f *testing.F) {
 	for _, source := range []string{"mixed-port: 7890\nmode: rule", "a: &a [*a]", "v: !!binary YWJj", "1: bad", "when: 2001-01-01\nv: .inf"} {
 		f.Add(source)
 	}
-	f.Fuzz(func(t *testing.T, source string) { _, _ = readDocumentYAML(source) })
+	f.Fuzz(func(t *testing.T, source string) { _, _ = readMihomoBase(source) })
 }

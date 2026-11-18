@@ -1,6 +1,6 @@
 package convert
 
-// TODO(N8-8b/c/d, N8-9): delete these transcoding entry points as callers
+// TODO(N8-8c/d, N8-9, N8-10): delete these transcoding entry points as callers
 // adopt the typed APIs. Business decisions belong to the typed implementation.
 import (
 	"context"
@@ -197,19 +197,6 @@ func ConvertNodeToMihomo(ctx context.Context, value *jsonx.Object, converter Pro
 		return nil, err
 	}
 	return legacyProxy(proxy)
-}
-
-// readDocumentYAML is only the remaining generator's legacy document boundary.
-// N8-8b removes it when generation consumes typed sections and Nodes directly.
-func readDocumentYAML(text string) (any, error) {
-	root, err := yamlx.Parse([]byte(text))
-	if err != nil {
-		return nil, err
-	}
-	if err := yamlx.ProjectJSONKeys(root, yamlx.RejectNonStringKeys); err != nil {
-		return nil, err
-	}
-	return yamlbridge.Value(root)
 }
 
 func encodeLegacy(value any) (any, error) {
@@ -952,7 +939,10 @@ func legacyCache(data json.RawMessage) (*jsonx.Object, error) {
 // MihomoEnvironmentFromLegacy registers the one temporary codec for each N8-9
 // collaborator. No external business implementation is copied into convert.
 func MihomoEnvironmentFromLegacy(old MihomoEnv) MihomoEnvironment {
-	env := MihomoEnvironment{Converter: legacyNodeConverter{old.Converter}, DownloadedText: old.DownloadedText}
+	env := MihomoEnvironment{DownloadedText: old.DownloadedText}
+	if old.Converter != nil {
+		env.Converter = legacyNodeConverter{old.Converter}
+	}
 	if old.ProviderInterval != nil {
 		env.ProviderInterval = func(settings model.MihomoSettings) (int64, error) {
 			wire, err := decodeLegacy[*jsonx.Object](settings)
@@ -1589,4 +1579,12 @@ func clientConverter() ProxyStringConverter {
 		return nativeClientConverter{converter}
 	}
 	return missingConverter{}
+}
+
+func subsError(err error) error {
+	var reference *subs.DialerReferenceError
+	if errors.As(err, &reference) {
+		return &DialerReferenceError{Message: reference.Message, cause: err}
+	}
+	return err
 }

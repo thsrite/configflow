@@ -82,6 +82,7 @@ func TestNativeMihomoGraphPresentation(t *testing.T) {
 }
 
 func TestNativeMihomoAliasEntrances(t *testing.T) {
+	t.Cleanup(SetMihomoIntegrations(MihomoIntegrations{GatewayEnabled: func(*model.Config) (bool, error) { return true, nil }}))
 	t.Cleanup(SetMihomoEnvironment(nativeGenerationEnv(t)))
 	texts := []struct {
 		name, text string
@@ -112,6 +113,10 @@ func TestNativeMihomoAliasEntrances(t *testing.T) {
 			if downloads != nil || !errors.Is(err, tt.want) {
 				t.Fatalf("provider downloads: %v", err)
 			}
+			downloads, err = MihomoRulesetDownloads(context.Background(), config, "")
+			if downloads != nil || !errors.Is(err, tt.want) {
+				t.Fatalf("ruleset downloads: %v", err)
+			}
 		})
 	}
 	self := yamlx.Map()
@@ -120,7 +125,7 @@ func TestNativeMihomoAliasEntrances(t *testing.T) {
 	if out, err := MihomoProviderDownloads(context.Background(), nil, "", self); out != nil || !errors.Is(err, yamlx.ErrAliasRecursion) {
 		t.Fatal(out, err)
 	}
-	// A 40-deep linear chain is shared, not expanded by occurrence.
+	// Repeated aliases retain their physical target.
 	leaf := yamlx.Seq(yamlx.Int(1))
 	leaf.Anchor = "leaf"
 	root := yamlx.Map(yamlx.Str("leaf"), leaf)
@@ -134,6 +139,20 @@ func TestNativeMihomoAliasEntrances(t *testing.T) {
 	if yamlx.Resolve(yamlx.Get(graph, "copy39")) != yamlx.Get(graph, "leaf") {
 		t.Fatal("sharing lost")
 	}
+	var linear strings.Builder
+	linear.WriteString("a0: &a0 {v: leaf}\n")
+	for i := 1; i <= 40; i++ {
+		fmt.Fprintf(&linear, "a%d: &a%d {child: *a%d}\n", i, i, i-1)
+	}
+	config := &model.Config{Profile: &model.Profile{Mihomo: model.MihomoSettings{CustomConfig: linear.String()}}}
+	doc, err := MihomoDocument(context.Background(), config, MihomoOptions{SkipProviderPreflight: true})
+	if err != nil {
+		t.Fatal("linear alias chain rejected", err)
+	}
+	if yamlx.Resolve(yamlx.Get(yamlx.Get(doc, "a40"), "child")) != yamlx.Get(doc, "a39") {
+		t.Fatal("linear chain sharing lost")
+	}
+
 }
 
 func TestNativeMihomoDownloads(t *testing.T) {
@@ -151,6 +170,11 @@ func TestNativeMihomoDownloads(t *testing.T) {
 	}
 	if _, err := MihomoRulesetDownloads(context.Background(), nil, ""); err == nil {
 		t.Fatal("missing config accepted")
+	}
+	for _, bad := range []*yamlx.Node{yamlx.Seq(), yamlx.Map(yamlx.Str("proxy-providers"), yamlx.Map(yamlx.Str("bad"), yamlx.Int(1)))} {
+		if _, err := MihomoProviderDownloads(context.Background(), nil, "", bad); err == nil {
+			t.Fatal("malformed provider document accepted")
+		}
 	}
 	address, err := appendProfileQuery("https://example.com/a?x=a+b&x=#part", [][2]string{{"token", "a b/c?"}})
 	if err != nil || address != "https://example.com/a?x=a%20b&x=&token=a%20b%2Fc%3F#part" {

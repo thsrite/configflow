@@ -157,9 +157,18 @@ func TestCommonCoreHasNoLegacyDependency(t *testing.T) {
 				t.Errorf("%s imports legacy %s", name, imp.Path.Value)
 			}
 		}
-		forbidden := map[string]bool{"any": true, "dictGet": true, "raise": true, "catch": true, "must": true, "pyError": true, "decodeLegacy": true, "rulesConfigFromLegacy": true, "ruleLibraryConfigFromLegacy": true, "githubConfigFromLegacy": true, "dialerConfigFromLegacy": true, "easyTierProfileFromLegacy": true, "encodeLegacy": true, "FixProxyFields": true, "ApplyGithubProxyDomain": true, "MihomoUsedPorts": true, "MihomoListenPorts": true, "ParseStructuredProxyString": true, "InspectStructuredProxyString": true, "ConvertNodeToMihomo": true, "ProxyStringConverter": true, "ConversionResults": true, "WithNodeConversions": true, "EnsureNodeConversions": true, "readDocumentYAML": true, "ValidateShapes": true, "ValidateDialers": true, "DependencyGraph": true, "RawDialer": true, "DialerTarget": true, "GroupMembers": true, "GroupDependencies": true, "CheckCycles": true, "IncomingDialers": true, "ResolveDialer": true, "OverlayDialer": true, "FilterProviderCandidates": true, "ProviderProxyName": true, "ValidateEmitted": true, "RejectSurgeDialers": true, "DependencyNodeIDs": true}
+		forbidden := map[string]bool{"rulesConfigFromLegacy": true, "ruleLibraryConfigFromLegacy": true, "githubConfigFromLegacy": true, "dialerConfigFromLegacy": true, "easyTierProfileFromLegacy": true, "any": true, "dictGet": true, "raise": true, "catch": true, "must": true, "pyError": true, "decodeLegacy": true, "configFromLegacy": true, "encodeLegacy": true, "FixProxyFields": true, "ApplyGithubProxyDomain": true, "MihomoUsedPorts": true, "MihomoListenPorts": true, "ParseStructuredProxyString": true, "InspectStructuredProxyString": true, "ConvertNodeToMihomo": true, "ProxyStringConverter": true, "ConversionResults": true, "WithNodeConversions": true, "EnsureNodeConversions": true, "readDocumentYAML": true, "ValidateShapes": true, "ValidateDialers": true, "DependencyGraph": true, "RawDialer": true, "DialerTarget": true, "GroupMembers": true, "GroupDependencies": true, "CheckCycles": true, "IncomingDialers": true, "ResolveDialer": true, "OverlayDialer": true, "FilterProviderCandidates": true, "ProviderProxyName": true, "ValidateEmitted": true, "RejectSurgeDialers": true, "DependencyNodeIDs": true, "CurrentMihomoEnv": true, "SetMihomoEnv": true, "RegisterMihomoHooks": true, "applyLinuxGateway": true, "gatewayEnabled": true, "isFullTun": true, "ValidateBaseSettings": true, "SplitHostPort": true, "SniffPortError": true, "AgentContext": true, "TakeoverMode": true, "GenerateMihomoConfig": true, "GenerateMihomoDocument": true, "GetMihomoProviderDownloads": true, "GetMihomoRulesetDownloads": true, "DefaultMihomoTemplate": true, "ValidateIPv6Flags": true, "NormalizeFindProcessMode": true, "ParseMosdnsCustomHosts": true, "SyncMosdnsHosts": true, "InjectRegionProbe": true, "BuildProviderHealthCheck": true, "SplitRulesAndRulesets": true, "splitRulesAndRulesets": true, "appendURLQuery": true, "profileAPIPath": true, "loadCustomConfig": true, "legacyProxy": true, "replaceLegacyDocument": true, "adaptDocument": true, "MihomoEnvironmentFromLegacy": true, "subsError": true, "MihomoEnv": true, "MihomoHooks": true, "GenerateOptions": true, "Download": true, "AgentSource": true, "PortOwner": true}
+		// Selector names belong to their imported owner (e.g. net.SplitHostPort),
+		// not to an unqualified compatibility entry in this package.
+		selected := map[*ast.Ident]bool{}
 		ast.Inspect(file, func(n ast.Node) bool {
-			if id, ok := n.(*ast.Ident); ok && forbidden[id.Name] {
+			if selector, ok := n.(*ast.SelectorExpr); ok {
+				selected[selector.Sel] = true
+			}
+			return true
+		})
+		ast.Inspect(file, func(n ast.Node) bool {
+			if id, ok := n.(*ast.Ident); ok && !selected[id] && forbidden[id.Name] {
 				t.Errorf("%s references %s", name, id.Name)
 			}
 			return true

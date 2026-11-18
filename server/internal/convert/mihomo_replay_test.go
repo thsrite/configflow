@@ -133,3 +133,6 @@ func TestNativeMihomoStoredMemberFallbacks(t *testing.T) {
 
 // NativeBaseControllerMessage exposes the shared message to archived boundary tests.
 const NativeBaseControllerMessage = msgBaseController
+
+// NativeMihomoRulesMessage exposes the typed rule-list diagnostic for old client boundary tests.
+const NativeMihomoRulesMessage = msgMihomoRules

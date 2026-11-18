@@ -8,10 +8,8 @@ import (
 	"configflow/internal/pystr"
 )
 
-// Python-semantics helpers of the C18 generator. The generator is written
-// like the Python function it ports: an exception Python would raise on a
-// malformed value is raised as a panic(raised{err}) and turned back into the
-// returned error by catch in the exported function.
+// Temporary helpers for the unported Surge/Loon generators (N8-8c). The
+// typed Mihomo generator does not call this compatibility layer.
 
 type raised struct{ err error }
 
