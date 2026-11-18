@@ -52,18 +52,22 @@ func readArchive(data []byte, dst any) error {
 }
 
 var frozenSummaries = sync.OnceValues(func() (map[string]frozenSummary, error) {
-	if fmt.Sprintf("%x", sha256.Sum256(frozenIndexBytes)) != "47e7732d7e632eacae626e6a99ecc2e136a5873c8d2297a68c0c8e5f9c45134b" {
+	return decodeFrozenIndex(frozenIndexBytes)
+})
+
+func decodeFrozenIndex(data []byte) (map[string]frozenSummary, error) {
+	if fmt.Sprintf("%x", sha256.Sum256(data)) != "47e7732d7e632eacae626e6a99ecc2e136a5873c8d2297a68c0c8e5f9c45134b" {
 		return nil, fmt.Errorf("historical YAML comparison index changed")
 	}
 	var index frozenIndex
-	if err := readArchive(frozenIndexBytes, &index); err != nil {
+	if err := readArchive(data, &index); err != nil {
 		return nil, err
 	}
 	if index.ArchiveSHA != frozenArchiveSHA || index.Revision != frozenRevision || len(index.Records) != frozenCount {
 		return nil, fmt.Errorf("historical YAML comparison index metadata changed")
 	}
 	return index.Records, nil
-})
+}
 
 func auditSHA(nodes []ParseNode) (string, error) {
 	data, err := json.Marshal(nodes)

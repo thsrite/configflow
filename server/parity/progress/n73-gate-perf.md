@@ -76,3 +76,35 @@ The full replay checks that wire representation against actual ParseAudit.
 Corrected complete yamlx race18.637s PASS, all AST controls retained.
 `go generate` output remains byte-identical, SHA
 `47e7732d7e632eacae626e6a99ecc2e136a5873c8d2297a68c0c8e5f9c45134b`.
+
+## Highest-priority final acceptance
+
+Coordinator made this task highest priority after the R10 merge gate timed out
+installer/provider at60min (installer's old migration gate alone43m22s).
+No additional work is being added. The remaining duplicate focused measurement
+was stopped after discovery's direct comparison completed, to run the required
+complete suites immediately. Its partial gateway/installer/mosdns results are
+not substituted for full-package timings.
+
+Same-host direct comparison (.64, same reader test/filter, GOMAXPROCS2, -p1,
+-race -count1 -timeout40m): discovery's7-row test1.58s/package2.647s PASS.
+Old test had not completed at763s (CPU691s, RSS1,327,596KiB); this lower bound
+is retained without estimating a finished old duration or claiming a multiple.
+
+Persistent negative control `TestFrozenIndexRejectsChangedEntry` mutates one
+record's class in otherwise valid index JSON and requires rejection by the
+actual index decoder. An end-to-end experiment also changed exactly one
+category in the real on-disk fixture, ran the full-replay test, verified a
+nonzero exit and its exact integrity diagnostic, then restored the original
+fixture before any green full-package run. Output:
+
+```text
+tampered one index category; metadata and record count unchanged
+--- FAIL: TestAllFrozenReaderSources (0.01s)
+    history_test.go:37: historical YAML comparison index changed
+FAIL configflow/internal/yamlx/yamlxtest 0.021s
+47e7732d7e632eacae626e6a99ecc2e136a5873c8d2297a68c0c8e5f9c45134b  internal/yamlx/yamlxtest/testdata/n73_index.json.gz
+```
+
+.64 final gofmt empty and full vet PASS; complete caller/helper/facade race
+currently running with -p6. Full output and exact commands follow at completion.

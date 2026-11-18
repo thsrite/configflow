@@ -98,3 +98,30 @@ func TestFrozenIndexRejectsUnrecordedInput(t *testing.T) {
 		t.Fatal("unrecorded input silently acquired a migration category")
 	}
 }
+
+// Alter valid JSON data rather than gzip bytes: metadata/count stay valid, so
+// this control detects a missing integrity check on a derived reference entry.
+func TestFrozenIndexRejectsChangedEntry(t *testing.T) {
+	var index frozenIndex
+	if err := readArchive(frozenIndexBytes, &index); err != nil {
+		t.Fatal(err)
+	}
+	id := fmt.Sprintf("%x", sha256.Sum256([]byte("mixed-port: 7890")))
+	entry, ok := index.Records[id]
+	if !ok {
+		t.Fatal("negative-control input missing from the index")
+	}
+	entry.Category += "-tampered"
+	index.Records[id] = entry
+	var changed bytes.Buffer
+	writer := gzip.NewWriter(&changed)
+	if err := json.NewEncoder(writer).Encode(index); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := decodeFrozenIndex(changed.Bytes()); err == nil {
+		t.Fatal("tampered derived reference entry was accepted")
+	}
+}

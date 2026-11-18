@@ -45,3 +45,33 @@ production projector, and explicit expected-change accounting. Native recorder
 reruns use this frozen old half and recalculate the native half independently.
 To regenerate the retired half for a new migration audit, use a checkout at the
 baseline revision; do not resurrect private parser/constructor code here.
+
+## Complete replay and compact caller lookup (N7-3d performance follow-up)
+
+The original archive above is unchanged. `history_test.go` alone embeds and
+streams every21,343 record for `TestAllFrozenReaderSources`; it checks source
+SHA/revision/unknown status, live Parse's entire physical graph or exact error,
+and every entry of the compact caller index. Duplicate IDs and missing entries
+fail. The ordinary `go test ./...` gate always executes this complete test.
+
+`n73_index.json.gz` is derived data, not a new oracle. Generate on a test server:
+
+```sh
+cd server/internal/yamlx/yamlxtest
+go generate
+sha256sum testdata/n73_index.json.gz
+```
+
+The generator reads only the original checksum-pinned archive; no YAML loader,
+business function or Python implementation runs. Each index entry preserves its
+source SHA, class, exact native diagnostic and SHA256 of the canonical typed
+physical audit JSON (tags, values, source positions, ordered child IDs, alias IDs
+and nil/empty distinctions). Both archive and index checksums are pinned. The
+full replay cross-checks the generator's JSON wire schema against ParseAudit.
+Index SHA:`47e7732d7e632eacae626e6a99ecc2e136a5873c8d2297a68c0c8e5f9c45134b`.
+
+Classify loads only this index, then runs live Parse/audit on the caller's actual
+source. All caller selection logic and occurrence counts remain unchanged;
+unrecorded sources still fail. This avoids decoding/retaining the full archive
+in every test binary without dropping or sampling any historical coverage.
+Detailed measurements: `server/parity/progress/n73-gate-perf.md`.
