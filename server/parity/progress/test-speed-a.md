@@ -425,3 +425,27 @@ loads to be below 10. Observe .64 load and external activity at each phase; retr
 any contaminated round. Use a new log directory so the discarded evidence is
 preserved. The coordinator reserves its new gates for .32 during the A window;
 other agents' auto-selected targeted work can still interfere.
+
+## Measurement deferred after the resource-wait limit
+
+After stopping the contaminated pair, a single foreground readiness wait checked
+both load and the coordinator's acceptance-process predicate every 30 seconds.
+At 2026-11-18 02:49:09 UTC, **908 seconds** had elapsed; `.32=8.77`, `.64=6.30`,
+but `gate-speed-accept` was still **active**. The no-acceptance-process condition
+was not satisfied even though loads were low (an acceptance script can be between
+heavy stages). No second measurement pair was launched.
+
+Per the original fifteen-minute queue rule, hand back with formal timings still
+**待测**. The prioritized gate-speed acceptance remains untouched. No A-owned
+measurement/test process remains, and A releases its timing-window reservation;
+B was not running a competing pair. A later run must first see no output from
+`pgrep -af '[g]ate-speed-accept'`, confirm both one-minute loads below 10, and use
+a fresh before/after log directory. The first pair remains discarded.
+
+Implementation remains validated: rebased batch-2 metadata, 8 transcripts and
+2914 actual-Python inputs with diff 0, all eight A packages' relevant race runs,
+vet/gofmt, cache/exec/fixture controls, ten-site A process registration and the
+shared all-Go-source helper audit. The refreshed implementation was previously
+handed back at `6fad06fcf`; later shared-audit hardening is the B patch adopted
+in A (same tool implementation). This section and the discarded-pair record are
+documentation only, not performance evidence.
