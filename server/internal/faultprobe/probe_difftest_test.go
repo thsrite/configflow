@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -53,5 +54,43 @@ func TestTokenRequiresPrivateRegularFile(t *testing.T) {
 	}
 	if _, err := Token(); err == nil {
 		t.Fatal("public token accepted")
+	}
+}
+
+func TestPointConcurrentObserversReleaseTogether(t *testing.T) {
+	dir := control(t)
+	pause := filepath.Join(dir, "pause."+string(ProviderRender))
+	if err := os.WriteFile(pause, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	var workers sync.WaitGroup
+	defer func() { cancel(); workers.Wait() }()
+	for range 32 {
+		workers.Go(func() { Point(ctx, ProviderRender) })
+	}
+	// The event transcript proves all callers reached the barrier before release.
+	tick := time.NewTicker(time.Millisecond)
+	defer tick.Stop()
+	for {
+		data, err := os.ReadFile(filepath.Join(dir, "events.jsonl"))
+		if err == nil && strings.Count(string(data), `"event":"entered"`) == 32 {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatal("concurrent observers did not reach the barrier")
+		case <-tick.C:
+		}
+	}
+	if active := Active(); len(active) != 1 || active[0] != ProviderRender {
+		t.Fatalf("active phases: %v", active)
+	}
+	if err := os.Remove(pause); err != nil {
+		t.Fatal(err)
+	}
+	workers.Wait()
+	if active := Active(); len(active) != 0 {
+		t.Fatalf("released observers still active: %v", active)
 	}
 }

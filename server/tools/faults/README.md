@@ -39,7 +39,7 @@ They cannot disable loops; the normal production lifecycle timings remain active
    `run.py`) decorated with `@SCENARIOS.register("r12-mid-publish", covers=["5.7",
    "R12"])`. It receives an Environment. Obtain a fresh World with `env.world()`;
    for a custom loopback device fake, use `env.shared_source(MyFake)` and pass that
-   source into the World. Extend the typed Go seeder or configure through real APIs;
+   source into the World. Extend the Go fixture seeder or configure through real APIs;
    retain its marker/empty-directory/loopback checks. Never load production data.
 2. Establish a real boundary: a fake transcript must prove a device write or I/O
    arrived, or arm a registered barrier with `world.arm("store")` and wait with
