@@ -106,3 +106,25 @@ No routers business or tests are edited.
 .64 separate live check: **5 corpus reference inputs, diff 0**, plus an empty
 fallback transcript for the complete original recorded replay. Selected package
 passed in `2.806s`. Race timing follows the shared fixture integration.
+
+## provider — independent seed copies
+
+The existing corpora already use recorded Python outputs, so there is no pure
+runtime Python oracle to replace. The expensive setup was `repo.Open` on an empty
+directory for every stateful row. Each replay/corpus now creates its initial
+repository once, copies that closed-on-return filesystem into a **new directory
+per row**, then opens a fresh repository object. All original calls, cache
+writes, durable SQL writes, revision checks and file assertions still run.
+Process-global Locations/Env/aggregation hooks keep these replays sequential.
+
+`TestCorpusRepositoryCopiesCannotLeakState` deliberately writes both shared SQL
+state and a cache file to one copy, then verifies an earlier and a later copy
+against the full clean export (including revisions) and file absence. Targeted
+race control passed in `1.393s`. Complete recorded/corpus rows and the control
+passed on .64 in a selected-test race run (`90.000s`; this is not the final paired
+measurement and does not include the N7-3 gate test).
+
+```
+go test -race -count=1 -timeout=30m -json ./internal/provider ./internal/deploy/... -run '^(TestCorpus|TestRecordedPythonTests|TestCorpusRepositoryCopiesCannotLeakState|TestPythonBuild|TestPythonCorpus|TestPythonCheckerHistories)$'
+configflow/internal/provider pass 90
+```

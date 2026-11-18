@@ -160,12 +160,8 @@ type world struct {
 	aggs    []any
 }
 
-func newWorld(t *testing.T, row *jsonx.Object) *world {
-	w := &world{t: t, row: row, root: t.TempDir(), answers: map[string][]*jsonx.Object{}}
-	r, err := repo.Open(w.root, repo.Options{})
-	if err != nil {
-		t.Fatal(err)
-	}
+func newWorld(t *testing.T, row *jsonx.Object, r *repo.Repository) *world {
+	w := &world{t: t, row: row, root: r.DataDir(), answers: map[string][]*jsonx.Object{}}
 	w.repo, w.ctx = r, repo.WithRepository(context.Background(), r)
 	for rel, content := range row.GetObject("files").All() {
 		text, ok := content.(string)
@@ -420,6 +416,7 @@ func sortedRepr(names []any) []any {
 
 func TestRecordedPythonTests(t *testing.T) {
 	rows := loadRecorded(t)
+	repository := corpusRepositoryFactory(t)
 	counts := map[string]int{}
 	files := map[string]bool{}
 	failures, unsupported := 0, 0
@@ -477,7 +474,7 @@ func TestRecordedPythonTests(t *testing.T) {
 			chains, err := ValidateRenderedBundle(recordedSnapshot(args[0]), providers)
 			got = recordedOutcome(chains, err)
 		case "prepare_sub", "bundle", "commit_bundle", "commit_updates":
-			w = newWorld(t, row)
+			w = newWorld(t, row, repository(t))
 			restoreEnv := SetEnv(&Env{Fetch: w.fetcher("default"), SubscriptionFetch: w.fetcher("subscriptions"),
 				AggregationFetch: w.fetcher("aggregations"), NodeID: w.nodeID, Converter: w})
 			var clock fixedClock

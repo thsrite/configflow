@@ -213,6 +213,7 @@ func diffText(want, got any) string {
 func TestCorpus(t *testing.T) {
 	defer SetLocations(fakeLocations{})()
 	rows := loadCorpus(t)
+	repository := corpusRepositoryFactory(t)
 	counts := map[string]int{}
 	failures := 0
 	for i, row := range rows {
@@ -244,7 +245,7 @@ func TestCorpus(t *testing.T) {
 			}())
 		case "prepare_sub", "bundle":
 			var check func(t *testing.T, files map[string]string)
-			got, check = scenarioRow(t, kind, asObject(input), row)
+			got, check = scenarioRow(t, kind, asObject(input), row, repository(t))
 			extra = func(t *testing.T) { check(t, nil) }
 		default:
 			t.Fatalf("row %d: unknown kind %q", i, kind)
@@ -435,12 +436,8 @@ func toRequested(v any) *Requested {
 	return &Requested{Kind: list[0].(string), Resource: list[1].(*jsonx.Object)}
 }
 
-func scenarioRow(t *testing.T, kind string, in, row *jsonx.Object) (*jsonx.Object, func(*testing.T, map[string]string)) {
-	root := t.TempDir()
-	r, err := repo.Open(root, repo.Options{})
-	if err != nil {
-		t.Fatal(err)
-	}
+func scenarioRow(t *testing.T, kind string, in, row *jsonx.Object, r *repo.Repository) (*jsonx.Object, func(*testing.T, map[string]string)) {
+	root := r.DataDir()
 	ctx := repo.WithRepository(context.Background(), r)
 	for id, cache := range in.GetObject("caches").All() {
 		if _, err := r.WriteSharedJSON(ctx, "subscribes/"+id+".json", cache); err != nil {
