@@ -14,6 +14,7 @@ import (
 	"time"
 
 	core "configflow/internal/agents"
+	"configflow/internal/auth"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
@@ -395,4 +396,40 @@ func TestO9CredentialIdentityUsesRenderedPortAndReportedHost(t *testing.T) {
 	body.Set("host", "172.20.0.5")
 	body.Set("registration_token", string(match[1]))
 	s.Post("/api/agents/register", httpxtest.JSON(body)).WantStatus(200)
+}
+
+func TestO9LoginDisabledKeepsExplicitRegistrationKeyPolicy(t *testing.T) {
+	s := o9Server(t)
+	previous := auth.Configure(auth.Config{})
+	defer auth.Configure(previous)
+	t.Setenv("AGENT_REGISTRATION_KEY", "synthetic-key")
+	script := s.Post("/api/agents/install-command", httpxtest.JSON(jsonx.Obj("name", "new-device"))).WantStatus(200).Object().GetString("script")
+	if o9Token.MatchString(script) {
+		t.Fatal("anonymous template bypassed explicit registration key policy")
+	}
+	s.Post("/api/agents/register", httpxtest.JSON(o9Body())).WantStatus(403)
+	body := o9Body()
+	body.Set("registration_key", "synthetic-key")
+	s.Post("/api/agents/register", httpxtest.JSON(body)).WantStatus(200)
+}
+
+func TestO9ValidBootstrapProofConsumedEvenWhenJWTAlsoPresent(t *testing.T) {
+	s := o9Server(t)
+	_, tokens := o9Command(t, s)
+	body := o9Body()
+	body.Set("registration_token", tokens[0])
+	registered := s.Post("/api/agents/register", s.Login(), httpxtest.JSON(body)).WantStatus(200).Object()
+	s.Delete("/api/agents/"+registered.GetString("id"), s.Login()).WantStatus(200)
+	s.Post("/api/agents/register", httpxtest.JSON(body)).WantStatus(403)
+}
+
+func TestO9ValidBootstrapProofConsumedAlongsideExistingAgentToken(t *testing.T) {
+	s := o9Server(t)
+	registered := s.Post("/api/agents/register", s.Login(), httpxtest.JSON(o9Body())).WantStatus(200).Object()
+	_, tokens := o9Command(t, s)
+	body := o9Body()
+	body.Set("registration_token", tokens[0])
+	s.Post("/api/agents/register", httpxtest.Bearer(registered.GetString("token")), httpxtest.JSON(body)).WantStatus(200)
+	s.Delete("/api/agents/"+registered.GetString("id"), s.Login()).WantStatus(200)
+	s.Post("/api/agents/register", httpxtest.JSON(body)).WantStatus(403)
 }

@@ -215,10 +215,14 @@ func doRegister(c *httpx.Ctx, out **jsonx.Object, secrets *redact.Secrets) (*htt
 		left, right := sha256.Sum256([]byte(candidate)), sha256.Sum256([]byte(key))
 		admission.AllowNew = subtle.ConstantTimeCompare(left[:], right[:]) == 1
 	}
-	if validPanelJWT(c) {
-		admission.AllowNew = true
+	if auth.IsAuthEnabled() {
+		if validPanelJWT(c) {
+			admission.AllowNew = true
+		}
 	}
-	admission.Credential, _ = registrationToken.(string)
+	if auth.IsAuthEnabled() || key == "" {
+		admission.Credential, _ = registrationToken.(string)
+	}
 
 	host := data.GetOr("host", "")
 	admission.ReportedHost, _ = host.(string)

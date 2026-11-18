@@ -108,9 +108,6 @@ func (m *Manager) RegisterAuthorizedAgent(ctx context.Context, data *Record, exi
 func (m *Manager) admitRegistration(ctx context.Context, system *model.System, data *Record, admission *RegistrationAuthorization) error {
 	now := lifecycle.ClockFrom(ctx).Now().Unix()
 	system.RegistrationSessions = activeRegistrationSessions(system.RegistrationSessions, now)
-	if admission.AllowNew {
-		return nil
-	}
 	host := admission.ReportedHost
 	if host == "" {
 		host = data.GetString("host")
@@ -124,13 +121,22 @@ func (m *Manager) admitRegistration(ctx context.Context, system *model.System, d
 			session.ServiceType != data.GetOr("service_type", "mihomo") || session.DeploymentMethod != data.GetString("deployment_method") ||
 			!jsonx.Equal(int64(session.Port), data.GetOr("port", 8080)) || session.Host != "" && session.Host != host ||
 			data.GetString("profile_id") != "" && data.GetString("profile_id") != session.ProfileID {
+			if admission.AllowNew {
+				return nil
+			}
 			return ErrRegistrationAuthorization
 		}
 		if _, err := m.repository.ProfileMetadata(ctx, session.ProfileID); err != nil {
+			if admission.AllowNew {
+				return nil
+			}
 			return err
 		}
 		data.Set("profile_id", session.ProfileID)
 		system.RegistrationSessions = append(system.RegistrationSessions[:i], system.RegistrationSessions[i+1:]...)
+		return nil
+	}
+	if admission.AllowNew {
 		return nil
 	}
 	return ErrRegistrationAuthorization

@@ -522,6 +522,15 @@ func (m *Manager) registerAgent(ctx context.Context, data *jsonx.Object, existin
 			if !ConstantTimeASCIIEqual(existingToken, existing.Value("token")) {
 				return nil, &PermissionError{}
 			}
+			// An authenticated re-registration must not be blocked by stale bootstrap
+			// data, but an accompanying still-valid one-use proof is spent on success.
+			if admission != nil && admission.Credential != "" {
+				optional := *admission
+				optional.AllowNew = true
+				if err := m.admitRegistration(ctx, system, data.DeepCopy(), &optional); err != nil {
+					return nil, err
+				}
+			}
 			if jsonx.Truthy(installationID) && jsonx.Equal(existing.Value("gateway_installation_id"), installationID) &&
 				!jsonx.Equal(requested, existing.Value("profile_id")) {
 				return nil, &DeploymentConflict{Message: "Installation Agent profile changed; prepare a new installation"}

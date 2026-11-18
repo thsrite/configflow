@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"os"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -332,7 +331,7 @@ func getInstallScript(c *httpx.Ctx) (*httpx.Response, error) {
 	}
 	// Anonymous script downloads remain templates. Only an authenticated panel
 	// request may mint a capability; a public URL can never become a proof oracle.
-	if (auth.IsAuthEnabled() || os.Getenv("AGENT_REGISTRATION_KEY") != "") && validPanelJWT(c) {
+	if auth.IsAuthEnabled() && validPanelJWT(c) {
 		tokens, failed := issueRegistration(c, shellRegistrationIdentities(params))
 		if failed != nil {
 			return failed, nil
@@ -387,7 +386,7 @@ func createInstallCommand(c *httpx.Ctx) (*httpx.Response, error) {
 	if failed != nil {
 		return failed, nil
 	}
-	if auth.IsAuthEnabled() || os.Getenv("AGENT_REGISTRATION_KEY") != "" {
+	if auth.IsAuthEnabled() {
 		identities := shellRegistrationIdentities(params)
 		tokens, failed := issueRegistration(c, identities)
 		if failed != nil {
@@ -492,7 +491,7 @@ func dockerAgentResponse(c *httpx.Ctx, render func(installer.DockerOptions) (str
 	if err != nil {
 		return dockerResponse(text, err, contentType), nil
 	}
-	if auth.IsAuthEnabled() || os.Getenv("AGENT_REGISTRATION_KEY") != "" {
+	if auth.IsAuthEnabled() {
 		var identities []model.AgentRegistrationSession
 		for _, service := range []struct {
 			name    string
