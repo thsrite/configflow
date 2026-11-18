@@ -87,7 +87,29 @@ func TestC34ObjectFieldValues(t *testing.T) {
 	w := newWorld(t)
 	for _, engine := range []string{"mihomo", "surge", "loon", "mosdns", "oxidns"} {
 		for _, value := range []any{nil, false, 0, []any{}, map[string]any{}, true, 3} {
-			w.check(post("/api/custom-config/"+engine, map[string]any{"config": value}))
+			r := post("/api/custom-config/"+engine, map[string]any{"config": value})
+			if number, ok := value.(int); !ok || number != 0 || engine == "oxidns" {
+				w.check(r)
+				continue
+			}
+			// N8-5's approved typed three-way merge distinguishes 0 from false.
+			// Python keeps the preceding false; Go stores the explicitly sent 0.
+			r.Headers = map[string]string{"Authorization": w.token, "Content-Type": "application/json"}
+			py, got := w.py.send(t, r), sendGo(t, w.srv, r)
+			compare(t, "typed zero status", got.Status, py.Status)
+			compare(t, "typed zero headers", headers(got), headers(py))
+			compare(t, "typed zero response", got.Body, py.Body)
+			expected := native(t, py.State).(map[string]any)
+			setting := expected["document"].(map[string]any)["profiles"].(map[string]any)["default"].(map[string]any)[engine].(map[string]any)
+			if flag, ok := setting["custom_config"].(bool); !ok || flag {
+				t.Fatalf("Python did not retain false: %v", setting["custom_config"])
+			}
+			current := got.State.(map[string]any)["document"].(map[string]any)["profiles"].(map[string]any)["default"].(map[string]any)[engine].(map[string]any)
+			if number, ok := current["custom_config"].(float64); !ok || number != 0 {
+				t.Fatalf("Go did not store numeric zero: %v", current["custom_config"])
+			}
+			setting["custom_config"] = float64(0)
+			compare(t, "typed zero complete storage", got.State, expected)
 		}
 	}
 }

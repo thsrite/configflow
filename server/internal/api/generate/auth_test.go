@@ -11,6 +11,10 @@ import (
 )
 
 func c34Owned(route *httpx.Route) bool {
+	// A20 shares the custom_config blueprint; its providers have their own auth contract.
+	if strings.Contains(route.Endpoint, ".linux_gateway_") {
+		return false
+	}
 	if strings.HasPrefix(route.Endpoint, "config.") || strings.HasPrefix(route.Endpoint, "custom_config.") || strings.HasPrefix(route.Endpoint, "generate.") {
 		return true
 	}
@@ -55,5 +59,21 @@ func TestEveryC34RegisteredMethodRequiresTheRightAuthentication(t *testing.T) {
 	current, _ := json.Marshal(after)
 	if string(original) != string(current) {
 		t.Fatal("unauthenticated C34 request wrote storage")
+	}
+}
+
+func TestC34OwnershipKeepsExternalBlueprintRoutesSeparate(t *testing.T) {
+	for _, test := range []struct {
+		endpoint string
+		want     bool
+	}{
+		{"custom_config.linux_gateway_settings", false}, {"custom_config.linux_gateway_rule_provider", false}, {"custom_config.linux_gateway_source_provider", false},
+		{"custom_config.handle_custom_mihomo_config", true}, {"generate.generate_mihomo", true}, {"profiles.handle_profiles", true},
+	} {
+		t.Run(test.endpoint, func(t *testing.T) {
+			if got := c34Owned(&httpx.Route{Endpoint: test.endpoint}); got != test.want {
+				t.Fatalf("owned=%v want=%v", got, test.want)
+			}
+		})
 	}
 }

@@ -40,16 +40,7 @@ func TestCompleteC34RegistrationHasOneOwner(t *testing.T) {
 			if method == "HEAD" || method == "OPTIONS" {
 				continue
 			}
-			if strings.HasPrefix(r.Endpoint, "config.") || strings.HasPrefix(r.Endpoint, "custom_config.") || strings.HasPrefix(r.Endpoint, "generate.") {
-				count++
-				continue
-			}
-			switch r.Endpoint {
-			case "profiles.handle_profiles", "profiles.handle_profile", "profiles.set_default_profile", "profiles.clone_profile", "profiles.profile_agent_bindings", "profiles.rebind_profile_agents", "profiles.export_profile", "profiles.import_profile", "profiles.import_client_profile":
-				count++
-				continue
-			}
-			if strings.Contains(r.Path, "/generate/") && (strings.HasPrefix(r.Endpoint, "profiles.profile_generate_") || strings.HasPrefix(r.Endpoint, "profiles.profile_preview_")) {
+			if c34Owned(r) {
 				count++
 			}
 		}

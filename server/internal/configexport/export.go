@@ -28,11 +28,15 @@ func sanitize(ctx context.Context, payload, settings *jsonx.Object) (*jsonx.Obje
 	if err != nil {
 		return nil, err
 	}
-	out, ok := jsonx.AsObject(result)
-	if !ok {
-		return nil, fmt.Errorf("sanitize configuration: object expected")
+	raw, err := json.Marshal(result)
+	if err != nil {
+		return nil, fmt.Errorf("encode sanitized configuration: %w", err)
 	}
-	return out, nil
+	var out jsonx.Object
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil, fmt.Errorf("read sanitized configuration: %w", err)
+	}
+	return &out, nil
 }
 
 // RedactOxiDNS removes opaque native text and upstream credentials while

@@ -61,7 +61,7 @@ func Register(r *httpx.Router) {
 		}
 		if c.Method() == "PUT" {
 			out, err := mutate(c.Context(), func(ctx context.Context, r *repo.Repository) (*jsonx.Object, error) {
-				return r.UpdateProfile(ctx, c.Param("profile_id"), body)
+				return r.UpdateProfileMetadata(ctx, c.Param("profile_id"), body)
 			})
 			return reply(out, err, 200)
 		}
@@ -163,7 +163,7 @@ func Register(r *httpx.Router) {
 // Binding summaries can include credentials inside a legacy host or label.
 // Use the shared public-metadata policy without changing stored connections.
 func publicBindings(value any) any {
-	return redact.SanitizeCredentials(jsonx.Obj("bindings", value), nil).Value("bindings")
+	return redact.SanitizeCredentials(value, nil)
 }
 
 func reply(out any, err error, status int) (*httpx.Response, error) {

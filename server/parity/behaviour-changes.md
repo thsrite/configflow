@@ -920,3 +920,9 @@ Python及原Go投影均原样显示；改绑冲突名称中的 password=... 也�
 这四个公共出口现在复用 redact.SanitizeCredentials；原存储/完整管理员备份仍保留连接信息。
 这是凭据安全修正，单独回归 TestReviewC34BindingCredentials，不放宽普通Flask差分。
 custom null/缺失裁定见上文最新逐引擎合同，dry_run及profile默认/校验修复均恢复Python行为。
+
+C34 rebase 到 N8-5 后补充实证：custom-config 先保存 `config:false`，再显式保存
+`config:0` 时，Python 的三方合并把 false/0 视为相等而保留 false；Go 按已裁定的
+JSON 类型比较保存 0。`TestC34ObjectFieldValues` 对四个宽松引擎分别断言这个差异，
+仅替换这一字段建立预期快照后继续比较完整 DB/files；OxiDNS 仍按其文本合同拒绝。
+这沿用 N8-5 的类型裁定，不放宽其他请求或状态差分。

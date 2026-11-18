@@ -50,7 +50,7 @@ func TestLiveConfigProfileAndAuthentication(t *testing.T) {
 func TestLoonFilenamePercentEncoding(t *testing.T) {
 	mihomoenv.Wire()
 	s := exportApp(t)
-	if _, err := s.Repo.UpdateProfile(s.Context(), "default", jsonx.Obj("name", "Phone @ Home + Office")); err != nil {
+	if _, err := s.Repo.UpdateProfileMetadata(s.Context(), "default", jsonx.Obj("name", "Phone @ Home + Office")); err != nil {
 		t.Fatal(err)
 	}
 	response := s.Get("/api/config/loon")
