@@ -54,7 +54,29 @@ the hand-back. If no notification arrives within ~3 h, check status once more.
 | 19338c67-c336-40c7-98a9-b4532a66af68 | C19/C20 Surge/Loon adversarial review | wks_0d8cd06808daac1f, branch `go-review-c19c20` |
 | 3112fbeb-e43a-4d16-ad1a-bc88670b1099 | C37 domain discovery port | wks_0dcc037efd16c502, branch `go-port-c37` |
 | e46d698f-6345-41b9-8a38-06d61b6622d3 | config black-box difftest, Step A coverage matrix (→ Opus O6 review) | wks_223d2a53f6e7abbb, branch `go-difftest-config` |
-## >>> CURRENT STATE — 2026-11-18 ~18:30 CST (coordinator f8801d39 → handing off; read this first) <<<
+## >>> CURRENT STATE — 2026-11-18 ~22:30 CST (coordinator 94c212e6; read this first) <<<
+
+**go = 55c9794a0** (pushed): **batch-6 merged** (A16, A17, A21, N8-8a review, N8-7b review, O3-6b, lifecycle race
+fix, 8a provider fix 694df9d0 + Codex review fix 38ad5156, R5 stale-expectation/identity fixes, integration fixes
+0d31fb93, and the generation perf fix). Gate: core FULL on .64 (race + 42 fuzz) PASS on a16a9fc99; compare on .32
+(proddiff new=0, retries 0, 21 difftest pkgs, 23 synthetic live) PASS on 573705d53 (test/doc-only delta).
+**Perf regression found by the gate:** N8-8a codecs re-decoded the whole config per node / per ruleset
+(Mihomo 128 nodes + 512 rules: 3.2 GB alloc, 3.4 s; OxiDNS POST 29–160 s). Fixed with narrow codecs (RulesetFormat
+decodes only rule_library): 77 MB, 0.1 s (Python 0.095 s, 119 MB alloc). Remaining gap vs pre-typed Go (9.8 MB) → O10.
+**batch-7** (b6fa1f80 builds ~/program/configflow-go-batch-7): A22, R14, R16, R17, R15 review (dab6b395, verified),
+O3-7, O3-8 (6e5c7760), pyref-narrow, N8-8b, N8-8c (097eba4e), N8-9 discovery, N8-9 health (Gemini draft →
+89c495b3 rework → 2a90a68e review), A18 review (1f3a87d6), A23 review (e8737927); integration: one RouterJobLock for
+R14/R15/R17, A22 registration, delete "deferred → R14/A18" baseline rows, O3-8 shutdown rerun, A14 throttle test
+clock. Accepted D2 consequences (O12 release notes): IPv6 verify reports and dismissed notifications reset once
+after the switch. Next: b6fa1f80 hands back tip after preflight + full compare → coordinator runs core on .64 → merge.
+**Follow-ups:** N8-9 health F1 (shared jsonstore ctx API + discovery adapters, after batch-7); O-1 decided (forced
+disable after 10 min offline, design a16-a18); O17 code-size audit + O10 allocation added (WORKFLOW).
+**Process changes today:** pre-flight = full non-race suite (/tmp/preflight.sh on both servers); A/B speed timing
+cancelled (maintainer); Gemini/Antigravity not used (trial draft needed 11 corrections, quota ran out mid-task).
+**Mac disk:** nearly full at 3 GiB; 99 idle worktrees removed (branches kept). Remove finished worktrees after every
+batch; give reused idle agents an explicit worktree (their old cwd may be gone, e.g. 0d31fb93, 694df9d0 kept).
+
+## (history) CURRENT STATE — 2026-11-18 ~18:30 CST (coordinator f8801d39 → handing off) <<<
 
 **go = 30caa723** (pushed). batch-5 merged 14:45 (A14, R12, R13+X1, C34, C36, N8-5c, go-gate-speed, speed A/B,
 Step B fixes). Verified 67/78 on go; 7 more verified and waiting (A16 A17 A21 in batch-6; A22 R14 R16 R17 for
