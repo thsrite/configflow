@@ -783,6 +783,7 @@ IPv6 DNS 的 ND payload 在最后事务读取也严格验证 disabled/dynamic/in
 原生格式差异：ND 的 DNS 列表在内部 stable 快照中用 JSON 文本，替代 Python repr；服务器列表、
 操作值及设备表本身不变。readiness fingerprint 使用 Go 原生、稳定排序后的 JSON 摘要，首次切换
 需要重新检查后再 prepare；只依赖稳定路由字段，路由顺序和 lease timer 变化不影响摘要。
+摘要输入里的路由器记录不含设备密码（Python 含），前端拿到的摘要不能用来离线猜密码；改密码不再改变摘要（R11 复核 F2）。
 复制用 CLI 复用 ScriptString，对控制字符也转义。业务中文、所有有效操作、设备最终状态与真实
 Python 对照；PD 脚本 source 逐字节对照三组参数。readiness 不自动写入路由，仍引导用户走上游路由发布。
 

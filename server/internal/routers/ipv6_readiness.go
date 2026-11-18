@@ -297,13 +297,21 @@ func InspectIPv6Readiness(ctx context.Context, d *RouterOS, r *Router, agent *mo
 		return strings.Compare(string(x), string(y))
 	})
 	slices.Sort(failed)
+	// The fingerprint reaches the browser; an unsalted hash over the device
+	// password would let anyone holding it test password guesses offline.
+	var router *Router
+	if r != nil {
+		c := *r
+		c.Password = ""
+		router = &c
+	}
 	raw, _ := json.Marshal(struct {
 		Router       *Router
 		Routes       []Row
 		LAN, Gateway string
 		Plan         Row
 		Errors       []string
-	}{r, evidence, lan, gateway, plan, failed})
+	}{router, evidence, lan, gateway, plan, failed})
 	hash := sha256.Sum256(raw)
 	result.Fingerprint = hex.EncodeToString(hash[:])
 	return result, nil
