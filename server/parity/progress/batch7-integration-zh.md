@@ -144,3 +144,11 @@ importer 0.005s、convert 原 R5/身份校验相关 0.032s 均 ok。后续整树
 仅 metadata 更新；全十份 2916 exact input/output 的哈希再次证明完全不变。
 `go test -race -count=1 -timeout=15m ./internal/convert ./internal/importer -run "TestBatch6|TestN88bReview|TestMihomoFollowKeepsLocalQuotedInterval|TestSharedScalarMihomoOutputBoundaries|TestTypedMihomoProviderInterval|TestSnell"`
 → convert 1.292s、importer 1.023s 均 ok。
+
+### 修复后的完整预检
+
+`RT_HOST="$BATCH_TEST_HOST" rt sync`，随后在用户指定主测试服务器执行：
+`bash /tmp/preflight.sh program__configflow-go-batch-7 -p 6`
+
+最终输出：`== vet`、`== full non-race tests (-p 6)`、`PREFLIGHT PASS`（退出码 0）。
+本次产品树为 ae3ad5077。batch-6 后续日志/性能修复尚待其最终 tip，rebase 后需再确认预检与 compare。
