@@ -40,6 +40,7 @@ func (r *request) UnmarshalJSON(raw []byte) error {
 
 // Register installs five generators and previews with their profile aliases.
 func Register(r *httpx.Router) {
+	registerArtifacts(r)
 	for _, prefix := range []struct{ path, blueprint string }{{"/api/generate", "generate"}, {"/api/profiles/<profile_id>/generate", "profiles"}} {
 		for _, engine := range []configgen.Engine{configgen.Mihomo, configgen.Surge, configgen.Loon, configgen.MosDNS, configgen.OxiDNS} {
 			for _, preview := range []bool{false, true} {

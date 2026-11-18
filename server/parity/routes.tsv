@@ -128,37 +128,37 @@ POST	/api/client-devices/fixed-ip/preview	routes.client_devices.preview_fixed_ip
 DELETE	/api/config-token	routes.settings.handle_config_token	internal/api/settings	done
 GET	/api/config-token	routes.settings.handle_config_token	internal/api/settings	done
 POST	/api/config-token	routes.settings.handle_config_token	internal/api/settings	done
-GET	/api/config/<profile_id>/loon	routes.config.get_profile_loon_config		todo
-GET	/api/config/<profile_id>/loon/<filename>	routes.config.get_profile_loon_config		todo
-GET	/api/config/<profile_id>/mihomo	routes.config.get_profile_mihomo_config		todo
-GET	/api/config/<profile_id>/mosdns	routes.config.get_profile_mosdns_config		todo
-GET	/api/config/<profile_id>/oxidns	routes.config.get_oxidns_config		todo
-GET	/api/config/<profile_id>/surge	routes.config.get_profile_surge_config		todo
-GET	/api/config/export	routes.config.export_config		todo
-POST	/api/config/import	routes.config.import_config		todo
-GET	/api/config/loon	routes.config.get_loon_config		todo
-GET	/api/config/mihomo	routes.config.get_mihomo_config		todo
-GET	/api/config/mosdns	routes.config.get_mosdns_config		todo
-GET	/api/config/oxidns	routes.config.get_oxidns_config		todo
-POST	/api/config/reset	routes.config.reset_config		todo
-GET	/api/config/surge	routes.config.get_surge_config		todo
-GET	/api/custom-config/linux-gateway	routes.linux_gateway.linux_gateway_settings	internal/api/linuxgateway	done
-POST	/api/custom-config/linux-gateway	routes.linux_gateway.linux_gateway_settings	internal/api/linuxgateway	done
-POST	/api/custom-config/linux-gateway/preview	routes.linux_gateway.linux_gateway_settings	internal/api/linuxgateway	done
-POST	/api/custom-config/linux-gateway/restore	routes.linux_gateway.linux_gateway_settings	internal/api/linuxgateway	done
-POST	/api/custom-config/linux-gateway/restore/preview	routes.linux_gateway.linux_gateway_settings	internal/api/linuxgateway	done
-GET	/api/custom-config/linux-gateway/rules/<path:rule_id>	routes.linux_gateway.linux_gateway_rule_provider	internal/api/linuxgateway	done
-GET	/api/custom-config/linux-gateway/source/<path:rule_id>	routes.linux_gateway.linux_gateway_source_provider	internal/api/linuxgateway	done
-GET	/api/custom-config/loon	routes.config.handle_custom_loon_config		todo
-POST	/api/custom-config/loon	routes.config.handle_custom_loon_config		todo
-GET	/api/custom-config/mihomo	routes.config.handle_custom_mihomo_config		todo
-POST	/api/custom-config/mihomo	routes.config.handle_custom_mihomo_config		todo
-GET	/api/custom-config/mosdns	routes.config.handle_custom_mosdns_config		todo
-POST	/api/custom-config/mosdns	routes.config.handle_custom_mosdns_config		todo
-GET	/api/custom-config/oxidns	routes.config.handle_custom_oxidns_config		todo
-POST	/api/custom-config/oxidns	routes.config.handle_custom_oxidns_config		todo
-GET	/api/custom-config/surge	routes.config.handle_custom_surge_config		todo
-POST	/api/custom-config/surge	routes.config.handle_custom_surge_config		todo
+GET	/api/config/<profile_id>/loon	routes.config.get_profile_loon_config	internal/api/config	done
+GET	/api/config/<profile_id>/loon/<filename>	routes.config.get_profile_loon_config	internal/api/config	done
+GET	/api/config/<profile_id>/mihomo	routes.config.get_profile_mihomo_config	internal/api/config	done
+GET	/api/config/<profile_id>/mosdns	routes.config.get_profile_mosdns_config	internal/api/config	done
+GET	/api/config/<profile_id>/oxidns	routes.config.get_oxidns_config	internal/api/config	done
+GET	/api/config/<profile_id>/surge	routes.config.get_profile_surge_config	internal/api/config	done
+GET	/api/config/export	routes.config.export_config	internal/api/config	done
+POST	/api/config/import	routes.config.import_config	internal/api/config	done
+GET	/api/config/loon	routes.config.get_loon_config	internal/api/config	done
+GET	/api/config/mihomo	routes.config.get_mihomo_config	internal/api/config	done
+GET	/api/config/mosdns	routes.config.get_mosdns_config	internal/api/config	done
+GET	/api/config/oxidns	routes.config.get_oxidns_config	internal/api/config	done
+POST	/api/config/reset	routes.config.reset_config	internal/api/config	done
+GET	/api/config/surge	routes.config.get_surge_config	internal/api/config	done
+GET	/api/custom-config/linux-gateway	routes.linux_gateway.linux_gateway_settings		todo
+POST	/api/custom-config/linux-gateway	routes.linux_gateway.linux_gateway_settings		todo
+POST	/api/custom-config/linux-gateway/preview	routes.linux_gateway.linux_gateway_settings		todo
+POST	/api/custom-config/linux-gateway/restore	routes.linux_gateway.linux_gateway_settings		todo
+POST	/api/custom-config/linux-gateway/restore/preview	routes.linux_gateway.linux_gateway_settings		todo
+GET	/api/custom-config/linux-gateway/rules/<path:rule_id>	routes.linux_gateway.linux_gateway_rule_provider		todo
+GET	/api/custom-config/linux-gateway/source/<path:rule_id>	routes.linux_gateway.linux_gateway_source_provider		todo
+GET	/api/custom-config/loon	routes.config.handle_custom_loon_config	internal/api/config	done
+POST	/api/custom-config/loon	routes.config.handle_custom_loon_config	internal/api/config	done
+GET	/api/custom-config/mihomo	routes.config.handle_custom_mihomo_config	internal/api/config	done
+POST	/api/custom-config/mihomo	routes.config.handle_custom_mihomo_config	internal/api/config	done
+GET	/api/custom-config/mosdns	routes.config.handle_custom_mosdns_config	internal/api/config	done
+POST	/api/custom-config/mosdns	routes.config.handle_custom_mosdns_config	internal/api/config	done
+GET	/api/custom-config/oxidns	routes.config.handle_custom_oxidns_config	internal/api/config	done
+POST	/api/custom-config/oxidns	routes.config.handle_custom_oxidns_config	internal/api/config	done
+GET	/api/custom-config/surge	routes.config.handle_custom_surge_config	internal/api/config	done
+POST	/api/custom-config/surge	routes.config.handle_custom_surge_config	internal/api/config	done
 GET	/api/domain-discovery/agents	routes.domain_discovery.list_agents	internal/api/domaindiscovery	done
 POST	/api/domain-discovery/apply	routes.domain_discovery.apply_rules	internal/api/domaindiscovery	done
 GET	/api/domain-discovery/domains	routes.domain_discovery.list_domains	internal/api/domaindiscovery	done
@@ -176,18 +176,18 @@ PUT	/api/domain-discovery/settings	routes.domain_discovery.update_settings	inter
 POST	/api/domain-discovery/undo	routes.domain_discovery.undo	internal/api/domaindiscovery	done
 POST	/api/domain-discovery/website/identify	routes.domain_discovery.identify_website	internal/api/domaindiscovery	done
 PUT	/api/domain-discovery/website/note	routes.domain_discovery.website_note	internal/api/domaindiscovery	done
-POST	/api/generate/<service>/artifact	routes.generate.generate_artifact		todo
-GET	/api/generate/artifacts/<preview_id>/<action>	routes.generate.read_artifact		todo
-POST	/api/generate/loon	routes.generate.generate_loon		todo
-POST	/api/generate/loon/preview	routes.generate.preview_loon		todo
-POST	/api/generate/mihomo	routes.generate.generate_mihomo		todo
-POST	/api/generate/mihomo/preview	routes.generate.preview_mihomo		todo
-POST	/api/generate/mosdns	routes.generate.generate_mosdns		todo
-POST	/api/generate/mosdns/preview	routes.generate.preview_mosdns		todo
-POST	/api/generate/oxidns	routes.generate.generate_oxidns		todo
-POST	/api/generate/oxidns/preview	routes.generate.preview_oxidns		todo
-POST	/api/generate/surge	routes.generate.generate_surge		todo
-POST	/api/generate/surge/preview	routes.generate.preview_surge		todo
+POST	/api/generate/<service>/artifact	routes.generate.generate_artifact	internal/api/generate	wip
+GET	/api/generate/artifacts/<preview_id>/<action>	routes.generate.read_artifact	internal/api/generate	wip
+POST	/api/generate/loon	routes.generate.generate_loon	internal/api/generate	done
+POST	/api/generate/loon/preview	routes.generate.preview_loon	internal/api/generate	done
+POST	/api/generate/mihomo	routes.generate.generate_mihomo	internal/api/generate	done
+POST	/api/generate/mihomo/preview	routes.generate.preview_mihomo	internal/api/generate	done
+POST	/api/generate/mosdns	routes.generate.generate_mosdns	internal/api/generate	done
+POST	/api/generate/mosdns/preview	routes.generate.preview_mosdns	internal/api/generate	done
+POST	/api/generate/oxidns	routes.generate.generate_oxidns	internal/api/generate	done
+POST	/api/generate/oxidns/preview	routes.generate.preview_oxidns	internal/api/generate	done
+POST	/api/generate/surge	routes.generate.generate_surge	internal/api/generate	done
+POST	/api/generate/surge/preview	routes.generate.preview_surge	internal/api/generate	done
 POST	/api/logs/clear	routes.logs.clear_logs	internal/api/logs	done
 GET	/api/logs/info	routes.logs.get_log_info	internal/api/logs	done
 GET	/api/logs/tail	routes.logs.get_logs	internal/api/logs	done
@@ -229,39 +229,39 @@ GET	/api/oxidns/settings	routes.oxidns.oxidns_settings	internal/api/oxidns	done
 POST	/api/oxidns/settings	routes.oxidns.oxidns_settings	internal/api/oxidns	done
 POST	/api/oxidns/template-preview	routes.oxidns.preview_oxidns_template	internal/api/oxidns	done
 POST	/api/oxidns/validate	routes.oxidns.validate_oxidns_draft	internal/api/oxidns	done
-GET	/api/profiles	routes.profiles.handle_profiles		todo
-POST	/api/profiles	routes.profiles.handle_profiles		todo
-DELETE	/api/profiles/<profile_id>	routes.profiles.handle_profile		todo
-GET	/api/profiles/<profile_id>	routes.profiles.handle_profile		todo
-PUT	/api/profiles/<profile_id>	routes.profiles.handle_profile		todo
-GET	/api/profiles/<profile_id>/agents	routes.profiles.profile_agent_bindings		todo
-POST	/api/profiles/<profile_id>/agents/rebind	routes.profiles.rebind_profile_agents	17	todo
+GET	/api/profiles	routes.profiles.handle_profiles	internal/api/profiles	done
+POST	/api/profiles	routes.profiles.handle_profiles	internal/api/profiles	done
+DELETE	/api/profiles/<profile_id>	routes.profiles.handle_profile	internal/api/profiles	done
+GET	/api/profiles/<profile_id>	routes.profiles.handle_profile	internal/api/profiles	done
+PUT	/api/profiles/<profile_id>	routes.profiles.handle_profile	internal/api/profiles	done
+GET	/api/profiles/<profile_id>/agents	routes.profiles.profile_agent_bindings	internal/api/profiles	done
+POST	/api/profiles/<profile_id>/agents/rebind	routes.profiles.rebind_profile_agents	internal/api/profiles	done
 GET	/api/profiles/<profile_id>/aggregations/<agg_id>/provider	routes.profiles.profile_aggregation_provider	internal/api/aggregations	done
-POST	/api/profiles/<profile_id>/clone	routes.profiles.clone_profile		todo
-GET	/api/profiles/<profile_id>/custom-config/linux-gateway	routes.linux_gateway.linux_gateway_settings	internal/api/linuxgateway	done
-POST	/api/profiles/<profile_id>/custom-config/linux-gateway	routes.linux_gateway.linux_gateway_settings	internal/api/linuxgateway	done
-POST	/api/profiles/<profile_id>/custom-config/linux-gateway/preview	routes.linux_gateway.linux_gateway_settings	internal/api/linuxgateway	done
-POST	/api/profiles/<profile_id>/custom-config/linux-gateway/restore	routes.linux_gateway.linux_gateway_settings	internal/api/linuxgateway	done
-POST	/api/profiles/<profile_id>/custom-config/linux-gateway/restore/preview	routes.linux_gateway.linux_gateway_settings	internal/api/linuxgateway	done
-POST	/api/profiles/<profile_id>/default	routes.profiles.set_default_profile		todo
-GET	/api/profiles/<profile_id>/export	routes.profiles.export_profile		todo
+POST	/api/profiles/<profile_id>/clone	routes.profiles.clone_profile	internal/api/profiles	done
+GET	/api/profiles/<profile_id>/custom-config/linux-gateway	routes.linux_gateway.linux_gateway_settings		todo
+POST	/api/profiles/<profile_id>/custom-config/linux-gateway	routes.linux_gateway.linux_gateway_settings		todo
+POST	/api/profiles/<profile_id>/custom-config/linux-gateway/preview	routes.linux_gateway.linux_gateway_settings		todo
+POST	/api/profiles/<profile_id>/custom-config/linux-gateway/restore	routes.linux_gateway.linux_gateway_settings		todo
+POST	/api/profiles/<profile_id>/custom-config/linux-gateway/restore/preview	routes.linux_gateway.linux_gateway_settings		todo
+POST	/api/profiles/<profile_id>/default	routes.profiles.set_default_profile	internal/api/profiles	done
+GET	/api/profiles/<profile_id>/export	routes.profiles.export_profile	internal/api/profiles	done
 GET	/api/profiles/<profile_id>/gateway-onboarding	routes.gateway_onboarding.gateway_onboarding		todo
 POST	/api/profiles/<profile_id>/gateway-onboarding	routes.gateway_onboarding.gateway_onboarding		todo
 POST	/api/profiles/<profile_id>/gateway-onboarding/preview	routes.gateway_onboarding.gateway_onboarding		todo
-POST	/api/profiles/<profile_id>/generate/<service>/artifact	routes.profiles.profile_generate_artifact		todo
-POST	/api/profiles/<profile_id>/generate/loon	routes.profiles.profile_generate_loon		todo
-POST	/api/profiles/<profile_id>/generate/loon/preview	routes.profiles.profile_preview_loon		todo
-POST	/api/profiles/<profile_id>/generate/mihomo	routes.profiles.profile_generate_mihomo		todo
-POST	/api/profiles/<profile_id>/generate/mihomo/preview	routes.profiles.profile_preview_mihomo		todo
-POST	/api/profiles/<profile_id>/generate/mosdns	routes.profiles.profile_generate_mosdns		todo
-POST	/api/profiles/<profile_id>/generate/mosdns/preview	routes.profiles.profile_preview_mosdns		todo
-POST	/api/profiles/<profile_id>/generate/oxidns	routes.profiles.profile_generate_oxidns		todo
-POST	/api/profiles/<profile_id>/generate/oxidns/preview	routes.profiles.profile_preview_oxidns		todo
-POST	/api/profiles/<profile_id>/generate/surge	routes.profiles.profile_generate_surge		todo
-POST	/api/profiles/<profile_id>/generate/surge/preview	routes.profiles.profile_preview_surge		todo
-POST	/api/profiles/<profile_id>/import	routes.profiles.import_profile		todo
-GET	/api/profiles/<profile_id>/linux-gateway/rules/<path:rule_id>	routes.linux_gateway.linux_gateway_rule_provider	internal/api/linuxgateway	done
-GET	/api/profiles/<profile_id>/linux-gateway/source/<path:rule_id>	routes.linux_gateway.linux_gateway_source_provider	internal/api/linuxgateway	done
+POST	/api/profiles/<profile_id>/generate/<service>/artifact	routes.profiles.profile_generate_artifact	internal/api/generate	wip
+POST	/api/profiles/<profile_id>/generate/loon	routes.profiles.profile_generate_loon	internal/api/generate	done
+POST	/api/profiles/<profile_id>/generate/loon/preview	routes.profiles.profile_preview_loon	internal/api/generate	done
+POST	/api/profiles/<profile_id>/generate/mihomo	routes.profiles.profile_generate_mihomo	internal/api/generate	done
+POST	/api/profiles/<profile_id>/generate/mihomo/preview	routes.profiles.profile_preview_mihomo	internal/api/generate	done
+POST	/api/profiles/<profile_id>/generate/mosdns	routes.profiles.profile_generate_mosdns	internal/api/generate	done
+POST	/api/profiles/<profile_id>/generate/mosdns/preview	routes.profiles.profile_preview_mosdns	internal/api/generate	done
+POST	/api/profiles/<profile_id>/generate/oxidns	routes.profiles.profile_generate_oxidns	internal/api/generate	done
+POST	/api/profiles/<profile_id>/generate/oxidns/preview	routes.profiles.profile_preview_oxidns	internal/api/generate	done
+POST	/api/profiles/<profile_id>/generate/surge	routes.profiles.profile_generate_surge	internal/api/generate	done
+POST	/api/profiles/<profile_id>/generate/surge/preview	routes.profiles.profile_preview_surge	internal/api/generate	done
+POST	/api/profiles/<profile_id>/import	routes.profiles.import_profile	internal/api/profiles	done
+GET	/api/profiles/<profile_id>/linux-gateway/rules/<path:rule_id>	routes.linux_gateway.linux_gateway_rule_provider		todo
+GET	/api/profiles/<profile_id>/linux-gateway/source/<path:rule_id>	routes.linux_gateway.linux_gateway_source_provider		todo
 GET	/api/profiles/<profile_id>/mosdns/rule-proxy	routes.profiles.profile_mosdns_rule_proxy	api/mosdns	done
 POST	/api/profiles/<profile_id>/oxidns/common-settings	routes.profiles.profile_read_oxidns_common_settings	internal/api/oxidns	done
 POST	/api/profiles/<profile_id>/oxidns/common-settings/apply	routes.profiles.profile_apply_oxidns_common_settings	internal/api/oxidns	done
@@ -279,7 +279,7 @@ GET	/api/profiles/<profile_id>/rules	routes.profiles.profile_rules	internal/api/
 POST	/api/profiles/<profile_id>/rules	routes.profiles.profile_rules	internal/api/rules	done
 GET	/api/profiles/<profile_id>/rules/local/<name>	routes.profiles.profile_local_rule	internal/api/rules	done
 GET	/api/profiles/<profile_id>/subscriptions/<sub_id>/proxies	routes.profiles.profile_subscription_proxies	api/subscriptions	done
-POST	/api/profiles/import-client	routes.profiles.import_client_profile		todo
+POST	/api/profiles/import-client	routes.profiles.import_client_profile	internal/api/profiles	done
 GET	/api/proxy-groups	routes.proxy_groups.handle_proxy_groups	api/proxygroups	done
 POST	/api/proxy-groups	routes.proxy_groups.handle_proxy_groups	api/proxygroups	done
 DELETE	/api/proxy-groups/<group_id>	routes.proxy_groups.handle_proxy_group	api/proxygroups	done
