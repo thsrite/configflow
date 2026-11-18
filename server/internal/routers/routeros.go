@@ -40,7 +40,7 @@ const (
 
 var (
 	rosRoutePaths     = []string{rosRoutes, rosIPv6Routes}
-	rosSingleRowPaths = []string{rosAddresses, rosRoutes, rosIPv6Routes}
+	rosSingleRowPaths = []string{rosAddresses, pdLists, rosRoutes, rosIPv6Routes}
 	rosRouteFields    = map[string]bool{
 		"dst-address": true, "gateway": true, "routing-table": true, "pref-src": true,
 		"blackhole": true, "check-gateway": true, "distance": true, "scope": true,
@@ -1275,7 +1275,7 @@ func payload(path string, row Row) Row {
 	}
 	if path == "/ipv6/nd" {
 		for _, key := range []string{"disabled", "dynamic", "invalid"} {
-			if _, err := ipv6DNSFlag(row, key); err != nil {
+			if flag, err := ipv6DNSFlag(row, key); err != nil || flag && key != "disabled" {
 				return nil
 			}
 		}
@@ -1331,8 +1331,12 @@ func payloadError(path string, row Row) error {
 			}
 		}
 	}
-	if path == "/ipv6/nd" && !rosTruthy(row["dynamic"]) && rosTruthy(row["invalid"]) {
-		return routerError(messageInvalidIPv6ND)
+	if path == rosIPv6ND && !rosTruthy(row["dynamic"]) {
+		dynamic, _ := ipv6DNSFlag(row, "dynamic")
+		invalid, _ := ipv6DNSFlag(row, "invalid")
+		if dynamic || invalid {
+			return routerError(messageInvalidIPv6ND)
+		}
 	}
 	return routerError(messageROSDynamicObject)
 }
@@ -1563,7 +1567,7 @@ func (d *RouterOS) perform(ctx context.Context, change ROSChange, undo *[]ROSCha
 
 func (d *RouterOS) scoped(ctx context.Context, path string, values Row) ([]Row, error) {
 	field := "dst-address"
-	if path == rosAddresses {
+	if path == rosAddresses || path == pdLists {
 		field = "list"
 	}
 	query := url.Values{field: []string{rosText(values[field])}}.Encode()
@@ -1571,7 +1575,7 @@ func (d *RouterOS) scoped(ctx context.Context, path string, values Row) ([]Row, 
 }
 
 func inScope(path string, row, values Row) bool {
-	if path == rosAddresses {
+	if path == rosAddresses || path == pdLists {
 		return row.text("list") == rosText(values["list"])
 	}
 	return comparable("dst-address", row["dst-address"]) == comparable("dst-address", values["dst-address"]) &&

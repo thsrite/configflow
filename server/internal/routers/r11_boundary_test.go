@@ -220,6 +220,11 @@ func r11Comparable(t *testing.T, v any) any {
 					delete(a, "owned")
 				}
 			}
+			// IPv6 address-list KnownIDs is now list-scoped. RESTORE only uses
+			// KnownIDs for route conflict checks, so foreign list IDs have no effect.
+			if a["path"] == pdLists && a["method"] == "RESTORE" {
+				a["known_ids"] = []any{a["id"]}
+			}
 			// Native JSON text replaces Python repr only inside stable snapshots.
 			if a["dns-servers"] == `["2001:db8::53","2001:db8::54"]` {
 				a["dns-servers"] = "['2001:db8::53', '2001:db8::54']"
@@ -295,10 +300,20 @@ func r11Cases() []r11Case {
 	out = append(out, base("pd", "withdraw", r11StepFor("publish"), off))
 	off.Action = "rollback"
 	out = append(out, base("pd", "withdraw_rollback", r11StepFor("publish"), off))
-	for _, which := range []string{"manual", "update", "shared_hook", "foreign_hook", "foreign_script", "foreign_poll", "pool_shared", "pool_ambiguous", "no_client", "two_clients", "no_pool", "no_lan", "bad_name", "bad_length", "no_advertise", "two_addresses", "rollback_helper"} {
+	for _, action := range []string{"publish", "rollback"} {
+		step := r11StepFor(action)
+		step.Enabled = false
+		step.Mutation = &routerfake.ExternalWrite{Fault: routerfake.Fault{ExtraRows: map[string][]routerfake.Row{
+			pdLists:    {{".id": "*F1", "list": pdLast, "address": "2001:db8:1::/64", "dynamic": "false"}, {".id": "*F2", "list": "geo6", "address": "2001:db8:9::/48", "dynamic": "false"}},
+			pdPrefixes: {{".id": "*F3", "prefix": "2001:db8:2::/64", "interface": "bridge", "comment": "cf-pd: deprecated until 12345", "dynamic": "false"}, {".id": "*F4", "prefix": "2001:db8:3::/64", "interface": "bridge", "comment": "manual", "dynamic": "false"}, {".id": "*65", "prefix": "2001:db8:1::/64", "interface": "bridge", "dynamic": "true"}},
+		}}}
+		out = append(out, base("pd", "runtime_"+action, r11StepFor("publish"), step))
+	}
+
+	for _, which := range []string{"manual_formatted", "hold_diff", "body_diff", "policy_diff", "poll_interval", "poll_disabled", "manual", "update", "shared_hook", "foreign_hook", "foreign_script", "foreign_poll", "pool_shared", "pool_ambiguous", "no_client", "two_clients", "no_pool", "no_lan", "bad_name", "bad_length", "no_advertise", "two_addresses", "rollback_helper"} {
 		tc := base("pd", which, r11StepFor("publish"))
 		switch which {
-		case "manual", "update", "shared_hook", "foreign_script", "foreign_poll", "rollback_helper":
+		case "manual_formatted", "hold_diff", "body_diff", "policy_diff", "poll_interval", "poll_disabled", "manual", "update", "shared_hook", "foreign_script", "foreign_poll", "rollback_helper":
 			source, _ := IPv6PDWatchSource("bridge", "pool-example")
 			if which == "update" {
 				source = strings.ReplaceAll(source, `"bridge"`, `"old-lan"`)
@@ -320,6 +335,23 @@ func r11Cases() []r11Case {
 				hook = ":log info mine\n" + pdHook
 			}
 			tc.State.Tables[pdClients][0]["script"] = hook
+			switch which {
+			case "manual_formatted":
+				tc.State.Tables[pdScripts][0]["source"] = "# manual install\r\n" + strings.ReplaceAll(source, "\n", "\r\n    ")
+				tc.State.Tables[pdScripts][0]["policy"] = "test,read,write"
+				tc.State.Tables[pdSchedulers][0]["interval"] = "00:00:30"
+			case "hold_diff":
+				tc.State.Tables[pdScripts][0]["source"] = strings.Replace(source, ":local hold 3600", ":local hold 1800", 1)
+			case "body_diff":
+				tc.State.Tables[pdScripts][0]["source"] = strings.ReplaceAll(source, ":log info", ":log debug")
+			case "policy_diff":
+				tc.State.Tables[pdScripts][0]["policy"] = "read"
+			case "poll_interval":
+				tc.State.Tables[pdSchedulers][0]["interval"] = "1m"
+			case "poll_disabled":
+				tc.State.Tables[pdSchedulers][0]["disabled"] = "true"
+			}
+
 			if which == "rollback_helper" {
 				tc.State.Tables[pdScripts] = append(tc.State.Tables[pdScripts], routerfake.Row{".id": "*52", "name": pdRollback, "source": ":log info helper"})
 			}
@@ -349,10 +381,15 @@ func r11Cases() []r11Case {
 		}
 		out = append(out, tc)
 	}
-	for _, which := range []string{"self", "no", "empty", "disabled", "all", "all_off", "all_disabled", "override", "dns_list", "dns_legacy", "bad_dns", "dynamic", "invalid", "bad_disabled", "duplicate", "no_selected_dns", "dhcp_pending", "dhcp_ambiguous", "invalid_gateway"} {
+	for _, which := range []string{"quoted_all", "self", "no", "empty", "disabled", "all", "all_off", "all_disabled", "override", "dns_list", "dns_legacy", "bad_dns", "dynamic", "invalid", "bad_disabled", "duplicate", "no_selected_dns", "dhcp_pending", "dhcp_ambiguous", "invalid_gateway"} {
 		tc := base("dns", which, r11StepFor("publish"))
 		r := tc.State.Tables[rosIPv6ND][0]
 		switch which {
+		case "quoted_all":
+			r["interface"] = "all"
+			r["mtu"] = `a "b" $c`
+			tc.State.Tables[rosIPv4Addresses][0]["interface"] = "lan bridge"
+			tc.State.Tables[rosIPv4Addresses][0]["actual-interface"] = "lan bridge"
 		case "self", "no":
 			r["advertise-dns"] = which
 		case "empty":

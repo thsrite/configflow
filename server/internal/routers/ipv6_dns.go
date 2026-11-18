@@ -201,7 +201,7 @@ func readIPv6DNS(ctx context.Context, d *RouterOS, gateway string) (string, []Ro
 		if r.text("interface") != iface && !r.is("interface", "all") {
 			continue
 		}
-		if id, ok := r.str(".id"); !ok || id == "" || seen[id] {
+		if id, ok := r.str(".id"); !ok || !rosIDPattern.MatchString(id) || seen[id] {
 			return "", nil, routerError(messageIPv6DNSNDID)
 		}
 		seen[r.id()] = true

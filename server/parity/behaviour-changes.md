@@ -782,3 +782,16 @@ IPv6 DNS 的 ND payload 在最后事务读取也严格验证 disabled/dynamic/in
 需要重新检查后再 prepare；只依赖稳定路由字段，路由顺序和 lease timer 变化不影响摘要。
 复制用 CLI 复用 ScriptString，对控制字符也转义。业务中文、所有有效操作、设备最终状态与真实
 Python 对照；PD 脚本 source 逐字节对照三组参数。readiness 不自动写入路由，仍引导用户走上游路由发布。
+
+R11 撤回回读也检查第二次 sweep 后新出现的 `cf-pd-last`/静态弃用前缀：Python 只比原先删除的 ID，
+进行中的 hook/script 若晚写出新 ID 会被误报为已撤回。Go 在本次确实删除受管 script 时报告既有
+撤回校验错误，不额外删除新对象；`TestR11PDWithdrawalDetectsLateRuntimeState` 固定此边界，L5继续验证实际时序。
+
+PD runtime 地址列表事务沿用已有 IPv4 single-row 模式：按 ID 核验/删除，只按 `list=cf-pd-last`
+取创建范围。Python 对每个 state DELETE 全读 IPv6 地址列表，会连同大型 GeoIP 表反复读取；Go
+扩展共享 single-row/scoped 分类到 IPv6 地址列表，完整配置证明和未知 PUT 的保留政策不变。
+
+PD 恢复 PUT 回复已经证明新 ID、但紧接着的 GET 失败时，Go 仍保留这个新 ID 与原配置证明，
+返回回滚未完成；下一次独立读取可以重新确认实际成功的恢复。对整 stage 部分 undo，只保留
+尚未成功补偿的当前证明，已成功清掉的 hook 不继续登记为新安装，允许下次安全修复；保留的
+新 ID 可替代该 role 原先已缺失的旧 ID。均不从现有相似配置推测归属。

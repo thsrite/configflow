@@ -89,7 +89,7 @@ func TestR11TemplateBytes(t *testing.T) {
 			}
 		})
 	}
-	for _, name := range []string{"", `unsafe"name`, "unsafe\\name", "unsafe$name", "unsafe name", "unsafe;name", "unsafe[name]", strings.Repeat("a", 65)} {
+	for _, name := range []string{"", "unsafe\x00name", `unsafe"name`, "unsafe\\name", "unsafe$name", "unsafe name", "unsafe;name", "unsafe[name]", strings.Repeat("a", 65)} {
 		if _, e := IPv6PDWatchSource(name, "pool-example"); e == nil {
 			t.Fatalf("unsafe source: %q", name)
 		}
@@ -324,6 +324,9 @@ func TestR11PDRefusedCompensationKeepsBirthProof(t *testing.T) {
 			}
 			if id == "" || findFake(f.Snapshot().Tables[pdSchedulers], id) == nil {
 				t.Fatal("trusted new object abandoned")
+			}
+			if repair := r11PDPlan(t, d, true); len(repair.Blockers) > 0 || repair.Status != "pending" {
+				t.Fatal("partially undone installation cannot be safely repaired", repair)
 			}
 			f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{PatchRows: map[string]map[string]routerfake.Row{pdSchedulers: {id: {"interval": "1h"}}}}})
 			if p := r11PDPlan(t, d, true); len(p.Blockers) == 0 {
@@ -722,7 +725,7 @@ func FuzzR11PDInput(f *testing.F) {
 
 // FuzzR11DNSRow exercises strict flags, legacy server list forms and CLI quoting.
 func FuzzR11DNSRow(f *testing.F) {
-	for _, s := range []string{`{}`, `{"dns":["2001:db8::53"]}`, `{"disabled":"unknown"}`, `{"dynamic":true}`, `{"dns-servers":[{}]}`, `{"dns-servers":null}`} {
+	for _, s := range []string{`{}`, `{"dns":["2001:db8::53"]}`, `{"disabled":"unknown"}`, `{"dynamic":true}`, `{"dynamic":"1"}`, `{"invalid":"1"}`, `{"dns-servers":[{}]}`, `{"dns-servers":null}`} {
 		f.Add(s)
 	}
 	f.Fuzz(func(t *testing.T, input string) {
@@ -740,8 +743,8 @@ func FuzzR11DNSRow(f *testing.F) {
 		_ = ipv6DNSCLI(row["dns"])
 		if p := payload(rosIPv6ND, row); p != nil {
 			for _, key := range []string{"disabled", "invalid", "dynamic"} {
-				if _, e := ipv6DNSFlag(row, key); e != nil {
-					t.Fatal("unrecognised flag became writable")
+				if flag, e := ipv6DNSFlag(row, key); e != nil || flag && key != "disabled" {
+					t.Fatal("unrecognised or noneditable flag became writable")
 				}
 			}
 		}
@@ -794,5 +797,73 @@ func TestR11DNSUnknownAndNoopEvidence(t *testing.T) {
 	f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{ExtraRows: map[string][]routerfake.Row{rosIPv6ND: {{".id": "*E1", "interface": "bridge", "advertise-dns": "yes"}}}}})
 	if e := VerifyIPv6DNS(t.Context(), d, p.Check); e == nil {
 		t.Fatal("noop failed to detect new DNS")
+	}
+}
+func TestR11PDCountersAndLeaseEvidence(t *testing.T) {
+	d, f := r11Driver(t)
+	r11PDApply(t, d, r11PDPlan(t, d, true))
+	first := r11PDPlan(t, d, true)
+	f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{PatchRows: map[string]map[string]routerfake.Row{pdScripts: {"*65": {"run-count": "100", "last-started": "synthetic now"}}, pdSchedulers: {"*66": {"run-count": "99", "next-run": "synthetic later"}}, pdClients: {"*C0": {"prefix": "2001:db8:1::/60, 23h59m", "status": "bound", "expires-after": "23h59m"}}}}})
+	next := r11PDPlan(t, d, true)
+	if !reflect.DeepEqual(r08Comparable(t, first), r08Comparable(t, next)) {
+		t.Fatal("runtime counters or lease state changed release evidence")
+	}
+}
+func TestR11PDWithdrawalDetectsLateRuntimeState(t *testing.T) {
+	for _, path := range []string{pdLists, pdPrefixes} {
+		t.Run(path, func(t *testing.T) {
+			d, f := r11Driver(t)
+			r11PDApply(t, d, r11PDPlan(t, d, true))
+			p := r11PDPlan(t, d, false)
+			r11PDApply(t, d, p)
+			row := routerfake.Row{".id": "*FA", "list": pdLast, "address": "2001:db8:1::/64"}
+			if path == pdPrefixes {
+				row = routerfake.Row{".id": "*FA", "prefix": "2001:db8:2::/64", "interface": "bridge", "comment": "cf-pd: deprecated until 12345", "dynamic": "false"}
+			}
+			f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{ExtraRows: map[string][]routerfake.Row{path: {row}}}})
+			if e := VerifyIPv6PDGuard(t.Context(), d, p.Check); e == nil {
+				t.Fatal("late runtime state reported as withdrawn")
+			}
+		})
+	}
+}
+func TestR11PDStateCleanupDoesNotReadGeoIPLists(t *testing.T) {
+	d, f := r11Driver(t)
+	r11PDApply(t, d, r11PDPlan(t, d, true))
+	f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{ExtraRows: map[string][]routerfake.Row{pdLists: {{".id": "*FA", "list": pdLast, "address": "2001:db8:1::/64"}, {".id": "*FB", "list": "geo6", "address": "2001:db8:9::/48"}}}}})
+	p := r11PDPlan(t, d, false)
+	u := r11PDApply(t, d, p)
+	if e := d.RestoreIPv6PDGuard(t.Context(), *u); e != nil {
+		t.Fatal(e)
+	}
+	for _, c := range f.Calls() {
+		if c.Method == "GET" && c.Path == pdLists && c.Query.Get("list") != pdLast {
+			t.Fatal("PD transaction fetched the unbounded global IPv6 list", c)
+		}
+	}
+	if findFake(f.Snapshot().Tables[pdLists], "*FB") == nil {
+		t.Fatal("foreign GeoIP entry modified")
+	}
+}
+func TestR11PDRestoredReplySurvivesFailedReadback(t *testing.T) {
+	d, f := r11Driver(t)
+	r11PDApply(t, d, r11PDPlan(t, d, true))
+	previous := r11Manifest(t, d)
+	u := r11PDApply(t, d, r11PDPlan(t, d, false))
+	f.ApplyExternal(routerfake.ExternalWrite{Faults: []routerfake.Fault{{Method: "GET", Path: pdScripts, Count: 3, Status: 403}}})
+	if e := d.RestoreIPv6PDGuard(t.Context(), *u); routerErrorKind(e) != KindRollback {
+		t.Fatal("unverified restore reported success", e)
+	}
+	m := r11Manifest(t, d)
+	if m.Resources[0].ID == previous.Resources[0].ID || findFake(f.Snapshot().Tables[pdScripts], m.Resources[0].ID) == nil {
+		t.Fatal("response-proven restoration lost after read failure")
+	}
+	if !reflect.DeepEqual(m.Resources[0].Config, previous.Resources[0].Config) {
+		t.Fatal("restore replaced original config proof")
+	}
+	// New independent reads can prove the actual successful restoration.
+	f.ApplyExternal(routerfake.ExternalWrite{})
+	if p := r11PDPlan(t, d, true); p.Status != "synced" {
+		t.Fatal("valid restored installation lost ownership", p)
 	}
 }

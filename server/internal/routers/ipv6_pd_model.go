@@ -39,7 +39,7 @@ func pdName(name string) bool {
 	if len([]rune(name)) < 1 || len([]rune(name)) > 64 {
 		return false
 	}
-	return !strings.ContainsAny(name, "\"\\$;{}[]") && !strings.ContainsFunc(name, unicode.IsSpace)
+	return !strings.ContainsAny(name, "\"\\$;{}[]") && !strings.ContainsFunc(name, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) })
 }
 
 // IPv6PDWatchSource returns the current cf-pd script for safe literal parameters.
@@ -211,7 +211,7 @@ func pdRows(ctx context.Context, d *RouterOS, path string) ([]Row, error) {
 	}
 	seen := map[string]bool{}
 	for _, r := range rows {
-		if id, ok := r.str(".id"); !ok || id == "" || seen[id] {
+		if id, ok := r.str(".id"); !ok || !rosIDPattern.MatchString(id) || seen[id] {
 			return nil, routerError(fmt.Sprintf(messagePDRowID, path))
 		}
 		seen[r.id()] = true
@@ -461,8 +461,24 @@ func pdOwned(d *RouterOS, raw json.RawMessage, live pdLive) (map[string]Row, err
 	if json.Unmarshal(raw, &m) != nil || m.Version != 1 || m.Resources == nil {
 		return nil, routerError(messagePDManifest)
 	}
+	if m.Spec == nil || !pdName(m.Spec.LAN) || !pdName(m.Spec.Pool) || !rosIDPattern.MatchString(m.Spec.Client) || m.Spec.Hold != pdHold {
+		return nil, routerError(messagePDManifest)
+	}
+	// Presence matters: null/empty config is damaged proof, not a legacy ID-only
+	// receipt. Validate it even if the referenced ID is currently absent.
+	var fields struct {
+		Resources []struct {
+			Config json.RawMessage `json:"config"`
+		} `json:"resources"`
+	}
+	if json.Unmarshal(raw, &fields) != nil {
+		return nil, routerError(messagePDManifest)
+	}
 	seen := map[string]bool{}
-	for _, entry := range m.Resources {
+	for i, entry := range m.Resources {
+		if len(fields.Resources[i].Config) > 0 && len(entry.Config) == 0 {
+			return nil, routerError(messagePDManifestObject)
+		}
 		path := pdRolePath(entry.Role)
 		if path == "" || entry.Path != path || !rosIDPattern.MatchString(entry.ID) || seen[entry.Role] {
 			return nil, routerError(messagePDManifestObject)

@@ -23,3 +23,10 @@
 .32 最新定向：`go test -count=1 -run "^TestR11" ./internal/routers ./internal/repo` → routers 24.695s、repo 9.443s；两包 vet clean。
 .32 `python3 scripts/r11-mutation-gate.py` → result/journal/request/device-table/recovery 五类均 DETECTED（编译失败不计入），5/5，源文件恢复。
 共享包 race + 全仓 gofmt/vet + 两个新 fuzz 正在 .32 前台跑（没有启动完整 race/proddiff）。与 O3-6b 已约定底层设备方法不重入 L1，由 R12/A23 上层取得统一 RouterJobLock→L2，held ctx 下传。当前 go 尚未包含 R10 review 分支，已通知协调者等合入再 rebase。
+
+第三步（待记录提交 ID）：Python 矩阵扩至 80 个序列（含 runtime state + 跨表相同 ID 的撤回/恢复），模板识别/权限/定时差异/CLI 引号补齐。PD runtime 地址列表改用已验证的 single-row/scoped driver 模式，避免清理 cf-pd-last 时全读 GeoIP。撤回会发现 sweep 之后的新 runtime ID。旧 proof 的 null/empty/config/spec 不能降级为 legacy；ND 最后事务拒绝 dynamic/invalid="1"。部分 stage undo 仅保留尚未成功补偿的当前资源；恢复 PUT 的可信 ID 即使随后 GET 失败也用原证明登记。
+
+.32 共享路径（214ed3bc4 的运行时代码）：全仓 gofmt 无输出、vet clean；race routers 990.855s、routersplit 56.088s、devhttp 3.948s、repo 448.124s、model 48.181s，全 PASS。两个新 fuzz 各 60s：PD 306469 executions / 61.088s；DNS 260409 executions / 60.117s，PASS。
+.64 最新产品定向：`go test -race -p 6 -count=1 -run "^TestR11|^FuzzR11" ./internal/routers ./internal/repo` → routers 27.887s、repo 25.853s，vet clean。
+.64 恢复修正后的 mutation 再跑 5/5 DETECTED；`TestR11PDRestoredReplySurvivesFailedReadback` 已包含在最新定向。测试文件与跨模块归属详见 `server/parity/r11-test-map.md`。
+下一步仅最终门禁（.64，单agent槽位，前台，15分钟队列自动终止）、合入通知后 rebase 和交回；不再添加产品功能。

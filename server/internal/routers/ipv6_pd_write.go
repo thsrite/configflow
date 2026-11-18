@@ -31,12 +31,13 @@ func (d *RouterOS) pdGone(ctx context.Context, path, id string) bool {
 	_, e := d.get(ctx, path+"/"+escapeROSPathID(id), rosTimeout)
 	return routerErrorKind(e) == KindMissingResource
 }
-func (d *RouterOS) rollbackPD(ctx context.Context, changes []ROSChange) (map[[2]string]string, error) {
+func (d *RouterOS) rollbackPD(ctx context.Context, changes []ROSChange) (map[[2]string]string, map[[3]string]bool, error) {
 	remap := map[[2]string]string{}
+	completed := map[[3]string]bool{}
 	failures := []string{}
 	for _, c := range changes {
 		if e := ctx.Err(); e != nil {
-			return remap, e
+			return remap, completed, e
 		}
 		allowed := slices.Contains([]string{pdScripts, pdSchedulers, pdClients, pdLists, pdPrefixes}, c.Path)
 		if !allowed || !rosIDPattern.MatchString(c.ID) || len(c.Expected) == 0 || !slices.Contains([]string{"PATCH", "RESTORE", "DELETE"}, c.Method) {
@@ -48,6 +49,11 @@ func (d *RouterOS) rollbackPD(ctx context.Context, changes []ROSChange) (map[[2]
 			continue
 		}
 		check, e := d.perform(ctx, c, &[]ROSChange{}, true, pdCreateGuard(c.Path, c.Values))
+		// The PUT reply proves the restored ID even if its verification read fails.
+		// Keep the original config proof; never bless a changed readback as our write.
+		if e == nil && c.Method == "RESTORE" && rosIDPattern.MatchString(check.ID) {
+			remap[[2]string{c.Path, c.ID}] = check.ID
+		}
 		if e == nil {
 			e = d.verifyChange(ctx, check)
 		}
@@ -57,14 +63,17 @@ func (d *RouterOS) rollbackPD(ctx context.Context, changes []ROSChange) (map[[2]
 		}
 		if e != nil {
 			failures = append(failures, e.Error())
-		} else if c.Method == "RESTORE" {
-			remap[[2]string{c.Path, c.ID}] = check.ID
+		} else {
+			completed[[3]string{c.Method, c.Path, c.ID}] = true
+			if c.Method == "RESTORE" {
+				remap[[2]string{c.Path, c.ID}] = check.ID
+			}
 		}
 	}
 	if len(failures) > 0 {
-		return remap, rollbackError(messagePDRollback + strings.Join(failures, "；"))
+		return remap, completed, rollbackError(messagePDRollback + strings.Join(failures, "；"))
 	}
-	return remap, nil
+	return remap, completed, nil
 }
 func pdRemapped(previous json.RawMessage, remap map[[2]string]string) json.RawMessage {
 	// Change only IDs; keep unknown document/resource fields and original proofs.
@@ -161,8 +170,15 @@ func (d *RouterOS) recoverPD(ctx context.Context, previous json.RawMessage, rema
 				continue
 			}
 			exists := false
-			for _, old := range m.Resources {
-				exists = exists || old.Role == role
+			for i, old := range m.Resources {
+				if old.Role == role {
+					exists = true
+					// A trusted surviving creation supersedes an older missing ID for this role.
+					// Existing configurations are never refreshed from a new device read.
+					if old.ID != entry.ID {
+						m.Resources[i] = entry
+					}
+				}
 			}
 			if !exists {
 				m.Resources = append(m.Resources, entry)
@@ -286,7 +302,12 @@ func (d *RouterOS) ApplyIPv6PDGuard(ctx context.Context, op IPv6PDGuardSync) (*I
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		remap, rollbackErr := d.rollbackPD(ctx, undo)
+		remap, completed, rollbackErr := d.rollbackPD(ctx, undo)
+		for role, r := range created {
+			if completed[[3]string{"DELETE", r.Path, r.ID}] {
+				delete(created, role)
+			}
+		}
 		if rollbackErr == nil {
 			created = nil
 		}
@@ -308,7 +329,7 @@ func (d *RouterOS) RestoreIPv6PDGuard(ctx context.Context, op IPv6PDGuardUndo) e
 	if e := ctx.Err(); e != nil {
 		return e
 	}
-	remap, e := d.rollbackPD(ctx, op.Changes)
+	remap, completed, e := d.rollbackPD(ctx, op.Changes)
 	if e != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -317,7 +338,7 @@ func (d *RouterOS) RestoreIPv6PDGuard(ctx context.Context, op IPv6PDGuardUndo) e
 		_ = json.Unmarshal(d.ipv6PDGuardManifest, &current)
 		retained := map[string]IPv6PDResource{}
 		for _, r := range current.Resources {
-			if r.Config != nil {
+			if r.Config != nil && !completed[[3]string{"DELETE", r.Path, r.ID}] && !completed[[3]string{"PATCH", r.Path, r.ID}] {
 				retained[r.Role] = r
 			}
 		}
@@ -339,6 +360,14 @@ func VerifyIPv6PDGuard(ctx context.Context, d *RouterOS, check *IPv6PDGuardCheck
 		return e
 	}
 	if check.Withdraw {
+		// A pre-delete hook run can create a new ID after the sweep. The old-ID
+		// removal check alone must not report that live runtime state as withdrawn.
+		swept := slices.ContainsFunc(check.Removed, func(item [2]string) bool { return item[0] == pdScripts })
+		if swept && (len(live.last) > 0 || slices.ContainsFunc(live.prefixes, func(row Row) bool {
+			return pdDeprecated.MatchString(row.text("comment")) && !policyFlag(row["dynamic"])
+		})) {
+			return routerError(messagePDVerifyWithdraw)
+		}
 		if truthy(d.ipv6PDGuardManifest) {
 			return routerError(messagePDVerifyWithdraw)
 		}
