@@ -19,9 +19,9 @@ import (
 // IPv6ReadinessConfiguration supplies saved Mihomo flags, independent of DNS mode.
 type IPv6ReadinessConfiguration struct {
 	PolicyConfiguration
-	IPv6          bool `json:"ipv6"`
-	FakeIPv6Route bool `json:"fake_ipv6_route"`
-	TUNEnabled    bool `json:"tun_enabled"`
+	IPv6          bool  `json:"ipv6"`
+	FakeIPv6Route *bool `json:"fake_ipv6_route,omitempty"`
+	TUNEnabled    bool  `json:"tun_enabled"`
 }
 
 // IPv6ReadinessCheck is a RouterOS diagnostic or static policy result.
@@ -49,7 +49,12 @@ type IPv6Readiness struct {
 type readinessTable struct{ key, path string }
 
 func readinessTables() []readinessTable {
-	return []readinessTable{{"routes", rosIPv6Routes}, {"addresses", rosIPv6Addresses}, {"nd", rosIPv6ND}, {"dhcp", pdClients}, {"nat", "/ipv6/firewall/nat"}, {"filter", "/ipv6/firewall/filter"}, {"ipv4_addresses", rosIPv4Addresses}, {"raw", "/ipv6/firewall/raw"}, {"mangle", "/ipv6/firewall/mangle"}, {"ipv4_routes", rosRoutes}, {"ipv4_filter", rosFilter}, {"ipv4_nat", rosNAT}, {"ipv4_raw", "/ip/firewall/raw"}, {"ipv4_mangle", rosMangle}, {"interface_lists", "/interface/list"}, {"interface_members", "/interface/list/member"}, {"interfaces", "/interface"}, {"routing_rules", "/routing/rule"}}
+	out := []readinessTable{{"routes", rosIPv6Routes}, {"addresses", rosIPv6Addresses}, {"nd", rosIPv6ND}, {"dhcp", pdClients}, {"nat", "/ipv6/firewall/nat"}, {"filter", "/ipv6/firewall/filter"}, {"ipv4_addresses", rosIPv4Addresses}}
+	paths := PolicyTablePaths()
+	for _, key := range []string{"raw", "mangle", "ipv4_routes", "ipv4_filter", "ipv4_nat", "ipv4_raw", "ipv4_mangle", "interface_lists", "interface_members", "interfaces", "routing_rules"} {
+		out = append(out, readinessTable{key, paths[key]})
+	}
+	return out
 }
 
 // InspectIPv6Readiness exports the RouterOS reader used by Agent readiness.
@@ -126,7 +131,11 @@ func InspectIPv6Readiness(ctx context.Context, d *RouterOS, r *Router, agent *mo
 	}
 	lan := IPv6LAN(snapshot, agentHost)
 	fake := ""
-	if configuration.FakeIPv6Route {
+	route := configuration.FakeIPv6Enabled
+	if configuration.FakeIPv6Route != nil {
+		route = *configuration.FakeIPv6Route
+	}
+	if route {
 		fake = configuration.FakeIPv6Range
 	}
 	existing := []Row{}
@@ -359,7 +368,10 @@ func (d *RouterOS) AddMissingIPv6Route(ctx context.Context, plan Row) (*IPv6Read
 			matched = append(matched, r)
 		}
 	}
-	if writeErr == nil && readErr == nil && len(matched) == 1 && readinessOwned(matched[0], values) && policyFlag(matched[0]["active"]) {
+	if writeErr == nil && readErr == nil && len(matched) == 1 && readinessOwned(matched[0], values) && rosIDPattern.MatchString(matched[0].id()) && policyFlag(matched[0]["active"]) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		return &IPv6ReadinessReceipt{matched[0].id(), values, d.ownershipSnapshot(rosIPv6Routes, matched[0])}, nil
 	}
 	if readErr != nil {

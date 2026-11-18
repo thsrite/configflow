@@ -757,3 +757,28 @@ R10 复核 F1：IPv6 路由补偿 DELETE 报错（回复丢失、回读失败）
 Go 移植版原本把它当失败并跳过 Fake-IP 旧路由恢复，使网段失去路由。现在设备结果与 Python 相同，
 旧路由的新 ID 按恢复响应重映射进 manifest，错误类别为原始失败而非回滚失败。
 `TestR10ReviewLostDeleteDeviceMatchesPython`、`TestR10ReviewFakeRollbackRestoresAfterLostDelete`。
+
+## R11 — PD 归属、部分补偿与 readiness 原生证据
+
+Python 的 PD guard 只保存 role/path/ID；Go 新写记录追加完整 stable config，后续外改和 ID 复用不再
+按同名或「像 cf-pd」覆盖。旧 ID-only 记录继续读取，但存量脚本/定时任务必须能确认为原模板，
+而非只含保留名称；重复保留名称、错型/重复角色、错误表或 ID 均拒绝。完全匹配的手动安装仍沿用，
+不登记；确认的部分更新仍按 Python 规则管理整套安装，共用 hook 不接管。记录的未知顶层、spec、
+resource 成员在正常更新、重映射和部分恢复中保留。
+
+Python 只在整个 PD 回滚成功后更新旧 ID，且按 ID、不含表名映射。Go 对每个已证恢复即时收集新 ID，
+即使其他步骤失败也按 (path, ID) 重映射，保留原配置证明；补偿删除失败时保留已证的新对象创建配置，
+整个 stage 的恢复失败也不丢掉当前记录。不会按当前相似配置猜测/刷新证明，不收养恢复期间出现的
+同名外部对象。补偿 DELETE 回复丢失，用一次 GET 的 404 证明已不存在才按成功继续（R10 复核 F1）；
+拒绝、外改或读失败继续报告回滚未完成。已有未知 PUT 仍保留现场，不凭相同配置猜新 ID。
+
+IPv6 DNS 的 ND payload 在最后事务读取也严格验证 disabled/dynamic/invalid；null 或未知状态不再
+作为可写对象。新增 readiness route undo 在保留随机尝试标识的同时核对完整 stable config，
+因此外部更改非目的/下一跳字段也会阻止删除；丢失 DELETE 回复同样只在 GET 证明确已删除后成功。
+关机后的补偿受同一取消约束，无法补偿的残留仍需 O14 drain 和 L5 验证；请求断开继续完成。
+
+原生格式差异：ND 的 DNS 列表在内部 stable 快照中用 JSON 文本，替代 Python repr；服务器列表、
+操作值及设备表本身不变。readiness fingerprint 使用 Go 原生、稳定排序后的 JSON 摘要，首次切换
+需要重新检查后再 prepare；只依赖稳定路由字段，路由顺序和 lease timer 变化不影响摘要。
+复制用 CLI 复用 ScriptString，对控制字符也转义。业务中文、所有有效操作、设备最终状态与真实
+Python 对照；PD 脚本 source 逐字节对照三组参数。readiness 不自动写入路由，仍引导用户走上游路由发布。

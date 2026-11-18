@@ -34,6 +34,7 @@ type r11Case struct {
 
 func r11State() routerfake.State {
 	s := r10State()
+	s.Tables["/ip/dns"] = []routerfake.Row{{"servers": "192.0.2.2", "dynamic-servers": ""}}
 	for _, path := range []string{pdScripts, pdSchedulers, pdClients, pdLists, pdPrefixes, rosIPv6ND, "/ipv6/firewall/nat", "/ipv6/firewall/raw", "/ipv6/firewall/mangle"} {
 		s.Tables[path] = []routerfake.Row{}
 	}
@@ -48,7 +49,7 @@ func r11State() routerfake.State {
 	return s
 }
 func r11StepFor(action string) r11Step {
-	return r11Step{Action: action, Enabled: true, Desired: &Desired{ProxyGateway: "192.0.2.4", DNSSettings: &DNSSettings{AgentID: "dns", Server: "192.0.2.2"}}, Scope: DNSCheck{ID: "*D0", Network: "192.0.2.0/24", Gateway: "192.0.2.4", DNS: []string{"192.0.2.2"}}, Agent: r10Agent(), Host: r10Host(), Configuration: IPv6ReadinessConfiguration{PolicyConfiguration: PolicyConfiguration{FakeIPv6Enabled: true, FakeIPv6Range: "fd00:face::/64"}, IPv6: true, FakeIPv6Route: true, TUNEnabled: true}}
+	return r11Step{Action: action, Enabled: true, Desired: &Desired{ProxyCIDRs: []ProxyCIDR{}, IPv6CIDRs: []ProxyCIDR{}, Warnings: []string{}, BlockingWarnings: []string{}, ProxyGateway: "192.0.2.4", DNSSettings: &DNSSettings{AgentID: "dns", Server: "192.0.2.2"}}, Scope: DNSCheck{ID: "*D0", Network: "192.0.2.0/24", Gateway: "192.0.2.4", DNS: []string{"192.0.2.2"}}, Agent: r10Agent(), Host: r10Host(), Configuration: IPv6ReadinessConfiguration{PolicyConfiguration: PolicyConfiguration{FakeIPv6Enabled: true, FakeIPv6Range: "fd00:face::/64"}, IPv6: true, FakeIPv6Route: new(true), TUNEnabled: true}}
 }
 func r11Run(t *testing.T, f *routerfake.Fake, endpoint string, tc r11Case) r08Output {
 	t.Helper()
@@ -123,6 +124,26 @@ func r11Run(t *testing.T, f *routerfake.Fake, endpoint string, tc r11Case) r08Ou
 					if len(dns.Blockers) > 0 {
 						continue
 					}
+				}
+			}
+			if err == nil && s.Action == "report" {
+				state, e := d.ReadState(t.Context())
+				if e != nil {
+					err = e
+				} else {
+					if tc.Feature == "pd" {
+						state.IPv6PDGuardPlan = plan
+					} else {
+						state.IPv6DNSPlan = dns
+					}
+					report, e := BuildReport(s.Desired, state)
+					err = e
+					if e == nil {
+						add(report)
+					}
+				}
+				if err == nil {
+					continue
 				}
 			}
 			if err == nil && s.Action != "plan" {
@@ -219,7 +240,9 @@ func TestR11PythonBoundary(t *testing.T) {
 	f := routerfake.New(nil)
 	srv := httptest.NewServer(f)
 	defer srv.Close()
-	for _, tc := range r11Cases() {
+	cases := r11Cases()
+	t.Logf("real Python boundary sequences: %d", len(cases))
+	for _, tc := range cases {
 		t.Run(tc.Name, func(t *testing.T) {
 			var py r08Output
 			raw := r09Python(t, "r11_reference.py", tc, srv.URL)
@@ -250,7 +273,7 @@ func r11Cases() []r11Case {
 		return r11Case{feature + "/" + name, feature, r11State(), r10Router(), steps}
 	}
 	for _, feature := range []string{"pd", "dns"} {
-		out = append(out, base(feature, "publish_idempotent", r11StepFor("publish"), r11StepFor("publish")), base(feature, "rollback", r11StepFor("rollback")))
+		out = append(out, base(feature, "publish_idempotent", r11StepFor("publish"), r11StepFor("publish")), base(feature, "rollback", r11StepFor("rollback")), base(feature, "report", r11StepFor("report")))
 		for _, which := range []string{"lan", "lifetime", "new_all", "client_hook"} {
 			tc := base(feature, "preview_"+which, r11StepFor("plan"), r11StepFor("apply"))
 			path, id := rosIPv6ND, "*E0"
@@ -383,7 +406,15 @@ func r11Cases() []r11Case {
 			if path == pdScripts || path == pdSchedulers {
 				method = "PUT"
 			}
-			tc.State.Faults = []routerfake.Fault{{Method: method, Path: path, Count: 1, Status: 403}}
+			faultPath := path
+			if method == "PATCH" {
+				if path == pdClients {
+					faultPath += "/*C0"
+				} else {
+					faultPath += "/*E0"
+				}
+			}
+			tc.State.Faults = []routerfake.Fault{{Method: method, Path: faultPath, Count: 1, Status: 403}}
 			out = append(out, tc)
 		}
 	}
@@ -394,7 +425,7 @@ func r11Cases() []r11Case {
 			tc.Steps[0].Configuration.FakeIPv6Enabled = false
 			tc.Steps[0].Configuration.TUNEnabled = which != "idle_no_tun"
 		case "off":
-			tc.Steps[0].Configuration.FakeIPv6Route = false
+			tc.Steps[0].Configuration.FakeIPv6Route = new(false)
 		case "no_tun":
 			tc.Steps[0].Configuration.TUNEnabled = false
 		case "foreign_good", "foreign_wrong":

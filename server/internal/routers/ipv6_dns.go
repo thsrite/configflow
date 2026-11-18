@@ -80,7 +80,11 @@ type IPv6DNSPlan struct {
 }
 
 func ipv6DNSFlag(row Row, key string) (bool, error) {
-	switch strings.ToLower(rosTextDefault(row[key], "false")) {
+	text := "false"
+	if v, ok := row[key]; ok {
+		text = rosText(v)
+	}
+	switch strings.ToLower(text) {
 	case "false", "no", "0":
 		return false, nil
 	case "true", "yes", "1":
@@ -126,6 +130,7 @@ func ipv6DNSServers(row Row) ([]string, error) {
 	return uniqueStrings(out), nil
 }
 func ipv6DNSScope(desired *Desired, scope DNSCheck) (DNSCheck, error) {
+	scope.DNS = slices.Clone(scope.DNS)
 	if desired == nil || desired.DNSSettings == nil {
 		return scope, routerError(messageIPv6DNSSelection)
 	}
@@ -171,11 +176,11 @@ func readIPv6DNS(ctx context.Context, d *RouterOS, gateway string) (string, []Ro
 		if invalid {
 			return "", nil, routerError(messageIPv6DNSLANInvalid)
 		}
-		iface := r.text("actual-interface")
-		if iface == "" {
-			iface = r.text("interface")
+		iface, valid := r.str("interface")
+		if actual, exists := r["actual-interface"]; exists && actual != nil && actual != "" {
+			iface, valid = actual.(string)
 		}
-		if iface == "" {
+		if !valid || iface == "" {
 			return "", nil, routerError(messageIPv6DNSLANInterface)
 		}
 	}
@@ -190,13 +195,13 @@ func readIPv6DNS(ctx context.Context, d *RouterOS, gateway string) (string, []Ro
 	selected := []Row{}
 	seen := map[string]bool{}
 	for _, r := range rows {
-		if r.text("interface") == "" {
+		if iface, ok := r.str("interface"); !ok || iface == "" {
 			return "", nil, routerError(messageIPv6DNSNDInterface)
 		}
 		if r.text("interface") != iface && !r.is("interface", "all") {
 			continue
 		}
-		if r.id() == "" || seen[r.id()] {
+		if id, ok := r.str(".id"); !ok || id == "" || seen[id] {
 			return "", nil, routerError(messageIPv6DNSNDID)
 		}
 		seen[r.id()] = true
@@ -429,7 +434,11 @@ func (d *RouterOS) ApplyIPv6DNS(ctx context.Context, op IPv6DNSUpdate) (ROSUndo,
 	if e := ctx.Err(); e != nil {
 		return ROSUndo{}, e
 	}
-	return d.transaction(ctx, []ROSChange{{Method: "PATCH", Path: rosIPv6ND, ID: op.ID, Values: Row{"advertise-dns": "no"}, Expected: marshalRow(op.Expected)}})
+	undo, err := d.transaction(ctx, []ROSChange{{Method: "PATCH", Path: rosIPv6ND, ID: op.ID, Values: Row{"advertise-dns": "no"}, Expected: marshalRow(op.Expected)}})
+	if err == nil {
+		err = ctx.Err()
+	}
+	return undo, err
 }
 
 // VerifyIPv6DNS checks DHCP and every relevant RA attribute, including no-op plans.

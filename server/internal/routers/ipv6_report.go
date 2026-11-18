@@ -25,7 +25,7 @@ func ipv6ReportParts(state *RouterState) []ReportPart {
 		if p.Status != "disabled" {
 			statuses = append(statuses, p.Status)
 		}
-		parts = append(parts, ReportPart{Key: "ipv6_dns", Section: p.IPv6DNSReport, Statuses: statuses, InSync: slices.Contains([]string{"disabled", "synced"}, p.Status) && len(p.Blockers) == 0 && len(p.Ops) == 0})
+		parts = append(parts, ReportPart{Key: "ipv6_dns", Section: ipv6DNSPublic(p), Statuses: statuses, InSync: slices.Contains([]string{"disabled", "synced"}, p.Status) && len(p.Blockers) == 0 && len(p.Ops) == 0})
 	}
 	if p := state.IPv6PDGuardPlan; p != nil {
 		statuses := []string{}
@@ -36,7 +36,25 @@ func ipv6ReportParts(state *RouterState) []ReportPart {
 			}
 			statuses = append(statuses, s)
 		}
-		parts = append(parts, ReportPart{Key: "ipv6_pd_guard", Section: p.IPv6PDGuardReport, Statuses: statuses, InSync: slices.Contains([]string{"disabled", "synced", "borrowed"}, p.Status) && len(p.Blockers) == 0 && len(p.Ops) == 0})
+		parts = append(parts, ReportPart{Key: "ipv6_pd_guard", Section: ipv6PDPublic(p), Statuses: statuses, InSync: slices.Contains([]string{"disabled", "synced", "borrowed"}, p.Status) && len(p.Blockers) == 0 && len(p.Ops) == 0})
 	}
 	return parts
+}
+
+func ipv6DNSPublic(p *IPv6DNSPlan) IPv6DNSReport {
+	out := p.IPv6DNSReport
+	out.Blockers = slices.Clone(out.Blockers)
+	out.Warnings = slices.Clone(out.Warnings)
+	out.Items = slices.Clone(out.Items)
+	for i := range out.Items {
+		out.Items[i].DNSServers = slices.Clone(out.Items[i].DNSServers)
+	}
+	return out
+}
+func ipv6PDPublic(p *IPv6PDGuardPlan) IPv6PDGuardReport {
+	out := p.IPv6PDGuardReport
+	out.Blockers = slices.Clone(out.Blockers)
+	out.Warnings = slices.Clone(out.Warnings)
+	out.Items = slices.Clone(out.Items)
+	return out
 }

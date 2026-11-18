@@ -44,6 +44,15 @@ try:
             desired['ipv6_dns_scope'] = copy.deepcopy(step['scope'])
             plan = module.inspect(desired, driver)
         out['results'].append(copy.deepcopy(plan))
+        if action == 'report':
+            from backend.routers.report import build_report
+            state = driver.read_state()
+            if case['feature'] == 'pd':
+                state.ipv6_pd_guard_plan = plan
+            else:
+                state.ipv6_dns_plan = plan
+            out['results'].append(build_report(step['desired'], state))
+            continue
         if action == 'plan' or plan['blockers']:
             continue
         if plan['ops']:

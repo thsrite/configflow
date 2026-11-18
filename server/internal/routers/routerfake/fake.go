@@ -256,6 +256,11 @@ func writeFault(w http.ResponseWriter, fault Fault) {
 }
 
 func (f *Fake) serveLocked(method, path string, query url.Values, body any, fault *Fault) (int, any, bool) {
+	if path == "/ip/dns" && method == http.MethodGet {
+		if rows, ok := f.tables[path]; ok && len(rows) == 1 {
+			return http.StatusOK, cloneRow(rows[0]), false
+		}
+	}
 	if path == "/routing/settings" && method == http.MethodGet {
 		if rows, ok := f.tables[path]; ok {
 			if len(rows) == 1 {

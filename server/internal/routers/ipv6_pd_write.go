@@ -92,6 +92,61 @@ func (d *RouterOS) commitPD(ctx context.Context, raw json.RawMessage) error {
 	d.SetIPv6PDGuardManifest(raw)
 	return nil
 }
+
+// pdStoreManifest patches known fields while retaining future document and
+// resource members, including when an old ID has just been remapped.
+func pdStoreManifest(previous json.RawMessage, spec *IPv6PDSpec, resources []IPv6PDResource) json.RawMessage {
+	var doc map[string]json.RawMessage
+	_ = json.Unmarshal(previous, &doc)
+	if doc == nil {
+		doc = map[string]json.RawMessage{}
+	}
+	var old []map[string]json.RawMessage
+	_ = json.Unmarshal(doc["resources"], &old)
+	next := []map[string]json.RawMessage{}
+	for _, entry := range resources {
+		fields := map[string]json.RawMessage{}
+		for _, candidate := range old {
+			var role, path, id string
+			_ = json.Unmarshal(candidate["role"], &role)
+			_ = json.Unmarshal(candidate["path"], &path)
+			_ = json.Unmarshal(candidate["id"], &id)
+			if role == entry.Role && path == entry.Path && id == entry.ID {
+				for k, v := range candidate {
+					fields[k] = v
+				}
+				break
+			}
+		}
+		fields["role"], _ = json.Marshal(entry.Role)
+		fields["path"], _ = json.Marshal(entry.Path)
+		fields["id"], _ = json.Marshal(entry.ID)
+		if entry.Config != nil {
+			fields["config"], _ = json.Marshal(entry.Config)
+		}
+		next = append(next, fields)
+	}
+	doc["version"] = json.RawMessage("1")
+	if spec == nil {
+		doc["spec"] = json.RawMessage("null")
+	} else {
+		var fields map[string]json.RawMessage
+		_ = json.Unmarshal(doc["spec"], &fields)
+		if fields == nil {
+			fields = map[string]json.RawMessage{}
+		}
+		known, _ := json.Marshal(spec)
+		var updates map[string]json.RawMessage
+		_ = json.Unmarshal(known, &updates)
+		for k, v := range updates {
+			fields[k] = v
+		}
+		doc["spec"], _ = json.Marshal(fields)
+	}
+	doc["resources"], _ = json.Marshal(next)
+	raw, _ := json.Marshal(doc)
+	return raw
+}
 func (d *RouterOS) recoverPD(ctx context.Context, previous json.RawMessage, remap map[[2]string]string, created map[string]IPv6PDResource, spec *IPv6PDSpec) error {
 	raw := pdRemapped(previous, remap)
 	var m IPv6PDManifest
@@ -100,7 +155,7 @@ func (d *RouterOS) recoverPD(ctx context.Context, previous json.RawMessage, rema
 		if m.Version == 0 {
 			m = IPv6PDManifest{Version: 1, Spec: spec, Resources: []IPv6PDResource{}}
 		}
-		for _, role := range []string{"script", "scheduler"} {
+		for _, role := range []string{"script", "scheduler", "hook"} {
 			entry, ok := created[role]
 			if !ok {
 				continue
@@ -113,18 +168,7 @@ func (d *RouterOS) recoverPD(ctx context.Context, previous json.RawMessage, rema
 				m.Resources = append(m.Resources, entry)
 			}
 		}
-		// Preserve unknown top-level members even on an incomplete rollback.
-		var doc map[string]json.RawMessage
-		_ = json.Unmarshal(raw, &doc)
-		if doc == nil {
-			doc = map[string]json.RawMessage{}
-		}
-		doc["version"] = json.RawMessage("1")
-		if _, ok := doc["spec"]; !ok {
-			doc["spec"], _ = json.Marshal(spec)
-		}
-		doc["resources"], _ = json.Marshal(m.Resources)
-		raw, _ = json.Marshal(doc)
+		raw = pdStoreManifest(raw, m.Spec, m.Resources)
 	}
 	return d.commitPD(ctx, raw)
 }
@@ -233,16 +277,7 @@ func (d *RouterOS) ApplyIPv6PDGuard(ctx context.Context, op IPv6PDGuardSync) (*I
 				}
 				resources = append(resources, entry)
 			}
-			// Preserve unknown fields from Python/newer Go manifests on read-modify-write.
-			var doc map[string]json.RawMessage
-			_ = json.Unmarshal(op.Previous, &doc)
-			if doc == nil {
-				doc = map[string]json.RawMessage{}
-			}
-			doc["version"] = json.RawMessage("1")
-			doc["spec"], _ = json.Marshal(op.Spec)
-			doc["resources"], _ = json.Marshal(resources)
-			raw, _ = json.Marshal(doc)
+			raw = pdStoreManifest(op.Previous, op.Spec, resources)
 		}
 		return d.commitPD(ctx, raw)
 	}()
@@ -278,7 +313,15 @@ func (d *RouterOS) RestoreIPv6PDGuard(ctx context.Context, op IPv6PDGuardUndo) e
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		if err := d.recoverPD(ctx, op.Previous, remap, nil, nil); err != nil {
+		var current IPv6PDManifest
+		_ = json.Unmarshal(d.ipv6PDGuardManifest, &current)
+		retained := map[string]IPv6PDResource{}
+		for _, r := range current.Resources {
+			if r.Config != nil {
+				retained[r.Role] = r
+			}
+		}
+		if err := d.recoverPD(ctx, op.Previous, remap, retained, current.Spec); err != nil {
 			return err
 		}
 		return e

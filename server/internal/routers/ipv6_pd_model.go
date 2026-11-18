@@ -211,7 +211,7 @@ func pdRows(ctx context.Context, d *RouterOS, path string) ([]Row, error) {
 	}
 	seen := map[string]bool{}
 	for _, r := range rows {
-		if r.id() == "" || seen[r.id()] {
+		if id, ok := r.str(".id"); !ok || id == "" || seen[id] {
 			return nil, routerError(fmt.Sprintf(messagePDRowID, path))
 		}
 		seen[r.id()] = true
@@ -477,6 +477,22 @@ func pdOwned(d *RouterOS, raw json.RawMessage, live pdLive) (map[string]Row, err
 		row := findRow(rows, entry.ID)
 		if row == nil {
 			continue
+		}
+		if entry.Config == nil {
+			// Legacy IDs have no byte-for-byte proof. Accept only a recognised template,
+			// never a merely same-named script or scheduler that could execute foreign code.
+			valid := false
+			switch entry.Role {
+			case "script":
+				valid = m.Spec != nil && pdScriptState(row, m.Spec).state == "ok"
+			case "scheduler":
+				valid = pdSchedulerState(row).state == "ok"
+			case "hook":
+				valid = slices.Contains([]string{"ok", "update"}, pdHookState(row).state)
+			}
+			if !valid {
+				return nil, routerError(messagePDOwnership)
+			}
 		}
 		if entry.Config != nil && !sameRow(d.ownershipSnapshot(path, row), entry.Config) {
 			return nil, routerError(messagePDOwnership)
