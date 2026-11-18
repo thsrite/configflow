@@ -1,5 +1,31 @@
 # Test speed A — Python reference recording and slow package analysis
 
+**本轮状态：实现交回；正式 race 前后耗时「待测」。** 协调者于
+2026-11-18 明确批准计时不作为本轮合入前提。当前两机负载 31–43，
+四轮批次门禁并行；本轮停止追加测试。batch-2（N73 优化）合入后再通知
+续做：rebase、实际重录/核对因消费者测试变化而失效的元数据，低负载时在
+同一机器顺序运行 measure-a.sh，最后以只改文档的提交报告正式计时。
+实现提交将由协调者加入下一批完整门禁；本分支不运行完整 gate。
+
+| Package | Before race | After race | Implementation |
+|---|---|---|---|
+| internal/mosdns | 待测 | 待测 | 4 transcripts; parallel converter suites |
+| internal/oxidns | 待测 | 待测 | 18-case archive transcript; separate fetch assertions |
+| internal/provider | 待测 | 待测 | per-row isolated copies of one initialized seed |
+| internal/deploy | 待测 | 待测 | parallel independent build rows |
+| internal/deploy/pushdiff | 待测 | 待测 | parallel independent corpus rows |
+| internal/deploy/contentsync | 待测 | 待测 | parallel independent checker histories |
+| internal/discovery | 待测 | 待测 | parallel pure YAML/domain checks |
+| internal/routersplit | 待测 | 待测 | normalized-input transcript; global hook replays stay sequential |
+
+本轮验收：7 个 transcript（两个回退会话为空），实际 live oracle
+**2892 个不同输入，diff 0**。所有原 corpus 行和断言保留。普通执行
+strace 零 Python，故意 Python exec 负控检出；live 子进程正常退出且无
+残留/僵尸；源码/输入/venv 漂移、未批准覆盖、原断言失败、实际缓存命中后
+修改 backend 的负控均通过。定向 race、全仓 vet、改动路径 gofmt 均通过，
+详见下方准确命令与输出。早期高负载且未包含 N73 索引的基线已丢弃，
+下面历史章节的单次定向耗时不是前后性能结论。
+
 Branch `go-test-speed-a`, based on go `a9d6ce86c`. Scope: mosdns, oxidns,
 provider, deploy and children, discovery, routersplit. Routers excluded. No tests
 removed, timeouts shortened or assertions relaxed. Ordinary references become
