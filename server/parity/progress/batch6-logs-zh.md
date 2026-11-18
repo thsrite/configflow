@@ -2,7 +2,9 @@
 
 分支 `go-fix-batch6-logs` 从指定 `batch-6@f9f3105ee` 新建，独立 worktree；不修改共享 batch worktree，不 push。全部测试/构建在 .32 经 rt；仅定向检查和 GATE_ONLY=compare。本文更正前一份报告把两条日志差异称为可放过的“负载噪声”：那个判断证据不足；客户端取消误报与生成器的配置重复解码都是真问题。
 
-本轮目标已达标：.32 proddiff **new=0 / stale=0，Python/Go 重试均为 0**，没有改 baseline/normalizer。整条 GATE_ONLY=compare 随后在两个 difftest 失败；已在未修改父提交 f9f3105ee 定向复现，详见末尾。synthetic live 因此未运行；完整 core 仍由协调者在 .64 跑。
+上一轮性能目标已达标：.32 proddiff **new=0 / stale=0，Python/Go 重试均为 0**，没有改 baseline/normalizer；当时后续两个 difftest 失败，synthetic live 未运行。两条失败在父提交 f9f3105ee 同样存在，但都是 batch-6 相对 go 新引入的问题，后续按协调者要求继续修复，最终结果见下段。完整 core 仍由协调者在 .64 跑。
+
+**后续收尾已完成：** 协调者要求继续修复两条 batch-6 difftest；已在 259efd4da 修正测试依据/夹具。最终 .32 整条 GATE_ONLY=compare 退出 0：new=0/stale=0、双方重试 0、21 个 difftest 包全部通过、synthetic live 23/23 实跑且 0 skip。完整来源、判定依据和命令见 [batch6-difftest-followup-zh.md](batch6-difftest-followup-zh.md)。下文的两条“剩余”记录保留为上一轮历史，不再是当前未决事项。
 
 ## 原门禁逐行归因
 
