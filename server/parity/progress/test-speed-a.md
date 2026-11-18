@@ -391,3 +391,37 @@ manifest scope (including ordinary helper subpackages), with one helper-source
 negative/registered positive control. B's unrelated progress file is omitted
 from the cherry-pick; its original author/co-author and shared-code patch remain.
 This changes only the one shared pyref implementation; no private A copy.
+
+## Discarded timing attempt 1 — external gate-speed acceptance overlap
+
+A valid low-load window was first observed at 2026-11-18 02:17:21 UTC:
+`.32=2.29`, `.64=9.85`. A fresh, explicit `git archive e0e9d9d45` baseline was
+prepared at `.64 ~/rt-baselines/pyref-speed-a-e0e9d9d45` (the `.pyref-baseline-ref`
+marker records the pinned revision). Candidate is `b2cf3e6b4`, on that same base.
+The newer integration commits after batch-2 were documentation-only. Immediately
+before launch the two loads were `.32=1.13`, `.64=9.50`; script-start .64 load
+was 9.84. B agreed not to launch a concurrent measurement.
+
+One foreground command invoked `measure-a.sh` on .64, fixed `-p 4`, baseline
+then candidate. Baseline passed, spanning 10:19:06–10:29:44 +08:00. At the phase
+boundary, the before-end and after-start load were both 17.14. A required
+interference check identified a foreign full race process (PID 379452,
+`go test -race -p=6 -timeout=60m ./...`), started at **10:28:27**, owned by the
+separately prioritized `gate-speed-accept` run. This overlaps the last 77 seconds
+of baseline and the candidate phase. The coordinator confirmed that acceptance
+has priority and instructed stopping this pair.
+
+Verified candidate Go PID 382389's cwd and argv belonged to this worktree, then
+terminated only that process tree (3 processes); the measurement returned 143.
+The external acceptance processes were untouched. **The entire pair is discarded;
+none of its package times or deltas is used as performance evidence.** Raw logs
+remain at `.64 ~/.cache/speed-a-paired-e0e9d9d45/{before,after}.{meta,jsonl}` for
+audit only. The measurement start load alone is insufficient to exclude a new
+job during a long round.
+
+Next attempt must wait for `pgrep -af '[g]ate-speed-accept'` to have no output
+(the brackets avoid matching the probe itself), and for both servers' one-minute
+loads to be below 10. Observe .64 load and external activity at each phase; retry
+any contaminated round. Use a new log directory so the discarded evidence is
+preserved. The coordinator reserves its new gates for .32 during the A window;
+other agents' auto-selected targeted work can still interfere.
