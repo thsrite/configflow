@@ -65,9 +65,9 @@ Command used: `find backend -name '*.py' -not -name 'test_*' -not -path 'backend
 | `backend/agents/operation_events.py` | 84 | agents |  |  |
 | `backend/agents/oxidns_cache.py` | 134 | agents |  |  |
 | `backend/agents/oxidns_dashboard_state.py` | 240 | agents |  |  |
-| `backend/agents/oxidns_ha.py` | 625 | agents |  |  |
-| `backend/agents/oxidns_ha_handoff.py` | 167 | agents |  |  |
-| `backend/agents/oxidns_ha_publish.py` | 676 | agents |  |  |
+| `backend/agents/oxidns_ha.py` | 625 | agents | A18 | `internal/agents/dnsha` |
+| `backend/agents/oxidns_ha_handoff.py` | 167 | agents | A18 | `internal/agents/dnsha` |
+| `backend/agents/oxidns_ha_publish.py` | 676 | agents | A18 | `internal/agents/dnsha` |
 | `backend/agents/oxidns_metrics.py` | 338 | agents |  |  |
 | `backend/agents/oxidns_monitor.py` | 727 | agents |  |  |
 | `backend/agents/oxidns_publication_stats.py` | 158 | agents |  |  |

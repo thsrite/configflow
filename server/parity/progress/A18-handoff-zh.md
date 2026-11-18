@@ -3,7 +3,7 @@
 状态：`ported`；独立 Opus HR 复核与 L3 实机仍待协调者执行。
 
 分支 `go-port-a18`，基于指定的 batch-6（A16/A17 集成与 N8 第 2 批）；未 push。
-主体提交 `133d5ec0f`；离线证明/基线关闭 `cc146fbc2`，故障/Runtime/集成回归与修正另行提交。
+主体提交 `133d5ec0f`；离线证明/基线关闭 `cc146fbc2`，故障/Runtime/集成回归与修正 `82c3fab94`；状态/归属/L3 计划为独立文档提交。
 
 ## 已实现
 
@@ -124,7 +124,7 @@ A15 原来排除整个 `.oxidns-ha-publications` 目录的 deferred 规则已收
 关机负控：修复前 `TestStopSignalDuringElectionDoesNotFailAppliedPair` 1.82s 报 `stop signal wrote a late failed journal`；修复后包括原始协议测试在上述 race 中通过。
 
 
-测试说明：初次 race 的 A18 fixture 不必要地加载了首次启动演示模板，导致每次 journal 保存都复制大量无关规则，累计超时；未视为功能缺陷。已改用真实 repository 的默认配置工厂与最小合成数据，完整 HTTP 成功生成另有真实 Flask/Go 和离线快照证明。生产 HTTP 超时、包大小、解析预算均未缩短或覆盖。恢复会话前的原 exec 输出通道失效，后续运行记录保存到服务器日志文件，确保可复核。
+测试说明：初次 race 的 A18 fixture 不必要地加载了首次启动演示模板，导致每次 journal 保存都复制大量无关规则，累计超时；未视为功能缺陷。已改用真实 repository 的默认配置工厂与最小合成数据，完整 HTTP 成功生成另有真实 Flask/Go 和离线快照证明。生产 HTTP 超时、包大小、解析预算均未缩短或覆盖。后续定向运行的完整日志保留于测试服务器的本任务缓存目录，文档仅记录合成用例与汇总。
 
 
 最终补充检查（同一固定目标；未运行全量门禁）：

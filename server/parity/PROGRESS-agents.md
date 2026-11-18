@@ -10,7 +10,7 @@ proddiff new0/stale0); post64815165 rebase vet/changed packages and all13diff
 pass. Detailed sources, classifications and commands:
 [progress/n7-4-writers.md](progress/n7-4-writers.md).
 
-Domain `agents` (WORKFLOW.md): Agent registry/heartbeat, metrics/traffic, OxiDNS/Mihomo monitoring, installers, Docker HA, deployment bundle, push diff, content sync, publishing, upgrades, address follow, rule sync, DNS follow, DNS HA, Linux gateway, gateway onboarding/installation, IPv6 readiness (old packages #20–#31). **69 Python files, 25154 lines, 24 modules** (equal to the `agents` totals in `FILES.md`) — 7 missing, 0 partial, 2 ported, 15 verified (A01, A02, A03, A04, A05, A06, A07, A08, A09, A10, A12, A13, A15, A19, A24). Only reviewers set `verified`.
+Domain `agents` (WORKFLOW.md): Agent registry/heartbeat, metrics/traffic, OxiDNS/Mihomo monitoring, installers, Docker HA, deployment bundle, push diff, content sync, publishing, upgrades, address follow, rule sync, DNS follow, DNS HA, Linux gateway, gateway onboarding/installation, IPv6 readiness (old packages #20–#31). **69 Python files, 25154 lines, 24 modules** (equal to the `agents` totals in `FILES.md`) — 3 missing, 0 partial, 1 ported (A18), 20 verified (A01–A17, A19, A20, A24). Only reviewers set `verified`.
 
 Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 496004d7. The Go code was read directly (`internal/agents`, `internal/api/agents`, `internal/notifications`, `internal/tasks`, `internal/server`); the hand-back in `progress/20-agents.md` was not relied on.
 
@@ -68,7 +68,7 @@ Same as `PROGRESS-config.md`: status `missing` / `partial` (exact list of what i
 | A15 | upgrades, Agent operations, address follow | 745 | verified | HR | A01, A02 | 15 (15 done) | internal/agents/upgrades (new), api/agents |
 | A16 | Agent rule sync, projection, snapshot | 1371 | verified | HR | A07, A14, C25, C27 | 2 | internal/agents/rulesync (new), api/agents |
 | A17 | DNS follow | 760 | verified | HR | A14, C26 | 4 | internal/agents/dnsfollow (new), api/agents |
-| A18 | DNS HA (keepalived pair, handoff, pair publication) | 1529 | wip | HR | A16, A17, C26, routers (`routers/store.py`) | 4 | internal/agents/dnsha (new), api/agents |
+| A18 | DNS HA (keepalived pair, handoff, pair publication) | 1529 | ported | HR | A16, A17, C26, routers (`routers/store.py`) | 4 | internal/agents/dnsha (new), api/agents |
 | A19 | Linux gateway core (common/linux_gateway.py) | 518 | verified | HR | C05, C08, routers (`router_split.check_generation`) | – | internal/gateway (new) |
 | A20 | Agent gateway bridge, gateway draft, gateway routes | 1110 | verified | HR | A19, A06, C18, routers (`router_split`, `routers/store.py`) | 18 | internal/gateway, api/agents, api/linuxgateway (new) |
 | A21 | gateway onboarding | 751 | verified | HR | A19, A20, C18, C22, C23, C24, C05, routers (`router_split`) | 3 | internal/gateway, api/gatewayonboarding (new) |
@@ -1598,6 +1598,8 @@ Review (adversarial, 2026-11-16) — every function and branch of upgrades.py, a
 
 Porter's differences, decided: Go transport texts — accepted (A01 limitation; only inside "Connection error: …"/`error_details`). `.oxidns-ha-publications/<sha256>/lock` files of restart/uninstall — accepted for now, A18 must create them in `service_operation` and then drop the exclusion in `upgrades_diff_test.go`. Non-dict record — fixed (finding 1). Windows digest-cache branch — accepted (server never runs on Windows).
 
+A18 integration closure: the full-directory HA artifact exclusion is narrowed to Python-only `/lock` files (Go uses O3 L1 leases); payload/journal files remain compared. Agent differential fixtures now use the default-config factory without demo subscriptions, preventing unrelated scheduler notification timestamps from contaminating A15 transcripts. See [A18 handoff](progress/A18-handoff-zh.md).
+
 Accepted differences (reviewer): a list-of-pairs record with a non-string key is a TypeError at `dict()` (Python builds the dict, but every later step fails: KeyError on 'status' or jsonify cannot sort mixed keys — 500 either way, only the log line differs). `~/.netrc` entries (requests with trust_env replaces the Bearer header with Basic auth for `_reaches`/`_ask`/manager calls) are not read: the image has no .netrc. Redirects of Agent answers follow Go's rules (requests 30 hops, auth stripping on host change in both). Shared-code changes made here: `agents.Call` (KeyError/latin-1, used by A01/A14/A18 paths too: an unencodable token now fails before sending, as in Python), `HTTPClient.Do` `Latin1Headers`, `api/agents.argBigInt` (A04/A05 routes now use pystr).
 
 Checks performed: state machine of start/poll/_save/report_legacy (terminal sets, only_queued, ownership, agent_updated_at ordering, event merge, rollback_failed polled, deadline 600 s with heartbeat-after rule, protocol 1/2/True/2.0/3), arch selection (unknown/missing/non-string arch, legacy needs all three, stuck `queued` reservation after KeyError like Python), artifacts (stat-keyed cache, ELF magic, size limit, change detection, per-arch directory), 4096 B report limit and token-or-JWT on the status route, every operation route's body handling (difftest), address follow (Usable corpus 49 + IPv6/zone/bridge/full-width via difftest, same-name records, HA notify-only with HA_STEPS, retry window per (host, member), confirmed_host, describe/change in modes agent/env/record/docker/404/unknown/ha, rejects 400/502, notifications and resolution), CPython error texts. Differentials re-run: `UpgradesDifferential` 130 requests (98 + 32 review cases), 0 differences; `UpgradesProxyDifferential` 6, 0; registry `TestDifferentialAgainstFlask` 234, 0.
@@ -1662,27 +1664,21 @@ Hooks to provide: `agents.SetDNSFollowRow` (dns_follow row; with A16's row this 
 
 ## A18 — DNS HA
 
-**Required A14 hand-off:** delete the exact temporary proddiff row `POST /api/agents/<agent_id>/generate-config · body.message · a18-ha-refusal` (narrowed by the A14 review: the comparator emits this type only when Go answers exactly the ErrPairPublisherMissing text on an otherwise identical failed 400; every other message difference stays `value`) marked `deferred → A18：HA 最终生成在 A18 接入前按设计拒绝，接入后必须消失` when wiring the HA publisher/generation path. It covers only the designed ErrPairPublisherMissing refusal: status 400, success=false and all other body fields/compared headers match. No wildcard; stale baseline is a hard gate failure.
+**Status: `ported`** · HR · 分支 `go-port-a18`；待新 Opus 独立复核和 L3 实机。实现、Python 覆盖映射、问题类检查、精确命令与运行结果见 [A18-handoff-zh.md](progress/A18-handoff-zh.md)。
 
-**Status: `wip`** · HR · prereqs: A16 (`prepare_candidate`, `settings_for`, `fetch_snapshot`), A17, A14, A11, C26 (`prepare_editor`), C22 (`load_native_yaml`), routers (`routers/store.routers_of`) · Go: internal/agents/dnsha (new), api/agents
+**Design:** `server/design/a16-a18-sync-follow-ha.md` 的 A18 部分。D-A18-1 已裁定：keepalived 阶段 HA 锁忙保持 applying，下一轮重试（需 O12 记录）；无待裁定接口。
 
-**Design:** `server/design/a16-a18-sync-follow-ha.md` (Opus, 2026-11-17) covers A16, A17 and A18 — package map, stored types, Agent protocol, loops, locks, failure/rollback, steps A16-0…A18-4, acceptance (fake pair, Python transcript differential, F1 closure, L3). Port to it; contract changes need the designer's or coordinator's agreement. Open maintainer decisions: D-A17-1, D-A18-1.
+Files: `backend/agents/oxidns_ha.py`、`oxidns_ha_handoff.py`、`oxidns_ha_publish.py`；`backend/routes/agents.py` lines 192–215、1233–1269。
 
-Files:
-- `backend/agents/oxidns_ha.py` (625)
-- `backend/agents/oxidns_ha_handoff.py` (167)
-- `backend/agents/oxidns_ha_publish.py` (676)
-- `backend/routes/agents.py` (61) — lines 192–215, 1233–1269
+Routes (4, 4 done): `GET|PUT|DELETE /api/agents/<agent_id>/oxidns-ha`；`GET /api/agents/<agent_id>/oxidns-ha-environment`。A09 deferred environment 用真实 Flask 鉴权/白名单对照关闭。
 
-Deferred from A09: `test_docker_ha_guide.py::test_live_environment_requires_admin_and_never_exposes_extra_payload` (`oxidns-ha-environment` route).
+Tests: `test_oxidns_ha.py` (37), `test_oxidns_ha_publish.py` (28), `test_oxidns_ha_docker.py` (9), `test_oxidns_ha_unchanged.py` (6), `test_oxidns_vip_handoff.py` (13), `test_oxidns_ha_identity.py` (8), `test_oxidns_ha_compact_identity.py` (7), `test_oxidns_ha_guards.py` (3)。逐文件边界映射见交接文档；不将 Python monkeypatch 机制移植为产品代码。
 
-Tests: `test_oxidns_ha.py` (37), `test_oxidns_ha_publish.py` (28), `test_oxidns_ha_docker.py` (9), `test_oxidns_ha_unchanged.py` (6), `test_oxidns_vip_handoff.py` (13), `test_oxidns_ha_identity.py` (8), `test_oxidns_ha_compact_identity.py` (7), `test_oxidns_ha_guards.py` (3)
+Evidence: 配对发布、两次 VIP/DNS 门禁、keepalived 应用/反序撤销、leftover/force 停用及持久恢复完成。真实全局 Runtime 覆盖断连继续、关闭后不再提交、上传/让位/双端 keepalived 中途关闭与重启。修复选举等待收到 Stopping 时晚写 failed 的问题，负控可复现、修复回归通过。A16 双 worker 与 A17 双端目标使用实际 owner 接线；A14 最终生成和 A07 强制规则路径已有边界回归。
 
-Routes (4): `GET|PUT|DELETE /api/agents/<agent_id>/oxidns-ha`; `GET /api/agents/<agent_id>/oxidns-ha-environment`
+A14/F1 hand-off 已关闭：离线只读快照定向证明 `cases=6 new=0 stale=12 remaining=0 self-check=PASS`，删除全部 12 条 `deferred → A18`，含 `a18-ha-refusal`。未放宽比较器或运行全量门禁。
 
-Evidence: 配对发布、VIP 交接、启停与四条路由已接线；基础发布/首次开启、真实 Python 预检对照在固定测试服务器通过。故障、Runtime、HTTP 差分与基线清理进行中，详见后续 A18 交接。
-
-Hooks to provide: `agents.RegisterHooks{HAServiceOperation, HADeployment, HAActivate, PublishDeployment (publish wrapper around A14's function)}`, `agents.OnManagerInit` (`oxidns_ha_publish.start_loop`), A07's HA rule-update hook; then delete `agents/compat.go` and switch the registry to the real functions (pair lock file included).
+Hooks 已注册：`deploy.SetPairPublisher`、`agents.RegisterHooks{HAServiceOperation, HADeployment, HAActivate}`、`agents.OnManagerInit`、A07 `SetHARules`、A16 `SetPairAdvance`；`agents/compat.go` 已删除，L1 pair/member 使用进程内 lease，不创建 Python flock 文件。
 
 ## A19 — Linux gateway core
 
