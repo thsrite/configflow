@@ -1,14 +1,18 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
 func TestAuditFindsAliasedAndNestedExec(t *testing.T) {
 	source := []byte(`package test
-import (cmd "os/exec"; "os"; y "configflow/internal/yamlx/yamlxtest")
+import (cmd "os/exec"; "os"
+ "encoding/json"
+ "strings"; y "configflow/internal/yamlx/yamlxtest")
 func TestExample(){ _ = func(){cmd.Command("python", "-c", "pass")}; cmd.CommandContext(nil,os.Args[0]); y.NewOracle(nil,"oracle.py") }
 `)
 	calls, err := inspect("server/internal/example/x_test.go", source)
@@ -70,5 +74,54 @@ import . "os/exec"
 func TestExample(){Command("python")}
 `)); err == nil {
 		t.Fatal("dot import bypass silently allowed")
+	}
+}
+
+// TestAuditRepository is the ordinary go-test enforcement point, not a manual
+// CLI convention. Each integrated group supplies its own scope/registry pair.
+func TestAuditRepository(t *testing.T) {
+	root, err := filepath.Abs("../../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifests, err := filepath.Glob(filepath.Join(root, "server/tools/pyref/scopes-*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, manifest := range manifests {
+		data, err := os.ReadFile(manifest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var scopes []string
+		if err = json.Unmarshal(data, &scopes); err != nil {
+			t.Fatal(err)
+		}
+		if len(scopes) == 0 {
+			t.Fatalf("empty process audit scope manifest: %s", manifest)
+		}
+		group := strings.TrimSuffix(strings.TrimPrefix(filepath.Base(manifest), "scopes-"), ".json")
+		registryPath := filepath.Join(filepath.Dir(manifest), "live-exceptions-"+group+".json")
+		data, err = os.ReadFile(registryPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var rows []exception
+		if err = json.Unmarshal(data, &rows); err != nil {
+			t.Fatal(err)
+		}
+		if err = audit(root, scopes, rows); err != nil {
+			t.Fatal(err)
+		}
+	}
+	registries, err := filepath.Glob(filepath.Join(root, "server/tools/pyref/live-exceptions-*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, registry := range registries {
+		group := strings.TrimSuffix(strings.TrimPrefix(filepath.Base(registry), "live-exceptions-"), ".json")
+		if _, err := os.Stat(filepath.Join(filepath.Dir(registry), "scopes-"+group+".json")); err != nil {
+			t.Fatalf("registry lacks exact scope manifest: %s", registry)
+		}
 	}
 }

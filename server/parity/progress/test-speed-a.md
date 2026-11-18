@@ -152,3 +152,13 @@ history constructs its own checker, clock, fake worker queue, limits, config,
 agent, preparation failures and version map. Every action and expected job/call/
 entry/detail count still executes in its original within-history order.
 No runtime Python reference existed. .64 selected-test race run passed `1.630s`.
+
+Shared actual-repository audit is enforced by ordinary `go test ./tools/pyref`,
+using per-group `scopes-*.json` plus exact `live-exceptions-*.json`. Missing pairs,
+new constructors and stale registrations fail. .64 race audit passed `1.560s`.
+
+Cache boundary identified from Go 1.26 cmd/go source: backend and venv lie outside
+server's Go module root, so bare cached `go test` does not recheck those reads.
+Actual executions (including current gate's -count=1) do validate hashes. Asked
+coordinator to approve a shared native-fingerprint test wrapper for cache-enabled
+daily runs; no gate script changes proposed.
