@@ -653,8 +653,10 @@ func (w *worker) publish(ctx context.Context, record *agents.Record, a *model.Ag
 	if e != nil {
 		return e
 	}
-	old := stateOf(a)
-	bundle, e := s.prepare(ctx, deploy.NewTarget(record), source, baseline, settings, id, value(old.ForceRefresh))
+	// Python's worker never forces downloads here: the stored force_refresh only
+	// resumes an interrupted refresh. Forcing would unpin rule files of a scope
+	// that is off and refetch unchanged ones (A18 forces its own rule jobs).
+	bundle, e := s.prepare(ctx, deploy.NewTarget(record), source, baseline, settings, id, false)
 	if e != nil {
 		return e
 	}

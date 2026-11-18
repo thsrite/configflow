@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"configflow/internal/deploy"
@@ -68,7 +69,7 @@ func TestProjectionAgainstPython(t *testing.T) {
 			if kind != tt.Kind {
 				t.Errorf("kind %s want %s", kind, tt.Kind)
 			}
-			if len(withheld) != len(tt.Withheld) {
+			if !slices.Equal(withheld, tt.Withheld) {
 				t.Errorf("withheld %v want %v", withheld, tt.Withheld)
 			}
 			got, _ := projected.Raw()

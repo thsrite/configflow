@@ -19,15 +19,9 @@ const (
 	Structure Kind = "structure"
 )
 
-func active(item *yaml.Node) bool {
-	for _, key := range []string{"enabled", "library_enabled"} {
-		n := get(item, key)
-		if n != nil && n.ShortTag() == "!!bool" && n.Value == "false" {
-			return false
-		}
-	}
-	return true
-}
+// active is Python's item.get('enabled', True) and item.get('library_enabled', True):
+// any falsy value (false, null, 0, "") excludes the rule, as in the generators.
+func active(item *yaml.Node) bool { return oxidns.RuleEnabled(item) }
 func sourceRuleState(doc *yaml.Node, content bool) *yaml.Node {
 	out := yamlx.Seq()
 	for _, r := range list(get(doc, "rule_configs")) {

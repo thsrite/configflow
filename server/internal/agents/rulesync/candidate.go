@@ -36,7 +36,9 @@ func PrepareCandidate(ctx context.Context, target deploy.Target, source *deploy.
 			}
 		}
 		forced := map[string]bool{}
-		if forceRefresh {
+		// Python forces the generated OxiDNS downloads; a Mihomo candidate has none
+		// (its materializer reads the final rule-providers graph).
+		if forceRefresh && target.ServiceType == "oxidns" {
 			entries, e := oxiEntries(source, receipt.BaseURL)
 			if e != nil {
 				return e
