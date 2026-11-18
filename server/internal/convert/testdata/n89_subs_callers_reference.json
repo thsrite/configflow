@@ -1,0 +1,411 @@
+{
+  "sources": {
+    "surge_loon_corpus": "0b83d1df81649ade20448bbf4ec4d58713c7a3d3fbf4a013b4e3fcf274f52918",
+    "review_c12": "3681e530e0930dc9d18ffc61c8ef2b6381a951a7377bbcd4979fab89a0337e68",
+    "corpus": "1f7c3c648572e11bf315f94bfd3d736c05435e14cf7e508df3d2807907792088"
+  },
+  "cases": {
+    "surge_loon_corpus/24090": {
+      "input_sha256": "61a3b7988d0e1f8301bd3c4bc4e98fd69f64a2c1e04ed5fdbedccdf2a50c832b",
+      "python_error": [
+        "AttributeError",
+        "'int' object has no attribute 'lower'"
+      ],
+      "native_error": [
+        "Go:*substore.ProxyShapeError",
+        "节点 type 必须是字符串，当前值：5"
+      ],
+      "reason": "native explicit node type validation replaces CPython AttributeError"
+    },
+    "surge_loon_corpus/24091": {
+      "input_sha256": "690a7dc7c76d59ff330bac82e4e5300e8529e0893c4746e634cd472b69765035",
+      "python_error": [
+        "AttributeError",
+        "'int' object has no attribute 'lower'"
+      ],
+      "native_error": [
+        "Go:*substore.ProxyShapeError",
+        "节点 type 必须是字符串，当前值：5"
+      ],
+      "reason": "native explicit node type validation replaces CPython AttributeError"
+    },
+    "surge_loon_corpus/24446": {
+      "input_sha256": "95d0f45f47820a8fa85564c1413b5c121889b1d0ede068b8a700666c7769540f",
+      "python_error": [
+        "AttributeError",
+        "'int' object has no attribute 'lower'"
+      ],
+      "native_error": [
+        "Go:*substore.ProxyShapeError",
+        "节点 type 必须是字符串，当前值：5"
+      ],
+      "reason": "native explicit node type validation replaces CPython AttributeError"
+    },
+    "surge_loon_corpus/24447": {
+      "input_sha256": "dafb4486ce5c04b3ff4f7e4fae6971bb934bc9933976d841ef73db357a5a65f4",
+      "python_error": [
+        "AttributeError",
+        "'int' object has no attribute 'lower'"
+      ],
+      "native_error": [
+        "Go:*substore.ProxyShapeError",
+        "节点 type 必须是字符串，当前值：5"
+      ],
+      "reason": "native explicit node type validation replaces CPython AttributeError"
+    },
+    "surge_loon_corpus/25056": {
+      "input_sha256": "1539ad0ca3f1cb94e4509ff3d03f894268dee1c5f93f92372429db6e09f182dd",
+      "python_error": [
+        "AttributeError",
+        "'int' object has no attribute 'lower'"
+      ],
+      "native_error": [
+        "Go:*substore.ProxyShapeError",
+        "节点 type 必须是字符串，当前值：5"
+      ],
+      "reason": "native explicit node type validation replaces CPython AttributeError"
+    },
+    "surge_loon_corpus/25057": {
+      "input_sha256": "c3e40b8c10fddd3dccf6beca88104740335a53ff9019dc168a7542fa08357e1e",
+      "python_error": [
+        "AttributeError",
+        "'int' object has no attribute 'lower'"
+      ],
+      "native_error": [
+        "Go:*substore.ProxyShapeError",
+        "节点 type 必须是字符串，当前值：5"
+      ],
+      "reason": "native explicit node type validation replaces CPython AttributeError"
+    },
+    "surge_loon_corpus/25466": {
+      "input_sha256": "61a3b7988d0e1f8301bd3c4bc4e98fd69f64a2c1e04ed5fdbedccdf2a50c832b",
+      "python_error": [
+        "AttributeError",
+        "'int' object has no attribute 'lower'"
+      ],
+      "native_error": [
+        "Go:*substore.ProxyShapeError",
+        "节点 type 必须是字符串，当前值：5"
+      ],
+      "reason": "native explicit node type validation replaces CPython AttributeError"
+    },
+    "surge_loon_corpus/25467": {
+      "input_sha256": "690a7dc7c76d59ff330bac82e4e5300e8529e0893c4746e634cd472b69765035",
+      "python_error": [
+        "AttributeError",
+        "'int' object has no attribute 'lower'"
+      ],
+      "native_error": [
+        "Go:*substore.ProxyShapeError",
+        "节点 type 必须是字符串，当前值：5"
+      ],
+      "reason": "native explicit node type validation replaces CPython AttributeError"
+    },
+    "surge_loon_corpus/25544": {
+      "input_sha256": "81af9c76bd379ba3574d42614bce26a5fb061eb0974eb58add43f4b3095bfce6",
+      "python_error": [
+        "AttributeError",
+        "'int' object has no attribute 'lower'"
+      ],
+      "native_error": [
+        "Go:*substore.ProxyShapeError",
+        "节点 type 必须是字符串，当前值：5"
+      ],
+      "reason": "native explicit node type validation replaces CPython AttributeError"
+    },
+    "surge_loon_corpus/25545": {
+      "input_sha256": "dfea3328b7759f02d36b74897f5e6e25b93c9baf81455d3fc4fb7d6938337300",
+      "python_error": [
+        "AttributeError",
+        "'int' object has no attribute 'lower'"
+      ],
+      "native_error": [
+        "Go:*substore.ProxyShapeError",
+        "节点 type 必须是字符串，当前值：5"
+      ],
+      "reason": "native explicit node type validation replaces CPython AttributeError"
+    },
+    "surge_loon_corpus/26190": {
+      "input_sha256": "61a3b7988d0e1f8301bd3c4bc4e98fd69f64a2c1e04ed5fdbedccdf2a50c832b",
+      "python_error": [
+        "AttributeError",
+        "'int' object has no attribute 'lower'"
+      ],
+      "native_error": [
+        "Go:*substore.ProxyShapeError",
+        "节点 type 必须是字符串，当前值：5"
+      ],
+      "reason": "native explicit node type validation replaces CPython AttributeError"
+    },
+    "surge_loon_corpus/26191": {
+      "input_sha256": "690a7dc7c76d59ff330bac82e4e5300e8529e0893c4746e634cd472b69765035",
+      "python_error": [
+        "AttributeError",
+        "'int' object has no attribute 'lower'"
+      ],
+      "native_error": [
+        "Go:*substore.ProxyShapeError",
+        "节点 type 必须是字符串，当前值：5"
+      ],
+      "reason": "native explicit node type validation replaces CPython AttributeError"
+    },
+    "surge_loon_corpus/26370": {
+      "input_sha256": "9828f0a67d1640f4830df7196e3d20c0e5a3e08ee54e97bf40ed941c0dab028c",
+      "python_error": [
+        "AttributeError",
+        "'int' object has no attribute 'lower'"
+      ],
+      "native_error": [
+        "Go:*substore.ProxyShapeError",
+        "节点 type 必须是字符串，当前值：5"
+      ],
+      "reason": "native explicit node type validation replaces CPython AttributeError"
+    },
+    "surge_loon_corpus/26371": {
+      "input_sha256": "db48be53c2e93b7d693fa2317037fce505777001382b37ff669b0bd327ac06f8",
+      "python_error": [
+        "AttributeError",
+        "'int' object has no attribute 'lower'"
+      ],
+      "native_error": [
+        "Go:*substore.ProxyShapeError",
+        "节点 type 必须是字符串，当前值：5"
+      ],
+      "reason": "native explicit node type validation replaces CPython AttributeError"
+    },
+    "surge_loon_corpus/26742": {
+      "input_sha256": "e0442c81fcd686e44451585737cba9664e8790b2ff73c2c1f72a56e167a00b73",
+      "python_error": [
+        "AttributeError",
+        "'int' object has no attribute 'lower'"
+      ],
+      "native_error": [
+        "Go:*substore.ProxyShapeError",
+        "节点 type 必须是字符串，当前值：5"
+      ],
+      "reason": "native explicit node type validation replaces CPython AttributeError"
+    },
+    "surge_loon_corpus/26743": {
+      "input_sha256": "f2b39ef34b715dc0934bcf87e545b1803a9e3db900f21e928469938dd9d3058f",
+      "python_error": [
+        "AttributeError",
+        "'int' object has no attribute 'lower'"
+      ],
+      "native_error": [
+        "Go:*substore.ProxyShapeError",
+        "节点 type 必须是字符串，当前值：5"
+      ],
+      "reason": "native explicit node type validation replaces CPython AttributeError"
+    },
+    "surge_loon_corpus/26978": {
+      "input_sha256": "b00fd41711aa7ee27aa9a4da351bcdf430b2c76dd82811ffc12f797df9000a89",
+      "python_error": [
+        "AttributeError",
+        "'int' object has no attribute 'lower'"
+      ],
+      "native_error": [
+        "Go:*substore.ProxyShapeError",
+        "节点 type 必须是字符串，当前值：5"
+      ],
+      "reason": "native explicit node type validation replaces CPython AttributeError"
+    },
+    "surge_loon_corpus/26979": {
+      "input_sha256": "34a4676eb2a534f86bd1b153433aed8bec8642b8761538d1db6c6829b2e92bf1",
+      "python_error": [
+        "AttributeError",
+        "'int' object has no attribute 'lower'"
+      ],
+      "native_error": [
+        "Go:*substore.ProxyShapeError",
+        "节点 type 必须是字符串，当前值：5"
+      ],
+      "reason": "native explicit node type validation replaces CPython AttributeError"
+    },
+    "surge_loon_corpus/27314": {
+      "input_sha256": "40bdad0040e7d4a191661dda2ad6369f1450a9e37e2c767b9f6e679b79cae721",
+      "python_error": [
+        "AttributeError",
+        "'int' object has no attribute 'lower'"
+      ],
+      "native_error": [
+        "Go:*substore.ProxyShapeError",
+        "节点 type 必须是字符串，当前值：5"
+      ],
+      "reason": "native explicit node type validation replaces CPython AttributeError"
+    },
+    "surge_loon_corpus/27315": {
+      "input_sha256": "7c6703c507259278a935a96b2cc9f342a969f750edaf3de107899e528b02a6e1",
+      "python_error": [
+        "AttributeError",
+        "'int' object has no attribute 'lower'"
+      ],
+      "native_error": [
+        "Go:*substore.ProxyShapeError",
+        "节点 type 必须是字符串，当前值：5"
+      ],
+      "reason": "native explicit node type validation replaces CPython AttributeError"
+    },
+    "surge_loon_corpus/27942": {
+      "input_sha256": "61a3b7988d0e1f8301bd3c4bc4e98fd69f64a2c1e04ed5fdbedccdf2a50c832b",
+      "python_error": [
+        "AttributeError",
+        "'int' object has no attribute 'lower'"
+      ],
+      "native_error": [
+        "Go:*substore.ProxyShapeError",
+        "节点 type 必须是字符串，当前值：5"
+      ],
+      "reason": "native explicit node type validation replaces CPython AttributeError"
+    },
+    "surge_loon_corpus/27943": {
+      "input_sha256": "690a7dc7c76d59ff330bac82e4e5300e8529e0893c4746e634cd472b69765035",
+      "python_error": [
+        "AttributeError",
+        "'int' object has no attribute 'lower'"
+      ],
+      "native_error": [
+        "Go:*substore.ProxyShapeError",
+        "节点 type 必须是字符串，当前值：5"
+      ],
+      "reason": "native explicit node type validation replaces CPython AttributeError"
+    },
+    "review_c12/2121": {
+      "input_sha256": "27f1bc43eebd84a63ca000e9e61e169088f111fa97e33f8ce47e925193e0fa65",
+      "python_error": null,
+      "native_error": [
+        "EasyTierSettingsError",
+        "Agent 上报的内核版本无法识别：alpha-123，请升级或重启 Agent"
+      ],
+      "reason": "approved nonempty unrecognized Agent version fails closed",
+      "native_mutated": {},
+      "python_mutated": {
+        "proxies": [
+          {
+            "name": "EasyTier",
+            "type": "easytier",
+            "network-name": "n",
+            "peers": [
+              "tcp://192.0.2.1:11010"
+            ]
+          }
+        ],
+        "proxy-groups": [],
+        "rules": []
+      },
+      "python_output": {
+        "proxy": "EasyTier",
+        "target": "EasyTier",
+        "rules": 0
+      }
+    },
+    "review_c12/2125": {
+      "input_sha256": "99a630f41f137bfde8c7d87e4111211b70daa3c715129d3a7f8d83b6be3a86d1",
+      "python_error": [
+        "EasyTierSettingsError",
+        "设备上的 Mihomo v１.19.30 不支持 EasyTier 节点（需要 v1.19.31 或更新），请先更新内核，或在 EasyTier 设置里不再下发到 Agent"
+      ],
+      "native_error": [
+        "EasyTierSettingsError",
+        "Agent 上报的内核版本无法识别：v１.19.30，请升级或重启 Agent"
+      ],
+      "reason": "approved nonempty unrecognized Agent version fails closed",
+      "native_mutated": {},
+      "python_mutated": {}
+    },
+    "corpus/34045": {
+      "input_sha256": "c606fffe83688eb0cbb003ac6e08f893f56712f2763c47da8a6f562da6885b37",
+      "python_error": [
+        "EasyTierSettingsError",
+        "EasyTier 节点名「EasyTier」与已有节点或策略组重名，请在 EasyTier 设置里改名"
+      ],
+      "native_error": [
+        "EasyTierSettingsError",
+        "Agent 上报的内核版本无法识别：alpha-abc，请升级或重启 Agent"
+      ],
+      "reason": "approved nonempty unrecognized Agent version fails closed",
+      "native_mutated": {
+        "proxies": [
+          {
+            "name": "EasyTier"
+          }
+        ],
+        "rules": null
+      },
+      "python_mutated": {
+        "proxies": [
+          {
+            "name": "EasyTier"
+          }
+        ],
+        "rules": null,
+        "proxy-groups": []
+      }
+    },
+    "corpus/35971": {
+      "input_sha256": "4645f88d8d2dbe6501d26d19562aee2615b6ff48f89abbd74ca285075eccb921",
+      "python_error": null,
+      "native_error": [
+        "EasyTierSettingsError",
+        "Agent 上报的内核版本无法识别：alpha-abc，请升级或重启 Agent"
+      ],
+      "reason": "approved nonempty unrecognized Agent version fails closed",
+      "native_mutated": {
+        "proxies": [
+          {
+            "name": "Relay",
+            "type": "ss"
+          }
+        ],
+        "proxy-groups": [
+          {
+            "name": "G",
+            "type": "select"
+          }
+        ],
+        "rules": [
+          "MATCH,DIRECT"
+        ],
+        "dns": {
+          "enable": true
+        }
+      },
+      "python_mutated": {
+        "proxies": [
+          {
+            "name": "Relay",
+            "type": "ss"
+          },
+          {
+            "name": "ET 1",
+            "type": "easytier",
+            "network-name": "home",
+            "network-secret": "s3cret",
+            "peers": [
+              "tcp://203.0.113.10:11010"
+            ],
+            "udp": true
+          }
+        ],
+        "proxy-groups": [
+          {
+            "name": "G",
+            "type": "select"
+          }
+        ],
+        "rules": [
+          "IP-CIDR,10.200.0.0/24,ET 1,no-resolve",
+          "IP-CIDR,10.144.144.0/24,ET 1,no-resolve",
+          "MATCH,DIRECT"
+        ],
+        "dns": {
+          "enable": true
+        }
+      },
+      "python_output": {
+        "proxy": "ET 1",
+        "target": "ET 1",
+        "rules": 2
+      }
+    }
+  }
+}

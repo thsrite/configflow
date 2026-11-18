@@ -288,3 +288,75 @@ convert 的订阅协作者直接调用 typed owner。下面各“阶段/剩余�
   buffer-pool噪声过紧（35.86→36.12MB/op），已改为基线2%+64KiB，仍小于一次1MiB配置
   解码，远小于逐节点16MiB。算法/正常字节/原语料期待没有改变。后续convert race跳过整套
   Corpus/Reference/Golden/RecordedPython/GenerationBytes，这些由非race跨包/字节门覆盖。
+
+## 最终改动清单与接线边界
+
+- typed 持久化：substore.Cache / CacheMetadata / Traffic，SaveCache/LoadCache/RemoveCache/
+  PruneOrphanCaches；runtimeState/RuntimeStatus/Snapshot；DependencyStatus/Release/UpdateState。
+  共享 repo 新增 ReadSharedBytes/RemoveSharedFile，保留真实叶锁与取消提交闸门。
+- typed 解析/生成：ParseList/ParsedProxy、FilterNodes/FilterProxies、RelinkListeners、HostsData/
+  HostIndex/MergeHosts、DialersData/SourceDialers/AddGroups、LowerChains/ChainProviders、ApplyDNS。
+  原始未知存储由 model.Raw/Fields 保留，开放 YAML 始终走 yamlx；没有节点/订阅级整配置解码。
+- 两条有意保留的外部订阅兼容：decodeSubscriptionBase64 的宽松ASCII垃圾/padding规则；
+  airportGroupType 的四类白名单与 select fallback。用户存储身份字段仍严格，Name数字转文本。
+- convert 产品改动仅：legacy.go（旧回调转到 typed owner）、subscription_nodes.go（typed parser
+  注册）、subscription_dialers.go（唯一共享 dialer owner 注册）、subscription_environment.go
+  （native owner 接线）。没有改 Mihomo/Surge/Loon 生成器算法；另有两份接线/分配测试。
+- 待其他 owner 后续移除：rules/check/provider/refresh/API 的旧调用仍可经 legacy*.go 转码；
+  本任务不复制它们的业务，不宣称整个仓库已无 jsonx。PSL 固定快照/公共后缀查询是既有业务
+  数据与算法，保持其27173条语料，不升级名单导致域名归属变化。
+- 前置阶段提交：8164958d7、43be7e5ec、7102e685c、6b13526e8、380734ae7、846d03761、
+  a7a836792、a61b78ac9、ccced28bb、01971b968、1b709ee31。
+  收口：1c17dfe55（native chains）、171447af2（删除剩余tempfile探测仿真）。
+
+### 核心最终定向检查
+
+以下命令均经 `RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc '…'`，在server目录执行，
+固定 GOMAXPROCS=4、-p4；原始语料由后续非race跨包命令覆盖，不重复完整race语料矩阵。
+
+- `go test -race -p 4 -count=1 -timeout=8m ./internal/subs ./internal/substore ./internal/model
+  ./internal/convert -skip "Corpus|OriginalInputsUnchanged|Reference|Golden"`：前三包通过，convert
+  误带全套生成测试后停止（见上）。
+- `go test -race -p 4 -count=1 -timeout=8m ./internal/convert -skip
+  "Corpus|OriginalInputsUnchanged|Reference|Golden|RecordedPython|GenerationBytes"`
+  → `ok configflow/internal/convert 51.289s`。
+- `go test -race -p 4 -count=1 -timeout=5m ./internal/substore -run
+  "TestDefaultRoot|TestN89Runtime|TestStateFileBytes|TestModeIsRead|TestCommandProtocol"`
+  → `ok configflow/internal/substore 8.297s`（含最终临时根目录选择改动）。
+- `go vet -p 4 ./internal/subs ./internal/substore ./internal/model ./internal/convert` → 无输出、退出0。
+
+### 跨包发现及修复
+
+首轮跨包非race FAIL已完整收集，不能记全绿：convert（全角版本业务门禁1条、私有数字type
+错误类别22条）、provider（无关根复杂键3条）、refresh（无cause失败业务消息1条）、mosdns
+（golden依赖清单仍指已删除文件）。其余包当轮通过，包括subs15.484s/substore0.259s/
+routers62.832s/oxidns21.363s/规则与仓储等。
+
+- EasyTier按协调者新裁定在Agent非空未知版本处fail-closed，空/缺失/null不变；仅这次必要
+  改动触及 convert/easytier.go、messages.go，另外增加回归，不动生成器算法。
+- 22个错误类别按已批准的“删除Python私有报错”做逐行精确native参照；真实Python重跑原
+  输入确认历史结果，与4条版本项共26条。原archive、原比较器、8c原分类索引不改。
+- provider/refresh为本次迁移遗漏，产品修复后保持原业务期待：只投影proxies子树，固定
+  SubscriptionFetchError业务名不丢。新专例均直接走真实消费入口。
+- mosdns清单删除已不存在的旧subs文件，后续通过canonical source建议/审计、只刷新真实
+  Python reference元数据；要求所有Python输出保持相同，不伪造Go期望。
+
+### 跨包修复验证结果
+
+- `go test -p 4 -count=1 -timeout=8m ./internal/convert -run
+  "TestN89CallerReference|TestSurgeLoonCorpus|TestReviewC12References|TestCorpus|TestN89AgentVersion"`
+  → convert46.575s；provider TestCorpus18.888s、refresh TestReferenceCorpus2.203s、substore
+  新未消费复杂键回归0.009s。全部原业务输出恢复，22条私有错误+4条版本裁定独立参照。
+- 四个版本输入精确绑定：review_c12/2121、2125，corpus/34045、35971；alpha-*与全角版本
+  都拒绝，非法版本先于图修改，原输入的完整 native_mutated 同时比较。正常/空值版本不变。
+- Canonical `go run ./tools/pyref -suggest-sources` 人工核查仅影响mosdns的三个依赖组：删除四个
+  已删除旧文件、加入20个新typed产品文件；没有放宽product边界或新增豁免。
+- `go test -p 4 -count=1 ./tools/pyref -run "^TestAuditRepository$"` → 0.548s。
+- `PYREF_MODE=record PYREF_ACCEPT=1 go test -p 4 -count=1 -timeout=12m ./internal/mosdns -run
+  "^(TestCorpus|TestRecordedPythonTests|TestReviewUnholdableYAMLOutsideTheOutputMatchesPython)$"`
+  →49.701s；紧接 `PYREF_MODE=check` 同命令 →49.121s。
+  与git原文件逐项断言 version/entries/declared-input/venv-dependencies 完全相同：分别2863/0/5个
+  exact entries不变；只更新metadata源码hash。0条的既有占位组不计作新增覆盖。
+- `go test -race -p 4 -count=1 -timeout=6m ./internal/convert ./internal/substore ./internal/refresh
+  -run "TestN89AgentVersion|TestN89CallerReference|TestN89ProxyReader|TestN89FetchWithout|TestN89NativeProxyRecords"`
+  → convert5.167s/substore1.035s/refresh1.024s。

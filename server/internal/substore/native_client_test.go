@@ -221,3 +221,12 @@ func TestN89FlightWaiterShutdownDoesNotWaitForOwner(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestN89ProxyReaderIgnoresUnconsumedComplexKeys(t *testing.T) {
+	for _, source := range []string{"{[a]: b}", "? [a]\n: b\nproxies: []\n"} {
+		nodes, err := ParseProxyNodes(source)
+		if err != nil || len(nodes) != 0 {
+			t.Fatalf("unconsumed metadata rejected: %v %#v", err, nodes)
+		}
+	}
+}

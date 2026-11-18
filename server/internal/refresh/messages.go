@@ -45,3 +45,5 @@ const (
 	msgRoundPanic           = "Scheduled refresh round panicked"
 	msgRoundFailed          = "Scheduled refresh round failed: %s"
 )
+
+const msgSubscriptionFetchUnknown = "更新失败（SubscriptionFetchError）"

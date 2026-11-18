@@ -30,9 +30,6 @@ func ParseProxyNodes(text string) ([]*yamlx.Node, error) {
 	if err != nil {
 		return nil, fmt.Errorf(msgInvalidYAML, err)
 	}
-	if err := yamlx.ProjectJSONKeys(root, yamlx.StringifyScalarKeys); err != nil {
-		return nil, err
-	}
 	root = yamlx.Resolve(root)
 	if root == nil || root.Kind != yaml.MappingNode {
 		return []*yamlx.Node{}, nil
@@ -40,6 +37,11 @@ func ParseProxyNodes(text string) ([]*yamlx.Node, error) {
 	list := yamlx.Get(root, "proxies")
 	if list == nil {
 		return []*yamlx.Node{}, nil
+	}
+	// Only the consumed proxies subtree is projected. Unrelated source keys
+	// must not change the existing empty-provider or provider-validation path.
+	if err := yamlx.ProjectJSONKeys(list, yamlx.StringifyScalarKeys); err != nil {
+		return nil, err
 	}
 	if _, err := yamlx.ToJSON(list); err != nil {
 		return nil, err

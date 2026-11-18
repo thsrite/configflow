@@ -177,6 +177,7 @@ func classed(err error) error {
 // through generate_surge_config / generate_loon_config (bytes, errors,
 // mutations), random nodes, Mihomo proxy lists, groups, Loon rules and names.
 func TestSurgeLoonCorpus(t *testing.T) {
+	nativeSubs := nativeSubsCallers(t, "surge_loon_corpus")
 	restore := convert.SetMihomoEnv(corpusEnv(nil, nil))
 	defer restore()
 	rows := loadJSONLines(t, "testdata/surge_loon_corpus.jsonl.gz")
@@ -211,6 +212,9 @@ func TestSurgeLoonCorpus(t *testing.T) {
 			}
 		}
 		row := rowOf(entry)
+		if expected, ok := nativeSubs[i]; ok {
+			row.errClass, row.errMsg = expected.NativeError[0], expected.NativeError[1]
+		}
 		counts[row.fn]++
 		// Existing typed decoder cases remain classified, but every representable
 		// row still executes its public entry below before an oracle decision.

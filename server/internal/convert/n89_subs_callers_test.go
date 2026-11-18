@@ -1,0 +1,109 @@
+package convert_test
+
+import (
+	"bufio"
+	"bytes"
+	"compress/gzip"
+	"configflow/internal/convert"
+	"configflow/internal/jsonx"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"os"
+	"strconv"
+	"strings"
+	"testing"
+)
+
+type subsCallerCase struct {
+	InputSHA      string          `json:"input_sha256"`
+	PythonError   [2]string       `json:"python_error"`
+	NativeError   [2]string       `json:"native_error"`
+	Reason        string          `json:"reason"`
+	NativeMutated json.RawMessage `json:"native_mutated"`
+}
+
+func nativeSubsCallers(t *testing.T, archive string) map[int]subsCallerCase {
+	t.Helper()
+	data, err := os.ReadFile("testdata/n89_subs_callers_reference.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixture struct {
+		Sources map[string]string         `json:"sources"`
+		Cases   map[string]subsCallerCase `json:"cases"`
+	}
+	if err := json.Unmarshal(data, &fixture); err != nil {
+		t.Fatal(err)
+	}
+	source, err := os.ReadFile("testdata/" + archive + ".jsonl.gz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(source)
+	if hex.EncodeToString(sum[:]) != fixture.Sources[archive] {
+		t.Fatal("subscription caller source drift")
+	}
+	reader, err := gzip.NewReader(bytes.NewReader(source))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	scanner := bufio.NewScanner(reader)
+	scanner.Buffer(make([]byte, 65536), 1<<24)
+	result := map[int]subsCallerCase{}
+	for index := 0; scanner.Scan(); index++ {
+		expected, ok := fixture.Cases[archive+"/"+strconv.Itoa(index)]
+		if !ok {
+			continue
+		}
+		sum := sha256.Sum256(scanner.Bytes())
+		if hex.EncodeToString(sum[:]) != expected.InputSHA || expected.Reason == "" {
+			t.Fatal("subscription caller input drift", index)
+		}
+		var original struct {
+			Error [2]string `json:"err"`
+		}
+		if err := json.Unmarshal(scanner.Bytes(), &original); err != nil || original.Error != expected.PythonError {
+			t.Fatal("historical caller error changed", index)
+		}
+		result[index] = expected
+	}
+	if err := scanner.Err(); err != nil {
+		t.Fatal(err)
+	}
+	count := 0
+	for key := range fixture.Cases {
+		if strings.HasPrefix(key, archive+"/") {
+			count++
+		}
+	}
+	if len(result) != count {
+		t.Fatal("unconsumed caller fixture")
+	}
+	return result
+}
+
+func TestN89CallerReferenceProvenance(t *testing.T) {
+	if len(nativeSubsCallers(t, "surge_loon_corpus")) != 22 {
+		t.Fatal("caller reference count changed")
+	}
+	for _, archive := range []string{"review_c12", "corpus"} {
+		versions := nativeSubsCallers(t, archive)
+		if len(versions) != 2 {
+			t.Fatal("version reference count changed")
+		}
+		rows := loadJSONLines(t, "testdata/"+archive+".jsonl.gz")
+		for index, expected := range versions {
+			args := rows[index].GetList("args")
+			document := args[0].(*jsonx.Object).DeepCopy()
+			_, err := convert.ApplyEasyTier(document, args[1], true, args[3])
+			var invalid *convert.EasyTierSettingsError
+			mutated, parseErr := jsonx.Parse(expected.NativeMutated)
+			if expected.NativeError[0] != "EasyTierSettingsError" || !errors.As(err, &invalid) || err.Error() != expected.NativeError[1] || parseErr != nil || !jsonx.Equal(document, mutated) {
+				t.Fatalf("Agent fixture %s/%d mismatch: %v", archive, index, err)
+			}
+		}
+	}
+}

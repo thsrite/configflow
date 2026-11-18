@@ -464,7 +464,11 @@ func ApplyEasyTierNode(document *yamlx.Node, config *model.Config, forAgent bool
 			return nil, errors.New(msgETVersionType)
 		}
 	}
-	if parsed, ok := subs.ParseCoreVersion(version); ok {
+	parsed, recognized := subs.CoreVersion(version)
+	if forAgent && version != "" && !recognized {
+		return nil, fmt.Errorf(msgETAgentVersionUnknown, version)
+	}
+	if recognized {
 		for i, part := range parsed {
 			if cmp := part.Cmp(big.NewInt(EasyTierMinCoreVersion[i])); cmp < 0 {
 				return nil, fmt.Errorf(msgETVersion, version)

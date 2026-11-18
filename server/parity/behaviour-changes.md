@@ -1894,3 +1894,24 @@ world 保留旧文件。原 archive 不改；独立 Python 参考绑定完整 ar
   TMPDIR/TEMP/TMP 优先级、绝对路径和既有有效 state.json 的位置；无显式配置使用 os.TempDir。
   不可用的显式目录由实际写入返回错误，不再悄悄退到其他目录并启动第二份 runtime。
   目录选择本身不写文件。旧 Python 原样 state.json 仍由读取回归验证；正常命令/副作用不改。
+
+### N8-9 subs — 跨包调用边界收口（2026-11-19）
+
+- Python bug 修复（协调者裁定）：EasyTier 的 Agent 门禁对非空但无法解析的 coreVersion
+  fail-closed，固定中文消息“Agent 上报的内核版本无法识别：<原值>，请升级或重启 Agent”。
+  不恢复非ASCII机器版本数字；空/未上报/null仍走既有unknown路径，非Agent路径不扩大限制。
+  冻结 review_c12 row2125（v１.19.30）绑定完整原输入、真实Python旧错误和明确native错误；
+  正常ASCII版本和生成字节不变。新增回归检查拒绝发生在修改文档之前。
+- 已批准的私有引擎错误替换：Surge/Loon的22条既有 proxies_* 数字type输入，Python原为
+  AttributeError，Go明确 ProxyShapeError：“节点 type 必须是字符串，当前值：5”。
+  由真实Python重跑确认旧错误，逐行输入SHA及完整native错误固定在独立caller fixture；
+  原archive/比较器/8c分类索引均不改，其他错误类别不放宽。4条版本项与其共26条精确参照。
+- 修复本次迁移引入的两处调用遗漏：ParseProxyNodes只投影实际消费的proxies子树，保持
+  无proxies但有无关复杂YAML键时的原空列表行为；DescribeFailure对无cause的
+  SubscriptionFetchError保持“更新失败（SubscriptionFetchError）”，不泄露Go包名到固定业务文案。
+  两项均有修复前失败的原跨包语料和专门回归，未改其业务期待。
+
+- 上述Agent版本新裁定还覆盖冻结corpus/34045、35971与review_c12/2121的alpha-*版本；
+  和row2125共4条，明确在任何图修改前拒绝，完整未修改图进入独立native期待。
+  MosDNS三份Python参考只刷新已删除/新增代码的依赖元数据；2863/0/5个既有exact entries、
+  声明输入hash及venv依赖hash均与git原文件相同，未修改Python业务答案。

@@ -38,6 +38,8 @@ func FailureReason(err error) string {
 			err = subscription.DirectError
 		} else if subscription.SubStoreError != nil {
 			err = subscription.SubStoreError
+		} else {
+			return msgSubscriptionFetchUnknown
 		}
 	}
 	var status interface{ HTTPStatus() int }

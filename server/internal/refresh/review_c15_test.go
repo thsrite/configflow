@@ -81,3 +81,9 @@ func TestReviewTypedLookupUsesCurrentDeclaration(t *testing.T) {
 		t.Fatal("changed declaration claimed stored cache", err)
 	}
 }
+
+func TestN89FetchWithoutCausesRetainsBusinessDiagnostic(t *testing.T) {
+	if got := DescribeFailure(&substore.SubscriptionFetchError{}); got != msgSubscriptionFetchUnknown {
+		t.Fatal(got)
+	}
+}

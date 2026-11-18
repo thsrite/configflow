@@ -9,6 +9,7 @@ import (
 	"bufio"
 	"compress/gzip"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -228,9 +229,11 @@ func noneSlotOrder(t *testing.T, row corpusRow, result any) bool {
 }
 
 func TestReviewC12References(t *testing.T) {
+	nativeVersions := nativeSubsVersionCases(t, "review_c12")
 	rows := loadRows(t, "testdata/review_c12.jsonl.gz")
 	failures, known := 0, 0
 	for i, row := range rows {
+		applyNativeSubsVersion(&row, nativeVersions.GetObject(fmt.Sprintf("review_c12/%d", i)))
 		if commonRowIssue(row) != "" {
 			known++
 			continue

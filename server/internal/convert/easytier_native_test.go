@@ -3,6 +3,7 @@ package convert
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -302,4 +303,34 @@ func easyTierRowIssue(row corpusRow) string {
 		}
 	}
 	return ""
+}
+
+func TestN89AgentVersionFailsClosedBeforeChangingDocument(t *testing.T) {
+	var settings model.EasyTierSettings
+	if err := json.Unmarshal([]byte(`{"enabled":true,"apply_to":"all","options":{"network-name":"test","peers":["tcp://192.0.2.1:11010"]}}`), &settings); err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name           string
+		version        json.RawMessage
+		agent, invalid bool
+	}{
+		{"missing", nil, true, false}, {"null", json.RawMessage(`null`), true, false}, {"empty", json.RawMessage(`""`), true, false},
+		{"valid", json.RawMessage(`"v1.19.31"`), true, false}, {"fullwidth", json.RawMessage(`"v１.19.30"`), true, true},
+		{"unknown", json.RawMessage(`"unrecognized"`), true, true}, {"non-agent", json.RawMessage(`"unrecognized"`), false, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			document := yamlx.Map()
+			_, err := ApplyEasyTierNode(document, &model.Config{Profile: &model.Profile{Mihomo: model.MihomoSettings{EasyTier: &settings}}}, test.agent, test.version)
+			if test.invalid {
+				var version string
+				_ = json.Unmarshal(test.version, &version)
+				if err == nil || err.Error() != fmt.Sprintf(msgETAgentVersionUnknown, version) || len(document.Content) != 0 {
+					t.Fatalf("invalid Agent version changed document: %v", err)
+				}
+			} else if err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
 }
