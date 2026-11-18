@@ -112,6 +112,14 @@ func TestReviewStageRejectsNewerCommittedDeclaration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	backup := stage.path + ".bak"
+	if err = os.WriteFile(backup, []byte("+.prior-backup.example\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	backupBefore, err := os.Stat(backup)
+	if err != nil {
+		t.Fatal(err)
+	}
 	// C33's DB commit is followed by a different owner's fresh transaction
 	// before C33 reaches its cache publication. No sleeps or mocked stores.
 	for _, content := range []string{"+.first-commit.example\n", "+.newer-owner.example\n"} {
@@ -126,6 +134,11 @@ func TestReviewStageRejectsNewerCommittedDeclaration(t *testing.T) {
 	before := doc(t, s)
 	if err = stage.commit(s.Context()); !errors.Is(err, errStaleCacheStage) {
 		t.Fatalf("published an obsolete stage: %v", err)
+	}
+	assertCacheBackup(t, stage.path, "+.prior-backup.example\n")
+	backupAfter, err := os.Stat(backup)
+	if err != nil || !os.SameFile(backupBefore, backupAfter) || !backupBefore.ModTime().Equal(backupAfter.ModTime()) {
+		t.Fatal("obsolete stage touched backup", err)
 	}
 	if doc(t, s) != before {
 		t.Fatal("cache guard changed DB/revision")

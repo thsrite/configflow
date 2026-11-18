@@ -2054,6 +2054,10 @@ Python：完整两路由 `backend/routes/rule_library.py`（540行）、`proxy_g
 
 60秒独立FuzzEditableContent PASS（39412次）；最终冻结树全仓gofmt/vet通过，proddiff harness direct/discover各42测试 PASS。旧树门禁均已取消，不计完整通过；最终树.64 gate在06:01:39入队，06:16:53仍无slot，15分14秒后按约定终止自身进程组，退出143，未开始任何检查。完整门禁由协调者在合并树运行cf-gate；精确命令、日志位置、已完成定向结果见报告。只允许读测试服务器离线快照，报告只记录new/stale/self-check；不接触生产，不复制快照内容，不push、不使用子agent。
 
+备份合同衔接（2026-11-18）：协调者在C33接通后的configdiff T25发现PUT/DELETE缺少Python保留的旧主缓存 `.list.bak`。新分支 `go-fix-c33-bak` 从go@d43cca6e4起步，最终变基到go@a9d6ce86c（c31源码及一条仅WORKFLOW的门禁说明）；修复代码0ddafc602→a0bbc3d6a（C33 Go代码未再修改）：L3声明守卫通过后捕获旧主字节，主rename后以0600 temp尽力刷新备份，备份失败不失败主写；最后一次owner取消检查在主rename前，成功后本地收尾不可取消。该备份没有自动恢复读取方，但实际参与unchanged-cache和孤儿ID保护，协调者已明确要求保留。O3-6c已收到Paseo文件修改通知；不改它的repo/taskstatus/rulefetch文件。
+
+新增备份/权限/空旧内容、unchanged-cache、孤儿ID、备份失败、主rename后Runtime关机回归；F7拒绝验证备份字节/inode/mtime不变；四点真实SIGKILL/reopen也核对备份和恢复后轮转。定向race9.198s通过。T25两个目标library/operation-2及operation-3均200/compared/diffs0；整组仍退出1（另有rules/operation-5的MosDNS revision1/10差异，preview未实现），不能称整组通过。没有改比较器或复制其他CFG票。变基前.32全仓格式/vet及C33/C32/rulefetch/rules/server race/live均通过；最终c31基底复验格式/vet、AST门1.117s、C33 API92.060s/live145.000s、rules19.379s、server2.451s通过，T25两目标再次compared/diffs0，整组仍保留上述其他差异。最终.64 gate于08:15:16排队，08:30:21仍无slot，按15分钟上限核对自身PID/PGID/cwd后终止，退出143，未开始检查、不计完整通过；协调者按WORKFLOW在批次合并树运行cf-gate。完整命令及结果见 [review-c33-bak.md](review-c33-bak.md)。
+
 ## C34 — generate, config and profile routes, config export
 
 **Status: `missing`** · prereqs: C18, C19, C20, C28, C29, C31, C33 · Go: internal/api/generate, api/config, api/profiles, internal/configexport (new; internal/redact exists)

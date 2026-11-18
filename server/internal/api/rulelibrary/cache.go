@@ -257,6 +257,12 @@ func (s *stagedCache) publish(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	// Capture only the current primary, under the declaration guard. Reading
+	// failure must not block publication or replace a previously valid backup.
+	previous, previousErr := os.ReadFile(s.path)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if err := s.replace(ctx, s.temp, s.path); err != nil {
 		if ctx.Err() == nil {
 			_ = os.Remove(s.path)
@@ -266,17 +272,43 @@ func (s *stagedCache) publish(ctx context.Context) error {
 		}
 		return fmt.Errorf("replace rule cache: %w", err)
 	}
+	// Rename is the publication point. Finish its durability, best-effort
+	// backup and receipt removal even if shutdown starts after this point.
+	ctx = ctxx.Uninterruptible(ctx)
 	// Persist the replacement before clearing its durable invalidation receipt.
 	if err := syncDirectory(ctx, filepath.Dir(s.path)); err != nil {
 		return fmt.Errorf("persist rule cache replacement: %w", err)
 	}
-	if err := ctx.Err(); err != nil {
-		return err
+	if previousErr == nil {
+		s.refreshBackup(ctx, previous)
 	}
 	if err := os.Remove(s.marker); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("clear rule cache invalidation: %w", err)
 	}
 	return syncDirectory(ctx, filepath.Dir(s.path))
+}
+
+// refreshBackup retains the previous primary after a successful publication.
+// A failed refresh leaves the old backup intact and cannot fail the main write.
+func (s *stagedCache) refreshBackup(ctx context.Context, previous []byte) {
+	file, err := os.CreateTemp(filepath.Dir(s.path), ".rule-edit-"+filepath.Base(s.path)+"-backup-*.tmp")
+	if err != nil {
+		return
+	}
+	defer os.Remove(file.Name())
+	_, err = file.Write(previous)
+	if err == nil {
+		err = file.Sync()
+	}
+	if closeErr := file.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return
+	}
+	if err = os.Rename(file.Name(), s.path+".bak"); err == nil {
+		_ = syncDirectory(ctx, filepath.Dir(s.path))
+	}
 }
 
 func syncDirectory(ctx context.Context, path string) error {

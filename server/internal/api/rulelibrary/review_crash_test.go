@@ -39,6 +39,15 @@ func TestReviewCacheCrashRecovery(t *testing.T) {
 			if text(item, "content") != want {
 				t.Fatalf("unexpected reopened DB: %s", text(item, "content"))
 			}
+			path, err := cachePath(s.Context(), item)
+			if err != nil {
+				t.Fatal(err)
+			}
+			backup := "+.prior-backup.example\n"
+			if point == "complete" {
+				backup = "+.old.example\n"
+			}
+			assertCacheBackup(t, path, backup)
 			raw, err := legacy(item)
 			if err != nil {
 				t.Fatal(err)
@@ -55,10 +64,11 @@ func TestReviewCacheCrashRecovery(t *testing.T) {
 			if _, err = (&Service{client: rulefetch.DefaultClient}).Cache(s.Context(), recordJSON(t, `{"rule_ids":["manual"]}`)); err != nil {
 				t.Fatal(err)
 			}
-			path, err := cachePath(s.Context(), item)
-			if err != nil {
-				t.Fatal(err)
+			previousPrimary := "+.old.example\n"
+			if point == "renamed" || point == "complete" {
+				previousPrimary = "+.committed.example\n"
 			}
+			assertCacheBackup(t, path, previousPrimary)
 			if _, err = os.Stat(path + ".invalid"); !os.IsNotExist(err) {
 				t.Fatal("restart repair retained invalidation", err)
 			}
@@ -83,6 +93,13 @@ func TestReviewCacheCrashChild(t *testing.T) {
 	createManual(t, s)
 	item, err := source(s.Context(), "manual")
 	if err != nil {
+		t.Fatal(err)
+	}
+	path, err := cachePath(s.Context(), item)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(path+".bak", []byte("+.prior-backup.example\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	crash := func() {
