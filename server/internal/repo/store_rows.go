@@ -176,8 +176,8 @@ func encodeMeta(meta *jsonx.Object) (map[string]json.RawMessage, error) {
 	return result, nil
 }
 
-func (r *Repository) createStore(doc, meta *jsonx.Object) (storedEntry, error) {
-	raw, err := encodeRows(doc, nil)
+func (r *Repository) createStore(doc *model.Document, meta *jsonx.Object) (storedEntry, error) {
+	raw, err := encodeModelRows(doc, nil)
 	if err != nil {
 		return storedEntry{}, err
 	}

@@ -353,3 +353,13 @@ func decodeLegacyRecord(object *jsonx.Object, record any) error {
 	}
 	return json.Unmarshal(data, record)
 }
+
+// validateLegacyDocument is write validation of a document built as jsonx
+// (imports and fresh data directories).
+func validateLegacyDocument(document *jsonx.Object) error {
+	typed, err := modelFromLegacy(document, nil)
+	if err != nil {
+		return err
+	}
+	return validateDocument(typed)
+}

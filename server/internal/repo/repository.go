@@ -386,10 +386,14 @@ func (r *Repository) createFreshLocked() error {
 	if err != nil {
 		return err
 	}
-	if _, err := ensureLegacyRuleProxyToken(document.GetObject("system")); err != nil {
+	typed, err := modelFromLegacy(document, nil)
+	if err != nil {
 		return err
 	}
-	if err := ValidateDocument(document); err != nil {
+	if _, err := ensureSystemTokens(&typed.System); err != nil {
+		return err
+	}
+	if err := validateDocument(typed); err != nil {
 		return err
 	}
 	// _migrate_raw_cache: the shared cache directories exist from the start.
@@ -407,7 +411,7 @@ func (r *Repository) createFreshLocked() error {
 		"migration", jsonx.Obj("source", "defaults", "at", now, "snapshot", nil),
 		"legacy_config", jsonx.Obj("sha256", nil, "size", nil, "revisions", revisionsOf(document),
 			"content", nil, "status", "migrated", "at", now, "data_source", false))
-	entry, err := r.createStore(document, meta)
+	entry, err := r.createStore(typed, meta)
 	if err != nil {
 		return err
 	}

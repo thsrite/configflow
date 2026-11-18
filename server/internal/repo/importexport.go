@@ -1,17 +1,20 @@
 package repo
 
 import (
-	"configflow/internal/ctxx"
 	"context"
+	"encoding/json"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"configflow/internal/ctxx"
 	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/rules"
 )
 
@@ -94,16 +97,21 @@ func (r *Repository) exportAll(ctx context.Context, desensitize bool) (result *j
 	return h.SanitizeExternalPayload(ctx, result, systemConfig)
 }
 
-// prepareImport is _prepare_import.
-func (r *Repository) prepareImport(data *jsonx.Object) (*jsonx.Object, error) {
-	document, err := r.convertImport(data, nil)
+// prepareImport is _prepare_import: the imported data as a validated typed
+// document with its rule proxy token maintained.
+func (r *Repository) prepareImport(data *jsonx.Object) (*model.Document, error) {
+	converted, err := r.convertImport(data, nil)
 	if err != nil {
 		return nil, err
 	}
-	if _, err := ensureLegacyRuleProxyToken(document.GetObject("system")); err != nil {
+	document, err := modelFromLegacy(converted, nil)
+	if err != nil {
 		return nil, err
 	}
-	if err := ValidateDocument(document); err != nil {
+	if _, err := ensureSystemTokens(&document.System); err != nil {
+		return nil, err
+	}
+	if err := validateDocument(document); err != nil {
 		return nil, err
 	}
 	return document, nil
@@ -198,55 +206,48 @@ func (r *Repository) snapshot(reason string) (string, error) {
 	return destination, nil
 }
 
-// replaceObject is target.clear(); target.update(source).
-func replaceObject(target, source *jsonx.Object) {
-	for _, key := range target.Keys() {
-		target.Delete(key)
-	}
-	target.Update(source)
-}
-
 // applyImport is _apply_import: replace the open transaction's document with
 // an imported one. The database is copied aside first; the previous rule
 // proxy tokens are retired and every revision advances.
-func (r *Repository) applyImport(previous, document *jsonx.Object, reason string) (string, error) {
+func (r *Repository) applyImport(tx *transaction, document *model.Document, reason string) (string, error) {
 	snapshot, err := r.snapshot(reason)
 	if err != nil {
 		return "", err
 	}
-	settings := document.GetObject("system").GetObject("system_config")
-	oldSettings := previous.GetObject("system").GetObject("system_config")
-	retired, err := compatList(settings.SetDefault("retired_rule_proxy_tokens", []any{}))
+	previous := tx.document
+	settings := &document.System.SystemConfig
+	oldView, err := viewOf(&previous.System.SystemConfig)
 	if err != nil {
 		return "", err
 	}
-	tokens := []any{oldSettings.Value("rule_proxy_token")}
-	oldRetired, err := compatList(oldSettings.GetOr("retired_rule_proxy_tokens", []any{}))
-	if err != nil {
-		return "", err
+	tokens := []string{previous.System.SystemConfig.RuleProxyToken}
+	var oldRetired []json.RawMessage
+	if raw, _ := oldView.get("retired_rule_proxy_tokens"); jsonKind(raw) == '[' {
+		_ = json.Unmarshal(raw, &oldRetired)
 	}
-	tokens = append(tokens, oldRetired...)
-	for _, value := range tokens {
-		token, ok := value.(string)
-		if !ok || token == "" || jsonx.Equal(token, settings.Value("rule_proxy_token")) {
+	for _, item := range oldRetired {
+		if token, ok := jsonString(item); ok {
+			tokens = append(tokens, token)
+		}
+	}
+	for _, token := range tokens {
+		if token == "" || token == settings.RuleProxyToken || slices.Contains(settings.RetiredRuleProxyTokens, token) {
 			continue
 		}
-		known := false
-		for _, item := range retired {
-			known = known || item == token
-		}
-		if !known {
-			retired = append(append([]any{}, retired...), token)
-			settings.Set("retired_rule_proxy_tokens", retired)
+		settings.RetiredRuleProxyTokens = append(slices.Clone(settings.RetiredRuleProxyTokens), token)
+	}
+	if settings.RetiredRuleProxyTokens == nil {
+		settings.RetiredRuleProxyTokens = []string{}
+	}
+	document.System.Revision = previous.System.Revision + 1
+	document.Shared.Revision = previous.Shared.Revision + 1
+	for _, profile := range document.Profiles {
+		profile.Revision = 1
+		if old := profileByKey(previous, profile.Key()); old != nil {
+			profile.Revision = old.Revision + 1
 		}
 	}
-	document.GetObject("system").Set("_revision", jsonx.Int(revisionOf(previous.GetObject("system"))+1))
-	document.GetObject("shared").Set("_revision", jsonx.Int(revisionOf(previous.GetObject("shared"))+1))
-	for key, value := range document.GetObject("profiles").All() {
-		old := previous.GetObject("profiles").GetObject(key)
-		value.(*jsonx.Object).Set("_revision", jsonx.Int(revisionOf(old)+1))
-	}
-	replaceObject(previous, document)
+	tx.document = document
 	return snapshot, nil
 }
 
@@ -261,11 +262,11 @@ func (r *Repository) ImportAll(ctx context.Context, data *jsonx.Object) (*jsonx.
 		return nil, err
 	}
 	batch := false
-	err = r.update(ctx, writeOptions{batch: &batch}, func(ctx context.Context, previous *jsonx.Object) error {
+	err = r.transact(ctx, writeOptions{batch: &batch}, func(ctx context.Context, tx *transaction) error {
 		if err := beginCommitBatch(ctx, &batch); err != nil {
 			return err
 		}
-		_, err := r.applyImport(previous, document, "import")
+		_, err := r.applyImport(tx, document, "import")
 		return err
 	})
 	if err != nil {
@@ -526,7 +527,7 @@ func (r *Repository) convertImport(source *jsonx.Object, resourceRemaps Resource
 	version := source.Value("schema_version")
 	if isSchemaVersion(version) {
 		document := source.DeepCopy()
-		if err := ValidateDocument(document); err != nil {
+		if err := validateLegacyDocument(document); err != nil {
 			return nil, err
 		}
 		return document, nil

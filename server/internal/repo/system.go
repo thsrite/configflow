@@ -62,7 +62,7 @@ var tokenURLSafe = func() string {
 // that also holds other values are kept) and creates the rule proxy token,
 // or rotates it when it equals config_token. retired is the stored list
 // member. It touches no other member and reports whether it changed anything.
-func ensureRuleProxyToken(settings *model.SystemConfig, retired json.RawMessage) bool {
+func ensureRuleProxyToken(settings *model.SystemConfig, retired json.RawMessage) (bool, error) {
 	var stored []json.RawMessage
 	isList := jsonKind(retired) == '[' && json.Unmarshal(retired, &stored) == nil
 	normalized := []string{}
@@ -75,23 +75,35 @@ func ensureRuleProxyToken(settings *model.SystemConfig, retired json.RawMessage)
 		}
 		normalized = append(normalized, token)
 	}
+	// Members are set as stored JSON so new ones are appended in this order
+	// (retired list, then token), as Python wrote them.
+	set := func(member string, value any) error {
+		data, err := json.Marshal(value)
+		if err != nil {
+			return err
+		}
+		return settings.SetJSON(member, data)
+	}
 	changed := false
 	if !clean {
-		settings.RetiredRuleProxyTokens = normalized
+		if err := set("retired_rule_proxy_tokens", normalized); err != nil {
+			return false, err
+		}
 		changed = true
 	}
 	if token := settings.RuleProxyToken; token != "" {
 		if token != settings.ConfigToken {
-			return changed
+			return changed, nil
 		}
 		if !slices.Contains(normalized, token) {
-			settings.RetiredRuleProxyTokens = append(normalized, token)
+			if err := set("retired_rule_proxy_tokens", append(normalized, token)); err != nil {
+				return false, err
+			}
 		}
 	}
 	for {
 		if token := tokenURLSafe(); token != settings.ConfigToken {
-			settings.RuleProxyToken = token
-			return true
+			return true, set("rule_proxy_token", token)
 		}
 	}
 }
@@ -108,7 +120,7 @@ func ensureSystemTokens(system *model.System) (bool, error) {
 		return false, err
 	}
 	retired, _ := settings.get("retired_rule_proxy_tokens")
-	return ensureRuleProxyToken(&system.SystemConfig, retired), nil
+	return ensureRuleProxyToken(&system.SystemConfig, retired)
 }
 
 // ensureLegacyRuleProxyToken is ensureRuleProxyToken for a document still

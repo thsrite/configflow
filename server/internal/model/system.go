@@ -1,5 +1,7 @@
 package model
 
+import "encoding/json"
+
 // SystemConfig holds global settings, secrets and retention choices; nil fields leave consumer defaults intact.
 type SystemConfig struct {
 	ServerDomain                   string             `json:"server_domain"`
@@ -27,6 +29,11 @@ func (r *SystemConfig) UnmarshalJSON(data []byte) error { return DecodeRecord(da
 // Clear drops a declared member (by JSON name) when SystemConfig is written, even if
 // it is stored as null or with a wrong type; see ClearMember.
 func (r *SystemConfig) Clear(member string) error { return ClearMember(r, &r.raw, member) }
+
+// SetJSON stores a JSON value as a member of SystemConfig; see SetMemberJSON.
+func (r *SystemConfig) SetJSON(member string, data json.RawMessage) error {
+	return SetMemberJSON(r, &r.raw, member, data)
+}
 
 // MarshalJSON preserves unknown and unchanged SystemConfig members.
 func (r SystemConfig) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
