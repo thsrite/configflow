@@ -54,7 +54,35 @@ the hand-back. If no notification arrives within ~3 h, check status once more.
 | 19338c67-c336-40c7-98a9-b4532a66af68 | C19/C20 Surge/Loon adversarial review | wks_0d8cd06808daac1f, branch `go-review-c19c20` |
 | 3112fbeb-e43a-4d16-ad1a-bc88670b1099 | C37 domain discovery port | wks_0dcc037efd16c502, branch `go-port-c37` |
 | e46d698f-6345-41b9-8a38-06d61b6622d3 | config black-box difftest, Step A coverage matrix (→ Opus O6 review) | wks_223d2a53f6e7abbb, branch `go-difftest-config` |
-## >>> CURRENT STATE — 2026-11-18 ~10:30 CST (read this first; everything below is history) <<<
+## >>> CURRENT STATE — 2026-11-18 ~12:10 CST (coordinator f8801d39; read this first) <<<
+
+**go = 566af4bd** (pushed): batch-4 merged (A20 review, C07 review, N8-7 batch 1, R10/R11 reviews, O3-6c,
+N8-5(a)(b), 3 integration fixes) + routers Step B (tooling/docs only). Verified modules ≈61/78.
+**Maintainer decisions today:** the three speed options are REJECTED (no incremental switch, no tiered
+verification, keep fixing Python bugs in Go). **All Opus agents run at thinking medium** (quota) — WORKFLOW
+"Model settings". Codex stays gpt-6.1-sol high.
+**Gate infra:** ~/.local/bin/cf-gate now sets GATE_FULL=1 automatically when backend/, core packages
+(lockx repo lifecycle ctxx yamlx model httpx), go.mod/sum, server/scripts or tools/pyref changed vs base;
+CF_GATE_SPLIT=1 runs core on .32 and compare on .64 in parallel (needs go-gate-speed's gate.sh). Lessons:
+run long remote gates detached (setsid nohup on the server) — a coordinator session restart killed one;
+`pgrep -f` watchers must not match their own command line; GATE_ONLY=difftest does not run fuzz.
+A/B test-speed timing only after 23:00 on .64 (daytime .64 is for gates).
+
+**batch-5 (next, full gate, split):** go-gate-speed@096ae6fa + go-fix-repo-crosscheck f01d464e (must go
+together); R12 = local branch batch-4-r12's 4 R12 commits + allowlist patch + go-r12-r03fix c2a9361c
+(TestR03Corpus fix); R13 review (10fcabd6 rebasing + P1 + X1 tolerant router decode); C34 review + C36
+(89c495b3 rebasing; C36 adds lockx.LevelSetupSession, C32 ReadRulesetContent 99afa95d); N8-5(c) (24d62bfc
+rebasing; then retire that session — context 670k); test-speed A b75f2d7f + B 68945125; go-fix-r05-stepb
+9be5a141; go-fix-a20-c26-stepb (e4e190e9, c36bce34, ce8b3796). Pre-flight: run package corpus tests on the
+stacked tree before the full gate.
+**Then:** A14 (06515315 rebasing + 4 wiring items) → A16 (reviewed 6464cd7c, 0 high) and A17 (reviewed
+f5180a27, 0 high) rebase on A14, RecordContext, mark verified. A21 (95eb529e) waits C34 for DNSLoop and does
+the final C36 server registration. O3-6b (6e5c7760). N8-8a (097eba4e; yamlx shares c5a31ce3 + static Node
+checks), then N8-7 batch 2.
+**Step B findings routed:** R05 + A20/C26 fixed (above); R15/R17 parts (HEAD creates router, verinfo/Location
+500 + failed probe save, udp keyword) belong to those ports — put them in their briefs.
+
+## (history) CURRENT STATE — 2026-11-18 ~10:30 CST (read this first; everything below is history) <<<
 
 **Process (all new today, maintainer-approved; see WORKFLOW.md last three sections + AGENT-BRIEF):**
 - Merge batching: ready branches are stacked into `batch-N` (rebase each onto the previous; `.md` conflicts keep
