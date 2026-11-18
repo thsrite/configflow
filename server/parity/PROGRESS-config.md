@@ -1125,10 +1125,15 @@ Commands (review):
 
 **Status: `verified`** (review 2026-11-16, commit b579c790; see "Review C16") · prereqs: C12, C13 · Go: `internal/health/check` (leaf: no repo import), `internal/health`, routes in `internal/api/nodes`
 
-**N8-9 typed 接手（待独立复核）**：Gemini 未验证草稿已保存为 WIP，Codex 已逐行审查并修正；
+**N8-9 typed 接手（health 范围独立复核完成；共享关机叶层后续拆出）**：Gemini 未验证草稿已保存为 WIP，Codex 已逐行审查并修正；
 采用共享 model codec、原生 worker/DTO/存储消费，Python 仿真移除；原 corpus 保持不变，
 typed 差异改为独立精确参考。更正清单、适配边界和定向验证见
 [progress/n8-9-health.md](progress/n8-9-health.md)。C16 原验证记录保留作迁移前基线。
+复核 `go-review-n8-9-health`：health 内 1 medium（删除/存储 owner ctx）和 1 low
+（worker 取消错误被包装）已由 `0f301dc67` 修复；定向 .32 race、全仓 vet、真实
+Python 162条精确参考重录和索引负控通过。共享 jsonstore 的最终 rename/unlink ctx
+及 discovery 两处 adapter 按协调者裁定留至 batch-7 后另派，不能声称全链路已封口。
+详见 [review-n8-9-health.md](review-n8-9-health.md)。
 
 Files → Go:
 - `backend/utils/health_check.py` (82) → `check/healthcheck.go`: `ProviderDefaults()`, `GroupDefaults()`, `GroupHealthTypes`/`IsGroupHealthType`, `InitializeGroupHealth`, `InitializeProviderHealth`, `ValidateHealth(values, provider)` (`*check.ValueError`), `ProviderHealthCheck` (missing key → `*check.KeyError`), `UserInfo`.

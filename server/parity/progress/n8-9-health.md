@@ -161,3 +161,15 @@ RT_HOST=sunbroke@192.168.0.32 rt --back server/internal/health/testdata/n89_expe
 初始原样草稿 race 已证实普通服务矩阵无法编码；未把这个错误登记成
 有意差异。中间检查揭示的 shared model 依赖、无效 seed、原生 root 校验问题均修代码，
 没有重写原 corpus 或放宽未列出的结果。
+
+## 独立复核（Codex，2026-11-18）
+
+`go-review-n8-9-health` 从本报告的 `d6cd8df63` 复核；修复提交 `0f301dc67`。
+0 high，health 内新增1 medium和1 low已修，真实 Runtime worker/文件提交检查、
+定向 race 与全仓 vet通过；真实Python重录162条参考逐字节一致，实际row745索引负控被拒。
+不重跑作者整套，不跑完整gate。完整发现、命令和后续API要求：
+[review-n8-9-health.md](../review-n8-9-health.md)。
+
+协调者明确把共享 jsonstore 的最终rename/unlink Context API及 discovery两个adapter
+拆到 batch-7 后另派；本次只补health自己的Context入口和提交前检查，
+未把整个跨模块关机协议标成零遗留。
