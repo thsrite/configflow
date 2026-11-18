@@ -25,3 +25,29 @@ const (
 	msgPairIncomplete        = "DNS 高可用配对不完整，请先修复主备关系"
 	msgMissingLibrary        = "规则集引用的共享来源不存在，请先修复规则引用。"
 )
+const (
+	msgNativeUnsafe       = "OxiDNS 原生分流包含无法识别的自定义结构，无法自动应用规则结构；请手动检查并发布。"
+	msgDraftUnsafe        = "OxiDNS 草稿分流无法唯一对应当前规则，请手动检查并发布。"
+	msgProviderParameters = "OxiDNS 规则 Provider 包含额外原生参数，请手动检查并发布。"
+	msgProviderShared     = "OxiDNS 规则 Provider 被自定义插件共用，无法安全自动替换；请手动发布。"
+	msgRoutingFailure     = "OxiDNS 规则分流无法自动更新：%s；请手动检查并发布。"
+	msgEmptyService       = "本次规则变更需要停用 OxiDNS 规则下载或重载服务，无法单独自动同步；请手动完整发布。"
+)
+const (
+	msgIdentityChanged     = "规则同步的设备或配置空间已经改变。"
+	msgServiceMismatch     = "规则同步服务类型不匹配。"
+	msgSequenceUnsafe      = "OxiDNS 主执行链无法安全隔离规则更新。"
+	msgIPUnsafe            = "OxiDNS IP 分流区包含自定义结构，无法自动隔离。"
+	msgBlackholeUnsafe     = "OxiDNS 候选配置的黑洞插件不是规则生成的格式。"
+	msgUnpublishedUpstream = "OxiDNS 候选配置包含未发布的指定上游，请手动发布。"
+	msgDuplicateTag        = "OxiDNS 插件标签重复，无法隔离规则更新。"
+	msgSequenceChanged     = "OxiDNS 候选配置包含规则范围之外的执行链变化。"
+	msgPluginChanged       = "OxiDNS 候选配置包含规则范围之外的插件变化。"
+	msgLifecycleChanged    = "自动同步不能启用或关闭 OxiDNS 下载和重载服务。"
+	msgParametersChanged   = "OxiDNS 候选配置改变了下载和重载服务参数。"
+	msgOrderChanged        = "OxiDNS 候选配置改变了非规则插件顺序。"
+	msgSharedFile          = "OxiDNS 规则文件被其他插件共用，无法单独自动更新。"
+	msgDownloadInvalid     = "OxiDNS 规则下载条目格式无效。"
+	msgFileConflict        = "规则文件与非规则文件冲突，无法自动隔离。"
+	msgRuleMissing         = "候选规则文件缺失或角色不符。"
+)

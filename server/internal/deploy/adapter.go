@@ -928,3 +928,7 @@ func uploadRecord(ctx context.Context, m *agents.Manager, agentID, id string, r 
 	}
 	return m.RecordDeployment(ctx, agentID, id, r, agents.RecordOptions{UploadReceipt: true})
 }
+
+// InternalRuleURL reports whether a URL is a callback into this source snapshot.
+// Rule synchronization uses the same classification as materialization.
+func (s *Source) InternalRuleURL(rawURL, baseURL string) bool { return s.internal(rawURL, baseURL) }

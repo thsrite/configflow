@@ -8,9 +8,11 @@ import (
 	"fmt"
 
 	"configflow/internal/agents"
+	"configflow/internal/convert"
 	"configflow/internal/deploy"
 	"configflow/internal/jsonx"
 	"configflow/internal/model"
+	"configflow/internal/oxidns"
 )
 
 func decodeAgent(record *agents.Record) (*model.Agent, error) {
@@ -80,4 +82,37 @@ func persistSync(ctx context.Context, m *agents.Manager, id string, settings *Se
 		return nil, ErrAgentNotFound
 	})
 	return err
+}
+
+func renderCandidate(ctx context.Context, target deploy.Target, source *deploy.Source, baseURL string) (string, []convert.Download, error) {
+	raw, err := source.Raw()
+	if err != nil {
+		return "", nil, err
+	}
+	value, err := jsonx.Parse(raw)
+	if err != nil {
+		return "", nil, err
+	}
+	config, ok := value.(*jsonx.Object)
+	if !ok {
+		return "", nil, refuse(msgSnapshotVerify)
+	}
+	if target.ServiceType == "mihomo" {
+		content, err := convert.GenerateMihomoConfig(ctx, config, convert.GenerateOptions{BaseURL: baseURL, SyncLANHosts: true, SkipProviderPreflight: true, ForAgent: true, RegionProbe: target.DomainDiscovery})
+		return content, nil, err
+	}
+	p := oxidns.NewProfile(config)
+	content, err := oxidns.Generate(p, baseURL)
+	if err != nil {
+		return "", nil, err
+	}
+	entries, err := oxidns.RulesetDownloads(p, baseURL)
+	if err != nil {
+		return "", nil, err
+	}
+	downloads := make([]convert.Download, 0, len(entries))
+	for _, e := range entries {
+		downloads = append(downloads, convert.Download{URL: e.URL, LocalPath: e.LocalPath})
+	}
+	return content, downloads, nil
 }
