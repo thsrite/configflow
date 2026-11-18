@@ -1,8 +1,8 @@
 # O9 安全复核 · 第一轮
 
-审查人：fresh Opus（未移植过这些代码）。基线 `go@95440b69e`，分支 `go-opus-o9-security`。
+审查人：fresh Opus（未移植过这些代码）。基线 `go@95440b69e`，后变基到 `go@d4fab6441`（batch-7 已合入），分支 `go-opus-o9-security`。
 范围：`server/` 产品代码；MCP（未注册）与 artifact 成功路径（固定 503）不审，列入第二轮。
-batch-7（`6c6b46ff5`）只读参考，见 §5。
+batch-7 已合入 `go@d4fab6441`，其新增入口（A18/A22/A23、R14–R17）本轮一并审，见 §5。
 
 ## 1. 威胁模型
 
@@ -33,6 +33,7 @@ batch-7（`6c6b46ff5`）只读参考，见 §5。
 | O9-L3 | low（继承） | `mosdns/ruleproxy.go:124`、`httpx/ctx.go:482` | 规则代理 token / config token 比较、内部调用头比较不是常量时间（`auth.ValidateTokenOrJWT` 已是常量时间） | — | 建议统一用 `subtle.ConstantTimeCompare` | mosdns、httpx |
 | O9-L4 | low（继承） | `api/agents/agents.go:207` | 注册时 `X-Forwarded-For` 第一段取作客户端 IP，可伪造；但请求体本可直接给 `host`，不增加能力 | — | 记录即可 | agents |
 | O9-L5 | low（继承） | Edge 静态文件、`/api/rules/local/*` | 无 `X-Content-Type-Options: nosniff`。公开规则内容以 `text/plain` 返回，主流浏览器不会把它当 HTML，风险很低 | — | 可在 Edge 和文本下载统一加 `nosniff` | httpx |
+| O9-L6 | low（继承） | `httpx` profile 上下文钩子（门禁之前） | 不存在的 `profile_id` 在门禁前就返回 404，存在的返回 401：无凭据者可枚举 profile id。Python 同序 | `TestO9EveryNonPublicRouteRequiresLogin` 用不存在的 id 时得到 404 | 可把门禁移到 profile 解析之前，或对未登录请求统一 401；影响很小 | httpx / auth |
 
 ## 3. 逐项结论
 
@@ -89,29 +90,28 @@ batch-7（`6c6b46ff5`）只读参考，见 §5。
 |---|---|---|
 | `internal/httpx/o9_security_test.go` | 常规（进 gate） | Edge 不出 Root；门禁点段；工具链守卫 |
 | `internal/yamlx/o9_alias_bomb_test.go` | 常规 | 别名放大被拒 |
+| `internal/server/o9_gate_test.go` | 常规 | 全部非白名单路由匿名访问必须 401 |
 | `internal/httpx/o9repro_test.go` | `//go:build o9repro` | O9-H1 CORS、O9-M1 后端体积，修复前失败 |
 | `internal/api/agents/o9repro_registration_test.go` | `o9repro` | O9-H2 匿名注册读配置，修复前失败 |
 | `internal/rulefetch/o9repro_bomb_test.go` | `o9repro` | O9-M2 gzip 炸弹，修复前失败 |
 
 复现测试用 build tag 隔离，避免未决问题让 gate 变红；修复时去掉 tag 并把断言保留为回归测试。
 
-## 5. batch-7 合入后补审清单
+## 5. batch-7 新增入口（已合入 `go@d4fab6441`，本轮审完）
 
-batch-7 新入口已只读看过注册处：
-
-- 已看：`/api/agents/gateway-installations*` 的 `enroll`/`script` 不经门禁，由会话 token（常量时间比较、过期检查）认证，请求体限 16 KiB，脚本响应 `no-store` + `no-referrer`；其余入口均 `auth.Require`。`/api/agents/<id>/oxidns-ha*`、`/api/client-devices*`、`/api/domain-discovery/*`、`/api/routers*`、`/api/agents/<id>/upstream-routers` 都有 `auth.Require`/`h.auth`；`ipv6-readiness` 四条未包 `auth.Require`，但不在任何白名单，门禁要求 JWT（与 Python 相同）。
-- 合入后补审：
-  1. R15 路由器 CRUD：路由器密码/API token 在列表、报告、错误信息、日志中的脱敏（`device_redact.go`）。
-  2. R15/R17 写设备：用户填写的设备名、备注、固定 IP 主机名进入 RouterOS 脚本/iKuai 请求的转义（`ScriptString` 覆盖面）。
-  3. A18 OxiDNS HA：keepalived 配置与 `docker_ha_*` 生成物里的 VIP、接口名、密码是否只接受解析后的值；enroll 会话 token 生命周期。
-  4. A22 网关安装：`gateway/installation` 生成脚本中的网络参数（接口、网段、DNS 上游）是否全部校验或 `shlexQuote`。
-  5. A23 IPv6：`verification-settings` PUT 的输入（探测目标）是否成为 SSRF 入口。
-  6. 若 O9-H2 修复改动注册流程，复查 batch-7 网关安装注册路径（`registration_profile`）。
+- **全量门禁回归**：新增 `internal/server/o9_gate_test.go`。它取完整 `NewApp()` 的所有已注册路由，把参数填成假值，排除白名单路径和 15 个自认证 endpoint，在开启登录时匿名访问每个方法，要求一律 401。现有 333 个方法/路由对全部通过，batch-7 的全部新入口都在内。以后新加的路由忘了门禁，或门禁与白名单不一致，都会在这里失败。
+- **A22 网关安装**：`enroll`/`script` 不经门禁，由会话 token 认证（常量时间比较、过期检查）；请求体限 16 KiB；脚本响应带 `no-store` 和 `no-referrer`。安装脚本由 `GenerateGatewayInstallScript` 生成，URL、token、校验和、版本全部经 `shlexQuote`。网络参数由 `host.ParseSpec` 严格校验：接口名正则、IPv4 地址与网段解析、范围检查，并与 Agent 检测结果比对，不会形成可执行内容。注册路径 `registration_profile` 只给本会话 profile 和两个服务身份，Agent token 比较为常量时间。
+- **A18 OxiDNS HA**：面板只接受 `peer_id`/`vip`/`vrid` 三个字段；VIP 用 `netip` 解析，VRID 为整数。keepalived 配置由 Agent 渲染，不在服务端范围。Docker HA 指南里的 docker run 参数逐个 `shlexQuote`，路径与名称有白名单（`guidePath`/`guideName`），镜像名在入口经 `isImageName` 校验。未发现问题。
+- **A23 IPv6**：四条路由都有 `auth.Require`。`verification-settings` 的 `test_url` 经 `validURL` 校验、限 2048 字符，由客户端 Agent 执行，不是面板侧的 SSRF。
+- **R15 路由器**：响应统一经 `redact.SanitizeCredentials`，记录对外只给 `has_password`。已有测试覆盖列表和 pending 中不出现对端密码（`safety_test.go` `TestR15MalformedRecordIsolationAndPeerCredentials`）。设备回包写进错误时经 `safeDeviceText`。
+- **R17 客户端设备 / 固定 IP**：RouterOS 侧用 REST JSON（`Row`）写入，ID 经 `escapeROSPathID`；iKuai 走 JSON API。没有控制台脚本拼接。
+- **R14/R16**：沿用 §3.3 的 `ScriptString` 和地址解析，没有新的拼接点。
+- O9-H2 一旦修改注册流程，需复查网关安装注册路径（列入第二轮）。
 
 ## 6. 第二轮清单
 
 - MCP（`/mcp`、`/mcp/` 6 条）：入口认证、`App.Invoke` 的内部头只在认证后设置、工具参数到 REST 的映射是否能越权调用。
 - artifact 成功路径（3 条）：预览归属、过期、文件读取路径校验、下载 Content-Type/Disposition。
-- O9-H1/H2/M1–M3 的修复复核（维护者决定后）。
+- O9-H1/H2/M1–M3 的修复复核（维护者决定后）；H2 修复后复查网关安装注册路径。
 - 全树（切换前）重跑 govulncheck，确认发行镜像 Go ≥1.26.11。
 - DNS rebinding / 主机别名（CFG-01 LOW-1/2）若决定做成真正的 SSRF 控制，复核 `net.Dialer.Control` 实现。
