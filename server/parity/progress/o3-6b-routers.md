@@ -109,3 +109,12 @@ TestO36bRepositoryRuntimeCommitBoundary对generic-password/manifest/delete、cal
 待O3-6c正式合入再应用为internal/routers/o36b_repo_runtime_test.go并远端gofmt、race3/vet；
 缺6c的旧树已知仍在普通BeforeCommit后COMMIT，不能把依赖未接通当成本步产品回归，也不提交失败测试。
 R10与6c未收到正式合入通知前不rebase；go新添的a9d6ce86c仅WORKFLOW批次合并/风险分层说明已读，未误当成R10合入。
+
+### R11 最终共享路径提醒（d214fb515）
+
+已只读核对go-port-r11相对R10的共享routeros.go差异，尚未合并进本分支：
+Apply入口ctx.Err与本步相同，保留一次；RESTORE递归perform须继续转发beforeCreate；
+IPv6 PD address-list加入rosSingleRowPaths，scoped/inScope按list限定，与IPv4一致；
+ND最终payload沿用R11的ipv6DNSFlag严格拒绝未知/null及dynamic/invalid标志，不回退rosTruthy宽松判断。
+这些改动依赖R11私有pdLists/ipv6DNSFlag等定义，后续整分支集成，不能只复制共享文件补丁。
+R11 owner回报完整共享包race/Python/mutation已通过；此处仅登记其报告和差异审阅，不冒称本分支已跑R11。
