@@ -179,3 +179,9 @@ const (
 	kindRuleSet      = "规则集"
 	kindRule         = "规则"
 )
+
+const (
+	msgClientText    = "节点文本字段必须为字符串或数值"
+	msgClientOptions = "节点参数必须为对象"
+	msgClientBoolean = "节点布尔字段 %s 类型错误，已使用缺省值"
+)

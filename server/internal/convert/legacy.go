@@ -1588,3 +1588,33 @@ func subsError(err error) error {
 	}
 	return err
 }
+
+// Temporary client codecs disappear as N8-8c consumers use the typed entries.
+func policyNames(lines []string) []string { return clientPolicyNames(lines) }
+func parseCustomSections(value any) []customSection {
+	if value == nil {
+		return nil
+	}
+	text, err := decodeLegacy[string](value)
+	if err != nil {
+		raise(err)
+	}
+	return splitClientSections(text)
+}
+func sectionText(sections []customSection, name string) (string, bool) {
+	return clientSection(sections, name)
+}
+func configAPIPath(value *jsonx.Object, target string) string {
+	config, err := configFromLegacy(value)
+	if err != nil {
+		raise(err)
+	}
+	return clientAPIPath(config, target)
+}
+func effectiveBaseURL(value *jsonx.Object, base string) string {
+	config, err := configFromLegacy(value)
+	if err != nil {
+		raise(err)
+	}
+	return clientBaseURL(config, base)
+}
