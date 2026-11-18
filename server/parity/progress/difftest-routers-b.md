@@ -2372,3 +2372,49 @@ Findings close-out:
 - Latest target host .32 only. No full gate/proddiff/private snapshot, no push.
 Next ONLY commit, git rebase go, final bounded targeted checks, record tails and
 clean status, then hand back. Do not resume the historical expansion plans.
+
+## Final close-out verification
+
+Coordinator-directed partial hand-back; no new audit directions. Tested source
+commit236c9cacc, rebased integration basee0e9d9d45. Exact .32 command:
+
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY="$HOME/.cache/routerdiff-build-302rx1dg-e0e9d9d45/configflow"; uptime; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python -m unittest -q test_probe_schemas test_runner test_recipes test_audits test_inventory test_reachability test_network_faults test_boundary.BoundaryTests.test_real_healthy_native_boundary_compares_complete_observations; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world ikuai-redirect-errors --world release-ik-suffix --output "$HOME/.cache/routerdiff-reports/302rx1dg/final-closeout.json"; ~/cf-test/.venv/bin/python - <<'"'"'PY'"'"'
+import re
+from pathlib import Path
+import audits, inventory, reachability
+known=set(audits.declared())|set(reachability.declared())
+pending=set(inventory.load()[1])-known
+text=Path("../../parity/difftest-routers-findings.md").read_text()
+listed=re.findall(r"^\| ([A-Za-z0-9-]+) \| \[矩阵 L", text, re.M)
+if len(listed)!=len(set(listed)) or set(listed)!=pending:
+    raise SystemExit("uncovered ledger differs from exact matrix complement")
+print("uncovered ledger: "+str(len(listed))+"/"+str(len(pending))+" exact, no duplicates")
+PY'
+```
+
+Final output:
+
+```text
+load average:20.67,18.03,13.88
+Ran 102 tests in 33.949s
+OK
+release-ik-suffix/ikuai_suffix_bug: 2 cumulative recipes, 0.54s
+ikuai-redirect-errors/cases: 8 cumulative recipes, 0.80s
+implemented_routes=0; recipe_counts={go-unimplemented:8}; referenced_entries=9
+python_bugs=[IKUAI_NETMASK_SUFFIX_ROLLBACK,IKUAI_PROBE_REDIRECT_PARSE_CRASH]
+complete=false; remaining_audits=2301 in this focused subset
+uncovered ledger: 1729/1729 exact, no duplicates
+```
+
+The102 targeted tests include the new redirect safe/unsafe native outcome
+oracle, coverage-ledger integrity, parent-namespace isolation/packet evidence,
+runner contracts and one actual healthy native public-boundary comparison.
+The8 real domain requests remain Go-unimplemented, not false passes. This is
+not a full Go suite, full matrix rerun, gate or proddiff. Coordinator owns the
+merge gate. Findings contain seven deduplicated reference-defect dispatch
+classes and exact1729 uncovered IDs with reasons; source code was not fixed.
+
+Hand-back scope is now closed as requested. No active command, no further
+audit expansion. All changes committed; final git rebase go and clean status
+are checked below/by the hand-back response. No push, no private snapshot data.
