@@ -61,7 +61,7 @@ Same as `PROGRESS-config.md`: status `missing` / `partial` (exact list of what i
 | A08 | installer script rendering, install command store | 1333 | verified | HR | A02, C02 | 8 (8 done) | internal/installer, internal/api/agents |
 | A09 | Docker HA guide, preflight, enrollment | 1083 | verified | HR | A08, A01 | 2 (2 done) | internal/installer, api/agents |
 | A10 | Docker HA compose variants, installer routes | 1018 | verified | HR | A08, A09 | 9 (9 done) | internal/installer, api/agents |
-| A11 | deployment bundle, locations, Mihomo resources, generated preview | 1264 | ported | HR | A02, A19, C05, C12, C14, C15, C21, C22, C25 | – | internal/deploy (new) |
+| A11 | deployment bundle, locations, Mihomo resources, generated preview | 1264 | verified | HR | A02, A19, C05, C12, C14, C15, C21, C22, C25 | – | internal/deploy (new) |
 | A12 | push diff | 1465 | verified | | A11 | – | internal/deploy/pushdiff |
 | A13 | content sync, Agent list/detail, push-diff routes | 584 | verified | | A12, A15 | 4 | internal/deploy, api/agents |
 | A14 | publishing: transactional content, push-config, deployments, receipts | 1002 | missing | HR | A11, A13, C13, C17, C18, C19, C20, C22, C23 | 9 | internal/deploy, api/agents |

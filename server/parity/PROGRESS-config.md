@@ -305,7 +305,7 @@ Rules for O3-5..O3-8 are in the review's last section.
 | C02 | infra helpers | 828 | verified | C01 | – |
 | C03 | repo storage core (config_repository.py part A) | 1576 | verified | C01, C02 | – |
 | C04 | repo public API (config_repository.py part B), config.py | 1373 | verified | C03 | – |
-| C05 | profile context, OxiDNS settings normalizer | 497 | ported | C04 | – |
+| C05 | profile context, OxiDNS settings normalizer | 497 | verified | C04 | – |
 | C06 | HTTP shell, auth, settings routes | 1028 | verified | C05 | 22 (22 done) |
 | C07 | logs, stats, tasks, notifications, web listener | 1393 | partial | C06 | 9 (5 done) |
 | C08 | rule syntax, matcher, rule utils | 1101 | verified | C02 | – |
@@ -322,18 +322,18 @@ Rules for O3-5..O3-8 are in the review's last section.
 | C19 | Surge converter | 1129 | verified | C18 | – |
 | C20 | Loon converter | 764 | verified | C19 | – |
 | C21 | MosDNS converter | 1261 | verified | C14 | – |
-| C22 | OxiDNS converter, native loader, references, match targets | 913 | ported | C05, C21 | – |
-| C23 | OxiDNS validation and constraints | 1542 | ported | C22 | – |
-| C24 | OxiDNS common settings | 1175 | ported | C23 | – |
-| C25 | OxiDNS common routing, DNS watchdog | 1286 | ported | C24 | – |
-| C26 | OxiDNS common updates, device policy, editor | 1189 | ported | C25 | – |
-| C27 | rule DNS actions | 885 | missing | C26 | – |
+| C22 | OxiDNS converter, native loader, references, match targets | 913 | verified | C05, C21 | – |
+| C23 | OxiDNS validation and constraints | 1542 | verified | C22 | – |
+| C24 | OxiDNS common settings | 1175 | verified | C23 | – |
+| C25 | OxiDNS common routing, DNS watchdog | 1286 | verified | C24 | – |
+| C26 | OxiDNS common updates, device policy, editor | 1189 | verified | C25 | – |
+| C27 | rule DNS actions | 885 | verified | C26 | – |
 | C28 | MosDNS archive and routes | 838 | verified | C21, C15 | 15 (15 done) |
 | C29 | OxiDNS native apply, archive, routes | 739 | verified | C27, C28 | 18 (18 done) |
-| C30 | subscription and node routes, node deletion | 994 | ported | C17, C16, C19, C20 | 26 (26 done) |
-| C31 | aggregation routes, device notes | 722 | ported | C30, C26 | 11 (11 done) |
-| C32 | rule routes | 1107 | missing | C09, C14, C27 | 21 (0 done) |
-| C33 | rule library and proxy group routes | 976 | ported | C32 | 25 (25 done) |
+| C30 | subscription and node routes, node deletion | 994 | verified | C17, C16, C19, C20 | 26 (26 done) |
+| C31 | aggregation routes, device notes | 722 | verified | C30, C26 | 11 (11 done) |
+| C32 | rule routes | 1107 | verified | C09, C14, C27 | 21 (0 done) |
+| C33 | rule library and proxy group routes | 976 | verified | C32 | 25 (25 done) |
 | C34 | generate, config and profile routes, config export | 1443 | missing | C18, C19, C20, C28, C29, C31, C33 | 59 (0 done) |
 | C35 | config importer, WebDAV backup | 1375 | verified | C04, C06 | – |
 | C36 | setup flow | 1372 | missing | C34, C35 | 5 (0 done) |
