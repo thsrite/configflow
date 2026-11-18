@@ -85,3 +85,7 @@ import alias、函数值、package initializer、exec.Cmd 字面量均审计；�
 共同 cache guard 解决模块外读取不进入 Go cache key 的边界：`tools/pyref -test -- ...` 原生计算 backend/venv
 fingerprint 并传入测试；普通缓存模式必须读取和核验该 env。没有 env 时只允许显式正数 `-count`（已禁用缓存），
 保持当前 gate 的 `-count=1`，不改 gate.sh。B 追加实际 consumer cache/漂移/strace 验证，结果在交回前补齐。
+
+审计还覆盖 scope 子树内普通 `.go` helper 源码，不能把 constructor 藏进 installertest/helper 包来绕过 `_test.go`
+扫描。新增实际 helper 源码负控及其逐点登记正控，`.64` race 工具测试通过。普通缓存运行缺 fingerprint、
+backend 改动后仍企图复用 cache、取消 reset、混用并行 seed 和新增未登记 exec 均已实际检出。
