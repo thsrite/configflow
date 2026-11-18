@@ -1,66 +1,21 @@
 package routersplit
 
 import (
-	"bufio"
-	"bytes"
-	"context"
-	"fmt"
-	"io"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"testing"
-	"time"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/testgolden"
 	"configflow/internal/yamlx"
 	"configflow/internal/yamlx/yamlxtest"
 
 	"gopkg.in/yaml.v3"
 )
 
-type nativeOracle struct {
-	input       io.WriteCloser
-	output      *bufio.Scanner
-	command     *exec.Cmd
-	diagnostics bytes.Buffer
-}
+type nativeOracle struct{ lines *testgolden.Lines }
 
 func newNativeOracle(t *testing.T) *nativeOracle {
 	t.Helper()
-	home, err := os.UserHomeDir()
-	if err != nil {
-		t.Fatal(err)
-	}
-	python := filepath.Join(home, "cf-test/.venv/bin/python")
-	if selected := os.Getenv("CONFIGFLOW_DIFF_PYTHON"); selected != "" {
-		python = selected
-	}
-	root, err := filepath.Abs("../../..")
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	command := exec.CommandContext(ctx, python, "-u", "server/internal/routersplit/testdata/n73_reference.py")
-	command.Dir = root
-	command.Env = append(os.Environ(), "PYTHONPATH="+root, "DATA_DIR="+t.TempDir(), "PYTHONDONTWRITEBYTECODE=1")
-	oracle := &nativeOracle{command: command}
-	command.Stderr = &oracle.diagnostics
-	oracle.input, err = command.StdinPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	output, err := command.StdoutPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	oracle.output = bufio.NewScanner(output)
-	oracle.output.Buffer(make([]byte, 1<<16), 1<<24)
-	if err := command.Start(); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = oracle.input.Close(); _ = command.Wait(); cancel() })
-	return oracle
+	return &nativeOracle{lines: testgolden.NewLines(t, "server/internal/routersplit/testdata/n73_reference.py")}
 }
 
 func rowYAML(row recordedRow) (string, bool) {
@@ -105,13 +60,8 @@ func (o *nativeOracle) compare(t *testing.T, row recordedRow, output any, actual
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = fmt.Fprintln(o.input, string(data)); err != nil {
-		t.Fatal(err)
-	}
-	if !o.output.Scan() {
-		t.Fatalf("native-policy Python oracle: %v %s", o.output.Err(), o.diagnostics.String())
-	}
-	value, err := jsonx.Parse(o.output.Bytes())
+	answerBytes := o.lines.Call(t, data, nil)
+	value, err := jsonx.Parse(answerBytes)
 	if err != nil {
 		t.Fatal(err)
 	}

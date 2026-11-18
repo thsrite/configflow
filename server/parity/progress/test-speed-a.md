@@ -94,3 +94,15 @@ entire fetch-path/count map; a duplicate or missing Go fetch still fails.
 Existing seven-way boundary workers and parallel suites are preserved; no unsafe
 shared repository/hook parallelism is added. Full package race timing pending
 integration of the independent YAML fixture optimization.
+
+## routersplit — normalized-input oracle
+
+Replaced only the pure JSON-lines Python oracle with the common transcript API;
+all recorded/corpus/edge replays, collaborator call ordering, invariants and
+error/structural comparisons are unchanged. Replay suites still run sequentially
+because they install process-global collaborators; t.Parallel there would race.
+No routers business or tests are edited.
+
+.64 separate live check: **5 corpus reference inputs, diff 0**, plus an empty
+fallback transcript for the complete original recorded replay. Selected package
+passed in `2.806s`. Race timing follows the shared fixture integration.
