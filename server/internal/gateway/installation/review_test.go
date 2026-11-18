@@ -4,9 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"testing"
 
+	"configflow/internal/deploy"
 	"configflow/internal/jsonx"
+	"configflow/internal/rules"
 )
 
 // A22 review F1: Python compares Agent members with dict.get equality. An Agent
@@ -63,5 +67,38 @@ func TestEnrollRefusesEarlierDuplicateTarget(t *testing.T) {
 	refusal(t, err, 409, msgDuplicate)
 	if !bytes.Equal(before, document(t, f)) || !bytes.Equal(record, recordBytes(t, f)) {
 		t.Fatal("refused enrollment wrote")
+	}
+}
+
+// A22 review F4: Python stores str(exc) for every ValueError raised while
+// preparing a core (strategy references, base settings, remote rule content,
+// profile validation), so the wizard names the configuration to fix. Only
+// other exceptions get the generic "check the device" text.
+func TestPublicationFailureNamesPythonValueErrors(t *testing.T) {
+	const text = "策略组「Proxy」引用了不存在的节点或策略组：Missing"
+	reference := fmt.Errorf("prepare mihomo: %w", &rules.StrategyReferenceError{Message: text})
+	var public *Error
+	var prep *deploy.PreparationError
+	if errors.As(reference, &public) || errors.As(reference, &prep) {
+		t.Fatal("control: the error is already an installation/preparation error")
+	}
+	tests := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"strategy reference", &rules.StrategyReferenceError{Message: text}, text},
+		{"installation refusal", failure(msgConfigChanged, 409), msgConfigChanged},
+		{"transport", errors.New("synthetic transport failure"), msgPublishFailed},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := failureMessage(tt.err); got != tt.want {
+				t.Fatalf("got %q want %q", got, tt.want)
+			}
+		})
+	}
+	if got := failureMessage(reference); got != reference.Error() {
+		t.Fatalf("wrapped ValueError hidden: %q", got)
 	}
 }

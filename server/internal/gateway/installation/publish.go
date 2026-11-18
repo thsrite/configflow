@@ -230,13 +230,9 @@ func (s *Service) RunPublication(ctx context.Context, id string) (err error) {
 			if e != nil {
 				return e
 			}
-			message := msgPublishFailed
-			var public *Error
 			var prep *deploy.PreparationError
-			if errors.As(original, &public) || errors.As(original, &prep) {
-				message = original.Error()
-			}
-			message, e = s.safeText(ctx, message)
+			_ = errors.As(original, &prep)
+			message, e := s.safeText(ctx, failureMessage(original))
 			if e != nil {
 				return e
 			}
@@ -360,4 +356,15 @@ func truncate(s string, max int) string {
 		return string(r[:max])
 	}
 	return s
+}
+
+// failureMessage is Python's str(exc) for InstallationError and every other
+// ValueError (deployment preparation, strategy/base-settings/remote-rule and
+// profile validation, safety refusals), otherwise the generic resumable text.
+func failureMessage(err error) string {
+	var public *Error
+	if errors.As(err, &public) || deploy.IsPreparationFailure(err) {
+		return err.Error()
+	}
+	return msgPublishFailed
 }
