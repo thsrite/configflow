@@ -185,3 +185,84 @@ func TestContextWriteFailureCleansTempFile(t *testing.T) {
 		})
 	}
 }
+
+// Capture nil before stopping the real owner, modelling preemption after the
+// last cancellation read. This is the narrow, unavoidable check/syscall window;
+// unlike a beforeCommit hook, it deliberately admits the current operation.
+type reviewFinalCheckContext struct {
+	context.Context
+	checks int
+	pause  func()
+}
+
+func (c *reviewFinalCheckContext) Err() error {
+	err := c.Context.Err()
+	c.checks++
+	if c.checks == 2 {
+		c.pause()
+	}
+	return err
+}
+
+func TestReviewCancellationAfterFinalCheckAdmitsOneCommit(t *testing.T) {
+	for _, operation := range []string{"unsigned", "signed", "remove"} {
+		t.Run(operation, func(t *testing.T) {
+			owner, shutdown := ownerLifetime(t, true)
+			s := jsonstore.New(t.TempDir())
+			path := s.Path("synthetic")
+			const before, after = `{"value":"old"}`, `{"value":"new"}`
+			if err := os.WriteFile(path, []byte(before), 0600); err != nil {
+				t.Fatal(err)
+			}
+			oldSignature, err := jsonstore.FileSignatureForTest(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			paused := false
+			ctx := &reviewFinalCheckContext{Context: owner, pause: func() {
+				paused = true
+				if got, err := os.ReadFile(path); err != nil || string(got) != before {
+					t.Fatalf("check was after commit: %q %v", got, err)
+				}
+				if operation != "remove" {
+					if got, err := os.ReadFile(path + ".tmp"); err != nil || string(got) != after {
+						t.Fatalf("check was before temp write: %q %v", got, err)
+					}
+				}
+				shutdown()
+			}}
+			var sig *jsonstore.Signature
+			if operation == "remove" {
+				err = s.RemoveContext(ctx, "synthetic")
+			} else {
+				sig, err = s.WriteContext(ctx, "synthetic", struct {
+					Value string `json:"value"`
+				}{"new"}, operation == "signed")
+			}
+			if !paused || err != nil || !errors.Is(owner.Err(), context.Canceled) {
+				t.Fatalf("paused=%v error=%v owner=%v", paused, err, owner.Err())
+			}
+			got, readErr := os.ReadFile(path)
+			if operation == "remove" {
+				if !errors.Is(readErr, os.ErrNotExist) {
+					t.Fatalf("unlink not admitted: %v", readErr)
+				}
+			} else if readErr != nil || string(got) != after {
+				t.Fatalf("rename not admitted: %q %v", got, readErr)
+			}
+			if operation == "signed" {
+				current, err := jsonstore.FileSignatureForTest(path)
+				if err != nil || sig == nil || *sig != current || *sig == oldSignature {
+					t.Fatalf("stale signature: got=%v current=%v old=%v error=%v", sig, current, oldSignature, err)
+				}
+			}
+			if _, err := os.Stat(path + ".tmp"); !errors.Is(err, os.ErrNotExist) {
+				t.Errorf("temp remains: %v", err)
+			}
+			// The admitted operation does not grant permission to any later one.
+			if err := s.RemoveContext(owner, "synthetic"); !errors.Is(err, context.Canceled) {
+				t.Errorf("next operation admitted: %v", err)
+			}
+		})
+	}
+}

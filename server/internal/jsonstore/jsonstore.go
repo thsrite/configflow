@@ -94,10 +94,12 @@ func (s *Store) Write(id string, data any, verifySignature bool) (*Signature, er
 	return s.WriteContext(context.Background(), id, data, verifySignature)
 }
 
-// WriteContext writes atomically within ctx's lifetime. Cancellation before
-// publication leaves the existing file unchanged; verification after a successful
-// rename completes even if ctx is then cancelled. Callers supply an owner context
-// detached from request cancellation when the write must outlive a disconnect.
+// WriteContext writes atomically, checking ctx at entry and immediately before
+// rename. Cancellation observed by that final check leaves the existing file
+// unchanged. Cancellation after the check cannot revoke an admitted rename;
+// verification after a successful rename completes even if ctx is then cancelled.
+// Callers supply an owner context detached from request cancellation when the
+// write must outlive a disconnect.
 func (s *Store) WriteContext(ctx context.Context, id string, data any, verifySignature bool) (*Signature, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -200,7 +202,8 @@ func (s *Store) Remove(id string) error {
 	return s.RemoveContext(context.Background(), id)
 }
 
-// RemoveContext unlinks id only while ctx is active. It preserves Remove's
+// RemoveContext checks ctx at entry and immediately before each unlink attempt.
+// Cancellation after a check cannot revoke that attempt. It preserves Remove's
 // missing-file and directory semantics and checks cancellation on each retry.
 func (s *Store) RemoveContext(ctx context.Context, id string) error {
 	if err := ctx.Err(); err != nil {

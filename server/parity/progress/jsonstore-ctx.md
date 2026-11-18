@@ -1,5 +1,10 @@
 # jsonstore owner context / health F1
 
+独立 Codex 复核已通过（O3 提交前检查协议）；详见
+[review-jsonstore-ctx.md](../review-jsonstore-ctx.md)。最终检查与系统调用之间仍允许每个调用
+一次已放行操作，无硬性时间上界；兼容 API 的失败临时文件清理是有意行为变化。
+复核新增定向回归和负控，修正文档承诺，未改产品逻辑。
+
 ## 范围与结果
 
 任务：闭合 `review-n8-9-health.md` 的 F1，共享 JSON 文件叶层的关机提交窗口，
