@@ -1,0 +1,187 @@
+[
+  {
+    "name": "block-payload-quoted-multiline",
+    "source": "payload:\n  - \"a.example.com\n    b\"\n",
+    "output": "payload:\n  - \"a.example.com\n    b\"\n",
+    "warnings": [
+      {
+        "line": 0,
+        "message": "payload 每项应为一行文本；复杂 YAML 内容已保留原文。"
+      }
+    ]
+  },
+  {
+    "name": "block-payload-plain-multiline",
+    "source": "payload:\n  - a.example.com\n    b\n",
+    "output": "payload:\n  - a.example.com\n    b\n",
+    "warnings": [
+      {
+        "line": 0,
+        "message": "payload 每项应为一行文本；复杂 YAML 内容已保留原文。"
+      }
+    ]
+  },
+  {
+    "name": "block-payload-single-multiline",
+    "source": "payload:\n  - 'a.example.com\n    b'\n",
+    "output": "payload:\n  - 'a.example.com\n    b'\n",
+    "warnings": [
+      {
+        "line": 0,
+        "message": "payload 每项应为一行文本；复杂 YAML 内容已保留原文。"
+      }
+    ]
+  },
+  {
+    "name": "block-root-flow-payload-multiline-item",
+    "source": "payload: [+.example.com, \"a\n b\"]\n",
+    "output": "payload: [+.example.com, \"a\n b\"]\n",
+    "warnings": [
+      {
+        "line": 0,
+        "message": "payload 每项应为一行文本；复杂 YAML 内容已保留原文。"
+      }
+    ]
+  },
+  {
+    "name": "block-root-flow-payload-other-multiline",
+    "source": "payload: [+.example.com]\nextra: \"a\n b\"\n",
+    "output": "payload:\n  - \"+.example.com\"\nextra: \"a\n b\"\n",
+    "warnings": []
+  },
+  {
+    "name": "multiline-key",
+    "source": "{payload: [+.example.com], \"multi\n key\": v}\n",
+    "output": "{payload: [+.example.com], \"multi\n key\": v}\n",
+    "warnings": [
+      {
+        "line": 0,
+        "message": "while parsing a flow mapping\n  in \"<unicode string>\", line 1, column 1:\n    {payload: [+.example.com], \"multi\n    ^\nexpected ',' or '}', but got ':'\n  in \"<unicode string>\", line 2, column 6:\n     key\": v}\n         ^"
+      }
+    ]
+  },
+  {
+    "name": "nel-in-quoted",
+    "source": "{payload: [+.example.com], extra: \"firstsecond\"}\n",
+    "output": "{payload: [+.example.com], extra: \"firstsecond\"}\n",
+    "warnings": [
+      {
+        "line": 0,
+        "message": "多行 YAML 内容已保留原文，请展开为普通 payload 列表。"
+      }
+    ]
+  },
+  {
+    "name": "ls-in-quoted",
+    "source": "{payload: [+.example.com], extra: \"first second\"}\n",
+    "output": "{payload: [+.example.com], extra: \"first second\"}\n",
+    "warnings": [
+      {
+        "line": 0,
+        "message": "多行 YAML 内容已保留原文，请展开为普通 payload 列表。"
+      }
+    ]
+  },
+  {
+    "name": "ps-in-plain",
+    "source": "{payload: [+.example.com], extra: first second}\n",
+    "output": "{payload: [+.example.com], extra: first second}\n",
+    "warnings": [
+      {
+        "line": 0,
+        "message": "多行 YAML 内容已保留原文，请展开为普通 payload 列表。"
+      }
+    ]
+  },
+  {
+    "name": "nested-sequence",
+    "source": "{payload: [+.example.com], extra: [\"a\n b\"]}\n",
+    "output": "{payload: [+.example.com], extra: [\"a\n b\"]}\n",
+    "warnings": [
+      {
+        "line": 0,
+        "message": "多行 YAML 内容已保留原文，请展开为普通 payload 列表。"
+      }
+    ]
+  },
+  {
+    "name": "cjk-multiline",
+    "source": "{payload: [+.例子.com], 名: \"甲\n 乙\"}\n",
+    "output": "{payload: [+.例子.com], 名: \"甲\n 乙\"}\n",
+    "warnings": [
+      {
+        "line": 0,
+        "message": "多行 YAML 内容已保留原文，请展开为普通 payload 列表。"
+      }
+    ]
+  },
+  {
+    "name": "cr-only",
+    "source": "{payload: [+.example.com], extra: \"first\r second\"}\r",
+    "output": "{payload: [+.example.com], extra: \"first\r second\"}\r",
+    "warnings": [
+      {
+        "line": 0,
+        "message": "多行 YAML 内容已保留原文，请展开为普通 payload 列表。"
+      }
+    ]
+  },
+  {
+    "name": "tagged-plain-multiline",
+    "source": "{payload: [+.example.com], extra: !!str first\n second}\n",
+    "output": "{payload: [+.example.com], extra: !!str first\n second}\n",
+    "warnings": [
+      {
+        "line": 0,
+        "message": "多行 YAML 内容已保留原文，请展开为普通 payload 列表。"
+      }
+    ]
+  },
+  {
+    "name": "verbatim-tag-multiline",
+    "source": "{payload: [+.example.com], extra: !<tag:yaml.org,2002:str> \"a\n b\"}\n",
+    "output": "{payload: [+.example.com], extra: !<tag:yaml.org,2002:str> \"a\n b\"}\n",
+    "warnings": [
+      {
+        "line": 0,
+        "message": "多行 YAML 内容已保留原文，请展开为普通 payload 列表。"
+      }
+    ]
+  },
+  {
+    "name": "valid-escaped-backslash-end",
+    "source": "{payload: [+.example.com], extra: \"a\\\\\"}\n",
+    "output": "payload:\n- +.example.com\nextra: a\\\n",
+    "warnings": []
+  },
+  {
+    "name": "valid-doubled-single-quote",
+    "source": "{payload: [+.example.com], extra: 'it''s'}\n",
+    "output": "payload:\n- +.example.com\nextra: it's\n",
+    "warnings": []
+  },
+  {
+    "name": "valid-verbatim-tag",
+    "source": "{payload: [+.example.com], extra: !<tag:yaml.org,2002:str> \"a b\"}\n",
+    "output": "payload:\n- +.example.com\nextra: a b\n",
+    "warnings": []
+  },
+  {
+    "name": "valid-multiline-layout",
+    "source": "{\n  payload: [+.example.com, a.example.com],\n  extra: \"x\"\n}\n",
+    "output": "payload:\n- +.example.com\n- a.example.com\nextra: x\n",
+    "warnings": []
+  },
+  {
+    "name": "valid-block-flow-payload",
+    "source": "payload: [+.example.com, \"a b\"]\nextra: 1\n",
+    "output": "payload:\n  - \"+.example.com\"\n  - \"a b\"\nextra: 1\n",
+    "warnings": []
+  },
+  {
+    "name": "valid-comment-quote",
+    "source": "{payload: [+.example.com], extra: \"x # y\"} # \"\n",
+    "output": "payload:\n- +.example.com\nextra: 'x # y' # \"\n",
+    "warnings": []
+  }
+]
