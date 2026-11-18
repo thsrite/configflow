@@ -261,6 +261,10 @@ func EmittedRules(value *jsonx.Object) ([]any, error) {
 	if err != nil {
 		return nil, err
 	}
+	return emittedRules(config)
+}
+
+func emittedRules(config *model.Config) ([]any, error) {
 	encoded, err := encodeLegacy(RulesForOutput(config))
 	if err != nil {
 		return nil, err
@@ -281,6 +285,10 @@ func RulesetFormat(rule, value *jsonx.Object, sourceURL string) (string, error) 
 	if err != nil {
 		return "", err
 	}
+	return rulesetFormat(rule, config, sourceURL)
+}
+
+func rulesetFormat(rule *jsonx.Object, config *model.Config, sourceURL string) (string, error) {
 	item, err := decodeLegacy[model.RuleConfig](rule)
 	if err != nil {
 		return "", err

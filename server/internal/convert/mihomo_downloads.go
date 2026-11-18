@@ -91,7 +91,7 @@ func GetMihomoRulesetDownloads(ctx context.Context, config *jsonx.Object, baseUR
 		if !jsonx.Truthy(dictGet(ruleSet, "enabled", true)) {
 			continue
 		}
-		url, originalURL := mihomoRulesetURL(config, ruleSet, ruleLibrary, effectiveBaseURL)
+		url, originalURL := mihomoRulesetURL(config, ruleSet, ruleLibrary, effectiveBaseURL, nil)
 		ruleFormat := mustValue(RulesetFormat(ruleSet.(*jsonx.Object), config, originalURL))
 		extension := ruleFormat
 		if ruleFormat == "text" {

@@ -609,18 +609,23 @@ func generateMihomoDocument(ctx context.Context, logical *jsonx.Object, opts Gen
 		}
 	}
 	roots := append(append([]string(nil), usedNodeIDs.keys...), aggregationRoots.keys...)
-	required := mustValue(DependencyNodeIDs(config, roots, false))
+	// Lowering has finished. Decode this stable view at the first dependency
+	// check, retaining its shape/R5 validation point, then share it only for
+	// this render. Per-node and per-ruleset codecs must not decode it again.
+	typedConfig := mustValue(shapeConfigFromLegacy(config))
+	required, dependencyErr := RequiredNodes(typedConfig, roots, false)
+	must(dialerLegacyError(dependencyErr))
 	for k := range required {
 		onlyInAggregations.removeKey(k)
 	}
 	for _, k := range directlySelected.keys {
 		onlyInAggregations.removeKey(k)
 	}
-	usedAll := mustValue(DependencyNodeIDs(config, roots, true))
+	usedAll, dependencyErr := RequiredNodes(typedConfig, roots, true)
+	must(dialerLegacyError(dependencyErr))
 
 	proxies := []any{}
 	var inline []subs.InlineProxy
-	var dialerConfig *model.Config
 	if debug {
 		mihomoLog.Debug("收集到的被使用节点ID: " + pySetRepr(sortedKeys(usedAll), keyValues(usedAll, usedNodeIDs, aggregationRoots)))
 		mihomoLog.Debug("开始生成 proxies，总节点数: " + strconv.Itoa(len(iterate(dictGet(config, "nodes", []any{})))))
@@ -647,12 +652,7 @@ func generateMihomoDocument(ctx context.Context, logical *jsonx.Object, opts Gen
 		}
 		node := n.(*jsonx.Object)
 		converted := mustValue(ConvertNodeToMihomo(ctx, node, env.Converter))
-		if dialerConfig == nil {
-			// Lowering is complete and this profile is stable for the loop.
-			// Keep the first overlay's validation point and error ordering.
-			dialerConfig = mustValue(configFromLegacy(config))
-		}
-		proxy := mustValue(overlayDialer(dialerConfig, node, converted))
+		proxy := mustValue(overlayDialer(typedConfig, node, converted))
 		if proxy != nil && proxy.Len() > 0 {
 			proxies = append(proxies, proxy)
 			inline = append(inline, subs.InlineProxy{Node: node, Proxy: proxy})
@@ -849,9 +849,9 @@ func generateMihomoDocument(ctx context.Context, logical *jsonx.Object, opts Gen
 		if !jsonx.Truthy(dictGet(ruleSet, "enabled", true)) {
 			continue
 		}
-		url, originalURL := mihomoRulesetURL(config, ruleSet, ruleLibrary, effectiveBaseURL)
+		url, originalURL := mihomoRulesetURL(config, ruleSet, ruleLibrary, effectiveBaseURL, typedConfig)
 		behavior := dictGet(ruleSet, "behavior", "domain")
-		ruleFormat := mustValue(RulesetFormat(ruleSet.(*jsonx.Object), config, originalURL))
+		ruleFormat := mustValue(rulesetFormat(ruleSet.(*jsonx.Object), typedConfig, originalURL))
 		extension := ruleFormat
 		if ruleFormat == "text" {
 			extension = "list"
@@ -873,7 +873,7 @@ func generateMihomoDocument(ctx context.Context, logical *jsonx.Object, opts Gen
 	must(applyLinuxGateway(mihomoConfig, config, effectiveBaseURL))
 
 	ruleLines := []any{}
-	emitted := mustValue(EmittedRules(config))
+	emitted := mustValue(emittedRules(typedConfig))
 	for _, item := range emitted {
 		if !jsonx.Truthy(dictGet(item, "enabled", true)) || !jsonx.Truthy(dictGet(item, "library_enabled", true)) {
 			continue
@@ -914,7 +914,7 @@ func generateMihomoDocument(ctx context.Context, logical *jsonx.Object, opts Gen
 			}
 		}
 	}
-	if mustValue(UDPFallback(config)) == "REJECT" {
+	if FallbackPolicy(typedConfig) == "REJECT" {
 		ruleLines = append(ruleLines, "NETWORK,udp,REJECT")
 	}
 	mihomoConfig.Set("rules", ruleLines)
@@ -993,7 +993,14 @@ func generateMihomoDocument(ctx context.Context, logical *jsonx.Object, opts Gen
 
 // mihomoRulesetURL is the URL logic shared by generate_mihomo_config and
 // get_mihomo_ruleset_downloads: (url, original_url).
-func mihomoRulesetURL(config *jsonx.Object, ruleSet, ruleLibrary any, effectiveBaseURL string) (any, string) {
+func mihomoRulesetURL(config *jsonx.Object, ruleSet, ruleLibrary any, effectiveBaseURL string, typedConfig *model.Config) (any, string) {
+	// Non-generator callers retain their lazy decoding and validation order.
+	resolve := func() *model.Config {
+		if typedConfig != nil {
+			return typedConfig
+		}
+		return mustValue(configFromLegacy(config))
+	}
 	libraryRuleID := dictGet(ruleSet, "library_rule_id", nil)
 	url := dictGet(ruleSet, "url", "")
 	originalURL := url
@@ -1010,7 +1017,7 @@ func mihomoRulesetURL(config *jsonx.Object, ruleSet, ruleLibrary any, effectiveB
 			ruleName := dictGet(libraryRule, "name", "")
 			if jsonx.Truthy(ruleName) {
 				url = profileAPIPath(config, "/rules/local/"+fstr(ruleName))
-				if mustValue(RulesetFormat(ruleSet.(*jsonx.Object), config, sourceURLText(originalURL))) != "mrs" {
+				if mustValue(rulesetFormat(ruleSet.(*jsonx.Object), resolve(), sourceURLText(originalURL))) != "mrs" {
 					url = appendURLQuery(url.(string), [][2]any{{"target", "mihomo"}})
 				}
 			}
@@ -1021,7 +1028,7 @@ func mihomoRulesetURL(config *jsonx.Object, ruleSet, ruleLibrary any, effectiveB
 		if strings.HasPrefix(text, "/") && effectiveBaseURL != "" {
 			url = effectiveBaseURL + text
 		} else if strings.HasPrefix(text, "http") {
-			url = mustValue(ApplyGithubProxyDomain(text, config))
+			url = mustValue(GitHubURL(text, resolve()))
 		}
 	}
 	return url, sourceURLText(originalURL)

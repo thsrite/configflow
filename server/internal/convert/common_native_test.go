@@ -172,7 +172,7 @@ func TestCommonLegacyOnlyCallsTypedEntries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	entries := map[string]string{"NTPDirectRule": "BuiltinNTPRule", "UDPFallback": "FallbackPolicy", "NTPDirect": "DirectNTP", "EmittedRules": "RulesForOutput", "AfterMatchComment": "RuleComment", "RulesetFormat": "RuleFormat"}
+	entries := map[string]string{"NTPDirectRule": "BuiltinNTPRule", "UDPFallback": "FallbackPolicy", "NTPDirect": "DirectNTP", "EmittedRules": "emittedRules", "emittedRules": "RulesForOutput", "AfterMatchComment": "RuleComment", "RulesetFormat": "rulesetFormat", "rulesetFormat": "RuleFormat"}
 	for _, declaration := range file.Decls {
 		function, ok := declaration.(*ast.FuncDecl)
 		if !ok {
