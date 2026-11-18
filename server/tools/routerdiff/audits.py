@@ -1132,6 +1132,75 @@ def declared():
         'the original id/manifest survive each accepted draft edit. Exact SQL absence/retention is asserted.',
         tuple(('stored', 'R010-B01/preserve-' + field + suffix, 200)
               for field in protected_fields for suffix in ('', '-object', '-list')))
+    # Verified firmware full-form contract, independently enumerated here so
+    # adding a convenient recipe/tag cannot silently widen a completed audit.
+    ik_fields = ('id', 'enabled', 'tagname', 'interface', 'phy_ifnames', 'addr_pool', 'exclude_pool', 'netmask', 'gateway',
+                 'next_server', 'dns1', 'dns2', 'domain', 'wins1', 'wins2', 'lease', 'delay', 'check_addr_valid', 'check_relay_only',
+                 'opt_type15', 'opt_type28', 'opt_type43', 'opt_type60', 'opt_type66', 'opt_type67', 'opt_type80',
+                 'opt_type119', 'opt_type125', 'opt_type128', 'opt_type138', 'opt_type121',
+                 'opt15', 'opt28', 'opt43', 'opt60', 'opt66', 'opt67', 'opt80', 'opt119', 'opt125', 'opt128', 'opt138', 'opt121')
+    ik_ints = ('id', 'lease', 'delay', 'check_addr_valid', 'check_relay_only', 'opt_type15', 'opt_type28', 'opt_type43',
+               'opt_type60', 'opt_type66', 'opt_type67', 'opt_type80', 'opt_type119', 'opt_type125', 'opt_type128',
+               'opt_type138', 'opt_type121')
+    ik_static = ('id', 'enabled', 'tagname', 'interface', 'mac', 'gateway', 'dns1', 'dns2', 'ip_addr', 'comment')
+    def ik_dhcp_rows(blocked, healthy=('healthy',)):
+        return (tuple(('dhcp-ikuai-evidence', route + '/ikuai-dhcp-' + label, status)
+                      for label in blocked for route, status in (('R018', 200), ('R012', 200), ('R011', 409)))
+                + tuple(('dhcp-ikuai-evidence', route + '/ikuai-dhcp-' + label, 200)
+                        for label in healthy for route in ('R018', 'R012')))
+    pools = tuple('pool-' + label for label in ('reversed', 'outside-end', 'outside-gateway', 'empty', 'invalid-start',
+                  'invalid-end', 'empty-start', 'empty-end', 'ipv6', 'extra-delimiter', 'bad-mask', 'noncontiguous-mask',
+                  'bad-gateway', 'ipv6-gateway'))
+    pool_ok = ('healthy', 'pool-valid-singleton', 'pool-valid-prefix-mask')
+    binding_types = tuple('binding-ip-type-' + label for label in ('null', 'false', 'true', 'integer', 'number', 'array', 'object'))
+    binding_types += ('binding-ip-missing',)
+    binding_invalid = binding_types + tuple('binding-ip-value-' + str(index) for index in range(7))
+    binding_ignored = ('healthy', 'binding-ignored-disabled', 'binding-ignored-outside', 'binding-ignored-runtime')
+    static_shapes = tuple('binding-shape-' + field + '-' + kind for field in ik_static if field != 'ip_addr'
+                          for kind in ('missing', 'wrong-type') if (field, kind) != ('id', 'wrong-type'))
+    static_shapes += ('binding-shape-unknown-enabled', 'binding-shape-upper-enabled')
+    ik_specs = {
+        'H0247': (tuple('missing-' + field for field in ik_fields) + ('missing-and-unknown', 'unknown', 'multiple-unknown'), ('healthy',),
+                  'Every43 full-form field independently absent; separate unknown fields and combined sorted missing/unknown CSV. Missing id is subsequently masked by the shared unique-identity diagnostic; no inner-message assertion is fabricated.'),
+        'H0248': (tuple('type-null-' + field for field in ik_fields) + tuple('type-bool-' + field for field in ik_ints)
+                  + tuple('type-other-' + field + '-' + str(index) for field in ('lease', 'tagname') for index in range(5)), ('healthy',),
+                  'Each43 field wrong by null; each17 integer field rejects bool despite numeric equality. Representative int/string fields cover every other JSON kind. Later enum/pool/DNS diagnostics remain ordered and visible, not stripped.'),
+        'H0249': (('enabled-empty', 'enabled-case', 'enabled-unknown', 'enabled-no'), ('healthy',),
+                  'Only exact yes/no are valid. no is a valid disabled server and reaches the separate no-matching-scope refusal; malformed values have the exact enabled diagnostic.'),
+        'H0250': (tuple('status-' + str(index) for index in range(9)), ('healthy',),
+                  'Missing-like/null, booleans, float1.0,0/2,string and containers cannot impersonate int1; status/available remain recognized runtime fields.'),
+        'H0251': (('relay-1', 'relay--1', 'relay-2'), ('healthy',), 'Each nonzero integer relay flag blocks; verified0 succeeds. Wrong types are separately covered at the full-form guard.'),
+        'H0252': (tuple('physical-' + str(index) for index in range(5)), ('healthy',), 'Empty/specific/case/list-text physical-interface restrictions all block; exact all succeeds.'),
+        'H0253': (('pool-reversed', 'pool-outside-end', 'pool-outside-gateway'), pool_ok,
+                  'Each explicit disjunct independently fails: end outside subnet, reversed interval, gateway outside subnet. Singleton range equality and prefix mask are accepted controls.'),
+        'H0254': (pools, pool_ok, 'Actual IPv4 parsing and each literal pool/gateway/mask failure retain an empty network plus diagnostic, then shared matching rejects the unknown subnet. Both start/end conversion positions are covered.'),
+        'H0255': (pools, pool_ok, 'The real caught pool error is preserved in the outer exact report/plan/apply diagnostic, not converted to an empty successful plan.'),
+        'H0256': (tuple('dns-' + field + '-' + str(index) for field in ('dns1', 'dns2') for index in range(5)) + ('dns-both-invalid',),
+                  ('healthy',) + tuple('dns-valid-' + label for label in ('first', 'second', 'duplicate', 'target-inherited', 'target-explicit')),
+                  'Both DNS slots independently reject invalid/IPv6/CSV/automatic strings. Empty slots and duplicate values are supported, while matching target with an inherited slot stays pending and two explicit target slots are synced.'),
+        'H0257': (tuple('dns-' + field + '-' + str(index) for field in ('dns1', 'dns2') for index in range(5)) + ('dns-both-invalid',),
+                  ('healthy',) + tuple('dns-valid-' + label for label in ('first', 'second', 'duplicate', 'target-inherited', 'target-explicit')),
+                  'Malformed DNS evidence does not discard a valid sibling address. Two bad slots deduplicate the shared diagnostic exactly.'),
+        'H0258': (binding_types, binding_ignored, 'Every non-string JSON address kind and missing member reach the actual explicit address guard; disabled binding short-circuits safely.'),
+        'H0259': (binding_invalid, binding_ignored, 'Wrong types and invalid/IPv6/CIDR/range/space/leading-zero text become an unknown static-DNS scope; no unsafe guessing or global device write.'),
+        'H0260': (binding_invalid, binding_ignored, 'The real caught binding-address failure reaches all public stages; valid outside-LAN and disabled bindings do not falsely block this LAN.'),
+        'H0261': (static_shapes, binding_ignored + ('binding-shape-id-wrong-type',),
+                  'Each reachable missing/wrong-type static member and enabled spelling. ip_addr failures belong to the earlier address guard; id type is intentionally not checked by this READ-only reader, unlike the fixed-IP writer. Full/runtime/outside/disabled controls stay usable.'),
+        'H0262': (('binding-dns-first', 'binding-dns-second', 'binding-dns-both'), binding_ignored,
+                  'Each independent client DNS slot and both slots block replacing only server DNS; inheriting empty slots remain usable.'),
+        'H0263': (('binding-unknown',), binding_ignored, 'An unverified static binding member blocks; the three explicitly recognized runtime keys do not. Outside/disabled rows remain irrelevant to this scope.'),
+        'H0147': (('missing-id', 'server-id-duplicate', 'server-id-duplicate-outside'),
+                  ('healthy', 'server-id-duplicate-disabled', 'server-id-unique-outside'),
+                  'Real iKuai entries reach the shared missing/duplicate enabled-ID guard, including duplicate on another subnet. Disabled row is excluded before identity validation. RouterOS refuses these IDs earlier in its reader, not by this branch.'),
+        'H0148': (pools, pool_ok, 'iKuai pool failures actually produce empty-string network and trigger real ValueError in shared matching with preserved blockers. Both production readers emit strings, so the alternative TypeError is not manufactured; RouterOS invalid networks refuse earlier.'),
+        'H0149': (pools, pool_ok, 'The shared unknown-subnet exception preserves the underlying read blockers and reaches exact report200 unknown, plan200 blocked and confirmation409.'),
+    }
+    for ident, (blocked, healthy, rationale) in ik_specs.items():
+        audits[ident] = Audit(('backend/routers/ikuai.py:381', 'backend/routers/ikuai.py:62',
+                              'backend/routers/dhcp_dns.py:80', 'backend/routes/routers.py:304'),
+            rationale + ' Complete synthetic firmware4.x forms and actual public server only; all three stages '
+            'compare complete DB/files/device state and perform no device write. Read/plan evidence does not '
+            'claim firmware acceptance, DNS delivery or successful publication.', ik_dhcp_rows(blocked, healthy))
     return audits
 
 

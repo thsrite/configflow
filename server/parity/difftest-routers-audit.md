@@ -616,3 +616,26 @@ Workspace revision extension (R014 GET/R015 PUT):
   linearization evidence before T02/T08 can be closed; no universal concurrent
   snapshot claim is made. Signed previews, plan fingerprints, YAML semantics,
   runtime publication/receipt clocks and ownership nonces remain pending.
+
+iKuai complete DHCP evidence / shared scope guards:
+- Actual637-request run covers20 new explicit audits H0247–H0263 and H0147–H0149.
+  Complete firmware4.x forms use43 known fields and2 recognized runtime fields;
+  every full-form field is missing/null independently and every17 integer field
+  rejects bool. Extra wrong kinds and ordered/combined diagnostics remain visible.
+- Enabled/runtime status (including bool-vs-int1), relay and physical interface
+  restrictions are distinct. Both start/end parsers, each explicit pool disjunct,
+  invalid masks/gateways, singleton and prefix-mask controls are actual device
+  replies. Invalid networks preserve their precise blockers through shared scope.
+- Both DNS slots have valid/invalid/empty/duplicate/inherited/explicit targets;
+  two bad slots deduplicate their diagnostic. Static bindings cover every early
+  address type/syntax guard, each reachable missing/type field, independent DNS,
+  unknown metadata and allowed runtime fields. Disabled/outside rows do not
+  block the target LAN. Static id type is intentionally only a reader control;
+  no assertion says this malformed id is accepted by the fixed-IP writer.
+- Shared matching sees actual missing/duplicate enabled IDs and unknown subnet
+  strings. RouterOS rejects malformed IDs/subnets before shared matching; iKuai
+  can emit an empty network and reach real ValueError. No private model/catch
+  simulation or fake exception is used to fabricate an alternative TypeError.
+- All report200/plan200/confirmation409 messages and full DB/device invariants
+  passed. No DNS delivery/write/readback/compensation or firmware acceptance is
+  inferred. Default static_rt netmask display suffix remains enabled unchanged.

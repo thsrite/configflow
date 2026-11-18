@@ -27,6 +27,7 @@ import probe_guards
 import probes
 import router_lifecycle
 import dhcp_guards
+import ikuai_dhcp_guards
 
 
 class AuditTests(unittest.TestCase):
@@ -53,6 +54,27 @@ class AuditTests(unittest.TestCase):
             self.assertEqual(evaluate(evidence[:-1])[ident]['audit'], 'variants-pending')
         for ident in ('R009-F12', 'R009-F18', 'R009-B04', 'R010-F15', 'R010-B06'):
             self.assertNotIn(ident, declared())  # No claim about waiting-lock/repository races.
+
+    def test_ikuai_dhcp_audits_require_complete_form_each_type_and_scoped_static_overrides(self):
+        actual = {case.ident: case for case in ikuai_dhcp_guards.cases()}
+        counts = {'H0247': 140, 'H0248': 212, 'H0249': 14, 'H0250': 29, 'H0251': 11, 'H0252': 17,
+                  'H0253': 15, 'H0254': 48, 'H0255': 48, 'H0256': 45, 'H0257': 45, 'H0258': 32,
+                  'H0259': 53, 'H0260': 53, 'H0261': 67, 'H0262': 17, 'H0263': 11,
+                  'H0147': 15, 'H0148': 48, 'H0149': 48}
+        for ident, count in counts.items():
+            required = declared()[ident].requirements
+            self.assertEqual(len(required), count, ident)
+            for world, name, status in required:
+                case = actual[name]
+                self.assertEqual(world, 'dhcp-ikuai-evidence')
+                self.assertEqual(case.expected, status, (ident, name))
+                self.assertIn(ident, case.entries, (ident, name))
+                self.assertEqual(case.effect, 'device-read')
+            evidence = [{'world': world, 'case': name, 'entries': [ident], 'python': {'status': status},
+                         'status': 'go-unimplemented'} for world, name, status in required]
+            self.assertEqual(evaluate(evidence)[ident]['audit'], 'variants-audited')
+            self.assertEqual(evaluate(evidence[:-1])[ident]['audit'], 'variants-pending')
+        self.assertNotIn('H0264', declared())  # Write/readback/undo paths remain separate.
 
     def test_dhcp_evidence_audits_require_real_report_plan_and_refused_confirmation(self):
         actual = {case.ident: case for case in dhcp_guards.cases()}
@@ -308,7 +330,7 @@ class AuditTests(unittest.TestCase):
 
     def test_auth_audits_require_every_explicit_real_reference_variant(self):
         audits = declared()
-        self.assertEqual(len(audits), 481)  # Named declarations; matrix parsing grants no coverage.
+        self.assertEqual(len(audits), 501)  # Named declarations; matrix parsing grants no coverage.
         self.assertFalse(set(audits) - set(load()[1]))
         self.assertEqual({value['audit'] for value in evaluate([]).values()},
                          {'variants-pending', 'source-proof-controls-pending', 'review-proof-controls-pending'})

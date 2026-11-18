@@ -2,8 +2,8 @@
 
 Status: in progress; NOT ready for acceptance hand-back. Branch go-difftest-routers-b.
 Latest clean integration rebase: goa9d6ce86c; normal public binary built from it.
-Current declarations:481 executed-variant audits plus9 explicit source-unreachable
-proofs plus2 O6 review-superseded entries;1809 remaining if all increments and
+Current declarations:501 executed-variant audits plus9 explicit source-unreachable
+proofs plus2 O6 review-superseded entries;1789 remaining if all increments and
 controls are composed. Last FULL composition still37937739:3054
 recipes/301 audits. Newer subsets do not replace that full evidence; latest
 large subset2470 recipes/327 audits. All observed26 domain routes remain absent
@@ -2101,3 +2101,41 @@ oracle, same rt command with only unittest portion=>Ran47 tests3.041s/OK.
 No active command.481 declarations+9 source proofs+2 O6 corrections/1809 pending
 unchanged. Remaining signatures/fingerprints/YAML/ownership/runtime clocks and
 matrix/background/concurrency, full composition and final gate/rebase still open.
+
+Complete iKuai DHCP read-evidence increment:
+- Read IKuaiDriver._dhcp_list/read_dhcp_dns, full firmware field contracts,
+  decoder, shared matching/report and public inspection/plan/apply boundaries.
+  New ikuai_dhcp_guards.py uses complete synthetic4.x forms and default fake
+  netmask presentation; it does not relax the known static-route suffix bug.
+-43 fields each absent and null;17 integer fields each bool; every JSON kind on
+  representative int/string fields. Missing/unknown CSV ordering, exact enabled/
+  runtime status/relay/physical restrictions, pool parser/disjuncts and both DNS
+  slots have separate evidence. Explicit-vs-inherited DNS targets differ correctly.
+- Static binding invalid-address types/text, every reachable missing/incorrect
+  member, independent DNS slots and unknown fields are exercised. Disabled/
+  outside/runtime-key controls remain usable. Read-only static id type is not
+  validated by this reader, unlike the fixed-IP writer; its valid-reader control
+  is explicit and makes no write/firmware-acceptance claim.
+- Shared matching tests missing/duplicate enabled IDs, unknown subnets with full
+  underlying diagnostics, disabled duplicates and distinct outside subnets.
+  Both real drivers construct network strings: real iKuai empty-string network
+  causes ValueError; no private DhcpDnsState or TypeError is manufactured.
+-20 new declarations H0247–H0263/H0147–H0149, each requiring actual report200,
+  plan200 and blocked confirmation409 plus independent positive controls.
+  First609 real requests passed in512.83s; no new bug and native0/26. Added28
+  boundary requests (end-address parsing, masks, singleton, both-DNS invalid,
+  whitespace/leading-zero binding address); expanded637 run currently active.
+- Targeted integrity checks passed46 tests28.981s before the expanded run.
+  Record final command/tail and commit only after the active foreground run ends.
+
+Final .64 command:
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY="$HOME/.cache/routerdiff-build-302rx1dg-a9d6ce86c/configflow"; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python -m unittest -v test_audits test_recipes; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world dhcp-ikuai-evidence --output "$HOME/.cache/routerdiff-reports/302rx1dg/ikuai-dhcp-evidence-audits.json"'`
+=> Ran46 tests28.981s/OK;637 actual recipes596.74s/allGo-unimplemented,
+20 references/20 new audits in this subset,2281 pending/complete=false/no bug.
+All expanded vectors passed real Python; no record composition or invented
+observation was used. This is a subset, not a replacement full-suite report.
+501 declarations+9 source proofs+2 O6 corrections/1789 pending if composed.
+No active command. Remaining write/readback/undo (H0264+), signatures/ownership/
+fingerprints/YAML/runtime clocks, other matrix and background/concurrency,
+full composition and final gate/rebase remain open. Next check fake transport's
+avoidable packet delays before further large real-reference batches.

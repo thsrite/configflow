@@ -24,6 +24,7 @@ import sync
 import upstream
 import dns
 import dhcp_guards
+import ikuai_dhcp_guards
 import gateway
 import disconnect
 import routing
@@ -916,6 +917,7 @@ def main():
               ('upstream-linked', upstream.options(), (upstream.linked,)),
               ('dns-guard', dns.options(), (dns.guard,)),
               ('dhcp-evidence-guards', dns.options(), (dhcp_guards.cases,)),
+              ('dhcp-ikuai-evidence', dns.ikuai_options(), (ikuai_dhcp_guards.cases,)),
               ('dhcp-ikuai-plain', dns.ikuai_options(), (dns.ikuai_dhcp,)),
               ('dns-ha', dns.ha_options(), (dns.ha,)),
               ('disconnect-release', releases.options(), (disconnect.release,)),

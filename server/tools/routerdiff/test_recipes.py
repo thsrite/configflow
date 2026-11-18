@@ -15,6 +15,7 @@ import sync
 import upstream
 import dns
 import dhcp_guards
+import ikuai_dhcp_guards
 import gateway
 import disconnect
 import routing
@@ -61,6 +62,30 @@ class RecipeTests(unittest.TestCase):
                 self.assertTrue(all(item['count'] == 0 for item in case.expected_requests))
             self.assertEqual([case.effect for case in rows if case.method == 'DELETE' and case.expected == 200],
                              ['router-delete', 'router-delete'])
+
+    def test_ikuai_dhcp_fixture_is_full_verified_form_and_every_request_is_readonly(self):
+        _, entries = load()
+        self.assertEqual(len(ikuai_dhcp_guards.FIELDS), 43)
+        self.assertEqual(len(ikuai_dhcp_guards.INT_FIELDS), 17)
+        self.assertEqual(set(dns.ikuai_server()) - {'status', 'available'}, set(ikuai_dhcp_guards.FIELDS))
+        self.assertEqual(len(ikuai_dhcp_guards.STATIC_FIELDS), 10)
+        seen = set()
+        rows = list(ikuai_dhcp_guards.cases())
+        self.assertGreater(len(rows), 600)
+        for case in rows:
+            self.assertNotIn(case.ident, seen)
+            seen.add(case.ident)
+            self.assertTrue(set(case.entries) <= set(entries))
+            self.assertEqual(case.effect, 'device-read')
+            if case.route == 'R011':
+                self.assertEqual(case.expected, 409)
+                self.assertIsNone(case.document)
+                self.assertTrue(case.message)
+            else:
+                self.assertEqual(case.expected, 200)
+        # Keep real firmware display defaults. These evidence-only recipes do
+        # not relax the previously discovered static-route netmask suffix bug.
+        self.assertNotIn('presentation', ikuai_dhcp_guards.base())
 
     def test_dhcp_evidence_variants_refuse_confirmation_before_any_device_write(self):
         _, entries = load()
