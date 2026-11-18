@@ -57,7 +57,7 @@ func TestRuleDNSPublicBoundary(t *testing.T) {
 					}
 				}
 			}
-			if difference := compare(reference.row, got, err); difference != "" {
+			if difference := compare(t, reference.row, got, err); difference != "" {
 				t.Fatal(difference)
 			}
 			if reference.Err != nil && err != nil && err.Error() != reference.Err[1] {

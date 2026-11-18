@@ -187,20 +187,37 @@ func draft(c *httpx.Ctx, action string) (*httpx.Response, error) {
 	if err != nil {
 		return userFailure(err, native)
 	}
-	config, err := repo.GetConfig(c.Context(), c.ProfileID)
+	repository, err := repo.GetRepository(c.Context())
 	if err != nil {
 		return nil, err
 	}
-	profile := engine.NewProfile(config)
+	profileID, err := repo.ResolveProfileID(c.Context(), c.ProfileID)
+	if err != nil {
+		return nil, err
+	}
+	config, err := repository.Config(c.Context(), profileID, nil)
+	if err != nil {
+		return nil, err
+	}
+	profile, err := engine.NewTypedProfile(config)
+	if err != nil {
+		return nil, err
+	}
 	switch action {
 	case "render":
 		normalized, err := engine.NormalizeSettings(settings, true)
 		if err != nil {
 			return userFailure(err, false)
 		}
-		config = config.DeepCopy()
-		config.Set("oxidns", engine.ToJSONX(normalized))
-		text, err := engine.Generate(engine.NewProfile(config), baseURL)
+		config.Profile.OxiDNS, err = dynamic(normalized)
+		if err != nil {
+			return nil, err
+		}
+		draft, err := engine.NewTypedProfile(config)
+		if err != nil {
+			return nil, err
+		}
+		text, err := engine.Generate(draft, baseURL)
 		if err != nil {
 			return userFailure(err, false)
 		}

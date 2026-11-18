@@ -5,8 +5,8 @@ import (
 	"compress/gzip"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
- "net/url"
 	"strings"
 	"testing"
 
@@ -49,7 +49,13 @@ func loadRows(t *testing.T, path string) []*jsonx.Object {
 }
 
 func errClass(err error) string {
- if errors.Is(err,ErrRuleProxyToken){return "ValueError"};var invalidURL *url.Error;if errors.As(err,&invalidURL){return "ValueError"}
+	if errors.Is(err, ErrRuleProxyToken) {
+		return "ValueError"
+	}
+	var invalidURL *url.Error
+	if errors.As(err, &invalidURL) {
+		return "ValueError"
+	}
 	var u *UnsupportedYAMLError
 	if errors.As(err, &u) {
 		return "Unsupported"
@@ -208,7 +214,7 @@ func compareRow(t *testing.T, oracle *goldenOracle, entry *jsonx.Object) (msg st
 		return "", false, false
 	}
 	if !jsonx.Equal(entry.Value("out"), out) || err != nil || entry.Has("err") {
-		if nativeMosDNSOutcome(t, oracle, entry, out, err) {
+		if nativeR5Outcome(t, oracle, entry, out, err) || nativeMosDNSOutcome(t, oracle, entry, out, err) {
 			return "", true, true
 		}
 	}

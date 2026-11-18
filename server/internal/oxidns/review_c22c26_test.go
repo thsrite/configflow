@@ -23,7 +23,7 @@ func TestC22C26ReviewReferences(t *testing.T) {
 			if !supported {
 				t.Fatalf("missing public boundary: %s", r.Fn)
 			}
-			if difference := compare(r, got, err); difference != "" {
+			if difference := compare(t, r, got, err); difference != "" {
 				t.Fatal(difference)
 			}
 			if len(r.ArgsAfter) != len(args) {

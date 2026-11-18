@@ -29,7 +29,7 @@ func TestC05ReviewSettingsReferences(t *testing.T) {
 			} else {
 				result, err = NormalizeSettings(args[0], boolArg(args[1]))
 			}
-			if difference := compare(r, result, err); difference != "" {
+			if difference := compare(t, r, result, err); difference != "" {
 				t.Fatal(difference)
 			}
 			if len(r.ArgsAfter) != len(args) {
@@ -115,7 +115,7 @@ func TestC05ReviewRecordedNormalization(t *testing.T) {
 					continue
 				}
 				got, err := NormalizeSettings(args[0], len(args) < 2 || boolArg(args[1]))
-				if difference := compare(r, got, err); difference != "" {
+				if difference := compare(t, r, got, err); difference != "" {
 					t.Errorf("row %d (%s): %s", i, r.Test, difference)
 				}
 			}

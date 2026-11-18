@@ -26,6 +26,7 @@ import (
 
 	"configflow/internal/model"
 	"configflow/internal/yamlx"
+	"gopkg.in/yaml.v3"
 )
 
 const testdataDir = "testdata/"
@@ -235,6 +236,13 @@ func canon(n *Node, yamlText bool) *Node {
 		if parsed, err := parseYAML(n.Value, errors.New("syntax")); err == nil {
 			return M("$yaml", canon(parsed, false))
 		}
+	case n != nil && n.Kind == yaml.ScalarNode && !isStr(n) && !isNum(n) && !isBool(n) && !isNone(n) && !isTag(n, tagUnsupported):
+		data, err := yamlx.ToJSON(n)
+		if err == nil {
+			if value, err := yamlx.FromJSON(data); err == nil {
+				return value
+			}
+		}
 	case isTag(n, tagUnsupported):
 		return S(strings.Join(strings.Fields(n.Value), ""))
 	case isMap(n):
@@ -302,7 +310,7 @@ func short(n *Node) string {
 var settingsClasses = map[string]bool{"OxidnsSettingsError": true, "OxidnsValidationError": true, "OxidnsReferenceError": true}
 
 // compare reports a difference ("" when equal).
-func compare(r row, got *Node, err error) string {
+func compareFrozen(r row, got *Node, err error) string {
 	// N7-3d changes only the reader's policy/alias diagnostics here. Both
 	// implementations must still reject as a settings error; accepted values,
 	// business validation messages and argument post-state remain strict.
@@ -717,7 +725,7 @@ func runBoundaryRows(t *testing.T, file string, rows <-chan row) {
 			}()
 			got, err, _ = call(t, r, args)
 		}()
-		diff := compare(r, got, err)
+		diff := compare(t, r, got, err)
 		if diff == "" {
 			diff = compareAfter(r, args, got)
 		}

@@ -37,7 +37,7 @@ func TestC29NativePythonBoundary(t *testing.T) {
 					}
 				}
 			}
-			if difference := compare(reference, got, err); difference != "" {
+			if difference := compare(t, reference, got, err); difference != "" {
 				t.Fatal(difference)
 			}
 			if len(reference.References) > 0 {

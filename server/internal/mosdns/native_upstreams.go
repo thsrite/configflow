@@ -74,3 +74,6 @@ func Upstreams(text string) ([]*yamlx.Node, error) {
 	}
 	return out, nil
 }
+
+// ErrUpstreamType identifies a non-text legacy upstream argument.
+var ErrUpstreamType = errors.New("mosdns: upstreams must be text")

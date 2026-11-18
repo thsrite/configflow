@@ -40,16 +40,34 @@ func ConfigFromJSON(data []byte) (*model.Config, error) {
 	}
 	config := &model.Config{Profile: profile}
 	if raw, ok := fields.Get("system_config"); ok {
-		if err = json.Unmarshal(raw, &config.SystemConfig); err != nil {
+		var projection model.Fields
+		if err = projection.Set("system_config", raw); err != nil {
 			return nil, err
 		}
+		data, err := projection.MarshalJSON()
+		if err != nil {
+			return nil, err
+		}
+		var system model.System
+		if err = json.Unmarshal(data, &system); err != nil {
+			return nil, err
+		}
+		config.SystemConfig = system.SystemConfig
 	}
 	if raw, ok := fields.Get("profile_id"); ok {
-		var id model.String
-		if err = json.Unmarshal(raw, &id); err != nil {
+		var projection model.Fields
+		if err = projection.Set("profile_id", raw); err != nil {
 			return nil, err
 		}
-		config.ProfileID = string(id)
+		data, err := projection.MarshalJSON()
+		if err != nil {
+			return nil, err
+		}
+		var identity profileIdentity
+		if err = json.Unmarshal(data, &identity); err != nil {
+			return nil, err
+		}
+		config.ProfileID = identity.ID
 	}
 	if raw, ok := fields.Get("rule_library"); ok {
 		var projection model.Fields
@@ -157,11 +175,11 @@ func SplitRulesAndRulesets(config *jsonx.Object) (any, any, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	r, err := legacyValue(rules)
+	r, err := legacyRuleList(rules)
 	if err != nil {
 		return nil, nil, err
 	}
-	s, err := legacyValue(sets)
+	s, err := legacyRuleList(sets)
 	return r, s, err
 }
 
@@ -173,7 +191,7 @@ func ParseDNSUpstreams(value any) ([]any, error) {
 		ok = true
 	}
 	if !ok {
-		return nil, fmt.Errorf("mosdns: upstreams must be text")
+		return nil, ErrUpstreamType
 	}
 	nodes, err := Upstreams(text)
 	if err != nil {
@@ -475,4 +493,52 @@ func legacyConsumedRecord(record, consumed any) (*jsonx.Object, error) {
 		}
 	}
 	return object, nil
+}
+
+type profileIdentity struct {
+	ID     string `json:"profile_id"`
+	Fields model.Fields
+	raw    model.Raw
+}
+
+func (v *profileIdentity) UnmarshalJSON(data []byte) error {
+	return model.DecodeRecord(data, v, &v.raw)
+}
+
+func legacyRuleList(rules []model.RuleConfig) ([]any, error) {
+	result := []any{}
+	for _, rule := range rules {
+		raw, err := model.Marshal(rule)
+		if err != nil {
+			return nil, err
+		}
+		original, err := jsonx.Parse(raw)
+		if err != nil {
+			return nil, err
+		}
+		object := original.(*jsonx.Object)
+		type ruleDTO model.RuleConfig
+		value := ruleDTO(rule)
+		value.Fields = model.Fields{}
+		data, err := json.Marshal(value)
+		if err != nil {
+			return nil, err
+		}
+		known, err := jsonx.Parse(data)
+		if err != nil {
+			return nil, err
+		}
+		for key, value := range known.(*jsonx.Object).All() {
+			if key == "Fields" || !object.Has(key) {
+				continue
+			}
+			if value == nil {
+				object.Delete(key)
+			} else {
+				object.Set(key, value)
+			}
+		}
+		result = append(result, object)
+	}
+	return result, nil
 }

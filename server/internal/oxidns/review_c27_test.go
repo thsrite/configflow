@@ -88,7 +88,7 @@ func TestC27ReviewPublicBoundaries(t *testing.T) {
 				c27AssertD2(t, reference, args, original, got, err)
 				return
 			}
-			if difference := compare(reference.row, got, err); difference != "" {
+			if difference := compare(t, reference.row, got, err); difference != "" {
 				t.Fatal(difference)
 			}
 			// This matrix's rejections are user-facing Chinese validation/conflict

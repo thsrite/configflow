@@ -37,7 +37,15 @@ for line in sys.stdin:
         elif fn == 'convert':
             result = m.convert_rule_content_for_mosdns(*args)
         else:
-            raise RuntimeError('not a YAML reader boundary')
+            functions = {
+                'downloads': m.get_mosdns_ruleset_downloads,
+                'custom_files': m.get_mosdns_custom_files,
+                'split': m.split_rules_and_rulesets,
+                'proxy_url': m._build_rule_proxy_url,
+                'ruleset_files': m._ruleset_files,
+                'custom_matches': m._parse_custom_matches,
+            }
+            result = functions[fn](*args)
         answer = {'out': result}
         if 'actual_yaml' in request:
             expected = result if fn == 'generate' else result['dump']

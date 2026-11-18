@@ -17,7 +17,13 @@ func NewProfile(raw *jsonx.Object) *Profile {
 	if raw == nil {
 		raw = jsonx.NewObject()
 	}
-	data, err := jsonx.Compact(raw)
+	projection := jsonx.NewObject()
+	for _, key := range []string{"oxidns", "mosdns", "rule_configs", "rules", "rule_sets", "proxy_groups", "device_notes", "profile_id", "system_config", "rule_library", "agents", "nodes", "subscriptions", "subscription_aggregations"} {
+		if value, ok := raw.Get(key); ok {
+			projection.Set(key, value)
+		}
+	}
+	data, err := jsonx.Compact(projection)
 	if err != nil {
 		return &Profile{doc: M(), source: &model.Config{Profile: &model.Profile{}}}
 	}

@@ -134,6 +134,7 @@ func SingleRuleBatches(config *model.Config) ([]RuleBatch, error) {
 	settings := config.Profile.MosDNS
 	direct, proxy := idSet(settings.DirectRules), idSet(settings.ProxyRules)
 	entries := config.Profile.RuleConfigs
+	legacy := len(entries) == 0
 	if len(entries) == 0 {
 		var err error
 		entries, _, err = SplitRules(config)
@@ -144,7 +145,7 @@ func SingleRuleBatches(config *model.Config) ([]RuleBatch, error) {
 	counts := map[string]int{}
 	previous := ""
 	for _, item := range entries {
-		if (item.ItemType != "" && item.ItemType != "rule") || !flag(item.Enabled) || !flag(item.LibraryEnabled) || (!direct[item.ID] && !proxy[item.ID]) {
+		if (item.ItemType != "rule" && !(legacy && item.ItemType == "")) || !flag(item.Enabled) || !flag(item.LibraryEnabled) || (!direct[item.ID] && !proxy[item.ID]) {
 			previous = ""
 			continue
 		}
@@ -183,7 +184,10 @@ func SingleRuleBatches(config *model.Config) ([]RuleBatch, error) {
 	return result, nil
 }
 
-type sourceIdentity struct{ LibraryID, Name, Behavior, URL string }
+type sourceIdentity struct {
+	LibraryID, Name, Behavior, URL string
+	Declared                       bool
+}
 type nativeLayout struct {
 	sets        map[string]model.RuleConfig
 	order       []string
@@ -210,7 +214,6 @@ func layoutFor(config *model.Config) (nativeLayout, error) {
 	for _, batch := range batches {
 		used[batch.Tag] = true
 	}
-	sources := map[sourceIdentity]string{}
 	for _, id := range out.order {
 		item := out.sets[id]
 		name := strings.TrimSpace(item.Name)
@@ -239,7 +242,12 @@ func layoutFor(config *model.Config) (nativeLayout, error) {
 			used[tag+suffix] = true
 		}
 		out.tags[id] = tag
-		source := sourceIdentity{item.LibraryRuleID, item.Name, textValue(item.Behavior, "domain"), textValue(item.URL, "")}
+	}
+	sources := map[sourceIdentity]string{}
+	for _, id := range out.order {
+		item, declared := out.sets[id]
+		tag := out.tags[id]
+		source := sourceIdentity{item.LibraryRuleID, item.Name, textValue(item.Behavior, "domain"), textValue(item.URL, ""), declared}
 		if existing, ok := sources[source]; ok {
 			out.stems[id] = existing
 		} else {
@@ -252,7 +260,7 @@ func layoutFor(config *model.Config) (nativeLayout, error) {
 
 // RuleProxyURL constructs a profile-scoped provider URL in protocol query order.
 func RuleProxyURL(config *model.Config, baseURL, sourceURL, part, sourceID string) (string, error) {
-	if config == nil || config.SystemConfig.RuleProxyToken == "" {
+	if config == nil || credentialMember(storedMembers(config.SystemConfig), "rule_proxy_token") == "" {
 		return "", ErrRuleProxyToken
 	}
 	endpoint := "/api/mosdns/rule-proxy"
@@ -352,4 +360,4 @@ type PublishGuard struct {
 }
 
 // ErrRuleProxyToken identifies a missing rule-provider capability.
-var ErrRuleProxyToken=errors.New(msgProxyTokenRequired)
+var ErrRuleProxyToken = errors.New(msgProxyTokenRequired)
