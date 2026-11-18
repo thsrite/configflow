@@ -1,4 +1,4 @@
-# N7-3d frozen-reader gate performance
+# N7-3d frozen-reader gate performance - handed back
 
 Branch `go-n73-gate-perf`, based on clean `go@c31fbf306`, independent of the
 handed-back `go-n8-7@1985337ad`. No product code changes, pushes or subagents.
@@ -35,12 +35,12 @@ uses Classify, but its command has no tests and does not execute it in a gate.
   only the unchanged archive and records metadata/physical-audit hashes; no
   production business functions or new reference outcomes are involved.
 
-## Timings and approved measurement scope (in progress)
+## Historical measurement procedure and approved scope
 
 Measure the same selected reader migration tests, serial package scheduling
 (`-p=1`), `GOMAXPROCS=2`, `-race -count=1`, on .64. The 40-minute timeout is
 measurement protection for the known old slow path, not a changed gate default.
-Commands and package elapsed times will be filled after both runs. Shared-host
+Final elapsed times and acceptance ownership are recorded below. Shared-host
 load is reported; timings are observations, never wall-clock assertions.
 
 Baseline exact command:
@@ -50,7 +50,7 @@ RT_HOST=sunbroke@192.168.0.64 rt -e GOMAXPROCS=2 --back .ci-results/n73-gate-per
 ```
 
 Baseline starts at 2026-11-18 00:22:56 UTC on .64 (initial load21.85).
-The original code/fixtures remain untouched on that server until it finishes.
+The original code/fixtures were untouched during that measurement.
 A separate .32 early validation runs the new all-source replay and compact-index
 negative control after gofmt/vet.
 
@@ -107,4 +107,69 @@ FAIL configflow/internal/yamlx/yamlxtest 0.021s
 ```
 
 .64 final gofmt empty and full vet PASS; complete caller/helper/facade race
-currently running with -p6. Full output and exact commands follow at completion.
+was stopped on coordinator instruction. Completed outputs and batch ownership follow below.
+
+## Final hand-back and batch-2 ownership
+
+Implementation00e741661 is already selected into coordinator batch-2. Its
+commit history is preserved; this final addition is documentation only. The
+branch was rebased onto go@a9d6ce86c before acceptance. Latest go@215ab6b04
+changes only AGENT-BRIEF process documentation; no product code differs.
+No push, subagents or product behavior changes.
+
+The coordinator explicitly requested stopping the author's remaining .64 race
+run and accepting final installer/oxidns/provider/routers validation through
+**the coordinator's batch-2 full gate**. Only the verified own go-test process
+was terminated; its known oxidns child and wrapper PIDs were confirmed gone.
+No other agent process was stopped. The aggregate run is not claimed PASS.
+
+At stop time, installer/provider/routers had already naturally completed with
+PASS results. Those extra timings are retained below; oxidns was incomplete.
+**All four packages remain covered by the coordinator's batch-2 gate for final
+acceptance. No further author tests or gate runs are being started.**
+
+Historical before data: N8-7 snapshot40935f37c, .64, GOMAXPROCS4, -p6, full95
+packages plus concurrent proddiff (load observed21.62 to28.39). All rows below
+passed; that historical aggregate gate failed only two unrelated old Unicode
+expectations in api/agents. It predates the added all-frozen-source replay.
+Current data: .64, GOMAXPROCS2, -p6, only10 related complete package suites,
+starting load19.56. Scope, source and load differ: these are historical
+observations, not a strict speedup ratio. Units: seconds.
+
+| Package | Historical full-gate race | Current complete-package race |
+|---|---:|---:|
+| `discovery` | 944.747 | 21.647 PASS |
+| `gateway` | 940.817 | 21.240 PASS |
+| `installer` | 2028.995 | 620.413 PASS |
+| `mosdns` | 1208.764 | 180.547 PASS |
+| `oxidns` | 2168.392 | incomplete; batch-2 |
+| `provider` | 1975.098 | 512.681 PASS |
+| `routers` | 1857.445 | 571.598 PASS |
+| `routersplit` | 1374.491 | 19.396 PASS |
+| `yamlx/yamlxtest` | 996.622 | 113.518 PASS |
+| `yamlx` | 33.306 | 22.495 PASS |
+
+The direct .64 discovery reader test passed in1.58s (package2.647s), versus
+old observation >763s without completion, CPU691s/RSS1,327,596KiB. Same test,
+inputs, flags, host; no estimated old completion duration.
+
+Current full helper suite113.518s PASS. Its real all-source replay107.22s PASS:
+21343 sources, unknown0, original12 category totals unchanged. Persistent
+entry-tamper negative control2.77s PASS; actual on-disk entry tampering made
+TestAllFrozenReaderSources fail in0.01s with the integrity diagnostic shown
+above. The original index/SHA was restored before green package runs.
+Gofmt had no output and full go vet ./... passed.
+
+Exact complete-race stage, inside the recorded rt bash script (format/vet and
+real-file negative controls ran before it):
+
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt -e GOMAXPROCS=2 -- bash -lc 'cd server; go test -json -race -p=6 -count=1 -timeout=40m ./internal/discovery ./internal/gateway ./internal/installer ./internal/mosdns ./internal/oxidns ./internal/provider ./internal/routers ./internal/routersplit ./internal/yamlx/...'
+```
+
+Raw ignored artifacts: `.ci-results/n87-gate/race.log` (historical),
+`.ci-results/n73-gate-perf-before/tests.jsonl` (old discovery lower bound),
+`.ci-results/n73-gate-perf-after/direct.jsonl` (direct comparison),
+`.ci-results/n73-gate-perf-final/{full.jsonl,negative.log,context.log}`.
+Nine package PASS events, no failure events; the unfinished oxidns result is
+not inferred. Batch-2 will provide the final four-package gate verdict.
