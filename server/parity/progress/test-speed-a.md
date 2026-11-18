@@ -1,0 +1,33 @@
+# Test speed A — Python reference recording and slow package analysis
+
+Branch `go-test-speed-a`, based on go `a9d6ce86c`. Scope: mosdns, oxidns,
+provider, deploy and children, discovery, routersplit. Routers excluded. No tests
+removed, timeouts shortened or assertions relaxed. Ordinary references become
+recorded outputs; difftest/proddiff and genuine cross-language interactions stay
+live. B group consumes the same `internal/testgolden` helper, no private copies.
+
+## Shared helper foundation
+
+`internal/testgolden`: exact input/output transcripts; source and venv metadata
+fingerprints; ordinary replay calls no reference callback. `PYREF_MODE=check`
+reports changed outputs and metadata without writing. `record` writes only with
+`PYREF_ACCEPT=1`, and only when the test has not failed. JSON-lines process starts
+lazily in live modes, closes input and is reaped before recording cleanup.
+`tools/pyref/README.md` documents both APIs and the review workflow.
+
+Foundation validation on .32:
+
+```
+RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server; gofmt -w internal/testgolden; go test -race -count=1 ./internal/testgolden; go vet ./internal/testgolden'
+ok configflow/internal/testgolden 1.008s
+```
+
+The .64 baseline is running with the command below; after changes, use the exact
+same command on that machine and retain JSON timings and /proc/loadavg samples:
+
+```
+RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'mkdir -p server/parity/test-speed; cat /proc/loadavg > server/parity/test-speed/a-before.load; cd server; go test -race -count=1 -timeout=30m -json ./internal/mosdns ./internal/oxidns ./internal/provider ./internal/deploy/... ./internal/discovery ./internal/routersplit > parity/test-speed/a-before.jsonl; result=$?; cat /proc/loadavg >> parity/test-speed/a-before.load; tail -4 parity/test-speed/a-before.jsonl; exit $result'
+```
+
+Pending: baseline results/hotspots; integrate and record each package; zero-diff
+live checks; ordinary-test process audit; after timings; final gate/rebase.
