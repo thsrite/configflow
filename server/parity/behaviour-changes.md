@@ -1502,3 +1502,13 @@ port/interval 使用 model.Int；不再保留私有数字文本解码或待接�
 - 真实 Runtime 关机取消停止设备请求、缓存/报告提交，正在运行的旧报告按既有五分钟期限显示中断；浏览器断连不取消已开始的写操作。HEAD 保持 Python 的 404，零写入、零设备请求。
 - 主机持久化证据和转发/RA 详情中的非字符串值按 JSON 字面量显示（`null`、`true`），不仿真 Python 的 `None`/`True`/字典 repr；字符串和整数值与 Python 相同（A23 复核登记）。
 - A23 复核 F2：主机 prepare 失败时 Agent 返回的文字也使用捕获的凭据种子脱敏（Python 不脱敏这条消息里的用户凭据）。
+
+## batch-7 D2 — IPv6 验收与已忽略通知的一次性迁移
+
+协调者确认：切换后需重新做一次 IPv6 验收。旧报告的 Python 摘要与 Go-native digest 不同，
+旧报告保留并显示陈旧；新 Go 报告在输入未变时继续有效，读取不会改写旧记录。
+切换后已忽略的通知会重新出现一次；以 Go 原生指纹再次忽略后，同一事件不再出现。
+这两项必须进入 **O12 发布说明**，提醒用户重新验收并确认一次重新出现的通知。
+精确 baseline 仅登记旧验收报告的 message、checks[0].details 长度/首项，以及通知 items 长度；
+没有扩大到其他字段。回归见 `TestD2VerificationReportMigration`、
+`TestNativeD2DismissalReappearsOnceAndRouterStateIsPreserved` 和 subscription 专项迁移用例。

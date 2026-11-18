@@ -23,7 +23,9 @@ type fakeClient struct{}
 
 func (fakeClient) Do(_ context.Context, r agents.Request) (*agents.Response, error) {
 	body := `{"success":true,"interface":"eth0","interface_index":2,"can_prepare":true,"checks":[{"id":"interface","status":"pass","message":"synthetic evidence"}],"persistence":{},"core":{"ipv6":true,"dns.ipv6":false}}`
-	if strings.HasSuffix(r.URL, "/probe") {
+	if strings.HasSuffix(r.URL, "/api/capabilities") {
+		body = `{}`
+	} else if strings.HasSuffix(r.URL, "/probe") {
 		body = `{"success":true,"connectivity":{"status":"ok","message":"synthetic TCP"}}`
 	}
 	return &agents.Response{StatusCode: 200, Body: []byte(body)}, nil
@@ -73,6 +75,7 @@ func TestRoutesAgainstFlask(t *testing.T) {
 	m.SetClient(fakeClient{})
 	_, e = m.UpdateAgents(srv.Context(), "", func(_ context.Context, rows *[]any) (any, error) {
 		*rows = []any{jsonx.Obj("id", "source", "name", "Synthetic", "host", "192.0.2.2", "port", 8080, "token", "synthetic-source-token", "profile_id", "default", "service_type", "mihomo", "deployment_method", "shell", "enabled", true, "status", "online", "last_heartbeat", time.Now().Format(time.RFC3339), "version", "1.8.50-go")}
+		*rows = append(*rows, jsonx.Obj("id", "client", "name", "Client", "host", "192.0.2.3", "port", 8080, "token", "synthetic-client-token", "profile_id", "default", "service_type", "oxidns", "deployment_method", "shell", "enabled", true, "status", "online", "last_heartbeat", "2000-01-01T00:00:00+00:00"))
 		return nil, nil
 	})
 	if e != nil {

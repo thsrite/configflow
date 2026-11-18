@@ -25,7 +25,12 @@ with tempfile.TemporaryDirectory() as temp, pytest.MonkeyPatch.context() as patc
     agent = {'id': 'source', 'name': 'Synthetic', 'host': '192.0.2.2', 'port': 8080, 'token': 'synthetic-source-token',
              'profile_id': 'default', 'service_type': 'mihomo', 'deployment_method': 'shell', 'enabled': True,
              'status': 'online', 'last_heartbeat': bridge._now(), 'version': '1.8.50-go'}
-    manager._update_agents(lambda rows: rows.__setitem__(slice(None), [agent]))
+    old_client = {'id': 'client', 'name': 'Client', 'host': '192.0.2.3', 'port': 8080,
+                  'token': 'synthetic-client-token', 'profile_id': 'default', 'service_type': 'oxidns',
+                  'deployment_method': 'shell', 'enabled': True, 'status': 'online',
+                  'last_heartbeat': '2000-01-01T00:00:00+00:00'}
+    manager._update_agents(lambda rows: rows.__setitem__(slice(None), [agent, old_client]))
+    patch.setattr(manager, '_deployment_request', lambda *args, **kwargs: {})
     manager.repository.save_profile('default', {'mihomo': {'custom_config': 'ipv6: true\ndns: {ipv6: false}\n', 'linux_gateway': {'enabled': True}}})
     def request(target, operation='', payload=None):
         if operation == 'probe':

@@ -324,6 +324,45 @@ class ComparatorTests(unittest.TestCase):
         self.assertEqual([('body.data.size', 'value')], pd.response_diffs(a, b, '/synthetic', rule))
         self.assertEqual(2, len(pd.response_diffs(a, b, '/other', rule)))
 
+    def test_batch7_request_clocks_keep_exact_fields_and_negative_controls(self):
+        configured = json.loads((pd.PARITY / 'proddiff-normalize.json').read_text())
+        expected = {
+            ('/api/agents/<agent_id>/ipv6-readiness', 'refresh_error.at'),
+            ('/api/agents/<agent_id>/upstream-routers', 'checked_at'),
+            ('/api/notifications', 'checked_at'),
+            ('/api/routers/<router_id>/policy', 'generated_at'),
+        }
+        selected = [rule for rule in configured if (rule['route'], rule.get('path')) in expected]
+        self.assertEqual(4, len(selected))
+        for rule in selected:
+            with self.subTest(route=rule['route']):
+                self.assertEqual(120, rule['tolerance'])
+                self.assertTrue(rule['reason'])
+                parts = rule['path'].split('.')
+                def body(value):
+                    result = {'success': True, 'payload': {'keep': 'value'}}
+                    node = result
+                    for part in parts[:-1]:
+                        node[part] = {}
+                        node = node[part]
+                    node[parts[-1]] = value
+                    return result
+                first, second = '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:01+00:00'
+                source, target = body(first), body(second)
+                self.assertEqual([], pd.response_diffs(reply(source), reply(target), rule['route'], [rule]))
+                for invalid in ['bad', 1, '2026-01-01T00:02:01+00:00']:
+                    self.assertTrue(pd.response_diffs(reply(source), reply(body(invalid)), rule['route'], [rule]))
+                missing = body(second)
+                node = missing
+                for part in parts[:-1]:
+                    node = node[part]
+                del node[parts[-1]]
+                self.assertTrue(pd.response_diffs(reply(source), reply(missing), rule['route'], [rule]))
+                changed = body(second)
+                changed['payload']['keep'] = 'changed'
+                self.assertTrue(pd.response_diffs(reply(source), reply(changed), rule['route'], [rule]))
+                self.assertTrue(pd.response_diffs(reply(source), reply(target), '/other', [rule]))
+
     def test_normalization_preserves_type_changes(self):
         rule = [{'route': '/synthetic', 'path': 'size', 'reason': 'test'}]
         self.assertEqual([('body.size', 'type')], pd.response_diffs(reply(b'{"size":1}'), reply(b'{"size":{}}'), '/synthetic', rule))

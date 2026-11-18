@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"time"
 
 	"configflow/internal/deploy"
 	"configflow/internal/lifecycle"
@@ -26,7 +25,9 @@ type lastCheck struct {
 	Result    *Report `json:"result"`
 }
 
-func now(ctx context.Context) string { return lifecycle.ClockFrom(ctx).Now().Format(time.RFC3339) }
+func now(ctx context.Context) string {
+	return lifecycle.ClockFrom(ctx).Now().Local().Format("2006-01-02T15:04:05-07:00")
+}
 func (s *Service) key(ctx context.Context, a Document, profile string, config Document) string {
 	agent := identity(a)
 	agent["status"] = raw("offline")

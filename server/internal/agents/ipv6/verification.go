@@ -166,7 +166,7 @@ func (s *Service) client(ctx context.Context, source Document, id string, capabi
 	if client == nil || id == text(source["id"]) || text(client["profile_id"]) != text(source["profile_id"]) || strings.EqualFold(text(client["host"]), text(source["host"])) || text(client["deployment_method"]) != "shell" || text(client["service_type"]) == "surge" {
 		return nil, failure("CLIENT_UNAVAILABLE", 409, msgClientUnavailable)
 	}
-	if string(client["enabled"]) == "false" || !clientOnline(client) {
+	if string(client["enabled"]) == "false" || text(client["status"]) != "online" {
 		return nil, failure("CLIENT_UNAVAILABLE", 409, msgClientOffline)
 	}
 	if capabilities {

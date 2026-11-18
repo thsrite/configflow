@@ -179,3 +179,32 @@ rebase 的 range-diff 核对：原75提交全部保留，74个补丁相同；唯
 `bash /tmp/preflight.sh program__configflow-go-batch-7 -p 6`，两组 vet 和全量非 race 全通过，
 最终输出 `PREFLIGHT PASS`（退出码 0）。验证产品树 1f610a0ea，包含 f2666fd23 的全部已提交修复。
 没有运行完整 core/race 门禁。开始重新执行 `GATE_ONLY=compare server/scripts/gate.sh -p 6`。
+
+### compare 首轮归因与协调者决定
+
+compare（产品树 1f610a0ea）在 proddiff 阶段返回 `baseline: new=9 stale=0`、self_check PASS；
+Go 有18次重试，本轮结束负载高，尚未执行后续 difftest/live。未把传输差异或重试加入 baseline。
+
+- 4 项为新入口请求时刻：A23 refresh_error.at、R16 upstream-routers checked_at、
+  notifications checked_at、R15 policy generated_at。每项精确 route/path、120秒、同类型/格式
+  归一化，并保留缺失/错误格式/超窗/其他字段的负向控制；A23 时间格式修成带明确本地偏移
+  的秒级 ISO 时间，与真实 Python 一致，不靠规则掩盖格式差异。
+- 1 项为 A23 候选缺失：Go 额外用心跳新鲜度排除了 stored status=online 的客户端，
+  Python `_client` 使用 GetAgentByID 的持久状态。修为相同状态判断；增加过期心跳的
+  真 Flask↔Go HTTP fixture，继续拒绝 stored status=preparing/offline。
+- 3 项为旧 IPv6 验收报告 D2 digest 失效的 message/details（长度、首项）。
+  协调者明确确认按 D2 接受，只登记三个精确字段，新增新 native 报告有效、旧报告陈旧
+  且 GET 不改写存储的回归，保留原历史报告。
+- 1 项为 notifications items 长度。私有证明同一历史 subscription 通知原已 dismissed，
+  Go native fingerprint 使其一次性重现；不是本轮产生的新失败。协调者明确确认按 D2
+  登记这一个精确字段；新增 subscription 类 synthetic dismissed→pending→native dismissal
+  不再重现、真正新事件重新出现的回归。所有已有项字段仍逐值比较。
+
+两个 D2 后果均已进入 behaviour-changes，明确标记 O12 发布说明：切换后需重新做一次 IPv6
+验收；切换后已忽略的通知会重新出现一次。没有恢复 Python hash 编码。
+
+本轮定向结果：`CONFIGFLOW_DIFF=1 go test -race -count=1 -timeout=15m ./internal/agents/ipv6 ./internal/api/ipv6 ./internal/notifications -run "TestClient|TestD2VerificationReportMigration|TestRoutesAgainstFlask|TestNativeD2"`
+→ ipv6 6.463s、api/ipv6 4.693s、notifications 1.047s 均 ok。
+新增 old-heartbeat 客户端通过真实 Flask HTTP 对照；旧报告与新报告检查分别通过。
+pyref audit 0.571s 通过；proddiff 全部54项 synthetic 自测 `Ran 54 tests ... OK`，
+包括4条时间规则的类型、格式、缺失、超120秒、其他字段和其他路由负向控制。

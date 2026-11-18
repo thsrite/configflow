@@ -7,6 +7,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+
+	"configflow/internal/model"
+	"configflow/internal/tasks"
 )
 
 func TestNativeSignatureChild(t *testing.T) {
@@ -146,5 +149,48 @@ else:
 	command.Env = append(os.Environ(), "PYTHONPATH="+root)
 	if out, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("Python rollback: %s %v", out, err)
+	}
+}
+
+func TestNativeD2SubscriptionDismissalReappearsOnce(t *testing.T) {
+	task := &tasks.Task{Key: "subscription:synthetic", Category: "subscription", Name: "Synthetic", ResourceID: "synthetic", Enabled: true,
+		HistoryData: &tasks.HistoryData{LastStatus: new("failed"), LastError: new("synthetic failure"), LastRunAt: new("2026-01-01T00:00:00+00:00"), RunCount: "2", FailureCount: "1", CacheRetained: new(true)}}
+	observation, err := TaskIncident(task, map[string]model.Agent{}, map[string]string{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := "task:subscription:synthetic"
+	items := newItems()
+	items.Set(key, &Item{State: "dismissed", Source: "task", Fingerprint: new("old-python-fingerprint")})
+	if err := ObserveItem(items, key, observation); err != nil {
+		t.Fatal(err)
+	}
+	current, _ := items.Get(key)
+	if current.State != "pending" || current.Message == nil || *current.Message != "synthetic failure" {
+		t.Fatalf("old dismissal did not reappear: %+v", current)
+	}
+	marker, err := dismissedItem(key, current)
+	if err != nil {
+		t.Fatal(err)
+	}
+	items.Set(key, marker)
+	if err := ObserveItem(items, key, observation); err != nil {
+		t.Fatal(err)
+	}
+	current, _ = items.Get(key)
+	if current.State != "dismissed" {
+		t.Fatal("same native incident reappeared twice")
+	}
+	task.HistoryData.LastError = new("new synthetic failure")
+	changed, err := TaskIncident(task, map[string]model.Agent{}, map[string]string{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ObserveItem(items, key, changed); err != nil {
+		t.Fatal(err)
+	}
+	current, _ = items.Get(key)
+	if current.State != "pending" {
+		t.Fatal("a genuinely new incident stayed hidden")
 	}
 }

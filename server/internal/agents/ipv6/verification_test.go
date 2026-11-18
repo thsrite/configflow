@@ -436,7 +436,7 @@ func TestVerificationRunsAtMostTwoWorkers(t *testing.T) {
 	}
 }
 
-func TestClientRequiresOnlineStatusAsWellAsFreshHeartbeat(t *testing.T) {
+func TestClientRequiresStoredOnlineStatus(t *testing.T) {
 	s, ctx := fixture(t)
 	addClient(t, s, ctx)
 	if e := s.update(ctx, "client", func(_ context.Context, a Document, _ []Document) error { a["status"] = raw("preparing"); return nil }); e != nil {
@@ -562,6 +562,92 @@ func TestSettingsCapabilityPreflightBelongsToWriteOwner(t *testing.T) {
 				}
 			} else if e != nil || settings(a).ClientAgentID != "client" || s.Manager.Repository().CommitCount() != before+1 {
 				t.Fatal("disconnect interrupted capability/save", e, settings(a))
+			}
+		})
+	}
+}
+
+func TestClientStoredOnlineSurvivesAnOldHeartbeat(t *testing.T) {
+	s, ctx := fixture(t)
+	addClient(t, s, ctx)
+	if err := s.update(ctx, "client", func(_ context.Context, a Document, _ []Document) error {
+		a["last_heartbeat"] = raw("2000-01-01T00:00:00+00:00")
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	source, err := s.agent(ctx, "source", "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := s.client(ctx, source, "client", false)
+	if err != nil || text(client["status"]) != "online" {
+		t.Fatalf("stored online client: %v", err)
+	}
+	result, err := s.VerificationSettings(ctx, "source", "default", nil)
+	if err != nil || len(result.Candidates) != 1 || result.Candidates[0].Status != "online" {
+		t.Fatalf("candidates: %+v %v", result, err)
+	}
+}
+
+func TestD2VerificationReportMigration(t *testing.T) {
+	s, ctx := fixture(t)
+	a, err := s.agent(ctx, "source", "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, revision, err := s.snapshot(ctx, "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	all, err := s.all(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	native := s.newRun(ctx, a, &revision, "", all)
+	native["status"] = raw("ok")
+	native["message"] = raw(msgManualRunning)
+	native["checks"] = raw([]Check{check("native_result", "native", "ok", "synthetic")})
+	for _, tt := range []struct {
+		name   string
+		legacy bool
+	}{{"native", false}, {"legacy", true}} {
+		t.Run(tt.name, func(t *testing.T) {
+			report := object(raw(native))
+			if tt.legacy {
+				for _, key := range []string{"settings_fingerprint", "target_fingerprint", "applied_fingerprint"} {
+					report[key] = raw("old-python-fingerprint")
+				}
+			}
+			if err := s.update(ctx, "source", func(_ context.Context, current Document, _ []Document) error {
+				current["ipv6_verifications"] = raw(Document{"manual": raw(report)})
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			before := s.Manager.Repository().CommitCount()
+			result, err := s.Result(ctx, "source", "default", "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			actual := object(result.Verification)
+			if yes(actual["stale"]) != tt.legacy {
+				t.Fatalf("stale result: %s", raw(actual))
+			}
+			if tt.legacy {
+				var checks []Check
+				if err := json.Unmarshal(actual["checks"], &checks); err != nil {
+					t.Fatal(err)
+				}
+				want := []string{msgChangedSettings, msgChangedTarget, msgChangedApplied}
+				if len(checks) != 1 || strings.Join(checks[0].Details, "|") != strings.Join(want, "|") {
+					t.Fatalf("changed inputs: %+v", checks)
+				}
+			} else if text(actual["status"]) != "ok" || string(actual["checks"]) != string(native["checks"]) {
+				t.Fatalf("native result changed: %s", raw(actual))
+			}
+			if s.Manager.Repository().CommitCount() != before {
+				t.Fatal("result GET rewrote stored report")
 			}
 		})
 	}

@@ -272,5 +272,3 @@ func (s *Service) systemSecrets(ctx context.Context) (redact.Secrets, error) {
 	seeds, err := redact.ExternalPayloadSecrets(ctx, system)
 	return redact.NewSecrets(seeds, []string{os.Getenv("AGENT_REGISTRATION_KEY")}), err
 }
-
-func clientOnline(a Document) bool { o, e := legacy(a); return e == nil && agents.IsOnline(o, nil) }
