@@ -180,7 +180,7 @@ func (s *Service) unchanged(ctx context.Context, record *agents.Record, settings
 }
 func (w *worker) run(ctx context.Context, id string) error {
 	s := w.s
-	record, e := s.m.GetAgentByID(ctx, id, false)
+	record, e := workerAgent(ctx, s.m, id)
 	if e != nil || record == nil {
 		return e
 	}

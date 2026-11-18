@@ -19,10 +19,8 @@ const (
 	msgService               = "规则自动同步仅支持 Mihomo 和 OxiDNS"
 	msgProjectionService     = "规则自动同步仅支持 Mihomo 和 OxiDNS。"
 	msgSettings              = "library 和 rules 必须分别为布尔值"
-	msgRequest               = "规则同步设置无效"
 	msgPairEnabling          = "DNS 高可用正在开启，请完成后再修改主备规则自动同步设置"
 	msgPairChanged           = "主备关系已改变，请刷新后重试"
-	msgPairIncomplete        = "DNS 高可用配对不完整，请先修复主备关系"
 	msgMissingLibrary        = "规则集引用的共享来源不存在，请先修复规则引用。"
 )
 const (

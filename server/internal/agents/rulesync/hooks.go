@@ -41,7 +41,7 @@ func PinnedWithheld(ctx context.Context, r *repo.Repository, receipts *deploy.Re
 	if len(ruleIDs) == 0 {
 		return false, nil
 	}
-	if profileID == "" || profileID == "default" {
+	if profileID == "" {
 		id, e := r.DefaultProfileID(ctx)
 		if e != nil {
 			return false, e

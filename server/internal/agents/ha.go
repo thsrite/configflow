@@ -7,7 +7,7 @@ import (
 )
 
 // ErrPairIncomplete means saved HA members no longer form a reciprocal pair.
-var ErrPairIncomplete = errors.New("DNS 高可用配对不完整，请先修复主备关系")
+var ErrPairIncomplete = errors.New(msgHAPairIncomplete)
 
 // HAEnabled reads the registry's strict boolean HA setting.
 func HAEnabled(agent *Record) bool { return haEnabled(agent) }

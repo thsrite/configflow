@@ -1,4 +1,5 @@
 """Real Python snapshot archive refusals; all transport is an in-memory fake."""
+import network_guard  # noqa: F401
 import base64
 import copy
 import json

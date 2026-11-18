@@ -83,7 +83,10 @@ func newWorkerFixture(t *testing.T, service string) *syncFixture {
 		}
 		if strings.HasPrefix(r.URL.Path, "/api/mihomo/providers/rules/") && r.Method == "PUT" {
 			fake.mu.Lock()
-			_, _ = io.Copy(io.Discard, r.Body)
+			rawBody, _ := io.ReadAll(r.Body)
+			if string(rawBody) != "{}" || r.Header.Get("Content-Type") != "application/json" || r.Header.Get("Accept") != "application/json" || r.Header.Get("Authorization") != "Bearer synthetic-rule-token" {
+				t.Error("provider raw body/header contract")
+			}
 			fake.refreshes++
 			fake.providerPaths = append(fake.providerPaths, r.URL.Path)
 			gate, entered := fake.gate, fake.entered
@@ -384,6 +387,25 @@ func TestNativeAcceptedTaskSurvivesRestartWithoutRepost(t *testing.T) {
 	if f.state(t).Status != "succeeded" || f.fake.posts != 1 {
 		t.Fatalf("resumed state %+v posts %d", f.state(t), f.fake.posts)
 	}
+	for _, request := range f.fake.requests {
+		if strings.HasSuffix(request.URL, "/api/oxidns/rules/update") {
+			if request.Timeout != agents.Pair(3, 15) || !request.NoProxy || !request.NoRedirects {
+				t.Fatal("native production options changed")
+			}
+			if request.Method == "GET" && len(request.Body) != 0 {
+				t.Fatal("native GET body")
+			}
+			if request.Method == "POST" {
+				var body struct {
+					Paths []string `json:"paths"`
+				}
+				if e := json.Unmarshal(request.Body, &body); e != nil || len(body.Paths) != 1 || !strings.HasPrefix(body.Paths[0], "rules/rule_") {
+					t.Fatalf("selective raw native body %s", request.Body)
+				}
+			}
+		}
+	}
+
 }
 func TestStructurePublicationPinsNonRuleConfiguration(t *testing.T) {
 	f := newWorkerFixture(t, "mihomo")
@@ -586,5 +608,30 @@ func TestEditDuringRefreshIsNotAcknowledged(t *testing.T) {
 	}
 	if bytes.Contains(baseline.Source, []byte("new.example.com")) || bytes.Contains(baseline.Source, []byte("concurrent.example.com")) {
 		t.Fatal("unverified source advanced")
+	}
+}
+
+func TestWorkerUsesDerivedOfflineStatus(t *testing.T) {
+	f := newWorkerFixture(t, "mihomo")
+	f.edit(t, "new.example.com")
+	entry := f.s.m.Runtime().Entries()["device"]
+	entry.LastHeartbeat = time.Now().Add(-5 * time.Minute).Format("2006-01-02T15:04:05.000000")
+	f.s.m.Runtime().SetEntry("device", entry)
+	stored, e := f.s.m.GetAgentByID(f.ctx, "device", false)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if stored.GetString("status") != "online" {
+		t.Fatal("negative control needs stored online status")
+	}
+	if e = f.s.Run(f.ctx, "device"); e != nil {
+		t.Fatal(e)
+	}
+	state := f.state(t)
+	if state.Status != "pending" || state.Message != msgOffline {
+		t.Fatalf("stale heartbeat: %+v", state)
+	}
+	if len(f.fake.requests) != 0 {
+		t.Fatal("offline worker made device requests")
 	}
 }

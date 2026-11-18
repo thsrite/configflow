@@ -1,4 +1,5 @@
 """Real Python projection oracle; synthetic sources and no network."""
+import network_guard  # noqa: F401
 import copy
 import json
 from backend.test_rule_sync_projection import fixture, native, add_set

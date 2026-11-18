@@ -14,6 +14,7 @@ import (
 	"configflow/internal/lifecycle"
 	"configflow/internal/lockx"
 	"configflow/internal/model"
+	"configflow/internal/notifications"
 	"configflow/internal/taskstatus"
 )
 
@@ -155,11 +156,7 @@ func (s *Service) Configure(ctx context.Context, id string, body json.RawMessage
 		if e != nil {
 			return e
 		}
-		a, e := decodeAgent(record)
-		if e != nil {
-			return e
-		}
-		if agents.HAActive(record) && a.OxiDNSHAPublication != nil && a.OxiDNSHAPublication.Enable != nil {
+		if pairEnabling(record) {
 			return refuse(msgPairEnabling)
 		}
 		pair, e := s.m.HAPair(ctx, id)
@@ -224,7 +221,7 @@ func (s *Service) Round(ctx context.Context) error {
 	if e != nil {
 		return e
 	}
-	agents.ObservePresence(records)
+	observePresence(ctx, s.m, records)
 	s.mu.Lock()
 	for id, running := range s.pending {
 		if !running {
@@ -343,7 +340,7 @@ func (s *Service) saveState(ctx context.Context, id string, next model.RuleSyncS
 		if e = ctx.Err(); e != nil {
 			return e
 		}
-		_, e = taskstatus.New(s.m.Repository().DataDir()).Record("agent_rule_sync:"+id, taskstatus.Result{OK: next.Status == "succeeded", Trigger: "event", Error: next.Message})
+		_, e = notifications.TaskStatus(ctx, s.m.Repository().DataDir()).Record("agent_rule_sync:"+id, taskstatus.Result{OK: next.Status == "succeeded", Trigger: "event", Error: next.Message})
 	}
 	return e
 }

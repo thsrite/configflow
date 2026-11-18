@@ -3,6 +3,7 @@
 The native panel call and live snapshot are device-boundary fakes. Agent HTTP
 framing and untrusted archives have separate loopback boundary tests in Go.
 """
+import network_guard  # noqa: F401
 import json
 import tempfile
 from pathlib import Path

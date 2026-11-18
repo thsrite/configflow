@@ -11,6 +11,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 
 	"configflow/internal/agents"
@@ -22,7 +23,7 @@ import (
 )
 
 func decodeAgent(record *agents.Record) (*model.Agent, error) {
-	raw, err := json.Marshal(record)
+	raw, err := json.Marshal(agentView(record))
 	if err != nil {
 		return nil, fmt.Errorf("encode agent snapshot: %w", err)
 	}
@@ -35,12 +36,34 @@ func decodeAgent(record *agents.Record) (*model.Agent, error) {
 
 // SettingsFor reads strictly boolean scopes; historical wrong types are off.
 func SettingsFor(record *agents.Record) Settings {
-	a, err := decodeAgent(record)
-	if err != nil || a.RuleSync == nil {
+	sync := record.GetObject("rule_sync")
+	if sync == nil {
 		return Settings{}
 	}
-	s := a.RuleSync.Settings
+	raw, err := json.Marshal(sync.Value("settings"))
+	if err != nil {
+		return Settings{}
+	}
+	var s model.RuleSyncSettings
+	if json.Unmarshal(raw, &s) != nil {
+		return Settings{}
+	}
 	return Settings{Library: s.Library != nil && *s.Library, Rules: s.Rules != nil && *s.Rules}
+}
+
+// agentView deliberately omits history members; none of this package's typed
+// reads needs them, and the light-read sentinel must never enter a JSON codec.
+func agentView(record *agents.Record) *jsonx.Object {
+	out := jsonx.NewObject()
+	if record == nil {
+		return out
+	}
+	for key, v := range record.All() {
+		if !slices.Contains(repo.AgentHistoryFields, key) {
+			out.Set(key, v)
+		}
+	}
+	return out
 }
 
 func publishSource(ctx context.Context, m *agents.Manager, profileID string) (*deploy.Source, error) {
@@ -63,6 +86,9 @@ func persistSync(ctx context.Context, m *agents.Manager, id string, settings *Se
 			record, ok := entry.(*jsonx.Object)
 			if !ok || record.GetString("id") != id {
 				continue
+			}
+			if settings != nil && pairEnabling(record) {
+				return nil, refuse(msgPairEnabling)
 			}
 			sync := record.GetObject("rule_sync")
 			if sync == nil {
@@ -156,6 +182,11 @@ func configurePair(ctx context.Context, m *agents.Manager, members []*agents.Rec
 			}
 		}
 		for _, member := range members {
+			if pairEnabling(byID[member.GetString("id")]) {
+				return nil, refuse(msgPairEnabling)
+			}
+		}
+		for _, member := range members {
 			current := byID[member.GetString("id")]
 			sync := current.GetObject("rule_sync")
 			if sync == nil {
@@ -169,17 +200,16 @@ func configurePair(ctx context.Context, m *agents.Manager, members []*agents.Rec
 	return err
 }
 func safeText(ctx context.Context, m *agents.Manager, record *agents.Record, text string) string {
-	system, err := m.Repository().GetSystem(ctx)
+	system, err := m.Repository().GetSystemSettings(ctx)
 	if err != nil {
 		return "[REDACTED]"
 	}
-	secrets, err := redact.ExternalPayloadSecrets(ctx, system.GetObject("system_config"))
+	secrets, err := redact.ExternalPayloadSecrets(ctx, system)
 	if err != nil {
 		return "[REDACTED]"
 	}
 	secrets = redact.CollectCredentials(record, secrets)
-	safe := redact.SanitizeCredentials(jsonx.Obj("message", text), secrets)
-	return agents.FailureText(safe.GetString("message"), []any{record.Value("token")}, 2000)
+	return safeDisplay(text, secrets)
 }
 func logState(ctx context.Context, m *agents.Manager, record *agents.Record, status, message string) {
 	name := record.GetString("name")
@@ -299,7 +329,11 @@ func pollDeployment(ctx context.Context, m *agents.Manager, id, deploymentID str
 
 func isOxi(record *agents.Record) bool { return record.GetString("service_type") == "oxidns" }
 func profileAgents(ctx context.Context, r *repo.Repository, profileID string) ([]*agents.Record, error) {
-	system, e := r.GetSystem(ctx)
+	records, e := r.GetAgents(ctx, false)
+	if e != nil {
+		return nil, e
+	}
+	settings, e := r.GetSystemSettings(ctx)
 	if e != nil {
 		return nil, e
 	}
@@ -307,21 +341,39 @@ func profileAgents(ctx context.Context, r *repo.Repository, profileID string) ([
 	if e != nil {
 		return nil, e
 	}
-	out := []*agents.Record{}
-	for _, entry := range system.GetList("agents") {
-		record, ok := entry.(*jsonx.Object)
-		if !ok {
-			continue
-		}
-		profile := record.GetString("profile_id")
-		if profile == "" || profile == "default" {
-			profile = defaultID
-		}
-		if profile == profileID {
-			out = append(out, record)
+	settings.Set("default_profile_id", defaultID)
+	light := make([]any, 0, len(records))
+	for _, entry := range records {
+		if record, ok := entry.(*jsonx.Object); ok {
+			light = append(light, agentView(record))
 		}
 	}
+	raw, e := json.Marshal(jsonx.Obj("agents", light, "profile_id", profileID, "system_config", settings))
+	if e != nil {
+		return nil, e
+	}
+	source, e := oxidns.ProfileFromJSON(raw)
+	if e != nil {
+		return nil, e
+	}
+	selected := oxidns.ProfileAgents(source)
+	out := make([]*agents.Record, 0, len(selected))
+	for _, node := range selected {
+		record, ok := oxidns.ToJSONX(node).(*jsonx.Object)
+		if !ok {
+			return nil, refuse(msgSnapshotVerify)
+		}
+		out = append(out, record)
+	}
 	return out, nil
+}
+func workerAgent(ctx context.Context, m *agents.Manager, id string) (*agents.Record, error) {
+	record, e := m.GetAgentByID(ctx, id, false)
+	if e != nil || record == nil {
+		return record, e
+	}
+	record.Set("status", agents.OnlineStatus(record, nil))
+	return record, nil
 }
 func repositorySource(ctx context.Context, r *repo.Repository, profileID string) (*deploy.Source, error) {
 	raw, revision, e := r.GetPublishSnapshot(ctx, profileID, false)
@@ -337,4 +389,54 @@ func snapshotVersion(record *agents.Record) string {
 		return applied.GetString("config_version")
 	}
 	return record.GetString("config_version")
+}
+
+// Presence uses the shared transition owner, with only its log-facing fields
+// projected and sanitized. No metrics/history or deployment graph is copied.
+func observePresence(ctx context.Context, m *agents.Manager, records []*agents.Record) {
+	settings, err := m.Repository().GetSystemSettings(ctx)
+	var secrets redact.Secrets
+	if err == nil {
+		secrets, err = redact.ExternalPayloadSecrets(ctx, settings)
+	}
+	for _, record := range records {
+		secrets = redact.CollectCredentials(record, secrets)
+	}
+	safe := make([]*agents.Record, 0, len(records))
+	for _, record := range records {
+		name := record.Value("name")
+		if !jsonx.Truthy(name) {
+			name = record.Value("id")
+		}
+		fields := jsonx.Obj("name", name, "last_heartbeat", record.Value("last_heartbeat"))
+		if err != nil {
+			fields.Set("name", redact.Redacted)
+			fields.Set("last_heartbeat", redact.Redacted)
+		} else {
+			for _, key := range []string{"name", "last_heartbeat"} {
+				if value, ok := fields.Value(key).(string); ok {
+					fields.Set(key, safeDisplay(value, secrets))
+				} else {
+					single := redact.SanitizeCredentials(jsonx.Obj("value", fields.Value(key)), secrets)
+					fields.Set(key, single.Value("value"))
+				}
+			}
+		}
+		fields.Set("id", record.Value("id"))
+		fields.Set("status", record.Value("status"))
+		safe = append(safe, fields)
+	}
+	agents.ObservePresence(safe)
+}
+
+func safeDisplay(text string, secrets redact.Secrets) string {
+	safe := agents.FailureText(text, jsonx.ListOf([]string(secrets)), 2000)
+	if redact.ContainsEncodedSecret(safe, secrets) {
+		return redact.Redacted
+	}
+	return safe
+}
+
+func pairEnabling(record *agents.Record) bool {
+	return agents.HAActive(record) && jsonx.Truthy(record.GetObject(agents.HAField).Value("enable"))
 }

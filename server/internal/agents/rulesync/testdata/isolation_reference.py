@@ -1,4 +1,5 @@
 """Real Python isolation oracle: managed/non-managed file and YAML boundaries."""
+import network_guard  # noqa: F401
 import base64
 import copy
 import json

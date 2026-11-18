@@ -1,6 +1,8 @@
 package rulesync
 
 import (
+	"bytes"
+	"configflow/internal/logx"
 	"context"
 	"encoding/json"
 	"errors"
@@ -177,6 +179,31 @@ func TestHASettingsPairAtomicity(t *testing.T) {
 			t.Fatal("pair settings", e)
 		}
 	}
+
+	_, e = s.m.UpdateAgents(ctx, "", func(_ context.Context, list *[]any) (any, error) {
+		(*list)[0].(*jsonx.Object).Set(agents.HAField, jsonx.Obj("status", "preparing", "enable", jsonx.Obj("peer_id", "peer")))
+		return nil, nil
+	})
+	if e != nil {
+		t.Fatal(e)
+	}
+	beforeEnable := systemBytes(t, s)
+	if e = configurePair(ctx, s.m, pair, Settings{Rules: true}); e == nil || e.Error() != msgPairEnabling {
+		t.Fatalf("concurrent enable guard: %v", e)
+	}
+	if e = persistSync(ctx, s.m, "device", &Settings{Rules: true}, nil); e == nil || e.Error() != msgPairEnabling {
+		t.Fatalf("single settings enable guard: %v", e)
+	}
+	if !bytes.Equal(beforeEnable, systemBytes(t, s)) {
+		t.Fatal("enable race overwrote settings")
+	}
+	_, e = s.m.UpdateAgents(ctx, "", func(_ context.Context, list *[]any) (any, error) {
+		(*list)[0].(*jsonx.Object).Delete(agents.HAField)
+		return nil, nil
+	})
+	if e != nil {
+		t.Fatal(e)
+	}
 	// A changed relationship cannot be overwritten by an already captured pair.
 	_, e = s.m.UpdateAgents(ctx, "", func(_ context.Context, list *[]any) (any, error) {
 		(*list)[1].(*jsonx.Object).GetObject("oxidns_ha").Set("group_id", "other")
@@ -296,4 +323,73 @@ func TestRoundAdmissionRotationAndDrain(t *testing.T) {
 		}
 		s.mu.Unlock()
 	}
+}
+
+func TestPresenceUsesSharedCredentialRedaction(t *testing.T) {
+	ctx, s := fixtureService(t)
+	var logs bytes.Buffer
+	root, e := logx.Setup(logx.Config{Level: logx.Info, Console: &logs})
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer root.Close()
+	record := jsonx.Obj("id", "a16-secret-presence", "name", "alice https://uri-user:presence-password@example.com/?token=synthetic-rule-token", "token", "synthetic-rule-token", "status", "online", "last_heartbeat", "2026-01-02T03:04:05Z")
+	observePresence(ctx, s.m, []*agents.Record{record})
+	record.Set("status", "offline")
+	observePresence(ctx, s.m, []*agents.Record{record})
+	output := logs.String()
+	if !strings.Contains(output, "已离线") || !strings.Contains(output, "alice") {
+		t.Fatal("presence transition/username missing", output)
+	}
+	if strings.Contains(output, "presence-password") || strings.Contains(output, "synthetic-rule-token") {
+		t.Fatal("presence credential leak", output)
+	}
+	if record.GetString("name") != "alice https://uri-user:presence-password@example.com/?token=synthetic-rule-token" {
+		t.Fatal("presence mutated registry")
+	}
+}
+
+func TestProfileFilteringKeepsLiteralDefaultAndDisabledAgents(t *testing.T) {
+	ctx, s := fixtureService(t)
+	r := s.m.Repository()
+	if _, e := r.CreateProfile(ctx, jsonx.Obj("id", "other", "name", "Other"), ""); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := r.SetDefaultProfile(ctx, "other"); e != nil {
+		t.Fatal(e)
+	}
+	_, e := s.m.UpdateAgents(ctx, "", func(_ context.Context, list *[]any) (any, error) {
+		original := (*list)[0].(*jsonx.Object)
+		unbound := original.DeepCopy()
+		unbound.Set("id", "other-device")
+		unbound.Set("profile_id", "other")
+		disabled := original.DeepCopy()
+		disabled.Set("id", "disabled")
+		disabled.Set("enabled", false)
+		*list = append(*list, unbound, disabled)
+		return nil, nil
+	})
+	if e != nil {
+		t.Fatal(e)
+	}
+	for _, tt := range []struct{ profile, want string }{{"default", "device"}, {"other", "other-device"}, {"", "other-device"}} {
+		records, e := profileAgents(ctx, r, tt.profile)
+		if e != nil {
+			t.Fatal(e)
+		}
+		if len(records) != 1 || recordID(records[0]) != tt.want {
+			t.Fatalf("profile %s matched %v want %s", tt.profile, records, tt.want)
+		}
+	}
+}
+
+type unreadHistory struct{}
+func (unreadHistory) MarshalJSON()([]byte,error){return nil,errors.New("history must not be encoded")}
+func TestSettingsAndAgentViewNeverReadHistory(t *testing.T){
+ tests:=[]struct{name string;settings *jsonx.Object;want Settings}{
+ {"strict booleans",jsonx.Obj("library",true,"rules",false),Settings{Library:true}},
+ {"historical wrong type",jsonx.Obj("library",true,"rules","true"),Settings{Library:true}},
+ {"null",jsonx.Obj("library",nil,"rules",nil),Settings{}},
+ }
+ for _,tt:=range tests{t.Run(tt.name,func(t *testing.T){record:=jsonx.Obj("id","device","rule_sync",jsonx.Obj("settings",tt.settings),"deployments",unreadHistory{},"ipv6_verifications",unreadHistory{});if got:=SettingsFor(record);got!=tt.want{t.Fatalf("%+v want %+v",got,tt.want)};if _,e:=decodeAgent(record);e!=nil{t.Fatal(e)}})}
 }

@@ -182,3 +182,5 @@ func PublicUpgradeState(state *jsonx.Object) *jsonx.Object {
 	}
 	return result
 }
+
+const msgHAPairIncomplete = "DNS 高可用配对不完整，请先修复主备关系"
