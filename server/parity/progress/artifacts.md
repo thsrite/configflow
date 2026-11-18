@@ -68,7 +68,7 @@ record、tar manifest、归档 SHA256、全部成员大小/摘要和主配置字
 
 执行前固定指定测试服务器的 RT_HOST；下列命令省略实际主机字面量。所有 Go 并发 `-p 2`。
 已 rebase 到最新本地 `go@95440b69e`；新增基底只有剩余工作盘点文档，产品代码与被测树相同。
-代码/测试提交 `71e2f9abb`，比较器/基线及首版报告 `cb3848319`。
+代码/测试提交 `71e2f9abb`，比较器/基线及首版报告 `cb3848319`；ZIP私有权限及显式格式投影补修 `a51fb5f20`。
 
 定向验证（退出0，server 工作目录）：
 
@@ -105,7 +105,27 @@ rt -- bash -lc 'GOFLAGS="-p=2" GOMAXPROCS=2 GATE_ONLY=compare GATE_LOGS="$HOME/.
 
 补修 ZIP 权限后的 targeted race/真实 Flask 结果：api/generate 5.053s、deploy 14.419s、
 api/config/difftest 25.341s，均 `ok`；工具5个控制 `OK`。后续增加根 sequence 控制，
-再跑相关调用方及最终 compare，完成后补录。
+根 sequence 控制后工具自检 `Ran 6 tests in 0.015s / OK`，api/agents 直接读取调用方
+race 5.911s `ok`。最终 compare 的 proddiff 已通过：23项 self-check 全部 PASS，
+`baseline: new=0 stale=0`、coverage_regressions=0、unmapped_routes=0。总2831例、
+2727已比较；原基底的其余38项已有差异不变。三个 artifact 方法没有剩余 baseline 项。
+同一次 compare 之后21个 difftest 包全部 `ok`（其中 api/config/difftest 70.898s、
+api/agents/difftest 235.043s）；synthetic live 末行：
+
+```text
+SYNTHETIC LIVE PASS: 23 required entries ran and passed; 0 skips; repo Python subtest and WebDAV Python exec verified
+GATE STAGE PASS: compare
+```
+
+该次日志目录为 `$HOME/.cache/configflow-artifacts-compare-1795016428`，只留在测试服务器；
+没有取回真实快照响应或产物。最后格式检查退出0、无输出：
+
+```sh
+rt -- bash -lc 'cd server && test -z "$(gofmt -l internal/api/generate internal/configgen internal/deploy/artifacts.go internal/deploy/previews.go internal/deploy/artifacts_test.go internal/api/config/difftest)"'
+```
+
+交回结论：实现完成、工作树干净、状态 `ported`，等待新的 Opus HR 复核。尚需协调者在
+最终批次树上跑完整门禁；本任务没有运行 core/full gate，也没有 push。
 
 首次 `gofmt`、`go vet -p 2 ./...` 通过。首次扩大到完整 deploy/api/agents 包的 race
 用例集合在8分钟总上限耗尽（其中 api/agents 正在既有
