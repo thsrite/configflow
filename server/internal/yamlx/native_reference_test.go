@@ -105,7 +105,7 @@ func TestNativeAmbiguousStringsReadByPyYAML(t *testing.T) {
 	values := []string{"yes", "on", "no", "off", "0777", "1:30", "1_000", "2001-12-14", "中文", "\nhello\n", "a\r\nb", "a\u0085b", "a\u2028b", "a\u2029b", strings.Repeat("word ", 200)}
 	var sources []string
 	for _, s := range values {
-		data, err := Marshal(Str(s))
+		data, err := MarshalChecked(t, Str(s))
 		if err != nil {
 			t.Fatal(err)
 		}

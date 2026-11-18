@@ -75,7 +75,7 @@ func TestNativeYAMLToJSON(t *testing.T) {
 func TestNativePassThroughTags(t *testing.T) {
 	for _, src := range []string{"!!binary aGVsbG8=", "!!set {a: null, b: null}", "!!omap [{a: 1}, {b: 2}]", "!!pairs [{a: 1}, {a: 2}]", "!!map {a: 1}", "!!seq [a, b]", "!custom text"} {
 		n := parseNative(t, src)
-		data, err := Marshal(n)
+		data, err := MarshalChecked(t, n)
 		if err != nil || !Equal(n, parseNative(t, string(data))) {
 			t.Fatalf("tag %q: %s %v", src, data, err)
 		}
@@ -101,7 +101,7 @@ func FuzzNativeRoundTrip(f *testing.F) {
 			// JSON numbers can exceed yaml.v3's scalar range. Marshal may
 			// explicitly refuse them, but success must always be readable
 			// with the same value; ToJSON's lexical contract stays separate.
-			output, err := Marshal(node)
+			output, err := MarshalChecked(t, node)
 			if err != nil {
 				if !errors.Is(err, ErrPolicy) || len(output) != 0 {
 					t.Fatalf("unexpected writer failure: %v", err)
@@ -114,7 +114,7 @@ func FuzzNativeRoundTrip(f *testing.F) {
 		if err != nil {
 			return
 		}
-		data, err := Marshal(n)
+		data, err := MarshalChecked(t, n)
 		if err != nil {
 			t.Fatalf("parsed node cannot marshal: %v", err)
 		}
@@ -136,7 +136,7 @@ func FuzzNativeNoPanic(f *testing.F) {
 		if n, err := Parse(src); err == nil {
 			var v any
 			_ = Decode(n, &v)
-			_, _ = Marshal(n)
+			_, _ = MarshalChecked(t, n)
 			_, _ = ToJSON(n)
 			c := Clone(n)
 			_ = Equal(n, c)

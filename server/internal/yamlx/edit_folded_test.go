@@ -12,7 +12,7 @@ func TestMarshalFoldedValuesKeepMeaning(t *testing.T) {
 			source := "text: " + indicator + "\n" + body + "keep: value # note\n"
 			t.Run(indicator+body, func(t *testing.T) {
 				original := mustEditParse(t, source)
-				out, err := Marshal(original)
+				out, err := MarshalChecked(t, original)
 				if err != nil {
 					t.Fatal(err)
 				}

@@ -83,7 +83,7 @@ func TestNativeWriterPythonReferences(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			out, err := yamlx.Marshal(want)
+			out, err := yamlx.MarshalChecked(t, want)
 			if err != nil {
 				t.Fatal(err)
 			}

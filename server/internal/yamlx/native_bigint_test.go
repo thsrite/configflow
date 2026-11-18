@@ -16,7 +16,7 @@ func TestLargeJSONIntegersSurviveYAML(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			data, err := Marshal(n)
+			data, err := MarshalChecked(t, n)
 			if err != nil {
 				t.Fatal(err)
 			}

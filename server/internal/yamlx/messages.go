@@ -18,4 +18,7 @@ const (
 	msgMappingShape      = "映射"
 	msgMergeSource       = "YAML 合并引用 << 必须是映射或映射序列（第 %d 行）"
 	msgExplicitScalar    = "YAML 标签 %s 的标量内容无效（第 %d 行）：%v"
+	msgMarshalGraph      = "YAML 输出节点无效"
+	msgMarshalNodeKind   = "YAML 输出节点必须设置类型"
+	msgMarshalAlias      = "YAML 输出引用必须指向此前定义且名称一致的锚点（第 %d 行）"
 )

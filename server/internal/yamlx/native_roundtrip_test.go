@@ -12,7 +12,7 @@ func TestMarshalCollectionKeyComments(t *testing.T) {
 		t.Run(source, func(t *testing.T) {
 			n := mustEditParse(t, source)
 			Delete(n, "A")
-			out, err := Marshal(n)
+			out, err := MarshalChecked(t, n)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -23,7 +23,7 @@ func TestMarshalCollectionKeyComments(t *testing.T) {
 		})
 	}
 	n := mustEditParse(t, "key: value # scalar note\n")
-	out, err := Marshal(n)
+	out, err := MarshalChecked(t, n)
 	if err != nil || string(out) != "key: value # scalar note\n" {
 		t.Fatalf("scalar comment moved: %q: %v", out, err)
 	}
@@ -33,7 +33,7 @@ func TestMarshalTabStringsUseDoubleQuotes(t *testing.T) {
 	for _, value := range []string{"\t", "\ttext", "first\n\t\nlast\n", "first\n\ttext\n"} {
 		for _, style := range []yaml.Style{yaml.LiteralStyle, yaml.FoldedStyle, yaml.TaggedStyle | yaml.LiteralStyle} {
 			n := &Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: value, Style: style}
-			out, err := Marshal(n)
+			out, err := MarshalChecked(t, n)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -55,7 +55,7 @@ func TestMarshalPreservesScalarTagsInAllLayouts(t *testing.T) {
 	} {
 		t.Run(source, func(t *testing.T) {
 			n := parseNative(t, source)
-			out, err := Marshal(n)
+			out, err := MarshalChecked(t, n)
 			if err != nil {
 				t.Fatal(err)
 			}

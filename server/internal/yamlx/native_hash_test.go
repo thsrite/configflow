@@ -48,7 +48,7 @@ func TestMaterializeAliasesRenamesCopiedDefinitions(t *testing.T) {
 	Set(n, "a", &changed)
 	before := ValueHash(n)
 	MaterializeAliases(n)
-	out, err := Marshal(n)
+	out, err := MarshalChecked(t, n)
 	if err != nil {
 		t.Fatal(err)
 	}

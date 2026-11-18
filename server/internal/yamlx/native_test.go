@@ -88,7 +88,7 @@ func TestNativeDuplicateKeys(t *testing.T) {
 func TestNativeMihomoRoundTrip(t *testing.T) {
 	src := "# 中文配置\r\nmixed-port: 7890 # 端口\r\n\r\nproxy-groups:\r\n  - &group\r\n    name: 选择\r\n    type: select\r\n    proxies: [DIRECT, yes, on]\r\ncopy: *group\r\ndns:\r\n  enable: true\r\n  nameserver: [https://dns.example.com/dns-query]\r\n# 结束\r\n"
 	n := parseNative(t, src)
-	data, err := Marshal(n)
+	data, err := MarshalChecked(t, n)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +115,7 @@ func TestNativeStringQuoting(t *testing.T) {
 	for _, s := range []string{"yes", "on", "0777", "1:30", "1_000", "2001-12-14", "no", "off", "y", "N", "1:30.5", "\nhello\n", "\r", "a\u0085b", "a\u2028b", "a\u2029b", strings.Repeat("word ", 200)} {
 		t.Run(fmt.Sprintf("%q", s), func(t *testing.T) {
 			n := Str(s)
-			data, err := Marshal(n)
+			data, err := MarshalChecked(t, n)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -165,7 +165,7 @@ func TestNativeDecodeTypedAndGeneric(t *testing.T) {
 			t.Fatalf("invalid destination %v accepted", dst)
 		}
 	}
-	if _, err := Marshal(make(chan int)); err == nil {
+	if _, err := MarshalChecked(t, make(chan int)); err == nil {
 		t.Fatal("unsupported value accepted")
 	}
 }
@@ -214,14 +214,14 @@ func TestNativeBuildersNavigationAndClone(t *testing.T) {
 		t.Fatalf("manual cycle clone: %#v", c)
 	}
 	for _, scalar := range []*Node{Int(1), Float(1), Bool(true), Null(), Str("1")} {
-		data, err := Marshal(scalar)
+		data, err := MarshalChecked(t, scalar)
 		if err != nil || !Equal(scalar, parseNative(t, string(data))) {
 			t.Fatalf("scalar %#v: %s %v", scalar, data, err)
 		}
 	}
 	for _, f := range []float64{math.Inf(1), math.Inf(-1), math.NaN()} {
 		n := Float(f)
-		b, err := Marshal(n)
+		b, err := MarshalChecked(t, n)
 		if err != nil || !Equal(n, parseNative(t, string(b))) {
 			t.Fatalf("nonfinite %s %v", b, err)
 		}
@@ -246,7 +246,7 @@ func TestNativeAliasSafety(t *testing.T) {
 	alias := &Node{Kind: yaml.AliasNode, Value: "a", Alias: cycle, Line: 2}
 	cycle.Content = []*Node{alias}
 	var dst any
-	for _, load := range []func() error{func() error { return Decode(cycle, &dst) }, func() error { _, err := Marshal(cycle); return err }} {
+	for _, load := range []func() error{func() error { return Decode(cycle, &dst) }, func() error { _, err := MarshalChecked(t, cycle); return err }} {
 		if err := load(); !errors.Is(err, ErrAliasRecursion) {
 			t.Fatalf("manual cycle: %v", err)
 		}
@@ -265,7 +265,7 @@ func TestNativeAliasSafety(t *testing.T) {
 	if err := yaml.Unmarshal([]byte(b.String()), &manual); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Marshal(&manual); !errors.Is(err, ErrAliasBudget) {
+	if _, err := MarshalChecked(t, &manual); !errors.Is(err, ErrAliasBudget) {
 		t.Fatalf("manual alias bomb: %v", err)
 	}
 	cloned := Clone(manual.Content[0])
@@ -297,7 +297,7 @@ func TestNativeAliasSafety(t *testing.T) {
 	if len(Get(n, "rules").Content) != 60000 {
 		t.Fatal("large plain document truncated")
 	}
-	if _, err := Marshal(n); err != nil {
+	if _, err := MarshalChecked(t, n); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -336,7 +336,7 @@ func TestNativeTimestampAliasesAndInline(t *testing.T) {
 func TestNativeRejectsMalformedManualNodes(t *testing.T) {
 	for _, n := range []*Node{Map(Str("odd")), {Kind: yaml.AliasNode}, {Kind: 99}, {Kind: yaml.DocumentNode}, {Kind: yaml.SequenceNode, Content: []*Node{nil}}} {
 		var dst any
-		for _, check := range []func() error{func() error { return Decode(n, &dst) }, func() error { _, err := Marshal(n); return err }, func() error { _, err := ToJSON(n); return err }} {
+		for _, check := range []func() error{func() error { return Decode(n, &dst) }, func() error { _, err := MarshalChecked(t, n); return err }, func() error { _, err := ToJSON(n); return err }} {
 			if err := check(); !errors.Is(err, ErrPolicy) {
 				t.Fatalf("manual node %#v: %v", n, err)
 			}

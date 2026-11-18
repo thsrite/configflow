@@ -84,6 +84,13 @@ func Marshal(v any) (data []byte, err error) {
 	defer nativeRecovery(&err)
 	n, err := Encode(v)
 	if err != nil {
+		var policy *SyntaxError
+		if errors.Is(err, ErrPolicy) && errors.As(err, &policy) && strings.HasPrefix(policy.Problem, "yamlx: ") {
+			return nil, fmt.Errorf("%s: %w", msgMarshalGraph, err)
+		}
+		return nil, err
+	}
+	if err := checkMarshalBindings(n); err != nil {
 		return nil, err
 	}
 	n = copyGraph(n, map[*Node]*Node{})

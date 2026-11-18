@@ -14,7 +14,7 @@ func TestMarshalMappingWithNonStringKeys(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		out, err := Marshal(node)
+		out, err := MarshalChecked(t, node)
 		if err != nil {
 			t.Fatal(err)
 		}

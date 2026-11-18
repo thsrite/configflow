@@ -200,6 +200,7 @@ func verifyEdit(out []byte, want *Node, comments []string) error {
 // Nothing is expanded, preserving alias chains and their budget (N7-2 F1).
 func MaterializeAliases(doc *Node) {
 	emitted := map[*Node]bool{}
+	definitions := map[*Node]*Node{}
 	names := map[*Node]string{}
 	used := map[string]bool{}
 	name := func(n *Node) string {
@@ -228,6 +229,7 @@ func MaterializeAliases(doc *Node) {
 			anchor := name(target)
 			if emitted[target] {
 				n.Value = anchor
+				n.Alias = definitions[target]
 				return
 			}
 			definition := *target
@@ -242,11 +244,13 @@ func MaterializeAliases(doc *Node) {
 			}
 			*n = definition
 			emitted[target] = true
+			definitions[target] = n
 			names[n] = anchor
 		} else if n.Anchor != "" {
 			n.Anchor = name(n)
 		}
 		emitted[n] = true
+		definitions[n] = n
 		for _, child := range n.Content {
 			walk(child)
 		}

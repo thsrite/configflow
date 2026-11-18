@@ -56,7 +56,7 @@ func TestReaderErrorKindsStayDistinct(t *testing.T) {
 				check(Decode(tc.node, &dst))
 				_, err := ToJSON(tc.node)
 				check(err)
-				_, err = Marshal(tc.node)
+				_, err = MarshalChecked(t, tc.node)
 				check(err)
 			}
 		})

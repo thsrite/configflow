@@ -56,7 +56,7 @@ func TestStandardTagShapes(t *testing.T) {
 					if err := Decode(manual, &value); !errors.Is(err, ErrPolicy) {
 						t.Fatalf("Decode: %v", err)
 					}
-					if _, err := Marshal(manual); !errors.Is(err, ErrPolicy) {
+					if _, err := MarshalChecked(t, manual); !errors.Is(err, ErrPolicy) {
 						t.Fatalf("Marshal: %v", err)
 					}
 				})

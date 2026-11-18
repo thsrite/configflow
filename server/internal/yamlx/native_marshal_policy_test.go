@@ -27,7 +27,7 @@ func TestMarshalRejectsUnparseableTaggedScalars(t *testing.T) {
 			if err != nil || !bytes.Equal(before, source) {
 				t.Fatalf("JSON text changed: %s %v", before, err)
 			}
-			output, err := Marshal(node)
+			output, err := MarshalChecked(t, node)
 			if tt.reject {
 				if len(output) != 0 || !errors.Is(err, ErrPolicy) || errors.Is(err, ErrSyntax) {
 					t.Fatalf("output=%q error=%v", output, err)

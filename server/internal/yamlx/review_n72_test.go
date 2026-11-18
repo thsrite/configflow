@@ -78,7 +78,7 @@ func TestReviewN72MergeKeysStayImplicit(t *testing.T) {
 	}
 	for _, tt := range tests {
 		n := mustEditParse(t, tt.source)
-		out, err := Marshal(n)
+		out, err := MarshalChecked(t, n)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -138,7 +138,7 @@ func TestReviewN72EmptyYAMLTagRejected(t *testing.T) {
 			t.Errorf("%q: %v", source, err)
 		}
 	}
-	if out, err := Marshal(&Node{Kind: yaml.ScalarNode, Tag: "!!", Value: "x"}); !errors.Is(err, ErrPolicy) {
+	if out, err := MarshalChecked(t, &Node{Kind: yaml.ScalarNode, Tag: "!!", Value: "x"}); !errors.Is(err, ErrPolicy) {
 		t.Errorf("unwritable tag marshalled as %q: %v", out, err)
 	}
 }
@@ -173,7 +173,7 @@ func TestReviewN72StringsSurviveMarshal(t *testing.T) {
 			for _, style := range []yaml.Style{0, yaml.SingleQuotedStyle, yaml.LiteralStyle, yaml.FoldedStyle} {
 				s := &Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: value, Style: style}
 				n := build(s)
-				out, err := Marshal(n)
+				out, err := MarshalChecked(t, n)
 				if err != nil {
 					t.Errorf("%q style %v: %v", value, style, err)
 					continue
