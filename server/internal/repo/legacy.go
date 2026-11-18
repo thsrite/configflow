@@ -247,7 +247,41 @@ func nodeRawDialer(node *model.Node) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return rawDialer(object)
+	return legacyRawDialer(object)
+}
+
+// legacyRawDialer is dialer_references.raw_dialer: the dialer-proxy of a
+// structured proxy_string, else of the node's own fields.
+func legacyRawDialer(node *jsonx.Object) (any, error) {
+	if proxyString := node.Value("proxy_string"); jsonx.Truthy(proxyString) {
+		text, ok := proxyString.(string)
+		if !ok {
+			return nil, validationError("节点 proxy_string 必须是字符串")
+		}
+		parsed, err := convert.InspectStructuredProxyString(text)
+		if err != nil {
+			return nil, convertFailure(err)
+		}
+		if parsed == nil || parsed.Len() == 0 {
+			return nil, nil
+		}
+		return parsed.Value("dialer-proxy"), nil
+	}
+	value, err := convert.RawDialer(node)
+	return value, convertFailure(err)
+}
+
+// convertFailure maps the converter's input errors to validation errors.
+func convertFailure(err error) error {
+	var reference *convert.DialerReferenceError
+	var yamlFailure *convert.ProxyYAMLError
+	switch {
+	case errors.As(err, &reference):
+		return &Error{Kind: ErrValidation, Message: reference.Message, Cause: err}
+	case errors.As(err, &yamlFailure):
+		return &Error{Kind: ErrValidation, Message: err.Error(), Cause: err}
+	}
+	return err
 }
 
 // Bridges to the validators of packages that still take jsonx values

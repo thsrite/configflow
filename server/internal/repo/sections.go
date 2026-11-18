@@ -164,36 +164,51 @@ func groupNames(profile *model.Profile) map[string]bool {
 	return names
 }
 
-// enabledFlag is an optional enabled member: absent means enabled.
-func enabledFlag(enabled *bool) bool { return enabled == nil || *enabled }
-
 // sharedItem is the identity of one shared resource for the deletion guard.
 type sharedItem struct {
 	id, name string
 	enabled  bool
 }
 
-func sharedItems(shared *model.Shared, kind string) []sharedItem {
+func sharedItems(shared *model.Shared, kind string) ([]sharedItem, error) {
 	var items []sharedItem
+	add := func(record any, id, name string, enabled *bool) error {
+		flag, err := storedEnabled(record, enabled)
+		items = append(items, sharedItem{id, name, flag})
+		return err
+	}
+	var err error
 	switch kind {
 	case kindSubscriptions:
-		for _, item := range shared.Subscriptions {
-			items = append(items, sharedItem{item.ID, item.Name, enabledFlag(item.Enabled)})
+		for index := range shared.Subscriptions {
+			item := &shared.Subscriptions[index]
+			if err = add(item, item.ID, item.Name, item.Enabled); err != nil {
+				return nil, err
+			}
 		}
 	case kindNodes:
-		for _, item := range shared.Nodes {
-			items = append(items, sharedItem{item.ID, item.Name, enabledFlag(item.Enabled)})
+		for index := range shared.Nodes {
+			item := &shared.Nodes[index]
+			if err = add(item, item.ID, item.Name, item.Enabled); err != nil {
+				return nil, err
+			}
 		}
 	case kindAggregations:
-		for _, item := range shared.Aggregations {
-			items = append(items, sharedItem{item.ID, item.Name, enabledFlag(item.Enabled)})
+		for index := range shared.Aggregations {
+			item := &shared.Aggregations[index]
+			if err = add(item, item.ID, item.Name, item.Enabled); err != nil {
+				return nil, err
+			}
 		}
 	case kindRuleLibrary:
-		for _, item := range shared.RuleLibrary {
-			items = append(items, sharedItem{item.ID, item.Name, enabledFlag(item.Enabled)})
+		for index := range shared.RuleLibrary {
+			item := &shared.RuleLibrary[index]
+			if err = add(item, item.ID, item.Name, item.Enabled); err != nil {
+				return nil, err
+			}
 		}
 	}
-	return items
+	return items, nil
 }
 
 // displayName is a resource's name, or its id when it has none.
@@ -216,8 +231,16 @@ func applySharedIn(document *model.Document, fn func(s *model.Shared) error) (*m
 		return nil, err
 	}
 	for _, kind := range SharedFields {
+		proposedItems, err := sharedItems(proposed, kind)
+		if err != nil {
+			return nil, err
+		}
+		currentItems, err := sharedItems(&document.Shared, kind)
+		if err != nil {
+			return nil, err
+		}
 		remaining := map[string]sharedItem{}
-		for _, item := range sharedItems(proposed, kind) {
+		for _, item := range proposedItems {
 			if item.id == "" {
 				return nil, validationError(kind + " 中每一项必须有 ID")
 			}
@@ -226,7 +249,7 @@ func applySharedIn(document *model.Document, fn func(s *model.Shared) error) (*m
 			}
 			remaining[item.id] = item
 		}
-		for _, item := range sharedItems(&document.Shared, kind) {
+		for _, item := range currentItems {
 			kept, found := remaining[item.id]
 			disabled := kind != kindRuleLibrary && item.enabled && !kept.enabled
 			if found && !disabled {

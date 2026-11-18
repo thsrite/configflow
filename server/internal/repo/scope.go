@@ -451,7 +451,7 @@ func prepareConfig(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		if pyStrip(jsonx.Str(system.GetObject("system_config").GetOr("server_domain", ""))) == "" {
+		if trimText(jsonx.Str(system.GetObject("system_config").GetOr("server_domain", ""))) == "" {
 			domain := h.DefaultServerDomain()
 			_, err := repository.UpdateSystemTransaction(ctx, func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
 				system.GetObject("system_config").Set("server_domain", domain)

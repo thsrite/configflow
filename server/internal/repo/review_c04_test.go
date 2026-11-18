@@ -92,34 +92,34 @@ func TestSaveRouterWithNonStringExpectedID(t *testing.T) {
 	wantError(t, r.SaveRouterPublication(bg, "default", withID(jsonx.Float(1.5)), RouterPublication{}), ErrInUse,
 		"路由器连接已变化，无法保存发布回读记录")
 	for _, id := range []any{jsonx.Obj("a", 1), []any{"x"}} {
-		err := r.SaveRouterSettings(bg, "default", withID(id), nil)
-		if !isHelperClass(err, ClassTypeError) || err.Error() != "unhashable type: '"+pyTypeName(id)+"'" {
-			t.Fatalf("settings with id %v: %v", id, err)
+		// A container id is refused before anything is read or written.
+		if err := r.SaveRouterSettings(bg, "default", withID(id), nil); err == nil {
+			t.Fatalf("settings with id %v accepted", id)
 		}
-		err = r.SaveRouterPublication(bg, "default", withID(id), RouterPublication{})
-		if !isHelperClass(err, ClassTypeError) {
-			t.Fatalf("publication with id %v: %v", id, err)
+		if err := r.SaveRouterPublication(bg, "default", withID(id), RouterPublication{}); err == nil {
+			t.Fatalf("publication with id %v accepted", id)
 		}
 	}
 	missing := router.DeepCopy()
 	missing.Delete("id")
-	if err := r.SaveRouterSettings(bg, "default", missing, nil); !isHelperClass(err, ClassKeyError) || err.Error() != "'id'" {
-		t.Fatalf("missing id: %v", err)
+	if err := r.SaveRouterSettings(bg, "default", missing, nil); err == nil {
+		t.Fatal("missing id accepted")
 	}
 	// A non-string id on a profile that does not exist: the profile is looked up first.
 	wantError(t, r.SaveRouterSettings(bg, "ghost", withID(jsonx.Int(5)), nil), ErrNotFound, "ghost")
 	wantEqual(t, must(r.GetProfile(bg, "default"))(t).GetObject("routers").GetList("items")[0], router)
 }
 
-// import_client_profile: a non-object "profile" result fails on .items()
-// like Python (AttributeError text).
+// import_client_profile: a non-object "profile" result from the builder is
+// an internal error and writes nothing (Python failed on .items()).
 func TestImportClientProfileNonObjectProfileResult(t *testing.T) {
 	r := newRepo(t)
+	before := must(r.Store().Fingerprint())(t)
 	_, err := r.ImportClientProfile(bg, jsonx.Obj("id", "c", "name", "C"),
 		func(context.Context, *jsonx.Object) (*jsonx.Object, error) {
 			return jsonx.Obj("profile", []any{"mihomo"}), nil
 		})
-	if !isHelperClass(err, ClassAttributeError) || err.Error() != "'list' object has no attribute 'items'" {
+	if err == nil || must(r.Store().Fingerprint())(t) != before {
 		t.Fatalf("got %v", err)
 	}
 }

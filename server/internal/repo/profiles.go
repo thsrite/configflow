@@ -63,34 +63,66 @@ func AgentBindingSummary(agent *jsonx.Object) *jsonx.Object {
 		"port", agent.Value("port"), "service_type", serviceType)
 }
 
-func agentProfileID(agent *jsonx.Object, defaultID string) any {
-	if value := agent.Value("profile_id"); jsonx.Truthy(value) {
-		return value
+// agentBindings is the binding summary (AgentBindingSummary) of every stored
+// Agent by the profile it is bound to (its profile_id, else the default).
+func agentBindings(document *model.Document) (map[string][]any, error) {
+	system, err := viewOf(&document.System)
+	if err != nil {
+		return nil, err
 	}
-	return defaultID
+	raw, _ := system.get("agents")
+	var agents []json.RawMessage
+	if jsonKind(raw) == '[' {
+		if err := json.Unmarshal(raw, &agents); err != nil {
+			return nil, err
+		}
+	}
+	defaultID := defaultProfileIn(document)
+	bindings := map[string][]any{}
+	for _, item := range agents {
+		if jsonKind(item) != '{' {
+			continue
+		}
+		agent := viewOfJSON(item)
+		profileID := defaultID
+		if raw, _ := agent.get("profile_id"); jsonTruthy(raw) {
+			text, ok := jsonString(raw)
+			if !ok {
+				continue
+			}
+			profileID = text
+		}
+		id := storedValue(agent, "id", nil)
+		name := id
+		if raw, _ := agent.get("name"); jsonTruthy(raw) {
+			name = storedValue(agent, "name", nil)
+		}
+		serviceType := any("mihomo")
+		if raw, _ := agent.get("service_type"); jsonTruthy(raw) {
+			serviceType = storedValue(agent, "service_type", nil)
+		}
+		bindings[profileID] = append(bindings[profileID], jsonx.Obj("id", id, "name", name,
+			"host", storedValue(agent, "host", ""), "port", storedValue(agent, "port", nil), "service_type", serviceType))
+	}
+	return bindings, nil
 }
 
 // ListProfiles is list_profiles(): metadata of every profile plus revision
 // (the generated-config revision, see ConfigRevision), is_default and
 // bound_agents.
 func (r *Repository) ListProfiles(ctx context.Context) (result []any, err error) {
-	err = r.view(ctx, func(document *jsonx.Object) error {
-		sharedRevision := revisionOf(document.GetObject("shared"))
-		defaultID := defaultProfileIDOf(document)
-		bindings := map[string][]any{}
-		for _, item := range document.GetObject("system").GetList("agents") {
-			agent, _ := jsonx.AsObject(item)
-			if profileID, ok := agentProfileID(agent, defaultID).(string); ok {
-				bindings[profileID] = append(bindings[profileID], AgentBindingSummary(agent))
-			}
+	err = r.read(ctx, func(document *model.Document) error {
+		bindings, err := agentBindings(document)
+		if err != nil {
+			return err
 		}
+		defaultID := defaultProfileIn(document)
 		result = []any{}
-		for _, value := range document.GetObject("profiles").All() {
-			profile, _ := jsonx.AsObject(value)
-			entry := metadataOf(profile)
-			entry.Set("revision", jsonx.Int(revisionOf(profile)+sharedRevision))
-			entry.Set("is_default", profile.Value("id") == defaultID)
-			bound := bindings[profile.GetString("id")]
+		for _, profile := range document.Profiles {
+			entry := profileMetadata(profile)
+			entry.Set("revision", jsonx.Int(int64(profile.Revision)+int64(document.Shared.Revision)))
+			entry.Set("is_default", profile.Key() == defaultID)
+			bound := bindings[profile.Key()]
 			if bound == nil {
 				bound = []any{}
 			}
@@ -104,20 +136,20 @@ func (r *Repository) ListProfiles(ctx context.Context) (result []any, err error)
 
 // GetProfileAgentBindings is get_profile_agent_bindings.
 func (r *Repository) GetProfileAgentBindings(ctx context.Context, profileID string) (result *jsonx.Object, err error) {
-	err = r.view(ctx, func(document *jsonx.Object) error {
-		profile, err := profileOf(document, profileID)
+	err = r.read(ctx, func(document *model.Document) error {
+		profile, err := profileFor(document, profileID)
 		if err != nil {
 			return err
 		}
-		defaultID := defaultProfileIDOf(document)
-		agents := []any{}
-		for _, item := range document.GetObject("system").GetList("agents") {
-			agent, _ := jsonx.AsObject(item)
-			if agentProfileID(agent, defaultID) == profileID {
-				agents = append(agents, AgentBindingSummary(agent))
-			}
+		bindings, err := agentBindings(document)
+		if err != nil {
+			return err
 		}
-		result = jsonx.Obj("profile", metadataOf(profile), "agents", agents)
+		agents := bindings[profileID]
+		if agents == nil {
+			agents = []any{}
+		}
+		result = jsonx.Obj("profile", profileMetadata(profile), "agents", agents)
 		return nil
 	})
 	return result, err
@@ -272,9 +304,14 @@ func (r *Repository) compatConfigWithBaseline(ctx context.Context, profileID str
 }
 
 // CompatConfigFrom is compat_config_from: resolve again from a document
-// returned by GetCompatConfigWithSource; the result equals the view of then.
+// returned by GetCompatConfigWithSource (or a candidate built as jsonx); the
+// result equals the view of then.
 func (r *Repository) CompatConfigFrom(document *jsonx.Object, profileID string) (*jsonx.Object, error) {
-	return resolveProfile(document, profileID, nil, true)
+	typed, err := modelFromLegacy(document, nil)
+	if err != nil {
+		return nil, err
+	}
+	return legacyConfig(typed, profileID, nil, true)
 }
 
 func newProfileID(metadata *jsonx.Object) (string, error) {
@@ -314,7 +351,7 @@ func (r *Repository) CreateProfile(ctx context.Context, metadata *jsonx.Object, 
 		rawName = value
 	}
 	name, ok := rawName.(string)
-	if !ok || pyStrip(name) == "" {
+	if !ok || trimText(name) == "" {
 		return nil, validationError("配置名称不能为空")
 	}
 	var profile *model.Profile
@@ -342,7 +379,7 @@ func (r *Repository) CreateProfile(ctx context.Context, metadata *jsonx.Object, 
 			return err
 		}
 		now := nowISO()
-		profile.ID, profile.Name, profile.Description = profileID, pyStrip(name), descriptionOf(metadata)
+		profile.ID, profile.Name, profile.Description = profileID, trimText(name), descriptionOf(metadata)
 		profile.CreatedAt, profile.UpdatedAt, profile.Revision = now, now, 0
 		document.Profiles = append(document.Profiles, profile)
 		return nil
@@ -388,7 +425,7 @@ func (r *Repository) ImportClientProfile(ctx context.Context, metadata *jsonx.Ob
 		return nil, err
 	}
 	name, ok := metadata.Value("name").(string)
-	if !ok || pyStrip(name) == "" {
+	if !ok || trimText(name) == "" {
 		return nil, validationError("配置名称不能为空")
 	}
 	var result *jsonx.Object
@@ -405,11 +442,11 @@ func (r *Repository) ImportClientProfile(ctx context.Context, metadata *jsonx.Ob
 			return err
 		}
 		if result == nil {
-			return helperError(ClassAttributeError, "'NoneType' object has no attribute 'get'")
+			return validationError(msgImportResultShape)
 		}
-		additions, err := compatObject(result.GetOr("shared", jsonx.NewObject()))
-		if err != nil {
-			return err
+		additions, ok := jsonx.AsObject(result.GetOr("shared", jsonx.NewObject()))
+		if !ok {
+			return validationError(msgImportResultShape)
 		}
 		adds := false
 		for _, field := range SharedFields {
@@ -421,9 +458,10 @@ func (r *Repository) ImportClientProfile(ctx context.Context, metadata *jsonx.Ob
 				return err
 			}
 			for _, field := range SharedFields {
-				extra, err := compatList(jsonx.DeepCopy(additions.GetOr(field, []any{})))
-				if err != nil {
-					return err
+				extra, ok := jsonx.AsList(jsonx.DeepCopy(additions.GetOr(field, []any{})))
+				if !ok {
+					// The additions are not resources with ids.
+					return validationError(field + " 中每一项必须有 ID")
 				}
 				if len(extra) == 0 {
 					continue
@@ -435,20 +473,20 @@ func (r *Repository) ImportClientProfile(ctx context.Context, metadata *jsonx.Ob
 			}
 			document.Shared.Revision++
 		}
-		built := r.emptyProfile(profileID, pyStrip(name), "")
+		built := r.emptyProfile(profileID, trimText(name), "")
 		profileValue := result.GetOr("profile", jsonx.NewObject())
 		fields, ok := profileValue.(*jsonx.Object)
 		if !ok || fields == nil {
-			return helperError(ClassAttributeError, "'"+pyTypeName(profileValue)+"' object has no attribute 'items'")
+			return validationError(msgImportResultShape)
 		}
 		for key, value := range fields.All() {
 			if !IsProfileField(key) {
 				return validationError("导入结果包含未知字段：" + key)
 			}
 			if current, ok := jsonx.AsObject(built.Value(key)); ok {
-				override, err := compatObject(value)
-				if err != nil {
-					return helperError(ClassAttributeError, "'"+pyTypeName(value)+"' object has no attribute 'items'")
+				override, ok := jsonx.AsObject(value)
+				if !ok {
+					return validationError(msgImportResultShape)
 				}
 				built.Set(key, DeepMerge(current, override))
 			} else {
@@ -490,11 +528,11 @@ func (r *Repository) UpdateProfileMetadata(ctx context.Context, profileID string
 		}
 		for key, value := range updates.All() {
 			text, ok := value.(string)
-			if !ok || (key == "name" && pyStrip(text) == "") {
+			if !ok || (key == "name" && trimText(text) == "") {
 				return validationError("配置名称和说明必须是字符串，名称不能为空")
 			}
 			if key == "name" {
-				profile.Name = pyStrip(text)
+				profile.Name = trimText(text)
 			} else {
 				profile.Description = text
 			}
@@ -685,23 +723,6 @@ func (r *Repository) DeleteProfile(ctx context.Context, profileID, newDefaultID 
 	})
 }
 
-// nameSet collects group names for "was this policy removed" checks.
-func nameSet(groups any) (map[string]bool, error) {
-	items, err := compatList(groups)
-	if err != nil {
-		return nil, err
-	}
-	names := map[string]bool{}
-	for _, item := range items {
-		group, err := compatObject(item)
-		if err != nil {
-			return nil, err
-		}
-		names[jsonx.Repr(group.Value("name"))] = true
-	}
-	return names, nil
-}
-
 // UpdateProfileTransaction is update_profile_transaction(profile_id,
 // updater, include_config_revision=True): updater edits the compat view of
 // the profile; its ProfileFields are stored. It returns a copy of the
@@ -829,13 +850,13 @@ type RouterPublication struct {
 func expectedRouterID(expectedRouter *jsonx.Object) (routerID string, isString bool, err error) {
 	value, ok := expectedRouter.Get("id")
 	if !ok {
-		return "", false, helperError(ClassKeyError, "'id'")
+		return "", false, validationError(msgRouterIDInvalid)
 	}
 	switch typed := value.(type) {
 	case string:
 		return typed, true, nil
 	case *jsonx.Object, []any:
-		return "", false, helperError(ClassTypeError, "unhashable type: '"+pyTypeName(value)+"'")
+		return "", false, validationError(msgRouterIDInvalid)
 	}
 	return "", false, nil
 }

@@ -3,7 +3,6 @@ package repo
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"configflow/internal/model"
 )
@@ -119,7 +118,7 @@ func selectResources(profile *model.Profile, c catalogs, roots ResourceRoots) (s
 		groupIDs[group.ID] = true
 	}
 	choose := func(kind, id string, allowBuiltin bool) error {
-		if strings.TrimSpace(id) == "" {
+		if trimText(id) == "" {
 			return validationError("资源引用必须是非空 ID")
 		}
 		if allowBuiltin && kind == kindNodes && builtinPolicy(id) {
@@ -137,7 +136,7 @@ func selectResources(profile *model.Profile, c catalogs, roots ResourceRoots) (s
 				return nil, validationError("代理链必须指定前置和落地引用")
 			}
 			for _, reference := range []model.ResourceRef{group.Chain.Entry, group.Chain.Exit} {
-				if (reference.Type != "node" && reference.Type != "group") || strings.TrimSpace(reference.ID) == "" {
+				if (reference.Type != "node" && reference.Type != "group") || trimText(reference.ID) == "" {
 					return nil, validationError("代理链引用必须是 node/group type 与非空 id")
 				}
 				if reference.Type == "node" {
@@ -267,7 +266,9 @@ func selectDialerTargets(profile *model.Profile, c catalogs, selected selection,
 				return err
 			}
 		}
-		if node.Enabled != nil && !*node.Enabled {
+		if enabled, err := storedEnabled(node, node.Enabled); err != nil {
+			return err
+		} else if !enabled {
 			continue
 		}
 		target, err := nodeRawDialer(node)
@@ -278,7 +279,7 @@ func selectDialerTargets(profile *model.Profile, c catalogs, selected selection,
 			continue
 		}
 		name, ok := target.(string)
-		if !ok || strings.TrimSpace(name) == "" {
+		if !ok || trimText(name) == "" {
 			return validationError("原始 dialer-proxy 必须是非空名称")
 		}
 		if builtinPolicy(name) {
@@ -457,4 +458,19 @@ func recordMembers(record any) (model.Fields, error) {
 		err = members.UnmarshalJSON(encoded)
 	}
 	return members, err
+}
+
+// storedEnabled is an optional enabled member's truth: absent means enabled,
+// and a stored value of another type (e.g. 0) counts by its truth, as the
+// stored document says (the typed field reads it as absent).
+func storedEnabled(record any, enabled *bool) (bool, error) {
+	if enabled != nil {
+		return *enabled, nil
+	}
+	view, err := viewOf(record)
+	if err != nil {
+		return false, err
+	}
+	raw, present := view.get("enabled")
+	return !present || jsonTruthy(raw), nil
 }

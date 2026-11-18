@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"configflow/internal/convert"
 	"configflow/internal/ctxx"
 	"configflow/internal/jsonx"
 	"configflow/internal/model"
@@ -281,19 +282,31 @@ func (r *Repository) ResetAll(ctx context.Context) (*jsonx.Object, error) {
 	return r.ImportAll(ctx, r.initialConfig())
 }
 
-// objectsOf iterates a list whose items Python uses as dicts.
+// objectsOf is a list of objects of an old-format document.
 func objectsOf(value any) ([]*jsonx.Object, error) {
-	items, err := compatList(value)
-	if err != nil {
-		return nil, err
+	items, ok := jsonx.AsList(value)
+	if !ok {
+		return nil, validationError(msgLegacyShape)
 	}
 	result := make([]*jsonx.Object, len(items))
 	for index, item := range items {
-		if result[index], err = compatObject(item); err != nil {
-			return nil, err
+		object, ok := jsonx.AsObject(item)
+		if !ok {
+			return nil, validationError(msgLegacyShape)
 		}
+		result[index] = object
 	}
 	return result, nil
+}
+
+// valueKey identifies a stored value by its JSON text (object members
+// sorted), so equal values of any type match.
+func valueKey(value any) string {
+	text, err := jsonx.Encode(value, jsonx.Options{SortKeys: true})
+	if err != nil {
+		return ""
+	}
+	return string(text)
 }
 
 func sortedJSON(value any) string {
@@ -322,8 +335,8 @@ func scopeLegacyDialers(source *jsonx.Object) (*jsonx.Object, error) {
 		if !ok {
 			return nil, validationError("旧配置内容必须是对象")
 		}
-		if err := validateShapes(profile, false); err != nil {
-			return nil, asValidation(err, ClassDialerReference)
+		if err := dialerValidation(convert.ValidateShapes(profile, false)); err != nil {
+			return nil, err
 		}
 		nodes, err := objectsOf(profile.GetOr("nodes", []any{}))
 		if err != nil {
@@ -361,7 +374,7 @@ func scopeLegacyDialers(source *jsonx.Object) (*jsonx.Object, error) {
 			if !truthyOr(node, "enabled", true) {
 				continue
 			}
-			raw, err := rawDialer(node)
+			raw, err := legacyRawDialer(node)
 			if err != nil {
 				return nil, err
 			}
@@ -369,7 +382,7 @@ func scopeLegacyDialers(source *jsonx.Object) (*jsonx.Object, error) {
 				continue
 			}
 			target, ok := raw.(string)
-			if !ok || pyStrip(target) == "" {
+			if !ok || trimText(target) == "" {
 				return nil, validationError("原始 dialer-proxy 必须是非空名称")
 			}
 			if isBuiltinPolicy(target) {
@@ -452,17 +465,17 @@ func scopeLegacyDialers(source *jsonx.Object) (*jsonx.Object, error) {
 			continue
 		}
 		if proxyString := item.node.Value("proxy_string"); jsonx.Truthy(proxyString) {
-			parsed, err := parseStructuredProxyString(proxyString.(string))
+			parsed, err := convert.InspectStructuredProxyString(proxyString.(string))
 			if err != nil {
-				return nil, fromConvert(err)
+				return nil, convertFailure(err)
 			}
 			if parsed == nil {
-				return nil, helperError(ClassTypeError, "'NoneType' object does not support item assignment")
+				return nil, validationError(msgLegacyDialerProxyString)
 			}
 			parsed.Set("dialer-proxy", name)
 			text, err := jsonx.Encode(parsed, jsonx.Options{})
 			if err != nil {
-				return nil, helperError(ClassTypeError, err.Error())
+				return nil, err
 			}
 			item.node.Set("proxy_string", string(text))
 		} else {
@@ -481,7 +494,7 @@ func sanitizeRuleNameOf(name any) (string, error) {
 	if !jsonx.Truthy(name) {
 		return "unnamed", nil
 	}
-	return "", helperError(ClassTypeError, "expected string or bytes-like object, got '"+pythonTypeName(name)+"'")
+	return "", validationError(msgLegacyRuleName)
 }
 
 // validateLegacyIndex is _validate_legacy_index (the system index of a
@@ -610,10 +623,7 @@ func (r *Repository) convertImport(source *jsonx.Object, resourceRemaps Resource
 			sanitized, err := sanitizeRuleNameOf(name)
 			return "S" + sanitized, err
 		}
-		key, ok := pyHashKey(name)
-		if !ok {
-			return "", unhashable(name)
-		}
+		key := valueKey(name)
 		return key, nil
 	}
 	mergeResource := func(kind string, resource *jsonx.Object, profileID string) (string, error) {
@@ -781,10 +791,7 @@ func (r *Repository) convertImport(source *jsonx.Object, resourceRemaps Resource
 			}
 		}
 		for _, group := range groups {
-			key, ok := pyHashKey(group.Value("id"))
-			if !ok {
-				return nil, unhashable(group.Value("id"))
-			}
+			key := valueKey(group.Value("id"))
 			groupIDs[key] = true
 		}
 		// proxies_order is only an ordering hint. Old versions left entries
@@ -802,24 +809,15 @@ func (r *Repository) convertImport(source *jsonx.Object, resourceRemaps Resource
 					continue
 				}
 				value, isString := item.Value("id").(string)
-				valueKey, hashable := pyHashKey(item.Value("id"))
+				idKey := valueKey(item.Value("id"))
 				if item.Value("type") == "strategy" {
-					if !hashable {
-						return nil, unhashable(item.Value("id"))
-					}
-					if !groupIDs[valueKey] || jsonx.Equal(item.Value("id"), group.Value("id")) {
+					if !groupIDs[idKey] || jsonx.Equal(item.Value("id"), group.Value("id")) {
 						continue
 					}
 				} else {
-					if _, ok := pyHashKey(item.Value("type")); !ok {
-						return nil, unhashable(item.Value("type"))
-					}
 					kind := sourceKind(item.Value("type"))
 					if kind == "" {
 						continue
-					}
-					if !hashable {
-						return nil, unhashable(item.Value("id"))
 					}
 					if !(kind == "nodes" && isString && isBuiltinPolicy(value)) {
 						id, ok := remaps[kind][value]
@@ -853,12 +851,9 @@ func (r *Repository) convertImport(source *jsonx.Object, resourceRemaps Resource
 		for _, item := range old.GetList("rule_library") {
 			entry := item.(*jsonx.Object)
 			if !entry.Has("name") {
-				return nil, helperError(ClassKeyError, "'name'")
+				return nil, validationError(msgLegacyRuleName)
 			}
-			key, ok := pyHashKey(entry.Value("name"))
-			if !ok {
-				return nil, unhashable(entry.Value("name"))
-			}
+			key := valueKey(entry.Value("name"))
 			ruleNames[key] = catalogs["rule_library"][remaps["rule_library"][entry.GetString("id")]].Value("name")
 		}
 		rules, err := objectsOf(profile.Value("rule_configs"))
@@ -923,10 +918,7 @@ func (r *Repository) convertImport(source *jsonx.Object, resourceRemaps Resource
 				}
 			}
 			if name := rule.Value("name"); jsonx.Truthy(name) {
-				key, ok := pyHashKey(name)
-				if !ok {
-					return nil, unhashable(name)
-				}
+				key := valueKey(name)
 				ruleNames[key] = catalogs["rule_library"][libraryID].Value("name")
 			}
 			rule.Set("library_rule_id", libraryID)
@@ -940,10 +932,7 @@ func (r *Repository) convertImport(source *jsonx.Object, resourceRemaps Resource
 				// rule['value'] = rule_names.get(rule.get('value'), rule.get('value')):
 				// a rule without a value gets "value": null.
 				value := rule.Value("value")
-				key, ok := pyHashKey(value)
-				if !ok {
-					return nil, unhashable(value)
-				}
+				key := valueKey(value)
 				if replacement, found := ruleNames[key]; found {
 					value = replacement
 				}
@@ -986,10 +975,7 @@ func (r *Repository) convertImport(source *jsonx.Object, resourceRemaps Resource
 					if !ok {
 						continue
 					}
-					key, hashable := pyHashKey(setting.Value("group_id"))
-					if !hashable {
-						return nil, unhashable(setting.Value("group_id"))
-					}
+					key := valueKey(setting.Value("group_id"))
 					if groupIDs[key] {
 						kept = append(kept, entry)
 					}

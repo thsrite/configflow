@@ -15,6 +15,7 @@ package repo
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -275,11 +276,23 @@ func TestReferenceCollectResourceRefs(t *testing.T) {
 			}
 		}
 		result, err := func() (any, error) {
-			catalogs, err := resourceCatalogs(document.GetObject("shared"), ResourceFields)
+			typed, err := modelFromLegacy(document, nil)
 			if err != nil {
 				return nil, err
 			}
-			selected, err := collectResourceRefs(document.GetObject("profiles").GetObject("default"), catalogs, roots)
+			profile := profileByKey(typed, DefaultProfileID)
+			view, err := viewOf(profile)
+			if err != nil {
+				return nil, err
+			}
+			groups, ok := view.get("proxy_groups")
+			if !ok {
+				groups = json.RawMessage("[]")
+			}
+			if err := checkGroupReferenceShapes(groups); err != nil {
+				return nil, err
+			}
+			selected, err := selectResources(profile, catalogsOf(&typed.Shared), roots)
 			if err != nil {
 				return nil, err
 			}
@@ -414,6 +427,14 @@ func TestReferenceConvertImport(t *testing.T) {
 			source = r.initialConfig()
 		}
 		document, err := r.convertImport(source, nil)
+		// Python crashed (unhashable dict/list values used as keys); Go
+		// matches values by their JSON text and converts these backups.
+		if label := record.GetString("label"); label == "subscription name dict" || label == "rule value list" {
+			if err != nil || document == nil {
+				t.Errorf("%s: %v", label, err)
+			}
+			continue
+		}
 		var got any
 		if document != nil {
 			got = document
@@ -425,5 +446,5 @@ func TestReferenceConvertImport(t *testing.T) {
 func TestReferenceFileIsCurrent(t *testing.T) {
 	t.Parallel()
 	// The generator's own sanity check: the base document validates in Go too.
-	noError(t, ValidateDocument(refBase(t)))
+	noError(t, validateLegacyDocument(refBase(t)))
 }

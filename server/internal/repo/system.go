@@ -123,55 +123,6 @@ func ensureSystemTokens(system *model.System) (bool, error) {
 	return ensureRuleProxyToken(&system.SystemConfig, retired)
 }
 
-// ensureLegacyRuleProxyToken is ensureRuleProxyToken for a document still
-// built as jsonx (fresh data directories and imports, until N8-5c moves
-// them); it reports whether system changed.
-func ensureLegacyRuleProxyToken(system *jsonx.Object) (bool, error) {
-	settings, err := compatObject(system.SetDefault("system_config", jsonx.NewObject()))
-	if err != nil {
-		return false, err
-	}
-	retired := settings.Value("retired_rule_proxy_tokens")
-	normalized := []any{}
-	contains := func(token string) bool {
-		for _, value := range normalized {
-			if value == token {
-				return true
-			}
-		}
-		return false
-	}
-	if values, ok := jsonx.AsList(retired); ok {
-		for _, value := range values {
-			if text, ok := value.(string); ok && text != "" && !contains(text) {
-				normalized = append(normalized, text)
-			}
-		}
-	}
-	changed := false
-	if _, isList := jsonx.AsList(retired); !isList || !jsonx.Equal(retired, normalized) {
-		settings.Set("retired_rule_proxy_tokens", normalized)
-		changed = true
-	}
-	configToken := settings.Value("config_token")
-	if token, ok := settings.Value("rule_proxy_token").(string); ok && token != "" {
-		if !jsonx.Equal(token, configToken) {
-			return changed, nil
-		}
-		if !contains(token) {
-			normalized = append(normalized, token)
-			settings.Set("retired_rule_proxy_tokens", normalized)
-		}
-	}
-	for {
-		token := tokenURLSafe()
-		if !jsonx.Equal(token, configToken) {
-			settings.Set("rule_proxy_token", token)
-			return true, nil
-		}
-	}
-}
-
 // TokenSet is a read-only set of secrets; never modify one.
 type TokenSet map[string]struct{}
 

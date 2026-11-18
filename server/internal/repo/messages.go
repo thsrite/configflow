@@ -24,3 +24,16 @@ const (
 // msgCommittedHookSkipped is logged when the committed document cannot be
 // handed to the ConfigurationCommitted hook.
 const msgCommittedHookSkipped = "配置已保存，但无法交给自动备份：%v"
+
+// Old-format import conversion.
+const (
+	msgLegacyShape             = "旧配置格式无效：资源列表与条目必须是数组和对象"
+	msgLegacyRuleName          = "旧配置的规则名称必须是字符串"
+	msgLegacyDialerProxyString = "旧配置节点的 proxy_string 无法添加拨号代理"
+)
+
+// msgRouterIDInvalid refuses a router record without a scalar id.
+const msgRouterIDInvalid = "路由器 ID 无效"
+
+// msgImportResultShape refuses an import builder result of the wrong shape.
+const msgImportResultShape = "导入结果格式无效"

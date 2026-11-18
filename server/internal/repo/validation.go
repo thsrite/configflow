@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"configflow/internal/devicenotes"
 	"configflow/internal/model"
@@ -668,7 +669,7 @@ func mustGet(view memberView, name string) json.RawMessage {
 
 func nonBlank(raw json.RawMessage) bool {
 	text, ok := jsonString(raw)
-	return ok && strings.TrimSpace(text) != ""
+	return ok && trimText(text) != ""
 }
 
 // checkGroupReferenceShapes is the shape part of _collect_resource_refs:
@@ -705,7 +706,7 @@ func checkGroupReferenceShapes(raw json.RawMessage) error {
 				return err
 			}
 			for _, value := range values {
-				if strings.TrimSpace(value) == "" {
+				if trimText(value) == "" {
 					return validationError("资源引用必须是非空 ID")
 				}
 			}
@@ -782,3 +783,9 @@ var (
 	routeLabels       = map[string]string{"direct": "直连 DNS", "proxy": "代理 DNS", "refused": "拒绝", "nxdomain": "不存在",
 		"nodata": "空应答", "blackhole": "黑洞", "upstream": "指定上游"}
 )
+
+// trimText trims leading and trailing white space and control characters
+// (including the information separators U+001C–U+001F) from names and ids.
+func trimText(text string) string {
+	return strings.TrimFunc(text, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) })
+}
