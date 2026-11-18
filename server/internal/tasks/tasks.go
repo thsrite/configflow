@@ -22,7 +22,6 @@ import (
 	"sync"
 	"time"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/lockx"
 	"configflow/internal/repo"
@@ -51,15 +50,15 @@ const BackupTaskKey = "webdav_backup"
 // MetricsTaskKey is metrics_flush.TASK_KEY.
 const MetricsTaskKey = "metrics_history_flush"
 
-// RowsFunc builds the rows of one slot from the loaded task statuses.
-type RowsFunc func(ctx context.Context, statuses *jsonx.Object) ([]*jsonx.Object, error)
+// BuildRows projects a slot from native saved receipts.
+type BuildRows func(context.Context, taskstatus.Snapshot) ([]*Task, error)
+
+// IntervalEditor edits a native integer interval; nil means invalid input.
+type IntervalEditor func(context.Context, *int64) error
 
 // RunFunc starts a task now. Return a *Busy, *NotFound, *Invalid or
 // *Conflict error for the user-facing failures.
 type RunFunc func(ctx context.Context, key, resource string) error
-
-// IntervalFunc sets the interval of a task (metrics history).
-type IntervalFunc func(ctx context.Context, value any) error
 
 // Error kinds of run_task / set_interval.
 type (
@@ -80,13 +79,13 @@ func (e *Conflict) Error() string { return e.Message }
 
 var (
 	mu        sync.Mutex
-	rows      = map[string]RowsFunc{SlotBackup: backupRows}
+	rows      = map[string]BuildRows{SlotBackup: backupRows}
 	runners   = map[string]RunFunc{}
-	intervals = map[string]IntervalFunc{}
+	intervals = map[string]IntervalEditor{}
 )
 
-// SetRows installs the row builder of a slot and returns its restoration.
-func SetRows(slot string, f RowsFunc) func() {
+// SetRowBuilder installs the row builder of a slot and returns its restoration.
+func SetRowBuilder(slot string, f BuildRows) func() {
 	mu.Lock()
 	previous := rows[slot]
 	rows[slot] = f
@@ -104,8 +103,8 @@ func SetRunner(category string, f RunFunc) func() {
 	return func() { mu.Lock(); runners[category] = previous; mu.Unlock() }
 }
 
-// SetIntervalSetter installs an exact-key editor and returns its restoration.
-func SetIntervalSetter(key string, f IntervalFunc) func() {
+// SetIntervalEditor installs an exact-key editor and returns its restoration.
+func SetIntervalEditor(key string, f IntervalEditor) func() {
 	mu.Lock()
 	previous := intervals[key]
 	intervals[key] = f
@@ -132,61 +131,18 @@ func Complete() bool { return len(Missing()) == 0 }
 // ErrIncomplete is returned by ListTasks while slots are missing.
 var ErrIncomplete = errors.New("task rows are not wired: " + "missing slots")
 
-// ISO is _iso(value): seconds precision, "Z" for UTC, nil for none.
-func ISO(t *time.Time) any {
+// Timestamp formats seconds precision with Z for UTC.
+func Timestamp(t *time.Time) *string {
 	if t == nil {
 		return nil
 	}
 	text := t.Format("2006-01-02T15:04:05-07:00")
-	return strings.Replace(text, "+00:00", "Z", 1)
+	return new(strings.Replace(text, "+00:00", "Z", 1))
 }
-
-var historyKeys = []string{"last_run_at", "last_status", "last_error", "last_duration_ms", "last_trigger",
-	"last_success_at", "run_count", "failure_count", "consecutive_failures", "cache_retained", "cache_updated_at"}
 
 // ErrInvalidHistory identifies malformed saved counters, distinct from I/O or
 // readiness. Notification list reads translate this data failure to HTTP 503.
 var ErrInvalidHistory = errors.New("invalid task history")
-
-// History is _history(entry).
-func History(entry *jsonx.Object) (*jsonx.Object, error) {
-	row := jsonx.NewObject()
-	for _, key := range historyKeys {
-		row.Set(key, entry.Value(key))
-	}
-	for _, key := range []string{"run_count", "failure_count"} {
-		raw, err := jsonx.Compact(row.Value(key))
-		if err != nil {
-			return nil, err
-		}
-		count, err := historyCount(raw)
-		if err != nil {
-			return nil, fmt.Errorf("%w: %s: %w", ErrInvalidHistory, key, err)
-		}
-		row.Set(key, jsonx.BigInt(count))
-	}
-	return row, nil
-}
-
-// Row is _row(key, category, name, **fields): the defaults, then fields
-// (pairs of key, value) in order, overriding defaults in place.
-func Row(key, category, name string, fields ...any) *jsonx.Object {
-	row := jsonx.Obj("key", key, "category", category, "name", name, "detail", "", "resource_id", "",
-		"profile_id", nil, "profile_name", nil, "enabled", true, "interval_seconds", nil,
-		"schedule_text", "", "editable", false, "can_run", false, "run_hint", "", "running", false,
-		"next_run_at", nil, "state_message", "", "link", nil)
-	for i := 0; i+1 < len(fields); i += 2 {
-		if object, ok := fields[i].(*jsonx.Object); ok && fields[i+1] == nil {
-			row.Update(object)
-			continue
-		}
-		row.Set(fields[i].(string), fields[i+1])
-	}
-	return row
-}
-
-// Spread marks a *jsonx.Object to merge into a Row (Python's **history).
-func Spread(o *jsonx.Object) []any { return []any{o, nil} }
 
 var background = lockx.NewKeyed[string](lockx.LevelJob, "tasks")
 
@@ -221,77 +177,68 @@ func startBackground(ctx context.Context, key string, work func(context.Context)
 	return nil
 }
 
-func backupRows(ctx context.Context, statuses *jsonx.Object) ([]*jsonx.Object, error) {
+func backupRows(ctx context.Context, statuses taskstatus.Snapshot) ([]*Task, error) {
 	repository, err := repo.GetRepository(ctx)
 	if err != nil {
 		return nil, err
 	}
-	system, err := repository.GetSystem(ctx)
+	system, err := repository.System(ctx)
 	if err != nil {
 		return nil, err
 	}
-	backup, _ := system.Value("backup").(*jsonx.Object)
-	configured := true
-	for _, key := range []string{"webdav_url", "webdav_username", "webdav_password"} {
-		if !jsonx.Truthy(backup.Value(key)) {
-			configured = false
-		}
-	}
-	entry, present := statuses.Get(BackupTaskKey)
-	if !configured && !present {
+	backup := system.Backup
+	configured := backup.WebDAVURL != "" && backup.WebDAVUsername != "" && backup.WebDAVPassword != ""
+	if _, present := statuses[BackupTaskKey]; !configured && !present {
 		return nil, nil
 	}
-	entryObject, _ := entry.(*jsonx.Object)
-	history, err := History(entryObject)
+	history, err := ProjectHistory(statuses.Entry(BackupTaskKey))
 	if err != nil {
 		return nil, err
 	}
-	autoBackup := jsonx.Truthy(backup.Value("auto_backup"))
+	automatic := backup.AutoBackup != nil && *backup.AutoBackup
 	hint := ""
 	if !configured {
-		hint = "请先填写 WebDAV 配置"
+		hint = msgBackupConfigure
 	}
-	fields := []any{"enabled", autoBackup,
-		"notifications_enabled", autoBackup || (configured && history.Value("last_trigger") == "manual"),
-		"schedule_text", "配置变更后自动备份", "can_run", configured, "run_hint", hint,
-		"running", IsBackground(BackupTaskKey), "link", "/system-settings"}
-	fields = append(fields, Spread(history)...)
-	return []*jsonx.Object{Row(BackupTaskKey, "webdav_backup", "WebDAV 自动备份", fields...)}, nil
+	manual := history.LastTrigger != nil && *history.LastTrigger == "manual"
+	return []*Task{{Key: BackupTaskKey, Category: SlotBackup, Name: msgBackupName, Enabled: automatic,
+		NotificationsEnabled: new(automatic || (configured && manual)), ScheduleText: msgBackupSchedule,
+		CanRun: configured, RunHint: hint, Running: IsBackground(BackupTaskKey), Link: new("/system-settings"), HistoryData: history}}, nil
 }
 
-// ListTasks is list_tasks().
-func ListTasks(ctx context.Context) ([]*jsonx.Object, error) {
+// List is list_tasks().
+func List(ctx context.Context) ([]*Task, error) {
 	if !Complete() {
 		return nil, ErrIncomplete
 	}
-	return AvailableTasks(ctx)
+	return Available(ctx)
 }
 
-// AvailableTasks projects receipts only for registered task owners. Callers
+// Available projects receipts only for registered task owners. Callers
 // requiring a complete observation must check readiness or use ListTasks.
-func AvailableTasks(ctx context.Context) ([]*jsonx.Object, error) {
+func Available(ctx context.Context) ([]*Task, error) {
 	return availableRows(ctx, "")
 }
 
-// RowsFor returns only the selected provided slot, never a fake empty provider.
-func RowsFor(ctx context.Context, slot string) ([]*jsonx.Object, error) {
+// ForSlot returns only the selected provided slot, never a fake empty provider.
+func ForSlot(ctx context.Context, slot string) ([]*Task, error) {
 	if !HasRows(slot) {
 		return nil, &Unavailable{Slots: []string{slot}}
 	}
 	return availableRows(ctx, slot)
 }
 
-func availableRows(ctx context.Context, selected string) ([]*jsonx.Object, error) {
+func availableRows(ctx context.Context, selected string) ([]*Task, error) {
 	repository, err := repo.GetRepository(ctx)
 	if err != nil {
 		return nil, err
 	}
-	statuses, err := taskstatus.New(repository.DataDir()).Load()
+	statuses, err := taskstatus.New(repository.DataDir()).Read()
 	if err != nil {
 		return nil, err
 	}
 	mu.Lock()
-	builders := make([]RowsFunc, 0, len(slotOrder))
+	builders := make([]BuildRows, 0, len(slotOrder))
 	for _, slot := range slotOrder {
 		if selected != "" && slot != selected {
 			continue
@@ -301,7 +248,7 @@ func availableRows(ctx context.Context, selected string) ([]*jsonx.Object, error
 		}
 	}
 	mu.Unlock()
-	result := []*jsonx.Object{}
+	result := []*Task{}
 	for _, build := range builders {
 		part, err := build(ctx, statuses)
 		if err != nil {
@@ -319,8 +266,8 @@ func Runner(category string) RunFunc {
 	return runners[category]
 }
 
-// IntervalSetter returns the interval edit of a key.
-func IntervalSetter(key string) IntervalFunc {
+// IntervalEditorFor returns the interval edit of a key.
+func IntervalEditorFor(key string) IntervalEditor {
 	mu.Lock()
 	defer mu.Unlock()
 	return intervals[key]

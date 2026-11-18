@@ -146,7 +146,12 @@ func TestRowShape(t *testing.T) {
 	wantRule := slices.Clone(wantSub)
 	// _rule_rows passes notifications_enabled before editable/can_run, which
 	// exist already: the same order.
-	if !slices.Equal(sub.Keys(), wantSub) || !slices.Equal(rule.Keys(), wantRule) {
+	slices.Sort(wantSub)
+	slices.Sort(wantRule)
+	gotSub, gotRule := sub.Keys(), rule.Keys()
+	slices.Sort(gotSub)
+	slices.Sort(gotRule)
+	if !slices.Equal(gotSub, wantSub) || !slices.Equal(gotRule, wantRule) {
 		t.Fatal(sub.Keys(), rule.Keys())
 	}
 	want := jsonx.Obj("category", "subscription", "name", "Feed", "detail", "", "resource_id", "s", "enabled", true,

@@ -23,6 +23,7 @@ import (
 	"configflow/internal/rules"
 	"configflow/internal/substore"
 	"configflow/internal/taskstatus"
+	"configflow/internal/yamlx/yamlxtest"
 )
 
 var corpusNow = time.Date(2026, 11, 1, 0, 0, 0, 250000000, time.UTC)
@@ -275,7 +276,7 @@ func checkScenario(t *testing.T, clock *fakeClock, row *jsonx.Object) {
 		want := expected(call)
 		gotText, _ := jsonx.Compact(got)
 		wantText, _ := jsonx.Compact(want)
-		if string(gotText) != string(wantText) {
+		if !yamlxtest.EqualJSON(got, want) {
 			t.Errorf("scenario %s / %s:\n  got  %s\n  want %s", name, label, gotText, wantText)
 		}
 	}

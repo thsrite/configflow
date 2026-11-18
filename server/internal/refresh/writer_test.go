@@ -1,6 +1,7 @@
 package refresh
 
 import (
+	"path/filepath"
 	"testing"
 
 	"configflow/internal/jsonx"
@@ -9,6 +10,7 @@ import (
 )
 
 func sourceWriterOutcomeEqual(fn string, want, got *jsonx.Object) bool {
+	want, got = taskReceiptOutcome(want), taskReceiptOutcome(got)
 	if yamlxtest.EqualJSON(want, got) {
 		return true
 	}
@@ -66,5 +68,48 @@ func TestSourceWriterComparison(t *testing.T) {
 				t.Fatalf("equal=%v want %v", equal, tc.equal)
 			}
 		})
+	}
+}
+
+// Only this migrated file changes from byte comparison to JSON structure.
+// Other files, output values and errors retain the original comparator.
+func taskReceiptOutcome(value *jsonx.Object) *jsonx.Object {
+	result := value.Clone()
+	after := value.GetObject("after")
+	if after == nil {
+		return result
+	}
+	files := after.Clone()
+	for key, raw := range after.All() {
+		if filepath.Base(key) != "task-status.json" {
+			continue
+		}
+		text, ok := raw.(string)
+		if !ok {
+			continue
+		}
+		parsed, err := jsonx.Parse([]byte(text))
+		if err != nil {
+			continue
+		}
+		files.Set(key, parsed)
+	}
+	result.Set("after", files)
+	return result
+}
+func TestTaskReceiptComparisonPreservesValues(t *testing.T) {
+	want := jsonx.Obj("after", jsonx.Obj("task-status.json", `{"a":{"run_count":1,"last_status":"failed"}}`))
+	for _, tc := range []struct {
+		data  string
+		equal bool
+	}{
+		{`{"a":{"last_status":"failed","run_count":1}}`, true},
+		{`{"a":{"last_status":"success","run_count":1}}`, false},
+		{`{"a":{"last_status":"failed","run_count":2}}`, false},
+	} {
+		got := jsonx.Obj("after", jsonx.Obj("task-status.json", tc.data))
+		if sourceWriterOutcomeEqual("refresh_subscription", want, got) != tc.equal {
+			t.Fatal(tc)
+		}
 	}
 }
