@@ -44,7 +44,10 @@ func Publish(ctx context.Context, m *agents.Manager, id string, b *Bundle, o Pub
 		if e != nil {
 			return e
 		}
-		if found && pairRequired(t) {
+		// Fail closed only without an owner. An installed owner that did not
+		// handle the Agent (no complete enabled pair, e.g. during a first enable)
+		// leaves it to PublishDirect, whose reservation answers the HA conflict.
+		if found && pair == nil && pairRequired(t) {
 			return ErrPairPublisherMissing
 		}
 		answer, e = PublishDirect(ctx, m, id, b, o)
