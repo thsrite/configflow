@@ -289,3 +289,42 @@ a pristine latest-go baseline tree on the same server; execute
 and after sequentially with the identical race command. Summarize each package's
 Elapsed and slowest tests from JSON and both load samples. No valid before/after
 numbers are claimed yet; old high-load/pre-index baseline remains discarded.
+
+## Batch-2 integration refresh (2026-11-18)
+
+Rebased implementation onto `go@1d554eae9`. Read-only real-Python check found no
+input/output differences in any of the seven transcripts. Only the four MosDNS
+metadata headers were stale: batch-2 adds `cfg09_runtime_test.go` (SHA256
+19700876ab1c3e35adc14bbaeff60e1c6ecfa3e2bf06f063c8a8840919815350)
+and `cfg09_test.go` (8d960482a49014ca8f66ebde195a4b97c16fedb4f5e44eba3fe5cd51ad39e12d).
+After reviewing that exact metadata-only diff, ran actual Python recording and a
+separate read-only check. **All 2892 distinct live inputs remain diff 0.**
+Canonical SHA256 of each transcript's entire entries map is byte-for-byte equal
+to before the refresh; backend/interpreter/dependency and expected outputs were
+not changed. OxiDNS/routersplit files were already current and not rewritten.
+
+.64 check outputs (not formal performance measurements):
+
+```
+PYREF equal: TestReviewUnholdableYAMLOutsideTheOutputMatchesPython (5)
+PYREF equal: TestN73SharedUpstreamMetadataMatchesPython (1)
+PYREF equal: TestRecordedPythonTests (0)
+PYREF equal: TestCorpus (2863)
+ok configflow/internal/mosdns 46.535s
+PYREF equal: TestC29ArchivePythonBoundary (18)
+ok configflow/internal/oxidns 0.653s
+PYREF equal: TestRecordedPythonTests (0)
+PYREF equal: TestCorpus (5)
+ok configflow/internal/routersplit 1.153s
+```
+
+Exact modes/arguments: `PYREF_MODE=record PYREF_ACCEPT=1 go test -count=1
+-timeout=30m -v ./internal/mosdns -run '^(TestRecordedPythonTests|TestCorpus|
+TestN73SharedUpstreamMetadataMatchesPython|TestReviewUnholdableYAMLOutsideTheOutputMatchesPython)$'`,
+then the same `PYREF_MODE=check` three-package command documented above with
+`-p 2`. Logs: `.64 ~/.cache/speed-a-batch2-{pre-refresh,refresh,live-check}.log`.
+
+Actual audit correctly rejected batch-2's new constructor site in discovery's
+CFG-06 differential. The new site is `cp`, guarded by CONFIGFLOW_DIFF=1; its Python
+seed/server calls still use the existing registered helpers. Register the exact
+new file/function/callee, then resume targeted checks. No directory exemption.
