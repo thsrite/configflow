@@ -10,8 +10,8 @@ package taskstatus
 
 import (
 	"context"
-	"fmt"
-	"math"
+	"encoding/json"
+	"errors"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -21,8 +21,9 @@ import (
 	"unicode/utf8"
 
 	"configflow/internal/ctxx"
-	"configflow/internal/jsonx"
-	"configflow/internal/pystr"
+	"configflow/internal/jsonresp"
+	"configflow/internal/logx"
+	"configflow/internal/model"
 )
 
 // Filename is the status file inside the data directory.
@@ -62,11 +63,9 @@ func NowISO() string { return time.Now().UTC().Format("2006-01-02T15:04:05Z") }
 
 func (s *Store) nowISO() string { return s.now().UTC().Format("2006-01-02T15:04:05Z") }
 
-// ParseTime is parse_time: the aware time for an ISO timestamp, or ok=false.
-// Naive timestamps are taken as UTC. See FromISOFormat for the accepted grammar.
-func ParseTime(value any) (time.Time, bool) {
-	text, ok := value.(string)
-	if !ok || text == "" {
+// ParseTimestamp reads an ISO timestamp, treating naive timestamps as UTC.
+func ParseTimestamp(text string) (time.Time, bool) {
+	if text == "" {
 		return time.Time{}, false
 	}
 	return FromISOFormat(strings.ReplaceAll(text, "Z", "+00:00"))
@@ -95,34 +94,66 @@ func (s *Store) lockedContext(ctx context.Context, fn func(path string) error) e
 	return fn(path)
 }
 
-// read is _read: the stored object, or an empty one when the file is missing,
-// damaged or not an object.
-func read(path string) *jsonx.Object {
+// Snapshot preserves unowned receipts and unknown JSON members without converting numbers.
+type Snapshot map[string]json.RawMessage
+
+// Receipt is the owned task status schema. Raw provenance preserves unrelated stored fields.
+type Receipt struct {
+	LastRunAt           *string         `json:"last_run_at"`
+	LastFinishedAt      *string         `json:"last_finished_at"`
+	LastStatus          *string         `json:"last_status"`
+	LastDurationMs      *model.Int      `json:"last_duration_ms"`
+	LastTrigger         *string         `json:"last_trigger"`
+	LastError           *string         `json:"last_error"`
+	RunCount            json.RawMessage `json:"run_count"`
+	FailureCount        json.RawMessage `json:"failure_count"`
+	ConsecutiveFailures json.RawMessage `json:"consecutive_failures"`
+	LastSuccessAt       *string         `json:"last_success_at"`
+	CacheRetained       *bool           `json:"cache_retained"`
+	CacheUpdatedAt      *string         `json:"cache_updated_at"`
+	Extra               model.Fields
+	Raw                 model.Raw
+}
+
+// UnmarshalJSON decodes a receipt while retaining unknown or malformed members.
+func (r *Receipt) UnmarshalJSON(data []byte) error { return model.DecodeRecord(data, r, &r.Raw) }
+
+// MarshalJSON preserves unedited stored members.
+func (r Receipt) MarshalJSON() ([]byte, error) { return model.EncodeRecord(&r, &r.Raw) }
+
+// Entry returns a private typed view of a receipt, or an empty receipt for non-objects.
+func (s Snapshot) Entry(key string) *Receipt {
+	var result Receipt
+	if json.Unmarshal(s[key], &result) != nil {
+		return &Receipt{}
+	}
+	return &result
+}
+
+func readSnapshot(path string) Snapshot {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return jsonx.NewObject()
+		if !errors.Is(err, os.ErrNotExist) {
+			category := "io"
+			if errors.Is(err, os.ErrPermission) {
+				category = "permission"
+			}
+			logx.Get("backend.utils.task_status").Warningf("%s: %s", msgReadFailed, category)
+		}
+		return Snapshot{}
 	}
-	value, err := jsonx.Parse(data)
-	if err != nil {
-		return jsonx.NewObject()
+	var result Snapshot
+	if jsonresp.DecodeStored(data, &result) != nil || result == nil {
+		return Snapshot{}
 	}
-	if object, ok := value.(*jsonx.Object); ok {
-		return object
-	}
-	return jsonx.NewObject()
+	return result
 }
 
-// write is _write: temp file in the same directory (mode 0600 like
-// tempfile.mkstemp), compact JSON, fsync, rename over the file.
-func write(path string, value *jsonx.Object) error {
-	return writeContext(context.Background(), path, value)
-}
-
-func writeContext(ctx context.Context, path string, value *jsonx.Object) error {
+func writeSnapshot(ctx context.Context, path string, value Snapshot) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	encoded, err := jsonx.Compact(value)
+	encoded, err := json.Marshal(value)
 	if err != nil {
 		return err
 	}
@@ -153,26 +184,11 @@ func writeContext(ctx context.Context, path string, value *jsonx.Object) error {
 	return os.Rename(name, path)
 }
 
-// Load is load(): the whole status object. The result is a private copy.
-func (s *Store) Load() (*jsonx.Object, error) {
-	var out *jsonx.Object
-	err := s.locked(func(path string) error {
-		out = read(path)
-		return nil
-	})
+// Read returns a private snapshot under the leaf lock.
+func (s *Store) Read() (Snapshot, error) {
+	var out Snapshot
+	err := s.locked(func(path string) error { out = readSnapshot(path); return nil })
 	return out, err
-}
-
-// Get is get(key): the entry of one task, an empty object when there is none.
-func (s *Store) Get(key string) (*jsonx.Object, error) {
-	data, err := s.Load()
-	if err != nil {
-		return nil, err
-	}
-	if entry, ok := data.Value(key).(*jsonx.Object); ok {
-		return entry, nil
-	}
-	return jsonx.NewObject(), nil
 }
 
 // Result is the keyword arguments of record().
@@ -190,89 +206,23 @@ type Result struct {
 	Skipped bool
 }
 
-// countError is the Python exception record() raises on a counter it cannot
-// convert (the file is left as it was).
-type countError struct{ class, msg string }
-
-func (e *countError) Error() string       { return e.msg }
-func (e *countError) PythonClass() string { return e.class }
-
-// pyInt is int(value or 0) for a counter read from the file: strings as
-// int(str) (white space, Unicode digits, underscores), floats truncated,
-// big integers kept; Python's TypeError/ValueError/OverflowError otherwise.
-func pyInt(v any) (*big.Int, error) {
-	switch x := v.(type) {
-	case nil:
-		return new(big.Int), nil
-	case bool:
-		if x {
-			return big.NewInt(1), nil
-		}
-		return new(big.Int), nil
-	case string:
-		if x == "" {
-			return new(big.Int), nil
-		}
-		n, err := pystr.Int(x, 10)
-		if err != nil {
-			return nil, &countError{"ValueError", err.Error()}
-		}
-		return n, nil
-	case jsonx.Number:
-		if x.IsInt() {
-			n, _ := new(big.Int).SetString(string(x), 10)
-			return n, nil
-		}
-		f := x.Float64()
-		switch {
-		case math.IsInf(f, 0):
-			return nil, &countError{"OverflowError", "cannot convert float infinity to integer"}
-		case math.IsNaN(f):
-			return nil, &countError{"ValueError", "cannot convert float NaN to integer"}
-		}
-		n, _ := big.NewFloat(math.Trunc(f)).Int(nil)
-		return n, nil
-	case []any:
-		if len(x) == 0 {
-			return new(big.Int), nil
-		}
-		return nil, &countError{"TypeError", "int() argument must be a string, a bytes-like object or a real number, not 'list'"}
-	case *jsonx.Object:
-		if x.Len() == 0 {
-			return new(big.Int), nil
-		}
-		return nil, &countError{"TypeError", "int() argument must be a string, a bytes-like object or a real number, not 'dict'"}
-	}
-	return nil, &countError{"TypeError", fmt.Sprintf("int() argument must be a string, a bytes-like object or a real number, not '%T'", v)}
-}
-
-// increment is int(entry.get(key) or 0) + 1 stored back under key.
-func increment(entry *jsonx.Object, key string) error {
-	n, err := pyInt(entry.Value(key))
+func increment(raw *json.RawMessage) error {
+	count, err := Count(*raw)
 	if err != nil {
 		return err
 	}
-	entry.Set(key, jsonx.BigInt(n.Add(n, big.NewInt(1))))
+	*raw = json.RawMessage(count.Add(count, big.NewInt(1)).String())
 	return nil
 }
 
-// Record is record(key, ...): append one finished run and return the updated
-// entry (a copy).
-func (s *Store) Record(key string, r Result) (*jsonx.Object, error) {
-	return s.RecordContext(context.Background(), key, r)
-}
-
-// RecordContext records a result independently of client disconnects, while
+// SaveResult records a result independently of client disconnects, while
 // respecting its work lifetime under the leaf lock and before replacement.
-func (s *Store) RecordContext(ctx context.Context, key string, r Result) (*jsonx.Object, error) {
+func (s *Store) SaveResult(ctx context.Context, key string, r Result) (*Receipt, error) {
 	ctx = ctxx.Detach(ctx)
-	var result *jsonx.Object
+	var result *Receipt
 	err := s.lockedContext(ctx, func(path string) error {
-		data := read(path)
-		entry, ok := data.Value(key).(*jsonx.Object)
-		if !ok {
-			entry = jsonx.NewObject()
-		}
+		data := readSnapshot(path)
+		entry := data.Entry(key)
 		finished := s.nowISO()
 		status := "failed"
 		switch {
@@ -300,41 +250,47 @@ func (s *Store) RecordContext(ctx context.Context, key string, r Result) (*jsonx
 				message = string([]rune(message)[:MaxError])
 			}
 		}
-		entry.Set("last_run_at", started)
-		entry.Set("last_finished_at", finished)
-		entry.Set("last_status", status)
-		entry.Set("last_duration_ms", duration)
-		entry.Set("last_trigger", trigger)
-		entry.Set("last_error", message)
+		entry.LastRunAt = new(started)
+		entry.LastFinishedAt = new(finished)
+		entry.LastStatus = new(status)
+		entry.LastDurationMs = new(model.Int(duration))
+		entry.LastTrigger = new(trigger)
+		entry.LastError = new(message)
 		if !r.Skipped {
-			if err := increment(entry, "run_count"); err != nil {
+			if err := increment(&entry.RunCount); err != nil {
 				return err
 			}
 			if r.OK {
-				entry.Set("last_success_at", finished)
-				entry.Set("consecutive_failures", 0)
+				entry.LastSuccessAt = new(finished)
+				entry.ConsecutiveFailures = json.RawMessage("0")
 			} else {
-				if err := increment(entry, "failure_count"); err != nil {
+				if err := increment(&entry.FailureCount); err != nil {
 					return err
 				}
-				if err := increment(entry, "consecutive_failures"); err != nil {
+				if err := increment(&entry.ConsecutiveFailures); err != nil {
 					return err
 				}
 			}
 		}
 		if r.OK || r.Skipped {
-			entry.Delete("cache_retained")
+			if err := model.ClearMember(entry, &entry.Raw, "cache_retained"); err != nil {
+				return err
+			}
 		} else if r.CacheRetained != nil {
-			entry.Set("cache_retained", *r.CacheRetained)
+			entry.CacheRetained = r.CacheRetained
 		}
 		if r.CacheUpdatedAt != "" {
-			entry.Set("cache_updated_at", r.CacheUpdatedAt)
+			entry.CacheUpdatedAt = new(r.CacheUpdatedAt)
 		}
-		data.Set(key, entry)
-		if err := writeContext(ctx, path, data); err != nil {
+		encoded, err := json.Marshal(entry)
+		if err != nil {
 			return err
 		}
-		result = entry.Clone()
+		data[key] = encoded
+		if err := writeSnapshot(ctx, path, data); err != nil {
+			return err
+		}
+		result = entry
 		return nil
 	})
 	if err != nil {
@@ -356,15 +312,16 @@ func (s *Store) Forget(keys ...string) error {
 func (s *Store) ForgetContext(ctx context.Context, keys ...string) error {
 	ctx = ctxx.Detach(ctx)
 	return s.lockedContext(ctx, func(path string) error {
-		data := read(path)
+		data := readSnapshot(path)
 		removed := false
 		for _, key := range keys {
-			if value, ok := data.Pop(key); ok && value != nil {
+			if value, ok := data[key]; ok && string(value) != "null" {
+				delete(data, key)
 				removed = true
 			}
 		}
 		if removed {
-			return writeContext(ctx, path, data)
+			return writeSnapshot(ctx, path, data)
 		}
 		return nil
 	})

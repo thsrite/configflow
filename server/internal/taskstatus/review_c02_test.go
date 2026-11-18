@@ -2,7 +2,6 @@ package taskstatus
 
 import (
 	"encoding/json"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -47,11 +46,8 @@ func loadReview(t *testing.T) ([]reviewRecord, []reviewTime) {
 	return ref.Records, ref.Times
 }
 
-// Regression (review C02, reported by the C15 port): record() converts a
-// hand-edited counter with int(): "4" counts on from 4, full-width and
-// Arabic-Indic digits and white space are accepted, floats are truncated,
-// big integers kept; values int() refuses make record() fail and leave the
-// file as it was (references from CPython 3.11.17).
+// The original Python fixture stays unchanged. Native decimal counters reject
+// CPython-only Unicode digits; persisted nonfinite values become null before use.
 func TestReviewRecordCountersLikePython(t *testing.T) {
 	records, _ := loadReview(t)
 	for _, row := range records {
@@ -67,22 +63,53 @@ func TestReviewRecordCountersLikePython(t *testing.T) {
 		}
 		entry, err := New(dir).Record("k", Result{OK: row.OK, StartedAt: "S", DurationMs: 1})
 		name := row.Field + "=" + string(row.Value)
-		if row.Out.Error != "" {
-			var class interface{ PythonClass() string }
-			if !errors.As(err, &class) || class.PythonClass() != row.Out.Error {
-				t.Errorf("%s ok=%v: want %s, got %v", name, row.OK, row.Out.Error, err)
+		used := row.Field == "run_count" || !row.OK
+		nonfinite := raw == "Infinity" || raw == "NaN"
+		var decimal string
+		_ = json.Unmarshal(row.Value, &decimal)
+		unicodeDigits := decimal == "０３" || decimal == "١٢"
+		wantError := row.Out.Error != ""
+		if nonfinite {
+			wantError = false
+		}
+		if unicodeDigits && used {
+			wantError = true
+		}
+		if wantError {
+			if err == nil {
+				t.Errorf("%s ok=%v: invalid counter accepted", name, row.OK)
 			}
 			after, _ := os.ReadFile(filepath.Join(dir, Filename))
 			if string(after) != string(before) {
-				t.Errorf("%s: file changed after a failed record: %s", name, after)
+				t.Errorf("%s: file changed after failure", name)
 			}
 			continue
+		}
+		if nonfinite {
+			if err != nil {
+				t.Fatalf("stored nonfinite: %v", err)
+			}
+			want := "null"
+			if used {
+				want = "1"
+			}
+			if row.Field == "consecutive_failures" && row.OK {
+				want = "0"
+			}
+			got, _ := jsonx.Compact(entry.Value(row.Field))
+			if string(got) != want {
+				t.Errorf("%s: native value %s want %s", name, got, want)
+			}
+			// Other fields still compare against the original fixture below.
 		}
 		if err != nil {
 			t.Errorf("%s ok=%v: %v", name, row.OK, err)
 			continue
 		}
 		for key, want := range row.Out.Entry {
+			if nonfinite && key == row.Field {
+				continue
+			}
 			got, _ := jsonx.Compact(entry.Value(key))
 			wantValue, _ := jsonx.Parse([]byte(strings.NewReplacer(`"__Infinity__"`, "Infinity", `"__NaN__"`, "NaN").Replace(string(want))))
 			if wantBytes, _ := jsonx.Compact(wantValue); string(got) != string(wantBytes) {

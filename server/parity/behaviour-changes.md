@@ -1117,3 +1117,10 @@ adding a production Parse/Equal pass. Normal converter byte expectations and the
   Normal integer ports and saved files are unchanged.
 - Log I/O failures retain the Chinese context, status and selected path; the
   OS detail uses Go's native error text rather than Python's errno/repr format.
+
+- Task status counters use the same native decimal reader as task history.
+  CPython-only Unicode decimal strings now return a validation error instead of
+  emulating int(); the original file remains untouched on failure. Persisted
+  NaN/Infinity in task-status.json becomes null on read; a later counter update
+  counts on from zero, while unrelated fields and receipts remain present.
+  Counter errors use ordinary Go error chains rather than Python class names.
