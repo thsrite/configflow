@@ -2186,7 +2186,7 @@ Exact commands/tails, native differences and added-file counts: [C35-HANDOFF.md]
 
 A20/A14 已提供共享只读 reader：`internal/setupflow.ProfileSessions(ctx, dataDir, profileID)`（首版来自 `go-port-a14`，A20 复用并补强类型错误的 fail-closed 中文提示，服务器 `setupflow.Wire` 注入 routersplit）。C36 在此基础上实现写入与流程，不另建第二套 reader。会话是 `setup-sessions/*.json` 的原子替换文件；读取在 repo 写事务外，绑定 Agent/配置取 repo 一致快照。
 
-**Status: `ported` (independent review pending; waiting batch-4 rebase)** · prereqs: C34, C35 · Go: `internal/setup`, `internal/api/setup`
+**Status: `ported` (independent review pending; rebased after batch-4)** · prereqs: C34, C35 · Go: `internal/setup`, `internal/api/setup`
 
 Sources: `setup_flow.py`, `setup_presets.py`, `setup_completion.py`, `setup_abandon.py`,
 `routes/setup.py` (1372 lines); Python `test_setup_flow.py` 76 families mapped in
@@ -2205,8 +2205,10 @@ session operation serialization. `lockx.LevelSetupSession = LevelDevice-1` order
 setup session → device/profile operation → repo (abandon retains the session lock
 through both deletions). A20 ProfileSessions remains a read-only leaf; no copied files.
 
-Deferred external integration: A20 reader arrives in batch-4 (wait for coordinator
-then rebase); real A21 server hook/DNS registration and real A22 latest/has-installation/
+A20 reader integration is complete: setupflow.ReadSession is the single bounded byte
+reader used by both ProfileSessions and C36, with no session lock in the read-only leaf.
+Rebased onto go@fbbe382ec; targeted .32 vet/race/Flask checks pass.
+Deferred external integration: real A21 server hook/DNS registration and real A22 latest/has-installation/
 gateway status; real router Driver/Inspect/BuildPlan callback. Formal A21 server test
 must prove registered callbacks remove503. Current tests prove callback dispatch,
 independent orchestration and genuine Python boundary parity with synthetic data.

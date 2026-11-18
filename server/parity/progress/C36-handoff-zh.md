@@ -4,8 +4,9 @@
 `internal/api/setup` 注册，核心编排在 `internal/setup`。不是 HR 模块，需另一位
 Codex 独立复核。未 push、未开子 agent、未跑完整 gate；只使用合成数据。
 
-当前依赖状态：等待协调者通知 batch-4（含 A20 reader）合入，然后 rebase 到
-本地 go。没有复制或 cherry-pick A20/A21 文件。A21 最终注册由后合入者完成。
+当前依赖状态：已按通知 rebase 到 batch-4，并继续跟到最新 go@fbbe382ec；
+叠在 C34 复核最终分支 9a5929ee2 上。A20 reader / O3-6c 已集成并验证。没有复制或
+cherry-pick A20/A21 文件。A21 最终注册仍由后合入者完成。
 
 ## 已实现的边界
 
@@ -49,7 +50,7 @@ Codex 独立复核。未 push、未开子 agent、未跑完整 gate；只使用�
    snapshot。revision 不能把 null/缺失/非法值的 model fallback 当成有效证明。
 4. C36 hook 自己 Detach，保留同一个 Runtime generation；取自己的 session 操作锁
    后及 rename 前检查 ctx。A21 不另取 session 锁，不从 Background 起新 generation。
-5. 统一锁是 `lockx.LevelSetupSession = LevelDevice-1`（提交 f681824cb），顺序
+5. 统一锁是 `lockx.LevelSetupSession = LevelDevice-1`（最终提交 402815b38（原 f681824cb）），顺序
    setup-session → profile/device operation → repo。A20 reader 无操作锁；若以后
    需要操作锁必须复用这个 owner，不能同资源另起不同级别的锁。
 6. 最后接线时补 **真实 A21/C36 的 server 级测试**：注册后 prepare 的 503 消失并
@@ -112,4 +113,8 @@ Python `backend/test_setup_flow.py` 的 76 个测试族按行为合并验证，�
 - 其余自有编排的正常行为、中文消息、已对照生成字段和状态码无已知差异。
 - 外部 owner 的 503 是已授权衔接边界，不能作为永久功能缺失结案。A21 最后注册清单
   如上；A22 和路由器正式检查 callback 必须由其 owner 提供。
-- 当前尚未 rebase 到包含 batch-4 的 go；协调者通知后再做，不自行复制依赖文件。
+- batch-4 rebase 已完成；共享 setupflow.ReadSession 同时服务 ProfileSessions 和 C36
+  写 owner，统一 16 MiB/UTF-8/JSON 校验。该 leaf 不取锁、不建目录；C36 保留更强的
+  typed ownership 校验，唯一 session 操作锁为 LevelSetupSession。
+- C34 原生接口适配位于 181349447，C36 的 native redaction 与 reader 衔接位于
+  3fb12cbf0。C32 独立入口最终提交 ae1c6f9b1；外部 owner 待接线清单如上。
