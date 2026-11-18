@@ -82,7 +82,7 @@ Python's `backend/routers` is one big import cycle (most cross-module imports ar
 | R14 | automatic rule sync | 1043 | verified | HR | R13, C14 (ready), C07 (`tasks`, ready) | – (handlers in R15) | internal/routers |
 | R15 | router HTTP routes, policy workspace, upstream-router reminder route | 656 | missing | HR | R14, C06, C22 (ready), C31, C34; A20⁵ | 21 (0 done) | internal/api/routers, internal/routers |
 | R16 | client devices and discovery | 786 | verified | | R13, A01, C26, C31 | – | internal/clients, internal/routers |
-| R17 | client fixed IP and client-device routes | 1077 | ported | HR | R16, R06, R14, C06 (JWT secret), C36², A13⁶ | 5 (5 done) | internal/clients, internal/routers, internal/api/clientdevices |
+| R17 | client fixed IP and client-device routes | 1077 | verified | HR | R16, R06, R14, C06 (JWT secret), C36², A13⁶ | 5 (5 done) | internal/clients, internal/routers, internal/api/clientdevices |
 
 ¹ `desired.compute_desired` loads rule content through `routes.rules.get_ruleset_content` (C32, a route file). Until C32 exists, a collaborator variable; C32 should export the function from a non-API package (also needed by agents A19). ² `setup_flow.profile_sessions` (C36 imports routers, so routers declares a hook; see contract). ³ Coordinator decision needed before R04/R05 (see questions). ⁴ `_inspect_state` → `agents.ipv6_readiness._request` (A23 imports routers → hook). ⁵ `/api/routers/gateway-forwarding` calls `agents.linux_gateway.gateway_forwarding_entry/persist_gateway_forwarding` (A20). ⁶ `routes.agents._public_deployment` (A13; collaborator variable until then).
 
@@ -907,7 +907,7 @@ unregistered production route. No R16-owned Step B finding remains.
 
 ## R17 — client fixed IP and client-device routes
 
-**Status: `ported`** · HR，待新的 Opus 独立复核 · Go: `internal/clients`, `internal/routers`, `internal/api/clientdevices`。分支 `go-port-r17`，临时基底 `go-r17-base-v2@673851659`，已按协调者要求用 `--onto` 换掉旧 R16；待通知后再 rebase go。
+**Status: `verified`**（Opus HR 复核 [review-r17.md](review-r17.md)：0 high、0 medium、2 low 已修于 `59c948366`；O3-6b `RouterJobLock` 合入后按报告复验）· HR · Go: `internal/clients`, `internal/routers`, `internal/api/clientdevices`。分支 `go-port-r17`，临时基底 `go-r17-base-v2@673851659`，已按协调者要求用 `--onto` 换掉旧 R16；待通知后再 rebase go。
 
 Files: `backend/common/client_fixed_ip.py` (281), `backend/routers/routeros_fixed_ip.py` (382), `backend/routers/ikuai_fixed_ip.py` (261), `backend/routes/client_devices.py` (153)。`routerdoc.ValidateBindings` 已在 R01 提供且 repo 已调用，无新增副本。
 
