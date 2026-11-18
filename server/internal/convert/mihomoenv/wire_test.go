@@ -11,6 +11,9 @@ func TestProductionWireRegistersEveryCallback(t *testing.T) {
 	t.Cleanup(convert.SetMihomoEnvironment(convert.MihomoEnvironment{}))
 	Wire()
 	env := convert.CurrentMihomoEnvironment()
+	if err := env.Clients.Check(); err != nil {
+		t.Fatal(err)
+	}
 	if err := env.CheckGeneration(); err != nil {
 		t.Fatal(err)
 	}

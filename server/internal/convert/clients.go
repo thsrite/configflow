@@ -11,7 +11,6 @@ import (
 
 	"configflow/internal/jsonx"
 	"configflow/internal/rules"
-	"configflow/internal/subs"
 )
 
 // pyDict is a Python dict with hashable keys (hashID): insertion-ordered, a
@@ -248,33 +247,4 @@ type missingConverter struct{}
 func (missingConverter) ConvertProxyString(context.Context, string) *jsonx.Object {
 	raise(&HookMissingError{Hook: "convert_proxy_string", Provider: "convert/mihomoenv (C13 substore)"})
 	return nil
-}
-
-// resolveProxyString is the proxy_string step shared by convert_node_to_surge
-// and loon._resolve_node: parse_uri_list(node['proxy_string'])[0] with the
-// outer name; ok false when Python returns None (no node, or any exception
-// inside the try).
-func resolveProxyString(node *jsonx.Object) (parsed *jsonx.Object, raw, ok bool) {
-	outerName := node.GetOr("name", "")
-	text, isString := node.Value("proxy_string").(string)
-	if !isString {
-		return nil, false, false // content.strip() raises inside the try
-	}
-	nodes := subs.ParseURIList(text)
-	if len(nodes) == 0 {
-		return nil, false, false
-	}
-	first := nodes[0]
-	if truthy(first.Value("_raw_object")) {
-		copied := jsonx.NewObject()
-		for k, v := range first.All() {
-			if k != "_raw_object" {
-				copied.Set(k, v)
-			}
-		}
-		copied.Set("name", outerName)
-		return copied, true, true
-	}
-	first.Set("name", outerName)
-	return first, false, true
 }

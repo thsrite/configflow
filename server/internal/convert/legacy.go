@@ -939,7 +939,7 @@ func legacyCache(data json.RawMessage) (*jsonx.Object, error) {
 // MihomoEnvironmentFromLegacy registers the one temporary codec for each N8-9
 // collaborator. No external business implementation is copied into convert.
 func MihomoEnvironmentFromLegacy(old MihomoEnv) MihomoEnvironment {
-	env := MihomoEnvironment{DownloadedText: old.DownloadedText}
+	env := MihomoEnvironment{DownloadedText: old.DownloadedText, Clients: legacyClientCallbacks()}
 	if old.Converter != nil {
 		env.Converter = legacyNodeConverter{old.Converter}
 	}
@@ -1617,4 +1617,80 @@ func effectiveBaseURL(value *jsonx.Object, base string) string {
 		raise(err)
 	}
 	return clientBaseURL(config, base)
+}
+
+// ConvertNodeToSurge is the single codec for the old node entry.
+func ConvertNodeToSurge(value *jsonx.Object) (string, string, error) {
+	node, err := decodeLegacy[model.Node](value)
+	if err != nil {
+		return "", "", err
+	}
+	return SurgeNode(node)
+}
+func convertNodeToSurge(value *jsonx.Object) (string, string) {
+	line, section, err := ConvertNodeToSurge(value)
+	if err != nil {
+		raise(err)
+	}
+	return line, section
+}
+
+// ConvertNodeToLoon is the single codec for the old node entry.
+func ConvertNodeToLoon(value *jsonx.Object) (string, error) {
+	node, err := decodeLegacy[model.Node](value)
+	if err != nil {
+		return "", err
+	}
+	return LoonNode(node)
+}
+func convertNodeToLoon(value *jsonx.Object) string {
+	line, err := ConvertNodeToLoon(value)
+	if err != nil {
+		raise(err)
+	}
+	return line
+}
+func legacyClientCallbacks() ClientCollaborators {
+	return ClientCollaborators{
+		ParseNodes: func(text string) ([]ClientSource, error) {
+			var result []ClientSource
+			for _, value := range subs.ParseURIList(text) {
+				node, err := decodeLegacy[model.Node](value)
+				if err != nil {
+					return nil, err
+				}
+				parameters := value.Value("params")
+				if value.Value("_raw_object") == true {
+					copy := value.Clone()
+					copy.Delete("_raw_object")
+					parameters = copy
+				}
+				params, err := yamlbridge.Encode(parameters)
+				if err != nil {
+					return nil, err
+				}
+				result = append(result, ClientSource{Node: node, Params: params})
+			}
+			return result, nil
+		},
+		FilterNodes: func(nodes []model.Node, include, exclude *string) ([]model.Node, error) {
+			wire, err := encodeLegacy(nodes)
+			if err != nil {
+				return nil, err
+			}
+			values, _ := wire.([]any)
+			var includeValue, excludeValue any
+			if include != nil {
+				includeValue = *include
+			}
+			if exclude != nil {
+				excludeValue = *exclude
+			}
+			filtered, err := rules.FilterCandidates(values, includeValue, excludeValue)
+			if err != nil {
+				return nil, err
+			}
+			return decodeLegacy[[]model.Node](filtered)
+		},
+	}
 }

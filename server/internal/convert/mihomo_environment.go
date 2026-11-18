@@ -32,6 +32,7 @@ type DialerCollaborators struct {
 // Each callback has one implementation in its owning package. Legacy adapters
 // only translate its parameters/results; missing callbacks never skip a step.
 type MihomoEnvironment struct {
+	Clients               ClientCollaborators
 	Converter             NodeConverter
 	ProviderInterval      func(model.MihomoSettings) (int64, error)
 	LoadSubscriptionCache CacheReader
