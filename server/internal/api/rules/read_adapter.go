@@ -28,8 +28,11 @@ import (
 )
 
 type sourceOptions struct {
-	host    string
-	offline bool
+	host           string
+	offline        bool
+	connectTimeout time.Duration
+	readTimeout    time.Duration
+	boundDeadline  bool
 }
 
 func (s *Service) sourceContent(ctx context.Context, config, item, library *jsonx.Object, options sourceOptions) (string, error) {
@@ -60,7 +63,14 @@ func (s *Service) sourceContent(ctx context.Context, config, item, library *json
 	if strings.HasPrefix(address, "/") {
 		address = strings.TrimRight(config.GetObject("system_config").GetString("server_domain"), "/") + address
 	}
-	fetch := s.fetch(ctx, config, options.host, 30*time.Second)
+	connect, read := options.connectTimeout, options.readTimeout
+	if connect == 0 {
+		connect = 30 * time.Second
+	}
+	if read == 0 {
+		read = 30 * time.Second
+	}
+	fetch := s.fetchWithTimeouts(ctx, config, options.host, connect, read, options.boundDeadline)
 	content, _, err := rulefetch.RefreshRemoteRule(ctx, source, config, rulefetch.RefreshOptions{Client: s.client, Timeout: 30 * time.Second, Fetch: func(string) (any, error) { return fetch(address) }})
 	if err == nil {
 		return sourceText(content), nil
@@ -86,11 +96,23 @@ func (s *Service) sourceContent(ctx context.Context, config, item, library *json
 	return "", nil
 }
 func (s *Service) fetch(ctx context.Context, config *jsonx.Object, host string, timeout time.Duration) func(string) (any, error) {
+	return s.fetchWithTimeouts(ctx, config, host, timeout, timeout, false)
+}
+
+func (s *Service) fetchWithTimeouts(ctx context.Context, config *jsonx.Object, host string, connect, read time.Duration, boundDeadline bool) func(string) (any, error) {
 	return func(address string) (any, error) {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		response, err := s.client.RequestRule(ctx, address, rulefetch.Request{Config: config, HostURL: host, ConnectTimeout: timeout, ReadTimeout: timeout})
+		connectTimeout, readTimeout := connect, read
+		if deadline, ok := ctx.Deadline(); boundDeadline && ok {
+			remaining := time.Until(deadline)
+			if remaining <= 0 {
+				return nil, context.DeadlineExceeded
+			}
+			connectTimeout, readTimeout = min(connect, remaining), min(read, remaining)
+		}
+		response, err := s.client.RequestRule(ctx, address, rulefetch.Request{Config: config, HostURL: host, ConnectTimeout: connectTimeout, ReadTimeout: readTimeout})
 		if err != nil {
 			return nil, err
 		}
