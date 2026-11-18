@@ -88,6 +88,8 @@ func FuzzNativeRoundTrip(f *testing.F) {
 		"[!!int 100000000000000000000, !!binary YQ==, !custom value, .inf, .nan, '123']",
 		"A:\n[]: #", "A:\n{}: #", "? [one, two] # note\n: value\n",
 		"text: >-\n  with # hash\n      more\n    proxy: Pinned\n",
+		`{"value":1e400}`, `{"value":-1e400}`, `{"value":1e-400}`,
+		`{"value":1e1000000000}`, `{"value":1e-1000000000}`,
 	} {
 		f.Add([]byte(source))
 	}
@@ -95,6 +97,19 @@ func FuzzNativeRoundTrip(f *testing.F) {
 		f.Add([]byte(src))
 	}
 	f.Fuzz(func(t *testing.T, src []byte) {
+		if node, err := FromJSON(src); err == nil {
+			// JSON numbers can exceed yaml.v3's scalar range. Marshal may
+			// explicitly refuse them, but success must always be readable
+			// with the same value; ToJSON's lexical contract stays separate.
+			output, err := Marshal(node)
+			if err != nil {
+				if !errors.Is(err, ErrPolicy) || len(output) != 0 {
+					t.Fatalf("unexpected writer failure: %v", err)
+				}
+			} else if again, err := Parse(output); err != nil || !Equal(node, again) {
+				t.Fatalf("JSON-origin YAML is not closed: %q %v", output, err)
+			}
+		}
 		n, err := Parse(src)
 		if err != nil {
 			return

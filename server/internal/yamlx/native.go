@@ -88,6 +88,12 @@ func Marshal(v any) (data []byte, err error) {
 	}
 	n = copyGraph(n, map[*Node]*Node{})
 	prepareStrings(n, map[*Node]bool{}, false)
+	// Preparation can make an implicit tag explicit (e.g. a JSON float
+	// outside yaml.v3's range). Validate those output tags without repeating
+	// the alias expansion budget; preparation changes presentation only.
+	if err := checkGraph(n, map[*Node]bool{}, map[*Node]bool{}); err != nil {
+		return nil, err
+	}
 	var b bytes.Buffer
 	e := yaml.NewEncoder(&b)
 	e.SetIndent(2)
@@ -359,6 +365,9 @@ func preserveScalarTag(n *Node, flow bool) {
 	}
 	plain := Node{Kind: yaml.ScalarNode, Value: n.Value}
 	if plain.ShortTag() != n.ShortTag() {
+		// The emitter would add this tag itself. Mark it before output policy
+		// validation, so an unparseable explicit scalar cannot escape.
+		n.Style |= yaml.TaggedStyle
 		return
 	}
 	n.Style &^= yaml.SingleQuotedStyle | yaml.DoubleQuotedStyle | yaml.LiteralStyle | yaml.FoldedStyle
