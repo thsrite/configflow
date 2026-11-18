@@ -939,3 +939,13 @@ upstreams after the first Mihomo publish). The A14 note "`settings_digest` chang
 **D-A18-1 → A (retry next round)**, by the coordinator: when keepalived-phase enablement finds the HA lock busy, Go retries
 in the next 2 s round instead of failing the whole enablement; record in O12.
 
+
+## Clarified 2026-11-18 (maintainer): O-1 stuck HA journal
+
+From the A18 review (server/parity/review-a18.md, O-1; inherited from Python): when one member goes permanently
+offline mid-handover the journal stays `unknown` forever and disable / push / Agent delete are all refused.
+**Decision: option 1 — forced disable.** When the journal is `unknown` and at least one member has been offline
+for ≥ 10 minutes, the HA card on the Agent page offers "强制停用"; after explicit confirmation it clears the
+journal and disables HA, after which push and Agent delete work normally. No automatic timeout (a member that is
+only temporarily offline must not find its pair silently marked failed). Implement after the switch; listed in the
+O12 behaviour-change ledger.
