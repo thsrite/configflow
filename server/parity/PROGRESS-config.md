@@ -303,12 +303,12 @@ Rules for O3-5..O3-8 are in the review's last section.
 | C03 | repo storage core (config_repository.py part A) | 1576 | verified | C01, C02 | – |
 | C04 | repo public API (config_repository.py part B), config.py | 1373 | verified | C03 | – |
 | C05 | profile context, OxiDNS settings normalizer | 497 | ported | C04 | – |
-| C06 | HTTP shell, auth, settings routes | 1028 | ported | C05 | 22 (22 done) |
+| C06 | HTTP shell, auth, settings routes | 1028 | verified | C05 | 22 (22 done) |
 | C07 | logs, stats, tasks, notifications, web listener | 1393 | partial | C06 | 9 (5 done) |
 | C08 | rule syntax, matcher, rule utils | 1101 | verified | C02 | – |
 | C09 | matcher cache, group candidates, reorder, strategy refs, connection rules | 708 | verified | C08 | – |
 | C10 | manual node parser, subscription hosts/filter/dialers | 1242 | verified | C08 | – |
-| C11 | proxy chains, commented Mihomo editor, listeners, proxy-server DNS | 855 | ported | C10 | – |
+| C11 | proxy chains, commented Mihomo editor, listeners, proxy-server DNS | 855 | verified | C10 | – |
 | C12 | converter common, Mihomo node conversion, dialer references, EasyTier | 1196 | verified | C09, C11 | – |
 | C13 | Sub-Store client, runtime, subscription cache, dependencies | 1193 | verified | C12, C10 | 3 (3 done) |
 | C14 | remote rule fetch, ruleset content, remote sources, website identity | 1202 | verified | C12, C08 | – |
@@ -536,7 +536,7 @@ Review coverage includes template short-circuit/first-error order, big integers/
 
 ## C06 — HTTP shell, auth, settings routes
 
-**Status: `ported`** (completion on `go-port-c06-c11`; gate queue cutoff / coordinator gate and independent review pending) · prereqs: C05 · Go: internal/httpx, httpxtest, auth, server, lifecycle, cmd/configflow, api/auth, api/settings, redact
+**Status: `verified`** (independent review 2026-11-18; 1 medium log-disclosure finding fixed, 0 open; review-c06.md records full gate and final-rebase targeted evidence) · prereqs: C05 · Go: internal/httpx, httpxtest, auth, server, lifecycle, cmd/configflow, api/auth, api/settings, redact
 
 Files:
 - `backend/app.py` (206)
@@ -554,9 +554,9 @@ Routes (22, 22 done):
 
 Evidence: all 22 declared routes exist, including delegated C13 dependency routes and C35 backup I/O. Completion branch adds six-path read-only HEAD dispatch, native Bind/BindSilent request DTOs, per-path complete-file/DB/revision invariance, 132 real Flask response + complete SQLite table/file comparisons (including 27 explicit non-finite rejection vectors), real SQLite save-failure log redaction, direct Python secret/text/finder/error-metadata contracts, and an authentication matrix over every current registration (checkpoint: 144 registrations / 406 method-path rows; C29 registrations included dynamically after rebase), with anonymous, invalid JWT and valid JWT. Existing HTTP differential and changed consumer tests pass on .64; the eight targeted Python source files pass 296 cases. Exact per-function mappings replace the stale blanket 26/9/2 deferrals in [progress/c06.md](progress/c06.md).
 
-Missing / deferred: C06 owner work is complete on O3-6a go@f90a156e: three owner entries detach and check shutdown before settings commits / WebDAV operations; handlers have no Detach or WithoutCancel. Real Runtime HTTP regressions cover eight operations, stopped-runtime state invariance and disconnected-request completion. Shared final commit windows are **已知、已分派**, O3-6c / 6e5c7760 (including WebDAV.Run's context-free receipt after in-flight cancellation). C07 is excluded. MCP (finish), C34 config/export leaf HTTP and C33 proxy-group HTTP retain explicit external owner cases; shared contracts do not claim those entry points exist.
+Missing / deferred: C06 owner work is complete on O3-6a go@f90a156e: three owner entries detach and check shutdown before settings commits / WebDAV operations; handlers have no Detach or WithoutCancel. Real Runtime HTTP regressions cover eight operations, stopped-runtime state invariance and disconnected-request completion. Shared final commit windows are **已知、已分派**, O3-6c / 6e5c7760 (including WebDAV.Run's context-free receipt after in-flight cancellation). C07 is excluded. MCP (finish), C34 config/export leaf HTTP and C33 proxy-group HTTP retain explicit external owner cases; shared contracts do not claim their leaf acceptance. C33 has since merged with its own independent verified review; C06/C11 do not reassign that owner work.
 
-Clarified in: [design/c06-http-settings.md](../design/c06-http-settings.md). HEAD on all six GET/write settings paths is GET without a body; strict binding follows N8-6 400/415 while silent readers keep their business responses. `compat.go` rule URL validation already delegates to shared rulefetch. `redact` has direct A24 credential-policy tests and new C06 Python text/finder/encoding comparisons; the old “no tests” note is obsolete. Final .64 owner scoped race passed (settings 29.111s, httpx/difftest 69.990s, subs/difftest 21.301s), formatting/vet passed. The foreground full gate never acquired a slot for 900s and was terminated as instructed (exit75); no gate stage/fuzz ran. Coordinator cf-gate and separate independent Codex C06/C11 reviews remain pending. See [C06/C11 hand-back](C06-C11-HANDOFF.md).
+Clarified in: [design/c06-http-settings.md](../design/c06-http-settings.md). HEAD on all six GET/write settings paths is GET without a body; strict binding follows N8-6 400/415 while silent readers keep their business responses. `compat.go` rule URL validation already delegates to shared rulefetch. `redact` has direct A24 credential-policy tests and new C06 Python text/finder/encoding comparisons; the old “no tests” note is obsolete. Final .64 owner scoped race passed (settings 29.111s, httpx/difftest 69.990s, subs/difftest 21.301s), formatting/vet passed. The author checkpoint gate never acquired a slot for 900s and was terminated (exit75); no stage/fuzz ran in that historical run. The later independent C06/C11 reviews are now complete: C06 log-disclosure fix 8168bc648, C11 evidence/count/regex corrections 118f1084c and cache-invalidation regression 56509f415. The .32 full gate passed (95 race ok packages, 15 enabled difftest packages, proddiff new=0/stale=0, two 60s fuzz targets); after rebase onto a9d6ce86c all relevant targeted checks passed. Final batch gate stays with the coordinator. See [C06 review](review-c06.md), [C11 review](review-c11.md), and the historical [author hand-back](C06-C11-HANDOFF.md).
 
 ## C07 — logs, stats, tasks, notifications, web listener
 
@@ -707,7 +707,7 @@ Commands: `rt -- bash -lc 'cd server && go vet ./internal/subs/... && go test -c
 
 ## C11 — proxy chains, commented Mihomo editor, listeners, proxy-server DNS
 
-**Status: `ported`** (completion on `go-port-c06-c11`; independent Codex review and coordinator gate pending; author gate reached the 900s queue cutoff) · prereqs: C10 · Go: internal/subs, internal/yamlx.Edit
+**Status: `verified`** (independent review 2026-11-18; 1 medium coverage gap and 1 low count error corrected, 0 open; review-c11.md records full gate and final-rebase targeted evidence) · prereqs: C10 · Go: internal/subs, internal/yamlx.Edit
 
 Files:
 - `backend/utils/proxy_chains.py` (262)
@@ -721,7 +721,7 @@ Routes: none.
 
 Evidence: `internal/subs` chains.go/listeners.go/proxyserverdns.go and shared `yamlx.Edit`. All 18 chain, 22 DNS and 10 listener source functions now have explicit mappings in [progress/c11.md](progress/c11.md). The old 10-chain/17-DNS blanket deferrals are superseded by verified C18 generation and C19 Surge replay, C15 refresh replay, native helper/corpus tests and the exact public logical-reference regression. C33 proxy-group PUT/DELETE persistence/409/rollback and C34 preview response wiring remain external, coordinator-approved owner entry points; this module does not implement them.
 
-The capture-count TODO is closed: provider backtick sorting compiles each bucket once and uses `rules.Regex.Groups()`. Live Python differential covers conditional/verbose/named/escaped/class parentheses, complete provider lowering and the emitted $N sorting substitution. .64 targeted subs/difftest/convert tests pass. Independent C11 review is still required.
+The capture-count TODO is closed: provider backtick sorting compiles each bucket once and uses `rules.Regex.Groups()`. Live Python differential covers conditional/verbose/named/escaped/class parentheses, complete provider lowering and the emitted $N sorting substitution. .64 targeted subs/difftest/convert tests pass. Independent C11 review completed: source count is 18, all 50 source functions are mapped, actual cache invalidation and provider validation are identified separately from metadata/generation replays; 13 live regex vectors apply every emitted $N target. See review-c11.md.
 
 N7-2 implementation: removed the private `subs/commented` parser/emitter
 and its generators. The frozen 12,479-row corpus now checks native YAML meaning

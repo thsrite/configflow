@@ -1,6 +1,6 @@
 # C11 独立复核
 
-状态：复核完成，**high 0 / medium 1 / low 1，均已修正，0 未决**。
+状态：**verified**，独立复核完成，**high 0 / medium 1 / low 1，均已修正，0 未决**。
 两项均为验收证据/覆盖问题，没有发现需修改产品实现的功能缺陷。
 分支 `go-review-c06-c11`，起点 `cefe6f7e3`，初始基于 `go@f90a156eb`。
 复核者未编写移植；未 push、未启动子 agent、未访问生产。新增数据全部合成。
@@ -9,8 +9,8 @@
 
 | 编号/级别 | 场景与证据 | 修正、回归和提交 |
 |---|---|---|
-| F1 / medium（验收覆盖） | 交接把 `test_only_hosts_changes_invalidate_agent_content_checks` 的四条 C15 回放当作失效副作用覆盖。逐条读取录制文件及 replay switch，四条全部是 `source_cache_metadata`，不会调用 SaveSubscriptionNodes 或 invalidator。另一个 provider-shadow 场景只列 C18 的生成调用，也不能证明之后的 snapshot.Validate。 | 明确 C15 只证明元数据，实际失效由 C13 `TestHostsChangeInvalidatesAgentContentChecksOnce` 验证；扩展它为真实 parse → nodes → SaveSubscriptionNodes 落盘，增加无 hosts 时仅节点地址变化不失效、相同 hosts 映射新增节点不失效，保留 hosts 新增/修改才失效。`9116717ae`。provider-shadow 映射补上 C17 `TestRecordedPythonTests` 中同源 1 capture + 2 validate（冲突拒绝/原始出口接受），另有 1 bundle；`95f0bb80d`。 |
-| F2 / low（文档计数） | c11.md 声称旧 18 函数已过时、当前 19；PROGRESS-config 也写 19。实际 AST 和逐行 def 清单只有 18，映射表也恰好 18 行，没有漏掉第 19 个测试。 | 修正为 18，与参数化执行次数、录制调用次数明确区分。机械核验 18 chain + 22 DNS + 10 listener 共 50 个源函数全部有映射；所有写明的 C18/C19/C15 调用数匹配录制文件，无未注明的 patched 行。`95f0bb80d`。 |
+| F1 / medium（验收覆盖） | 交接把 `test_only_hosts_changes_invalidate_agent_content_checks` 的四条 C15 回放当作失效副作用覆盖。逐条读取录制文件及 replay switch，四条全部是 `source_cache_metadata`，不会调用 SaveSubscriptionNodes 或 invalidator。另一个 provider-shadow 场景只列 C18 的生成调用，也不能证明之后的 snapshot.Validate。 | 明确 C15 只证明元数据，实际失效由 C13 `TestHostsChangeInvalidatesAgentContentChecksOnce` 验证；扩展它为真实 parse → nodes → SaveSubscriptionNodes 落盘，增加无 hosts 时仅节点地址变化不失效、相同 hosts 映射新增节点不失效，保留 hosts 新增/修改才失效。`56509f415`。provider-shadow 映射补上 C17 `TestRecordedPythonTests` 中同源 1 capture + 2 validate（冲突拒绝/原始出口接受），另有 1 bundle；`118f1084c`。 |
+| F2 / low（文档计数） | c11.md 声称旧 18 函数已过时、当前 19；PROGRESS-config 也写 19。实际 AST 和逐行 def 清单只有 18，映射表也恰好 18 行，没有漏掉第 19 个测试。 | 修正为 18，与参数化执行次数、录制调用次数明确区分。机械核验 18 chain + 22 DNS + 10 listener 共 50 个源函数全部有映射；所有写明的 C18/C19/C15 调用数匹配录制文件，无未注明的 patched 行。`118f1084c`。 |
 
 ## 审计结论
 
@@ -26,7 +26,7 @@
   `(?#...)` 注释、12 个捕获的 `$13`、第二桶命中和多桶同时匹配时首桶优先。
   比较完整 provider/group/override 输出，再按生成 target 中实际 `$N` 数字执行全部
   排序替换；不从 Groups 重建待验证 target。与 Python 最终节点名相等。
-  `95f0bb80d`，定向及 race 均通过。此处验证输出契约，不冒称启动了真实 Mihomo 内核。
+  `118f1084c`，定向及 race 均通过。此处验证输出契约，不冒称启动了真实 Mihomo 内核。
 - 50 条源函数逐项核验：原始文件确有该函数；每个引用的 Go 测试存在；录制调用实际存在、
   没有以函数名相同但跳过的行冒充覆盖；手写逻辑图/入边、禁用链、深拷贝、
   注释/alias/merge/CRLF 和事务 rollback 测试检查相应断言。C18/C19 生成及 C15 refresh
@@ -55,24 +55,36 @@
 无新写 owner、HTTP/device client、共享驱动变更或用户操作入口；WORKFLOW 四常设项中
 不涉及的 client/raw request 项不以本模块测试冒充。无需新增 doc 截图。
 
-## 验证
+## 验证与最终交回
 
-- `.64` 完整 subs、subs/difftest、convert、refresh 及 C06 HTTP 消费者全部通过，精确命令
-  见 [C06 报告](review-c06.md)。最终扩展后 scoped race：settings 42.567s、
-  httpx/difftest 96.790s、subs/difftest 24.710s；全仓 vet、格式检查通过。
-- `RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'cd server && go test -race -count=1 -run "^TestHostsChangeInvalidatesAgentContentChecksOnce$" ./internal/substore'`
-  退出 0：`ok configflow/internal/substore 1.599s`。
-- `.32`：`go test -count=1 -run '^TestRecordedPythonTests$' ./internal/provider`，
-  退出 0：`ok configflow/internal/provider 199.603s`，包含 F1 所列 capture/validate 回放。
+所有执行均经 rt，在测试服务器前台完成。精确 rt 命令和完整门禁启动守卫见
+[C06 报告](review-c06.md)。
 
-八个原始 Python 文件在 `.32` 退出 0：`296 passed in 58.51s`。精确 rt 命令见 C06 报告。
+- 八个原始 Python 文件：`.32` `296 passed in 58.51s`。
+- F1 provider 实际 capture/validate 录制回放：`.32` `provider 199.603s`；扩展后的真实
+  hosts invalidator 回归 `.64` race `1.599s`。初始全 subs/convert/refresh 和相关 HTTP 包通过。
+- `.32` 完整 gate **退出 0，GATE PASS**：gofmt/vet、双 tag、observer、95 个 ok 包的全量
+  race、15 个 HTTP difftest、离线快照 `new=0 stale=0` 和两个 60s fuzz 全部通过。
+  subs race 103.446s、substore race 96.425s、convert race 238.156s；启用的 subs/difftest 26.152s。
 
-变基到本地最新 `go@a08c4cc27`（N7-3d），唯一冲突仅合并 behaviour-changes 两段追加文字。
-修正提交变为 `95f0bb80d`、`9116717ae`。变基前 gate 主动中止（exit 241），不计通过；
-变基后第二次 gate 因 C06 新日志修复主动停止（exit 241）；最终 gate 在 `86edb0737`
-上运行，日志目录 `.32:~/.cache/rt-tmp/review-c06-c11-fixed`，队列守卫及命令见 C06 报告。最终结果待追加。
+```text
+FuzzBindNativeJSON ok configflow/internal/httpx 61.069s
+FuzzSubscriptionYAMLReaders ok configflow/internal/subs 61.046s
+GATE PASS
+```
 
+完整 gate 对应 `go@1439e503d` 的等价产品树；随后最终变基到 **go@a9d6ce86c**，
+合入 C33 和共享 YAML 复核修正。没有本模块产品代码冲突，行为变更文档追加内容全部保留。
+最终基线通过全仓 vet/格式、settings/httpx-difftest/subs-difftest scoped race（42.690s/
+93.640s/24.668s）、hosts invalidator race（1.714s）、完整 subs/convert（14.130s/34.147s）。
+按新 WORKFLOW，最终合并树的 batch gate 由协调者执行；没有将变基前完整 gate 和变基后
+定向证据混记成一次最终整树 gate。
 
-最终又变基到 `go@1439e503d`（只新增 configdiff 工具/文档）；与 gate 启动时的
-backend/internal/cmd/go.mod/go.sum/scripts/tools/proddiff 完全无差异，核验命令见 C06 报告。
-因此本次 gate 继续运行，测试源树未改变。最终 C11 修正提交：`95f0bb80d`、`9116717ae`。
+C33 已合入并独立 verified；真实入口已有 `TestGroupListenerRelinkingHTTPParity`
+（PUT rename/disable，完整 Flask/DB/files）和 `TestListenerRelinkingPreservesUserComments`。
+整个 C33 DELETE/409/rollback 验收仍见 `review-c33.md`；C34 preview 响应和 A14 实际版本
+传递仍由其 owner 负责，生成回放不代替入口验证。
+
+最终修正提交：**118f1084c**（F1 provider 证据、F2 计数、13 regex 向量）、
+**56509f415**（F1 hosts 副作用回归）。分支 `go-review-c06-c11`，0 个 C11 未决发现。
+未 push、未访问生产、未启动子 agent。

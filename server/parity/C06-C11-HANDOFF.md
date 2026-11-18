@@ -36,3 +36,18 @@
 **已知、已分派：O3-6c / 6e5c7760** 处理 repo 最终 COMMIT、taskstatus 带 ctx 入口/调用方、rulefetch touch/rename 及共享 archive 链。特别是当前 `webdav.Run` 在 Upload 返回后调用无 ctx 的 taskstatus.Record，执行中关机仍可能写失败回执。C06 已在进入共享层前检查；没有声称共享窗口已关闭，也没有复制共享 helper。
 
 外部入口保留原 owner：finish 的 MCP、C34 config/export/generate HTTP、C33 proxy-group HTTP；精确缺项与已有契约证据均在逐项映射中。N8-5 的 typed repo 消费者迁移位置也已列明。
+
+
+## 独立复核最终交回（以上为作者原始历史）
+
+分支 `go-review-c06-c11`，最终基线 `go@a9d6ce86c`。两模块均由非作者设为 verified：
+- C06：1 medium 日志凭据/文本泄露，已修 `8168bc648`；新增 34 个存储边界请求 `4cbbb19f9`。
+- C11：1 medium 验收覆盖 + 1 low 计数问题，已修 `118f1084c` / `56509f415`；13 个真实 Python regex 向量。
+- 详细场景、证据、修复及外部 owner：[review-c06.md](review-c06.md)、[review-c11.md](review-c11.md)。
+
+`.32` 完整 gate PASS：全量 race（95 个 ok 包）、15 个启用 difftest、离线 new=0/stale=0、
+两个 60s fuzz 全通过。其后合入 C33/YAML 复核再变基，相关定向 race/完整消费者、全仓
+vet/格式全部通过。两轮证据分开记录，不把变基前 gate 写成最终整树 gate；按新 WORKFLOW
+由协调者对 batch 树统一验收。原始 8 个 Python 文件另有 296 passed。
+共享 O3-6c、MCP/C34/A14 和 C33 的责任边界不由本复核冒认完成；C33 已合入且其自身复核见 review-c33。
+未 push、未访问生产、未启动子 agent。工作区最终应为干净，最终文档提交见分支 HEAD。

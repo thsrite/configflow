@@ -1,6 +1,6 @@
 # C06 独立复核
 
-状态：复核完成，**high 0 / medium 1 / low 0，已修复，0 个模块内未决发现**。复核起点
+状态：**verified**，独立复核完成，**high 0 / medium 1 / low 0，已修复，0 个模块内未决发现**。复核起点
 `go-port-c06-c11@cefe6f7e3`，分支 `go-review-c06-c11`，初始基于 `go@f90a156eb`。
 复核者不是移植作者；未 push、未启动子 agent、未访问生产。新增输入全部为合成数据。
 
@@ -17,7 +17,7 @@ forged-log-entry 泄露，测试退出 1（0.588s）。
 现在两个位置只记更新事件，不记录设置内容；继续保存、返回原值，没有改校验和 API。
 回归同时断言事件仍存在、完整存储值不变和日志无凭据/伪造行。遍历其他 C06 写 handler，
 proxy/token/backup/mode 已分别只记录固定事件、字段名、开关或已验证枚举，不存在另一个
-拼接任意设置值的 INFO 位点。此安全差异已登记 behaviour-changes；修复提交 `86edb0737`。
+拼接任意设置值的 INFO 位点。此安全差异已登记 behaviour-changes；修复提交 `8168bc648`。
 
 ## 审计结论
 
@@ -37,7 +37,7 @@ proxy/token/backup/mode 已分别只记录固定事件、字段名、开关或�
 - 新增 `TestReviewC06SettingsMemberTypes`，34 个独立 Flask 请求：null/bool/数字/数组/对象
   成员、整数与 1.0/1e0、保留份数边界、重复键最后成员替换、大小写不同键、
   aggregation 对象覆盖/null/字符串。响应和完整 meta/sections/fields 及文件状态全部相等。
-  复用原有状态比较器，没有增加 normalization。提交：`d9ecc1d36`。
+  复用原有状态比较器，没有增加 normalization。提交：`4cbbb19f9`。
 - `saveSettings`、`testBackupConnection`、`runManualBackup` 在 owner Detach 后检查取消；
   保存前直接检查，手动备份在 Capture 后、Run 前再次检查。handler 没有 WithoutCancel。
   原始 Scope/baseline 继续交给 repo，不另造提交/锁/回执 helper。
@@ -89,39 +89,78 @@ C35 安全修正继续以设计/behaviour-changes 为准。
 4. `RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && go test -count=1 -run "^TestRecordedPythonTests$" ./internal/provider && cd .. && ~/cf-test/.venv/bin/python -m pytest -q -p no:cacheprovider backend/test_bearer_auth.py backend/test_login_messages.py backend/test_request_exception_redaction.py backend/test_rule_fetch_proxy_settings.py backend/test_security_regressions.py backend/test_proxy_chains.py backend/test_mihomo_listener_lifecycle.py backend/test_proxy_server_dns.py'`
    退出 0：provider 199.603s；`296 passed in 58.51s`。
 
-## 变基与完整 gate
+## 完整 gate 与最终基线
 
-本地 go 前进到 N7-3d `a08c4cc27` 后，停止原基线刚进入 race/proddiff 阶段的 gate
-（退出 241，不记通过），完成 `git rebase go`。唯一冲突是 behaviour-changes 两个
-append-only 小节，保留 N7-3d 和 C06 全部记录，没有产品代码冲突。
-当前门禁基线 `a08c4cc27 + C06/C11`，末笔测试提交 `9116717ae`。
-测试/修正变基后提交：`d9ecc1d36`、`95f0bb80d`、`9116717ae`。
+`.32:~/.cache/rt-tmp/review-c06-c11-fixed` 完整 gate **退出 0，GATE PASS**：
 
-在 `.32` 前台通过 rt + Python 子进程守卫执行：
-`GATE_LOGS=$HOME/.cache/rt-tmp/review-c06-c11-rebased server/scripts/gate.sh -p 6 FuzzBindNativeJSON:./internal/httpx FuzzSubscriptionYAMLReaders:./internal/subs`。
-守卫仅在 900 秒未取得 slot 时终止本次排队（exit 75），已取得 slot 后不限制 gate 执行时间。
-这次已取得 slot 并进入 race/proddiff，随后因复现 F1 主动停止（exit 241），也不计通过。
-F1 修复后的最终 gate 另记；不以作者的旧 gate 排队或这两次主动中止冒充门禁通过。
+- gofmt 无输出；全仓 vet、双 tag build/vet/lifecycle 和 observer 自检通过。
+- 全量 `-race -p=6` 全绿，95 个包输出 ok；settings 64.538s、auth 6.877s、redact 1.255s、subs 103.446s、substore 96.425s、convert 238.156s、refresh 162.831s。没有 data race。
+- 离线 proddiff：`new=0 stale=0`；15 个启用 HTTP difftest 包全部通过，httpx/difftest 66.329s、subs/difftest 26.152s。
+- 两个 fuzz 各 60s 通过，最终输出：
 
-
-F1 修复后 `.64` 前台验收：
-
-```sh
-RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'cd server && go test -race -count=1 ./internal/api/settings && CONFIGFLOW_DIFF=1 go test -count=1 ./internal/httpx/difftest && go vet ./internal/api/settings && test -z "$(gofmt -l internal/api/settings)"'
+```text
+baseline: new=0 stale=0
+FuzzBindNativeJSON ok configflow/internal/httpx 61.069s
+FuzzSubscriptionYAMLReaders ok configflow/internal/subs 61.046s
+GATE PASS
 ```
 
-退出 0：settings race 37.306s、httpx/difftest 39.106s（含原 132 + 新 34 个存储 oracle）、
-vet/gofmt 无输出。修复前最小复现命令：
-`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'cd server && go test -count=1 -run "^TestReviewSettingsLogsDoNotEchoValues$" ./internal/api/settings'`，退出 1，两条路由各有四项泄露断言失败。
+此门禁在旧 `4754d18da` 快照执行，等价于 `go@1439e503d` 上的本分支产品/Go测试/gate源码。
+此前两次因变基、补 F1 修复而主动中止的运行均不计通过。运行期间叠入的 configdiff 工具/文档
+不在这次门禁范围内；以下比较当时退出 0，确认 Go 产品/测试与 gate 输入未变：
+`git diff --exit-code 4754d18da HEAD -- backend server/internal server/cmd server/go.mod server/go.sum server/scripts server/tools/proddiff`。
 
-最终 gate 在 `86edb0737` 上执行，目录 `.32:~/.cache/rt-tmp/review-c06-c11-fixed`，
-仍使用上面的 `gate.sh -p 6`、两个 fuzz 目标及相同前台 900 秒队列守卫。最终结果待补。
+随后 go 合入 C33 和 N7-3d 独立复核，最终变基到 **go@a9d6ce86c**。
+冲突仅为行为变更文档的追加段落，保留双方；没有 C06/C11 产品代码冲突。
+这次确有其他 owner 的产品变化，所以不把旧完整 gate 冒称为最终整棵树的 gate。
+按新 WORKFLOW 的批量合入机制，协调者在最终 batch 树上统一验收。
 
+最终基线定向命令，rt 自动选择 `.32`，退出 0：
 
-完整 gate 运行中，local go 又合入 configdiff 工具/文档到 `1439e503d`，本分支再次变基。
-唯一冲突仍为 behaviour-changes 追加段落，保留双方全文。静态核验新增路径仅
-server/parity 与 server/tools/configdiff，没有任何 Go 或 backend 变更。
-`git diff --exit-code 4754d18da HEAD -- backend server/internal server/cmd server/go.mod server/go.sum server/scripts server/tools/proddiff`
-退出 0：最终分支与正在测试的旧 `4754d18da` 的产品、测试和 gate/proddiff 源码完全相同，
-所以不中断 gate，也不重复同一套测试。等价日志修复提交现为 `86edb0737`。
-最终基线 `go@1439e503d`；本轮差分分诊也明确没有新增归 C06/C11 的工单。
+```sh
+rt -e GOMAXPROCS=4 -- bash -lc 'cd server && test -z "$(gofmt -l internal tools cmd)" && go vet ./... && CONFIGFLOW_DIFF=1 go test -race -count=1 ./internal/api/settings ./internal/httpx/difftest ./internal/subs/difftest && go test -race -count=1 -run "^TestHostsChangeInvalidatesAgentContentChecksOnce$" ./internal/substore && go test -count=1 ./internal/subs ./internal/convert'
+```
+
+settings race 42.690s、httpx/difftest race 93.640s、subs/difftest race 24.668s、hosts invalidator
+race 1.714s、subs 14.130s、convert 34.147s；最终格式及全仓 vet 通过。动态认证矩阵包含新
+合入的全部 C33 注册。C33 真实入口已有其独立 `review-c33.md`，不由 leaf stub 冒认；
+MCP/C34 和共享 O3-6c 的责任仍按上文保留。
+
+正常的 owner 前读取也已追至 GetSystemWithSource → committedSource → readEntry/loadEntry：
+健康读取没有先检查请求 ctx.Err 的闸门，冷读不会仅因客户端断开而直接拒绝；没有发现新增问题。
+16 个 Runtime 回归仍明确只声称其入口边界，不代替共享 I/O 失败重试或最终提交窗口验收。
+
+最终修复提交：**8168bc648**（F1 日志），边界增强 **4cbbb19f9**；分支 `go-review-c06-c11`。
+0 个 C06 未决发现；未 push、未访问生产、未启动子 agent。
+
+### 完整 gate 的精确前台 rt 启动命令
+
+守卫只对未取得 slot 的排队设置 900 秒上限，取得 slot 后持续前台跟随至退出。
+
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'python3 - <<'"'"'PY'"'"'
+import os, selectors, signal, subprocess, sys, time
+logdir = os.path.expanduser("~/.cache/rt-tmp/review-c06-c11-fixed")
+os.makedirs(logdir, exist_ok=True)
+os.environ["GATE_LOGS"] = logdir
+print("C06/C11 fixed gate; queue cutoff 900s; logs " + logdir, flush=True)
+p = subprocess.Popen(["server/scripts/gate.sh", "-p", "6", "FuzzBindNativeJSON:./internal/httpx", "FuzzSubscriptionYAMLReaders:./internal/subs"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
+s = selectors.DefaultSelector(); s.register(p.stdout, selectors.EVENT_READ)
+start, acquired, pending = time.monotonic(), False, ""
+with open(os.path.join(logdir,"console.log"),"wb") as log:
+    while True:
+        if not acquired and time.monotonic()-start >= 900:
+            print("QUEUE LIMIT: 900 seconds without slot; terminating queued gate",flush=True)
+            os.killpg(p.pid,signal.SIGTERM); p.wait(timeout=30); sys.exit(75)
+        for key,_ in s.select(timeout=5):
+            chunk=os.read(key.fileobj.fileno(),65536)
+            if not chunk: s.unregister(key.fileobj); continue
+            log.write(chunk); log.flush()
+            sys.stdout.buffer.write(chunk); sys.stdout.buffer.flush()
+            pending+=chunk.decode("utf-8",errors="replace")
+            while "\n" in pending:
+                line,pending=pending.split("\n",1)
+                if line.startswith("gate: slot "): acquired=True
+        if p.poll() is not None and not s.get_map(): sys.exit(p.returncode)
+PY'
+```
