@@ -743,7 +743,9 @@ func ValidateRenderedBundle(snapshot *Snapshot, providers []*Rendered) (bool, er
 
 // CommitCacheUpdates is commit_cache_updates(updates).
 func CommitCacheUpdates(ctx context.Context, updates []CacheUpdate) error {
-	// Shutdown before the first write commits nothing; a started batch is whole.
+	// Browser cancellation never interrupts the owner; shutdown before the first
+	// write commits nothing; a started batch is whole.
+	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -1177,7 +1179,9 @@ func PrepareProviderBundle(ctx context.Context, config, main *jsonx.Object, opts
 // CommitProviderBundle is commit_provider_bundle(profile_id, bundle): only
 // call after the complete exact bundle passed validation.
 func CommitProviderBundle(ctx context.Context, profileID string, bundle []*Rendered) error {
-	// Shutdown before the first write commits nothing; a started batch is whole.
+	// Browser cancellation never interrupts the owner; shutdown before the first
+	// write commits nothing; a started batch is whole.
+	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return err
 	}
