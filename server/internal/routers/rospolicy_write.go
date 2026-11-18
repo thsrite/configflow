@@ -66,6 +66,9 @@ func init() {
 // ApplyROSPolicy applies a server-built typed plan and compensates any failure.
 func (d *RouterOS) ApplyROSPolicy(ctx context.Context, op *ROSPolicyReplace) (*ROSPolicyUndo, error) {
 	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	raw, err := json.Marshal(op)
 	if err != nil {
 		return nil, routerError(messageOperationFormat)
@@ -229,6 +232,9 @@ func (d *RouterOS) applyPolicy(ctx context.Context, op policyWrite) (*ROSPolicyU
 		}
 		return nil, err
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if len(resources) == 0 {
 		d.SetPolicyManifest(json.RawMessage(`null`))
 	} else {
@@ -353,6 +359,9 @@ func (d *RouterOS) deletePolicyRoutes(ctx context.Context, items []ROSResource, 
 // replacement protection; changed IDs and foreign references remain untouched.
 func (d *RouterOS) RestoreROSPolicy(ctx context.Context, undo ROSPolicyUndo) error {
 	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	d.InvalidateAddressReads()
 	for _, step := range undo.Steps {
 		if step.Action == "operation" {
@@ -459,6 +468,9 @@ func (d *RouterOS) RestoreROSPolicy(ctx context.Context, undo ROSPolicyUndo) err
 		_ = devhttp.DecodeJSON(previous, &fields)
 		fields["resources"] = mustPolicyJSON(manifest.Resources)
 		previous = mustPolicyJSON(fields)
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	d.SetPolicyManifest(previous)
 	if len(failures) > 0 {

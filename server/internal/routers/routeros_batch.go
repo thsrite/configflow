@@ -57,8 +57,11 @@ func (*RouterOS) BatchKinds() []string { return []string{"route_add", "route_del
 // shutdown drain deadline cancels the detached work context.
 func (d *RouterOS) ApplyMany(ctx context.Context, ops []json.RawMessage, record func(json.RawMessage, json.RawMessage)) error {
 	work := lifecycle.Detach(ctx)
+	if err := work.Err(); err != nil {
+		return err
+	}
 	for index := 0; index < len(ops); {
-		if err := ctx.Err(); err != nil {
+		if err := work.Err(); err != nil {
 			return err
 		}
 		var first rosOperation

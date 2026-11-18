@@ -8,7 +8,6 @@ package routers
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -144,19 +143,19 @@ func TestApplyFinishesNATBatchAfterCancellation(t *testing.T) {
 	}
 }
 
-// F3: ApplyMany may stop for a cancelled context only between batches, with
-// every route already written proven and recorded.
-func TestApplyManyStopsOnlyAtProvenBatchBoundary(t *testing.T) {
+// O3 2.5 / PORTING 4b: a client disconnect does not stop a write owner,
+// including between batches. Every written route must still be proven/recorded.
+func TestApplyManyFinishesAfterRequestCancellation(t *testing.T) {
 	driver, fake, ctx := newCancellingRouterOS(t, routerfake.State{}, "POST /execute")
 	ops := routeAddOps(t, 150, 41)
 	recorded := 0
 	err := driver.ApplyMany(ctx, ops, func(_, _ json.RawMessage) { recorded++ })
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("ApplyMany error = %v, want context.Canceled at the batch boundary", err)
+	if err != nil {
+		t.Fatalf("ApplyMany interrupted by client disconnect: %v", err)
 	}
 	written := len(fake.Snapshot().Tables[rosRoutes])
-	if written != 100 || recorded != written {
-		t.Fatalf("written %d routes, recorded %d: every written route must be recorded (want 100/100)", written, recorded)
+	if written != 150 || recorded != written {
+		t.Fatalf("written %d routes, recorded %d: every written route must be recorded (want 150/150)", written, recorded)
 	}
 }
 

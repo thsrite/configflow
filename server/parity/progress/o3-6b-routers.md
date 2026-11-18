@@ -44,3 +44,28 @@ RT_HOST=sunbroke@192.168.0.32 rt --back server/internal/routers/joblock_test.go 
 ```
 退出0：`ok configflow/internal/routers 24.301s`。更早纯JobLock组race3通过1.150s。
 下一步迁移旧driver的WithoutCancel并加真实Runtime I/O/rollback/lock-wait回归。
+
+## 旧写入/回滚取消边界
+
+已移除routers剩余WithoutCancel（iKuai Write/Apply/Batch、两vendor手工route编辑、ExecuteRoutePlan、
+RouterOperationLock写模式），入口Detach并检查ctx。iKuai每次post前与返回后保留原生取消，设备timeout未变。
+R07地址/NAT入口在清理read evidence或设置touched之前检查；RouterOS.Apply补入口检查，与R11同一修复后续保留一次。
+R08 apply与restore在最终SetPolicyManifest前检查，取消不得提交proof。
+
+协调者批准Clarified in O3-6b并登记behaviour-changes：ApplyMany批次间原ctx改work ctx，
+旧review测试有意改为断开后150/150，符合O3 §2.5 / PORTING4b；新增真实Runtime第100个已证明记录回调后
+Shutdown仍为100/100、后续批次不写。没有改batchMin/routeBatch或网络timeout。
+
+真实Runtime回归TestO36bLegacyWriteRuntimeBoundary覆盖两vendor apply/restore/edit/plan/empty-plan及iKuai Write/Batch，
+停止后零I/O/零device变化（空batch不执行callback），断开后全部完成。
+TestO36bPolicyRestoreCommitRuntimeBoundary在最后snapshot响应后关机，旧proof不变；断开仍能完成manifest-only恢复。
+
+- 红（产品修复前，.32）：`go test -count=1 -run "^TestO36b(LegacyWrite|ApplyMany|PolicyRestore)" ./internal/routers/`
+  退出1，0.161s。10个旧owner在停止后仍成功执行/发请求；ApplyMany断开后停批次；R08取消后manifest=null。
+- 初轮编译抓到一处范围过宽的ctx替换和删除旧断言后的unused import，已修正；不记为红证据。
+- 绿（.32）：
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt --back server/internal/routers -- bash -lc 'cd server && gofmt -w internal/routers/route_editor.go internal/routers/ikuai_apply.go internal/routers/ikuai.go internal/routers/ikuai_routes.go internal/routers/routeros_routes.go internal/routers/routeros_batch.go internal/routers/rospolicy_write.go internal/routers/r04_review_test.go internal/routers/natlist_write.go internal/routers/addresswrite.go internal/routers/routeros.go && go vet ./internal/routers/ && go test -race -count=3 -run "TestO36b|TestApplyManyFinishesAfterRequestCancellation|TestApplyFinishesNATBatchAfterCancellation|TestRestoreManyIgnoresCancellation|TestR06ConnectionLock|TestR09RuntimeShutdownAndRequestDisconnect" ./internal/routers/'
+```
+  退出0，`ok configflow/internal/routers 30.676s`。
+下一步：真实I/O中途取消、L2等待、repo caller-held提交与并发发布压力；R10/6c合入后rebase及最终门禁。

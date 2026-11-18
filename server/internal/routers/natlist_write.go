@@ -177,6 +177,9 @@ func indexROSRows(rows []Row) (map[string]Row, map[string]int) {
 // batched removal. A fallback rechecks every remaining snapshot before DELETE.
 func (d *RouterOS) DeleteNATRules(ctx context.Context, items []ROSResource, journal *[]NATStep) error {
 	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	rows, err := d.list(ctx, rosNAT)
 	if err != nil {
 		return err
@@ -600,6 +603,9 @@ func (d *RouterOS) proveNATList(ctx context.Context, op NATListSync, id string) 
 // on failure. Every mutation is guarded by the preview and recorded before I/O.
 func (d *RouterOS) ApplyNATLists(ctx context.Context, op NATListSync) (*NATListUndo, error) {
 	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	d.InvalidateAddressReads()
 	full, err := d.list(ctx, rosNAT)
 	if err != nil {
@@ -727,6 +733,9 @@ func (d *RouterOS) ApplyNATLists(ctx context.Context, op NATListSync) (*NATListU
 // reports an incomplete rollback; it never deletes by a destination guess.
 func (d *RouterOS) RestoreNATLists(ctx context.Context, op NATListUndo) error {
 	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	for _, step := range op.Steps {
 		if (step.Path != rosNAT && step.Path != rosAddresses) || (step.Action != "delete" && step.Action != "restore" && step.Action != "sweep") || (step.Action != "sweep" && (step.ID == "" || step.Config == nil)) {
 			return routerError(messageOperationFormat)

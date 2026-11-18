@@ -20,7 +20,8 @@ package routers
 //   - every list is read completely, page by page, and a read that changes
 //     between pages or lacks unique IDs fails closed;
 //   - an operation, once started, runs to the end even when the caller's
-//     context is cancelled (PORTING rule 4b); every request has its own timeout.
+//     request disconnects (PORTING rule 4b); Runtime shutdown still cancels it,
+//     and every request has its own timeout.
 
 import (
 	"bytes"
@@ -40,6 +41,7 @@ import (
 	"time"
 
 	"configflow/internal/devhttp"
+	"configflow/internal/lifecycle"
 	"configflow/internal/netipx"
 )
 
@@ -131,11 +133,17 @@ func ikuaiSeconds(seconds float64) string { return strconv.FormatFloat(seconds, 
 // post sends one request and returns the reply object. timeout is in seconds
 // (0: the default 10).
 func (d *Ikuai) post(ctx context.Context, path string, body any, timeout float64) (Row, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if timeout <= 0 {
 		timeout = ikuaiTimeoutSeconds
 	}
 	target := d.endpoint + path
 	response, err := d.client.Do(ctx, http.MethodPost, target, body, time.Duration(timeout*float64(time.Second)))
+	if cancelled := ctx.Err(); cancelled != nil {
+		return nil, cancelled
+	}
 	if err != nil {
 		// Only the failure class is shown: the raw error may name the URL.
 		var message string
@@ -370,9 +378,13 @@ func (d *Ikuai) Call(ctx context.Context, funcName string, param map[string]any)
 // the reply's results. A refusal is a *RouterError of KindRejected: nothing
 // changed. Any other error may hide a change (the reply was lost). timeout is
 // in seconds (0: the default 10). A started write is not abandoned when ctx
-// is cancelled (o3-concurrency 2.5): the request keeps its own timeout.
+// disconnects (o3-concurrency 2.5); Runtime shutdown still cancels it. The
+// device request keeps its own timeout.
 func (d *Ikuai) Write(ctx context.Context, funcName, action string, param any, timeout float64) (Row, error) {
-	ctx = context.WithoutCancel(ctx)
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	encoded, err := ikuaiEncodeParam(param)
 	if err != nil {
 		return nil, err

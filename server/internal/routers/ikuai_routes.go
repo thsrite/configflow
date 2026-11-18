@@ -10,6 +10,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"configflow/internal/lifecycle"
 	"configflow/internal/netipx"
 )
 
@@ -168,7 +169,10 @@ func (d *Ikuai) MutateRoute(ctx context.Context, action string, expected *Editab
 // name is a deterministic per-call seam for the Python boundary corpus, never a global hook.
 func (d *Ikuai) mutateRoute(ctx context.Context, action string, expected *EditableRoute, values *RouteValues, name string) (result *RouteMutation, err error) {
 	defer func() { err = routeSafeError(err, d.endpoint, d.password) }()
-	ctx = context.WithoutCancel(ctx)
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if action != "add" && action != "update" && action != "delete" {
 		return nil, routerError(messageEditVendorAction)
 	}

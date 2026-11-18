@@ -302,7 +302,10 @@ func BuildRoutePlan(router Router, rows []*EditableRoute, data json.RawMessage) 
 // ExecuteRoutePlan completes an edit and all its readbacks/compensation even if the request disconnects.
 // Callers own the connection lock and rebuild the plan from fresh rows before calling.
 func ExecuteRoutePlan(ctx context.Context, driver Driver, rows []*EditableRoute, plan *RoutePlan) (*RouteResult, error) {
-	ctx = context.WithoutCancel(ctx)
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if plan == nil {
 		return nil, routerError(messageEditFormat)
 	}
@@ -343,7 +346,8 @@ func routeIdentityEqual(a, b *EditableRoute) bool {
 var routeLocks = lockx.NewKeyed[[2]string](lockx.LevelDevice, "router-operation")
 
 // RouterOperationLock serializes read-modify-write operations on a connection.
-// Read callers retain cancellation; write callers detach and wait at most ten minutes.
+// Read callers retain cancellation; write callers detach from client disconnects
+// and wait at most ten minutes, bounded by Runtime shutdown cancellation.
 // Do not acquire recursively: pass the returned context down under the same lock.
 func RouterOperationLock(ctx context.Context, router Router, write bool) (context.Context, func(), error) {
 	limit := time.Duration(0)
@@ -356,7 +360,7 @@ func RouterOperationLock(ctx context.Context, router Router, write bool) (contex
 	}
 	key := [2]string{router.Type, strings.TrimRight(router.Endpoint, "/")}
 	held, release, err := routeLocks.Lock(ctx, key, limit)
-	if err != nil && write && ctx.Err() == nil {
+	if err != nil && write && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
 		return ctx, nil, rosError(KindConflict, messageEditBusy)
 	}
 	return held, release, err

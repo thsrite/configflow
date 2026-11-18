@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"configflow/internal/devhttp"
+	"configflow/internal/lifecycle"
 	"configflow/internal/netipx"
 )
 
@@ -162,8 +163,13 @@ type ikuaiWrittenGroup struct {
 // next other write (a stage may delete what they replace) and at the end; a
 // rollback attempts every undo even after a failed re-add, so it proves its
 // re-adds only at the end. Nothing carries over to the next batch. A nested
-// call just runs fn. The final read-back runs even when ctx was cancelled.
+// call just runs fn. Client disconnects do not stop final read-back; Runtime
+// shutdown still bounds the work, including empty batches.
 func (d *Ikuai) Batch(ctx context.Context, rollback bool, fn func(context.Context) error) error {
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if d.batch != nil {
 		return fn(ctx)
 	}
@@ -173,7 +179,10 @@ func (d *Ikuai) Batch(ctx context.Context, rollback bool, fn func(context.Contex
 	if err := fn(ctx); err != nil {
 		return err
 	}
-	return d.confirmAdded(context.WithoutCancel(ctx), d.batch.added)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return d.confirmAdded(ctx, d.batch.added)
 }
 
 func rowsByID(rows []Row) map[string]Row {
@@ -513,10 +522,13 @@ func ipv4Mask(bits int) string { return net.IP(net.CIDRMask(bits, 32)).String() 
 
 // Apply applies one release operation and returns the one that undoes it. A
 // write that may have happened before failing returns an error carrying its
-// undo (UndoOf). Once started it runs to the end even if ctx is cancelled
-// (PORTING rule 4b); each device request has its own timeout.
+// undo (UndoOf). Client disconnects do not abort it (PORTING rule 4b);
+// Runtime shutdown does. Each device request keeps its own timeout.
 func (d *Ikuai) Apply(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
-	ctx = context.WithoutCancel(ctx)
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	var op ikuaiOp
 	if err := devhttp.DecodeJSON(raw, &op); err != nil {
 		return nil, routerError(messageIkuaiOperationFormat)

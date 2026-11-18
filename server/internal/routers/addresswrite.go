@@ -239,6 +239,9 @@ func (d *RouterOS) settledAddressRows(ctx context.Context, name string) ([]Row, 
 // fresh, unique IDs with matching submitted values. It detaches cancellation.
 func (d *RouterOS) CreateAddresses(ctx context.Context, entries []Row, journal *[]NATStep, ids ROSIDs) ([]ROSResource, error) {
 	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	return d.createAddresses(ctx, entries, journal, ids, nil)
 }
 func (d *RouterOS) createAddresses(ctx context.Context, entries []Row, journal *[]NATStep, ids ROSIDs, created map[int]ROSResource) ([]ROSResource, error) {
@@ -412,6 +415,9 @@ func (d *RouterOS) forgetAddresses(items []ROSResource, removed map[string]bool)
 // it; only the shutdown drain deadline can (lifecycle.Detach).
 func (d *RouterOS) DeleteAddresses(ctx context.Context, items []ROSResource, journal *[]NATStep) error {
 	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	d.InvalidateAddressReads()
 	live, err := d.liveAddresses(ctx, items)
 	if err != nil {

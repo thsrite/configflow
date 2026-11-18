@@ -510,6 +510,14 @@ Implementation notes: [startup and shutdown](o3-startup-shutdown.md).
   that sequence on the merged C33 tree. Preserve F7's L3 declaration guard and F8's owner-context
   restoration; do not duplicate checks at the same action. Migrate C33 Forget to ForgetContext.
 
+**Clarified in O3-6b (coordinator, 2026-11-18):**
+- R04 ApplyMany checks its detached work context at batch boundaries (section 2.5 / PORTING 4b).
+  A browser disconnect completes all 150/150 routes in the former review regression; intentionally
+  change that old test. A real Runtime shutdown after the 100th proven record leaves 100/100
+  written/proven/recorded, with no write from the next batch. Keep the production batch and I/O limits.
+- R08 RestoreROSPolicy checks the work context immediately before SetPolicyManifest. Cancellation
+  after the final snapshot must not commit the proof; client disconnect alone still completes it.
+
 ### 2.4 Mapping table (every Python loop/lock → Go construct)
 
 Porters of the missing modules use these names, timings and levels; reviewers check them.

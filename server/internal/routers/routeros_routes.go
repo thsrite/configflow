@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 
+	"configflow/internal/lifecycle"
 	"configflow/internal/netipx"
 )
 
@@ -236,7 +237,10 @@ func editResource(id string) string { return rosRoutes + "/" + escapeROSPathID(i
 // MutateRoute edits one route, proving ownership again before every compensation.
 func (d *RouterOS) MutateRoute(ctx context.Context, action string, expected *EditableRoute, values *RouteValues) (result *RouteMutation, err error) {
 	defer func() { err = routeSafeError(err, d.endpoint, d.password) }()
-	ctx = context.WithoutCancel(ctx)
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if action != "add" && action != "update" && action != "delete" {
 		return nil, routerError(messageEditVendorAction)
 	}
