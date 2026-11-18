@@ -543,6 +543,17 @@ class ComparatorTests(unittest.TestCase):
             build.return_value.open.side_effect = pd.urllib.error.HTTPError('http://example.com', 500, 'error', headers, io.BytesIO(b'{}'))
             self.assertEqual(500, pd.send(15001, 'GET', '/')[0])
 
+    def test_transport_diagnostics_preserve_reply_and_timeout(self):
+        errors = []
+        failure = TimeoutError('synthetic transport failure')
+        with mock.patch.object(pd.urllib.request, 'build_opener') as build:
+            build.return_value.open.side_effect = failure
+            result = pd.send(15002, 'GET', '/synthetic', timeout=40,
+                             transport_error=errors.append)
+            self.assertEqual((0, '', b'', {}), result)
+            self.assertEqual([failure], errors)
+            self.assertEqual(40, build.return_value.open.call_args.kwargs['timeout'])
+
     def test_phases_put_log_readers_last(self):
         self.assertEqual(0, pd.phase(('GET', '/api/agents', '', None, False)))
         self.assertEqual(1, pd.phase(('POST', '/api/generate/mihomo', '', None, False)))

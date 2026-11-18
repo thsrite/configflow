@@ -515,7 +515,7 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def send(port, method, path, token='', body=None, timeout=20):
+def send(port, method, path, token='', body=None, timeout=20, transport_error=None):
     headers = {'Host': '127.0.0.1:5001', 'X-Forwarded-Host': '127.0.0.1:5001',
                'X-Forwarded-Proto': 'http', 'Content-Type': 'application/json'}
     if token:
@@ -528,7 +528,9 @@ def send(port, method, path, token='', body=None, timeout=20):
         response = opener.open(request, timeout=timeout)
     except urllib.error.HTTPError as error:
         response = error
-    except (OSError, TimeoutError):
+    except (OSError, TimeoutError) as error:
+        if transport_error is not None:
+            transport_error(error)
         return 0, '', b'', {}
     with response:
         headers = {name.lower(): ', '.join(response.headers.get_all(name)) for name in set(response.headers.keys())}
@@ -926,11 +928,32 @@ def main():
             all_cases = list(cases(rows, doc, copies[0]))
 
             agent_identities = AgentComparisonIdentities()
+            transport_trace_lock = threading.Lock()
+            transport_trace = report / 'transport-attempts.jsonl'
+
             def ask(index, method, route, path, body, timeout):
                 from content_policy import REQUEST_SECONDS, ROUTES
                 if method == 'GET' and route in ROUTES:
                     timeout = max(timeout, REQUEST_SECONDS)
-                return scrub(send(15001 + index, method, path, tokens[index], body, timeout=timeout), copies[index])
+                errors = []
+                started = time.monotonic()
+                reply = send(15001 + index, method, path, tokens[index], body,
+                             timeout=timeout, transport_error=errors.append)
+                event = {'side': ('python', 'go')[index], 'method': method, 'route': route,
+                         'timeout_seconds': timeout, 'elapsed_seconds': time.monotonic() - started,
+                         'status': reply[0]}
+                if errors:
+                    error = errors[0]
+                    event['error_type'] = type(error).__name__
+                    event['errno'] = getattr(error, 'errno', None)
+                    if isinstance(error, urllib.error.URLError):
+                        event['reason_type'] = type(error.reason).__name__
+                # Schema-only diagnostics: never record expanded paths, request
+                # bodies, credentials or error strings. Comparison/retry policy
+                # and the returned reply are unchanged.
+                with transport_trace_lock, transport_trace.open('a') as trace:
+                    trace.write(json.dumps(event) + '\n')
+                return scrub(reply, copies[index])
 
             def compare(case):
                 method, route, path, body, no_data = case
