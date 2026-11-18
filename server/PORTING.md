@@ -99,7 +99,12 @@ server/
    in-process locks (`lockx`, levels L1 try-only → L2 → L3 `.config.lock` → L4 → L5); loops, startup work and
    detached jobs go through `lifecycle` (Periodic / Startup / `Spawn`) with Python's first delays and
    intervals (table 2.4 there); a lock Python takes before validation is taken at the same point (409 before
-   400). Until steps O3-2/O3-6 land, follow the transitional rule at the end of its section 4.
+   400). The old O3-2/O3-6 transitional rule has expired; the migrated concurrency boundary applies.
+   The AST gate `internal/lifecycle/gate_test.go::TestConcurrencyFacadeBoundary` enforces the boundary.
+   Any joined fan-out exemption is an exact `file:func` with a reason; no blanket package exemptions.
+   Source-bound owners use `lifecycle.SpawnerFrom(ctx)` so a stopped generation cannot move work
+   into the global Runtime. Local HTTP callbacks require an injected tracked Spawner.
+
 8. **HTTP handlers** live in `internal/api/<blueprint>` and only translate HTTP ↔ package calls.
    Register routes in that package's `Register(*httpx.Router)`; never edit another package's
    registration. Update `parity/routes.tsv` for the routes you implemented (`go package`, status

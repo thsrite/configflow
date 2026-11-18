@@ -85,6 +85,9 @@ structurally against real Python, storage round trips, loopback fakes for device
 
 Locks, background loops, detached jobs, cancellation and shutdown: `server/design/o3-concurrency.md` (no new
 `flock`, no bare `go` for work that outlives its caller, loop timings from its table 2.4).
+`internal/lifecycle/gate_test.go::TestConcurrencyFacadeBoundary` checks all non-test Go sources:
+Flock only in repo/instance, explicit file:function exemptions for joined fan-outs and wall-clock primitives.
+Use `SpawnerFrom(ctx)` to preserve an originating Runtime; do not add broad exemptions to bypass Spawn/Clock.
 
 ## Style, hand-off, escalation
 
