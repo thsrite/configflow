@@ -17,6 +17,7 @@ import (
 	"unicode/utf8"
 
 	"configflow/internal/agents/diag"
+	"configflow/internal/clock"
 	"configflow/internal/convert"
 	"configflow/internal/jsonx"
 	"configflow/internal/localhttp"
@@ -36,12 +37,14 @@ type Client struct {
 	Transport Transport
 	// Local is localhttp.Do (in-process dispatch of this server's own API).
 	Local func(ctx context.Context, r localhttp.Request) (*localhttp.Response, error)
-	// Sleep waits between retries (time.Sleep).
+	// Sleep optionally overrides retry waits in legacy tests. Nil uses Clock.
 	Sleep func(time.Duration)
+	// Clock drives retry waits. Nil uses the real clock; ctx can cancel a wait.
+	Clock clock.Clock
 }
 
-// DefaultClient uses the network, localhttp and time.Sleep.
-var DefaultClient = &Client{Transport: HTTPTransport{}, Local: localhttp.Do, Sleep: time.Sleep}
+// DefaultClient uses the network, localhttp and the real retry clock.
+var DefaultClient = &Client{Transport: HTTPTransport{}, Local: localhttp.Do}
 
 // Request is the keyword arguments of request_rule.
 type Request struct {
@@ -526,7 +529,22 @@ func (c *Client) requestWithRetries(ctx context.Context, url string, r *Request,
 		}
 		logger.Infof("规则下载连接中断（%s），%d 秒后重试第 %d 次：%s", fetch.Class,
 			int(retryDelays[attempt]/time.Second), attempt+1, weburl.SafeForLog(url))
-		c.Sleep(retryDelays[attempt])
+		if c.Sleep != nil {
+			c.Sleep(retryDelays[attempt])
+		} else {
+			source := c.Clock
+			if source == nil {
+				source = clock.Real{}
+			}
+			timer := source.NewTimer(retryDelays[attempt])
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return nil, ctx.Err()
+			case <-timer.C():
+			}
+			timer.Stop()
+		}
 	}
 }
 

@@ -262,8 +262,7 @@ type Manager struct {
 	deploymentMu sync.Mutex
 	preparations map[[2]string]*preparationLease
 
-	// Test seams (Python monkeypatched time.sleep / time.monotonic and
-	// _preparation_running).
+	// Optional test seams. A nil sleep uses the Runtime Clock and honours ctx.
 	sleep              func(time.Duration)
 	monotonic          func() float64
 	preparationRunning func(agentID, deploymentID string) (bool, error)
@@ -276,7 +275,6 @@ func New(ctx context.Context, repository *repo.Repository) (*Manager, error) {
 		repository:   repository,
 		runtime:      RuntimeFor(repository.DataDir()),
 		preparations: map[[2]string]*preparationLease{},
-		sleep:        time.Sleep,
 		monotonic:    func() float64 { return time.Since(processStart).Seconds() },
 	}
 	m.preparationRunning = m.defaultPreparationRunning

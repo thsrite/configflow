@@ -513,7 +513,19 @@ func (m *Manager) DeploymentRequest(ctx context.Context, agent *jsonx.Object, me
 		if !retryBusy || !busy || attempt == 20 || remaining <= 0 {
 			return result, nil
 		}
-		m.sleep(time.Duration(min(0.1, remaining) * float64(time.Second)))
+		delay := time.Duration(min(0.1, remaining) * float64(time.Second))
+		if m.sleep != nil {
+			m.sleep(delay)
+		} else {
+			timer := lifecycle.ClockFrom(ctx).NewTimer(delay)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return nil, ctx.Err()
+			case <-timer.C():
+			}
+			timer.Stop()
+		}
 	}
 }
 

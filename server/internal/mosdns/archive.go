@@ -486,21 +486,29 @@ func BuildMosDNSZip(ctx context.Context, config *jsonx.Object, yamlContent strin
 	entries := order
 	order = nil
 
-	// A failure returns at once; at most MaxWorkers downloads stay in
-	// flight (bounded timeouts) and their results are dropped.
+	// Downloads may outlive an early failure, so Runtime tracks each worker.
+	// At most MaxWorkers downloads stay in flight; results are buffered.
 	fetch := fetchRemoteFn
 	results := make(chan fetched, len(sources))
 	next, pending := 0, 0
-	schedule := func() {
-		for ; pending < MaxWorkers && next < len(sources) && ctx.Err() == nil; next, pending = next+1, pending+1 {
+	schedule := func() error {
+		for pending < MaxWorkers && next < len(sources) && ctx.Err() == nil {
 			src := sources[next]
-			go func() {
-				content, err := fetchSource(ctx, fetch, config, src, label(uses[src][0].name))
-				results <- fetched{src, content, err}
-			}()
+			if err := lifecycle.SpawnerFrom(ctx).Spawn(ctx, "mosdns-archive-download", func(work context.Context) {
+				result := fetched{key: src, err: lifecycle.ErrPanic}
+				defer func() { results <- result }()
+				result.content, result.err = fetchSource(work, fetch, config, src, label(uses[src][0].name))
+			}); err != nil {
+				return err
+			}
+			next++
+			pending++
 		}
+		return nil
 	}
-	schedule()
+	if err := schedule(); err != nil {
+		return nil, err
+	}
 	for ; pending > 0; pending-- {
 		var result fetched
 		select {
@@ -534,7 +542,9 @@ func BuildMosDNSZip(ctx context.Context, config *jsonx.Object, yamlContent strin
 				return nil, archiveErr("规则“" + label(u.name) + "”转换失败：" + detail(err))
 			}
 		}
-		schedule()
+		if err := schedule(); err != nil {
+			return nil, err
+		}
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err

@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/lifecycle"
 	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
 	"configflow/internal/taskstatus"
@@ -389,5 +390,56 @@ func TestArchivePathsAndReferences(t *testing.T) {
 	}
 	if got := label("https://x.test/?token=1"); got != "未命名规则" {
 		t.Errorf("label %q", got)
+	}
+}
+
+func TestArchiveEarlyFailureWorkersRemainTracked(t *testing.T) {
+	base, _ := testRepo(t, jsonx.NewObject())
+	runtime := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry(), Grace: 2 * time.Second})
+	runtime.Start(base)
+	defer runtime.Shutdown(context.Background())
+	release, all, cancelled := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	defer func() {
+		select {
+		case <-release:
+		default:
+			close(release)
+		}
+	}()
+	var started, stopped atomic.Int32
+	withFetch(t, func(ctx context.Context, url string, _ *jsonx.Object, _ string) ([]byte, error) {
+		if started.Add(1) == MaxWorkers {
+			close(all)
+		}
+		<-all
+		if strings.HasSuffix(url, "/0") {
+			return nil, &rulefetch.FetchError{Class: "ReadTimeout", Message: "synthetic"}
+		}
+		<-ctx.Done()
+		if stopped.Add(1) == MaxWorkers-1 {
+			close(cancelled)
+		}
+		<-release
+		return nil, ctx.Err()
+	})
+	if _, err := BuildMosDNSZip(runtime.BindRequest(base), remoteSnapshot(), "plugins: []", remoteDownloads(MaxWorkers), nil, ArchiveOptions{}); err == nil {
+		t.Fatal("failure hidden")
+	}
+	waiting, cancel := context.WithCancel(t.Context())
+	cancel()
+	if err := runtime.WaitIdle(waiting); !errors.Is(err, context.Canceled) {
+		t.Fatal("early-return workers were not tracked", err)
+	}
+	done := make(chan struct{})
+	go func() { runtime.Shutdown(t.Context()); close(done) }()
+	select {
+	case <-cancelled:
+	case <-time.After(3 * time.Second):
+		t.Fatal("archive I/O did not receive Runtime cancellation")
+	}
+	close(release)
+	<-done
+	if err := runtime.WaitIdle(t.Context()); err != nil {
+		t.Fatal(err)
 	}
 }
