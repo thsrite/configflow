@@ -33,6 +33,8 @@ func TestR01Corpus(t *testing.T) {
 	}
 	scanner := bufio.NewScanner(gz)
 	scanner.Buffer(make([]byte, 1<<20), 1<<26)
+	independent := loadR01NativeExpected(t)
+	rowIndex := 0
 	counts, differ, internal := map[string]int{}, 0, map[string]int{}
 	for scanner.Scan() {
 		var row struct {
@@ -44,6 +46,14 @@ func TestR01Corpus(t *testing.T) {
 		if err := json.Unmarshal(scanner.Bytes(), &row); err != nil {
 			t.Fatal(err)
 		}
+		if expected, ok := independent[rowIndex]; ok {
+			if r01Hash(scanner.Bytes()) != expected.InputSHA256 {
+				t.Fatal("independent input changed")
+			}
+			row.Out, row.Err = expected.Answer.Out, expected.Answer.Err
+			delete(independent, rowIndex)
+		}
+		rowIndex++
 		counts[row.Fn]++
 		got, gotErr := r01Call(t, row.Fn, row.In)
 		ok := false
@@ -79,6 +89,9 @@ func TestR01Corpus(t *testing.T) {
 	}
 	if err := scanner.Err(); err != nil {
 		t.Fatal(err)
+	}
+	if len(independent) > 0 {
+		t.Fatal("stale independent expectations")
 	}
 	t.Logf("rows %v; %d differ; Python-internal exceptions where Go also rejects: %v", counts, differ, internal)
 }

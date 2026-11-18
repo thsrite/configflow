@@ -866,47 +866,18 @@ func expectedRouterID(expectedRouter *jsonx.Object) (routerID string, isString b
 // caller holds this router's job lock. The stored record must still equal
 // expectedRouter.
 func (r *Repository) SaveRouterSettings(ctx context.Context, profileID string, expectedRouter, replacement *jsonx.Object) error {
-	ctx = ctxx.Detach(ctx)
-	routerID, isString, err := expectedRouterID(expectedRouter)
+	expected, err := json.Marshal(expectedRouter)
 	if err != nil {
 		return err
 	}
-	key := routerKey{profileID, routerID}
-	return r.transact(ctx, writeOptions{lockedRouters: map[routerKey]bool{key: true}}, func(_ context.Context, tx *transaction) error {
-		profile, err := profileFor(tx.document, profileID)
+	var next json.RawMessage
+	if replacement != nil {
+		next, err = json.Marshal(replacement)
 		if err != nil {
 			return err
 		}
-		records, err := routerRecordsIn(tx.document)
-		if err != nil {
-			return err
-		}
-		current, found := records.values[key]
-		if !found || !isString || !sameRouter(current, expectedRouter) {
-			return inUse("路由器设置已变化，请刷新后重试")
-		}
-		if replacement != nil && replacement.Value("id") != routerID {
-			return validationError("不能修改路由器 ID")
-		}
-		items := make([]model.Router, 0, len(profile.Routers.Items))
-		for _, item := range profile.Routers.Items {
-			if item.ID != routerID {
-				items = append(items, item)
-				continue
-			}
-			if replacement != nil {
-				var router model.Router
-				if err := decodeLegacyRecord(replacement, &router); err != nil {
-					return err
-				}
-				items = append(items, router)
-			}
-		}
-		profile.Routers.Items = items
-		profile.Revision++
-		profile.UpdatedAt = nowISO()
-		return nil
-	})
+	}
+	return r.SaveRouterSettingsJSON(ctx, profileID, expected, next)
 }
 
 // SaveRouterPublication is save_router_publication: persist verified

@@ -26,13 +26,15 @@ import (
 // RecordedRow is one recorded call (shared with internal/ippresence's
 // replay through LoadRecorded in export_test.go).
 type recordedRow struct {
-	Test string
-	Fn   string
-	Args *jsonx.Object
-	Out  any
-	Err  *jsonx.Object
-	Env  []any
-	Raw  *jsonx.Object
+	Test     string
+	Fn       string
+	Args     *jsonx.Object
+	Out      any
+	Err      *jsonx.Object
+	Env      []any
+	Raw      *jsonx.Object
+	InputSHA string
+	Line     int
 }
 
 func loadRecorded(t testing.TB, path string) []recordedRow {
@@ -49,6 +51,7 @@ func loadRecorded(t testing.TB, path string) []recordedRow {
 	scanner := bufio.NewScanner(gz)
 	scanner.Buffer(make([]byte, 1<<20), 64<<20)
 	var rows []recordedRow
+	index := 0
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		if len(line) == 0 {
@@ -61,6 +64,9 @@ func loadRecorded(t testing.TB, path string) []recordedRow {
 		entry := decodeRecorded(value).(*jsonx.Object)
 		row := recordedRow{Test: entry.GetString("test"), Fn: entry.GetString("fn"), Args: entry.GetObject("args"),
 			Out: entry.Value("out"), Err: entry.GetObject("err"), Env: entry.GetList("env"), Raw: entry}
+		row.InputSHA = n89Hash(line)
+		row.Line = index
+		index++
 		rows = append(rows, row)
 	}
 	if err := scanner.Err(); err != nil {
@@ -285,6 +291,7 @@ func TestCorpus(t *testing.T) { replay(t, "testdata/r02_corpus.jsonl.gz") }
 
 func replay(t *testing.T, path string) {
 	rows := loadRecorded(t, path)
+	independent := n89Expectations(t, path)
 	identical, notExpr := map[string]int{}, map[string]int{}
 	differ := 0
 	nativeClasses := map[string]int{}
@@ -303,6 +310,18 @@ func replay(t *testing.T, path string) {
 		var ne notExpressible
 		if errors.As(err, &ne) {
 			notExpr[row.Fn]++
+			continue
+		}
+		if expectation, ok := independent[row.Line]; ok {
+			if row.InputSHA != expectation.InputSHA256 {
+				t.Fatal("independent row input changed")
+			}
+			n89Check(t, expectation, row, out, err, env.next)
+			if len(env.problems) > 0 {
+				t.Error(env.problems)
+			}
+			delete(independent, row.Line)
+			identical[row.Fn]++
 			continue
 		}
 		var problems []string
@@ -341,6 +360,9 @@ func replay(t *testing.T, path string) {
 			continue
 		}
 		identical[row.Fn]++
+	}
+	if len(independent) > 0 {
+		t.Fatal("stale independent expectations", len(independent))
 	}
 	total, notTotal := 0, 0
 	for _, n := range notExpr {

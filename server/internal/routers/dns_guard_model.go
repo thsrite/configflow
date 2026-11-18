@@ -144,5 +144,5 @@ func parseDNSGuardManifest(raw json.RawMessage) (*DNSGuardManifest, error) {
 
 // DNSGuardRelevant reports whether inspection must include the guard stage.
 func DNSGuardRelevant(r *Router) bool {
-	return r != nil && r.Type == "routeros" && (r.DNSGuard != nil && r.DNSGuard.Enabled || truthy(r.Extra["dns_guard_state"]))
+	return r != nil && r.Type == "routeros" && (r.DNSGuard != nil && r.DNSGuard.Enabled || hasStoredState(r.Extra["dns_guard_state"]))
 }

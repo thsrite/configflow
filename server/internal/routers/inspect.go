@@ -42,6 +42,11 @@ func Inspect(ctx context.Context, req InspectRequest) (*Inspection, error) {
 		return nil, err
 	}
 	r, d := req.Router, req.Driver
+	if r != nil {
+		if err := r.validateIdentity(); err != nil {
+			return nil, err
+		}
+	}
 	if r == nil || d == nil {
 		return nil, routerError(messageOperationFormat)
 	}
@@ -90,7 +95,7 @@ func Inspect(ctx context.Context, req InspectRequest) (*Inspection, error) {
 	}
 	desired.DNSSettings = &settings
 	ros, isROS := d.(*RouterOS)
-	policy := r.Type == "routeros" && (len(r.RosPolicyRuleSets) > 0 || truthy(r.State("ros_policy_state")))
+	policy := r.Type == "routeros" && (len(r.RosPolicyRuleSets) > 0 || hasStoredState(r.State("ros_policy_state")))
 	guard := DNSGuardRelevant(r)
 	if policy || guard {
 		if !isROS {
@@ -336,31 +341,13 @@ func returnCleanup(ctx context.Context, req InspectRequest, r *Router, a *Gatewa
 	if req.Repo == nil {
 		return nil, ErrNotPorted
 	}
-	profiles, err := req.Repo.ListProfiles(ctx)
+	profiles, err := routerProfiles(ctx, req.Repo)
 	if err != nil {
-		return nil, err
-	}
-	data, err := json.Marshal(profiles)
-	if err != nil {
-		return nil, err
-	}
-	var list []struct {
-		ID string `json:"id"`
-	}
-	if err = json.Unmarshal(data, &list); err != nil {
 		return nil, err
 	}
 	shared := []string{}
-	for _, p := range list {
-		cfg, err := req.Repo.GetCompatConfig(ctx, p.ID, repo.ResourceRoots{})
-		if err != nil {
-			return nil, err
-		}
-		b, err := json.Marshal(cfg)
-		if err != nil {
-			return nil, err
-		}
-		for _, other := range routersOf(b) {
+	for _, p := range profiles {
+		for _, other := range p.Routers {
 			if (p.ID != req.ProfileID || other.ID != r.ID) && other.ManageReturnRouting && other.ProxyGatewayAgentID == a.ID {
 				shared = append(shared, orText(other.Name, other.ID))
 			}

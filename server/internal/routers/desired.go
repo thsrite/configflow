@@ -95,11 +95,11 @@ func (e *desiredYAMLError) Error() string   { return e.validation.Error() }
 func (e *desiredYAMLError) Unwrap() []error { return []error{e.validation, e.cause} }
 
 func (d desiredProfile) label() string {
-	id, _ := jsonString(d.ProfileID)
+	id, _ := requestString(d.ProfileID)
 	if id == "" {
-		id, _ = jsonString(d.ID)
+		id, _ = requestString(d.ID)
 	}
-	name, _ := jsonString(d.Name)
+	name, _ := requestString(d.Name)
 	if name != "" && id != "" {
 		return name + "（" + id + "）"
 	}
@@ -178,12 +178,12 @@ func directOnlyGroups(groups []json.RawMessage) map[string]bool {
 		var nodes []string
 		direct := json.Unmarshal(raw, &g) == nil && json.Unmarshal(g["manual_nodes"], &nodes) == nil && len(nodes) > 0
 		for _, key := range []string{"include_groups", "subscriptions", "aggregations", "regex", "follow_group"} {
-			direct = direct && !truthy(g[key])
+			direct = direct && !hasStoredState(g[key])
 		}
 		for _, node := range nodes {
 			direct = direct && slices.Contains(BuiltinNonProxy, node)
 		}
-		if name, ok := jsonString(g["name"]); direct && ok {
+		if name, ok := requestString(g["name"]); direct && ok {
 			names[name] = true
 		}
 	}

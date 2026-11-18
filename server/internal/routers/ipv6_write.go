@@ -112,7 +112,7 @@ func (d *RouterOS) remapIPv6(ctx context.Context, previous json.RawMessage, rema
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if !truthy(previous) {
+	if !hasStoredState(previous) {
 		d.setIPv6Manifest(fake, nil)
 		return nil
 	}
@@ -553,7 +553,7 @@ func VerifyIPv6FakeIP(ctx context.Context, d *RouterOS, check *IPv6FakeIPCheck) 
 		return err
 	}
 	if check.Spec == nil {
-		if truthy(d.ipv6FakeIPManifest) || len(owned) > 0 {
+		if hasStoredState(d.ipv6FakeIPManifest) || len(owned) > 0 {
 			return routerError(messageIPv6FakeVerifyRemove)
 		}
 		if check.Removed != nil {
@@ -696,10 +696,10 @@ func ipv6AddGuard(proofs map[string]Row) func([]Row) error {
 // whole-stage rollback. Missing IDs stay stale, never become clear commands or
 // configuration matches that could adopt an object created by another writer.
 func mergeIPv6Recovery(previous, current json.RawMessage) json.RawMessage {
-	if !truthy(previous) {
+	if !hasStoredState(previous) {
 		return guardRaw(current)
 	}
-	if !truthy(current) {
+	if !hasStoredState(current) {
 		return guardRaw(previous)
 	}
 	var oldDoc, newDoc map[string]json.RawMessage

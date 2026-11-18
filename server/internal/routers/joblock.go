@@ -32,12 +32,23 @@ func RouterJobLock(ctx context.Context, profileID, routerID string, router *Rout
 	if err := ctx.Err(); err != nil {
 		return ctx, nil, err
 	}
+
 	held, release, ok := routerJobs.TryLock(ctx, routerJobKey(profileID, routerID, router))
 	if !ok {
 		if err := ctx.Err(); err != nil {
 			return ctx, nil, err
 		}
 		return ctx, nil, rosError(KindConflict, messageEditBusy)
+	}
+	if err := held.Err(); err != nil {
+		release()
+		return held, nil, err
+	}
+	if router != nil {
+		if err := router.validateIdentity(); err != nil {
+			release()
+			return held, nil, err
+		}
 	}
 	return held, release, nil
 }

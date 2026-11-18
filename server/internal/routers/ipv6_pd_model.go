@@ -100,7 +100,7 @@ func pdSettings(r *Router) PDGuard {
 
 // IPv6PDGuardRelevant avoids device reads while disabled and unowned.
 func IPv6PDGuardRelevant(r *Router) bool {
-	return r != nil && r.Type == "routeros" && (pdSettings(r).Enabled || truthy(r.Extra["ipv6_pd_guard_state"]))
+	return r != nil && r.Type == "routeros" && (pdSettings(r).Enabled || hasStoredState(r.Extra["ipv6_pd_guard_state"]))
 }
 
 // IPv6PDSpec identifies the single pool, LAN and DHCPv6 client to watch.
@@ -456,7 +456,7 @@ func pdRoleName(role string) string {
 }
 func pdOwned(d *RouterOS, raw json.RawMessage, live pdLive) (map[string]Row, error) {
 	out := map[string]Row{}
-	if !truthy(raw) {
+	if !hasStoredState(raw) {
 		return out, nil
 	}
 	var m IPv6PDManifest

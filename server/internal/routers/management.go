@@ -10,6 +10,7 @@ import (
 	"configflow/internal/agents/diag"
 	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
+	"configflow/internal/model"
 	"configflow/internal/redact"
 	"configflow/internal/repo"
 )
@@ -25,7 +26,7 @@ var managementLogger = logx.Get("backend.routes.routers")
 
 // Records loads the resolved configuration and R5-decoded router records.
 func (s *ManagementService) Records(ctx context.Context, profile string) (json.RawMessage, []*Router, error) {
-	doc, err := s.Repo.GetCompatConfig(ctx, profile, repo.ResourceRoots{})
+	doc, err := s.Repo.Config(ctx, profile, repo.ResourceRoots{})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -36,6 +37,9 @@ func (s *ManagementService) Records(ctx context.Context, profile string) (json.R
 	return raw, routersOf(raw), nil
 }
 func (s *ManagementService) open(r *Router) (Driver, error) {
+	if err := r.validateIdentity(); err != nil {
+		return nil, err
+	}
 	factory := s.NewDriver
 	if factory == nil {
 		factory = NewDriver
@@ -70,53 +74,44 @@ func (s *ManagementService) Create(ctx context.Context, profile string, body jso
 	return r, nil
 }
 func replaceManagementRouter(config json.RawMessage, id string, next *Router) (json.RawMessage, error) {
-	var doc map[string]json.RawMessage
-	if err := json.Unmarshal(config, &doc); err != nil {
+	var p model.Profile
+	if err := json.Unmarshal(config, &p); err != nil {
 		return nil, err
 	}
-	var collection map[string]json.RawMessage
-	_ = json.Unmarshal(doc["routers"], &collection)
-	if collection == nil {
-		collection = map[string]json.RawMessage{}
-	}
-	var rows []json.RawMessage
-	_ = json.Unmarshal(collection["items"], &rows)
-	out := []json.RawMessage{}
-	for _, row := range rows {
-		var key struct {
-			ID string `json:"id"`
+	out := make([]model.Router, 0, len(p.Routers.Items)+1)
+	appendNext := func() error {
+		if next == nil {
+			return nil
 		}
-		_ = json.Unmarshal(row, &key)
-		if id != "" && key.ID == id {
-			if next != nil {
-				encoded, err := json.Marshal(next)
-				if err != nil {
-					return nil, err
-				}
-				out = append(out, encoded)
-			}
-			continue
-		}
-		out = append(out, row)
-	}
-	if id == "" && next != nil {
-		encoded, err := json.Marshal(next)
+		raw, err := next.MarshalJSON()
 		if err != nil {
+			return err
+		}
+		var stored model.Router
+		if err = json.Unmarshal(raw, &stored); err != nil {
+			return err
+		}
+		out = append(out, stored)
+		return nil
+	}
+	for _, r := range p.Routers.Items {
+		if id != "" && r.ID == id {
+			if err := appendNext(); err != nil {
+				return nil, err
+			}
+		} else {
+			out = append(out, r)
+		}
+	}
+	if id == "" {
+		if err := appendNext(); err != nil {
 			return nil, err
 		}
-		out = append(out, encoded)
 	}
-	var err error
-	collection["items"], err = json.Marshal(out)
-	if err != nil {
-		return nil, err
-	}
-	doc["routers"], err = json.Marshal(collection)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(doc)
+	p.Routers.Items = out
+	return model.Marshal(&p)
 }
+
 func (s *ManagementService) locked(ctx context.Context, profile string, old *Router) (context.Context, func(), *Router, error) {
 	return s.lockedFor(ctx, profile, old, true)
 }
@@ -271,35 +266,32 @@ func (s *ManagementService) Probe(ctx context.Context, profile string, r *Router
 	return result, err
 }
 func replaceManagementRawRouter(config json.RawMessage, id string, fields map[string]json.RawMessage) (json.RawMessage, error) {
-	var doc map[string]json.RawMessage
-	_ = json.Unmarshal(config, &doc)
-	var collection map[string]json.RawMessage
-	_ = json.Unmarshal(doc["routers"], &collection)
-	var rows []json.RawMessage
-	_ = json.Unmarshal(collection["items"], &rows)
-	for i, row := range rows {
-		var key struct {
-			ID string `json:"id"`
+	var p model.Profile
+	if err := json.Unmarshal(config, &p); err != nil {
+		return nil, err
+	}
+	for i := range p.Routers.Items {
+		r := &p.Routers.Items[i]
+		if r.ID != id {
+			continue
 		}
-		_ = json.Unmarshal(row, &key)
-		if key.ID == id {
-			encoded, err := json.Marshal(fields)
-			if err != nil {
-				return nil, err
+		before, err := model.Marshal(r)
+		if err != nil {
+			return nil, err
+		}
+		var old map[string]json.RawMessage
+		if err = json.Unmarshal(before, &old); err != nil {
+			return nil, err
+		}
+		for key, value := range fields {
+			if !jsonEqual(value, old[key]) {
+				if err = r.SetJSON(key, value); err != nil {
+					return nil, err
+				}
 			}
-			rows[i] = encoded
 		}
 	}
-	var err error
-	collection["items"], err = json.Marshal(rows)
-	if err != nil {
-		return nil, err
-	}
-	doc["routers"], err = json.Marshal(collection)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(doc)
+	return model.Marshal(&p)
 }
 
 // EditRoute validates, locks, rebuilds and optionally applies a manual route plan.

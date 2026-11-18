@@ -368,7 +368,7 @@ func VerifyIPv6PDGuard(ctx context.Context, d *RouterOS, check *IPv6PDGuardCheck
 		})) {
 			return routerError(messagePDVerifyWithdraw)
 		}
-		if truthy(d.ipv6PDGuardManifest) {
+		if hasStoredState(d.ipv6PDGuardManifest) {
 			return routerError(messagePDVerifyWithdraw)
 		}
 		for _, v := range []struct {

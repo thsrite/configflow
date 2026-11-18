@@ -251,7 +251,7 @@ func TestR11PDLostCompensationDelete(t *testing.T) {
 	if e == nil || routerErrorKind(e) == KindRollback {
 		t.Fatalf("lost DELETE reply should be proven absent, retaining original failure only: %v", e)
 	}
-	if len(f.Snapshot().Tables[pdScripts]) != 0 || len(f.Snapshot().Tables[pdSchedulers]) != 0 || truthy(d.ipv6PDGuardManifest) {
+	if len(f.Snapshot().Tables[pdScripts]) != 0 || len(f.Snapshot().Tables[pdSchedulers]) != 0 || hasStoredState(d.ipv6PDGuardManifest) {
 		t.Fatal("compensation did not finish")
 	}
 }

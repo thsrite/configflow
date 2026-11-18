@@ -14,47 +14,43 @@ import (
 // managementTransaction is the legacy C03 boundary; the business callback gets
 // native JSON and the held transaction context, including its cancellation.
 func managementTransaction(ctx context.Context, db *repo.Repository, profile string, fn func(context.Context, json.RawMessage) (json.RawMessage, error)) error {
-	_, _, err := db.UpdateProfileTransaction(ctx, profile, func(work context.Context, current *jsonx.Object) (*jsonx.Object, error) {
-		raw, err := json.Marshal(current)
+	_, err := db.UpdateProfile(ctx, profile, func(work context.Context, current *model.Profile) error {
+		if err := work.Err(); err != nil {
+			return err
+		}
+		raw, err := model.Marshal(current)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		next, err := fn(work, raw)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		var out jsonx.Object
-		if err = json.Unmarshal(next, &out); err != nil {
-			return nil, err
+		var updated model.Profile
+		if err = json.Unmarshal(next, &updated); err != nil {
+			return err
 		}
-		return &out, work.Err()
+		if err = work.Err(); err != nil {
+			return err
+		}
+		*current = updated
+		return nil
 	})
 	return err
 }
 func saveManagementSettings(ctx context.Context, db *repo.Repository, profile string, old, next *Router) error {
-	raw, err := releaseRouterRecord(old)
+	expected, err := releaseRouterRecord(old)
 	if err != nil {
 		return err
 	}
-	var expected jsonx.Object
-	if err = json.Unmarshal(raw, &expected); err != nil {
-		return err
-	}
-	var replacement *jsonx.Object
+	var replacement json.RawMessage
 	if next != nil {
-		encoded, err := json.Marshal(next)
+		replacement, err = json.Marshal(next)
 		if err != nil {
 			return err
 		}
-		replacement = jsonx.NewObject()
-		if err = json.Unmarshal(encoded, replacement); err != nil {
-			return err
-		}
 	}
-	if err = ctx.Err(); err != nil {
-		return err
-	}
-	return db.SaveRouterSettings(ctx, profile, &expected, replacement)
+	return db.SaveRouterSettingsJSON(ctx, profile, expected, replacement)
 }
 
 // saveWorkspacePolicies adapts C22/C31's existing profile mutation boundary.

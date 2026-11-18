@@ -2,8 +2,8 @@ package routersplit
 
 import (
 	"configflow/internal/gateway/gwbase"
-	"configflow/internal/jsonx"
 	"configflow/internal/yamlx"
+	"fmt"
 
 	"gopkg.in/yaml.v3"
 )
@@ -23,7 +23,25 @@ func nodeTruthy(node *yamlx.Node) bool {
 	if err := yamlx.Decode(node, &value); err != nil {
 		return true
 	}
-	return jsonx.Truthy(value)
+	switch v := value.(type) {
+	case nil:
+		return false
+	case bool:
+		return v
+	case string:
+		return v != ""
+	case int:
+		return v != 0
+	case int64:
+		return v != 0
+	case uint64:
+		return v != 0
+	case float64:
+		return v != 0
+	}
+	// Opaque tagged scalars and undecodable extensions are active filters: a
+	// takeover must fail closed rather than silently bypass user exclusions.
+	return true
 }
 
 func nodeTunFilters(tun *yamlx.Node) []string {
@@ -46,29 +64,15 @@ func fullTunNode(document *yamlx.Node) (*yamlx.Node, error) {
 		tun = yamlx.Map()
 	}
 	if tun.Kind != yaml.MappingNode {
-		return nil, gatewayError("Mihomo tun 必须是对象")
+		return nil, gatewayError(messageTunObject)
 	}
-	if len(nodeTunFilters(tun)) != 0 {
-		// Reuse the established message and key ordering, with only the small
-		// filter projection crossing the existing JSON configuration boundary.
-		projection := jsonx.Obj()
-		for _, key := range nodeTunFilters(tun) {
-			projection.Set(key, true)
-		}
-		_, err := FullTunDocument(jsonx.Obj("tun", projection))
-		return nil, err
+	if filters := nodeTunFilters(tun); len(filters) > 0 {
+		return nil, gatewayError(fmt.Sprintf(messageTunFilter, filters[0]))
 	}
 	for _, key := range RouteKeysRemoved {
 		yamlx.Delete(tun, key)
 	}
-	data, err := jsonx.Compact(FullTun())
-	if err != nil {
-		return nil, err
-	}
-	full, err := yamlx.FromJSON(data)
-	if err != nil {
-		return nil, err
-	}
+	full := yamlx.Map(yamlx.Str("enable"), yamlx.Bool(true), yamlx.Str("stack"), yamlx.Str("mixed"), yamlx.Str("auto-route"), yamlx.Bool(true), yamlx.Str("auto-redirect"), yamlx.Bool(true), yamlx.Str("auto-detect-interface"), yamlx.Bool(true), yamlx.Str("dns-hijack"), yamlx.Seq(yamlx.Str("any:53"), yamlx.Str("tcp://any:53")))
 	for key, value := range yamlx.Pairs(full) {
 		if key != "stack" || yamlx.Get(tun, key) == nil {
 			yamlx.Set(tun, key, value)

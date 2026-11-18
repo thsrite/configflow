@@ -6,13 +6,13 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/url"
 	"slices"
 	"strconv"
 	"strings"
 
+	"configflow/internal/model"
 	"configflow/internal/netipx"
 )
 
@@ -66,7 +66,10 @@ type RouterSettings struct {
 // field (last_probe, last_release, ros_policy_state, dns_guard_state,
 // ipv6_*_state, unknown ones) is kept in Extra and written back unchanged.
 type Router struct {
-	source json.RawMessage // original stored member presence for publication CAS
+	source   json.RawMessage // original stored member presence for publication CAS
+	stored   *model.Router
+	baseline json.RawMessage
+	explicit map[string]bool
 	RouterSettings
 	Password string                     `json:"password"`
 	Extra    map[string]json.RawMessage `json:"-"`
@@ -79,45 +82,61 @@ type Router struct {
 // 「配置字段类型不匹配，已按缺省值解码」 for it on load. The stored bytes stay in
 // source, so an unchanged record is written back as it was.
 func (r *Router) UnmarshalJSON(data []byte) error {
-	type plain Router
-	defaults := func() plain { return plain{RouterSettings: RouterSettings{VerifyTLS: true, RuleSyncInterval: 60}} }
-	p := defaults()
-	if err := json.Unmarshal(data, &p); err != nil {
-		var typeErr *json.UnmarshalTypeError
-		var members map[string]json.RawMessage
-		if !errors.As(err, &typeErr) || json.Unmarshal(data, &members) != nil {
-			return err
-		}
-		valid := map[string]json.RawMessage{}
-		for name, value := range members {
-			probe := defaults()
-			one, err := json.Marshal(map[string]json.RawMessage{name: value})
-			if err == nil && json.Unmarshal(one, &probe) == nil {
-				valid[name] = value
-			}
-		}
-		cleaned, err := json.Marshal(valid)
-		if err != nil {
-			return err
-		}
-		p = defaults()
-		if err := json.Unmarshal(cleaned, &p); err != nil {
-			return err
-		}
-	}
-	if err := json.Unmarshal(data, &p.Extra); err != nil {
+	var stored model.Router
+	if err := json.Unmarshal(data, &stored); err != nil {
 		return err
 	}
-	for _, key := range append([]string{"id", "password"}, EditableFields...) {
-		delete(p.Extra, key)
-	}
-	*r = Router(p)
+	*r = routerFromModel(stored)
 	r.source = bytes.Clone(data)
+
 	return nil
 }
 
 // MarshalJSON writes the known fields and Extra.
 func (r Router) MarshalJSON() ([]byte, error) {
+	if r.stored != nil && len(r.source) > 0 {
+		stored := *r.stored
+		var before, after map[string]json.RawMessage
+		_ = json.Unmarshal(r.baseline, &before)
+		encoded, err := json.Marshal(struct {
+			RouterSettings
+			Password string `json:"password"`
+		}{r.RouterSettings, r.Password})
+		if err != nil {
+			return nil, err
+		}
+		_ = json.Unmarshal(encoded, &after)
+		for key, value := range after {
+			if r.explicit[key] || !jsonEqual(value, before[key]) {
+				if err = stored.SetJSON(key, value); err != nil {
+					return nil, err
+				}
+			}
+		}
+		var original map[string]json.RawMessage
+		_ = json.Unmarshal(r.source, &original)
+		for key := range original {
+			if key == "id" || key == "password" || slices.Contains(EditableFields, key) {
+				continue
+			}
+			if _, kept := r.Extra[key]; kept {
+				continue
+			}
+			if stored.Fields.Has(key) {
+				stored.Fields.Delete(key)
+			} else if err = stored.Clear(key); err != nil {
+				return nil, err
+			}
+		}
+		for key, value := range r.Extra {
+			if !jsonEqual(value, original[key]) {
+				if err = stored.SetJSON(key, value); err != nil {
+					return nil, err
+				}
+			}
+		}
+		return model.Marshal(&stored)
+	}
 	type plain Router
 	known, err := json.Marshal(plain(r))
 	if err != nil || len(r.Extra) == 0 {
@@ -129,7 +148,7 @@ func (r Router) MarshalJSON() ([]byte, error) {
 
 // State is a stored device-state field (Extra), nil when absent or falsy.
 func (r *Router) State(key string) json.RawMessage {
-	if v := r.Extra[key]; truthy(v) {
+	if v := r.Extra[key]; hasStoredState(v) {
 		return v
 	}
 	return nil
@@ -170,8 +189,9 @@ func (r *Router) View() RouterView {
 	return v
 }
 
-// truthy is JSON truthiness: not absent/null/false/0/""/[]/{}.
-func truthy(raw json.RawMessage) bool {
+// hasStoredState keeps opaque nonempty ownership evidence fail-closed, including
+// malformed records. Legacy empty/null/false/zero receipts carry no ownership.
+func hasStoredState(raw json.RawMessage) bool {
 	var compact bytes.Buffer
 	if json.Compact(&compact, raw) != nil {
 		return false
@@ -185,31 +205,26 @@ func truthy(raw json.RawMessage) bool {
 	}
 }
 
-// text is Python str(value or ""): strings as they are, other values in their JSON
-// form (True for true), "" for falsy values.
-func text(raw json.RawMessage) string {
-	if s, ok := jsonString(raw); ok || !truthy(raw) {
-		return s
-	}
-	if string(raw) == "true" {
-		return "True"
-	}
-	return string(raw)
+// storedText uses the shared lossless text codec for display text.
+func storedText(raw json.RawMessage) string {
+	var text model.String
+	_ = json.Unmarshal(raw, &text)
+	return string(text)
 }
 
-// jsonString decodes a JSON string (null and other types are not strings).
-func jsonString(raw json.RawMessage) (string, bool) {
-	var s *string
-	if json.Unmarshal(raw, &s) != nil || s == nil {
+// requestString is strict validation of a user identity, never a coercion.
+func requestString(raw json.RawMessage) (string, bool) {
+	var text *string
+	if json.Unmarshal(raw, &text) != nil || text == nil {
 		return "", false
 	}
-	return *s, true
+	return *text, true
 }
 
 // idList decodes a list of non-empty rule-set ids, de-duplicated (falsy means none).
 func idList(raw json.RawMessage) ([]string, bool) {
 	var items []*string
-	if truthy(raw) && json.Unmarshal(raw, &items) != nil || slices.Contains(items, nil) {
+	if len(raw) > 0 && json.Unmarshal(raw, &items) != nil || slices.Contains(items, nil) {
 		return nil, false
 	}
 	out := []string{}
@@ -321,24 +336,47 @@ func Normalize(body []byte, existing *Router) (*Router, error) {
 		_ = json.Unmarshal(data, &m)
 		m["ip_rule_sets"], _ = json.Marshal(existing.StaticRuleSets())
 	}
+	r.explicit = map[string]bool{}
 	for _, key := range EditableFields {
 		if v, ok := payload[key]; ok {
+			r.explicit[key] = true
 			m[key] = v
 		}
 	}
-	if s, ok := jsonString(payload["password"]); ok && s != "" {
-		r.Password = s
+	for _, key := range []string{"type", "endpoint", "username", "password", "proxy_gateway_agent_id", "dns_agent_id"} {
+		if raw, present := payload[key]; present {
+			if _, valid := requestString(raw); !valid {
+				return nil, invalid(messageRouterFieldType)
+			}
+		}
 	}
-	r.Name, r.Type, r.Username = strings.TrimSpace(text(m["name"])), text(m["type"]), strings.TrimSpace(text(m["username"]))
-	r.Endpoint = strings.TrimRight(strings.TrimSpace(text(m["endpoint"])), "/")
-	r.VerifyTLS = string(m["verify_tls"]) != "false"
-	r.ProxyGatewayAgentID, r.DNSAgentID = text(m["proxy_gateway_agent_id"]), text(m["dns_agent_id"])
+	if s, ok := requestString(payload["password"]); ok && s != "" {
+		r.Password = s
+		r.explicit["password"] = true
+	}
+	r.Name, r.Type, r.Username = strings.TrimSpace(storedText(m["name"])), storedText(m["type"]), strings.TrimSpace(storedText(m["username"]))
+	r.Endpoint = strings.TrimRight(strings.TrimSpace(storedText(m["endpoint"])), "/")
+	r.VerifyTLS = true
+	if raw, present := m["verify_tls"]; present {
+		var ok bool
+		r.VerifyTLS, ok = boolField(m, "verify_tls", true)
+		if !ok {
+			return nil, invalid(messageRouterFieldType)
+		}
+		_ = raw
+	}
+	r.ProxyGatewayAgentID, r.DNSAgentID = storedText(m["proxy_gateway_agent_id"]), storedText(m["dns_agent_id"])
 	manageOK, autoOK, idsOK, policyOK := false, false, false, false
 	r.ManageReturnRouting, manageOK = boolField(m, "manage_return_routing", false)
 	r.AutoRuleSync, autoOK = boolField(m, "auto_rule_sync", false)
 	r.RuleSyncInterval = 60
 	if v, present := m["rule_sync_interval"]; present {
-		r.RuleSyncInterval, _ = strconv.Atoi(string(v)) // not an integer: 0, rejected below
+		var interval model.Int
+		if json.Unmarshal(v, &interval) == nil {
+			r.RuleSyncInterval = int(interval)
+		} else {
+			r.RuleSyncInterval = 0
+		}
 	}
 	r.IPRuleSets, idsOK = idList(m["ip_rule_sets"])
 	r.RosPolicyRuleSets, policyOK = idList(m["ros_policy_rule_sets"])
@@ -419,7 +457,7 @@ func RedactRouters(document []byte) ([]byte, error) {
 			delete(item, key)
 		}
 		for _, key := range []string{"username", "endpoint"} {
-			if truthy(item[key]) {
+			if hasStoredState(item[key]) {
 				item[key] = json.RawMessage(`"[REDACTED]"`)
 			}
 		}

@@ -403,6 +403,10 @@ func (s *RuleSyncService) sync(ctx context.Context, profile, id, trigger string)
 		if err != nil {
 			return err
 		}
+		ctx, err = withSyncEnvironment(ctx, config)
+		if err != nil {
+			return err
+		}
 		seen := map[string]bool{}
 		for _, source := range sources {
 			if source.Source.SourceType != "url" || seen[source.Source.ID] {
@@ -493,7 +497,7 @@ func (s *RuleSyncService) RunRound(ctx context.Context) error {
 		return nil
 	}
 	defer release()
-	profiles, err := s.Repo.ListProfiles(held)
+	profiles, err := routerProfiles(held, s.Repo)
 	if err != nil {
 		return err
 	}
@@ -501,16 +505,8 @@ func (s *RuleSyncService) RunRound(ctx context.Context) error {
 	if copyService.Download == nil {
 		copyService.Download = (&RuleSyncDownloads{}).Download
 	}
-	for _, value := range profiles {
-		var profile pendingProfile
-		if err = json.Unmarshal(mustPolicyJSON(value), &profile); err != nil {
-			return err
-		}
-		config, err := s.Repo.GetProfile(held, profile.ID)
-		if err != nil {
-			return err
-		}
-		for _, r := range routersOf(mustPolicyJSON(config)) {
+	for _, profile := range profiles {
+		for _, r := range profile.Routers {
 			if r.Type != "routeros" || !r.AutoRuleSync {
 				continue
 			}

@@ -171,7 +171,7 @@ func NormalizeRouteRequest(data json.RawMessage) (RouteIntent, error) {
 	} else {
 		for _, key := range []string{"id", "revision"} {
 			if value, exists := raw[key]; exists && strings.TrimSpace(string(value)) != "null" {
-				text, valid := jsonString(value)
+				text, valid := requestString(value)
 				if !valid || text != "" {
 					return intent, invalid(messageEditAddIdentity)
 				}
@@ -220,7 +220,7 @@ func NormalizeRouteRequest(data json.RawMessage) (RouteIntent, error) {
 }
 
 func routeJSONString(data []byte, target *string) bool {
-	value, ok := jsonString(data)
+	value, ok := requestString(data)
 	if ok {
 		*target = value
 	}

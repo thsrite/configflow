@@ -435,3 +435,5 @@ const (
 )
 
 const messageAddressInvalidField = "地址列表条目含无法安全写入的字段"
+
+const messageRouterFieldType = "路由器身份和凭据字段必须是文本"

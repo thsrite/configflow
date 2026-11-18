@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/repo"
 	"configflow/internal/tasks"
@@ -22,7 +21,7 @@ func wireRuleSync() {
 		}
 		return service.Capture(ctx, profile, config, r, d, desired)
 	}
-	tasks.SetRows(tasks.SlotRouters, ruleSyncRows)
+	tasks.SetRowBuilder(tasks.SlotRouters, ruleSyncTasks)
 	tasks.SetRunner(tasks.SlotRouters, func(ctx context.Context, _ string, resource string) error {
 		profile, id, _ := strings.Cut(resource, ":")
 		service, err := newSyncService(lifecycle.Detach(ctx))
@@ -44,27 +43,19 @@ func wireRuleSync() {
 		return service.RunRound(ctx)
 	}})
 }
-func ruleSyncRows(ctx context.Context, statuses *jsonx.Object) ([]*jsonx.Object, error) {
+func ruleSyncTasks(ctx context.Context, statuses taskstatus.Snapshot) ([]*tasks.Task, error) {
 	db, err := repo.GetRepository(ctx)
 	if err != nil {
 		return nil, err
 	}
-	profiles, err := db.ListProfiles(ctx)
+	profiles, err := routerProfiles(ctx, db)
 	if err != nil {
 		return nil, err
 	}
-	rows := []*jsonx.Object{}
+	rows := []*tasks.Task{}
 	store := RuleSyncStore{DataDir: db.DataDir()}
-	for _, value := range profiles {
-		var profile pendingProfile
-		if err = json.Unmarshal(mustPolicyJSON(value), &profile); err != nil {
-			return nil, err
-		}
-		config, err := db.GetProfile(ctx, profile.ID)
-		if err != nil {
-			return nil, err
-		}
-		for _, r := range routersOf(mustPolicyJSON(config)) {
+	for _, profile := range profiles {
+		for _, r := range profile.Routers {
 			if r.Type != "routeros" {
 				continue
 			}
@@ -80,25 +71,25 @@ func ruleSyncRows(ctx context.Context, statuses *jsonx.Object) ([]*jsonx.Object,
 				interval = 60
 			}
 			interval *= 60
-			history, err := tasks.History(statuses.GetObject(key))
+			history, err := tasks.ProjectHistory(statuses.Entry(key))
 			if err != nil {
 				return nil, err
 			}
 			if receipt.CheckedAt != nil && *receipt.CheckedAt != "" {
-				history.Set("last_run_at", *receipt.CheckedAt)
+				history.LastRunAt = new(*receipt.CheckedAt)
 			}
 			switch status {
 			case "synced":
-				history.Set("last_status", "success")
+				history.LastStatus = new("success")
 			case "failed", "paused":
-				history.Set("last_status", "failed")
+				history.LastStatus = new("failed")
 			case "running", "queued":
 			default:
-				history.Set("last_status", nil)
+				history.LastStatus = nil
 			}
-			history.Set("last_error", "")
+			history.LastError = new("")
 			if status == "failed" || status == "paused" {
-				history.Set("last_error", receipt.Message)
+				history.LastError = new(receipt.Message)
 			}
 			var due *time.Time
 			if r.AutoRuleSync && ready && status != "paused" && receipt.CheckedAt != nil {
@@ -121,9 +112,9 @@ func ruleSyncRows(ctx context.Context, statuses *jsonx.Object) ([]*jsonx.Object,
 			} else if status == "paused" {
 				message = messageSyncPausedState
 			}
-			fields := []any{"resource_id", r.ID, "profile_id", profile.ID, "profile_name", orText(profile.Name, profile.ID), "enabled", r.AutoRuleSync, "interval_seconds", interval, "editable", true, "can_run", hint == "", "run_hint", hint, "running", status == "running" || status == "queued", "next_run_at", tasks.ISO(due), "state_message", message, "link", "/routers"}
-			fields = append(fields, tasks.Spread(history)...)
-			rows = append(rows, tasks.Row(key, tasks.SlotRouters, orText(r.Name, r.ID), fields...))
+			row := &tasks.Task{Key: key, Category: tasks.SlotRouters, Name: orText(r.Name, r.ID), ResourceID: r.ID, ProfileID: new(profile.ID), ProfileName: new(orText(profile.Name, profile.ID)), Enabled: r.AutoRuleSync, IntervalSeconds: mustPolicyJSON(interval), Editable: true, CanRun: hint == "", RunHint: hint, Running: status == "running" || status == "queued", StateMessage: message, Link: new("/routers"), HistoryData: history}
+			row.NextRunAt = tasks.Timestamp(due)
+			rows = append(rows, row)
 		}
 	}
 	return rows, nil

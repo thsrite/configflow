@@ -307,7 +307,7 @@ func InspectIPv6FakeIP(ctx context.Context, config *model.Profile, r *Router, ag
 			removed = append(removed, e.ID)
 		}
 		plan.Check = IPv6FakeIPCheck{Removed: &removed}
-		if truthy(previous) {
+		if hasStoredState(previous) {
 			plan.Status = "pending"
 			var manifest IPv6FakeIPManifest
 			_ = json.Unmarshal(previous, &manifest)
@@ -316,7 +316,7 @@ func InspectIPv6FakeIP(ctx context.Context, config *model.Profile, r *Router, ag
 			}
 		}
 	}
-	if len(plan.Blockers) == 0 && (truthy(previous) || spec != nil) && !good && borrowed == nil {
+	if len(plan.Blockers) == 0 && (hasStoredState(previous) || spec != nil) && !good && borrowed == nil {
 		summary := messageIPv6FakeRemoveSummary
 		if spec != nil {
 			summary = fmt.Sprintf(messageIPv6FakeAddSummary, spec.CIDR, spec.Gateway)
@@ -609,10 +609,10 @@ func InspectIPv6Routes(ctx context.Context, config *model.Profile, r *Router, de
 		}
 	}
 	remains := len(retained) > 0 || len(adds) > 0
-	stale := truthy(previous) && (len(owned) != len(prev.Resources) || !remains)
-	if len(adds) > 0 || len(deletes) > 0 || stale || (truthy(previous) && remains && prev.Gateway != manifestGateway) {
+	stale := hasStoredState(previous) && (len(owned) != len(prev.Resources) || !remains)
+	if len(adds) > 0 || len(deletes) > 0 || stale || (hasStoredState(previous) && remains && prev.Gateway != manifestGateway) {
 		switch {
-		case !truthy(previous):
+		case !hasStoredState(previous):
 			plan.Auto = messageIPv6RoutesAutoFirst
 		case !s.Enabled:
 			plan.Auto = messageIPv6RoutesAutoOff

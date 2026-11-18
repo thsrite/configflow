@@ -49,7 +49,7 @@ func InspectIPv6PDGuard(ctx context.Context, r *Router, gateway string, d *Route
 		previous = guardRaw(r.Extra["ipv6_pd_guard_state"])
 	}
 	d.SetIPv6PDGuardManifest(previous)
-	p.Managed = truthy(previous)
+	p.Managed = hasStoredState(previous)
 	err := func() error {
 		live, e := pdSnapshot(ctx, d, !p.Enabled)
 		if e != nil {
@@ -223,7 +223,7 @@ func InspectIPv6PDGuard(ctx context.Context, r *Router, gateway string, d *Route
 	return p, nil
 }
 func pdWithdrawPlan(d *RouterOS, p *IPv6PDGuardPlan, live pdLive, owned map[string]Row, previous json.RawMessage) error {
-	if !truthy(previous) {
+	if !hasStoredState(previous) {
 		return nil
 	}
 	changes := []IPv6PDChange{}

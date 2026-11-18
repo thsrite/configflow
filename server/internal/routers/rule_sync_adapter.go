@@ -8,84 +8,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 	"time"
 	"unicode/utf8"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
 	"configflow/internal/weburl"
 )
-
-func syncObject(raw json.RawMessage) (*jsonx.Object, error) {
-	var out jsonx.Object
-	err := json.Unmarshal(raw, &out)
-	return &out, err
-}
-func syncValidate(ctx context.Context, content string, source syncSource, config json.RawMessage) error {
-	rule, err := syncObject(source.Library.Raw)
-	if err != nil {
-		return err
-	}
-	cfg, err := syncObject(config)
-	if err != nil {
-		return err
-	}
-	return rulefetch.ValidateRemoteRuleContent(content, rule, cfg, "")
-}
-func syncCacheRead(ctx context.Context, source syncSource, config json.RawMessage) (string, error) {
-	rule, err := syncObject(source.Library.Raw)
-	if err != nil {
-		return "", err
-	}
-	cfg, err := syncObject(config)
-	if err != nil {
-		return "", err
-	}
-	path, err := rulefetch.RuleCacheReadPath(ctx, rule, cfg.GetList("rule_library"))
-	if err != nil {
-		return "", err
-	}
-	file, err := os.Open(path)
-	if errors.Is(err, os.ErrNotExist) {
-		if source.Source.SourceType == "content" {
-			return source.Source.Content, nil
-		}
-		return "", nil
-	}
-	if err != nil {
-		return "", err
-	}
-	defer file.Close()
-	raw, err := io.ReadAll(io.LimitReader(file, syncMaxBytes+1))
-	if err != nil {
-		return "", err
-	}
-	if len(raw) > syncMaxBytes {
-		return "", routerError(fmt.Sprintf(messageSyncSourceLarge, orText(source.Source.Name, source.Item.ID)))
-	}
-	if !utf8.Valid(raw) {
-		return "", routerError(fmt.Sprintf(messageSyncUTF8, orText(source.Source.Name, source.Item.ID)))
-	}
-	return strings.TrimPrefix(string(raw), "\ufeff"), nil
-}
-func syncCacheWrite(ctx context.Context, source syncSource, content string, config json.RawMessage) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	rule, err := syncObject(source.Library.Raw)
-	if err != nil {
-		return err
-	}
-	cfg, err := syncObject(config)
-	if err != nil {
-		return err
-	}
-	_, err = rulefetch.WriteValidatedRuleCache(ctx, rule, content, cfg)
-	return err
-}
 
 // RuleSyncDownload fetches one declaration; each consumer independently validates its content.
 type RuleSyncDownload func(context.Context, json.RawMessage, json.RawMessage) (string, error)
@@ -106,15 +36,18 @@ type RuleSyncDownloads struct {
 
 // Download applies the production 5/10 second I/O and 30 second total limits.
 func (d *RuleSyncDownloads) Download(ctx context.Context, raw, config json.RawMessage) (string, error) {
+	var envErr error
+	ctx, envErr = withSyncEnvironment(ctx, config)
+	if envErr != nil {
+		return "", envErr
+	}
 	var source struct {
 		URL string `json:"url"`
 	}
 	if err := json.Unmarshal(raw, &source); err != nil {
 		return "", err
 	}
-	var cfgFields map[string]json.RawMessage
-	_ = json.Unmarshal(config, &cfgFields)
-	key := routeDigest([]json.RawMessage{mustPolicyJSON(source.URL), cfgFields["system_config"]})
+	key := syncTransportKey(ctx, source.URL)
 	if value, ok := d.items[key]; ok {
 		var src syncSource
 		src.Library.Raw = raw
@@ -123,7 +56,7 @@ func (d *RuleSyncDownloads) Download(ctx context.Context, raw, config json.RawMe
 		}
 		return value, nil
 	}
-	cfg, err := syncObject(config)
+	cfg, err := syncEnvironmentConfig(ctx, config)
 	if err != nil {
 		return "", err
 	}
@@ -178,6 +111,11 @@ func (d *RuleSyncDownloads) Download(ctx context.Context, raw, config json.RawMe
 	return content, nil
 }
 func loadSyncSources(ctx context.Context, config json.RawMessage, r *Router, download RuleSyncDownload) (map[string]string, map[string]*RuleSyncRecord, error) {
+	var envErr error
+	ctx, envErr = withSyncEnvironment(ctx, config)
+	if envErr != nil {
+		return nil, nil, envErr
+	}
 	sources, err := selectedSyncSources(config, r)
 	if err != nil {
 		return nil, nil, err
@@ -232,7 +170,7 @@ func loadSyncSources(ctx context.Context, config json.RawMessage, r *Router, dow
 	return contents, records, nil
 }
 func syncConfig(ctx context.Context, db *repo.Repository, id string) (json.RawMessage, error) {
-	config, err := db.GetCompatConfig(ctx, id, repo.ResourceRoots{})
+	config, err := db.Config(ctx, id, repo.ResourceRoots{})
 	if err != nil {
 		return nil, err
 	}

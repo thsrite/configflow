@@ -1,62 +1,39 @@
 package routers
 
 import (
-	"context"
-	"encoding/json"
-
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 	"configflow/internal/notifications"
 	"configflow/internal/repo"
+	"context"
+	"encoding/json"
 )
 
-// Wire registers desensitized exports, the shared publication lock, pending
-// notification summaries and the rule-sync task slot and loop.
+// Wire installs native notifications, the shared publication lock and scheduler.
 func Wire() {
 	wireRuleSync()
 	repo.RegisterHooks(repo.Hooks{RedactRouters: redactHook, JobLock: jobLockHook})
-	notifications.SetSources(notifications.Sources{Summarize: pendingSummaryHook})
+	notifications.SetInputs(notifications.Inputs{Summarize: pendingSummary})
 }
 
-// redactHook adapts RedactRouters to repo's jsonx document (until repo's S pass).
-func redactHook(routers any) any {
-	if document, err := jsonx.Compact(routers); err == nil {
-		if redacted, err := RedactRouters(document); err == nil {
-			if value, err := jsonx.Parse(redacted); err == nil {
-				return value
-			}
-		}
-	}
-	return routers
-}
-
-// pendingSummaryHook is the existing C07 legacy callback boundary. R13's
-// summary business logic uses native projections; N8-7 owns its later migration.
-func pendingSummaryHook(report, plan *jsonx.Object) *jsonx.Object {
-	r, err := json.Marshal(report)
+func pendingSummary(report *notifications.RouterReport, plan json.RawMessage) (*notifications.RouterSummary, error) {
+	raw, err := json.Marshal(report)
 	if err != nil {
-		return pendingUnknownHook()
+		return nil, err
 	}
-	p, err := json.Marshal(plan)
+	summary, err := SummarizeJSON(raw, plan)
 	if err != nil {
-		return pendingUnknownHook()
+		return nil, err
 	}
-	summary, err := SummarizeJSON(r, p)
+	encoded, err := json.Marshal(summary)
 	if err != nil {
-		return pendingUnknownHook()
+		return nil, err
 	}
-	b, err := json.Marshal(summary)
-	if err != nil {
-		return pendingUnknownHook()
+	var result notifications.RouterSummary
+	if err = json.Unmarshal(encoded, &result); err != nil {
+		return nil, err
 	}
-	var result jsonx.Object
-	if err = json.Unmarshal(b, &result); err != nil {
-		return pendingUnknownHook()
-	}
-	return &result
-}
-func pendingUnknownHook() *jsonx.Object {
-	return jsonx.Obj("state", "unknown", "pending", 0, "items", []any{}, "message", messagePendingMalformed)
+	return &result, nil
 }
 func recordPendingNotice(ctx context.Context, db *repo.Repository, profileID string, config json.RawMessage, r *Router, report *Report, plan *Plan) {
 	work := lifecycle.Detach(repo.WithRepository(ctx, db))
@@ -64,42 +41,29 @@ func recordPendingNotice(ctx context.Context, db *repo.Repository, profileID str
 		return
 	}
 	notifications.Safely(func() error {
-		router, err := releaseRouterRecord(r)
+		raw, err := releaseRouterRecord(r)
 		if err != nil {
 			return err
 		}
-		reportData, err := json.Marshal(report)
+		var router model.Router
+		if err = json.Unmarshal(raw, &router); err != nil {
+			return err
+		}
+		raw, err = json.Marshal(report)
 		if err != nil {
 			return err
 		}
-		planData, err := json.Marshal(plan)
-		if err != nil {
+		var native notifications.RouterReport
+		if err = json.Unmarshal(raw, &native); err != nil {
 			return err
 		}
-		values := []json.RawMessage{config, router, reportData, planData}
-		records := make([]*jsonx.Object, len(values))
-		for i, data := range values {
-			records[i] = jsonx.NewObject()
-			if err = json.Unmarshal(data, records[i]); err != nil {
-				return err
-			}
+		raw, err = json.Marshal(plan)
+		if err != nil {
+			return err
 		}
 		if err = work.Err(); err != nil {
 			return err
 		}
-		// C07 batch-1 RecordRouter calls TransactionContext. Do not duplicate its
-		// leaf cancellation guard here or introduce a parallel JSON writer API.
-		return notifications.RecordRouter(work, profileID, records[0], records[1], records[2], records[3], "")
+		return notifications.SaveRouter(work, profileID, config, &router, &native, raw, "")
 	})
-}
-
-// jobLockHook only tries the routers-owned L1 lock, even when called under L3.
-// It never reads the repository; router is the immutable transaction snapshot.
-func jobLockHook(ctx context.Context, profileID, routerID string, router *jsonx.Object) (func(), bool) {
-	var connection *Router
-	if router != nil {
-		connection = &Router{RouterSettings: RouterSettings{Type: router.GetString("type"), Endpoint: router.GetString("endpoint")}}
-	}
-	_, release, err := RouterJobLock(ctx, profileID, routerID, connection)
-	return release, err == nil
 }

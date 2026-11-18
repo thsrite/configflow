@@ -74,20 +74,12 @@ func pendingTargets(ctx context.Context, req PendingRequest) ([]pendingTarget, s
 	if err != nil {
 		return nil, "", "", err
 	}
-	profiles, err := req.Repo.ListProfiles(ctx)
+	list, err := pendingProfiles(ctx, req.Repo)
 	if err != nil {
-		return nil, "", "", err
-	}
-	raw, err := json.Marshal(profiles)
-	if err != nil {
-		return nil, "", "", err
-	}
-	var list []pendingProfile
-	if err = json.Unmarshal(raw, &list); err != nil {
 		return nil, "", "", err
 	}
 	if req.ProfileID != nil {
-		if _, err = req.Repo.ProfileMetadata(ctx, *req.ProfileID); err != nil {
+		if _, err = req.Repo.Profile(ctx, *req.ProfileID); err != nil {
 			return nil, "", "", err
 		}
 	}
@@ -97,7 +89,7 @@ func pendingTargets(ctx context.Context, req PendingRequest) ([]pendingTarget, s
 		if req.ProfileID != nil && profile.ID != *req.ProfileID {
 			continue
 		}
-		config, err := req.Repo.GetCompatConfig(ctx, profile.ID, repo.ResourceRoots{})
+		config, err := req.Repo.Config(ctx, profile.ID, repo.ResourceRoots{})
 		if err != nil {
 			return nil, "", "", err
 		}

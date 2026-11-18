@@ -369,7 +369,7 @@ func IPv6RoutesSettings(config *model.Profile) IPv6RouteSettings {
 
 // IPv6FakeIPRelevant reports whether inspection has settings or ownership to check.
 func IPv6FakeIPRelevant(config *model.Profile, r *Router) bool {
-	return r != nil && r.Type == "routeros" && (IPv6FakeIPSettings(config).Enabled || truthy(r.Extra["ipv6_fakeip_state"]))
+	return r != nil && r.Type == "routeros" && (IPv6FakeIPSettings(config).Enabled || hasStoredState(r.Extra["ipv6_fakeip_state"]))
 }
 
 // IPv6RoutesRelevant reports whether a rule-set destination or prior manifest exists.
@@ -377,7 +377,7 @@ func IPv6RoutesRelevant(config *model.Profile, r *Router, desired *Desired) bool
 	if r == nil || r.Type != "routeros" {
 		return false
 	}
-	if truthy(r.Extra["ipv6_routes_state"]) {
+	if hasStoredState(r.Extra["ipv6_routes_state"]) {
 		return true
 	}
 	s := IPv6RoutesSettings(config)

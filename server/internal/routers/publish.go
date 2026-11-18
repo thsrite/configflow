@@ -180,7 +180,7 @@ func Publish(ctx context.Context, req PublishRequest) PublishOutcome {
 	if err = work.Err(); err != nil {
 		return PublishOutcome{Err: err}
 	}
-	cfg, err := req.Repo.GetCompatConfig(work, req.ProfileID, repo.ResourceRoots{})
+	cfg, err := req.Repo.Config(work, req.ProfileID, repo.ResourceRoots{})
 	if err != nil {
 		return PublishOutcome{Err: err}
 	}
