@@ -202,3 +202,52 @@ func TestPreparationFailureRecordHidesOtherAgentCredentials(t *testing.T) {
 		t.Fatal("source credential stored in the target's records")
 	}
 }
+
+// R05-3 regression: a private job whose candidate is missing or not an object
+// never replaces the OxiDNS draft. The profile validation refuses it and the
+// follow reports the kept draft (draft_synced=false), as Python does for null.
+func TestCorruptJobCandidateNeverReplacesDraft(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		edit func(*jsonx.Object)
+	}{
+		{"missing", func(job *jsonx.Object) { job.Delete("candidate_settings") }},
+		{"null", func(job *jsonx.Object) { job.Set("candidate_settings", nil) }},
+		{"text", func(job *jsonx.Object) { job.Set("candidate_settings", "synthetic") }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t, Options{}, agentfake.Options{})
+			f.bind(t)
+			f.publishSource(t, "source-next")
+			f.target.mu.Lock()
+			f.target.loseUploadResponse = true
+			f.target.pollOffline = true
+			f.target.mu.Unlock()
+			if err := f.s.Tick(f.ctx); err != nil {
+				t.Fatal(err)
+			}
+			if st := state(f.agent(t)); st.Status != "publishing" || f.agent(t).DNSFollowJob == nil {
+				t.Fatal(st)
+			}
+			f.editAgent(t, "target", func(a *agents.Record) { tc.edit(a.GetObject("dns_follow_job")) })
+			before := f.profile(t)
+			f.target.mu.Lock()
+			f.target.pollOffline = false
+			f.target.mu.Unlock()
+			if err := f.s.Tick(f.ctx); err != nil {
+				t.Fatal(err)
+			}
+			p, err := f.r.GetProfile(f.ctx, "default")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if p.GetObject("oxidns") == nil || f.profile(t) != before {
+				t.Fatalf("corrupt job replaced the draft: %v", p.Value("oxidns"))
+			}
+			a := f.agent(t)
+			if st := state(a); value(st.DraftSynced) || a.DNSFollow.UpstreamSignature == a.DNSFollowJob.CandidateSignature {
+				t.Fatalf("kept draft reported as synchronized: %q %q", st.Status, st.Message)
+			}
+		})
+	}
+}
