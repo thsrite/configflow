@@ -17,6 +17,7 @@ import fixtures
 import probes
 import probe_workflows
 import probe_guards
+import probe_schemas
 import releases
 import clients
 import sync
@@ -584,6 +585,30 @@ def execute(pair, case, available, routes):
                              pair.router_ids.snapshot('go', projected_states['go']), '/state')
         if case.unchanged:
             found += differences(snapshots['go']['before'], snapshots['go']['after'], '/go-unexpected-write')
+        if case.python_bug == 'IKUAI_PROBE_NESTED_SCHEMA_CRASH':
+            body = observations['go']['body']
+            before, after = snapshots['go']['before'], snapshots['go']['after']
+            reply = observations['go']
+            rejected = (400 <= reply['status'] < 600 and reply['kind'] == 'json' and isinstance(body, dict)
+                        and body.get('success') is False and isinstance(body.get('message'), str)
+                        and bool(body['message'].strip()))
+            device_changed = any(differences(before['fake'][key], after['fake'][key]) for key in ('ros', 'ikuai', 'agent'))
+            writes = [item for item in after['fake']['transcript'][len(before['fake']['transcript']):]
+                      if not (item['peer'] == 'ikuai' and item['method'] == 'POST'
+                              and (item['path'] == '/Action/login' or
+                                   item['path'] == '/Action/call' and isinstance(item['body'], dict)
+                                   and item['body'].get('action') == 'show'))]
+            own_metadata = probe_schemas.only_failed_probe_metadata(before, after, case.profile,
+                                                                    'r-ik', response_windows['go'])
+            files_changed = bool(differences(before['files'], after['files']) or
+                                 differences(before.get('filesystem', {}), after.get('filesystem', {})))
+            go_bug_outcome = {'http_status': reply['status'], 'structured_refusal': rejected,
+                              'only_failed_probe_metadata': own_metadata, 'files_changed': files_changed,
+                              'device_changed': bool(device_changed), 'unexpected_device_requests': len(writes)}
+            if not rejected or device_changed or writes or not own_metadata or files_changed:
+                found.append({'path': '/safety/untrusted-probe-schema',
+                              'python': 'bounded structured refusal without device mutation; exact policy requires O12 review',
+                              'go': go_bug_outcome, 'category': 'safety'})
         if case.python_bug == 'NATIVE_SIDE_REFERENCE_PROTOCOL_COLLISION':
             body = observations['go']['body']
             expected_side = [{'tags': ['side_udp'], 'listen': '127.0.0.1:5353', 'entry': 'side'}]
@@ -654,7 +679,13 @@ def execute(pair, case, available, routes):
             ('profile-write', 'profile-write-device', 'router-create', 'router-delete', 'device-only')):
         pair.go.missing_effects.append({'case': case.ident, 'missing_routes': sorted(set(missing_routes))})
     python_bug_outcome = None
-    if case.python_bug == 'NATIVE_SIDE_REFERENCE_PROTOCOL_COLLISION':
+    if case.python_bug == 'IKUAI_PROBE_NESTED_SCHEMA_CRASH':
+        before, after = snapshots['python']['before'], snapshots['python']['after']
+        python_bug_outcome = {'http_status': observations['python']['status'],
+                              'database_changed': bool(differences(before['database'], after['database'])),
+                              'device_changed': any(bool(differences(before['fake'][key], after['fake'][key]))
+                                                    for key in ('ros', 'ikuai', 'agent'))}
+    elif case.python_bug == 'NATIVE_SIDE_REFERENCE_PROTOCOL_COLLISION':
         python_bug_outcome = {'http_status': observations['python']['status'], 'valid_native_edit_incorrectly_blocked': True}
     elif case.python_bug == 'IKUAI_NETMASK_SUFFIX_ROLLBACK':
         python_bug_outcome = {'created_static_rows_remaining': len(snapshots['python']['after']['fake']['ikuai']['static_rt']),
@@ -841,6 +872,7 @@ def main():
                     (gateway.reads, gateway.writes, gateway.response_limits, gateway.display_filter, gateway.malformed_filter_bug)),
               ('forwarding-uncertain', fixtures.agent_options(), (gateway.uncertain, gateway.timeouts)),
               ('probe-errors', options, (probes.routeros, probes.ikuai)),
+              ('probe-nested-schema', options, (probe_schemas.cases,)),
               ('probe-clock-roundtrip', options, (probe_workflows.roundtrip,)),
               ('probe-guard-controls', options, (probe_guards.controls, probe_guards.late_rows, probe_guards.invalid_versions)),
               ('probe-tls', probes.tls_options(), (probes.tls,)),

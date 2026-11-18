@@ -11,6 +11,11 @@ class ReferenceBug:
 
 
 BUGS = {
+    'IKUAI_PROBE_NESTED_SCHEMA_CRASH': ReferenceBug('R05（iKuai）及 R15（probe HTTP）',
+        'iKuai sysstat 的 verinfo 为非空数组或标量时，Python 未先校验对象类型就调用 .get，'
+        '抛出 AttributeError，探测返回 HTML 500且未保存失败探测。空容器/空值则走正常502版本拒绝。',
+        ('该输入来自隔离 fake 的不可信设备 JSON；异常由实际 Python 日志确认，没有替换驱动或模拟异常。',
+         'Go 应有界拒绝并保留设备/其他配置；具体错误响应及失败元数据策略单列 O12 复核，不自动算通过。'), severity='low'),
     'NATIVE_SIDE_REFERENCE_PROTOCOL_COLLISION': ReferenceBug('C26（OxiDNS 设备策略/引用扫描）及 R17（客户端 HTTP）',
         '合法 native 配置把主 UDP 监听器命名为 udp，旁路独立转发器使用 udp:// 上游地址时，Python 的引用扫描把 URL 协议名'
         '误当插件引用，经主监听器走到 sequence_main，错误地把整份设备策略标为不可编辑；正常模式修改被400拒绝。',

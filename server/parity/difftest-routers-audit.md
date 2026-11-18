@@ -508,3 +508,21 @@ DHCP evidence guard increment (author audit, not native parity):
   exists. Real both-vendor probe/read/selected-DHCP/successful-write controls are
   required by reachability.py; no control is tagged as executing a base error.
   This is separate source proof, not a test pass or package verification.
+
+Untrusted nested probe schema / X12 increment:
+- Actual iKuai sysstat code0/results object with truthy nonobject verinfo raises
+  uncaught AttributeError before version validation. Five JSON kinds were proven
+  by actual local-window Python traceback and HTML500, not exception emulation.
+  Database/device state remains unchanged; each has a subsequent healthy probe.
+  Six falsy values instead follow the ordinary502 version error and persist it.
+- New low reference bug belongs to R05/R15. Missing Go R017 stays unimplemented;
+  no native outcome is invented. Safe native structured rejection is separate
+  O12 review with all differences retained, never a parity pass. Matching HTML
+  failure/success-looking reply/device mutation/write intent is a safety failure.
+- A Go fix may leave DB untouched or add only its own fresh failed last_probe,
+  one profile revision/generation and a new commit ID. Foreign owners, other
+  profile fields, stable meta, schema and files cannot change. Purpose-broken
+  oracle tests check stale clock, corrupted router/settings, duplicate/bad rows,
+  wrong store/generation/commit and foreign DB/file/device-write changes.
+- This does not complete broad R017-F12 or X12. Other nested error schemas,
+  Unicode credential transport and publication-time uncaught errors remain open.

@@ -1930,3 +1930,32 @@ No command pending.465 declarations+9 source proofs+2 O6 corrections;1825 remain
 if all increments/controls are composed. Historical full3054/301 still stands;
 this subset does not replace it. Next: remaining route/driver/schema/dynamic/
 background matrix, full composition, final gate/rebase/clean hand-back.
+
+Nested iKuai schema / new reference finding:
+- Read real iKuai _post/_login/call/probe and R017 again. code0/results object
+  does not guarantee verinfo is an object. Nonempty bool/int/float/string/list
+  reaches .get and raises actual AttributeError; no failed probe is saved.
+-16 real HTTP requests:6 falsy controls return502 and persist failed probe,
+ 5 truthy malformed kinds return HTML500 with own-request source traceback,
+ 5 subsequent valid probes succeed. Crashes leave DB and device tables unchanged.
+  New low bug IKUAI_PROBE_NESTED_SCHEMA_CRASH belongs R05/R15, recorded in main
+  findings as a separate increment. Six reference defect classes are now known.
+- Native safe structured refusal is O12 review, not an equality pass. Matching
+  HTML failure, accepted response, device writes/mutation, other settings/foreign
+  state/file mutation fail safety checks. A fix can persist only its own fresh
+  failed probe with one profile revision/generation and new commit_id; stable
+  metadata/configuration stay unchanged. All physical diffs remain visible.
+- Oracle controls include broken response types, bool-vs-number, stale clock,
+  extra/duplicate malformed router rows, foreign DB/config/files, device write
+  intent, wrong store identity/commit/generation. No product helper patched.
+
+.64 regression command:
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY="$HOME/.cache/routerdiff-build-302rx1dg-a08c4cc27/configflow"; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python -m unittest -v test_probe_schemas test_runner test_recipes; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world probe-nested-schema --output "$HOME/.cache/routerdiff-reports/302rx1dg/probe-nested-schema.json" --findings "$HOME/.cache/routerdiff-reports/302rx1dg/probe-nested-schema-findings.md"'`
+=> Ran54 tests3.411s/OK;16 actual requests2.82s/allGo-unimplemented,4 references,
+0 new audits/proofs, new named Python bug, complete=false. Initial purpose-broken
+transcript lacked required raw/headers fixture members; fixed the oracle fixture.
+After tightening the own failed-probe metadata scope, exact same rt command with
+`python -m unittest -v test_probe_schemas`=>Ran3 tests0.225s/OK;16 actual requests
+3.31s/allGo-unimplemented with same verified reference bug. No active command.
+Counts465 declarations+9 source proofs+2 O6 entries/1825 remaining unchanged.
+Final full composition/gate/rebase and the remaining matrix are still pending.

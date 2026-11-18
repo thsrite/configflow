@@ -158,3 +158,33 @@ native-side 批次71条请求、6条显式审计通过；Go领域路由仍未注
 
 这两项属于已有 `AGENT_FORWARD_FILTER_UNHASHABLE` 类别。未修改产品实现或
 放宽 fake；匹配 Python 崩溃的 Go 结果仍会按安全性差异处理，不能算通过。
+
+# 增量发现：iKuai 探测的嵌套版本结构未校验
+
+本节来自独立 `probe-nested-schema` 世界的16条真实 HTTP 请求，不替换前面
+最后一次完整组合的3054条统计。新增参考缺陷类别
+`IKUAI_PROBE_NESTED_SCHEMA_CRASH`；严重程度 **low**；建议负责模块
+**R05（iKuai）与 R15（probe HTTP）**；矩阵关联 **R017-F12、X12**。
+
+下列每项均请求 `POST /api/routers/r-ik/probe`，合成 iKuai 的
+`/Action/call`、`func_name=sysstat` 回 `code:0`，`results.verinfo` 如表。
+
+| 用例（世界均为 probe-nested-schema） | verinfo | Python 的真实结果 | Go 的实际结果 |
+|---|---|---|---|
+| R017/ikuai/nested-verinfo-true | `true` | HTML 500，局部日志确认 bool 的 AttributeError | 公开清单未注册 R017，Go尚未实现 |
+| R017/ikuai/nested-verinfo-integer | `1` | HTML 500，局部日志确认 int 的 AttributeError | 同上 |
+| R017/ikuai/nested-verinfo-number | `1.5` | HTML 500，局部日志确认 float 的 AttributeError | 同上 |
+| R017/ikuai/nested-verinfo-text | `"4.0.314"` | HTML 500，局部日志确认 str 的 AttributeError | 同上 |
+| R017/ikuai/nested-verinfo-list | `[{"version":"4.0.314"}]` | HTML 500，局部日志确认 list 的 AttributeError | 同上 |
+
+根因是 `backend/routers/ikuai.py:300` 只以 `or {}` 处理空值，随后直接调用
+`verinfo.get`。这些非空值穿过了空值回退；异常不是 RouterError，R017未捕获，
+不会保存失败探测。五项均验证数据库和设备表不变，之后正常版本探测仍能
+成功，表明错误没有破坏进程和会话。另有 null/false/0/空字符串/空列表/空对象
+六个对照，均真实返回502并保存失败探测。
+
+未修改产品实现或 fake 来掩盖问题。将来 Go 的安全拒绝进入 O12 人工复核，
+不能自动算通过；重复 HTML 崩溃、成功接受、写设备、改其他配置/文件都不能
+通过安全性检查。允许 Go 修复额外保存自己的失败探测，但必须只改请求的
+路由器 last_probe，使用自身请求时间内的时间戳、单次配置 revision/generation
+递增与新 commit_id，其他空间与元数据不变。具体响应/存储差异始终保留。
