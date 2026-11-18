@@ -5,9 +5,10 @@
 # Stage 1: 构建 Go Agent 二进制文件
 # 产物与目标平台无关，固定在构建机原生平台运行：多架构构建时不再经 QEMU 模拟重复编译。
 # ==============================================================================
-# Go 1.26.10 distrusts compromised intermediate CA keys in crypto/x509 (CVE-2026-111943);
+# Go 1.26.11: GO-2026-6859 (net/http MaxBytesReader server crash); 1.26.10 distrusts
+# compromised intermediate CA keys in crypto/x509 (CVE-2026-111943);
 # Agent and node-probe verify TLS, so security releases need this pin and a new image.
-FROM --platform=$BUILDPLATFORM golang:1.26.10-alpine AS go-builder
+FROM --platform=$BUILDPLATFORM golang:1.26.11-alpine AS go-builder
 
 WORKDIR /build
 ENV GOPROXY=https://goproxy.cn,direct CGO_ENABLED=0 GOOS=linux
@@ -29,7 +30,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # ==============================================================================
 # 独立节点测速组件：仅编译目标架构，运行时不启用 TUN 或监听服务
 # ==============================================================================
-FROM --platform=$BUILDPLATFORM golang:1.26.10-alpine AS node-probe-builder
+FROM --platform=$BUILDPLATFORM golang:1.26.11-alpine AS node-probe-builder
 WORKDIR /build
 ENV CGO_ENABLED=0
 COPY backend/node-probe/go.mod backend/node-probe/go.sum ./
@@ -164,7 +165,7 @@ CMD ["/usr/local/bin/configflow-start.sh"]
 # 在 runtime 基础上加入 Go 与 npm：容器启动时拉取分支最新源码，按需重建前端与
 # Agent 后运行（见 docker/auto_update.py）。默认镜像构建请指定 target: runtime。
 # ==============================================================================
-FROM golang:1.26.10-bookworm AS go-toolchain
+FROM golang:1.26.11-bookworm AS go-toolchain
 
 FROM runtime AS autoupdate
 COPY --from=go-toolchain /usr/local/go /usr/local/go

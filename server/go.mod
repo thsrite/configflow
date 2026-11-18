@@ -2,6 +2,9 @@ module configflow
 
 go 1.26.0
 
+// Minimum release toolchain: GO-2026-6859 (net/http MaxBytesReader crash, used by the Edge) is fixed in 1.26.11.
+toolchain go1.26.11
+
 require (
 	github.com/dlclark/regexp2 v1.12.0
 	github.com/google/uuid v1.6.0
