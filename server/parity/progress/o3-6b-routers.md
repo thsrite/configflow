@@ -1,6 +1,6 @@
 # O3-6b — routers JobLock 与工作取消
 
-状态：batch-4集成完成，定向验收中。分支go-o3-6b最初从协调者指定的go-opus-review-r10@f368fa1b9建立；
+状态：batch-4集成与定向检查完成，待协调者复验/合并。分支go-o3-6b最初从协调者指定的go-opus-review-r10@f368fa1b9建立；
 已按正式通知变基go@c939a5f61（R10/R11与O3-6c已在其中）。不push、不派子agent、本机不测试。
 
 ## 范围与契约
@@ -173,3 +173,42 @@ RT_HOST=sunbroke@192.168.0.32 rt --back server/internal/routers/o36b_repo_runtim
 退出0，`ok configflow/internal/routers 62.272s`（28叶例各执行3轮）。
 下一步：全目录gofmt-l、全仓vet；routers及直接调用方/相关repo-devhttp集成race；
 相关api/rules、api/rulelibrary difftest，全部固定.32，不跑gate/proddiff/全仓race；无新fuzz目标。
+
+
+## 最终交回（batch-4 后，固定 .32）
+
+本节是当前结果；前面的等待R10/6c和旧gate计划都是历史记录，已由本节覆盖。
+分支go-o3-6b，基于go@c939a5f61。产品改动保持唯一routers L1表+Wire与剩余owner取消边界；
+没有复制R10/R11的产品提交，也不提前引入R12。新增28子例与语义/单次generation/释放/零违规断言
+已在86714de27提交。无新依赖、无新fuzz、无新goroutine/flock或循环开关。
+
+### 结果
+
+- 新矩阵 `-race -count=3`：routers62.272s，通过（28子例×3）。
+- 全目录gofmt-l无输出、全仓go vet通过。
+- 相关包全包race/count1：routers548.208s、devhttp3.486s、routersplit13.167s、
+  server2.300s、api/rules84.766s，全部通过。包含R04–R11实际Python边界、生产timeout/raw-wire、
+  Runtime停止/断开、L2等待、24竞争发布、旧锁哨兵以及本步全部O36b测试。
+- repo相关O36c/R10/router guard/批次marker回归：race/count1通过154.882s。
+  按明确测试名单执行；不启用尚待batch-5修复的repo crosscheck布局组，也不冒称跑过它。
+- CONFIGFLOW_DIFF=1的实际Flask差分：api/rules/difftest75.079s、
+  api/rulelibrary/difftest34.479s，2包通过；JSON事件核验零skip/零fail。
+- 合并后的正常L1→L2→L3路径明确Violations==0；各次关机后同设备租约可再取。
+  关机不提交、断开完成、发布竞争互斥的语义均保持。没有放宽时限、记录数量或文件断言。
+- 按新流程没有跑gate、全仓race、proddiff；完整批次门禁留协调者。
+
+### 完整定向命令
+
+从本worktree调用（RT_HOST固定.32），前台单条阻塞等待，退出0：
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'set -e; cd server; export CONFIGFLOW_PY=$HOME/cf-test/.venv/bin/python CONFIGFLOW_REPO=$(dirname "$PWD") CONFIGFLOW_DIFF_PYTHON=$HOME/cf-test/.venv/bin/python PYTHONDONTWRITEBYTECODE=1; unset CONFIGFLOW_SNAPSHOT CONFIGFLOW_DIFF; task_logs=$(mktemp -d "${TMPDIR:-/tmp}/o36b-final.XXXXXX"); echo "O36B_LOGS=$task_logs"; test -z "$(gofmt -l internal tools cmd)"; go vet ./...; go test -race -p=4 -count=1 -timeout=60m ./internal/routers/ ./internal/devhttp/ ./internal/routersplit/ ./internal/server/ ./internal/api/rules/ >"$task_logs/race.log" 2>&1 || { cat "$task_logs/race.log"; exit 1; }; cat "$task_logs/race.log"; go test -race -count=1 -timeout=15m -run "^Test(O36c.*|R10.*|EveryWriter.*|CredentialRepair.*|LivePublication.*|DeleteAndReset.*|DuplicateIds.*|VerifiedPublication.*|PublicationCannot.*|SettingsCommit.*|OrdinaryWriter.*|BatchRemoval.*|FirstPublication.*|ReplacementHolds.*|CommitBatchMarkersMatchDesign)$" ./internal/repo/ >"$task_logs/repo.log" 2>&1 || { cat "$task_logs/repo.log"; exit 1; }; cat "$task_logs/repo.log"; CONFIGFLOW_DIFF=1 go test -json -p=2 -count=1 -timeout=30m ./internal/api/rules/difftest/ ./internal/api/rulelibrary/difftest/ >"$task_logs/diff.json" 2>&1 || { tail -70 "$task_logs/diff.json"; exit 1; }; "$CONFIGFLOW_PY" -c '''import json,sys; events=[json.loads(line) for line in open(sys.argv[1])]; bad=[e for e in events if e["Action"] in ("skip","fail")]; assert not bad, bad; packages=[e for e in events if e["Action"]=="pass" and "Test" not in e]; assert len(packages)==2, packages; print("DIFF PASS: 2 packages, 0 skip"); [print(e["Package"],e.get("Elapsed")) for e in packages]''' "$task_logs/diff.json"; echo "O36B TARGETED PASS"'
+```
+最终输出：`DIFF PASS: 2 packages, 0 skip`、`O36B TARGETED PASS`。
+日志在.32 `/home/sunbroke/.cache/rt-tmp/o36b-final.BQZRJp/{race.log,repo.log,diff.json}`。
+
+### 下游接线
+
+`RouterJobLock(ctx, profileID, routerID, *Router) (held, release, error)`签名保持稳定，
+同一张L1表已通过repo hook与发布owner真实并发验证。R12合并时直接使用本入口，不再保留临时stub，
+不在设备底层重入L1；其Aborted&&Wrote获批本地publication例外和canonical AST patch由R12集成处理，
+本步不把普通提交改为不可中断。交回前rebase最新go，工作区干净，不push。
