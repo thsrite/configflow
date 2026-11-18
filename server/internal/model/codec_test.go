@@ -60,10 +60,10 @@ func TestRecordInvalidTypeAndPresence(t *testing.T) {
 	if err := json.Unmarshal(original, &record); err != nil {
 		t.Fatal(err)
 	}
-	if record.Name != "" || record.Count != 0 || record.Enabled == nil || *record.Enabled {
+	if record.Name != "5" || record.Count != 0 || record.Enabled == nil || *record.Enabled {
 		t.Fatal("wrong fallback or pointer default")
 	}
-	if issues := valueIssues(reflect.ValueOf(record), ""); len(issues) != 2 {
+	if issues := valueIssues(reflect.ValueOf(record), ""); len(issues) != 1 {
 		t.Fatalf("issues=%v", issues)
 	}
 	got, err := Marshal(record)
@@ -104,7 +104,7 @@ func TestIntExactJSON(t *testing.T) {
 		{"60", 60, true}, {"60.0", 60, true}, {"6e1", 60, true}, {"600e-1", 60, true}, {"0e9999999999999999999999", 0, true},
 		{"9223372036854775807.0", 9223372036854775807, true}, {"-9223372036854775808", -9223372036854775808, true},
 		{"1.00000000000000000001", 0, false}, {"1e99999999999999999999", 0, false}, {"1e-999999999999999999", 0, false},
-		{"true", 0, false}, {`"60"`, 0, false}, {"null", 0, false}, {"9223372036854775808", 0, false},
+		{"true", 0, false}, {`"60"`, 60, true}, {"null", 0, false}, {"9223372036854775808", 0, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.literal, func(t *testing.T) {
@@ -208,10 +208,10 @@ func TestSkeletonPreservesOpaqueMembersAndDiagnostics(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if document.System.Revision != 0 || document.Profiles[0].Revision != 60 || document.Profiles[0].Name != "" {
+	if document.System.Revision != 0 || document.Profiles[0].Revision != 60 || document.Profiles[0].Name != "7" {
 		t.Fatal("typed skeleton fallback")
 	}
-	if len(issues) != 2 || issues[0].Path != "system._revision" || issues[1].Path != "profiles[0].name" {
+	if len(issues) != 1 || issues[0].Path != "system._revision" {
 		t.Fatalf("diagnostics=%v", issues)
 	}
 	encoded, err := Marshal(document)

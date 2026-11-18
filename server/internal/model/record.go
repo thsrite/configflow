@@ -478,8 +478,8 @@ func decodeValue(data []byte, target any) error {
 }
 
 // decodeInto decodes into an addressable destination. encoding/json accepts a
-// quoted numeric string for json.Number, so exact-number members and lists
-// holding them are checked element by element: a string is never a number (R8).
+// quoted numeric string for json.Number, so exact-number members remain strict.
+// String and Int use the shared R5 scalar rules, also within pointers/lists.
 func decodeInto(data []byte, destination reflect.Value) error {
 	typ := destination.Type()
 	pointers := 0
@@ -497,7 +497,21 @@ func decodeInto(data []byte, destination reflect.Value) error {
 		if len(text) == 0 || (text[0] != '-' && (text[0] < '0' || text[0] > '9')) {
 			return ErrType
 		}
-	case typ.Kind() == reflect.Slice && typ != rawMessageType && holdsNumber(typ.Elem()):
+	case typ.Kind() == reflect.String:
+		var value String
+		if err := value.UnmarshalJSON(data); err != nil {
+			return err
+		}
+		decoded := reflect.New(typ).Elem()
+		decoded.SetString(string(value))
+		for range pointers {
+			wrapped := reflect.New(decoded.Type())
+			wrapped.Elem().Set(decoded)
+			decoded = wrapped
+		}
+		destination.Set(decoded)
+		return nil
+	case typ.Kind() == reflect.Slice && typ != rawMessageType:
 		var items []json.RawMessage
 		if err := json.Unmarshal(data, &items); err != nil {
 			return err
@@ -521,14 +535,4 @@ func decodeInto(data []byte, destination reflect.Value) error {
 		return nil
 	}
 	return json.Unmarshal(data, destination.Addr().Interface())
-}
-
-func holdsNumber(typ reflect.Type) bool {
-	for typ.Kind() == reflect.Pointer {
-		typ = typ.Elem()
-	}
-	if typ == jsonNumberType {
-		return true
-	}
-	return typ.Kind() == reflect.Slice && typ != rawMessageType && holdsNumber(typ.Elem())
 }

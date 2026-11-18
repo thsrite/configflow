@@ -9,12 +9,34 @@ import (
 )
 
 // Int is an int64 stored as an integral JSON number. Decimal and exponent
-// notation are accepted exactly; booleans, strings, fractions and overflow are not.
+// notation and strict ASCII decimal integer strings are accepted exactly;
+// booleans, fractional values and overflow are not.
 type Int int64
 
 // UnmarshalJSON decodes an integral int64 without passing through float64.
 func (n *Int) UnmarshalJSON(data []byte) error {
 	data = bytes.TrimSpace(data)
+	if len(data) > 0 && data[0] == '"' {
+		var text string
+		if err := json.Unmarshal(data, &text); err != nil {
+			return fmt.Errorf("%w: integer text: %w", ErrType, err)
+		}
+		digits := strings.TrimPrefix(text, "-")
+		if digits == "" {
+			return fmt.Errorf("%w: decimal integer required", ErrType)
+		}
+		for _, digit := range []byte(digits) {
+			if digit < '0' || digit > '9' {
+				return fmt.Errorf("%w: decimal integer required", ErrType)
+			}
+		}
+		value, err := strconv.ParseInt(text, 10, 64)
+		if err != nil {
+			return fmt.Errorf("%w: integer range: %w", ErrType, err)
+		}
+		*n = Int(value)
+		return nil
+	}
 	if len(data) == 0 || !json.Valid(data) || (data[0] != '-' && (data[0] < '0' || data[0] > '9')) {
 		return fmt.Errorf("%w: integral number required", ErrType)
 	}

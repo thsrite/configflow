@@ -232,7 +232,7 @@ func TestReviewN83CopiedProfileUsesItsNewID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(issues) != 1 || issues[0].Path != "profiles[1].id" {
+	if len(issues) != 0 || document.Profiles[1].ID != "7" {
 		t.Fatalf("issues=%v", issues)
 	}
 	clone := *document.Profiles[0]

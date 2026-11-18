@@ -40,7 +40,9 @@ func (r *ProviderHealthCheck) Clear(member string) error { return ClearMember(r,
 // MarshalJSON preserves unknown and unchanged ProviderHealthCheck members.
 func (r ProviderHealthCheck) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
-// Node is a shared node. Params is an open Mihomo engine mapping, expanded wholesale by Python; protocol extensions remain dynamic.
+// Node is a shared node. Scalar attributes use the shared model codecs.
+// Params is an open Mihomo engine mapping; protocol extensions retain their
+// values and YAML tags.
 type Node struct {
 	ID               string       `json:"id"`
 	Name             string       `json:"name"`

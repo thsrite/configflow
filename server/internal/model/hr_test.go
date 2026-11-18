@@ -200,13 +200,16 @@ func TestOwnershipFallbackIsDiagnosed(t *testing.T) {
 		t.Fatal("malformed proof decode failed")
 	}
 	issues := valueIssues(reflect.ValueOf(&router), "routers.items[0]")
-	for _, path := range []string{"ros_policy_state.spec", "ros_policy_state.resources", "dns_guard_state.resources[0].id", "ipv6_pd_guard_state.resources[0].role"} {
+	for _, path := range []string{"ros_policy_state.spec", "ros_policy_state.resources", "dns_guard_state.resources[0].id"} {
 		if !slices.Contains(issues, FieldIssue{"routers.items[0]." + path, IssueType}) {
 			t.Fatalf("missing ownership schema issue: %v", issues)
 		}
 	}
 	// The model is intentionally tolerant; empty fallback resources are not
 	// verified absence. Device consumers must reject incomplete evidence.
+	if router.IPv6PDGuardState.Resources[0].Role != "7" {
+		t.Fatal("numeric role did not use the shared text codec")
+	}
 	if len(router.ROSPolicyState.Resources) != 0 {
 		t.Fatal("invalid resources did not fall back")
 	}
