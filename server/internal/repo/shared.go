@@ -1,15 +1,16 @@
 package repo
 
 import (
-	"configflow/internal/ctxx"
 	"context"
 	"crypto/subtle"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 
+	"configflow/internal/ctxx"
 	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/rules"
@@ -69,10 +70,14 @@ func (r *Repository) CreateRuleLibraryItem(ctx context.Context, rule *jsonx.Obje
 		}
 	}()
 	batch := false
-	err = r.update(ctx, writeOptions{batch: &batch}, func(ctx context.Context, document *jsonx.Object) error {
-		shared := document.GetObject("shared")
-		for _, item := range shared.GetList("rule_library") {
-			if object, _ := jsonx.AsObject(item); object.Value("id") == ruleID {
+	item, err := ruleLibraryRecord(rule)
+	if err != nil {
+		return nil, err
+	}
+	err = r.transact(ctx, writeOptions{batch: &batch}, func(ctx context.Context, tx *transaction) error {
+		shared := &tx.document.Shared
+		for _, existing := range shared.RuleLibrary {
+			if existing.ID == ruleID {
 				return exists("规则库 ID 已存在，请刷新后重试")
 			}
 		}
@@ -90,8 +95,8 @@ func (r *Repository) CreateRuleLibraryItem(ctx context.Context, rule *jsonx.Obje
 			return err
 		}
 		ownsCache = true
-		shared.Set("rule_library", append(append([]any{}, shared.GetList("rule_library")...), rule.DeepCopy()))
-		bumpRevision(shared)
+		shared.RuleLibrary = append(shared.RuleLibrary, item)
+		shared.Revision++
 		return writeAtomic(path, content)
 	})
 	if err != nil {
@@ -105,8 +110,8 @@ func (r *Repository) CreateRuleLibraryItem(ctx context.Context, rule *jsonx.Obje
 		if raw, failure := r.store.Load(); failure == nil {
 			if current, failure := decodeEntry(raw); failure == nil {
 				preserve = false
-				for _, item := range current.Document.GetObject("shared").GetList("rule_library") {
-					if object, _ := jsonx.AsObject(item); object.Value("id") == ruleID {
+				for _, existing := range current.Model.Shared.RuleLibrary {
+					if existing.ID == ruleID {
 						preserve = true
 					}
 				}
@@ -119,6 +124,17 @@ func (r *Repository) CreateRuleLibraryItem(ctx context.Context, rule *jsonx.Obje
 	}
 	preserve = true
 	return rule.DeepCopy(), nil
+}
+
+// ruleLibraryRecord decodes a new rule library item given as jsonx; members
+// of a wrong type are kept as given (R5) for write validation.
+func ruleLibraryRecord(rule *jsonx.Object) (model.RuleLibraryItem, error) {
+	var item model.RuleLibraryItem
+	data, err := jsonx.Compact(rule)
+	if err == nil {
+		err = json.Unmarshal(data, &item)
+	}
+	return item, err
 }
 
 // UpdateSharedTransaction is update_shared_transaction: updater edits a copy
