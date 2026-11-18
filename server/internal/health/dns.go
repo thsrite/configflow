@@ -558,6 +558,12 @@ func CheckDNSSettingsJSON(ctx context.Context, raw json.RawMessage) (DNSCheckRes
 		Timeout: checkTimeout,
 		Env:     env.workerEnv(),
 	})
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return DNSCheckResult{}, ctxErr
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return DNSCheckResult{}, err
+	}
 	if errors.Is(err, ErrTimeout) {
 		return DNSCheckResult{
 			Success:   false,

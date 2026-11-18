@@ -405,6 +405,12 @@ func runProbeFields(ctx context.Context, proxies []model.Fields, options ProbeSe
 		Timeout: budget,
 		Env:     env.workerEnv(),
 	})
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return empty, ctxErr
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return empty, err
+	}
 	if errors.Is(err, ErrTimeout) {
 		return empty, &ProbeUnavailable{Message: msgProbeTimeout}
 	}

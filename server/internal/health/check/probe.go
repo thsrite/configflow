@@ -2,6 +2,7 @@ package check
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -493,6 +494,15 @@ func pruneHosts(hosts *model.Map[TimedRecord], now time.Time) {
 // SaveEntries merges results into agentID's probe file, prunes expired/excess
 // entries relative to now (zero uses time.Now), and writes atomically.
 func (s *ProbeStore) SaveEntries(agentID string, results model.Map[TimedRecord], now time.Time) error {
+	return s.SaveEntriesContext(context.Background(), agentID, results, now)
+}
+
+// SaveEntriesContext merges probe entries, retaining the caller's owner lifetime
+// through lock acquisition and checking cancellation before file publication.
+func (s *ProbeStore) SaveEntriesContext(ctx context.Context, agentID string, results model.Map[TimedRecord], now time.Time) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if now.IsZero() {
 		now = time.Now()
 	}
@@ -507,11 +517,17 @@ func (s *ProbeStore) SaveEntries(agentID string, results model.Map[TimedRecord],
 
 	probeLock.Lock()
 	defer probeLock.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	file := s.readFile(agentID)
 	for host, entry := range results.All() {
 		file.Hosts.Set(host, entry)
 	}
 	pruneHosts(&file.Hosts, now)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	_, err := s.files.Write(agentID, &file, false)
 	return err
 }
@@ -531,8 +547,19 @@ func (s *ProbeStore) LoadEntries(agentID string, now time.Time) model.Map[TimedR
 
 // Delete removes the probe store file for agentID.
 func (s *ProbeStore) Delete(agentID string) error {
+	return s.DeleteContext(context.Background(), agentID)
+}
+
+// DeleteContext removes the probe file only while its owner is active.
+func (s *ProbeStore) DeleteContext(ctx context.Context, agentID string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	probeLock.Lock()
 	defer probeLock.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	return s.files.Remove(agentID)
 }
 

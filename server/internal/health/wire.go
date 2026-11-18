@@ -6,6 +6,7 @@ import (
 
 	"configflow/internal/agents"
 	"configflow/internal/health/check"
+	"configflow/internal/lifecycle"
 	"configflow/internal/repo"
 )
 
@@ -32,7 +33,7 @@ func deleteProbeStore(ctx context.Context, agentID string) error {
 	if err != nil {
 		return err
 	}
-	return store.Delete(agentID)
+	return store.DeleteContext(lifecycle.Detach(ctx), agentID)
 }
 
 func deleteRegionStore(ctx context.Context, agentID string) error {
@@ -40,7 +41,7 @@ func deleteRegionStore(ctx context.Context, agentID string) error {
 	if err != nil {
 		return err
 	}
-	return store.Delete(agentID)
+	return store.DeleteContext(lifecycle.Detach(ctx), agentID)
 }
 
 // Wire registers Agent deletion cleanup hooks for domain probes and region checks.

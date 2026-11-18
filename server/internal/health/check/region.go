@@ -2,6 +2,7 @@ package check
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -985,11 +986,23 @@ func hasEncodedMember(data *RegionData, name string) bool {
 // UpdateData mutates agentID's stored RegionData, prunes entries older than
 // RegionRetentionDays, bounds websites to the newest 1000, and writes atomically.
 func (s *RegionStore) UpdateData(agentID string, mutate func(*RegionData) error, now time.Time) error {
+	return s.UpdateDataContext(context.Background(), agentID, mutate, now)
+}
+
+// UpdateDataContext mutates region data while retaining the caller's owner
+// lifetime through lock acquisition and the final file publication check.
+func (s *RegionStore) UpdateDataContext(ctx context.Context, agentID string, mutate func(*RegionData) error, now time.Time) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if now.IsZero() {
 		now = time.Now()
 	}
 	regionLock.Lock()
 	defer regionLock.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	data := s.readData(agentID)
 	if err := mutate(&data); err != nil {
 		return err
@@ -1066,6 +1079,9 @@ func (s *RegionStore) UpdateData(agentID string, mutate func(*RegionData) error,
 	if err := model.SetMemberJSON(&data, &data.raw, "websites", websitesJSON); err != nil {
 		return fmt.Errorf("set region websites: %w", err)
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	_, err = s.files.Write(agentID, &data, false)
 	return err
 }
@@ -1079,7 +1095,18 @@ func (s *RegionStore) LoadData(agentID string) RegionData {
 
 // Delete removes the region store file for agentID.
 func (s *RegionStore) Delete(agentID string) error {
+	return s.DeleteContext(context.Background(), agentID)
+}
+
+// DeleteContext removes the region file only while its owner is active.
+func (s *RegionStore) DeleteContext(ctx context.Context, agentID string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	regionLock.Lock()
 	defer regionLock.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	return s.files.Remove(agentID)
 }
