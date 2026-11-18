@@ -36,6 +36,7 @@ const (
 	msgReadonly       = "'%s' 是只读设置"
 	msgContent        = "action=set 需要提供 content"
 	msgCallFailed     = "调用失败（HTTP %d）：%s"
+	logToolFailed     = "MCP 工具 %s 调用失败: %s"
 	msgSaved          = "%s 配置已生成并保存到数据目录，订阅链接即可取到新配置"
 	msgPacked         = "%s 规则包已打包（含规则文件，需在界面下载）；订阅链接为实时生成，配置改动无需此步即已生效"
 	instructions      = "ConfigFlow 代理配置管理平台。可管理订阅、节点、规则、规则仓库、策略组、订阅聚合、MosDNS / OxiDNS 与远程 Agent，并生成 Mihomo / Surge / MosDNS / OxiDNS 配置。建议先调用 get_overview 了解当前状态；Mihomo / Surge 修改后调用 generate_config 写入配置文件；MosDNS / OxiDNS 订阅实时生成，Agent 生效需显式推送。"

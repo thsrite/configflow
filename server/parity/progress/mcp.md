@@ -1,8 +1,8 @@
-# MCP #39 移植交回（待 Opus HR）
+# MCP #39 移植交回（Opus HR 已复核：verified）
 
 分支 `go-port-mcp`；最初基于 `go@03257978f`，完成后 rebase 到本地
 `go@95440b69e`（新增 remaining-work 盘点，产品代码相同）。产品提交 `205c116b0`，凭据容器补强 `02a39c5a8`。
-状态 **ported，未 verified，等待独立 Opus HR 复核**。本次没有子 agent、push、生产访问或完整门禁。
+状态 **verified**：独立 Opus HR 复核见 [review-mcp.md](../review-mcp.md)（high 0；2 条 low 已在 `go-opus-review-mcp` 修复）。原状态为 ported，等待 Opus HR 复核。本次没有子 agent、push、生产访问或完整门禁。
 
 ## 范围与实现
 

@@ -16,6 +16,7 @@ import (
 
 	"configflow/internal/auth"
 	"configflow/internal/httpx"
+	"configflow/internal/jsonresp"
 	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
 	"configflow/internal/model"
@@ -302,6 +303,11 @@ func execute(c *httpx.Ctx, params json.RawMessage) (json.RawMessage, error) {
 		}
 		failed = true
 		payload = text(fmt.Sprintf(msgCallFailed, api.status, api.message))
+		// Python logs the business failure as a warning; internal tokens
+		// never reach the log.
+		if logged, err := redact.RedactSecretsInText(ctx, api.message); err == nil {
+			logger.Warningf(logToolFailed, name, logged)
+		}
 	}
 	content, err := publicText(ctx, payload)
 	if err != nil {
@@ -326,7 +332,8 @@ func publicText(ctx context.Context, payload json.RawMessage) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	encoded, err := json.Marshal(public)
+	// Python json.dumps(ensure_ascii=False): no HTML escaping of & < >.
+	encoded, err := jsonresp.EncodeUTF8(public)
 	if err != nil {
 		return "", err
 	}
