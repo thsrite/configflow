@@ -67,10 +67,14 @@ func TestFilterCorpus(t *testing.T) {
 
 func TestHostsCorpus(t *testing.T) {
 	rows := loadCorpus(t, "hosts.jsonl.gz")
+	native := nativeHostsExpectations(t)
 	oracle := nativeReaderCases(t)
 	kinds := map[string]int{}
 	for i, row := range rows {
 		kinds[row.Fn]++
+		if expected := native.GetObject(fmt.Sprintf("hosts/%d", i)); expected != nil {
+			row.Out = expected.Value("output")
+		}
 		switch row.Fn {
 		case "extract_subscription_hosts":
 			if expected, changed := changedNativeCase(t, oracle, fmt.Sprintf("subs/hosts/%d", i)); changed {

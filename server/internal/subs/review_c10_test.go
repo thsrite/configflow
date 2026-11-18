@@ -35,6 +35,7 @@ func TestReviewC10References(t *testing.T) {
 	rows := loadCorpus(t, "review_c10.jsonl.gz")
 	oracle := nativeReaderCases(t)
 	native := nativeParserExpectations(t)
+	hostsNative := nativeHostsExpectations(t)
 	compared, unrepresentable, known, acceptedUTF8 := 0, 0, 0, 0
 	for i, row := range rows {
 		if expected, changed := changedNativeCase(t, oracle, fmt.Sprintf("subs/review_c10/%d", i)); changed {
@@ -43,6 +44,9 @@ func TestReviewC10References(t *testing.T) {
 			} else {
 				row.Out = expected.Value("value")
 			}
+		}
+		if expected := hostsNative.GetObject(fmt.Sprintf("review_c10/%d", i)); expected != nil {
+			row.Out = expected.Value("output")
 		}
 		if row.Fn == "parse_uri_list" {
 			if expected := native.GetObject(fmt.Sprintf("review_c10/%d", i)); expected != nil {

@@ -1,0 +1,638 @@
+{
+  "sources": {
+    "hosts": "38bda98541b86428892fc980cd90b2f7ef519d618d239e4f72071712402d708f",
+    "review_c10": "30665c4387a143bbf2ec4ab8a06ecddc69df4fab9f7f56c462e70d6a7bc47e85"
+  },
+  "cases": {
+    "hosts/11": {
+      "input_sha256": "e2f537ee23221c339941cf6482da5bb662821677fac2203c3bd7f0f69c0f2877",
+      "reason": "native YAML line boundaries retain non-YAML control characters for rejection",
+      "output": {
+        "entries": {},
+        "total": 0,
+        "skipped_count": 1,
+        "skipped": [
+          {
+            "domain": "",
+            "reason": "parse_error"
+          }
+        ]
+      }
+    },
+    "hosts/60": {
+      "input_sha256": "4899bcfaead04cb51f5f87593526680d5dc56435d2e8c19b8c51751632ec3be1",
+      "reason": "native YAML line boundaries retain non-YAML control characters for rejection",
+      "output": {
+        "entries": {},
+        "total": 0,
+        "skipped_count": 1,
+        "skipped": [
+          {
+            "domain": "",
+            "reason": "parse_error"
+          }
+        ]
+      }
+    },
+    "hosts/81": {
+      "input_sha256": "7de23c3d2e4e612c1f583aa7f8c8d9a3f8967542091b01ee1b1d46ff83b2775a",
+      "reason": "native YAML line boundaries retain non-YAML control characters for rejection",
+      "output": {
+        "entries": {},
+        "total": 0,
+        "skipped_count": 1,
+        "skipped": [
+          {
+            "domain": "",
+            "reason": "parse_error"
+          }
+        ]
+      }
+    },
+    "hosts/113": {
+      "input_sha256": "e8466cf7090de24907bf54ede5f9c9dedf9db3cd47969dd112505e565e0b3300",
+      "reason": "native YAML line boundaries retain non-YAML control characters for rejection",
+      "output": {
+        "entries": {},
+        "total": 0,
+        "skipped_count": 1,
+        "skipped": [
+          {
+            "domain": "",
+            "reason": "parse_error"
+          }
+        ]
+      }
+    },
+    "hosts/149": {
+      "input_sha256": "5127fdfbbe03ece892e71798d70666dabeb3b668309c47daedf97eac263a13ca",
+      "reason": "native YAML line boundaries retain non-YAML control characters for rejection",
+      "output": {
+        "entries": {},
+        "total": 0,
+        "skipped_count": 1,
+        "skipped": [
+          {
+            "domain": "",
+            "reason": "parse_error"
+          }
+        ]
+      }
+    },
+    "hosts/154": {
+      "input_sha256": "10584fa46e17df2b417e7b540eb41488ec5151f1d59e00faa0f3d5ac14cd17e0",
+      "reason": "native YAML line boundaries retain non-YAML control characters for rejection",
+      "output": {
+        "entries": {},
+        "total": 0,
+        "skipped_count": 1,
+        "skipped": [
+          {
+            "domain": "",
+            "reason": "parse_error"
+          }
+        ]
+      }
+    },
+    "hosts/168": {
+      "input_sha256": "9e372eb5765b383570b4d8a5a43ed84792e730ff6cd8791da7d315010901cb8f",
+      "reason": "native YAML line boundaries retain non-YAML control characters for rejection",
+      "output": {
+        "entries": {},
+        "total": 0,
+        "skipped_count": 1,
+        "skipped": [
+          {
+            "domain": "",
+            "reason": "parse_error"
+          }
+        ]
+      }
+    },
+    "hosts/213": {
+      "input_sha256": "408fdf5690f5dec5de7b68debc62e7e15c2589f81ebff5c240784ca3f2ff575b",
+      "reason": "native YAML line boundaries retain non-YAML control characters for rejection",
+      "output": {
+        "entries": {},
+        "total": 0,
+        "skipped_count": 1,
+        "skipped": [
+          {
+            "domain": "",
+            "reason": "parse_error"
+          }
+        ]
+      }
+    },
+    "hosts/233": {
+      "input_sha256": "566e90036ff38bf7392aa4815d563b012e58269e3ff91461a635634a56daaf13",
+      "reason": "native YAML line boundaries retain non-YAML control characters for rejection",
+      "output": {
+        "entries": {},
+        "total": 0,
+        "skipped_count": 1,
+        "skipped": [
+          {
+            "domain": "",
+            "reason": "parse_error"
+          }
+        ]
+      }
+    },
+    "hosts/247": {
+      "input_sha256": "67f94c0946be79322966cde4312a9c13e07fbcdf2e25e5d44dec1bd2dabaf9b9",
+      "reason": "native YAML line boundaries retain non-YAML control characters for rejection",
+      "output": {
+        "entries": {},
+        "total": 0,
+        "skipped_count": 1,
+        "skipped": [
+          {
+            "domain": "",
+            "reason": "parse_error"
+          }
+        ]
+      }
+    },
+    "hosts/256": {
+      "input_sha256": "cad5ab47610591f437a2bf062290c6565118f1751b36f4aede186e2201070450",
+      "reason": "native YAML line boundaries retain non-YAML control characters for rejection",
+      "output": {
+        "entries": {},
+        "total": 0,
+        "skipped_count": 1,
+        "skipped": [
+          {
+            "domain": "",
+            "reason": "parse_error"
+          }
+        ]
+      }
+    },
+    "hosts/363": {
+      "input_sha256": "c51936264a5cdd7b85de2eddaf18d98650e8cff38be6c279a400bd89c425e4fb",
+      "reason": "native YAML line boundaries retain non-YAML control characters for rejection",
+      "output": {
+        "entries": {},
+        "total": 0,
+        "skipped_count": 1,
+        "skipped": [
+          {
+            "domain": "",
+            "reason": "parse_error"
+          }
+        ]
+      }
+    },
+    "hosts/387": {
+      "input_sha256": "0132c8394cbd8eadf5f39df7b5ee6ab51055879fea0535f65b322b242105ff47",
+      "reason": "native YAML line boundaries retain non-YAML control characters for rejection",
+      "output": {
+        "entries": {},
+        "total": 0,
+        "skipped_count": 1,
+        "skipped": [
+          {
+            "domain": "",
+            "reason": "parse_error"
+          }
+        ]
+      }
+    },
+    "hosts/443": {
+      "input_sha256": "ddf775e29c98bbce9cb91f585c7d1e2a2a91a9600dfce1d2af96d8b0357a488c",
+      "reason": "native YAML line boundaries retain non-YAML control characters for rejection",
+      "output": {
+        "entries": {},
+        "total": 0,
+        "skipped_count": 1,
+        "skipped": [
+          {
+            "domain": "",
+            "reason": "parse_error"
+          }
+        ]
+      }
+    },
+    "hosts/479": {
+      "input_sha256": "7dce27158ffbd81922703a983a919fa15290673f9e020cdcd446b9e432b048d4",
+      "reason": "native YAML line boundaries retain non-YAML control characters for rejection",
+      "output": {
+        "entries": {},
+        "total": 0,
+        "skipped_count": 1,
+        "skipped": [
+          {
+            "domain": "",
+            "reason": "parse_error"
+          }
+        ]
+      }
+    },
+    "hosts/507": {
+      "input_sha256": "ca79a1575d6293151dcbc2b789098cba316bed00eb1743d906da98a5efe02021",
+      "reason": "native YAML line boundaries retain non-YAML control characters for rejection",
+      "output": {
+        "entries": {},
+        "total": 0,
+        "skipped_count": 1,
+        "skipped": [
+          {
+            "domain": "",
+            "reason": "parse_error"
+          }
+        ]
+      }
+    },
+    "hosts/865": {
+      "input_sha256": "b8021927e9dfc974976e323b6eceb65ae59c16156610125d8e3b0a38377eb509",
+      "reason": "native YAML line boundaries retain non-YAML control characters for rejection",
+      "output": {
+        "entries": {},
+        "total": 0,
+        "skipped_count": 1,
+        "skipped": [
+          {
+            "domain": "",
+            "reason": "parse_error"
+          }
+        ]
+      }
+    },
+    "hosts/874": {
+      "input_sha256": "70cb9cb47e863b3171cb9e7506f91539bcdf68bd7f58cef3f5c96a41edb60c17",
+      "reason": "native YAML line boundaries retain non-YAML control characters for rejection",
+      "output": {
+        "entries": {},
+        "total": 0,
+        "skipped_count": 1,
+        "skipped": [
+          {
+            "domain": "",
+            "reason": "parse_error"
+          }
+        ]
+      }
+    },
+    "hosts/892": {
+      "input_sha256": "3ec33597319f097b9c7574b14827441b7f6a81db7deadde0dd2bd18c94ff86a8",
+      "reason": "native YAML line boundaries retain non-YAML control characters for rejection",
+      "output": {
+        "entries": {},
+        "total": 0,
+        "skipped_count": 1,
+        "skipped": [
+          {
+            "domain": "",
+            "reason": "parse_error"
+          }
+        ]
+      }
+    },
+    "hosts/910": {
+      "input_sha256": "e068bcc82fda896d224539cadc8347e134f536a4015801fb21b097df9f62d0e5",
+      "reason": "D2 native canonical JSON",
+      "output": "a4e330063429d83a3a72857ca7544ff207a135fd5380126da1f4d5c9d144e865"
+    },
+    "hosts/914": {
+      "input_sha256": "9c4b8ac0663967ac5a5237fcb2ea8d08fbd3ca760ddd011c06fba45e9c01a31d",
+      "reason": "D2 native canonical JSON",
+      "output": "1249fd5aeb56d067fd0f5b1da419d2eca09b675382efcce2a4c09581509626a4"
+    },
+    "hosts/920": {
+      "input_sha256": "1f27975c86b976000c530e5386cddc4ad2673e9ca675996fca8686c1a832e0b6",
+      "reason": "D2 native canonical JSON",
+      "output": "0f74bee0b8d28cc7a423732e40651cae4cd1fd5ca594c54d3e265583c57d8fe5"
+    },
+    "hosts/922": {
+      "input_sha256": "e4288b665222ffb20af8b6a1806cf9fb05a9fa83879ae53ed60e29025e71bfad",
+      "reason": "D2 native canonical JSON",
+      "output": "9984bb60e3c583a3443480842613568790b99c1ddc7ec077465facad72e1e777"
+    },
+    "hosts/928": {
+      "input_sha256": "38333ed82e37c8f25c1e98f266315cca6fa7e4ecc5d7ea78ffd33a189ee29728",
+      "reason": "D2 native canonical JSON",
+      "output": "7786b2b95882dc50e030ea0a8bbda4bb90d1cd9c2a9fbae27ca47e810505eae8"
+    },
+    "hosts/930": {
+      "input_sha256": "52227f388a4efd10c5e98b24c75cf64d49c429279adf25412cbb96961957bf72",
+      "reason": "D2 native canonical JSON",
+      "output": "f530c53de965a8d42b3a5cbc606204f4f76879405058892414ba5ce4850fc512"
+    },
+    "hosts/944": {
+      "input_sha256": "6bd307e5a6915daace1f81a08427a0d6c4c2111c2242ea3ab19766a902a216cb",
+      "reason": "D2 native canonical JSON",
+      "output": "633fc245540de4a25badd35b56add786e76e32832f19b7afab330567ab79ba8b"
+    },
+    "hosts/946": {
+      "input_sha256": "0964675d3bdb57384010b10eb7de1484e6acd6978a54cad7a296a438703a4912",
+      "reason": "D2 native canonical JSON",
+      "output": "67c37d03c790a16507598e1dd2e5d39a372e3f7c8b5efce0ab8eaf6c1b21d093"
+    },
+    "hosts/958": {
+      "input_sha256": "0f19bc3cbb6dd123995a0d8aae83b417fa2ca279d3af7c242b486ba0c864e97e",
+      "reason": "D2 native canonical JSON",
+      "output": "81c2bff06fa7b64cdb2fa6bc2a66ece4d6afc81aa218c505ad6b812753b66049"
+    },
+    "hosts/970": {
+      "input_sha256": "7c9356e09797d2c5516241f88361be42e81fde16ff55c7ac53174d6e4a5a8191",
+      "reason": "D2 native canonical JSON",
+      "output": "6019ce73f68aa2148842caf41d126258d6e568555795f2278b1c7dfa313811d7"
+    },
+    "hosts/980": {
+      "input_sha256": "9fcc3b90a801fb84bf092240a41cc6c2666577c9e93a916afe95424062593408",
+      "reason": "D2 native canonical JSON",
+      "output": "4c9a9471cdb7d4137c066cc3ad8c6d08f33e80bb7a7464ba4cbaa7e9cda37b69"
+    },
+    "hosts/982": {
+      "input_sha256": "911d7af0bdae1c343023ab97918f441e80d211fa3ce53cfade5e3d363006d9d7",
+      "reason": "D2 native canonical JSON",
+      "output": "80a94574f5331ef906447d0d5cab5025e83b0012b2935ca284f4ec896ccb6af8"
+    },
+    "hosts/992": {
+      "input_sha256": "6d3afb972b530b126a51b0d7a05c546ccb03590fd673cd8489ad9cecd22d0d6d",
+      "reason": "D2 native canonical JSON",
+      "output": "c2d2d7e658d249acfe406ac28c7e026775b3c85c0682c5ac04ee39790e163871"
+    },
+    "hosts/996": {
+      "input_sha256": "f9163675a488f45029337883a7ec9ad15b5843208aa3f969841a785c9b8403f5",
+      "reason": "D2 native canonical JSON",
+      "output": "19d72dd6428f14aac45725b97a4ca258fe656579282a1c8da81ad70449154a22"
+    },
+    "hosts/1002": {
+      "input_sha256": "61005e8a77a62954d26b565e660a16127f3ad65ecc2e02e19898f6a5617881a2",
+      "reason": "D2 native canonical JSON",
+      "output": "7e3da167df69d0368a0748a52791e404e3cbff2b1bb6dd97431c2ccd55f4e321"
+    },
+    "hosts/1008": {
+      "input_sha256": "b94c6c0f5424250487e5b1a6485cd76270f5778ac25cede973d24597174b39d0",
+      "reason": "D2 native canonical JSON",
+      "output": "7940fcbf6f78c24f7b8ed703715c20324d63ae0b31a07b5a98a9347a53f50cf3"
+    },
+    "hosts/1014": {
+      "input_sha256": "fdbb387423126307d89f655aa9bf65924de45bd393cabcac46de584edc614a10",
+      "reason": "D2 native canonical JSON",
+      "output": "702a2c76158e27828b2a14ae7358663711b378401bb5710fd79e691d30d65adb"
+    },
+    "hosts/1024": {
+      "input_sha256": "3db4dc239e44b6e675ddd6c67fe79c2b348eb7c7eabb5df987cd12a38ab8edc3",
+      "reason": "D2 native canonical JSON",
+      "output": "e428ca6418a06a2ba59a7c4e16027138eb9a7f526e2ca9ad20988392a00c8c1a"
+    },
+    "hosts/1036": {
+      "input_sha256": "517504a93a5a9afa40b9d8484f9bef72e0a81d0926dfd0617cc73a72eb7db14a",
+      "reason": "D2 native canonical JSON",
+      "output": "025f56f176b804cda73409547f0c5afd3b7c97cee3bbdcd23dac9eb0e7341280"
+    },
+    "hosts/1054": {
+      "input_sha256": "52cf02619097be043baa7415ed2d04d41204d2e8c1b114bf35220fbef46e9516",
+      "reason": "D2 native canonical JSON",
+      "output": "dfea8f8abcdf834be80aa493adc346697c5b1b66ada882b93b78fc8644ef1f9c"
+    },
+    "hosts/1060": {
+      "input_sha256": "0964675d3bdb57384010b10eb7de1484e6acd6978a54cad7a296a438703a4912",
+      "reason": "D2 native canonical JSON",
+      "output": "67c37d03c790a16507598e1dd2e5d39a372e3f7c8b5efce0ab8eaf6c1b21d093"
+    },
+    "hosts/1074": {
+      "input_sha256": "3dcdb4fdca0318ee60686dc30ee0804090d5c5b62c6e1f4109eefa90c2612d2a",
+      "reason": "D2 native canonical JSON",
+      "output": "d1c97345d15beb290ea0c5b9fbbed31425356bab95302c6d5455d6d5372e1f4b"
+    },
+    "hosts/1086": {
+      "input_sha256": "205130e5a6ca7ff6ec42f29668f49f53b2d9fc41ebbae6b93480d1adc49298af",
+      "reason": "D2 native canonical JSON",
+      "output": "67c37d03c790a16507598e1dd2e5d39a372e3f7c8b5efce0ab8eaf6c1b21d093"
+    },
+    "hosts/1092": {
+      "input_sha256": "4133e50d3f79c9c0561930a92d15a3f006bfc43d4ba39915cc180bb5d46cdf3a",
+      "reason": "D2 native canonical JSON",
+      "output": "b211c090c74451d49e3e5cf0c13e76abd38381f4e3bc8c4876e77ab92a1ded0e"
+    },
+    "hosts/1094": {
+      "input_sha256": "206ccf82747a0f1ad0914e4922fdf55276b3870e788183a1fd94db0cf33087e0",
+      "reason": "D2 native canonical JSON",
+      "output": "d1cc44cd3267e82b300ac6e553a9c55023f7c828bc50f69bd08136b557663c9b"
+    },
+    "hosts/1100": {
+      "input_sha256": "169e4da527950c9b4c6ff5d52faa8fd6a0dab43b75a939fa3eef9405ee631d6c",
+      "reason": "D2 native canonical JSON",
+      "output": "94a9f0cba4ad09aa4728a7615a2d1723130547baa58ec66fb6bb0c5494daac71"
+    },
+    "hosts/1134": {
+      "input_sha256": "8f1e6130612a0f6754ae0b474cf07a1d50ed5ca408e8f6f7ae67d562f351c15a",
+      "reason": "D2 native canonical JSON",
+      "output": "eb5bb65219770d281643a4c13e0a0dfd059e79ac3cdc49b3eedb7fb04c4ab45e"
+    },
+    "hosts/1148": {
+      "input_sha256": "1bd2bfb6f6e6621212c57dc50b1f56dfc0e4b12d1a9d9389c4cbaa0fa32968eb",
+      "reason": "D2 native canonical JSON",
+      "output": "a77c60411dde3dcb5ee7cfa1b1e55e3505f157ffe2d28f9e2906d89f15651c94"
+    },
+    "hosts/1160": {
+      "input_sha256": "7f02869076f2b1199f49ada05917e4b5a1b51644b072358504cc9ebb9ed7dc58",
+      "reason": "D2 native canonical JSON",
+      "output": "37c8e30a41b3c212d6dc414e8e6f2f063154bf20ceeb1833648ded2bc4513db2"
+    },
+    "hosts/1170": {
+      "input_sha256": "52227f388a4efd10c5e98b24c75cf64d49c429279adf25412cbb96961957bf72",
+      "reason": "D2 native canonical JSON",
+      "output": "f530c53de965a8d42b3a5cbc606204f4f76879405058892414ba5ce4850fc512"
+    },
+    "hosts/1186": {
+      "input_sha256": "8d4c9363cad6224181caa0cf49d7cfb9ecbf2c9f5edabd7418fa52b93dbc136c",
+      "reason": "D2 native canonical JSON",
+      "output": "1230a0be3e87118d3d8a20f94634066f75550e824763a9ad6ceea498794c30ba"
+    },
+    "hosts/1198": {
+      "input_sha256": "4133e50d3f79c9c0561930a92d15a3f006bfc43d4ba39915cc180bb5d46cdf3a",
+      "reason": "D2 native canonical JSON",
+      "output": "b211c090c74451d49e3e5cf0c13e76abd38381f4e3bc8c4876e77ab92a1ded0e"
+    },
+    "hosts/1208": {
+      "input_sha256": "7c9356e09797d2c5516241f88361be42e81fde16ff55c7ac53174d6e4a5a8191",
+      "reason": "D2 native canonical JSON",
+      "output": "6019ce73f68aa2148842caf41d126258d6e568555795f2278b1c7dfa313811d7"
+    },
+    "hosts/1220": {
+      "input_sha256": "aad338d6fb9bd3df737bea22143be12c34dc4c51cf983fc095cd476c9d5eccb0",
+      "reason": "D2 native canonical JSON",
+      "output": "28aed978190e05d80761040526507eab7c13dfd2abb034acf6a09ad9f191bdd1"
+    },
+    "hosts/1222": {
+      "input_sha256": "6bd307e5a6915daace1f81a08427a0d6c4c2111c2242ea3ab19766a902a216cb",
+      "reason": "D2 native canonical JSON",
+      "output": "633fc245540de4a25badd35b56add786e76e32832f19b7afab330567ab79ba8b"
+    },
+    "hosts/1226": {
+      "input_sha256": "517504a93a5a9afa40b9d8484f9bef72e0a81d0926dfd0617cc73a72eb7db14a",
+      "reason": "D2 native canonical JSON",
+      "output": "025f56f176b804cda73409547f0c5afd3b7c97cee3bbdcd23dac9eb0e7341280"
+    },
+    "hosts/1232": {
+      "input_sha256": "25333f31770ee3d260b645d2b6e4c753da43fadaa38224443faf4402b0307481",
+      "reason": "D2 native canonical JSON",
+      "output": "fe557b30a338825595484da02bd49903389c60fdf86e9b7a32a7e47684ec84b9"
+    },
+    "hosts/1242": {
+      "input_sha256": "4777c6b19313988fbdae4c6e125040b096d509063a859a47ca33f1c15fe6924f",
+      "reason": "D2 native canonical JSON",
+      "output": "3453917033e5d2eb50636a38f66b74c3774640b5a983d0be6ab633f0a3e59830"
+    },
+    "hosts/1252": {
+      "input_sha256": "b4c36083312308085c6298f46c82f5332091421153c57e8d6dab2aeebab25dbb",
+      "reason": "D2 native canonical JSON",
+      "output": "99dbeaa2692aa76d4209e7a59bff550c2d0cff2214fa9c1100c9f3f57edcd8dc"
+    },
+    "hosts/1260": {
+      "input_sha256": "c049a33e3ee4059424e994ad651fa3f236567e515ffab0387bddef8d27e18f57",
+      "reason": "D2 native canonical JSON",
+      "output": "f530c53de965a8d42b3a5cbc606204f4f76879405058892414ba5ce4850fc512"
+    },
+    "hosts/1268": {
+      "input_sha256": "df968e663472ff3ae6b486d94477ed80f5d652be6167a09709d498c7c029807e",
+      "reason": "D2 native canonical JSON",
+      "output": "b30cba6a11faa00c76d5292684163a69d7daedd01054034682de290382b40ba4"
+    },
+    "hosts/1274": {
+      "input_sha256": "1dce3ae58f210e5fb7e53be88abe077c09948436e1bcfdb9f36ff5505c8cacbe",
+      "reason": "D2 native canonical JSON",
+      "output": "b86264d72612dd8c41ec1ff109213951b67d0ceb3b8ccd4ff9690cfbb1288ab5"
+    },
+    "hosts/1286": {
+      "input_sha256": "2fe8ff87855da64d8738c3d0519558f00a31d9d91c46f806d8b3073f832b9755",
+      "reason": "D2 native canonical JSON",
+      "output": "7e3da167df69d0368a0748a52791e404e3cbff2b1bb6dd97431c2ccd55f4e321"
+    },
+    "hosts/1314": {
+      "input_sha256": "aa5a204f661ca9681404afe103829d91484bf6edefd52b1b39ff06618a22cd38",
+      "reason": "D2 native canonical JSON",
+      "output": "b64f6640f6f9e2e11877c92fb72fbb86b9992af074b8b143f16e7bd538436885"
+    },
+    "hosts/1332": {
+      "input_sha256": "519bfc0d44d7b017436bdb0a988872e33232b3c2ce1e2346b3ad15e8442ccad1",
+      "reason": "D2 native canonical JSON",
+      "output": "512e7491132fa7c86c9a04c5e8e14997a71324b71d26c76e706745f980487a46"
+    },
+    "hosts/1338": {
+      "input_sha256": "1cf419fb4f43b464aa754d67c8b532199ccc6a992c27a9468ef5520ee7e2fb58",
+      "reason": "D2 native canonical JSON",
+      "output": "eaffb42802dc570bef17d9eb7818ca1d489980c23cdcac18c7f61ac895d5a11d"
+    },
+    "hosts/1340": {
+      "input_sha256": "25333f31770ee3d260b645d2b6e4c753da43fadaa38224443faf4402b0307481",
+      "reason": "D2 native canonical JSON",
+      "output": "fe557b30a338825595484da02bd49903389c60fdf86e9b7a32a7e47684ec84b9"
+    },
+    "hosts/1342": {
+      "input_sha256": "0964675d3bdb57384010b10eb7de1484e6acd6978a54cad7a296a438703a4912",
+      "reason": "D2 native canonical JSON",
+      "output": "67c37d03c790a16507598e1dd2e5d39a372e3f7c8b5efce0ab8eaf6c1b21d093"
+    },
+    "hosts/1346": {
+      "input_sha256": "4777c6b19313988fbdae4c6e125040b096d509063a859a47ca33f1c15fe6924f",
+      "reason": "D2 native canonical JSON",
+      "output": "3453917033e5d2eb50636a38f66b74c3774640b5a983d0be6ab633f0a3e59830"
+    },
+    "hosts/1364": {
+      "input_sha256": "91a49cdd27e328dc8bcb353bc95df86677b8f6b4d873a0dfc8d3b3c843bbd508",
+      "reason": "D2 native canonical JSON",
+      "output": "5907224e2a4fc9d1dfdaab16459014e9f51d41f8dcc273d16682d6128f72d8b8"
+    },
+    "hosts/1380": {
+      "input_sha256": "918ac17e55be608e10fd6a3efe7e1f7256e834a6a9014509947847990a47ada5",
+      "reason": "D2 native canonical JSON",
+      "output": "a433139822fe46d943c56c98ade13e1fb5cec4b7d306ada395fb87ea24fcd82f"
+    },
+    "hosts/1392": {
+      "input_sha256": "534f25c8ab9089bdab42effcc26cbf8e7134ae98022d042162966754ccb513f6",
+      "reason": "D2 native canonical JSON",
+      "output": "7cfeb3045bfed32b04c5d67e231029e385f02e6b5a289d102843a2987c287ad6"
+    },
+    "hosts/1394": {
+      "input_sha256": "8f1e6130612a0f6754ae0b474cf07a1d50ed5ca408e8f6f7ae67d562f351c15a",
+      "reason": "D2 native canonical JSON",
+      "output": "eb5bb65219770d281643a4c13e0a0dfd059e79ac3cdc49b3eedb7fb04c4ab45e"
+    },
+    "hosts/1408": {
+      "input_sha256": "aad338d6fb9bd3df737bea22143be12c34dc4c51cf983fc095cd476c9d5eccb0",
+      "reason": "D2 native canonical JSON",
+      "output": "28aed978190e05d80761040526507eab7c13dfd2abb034acf6a09ad9f191bdd1"
+    },
+    "hosts/1416": {
+      "input_sha256": "91a49cdd27e328dc8bcb353bc95df86677b8f6b4d873a0dfc8d3b3c843bbd508",
+      "reason": "D2 native canonical JSON",
+      "output": "5907224e2a4fc9d1dfdaab16459014e9f51d41f8dcc273d16682d6128f72d8b8"
+    },
+    "hosts/1420": {
+      "input_sha256": "f86367185475b4d63cb268a8b8d2238e6db5f91edba54e9404b41139e1c9adc3",
+      "reason": "D2 native canonical JSON",
+      "output": "d6cb20548579f37236c8b0e61ffe85da1d527f7cce1f13e261a573d0c3ef7983"
+    },
+    "hosts/1430": {
+      "input_sha256": "911d7af0bdae1c343023ab97918f441e80d211fa3ce53cfade5e3d363006d9d7",
+      "reason": "D2 native canonical JSON",
+      "output": "80a94574f5331ef906447d0d5cab5025e83b0012b2935ca284f4ec896ccb6af8"
+    },
+    "hosts/1432": {
+      "input_sha256": "9fcc3b90a801fb84bf092240a41cc6c2666577c9e93a916afe95424062593408",
+      "reason": "D2 native canonical JSON",
+      "output": "4c9a9471cdb7d4137c066cc3ad8c6d08f33e80bb7a7464ba4cbaa7e9cda37b69"
+    },
+    "hosts/1434": {
+      "input_sha256": "bc7e197a97f27e76859d3a176a442a1e283179a9980d2220d244c8f8f5bafc45",
+      "reason": "D2 native canonical JSON",
+      "output": "17a7ee9b9eafd4e79bdce255beb47d94307f2a8ed6b84d15b46040197fc292fe"
+    },
+    "hosts/1442": {
+      "input_sha256": "9fcc3b90a801fb84bf092240a41cc6c2666577c9e93a916afe95424062593408",
+      "reason": "D2 native canonical JSON",
+      "output": "4c9a9471cdb7d4137c066cc3ad8c6d08f33e80bb7a7464ba4cbaa7e9cda37b69"
+    },
+    "hosts/1444": {
+      "input_sha256": "7c9356e09797d2c5516241f88361be42e81fde16ff55c7ac53174d6e4a5a8191",
+      "reason": "D2 native canonical JSON",
+      "output": "6019ce73f68aa2148842caf41d126258d6e568555795f2278b1c7dfa313811d7"
+    },
+    "hosts/1448": {
+      "input_sha256": "1f27975c86b976000c530e5386cddc4ad2673e9ca675996fca8686c1a832e0b6",
+      "reason": "D2 native canonical JSON",
+      "output": "0f74bee0b8d28cc7a423732e40651cae4cd1fd5ca594c54d3e265583c57d8fe5"
+    },
+    "hosts/1462": {
+      "input_sha256": "bcae4e792dc38012c79c58ee212e955d6581344c74cd1672615cecd90b81bec1",
+      "reason": "D2 native canonical JSON",
+      "output": "9984bb60e3c583a3443480842613568790b99c1ddc7ec077465facad72e1e777"
+    },
+    "hosts/1472": {
+      "input_sha256": "b086f3ba1c1d511b77383bfb6052c593a3c0a7bb9d6abc6bcbf67f916c04af1f",
+      "reason": "D2 native canonical JSON",
+      "output": "fc9c13c0125d89e177f5b5cbb5517aadc51208a7789200e3aa725417a70961e4"
+    },
+    "hosts/1474": {
+      "input_sha256": "d8e349adb494bb7dd5a5a253528553864734e4e5bfbadfdb77eb99b703e62115",
+      "reason": "D2 native canonical JSON",
+      "output": "389a59fe38354f3f8cd4b6f8ef5728c09e8b74e80d1f5b4339cb8a69a4419398"
+    },
+    "hosts/1480": {
+      "input_sha256": "b94c6c0f5424250487e5b1a6485cd76270f5778ac25cede973d24597174b39d0",
+      "reason": "D2 native canonical JSON",
+      "output": "7940fcbf6f78c24f7b8ed703715c20324d63ae0b31a07b5a98a9347a53f50cf3"
+    },
+    "hosts/1486": {
+      "input_sha256": "ea1243f1c3073704954d3da64f26cb87cd123fd2ea61cfd9a7f41e624bf48a1a",
+      "reason": "D2 native canonical JSON",
+      "output": "9875e11ab6b5ef5b377d2934f59e0948110122c83c75029230a7a64132a3d47f"
+    },
+    "hosts/1490": {
+      "input_sha256": "52227f388a4efd10c5e98b24c75cf64d49c429279adf25412cbb96961957bf72",
+      "reason": "D2 native canonical JSON",
+      "output": "f530c53de965a8d42b3a5cbc606204f4f76879405058892414ba5ce4850fc512"
+    },
+    "hosts/1498": {
+      "input_sha256": "0793347278ac10fe3bad5482748c07a2ec2a1c15f59e8cd1b96c3b91bb3d1d30",
+      "reason": "D2 native canonical JSON",
+      "output": "5d7576447e56c9cf7871449da0ecd26aa5f5a6064c606e315aaf10c20b2a99d1"
+    }
+  }
+}

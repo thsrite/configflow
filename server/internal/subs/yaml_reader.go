@@ -47,10 +47,10 @@ func subscriptionYAMLValue(n *yamlx.Node) (any, error) {
 	return jsonx.Parse(data)
 }
 
-// ProjectHostsYAMLKeys validates the hosts transition without coercing scalar
+// ValidateHostsGraph validates the hosts transition without coercing scalar
 // keys, which the hosts business rules must inspect in source order. Values
-// must fit their own alias/JSON budget. N8-9 removes this transition helper.
-func ProjectHostsYAMLKeys(n *yamlx.Node) error {
+// must fit their own alias/JSON budget.
+func ValidateHostsGraph(n *yamlx.Node) error {
 	n = yamlx.Resolve(n)
 	if n == nil || n.Kind != yaml.MappingNode {
 		return nil
@@ -70,3 +70,6 @@ type hostYAMLKeyError struct{ line int }
 
 func (e *hostYAMLKeyError) Error() string { return fmt.Sprintf(msgHostsKeyShape, e.line) }
 func (e *hostYAMLKeyError) Unwrap() error { return yamlx.ErrPolicy }
+
+// ProjectHostsYAMLKeys is the old name for the shared graph validator.
+func ProjectHostsYAMLKeys(n *yamlx.Node) error { return ValidateHostsGraph(n) }

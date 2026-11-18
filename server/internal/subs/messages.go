@@ -30,3 +30,10 @@ const (
 	msgDNSUnchecked       = "；名单里的 geosite / rule-set 条目无法检查"
 	msgDNSUnknownVersion  = "需要 Mihomo %s 或更新：更旧的内核会忽略 proxy-server-nameserver-policy，这些节点照旧连接左侧域名自己的地址"
 )
+
+const (
+	msgSubscriptionCollaborator = "订阅协作者未接线：%s"
+	msgHostsConflict            = "订阅「%s」给了不同的值，按订阅列表顺序采用「%s」"
+	msgHostsInvalidEntry        = "条目无效"
+	msgHostsLog                 = "订阅 hosts：合并 %d 条（其中域名映射 %d 条），忽略 %d 条%s"
+)

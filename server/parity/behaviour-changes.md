@@ -1816,3 +1816,23 @@ world 保留旧文件。原 archive 不改；独立 Python 参考绑定完整 ar
   因此保留整个配置并给现有 filter_not_list 中文提示，不再覆盖这些用户错误值。
 - DNS 写入先完成计划与验证，再克隆拥有的 DNS 子树；不通过共享 alias 改动用户其他字段。
   hosts 索引每次生成构建一次，null 的末尾 host 值维持原“目标域名尚未解析”语义。
+
+### N8-9 subs — typed hosts 元数据、合并与 D2（2026-11-19）
+
+- ExtractHosts 直接读 YAML 节点并生成 HostsData，保留 entries/total/skipped_count/skipped
+  四个输出字段，包括显式0、空映射/空列表、空 domain。只提取顶层 hosts，不被订阅其他坏段影响。
+  合法 YAML 的 CR/LF/NEL/U+2028/U+2029 行边界保持；CPython splitlines 特有的 VT/FF/
+  U+001C/U+001D/U+001E 不再把控制字符悄悄删成新行，交给原生 YAML 拒绝。冻结语料中
+  19条这种已有输入由真实 Python业务加原生区块选择独立生成完整 parse_error 期待；正常字段/
+  值/顺序/文件和副作用不放宽，原 archive/N7资料/比较函数不改。
+- 按 design/n7-n8.md §2.7 的 D2，现在启用原生 HostDigest：共享 jsonresp.Canonical 编码，
+  标准 UTF-8/紧凑 JSON，而非 Python json.dumps 的 spacing/ASCII。69条既有 digest 输入逐项
+  固定原生 SHA；HTTP共享入口的单条 hosts identity期待同步更新，并保留历史hash注释。该值
+  是订阅 hosts 内容身份，切换后允许报告一次变化；不是设备生成文档或命令的字节签名。
+- SourceMetadata/SubscriptionCache 是 subs 的只读消费 DTO，持久化 owner 仍为 substore.Cache。
+  一批缓存节点逐个进入共享 model.Node codec，坏的非对象 sibling 保持跳过，不把整批有效节点
+  丢掉；没有重写/清理缓存文件。HostIndex 保留 absent/null/错型 entries 的“无可用索引”区别，
+  不制造可用的空集合。URL一致性、共享 String/Int/bool规则、未知字段原始存储均保持。
+- MergeHosts 直接消费 model.Config、typed source index 和开放 YAML 图；每个订阅只取一次索引，
+  不在节点/订阅循环重解整个配置。只克隆并替换拥有的 hosts 容器，不修改其他 alias。缺失
+  必需 owner 明确报 CollaborationError，而非把没检查的数据当成不需要合并。

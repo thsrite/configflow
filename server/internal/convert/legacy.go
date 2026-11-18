@@ -1078,63 +1078,43 @@ func MihomoEnvironmentFromLegacy(old MihomoEnv) MihomoEnvironment {
 		return adaptDocument(document, func(main *jsonx.Object) error { return subsError(subs.LowerChainProviders(logical, main)) })
 	}
 	env.MergeHosts = func(ctx context.Context, document *yamlx.Node, config *model.Config, userKeys, mosdnsKeys []string, inline []InlineNode, load CacheReader) (*HostsResult, error) {
-		main, err := legacyProxy(document)
-		if err != nil {
-			return nil, err
-		}
-		logical, err := legacyDialerView(config)
-		if err != nil {
-			return nil, err
-		}
-		values := make([]subs.InlineProxy, 0, len(inline))
+		values := make([]subs.HostInline, 0, len(inline))
 		for _, item := range inline {
-			node, err := decodeLegacy[*jsonx.Object](item.Node)
-			if err != nil {
-				return nil, err
-			}
-			proxy, err := legacyProxy(item.Proxy)
-			if err != nil {
-				return nil, err
-			}
-			values = append(values, subs.InlineProxy{Node: node, Proxy: proxy})
+			values = append(values, subs.HostInline{Node: item.Node, Proxy: item.Proxy})
 		}
-		merged := jsonx.NewObject()
-		var failure error
-		report := subs.MergeSubscriptionHosts(main, logical, userKeys, mosdnsKeys, values, merged, func(sub *jsonx.Object) *subs.HostsIndex {
+		report, merged, err := subs.MergeHosts(document, config, userKeys, mosdnsKeys, values, func(sub model.Subscription) (*subs.HostIndex, error) {
 			if load == nil {
-				failure = &HookMissingError{Hook: "load_subscription_cache", Provider: "convert/mihomoenv"}
-				return nil
+				return nil, &HookMissingError{Hook: "load_subscription_cache", Provider: "convert/mihomoenv"}
 			}
-			data, err := load(ctx, sub.GetString("id"))
+			data, err := load(ctx, sub.ID)
 			if err != nil {
-				failure = err
-				return nil
+				return nil, err
 			}
-			cache, err := legacyCache(data)
+			if len(data) == 0 || string(data) == "null" {
+				return nil, nil
+			}
+			var cache subs.SubscriptionCache
+			if err := json.Unmarshal(data, &cache); err != nil {
+				return nil, err
+			}
+			index, err := subs.NewHostIndex(&cache)
 			if err != nil {
-				failure = err
-				return nil
+				return nil, err
 			}
-			if cache == nil {
-				return nil
-			}
-			return subs.NewHostsIndex(cache).ForURL(sub)
+			return index.ForSubscription(sub), nil
 		})
-		if failure != nil {
-			return nil, failure
-		}
-		if err = replaceLegacyDocument(document, main); err != nil {
-			return nil, err
-		}
-		reportNode, err := yamlbridge.Encode(report)
 		if err != nil {
 			return nil, err
 		}
-		mergedNode, err := yamlbridge.Encode(merged)
+		data, err := jsonresp.Encode(report)
 		if err != nil {
 			return nil, err
 		}
-		return &HostsResult{Report: reportNode, Merged: mergedNode}, nil
+		graph, err := yamlx.FromJSON(data)
+		if err != nil {
+			return nil, err
+		}
+		return &HostsResult{Report: graph, Merged: merged}, nil
 	}
 	env.NodeDNS = func(document, merged *yamlx.Node, version string) (*yamlx.Node, error) {
 		report, err := subs.ApplyDNS(document, merged, version)
@@ -1147,13 +1127,16 @@ func MihomoEnvironmentFromLegacy(old MihomoEnv) MihomoEnvironment {
 		}
 		return yamlx.FromJSON(data)
 	}
-	env.LogHosts = func(profileID string, report *yamlx.Node) error {
-		wire, err := legacyProxy(report)
+	env.LogHosts = func(profileID string, document *yamlx.Node) error {
+		data, err := yamlx.ToJSON(document)
 		if err != nil {
 			return err
 		}
-		subs.LogReport(profileID, wire)
-		return nil
+		var report subs.HostReport
+		if err := json.Unmarshal(data, &report); err != nil {
+			return err
+		}
+		return subs.LogHostReport(profileID, &report)
 	}
 	env.DialerGroups = func(ctx context.Context, document *yamlx.Node, config *model.Config, deps DialerCollaborators) (*yamlx.Node, error) {
 		main, err := legacyProxy(document)

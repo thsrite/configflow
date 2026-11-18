@@ -189,3 +189,34 @@ owner 暂时仍调用的原有 helper，后续必须一起删除，不能据此�
   308/902/6340 allocs/op。输入增8倍，分配近线性增长；64→256 的分配回归上限为6倍，
   不允许重新出现每个映射重建整个 hosts 索引的平方增长。完整生成管线基准仍待后续阶段。
 - 剩余：hosts/dialers/chains/compat 核心及私有 pyconv 清除、完整管线基准和最终跨包/HTTP/fuzz。
+
+## hosts typed 阶段
+
+- ExtractHosts / HostDigest / CompareHosts / SourceMetadata / SubscriptionCache / HostIndex /
+  MergeHosts / HostReport / LogHostReport 已成为唯一原生业务入口。原旧入口在 legacy.go 转码，
+  不再有 ExtractSubscriptionHosts/HostsDigest/DescribeChange 的旧算法。hosts.go 核心不引用
+  jsonx/any/私有数字解码；原生合并不序列化配置，不通过节点循环调用旧 Config adapter。
+- 只读 cache DTO 对坏 node sibling 单独跳过，保留有效兄弟；entries 缺失/null/错型不伪造
+  空索引。加入这些真实消费回归、共享 alias 不外溢、缺 owner 失败不改图、regex全排除仍有
+  正确 ignored preview 的回归。三种持久化拥有者的未知字段由原 store/model 继续保留。
+- 生成的元数据先用普通 DTO 写齐必需0字段，再进入 model；不把 R3 的 omitted zero 当作
+  对外协议。正常四字段、空 domain、条目顺序及原 cache 侧效果保持。
+- 88条独立边界：19个 CPython 私有 splitlines 输入由真实Python业务+原生区块选择生成完整
+  期待，69个 D2 digest 用标准紧凑UTF-8 canonical JSON；所有 source/row SHA 验证。冻结
+  archive、N7原生资料和比较函数不改。共享 httpx 的一条身份断言明确更新，旧hash保留注释。
+- 主测试服务器 GOMAXPROCS=4、-p4：
+  `go test -race -p 4 -count=1 -timeout 5m ./internal/subs ./internal/substore ./internal/httpx -run
+  "TestN89Host|TestN89TypedHost|TestHostsCorpus|TestReviewC10References|TestExtract|TestHostsDigest|TestMerges|TestN8Persisted|TestHostsChange"`
+  → subs21.738s / substore1.598s / httpx1.041s；随后四包 subs/substore/convert/httpx vet通过。
+- BenchmarkN89HostGeneration（配置另带1MiB无关数据），32/256/1024节点：
+  66304/526016/1957720 B/op，348/2188/8399 allocs/op；分配随节点量近线性。
+  TestN89HostGenerationDoesNotDecodeUnrelatedConfig 测试64节点下0与1MiB无关配置的实际B/op，
+  增量不得超过32KiB，每次生成 callback必须恰好1次。均通过；这是 hosts 管线，完整Mihomo
+  管线在代理链/dialer迁移后再测，不提前声称整体完成。
+- convert 只换 owned MergeHosts/LogHosts callbacks 为 typed，生成器代码未动。最终将统一从
+  legacy.go 移出这些已原生的 collaborator 接线。legacy_pending.go 的 listField/objectsByID
+  仍是尚未迁移的 dialers/chains/compat 所用临时旧逻辑，必须在下一阶段删除。
+- 接入 native hosts/DNS 后，主服务器非race Mihomo原始语料+原输入不变门：
+  `go test -p 4 -count=1 -timeout 8m ./internal/convert -run
+  "^(TestMihomoCorpus|TestNativeMihomoOriginalInputsUnchanged)$"`
+  → `ok configflow/internal/convert 32.770s`。2353正常生成仍走原exact-count字节门。

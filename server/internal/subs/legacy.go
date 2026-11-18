@@ -248,3 +248,191 @@ func OutdatedAgents(agents []*jsonx.Object, profileID, defaultID string, load St
 	}
 	return out
 }
+
+func domainOf(value any) string  { text, _ := value.(string); return hostDomain(text) }
+func addressOf(value any) string { text, _ := value.(string); return usableAddress(text) }
+
+// ExtractSubscriptionHosts adapts typed metadata for the unported refresh owner.
+func ExtractSubscriptionHosts(text string) *jsonx.Object {
+	record := ExtractHosts(text)
+	if record == nil {
+		return nil
+	}
+	out, _ := encodeLegacy(record)
+	return out
+}
+
+// HostsDigest adapts an old metadata value to the native D2 identity.
+func HostsDigest(value *jsonx.Object) string {
+	record, err := decodeLegacy[*HostsData](value)
+	if err != nil {
+		return ""
+	}
+	digest, _ := HostDigest(record)
+	return digest
+}
+
+// DescribeChange adapts two old host metadata values.
+func DescribeChange(previous, current *jsonx.Object) *jsonx.Object {
+	old, err := decodeLegacy[*HostsData](previous)
+	if err != nil {
+		return nil
+	}
+	next, err := decodeLegacy[*HostsData](current)
+	if err != nil {
+		return nil
+	}
+	change, err := CompareHosts(old, next)
+	if err != nil {
+		return nil
+	}
+	out, _ := encodeLegacy(change)
+	return out
+}
+
+// legacyConfig decodes each owning section once at old public boundaries.
+func legacyConfig(value *jsonx.Object) (*model.Config, error) {
+	if value == nil {
+		value = jsonx.NewObject()
+	}
+	profileMembers := value.Clone()
+	for _, name := range []string{"profile_id", "system_config", "backup", "agents", "nodes", "subscriptions", "subscription_aggregations", "rule_library"} {
+		profileMembers.Delete(name)
+	}
+	profile, err := decodeLegacy[model.Profile](profileMembers)
+	if err != nil {
+		return nil, err
+	}
+	selected := jsonx.NewObject()
+	for _, name := range []string{"nodes", "subscriptions", "subscription_aggregations", "rule_library"} {
+		if member, present := value.Get(name); present {
+			selected.Set(name, member)
+		}
+	}
+	shared, err := decodeLegacy[model.Shared](selected)
+	if err != nil {
+		return nil, err
+	}
+	return &model.Config{Profile: &profile, ProfileID: value.GetString("profile_id"), Nodes: shared.Nodes, Subscriptions: shared.Subscriptions, Aggregations: shared.Aggregations, RuleLibrary: shared.RuleLibrary}, nil
+}
+
+// HostsIndex is the old cache-index API; its data is owned by the native index.
+type HostsIndex struct{ native *HostIndex }
+
+// NewHostsIndex adapts a single cache, without ever decoding configuration.
+func NewHostsIndex(value *jsonx.Object) *HostsIndex {
+	cache, err := decodeLegacy[*SubscriptionCache](value)
+	if err != nil {
+		return nil
+	}
+	index, err := NewHostIndex(cache)
+	if err != nil || index == nil {
+		return nil
+	}
+	return &HostsIndex{native: index}
+}
+
+// ForURL adapts the current source URL.
+func (h *HostsIndex) ForURL(value *jsonx.Object) *HostsIndex {
+	if h == nil {
+		return nil
+	}
+	sub, err := decodeLegacy[model.Subscription](value)
+	if err != nil {
+		return nil
+	}
+	index := h.native.ForSubscription(sub)
+	if index == nil {
+		return nil
+	}
+	return &HostsIndex{native: index}
+}
+
+// HostsIndexOf is the old refresh cache callback.
+type HostsIndexOf func(*jsonx.Object) *HostsIndex
+
+// InlineProxy is the old inline delivery pair.
+type InlineProxy struct {
+	Node  *jsonx.Object
+	Proxy *jsonx.Object
+}
+
+// MergeSubscriptionHosts adapts the full config once, then only transcodes collaborators.
+func MergeSubscriptionHosts(main, config *jsonx.Object, userKeys, mosdnsKeys []string, inline []InlineProxy, mergedOut *jsonx.Object, load HostsIndexOf) *jsonx.Object {
+	graph, err := legacyNode(main)
+	if err != nil {
+		return nil
+	}
+	native, err := legacyConfig(config)
+	if err != nil {
+		return nil
+	}
+	selected := make([]HostInline, 0, len(inline))
+	for _, item := range inline {
+		node, err := decodeLegacy[model.Node](item.Node)
+		if err != nil {
+			return nil
+		}
+		proxy, err := legacyNode(item.Proxy)
+		if err != nil {
+			return nil
+		}
+		selected = append(selected, HostInline{node, proxy})
+	}
+	var loader HostIndexLoader
+	if load != nil {
+		loader = func(sub model.Subscription) (*HostIndex, error) {
+			wire, err := encodeLegacy(sub)
+			if err != nil {
+				return nil, err
+			}
+			index := load(wire)
+			if index == nil {
+				return nil, nil
+			}
+			return index.native, nil
+		}
+	}
+	report, merged, err := MergeHosts(graph, native, userKeys, mosdnsKeys, selected, loader)
+	if err != nil {
+		return nil
+	}
+	if report.Merged > 0 {
+		data, err := yamlx.ToJSON(yamlx.Get(graph, "hosts"))
+		if err != nil {
+			return nil
+		}
+		value, err := jsonx.Parse(data)
+		if err != nil {
+			return nil
+		}
+		main.Set("hosts", value)
+	}
+	if mergedOut != nil {
+		data, err := yamlx.ToJSON(merged)
+		if err != nil {
+			return nil
+		}
+		value, err := jsonx.Parse(data)
+		if err != nil {
+			return nil
+		}
+		mergedOut.Update(value.(*jsonx.Object))
+	}
+	out, _ := encodeLegacy(report)
+	return out
+}
+
+// Matches adapts a legacy domain matcher scalar.
+func Matches(value any, domain string) bool {
+	text, ok := value.(string)
+	return ok && hostPatternMatches(hostPatternText(text), domain)
+}
+
+// LogReport adapts the old preview DTO.
+func LogReport(id string, value *jsonx.Object) {
+	report, err := decodeLegacy[*HostReport](value)
+	if err == nil {
+		_ = LogHostReport(id, report)
+	}
+}
