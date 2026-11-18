@@ -1,5 +1,7 @@
 # batch-6 集成失败修复
 
+**后续更正：** 本文曾把 logs 两条余差归为可放过的负载噪声，证据不足，该定性撤回。后续在低负载和旧 Go 对照中定位到客户端取消误报及 N8-8a 重复配置解码，已分别修复；逐行字节归因和复验见 [batch6-logs-zh.md](batch6-logs-zh.md)。本文原始命令/结果作为历史记录保留。
+
 基点 `batch-6@824189f07`，独立 worktree / 分支 `go-fix-batch6-integ`；不在批次 worktree 写入或提交。只用 rt 固定 .32 做定向检查，不跑完整门禁，不改其他 Codex 负责的 convert/notifications/repo R5 解码范围，不 push。
 
 ## 1. YAML 门面检查（已修）

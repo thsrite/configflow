@@ -203,6 +203,9 @@ rt --back server/parity/proddiff-baseline.txt \
 `summary.json`、`coverage.json`、`differences.tsv`、`report.md` 是脱敏结果；
 summary 中的 `transport_retries` 分别累计 Python/Go 的实际传输重试请求数（不含初次请求），
 `counts.bracket-rescued` 保留成功窗口重问的用例数；两者都是随请求调度变化的重试计数。
+私有 `transport-attempts.jsonl` 逐次记录 side、method、路由模板、status、timeout_seconds、elapsed_seconds；
+传输失败另记异常类、errno（URLError 只记 reason 的类型）。不记录展开路径、请求正文、凭据或异常文本；
+此诊断不改变响应、超时、重试或比较规则。
 `loadavg.start` / `loadavg.end` 保存比较程序开始/结束时的 `/proc/loadavg` 原文；
 `connection_failures` 只统计最终回复，因此成功恢复的临时失败只体现在重试计数中。
 `responses.jsonl`、`generator-*.jsonl`、`generator-jobs.json` 和服务日志可能含真实请求参数、响应和凭据，只能留在该私有目录，

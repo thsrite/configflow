@@ -1326,3 +1326,10 @@ reference_native_scalars 的 schema str 明确接受严格整数字符串版本�
 `convert.TestBatch6R5RuleIdentityValidationPreservesStorage`、`convert.TestBatch6R5StoredNodeType`、
 `convert.TestBatch6R5UnusedStoredNodeType`、`convert.TestMihomoQuotedPort`、
 `convert.TestTypedEasyTierQuotedMTU`，以及本轮更新的 Common、Node、日志、URL、通知、repo 旧断言。
+
+## batch-6 — 客户端取消的日志边界
+
+HTTP handler 返回的错误若与该 HTTP 请求已结束的 context cause 匹配，不再误记为应用 `Exception`。subscriptions 的专用失败日志同样使用工作 ctx；活请求中的内部 cancellation、断连后的无关故障和 detached owner 的真实失败仍记录。状态码/JSON/中文消息、后台 owner 的生命周期均不变。真实 TCP 断连回归证明修复前误报、修复后不误报；原先把 proddiff 的相关日志差异归为可放过的“负载噪声”的判断已撤回，另修生成器重复解码造成的超时回退。详见 progress/batch6-logs-zh.md。
+
+
+batch-6 codec 窄化：格式查询只解规则库，继续使用 model.Shared 的原 R5 解码和原 RuleFormat；其余 metadata codec 同样只解 native helper 消费的字段。不再保留“无关字段里非 JSON 瞬态 Go 值碰巧让 Marshal 失败”的旧行为（协调者裁定）；有效持久化 JSON 的 R5 校验、ID/name/URL 和首匹配语义不变。窄 codec 及同快照单请求/分配基准见 progress/batch6-logs-zh.md。
