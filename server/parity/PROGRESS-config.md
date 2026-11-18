@@ -353,9 +353,9 @@ Rules for O3-5..O3-8 are in the review's last section.
 | C31 | aggregation routes, device notes | 722 | verified | C30, C26 | 11 (11 done) |
 | C32 | rule routes | 1107 | verified | C09, C14, C27 | 21 (0 done) |
 | C33 | rule library and proxy group routes | 976 | verified | C32 | 25 (25 done) |
-| C34 | generate, config and profile routes, config export | 1443 | missing | C18, C19, C20, C28, C29, C31, C33 | 59 (0 done) |
+| C34 | generate, config and profile routes, config export | 1443 | verified | C18, C19, C20, C28, C29, C31, C33 | 59 (0 done) |
 | C35 | config importer, WebDAV backup | 1375 | verified | C04, C06 | – |
-| C36 | setup flow | 1372 | missing | C34, C35 | 5 (0 done) |
+| C36 | setup flow | 1372 | ported | C34, C35 | 5 (0 done) |
 | C37 | domain discovery | 1658 | verified | C14, C16 | 17 (17 done) |
 
 Routes in config modules: 228 of the 380 rows in routes.tsv.
