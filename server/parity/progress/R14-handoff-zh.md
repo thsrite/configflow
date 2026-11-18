@@ -1,4 +1,4 @@
-# R14 自动规则同步 — ported，待 HR 复核
+# R14 自动规则同步 — verified（HR 复核见 ../review-r14.md）
 
 范围：`rule_sync.py`、`rule_sync_rules.py`、`rule_sync_store.py`、`rule_sync_write.py` 和 C07 `_router_rows`。无新路由，R15 负责 rule-sync HTTP 三个 method。基线 `go@c5f5ff349`，分支 `go-port-r14`，首个实现提交 `2e8925789`；对照/边界修正为本文件所在提交。只做合成数据和 loopback routerfake；未 push、未运行 gate/全仓 race/proddiff，未操作实验设备或生产。
 
@@ -71,6 +71,8 @@ RT_HOST="$R14_TEST_HOST" rt -- bash -lc 'cd server && gofmt -w internal/routers/
 3. 测试服务器独立临时副本：复制 server/backend，删除全部新增 rule_sync*.go/r14*.go、恢复 `c5f5ff349` 原始 wire.go（其余原文件未变），再 `go test -race -count=5 ./internal/routers -run "^TestR13ReviewNoticeWaitingForLeafLock$" -timeout 5m`：5 次中 2 次同一失败，15.836s，`BASELINE_R13_EXIT=1`。临时副本已清理。
 
 这是基线已有取消结果竞态，未将它改成通过，也未把共享回归称为全绿。建议由 R13/新 Opus 检查通知取消被 Safely 吞掉后 Flight/等待者完成与关机之间的结果竞争。R14 自己的真实 Runtime/leaf/目的写用例均通过。
+
+**复核结论（2026-11-18）：** 产品竞态，不是测试问题。根因在 lifecycle：job context 经 `context.AfterFunc` 异步得知关机，而 `Detach(job)` 直接以 `g.jobs` 为父节点，owner 可能看到叶写入已 Canceled、自己的 `Err()` 仍为 nil。已在 `264ffbb55` 修复（review-r14 M1），R13 用例 `-count=20` 通过。
 
 ## 新增文件行数
 

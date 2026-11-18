@@ -79,7 +79,7 @@ Python's `backend/routers` is one big import cycle (most cross-module imports ar
 | R11 | IPv6 PD guard, IPv6 DNS, RouterOS IPv6 readiness | 1161 | verified | HR | R10 | – | internal/routers |
 | R12 | release plan and staged execution | 1220 | verified | HR | R03–R11, A01 (return routing calls, ready) | – | internal/routers |
 | R13 | inspection service, return advisory, pending reminders | 713 | verified | HR | R12, C07 (`RecordRouter`, ready), A01, A06 (ready); A23⁴ | – | internal/routers |
-| R14 | automatic rule sync | 1043 | ported | HR | R13, C14 (ready), C07 (`tasks`, ready) | – (handlers in R15) | internal/routers |
+| R14 | automatic rule sync | 1043 | verified | HR | R13, C14 (ready), C07 (`tasks`, ready) | – (handlers in R15) | internal/routers |
 | R15 | router HTTP routes, policy workspace, upstream-router reminder route | 656 | missing | HR | R14, C06, C22 (ready), C31, C34; A20⁵ | 21 (0 done) | internal/api/routers, internal/routers |
 | R16 | client devices and discovery | 786 | missing | | R13, A01, C26, C31 | – | internal/clients, internal/routers |
 | R17 | client fixed IP and client-device routes | 1077 | missing | HR | R16, R06, R14, C06 (JWT secret), C36², A13⁶ | 5 (0 done) | internal/clients, internal/routers, internal/api/clientdevices |
@@ -838,6 +838,8 @@ Notes for porter (pre-design, superseded where they conflict): `Driver(router)`,
 
 **Status: `ported`** · HR · prereqs: R13, C14, C07 (`tasks`) · Go: internal/routers
 
+**Status: `verified`**（HR 复核 2026-11-18，待 batch-6 合入后复验单一 JobLock）· HR · prereqs: R13, C14, C07 (`tasks`) · Go: internal/routers
+
 Files:
 - `backend/routers/rule_sync.py` (474), `rule_sync_rules.py` (214), `rule_sync_store.py` (90), `rule_sync_write.py` (265)
 - plus `backend/routes/tasks.py::_router_rows` (C07's file; listed under C07 as "ported by routers")
@@ -853,6 +855,8 @@ Notes for porter: reuse O3-6b `RouterJobLock` (the sole routers-owned L1 Keyed s
 验证与 HR checklist、40 个真实 Python 对照、Runtime/raw HTTP/缓存/重启用例、命令输出与 L5 项目见 [R14-handoff-zh.md](progress/R14-handoff-zh.md)。实现提交：`2e8925789` + 交接文件所在最终提交；仅作者标 ported，待新 Opus HR 复核。
 
 集成注意：此基线尚未合入 O3-6b RouterJobLock，临时 `JobLock/syncJobs` 与 repo hook 共用同一 L1；O3-6b 合入时改为统一入口，不可保留两把独立锁。D2 原生 controls 可能要求切换后手动重建基准；修复 F-R12-3 的回读失败未补偿问题。另发现既有 R13 关机取消用例间歇失败，已在恢复原基线的临时副本重现，未改 R13，详见交接。
+
+HR 复核（[review-r14.md](review-r14.md)）：0 high、2 medium、3 low 已修，4 low 记录。M1 是 R13 间歇失败的根因——lifecycle job context 经 AfterFunc 异步得知关机，而 `Detach(job)` 直接看 `g.jobs`；改为 detached job 是 `g.jobs` 的直接子 context，`Detach` 改用 Shutdown 在 `stopJobs` 之后才取消的 `detached` 父节点（`264ffbb55`）。M2 收到响应前用完下载预算改为 failed（重试）而非 paused；L1 StartJob 忙碌文案「重试」；L2/L3 分类器域名写法与单独 CR（`3c492b520`）。待 batch-6 后复验：删除 `syncJobs` 与 R14 的 repo hook，统一到 `RouterJobLock`，复跑 `TestR14ReviewRepositoryHookSharesJobLock`。
 
 ## R15 — router HTTP routes, policy workspace, upstream-router reminder route
 

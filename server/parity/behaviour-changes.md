@@ -1361,5 +1361,5 @@ batch-6 codec 窄化：格式查询只解规则库，继续使用 model.Shared �
 
 - `controls` 按 D2 使用 Go canonical JSON + SHA-256，不仿真 Python 编码；旧回执仍可读取，若旧 control 不匹配则暂停并要求手动「预览发布」重新建立基准。合法 profile/router ID 的回执文件 key 保持兼容。
 - 修复 F-R12-3：Python `rule_sync_write._apply_delta` 未捕获最终 `_verify` 的 `ReleaseError`，设备目的更新可能残留；Go 对所有回读错误补偿自己的增删，并保留外部编辑。`TestR14DeltaPython/verify_failure` 同时证明 Python 残留与 Go 补偿。
-- 30 秒下载总预算从请求前开始，包含连接、共享客户端重试和响应读取；Python 在收到响应后才开始该总预算。连接/单次读取仍分别为 5 秒/10 秒，超时或超限不成为空路由意图。
+- 30 秒下载总预算从请求前开始，包含连接、共享客户端重试和响应读取；Python 在收到响应后才开始该总预算。连接/单次读取仍分别为 5 秒/10 秒，超时或超限不成为空路由意图。收到响应前预算用完（含重试）与 Python 的连接/读超时一样记为下载失败（failed，按间隔重试）；只有读响应体时超时或超过 4 MiB 才是「超过大小或时间限制」并暂停（R14 复核 M2）。
 - 使用 O3 的进程内单实例/L1/L2，不创建每设备 flock。关机取消停止设备和本地提交；已保存的 running 回执在重启后按既有规则暂停人工确认，不新增不可中断提交。
