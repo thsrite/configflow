@@ -1968,7 +1968,7 @@ Tests: `test_gateway_installation.py` (54), `test_router_split_regression.py` (4
 
 Routes (7): `GET|POST /api/agents/gateway-installations`; `GET /api/agents/gateway-installations/<session_id>`; `POST …/enroll`; `POST …/network`; `POST …/publish`; `GET …/script`
 
-实现检查点 `b057c148b`，基于 A21 HR 复核 `663d271bb`（以 --onto 换基线）。已完成 native installation owner、七方法 HTTP、原子 capability 登记、固定 ID 顺序发布/恢复，以及 C36 Latest/HasInstallation/GatewayStatus 的真实 server 注册。A21 F1 的输入错误400与 F4 的两级脱敏均有回归。证据、文件/测试映射与命令见 [A22-handoff-zh.md](progress/A22-handoff-zh.md)。定向 vet/race、真实 Flask HTTP/持久状态及 Python 双核产物对照、新 fuzz60秒通过；待新的 Opus HR 复核。完整批次 gate 与 L4 由协调者执行。
+实现 `b057c148b`，最终边界验证及接线 `3cf6976d5`，基于 A21 HR 复核 `663d271bb`（以 --onto 换基线）。已完成 native installation owner、七方法 HTTP、原子 capability 登记、固定 ID 顺序发布/恢复，以及 C36 Latest/HasInstallation/GatewayStatus 的真实 server 注册。A21 F1 的输入错误400与 F4 的两级脱敏均有回归。证据、文件/测试映射与命令见 [A22-handoff-zh.md](progress/A22-handoff-zh.md)。定向 vet/race、真实 Flask HTTP/持久状态及 Python 双核产物对照、新 fuzz60秒通过；待新的 Opus HR 复核。完整批次 gate 与 L4 由协调者执行。
 
 已提供 `agents.RegisterHooks{InstallationProfile, InstallationRegister}`；C36 Installation owner 的缺省503已由真实 owner接上。冻结脚本与 abandon 占用查询不初始化 manager/旧 runtime DB，server 负例已覆盖。未 push、无子 agent、无真实设备访问。
 

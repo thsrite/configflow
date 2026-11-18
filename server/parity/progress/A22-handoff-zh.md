@@ -1,6 +1,6 @@
 # A22 网关安装交接
 
-分支 `go-port-a22`。按协调者通知，以 `git rebase --onto go-opus-review-a21 26a8a649c go-port-a22` 换到 A21 HR 复核基线 `663d271bb`，没有重复引入旧 A21 提交。实现检查点 `b057c148b`；本轮补充边界验证与复核规则接入。只使用合成数据；未 push、未开子 agent、未访问真实设备。状态 `ported`，最终定向 vet/race/fuzz 全通过，等待新的 Opus HR 复核。
+分支 `go-port-a22`。按协调者通知，以 `git rebase --onto go-opus-review-a21 26a8a649c go-port-a22` 换到 A21 HR 复核基线 `663d271bb`，没有重复引入旧 A21 提交。实现提交 `b057c148b`；最终产品修正、边界验证与 A21 复核规则接入提交 `3cf6976d5`。只使用合成数据；未 push、未开子 agent、未访问真实设备。状态 `ported`，最终定向 vet/race/fuzz 全通过，等待新的 Opus HR 复核。
 
 ## 实现范围
 
