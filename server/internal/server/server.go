@@ -63,8 +63,8 @@ import (
 	"configflow/internal/health"
 	"configflow/internal/httpx"
 	"configflow/internal/ippresence"
+	"configflow/internal/mcp"
 	"configflow/internal/notifications"
- "configflow/internal/mcp"
 	"configflow/internal/refresh"
 	"configflow/internal/repo"
 	"configflow/internal/routers"
@@ -77,7 +77,7 @@ import (
 
 // routePackages are the Register functions of the ported blueprints.
 var routePackages = []func(*httpx.Router){
- mcp.Register,
+	mcp.Register,
 	apiauth.Register,
 	apiclientdevices.Register,
 	apinodes.Register,

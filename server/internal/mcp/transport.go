@@ -111,9 +111,13 @@ func authenticate(c *httpx.Ctx) (bool, error) {
 	}
 	// Credential authority must not use R5's zero fallback or numeric text:
 	// a damaged stored token must never become anonymous access or a new token.
-	settings, err := model.Marshal(sys.SystemConfig)
+	system, err := model.Marshal(sys)
 	if err != nil {
 		return false, err
+	}
+	settings := asObject(system)["system_config"]
+	if !unset(settings) && bytes.TrimSpace(settings)[0] != '{' {
+		return false, nil
 	}
 	token := ""
 	malformed := false

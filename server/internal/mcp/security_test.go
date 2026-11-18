@@ -229,3 +229,35 @@ func TestResourceMergeKeepsExplicitEmptyHealth(t *testing.T) {
 		t.Fatalf("missing health lost legacy URL: %s", got["health_check"])
 	}
 }
+
+func TestMalformedSystemConfigCannotAuthorizeMCP(t *testing.T) {
+	previous := auth.Configure(auth.Config{})
+	defer auth.Configure(previous)
+	for _, settings := range []string{`true`, `123`, `["unexpected"]`} {
+		t.Run(settings, func(t *testing.T) {
+			r, err := repo.Open(t.TempDir(), repo.Options{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			db, err := sql.Open("sqlite", r.DatabasePath())
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer db.Close()
+			if _, err := db.Exec("UPDATE fields SET value=?,revision=revision+1 WHERE scope='system' AND owner='' AND field='system_config'", settings); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := db.Exec("UPDATE meta SET value=CAST(value AS INTEGER)+1 WHERE key='generation'"); err != nil {
+				t.Fatal(err)
+			}
+			app := httpx.New()
+			Register(app.Router)
+			req := httptest.NewRequest("POST", "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"ping"}`)).WithContext(repo.WithRepository(context.Background(), r))
+			w := httptest.NewRecorder()
+			app.ServeHTTP(w, req)
+			if w.Code != 401 {
+				t.Fatalf("malformed system_config authorized MCP: %d %s", w.Code, w.Body.Bytes())
+			}
+		})
+	}
+}
