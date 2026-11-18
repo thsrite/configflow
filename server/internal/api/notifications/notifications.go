@@ -6,6 +6,7 @@
 package notifications
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -14,7 +15,6 @@ import (
 
 	"configflow/internal/auth"
 	"configflow/internal/httpx"
-	"configflow/internal/jsonx"
 	"configflow/internal/notifications"
 	"configflow/internal/repo"
 	"configflow/internal/tasks"
@@ -40,7 +40,7 @@ func RegisterAlways(r *httpx.Router) {
 func isOSOrValueError(err error) bool {
 	var pathErr *os.PathError
 	var linkErr *os.LinkError
-	var syntaxErr *jsonx.SyntaxError
+	var syntaxErr *json.SyntaxError
 	return errors.As(err, &pathErr) || errors.As(err, &linkErr) || errors.As(err, &syntaxErr) ||
 		errors.Is(err, notifications.ErrInvalidStore) || errors.Is(err, tasks.ErrIncomplete) || errors.Is(err, tasks.ErrInvalidHistory) ||
 		repo.IsValueError(err) || errors.Is(err, notifications.ErrSourceUnavailable)
@@ -55,12 +55,12 @@ func listNotifications(c *httpx.Ctx) (*httpx.Response, error) {
 			Missing []string `json:"missing_slots"`
 		}{false, fmt.Sprintf(msgNotReady, strings.Join(missing, "、")), missing}).NoStore(), nil
 	}
-	var items []any
+	var items []*notifications.Item
 	var err error
 	if c.Request.Method == http.MethodHead {
-		items, err = notifications.Preview(c.Context())
+		items, err = notifications.PreviewItems(c.Context())
 	} else {
-		items, err = notifications.Snapshot(c.Context(), "")
+		items, err = notifications.SnapshotItems(c.Context(), "")
 	}
 	if err != nil {
 		if isOSOrValueError(err) {
@@ -68,7 +68,11 @@ func listNotifications(c *httpx.Ctx) (*httpx.Response, error) {
 		}
 		return nil, err
 	}
-	return httpx.JSON(jsonx.Obj("success", true, "items", items, "checked_at", notifications.Now())).NoStore(), nil
+	return httpx.JSON(struct {
+		Success   bool                  `json:"success"`
+		Items     []*notifications.Item `json:"items"`
+		CheckedAt string                `json:"checked_at"`
+	}{true, items, notifications.Now()}).NoStore(), nil
 }
 
 func readNotifications(c *httpx.Ctx) (*httpx.Response, error) {
@@ -80,12 +84,10 @@ func readNotifications(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	versions := jsonx.NewObject()
-	for key, version := range body.Versions {
-		versions.Set(key, version)
-	}
-	if err := notifications.MarkReadContext(c.Context(), repository.DataDir(), versions); err != nil {
+	if err := notifications.Dismiss(c.Context(), repository.DataDir(), body.Versions); err != nil {
 		return nil, err
 	}
-	return httpx.JSON(jsonx.Obj("success", true)), nil
+	return httpx.JSON(struct {
+		Success bool `json:"success"`
+	}{true}), nil
 }
