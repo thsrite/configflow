@@ -442,10 +442,11 @@ def response_diffs(left, right, route, rules, agent_identities=None, artifact_pr
         # Compare the approved availability contract instead of exposing a
         # partial task list. Keep both original content types and headers.
         left = (right[0], left[1], right[2], *left[3:])
+    # Apply the exact H2 installer delta before deriving the H1/L5 headers.
+    right = bootstrap_installer_baseline(right, route)
     # O9-H1/L5: exact security-header delta; no response/body/status masks.
     if len(left) > 3 and len(right) > 3:
         left = (*left[:3], expected_headers(left[3], right[3], right[1]))
-    right = bootstrap_installer_baseline(right, route)
     right = installer_rollback_baseline(right, route)
     if plain_install_error(left, right, route):
         # Body/status/type already agree exactly. Assert only the approved

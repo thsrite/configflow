@@ -27,6 +27,22 @@ def reply(body, content_type=JSON, status=200, headers=None):
 
 
 class ComparatorTests(unittest.TestCase):
+    def test_o9_bootstrap_and_security_headers_compose_exactly(self):
+        token = 'x' * 43
+        before = b'services:\n'
+        after = before + ('      - AGENT_MIHOMO_REGISTRATION_TOKEN=' + token + '\n').encode()
+        left = reply(before, 'text/plain; charset=utf-8', headers={
+            'access-control-allow-origin': '*', 'vary': 'Origin, Accept-Encoding'})
+        headers = {'cache-control': 'no-store', 'x-content-type-options': 'nosniff',
+                   'vary': 'Accept-Encoding'}
+        route = '/api/agents/docker-agent-compose'
+        self.assertEqual([], pd.response_diffs(left, reply(after, left[1], headers=headers), route, []))
+        for changed in ({**headers, 'cache-control': 'private'},
+                        {**headers, 'x-content-type-options': 'unsafe'},
+                        {**headers, 'access-control-allow-origin': '*'}):
+            self.assertTrue(pd.response_diffs(left, reply(after, left[1], headers=changed), route, []))
+        self.assertTrue(pd.response_diffs(left, reply(after + b'changed', left[1], headers=headers), route, []))
+
     def test_o9_security_header_delta_is_exact(self):
         source = {'access-control-allow-origin': '*', 'access-control-allow-methods': 'GET, POST',
                   'access-control-allow-headers': 'Authorization', 'vary': 'Origin, Accept-Encoding',
