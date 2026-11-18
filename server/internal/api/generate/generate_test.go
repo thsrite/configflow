@@ -77,7 +77,7 @@ func TestGeneratedDownloadsPreviewsAndProfileIsolation(t *testing.T) {
 	}
 	for _, engine := range []string{"mihomo", "surge", "loon", "mosdns"} {
 		s.Post("/api/generate/"+engine, httpxtest.Body([]byte(`{`), "application/json")).WantStatus(400)
-		s.Post("/api/generate/"+engine, httpxtest.Body([]byte(`[]`), "application/json")).WantStatus(400)
+		s.Post("/api/generate/"+engine, httpxtest.Body([]byte(`[1]`), "application/json")).WantStatus(500)
 		s.Post("/api/generate/"+engine, httpxtest.Body([]byte(`{}`), "text/plain")).WantStatus(415)
 	}
 }

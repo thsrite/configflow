@@ -894,3 +894,14 @@ PD 恢复 PUT 回复已经证明新 ID、但紧接着的 GET 失败时，Go 仍�
 C34 同类修复：`/api/profiles` 的 HEAD 不再创建 profile，`/api/profiles/<profile_id>` 的 HEAD 不再删除；全部 profile GET 路径走读取分支。回归 `api/profiles.TestProfileHEADIsReadOnly` 比较 GET headers，并断言 DB、revision、业务文件和生成缓存不变。真实 Flask 预期差异另见 C34 差分测试。
 
 C34 自定义配置五条路径同样将 HEAD 分派给 GET：Mihomo、Surge、MosDNS 不再因无返回值而 500；Loon/OxiDNS 不再落入保存分支。`api/config.TestCustomHEADAndBodyBinding` 逐条验证全部 GET headers、无 body，以及 DB、revision、业务文件和生成缓存不变。严格请求绑定的畸形 JSON/媒体类型沿用 N8-6 的 400/415 修正；不把捕获后的 Python 内部 500 作为合法输入契约。
+
+## C34 custom-config JSON 对象契约
+
+协调者裁定（2026-11-18），只适用于五条 `/api/custom-config/{mihomo,surge,loon,mosdns,oxidns}`：
+
+- **Python 200 的无字段非对象请求**：Surge/Loon 将部分字符串、数组、数字、布尔（包括 `""`、`0`、`false`、`[]`）误当无字段补丁，未改业务字段却递增 revision。Go 一律 400，DB、文件、revision 不变。
+- **Python 500 的非对象请求**：Mihomo/MosDNS 的属性访问，以及 Surge/Loon 的不可迭代值或含字段名的字符串/数组，会抛内部异常。Go 一律 400，DB、文件、revision 不变。OxiDNS 原已 400，继续拒绝；消息明确要求 JSON 对象。
+- **null / 缺失 body**：五条路由统一执行空更新，返回 200、revision 恰好 +1，业务字段和文件不变。Surge/Loon 的 JSON null 本来如此；Mihomo/MosDNS 的 null 和严格解析缺失 body 原为 500，OxiDNS 原为 400，也按本次显式裁定统一修正。
+- 普通对象的每个字段值仍交给现有业务 validator；不把 Python 容器成员关系移植为新 helper。profile create/generate 不采用本项新 schema。
+
+`api/config/difftest.TestC34ExpectedDifferenceCustomJSONShapes` 对五个引擎逐项断言十二种 shape 的 Python/Go 状态码，以及两边各自的 DB、完整字段、revision、文件效果。`TestC34ObjectFieldValues` 单独对照对象里的 null/false/0/空数组/空对象/true/数字，避免 DTO 意外收窄业务输入。严格畸形 JSON 400 / 非 JSON 媒体类型 415 沿用 N8-6 的迁移决策。YAML `yes` 为字符串、重复键和 alias 预算沿用 N7 §5.7，不作为未知差异。

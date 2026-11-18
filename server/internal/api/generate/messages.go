@@ -1,6 +1,7 @@
 package generate
 
 const (
+	msgObject        = "请求数据必须是 JSON 对象"
 	msgAwaitRelease  = "等待 Agent 发布模块"
 	msgUnsupported   = "不支持的配置类型。"
 	msgUnknownAction = "未知操作。"

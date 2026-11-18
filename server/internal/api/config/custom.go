@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"configflow/internal/auth"
@@ -22,6 +23,7 @@ import (
 )
 
 type customRequest struct {
+	Noop        bool
 	Config      json.RawMessage
 	SmartGroups json.RawMessage
 	Interval    json.RawMessage
@@ -36,7 +38,7 @@ func (r *customRequest) UnmarshalJSON(raw []byte) error {
 	if fields == nil {
 		return errors.New("configuration object expected")
 	}
-	*r = customRequest{fields["config"], fields["smart_groups"], fields["provider_update_interval"], fields["easytier"]}
+	*r = customRequest{Config: fields["config"], SmartGroups: fields["smart_groups"], Interval: fields["provider_update_interval"], EasyTier: fields["easytier"]}
 	return nil
 }
 func registerCustom(r *httpx.Router) {
@@ -50,15 +52,35 @@ func registerCustom(r *httpx.Router) {
 				return httpx.JSON(out), nil
 			}
 			var body customRequest
-			if engine == "oxidns" {
-				if !c.BindSilent(&body) {
-					return httpx.Message(400, false, msgYAMLText), nil
-				}
+			data, err := c.Data()
+			if err != nil {
+				return nil, err
+			}
+			if len(data) == 0 {
+				body.Noop = true
 			} else {
-				if err := c.Bind(&body); err != nil {
-					return nil, err
+				var raw json.RawMessage
+				if engine == "oxidns" {
+					if !c.BindSilent(&raw) {
+						return httpx.Message(400, false, msgYAMLText), nil
+					}
+				} else {
+					if err := c.Bind(&raw); err != nil {
+						return nil, err
+					}
+				}
+				if string(raw) == "null" {
+					body.Noop = true
+				} else {
+					if len(raw) == 0 || raw[0] != '{' {
+						return httpx.Message(400, false, msgObject), nil
+					}
+					if err := json.Unmarshal(raw, &body); err != nil {
+						return nil, err
+					}
 				}
 			}
+
 			guard, err := saveCustom(c.Context(), c.ProfileID, engine, body)
 			if err != nil {
 				var failure *customError
@@ -147,6 +169,31 @@ func saveCustom(ctx context.Context, id, engine string, body customRequest) (*js
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	if body.Noop {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		r, err := repo.GetRepository(ctx)
+		if err != nil {
+			return nil, err
+		}
+		resolved, err := repo.ResolveProfileID(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		_, revision, err := r.UpdateProfileTransaction(ctx, resolved, func(ctx context.Context, _ *jsonx.Object) (*jsonx.Object, error) { return nil, ctx.Err() })
+		if err != nil {
+			return nil, err
+		}
+		repo.ResetConfigContext(ctx)
+		if engine == "mihomo" || engine == "surge" || engine == "mosdns" {
+			return jsonx.Obj("expected_profile_id", resolved, "expected_service_type", engine, "expected_config_revision", jsonx.Int(revision)), nil
+		}
+		return nil, nil
+	}
 	if engine == "oxidns" {
 		var text string
 		if len(body.Config) == 0 || string(body.Config) == "null" || json.Unmarshal(body.Config, &text) != nil {
@@ -208,8 +255,11 @@ func saveCustom(ctx context.Context, id, engine string, body customRequest) (*js
 		}
 		var text string
 		if len(body.Config) > 0 {
-			if err = json.Unmarshal(body.Config, &text); err != nil && string(body.Config) != "null" {
-				return nil, &customError{500, "configuration text expected"}
+			if err = json.Unmarshal(body.Config, &text); err != nil {
+				node, decodeErr := yamlx.FromJSON(body.Config)
+				if decodeErr != nil || !emptyDraft(node) {
+					return nil, &customError{500, "configuration text expected"}
+				}
 			}
 		}
 		if strings.TrimSpace(text) != "" {
@@ -342,4 +392,29 @@ func agentContext(ctx context.Context, id string) (map[int]string, []any, error)
 	}
 	reserved, _, hosts := convert.AgentContext(source, id)
 	return reserved, hosts, nil
+}
+
+// emptyDraft is the custom-config form's accepted empty JSON alternative.
+// The original value is still saved verbatim; only YAML validation is skipped.
+func emptyDraft(n *yamlx.Node) bool {
+	if n == nil {
+		return true
+	}
+	switch n.Kind {
+	case yaml.MappingNode, yaml.SequenceNode:
+		return len(n.Content) == 0
+	case yaml.ScalarNode:
+		switch n.ShortTag() {
+		case "!!null":
+			return true
+		case "!!bool":
+			return n.Value == "false"
+		case "!!str":
+			return n.Value == ""
+		case "!!int", "!!float":
+			number, err := strconv.ParseFloat(n.Value, 64)
+			return err == nil && number == 0
+		}
+	}
+	return false
 }

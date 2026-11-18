@@ -62,14 +62,25 @@ func Register(r *httpx.Router) {
 	}
 }
 func generate(c *httpx.Ctx, engine configgen.Engine, preview bool) (*httpx.Response, error) {
-	var body request
+	var raw json.RawMessage
 	if engine == configgen.OxiDNS {
-		c.BindSilent(&body)
+		if !c.BindSilent(&raw) {
+			raw = json.RawMessage(`{}`)
+		}
 	} else {
-		if err := c.Bind(&body); err != nil {
+		if err := c.Bind(&raw); err != nil {
 			return nil, err
 		}
 	}
+	var body request
+	if err := json.Unmarshal(raw, &body); err != nil {
+		switch string(raw) {
+		case "false", "0", "0.0", `""`, "[]":
+		default:
+			return httpx.Message(500, false, msgObject), nil
+		}
+	}
+
 	base := body.BaseURL
 	if !preview {
 		if engine == configgen.MosDNS {

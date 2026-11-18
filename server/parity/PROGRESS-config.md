@@ -2113,7 +2113,7 @@ Python：完整两路由 `backend/routes/rule_library.py`（540行）、`proxy_g
 
 ## C34 — generate, config and profile routes, config export
 
-**Status: `missing`** · prereqs: C18, C19, C20, C28, C29, C31, C33 · Go: internal/api/generate, api/config, api/profiles, internal/configexport (new; internal/redact exists)
+**Status: `partial`** · prereqs: C18, C19, C20, C28, C29, C31, C33 · Go: internal/api/generate, api/config, api/profiles, internal/configexport (new; internal/redact exists)
 
 
 **Clarified in C34 (2026-11-18):** HEAD uses the GET read-only branch for profile collections/items and all custom-config routes: no DB, business-file, revision or generation-cache changes. These fix Python dispatch bugs and have explicit expected differences. Artifact routes are registered before A14 integration and return 503 「等待 Agent 发布模块」; unknown services remain 400 and unknown actions 404. Frozen-artifact success coverage awaits A14, without copying its implementation. `repo.Hooks.SanitizeExternalPayload` gains a first `context.Context` parameter; desensitized ExportAll reads credentials from the same repository snapshot as the exported document. N8-5b was notified; N8-5c retains this contract. A11 Previews gets a separate shared-leaf-lock/shutdown fix **after O3-6c merges**, with real Runtime reproductions; the A14 reviewer has been notified. Commit sequence: export wiring, profiles, custom config, generation/live config, artifact integration. Shared commit points remain known and assigned to O3-6c; final gate queue limit is 15 minutes.
@@ -2126,17 +2126,20 @@ Files:
 
 Tests: `test_agent_log_redaction.py` (2), `test_flow_ui_apis.py` (9), `test_profile_api.py` (19), `test_profile_generation.py` (10), `test_profile_scoped_artifacts.py` (16), `test_sensitive_config_exports.py` (25)
 
-Routes (59, 0 done):
+Routes (59, 56 done, 3 registered wip pending A14):
 
 `GET /api/config/<profile_id>/loon`; `GET /api/config/<profile_id>/loon/<filename>`; `GET /api/config/<profile_id>/mihomo`; `GET /api/config/<profile_id>/mosdns`; `GET /api/config/<profile_id>/oxidns`; `GET /api/config/<profile_id>/surge`; `GET /api/config/export`; `POST /api/config/import`; `GET /api/config/loon`; `GET /api/config/mihomo`; `GET /api/config/mosdns`; `GET /api/config/oxidns`; `POST /api/config/reset`; `GET /api/config/surge`; `GET /api/custom-config/loon`; `POST /api/custom-config/loon`; `GET /api/custom-config/mihomo`; `POST /api/custom-config/mihomo`; `GET /api/custom-config/mosdns`; `POST /api/custom-config/mosdns`; `GET /api/custom-config/oxidns`; `POST /api/custom-config/oxidns`; `GET /api/custom-config/surge`; `POST /api/custom-config/surge`; `POST /api/generate/<service>/artifact`; `GET /api/generate/artifacts/<preview_id>/<action>`; `POST /api/generate/loon`; `POST /api/generate/loon/preview`; `POST /api/generate/mihomo`; `POST /api/generate/mihomo/preview`; `POST /api/generate/mosdns`; `POST /api/generate/mosdns/preview`; `POST /api/generate/oxidns`; `POST /api/generate/oxidns/preview`; `POST /api/generate/surge`; `POST /api/generate/surge/preview`; `GET /api/profiles`; `POST /api/profiles`; `DELETE /api/profiles/<profile_id>`; `GET /api/profiles/<profile_id>`; `PUT /api/profiles/<profile_id>`; `GET /api/profiles/<profile_id>/agents`; `POST /api/profiles/<profile_id>/agents/rebind`; `POST /api/profiles/<profile_id>/clone`; `POST /api/profiles/<profile_id>/default`; `GET /api/profiles/<profile_id>/export`; `POST /api/profiles/<profile_id>/generate/<service>/artifact`; `POST /api/profiles/<profile_id>/generate/loon`; `POST /api/profiles/<profile_id>/generate/loon/preview`; `POST /api/profiles/<profile_id>/generate/mihomo`; `POST /api/profiles/<profile_id>/generate/mihomo/preview`; `POST /api/profiles/<profile_id>/generate/mosdns`; `POST /api/profiles/<profile_id>/generate/mosdns/preview`; `POST /api/profiles/<profile_id>/generate/oxidns`; `POST /api/profiles/<profile_id>/generate/oxidns/preview`; `POST /api/profiles/<profile_id>/generate/surge`; `POST /api/profiles/<profile_id>/generate/surge/preview`; `POST /api/profiles/<profile_id>/import`; `POST /api/profiles/import-client`
 
-Evidence: No Go package; no route registered.
+Evidence: all 59 methods registered; HANDOFF 3c ownership/precedence and authentication matrix cover the complete app. Implementation, source mapping and validation: [progress/c34.md](progress/c34.md).
 
-Missing / deferred: Everything in the files below.
+Missing / deferred: A14 frozen artifact success wiring (three explicit 503 routes); A11 shared Previews shutdown/keyed-lock fix waits for O3-6c merge notification. C34 ordinary endpoints implemented.
 
 Notes for porter: Own routes: `routes/config.py` (24), `routes/generate.py` (12), `routes/profiles.py` CRUD/import/export/agents/generate wrappers (23). `routes/generate.py` calls `agents.deployment_bundle._pack` and `routes.agents.download_final_agent_config/read_final_agent_file` (agents domain) for artifacts; `routes/profiles.py` uses `agents.manager.AgentDeploymentConflict` and the agent manager. `config_export` → `internal/redact` already has the response-redaction part; this module adds `sanitize_config_for_output`, `redact_oxidns_settings` and registers the repo redaction hooks.
 
 C35 supplies native `importer.Parse/Build` for `/api/profiles/import-client` (API reference in PORTING.md). Run `test_config_import.py::test_import_route_dry_run_and_commit` at the HTTP boundary when C34 lands. C35 already compares all four client parse/build outputs and real repository commit/rollback; the route itself remains C34's responsibility.
+
+
+**Clarified in C34 JSON shape follow-up:** only the five custom-config routes accept null/missing bodies as empty updates (200, revision+1) and reject every other non-object JSON with 400/no writes. Ordinary object values stay with existing business validators. Explicit Python-200/no-field and Python-500 shape classes are separately recorded in behaviour-changes and asserted by real Flask tests. No Python container-membership emulation.
 
 ## C35 — config importer, WebDAV backup
 

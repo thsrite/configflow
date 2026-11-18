@@ -69,7 +69,7 @@ func TestCustomHEADAndBodyBinding(t *testing.T) {
 			if before != stored(t, s) || !reflect.DeepEqual(files, businessFiles(t, s.DataDir)) {
 				t.Fatal("HEAD wrote DB/revisions/files/caches")
 			}
-			for _, body := range []string{`{`, `[]`, `null`, `"text"`, `{"config":NaN}`} {
+			for _, body := range []string{`{`, `{"config":NaN}`} {
 				before = stored(t, s)
 				s.Post(path, httpxtest.Body([]byte(body), "application/json")).WantStatus(400)
 				if before != stored(t, s) {
@@ -156,5 +156,60 @@ func TestMihomoFormDefaultTemplateAndNullableTakeover(t *testing.T) {
 	}
 	if form.Base.Takeover != nil {
 		t.Fatal("absent takeover must be null")
+	}
+}
+
+func TestCustomObjectShapeContract(t *testing.T) {
+	s := exportApp(t)
+	for _, engine := range []string{"mihomo", "surge", "loon", "mosdns", "oxidns"} {
+		path := "/api/custom-config/" + engine
+		for _, body := range []string{`[]`, `"text"`, `""`, `false`, `true`, `0`, `3`} {
+			before := stored(t, s)
+			s.Post(path, httpxtest.Body([]byte(body), "application/json")).WantStatus(400)
+			if stored(t, s) != before {
+				t.Fatal("non-object request changed storage")
+			}
+		}
+		for _, body := range []string{`null`, ""} {
+			revision, err := s.Repo.ConfigRevision(s.Context(), "default")
+			if err != nil {
+				t.Fatal(err)
+			}
+			s.Post(path, httpxtest.Body([]byte(body), "application/json")).WantStatus(200)
+			after, err := s.Repo.ConfigRevision(s.Context(), "default")
+			if err != nil || after != revision+1 {
+				t.Fatal("empty update did not commit exactly once")
+			}
+		}
+	}
+}
+
+func TestEmptyCustomUpdateRuntime(t *testing.T) {
+	for _, engine := range []string{"mihomo", "surge", "loon", "mosdns", "oxidns"} {
+		for _, shutdown := range []bool{true, false} {
+			t.Run(engine+map[bool]string{true: "/shutdown", false: "/disconnect"}[shutdown], func(t *testing.T) {
+				s := exportApp(t)
+				before := stored(t, s)
+				rt := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
+				rt.Start(t.Context())
+				t.Cleanup(func() { rt.Shutdown(t.Context()) })
+				request, cancel := context.WithCancel(s.Context())
+				defer cancel()
+				ctx := rt.BindRequest(request)
+				if shutdown {
+					rt.Shutdown(t.Context())
+				} else {
+					cancel()
+				}
+				_, err := saveCustom(ctx, "default", engine, customRequest{Noop: true})
+				if shutdown {
+					if err == nil || stored(t, s) != before {
+						t.Fatal("empty update committed after shutdown")
+					}
+				} else if err != nil || stored(t, s) == before {
+					t.Fatalf("disconnect interrupted empty update: %v", err)
+				}
+			})
+		}
 	}
 }

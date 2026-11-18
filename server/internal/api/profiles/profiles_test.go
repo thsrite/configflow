@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -160,5 +161,40 @@ func TestProfileRegistration(t *testing.T) {
 	s.Handler().ServeHTTP(rec, req)
 	if rec.Code != 400 || !strings.Contains(rec.Body.String(), msgName) {
 		t.Fatal("import-client shadowed", rec.Code, rec.Body.String())
+	}
+}
+
+func TestProfileExportRedactsCredentialEncodingCombinations(t *testing.T) {
+	s := profileApp(t)
+	_, err := s.Repo.UpdateSystemTransaction(s.Context(), func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
+		system.GetObject("system_config").Update(jsonx.Obj("rule_proxy_token", "synthetic-rule-current", "retired_rule_proxy_tokens", []any{"synthetic-rule-retired"}))
+		system.Set("agents", []any{jsonx.Obj("id", "synthetic-agent", "name", "Agent", "profile_id", "default", "token", "synthetic-agent-token")})
+		return nil, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	embedded := jsonx.NewObject()
+	for _, credential := range []string{"synthetic-rule-current", "synthetic-rule-retired", "synthetic-agent-token"} {
+		text := credential
+		for level := 0; level <= 20; level++ {
+			embedded.Set(credential+"-"+string(rune('a'+level)), "https://example.com/source?token="+text)
+			text = url.QueryEscape(text)
+		}
+	}
+	_, _, err = s.Repo.UpdateProfileFields(s.Context(), "default", jsonx.Obj("mihomo", jsonx.Obj("future_payload", embedded)), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := state(t, s)
+	response := s.Get("/api/profiles/default/export")
+	response.WantStatus(200)
+	for _, credential := range []string{"synthetic-rule-current", "synthetic-rule-retired", "synthetic-agent-token"} {
+		if bytes.Contains(response.Body, []byte(credential)) {
+			t.Fatal("profile export leaked stored credential")
+		}
+	}
+	if state(t, s) != before {
+		t.Fatal("profile export mutated stored payload")
 	}
 }

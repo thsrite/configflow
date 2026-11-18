@@ -40,11 +40,12 @@ func Register(r *httpx.Router) {
 		return httpx.File(httpx.FileOptions{Data: content, MimeType: "application/json", AsAttachment: true, DownloadName: name})
 	}))
 	r.POST("/api/config/import", "config.import_config", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
-		var data *jsonx.Object
-		if err := c.Bind(&data); err != nil {
+		var raw json.RawMessage
+		if err := c.Bind(&raw); err != nil {
 			return nil, err
 		}
-		if data == nil {
+		var data *jsonx.Object
+		if err := json.Unmarshal(raw, &data); err != nil || data == nil {
 			return httpx.Message(400, false, msgObject), nil
 		}
 		if err := writeGlobal(c.Context(), data, false); err != nil {

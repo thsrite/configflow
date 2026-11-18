@@ -3,7 +3,9 @@ package configexport_test
 import (
 	"bytes"
 	"encoding/json"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -24,7 +26,8 @@ func TestOxiDNSRedactionMatchesPython(t *testing.T) {
 	}
 	cases = append(cases, []byte(deep))
 	input, _ := json.Marshal(cases)
-	cmd := exec.Command("/home/sunbroke/cf-test/.venv/bin/python", "-c", `import json,sys;from backend.common.config_export import redact_oxidns_settings;json.dump([redact_oxidns_settings(v) for v in json.load(sys.stdin)],sys.stdout)`)
+	home, _ := os.UserHomeDir()
+	cmd := exec.Command(filepath.Join(home, "cf-test/.venv/bin/python"), "-c", `import json,sys;from backend.common.config_export import redact_oxidns_settings;json.dump([redact_oxidns_settings(v) for v in json.load(sys.stdin)],sys.stdout)`)
 	cmd.Dir = "../../.."
 	cmd.Stdin = bytes.NewReader(input)
 	reference, err := cmd.CombinedOutput()
