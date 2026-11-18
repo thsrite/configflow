@@ -377,7 +377,7 @@ func (s *Service) recordOutcome(ctx context.Context, id, status, message string)
 		return e
 	}
 	store := notifications.TaskStatus(ctx, s.m.Repository().DataDir())
-	_, err := store.Record("dns_follow:"+id, taskstatus.Result{OK: status == "succeeded", Trigger: "event", Error: message})
+	_, err := store.RecordContext(ctx, "dns_follow:"+id, taskstatus.Result{OK: status == "succeeded", Trigger: "event", Error: message})
 	return err
 }
 func (s *Service) logState(a *agent, previous model.DNSFollowState, current model.DNSFollowState, list []*agent) {
@@ -442,7 +442,10 @@ func taskRow(ctx context.Context, raw *agents.Record, statuses *jsonx.Object) (*
 	}
 	state := raw.GetObject("dns_follow_state")
 	status := state.GetString("status")
-	history := tasks.History(statuses.GetObject(key))
+	history, err := tasks.History(statuses.GetObject(key))
+	if err != nil {
+		return nil, err
+	}
 	if status == "succeeded" || status == "failed" {
 		last := "success"
 		detail := ""
@@ -481,7 +484,11 @@ func taskRow(ctx context.Context, raw *agents.Record, statuses *jsonx.Object) (*
 		secrets = redact.CollectCredentials(a, secrets)
 		secrets = append(secrets, a.GetString("token"))
 	}
-	return redact.SanitizeCredentials(row, secrets), nil
+	sanitized, err := jsonx.Parse(redact.SanitizeCredentials(row, secrets))
+	if err != nil {
+		return nil, err
+	}
+	return sanitized.(*jsonx.Object), nil
 }
 
 func timestamp(t time.Time) string {

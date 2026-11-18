@@ -14,7 +14,7 @@
 - medium 2 条，都在「草稿已写入、状态未写完」这一段，都会让绑定永久失效（下一次 Mihomo 发布报
   「绑定的上游已被编辑或移动」，只能手动重新绑定）；Python 都没有这个问题。已修。
 - low 3 条（凭据脱敏同类残留 1、设备回复类型容忍 1、用户可见文本 1），已修；测试覆盖补充 2 项。
-- 共享最终提交窗口（O3-6c）登记为**待复验**，见第 3 节。
+- 共享最终提交窗口（O3-6c）原登记待复验，现已在 batch-5 合并树闭合，见第 3 节。
 
 ## 1. 发现
 
@@ -94,12 +94,16 @@
   「绑定已改变」；`dns/active` 的 `deployment_id` 缺失不当作匹配（Python `None == None` 会通过，Go 拒绝，属 R05-3 修正）；
   `attempt: null` 重试按 0 处理（Python 500）；`dns_follow_state` 为 null/非对象时写入新状态（Python AttributeError）。
 
-## 3. 待复验（不计入本次发现）
+## 3. 集成复验（原待复验，已闭合）
 
-- **O3-6c 共享最终提交窗口**：`taskstatus.Store.Record` 无 ctx（A14 父分支还没有 `RecordContext`），SQLite
-  最终提交前的 ctx 检查由共享层负责。A14 与 batch-4 合入 go 后 rebase，把 `recordOutcome` 换成
-  `RecordContext(owner ctx)`，在合并树上补跑：本包定向 race、关机后 taskstatus 不写、live difftest。
-- A14 合入后同时复验本分支新增的 M1/M2/L1 用例（它们依赖 A14 的 `PublishDirect`/`SetPairPublisher` 行为）。
+以下由集成者 Codex 在指定 `batch-5@0d43e3f15` 上补验，独立 Opus 发现与修复结论不变：
+
+- `go-a17-integrate` 从本复核分支 f5180a271 用 `--onto ... b6ce4ac29` 仅回放 A17 的 10 个提交，不重复带入旧 A14。
+- `recordOutcome` 已切 `taskstatus.Store.RecordContext(owner ctx)`；同时衔接合并后的 `tasks.History` error 和共享脱敏 RawMessage 返回。
+- 新真实 Runtime `TestTaskStatusRetainsOwnerLifetimeAfterPrecheck` 在 owner 已观察到 nil Err 后暂停并触发关机；旧 Record 负控返回 nil 而失败，新入口要求取消且 DB/所有辅助文件不变。断连正控必须成功、run_count 只增一次，最终两子例 PASS 1.99s。
+- 固定 .32：本包完整 race **1121.876s**（含 M1/M2/L1、其他全部作者/Opus回归及锁序）；live difftest **189.637s**；逐路由 auth/HEAD **1.499s**；共享 taskstatus leaf/写中 Runtime 检查 **1.253s**；server 组合编译 **0.008s**，gofmt/全仓 vet 通过。
+- 首轮本包 race 的旧测试 10s 观察期限与失败路径未释放屏障导致 Runtime 污染，已修为独立的 60s 观察期限及全路径释放/等待 owner；生产 HTTP 超时不变。干净进程完整重跑通过，已通过的 live suite 没有重复。
+- 无新增开放发现，A17 可标 verified，进入 batch-6；未跑完整门禁。命令、负控及范围见 [A17 集成交回](progress/A17-handoff-zh.md)。下列 L3 实机项继续保留，不属于本轮已通过范围。
 
 ## 4. 需要 L3 实机验证的项目（设计 §6.7 第 9、10 项细化）
 

@@ -70,7 +70,7 @@ Same as `PROGRESS-config.md`: status `missing` / `partial` (exact list of what i
 | A17 | DNS follow | 760 | missing | HR | A14, C26 | 4 | internal/agents/dnsfollow (new), api/agents |
 
 | A16 | Agent rule sync, projection, snapshot | 1371 | missing | HR | A07, A14, C25, C27 | 2 | internal/agents/rulesync (new), api/agents |
-| A17 | DNS follow | 760 | ported | HR | A14, C26 | 4 | internal/agents/dnsfollow (new), api/agents |
+| A17 | DNS follow | 760 | verified | HR | A14, C26 | 4 | internal/agents/dnsfollow (new), api/agents |
 | A18 | DNS HA (keepalived pair, handoff, pair publication) | 1529 | missing | HR | A16, A17, C26, routers (`routers/store.py`) | 4 | internal/agents/dnsha (new), api/agents |
 | A19 | Linux gateway core (common/linux_gateway.py) | 518 | verified | HR | C05, C08, routers (`router_split.check_generation`) | – | internal/gateway (new) |
 | A20 | Agent gateway bridge, gateway draft, gateway routes | 1110 | verified | HR | A19, A06, C18, routers (`router_split`, `routers/store.py`) | 18 | internal/gateway, api/agents, api/linuxgateway (new) |
@@ -1645,9 +1645,9 @@ Original author product tip: `c241f2938`; original .64 targeted checks: rulesync
 
 ## A17 — DNS follow
 
-**Status: `ported` — Opus HR 复核完成（0 high），待 A14 合入后 rebase 复验再标 `verified`** · HR · prereqs: A14 (`_prepare_transactional_content`), A11, A02 (IdleRounds, events), C26 (`oxidns_editor.prepare_editor`), C22 (`load_native_yaml`, `generate_oxidns_config`) · Go: internal/agents/dnsfollow (new), api/agents
+**Status: `verified` — Opus HR（0 high）及 batch-5 合并树定向复验通过，待 batch-6 门禁** · HR · prereqs: A14 (`_prepare_transactional_content`), A11, A02 (IdleRounds, events), C26 (`oxidns_editor.prepare_editor`), C22 (`load_native_yaml`, `generate_oxidns_config`) · Go: internal/agents/dnsfollow (new), api/agents
 
-**Opus HR review (2026-11-18, branch `go-opus-review-a17`):** [review-a17.md](review-a17.md)。high **0**（未达回退门槛）；medium 2 已修：M1 重复 finalize 因 `[]byte` 被编码成 base64 永远认不出自己写的草稿，关机落在草稿提交后时重启误报「草稿有新修改」并留下旧签名（`2a14b8ea7`）；M2 草稿提交后的签名重绑重跑完整归属，来源此刻开始新发布即留下旧签名（`64c9ceafc`）——两者都会让绑定在下一次 Mihomo 发布时永久失效，Python 无此问题。low 3 已修：失败 child 的 `error_details` 只按目标 token 脱敏（`a265d0d5d`）、DNS 回复整体解码不容忍错类型（`64c9ceafc`/`49bbe1c0d`）、设备名/来源名缺省值（`49bbe1c0d`）；另补原始请求 query 断言与 `TestMain` 锁序断言。.32：本包 race 555.914s、live difftest 95.263s、api/agents 1.378s 通过。**不能标 verified 的原因**：A17 叠在尚未进 go 的 A14 上；A14 与 batch-4 合入后需 rebase，把 `recordOutcome` 切到 `taskstatus.RecordContext(owner ctx)`（O3-6c），在合并树补跑本包 race、关机后 taskstatus 不写与 live difftest，通过后即可标 `verified`。L3 实机项见复核报告第 4 节。
+**Opus HR review (2026-11-18, branch `go-opus-review-a17`):** [review-a17.md](review-a17.md)。high **0**（未达回退门槛）；medium 2 已修：M1 重复 finalize 因 `[]byte` 被编码成 base64 永远认不出自己写的草稿，关机落在草稿提交后时重启误报「草稿有新修改」并留下旧签名（`2a14b8ea7`）；M2 草稿提交后的签名重绑重跑完整归属，来源此刻开始新发布即留下旧签名（`64c9ceafc`）——两者都会让绑定在下一次 Mihomo 发布时永久失效，Python 无此问题。low 3 已修：失败 child 的 `error_details` 只按目标 token 脱敏（`a265d0d5d`）、DNS 回复整体解码不容忍错类型（`64c9ceafc`/`49bbe1c0d`）、设备名/来源名缺省值（`49bbe1c0d`）；另补原始请求 query 断言与 `TestMain` 锁序断言。.32：本包 race 555.914s、live difftest 95.263s、api/agents 1.378s 通过。**集成已闭合**：`go-a17-integrate` 从复核 tip f5180a271 用 `--onto 0d43e3f15 b6ce4ac29` 仅回放10个A17提交；`recordOutcome` 已用 RecordContext(owner ctx)，并适配 History 错误返回及脱敏 RawMessage。旧 Record 的真实 Runtime 负控明确失败；新入口关机不写、断连照常写（1.99s）。.32 最终本包 race1121.876s、live difftest189.637s、auth1.499s、共享taskstatus Runtime1.253s、server组合编译0.008s通过，gofmt/全仓vet通过。首轮旧测试10s观察期限与未释放屏障造成Runtime污染，已仅修测试控制后在干净进程完整重跑本包；HTTP生产超时未改，无完整gate/无push。L3 实机项见复核报告第 4 节。
 
 **Design:** `server/design/a16-a18-sync-follow-ha.md` (Opus, 2026-11-17) covers A16, A17 and A18 — package map, stored types, Agent protocol, loops, locks, failure/rollback, steps A16-0…A18-4, acceptance (fake pair, Python transcript differential, F1 closure, L3). Port to it; contract changes need the designer's or coordinator's agreement. D-A17-1 已裁定 B（Go-native canonical JSON，切换后重新选择 binding）；D-A18-1 属于 A18。
 
@@ -1659,7 +1659,7 @@ Tests: `test_dns_follow.py` (70)
 
 Routes (4): `GET|PUT|DELETE /api/agents/<agent_id>/dns-follow`; `POST /api/agents/<agent_id>/dns-follow/retry`
 
-Evidence: go-port-a17 基于 go-opus-review-a14@b6ce4ac29，主体 8dec20f39，后续验收提交附真实 Flask/Go 7 场景差分、23 个 owner/Runtime/恢复/脱敏测试及逐路由 auth/HEAD 检查。最终 .32：全仓 vet/gofmt 通过；本包 race 440.750s、live difftest 151.565s、api/agents race 358.929s、server 1.836s；retry 最后修正定向 31.931s、HTTP auth 1.465s、重试 live diff 35.706s。Python pin fixture 由真实 helper 生成并检查新鲜度。A16 接口已对齐，没有伪造 RuleSyncRow；不 push/不开子 agent。A14 仍未入 go，遵协调者指令不拉入其后续变动；收到通知后 rebase，切 RecordContext(owner ctx) 并补集成定向验证。本轮按 Leaner 不跑完整 gate。测试映射、差异与共享窗口说明见 [A17-handoff-zh.md](progress/A17-handoff-zh.md)。
+Evidence: go-port-a17 基于 go-opus-review-a14@b6ce4ac29，主体 8dec20f39，后续验收提交附真实 Flask/Go 7 场景差分、23 个 owner/Runtime/恢复/脱敏测试及逐路由 auth/HEAD 检查。最终 .32：全仓 vet/gofmt 通过；本包 race 440.750s、live difftest 151.565s、api/agents race 358.929s、server 1.836s；retry 最后修正定向 31.931s、HTTP auth 1.465s、重试 live diff 35.706s。Python pin fixture 由真实 helper 生成并检查新鲜度。A16 接口已对齐，没有伪造 RuleSyncRow；不 push/不开子 agent。现已在含 A14/O3-6c 的指定 batch-5 合并树完成上述集成复验；完整门禁进入 batch-6。本轮按 Leaner 不跑完整 gate。测试映射、差异与共享窗口说明见 [A17-handoff-zh.md](progress/A17-handoff-zh.md)。
 
 Hooks to provide: `agents.SetDNSFollowRow` (dns_follow row; with A16's row this completes the `agent` task slot), `tasks.SetRunner("dns_follow", dns_follow.retry)`, `agents.OnManagerInit` (`dns_follow.start_loop`, registered first: Python order dns_follow → HA publication → IPv6 verification). `settings_digest` is used by A14 `_remember_deployment_content` (export it; A14 needs it → port the digest helper in A14 or give A14 a hook).
 

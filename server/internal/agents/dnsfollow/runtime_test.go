@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -133,16 +134,29 @@ func TestShutdownDuringFollowIOLeavesNoLateCommit(t *testing.T) {
 				c.path = "/api/deployments"
 			} // Only POST is intercepted below for accepted uploads.
 			f.m.SetClient(&followStopClient{c: c})
+			var releaseOnce sync.Once
+			release := func() { releaseOnce.Do(func() { close(c.release) }) }
+			finished := make(chan struct{})
+			t.Cleanup(func() {
+				release()
+				select {
+				case <-finished:
+				case <-time.After(30 * time.Second):
+					t.Error("follow owner did not finish during cleanup")
+				}
+			})
 			done := make(chan error, 1)
-			go func() { done <- f.s.Tick(lifecycle.BindRequest(f.ctx)) }()
+			go func() { defer close(finished); done <- f.s.Tick(lifecycle.BindRequest(f.ctx)) }()
 			select {
 			case <-c.arrived:
-			case <-time.After(10 * time.Second):
+			case err := <-done:
+				t.Fatal("owner exited before real I/O", err)
+			case <-time.After(60 * time.Second):
 				t.Fatal("owner did not reach real I/O")
 			}
 			lifecycle.Stop(20 * time.Millisecond)
 			before := durable(t, f)
-			close(c.release)
+			release()
 			if e := <-done; !errors.Is(e, context.Canceled) {
 				t.Fatal(e)
 			}

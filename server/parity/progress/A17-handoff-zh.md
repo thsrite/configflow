@@ -1,12 +1,12 @@
 # A17 DNS follow 移植交回
 
-状态：**ported，待独立 Opus HR 复核及 A14 合入后的集成复验**。分支 `go-port-a17`，首个提交 `8dec20f39`，基于 `go-opus-review-a14@b6ce4ac29`。协调者 2026-11-18 明确要求在 batch-4 → A14 收尾 → 下一批合入之前不拉入 A14 的后续改动；A14 进 go 后再 rebase。本文记录的是独立 A17 树，不代表依赖合并后的门禁。
+状态：**verified：Opus HR 已完成（0 high，2 medium / 3 low 已修），batch-5 合并树集成复验通过**。当前分支 `go-a17-integrate`，由 `go-opus-review-a17@f5180a271` 新建，执行 `git rebase --onto 0d43e3f15 b6ce4ac29`，仅回放 10 个 A17 提交，不重复带入旧 A14。行为差异文档的追加冲突保留双方；server/Register/routes 自动合并后逐段核对。原移植分支 `go-port-a17`（主体 `8dec20f39`、验收 `1560b84b0`）的运行记录保留在下文。已具备进入 batch-6 的条件，完整门禁由协调者安排。
 
 ## 实现与边界
 
 完整阅读 Python `backend/agents/dns_follow.py`、路由 162–191 行和 `backend/test_dns_follow.py`（70 个函数/参数化定义）；对照 A14 复核/HANDOFF、C26、O3-6 locks、A16–A18 设计及 WORKFLOW Leaner verification。
 
-`internal/agents/dnsfollow` 提供 `Options/Configure/Disable/Retry/Tick`、`ForManager/Wire/Register`。绑定、来源和目标 profile、连接信息、基准、资源摘要以及成功发布归属都在写入前重新核对。A14 提供真正的 PrepareContent/Publish、reservation、receipt、Agent 协议和缓存提交；C26 提供文档/生成检查。无自制 YAML/JSON parser，无新依赖。未改共享 taskstatus.Store.Now，避免多个 owner 写共享时钟字段。只有 `adapter.go` 接触旧 registry/repo 的 jsonx API；业务类型使用 model 和 deploy Source。
+`internal/agents/dnsfollow` 提供 `Options/Configure/Disable/Retry/Tick`、`ForManager/Wire/Register`。候选发布及 profile CAS 前核对绑定、来源和目标 profile、连接信息、基准、资源摘要与成功发布归属；草稿已提交后的签名重绑只核对 binding id，保留 Opus M2 修复的幂等边界。A14 提供真正的 PrepareContent/Publish、reservation、receipt、Agent 协议和缓存提交；C26 提供文档/生成检查。无自制 YAML/JSON parser，无新依赖。taskstatus 使用真实 store 的默认时钟，不替换生产参数。只有 `adapter.go` 接触旧 registry/repo 的 jsonx API；业务类型使用 model 和 deploy Source。
 
 四条路由全部通过 panel auth：GET/PUT/DELETE `/api/agents/<agent_id>/dns-follow`，POST `/api/agents/<agent_id>/dns-follow/retry`。HEAD 走只读 options；PUT 使用 BindSilent，与 Flask silent JSON 一致；retry 成功 202，拒绝 409。options 不返回私有 job，只投影来源公共字段。绑定索引接受整数且不接受 bool/null/浮点；保存数据里的 R5 错类型回退也不能成为 upstream 0 的所有权证据。
 
@@ -16,11 +16,13 @@
 
 L1 try-lock 按 repository canonical DataDir 共享，跨 Manager/Service 排他，忙冲突在参数校验之前返回；不增加 flock/锁文件。UpdateAgents 和 profile 事务 callback 不做网络；来源/目标网络请求都走 Manager 的实际 HTTP client 和生产超时。boot 首轮零延迟，之后 5 秒；IdleRounds 600 秒复查，稳定结果不重写时间、事件或 taskstatus。
 
-child ID 由 binding/source/attempt 确定；预留后保存私有 job、提交证据，再上传同一 prepared bundle。丢响应保留 submitted 任务，重启只 poll；rollback_failed 非终态，禁止重复 retry/upload；仅 failed/rolled_back/succeeded 为终态。成功后 profile 做 settings CAS，期间新草稿保留并报告 draft_synced=false。finalize 在 profile L3 事务中再读归属，避免核验与写入之间让旧 child 覆盖新归属。
+child ID 由 binding/source/attempt 确定；预留后保存私有 job、提交证据，再上传同一 prepared bundle。丢响应保留 submitted 任务，重启只 poll；rollback_failed 非终态，禁止重复 retry/upload；仅 failed/rolled_back/succeeded 为终态。成功后 profile 做 settings CAS，期间新草稿保留并报告 draft_synced=false。finalize 在 profile L3 事务中再读归属，避免核验与写入之间让旧 child 覆盖新归属；重复 finalize 以 json.RawMessage 比较已提交候选，保留 Opus M1 的重启恢复修复。
 
 所有写 owner 通过 deploy.RunDetached；已绑定请求断连会完成工作，Runtime 关闭则拒绝新工作。真实 Runtime 用例在 DNS 响应/Agent 接受上传后停机，比较完整 DB 文档与非 SQLite 辅助文件，确认晚到响应不提交状态/job/profile/taskstatus；已接受的上传保留不确定证据以待下次恢复。无裸后台 goroutine，ForManager 在 Manager.Close 时移除 pool entry；回环测试的 goroutine 只用于触发真实并发。
 
-当前 A14 parent 尚无 taskstatus.RecordContext；adapter 使用 notifications 的真实 TaskStatus store 和 Record。共享 SQLite/原子文件/taskstatus 最后窗口属于 O3-6c，不能拿 A17 定向测试声称它已修。**A14 合入 go 后必须把 Record 换成 RecordContext(owner ctx)，在合并树补跑关机后 taskstatus 不写及本包定向 race/live difftest。** 协调者已明确这个顺序。
+O3-6c 集成：`recordOutcome` 已改为 `notifications.TaskStatus(...).RecordContext(owner ctx, ...)`，将 owner 的关机取消传到共享 leaf lock/原子替换。合并树同时适配 `tasks.History` 的错误返回（错误不吞掉）及 `redact.SanitizeCredentials` 的 RawMessage 返回（在既有 adapter 边界转换回 task row）。没有修改共享驱动、生产超时或比较器。
+
+新增 `TestTaskStatusRetainsOwnerLifetimeAfterPrecheck`：真实 Runtime Start/BindRequest，暂停在 owner 已读到 nil Err、但尚未进入 taskstatus leaf 的位置。关机后释放时，要求 context.Canceled 且完整 DB/辅助文件不变；浏览器断连正控要求 event 成功并且 run_count 只增一次。暂停只控制调度，保留真实 context.Value/owner lifetime，不缩短生产 I/O 参数。切换前的旧 `Record` **负控明确失败**（shutdown 子例返回 `<nil>`，2.049s），断连子例通过；避免只测试入口处早退而漏掉内部窗口。另补 `TestTaskRowPropagatesInvalidHistory` 验证 shared History 错误确实上抛。
 
 ## 脱敏与行为差异
 
@@ -86,4 +88,32 @@ child ID 由 binding/source/attempt 确定；预留后保存私有 job、提交�
 
 提交：`8dec20f39` 为主体；后续边界修复、差分、真实 Runtime 和交回说明在本报告所在的验收提交。工作树最终保持干净，未 push。
 
-没有申请 full gate；协调者安排独立 Opus HR 和后续合并批次门禁。当前不能越过 A14 未合入的依赖声称合并复验已完成。
+## batch-5 合并树集成（通过）
+
+固定 `.32`，本轮不跑完整门禁。`recordOutcome` 传 owner ctx、History 错误与 RawMessage consumer 适配及测试控制修复在本次集成提交。
+
+集成首轮：gofmt、全仓 vet 通过；live difftest `ok 189.637s`。本包 race `1084.796s` 未全绿：`TestShutdownDuringFollowIOLeavesNoLateCommit//api/deployments` 的 10s 到达点观察期限先到，失败路径没有释放测试屏障，遗留 Runtime owner，随后 5 组用例连带报 stopping/running。已修测试控制：观察期限为 60s、所有退出路径释放屏障并等待 owner，owner 提前结束直接报告；HTTP 生产连接/读取与上传 timeout 不改。本包在干净进程重跑，已通过的 live diff 不重复。Opus 的 M1/M2/L1、其他 Runtime/脱敏/lock-order 回归都包含在本包 race 中；live difftest 在含 A14/O3-6c 的同一树执行。待通过后交协调者进入 batch-6，实机 L3 项仍按独立复核报告保留。
+
+
+最终命令（全部前台，`RT_HOST=sunbroke@192.168.0.32`）：
+
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt -e GOMAXPROCS=4 -e CONFIGFLOW_DIFF=1 -- bash -lc 'set -e; cd server; test -z "$(gofmt -l internal/agents/dnsfollow internal/api/agents/dnsfollow*)"; go vet ./...; go test -race -p 4 -count=1 -timeout=20m ./internal/agents/dnsfollow/...'
+```
+
+该轮 gofmt / 全仓 vet 通过，live difftest `ok 189.637s`；本包的测试控制失败如上，不能将该轮包 race 记为通过。修正后只重跑本包与尚未执行的接线/共享检查，不重复已通过的 live suite：
+
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt -e GOMAXPROCS=4 -- bash -lc 'set -e; cd server; test -z "$(gofmt -l internal/agents/dnsfollow)"; go vet ./internal/agents/dnsfollow/...; go test -race -v -count=1 -timeout=30m ./internal/agents/dnsfollow; go test -race -count=1 -run TestDNSFollow ./internal/api/agents; go test -race -count=1 -run TestO36cStatus ./internal/taskstatus; go test -count=1 -run "^$" ./internal/server'
+```
+
+实际将 `-v` race 输出重定向到测试服务器 `$TMPDIR/a17-integrate-race.log` 并在成功后打印尾部，仍为前台运行；上面保留等价的直接命令。最终：
+
+- `ok configflow/internal/agents/dnsfollow 1121.876s`（全部作者及 Opus 回归、TestMain 锁序、关机/断连）
+- `TestTaskStatusRetainsOwnerLifetimeAfterPrecheck` 的 shutdown/disconnect 两子例 **PASS 1.99s**；坏 History 错误上抛 **PASS**
+- `TestShutdownDuringFollowIOLeavesNoLateCommit` **PASS 51.57s**，后续用例没有 Runtime 污染
+- `ok configflow/internal/api/agents 1.499s`
+- `ok configflow/internal/taskstatus 1.253s`（共享 leaf lock 等待、写中关机及断连正控）
+- `ok configflow/internal/server 0.008s [no tests to run]`
+
+本轮无新功能差异、无未修复发现；O3-6c 在 A17 的 taskstatus 入口衔接窗口已闭合。`git range-diff` 核对 10 个复核后提交：9 个补丁完全相同，另 1 个只因 behaviour-changes 文档追加合并发生上下文差异。没有重复带入旧 A14，不改共享驱动，不 push，不访问生产，不开子 agent。A17 已在 PROGRESS 标 verified；batch-6 完整门禁与设计 L3 实机项仍由协调者安排。
