@@ -68,7 +68,7 @@ Same as `PROGRESS-config.md`: status `missing` / `partial` (exact list of what i
 | A15 | upgrades, Agent operations, address follow | 745 | verified | HR | A01, A02 | 15 (15 done) | internal/agents/upgrades (new), api/agents |
 | A16 | Agent rule sync, projection, snapshot | 1371 | verified | HR | A07, A14, C25, C27 | 2 | internal/agents/rulesync (new), api/agents |
 | A17 | DNS follow | 760 | verified | HR | A14, C26 | 4 | internal/agents/dnsfollow (new), api/agents |
-| A18 | DNS HA (keepalived pair, handoff, pair publication) | 1529 | missing | HR | A16, A17, C26, routers (`routers/store.py`) | 4 | internal/agents/dnsha (new), api/agents |
+| A18 | DNS HA (keepalived pair, handoff, pair publication) | 1529 | wip | HR | A16, A17, C26, routers (`routers/store.py`) | 4 | internal/agents/dnsha (new), api/agents |
 | A19 | Linux gateway core (common/linux_gateway.py) | 518 | verified | HR | C05, C08, routers (`router_split.check_generation`) | – | internal/gateway (new) |
 | A20 | Agent gateway bridge, gateway draft, gateway routes | 1110 | verified | HR | A19, A06, C18, routers (`router_split`, `routers/store.py`) | 18 | internal/gateway, api/agents, api/linuxgateway (new) |
 | A21 | gateway onboarding | 751 | verified | HR | A19, A20, C18, C22, C23, C24, C05, routers (`router_split`) | 3 | internal/gateway, api/gatewayonboarding (new) |
@@ -1664,7 +1664,7 @@ Hooks to provide: `agents.SetDNSFollowRow` (dns_follow row; with A16's row this 
 
 **Required A14 hand-off:** delete the exact temporary proddiff row `POST /api/agents/<agent_id>/generate-config · body.message · a18-ha-refusal` (narrowed by the A14 review: the comparator emits this type only when Go answers exactly the ErrPairPublisherMissing text on an otherwise identical failed 400; every other message difference stays `value`) marked `deferred → A18：HA 最终生成在 A18 接入前按设计拒绝，接入后必须消失` when wiring the HA publisher/generation path. It covers only the designed ErrPairPublisherMissing refusal: status 400, success=false and all other body fields/compared headers match. No wildcard; stale baseline is a hard gate failure.
 
-**Status: `missing`** · HR · prereqs: A16 (`prepare_candidate`, `settings_for`, `fetch_snapshot`), A17, A14, A11, C26 (`prepare_editor`), C22 (`load_native_yaml`), routers (`routers/store.routers_of`) · Go: internal/agents/dnsha (new), api/agents
+**Status: `wip`** · HR · prereqs: A16 (`prepare_candidate`, `settings_for`, `fetch_snapshot`), A17, A14, A11, C26 (`prepare_editor`), C22 (`load_native_yaml`), routers (`routers/store.routers_of`) · Go: internal/agents/dnsha (new), api/agents
 
 **Design:** `server/design/a16-a18-sync-follow-ha.md` (Opus, 2026-11-17) covers A16, A17 and A18 — package map, stored types, Agent protocol, loops, locks, failure/rollback, steps A16-0…A18-4, acceptance (fake pair, Python transcript differential, F1 closure, L3). Port to it; contract changes need the designer's or coordinator's agreement. Open maintainer decisions: D-A17-1, D-A18-1.
 
@@ -1680,7 +1680,7 @@ Tests: `test_oxidns_ha.py` (37), `test_oxidns_ha_publish.py` (28), `test_oxidns_
 
 Routes (4): `GET|PUT|DELETE /api/agents/<agent_id>/oxidns-ha`; `GET /api/agents/<agent_id>/oxidns-ha-environment`
 
-Evidence: no Go code; pure pieces copied in `internal/agents/compat.go`.
+Evidence: 配对发布、VIP 交接、启停与四条路由已接线；基础发布/首次开启、真实 Python 预检对照在固定测试服务器通过。故障、Runtime、HTTP 差分与基线清理进行中，详见后续 A18 交接。
 
 Hooks to provide: `agents.RegisterHooks{HAServiceOperation, HADeployment, HAActivate, PublishDeployment (publish wrapper around A14's function)}`, `agents.OnManagerInit` (`oxidns_ha_publish.start_loop`), A07's HA rule-update hook; then delete `agents/compat.go` and switch the registry to the real functions (pair lock file included).
 

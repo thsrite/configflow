@@ -1626,3 +1626,6 @@ func compareState(ctx context.Context, m Manager, store *StateStore, agentID, ex
 		return err
 	})
 }
+
+// RegistryManager exposes the publication owner behind this monitor adapter.
+func (m agentsManager) RegistryManager() *agents.Manager { return m.Manager }

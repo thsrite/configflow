@@ -400,8 +400,16 @@ func GenerateFinal(ctx context.Context, m *agents.Manager, id string, r Generate
 			}
 			return nil
 		}
-		if pairRequired(t) {
-			return fail(ErrPairPublisherMissing)
+		pair, e := m.HAPair(ctx, id)
+		if e != nil {
+			return fail(e)
+		}
+		members := []Target{t}
+		if len(pair) > 0 {
+			members = nil
+			for _, member := range pair {
+				members = append(members, NewTarget(member))
+			}
 		}
 		src, revision, e := publishSource(ctx, m, t.ProfileID, true)
 		if e != nil {
@@ -412,7 +420,7 @@ func GenerateFinal(ctx context.Context, m *agents.Manager, id string, r Generate
 			base = v
 		}
 		base = strings.TrimRight(base, "/")
-		input := PreviewInput{Target: t, Source: src, ConfigRevision: revision, BaseURL: base, Members: []Target{t}}
+		input := PreviewInput{Target: t, Source: src, ConfigRevision: revision, BaseURL: base, Members: members}
 		var prepared *Prepared
 		if t.ServiceType == "surge" {
 			generated, e := GenerateAgentConfig(ctx, src, t, base)
@@ -428,6 +436,22 @@ func GenerateFinal(ctx context.Context, m *agents.Manager, id string, r Generate
 			input.Bundle, e = FinalizeBundle(ctx, m, t, prepared.Bundle, src)
 			if e != nil {
 				return fail(e)
+			}
+			for _, peer := range members {
+				if peer.ID == id {
+					continue
+				}
+				other, err := FinalizeBundle(ctx, m, peer, input.Bundle, src)
+				if err != nil {
+					return fail(err)
+				}
+				same, err := input.Bundle.Equal(other)
+				if err != nil {
+					return fail(err)
+				}
+				if !same {
+					return fail(&Refusal{Message: msgHAFinalDifferent})
+				}
 			}
 		}
 		if ctx.Err() != nil {

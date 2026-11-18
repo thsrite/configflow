@@ -59,8 +59,7 @@ type Hooks struct {
 	// oxidns_ha_publish.service_operation / deployment / activate (#29).
 	// Defaults: the Python code path for Agents without an active pair
 	// publication (conflict checks included, without the pair lock file);
-	// a deployment that belongs to a pair publication fails with
-	// ErrNotPorted.
+	// an active pair publication fails closed with ErrHAOwnerMissing.
 	HAServiceOperation func(ctx context.Context, m *Manager, agentID string, operation func() (*jsonx.Object, error), uninstall bool) (*jsonx.Object, error)
 	HADeployment       func(ctx context.Context, m *Manager, agentID, deploymentID string) (*jsonx.Object, error)
 	HAActivate         func(ctx context.Context, m *Manager, agentID, deploymentID string) (*jsonx.Object, error)

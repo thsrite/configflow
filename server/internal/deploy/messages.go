@@ -104,3 +104,5 @@ const (
 	msgRulesPacked            = "规则文件准备完成，正在打包"
 	msgRuleProgress           = "正在准备规则文件 %d/%d"
 )
+
+const msgHAFinalDifferent = "主备设备需要不同的最终配置，请先统一主备配置路径与设备设置。"

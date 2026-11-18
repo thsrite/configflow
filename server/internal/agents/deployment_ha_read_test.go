@@ -19,7 +19,7 @@ func TestHistoricalHAPairReadDoesNotReconcile(t *testing.T) {
 			before := e.system().DeepCopy()
 			got, err := e.m.GetDeployment(e.ctx, e.id(), "history")
 			if status == "applying" || status == "rollback_failed" {
-				if !errors.Is(err, ErrNotPorted) {
+				if !errors.Is(err, ErrHAOwnerMissing) {
 					t.Fatal(got, err)
 				}
 			} else {

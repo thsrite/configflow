@@ -19,6 +19,7 @@ import (
 
 	"configflow/internal/agents"
 	"configflow/internal/agents/dnsfollow"
+	"configflow/internal/agents/dnsha"
 	"configflow/internal/agents/metrics"
 	"configflow/internal/agents/monitor"
 	"configflow/internal/agents/rulesync"
@@ -116,6 +117,7 @@ var wirePackages = []func(){
 	aggregations.Wire,
 	agents.Wire,
 	dnsfollow.Register,
+	dnsha.Register,
 	metrics.Wire,
 	metrics.WireTraffic,
 	monitor.Wire,

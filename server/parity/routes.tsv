@@ -46,10 +46,10 @@ POST	/api/agents/<agent_id>/mihomo/<path:resource>	routes.agents.mihomo_panel	ap
 PUT	/api/agents/<agent_id>/mihomo/<path:resource>	routes.agents.mihomo_panel	api/agents	done
 GET	/api/agents/<agent_id>/mihomo/rule-targets	routes.client_tools.rule_targets	internal/api/agents	done
 POST	/api/agents/<agent_id>/mihomo/rule-targets/apply	routes.client_tools.connection_rule	internal/api/agents	done
-DELETE	/api/agents/<agent_id>/oxidns-ha	routes.agents.agent_oxidns_ha	29	todo
-GET	/api/agents/<agent_id>/oxidns-ha	routes.agents.agent_oxidns_ha	29	todo
-PUT	/api/agents/<agent_id>/oxidns-ha	routes.agents.agent_oxidns_ha	29	todo
-GET	/api/agents/<agent_id>/oxidns-ha-environment	routes.agents.agent_oxidns_ha_environment	29	todo
+DELETE	/api/agents/<agent_id>/oxidns-ha	routes.agents.agent_oxidns_ha	internal/api/agents	done
+GET	/api/agents/<agent_id>/oxidns-ha	routes.agents.agent_oxidns_ha	internal/api/agents	done
+PUT	/api/agents/<agent_id>/oxidns-ha	routes.agents.agent_oxidns_ha	internal/api/agents	done
+GET	/api/agents/<agent_id>/oxidns-ha-environment	routes.agents.agent_oxidns_ha_environment	internal/api/agents	done
 GET	/api/agents/<agent_id>/oxidns/cache	routes.agents.oxidns_cache	api/agents	done
 POST	/api/agents/<agent_id>/oxidns/cache/flush	routes.agents.oxidns_cache	api/agents	done
 GET	/api/agents/<agent_id>/oxidns/clients	routes.agents.get_oxidns_clients	api/agents	done
