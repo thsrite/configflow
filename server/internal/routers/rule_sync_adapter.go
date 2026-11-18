@@ -134,6 +134,11 @@ func (d *RuleSyncDownloads) Download(ctx context.Context, raw, config json.RawMe
 	work, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	response, err := client.RequestRule(work, source.URL, rulefetch.Request{Config: cfg, Stream: true, ConnectTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second})
+	// Only a body that outgrows the size or total time is the permanent limit
+	// error (paused). The budget running out while connecting or waiting for
+	// the response, including the client's retries, is a transient failure
+	// retried at the next interval, as Python's connect/read timeouts are.
+	responded := err == nil
 	if err == nil {
 		defer response.Close()
 		err = response.RaiseForStatus()
@@ -142,7 +147,7 @@ func (d *RuleSyncDownloads) Download(ctx context.Context, raw, config json.RawMe
 	if err == nil {
 		data, err = io.ReadAll(io.LimitReader(response, syncMaxBytes+1))
 	}
-	if len(data) > syncMaxBytes || errors.Is(work.Err(), context.DeadlineExceeded) {
+	if len(data) > syncMaxBytes || responded && errors.Is(work.Err(), context.DeadlineExceeded) {
 		return "", routerError(messageSyncDownloadLimit)
 	}
 	if err != nil {

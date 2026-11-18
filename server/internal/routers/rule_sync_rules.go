@@ -57,7 +57,9 @@ func ClassifySyncRules(content, behavior string) (*RuleSyncRecord, error) {
 	if !slices.Contains([]string{"classical", "ipcidr", "domain"}, behavior) {
 		return nil, routerError(messageSyncBehavior)
 	}
-	lines := strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n")
+	// CR, LF and CRLF all end a line, as in the Python classifier and YAML.
+	text = strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\r", "\n")
+	lines := strings.Split(text, "\n")
 	var entries []*yaml.Node
 	if syncPayload.MatchString(text) {
 		root, err := yamlx.Parse([]byte(text))
@@ -123,6 +125,9 @@ func ClassifySyncRules(content, behavior string) (*RuleSyncRecord, error) {
 		if domain && value != "" && behavior != "ipcidr" {
 			record.DomainCount++
 			continue
+		}
+		if domain {
+			ok = false // a domain-form entry is never an address, even when its value parses as one
 		}
 		if kind == "IP-CIDR" && ok && !network.Addr().Is4() || kind == "IP-CIDR6" && ok && network.Addr().Is4() {
 			ok = false

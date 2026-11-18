@@ -566,7 +566,7 @@ func (s *RuleSyncService) StartJob(ctx context.Context, profile, id string) erro
 	r := findSyncRouter(config, id)
 	job, unlock, ok := JobLock(held, profile, id, r)
 	if !ok {
-		return routerError(messageSyncBusy)
+		return routerError(messageEditBusy) // start_job says 重试; the sync itself says 再试
 	}
 	receipt, err := s.store().Read(job, profile, id)
 	if err != nil {
