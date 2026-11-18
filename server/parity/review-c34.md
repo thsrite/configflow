@@ -223,3 +223,9 @@ RT_HOST=sunbroke@192.168.0.32 rt --back server/internal/api/config/difftest/rout
 末行 `ok configflow/internal/api/config/difftest 10.466s`。没有遗留失败；不重复已经
 通过的其他差分组。此次只改适配层/测试，没有新 parser/fuzz target，既有 60s 记录保留。
 C34 与 C36 一起交回 batch-5；不 push、不复制 A20/A21 文件。
+
+交回前本地 go 前进到 `fbbe382ec`，仅新增 routerdiff 工具/文档与 HANDOFF；
+`git diff --name-only c939a5f61..go -- server/internal server/go.mod server/go.sum backend`
+无输出。已再次 rebase 到该最新 go，无冲突、Go/Python 被测运行时代码无变化，
+不重复已通过的检查。最终原复核修复为 `98e480fc0`，N8/A20 衔接修复为
+`181349447`。C34 分支只含 C34 与该衔接；C36 另叠在此分支之上。
