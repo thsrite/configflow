@@ -42,7 +42,8 @@ accept flag in gate/CI. Record, review the git diff, and run `check` once more.
 ## Process audit and explicit live exceptions
 
 `go run ./tools/pyref` audits A scopes by default. `-scopes` selects migrated
-packages; it also inspects their children. Every process constructor (including
+packages; it also inspects all Go sources in their children, including ordinary
+`.go` test helpers. Every process constructor (including
 aliased imports and calls in callbacks) and old `yamlxtest.NewOracle` call must
 have an exact file/function/callee registration in `live-exceptions-a.json` or
 `live-exceptions-b.json`. `count` defaults to one; an added call or stale entry

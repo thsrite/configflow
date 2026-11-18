@@ -125,3 +125,22 @@ func TestAuditRepository(t *testing.T) {
 		}
 	}
 }
+
+func TestAuditRejectsHelperPackageProcesses(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "server/internal/example/helper/process.go")
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("package helper\nimport cmd \"os/exec\"\nfunc probe() { cmd.Command(\"python3\") }\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	scopes := []string{"server/internal/example"}
+	if err := audit(root, scopes, nil); err == nil || !strings.Contains(err.Error(), "helper/process.go:probe:exec.Command") {
+		t.Fatal("non-test helper constructor bypassed registration", err)
+	}
+	row := exception{ID: "helper", File: "server/internal/example/helper/process.go", Function: "probe", Callee: "exec.Command", Guard: "record callback only", Kind: "record-only", Reason: "reference output"}
+	if err := audit(root, scopes, []exception{row}); err != nil {
+		t.Fatal(err)
+	}
+}

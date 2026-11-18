@@ -385,3 +385,9 @@ Current timing readiness check at 2026-11-18 02:08:05 UTC: one-minute load
 `.32=10.54`, `.64=26.59`; both-under-10 condition not met. No formal measurement
 started. Refreshed implementation and the edge-fixture repair were handed back
 at `6fad06fcf`; all original package cases now execute with source-checked goldens.
+
+Adopted B's shared-tool hardening `26a077a66`: audit every `.go` source in each
+manifest scope (including ordinary helper subpackages), with one helper-source
+negative/registered positive control. B's unrelated progress file is omitted
+from the cherry-pick; its original author/co-author and shared-code patch remain.
+This changes only the one shared pyref implementation; no private A copy.

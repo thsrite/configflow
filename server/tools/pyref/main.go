@@ -1,4 +1,4 @@
-// Command pyref audits process creation in the explicitly migrated Go tests.
+// Command pyref audits process creation in migrated package trees, including test helpers.
 package main
 
 import (
@@ -116,7 +116,7 @@ func audit(root string, scopes []string, registry []exception) error {
 				}
 				return nil
 			}
-			if !strings.HasSuffix(path, "_test.go") {
+			if !strings.HasSuffix(path, ".go") {
 				return nil
 			}
 			data, err := os.ReadFile(path)
