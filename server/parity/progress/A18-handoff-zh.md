@@ -1,6 +1,6 @@
 # A18 DNS HA 移植交接
 
-状态：`ported`；独立 Opus HR 复核与 L3 实机仍待协调者执行。
+状态：`verified`（Opus HR 复核见 review-a18.md）；L3 实机仍待协调者执行。
 
 分支 `go-port-a18`，基于指定的 batch-6（A16/A17 集成与 N8 第 2 批）；未 push。
 主体提交 `133d5ec0f`；离线证明/基线关闭 `cc146fbc2`，故障/Runtime/集成回归与修正 `82c3fab94`；状态/归属/L3 计划为独立文档提交。

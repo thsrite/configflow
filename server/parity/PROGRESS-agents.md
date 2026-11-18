@@ -10,7 +10,7 @@ proddiff new0/stale0); post64815165 rebase vet/changed packages and all13diff
 pass. Detailed sources, classifications and commands:
 [progress/n7-4-writers.md](progress/n7-4-writers.md).
 
-Domain `agents` (WORKFLOW.md): Agent registry/heartbeat, metrics/traffic, OxiDNS/Mihomo monitoring, installers, Docker HA, deployment bundle, push diff, content sync, publishing, upgrades, address follow, rule sync, DNS follow, DNS HA, Linux gateway, gateway onboarding/installation, IPv6 readiness (old packages #20–#31). **69 Python files, 25154 lines, 24 modules** (equal to the `agents` totals in `FILES.md`) — 3 missing, 0 partial, 1 ported (A18), 20 verified (A01–A17, A19, A20, A24). Only reviewers set `verified`.
+Domain `agents` (WORKFLOW.md): Agent registry/heartbeat, metrics/traffic, OxiDNS/Mihomo monitoring, installers, Docker HA, deployment bundle, push diff, content sync, publishing, upgrades, address follow, rule sync, DNS follow, DNS HA, Linux gateway, gateway onboarding/installation, IPv6 readiness (old packages #20–#31). **69 Python files, 25154 lines, 24 modules** (equal to the `agents` totals in `FILES.md`) — 3 missing, 0 partial, 0 ported, 21 verified (A01–A20, A24). Only reviewers set `verified`.
 
 Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 496004d7. The Go code was read directly (`internal/agents`, `internal/api/agents`, `internal/notifications`, `internal/tasks`, `internal/server`); the hand-back in `progress/20-agents.md` was not relied on.
 
@@ -68,7 +68,7 @@ Same as `PROGRESS-config.md`: status `missing` / `partial` (exact list of what i
 | A15 | upgrades, Agent operations, address follow | 745 | verified | HR | A01, A02 | 15 (15 done) | internal/agents/upgrades (new), api/agents |
 | A16 | Agent rule sync, projection, snapshot | 1371 | verified | HR | A07, A14, C25, C27 | 2 | internal/agents/rulesync (new), api/agents |
 | A17 | DNS follow | 760 | verified | HR | A14, C26 | 4 | internal/agents/dnsfollow (new), api/agents |
-| A18 | DNS HA (keepalived pair, handoff, pair publication) | 1529 | ported | HR | A16, A17, C26, routers (`routers/store.py`) | 4 | internal/agents/dnsha (new), api/agents |
+| A18 | DNS HA (keepalived pair, handoff, pair publication) | 1529 | verified | HR | A16, A17, C26, routers (`routers/store.py`) | 4 | internal/agents/dnsha (new), api/agents |
 | A19 | Linux gateway core (common/linux_gateway.py) | 518 | verified | HR | C05, C08, routers (`router_split.check_generation`) | – | internal/gateway (new) |
 | A20 | Agent gateway bridge, gateway draft, gateway routes | 1110 | verified | HR | A19, A06, C18, routers (`router_split`, `routers/store.py`) | 18 | internal/gateway, api/agents, api/linuxgateway (new) |
 | A21 | gateway onboarding | 751 | verified | HR | A19, A20, C18, C22, C23, C24, C05, routers (`router_split`) | 3 | internal/gateway, api/gatewayonboarding (new) |
@@ -2120,3 +2120,5 @@ Questions for the coordinator/maintainer:
 - No Agent heartbeat/traffic HTTP request binder is migrated here. Those legacy
   request consumers still wait for N8-10/A04/A05 ingestion governance. Scope and
   exact validation output: [progress/n8-7.md](progress/n8-7.md).
+
+**A18 Opus HR review (2026-11-18, branch `go-opus-review-a18`):** [review-a18.md](review-a18.md). High **0** (fallback threshold not reached); medium 1 fixed (M1: during a first enable `deploy.Publish` returned A14's `ErrPairPublisherMissing` 500 instead of Python's 409 HA conflict; `467178838`, test `TestPublishDuringFirstEnableAnswersPythonConflict`). Open decision O-1 (inherited from Python): a member lost for good during a VIP handoff wedges the pair journal in `unknown` (no disable/publish). D-A18-1 retry is unbounded but bounded by the other lock holders (no livelock). Full proddiff compare: no A18 rows return; 21 unrelated new rows (load-induced subscription log consequences, `router_rule_sync` task slot). Status: `verified`; L3 items 1–13 in `lab/L3.md` pending.
