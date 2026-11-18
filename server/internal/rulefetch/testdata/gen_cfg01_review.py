@@ -84,6 +84,10 @@ add('prefix-dot-out-no-redirect', '{origin}/cf/api/../../api/ok', domain='{origi
 add('legit-query', '{origin}/api/rules?url=http%3A%2F%2Fexample.com%2Fa&x=1')
 add('legit-encoded-slash', '{origin}/api/a%2Fb')
 add('legit-percent', '{origin}/api/50%25off')
+add('legit-backslash-name', '{origin}/api/rules/local/a\\b')
+add('legit-encoded-backslash-name', '{origin}/api/rules/local/a%5Cb')
+add('legit-backslash-dot-inside', '{origin}/api/a\\..\\b')
+add('redir-backslash-traversal', '{origin}/api/start', ['/api/x\\..\\..\\landing'])
 add('legit-external-query', '{external}/rules.txt?token=abc&v=1')
 add('legit-external-redirect', '{external}/source', [], ['/rules.txt'])
 

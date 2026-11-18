@@ -104,17 +104,12 @@ func (b *internalBoundary) validate(target *url.URL) error {
 	}
 	// Path is already decoded once by net/url. Check nested escaped forms too:
 	// a reverse proxy must not turn an accepted encoded traversal into a path
-	// outside the API. Backslashes have inconsistent separator semantics.
+	// outside the API. Some servers read a backslash as a separator, others
+	// as a name character (a rule name may contain one): the path must stay
+	// inside the API either way.
 	candidate := target.Path
 	for round := 0; round < 8; round++ {
-		if strings.Contains(candidate, "\\") {
-			return ErrInternalRedirect
-		}
-		clean := path.Clean(candidate)
-		if strings.HasSuffix(candidate, "/") {
-			clean += "/"
-		}
-		if !strings.HasPrefix(clean, b.prefix) {
+		if !b.contains(candidate) || !b.contains(strings.ReplaceAll(candidate, "\\", "/")) {
 			return ErrInternalRedirect
 		}
 		decoded, err := url.PathUnescape(candidate)
@@ -126,6 +121,16 @@ func (b *internalBoundary) validate(target *url.URL) error {
 	// Do not spend unbounded work peeling adversarial encodings or accept a
 	// still-ambiguous path when the bounded native checks cannot prove it safe.
 	return ErrInternalRedirect
+}
+
+// contains reports whether p, with its dot segments resolved, is below the
+// API prefix.
+func (b *internalBoundary) contains(p string) bool {
+	clean := path.Clean(p)
+	if strings.HasSuffix(p, "/") {
+		clean += "/"
+	}
+	return strings.HasPrefix(clean, b.prefix)
 }
 
 // ValidateRuleURL is validate_rule_url: syntax only (http/https, a host,

@@ -527,7 +527,7 @@
         "body": "ok",
         "source_paths": [
           "/api/start",
-          "/api/%5C%5C127.0.0.1:32977/landing"
+          "/api/%5C%5C127.0.0.1:44173/landing"
         ],
         "external_paths": [],
         "forbidden": 1
@@ -984,7 +984,7 @@
         "body": "ok",
         "source_paths": [
           "/api/start",
-          "/api/ok?next=http://127.0.0.1:40327/landing"
+          "/api/ok?next=http://127.0.0.1:42113/landing"
         ],
         "external_paths": [],
         "forbidden": 0
@@ -1242,6 +1242,85 @@
         "body": "ok",
         "source_paths": [
           "/api/50%25off"
+        ],
+        "external_paths": [],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "legit-backslash-name",
+      "start": "{origin}/api/rules/local/a\\b",
+      "source_locations": [],
+      "external_locations": [],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": false,
+        "status": 200,
+        "body": "ok",
+        "source_paths": [
+          "/api/rules/local/a%5Cb"
+        ],
+        "external_paths": [],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "legit-encoded-backslash-name",
+      "start": "{origin}/api/rules/local/a%5Cb",
+      "source_locations": [],
+      "external_locations": [],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": false,
+        "status": 200,
+        "body": "ok",
+        "source_paths": [
+          "/api/rules/local/a%5Cb"
+        ],
+        "external_paths": [],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "legit-backslash-dot-inside",
+      "start": "{origin}/api/a\\..\\b",
+      "source_locations": [],
+      "external_locations": [],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": false,
+        "status": 200,
+        "body": "ok",
+        "source_paths": [
+          "/api/a%5C..%5Cb"
+        ],
+        "external_paths": [],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "redir-backslash-traversal",
+      "start": "{origin}/api/start",
+      "source_locations": [
+        "/api/x\\..\\..\\landing"
+      ],
+      "external_locations": [],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": false,
+        "status": 200,
+        "body": "ok",
+        "source_paths": [
+          "/api/start",
+          "/api/x%5C..%5C..%5Clanding"
         ],
         "external_paths": [],
         "forbidden": 0

@@ -58,6 +58,7 @@ var cfg01ReviewGoStricter = map[string]bool{
 	"redir-encoded-mixed":             true, // Python requested /api/../landing
 	"redir-encoded-slash":             true,
 	"redir-encoded-backslash":         true,
+	"redir-backslash-traversal":       true, // escapes the API if "\\" is a separator
 	"redir-backslash-scheme-relative": true,
 	"redir-http-colon-relative":       true, // Location "http:ok": a relative path only to urljoin
 	"prefix-dot-out-no-redirect":      true, // the API URL itself leaves /cf/api/
