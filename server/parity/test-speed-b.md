@@ -61,3 +61,10 @@ newEnv 的完整初始仓库只生成一次，读取已 checkpoint 的私有文�
 A10 的 3000 seeded conditional/date 参考改用共同 testgolden，记录完整输入 payload；临时文件路径不参与 key。
 逐条错误、日期、请求条件结果断言不改，普通运行不先查找或启动解释器。录制后现场 check 输出完全相等
 （.64 0.227s，零 diff）。该纯测试可并行；显式 HTTP/JSONL 的 client_tools/public_agent 测试保持现场运行。
+
+## installer
+
+A10 233 个 deflate 输入（42,197,691 字节）和 60 个 ZIP 的参考输出录成 golden，所有 digest/size/替代 zlib
+断言保留。输入 key 包含逐成员长度、字节与 ZIP manifest 指纹，路径只是传输。最终现场 check 零 diff（.64 1.984s）。
+六个只渲染/比较静态 corpus 的测试与纯压缩测试并行；改 enrollment 时钟/随机数、真实 issue/enroll IO 的测试
+仍串行。被测 bootstrap/migration Python 与 shell stub 保留真实执行，不改成 golden。

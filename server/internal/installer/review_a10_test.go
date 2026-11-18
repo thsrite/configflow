@@ -24,20 +24,9 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-)
 
-func reviewPython311(t *testing.T) string {
-	t.Helper()
-	if path := os.Getenv("A10_PYTHON"); path != "" {
-		return path
-	}
-	home, _ := os.UserHomeDir()
-	path := filepath.Join(home, "cf-test", ".venv", "bin", "python")
-	if _, err := os.Stat(path); err != nil {
-		t.Skip("CPython 3.11 reference (~/cf-test/.venv) not available")
-	}
-	return path
-}
+	"configflow/internal/testgolden"
+)
 
 // reviewDeflateInputs returns deterministic adversarial deflate inputs.
 func reviewDeflateInputs(random int) [][]byte {
@@ -144,7 +133,7 @@ type reviewZipEntry struct {
 }
 
 func TestReviewDeflateAndZipMatchPython(t *testing.T) {
-	python := reviewPython311(t)
+	t.Parallel()
 	random := 120
 	if n, err := strconv.Atoi(os.Getenv("A10_DEFLATE_FUZZ")); err == nil {
 		random = n
@@ -188,12 +177,22 @@ func TestReviewDeflateAndZipMatchPython(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "zips.json"), manifest, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command(python, "testdata/review_a10_deflate.py", dir)
-	cmd.Stderr = os.Stderr
-	out, err := cmd.Output()
-	if err != nil {
-		t.Fatal(err)
+	// The temporary directory is transport only; hash the exact input members
+	// and manifest so an enlarged/adapted corpus cannot reuse another answer.
+	hash := sha256.New()
+	for _, input := range inputs {
+		fmt.Fprintf(hash, "%d:", len(input))
+		hash.Write(input)
 	}
+	hash.Write(manifest)
+	out := testgolden.New(t, testgolden.Spec{
+		Sources: []string{"backend", "server/internal/installer/testdata/review_a10_deflate.py"},
+		Input:   hash.Sum(nil),
+		Run: func() ([]byte, error) {
+			cmd := exec.Command(testgolden.Python(), "testdata/review_a10_deflate.py", dir)
+			return cmd.Output()
+		},
+	}).Output(t)
 	digest := func(b []byte) string { s := sha256.Sum256(b); return hex.EncodeToString(s[:]) }
 	deflates, zips, alts := 0, 0, 0
 	scanner := bufio.NewScanner(bytes.NewReader(out))
@@ -242,6 +241,7 @@ func TestReviewDeflateAndZipMatchPython(t *testing.T) {
 // TestComposeReviewCorpusMatchesPython replays generate_guide for the three
 // Compose methods with adversarial values (testdata/gen_review_a10.py).
 func TestComposeReviewCorpusMatchesPython(t *testing.T) {
+	t.Parallel()
 	replayRecordFile(t, "testdata/docker_ha_compose_review.jsonl.gz")
 }
 

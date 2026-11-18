@@ -42,6 +42,7 @@ func readGzipJSONLines(t *testing.T, path string) []*jsonx.Object {
 // rendered by the Python generators). Every rendered script must have the
 // same SHA256 and length, every refusal the same exception text.
 func TestFuzzCorpusMatchesPython(t *testing.T) {
+	t.Parallel()
 	file, err := os.Open("testdata/fuzz.jsonl.gz")
 	if err != nil {
 		t.Fatal(err)

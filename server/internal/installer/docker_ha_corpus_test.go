@@ -73,6 +73,7 @@ func pythonClassOf(err error) (string, string) {
 // many realistic and damaged ones. Answers and ValueError texts must match;
 // a Python exception of another class must be a non-ValueError in Go.
 func TestDockerHACorpusMatchesPython(t *testing.T) {
+	t.Parallel()
 	records := readDockerHACorpus(t)
 	counts := map[string]int{}
 	failed := 0

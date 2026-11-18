@@ -134,6 +134,7 @@ func zipDifference(pyB64, goB64 string) string {
 // every generate_compact / generate_direct / generate_bundle call made while
 // the whole Python backend suite ran under testdata/a10_record.py.
 func TestComposeRecordedCallsMatchPython(t *testing.T) {
+	t.Parallel()
 	rows := readComposeLines(t, "testdata/docker_ha_compose_recorded.jsonl.gz")
 	counts := map[string]int{}
 	tests := map[string]bool{}
@@ -160,6 +161,7 @@ func TestComposeRecordedCallsMatchPython(t *testing.T) {
 // generators over fixed and seeded random params, requests and enrollments,
 // and zipfile's raw deflate over many inputs.
 func TestComposeCorpusMatchesPython(t *testing.T) {
+	t.Parallel()
 	rows := readComposeLines(t, "testdata/docker_ha_compose.jsonl.gz")
 	counts := map[string]int{}
 	failed := 0

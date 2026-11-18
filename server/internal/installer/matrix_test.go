@@ -190,6 +190,7 @@ func firstDifference(a, b string) string {
 // testdata/gen_matrix.py with the Python generators): every rendered script
 // must have the same SHA256 and length, every refusal the same ValueError.
 func TestRenderMatrixMatchesPython(t *testing.T) {
+	t.Parallel()
 	cases := readJSONLines(t, "testdata/matrix.jsonl")
 	full := map[int64]string{}
 	if path := os.Getenv("INSTALLER_MATRIX_FULL"); path != "" {
