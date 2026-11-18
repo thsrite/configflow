@@ -20,7 +20,7 @@ func TestDNSLoopMatchesPython(t *testing.T) {
 	}
 	tests := []probe{}
 	hosts := []string{"192.0.2.1", "2001:db8::1"}
-	upstreams := []string{"example.com", "192.0.2.53", "2001:db8::53", "127.0.0.1", "127.0.0.2", "0.0.0.0", "localhost", "LOCALHOST", "[::1]", "[::]", "[::ffff:127.0.0.1]", "192.0.2.1", "192.0.2.1:53", "192.0.2.1:1053", "192.0.2.1:5353", "[2001:db8::1]:53", "[2001:db8::1]:1053", "[2001:db8::1]:5353", "system", "system://", "system#DIRECT", "example.com:bad", "[broken", "192.0.2.1:65536", "127.0.0.1:65536", "https://user:credential@localhost/dns-query", "", "udp://", "https://[::1]/dns-query"}
+	upstreams := []string{"192.0.2.1:00053", "192.0.2.1:01053", "[2001:db8::1]:00053", "example.com", "192.0.2.53", "2001:db8::53", "127.0.0.1", "127.0.0.2", "0.0.0.0", "localhost", "LOCALHOST", "[::1]", "[::]", "[::ffff:127.0.0.1]", "192.0.2.1", "192.0.2.1:53", "192.0.2.1:1053", "192.0.2.1:5353", "[2001:db8::1]:53", "[2001:db8::1]:1053", "[2001:db8::1]:5353", "system", "system://", "system#DIRECT", "example.com:bad", "[broken", "192.0.2.1:65536", "127.0.0.1:65536", "https://user:credential@localhost/dns-query", "", "udp://", "https://[::1]/dns-query"}
 	for _, scheme := range []string{"udp", "tcp", "tls", "https", "quic"} {
 		for _, host := range []string{"127.0.0.1", "localhost", "192.0.2.1", "192.0.2.1:53", "192.0.2.1:853", "[::1]", "[2001:db8::1]:1053", "example.com:443"} {
 			upstreams = append(upstreams, scheme+"://"+host)

@@ -1,6 +1,8 @@
 package config
 
 import (
+	"encoding/json"
+	"errors"
 	"net/url"
 	"strings"
 	"unicode"
@@ -8,7 +10,9 @@ import (
 	"configflow/internal/auth"
 	"configflow/internal/configgen"
 	"configflow/internal/httpx"
+	"configflow/internal/oxidns"
 	"configflow/internal/repo"
+	"configflow/internal/rules"
 )
 
 func registerLive(r *httpx.Router) {
@@ -45,22 +49,37 @@ func live(c *httpx.Ctx, engine configgen.Engine) (*httpx.Response, error) {
 	if engine == configgen.Mihomo {
 		base, _ = c.Arg("base_url")
 		if base == "" {
-			var body struct {
-				BaseURL string `json:"base_url"`
+			var raw json.RawMessage
+			if c.BindSilent(&raw) {
+				base, err = configgen.RequestBaseURL(raw)
+				if err != nil {
+					if errors.Is(err, configgen.ErrBaseURL) {
+						return httpx.Message(400, false, err.Error()), nil
+					}
+					return httpx.Message(500, false, err.Error()), nil
+				}
 			}
-			if c.BindSilent(&body) {
-				base = body.BaseURL
-			}
+
 		}
 	}
 	out, err := configgen.Render(c.Context(), config, engine, base)
 	if err != nil {
-		return nil, err
+		var reference *rules.StrategyReferenceError
+		if errors.As(err, &reference) {
+			return httpx.Message(400, false, reference.Error()), nil
+		}
+		if engine == configgen.OxiDNS {
+			if message, ok := oxidns.IsSettingsError(err); ok {
+				return httpx.Message(400, false, message), nil
+			}
+			return nil, err
+		}
+		return httpx.Message(500, false, err.Error()), nil
 	}
 	disposition := "inline"
 	if engine == configgen.Loon {
 		name := loonName(config.GetString("name"), config.GetString("profile_id")) + ".lcf"
-		disposition = "inline; filename*=UTF-8''" + strings.ReplaceAll(url.PathEscape(name), "+", "%2B")
+		disposition = "inline; filename*=UTF-8''" + strings.ReplaceAll(url.QueryEscape(name), "+", "%20")
 	}
 	return httpx.Text(200, out.Content).WithHeader("Content-Disposition", disposition), nil
 }

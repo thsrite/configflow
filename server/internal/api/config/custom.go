@@ -265,7 +265,10 @@ func saveCustom(ctx context.Context, id, engine string, body customRequest) (*js
 		if strings.TrimSpace(text) != "" {
 			node, err := yamlx.Parse([]byte(text))
 			if err != nil {
-				return nil, reject(fmt.Sprintf(msgYAMLSyntax, err))
+				if errors.Is(err, yamlx.ErrSyntax) {
+					return nil, reject(fmt.Sprintf(msgYAMLSyntax, err))
+				}
+				return nil, reject(err.Error())
 			}
 			document, err := legacyYAML(node)
 			if err != nil {

@@ -3,6 +3,8 @@ package config
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -12,6 +14,7 @@ import (
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
+	"configflow/internal/yamlx"
 )
 
 func stored(t *testing.T, s *httpxtest.Server) string {
@@ -211,5 +214,32 @@ func TestEmptyCustomUpdateRuntime(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestSavedMihomoBaseFallsBackOnlyForSyntax(t *testing.T) {
+	chain := "a0: &a0 [x, x]\n"
+	for i := 1; i < 40; i++ {
+		chain += fmt.Sprintf("a%d: &a%d [*a%d, *a%d]\n", i, i, i-1, i-1)
+	}
+	for _, test := range []struct {
+		name, text string
+		want       error
+	}{
+		{"syntax", "bad: [", nil},
+		{"duplicate", "x: 1\nx: 2\n", yamlx.ErrDuplicateKey},
+		{"recursive", "a: &a [*a]\n", yamlx.ErrAliasRecursion},
+		{"budget", chain, yamlx.ErrAliasBudget},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := savedMihomoBase(jsonx.Obj("custom_config", test.text))
+			if test.want == nil {
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else if !errors.Is(err, test.want) {
+				t.Fatalf("got %v want %v", err, test.want)
+			}
+		})
 	}
 }

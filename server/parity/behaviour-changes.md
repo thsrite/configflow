@@ -905,3 +905,9 @@ C34 自定义配置五条路径同样将 HEAD 分派给 GET：Mihomo、Surge、M
 - 普通对象的每个字段值仍交给现有业务 validator；不把 Python 容器成员关系移植为新 helper。profile create/generate 不采用本项新 schema。
 
 `api/config/difftest.TestC34ExpectedDifferenceCustomJSONShapes` 对五个引擎逐项断言十二种 shape 的 Python/Go 状态码，以及两边各自的 DB、完整字段、revision、文件效果。`TestC34ObjectFieldValues` 单独对照对象里的 null/false/0/空数组/空对象/true/数字，避免 DTO 意外收窄业务输入。严格畸形 JSON 400 / 非 JSON 媒体类型 415 沿用 N8-6 的迁移决策。YAML `yes` 为字符串、重复键和 alias 预算沿用 N7 §5.7，不作为未知差异。
+
+## C34 base_url 字段 schema
+
+协调者裁定（2026-11-18）：缺失/null 不覆盖，字符串（含空串）照常使用，其他 JSON 类型统一 400，且不提交 DB、业务文件、生成缓存。仅限 `base_url` 字段，不改变其他字段，也不扩大 custom-config 的 body schema 到 profile create/generate 的空 body 默认行为。
+
+Python 的 Surge 等生成器将 null/false/数字/容器隐式转成文本，可生成 `None/api/…`、`False/api/…`、`3/api/…` 之类的无效 URL；OxiDNS 的同类预览请求因字符串属性访问返回 500。Go 用共享的 `configgen.RequestBaseURL` 读取精确字段名并校验类型，不移植这些 Python 文本转换。`TestC34BaseURLInputAlternatives` 明确断言五个引擎十种输入的 Python/Go 状态、Surge 的 None URL 证据、Go null 等同缺失、合法字符串输出一致、预览及两个下载前缀均无非法输入提交。

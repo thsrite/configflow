@@ -60,13 +60,15 @@ func localDNSUpstream(upstream string, hosts []netip.Addr) bool {
 		return false
 	}
 	hostname := strings.ToLower(parsed.Hostname())
-	port := parsed.Port()
-	if port != "" {
-		if _, err := strconv.ParseUint(port, 10, 16); err != nil {
+	var port uint64
+	if text := parsed.Port(); text != "" {
+		var err error
+		port, err = strconv.ParseUint(text, 10, 16)
+		if err != nil {
 			return false
 		}
 	} else if parsed.Scheme == "udp" || parsed.Scheme == "tcp" {
-		port = "53"
+		port = 53
 	}
 	local, matches := hostname == "localhost", false
 	if addr, err := netip.ParseAddr(hostname); err == nil {
@@ -78,5 +80,5 @@ func localDNSUpstream(upstream string, hosts []netip.Addr) bool {
 			}
 		}
 	}
-	return local || matches && (port == "53" || port == "1053") || strings.TrimSpace(raw) == "system" || strings.TrimSpace(raw) == "system://"
+	return local || matches && (port == 53 || port == 1053) || strings.TrimSpace(raw) == "system" || strings.TrimSpace(raw) == "system://"
 }

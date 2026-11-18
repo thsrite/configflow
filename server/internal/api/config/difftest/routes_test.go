@@ -1,7 +1,9 @@
 package difftest
 
 import (
+	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -17,6 +19,8 @@ func TestC34ProfilesAndCustomConfiguration(t *testing.T) {
 		{Method: "GET", Path: "/api/profiles/phone/agents"},
 		post("/api/profiles/phone/agents/rebind", map[string]any{"target_profile_id": "copy", "agent_ids": []any{}}),
 		{Method: "GET", Path: "/api/profiles/phone/export"},
+		post("/api/profiles/office/agents/rebind", map[string]any{"target_profile_id": "copy", "agent_ids": []string{"synthetic-agent"}}),
+		post("/api/profiles/copy/agents/rebind", map[string]any{"target_profile_id": "office", "agent_ids": []string{"synthetic-agent"}}),
 		post("/api/profiles/phone/import", map[string]any{"loon": map[string]string{"custom_config": "[General]\nip-mode=ipv4-only"}}),
 		{Method: "DELETE", Path: "/api/profiles/phone"},
 		{Method: "GET", Path: "/api/profiles/missing"},
@@ -164,4 +168,116 @@ func assertUpdateEffect(t *testing.T, label string, before, after any, commit bo
 	delete(left, "updated_at")
 	delete(right, "updated_at")
 	compare(t, label+" empty update preserves every field/file", a, b)
+}
+
+func TestC34ExplicitBindingDifferences(t *testing.T) {
+	for _, engine := range []string{"mihomo", "surge", "loon", "mosdns", "oxidns"} {
+		w := newWorld(t)
+		for _, input := range []struct {
+			name, body, media string
+			status            int
+		}{
+			{"malformed", `{"config":`, "application/json", 400},
+			{"media", `{}`, "text/plain", 415},
+			{"nonfinite", `{"config":NaN}`, "application/json", 400},
+		} {
+			t.Run(engine+"/"+input.name, func(t *testing.T) {
+				headers := map[string]string{"Authorization": w.token, "Content-Type": input.media}
+				path := "/api/custom-config/" + engine
+				get := request{Method: "GET", Path: path, Headers: map[string]string{"Authorization": w.token}}
+				beforePy := w.py.send(t, get)
+				beforeGo := sendGo(t, w.srv, get)
+				call := request{Method: "POST", Path: path, Body: raw(input.body), Headers: headers}
+				py := w.py.send(t, call)
+				got := sendGo(t, w.srv, call)
+				wantPy := 500
+				wantGo := input.status
+				if engine == "oxidns" {
+					wantPy = 400
+					wantGo = 400
+				} else if input.name == "nonfinite" && engine != "mihomo" {
+					wantPy = 200
+				}
+				if py.Status != wantPy || got.Status != wantGo {
+					t.Fatalf("Python=%d want %d Go=%d want %d", py.Status, wantPy, got.Status, wantGo)
+				}
+				assertUpdateEffect(t, "Go", beforeGo.State, got.State, false)
+				if wantPy != 200 {
+					assertUpdateEffect(t, "Python", beforePy.State, py.State, false)
+				} else {
+					original := native(t, beforePy.State).(map[string]any)
+					current := native(t, py.State).(map[string]any)
+					profile := original["document"].(map[string]any)["profiles"].(map[string]any)["default"].(map[string]any)
+					profile[engine].(map[string]any)["custom_config"] = map[string]any{"$oracle_nonfinite": "NaN"}
+					profile["_revision"] = profile["_revision"].(float64) + 1
+					compare(t, "Python NaN changes only accepted field/revision/time", current, original)
+				}
+				t.Logf("expected_difference=binding shape=%s Python=%d Go=%d", input.name, py.Status, got.Status)
+			})
+		}
+	}
+	w := newWorld(t)
+	for _, path := range []string{"/api/profiles/office/import", "/api/profiles/office/agents/rebind"} {
+		w.check(request{Method: "POST", Path: path, Body: raw(`{`)})
+	}
+}
+
+func TestC34BaseURLInputAlternatives(t *testing.T) {
+	w := newWorld(t)
+	for _, engine := range []string{"mihomo", "surge", "loon", "mosdns", "oxidns"} {
+		baseline := w.check(post("/api/generate/"+engine+"/preview", map[string]any{}))
+		for _, test := range []struct {
+			name    string
+			value   any
+			invalid bool
+		}{
+			{"null", nil, false}, {"false", false, true}, {"zero", 0, true}, {"zero-float", json.RawMessage(`0.0`), true}, {"array", []any{}, true}, {"object", map[string]any{}, true}, {"empty", "", false}, {"true", true, true}, {"number", 3, true}, {"url", "http://example.com", false},
+		} {
+			r := post("/api/generate/"+engine+"/preview", map[string]any{"base_url": test.value})
+			r.Headers = map[string]string{"Content-Type": "application/json", "Authorization": w.token}
+			py := w.py.send(t, r)
+			got := sendGo(t, w.srv, r)
+			want := 200
+			if test.invalid {
+				want = 400
+			}
+			if got.Status != want {
+				t.Fatalf("%s/%s Go=%d want %d", engine, test.name, got.Status, want)
+			}
+			compare(t, "Go URL input preserves DB/files/cache", got.State, baseline.State)
+			compare(t, "Python preview does not write", py.State, baseline.State)
+			wantPy := 200
+			if engine == "oxidns" && test.name != "empty" && test.name != "url" {
+				wantPy = 500
+			}
+			if py.Status != wantPy {
+				t.Fatalf("%s/%s Python=%d want %d", engine, test.name, py.Status, wantPy)
+			}
+			if engine == "surge" && test.name == "null" {
+				content := py.Body.(map[string]any)["content"].(string)
+				if !strings.Contains(content, "None/api/") {
+					t.Fatal("Python invalid None URL was not exercised")
+				}
+			}
+			if test.invalid {
+				for _, prefix := range []string{"/api/generate", "/api/profiles/office/generate"} {
+					call := post(prefix+"/"+engine, map[string]any{"base_url": test.value})
+					call.Headers = r.Headers
+					rejected := sendGo(t, w.srv, call)
+					if rejected.Status != 400 {
+						t.Fatal("download URL shape did not reject")
+					}
+					compare(t, "invalid URL download preserves DB/files/cache", rejected.State, baseline.State)
+				}
+			}
+			t.Logf("base_url engine=%s shape=%s Python=%d Go=%d", engine, test.name, py.Status, got.Status)
+			if test.name == "null" {
+				compare(t, "null means no override", got.Body, baseline.Body)
+			}
+			if test.name == "empty" || test.name == "url" {
+				compare(t, "valid string status", got.Status, py.Status)
+				compare(t, "valid string output", got.Body, py.Body)
+			}
+		}
+	}
 }

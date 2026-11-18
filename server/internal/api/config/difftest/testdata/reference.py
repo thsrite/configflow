@@ -2,6 +2,7 @@
 import contextlib
 import io
 import json
+import math
 import os
 from pathlib import Path
 import sys
@@ -39,6 +40,17 @@ def state():
             files[relative] = list(path.read_bytes())
     return {'document': repository.export_all(), 'files': files}
 
+def json_safe(value):
+    # Preserve non-finite type information in the oracle transport. Go's
+    # standard JSON decoder deliberately rejects the non-standard literals.
+    if isinstance(value, float) and not math.isfinite(value):
+        return {'$oracle_nonfinite': 'NaN' if math.isnan(value) else 'Infinity' if value > 0 else '-Infinity'}
+    if isinstance(value, dict):
+        return {key: json_safe(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [json_safe(item) for item in value]
+    return value
+
 for line in sys.stdin:
     try:
         request = json.loads(line)
@@ -53,6 +65,6 @@ for line in sys.stdin:
             if request['method'] != 'HEAD' and reply.mimetype == 'application/json' and isinstance(body,str):
                 body=json.loads(body)
             result = {'status': reply.status_code, 'headers': dict(reply.headers), 'body': body, 'state': state()}
-        print(json.dumps(result, ensure_ascii=False), flush=True)
+        print(json.dumps(json_safe(result), ensure_ascii=False, allow_nan=False), flush=True)
     except Exception as error:
         print(json.dumps({'oracle_error': str(error)}), flush=True)

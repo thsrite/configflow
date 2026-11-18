@@ -46,3 +46,16 @@ func TestLiveConfigProfileAndAuthentication(t *testing.T) {
 		t.Fatal("filename alias changes profile output")
 	}
 }
+
+func TestLoonFilenamePercentEncoding(t *testing.T) {
+	mihomoenv.Wire()
+	s := exportApp(t)
+	if _, err := s.Repo.UpdateProfile(s.Context(), "default", jsonx.Obj("name", "Phone @ Home + Office")); err != nil {
+		t.Fatal(err)
+	}
+	response := s.Get("/api/config/loon")
+	response.WantStatus(200)
+	if got := response.Header.Get("Content-Disposition"); got != "inline; filename*=UTF-8''Phone%20%40%20Home%20%2B%20Office.lcf" {
+		t.Fatalf("Loon filename %q", got)
+	}
+}

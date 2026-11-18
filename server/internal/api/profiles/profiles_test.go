@@ -167,15 +167,15 @@ func TestProfileRegistration(t *testing.T) {
 func TestProfileExportRedactsCredentialEncodingCombinations(t *testing.T) {
 	s := profileApp(t)
 	_, err := s.Repo.UpdateSystemTransaction(s.Context(), func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		system.GetObject("system_config").Update(jsonx.Obj("rule_proxy_token", "synthetic-rule-current", "retired_rule_proxy_tokens", []any{"synthetic-rule-retired"}))
-		system.Set("agents", []any{jsonx.Obj("id", "synthetic-agent", "name", "Agent", "profile_id", "default", "token", "synthetic-agent-token")})
+		system.GetObject("system_config").Update(jsonx.Obj("rule_proxy_token", "synthetic-rule+/ 当前", "retired_rule_proxy_tokens", []any{"synthetic-retired+/ 旧"}))
+		system.Set("agents", []any{jsonx.Obj("id", "synthetic-agent", "name", "Agent", "profile_id", "default", "token", "synthetic-agent+/ 设备")})
 		return nil, nil
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	embedded := jsonx.NewObject()
-	for _, credential := range []string{"synthetic-rule-current", "synthetic-rule-retired", "synthetic-agent-token"} {
+	for _, credential := range []string{"synthetic-rule+/ 当前", "synthetic-retired+/ 旧", "synthetic-agent+/ 设备"} {
 		text := credential
 		for level := 0; level <= 20; level++ {
 			embedded.Set(credential+"-"+string(rune('a'+level)), "https://example.com/source?token="+text)
@@ -189,12 +189,52 @@ func TestProfileExportRedactsCredentialEncodingCombinations(t *testing.T) {
 	before := state(t, s)
 	response := s.Get("/api/profiles/default/export")
 	response.WantStatus(200)
-	for _, credential := range []string{"synthetic-rule-current", "synthetic-rule-retired", "synthetic-agent-token"} {
-		if bytes.Contains(response.Body, []byte(credential)) {
-			t.Fatal("profile export leaked stored credential")
+	for _, credential := range []string{"synthetic-rule+/ 当前", "synthetic-retired+/ 旧", "synthetic-agent+/ 设备"} {
+		encoded := credential
+		for level := 0; level <= 20; level++ {
+			if bytes.Contains(response.Body, []byte(encoded)) {
+				t.Fatal("profile export leaked raw/encoded stored credential")
+			}
+			encoded = url.QueryEscape(encoded)
 		}
 	}
 	if state(t, s) != before {
 		t.Fatal("profile export mutated stored payload")
+	}
+}
+
+func TestAgentBindingHTTPUsesAtomicManagerOwner(t *testing.T) {
+	s := profileApp(t)
+	if _, err := s.Repo.CreateProfile(s.Context(), jsonx.Obj("id", "target", "name", "Target"), ""); err != nil {
+		t.Fatal(err)
+	}
+	_, err := s.Repo.UpdateSystemTransaction(s.Context(), func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
+		system.Set("agents", []any{jsonx.Obj("id", "first", "name", "First", "host", "192.0.2.1", "port", jsonx.Int(8080), "profile_id", "default", "token", "synthetic-first"), jsonx.Obj("id", "second", "name", "Second", "host", "192.0.2.2", "port", jsonx.Int(8080), "profile_id", "default", "token", "synthetic-second", "latest_upgrade", jsonx.Obj("status", "installing"))})
+		return nil, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := jsonx.Obj("target_profile_id", "target", "agent_ids", []any{"first", "second"})
+	before := state(t, s)
+	s.Post("/api/profiles/default/agents/rebind", httpxtest.JSON(payload)).WantStatus(409)
+	if state(t, s) != before {
+		t.Fatal("busy rebind partially committed")
+	}
+	_, err = s.Repo.UpdateSystemTransaction(s.Context(), func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
+		system.GetList("agents")[1].(*jsonx.Object).Delete("latest_upgrade")
+		return nil, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := s.Post("/api/profiles/default/agents/rebind", httpxtest.JSON(payload))
+	response.WantStatus(200)
+	if bytes.Contains(response.Body, []byte("synthetic-first")) || bytes.Contains(response.Body, []byte("synthetic-second")) {
+		t.Fatal("rebind leaked credentials")
+	}
+	bindings, err := s.Repo.GetProfileAgentBindings(s.Context(), "target")
+	if err != nil || len(bindings.GetList("agents")) != 2 {
+		t.Fatal("bindings not moved atomically", err)
 	}
 }

@@ -150,6 +150,13 @@ func newWorld(t *testing.T) *world {
 	if _, err := srv.Repo.CloneProfile(ctx, "default", jsonx.Obj("id", "office", "name", "Office")); err != nil {
 		t.Fatal(err)
 	}
+
+	if _, err := srv.Repo.UpdateSystemTransaction(ctx, func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
+		system.Set("agents", []any{jsonx.Obj("id", "synthetic-agent", "name", "Synthetic Agent", "host", "192.0.2.2", "port", jsonx.Int(8080), "service_type", "mihomo", "profile_id", "office", "token", "synthetic-agent-credential")})
+		return nil, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
 	// Preserve unrelated binary/JSON/YAML files as well as all database members.
 	if err := os.WriteFile(filepath.Join(srv.DataDir, "unrelated.bin"), []byte{0, 1, 255}, 0600); err != nil {
 		t.Fatal(err)
@@ -280,17 +287,21 @@ func normalize(value any, key string) any {
 		for k, item := range v {
 			if k == "updated_at" || k == "created_at" {
 				if text, ok := item.(string); ok {
-					if _, err := time.Parse(time.RFC3339Nano, text); err == nil {
+					_, err := time.Parse(time.RFC3339Nano, text)
+					if err != nil {
+						_, err = time.Parse("2006-01-02T15:04:05.999999999", text)
+					}
+					if err == nil {
 						v[k] = "<valid-update-time>"
 						continue
 					}
 				}
 			}
-			if strings.HasSuffix(k, ".lock") {
+			if key == "files" && strings.HasSuffix(k, ".lock") {
 				delete(v, k)
 				continue
 			}
-			if strings.HasPrefix(k, "migrations/deleted-") {
+			if key == "files" && strings.HasPrefix(k, "migrations/deleted-") && !strings.Contains(k, "-<id>/") {
 				parts := strings.Split(k, "/")
 				if len(parts) > 2 {
 					end := strings.LastIndex(parts[1], "-")

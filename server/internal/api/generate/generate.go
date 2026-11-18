@@ -6,6 +6,7 @@ package generate
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 
 	"configflow/internal/auth"
@@ -21,22 +22,7 @@ import (
 	"configflow/internal/weburl"
 	"configflow/internal/yamlbridge"
 	"configflow/internal/yamlx"
-	"fmt"
 )
-
-type request struct{ BaseURL string }
-
-func (r *request) UnmarshalJSON(raw []byte) error {
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &fields); err != nil {
-		return err
-	}
-	r.BaseURL = ""
-	if data := fields["base_url"]; len(data) > 0 {
-		return json.Unmarshal(data, &r.BaseURL)
-	}
-	return nil
-}
 
 // Register installs five generators and previews with their profile aliases.
 func Register(r *httpx.Router) {
@@ -72,16 +58,14 @@ func generate(c *httpx.Ctx, engine configgen.Engine, preview bool) (*httpx.Respo
 			return nil, err
 		}
 	}
-	var body request
-	if err := json.Unmarshal(raw, &body); err != nil {
-		switch string(raw) {
-		case "false", "0", "0.0", `""`, "[]":
-		default:
-			return httpx.Message(500, false, msgObject), nil
+	base, err := configgen.RequestBaseURL(raw)
+	if err != nil {
+		if errors.Is(err, configgen.ErrBaseURL) {
+			return httpx.Message(400, false, err.Error()), nil
 		}
+		return httpx.Message(500, false, err.Error()), nil
 	}
 
-	base := body.BaseURL
 	if !preview {
 		if engine == configgen.MosDNS {
 			base = strings.TrimSpace(base)
@@ -97,7 +81,7 @@ func generate(c *httpx.Ctx, engine configgen.Engine, preview bool) (*httpx.Respo
 		}
 		file, err := configgen.Build(c.Context(), c.ProfileID, engine, base)
 		if err != nil {
-			return failure(engine, err)
+			return failure(engine, err, preview)
 		}
 		return httpx.File(httpx.FileOptions{Path: file.Path, Data: file.Data, DownloadName: file.Name, AsAttachment: true, MimeType: file.MIME})
 	}
@@ -107,7 +91,7 @@ func generate(c *httpx.Ctx, engine configgen.Engine, preview bool) (*httpx.Respo
 	}
 	out, err := configgen.Render(c.Context(), config, engine, base)
 	if err != nil {
-		return failure(engine, err)
+		return failure(engine, err, preview)
 	}
 	if engine == configgen.OxiDNS {
 		node, err := yamlx.Parse([]byte(out.Content))
@@ -153,7 +137,7 @@ func generate(c *httpx.Ctx, engine configgen.Engine, preview bool) (*httpx.Respo
 func forwardedBase(c *httpx.Ctx) string {
 	return c.HeaderDefault("X-Forwarded-Proto", c.Scheme()) + "://" + c.HeaderDefault("X-Forwarded-Host", c.Host())
 }
-func failure(engine configgen.Engine, err error) (*httpx.Response, error) {
+func failure(engine configgen.Engine, err error, preview bool) (*httpx.Response, error) {
 	var reference *rules.StrategyReferenceError
 	if errors.As(err, &reference) {
 		return httpx.Message(400, false, err.Error()), nil
@@ -163,8 +147,10 @@ func failure(engine configgen.Engine, err error) (*httpx.Response, error) {
 			return httpx.Message(400, false, message), nil
 		}
 	}
-	// Converter/archive diagnostics can embed source URLs; use the shared safe
-	// formatter rather than emitting raw request or subscription credentials.
+	if engine == configgen.Mihomo || engine == configgen.Surge || engine == configgen.Loon || engine == configgen.MosDNS && preview {
+		return httpx.Message(500, false, err.Error()), nil
+	}
+	// DNS archive diagnostics retain the shared safe formatter.
 	var archive *mosdns.ArchiveError
 	if errors.As(err, &archive) {
 		return httpx.Message(500, false, archive.Message), nil
@@ -177,7 +163,7 @@ func failure(engine configgen.Engine, err error) (*httpx.Response, error) {
 	if engine == configgen.MosDNS {
 		detail = fmt.Sprintf(msgMosDNSFailure, detail)
 	}
-	if engine == configgen.OxiDNS {
+	if engine == configgen.OxiDNS && !preview {
 		detail = fmt.Sprintf(msgOxiDNSFailure, detail)
 	}
 	return httpx.Message(500, false, detail), nil
