@@ -108,5 +108,14 @@
     "kind": "differential",
     "guard": "Always-on live differential; synthetic inputs, separate temporary repositories and independent loopback agentfake instances (no CONFIGFLOW_DIFF guard)",
     "reason": "Real Python AgentManager publishes, polls, activates, rolls back and recovers against a live fake Agent. Compare Go/Python HTTP sequences, headers, uploaded manifest/file digests, persisted Agent state and receipt files. A static pure-oracle golden cannot produce the Python-side HTTP journal, so keep the existing live execution and all eleven scenarios."
+  },
+  {
+    "id": "A-BATCH8-D2",
+    "file": "server/internal/mosdns/difftest/diff_test.go",
+    "function": "applyNativeCachePaths",
+    "callee": "exec.Command",
+    "kind": "differential",
+    "guard": "CONFIGFLOW_DIFF=1 in TestDifferentialMosDNSRoutes; exactly two loopback source declarations",
+    "reason": "Real Python cache filename paired with independent native JSON digest for exact D2 HTTP storage paths; full cache bytes and all other files remain strict."
   }
 ]

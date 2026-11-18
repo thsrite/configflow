@@ -493,6 +493,11 @@ func TestEnrollOnlyValidNewIPv6Publications(t *testing.T) {
 func TestSchedulerStartsCapturedPublicationOnce(t *testing.T) {
 	startRuntime(t)
 	s, ctx := fixture(t)
+	ctx = lifecycle.BindRequest(ctx)
+	runtime, ok := lifecycle.SpawnerFrom(ctx).(*lifecycle.Runtime)
+	if !ok {
+		t.Fatal("scheduler request has no originating Runtime")
+	}
 	seedPublication(t, s, ctx, "automatic-publication")
 	var verifications atomic.Int32
 	s.Manager.SetClient(clientFunc(func(_ context.Context, r agents.Request) (*agents.Response, error) {
@@ -506,7 +511,19 @@ func TestSchedulerStartsCapturedPublicationOnce(t *testing.T) {
 	if e != nil || idle {
 		t.Fatal("automatic publication not scheduled", idle, e)
 	}
-	waitReport(t, s, ctx, "automatic-publication")
+	// Join the actual owner instead of polling report visibility for a fixed
+	// wall-clock interval. This also joins final transaction accounting.
+	if err := runtime.WaitIdle(ctx); err != nil {
+		t.Fatal(err)
+	}
+	agent, err := s.agent(ctx, "source", "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, ok := runs(agent).Get("automatic-publication")
+	if !ok || text(object(stored)["status"]) == "running" {
+		t.Fatal("joined publication did not finish", string(stored))
+	}
 	before := s.Manager.Repository().CommitCount()
 	idle, e = s.Tick(ctx)
 	if e != nil || !idle || verifications.Load() != 1 || s.Manager.Repository().CommitCount() != before {

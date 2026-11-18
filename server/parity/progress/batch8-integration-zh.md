@@ -170,3 +170,24 @@ MosDNS HTTP 的缓存文件名仍按旧 Python digest 比较：55个响应相同
 
 三条定向真实 Python repo race 回归完成：`repo 233.027s`，PASS。
 为使交回验证覆盖最终测试树，将依次重新执行用户指定 preflight 与完整 compare。
+
+### 最终预检第二轮补充
+
+新增 MosDNS live Python helper 需要登记进进程 oracle 审计；现精确登记函数和
+CONFIGFLOW_DIFF guard，不扩大 scope。另发现 IPv6 TestSchedulerStartsCapturedPublicationOnce
+偶发在 idle=true、verify次数1时因 CommitCount变化失败：事务完成后先 setCache 再
+commitCount.Add，轮询报告不能证明后台 owner 已完全退出。测试改用独立 Runtime，
+在原提交计数断言前 WaitIdle；不放宽阈值、不加 sleep、不改产品。审计0.759s通过；
+`go test -race -count=25 -timeout=5m -run "^TestSchedulerStartsCapturedPublicationOnce$" ./internal/agents/ipv6`
+全部通过（27.044s）。随后重新执行最终 preflight 与完整 compare。
+
+### 调度测试同步修正的整包复核
+
+前次孤立25轮通过不足以证明整包隔离：full preflight 随后在固定5秒 waitReport 超时。
+移除固定轮询后，整包5轮揭示私有Runtime不是生产 global Spawn 的实际 owner，
+前序测试 Stop 默认Runtime后会拒绝 admission（孤立运行时默认Runtime尚未停止）。
+这是测试修正引入的问题，已恢复 startRuntime，并从 lifecycle.BindRequest 的
+SpawnerFrom 取得实际默认Runtime；WaitIdle 后直接断言报告完成，再保留原 verify=1、
+idle=true、CommitCount不变断言。没有提高等待阈值或增加sleep，也没有改产品。
+最终 `go test -race -count=5 -timeout=10m ./internal/agents/ipv6` 整包通过，113.870s。
+最后一项同步提交已整理为最终实现，接着重跑 preflight 与完整 compare。
