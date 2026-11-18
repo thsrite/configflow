@@ -839,7 +839,7 @@ PD 恢复 PUT 回复已经证明新 ID、但紧接着的 GET 失败时，Go 仍�
   R14, can compensate uniformly; no Python ReleaseError exception category is
   needed. R14's delta owner must handle every error (its own acceptance).
 - D-R12-3 / Clarified in R12: after Runtime shutdown interrupts a release with a
-  proven device write, stop device I/O and compensation, retain Result, and record
+  started (R12 review F2: attempted, not only proven) device or Agent write, stop device I/O and compensation, retain Result, and record
   one local failure+manifest+revision transaction using the explicitly approved
   ctxx.Uninterruptible boundary. Before the first write, cancellation commits
   nothing. R04–R11 interruption before a lower owner records its manifest remains
@@ -849,3 +849,9 @@ PD 恢复 PUT 回复已经证明新 ID、但紧接着的 GET 失败时，Go 仍�
   DNS guard inputs, as Python does. Skipped IPv6 DNS retains `checks.ipv6_dns:{}`.
 - Agent errors use shared diag credential redaction without hiding the username;
   raw successful Agent status preserves unknown fields and numeric literals.
+- R12 review F4 (Python bug fixed): a forward return-routing apply/remove first
+  re-proves that the Agent still holds the managed spec the plan was built from
+  (unknown fields by value, `proxy_dst` as a set). If another router sharing the
+  Agent changed or removed it after the preview, the stage fails with Python's
+  `回流资源分配在预览后发生变化，请重新预览后发布` and rolls back; Python removed or
+  overwrote the other router's rule. Compensation during rollback is unchanged.

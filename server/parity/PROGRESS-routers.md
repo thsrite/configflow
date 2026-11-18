@@ -750,7 +750,7 @@ PD 保护既不能更新也不能撤回（改池名后还会静默失效）；�
 
 ## R12 — release plan and staged execution
 
-**Status: `ported`**（待独立 Opus HR 复核；AST 白名单见下） · HR · prereqs: R03–R11, A01 (ready) · Go: internal/routers
+**Status: `verified`**（Opus HR 复核 2026-11-18，见 [review-r12.md](review-r12.md)：0 high、3 medium、2 low 已修；AST 白名单补丁已修正，待 O3-6c/R10/R11 合入后集成） · HR · prereqs: R03–R11, A01 (ready) · Go: internal/routers
 
 Files:
 - `backend/routers/plan.py` (807), `backend/routers/release.py` (413)

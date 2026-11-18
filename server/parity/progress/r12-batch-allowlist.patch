@@ -1,7 +1,8 @@
 diff --git a/server/internal/repo/batch_paths_test.go b/server/internal/repo/batch_paths_test.go
+index 9376220a6..7afab1a46 100644
 --- a/server/internal/repo/batch_paths_test.go
 +++ b/server/internal/repo/batch_paths_test.go
-@@ -6,45 +6,97 @@
+@@ -6,45 +6,99 @@ import (
  	"go/token"
  	"os"
  	"path/filepath"
@@ -48,6 +49,7 @@ diff --git a/server/internal/repo/batch_paths_test.go b/server/internal/repo/bat
 -			ast.Inspect(declaration, func(node ast.Node) bool {
 -				call, ok := node.(*ast.CallExpr)
 -				if !ok {
+-					return true
 +			file, err := parser.ParseFile(token.NewFileSet(), name, nil, 0)
 +			if err != nil {
 +				t.Fatal(err)
@@ -58,17 +60,23 @@ diff --git a/server/internal/repo/batch_paths_test.go b/server/internal/repo/bat
 +				path, err := strconv.Unquote(imp.Path.Value)
 +				if err != nil {
 +					t.Fatal(err)
-+				}
+ 				}
+-				name, ok := call.Fun.(*ast.Ident)
+-				if !ok || name.Name != "beginCommitBatch" {
+-					return true
 +				if path != "configflow/internal/ctxx" {
 +					continue
-+				}
+ 				}
+-				if _, found := allowed[owner]; !found {
+-					t.Errorf("batch marker in unapproved path %s: update Clarified in O3-6c", owner)
 +				alias := "ctxx"
 +				if imp.Name != nil {
 +					alias = imp.Name.Name
 +				}
 +				if alias == "." {
 +					dotCtxx = true
-+				} else {
+ 				} else {
+-					allowed[owner]++
 +					ctxxAliases[alias] = true
 +				}
 +			}
@@ -76,10 +84,14 @@ diff --git a/server/internal/repo/batch_paths_test.go b/server/internal/repo/bat
 +				owner := ""
 +				if fn, ok := decl.(*ast.FuncDecl); ok {
 +					owner = fn.Name.Name
-+					if fn.Recv != nil {
++					// The repo batches are *Repository methods (O3-6c); in routers a
++					// method must not pass for the approved plain function.
++					if fn.Recv != nil && pkg != "repo" {
 +						owner = "method:" + owner
 +					}
-+				}
+ 				}
+-				return true
+-			})
 +				ast.Inspect(decl, func(node ast.Node) bool {
 +					callee := ""
 +					switch value := node.(type) {
@@ -108,19 +120,7 @@ diff --git a/server/internal/repo/batch_paths_test.go b/server/internal/repo/bat
 +					} else {
 +						allowed[key]++
 +					}
- 					return true
--				}
--				name, ok := call.Fun.(*ast.Ident)
--				if !ok || name.Name != "beginCommitBatch" {
--					return true
--				}
--				if _, found := allowed[owner]; !found {
--					t.Errorf("batch marker in unapproved path %s: update Clarified in O3-6c", owner)
--				} else {
--					allowed[owner]++
--				}
--				return true
--			})
++					return true
 +				})
 +			}
  		}
