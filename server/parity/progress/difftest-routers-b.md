@@ -1,7 +1,7 @@
 # Routers Step B — independent public HTTP differential
 
 Status: in progress; NOT ready for acceptance hand-back. Branch go-difftest-routers-b.
-Latest clean integration rebase: goa08c4cc27; normal public binary built from it.
+Latest clean integration rebase: goa9d6ce86c; normal public binary built from it.
 Current declarations:465 executed-variant audits plus9 explicit source-unreachable
 proofs plus2 O6 review-superseded entries;1825 remaining if all increments and
 controls are composed. Last FULL composition still37937739:3054
@@ -1992,3 +1992,23 @@ Counts465 declarations+9 source proofs+2 O6 entries/1825 remaining unchanged.
 Remaining: ownership nonces/comments/tags, opaque tokens/fingerprints/revisions,
 YAML structure/retention, runtime receipt/setup clocks/read transcript order,
 remaining route/device/background matrix, full composition/final gate/rebase.
+
+Periodic integration refresh (not final hand-back):
+- Clean git rebase go succeeded across65 commits onto a9d6ce86c. Python source,
+  PORTING and root AGENTS unchanged; reread the brief/workflow changes: one agent
+  gate/server (coordinator can add one), coordinator batch/risk-tier rules. Final
+  work still follows the task's explicit gate instruction; no gate run yet.
+- Current rebased commits:1fc410b93 store heads,84e850094 nested-schema bug,
+ 3ad1779e9 DHCP evidence,a2f227708 auxiliary HTTP. Older IDs above are provenance.
+- Built normal public binary with observer at
+  ~/.cache/routerdiff-build-302rx1dg-a9d6ce86c/configflow. Use this binary now;
+  older a08c4cc27 paths in historical commands remain historical observations.
+
+.64 refresh command:
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1; uptime; ~/cf-test/.venv/bin/python server/tools/routerdiff/build.py "$HOME/.cache/routerdiff-build-302rx1dg-a9d6ce86c" --parallel 4; export ROUTERDIFF_BINARY="$HOME/.cache/routerdiff-build-302rx1dg-a9d6ce86c/configflow"; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python -m unittest discover -v; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world runtime-reads --world router-creations --world probe-clock-roundtrip --world probe-nested-schema --world fixed-ip --world workspace-drafts --world client-drafts --output "$HOME/.cache/routerdiff-reports/302rx1dg/rebase-a9d6ce86c-foundation.json"'`
+=> Load15.90/19.85/23.38; build success; Ran129 tests119.753s/OK;153 actual
+recipes/allGo-unimplemented,67 references,1 existing audit,complete=false;
+known nested-schema reference bug reproduced. Actual domain manifest still0/26.
+465 declarations+9 source proofs+2 O6 corrections/1825 pending if composed.
+No command pending. Full composition and remaining matrix still open; no final
+Go gate, no private snapshot read, no push. Continue remaining domain coverage.
