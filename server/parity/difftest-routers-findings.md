@@ -2029,3 +2029,12 @@ R17 自身另有 `TestR17FlaskHTTPAndStoredState` 的 15 请求真实 Flask↔Go
 覆盖五路由成功与代表性失败，比较每步完整 profile、HTTP 状态/JSON/no-store 与最终设备表；
 单独回归 HEAD 只读、Agent pinning、跨设备凭据引用和坏发现行隔离。
 这是作者定向证据，不能替代独立 Step B 全部未覆盖项、fresh Opus HR 复核或 L5。
+
+## R15 port 回填（保留上文历史 Step B 覆盖统计）
+
+- HEAD_CREATES_ROUTER / HEAD_PERSISTS_FORWARDING：生产 HTTP HEAD 按 GET，带合法写 body 也不改 SQLite/revision/JSON/YAML，不向 Agent POST；同 body 的 POST 正控制会走真实 forwarding wire。
+- IKUAI_PROBE_NESTED_SCHEMA_CRASH / IKUAI_PROBE_REDIRECT_PARSE_CRASH：真实 Flask 500/旧 probe 的参考缺陷，与 Go 502/仅 last_probe replacement/revision+1 同时验证；复用 R05 KindInvalidResponse。
+- AGENT_FORWARD_FILTER_UNHASHABLE：R15 forwarding HTTP 复用已修的 A20 Bridge，坏的 state[] 只影响本条，健康网关保留；最终结果还检查 peer 凭据引用脱敏。
+- O6/HANDOFF 3c：真实 Werkzeug match 与 Go HTTP endpoint selection 证明三个优先级；httpx 当前已是自定义 matcher，没有 ServeMux panic 路径。A22 pattern 在本临时基底未实际注册，测试按真实 pattern 注册合同，包含 A22 的批次仍需复验。
+
+证据在 internal/api/routers 的 Flask HTTP/存储/文件对照与 safety/forwarding/publish/routing 测试，细节见 progress/R15-handoff-zh.md。46 个实际 HTTP 对照与5个 route match 是作者定向覆盖，不替代独立 Step B 未覆盖项、fresh Opus HR 或 L5。

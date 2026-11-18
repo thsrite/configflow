@@ -28,21 +28,21 @@ var logger = logx.Get("backend.routes.routers")
 // segments win per segment; method mismatches may fall through to a path route.
 func Register(r *httpx.Router) {
 	h := &handler{pending: core.NewPendingCache(nil, nil)}
-	r.Handle([]string{"GET", "POST"}, "/api/routers", "routers.list_or_create_routers", auth.Require(h.collection))
-	r.Handle([]string{"GET", "POST"}, "/api/routers/gateway-forwarding", "routers.gateway_forwarding", auth.Require(h.forwarding))
-	r.Handle([]string{"PUT", "DELETE"}, "/api/routers/<router_id>", "routers.update_or_delete_router", auth.Require(h.job(h.settings)))
-	r.POST("/api/routers/<router_id>/probe", "routers.probe_router", auth.Require(h.job(h.probe)))
-	r.GET("/api/routers/<router_id>/report", "routers.router_report", auth.Require(h.inspect))
-	r.POST("/api/routers/<router_id>/plan", "routers.router_plan", auth.Require(h.inspect))
-	r.POST("/api/routers/<router_id>/apply", "routers.router_apply", auth.Require(h.job(h.apply)))
-	r.GET("/api/routers/<router_id>/routes", "routers.list_device_routes", auth.Require(h.routes))
-	r.POST("/api/routers/<router_id>/routes/plan", "routers.preview_device_route", auth.Require(h.routeChange))
-	r.POST("/api/routers/<router_id>/routes/apply", "routers.apply_device_route", auth.Require(h.job(h.routeChange)))
-	r.GET("/api/routers/<router_id>/policy", "routers.list_device_policy", auth.Require(h.policy))
-	r.Handle([]string{"GET", "PUT"}, "/api/routers/<router_id>/policy-settings", "routers.policy_settings", auth.Require(h.settingsJob(h.workspace)))
-	r.POST("/api/routers/<router_id>/policy-settings/preview", "routers.preview_policy_settings", auth.Require(h.previewWorkspace))
-	r.Handle([]string{"GET", "PUT", "POST"}, "/api/routers/<router_id>/rule-sync", "routers.router_rule_sync", auth.Require(h.settingsJob(h.sync)))
-	r.GET("/api/agents/<agent_id>/upstream-routers", "agents.upstream_router_pending", auth.Require(h.upstream))
+	r.Handle([]string{"GET", "POST"}, "/api/routers", "routers.list_or_create_routers", h.auth(h.collection))
+	r.Handle([]string{"GET", "POST"}, "/api/routers/gateway-forwarding", "routers.gateway_forwarding", h.auth(h.forwarding))
+	r.Handle([]string{"PUT", "DELETE"}, "/api/routers/<router_id>", "routers.update_or_delete_router", h.auth(h.job(h.settings)))
+	r.POST("/api/routers/<router_id>/probe", "routers.probe_router", h.auth(h.job(h.probe)))
+	r.GET("/api/routers/<router_id>/report", "routers.router_report", h.auth(h.inspect))
+	r.POST("/api/routers/<router_id>/plan", "routers.router_plan", h.auth(h.inspect))
+	r.POST("/api/routers/<router_id>/apply", "routers.router_apply", h.auth(h.job(h.apply)))
+	r.GET("/api/routers/<router_id>/routes", "routers.list_device_routes", h.auth(h.routes))
+	r.POST("/api/routers/<router_id>/routes/plan", "routers.preview_device_route", h.auth(h.routeChange))
+	r.POST("/api/routers/<router_id>/routes/apply", "routers.apply_device_route", h.auth(h.job(h.routeChange)))
+	r.GET("/api/routers/<router_id>/policy", "routers.list_device_policy", h.auth(h.policy))
+	r.Handle([]string{"GET", "PUT"}, "/api/routers/<router_id>/policy-settings", "routers.policy_settings", h.auth(h.settingsJob(h.workspace)))
+	r.POST("/api/routers/<router_id>/policy-settings/preview", "routers.preview_policy_settings", h.auth(h.previewWorkspace))
+	r.Handle([]string{"GET", "PUT", "POST"}, "/api/routers/<router_id>/rule-sync", "routers.router_rule_sync", h.auth(h.settingsJob(h.sync)))
+	r.GET("/api/agents/<agent_id>/upstream-routers", "agents.upstream_router_pending", h.auth(h.upstream))
 }
 func service(c *httpx.Ctx) (*core.ManagementService, error) {
 	db, err := repo.GetRepository(c.Context())
@@ -96,7 +96,10 @@ func public(c *httpx.Ctx, cfg json.RawMessage, value any, status int, noStore bo
 	if err != nil {
 		return nil, err
 	}
-	secrets, err := redact.ExternalPayloadSecrets(c.Context(), nil)
+	secrets, cached := publicSeeds(c)
+	if !cached {
+		secrets, err = redact.ExternalPayloadSecrets(c.Context(), nil)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -117,10 +120,12 @@ func failure(c *httpx.Ctx, cfg json.RawMessage, err error, status int, noStore b
 	if errors.As(err, &validation) || errors.As(err, &settings) {
 		status = 400
 	} else if errors.As(err, &re) {
-		if re.Kind == core.KindConflict {
-			status = 409
-		} else if status == 0 {
-			status = 502
+		if status == 0 {
+			if re.Kind == core.KindConflict {
+				status = 409
+			} else {
+				status = 502
+			}
 		}
 	} else {
 		return nil, err
@@ -264,7 +269,7 @@ func (h *handler) inspect(c *httpx.Ctx) (*httpx.Response, error) {
 		defer d.Close()
 	}
 	if err != nil {
-		return failure(c, cfg, err, 0, false)
+		return failure(c, cfg, err, 502, false)
 	}
 	if strings.HasSuffix(c.Request.URL.Path, "/report") {
 		recordNotice(c, cfg, r, value.Report, nil)
@@ -276,7 +281,7 @@ func (h *handler) inspect(c *httpx.Ctx) (*httpx.Response, error) {
 	}
 	plan, err := core.BuildPlan(c.Context(), r, value, d)
 	if err != nil {
-		return failure(c, cfg, err, 0, false)
+		return failure(c, cfg, err, 502, false)
 	}
 	recordNotice(c, cfg, r, value.Report, plan)
 	if plan.Empty && len(plan.Blockers) == 0 {
@@ -320,7 +325,7 @@ func (h *handler) apply(c *httpx.Ctx) (*httpx.Response, error) {
 		}
 		return public(c, cfg, response, 409, false)
 	case core.PublishDeviceError:
-		return httpx.Message(502, false, out.Message), nil
+		return public(c, cfg, map[string]any{"success": false, "message": out.Message}, 502, false)
 	}
 	status := 200
 	if out.Status == core.PublishFailed {
@@ -398,24 +403,7 @@ func (h *handler) policy(c *httpx.Ctx) (*httpx.Response, error) {
 	if r.Type != "routeros" {
 		return httpx.Message(400, false, messagePolicyViewOnly), nil
 	}
-	held, release, err := core.RouterOperationLock(c.Context(), *r, false)
-	if err != nil {
-		return failure(c, cfg, err, 0, false)
-	}
-	defer release()
-	original := c.Context()
-	c.SetContext(held)
-	defer c.SetContext(original)
-	_, _, current, err := selected(c)
-	if err != nil {
-		return nil, err
-	}
-	if !equalRouter(current, r) {
-		return httpx.Message(409, false, messageChanged), nil
-	}
-	d := core.NewRouterOS(r.Endpoint, r.Username, r.Password, r.VerifyTLS)
-	defer d.Close()
-	objects, err := core.ReadPolicyObjects(held, d, r.Extra["ros_policy_state"])
+	objects, err := s.PolicyObjects(c.Context(), c.ProfileID, r)
 	if err != nil {
 		return failure(c, cfg, err, 0, false)
 	}
@@ -437,14 +425,6 @@ func (h *handler) policy(c *httpx.Ctx) (*httpx.Response, error) {
 	}
 	return public(c, cfg, map[string]any{"success": true, "policy": map[string]any{"objects": objects, "source_agents": sources}, "generated_at": stamp(c)}, 200, true)
 }
-func equalRouter(a, b *core.Router) bool {
-	if a == nil || b == nil {
-		return a == b
-	}
-	left, _ := json.Marshal(a)
-	right, _ := json.Marshal(b)
-	return string(left) == string(right)
-}
 func (h *handler) upstream(c *httpx.Ctx) (*httpx.Response, error) {
 	s, err := service(c)
 	if err != nil {
@@ -458,6 +438,11 @@ func (h *handler) upstream(c *httpx.Ctx) (*httpx.Response, error) {
 	if value, ok := c.Arg("profile"); ok {
 		profile = &value
 	}
+	secrets, err := allProfileSecrets(c.Context(), s.Repo)
+	if err != nil {
+		return nil, err
+	}
+	c.Set("routers.public-seeds", secrets)
 	value, err := core.AgentRouters(c.Context(), core.PendingRequest{AgentID: c.Param("agent_id"), ProfileID: profile, Refresh: c.ArgDefault("refresh", "") == "1" || c.ArgDefault("refresh", "") == "true", Repo: s.Repo, Agents: core.ManagerAgentSource{Manager: m}, Cache: h.pending})
 	if errors.Is(err, core.ErrPendingTimeout) {
 		return httpx.Message(504, false, messagePendingTimeout).NoStore(), nil
@@ -594,4 +579,32 @@ func (h *handler) forwarding(c *httpx.Ctx) (*httpx.Response, error) {
 	}
 	logger.Infof(messageForwardSaved, logx.LogText(id, 120))
 	return public(c, cfg, value, 200, true)
+}
+
+func publicSeeds(c *httpx.Ctx) (redact.Secrets, bool) {
+	value, ok := c.Get("routers.public-seeds")
+	if !ok {
+		return nil, false
+	}
+	seeds, ok := value.(redact.Secrets)
+	return seeds, ok
+}
+
+// auth admits a mutation with a detached context before metadata preflight.
+// Domain write owners detach again themselves; this also protects the adapter's
+// selected-router/link/receipt reads from an already disconnected browser.
+func (h *handler) auth(next httpx.HandlerFunc) httpx.HandlerFunc {
+	return auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
+		if c.Method() != "POST" && c.Method() != "PUT" && c.Method() != "DELETE" {
+			return next(c)
+		}
+		original := c.Context()
+		work := lifecycle.Detach(original)
+		if err := work.Err(); err != nil {
+			return nil, err
+		}
+		c.SetContext(work)
+		defer c.SetContext(original)
+		return next(c)
+	})
 }

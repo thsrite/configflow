@@ -67,7 +67,7 @@ func TestR15FlaskRoutePriorities(t *testing.T) {
 	s := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(apiagents.Register, api.Register, func(r *httpx.Router) {
 		// A22 is not on this temporary base yet. Register its real Flask pattern
 		// as a dispatch contract; all already-ported handlers remain production ones.
-		r.GET("/api/agents/gateway-installations/<session_id>", "agents.gateway_installation_state", func(c *httpx.Ctx) (*httpx.Response, error) { return httpx.Empty(404), nil })
+		r.GET("/api/agents/gateway-installations/<session_id>", "agents.gateway_installation_status", func(c *httpx.Ctx) (*httpx.Response, error) { return httpx.Empty(404), nil })
 	}), Setup: func(app *httpx.App) {
 		app.BeforeRequest(func(c *httpx.Ctx) (*httpx.Response, error) {
 			if c.Endpoint != "" {
@@ -76,7 +76,7 @@ func TestR15FlaskRoutePriorities(t *testing.T) {
 			return nil, nil
 		})
 	}})
-	for _, tc := range []struct{ method, path, endpoint string }{{"GET", "/api/agents/gateway-installations/upstream-routers", "agents.gateway_installation_state"}, {"GET", "/api/agents/i/status", "agents.download_install_command"}, {"POST", "/api/agents/one/mihomo/rule-targets", "agents.mihomo_panel"}, {"GET", "/api/agents/one/mihomo/rule-targets", "agents.rule_targets"}, {"GET", "/api/agents/one/upstream-routers", "agents.upstream_router_pending"}} {
+	for _, tc := range []struct{ method, path, endpoint string }{{"GET", "/api/agents/gateway-installations/upstream-routers", "agents.gateway_installation_status"}, {"GET", "/api/agents/i/status", "agents.download_install_command"}, {"POST", "/api/agents/one/mihomo/rule-targets", "agents.mihomo_panel"}, {"GET", "/api/agents/one/mihomo/rule-targets", "agents.rule_targets"}, {"GET", "/api/agents/one/upstream-routers", "agents.upstream_router_pending"}} {
 		result := s.Do(tc.method, tc.path)
 		result.WantStatus(200)
 		if result.Object().GetString("endpoint") != tc.endpoint {
@@ -108,5 +108,20 @@ func TestR15WorkspaceDraftIsOfflineAndAtomic(t *testing.T) {
 	after, _ := s.Repo.ConfigRevision(s.Context(), "default")
 	if before != after {
 		t.Fatal("workspace HEAD wrote")
+	}
+}
+
+func TestR15EveryRouteRequiresAuthentication(t *testing.T) {
+	s := fixture(t)
+	root := "/api/routers/missing"
+	cases := []struct{ method, path string }{{"GET", "/api/routers"}, {"POST", "/api/routers"}, {"PUT", root}, {"DELETE", root}, {"POST", root + "/probe"}, {"GET", root + "/report"}, {"POST", root + "/plan"}, {"POST", root + "/apply"}, {"GET", root + "/routes"}, {"POST", root + "/routes/plan"}, {"POST", root + "/routes/apply"}, {"GET", root + "/policy"}, {"GET", root + "/policy-settings"}, {"PUT", root + "/policy-settings"}, {"POST", root + "/policy-settings/preview"}, {"GET", root + "/rule-sync"}, {"PUT", root + "/rule-sync"}, {"POST", root + "/rule-sync"}, {"GET", "/api/routers/gateway-forwarding"}, {"POST", "/api/routers/gateway-forwarding"}, {"GET", "/api/agents/missing/upstream-routers"}}
+	before, _ := s.Repo.ConfigRevision(s.Context(), "default")
+	for _, tc := range cases {
+		s.Do(tc.method, tc.path, httpxtest.JSON([]any{})).WantStatus(401)
+	}
+	s.Get("/api/agents/missing/upstream-routers?profile=missing").WantStatus(401)
+	after, _ := s.Repo.ConfigRevision(s.Context(), "default")
+	if before != after {
+		t.Fatal("unauthenticated request committed")
 	}
 }

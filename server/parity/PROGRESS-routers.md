@@ -84,6 +84,10 @@ Python's `backend/routers` is one big import cycle (most cross-module imports ar
 | R16 | client devices and discovery | 786 | verified | | R13, A01, C26, C31 | – | internal/clients, internal/routers |
 | R17 | client fixed IP and client-device routes | 1077 | verified | HR | R16, R06, R14, C06 (JWT secret), C36², A13⁶ | 5 (5 done) | internal/clients, internal/routers, internal/api/clientdevices |
 
+| R15 | router HTTP routes, policy workspace, upstream-router reminder route | 656 | ported | HR | R14, C06, C22 (ready), C31, C34; A20⁵ | 21 (21 done) | internal/api/routers, internal/routers |
+| R16 | client devices and discovery | 786 | missing | | R13, A01, C26, C31 | – | internal/clients, internal/routers |
+| R17 | client fixed IP and client-device routes | 1077 | missing | HR | R16, R06, R14, C06 (JWT secret), C36², A13⁶ | 5 (0 done) | internal/clients, internal/routers, internal/api/clientdevices |
+
 ¹ `desired.compute_desired` loads rule content through `routes.rules.get_ruleset_content` (C32, a route file). Until C32 exists, a collaborator variable; C32 should export the function from a non-API package (also needed by agents A19). ² `setup_flow.profile_sessions` (C36 imports routers, so routers declares a hook; see contract). ³ Coordinator decision needed before R04/R05 (see questions). ⁴ `_inspect_state` → `agents.ipv6_readiness._request` (A23 imports routers → hook). ⁵ `/api/routers/gateway-forwarding` calls `agents.linux_gateway.gateway_forwarding_entry/persist_gateway_forwarding` (A20). ⁶ `routes.agents._public_deployment` (A13; collaborator variable until then).
 
 Totals: 17 modules, **17574 Python lines, 52 files** (= FILES.md `routers`: 52 files, 17574 lines; checked with `wc -l` on the FILES.md list in this worktree). Routes: **26 rows** of routes.tsv (20 `routes.routers`, 5 `routes.client_devices`, 1 `routes.upstream_router_pending`), 0 done. Python tests owned here: **59 files, 959 tests**.
@@ -860,20 +864,23 @@ HR 复核（[review-r14.md](review-r14.md)）：0 high、2 medium、3 low 已修
 
 ## R15 — router HTTP routes, policy workspace, upstream-router reminder route
 
-**Status: `missing`** · HR · prereqs: R14, C06, C22 (ready), C31 (`device_notes`), C34 (`sanitize_external_payload`); A20 for gateway forwarding · Go: internal/api/routers, internal/routers (policy workspace)
+**Status: `ported`** · HR，待 fresh Opus 独立复核 · Go: `internal/api/routers`, `internal/routers`。分支 `go-port-r15`，按协调者从 `go-opus-review-r14@a08a120b2` 新建；待 batch-6 通知后再 rebase/接 O3-6b 唯一 RouterJobLock，当前仍复用 R14 的临时唯一 L1。
 
-Files:
-- `backend/routes/routers.py` (577) — lines 37–62, 100–229, 386–754, 769–820 (handlers)
-- `backend/routes/upstream_router_pending.py` (27) — on the agents blueprint, endpoint `agents.upstream_router_pending`
-- `backend/routers/policy_workspace.py` (52)
+21 method/path 均注册并在 routes.tsv 标 done：CRUD/probe/report/plan/apply、手动 routes 三入口、policy 查看、policy-settings GET/PUT/preview、rule-sync GET/PUT/POST、gateway-forwarding GET/POST、agents upstream-routers GET。使用 auth、R5 shared decoder、C03 事务/CAS、R06 L2、R12 Inspect/BuildPlan/Publish、R13 app-owned PendingCache、R14 StartJob、C22/C31 工作区与 DNS 生成、C34 shared redact、A20 host.Bridge；不复制发布器、驱动或策略编辑器。
 
-Tests: `test_policy_workspace.py` (17), `test_ros_api_safety.py` (7). Deferred here: `test_router_repository_safety.py` (C03) 5 cases (`test_first_publication_blocks_batch_replacement…`, `test_batch_http_mutations_cannot_abandon_published_policy`, `test_batch_http_mutation_during_first_readback…`, `test_router_settings_allow_credential_repair…`, `test_rotated_router_password_can_be_repaired…`); `test_notifications.py` (C07) `test_confirmed_empty_router_release_clears_previous_failure`; `test_operation_logs.py` (C02) router release log cases; `test_profile_clone_router_isolation.py` (C04, route half with C34); `test_router_gateway_forwarding.py` (A20-owned; the route is here); route halves of every R01–R14 test file.
+- HEAD 按 GET 分支读取，不能创建路由器或持久化转发。已有静态段优先/method fallback 的 httpx matcher 明确承担 Flask 优先级；真实 Flask match 对照覆盖 gateway-installations/upstream 重叠、i/status 短链、POST Mihomo rule-targets proxy fallback。该临时基底尚未注册 A22 gateway-installations，Go 匹配测试加入其真实 Flask pattern，完整当前 server 注册也通过；待包含 A22 的批次做最终注册复验。
+- probe 捕获所有 RouterError（含 R05 KindInvalidResponse），只提交 last_probe，revision 恰好 +1。真实 Python 坏 verinfo/Location 为 HTML500且保留旧探测，Go 结构化502并保存失败；其他字段/归属记录保留。
+- 工作区 native typed read/revision/save；来源名称与策略、router 原子更新；预览固定完整 publish snapshot/config_revision，选中 DNS 才生成/校验，目标限定绑定空间，生成后重查 revision。D2 native revisions 与 C22 YAML 格式差异按结构比较。
+- 全部公开最终投影用 shared credential redactor；global upstream 的种子覆盖它可展示的全部空间。健康网关不受坏 Agent 报告影响；同名 has_password 仅布尔 flag 保留，字符串仍脱敏；Management 日志/探测诊断也保护同空间 peer 凭据。私有 CAS/存储证据保留原值。
+- 写 owner Detach，adapter 的 mutation admission 也保护 preflight；L1 先于 404/body validation，L2 后重新核对完整原始记录，不用 R5 显示默认值作 CAS。真实 Runtime HTTP 测写前/IO中/写后关机与断连；普通提交关机前停止，R12 已获批写后中止 publication 仍只走其原 owner。
 
-Routes (21, 0 done):
+作者定向证据：46 次真实 Flask HTTP 对照（每步 profile/system/shared、JSON/YAML 文件、最终设备表），2 类已知 Python probe bug 差异、5 条真实 Flask route match；全部21入口鉴权、忙锁优先、HEAD零写、正常/中止发布、工作区/转发/坏记录/跨设备凭据、真实 Runtime、原始 Agent forwarding bytes。Python `test_policy_workspace.py`、`test_ros_api_safety.py`、C03/C07/C02/C04 与 A20 延后项映射、HR checklist、精确命令/尾行见 [R15-handoff-zh.md](progress/R15-handoff-zh.md)。
 
 `GET /api/routers`; `POST /api/routers`; `PUT /api/routers/<router_id>`; `DELETE /api/routers/<router_id>`; `POST /api/routers/<router_id>/probe`; `GET /api/routers/<router_id>/report`; `POST /api/routers/<router_id>/plan`; `POST /api/routers/<router_id>/apply`; `GET /api/routers/<router_id>/routes`; `POST /api/routers/<router_id>/routes/plan`; `POST /api/routers/<router_id>/routes/apply`; `GET /api/routers/<router_id>/policy`; `GET /api/routers/<router_id>/policy-settings`; `PUT /api/routers/<router_id>/policy-settings`; `POST /api/routers/<router_id>/policy-settings/preview`; `GET /api/routers/<router_id>/rule-sync`; `PUT /api/routers/<router_id>/rule-sync`; `POST /api/routers/<router_id>/rule-sync`; `GET /api/routers/gateway-forwarding`; `POST /api/routers/gateway-forwarding`; `GET /api/agents/<agent_id>/upstream-routers`
 
 Notes for porter: **rule 4b is critical here**: probe, apply, routes/apply, rule-sync, settings PUT/DELETE must call owners that start with `lifecycle.Detach(ctx)` and check before commits; browser disconnects do not abort work, Runtime shutdown does — a half-finished publish on a router is the worst outcome. `_manual_sync_lock` / `_router_settings_lock` decorators take `job_lock` (409 texts). `Cache-Control: no-store` on gateway-forwarding and upstream-routers. `gateway-forwarding` calls A20 (`gateway_forwarding_entry`, `persist_gateway_forwarding`) directly from this API package (no cycle); until A20 exists it fails closed (500 with a "not wired" error), never silently. The `/api/profiles/<id>/…` forms do not exist for routers (profile via `X-ConfigFlow-Profile`/`?profile=`).
+
+未跑完整 gate/proddiff，未访问生产/真实路由器；fresh Opus、batch gate 与 L5 仍由协调者接续。代码第一步 `f7931b2a4`，后续提交见交接与分支 log。
 
 ## R16 — client devices and discovery
 

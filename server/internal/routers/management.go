@@ -10,6 +10,7 @@ import (
 	"configflow/internal/agents/diag"
 	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
+	"configflow/internal/redact"
 	"configflow/internal/repo"
 )
 
@@ -65,7 +66,7 @@ func (s *ManagementService) Create(ctx context.Context, profile string, body jso
 	if err != nil {
 		return nil, err
 	}
-	managementLogger.Infof(messageManagementCreated, releaseLabel(r), r.Type)
+	managementLogger.Infof(messageManagementCreated, s.safeLog(ctx, profile, r, orText(r.Name, r.ID)), r.Type)
 	return r, nil
 }
 func replaceManagementRouter(config json.RawMessage, id string, next *Router) (json.RawMessage, error) {
@@ -117,11 +118,19 @@ func replaceManagementRouter(config json.RawMessage, id string, next *Router) (j
 	return json.Marshal(doc)
 }
 func (s *ManagementService) locked(ctx context.Context, profile string, old *Router) (context.Context, func(), *Router, error) {
-	ctx = lifecycle.Detach(ctx)
+	return s.lockedFor(ctx, profile, old, true)
+}
+func (s *ManagementService) lockedFor(ctx context.Context, profile string, old *Router, write bool) (context.Context, func(), *Router, error) {
+	if write {
+		ctx = lifecycle.Detach(ctx)
+	}
+	if old == nil {
+		return ctx, nil, nil, rosError(KindConflict, messageManagementMissing)
+	}
 	if err := ctx.Err(); err != nil {
 		return ctx, nil, nil, err
 	}
-	held, release, err := RouterOperationLock(ctx, *old, true)
+	held, release, err := RouterOperationLock(ctx, *old, write)
 	if err != nil {
 		return ctx, nil, nil, err
 	}
@@ -167,7 +176,7 @@ func (s *ManagementService) Save(ctx context.Context, profile string, old *Route
 	}
 	repo.ResetConfigContext(work)
 	if remove {
-		managementLogger.Infof(messageManagementDeleted, releaseLabel(r))
+		managementLogger.Infof(messageManagementDeleted, s.safeLog(work, profile, r, orText(r.Name, r.ID)))
 	} else {
 		oldRaw, _ := json.Marshal(r)
 		newRaw, _ := json.Marshal(next)
@@ -191,7 +200,7 @@ func (s *ManagementService) Save(ctx context.Context, profile string, old *Route
 		if r.Password != next.Password {
 			changed = append(changed, "password")
 		}
-		managementLogger.Infof(messageManagementUpdated, releaseLabel(next), orText(strings.Join(changed, "、"), messageManagementNoChange))
+		managementLogger.Infof(messageManagementUpdated, s.safeLog(work, profile, r, orText(next.Name, next.ID)), orText(strings.Join(changed, "、"), messageManagementNoChange))
 	}
 	return next, nil
 }
@@ -230,7 +239,7 @@ func (s *ManagementService) Probe(ctx context.Context, profile string, r *Router
 		if !errors.As(err, &re) {
 			return result, err
 		}
-		result.Message = diag.EventMessage(re.Message, []any{r.Password})
+		result.Message = s.safeLog(ctx, profile, r, re.Message)
 	} else {
 		result.OK = true
 		result.RouterInfo = info
@@ -323,14 +332,14 @@ func (s *ManagementService) EditRoute(ctx context.Context, profile string, r *Ro
 	}
 	result, err := ExecuteRoutePlan(work, d, rows, plan)
 	if err != nil {
-		managementLogger.Warningf(messageManagementRouteFailed, releaseLabel(current), diag.EventMessage(err.Error(), []any{current.Password}))
+		managementLogger.Warningf(messageManagementRouteFailed, s.safeLog(work, profile, current, orText(current.Name, current.ID)), s.safeLog(work, profile, current, err.Error()))
 		return plan, result, err
 	}
 	note := ""
 	if !result.Changed {
 		note = messageManagementUnchanged
 	}
-	managementLogger.Infof(messageManagementRoute, releaseLabel(current), plan.Summary, note)
+	managementLogger.Infof(messageManagementRoute, s.safeLog(work, profile, current, orText(current.Name, current.ID)), s.safeLog(work, profile, current, plan.Summary), note)
 	return plan, result, nil
 }
 
@@ -379,3 +388,50 @@ func (s *ManagementService) SaveSyncSettings(ctx context.Context, profile string
 
 // ManagementRouters exposes the shared R5 decoder for a frozen HTTP snapshot.
 func ManagementRouters(config json.RawMessage) []*Router { return routersOf(config) }
+
+// PolicyObjects reads under the same L2 and complete stored-record guard as
+// writes. R5 display defaults never erase changes from the optimistic proof.
+func (s *ManagementService) PolicyObjects(ctx context.Context, profile string, r *Router) ([]ROSPolicyObject, error) {
+	work, release, current, err := s.lockedFor(ctx, profile, r, false)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+	d, err := s.open(current)
+	if err != nil {
+		return nil, err
+	}
+	defer d.Close()
+	ros, ok := d.(*RouterOS)
+	if !ok {
+		return nil, invalid(messageManagementPolicyOnly)
+	}
+	return ReadPolicyObjects(work, ros, current.Extra["ros_policy_state"])
+}
+
+func (s *ManagementService) safeLog(ctx context.Context, profile string, r *Router, value string) string {
+	if ctx.Err() != nil {
+		return redact.Redacted
+	}
+	config, _, err := s.Records(ctx, profile)
+	if err != nil {
+		return redact.Redacted
+	}
+	seeds, err := redact.ExternalPayloadSecrets(ctx, nil)
+	if err != nil {
+		return redact.Redacted
+	}
+	return managementLogText(config, seeds, r, value)
+}
+func managementLogText(config json.RawMessage, seeds redact.Secrets, r *Router, value string) string {
+	if r == nil {
+		return redact.Redacted
+	}
+	seeds = redact.NewSecrets(seeds, []string{r.Password})
+	raw := redact.SanitizeCredentials(value, redact.CollectCredentials(config, seeds))
+	var safe string
+	if json.Unmarshal(raw, &safe) != nil {
+		return redact.Redacted
+	}
+	return diag.EventMessage(safe, nil)
+}

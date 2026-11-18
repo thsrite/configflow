@@ -279,6 +279,16 @@ func (s *sanitizer) visit(value any, depth int) any {
 					item = decoded
 				}
 			}
+			// This schema flag reports presence, never credential material.
+			// A string under the same key still follows the credential rule.
+			if key == "has_password" {
+				if _, ok := item.(bool); ok {
+					if output != nil {
+						output.Set(s.str(key), item)
+					}
+					continue
+				}
+			}
 			if s.credentials && diag.IsCredentialKey(key) {
 				if text, ok := item.(string); ok && text != Redacted {
 					s.discovered = append(s.discovered, text)

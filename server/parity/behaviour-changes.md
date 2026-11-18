@@ -1388,3 +1388,12 @@ batch-6 codec 窄化：格式查询只解规则库，继续使用 model.Shared �
 - DHCP 归属证明要求 RouterOS server、iKuai interface/gateway 非空，且补偿 receipt 的完整 expected 存在。Python 的空 scope 相等不能作为 Go 删除外部对象的证明。异常设备响应仍可能使固定 IP 控件 fail closed，但健康发现设备保留。
 - R17 iKuai 新路径保留 Runtime 关机取消，通过共用 writeForm 编码/错误分类发请求；浏览器断连由 owner Detach 后完成。旧公共 Write 单操作完成语义不变。关机后不补偿/不提交本地 metadata；中止前设备可能已落下的独特 marker 保留，需重新发现确认。未增加不可中断提交或套用仅 R12 获批的 D-R12-3 例外。
 - JSON/YAML 原生表示与 D2 摘要不追逐 Python 字节。短随机 tag/nonce、validated updated_at/checked_at 是差分的精确归一化项，其余响应、revision、完整 profile 和设备表逐值比较。
+
+## R15 — 路由器 HTTP 与策略工作区
+
+- HEAD collection/forwarding 明确进入 GET 语义，修复 Python HEAD body 创建 router/持久化转发的缺陷。报告/提醒沿用 GET 的只读设备检查和观察记录语义。
+- R05 已明确分类的坏 verinfo / 损坏 Location 在 probe HTTP 中变为结构化502，失败 last_probe 保存且只增一次配置修订；Python 内部异常会 HTML500并丢掉本次探测。没有把坏回应当成成功或空表。
+- 延用 A20 的坏报告隔离：异常 forward_filter 只使本条网关 error，其他条目继续显示。公开最终投影（包括跨空间 upstream）、新 Management 日志/诊断使用共享 credential redactor，用户名保留。同名 has_password 布尔 presence flag 保持布尔，同名字符串仍按凭据字段脱敏，修复 Go 过度脱敏导致的类型变化。
+- 策略工作区 revision 按 D2 使用 Go native JSON；router 的 last_probe 不影响 draft revision，名字由独立 C31 revision 保护。旧 preview/draft 在切换后需重新载入。C22 生成/保存的 native_config、template_base_config 和 dns_content 按 YAML 结构兼容，格式及其派生 opaque revision 可不同。
+- R15 的规则同步 HTTP 差分也验证了已有 R14 私有 receipt 的表示差异：Go _rule_order 是对规则集合的顺序索引，公开 rules 数组仍按序严格比较；成功 delta 后 Python 省略的零值 Desired/added/removed/log，按明确缺省值核对，不丢弃非缺省数据。202 返回可以处于 queued/running/synced 的合法阶段；每个阶段中文消息须匹配，任务结束后完整 DB/文件/公开状态仍严格比较。
+- 设备锁沿用 R06 的有界 write wait，mutation preflight 与 owner 都保持 Runtime cancellation；仅 R12 已获批 publication 例外在设备尝试写入后记录中止。未增加不可中断区或新的后台调度器。

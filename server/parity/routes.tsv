@@ -79,7 +79,7 @@ POST	/api/agents/<agent_id>/uninstall	routes.agents.uninstall_agent	api/agents	d
 POST	/api/agents/<agent_id>/update	routes.agents.update_agent_version	api/agents	done
 GET	/api/agents/<agent_id>/upgrade	routes.agents.get_agent_upgrade	api/agents	done
 POST	/api/agents/<agent_id>/upgrade/report	routes.agents.report_agent_upgrade	api/agents	done
-GET	/api/agents/<agent_id>/upstream-routers	routes.upstream_router_pending.upstream_router_pending	37	todo
+GET	/api/agents/<agent_id>/upstream-routers	routes.upstream_router_pending.upstream_router_pending	internal/api/routers	done
 POST	/api/agents/core-install-command	routes.agents.create_core_install_command	internal/api/agents	done
 GET	/api/agents/core-install-script	routes.agents.get_core_install_script	internal/api/agents	done
 GET	/api/agents/docker-agent-compose	routes.agents.get_docker_agent_compose	internal/api/agents	done
@@ -288,26 +288,26 @@ PUT	/api/proxy-groups/batch-health-url	routes.proxy_groups.update_batch_health_u
 GET	/api/proxy-groups/health-defaults	routes.proxy_groups.health_defaults	api/proxygroups	done
 POST	/api/proxy-groups/preview-regex	routes.proxy_groups.preview_proxy_group_regex	api/proxygroups	done
 POST	/api/proxy-groups/reorder	routes.proxy_groups.reorder_proxy_groups	api/proxygroups	done
-GET	/api/routers	routes.routers.list_or_create_routers		todo
-POST	/api/routers	routes.routers.list_or_create_routers		todo
-DELETE	/api/routers/<router_id>	routes.routers.update_or_delete_router		todo
-PUT	/api/routers/<router_id>	routes.routers.update_or_delete_router		todo
-POST	/api/routers/<router_id>/apply	routes.routers.router_apply		todo
-POST	/api/routers/<router_id>/plan	routes.routers.router_plan		todo
-GET	/api/routers/<router_id>/policy	routes.routers.list_device_policy		todo
-GET	/api/routers/<router_id>/policy-settings	routes.routers.policy_settings		todo
-PUT	/api/routers/<router_id>/policy-settings	routes.routers.policy_settings		todo
-POST	/api/routers/<router_id>/policy-settings/preview	routes.routers.preview_policy_settings		todo
-POST	/api/routers/<router_id>/probe	routes.routers.probe_router		todo
-GET	/api/routers/<router_id>/report	routes.routers.router_report		todo
-GET	/api/routers/<router_id>/routes	routes.routers.list_device_routes		todo
-POST	/api/routers/<router_id>/routes/apply	routes.routers.apply_device_route		todo
-POST	/api/routers/<router_id>/routes/plan	routes.routers.preview_device_route		todo
-GET	/api/routers/<router_id>/rule-sync	routes.routers.router_rule_sync		todo
-POST	/api/routers/<router_id>/rule-sync	routes.routers.router_rule_sync		todo
-PUT	/api/routers/<router_id>/rule-sync	routes.routers.router_rule_sync		todo
-GET	/api/routers/gateway-forwarding	routes.routers.gateway_forwarding		todo
-POST	/api/routers/gateway-forwarding	routes.routers.gateway_forwarding		todo
+GET	/api/routers	routes.routers.list_or_create_routers	internal/api/routers	done
+POST	/api/routers	routes.routers.list_or_create_routers	internal/api/routers	done
+DELETE	/api/routers/<router_id>	routes.routers.update_or_delete_router	internal/api/routers	done
+PUT	/api/routers/<router_id>	routes.routers.update_or_delete_router	internal/api/routers	done
+POST	/api/routers/<router_id>/apply	routes.routers.router_apply	internal/api/routers	done
+POST	/api/routers/<router_id>/plan	routes.routers.router_plan	internal/api/routers	done
+GET	/api/routers/<router_id>/policy	routes.routers.list_device_policy	internal/api/routers	done
+GET	/api/routers/<router_id>/policy-settings	routes.routers.policy_settings	internal/api/routers	done
+PUT	/api/routers/<router_id>/policy-settings	routes.routers.policy_settings	internal/api/routers	done
+POST	/api/routers/<router_id>/policy-settings/preview	routes.routers.preview_policy_settings	internal/api/routers	done
+POST	/api/routers/<router_id>/probe	routes.routers.probe_router	internal/api/routers	done
+GET	/api/routers/<router_id>/report	routes.routers.router_report	internal/api/routers	done
+GET	/api/routers/<router_id>/routes	routes.routers.list_device_routes	internal/api/routers	done
+POST	/api/routers/<router_id>/routes/apply	routes.routers.apply_device_route	internal/api/routers	done
+POST	/api/routers/<router_id>/routes/plan	routes.routers.preview_device_route	internal/api/routers	done
+GET	/api/routers/<router_id>/rule-sync	routes.routers.router_rule_sync	internal/api/routers	done
+POST	/api/routers/<router_id>/rule-sync	routes.routers.router_rule_sync	internal/api/routers	done
+PUT	/api/routers/<router_id>/rule-sync	routes.routers.router_rule_sync	internal/api/routers	done
+GET	/api/routers/gateway-forwarding	routes.routers.gateway_forwarding	internal/api/routers	done
+POST	/api/routers/gateway-forwarding	routes.routers.gateway_forwarding	internal/api/routers	done
 GET	/api/rule-library	routes.rule_library.handle_rule_library	api/rulelibrary	done
 POST	/api/rule-library	routes.rule_library.handle_rule_library	api/rulelibrary	done
 DELETE	/api/rule-library/<rule_id>	routes.rule_library.handle_rule_library_item	api/rulelibrary	done

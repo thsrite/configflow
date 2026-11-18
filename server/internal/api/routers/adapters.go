@@ -1,14 +1,16 @@
 package routers
 
 import (
+	"context"
+	"encoding/json"
+
 	"configflow/internal/httpx"
 	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/notifications"
+	"configflow/internal/redact"
 	"configflow/internal/repo"
 	core "configflow/internal/routers"
-	"context"
-	"encoding/json"
 )
 
 // recordNotice is the C07 legacy boundary. Notification failures do not change
@@ -81,4 +83,33 @@ func publishSnapshot(ctx context.Context, db *repo.Repository, id string) (json.
 	}
 	raw, err := json.Marshal(cfg)
 	return raw, revision, err
+}
+
+// allProfileSecrets seeds the global reminder projection from the same profile
+// scope it can display. The bounded shared redactor owns credential detection.
+func allProfileSecrets(ctx context.Context, db *repo.Repository) (redact.Secrets, error) {
+	seeds, err := redact.ExternalPayloadSecrets(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	profiles, err := db.ListProfiles(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, raw := range profiles {
+		profile, ok := raw.(*jsonx.Object)
+		if !ok {
+			continue
+		}
+		cfg, err := db.GetCompatConfig(ctx, profile.GetString("id"), repo.ResourceRoots{})
+		if err != nil {
+			return nil, err
+		}
+		data, err := json.Marshal(cfg)
+		if err != nil {
+			return nil, err
+		}
+		seeds = redact.CollectCredentials(json.RawMessage(data), seeds)
+	}
+	return seeds, nil
 }

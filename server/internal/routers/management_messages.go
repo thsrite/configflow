@@ -1,6 +1,7 @@
 package routers
 
 const (
+	messageManagementPolicyOnly  = "策略路由查看仅支持 RouterOS"
 	messageWorkspaceStale        = "配置已在其他页面更新，请重新载入后再保存。"
 	messageManagementChanged     = "路由器设置已变化，请刷新后重试"
 	messageManagementMissing     = "路由器已不存在"

@@ -1,12 +1,13 @@
 package routers
 
 import (
+	"encoding/json"
+
 	"configflow/internal/httpx"
 	"configflow/internal/oxidns"
 	"configflow/internal/redact"
 	core "configflow/internal/routers"
 	"configflow/internal/yamlx"
-	"encoding/json"
 )
 
 func workspaceRequest(raw json.RawMessage) (core.WorkspaceRequest, bool) {
@@ -76,12 +77,12 @@ func (h *handler) workspace(c *httpx.Ctx) (*httpx.Response, error) {
 }
 func (h *handler) previewWorkspace(c *httpx.Ctx) (*httpx.Response, error) {
 	values, ok := fields(body(c))
-	var targets *[]string
-	if !ok || json.Unmarshal(values["targets"], &targets) != nil || targets == nil {
+	targets, validTargets := previewTargets(values["targets"])
+	if !ok || !validTargets {
 		return httpx.Message(400, false, messagePreviewFormat), nil
 	}
 	seen := map[string]bool{}
-	for _, id := range *targets {
+	for _, id := range targets {
 		if seen[id] {
 			return httpx.Message(400, false, messagePreviewFormat), nil
 		}
@@ -138,7 +139,7 @@ func (h *handler) previewWorkspace(c *httpx.Ctx) (*httpx.Response, error) {
 		}
 	}
 	selected := []core.WorkspacePeer{}
-	for _, id := range *targets {
+	for _, id := range targets {
 		peer, exists := byID[id]
 		if !exists {
 			return httpx.Message(409, false, messageTargetsChanged), nil
@@ -161,7 +162,7 @@ func (h *handler) previewWorkspace(c *httpx.Ctx) (*httpx.Response, error) {
 		return nil, err
 	}
 	content := ""
-	if len(*targets) > 0 {
+	if len(targets) > 0 {
 		content, err = oxidns.Generate(p, base)
 		if err != nil {
 			return failure(c, cfg, err, 400, false)
@@ -205,3 +206,19 @@ func (h *handler) previewWorkspace(c *httpx.Ctx) (*httpx.Response, error) {
 // selectedRouters delegates to the shared R5 decoder via the management view.
 // The snapshot is already resolved; this export avoids independent decoder rules.
 func selectedRouters(cfg json.RawMessage) []*core.Router { return core.ManagementRouters(cfg) }
+
+func previewTargets(raw json.RawMessage) ([]string, bool) {
+	var rows *[]json.RawMessage
+	if json.Unmarshal(raw, &rows) != nil || rows == nil {
+		return nil, false
+	}
+	result := make([]string, 0, len(*rows))
+	for _, row := range *rows {
+		value, ok := stringValue(row)
+		if !ok {
+			return nil, false
+		}
+		result = append(result, value)
+	}
+	return result, true
+}
