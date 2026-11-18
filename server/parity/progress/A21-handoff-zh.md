@@ -132,3 +132,11 @@ ok configflow/internal/gateway/onboarding                  61.027s
 最终 fuzz 225 个缓存 baseline，15334 次执行，新发现 16 个 interesting inputs，无失败。早期完整直接调用方的命令展示省略了仅取回 gofmt 文件的 --back 参数；这里的最终命令包含它们。
 
 共享 OxiDNS helper 提交：`7129d0ef4`。主实现提交见本分支随后的一条 `go(gateway): A21 ...` 提交。
+
+## 提交与交回状态
+
+- `7129d0ef4`：共享 OxiDNS upstream/reference 入口。
+- `0ade86dd8`：A21 原生准备/状态/安装前验证、原子 owner、3 个 HTTP 方法入口、C36 hook/纯功能 API、定向测试与差异登记。
+- 工作分支 `go-port-a21`，起点 `batch-1@778d8f8e2`；当前 `go@e0e9d9d45` 仍不包含 batch-1，按原裁定等其合入后再 rebase。C34 DNSLoop 也尚未合入 go。
+- 这是依赖未解除时的可审阅 checkpoint，不是已完成/已验证的 A21。生产 Register 的 checker 仍为 TODO(C34)，准备/保存会拒绝绕过它；路由清单和模块状态保持 wip，不能直接合入或宣称成功闭环。
+- 需要协调者在 batch-1、O3-6c、C34 合入后提供提交号；随后接线、做代表性实际 DNSLoop/owner 合并态验证，再正式交给新的 Opus HR 复核。
