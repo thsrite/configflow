@@ -15,6 +15,18 @@ import (
 // content or validated local cache bytes. It never performs a network request.
 // A nil result means the content cannot establish whether IP rules are present.
 func TypedClassicalIPLines(ctx context.Context, rule model.RuleConfig, library []model.RuleLibraryItem) (*bool, error) {
+	return typedClassicalIPLines(ctx, rule, library, rulefetch.ReadCacheWithFormat)
+}
+
+// PeekTypedClassicalIPLines probes offline metadata for pure generation. Unlike
+// the request reader, it never migrates a validated cache under a legacy name.
+func PeekTypedClassicalIPLines(ctx context.Context, rule model.RuleConfig, library []model.RuleLibraryItem) (*bool, error) {
+	return typedClassicalIPLines(ctx, rule, library, rulefetch.PeekCacheWithFormat)
+}
+
+type cacheReader func(context.Context, model.RuleConfig, *rulefetch.SourceConfig, string) ([]byte, error)
+
+func typedClassicalIPLines(ctx context.Context, rule model.RuleConfig, library []model.RuleLibraryItem, read cacheReader) (*bool, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -64,6 +76,6 @@ func TypedClassicalIPLines(ctx context.Context, rule model.RuleConfig, library [
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		return rulefetch.ReadCacheWithFormat(ctx, rule, &rulefetch.SourceConfig{Library: library}, format)
+		return read(ctx, rule, &rulefetch.SourceConfig{Library: library}, format)
 	})
 }

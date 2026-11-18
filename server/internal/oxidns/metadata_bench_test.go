@@ -97,7 +97,7 @@ func BenchmarkOxiDNSMetadataChain(b *testing.B) {
 	var calls atomic.Int64
 	restore := oxidns.SetNativeClassicalIPLines(func(ctx context.Context, item model.RuleConfig, library []model.RuleLibraryItem) (*bool, error) {
 		calls.Add(1)
-		return ippresence.TypedClassicalIPLines(repo.WithRepository(ctx, repository), item, library)
+		return ippresence.PeekTypedClassicalIPLines(repo.WithRepository(ctx, repository), item, library)
 	})
 	defer restore()
 
@@ -139,7 +139,7 @@ func TestMetadataChainAllocationBound(t *testing.T) {
 	var calls int
 	restore := oxidns.SetNativeClassicalIPLines(func(ctx context.Context, item model.RuleConfig, library []model.RuleLibraryItem) (*bool, error) {
 		calls++
-		return ippresence.TypedClassicalIPLines(repo.WithRepository(ctx, repository), item, library)
+		return ippresence.PeekTypedClassicalIPLines(repo.WithRepository(ctx, repository), item, library)
 	})
 	defer restore()
 	var sizes []uint64

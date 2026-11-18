@@ -429,6 +429,8 @@ func (p *Profile) classicalWithoutIP(item *Node) bool {
 			*member.destination = &text
 		}
 	}
+	// Generate owns only a snapshot, not a write-capable Runtime context. Wire
+	// installs the peek-only reader so this offline probe cannot migrate files.
 	value, err := resolver(context.Background(), rule)
 	return err == nil && value != nil && !*value
 }

@@ -14,7 +14,7 @@ import (
 // internal/oxidns.
 func Wire() {
 	convert.RegisterMihomoHooks(convert.MihomoHooks{IsFullTun: isFullTun})
-	oxidns.SetNativeClassicalIPLines(TypedClassicalIPLines)
+	oxidns.SetNativeClassicalIPLines(PeekTypedClassicalIPLines)
 }
 
 func isFullTun(config *jsonx.Object) (bool, error) {

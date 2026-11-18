@@ -88,6 +88,17 @@ func ReadCache(ctx context.Context, rule model.RuleConfig, config *SourceConfig)
 // A nonempty format never runs inference or decodes a rule-library payload.
 func ReadCacheWithFormat(ctx context.Context, rule model.RuleConfig, config *SourceConfig, format string) ([]byte, error) {
 	ctx = ctxx.Detach(ctx)
+	return readCacheWithFormat(ctx, rule, config, format, true)
+}
+
+// PeekCacheWithFormat validates local cache bytes without migrating them. It
+// never takes a write lock, updates receipts, or creates or replaces any file.
+// A nonempty format uses the same inference-free path as ReadCacheWithFormat.
+func PeekCacheWithFormat(ctx context.Context, rule model.RuleConfig, config *SourceConfig, format string) ([]byte, error) {
+	return readCacheWithFormat(ctx, rule, config, format, false)
+}
+
+func readCacheWithFormat(ctx context.Context, rule model.RuleConfig, config *SourceConfig, format string, migrate bool) ([]byte, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -115,6 +126,9 @@ func ReadCacheWithFormat(ctx context.Context, rule model.RuleConfig, config *Sou
 			}
 			return nil, err
 		}
+	}
+	if !migrate {
+		return content, nil
 	}
 	// Migrate an old name only after byte validation and another declaration
 	// check under the repository transaction. Keep the old file for rollback.
