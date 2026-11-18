@@ -115,9 +115,12 @@ func failure(c *httpx.Ctx, cfg json.RawMessage, err error, status int, noStore b
 		return nil, nil
 	}
 	var validation *core.ValidationError
-	var settings *oxidns.SettingsError
 	var re *core.RouterError
-	if errors.As(err, &validation) || errors.As(err, &settings) {
+	message := err.Error()
+	// OxidnsValidationError and OxidnsReferenceError subclass OxidnsSettingsError.
+	if text, ok := oxidns.IsSettingsError(err); ok {
+		status, message = 400, text
+	} else if errors.As(err, &validation) {
 		status = 400
 	} else if errors.As(err, &re) {
 		if status == 0 {
@@ -133,7 +136,7 @@ func failure(c *httpx.Ctx, cfg json.RawMessage, err error, status int, noStore b
 	return public(c, cfg, struct {
 		Success bool   `json:"success"`
 		Message string `json:"message"`
-	}{false, err.Error()}, status, noStore)
+	}{false, message}, status, noStore)
 }
 func notFound() (*httpx.Response, error) { return httpx.Message(404, false, messageMissing), nil }
 func (h *handler) job(next httpx.HandlerFunc) httpx.HandlerFunc {

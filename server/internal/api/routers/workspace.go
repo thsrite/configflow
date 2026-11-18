@@ -2,10 +2,12 @@ package routers
 
 import (
 	"encoding/json"
+	"errors"
 
 	"configflow/internal/httpx"
 	"configflow/internal/oxidns"
 	"configflow/internal/redact"
+	"configflow/internal/repo"
 	core "configflow/internal/routers"
 	"configflow/internal/yamlx"
 )
@@ -38,6 +40,25 @@ func (h *handler) workspace(c *httpx.Ctx) (*httpx.Response, error) {
 	if r.Type != "routeros" {
 		return httpx.Message(400, false, messagePolicyOnly), nil
 	}
+	return repositoryFailure(c, cfg)(h.workspaceBody(c, s, cfg, r))
+}
+
+// repositoryFailure maps ProfileRepositoryError, which Python policy_settings
+// catches as 400 together with the router validation errors.
+func repositoryFailure(c *httpx.Ctx, cfg json.RawMessage) func(*httpx.Response, error) (*httpx.Response, error) {
+	return func(response *httpx.Response, err error) (*httpx.Response, error) {
+		var stored *repo.Error
+		if !errors.As(err, &stored) {
+			return response, err
+		}
+		return public(c, cfg, struct {
+			Success bool   `json:"success"`
+			Message string `json:"message"`
+		}{false, stored.Error()}, 400, false)
+	}
+}
+func (h *handler) workspaceBody(c *httpx.Ctx, s *core.ManagementService, cfg json.RawMessage, r *core.Router) (*httpx.Response, error) {
+	var err error
 	if c.Method() == "PUT" {
 		body, ok := workspaceRequest(body(c))
 		if !ok {

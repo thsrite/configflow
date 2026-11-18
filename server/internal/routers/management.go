@@ -239,7 +239,9 @@ func (s *ManagementService) Probe(ctx context.Context, profile string, r *Router
 		if !errors.As(err, &re) {
 			return result, err
 		}
-		result.Message = s.safeLog(ctx, profile, r, re.Message)
+		// Python stores str(error). Only credentials are hidden here: the
+		// diagnostic URL filter would erase the redirect origin the user needs.
+		result.Message = s.safeText(ctx, profile, r, re.Message)
 	} else {
 		result.OK = true
 		result.RouterInfo = info
@@ -410,6 +412,11 @@ func (s *ManagementService) PolicyObjects(ctx context.Context, profile string, r
 }
 
 func (s *ManagementService) safeLog(ctx context.Context, profile string, r *Router, value string) string {
+	return eventText(s.safeText(ctx, profile, r, value))
+}
+
+// safeText hides stored and peer credentials without the diagnostic filters.
+func (s *ManagementService) safeText(ctx context.Context, profile string, r *Router, value string) string {
 	if ctx.Err() != nil {
 		return redact.Redacted
 	}
@@ -421,9 +428,18 @@ func (s *ManagementService) safeLog(ctx context.Context, profile string, r *Rout
 	if err != nil {
 		return redact.Redacted
 	}
-	return managementLogText(config, seeds, r, value)
+	return managementSafeText(config, seeds, r, value)
 }
 func managementLogText(config json.RawMessage, seeds redact.Secrets, r *Router, value string) string {
+	return eventText(managementSafeText(config, seeds, r, value))
+}
+func eventText(value string) string {
+	if value == redact.Redacted {
+		return value
+	}
+	return diag.EventMessage(value, nil)
+}
+func managementSafeText(config json.RawMessage, seeds redact.Secrets, r *Router, value string) string {
 	if r == nil {
 		return redact.Redacted
 	}
@@ -433,5 +449,5 @@ func managementLogText(config json.RawMessage, seeds redact.Secrets, r *Router, 
 	if json.Unmarshal(raw, &safe) != nil {
 		return redact.Redacted
 	}
-	return diag.EventMessage(safe, nil)
+	return safe
 }

@@ -85,6 +85,8 @@ Python's `backend/routers` is one big import cycle (most cross-module imports ar
 | R17 | client fixed IP and client-device routes | 1077 | verified | HR | R16, R06, R14, C06 (JWT secret), C36², A13⁶ | 5 (5 done) | internal/clients, internal/routers, internal/api/clientdevices |
 
 | R15 | router HTTP routes, policy workspace, upstream-router reminder route | 656 | ported | HR | R14, C06, C22 (ready), C31, C34; A20⁵ | 21 (21 done) | internal/api/routers, internal/routers |
+
+| R15 | router HTTP routes, policy workspace, upstream-router reminder route | 656 | verified | HR | R14, C06, C22 (ready), C31, C34; A20⁵ | 21 (21 done) | internal/api/routers, internal/routers |
 | R16 | client devices and discovery | 786 | missing | | R13, A01, C26, C31 | – | internal/clients, internal/routers |
 | R17 | client fixed IP and client-device routes | 1077 | missing | HR | R16, R06, R14, C06 (JWT secret), C36², A13⁶ | 5 (0 done) | internal/clients, internal/routers, internal/api/clientdevices |
 
@@ -864,7 +866,7 @@ HR 复核（[review-r14.md](review-r14.md)）：0 high、2 medium、3 low 已修
 
 ## R15 — router HTTP routes, policy workspace, upstream-router reminder route
 
-**Status: `ported`** · HR，待 fresh Opus 独立复核 · Go: `internal/api/routers`, `internal/routers`。分支 `go-port-r15`，按协调者从 `go-opus-review-r14@a08a120b2` 新建；待 batch-6 通知后再 rebase/接 O3-6b 唯一 RouterJobLock，当前仍复用 R14 的临时唯一 L1。
+**Status: `verified`**（fresh Opus HR 复核 2026-11-18，[review-r15.md](review-r15.md)：0 high，2 medium + 2 low 已修；集成清单见该文件）· HR · Go: `internal/api/routers`, `internal/routers`。分支 `go-port-r15`，按协调者从 `go-opus-review-r14@a08a120b2` 新建；待 batch-6 通知后再 rebase/接 O3-6b 唯一 RouterJobLock，当前仍复用 R14 的临时唯一 L1。
 
 21 method/path 均注册并在 routes.tsv 标 done：CRUD/probe/report/plan/apply、手动 routes 三入口、policy 查看、policy-settings GET/PUT/preview、rule-sync GET/PUT/POST、gateway-forwarding GET/POST、agents upstream-routers GET。使用 auth、R5 shared decoder、C03 事务/CAS、R06 L2、R12 Inspect/BuildPlan/Publish、R13 app-owned PendingCache、R14 StartJob、C22/C31 工作区与 DNS 生成、C34 shared redact、A20 host.Bridge；不复制发布器、驱动或策略编辑器。
 
@@ -881,6 +883,8 @@ HR 复核（[review-r14.md](review-r14.md)）：0 high、2 medium、3 low 已修
 Notes for porter: **rule 4b is critical here**: probe, apply, routes/apply, rule-sync, settings PUT/DELETE must call owners that start with `lifecycle.Detach(ctx)` and check before commits; browser disconnects do not abort work, Runtime shutdown does — a half-finished publish on a router is the worst outcome. `_manual_sync_lock` / `_router_settings_lock` decorators take `job_lock` (409 texts). `Cache-Control: no-store` on gateway-forwarding and upstream-routers. `gateway-forwarding` calls A20 (`gateway_forwarding_entry`, `persist_gateway_forwarding`) directly from this API package (no cycle); until A20 exists it fails closed (500 with a "not wired" error), never silently. The `/api/profiles/<id>/…` forms do not exist for routers (profile via `X-ConfigFlow-Profile`/`?profile=`).
 
 未跑完整 gate/proddiff，未访问生产/真实路由器；fresh Opus、batch gate 与 L5 仍由协调者接续。代码第一步 `f7931b2a4`，后续提交见交接与分支 log。
+
+R15 复核（分支 `go-opus-review-r15`）：M1 iKuai probe 跳转文案中的管理地址被 `EventMessage` 与共享 `diag.CredentialSpans`（URL 后紧跟全角标点时 fail-closed）整段隐藏 → probe 只做凭据清洗、`proseAfterOrigin` 收窄例外；M2 `oxidns.ValidationError/ReferenceError` 由 500 改为 400（`IsSettingsError`）；L1 policy-settings 的 `repo.Error` → 400；L2 `server.go` gofmt。命令：`rt -- bash -lc 'cd server && go test -count=1 ./internal/redact ./internal/api/routers -run TestReviewR15 -v'`（修复前 3+1 项失败，修复后 PASS）；`rt -- bash -lc 'cd server && test -z "$(gofmt -l .)" && go vet ./... && go test -race -count=1 ./internal/redact ./internal/api/routers ./internal/deploy/pushdiff ./internal/agents ./internal/api/profiles ./internal/api/rules ./internal/gateway/draft ./internal/gateway/host ./internal/setup ./internal/server -timeout 15m && go test -race -count=1 ./internal/routers -run "TestR15|TestR05|TestR06|TestR12|TestIkuai|Ikuai" -timeout 15m'`，.64：全部 ok（api/routers 25.7s、agents 479.8s、routers 103.3s），退出 0。
 
 ## R16 — client devices and discovery
 

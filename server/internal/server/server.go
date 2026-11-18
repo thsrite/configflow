@@ -25,7 +25,6 @@ import (
 	"configflow/internal/agents/upgrades"
 	"configflow/internal/aggregations"
 	apiagents "configflow/internal/api/agents"
- apirouters "configflow/internal/api/routers"
 	apiaggregations "configflow/internal/api/aggregations"
 	apiauth "configflow/internal/api/auth"
 	apiclientdevices "configflow/internal/api/clientdevices"
@@ -41,6 +40,7 @@ import (
 	apioxidns "configflow/internal/api/oxidns"
 	apiprofiles "configflow/internal/api/profiles"
 	apiproxygroups "configflow/internal/api/proxygroups"
+	apirouters "configflow/internal/api/routers"
 	apirulelibrary "configflow/internal/api/rulelibrary"
 	apirules "configflow/internal/api/rules"
 	apisettings "configflow/internal/api/settings"
@@ -82,7 +82,7 @@ var routePackages = []func(*httpx.Router){
 	apirulelibrary.Register,
 	apiproxygroups.Register,
 	apiagents.Register,
- apirouters.Register,
+	apirouters.Register,
 	apilinuxgateway.Register,
 	apiconfig.Register,
 	apigenerate.Register,

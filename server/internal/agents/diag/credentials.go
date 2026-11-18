@@ -78,6 +78,9 @@ func urlCredentialSpans(raw string) [][2]int {
 	// Go's parser also rejects a stray percent escape. Keeping such a URL secret
 	// is preferable to leaking a credential when its boundary is ambiguous.
 	if _, err := url.Parse(raw); err != nil {
+		if proseAfterOrigin(raw) {
+			return nil
+		}
 		return [][2]int{{0, len(raw)}}
 	}
 	head := strings.Index(raw, "://") + 3
@@ -121,4 +124,17 @@ func urlCredentialSpans(raw string) [][2]int {
 		}
 	}
 	return spans
+}
+
+// proseAfterOrigin reports a bare scheme://host[:port] directly followed by
+// non-ASCII punctuation, as in Chinese messages "跳转到 https://host:8443（HTTP 302）".
+// Only a credential-free origin qualifies, and the rest of the word must not
+// contain '@'; anything else stays fail-closed.
+func proseAfterOrigin(raw string) bool {
+	cut := strings.IndexFunc(raw, func(r rune) bool { return r > unicode.MaxASCII && unicode.IsPunct(r) })
+	if cut < 0 || strings.Contains(raw[cut:], "@") {
+		return false
+	}
+	u, err := url.Parse(raw[:cut])
+	return err == nil && u.Host != "" && u.User == nil && u.Opaque == "" && u.Path == "" && !u.ForceQuery && u.RawQuery == "" && u.Fragment == "" && !strings.ContainsAny(raw[:cut], "?#")
 }
