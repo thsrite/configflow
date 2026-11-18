@@ -93,6 +93,11 @@ uncommitted or non-compiling code: commit what compiles, revert the rest, write 
 PROGRESS file. If you fail the same problem 2–3 rounds, stop and report an escalation packet: failing command
 + trimmed output, file paths, one line per attempt and why it failed, branch/commit (WORKFLOW.md, last section).
 
+## Verification scope (2026-11-18)
+
+Follow WORKFLOW.md "Leaner verification": reviewers do not re-run the author's whole suites, no per-module
+mutation gates, and Python comparisons cover normal paths plus one representative case per error class.
+
 ## Messages to the coordinator
 
 Send a message only when (a) you need a decision, (b) you hand back, or (c) you are blocked. Do not send

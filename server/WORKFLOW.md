@@ -459,3 +459,20 @@ Approved by the maintainer to cut gate time without reducing what is verified.
   Anything that touches Go product code, even one package, goes through a batch full gate.
 - Agents keep handing back with targeted evidence when the gate queue exceeds 15 minutes; the coordinator
   decides which batch a branch joins.
+
+## Leaner verification (maintainer, 2026-11-18)
+
+The rewrite was spending most of its time and tokens re-verifying the same things. Product behaviour rules
+are unchanged (Python parity, approved behaviour changes, HR review, non-HR independent review, full batch
+gate before every merge). What changes is how much each agent re-runs:
+
+1. **No duplicate runs.** A reviewer does not re-run the author's full comparison suites. It reads them, runs
+   the tests for its own fixes, and spot-checks: a few author cases per risk area plus any case it doubts.
+   The batch gate re-runs everything anyway.
+2. **No per-module mutation gates.** Do not build "N/N mutations detected" scripts per module. A negative
+   control is still required where a test could pass vacuously (an index or golden that might be ignored, a
+   guard that might never fire) — one targeted control, not a mutation suite.
+3. **Python comparisons cover behaviour boundaries, not exhaustive input matrices.** Compare the normal
+   paths plus one representative case per error class (malformed JSON, non-object body, wrong type, missing
+   field, conflict, cancellation). Do not enumerate every shape x every engine. When an error class has a
+   per-engine or per-route difference in Python, cover each distinct behaviour once.
