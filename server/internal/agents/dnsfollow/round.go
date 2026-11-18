@@ -138,7 +138,12 @@ func (s *Service) round(ctx context.Context) (bool, error) {
 			} else {
 				if found && !terminal(child.Status) {
 					idle = false
-					if e = s.failPreparation(ctx, current, id, message); e != nil {
+					// A01 redacts the child only with the target's own token.
+					all, e := s.all(ctx)
+					if e != nil {
+						return e
+					}
+					if e = s.failPreparation(ctx, current, id, s.safe(message, all)); e != nil {
 						return e
 					}
 				}

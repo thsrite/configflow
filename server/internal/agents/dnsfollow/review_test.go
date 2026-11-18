@@ -10,6 +10,7 @@ import (
 
 	"configflow/internal/agents"
 	"configflow/internal/agents/agentfake"
+	"configflow/internal/deploy"
 	"configflow/internal/jsonx"
 	"configflow/internal/repo"
 	"configflow/internal/yamlx"
@@ -163,4 +164,41 @@ func TestDeviceAndSourceNamesFollowStoredRecord(t *testing.T) {
 	f.target.server.Close()
 	_, err = f.s.Configure(f.ctx, "target", json.RawMessage(`{"source_agent_id":"source","upstream_tag":"forward_remote","upstream_index":1,"connection":"auto"}`))
 	wantRefusal(t, err, fmt.Sprintf(msgUnreachable, msgDefaultAgentName))
+}
+
+// Same class as the task-row fix: the child record that marks an unsubmitted
+// follow as failed is projected later with the target's own credentials only
+// (public Agent view, A01 redaction), so its error_details must already hide
+// every other Agent's credential.
+func TestPreparationFailureRecordHidesOtherAgentCredentials(t *testing.T) {
+	f := newFixture(t, Options{}, agentfake.Options{})
+	f.bind(t)
+	restore := deploy.SetPairPublisher(func(_ context.Context, _ *agents.Manager, id string, _ *deploy.Bundle, _ deploy.PublishOptions) (*agents.Result, bool, error) {
+		if id != "target" {
+			return nil, false, nil
+		}
+		return nil, false, &deploy.Refusal{Message: "peer refused " + f.source.token}
+	})
+	defer restore()
+	f.publishSource(t, "source-next")
+	if e := f.s.Tick(f.ctx); e != nil {
+		t.Fatal(e)
+	}
+	a := f.agent(t)
+	st := state(a)
+	child, ok := a.Deployments.Get(value(st.TargetDeploymentID))
+	if st.Status != "failed" || !ok || child.Status != "failed" {
+		t.Fatalf("state %q %q child %+v", st.Status, st.Message, child)
+	}
+	raw, err := f.m.GetAgentByID(f.ctx, "target", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), f.source.token) {
+		t.Fatal("source credential stored in the target's records")
+	}
 }
