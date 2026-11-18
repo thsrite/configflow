@@ -9,6 +9,7 @@ import (
 	"fmt"
 
 	"configflow/internal/agents/diag"
+	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
 	"configflow/internal/repo"
 )
@@ -145,7 +146,11 @@ func pendingTargets(ctx context.Context, req PendingRequest) ([]pendingTarget, s
 // AgentRouters reuses R12's read-only inspection and preview. Shared loads are
 // tracked independently of the HTTP waiter, and never execute a release.
 func AgentRouters(ctx context.Context, req PendingRequest) (*PendingResponse, error) {
-	targets, profile, signature, err := pendingTargets(ctx, req)
+	work := lifecycle.Detach(ctx)
+	if err := work.Err(); err != nil {
+		return nil, err
+	}
+	targets, profile, signature, err := pendingTargets(work, req)
 	if err != nil {
 		return nil, err
 	}

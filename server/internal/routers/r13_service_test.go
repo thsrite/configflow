@@ -214,7 +214,7 @@ func TestR13Fanout25SecondsAndEightWorkers(t *testing.T) {
 	}
 }
 func TestR13DisconnectFinishesButShutdownDoesNotCommit(t *testing.T) {
-	for _, mode := range []string{"disconnect", "shutdown"} {
+	for _, mode := range []string{"disconnect", "disconnect-before-entry", "shutdown"} {
 		t.Run(mode, func(t *testing.T) {
 			l := r13Fixture(t)
 			rt := r13Runtime(t)
@@ -238,10 +238,13 @@ func TestR13DisconnectFinishesButShutdownDoesNotCommit(t *testing.T) {
 			request, cancel := context.WithCancel(t.Context())
 			defer cancel()
 			ctx := rt.BindRequest(request)
+			if mode == "disconnect-before-entry" {
+				cancel()
+			}
 			done := make(chan error, 1)
 			go func() { _, e := AgentRouters(ctx, req); done <- e }()
 			<-started
-			if mode == "disconnect" {
+			if mode != "shutdown" {
 				cancel()
 				if e := <-done; !errors.Is(e, context.Canceled) {
 					t.Fatal(e)

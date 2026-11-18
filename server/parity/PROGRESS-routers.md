@@ -78,7 +78,7 @@ Python's `backend/routers` is one big import cycle (most cross-module imports ar
 | R10 | IPv6 policy, IPv6 fake-IP, IPv6 rule-set routes | 1247 | verified | HR | R04, R09 | – | internal/routers |
 | R11 | IPv6 PD guard, IPv6 DNS, RouterOS IPv6 readiness | 1161 | verified | HR | R10 | – | internal/routers |
 | R12 | release plan and staged execution | 1220 | verified | HR | R03–R11, A01 (return routing calls, ready) | – | internal/routers |
-| R13 | inspection service, return advisory, pending reminders | 713 | missing | HR | R12, C07 (`RecordRouter`, ready), A01, A06 (ready); A23⁴ | – | internal/routers |
+| R13 | inspection service, return advisory, pending reminders | 713 | ported | HR | R12, C07 (`RecordRouter`, ready), A01, A06 (ready); A23⁴ | – | internal/routers |
 | R14 | automatic rule sync | 1043 | missing | HR | R13, C14 (ready), C07 (`tasks`, ready) | – (handlers in R15) | internal/routers |
 | R15 | router HTTP routes, policy workspace, upstream-router reminder route | 656 | missing | HR | R14, C06, C22 (ready), C31, C34; A20⁵ | 21 (0 done) | internal/api/routers, internal/routers |
 | R16 | client devices and discovery | 786 | missing | | R13, A01, C26, C31 | – | internal/clients, internal/routers |
@@ -785,7 +785,25 @@ R09 remap/多表、R10 补偿证明、R11 用户 hook 部分归属、A24 凭据�
 
 ## R13 — inspection service, return advisory, pending reminders
 
-**Status: `missing`** · HR · prereqs: R12, C05, C07 (ready), A01, A06 (ready); A23 hook · Go: internal/routers
+**Status: `ported`** · HR · prereqs: R12, C05, C07 (ready), A01, A06 (ready); A23 hook · Go: internal/routers
+
+R13 实现位于 `pending.go`、`pending_cache.go`、`pending_summary.go`；交接见
+[progress/R13-handoff-zh.md](progress/R13-handoff-zh.md)。已叠入 R12 复核产品修复
+`92b5c81c1`；C07 batch-1 的 TransactionContext 取消修复按协调者裁定复用，待正式集成后验证叶提交窗口。
+
+- pending 展示直接复用 R12 Inspect/BuildPlan，显式传 profileID，预览和摘要的操作数、顺序与状态一致。
+  25 秒共享读取预算、8 worker、35 秒共享结果等待、64 Agent LRU 无 TTL；unknown 不复用，refresh 合并，
+  generation/Clear/eviction 防旧结果覆盖，返回值深拷贝。
+- `test_upstream_router_pending.py`：摘要正常/错误类代表由 `TestR13SummariesPython` 运行真实 Python 对照；
+  多 profile/克隆 ID、非法 scope、revision/Agent 失效、通知落盘由 `TestR13AgentRoutersScopeCacheAndNotifications`；
+  错误/超时隔离由 `TestR13OneReadErrorDoesNotHideOtherRouters`、`TestR13Fanout25SecondsAndEightWorkers`；
+  缓存合并/重试/容量由 `TestR13Cache*`，断开与关机由真实 Runtime 用例覆盖。HTTP 鉴权和 504 映射留 R15。
+  `test_ros_return_advisory.py` 与 inspection 的 `test_router_ipv6_integration.py` 部分已归 R12，不重复移植；rule-sync 部分留 R14。
+- R06/R07/R08/R09/R10/R11、A24、N8-4ef 复核类别：本模块只发 GET，不新增写入、回滚或归属推断；
+  独立 profile 上下文与非默认同 ID 负控；共享缓存只存 credential digest 和安全 DTO；错误走 diag 脱敏、panic 不输出 payload；
+  Detach 的 owner 用 Runtime 管理，缓存提交前检查取消；既有 C07 leaf 事务修复不复制；legacy jsonx 只在现有 wire.go 适配。
+  无新 YAML 路径，不新建 Keyed，不侵入用户对象。设备请求沿用 R12 驱动边界，本模块检查所有设备请求为 GET。
+- A23 仍由外部 owner 接线，缺省 fail closed；R14 task slot 与 R15 HTTP 均不伪造。按 Leaner verification 只跑定向，未跑 gate/变异。
 
 Files:
 - `backend/routes/routers.py` (243) — lines 1–36, 63–99, 230–385, 755–768 (inspection service; see table at the top)

@@ -855,3 +855,20 @@ PD 恢复 PUT 回复已经证明新 ID、但紧接着的 GET 失败时，Go 仍�
   Agent changed or removed it after the preview, the stage fails with Python's
   `回流资源分配在预览后发生变化，请重新预览后发布` and rolls back; Python removed or
   overwrote the other router's rule. Compensation during rollback is unchanged.
+
+### R13 — pending reminders
+
+- Pending reads reuse R12's explicit-profile inspection (F-R12-2 / T27), including
+  cloned router IDs across profiles; invalid or nonexistent explicit profiles never fall
+  back to a different profile. The inspection/advisory implementation remains R12-owned.
+- Cache identity uses native canonical JSON and an internal SHA-256 digest. It
+  intentionally differs from Python's ephemeral cache hash; router credentials
+  never appear in reminder payloads or cached result DTOs. There is no on-disk
+  cache migration and no TTL. Unknown reads are retried.
+- Unexpected reader errors/panics produce the clear native message
+  `读取失败：内部错误` instead of exposing Python exception class names. RouterError
+  diagnostics use shared credential redaction; panic payloads are never logged.
+- Shared reads survive request disconnection through tracked lifecycle workers.
+  Runtime shutdown cancels device reads and rejects cache/notification admission;
+  C07 batch-1 owns the final cancellation checks under the notification leaf lock
+  and before Rename. R13 does not duplicate that transaction implementation.
