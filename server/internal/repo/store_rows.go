@@ -115,7 +115,8 @@ func legacyIntentRows(doc *jsonx.Object, base *store.Document) (*store.Document,
 		case "system", "shared":
 			object, ok := jsonx.AsObject(value)
 			if !ok {
-				return nil, &store.Error{Kind: store.ErrDocument, Message: fmt.Sprintf(msgStoreSectionObject, name)}
+				// A legacy caller replaced a section: Python's write validation.
+				return nil, validationError(msgSectionMissing + name)
 			}
 			var old []store.Field
 			prior := base.System
@@ -137,7 +138,7 @@ func legacyIntentRows(doc *jsonx.Object, base *store.Document) (*store.Document,
 		case "profiles":
 			profiles, ok := jsonx.AsObject(value)
 			if !ok {
-				return nil, &store.Error{Kind: store.ErrDocument, Message: msgStoreProfilesObject}
+				return nil, validationError(msgSectionMissing + "profiles")
 			}
 			previous := map[string][]store.Field{}
 			for _, p := range base.Profiles {
@@ -146,7 +147,7 @@ func legacyIntentRows(doc *jsonx.Object, base *store.Document) (*store.Document,
 			for id, v := range profiles.All() {
 				profile, ok := jsonx.AsObject(v)
 				if !ok {
-					return nil, &store.Error{Kind: store.ErrDocument, Message: fmt.Sprintf(msgStoreProfileObject, id)}
+					return nil, validationError(msgProfileIDMismatch)
 				}
 				encoded, err := fields(profile, previous[id])
 				if err != nil {

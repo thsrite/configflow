@@ -168,7 +168,7 @@ func (r *Repository) transactLocked(ctx context.Context, options writeOptions, f
 	if err := ensureLegacyRuleProxyToken(tx, legacy); err != nil {
 		return err
 	}
-	if err := ValidateDocument(legacy); err != nil {
+	if err := validateDocument(tx.document); err != nil {
 		return err
 	}
 	release, err := r.routerCommitGuard(ctx, base.Document, legacy, options.lockedRouters, options.policyRouter)

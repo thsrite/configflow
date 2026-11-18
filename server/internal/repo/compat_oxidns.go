@@ -76,16 +76,7 @@ func validateBindings(value any) error {
 
 // ---- rule_dns.py ----
 
-var (
-	ruleDNSActions     = []string{"refused", "nxdomain", "nodata", "blackhole", "upstream"}
-	ruleDNSListRoutes  = []string{"direct", "proxy"}
-	ruleDNSSources     = []string{"local", "remote", "fallback"}
-	rulesetSourceField = []string{"name", "url", "behavior", "content", "source_type", "format"}
-
-	// routeLabels is ROUTE_LABELS.
-	routeLabels = map[string]string{"direct": "直连 DNS", "proxy": "代理 DNS", "refused": "拒绝", "nxdomain": "不存在",
-		"nodata": "空应答", "blackhole": "黑洞", "upstream": "指定上游"}
-)
+var rulesetSourceField = []string{"name", "url", "behavior", "content", "source_type", "format"}
 
 func containsString(list []string, value any) bool {
 	text, ok := value.(string)

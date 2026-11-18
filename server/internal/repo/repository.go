@@ -352,7 +352,7 @@ func (r *Repository) openLocked(ctx context.Context) error {
 	// R5 permits stored business-invalid values to be read and repaired; do
 	// not let startup maintenance turn them into a failed Open (or rewrite
 	// malformed settings). The eventual repairing transaction ensures tokens.
-	if err := ValidateDocument(entry.Document); err != nil {
+	if err := validateDocument(entry.Model); err != nil {
 		return nil
 	}
 	system, _ := jsonx.AsObject(jsonx.DeepCopy(entry.Document.Value("system")))

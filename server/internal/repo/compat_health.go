@@ -31,9 +31,6 @@ func validateHealth(values any, provider bool) error {
 	return err
 }
 
-// maxRefreshInterval is subscription_refresh.MAX_INTERVAL.
-const maxRefreshInterval = 604800
-
 // validateRefreshInterval is validate_refresh_interval with its default label.
 func validateRefreshInterval(value any) error {
 	number, ok := pyInt(value)

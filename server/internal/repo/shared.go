@@ -299,7 +299,11 @@ func (r *Repository) nodeDeletionPlan(document *jsonx.Object, nodeIDs any) (prev
 		return nil, nil, err
 	}
 	if !jsonx.Truthy(preview.Value("blockers")) {
-		if failure := ValidateDocument(candidate); failure != nil {
+		typed, failure := modelFromLegacy(candidate, nil)
+		if failure == nil {
+			failure = validateDocument(typed)
+		}
+		if failure != nil {
 			if !errors.Is(failure, ErrRepository) {
 				return nil, nil, failure
 			}

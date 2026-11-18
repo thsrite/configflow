@@ -222,19 +222,38 @@ func TestReferenceValidateDocument(t *testing.T) {
 	// R8 (design n7-n8 2.3): an integral JSON number in any notation is a
 	// stored integer, so Go accepts the revision 1.0 that Python refused.
 	acceptedByGo := map[string]bool{"revision float": true}
+	// A name that is not a string appears in messages as its JSON text
+	// (Python printed its repr); one representative per kind of value.
+	goMessages := map[string]string{
+		"agent name none":       "Agent null 绑定的配置不存在",
+		"agent name dict":       `Agent {"a":[1,"x"]} 绑定的配置不存在`,
+		"agent name bool":       "Agent true 绑定的配置不存在",
+		"aggregation name none": "聚合 null 引用了不存在的资源：gone",
+		"aggregation name list": `聚合 ["a",1] 的 nodes 只能包含资源 ID，不能设置资源覆盖`,
+	}
 	for _, item := range refLoad(t).GetList("validate") {
 		record := item.(*jsonx.Object)
 		document := refBase(t)
 		refPatch(t, document, record.GetList("patch"))
 		label := record.GetString("label")
+		typed, err := modelFromLegacy(document, nil)
+		if err == nil {
+			err = validateDocument(typed)
+		}
 		if acceptedByGo[label] {
 			if !record.Has("error") {
 				t.Fatalf("%s: Python accepted it too", label)
 			}
-			noError(t, ValidateDocument(document))
+			noError(t, err)
 			continue
 		}
-		refOutcome(t, label, record, nil, ValidateDocument(document))
+		if message, ok := goMessages[label]; ok {
+			if err == nil || err.Error() != message || !errors.Is(err, ErrValidation) {
+				t.Errorf("%s: go %v", label, err)
+			}
+			continue
+		}
+		refOutcome(t, label, record, nil, err)
 	}
 }
 

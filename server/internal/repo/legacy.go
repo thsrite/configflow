@@ -8,6 +8,10 @@ package repo
 import (
 	"context"
 	"encoding/json"
+	"errors"
+
+	"configflow/internal/convert"
+	"configflow/internal/health/check"
 
 	"configflow/internal/jsonx"
 	"configflow/internal/model"
@@ -274,4 +278,64 @@ func nodeRawDialer(node *model.Node) (any, error) {
 		return nil, err
 	}
 	return rawDialer(object)
+}
+
+// Bridges to the validators of packages that still take jsonx values
+// (health/check, convert); they move to typed input with their owners
+// (N8-8a/N8-9), and these bridges go with legacy.go.
+
+// checkHealth is health_check.validate_health of a stored value: a
+// ValueError is a validation error.
+func checkHealth(raw json.RawMessage, provider bool) error {
+	value, err := jsonx.Parse(raw)
+	if err != nil {
+		return err
+	}
+	err = check.ValidateHealth(value, provider)
+	var invalid *check.ValueError
+	if errors.As(err, &invalid) {
+		return validationError(invalid.Message)
+	}
+	return err
+}
+
+// checkNodeShapes is dialer_references.validate_shapes of the shared nodes.
+func checkNodeShapes(nodes json.RawMessage) error {
+	value, err := jsonx.Parse(nodes)
+	if err != nil {
+		return err
+	}
+	return dialerValidation(convert.ValidateShapes(jsonx.Obj("nodes", value), true))
+}
+
+// checkProfileShapes is dialer_references.validate_shapes of a profile.
+func checkProfileShapes(profile *model.Profile) error {
+	object, err := legacyObject(profile)
+	if err != nil {
+		return err
+	}
+	return dialerValidation(convert.ValidateShapes(object, true))
+}
+
+// checkDialers is dialer_references.validate_dialers of a resolved profile:
+// a broken reference is ErrInUse.
+func checkDialers(config *model.Config) error {
+	object, err := legacyObject(config)
+	if err != nil {
+		return err
+	}
+	err = convert.ValidateDialers(object)
+	var reference *convert.DialerReferenceError
+	if errors.As(err, &reference) {
+		return &Error{Kind: ErrInUse, Message: reference.Message, Usages: []any{}, Cause: err}
+	}
+	return err
+}
+
+func dialerValidation(err error) error {
+	var reference *convert.DialerReferenceError
+	if errors.As(err, &reference) {
+		return &Error{Kind: ErrValidation, Message: reference.Message, Cause: err}
+	}
+	return err
 }
