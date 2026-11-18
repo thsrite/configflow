@@ -79,3 +79,6 @@ func localYearsInRange(wall int64, zone *time.Location) bool {
 	local(wall - b)
 	return inRange
 }
+
+// DNSFollowBusy reports whether a live follow publication owns this Agent.
+func DNSFollowBusy(records []any, agentID string) bool { return dnsFollowBusy(records, agentID) }

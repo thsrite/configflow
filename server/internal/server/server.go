@@ -54,6 +54,7 @@ import (
 	"configflow/internal/discovery"
 	"configflow/internal/gateway"
 	"configflow/internal/gateway/host"
+	"configflow/internal/gateway/installation"
 	"configflow/internal/health"
 	"configflow/internal/httpx"
 	"configflow/internal/ippresence"
@@ -124,6 +125,8 @@ var wirePackages = []func(){
 	routers.Wire,    // routers R01: repo.Hooks.RedactRouters
 	wireSetupContent,
 	wireSetupOnboarding,
+	installation.Wire,
+	wireSetupInstallation,
 	apirules.Wire,     // config C32: shared source loader for gateway providers
 	gateway.Wire,      // agents A19: convert.MihomoHooks Linux gateway
 	setupflow.Wire,    // agents A20 / config C36: routersplit setup-session reader

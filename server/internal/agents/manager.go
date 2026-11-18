@@ -453,6 +453,16 @@ func objOr(value any) *jsonx.Object {
 // created and its token returned once. existingToken and installationID are
 // nil when absent.
 func (m *Manager) RegisterAgent(ctx context.Context, data *jsonx.Object, existingToken, installationID any) (*jsonx.Object, error) {
+	return m.registerAgent(ctx, data, existingToken, installationID, false)
+}
+
+// RegisterInstallationAgent permits credential replay only for the exact trusted
+// capability marker and unchanged installation identity, checked inside L3.
+func (m *Manager) RegisterInstallationAgent(ctx context.Context, data *Record, existingToken, installationID string) (*Result, error) {
+	return m.registerAgent(ctx, data, existingToken, installationID, true)
+}
+
+func (m *Manager) registerAgent(ctx context.Context, data *jsonx.Object, existingToken, installationID any, replay bool) (*jsonx.Object, error) {
 	name := data.GetOr("name", "Unnamed Agent")
 	host := data.GetOr("host", "")
 	requested := data.Value("profile_id")
@@ -477,6 +487,15 @@ func (m *Manager) RegisterAgent(ctx context.Context, data *jsonx.Object, existin
 		}
 		if existingIndex >= 0 {
 			existing := objectAt(list, existingIndex)
+			owned := replay && installationID != "" && jsonx.Equal(existing.Value("gateway_installation_id"), installationID)
+			if owned {
+				for _, key := range []string{"name", "host", "port", "service_type", "deployment_method", "profile_id"} {
+					if !jsonx.Equal(existing.Value(key), data.Value(key)) {
+						return nil, &DeploymentConflict{Message: installationIdentityChanged}
+					}
+				}
+				existingToken = existing.Value("token")
+			}
 			if !ConstantTimeASCIIEqual(existingToken, existing.Value("token")) {
 				return nil, &PermissionError{}
 			}
@@ -547,7 +566,11 @@ func (m *Manager) RegisterAgent(ctx context.Context, data *jsonx.Object, existin
 				updated.Set("gateway_installation_id", existing.Value("gateway_installation_id"))
 			}
 			list[existingIndex] = updated
-			return jsonx.Obj("id", agentID, "status", "online", "is_new", false), nil
+			answer := jsonx.Obj("id", agentID, "status", "online", "is_new", false)
+			if owned {
+				answer.Set("token", existing.Value("token"))
+			}
+			return answer, nil
 		}
 
 		agentID := fmt.Sprintf("agent_%d_%s", int64(math.Floor(pyTimestamp(clock())*1000)), tokenHex(3))
