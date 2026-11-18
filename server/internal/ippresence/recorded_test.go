@@ -31,6 +31,7 @@ func encode(v any) string {
 }
 
 func TestRecordedPythonTests(t *testing.T) {
+	t.Parallel()
 	replay(t, "../routersplit/testdata/r02_recorded.jsonl.gz")
 }
 
@@ -38,9 +39,13 @@ func TestRecordedPythonTests(t *testing.T) {
 // (routersplit/testdata/gen_r02.py): random libraries, declarations,
 // inline and cached contents (payload YAML, BOM, invalid UTF-8, line
 // separators), mrs formats, legacy cache names.
-func TestCorpus(t *testing.T) { replay(t, "../routersplit/testdata/r02_corpus.jsonl.gz") }
+func TestCorpus(t *testing.T) {
+	t.Parallel()
+	replay(t, "../routersplit/testdata/r02_corpus.jsonl.gz")
+}
 
 func replay(t *testing.T, path string) {
+	fixture := newReplayRepository(t)
 	f, err := os.Open(path)
 	if err != nil {
 		t.Fatal(err)
@@ -76,7 +81,7 @@ func replay(t *testing.T, path string) {
 		}
 		tests[test] = true
 		files[strings.SplitN(test, "::", 2)[0]] = true
-		ctx, problem := rowRepository(t, rules)
+		ctx, problem := fixture.reset(t, rules)
 		if problem != "" {
 			t.Errorf("%s: %s", test, problem)
 			differ++
@@ -122,21 +127,46 @@ func replay(t *testing.T, path string) {
 		path, identical, differ, notExpressible, len(tests), len(files), outcomes)
 }
 
-// rowRepository builds the repository of a recorded call.
-func rowRepository(t *testing.T, rules *jsonx.Object) (context.Context, string) {
+// replayRepository shares only schema/default initialization. Each recorded
+// call replaces the library and cache files, and replay clears the content memo.
+// Reusing this fixture must not let a previous row supply undeclared input.
+type replayRepository struct {
+	r       *repo.Repository
+	ctx     context.Context
+	root    string
+	library string
+}
+
+func newReplayRepository(t *testing.T) *replayRepository {
 	t.Helper()
 	r, err := repo.Open(t.TempDir(), repo.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := repo.WithRepository(context.Background(), r)
-	if library, ok := rules.Value("library").([]any); ok && len(library) > 0 {
-		if _, err := r.SaveShared(ctx, jsonx.Obj("rule_library", library), nil); err != nil {
-			return nil, "cannot store the recorded rule library: " + err.Error()
-		}
-	}
 	root, err := r.SharedRulesDir()
 	if err != nil {
+		t.Fatal(err)
+	}
+	return &replayRepository{r: r, ctx: repo.WithRepository(context.Background(), r), root: root}
+}
+
+func (f *replayRepository) reset(t *testing.T, rules *jsonx.Object) (context.Context, string) {
+	t.Helper()
+	library, _ := rules.Value("library").([]any)
+	if library == nil {
+		library = []any{}
+	}
+	encoded := encode(library)
+	if encoded != f.library {
+		if _, err := f.r.SaveShared(f.ctx, jsonx.Obj("rule_library", library), nil); err != nil {
+			return nil, "cannot store the recorded rule library: " + err.Error()
+		}
+		f.library = encoded
+	}
+	if err := os.RemoveAll(f.root); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(f.root, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	for name, data := range rules.GetObject("files").All() {
@@ -144,7 +174,7 @@ func rowRepository(t *testing.T, rules *jsonx.Object) (context.Context, string) 
 		if err != nil {
 			t.Fatal(err)
 		}
-		path := filepath.Join(root, name)
+		path := filepath.Join(f.root, name)
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -152,11 +182,46 @@ func rowRepository(t *testing.T, rules *jsonx.Object) (context.Context, string) 
 			t.Fatal(err)
 		}
 	}
-	return ctx, ""
+	return f.ctx, ""
 }
 
 // TestEdgeCorpus replays the classical_ip_lines rows of the hand-picked edge
 // corpus (routersplit/testdata/gen_r02_edge.py, review R02): legacy-name
 // cache path with malformed library entries, by-id caches, library_rule_id
 // shapes, url/source_type shapes, Unicode contents and invalid UTF-8.
-func TestEdgeCorpus(t *testing.T) { replay(t, "../routersplit/testdata/r02_edge.jsonl.gz") }
+func TestEdgeCorpus(t *testing.T) {
+	t.Parallel()
+	replay(t, "../routersplit/testdata/r02_edge.jsonl.gz")
+}
+
+// TestReplayRepositoryDoesNotLeakInputs guards the shared fixture reset itself.
+// A missing cache-directory reset leaves the first row's extra file behind.
+func TestReplayRepositoryDoesNotLeakInputs(t *testing.T) {
+	f := newReplayRepository(t)
+	first := jsonx.Obj("library", []any{jsonx.Obj("id", "old", "name", "old")},
+		"files", jsonx.Obj("old.list", hex.EncodeToString([]byte("192.0.2.0/24\n"))))
+	if _, problem := f.reset(t, first); problem != "" {
+		t.Fatal(problem)
+	}
+	if _, err := os.Stat(filepath.Join(f.root, "old.list")); err != nil {
+		t.Fatal(err)
+	}
+	second := jsonx.Obj("library", []any{}, "files", jsonx.Obj())
+	if _, problem := f.reset(t, second); problem != "" {
+		t.Fatal(problem)
+	}
+	shared, err := f.r.GetShared(f.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(shared.GetList("rule_library")) != 0 {
+		t.Fatal("previous row library leaked")
+	}
+	files, err := os.ReadDir(f.root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 0 {
+		t.Fatal("previous row files leaked", files)
+	}
+}
