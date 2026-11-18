@@ -50,3 +50,8 @@ newEnv 的完整初始仓库只生成一次，读取已 checkpoint 的私有文�
 仍调用真实 OpenDefault/New。没有共享 Repository、连接或可写文件，也没有改变已有 openRepo 的重开/迁移测试。
 模板出现 WAL/SHM 时直接失败，防止复制未 checkpoint 的 SQLite。新增双仓库修改隔离断言通过 race。
 八个只处理本地 event/message 输入的测试并行；改全局 hooks、runtime、环境、时钟的测试保持串行。
+
+## agents/metrics
+
+只把 target key、全 Unicode lower/final-sigma 三个独立纯参考测试并行。数据保持原来的静态 Python corpus，
+不启动 Python；修改 now/环境与数据库事务的测试保持串行，没有降低 Unicode 遍历范围。

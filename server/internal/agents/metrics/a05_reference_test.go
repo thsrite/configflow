@@ -34,6 +34,7 @@ func loadA05Reference(t *testing.T) *jsonx.Object {
 }
 
 func TestA05ReferenceTargetKeys(t *testing.T) {
+	t.Parallel()
 	ref := loadA05Reference(t)
 	for input, want := range ref.GetObject("target_keys").All() {
 		if got := targetKey(input); got != want {
@@ -43,6 +44,7 @@ func TestA05ReferenceTargetKeys(t *testing.T) {
 }
 
 func TestA05ReferenceLowerEveryCodePoint(t *testing.T) {
+	t.Parallel()
 	ref := loadA05Reference(t)
 	want := map[rune]string{}
 	for key, value := range ref.GetObject("lower_map").All() {
@@ -75,6 +77,7 @@ func sameJSON(a, b any) bool {
 }
 
 func TestA05ReferenceFinalSigmaContext(t *testing.T) {
+	t.Parallel()
 	ref := loadA05Reference(t).GetObject("sigma_context")
 	inRanges := func(name string) map[rune]bool {
 		out := map[rune]bool{}
