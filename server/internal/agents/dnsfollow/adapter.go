@@ -201,16 +201,44 @@ func (s *Service) failPreparation(ctx context.Context, a *agent, id, message str
 }
 
 type deviceReply struct {
-	Success      bool            `json:"success"`
-	HTTPStatus   int             `json:"http_status"`
-	Message      string          `json:"message"`
-	AgentID      string          `json:"agent_id"`
-	DeploymentID string          `json:"deployment_id"`
-	Enabled      bool            `json:"enabled"`
-	Host         string          `json:"host"`
-	Port         json.RawMessage `json:"port"`
-	PeerAgentID  string          `json:"peer_agent_id"`
-	ServiceType  string          `json:"service_type"`
+	Success      bool
+	Failed       bool // http_status present and truthy
+	HTTPStatus   int
+	Message      string
+	AgentID      string
+	DeploymentID string
+	Enabled      bool
+	Host         string
+	Port         json.RawMessage
+	PeerAgentID  string
+	ServiceType  string
+}
+
+// UnmarshalJSON reads each member on its own. A member of the wrong type is
+// treated as absent instead of failing the whole reply, so a malformed
+// listener answer still gets its specific refusal (R04-F1).
+func (r *deviceReply) UnmarshalJSON(data []byte) error {
+	var members map[string]json.RawMessage
+	if err := json.Unmarshal(data, &members); err != nil {
+		return fmt.Errorf("decode Agent DNS reply: %w", err)
+	}
+	str := func(key string) string {
+		var s string
+		_ = json.Unmarshal(members[key], &s)
+		return s
+	}
+	truthy := func(key string) bool {
+		v, err := jsonx.Parse(members[key])
+		return err == nil && jsonx.Truthy(v)
+	}
+	var status int
+	_ = json.Unmarshal(members["http_status"], &status) // 404 only when integral
+	var enabled bool
+	_ = json.Unmarshal(members["enabled"], &enabled)
+	*r = deviceReply{Success: truthy("success"), Failed: truthy("http_status"), HTTPStatus: status, Message: str("message"),
+		AgentID: str("agent_id"), DeploymentID: str("deployment_id"), Enabled: enabled, Host: str("host"), Port: members["port"],
+		PeerAgentID: str("peer_agent_id"), ServiceType: str("service_type")}
+	return nil
 }
 
 func (s *Service) request(ctx context.Context, a *agent, path, deploymentID string) (deviceReply, error) {
@@ -236,7 +264,7 @@ func (s *Service) request(ctx context.Context, a *agent, path, deploymentID stri
 	if err != nil {
 		return out, err
 	}
-	if !out.Success || out.HTTPStatus != 0 {
+	if !out.Success || out.Failed {
 		message := out.Message
 		if message == "" || out.HTTPStatus == 404 {
 			message = msgUpgrade

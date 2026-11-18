@@ -51,6 +51,7 @@ type peer struct {
 	paths                                       []string
 	loseUploadResponse, pollOffline             bool
 	hook                                        func(*http.Request)
+	listenerExtra                               map[string]any
 }
 
 func newPeer(t *testing.T, id, service string, o agentfake.Options) *peer {
@@ -65,6 +66,7 @@ func newPeer(t *testing.T, id, service string, o agentfake.Options) *peer {
 		hook := p.hook
 		lose, offline := p.loseUploadResponse, p.pollOffline
 		host, port, active, enabled, same, matches := p.listenerHost, p.listenerPort, p.activeID, p.listenerEnabled, p.peerMatches, p.activeMatches
+		extra := p.listenerExtra
 		p.mu.Unlock()
 		if hook != nil {
 			hook(r)
@@ -76,7 +78,11 @@ func newPeer(t *testing.T, id, service string, o agentfake.Options) *peer {
 			var reply any
 			switch r.URL.Path {
 			case "/api/dns/listener":
-				reply = map[string]any{"success": true, "agent_id": p.id, "deployment_id": active, "enabled": enabled, "host": host, "port": port}
+				listener := map[string]any{"success": true, "agent_id": p.id, "deployment_id": active, "enabled": enabled, "host": host, "port": port}
+				for key, value := range extra {
+					listener[key] = value
+				}
+				reply = listener
 			case "/api/dns/peer":
 				id := "source"
 				if !same {

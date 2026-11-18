@@ -445,12 +445,13 @@ func (s *Service) finalize(ctx context.Context, target *agent, st model.DNSFollo
 		warning = e.Error()
 	}
 	if warning == "" {
+		// The draft now holds the candidate entry. Its signature belongs to the
+		// binding that authorized the job, whatever the source does next; a
+		// newer Mihomo publication is followed by a later round.
 		if e = s.update(ctx, func(_ context.Context, list []*agent) error {
-			a, e := s.finalOwnership(ctx, list, target.ID, st, job)
-			if e != nil {
-				return e
+			if a := selected(list, target.ID); a != nil && a.DNSFollow != nil && a.DNSFollow.ID == job.BindingID {
+				a.DNSFollow.UpstreamSignature = job.CandidateSignature
 			}
-			a.DNSFollow.UpstreamSignature = job.CandidateSignature
 			return nil
 		}); e != nil {
 			return e
