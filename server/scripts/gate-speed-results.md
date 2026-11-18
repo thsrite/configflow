@@ -96,3 +96,28 @@ private trace permissions. All **10 routing + 6 evidence** controls now pass.
 The missing edge corpus exists in the completed speed-a branch; update only the
 temporary dependency tree before restarting the unchanged-tree timing matrix.
 No product code or assertions were changed to hide these failures.
+
+### Successful unchanged-tree first/full and cached results
+
+Updated integration tree `go-gate-speed-check@33f69dec2` includes the completed
+speed-a dependency, crosscheck repair and final scripts (including umask fix).
+The targeted retry of all three failures passed: installer31.209s,
+store1.009s, routersplit2.024s. Real inherited umask was0022.
+
+| Acceptance label | Actual log directory | Mode | Wall seconds | Race cache hits | Result |
+|---|---|---|---:|---:|---|
+| first-full | retry-full | FULL, GATE_FULL=1, clean test cache | 1047.89 | 0/100 | PASS |
+| second-cache | retry-cache | CACHE, real first-run full-success stamp | 68.07 | 100/100 | PASS |
+| forced-full | retry-forced | FULL, GATE_FULL=1 | pending | pending | running |
+
+Cached wall time is 93.50% lower (15.39x faster), including the same three
+60-second fuzz runs and fresh tag/lifecycle checks in both calls. All 100
+packages with tests reported `(cached)` in second-cache; no-test-file packages
+are not included in the denominator. This includes packages whose optional live
+parts belong to compare, not core; cache hits do not claim those live branches
+ran in core. Exact cached package list: [gate-speed-cache-packages.txt](gate-speed-cache-packages.txt).
+The core itself prints this same list and saves `race-cached.txt`.
+
+All three fuzz targets passed in both completed calls (~61s each, concurrently).
+The third forced call is still in progress; compare remains queued behind this
+single project's core matrix, not running another heavy task concurrently.
