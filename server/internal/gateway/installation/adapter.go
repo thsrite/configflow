@@ -206,7 +206,18 @@ func (s *Service) secrets(ctx context.Context) (redact.Secrets, error) {
 	if err != nil {
 		return nil, err
 	}
-	return redact.CollectCredentials(system, secrets), nil
+	return redact.CollectCredentials(nil, secrets), nil
+}
+func (s *Service) diagnosticSecrets(ctx context.Context) (redact.Secrets, error) {
+	seeds, err := s.secrets(ctx)
+	if err != nil {
+		return nil, err
+	}
+	document, err := s.Repository.ExportAll(ctx, false)
+	if err != nil {
+		return nil, err
+	}
+	return redact.CollectCredentials(document, seeds), nil
 }
 func (s *Service) safeError(ctx context.Context, err error) error {
 	if err == nil || ctx.Err() != nil {
@@ -216,7 +227,7 @@ func (s *Service) safeError(ctx context.Context, err error) error {
 	if !errors.As(err, &e) {
 		return err
 	}
-	secrets, se := s.secrets(ctx)
+	secrets, se := s.diagnosticSecrets(ctx)
 	if se != nil {
 		return se
 	}
@@ -317,18 +328,31 @@ func (s *Service) bind(ctx context.Context, r *Record, proofs map[string]json.Ra
 }
 
 func (s *Service) safeText(ctx context.Context, value string) (string, error) {
-	secrets, err := s.secrets(ctx)
+	secrets, err := s.diagnosticSecrets(ctx)
 	if err != nil {
 		return "", err
 	}
 	return text(redact.SanitizeCredentials(value, secrets)), nil
 }
 func (s *Service) safeMetadata(ctx context.Context, value json.RawMessage) (json.RawMessage, error) {
-	secrets, err := s.secrets(ctx)
+	system, err := s.secrets(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return redact.SanitizeCredentials(value, secrets), nil
+	diagnostics, err := s.diagnosticSecrets(ctx)
+	if err != nil {
+		return nil, err
+	}
+	fields := object(value)
+	if fields == nil {
+		return nil, failure(msgCorrupt, 409)
+	}
+	for _, key := range []string{"message", "error", "rollback_error"} {
+		if v, ok := fields[key]; ok {
+			fields[key] = redact.SanitizeCredentials(v, diagnostics)
+		}
+	}
+	return json.Marshal(redact.SanitizeWithSecrets(fields, system, true))
 }
 func (s *Service) deployment(ctx context.Context, id, did string, activate bool) (json.RawMessage, error) {
 	var result *agents.Result
@@ -349,4 +373,12 @@ func (s *Service) recordFailed(ctx context.Context, id, did string) (json.RawMes
 		return nil, err
 	}
 	return encodeResult(result)
+}
+
+func (s *Service) safeMetadataText(ctx context.Context, value json.RawMessage) (json.RawMessage, error) {
+	secrets, err := s.diagnosticSecrets(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return redact.SanitizeCredentials(value, secrets), nil
 }

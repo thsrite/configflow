@@ -72,7 +72,7 @@ Same as `PROGRESS-config.md`: status `missing` / `partial` (exact list of what i
 | A19 | Linux gateway core (common/linux_gateway.py) | 518 | verified | HR | C05, C08, routers (`router_split.check_generation`) | – | internal/gateway (new) |
 | A20 | Agent gateway bridge, gateway draft, gateway routes | 1110 | verified | HR | A19, A06, C18, routers (`router_split`, `routers/store.py`) | 18 | internal/gateway, api/agents, api/linuxgateway (new) |
 | A21 | gateway onboarding | 751 | verified | HR | A19, A20, C18, C22, C23, C24, C05, routers (`router_split`) | 3 | internal/gateway, api/gatewayonboarding (new) |
-| A22 | gateway installation | 809 | missing | HR | A08, A14, A20, A21, C17 | 7 | internal/gateway, api/agents |
+| A22 | gateway installation | 809 | ported | HR | A08, A14, A20, A21, C17 | 7 | internal/gateway, api/agents |
 | A23 | IPv6 readiness, client evidence, verification | 1344 | missing | HR | A06, A13, A14, C16, routers (`ipv6_readiness`, `routeros`, `route_editor`, `rule_sync_store`, `store`, `client_devices`) | 5 | internal/agents/ipv6 (new), api/agents |
 | A24 | client tools, OxiDNS device policies, domain-discovery toggles | 198 | verified | | A05, C09, C26, C31, C37 | 8 | api/agents |
 
@@ -1958,7 +1958,7 @@ Routes (3): `GET|POST /api/profiles/<profile_id>/gateway-onboarding`; `POST /api
 
 ## A22 — gateway installation
 
-**Status: `missing`** · HR · prereqs: A08 (`gateway_install_script`, `install_command_store`, `install_output`), A14 (`_prepare_transactional_content`), A20, A21, A06 (`MonitorError`), C17 (`commit_provider_bundle`), C18 (`_default_mihomo_template`, `mihomo_listen_ports`), routers (`router_split.is_full_tun`) · Go: internal/gateway, api/agents
+**Status: `ported`** · HR · prereqs: A08 (`gateway_install_script`, `install_command_store`, `install_output`), A14 (`_prepare_transactional_content`), A20, A21, A06 (`MonitorError`), C17 (`commit_provider_bundle`), C18 (`_default_mihomo_template`, `mihomo_listen_ports`), routers (`router_split.is_full_tun`) · Go: internal/gateway, api/agents
 
 Files:
 - `backend/agents/gateway_installation.py` (727)
@@ -1968,9 +1968,9 @@ Tests: `test_gateway_installation.py` (54), `test_router_split_regression.py` (4
 
 Routes (7): `GET|POST /api/agents/gateway-installations`; `GET /api/agents/gateway-installations/<session_id>`; `POST …/enroll`; `POST …/network`; `POST …/publish`; `GET …/script`
 
-Evidence: no Go code.
+实现检查点 `b057c148b`，基于 A21 HR 复核 `663d271bb`（以 --onto 换基线）。已完成 native installation owner、七方法 HTTP、原子 capability 登记、固定 ID 顺序发布/恢复，以及 C36 Latest/HasInstallation/GatewayStatus 的真实 server 注册。A21 F1 的输入错误400与 F4 的两级脱敏均有回归。证据、文件/测试映射与命令见 [A22-handoff-zh.md](progress/A22-handoff-zh.md)。定向 vet/race、真实 Flask HTTP/持久状态及 Python 双核产物对照、新 fuzz60秒通过；待新的 Opus HR 复核。完整批次 gate 与 L4 由协调者执行。
 
-Hooks to provide: `agents.RegisterHooks{InstallationProfile, InstallationRegister}` (registration route currently answers `InstallationError` 501 for gateway installs). For C36: `setup_abandon`/`setup_flow` call `gateway_installation` (interface in C36).
+已提供 `agents.RegisterHooks{InstallationProfile, InstallationRegister}`；C36 Installation owner 的缺省503已由真实 owner接上。冻结脚本与 abandon 占用查询不初始化 manager/旧 runtime DB，server 负例已覆盖。未 push、无子 agent、无真实设备访问。
 
 ## A23 — IPv6 readiness, client evidence, verification
 

@@ -1333,3 +1333,23 @@ HTTP handler 返回的错误若与该 HTTP 请求已结束的 context cause 匹�
 
 
 batch-6 codec 窄化：格式查询只解规则库，继续使用 model.Shared 的原 R5 解码和原 RuleFormat；其余 metadata codec 同样只解 native helper 消费的字段。不再保留“无关字段里非 JSON 瞬态 Go 值碰巧让 Marshal 失败”的旧行为（协调者裁定）；有效持久化 JSON 的 R5 校验、ID/name/URL 和首匹配语义不变。窄 codec 及同快照单请求/分配基准见 progress/batch6-logs-zh.md。
+
+
+## A22 — gateway installation
+
+- Capability credential recovery proves the installation marker and full
+  Agent identity inside the registry transaction. Python read the proof before
+  entering that transaction; a concurrent rebind could invalidate it. Ordinary
+  owned replays and explicit existing-Agent bearer proofs remain compatible.
+- Malformed or wrong-typed private installation sessions fail closed with 409
+  and bounded 2 MiB reads instead of some Python JSON/KeyError 500 paths.
+  Latest ignores unsafe records; abandon still treats a parseable profile_id
+  as occupied. Unknown valid session members survive updates.
+- A21 F4's two-level redaction applies here too: system credentials are masked
+  across the response, while discovered user credentials are masked only in
+  diagnostics. This also protects references to another Agent's private
+  credentials without corrupting structural fields for short passwords.
+- The existing O3 in-process lock and shutdown rules apply to installation
+  workers. Cancellation after the drain deadline preserves the recorded
+  publishing IDs, makes no further commit, and resumes only on an explicit
+  later publication request; no new recovery action is added.

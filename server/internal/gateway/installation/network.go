@@ -42,6 +42,9 @@ func (s *Service) pair(ctx context.Context, r *Record) (map[string]*agent, error
 func (s *Service) status(ctx context.Context, r *Record) (host.Reply, error) {
 	bridge := host.Bridge{Repository: s.Repository, Manager: s.Manager}
 	reply, err := bridge.Call(ctx, r.AgentIDs["mihomo"], "status", "GET", r.ProfileID, nil)
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
 	if err != nil {
 		return nil, publicOwnerError(err)
 	}
@@ -146,6 +149,11 @@ func (s *Service) UpdateNetwork(ctx context.Context, id string, body json.RawMes
 			return failure(msgNetworkActual, 409)
 		}
 		managed := object(reply["managed"])
+		for _, key := range []string{"active", "pending"} {
+			if value, ok := managed[key]; ok && string(value) != "true" && string(value) != "false" && string(value) != "null" {
+				return failure(msgNetworkActive, 409)
+			}
+		}
 		if (flag(managed["active"]) || flag(managed["pending"])) && spec != r.Network {
 			live, e := host.ParseSpec(managed["spec"])
 			if e != nil || spec != live {

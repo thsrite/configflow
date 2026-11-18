@@ -45,7 +45,7 @@ Command used: `find backend -name '*.py' -not -name 'test_*' -not -path 'backend
 | `backend/agents/docker_ha_guide.py` | 475 | agents |  |  |
 | `backend/agents/docker_ha_preflight.py` | 376 | agents |  |  |
 | `backend/agents/gateway_install_script.py` | 176 | agents |  |  |
-| `backend/agents/gateway_installation.py` | 727 | agents |  |  |
+| `backend/agents/gateway_installation.py` | 727 | agents | A22 | internal/gateway/installation |
 | `backend/agents/generated_preview.py` | 159 | agents |  |  |
 | `backend/agents/go_install_script.py` | 525 | agents |  |  |
 | `backend/agents/idle_rounds.py` | 46 | agents |  |  |
@@ -203,7 +203,7 @@ Command used: `find backend -name '*.py' -not -name 'test_*' -not -path 'backend
 | `backend/routes/config.py` | 497 | config | C34 |  |
 | `backend/routes/docker_ha_installation.py` | 67 | agents |  |  |
 | `backend/routes/domain_discovery.py` | 174 | config | C37 |  |
-| `backend/routes/gateway_installations.py` | 82 | agents |  |  |
+| `backend/routes/gateway_installations.py` | 82 | agents | A22 | internal/api/agents |
 | `backend/routes/gateway_onboarding.py` | 91 | agents |  |  |
 | `backend/routes/generate.py` | 320 | config | C34 |  |
 | `backend/routes/ipv6_readiness.py` | 63 | agents |  |  |

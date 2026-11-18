@@ -110,7 +110,6 @@ func (s *Service) Register(ctx context.Context, id, token string, data json.RawM
 				return e
 			}
 			if stored.Network.Address == "" {
-				stored.Network.Address = ""
 				if e = target(stored, a, list); e != nil {
 					return e
 				}
@@ -186,6 +185,7 @@ func (s *Service) Enroll(ctx context.Context, id, token string, body json.RawMes
 		if r.Phase == "waiting" {
 			r.Phase = "enrolled"
 			r.Message = msgEnrolled
+			logger.Infof(msgEnrolledLog, s.safeLabel(ctx, r))
 		}
 		return s.write(ctx, r)
 	})

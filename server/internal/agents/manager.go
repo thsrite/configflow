@@ -459,6 +459,10 @@ func (m *Manager) RegisterAgent(ctx context.Context, data *jsonx.Object, existin
 // RegisterInstallationAgent permits credential replay only for the exact trusted
 // capability marker and unchanged installation identity, checked inside L3.
 func (m *Manager) RegisterInstallationAgent(ctx context.Context, data *Record, existingToken, installationID string) (*Result, error) {
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	return m.registerAgent(ctx, data, existingToken, installationID, true)
 }
 

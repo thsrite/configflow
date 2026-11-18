@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -708,4 +709,152 @@ func FuzzInstallationRecord(f *testing.F) {
 			t.Fatal("durable identity changed")
 		}
 	})
+}
+
+func TestReviewedA21ValidationClassAndTwoLevelRedaction(t *testing.T) {
+	for _, kind := range []string{"oxidns", "mihomo"} {
+		t.Run(kind, func(t *testing.T) {
+			f := newFixture(t)
+			_, _, err := f.s.Repository.UpdateProfileTransaction(f.ctx, "default", func(_ context.Context, c *jsonx.Object) (*jsonx.Object, error) {
+				if kind == "oxidns" {
+					c.GetObject("oxidns").Set("remote_dns", "[")
+				} else {
+					c.GetObject("mihomo").Set("custom_config", "dns: [")
+				}
+				return nil, nil
+			})
+			must(t, err)
+			revision, err := f.s.Repository.ConfigRevision(f.ctx, "default")
+			must(t, err)
+			f.body["config_revision"] = raw(revision)
+			before := document(t, f)
+			checkpoint := recordBytes(t, f)
+			_, err = f.s.Create(f.ctx, raw(f.body))
+			refusal(t, err, 400, "")
+			if !bytes.Equal(before, document(t, f)) || !bytes.Equal(checkpoint, recordBytes(t, f)) {
+				t.Fatal("invalid saved draft wrote")
+			}
+		})
+	}
+	f := newFixture(t)
+	f.enroll(t)
+	_, err := f.s.Repository.UpdateSharedTransaction(f.ctx, func(_ context.Context, c *jsonx.Object) (*jsonx.Object, error) {
+		c.GetList("nodes")[0].(*jsonx.Object).Set("password", "linux")
+		return nil, nil
+	})
+	must(t, err)
+	view, err := f.s.Get(f.ctx, f.r.ID)
+	must(t, err)
+	if text(object(view)["name"]) != f.r.Name || object(view)["network"] == nil || !bytes.Contains(view, []byte(`"mihomo"`)) {
+		t.Fatal("short user credential corrupted structural fields")
+	}
+	safe := f.s.PublicError(f.ctx, &Error{Message: "failure linux", Status: 400})
+	refusal(t, safe, 400, "[REDACTED]")
+}
+
+func TestPublicationWorkerKeepsRuntimeAfterDisconnectAndShutdown(t *testing.T) {
+	for _, shutdown := range []bool{false, true} {
+		t.Run(fmt.Sprint(shutdown), func(t *testing.T) {
+			f := newFixture(t)
+			f.enroll(t)
+			f.prepareRun(t)
+			fake := f.fakePair(t, nil)
+			runtime := lifecycle.NewRuntime(lifecycle.Options{Mode: lifecycle.ModeManual, Registry: lifecycle.NewRegistry(), Grace: 2100 * time.Millisecond})
+			runtime.Start(context.Background())
+			defer runtime.Shutdown(context.Background())
+			f.s.Spawner = runtime
+			request, cancel := context.WithCancel(f.ctx)
+			defer cancel()
+			bound := runtime.BindRequest(request)
+			client := f.s.Manager.Client().(*routeClient)
+			entered := make(chan struct{})
+			resume := make(chan struct{})
+			var once sync.Once
+			var checkpoint []byte
+			fingerprint, _ := f.s.Repository.Store().Fingerprint()
+			previous := client.inspect
+			client.inspect = func(r agents.Request) {
+				previous(r)
+				if r.Method == "POST" && strings.HasSuffix(r.URL, "/api/deployments") {
+					once.Do(func() {
+						checkpoint = recordBytes(t, f)
+						var e error
+						fingerprint, e = f.s.Repository.Store().Fingerprint()
+						must(t, e)
+						close(entered)
+						<-resume
+					})
+				}
+			}
+			_, err := f.s.Publish(bound, f.r.ID, raw(map[string]any{}))
+			must(t, err)
+			select {
+			case <-entered:
+			case <-time.After(10 * time.Second):
+				t.Fatal("worker did not reach upload")
+			}
+			if shutdown {
+				runtime.Shutdown(context.Background())
+				close(resume)
+			} else {
+				cancel()
+				close(resume)
+			}
+			wait, cancelWait := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancelWait()
+			must(t, runtime.WaitIdle(wait))
+			final, err := f.s.read(f.ctx, f.r.ID)
+			must(t, err)
+			if shutdown {
+				after, e := f.s.Repository.Store().Fingerprint()
+				must(t, e)
+				if final.Phase != "publishing" || !bytes.Equal(checkpoint, recordBytes(t, f)) || fingerprint != after || len(uploads(fake["mihomo"])) != 0 || len(uploads(fake["oxidns"])) != 0 {
+					t.Fatal("shutdown crossed a commit/device boundary", final.Phase)
+				}
+			} else if final.Phase != "published" || len(uploads(fake["mihomo"])) != 1 || len(uploads(fake["oxidns"])) != 1 {
+				t.Fatal("disconnect lost tracked publication", final.Phase, final.Message)
+			}
+		})
+	}
+}
+func TestFullTUNTakeoverNeedsDistinctCapability(t *testing.T) {
+	f := newFixture(t)
+	f.enroll(t)
+	snapshot, _, err := f.s.Repository.GetPublishSnapshot(f.ctx, "default", true)
+	must(t, err)
+	var doc onboarding.Document
+	must(t, json.Unmarshal(raw(snapshot), &doc))
+	form, err := onboarding.ParseRequest(raw(map[string]any{"rule_set_ids": []string{}, "direct_rule_set_ids": []string{}, "proxy_rule_set_ids": []string{}, "local_dns": "https://192.0.2.53/dns-query"}))
+	must(t, err)
+	candidate, report, err := onboarding.Prepare(f.ctx, doc, form, onboarding.Options{BaseURL: testOrigin, Takeover: "full_tun"})
+	must(t, err)
+	if !report.Ready {
+		t.Fatal(report.Blockers)
+	}
+	_, revision, err := f.s.Repository.UpdateProfileTransaction(f.ctx, "default", func(_ context.Context, current *jsonx.Object) (*jsonx.Object, error) {
+		for _, key := range []string{"mihomo", "oxidns"} {
+			v, e := jsonx.Parse(candidate[key])
+			if e != nil {
+				return nil, e
+			}
+			current.Set(key, v)
+		}
+		return nil, nil
+	})
+	must(t, err)
+	f.body["config_revision"] = raw(revision)
+	out, err := f.s.Create(f.ctx, raw(f.body))
+	must(t, err)
+	id := text(object(out)["id"])
+	if id == f.r.ID || text(object(out)["takeover"]) != "full_tun" {
+		t.Fatal("takeover reused selective capability")
+	}
+	r, err := f.s.read(f.ctx, id)
+	must(t, err)
+	if !strings.Contains(r.Script, "-prepare-tun -assume-tun-enabled") || !strings.Contains(r.Script, "persist_ipv4_forwarding") || strings.Contains(r.Script, "CONFIGFLOW_FORWARDING_OWNER") {
+		t.Fatal("full TUN installer was not reused")
+	}
+	f.r.ConfigRevision = revision
+	_, _, err = f.s.savedSnapshot(f.ctx, f.r)
+	refusal(t, err, 409, msgTakeoverChanged)
 }

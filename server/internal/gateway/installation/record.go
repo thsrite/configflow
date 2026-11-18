@@ -24,7 +24,7 @@ func (e *Error) Unwrap() error                 { return e.Cause }
 func failure(message string, status int) error { return &Error{Message: message, Status: status} }
 
 // Record is the private Python-compatible durable installation session.
-// The raw model preserves unknown members during a read/modify/write.
+// Opaque native JSON members survive read/modify/write.
 type Record struct {
 	ID             string                     `json:"id"`
 	ProfileID      string                     `json:"profile_id"`

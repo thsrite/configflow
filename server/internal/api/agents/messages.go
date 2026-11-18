@@ -23,3 +23,5 @@ const msgGeneratedFileMissing = "生成结果中没有这个文件。"
 
 const msgRuleSyncRequest = "规则同步设置无效"
 const msgRuleSyncNotFound = "未找到这台 Agent"
+const msgInstallationSize = "安装请求内容过大。"
+const msgInstallationJSON = "安装请求需要 JSON 对象。"

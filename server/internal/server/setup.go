@@ -84,10 +84,7 @@ func wireSetupInstallation() {
 			return response.Session, nil
 		},
 		HasInstallation: func(ctx context.Context, r *repo.Repository, profile string) (bool, error) {
-			s, e := service(ctx, r)
-			if e != nil {
-				return false, e
-			}
+			s := &installation.Service{Repository: r}
 			v, e := s.HasInstallation(ctx, profile)
 			return v, ownerError(ctx, s, e)
 		},
@@ -98,6 +95,9 @@ func wireSetupInstallation() {
 			}
 			bridge := host.Bridge{Repository: r, Manager: s.Manager}
 			reply, e := bridge.Call(ctx, id, "status", "GET", profile, nil)
+			if ctx.Err() != nil {
+				return setup.GatewayStatus{}, ctx.Err()
+			}
 			if e != nil {
 				return setup.GatewayStatus{}, ownerError(ctx, s, e)
 			}

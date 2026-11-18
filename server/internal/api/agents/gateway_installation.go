@@ -16,8 +16,6 @@ import (
 
 const (
 	installationMaxBody = 16384
-	msgInstallationSize = "安装请求内容过大。"
-	msgInstallationJSON = "安装请求需要 JSON 对象。"
 )
 
 func registerGatewayInstallations(r *httpx.Router) {
@@ -59,9 +57,12 @@ func installationHandler(operation string) httpx.HandlerFunc {
 		if err != nil {
 			return nil, err
 		}
-		m, err := agents.Get(c.Context())
-		if err != nil {
-			return nil, err
+		var m *agents.Manager
+		if operation != "script" {
+			m, err = agents.Get(c.Context())
+			if err != nil {
+				return nil, err
+			}
 		}
 		s := installation.Service{Repository: r, Manager: m}
 		var body, jsonBody json.RawMessage
@@ -112,7 +113,7 @@ func installationResponse(s *installation.Service, c *httpx.Ctx, value json.RawM
 				v["code"] = e.Code
 			}
 			value, _ = json.Marshal(v)
-		} else if errors.Is(err, repo.ErrValidation) || errors.Is(err, repo.ErrNotFound) {
+		} else if errors.Is(err, repo.ErrValidation) {
 			status = 400
 			value, _ = json.Marshal(map[string]any{"success": false, "message": strings.TrimSpace(err.Error())})
 		} else {

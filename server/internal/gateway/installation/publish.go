@@ -85,8 +85,8 @@ func (s *Service) Publish(ctx context.Context, id string, body json.RawMessage) 
 	if captured.Phase == "published" {
 		return s.public(ctx, captured)
 	}
-	// Drop lock-order annotations inherited from the request's lease when starting
-	// the worker: only the lease's release closure crosses the job boundary.
+	// The worker inherits the L1 lease annotation; the session L2 acquisition
+	// follows it. Only the release closure mutates lease ownership.
 	spawner := s.Spawner
 	if spawner == nil {
 		spawner = lifecycle.DefaultSpawner{}
@@ -94,11 +94,19 @@ func (s *Service) Publish(ctx context.Context, id string, body json.RawMessage) 
 	if err = ctx.Err(); err != nil {
 		return nil, err
 	}
-	err = spawner.Spawn(ctx, "gateway-onboarding-"+id[:8], func(job context.Context) { defer release(); _ = s.RunPublication(job, id) })
+	err = spawner.Spawn(ctx, "gateway-onboarding-"+id[:8], func(job context.Context) {
+		defer release()
+		if err := s.RunPublication(job, id); err != nil && job.Err() == nil {
+			if record, e := s.read(job, id); e == nil {
+				logger.Warningf(msgFailedLog, s.safeLabel(job, record), truncate(record.Message, 300))
+			}
+		}
+	})
 	if err != nil {
 		return nil, err
 	}
 	transferred = true
+	logger.Infof(msgStartLog, s.safeLabel(ctx, captured))
 	return s.public(ctx, captured)
 }
 func (s *Service) progress(ctx context.Context, id, service string, result json.RawMessage) error {
@@ -328,7 +336,12 @@ func (s *Service) RunPublication(ctx context.Context, id string) (err error) {
 		if final.Takeover == "full_tun" {
 			final.Message = msgPublishedFull
 		}
-		return s.write(ctx, final)
+
+		if e = s.write(ctx, final); e != nil {
+			return e
+		}
+		logger.Infof(msgPublishedLog, s.safeLabel(ctx, final))
+		return nil
 	})
 }
 func pause(ctx context.Context) error {

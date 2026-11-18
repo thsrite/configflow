@@ -74,3 +74,12 @@ const (
 	msgPublished          = "Mihomo 和 OxiDNS 均已发布并通过健康检查，现在可以预览网关转发。"
 	msgPublishFailed      = "发布暂未完成，请检查设备状态后继续；已保存任务编号。"
 )
+
+const (
+	msgCreatedLog   = "已创建网关安装 %s（目标 %s）"
+	msgReuseLog     = "网关安装 %s：沿用已安装的设备，配置更新为版本 %d"
+	msgEnrolledLog  = "网关安装 %s：Mihomo 和 OxiDNS Agent 已登记"
+	msgStartLog     = "网关安装 %s：开始按顺序发布 Mihomo 和 OxiDNS"
+	msgPublishedLog = "网关安装 %s：Mihomo 和 OxiDNS 均已发布并通过健康检查"
+	msgFailedLog    = "网关安装 %s 发布未完成：%s"
+)

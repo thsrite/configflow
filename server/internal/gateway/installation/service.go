@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/netip"
 	"net/url"
 	"regexp"
@@ -20,9 +21,12 @@ import (
 	"configflow/internal/installer"
 	"configflow/internal/lifecycle"
 	"configflow/internal/lockx"
+	"configflow/internal/logx"
 	"configflow/internal/redact"
 	"configflow/internal/repo"
 )
+
+var logger = logx.Get("backend.agents.gateway_installation")
 
 // Service composes the existing installation, host and publication owners.
 // Render is an optional immutable collaborator; nil uses the real installer.
@@ -208,7 +212,7 @@ func (s *Service) Create(ctx context.Context, body json.RawMessage) (json.RawMes
 		return nil, err
 	}
 	now := s.now(ctx)
-	r := &Record{ID: id, ProfileID: profile, ConfigRevision: revision, Name: name, ServerURL: origin, Network: network, Ports: ports, Token: token, CreatedAt: now.UTC().Format("2006-01-02T15:04:05.000000+00:00"), Expires: float64(now.UnixNano())/1e9 + 86400, Phase: "waiting", AgentIDs: map[string]string{}, Registered: map[string]string{}, Deployments: map[string]json.RawMessage{}, Message: msgWaiting, AutoNetwork: automatic, RequestedIP: requested}
+	r := &Record{ID: id, ProfileID: profile, ConfigRevision: revision, Name: name, ServerURL: origin, Network: network, Ports: ports, Token: token, CreatedAt: isoTimestamp(float64(now.UnixNano()) / 1e9), Expires: float64(now.UnixNano())/1e9 + 86400, Phase: "waiting", AgentIDs: map[string]string{}, Registered: map[string]string{}, Deployments: map[string]json.RawMessage{}, Message: msgWaiting, AutoNetwork: automatic, RequestedIP: requested}
 	if _, mode, e := s.savedSnapshot(ctx, r); e != nil {
 		return nil, e
 	} else {
@@ -245,6 +249,7 @@ func (s *Service) Create(ctx context.Context, body json.RawMessage) (json.RawMes
 				same = same && old.Network == network
 			}
 			if same {
+				changedRevision := old.ConfigRevision != revision
 				err = s.locked(ctx, old.ID, func(ctx context.Context) error {
 					current, e := s.read(ctx, old.ID)
 					if e != nil {
@@ -275,6 +280,9 @@ func (s *Service) Create(ctx context.Context, body json.RawMessage) (json.RawMes
 				if err != nil {
 					return nil, err
 				}
+				if changedRevision {
+					logger.Infof(msgReuseLog, s.safeLabel(ctx, old), revision)
+				}
 				return s.public(ctx, old)
 			}
 		}
@@ -293,6 +301,7 @@ func (s *Service) Create(ctx context.Context, body json.RawMessage) (json.RawMes
 	if err = s.write(ctx, r); err != nil {
 		return nil, err
 	}
+	logger.Infof(msgCreatedLog, s.safeLabel(ctx, r), r.Network.Address)
 	return s.public(ctx, r)
 }
 func (s *Service) ensureLink(ctx context.Context, r *Record) error {
@@ -381,7 +390,7 @@ func (s *Service) public(ctx context.Context, r *Record) (json.RawMessage, error
 		}
 	}
 	expired := float64(s.now(ctx).UnixNano())/1e9 >= r.Expires
-	v := map[string]json.RawMessage{"success": raw(true), "id": raw(r.ID), "profile_id": raw(r.ProfileID), "config_revision": raw(r.ConfigRevision), "name": raw(r.Name), "network": raw(r.Network), "phase": raw(r.Phase), "created_at": raw(r.CreatedAt), "deployments": raw(r.Deployments), "message": raw(r.Message), "remedy": r.Remedy, "server_url": raw(r.ServerURL), "auto_network": raw(r.AutoNetwork), "takeover": raw(r.Takeover), "expires_at": raw(time.Unix(0, int64(r.Expires*1e9)).UTC().Format("2006-01-02T15:04:05.000000+00:00")), "expired": raw(expired), "agents": raw(agentsView), "config_changed": raw(revision != r.ConfigRevision), "target_changed": raw(changed)}
+	v := map[string]json.RawMessage{"success": raw(true), "id": raw(r.ID), "profile_id": raw(r.ProfileID), "config_revision": raw(r.ConfigRevision), "name": raw(r.Name), "network": raw(r.Network), "phase": raw(r.Phase), "created_at": raw(r.CreatedAt), "deployments": raw(r.Deployments), "message": raw(r.Message), "remedy": r.Remedy, "server_url": raw(r.ServerURL), "auto_network": raw(r.AutoNetwork), "takeover": raw(r.Takeover), "expires_at": raw(isoTimestamp(r.Expires)), "expired": raw(expired), "agents": raw(agentsView), "config_changed": raw(revision != r.ConfigRevision), "target_changed": raw(changed)}
 	if len(v["remedy"]) == 0 {
 		v["remedy"] = raw(nil)
 	}
@@ -394,7 +403,19 @@ func (s *Service) public(ctx context.Context, r *Record) (json.RawMessage, error
 	if err != nil {
 		return nil, err
 	}
-	safe := object(redact.SanitizeCredentials(v, secrets))
+	safe := v
+	safe["message"], err = s.safeMetadataText(ctx, safe["message"])
+	if err != nil {
+		return nil, err
+	}
+	publicTasks := map[string]json.RawMessage{}
+	for service, task := range r.Deployments {
+		publicTasks[service], err = s.safeMetadata(ctx, task)
+		if err != nil {
+			return nil, err
+		}
+	}
+	safe["deployments"] = raw(publicTasks)
 	if !expired {
 		scriptURL := r.ServerURL + "/api/agents/gateway-installations/" + r.ID + "/script?" + url.Values{"token": {r.Token}}.Encode()
 		download := scriptURL
@@ -408,3 +429,22 @@ func (s *Service) public(ctx context.Context, r *Record) (json.RawMessage, error
 	return json.Marshal(redact.SanitizeWithSecrets(safe, secrets, true))
 }
 func shellQuote(v string) string { return "'" + strings.ReplaceAll(v, "'", `'"'"'`) + "'" }
+
+// Stored Unix seconds are rounded to the public timestamp's microsecond
+// precision; splitting avoids loss of precision from scaling the whole epoch.
+func isoTimestamp(value float64) string {
+	seconds, fraction := math.Modf(value)
+	at := time.Unix(int64(seconds), int64(math.RoundToEven(fraction*1e6))*1000).UTC()
+	if at.Nanosecond() == 0 {
+		return at.Format("2006-01-02T15:04:05+00:00")
+	}
+	return at.Format("2006-01-02T15:04:05.000000+00:00")
+}
+
+func (s *Service) safeLabel(ctx context.Context, r *Record) string {
+	value, err := s.safeText(ctx, r.Name)
+	if err != nil {
+		return r.ID[:8]
+	}
+	return value
+}
