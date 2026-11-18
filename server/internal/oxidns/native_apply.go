@@ -132,7 +132,7 @@ func nativePlugins(document *Node) (map[string]*Node, error) {
 
 func prepareNativeEdit(settings *Node, text string, p *Profile, baseURL string) (*nativeEdit, error) {
 	if p == nil {
-		p = NewProfile(nil)
+		p = emptyProfile()
 	}
 	current, err := PrepareEditor(settings, p, baseURL)
 	if err != nil {
@@ -416,7 +416,7 @@ func (e *nativeEdit) apply(settings *Node, options NativeApplyOptions) (NativeAp
 	}
 	if len(renames) > 0 {
 		refs := ReferenceLocations(e.candidate, nil, true)
-		if len(refs) > 0 || truthy(get(e.candidate, "include")) {
+		if len(refs) > 0 || (externalIncludes(e.candidate)) {
 			if len(refs) == 0 {
 				refs = []Reference{{Path: Path{}.with("include"), Reason: messageNativeIncludeRenameReason}}
 			}
@@ -541,7 +541,7 @@ func (e *nativeEdit) apply(settings *Node, options NativeApplyOptions) (NativeAp
 	}
 	originalCandidate := clone(e.candidate)
 	if len(targets) > 0 {
-		if truthy(get(e.candidate, "include")) {
+		if externalIncludes(e.candidate) {
 			return NativeApplied{}, NewReferenceError(messageNativeIncludeDelete, []Reference{{Path: Path{}.with("include"), Reason: messageNativeIncludeDeleteReason}})
 		}
 		if err := nativeRejectReferences(e.candidate, targets); err != nil {

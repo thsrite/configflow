@@ -19,7 +19,7 @@ type MatchTargets struct {
 // dependency cycle.
 func ReadMatchTargets(document, settings *Node) (MatchTargets, error) {
 	var sources *Sources
-	if truthy(get(document, "include")) {
+	if externalIncludes(document) {
 		sources = &Sources{}
 		expanded, err := NativeDocument(settings, false, sources)
 		if err != nil {

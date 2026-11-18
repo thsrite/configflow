@@ -14,6 +14,7 @@ import (
 	"configflow/internal/faultprobe"
 	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 	"configflow/internal/mosdns"
 	"configflow/internal/oxidns"
 	"configflow/internal/repo"
@@ -81,7 +82,11 @@ func Render(ctx context.Context, config *jsonx.Object, engine Engine, baseURL st
 	case MosDNS:
 		out.Content, err = mosdns.GenerateMosDNSConfig(config, baseURL)
 	case OxiDNS:
-		out.Content, err = oxidns.Generate(oxidns.NewProfile(config), baseURL)
+		profile, e := dnsProfile(config)
+		if e != nil {
+			return out, e
+		}
+		out.Content, err = oxidns.Generate(profile, baseURL)
 	default:
 		err = errors.New("unsupported configuration engine")
 	}
@@ -95,16 +100,42 @@ func Build(ctx context.Context, id string, engine Engine, baseURL string) (Downl
 	if err := ctx.Err(); err != nil {
 		return Download{}, err
 	}
-	faultprobe.Point(ctx, faultprobe.GenerateBuild)
-	config, err := repo.GetConfig(ctx, id)
+faultprobe.Point(ctx, faultprobe.GenerateBuild)
+	var config *jsonx.Object
+	var native *model.Config
+	var out Output
+	var err error
+	if engine == MosDNS || engine == OxiDNS {
+		repository, e := repo.GetRepository(ctx)
+		if e != nil {
+			return Download{}, e
+		}
+		profileID, e := repo.ResolveProfileID(ctx, id)
+		if e != nil {
+			return Download{}, e
+		}
+		native, err = repository.Config(ctx, profileID, nil)
+		if err == nil {
+			if engine == MosDNS {
+				out.Content, err = mosdns.Generate(native, baseURL)
+			} else {
+				var profile *oxidns.Profile
+				profile, err = oxidns.NewTypedProfile(native)
+				if err == nil {
+					out.Content, err = oxidns.Generate(profile, baseURL)
+				}
+			}
+		}
+	} else {
+		config, err = repo.GetConfig(ctx, id)
+		if err == nil {
+			out, err = Render(ctx, config, engine, baseURL)
+		}
+	}
 	if err != nil {
 		return Download{}, err
 	}
-	if err := ctx.Err(); err != nil {
-		return Download{}, err
-	}
-	out, err := Render(ctx, config, engine, baseURL)
-	if err != nil {
+	if err = ctx.Err(); err != nil {
 		return Download{}, err
 	}
 	result := Download{Output: out}
@@ -125,33 +156,28 @@ func Build(ctx context.Context, id string, engine Engine, baseURL string) (Downl
 			return Download{}, err
 		}
 	case MosDNS:
-		rows, err := mosdns.GetMosDNSRulesetDownloads(config, baseURL)
+		downloads, err := mosdns.Downloads(native, baseURL)
 		if err != nil {
 			return Download{}, err
 		}
-		downloads, err := mosdns.DecodeList[mosdns.Download](rows)
+		files, err := mosdns.CustomFiles(native)
 		if err != nil {
 			return Download{}, err
 		}
-		rows, err = mosdns.GetMosDNSCustomFiles(config)
-		if err != nil {
+		if err = ctx.Err(); err != nil {
 			return Download{}, err
 		}
-		files, err := mosdns.DecodeList[mosdns.File](rows)
-		if err != nil {
-			return Download{}, err
-		}
-		if err := ctx.Err(); err != nil {
-			return Download{}, err
-		}
-		result.Data, err = mosdns.BuildMosDNSZip(ctx, config, out.Content, downloads, files, mosdns.ArchiveOptions{BaseURL: baseURL})
+		result.Data, err = mosdns.BuildZIP(ctx, native, out.Content, downloads, files, mosdns.ArchiveOptions{BaseURL: baseURL})
 		if err != nil {
 			return Download{}, err
 		}
 		result.Name = "mosdns-config.zip"
 		result.MIME = "application/zip"
 	case OxiDNS:
-		profile := oxidns.NewProfile(config)
+		profile, err := oxidns.NewTypedProfile(native)
+		if err != nil {
+			return Download{}, err
+		}
 		rows, err := oxidns.RulesetDownloads(profile, baseURL)
 		if err != nil {
 			return Download{}, err
@@ -171,7 +197,7 @@ func Build(ctx context.Context, id string, engine Engine, baseURL string) (Downl
 		if err := ctx.Err(); err != nil {
 			return Download{}, err
 		}
-		result.Data, err = oxidns.BuildZIP(ctx, config, out.Content, downloads, files, baseURL)
+		result.Data, err = oxidns.BuildTypedZIP(ctx, native, out.Content, downloads, files, baseURL)
 		if err != nil {
 			return Download{}, err
 		}

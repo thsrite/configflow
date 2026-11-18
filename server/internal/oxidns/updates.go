@@ -34,7 +34,7 @@ func pipelineError() error {
 // It returns the number of removed entries and whether candidate changed.
 func ReconcileNativeWithdrawals(before, candidate, originalSettings, settings *Node, p *Profile) (int, bool, error) {
 	expand := func(document, values *Node) (*Node, error) {
-		if !truthy(get(document, "include")) {
+		if !(externalIncludes(document)) {
 			return document, nil
 		}
 		v := shallow(values)
@@ -136,7 +136,7 @@ func updateProviders(document, existing *Node) *Node {
 		}
 	}
 	for _, item := range items(get(document, "plugins")) {
-		if isOneOf(get(item, "type"), "domain_set", "ip_set", "adguard_rule") && truthy(get(mapOr(get(item, "args")), "files")) {
+		if isOneOf(get(item, "type"), "domain_set", "ip_set", "adguard_rule") && (len(items(get(mapOr(get(item, "args")), "files"))) > 0) {
 			if value := S("$" + str(get(item, "tag"))); !contains(result, value) {
 				result.Content = append(result.Content, value)
 			}
@@ -276,7 +276,7 @@ func prepareRuleUpdate(c *commonContext, changes *Node, p *Profile, baseURL stri
 	if restoredRefresh && equal(get(refresh, "args"), L()) {
 		set(refresh, "args", refreshSteps())
 	}
-	if refresh != nil && equal(get(refresh, "type"), S("sequence")) && equal(get(refresh, "args"), downloadOnlySteps()) && reload != nil && truthy(get(reload, "args")) {
+	if refresh != nil && equal(get(refresh, "type"), S("sequence")) && equal(get(refresh, "args"), downloadOnlySteps()) && reload != nil && (len(items(get(reload, "args"))) > 0) {
 		set(refresh, "args", refreshSteps())
 	}
 	defaults := at(defaultSettingsNode, "rule_update", "args")
@@ -460,10 +460,10 @@ func finishRuleUpdates(c *commonContext, changes *Node, p *Profile, baseURL stri
 	emptyDownload := download != nil && equal(get(download, "type"), S("download")) && isMap(get(download, "args")) && equal(downloads, L())
 	emptyRefresh := refresh != nil && equal(get(refresh, "type"), S("sequence")) && equal(get(refresh, "args"), L())
 	if emptyDownload || emptyRefresh {
-		return stopPipeline(c, emptyRefresh && !emptyDownload && reload != nil && truthy(get(reload, "args")))
+		return stopPipeline(c, emptyRefresh && !emptyDownload && reload != nil && (len(items(get(reload, "args"))) > 0))
 	}
 	if reload != nil && equal(get(reload, "type"), S("reload_provider")) && equal(get(reload, "args"), L()) {
-		if download != nil && equal(get(download, "type"), S("download")) && isMap(get(download, "args")) && truthy(get(get(download, "args"), "downloads")) {
+		if download != nil && equal(get(download, "type"), S("download")) && isMap(get(download, "args")) && (len(items(get(get(download, "args"), "downloads"))) > 0) {
 			return removeEmptyReload(c)
 		}
 		return stopPipeline(c, false)
@@ -526,7 +526,7 @@ func (p *Profile) proxyIdentity() (map[string]bool, string, bool) {
 		}
 	}
 	endpoint := "/api/mosdns/rule-proxy"
-	if id := p.get("profile_id"); truthy(id) {
+	if id := p.get("profile_id"); str(id) != "" {
 		endpoint = "/api/profiles/" + displayValue(id) + "/mosdns/rule-proxy"
 	}
 	return tokens, endpoint, true

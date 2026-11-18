@@ -71,9 +71,9 @@ func ParseClashRuleValue(line string) (kind, value string) {
 // isIPOrCIDR is _is_ip_or_cidr.
 func isIPOrCIDR(value string) bool { return convert.IsIPNetwork(value) }
 
-// RulesetParts is _ruleset_parts: the file parts a rule set needs in MosDNS
+// Parts lists the file parts a rule set needs in MosDNS
 // (classical sets are split into a domain and an IP file).
-func RulesetParts(behavior any) []string {
+func Parts(behavior string) []string {
 	if behavior == "ipcidr" {
 		return []string{PartIP}
 	}

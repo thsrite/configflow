@@ -253,7 +253,7 @@ func layoutFor(config *model.Config) (nativeLayout, error) {
 // RuleProxyURL constructs a profile-scoped provider URL in protocol query order.
 func RuleProxyURL(config *model.Config, baseURL, sourceURL, part, sourceID string) (string, error) {
 	if config == nil || config.SystemConfig.RuleProxyToken == "" {
-		return "", errors.New(msgProxyTokenRequired)
+		return "", ErrRuleProxyToken
 	}
 	endpoint := "/api/mosdns/rule-proxy"
 	if config.ProfileID != "" {
@@ -271,7 +271,7 @@ func RuleProxyURL(config *model.Config, baseURL, sourceURL, part, sourceID strin
 	if err != nil {
 		return "", err
 	}
-	query := weburl.EncodeQuery(pairs)
+	query := strings.ReplaceAll(weburl.EncodeQuery(pairs), "+", "%20")
 	if parsed.RawQuery != "" {
 		query = parsed.RawQuery + "&" + query
 	}
@@ -294,7 +294,7 @@ func RuleFiles(config *model.Config, baseURL string, item model.RuleConfig, stem
 		stem = item.Name
 	}
 	files := []SourceFile{}
-	for _, part := range RulesetParts(behavior) {
+	for _, part := range Parts(behavior) {
 		suffix := ""
 		if part == PartIP && behavior == "classical" {
 			suffix = "_ip"
@@ -350,3 +350,6 @@ type PublishGuard struct {
 	ServiceType    string `json:"expected_service_type"`
 	ConfigRevision int64  `json:"expected_config_revision"`
 }
+
+// ErrRuleProxyToken identifies a missing rule-provider capability.
+var ErrRuleProxyToken=errors.New(msgProxyTokenRequired)

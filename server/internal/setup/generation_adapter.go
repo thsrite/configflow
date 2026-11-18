@@ -91,7 +91,21 @@ func resourceNodes(ctx context.Context, fields map[string]json.RawMessage, recor
 }
 
 func validateGenerated(ctx context.Context, candidate *jsonx.Object, baseURL string) error {
-	dns, err := oxidns.Generate(oxidns.NewProfile(candidate), baseURL)
+	selected := jsonx.NewObject()
+	for _, key := range []string{"oxidns", "mosdns", "rule_configs", "rules", "rule_sets", "proxy_groups", "device_notes", "profile_id", "system_config", "rule_library", "agents", "nodes", "subscriptions", "subscription_aggregations"} {
+		if value, ok := candidate.Get(key); ok {
+			selected.Set(key, value)
+		}
+	}
+	data, err := jsonx.Compact(selected)
+	if err != nil {
+		return err
+	}
+	profile, err := oxidns.ProfileFromJSON(data)
+	if err != nil {
+		return err
+	}
+	dns, err := oxidns.Generate(profile, baseURL)
 	if err != nil {
 		return err
 	}

@@ -196,7 +196,11 @@ func (s *Source) validateRemote(value []byte, rule RuleRef) error {
 	return rulefetch.ValidateRemoteRuleContent(value, jsonx.Obj("name", rule.Name, "url", rule.URL, "source_type", "url", "behavior", rule.Behavior, "format", rule.Format), jsonx.NewObject(), rule.Format)
 }
 func (s *Source) unavailable(paths []string) []string {
-	return oxidns.UnavailableRulesets(oxidns.NewProfile(s.config()), paths)
+	profile, err := s.dnsProfile()
+	if err != nil {
+		return []string{err.Error()}
+	}
+	return oxidns.UnavailableRulesets(profile, paths)
 }
 func resolvedBuildProfile(ctx context.Context, src *Source, t Target) (string, error) {
 	if id := src.ProfileID(); id != "" {
@@ -496,7 +500,11 @@ func generateAgentConfig(ctx context.Context, s *Source, t Target, base string) 
 	case "mosdns":
 		text, err = mosdns.GenerateMosDNSConfig(s.config(), base)
 	case "oxidns":
-		text, err = oxidns.Generate(oxidns.NewProfile(s.config()), base)
+		profile, e := s.dnsProfile()
+		if e != nil {
+			return AgentConfig{}, e
+		}
+		text, err = oxidns.Generate(profile, base)
 	case "surge":
 		text, err = convert.GenerateSurgeConfig(ctx, s.config(), base)
 	default:
@@ -714,7 +722,10 @@ func prepareContent(ctx context.Context, m *agents.Manager, t Target, s *Source,
 			p.CustomFiles = append(p.CustomFiles, CustomFile{Path: r.GetString("path"), Name: r.GetString("name"), Content: []byte(r.GetString("content")), Native: r.GetBool("native")})
 		}
 	case "oxidns":
-		profile := oxidns.NewProfile(cfg)
+		profile, e := s.dnsProfile()
+		if e != nil {
+			return nil, e
+		}
 		p.ConfigContent, err = oxidns.Generate(profile, o.BaseURL)
 		if err != nil {
 			return nil, err
@@ -932,3 +943,18 @@ func uploadRecord(ctx context.Context, m *agents.Manager, agentID, id string, r 
 // InternalRuleURL reports whether a URL is a callback into this source snapshot.
 // Rule synchronization uses the same classification as materialization.
 func (s *Source) InternalRuleURL(rawURL, baseURL string) bool { return s.internal(rawURL, baseURL) }
+
+func (s *Source) dnsProfile() (*oxidns.Profile, error) {
+	selected := jsonx.NewObject()
+	config := s.config()
+	for _, key := range []string{"oxidns", "mosdns", "rule_configs", "rules", "rule_sets", "proxy_groups", "device_notes", "profile_id", "system_config", "rule_library", "agents", "nodes", "subscriptions", "subscription_aggregations"} {
+		if value, ok := config.Get(key); ok {
+			selected.Set(key, value)
+		}
+	}
+	data, err := jsonx.Compact(selected)
+	if err != nil {
+		return nil, err
+	}
+	return oxidns.ProfileFromJSON(data)
+}

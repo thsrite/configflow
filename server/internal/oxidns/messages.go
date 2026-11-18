@@ -85,3 +85,6 @@ const (
 	// SettingsChangedMessage explains a stale whole-object editor save.
 	SettingsChangedMessage = "OxiDNS 设置已在其他页面修改（例如策略规则的 DNS），请重新加载后再保存"
 )
+
+const messageSafeFieldNames = "OxiDNS YAML 字段名必须为安全文本"
+const messageFiniteNumbers = "OxiDNS YAML 数字必须为有限值"

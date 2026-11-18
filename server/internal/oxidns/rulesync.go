@@ -42,5 +42,5 @@ func RulesetParts(behavior string) []string { return managedRulesetParts(M("beha
 
 // RuleEnabled applies the converter's existing enabled/library-enabled policy.
 func RuleEnabled(item *Node) bool {
-	return truthyOr(item, "enabled") && truthyOr(item, "library_enabled")
+	return enabledOrDefault(item, "enabled") && enabledOrDefault(item, "library_enabled")
 }

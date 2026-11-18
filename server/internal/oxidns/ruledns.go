@@ -129,7 +129,7 @@ func upstreamChain(action, features *Node) []*Node {
 			}
 		}
 	}
-	if truthy(get(features, "cache_enabled")) {
+	if isTrue(get(features, "cache_enabled")) {
 		cache := M("size", upstreamCacheSize)
 		if lazy, ok := ratOf(get(features, "cache_lazy_ttl")); ok && lazy.Sign() > 0 {
 			set(cache, "lazy_cache_ttl", clone(get(features, "cache_lazy_ttl")))
@@ -139,7 +139,7 @@ func upstreamChain(action, features *Node) []*Node {
 		steps.Content = append(steps.Content, M("exec", "$"+CachePrefix+key))
 	}
 	steps.Content = append(steps.Content, M("exec", "$"+ForwardPrefix+key), M("matches", L("!has_resp"), "exec", "reject 3"))
-	if ttl := get(features, "remote_ttl"); source != "local" && truthy(ttl) {
+	if ttl := get(features, "remote_ttl"); source != "local" && (positive(ttl)) {
 		steps.Content = append(steps.Content, M("exec", "ttl "+ttl.Value))
 	}
 	steps.Content = append(steps.Content, M("exec", "accept"))
@@ -320,7 +320,7 @@ func pinnedSource(key string, entry *Node, sources []string, plugins map[string]
 		}
 		var kept []string
 		for _, item := range sources {
-			if !(item == "local" && hooks || item != "local" && truthy(get(features, "remote_ttl"))) {
+			if !(item == "local" && hooks || item != "local" && (positive(get(features, "remote_ttl")))) {
 				kept = append(kept, item)
 			}
 		}
@@ -436,14 +436,14 @@ func policyDNSRoutes(p *Profile) map[string]string {
 			return route
 		}
 		group := groups[name]
-		if group == nil || has(group, "enabled") && !truthy(get(group, "enabled")) || equal(get(group, "type"), S("chain")) ||
+		if group == nil || has(group, "enabled") && !(isTrue(get(group, "enabled"))) || equal(get(group, "type"), S("chain")) ||
 			visiting[name] || len(visiting) >= 64 {
 			return "proxy"
 		}
 		source := group
-		if follow := get(group, "follow_group"); truthy(follow) {
+		if follow := get(group, "follow_group"); str(follow) != "" {
 			source = byID[str(follow)]
-			if !isStr(follow) || source == nil || truthy(get(source, "follow_group")) {
+			if !isStr(follow) || source == nil || (str(get(source, "follow_group")) != "") {
 				return "proxy"
 			}
 		}
@@ -451,7 +451,7 @@ func policyDNSRoutes(p *Profile) map[string]string {
 			return "proxy"
 		}
 		emitted := p.renderMembers(source)
-		if strings.Contains(str(get(emitted, "filter")), "`") || truthy(get(source, "exclude-filter")) || truthy(get(source, "exclude-type")) {
+		if strings.Contains(str(get(emitted, "filter")), "`") || (str(get(source, "exclude-filter")) != "") || (str(get(source, "exclude-type")) != "") {
 			return "proxy"
 		}
 		route := "proxy"

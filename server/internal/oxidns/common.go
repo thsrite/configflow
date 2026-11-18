@@ -279,7 +279,7 @@ func newContext(document, settings *Node) (*commonContext, error) {
 	if !isMap(ctx.parked) {
 		ctx.parked = M()
 	}
-	if truthy(get(document, "include")) {
+	if externalIncludes(document) {
 		expanded, err := NativeDocument(settings, false, nil)
 		if err != nil {
 			return nil, err
@@ -345,7 +345,7 @@ func (c *commonContext) storedArgs(tag string) *Node {
 		plugin = get(c.parked, tag)
 	}
 	if isMap(plugin) && equal(get(plugin, "tag"), S(tag)) && equal(get(plugin, "type"), S(tagType(tag))) {
-		if args := get(plugin, "args"); truthy(args) {
+		if args := get(plugin, "args"); !isNone(args) {
 			return args
 		}
 		return M()
@@ -422,7 +422,7 @@ func (c *commonContext) parkPlugin(tag string) {
 
 // expanded is the document with includes expanded (from the current draft).
 func (c *commonContext) expanded() (*Node, error) {
-	if !truthy(get(c.doc, "include")) {
+	if !(externalIncludes(c.doc)) {
 		return c.doc, nil
 	}
 	settings := shallow(c.settings)
@@ -448,7 +448,7 @@ func (c *commonContext) callState(tag string, chains []string) (bool, Capability
 		alias := c.aliasCapability(tag)
 		return alias != nil && len(ReferenceLocations(c.doc, []string{alias.Target}, false)) > 0, cap
 	}
-	if truthy(get(c.doc, "include")) {
+	if externalIncludes(c.doc) {
 		return false, capability(false, "配置包含外部执行链，请在完整参数中调整功能调用", tag)
 	}
 	expected := M("exec", "$"+tag)
@@ -622,7 +622,7 @@ func fallbackState(c *commonContext) (bool, Capability) {
 	if len(ReferenceLocations(c.doc, nil, true)) > 0 {
 		return enabled, capability(false, fallbackDynamicReason, "proxy_dns_seq")
 	}
-	if truthy(get(c.doc, "include")) || c.sequence("remote_dns") == nil ||
+	if (externalIncludes(c.doc)) || c.sequence("remote_dns") == nil ||
 		!same(calls, fallbackOn()) && !same(calls, fallbackOff()) && !same(calls, L(M("exec", "$remote_dns"), M("exec", "accept"))) {
 		return enabled, denied
 	}
@@ -810,7 +810,7 @@ func (c *commonContext) directRead(values *Node, caps map[string]Capability) {
 func (c *commonContext) mainControl(field string) (*Node, Capability, int) {
 	sequence := c.sequence("sequence_main")
 	locked := capability(false, "当前使用了条件化、重复或自定义指令，请在完整参数中编辑", "sequence_main")
-	if sequence == nil || truthy(get(c.doc, "include")) {
+	if sequence == nil || (externalIncludes(c.doc)) {
 		return Null(), capability(false, "当前没有可识别的主处理链，请在完整参数中编辑", "sequence_main"), -1
 	}
 	editable := capability(true, "", "sequence_main")
@@ -897,7 +897,7 @@ var (
 // domain set.
 func (c *commonContext) dynamicState() (bool, string, Capability) {
 	list := c.sequence("sequence_main")
-	if list == nil || truthy(get(c.doc, "include")) {
+	if list == nil || (externalIncludes(c.doc)) {
 		return false, "", capability(false, "当前没有可识别的主处理链，请在完整参数中编辑", "dynamic_domains")
 	}
 	for _, plugin := range c.plugins.Content {
@@ -1033,7 +1033,7 @@ func (c *commonContext) adguardState() (bool, Capability) {
 	}
 	denied := capability(false, "自定义过滤链请在完整参数中调整", "adguard_rules")
 	reject := c.plugin("adguard_reject")
-	if main == nil || truthy(get(c.doc, "include")) ||
+	if main == nil || (externalIncludes(c.doc)) ||
 		reject != nil && (!equal(get(reject, "type"), S("sequence")) || !equal(get(reject, "args"), L(M("exec", "$adguard_block"), M("exec", "accept")))) ||
 		!c.allowed("adguard_block", "").Editable || !c.allowed("adguard_rules", "").Editable {
 		return enabled, denied
@@ -1123,9 +1123,9 @@ func readCommon(document, settings *Node, p *Profile) (CommonView, error) {
 	caps["tcp_enabled"] = c.allowed("server_tcp", "")
 	parkedTCP := get(c.parked, "server_tcp")
 	restorable := isMap(parkedTCP) && equal(get(parkedTCP, "type"), S("tcp_server")) && isMap(get(parkedTCP, "args")) &&
-		truthy(get(get(parkedTCP, "args"), "listen")) && truthy(get(get(parkedTCP, "args"), "entry"))
+		(str(get(get(parkedTCP, "args"), "listen")) != "") && (str(get(get(parkedTCP, "args"), "entry")) != "")
 	if tcp == nil && !restorable && (c.plugin("server_udp") == nil || !c.allowed("server_udp", "").Editable ||
-		!isMap(udp) || !truthy(get(udp, "listen")) || !truthy(get(udp, "entry"))) {
+		!isMap(udp) || !(str(get(udp, "listen")) != "") || !(str(get(udp, "entry")) != "")) {
 		caps["tcp_enabled"] = capability(false, "缺少可复用的 UDP 监听地址和处理入口，请在监听服务中配置 TCP", "server_tcp")
 	}
 	if tcp != nil && c.plugin("server_udp") != nil && (!isMap(udp) || !isMap(get(tcp, "args")) ||
@@ -1146,7 +1146,7 @@ func readCommon(document, settings *Node, p *Profile) (CommonView, error) {
 		caps[f.field] = cap
 	}
 	cache := c.storedArgs("lazy_cache")
-	dumpOn := isMap(cache) && truthy(get(cache, "dump_file"))
+	dumpOn := isMap(cache) && (str(get(cache, "dump_file")) != "")
 	set(values, "cache_dump_enabled", B(dumpOn))
 	caps["cache_dump_enabled"] = c.allowed("lazy_cache", "")
 	if !dumpOn && isMap(cache) {
@@ -1409,9 +1409,9 @@ func (c *commonContext) patchDirect(field string, value *Node) error {
 func (c *commonContext) patchAPI(field string, value *Node) error {
 	current, enabled := c.apiHolder(true)
 	if field == "api.enabled" {
-		if truthy(value) {
+		if isTrue(value) || len(items(value)) > 0 {
 			http := M("listen", at(defaultSettingsNode, "api", "listen"))
-			if truthy(current) {
+			if isMap(current) && mapSize(current) > 0 {
 				http = clone(current)
 			}
 			set(setDefault(c.doc, "api", M()), "http", http)
@@ -1450,13 +1450,13 @@ func (c *commonContext) patchAPI(field string, value *Node) error {
 		if len(auth.Content) > 0 {
 			setDefault(auth, "type", S("basic"))
 		}
-		if !truthy(get(auth, "username")) && !truthy(get(auth, "password")) {
+		if !(str(get(auth, "username")) != "") && !(str(get(auth, "password")) != "") {
 			c.park("api_auth", auth)
 			del(holder, "auth")
 		}
 	}
 	if path[0] == "webui" {
-		if webui := get(holder, "webui"); truthy(get(mapOr(webui), "root")) {
+		if webui := get(holder, "webui"); str(get(mapOr(webui), "root")) != "" {
 			setDefault(webui, "index", S("index.html"))
 		} else if isMap(webui) {
 			c.park("api_webui", del(holder, "webui"))
@@ -1474,14 +1474,14 @@ func (c *commonContext) patchCacheDump(changes *Node) error {
 		return err
 	}
 	args := get(plugin, "args")
-	enabled := truthy(get(args, "dump_file"))
+	enabled := (str(get(args, "dump_file")) != "")
 	if has(changes, "cache_dump_enabled") {
-		enabled = truthy(get(changes, "cache_dump_enabled"))
+		enabled = (isTrue(get(changes, "cache_dump_enabled")))
 	}
-	if truthy(get(args, "dump_file")) {
+	if str(get(args, "dump_file")) != "" {
 		c.park("cache_dump_file", get(args, "dump_file"))
 	}
-	if truthy(get(args, "dump_file")) || has(args, "dump_interval") {
+	if (str(get(args, "dump_file")) != "") || has(args, "dump_interval") {
 		c.park("cache_dump_interval", orNull(get(args, "dump_interval")))
 	}
 	for _, field := range []string{"cache_dump_file", "cache_dump_interval"} {
@@ -1493,10 +1493,10 @@ func (c *commonContext) patchCacheDump(changes *Node) error {
 		path := get(changes, "cache_dump_file")
 		if !has(changes, "cache_dump_file") {
 			path = get(args, "dump_file")
-			if !truthy(path) {
+			if !(str(path) != "") {
 				path = get(c.parked, "cache_dump_file")
 			}
-			if !truthy(path) {
+			if !(str(path) != "") {
 				path = get(defaultSettingsNode, "cache_dump_file")
 			}
 		}
@@ -1570,7 +1570,7 @@ func (c *commonContext) patchMain(field string, value *Node) {
 	_, _, index := c.mainControl(field)
 	list := c.sequence("sequence_main")
 	var replacement *Node
-	if truthy(value) {
+	if isTrue(value) || len(items(value)) > 0 {
 		switch field {
 		case "block_qtypes":
 			codes := make([]string, len(value.Content))
@@ -1611,7 +1611,7 @@ func (c *commonContext) patchDynamic(changes *Node) error {
 	parked := mapOr(get(c.parked, "dynamic_domain_set_state"))
 	nextEnabled := enabled
 	if has(changes, "dynamic_domain_set.enabled") {
-		nextEnabled = truthy(get(changes, "dynamic_domain_set.enabled"))
+		nextEnabled = (isTrue(get(changes, "dynamic_domain_set.enabled")))
 	}
 	nextRoute := S(route)
 	if route == "" {
@@ -1680,7 +1680,7 @@ func (c *commonContext) patchDynamic(changes *Node) error {
 			list := c.sequence(chain)
 			list.Content = filter(list.Content, func(item *Node) bool { return !equal(item, learnCall) })
 		}
-		if nextEnabled && truthy(learn) {
+		if nextEnabled && (isTrue(learn)) {
 			name := "ip_requery_proxy"
 			if nextRoute.Value == "direct" {
 				name = "direct_ip"
@@ -1774,7 +1774,7 @@ func (c *commonContext) patchRuleUpdate(changes *Node, p *Profile, baseURL strin
 		setDefault(get(downloader, "args"), "downloads", seqOf(downloads))
 		providers := L()
 		for _, item := range items(get(c.doc, "plugins")) {
-			if isOneOf(get(item, "type"), "domain_set", "ip_set", "adguard_rule") && isMap(get(item, "args")) && truthy(get(get(item, "args"), "files")) {
+			if isOneOf(get(item, "type"), "domain_set", "ip_set", "adguard_rule") && isMap(get(item, "args")) && (len(items(get(get(item, "args"), "files"))) > 0) {
 				providers.Content = append(providers.Content, S("$"+str(get(item, "tag"))))
 			}
 		}
@@ -1853,7 +1853,7 @@ func (c *commonContext) patchResources(changes *Node, p *Profile, baseURL string
 				index := 0
 				for i, item := range main.Content {
 					first := ""
-					if m := get(item, "matches"); truthy(m) {
+					if m := get(item, "matches"); len(items(m)) > 0 || str(m) != "" {
 						first = displayValue(items(m)[0])
 						if isStr(m) {
 							first = string([]rune(m.Value)[0])
@@ -1916,10 +1916,10 @@ func (c *commonContext) patchResources(changes *Node, p *Profile, baseURL string
 		content = orDefault(resource, "content", S(""))
 	}
 	content = orDefault(changes, "adguard.content", content)
-	if !truthy(content) {
+	if !(str(content) != "") {
 		content = S("")
 	}
-	if truthy(get(changes, "adguard.enabled")) && isMap(get(c.parked, "adguard_rules")) {
+	if (isTrue(get(changes, "adguard.enabled"))) && isMap(get(c.parked, "adguard_rules")) {
 		if _, err := c.ensure("adguard_rules", nil, ""); err != nil {
 			return err
 		}
@@ -1932,7 +1932,7 @@ func (c *commonContext) patchResources(changes *Node, p *Profile, baseURL string
 	if !isSeq(urlList) {
 		return errMalformed
 	}
-	if touches(changes, []string{"adguard.urls", "adguard.content"}) || truthy(get(changes, "adguard.enabled")) && c.plugin("adguard_rules") == nil {
+	if touches(changes, []string{"adguard.urls", "adguard.content"}) || (isTrue(get(changes, "adguard.enabled"))) && c.plugin("adguard_rules") == nil {
 		provider, err := c.ensure("adguard_rules", M("files", L()), "")
 		if err != nil {
 			return err
@@ -1976,7 +1976,7 @@ func (c *commonContext) patchResources(changes *Node, p *Profile, baseURL string
 	}
 	if has(changes, "adguard.enabled") {
 		main := c.sequence("sequence_main")
-		if truthy(get(changes, "adguard.enabled")) {
+		if isTrue(get(changes, "adguard.enabled")) {
 			if _, err := c.ensure("adguard_block", M("mode", "nxdomain"), ""); err != nil {
 				return err
 			}
@@ -2154,7 +2154,7 @@ func (c *commonContext) applyCommon(changes *Node, p *Profile, baseURL string) e
 	// Enable first so simultaneous argument edits modify the new node.
 	for _, f := range featureCalls {
 		if has(changes, f.field) {
-			if err := c.toggleCall(f.tag, f.chains, truthy(get(changes, f.field)), defaultArgs(f.tag)); err != nil {
+			if err := c.toggleCall(f.tag, f.chains, (isTrue(get(changes, f.field))), defaultArgs(f.tag)); err != nil {
 				return err
 			}
 		}
@@ -2260,7 +2260,7 @@ func (c *commonContext) patchField(field string, value *Node) error {
 			set(c.args("server_tcp"), "listen", value)
 		}
 	case "tcp_enabled":
-		if truthy(value) {
+		if isTrue(value) || len(items(value)) > 0 {
 			args := clone(c.args("server_udp"))
 			parked := get(c.parked, "server_tcp")
 			if c.plugin("server_tcp") == nil && isMap(parked) && equal(get(parked, "type"), S("tcp_server")) {
@@ -2289,11 +2289,11 @@ func (c *commonContext) patchField(field string, value *Node) error {
 			}
 		}
 		switch {
-		case index >= 0 && truthy(value):
+		case index >= 0 && (positive(value)):
 			list.Content[index] = M("exec", "ttl "+value.Value)
 		case index >= 0:
 			list.Content = append(list.Content[:index:index], list.Content[index+1:]...)
-		case truthy(value):
+		case (positive(value)):
 			list.Content = append(list.Content, M("exec", "ttl "+value.Value))
 		}
 	}

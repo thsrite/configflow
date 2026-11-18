@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strings"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/repo"
@@ -35,20 +34,16 @@ type SavedSettings struct {
 	Guard    PublishGuard
 }
 
-// storedSettings is the temporary N8-5 adapter from the existing repository API.
-// No other fields are decoded or normalized as a side effect of reading OxiDNS.
-func storedSettings(config *jsonx.Object) (model.Dynamic, error) {
-	var value model.Dynamic
-	raw := []byte(`{}`)
-	if config.Has("oxidns") {
-		var err error
-		raw, err = jsonx.Compact(config.Value("oxidns"))
-		if err != nil {
-			return value, fmt.Errorf("encode stored OxiDNS: %w", err)
-		}
+// storedSettings reads only the typed OxiDNS member; missing settings use an
+// empty object without normalizing any unrelated profile fields.
+func storedSettings(profile *model.Profile) (model.Dynamic, error) {
+	value := profile.OxiDNS
+	node, err := value.Node()
+	if err != nil {
+		return value, err
 	}
-	if err := value.UnmarshalJSON(raw); err != nil {
-		return value, fmt.Errorf("decode stored OxiDNS: %w", err)
+	if isNone(node) {
+		return dynamicSettings(M())
 	}
 	return value, nil
 }
@@ -69,7 +64,15 @@ func settingsETag(value *Node) string {
 // ReadSettings reads a draft without saving normalization/defaults. HEAD uses
 // this same owner entry point; a body on HEAD never reaches SaveSettings.
 func ReadSettings(ctx context.Context, profileID string) (StoredSettings, error) {
-	config, err := repo.GetConfig(ctx, profileID)
+	repository, err := repo.GetRepository(ctx)
+	if err != nil {
+		return StoredSettings{}, err
+	}
+	id, err := repo.ResolveProfileID(ctx, profileID)
+	if err != nil {
+		return StoredSettings{}, err
+	}
+	config, err := repository.Profile(ctx, id)
 	if err != nil {
 		return StoredSettings{}, err
 	}
@@ -119,39 +122,51 @@ func SaveSettings(ctx context.Context, profileID string, value *Node, expected s
 	if err := ctx.Err(); err != nil {
 		return SavedSettings{}, err
 	}
-	saved, revision, err := repository.UpdateProfileTransaction(ctx, id, func(ctx context.Context, current *jsonx.Object) (*jsonx.Object, error) {
+	var saved model.Dynamic
+	revision, err := repository.UpdateProfile(ctx, id, func(ctx context.Context, current *model.Profile) error {
 		if err := ctx.Err(); err != nil {
-			return nil, err
+			return err
 		}
 		stored, err := storedSettings(current)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		before, err := stored.Node()
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if expected != "" && expected != "*" && expected != settingsETag(before) {
-			return nil, ErrSettingsChanged
+			return ErrSettingsChanged
 		}
-		replacement, err := InvalidateFollow(NewProfile(current), normalized)
+		source, err := repository.Config(ctx, id, nil)
 		if err != nil {
-			return nil, err
+			return err
+		}
+		view, err := NewTypedProfile(source)
+		if err != nil {
+			return err
+		}
+		replacement, err := InvalidateFollow(view, normalized)
+		if err != nil {
+			return err
 		}
 		if err := ctx.Err(); err != nil {
-			return nil, err
+			return err
 		}
-		// N8-5: assign model.Profile.OxiDNS once the typed updater is available.
-		current.Set("oxidns", ToJSONX(replacement))
-		return current, ctx.Err()
+		saved, err = dynamicSettings(replacement)
+		if err != nil {
+			return err
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		current.OxiDNS = saved
+		return nil
 	})
 	if err != nil {
 		return SavedSettings{}, err
 	}
-	settings, err := storedSettings(saved)
-	if err != nil {
-		return SavedSettings{}, err
-	}
+	settings := saved
 	node, err := settings.Node()
 	if err != nil {
 		return SavedSettings{}, err

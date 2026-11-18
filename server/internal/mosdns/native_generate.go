@@ -97,6 +97,7 @@ func Generate(config *model.Config, baseURL string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	yamlx.MaterializeAliases(root)
 	custom := config.Profile.MosDNS.CustomConfig
 	if original, parseErr := yamlx.Parse([]byte(custom)); parseErr == nil && original.Kind == yaml.MappingNode {
 		data, err := yamlx.Edit([]byte(custom), func(node *yamlx.Node) error { *node = *root; return nil })
@@ -186,9 +187,8 @@ func document(config *model.Config, baseURL string) (*yamlx.Node, error) {
 		return nil, err
 	}
 	if len(fallback) == 0 {
-		for _, node := range local {
-			fallback = append(fallback, yamlx.Clone(node))
-		}
+		copied := yamlx.CopyGraph(yamlx.Seq(local...))
+		fallback = copied.Content
 	}
 	for _, forward := range []struct {
 		tag         string
@@ -255,7 +255,7 @@ func document(config *model.Config, baseURL string) (*yamlx.Node, error) {
 			}
 			rs := layout.sets[item.ID]
 			tag := layout.tags[item.ID]
-			for _, part := range RulesetParts(textValue(rs.Behavior, "domain")) {
+			for _, part := range Parts(textValue(rs.Behavior, "domain")) {
 				t := tag
 				if part == PartIP && textValue(rs.Behavior, "domain") == "classical" {
 					t += "_ip"

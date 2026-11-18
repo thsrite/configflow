@@ -24,7 +24,7 @@ func WatchdogRule() *Node { return M("matches", L("qname full:"+WatchdogName), "
 // them).
 func EnsureLocalDNSWatchdog(document *Node) (*Node, error) {
 	result := clone(document)
-	if truthy(get(result, "include")) {
+	if externalIncludes(result) {
 		return result, nil
 	}
 	plugins := get(result, "plugins")
@@ -40,7 +40,7 @@ func EnsureLocalDNSWatchdog(document *Node) (*Node, error) {
 			return nil, errors.New("DNS watchdog requires plugin objects")
 		}
 		tag := get(plugin, "tag")
-		if !truthy(tag) {
+		if isNone(tag) || isStr(tag) && str(tag) == "" {
 			continue // MosDNS servers need no tag
 		}
 		if !isStr(tag) || tagged[tag.Value] != nil {

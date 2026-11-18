@@ -24,7 +24,7 @@ import (
 	"testing"
 	"unicode"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/yamlx"
 )
 
@@ -165,7 +165,12 @@ func profileOf(n *Node) *Profile {
 	if !isMap(n) {
 		return NewProfile(nil)
 	}
-	return &Profile{doc: n, raw: ToJSONX(n).(*jsonx.Object)}
+	p, err := ProfileFromJSON(ToJSON(n))
+	if err != nil {
+		return &Profile{doc: n, source: &model.Config{Profile: &model.Profile{}}}
+	}
+	p.doc = n
+	return p
 }
 
 // toNode turns a Go result into a node for comparison.

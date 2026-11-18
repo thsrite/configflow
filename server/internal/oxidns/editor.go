@@ -19,7 +19,7 @@ var (
 func (p *Profile) ruleIDs() (map[string]*Node, map[string]bool) {
 	known := map[string]*Node{}
 	list := items(p.get("rule_configs"))
-	if !truthy(p.get("rule_configs")) {
+	if !(len(items(p.get("rule_configs"))) > 0) {
 		list = p.activeItems()
 	}
 	for _, item := range list {
@@ -147,7 +147,7 @@ func renderTemplate(settings *Node, p *Profile, baseURL string) (*Node, string, 
 // writing it: template settings are rendered into a native draft.
 func PrepareEditor(settings *Node, p *Profile, baseURL string) (*Node, error) {
 	if p == nil {
-		p = NewProfile(nil)
+		p = emptyProfile()
 	}
 	current, err := NormalizeSettings(settings, false)
 	if err != nil {
@@ -565,7 +565,7 @@ func PreviewTemplate(settings, proposedInputs *Node, p *Profile, baseURL string,
 	currentAdguard := mapOr(get(current, "adguard"))
 	nextAdguard := get(nextTemplate, "adguard")
 	adguard := clone(currentAdguard)
-	set(adguard, "enabled", B(truthy(get(currentAdguard, "enabled")) || truthy(get(nextAdguard, "enabled"))))
+	set(adguard, "enabled", B((isTrue(get(currentAdguard, "enabled"))) || (isTrue(get(nextAdguard, "enabled")))))
 	set(adguard, "urls", union(get(currentAdguard, "urls"), get(nextAdguard, "urls")))
 	contentPath := []string{"resources", "adguard", "content"}
 	textOr := func(m *Node) *Node {

@@ -132,6 +132,9 @@ func requestSettings(c *httpx.Ctx, name string) (model.MosDNSSettings, error) {
 	if err = json.Unmarshal(data, &value); err != nil {
 		return value, repo.NewValidationError(messageSettingsObject)
 	}
+	if len(model.Issues(value)) > 0 {
+		return value, repo.NewValidationError(messageSettingsObject)
+	}
 	return value, nil
 }
 func (s section) handle(c *httpx.Ctx) (*httpx.Response, error) {

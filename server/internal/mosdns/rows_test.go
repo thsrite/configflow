@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+ "net/url"
 	"strings"
 	"testing"
 
@@ -48,6 +49,7 @@ func loadRows(t *testing.T, path string) []*jsonx.Object {
 }
 
 func errClass(err error) string {
+ if errors.Is(err,ErrRuleProxyToken){return "ValueError"};var invalidURL *url.Error;if errors.As(err,&invalidURL){return "ValueError"}
 	var u *UnsupportedYAMLError
 	if errors.As(err, &u) {
 		return "Unsupported"

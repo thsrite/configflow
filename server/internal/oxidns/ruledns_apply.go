@@ -252,10 +252,10 @@ func newValidationIssue(before, after *Node) *Issue {
 // retaining the first occurrence's position. It does not persist or mutate inputs.
 func ApplyRuleDNS(before, after *Profile, assignments []DNSAssignment, options RuleDNSApplyOptions) (RuleDNSUpdate, error) {
 	if before == nil {
-		before = NewProfile(nil)
+		before = emptyProfile()
 	}
 	if after == nil {
-		after = NewProfile(nil)
+		after = emptyProfile()
 	}
 	settings := mapOr(after.Settings())
 	out := clone(settings)
@@ -416,7 +416,7 @@ func ApplyRuleDNS(before, after *Profile, assignments []DNSAssignment, options R
 // an active rule's actual route changes. Locked drafts retain all intent markers.
 func InvalidateFollow(p *Profile, settings *Node) (*Node, error) {
 	if p == nil {
-		p = NewProfile(nil)
+		p = emptyProfile()
 	}
 	out := clone(settings)
 	if !isSeq(get(settings, "rule_dns_follow")) || len(items(get(settings, "rule_dns_follow"))) == 0 {

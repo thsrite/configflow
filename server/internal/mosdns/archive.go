@@ -19,11 +19,9 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"configflow/internal/convert"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
-	"configflow/internal/refresh"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
 	"configflow/internal/weburl"
@@ -58,27 +56,13 @@ type Download struct {
 	Name      string `json:"name"`
 	URL       string `json:"url"`
 	LocalPath string `json:"local_path"`
-	Behavior  string `json:"behavior,omitempty"`
+	Behavior  string `json:"behavior"`
 }
 
 // File is a file stored as is (GetMosDNSCustomFiles, OxiDNS attachments).
 type File struct {
 	Path    string `json:"path"`
 	Content string `json:"content"`
-}
-
-// DecodeList converts a converter result list (downloads, custom files).
-func DecodeList[T any](list []any) ([]T, error) {
-	var out []T
-	return out, viaJSON(list, &out)
-}
-
-func viaJSON(value any, target any) error {
-	data, err := jsonx.Compact(value)
-	if err != nil {
-		return err
-	}
-	return json.Unmarshal(data, target)
 }
 
 // ArchiveOptions are the options of BuildMosDNSZip.
@@ -131,79 +115,76 @@ func label(name string) string {
 	return b.String()
 }
 
-// snapshot is the part of the profile snapshot the callbacks resolve
-// against. Hand-edited values of another JSON type are kept and compared
-// like Python compares them (a number never equals a string).
+// snapshot contains only the typed metadata needed by archive callbacks.
 type snapshot struct {
-	ProfileID    text `json:"profile_id"`
-	SystemConfig struct {
-		ServerDomain   text `json:"server_domain"`
-		ConfigToken    text `json:"config_token"`
-		RuleProxyToken text `json:"rule_proxy_token"`
-	} `json:"system_config"`
-	RuleConfigs []struct {
-		LibraryRuleID  text  `json:"library_rule_id"`
-		Enabled        truth `json:"enabled"`
-		LibraryEnabled truth `json:"library_enabled"`
-	} `json:"rule_configs"`
-	RuleLibrary []struct {
-		ID         text `json:"id"`
-		Name       text `json:"name"`
-		SourceType text `json:"source_type"`
-		URL        text `json:"url"`
-		Content    text `json:"content"`
-	} `json:"rule_library"`
+	ProfileID    string
+	SystemConfig model.SystemConfig
+	RuleConfigs  []model.RuleConfig
+	RuleLibrary  []model.RuleLibraryItem
 }
 
-// text is a snapshot value: a string (isString) or the JSON text of any
-// other value; missing and null are the zero value.
-type text struct {
-	value    string
-	isString bool
-}
-
-func (t *text) UnmarshalJSON(data []byte) error {
-	if json.Unmarshal(data, &t.value) == nil {
-		t.isString = true
-	} else if string(data) != "null" {
-		t.value = string(data)
+// Security decisions require literal stored strings and booleans rather than
+// R5's display-text coercion. Malformed grants fail closed.
+func snapshotOf(config *model.Config) snapshot {
+	result := snapshot{ProfileID: config.ProfileID, SystemConfig: config.SystemConfig}
+	system := storedMembers(config.SystemConfig)
+	result.SystemConfig.ConfigToken = credentialMember(system, "config_token")
+	result.SystemConfig.RuleProxyToken = credentialMember(system, "rule_proxy_token")
+	for _, rule := range config.Profile.RuleConfigs {
+		members := storedMembers(rule)
+		rule.LibraryRuleID = credentialMember(members, "library_rule_id")
+		allowed := literalFlag(members, "enabled") && literalFlag(members, "library_enabled")
+		rule.Enabled = &allowed
+		rule.LibraryEnabled = &allowed
+		result.RuleConfigs = append(result.RuleConfigs, rule)
 	}
-	return nil
-}
-
-func (t text) is(s string) bool { return t.isString && t.value == s }
-
-// str is the string value ("" for other types).
-func (t text) str() string {
-	if t.isString {
-		return t.value
+	for _, item := range config.RuleLibrary {
+		members := storedMembers(item)
+		item.ID = credentialMember(members, "id")
+		item.Name = credentialMember(members, "name")
+		content := credentialMember(members, "content")
+		item.Content = &content
+		result.RuleLibrary = append(result.RuleLibrary, item)
 	}
-	return ""
+	return result
 }
-
-// truth is a flag that defaults to true when missing and otherwise follows
-// Python truthiness (null, 0, "" and empty containers are false).
-type truth struct{ off bool }
-
-func (t *truth) UnmarshalJSON(data []byte) error {
-	var v any
-	json.Unmarshal(data, &v)
-	switch x := v.(type) {
-	case []any:
-		t.off = len(x) == 0
-	case map[string]any:
-		t.off = len(x) == 0
-	default:
-		t.off = v == nil || v == false || v == 0.0 || v == ""
+func storedMembers(value any) model.Fields {
+	data, err := model.Marshal(value)
+	if err != nil {
+		return model.Fields{}
 	}
-	return nil
+	var fields model.Fields
+	if json.Unmarshal(data, &fields) != nil {
+		return model.Fields{}
+	}
+	return fields
+}
+func credentialMember(fields model.Fields, key string) string {
+	data, ok := fields.Get(key)
+	if !ok {
+		return ""
+	}
+	var value string
+	if json.Unmarshal(data, &value) != nil {
+		return ""
+	}
+	return value
+}
+func literalFlag(fields model.Fields, key string) bool {
+	data, ok := fields.Get(key)
+	if !ok {
+		return true
+	}
+	var value bool
+	return json.Unmarshal(data, &value) == nil && value
 }
 
-// selected reports whether a library rule is used by an enabled rule
-// configuration of the profile.
-func (s *snapshot) selected(id text) bool {
+func (s *snapshot) selected(id string) bool {
+	if id == "" {
+		return false
+	}
 	for _, rule := range s.RuleConfigs {
-		if rule.LibraryRuleID == id && !rule.Enabled.off && !rule.LibraryEnabled.off {
+		if rule.LibraryRuleID == id && flag(rule.Enabled) && flag(rule.LibraryEnabled) {
 			return true
 		}
 	}
@@ -255,7 +236,7 @@ func (s *snapshot) localPath(ctx context.Context, raw, baseURL string) (string, 
 		if err != nil {
 			return "", false, err
 		}
-		for _, base := range []string{s.SystemConfig.ServerDomain.str(), baseURL} {
+		for _, base := range []string{s.SystemConfig.ServerDomain, baseURL} {
 			if base == "" {
 				continue
 			}
@@ -273,7 +254,7 @@ func (s *snapshot) localPath(ctx context.Context, raw, baseURL string) (string, 
 			}
 		}
 	}
-	profileID := s.ProfileID.value
+	profileID := s.ProfileID
 	if profileID == "" {
 		if profileID, err = repo.GetDefaultProfileID(ctx); err != nil {
 			return "", false, err
@@ -308,7 +289,7 @@ type source struct {
 
 // resolve follows callbacks to their source and returns the conversion
 // parts to apply in order ("" = the default conversion).
-func (s *snapshot) resolve(ctx context.Context, config *jsonx.Object, raw, baseURL string, depth int, sourceID string) (source, []string, error) {
+func (s *snapshot) resolve(ctx context.Context, config *model.Config, raw, baseURL string, depth int, sourceID string) (source, []string, error) {
 	if depth > 3 {
 		return source{}, nil, archiveErr("规则回调存在循环引用")
 	}
@@ -320,13 +301,13 @@ func (s *snapshot) resolve(ctx context.Context, config *jsonx.Object, raw, baseU
 		return source{}, nil, err
 	}
 	if !found {
-		declared, err := rulefetch.ResolveRemoteRuleSource(raw, config, sourceID)
+		declared, err := resolveLegacySource(raw, config, sourceID)
 		if err != nil {
 			return source{}, nil, err
 		}
 		identity := sourceID
-		if declared != nil && jsonx.Truthy(declared.Value("id")) {
-			identity = jsonx.Str(declared.Value("id"))
+		if declared != nil && declared.ID != "" {
+			identity = declared.ID
 		}
 		return source{url: raw, identity: identity}, nil, nil
 	}
@@ -346,13 +327,13 @@ func (s *snapshot) resolve(ctx context.Context, config *jsonx.Object, raw, baseU
 		return source{}, nil, archiveErr("无法识别规则回调")
 	}
 	for _, rule := range s.RuleLibrary {
-		if !s.selected(rule.ID) || !(byID && rule.ID.is(libraryID) || byName && rule.Name.is(name)) {
+		if !s.selected(rule.ID) || !(byID && rule.ID == libraryID || byName && rule.Name == name) {
 			continue
 		}
-		if rule.SourceType.is("content") {
-			return source{inline: true, content: rule.Content.str()}, nil, nil
+		if textValue(rule.SourceType, "url") == "content" {
+			return source{inline: true, content: textValue(rule.Content, "")}, nil, nil
 		}
-		return s.resolve(ctx, config, rule.URL.str(), baseURL, depth+1, rule.ID.value)
+		return s.resolve(ctx, config, textValue(rule.URL, ""), baseURL, depth+1, rule.ID)
 	}
 	return source{}, nil, archiveErr("规则不在当前配置快照中")
 }
@@ -404,19 +385,18 @@ type fetched struct {
 	err     error
 }
 
-// BuildMosDNSZip packs config.yaml, the custom files and every download
+// BuildZIP packs config.yaml, the custom files and every download
 // into a ZIP. config is the profile snapshot (it is not modified).
-func BuildMosDNSZip(ctx context.Context, config *jsonx.Object, yamlContent string, downloads []Download, custom []File, opts ArchiveOptions) ([]byte, error) {
+func BuildZIP(ctx context.Context, config *model.Config, yamlContent string, downloads []Download, custom []File, opts ArchiveOptions) ([]byte, error) {
 	// Ignore client disconnects while retaining the Runtime's shutdown bound.
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	config = config.DeepCopy()
-	var snap snapshot
-	if err := viaJSON(config, &snap); err != nil {
-		return nil, err
+	if config == nil || config.Profile == nil {
+		return nil, archiveErr("MosDNS 配置快照缺失")
 	}
+	snap := snapshotOf(config)
 	files := map[string][]byte{}
 	var order []string
 	total := 0
@@ -487,9 +467,9 @@ func BuildMosDNSZip(ctx context.Context, config *jsonx.Object, yamlContent strin
 	entries := order
 	order = nil
 
-	// Downloads may outlive an early failure, so Runtime tracks each worker.
-	// At most MaxWorkers downloads stay in flight; results are buffered.
-	fetch := fetchRemoteFn
+// Downloads may outlive an early failure, so Runtime tracks each worker.
+    // At most MaxWorkers downloads stay in flight; results are buffered.
+    fetch := fetchCaptured
 	results := make(chan fetched, len(sources))
 	next, pending := 0, 0
 	schedule := func() error {
@@ -562,37 +542,15 @@ func BuildMosDNSZip(ctx context.Context, config *jsonx.Object, yamlContent strin
 
 // fetchSource returns a source's text: inline content, the remote
 // declaration's validated cache or download, or an undeclared URL.
-func fetchSource(ctx context.Context, fetch fetchFunc, config *jsonx.Object, src source, name string) (string, error) {
+func fetchSource(ctx context.Context, fetch nativeFetchFunc, config *model.Config, src source, name string) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
 	if src.inline {
 		return src.content, nil
 	}
-	text, err := func() (string, error) {
-		declared, err := rulefetch.ResolveRemoteRuleSource(src.url, config, src.identity)
-		if err != nil {
-			return "", err
-		}
-		if declared == nil {
-			content, err := fetch(ctx, src.url, config, "")
-			return strings.ToValidUTF8(string(content), "�"), err
-		}
-		if format, err := convert.RulesetFormat(declared, config, ""); err != nil {
-			return "", err
-		} else if format == "mrs" {
-			return "", rulefetch.NewRemoteRuleMessage(mrsMessage)
-		}
-		content, stale, err := refresh.ReadRuleSource(ctx, declared, refresh.RuleOptions{Config: config,
-			Fetch: func(url string) (any, error) { return fetch(ctx, url, config, "") }})
-		if err != nil {
-			return "", err
-		}
-		if stale != nil {
-			archiveLogger.Warningf("MosDNS ZIP 规则“%s”更新失败，使用上一次有效缓存：%s", name, refresh.DescribeFailure(stale))
-		}
-		return decodeText(content)
-	}()
+	text, err := fetchLegacySource(ctx, fetch, config, src, name)
+
 	if cancelled := ctx.Err(); cancelled != nil {
 		return "", cancelled
 	}

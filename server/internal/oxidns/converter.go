@@ -35,7 +35,7 @@ func RulePath(item *Node, part string) string {
 // base is the effective panel origin: system_config.server_domain or baseURL.
 func (p *Profile) base(baseURL string) string {
 	domain := get(mapOr(p.get("system_config")), "server_domain")
-	if truthy(domain) {
+	if str(domain) != "" {
 		baseURL = str(domain)
 	}
 	return strings.TrimRight(baseURL, "/")
@@ -43,9 +43,9 @@ func (p *Profile) base(baseURL string) string {
 
 // activeItems is _items: enabled rule_configs, or the legacy rules/rule sets.
 func (p *Profile) activeItems() []*Node {
-	if configs := p.get("rule_configs"); truthy(configs) {
+	if configs := p.get("rule_configs"); len(items(configs)) > 0 {
 		return filter(items(configs), func(item *Node) bool {
-			return truthyOr(item, "enabled") && truthyOr(item, "library_enabled")
+			return enabledOrDefault(item, "enabled") && enabledOrDefault(item, "library_enabled")
 		})
 	}
 	ruleList, sets := p.splitRules()
@@ -63,8 +63,10 @@ func (p *Profile) activeItems() []*Node {
 	return out
 }
 
-// truthyOr is item.get(key, True) as a bool.
-func truthyOr(item *Node, key string) bool { return !has(item, key) || truthy(get(item, key)) }
+// enabledOrDefault defaults an absent enable flag to true.
+func enabledOrDefault(item *Node, key string) bool {
+	return !has(item, key) || (isTrue(get(item, key)))
+}
 
 func suffixOf(item *Node) string {
 	if equal(get(item, "itemType"), S("ruleset")) {
@@ -133,7 +135,7 @@ func UnavailableRulesets(p *Profile, paths []string) []string {
 			continue
 		}
 		name := get(item, "name")
-		if !truthy(name) {
+		if !(str(name) != "") {
 			name = get(item, "id")
 		}
 		behavior := get(item, "behavior")
@@ -141,9 +143,9 @@ func UnavailableRulesets(p *Profile, paths []string) []string {
 			behavior = S("domain")
 		}
 		switch label := displayValue(name); {
-		case !truthyOr(item, "enabled"):
+		case !enabledOrDefault(item, "enabled"):
 			lines = append(lines, "「"+label+"」已停用：请在规则管理中重新启用")
-		case !truthyOr(item, "library_enabled"):
+		case !enabledOrDefault(item, "library_enabled"):
 			lines = append(lines, "「"+label+"」的规则来源已停用：请在规则库中重新启用")
 		case !containsString(rulesetParts(behavior), m[2]):
 			if isNone(behavior) {
@@ -247,7 +249,7 @@ func rulesetDownloads(settings *Node, p *Profile, baseURL string) ([]RulesetDown
 			continue
 		}
 		url := get(item, "url")
-		if !truthy(url) {
+		if !(str(url) != "") {
 			return nil, fail("已选择的规则集缺少下载来源")
 		}
 		if !isStr(url) {
@@ -258,7 +260,7 @@ func rulesetDownloads(settings *Node, p *Profile, baseURL string) ([]RulesetDown
 			link = effective + link
 		}
 		name := "规则集"
-		if n := get(item, "name"); truthy(n) {
+		if n := get(item, "name"); str(n) != "" {
 			name = displayValue(n)
 		}
 		for _, part := range parts {
@@ -270,7 +272,7 @@ func rulesetDownloads(settings *Node, p *Profile, baseURL string) ([]RulesetDown
 		}
 	}
 	adguard := get(settings, "adguard")
-	if isMap(adguard) && truthy(get(adguard, "enabled")) {
+	if isMap(adguard) && (isTrue(get(adguard, "enabled"))) {
 		for _, url := range items(get(adguard, "urls")) {
 			path := "./rules/" + TagFor("adguard", url) + ".txt"
 			if native != nil {
@@ -310,7 +312,7 @@ func CustomFiles(p *Profile) ([]File, error) {
 		files = append(files, File{Path: "./rules/custom_hosts.txt", Content: []byte(content)})
 	}
 	adguard := mapOr(get(settings, "adguard"))
-	if content := get(adguard, "content"); (native == nil || native["rules/adguard-custom.txt"]) && truthy(get(adguard, "enabled")) && isStr(content) && strings.TrimSpace(content.Value) != "" {
+	if content := get(adguard, "content"); (native == nil || native["rules/adguard-custom.txt"]) && (isTrue(get(adguard, "enabled"))) && isStr(content) && strings.TrimSpace(content.Value) != "" {
 		files = append(files, File{Path: "./rules/adguard-custom.txt", Content: []byte(content.Value)})
 	}
 	managed, err := ManagedFiles(get(settings, "additional_files"))
@@ -471,7 +473,7 @@ func (p *Profile) routingGroups(settings *Node, legacy legacyMode, candidates []
 		}
 		for _, e := range entries {
 			target := groups.part(e.part)
-			if n := len(*target); truthy(get(settings, "aggregate_rules")) && n > 0 && (*target)[n-1].Route == route {
+			if n := len(*target); (isTrue(get(settings, "aggregate_rules"))) && n > 0 && (*target)[n-1].Route == route {
 				last := (*target)[n-1]
 				pairs(e.args, func(key string, values *Node) bool {
 					list := setDefault(last.Args, key, L())
@@ -509,7 +511,7 @@ func forwardUpstreams(text string, defaults []string) (*Node, error) {
 		}
 		bad := len(values) == 0
 		for _, item := range values {
-			bad = bad || !isStr(item) && !isMap(item) || isMap(item) && !truthy(get(item, "addr"))
+			bad = bad || !isStr(item) && !isMap(item) || isMap(item) && !(str(get(item, "addr")) != "")
 		}
 		if bad {
 			return nil, fail("DNS 上游 YAML 每项需要 addr 地址")
@@ -596,7 +598,7 @@ func templateDocument(s *Node, p *Profile, baseURL string) (*Node, error) {
 	if !isMap(custom) {
 		return nil, fail("OxiDNS 高级 YAML 顶层必须为对象")
 	}
-	if truthy(get(custom, "include")) {
+	if externalIncludes(custom) {
 		return nil, fail("完整部署模板不支持外部 include；请将插件内联到高级 YAML")
 	}
 	extra := del(custom, "plugins")
@@ -620,20 +622,20 @@ func templateDocument(s *Node, p *Profile, baseURL string) (*Node, error) {
 	del(result, "api")
 	if api := get(s, "api"); isTrue(get(api, "enabled")) {
 		http := M("listen", get(api, "listen"))
-		if truthy(get(api, "username")) {
+		if str(get(api, "username")) != "" {
 			set(http, "auth", M("type", "basic", "username", get(api, "username"), "password", get(api, "password")))
 		}
-		if truthy(get(api, "webui_root")) {
+		if str(get(api, "webui_root")) != "" {
 			set(http, "webui", M("root", get(api, "webui_root"), "index", "index.html"))
 		}
-		if truthy(get(api, "ssl")) {
+		if isMap(get(api, "ssl")) && mapSize(get(api, "ssl")) > 0 {
 			set(http, "ssl", clone(get(api, "ssl")))
 		}
 		set(result, "api", M("http", http))
 	}
 	log := get(s, "log")
 	logOut := M("level", get(log, "level"))
-	if truthy(get(log, "file")) {
+	if str(get(log, "file")) != "" {
 		set(logOut, "file", get(log, "file"))
 		set(logOut, "rotation", M("type", get(log, "rotation"), "max_files", get(log, "max_files")))
 	}
@@ -695,7 +697,7 @@ func templateDocument(s *Node, p *Profile, baseURL string) (*Node, error) {
 		add("forward_fallback", "forward", M("concurrent", get(s, "fallback_concurrent"), "upstreams", fallback))
 	}
 	dynamic := get(s, "dynamic_domain_set")
-	dynamicOn, learn := isTrue(get(dynamic, "enabled")), truthy(get(dynamic, "learn"))
+	dynamicOn, learn := isTrue(get(dynamic, "enabled")), (isTrue(get(dynamic, "learn")))
 	if dynamicOn {
 		add("dynamic_domains", "dynamic_domain_set", clone(get(dynamic, "args")))
 		if learn {
@@ -757,7 +759,7 @@ func templateDocument(s *Node, p *Profile, baseURL string) (*Node, error) {
 	probe.Content = append(probe.Content, M("matches", L("!has_resp"), "exec", "$forward_local"), M("exec", "return"))
 	add("local_probe", "sequence", probe)
 	remote := L(M("exec", "$forward_remote"), M("matches", L("!has_resp"), "exec", "reject 3"))
-	if ttl := get(s, "remote_ttl"); truthy(ttl) {
+	if ttl := get(s, "remote_ttl"); positive(ttl) {
 		remote.Content = append(remote.Content, M("exec", "ttl "+ttl.Value))
 	}
 	add("remote_dns", "sequence", remote)
@@ -924,7 +926,7 @@ func templateDocument(s *Node, p *Profile, baseURL string) (*Node, error) {
 		tags[tag.Value] = true
 	}
 	set(result, "plugins", plugins)
-	if policies := get(s, "device_policies"); truthy(policies) {
+	if policies := get(s, "device_policies"); len(items(policies)) > 0 {
 		return PatchDocument(result, L(), policies, nil)
 	}
 	return result, nil

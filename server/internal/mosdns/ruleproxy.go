@@ -7,6 +7,8 @@ package mosdns
 import (
 	"configflow/internal/lifecycle"
 	"context"
+	"crypto/sha256"
+	"crypto/subtle"
 	"errors"
 	"fmt"
 	"io"
@@ -18,12 +20,12 @@ import (
 	"time"
 
 	"configflow/internal/auth"
-	"configflow/internal/convert"
-	"configflow/internal/jsonx"
 	"configflow/internal/logx"
+	"configflow/internal/model"
 	"configflow/internal/refresh"
 	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
+	"configflow/internal/rulesetfmt"
 	"configflow/internal/store"
 	"configflow/internal/weburl"
 )
@@ -42,19 +44,13 @@ var (
 	errContentLength = errors.New("invalid Content-Length")
 )
 
-// fetchRemoteFn is fetchRemote (tests replace it).
-var fetchRemoteFn fetchFunc = fetchRemote
+type nativeFetchFunc func(context.Context, string, *model.Config, string) ([]byte, error)
 
-type fetchFunc func(ctx context.Context, rawURL string, config *jsonx.Object, hostURL string) ([]byte, error)
-
-// fetchRemote downloads url with (3, 10) s timeouts, at most 3 redirects,
-// a 2xx status and at most MaxRuleProxyBytes. config nil uses the system
-// settings; hostURL is the request's host URL ("" outside a request).
-func fetchRemote(ctx context.Context, rawURL string, config *jsonx.Object, hostURL string) ([]byte, error) {
+func fetchNative(ctx context.Context, rawURL string, config *model.Config, hostURL string) ([]byte, error) {
 	redirects := 3
-	response, err := RequestRule(ctx, rawURL, rulefetch.Request{
+	response, err := requestCaptured(ctx, rawURL, config, rulefetch.Request{
 		ConnectTimeout: 3 * time.Second, ReadTimeout: 10 * time.Second, Stream: true,
-		MaxRedirects: &redirects, Config: config, HostURL: hostURL,
+		MaxRedirects: &redirects, HostURL: hostURL,
 	})
 	if err != nil {
 		return nil, err
@@ -98,7 +94,7 @@ func authorized(cfg snapshot, request AuthRequest, internalTokens repo.TokenSet)
 	if request.Internal {
 		return true, nil
 	}
-	current := cfg.SystemConfig.RuleProxyToken.str()
+	current := cfg.SystemConfig.RuleProxyToken
 	retired := func(token string) bool { return token != current && internalTokens.Has(token) }
 	bearer, _ := auth.ParseBearerToken(request.Authorization, request.Authorization != "")
 	if retired(bearer) {
@@ -120,8 +116,8 @@ func authorized(cfg snapshot, request AuthRequest, internalTokens repo.TokenSet)
 	if retired(token) {
 		return false, nil
 	}
-	config := cfg.SystemConfig.ConfigToken.str()
-	return current != "" && token == current || config != "" && token == config, nil
+	config := cfg.SystemConfig.ConfigToken
+	return current != "" && sameCredential(token, current) || config != "" && sameCredential(token, config), nil
 }
 
 // localContent returns the content of this profile's selected inline
@@ -132,7 +128,7 @@ func localContent(raw string, cfg snapshot, hostURL string) (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	base := strings.TrimSpace(cfg.SystemConfig.ServerDomain.str())
+	base := strings.TrimSpace(cfg.SystemConfig.ServerDomain)
 	if base == "" {
 		base = strings.TrimRight(hostURL, "/")
 	}
@@ -149,16 +145,16 @@ func localContent(raw string, cfg snapshot, hostURL string) (string, bool) {
 		return "", false
 	}
 	prefix := ""
-	if cfg.ProfileID.value != "" {
-		prefix = "/api/profiles/" + cfg.ProfileID.value
+	if cfg.ProfileID != "" {
+		prefix = "/api/profiles/" + cfg.ProfileID
 	}
 	for _, rule := range cfg.RuleLibrary {
-		if !rule.SourceType.is("content") || !cfg.selected(rule.ID) {
+		if textValue(rule.SourceType, "url") != "content" || !cfg.selected(rule.ID) {
 			continue
 		}
-		path := prefix + "/rule-library/content/" + rule.ID.value
+		path := prefix + "/rule-library/content/" + rule.ID
 		if parsed.Path == path || parsed.Path == strings.TrimRight(origin.Path, "/")+path {
-			return rule.Content.str(), true
+			return textValue(rule.Content, ""), true
 		}
 	}
 	return "", false
@@ -236,18 +232,19 @@ func isBadRequest(err error) bool {
 }
 
 func ruleProxy(ctx context.Context, request RuleProxyRequest) (*RuleProxyResponse, error) {
-	config, err := repo.GetConfig(ctx, "")
-	if err != nil {
-		return nil, err
-	}
-	var cfg snapshot
-	if err := viaJSON(config, &cfg); err != nil {
-		return nil, err
-	}
 	r, err := repo.GetRepository(ctx)
 	if err != nil {
 		return nil, err
 	}
+	id, err := repo.ResolveProfileID(ctx, "")
+	if err != nil {
+		return nil, err
+	}
+	config, err := r.Config(ctx, id, nil)
+	if err != nil {
+		return nil, err
+	}
+	cfg := snapshotOf(config)
 	tokens, err := r.RuleProxyTokensForSanitization(ctx)
 	if err != nil {
 		return nil, err
@@ -268,28 +265,27 @@ func ruleProxy(ctx context.Context, request RuleProxyRequest) (*RuleProxyRespons
 	if !found {
 		// Normal hostname routing, including Fake-IP networks and the
 		// download proxy.
-		fetchURL, err := convert.ApplyGithubProxyDomain(request.URL, config)
+		fetchURL, err := proxySourceURL(request.URL, config)
 		if err != nil {
 			return nil, err
 		}
 		if _, err := rulefetch.ValidateRuleURL(fetchURL); err != nil {
 			return nil, err
 		}
-		declared, err := rulefetch.ResolveRemoteRuleSource(request.URL, config, request.SourceID)
+		declared, err := resolveLegacySource(request.URL, config, request.SourceID)
 		if err != nil {
 			return nil, err
 		}
 		var fetchErr error
 		if declared != nil {
-			if format, err := convert.RulesetFormat(declared, config, ""); err != nil {
+			if format, err := rulesetfmt.RuleFormat(model.RuleConfig{LibraryRuleID: declared.ID, Name: declared.Name}, config.RuleLibrary, ""); err != nil {
 				return nil, err
 			} else if format == "mrs" {
 				return nil, rulefetch.NewRemoteRuleMessage(mrsMessage)
 			}
 			var raw []byte
 			var staleErr error
-			raw, staleErr, fetchErr = refresh.ReadRuleSource(ctx, declared, refresh.RuleOptions{Config: config,
-				Fetch: func(string) (any, error) { return fetchRemoteFn(ctx, fetchURL, config, request.HostURL) }})
+			raw, staleErr, fetchErr = readCapturedSource(ctx, *declared, config, func(string) (any, error) { return fetchCaptured(ctx, fetchURL, config, request.HostURL) })
 			if fetchErr == nil {
 				if content, err = decodeText(raw); err != nil {
 					return nil, err
@@ -297,12 +293,12 @@ func ruleProxy(ctx context.Context, request RuleProxyRequest) (*RuleProxyRespons
 				if staleErr != nil {
 					stale = true
 					routeLogger.Warningf("规则集「%s」更新失败，使用上一次有效缓存：%s",
-						jsonx.Str(declared.GetOr("name", "")), refresh.DescribeFailure(staleErr))
+						declared.Name, refresh.DescribeFailure(staleErr))
 				}
 			}
 		} else {
 			var raw []byte
-			raw, fetchErr = fetchRemoteFn(ctx, fetchURL, nil, request.HostURL)
+			raw, fetchErr = fetchCaptured(ctx, fetchURL, nil, request.HostURL)
 			content = strings.ToValidUTF8(string(raw), "�")
 		}
 		if fetchErr != nil {
@@ -324,4 +320,9 @@ func ruleProxy(ctx context.Context, request RuleProxyRequest) (*RuleProxyRespons
 		return nil, err
 	}
 	return &RuleProxyResponse{Status: 200, Text: converted, NoStore: true, Stale: stale}, nil
+}
+
+func sameCredential(a, b string) bool {
+	left, right := sha256.Sum256([]byte(a)), sha256.Sum256([]byte(b))
+	return subtle.ConstantTimeCompare(left[:], right[:]) == 1
 }

@@ -130,7 +130,7 @@ func ProfileAgents(p *Profile) []*Node {
 		if id == "" {
 			id = defaultID
 		}
-		if isMap(agent) && truthyOr(agent, "enabled") && id == profileID {
+		if isMap(agent) && enabledOrDefault(agent, "enabled") && id == profileID {
 			out = append(out, clone(agent))
 		}
 	}
@@ -140,7 +140,7 @@ func ProfileAgents(p *Profile) []*Node {
 // PolicyDNSRoutes returns configured group defaults; an empty route means no DNS route.
 func PolicyDNSRoutes(p *Profile) map[string]string {
 	if p == nil {
-		p = NewProfile(nil)
+		p = emptyProfile()
 	}
 	return policyDNSRoutes(p)
 }
@@ -358,7 +358,7 @@ func viewUpstreams(settings *Node, view ruleDNSView, agents []*Node) ([]Upstream
 // ReadRuleDNS computes the rules page without mutating the profile.
 func ReadRuleDNS(p *Profile, options RuleDNSReadOptions) (RuleDNSState, error) {
 	if p == nil {
-		p = NewProfile(nil)
+		p = emptyProfile()
 	}
 	settings := p.Settings()
 	view, err := readRuleDNS(p, settings)
@@ -439,7 +439,7 @@ func ReadRuleDNS(p *Profile, options RuleDNSReadOptions) (RuleDNSState, error) {
 		engine.PolicyRoutes[name] = nullableRoute(route)
 	}
 	for _, key := range append(append([]string{}, Selectors...), ruleDNSFields...) {
-		engine.InUse = engine.InUse || truthy(get(stored, key))
+		engine.InUse = engine.InUse || (len(items(get(stored, key))) > 0 || isMap(get(stored, key)) && mapSize(get(stored, key)) > 0)
 	}
 	var steps []*Node
 	for _, plugin := range items(get(view.Document, "plugins")) {
@@ -455,7 +455,7 @@ func ReadRuleDNS(p *Profile, options RuleDNSReadOptions) (RuleDNSState, error) {
 			engine.LocalProbeActive = engine.LocalProbeActive || isOneOf(get(step, "exec"), "jump local_probe")
 		}
 	}
-	if forward := get(view.Routing, "default_forward"); truthy(forward) {
+	if forward := get(view.Routing, "default_forward"); str(forward) != "" {
 		engine.DefaultForward = str(forward)
 	}
 	engine.Warnings = cacheWarnings(settings, view)
@@ -512,7 +512,7 @@ func cacheWarnings(settings *Node, view ruleDNSView) []string {
 // ExplicitRuleDNS returns a rule's own route, including a parked choice, or empty.
 func ExplicitRuleDNS(p *Profile, id string) (string, error) {
 	if p == nil {
-		p = NewProfile(nil)
+		p = emptyProfile()
 	}
 	view, err := readRuleDNS(p, p.Settings())
 	if err != nil {

@@ -503,7 +503,7 @@ func collectPluginIssues(plugin *Node, index int) []Issue {
 				ips = seqOf(filter(ips.Content, func(x *Node) bool { return trimmed(x) != "" }))
 			}
 			switch {
-			case equal(mode, S("custom")) && (isSeq(ips) || isNone(ips)) && !truthy(ips):
+			case equal(mode, S("custom")) && (isSeq(ips) || isNone(ips)) && !(len(items(ips)) > 0):
 				errorAt(P("ips"), "custom 模式至少需要一个 IP", "required")
 			case !isNone(mode) && !equal(mode, S("custom")) && isSeq(ips) && len(ips.Content) > 0:
 				errorAt(P("ips"), "只有 custom 模式可以配置 ips", "mutually-exclusive")
@@ -771,7 +771,7 @@ func collectPluginIssues(plugin *Node, index int) []Issue {
 	switch kind {
 	case "http_request":
 		count := 0
-		for _, present := range []bool{!isNone(get(args, "body")), !isNone(get(args, "json")), truthy(get(args, "form"))} {
+		for _, present := range []bool{!isNone(get(args, "body")), !isNone(get(args, "json")), (str(get(args, "form")) != "")} {
 			if present {
 				count++
 			}
@@ -779,7 +779,7 @@ func collectPluginIssues(plugin *Node, index int) []Issue {
 		if count > 1 {
 			errorAt(P("body"), "body、json 和非空 form 不能同时配置", "mutually-exclusive")
 		}
-		if !isNone(get(args, "content_type")) && (!isNone(get(args, "json")) || truthy(get(args, "form"))) {
+		if !isNone(get(args, "content_type")) && (!isNone(get(args, "json")) || (str(get(args, "form")) != "")) {
 			errorAt(P("content_type"), "content_type 仅用于原始 body", "dependency")
 		}
 		for _, key := range []string{"url", "body", "content_type"} {
@@ -902,7 +902,7 @@ func collectPluginIssues(plugin *Node, index int) []Issue {
 			if isStr(start) && isStr(end) && !deferred(start) && strings.TrimSpace(start.Value) == strings.TrimSpace(end.Value) {
 				errorAt(P("periods", j, "end"), "开始和结束时间不能相同", "range")
 			}
-			if isNone(start) && !truthy(get(period, "weekdays")) && !truthy(get(period, "monthdays")) {
+			if isNone(start) && !(len(items(get(period, "weekdays"))) > 0) && !(len(items(get(period, "monthdays"))) > 0) {
 				errorAt(P("periods", j), "省略时间段时至少设置星期或月日", "required")
 			}
 			for k, day := range items(get(period, "weekdays")) {

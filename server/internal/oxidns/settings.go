@@ -299,7 +299,7 @@ func checkTemplate(s *Node) error {
 		if !isMap(entry) {
 			return fail("自定义匹配条目必须为对象")
 		}
-		if enabled := get(entry, "enabled"); has(entry, "enabled") && !truthy(enabled) {
+		if enabled := get(entry, "enabled"); has(entry, "enabled") && !(isTrue(enabled)) {
 			continue
 		}
 		matches := get(entry, "matches")
@@ -360,7 +360,7 @@ func checkTemplate(s *Node) error {
 		if !isMap(ssl) {
 			return fail("API TLS 设置必须为对象")
 		}
-		if truthy(get(ssl, "cert")) != truthy(get(ssl, "key")) {
+		if (str(get(ssl, "cert")) != "") != (str(get(ssl, "key")) != "") {
 			return fail("API TLS 证书和私钥必须同时设置")
 		}
 	}
@@ -479,7 +479,7 @@ func checkTemplate(s *Node) error {
 			if !isMap(tls) {
 				return fail("RouterOS TLS 必须为对象，关闭时删除 tls 字段")
 			}
-			if truthy(get(tls, "ca")) && truthy(get(tls, "insecure")) {
+			if (str(get(tls, "ca")) != "") && (isTrue(get(tls, "insecure"))) {
 				return fail("RouterOS TLS 不能同时设置 CA 和跳过验证")
 			}
 		}
@@ -494,7 +494,7 @@ func checkTemplate(s *Node) error {
 		if lo.Cmp(hi) > 0 {
 			return fail("RouterOS 最小 TTL 不能大于最大 TTL")
 		}
-		if name == "ros_route" && (!truthy(get(args, "routing_table")) || !(truthy(get(args, "gateway4")) || truthy(get(args, "gateway6")))) {
+		if name == "ros_route" && (!(str(get(args, "routing_table")) != "") || !((str(get(args, "gateway4")) != "") || (str(get(args, "gateway6")) != ""))) {
 			return fail("RouterOS 路由需要已存在的路由表和至少一个网关")
 		}
 	}

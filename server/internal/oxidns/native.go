@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"math/big"
 	"path"
 	"regexp"
 	"strconv"
@@ -34,11 +33,6 @@ func validTag(tag string) bool {
 		!strings.HasPrefix(tag, "qs.exec.") && !strings.HasPrefix(tag, "qs.match.") && !strings.HasPrefix(tag, "qs.cron.")
 }
 
-var (
-	nativeInt   = regexp.MustCompile(`^[-+]?(?:[0-9][0-9_]*|0o[0-7_]+|0x[0-9a-fA-F_]+|0b[01_]+)$`)
-	nativeFloat = regexp.MustCompile(`^[-+]?(?:(?:[0-9][0-9_]*\.[0-9_]*|\.[0-9_]+)(?:[eE][-+]?[0-9]+)?|[0-9][0-9_]*[eE][-+]?[0-9]+|\.(?:inf|Inf|INF|nan|NaN|NAN))$`)
-)
-
 const tagUnsupported = "!unsupported"
 
 // LoadNativeYAML parses native OxiDNS YAML: YAML 1.2 scalars (no yes/no,
@@ -60,6 +54,7 @@ func loadNative(text *Node, label string) (*Node, error) {
 	active := map[*Node]bool{}
 	var visit func(n *Node, depth int) error
 	visit = func(n *Node, depth int) error {
+		n = yamlx.Resolve(n)
 		count++
 		if count > 50000 || depth > 32 {
 			return fail("OxiDNS YAML 超出结构大小限制")
@@ -97,8 +92,8 @@ func loadNative(text *Node, label string) (*Node, error) {
 	return value, nil
 }
 
-// parseYAML applies the shared reader policies, then runs the unchanged
-// native-document builder. Only syntax failures retain the old failure contract.
+// parseYAML reads native YAML with the shared D1/alias policy and validates
+// the OxiDNS document schema. Scalar interpretation belongs to yamlx alone.
 func parseYAML(text string, syntax error) (*Node, error) {
 	root, err := yamlx.Parse([]byte(text))
 	if err != nil {
@@ -107,237 +102,47 @@ func parseYAML(text string, syntax error) (*Node, error) {
 		}
 		return nil, yamlReaderFailure(err)
 	}
-	b := &builder{memo: map[*Node]*Node{}, syntax: syntax}
-	out, err := b.node(root)
-	for len(b.queue) > 0 && err == nil {
-		src, dst := b.queue[0][0], b.queue[0][1]
-		b.queue = b.queue[1:]
-		err = b.fill(src, dst)
-	}
-	for _, pair := range b.aliasCopies {
-		pair[1].Content = pair[0].Content
-	}
-	if err == nil {
-		err = validateMerges(out, map[*Node]bool{})
-	}
-	return out, err
-}
-
-func validateMerges(n *Node, active map[*Node]bool) error {
-	if active[n] {
-		return nil
-	} // loadNative reports recursive aliases with its normal limit.
-	active[n] = true
-	for i, child := range n.Content {
-		if isMap(n) && i%2 == 0 && child.Tag == "!!merge" {
-			v := n.Content[i+1]
-			if !isMap(v) && !isSeq(v) {
-				return fail(messageMergeSources)
-			}
-			for _, source := range items(v) {
-				if !isMap(source) {
-					return fail(messageMergeSources)
+	var validate func(*Node) error
+	validate = func(node *Node) error {
+		node = yamlx.Resolve(node)
+		if node.Kind == yaml.MappingNode {
+			for key, value := range yamlx.AllPairs(node) {
+				key = yamlx.Resolve(key)
+				if !isStr(key) || key.Value == "__proto__" || key.Value == "prototype" || key.Value == "constructor" {
+					return fail(messageSafeFieldNames)
+				}
+				if err := validate(value); err != nil {
+					return err
 				}
 			}
+			return nil
 		}
-		if err := validateMerges(child, active); err != nil {
-			return err
+		if node.Kind == yaml.SequenceNode {
+			for _, value := range node.Content {
+				if err := validate(value); err != nil {
+					return err
+				}
+			}
+			return nil
 		}
-	}
-	return nil
-}
-
-type builder struct {
-	memo        map[*Node]*Node
-	queue       [][2]*Node
-	syntax      error
-	aliasCopies [][2]*Node
-}
-
-func (b *builder) node(src *Node) (*Node, error) {
-	if src.Kind == yaml.AliasNode {
-		value, err := b.node(src.Alias)
-		if err != nil {
-			return nil, err
-		}
-		if src.HeadComment != "" || src.LineComment != "" || src.FootComment != "" {
-			copy := presentation(value, src)
-			b.aliasCopies = append(b.aliasCopies, [2]*Node{value, copy})
-			return copy, nil
-		}
-		return value, nil
-	}
-	if out, ok := b.memo[src]; ok {
-		return out, nil
-	}
-	explicit := src.Style&yaml.TaggedStyle != 0
-	var out *Node
-	switch src.Kind {
-	case yaml.ScalarNode:
-		tag, value, err := resolveScalar(src, explicit)
-		if err != nil {
-			return nil, b.syntax
-		}
-		out = &Node{Kind: yaml.ScalarNode, Tag: tag, Value: value}
-	case yaml.MappingNode, yaml.SequenceNode:
-		tag := src.Tag
-		switch {
-		case !explicit || tag == "!!map" && src.Kind == yaml.MappingNode || tag == "!!seq" && src.Kind == yaml.SequenceNode:
-			out = &Node{Kind: src.Kind, Tag: map[yaml.Kind]string{yaml.MappingNode: "!!map", yaml.SequenceNode: "!!seq"}[src.Kind]}
-			b.queue = append(b.queue, [2]*Node{src, out})
-		case tag == "!!set" && src.Kind == yaml.MappingNode, (tag == "!!omap" || tag == "!!pairs") && src.Kind == yaml.SequenceNode:
-			out = &Node{Kind: yaml.ScalarNode, Tag: tagUnsupported}
+		switch node.ShortTag() {
+		case tagStr, tagBool, tagNull, tagInt, "!!timestamp", "!!binary":
+			return nil
+		case tagFloat:
+			var value float64
+			if err := yamlx.Decode(node, &value); err != nil || math.IsInf(value, 0) || math.IsNaN(value) {
+				return fail(messageFiniteNumbers)
+			}
+			return nil
 		default:
-			return nil, b.syntax
-		}
-	default:
-		return nil, b.syntax
-	}
-	out.Style, out.HeadComment, out.LineComment, out.FootComment = src.Style&^yaml.TaggedStyle, src.HeadComment, src.LineComment, src.FootComment
-	if out.Kind == yaml.ScalarNode && out.Tag != tagStr {
-		out.Style = 0
-	} else if isStr(out) {
-		out.Style = stringStyle(out.Value, out.Style)
-	}
-	b.memo[src] = out
-	return out, nil
-}
-
-func (b *builder) fill(src, dst *Node) error {
-	if src.Kind == yaml.SequenceNode {
-		dst.Content = make([]*Node, 0, len(src.Content))
-		for _, child := range src.Content {
-			n, err := b.node(child)
-			if err != nil {
-				return err
-			}
-			dst.Content = append(dst.Content, n)
-		}
-		return nil
-	}
-	seen := map[string]bool{}
-	for i := 0; i+1 < len(src.Content); i += 2 {
-		key, err := b.node(src.Content[i])
-		if err != nil {
-			return err
-		}
-		if (!isStr(key) && key.Tag != "!!merge") || key.Value == "__proto__" || key.Value == "prototype" || key.Value == "constructor" {
-			return fail("OxiDNS YAML 字段名必须为安全文本")
-		}
-		if seen[key.Value] {
-			return fail("OxiDNS YAML 包含重复字段")
-		}
-		seen[key.Value] = true
-		value, err := b.node(src.Content[i+1])
-		if err != nil {
-			return err
-		}
-		dst.Content = append(dst.Content, key, value)
-	}
-	return nil
-}
-
-func resolveScalar(src *Node, explicit bool) (string, string, error) {
-	value := src.Value
-	plain := src.Style&(yaml.DoubleQuotedStyle|yaml.SingleQuotedStyle|yaml.LiteralStyle|yaml.FoldedStyle) == 0
-	tag := src.Tag
-	if !explicit {
-		tag = tagStr
-		if plain {
-			switch {
-			case value == "" || value == "~" || value == "null" || value == "Null" || value == "NULL":
-				tag = tagNull
-			case value == "true" || value == "True" || value == "TRUE" || value == "false" || value == "False" || value == "FALSE":
-				tag = tagBool
-			case nativeInt.MatchString(value):
-				tag = tagInt
-			case nativeFloat.MatchString(value):
-				tag = tagFloat
-			case value == "<<" && src.Tag == "!!merge":
-				return "!!merge", value, nil
-			case value == "=":
-				return "", "", errMalformed
-			}
+			return errUnsupportedYAML
 		}
 	}
-	switch tag {
-	case "!!merge":
-		return "!!merge", value, nil
-	case tagStr, "!":
-		return tagStr, value, nil
-	case tagNull:
-		return tagNull, "null", nil
-	case tagBool:
-		switch strings.ToLower(value) {
-		case "true", "yes", "on":
-			return tagBool, "true", nil
-		case "false", "no", "off":
-			return tagBool, "false", nil
-		}
-		return "", "", errMalformed
-	case tagInt:
-		text := strings.TrimSpace(strings.ReplaceAll(value, "_", ""))
-		base := 10
-		unsigned := strings.TrimLeft(text, "-+")
-		if strings.HasPrefix(unsigned, "0x") || strings.HasPrefix(unsigned, "0o") || strings.HasPrefix(unsigned, "0b") {
-			base = 0
-		}
-		n, ok := new(big.Int).SetString(text, base)
-		if !ok {
-			return "", "", errMalformed
-		}
-		return tagInt, n.String(), nil
-	case tagFloat:
-		f, err := yamlFloat(value)
-		if err != nil {
-			return "", "", err
-		}
-		if math.IsInf(f, 0) || math.IsNaN(f) {
-			return tagFloat, strconv.FormatFloat(f, 'g', -1, 64), nil
-		}
-		return tagFloat, Float(f).Value, nil
-	case "!!binary", "!!timestamp":
-		return tagUnsupported, value, nil
+	if err := validate(root); err != nil {
+		return nil, err
 	}
-	return "", "", errMalformed
-}
-
-// yamlFloat is SafeConstructor.construct_yaml_float.
-func yamlFloat(text string) (float64, error) {
-	value := strings.ToLower(strings.ReplaceAll(text, "_", ""))
-	sign := 1.0
-	if strings.HasPrefix(value, "-") {
-		sign = -1
-	}
-	if value != "" && (value[0] == '-' || value[0] == '+') {
-		value = value[1:]
-	}
-	switch {
-	case value == ".inf":
-		return sign * math.Inf(1), nil
-	case value == ".nan":
-		return math.NaN(), nil
-	case strings.Contains(value, ":"):
-		digits := strings.Split(value, ":")
-		total, base := 0.0, 1.0
-		for i := len(digits) - 1; i >= 0; i-- {
-			d, err := strconv.ParseFloat(digits[i], 64)
-			if err != nil {
-				return 0, errMalformed
-			}
-			total += d * base
-			base *= 60
-		}
-		return sign * total, nil
-	}
-	if strings.HasPrefix(value, "0x") || value == "" {
-		return 0, errMalformed
-	}
-	f, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
-	if err != nil && !errors.Is(err, strconv.ErrRange) {
-		return 0, errMalformed
-	}
-	return sign * f, nil
+	yamlx.MaterializeAliases(root)
+	return root, nil
 }
 
 // File is a deployment file: managed attachments are Native.
@@ -595,7 +400,7 @@ func ResourceReferences(document *Node) ([]string, error) {
 	}
 	for _, plugin := range plugins {
 		args := get(plugin, "args")
-		if !truthy(args) {
+		if !(!isNone(args)) {
 			args = M()
 		}
 		if !isMap(args) {
@@ -605,7 +410,7 @@ func ResourceReferences(document *Node) ([]string, error) {
 			return nil, err
 		}
 		for _, key := range []string{"file", "cert", "key"} {
-			if truthy(get(args, key)) {
+			if str(get(args, key)) != "" {
 				if err := add(get(args, key)); err != nil {
 					return nil, err
 				}
@@ -619,7 +424,7 @@ func ResourceReferences(document *Node) ([]string, error) {
 			if err := files(nested); err != nil {
 				return nil, err
 			}
-			if truthy(get(nested, "ca")) {
+			if str(get(nested, "ca")) != "" {
 				if err := add(get(nested, "ca")); err != nil {
 					return nil, err
 				}
@@ -627,12 +432,12 @@ func ResourceReferences(document *Node) ([]string, error) {
 		}
 	}
 	api := get(document, "api")
-	if !truthy(api) {
+	if !(isMap(api) && mapSize(api) > 0) {
 		api = M()
 	}
 	var http *Node
 	if isMap(api) {
-		if http = get(api, "http"); !truthy(http) {
+		if http = get(api, "http"); !(isMap(http) && mapSize(http) > 0) {
 			http = M()
 		}
 	} else if isStr(api) || isSeq(api) || isTag(api, tagInt) || isTag(api, tagFloat) || isBool(api) {
@@ -643,14 +448,14 @@ func ResourceReferences(document *Node) ([]string, error) {
 	}
 	if ssl := get(http, "ssl"); isMap(ssl) {
 		for _, key := range []string{"cert", "key", "client_ca"} {
-			if truthy(get(ssl, key)) {
+			if str(get(ssl, key)) != "" {
 				if err := add(get(ssl, key)); err != nil {
 					return nil, err
 				}
 			}
 		}
 	}
-	if webui := get(http, "webui"); isMap(webui) && truthy(get(webui, "root")) {
+	if webui := get(http, "webui"); isMap(webui) && resourcePresent(get(webui, "root")) {
 		root, index := get(webui, "root"), get(webui, "index")
 		if !has(webui, "index") {
 			index = S("index.html")
@@ -753,7 +558,7 @@ func ValidateResourceFiles(document *Node, paths []string) error {
 	plugins, _ := pluginList(document)
 	for _, plugin := range plugins {
 		args := get(plugin, "args")
-		if !truthy(args) {
+		if !(!isNone(args)) {
 			args = M()
 		}
 		if !isMap(args) {
@@ -764,7 +569,7 @@ func ValidateResourceFiles(document *Node, paths []string) error {
 			return errMalformed
 		}
 		key := map[string]string{"cache": "dump_file", "query_recorder": "path", "dynamic_domain_set": "path"}[str(kind)]
-		if key != "" && truthy(get(args, key)) {
+		if key != "" && resourcePresent(get(args, key)) {
 			p, ok, err := RelativeResource(get(args, key))
 			if err != nil {
 				return err
@@ -830,3 +635,5 @@ func duplicateAnchor(n *Node, seen map[string]bool) bool {
 	}
 	return false
 }
+
+func resourcePresent(value *Node) bool { return !isNone(value) && (!isStr(value) || str(value) != "") }

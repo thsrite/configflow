@@ -31,7 +31,6 @@ func c27Snapshot(t *testing.T, native bool) *Profile {
 			t.Fatal(err)
 		}
 		set(p.doc, "oxidns", settings)
-		p.raw.Set("oxidns", ToJSONX(settings))
 	}
 	return p
 }
@@ -98,13 +97,11 @@ func TestC27ReviewNativeIdentitiesRemainEditable(t *testing.T) {
 				set(settings, source+"_dns", S(text))
 				set(settings, "rule_actions", M("a", M("action", "upstream", "source", source, "upstream", entry)))
 				set(p.doc, "oxidns", settings)
-				p.raw.Set("oxidns", ToJSONX(settings))
 				settings, err = PrepareEditor(settings, p, "https://panel.example.com")
 				if err != nil {
 					t.Fatal(err)
 				}
 				set(p.doc, "oxidns", settings)
-				p.raw.Set("oxidns", ToJSONX(settings))
 				state, err := ReadRuleDNS(p, RuleDNSReadOptions{})
 				if err != nil {
 					t.Fatal(err)
@@ -128,7 +125,7 @@ func c27Repository(t *testing.T, native bool) (*repo.Repository, context.Context
 	}
 	ctx := repo.WithRepository(context.Background(), r)
 	p := c27Snapshot(t, native)
-	fields := jsonx.Obj("rule_configs", p.raw.Value("rule_configs"), "oxidns", ToJSONX(p.Settings()))
+	fields := jsonx.Obj("rule_configs", ToJSONX(p.get("rule_configs")), "oxidns", ToJSONX(p.Settings()))
 	if _, _, err := r.UpdateProfileFields(ctx, "default", fields, nil); err != nil {
 		t.Fatal(err)
 	}

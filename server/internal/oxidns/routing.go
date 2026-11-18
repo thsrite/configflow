@@ -132,11 +132,11 @@ func prefixEnd(args []*Node) int {
 		switch {
 		case equal(item, WatchdogRule()):
 			index++
-		case !truthy(get(item, "matches")) && (isOneOf(action, "prefer_ipv4", "$query_recorder") || strings.HasPrefix(str(action), "metrics_collector ")):
+		case !(len(items(get(item, "matches"))) > 0) && (isOneOf(action, "prefer_ipv4", "$query_recorder") || strings.HasPrefix(str(action), "metrics_collector ")):
 			index++
 		case isOneOf(action, blockQtypesExecs...) && single && qtypeMatch.MatchString(match):
 			index++
-		case equal(action, S("$custom_hosts")) && !truthy(get(item, "matches")) && index+1 < len(args) &&
+		case equal(action, S("$custom_hosts")) && !(len(items(get(item, "matches"))) > 0) && index+1 < len(args) &&
 			equal(get(args[index+1], "exec"), S("accept")) && func() bool { m, ok := singleMatch(args[index+1]); return ok && m == "has_resp" }():
 			index += 2
 		case equal(action, S("goto adguard_reject")) && single && match == "question $adguard_rules":
@@ -319,7 +319,7 @@ type routingState struct {
 // knownRules is every rule of the space by id (disabled ones included).
 func (p *Profile) knownRules() (map[string]*Node, []string) {
 	list := items(p.get("rule_configs"))
-	if !truthy(p.get("rule_configs")) {
+	if !(len(items(p.get("rule_configs"))) > 0) {
 		list = p.activeItems()
 	}
 	known := map[string]*Node{}
@@ -431,7 +431,7 @@ func (p *Profile) recognize(document, settings *Node, claim bool, catalog func()
 	}
 	entries := args.Content
 	final := entries[len(entries)-1]
-	if truthy(get(final, "matches")) || domainTargets[get(final, "exec").Value] == "" {
+	if (len(items(get(final, "matches"))) > 0) || domainTargets[get(final, "exec").Value] == "" {
 		return state
 	}
 	defaultForward := "forward_remote"
@@ -494,7 +494,7 @@ func (p *Profile) recognize(document, settings *Node, claim bool, catalog func()
 				continue
 			}
 		}
-		if !truthy(get(entry, "matches")) && exec == "jump local_probe" {
+		if !(len(items(get(entry, "matches"))) > 0) && exec == "jump local_probe" {
 			middleEnd = min(middleEnd, index)
 		}
 	}
@@ -910,7 +910,7 @@ func (p *Profile) aliasedCustomState(document, settings *Node) (*routingState, e
 	}
 	plugins := pluginMap(document)
 	expanded := plugins
-	if truthy(get(document, "include")) {
+	if externalIncludes(document) {
 		doc, err := NativeDocument(settings, false, nil)
 		if err != nil {
 			return nil, err
@@ -994,7 +994,7 @@ func MigrateDomainOnlyRouting(document, settings *Node, p *Profile, baseURL stri
 			return nil, nil, err
 		}
 	}
-	if truthy(get(document, "include")) || truthy(get(source, "include")) {
+	if (externalIncludes(document)) || (externalIncludes(source)) {
 		return document, settings, nil
 	}
 	current := p.analyzeRouting(document, settings)
@@ -1773,7 +1773,7 @@ func filterOnce(list []*Node, value string) []*Node {
 
 func ruleName(item *Node) *Node {
 	for _, key := range []string{"name", "value", "id"} {
-		if v := get(item, key); truthy(v) {
+		if v := get(item, key); str(v) != "" {
 			return v
 		}
 	}
@@ -1911,7 +1911,7 @@ func applyAliasedCustom(document, settings *Node, state *routingState, changes *
 		}
 	}
 	position := "tail"
-	if v := get(state.values, "custom_match_position"); truthy(v) {
+	if v := get(state.values, "custom_match_position"); str(v) != "" {
 		position = str(v)
 	}
 	if has(changes, "custom_match_position") {
@@ -2076,7 +2076,7 @@ func ApplyRouting(document, settings *Node, p *Profile, changes *Node, baseURL s
 			for _, i := range positions(inside, g.tag) {
 				used = used || !isOneOf(get(inside[i], "tag"), "sequence_main", "rules_reload", g.tag)
 			}
-			if extraKeys || truthy(get(document, "include")) || len(positions(outside, g.tag)) > 0 || used {
+			if extraKeys || (externalIncludes(document)) || len(positions(outside, g.tag)) > 0 || used {
 				external[g.tag] = true
 			}
 		}
@@ -2115,7 +2115,7 @@ func ApplyRouting(document, settings *Node, p *Profile, changes *Node, baseURL s
 	}
 	custom := clone(get(values, "custom_matches"))
 	position := "tail"
-	if v := get(values, "custom_match_position"); truthy(v) {
+	if v := get(values, "custom_match_position"); str(v) != "" {
 		position = str(v)
 	}
 	entryFor := func(part string, index int, g *ruleGroup, recognized []*recGroup) (*Node, error) {

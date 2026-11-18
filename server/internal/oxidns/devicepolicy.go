@@ -134,7 +134,7 @@ func displayValue(n *Node) string {
 
 // checkMain: the hook needs a recognizable sequence_main and a local upstream.
 func checkMain(document *Node, plugins map[string]*Node) error {
-	if truthy(get(document, "include")) {
+	if externalIncludes(document) {
 		return refuse("配置用 include 引入了其他文件，看不到完整的处理链")
 	}
 	if list := items(get(document, "plugins")); len(plugins) == 0 && len(list) > 0 {
@@ -188,7 +188,7 @@ func checkMain(document *Node, plugins map[string]*Node) error {
 			return refuse(messageNullForwardType)
 		}
 		return refuse("本地上游 forward_local 的类型是 " + displayValue(get(forward, "type")) + "，不是 forward")
-	case !isMap(get(forward, "args")) || !truthy(get(get(forward, "args"), "upstreams")):
+	case !isMap(get(forward, "args")) || !(len(items(get(get(forward, "args"), "upstreams"))) > 0):
 		return refuse("本地上游 forward_local 没有配置上游地址")
 	}
 	return nil

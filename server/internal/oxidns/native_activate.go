@@ -23,7 +23,7 @@ func (e *nativeEdit) activate(added, standard map[string]bool) error {
 		return nil
 	}
 	targets := nativeAdditionTargets(additions)
-	if truthy(get(e.candidate, "include")) {
+	if externalIncludes(e.candidate) {
 		return NewReferenceError(messageNativeIncludeAdd, []Reference{{Path: Path{}.with("include"), Reason: messageNativeIncludeAddReason}})
 	}
 	refs := ReferenceLocations(nativeMaskOwned(e.candidate, targets), tagNames(targets), true)
@@ -336,7 +336,7 @@ func (e *nativeEdit) stopEmptyHosts() error {
 	if !oldSource {
 		return nil
 	}
-	if truthy(get(e.candidate, "include")) {
+	if externalIncludes(e.candidate) {
 		return NewReferenceError(messageNativeIncludeHosts, []Reference{{Path: Path{}.with("include"), Tag: "custom_hosts", Reason: messageNativeIncludeHostsReason}})
 	}
 	if err = nativeRejectReferences(e.candidate, tagSet("custom_hosts")); err != nil {
