@@ -14,6 +14,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"configflow/internal/lifecycle"
 	"configflow/internal/lockx"
 	"configflow/internal/netipx"
 	"configflow/internal/redact"
@@ -347,12 +348,15 @@ var routeLocks = lockx.NewKeyed[[2]string](lockx.LevelDevice, "router-operation"
 func RouterOperationLock(ctx context.Context, router Router, write bool) (context.Context, func(), error) {
 	limit := time.Duration(0)
 	if write {
-		ctx = context.WithoutCancel(ctx)
+		ctx = lifecycle.Detach(ctx)
+		if err := ctx.Err(); err != nil {
+			return ctx, nil, err
+		}
 		limit = 10 * time.Minute
 	}
 	key := [2]string{router.Type, strings.TrimRight(router.Endpoint, "/")}
 	held, release, err := routeLocks.Lock(ctx, key, limit)
-	if err != nil && write {
+	if err != nil && write && ctx.Err() == nil {
 		return ctx, nil, rosError(KindConflict, messageEditBusy)
 	}
 	return held, release, err

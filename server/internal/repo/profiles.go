@@ -903,3 +903,51 @@ func (r *Repository) SaveRouterPublication(ctx context.Context, profileID string
 		return nil
 	})
 }
+
+// JSONUpdate distinguishes an untouched publication field, replacement, and
+// explicit null (clear). It is a boundary DTO; callers retain native models.
+type JSONUpdate struct {
+	Set   bool
+	Value json.RawMessage
+}
+
+// RouterPublicationJSON is the native JSON boundary of RouterPublication.
+type RouterPublicationJSON struct {
+	Manifest, DNSGuard, IPv6FakeIP, IPv6Routes, IPv6PDGuard, LastRelease JSONUpdate
+}
+
+// SaveRouterPublicationJSON decodes only at the legacy repository boundary and
+// delegates the single guarded publication transaction, including its revision.
+func (r *Repository) SaveRouterPublicationJSON(ctx context.Context, profileID string, expected json.RawMessage, p RouterPublicationJSON) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	var record jsonx.Object
+	if err := json.Unmarshal(expected, &record); err != nil {
+		return err
+	}
+	decode := func(v JSONUpdate) (Optional, error) {
+		if !v.Set {
+			return Optional{}, nil
+		}
+		if len(v.Value) == 0 {
+			return Some(nil), nil
+		}
+		var value any
+		value, err := jsonx.Parse(v.Value)
+		if err != nil {
+			return Optional{}, err
+		}
+		return Some(value), nil
+	}
+	fields := []JSONUpdate{p.Manifest, p.DNSGuard, p.IPv6FakeIP, p.IPv6Routes, p.IPv6PDGuard, p.LastRelease}
+	out := make([]Optional, len(fields))
+	for i, v := range fields {
+		var err error
+		out[i], err = decode(v)
+		if err != nil {
+			return err
+		}
+	}
+	return r.SaveRouterPublication(ctx, profileID, &record, RouterPublication{Manifest: out[0], DNSGuard: out[1], IPv6FakeIP: out[2], IPv6Routes: out[3], IPv6PDGuard: out[4], LastRelease: out[5]})
+}

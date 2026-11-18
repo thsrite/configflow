@@ -175,14 +175,15 @@ var ReportParts = func(desired *Desired, state *RouterState) ([]ReportPart, erro
 
 // Report is the drift report.
 type Report struct {
-	Desired     *Desired       `json:"desired"`
-	Routes      RoutesReport   `json:"routes"`
-	NatBypass   NatReport      `json:"nat_bypass"`
-	DhcpDNS     DNSReport      `json:"dhcp_dns"`
-	Summary     map[string]int `json:"summary"`
-	InSync      bool           `json:"in_sync"`
-	IkuaiGroups *GroupReport   `json:"ikuai_groups,omitempty"`
-	Parts       []ReportPart   `json:"-"`
+	ReturnRouting *ReturnStatus  `json:"return_routing,omitempty"`
+	Desired       *Desired       `json:"desired"`
+	Routes        RoutesReport   `json:"routes"`
+	NatBypass     NatReport      `json:"nat_bypass"`
+	DhcpDNS       DNSReport      `json:"dhcp_dns"`
+	Summary       map[string]int `json:"summary"`
+	InSync        bool           `json:"in_sync"`
+	IkuaiGroups   *GroupReport   `json:"ikuai_groups,omitempty"`
+	Parts         []ReportPart   `json:"-"`
 }
 
 // MarshalJSON adds the later modules' sections under their keys.
