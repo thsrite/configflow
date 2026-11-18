@@ -33,18 +33,7 @@ type RuleSyncService struct {
 
 var syncLogger = logx.Get("backend.routers.rule_sync")
 var syncWorkers = lockx.NewKeyed[string](lockx.LevelJob, "routers:rule-sync")
-var syncJobs = lockx.NewKeyed[string](lockx.LevelJob, "router-job")
 
-// JobLock is the transitional R14 L1 entry until O3-6b supplies RouterJobLock.
-// It uses the O3 connection equivalence classes; no per-resource flock is created.
-func JobLock(ctx context.Context, profile, id string, r *Router) (context.Context, func(), bool) {
-	ctx = lifecycle.Detach(ctx)
-	key := profile + "\n" + id
-	if r != nil {
-		key = r.Type + "\n" + strings.TrimRight(r.Endpoint, "/")
-	}
-	return syncJobs.TryLock(ctx, key)
-}
 func (s *RuleSyncService) store() RuleSyncStore { return RuleSyncStore{DataDir: s.Repo.DataDir()} }
 func (s *RuleSyncService) context(ctx context.Context) context.Context {
 	return repo.WithRepository(lifecycle.Detach(ctx), s.Repo)
@@ -217,9 +206,13 @@ func (s *RuleSyncService) Sync(ctx context.Context, profile, id, trigger string)
 		return RuleSyncStatus{}, err
 	}
 	connection := findSyncRouter(config, id)
-	held, release, ok := JobLock(work, profile, id, connection)
-	if !ok {
-		return RuleSyncStatus{}, routerError(messageSyncBusy)
+	held, release, lockErr := RouterJobLock(work, profile, id, connection)
+	if lockErr != nil {
+		var conflict *RouterError
+		if errors.As(lockErr, &conflict) && conflict.Kind == KindConflict {
+			return RuleSyncStatus{}, routerError(messageSyncBusy)
+		}
+		return RuleSyncStatus{}, lockErr
 	}
 	defer release()
 	return s.sync(held, profile, id, trigger)
@@ -564,9 +557,9 @@ func (s *RuleSyncService) StartJob(ctx context.Context, profile, id string) erro
 		return err
 	}
 	r := findSyncRouter(config, id)
-	job, unlock, ok := JobLock(held, profile, id, r)
-	if !ok {
-		return routerError(messageEditBusy) // start_job says 重试; the sync itself says 再试
+	job, unlock, lockErr := RouterJobLock(held, profile, id, r)
+	if lockErr != nil {
+		return lockErr
 	}
 	receipt, err := s.store().Read(job, profile, id)
 	if err != nil {

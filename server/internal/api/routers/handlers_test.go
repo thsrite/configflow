@@ -54,8 +54,8 @@ func TestR15JobLockPrecedesValidation(t *testing.T) {
 	cfg, _ := s.Repo.GetCompatConfig(s.Context(), "default", repo.ResourceRoots{})
 	raw, _ := json.Marshal(cfg)
 	r := core.ManagementRouters(raw)[0]
-	_, release, ok := core.JobLock(s.Context(), "default", id, r)
-	if !ok {
+	_, release, lockErr := core.RouterJobLock(s.Context(), "default", id, r)
+	if lockErr != nil {
 		t.Fatal("lock")
 	}
 	defer release()

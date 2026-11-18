@@ -13,8 +13,8 @@ import (
 // Wire registers desensitized exports, the shared publication lock, pending
 // notification summaries and the rule-sync task slot and loop.
 func Wire() {
- wireRuleSync()
- repo.RegisterHooks(repo.Hooks{RedactRouters:redactHook,JobLock:jobLockHook})
+	wireRuleSync()
+	repo.RegisterHooks(repo.Hooks{RedactRouters: redactHook, JobLock: jobLockHook})
 	notifications.SetSources(notifications.Sources{Summarize: pendingSummaryHook})
 }
 

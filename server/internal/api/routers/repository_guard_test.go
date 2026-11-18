@@ -43,8 +43,8 @@ func TestR15OwnedRecordCredentialRepairUsesRepositoryGuard(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	held, release, ok := core.JobLock(s.Context(), "default", "router-one", rows[0])
-	if !ok {
+	held, release, lockErr := core.RouterJobLock(s.Context(), "default", "router-one", rows[0])
+	if lockErr != nil {
 		t.Fatal("L1 unavailable")
 	}
 	manifest := json.RawMessage(`{"future":"retained-ownership"}`)

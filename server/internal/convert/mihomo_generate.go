@@ -575,7 +575,9 @@ func MihomoDocument(ctx context.Context, logical *model.Config, options MihomoOp
 	if logical == nil || logical.Profile == nil {
 		return nil, fmt.Errorf("%s", msgMihomoConfig)
 	}
- if err:=validateRuleIdentities(logical.Profile.RuleConfigs);err!=nil{return nil,err}
+	if err := validateRuleIdentities(logical.Profile.RuleConfigs); err != nil {
+		return nil, err
+	}
 	env := CurrentMihomoEnvironment()
 	if err := env.CheckGeneration(); err != nil {
 		return nil, err

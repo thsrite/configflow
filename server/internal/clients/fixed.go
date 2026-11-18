@@ -436,15 +436,19 @@ func (s *FixedIPService) Apply(ctx context.Context, profile, token string) (err 
 			continue
 		}
 		connections[key] = true
-		held, release, ok := routers.JobLock(ctx, profile, id, r)
-		if !ok {
-			return fixedError(routers.KindConflict, messageFixedBusy)
+		held, release, lockErr := routers.RouterJobLock(ctx, profile, id, r)
+		if lockErr != nil {
+			var conflict *routers.RouterError
+			if errors.As(lockErr, &conflict) && conflict.Kind == routers.KindConflict {
+				return fixedError(routers.KindConflict, messageFixedBusy)
+			}
+			return lockErr
 		}
 		unlocks = append(unlocks, release)
 		lockRouters = append(lockRouters, r)
 		ctx = held
 	}
-	held, release, err := routers.RouterOperationLocks(ctx, lockRouters)
+	held, release, err := routers.RouterOperationLocks(ctx, lockRouters, true)
 	if err != nil {
 		return err
 	}

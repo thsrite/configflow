@@ -214,9 +214,13 @@ func (s *Service) Prepare(ctx context.Context, id, profile string, body json.Raw
 				continue
 			}
 			seen[key] = true
-			_, unlock, ok := routers.JobLock(ctx, profile, r.ID, r)
-			if !ok {
-				return failure("BUSY", 409, msgRouterBusy)
+			_, unlock, lockErr := routers.RouterJobLock(ctx, profile, r.ID, r)
+			if lockErr != nil {
+				var conflict *routers.RouterError
+				if errors.As(lockErr, &conflict) && conflict.Kind == routers.KindConflict {
+					return failure("BUSY", 409, msgRouterBusy)
+				}
+				return lockErr
 			}
 			jobs = append(jobs, unlock)
 		}

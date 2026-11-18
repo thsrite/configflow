@@ -13,7 +13,9 @@ func clientPreflight(ctx context.Context, config *model.Config, target string) e
 	if config == nil || config.Profile == nil {
 		return fmt.Errorf("%s", msgClientConfig)
 	}
- if err:=validateRuleIdentities(config.Profile.RuleConfigs);err!=nil{return err}
+	if err := validateRuleIdentities(config.Profile.RuleConfigs); err != nil {
+		return err
+	}
 	if err := ConfigDialers(config); err != nil {
 		return &DialerReferenceError{Message: err.Error(), cause: err}
 	}

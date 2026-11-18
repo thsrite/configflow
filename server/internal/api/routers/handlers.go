@@ -152,8 +152,12 @@ func (h *handler) job(next httpx.HandlerFunc) httpx.HandlerFunc {
 		if err != nil {
 			return nil, err
 		}
-		held, release, ok := core.JobLock(ctx, c.ProfileID, c.Param("router_id"), r)
-		if !ok {
+		held, release, lockErr := core.RouterJobLock(ctx, c.ProfileID, c.Param("router_id"), r)
+		if lockErr != nil {
+			var conflict *core.RouterError
+			if !errors.As(lockErr, &conflict) || conflict.Kind != core.KindConflict {
+				return nil, lockErr
+			}
 			return public(c, cfg, struct {
 				Success bool   `json:"success"`
 				Message string `json:"message"`

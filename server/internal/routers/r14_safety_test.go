@@ -16,8 +16,8 @@ import (
 func TestR14ManifestRollbackPersistsLatestState(t *testing.T) {
 	s, _, r := r14Fixture(t)
 	ctx := repo.WithRepository(t.Context(), s.Repo)
-	held, unlock, ok := JobLock(ctx, "default", r.ID, r)
-	if !ok {
+	held, unlock, lockErr := RouterJobLock(ctx, "default", r.ID, r)
+	if lockErr != nil {
 		t.Fatal("busy")
 	}
 	defer unlock()

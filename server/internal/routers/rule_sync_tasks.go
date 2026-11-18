@@ -15,20 +15,6 @@ import (
 )
 
 func wireRuleSync() {
-	// O3-6b has not landed in this base. This is the one transitional lock shared
-	// by sync, R15 callers of JobLock, and the repository's commit guard.
-	repo.RegisterHooks(repo.Hooks{JobLock: func(ctx context.Context, profile, id string, raw *jsonx.Object) (func(), bool) {
-		var r *Router
-		if raw != nil {
-			var v Router
-			if json.Unmarshal(mustPolicyJSON(raw), &v) != nil {
-				return nil, false
-			}
-			r = &v
-		}
-		_, release, ok := JobLock(ctx, profile, id, r)
-		return release, ok
-	}})
 	CaptureManual = func(ctx context.Context, profile string, config json.RawMessage, r *Router, d Driver, desired *Desired) error {
 		service, err := newSyncService(ctx)
 		if err != nil {

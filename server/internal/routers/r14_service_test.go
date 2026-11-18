@@ -27,8 +27,8 @@ func r14Hook(t *testing.T) {
 		if raw != nil {
 			_ = json.Unmarshal(mustPolicyJSON(raw), &r)
 		}
-		_, release, ok := JobLock(ctx, profile, id, &r)
-		return release, ok
+		_, release, lockErr := RouterJobLock(ctx, profile, id, &r)
+		return release, lockErr == nil
 	}})
 	t.Cleanup(func() { repo.SetHooks(old) })
 }
