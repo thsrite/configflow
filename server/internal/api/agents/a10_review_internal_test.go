@@ -5,8 +5,8 @@ package agents
 // its RequestedRangeNotSatisfiable and parse_date's OverflowError become the
 // 500 JSON answer. References come from Werkzeug 3.1 / CPython 3.11
 // (testdata/review_a10_conditional.py): the fixed tables below were produced
-// by it, TestReviewConditionalMatchesWerkzeug compares seeded random cases
-// live on the test server.
+// by it. TestReviewConditionalMatchesWerkzeug replays fingerprinted seeded
+// references; explicit record/check mode reruns Python on the test server.
 
 import (
 	"encoding/json"
@@ -18,6 +18,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"configflow/internal/testgolden"
 )
 
 const reviewLastModified = "Sun, 01 Nov 2026 12:30:15 GMT"
@@ -125,21 +127,8 @@ func TestReviewConditionalFollowsWerkzeug(t *testing.T) {
 	}
 }
 
-func reviewPython311(t *testing.T) string {
-	t.Helper()
-	if path := os.Getenv("A10_PYTHON"); path != "" {
-		return path
-	}
-	home, _ := os.UserHomeDir()
-	path := filepath.Join(home, "cf-test", ".venv", "bin", "python")
-	if _, err := os.Stat(path); err != nil {
-		t.Skip("CPython 3.11 + Werkzeug reference (~/cf-test/.venv) not available")
-	}
-	return path
-}
-
 func TestReviewConditionalMatchesWerkzeug(t *testing.T) {
-	python := reviewPython311(t)
+	t.Parallel()
 	n := 3000
 	if v, err := strconv.Atoi(os.Getenv("A10_CONDITIONAL_FUZZ")); err == nil {
 		n = v
@@ -238,12 +227,14 @@ func TestReviewConditionalMatchesWerkzeug(t *testing.T) {
 	if err := os.WriteFile(file, payload, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command(python, "testdata/review_a10_conditional.py", file)
-	cmd.Stderr = os.Stderr
-	out, err := cmd.Output()
-	if err != nil {
-		t.Fatal(err)
-	}
+	out := testgolden.New(t, testgolden.Spec{
+		Sources: []string{"backend", "server/internal/api/agents/testdata/review_a10_conditional.py"},
+		Input:   payload,
+		Run: func() ([]byte, error) {
+			cmd := exec.Command(testgolden.Python(), "testdata/review_a10_conditional.py", file)
+			return cmd.Output()
+		},
+	}).Output(t)
 	var want struct {
 		Dates    []string `json:"dates"`
 		Requests []string `json:"requests"`

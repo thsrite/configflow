@@ -55,3 +55,9 @@ newEnv 的完整初始仓库只生成一次，读取已 checkpoint 的私有文�
 
 只把 target key、全 Unicode lower/final-sigma 三个独立纯参考测试并行。数据保持原来的静态 Python corpus，
 不启动 Python；修改 now/环境与数据库事务的测试保持串行，没有降低 Unicode 遍历范围。
+
+## api/agents
+
+A10 的 3000 seeded conditional/date 参考改用共同 testgolden，记录完整输入 payload；临时文件路径不参与 key。
+逐条错误、日期、请求条件结果断言不改，普通运行不先查找或启动解释器。录制后现场 check 输出完全相等
+（.64 0.227s，零 diff）。该纯测试可并行；显式 HTTP/JSONL 的 client_tools/public_agent 测试保持现场运行。
