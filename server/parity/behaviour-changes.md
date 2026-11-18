@@ -1866,3 +1866,24 @@ world 保留旧文件。原 archive 不改；独立 Python 参考绑定完整 ar
   既有 portable punctuation 转义，保持生成 filter 的字节和反引号排序语法。
 - 业务名称冲突仍保留已经生成的代理前缀；本次未生成的 group 不伪造成功。Source cache 与
   model.Config 不修改。Runtime关机在读缓存返回后立即阻止继续转换和图提交，取消保持原样。
+
+### N8-9 subs — 唯一 typed 链 owner 与旧私有 helper 删除（2026-11-19）
+
+- LowerChains/ChainProviders 只消费 model.Config/yamlx，dialer 校验、图、成员解析、过滤和结构化
+  proxy_string 使用 convert 唯一共享实现。删除 subs 的私有 compat.go、pyconv.go、旧 chains.go、
+  yaml_reader.go；legacy*.go 仅在旧入口转码。固定业务错误及正常生成字节不变，不再复刻
+  CPython repr/AttributeError/动态 ID 相等。缺少 shared collaborator 明确失败。
+- 既有 shared R5 边界现在同样适用于旧 subs 入口：数字 proxy_string/ResourceRef.ID/组列表文本
+  用共享 String；错型整体 nodes/subscriptions/aggregations、列表、follow_group 消费零值但不改
+  原存储；params:null 按缺失；include-all 只收 bool。坏 dialer_ref 不得因 R5 变 nil 后漏掉业务
+  校验，仍由共享 owner fail-closed；错误保留实际原 JSON。结构化 type 为非字符串不可用，
+  YAML 标量键及非有限 JSON 后转 YAML 的规则跟唯一共享 owner 一致，不保留私有旧解析分支。
+- n89_chain_reference.py 读取冻结输入、调用真实 Python 业务并应用已批准的 shared R5 读视图，
+  对656条已有输入逐项记录类别、原输入 SHA 和完整 native 输出；原 archives、N7 oracle、比较
+  函数均不变。具体类别逐项列在 fixture.classes（19类，含正常 ID 数字文本及明确错误）。
+  泛化的历史 Python 内部异常仍沿用原先“必须报错”的约束，不把真实 DialerReferenceError 放宽。
+- URI query 解析使用明确的 ParseQueryOptions：保持重复参数顺序、空值忽略和分号作为值；PSL
+  输入使用 strings.TrimSpace，不复刻 CPython C0 空白。既有 URI/base64/registrable 语料继续验证。
+- 新增 ProxyGroup.SetJSON 复用共享 SetMemberJSON；只替换拥有成员，保留显式 null/空列表和新增
+  成员顺序，不改未知大整数及输入副本。链私有 ID/名称/排序/provider 复制及中途错误的成功前缀
+  均保持。与未迁移 rules/provider 的边界不复制业务；convert 仅新增订阅 typed 接线文件。

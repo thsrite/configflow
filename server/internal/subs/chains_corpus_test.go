@@ -2,6 +2,7 @@ package subs
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 
 	"configflow/internal/jsonx"
@@ -34,10 +35,14 @@ func matchError(t *testing.T, where string, err error, want any) bool {
 
 func TestChainsCorpus(t *testing.T) {
 	rows := loadCorpus(t, "chains.jsonl.gz")
+	native := nativeChainExpectations(t)
 	stats := map[string]int{}
 	for i, row := range rows {
 		in := asObj(row.In)
 		want := asObj(row.Out)
+		if entry := native.GetObject(fmt.Sprintf("chains/%d", i)); entry != nil {
+			want = entry.GetObject("expected")
+		}
 		where := func(what string) string { return what + " row " + jsonx.Str(jsonx.Int(i)) + " " + compact(t, in) }
 		profile := in.DeepCopy()
 		if matchError(t, where("validate"), ValidateDialers(profile), want.Value("validate")) {

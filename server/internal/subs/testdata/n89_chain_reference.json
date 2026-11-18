@@ -1,0 +1,7022 @@
+{
+  "sources": {
+    "chains": "7457d3fd49b1c65eda58712522b7769d8046ca4efa3b41d0ad0a6184d6f9a57f",
+    "drift": "1f7c3c648572e11bf315f94bfd3d736c05435e14cf7e508df3d2807907792088",
+    "golden": "6c3bf6ac201124d6f85f378f182aa2a22ca5ea8c38fb9189373f6e94f74519df"
+  },
+  "n7_reference_sha256": "40c800e9f942e0024dced8f4aa166376447f7e93384ab1413b8be1373f019da5",
+  "cases": {
+    "chains/103": {
+      "input_sha256": "21efc0a287b3e63f28732dd47ede6766cbb5ed50f6e9e4b7128be6a5e3f8b338",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "validate": {
+          "error": "代理链不能同时配置普通策略组来源",
+          "type": "DialerReferenceError"
+        },
+        "lower": {
+          "error": "代理链不能同时配置普通策略组来源",
+          "type": "DialerReferenceError"
+        },
+        "input_mutated": false
+      }
+    },
+    "chains/104": {
+      "input_sha256": "c4bd37b0341620bf66372bfeb4fb8ee11bb3f0b5f8be192f8f22f6d8cea3c9a0",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "validate": null,
+        "lower": {
+          "profile_id": "default",
+          "nodes": [
+            1
+          ],
+          "proxy_groups": [
+            {
+              "id": "chooser",
+              "name": "Chooser",
+              "type": "select",
+              "manual_nodes": [
+                "a",
+                "d",
+                "e"
+              ]
+            },
+            {
+              "id": "entry",
+              "name": "Entry",
+              "type": "url-test"
+            },
+            {
+              "id": "pool",
+              "name": "Pool",
+              "type": "select",
+              "subscriptions": [
+                "feed"
+              ]
+            },
+            {
+              "id": "follow",
+              "name": "Follow",
+              "type": "url-test",
+              "manual_nodes": [
+                "b",
+                "c"
+              ]
+            }
+          ],
+          "rule_configs": [],
+          "subscriptions": [
+            {
+              "id": "feed",
+              "name": "Feed",
+              "url": "https://feed.example.test",
+              "enabled": true
+            }
+          ],
+          "subscription_aggregations": [
+            {
+              "id": "agg",
+              "name": "Agg",
+              "subscriptions": [
+                "feed"
+              ],
+              "nodes": [
+                "b"
+              ]
+            }
+          ]
+        },
+        "input_mutated": false
+      }
+    },
+    "chains/245": {
+      "input_sha256": "2fe89a93320da85c67972a8b0896c327f7f36e1367be079b3f5b4d916008af46",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "validate": {
+          "error": "代理链依赖不存在或未启用",
+          "type": "DialerReferenceError"
+        },
+        "lower": {
+          "error": "代理链依赖不存在或未启用",
+          "type": "DialerReferenceError"
+        },
+        "input_mutated": false
+      }
+    },
+    "chains/273": {
+      "input_sha256": "c10a939d7350c03b48463c2daf530d4a194d4aae7a2a1d1a98545d1365897a51",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "validate": {
+          "error": "代理链依赖不存在或未启用",
+          "type": "DialerReferenceError"
+        },
+        "lower": {
+          "error": "代理链依赖不存在或未启用",
+          "type": "DialerReferenceError"
+        },
+        "input_mutated": false
+      }
+    },
+    "chains/423": {
+      "input_sha256": "1e3f4c1df53cfc5bca357df0791d6fcc41a09f83d84f7115c5dd5b69690fb8aa",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "validate": {
+          "error": "代理链依赖不存在或未启用",
+          "type": "DialerReferenceError"
+        },
+        "lower": {
+          "error": "代理链依赖不存在或未启用",
+          "type": "DialerReferenceError"
+        },
+        "input_mutated": false
+      }
+    },
+    "chains/733": {
+      "input_sha256": "2d0a77eea2ebb08f397eb7cb032ea892c18e4d99d4fa5cac108576ecaa9b4313",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "validate": {
+          "error": "代理链依赖不存在或未启用",
+          "type": "DialerReferenceError"
+        },
+        "lower": {
+          "error": "代理链依赖不存在或未启用",
+          "type": "DialerReferenceError"
+        },
+        "input_mutated": false
+      }
+    },
+    "chains/769": {
+      "input_sha256": "748c7e3f0523daad0091f4ed7934e80078b6ebb95662d91fd501712e3101c834",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "validate": null,
+        "lower": {
+          "profile_id": "default",
+          "nodes": null,
+          "proxy_groups": [
+            {
+              "id": "dyn",
+              "name": "Dyn",
+              "type": "url-test",
+              "proxies_order": [
+                {
+                  "type": "node",
+                  "id": "b"
+                }
+              ],
+              "enabled": false
+            }
+          ],
+          "rule_configs": [],
+          "subscriptions": [
+            {
+              "id": "feed",
+              "name": "Feed",
+              "url": "https://feed.example.test",
+              "enabled": true
+            }
+          ],
+          "subscription_aggregations": [
+            {
+              "id": "agg",
+              "name": "Agg",
+              "subscriptions": [
+                "feed"
+              ],
+              "nodes": [
+                "b"
+              ]
+            }
+          ]
+        },
+        "input_mutated": false
+      }
+    },
+    "chains/935": {
+      "input_sha256": "33de2554ca8f5036ae8646f8a9b57079268802f0eb21ad8132e2d77f1e7893e2",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "validate": {
+          "error": "代理链依赖不存在或未启用",
+          "type": "DialerReferenceError"
+        },
+        "lower": {
+          "error": "代理链依赖不存在或未启用",
+          "type": "DialerReferenceError"
+        },
+        "input_mutated": false
+      }
+    },
+    "chains/969": {
+      "input_sha256": "c97c0fa69af19bbc5b1a17a19b1ef10b301bd93b326dddb3bcd0776e42b38df7",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "validate": {
+          "error": "代理链依赖不存在或未启用",
+          "type": "DialerReferenceError"
+        },
+        "lower": {
+          "error": "代理链依赖不存在或未启用",
+          "type": "DialerReferenceError"
+        },
+        "input_mutated": false
+      }
+    },
+    "chains/994": {
+      "input_sha256": "86449d309fd083a548c501998995323b31e60524d4db030bbba97f0fc6034ab5",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "validate": null,
+        "lower": {
+          "profile_id": "default",
+          "nodes": "x",
+          "proxy_groups": [
+            {
+              "id": "pool",
+              "name": "Pool",
+              "type": "url-test",
+              "manual_nodes": [
+                "a"
+              ]
+            },
+            {
+              "id": "dyn",
+              "name": "Dyn",
+              "type": "url-test",
+              "subscriptions": [
+                "feed"
+              ]
+            },
+            {
+              "id": "entry",
+              "name": "Entry",
+              "type": "select",
+              "manual_nodes": [
+                "b",
+                "c"
+              ]
+            }
+          ],
+          "rule_configs": [],
+          "subscriptions": [
+            {
+              "id": "feed",
+              "name": "Feed",
+              "url": "https://feed.example.test",
+              "enabled": true
+            }
+          ],
+          "subscription_aggregations": [
+            {
+              "id": "agg",
+              "name": "Agg",
+              "subscriptions": [
+                "feed"
+              ],
+              "nodes": [
+                "b"
+              ]
+            }
+          ]
+        },
+        "input_mutated": false
+      }
+    },
+    "chains/1032": {
+      "input_sha256": "5eac9da9201ccf6f95d3aa0897197f1ae7e23550dd16657d18bcef714dc86cfb",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "validate": null,
+        "lower": {
+          "profile_id": "default",
+          "nodes": "x",
+          "proxy_groups": [
+            {
+              "id": "dyn",
+              "name": "Dyn",
+              "type": "url-test",
+              "aggregations": [
+                "agg"
+              ]
+            },
+            {
+              "id": "entry",
+              "name": "Entry",
+              "type": "select",
+              "use": [
+                "Feed"
+              ],
+              "manual_nodes": [
+                "a"
+              ]
+            }
+          ],
+          "rule_configs": [],
+          "subscriptions": [
+            {
+              "id": "feed",
+              "name": "Feed",
+              "url": "https://feed.example.test",
+              "enabled": true
+            }
+          ],
+          "subscription_aggregations": [
+            {
+              "id": "agg",
+              "name": "Agg",
+              "subscriptions": [
+                "feed"
+              ],
+              "nodes": [
+                "b"
+              ]
+            }
+          ]
+        },
+        "input_mutated": false
+      }
+    },
+    "chains/1120": {
+      "input_sha256": "a68e4b0110a434c0a89157f33908ea3f3c82cb7661ec239da7614ee2c50e3b5d",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "validate": {
+          "error": "代理链依赖不存在或未启用",
+          "type": "DialerReferenceError"
+        },
+        "lower": {
+          "error": "代理链依赖不存在或未启用",
+          "type": "DialerReferenceError"
+        },
+        "input_mutated": false
+      }
+    },
+    "chains/1235": {
+      "input_sha256": "903759f119222254cfbb9bfd5ac8d7a3ace38064fd4cad067d530a25655c9e43",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "validate": {
+          "error": "代理链依赖不存在或未启用",
+          "type": "DialerReferenceError"
+        },
+        "lower": {
+          "error": "代理链依赖不存在或未启用",
+          "type": "DialerReferenceError"
+        },
+        "input_mutated": false
+      }
+    },
+    "chains/1325": {
+      "input_sha256": "132e9d3586d5aa3b3d30da8099a9d49882d2460828a33fa558d7156a4e1e03b3",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "validate": {
+          "error": "代理链依赖不存在或未启用",
+          "type": "DialerReferenceError"
+        },
+        "lower": {
+          "error": "代理链依赖不存在或未启用",
+          "type": "DialerReferenceError"
+        },
+        "input_mutated": false
+      }
+    },
+    "chains/1359": {
+      "input_sha256": "e6858529eb08da32c4fc5b0fa789b50a35b7d6ed909596fb8251f6e9a4c09fb2",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "validate": {
+          "error": "代理链不能同时配置普通策略组来源",
+          "type": "DialerReferenceError"
+        },
+        "lower": {
+          "error": "代理链不能同时配置普通策略组来源",
+          "type": "DialerReferenceError"
+        },
+        "input_mutated": false
+      }
+    },
+    "chains/1403": {
+      "input_sha256": "6b1669f5c1b37f6457347569bddee3794246301a65694827683072c2d853eb5d",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "validate": null,
+        "lower": {
+          "profile_id": "default",
+          "nodes": null,
+          "proxy_groups": [],
+          "rule_configs": [],
+          "subscriptions": [
+            {
+              "id": "feed",
+              "name": "Feed",
+              "url": "https://feed.example.test",
+              "enabled": true
+            }
+          ],
+          "subscription_aggregations": [
+            {
+              "id": "agg",
+              "name": "Agg",
+              "subscriptions": [
+                "feed"
+              ],
+              "nodes": [
+                "b"
+              ]
+            }
+          ]
+        },
+        "input_mutated": false
+      }
+    },
+    "chains/1444": {
+      "input_sha256": "acbfe2d95a9c6631afc1f592e7e94a48f5c67d29cdbf2c80f71eac001a6cce6a",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "validate": {
+          "error": "代理链依赖不存在或未启用",
+          "type": "DialerReferenceError"
+        },
+        "lower": {
+          "error": "代理链依赖不存在或未启用",
+          "type": "DialerReferenceError"
+        },
+        "input_mutated": false
+      }
+    },
+    "chains/1567": {
+      "input_sha256": "54cfd36aa933a2155b62e5c19485640538e47932b1bc324d0abb29b69fc1b00b",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "validate": null,
+        "lower": {
+          "profile_id": "default",
+          "nodes": [
+            1
+          ],
+          "proxy_groups": [
+            {
+              "id": "entry",
+              "name": "Entry",
+              "type": "select",
+              "use": [
+                "Feed"
+              ],
+              "manual_nodes": [
+                "a"
+              ]
+            },
+            {
+              "id": "pool",
+              "name": "Pool",
+              "type": "url-test",
+              "manual_nodes": [
+                "c",
+                "e"
+              ]
+            },
+            {
+              "id": "chooser",
+              "name": "Chooser",
+              "type": "select",
+              "use": [
+                "Nope"
+              ],
+              "manual_nodes": [
+                "a"
+              ]
+            },
+            {
+              "id": "follow",
+              "name": "Follow",
+              "type": "select",
+              "proxies_order": [
+                {
+                  "type": "node",
+                  "id": "a"
+                },
+                {
+                  "type": "builtin",
+                  "id": "DIRECT"
+                }
+              ],
+              "follow_group": "follow",
+              "proxy_order": "strategies_first"
+            }
+          ],
+          "rule_configs": [],
+          "subscriptions": [
+            {
+              "id": "feed",
+              "name": "Feed",
+              "url": "https://feed.example.test",
+              "enabled": true
+            }
+          ],
+          "subscription_aggregations": [
+            {
+              "id": "agg",
+              "name": "Agg",
+              "subscriptions": [
+                "feed"
+              ],
+              "nodes": [
+                "b"
+              ]
+            }
+          ]
+        },
+        "input_mutated": false
+      }
+    },
+    "chains/1588": {
+      "input_sha256": "c8d19490b0872063ae60e60ebbcdc62a4b72eee2c835473b2116422dbe0739cd",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "validate": {
+          "error": "代理链依赖不存在或未启用",
+          "type": "DialerReferenceError"
+        },
+        "lower": {
+          "error": "代理链依赖不存在或未启用",
+          "type": "DialerReferenceError"
+        },
+        "input_mutated": false
+      }
+    },
+    "chains/1740": {
+      "input_sha256": "d3921f00e9e4aa4d77a5952554fbbdca048339aff20eb1502042e049dfb3de69",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "validate": {
+          "error": "代理链依赖不存在或未启用",
+          "type": "DialerReferenceError"
+        },
+        "lower": {
+          "error": "代理链依赖不存在或未启用",
+          "type": "DialerReferenceError"
+        },
+        "input_mutated": false
+      }
+    },
+    "chains/1742": {
+      "input_sha256": "4ea3f4033e1737380afe47a7796ce17480220ed849ef14c0c63fbbc5228c6f75",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "validate": null,
+        "lower": {
+          "profile_id": "default",
+          "nodes": "x",
+          "proxy_groups": [
+            {
+              "id": "entry",
+              "name": "Entry",
+              "type": "select",
+              "proxies_order": [
+                {
+                  "type": "node",
+                  "id": "a"
+                }
+              ]
+            },
+            {
+              "id": "pool",
+              "name": "Pool",
+              "type": "url-test",
+              "manual_nodes": [
+                "c"
+              ]
+            },
+            {
+              "id": "follow",
+              "name": "Follow",
+              "type": "select",
+              "manual_nodes": [
+                "DIRECT"
+              ],
+              "follow_group": "missing"
+            }
+          ],
+          "rule_configs": []
+        },
+        "input_mutated": false
+      }
+    },
+    "chains/1781": {
+      "input_sha256": "ed9601566887706b095e058a6c5fcc9fc3b56715082a12c11ba6f03decbdff8a",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "validate": null,
+        "lower": {
+          "profile_id": "default",
+          "nodes": null,
+          "proxy_groups": [
+            {
+              "id": "pool",
+              "name": "Pool",
+              "type": "url-test",
+              "proxies_order": [
+                {
+                  "type": "node",
+                  "id": "d"
+                },
+                {
+                  "type": "builtin",
+                  "id": "DIRECT"
+                }
+              ],
+              "proxy_order": "strategies_first"
+            },
+            {
+              "id": "follow",
+              "name": "Follow",
+              "type": "select",
+              "manual_nodes": [
+                "DIRECT"
+              ],
+              "follow_group": "chooser"
+            },
+            {
+              "id": "chooser",
+              "name": "Chooser",
+              "type": "select",
+              "manual_nodes": [
+                "b"
+              ]
+            },
+            {
+              "id": "dyn",
+              "name": "Dyn",
+              "type": "select",
+              "use": [
+                "Agg"
+              ],
+              "manual_nodes": [
+                "a"
+              ]
+            }
+          ],
+          "rule_configs": []
+        },
+        "input_mutated": false
+      }
+    },
+    "drift/3174": {
+      "input_sha256": "509b76443b21454b038115baa9193241c50a34dc37e886374bc11d2fad31153c",
+      "classes": [
+        "group/follow_group/R5-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/3176": {
+      "input_sha256": "993dc9dc558f8952d12f0cdad60d492c10bb73d45d5e65216d153db2438a9778",
+      "classes": [
+        "group/follow_group/R5-text"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/3218": {
+      "input_sha256": "1c481ea81b333dcf49811b06c8c116466dca2c15ef0cc44f330a240e187b4192",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "error": "代理链 chain 必须包含 entry 和 exit",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/3219": {
+      "input_sha256": "d5af42ffcf9d1fbb1499da13b37c92fe1dab81509cb48c0a4f267bf708db2f78",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/3220": {
+      "input_sha256": "4a0d8b4a93c51caa1ff787c2f80cd850115646d4e4b7bfbeb4edade5ea38b52b",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "error": "代理链 chain 必须包含 entry 和 exit",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/3311": {
+      "input_sha256": "5aa1499ec001f4dcc32e0f46352f4da2e884008c8d16e80863f08a7f3b400d66",
+      "classes": [
+        "group/proxies_order/R5-array"
+      ],
+      "expected": {
+        "value": [
+          [
+            "node",
+            "n3"
+          ]
+        ]
+      }
+    },
+    "drift/3333": {
+      "input_sha256": "cfae01e805550aa6084dc1f45e91563bf67f54f81a99c6a971835bcb863eef26",
+      "classes": [
+        "group/proxies_order/R5-array"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/3334": {
+      "input_sha256": "3eace64f10e919e0dc746b9345cda7c2ee7d71988388820cc937fb7059c1aa76",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/3335": {
+      "input_sha256": "bdb1d445c1cdc909837f4c595758ace4c2fa18a4be13428013c7ca93d7cbca46",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/3336": {
+      "input_sha256": "52eb8c3ffe361e7d151b1b0039049d463578c17aa1f93dfd628c01062a9184d3",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/3575": {
+      "input_sha256": "289d8ed249c2110ef05033e82b2529bce19429ed9807c4809be5b34b2944f40c",
+      "classes": [
+        "node/params/null-absent"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/3577": {
+      "input_sha256": "d72c77b6f70944f5a153f2a287abdf91477da0267347a07b69b02608d3a154b2",
+      "classes": [
+        "node/params/null-absent"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/3644": {
+      "input_sha256": "b7c71d0c18b7932fdd1fb4fb5f527c6361b372938e12335cb8fea8b8844af39d",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "error": "拨号引用不存在、未启用或不在当前配置空间",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/3645": {
+      "input_sha256": "092cb755ebdcfc4167107b4bb07e33e4833c9ed98485fa02709924faa5635be6",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/3646": {
+      "input_sha256": "e1902df5da3bf291250022a474a29e6e5ab655a5bcd968c169b9d899f0d9c419",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/3718": {
+      "input_sha256": "731dadf1582c4ac69b018039717176981bafbc6689279356dc963d2a8a489edc",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/3719": {
+      "input_sha256": "dbfb320747f152fd814c250615dbe8ac96e89b1f8f1885764badf266bd4c763f",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/3720": {
+      "input_sha256": "321f10e7aee357f1e098f5294db662e259acdb4cf1f5ad24bc3f29ef4fb2d2a0",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/3745": {
+      "input_sha256": "60cc22a15bf8d0f0c11fa90f236f0180690b22dff5e92c07dd095dc87d89a4a3",
+      "classes": [
+        "dialer_ref/fail-closed-shape"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/3769": {
+      "input_sha256": "ab1e890f1f11aca9aa0c2516cdd5acfec8a9b65b8f152475ff3942adbdddd691",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "拨号引用不存在、未启用或不在当前配置空间",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/3770": {
+      "input_sha256": "33ddc3beb0c920b67bec257b1dae5a64b15b430376809fa12f402d00dd906f6e",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/3771": {
+      "input_sha256": "efa6dc3d9677a71bd57874091c89718571cde51ffdbc89ecd3a1404309a9f6da",
+      "classes": [
+        "dialer_ref/fail-closed-shape",
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/3791": {
+      "input_sha256": "1f52d90755a63f200e3a78d745de98423a4f096177749830c1d53d15edb2a3e4",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "error": "策略组 use 引用不存在或名称不唯一",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/3792": {
+      "input_sha256": "62a9021ac47163458d1cf2473464481ab7443b09bd4491130392da9babea8dd2",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/3793": {
+      "input_sha256": "1c24b14b4eb0f3cc88baf66c8482ffd0e55665192e8bd68a7d711eade7f70b7c",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "error": "策略组 use 引用不存在或名称不唯一",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/3877": {
+      "input_sha256": "50742600a5af063a051de2abe76220792c2d06dd26905a4ad6910fb2c04d5492",
+      "classes": [
+        "group/proxies_order/R5-array"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/3933": {
+      "input_sha256": "40879059fce68c84516ece8d9f7db7cb9762c872be61fdfe3de884f2455be62b",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "error": "拨号引用不存在、未启用或不在当前配置空间",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/3934": {
+      "input_sha256": "d5ca3b6e677d0d329c6c3dedfa5b07a3d9f6f4e38df7229c99968f35d32cb6a5",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/3935": {
+      "input_sha256": "ca6145e77dbe2921869d0de27e73e5c75ee1c99598532f6b7a0af02a7cb7e884",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "error": "拨号依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/4246": {
+      "input_sha256": "63bb3063703d35c5713065a92bf05cc1f6651e12f740ce697f80c4843632e72c",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/4247": {
+      "input_sha256": "6b4d940cc792a4d67fa4bf3585774881bdb4ac1fdd2f0a7f6de95074818c85ae",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/4248": {
+      "input_sha256": "2b7fb35e46d02a0e4162b8308d7f0bc33d36d48deac451f657f66db9777ac702",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/5007": {
+      "input_sha256": "9b8c8ea45d0179e5e77f29c21f12103776cabe03b41dbc6215d896d0ba203887",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/5008": {
+      "input_sha256": "2e0c470c64bf685171cfb88d996f4339b8ec6e667744f8f19158d08820cc92a8",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/5009": {
+      "input_sha256": "511526eb74c5e8a96bba6a6cd14b1e6b98eeb48d9e1595d5cd8a3497e3ac7319",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/5034": {
+      "input_sha256": "21adc38c2d98d0d1325b87eb38776782f0663445c2c40dffac2af9927c7cca39",
+      "classes": [
+        "dialer_ref/fail-closed-shape"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/5145": {
+      "input_sha256": "3cc441c29ec4ada8ae08281833a8de8f5d77be0d6026ff6b4441c0905f83b866",
+      "classes": [
+        "dialer_ref/fail-closed-shape"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/5152": {
+      "input_sha256": "80ce6576a987675e6df2e63b4434b57b9379d140461b932f50dbe7646229a204",
+      "classes": [
+        "dialer_ref/fail-closed-shape"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/5251": {
+      "input_sha256": "b74b4f3bc44cc42d0c4ed1a34a56e36c871566712da16c5541fee8d227edeeea",
+      "classes": [
+        "ResourceRef/id/numeric-text"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/5253": {
+      "input_sha256": "132865cbfe05938e99afc3fea7cc1c2b5e419f1687e01eb6d61b8053749bb974",
+      "classes": [
+        "ResourceRef/id/numeric-text"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/5749": {
+      "input_sha256": "05a8f34747f10aa0508839e2a0df915badfe353577acc218cdb42a32dfe61396",
+      "classes": [
+        "dialer_ref/fail-closed-shape"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/5756": {
+      "input_sha256": "6f1fb656812b77867d4d6da03469a1098403ab8a89caf342be7aa3cf24c8f6fe",
+      "classes": [
+        "dialer_ref/fail-closed-shape"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/5831": {
+      "input_sha256": "04f9b336bc7a91a8bb4f85955ff89c2895d702f52dfaebb50b1f6b384a134af3",
+      "classes": [
+        "dialer_ref/fail-closed-shape"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/5832": {
+      "input_sha256": "6ec3a117dec510bbd3bf7f798806b222ff05ca2b392f9e9f3b252039ac4cb227",
+      "classes": [
+        "dialer_ref/fail-closed-shape"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/6029": {
+      "input_sha256": "a6ddbe2e48faea5864b002fa24ae4ef2ba10e1a298aa11927b58953df585b80c",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/6030": {
+      "input_sha256": "be476f4c68ae44e1fdc9b13a1450f419e5d732b3c9a5c7170c664d89b528dc62",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/6031": {
+      "input_sha256": "44577dfb2fba388b224a92c60674ebe234bac273e74be8e0c820822fd9334e79",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/6068": {
+      "input_sha256": "edf754b83e06576397ba7be97660421705db0e2a0b448ed720d991f16212d393",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "代理链端点必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/6069": {
+      "input_sha256": "e9995d6de397e26f7d02befb8dc501a0807ab02f40635a43adb908532589fda8",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/6070": {
+      "input_sha256": "e5df2adf96fc3dafd42238ec8b5a558ee8b96dd5ebfb85a75b1d6c8915877777",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "代理链端点必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/6165": {
+      "input_sha256": "bddd0d133a1a7bb3f92c722194ec3b27f8c06ccd723acf202cbfc0522c45ab68",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/6166": {
+      "input_sha256": "cdecf9359fe1282e797875eccd3be429b7178136748018c272ab8dc138c8d0b7",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/6167": {
+      "input_sha256": "c2c9a9f419ce231587a2c3877fb38c9fa8fb01fc8d09f79696214b270c75c6c6",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/6237": {
+      "input_sha256": "d55d0036a4d5fca38073909a1d4b5bc050a8fa4136838a79a91d0bef162b7dc7",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/6238": {
+      "input_sha256": "8631dd7caf00aaddc1c3fe5f55b77980be47058fe28f3117cffa409ff4a2fa9b",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/6239": {
+      "input_sha256": "d1915031ef3cf46e9eac108ed465ca8cbc20fe163ac80afff13c4556125b7cca",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/6285": {
+      "input_sha256": "b57ba7fc6279e66ff2317f18966089d53671682b4b21646f549d69316628bc64",
+      "classes": [
+        "ResourceRef/id/numeric-text"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/6287": {
+      "input_sha256": "fefeb57df9d37623f8d7582687da4655f0249961f48199bbc913c5ad2b3107e7",
+      "classes": [
+        "ResourceRef/id/numeric-text"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/6318": {
+      "input_sha256": "691937c99933e93f9489e1fa0dc20525c898d1336ad26c0454c49b1a56592e64",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "error": "节点不能引用自身作为拨号代理",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/6319": {
+      "input_sha256": "6205af7800dfe74c5a78530251fc2f01803e6bea80da50e5e81822fb1afc2904",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/6320": {
+      "input_sha256": "56be66927f9a58a15959f7fb4e036cb5453dabd649993dd66a334b11aaf261ef",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "error": "拨号代理依赖存在循环",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/6538": {
+      "input_sha256": "5a3ab55d4994867eaf0cb553dafedc227bc324ccfe76ae89ced2c4db59a14216",
+      "classes": [
+        "dialer_ref/fail-closed-shape"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/6558": {
+      "input_sha256": "f052b293385dedae18ed38d6ba44f7190000c0f6e8bf9b22e21d08a829abf36a",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "策略组引用不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/6559": {
+      "input_sha256": "1e85f1f010d662c6076713fda3c65fcff68409590d653ba2f99989f861c8467b",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/6560": {
+      "input_sha256": "c7ccf092f5beb652707616d290a2415fac3bc63d4411101ddf46aef9b3381dc4",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "策略组引用不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/6831": {
+      "input_sha256": "76580e55e958cda9ce5eb941a0859a95abc610bf60d63cafe0ae92f808c0212d",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "策略组引用不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/6832": {
+      "input_sha256": "d48c2c1fb768a0ac2e63e954702bd4174e38a132dc2098132bbac869ced1ca94",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/6833": {
+      "input_sha256": "07e467cda697f59ed35aaeb08270e5add44f28c7129f2b844a6ce4a08cb12f58",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "策略组引用不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/6838": {
+      "input_sha256": "bccdd2866b26b346d1692d791a0bea7fc2e9206eb6f0905aefa87d727f72d6a4",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/6840": {
+      "input_sha256": "e30b17b8e69f4ae65db65bc234a4b4cc9029f3e23b89daf437b2f020b94b0f31",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/6918": {
+      "input_sha256": "1092dd36a417bcd9a24b24dc7c999ded47f942ef04d9aca09b42e0599ee39263",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/6919": {
+      "input_sha256": "7ba8ba773c3690441076e376eed2ee57593b78e83fe692acf939b54ff368090b",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/6920": {
+      "input_sha256": "7434177ac6d51f295e8eede7cc833bcef8fcd9e010dfae5f706d28d0d5ad6e6a",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/6982": {
+      "input_sha256": "ba183367dc1e16e8e01388e51b206fe879764882f6d32d366c4fa18eb30ee652",
+      "classes": [
+        "dialer_ref/fail-closed-shape"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/7046": {
+      "input_sha256": "f016be3bcdf001347749c90d0ae6268ef135ff17a60c07eb71c996a85720e3e7",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/7047": {
+      "input_sha256": "6c06e9fb3946c50e5c74646ae39716cd49dafacecfd15038eaec40a9f1590ac0",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/7048": {
+      "input_sha256": "6fe8e0d27b979284c0970eb46526683ef06d5af5d01f322fb840a316807aa4fc",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/7118": {
+      "input_sha256": "4735fc274bf71c11512e738649ce618136fc5b19306946ed8dbd727129dc67fc",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/7119": {
+      "input_sha256": "2fbfd60d67176d7e9b36d9ed7c663e2248c9e32d8f9d5c38005f89b36b7b47b8",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/7120": {
+      "input_sha256": "aa0089b085db1566e52f39a08f82e76a23cf80b4e94f6da12fe884aff188f95f",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/7461": {
+      "input_sha256": "3e6199f255c4dea3b8dec79006d37862ef33eb38364d29cdce32dd907a741822",
+      "classes": [
+        "ResourceRef/id/numeric-text"
+      ],
+      "expected": {
+        "error": "拨号引用不存在、未启用或不在当前配置空间",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/7470": {
+      "input_sha256": "9b959fb2f9f3737bb98f1d395260e7321137d91275b92fe9d11e4dd9733cc70e",
+      "classes": [
+        "ResourceRef/id/numeric-text"
+      ],
+      "expected": {
+        "value": [
+          "group",
+          "5"
+        ]
+      }
+    },
+    "drift/7718": {
+      "input_sha256": "62b689fe31b601eb7b3fe665fa519f86cab89e7c83481e58b20ac2e50d51fbbf",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "稳定拨号引用仅支持手动节点，不能使用订阅节点",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/7719": {
+      "input_sha256": "25fd5dc438a575cf54d8088f2e93dbf6ad733748f14f4a8be4996daae949d1db",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/7720": {
+      "input_sha256": "b11f94b8f0081f52771b18578951457bbc769d5d774e0b6031b787bbae2760c8",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": [
+          [
+            [
+              "node",
+              "n0"
+            ],
+            [
+              [
+                "node",
+                "n1"
+              ]
+            ]
+          ],
+          [
+            [
+              "node",
+              "n1"
+            ],
+            []
+          ]
+        ]
+      }
+    },
+    "drift/7725": {
+      "input_sha256": "4f528179e23dc14666f07e4d8bd3fa60a69b8b12a6ec77f8174da9e6444e712d",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/7727": {
+      "input_sha256": "89b5593edcbf389df566e52f15712eac9a08e2cdfcbb8281f062917c49a12c20",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/7803": {
+      "input_sha256": "0ee2796d5d311cebdf588aac3c1aff8e87be24ecf5ef29e311a6b957307da1bd",
+      "classes": [
+        "dialer_ref/fail-closed-shape"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/8045": {
+      "input_sha256": "a10367b80d2d81576069471324c92e9d4223ed2a971a790cc52c1e7c7938880b",
+      "classes": [
+        "dialer_ref/fail-closed-shape"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/8336": {
+      "input_sha256": "922531cdc56a12d261d280cacabe4bf9e03aed377bd4c926bf33f66991bd18b6",
+      "classes": [
+        "dialer_ref/R5-record",
+        "dialer_ref/fail-closed-type"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须是 {type: node|group, id: 非空字符串}，当前值：\"n1\"",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/8343": {
+      "input_sha256": "207c891b094d164450f575135a2170a0d7591596f41920e87747fe7e75c9b84d",
+      "classes": [
+        "dialer_ref/R5-record",
+        "dialer_ref/fail-closed-type"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须是 {type: node|group, id: 非空字符串}，当前值：\"n1\"",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/8390": {
+      "input_sha256": "a7b2903ed6315dcaab24209b578ffe8a5693f001c428d6b6097f3502b3e4c181",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "原始 dialer-proxy 'n1' 不存在、未启用或名称不唯一，请改用稳定引用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/8391": {
+      "input_sha256": "4215fd87cbb79d4a03858b83c7665a52239693f24520415ce9533af807b91756",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/8392": {
+      "input_sha256": "2ce4bb047ba9980951ae91fd54f3ac5c701d0df7d3b967feb0b0f2b95d662744",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "原始 dialer-proxy 'n1' 不存在、未启用或名称不唯一，请改用稳定引用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/8477": {
+      "input_sha256": "09165bb085cf81b1b5b73ee8c17fb292ba3476606cac5664bd276484f8cabbf3",
+      "classes": [
+        "dialer_ref/fail-closed-shape"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/8517": {
+      "input_sha256": "c0ebd9d1c7fbae018cc3de72e3027284e26dfbf86fbee8c6b8a7877e2f3fe42d",
+      "classes": [
+        "dialer_ref/fail-closed-shape"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/8550": {
+      "input_sha256": "aae2a9334840c68b1f8a3b8634cda17d9e9833924353c13b3901e98da55cf5a4",
+      "classes": [
+        "ResourceRef/id/numeric-text"
+      ],
+      "expected": {
+        "value": [
+          "group",
+          "5"
+        ]
+      }
+    },
+    "drift/8867": {
+      "input_sha256": "e0bff7419ce591cdd8e9ba8181a850cbb63e6e994c6bc495735136d3de257682",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/8868": {
+      "input_sha256": "8aa49c3d87ecbed75483dc3f08921b77cb8e392a29466cac6aca55fea6df89e6",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/8869": {
+      "input_sha256": "f8c1cc67d148bc90c178e51b7f4676e54a650c32d2433941a3637b343862da49",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "value": [
+          [
+            [
+              "group",
+              "g1"
+            ],
+            [
+              [
+                "node",
+                "n2"
+              ]
+            ]
+          ],
+          [
+            [
+              "node",
+              "n2"
+            ],
+            []
+          ],
+          [
+            [
+              "node",
+              "n1"
+            ],
+            [
+              [
+                "builtin",
+                "REJECT"
+              ]
+            ]
+          ]
+        ]
+      }
+    },
+    "drift/8910": {
+      "input_sha256": "fb588c2e60ea41f873079bcbfe72cbedb58da49b8cca290db5c1ab0ea382268f",
+      "classes": [
+        "group/follow_group/R5-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/8912": {
+      "input_sha256": "cc0c279bf0d520cbeccd758bf1ee68712809c1f3c45f90d828fadbdc519f4bd4",
+      "classes": [
+        "group/follow_group/R5-text"
+      ],
+      "expected": {
+        "value": [
+          [
+            [
+              "node",
+              "n3"
+            ],
+            [
+              [
+                "builtin",
+                "DIRECT"
+              ]
+            ]
+          ]
+        ]
+      }
+    },
+    "drift/8923": {
+      "input_sha256": "8daa22c707dc229917695f995cc7e65aaef0939f073ee3408cf14b083e367df6",
+      "classes": [
+        "dialer_ref/fail-closed-shape"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/8929": {
+      "input_sha256": "4edea07944b654272e3201f0d659541d78c401b61669d90fa8dbe9598dfbe6f1",
+      "classes": [
+        "dialer_ref/fail-closed-shape"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/8930": {
+      "input_sha256": "7bae505479bbb93e9913a60d96d2d8de9f83a7c35299a5127e8f85043c7be1a0",
+      "classes": [
+        "dialer_ref/fail-closed-shape"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/9020": {
+      "input_sha256": "8e2aabd37c2df63dd88fc022587e73808732a35fc1e2cf130f45519ac0684abc",
+      "classes": [
+        "dialer_ref/fail-closed-shape"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/9027": {
+      "input_sha256": "9525b2f7a3c759abecd5195ead2fb05805e88f01c800c84b11fce8fd7cee0527",
+      "classes": [
+        "dialer_ref/fail-closed-shape"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/9139": {
+      "input_sha256": "971e70e0b94b83bff2607c81336fc91e702323ae05abeff0da38c98a3534efa7",
+      "classes": [
+        "dialer_ref/fail-closed-shape"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/9247": {
+      "input_sha256": "e220e991920d35090a76b04901ea27b5691ab8413f241d8843c5dba7bbbf57f3",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "代理链 chain 必须包含 entry 和 exit",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/9248": {
+      "input_sha256": "a27e65cd70b2c6dc6425b95e022ba12fa2c36bf402f1051dd5dd57b9f4b7911e",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/9249": {
+      "input_sha256": "90a45b03317540967411897b0078833f245e4526c26d65379a8f845c73ace72d",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "代理链 chain 必须包含 entry 和 exit",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/9301": {
+      "input_sha256": "efa749b5de747eee4ad7ff3d87dc796176e69f5f76262655247ec6a133c59e8c",
+      "classes": [
+        "group/proxies_order/R5-array"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/9388": {
+      "input_sha256": "68591f59d73664cdc9e375cecd69db89f1ce6bf4ed67133a94a6185fe563fec6",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/9389": {
+      "input_sha256": "6f5f31233331ebd84e471a8512f4a97616eabb719e6aba1c17de8d222210013d",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/9390": {
+      "input_sha256": "467af42cd3b94c619ae9ed4bed11ec956e0d441ab18036a9851aae48c016daab",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/9534": {
+      "input_sha256": "e0f74f930ea79fe55b95880f17b9a45b74299af418d84e397d723f49b442826b",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/9535": {
+      "input_sha256": "323935f06676af1e9243375d1d29ba9f28026279f6f21620bec8ee0f96a19ad6",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/9536": {
+      "input_sha256": "067481b5e932403b5d09df2419086c6cef3a000d9a944c9b868cafe84bd08933",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/9697": {
+      "input_sha256": "722d2ec04ae3ee5c73903eb4cec1b42ceeb30f20a9955eca75f7b1dbb54929d6",
+      "classes": [
+        "dialer_ref/R5-record",
+        "dialer_ref/fail-closed-type"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须是 {type: node|group, id: 非空字符串}，当前值：\"n1\"",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/10013": {
+      "input_sha256": "519b1e0aeed3c33fa43ab8e2d263bdccadb51ae3b1d9a7f04970b9d8f4e3fed3",
+      "classes": [
+        "group/proxies_order/R5-array"
+      ],
+      "expected": {
+        "value": [
+          [
+            "group",
+            "g2"
+          ],
+          [
+            "group",
+            "g0"
+          ]
+        ]
+      }
+    },
+    "drift/10210": {
+      "input_sha256": "04381026bec42422082b0671024b6872455654ef6caa0a1d6f5f6f04608173c4",
+      "classes": [
+        "group/manual_nodes/R5-array"
+      ],
+      "expected": {
+        "value": [
+          [
+            "group",
+            "g2"
+          ],
+          [
+            "group",
+            "g0"
+          ]
+        ]
+      }
+    },
+    "drift/10243": {
+      "input_sha256": "8c681c5c0b1c84d1c8bdd12bf9f7ef514f1f88d73d50d923b939ee2d568a6c45",
+      "classes": [
+        "group/proxies_order/R5-array"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/10321": {
+      "input_sha256": "e0856ca785fb7240058e21fe22c53b2490a0dc82c7b8d838a8766d1fbde1fde9",
+      "classes": [
+        "dialer_ref/fail-closed-shape"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/10382": {
+      "input_sha256": "b34d583d6a6c0606e07a3dd6892f6b3ea4c210752d00ac806f38321bbfd1bc1e",
+      "classes": [
+        "group/manual_nodes/R5-array"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/10447": {
+      "input_sha256": "d4f1179593ad7d5d49477a45b7130c290d0ce2233866003b3410ffae82c33084",
+      "classes": [
+        "dialer_ref/fail-closed-shape"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/10753": {
+      "input_sha256": "4fd6965864169d3a014d02b10ee7e418888a6c67f17fcdf05adb3c38396e503a",
+      "classes": [
+        "group/manual_nodes/R5-array"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/10992": {
+      "input_sha256": "250f2c67745202b6c5fa8782901e4a2fd7f2f54f2b99468d06ca673df6707dcb",
+      "classes": [
+        "ResourceRef/id/numeric-text"
+      ],
+      "expected": {
+        "value": [
+          "group",
+          "5"
+        ]
+      }
+    },
+    "drift/11048": {
+      "input_sha256": "eab5e386c0b3e0eccf81a8c5623352c97ca690316b3270f81fb1a55f9f2ff44f",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "策略组引用不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/11049": {
+      "input_sha256": "e470227c62d20e507d2944891973357e108d83b02e6aee24b63c48eda50b27ca",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/11050": {
+      "input_sha256": "2b5f3e98724c2cdd575d36cb7a5a2deb58e12e0ed154157a02aaa6723f28dfc2",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "策略组引用不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/11055": {
+      "input_sha256": "ae858f11a58380f70847eb9e8480bb0b65e7332e0b8095a25bd77446e0671724",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/11057": {
+      "input_sha256": "123f26c8000664e3f6cbf75c7bd6818b5e4e59abed32f7cee0c6fb14c4f7c176",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/11092": {
+      "input_sha256": "34b45f2b4f5fcc18f9e402a613f41c01fe69c08a0d299e81095403fa9b191f5c",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "代理链仅支持共享手动节点，订阅请通过策略组使用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/11093": {
+      "input_sha256": "4f73fa49c4b2d2103b39a453fec51a6b27594f31620f9e15eb8977edf42d2b9b",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/11094": {
+      "input_sha256": "ab07fec0e80985772d3439106519d6f843b0dce205257707703a52a1e52fc8b9",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "代理链仅支持共享手动节点，订阅请通过策略组使用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/11268": {
+      "input_sha256": "478812d2b5cd851c3cba4301ff2cf27006fecebec22425c3e9454ae177ea9db4",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/11269": {
+      "input_sha256": "f8dd0701c55512869e17dacf7c2b9bdc306c9cbcb3e8bb9f81ef9a9d004c9e4f",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/11270": {
+      "input_sha256": "d84ca4d7f825441c96094a59dade2de6c9f2a5bdcc9198ac81c09cc32ad32b4a",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/11301": {
+      "input_sha256": "26b11a2af1aafe2cf82604e68aa1464c672699513ad36eea84e0e4a7ae181a35",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/11302": {
+      "input_sha256": "487066f6167e8a4b8646b5171f313f32eb66a30a3a87dcccc268345e26d5963a",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/11303": {
+      "input_sha256": "d90713c3ea129c338ff2083e536721ce4eef6f3c10e3d6a85f8768928fea1e2c",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/11437": {
+      "input_sha256": "e87cb1e28dcfe809e15e5661994e3fff99207180a3bba4136c9d2abd3af48ed2",
+      "classes": [
+        "ResourceRef/id/numeric-text",
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/11438": {
+      "input_sha256": "0f653f94922415df5c8e012ddd098a45119c788819ac5b361c3c37e4185de855",
+      "classes": [
+        "ResourceRef/id/numeric-text",
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/11439": {
+      "input_sha256": "69a9d8833a49918910798a2ab479949dff0624c5fb87f8621cc167d2252f9d76",
+      "classes": [
+        "ResourceRef/id/numeric-text",
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/11615": {
+      "input_sha256": "02d7ca43dbf7118fff07a4e47c3e576150c7d4d9132841577d8544d485db5229",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/11616": {
+      "input_sha256": "b5c872d5e15f8bfab1fa4329067f041731382339cba1210042c323fb06547053",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/11617": {
+      "input_sha256": "cb4aac9d69c04b345d8ef64bb22f964e7da500e8b1ead3950e44e50c26417494",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/11622": {
+      "input_sha256": "dd9cbae2ec32a60e875bc32dbe8a4a66a2e45a70ccf9eb4585caf47a3bc19f40",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/11624": {
+      "input_sha256": "a193ed3f21bf380721824259edc120e8540bb95defe68719d3de7596c27cf635",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/11714": {
+      "input_sha256": "41d4d2163e9d2d14f079c54e608ec823ffec727b36c615184f94e4703f7d2ad3",
+      "classes": [
+        "dialer_ref/fail-closed-shape"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/11721": {
+      "input_sha256": "abdb14f531d9723a3d2a3cf0870906b8d551f8724470815a6d404ba1eb4b212e",
+      "classes": [
+        "dialer_ref/fail-closed-shape"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/11745": {
+      "input_sha256": "3cad732ecdf008956846b51bb27da9c4f02d170da204de09f5bb9774922cba0a",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/11746": {
+      "input_sha256": "79efc1366fda272b2a18b7404082b3fb87667a18d58450f5c05a610199992bd5",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/11747": {
+      "input_sha256": "7f3fc54a194ad7fc206de7049e3d60807d132d1234dbf44061edb7a399e7f253",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/11939": {
+      "input_sha256": "f42161a4a17ce47fda5cfdf09eb2c3c7c4da8bad83a4a8499308419dcd5e0e03",
+      "classes": [
+        "group/proxies_order/R5-array"
+      ],
+      "expected": {
+        "value": [
+          [
+            "group",
+            "g0"
+          ]
+        ]
+      }
+    },
+    "drift/12006": {
+      "input_sha256": "0bad348bbd80892e7e0ae0ea934cfb0c3677ead53cf7aec46e01370766937df2",
+      "classes": [
+        "dialer_ref/R5-record",
+        "dialer_ref/fail-closed-type"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须是 {type: node|group, id: 非空字符串}，当前值：\"n1\"",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/12144": {
+      "input_sha256": "3a9adc25873a5fa88c76512707ef129964330518e2852740da43ab0bf8e30408",
+      "classes": [
+        "node/params/null-absent"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/12146": {
+      "input_sha256": "a383f327f6915aa82dbc01c65bdc1390e02efffe406ff12021a9223c492f6d0a",
+      "classes": [
+        "node/params/null-absent"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/12158": {
+      "input_sha256": "af0111b2f43a5cde2c6738216cb1e76e1ba33f2c1219e9631e8eccd34bb8c19b",
+      "classes": [
+        "group/follow_group/R5-text",
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "策略组 proxies_order 必须是含 type/id 字符串的对象数组",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/12159": {
+      "input_sha256": "569f7738e22c69ebd35c1631ab70c5da20a8fbf5159d26b7fa8a13d4e70425a2",
+      "classes": [
+        "group/follow_group/R5-text",
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "策略组 proxies_order 必须是含 type/id 字符串的对象数组",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/12160": {
+      "input_sha256": "2649ac3400a3991c9e18a37ff4ac37370e6a5a73596f51627fdbaee22260fe31",
+      "classes": [
+        "group/follow_group/R5-text",
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "策略组 proxies_order 必须是含 type/id 字符串的对象数组",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/12165": {
+      "input_sha256": "9ee602f307642bdc9e2a60c192370c715181023a11dd6d401a13899e53794f58",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/12167": {
+      "input_sha256": "f7ab526eb90ca5cd74bdb2337da4d4c8a4f2d7594d0c64a77ec4fabb2e3e4683",
+      "classes": [
+        "group/follow_group/R5-text",
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/12168": {
+      "input_sha256": "fb92a9e2f6eec1db4524484d4a180011d90a1a6a2f445f919d845aa2104fc974",
+      "classes": [
+        "group/follow_group/R5-text",
+        "group/proxies_order/R5-array"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/12384": {
+      "input_sha256": "4a147140ebafe65a8a290d44c7e5f02270f85cda65070aae642691bad8db7ab7",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "error": "策略组引用不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/12385": {
+      "input_sha256": "895915256a69aa5076b46dd45d514cae8994a33033efe83189fdc4f424cdae09",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/12386": {
+      "input_sha256": "fde9f5b44b41e930d51a9c07e0d79c2381cd09331f3ffeaa008d857d1a592cc6",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "error": "策略组引用不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/12487": {
+      "input_sha256": "9962255adeea18cb7bdf9057d508ab84b5aa0b222f885dd40096ab3d84ff47d0",
+      "classes": [
+        "ResourceRef/id/numeric-text"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/12489": {
+      "input_sha256": "7182bdf609545adbb0b7a976a66e9ead43857de63a94672f9a2d7b63dc8c0044",
+      "classes": [
+        "ResourceRef/id/numeric-text"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/12498": {
+      "input_sha256": "b2c484316c89f3f562bbc4682c99542098072494636e4b05a304047c75c2c9df",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/12499": {
+      "input_sha256": "b4eec784cb0844821077a841b1649ec9160189845885a53e45cc8c6ad2b5f50b",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/12500": {
+      "input_sha256": "2e80efe457b6c7bd672da80579c14846933af447eb77a2c6633e8634f5fea150",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/12612": {
+      "input_sha256": "7152c2eadaf1fd7afb4b613a6acab9de49d949fc0e25f69e0c78848d04dd0bc4",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/12613": {
+      "input_sha256": "b7126a0eb86356fdc28ac72b8d0d682e99c7dee54069d5b0e72304d33f7562a1",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/12614": {
+      "input_sha256": "0103f61bf3a8a2cd013f7c0e7511e94a9ed0ccc306003a78a5672f81b8cb39ce",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/12662": {
+      "input_sha256": "f0b53220b018f41cf7472c1702f27516580678256b34847024584c9b5b7b4c7c",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/12663": {
+      "input_sha256": "7a61e875ffe1d003e705975bafefef073750b56c91b47c8a349a72921cba9f72",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/12664": {
+      "input_sha256": "22556ae33036aa5780c7fee690decd09719955a6bd6380eee761fb140465c479",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/12689": {
+      "input_sha256": "9d9a1f89cacfd29ac6347b023ad904140d830477e135da451b58966537a6eca9",
+      "classes": [
+        "dialer_ref/fail-closed-shape"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/12741": {
+      "input_sha256": "2f39e043096d5ed8e3e387db6bf192aa4de1d59d4522e4af0343b9072c98b73b",
+      "classes": [
+        "ResourceRef/id/numeric-text"
+      ],
+      "expected": {
+        "value": [
+          "group",
+          "5"
+        ]
+      }
+    },
+    "drift/12745": {
+      "input_sha256": "2a409ddd33a98b0a9e7439ec6a5403aece833951b1de92415a2f0c6393060d53",
+      "classes": [
+        "dialer_ref/fail-closed-shape"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/12764": {
+      "input_sha256": "bc0f6bad7bf3e6d37cfcbdb00b09da81231c34c902b5303662736b7e42a689e1",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/12765": {
+      "input_sha256": "bf5ff9cc434d31adcca766dad9585dad41e2da291227cb561758f84152ddec3f",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/12766": {
+      "input_sha256": "5767978a478c14fe7c2415d60404d5c81086aa030e27455f5496cd94f142ced4",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/12771": {
+      "input_sha256": "bc2f1ee7e4a59ce92d17bc6b95ce3b2ffe2f1adf2f3d9faece858e1fc6be86ad",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/12773": {
+      "input_sha256": "bfb55e0a8b05c0d30185a7936d1269171438de73fd7c532a09f249609fda25ef",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/12830": {
+      "input_sha256": "1b07f6e37ad59f6db72da9c698bb5e1a07c7baf06c01f729b60585630aea6269",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "error": "原始 dialer-proxy 'g0' 不存在、未启用或名称不唯一，请改用稳定引用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/12831": {
+      "input_sha256": "684cfe1235d5ffb3d54fc264dd18ef6fce7f83a1d366d1f12d06260026f172ee",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/12832": {
+      "input_sha256": "84f5ce61f7f038e20f67137fcd7f7e8ded868cee57a1a3026d8c0c8452078a9a",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "error": "原始 dialer-proxy 'g0' 不存在、未启用或名称不唯一，请改用稳定引用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/12885": {
+      "input_sha256": "89cba50578315efb6b62817a98fc7d776a8602133836c2d196ce904d9104629b",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "error": "拨号代理要求代理/策略组名称非空、唯一且不与内置策略冲突",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/12886": {
+      "input_sha256": "f245ed0e5c53e5dcf29e64355548610a5eba8dea151da840f8417f58ab9a7d2b",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/12887": {
+      "input_sha256": "08b8fd6d7f32523b2d4bc17d58bb10233b3d23865a36439e27763cd0ffb76414",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "error": "原始 dialer-proxy 'g3' 不存在、未启用或名称不唯一，请改用稳定引用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/13016": {
+      "input_sha256": "6338b0b72433448eb2d1b02cc554e0019039482eec0a55cf93a9028b81d96315",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "error": "拨号引用不存在、未启用或不在当前配置空间",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/13017": {
+      "input_sha256": "57e2976422fa54b6d0eb1c62719ff88d0f7e0c84432f1ff2519c6a9bb73b8e5d",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/13018": {
+      "input_sha256": "cc649197863dd9125e149f4add1d08575cb35e27bae1f35171312f8d6f529a65",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "error": "拨号依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/13275": {
+      "input_sha256": "69dfdc2ad0fcd08d91578587c7a8eaa5ae23cc2b1ca71c353f3c98cda28d1b26",
+      "classes": [
+        "group/proxies_order/R5-array"
+      ],
+      "expected": {
+        "value": [
+          [
+            "builtin",
+            "DIRECT"
+          ],
+          [
+            "node",
+            "n4"
+          ],
+          [
+            "group",
+            "g1"
+          ]
+        ]
+      }
+    },
+    "drift/13298": {
+      "input_sha256": "034ab5ed1862fbe33aaca1ebbb2b2402df29cef7c3f491a58ac41c29cb2c25f9",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/13299": {
+      "input_sha256": "f5fdef698c79b89c98a19115b020ecc7604ec3ec01bb4fc00b8bd1b7ad8a2c9a",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/13300": {
+      "input_sha256": "af05a537328ab391e983529856a006e32b465ea9d0788d900440199c479576de",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/13547": {
+      "input_sha256": "b345ab3d21cbf479d1e7e0b2befc4b9620a6bf8f7d8de8b08ef5bb7c34b115b5",
+      "classes": [
+        "dialer_ref/fail-closed-shape"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/13548": {
+      "input_sha256": "6445dca742b224e2ec5ef31a419e2de36752bdcbbd8d9a926d1dffc16db24b93",
+      "classes": [
+        "dialer_ref/fail-closed-shape"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/13731": {
+      "input_sha256": "cd2c6a797fd9895aa8739718ce8b994212d04cc501d012f6e31f2f79e979b5ae",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/13732": {
+      "input_sha256": "c371f9bcb853ca0c478b4a5fe5d56c6168c1c8138a355010a50a808262714a66",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/13733": {
+      "input_sha256": "685f79139180878fb3e265b2ba4a3d10db782521c7778a29bd5292ba2d110346",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/13755": {
+      "input_sha256": "e405119ca09735b1e19ffcf4a24158d352edbc2c2c927fa308f68bd48561c756",
+      "classes": [
+        "node/params/null-absent"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/13757": {
+      "input_sha256": "11cfbf4cd04c964945c5074d3ada628486c1c242882302f6b85bc4de490ce451",
+      "classes": [
+        "node/params/null-absent"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/13780": {
+      "input_sha256": "c353ef044df3bd94313508672c1f032d2efbbda4a0fa79b140cea2b9a2d4207c",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/13781": {
+      "input_sha256": "22f1c4cc35f0907adedb973a935438aad2d4fb687ac89d30ea0c2819fad9d65d",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/13782": {
+      "input_sha256": "18d1d297e3eabbc90ba080fe371ccc23509bbfeb402b9e80258657c2e291e1e4",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/13856": {
+      "input_sha256": "cf1d2c164b17328ec2b8d7289381520ca33102c5fb584fb83d386ef484ca5ada",
+      "classes": [
+        "group/follow_group/R5-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/13858": {
+      "input_sha256": "0b25a803e4a9a212461fc3b8ce3cf36943b3469d8250051f358e8c62fe4c2a4a",
+      "classes": [
+        "group/follow_group/R5-text"
+      ],
+      "expected": {
+        "value": [
+          [
+            [
+              "node",
+              "n2"
+            ],
+            [
+              [
+                "builtin",
+                "DIRECT"
+              ]
+            ]
+          ]
+        ]
+      }
+    },
+    "drift/14063": {
+      "input_sha256": "71922d7ba0ea3ae297bff54aeec8498838fc7e91bd2a79b6ae57a48e10ef65cc",
+      "classes": [
+        "ResourceRef/id/numeric-text",
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/14064": {
+      "input_sha256": "b8abe2da0c441cd1268e5cf897d6486ec1c0abe69894f5fb7e3a00bfc6633cb8",
+      "classes": [
+        "ResourceRef/id/numeric-text",
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/14065": {
+      "input_sha256": "f55759b3ea044fc583f6fef5947d3b55f73d14176dc50a578b04f195263952e1",
+      "classes": [
+        "ResourceRef/id/numeric-text",
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/14070": {
+      "input_sha256": "4532b1df0c61b577c1bf35c4c28c60366eb7043a030d441ffcf7ec674fac9a11",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/14072": {
+      "input_sha256": "2195f389110b45ca8d926f947bcdf381e7cf79e6435a75b58f677c39a28d06f1",
+      "classes": [
+        "ResourceRef/id/numeric-text",
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/14178": {
+      "input_sha256": "10899089f77a0d58396df34196fe6888f7365951c60e560f9843ee3d7e83f852",
+      "classes": [
+        "dialer_ref/fail-closed-shape"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/14219": {
+      "input_sha256": "b7723bab1d35d5489d5234f31af58c7c91e6ad302a29fab123975a3f585c4c44",
+      "classes": [
+        "dialer_ref/fail-closed-shape"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/14220": {
+      "input_sha256": "e403c39945cf24edbc81ecf34049fed88a861baf2a2e0dd621fbd0930110687a",
+      "classes": [
+        "dialer_ref/fail-closed-shape"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/14318": {
+      "input_sha256": "1e4a965dd2b52330eb949c8830cc06f52b8f19e6754599bdbcd5c5c2c40aa1f9",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/14319": {
+      "input_sha256": "1ecfb9b2cc4c353e22cad2544aaf2ba6bba44ac55ec0d8f5b57fad2863c843f5",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/14320": {
+      "input_sha256": "a58ddbef8023595eb0f26b1194c6afca4d09adfa5eb7c1c52ccb9201172a8519",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/14356": {
+      "input_sha256": "73ddc34c8620c507e0329393abd8333f86b9b321f1e8f5ce7e6d8de98f24cf0a",
+      "classes": [
+        "group/proxies_order/R5-array"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/14694": {
+      "input_sha256": "5685fbb1edfea727053a5333013191e262bb4103665b4df911148029374a1749",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "拨号引用不存在、未启用或不在当前配置空间",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/14695": {
+      "input_sha256": "1174e24bf3f323ce90e7eed06f1827fa7239c0dc73b9396d306d9b120ccb65b8",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/14696": {
+      "input_sha256": "88fe7337a4794d4e41cc48325a0258f90c9399560777aedc680f7d7e982a427c",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "拨号依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/14843": {
+      "input_sha256": "0a4fec2f937bc6bdcf1850b0cb25b006a61041e42931cc27642d88bfce407800",
+      "classes": [
+        "group/proxies_order/R5-array"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/15210": {
+      "input_sha256": "ccca0ebb2198ae5dadfbfc6135f64bca1adac3d0b24c73c64785f7396bfb4eb2",
+      "classes": [
+        "dialer_ref/R5-record",
+        "dialer_ref/fail-closed-type"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须是 {type: node|group, id: 非空字符串}，当前值：\"n1\"",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/15244": {
+      "input_sha256": "22d2cea91ad3b353d3cb7a9bef042199780e5e379bf071c67f5f5279681c4a0a",
+      "classes": [
+        "dialer_ref/fail-closed-shape"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/15251": {
+      "input_sha256": "07ba32ca3ca5a6d7486bd6f23fbe33f946c4b9eeb50da07c1d12abbade4c7ddb",
+      "classes": [
+        "dialer_ref/fail-closed-shape"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/15263": {
+      "input_sha256": "0e70f852be348f5e34aa87249d05b7332ab3c4cacbaf7e24666b2bfed78c96fb",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/15264": {
+      "input_sha256": "d4c70c59f07e0f07fd7928e52b934c6b12e14920a1f9dd3eced5857410bc6f52",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/15265": {
+      "input_sha256": "67f9b32955634440c24b172daa367be8025c3562a35997283cdb2b69c4131c86",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/15270": {
+      "input_sha256": "e0991c480c05bd786efb53813f2921e5fdfda576ed50c192df037be24079d385",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/15272": {
+      "input_sha256": "d27408940b575582c1fc2497397b98764ad8b19ab01e96d221eddf3a6f4d354e",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/15488": {
+      "input_sha256": "fd45155737b4c2ea144fd29ea407509821ca2819e6ee9ebeac67644c93ec9857",
+      "classes": [
+        "group/manual_nodes/R5-array"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/15661": {
+      "input_sha256": "e20f13a663e87fdd590035b09fc21545565e966ec63ec9702e235ddcb66cd0ac",
+      "classes": [
+        "ResourceRef/id/numeric-text"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/15663": {
+      "input_sha256": "56869bc7ca860945b6fab0c2d8a852e0bd838973a9ea134a8ddba639167d3c1c",
+      "classes": [
+        "ResourceRef/id/numeric-text"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/15692": {
+      "input_sha256": "34ac52414744db0b1565dfe1976cfa8ab9a898eac73daf5b25ca47cde3ecde4f",
+      "classes": [
+        "ResourceRef/id/numeric-text"
+      ],
+      "expected": {
+        "value": [
+          "group",
+          "5"
+        ]
+      }
+    },
+    "drift/15740": {
+      "input_sha256": "05fd1626ab78ef68889f73a76a8970e3263bebc018502ba58e5def36866995f0",
+      "classes": [
+        "dialer_ref/fail-closed-shape"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/15747": {
+      "input_sha256": "33aafa7b4dacac6a27a6cf36fbc2cd6afa6df6fb26fffa66daf62860b2084ffc",
+      "classes": [
+        "dialer_ref/fail-closed-shape"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/15760": {
+      "input_sha256": "12c93520cda471494674207592b22d5f7b7e3b5c08a75602302d8db7629301c7",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/15761": {
+      "input_sha256": "6a6e8b71444067ef718fb8b1f797055be2a076464d54383ce05258faee170dee",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/15762": {
+      "input_sha256": "3b5c650de5c6b951ac4ae1c0abc258f9f647533c10a4acc8cf41f8bc250f9bf6",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/15809": {
+      "input_sha256": "37eb7cc9e6ec800018f7ba36bb142dbdcf32776ce394dc477a6771c0d8371720",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "节点 params 必须是对象，不能为 null",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/15810": {
+      "input_sha256": "f2c11e4f84a7b881b9bafaf34642ad0487f0aef4d9ab3a3b8a9b47fe8b44119c",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "节点 params 必须是对象，不能为 null",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/15811": {
+      "input_sha256": "7b809c618811d064592e2f708df8aedba7da6e490677f212929dbbacf16728dd",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "节点 params 必须是对象，不能为 null",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/15873": {
+      "input_sha256": "ef1bbba87037d956bb3eb30b74058a911634a901c90c6cd5461343ae2968720c",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/15874": {
+      "input_sha256": "0fca9b62c2212872a71216cd368f064ad5c0ba7edc537d456c0c0be8e4866583",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/15875": {
+      "input_sha256": "4ac74b68dea6b822934eac5f6a4c1dfa88d5de3efeed3f418411bd7429d1979a",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/15922": {
+      "input_sha256": "8ab76ebd26df5b9c48b266011062d4302d32134282fbfa7d16f976ea89808008",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/15923": {
+      "input_sha256": "ab43fae07c1ae4edad6a99556e44302a61aa530b371ae5753d266623b64cd2f2",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/15924": {
+      "input_sha256": "153ee398e52b733546adde63c2b727f21391baeed7016dec786df8a289671e75",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/16052": {
+      "input_sha256": "7ca469c235db1499cbce28d8c533b3af890a9b96c01ee0ddbd09357ad1b3b9ff",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/16053": {
+      "input_sha256": "31cc683a32f888ab2b66120e11f469f855238b2bc9447426e2ed2a04b3146387",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/16054": {
+      "input_sha256": "4f35f64f1fb3ca09d73d10a4d18dccea4bbaf980c8047e1d421fe93ecaa838e8",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/16059": {
+      "input_sha256": "0a8ef82dc1935bab90a17bb50c918290d56a8e25ed4162b8b9ad7a1bd206ffd5",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/16061": {
+      "input_sha256": "3f3ebed4248522724802f0aa7dc796ea32f5554929677ec42ff0c06c38937196",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/16170": {
+      "input_sha256": "82c25652c0739234a64edf11efe72f7af77ed94ea5df11943a7175c2adae34b9",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "error": "代理链 chain 必须包含 entry 和 exit",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/16171": {
+      "input_sha256": "40b547129dd374f7777622b1c84ac76d18c542fe4bcab4e0c4e80f9c3eb63f03",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/16172": {
+      "input_sha256": "c28478733388de74d4dba74f80bb992fd99974f5aac39fccc5d13a8ccc3fce78",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "error": "代理链 chain 必须包含 entry 和 exit",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/16224": {
+      "input_sha256": "41e3f063b1930b7d1c118f56cb236858fcc702c50e3fc1e7ba0c33b8c60758d9",
+      "classes": [
+        "ResourceRef/id/numeric-text"
+      ],
+      "expected": {
+        "error": "拨号引用不存在、未启用或不在当前配置空间",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/16233": {
+      "input_sha256": "1eb37c8c28378b9fa4f5611f7dff02c0eea7b0b7d40fde1e81facdb7fca9e43c",
+      "classes": [
+        "ResourceRef/id/numeric-text"
+      ],
+      "expected": {
+        "value": [
+          "group",
+          "5"
+        ]
+      }
+    },
+    "drift/16235": {
+      "input_sha256": "2e515c3e1f55e5fdf4a71b88f556c1b0608bb044dfcf900995144d5951a65015",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "error": "拨号引用不存在、未启用或不在当前配置空间",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/16236": {
+      "input_sha256": "ca57c113e42fdffe080b64d6f38eac769027d0de0d88ab958c4e41072ca16867",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/16237": {
+      "input_sha256": "186ec3c0329e80384d782b79f6d9c9090f6cd136e7e9ea5620efcbbe6baeacfb",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "error": "拨号依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/16482": {
+      "input_sha256": "5c901bded4db0b9506fc0ab7eb84a35ef658874eab8026e784cde1b5c4162d9e",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "error": "代理链端点必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/16483": {
+      "input_sha256": "635a39719c4a7e868ddf9d53fa8c30ebede58ef11de5a177c23e96e1de426cc1",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/16484": {
+      "input_sha256": "95e877e5ff039271d6c09b74022d037277a7e015d72a9a24301a99c81fd7f6f5",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "error": "代理链端点必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/16565": {
+      "input_sha256": "a44541a6258fd05ecd084bb88f4fcaf5de6a1b53745eef76aa609a651a814591",
+      "classes": [
+        "node/params/null-absent"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/16567": {
+      "input_sha256": "3ec617b67d416f84fb73b1d0216409e205244179c0c6d7d65b5424fde6939c79",
+      "classes": [
+        "node/params/null-absent"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/16709": {
+      "input_sha256": "4b599bd560e3e50aab4062ef348b51af04b31eb0856c3f92b5fe274412b879c2",
+      "classes": [
+        "ResourceRef/id/numeric-text"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/16711": {
+      "input_sha256": "273769ff15129c803dc60ce863e8ebdfb0946847730e9ab9cd23d470abe09f4a",
+      "classes": [
+        "ResourceRef/id/numeric-text"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/16764": {
+      "input_sha256": "59b1e1ab7a240a7eba4579d214c6edace305a9432a1ab933bd3f84e7f334895d",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "error": "原始 dialer-proxy 'g0' 不存在、未启用或名称不唯一，请改用稳定引用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/16765": {
+      "input_sha256": "def1398cfc4ba38c08f3d1f6e374a3a440e09f0bf3cd5fc08bc46b615db0cd76",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/16766": {
+      "input_sha256": "f0762bf648f1beabcfbf57f46ae9e3d4e652e321cf35c3e445f5a5c48bce799e",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "error": "原始 dialer-proxy 'g0' 不存在、未启用或名称不唯一，请改用稳定引用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/16808": {
+      "input_sha256": "17583f85d29c70406138e99cb9328504ffad71e01cf6d75eaecdf6bf095b11a3",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/16809": {
+      "input_sha256": "52acacc286a15146929bcf9cf9fb3177aab95123fe6f076e6145950d498ff70e",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/16810": {
+      "input_sha256": "9794b8c5b7a129ac2db43afa23b3602278960a3da6bd48ac387efd8babced25b",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": [
+          [
+            [
+              "node",
+              "n0"
+            ],
+            [
+              [
+                "node",
+                "n1"
+              ]
+            ]
+          ],
+          [
+            [
+              "node",
+              "n1"
+            ],
+            []
+          ]
+        ]
+      }
+    },
+    "drift/16815": {
+      "input_sha256": "e0991c480c05bd786efb53813f2921e5fdfda576ed50c192df037be24079d385",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/16817": {
+      "input_sha256": "7391dfb7a080f745598ee94753e59b6b8c44a0d13a74072e72d2679e5a6b5966",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/16938": {
+      "input_sha256": "9d663a2845a459fe69ce410cb29db86e64b0f7b28804e7a488b7b6b441707366",
+      "classes": [
+        "ResourceRef/id/numeric-text"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/16940": {
+      "input_sha256": "f33d57de7059bcd5cdccaeb3902fb887b555e4d0505ae738cd9739c7e269db1c",
+      "classes": [
+        "ResourceRef/id/numeric-text"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/17026": {
+      "input_sha256": "1c0a2e0e6503dc5074d3487636f386a8f0a26f200b9986c28b11c8e0c39582a8",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/17027": {
+      "input_sha256": "51907acd132eb595b32e76936137b7edddcd1786c9fb0274274c38e3f292ad67",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/17028": {
+      "input_sha256": "57099b887cb20e72021c38dcf060e186e4f5e6233908c2ef60c4f7ef7163a42a",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/17044": {
+      "input_sha256": "5db00dba37f7d5379f5f42062c8541edf33d8e0e44ab4f2eb578c6be1a4ca334",
+      "classes": [
+        "dialer_ref/R5-record",
+        "dialer_ref/fail-closed-type"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须是 {type: node|group, id: 非空字符串}，当前值：\"n1\"",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/17046": {
+      "input_sha256": "4341a31fb4a74737f73dacd08f25c35d572ea87e47758c8cbce0006aba98264c",
+      "classes": [
+        "dialer_ref/R5-record",
+        "dialer_ref/fail-closed-type"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须是 {type: node|group, id: 非空字符串}，当前值：\"n1\"",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/17051": {
+      "input_sha256": "a6ae32149923a0d1e4a93877ef03a6f264f87e31d110e0bba5e0cb59c2cda053",
+      "classes": [
+        "dialer_ref/R5-record",
+        "dialer_ref/fail-closed-type"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须是 {type: node|group, id: 非空字符串}，当前值：\"n1\"",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/17265": {
+      "input_sha256": "ad4fd395db49e779574536db0383cd01937ed95363830e54d8ca6cdb8c98224c",
+      "classes": [
+        "dialer_ref/fail-closed-shape"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/17321": {
+      "input_sha256": "57a1442311f1f33128522e76e98eb74302b1970e7b913daaf79d756e1b79b980",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/17322": {
+      "input_sha256": "7a3da509ecd78dc4a9cdc939114b6a49f6d1037692db725b2e88f924a06d3572",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/17323": {
+      "input_sha256": "fc28f540e5bd5db0b8a18b16adcf96546b5b7962bd2e4fd6fd206c850610e7fd",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/17599": {
+      "input_sha256": "db6544ced5355c92ec738877dc6f561ceb6cdcd0478fee537af18a84722b38ab",
+      "classes": [
+        "group/follow_group/R5-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/17601": {
+      "input_sha256": "f8b9a5bea30d972694a82675e8263082e8a35bfc2db0409797eaf12768f2ef79",
+      "classes": [
+        "group/follow_group/R5-text"
+      ],
+      "expected": {
+        "value": [
+          [
+            [
+              "node",
+              "n3"
+            ],
+            [
+              [
+                "builtin",
+                "DIRECT"
+              ]
+            ]
+          ]
+        ]
+      }
+    },
+    "drift/17621": {
+      "input_sha256": "83ce567f0bd77f064ae28092f8975c006a28037a8fe095099f158fdc1f96e8bd",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "代理链 chain 必须包含 entry 和 exit",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/17622": {
+      "input_sha256": "68b6958613ba9019132cb9ec71c6d39ae92966a13f91df9d95187f148ff79c4c",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/17623": {
+      "input_sha256": "bae9a6dcd2a1e604e31217932d23d65731bcb7a81fd597b11582f40d3f98eb95",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "代理链 chain 必须包含 entry 和 exit",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/17628": {
+      "input_sha256": "a21babedec12f60c0f4def6ad37066c9115d7ea28908d345e5f6d0a335826f40",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/17652": {
+      "input_sha256": "af03efba2abaa4375d4d57b3b95ad86d9483192369ce567b22d0b508326e372f",
+      "classes": [
+        "ResourceRef/id/numeric-text"
+      ],
+      "expected": {
+        "value": [
+          "group",
+          "5"
+        ]
+      }
+    },
+    "drift/17663": {
+      "input_sha256": "889e0148540bb81044ae0b12796bd3406e5333dbcbc078e23e1a819af449a2ef",
+      "classes": [
+        "group/manual_nodes/R5-array"
+      ],
+      "expected": {
+        "value": [
+          [
+            "group",
+            "g0"
+          ]
+        ]
+      }
+    },
+    "drift/17900": {
+      "input_sha256": "f43137b6da4c4460df608d0fbb0988f37ffcb2468e3dba294b7d9897aeddd9e0",
+      "classes": [
+        "ResourceRef/id/numeric-text"
+      ],
+      "expected": {
+        "value": [
+          "group",
+          "5"
+        ]
+      }
+    },
+    "drift/18185": {
+      "input_sha256": "9342cff0430be6beab65a21d29cd68065eca7d1b165f684c1cc493cf9a088394",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "error": "策略组引用不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/18186": {
+      "input_sha256": "1351e45719897ad2aad5059df7e0688f18d3f00d1ac7a774c64fd69cf82769f6",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/18187": {
+      "input_sha256": "a89ce6af8a16493066e368738999a3b79c67067ff35693552bee8a16551c84d0",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "error": "策略组引用不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/18218": {
+      "input_sha256": "445ed76304c13070c0b75228ed01bf1bec4519f0de7dcd1718cf50ccb70f364d",
+      "classes": [
+        "group/follow_group/R5-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/18220": {
+      "input_sha256": "2d5f882626179a8136eacac9309c9c654e1d6882fad85b8cf300b71bae4eb7e5",
+      "classes": [
+        "group/follow_group/R5-text"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/18300": {
+      "input_sha256": "f7d2c6acba4d39afed45f8b71fb378b7593e640546d807c3c6077a2b766bb18d",
+      "classes": [
+        "node/params/null-absent"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/18302": {
+      "input_sha256": "7c2a778a007fed86bf005f338e52e6791d190e8733d1f0cb7fa4019230c79a06",
+      "classes": [
+        "node/params/null-absent"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/18314": {
+      "input_sha256": "531dec077d77671813aac256e9c0a7beb10501c82044ec699b0ccd3c7ae379bf",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "策略组 proxies_order 必须是含 type/id 字符串的对象数组",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/18315": {
+      "input_sha256": "68d47d5d8102ddc4902da9d39695745630f0f9cd35778c78ecbb4fdf381f6789",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "策略组 proxies_order 必须是含 type/id 字符串的对象数组",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/18316": {
+      "input_sha256": "4d13270ff9d06a98fdc2aa9348401758ed713745fd36b632cc0e8f00fc5ab865",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "策略组 proxies_order 必须是含 type/id 字符串的对象数组",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/18321": {
+      "input_sha256": "7c62b24bd27ed94729501ff2072382b7c7bb1f79b4793429a7bfd24266d5de6b",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/18323": {
+      "input_sha256": "8cdc156a3576c8035274458a931a82059d868a1891b1da3e214f64b9162f4d6e",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/18324": {
+      "input_sha256": "84a3c22b4d2b7d1b1e4759d564538e050a1951ff5b77a9f3f5bd691d1be3f96f",
+      "classes": [
+        "group/proxies_order/R5-array"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/18377": {
+      "input_sha256": "89bf036276c9c8815db3a960b9012ff7cde29b1903a3891fccf51f7362c2b894",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/18378": {
+      "input_sha256": "4e1cffe95f383d2faca45692ea84ddc3f6074ee696728a86cecfc828fb893a4c",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/18379": {
+      "input_sha256": "8ed47c1a26c2da01856f28b24f7ee3e46c17e8a711805aa1ddebc76f9052a963",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/18427": {
+      "input_sha256": "abe0ec533d3f704d79e8d475beaab96acce90658498e650bed3ab74b17582a97",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/18428": {
+      "input_sha256": "68fbb1454610e9c68bbc07e6fd33d3f882ba758d22186faf47d95314850f5cb6",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/18429": {
+      "input_sha256": "c3608ea4bf8b8a6ee9aa08de4f657c7fc687a7724d571a5987106d5c7e9d4e34",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/18584": {
+      "input_sha256": "34d5b081d465dbe45ed50997f513818b379112137aeee0a18a19e21f5a209fa8",
+      "classes": [
+        "group/follow_group/R5-text",
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/18585": {
+      "input_sha256": "58233d384ed37c0173789cf3366e4a8816d6adbe5decb0bba085ab0bef4d4f94",
+      "classes": [
+        "group/follow_group/R5-text",
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/18586": {
+      "input_sha256": "430a60154e313fa454f87e8a3335da78edb86cd093c1e30e32228acc399d9792",
+      "classes": [
+        "group/follow_group/R5-text",
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/18777": {
+      "input_sha256": "1e9e7fe87cbbdb82525afedeaa758a156e775fb6bc29d3eb3ff95d3a88006862",
+      "classes": [
+        "group/proxies_order/R5-array"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/18789": {
+      "input_sha256": "6673be8f1343ff3a03f350ed8ed7eaf190aecc05ece583b5ea9f328dcb606558",
+      "classes": [
+        "ResourceRef/id/numeric-text"
+      ],
+      "expected": {
+        "error": "拨号引用不存在、未启用或不在当前配置空间",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/18798": {
+      "input_sha256": "f4aedd87b38b971bfe4dd29636152ae5d45fa37e536ad8acb8f9d12fc985d543",
+      "classes": [
+        "ResourceRef/id/numeric-text"
+      ],
+      "expected": {
+        "value": [
+          "group",
+          "5"
+        ]
+      }
+    },
+    "drift/18833": {
+      "input_sha256": "f9c550241e71a6b07096ae6bb3c6b0de9742300c89da78f6b5b674924af60d51",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/18834": {
+      "input_sha256": "e40d9e4b585bbbeec9a2729c0474eaa25bd79a16c212e923658748cff91325fe",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/18835": {
+      "input_sha256": "45a03259b70ab8873ea03c14eff4676729f39deccf1d75f8300566721ce3667c",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/18888": {
+      "input_sha256": "1af1c466d640a8f8196c049e3079315ae776631826bb94eadbc0461610c23b89",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/18889": {
+      "input_sha256": "26fbf3c6c012e0d89c65a12ab7f84f1adcd82fbac77af4c8db2fe12e6b7c5a7f",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/18890": {
+      "input_sha256": "d499711703d6dc3b02b072ed15a5661eb9af45bdbafca5c5b48d4cb4a4e6bfe1",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/19079": {
+      "input_sha256": "0145588c962e16fb226261fe145c56e9080d62eb795e503bbf43e52cc568445d",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/19080": {
+      "input_sha256": "ef9eed2f0f5f82d4664ea792fe04ab33682f376da9e8034c6a88d4a3b7f78851",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/19081": {
+      "input_sha256": "c90f998a9979d8fbed096c34e0be665270739159cbe939a2c46dd86985b21f65",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/19216": {
+      "input_sha256": "40cf55f873002e4230995b90521a5d10988c159f3e0fb96fff67552a04d60577",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/19217": {
+      "input_sha256": "0b58bcf0457f19141a7a328753bad24abef8b657aa69205a575e35a8f9ede313",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/19218": {
+      "input_sha256": "10fb25764f78dcf3c243e63e9ec40a05ed9ffb8ba3440b2fab511d99e9dd7aeb",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/19341": {
+      "input_sha256": "bcc7346fa88bbef0caefc5f74937f2a551985a92300203b0f7a9fc4f0ba27d1a",
+      "classes": [
+        "dialer_ref/fail-closed-shape"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/19398": {
+      "input_sha256": "df038bae37f3c95ef4047d96aabdcc4330c8b56ab836b77e40e62edaa01dac0e",
+      "classes": [
+        "ResourceRef/id/numeric-text"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/19400": {
+      "input_sha256": "2ba6773fc333a4b6c826d8386306cf081a8955d197f3c508b449ed173d61bcf2",
+      "classes": [
+        "ResourceRef/id/numeric-text"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/19409": {
+      "input_sha256": "d7df81b5ca65e7a85956f6e144abf3cc7e62d1658af347aff188b718e2ceb5fc",
+      "classes": [
+        "ResourceRef/id/numeric-text"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/19411": {
+      "input_sha256": "2ec8f753414b2bb692695719bbf15a639acc462bc8d0618b0959ead566e18b83",
+      "classes": [
+        "ResourceRef/id/numeric-text"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/19442": {
+      "input_sha256": "8024d3406ba2c951a9fe819e53ee7a2347243c48d134dbeff43c25a8841540d3",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "代理链前置与落地不能是同一资源",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/19443": {
+      "input_sha256": "468a326e7cff2e4250cb02fb37c151b7ca0b3f45de529c7f9e0c12a517e7037f",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/19444": {
+      "input_sha256": "6f7e91ae4a0ddda41885e42808586f40dbcd322cdfd35a6e39e8f5d135076220",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "代理链前置与落地不能是同一资源",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/19449": {
+      "input_sha256": "32c1ea27f91a1a616e39f7cfaaa601225f28e22b7680e7670a1a0d8dcf7b4f70",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/19451": {
+      "input_sha256": "27845491cd376506167b69b64ab5e58c9666d953f3436e32dc60324bb8b7da32",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/19551": {
+      "input_sha256": "1ce6e053d450b965fedfe1969927c0cd8f9890e4fa508603464483445e3e1e7e",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "error": "节点不能引用自身作为拨号代理",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/19552": {
+      "input_sha256": "18655cf8145aa6aaf107ec3a1503a11b81fd8d204ce6a805ec2558a9bd6283e0",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/19553": {
+      "input_sha256": "50c29649262fa17f84d8bad6810e4ddbd8f485891c298e30e468493d68b15881",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "error": "拨号代理依赖存在循环",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/19573": {
+      "input_sha256": "b5c052e09b46080e5ecd631185bcde632dae1a9e08b74f0cbb50efacacb03231",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/19574": {
+      "input_sha256": "bb43f067cfe330e9bde9729e9ef236f6dff95cbfc560d8cb50c12ec71e4d160c",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/19575": {
+      "input_sha256": "18ec4cf2c92a9b9ad78d3b7b78fe928a9179da218551040ed219833c4ef3d078",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/19590": {
+      "input_sha256": "b0f18b36e275298968093987985d092547d3e553fdbbb2e7d625ceffaceab4ef",
+      "classes": [
+        "dialer_ref/R5-record",
+        "dialer_ref/fail-closed-type",
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须是 {type: node|group, id: 非空字符串}，当前值：\"n1\"",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/19591": {
+      "input_sha256": "99c4f855a719537e63118bd8b0799634b38d48f7b5292dd38ca7922643be72b6",
+      "classes": [
+        "dialer_ref/R5-record",
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/19592": {
+      "input_sha256": "b0587703e660a9a3b3b282dae15ac0dc53f15470a9d060477160ee498331fe6b",
+      "classes": [
+        "dialer_ref/R5-record",
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "代理链 chain 必须包含 entry 和 exit",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/19597": {
+      "input_sha256": "1202caf82de195313f64b81fc38447056965c3e648c63c60e9cae96b5182ec5d",
+      "classes": [
+        "dialer_ref/R5-record",
+        "dialer_ref/fail-closed-type"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须是 {type: node|group, id: 非空字符串}，当前值：\"n1\"",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/19720": {
+      "input_sha256": "90669bb1948dde42a9cd9dc58c769c7cc878334ebd4e5054bdd2483fe960ef8a",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/19721": {
+      "input_sha256": "de6db3903018d0c2e40d4dc2e4d7919539fd0ef3bf867513b1ca5eefadfd02c5",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/19722": {
+      "input_sha256": "051b05ed235393d9764b68e58af329ec5b7fe009d87ac1a5eccecb423fa1b7e4",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/19794": {
+      "input_sha256": "2d7ae661483aa81de1cdf41280be93869d11b1e799eda4f5758be33e6a8787e3",
+      "classes": [
+        "group/follow_group/R5-text",
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "error": "拨号引用不存在、未启用或不在当前配置空间",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/19795": {
+      "input_sha256": "99659d719179c01f05574dd4ec63c15b8cf537809cf475a3ddb4eb580dcb506c",
+      "classes": [
+        "group/follow_group/R5-text",
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/19796": {
+      "input_sha256": "00cbb66ea3fc3a8725d5da7213ca2a7ff828b1ea03bd9cea698b4f792d606ca9",
+      "classes": [
+        "group/follow_group/R5-text",
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/20010": {
+      "input_sha256": "ce093d8946f0e976f49c2e9e0df784e4fdcbe0ab62bcaf1c1c394380cc89ea80",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/20011": {
+      "input_sha256": "a3dfeaa69227951bedddbeb08a44c8f0031b2e3d4673fc5f7bdf32faf4c62a1b",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/20012": {
+      "input_sha256": "b48b4b00957f7bfc936ae505c9130419802f8dadc80b6bb2271fcc0e3e55fa9d",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/20137": {
+      "input_sha256": "dcb3d5b03e20b04aaa60900714206eab44061e65aeb94cd9c5d3b96b88592c37",
+      "classes": [
+        "group/manual_nodes/R5-array"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/20159": {
+      "input_sha256": "1652656093d3091c3ba570de0cea24e8355ea743e17c30ab1e61909abc8fff5e",
+      "classes": [
+        "ResourceRef/id/numeric-text"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/20161": {
+      "input_sha256": "8246e9c29e5b0f40280cd6af37ffe4d3675c905419ea117f11a5fc063f49d53c",
+      "classes": [
+        "ResourceRef/id/numeric-text"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/20180": {
+      "input_sha256": "7bde790b09d1658692d665c351a975f7b609e90b142468240cf0db19f752afdd",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "代理链 chain 必须包含 entry 和 exit",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/20181": {
+      "input_sha256": "165e4c8878fd9cbaadcaa82b8e5ffb98badf18bed78f631ac4bd411db599372e",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/20182": {
+      "input_sha256": "deff5944c817f49567cd18a86ef5da91af60f71ab0387b04010d2d79da872b96",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "代理链 chain 必须包含 entry 和 exit",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/20187": {
+      "input_sha256": "4532b1df0c61b577c1bf35c4c28c60366eb7043a030d441ffcf7ec674fac9a11",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/20189": {
+      "input_sha256": "feb8fda27a8cdaef8d33ab09f075afff617dc10e2cd8be0407863a4a7fff9f9a",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/20246": {
+      "input_sha256": "8bf96c27156e5ad5008b476d30dd4415352c0d8dd0b4a63001a815d45c4ecc7c",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "拨号代理依赖存在循环",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/20247": {
+      "input_sha256": "ca72ef110e84d572a23934354485b6d14143fd9187e9681843838f048c955c4e",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/20248": {
+      "input_sha256": "743cac2ef08dd252479e3bac26eaa779d2c4abe84771031d1be99e9195f8820e",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "拨号代理依赖存在循环",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/20342": {
+      "input_sha256": "d0037da1da3bac235506fb8e67030790ffd172e522d80d858d4fd82fa294d0bb",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "拨号代理要求代理/策略组名称非空、唯一且不与内置策略冲突",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/20343": {
+      "input_sha256": "53e3b4cb6affe26dc64ce41f550aceaab7a1284ab7829ad7b3d99ff9967cfbe3",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/20344": {
+      "input_sha256": "1574e9ad5cc672d407fb94659753c5af23c03cfb8977139d33ea09026354a868",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "原始 dialer-proxy 'n4' 不存在、未启用或名称不唯一，请改用稳定引用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/20427": {
+      "input_sha256": "54ba7774548b50b8a4e2baa68b09fd229aef3db96c0e1613ca627e9c294f23c0",
+      "classes": [
+        "ResourceRef/id/numeric-text"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/20429": {
+      "input_sha256": "da2ba7018db47b0d6e46e7eac3acbb55d9ea354241070d176e6372aad5944671",
+      "classes": [
+        "ResourceRef/id/numeric-text"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/20481": {
+      "input_sha256": "aaf0cb092cf0aa13977940193d06aebb34ad318ba197d1555bcf54a88b128cd8",
+      "classes": [
+        "group/proxies_order/R5-array"
+      ],
+      "expected": {
+        "value": [
+          [
+            "group",
+            "g3"
+          ],
+          [
+            "group",
+            "g0"
+          ]
+        ]
+      }
+    },
+    "drift/20603": {
+      "input_sha256": "b9ba3eb6f5b34ab8b675c289a6f7fd48e34a62d93e3f3f805a7868fc7d3607e0",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/20604": {
+      "input_sha256": "b206ddfef883f77cb05717d694706f6d9d21ce4808e1e9922e261df5144e6aa8",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/20605": {
+      "input_sha256": "76ce8250b774ee2284c0efaae7574a0f1cd5ff4259f85a16836536ac0bf637b7",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/20746": {
+      "input_sha256": "5d18ee47e0a9e1576f3595a423aa0df3420cb3fde9a41664133c6fd9db1a261b",
+      "classes": [
+        "dialer_ref/fail-closed-shape"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/20787": {
+      "input_sha256": "43025fb69d9a8f3f37ceb6d7de1f90d28ca423ec1abf4438445a2d221b28d6a8",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/20788": {
+      "input_sha256": "209cfc19a53111107c43951ea3bb3b45a0fe7900b8808a780dc5507a99d6136a",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/20789": {
+      "input_sha256": "7bc4315f28eaeffc834ce132e85068bde1bf05811aa5f9bf553a02598fd22c81",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/20848": {
+      "input_sha256": "ac2256a7d705306258537f9dd4a08dafa552c299a5d543a47957210dbedeceb8",
+      "classes": [
+        "ResourceRef/id/numeric-text"
+      ],
+      "expected": {
+        "error": "拨号引用不存在、未启用或不在当前配置空间",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/20879": {
+      "input_sha256": "59ad9c594e835b821e18b17e5c0df8b9aafab9673fa602d2c0038a818bbd6799",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/20880": {
+      "input_sha256": "62b2d36dad1ddb0f7c661651cfda85222bb86e124f59966c3beb60e578e380dc",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/20881": {
+      "input_sha256": "e0362be2635aa1a39cabf108b860ab7fea1f306d32e962e539482e95a24dc66b",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/20961": {
+      "input_sha256": "07011a63f84647f671cdc7f265bc2285e2857782fee576f9d9aaebaf6a28bc93",
+      "classes": [
+        "group/manual_nodes/R5-array"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/20994": {
+      "input_sha256": "72b378c53acf2be3d1cb28377a4f59c5a44b89f8d38aded3ca372dd62b5ee45b",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/20995": {
+      "input_sha256": "0c4a870e3f1c3db59a8745a9b01f8db40e1ac1ba449ccc08b21a476fdfc06279",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/20996": {
+      "input_sha256": "ba9ba5e7b259d97862e6be73ce43c98efdda7fa862b2848a1b072f8ba48bee01",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/21081": {
+      "input_sha256": "fde1d4506062faaf0a7173860317d38d5fdd0b584ad41be4cc4adbfb3bb973aa",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "原始 dialer-proxy 'G0' 不存在、未启用或名称不唯一，请改用稳定引用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/21082": {
+      "input_sha256": "1ab7ed02c2c25bc05cf2a01da461289851f5c9a049d646bac218d0c6f0bcf6f9",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/21083": {
+      "input_sha256": "a7a1d231bf66a3fea763ef82b870714f0db52607225fe7d88bb294c9e4cd4374",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "原始 dialer-proxy 'G0' 不存在、未启用或名称不唯一，请改用稳定引用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/21338": {
+      "input_sha256": "c137ff018c99aaa7dcfbc74e402388bb365a2e8b553f0194380c8287ea423adb",
+      "classes": [
+        "dialer_ref/fail-closed-shape"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/21390": {
+      "input_sha256": "cabdb5dd4808b81af38862f17aaf632423769e57ac5ea172171181ae9da750b8",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/21391": {
+      "input_sha256": "94d70f43f78c4763f8e79c16e49fba859f790359d38803d93a075e2e7ff7f65c",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/21392": {
+      "input_sha256": "238954d3c0e3d2d763b0f6486c81447b6b4798056fcf7bafc665e03aca5c1dc4",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/21417": {
+      "input_sha256": "35457bade199c170c744cdec1d7ed5d2e221e3c47bbe8d277005ece0de8aaa5e",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "error": "拨号引用不存在、未启用或不在当前配置空间",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/21418": {
+      "input_sha256": "b1245f71055e40734a48d66be2883cc87d334356cb50f07bd5f469c7236706c0",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/21419": {
+      "input_sha256": "da06c5c1345b8d8ccf97090688f06618c85816db1738877507e390d0a340b6d1",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "error": "拨号依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/21525": {
+      "input_sha256": "1665ce1c9b449e51f57108de5ae185a22511ae4ee40a0893eab31d56a647dc5e",
+      "classes": [
+        "group/proxies_order/R5-array"
+      ],
+      "expected": {
+        "value": [
+          [
+            "group",
+            "g2"
+          ],
+          [
+            "group",
+            "g1"
+          ]
+        ]
+      }
+    },
+    "drift/21547": {
+      "input_sha256": "bf26fc9dfbca8a36492de5b91ef938257bdf75935b619de6a54ed3bc2c21ad3c",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/21548": {
+      "input_sha256": "37972f44ec34cc42283a37fc3ca677f96fc37af8e6e8faea7dcf3314cfadddb1",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/21549": {
+      "input_sha256": "69696ad91dd394cd2507233237bcabcdcf190dcc810295b416e116890b612d45",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/21589": {
+      "input_sha256": "fcda32ccd46ff7367409f66339cafafc7747a85fbe0257c6feb8eb97a8919c66",
+      "classes": [
+        "group/proxies_order/R5-array"
+      ],
+      "expected": {
+        "value": [
+          [
+            "node",
+            "n3"
+          ],
+          [
+            "group",
+            "g3"
+          ],
+          [
+            "group",
+            "g1"
+          ]
+        ]
+      }
+    },
+    "drift/21601": {
+      "input_sha256": "b514ddec915edbb09c1e3a817be159d264e19fc877f17403ba017eec20050e6a",
+      "classes": [
+        "dialer_ref/R5-record",
+        "dialer_ref/fail-closed-type"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须是 {type: node|group, id: 非空字符串}，当前值：\"n1\"",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/21708": {
+      "input_sha256": "830a4bca89a2057e2e0404181061fce37db19a4f8f9cf0e599b8013c6d1aef88",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/21709": {
+      "input_sha256": "11b1107e8cf8b6e9afac38a445f2924ec3dd244ded323cb471d0ab406843b0e7",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/21710": {
+      "input_sha256": "95d633f52294bc568af9e3aca7e213242e57258e876c26999ab851e1744589a5",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/21727": {
+      "input_sha256": "a7676b324f3c8ad8207844a07c4a2429b76963e7b9751346084a154c1f8db6f7",
+      "classes": [
+        "dialer_ref/fail-closed-shape"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/21733": {
+      "input_sha256": "4a76ec0d59cb266abe1c0200301078642c3aa89ec0a86f4ab7555594197987b3",
+      "classes": [
+        "dialer_ref/fail-closed-shape"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/21734": {
+      "input_sha256": "557496f67e25474b76f2d260245747751ff63788c02be92e4c034521ecc2ee6f",
+      "classes": [
+        "dialer_ref/fail-closed-shape"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/21736": {
+      "input_sha256": "acf1d0c061b6c1663eb968efe98216ceef4f9b02a76aa6c6cd6ceb36ebf5eef4",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "error": "拨号代理要求代理/策略组名称非空、唯一且不与内置策略冲突",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/21737": {
+      "input_sha256": "47fed08f7ed02a496e154f539170b5e26ad3852fbaeffd1892eb1f9897381542",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/21738": {
+      "input_sha256": "fce50148b02fd6b3be18b3f98c3f45a01c083eb66f1f4db9ce090b82a17ccad1",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "error": "原始 dialer-proxy 'n2' 不存在、未启用或名称不唯一，请改用稳定引用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/21906": {
+      "input_sha256": "08f65bdf8afb4e1ebe66a63481442440c9ef8cbff590c99d1a623772d6a8e2c9",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/21907": {
+      "input_sha256": "23c71a54c15d98d60a96db71bb1a38a712ebc8086fcc991d10357988cbf21ec4",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/21908": {
+      "input_sha256": "b695010b89ffe3552d602cc48c77a33d7e7e43584738a4a2838a04d8985acf3d",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/22009": {
+      "input_sha256": "32086c1e8fe0a32f2014e7eaa33a150da86adeb5c837546723030ffbb46422c7",
+      "classes": [
+        "group/proxies_order/R5-array"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/22052": {
+      "input_sha256": "cb71f098f823f630fcc01a2f128e340121aa1a27dee1c621b2304e86ea62eeb0",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "error": "策略组 use 引用不存在或名称不唯一",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/22053": {
+      "input_sha256": "8954a117a5a878db4b29d56e0427bf12ba99dc6a9e6a7830aaf068180eff5201",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/22054": {
+      "input_sha256": "501db39f9492ea7e4c06661a1a1d81b72c77811e48aed9ed6e2b5f1807dc9acf",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "error": "策略组 use 引用不存在或名称不唯一",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/22091": {
+      "input_sha256": "88cf083cceb4e77998c99dac567791c9becdb10b10e8761e35b16854bf738e6a",
+      "classes": [
+        "group/follow_group/R5-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/22093": {
+      "input_sha256": "13d8ca1606ad618140a80ea4174d6dc1e3af826ff5e19ad2f2eade2a983a0c3b",
+      "classes": [
+        "group/follow_group/R5-text"
+      ],
+      "expected": {
+        "value": [
+          [
+            [
+              "node",
+              "n1"
+            ],
+            [
+              [
+                "node",
+                "n0"
+              ]
+            ]
+          ],
+          [
+            [
+              "node",
+              "n0"
+            ],
+            []
+          ]
+        ]
+      }
+    },
+    "drift/22253": {
+      "input_sha256": "f0e95edbeee3c8804eecc00236d8648d9195ebff844f67344b7413b4330e88aa",
+      "classes": [
+        "dialer_ref/fail-closed-shape"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/22411": {
+      "input_sha256": "9605c80faba888d77be001358cbe3bde6deb902cf64af682bd80b327aef7169b",
+      "classes": [
+        "group/follow_group/R5-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/22413": {
+      "input_sha256": "ad731c586f33f58de9827dafc67d6639b30332eb336b4886e4a35710d5703775",
+      "classes": [
+        "group/follow_group/R5-text"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/22499": {
+      "input_sha256": "5816cdfa454b5e3e37427177c94d372f5701be4d2b42fea8d476486e528fd793",
+      "classes": [
+        "dialer_ref/R5-record",
+        "dialer_ref/fail-closed-type"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须是 {type: node|group, id: 非空字符串}，当前值：\"n1\"",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/22506": {
+      "input_sha256": "a6ae32149923a0d1e4a93877ef03a6f264f87e31d110e0bba5e0cb59c2cda053",
+      "classes": [
+        "dialer_ref/R5-record",
+        "dialer_ref/fail-closed-type"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须是 {type: node|group, id: 非空字符串}，当前值：\"n1\"",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/22673": {
+      "input_sha256": "f17e40b757d492d9b4b423cd05a514de49cf5aac8d09db3e244c7ddfb13f5ad3",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/22674": {
+      "input_sha256": "8fba1a8ddee5184bd253ef57d072a19bc65101f15d15f330d1f41d9e739742aa",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/22675": {
+      "input_sha256": "c5a5776dc4c09a4aaf870595f8697ebf5dc9f103d4718da2d5c75298b86cdd3e",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/22680": {
+      "input_sha256": "75e72c1be37a4d5f14be1ac0132265b591270a5b7f4bfbb288fcce5bb20a6d2a",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/22682": {
+      "input_sha256": "8884fe83ed8cd30c04161e678f3f1f58a44fba4d02b4782ede16ceecda49798c",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/22810": {
+      "input_sha256": "a44541a6258fd05ecd084bb88f4fcaf5de6a1b53745eef76aa609a651a814591",
+      "classes": [
+        "node/params/null-absent"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/22812": {
+      "input_sha256": "959904fe6728fca6a12347b17c65cf1af2d9226c19d5a29e0dd39ecbf95e6a13",
+      "classes": [
+        "node/params/null-absent"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/22908": {
+      "input_sha256": "cd153ac1a1b3955614f49f774652cf3e46d5dfe43428f6438c1d3cad01d5cb0b",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "error": "代理链 chain 必须包含 entry 和 exit",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/22909": {
+      "input_sha256": "05ccd0635fd3127c2489cb8988b3afee2ae2576a27d0e164000e6ff745a0fd40",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/22910": {
+      "input_sha256": "70607a25faf23a425c6f10b1a61ef406e4dd62cd3a64f3b500a439e6fb013708",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "error": "代理链 chain 必须包含 entry 和 exit",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/23000": {
+      "input_sha256": "92c06fc10d10a5bf7c611b08c30c5418efdb2491ad16d46aae0e395cd42c2877",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "error": "拨号引用不存在、未启用或不在当前配置空间",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/23001": {
+      "input_sha256": "3027669263387a1fdac6d87f789de86bd67bca22a882a1074690fc31b6b1dd35",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/23002": {
+      "input_sha256": "6c31fdf1258a3e8e75a072ab8d1a1331f3dd73cbd13c76df91f1334f6acf0887",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "error": "拨号依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/23239": {
+      "input_sha256": "3ac14a15e95db0246db0bfeac3db8d7a334a05b976239fd1189a00b9f4295d5d",
+      "classes": [
+        "dialer_ref/R5-record",
+        "dialer_ref/fail-closed-type"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须是 {type: node|group, id: 非空字符串}，当前值：\"n1\"",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/23356": {
+      "input_sha256": "f4dc1f4c964c5113052e3eb51371564618405331f8ee3d3cfc68a831ced546b0",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/23357": {
+      "input_sha256": "e44d2fbc05b14045715008361c9a2aa25453334c3ca4cbbdbc5c36f9c7862b07",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/23358": {
+      "input_sha256": "a9c143dc7d5a3fd486242630a91944f7266bd469ecbd3118a092806268eb8d2c",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/23536": {
+      "input_sha256": "71c373eacd8019a17920688e1e4f417825f1882542d0b564fdc1fb3bfd587259",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "节点不能引用自身作为拨号代理",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/23537": {
+      "input_sha256": "e4ac6fa30e0f581aec4381ab74b110f8df300f13d74fa99433976ecb83016e46",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/23538": {
+      "input_sha256": "632d8e1a9bea490b96bc9ee6c638dba676268905d75e78bf26212f5f0e7749cd",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "拨号代理依赖存在循环",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/23568": {
+      "input_sha256": "0c9a6b9e8ef5b3472e0e23c2efd34d6d414930cd777fae3e806754f4c385e6e4",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/23569": {
+      "input_sha256": "bace249ebcd3a939d81af80092bcecb3606e66f9bbabfd54954fbd835233845e",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/23570": {
+      "input_sha256": "912c147f9a8646dcdb2676cdaf4d778c87352c72401f90305711e2287e8cfafb",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/23654": {
+      "input_sha256": "f1a6d628bb12ea248f40113b4766c835910c34c09f084621b3164adb00c1ef74",
+      "classes": [
+        "ResourceRef/id/numeric-text"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/23656": {
+      "input_sha256": "e36f133271998168dbc8f6c255f1e06f83d0eea9ed7e94caeb246c9ed51eb981",
+      "classes": [
+        "ResourceRef/id/numeric-text"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/23948": {
+      "input_sha256": "3e2fa78dfe38731e725a11469d71dc4008fbc8005b908ce472624d1714171f18",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "拨号依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/23949": {
+      "input_sha256": "33beb968bb578b1d00cef60d5e4e1bde62d6bcdf518767a55a996be7e723f0fa",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/23950": {
+      "input_sha256": "93d318b61776f993f4f9c633fc014be402672568dd4ad9fc6b23fa79b01db20f",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "拨号依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/23955": {
+      "input_sha256": "16d41892e066f5359c8758a498647235ee9a46ef0e8fc8f3a20b0113580af1ef",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/23992": {
+      "input_sha256": "3c5bcfa94fa6f0ff710e2f072ebd03d49096937c9c88324d8d70aa38f4e13d3b",
+      "classes": [
+        "dialer_ref/R5-record",
+        "dialer_ref/fail-closed-type"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须是 {type: node|group, id: 非空字符串}，当前值：\"n1\"",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/23999": {
+      "input_sha256": "1202caf82de195313f64b81fc38447056965c3e648c63c60e9cae96b5182ec5d",
+      "classes": [
+        "dialer_ref/R5-record",
+        "dialer_ref/fail-closed-type"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须是 {type: node|group, id: 非空字符串}，当前值：\"n1\"",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/24014": {
+      "input_sha256": "3f465cfab939fed554a835d96c7b9eec35d3e99dd1f114e3c45c042785754a73",
+      "classes": [
+        "dialer_ref/R5-record",
+        "dialer_ref/fail-closed-type"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须是 {type: node|group, id: 非空字符串}，当前值：\"n1\"",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/24021": {
+      "input_sha256": "d2e4bec82a344714121df27a9541f926e58b1a248997033c32cf5addc0225c45",
+      "classes": [
+        "dialer_ref/R5-record",
+        "dialer_ref/fail-closed-type"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须是 {type: node|group, id: 非空字符串}，当前值：\"n1\"",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/24132": {
+      "input_sha256": "28a49a81490a9e9be2c3a647e8393fc7a56769c7d8d5eb2dfe6ad5edbb100fdf",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/24133": {
+      "input_sha256": "225903b22adef20ded5e7c2391ac69b798d62abab2dbc3ae730a2b998169448f",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/24134": {
+      "input_sha256": "d5c5c0b1af677392437f2ae59dbbe9a0063816630fb123a68d2e22b075e9bfb3",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/24248": {
+      "input_sha256": "d187ea879aefa918f4d3a971b78f57ae795dcc438aa4a1e281245618c2f5dc6a",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/24249": {
+      "input_sha256": "b3edc0eb8faa8630d14508c36edf5757f3103fe68dc8a8164eb75b193377ff4a",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/24250": {
+      "input_sha256": "7be79ff3761f71f51f0321dc12023f118b9fc51f5e59538d71b8645b01d19161",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/24262": {
+      "input_sha256": "a6ae32149923a0d1e4a93877ef03a6f264f87e31d110e0bba5e0cb59c2cda053",
+      "classes": [
+        "dialer_ref/R5-record",
+        "dialer_ref/fail-closed-type"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须是 {type: node|group, id: 非空字符串}，当前值：\"n1\"",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/24277": {
+      "input_sha256": "ec471ed67ff87ad136db0172e242d0e2b17c13b463e4433ec73a1aa17cd3cbad",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/24278": {
+      "input_sha256": "806ba0a1f2d882463e0565151ac7f44eef99cfe9080b5227531d21b79d010325",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/24279": {
+      "input_sha256": "0f27fd530ae9945a464c9143676d09baaf2edba84a1122be74ba3c22d60d1d38",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/24382": {
+      "input_sha256": "d81c127ff822b1ef53b70798db904953bb0db266d5a9a8a8ac0d5e35145b0028",
+      "classes": [
+        "ResourceRef/id/numeric-text"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/24384": {
+      "input_sha256": "34e51f0a5a597f91d912c18051b43e95fd82ce954b019355aaa1924d51667609",
+      "classes": [
+        "ResourceRef/id/numeric-text"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/24492": {
+      "input_sha256": "99d04dd0aacc0a2a7d4d8b68c980961a0b8360746e3f3d96b24cc7a87c1bf277",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "拨号代理要求代理/策略组名称非空、唯一且不与内置策略冲突",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/24493": {
+      "input_sha256": "ec09a26039867aa338d5c03cd6ca6d0102d7f1b811cc326dc5f50940839d7621",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/24494": {
+      "input_sha256": "fed90f4470a48fb7a5f7fd73c1b4c6798bf9bbad5c5b8138d2da6808aa78893c",
+      "classes": [
+        "dialer_ref/fail-closed-shape",
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/24645": {
+      "input_sha256": "6901f007d46369cee638534a36ca0e4c3a0d6d282960a725cbc3c6916f87966e",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "跟随模式不能引用代理链，请使用策略组引用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/24646": {
+      "input_sha256": "4eb495c64df8968aa2e9264022daaa526812ed8055dc5b5521ca00833d66593d",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/24647": {
+      "input_sha256": "caec54f4a04c37e29404affee53a4f090a6f6d57092015dcf236d935c9816178",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "跟随模式不能引用代理链，请使用策略组引用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/24652": {
+      "input_sha256": "8dfef60246b4b187f7c6d1561fc4007d3bc40a67983f7d2bf100de216613f63f",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/24654": {
+      "input_sha256": "d0d298b97e8f99f9311a1954664caf14c9d86f072af18044a12e3a5e5afb961a",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/24658": {
+      "input_sha256": "963c2ab91960424a7247655a333c5ab32896bdbad96bb500bdec1c1a6d8f17de",
+      "classes": [
+        "dialer_ref/fail-closed-shape"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/24901": {
+      "input_sha256": "9e89d283c70310d309eedc3fcb6308577511d3c7cbb7f41a5d73ab168751b8ad",
+      "classes": [
+        "dialer_ref/fail-closed-shape"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/25033": {
+      "input_sha256": "cef634b99fde9d2e51e9e9c3a552b3a7a5ee83b338c8531e80634eb892017c3c",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/25034": {
+      "input_sha256": "5c8855f412aff080d75379252ce2358b1956482ddf382f14be3ea5648924e878",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/25035": {
+      "input_sha256": "ca1c7c36bf059f04db91fe54b549dbd1f65fc8a88720fdd101ac6e761db28509",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/25082": {
+      "input_sha256": "a91e276b1d2a068b5f3760ad0efdd1d5aa986efa2ea896d8707bf2102b7401fc",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/25083": {
+      "input_sha256": "8bdc867d7d434cc872f89c88ba2fcf2035af6e640a4d0981e6a4c9eaff723658",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/25084": {
+      "input_sha256": "670709664288f89a9ec7ffa37b94270d61d480f96b3d034b461199f5f8ee1368",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/25197": {
+      "input_sha256": "d60e170e4450ae47f1de88ea54af409373506fdb738c575def8fc45e9281df1c",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/25198": {
+      "input_sha256": "48f29e2331dfe4eaa246e0a1772a61a0b176c2a026f650c9574a98579683593d",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/25199": {
+      "input_sha256": "291b34b0d3684afb9bc012417d0899c97135438d00e030048fa3a86c3591f4c7",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/25204": {
+      "input_sha256": "4532b1df0c61b577c1bf35c4c28c60366eb7043a030d441ffcf7ec674fac9a11",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/25206": {
+      "input_sha256": "85ebb88800bdb67f2c4e2e2b69bf2274f6bf50e0ad8e395e1adde5772aba6bca",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/25272": {
+      "input_sha256": "c14122f8cc14b45868bbd54756483b59919551aa0cbda32ba01d1a2236fdb50a",
+      "classes": [
+        "group/proxies_order/R5-array"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/25284": {
+      "input_sha256": "2dc420ec7b7163771d4ebf08f6cff5e9f4eb9a5113f918b18818c083d5bdd126",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "原始 dialer-proxy 'g1' 不存在、未启用或名称不唯一，请改用稳定引用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/25285": {
+      "input_sha256": "8a2cf8910af5e2fd356a936d83655117d9ee99819d783d69dad0a50d4a4490b0",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/25286": {
+      "input_sha256": "627ce70d35c00753a664d6f6538242f8decdf67a98ac053118a4a5078c468c0f",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "原始 dialer-proxy 'g1' 不存在、未启用或名称不唯一，请改用稳定引用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/25291": {
+      "input_sha256": "65ade8d87c8d633a9fb4f66b4ba704cc66e196606d4d2ee58e16a9448a150a8c",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/25293": {
+      "input_sha256": "2270e2f126bcba0ebdf14d16fab0f42a5b53d7213c47de794f032d1ac189925d",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/25327": {
+      "input_sha256": "c56f4df922bdcdbcd574b885665c40c9c5ebffe022b903a25f2912a7cb9e0547",
+      "classes": [
+        "group/follow_group/R5-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/25329": {
+      "input_sha256": "9c002c87e4992372c3621ddb07ef7e5bb7fe12d7c8165cae47b58c6e9171460b",
+      "classes": [
+        "group/follow_group/R5-text"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/25382": {
+      "input_sha256": "feaae56a65863635f8d48038985d4caee27d43421838d716861b5889c865e695",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "error": "代理链端点必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/25383": {
+      "input_sha256": "00fcf527a9d8c243038068dabf49011945c1eeb86cfa1097f03c291d8a9d4a71",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/25384": {
+      "input_sha256": "92574d1782c9e93ecf370df94be189adaf5c853d8af7f2b745c803ecc0c1e388",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "error": "代理链端点必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/25562": {
+      "input_sha256": "95fc430d800992d6e17cc2940c8ad89c12e919c7e2dbde48664d83cb06aca594",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "error": "拨号引用不存在、未启用或不在当前配置空间",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/25563": {
+      "input_sha256": "29332bb42c7f877e2bdf10da8fc280cda289f016645ef6f64c08df855bd7b382",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/25564": {
+      "input_sha256": "b80fd204705e872a0b5651c6cbc9c03f2a0c568cf6385f90bb1d479f3baa752b",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "error": "拨号依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/25768": {
+      "input_sha256": "91eee417fe48e275c0c94160b2ccfb3f4d54cdbee372849c19ecbec3bc5b315f",
+      "classes": [
+        "dialer_ref/fail-closed-shape"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/25893": {
+      "input_sha256": "289d8ed249c2110ef05033e82b2529bce19429ed9807c4809be5b34b2944f40c",
+      "classes": [
+        "node/params/null-absent"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/25895": {
+      "input_sha256": "3ad445bfdaa7cd9a1c56913f7db6ff5363372c3843d55b7a0d33e816d101733b",
+      "classes": [
+        "node/params/null-absent"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/26123": {
+      "input_sha256": "3b95d98a910ea20a540dfee8971f5f5d8bcb2db451cbd694f9bb61412613415b",
+      "classes": [
+        "group/proxies_order/R5-array"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/26145": {
+      "input_sha256": "c9bcd5b71e6cb782d18999f1b46f3cb30a5b89187857ff64f27a752b28766add",
+      "classes": [
+        "group/proxies_order/R5-array"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/26212": {
+      "input_sha256": "c0d693848e4d40ac4d9342b7b4579514f3035a105a099991add65b819ead9d23",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "error": "策略组引用不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/26213": {
+      "input_sha256": "31eca0051b1a30f74dbc71bce81a23f63681df2d7f031ac80bc75610c458953d",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/26214": {
+      "input_sha256": "3e6f6dd614571f04f87757e756e6395a137288e07ec2f18ce00036686430939a",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "error": "策略组引用不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/26234": {
+      "input_sha256": "f8052c2596d96ffb87a79126e08701657562c844a1e3c0efd1270609b5ac5aa7",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/26235": {
+      "input_sha256": "54aa693b2336332852dc658415c2f1bcd0b9e29236e5f44c9b346e09b8d1419a",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/26236": {
+      "input_sha256": "fb0eb1860c27e3b0f079e526ae0fe9a4cc8231912f1af9d250922f09f3ad0e51",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "value": [
+          [
+            [
+              "node",
+              "n0"
+            ],
+            [
+              [
+                "node",
+                "n1"
+              ]
+            ]
+          ],
+          [
+            [
+              "node",
+              "n1"
+            ],
+            []
+          ]
+        ]
+      }
+    },
+    "drift/26266": {
+      "input_sha256": "3f5342bf9b05393248bb5a9e770cfa854053d3cc761ba92546299bcc05a44dc9",
+      "classes": [
+        "group/manual_nodes/R5-array"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/26353": {
+      "input_sha256": "05981dfae780ca2a3bf5e54c46266057739b239d2f4fd8f5b603c4a9350d77f6",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/26354": {
+      "input_sha256": "615d536b5ee060783aec9999e3e6f1502c9b3c20b57c39802b8d053cb1326624",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/26355": {
+      "input_sha256": "f7939ec05994284504fd4663c7832e259e7693deb8d36a131a9fa3793b250881",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/26369": {
+      "input_sha256": "157625a75145b76545125d5561e24c3323ce826308827ca31eaed849f8891e63",
+      "classes": [
+        "group/proxies_order/R5-array"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/26498": {
+      "input_sha256": "d6c8000488e4a964e7332f2bfd0905d19a584d92638ebd17a6997b98d4808f68",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/26499": {
+      "input_sha256": "bc039cfbb97796516ba4d06a8deea6d9fac9d511ea15e88e311d56a6dfb0cc9b",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/26500": {
+      "input_sha256": "8fb0721c2a71ddae50772b3c37e4a73be63edd7d345a7f4766f4bcc147a9868d",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/26527": {
+      "input_sha256": "a9f05dbb8aa8c62916b053afeb9eeca757aae1722f2efc0fc108c88cdfd3b9c6",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "原始 dialer-proxy 'g0' 不存在、未启用或名称不唯一，请改用稳定引用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/26528": {
+      "input_sha256": "f08d23348fd98e1c8f48ea09efc9d6b0ca5701abf7fb0bcec3984916779ed0c0",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/26529": {
+      "input_sha256": "cb0fdda6e9ba46c3a362b5aa85e0fa1c08223c50f254afad669bbeca8a0260b8",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "原始 dialer-proxy 'g0' 不存在、未启用或名称不唯一，请改用稳定引用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/26534": {
+      "input_sha256": "4532b1df0c61b577c1bf35c4c28c60366eb7043a030d441ffcf7ec674fac9a11",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/26536": {
+      "input_sha256": "0cd52032203624d738e6f5b67d2b7787c0690634ec79f9adbf7fa522bad4e138",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/26613": {
+      "input_sha256": "3e5b1f65a97481a9bbba555d0d9ced939e98cd5c85750e33667c4813dff980a1",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/26614": {
+      "input_sha256": "b6653204b0df4c15c1715f55b2db99af80c8d2d5d273bb4619e146829d1f2f28",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/26615": {
+      "input_sha256": "339d7603235cee36aefaf8cd04b9a9e1a35a6571ce4792e61134421aba87f51e",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/26664": {
+      "input_sha256": "b12cf2aeca710d5f2fb5f63169ab708dd2e19fb8c77b2c2df397cba41515035f",
+      "classes": [
+        "ResourceRef/id/numeric-text"
+      ],
+      "expected": {
+        "error": "拨号引用不存在、未启用或不在当前配置空间",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/26675": {
+      "input_sha256": "be5bca1398de7ac722c8c127110c215d2d510b9079c956752469ae8204636f40",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "error": "策略组引用不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/26676": {
+      "input_sha256": "7d355eea60fdbc8288d6ae3c427973111159561a0a67c4d3530b57a46769d2d7",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/26677": {
+      "input_sha256": "9070b87400a6f5cc2e401226b18dc8634f39e6faacb02e0b6a4aa1002b602a57",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "error": "策略组引用不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/26844": {
+      "input_sha256": "3d3cb60470eb43b486ab9a2904e4ac0342591bacede2b7dfd889ef300cf38deb",
+      "classes": [
+        "dialer_ref/R5-record",
+        "dialer_ref/fail-closed-type"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须是 {type: node|group, id: 非空字符串}，当前值：\"n1\"",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/27314": {
+      "input_sha256": "2e97debd1eec9ce3b1bb132e8402ee2ca373080d6c2489ea8d757c303dbb23f4",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/27315": {
+      "input_sha256": "006964d64046064c8493db9946bb897ba127d886b7b64cb7ed0c954f4b07b4dd",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/27316": {
+      "input_sha256": "7815403261e3285c2462d63a7cee1cf502f8197652eecb58629ddba9d80699ab",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/27404": {
+      "input_sha256": "07f784cb33091d9703d6959ebed748c6af650a103861e2ea3052962ba2988158",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/27405": {
+      "input_sha256": "bbaca06d4952fa3a43ef892e782ea8052f26cc25f3d2c644a79f0146662ff8fa",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/27406": {
+      "input_sha256": "5e06f363462930468ac4751bd4b8b14dee3f410002308e102765d595d6ac8a44",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/27432": {
+      "input_sha256": "2527e45095d6e4d405329543744a02adeb5bf14d5e922eb127801a826adef37d",
+      "classes": [
+        "group/proxies_order/R5-array"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/27455": {
+      "input_sha256": "926bb8602109857b8627caf1d19a3e4a55b72f15eee0df23594cb39ac8c6bb1f",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "error": "拨号代理要求代理/策略组名称非空、唯一且不与内置策略冲突",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/27456": {
+      "input_sha256": "09cc30063db7f492b62034d367785821eeb78b1d9849cc4124d7280eb2caab6e",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/27457": {
+      "input_sha256": "234b5f8699c4d4b56c0821384ac67205f2a917d58a855b516b54bbd5e28f3811",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "value": [
+          [
+            [
+              "node",
+              "n1"
+            ],
+            [
+              [
+                "builtin",
+                "REJECT"
+              ]
+            ]
+          ]
+        ]
+      }
+    },
+    "drift/27520": {
+      "input_sha256": "0dea7e5272940eb0c5c6a7bbd288c3aa32cf0d6ec999ee07834f489cfd92bcb7",
+      "classes": [
+        "ResourceRef/id/numeric-text"
+      ],
+      "expected": {
+        "error": "拨号引用不存在、未启用或不在当前配置空间",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/27649": {
+      "input_sha256": "47191af8fd0faf28ad64b4eb7c08739fd71737012ccb3ce4c85b2acf930dc43c",
+      "classes": [
+        "dialer_ref/R5-record",
+        "dialer_ref/fail-closed-type"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须是 {type: node|group, id: 非空字符串}，当前值：\"n1\"",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/27656": {
+      "input_sha256": "64a6f810d0ba71d4411ba98c18e9a6497e97a69900c74269cd4485356c1d9d75",
+      "classes": [
+        "dialer_ref/R5-record",
+        "dialer_ref/fail-closed-type"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须是 {type: node|group, id: 非空字符串}，当前值：\"n1\"",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/27691": {
+      "input_sha256": "a13e08dab741d41ac5d4f7fcab3042b32c99c06fc20eb4855ec3c71a8062197d",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "策略组引用不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/27692": {
+      "input_sha256": "41630dd9feec5ad521bcae3d4a57403fd40d18cb7404f020c82d02c33c507dba",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/27693": {
+      "input_sha256": "adf24eb7c31958d313c84705ff5b980b2ce58e8533023cf4aa2ad5893b04d14d",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "策略组引用不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/27883": {
+      "input_sha256": "0fb8ca27f38646019c4812f4ddca11d250974de13bd38da0f1565a153a41dc24",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/27884": {
+      "input_sha256": "438a81705f766cfb4f587f1ef1f10479c6a1f2bf4a8259a1887dddd0ea86ce5c",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/27885": {
+      "input_sha256": "4c86203a63c5fef98568fe67755fb885a28599e1058563f204ac8ae2e8e4756a",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/27943": {
+      "input_sha256": "4a2da7ea63d2ab66de312996b7a750395837c7e55be5757118c7e8ac750b4662",
+      "classes": [
+        "dialer_ref/R5-record",
+        "dialer_ref/fail-closed-type"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须是 {type: node|group, id: 非空字符串}，当前值：\"n1\"",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/27974": {
+      "input_sha256": "ee94f3aae633021d8b5b1d46d7c0378f88609ab02128812f9b0adb25ab70c93a",
+      "classes": [
+        "group/proxies_order/R5-array"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/27975": {
+      "input_sha256": "7da9570ee5e6480e9159ddb9c8cc8417c401724e63baf21d9265c44b5fb20155",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/27976": {
+      "input_sha256": "1cb04a2f30a2bdb4411f7a470941f5c7e2d6f1c68312eb139f7f9ed4676e5524",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/27977": {
+      "input_sha256": "c81d1b12464b52e7bbaa0220972bd36352f289f5f6f41be5a09a786f16aad260",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/28101": {
+      "input_sha256": "db80ba9cdf33e5de331713f11486dce5651e7262ed29a62abebce3f011ebfb7a",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/28102": {
+      "input_sha256": "078b8da0f9b4096f0adffbc173b7ab9ea2ee993f8d75c388daf8e0a9839cb577",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/28103": {
+      "input_sha256": "e5199ca87548fcbb1f0136f151e42cd850a1dbb8caaf451ece38065b6215f302",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/28108": {
+      "input_sha256": "35b2a0ddaa93434d9b298c859541afa830253abea71fcbdf4e5484990874fa0e",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/28109": {
+      "input_sha256": "c5f692ad6f71a9fb05a8c841fb137da8bc7860acadf611789626abdf8ddbd029",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/28110": {
+      "input_sha256": "ae18a76239e7317aa5bd4229468231ceab8e5cfd52cab43e88da4e49bb2eb966",
+      "classes": [
+        "dialer_ref/fail-closed-shape",
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/28117": {
+      "input_sha256": "9eeb7a5e1141425bb914ed102ac8d60165b1a7714ae3bde005eea988e80ce65e",
+      "classes": [
+        "dialer_ref/fail-closed-shape",
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/28246": {
+      "input_sha256": "6ee4ebb7ce7475c6750be50527b48b8e226c05292cb59925e67cfbfe91465882",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "error": "原始 dialer-proxy 'gone' 不存在、未启用或名称不唯一，请改用稳定引用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/28247": {
+      "input_sha256": "a2cd8fa8dd12c883b7a25f35a0aac2fd5cb11c3a4994a41e6045a759e8a12e31",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/28248": {
+      "input_sha256": "c082543acd6f450d66854757ce8621a88a591281407d18936674eeb011b60e37",
+      "classes": [
+        "group/use/shared-string-items"
+      ],
+      "expected": {
+        "error": "原始 dialer-proxy 'gone' 不存在、未启用或名称不唯一，请改用稳定引用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/28417": {
+      "input_sha256": "239a3f80bef275b79cebbd2520e0061621f706e27dc1acee364531332c77dbca",
+      "classes": [
+        "ResourceRef/id/numeric-text"
+      ],
+      "expected": {
+        "value": [
+          "group",
+          "5"
+        ]
+      }
+    },
+    "drift/28465": {
+      "input_sha256": "e09221bb14d895e3eca91a97aaf2b7cf8a320db089aa0451516a9b887bca5c7c",
+      "classes": [
+        "dialer_ref/fail-closed-shape"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/28472": {
+      "input_sha256": "3888240932e00901982104d56aa898b69cc4d92ee9aa9e3288fd0678f59dd766",
+      "classes": [
+        "dialer_ref/fail-closed-shape"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/28625": {
+      "input_sha256": "00cf510b3aa9ef0b1f75a599ad413836499a877150f0cd02bb8d49bd4aa52490",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/28626": {
+      "input_sha256": "19f0aeaa3ccd6432be49f50a7136cd03260ea53725ddeda9b003430c22548d44",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/28627": {
+      "input_sha256": "ebc337a3d35c47cf68a17b7a9c75f75991a0bbdca15f96e32f8ceff8efb8784e",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/28935": {
+      "input_sha256": "d34281e680077223cb9b45666bf36ca6a25ccdad2e6ec3103e5beb296e78eceb",
+      "classes": [
+        "ResourceRef/id/numeric-text"
+      ],
+      "expected": {
+        "error": "拨号引用不存在、未启用或不在当前配置空间",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/28944": {
+      "input_sha256": "c3003014d793050bf5a960c494e6d7fc41cc4f6af4ab4b977295d1be4ad9b04b",
+      "classes": [
+        "ResourceRef/id/numeric-text"
+      ],
+      "expected": {
+        "value": [
+          "group",
+          "5"
+        ]
+      }
+    },
+    "drift/28967": {
+      "input_sha256": "7416b7305a7ab3f59e07e1cd242d4be2845455e43cf6b3896774f8f98f72ae24",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/28968": {
+      "input_sha256": "e674c7522ea02de1cdfb1020a754a48519a80a57ce4d62423eb35fa921264ff9",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/28969": {
+      "input_sha256": "f827676c0a18ec0002afd27f3344d21faf176a10bb3083ed0e7d687142217e5b",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "error": "代理链依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/29142": {
+      "input_sha256": "ef64984fa23650c07236fa45c4b683df99003131925e2475db0af1385b0b8c22",
+      "classes": [
+        "node/params/null-absent"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/29144": {
+      "input_sha256": "379ccb6dfc8f8fa7dac66c647910453ff1203f46eb03b0d508ba8fb8b7cb271e",
+      "classes": [
+        "node/params/null-absent"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/29166": {
+      "input_sha256": "80aa1f2804e044e1cf36f34a01ad8d5cd4314ec61fc31ac7a9d0feefdc840894",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "拨号引用不存在、未启用或不在当前配置空间",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/29167": {
+      "input_sha256": "c4aea65425f230d479802c6d11f5439170acba69b5d0ec882f89d672670bdefc",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/29168": {
+      "input_sha256": "ed5c2c0c5ba1e77961fb58ed4d2f5e067b43eb3c257b4a9bb9da3289e37df300",
+      "classes": [
+        "node/proxy_string/numeric-text"
+      ],
+      "expected": {
+        "error": "拨号依赖不存在或未启用",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/29261": {
+      "input_sha256": "ff9d760a63e5e5bb04ffce531c1ed5acf533d936154e67fa1df9accb5a673e7a",
+      "classes": [
+        "dialer_ref/fail-closed-shape"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/29262": {
+      "input_sha256": "c608b8b18c6229685b23b3a7606ceca387107940930f0c56c8715cdcae58f336",
+      "classes": [
+        "dialer_ref/fail-closed-shape"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/29287": {
+      "input_sha256": "f14e84b767c50e0db6d63e9967285c1c4aa63613485fadd7601c9a731e11c730",
+      "classes": [
+        "dialer_ref/fail-closed-shape"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/29294": {
+      "input_sha256": "ad1bf65bd7737ed0e5b502e0839c9dfed283ca2181b7529721fbd6eb38771cdf",
+      "classes": [
+        "dialer_ref/fail-closed-shape"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须为 {type: node|group, id: 非空字符串}",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/29393": {
+      "input_sha256": "8fd8fd42cd0cc0c7b3590dd8aa053e090900d2386cf3ba94be19a5673efecb52",
+      "classes": [
+        "ResourceRef/id/numeric-text"
+      ],
+      "expected": {
+        "error": "拨号引用不存在、未启用或不在当前配置空间",
+        "class": "DialerReferenceError"
+      }
+    },
+    "drift/29643": {
+      "input_sha256": "b40746be9bbc111e888c3539e0d589a000e3dbe194f1dac63773fe5f1dce3ff6",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/29644": {
+      "input_sha256": "c6ae9695058668326476fb307553d58936eb6f057dc82d358196888ee3620e24",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "drift/29645": {
+      "input_sha256": "b211e8a030d12cfe58a12dfb88575ec5ee1fc388db451b356be3d3ecafe55a5f",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": []
+      }
+    },
+    "drift/2749": {
+      "input_sha256": "ff0a7875d5da21b77e3369d3b00da15af84e1767e7c99eee186805d82bdcc74b",
+      "classes": [
+        "structured/native-finite-JSON"
+      ],
+      "expected": {
+        "value": {
+          "type": "ss",
+          "value": "NaN"
+        }
+      }
+    },
+    "golden/57": {
+      "input_sha256": "762f35d46fdebc849a87821e9924c00d6a5783ef59573becce4f1a350a1080ba",
+      "classes": [
+        "dialer_ref/R5-record",
+        "dialer_ref/fail-closed-type"
+      ],
+      "expected": {
+        "error": "dialer_ref 必须是 {type: node|group, id: 非空字符串}，当前值：\"b\"",
+        "class": "DialerReferenceError"
+      }
+    },
+    "golden/64": {
+      "input_sha256": "17c1430afc52dc5a13046606ab8e8552ae0bfa21a5ba41d2d22b39519122d973",
+      "classes": [
+        "group/include-all/strict-bool"
+      ],
+      "expected": {
+        "error": "拨号策略组不能为空",
+        "class": "DialerReferenceError"
+      }
+    },
+    "golden/91": {
+      "input_sha256": "363491c7aa776ea06e7da7323fe3955074a6208b1de8343d6b1102c6feecac96",
+      "classes": [
+        "subscriptions/missing-id-text"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "golden/92": {
+      "input_sha256": "2c518c506701b14ecbfbf7ad48e1e081eed212931dea78f1d513e9fe57ff7868",
+      "classes": [
+        "subscriptions/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "golden/93": {
+      "input_sha256": "33c7bbec0c61fb2fd5772ff49b93c735b95abf8f80818250d738306b528ae235",
+      "classes": [
+        "subscription_aggregations/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "golden/138": {
+      "input_sha256": "e1c3c5198a4b5ac468173aa9734015a64a91ca0c49109ec8c5c7ade0ae2ec50f",
+      "classes": [
+        "nodes/R5-catalog"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "golden/139": {
+      "input_sha256": "d3de903fcda0f680bda497c7c414f18d30e258bd3438fab5f4de6b01504e9beb",
+      "classes": [
+        "group/manual_nodes/shared-string-items"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "golden/201": {
+      "input_sha256": "141b225e4c3af33899b3b18d4f5379ca906cf27cefbf077666ee130d925abb17",
+      "classes": [
+        "structured/type-discriminator"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "golden/202": {
+      "input_sha256": "154d0565c5da5d102e433215da9ae8784281b553755c61fa5662ed86b627a147",
+      "classes": [
+        "structured/type-discriminator"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "golden/203": {
+      "input_sha256": "ada2154fdab0294113759ca99d104277958763f04c57f02079eae539b2bc1646",
+      "classes": [
+        "structured/type-discriminator"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "golden/204": {
+      "input_sha256": "5979485e7dfe7cc9f87c5e48dd1f6c15075b871881daf77ebcf916072a852f1f",
+      "classes": [
+        "structured/type-discriminator"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "golden/207": {
+      "input_sha256": "9dd2b0c2374836b23804bb2f1c461ec81095b99001e00a9324c48b30d15b9680",
+      "classes": [
+        "structured/type-discriminator"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "golden/208": {
+      "input_sha256": "ea8aec3ebd9b04aa18835bbaf85d640dbc782394ca6e14925e2eb315a799d0dd",
+      "classes": [
+        "structured/type-discriminator"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "golden/209": {
+      "input_sha256": "e52eec01bec8acbcdf81f48f036571825998df91d58d27aba4e8290130ddedce",
+      "classes": [
+        "structured/type-discriminator"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "golden/210": {
+      "input_sha256": "503e3d772d2ef8a7b25c0d9733703592cc88e74dcdbb6d69e3fec231a10b66fa",
+      "classes": [
+        "structured/type-discriminator"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "golden/211": {
+      "input_sha256": "68b818a63578144f47695b39642ecacc7c416174fed9dd0250dd5da5862e192e",
+      "classes": [
+        "structured/type-discriminator"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "golden/212": {
+      "input_sha256": "3e4be9f7a1017f74f5c27b0f255e49eddc5734ea62cb2278cfe7ec06911abe71",
+      "classes": [
+        "structured/type-discriminator"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "golden/218": {
+      "input_sha256": "a0d950f208c17ec3d47e7cdca3905058d71735765a2fe74591ed6c55fe241e71",
+      "classes": [
+        "structured/type-discriminator"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "golden/219": {
+      "input_sha256": "5ac91f114a34a778b3e120a9b27ec3369042815d4f489b31ca9970e367be0404",
+      "classes": [
+        "structured/type-discriminator"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "golden/220": {
+      "input_sha256": "c8b12098b7f9d0edc24368dbef172494d3113683237ac8de375de5a913c8fe47",
+      "classes": [
+        "structured/type-discriminator"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "golden/222": {
+      "input_sha256": "c2bb24877ee05fc6d93dc534a27398e84fa95bafb122b94ee3af2f83d94a370b",
+      "classes": [
+        "structured/type-discriminator"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "golden/223": {
+      "input_sha256": "128929b2b3cb38357743740e7e792bb8cdb2e1dbaeee8f10ec92751ac523e75c",
+      "classes": [
+        "structured/type-discriminator"
+      ],
+      "expected": {
+        "value": null
+      }
+    },
+    "golden/232": {
+      "input_sha256": "4d530939b21b692b17e43f7583bf2abf6924828a789ba2805c7f57bd7320db60",
+      "classes": [
+        "structured/shared-scalar-key-policy"
+      ],
+      "expected": {
+        "value": {
+          "1": "a",
+          "1.5": "d",
+          "null": "c",
+          "type": "ss"
+        }
+      }
+    },
+    "golden/266": {
+      "input_sha256": "92e60aa1a1d3a9e45f1e7da9aebf2806b0f097a145e0275750c88d588f7c21ce",
+      "classes": [
+        "structured/native-finite-JSON",
+        "structured/shared-scalar-key-policy"
+      ],
+      "expected": {
+        "value": {
+          "type": "ss",
+          "1": "a"
+        }
+      }
+    }
+  }
+}

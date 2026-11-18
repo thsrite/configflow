@@ -47,3 +47,19 @@ const (
 	msgDialerNameConflict = "名称「%s」已被使用，与订阅「%s」自动生成的中转分组冲突，请改名后重新生成"
 	msgDialerMissing      = "订阅链式节点：%d 个节点的中转分组未能补上（%s）"
 )
+
+const (
+	msgChainMissing       = "代理链资源「%s」不存在"
+	msgChainProviderNames = "订阅与聚合 Provider 名称必须唯一"
+	msgChainFollowMissing = "跟随策略组依赖不存在或存在循环"
+	msgChainFollowCycle   = "跟随策略组依赖存在循环"
+	msgChainEndpoints     = "代理链 chain 必须包含 entry 和 exit"
+	msgChainBuiltinExit   = "代理链落地组不能包含 DIRECT/REJECT 等非代理候选"
+)
+
+const (
+	msgChainFieldInvalid = "代理链字段 %s 类型无效"
+	msgChainNodeType     = "节点 type"
+	msgChainGroupType    = "策略组 type"
+	msgChainIdentityType = "%s 必须是字符串，当前值：%s"
+)

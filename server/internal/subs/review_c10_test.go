@@ -158,16 +158,16 @@ func TestQueryFilterUnsupportedPatternIsNotApplied(t *testing.T) {
 	}
 }
 
-// Regression (review C10): int() of digits inside a contiguous block of Nd
-// runs (U+1D7CE..U+1D7FF) and IPv4-mapped special addresses (3.11.17).
-func TestPyIntStrAndMappedAddresses(t *testing.T) {
-	for in, want := range map[string]string{"𝟙𝟙": "11", "𝟡𝟡": "99", "𝟬𝟭": "1", "٤٤٣": "443"} {
-		if n, err := pyIntStr(in); err != nil || n.String() != want {
-			t.Errorf("int(%q) = %v %v, want %s", in, n, err, want)
+// The retired private int() emulation accepted Unicode digits. URI integers
+// now use the approved ASCII decimal protocol; mapped-address rules are unchanged.
+func TestNativeURIIntegerAndMappedAddresses(t *testing.T) {
+	for _, input := range []string{"𝟙𝟙", "𝟡𝟡", "𝟬𝟭", "٤٤٣"} {
+		if _, err := parseURIPort(input); err == nil {
+			t.Errorf("non-ASCII URI integer %q accepted", input)
 		}
 	}
 	for in, want := range map[string]string{"::ffff:224.0.0.1": "", "::ffff:0.0.0.0": "", "::ffff:127.0.0.1": "::ffff:127.0.0.1"} {
-		if got := addressOf(in); got != want {
+		if got := usableAddress(in); got != want {
 			t.Errorf("_address(%q) = %q, want %q", in, got, want)
 		}
 	}

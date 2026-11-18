@@ -27,6 +27,7 @@ func TestCompatAgainstRepoGolden(t *testing.T) {
 	}
 	stats := map[string]int{}
 	oracle := nativeReaderCases(t)
+	native := nativeChainExpectations(t)
 	for i, item := range parsed.(*jsonx.Object).GetList("cases") {
 		record := item.(*jsonx.Object)
 		if record.GetString("fn") == "parse_proxy_string" || record.GetString("fn") == "validate_dialers" {
@@ -36,6 +37,18 @@ func TestCompatAgainstRepoGolden(t *testing.T) {
 				record.Set("raised", expected.Has("error"))
 				record.Set("error_class", expected.GetString("error"))
 				record.Set("error", expected.GetString("message"))
+			}
+		}
+		if entry := native.GetObject(fmt.Sprintf("golden/%d", i)); entry != nil {
+			record = record.Clone()
+			expected := entry.GetObject("expected")
+			if expected.Has("error") {
+				record.Set("raised", true)
+				record.Set("error_class", expected.Value("class"))
+				record.Set("error", expected.Value("error"))
+			} else {
+				record.Set("raised", false)
+				record.Set("ok", expected.Value("value"))
 			}
 		}
 		input := record.Value("input")
@@ -74,7 +87,7 @@ func TestCompatAgainstRepoGolden(t *testing.T) {
 				t.Errorf("case %d: python raised", i)
 				continue
 			}
-			if _, lerr := readSubscriptionYAML(pyStrip(input.(string)), false); got == nil && record.Value("ok") != nil && errors.Is(lerr, yamlx.ErrPolicy) && strings.Contains(lerr.Error(), "JSON object key must be a string") {
+			if _, lerr := readSubscriptionYAML(strings.TrimSpace(input.(string)), false); got == nil && record.Value("ok") != nil && errors.Is(lerr, yamlx.ErrPolicy) && strings.Contains(lerr.Error(), "JSON object key must be a string") {
 				stats["proxy_string_non_string_keys"]++
 				continue
 			}

@@ -72,7 +72,7 @@ func sourceProviders(main *yamlx.Node, config *model.Config) []providerSource {
 		if err != nil {
 			continue
 		}
-		_, query := ParseQS(u.RawQuery)
+		_, query := ParseQueryOptions(u.RawQuery)
 		if i := strings.LastIndex(u.Path, "/subscriptions/"); i >= 0 {
 			ident := u.Path[i+len("/subscriptions/"):]
 			ident, _, _ = strings.Cut(ident, "/")

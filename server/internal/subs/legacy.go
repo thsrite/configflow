@@ -250,9 +250,6 @@ func OutdatedAgents(agents []*jsonx.Object, profileID, defaultID string, load St
 	return out
 }
 
-func domainOf(value any) string  { text, _ := value.(string); return hostDomain(text) }
-func addressOf(value any) string { text, _ := value.(string); return usableAddress(text) }
-
 // ExtractSubscriptionHosts adapts typed metadata for the unported refresh owner.
 func ExtractSubscriptionHosts(text string) *jsonx.Object {
 	record := ExtractHosts(text)
@@ -556,3 +553,83 @@ func AddDialerGroups(main, config *jsonx.Object, deps DialerDeps) (*jsonx.Object
 	}
 	return encodeLegacy(report)
 }
+
+// ValidateProxyChains adapts one old resolved view to the sole chain validator.
+func ValidateProxyChains(value *jsonx.Object) error {
+	config, err := legacyConfig(value)
+	if err != nil {
+		return err
+	}
+	if err := ValidateChains(config); err != nil {
+		return dre(err.Error())
+	}
+	return nil
+}
+
+// LowerProxyChains adapts a view once and copies back only owned runtime fields.
+func LowerProxyChains(value *jsonx.Object) (*jsonx.Object, error) {
+	config, err := legacyConfig(value)
+	if err != nil {
+		return nil, err
+	}
+	runtime, err := LowerChains(config)
+	if err != nil {
+		return nil, dre(err.Error())
+	}
+	if runtime == config {
+		return value, nil
+	}
+	out := value.DeepCopy()
+	groupJSON, err := model.Marshal(runtime.Profile.ProxyGroups)
+	if err != nil {
+		return nil, err
+	}
+	groups, err := jsonx.Parse(groupJSON)
+	if err != nil {
+		return nil, err
+	}
+	nodeJSON, err := model.Marshal(runtime.Nodes)
+	if err != nil {
+		return nil, err
+	}
+	nodes, err := jsonx.Parse(nodeJSON)
+	if err != nil {
+		return nil, err
+	}
+	out.Set("proxy_groups", groups)
+	out.Set("nodes", nodes)
+	return out, nil
+}
+
+// LowerChainProviders adapts one runtime view and copies the owned prefix back.
+func LowerChainProviders(value, main *jsonx.Object) error {
+	config, err := legacyConfig(value)
+	if err != nil {
+		return err
+	}
+	document, err := legacyNode(main)
+	if err != nil {
+		return err
+	}
+	failure := ChainProviders(config, document)
+	for _, field := range []string{"proxy-providers", "proxy-groups"} {
+		node := yamlx.Get(document, field)
+		if node == nil {
+			main.Delete(field)
+			continue
+		}
+		data, err := yamlx.ToJSON(node)
+		if err != nil {
+			return err
+		}
+		decoded, err := jsonx.Parse(data)
+		if err != nil {
+			return err
+		}
+		main.Set(field, decoded)
+	}
+	return referenceFailure(failure)
+}
+
+// ProjectHostsYAMLKeys is the old graph validator name.
+func ProjectHostsYAMLKeys(n *yamlx.Node) error { return ValidateHostsGraph(n) }

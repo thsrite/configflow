@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 	"regexp"
@@ -317,3 +318,32 @@ func CompareHosts(previous, current *HostsData) (HostChange, error) {
 	change.Removed = len(old)
 	return change, nil
 }
+
+// ValidateHostsGraph validates the hosts transition without coercing scalar
+// keys, which the hosts business rules must inspect in source order. Values
+// must fit their own alias/JSON budget.
+func ValidateHostsGraph(n *yamlx.Node) error {
+	n = yamlx.Resolve(n)
+	if n == nil || n.Kind != yaml.MappingNode {
+		return nil
+	}
+	for key, value := range yamlx.AllPairs(n) {
+		resolved := yamlx.Resolve(key)
+		if resolved == nil || resolved.Kind != yaml.ScalarNode {
+			line := 0
+			if key != nil {
+				line = key.Line
+			}
+			return &hostYAMLKeyError{line: line}
+		}
+		if _, err := yamlx.ToJSON(value); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+type hostYAMLKeyError struct{ line int }
+
+func (e *hostYAMLKeyError) Error() string { return fmt.Sprintf(msgHostsKeyShape, e.line) }
+func (e *hostYAMLKeyError) Unwrap() error { return yamlx.ErrPolicy }

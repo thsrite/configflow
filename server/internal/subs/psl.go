@@ -237,7 +237,7 @@ func lenientNetloc(url string) string {
 			return head + "]"
 		}
 	}
-	host := pyStrip(partitionHead(after, ":"))
+	host := strings.TrimSpace(partitionHead(after, ":"))
 	return strings.TrimRight(host, ".。．｡")
 }
 

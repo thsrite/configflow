@@ -420,7 +420,10 @@ func parseVMessNode(uri string) (*model.Node, error) {
 
 type queryOptions map[string][]string
 
-func queryValues(query string) queryOptions { _, values := ParseQS(query); return queryOptions(values) }
+func queryValues(query string) queryOptions {
+	_, values := ParseQueryOptions(query)
+	return queryOptions(values)
+}
 func (q queryOptions) one(key string) (string, bool) {
 	values, ok := q[key]
 	if !ok || len(values) != 1 {

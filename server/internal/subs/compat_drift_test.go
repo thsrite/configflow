@@ -1,14 +1,8 @@
 package subs
 
-// compat.go keeps a private copy of dialer_references (and of
-// _parse_structured_proxy_string) because the real port, internal/convert,
-// imports this package (validate_proxy_chains): subs cannot import convert.
-// So the two cannot drift, this test runs the copy over convert's
-// differential corpus (the Python results that internal/convert is checked
-// against, see ../convert/testdata/gen.py): results and intentional
-// DialerReferenceError messages must equal Python's. Inputs on which Python
-// raises an unintended exception only require some error, and inputs the
-// copy does not check like Python (listed in driftKnown) are counted.
+// Archived Python dialer cases now exercise the codec facades over the sole
+// convert-owned typed implementation. Approved R5 differences have exact,
+// independently generated references; ordinary business results stay unchanged.
 
 import (
 	"bufio"
@@ -80,17 +74,9 @@ func driftRefs(refs []ref) []any {
 	return out
 }
 
-// driftCall runs the compat copy; ok=false skips rows the copy has no
-// counterpart for.
+// driftCall runs the codec facade; ok=false selects cases owned elsewhere.
 func driftCall(row driftRow) (result any, err error, ok bool) {
 	obj := func(i int) *jsonx.Object { o, _ := row.args[i].(*jsonx.Object); return o }
-	defer func() {
-		// The copy indexes some malformed values Python only fails on later;
-		// a panic counts as the error Python raised.
-		if r := recover(); r != nil {
-			result, err, ok = nil, pyErr("panic"), true
-		}
-	}()
 	switch row.fn {
 	case "validate_dialers":
 		return nil, ValidateDialers(obj(0)), true
@@ -146,6 +132,7 @@ func driftCall(row driftRow) (result any, err error, ok bool) {
 
 func TestCompatDoesNotDriftFromConvertCorpus(t *testing.T) {
 	rows := loadDriftCorpus(t)
+	native := nativeChainExpectations(t)
 	oracle := nativeReaderCases(t)
 	checked, lenient := map[string]int{}, map[string]int{}
 	for i, row := range rows {
@@ -154,6 +141,17 @@ func TestCompatDoesNotDriftFromConvertCorpus(t *testing.T) {
 				row.out = expected.Value("value")
 				row.errClass = expected.GetString("error")
 				row.errMsg = expected.GetString("message")
+			}
+		}
+		if entry := native.GetObject(fmt.Sprintf("drift/%d", i)); entry != nil {
+			expected := entry.GetObject("expected")
+			if expected.Has("error") {
+				row.errClass = expected.GetString("class")
+				row.errMsg = expected.GetString("error")
+			} else {
+				row.errClass = ""
+				row.errMsg = ""
+				row.out = expected.Value("value")
 			}
 		}
 		got, err, ok := driftCall(row)

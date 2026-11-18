@@ -1,6 +1,6 @@
 # N8-9 subs/substore
 
-分支 `go-n8-9-subs`，基于 `go@03257978f`。仅在主测试服务器通过 rt 定向验证，不 push、不起子 agent、不跑完整门禁。
+分支 `go-n8-9-subs`，初始基于 `go@03257978f`，现已 rebase 到合入 batch-7 的 `go@d4fab6441`。仅在主测试服务器通过 rt 定向验证，不 push、不起子 agent、不跑完整门禁。
 
 ## 范围与设计
 
@@ -13,19 +13,12 @@
 
 ## 状态
 
-已读 AGENT-BRIEF、PORTING/WORKFLOW、N8-9 与 R5/R8、discovery 交接、health 独立复核。
-缓存及 DTO 已迁移；六条有效缓存原测试、原始文件字节/hosts/日志断言保留。
-已补真实 Runtime 的保存/删除/清理 × 关机/断开六条，以及 repo 实际叶锁后取消两条。
-数字 ID 真实 Python 精确参照已生成，改变一个完整期待删除项的实际测试负控确实失败。
-客户端/runtime/dependencies、subs 核心尚未迁移；legacy.go 中 iterate/pyMakedirs 是旧 dependency
-owner 暂时仍调用的原有 helper，后续必须一起删除，不能据此声称 legacy 已纯转码。
-后续完成这些核心及分配基准、所有定向检查。
+产品迁移已经完成，当前进行最终定向验证。subs/substore 核心只用 model/DTO/yamlx；
+旧入口收在 legacy*.go 且只转码。私有 compat/pyconv/pystr/yaml_reader 已删除，
+convert 的订阅协作者直接调用 typed owner。下面各“阶段/剩余”描述是相应提交时的历史记录，
+最终检查结果与交回清单以文末为准。
 
-## 验证（待填写）
-
-固定 RT_HOST=sunbroke@192.168.0.32，GOMAXPROCS=4，-p 4。
-受影响包 race，跨包 Corpus|Reference|Golden，相关 HTTP difftest，60s fuzz；不跑完整门禁。
-
+固定 RT_HOST=sunbroke@192.168.0.32，GOMAXPROCS=4，-p 4。不跑完整门禁。
 
 ### 缓存阶段验证
 
@@ -262,3 +255,27 @@ owner 暂时仍调用的原有 helper，后续必须一起删除，不能据此�
   不得超过32KiB的实际B/op回归通过，不允许每个源重新编码完整配置。
 - 剩余核心仅链降级/链provider和compat/pyconv/yaml_reader旧模拟删除；随后统一原生
   collaborator接线文件、完整Mihomo管线分配基准、最终跨包Corpus|Reference|Golden、HTTP、fuzz。
+
+## typed 链降级与私有模拟清除阶段
+
+- LowerChains/ChainProviders 已成为原生 owner；配置只在旧 API 边界投影一次，节点/源循环内
+  无完整配置转码。删除 chains.go/compat.go/pyconv.go/yaml_reader.go/legacy_pending.go，旧入口
+  与历史测试 helper 分离。新增核心 AST 断言：subs/substore 非 legacy 产品不引 jsonx、不用
+  动态 any（omap 的泛型约束除外），不保留两套 dialer 校验。shared owner 缺失明确报错。
+- 656条已有输入的精确 Python+R5 reference，source/row/N7 SHA 绑定；19类边界逐项 ledger。
+  所有冻结 archive 与比较函数未改。1800链语料、原共享convert漂移及repo golden同次通过。
+- 新模型成员入口 ProxyGroup.SetJSON 复用共享 codec，保证显式null/空值、成员追加顺序和COW。
+  链克隆只投影单个拥有的group，保留原私有成员位置；节点/组/源 ID 和生成字节不变。新增
+  COW/失败成功前缀/源provider不变/坏alias key不panic及核心边界回归。
+- 原生订阅协作者已移到 convert/subscription_environment.go；legacy.go 仍保留其他 owner
+  （rules/check/provider）薄桥，不在本任务复制它们。ValidateListeners 直接使用原生入口。
+- 主服务器 `GOMAXPROCS=4 go test -p 4 -count=1 -timeout=6m ./internal/subs ./internal/model
+  ./internal/convert -run "TestN89Core|TestN89HostsRejects|TestN89LowerChains|TestN89Chains|TestN89ChainProvider|TestProxyGroupSetJSON|TestNativeMihomoMissingCollaborators|TestChainsCorpus|TestCompatDoesNotDriftFromConvertCorpus|TestCompatAgainstRepoGolden"`
+  → subs10.132s/model0.003s/convert0.010s。
+- Mihomo正常2353字节门、原输入不变与完整管线无关配置分配回归同次非race通过21.970s。
+  BenchmarkN89ChainGeneration 8/32/128节点：435840/1231176/4559128 B/op，
+  5245/15316/56151 allocs/op。BenchmarkN89MihomoSubscriptionPipeline 32/128节点、512规则、
+  1MiB无关字段：34418752/80579208 B/op，370726/861075 allocs/op；四倍节点量约2.34倍分配。
+  两个真实B/op回归分别约束链owner/完整typed生成16节点时，无关配置从0→1MiB的分配增量
+  ≤32KiB/64KiB，均通过。未声称其他未迁移rules/provider薄桥已被删除。
+- 剩余：最终受影响包/直接调用方race，跨包Corpus|Reference|Golden、相关HTTP difftest、60s fuzz及vet。

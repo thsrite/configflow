@@ -1,5 +1,7 @@
 package model
 
+import "encoding/json"
+
 // ProxyChain connects two stable resource references without recursive stored objects.
 type ProxyChain struct {
 	Entry  ResourceRef `json:"entry"`
@@ -69,6 +71,12 @@ func (r *ProxyGroup) UnmarshalJSON(data []byte) error { return DecodeRecord(data
 // Clear drops a declared member (by JSON name) when ProxyGroup is written, even if
 // it is stored as null or with a wrong type; see ClearMember.
 func (r *ProxyGroup) Clear(member string) error { return ClearMember(r, &r.raw, member) }
+
+// SetJSON explicitly replaces a declared group member, including owned zero/null values.
+// It uses the same shared record codec as Profile.SetJSON.
+func (r *ProxyGroup) SetJSON(member string, data json.RawMessage) error {
+	return SetMemberJSON(r, &r.raw, member, data)
+}
 
 // MarshalJSON preserves unknown and unchanged ProxyGroup members.
 func (r ProxyGroup) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
