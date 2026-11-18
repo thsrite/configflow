@@ -225,6 +225,12 @@ func startPythonArgs(t *testing.T, dataDir string, args ...string) (string, func
 }
 
 func startGo(t *testing.T, dataDir string) (string, func()) {
+	return startGoWithRequestRuntime(t, dataDir, nil)
+}
+
+// startGoWithRequestRuntime can give this test's requests an independent clock
+// without advancing or replacing the production background-loop runtime.
+func startGoWithRequestRuntime(t *testing.T, dataDir string, requestRuntime *lifecycle.Runtime) (string, func()) {
 	t.Setenv("DATA_DIR", dataDir)
 	t.Setenv("AGENT_REGISTRATION_KEY", "")
 	root, err := logx.Setup(logx.Config{Level: logx.Info, File: filepath.Join(dataDir, "app.log")})
@@ -244,7 +250,13 @@ func startGo(t *testing.T, dataDir string) (string, func()) {
 	if _, err := repo.LoadConfig(repo.WithScope(context.Background())); err != nil {
 		t.Fatal(err)
 	}
-	srv := httptest.NewServer(app)
+	var handler http.Handler = app
+	if requestRuntime != nil {
+		handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			app.ServeHTTP(w, r.WithContext(requestRuntime.BindRequest(r.Context())))
+		})
+	}
+	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
 	// main starts the loops once listening and, on SIGTERM, stops the HTTP
 	// server before lifecycle.Stop runs the shutdown hooks.

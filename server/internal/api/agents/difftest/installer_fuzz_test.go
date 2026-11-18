@@ -5,14 +5,14 @@ package difftest
 // empty keys, shell metacharacters, Unicode, long values, malformed ports and
 // addresses) for install-script and the Docker snippets, random JSON bodies
 // for install-command (every field with every JSON type) and core-install-command.
+// Set CONFIGFLOW_INSTALLER_FUZZ_ITERATIONS to select that many original
+// cases per phase for profiling; unset runs the unchanged complete corpus.
 // Lone surrogate escapes are left out: jsonx decodes them as U+FFFD (documented
 // jsonx limitation, see jsonx/doc.go).
 //
 //	rt -- bash -lc 'cd server && CONFIGFLOW_DIFF=1 go test -count=1 -v -run InstallerFuzz ./internal/api/agents/difftest/'
 
 import (
-	"configflow/internal/model"
-	"configflow/internal/repo"
 	"context"
 	"fmt"
 	"math/rand/v2"
@@ -22,8 +22,12 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/lifecycle"
+	"configflow/internal/lifecycle/lifecycletest"
+	"configflow/internal/repo"
 )
 
 type installerFuzz struct{ rng *rand.Rand }
@@ -308,37 +312,69 @@ func TestInstallerFuzzAgainstFlask(t *testing.T) {
 	for _, dir := range []string{seedDir, pyDir, goDir} {
 		os.MkdirAll(dir, 0o755)
 	}
-	seed(t, seedDir)
+	// Installer rendering has no dependency on monitoring history, existing
+	// Agents or the large application template. Keep the same minimal persisted
+	// configuration on both sides; registration issuance still uses the real repo.
+	if _, err := repo.Open(seedDir, repo.Options{}); err != nil {
+		t.Fatal(err)
+	}
 	copyDir(t, seedDir, pyDir)
 	copyDir(t, seedDir, goDir)
 	pyBase, stopPython := startPython(t, pyDir)
 	defer stopPython()
-	goBase, stopGo := startGo(t, goDir)
+	// The real issuance owner expires prior capabilities in its normal write.
+	// Advance only this request runtime, leaving JWT/link clocks and production
+	// background-loop timers alone. No extra repository cleanup transaction.
+	clock := lifecycletest.NewClock(time.Now())
+	runtime := lifecycle.NewRuntime(lifecycle.Options{Clock: clock, Mode: lifecycle.ModeManual})
+	runtime.Start(context.Background())
+	defer runtime.Shutdown(context.Background())
+	goBase, stopGo := startGoWithRequestRuntime(t, goDir, runtime)
 	defer stopGo()
 	pyToken, goToken := login(t, pyBase), login(t, goBase)
 	f := installerFuzz{rand.New(rand.NewPCG(20261116, 8))}
+	// Diagnostic limits select prefixes of each phase. Generate skipped inputs
+	// too, so the fixed RNG stream and every later phase retain the full corpus.
+	iterations := 0
+	if raw := os.Getenv("CONFIGFLOW_INSTALLER_FUZZ_ITERATIONS"); raw != "" {
+		var err error
+		iterations, err = strconv.Atoi(raw)
+		if err != nil || iterations < 1 {
+			t.Fatal("CONFIGFLOW_INSTALLER_FUZZ_ITERATIONS must be a positive integer")
+		}
+	}
+	selected := func(i int) bool { return iterations == 0 || i < iterations }
+	type phaseTime struct {
+		count                            int
+		prepare, python, goHTTP, compare time.Duration
+	}
+	timings := map[string]*phaseTime{}
+	defer func() {
+		for _, kind := range []string{"install-script", "compose", "run", "install-command", "core-install-command"} {
+			if v := timings[kind]; v != nil {
+				t.Logf("installer timing %s count=%d prepare=%s python=%s go=%s compare=%s per_iteration=%s", kind, v.count, v.prepare, v.python, v.goHTTP, v.compare, (v.prepare+v.python+v.goHTTP+v.compare)/time.Duration(v.count))
+			}
+		}
+	}()
 	counts := map[string]int{}
 	failed, same := 0, 0
 	check := func(kind string, r installerRequest, mask ...string) (response, response) {
-		// Each random generator request is independent. O9-H2 caps live service
-		// proofs at 100; its real capacity contract is tested by TestO9RegistrationCapacity.
-		repository, err := repo.GetRepository(context.Background())
-		if err != nil {
-			t.Fatal(err)
+		timing := timings[kind]
+		if timing == nil {
+			timing = &phaseTime{}
+			timings[kind] = timing
 		}
-		system, err := repository.System(context.Background())
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(system.RegistrationSessions) > 0 {
-			if err := repository.Update(context.Background(), func(_ context.Context, document *model.Document) error {
-				document.System.RegistrationSessions = nil
-				return nil
-			}); err != nil {
-				t.Fatal(err)
-			}
-		}
-		py, gor := sendInstaller(t, pyBase, r, pyToken), sendInstaller(t, goBase, r, goToken)
+		begin := time.Now()
+
+		clock.Advance(25 * time.Hour)
+		timing.prepare += time.Since(begin)
+		begin = time.Now()
+		py := sendInstaller(t, pyBase, r, pyToken)
+		timing.python += time.Since(begin)
+		begin = time.Now()
+		gor := sendInstaller(t, goBase, r, goToken)
+		timing.goHTTP += time.Since(begin)
+		begin = time.Now()
 		counts[fmt.Sprintf("%s %d", kind, py.status)]++
 		diffs := compareInstaller(py, gor, mask)
 		oracleResponse := py
@@ -371,6 +407,8 @@ func TestInstallerFuzzAgainstFlask(t *testing.T) {
 		} else {
 			same++
 		}
+		timing.compare += time.Since(begin)
+		timing.count++
 		return py, gor
 	}
 	for i := 0; i < 1500; i++ {
@@ -388,12 +426,16 @@ func TestInstallerFuzzAgainstFlask(t *testing.T) {
 			// ASCII only: the Go client would IDNA-encode a Unicode Host.
 			r.host = []string{"[fd00::5]:5001", "panel.test", "h:1", "x_y.test:80"}[f.rng.IntN(4)]
 		}
-		check("install-script", r)
+		if selected(i) {
+			check("install-script", r)
+		}
 	}
 	for _, kind := range []string{"compose", "run"} {
 		for i := 0; i < 700; i++ {
-			check(kind, installerRequest{method: "GET", admin: true,
-				path: "/api/agents/docker-agent-" + kind + "?" + f.query(dockerFields, f.dockerValue)})
+			r := installerRequest{method: "GET", admin: true, path: "/api/agents/docker-agent-" + kind + "?" + f.query(dockerFields, f.dockerValue)}
+			if selected(i) {
+				check(kind, r)
+			}
 		}
 	}
 	for i := 0; i < 1000; i++ {
@@ -403,6 +445,9 @@ func TestInstallerFuzzAgainstFlask(t *testing.T) {
 		}
 		r := installerRequest{method: "POST", path: "/api/agents/install-command", admin: true,
 			contentType: "application/json", body: body}
+		if !selected(i) {
+			continue
+		}
 		py, gor := check("install-command", r, "download_path", "expires_at")
 		if py.status == 200 && gor.status == 200 {
 			pyAnswer, _ := jsonx.Parse(py.body)
@@ -423,6 +468,9 @@ func TestInstallerFuzzAgainstFlask(t *testing.T) {
 	for i := 0; i < 150; i++ {
 		body := []string{`{"target":` + f.jsonValue("target") + `}`, `{"target":"both"}`, `{"target":"mihomo","x":1}`,
 			`{"target":"oxidns"}`, `{}`, `[]`, f.commandBody()}[f.rng.IntN(7)]
+		if !selected(i) {
+			continue
+		}
 		py, _ := check("core-install-command", installerRequest{method: "POST", path: "/api/agents/core-install-command",
 			admin: true, contentType: "application/json", body: body}, "download_path", "expires_at")
 		if py.status == 200 {
@@ -431,7 +479,7 @@ func TestInstallerFuzzAgainstFlask(t *testing.T) {
 			}
 		}
 	}
-	if count := counts["EXPECTED native writer NEL compose"]; count != 4 {
+	if count := counts["EXPECTED native writer NEL compose"]; iterations == 0 && count != 4 {
 		t.Errorf("explicit NEL writer expectations used %d times, want 4", count)
 	}
 	t.Logf("installer fuzz: %d comparisons equal, %d differ; statuses %v", same, failed, counts)
