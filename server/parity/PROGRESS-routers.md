@@ -77,7 +77,7 @@ Python's `backend/routers` is one big import cycle (most cross-module imports ar
 | R09 | forced DNS (DNS guard), IPv4 same-port forward hint | 773 | verified | HR | R04, R07 | – | internal/routers |
 | R10 | IPv6 policy, IPv6 fake-IP, IPv6 rule-set routes | 1247 | verified | HR | R04, R09 | – | internal/routers |
 | R11 | IPv6 PD guard, IPv6 DNS, RouterOS IPv6 readiness | 1161 | verified | HR | R10 | – | internal/routers |
-| R12 | release plan and staged execution | 1220 | missing | HR | R03–R11, A01 (return routing calls, ready) | – | internal/routers |
+| R12 | release plan and staged execution | 1220 | verified | HR | R03–R11, A01 (return routing calls, ready) | – | internal/routers |
 | R13 | inspection service, return advisory, pending reminders | 713 | missing | HR | R12, C07 (`RecordRouter`, ready), A01, A06 (ready); A23⁴ | – | internal/routers |
 | R14 | automatic rule sync | 1043 | missing | HR | R13, C14 (ready), C07 (`tasks`, ready) | – (handlers in R15) | internal/routers |
 | R15 | router HTTP routes, policy workspace, upstream-router reminder route | 656 | missing | HR | R14, C06, C22 (ready), C31, C34; A20⁵ | 21 (0 done) | internal/api/routers, internal/routers |
