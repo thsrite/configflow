@@ -436,3 +436,30 @@ func TestO9ValidBootstrapProofConsumedAlongsideExistingAgentToken(t *testing.T) 
 	s.Delete("/api/agents/"+registered.GetString("id"), s.Login()).WantStatus(200)
 	s.Post("/api/agents/register", httpxtest.JSON(body)).WantStatus(403)
 }
+
+func TestO9InstallScriptRetainsRawQuerySemantics(t *testing.T) {
+	s := o9Server(t)
+	tests := []struct {
+		name, query, want string
+		status            int
+	}{
+		{"bad escape value", "config_path=/tmp/a%2", `"config_path": "/tmp/a%2"`, 200},
+		{"semicolon value", "config_path=/tmp/a;b", `"config_path": "/tmp/a;b"`, 200},
+		{"bad escape service", "type=mihomo%zz", "", 400},
+		{"bad escape lifecycle", "restart_command=%2Fcustom%2", "", 400},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			for _, authenticated := range []bool{false, true} {
+				var options []httpxtest.Option
+				if authenticated {
+					options = append(options, s.Login())
+				}
+				result := s.Get("/api/agents/install-script?"+test.query, options...).WantStatus(test.status)
+				if test.want != "" && !strings.Contains(result.Text(), test.want) {
+					t.Fatalf("query parameter lost: %s", test.query)
+				}
+			}
+		})
+	}
+}

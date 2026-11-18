@@ -101,6 +101,20 @@ type queryParams struct{ c *httpx.Ctx }
 
 func (q queryParams) get(name string) (string, bool) { return q.c.Arg(name) }
 
+type credentialParams struct {
+	base   installParams
+	tokens map[string]string
+}
+
+func (p credentialParams) get(name string) (string, bool) {
+	if service, ok := strings.CutPrefix(name, "registration_token_"); ok {
+		if token, present := p.tokens[service]; present {
+			return token, true
+		}
+	}
+	return p.base.get(name)
+}
+
 type mapParams map[string]string
 
 func (m mapParams) get(name string) (string, bool) {
@@ -319,12 +333,7 @@ func renderInstallScript(c *httpx.Ctx, params installParams) (string, error) {
 }
 
 func getInstallScript(c *httpx.Ctx) (*httpx.Response, error) {
-	params := mapParams{}
-	for key, values := range c.Request.URL.Query() {
-		if len(values) > 0 {
-			params[key] = values[0]
-		}
-	}
+	params := queryParams{c}
 	script, failed := installScriptResponse(c, params)
 	if failed != nil {
 		return failed, nil
@@ -336,10 +345,7 @@ func getInstallScript(c *httpx.Ctx) (*httpx.Response, error) {
 		if failed != nil {
 			return failed, nil
 		}
-		for service, token := range tokens {
-			params["registration_token_"+service] = token
-		}
-		script, failed = installScriptResponse(c, params)
+		script, failed = installScriptResponse(c, credentialParams{base: params, tokens: tokens})
 		if failed != nil {
 			return failed, nil
 		}

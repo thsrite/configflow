@@ -326,8 +326,17 @@ func TestInstallerFuzzAgainstFlask(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := repository.UpdateSystem(context.Background(), func(_ context.Context, system *model.System) error { system.RegistrationSessions = nil; return nil }); err != nil {
+		system, err := repository.System(context.Background())
+		if err != nil {
 			t.Fatal(err)
+		}
+		if len(system.RegistrationSessions) > 0 {
+			if err := repository.Update(context.Background(), func(_ context.Context, document *model.Document) error {
+				document.System.RegistrationSessions = nil
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
 		}
 		py, gor := sendInstaller(t, pyBase, r, pyToken), sendInstaller(t, goBase, r, goToken)
 		counts[fmt.Sprintf("%s %d", kind, py.status)]++

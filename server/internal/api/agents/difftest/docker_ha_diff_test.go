@@ -541,7 +541,7 @@ func TestDockerHADifferentialAgainstFlask(t *testing.T) {
 	}
 	// Takeover of a registered device is refused.
 	{
-		r := request{name: "register taken", method: "POST", path: "/api/agents/register", contentType: "application/json",
+		r := request{name: "register taken", method: "POST", admin: true, path: "/api/agents/register", contentType: "application/json",
 			body: `{"name": "taken-dns-oxidns", "host": "192.168.50.30", "port": 8082, "service_type": "oxidns", "deployment_method": "docker"}`}
 		p, g := both(r)
 		compareHA(t, r.name, p, g, &same, &failed, "id", "token")

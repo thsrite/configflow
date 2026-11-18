@@ -1630,3 +1630,7 @@ D2：`system.agent_registration_sessions` 是 Go 原生新字段，Python 没有
 Flask 差分只为安装脚本 JSON 的 `registration_token` 与 Docker 的
 `AGENT_<SERVICE>_REGISTRATION_TOKEN` 字段增加严格 43 字符 base64url 精确规则；
 注册差分的旧匿名成功样例改为两侧都带 JWT，匿名拒绝单独回归，不宽泛忽略状态或响应。
+
+发布要求：面板必须同时提供由本次源码重建的 Agent 二进制和 Docker 镜像。旧二进制不识别
+`registration_token` / `registration_key`，不能执行登录开启后的新首次注册流程；已有 Agent
+持有自身 token 的运行协议不变，无须仅为此强制升级。
