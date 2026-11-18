@@ -442,3 +442,20 @@ the issue classes are now written down; porting is the most token-heavy step and
   after Detach and before each commit point (repo transaction, file replace, device write), and leaf stores without a
   ctx get one. Test with a real `Runtime.Start/BindRequest/Shutdown`: after shutdown no write lands; after a request
   disconnect every write still completes.
+
+## Merge batching and risk tiers (coordinator, since 2026-11-18)
+
+Approved by the maintainer to cut gate time without reducing what is verified.
+
+- **Batch merges.** Branches that are ready (reviewed, targeted tests green) are stacked on top of `go` in
+  one batch tree (`batch-N`, each branch rebased in turn; `.md` conflicts keep both sides) and the full gate
+  (`cf-gate`) runs once on that tree. On PASS the whole batch fast-forwards into `go`. On FAIL the failing
+  package normally names the branch; that branch is dropped from the batch and handed back, and the rest is
+  re-gated (or gated separately when the failure cannot be attributed). Every commit that reaches `go`
+  therefore still passed a full gate on the exact tree it lands in.
+- **Risk tiers.** Commits that change only documentation or test tooling (`server/parity/**`, `*.md`,
+  `server/tools/configdiff/**` and similar, no Go product code and no `server/scripts/gate.sh` logic that the
+  gate itself depends on) may be fast-forwarded after their own checks (e.g. configdiff self-tests).
+  Anything that touches Go product code, even one package, goes through a batch full gate.
+- Agents keep handing back with targeted evidence when the gate queue exceeds 15 minutes; the coordinator
+  decides which batch a branch joins.
