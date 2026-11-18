@@ -120,11 +120,11 @@ GET	/api/backup/config	routes.settings.backup_config	internal/api/settings	done
 POST	/api/backup/config	routes.settings.backup_config	internal/api/settings	done
 POST	/api/backup/now	routes.settings.backup_now	api/settings	done
 POST	/api/backup/test	routes.settings.test_backup	api/settings	done
-GET	/api/client-devices	routes.client_devices.client_devices		todo
-PUT	/api/client-devices	routes.client_devices.client_devices		todo
-GET	/api/client-devices/discovery	routes.client_devices.client_device_discovery		todo
-POST	/api/client-devices/fixed-ip/apply	routes.client_devices.apply_fixed_ip		todo
-POST	/api/client-devices/fixed-ip/preview	routes.client_devices.preview_fixed_ip		todo
+GET	/api/client-devices	routes.client_devices.client_devices	internal/api/clientdevices	done
+PUT	/api/client-devices	routes.client_devices.client_devices	internal/api/clientdevices	done
+GET	/api/client-devices/discovery	routes.client_devices.client_device_discovery	internal/api/clientdevices	done
+POST	/api/client-devices/fixed-ip/apply	routes.client_devices.apply_fixed_ip	internal/api/clientdevices	done
+POST	/api/client-devices/fixed-ip/preview	routes.client_devices.preview_fixed_ip	internal/api/clientdevices	done
 DELETE	/api/config-token	routes.settings.handle_config_token	internal/api/settings	done
 GET	/api/config-token	routes.settings.handle_config_token	internal/api/settings	done
 POST	/api/config-token	routes.settings.handle_config_token	internal/api/settings	done

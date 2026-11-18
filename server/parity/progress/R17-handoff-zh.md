@@ -11,3 +11,7 @@
 R16 复核规则：坏记录只影响自身；公开列表/发现/错误不能引用其他设备凭据；完整响应用共享 redact 和 repository token hook，私有乐观更新快照不修改。UDP 协议引用误判属 C26 已修，R17 HTTP 补回归。
 
 命令：`RT_HOST="$R17_TEST_HOST" rt -- bash -lc 'cd server && gofmt -w internal/routers/fixed_ip*.go internal/routers/r17_fixed_test.go internal/routers/routerfake/fake.go && go test -race -count=1 ./internal/routers -run "TestR17" -timeout 3m'`（R17_TEST_HOST 是会话固定的测试服务器 SSH 目标，不把基础设施地址写入仓库）。无未编译的半写文件。
+
+第二步：clients FixedIPService（C36 fail-closed guard、重建计划、跨设备 L1、共用 R06 的批量 L2、事务/补偿/删除恢复 ID 保存、发现 enrichment）与正式 api/clientdevices 五路由完成。使用 A13 deploy.PublicDeployment、C36 ProfileSessions、auth.Current SecretKey；HEAD 走 GET；完整公开投影沿用共享 redact 和 repository tokens。preview token 的签名按 itsdangerous 原协议、JSON 原生编码，Python 与 Go 双向互验（含压缩/Unicode/600 秒/未来时间）通过。批量 L2 只 try 一组，任何失败先释放整组再等待单锁，不绕开 checker 或另建锁。
+
+定向 race：routers R17 1.084s；正式 HTTP 3.546s；clients R17 5.045s。下一步真实 Flask HTTP 差分、两厂商 Python 边界错误/回滚语义、真实 Runtime 设备 I/O/写后关机、跨设备/克隆/恢复/超限回归、UDP protocol collision HTTP 入口回归，以及最终定向检查。第一步提交 `8f05e4f0e`；第二步为本文件所在提交。

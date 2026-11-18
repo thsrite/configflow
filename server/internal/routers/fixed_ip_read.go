@@ -309,7 +309,7 @@ func (d *Ikuai) fixedStatic(ctx context.Context) ([]Row, error) {
 		return nil, err
 	}
 	for i, row := range rows {
-		decoded := asRow(DecodeIkuaiValue(row, ""))
+		decoded := decodeIkuaiRow(row)
 		if decoded == nil {
 			return nil, routerError(messageFixedIKFields)
 		}
@@ -328,7 +328,7 @@ func (d *Ikuai) ReadFixedIP(ctx context.Context) (*FixedIPSnapshot, error) {
 		return nil, err
 	}
 	for i, row := range servers {
-		servers[i] = asRow(DecodeIkuaiValue(row, ""))
+		servers[i] = decodeIkuaiRow(row)
 	}
 	static, err := d.fixedStatic(ctx)
 	if err != nil {

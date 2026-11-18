@@ -52,3 +52,6 @@ func TestR17ROSReservationLifecycle(t *testing.T) {
 		})
 	}
 }
+
+func r17IKState()routerfake.IkuaiState{return routerfake.IkuaiState{Tables:map[string][]routerfake.Row{"dhcp_server":{{"id":1,"enabled":"yes","status":1,"interface":"lan1","check_relay_only":0,"addr_pool":"192.0.2.10-192.0.2.200","netmask":"255.255.255.0","gateway":"192.0.2.1"}},"dhcp_static":{},"dhcp_lease":{{"ip_addr":"192.0.2.21","mac":"02:00:00:00:00:21","interface":"lan1"}},"monitor_lanip":{}}}}
+func TestR17IkuaiReservationLifecycle(t *testing.T){f:=routerfake.NewIkuai(r17IKState());srv:=httptest.NewServer(f);defer srv.Close();d:=NewIkuai(srv.URL,routerfake.IkuaiUser,routerfake.IkuaiPassword,false);defer d.Close();op,err:=d.PreviewFixedIP(t.Context(),"192.0.2.21","02:00:00:00:00:21","Synthetic");if err!=nil{t.Fatal(err)};b,err:=d.ApplyFixedIP(t.Context(),op);if err!=nil{t.Fatal(err)};del,err:=d.PreviewDeleteFixedIP(t.Context(),b);if err!=nil{t.Fatal(err)};removed,err:=d.DeleteFixedIP(t.Context(),del);if err!=nil{t.Fatal(err)};restored,err:=d.RestoreDeletedFixedIP(t.Context(),removed);if err!=nil||restored.ID==""{t.Fatal(err,restored)};restored.Undo=b.Undo;if err=d.RollbackFixedIP(t.Context(),restored);err!=nil{t.Fatal(err)}}
