@@ -113,10 +113,9 @@ call only; C33 keeps `.list.bak`; R11 F3 (block on edited owned script) accepted
 exception; O14 follow-up: apply the same pattern to R04–R11 F6; CFG-01 LOW: host aliases / DNS rebinding not
 guarded in Python or Go (post-switch item).
 
-**Open question to the maintainer (asked, unanswered):** three speed options — (1) incremental switch: Go serves
-ported routes and proxies the rest to Python; (2) risk-tiered verification (lighter for logs/stats/settings);
-(3) stop fixing non-security Python bugs during the port (record only). Coordinator recommended all three, (1)
-first, with a "minimum module set for switch" estimate.
+**Maintainer decision 2026-11-18 ~10:40: all three speed options REJECTED** — no incremental switch/proxy to
+Python, no risk-tiered (lighter) verification, keep fixing Python bugs in Go (record in behaviour-changes.md).
+Do not re-propose them.
 
 ## (history) CURRENT STATE — 2026-11-17 evening
 
