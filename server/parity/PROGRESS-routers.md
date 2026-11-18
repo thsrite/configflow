@@ -79,7 +79,7 @@ Python's `backend/routers` is one big import cycle (most cross-module imports ar
 | R11 | IPv6 PD guard, IPv6 DNS, RouterOS IPv6 readiness | 1161 | verified | HR | R10 | – | internal/routers |
 | R12 | release plan and staged execution | 1220 | verified | HR | R03–R11, A01 (return routing calls, ready) | – | internal/routers |
 | R13 | inspection service, return advisory, pending reminders | 713 | verified | HR | R12, C07 (`RecordRouter`, ready), A01, A06 (ready); A23⁴ | – | internal/routers |
-| R14 | automatic rule sync | 1043 | missing | HR | R13, C14 (ready), C07 (`tasks`, ready) | – (handlers in R15) | internal/routers |
+| R14 | automatic rule sync | 1043 | ported | HR | R13, C14 (ready), C07 (`tasks`, ready) | – (handlers in R15) | internal/routers |
 | R15 | router HTTP routes, policy workspace, upstream-router reminder route | 656 | missing | HR | R14, C06, C22 (ready), C31, C34; A20⁵ | 21 (0 done) | internal/api/routers, internal/routers |
 | R16 | client devices and discovery | 786 | missing | | R13, A01, C26, C31 | – | internal/clients, internal/routers |
 | R17 | client fixed IP and client-device routes | 1077 | missing | HR | R16, R06, R14, C06 (JWT secret), C36², A13⁶ | 5 (0 done) | internal/clients, internal/routers, internal/api/clientdevices |
@@ -836,6 +836,8 @@ Notes for porter (pre-design, superseded where they conflict): `Driver(router)`,
 
 **Status: `missing`** · HR · prereqs: R13, C14, C07 (`tasks`) · Go: internal/routers
 
+**Status: `ported`** · HR · prereqs: R13, C14, C07 (`tasks`) · Go: internal/routers
+
 Files:
 - `backend/routers/rule_sync.py` (474), `rule_sync_rules.py` (214), `rule_sync_store.py` (90), `rule_sync_write.py` (265)
 - plus `backend/routes/tasks.py::_router_rows` (C07's file; listed under C07 as "ported by routers")
@@ -845,6 +847,12 @@ Tests: `test_router_rule_sync.py` (27), `test_routeros_nat_list_sync.py` (6), `t
 Routes: none here (`GET|PUT|POST /api/routers/<id>/rule-sync` handlers are R15).
 
 Notes for porter: reuse O3-6b `RouterJobLock` (the sole routers-owned L1 Keyed shared with `repo.Hooks.JobLock`); do not add a second lock map or recreate `router-rule-sync/*.lock` files. Existing Python locks stay untouched. Register `tasks.SetRows(tasks.SlotRouters, …)`, `tasks.SetRunner("router_rule_sync", …)` (RouterError → `*tasks.Conflict`), `lifecycle.Periodic` for `rule_sync.start_loop` (O3 table: 30 s first/interval, first authenticated request activation). Receipts `DATA_DIR/router-rule-sync/*.json` byte-identical. `capture_manual`, `needs_baseline`, `start_job`, `paused_message` are used by R13/R15. Idle CPU history (#534–#537): keep the loop's idle gating exactly. Task status through `notifications.TaskStatus`.
+
+已移植：原生分类/来源选择、bounded 下载及逐声明验证、手动基准 Capture、受限 IPv4/policy/NAT/IPv6 目的增删与全错误补偿、原子回执、StartJob/30s 调度、C07 rows/runner 与 Wire。无新依赖；不创建 flock。R12 CaptureManual 已接线；R15 可用 `NeedsBaseline`、`RuleSyncStore.Read/Public`、`RuleSyncService.StartJob`，发布与设置入口需共用 `JobLock`。
+
+验证与 HR checklist、40 个真实 Python 对照、Runtime/raw HTTP/缓存/重启用例、命令输出与 L5 项目见 [R14-handoff-zh.md](progress/R14-handoff-zh.md)。实现提交：`2e8925789` + 交接文件所在最终提交；仅作者标 ported，待新 Opus HR 复核。
+
+集成注意：此基线尚未合入 O3-6b RouterJobLock，临时 `JobLock/syncJobs` 与 repo hook 共用同一 L1；O3-6b 合入时改为统一入口，不可保留两把独立锁。D2 原生 controls 可能要求切换后手动重建基准；修复 F-R12-3 的回读失败未补偿问题。另发现既有 R13 关机取消用例间歇失败，已在恢复原基线的临时副本重现，未改 R13，详见交接。
 
 ## R15 — router HTTP routes, policy workspace, upstream-router reminder route
 

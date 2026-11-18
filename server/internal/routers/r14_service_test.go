@@ -173,7 +173,7 @@ func TestR14FailuresBeforeWrites(t *testing.T) {
 					t.Fatal(err)
 				}
 				want := "paused"
-				if mode == "download" || mode == "invalid" {
+				if mode == "download" {
 					want = "failed"
 				}
 				if result.Status != want {
@@ -247,8 +247,10 @@ func TestR14ReceiptLeafAndPrivacy(t *testing.T) {
 	if err != nil || got.Status != "paused" || got.Message != messageSyncUnreadable {
 		t.Fatalf("corrupt %+v %v", got, err)
 	}
-	cancelCtx, cancel := context.WithCancel(ctx)
-	cancel()
+	runtime := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry(), Mode: lifecycle.ModeManual})
+	runtime.Start(ctx)
+	cancelCtx := runtime.BindRequest(ctx)
+	runtime.Shutdown(ctx)
 	if err = store.Write(cancelCtx, "plain", "r", receipt); !errors.Is(err, context.Canceled) {
 		t.Fatal(err)
 	}

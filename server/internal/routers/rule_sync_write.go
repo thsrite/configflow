@@ -78,7 +78,7 @@ func restrictSyncPlan(plan *Plan, baseline *RuleSyncBaseline) ([]Op, error) {
 	}
 	result := []Op{}
 	for _, op := range routes.Ops {
-		switch v := op.(type) {
+		switch v := syncValueOp(op).(type) {
 		case *NATListSync:
 			if nat == nil {
 				return nil, routerError(fmt.Sprintf(messageSyncStage, StageTitles[StageNATBypass]))
@@ -100,11 +100,11 @@ func restrictSyncPlan(plan *Plan, baseline *RuleSyncBaseline) ([]Op, error) {
 			if !jsonEqual(a, b) {
 				return nil, routerError(messageSyncPolicyScope)
 			}
-		case *RouteDeleteOp:
+		case RouteDeleteOp:
 			if ids[v.ID] {
 				result = append(result, v)
 			}
-		case *RouteAddOp:
+		case RouteAddOp:
 			result = append(result, v)
 		default:
 			return nil, routerError(messageSyncAdopt)
@@ -141,10 +141,8 @@ func ApplyRuleSyncDelta(ctx context.Context, d *RouterOS, desired *Desired, plan
 		return out, err
 	}
 	live := *livePtr
-	for _, item := range baseline.StaticResources {
-		if err = guardPolicyIn(live, item); err != nil {
-			return out, err
-		}
+	if err = syncGuardResources(live, baseline.StaticResources); err != nil {
+		return out, err
 	}
 	nat := NATMemberUpdate(plan.Stages, baseline.NATList)
 	retainedNAT := []ROSResource{}
@@ -217,10 +215,10 @@ func ApplyRuleSyncDelta(ctx context.Context, d *RouterOS, desired *Desired, plan
 	additions := []ROSResource{}
 	removals := []ROSResource{}
 	for _, op := range operations {
-		switch v := op.(type) {
-		case *RouteAddOp:
+		switch v := syncValueOp(op).(type) {
+		case RouteAddOp:
 			additions = append(additions, ROSResource{Path: rosRoutes, Config: Row{"dst-address": v.CIDR, "gateway": v.Gateway, "comment": v.Comment, "disabled": "false"}})
-		case *RouteDeleteOp:
+		case RouteDeleteOp:
 			removals = append(removals, known[v.ID])
 		}
 	}
@@ -436,7 +434,10 @@ func ApplyRuleSyncDelta(ctx context.Context, d *RouterOS, desired *Desired, plan
 	} else { // Keep opaque manifest members when destinations/resources change.
 		var fields map[string]json.RawMessage
 		_ = json.Unmarshal(previous, &fields)
-		fields["spec"] = mustPolicyJSON(next.Spec)
+		var spec map[string]json.RawMessage
+		_ = json.Unmarshal(fields["spec"], &spec)
+		spec["destinations"] = mustPolicyJSON(next.Spec.Destinations)
+		fields["spec"] = mustPolicyJSON(spec)
 		fields["resources"] = mustPolicyJSON(next.Resources)
 		d.SetPolicyManifest(mustPolicyJSON(fields))
 	}
@@ -488,4 +489,37 @@ func syncNATEntries(name string, values []string) []Row {
 		rows = append(rows, Row{"list": name, "address": value, "comment": NATListComment, "disabled": "false"})
 	}
 	return rows
+}
+
+func syncValueOp(op Op) Op {
+	switch v := op.(type) {
+	case *RouteAddOp:
+		return *v
+	case *RouteDeleteOp:
+		return *v
+	}
+	return op
+}
+
+// syncGuardResources indexes once even when a receipt contains 20,000 routes.
+func syncGuardResources(live ROSPolicySnapshot, items []ROSResource) error {
+	rows := map[[2]string][]Row{}
+	for path, entries := range live {
+		for _, row := range entries {
+			key := [2]string{path, row.id()}
+			rows[key] = append(rows[key], row)
+		}
+	}
+	seen := map[[2]string]bool{}
+	for _, item := range items {
+		key := [2]string{item.Path, item.ID}
+		if seen[key] {
+			return routerError(messageOperationFormat)
+		}
+		seen[key] = true
+		if err := guardPolicyIn(ROSPolicySnapshot{item.Path: rows[key]}, item); err != nil {
+			return err
+		}
+	}
+	return nil
 }

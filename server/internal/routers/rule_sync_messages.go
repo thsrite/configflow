@@ -53,6 +53,7 @@ const (
 	messageSyncCapturePrefix        = "本次发布未建立自动同步基准："
 	messageSyncCaptureIO            = "同步记录无法保存，请重新预览发布"
 	messageSyncDownloadLimit        = "远程规则下载超过大小或时间限制"
+	messageSyncDownloadUTF8         = "远程规则下载失败：响应不是 UTF-8 文本"
 	messageSyncDownloadError        = "远程规则下载失败："
 	messageSyncInternal             = "内部错误"
 	messageSyncWorkerBusy           = "已有规则同步任务正在运行，请稍后重试"

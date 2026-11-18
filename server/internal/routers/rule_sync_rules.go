@@ -20,17 +20,18 @@ const syncMaxIPs = 20000
 
 // RuleSyncRecord holds classified source versions, never downloaded contents.
 type RuleSyncRecord struct {
-	Version      string   `json:"version"`
-	IPv4         []string `json:"ipv4"`
-	IPv6         []string `json:"ipv6"`
-	IP6Count     int      `json:"ip6_count"`
-	IPCount      int      `json:"ip_count"`
-	DomainCount  int      `json:"domain_count"`
-	IgnoredCount int      `json:"ignored_count"`
-	InvalidCount int      `json:"invalid_count"`
-	Name         string   `json:"name"`
-	SourceType   string   `json:"source_type"`
-	LibraryID    string   `json:"library_id"`
+	Extra        map[string]json.RawMessage `json:"-"`
+	Version      string                     `json:"version"`
+	IPv4         []string                   `json:"ipv4"`
+	IPv6         []string                   `json:"ipv6"`
+	IP6Count     int                        `json:"ip6_count"`
+	IPCount      int                        `json:"ip_count"`
+	DomainCount  int                        `json:"domain_count"`
+	IgnoredCount int                        `json:"ignored_count"`
+	InvalidCount int                        `json:"invalid_count"`
+	Name         string                     `json:"name"`
+	SourceType   string                     `json:"source_type"`
+	LibraryID    string                     `json:"library_id"`
 }
 
 var syncDomain = regexp.MustCompile(`^(?:\+\.|\*\.|\.)?(?:[\pL\pN_\-]+\.)+[\pL\pN_\-]+\.?$`)
@@ -209,15 +210,18 @@ func selectedSyncSources(config json.RawMessage, r *Router) ([]syncSource, error
 	}
 	ids := append(r.StaticRuleSets(), r.RosPolicyRuleSets...)
 	seen := map[string]bool{}
-	result := []syncSource{}
+	selected := []string{}
 	for _, id := range ids {
-		if seen[id] {
-			continue
+		if !seen[id] {
+			selected = append(selected, id)
+			seen[id] = true
 		}
-		seen[id] = true
-		if len(seen) > 128 {
-			return nil, routerError(messageSyncSelectionCap)
-		}
+	}
+	if len(selected) > 128 {
+		return nil, routerError(messageSyncSelectionCap)
+	}
+	result := []syncSource{}
+	for _, id := range selected {
 		item, exists := rules[id]
 		source, found := library[item.LibraryRuleID]
 		var ip *RuleSet

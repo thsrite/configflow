@@ -116,6 +116,11 @@ func (d *RuleSyncDownloads) Download(ctx context.Context, raw, config json.RawMe
 	_ = json.Unmarshal(config, &cfgFields)
 	key := routeDigest([]json.RawMessage{mustPolicyJSON(source.URL), cfgFields["system_config"]})
 	if value, ok := d.items[key]; ok {
+		var src syncSource
+		src.Library.Raw = raw
+		if err := syncValidate(ctx, value, src, config); err != nil {
+			return "", &syncDownloadError{routerError(err.Error())}
+		}
 		return value, nil
 	}
 	cfg, err := syncObject(config)
@@ -144,7 +149,7 @@ func (d *RuleSyncDownloads) Download(ctx context.Context, raw, config json.RawMe
 		return "", &syncDownloadError{routerError(messageSyncDownloadError + weburl.SafeErrorDetails(err))}
 	}
 	if !utf8.Valid(data) {
-		return "", &syncDownloadError{routerError(messageSyncDownloadError + "UnicodeDecodeError")}
+		return "", &syncDownloadError{routerError(messageSyncDownloadUTF8)}
 	}
 	content := strings.TrimPrefix(string(data), "\ufeff")
 	// Validate before caching, and the engine validates again on every declaration.
@@ -197,11 +202,7 @@ func loadSyncSources(ctx context.Context, config json.RawMessage, r *Router, dow
 		}
 		if source.Source.SourceType == "url" {
 			if err = syncValidate(ctx, content, source, config); err != nil {
-				var transient *syncDownloadError
-				if download != nil {
-					transient = &syncDownloadError{routerError(err.Error())}
-					return nil, nil, transient
-				}
+
 				return nil, nil, routerError(fmt.Sprintf(messageSyncSourceError, orText(source.Source.Name, source.Item.ID), err.Error()))
 			}
 		}

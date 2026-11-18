@@ -12,10 +12,12 @@ import (
 
 	"configflow/internal/lifecycle"
 	"configflow/internal/lockx"
+	"configflow/internal/repo"
 )
 
 // RuleSyncBaseline pins source versions and complete device ownership proofs.
 type RuleSyncBaseline struct {
+	Extra           map[string]json.RawMessage `json:"-"`
 	Control         string                     `json:"control"`
 	Rules           map[string]*RuleSyncRecord `json:"rules"`
 	Desired         *Desired                   `json:"desired"`
@@ -32,6 +34,8 @@ type RuleSyncLog struct {
 
 // RuleSyncReceipt is runtime state outside configuration revisions and exports.
 type RuleSyncReceipt struct {
+	Extra     map[string]json.RawMessage `json:"-"`
+	RuleOrder []string                   `json:"_rule_order,omitempty"`
 	Status    string                     `json:"status,omitempty"`
 	Message   string                     `json:"message,omitempty"`
 	CheckedAt *string                    `json:"checked_at,omitempty"`
@@ -79,7 +83,14 @@ func (r RuleSyncReceipt) Public(enabled bool) RuleSyncStatus {
 	if len(rules) == 0 && r.Baseline != nil {
 		rules = r.Baseline.Rules
 	}
+	order := append([]string{}, r.RuleOrder...)
+	seen := stringSet(order...)
 	for _, id := range sortedSyncKeys(rules) {
+		if !seen[id] {
+			order = append(order, id)
+		}
+	}
+	for _, id := range order {
 		v := rules[id]
 		if v == nil {
 			continue
@@ -125,14 +136,25 @@ func (s RuleSyncStore) Read(ctx context.Context, profile, id string) (RuleSyncRe
 		return RuleSyncReceipt{}, nil
 	}
 	var result RuleSyncReceipt
+	if err == nil && json.Valid(data) && len(bytes.TrimSpace(data)) > 0 && bytes.TrimSpace(data)[0] != '{' {
+		return result, nil
+	}
 	if err != nil || json.Unmarshal(data, &result) != nil || bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
 		return RuleSyncReceipt{Status: "paused", Message: messageSyncUnreadable}, nil
+	}
+	if result.Baseline != nil {
+		if result.Baseline.Control == "" && result.Baseline.Desired == nil && result.Baseline.Rules == nil {
+			result.Baseline = nil
+		} else if result.Baseline.Desired == nil || result.Baseline.Control == "" || result.Baseline.Rules == nil {
+			return RuleSyncReceipt{Status: "paused", Message: messageSyncUnreadable}, nil
+		}
 	}
 	return result, nil
 }
 
 // Write checks shutdown after taking the shared leaf lock and before atomic replacement.
 func (s RuleSyncStore) Write(ctx context.Context, profile, id string, value RuleSyncReceipt) error {
+	ctx = lifecycle.Detach(ctx)
 	path := s.path(profile, id)
 	_, release, err := syncReceiptLocks.Lock(ctx, path, 0)
 	if err != nil {
@@ -184,4 +206,13 @@ func (s RuleSyncStore) NeedsBaseline(ctx context.Context, profile string, r *Rou
 }
 func syncNow(ctx context.Context) string {
 	return lifecycle.ClockFrom(ctx).Now().UTC().Format("2006-01-02T15:04:05+00:00")
+}
+
+// NeedsBaseline is the R15 preview adapter for the current repository's receipts.
+func NeedsBaseline(ctx context.Context, profile string, r *Router) (bool, error) {
+	db, err := repo.GetRepository(ctx)
+	if err != nil {
+		return false, err
+	}
+	return (RuleSyncStore{DataDir: db.DataDir()}).NeedsBaseline(ctx, profile, r)
 }

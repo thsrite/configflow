@@ -27,6 +27,8 @@ type RuleSyncService struct {
 	Agents    AgentSource
 	NewDriver func(*Router) *RouterOS
 	Download  RuleSyncDownload
+	// Spawner defaults to the production lifecycle; isolated runtimes may be injected.
+	Spawner lockx.Spawner
 }
 
 var syncLogger = logx.Get("backend.routers.rule_sync")
@@ -36,6 +38,7 @@ var syncJobs = lockx.NewKeyed[string](lockx.LevelJob, "router-job")
 // JobLock is the transitional R14 L1 entry until O3-6b supplies RouterJobLock.
 // It uses the O3 connection equivalence classes; no per-resource flock is created.
 func JobLock(ctx context.Context, profile, id string, r *Router) (context.Context, func(), bool) {
+	ctx = lifecycle.Detach(ctx)
 	key := profile + "\n" + id
 	if r != nil {
 		key = r.Type + "\n" + strings.TrimRight(r.Endpoint, "/")
@@ -52,7 +55,6 @@ func (s *RuleSyncService) driver(r *Router) *RouterOS {
 	}
 	return NewRouterOS(r.Endpoint, r.Username, r.Password, r.VerifyTLS)
 }
-func lifecycleSyncDetach(ctx context.Context) context.Context { return lifecycle.Detach(ctx) }
 func (s *RuleSyncService) baseline(ctx context.Context, config json.RawMessage, r *Router, d *RouterOS, desired *Desired, records map[string]*RuleSyncRecord, control string) (*RuleSyncBaseline, error) {
 	static, err := syncStaticResources(ctx, d, desired)
 	if err != nil {
@@ -138,7 +140,7 @@ func (s *RuleSyncService) Capture(ctx context.Context, profile string, config js
 		if err != nil {
 			return err
 		}
-		return s.store().Write(work, profile, r.ID, RuleSyncReceipt{Status: "synced", Message: messageSyncCaptured, SyncedAt: &timestamp, UpdatedAt: &timestamp, Baseline: baseline, Rules: records})
+		return s.store().Write(work, profile, r.ID, RuleSyncReceipt{Status: "synced", Message: messageSyncCaptured, SyncedAt: &timestamp, UpdatedAt: &timestamp, Baseline: baseline, Rules: records, RuleOrder: syncSelectedOrder(config, r)})
 	}()
 	if err == nil {
 		return nil
@@ -279,7 +281,13 @@ func (s *RuleSyncService) sync(ctx context.Context, profile, id, trigger string)
 		if err != nil {
 			return err
 		}
+		for id, record := range records {
+			if old := base.Rules[id]; old != nil {
+				record.Extra = maps.Clone(old.Extra)
+			}
+		}
 		receipt.Rules = records
+		receipt.RuleOrder = syncSelectedOrder(config, r)
 		for key, v := range records {
 			if base.Rules[key] == nil || v.Version != base.Rules[key].Version {
 				receipt.UpdatedAt = &timestamp
@@ -383,9 +391,11 @@ func (s *RuleSyncService) sync(ctx context.Context, profile, id, trigger string)
 		if err != nil {
 			return err
 		}
+		updated.Extra = maps.Clone(base.Extra)
 		base = updated
 		receipt.Baseline = base
 		receipt.Rules = records
+		receipt.RuleOrder = syncSelectedOrder(config, r)
 		receipt.Status = "running"
 		receipt.Message = messageSyncCaching
 		receipt.Added = outcome.Added
@@ -585,7 +595,11 @@ func (s *RuleSyncService) StartJob(ctx context.Context, profile, id string) erro
 		return err
 	}
 	unlock()
-	err = lifecycle.Spawn(held, "router-rule-sync-now", func(run context.Context) {
+	spawner := s.Spawner
+	if spawner == nil {
+		spawner = lifecycle.DefaultSpawner{}
+	}
+	err = spawner.Spawn(held, "router-rule-sync-now", func(run context.Context) {
 		defer release()
 		defer func() {
 			if recover() != nil {
@@ -624,4 +638,16 @@ func newSyncService(ctx context.Context) (*RuleSyncService, error) {
 		return nil, err
 	}
 	return &RuleSyncService{Repo: db, Agents: ManagerAgentSource{Manager: manager}}, nil
+}
+
+func syncSelectedOrder(config json.RawMessage, r *Router) []string {
+	sources, err := selectedSyncSources(config, r)
+	if err != nil {
+		return nil
+	}
+	ids := []string{}
+	for _, source := range sources {
+		ids = append(ids, source.Item.ID)
+	}
+	return ids
 }

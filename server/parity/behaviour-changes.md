@@ -1356,3 +1356,10 @@ batch-6 codec 窄化：格式查询只解规则库，继续使用 model.Shared �
 - Python bug（复核 A22 F3）：setup check 读取 Agent 状态时，`managed` 是真值但不是对象（不可读的转发记录），
   Python `managed.get` 抛 AttributeError → 500。Go 按 A20 `HasRecord` 的 fail-closed 规则视为仍有转发记录，
   返回对应的 409。其余成员类型不符时与 Python 的真值 / `is True` / `== '1'` 判定一致。见 review-a22.md。
+
+## R14 — 自动规则同步
+
+- `controls` 按 D2 使用 Go canonical JSON + SHA-256，不仿真 Python 编码；旧回执仍可读取，若旧 control 不匹配则暂停并要求手动「预览发布」重新建立基准。合法 profile/router ID 的回执文件 key 保持兼容。
+- 修复 F-R12-3：Python `rule_sync_write._apply_delta` 未捕获最终 `_verify` 的 `ReleaseError`，设备目的更新可能残留；Go 对所有回读错误补偿自己的增删，并保留外部编辑。`TestR14DeltaPython/verify_failure` 同时证明 Python 残留与 Go 补偿。
+- 30 秒下载总预算从请求前开始，包含连接、共享客户端重试和响应读取；Python 在收到响应后才开始该总预算。连接/单次读取仍分别为 5 秒/10 秒，超时或超限不成为空路由意图。
+- 使用 O3 的进程内单实例/L1/L2，不创建每设备 flock。关机取消停止设备和本地提交；已保存的 running 回执在重启后按既有规则暂停人工确认，不新增不可中断提交。

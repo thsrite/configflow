@@ -35,10 +35,10 @@ func (s *RuleSyncService) SyncControls(ctx context.Context, config json.RawMessa
 	}
 	router := syncProjection(raw, "id", "type", "endpoint", "username", "password", "verify_tls", "proxy_gateway_agent_id", "dns_agent_id", "manage_return_routing", "ip_rule_sets", "ros_policy_rule_sets")
 	if r.DNSGuard != nil && r.DNSGuard.Enabled {
-		router["dns_guard"] = mustPolicyJSON(r.DNSGuard)
+		router["dns_guard"] = syncProjection(raw, "dns_guard")["dns_guard"]
 	}
 	if r.IPv6PDGuard != nil && r.IPv6PDGuard.Enabled {
-		router["ipv6_pd_guard"] = mustPolicyJSON(r.IPv6PDGuard)
+		router["ipv6_pd_guard"] = syncProjection(raw, "ipv6_pd_guard")["ipv6_pd_guard"]
 	}
 	agents := []map[string]json.RawMessage{}
 	var dns *GatewayAgent
