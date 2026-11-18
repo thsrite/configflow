@@ -8,7 +8,6 @@ package monitor
 // by operation with every stored row compared.
 
 import (
-	"compress/gzip"
 	"database/sql"
 	"encoding/base64"
 	"errors"
@@ -23,41 +22,9 @@ import (
 	"configflow/internal/jsonx"
 )
 
-func loadA07(t *testing.T) *jsonx.Object {
+func loadA07(t *testing.T, fields ...string) *jsonx.Object {
 	t.Helper()
-	f, err := os.Open("testdata/a07_reference.json.gz")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer f.Close()
-	r, err := gzip.NewReader(f)
-	if err != nil {
-		t.Fatal(err)
-	}
-	data, err := readAllA07(r)
-	if err != nil {
-		t.Fatal(err)
-	}
-	value, err := jsonx.Parse(data)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return value.(*jsonx.Object)
-}
-
-func readAllA07(r *gzip.Reader) ([]byte, error) {
-	var out []byte
-	buf := make([]byte, 64*1024)
-	for {
-		n, err := r.Read(buf)
-		out = append(out, buf[:n]...)
-		if err != nil {
-			if err.Error() == "EOF" {
-				return out, nil
-			}
-			return out, err
-		}
-	}
+	return referenceFields(t, "testdata/a07_reference.json.gz", fields...)
 }
 
 func sortedDump(t *testing.T, v any) string {
@@ -194,7 +161,7 @@ func pairsOf(list []any) [][2]string {
 }
 
 func TestReferencePanelCalls(t *testing.T) {
-	ref := loadA07(t)
+	ref := loadA07(t, "panel")
 	for i, item := range ref.GetList("panel") {
 		c := item.(*jsonx.Object)
 		client := caseClient(c)
@@ -206,7 +173,7 @@ func TestReferencePanelCalls(t *testing.T) {
 }
 
 func TestReferenceCacheCalls(t *testing.T) {
-	ref := loadA07(t)
+	ref := loadA07(t, "cache")
 	for i, item := range ref.GetList("cache") {
 		c := item.(*jsonx.Object)
 		client := caseClient(c)
@@ -217,7 +184,7 @@ func TestReferenceCacheCalls(t *testing.T) {
 }
 
 func TestReferenceRuleUpdateCalls(t *testing.T) {
-	ref := loadA07(t)
+	ref := loadA07(t, "rule_update")
 	for i, item := range ref.GetList("rule_update") {
 		c := item.(*jsonx.Object)
 		client := caseClient(c)
@@ -232,7 +199,7 @@ func TestReferenceRuleUpdateCalls(t *testing.T) {
 }
 
 func TestReferencePanelHelpers(t *testing.T) {
-	ref := loadA07(t)
+	ref := loadA07(t, "core_version_texts", "last_complete_slot_end", "newer_release")
 	for _, item := range ref.GetList("newer_release") {
 		c := item.([]any)
 		if got, err := newerRelease(c[0].(string), c[1].(string)); err != nil || got != c[2].(bool) {
@@ -376,7 +343,7 @@ func dbDump(t *testing.T, path string) *jsonx.Object {
 }
 
 func TestReferenceRankingScenario(t *testing.T) {
-	ref := loadA07(t).GetObject("ranking")
+	ref := loadA07(t, "ranking").GetObject("ranking")
 	ops, results := ref.GetList("ops"), ref.GetList("results")
 	store := NewRankingStore(t.TempDir())
 	for i, item := range ops {

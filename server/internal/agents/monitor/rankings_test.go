@@ -244,31 +244,85 @@ func query1(t *testing.T, store *RankingStore, agentID, recorder string, since, 
 	return answer
 }
 
+// installFakeAgents owns the hook in the parent; children only read its map.
+func installFakeAgents(t *testing.T, fakes map[string]*fakeAgent) {
+	t.Helper()
+	useAgent(t, func(ctx context.Context, m Manager, agent *jsonx.Object, endpoint string, params query, minVersion string) (*jsonx.Object, error) {
+		fake := fakes[agent.GetString("id")]
+		if fake == nil {
+			return nil, fmt.Errorf("unexpected test Agent %q", agent.GetString("id"))
+		}
+		return fake.do(ctx, m, agent, endpoint, params, minVersion)
+	})
+}
+
+func TestParallelSeedFixturesAreIsolated(t *testing.T) {
+	fakes := make(map[string]*fakeAgent)
+	for seed := 1; seed <= 3; seed++ {
+		id := strconv.Itoa(seed)
+		rows := make([]rankRecord, seed)
+		for i := range rows {
+			rows[i] = rankRecord{t0 + int64(i), "192.0.2." + id, "seed" + id + ".example", false}
+		}
+		fakes[id] = newFakeAgent(rows)
+	}
+	installFakeAgents(t, fakes)
+	for seed := 1; seed <= 3; seed++ {
+		id := strconv.Itoa(seed)
+		t.Run(id, func(t *testing.T) {
+			t.Parallel()
+			store := NewRankingStore(t.TempDir())
+			agent := historyAgent.DeepCopy()
+			agent.Set("id", id)
+			for collect(t, store, agent, t0+rSlot+120, 10_000, 0) > 0 {
+			}
+			got := query1(t, store, id, "records", t0, t0+rHour)
+			if got.Records != int64(seed) || len(got.Rows["domains"]) != 1 || got.Rows["domains"][0].Key != "seed"+id+".example" {
+				t.Fatal("parallel seed received another fixture", got)
+			}
+		})
+	}
+}
+
 // --- the requirement: what the panel shows is every record --------------------
 
 func TestStoredPeriodsAddUpToTheExactCountsOfEveryRecord(t *testing.T) {
+	// The parent owns one global request hook until all parallel children finish.
+	// Dispatch by Agent ID so each seed retains its own core, store and call log.
+	fakes := make(map[string]*fakeAgent)
 	for _, seed := range []uint64{1, 2, 3} {
-		store := NewRankingStore(t.TempDir())
-		records := generate(seed, t0, 3, 16_500/8)
-		fake := newFakeAgent(records)
-		now := t0 + 3*rDay + 2*rSlot
-		collectAll(t, store, historyAgent, fake, now)
-		until := LastCompleteSlotEnd(now)
-		var want exactCounts
-		for _, since := range []int64{t0, t0 + rDay, t0 + 2*rDay + 5*rHour} {
-			got := query1(t, store, "dns", "records", since, until+rHour)
-			want = exact(records, since, until)
-			if got.Records != want.records || got.BlockedRecords != want.blockedRecords {
-				t.Fatal(seed, since, got, want)
+		fakes[strconv.FormatUint(seed, 10)] = newFakeAgent(generate(seed, t0, 3, 16_500/8))
+	}
+	installFakeAgents(t, fakes)
+	for _, seed := range []uint64{1, 2, 3} {
+		id := strconv.FormatUint(seed, 10)
+		t.Run(id, func(t *testing.T) {
+			t.Parallel()
+			store := NewRankingStore(t.TempDir())
+			fake := fakes[id]
+			records := fake.records
+			agent := historyAgent.DeepCopy()
+			agent.Set("id", id)
+			now := t0 + 3*rDay + 2*rSlot
+			for collect(t, store, agent, now, 10_000, 0) > 0 {
 			}
-			rowsEqual(t, got.Rows["clients"], want.clients, "clients")
-			rowsEqual(t, got.Rows["domains"], want.domains, "domains")
-			rowsEqual(t, got.Rows["blocked"], want.blocked, "blocked")
-		}
-		// A single request over the same three days sees the newest 10,000 only.
-		if n := len(fake.window(t0, until, false)); n != 10_000 || int64(n) >= want.records {
-			t.Fatal(n, want.records)
-		}
+			until := LastCompleteSlotEnd(now)
+			var want exactCounts
+			for _, since := range []int64{t0, t0 + rDay, t0 + 2*rDay + 5*rHour} {
+				got := query1(t, store, id, "records", since, until+rHour)
+				want = exact(records, since, until)
+				if got.Records != want.records || got.BlockedRecords != want.blockedRecords {
+					t.Fatal(seed, since, got, want)
+				}
+				rowsEqual(t, got.Rows["clients"], want.clients, "clients")
+				rowsEqual(t, got.Rows["domains"], want.domains, "domains")
+				rowsEqual(t, got.Rows["blocked"], want.blocked, "blocked")
+			}
+			// A single request over the same three days sees the newest 10,000 only.
+			if n := len(fake.window(t0, until, false)); n != 10_000 || int64(n) >= want.records {
+				t.Fatal(n, want.records)
+			}
+		})
 	}
 }
 

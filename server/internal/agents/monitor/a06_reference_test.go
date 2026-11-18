@@ -9,9 +9,7 @@ package monitor
 // totals transitions with every deployment state.
 
 import (
-	"compress/gzip"
 	"errors"
-	"os"
 	"strings"
 	"testing"
 
@@ -19,31 +17,9 @@ import (
 	"configflow/internal/jsonx"
 )
 
-func loadReference(t *testing.T) *jsonx.Object {
+func loadReference(t *testing.T, fields ...string) *jsonx.Object {
 	t.Helper()
-	f, err := os.Open("testdata/a06_reference.json.gz")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer f.Close()
-	r, err := gzip.NewReader(f)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var b strings.Builder
-	buf := make([]byte, 1<<16)
-	for {
-		n, err := r.Read(buf)
-		b.Write(buf[:n])
-		if err != nil {
-			break
-		}
-	}
-	value, err := jsonx.ParseString(b.String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	return value.(*jsonx.Object)
+	return referenceFields(t, "testdata/a06_reference.json.gz", fields...)
 }
 
 func dumpSorted(t *testing.T, v any) string {
@@ -76,7 +52,7 @@ func pairs(value any) [][2]string {
 }
 
 func TestReferenceMetrics(t *testing.T) {
-	ref := loadReference(t)
+	ref := loadReference(t, "metrics")
 	for _, c := range cases(ref, "metrics") {
 		text := c.GetString("text")
 		var result any
@@ -94,7 +70,7 @@ func TestReferenceMetrics(t *testing.T) {
 }
 
 func TestReferenceBaselineArithmetic(t *testing.T) {
-	ref := loadReference(t)
+	ref := loadReference(t, "baseline")
 	for _, c := range cases(ref, "baseline") {
 		current := parse(t, c.GetString("current"))
 		baseline := parse(t, c.GetString("baseline"))
@@ -116,7 +92,7 @@ func TestReferenceBaselineArithmetic(t *testing.T) {
 }
 
 func TestReferenceUpstreamLabels(t *testing.T) {
-	ref := loadReference(t)
+	ref := loadReference(t, "public_upstreams", "upstream")
 	if len(ref.GetList("upstream")) == 0 {
 		t.Fatal("no cases")
 	}
@@ -139,7 +115,7 @@ func TestReferenceUpstreamLabels(t *testing.T) {
 }
 
 func TestReferenceIPAddresses(t *testing.T) {
-	ref := loadReference(t)
+	ref := loadReference(t, "ip")
 	if len(ref.GetList("ip")) == 0 {
 		t.Fatal("no cases")
 	}
@@ -157,7 +133,7 @@ func TestReferenceIPAddresses(t *testing.T) {
 }
 
 func TestReferenceAgentOrigins(t *testing.T) {
-	ref := loadReference(t)
+	ref := loadReference(t, "origin")
 	for _, c := range cases(ref, "origin") {
 		origin, err := AgentOrigin(c.GetObject("agent"))
 		var e *Error
@@ -194,7 +170,7 @@ func checkParams(t *testing.T, name string, c *jsonx.Object, result query, err e
 }
 
 func TestReferenceRequestParameters(t *testing.T) {
-	ref := loadReference(t)
+	ref := loadReference(t, "client_params", "dashboard_params", "query_params", "recorder_tags")
 	for _, c := range cases(ref, "query_params") {
 		detail := c.GetList("extra")[0] == true
 		result, err := QueryParams(pairs(c.Value("args")), detail)
@@ -220,7 +196,7 @@ func TestReferenceRequestParameters(t *testing.T) {
 }
 
 func TestReferenceStateValidation(t *testing.T) {
-	ref := loadReference(t)
+	ref := loadReference(t, "validate_state")
 	if len(ref.GetList("validate_state")) == 0 {
 		t.Fatal("no cases")
 	}
@@ -242,7 +218,7 @@ func TestReferenceStateValidation(t *testing.T) {
 }
 
 func TestReferenceRankingSectionsAndRecords(t *testing.T) {
-	ref := loadReference(t)
+	ref := loadReference(t, "ranking_section", "record")
 	for _, c := range cases(ref, "ranking_section") {
 		var result any
 		section, err := rankingSection(c.Value("value"), c.GetString("kind"))
@@ -270,7 +246,7 @@ func TestReferenceRankingSectionsAndRecords(t *testing.T) {
 }
 
 func TestReferenceTimestamps(t *testing.T) {
-	ref := loadReference(t)
+	ref := loadReference(t, "timestamps")
 	if len(ref.GetList("timestamps")) == 0 {
 		t.Fatal("no cases")
 	}
@@ -284,7 +260,7 @@ func TestReferenceTimestamps(t *testing.T) {
 }
 
 func TestReferenceAgentAnswers(t *testing.T) {
-	ref := loadReference(t)
+	ref := loadReference(t, "responses")
 	agent := jsonx.Obj("id", "oxi", "host", "127.0.0.1", "port", 8082, "token", "tok", "service_type", "oxidns", "version", "1.8.14-go")
 	for _, c := range cases(ref, "responses") {
 		body := decodeHex(c.GetString("body"))
@@ -321,7 +297,7 @@ func decodeHex(s string) []byte {
 }
 
 func TestReferenceAdvanceAndTotals(t *testing.T) {
-	ref := loadReference(t)
+	ref := loadReference(t, "advance")
 	previous := tokenHex
 	tokenHex = func() string { return strings.Repeat("f", 32) }
 	t.Cleanup(func() { tokenHex = previous })

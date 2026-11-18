@@ -25,26 +25,9 @@ import (
 	"configflow/internal/jsonx"
 )
 
-func loadReview(t *testing.T) *jsonx.Object {
+func loadReview(t *testing.T, fields ...string) *jsonx.Object {
 	t.Helper()
-	f, err := os.Open("testdata/a06_review.json.gz")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer f.Close()
-	r, err := gzip.NewReader(f)
-	if err != nil {
-		t.Fatal(err)
-	}
-	data, err := io.ReadAll(r)
-	if err != nil {
-		t.Fatal(err)
-	}
-	value, err := jsonx.Parse(data)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return value.(*jsonx.Object)
+	return referenceFields(t, "testdata/a06_review.json.gz", fields...)
 }
 
 // failures bounds the reported differences per test.
@@ -90,7 +73,7 @@ func errorResult(err error) *jsonx.Object {
 }
 
 func TestReviewMetrics(t *testing.T) {
-	ref := loadReview(t)
+	ref := loadReview(t, "metrics")
 	f := &failures{t: t}
 	all := cases(ref, "metrics")
 	for _, c := range all {
@@ -111,7 +94,7 @@ func TestReviewMetrics(t *testing.T) {
 }
 
 func TestReviewBaselineArithmetic(t *testing.T) {
-	ref := loadReview(t)
+	ref := loadReview(t, "baseline")
 	f := &failures{t: t}
 	all := cases(ref, "baseline")
 	for _, c := range all {
@@ -137,7 +120,7 @@ func TestReviewBaselineArithmetic(t *testing.T) {
 }
 
 func TestReviewIPAddresses(t *testing.T) {
-	ref := loadReview(t)
+	ref := loadReview(t, "ip")
 	f := &failures{t: t}
 	all := ref.GetList("ip")
 	for _, item := range all {
@@ -176,7 +159,7 @@ func labelEdgeCase(input any) bool {
 }
 
 func TestReviewUpstreamLabels(t *testing.T) {
-	ref := loadReview(t)
+	ref := loadReview(t, "upstream")
 	f := &failures{t: t}
 	all := ref.GetList("upstream")
 	for _, item := range all {
@@ -189,7 +172,7 @@ func TestReviewUpstreamLabels(t *testing.T) {
 }
 
 func TestReviewRequestParameters(t *testing.T) {
-	ref := loadReview(t)
+	ref := loadReview(t, "client_params", "dashboard_params", "query_params")
 	for _, c := range cases(ref, "query_params") {
 		result, err := QueryParams(pairs(c.Value("args")), c.GetList("extra")[0] == true)
 		checkParams(t, "query_params", c, result, err)
@@ -205,7 +188,7 @@ func TestReviewRequestParameters(t *testing.T) {
 }
 
 func TestReviewRankingSections(t *testing.T) {
-	ref := loadReview(t)
+	ref := loadReview(t, "ranking_section")
 	f := &failures{t: t}
 	all := cases(ref, "ranking_section")
 	for _, c := range all {
@@ -255,7 +238,7 @@ func answerResult(t *testing.T, result any, err error, seen *[]any) string {
 }
 
 func TestReviewClientsQueriesAndQuery(t *testing.T) {
-	ref := loadReview(t)
+	ref := loadReview(t, "clients", "queries", "query")
 	f := &failures{t: t}
 	all := cases(ref, "clients")
 	for _, c := range all {
@@ -287,7 +270,7 @@ func TestReviewClientsQueriesAndQuery(t *testing.T) {
 }
 
 func TestReviewOverviewSnapshots(t *testing.T) {
-	ref := loadReview(t)
+	ref := loadReview(t, "overview_snapshot")
 	f := &failures{t: t}
 	all := cases(ref, "overview_snapshot")
 	for _, c := range all {
@@ -311,7 +294,7 @@ func TestReviewOverviewSnapshots(t *testing.T) {
 }
 
 func TestReviewDashboardRankings(t *testing.T) {
-	ref := loadReview(t)
+	ref := loadReview(t, "dashboard_rankings")
 	f := &failures{t: t}
 	all := cases(ref, "dashboard_rankings")
 	for _, c := range all {
@@ -328,7 +311,7 @@ func TestReviewDashboardRankings(t *testing.T) {
 }
 
 func TestReviewStateValidation(t *testing.T) {
-	ref := loadReview(t)
+	ref := loadReview(t, "validate_state")
 	f := &failures{t: t}
 	all := ref.GetList("validate_state")
 	for _, item := range all {
@@ -342,7 +325,7 @@ func TestReviewStateValidation(t *testing.T) {
 }
 
 func TestReviewStateFiles(t *testing.T) {
-	ref := loadReview(t)
+	ref := loadReview(t, "state_files")
 	f := &failures{t: t}
 	all := cases(ref, "state_files")
 	store := NewStateStore(t.TempDir())
@@ -380,7 +363,7 @@ func TestReviewStateFiles(t *testing.T) {
 }
 
 func TestReviewTargetDigests(t *testing.T) {
-	ref := loadReview(t)
+	ref := loadReview(t, "target")
 	f := &failures{t: t}
 	all := ref.GetList("target")
 	for _, item := range all {
