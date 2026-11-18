@@ -6,6 +6,7 @@ import sqlite3
 import os
 from pathlib import Path
 import unittest
+import uuid
 
 from harness import Pair
 from seed import DEVICE_PASSWORD, router, AGENT_TOKEN
@@ -19,6 +20,45 @@ import fixed_setup
 
 @unittest.skipUnless(os.environ.get('ROUTERDIFF_BINARY'), 'requires .32 native public Go binary')
 class BoundaryTests(unittest.TestCase):
+    def test_real_native_config_write_pairs_only_content_bound_store_commit_ids(self):
+        with Pair(Path(os.environ['ROUTERDIFF_BINARY'])) as pair:
+            available = registered(pair.go.rpc('manifest'))
+            self.assertIn(('POST', '/api/server-domain'), available)
+            self.assertIn(('GET', '/api/server-domain'), available)
+            for index in range(2):
+                domain = 'http://changed' + str(index) + '.example'
+                case = Case('oracle-native-store-commit-' + str(index), '', 'POST', '/api/server-domain', 200,
+                            boundary=('POST', '/api/server-domain'), owner='test oracle store commit control',
+                            document={'new_domain': domain}, unchanged=False,
+                            checks={'success': True, 'server_domain': domain})
+                result = execute(pair, case, available, load()[0])
+                self.assertEqual(result['status'], 'compared', result['differences'])
+                self.assertEqual(result['differences'], [])
+                # A read sees the same own commit/content, not a freshly
+                # manufactured token, and must reuse the established binding.
+                read = Case('oracle-native-store-read-' + str(index), '', 'GET', '/api/server-domain', 200,
+                            boundary=('GET', '/api/server-domain'), owner='test oracle store commit control',
+                            checks={'server_domain': domain})
+                self.assertEqual(execute(pair, read, available, load()[0])['status'], 'compared')
+            raw = {side: pair.sides[side].rpc('snapshot')['database']['meta'] for side in ('python', 'go')}
+            self.assertNotEqual(raw['python']['rows'], raw['go']['rows'])  # Actual raw tokens stay intact.
+            # Purpose-broken owned-store control, never a product fixture:
+            # rotate only the native commit token while its generation and
+            # config remain identical. A restart must not make that rotation
+            # look like a newly pairable baseline.
+            side = pair.go
+            side.rpc('stop')
+            with sqlite3.connect(side.directory / 'data/configflow.sqlite3') as database:
+                database.execute("UPDATE meta SET value=? WHERE key='commit_id'", (json.dumps(uuid.uuid4().hex),))
+            side.start()
+            corrupted = Case('oracle-corrupt-store-head', '', 'GET', '/api/server-domain', 200,
+                             boundary=('GET', '/api/server-domain'), owner='test oracle negative store head control',
+                             checks={'server_domain': domain})
+            result = execute(pair, corrupted, available, load()[0])
+            self.assertEqual(result['status'], 'different')
+            self.assertEqual(result['go']['status'], 200)
+            self.assertIn('store-head', {item['category'] for item in result['differences']})
+
     def test_real_healthy_native_boundary_compares_complete_observations(self):
         with Pair(Path(os.environ['ROUTERDIFF_BINARY'])) as pair:
             available = registered(pair.go.rpc('manifest'))

@@ -18,6 +18,7 @@ import jwt
 
 from inventory import ROOT
 from seed import ADMIN, PASSWORD, JWT_SECRET
+from store_heads import StoreHeads
 
 HERE = Path(__file__).resolve().parent
 
@@ -154,6 +155,7 @@ class Pair:
         self.keep = bool(keep)
         self.sides = {}
         self.go_startup_failure = None
+        self.store_heads = StoreHeads()
         options = options or {}
         seed_dir = self.root / 'seed'
         option_path = self.root / 'options.json'

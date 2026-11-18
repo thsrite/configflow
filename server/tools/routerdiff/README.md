@@ -61,3 +61,10 @@ quiescence or compensation. Worker exception classes are structured observations
 RPC/fixture failures and Python precondition failures are kept distinct. Oracle
 negative controls kill only an owned disposable process and do not enter the
 product findings/corpus counts.
+
+Store commit IDs are paired only after full candidate DB equality and own raw
+store/generation/config provenance validation. Only meta.commit_id is projected;
+no generic UUID replacement. Physical revisions, generations, stable metadata,
+config values and file contents stay strict. Metadata-only commits and literal
+legacy missing/null/empty IDs are handled separately. Real native write/read and
+owned-store corruption controls test this rule without entering routers counts.

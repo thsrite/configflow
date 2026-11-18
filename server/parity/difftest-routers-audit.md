@@ -526,3 +526,27 @@ Untrusted nested probe schema / X12 increment:
   wrong store/generation/commit and foreign DB/file/device-write changes.
 - This does not complete broad R017-F12 or X12. Other nested error schemas,
   Unicode credential transport and publication-time uncaught errors remain open.
+
+Store commit identity comparator:
+- Real normal Go POST /api/server-domain matched Python HTTP and stored config,
+  with the sole difference at meta.commit_id. These are independently generated
+  identities, not config content. Oracle control is outside routers coverage.
+- StoreHeads binds only actual meta.commit_id after own store/generation/config
+  provenance checks and equality of the complete projected database excluding
+  that one ID. Config-table digest includes physical field revisions/positions,
+  sections and root_order. Only independently validated router/probe projections
+  precede candidate equality; no generic UUID/clock/string mask is introduced.
+- Each side records raw content separately from comparison copies. Reusing a
+  token for another generation/content, changing a known generation's token or
+  content between requests, rewinding generation or changing store identity is
+  a contract difference. Raw observations, files, arbitrary ID-looking fields,
+  stable metadata, actual generations and revisions remain strict and intact.
+- Python config_store permits metadata-only commits without changing head:
+  raw config provenance excludes unrelated metadata from its digest, while those
+  metadata rows stay fully compared. Legacy absent/null/empty commit IDs remain
+  literal, never aliased; a subsequent real config commit needs a fresh token.
+- Every real Pair enables this check, including Python-only requests while Go
+  routers are absent. Real two-cycle native config write/read controls pass.
+  Rotating only the native token in its OWN stopped disposable DB, then restarting
+  and returning normal HTTP200, is detected as store-head corruption. This
+  deliberate oracle fault is not a native finding or matrix recipe.

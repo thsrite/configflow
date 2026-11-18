@@ -1959,3 +1959,36 @@ After tightening the own failed-probe metadata scope, exact same rt command with
 3.31s/allGo-unimplemented with same verified reference bug. No active command.
 Counts465 declarations+9 source proofs+2 O6 entries/1825 remaining unchanged.
 Final full composition/gate/rebase and the remaining matrix are still pending.
+
+Content-bound store commit identities:
+- Real POST /api/server-domain matched HTTP/DB except independently generated
+  meta.commit_id. Added StoreHeads: only this exact meta member can be projected,
+  after full candidate DB equality and independent raw store/generation/config
+  provenance checks. Reused token, rotated known generation, changed store,
+  backward/invalid generation and unchanged-generation config changes fail.
+- Raw config provenance includes fields/sections/root_order and all physical
+  revisions/positions. Projection uses separately proven RouterIDs/ProbeClocks,
+  but history always retains each side's raw digest. No file/message/field UUID
+  text or other metadata is rewritten. Real Pairs always enable reference checks;
+  existing small purpose-built runner stubs opt into it only when testing heads.
+- Read actual config_store.head/commit/_apply. Metadata-only transactions keep
+  generation/commit and are valid; unrelated metadata remains strict. Legacy
+  missing/null/empty commit IDs stay literal and never earn an alias; normal
+  config write thereafter has a new opaque token. No Python UUID encoding rule
+  is imposed on Go's token. No product implementation was read or changed.
+
+.64 initial oracle command:
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY="$HOME/.cache/routerdiff-build-302rx1dg-a08c4cc27/configflow"; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python -m unittest -v test_store_heads test_boundary'`
+=> Ran19 tests101.894s/OK; real native writes/readbacks compare successfully.
+Final corruption control and reference corpus:
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY="$HOME/.cache/routerdiff-build-302rx1dg-a08c4cc27/configflow"; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python -m unittest -v test_store_heads test_boundary.BoundaryTests.test_real_native_config_write_pairs_only_content_bound_store_commit_ids; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world router-creations --world probe-clock-roundtrip --world probe-nested-schema --world fixed-ip --world workspace-drafts --world client-drafts --output "$HOME/.cache/routerdiff-reports/302rx1dg/store-head-binding.json"'`
+=> Ran7 tests6.479s/OK; actual token-only tamper in stopped OWN native DB survives
+restart/publicHTTP200 but is rejected by comparator.140 real domain recipes,
+allGo-unimplemented,58 references,1 existing audit,complete=false; existing named
+schema bug retained. No domain native parity claim. After adding legacy-null/
+empty/missing controls, same rt command with only the unittest portion=>Ran8
+ tests4.986s/OK. No command active, all tests/builds remained on .64.
+Counts465 declarations+9 source proofs+2 O6 entries/1825 remaining unchanged.
+Remaining: ownership nonces/comments/tags, opaque tokens/fingerprints/revisions,
+YAML structure/retention, runtime receipt/setup clocks/read transcript order,
+remaining route/device/background matrix, full composition/final gate/rebase.

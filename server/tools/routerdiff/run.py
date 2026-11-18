@@ -537,6 +537,8 @@ def execute(pair, case, available, routes):
                     return [row for row in snapshot['fake'][peer][table] if World.matches(row, criteria)]
                 if not selected(before) or differences(selected(before), selected(after)):
                     raise RuntimeError(case.ident + ': expected retained device objects changed or disappeared')
+            if getattr(pair, 'store_heads', None) is not None:
+                pair.store_heads.reference(before, after)
             if case.unchanged:
                 changed = differences(before, after)
                 if changed:
@@ -580,9 +582,12 @@ def execute(pair, case, available, routes):
                      for side in ('python', 'go')}
         found += differences(pair.router_ids.response('python', case.profile, case.route, projected['python']),
                              pair.router_ids.response('go', case.profile, case.route, projected['go']), '/http')
-        projected_states = {side: pair.probe_clocks.snapshot(side, snapshots[side]['after']) for side in ('python', 'go')}
-        found += differences(pair.router_ids.snapshot('python', projected_states['python']),
-                             pair.router_ids.snapshot('go', projected_states['go']), '/state')
+        projected_states = {side: pair.router_ids.snapshot(side,
+                            pair.probe_clocks.snapshot(side, snapshots[side]['after'])) for side in ('python', 'go')}
+        if getattr(pair, 'store_heads', None) is not None:
+            projected_states, head_differences = pair.store_heads.pair(snapshots, projected_states)
+            found += head_differences
+        found += differences(projected_states['python'], projected_states['go'], '/state')
         if case.unchanged:
             found += differences(snapshots['go']['before'], snapshots['go']['after'], '/go-unexpected-write')
         if case.python_bug == 'IKUAI_PROBE_NESTED_SCHEMA_CRASH':
