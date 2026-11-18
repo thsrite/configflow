@@ -463,3 +463,45 @@ func TestO9InstallScriptRetainsRawQuerySemantics(t *testing.T) {
 		})
 	}
 }
+
+// Review O9-fix: without any first-registration proof, an existing name/host
+// pair must be refused exactly like an unknown one (no registry oracle).
+func TestO9AnonymousRefusalDoesNotRevealExistingIdentity(t *testing.T) {
+	s := o9Server(t)
+	s.Post("/api/agents/register", s.Login(), httpxtest.JSON(o9Body())).WantStatus(200)
+	unknown := o9Body()
+	unknown.Set("name", "unknown-device")
+	garbage := o9Body()
+	garbage.Set("registration_token", strings.Repeat("A", 43))
+	tests := []struct {
+		name    string
+		options []httpxtest.Option
+	}{
+		{"unknown", []httpxtest.Option{httpxtest.JSON(unknown)}},
+		{"existing-anonymous", []httpxtest.Option{httpxtest.JSON(o9Body())}},
+		{"existing-wrong-bearer", []httpxtest.Option{httpxtest.Bearer("synthetic-wrong-agent-token"), httpxtest.JSON(o9Body())}},
+		{"existing-garbage-proof", []httpxtest.Option{httpxtest.JSON(garbage)}},
+	}
+	// The shared server is bound to the parent test, so cases run in sequence.
+	var first string
+	for _, test := range tests {
+		response := s.Post("/api/agents/register", test.options...).WantStatus(403)
+		if body := response.Object(); body.GetString("message") != RegistrationLocked {
+			t.Fatalf("%s: distinguishable refusal: %v", test.name, body)
+		}
+		if first == "" {
+			first = response.Text()
+		} else if response.Text() != first {
+			t.Fatalf("%s: refusal body differs: %s vs %s", test.name, response.Text(), first)
+		}
+	}
+	// Proof holders still get the actionable ownership refusal, and keep their proof.
+	s.Post("/api/agents/register", s.Login(), httpxtest.JSON(o9Body())).WantStatus(401)
+	_, tokens := o9Command(t, s)
+	proof := o9Body()
+	proof.Set("registration_token", tokens[0])
+	s.Post("/api/agents/register", httpxtest.JSON(proof)).WantStatus(401)
+	if sessions := mustO9System(t, s).RegistrationSessions; len(sessions) != 1 {
+		t.Fatalf("ownership refusal consumed the proof: %d sessions", len(sessions))
+	}
+}

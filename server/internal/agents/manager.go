@@ -520,6 +520,12 @@ func (m *Manager) registerAgent(ctx context.Context, data *jsonx.Object, existin
 				existingToken = existing.Value("token")
 			}
 			if !ConstantTimeASCIIEqual(existingToken, existing.Value("token")) {
+				// Without any first-registration proof the caller must get the same
+				// refusal as for an unknown identity, or the public route becomes an
+				// oracle for which name/host pairs are registered.
+				if admission != nil && !admission.AllowNew && !m.proofMatches(ctx, system, data, admission) {
+					return nil, ErrRegistrationAuthorization
+				}
 				return nil, &PermissionError{}
 			}
 			// An authenticated re-registration must not be blocked by stale bootstrap

@@ -1634,3 +1634,11 @@ Flask 差分只为安装脚本 JSON 的 `registration_token` 与 Docker 的
 发布要求：面板必须同时提供由本次源码重建的 Agent 二进制和 Docker 镜像。旧二进制不识别
 `registration_token` / `registration_key`，不能执行登录开启后的新首次注册流程；已有 Agent
 持有自身 token 的运行协议不变，无须仅为此强制升级。
+
+### O9-H2 复核补充 — 匿名注册不再暴露已有 name/host
+
+开启登录（或未开登录但设置了 `AGENT_REGISTRATION_KEY`）时，没有注册密钥、面板 JWT、也没有与该身份匹配的一次性凭据的请求，
+遇到同名同地址的已有 Agent 时返回与未知身份相同的 403（`RegistrationLocked`），不再返回 Python 的 401 归属提示；
+否则公开的注册路由会告诉匿名调用者哪些 name/host 已注册。带面板 JWT、正确注册密钥或该身份有效凭据的请求仍得到原 401 提示，
+且该凭据不被消费。未开登录且未设注册密钥时行为不变。差分只对 4 个具名重复身份样例断言精确的 Python 401 / Go 403 完整 JSON，
+回归见 `TestO9AnonymousRefusalDoesNotRevealExistingIdentity`。

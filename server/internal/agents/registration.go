@@ -105,6 +105,19 @@ func (m *Manager) RegisterAuthorizedAgent(ctx context.Context, data *Record, exi
 	return m.registerAgent(ctx, data, existingToken, nil, false, &admission)
 }
 
+// proofMatches reports whether admission carries a live proof for this exact
+// identity, without consuming it or touching the transaction's system copy.
+func (m *Manager) proofMatches(ctx context.Context, system *model.System, data *Record, admission *RegistrationAuthorization) bool {
+	if admission.Credential == "" {
+		return false
+	}
+	probe := &model.System{RegistrationSessions: append([]model.AgentRegistrationSession(nil), system.RegistrationSessions...)}
+	strict := *admission
+	strict.AllowNew = false
+	// With AllowNew false, admitRegistration succeeds only on an exact match.
+	return m.admitRegistration(ctx, probe, data.DeepCopy(), &strict) == nil
+}
+
 func (m *Manager) admitRegistration(ctx context.Context, system *model.System, data *Record, admission *RegistrationAuthorization) error {
 	now := lifecycle.ClockFrom(ctx).Now().Unix()
 	system.RegistrationSessions = activeRegistrationSessions(system.RegistrationSessions, now)

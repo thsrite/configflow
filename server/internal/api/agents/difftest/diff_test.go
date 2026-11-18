@@ -28,6 +28,7 @@ import (
 	"testing"
 	"time"
 
+	apiagents "configflow/internal/api/agents"
 	"configflow/internal/auth"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/jsonx"
@@ -268,6 +269,9 @@ func startGoWithRequestRuntime(t *testing.T, dataDir string, requestRuntime *lif
 }
 
 type request struct {
+	// noOracle names the anonymous duplicate-identity cases whose Python 401
+	// ownership refusal Go replaces with the generic O9-H2 403 (review O9-fix).
+	noOracle bool
 	// nonFiniteMetrics names only the saved agent-odd history/summary bug cases.
 	nonFiniteMetrics bool
 	name             string
@@ -427,9 +431,9 @@ func requests() []request {
 			capture: map[string]string{"id": "id", "token": "token"}},
 		{name: "register duplicate without token", method: "POST", path: "/api/agents/register", body: agent, contentType: J},
 		{name: "register duplicate wrong token", method: "POST", path: "/api/agents/register", body: agent, contentType: J,
-			headers: map[string]string{"Authorization": "Bearer wrong"}},
+			headers: map[string]string{"Authorization": "Bearer wrong"}, noOracle: true},
 		{name: "register duplicate malformed bearer", method: "POST", path: "/api/agents/register", body: agent, contentType: J,
-			headers: map[string]string{"Authorization": "Bearer  {token}"}},
+			headers: map[string]string{"Authorization": "Bearer  {token}"}, noOracle: true},
 		{name: "re-register with token", method: "POST", path: "/api/agents/register", contentType: J, mask: []string{"id"},
 			body:    `{"name": "edge", "host": "10.0.0.8", "port": 9090, "service_type": "mihomo", "version": "1.3.0"}`,
 			headers: map[string]string{"Authorization": "Bearer {token}"}},
@@ -524,9 +528,9 @@ func requests() []request {
 		{name: "metrics summary no login", method: "GET", path: "/api/agents/agent-1/metrics/summary"},
 		{name: "metrics summary unknown", method: "GET", path: "/api/agents/missing/metrics/summary", admin: true},
 		{name: "register duplicate non-ascii bearer", method: "POST", path: "/api/agents/register", body: agent, contentType: J,
-			headers: map[string]string{"Authorization": "Bearer 令牌🔐"}},
+			headers: map[string]string{"Authorization": "Bearer 令牌🔐"}, noOracle: true},
 		{name: "register duplicate oversized bearer", method: "POST", path: "/api/agents/register", body: agent, contentType: J,
-			headers: map[string]string{"Authorization": "Bearer " + strings.Repeat("x", 4097)}},
+			headers: map[string]string{"Authorization": "Bearer " + strings.Repeat("x", 4097)}, noOracle: true},
 		{name: "register bad encoding", method: "POST", path: "/api/agents/register", body: "\xff", contentType: J},
 		{name: "register busy agent other profile", method: "POST", path: "/api/agents/register", contentType: J,
 			body:    `{"name": "busy agent", "host": "10.9.0.2", "port": 9, "profile_id": "other"}`,
@@ -718,6 +722,15 @@ func TestDifferentialAgainstFlask(t *testing.T) {
 				value, _ := jsonx.Parse(side.body)
 				side.values[name] = jsonx.Str(lookup(value, path))
 			}
+		}
+		if r.noOracle {
+			if diff := noOracleDelta(py, gor); diff != "" {
+				failed++
+				t.Errorf("DIFF %s %s %s:\n  %s", r.name, r.method, r.path, diff)
+			} else {
+				t.Logf("same %-38s %s %s → approved O9 401→403", r.name, r.method, r.path)
+			}
+			continue
 		}
 		if diffs := compare(r, py, gor); len(diffs) > 0 {
 			failed++
@@ -938,4 +951,23 @@ func equalSavedMetricLines(t *testing.T, name, python, native string) bool {
 		}
 	}
 	return true
+}
+
+// noOracleDelta accepts exactly Python's ownership 401 against Go's generic
+// first-registration 403, so the public route does not reveal registered
+// name/host pairs to callers without any registration proof.
+func noOracleDelta(py, gor response) string {
+	if py.status != 401 || gor.status != 403 {
+		return fmt.Sprintf("status python=%d go=%d, want 401/403", py.status, gor.status)
+	}
+	want, _ := jsonx.Encode(jsonx.Obj("message", apiagents.RegistrationLocked, "success", false), jsonx.Options{SortKeys: true})
+	got, err := jsonx.Parse(gor.body)
+	if err != nil {
+		return "go body: " + err.Error()
+	}
+	text, _ := jsonx.Encode(got, jsonx.Options{SortKeys: true})
+	if string(text) != string(want) {
+		return "go body " + string(text) + ", want " + string(want)
+	}
+	return ""
 }
