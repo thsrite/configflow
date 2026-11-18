@@ -2,6 +2,7 @@
 package main
 
 import (
+	"configflow/internal/testgolden"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -183,9 +185,33 @@ func audit(root string, scopes []string, registry []exception) error {
 	return nil
 }
 func main() {
+	fingerprintFlag := flag.Bool("fingerprint", false, "print native backend+venv fingerprint for gate integration")
+	testFlag := flag.Bool("test", false, "run go test with native external-input cache fingerprint; arguments after --")
 	scopesFlag := flag.String("scopes", "server/internal/mosdns,server/internal/oxidns,server/internal/provider,server/internal/deploy,server/internal/discovery,server/internal/routersplit", "comma-separated repository-relative scopes")
 	root := flag.String("root", "..", "repository root (run from server)")
 	flag.Parse()
+	if *fingerprintFlag || *testFlag {
+		fingerprint, err := testgolden.Fingerprint()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		if *fingerprintFlag {
+			fmt.Println(fingerprint)
+			return
+		}
+		command := exec.Command("go", append([]string{"test"}, flag.Args()...)...)
+		command.Env = append(os.Environ(), "PYREF_INPUT_FINGERPRINT="+fingerprint)
+		command.Stdin, command.Stdout, command.Stderr = os.Stdin, os.Stdout, os.Stderr
+		if err := command.Run(); err != nil {
+			if exit, ok := err.(*exec.ExitError); ok {
+				os.Exit(exit.ExitCode())
+			}
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	files, err := filepath.Glob(filepath.Join(*root, "server/tools/pyref/live-exceptions-*.json"))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

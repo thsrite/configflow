@@ -98,8 +98,8 @@ func TestRecordingAndReplayNegativeControls(t *testing.T) {
 	}
 	run := func(mode, accept, input, output, want string, success bool) string {
 		t.Helper()
-		cmd := exec.Command(os.Args[0], "-test.run=^TestGoldenHelperProcess$", "-test.v")
-		cmd.Env = append(os.Environ(), "PYREF_SELFTEST_DIR="+dir, "CONFIGFLOW_DIFF_PYTHON="+filepath.Join(dir, "venv/bin/python"), "PYREF_MODE="+mode, "PYREF_ACCEPT="+accept, "PYREF_SELFTEST_INPUT="+input, "PYREF_SELFTEST_OUTPUT="+output, "PYREF_SELFTEST_WANT="+want)
+		cmd := exec.Command(os.Args[0], "-test.run=^TestGoldenHelperProcess$", "-test.v", "-test.count=1")
+		cmd.Env = append(os.Environ(), "PYREF_SELFTEST_DIR="+dir, "PYREF_INPUT_FINGERPRINT=", "CONFIGFLOW_DIFF_PYTHON="+filepath.Join(dir, "venv/bin/python"), "PYREF_MODE="+mode, "PYREF_ACCEPT="+accept, "PYREF_SELFTEST_INPUT="+input, "PYREF_SELFTEST_OUTPUT="+output, "PYREF_SELFTEST_WANT="+want)
 		data, err := cmd.CombinedOutput()
 		if (err == nil) != success {
 			t.Fatalf("mode=%s success=%v err=%v\n%s", mode, success, err, data)

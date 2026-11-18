@@ -178,3 +178,42 @@ A process inventory registers exactly nine existing sites: three Go self-process
 isolation/restart tests and six unchanged live differential/copy sites. There are
 no whole-package exemptions. Normal MosDNS/OxiDNS/routersplit references only
 call shared testgolden; ordinary process tracing remains a separate check.
+
+## Cache-safe reference testing (coordinator approved)
+
+Shared `testgolden.Fingerprint` and `tools/pyref -fingerprint` read backend Python
+sources and venv metadata natively. `tools/pyref -test -- <go test args>` exports
+`PYREF_INPUT_FINGERPRINT` and forwards Go's exact exit code and standard streams.
+`New` always reads that env (Go cache input), checks it against the current native
+fingerprint and retains its original per-golden hash validation. A missing env
+is allowed only for an explicitly supplied positive `-count`, which disables
+Go caching; bare cache-enabled tests fail with the wrapper instructions.
+
+Gate integration (coordinator changes gate.sh later, **not edited here**):
+
+```
+cd server
+export PYREF_INPUT_FINGERPRINT="$(go run ./tools/pyref -fingerprint)"
+go test -race -p 6 ./...
+```
+
+Compute the export anew before each test batch. The reusable Go function is
+`testgolden.Fingerprint() (string, error)`; it starts no Python.
+
+Actual cache negative control on .64 passed. In one foreground command, the
+wrapper ran the C29 archive test with race, the identical second invocation hit
+cache, a temporary comment was appended to its recorded backend reference file
+`backend/utils/oxidns_archive.py`, and the identical wrapper invocation reran and
+failed the metadata check. Restoring the original file (trap-protected, preserved
+mtime) restored the valid cache hit. No golden or local backend source was edited.
+
+```
+go run ./tools/pyref -test -- -race -run '^TestC29ArchivePythonBoundary$' ./internal/oxidns
+ok configflow/internal/oxidns (cached)
+archive_test.go:66: ... Python 参考已变化，请重新录制 (source/input/venv hash mismatch)
+ok configflow/internal/oxidns (cached)
+CACHE CONTROL PASS: cached -> backend mutation reruns and fails -> restored cached
+```
+
+Evidence logs on .64: `~/.cache/pyref-cache-control/{first,cached,mutated,restored}.log`.
+Shared race selfchecks/vet passed (`testgolden 4.359s`, `tools/pyref 1.296s`).

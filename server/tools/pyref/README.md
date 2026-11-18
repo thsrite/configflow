@@ -59,3 +59,29 @@ The audit scans constructor references in package initializers and function
 values as well as direct calls. Dot imports of process packages are rejected;
 literal `exec.Cmd{...}` construction is inventoried too. Runtime exec tracing
 still verifies the ordinary path; the registry is not a reflection/shell proof.
+
+## Cache-safe daily tests and gate integration
+
+Go's cache does not watch files outside the module root (`backend/` and the
+venv). Use the shared native wrapper for cached tests:
+
+```sh
+cd server
+# Backend+venv SHA becomes a logged environment input of every reference test.
+go run ./tools/pyref -test -- -race ./internal/mosdns
+```
+
+The wrapper propagates stdin/stdout/stderr and the exact `go test` exit code.
+It starts Go, never Python. For gate.sh or another driver, the equivalent is:
+
+```sh
+export PYREF_INPUT_FINGERPRINT="$(go run ./tools/pyref -fingerprint)"
+go test -race -p 6 ./...
+```
+
+Compute the export afresh for every invocation/batch; never store a fixed value.
+The actual test also verifies it against the native fingerprint and retains all
+per-golden source/input/dependency checks. Bare cache-enabled `go test` without
+the variable fails with instructions. An explicitly supplied positive `-count`
+disables Go caching and is allowed without a fingerprint (including the current
+gate's `-count=1`). This branch does **not** edit gate.sh.

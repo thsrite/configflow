@@ -186,6 +186,9 @@ func sourceMetadata(spec Spec) (metadata, error) {
 // with PYREF_ACCEPT=1. Failed tests never write golden files.
 func New(t *testing.T, spec Spec) *Reference {
 	t.Helper()
+	if err := cacheGuard(); err != nil {
+		t.Fatal(err)
+	}
 	if spec.Name == "" {
 		spec.Name = t.Name()
 	}
