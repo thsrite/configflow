@@ -245,9 +245,9 @@ POST	/api/profiles/<profile_id>/custom-config/linux-gateway/restore	routes.linux
 POST	/api/profiles/<profile_id>/custom-config/linux-gateway/restore/preview	routes.linux_gateway.linux_gateway_settings	internal/api/linuxgateway	done
 POST	/api/profiles/<profile_id>/default	routes.profiles.set_default_profile	internal/api/profiles	done
 GET	/api/profiles/<profile_id>/export	routes.profiles.export_profile	internal/api/profiles	done
-GET	/api/profiles/<profile_id>/gateway-onboarding	routes.gateway_onboarding.gateway_onboarding	internal/api/gatewayonboarding	wip
-POST	/api/profiles/<profile_id>/gateway-onboarding	routes.gateway_onboarding.gateway_onboarding	internal/api/gatewayonboarding	wip
-POST	/api/profiles/<profile_id>/gateway-onboarding/preview	routes.gateway_onboarding.gateway_onboarding	internal/api/gatewayonboarding	wip
+GET	/api/profiles/<profile_id>/gateway-onboarding	routes.gateway_onboarding.gateway_onboarding	internal/api/gatewayonboarding	done
+POST	/api/profiles/<profile_id>/gateway-onboarding	routes.gateway_onboarding.gateway_onboarding	internal/api/gatewayonboarding	done
+POST	/api/profiles/<profile_id>/gateway-onboarding/preview	routes.gateway_onboarding.gateway_onboarding	internal/api/gatewayonboarding	done
 POST	/api/profiles/<profile_id>/generate/<service>/artifact	routes.profiles.profile_generate_artifact	internal/api/generate	wip
 POST	/api/profiles/<profile_id>/generate/loon	routes.profiles.profile_generate_loon	internal/api/generate	done
 POST	/api/profiles/<profile_id>/generate/loon/preview	routes.profiles.profile_preview_loon	internal/api/generate	done

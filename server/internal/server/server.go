@@ -29,8 +29,8 @@ import (
 	apiauth "configflow/internal/api/auth"
 	apiconfig "configflow/internal/api/config"
 	apidiscovery "configflow/internal/api/domaindiscovery"
-	apigenerate "configflow/internal/api/generate"
 	apigatewayonboarding "configflow/internal/api/gatewayonboarding"
+	apigenerate "configflow/internal/api/generate"
 	apilinuxgateway "configflow/internal/api/linuxgateway"
 	apilogs "configflow/internal/api/logs"
 	apimosdns "configflow/internal/api/mosdns"
@@ -123,6 +123,7 @@ var wirePackages = []func(){
 	ippresence.Wire, // routers R02: convert.MihomoHooks.IsFullTun, oxidns classical_ip_lines
 	routers.Wire,    // routers R01: repo.Hooks.RedactRouters
 	wireSetupContent,
+	wireSetupOnboarding,
 	apirules.Wire,     // config C32: shared source loader for gateway providers
 	gateway.Wire,      // agents A19: convert.MihomoHooks Linux gateway
 	setupflow.Wire,    // agents A20 / config C36: routersplit setup-session reader

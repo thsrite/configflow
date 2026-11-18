@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,10 +14,11 @@ import (
 	apionboarding "configflow/internal/api/gatewayonboarding"
 	"configflow/internal/convert/mihomoenv"
 	"configflow/internal/gateway"
+	"configflow/internal/gateway/onboarding"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/jsonx"
+	"configflow/internal/setup"
 	"configflow/internal/setupflow"
-	"configflow/internal/yamlx"
 )
 
 const validForm = `{"rule_set_ids":[],"direct_rule_set_ids":[],"proxy_rule_set_ids":[],"local_dns":"https://192.0.2.53/dns-query"}`
@@ -28,8 +28,8 @@ func testServer(t *testing.T) *httpxtest.Server {
 	gateway.Wire()
 	mihomoenv.Wire()
 	setupflow.Wire()
-	h := apionboarding.Handler{DNSLoop: func(*yamlx.Node, []netip.Addr) (bool, error) { return false, nil }}
-	s := httpxtest.New(t, httpxtest.Options{Auth: true, Register: httpxtest.Routes(h.Register)})
+	t.Cleanup(onboarding.SetAdoptOwnedWrite(setup.AdoptOwnedWrite))
+	s := httpxtest.New(t, httpxtest.Options{Auth: true, Register: httpxtest.Routes(apionboarding.Register)})
 	ctx := s.Context()
 	_, err := s.Repo.UpdateSharedTransaction(ctx, func(_ context.Context, c *jsonx.Object) (*jsonx.Object, error) {
 		c.Set("nodes", []any{jsonx.Obj("id", "n", "name", "Example", "type", "ss", "server", "192.0.2.2", "port", 443, "cipher", "aes-128-gcm", "password", "synthetic-node-secret")})

@@ -93,7 +93,11 @@ func prepareMihomoDNS(config Document, options Options) error {
 			return err
 		}
 	}
-	document, err = PrepareMihomoDNS(document, options.LocalAddresses, options.DNSLoop)
+	check := options.DNSLoop
+	if check == nil {
+		check = CheckDNSLoop
+	}
+	document, err = PrepareMihomoDNS(document, options.LocalAddresses, check)
 	if err != nil {
 		return err
 	}

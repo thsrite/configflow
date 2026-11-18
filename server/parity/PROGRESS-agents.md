@@ -1933,7 +1933,7 @@ RT_HOST=sunbroke@192.168.0.64 rt -e GOMAXPROCS=6 -- bash -lc 'server/scripts/gat
 
 ## A21 — gateway onboarding
 
-**Status: `wip`** · HR · prereqs: A19, A20, C05 (`normalize_oxidns_settings`), C18 (`generate_mihomo_config`, `_default_mihomo_template`), C22 (`_forward`, `generate_oxidns_config`, `native_document`, `load_native_yaml`), C23 (`validate_settings`), C24 (`apply/read_common_settings`), C25 (`_references`), C36 (`setup_flow.adopt_owned_write`, lazy in the route), routers (`router_split`) · Go: internal/gateway, api/gatewayonboarding (new; endpoint `profiles.gateway_onboarding`)
+**Status: `ported`**（作者定向检查通过，待新的 Opus HR 复核） · HR · prereqs: A19, A20, C05 (`normalize_oxidns_settings`), C18 (`generate_mihomo_config`, `_default_mihomo_template`), C22 (`_forward`, `generate_oxidns_config`, `native_document`, `load_native_yaml`), C23 (`validate_settings`), C24 (`apply/read_common_settings`), C25 (`_references`), C36 (`setup_flow.adopt_owned_write`, lazy in the route), routers (`router_split`) · Go: internal/gateway, api/gatewayonboarding (new; endpoint `profiles.gateway_onboarding`)
 
 Files:
 - `backend/common/gateway_onboarding.py` (660)
@@ -1943,14 +1943,14 @@ Tests: `test_gateway_onboarding.py` (50); deferred from config `test_mihomo_base
 
 Routes (3): `GET|POST /api/profiles/<profile_id>/gateway-onboarding`; `POST /api/profiles/<profile_id>/gateway-onboarding/preview`
 
-实现与定向证据见 [A21-handoff-zh.md](progress/A21-handoff-zh.md)。原生 request/report、model 读取、候选双服务验证、原生链投影、原子 owner 和 HTTP 已实现；DNSLoop 等 C34 复核合入后接线，不能标 ported。A22 复用 `onboarding.AssertReady`，C36 复用 hook。
+实现与定向证据见 [A21-handoff-zh.md](progress/A21-handoff-zh.md)。原生 request/report、model 读取、候选双服务验证、原生链投影、原子 owner 和 HTTP 已实现；已在 batch-5 合并树接上 C34 真实 DNSLoop 与 C36 DNS/adopt owner。A22 复用 `onboarding.AssertReady`，其 Options.LocalAddresses 注入目标主机地址。server 真实 prepare/adoption 与 Python revision+1 条件已闭合。
 
 ### Clarified in A21（协调者，2026-11-18）
 
-- DNSLoop 不 cherry-pick、不重写；C34 复核可能改共享函数。合入后 rebase 再接线，保留 TODO(C34)。当前缺省 checker 拒绝准备；非回环独立测试注入明确的 seam，不冒充完整接线测试。
-- C36 仅有 `setupflow.ProfileSessions` 只读 reader。保留 `SetAdoptOwnedWrite` hook；无未完成 session 的正常保存不受阻。存在未完成 session 或 reader 失败/损坏时，profile 提交前返回 503「等待首次使用向导模块」，不改变 DB、文件或 revision。GET/preview 不走这个保存就绪分支。不计算 digest、不创建替代会话。
-- C36 实现 hook 后须对照 Python 的 `_revision+1` 条件和会话 ownership digest；session 文件锁及写入归 C36 owner，A21 在调用前检查 shutdown。C36 合入后由 A21 按其 handoff 做 server 的 adopt/DNS callbacks 最终注册，并补 server 级回归证明注册后 503 消失。
-- batch-4（含 batch-1/O3-6c）已 rebase 到本地 go@fbbe382ec；沿用 repo 的 CommitContext 最终提交检查，真实 Runtime 最终 COMMIT 屏障回归见 A21 handoff。DNSLoop 仍等 C34 合入。
+- C34 已合入，薄适配 `gateway.MihomoDNSLoop`；HTTP/default Prepare/AssertReady 与 C36 复用同一 checker，无 TODO(C34)、无复制或 cherry-pick。
+- server 用 `setup.RegisterExternalOwners` 合并 DNSOwner，保留 C32；并注册 `onboarding.SetAdoptOwnedWrite(setup.AdoptOwnedWrite)`。真实 server prepare 从503变200，实际保存的 full/without-base proofs 与真实 Python 一致。
+- adoption 在 repo L3 释放后，仅 saved revision == before+1 且 ctx 检查通过时调用。Python 相同表单重复保存仍+1；插入一次 metadata 写入使旧快照到保存差2时，双方均不认领。C36 唯一锁为 LevelSetupSession=19；A21 不另造锁。
+- batch-5 已 rebase 到 go@c5f5ff349（含 batch-1/O3-6c/C34/C36）。固定 .32：全仓vet、A21/C36/server race、相关 Flask/dns/reference、FuzzGatewayOnboarding 60s均通过；证据见 handoff。没有运行完整gate。
 - HEAD 按 GET 只读，忽略 body，不改 DB、业务文件或 revision；真实 Flask 显式复现旧版 HEAD 进入保存事务，属于已有 HEAD 只读类别。
 
 **Clarified in C34 (2026-11-18):** `gateway_onboarding.mihomo_dns_loop` is a pure function of the supplied DNS tree and host-address list (standard URL/IP parsing only; no repository, device, session, probe or onboarding runtime state). C34 provides `gateway.MihomoDNSLoop` and wires `convert.MihomoHooks.MihomoDNSLoop` through gateway.Hooks. A21 must reuse this function, not rewrite it. Real Python direct comparisons cover ordinary/local/host IPv4 and IPv6, domains, ports, udp/tcp/tls/https/quic and malformed addresses. Other A21 functions/routes remain this module's responsibility.

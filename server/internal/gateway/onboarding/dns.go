@@ -3,6 +3,7 @@ package onboarding
 import (
 	"net/netip"
 
+	"configflow/internal/gateway"
 	"configflow/internal/yamlx"
 	"gopkg.in/yaml.v3"
 )
@@ -56,8 +57,7 @@ func PrepareMihomoDNS(document *yamlx.Node, localAddresses []netip.Addr, check D
 		}
 		yamlx.Set(dns, "nameserver", nameservers)
 	}
-	// TODO(C34): pass the reviewed gateway.MihomoDNSLoop at production wiring.
-	// No temporary loop parser or second implementation is installed here.
+	// The caller supplies the shared checker; missing wiring fails closed.
 	if check == nil {
 		return nil, invalid(msgWaitingDNS)
 	}
@@ -70,4 +70,10 @@ func PrepareMihomoDNS(document *yamlx.Node, localAddresses []netip.Addr, check D
 	}
 	yamlx.MaterializeAliases(document)
 	return document, nil
+}
+
+// CheckDNSLoop adapts the shared gateway validator without duplicating its
+// upstream parsing. Host addresses are supplied only by the target-host owner.
+func CheckDNSLoop(dns *yamlx.Node, localAddresses []netip.Addr) (bool, error) {
+	return gateway.MihomoDNSLoop(dns, localAddresses) != nil, nil
 }

@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"net/netip"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -18,7 +17,6 @@ import (
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/jsonx"
 	"configflow/internal/setupflow"
-	"configflow/internal/yamlx"
 )
 
 const validForm = `{"rule_set_ids":[],"direct_rule_set_ids":[],"proxy_rule_set_ids":[],"local_dns":"https://192.0.2.53/dns-query"}`
@@ -28,8 +26,7 @@ func testServer(t *testing.T) *httpxtest.Server {
 	gateway.Wire()
 	mihomoenv.Wire()
 	setupflow.Wire()
-	h := Handler{DNSLoop: func(*yamlx.Node, []netip.Addr) (bool, error) { return false, nil }}
-	s := httpxtest.New(t, httpxtest.Options{Auth: true, Register: httpxtest.Routes(h.Register)})
+	s := httpxtest.New(t, httpxtest.Options{Auth: true, Register: httpxtest.Routes(Register)})
 	ctx := s.Context()
 	_, err := s.Repo.UpdateSharedTransaction(ctx, func(_ context.Context, c *jsonx.Object) (*jsonx.Object, error) {
 		c.Set("nodes", []any{jsonx.Obj("id", "n", "name", "Example", "type", "ss", "server", "192.0.2.2", "port", 443, "cipher", "aes-128-gcm", "password", "synthetic-node-secret")})
@@ -193,5 +190,36 @@ func TestSaveAndPreviewHTTP(t *testing.T) {
 	saved := s.Post(url, admin, requestBody(validForm)).WantStatus(200)
 	if saved.Object().Value("draft") != true || bytes.Equal(before, snapshot(t, s)) {
 		t.Fatal(saved.Text())
+	}
+}
+
+func TestProductionCheckerRejectsLoopWithoutWrites(t *testing.T) {
+	s := testServer(t)
+	admin := s.Login()
+	_, _, err := s.Repo.UpdateProfileTransaction(s.Context(), "default", func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
+		p.GetObject("mihomo").Set("custom_config", "dns:\n  nameserver: [udp://127.0.0.1:1053]\n")
+		return nil, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := snapshot(t, s)
+	for _, tc := range []struct {
+		path   string
+		status int
+	}{{"/api/profiles/default/gateway-onboarding/preview", 200}, {"/api/profiles/default/gateway-onboarding", 400}} {
+		response := s.Post(tc.path, admin, requestBody(validForm)).WantStatus(tc.status)
+		if tc.status == 200 {
+			var report struct {
+				Ready    bool     `json:"ready"`
+				Blockers []string `json:"blockers"`
+			}
+			if err := json.Unmarshal(response.Body, &report); err != nil || report.Ready || len(report.Blockers) == 0 {
+				t.Fatal("preview did not report the DNS blocker", err)
+			}
+		}
+		if !bytes.Equal(before, snapshot(t, s)) {
+			t.Fatal("rejected DNS loop wrote storage")
+		}
 	}
 }

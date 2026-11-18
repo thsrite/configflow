@@ -20,12 +20,11 @@ const maxBody = 262144
 
 // Register adds the wizard's read, preview and atomic save routes.
 func Register(r *httpx.Router) {
-	// TODO(C34): install the reviewed shared DNSLoop checker after merge.
-	Handler{}.Register(r)
+	Handler{DNSLoop: onboarding.CheckDNSLoop}.Register(r)
 }
 
 // Handler registers routes with their pure DNS-check collaborator.
-// Production wiring will supply the reviewed checker after C34 merges.
+// Register supplies the shared checker in production.
 type Handler struct{ DNSLoop onboarding.DNSLoopChecker }
 
 // Register adds all onboarding methods with the same authentication policy.
@@ -67,7 +66,6 @@ func (h Handler) handle(c *httpx.Ctx) (*httpx.Response, error) {
 			return httpx.Message(400, false, err.Error()).NoStore(), nil
 		}
 	}
-	// TODO(C34): use the reviewed shared gateway.MihomoDNSLoop after merge.
 	service := onboarding.Service{Repository: r, DNSLoop: h.DNSLoop}
 	data, err := service.Execute(c.Context(), op)
 	if err != nil {

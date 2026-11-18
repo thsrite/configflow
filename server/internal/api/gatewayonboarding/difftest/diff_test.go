@@ -18,6 +18,10 @@ import (
 	"configflow/internal/auth"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/jsonx"
+	"configflow/internal/repo"
+	"configflow/internal/routersplit"
+	"configflow/internal/setup"
+	"configflow/internal/setupflow"
 	"configflow/internal/yamlx"
 )
 
@@ -35,7 +39,7 @@ type oracle struct {
 	cmd     *exec.Cmd
 }
 
-func newOracle(t *testing.T, s *httpxtest.Server) *oracle {
+func newOracle(t *testing.T, s *httpxtest.Server, adoptionTrace ...string) *oracle {
 	t.Helper()
 	directory := t.TempDir()
 	if out, err := exec.Command("cp", "-a", s.DataDir+"/.", directory).CombinedOutput(); err != nil {
@@ -47,12 +51,18 @@ func newOracle(t *testing.T, s *httpxtest.Server) *oracle {
 	}
 	// Reuse A20's public Flask + SQLite/file oracle; no second Flask harness.
 	script := filepath.Join(root, "server/internal/api/linuxgateway/difftest/testdata/reference.py")
+	if len(adoptionTrace) > 0 {
+		script = filepath.Join(root, "server/internal/api/gatewayonboarding/difftest/testdata/adoption.py")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	t.Cleanup(cancel)
 	o := &oracle{}
 	o.cmd = exec.CommandContext(ctx, filepath.Join(os.Getenv("HOME"), "cf-test/.venv/bin/python"), script)
 	o.cmd.Dir = root
 	o.cmd.Env = append(os.Environ(), "PYTHONPATH="+root, "DATA_DIR="+directory, "ADMIN_USERNAME="+httpxtest.Username, "ADMIN_PASSWORD="+httpxtest.Password, "JWT_SECRET_KEY=a21-test-signing-key", "LOG_FILE="+filepath.Join(directory, "app.log"), "PYTHONDONTWRITEBYTECODE=1")
+	if len(adoptionTrace) > 0 {
+		o.cmd.Env = append(o.cmd.Env, "A21_ADOPT_TRACE="+adoptionTrace[0])
+	}
 	o.cmd.Stderr = &o.stderr
 	o.stdin, err = o.cmd.StdinPipe()
 	if err != nil {
@@ -213,7 +223,7 @@ func compare(t *testing.T, label string, got, want json.RawMessage) {
 
 // TestFlaskHTTP compares all three route methods against real Python, including
 // SQL member positions, stored documents, files, Chinese errors and no-store.
-// Until C34 merges only the independent, non-loop corpus injects the DNS seam.
+// The production route registration uses C34's real shared checker.
 func TestFlaskHTTP(t *testing.T) {
 	if os.Getenv("CONFIGFLOW_DIFF") != "1" {
 		t.Skip("CONFIGFLOW_DIFF=1 runs real Flask")
@@ -308,27 +318,153 @@ func revisionOfProfile(t *testing.T, p *jsonx.Object) int64 {
 	return v.Revision
 }
 
-func TestFlaskSetupExpectedDependencyDifference(t *testing.T) {
+// TestFlaskAdoptionRevisionCondition observes Python's real route guard and
+// real setup owner, including a metadata write between the before snapshot and
+// save transaction. That intervening revision must prevent session adoption.
+func TestFlaskAdoptionRevisionCondition(t *testing.T) {
 	if os.Getenv("CONFIGFLOW_DIFF") != "1" {
 		t.Skip("CONFIGFLOW_DIFF=1 runs real Flask")
 	}
-	s := testServer(t)
-	authForOracle(t)
-	admin := s.Login()
-	request := &http.Request{Header: http.Header{}}
-	admin(request)
-	dir := filepath.Join(s.DataDir, "setup-sessions")
-	if err := os.MkdirAll(dir, 0700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, strings.Repeat("a", 32)+".json"), []byte(`{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","profile_id":"default","goal":"gateway","completed":false}`), 0600); err != nil {
-		t.Fatal(err)
-	}
-	o := newOracle(t, s)
-	before := snapshot(t, s)
-	py := o.call(t, "POST", "/api/profiles/default/gateway-onboarding", validForm, request.Header.Get("Authorization"))
-	goResult := s.Post("/api/profiles/default/gateway-onboarding", admin, requestBody(validForm)).WantStatus(503)
-	if py.Status != 200 || !bytes.Equal(before, snapshot(t, s)) || !goResult.Contains("等待首次使用向导模块") {
-		t.Fatalf("C36 explicit dependency difference Python=%d Go=%d", py.Status, goResult.Status)
+	for _, concurrent := range []bool{false, true} {
+		name := "normal-and-repeat"
+		if concurrent {
+			name = "intervening-revision"
+		}
+		t.Run(name, func(t *testing.T) {
+			s := testServer(t)
+			authForOracle(t)
+			admin := s.Login()
+			request := &http.Request{Header: http.Header{}}
+			admin(request)
+			profile, err := s.Repo.GetProfile(s.Context(), "default")
+			if err != nil {
+				t.Fatal(err)
+			}
+			raw, err := jsonx.Compact(profile)
+			if err != nil {
+				t.Fatal(err)
+			}
+			full, err := setup.OwnedDigest(raw, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			without, err := setup.OwnedDigest(raw, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			dir := filepath.Join(s.DataDir, "setup-sessions")
+			if err := os.MkdirAll(dir, 0700); err != nil {
+				t.Fatal(err)
+			}
+			const id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+			record, err := json.Marshal(map[string]any{"id": id, "profile_id": "default", "goal": "gateway", "completed": false, "owned_digest": full, "owned_digest_without_base": without})
+			if err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(dir, id+".json")
+			if err := os.WriteFile(path, record, 0600); err != nil {
+				t.Fatal(err)
+			}
+			trace := filepath.Join(t.TempDir(), "adopt.jsonl")
+			t.Setenv("A21_CONCURRENT_WRITE", "0")
+			attempts := 2
+			if concurrent {
+				attempts = 1
+				t.Setenv("A21_CONCURRENT_WRITE", "1")
+				calls := 0
+				t.Cleanup(routersplit.SetProfileSessions(func(ctx context.Context, r *repo.Repository, profileID string) ([]*jsonx.Object, error) {
+					calls++
+					if calls == 1 {
+						if _, err := r.UpdateProfileMetadata(ctx, profileID, jsonx.Obj("name", "Concurrent metadata")); err != nil {
+							return nil, err
+						}
+					}
+					sessions, err := setupflow.ProfileSessions(ctx, r.DataDir(), profileID)
+					if err != nil {
+						return nil, err
+					}
+					out := make([]*jsonx.Object, 0, len(sessions))
+					for _, session := range sessions {
+						v, err := jsonx.Parse(session.Raw)
+						if err != nil {
+							return nil, err
+						}
+						out = append(out, v.(*jsonx.Object))
+					}
+					return out, nil
+				}))
+			}
+			o := newOracle(t, s, trace)
+			previous := revisionOfProfile(t, profile)
+			for attempt := range attempts {
+				py := o.call(t, "POST", "/api/profiles/default/gateway-onboarding", validForm, request.Header.Get("Authorization"))
+				got := s.Post("/api/profiles/default/gateway-onboarding", admin, requestBody(validForm)).WantStatus(200)
+				if py.Status != 200 {
+					t.Fatalf("Flask %d %s", py.Status, py.Body)
+				}
+				compare(t, "embedded body", got.Body, py.Body)
+				current, err := s.Repo.GetProfile(s.Context(), "default")
+				if err != nil {
+					t.Fatal(err)
+				}
+				expectedRevision := previous + int64(attempt) + 1
+				if concurrent {
+					expectedRevision++
+				}
+				var state struct {
+					Document struct {
+						Profiles map[string]struct {
+							Revision int64 `json:"_revision"`
+						} `json:"profiles"`
+					} `json:"document"`
+					Files map[string]json.RawMessage `json:"files"`
+				}
+				if err := json.Unmarshal(py.State, &state); err != nil {
+					t.Fatal(err)
+				}
+				if revisionOfProfile(t, current) != expectedRevision || state.Document.Profiles["default"].Revision != expectedRevision {
+					t.Fatal("stored revision diverged")
+				}
+				observed, err := os.ReadFile(trace)
+				saved, readErr := os.ReadFile(path)
+				if readErr != nil {
+					t.Fatal(readErr)
+				}
+				if concurrent {
+					if !os.IsNotExist(err) || !bytes.Equal(record, saved) {
+						t.Fatalf("+2 write adopted: trace=%s err=%v", observed, err)
+					}
+					compare(t, "Python +2 session unchanged", record, state.Files["setup-sessions/"+id+".json"])
+					continue
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				lines := bytes.Split(bytes.TrimSpace(observed), []byte("\n"))
+				if len(lines) != attempt+1 {
+					t.Fatalf("Python adoption calls %s", observed)
+				}
+				for n, line := range lines {
+					var revisions []int64
+					if err := json.Unmarshal(line, &revisions); err != nil || len(revisions) != 2 || revisions[0] != previous+int64(n) || revisions[1] != previous+int64(n)+1 {
+						t.Fatalf("Python +1 guard %s %v", line, err)
+					}
+				}
+				if bytes.Equal(record, saved) {
+					t.Fatal("Go +1 did not invoke real C36 owner")
+				}
+				record = saved
+				var goSession, pySession setup.Record
+				if err := json.Unmarshal(saved, &goSession); err != nil {
+					t.Fatal(err)
+				}
+				if err := json.Unmarshal(state.Files["setup-sessions/"+id+".json"], &pySession); err != nil {
+					t.Fatal(err)
+				}
+				if goSession.OwnedDigest == nil || pySession.OwnedDigest == nil || goSession.OwnedDigestWithoutBase == nil || pySession.OwnedDigestWithoutBase == nil {
+					t.Fatal("missing adoption proof")
+				}
+			}
+		})
 	}
 }

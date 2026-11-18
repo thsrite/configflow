@@ -2194,7 +2194,7 @@ Exact commands/tails, native differences and added-file counts: [C35-HANDOFF.md]
 
 ## C36 — setup flow
 
-Clarified in A21：C36 须实现 `adopt_owned_write` 并注册 A21 hook，补 `_revision+1` 条件和 Python ownership digest 对照。此前 A21 对未完成 session 或 reader 失败在 profile 提交前返回 503「等待首次使用向导模块」；无未完成 session 的保存正常，GET/preview 正常。不计算替代 digest，不制造状态。
+Clarified in A21：C36 的 `adopt_owned_write` 与 DNSOwner 已由 A21 在 batch-5 合并树的 server 最终注册；真实 prepare503已消失。A21 补上普通/重复保存的 `_revision+1` 以及中途 metadata 写入造成+2不认领的真实 Flask对照，并把实际 Go 存储 profile 原样交 Python 验证 full/without-base ownership digest。详情见 progress/A21-handoff-zh.md。
 
 A20/A14 已提供共享只读 reader：`internal/setupflow.ProfileSessions(ctx, dataDir, profileID)`（首版来自 `go-port-a14`，A20 复用并补强类型错误的 fail-closed 中文提示，服务器 `setupflow.Wire` 注入 routersplit）。C36 在此基础上实现写入与流程，不另建第二套 reader。会话是 `setup-sessions/*.json` 的原子替换文件；读取在 repo 写事务外，绑定 Agent/配置取 repo 一致快照。
 
@@ -2220,9 +2220,10 @@ through both deletions). A20 ProfileSessions remains a read-only leaf; no copied
 A20 reader integration is complete: setupflow.ReadSession is the single bounded byte
 reader used by both ProfileSessions and C36, with no session lock in the read-only leaf.
 Rebased onto go@fbbe382ec; targeted .32 vet/race/Flask checks pass.
-Deferred external integration: real A21 server hook/DNS registration and real A22 latest/has-installation/
-gateway status; real router Driver/Inspect/BuildPlan callback. Formal A21 server test
-must prove registered callbacks remove503. Current tests prove callback dispatch,
+A21 integration completed on batch-5 by A21: real server hook/DNS registration,
+prepare503→200 and real Python revision+1 / stored ownership proofs. Deferred external
+integration: real A22 latest/has-installation/gateway status and real router
+Driver/Inspect/BuildPlan callback. C36 tests prove callback dispatch,
 independent orchestration and genuine Python boundary parity with synthetic data.
 See [进度与精确命令](progress/c36.md) and [接线与验证映射](progress/C36-handoff-zh.md).
 
@@ -2232,7 +2233,7 @@ credential seeds through final redaction; usernames/password-presence flags, sto
 HTTP statuses and owner error chains are preserved. Added explicit revision+1/idempotence/digest,
 post-external-read Runtime shutdown and exact503/zero-write regressions; targeted .32 race,
 normal/error Flask boundary, reader/lock/C32 timeout checks and vet pass. Approved external owner
-registration and real A21 embedded-save precondition integration remain deferred as listed above.
+registration for A22/router owners remains deferred; A21 embedded-save precondition integration is now complete as above.
 Fixes: `1fe46a78f`, `3defa2895`; exact commands and fail-before/pass-after evidence are in the review.
 
 ## C37 — domain discovery
