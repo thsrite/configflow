@@ -90,3 +90,19 @@ RT_HOST=sunbroke@192.168.0.32 rt --back server/internal/routers/joblock_test.go 
 既定关机边界仍保留（review-r09 F6）：已经发送到设备的写入可能留下部分状态，关机后补偿也是写入，不能绕过取消；
 后续R12恢复/人工核验负责该状态，不把本步取消闸门宣称为完整发布事务原子性。
 接下来跑当前合并树routers/devhttp/routersplit完整相关包race，等待R10与6c正式合入通知后rebase。
+
+## 长任务检查点
+
+产品/测试提交：b8f34ccc7（共享JobLock）、c2b3e9991（owner取消与已批准旧测试语义）、
+a80e49197（实际I/O/等待/并发/空路径）。当前完整相关包命令仍在前台执行，未返回前不能算通过：
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && export CONFIGFLOW_PY=$HOME/cf-test/.venv/bin/python CONFIGFLOW_REPO=$(dirname "$PWD"); test -z "$(gofmt -l internal tools cmd)" && go vet ./... && go test -race -p=4 -count=1 -timeout=60m ./internal/routers/ ./internal/devhttp/ ./internal/routersplit/'
+```
+前台exec session75973。不要结束回合等待通知，继续跟到退出。
+
+`/tmp/o36b-repo-runtime-draft.go`是后续集成测试草稿，尚未放进正式树：
+TestO36bRepositoryRuntimeCommitBoundary对generic-password/manifest/delete、caller-held settings/settings-delete/publication/withdrawal，
+分别在实际L3等待或BeforeCommit回调关机/断开（28子例），核对完整SQLite Fingerprint及非DB文件清单。
+待O3-6c正式合入再应用为internal/routers/o36b_repo_runtime_test.go并远端gofmt、race3/vet；
+缺6c的旧树已知仍在普通BeforeCommit后COMMIT，不能把依赖未接通当成本步产品回归，也不提交失败测试。
+R10与6c未收到正式合入通知前不rebase；go新添的a9d6ce86c仅WORKFLOW批次合并/风险分层说明已读，未误当成R10合入。
