@@ -28,3 +28,14 @@ func TestN89NativeMappedAddressProperties(t *testing.T) {
 		}
 	}
 }
+
+func TestN89HostChainEndsAtNullMapping(t *testing.T) {
+	hosts := yamlx.Map(yamlx.Str("source.example"), yamlx.Str("target.example"), yamlx.Str("*.example"), yamlx.Null())
+	resolver := NewHostResolver(hosts)
+	if got := resolver.Target("source.example"); got != "target.example" {
+		t.Fatalf("target %q", got)
+	}
+	if got := resolver.Target("null.example"); got != "" {
+		t.Fatalf("initial null target %q", got)
+	}
+}

@@ -2,10 +2,12 @@ package subs
 
 // Legacy entry points transcode the old API; native owners never call them.
 import (
+	"configflow/internal/jsonresp"
 	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/yamlx"
 	"encoding/json"
+	"math/big"
 )
 
 func decodeLegacy[T any](value any) (T, error) {
@@ -17,7 +19,7 @@ func decodeLegacy[T any](value any) (T, error) {
 	return result, err
 }
 func encodeLegacy(value any) (*jsonx.Object, error) {
-	data, err := model.Marshal(value)
+	data, err := jsonresp.Encode(value)
 	if err != nil {
 		return nil, err
 	}
@@ -158,4 +160,91 @@ func ParseYAMLObject(source string) *jsonx.Object {
 		object.Set("_raw_object", true)
 	}
 	return object
+}
+
+// ListenerAddress adapts a legacy listener scalar.
+func ListenerAddress(value any) (string, string) { text, _ := value.(string); return DNSListener(text) }
+
+// ParseCoreVersion adapts a legacy version scalar.
+func ParseCoreVersion(value any) ([3]*big.Int, bool) {
+	text, _ := value.(string)
+	return CoreVersion(text)
+}
+
+// CoreTooOld adapts a legacy version scalar.
+func CoreTooOld(value any) bool { text, _ := value.(string); return IsCoreTooOld(text) }
+
+// FinalTarget adapts an open hosts graph for callers not yet migrated.
+func FinalTarget(hosts *jsonx.Object, domain string) string {
+	graph, err := legacyNode(hosts)
+	if err != nil {
+		return ""
+	}
+	return NewHostResolver(graph).Target(domain)
+}
+
+// ApplyNodeDNS adapts each complete open document once and copies back only DNS.
+func ApplyNodeDNS(main, merged *jsonx.Object, version string) *jsonx.Object {
+	graph, err := legacyNode(main)
+	if err != nil {
+		return nil
+	}
+	hosts, err := legacyNode(merged)
+	if err != nil {
+		return nil
+	}
+	report, err := ApplyDNS(graph, hosts, version)
+	if err != nil || report == nil {
+		return nil
+	}
+	dns := yamlx.Get(graph, "dns")
+	if dns != nil {
+		data, err := yamlx.ToJSON(dns)
+		if err != nil {
+			return nil
+		}
+		value, err := jsonx.Parse(data)
+		if err != nil {
+			return nil
+		}
+		main.Set("dns", value)
+	}
+	out, _ := encodeLegacy(report)
+	return out
+}
+
+// StatusLoader is the unported traffic store boundary.
+type StatusLoader func(agentID string) *jsonx.Object
+
+func legacyStatusLoader(load StatusLoader) CoreStatusLoader {
+	if load == nil {
+		return nil
+	}
+	return func(id string) CoreStatus { value, _ := decodeLegacy[CoreStatus](load(id)); return value }
+}
+
+// ReportedCoreVersion adapts one legacy agent and its owning status loader.
+func ReportedCoreVersion(agent *jsonx.Object, load StatusLoader) string {
+	native, err := decodeLegacy[CoreAgent](agent)
+	if err != nil {
+		return ""
+	}
+	return AgentCoreVersion(native, legacyStatusLoader(load))
+}
+
+// OutdatedAgents adapts a legacy batch and returns preview DTOs.
+func OutdatedAgents(agents []*jsonx.Object, profileID, defaultID string, load StatusLoader) []any {
+	native, err := decodeLegacy[[]CoreAgent](agents)
+	if err != nil {
+		return []any{}
+	}
+	reports := OldCoreAgents(native, profileID, defaultID, legacyStatusLoader(load))
+	out := make([]any, 0, len(reports))
+	for _, report := range reports {
+		item, err := encodeLegacy(report)
+		if err == nil {
+			out = append(out, item)
+		}
+	}
+	return out
 }

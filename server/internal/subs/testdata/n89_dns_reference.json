@@ -1,0 +1,27 @@
+{
+  "source_sha256": "5f2f0a45585ba15d59ef37752d14fc09fded929836d2d0d9c610cceb9012653a",
+  "cases": {
+    "919": {
+      "input_sha256": "d81c5deca560c6d721bee053910ab808b7e0497e66f3e980a30e37ce8e292e3e",
+      "reason": "ASCII listener port",
+      "python": [
+        "udp://1.2.3.4:53",
+        null
+      ],
+      "out": [
+        null,
+        "listen_unparsed"
+      ]
+    },
+    "955": {
+      "input_sha256": "22a2b9702ed3e2fbad745eac88f7689af1418e9accdad361c4dbb8663b480ed7",
+      "reason": "ASCII semantic version",
+      "python": [
+        1,
+        19,
+        20
+      ],
+      "out": null
+    }
+  }
+}

@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"configflow/internal/health/check"
+	"configflow/internal/jsonresp"
 	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/rules"
@@ -1136,22 +1137,15 @@ func MihomoEnvironmentFromLegacy(old MihomoEnv) MihomoEnvironment {
 		return &HostsResult{Report: reportNode, Merged: mergedNode}, nil
 	}
 	env.NodeDNS = func(document, merged *yamlx.Node, version string) (*yamlx.Node, error) {
-		main, err := legacyProxy(document)
+		report, err := subs.ApplyDNS(document, merged, version)
+		if err != nil || report == nil {
+			return nil, err
+		}
+		data, err := jsonresp.Encode(report)
 		if err != nil {
 			return nil, err
 		}
-		hosts, err := legacyProxy(merged)
-		if err != nil {
-			return nil, err
-		}
-		report := subs.ApplyNodeDNS(main, hosts, version)
-		if err = replaceLegacyDocument(document, main); err != nil {
-			return nil, err
-		}
-		if report == nil {
-			return nil, nil
-		}
-		return yamlbridge.Encode(report)
+		return yamlx.FromJSON(data)
 	}
 	env.LogHosts = func(profileID string, report *yamlx.Node) error {
 		wire, err := legacyProxy(report)

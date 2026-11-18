@@ -19,3 +19,14 @@ const (
 	msgFilterInvalid = "节点筛选正则无效: "
 	msgFilterIgnored = "订阅 '%s' 的节点筛选正则无效，已忽略: %s"
 )
+
+const (
+	msgDNSOldCore         = "Mihomo 内核 %s 早于 %s，不认识 proxy-server-nameserver-policy，所以没有加入；升级内核后重新推送，映射才对节点生效"
+	msgDNSPolicyConflict  = "你已为 %s 写了 proxy-server-nameserver-policy，保留你的设置；这条映射对该节点不生效"
+	msgDNSPolicyCovers    = "你写的 proxy-server-nameserver-policy 条目 %s 覆盖了 %s，保留你的设置；这条映射对该节点不生效"
+	msgDNSMatchers        = "你写的 proxy-server-nameserver-policy 里有 geosite / rule-set 条目，ConfigFlow 无法检查；Mihomo 按顺序先匹配它们，匹配到的节点域名仍按你的设置解析"
+	msgDNSWhitelistCovers = "fake-ip-filter-mode 为 whitelist，名单覆盖了映射目标 %s，改走本机 DNS 监听会让 %s 拿到假地址，所以没有改动这条"
+	msgDNSWhitelist       = "fake-ip-filter-mode 为 whitelist：只有名单内的域名返回假地址，映射目标不在名单内，无需改动 fake-ip-filter"
+	msgDNSUnchecked       = "；名单里的 geosite / rule-set 条目无法检查"
+	msgDNSUnknownVersion  = "需要 Mihomo %s 或更新：更旧的内核会忽略 proxy-server-nameserver-policy，这些节点照旧连接左侧域名自己的地址"
+)

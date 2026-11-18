@@ -1,33 +1,36 @@
 package subs
 
 import (
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/jsonresp"
+	"configflow/internal/model"
 	"configflow/internal/weburl"
+	"configflow/internal/yamlx"
+	"gopkg.in/yaml.v3"
 )
 
-// Constants of proxy_server_dns.
+// PolicyKey is the Mihomo policy that routes proxy hostname lookups.
+const PolicyKey = "proxy-server-nameserver-policy"
+
+// MinCoreText is the first Mihomo version that supports PolicyKey.
+const MinCoreText = "v1.19.20"
 const (
-	PolicyKey    = "proxy-server-nameserver-policy"
-	MinCoreText  = "v1.19.20"
 	minCoreMajor = 1
 	minCoreMinor = 19
 	minCorePatch = 20
 )
 
-// ConnectivityFilter is Windows' connectivity check (NCSI) fake-ip-filter default.
+// ConnectivityFilter is the Windows connectivity check default fake-IP exemption.
 var ConnectivityFilter = []string{"dns.msftncsi.com", "www.msftncsi.com", "www.msftconnecttest.com"}
-
-var (
-	simplePattern = regexp.MustCompile(`^(?:\+\.|\.|\*\.)?[a-z0-9_*.-]+$`)
-	pySpace       = `[\s\x{1c}-\x{1f}\x{85}\x{a0}\x{1680}\x{2000}-\x{200a}\x{2028}\x{2029}\x{202f}\x{205f}\x{3000}]`
-	versionRE     = regexp.MustCompile(`(?i)^` + pySpace + `*(?:mihomo` + pySpace + `+)?(?:meta` + pySpace + `+)?v?(\p{Nd}+)\.(\p{Nd}+)\.(\p{Nd}+)`)
-)
+var simplePattern = regexp.MustCompile(`^(?:\+\.|\.|\*\.)?[a-z0-9_*.-]+$`)
+var versionRE = regexp.MustCompile(`(?i)^v?([0-9]+)\.([0-9]+)\.([0-9]+)`)
 
 // registrable is _registrable: "<domain>.<suffix>" per tldextract 5.1.2's
 // bundled public suffix list with private suffixes counted as public (one
@@ -132,49 +135,44 @@ func Compress(domains []string) []string {
 	return out
 }
 
-// ListenerAddress is listener_address: Mihomo's own DNS listener as a
-// nameserver URL, or ("", reason).
-func ListenerAddress(listen any) (string, string) {
-	s, ok := listen.(string)
-	if !ok || pyStrip(s) == "" {
+// DNSListener returns a usable local DNS URL, or a stable warning category.
+func DNSListener(listen string) (string, string) {
+	t := strings.TrimSpace(listen)
+	if t == "" {
 		return "", "no_listen"
 	}
-	t := pyStrip(s)
 	i := strings.LastIndex(t, ":")
 	if i < 0 {
 		return "", "listen_unparsed"
 	}
-	host, port := t[:i], t[i+1:]
-	if !pyIsDigit(port) {
+	host, port := strings.TrimSpace(t[:i]), t[i+1:]
+	if port == "" {
 		return "", "listen_unparsed"
 	}
-	n, err := pyIntStr(port)
-	if err != nil {
+	for _, c := range port {
+		if c < '0' || c > '9' {
+			return "", "listen_unparsed"
+		}
+	}
+	pn, err := strconv.ParseUint(port, 10, 16)
+	if err != nil || pn == 0 {
 		return "", "listen_unparsed"
 	}
-	pn, ok := n.Int64()
-	if !ok || pn <= 0 || pn >= 65536 {
-		return "", "listen_unparsed"
-	}
-	host = pyStrip(host)
 	if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
 		host = host[1 : len(host)-1]
 	}
 	if host == "" || host == "0.0.0.0" || host == "::" {
 		return fmt.Sprintf("udp://127.0.0.1:%d", pn), ""
 	}
-	info, ok := pyIPAddress(host)
-	if !ok || info.unspecified || info.multicast {
+	address, ok := parseHostIP(host)
+	if !ok || address.WithZone("").Unmap().IsUnspecified() || address.WithZone("").Unmap().IsMulticast() {
 		return "", "listen_unparsed"
 	}
-	if info.v6 {
-		return fmt.Sprintf("udp://[%s]:%d", info.text, pn), ""
+	if address.Is6() {
+		return fmt.Sprintf("udp://[%s]:%d", address, pn), ""
 	}
-	return fmt.Sprintf("udp://%s:%d", info.text, pn), ""
+	return fmt.Sprintf("udp://%s:%d", address, pn), ""
 }
-
-// nameserverAddr is the scheme, host name and port (0 = none) of a DNS
-// server URL; ok is false when it does not parse or the port is invalid.
 func nameserverAddr(text string) (scheme, host string, port int, ok bool) {
 	u, err := weburl.Parse(text)
 	if err != nil {
@@ -186,33 +184,39 @@ func nameserverAddr(text string) (scheme, host string, port int, ok bool) {
 	}
 	return strings.ToLower(u.Scheme), weburl.Hostname(u), port, true
 }
-
 func isUnspecifiedListen(listen string) bool {
-	t := pyStrip(listen)
+	t := strings.TrimSpace(listen)
 	i := strings.LastIndex(t, ":")
 	h := ""
 	if i >= 0 {
 		h = t[:i]
 	}
-	h = strings.Trim(pyStrip(h), "[]")
+	h = strings.Trim(strings.TrimSpace(h), "[]")
 	return h == "" || h == "0.0.0.0" || h == "::"
 }
-
-// pointsToListener is _points_to_listener: true when every given nameserver
-// is this Mihomo's own DNS listener.
-func pointsToListener(values []any, listen string) bool {
-	address, _ := ListenerAddress(listen)
-	if address == "" || len(values) == 0 {
+func listenerTargets(values *yamlx.Node, listen string) bool {
+	address, _ := DNSListener(listen)
+	if address == "" {
+		return false
+	}
+	values = yamlx.Resolve(values)
+	if values == nil {
+		return false
+	}
+	items := []*yamlx.Node{values}
+	if values.Kind == yaml.SequenceNode {
+		items = values.Content
+	}
+	if len(items) == 0 {
 		return false
 	}
 	_, expectedHost, expectedPort, _ := nameserverAddr(address)
-	unspecified := isUnspecifiedListen(listen)
-	for _, v := range values {
-		s, ok := v.(string)
-		if !ok || pyStrip(s) == "" {
+	for _, value := range items {
+		s, ok := dnsText(value)
+		if !ok || strings.TrimSpace(s) == "" {
 			return false
 		}
-		text := pyStrip(s)
+		text := strings.TrimSpace(s)
 		if !strings.Contains(s, "://") {
 			text = "udp://" + text
 		}
@@ -229,11 +233,11 @@ func pointsToListener(values []any, listen string) bool {
 		if host == expectedHost || (expectedHost == "127.0.0.1" && host == "localhost") {
 			continue
 		}
-		if unspecified {
+		if isUnspecifiedListen(listen) {
 			if host == "localhost" {
 				continue
 			}
-			if info, ok := pyIPAddress(host); ok && info.loopback {
+			if addr, ok := parseHostIP(host); ok && addr.WithZone("").Unmap().IsLoopback() {
 				continue
 			}
 		}
@@ -242,103 +246,42 @@ func pointsToListener(values []any, listen string) bool {
 	return true
 }
 
-type hostsMap struct {
-	keys []string
-	m    map[string]any
-}
-
-func lookupHost(h *hostsMap, domain string) any {
-	if v, ok := h.m[domain]; ok {
-		return v
+// CoreVersion parses an ASCII semantic version, accepting the usual Mihomo prefixes.
+// Version components are unbounded; build and prerelease suffixes are immaterial.
+func CoreVersion(text string) (version [3]*big.Int, ok bool) {
+	parts := strings.Fields(text)
+	if len(parts) > 0 && strings.EqualFold(parts[0], "mihomo") {
+		parts = parts[1:]
 	}
-	best, bestLen := "", -1
-	var found any
-	for _, key := range h.keys {
-		if key != domain && matchesText(key, domain) && len(key) > bestLen {
-			best, bestLen, found = key, len(key), h.m[key]
-		}
+	if len(parts) > 0 && strings.EqualFold(parts[0], "meta") {
+		parts = parts[1:]
 	}
-	_ = best
-	if bestLen < 0 {
-		return nil
-	}
-	return found
-}
-
-// FinalTarget is final_target: the domain a hosts chain from domain ends on,
-// or "" when it ends in IPs.
-func FinalTarget(hosts *jsonx.Object, domain string) string {
-	h := &hostsMap{m: map[string]any{}}
-	for key, v := range hosts.All() {
-		k := targetText(key)
-		if _, ok := h.m[k]; !ok {
-			h.keys = append(h.keys, k)
-		}
-		h.m[k] = v
-	}
-	value := lookupHost(h, domain)
-	seen := map[string]bool{}
-	for value != nil {
-		if list, ok := value.([]any); ok {
-			if len(list) == 1 {
-				if s, ok := list[0].(string); ok && addressOf(s) == "" {
-					value = s
-					goto next
-				}
-			}
-			return ""
-		}
-	next:
-		s, ok := value.(string)
-		if !ok || addressOf(s) != "" {
-			return ""
-		}
-		target := targetText(s)
-		if seen[target] {
-			return ""
-		}
-		seen[target] = true
-		following := lookupHost(h, target)
-		if following == nil {
-			return target
-		}
-		value = following
-	}
-	return ""
-}
-
-// ParseCoreVersion is parse_core_version: (major, minor, patch) of a Mihomo
-// version such as `v1.19.33`, or ok=false. The parts are unbounded like
-// Python ints.
-func ParseCoreVersion(text any) (version [3]*big.Int, ok bool) {
-	s, isStr := text.(string)
-	if !isStr {
+	if len(parts) == 0 {
 		return version, false
 	}
-	m := versionRE.FindStringSubmatch(s)
-	if m == nil {
+	match := versionRE.FindStringSubmatch(parts[0])
+	if match == nil {
 		return version, false
 	}
-	for i := 0; i < 3; i++ {
-		n, err := pyIntStr(m[i+1])
-		if err != nil {
+	for i := range version {
+		version[i], ok = new(big.Int).SetString(match[i+1], 10)
+		if !ok {
 			return version, false
 		}
-		version[i], _ = n.BigInt()
 	}
 	return version, true
 }
 
-// CoreTooOld is core_too_old: true only for a recognised older version.
-func CoreTooOld(version any) bool {
-	v, ok := ParseCoreVersion(version)
+// IsCoreTooOld reports whether a recognized core predates proxy DNS policies.
+func IsCoreTooOld(text string) bool {
+	v, ok := CoreVersion(text)
 	if !ok {
 		return false
 	}
-	min := [3]int64{minCoreMajor, minCoreMinor, minCorePatch}
-	for i := 0; i < 3; i++ {
-		if c := v[i].Cmp(big.NewInt(min[i])); c != 0 {
-			return c < 0
+	minimum := [3]int64{minCoreMajor, minCoreMinor, minCorePatch}
+	for i := range v {
+		if cmp := v[i].Cmp(big.NewInt(minimum[i])); cmp != 0 {
+			return cmp < 0
 		}
 	}
 	return false
@@ -356,31 +299,112 @@ var Warnings = map[string]string{
 }
 
 func oldCoreWarning(version string) string {
-	return fmt.Sprintf("Mihomo 内核 %s 早于 %s，不认识 proxy-server-nameserver-policy，所以没有加入；升级内核后重新推送，映射才对节点生效", version, MinCoreText)
+	return fmt.Sprintf(msgDNSOldCore, version, MinCoreText)
 }
 
-func simplePatterns(entries []any) []string {
+// DNSChoice records ownership of one selected proxy hostname lookup policy.
+type DNSChoice struct {
+	Domain string `json:"domain"`
+	Target string `json:"target"`
+	Source string `json:"source"`
+}
+
+// DNSSkip explains a mapping deliberately left unchanged.
+type DNSSkip struct {
+	Domain string `json:"domain"`
+	Target string `json:"target"`
+	Reason string `json:"reason"`
+}
+
+// DNSReport is the stable generated-preview DTO for subscription hostname DNS.
+type DNSReport struct {
+	Mapped          int         `json:"mapped"`
+	Applied         bool        `json:"applied"`
+	Listener        *string     `json:"listener"`
+	Policy          []DNSChoice `json:"policy"`
+	Filter          []string    `json:"filter"`
+	TargetsFiltered int         `json:"targets_filtered"`
+	TargetsCovered  int         `json:"targets_covered"`
+	FakeIP          *string     `json:"fake_ip"`
+	Skipped         []DNSSkip   `json:"skipped"`
+	Warnings        []string    `json:"warnings"`
+	Notes           []string    `json:"notes"`
+	MinVersion      string      `json:"min_version"`
+}
+
+type dnsSettings struct {
+	Enable       *bool  `json:"enable"`
+	UseHosts     *bool  `json:"use-hosts"`
+	Listen       string `json:"listen"`
+	EnhancedMode string `json:"enhanced-mode"`
+	FilterMode   string `json:"fake-ip-filter-mode"`
+	Fields       model.Fields
+	Raw          model.Raw
+}
+
+func (d *dnsSettings) UnmarshalJSON(b []byte) error { return model.DecodeRecord(b, d, &d.Raw) }
+
+// readDNSSettings decodes only the consumed fixed scalar members, once. The
+// potentially large and open hosts, policy and filter graphs remain Nodes.
+func readDNSSettings(dns *yamlx.Node) (dnsSettings, error) {
+	fixed := struct {
+		Enable       json.RawMessage `json:"enable,omitempty"`
+		UseHosts     json.RawMessage `json:"use-hosts,omitempty"`
+		Listen       json.RawMessage `json:"listen,omitempty"`
+		EnhancedMode json.RawMessage `json:"enhanced-mode,omitempty"`
+		FilterMode   json.RawMessage `json:"fake-ip-filter-mode,omitempty"`
+	}{}
+	fields := []struct {
+		name string
+		out  *json.RawMessage
+	}{{"enable", &fixed.Enable}, {"use-hosts", &fixed.UseHosts}, {"listen", &fixed.Listen}, {"enhanced-mode", &fixed.EnhancedMode}, {"fake-ip-filter-mode", &fixed.FilterMode}}
+	for _, field := range fields {
+		if value := yamlx.Get(dns, field.name); value != nil {
+			data, err := yamlx.ToJSON(value)
+			if err != nil {
+				return dnsSettings{}, err
+			}
+			*field.out = data
+		}
+	}
+	data, err := jsonresp.Encode(fixed)
+	var out dnsSettings
+	if err == nil {
+		err = json.Unmarshal(data, &out)
+	}
+	return out, err
+}
+func dnsText(n *yamlx.Node) (string, bool) {
+	n = yamlx.Resolve(n)
+	if n == nil || n.Kind != yaml.ScalarNode || n.ShortTag() != "!!str" {
+		return "", false
+	}
+	return n.Value, true
+}
+func dnsNull(n *yamlx.Node) bool {
+	n = yamlx.Resolve(n)
+	return n == nil || (n.Kind == yaml.ScalarNode && n.ShortTag() == "!!null")
+}
+func simplePatterns(entries []*yamlx.Node) []string {
 	var out []string
-	for _, e := range entries {
-		if s, ok := e.(string); ok && simplePattern.MatchString(pyLower(pyStrip(s))) {
-			out = append(out, targetText(s))
+	for _, entry := range entries {
+		if text, ok := dnsText(entry); ok && simplePattern.MatchString(hostPatternText(text)) {
+			out = append(out, hostPatternText(text))
 		}
 	}
 	return out
 }
-
-func uncheckedEntries(entries []any) bool {
-	for _, e := range entries {
-		if s, ok := e.(string); ok && !simplePattern.MatchString(pyLower(pyStrip(s))) {
+func uncheckedEntries(entries []*yamlx.Node) bool {
+	for _, entry := range entries {
+		if text, ok := dnsText(entry); ok && !simplePattern.MatchString(hostPatternText(text)) {
 			return true
 		}
 	}
 	return false
 }
-
 func covered(patterns []string, domain string) bool {
-	for _, p := range patterns {
-		if matchesText(p, domain) {
+	for _, pattern := range patterns {
+		if hostPatternMatches(pattern, domain) {
 			return true
 		}
 	}
@@ -389,322 +413,257 @@ func covered(patterns []string, domain string) bool {
 
 type policyKeyEntry struct {
 	pattern string
-	value   any
+	value   *yamlx.Node
 }
 
-func policyKeys(policy *jsonx.Object) (plain []policyKeyEntry, matchers []string) {
-	for key, value := range policy.All() {
-		text := pyStrip(key)
-		lower := pyLower(text)
+func policyKeys(policy *yamlx.Node) (plain []policyKeyEntry, matchers []string) {
+	for key, value := range yamlx.AllPairs(policy) {
+		keyText, ok := dnsText(key)
+		if !ok {
+			continue
+		}
+		text := strings.TrimSpace(keyText)
+		lower := strings.ToLower(text)
 		if strings.HasPrefix(lower, "geosite:") || strings.HasPrefix(lower, "rule-set:") {
 			matchers = append(matchers, text)
 			continue
 		}
 		for _, part := range strings.Split(text, ",") {
-			if pyStrip(part) != "" {
-				plain = append(plain, policyKeyEntry{targetText(part), value})
+			if strings.TrimSpace(part) != "" {
+				plain = append(plain, policyKeyEntry{hostPatternText(part), value})
 			}
 		}
 	}
 	return
 }
-
 func userPolicyFor(plain []policyKeyEntry, domain string) *policyKeyEntry {
-	var matches []policyKeyEntry
-	for _, p := range plain {
-		if matchesText(p.pattern, domain) {
-			matches = append(matches, p)
+	best := -1
+	for i := range plain {
+		if hostPatternMatches(plain[i].pattern, domain) {
+			if plain[i].pattern == domain {
+				return &plain[i]
+			}
+			if best < 0 || len(plain[i].pattern) > len(plain[best].pattern) {
+				best = i
+			}
 		}
 	}
-	if len(matches) == 0 {
+	if best < 0 {
 		return nil
 	}
-	for i := range matches {
-		if matches[i].pattern == domain {
-			return &matches[i]
-		}
-	}
-	best := 0
-	for i := range matches {
-		if len(matches[i].pattern) > len(matches[best].pattern) {
-			best = i
-		}
-	}
-	return &matches[best]
+	return &plain[best]
 }
-
-// ApplyNodeDNS is apply_node_dns: it resolves mapped node domains through
-// the DNS listener when a merged mapping needs it. merged holds the
-// subscription entries merged into main["hosts"]. It returns nil (and leaves
-// main untouched) when no merged mapping ends on a domain, otherwise the
-// preview report. coreVersion is "" when unknown.
-func ApplyNodeDNS(main, merged *jsonx.Object, coreVersion string) *jsonx.Object {
-	hosts := main.GetObject("hosts")
-	if hosts == nil {
-		hosts = jsonx.NewObject()
-	}
-	type mapping struct{ domain, target string }
-	var mapped []mapping
-	for domain, value := range merged.All() {
-		if _, ok := value.(string); ok {
-			if t := FinalTarget(hosts, domain); t != "" {
-				mapped = append(mapped, mapping{domain, t})
-			}
-		}
-	}
-	if len(mapped) == 0 {
-		return nil
-	}
-	report := jsonx.Obj("mapped", jsonx.Int(len(mapped)), "applied", false, "listener", nil, "policy", []any{},
-		"filter", []any{}, "targets_filtered", jsonx.Int(0), "targets_covered", jsonx.Int(0), "fake_ip", nil,
-		"skipped", []any{}, "warnings", []any{}, "notes", []any{}, "min_version", MinCoreText)
-	warn := func(s string) { report.Set("warnings", append(report.GetList("warnings"), s)) }
-	note := func(s string) { report.Set("notes", append(report.GetList("notes"), s)) }
-	skip := func(o *jsonx.Object) { report.Set("skipped", append(report.GetList("skipped"), o)) }
-
-	dns := main.GetObject("dns")
-	if dns == nil || dns.Value("enable") != true {
-		warn(Warnings["dns_disabled"])
-		return report
-	}
-	if dns.Value("use-hosts") == false {
-		warn(Warnings["use_hosts_off"])
-		return report
-	}
-	address, reason := ListenerAddress(dns.Value("listen"))
-	if address == "" {
-		warn(Warnings[reason])
-		return report
-	}
-	report.Set("listener", address)
-	if coreVersion != "" && CoreTooOld(coreVersion) {
-		warn(oldCoreWarning(coreVersion))
-		return report
-	}
-	if !jsonx.Truthy(dns.Value("proxy-server-nameserver")) {
-		warn(Warnings["no_nameserver"])
-		return report
-	}
-	var written *jsonx.Object
-	if w := dns.Value(PolicyKey); w != nil {
-		o, ok := w.(*jsonx.Object)
-		if !ok {
-			warn(Warnings["policy_not_mapping"])
-			return report
-		}
-		written = o
-	}
-	writtenOrEmpty := written
-	if writtenOrEmpty == nil {
-		writtenOrEmpty = jsonx.NewObject()
-	}
-	plain, matchers := policyKeys(writtenOrEmpty)
-
-	type chosenItem struct {
-		obj    *jsonx.Object
-		source string
-	}
-	chosen := jsonx.NewObject()
-	for _, m := range mapped {
-		found := userPolicyFor(plain, m.domain)
-		if found == nil {
-			chosen.Set(m.domain, jsonx.Obj("domain", m.domain, "target", m.target, "source", "configflow"))
-			continue
-		}
-		values, isList := found.value.([]any)
-		if !isList {
-			values = []any{found.value}
-		}
-		if pointsToListener(values, jsonx.Str(dns.Value("listen"))) {
-			chosen.Set(m.domain, jsonx.Obj("domain", m.domain, "target", m.target, "source", "user"))
-		} else {
-			skip(jsonx.Obj("domain", m.domain, "target", m.target, "reason", "policy_conflict"))
-			var writtenFor string
-			if found.pattern == m.domain {
-				writtenFor = "你已为 " + m.domain + " 写了 proxy-server-nameserver-policy"
-			} else {
-				writtenFor = "你写的 proxy-server-nameserver-policy 条目 " + found.pattern + " 覆盖了 " + m.domain
-			}
-			warn(writtenFor + "，保留你的设置；这条映射对该节点不生效")
-		}
-	}
-	if len(matchers) > 0 {
-		note("你写的 proxy-server-nameserver-policy 里有 geosite / rule-set 条目，ConfigFlow 无法检查；Mihomo 按顺序先匹配它们，匹配到的节点域名仍按你的设置解析")
-	}
-
-	var additions []string
-	var filterValue []any
-	hasFilterValue := false
-	if dns.Value("enhanced-mode") == "fake-ip" {
-		var mode any = "blacklist"
-		if jsonx.Truthy(dns.Value("fake-ip-filter-mode")) {
-			mode = dns.Value("fake-ip-filter-mode")
-		}
-		var current any
-		if mode == "rule" {
-			current = dns.Value("fake-ip-filter")
-			if !jsonx.Truthy(current) {
-				current = []any{}
-			}
-		} else if dns.Has("fake-ip-filter") {
-			current = dns.Value("fake-ip-filter")
-			if current == nil {
-				current = []any{}
-			}
-		} else {
-			current = jsonx.ListOf(ConnectivityFilter)
-		}
-		currentList, ok := current.([]any)
-		if !ok {
-			warn(Warnings["filter_not_list"])
-			return report
-		}
-		report.Set("fake_ip", mode)
-		if mode == "whitelist" {
-			patterns := simplePatterns(currentList)
-			for _, domain := range chosen.Keys() {
-				item := chosen.GetObject(domain)
-				if covered(patterns, item.GetString("target")) {
-					chosen.Delete(domain)
-					skip(jsonx.Obj("domain", domain, "target", item.Value("target"), "reason", "whitelist_covers"))
-					warn("fake-ip-filter-mode 为 whitelist，名单覆盖了映射目标 " + item.GetString("target") + "，改走本机 DNS 监听会让 " + domain + " 拿到假地址，所以没有改动这条")
-				}
-			}
-			if chosen.Len() > 0 {
-				text := "fake-ip-filter-mode 为 whitelist：只有名单内的域名返回假地址，映射目标不在名单内，无需改动 fake-ip-filter"
-				if uncheckedEntries(currentList) {
-					text += "；名单里的 geosite / rule-set 条目无法检查"
-				}
-				note(text)
-			}
-		} else {
-			var targets []string
-			seen := map[string]bool{}
-			for _, item := range chosen.Values() {
-				t := item.(*jsonx.Object).GetString("target")
-				if !seen[t] {
-					seen[t] = true
-					targets = append(targets, t)
-				}
-			}
-			var patterns []string
-			if mode != "rule" {
-				patterns = simplePatterns(currentList)
-			}
-			var needed []string
-			for _, t := range targets {
-				if !covered(patterns, t) {
-					needed = append(needed, t)
-				}
-			}
-			report.Set("targets_covered", jsonx.Int(len(targets)-len(needed)))
-			additions = Compress(needed)
-			report.Set("targets_filtered", jsonx.Int(len(needed)))
-			hasFilterValue = true
-			if mode == "rule" {
-				var rules []any
-				for _, entry := range additions {
-					if strings.HasPrefix(entry, "+.") {
-						rules = append(rules, "DOMAIN-SUFFIX,"+entry[2:]+",real-ip")
-					} else {
-						rules = append(rules, "DOMAIN,"+entry+",real-ip")
-					}
-				}
-				filterValue = append([]any{}, rules...)
-				for _, rule := range currentList {
-					if !containsValue(rules, rule) {
-						filterValue = append(filterValue, rule)
-					}
-				}
-			} else {
-				filterValue = append([]any{}, currentList...)
-				for _, entry := range additions {
-					if !containsValue(currentList, entry) {
-						filterValue = append(filterValue, entry)
-					}
-				}
-			}
-		}
-	} else {
-		report.Set("fake_ip", "not_needed")
-	}
-	if chosen.Len() == 0 {
-		return report
-	}
-	policy := writtenOrEmpty.Clone()
-	for domain, v := range chosen.All() {
-		if v.(*jsonx.Object).GetString("source") == "configflow" {
-			policy.Set(domain, address)
-		}
-	}
-	if !jsonx.Equal(policy, writtenOrEmpty) {
-		dns.Set(PolicyKey, policy)
-	}
-	if len(additions) > 0 && hasFilterValue {
-		dns.Set("fake-ip-filter", filterValue)
-	}
-	report.Set("policy", append([]any{}, chosen.Values()...))
-	report.Set("filter", jsonx.ListOf(additions))
-	report.Set("applied", true)
-	if _, ok := ParseCoreVersion(coreVersion); !ok {
-		note("需要 Mihomo " + MinCoreText + " 或更新：更旧的内核会忽略 proxy-server-nameserver-policy，这些节点照旧连接左侧域名自己的地址")
-	}
-	return report
-}
-
-func containsValue(list []any, v any) bool {
-	for _, x := range list {
-		if jsonx.Equal(x, v) {
+func containsDNSNode(items []*yamlx.Node, value *yamlx.Node) bool {
+	for _, item := range items {
+		if yamlx.Equal(item, value) {
 			return true
 		}
 	}
 	return false
 }
 
-// StatusLoader loads an Agent's stored status document (the traffic store's
-// load_status); nil when there is none or it cannot be read.
-type StatusLoader func(agentID string) *jsonx.Object
-
-// ReportedCoreVersion is reported_core_version: the Mihomo version an Agent
-// last reported, "" when ConfigFlow does not know it. Only a Mihomo Agent
-// with domain discovery enabled counts (a report left from before it was
-// turned off may be stale); statusOf is called only for those.
-func ReportedCoreVersion(agent *jsonx.Object, statusOf StatusLoader) string {
-	if agent == nil {
-		return ""
-	}
-	if st := getOr(agent, "service_type", "mihomo"); st != "mihomo" || !jsonx.Truthy(agent.Value("domain_discovery_enabled")) ||
-		!isString(agent.Value("id")) {
-		return ""
-	}
-	if statusOf == nil {
-		return ""
-	}
-	v, _ := statusOf(agent.GetString("id")).Value("mihomo_version").(string)
-	return pyStrip(v)
-}
-
-// OutdatedAgents is outdated_agents over an agent list: Mihomo Agents of
-// profileID (an Agent without profile_id belongs to defaultID) whose
-// reported core ignores the policy. statusOf loads an Agent's stored status.
-func OutdatedAgents(agents []*jsonx.Object, profileID, defaultID string, statusOf StatusLoader) []any {
-	found := []any{}
-	for _, agent := range agents {
-		pid := defaultID
-		if jsonx.Truthy(agent.Value("profile_id")) {
-			pid = jsonx.Str(agent.Value("profile_id"))
-		}
-		if pid != profileID {
+// ApplyDNS plans and applies subscription hostname policies on an open Mihomo
+// graph. It indexes hosts exactly once and clones only the owned DNS subtree.
+// All validation precedes writes, so warnings and errors leave the graph intact.
+func ApplyDNS(main, merged *yamlx.Node, coreVersion string) (*DNSReport, error) {
+	resolver := NewHostResolver(yamlx.Get(main, "hosts"))
+	var mapped []DNSChoice
+	for key, value := range yamlx.AllPairs(merged) {
+		domain, ok := dnsText(key)
+		if !ok {
 			continue
 		}
-		version := ReportedCoreVersion(agent, statusOf)
-		if version != "" && CoreTooOld(version) {
-			name := agent.Value("name")
-			if !jsonx.Truthy(name) {
-				name = agent.Value("id")
+		if _, ok := dnsText(value); ok {
+			if target := resolver.Target(domain); target != "" {
+				mapped = append(mapped, DNSChoice{Domain: domain, Target: target})
 			}
-			found = append(found, jsonx.Obj("name", jsonx.Str(name), "version", version))
 		}
 	}
-	return found
+	if len(mapped) == 0 {
+		return nil, nil
+	}
+	report := &DNSReport{Mapped: len(mapped), Policy: []DNSChoice{}, Filter: []string{}, Skipped: []DNSSkip{}, Warnings: []string{}, Notes: []string{}, MinVersion: MinCoreText}
+	warn := func(text string) { report.Warnings = append(report.Warnings, text) }
+	dns := yamlx.Resolve(yamlx.Get(main, "dns"))
+	settings, err := readDNSSettings(dns)
+	if err != nil {
+		return nil, err
+	}
+	if settings.Enable == nil || !*settings.Enable {
+		warn(Warnings["dns_disabled"])
+		return report, nil
+	}
+	if settings.UseHosts != nil && !*settings.UseHosts {
+		warn(Warnings["use_hosts_off"])
+		return report, nil
+	}
+	address, reason := DNSListener(settings.Listen)
+	if address == "" {
+		warn(Warnings[reason])
+		return report, nil
+	}
+	report.Listener = &address
+	if coreVersion != "" && IsCoreTooOld(coreVersion) {
+		warn(oldCoreWarning(coreVersion))
+		return report, nil
+	}
+	nameservers := yamlx.Resolve(yamlx.Get(dns, "proxy-server-nameserver"))
+	if nameservers == nil || !((nameservers.Kind == yaml.SequenceNode && len(nameservers.Content) > 0) || (nameservers.Kind == yaml.ScalarNode && nameservers.ShortTag() == "!!str" && nameservers.Value != "")) {
+		warn(Warnings["no_nameserver"])
+		return report, nil
+	}
+	written := yamlx.Resolve(yamlx.Get(dns, PolicyKey))
+	if !dnsNull(written) && written.Kind != yaml.MappingNode {
+		warn(Warnings["policy_not_mapping"])
+		return report, nil
+	}
+	if dnsNull(written) {
+		written = yamlx.Map()
+	}
+	plain, matchers := policyKeys(written)
+	chosen := make([]DNSChoice, 0, len(mapped))
+	for _, item := range mapped {
+		found := userPolicyFor(plain, item.Domain)
+		if found == nil {
+			item.Source = "configflow"
+			chosen = append(chosen, item)
+			continue
+		}
+		if listenerTargets(found.value, settings.Listen) {
+			item.Source = "user"
+			chosen = append(chosen, item)
+			continue
+		}
+		report.Skipped = append(report.Skipped, DNSSkip{item.Domain, item.Target, "policy_conflict"})
+		if found.pattern == item.Domain {
+			warn(fmt.Sprintf(msgDNSPolicyConflict, item.Domain))
+		} else {
+			warn(fmt.Sprintf(msgDNSPolicyCovers, found.pattern, item.Domain))
+		}
+	}
+	if len(matchers) > 0 {
+		report.Notes = append(report.Notes, msgDNSMatchers)
+	}
+	var additions []string
+	var filterValue []*yamlx.Node
+	if settings.EnhancedMode == "fake-ip" {
+		mode := settings.FilterMode
+		if mode == "" {
+			mode = "blacklist"
+		}
+		report.FakeIP = &mode
+		current := yamlx.Resolve(yamlx.Get(dns, "fake-ip-filter"))
+		if current == nil && mode != "rule" {
+			current = yamlx.Seq()
+			for _, text := range ConnectivityFilter {
+				current.Content = append(current.Content, yamlx.Str(text))
+			}
+		}
+		if dnsNull(current) {
+			current = yamlx.Seq()
+		}
+		if current.Kind != yaml.SequenceNode {
+			warn(Warnings["filter_not_list"])
+			report.FakeIP = nil
+			return report, nil
+		}
+		if mode == "whitelist" {
+			patterns := simplePatterns(current.Content)
+			kept := chosen[:0]
+			for _, item := range chosen {
+				if covered(patterns, item.Target) {
+					report.Skipped = append(report.Skipped, DNSSkip{item.Domain, item.Target, "whitelist_covers"})
+					warn(fmt.Sprintf(msgDNSWhitelistCovers, item.Target, item.Domain))
+				} else {
+					kept = append(kept, item)
+				}
+			}
+			chosen = kept
+			if len(chosen) > 0 {
+				text := msgDNSWhitelist
+				if uncheckedEntries(current.Content) {
+					text += msgDNSUnchecked
+				}
+				report.Notes = append(report.Notes, text)
+			}
+		} else {
+			var targets, needed, patterns []string
+			seen := map[string]bool{}
+			for _, item := range chosen {
+				if !seen[item.Target] {
+					seen[item.Target] = true
+					targets = append(targets, item.Target)
+				}
+			}
+			if mode != "rule" {
+				patterns = simplePatterns(current.Content)
+			}
+			for _, target := range targets {
+				if !covered(patterns, target) {
+					needed = append(needed, target)
+				}
+			}
+			report.TargetsCovered = len(targets) - len(needed)
+			report.TargetsFiltered = len(needed)
+			additions = Compress(needed)
+			if mode == "rule" {
+				for _, entry := range additions {
+					text := "DOMAIN," + entry + ",real-ip"
+					if strings.HasPrefix(entry, "+.") {
+						text = "DOMAIN-SUFFIX," + entry[2:] + ",real-ip"
+					}
+					filterValue = append(filterValue, yamlx.Str(text))
+				}
+				rules := append([]*yamlx.Node(nil), filterValue...)
+				for _, entry := range current.Content {
+					if !containsDNSNode(rules, entry) {
+						filterValue = append(filterValue, entry)
+					}
+				}
+			} else {
+				filterValue = append(filterValue, current.Content...)
+				for _, entry := range additions {
+					n := yamlx.Str(entry)
+					if !containsDNSNode(current.Content, n) {
+						filterValue = append(filterValue, n)
+					}
+				}
+			}
+		}
+	} else {
+		mode := "not_needed"
+		report.FakeIP = &mode
+	}
+	if len(chosen) == 0 {
+		return report, nil
+	}
+	// Validate before Clone: Clone deliberately returns null for invalid graphs.
+	if _, err := yamlx.ToJSON(dns); err != nil {
+		return nil, err
+	}
+	policy := yamlx.Clone(written)
+	for _, item := range chosen {
+		if item.Source == "configflow" {
+			yamlx.Set(policy, item.Domain, yamlx.Str(address))
+		}
+	}
+	policyChanged := !yamlx.Equal(policy, written)
+	if policyChanged || len(additions) > 0 {
+		owned := yamlx.Clone(dns)
+		if policyChanged {
+			yamlx.Set(owned, PolicyKey, policy)
+		}
+		if len(additions) > 0 {
+			yamlx.Set(owned, "fake-ip-filter", yamlx.Clone(yamlx.Seq(filterValue...)))
+		}
+		yamlx.Set(main, "dns", owned)
+		yamlx.MaterializeAliases(main)
+	}
+	report.Policy = chosen
+	report.Filter = append(report.Filter, additions...)
+	report.Applied = true
+	if _, ok := CoreVersion(coreVersion); !ok {
+		report.Notes = append(report.Notes, fmt.Sprintf(msgDNSUnknownVersion, MinCoreText))
+	}
+	return report, nil
 }

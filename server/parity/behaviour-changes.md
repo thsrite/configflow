@@ -1804,3 +1804,15 @@ world 保留旧文件。原 archive 不改；独立 Python 参考绑定完整 ar
   这不是扩充输入矩阵。冻结 corpus、N7资料和比较器未改；一次完整输出负控确实失败。
 - 开放 JSON 的 `1e400` 和大整数 token 仍保留，typed Port 溢出为0并保留问题证据；
   JSON不接受的 NaN 文本按既有开放 YAML 原生规则成为字符串“NaN”。独立回归固定完整原文。
+
+### N8-9 subs — native DNS 图与协议文本（2026-11-19）
+
+- ApplyDNS 消费固定 typed DNS 字段，开放 hosts/policy/filter 保留 YAML 图。DNS listener 端口、
+  semantic version 使用 ASCII 协议数字，不再接受 CPython 的 Unicode Nd：冻结 DNS row919
+  `1.2.3.4:٥٣` 明确返回 listen_unparsed，row955 `v١.١٩.٢٠` 是未知版本。两条期待由真实
+  Python 确认旧值并逐行绑定 SHA；其余4767条原期待及比较器不变。
+- 固定 String/Int/bool 的已定 R5 边界同样用于 DNS 与 discovery 状态；无配置/缓存的每节点
+  转码。rule 模式的 fake-ip-filter 必须为列表，false/0/空字符串/映射不能证明是空名单，
+  因此保留整个配置并给现有 filter_not_list 中文提示，不再覆盖这些用户错误值。
+- DNS 写入先完成计划与验证，再克隆拥有的 DNS 子树；不通过共享 alias 改动用户其他字段。
+  hosts 索引每次生成构建一次，null 的末尾 host 值维持原“目标域名尚未解析”语义。

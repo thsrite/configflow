@@ -1,6 +1,7 @@
 package subs
 
 import (
+	"strconv"
 	"testing"
 
 	"configflow/internal/jsonx"
@@ -8,9 +9,13 @@ import (
 
 func TestProxyServerDNSCorpus(t *testing.T) {
 	rows := loadCorpus(t, "dns.jsonl.gz")
+	native := nativeDNSExpectations(t)
 	kinds := map[string]int{}
 	for i, row := range rows {
 		kinds[row.Fn]++
+		if entry := native.GetObject(strconv.Itoa(i)); entry != nil {
+			row.Out = entry.Value("out")
+		}
 		switch row.Fn {
 		case "compress":
 			got := jsonx.ListOf(Compress(strList(row.In)))

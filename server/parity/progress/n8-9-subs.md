@@ -170,3 +170,22 @@ owner 暂时仍调用的原有 helper，后续必须一起删除，不能据此�
   已解决该生成路径的分配问题。
 - 主服务器旧HostsCorpus3186条、DNSCorpus4769条、映射地址专例及新resolver的定向race
   → `ok configflow/internal/subs 3.347s`；旧期待未改。
+
+## DNS typed 阶段
+
+- ApplyDNS / DNSReport / DNSChoice / DNSSkip / CoreVersion / DNSListener 原生入口；只投影五个
+  固定标量字段，开放 hosts/policy/filter 直接在 yamlx 上计算。HostResolver 每生成一次索引，
+  修复迁移中 null 链端点被误当无目标的问题，原4769条 DNS 语料现通过（仅两条已批准的
+  ASCII 数字边界用逐行 SHA 独立期待）。没有改原 archive 或比较函数。
+- 通过 shared alias 的 DNS/filter 写入改成只克隆拥有子树，其他 alias 不变且最终 YAML 可重读。
+  malformed rule filter false/0/空串/映射保持原文、返回固定业务警告，未知不等于空集合。
+- CoreAgent / CoreStatus / CoreReport 和 typed status loader 取代动态状态消费，旧调用只在
+  legacy.go 转码。convert 仅调整 legacy environment 的 NodeDNS 接线，未改生成器。
+- 主测试服务器，GOMAXPROCS=4、-p4：
+  `go test -race -p 4 -count=1 -timeout 5m ./internal/subs ./internal/convert -run
+  "TestN89DNS|TestN89NativeHostResolver|TestN89HostChain|TestProxyServerDNSCorpus|TestReviewC10References|TestTypedClient"`
+  → subs 3.695s、convert 1.086s；随后 subs/substore/convert vet 通过。
+- BenchmarkN89DNSHostIndex，32/256/2048 个域名：69368/281368/2328064 B/op，
+  308/902/6340 allocs/op。输入增8倍，分配近线性增长；64→256 的分配回归上限为6倍，
+  不允许重新出现每个映射重建整个 hosts 索引的平方增长。完整生成管线基准仍待后续阶段。
+- 剩余：hosts/dialers/chains/compat 核心及私有 pyconv 清除、完整管线基准和最终跨包/HTTP/fuzz。

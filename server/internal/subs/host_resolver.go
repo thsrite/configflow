@@ -34,7 +34,7 @@ func NewHostResolver(hosts *yamlx.Node) *HostResolver {
 }
 func (h *HostResolver) lookup(domain string) *yamlx.Node {
 	if value, present := h.values[domain]; present {
-		return value
+		return nonNullHost(value)
 	}
 	var value *yamlx.Node
 	best := -1
@@ -43,6 +43,14 @@ func (h *HostResolver) lookup(domain string) *yamlx.Node {
 			value = h.values[pattern]
 			best = len(pattern)
 		}
+	}
+	return nonNullHost(value)
+}
+
+func nonNullHost(value *yamlx.Node) *yamlx.Node {
+	resolved := yamlx.Resolve(value)
+	if resolved == nil || (resolved.Kind == yaml.ScalarNode && resolved.ShortTag() == "!!null") {
+		return nil
 	}
 	return value
 }
