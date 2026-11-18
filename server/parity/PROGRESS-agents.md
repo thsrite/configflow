@@ -72,7 +72,7 @@ Same as `PROGRESS-config.md`: status `missing` / `partial` (exact list of what i
 | A19 | Linux gateway core (common/linux_gateway.py) | 518 | verified | HR | C05, C08, routers (`router_split.check_generation`) | – | internal/gateway (new) |
 | A20 | Agent gateway bridge, gateway draft, gateway routes | 1110 | verified | HR | A19, A06, C18, routers (`router_split`, `routers/store.py`) | 18 | internal/gateway, api/agents, api/linuxgateway (new) |
 | A21 | gateway onboarding | 751 | verified | HR | A19, A20, C18, C22, C23, C24, C05, routers (`router_split`) | 3 | internal/gateway, api/gatewayonboarding (new) |
-| A22 | gateway installation | 809 | ported | HR | A08, A14, A20, A21, C17 | 7 | internal/gateway, api/agents |
+| A22 | gateway installation | 809 | verified | HR | A08, A14, A20, A21, C17 | 7 | internal/gateway, api/agents |
 | A23 | IPv6 readiness, client evidence, verification | 1344 | missing | HR | A06, A13, A14, C16, routers (`ipv6_readiness`, `routeros`, `route_editor`, `rule_sync_store`, `store`, `client_devices`) | 5 | internal/agents/ipv6 (new), api/agents |
 | A24 | client tools, OxiDNS device policies, domain-discovery toggles | 198 | verified | | A05, C09, C26, C31, C37 | 8 | api/agents |
 
@@ -1958,7 +1958,7 @@ Routes (3): `GET|POST /api/profiles/<profile_id>/gateway-onboarding`; `POST /api
 
 ## A22 — gateway installation
 
-**Status: `ported`** · HR · prereqs: A08 (`gateway_install_script`, `install_command_store`, `install_output`), A14 (`_prepare_transactional_content`), A20, A21, A06 (`MonitorError`), C17 (`commit_provider_bundle`), C18 (`_default_mihomo_template`, `mihomo_listen_ports`), routers (`router_split.is_full_tun`) · Go: internal/gateway, api/agents
+**Status: `verified`**（Opus HR 复核 [review-a22.md](review-a22.md)：high 0、medium 2、low 2，全部修复，0 未决；修复 `60df17ed6`、`9ac80102f`、`24b2e097f`；待协调者批次 gate） · HR · prereqs: A08 (`gateway_install_script`, `install_command_store`, `install_output`), A14 (`_prepare_transactional_content`), A20, A21, A06 (`MonitorError`), C17 (`commit_provider_bundle`), C18 (`_default_mihomo_template`, `mihomo_listen_ports`), routers (`router_split.is_full_tun`) · Go: internal/gateway, api/agents
 
 Files:
 - `backend/agents/gateway_installation.py` (727)

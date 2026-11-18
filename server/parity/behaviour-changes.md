@@ -1353,3 +1353,6 @@ batch-6 codec 窄化：格式查询只解规则库，继续使用 model.Shared �
   workers. Cancellation after the drain deadline preserves the recorded
   publishing IDs, makes no further commit, and resumes only on an explicit
   later publication request; no new recovery action is added.
+- Python bug（复核 A22 F3）：setup check 读取 Agent 状态时，`managed` 是真值但不是对象（不可读的转发记录），
+  Python `managed.get` 抛 AttributeError → 500。Go 按 A20 `HasRecord` 的 fail-closed 规则视为仍有转发记录，
+  返回对应的 409。其余成员类型不符时与 Python 的真值 / `is True` / `== '1'` 判定一致。见 review-a22.md。
