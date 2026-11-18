@@ -564,6 +564,13 @@ func OverlayDialer(value, nodeValue, proxyValue *jsonx.Object) (*jsonx.Object, e
 	if err != nil {
 		return nil, err
 	}
+	return overlayDialer(config, nodeValue, proxyValue)
+}
+
+// overlayDialer is the codec boundary for one node. A generator can reuse the
+// typed view of its stable lowered profile without decoding the whole profile
+// for every emitted node. Validation and overlay behaviour remain native.
+func overlayDialer(config *model.Config, nodeValue, proxyValue *jsonx.Object) (*jsonx.Object, error) {
 	node, err := decodeLegacy[model.Node](nodeValue)
 	if err != nil {
 		return nil, err

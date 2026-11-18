@@ -10,6 +10,7 @@ import (
 	"configflow/internal/health/check"
 	"configflow/internal/jsonx"
 	"configflow/internal/logx"
+	"configflow/internal/model"
 	"configflow/internal/pystr"
 	"configflow/internal/rules"
 	"configflow/internal/subs"
@@ -619,6 +620,7 @@ func generateMihomoDocument(ctx context.Context, logical *jsonx.Object, opts Gen
 
 	proxies := []any{}
 	var inline []subs.InlineProxy
+	var dialerConfig *model.Config
 	if debug {
 		mihomoLog.Debug("收集到的被使用节点ID: " + pySetRepr(sortedKeys(usedAll), keyValues(usedAll, usedNodeIDs, aggregationRoots)))
 		mihomoLog.Debug("开始生成 proxies，总节点数: " + strconv.Itoa(len(iterate(dictGet(config, "nodes", []any{})))))
@@ -645,7 +647,12 @@ func generateMihomoDocument(ctx context.Context, logical *jsonx.Object, opts Gen
 		}
 		node := n.(*jsonx.Object)
 		converted := mustValue(ConvertNodeToMihomo(ctx, node, env.Converter))
-		proxy := mustValue(OverlayDialer(config, node, converted))
+		if dialerConfig == nil {
+			// Lowering is complete and this profile is stable for the loop.
+			// Keep the first overlay's validation point and error ordering.
+			dialerConfig = mustValue(configFromLegacy(config))
+		}
+		proxy := mustValue(overlayDialer(dialerConfig, node, converted))
 		if proxy != nil && proxy.Len() > 0 {
 			proxies = append(proxies, proxy)
 			inline = append(inline, subs.InlineProxy{Node: node, Proxy: proxy})
