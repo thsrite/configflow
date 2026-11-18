@@ -1,5 +1,14 @@
 # Deliberate behaviour changes
 
+## N8-8a provider fix review — strict identity discriminators
+
+- `proxies_order.type` and a strategy group's `type` must be JSON strings at
+  the converter shape boundary. Wrong types report the field and original JSON
+  value instead of becoming unknown enum strings or R5 zero values that silently
+  remove references/bypass chain classification. Resource IDs retain the shared
+  numeric-text compatibility and unchanged stored tokens. This applies the
+  maintainer's strict identity-field rule without narrowing the shared codec.
+
 ## R09 — 强制 DNS 的归属保护（Python bug 修正）
 
 - 路由器上存在未登记归属、注释为 `cf-dnsguard:hijack` 的 NAT（不论 chain、端口、是否 disabled，

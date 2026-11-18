@@ -113,6 +113,16 @@ func configGroups(config *model.Config) []model.ProxyGroup {
 	return config.Profile.ProxyGroups
 }
 
+// Scalar compatibility does not apply to identity discriminators. Inspect
+// retained JSON rather than the model's number-to-text reading of the field.
+func identityString(raw json.RawMessage, field string) error {
+	var value *string
+	if json.Unmarshal(raw, &value) != nil || value == nil {
+		return fmt.Errorf(msgIdentityString, field, raw)
+	}
+	return nil
+}
+
 // ConfigShapes validates metadata needed by node and topology generation.
 func ConfigShapes(config *model.Config, requireIDs bool) error {
 	if config == nil {
@@ -163,6 +173,11 @@ func ConfigShapes(config *model.Config, requireIDs bool) error {
 		if strings.TrimSpace(group.Name) == "" {
 			return fmt.Errorf(msgResourceField, "name")
 		}
+		if raw, present := members["type"]; present {
+			if err := identityString(raw, "type"); err != nil {
+				return err
+			}
+		}
 		for _, key := range []string{"manual_nodes", "include_groups", "proxies", "subscriptions", "aggregations", "use"} {
 			if raw, present := members[key]; present {
 				var values []*model.String
@@ -182,11 +197,18 @@ func ConfigShapes(config *model.Config, requireIDs bool) error {
 				return errors.New(msgGroupOrder)
 			}
 			for _, entry := range entries {
-				for _, key := range []string{"type", "id"} {
-					var value *model.String
-					if json.Unmarshal(entry[key], &value) != nil || value == nil {
-						return errors.New(msgGroupOrder)
-					}
+				raw, present := entry["type"]
+				if !present {
+					return errors.New(msgGroupOrder)
+				}
+				if err := identityString(raw, "proxies_order.type"); err != nil {
+					return err
+				}
+				// Resource IDs use the shared lossless text codec; the type
+				// discriminator above deliberately remains strict.
+				var id *model.String
+				if json.Unmarshal(entry["id"], &id) != nil || id == nil {
+					return errors.New(msgGroupOrder)
 				}
 			}
 		}

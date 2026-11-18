@@ -65,6 +65,7 @@ const (
 	msgProxyStringType          = "节点 proxy_string 必须是字符串"
 	msgGroupStringList          = "策略组 %s 必须是字符串数组"
 	msgGroupOrder               = "策略组 proxies_order 必须是含 type/id 字符串的对象数组"
+	msgIdentityString           = "%s 必须是字符串，当前值：%s"
 	msgDialerIncludeAll         = "拨号拓扑不支持 include-all 隐式全局来源，请显式选择来源"
 	msgGroupUse                 = "策略组 use 引用不存在或名称不唯一"
 	msgGroupSourceMissing       = "拨号策略组来源不存在或未启用"
