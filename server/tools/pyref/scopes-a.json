@@ -1,0 +1,8 @@
+[
+  "server/internal/mosdns",
+  "server/internal/oxidns",
+  "server/internal/provider",
+  "server/internal/deploy",
+  "server/internal/discovery",
+  "server/internal/routersplit"
+]

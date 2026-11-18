@@ -173,3 +173,8 @@ jobState, some tests replace the default repository and several assert GC livene
 No timeout, depth, case count or assertion changes. .64 targeted race of the
 four non-history parser/domain suites passed `2.049s`; complete paired race run
 will include the migration check after the independent frozen index lands.
+
+A process inventory registers exactly nine existing sites: three Go self-process
+isolation/restart tests and six unchanged live differential/copy sites. There are
+no whole-package exemptions. Normal MosDNS/OxiDNS/routersplit references only
+call shared testgolden; ordinary process tracing remains a separate check.

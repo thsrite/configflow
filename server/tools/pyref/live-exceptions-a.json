@@ -1,0 +1,83 @@
+[
+  {
+    "id": "A-GO-1",
+    "file": "server/internal/discovery/review_restart_test.go",
+    "function": "TestReviewRestartDropsPollingJobsButKeepsProbeStore",
+    "callee": "exec.CommandContext",
+    "kind": "go-subprocess",
+    "guard": "os.Args[0], exact child test filter",
+    "reason": "Fresh Go process verifies restart persistence and in-flight job disappearance."
+  },
+  {
+    "id": "A-GO-2",
+    "file": "server/internal/deploy/contentsync/review_n73d_test.go",
+    "function": "TestReviewN73DUnsafeYAMLListing",
+    "callee": "exec.CommandContext",
+    "kind": "go-subprocess",
+    "guard": "os.Args[0], CONFIGFLOW_REVIEW_N73D_CONTENT_CHILD",
+    "reason": "Go child isolates hostile alias input and enforces original 10s bound."
+  },
+  {
+    "id": "A-GO-3",
+    "file": "server/internal/deploy/pushdiff/review_n73d_test.go",
+    "function": "TestReviewN73DListingAliasBomb",
+    "callee": "exec.CommandContext",
+    "kind": "go-subprocess",
+    "guard": "os.Args[0], exact child test filter",
+    "reason": "Go child isolates alias-bomb input and retains original 10s guard."
+  },
+  {
+    "id": "A-DIFF-1",
+    "file": "server/internal/mosdns/difftest/diff_test.go",
+    "function": "startPython",
+    "callee": "exec.Command",
+    "kind": "differential",
+    "guard": "CONFIGFLOW_DIFF=1 in TestDifferentialMosDNSRoutes",
+    "reason": "Live Flask HTTP and storage boundary, not a pure oracle."
+  },
+  {
+    "id": "A-DIFF-2",
+    "file": "server/internal/mosdns/difftest/diff_test.go",
+    "function": "TestDifferentialMosDNSRoutes",
+    "callee": "exec.Command",
+    "kind": "differential",
+    "guard": "CONFIGFLOW_DIFF=1; argv[0]=cp",
+    "reason": "Copy identical seeded data directories before live HTTP comparison."
+  },
+  {
+    "id": "A-DIFF-3",
+    "file": "server/internal/discovery/difftest/diff_test.go",
+    "function": "runPython",
+    "callee": "exec.Command",
+    "kind": "differential",
+    "guard": "CONFIGFLOW_DIFF=1 in TestHTTPAndStorageParity",
+    "reason": "Live Python seed setup for Flask HTTP and storage differential."
+  },
+  {
+    "id": "A-DIFF-4",
+    "file": "server/internal/discovery/difftest/diff_test.go",
+    "function": "startPython",
+    "callee": "exec.Command",
+    "kind": "differential",
+    "guard": "CONFIGFLOW_DIFF=1 in TestHTTPAndStorageParity",
+    "reason": "Live Flask server and background job progress are the tested boundary."
+  },
+  {
+    "id": "A-DIFF-5",
+    "file": "server/internal/discovery/difftest/diff_test.go",
+    "function": "TestHTTPAndStorageParity",
+    "callee": "exec.Command",
+    "kind": "differential",
+    "guard": "CONFIGFLOW_DIFF=1; argv[0]=cp",
+    "reason": "Copy identical seeded data directories before live comparison."
+  },
+  {
+    "id": "A-DIFF-6",
+    "file": "server/internal/provider/difftest/slow_test.go",
+    "function": "python",
+    "callee": "exec.CommandContext",
+    "kind": "differential",
+    "guard": "CONFIGFLOW_DIFF=1 in TestSlowProviderParity",
+    "reason": "Live slow-provider concurrency, timing, persistence and HTTP outcome comparison."
+  }
+]
