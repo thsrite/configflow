@@ -239,7 +239,9 @@ func publicRecord(record *Record) (json.RawMessage, error) {
 		}
 		hasPassword = router.Password != ""
 	}
-	payload = *redact.SanitizeCredentials(&payload, secrets)
+	if err := json.Unmarshal(redact.SanitizeCredentials(&payload, secrets), &payload); err != nil {
+		return nil, err
+	}
 	if len(record.RouterDraft) != 0 && string(record.RouterDraft) != "null" {
 		cleaned, err := json.Marshal(payload.Value("router_draft"))
 		if err != nil {

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -15,9 +14,10 @@ import (
 	"configflow/internal/lifecycle"
 	"configflow/internal/lockx"
 	"configflow/internal/repo"
+	"configflow/internal/setupflow"
 )
 
-const maxRecordBytes = 16 << 20 // Same limit as the existing setupflow reader.
+const maxRecordBytes = setupflow.MaxSessionBytes
 
 var validID = regexp.MustCompile(`^[a-f0-9]{32}$`)
 
@@ -58,22 +58,20 @@ func (s recordStore) read(ctx context.Context, id string) (*Record, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	path, err := s.path(id)
-	if err != nil {
+	if _, err := s.path(id); err != nil {
 		return nil, err
 	}
-	file, err := os.Open(path)
+	raw, err := setupflow.ReadSession(ctx, filepath.Dir(s.root), id)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, failure(msgMissingSession, 404)
 	}
-	if err != nil {
-		return nil, fmt.Errorf("read setup session: %w", err)
+	if errors.Is(err, setupflow.ErrInvalidSession) {
+		return nil, errors.Join(ErrCorruptRecord, err)
 	}
-	defer file.Close()
-	raw, err := io.ReadAll(io.LimitReader(file, maxRecordBytes+1))
 	if err != nil {
-		return nil, fmt.Errorf("read setup session: %w", err)
+		return nil, err
 	}
+
 	var record Record
 	if len(raw) > maxRecordBytes || json.Unmarshal(raw, &record) != nil || record.ID != id || record.ProfileID == "" {
 		return nil, ErrCorruptRecord

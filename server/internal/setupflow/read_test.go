@@ -90,3 +90,46 @@ func FuzzSetupSession(f *testing.F) {
 		}
 	})
 }
+
+func TestReadSessionSharesProfileReaderBoundary(t *testing.T) {
+	dir := t.TempDir()
+	id := strings.Repeat("a", 32)
+	if _, err := ReadSession(t.Context(), dir, id); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("missing file classification", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "setup-sessions")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("read created directory")
+	}
+	root := filepath.Join(dir, "setup-sessions")
+	if err := os.Mkdir(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name  string
+		body  []byte
+		valid bool
+	}{
+		{"native", []byte(`{"profile_id":"synthetic","future":[null,1],"completed":false}`), true},
+		{"invalid-json", []byte(`{`), false},
+		{"invalid-utf8", []byte{'"', 255, '"'}, false},
+		{"over-limit", []byte(strings.Repeat(" ", MaxSessionBytes+1)), false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if err := os.WriteFile(filepath.Join(root, id+".json"), test.body, 0600); err != nil {
+				t.Fatal(err)
+			}
+			raw, err := ReadSession(t.Context(), dir, id)
+			_, profileErr := ProfileSessions(t.Context(), dir, "synthetic")
+			if test.valid {
+				if err != nil || profileErr != nil || string(raw) != string(test.body) {
+					t.Fatal("raw record changed", err, profileErr)
+				}
+			} else if !errors.Is(err, ErrInvalidSession) || !errors.Is(profileErr, ErrInvalidSession) {
+				t.Fatal("reader policies diverged", err, profileErr)
+			}
+		})
+	}
+	if _, err := ReadSession(t.Context(), dir, "../outside"); !errors.Is(err, ErrInvalidSession) {
+		t.Fatal("invalid identity accepted", err)
+	}
+}

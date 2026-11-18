@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strings"
 	"unicode/utf8"
 )
 
@@ -22,6 +23,37 @@ var ErrReadSession = errors.New(msgReadSession)
 var ErrInvalidSession = errors.New("invalid setup session JSON")
 
 var sessionName = regexp.MustCompile(`^[a-f0-9]{32}\.json$`)
+
+// MaxSessionBytes bounds both read-only evidence and the C36 write owner.
+const MaxSessionBytes = 16 * 1024 * 1024
+
+// ReadSession reads one existing session without locks or directory creation.
+// It shares the ProfileSessions byte/JSON policy and leaves typed ownership
+// validation to the write owner. Missing files retain os.ErrNotExist for races.
+func ReadSession(ctx context.Context, dataDir, sessionID string) (json.RawMessage, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if !sessionName.MatchString(sessionID + ".json") {
+		return nil, fmt.Errorf("%w: %w", ErrReadSession, ErrInvalidSession)
+	}
+	file, err := os.Open(filepath.Join(dataDir, "setup-sessions", sessionID+".json"))
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrReadSession, err)
+	}
+	defer file.Close()
+	raw, err := io.ReadAll(io.LimitReader(file, MaxSessionBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrReadSession, err)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if len(raw) > MaxSessionBytes || !utf8.Valid(raw) || !json.Valid(raw) {
+		return nil, fmt.Errorf("%w: %w", ErrReadSession, ErrInvalidSession)
+	}
+	return raw, nil
+}
 
 // Session is an immutable stored wizard record and its sorting/binding fields.
 // Raw preserves every unknown member for C36's later read-modify-write owner.
@@ -52,24 +84,14 @@ func ProfileSessions(ctx context.Context, dataDir, profileID string) ([]Session,
 		if entry.IsDir() || !sessionName.MatchString(entry.Name()) {
 			continue
 		}
-		file, e := os.Open(filepath.Join(dataDir, "setup-sessions", entry.Name()))
-		var raw []byte
-		if e == nil {
-			raw, e = io.ReadAll(io.LimitReader(file, 16*1024*1024+1))
-			_ = file.Close()
-		}
-		if len(raw) > 16*1024*1024 {
-			return nil, fmt.Errorf("%w: %w", ErrReadSession, ErrInvalidSession)
-		}
+		raw, e := ReadSession(ctx, dataDir, strings.TrimSuffix(entry.Name(), ".json"))
 		if errors.Is(e, os.ErrNotExist) {
 			continue
 		}
 		if e != nil {
-			return nil, fmt.Errorf("%w: %w", ErrReadSession, e)
+			return nil, e
 		}
-		if !utf8.Valid(raw) || !json.Valid(raw) {
-			return nil, fmt.Errorf("%w: %w", ErrReadSession, ErrInvalidSession)
-		}
+
 		var object map[string]json.RawMessage
 		if json.Unmarshal(raw, &object) != nil || object == nil {
 			continue

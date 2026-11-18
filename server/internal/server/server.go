@@ -115,9 +115,9 @@ var wirePackages = []func(){
 	ippresence.Wire, // routers R02: convert.MihomoHooks.IsFullTun, oxidns classical_ip_lines
 	routers.Wire,    // routers R01: repo.Hooks.RedactRouters
 	wireSetupContent,
-	apirules.Wire,   // config C32: shared source loader for gateway providers
-	gateway.Wire,    // agents A19: convert.MihomoHooks Linux gateway
-	setupflow.Wire,  // agents A20 / config C36: routersplit setup-session reader
+	apirules.Wire,  // config C32: shared source loader for gateway providers
+	gateway.Wire,   // agents A19: convert.MihomoHooks Linux gateway
+	setupflow.Wire, // agents A20 / config C36: routersplit setup-session reader
 }
 
 func wireCore() {
