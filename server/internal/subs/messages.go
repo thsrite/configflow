@@ -13,3 +13,9 @@ const (
 )
 
 const msgHostsKeyShape = "YAML hosts 的键必须是标量（第 %d 行）"
+
+const (
+	msgFilterType    = "节点筛选正则必须是字符串"
+	msgFilterInvalid = "节点筛选正则无效: "
+	msgFilterIgnored = "订阅 '%s' 的节点筛选正则无效，已忽略: %s"
+)

@@ -116,7 +116,7 @@ func parseShadowsocks(uri string) (*jsonx.Object, error) {
 		var userInfo string
 		userInfo, serverInfo, _ = strings.Cut(uri, "@")
 		ok := false
-		if decoded, err := b64decodeString(userInfo); err == nil {
+		if decoded, err := decodeSubscriptionText(userInfo); err == nil {
 			if m, p, found := strings.Cut(decoded, ":"); found {
 				method, password, ok = m, p, true
 			}
@@ -128,7 +128,7 @@ func parseShadowsocks(uri string) (*jsonx.Object, error) {
 			}
 		}
 	} else {
-		decoded, err := b64decodeString(uri)
+		decoded, err := decodeSubscriptionText(uri)
 		if err != nil {
 			return nil, err
 		}
@@ -157,7 +157,7 @@ func parseShadowsocks(uri string) (*jsonx.Object, error) {
 
 func parseShadowsocksR(uri string) (*jsonx.Object, error) {
 	uri = uri[len("ssr://"):]
-	decoded, err := b64decodeString(uri)
+	decoded, err := decodeSubscriptionText(uri)
 	if err != nil {
 		return nil, err
 	}
@@ -172,7 +172,7 @@ func parseShadowsocksR(uri string) (*jsonx.Object, error) {
 		return nil, errValue
 	}
 	server, port, protocol, method, obfs, passwordB64 := fields[0], fields[1], fields[2], fields[3], fields[4], fields[5]
-	password, err := b64decodeString(passwordB64)
+	password, err := decodeSubscriptionText(passwordB64)
 	if err != nil {
 		return nil, err
 	}
@@ -180,7 +180,7 @@ func parseShadowsocksR(uri string) (*jsonx.Object, error) {
 	if _, query, ok := strings.Cut(paramsPart, "?"); ok {
 		for _, item := range strings.Split(query, "&") {
 			if key, value, ok := strings.Cut(item, "="); ok {
-				if params[key], err = b64decodeString(value); err != nil {
+				if params[key], err = decodeSubscriptionText(value); err != nil {
 					return nil, err
 				}
 			}
@@ -208,7 +208,7 @@ func parseShadowsocksR(uri string) (*jsonx.Object, error) {
 
 func parseVMess(uri string) (*jsonx.Object, error) {
 	uri = uri[len("vmess://"):]
-	decoded, err := b64decodeString(uri)
+	decoded, err := decodeSubscriptionText(uri)
 	if err != nil {
 		return nil, err
 	}

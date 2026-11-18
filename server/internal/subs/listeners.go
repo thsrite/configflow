@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/rules"
 	"configflow/internal/yamlx"
 
@@ -35,35 +35,38 @@ func lre(msg string) error { return &ListenerReferenceError{Message: msg} }
 
 var listenerBuiltins = []string{"DIRECT", "REJECT", "REJECT-DROP", "PASS", "PASS-RULE", "COMPATIBLE", "GLOBAL"}
 
-// listenersOf is _listeners: the document's listeners, validated.
-func listenersOf(document *jsonx.Object) ([]any, error) {
-	v := document.Value("listeners")
-	if v == nil {
+// listenerNodes validates the open engine document without decoding a config.
+func listenerNodes(document *yamlx.Node) ([]*yamlx.Node, error) {
+	list := yamlx.Resolve(yamlx.Get(document, "listeners"))
+	if list == nil || list.Kind == yaml.ScalarNode && list.ShortTag() == "!!null" {
 		return nil, nil
 	}
-	listeners, ok := v.([]any)
-	if !ok {
+	if list.Kind != yaml.SequenceNode {
 		return nil, lre(msgListenerListRequired)
 	}
-	for i, l := range listeners {
-		o, ok := l.(*jsonx.Object)
-		if !ok {
+	for i, item := range list.Content {
+		item = yamlx.Resolve(item)
+		if item == nil || item.Kind != yaml.MappingNode {
 			return nil, lre(fmt.Sprintf(msgListenerObjectRequired, i))
 		}
-		if t := o.Value("proxy"); t != nil && !isString(t) {
+		target := yamlx.Resolve(yamlx.Get(item, "proxy"))
+		if target != nil && target.ShortTag() != "!!null" && (target.Kind != yaml.ScalarNode || target.ShortTag() != "!!str") {
 			return nil, lre(fmt.Sprintf(msgListenerTargetRequired, i))
 		}
 	}
-	return listeners, nil
+	return list.Content, nil
 }
 
-// RelinkGroupListeners is relink_group_listeners: it keeps listeners'
+// RelinkListeners keeps it keeps listeners'
 // explicit `proxy` references aligned with a managed group edit, rewriting
 // profile["mihomo"]["custom_config"] with its comments preserved, and returns
 // the changed paths. newName nil restores the listener's own rules.
-func RelinkGroupListeners(profile *jsonx.Object, oldName string, newName *string) ([]string, error) {
-	settings := profile.GetObject("mihomo")
-	source, _ := settings.Value("custom_config").(string)
+func RelinkListeners(profile *model.Profile, oldName string, newName *string) ([]string, error) {
+	if profile == nil {
+		return nil, nil
+	}
+	settings := &profile.Mihomo
+	source := settings.CustomConfig
 	if strings.TrimSpace(source) == "" || newName != nil && oldName == *newName {
 		return nil, nil
 	}
@@ -145,11 +148,7 @@ func RelinkGroupListeners(profile *jsonx.Object, oldName string, newName *string
 		return nil, &ListenerReferenceError{Message: fmt.Sprintf(msgListenerBaseParseDetail, err), Cause: err}
 	}
 	if len(changed) > 0 {
-		if settings == nil {
-			settings = jsonx.NewObject()
-			profile.Set("mihomo", settings)
-		}
-		settings.Set("custom_config", string(updated))
+		settings.CustomConfig = string(updated)
 	}
 	return changed, nil
 }
@@ -218,31 +217,32 @@ func sharedListenerNodes(n *yamlx.Node) bool {
 	return false
 }
 
-// ValidateListenerPolicies is validate_listener_policies: every fixed
-// listener target must exist, even without a dialer topology.
-func ValidateListenerPolicies(document *jsonx.Object) error {
+// ValidateListenerNode checks every fixed target, including documents without dialer topology.
+func ValidateListenerNode(document *yamlx.Node) error {
 	available := map[string]bool{}
-	for _, b := range listenerBuiltins {
-		available[b] = true
+	for _, name := range listenerBuiltins {
+		available[name] = true
 	}
 	for _, key := range []string{"proxies", "proxy-groups"} {
-		items, _ := iterate(document.Value(key))
-		for _, item := range items {
-			if o, ok := item.(*jsonx.Object); ok {
-				if n, ok := o.Value("name").(string); ok {
-					available[n] = true
-				}
+		list := yamlx.Resolve(yamlx.Get(document, key))
+		if list == nil || list.Kind != yaml.SequenceNode {
+			continue
+		}
+		for _, item := range list.Content {
+			name := yamlx.Resolve(yamlx.Get(item, "name"))
+			if name != nil && name.Kind == yaml.ScalarNode && name.ShortTag() == "!!str" {
+				available[name.Value] = true
 			}
 		}
 	}
-	listeners, err := listenersOf(document)
+	listeners, err := listenerNodes(document)
 	if err != nil {
 		return err
 	}
-	for i, l := range listeners {
-		target := l.(*jsonx.Object).Value("proxy")
-		if jsonx.Truthy(target) && !available[target.(string)] {
-			return lre(fmt.Sprintf(msgListenerMissingPolicy, i, target.(string)))
+	for i, item := range listeners {
+		target := yamlx.Resolve(yamlx.Get(item, "proxy"))
+		if target != nil && target.ShortTag() == "!!str" && target.Value != "" && !available[target.Value] {
+			return lre(fmt.Sprintf(msgListenerMissingPolicy, i, target.Value))
 		}
 	}
 	return nil

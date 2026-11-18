@@ -8,7 +8,6 @@ import (
 	"sort"
 	"strings"
 	"unicode"
-	"unicode/utf8"
 
 	"configflow/internal/jsonx"
 	"configflow/internal/weburl"
@@ -23,80 +22,6 @@ func (e *errPy) Error() string { return e.msg }
 func pyErr(msg string) error { return &errPy{msg} }
 
 var errValue = pyErr("ValueError")
-
-// b64decode is base64.b64decode(s) of a str (validate=False) as CPython 3.11
-// implements it: non-alphabet characters (including "-" and "_") are skipped,
-// padding handling follows binascii.a2b_base64.
-func b64decode(s string) ([]byte, error) {
-	for i := 0; i < len(s); i++ {
-		if s[i] > 0x7f {
-			return nil, pyErr("string argument should contain only ASCII characters")
-		}
-	}
-	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
-	var table [256]int8
-	for i := range table {
-		table[i] = -1
-	}
-	for i := 0; i < len(alphabet); i++ {
-		table[alphabet[i]] = int8(i)
-	}
-	var out []byte
-	quad, pads := 0, 0
-	var left int
-loop:
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if c == '=' {
-			if quad >= 2 {
-				pads++
-				if quad+pads >= 4 {
-					quad = 0
-					break loop
-				}
-			}
-			continue
-		}
-		v := table[c]
-		if v < 0 {
-			continue
-		}
-		pads = 0
-		switch quad {
-		case 0:
-			quad = 1
-			left = int(v)
-		case 1:
-			quad = 2
-			out = append(out, byte(left<<2|int(v)>>4))
-			left = int(v) & 0x0f
-		case 2:
-			quad = 3
-			out = append(out, byte(left<<4|int(v)>>2))
-			left = int(v) & 0x03
-		case 3:
-			quad = 0
-			out = append(out, byte(left<<6|int(v)))
-			left = 0
-		}
-	}
-	if quad != 0 {
-		return nil, pyErr("Incorrect padding")
-	}
-	return out, nil
-}
-
-// b64decodeString is b64decode(s).decode('utf-8').
-func b64decodeString(s string) (string, error) {
-	b, err := b64decode(s)
-	if err != nil {
-		return "", err
-	}
-	if !utf8.Valid(b) {
-		return "", pyErr("'utf-8' codec can't decode bytes")
-	}
-	return string(b), nil
-}
 
 // unpack2 is `a, b = s.split(sep, 1)`.
 func unpack2(s, sep string) (string, string, error) {

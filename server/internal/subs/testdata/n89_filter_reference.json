@@ -1,0 +1,313 @@
+{
+  "source_sha256": "bddce7cabc9d27aaf603264c3a7c99fe8030978e9ce1121c9c4abaab98089f10",
+  "cases": {
+    "174": {
+      "input_sha256": "56f6f135876f66fd7ca3164519754ab6c1b6429a311c9f7bb0701999517d21e7",
+      "output": [
+        {
+          "name": "香港 01"
+        },
+        {
+          "name": "HK-02"
+        },
+        {
+          "name": "IPLC 香港"
+        }
+      ]
+    },
+    "175": {
+      "input_sha256": "9b4db18213f0984159d2a73f7f85655c15c6a0c75dc34997f01e68c537fa1a22",
+      "output": [
+        {
+          "name": "香港 01"
+        },
+        {
+          "name": "HK-02"
+        },
+        {
+          "name": "IPLC 香港"
+        }
+      ]
+    },
+    "228": {
+      "input_sha256": "60e3756756aa7af8975a8069492b2fd395aae3595246fdbd7b8cc155276a40e1",
+      "output": [
+        {
+          "name": "hk 03"
+        },
+        {
+          "name": "香港 01"
+        },
+        {
+          "name": "a\nb"
+        },
+        {
+          "name": "Name With Spaces"
+        },
+        {
+          "name": "过期时间 2026"
+        },
+        {
+          "name": "IPLC 香港"
+        },
+        {
+          "name": "剩余流量 100G"
+        },
+        {
+          "name": "\n"
+        },
+        {
+          "name": "HK-02"
+        },
+        {
+          "name": " "
+        },
+        {
+          "name": "JP 5"
+        },
+        {
+          "name": "😀"
+        },
+        {
+          "name": "日本 01"
+        }
+      ]
+    },
+    "229": {
+      "input_sha256": "265dc7ad05b81f657c4340f98a46da8a4947fc800684d65bda80c693275bb01d",
+      "output": [
+        {
+          "name": "a\nb"
+        },
+        {
+          "name": "过期时间 2026"
+        },
+        {
+          "name": "IPLC 香港"
+        },
+        {
+          "name": "剩余流量 100G"
+        },
+        {
+          "name": "HK-02"
+        },
+        {
+          "name": "hk 03"
+        },
+        {
+          "name": " "
+        },
+        {
+          "name": "JP 5"
+        },
+        {
+          "name": "😀"
+        },
+        {
+          "name": "\n"
+        },
+        {
+          "name": "日本 01"
+        },
+        {
+          "name": "香港 01"
+        },
+        {
+          "name": "Name With Spaces"
+        }
+      ]
+    },
+    "232": {
+      "input_sha256": "a74ffa73f5f81eb844f52d334b58c8103409e99656375281a26376d3090cb83d",
+      "output": [
+        {
+          "name": "AbA"
+        },
+        {
+          "name": "Name With Spaces"
+        },
+        {
+          "name": "😀"
+        },
+        {
+          "name": "日本 01"
+        },
+        {
+          "name": "\n"
+        },
+        {
+          "name": "axb"
+        },
+        {
+          "name": "ÀÉ"
+        },
+        {
+          "name": "ǅ"
+        },
+        {
+          "name": "ab"
+        },
+        {
+          "name": 5
+        },
+        {
+          "name": "a\nb"
+        },
+        {
+          "name": "x"
+        },
+        {
+          "name": " "
+        },
+        {
+          "name": "香港 01"
+        },
+        {
+          "name": "IPLC 香港"
+        },
+        {
+          "name": "hk 03"
+        },
+        {
+          "name": "b"
+        },
+        {
+          "name": "abcabc"
+        },
+        {
+          "name": "xxx"
+        },
+        {
+          "name": "剩余流量 100G"
+        },
+        {
+          "name": "a"
+        },
+        {
+          "name": "过期时间 2026"
+        },
+        {
+          "name": "HK-02"
+        },
+        {
+          "name": "123"
+        },
+        {
+          "name": "JP 5"
+        },
+        {
+          "name": "_"
+        }
+      ]
+    },
+    "233": {
+      "input_sha256": "b3a43095ad2138dbfd5c247a7b785836985c691366bd96e8e6366a33a5054a12",
+      "output": [
+        {
+          "name": "hk 03"
+        },
+        {
+          "name": "xxx"
+        },
+        {
+          "name": "AbA"
+        },
+        {
+          "name": "x"
+        },
+        {
+          "name": "b"
+        },
+        {
+          "name": " "
+        },
+        {
+          "name": "a"
+        },
+        {
+          "name": "\n"
+        },
+        {
+          "name": "abcabc"
+        },
+        {
+          "name": "JP 5"
+        },
+        {
+          "name": "123"
+        },
+        {
+          "name": "😀"
+        },
+        {
+          "name": "ab"
+        },
+        {
+          "name": "过期时间 2026"
+        },
+        {
+          "name": "axb"
+        },
+        {
+          "name": "a\nb"
+        },
+        {
+          "name": "IPLC 香港"
+        },
+        {
+          "name": "ÀÉ"
+        },
+        {
+          "name": "日本 01"
+        },
+        {
+          "name": "HK-02"
+        },
+        {
+          "name": "ǅ"
+        },
+        {
+          "name": "剩余流量 100G"
+        },
+        {
+          "name": "香港 01"
+        },
+        {
+          "name": "Name With Spaces"
+        },
+        {
+          "name": "_"
+        },
+        {
+          "name": 5
+        }
+      ]
+    },
+    "246": {
+      "input_sha256": "191d7f45a85b8946b638acddb010dd0a26fd18d5cf07642629cf1ad87bcea8f2",
+      "output": [
+        {
+          "name": "IPLC 香港"
+        },
+        {
+          "name": "香港 01"
+        }
+      ]
+    },
+    "247": {
+      "input_sha256": "a295dcdbfce2e1f0bd349d02949ab77a0431cb1c9b24e47de9002f08fce0a760",
+      "output": [
+        {
+          "name": "香港 01"
+        },
+        {
+          "name": "IPLC 香港"
+        }
+      ]
+    },
+    "289": {
+      "input_sha256": "fd2c0e6b6e0a5ef38872ad96e3c2f3240ea76edc4d8ae79008d8c1599699107a",
+      "output": []
+    }
+  }
+}

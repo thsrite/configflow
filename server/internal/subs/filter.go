@@ -3,9 +3,14 @@ package subs
 import (
 	"errors"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/logx"
+	"configflow/internal/model"
 	"configflow/internal/rules"
+	"configflow/internal/yamlx"
+	"encoding/json"
+	"gopkg.in/yaml.v3"
+	"slices"
+	"strings"
 )
 
 var filterLogger = logx.Get("backend.utils.subscription_filter")
@@ -31,60 +36,73 @@ func isUnsupported(err error) bool {
 	return errors.As(err, &u)
 }
 
-// ValidateRegexFilter is validate_regex_filter: "" means valid (None).
-func ValidateRegexFilter(value any) string {
-	if value == nil {
+// ValidateFilter reports the existing business prefix and native regex diagnostic.
+func ValidateFilter(text string) string {
+	text = strings.TrimSpace(text)
+	if text == "" {
 		return ""
 	}
-	s, ok := value.(string)
-	if !ok {
-		return "节点筛选正则必须是字符串"
-	}
-	if pyStrip(s) == "" {
-		return ""
-	}
-	if _, err := compileRegex(pyStrip(s)); err != nil && !isUnsupported(err) {
-		return "节点筛选正则无效: " + err.Error()
+	if _, err := compileRegex(text); err != nil && !isUnsupported(err) {
+		return msgFilterInvalid + err.Error()
 	}
 	return ""
 }
 
-// CompileSubscriptionFilter is compile_subscription_filter: nil when no
-// filter is configured or the pattern is invalid. A pattern the Go engine
-// cannot run (\N{name}, see compileRegex) is also treated as "no filter",
-// silently; Python would apply it. ValidateRegexFilter accepts such a
-// pattern as Python does.
-func CompileSubscriptionFilter(sub any) Matcher {
-	obj, ok := sub.(*jsonx.Object)
-	if !ok {
+// CompileFilter compiles the configured filter once for a subscription batch.
+func CompileFilter(sub model.Subscription) Matcher {
+	if sub.RegexFilter == nil {
 		return nil
 	}
-	pattern, ok := obj.Get("regex_filter")
-	text, isStr := pattern.(string)
-	if !ok || !isStr || pyStrip(text) == "" {
+	pattern := strings.TrimSpace(*sub.RegexFilter)
+	if pattern == "" {
 		return nil
 	}
-	re, err := compileRegex(pyStrip(text))
+	re, err := compileRegex(pattern)
 	if err != nil {
 		if !isUnsupported(err) {
-			filterLogger.Warningf("订阅 '%s' 的节点筛选正则无效，已忽略: %s", jsonx.Str(obj.Value("name")), err.Error())
+			filterLogger.Warningf(msgFilterIgnored, sub.Name, err.Error())
 		}
 		return nil
 	}
 	return re
 }
 
-// FilterSubscriptionItems is filter_subscription_items; items are
-// node/proxy objects matched on their name.
-func FilterSubscriptionItems(sub any, items []any) []any {
-	out := append([]any(nil), items...)
-	re := CompileSubscriptionFilter(sub)
+// FilterNodes selects owned typed node records in input order.
+func FilterNodes(sub model.Subscription, nodes []model.Node) []model.Node {
+	re := CompileFilter(sub)
 	if re == nil {
-		return out
+		return slices.Clone(nodes)
 	}
-	kept := []any{}
-	for _, item := range out {
-		if obj, ok := item.(*jsonx.Object); ok && re.Search(jsonx.Str(getOr(obj, "name", ""))) {
+	kept := make([]model.Node, 0, len(nodes))
+	for _, node := range nodes {
+		if re.Search(node.Name) {
+			kept = append(kept, node)
+		}
+	}
+	return kept
+}
+
+// FilterProxies selects original open proxy graph nodes without copying their parameters.
+func FilterProxies(sub model.Subscription, nodes []*yamlx.Node) []*yamlx.Node {
+	re := CompileFilter(sub)
+	if re == nil {
+		return slices.Clone(nodes)
+	}
+	kept := make([]*yamlx.Node, 0, len(nodes))
+	for _, item := range nodes {
+		proxy := yamlx.Resolve(item)
+		if proxy == nil || proxy.Kind != yaml.MappingNode {
+			continue
+		}
+		var name model.String
+		data, err := yamlx.ToJSON(yamlx.Get(proxy, "name"))
+		if err != nil {
+			continue
+		}
+		if json.Unmarshal(data, &name) != nil {
+			name = ""
+		}
+		if re.Search(string(name)) {
 			kept = append(kept, item)
 		}
 	}

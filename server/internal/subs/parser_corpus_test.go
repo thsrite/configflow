@@ -33,13 +33,13 @@ func TestParserCorpus(t *testing.T) {
 			}
 		case "b64decode":
 			out := row.Out.(*jsonx.Object)
-			b, err := b64decode(row.In.(string))
+			b, err := decodeSubscriptionBase64(row.In.(string))
 			if out.Has("error") {
 				if err == nil {
-					t.Fatalf("row %d b64decode(%q): want error %v, got %x", i, row.In, out.Value("error"), b)
+					t.Fatalf("row %d decodeSubscriptionBase64(%q): want error %v, got %x", i, row.In, out.Value("error"), b)
 				}
 			} else if err != nil || hex.EncodeToString(b) != out.GetString("hex") {
-				t.Fatalf("row %d b64decode(%q): got %x (%v), want %s", i, row.In, b, err, out.GetString("hex"))
+				t.Fatalf("row %d decodeSubscriptionBase64(%q): got %x (%v), want %s", i, row.In, b, err, out.GetString("hex"))
 			}
 		case "int":
 			n, err := pyIntStr(row.In.(string))

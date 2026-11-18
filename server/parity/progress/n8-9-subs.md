@@ -112,3 +112,19 @@ owner 暂时仍调用的原有 helper，后续必须一起删除，不能据此�
   或任何比较器。4301位分量明确走 native 文本验证，不放开其他语料。
 - 此时 substore 已迁移，subs（parser/filter/hosts/dialers/chains/listeners/proxy DNS）尚未迁移；
   下一阶段清除 subs 的私有 convert copy，保留业务功能和链路正常输出。
+
+
+## batch-7 基线与 subs 首批
+
+- 已在干净节点 rebase 到 go@d4fab6441。四条 substore 提交改为
+  8164958d7 / 43be7e5ec / 7102e685c / 6b13526e8；仅 ledger 追加位置冲突，双方内容保留。
+  已读取8b/8c实际 typed collaborator API；将直接接入，不复制生成器实现。
+- listener 核心已 typed，旧接口只转码，原注释/alias保护不改；filter 使用 model 和 yamlx，
+  数字文本/R5消费按已定规则。9条 malformed 改变由真实 Python消费投影得出精确选择，
+  原始记录及字段不重写。schema 与每条 input SHA 都有校验。
+- Base64协调者明确不批准strict。已按裁定用清洗+encoding/base64改写，保留完整接受范围；
+  原2500 helper+3714实际URI的6235条 parser corpus 未改且通过。此时 parser 其余动态
+  字段和 pyconv 的数字/IP等还未迁移，不能声称 subs 已完成。
+- 主服务器 GOMAXPROCS=4、-p4：parser+listener正常/安全编辑/别名的定向 race 2.431s；
+  filter+新R5原始记录保留回归定向 race 1.169s。下一阶段清理剩余 parser、hosts、dialers、
+  chains、proxy DNS 及 compat 私有副本，之后再做跨包/HTTP/fuzz/完整配置分配基准。

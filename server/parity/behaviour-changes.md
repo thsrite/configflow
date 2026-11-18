@@ -1760,3 +1760,21 @@ world 保留旧文件。原 archive 不改；独立 Python 参考绑定完整 ar
   terminal observation。已经替换 bundle 但还没写 VERSION 时保留旧 VERSION 和完整备份，
   不再重启或破坏恢复证据；请求断开仍完成全部更新。真实 Runtime 的三提交点×两种取消
   及入口关机回归验证这些状态和最终锁释放。
+
+
+### N8-9 subs — 监听器、筛选与订阅 Base64（2026-11-19）
+
+- 监听器核心使用 model.Profile / yamlx.Node；保留原有 yamlx.Edit、alias/anchor 分离、
+  原文与注释、错误定位、路径顺序及不安全编辑拒绝规则，旧入口只转码并回写唯一拥有的
+  custom_config 字段，不重写其他字段。
+- 订阅筛选按 model.Subscription 读取，一批只编译一次正则。节点名的数字文本兼容保留；
+  bool/容器/null 名称按 R5 的空文本消费，不再用 Python repr 构造节点名。返回的是选中的
+  原始节点（未知字段、原值、顺序不改）；numeric regex_filter 通过共享文本规则消费。
+  `n89_filter_reference.py` 在精确消费投影上调用真实 Python，然后把选择位置映射回原始
+  记录；9条变化有 source/row SHA 和完整期待，原 corpus/比较器不改。严格请求 token 校验
+  `节点筛选正则必须是字符串` 和固定中文日志前缀不变。
+- **有意保留兼容规则，非行为变化**（协调者明确裁定）：外部订阅源的 Base64 必须继续
+  宽松读取。decodeSubscriptionBase64 忽略非字母表 ASCII（空格/换行/垃圾）、忽略尚不能
+  完成末尾量子的多余 padding，完整 padding 后停止；非 ASCII 和不完整末尾仍失败。
+  前置清洗后由 encoding/base64 完成解码，删除旧手写 bit decoder。2500条原 helper 语料
+  及3714条实际 URI 语料保持原期待，不改为 strict、不扩展无 padding 编码的接受范围。

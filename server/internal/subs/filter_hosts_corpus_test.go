@@ -16,6 +16,7 @@ func asObj(v any) *jsonx.Object {
 
 func TestFilterCorpus(t *testing.T) {
 	rows := loadCorpus(t, "filter.jsonl.gz")
+	native := nativeFilterExpectations(t)
 	pending := 0
 	for i, row := range rows {
 		switch row.Fn {
@@ -52,6 +53,9 @@ func TestFilterCorpus(t *testing.T) {
 				// Python's $ also matches before a trailing newline; RE2's only
 				// at the end (names with a trailing newline are not realistic).
 				continue
+			}
+			if expected := native.GetObject(fmt.Sprint(i)); expected != nil {
+				row.Out = expected.Value("output")
 			}
 			if g, w := compact(t, got), compact(t, row.Out); g != w {
 				t.Fatalf("row %d filter %s\n got  %s\n want %s", i, compact(t, row.In), g, w)
