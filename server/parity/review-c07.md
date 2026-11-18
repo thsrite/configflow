@@ -3,7 +3,8 @@
 分支 `go-review-c07`，起点 `go-port-c07@edde72d2b`，初始集成基底 `go@765c04edb`。
 复核者不是作者。已完整读取 C07 的七个 Python 源文件，再核对实现和映射。
 未启动子 agent、未 push、未接触生产；新增输入全部合成，所有测试/格式/vet 经 rt。
-当前发现 **high 0 / medium 1 / low 3**，四项均已修复并有修复前失败证据；最终验收进行中。
+状态：**C07 独立复核 verified，high 0 / medium 1 / low 3，四项全部修复，0个模块内未决发现**。
+最终完整 gate 排队达到900秒后按约定停止（exit75，无阶段开始）；协调者仍须在合并树运行完整门禁。
 
 ## 发现及修复
 
@@ -16,7 +17,7 @@
   `TestHistoryCountersAgainstPython` 从17扩到25组，包含超 int64 的有符号分隔符数值；
   `TestReviewC07LegacyCountersAndSilentBinding` 通过真实 Flask 比较两条 GET 及六条绑定边界，
   每次核对完整 JSON、headers 和 DB/JSON/log 后状态；不改 oracle 或 normalize。
-  修复前两条 GET 和三组直接计数均失败；修复后定向测试通过。修复提交待填写。
+  修复前两条 GET 和三组直接计数均失败；修复后定向测试通过。修复提交 `bf8003685`。
 - **F2 / low：假 slot 及 runner 泄漏到后续测试。**
   metrics、refresh 及其 live harness、C35 live harness 的空 rows 未注册清理。
   C07 live harness 调用 `refresh.Wire` 后再覆盖 runner，cleanup 实际恢复成 Wire 的 runner，
@@ -25,7 +26,7 @@
   不调用有全局注册副作用的 Wire。C35 Sources 也恢复先前值而非清空整个注册。
   两个 `TestReviewTaskFixtureRestoresMissingSlots` 和
   `TestReviewC07FixtureRestoresRunner` 修复前分别观察 missing 列表变空、原 runner 被替换，
-  修复后均通过。生产注册未改，无生产空 rows。修复提交待填写。
+  修复后均通过。生产注册未改，无生产空 rows。修复提交 `bf8003685`。
 - **F3 / low：已成功回滚的 listener 状态读取故障返回错误的恢复提示。**
   新端口真实 token 健康检查成功后，状态目录失去遍历权限；Update 为保存回滚快照而读旧文件，
   直接交出 PathError。现有 C06 handler 会将它变成503“无法访问 Web 监听配置”，
@@ -33,7 +34,7 @@
   现在该失败仍先关闭新 sockets、恢复旧 token，再返回统一恢复提示；保留关机取消优先。
   `TestReviewStateReadFailureAfterHealthRollsBackWithSafeError` 用真实无权限目录、实际HTTP探测，
   检查旧 socket/token/文件字节与新端口关闭，修复前检出 PathError，修复后通过。
-  没有改持久化协议或用假写入替代故障。修复提交待填写。
+  没有改持久化协议或用假写入替代故障。修复提交 `bf8003685`。
 - **F4 / low：无效单键任务被误判为已知但尚未就绪。**
   metrics slot 缺失时，`PUT /api/tasks/interval` 接收
   `metrics_history_flush:unknown`，先按分类查询 readiness 而返回503；该 key 从来不属于
@@ -41,7 +42,7 @@
   interval 现在先拒绝这个非法 exact key，再对合法 key 查询缺失 owner。
   `TestReviewUnknownExactKeyDoesNotBecomeUnavailable` 修复前实测503/期望400，另保持
   合法 exact key 的 run/interval503 正控；`TestReviewC07UnknownExactKeyAgainstFlask`
-  比较真实 Python 两条400、完整响应及 DB/files 不变。修复提交待填写。
+  比较真实 Python 两条400、完整响应及 DB/files 不变。修复提交 `ae816cb07`。
 
 ## 审计结论
 
@@ -83,6 +84,9 @@
 作者修复5b6dcd1f3只改 Go 的 native fs.ErrNotExist 分流；本轮非root目录权限回归再次通过。
 `log_stat_fault.py` 仍要求 expect500、真实不可遍历目录、数据库可读及指定路径的权限错误；
 没有改 Python，也没有反向修成200或改变比较方式。作者记录的500/500与原方向一致。
+本轮在两台服务器独立重新运行 R075-F08，均 compared1/diffs0/open0，155个比较器自检和
+端到端 mutation check 通过；最终 .32 报告直接读取确认 python_status=500、go_status=500。
+最终报告标注精确代码提交 ae816cb07，使用独立临时报告，没有改写全局 configdiff 结果。
 
 ## 已分派共享边界
 
@@ -94,4 +98,74 @@ R14/A16/A17 的真实 rows/runner、routers confirmed-empty apply、C06 handler�
 
 ## 验证
 
-待最终命令和门禁结果补齐；不会把作者门禁排队退出75或本轮中止的诊断运行计为通过。
+最终基底 `go@d43cca6e4`（含C33及独立复核），代码修复 `bf8003685` / `ae816cb07`；
+提交间窗口补验 `e32998805`。变基仅两个文档追加冲突，双方原文均保留，没有 Go 冲突。
+全树 gofmt-l 无输出，go vet ./... 通过。没有新增依赖或用户功能/入口，无新增 doc 截图要求。
+
+主要完整定向命令（.32，前台，退出0；末次F4增量另列）：
+
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt -e GOMAXPROCS=4 --back server/internal/weblistener/portable_test.go -- bash -lc 'cd server && gofmt -w internal/weblistener/portable_test.go && test -z "$(gofmt -l internal tools cmd)" && go vet ./... && CONFIGFLOW_DIFF=1 go test -race -p=4 -count=1 -timeout=10m ./internal/tasks/... ./internal/api/tasks ./internal/weblistener ./internal/notifications ./internal/api/notifications ./internal/api/logs ./internal/api/stats ./internal/webdav/... ./internal/refresh/... ./internal/agents/metrics ./internal/server && go test -race -count=3 -timeout=5m -run "^TestReviewManualAutoTaskKeepsWorkValuesWithFreshScope$" ./internal/discovery'
+```
+
+```text
+ok configflow/internal/tasks                 2.607s
+ok configflow/internal/tasks/difftest        30.919s
+ok configflow/internal/api/tasks            12.476s
+ok configflow/internal/weblistener           2.155s
+ok configflow/internal/notifications        24.194s
+ok configflow/internal/api/notifications     3.840s
+ok configflow/internal/api/logs             12.187s
+ok configflow/internal/api/stats            10.949s
+ok configflow/internal/webdav               13.674s
+ok configflow/internal/webdav/difftest       80.405s
+ok configflow/internal/refresh             259.837s
+ok configflow/internal/refresh/difftest      25.301s
+ok configflow/internal/agents/metrics       27.128s
+ok configflow/internal/server               2.315s
+ok configflow/internal/discovery            6.249s
+```
+
+F4最后仅改 interval 三行判断；`.32` 启用真实 Flask 的完整 tasks/difftest race
+**27.432s**、完整 api/tasks race **10.443s**，全树格式/vet仍通过。
+`.64` 完整 api/tasks race/vet **5.433s**；`.32` exact-key400和合法缺失key503的正负控制
+race count3 **2.981s**。对应命令：
+
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt -e GOMAXPROCS=4 --back server/internal/tasks/difftest/review_test.go -- bash -lc 'cd server && gofmt -w internal/tasks/difftest/review_test.go && CONFIGFLOW_DIFF=1 go test -race -count=1 -timeout=5m ./internal/tasks/difftest && go test -race -count=1 -timeout=5m ./internal/api/tasks && test -z "$(gofmt -l internal tools cmd)" && go vet ./...'
+RT_HOST=sunbroke@192.168.0.64 rt -e GOMAXPROCS=4 -- bash -lc 'cd server && go test -run "^$" -fuzz "^FuzzTaskHistoryCounters$" -fuzztime=60s -parallel=2 ./internal/tasks'
+```
+
+第二条是实际组合命令内的 fuzz 子命令：**686577 execs / 60.076s / PASS**，其后 parser 未变。
+CFG-07 最后在 .32 执行（同一条 rt 先跑上述 exact-key count3和格式检查）：
+
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt -e GOMAXPROCS=4 -- bash -lc 'cd server && test -z "$(gofmt -l internal tools cmd)" && go test -race -count=3 -timeout=5m -run "^TestReviewUnknownExactKeyDoesNotBecomeUnavailable$" ./internal/api/tasks && cd .. && mkdir -p "$HOME/.cache/rt-tmp/review-c07-cfg07-final" && server/tools/configdiff/native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups logs-real-stat-permission --baseline ae816cb07 --output "$HOME/.cache/rt-tmp/review-c07-cfg07-final/results.json" --findings "$HOME/.cache/rt-tmp/review-c07-cfg07-final/findings.md" > "$HOME/.cache/rt-tmp/review-c07-cfg07-final/console.log" 2>&1 && tail -10 "$HOME/.cache/rt-tmp/review-c07-cfg07-final/console.log"'
+```
+
+退出0，155自检/OK，MUTATION-CHECK 检出人为破坏；R075-F08 compared/diffs0，
+open0、design_errors=[]、35.35s。`.64` 的独立同组复验为16.18s/相同结论。
+
+诊断运行不计为通过：初始 .64 的 discovery 整包在
+`TestN73CustomPortReaderMigrationGate` 长时间执行，先对本 worktree 的进程取 SIGQUIT 栈后停止，
+再用 `go test -race -v -count=1 -timeout=90s ./internal/discovery` 定位，90s也停在该用例。
+该用例校验 N7 冻结 YAML 语料，不是 C07 taskbridge；没有修改或跳过它、未据此断言产品缺陷。
+C37手动任务专用三轮回归在两台分别通过8.544s/6.249s。未声称 discovery整包通过。
+
+## 最终 gate
+
+`.64` 前台运行 `server/scripts/gate.sh -p 6 FuzzTaskHistoryCounters:./internal/tasks`，
+由 Python 子进程守卫读取实时 stdout；单机 agent slot上限保持1，没有绕过锁或在gate外跑全量race/proddiff。
+07:48:41进入队列；07:57:17为补F4停下仍在排队的第一次尝试（exit241，无阶段开始）；
+08:00:09在ae816cb07上恢复，保留原 **08:03:41（00:03:41UTC）** 绝对截止，暂停时间也计入900秒。
+日志目录：`.64:~/.cache/rt-tmp/review-c07-final-resumed-20261118`。
+最终 **08:03:41** 守卫按原截止停止排队，退出 **75**，末行：
+
+```text
+C07_QUEUE_LIMIT: original 900-second deadline reached without slot; stopping queued gate
+```
+
+没有取得slot，gofmt/vet/双tag/full-race/proddiff/difftest/fuzz等gate阶段全部未开始，
+不计GATE PASS，本轮无proddiff new/stale/self-check汇总。上文的格式/vet、相关包race/live、
+单独fuzz及CFG-07是确实执行完成的独立证据。完整门禁交协调者cf-gate，不重启或延长队列。
+最后仅补两条已通过count3的正控及本文档收尾，无产品代码增量；工作区交回时干净。

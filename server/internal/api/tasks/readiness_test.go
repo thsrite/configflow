@@ -85,6 +85,8 @@ func TestReviewUnknownExactKeyDoesNotBecomeUnavailable(t *testing.T) {
 	s.Post("/api/tasks/run", httpxtest.JSON(map[string]string{"key": key})).WantStatus(400)
 	s.Put("/api/tasks/interval", httpxtest.JSON(map[string]any{"key": key, "interval_seconds": 600})).WantStatus(400).
 		WantJSON(jsonx.Obj("success", false, "message", "这个任务的间隔不能在这里修改"))
+	s.Post("/api/tasks/run", httpxtest.JSON(map[string]string{"key": tasks.MetricsTaskKey})).WantStatus(503)
+	s.Put("/api/tasks/interval", httpxtest.JSON(map[string]any{"key": tasks.MetricsTaskKey, "interval_seconds": 600})).WantStatus(503)
 }
 
 func TestReviewRunFailuresUseCentralRedaction(t *testing.T) {

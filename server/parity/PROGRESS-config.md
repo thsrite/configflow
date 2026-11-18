@@ -563,7 +563,19 @@ Clarified in: [design/c06-http-settings.md](../design/c06-http-settings.md). HEA
 
 ## C07 — logs, stats, tasks, notifications, web listener
 
-**Status: `ported` — independent review pending; final gate queued out (exit75, no stage ran)** · prereqs: C06 · Go: internal/api/logs, api/stats, api/tasks, api/notifications, tasks, notifications, weblistener
+**Status: `verified` — independent C07 review complete; full integration gate remains due (900s queue limit, exit75, no stage ran)** · prereqs: C06 · Go: internal/api/logs, api/stats, api/tasks, api/notifications, tasks, notifications, weblistener
+
+Independent review (2026-11-18): [review-c07.md](review-c07.md), base go@d43cca6e4.
+Four findings (0 high / 1 medium / 3 low), all fixed: valid legacy decimal-counter
+separators, scoped test providers/runners, listener rollback error contract
+(bf8003685), and unknown exact task keys before readiness dispatch (ae816cb07).
+e32998805 adds a real Runtime shutdown between saved-state and active-listener
+commits. Full changed-package race/live, whole-tree format/vet, C37 manual-task
+three-round regressions, 60s counter fuzz (686577 execs), and independent CFG-07
+on both servers pass (Python/Go500/500, compared1/diffs0,155 comparator self-tests).
+No module-local open findings; existing O3-6c/shared and R14/A16/A17 owners remain
+explicit. Reviewer final gate stayed queued through the original900s deadline;
+no gate phase/proddiff was run. Coordinator cf-gate on the merged tree is still due.
 
 Scope: backend/routes/{logs,stats,tasks,notifications}.py, backend/notifications.py,
 backend/utils/{notification_store,web_listener}.py. All nine routes now done,
