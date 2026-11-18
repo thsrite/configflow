@@ -79,5 +79,14 @@
     "kind": "differential",
     "guard": "CONFIGFLOW_DIFF=1 in TestSlowProviderParity",
     "reason": "Live slow-provider concurrency, timing, persistence and HTTP outcome comparison."
+  },
+  {
+    "id": "A-DIFF-7",
+    "file": "server/internal/discovery/difftest/cfg06_test.go",
+    "function": "TestCFG06DuplicateTargetDifference",
+    "callee": "exec.Command",
+    "kind": "differential",
+    "guard": "CONFIGFLOW_DIFF=1; argv[0]=cp",
+    "reason": "Copy the same CFG-06 duplicate-target seed to separate Flask/Go data directories; live HTTP and durable state assertions remain active."
   }
 ]

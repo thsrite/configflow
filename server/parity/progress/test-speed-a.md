@@ -328,3 +328,8 @@ Actual audit correctly rejected batch-2's new constructor site in discovery's
 CFG-06 differential. The new site is `cp`, guarded by CONFIGFLOW_DIFF=1; its Python
 seed/server calls still use the existing registered helpers. Register the exact
 new file/function/callee, then resume targeted checks. No directory exemption.
+
+Registered `A-DIFF-7`, exactly
+`discovery/difftest/cfg06_test.go:TestCFG06DuplicateTargetDifference:exec.Command`:
+CONFIGFLOW_DIFF=1, executable cp, same synthetic seed copied to independent
+Flask/Go directories. A-group inventory is now ten precise source sites.
