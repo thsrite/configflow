@@ -641,7 +641,13 @@ func ApplyDNS(main, merged *yamlx.Node, coreVersion string) (*DNSReport, error) 
 	if _, err := yamlx.Encode(dns); err != nil {
 		return nil, err
 	}
-	policy := yamlx.Clone(written)
+	// Validate each isolated subtree before alias expansion. The containing DNS
+	// graph can pass its ratio budget while a selected child exceeds its own.
+	validatedPolicy, err := yamlx.Encode(written)
+	if err != nil {
+		return nil, err
+	}
+	policy := yamlx.Clone(validatedPolicy)
 	for _, item := range chosen {
 		if item.Source == "configflow" {
 			yamlx.Set(policy, item.Domain, yamlx.Str(address))
@@ -654,7 +660,11 @@ func ApplyDNS(main, merged *yamlx.Node, coreVersion string) (*DNSReport, error) 
 			yamlx.Set(owned, PolicyKey, policy)
 		}
 		if len(additions) > 0 {
-			yamlx.Set(owned, "fake-ip-filter", yamlx.Clone(yamlx.Seq(filterValue...)))
+			validatedFilter, err := yamlx.Encode(yamlx.Seq(filterValue...))
+			if err != nil {
+				return nil, err
+			}
+			yamlx.Set(owned, "fake-ip-filter", yamlx.Clone(validatedFilter))
 		}
 		yamlx.Set(main, "dns", owned)
 		yamlx.MaterializeAliases(main)

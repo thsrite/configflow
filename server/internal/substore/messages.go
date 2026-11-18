@@ -76,3 +76,5 @@ const (
 )
 
 const msgRuntimeDirectoryReadOnly = "目录位于只读文件系统"
+
+const msgResponseTooLarge = "订阅或 Sub-Store 响应内容超过 64 MiB 上限"

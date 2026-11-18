@@ -1937,3 +1937,18 @@ world 保留旧文件。原 archive 不改；独立 Python 参考绑定完整 ar
   提交缓存与所选节点的引用，导致后加的enabled字段未落入缓存。现在只映射native选择结果
   回原始对象，保留重复引用、原顺序与未知字段；原聚合缓存字段/副作用期待不改。
   专用身份/未知字段回归与原聚合HTTP用例修复前失败、修复后通过；六组最终HTTP全绿。
+
+## N8-9 subs/substore independent review: response and subtree budgets (2026-11-19)
+
+- Close the substore portion of O9-M2: the production subscription/Sub-Store HTTP client now
+  refuses wire bodies and every decoded gzip/deflate layer above **64 MiB**. This also bounds
+  intermediary decoded layers before another decoder consumes them. The failure is a
+  `ContentDecodingError` wrapping `substore.ErrResponseTooLarge`, with the Chinese diagnostic
+  `订阅或 Sub-Store 响应内容超过 64 MiB 上限`; it never returns a partial successful response.
+  Python's formerly unbounded fetch is intentionally restricted. Exact-limit bodies remain valid.
+- A parent graph passing yamlx's alias ratio budget does not establish that a copied child passes
+  the same policy in isolation. Provider proxy records, DNS policy and rebuilt fake-ip-filter now
+  validate the exact subtree before Clone. Excessive aliases return the shared `ErrAliasBudget`
+  rather than silently substituting null and reporting success. DNS rejection leaves its source
+  document unchanged. The shared alias budget and all ordinary generation expectations stay intact.
+- Evidence, failures before each fix and targeted checks: `review-n8-9-subs.md`.

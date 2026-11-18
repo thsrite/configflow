@@ -447,14 +447,18 @@ func (RequestsClient) Do(ctx context.Context, request *Request) (*Response, erro
 		return nil, classifyRequestError(err, viaProxy, connected)
 	}
 	defer resp.Body.Close()
-	data, err := io.ReadAll(resp.Body)
+	data, err := readResponseBody(ctx, resp.Body)
 	if canceled := ctx.Err(); canceled != nil {
 		return nil, canceled
 	}
 	if err != nil {
 		return nil, classifyBodyError(err)
 	}
-	if data, err = decodeContent(data, resp.Header.Values("Content-Encoding")); err != nil {
+	data, err = decodeContent(ctx, data, resp.Header.Values("Content-Encoding"))
+	if canceled := ctx.Err(); canceled != nil {
+		return nil, canceled
+	}
+	if err != nil {
 		return nil, err
 	}
 	_, reason, _ := strings.Cut(resp.Status, " ")
@@ -530,7 +534,7 @@ func classifyBodyError(err error) error {
 
 // decodeContent applies Content-Encoding like urllib3 (gzip and deflate;
 // other encodings are left as they are), last encoding first.
-func decodeContent(data []byte, header []string) ([]byte, error) {
+func decodeContent(ctx context.Context, data []byte, header []string) ([]byte, error) {
 	var encodings []string
 	for _, value := range header {
 		for _, part := range strings.Split(value, ",") {
@@ -540,7 +544,7 @@ func decodeContent(data []byte, header []string) ([]byte, error) {
 		}
 	}
 	for i := len(encodings) - 1; i >= 0; i-- {
-		var reader io.Reader
+		var reader io.ReadCloser
 		switch encodings[i] {
 		case "gzip", "x-gzip":
 			gz, err := gzip.NewReader(bytes.NewReader(data))
@@ -557,7 +561,8 @@ func decodeContent(data []byte, header []string) ([]byte, error) {
 		default:
 			continue
 		}
-		decoded, err := io.ReadAll(reader)
+		decoded, err := readResponseBody(ctx, reader)
+		reader.Close()
 		if err != nil {
 			return nil, &RequestError{Class: "ContentDecodingError", Message: err.Error(), Err: err}
 		}

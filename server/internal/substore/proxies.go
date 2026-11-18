@@ -56,7 +56,13 @@ func ParseProxyNodes(text string) ([]*yamlx.Node, error) {
 		if item == nil || item.Kind != yaml.MappingNode {
 			return nil, proxyShape(msgProxyObject, item)
 		}
-		node := yamlx.Clone(item)
+		// A batch budget does not prove that an isolated proxy can be safely
+		// expanded: earlier ordinary nodes can subsidize its alias ratio.
+		validated, err := yamlx.Encode(item)
+		if err != nil {
+			return nil, err
+		}
+		node := yamlx.Clone(validated)
 		convert.FixProxyNode(node)
 		out = append(out, node)
 	}
