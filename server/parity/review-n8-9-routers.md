@@ -148,3 +148,63 @@ TestZZReviewUnknownExtraEdit: modified/added unknown → model: incompatible JSO
 TestZZReviewSelectionListEdit: rename → "ros_policy_rule_sets":[],"ip_rule_sets":[]
 TestZZReviewUnrelatedMalformedLink: marker/plain ModeFromContext 和 LegacyGatewayAgentIDs → 主路由分流的拓扑身份必须是非空文本
 ```
+
+## 修复复核（提交 117cf39c0，2026-11-19）
+
+本轮只读代码，没有跑任何测试；作者说明负控已固化为永久 HTTP/单元回归，并在 .32 通过。
+按作者要求，前面 .64 上的负控不计入验收。
+
+| 项 | 结论 | 核对依据 |
+|---|---|---|
+| F1 | 已修复 | `RouterJobLock` 只做 try-lock 和 shutdown 检查（joblock.go）。身份和守卫校验集中在 `ValidateForDevice`（stored_model.go:157），调用点覆盖 management.open、Inspect（发布、pending、rule sync 都经由它）、rule_sync.go:346、GET routes、inspect handler、fixed-IP、IPv6 readiness/inspect/evidence、PD guard。错误统一为 ValidationError（HTTP 400）或各模块的 409，不再出现 500。`n89_boundary_test.go:86` 覆盖：坏 username 和坏选择列表下 probe/routes 返回 400，无关改名返回 400，修复后 PUT 返回 200，DELETE 返回 200。 |
+| F2 | 已修复 | `ValidateTopology` 在 marker 非 absent 时直接返回。`topologyRouter` 中非文本或 null 的链接视为无链接；只有链接确实命中 context 的 Agent、而路由器 id 不是非空文本时才返回 409。Context 和最新会话的错型身份清空后返回 409。sidecar 用同一口径重新生成（2553 行），R02 原输入总数不变。 |
+| F3 | 已修复 | Normalize 在 payload 没覆盖时读取原始 `existing.source` 的选择列表，错型就按 Python 的消息返回 400；payload 覆盖时允许保存。 |
+| F4 | 已修复 | 未声明的 Extra 改用 `Fields.Set`，已声明的 state/last_* 用 `SetJSON`，删除用 `Fields.Delete` 或 `Clear`。 |
+| F5 | 已修复并登记 | 请求中的 interval 恢复为严格 JSON 整数（`*int`），`"60"` 和 `60.0` 都返回 400，与 Python 一致；sidecar 删除了 interval 投影，直接用真实 Python。TLS/身份严格化已登记到 behaviour-changes。 |
+| F6 | 搁置 | legacy_rulefetch 将随 rules rebase 删除，届时复核新负控能否覆盖真实逐规则路径。 |
+| F7 | 已修复 | Session 只对最新非 abandoned 会话的错型 id 拒绝；installation proof 只接受非空字符串；pending、returnCleanup、IPv6 linked 用 `LinkID`（原 token 必须是文本，不再把数字转成文本）。 |
+| F8 | 已修复 | 拓扑错误的 class/code/status 统一为 RouterSplitError/ROUTER_SPLIT_INVALID/409；`n89_session_expectation.json` 已提交，并由 `n89_session_test.go` 绑定输入、原 Python 答案和 R5 答案；`_router_ids` 的修改已作为「空 ID 和数值相等不再制造关系」登记。 |
+| F9 | 已修复 | 守卫配置有 issue，且原始 enabled 为 true 或存在 *_state 时，`ValidateForDevice` 返回 `messageStoredGuardInvalid`，不会再回退成关闭并撤除守卫。 |
+
+### 剩余意见（都是低严重度，不阻塞 verified）
+
+1. 守卫校验写在 `ValidateForDevice` 里，所以错型的守卫配置也会挡住与守卫无关的设备操作：probe、GET routes、fixed-IP 写入、IPv6 readiness。Python 中这些操作不受影响。
+   如果希望范围更小，可以拆成 `ValidateIdentity`（所有设备操作都调）和 `ValidateGuards`（只在 Inspect/plan/publish 中调）。按现状保留也可以接受，因为方向是 fail-closed，并且错误消息会提示用户先修正设置。
+2. Normalize 的 F3 检查放在其他字段校验之前。存储列表错型、同时还有其他错误的请求，返回的第一条消息与 Python 的顺序不同；另外存储值为 `false/0/""` 时 Python 按空列表处理，Go 返回 400。两者都只出现在手改数据中。
+3. behaviour-changes 里还没写到这一点：请求中 `ip_rule_sets`/`ros_policy_rule_sets` 为 `false/0/""` 时现在返回 400（Python 把它们当作空列表）。建议在 N8-9 小节补一句。
+4. rules 接线：见下一节，已复核。
+
+## F6 接线复核（rebase 到 rules@9989da440，基于 117cf39c0 加未提交的 native 接线，只读）
+
+只读了代码，没有跑测试。数值引用作者在 .32 的结果：`TestN89SyncPipelineAllocations|TestR14DownloadsProductionParameters|TestR14SourceSelection`，11.170s 通过。
+
+- **legacy codec 已删除**：`legacy_rulefetch.go` 和 `syncTransportKey` 都不在了。`rule_sync_sources.go` 直接调用 typed 的
+  `rulefetch.SourceConfig`、`ValidateRemote`、`CacheReadPath`、`WriteCache`；Download 使用正式的 `DownloadRequest`，
+  5 s/10 s/30 s 的生产参数保持不变。routers 包里已经没有 jsonx 规则环境。
+- **每次操作只解码一次**：`withSyncEnvironment` 只读 `system_config` 和 `rule_library`，传输摘要在构建环境时计算一次；
+  Download 的缓存键只是 `transport + "\x00" + URL`。所有逐规则调用方都从同一个 ctx 取环境，包括 loadSyncSources 中的
+  syncCacheRead/syncValidate、sync() 第 409 行之后的 syncCacheWrite 循环，以及 Capture 中的 loadSyncSources。
+  `sync()` 里的 config 从读取开始到写缓存都没有重新赋值，所以环境不会和 config 对不上。
+- **缓存读取**：在 `CacheReadPath` 返回的 typed 路径上做有界只读读取（`syncMaxBytes` 加 UTF-8 校验），不迁移旧路径，也不改 mtime；
+  没有使用会迁移的 ReadCache，这个取舍正确。
+- **分配负控（解决了上一轮「负控空转」的问题）**：
+  - 新测试穿过真实的 `loadSyncSources` 逐规则路径。cache 模式把 1 MiB 无关数据放在 shared 和 config 里，用来抓逐规则重复读取
+    repo/shared。download 模式用 loopback HTTP，走真实的 `rulefetch.HTTPTransport`。
+  - 对照组通过 `noSyncEnvironment` 只在 Download 的 ctx 中隐藏环境。
+  - 数字吻合：native 下 16 条规则额外 256 KiB settings 增加约 3.7 MB，约等于构建一次环境；隐藏环境后增加 63 MB，约等于 16 次。
+    6 MiB 预算放在两者之间，多一次重建就会超限，判别力足够。
+  - loopback 服务端断言了 GET 和空 body，符合常设第二项的原始请求要求。
+
+### 剩余意见（低，不阻塞）
+
+1. cache 模式下 system_config 里没有放 padding。可能被逐规则重解的大成员只有 settings，mihomo 字符串在 encoding/json 中被跳过时几乎不分配，
+   所以这一模式只能证明「没有逐规则读 repo/shared」，证明不了「没有逐规则重建环境」；sync() 第 409 行之后的 `syncCacheWrite` 循环也不在测量范围里。
+   建议 cache 模式同样在 settings 中放 padding，或者对写缓存循环加一条同预算断言。
+2. `withSyncEnvironment` 仍然只要 ctx 里有环境就直接复用，不比较 config。目前所有调用方都是「一次操作一个 config」，所以不会出错；
+   建议在注释里写明这个前提，或者把 config 摘要存进环境，防止以后复用 ctx。
+3. 每次构建环境的分配约为 settings 大小的 14 倍（3.7 MB 对 256 KiB）。每次操作只有一次，所以不是问题，记下来供以后优化参考。
+
+## 最终结论
+
+F1–F9 都已关闭（F6 由本节关闭）。修复复核和接线复核中的剩余意见都是低严重度，不阻塞。
+本复核同意把 N8-9 routers/routersplit 标为 **verified**，前提是作者自己的收尾检查通过：cross-corpus、定向 HTTP、新 fuzz 60s、gofmt/vet，以及把 native 接线提交。

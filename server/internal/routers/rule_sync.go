@@ -266,6 +266,10 @@ func (s *RuleSyncService) sync(ctx context.Context, profile, id, trigger string)
 		if !jsonEqual(syncNull(r.State("ros_policy_state")), syncNull(base.Policy)) {
 			return routerError(messageSyncPolicyChanged)
 		}
+		ctx, err = withSyncEnvironment(ctx, config)
+		if err != nil {
+			return err
+		}
 		download := s.Download
 		if download == nil {
 			download = (&RuleSyncDownloads{}).Download
@@ -406,19 +410,8 @@ func (s *RuleSyncService) sync(ctx context.Context, profile, id, trigger string)
 		if err != nil {
 			return err
 		}
-		ctx, err = withSyncEnvironment(ctx, config)
-		if err != nil {
+		if err = writeSyncSources(ctx, sources, contents, config); err != nil {
 			return err
-		}
-		seen := map[string]bool{}
-		for _, source := range sources {
-			if source.Source.SourceType != "url" || seen[source.Source.ID] {
-				continue
-			}
-			seen[source.Source.ID] = true
-			if err = syncCacheWrite(ctx, source, contents[source.Item.ID], config); err != nil {
-				return err
-			}
 		}
 		receipt.Status = "synced"
 		receipt.Message = messageSyncDone

@@ -48,3 +48,13 @@
 - 首次完整跨包语料运行被排队rt的同步改写远端oracle/sidecar打断（ValueError→RouterSplitError及源码metadata漂移），不能计PASS。停止并发同步同项目；后续每条rt完成后才发下一条。
 - 最后完整routers/api race在eceb4e2e6树通过375.507s/28.791s；split只有旧completed=1断言失败，后来的真实Python独立session fixture已通过5.232s；本轮HR修改后会再跑相关定向race。
 - 协调者明确允许rebase到rules最终复核分支go-review-n8-9-rules@9989da440以接正式SourceConfig/CacheReadPath/Download。batch-8合入go后再rebase到go，重复patch会跳过；不复制owner文件/业务。生成只读入口等同PeekCacheWithFormat，不迁移cache；saveWorkspacePolicies继续不动。
+
+## 正式 rules 接线与最终复核
+
+- 已完成rebase到go-review-n8-9-rules@9989da440；本组重写后的两个提交为c8b4ab7cc、117cf39c0。只有behaviour-changes尾部冲突，保留双方登记。
+- 删除legacy_rulefetch.go和syncTransportKey；native SourceConfig/ValidateRemote/CacheReadPath/WriteCache/DownloadRequest接线完成。环境在sync已核对控制摘要和manifest之后建立，同一不可变config贯穿读取、逐项下载和最终写cache；设置摘要只算一次，每条下载只拼摘要+URL。ctx不得跨snapshot复用已写入注释。
+- 只读缓存使用typed CacheReadPath上的有界peek，不调用会迁移旧摘要的ReadCache；PeekCacheWithFormat尚未在依赖基点，叠batch-8时以owner正式只读入口为准。新增真实legacy缓存读取回归：内容完整相等、旧mtime和DB revision不变、native文件仍不存在，race通过1.587s。saveWorkspacePolicies自d4fab6441逐字未动，脚本核对为True。
+- 全管线分配：真实loadSyncSources+原生loopback下载和transport；cache 1/16规则额外1MiB shared/config的B/op为57365/56277、898508/882945；16规则下载多256KiB settings，native增3700694B，隐藏环境负控增63378357B，同一6MiB预算正控通过且负控明确超限。实际生产writeSyncSources循环也加预算：race16规则2118706/5813900B，增3695194B（<6MiB）。没有用只测helper的基准冒充完整管线。
+- 新peek测试首次把文档网段的IPCount误期望为1，属于新增测试错误；改为断言实际读取的原始内容和无副作用，不改变原冻结分类期待。最初缺legacy子目录的fixture也已补齐。
+- Opus追加复核F1–F9全部关闭，同意verified，条件为作者收尾检查通过；只读复核未重复任何测试。作者随后仅补实际写缓存预算、环境scope注释和readonly回归。余下：最终定向race/HTTP、跨包语料、fuzz60s、vet/gofmt、最新go重base状态与最终报告。
+- 数量澄清：8323是随机corpus6000+edge2323；此外recorded2595，routersplit三份共有10918条自身调用（原gz合计13641，含ippresence的2723行）。不减分母。R01固定10000行，725行独立native策略期望。

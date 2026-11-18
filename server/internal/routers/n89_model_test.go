@@ -159,57 +159,6 @@ func FuzzN89StoredRouter(f *testing.F) {
 	})
 }
 
-func BenchmarkSyncEnvironment(b *testing.B) {
-	for _, n := range []int{1, 16, 64} {
-		for _, padding := range []int{0, 1 << 20} {
-			b.Run(fmt.Sprintf("rules%d/padding%d", n, padding), func(b *testing.B) {
-				raw, _ := json.Marshal(map[string]any{"mihomo": map[string]string{"custom_config": strings.Repeat("x", padding)}, "system_config": map[string]string{"rule_fetch_proxy": ""}, "rule_library": []any{}})
-				ctx, err := withSyncEnvironment(context.Background(), raw)
-				if err != nil {
-					b.Fatal(err)
-				}
-				b.ReportAllocs()
-				b.ResetTimer()
-				for b.Loop() {
-					for i := 0; i < n; i++ {
-						if _, err = syncEnvironmentConfig(ctx, raw); err != nil {
-							b.Fatal(err)
-						}
-						_ = syncTransportKey(ctx, "https://example.com/rule")
-					}
-				}
-			})
-		}
-	}
-}
-func TestN89SyncEnvironmentAllocations(t *testing.T) {
-	measure := func(n, padding int) int64 {
-		raw, _ := json.Marshal(map[string]any{"mihomo": map[string]string{"custom_config": strings.Repeat("x", padding)}})
-		ctx, err := withSyncEnvironment(t.Context(), raw)
-		if err != nil {
-			t.Fatal(err)
-		}
-		result := testing.Benchmark(func(b *testing.B) {
-			for b.Loop() {
-				for i := 0; i < n; i++ {
-					if _, err := syncEnvironmentConfig(ctx, raw); err != nil {
-						b.Fatal(err)
-					}
-					_ = syncTransportKey(ctx, "https://example.com/rule")
-				}
-			}
-		})
-		t.Logf("rules=%d padding=%d B/op=%d allocs/op=%d", n, padding, result.AllocedBytesPerOp(), result.AllocsPerOp())
-		return result.AllocedBytesPerOp()
-	}
-	for _, n := range []int{1, 64} {
-		small, large := measure(n, 0), measure(n, 1<<20)
-		if large-small > 32<<10 {
-			t.Fatalf("full config decoded per rule: delta=%d", large-small)
-		}
-	}
-}
-
 func TestN89UnknownEditsAndStateRemoval(t *testing.T) {
 	source := []byte(`{"id":"r","future":1,"last_probe":{"ok":true},"opaque":9223372036854775808123}`)
 	for _, tc := range []struct {

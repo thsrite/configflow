@@ -1,7 +1,7 @@
 package routers
 
-// Legacy repository/rulefetch/task boundaries are isolated here; the sync
-// engine holds native typed records and JSON, not dynamic document values.
+// Rule sync downloads and snapshot orchestration use the typed rule owner.
+// Device writes remain in the sync service and guarded stores.
 import (
 	"context"
 	"encoding/json"
@@ -47,7 +47,8 @@ func (d *RuleSyncDownloads) Download(ctx context.Context, raw, config json.RawMe
 	if err := json.Unmarshal(raw, &source); err != nil {
 		return "", err
 	}
-	key := syncTransportKey(ctx, source.URL)
+	environment := ctx.Value(syncEnvironmentKey{}).(*syncEnvironment)
+	key := environment.transport + "\x00" + source.URL
 	if value, ok := d.items[key]; ok {
 		var src syncSource
 		src.Library.Raw = raw
@@ -66,7 +67,7 @@ func (d *RuleSyncDownloads) Download(ctx context.Context, raw, config json.RawMe
 	}
 	work, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	response, err := client.RequestRule(work, source.URL, rulefetch.Request{Config: cfg, Stream: true, ConnectTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second})
+	response, err := client.Download(work, source.URL, rulefetch.DownloadRequest{Config: cfg, Stream: true, ConnectTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second})
 	// Only a body that outgrows the size or total time is the permanent limit
 	// error (paused). The budget running out while connecting or waiting for
 	// the response, including the client's retries, is a transient failure
