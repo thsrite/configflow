@@ -61,7 +61,7 @@ func cacheReadPath(ctx context.Context, rule model.RuleConfig, library func() []
 	// unrelated node/subscription for each ruleset miss.
 	var result string
 	err = r.View(ctx, func(document *model.Document) error {
-		result = rules.CacheReadPath(rule, library(), document.Shared.RuleLibrary, root)
+		result = rules.StoredCacheReadPath(rule, library(), document, root)
 		return nil
 	})
 	return result, err
@@ -370,21 +370,14 @@ func migrateCache(ctx context.Context, rule model.RuleConfig, data []byte, oldPa
 	if err != nil {
 		return err
 	}
-	err = r.UpdateShared(ctx, func(held context.Context, shared *model.Shared) error {
+	err = r.Update(ctx, func(held context.Context, document *model.Document) error {
 		if err := held.Err(); err != nil {
 			return err
 		}
-		if rules.CacheReadPath(rule, nil, shared.RuleLibrary, root) != oldPath {
+		if rules.StoredCacheReadPath(rule, nil, document, root) != oldPath {
 			return errInlineCacheOnly
 		}
-		found := false
-		for _, item := range shared.RuleLibrary {
-			if item.ID == rule.ID {
-				found = rules.SameSourceDeclaration(rule, rules.LibraryRule(item))
-				break
-			}
-		}
-		if !found {
+		if !rules.OwnsCacheSource(rule, document) {
 			return errInlineCacheOnly
 		}
 		if err := held.Err(); err != nil {

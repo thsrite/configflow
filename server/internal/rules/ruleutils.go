@@ -83,7 +83,68 @@ func fileExists(path string) bool {
 // legacy names against (nil: use stored); stored is
 // the current shared rule_library from the repository.
 // An empty result means a receipt or path boundary forbids reading the cache.
-func CacheReadPath(rule model.RuleConfig, library, stored []model.RuleLibraryItem, rulesDir string) (selected string) {
+func CacheReadPath(rule model.RuleConfig, library, stored []model.RuleLibraryItem, rulesDir string) string {
+	return cacheReadPath(rule, library, stored, rulesDir, func() bool { return cacheSourceOwned(rule, stored, nil) })
+}
+
+// StoredCacheReadPath recognizes legacy cache ownership from the current stored
+// library and profile-local URL declarations, never a caller's proposed snapshot.
+func StoredCacheReadPath(rule model.RuleConfig, library []model.RuleLibraryItem, document *model.Document, rulesDir string) string {
+	if document == nil {
+		return CacheReadPath(rule, library, nil, rulesDir)
+	}
+	return cacheReadPath(rule, library, document.Shared.RuleLibrary, rulesDir, func() bool { return OwnsCacheSource(rule, document) })
+}
+
+// OwnsCacheSource reports whether the current stored document owns the exact
+// source declaration. It does not confer permission to migrate or write a cache.
+func OwnsCacheSource(rule model.RuleConfig, document *model.Document) bool {
+	return document != nil && cacheSourceOwned(rule, document.Shared.RuleLibrary, document.Profiles)
+}
+
+func cacheSourceOwned(rule model.RuleConfig, stored []model.RuleLibraryItem, profiles []*model.Profile) bool {
+	for _, item := range stored {
+		if item.ID == rule.ID && originalMemberEqual(LibraryRule(item), rule, "id") {
+			if SameSourceDeclaration(LibraryRule(item), rule) {
+				return true
+			}
+			break
+		}
+	}
+	for _, profile := range profiles {
+		if profile == nil {
+			continue
+		}
+		records := profile.RuleConfigs
+		if len(records) == 0 {
+			records = nil
+			// Old profiles can store URL rules under either legacy collection. Decode
+			// only those members, once per legacy miss, not the complete configuration.
+			for _, name := range []string{"rules", "rule_sets"} {
+				if raw, ok := profile.Fields.Get(name); ok {
+					var entries []model.RuleConfig
+					if json.Unmarshal(raw, &entries) == nil {
+						records = append(records, entries...)
+					}
+				}
+			}
+		}
+		for _, item := range records {
+			if item.LibraryRuleID != "" || (item.ItemType != "" && item.ItemType != "ruleset") || valueOr(item.SourceType, "url") != "url" || valueOr(item.URL, "") == "" {
+				continue
+			}
+			if !originalMemberEqual(item, rule, "id") || (item.ID == "" && !originalMemberEqual(item, rule, "name")) {
+				continue
+			}
+			if SameSourceDeclaration(item, rule) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func cacheReadPath(rule model.RuleConfig, library, stored []model.RuleLibraryItem, rulesDir string, owns func() bool) (selected string) {
 	defer func() {
 		// Names are sanitized/hashes, but an existing cache or namespace can
 		// still be a symlink. Never lend bytes from outside the rules root to
@@ -119,18 +180,10 @@ func CacheReadPath(rule model.RuleConfig, library, stored []model.RuleLibraryIte
 	if library == nil {
 		library = stored
 	}
-	// Migrate pre-validation identity caches only for the stored declaration;
-	// proposed edits and stale publication snapshots cannot claim these bytes.
-	var current *model.RuleLibraryItem
-	for i := range stored {
-		if stored[i].ID == rule.ID && originalMemberEqual(LibraryRule(stored[i]), rule, "id") {
-			current = &stored[i]
-			break
-		}
-	}
-	same := func() bool { return SameSourceDeclaration(LibraryRule(*current), rule) }
-
-	if current != nil && same() {
+	// Legacy identity/source caches require a current stored owner. A
+	// captured snapshot or a proposed edit is not evidence of ownership.
+	claimed := owns()
+	if claimed {
 		// This fixed-schema digest is read-only migration metadata, never a
 		// writer's filename. Do not attribute an old declaration to a new one.
 		if oldName, ok := LegacyCacheFilename(rule); ok {
@@ -154,7 +207,7 @@ func CacheReadPath(rule model.RuleConfig, library, stored []model.RuleLibraryIte
 			return old
 		}
 	}
-	if valueOr(rule.SourceType, "url") == "url" && valueOr(rule.URL, "") != "" && (current == nil || !same()) {
+	if valueOr(rule.SourceType, "url") == "url" && valueOr(rule.URL, "") != "" && !claimed {
 		return path
 	}
 	name := rule.Name

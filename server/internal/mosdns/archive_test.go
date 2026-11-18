@@ -147,6 +147,8 @@ func withFetch(t *testing.T, fn func(context.Context, string, *jsonx.Object, str
 
 func TestArchiveMatchesRecordedPythonBuilds(t *testing.T) {
 	rows := loadRows(t, "testdata/c28_recorded.jsonl.gz")
+	references := archiveCacheReferences(t, rows)
+	usedReferences := 0
 	built, failures := 0, 0
 	for i, row := range rows {
 		// The cancellation test races its downloads (only the first ones are
@@ -160,6 +162,10 @@ func TestArchiveMatchesRecordedPythonBuilds(t *testing.T) {
 			continue
 		}
 		name := row.GetString("test") + " #" + jsonx.Str(i)
+		reference, approved := references[i]
+		if approved {
+			usedReferences++
+		}
 		args := row.GetList("args")
 		ctx, r := testRepo(t, world)
 		limits := row.GetList("limits")
@@ -193,6 +199,16 @@ func TestArchiveMatchesRecordedPythonBuilds(t *testing.T) {
 		fetchRemoteFn = saved
 		MaxFiles, MaxTotalBytes = savedFiles, savedTotal
 		built++
+		if reference.Kind == "unowned_refusal" {
+			var refusal *ArchiveError
+			if !errors.As(err, &refusal) || err.Error() != reference.Error || len(data) != 0 {
+				t.Errorf("%s: exact unowned source refusal: %v", name, err)
+			}
+			if !equalMaps(ruleCacheFiles(r), archiveExpectedCaches(t, row, reference)) {
+				t.Errorf("%s: unowned source changed cache files", name)
+			}
+			continue
+		}
 		if want := row.GetObject("err"); want != nil {
 			var archive *ArchiveError
 			if !errors.As(err, &archive) || err.Error() != want.GetString("message") {
@@ -220,15 +236,14 @@ func TestArchiveMatchesRecordedPythonBuilds(t *testing.T) {
 			t.Errorf("%s: entries\n  got  %.500q\n  want %.500q", name, got, want)
 			continue
 		}
-		after := map[string]string{}
-		for path, value := range row.GetObject("after").All() {
-			content, _ := hexBytes(value)
-			after[path] = string(content)
-		}
+		after := archiveExpectedCaches(t, row, reference)
 		if got := ruleCacheFiles(r); !equalMaps(got, after) {
 			failures++
 			t.Errorf("%s: rule caches after\n  got  %v\n  want %v", name, keys(got), keys(after))
 		}
+	}
+	if usedReferences != len(references) {
+		t.Fatal("archive D2 references were not all exercised")
 	}
 	if built == 0 {
 		t.Fatal("no recorded builds")

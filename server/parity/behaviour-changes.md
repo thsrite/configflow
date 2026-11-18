@@ -1664,3 +1664,16 @@ Flask 差分只为安装脚本 JSON 的 `registration_token` 与 Docker 的
 Content-Length、gzip/deflate 压缩大小及调用者的 streaming 选择均不能绕过；更小的
 部署文件限制仍生效。超限关闭响应，返回 typed size refusal，不把部分内容写进缓存，
 保留上一份已验证内容。O12 发布说明需列出这个上限；Sub-Store 专属路径另由 subs 组处理。
+
+### batch-8 D2 — 历史 profile-local URL 缓存归属
+
+当前 SQLite 中已保存的 profile-local URL 来源也可认领与其声明完全一致的旧规则缓存，
+包括旧 rule_sets 存储形式。归属只来自当前 stored document，不能来自 captured args、
+拟议编辑、已删除来源、未解析的 library 引用或不同 ID 的同名替代来源。纯生成走 Peek，
+不迁移；正常 reader 在带来源 ctx 的写事务内再次核对归属，保存新文件并保留旧文件及
+mtime，不改 DB/revision。O12 发布说明应与既有规则缓存迁移说明一起列出。
+
+C28 的两个原冻结 world 不含 captured 来源的当前声明，按协调者裁定精确断言离线
+拒绝（Timeout）、无 ZIP 和无缓存改动；另七条 D2 写入/迁移仅改变原生缓存地址并按原
+world 保留旧文件。原 archive 不改；独立 Python 参考绑定完整 archive 和每条原行摘要，
+正常 ZIP 的完整内容和全部 cache bytes 仍比较，没有通配 baseline。
