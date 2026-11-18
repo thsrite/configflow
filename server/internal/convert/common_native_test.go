@@ -130,7 +130,7 @@ func TestCommonTypedDefaultsAndMalformedStorage(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{"itemType":"rule","rule_type":"MATCH","value":5,"policy":null}`), &malformed); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := RuleComment(malformed), "# "+AfterMatchNote+": MATCH,,"; got != want {
+	if got, want := RuleComment(malformed), "# "+AfterMatchNote+": MATCH,5,"; got != want {
 		t.Fatalf("got %q want %q", got, want)
 	}
 	for _, raw := range []string{`null`, `1`, `false`, `[]`, `"bad"`} {

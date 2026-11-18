@@ -61,17 +61,29 @@ func TestMihomoNumericServer(t *testing.T) {
 }
 
 func TestMihomoQuotedPort(t *testing.T) {
-	var node model.Node
-	if err := json.Unmarshal([]byte(`{"name":"N","type":"http","server":"example.com","port":"443"}`), &node); err != nil || node.Port != 443 || model.IssueUnder(model.Issues(node), "port") {
-		t.Fatalf("port lost during typed decode: %d %v", node.Port, err)
-	}
-	proxy, err := NodeProxy(context.Background(), node, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	port := yamlx.Get(proxy, "port")
-	if port == nil || port.Value != "443" || port.ShortTag() != "!!str" {
-		t.Fatalf("original Mihomo port spelling changed: %+v", port)
+	for _, literal := range []string{`"443"`, `"00443"`} {
+		t.Run(literal, func(t *testing.T) {
+			var node model.Node
+			if err := json.Unmarshal([]byte(`{"name":"N","type":"http","server":"example.com","port":`+literal+`}`), &node); err != nil || node.Port != 443 || model.IssueUnder(model.Issues(node), "port") {
+				t.Fatalf("port lost during typed decode: %d %v", node.Port, err)
+			}
+			before, err := model.Marshal(node)
+			if err != nil {
+				t.Fatal(err)
+			}
+			proxy, err := NodeProxy(t.Context(), node, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			port := yamlx.Get(proxy, "port")
+			if port == nil || port.Value != "443" || port.ShortTag() != "!!int" {
+				t.Fatalf("quoted Mihomo port was not normalized: %+v", port)
+			}
+			after, err := model.Marshal(node)
+			if err != nil || !bytes.Equal(before, after) {
+				t.Fatalf("generation changed stored port: %s %v", after, err)
+			}
+		})
 	}
 }
 
@@ -295,9 +307,9 @@ func nativePortReplay(t *testing.T, row corpusRow, result any, err error) bool {
 
 func TestNativeNodeR5AndParamsValidation(t *testing.T) {
 	for _, tt := range []struct{ field, raw, want string }{
-		{"name", "5", `{"name":"","type":"http","server":"example.com","port":80}`},
+		{"name", "5", `{"name":"5","type":"http","server":"example.com","port":80}`},
 		{"server", "false", `{"name":"outer","type":"http","server":"","port":80}`},
-		{"port", `"80"`, `{"name":"outer","type":"http","server":"example.com","port":0}`},
+		{"port", `"80"`, `{"name":"outer","type":"http","server":"example.com","port":80}`},
 		{"proxy_string", "[]", `{"name":"outer","type":"http","server":"example.com","port":80}`},
 		{"params", "null", `{"name":"outer","type":"http","server":"example.com","port":80}`},
 	} {

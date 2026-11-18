@@ -78,6 +78,7 @@ func surgeGroupSources(config *jsonx.Object, group any, ownOrder bool) (manual, 
 }
 
 func generateSurge(ctx context.Context, config *jsonx.Object, baseURL string) string {
+	must(validateGenerationRules(config))
 	must(ValidateDialers(config))
 	must(RejectSurgeDialers(ctx, config, "Surge", clientConverter()))
 	splitRulesAndRulesets(config)

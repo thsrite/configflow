@@ -1248,8 +1248,9 @@ Provider snapshot 调用 typed `ValidateTopology` 时，非对象的 Provider de
 - 原始字节、未知字段、未修改成员继续按 R2 保留；没有把这些兼容读取写回存储。
   JSON 请求绑定仍遵守各路由自己的契约，后续业务检查不会因标量兼容而被跳过。
 - 开放的 Mihomo Params / proxy_string YAML 继续保留原值和 tag，不强制把密码数字转字符串。
-  数字 password 两条来源仍输出 `password: 123`；存储的引号 port 原样生成，引号未被删掉，
-  但 typed Node.Port 正确为 443。原冻结字节门的 quoted-port 类型边界仍单独用 native 回归。
+  数字 password 两条来源仍输出 `password: 123`；存储的引号 port 保留原始存储字节，
+  生成时按整数输出（下述 batch-6 修复更正了最初保留引号的输出）。
+  原冻结字节门的 quoted-port 类型边界仍单独用 native 回归。
 
 回归：`model.TestGenericNumericTextAndQuotedIntegers`、
 `model.TestScalarTextBoundariesAndPreservation`、`model.TestNodeNumericText`、
@@ -1297,3 +1298,31 @@ GitHub 代理域名的数值 `5` 现在读成 `"5"`，不再忽略，因此启�
 改用共享 NodeDialer；checkDialers 直接调用 ConfigDialers。通用标量和业务校验本身不变。
 reference_native_scalars 的 schema str 明确接受严格整数字符串版本号；subscription zero
 由新 resolver 报 ProfileInUse「引用的共享资源不存在：subscriptions/0」，保留完整 profile 上下文。
+
+
+### batch-6 R5 全包断言收口（协调者裁定）
+
+- 节点 Name 不属于严格身份字段：`name:5` 读为 `"5"`，节点输出和转换日志都保留这个名称；
+  profile name `7` 也读为 `"7"`，不再出现 model 类型诊断。更新旧的空串断言，未改 codec。
+- Node.Type 也是严格身份字段：实际走存储节点转换时拒绝数字等非字符串，消息如
+  `节点 type 必须是字符串，当前值：5`。proxy_string 已提供节点时不读取存储 Type，
+  保持原覆盖路径；Node.Name 的数字文本兼容不变。
+- RuleConfig 的 `value` 和 `rule_type` 是严格身份字段。Mihomo、Surge、Loon 的生成入口
+  检查保留的原始 JSON，数字、bool、null、容器不能被 R5 兼容或回退悄悄放行；
+  诊断如 `规则 value 必须是字符串，当前值：5`。底层 RuleComment 仍是纯格式化：
+  独立调用时会把已经解码的 value `"5"` 格式化成 `MATCH,5,`，不负责业务拒绝。
+- 存储节点 port `"80"`、`"00443"` 分别生成整数 `80`、`443`，修复 typed 读取后又复用原始
+  字符串 tag 的遗漏；生成不修改存储，引号原值依旧按 R2 保留。已有数值 `80.0` 保留其合法
+  数值写法，Mihomo 开放 Params 和 proxy_string 的原始值与 tag 不受此修改影响。
+- EasyTier MTU `"1500"` 按共享 Int 规则有效，`"1500.0"` 仍无效；通知 occurrences `"7"`
+  有效读取为 7，改无关字段后仍原样存储 `"7"`。bool 和非整数仍保持原拒绝/回退规则。
+- URL `0` 按共享 String 规则读为 `"0"`，规则格式为 text，文件为 `Rules.list`，不再报告
+  URL 类型错误；bool、数组、对象仍按原 URL 类型错误拒绝。
+- `_revision:"60"` 的 typed 读取为 60、无类型诊断，修复事务将 revision 增加为 61；
+  这不取消 N8-5 的独立原始写入校验，尚未修复的字符串 revision 和数字 profile name
+  仍会阻止无关写入。保留其错误断言，继续覆盖“读兼容、写验证、原样往返、修复”四个边界。
+
+回归：`convert.TestBatch6R5GenerationRejectsRuleIdentityTypes`、
+`convert.TestBatch6R5RuleIdentityValidationPreservesStorage`、`convert.TestBatch6R5StoredNodeType`、
+`convert.TestBatch6R5UnusedStoredNodeType`、`convert.TestMihomoQuotedPort`、
+`convert.TestTypedEasyTierQuotedMTU`，以及本轮更新的 Common、Node、日志、URL、通知、repo 旧断言。

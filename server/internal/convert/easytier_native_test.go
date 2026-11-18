@@ -18,7 +18,7 @@ func TestTypedEasyTierValidation(t *testing.T) {
 		{`{"keepalive":1}`, msgETKeepObject},
 		{`{"options":false}`, msgETOptionsObject},
 		{`{"options":{"udp":"yes"}}`, "udp"},
-		{`{"options":{"mtu":"1500"}}`, "mtu"},
+		{`{"options":{"mtu":"1500.0"}}`, "mtu"},
 		{`{"options":{"peers":false}}`, "peers"},
 		{`{"routes":[1]}`, msgETRoutes},
 	} {
@@ -41,6 +41,25 @@ func TestTypedEasyTierValidation(t *testing.T) {
 	settings, err := NormalizeEasyTier(&input)
 	if err != nil || settings.Options.MTU == nil || *settings.Options.MTU != 1500 || *settings.Options.RoutingMark != 60 || *settings.Keepalive.Interval != 60 {
 		t.Fatalf("R8: %#v %v", settings, err)
+	}
+}
+
+func TestTypedEasyTierQuotedMTU(t *testing.T) {
+	var input model.EasyTierSettings
+	if err := json.Unmarshal([]byte(`{"options":{"mtu":"1500"}}`), &input); err != nil {
+		t.Fatal(err)
+	}
+	settings, err := NormalizeEasyTier(&input)
+	if err != nil || settings.Options.MTU == nil || *settings.Options.MTU != 1500 {
+		t.Fatalf("quoted MTU: %#v %v", settings, err)
+	}
+	normalized, err := easyTierSettingsNode(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mtu := yamlx.Get(yamlx.Get(normalized, "options"), "mtu")
+	if mtu == nil || mtu.ShortTag() != "!!int" || mtu.Value != "1500" {
+		t.Fatalf("MTU was not normalized: %+v", mtu)
 	}
 }
 

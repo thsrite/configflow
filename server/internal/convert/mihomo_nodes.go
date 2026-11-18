@@ -423,6 +423,23 @@ func NodeProxy(ctx context.Context, node model.Node, converter NodeConverter) (*
 		}
 		return proxy, nil
 	}
+	// A proxy_string owns its protocol type. Only the stored-node path uses
+	// Node.Type, whose original JSON must remain a string discriminator.
+	data, err := model.Marshal(node)
+	if err != nil {
+		return nil, err
+	}
+	var metadata struct {
+		Type json.RawMessage `json:"type"`
+	}
+	if err := json.Unmarshal(data, &metadata); err != nil {
+		return nil, err
+	}
+	if metadata.Type != nil {
+		if err := identityString(metadata.Type, msgNodeTypeField); err != nil {
+			return nil, err
+		}
+	}
 	kind := cases.Lower(language.Und).String(node.Type)
 	if kind == "" {
 		return nil, nil
@@ -436,17 +453,14 @@ func NodeProxy(ctx context.Context, node model.Node, converter NodeConverter) (*
 	}
 	// R2 retains valid integer notation from storage (e.g. 443.0). An R5
 	// invalid field uses its typed zero, never the preserved invalid bytes.
+	// Quoted integers are accepted on read but generated as integer scalars.
 	port := yamlx.Int(int64(node.Port))
 	if !model.IssueUnder(model.Issues(node), "port") {
-		data, err := model.Marshal(node)
-		if err != nil {
-			return nil, err
-		}
 		record, err := yamlx.FromJSON(data)
 		if err != nil {
 			return nil, err
 		}
-		if original := yamlx.Get(record, "port"); original != nil && original.ShortTag() != "!!null" {
+		if original := yamlx.Get(record, "port"); original != nil && (original.ShortTag() == "!!int" || original.ShortTag() == "!!float") {
 			port = original
 		}
 	}

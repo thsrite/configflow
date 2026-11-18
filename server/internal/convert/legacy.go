@@ -431,6 +431,15 @@ func shapeConfigFromLegacy(value *jsonx.Object) (*model.Config, error) {
 	return configFromLegacy(value)
 }
 
+// validateGenerationRules only transcodes the legacy generation boundary.
+func validateGenerationRules(value *jsonx.Object) error {
+	profile, err := decodeLegacy[model.Profile](jsonx.Obj("rule_configs", value.Value("rule_configs")))
+	if err != nil {
+		return err
+	}
+	return validateRuleIdentities(profile.RuleConfigs)
+}
+
 // ValidateShapes transcodes the old resolved view to ConfigShapes.
 func ValidateShapes(value *jsonx.Object, requireIDs bool) error {
 	config, err := shapeConfigFromLegacy(value)

@@ -820,7 +820,7 @@ func TestConversionLogLines(t *testing.T) {
 	ConvertNodeToMihomo(ctx, jsonx.Obj("proxy_string", "ss://a@proxy.example:1"), &fakeConverter{})
 	want := []string{
 		" - backend.converters.mihomo - INFO - 节点 '节点' 为 JSON/YAML 格式，本地解析",
-		" - backend.converters.mihomo - INFO - 节点 '' 为 URI/base64 格式，使用 Sub-Store 的转换结果",
+		" - backend.converters.mihomo - INFO - 节点 '5' 为 URI/base64 格式，使用 Sub-Store 的转换结果",
 		" - backend.converters.mihomo - INFO - 节点 '' 为 URI/base64 格式，使用 Sub-Store 的转换结果",
 	}
 	lines := strings.Split(strings.TrimRight(buffer.String(), "\n"), "\n")

@@ -62,7 +62,7 @@ func TestMihomoReviewEmptyLibraryURLUsesRuleFormat(t *testing.T) {
 				"rule_configs", []any{jsonx.Obj("id", "r", "name", "Rules", "itemType", "ruleset", "library_rule_id", "lib", "url", "/fallback.yaml", "policy", "DIRECT")},
 			)
 			doc, err := convert.GenerateMihomoDocument(context.Background(), config, convert.GenerateOptions{SkipProviderPreflight: true})
-			if test.url != nil && test.name != "empty" {
+			if test.url != nil && test.name != "empty" && test.name != "zero" {
 				if !errors.Is(err, rulesetfmt.ErrURLType) {
 					t.Fatalf("want native URL type validation, got %v", err)
 				}
@@ -72,11 +72,16 @@ func TestMihomoReviewEmptyLibraryURLUsesRuleFormat(t *testing.T) {
 				t.Fatal(err)
 			}
 			provider := doc.GetObject("rule-providers").GetObject("Rules")
-			if provider.GetString("format") != "yaml" || provider.GetString("path") != "./ruleset/Rules.yaml" {
+			format, extension := "yaml", "yaml"
+			if test.name == "zero" {
+				// Numeric URL reads as "0", so it no longer uses the YAML fallback.
+				format, extension = "text", "list"
+			}
+			if provider.GetString("format") != format || provider.GetString("path") != "./ruleset/Rules."+extension {
 				t.Fatalf("wrong fallback format: %v", provider)
 			}
 			downloads, err := convert.GetMihomoRulesetDownloads(context.Background(), config, "")
-			if err != nil || len(downloads) != 1 || downloads[0].LocalPath != "./ruleset/Rules.yaml" {
+			if err != nil || len(downloads) != 1 || downloads[0].LocalPath != "./ruleset/Rules."+extension {
 				t.Fatalf("wrong fallback download: %+v, %v", downloads, err)
 			}
 		})

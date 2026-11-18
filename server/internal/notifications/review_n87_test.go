@@ -88,7 +88,19 @@ func TestN87ReviewOccurrenceR5AndUntouchedNotation(t *testing.T) {
 			}
 			if err := UpdateItems(t.Context(), dir, func(items *Items) error {
 				item, _ := items.Get("n")
-				if value != `60.0` && item.Occurrences != nil {
+				if value == `60.0` || value == `"7"` {
+					want := "60"
+					if value == `"7"` {
+						want = "7"
+					}
+					if item.Occurrences == nil {
+						t.Fatal("compatible occurrence lost")
+					}
+					got, err := item.Occurrences.MarshalJSON()
+					if err != nil || string(got) != want {
+						t.Fatalf("compatible occurrence: %s %v", got, err)
+					}
+				} else if item.Occurrences != nil {
 					t.Fatal("invalid occurrence bypassed R5")
 				}
 				item.Stale = new(true)

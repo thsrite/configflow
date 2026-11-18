@@ -95,6 +95,29 @@ func RulesForOutput(config *model.Config) []model.RuleConfig {
 	return result
 }
 
+// validateRuleIdentities checks retained types before configuration generation.
+// Number-to-text compatibility is for scalar data, not rule identity fields.
+func validateRuleIdentities(rules []model.RuleConfig) error {
+	for _, rule := range rules {
+		data, err := model.Marshal(rule)
+		if err != nil {
+			return err
+		}
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(data, &fields); err != nil {
+			return err
+		}
+		for _, field := range []struct{ key, label string }{{"rule_type", msgRuleTypeField}, {"value", msgRuleValueField}} {
+			if raw, present := fields[field.key]; present {
+				if err := identityString(raw, field.label); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
+
 // RuleComment renders the explanatory comment for a rule after MATCH.
 func RuleComment(rule model.RuleConfig) string {
 	var line string

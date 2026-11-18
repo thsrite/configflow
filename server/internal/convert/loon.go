@@ -221,6 +221,7 @@ func GenerateLoonConfig(ctx context.Context, config *jsonx.Object, baseURL strin
 }
 
 func generateLoon(ctx context.Context, config *jsonx.Object, baseURL string) string {
+	must(validateGenerationRules(config))
 	must(ValidateDialers(config))
 	must(RejectSurgeDialers(ctx, config, "Loon", clientConverter()))
 
@@ -473,6 +474,7 @@ func generateLoon(ctx context.Context, config *jsonx.Object, baseURL string) str
 // [Rule] and [Remote Rule] sections (with their header lines).
 func BuildLoonRules(config *jsonx.Object, effectiveBaseURL string) (ruleLines, remoteRules []string, err error) {
 	defer catch(&err)
+	must(validateGenerationRules(config))
 	ruleLines, remoteRules = buildLoonRules(config, effectiveBaseURL)
 	return
 }

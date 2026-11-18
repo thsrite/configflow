@@ -409,6 +409,7 @@ func generateMihomoDocument(ctx context.Context, logical *jsonx.Object, opts Gen
 	env := CurrentMihomoEnv()
 
 	// lower_proxy_chains: validate_dialers (this package) then the lowering.
+	must(validateGenerationRules(logical))
 	must(ValidateDialers(logical))
 	config, lowerErr := subs.LowerProxyChains(logical)
 	must(subsError(lowerErr))
