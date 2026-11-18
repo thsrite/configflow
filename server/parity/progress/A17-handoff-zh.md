@@ -1,6 +1,6 @@
 # A17 DNS follow 移植交回
 
-状态：**verified：Opus HR 已完成（0 high，2 medium / 3 low 已修），batch-5 合并树集成复验通过**。当前分支 `go-a17-integrate`，由 `go-opus-review-a17@f5180a271` 新建，执行 `git rebase --onto 0d43e3f15 b6ce4ac29`，仅回放 10 个 A17 提交，不重复带入旧 A14。行为差异文档的追加冲突保留双方；server/Register/routes 自动合并后逐段核对。原移植分支 `go-port-a17`（主体 `8dec20f39`、验收 `1560b84b0`）的运行记录保留在下文。已具备进入 batch-6 的条件，完整门禁由协调者安排。
+状态：**verified：Opus HR 已完成（0 high，2 medium / 3 low 已修），batch-5 合并树集成复验通过**。当前分支 `go-a17-integrate`，集成实现与验收提交 `7f0e9b173`，由 `go-opus-review-a17@f5180a271` 新建，执行 `git rebase --onto 0d43e3f15 b6ce4ac29`，仅回放 10 个 A17 提交，不重复带入旧 A14。行为差异文档的追加冲突保留双方；server/Register/routes 自动合并后逐段核对。原移植分支 `go-port-a17`（主体 `8dec20f39`、验收 `1560b84b0`）的运行记录保留在下文。已具备进入 batch-6 的条件，完整门禁由协调者安排。
 
 ## 实现与边界
 
