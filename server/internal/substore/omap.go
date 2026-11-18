@@ -1,6 +1,6 @@
 package substore
 
-// omap is a Python dict for the client's bookkeeping: insertion order,
+// omap is an insertion-ordered index for client reuse and eviction bookkeeping:
 // assigning an existing key keeps its position.
 type omap[K comparable, V any] struct {
 	order  []K

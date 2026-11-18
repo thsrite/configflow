@@ -413,7 +413,7 @@ func TestStateFileBytes(t *testing.T) {
 func TestDefaultRoot(t *testing.T) {
 	env := &Env{DataDir: func() string { return "/data" }}
 	rt := NewRuntime(env, "", IdleSeconds)
-	want := filepath.Join(gettempdir(), "configflow-sub-store-"+sha12("/data"))
+	want := filepath.Join(runtimeTempRoot(), "configflow-sub-store-"+sha12("/data"))
 	if rt.Root() != want {
 		t.Fatalf("root %s want %s", rt.Root(), want)
 	}

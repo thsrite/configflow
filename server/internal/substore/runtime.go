@@ -106,49 +106,20 @@ func NewRuntime(env *Env, directory string, idleSeconds float64) *Runtime {
 	return &Runtime{env: env, Directory: directory, IdleSeconds: idleSeconds}
 }
 
-var (
-	tempDirOnce sync.Once
-	tempDir     string
-)
-
-// gettempdir is tempfile.gettempdir(): the first usable of $TMPDIR, $TEMP,
-// $TMP, /tmp, /var/tmp, /usr/tmp, the working directory (absolute).
-func gettempdir() string {
-	tempDirOnce.Do(func() {
-		var candidates []string
-		for _, key := range []string{"TMPDIR", "TEMP", "TMP"} {
-			if value := os.Getenv(key); value != "" {
-				candidates = append(candidates, value)
+// runtimeTempRoot retains explicit legacy temporary-directory settings so a
+// valid existing state file stays at the same location. Selection is read-only:
+// an unusable configured directory fails at the actual write, without probing
+// files or silently starting a second runtime under a different directory.
+func runtimeTempRoot() string {
+	for _, key := range []string{"TMPDIR", "TEMP", "TMP"} {
+		if value := os.Getenv(key); value != "" {
+			if absolute, err := filepath.Abs(value); err == nil {
+				return absolute
 			}
+			return value
 		}
-		candidates = append(candidates, "/tmp", "/var/tmp", "/usr/tmp")
-		if wd, err := os.Getwd(); err == nil {
-			candidates = append(candidates, wd)
-		} else {
-			candidates = append(candidates, ".")
-		}
-		for _, dir := range candidates {
-			if dir != "." {
-				if abs, err := filepath.Abs(dir); err == nil {
-					dir = abs
-				}
-			}
-			f, err := os.CreateTemp(dir, "tmp")
-			if err != nil {
-				continue
-			}
-			name := f.Name()
-			_, werr := f.Write([]byte("blat"))
-			f.Close()
-			os.Remove(name)
-			if werr == nil {
-				tempDir = dir
-				return
-			}
-		}
-		tempDir = os.TempDir()
-	})
-	return tempDir
+	}
+	return os.TempDir()
 }
 
 // Root is the runtime's directory: Directory, or
@@ -162,7 +133,7 @@ func (r *Runtime) Root() string {
 		abs = r.env.DataDir()
 	}
 	sum := sha256.Sum256([]byte(abs))
-	return filepath.Join(gettempdir(), "configflow-sub-store-"+hex.EncodeToString(sum[:])[:12])
+	return filepath.Join(runtimeTempRoot(), "configflow-sub-store-"+hex.EncodeToString(sum[:])[:12])
 }
 
 const (

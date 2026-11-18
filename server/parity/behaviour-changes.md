@@ -1887,3 +1887,10 @@ world 保留旧文件。原 archive 不改；独立 Python 参考绑定完整 ar
 - 新增 ProxyGroup.SetJSON 复用共享 SetMemberJSON；只替换拥有成员，保留显式 null/空列表和新增
   成员顺序，不改未知大整数及输入副本。链私有 ID/名称/排序/provider 复制及中途错误的成功前缀
   均保持。与未迁移 rules/provider 的边界不复制业务；convert 仅新增订阅 typed 接线文件。
+
+### N8-9 substore — 原生临时根目录选择（2026-11-19）
+
+- 删除残留的 tempfile.gettempdir 仿真及写“blat”探测文件。runtimeTempRoot 保持显式
+  TMPDIR/TEMP/TMP 优先级、绝对路径和既有有效 state.json 的位置；无显式配置使用 os.TempDir。
+  不可用的显式目录由实际写入返回错误，不再悄悄退到其他目录并启动第二份 runtime。
+  目录选择本身不写文件。旧 Python 原样 state.json 仍由读取回归验证；正常命令/副作用不改。

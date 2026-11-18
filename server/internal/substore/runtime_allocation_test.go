@@ -6,6 +6,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -59,5 +61,16 @@ func TestN89RuntimeModeAllocationBudget(t *testing.T) {
 	small, large := measure(0), measure(1<<20)
 	if large > small+(64<<10) {
 		t.Fatalf("mode getter copied unrelated configuration: empty=%d B/op, 1MiB=%d B/op", small, large)
+	}
+}
+
+func TestN89RuntimeTempRootDoesNotProbeOrFallback(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "not-created")
+	t.Setenv("TMPDIR", root)
+	if got := runtimeTempRoot(); got != root {
+		t.Fatalf("temporary root changed %q", got)
+	}
+	if _, err := os.Stat(root); !os.IsNotExist(err) {
+		t.Fatalf("root selection wrote filesystem: %v", err)
 	}
 }

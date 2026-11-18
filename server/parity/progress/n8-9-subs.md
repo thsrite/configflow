@@ -277,5 +277,14 @@ convert 的订阅协作者直接调用 typed owner。下面各“阶段/剩余�
   5245/15316/56151 allocs/op。BenchmarkN89MihomoSubscriptionPipeline 32/128节点、512规则、
   1MiB无关字段：34418752/80579208 B/op，370726/861075 allocs/op；四倍节点量约2.34倍分配。
   两个真实B/op回归分别约束链owner/完整typed生成16节点时，无关配置从0→1MiB的分配增量
-  ≤32KiB/64KiB，均通过。未声称其他未迁移rules/provider薄桥已被删除。
+  ≤32KiB/（基线2%+64KiB），均通过。完整管线含buffer pool，在race下有分配采样噪声；
+  该预算仍小于单次1MiB配置解码，更远低于16节点逐节点解码的16MiB。未声称其他未迁移rules/provider薄桥已被删除。
 - 剩余：最终受影响包/直接调用方race，跨包Corpus|Reference|Golden、相关HTTP difftest、60s fuzz及vet。
+
+### 最终验证记录（进行中）
+
+- 第一轮 `-race`：subs17.892s、substore44.979s、model12.912s 通过；convert误带全套生成
+  字节测试，295.920s时由作者停止，不记通过。该轮暴露新分配断言的固定64KiB预算对race
+  buffer-pool噪声过紧（35.86→36.12MB/op），已改为基线2%+64KiB，仍小于一次1MiB配置
+  解码，远小于逐节点16MiB。算法/正常字节/原语料期待没有改变。后续convert race跳过整套
+  Corpus/Reference/Golden/RecordedPython/GenerationBytes，这些由非race跨包/字节门覆盖。

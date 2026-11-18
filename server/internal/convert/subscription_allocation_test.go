@@ -64,7 +64,10 @@ func TestN89MihomoPipelineDoesNotDecodeUnrelatedConfigPerNode(t *testing.T) {
 		return result.AllocedBytesPerOp()
 	}
 	small, large := measure(0), measure(1<<20)
-	if large > small+65536 {
+	// Race instrumentation and pooled output buffers add small sampling noise.
+	// A 2% margin still rejects even one extra 1MiB config decode here, far
+	// below the 16MiB minimum introduced by decoding it for every node.
+	if large > small+small/50+65536 {
 		t.Fatalf("generation decoded unrelated config per node: %d -> %d B/op", small, large)
 	}
 }
