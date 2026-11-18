@@ -157,7 +157,19 @@ func gatewayGuards() deploy.GatewayGuards {
 	}
 }
 
-func wireIPv6() { agentipv6.Wire(apiagents.ContentChecker) }
+func wireIPv6() {
+	agentipv6.Wire(apiagents.ContentChecker)
+	routers.IPv6HostRequest = func(ctx context.Context, agent *routers.GatewayAgent) (routers.IPv6Host, error) {
+		m, err := agents.Get(ctx)
+		if err != nil {
+			return routers.IPv6Host{}, err
+		}
+		if agent == nil {
+			return (&agentipv6.Service{Manager: m}).Host(ctx, nil)
+		}
+		return (&agentipv6.Service{Manager: m}).Host(ctx, agent.Agent)
+	}
+}
 
 func wireGatewayGuards() { deploy.SetGatewayGuards(gatewayGuards()) }
 

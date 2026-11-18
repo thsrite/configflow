@@ -77,7 +77,7 @@ Same as `PROGRESS-config.md`: status `missing` / `partial` (exact list of what i
 
 | A21 | gateway onboarding | 751 | missing | HR | A19, A20, C18, C22, C23, C24, C05, routers (`router_split`) | 3 | internal/gateway, api/gatewayonboarding (new) |
 | A22 | gateway installation | 809 | missing | HR | A08, A14, A20, A21, C17 | 7 | internal/gateway, api/agents |
-| A23 | IPv6 readiness, client evidence, verification | 1344 | wip | HR | A06, A13, A14, C16, routers (`ipv6_readiness`, `routeros`, `route_editor`, `rule_sync_store`, `store`, `client_devices`) | 5 | internal/agents/ipv6 (new), api/agents |
+| A23 | IPv6 readiness, client evidence, verification | 1344 | ported | HR | A06, A13, A14, C16, routers (`ipv6_readiness`, `routeros`, `route_editor`, `rule_sync_store`, `store`, `client_devices`) | 5 | internal/agents/ipv6, internal/api/ipv6 |
 | A24 | client tools, OxiDNS device policies, domain-discovery toggles | 198 | verified | | A05, C09, C26, C31, C37 | 8 | api/agents |
 
 ¹ A05 needs only `utils/domain_discovery.registrable_domain` (C37's file; a thin wrapper over `subs.ExtractDomain`). Ask the coordinator to have it exported early from the C37 package, or port A05 after C37.
@@ -1974,7 +1974,7 @@ Routes (7): `GET|POST /api/agents/gateway-installations`; `GET /api/agents/gatew
 
 ## A23 — IPv6 readiness, client evidence, verification
 
-**Status: `wip`** · HR · prereqs: A06, A13 (`compare_now`, `get_content_sync`), A14 (`_prepare_content_bundle`), A16 (`rule_sync_store.load`), A02 (IdleRounds), C16 (`health_check.validate_health`, `GROUP_DEFAULTS`), C18 (`_default_mihomo_template`), routers (`routers/ipv6_readiness`, `routers/base.RouterError`, `route_editor.router_operation_lock`, `routeros.RouterOSDriver`, `routers/rule_sync_store.job_lock`, `routers/store.routers_of`, `common/client_devices.list_devices`) · Go: internal/agents/ipv6 (new), api/agents
+**Status: `ported`** · HR · prereqs: A06, A13 (`compare_now`, `get_content_sync`), A14 (`_prepare_content_bundle`), A16 (`rule_sync_store.load`), A02 (IdleRounds), C16 (`health_check.validate_health`, `GROUP_DEFAULTS`), C18 (`_default_mihomo_template`), routers (`routers/ipv6_readiness`, `routers/base.RouterError`, `route_editor.router_operation_lock`, `routeros.RouterOSDriver`, `routers/rule_sync_store.job_lock`, `routers/store.routers_of`, `common/client_devices.list_devices`) · Go: internal/agents/ipv6, internal/api/ipv6
 
 Files:
 - `backend/agents/ipv6_readiness.py` (492)
@@ -1986,9 +1986,9 @@ Tests: `test_ipv6_readiness.py` (41), `test_ipv6_verification.py` (39), `test_ip
 
 Routes (5): `GET /api/agents/<agent_id>/ipv6-readiness`; `POST /api/agents/<agent_id>/ipv6-readiness/<operation>`; `GET|PUT …/ipv6-readiness/verification-settings`; `GET …/ipv6-readiness/verify`
 
-分支 go-port-a23，从协调者指定 go-r17-base-v2@673851659 新建。第一步原生保存配置/IPv6前缀归一化/节点候选已实现；12个真实 Python 对照 + race 通过。后续状态、证据、prepare、verification worker/调度与 HTTP 仍在实现。并发短设计由协调者明确授权：setup18→Agent19→router20→repo，routers 批量同连接锁组复用原锁；见 A23-handoff-zh.md。
+分支 `go-port-a23`，从协调者指定 `go-r17-base-v2@673851659` 新建。完整就绪/缓存/prepare/probe、客户端相关证据、settings/result/start/enroll/0-5秒调度、8 slots/2 workers、HTTP五方法及R13 host/A14/A13接线已实现。setup18→Agent19→router20→repo，批量锁组复用原锁，设计见 O3 Clarified in A23。真实 Python/Flask、原始HTTP、真实Runtime断连/关机、坏行/旧凭据隔离、定向race/vet/gofmt及60秒fuzz通过。尚待新的Opus HR复核、依赖通知后的rebase与batch gate/L4；详见 [A23交接](progress/A23-handoff-zh.md)。
 
-Hooks to provide: `agents.OnManagerInit` (`ipv6_verification.start_loop`, last); `ipv6_verification.enroll` is called from A14 `_publish_deployment` (A14 declares a hook with a no-op default, registered here). Routers' `routes/routers.py` imports `agents.ipv6_readiness` (interface for the routers domain).
+Hooks installed: `agents.OnManagerInit` (`ipv6_verification.start_loop`, last); `ipv6_verification.enroll` is called from A14 `_publish_deployment` (A14 declares a hook with a no-op default, registered here). Routers' `routes/routers.py` imports `agents.ipv6_readiness` (interface for the routers domain).
 
 ## A24 — client tools, OxiDNS device policies, domain-discovery toggles
 

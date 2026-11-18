@@ -3,6 +3,7 @@ package ipv6
 import (
 	"context"
 	"encoding/json"
+	"errors"
 
 	"configflow/internal/agents/diag"
 	"configflow/internal/redact"
@@ -29,7 +30,7 @@ func (s *Service) credentials(ctx context.Context, config Document) (redact.Secr
 	return seeds, nil
 }
 
-var diagnosticFields = map[string]bool{"checks": true, "message": true, "error": true, "reason": true, "details": true, "command": true, "conflicts": true, "evidence": true, "refresh_error": true, "source_note": true}
+var diagnosticFields = map[string]bool{"label": true, "message": true, "error": true, "reason": true, "details": true, "command": true, "conflicts": true, "evidence": true, "source_note": true}
 
 func diagnosticProjection(b json.RawMessage, seeds redact.Secrets) json.RawMessage {
 	if obj := object(b); obj != nil {
@@ -72,4 +73,41 @@ func (s *Service) Public(ctx context.Context, profile string, value any) (json.R
 	}
 	projected := diagnosticProjection(raw(value), seeds)
 	return json.Marshal(redact.SanitizeWithSecrets(projected, system, false))
+}
+
+// capturedPublic retains credential seeds from the observation's immutable
+// source even when a concurrent edit removes them from the live repository.
+func (s *Service) capturedPublic(ctx context.Context, config, a Document, value any) (json.RawMessage, error) {
+	seeds, e := s.credentials(ctx, config)
+	if e != nil {
+		return nil, e
+	}
+	seeds = redact.CollectCredentials(raw(a), seeds)
+	system, e := s.systemSecrets(ctx)
+	if e != nil {
+		return nil, e
+	}
+	system = redact.NewSecrets(system, []string{text(a["token"])})
+	for _, peer := range documents(config["agents"]) {
+		system = redact.NewSecrets(system, []string{text(peer["token"])})
+	}
+	projected := diagnosticProjection(raw(value), seeds)
+	return json.Marshal(redact.SanitizeWithSecrets(projected, system, false))
+}
+
+func (s *Service) capturedError(ctx context.Context, config, a Document, err error) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	var boundary *Error
+	if !errors.As(err, &boundary) {
+		return err
+	}
+	b, e := s.capturedPublic(ctx, config, a, Document{"message": raw(boundary.Message)})
+	if e != nil {
+		return e
+	}
+	copy := *boundary
+	copy.Message = text(object(b)["message"])
+	return &copy
 }

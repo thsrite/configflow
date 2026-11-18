@@ -92,3 +92,12 @@ func FuzzSavedIPv6Configuration(f *testing.F) {
 		}
 	})
 }
+
+func TestMalformedNodeDoesNotConsumeDirectProbeSlots(t *testing.T) {
+	_, doc := ReadConfiguration(Document{})
+	config := Document{"nodes": json.RawMessage(`[{"type":"ss","server":"[]","port":443},{"type":"ss","server":"","port":443},{"type":"ss","server":"indirect.example","port":443,"dialer-proxy":true},{"type":"ss","server":"2001:db8::2","port":443}]`)}
+	targets := ProbeTargets(config, doc)
+	if len(targets) != 1 || targets[0].Host != "2001:db8::2" {
+		t.Fatal("bad node hid healthy direct endpoint", targets)
+	}
+}

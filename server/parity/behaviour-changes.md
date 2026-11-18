@@ -1492,3 +1492,11 @@ port/interval 使用 model.Int；不再保留私有数字文本解码或待接�
 - node-probe JSON stdin 使用 D2 的 Go 原生编码；空白和 Unicode 转义可不同，JSON 字段、
   数值、argv、预算、环境、结果和持久化仍严格比较。目录删除保留 errno 与“不删除目录”的
   约束，使用 N8-7 jsonstore 的原生错误，不拼装 Python OSError 文本。
+
+## A23 — IPv6 readiness and verification
+
+- `check_token`、检查缓存 key、验收 target/settings/client/applied fingerprints 按 D2 复用 Go canonical digest，不仿真 Python JSON 编码。旧缓存/历史报告仍可读取；旧 token 或 fingerprints 不匹配时需要重新检查/验收，不把旧证据用于当前配置。
+- 连接表混合坏行由 R16 受限 reader 隔离；不完整或超过 256 行的基线不证明某连接是新增的。无效、负数、超出 uint64 的包计数保留为未知，不把解析失败或溢出算作正包数。Python 的混合坏行会使整表失败；网络包计数的格式错误不影响其他健康记录。
+- 已保存节点中的空服务器、非空但类型错误的 dialer-proxy 不占直接 TCP probe 的三个候选名额。Python 可能把这些坏节点作为直接候选发给 Agent；Go 保留健康候选。
+- 系统密钥整份脱敏；用户凭据只影响诊断及明确凭据字段，保留状态、ID、作用范围和 check_token 等协议值。种子覆盖完整 peer 配置与捕获快照，包含在请求期间被替换的旧凭据；主机和 ROS 的诊断不能引用另一台设备的密码/token。
+- 真实 Runtime 关机取消停止设备请求、缓存/报告提交，正在运行的旧报告按既有五分钟期限显示中断；浏览器断连不取消已开始的写操作。HEAD 保持 Python 的 404，零写入、零设备请求。

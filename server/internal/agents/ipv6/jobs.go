@@ -10,6 +10,7 @@ import (
 
 	"configflow/internal/deploy"
 	"configflow/internal/lifecycle"
+	"configflow/internal/redact"
 )
 
 var verificationSlots = make(chan struct{}, 8)
@@ -79,7 +80,7 @@ func (s *Service) newRun(ctx context.Context, a Document, revision *int64, did s
 	if did != "" {
 		deployment = &did
 	}
-	return Document{"status": raw("running"), "scope": raw(scope), "checks": raw([]Check{}), "started_at": raw(now(ctx)), "started_epoch": raw(float64(lifecycle.ClockFrom(ctx).Now().UnixNano()) / 1e9), "run_id": raw(newID()), "profile_id": a["profile_id"], "config_revision": raw(revision), "deployment_id": raw(deployment), "settings_fingerprint": raw(digest(saved)), "target_fingerprint": raw(digest(identity(a))), "applied_fingerprint": raw(digest(applied(a))), "client_fingerprint": clientFingerprint(a, all), "message": raw(message)}
+	return Document{"status": raw("running"), "scope": raw(scope), "checks": raw([]Check{}), "started_at": raw(now(ctx)), "started_epoch": raw(float64(lifecycle.ClockFrom(ctx).Now().UnixNano()) / 1e9), "run_id": raw(newID()), "profile_id": a["profile_id"], "config_revision": raw(revision), "deployment_id": raw(deployment), "settings_fingerprint": raw(digest(saved)), "target_fingerprint": raw(digest(verificationIdentity(a))), "applied_fingerprint": raw(digest(applied(a))), "client_fingerprint": clientFingerprint(a, all), "message": raw(message)}
 }
 
 // Start reserves a bounded verification and spawns a Runtime-owned worker. It
@@ -198,6 +199,7 @@ func (s *Service) Start(ctx context.Context, id, profile string, body json.RawMe
 				defer release()
 				defer func() {
 					if recover() != nil {
+						logger.Error("IPv6 verification worker did not complete")
 						if job.Err() == nil {
 							_ = s.failRun(job, id, key, text(report["run_id"]))
 						}
@@ -279,6 +281,12 @@ func (s *Service) execute(ctx context.Context, a, config Document, saved Setting
 		}
 		checks = append(checks, check("verification_failed", msgVerifyIncomplete, "error", message))
 	}
+	seeds, seedError := s.credentials(ctx, config)
+	if seedError != nil {
+		return
+	}
+	seeds = redact.CollectCredentials(raw(a), seeds)
+	_ = json.Unmarshal(diagnosticProjection(raw(checks), seeds), &checks)
 	_ = s.update(ctx, text(a["id"]), func(ctx context.Context, current Document, all []Document) error {
 		if current == nil {
 			return nil

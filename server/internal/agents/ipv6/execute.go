@@ -29,17 +29,17 @@ func safeChecks(data Document, prefix string) []Check {
 		if status != "ok" && status != "warning" && status != "error" && status != "unknown" {
 			status = "unknown"
 		}
-		id := text(v["id"])
-		if id == "" {
-			id = "unknown"
+		id := "unknown"
+		if b, ok := v["id"]; ok {
+			id = display(b)
 		}
-		label := text(v["label"])
-		if label == "" {
-			label = msgVerifyResult
+		label := msgVerifyResult
+		if b, ok := v["label"]; ok {
+			label = display(b)
 		}
-		message := text(v["message"])
-		if message == "" {
-			message = msgNoEvidence
+		message := msgNoEvidence
+		if b, ok := v["message"]; ok {
+			message = display(b)
 		}
 		details := []string{}
 		var rawDetails []json.RawMessage
@@ -101,7 +101,7 @@ func verificationURL(config Document, saved Settings) string {
 	return defaultURL()
 }
 func (s *Service) executeChecks(ctx context.Context, a, config Document, saved Settings, hash string, report Document) ([]Check, error) {
-	if digest(identity(s.lookup(ctx, text(a["id"])))) != digest(identity(a)) {
+	if digest(verificationIdentity(s.lookup(ctx, text(a["id"])))) != digest(verificationIdentity(a)) {
 		return nil, failure("AGENT_CHANGED", 409, msgAgentChanged)
 	}
 	inspection, e := s.inspect(ctx, a, text(report["profile_id"]), config)
@@ -167,6 +167,7 @@ func (s *Service) clientChecks(ctx context.Context, a, config Document, saved Se
 	e = lifecycle.Spawn(watchCtx, "ipv6-router-observe", func(job context.Context) {
 		defer func() {
 			if recover() != nil {
+				logger.Error("IPv6 router observer did not complete")
 				observations <- observed{}
 			}
 		}()
@@ -187,6 +188,7 @@ func (s *Service) clientChecks(ctx context.Context, a, config Document, saved Se
 	e = lifecycle.Spawn(ctx, "ipv6-connection-observe", func(job context.Context) {
 		defer func() {
 			if recover() != nil {
+				logger.Error("IPv6 connection observer did not complete")
 				traces <- nil
 			}
 		}()
@@ -209,7 +211,7 @@ func (s *Service) clientChecks(ctx context.Context, a, config Document, saved Se
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
-	if digest(identity(s.lookup(ctx, text(client["id"])))) != digest(identity(client)) {
+	if digest(verificationIdentity(s.lookup(ctx, text(client["id"])))) != digest(verificationIdentity(client)) {
 		return nil, failure("CLIENT_CHANGED", 409, msgClientChanged)
 	}
 	checks := safeChecks(clientReport, "")

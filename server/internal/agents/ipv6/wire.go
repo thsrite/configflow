@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sync"
 	"time"
 
 	"configflow/internal/agents"
@@ -169,19 +170,47 @@ func Wire(checker func(*agents.Manager) *contentsync.Checker) {
 		}
 		return (&Service{Manager: m, Checker: checker}).Enroll(ctx, id, did, object(b))
 	})
+
 	agents.OnManagerInit(func(ctx context.Context, m *agents.Manager) {
-		service := &Service{Manager: m, Checker: checker}
-		rounds := agents.NewIdleRounds(nil)
-		lifecycle.RegisterPeriodic(lifecycle.Periodic{Name: "ipv6-verification-scheduler", FirstDelay: 0, Interval: func(context.Context) time.Duration { return 5 * time.Second }, Round: func(ctx context.Context) error {
-			head, due, e := rounds.Due(ctx, m.Repository())
-			if e != nil || !due {
-				return e
+		owner := &schedulerOwner{service: &Service{Manager: m, Checker: checker}, rounds: agents.NewIdleRounds(nil)}
+		scheduler.Lock()
+		scheduler.owner = owner
+		scheduler.Unlock()
+		m.OnClose(func() {
+			scheduler.Lock()
+			if scheduler.owner == owner {
+				scheduler.owner = nil
 			}
-			idle, e := service.Tick(ctx)
-			if e == nil {
-				rounds.Done(m.Repository(), head, idle)
-			}
-			return e
-		}})
+			scheduler.Unlock()
+		})
+		lifecycle.RegisterPeriodic(lifecycle.Periodic{Name: "ipv6-verification-scheduler", FirstDelay: 0, Interval: func(context.Context) time.Duration { return 5 * time.Second }, Round: schedulerRound})
 	})
+}
+
+type schedulerOwner struct {
+	service *Service
+	rounds  *agents.IdleRounds
+}
+
+var scheduler struct {
+	sync.Mutex
+	owner *schedulerOwner
+}
+
+func schedulerRound(ctx context.Context) error {
+	scheduler.Lock()
+	owner := scheduler.owner
+	scheduler.Unlock()
+	if owner == nil {
+		return nil
+	}
+	head, due, e := owner.rounds.Due(ctx, owner.service.Manager.Repository())
+	if e != nil || !due {
+		return e
+	}
+	idle, e := owner.service.Tick(ctx)
+	if e == nil {
+		owner.rounds.Done(owner.service.Manager.Repository(), head, idle)
+	}
+	return e
 }

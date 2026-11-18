@@ -26,21 +26,27 @@ func settings(a Document) Settings {
 	d := object(a["ipv6_verification_settings"])
 	return Settings{text(d["client_agent_id"]), text(d["test_url"])}
 }
+func verificationIdentity(a Document) Document {
+	out := identity(a)
+	out["enabled"] = raw(string(a["enabled"]) != "false")
+	return out
+}
+
 func applied(a Document) Document {
-	return Document{"latest": raw(selectFields(object(a["latest_deployment"]), "deployment_id", "status", "manual_rollback", "config_version", "config_revision")), "config_revision": a["config_revision"], "config_version": a["config_version"], "applied_content": raw(object(a["applied_content"]))}
+	return Document{"latest": raw(selectFields(object(a["latest_deployment"]), "deployment_id", "status", "manual_rollback", "config_version", "config_revision")), "config_revision": a["config_revision"], "config_version": a["config_version"], "applied_content": raw(nonNilObject(a["applied_content"]))}
 }
 func clientFingerprint(a Document, all []Document) json.RawMessage {
 	id := settings(a).ClientAgentID
 	for _, c := range all {
 		if text(c["id"]) == id && id != "" {
-			return raw(digest(struct{ Identity, Applied Document }{identity(c), applied(c)}))
+			return raw(digest(struct{ Identity, Applied Document }{verificationIdentity(c), applied(c)}))
 		}
 	}
 	return raw(nil)
 }
 func (s *Service) findings(ctx context.Context, a, report Document, all []Document) []string {
 	out := []string{}
-	for _, v := range []struct{ field, want, message string }{{"settings_fingerprint", digest(settings(a)), msgChangedSettings}, {"target_fingerprint", digest(identity(a)), msgChangedTarget}, {"applied_fingerprint", digest(applied(a)), msgChangedApplied}} {
+	for _, v := range []struct{ field, want, message string }{{"settings_fingerprint", digest(settings(a)), msgChangedSettings}, {"target_fingerprint", digest(verificationIdentity(a)), msgChangedTarget}, {"applied_fingerprint", digest(applied(a)), msgChangedApplied}} {
 		if text(report[v.field]) != v.want {
 			out = append(out, v.message)
 		}
@@ -160,11 +166,17 @@ func (s *Service) client(ctx context.Context, source Document, id string, capabi
 	if client == nil || id == text(source["id"]) || text(client["profile_id"]) != text(source["profile_id"]) || strings.EqualFold(text(client["host"]), text(source["host"])) || text(client["deployment_method"]) != "shell" || text(client["service_type"]) == "surge" {
 		return nil, failure("CLIENT_UNAVAILABLE", 409, msgClientUnavailable)
 	}
-	if string(client["enabled"]) == "false" || !online(client) {
+	if string(client["enabled"]) == "false" || !clientOnline(client) {
 		return nil, failure("CLIENT_UNAVAILABLE", 409, msgClientOffline)
 	}
-	if capabilities && !supported(s.capabilities(ctx, client)) {
-		return nil, failure("CLIENT_UPGRADE_REQUIRED", 409, msgClientUpgrade)
+	if capabilities {
+		cap := s.capabilities(ctx, client)
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		if !supported(cap) {
+			return nil, failure("CLIENT_UPGRADE_REQUIRED", 409, msgClientUpgrade)
+		}
 	}
 	return client, nil
 }
@@ -192,6 +204,18 @@ type SettingsResult struct {
 // VerificationSettings reads or atomically replaces saved settings. The write
 // checks captured identity and running jobs again at the repository boundary.
 func (s *Service) VerificationSettings(ctx context.Context, id, profile string, body json.RawMessage) (*SettingsResult, error) {
+	if body == nil {
+		return s.verificationSettings(ctx, id, profile, nil)
+	}
+	var result *SettingsResult
+	e := deploy.RunDetached(ctx, "ipv6-settings", func(ctx context.Context) error {
+		var e error
+		result, e = s.verificationSettings(ctx, id, profile, body)
+		return e
+	})
+	return result, e
+}
+func (s *Service) verificationSettings(ctx context.Context, id, profile string, body json.RawMessage) (*SettingsResult, error) {
 	a, e := s.agent(ctx, id, profile)
 	if e != nil {
 		return nil, e
@@ -202,7 +226,7 @@ func (s *Service) VerificationSettings(ctx context.Context, id, profile string, 
 			return nil, failure("INVALID_REQUEST", 400, msgSettingsBody)
 		}
 		var saved Settings
-		if json.Unmarshal(body, &saved) != nil {
+		if json.Unmarshal(body, &saved) != nil || string(values["client_agent_id"]) == "null" || string(values["test_url"]) == "null" {
 			return nil, failure("INVALID_REQUEST", 400, msgSettingsBody)
 		}
 		saved.ClientAgentID = strings.TrimSpace(saved.ClientAgentID)
@@ -220,19 +244,17 @@ func (s *Service) VerificationSettings(ctx context.Context, id, profile string, 
 				return nil, e
 			}
 		}
-		e = deploy.RunDetached(ctx, "ipv6-settings", func(ctx context.Context) error {
-			return s.update(ctx, id, func(ctx context.Context, current Document, _ []Document) error {
-				if current == nil || digest(identity(current)) != digest(identity(a)) {
-					return failure("PROFILE_CHANGED", 409, msgIdentityChanged)
+		e = s.update(ctx, id, func(ctx context.Context, current Document, _ []Document) error {
+			if current == nil || digest(verificationIdentity(current)) != digest(verificationIdentity(a)) {
+				return failure("PROFILE_CHANGED", 409, msgIdentityChanged)
+			}
+			for _, b := range runs(current).All() {
+				if text(object(b)["status"]) == "running" {
+					return failure("BUSY", 409, msgSettingsBusy)
 				}
-				for _, b := range runs(current).All() {
-					if text(object(b)["status"]) == "running" {
-						return failure("BUSY", 409, msgSettingsBusy)
-					}
-				}
-				current["ipv6_verification_settings"] = raw(saved)
-				return nil
-			})
+			}
+			current["ipv6_verification_settings"] = raw(saved)
+			return nil
 		})
 		if e != nil {
 			return nil, e
@@ -286,4 +308,11 @@ func (s *Service) VerificationSettings(ctx context.Context, id, profile string, 
 		return nil, e
 	}
 	return result, nil
+}
+
+func nonNilObject(b json.RawMessage) Document {
+	if d := object(b); d != nil {
+		return d
+	}
+	return Document{}
 }

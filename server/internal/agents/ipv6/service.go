@@ -1,10 +1,10 @@
 package ipv6
 
 import (
+	"configflow/internal/deploy"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/netip"
 	"strings"
@@ -49,7 +49,8 @@ func selectFields(d Document, keys ...string) Document {
 	return out
 }
 func identity(a Document) Document { return selectFields(a, identityFields...) }
-func digest(v any) string          { sum := sha256.Sum256(raw(v)); return hex.EncodeToString(sum[:]) }
+func digest(v any) string          { return deploy.CanonicalDigest(raw(v)) }
+
 func linked(config Document, id string) []*routers.Router {
 	out := []*routers.Router{}
 	for _, r := range routers.FromConfig(raw(config)) {
@@ -95,7 +96,42 @@ func (s *Service) policy(ctx context.Context, config, a Document) routers.Policy
 	}
 	return p
 }
-func (s *Service) inspect(ctx context.Context, a Document, profile string, config Document) (*Report, error) {
+func (s *Service) inspect(ctx context.Context, a Document, profile string, config Document) (result *Report, resultError error) {
+	defer func() {
+		if ctx.Err() != nil {
+			result = nil
+			resultError = ctx.Err()
+			return
+		}
+		if resultError != nil {
+			var boundary *Error
+			if errors.As(resultError, &boundary) {
+				b, e := s.capturedPublic(ctx, config, a, Document{"message": raw(boundary.Message)})
+				if e != nil {
+					resultError = e
+					return
+				}
+				copy := *boundary
+				copy.Message = text(object(b)["message"])
+				resultError = &copy
+			}
+			return
+		}
+		b, e := s.capturedPublic(ctx, config, a, result)
+		if e != nil {
+			result = nil
+			resultError = e
+			return
+		}
+		var safe Report
+		if e = json.Unmarshal(b, &safe); e != nil {
+			result = nil
+			resultError = e
+			return
+		}
+		result = &safe
+	}()
+
 	settings, _ := ReadConfiguration(config)
 	host, e := s.request(ctx, a, "", nil)
 	if e != nil {
@@ -105,7 +141,7 @@ func (s *Service) inspect(ctx context.Context, a Document, profile string, confi
 	if json.Unmarshal(host["checks"], &hostChecks) != nil || hostChecks == nil || object(host["persistence"]) == nil {
 		return nil, failure("INVALID_RESPONSE", 502, msgHostFields)
 	}
-	report := &Report{Success: true, AgentID: text(a["id"]), ProfileID: profile, Configuration: settings, Host: raw(host), Checks: []Check{}, Routers: []*routers.IPv6Readiness{}, PrepareInterface: text(host["interface"]), Connectivity: Connectivity{Status: "not_checked", Message: msgConnectivity}}
+	report := &Report{Success: true, AgentID: text(a["id"]), ProfileID: profile, Configuration: settings, Host: raw(host), Checks: []Check{}, Routers: []*RouterReport{}, PrepareInterface: text(host["interface"]), Connectivity: Connectivity{Status: "not_checked", Message: msgConnectivity}}
 	status, message := "ok", fmt.Sprintf(msgSummary, onOff(settings.IPv6), onOff(settings.DNSIPv6))
 	if len(settings.Errors) > 0 {
 		status = "error"
@@ -136,7 +172,7 @@ func (s *Service) inspect(ctx context.Context, a Document, profile string, confi
 				v = raw(nil)
 			}
 		}
-		if ok && string(v) != string(item.value) {
+		if ok && string(normalRaw(v)) != string(normalRaw(item.value)) {
 			differing = append(differing, deployedLabels[item.key])
 		}
 	}
@@ -196,7 +232,7 @@ func (s *Service) inspect(ctx context.Context, a Document, profile string, confi
 	_ = json.Unmarshal(raw(a), &agent)
 	for _, r := range rs {
 		if r.Type != "routeros" {
-			report.Routers = append(report.Routers, &routers.IPv6Readiness{ID: r.ID, Name: r.Name, Status: "warning", Checks: []Check{check("manual", msgRouterIPv6, "unknown", msgManualRouter)}})
+			report.Routers = append(report.Routers, &RouterReport{IPv6Readiness: &routers.IPv6Readiness{ID: r.ID, Name: routerName(r), Status: "warning", Checks: []Check{check("manual", msgRouterIPv6, "unknown", msgManualRouter)}}, manual: true})
 			continue
 		}
 		d := routers.NewRouterOS(r.Endpoint, r.Username, r.Password, r.VerifyTLS)
@@ -208,7 +244,7 @@ func (s *Service) inspect(ctx context.Context, a Document, profile string, confi
 		if err != nil {
 			return nil, err
 		}
-		report.Routers = append(report.Routers, result)
+		report.Routers = append(report.Routers, &RouterReport{IPv6Readiness: result})
 		blocked = blocked || result.Status == "error"
 	}
 	if len(rs) == 0 {
@@ -232,7 +268,7 @@ func (s *Service) inspect(ctx context.Context, a Document, profile string, confi
 }
 func display(b json.RawMessage) string {
 	if len(b) == 0 || string(b) == "null" {
-		return "None"
+		return "null"
 	}
 	if b[0] == '"' {
 		return text(b)
@@ -244,4 +280,54 @@ func onOff(b json.RawMessage) string {
 		return msgOn
 	}
 	return msgOff
+}
+
+func routerName(r *routers.Router) string {
+	if r.Name != "" {
+		return r.Name
+	}
+	return r.ID
+}
+
+// Host reads the captured gateway Agent for router inspection. The router owner
+// already holds its device lock, so this leaf read never takes the Agent lock.
+func (s *Service) Host(ctx context.Context, agent *model.Agent) (routers.IPv6Host, error) {
+	if agent == nil {
+		return routers.IPv6Host{}, failure("AGENT_NOT_FOUND", 404, msgMissing)
+	}
+	config, _, e := s.snapshot(ctx, agent.ProfileID)
+	if e != nil {
+		return routers.IPv6Host{}, e
+	}
+	a := object(raw(agent))
+	data, e := s.request(ctx, a, "", nil)
+	if e != nil {
+		var boundary *Error
+		if errors.As(e, &boundary) {
+			b, err := s.capturedPublic(ctx, config, a, Document{"message": raw(boundary.Message)})
+			if err != nil {
+				return routers.IPv6Host{}, err
+			}
+			copy := *boundary
+			copy.Message = text(object(b)["message"])
+			e = &copy
+		}
+		return routers.IPv6Host{}, e
+	}
+	b, e := s.capturedPublic(ctx, config, a, data)
+	if e != nil {
+		return routers.IPv6Host{}, e
+	}
+	var host routers.IPv6Host
+	if json.Unmarshal(b, &host) != nil {
+		return host, failure("INVALID_RESPONSE", 502, msgResponseShape)
+	}
+	return host, nil
+}
+
+func normalRaw(b json.RawMessage) json.RawMessage {
+	if len(b) == 0 {
+		return raw(nil)
+	}
+	return b
 }

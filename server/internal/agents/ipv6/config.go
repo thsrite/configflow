@@ -134,7 +134,7 @@ func ProbeTargets(config Document, doc *yamlx.Node) []ProbeTarget {
 	out := []ProbeTarget{}
 	for _, node := range candidates {
 		kind := strings.ToLower(text(node["type"]))
-		if !slices.Contains([]string{"socks5", "http", "ss", "ssr", "vmess", "vless", "trojan", "anytls"}, kind) || text(node["dialer-proxy"]) != "" {
+		if !slices.Contains([]string{"socks5", "http", "ss", "ssr", "vmess", "vless", "trojan", "anytls"}, kind) || indirect(node["dialer-proxy"]) {
 			continue
 		}
 		host := text(node["server"])
@@ -143,6 +143,9 @@ func ProbeTargets(config Document, doc *yamlx.Node) []ProbeTarget {
 			continue
 		}
 		host = strings.Trim(host, "[]")
+		if host == "" {
+			continue
+		}
 		ip, e := netip.ParseAddr(host)
 		if e == nil && !ip.Is6() {
 			continue
@@ -169,4 +172,9 @@ func prepareConfig(config Document) Document {
 		delete(next, key)
 	}
 	return next
+}
+
+// A malformed nonempty dialer selection is not a directly reachable node.
+func indirect(b json.RawMessage) bool {
+	return len(b) > 0 && string(b) != "null" && string(b) != `""` && string(b) != "false" && string(b) != "0"
 }

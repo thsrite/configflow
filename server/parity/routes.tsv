@@ -25,11 +25,11 @@ POST	/api/agents/<agent_id>/generate-config	routes.agents.generate_final_agent_c
 GET	/api/agents/<agent_id>/generated-config/<preview_id>/download	routes.agents.download_final_agent_config	internal/api/agents	done
 GET	/api/agents/<agent_id>/generated-config/<preview_id>/file	routes.agents.read_final_agent_file	internal/api/agents	done
 POST	/api/agents/<agent_id>/heartbeat	routes.agents.agent_heartbeat	api/agents	done
-GET	/api/agents/<agent_id>/ipv6-readiness	routes.ipv6_readiness.ipv6_readiness_operation	31	todo
-POST	/api/agents/<agent_id>/ipv6-readiness/<operation>	routes.ipv6_readiness.ipv6_readiness_operation	31	todo
-GET	/api/agents/<agent_id>/ipv6-readiness/verification-settings	routes.ipv6_readiness.ipv6_readiness_operation	31	todo
-PUT	/api/agents/<agent_id>/ipv6-readiness/verification-settings	routes.ipv6_readiness.ipv6_readiness_operation	31	todo
-GET	/api/agents/<agent_id>/ipv6-readiness/verify	routes.ipv6_readiness.ipv6_readiness_operation	31	todo
+GET	/api/agents/<agent_id>/ipv6-readiness	routes.ipv6_readiness.ipv6_readiness_operation	internal/api/ipv6	done
+POST	/api/agents/<agent_id>/ipv6-readiness/<operation>	routes.ipv6_readiness.ipv6_readiness_operation	internal/api/ipv6	done
+GET	/api/agents/<agent_id>/ipv6-readiness/verification-settings	routes.ipv6_readiness.ipv6_readiness_operation	internal/api/ipv6	done
+PUT	/api/agents/<agent_id>/ipv6-readiness/verification-settings	routes.ipv6_readiness.ipv6_readiness_operation	internal/api/ipv6	done
+GET	/api/agents/<agent_id>/ipv6-readiness/verify	routes.ipv6_readiness.ipv6_readiness_operation	internal/api/ipv6	done
 GET	/api/agents/<agent_id>/linux-gateway/<operation>	routes.linux_gateway_agents.linux_gateway_operation	internal/api/agents	done
 POST	/api/agents/<agent_id>/linux-gateway/<operation>	routes.linux_gateway_agents.linux_gateway_operation	internal/api/agents	done
 GET	/api/agents/<agent_id>/logs	routes.agents.get_agent_logs	api/agents	done

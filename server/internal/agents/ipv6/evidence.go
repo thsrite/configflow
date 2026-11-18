@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net"
 	"net/netip"
 	"net/url"
@@ -64,8 +65,46 @@ func rowMatches(row routers.Row, source string, sport int, destination string, d
 	}
 	src, sp := endpoint(row, "src")
 	dst, dp := endpoint(row, "dst")
-	return source != "" && destination != "" && sport > 0 && dport > 0 && src == source && sp == sport && dst == destination && dp == dport && number(row["orig-packets"])+number(row["orig-fasttrack-packets"]) > 0
+	return source != "" && destination != "" && sport > 0 && dport > 0 && src == source && sp == sport && dst == destination && dp == dport && hasPackets(row)
 }
+
+// Packet counters are non-negative uint64 values. Invalid/missing-type
+// counters are unknown, and overflow can never manufacture positive evidence.
+func hasPackets(row routers.Row) bool {
+	positive := false
+	for _, key := range []string{"orig-packets", "orig-fasttrack-packets"} {
+		v, present := row[key]
+		if !present {
+			continue
+		}
+		var n uint64
+		var err error
+		switch value := v.(type) {
+		case string:
+			n, err = strconv.ParseUint(strings.TrimSpace(value), 10, 64)
+		case json.Number:
+			n, err = strconv.ParseUint(value.String(), 10, 64)
+		case float64:
+			if value < 0 || value >= 18446744073709551616 || math.IsNaN(value) {
+				return false
+			}
+			n = uint64(value)
+		case int:
+			if value < 0 {
+				return false
+			}
+			n = uint64(value)
+		default:
+			return false
+		}
+		if err != nil {
+			return false
+		}
+		positive = positive || n > 0
+	}
+	return positive
+}
+
 func targetURL(testURL string) (string, int) {
 	u, e := url.Parse(testURL)
 	if e != nil {
@@ -101,6 +140,7 @@ func rawPort(b json.RawMessage) int { var v any; _ = json.Unmarshal(b, &v); retu
 func observe(ctx context.Context, config, source Document, testURL string, ready chan<- struct{}) observed {
 	defer close(ready)
 	_, p := targetURL(testURL)
+	deadline := lifecycle.ClockFrom(ctx).Now().Add(30 * time.Second)
 	type scan struct {
 		id       string
 		driver   *routers.RouterOS
@@ -142,7 +182,6 @@ func observe(ctx context.Context, config, source Document, testURL string, ready
 	case ready <- struct{}{}:
 	case <-ctx.Done():
 	}
-	deadline := lifecycle.ClockFrom(ctx).Now().Add(30 * time.Second)
 	for ctx.Err() == nil && lifecycle.ClockFrom(ctx).Now().Before(deadline) {
 		for _, s := range scans {
 			for family := range 2 {

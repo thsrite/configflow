@@ -4,8 +4,9 @@
 package ipv6
 
 import (
-	"configflow/internal/routers"
 	"encoding/json"
+
+	"configflow/internal/routers"
 )
 
 // Document is an immutable saved compatibility snapshot at the repository boundary.
@@ -46,25 +47,25 @@ type Connectivity struct {
 
 // Report contains an immutable readiness observation and its guarded prepare token.
 type Report struct {
-	Success          bool                     `json:"success"`
-	AgentID          string                   `json:"agent_id"`
-	ProfileID        string                   `json:"profile_id"`
-	Configuration    Configuration            `json:"configuration"`
-	Host             json.RawMessage          `json:"host"`
-	Checks           []Check                  `json:"checks"`
-	Routers          []*routers.IPv6Readiness `json:"routers"`
-	CanPrepare       bool                     `json:"can_prepare"`
-	PrepareInterface string                   `json:"prepare_interface"`
-	CheckToken       string                   `json:"check_token"`
-	Connectivity     Connectivity             `json:"connectivity"`
-	ConfigRevision   *int64                   `json:"config_revision,omitempty"`
-	CheckedAt        string                   `json:"checked_at,omitempty"`
-	Cached           *bool                    `json:"cached,omitempty"`
-	Publication      string                   `json:"publication,omitempty"`
-	Stale            *bool                    `json:"stale,omitempty"`
-	RefreshError     *RefreshError            `json:"refresh_error,omitempty"`
-	Message          string                   `json:"message,omitempty"`
-	ChangedRoutes    *int                     `json:"changed_routes,omitempty"`
+	Success          bool            `json:"success"`
+	AgentID          string          `json:"agent_id"`
+	ProfileID        string          `json:"profile_id"`
+	Configuration    Configuration   `json:"configuration"`
+	Host             json.RawMessage `json:"host"`
+	Checks           []Check         `json:"checks"`
+	Routers          []*RouterReport `json:"routers"`
+	CanPrepare       bool            `json:"can_prepare"`
+	PrepareInterface string          `json:"prepare_interface"`
+	CheckToken       string          `json:"check_token"`
+	Connectivity     Connectivity    `json:"connectivity"`
+	ConfigRevision   *int64          `json:"config_revision,omitempty"`
+	CheckedAt        string          `json:"checked_at,omitempty"`
+	Cached           *bool           `json:"cached,omitempty"`
+	Publication      string          `json:"publication,omitempty"`
+	Stale            *bool           `json:"stale,omitempty"`
+	RefreshError     *RefreshError   `json:"refresh_error,omitempty"`
+	Message          string          `json:"message,omitempty"`
+	ChangedRoutes    *int            `json:"changed_routes,omitempty"`
 }
 
 // RefreshError explains why the previously persisted result is being shown.
@@ -81,4 +82,40 @@ func yes(b json.RawMessage) bool        { return string(b) == "true" }
 func ptr[T any](v T) *T                 { return &v }
 func check(id, label, status, message string, details ...string) Check {
 	return Check{ID: id, Label: label, Status: status, Message: message, Details: details}
+}
+
+// RouterReport keeps the shared RouterOS result and the smaller manual-model
+// response shape. No router publication or plan logic is duplicated here.
+type RouterReport struct {
+	*routers.IPv6Readiness
+	manual bool
+}
+
+// MarshalJSON preserves Python's manual-model field set.
+func (r RouterReport) MarshalJSON() ([]byte, error) {
+	if !r.manual {
+		return json.Marshal(r.IPv6Readiness)
+	}
+	return json.Marshal(struct {
+		ID         string  `json:"id"`
+		Name       string  `json:"name"`
+		CanPrepare bool    `json:"can_prepare"`
+		Status     string  `json:"status"`
+		Checks     []Check `json:"checks"`
+	}{r.ID, r.Name, false, r.Status, r.Checks})
+}
+
+// UnmarshalJSON restores cached shared/manual results without adding fields to
+// the manual model's public shape.
+func (r *RouterReport) UnmarshalJSON(b []byte) error {
+	var result routers.IPv6Readiness
+	if e := json.Unmarshal(b, &result); e != nil {
+		return e
+	}
+	r.IPv6Readiness = &result
+	d := object(b)
+	_, plan := d["plan"]
+	_, fingerprint := d["fingerprint"]
+	r.manual = !plan && !fingerprint
+	return nil
 }

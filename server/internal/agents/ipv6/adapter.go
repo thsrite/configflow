@@ -3,6 +3,13 @@ package ipv6
 // Legacy repo, converter and registry types stop at this adapter. The IPv6
 // owners only operate on native snapshots and independently owned Agent records.
 import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"os"
+	"time"
+
 	"configflow/internal/agents"
 	"configflow/internal/agents/diag"
 	"configflow/internal/agents/monitor"
@@ -14,11 +21,6 @@ import (
 	"configflow/internal/repo"
 	"configflow/internal/yamlbridge"
 	"configflow/internal/yamlx"
-	"context"
-	"encoding/json"
-	"errors"
-	"net/http"
-	"time"
 )
 
 func defaultMihomo() (*yamlx.Node, error) { return yamlbridge.Encode(convert.DefaultMihomoTemplate()) }
@@ -47,7 +49,7 @@ func (s *Service) snapshot(ctx context.Context, profile string) (Document, int64
 	return native(o), r, e
 }
 func (s *Service) agent(ctx context.Context, id, profile string) (Document, error) {
-	a, e := s.Manager.GetAgentByID(ctx, id, false)
+	a, e := s.Manager.GetAgentByID(ctx, id, true)
 	if e != nil {
 		return nil, e
 	}
@@ -70,7 +72,7 @@ func (s *Service) lookup(ctx context.Context, id string) Document {
 	if id == "" {
 		return nil
 	}
-	a, e := s.Manager.GetAgentByID(ctx, id, false)
+	a, e := s.Manager.GetAgentByID(ctx, id, true)
 	if e != nil {
 		return nil
 	}
@@ -137,7 +139,11 @@ func (s *Service) request(ctx context.Context, a Document, operation string, pay
 		path += "/" + operation
 		body = raw(payload)
 	}
-	response, e := s.Manager.Client().Do(ctx, agents.Request{Method: method, URL: address + path, Header: http.Header{"Authorization": {"Bearer " + text(a["token"])}, "Content-Type": {"application/json"}}, Body: body, Timeout: agents.Pair(3, 45), NoProxy: true, NoRedirects: true, MaxBody: 512 * 1024})
+	header := http.Header{"Authorization": {"Bearer " + text(a["token"])}}
+	if operation != "" {
+		header.Set("Content-Type", "application/json")
+	}
+	response, e := s.Manager.Client().Do(ctx, agents.Request{Method: method, URL: address + path, Header: header, Body: body, Timeout: agents.Pair(3, 45), NoProxy: true, NoRedirects: true, MaxBody: 512 * 1024})
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
@@ -183,7 +189,7 @@ func (s *Service) request(ctx context.Context, a Document, operation string, pay
 }
 
 func (s *Service) all(ctx context.Context) ([]Document, error) {
-	rows, e := s.Manager.GetAllAgents(ctx, false)
+	rows, e := s.Manager.GetAllAgents(ctx, true)
 	if e != nil {
 		return nil, e
 	}
@@ -263,5 +269,8 @@ func (s *Service) systemSecrets(ctx context.Context) (redact.Secrets, error) {
 	if e != nil {
 		return nil, e
 	}
-	return redact.ExternalPayloadSecrets(ctx, system)
+	seeds, err := redact.ExternalPayloadSecrets(ctx, system)
+	return redact.NewSecrets(seeds, []string{os.Getenv("AGENT_REGISTRATION_KEY")}), err
 }
+
+func clientOnline(a Document) bool { o, e := legacy(a); return e == nil && agents.IsOnline(o, nil) }

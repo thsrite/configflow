@@ -222,7 +222,7 @@ func (s *Service) Prepare(ctx context.Context, id, profile string, body json.Raw
 		if e != nil {
 			return e
 		}
-		if token != report.CheckToken || text(input["interface"]) != report.PrepareInterface {
+		if token != report.CheckToken || string(input["interface"]) != string(raw(report.PrepareInterface)) {
 			return failure("CHECK_CHANGED", 409, msgCheckChanged)
 		}
 		if !report.CanPrepare {
@@ -285,7 +285,7 @@ type ProbeResult struct {
 }
 
 // Probe tests saved directly reachable node candidates using the Agent owner.
-func (s *Service) Probe(ctx context.Context, id, profile string) (*ProbeResult, error) {
+func (s *Service) Probe(ctx context.Context, id, profile string) (out *ProbeResult, resultError error) {
 	a, e := s.agent(ctx, id, profile)
 	if e != nil {
 		return nil, e
@@ -294,6 +294,30 @@ func (s *Service) Probe(ctx context.Context, id, profile string) (*ProbeResult, 
 	if e != nil {
 		return nil, e
 	}
+	defer func() {
+		if resultError != nil {
+			resultError = s.capturedError(ctx, config, a, resultError)
+			return
+		}
+		if ctx.Err() != nil {
+			out = nil
+			resultError = ctx.Err()
+			return
+		}
+		b, e := s.capturedPublic(ctx, config, a, out)
+		if e != nil {
+			out = nil
+			resultError = e
+			return
+		}
+		var safe ProbeResult
+		if e = json.Unmarshal(b, &safe); e != nil {
+			out = nil
+			resultError = e
+			return
+		}
+		out = &safe
+	}()
 	settings, doc := ReadConfiguration(config)
 	if len(settings.Errors) > 0 || !yes(settings.IPv6) {
 		return nil, failure("IPV6_DISABLED", 409, msgProbeDisabled)
