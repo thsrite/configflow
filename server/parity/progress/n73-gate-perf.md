@@ -35,7 +35,7 @@ uses Classify, but its command has no tests and does not execute it in a gate.
   only the unchanged archive and records metadata/physical-audit hashes; no
   production business functions or new reference outcomes are involved.
 
-## Timings (in progress)
+## Timings and approved measurement scope (in progress)
 
 Measure the same selected reader migration tests, serial package scheduling
 (`-p=1`), `GOMAXPROCS=2`, `-race -count=1`, on .64. The 40-minute timeout is
@@ -56,3 +56,23 @@ negative control after gofmt/vet.
 
 The actual baseline command also prints pass/fail package/test elapsed fields
 from this JSONL using Python after go test; the test invocation above is exact.
+
+Coordinator approved avoiding nine old full-decode repetitions (2026-11-18):
+use the original N8-7 complete gate as historical before data, explicitly state
+load/scope differences, retain discovery's direct before/after observation, and
+run every caller and center package's complete race suite on the new tree.
+Do not claim a strict speedup multiple. The old process was stopped after an
+observation at12m43s elapsed/11m31s CPU/1,327,596KiB RSS with no test result.
+This is a censored measurement (>763s), not a passed test or timeout failure.
+Only our verified go-test PID and its discovery test child were stopped; no
+other gate or process was changed. The old rt command exited143.
+
+.32 preliminary validation: full replay21343, original category counts,
+unknown0, race126.629s PASS. Complete helper suite128.618s and discovery24.790s
+PASS; discovery's7-row migration test1.50s. The first YAML facade package run
+found a forbidden generator import of the test helper; fixed by giving the
+offline generator its JSON wire-schema DTO, without widening the AST allowlist.
+The full replay checks that wire representation against actual ParseAudit.
+Corrected complete yamlx race18.637s PASS, all AST controls retained.
+`go generate` output remains byte-identical, SHA
+`47e7732d7e632eacae626e6a99ecc2e136a5873c8d2297a68c0c8e5f9c45134b`.

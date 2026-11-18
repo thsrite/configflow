@@ -9,9 +9,19 @@ import (
 	"fmt"
 	"io"
 	"os"
-
-	"configflow/internal/yamlx/yamlxtest"
 )
+
+// physicalNode is the archive's JSON wire schema, not a YAML reader. The full
+// replay cross-checks its encoded digest against the actual ParseAudit type.
+type physicalNode struct {
+	ID           int    `json:"id"`
+	Kind         uint32 `json:"kind"`
+	Tag          string `json:"tag"`
+	Value        string `json:"value"`
+	Line, Column int
+	Content      []int `json:"content"`
+	Alias        int   `json:"alias"`
+}
 
 type summary struct {
 	Category    string `json:"category"`
@@ -63,12 +73,12 @@ func generate() error {
 			return fmt.Errorf("duplicate archive key %s", id)
 		}
 		var row struct {
-			Source      string                `json:"source"`
-			Category    string                `json:"category"`
-			Native      []yamlxtest.ParseNode `json:"native"`
-			NativeError string                `json:"native_error"`
-			Unknown     bool                  `json:"unknown"`
-			Revision    string                `json:"revision"`
+			Source      string         `json:"source"`
+			Category    string         `json:"category"`
+			Native      []physicalNode `json:"native"`
+			NativeError string         `json:"native_error"`
+			Unknown     bool           `json:"unknown"`
+			Revision    string         `json:"revision"`
 		}
 		if err := decoder.Decode(&row); err != nil {
 			return err
