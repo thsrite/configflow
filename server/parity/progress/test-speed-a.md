@@ -449,3 +449,19 @@ shared all-Go-source helper audit. The refreshed implementation was previously
 handed back at `6fad06fcf`; later shared-audit hardening is the B patch adopted
 in A (same tool implementation). This section and the discarded-pair record are
 documentation only, not performance evidence.
+
+## Night-only timing reservation (latest coordinator instruction)
+
+2026-11-18 schedule update: daytime .64 capacity belongs to product merge gates.
+A's formal pair moves to **23:00 or later (Asia/Shanghai)**; B follows A. Cancelled
+the daytime readiness watcher; no new measurement was started during the N8-5
+race/difftest work. Before night measurement, require no other `go test`/test
+binary process on .64 and one-minute load below 10; inspect interference during
+each round and discard/retry a contaminated round.
+
+A single-run Paseo heartbeat (`a1e5a8de`, existing A agent, no new agent) is set
+for **2026-11-18 23:00 +08:00**, maxRuns=1, to resume this exact worktree and
+pinned-version comparison. It must use a fresh log directory, preserve discarded
+attempt-1 evidence, commit only the timing documentation, and tell coordinator
+`f8801d39-a5bb-4c3f-bb7d-4b9eca9cc4b5` when the A window is released. Formal
+numbers remain 待测 until an uncontaminated pair has actually passed.
