@@ -122,6 +122,16 @@ func requestSettings(c *httpx.Ctx, name string) (model.MosDNSSettings, error) {
 	if err = json.Unmarshal(data, &fields); err != nil {
 		return value, repo.NewValidationError(SettingsObjectMessage)
 	}
+	if name == "" || name == "cache-settings" {
+		for _, key := range []string{"cache_enabled", "cache_dump_enabled"} {
+			if raw, present := fields.Get(key); present {
+				token := bytes.TrimSpace(raw)
+				if !bytes.Equal(token, []byte("true")) && !bytes.Equal(token, []byte("false")) {
+					return value, repo.NewValidationError(SettingsFieldTypeMessage)
+				}
+			}
+		}
+	}
 	if name == "custom-matches" {
 		if raw, ok := fields.Get("position"); ok {
 			if err = fields.Set("custom_match_position", raw); err != nil {

@@ -48,6 +48,9 @@ func TestMosDNSNativeRequestDifferences(t *testing.T) {
 		{request{name: "post cache-settings list", method: "POST", path: "/api/mosdns/cache-settings", body: `[1]`}, 500, 400},
 		{request{name: "post cache-settings text", method: "POST", path: "/api/mosdns/cache-settings", body: `x`, contentType: "text/plain"}, 500, 400},
 
+		{request{name: "null editor cache boolean", method: "POST", path: "/api/mosdns/settings", body: `{"cache_enabled":null}`}, 200, 400},
+		{request{name: "null cache boolean", method: "POST", path: "/api/mosdns/cache-settings", body: `{"cache_enabled":null}`}, 200, 400},
+		{request{name: "null dump boolean", method: "POST", path: "/api/mosdns/cache-settings", body: `{"cache_dump_enabled":null}`}, 200, 400},
 		{request{name: "fractional integer", method: "POST", path: "/api/mosdns/cache-settings", body: `{"cache_lazy_ttl":60.9}`}, 200, 400},
 		{request{name: "boolean integer", method: "POST", path: "/api/mosdns/cache-settings", body: `{"cache_size":true}`}, 200, 400},
 		{request{name: "numeric boolean", method: "POST", path: "/api/mosdns/cache-settings", body: `{"cache_enabled":0}`}, 200, 400},
