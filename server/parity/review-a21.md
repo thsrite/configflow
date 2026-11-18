@@ -121,3 +121,5 @@ ok  	configflow/internal/gateway/onboarding	61.017s
 ```
 
 没有运行完整 gate / proddiff（按 2026-11-18 规则由协调者批次执行）。
+
+修复提交：`26feab070`（产品代码、测试、文档同一提交）。
