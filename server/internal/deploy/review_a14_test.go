@@ -1,8 +1,11 @@
 package deploy
 
 import (
+	"configflow/internal/lifecycle"
+	"configflow/internal/lifecycle/lifecycletest"
 	"context"
 	"testing"
+	"time"
 
 	"configflow/internal/agents/agentfake"
 	"configflow/internal/jsonx"
@@ -21,12 +24,26 @@ func TestReviewA14UnforcedProgressIsThrottled(t *testing.T) {
 	message := func() string {
 		return f.agent(t).GetObject("deployments").GetObject("throttle").GetString("message")
 	}
-	p := publishProgress(f.ctx, f.m, "publish-agent", "throttle", "")
+	clock := lifecycletest.NewClock(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
+	runtime := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry(), Clock: clock, Mode: lifecycle.ModeManual})
+	runtime.Start(f.ctx)
+	defer runtime.Shutdown(context.Background())
+	p := publishProgress(runtime.BindRequest(f.ctx), f.m, "publish-agent", "throttle", "")
 	p.Message("正在准备节点来源「A」")
 	p.Message("节点来源「A」已准备")
 	p.Message("正在准备节点来源「B」")
 	if got := message(); got != "正在准备节点来源「A」" {
 		t.Fatal("unforced details were not throttled", got)
+	}
+	clock.Advance(999 * time.Millisecond)
+	p.Message("节点来源「B」已准备")
+	if got := message(); got != "正在准备节点来源「A」" {
+		t.Fatal("detail persisted before one second", got)
+	}
+	clock.Advance(time.Millisecond)
+	p.Message("节点来源「B」已准备")
+	if got := message(); got != "节点来源「B」已准备" {
+		t.Fatal("detail did not persist at one second", got)
 	}
 	p.Phase("正在校验节点来源与拨号引用关系（2 个文件）")
 	if got := message(); got != "正在校验节点来源与拨号引用关系（2 个文件）" {

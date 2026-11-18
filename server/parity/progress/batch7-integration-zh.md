@@ -53,7 +53,7 @@
 3. baseline：已删除 11 条 deferred→R14 和 12 条 deferred→A18；其余分类保留。最终 compare 检验 new/stale。
 4. O3-8：待跑 16 个 scenarios，验证已包含 R14 M1 的关停次序。
 5. A14 节流：集成树初次独立 race count=3 通过（14.714s）；为消除慢磁盘/负载造成的真实时间依赖，
-   仅测试接入既有生命周期 fake Clock，验证 999ms 不写、1000ms 写及强制阶段写，不修改生产阈值。
+   仅测试接入既有生命周期 fake Clock（race count=3 验证通过，17.059s），验证 999ms 不写、1000ms 写及强制阶段写，不修改生产阈值。
 
 ## 验证及剩余工作
 
@@ -82,3 +82,10 @@ NewApp endpoint 清单增加全部六个 A22 endpoint（index 同时承载 GET/P
 `go test -count=1 -timeout=15m ./internal/api/routers ./internal/server -run "^TestR15(FlaskRoutePriorities|RealFlaskRoutePriorities)$|^TestNewAppRegistersImplementedRoutes$"`
 末行 api/routers 0.566s、server 0.013s 均 ok。
 同时回归 batch-6 R5：`go test -count=1 ./internal/convert -run "TestBatch6|TestMihomo.*Identit"` → ok 0.011s。
+
+### 集成 5 验证
+
+未在三次独立 race 重放中复现原真实时间误判，但该断言原本依赖数据库落盘速度；
+测试改用 publishProgress 已支持的 lifecycle.ClockFrom，严格检查 999ms/1000ms 边界及同一刻 forced phase。
+`go test -race -count=3 ./internal/deploy -run "^TestReviewA14UnforcedProgressIsThrottled$"` → ok 17.059s。
+没有修改生产节流逻辑、持续时间、阈值或放宽断言。
