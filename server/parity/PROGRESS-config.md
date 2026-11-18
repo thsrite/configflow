@@ -57,10 +57,14 @@ diagnosis and strict other fields/storage; no aggregation runtime code changes. 
 
 ## N8-7 — early consumers, first batch (ported; final acceptance running)
 
-- Branch go-n8-7 from a08c4cc2. Package commits: version c46c511e4, utilx
-  6b351e016, logx c98f3ec0e, localhttp 1cd533f6c, auth fa731d217,
-  jsonresp de05d6327, jsonstore 81e93b5e0, redact b69c03c10; metrics/file and
-  final acceptance commits follow. Full report: [progress/n8-7.md](progress/n8-7.md).
+## N8-7 — early consumers, first batch (ported; coordinator acceptance pending)
+
+- Branch go-n8-7 from a08c4cc2, finally rebased onto go@c31fbf306. Package
+  commits are listed in the full report: [progress/n8-7.md](progress/n8-7.md).
+  Original full race had one obsolete Unicode fixture failure, closed by the
+  corrected complete api/agents race; first proddiff new=0/stale=0. Final
+  all-difftest/proddiff stages never obtained slots within the authorized
+  15-minute queue limit. Final merged-tree cf-gate remains pending.
 - Native file codec, typed JWT claims, shared bounded native redaction. Real Python
   file interchange, JWT bidirectional interop and HMAC negative controls.
 - Coordinator split: taskstatus waits for O3-6c; tasks, notifications (+store),
