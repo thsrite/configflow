@@ -1013,6 +1013,21 @@ JSON 类型比较保存 0。`TestC34ObjectFieldValues` 对四个宽松引擎分�
   sole last_probe replacement with exactly one revision increment; R15 HTTP
   remains unported and is not claimed verified here.
 
+## R16 review — isolated client evidence and private credential references
+
+- RouterOS discovery skips non-object members of a valid table array and keeps
+  its healthy rows. It marks the reading incomplete, so absent saved devices
+  remain unknown. Python rejects the whole mixed table: a malformed ARP or DHCP
+  server row can hide all clients, and optional tables lose their healthy rows.
+  A non-array table still fails; this does not turn invalid replies into empty
+  successful scans or change the shared write/ownership driver paths.
+- Discovery applies shared credential redaction after joining saved identities,
+  live readings and refresh diagnostics. A device's text cannot echo a peer's
+  stored password or a known Agent credential from the profile. Encoded
+  references and unsupported/cached responses are covered; usernames stay
+  visible. Private configuration and cached evidence are not rewritten.
+  Production HTTP authorization and its repository-wide token hook remain R17.
+
 ## N8-5c — typed validation, router guard, imports
 
 - **写入校验的类型错误消息。** 名称不是字符串时，提示里显示其 JSON 文本（`null`、`true`、`{"a":1}`），Python 显示 repr（`None`、`True`）。

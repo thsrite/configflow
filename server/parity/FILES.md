@@ -91,8 +91,8 @@ Command used: `find backend -name '*.py' -not -name 'test_*' -not -path 'backend
 | `backend/common/agent_manager.py` | 28 | agents |  | also used by: config (notifications, routes/tasks, routes/config, domain discovery, setup) |
 | `backend/common/auth.py` | 171 | config | C06 |  |
 | `backend/common/client_devices.py` | 63 | routers |  | R16 |
-| `backend/common/client_discovery.py` | 204 | routers |  |  |
-| `backend/common/client_discovery_cache.py` | 88 | routers |  |  |
+| `backend/common/client_discovery.py` | 204 | routers |  | R16 |
+| `backend/common/client_discovery_cache.py` | 88 | routers |  | R16 |
 | `backend/common/client_fixed_ip.py` | 281 | routers |  | R17 |
 | `backend/common/config.py` | 345 | config | C04 | also used by: every domain |
 | `backend/common/config_export.py` | 290 | config | C34 |  |

@@ -13,6 +13,7 @@ import (
 	"configflow/internal/lifecycle"
 	"configflow/internal/lockx"
 	"configflow/internal/logx"
+	"configflow/internal/redact"
 	"configflow/internal/routerdoc"
 	"configflow/internal/routers"
 )
@@ -217,7 +218,22 @@ func savedEvidence(p netip.Prefix, valid bool, merged map[string]*routerdoc.Sigh
 // Discover concurrently reads all supported main routers and joins fresh saved
 // data. The owner detaches request cancellation for shared cache/probe work;
 // device I/O has its own bounds and Runtime shutdown still cancels it.
-func (s *DiscoveryService) Discover(ctx context.Context, config json.RawMessage, opts DiscoveryOptions) (Discovery, error) {
+func (s *DiscoveryService) Discover(ctx context.Context, config json.RawMessage, opts DiscoveryOptions) (result Discovery, err error) {
+	// Drivers can hide their own password, but a peer's diagnostic/hostname or
+	// a saved name can reference any credential in the profile. Project only the
+	// final response; cached evidence and optimistic edit inputs remain private.
+	defer func() {
+		if err != nil {
+			return
+		}
+		var data []byte
+		data, err = json.Marshal(result)
+		if err != nil {
+			return
+		}
+		secrets := redact.CollectCredentials(config, nil)
+		err = json.Unmarshal(redact.SanitizeCredentials(json.RawMessage(data), secrets), &result)
+	}()
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return Discovery{}, err
@@ -232,7 +248,7 @@ func (s *DiscoveryService) Discover(ctx context.Context, config json.RawMessage,
 			rs = append(rs, r)
 		}
 	}
-	result := Discovery{CheckedAt: lifecycle.ClockFrom(ctx).Now().Local().Format("2006-01-02T15:04:05-07:00"), Sources: []Source{}, Devices: []ObservedDevice{}, Discovered: []DiscoveredDevice{}}
+	result = Discovery{CheckedAt: lifecycle.ClockFrom(ctx).Now().Local().Format("2006-01-02T15:04:05-07:00"), Sources: []Source{}, Devices: []ObservedDevice{}, Discovered: []DiscoveredDevice{}}
 	networks := map[string]netip.Prefix{}
 	saved := map[string]bool{}
 	for _, d := range list.Devices {

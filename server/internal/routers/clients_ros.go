@@ -200,24 +200,28 @@ func clientBudget(deadline time.Time) time.Duration {
 	}
 	return min(4*time.Second, left)
 }
-func (d *RouterOS) clientList(ctx context.Context, path string, timeout time.Duration) ([]Row, error) {
+func (d *RouterOS) clientList(ctx context.Context, path string, timeout time.Duration) ([]Row, bool, error) {
 	v, err := d.get(ctx, path, timeout)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	items, ok := v.([]any)
 	if !ok {
-		return nil, routerError(fmt.Sprintf(messageROSListFormat, path))
+		return nil, false, routerError(fmt.Sprintf(messageROSListFormat, path))
 	}
 	rows := make([]Row, 0, len(items))
+	complete := true
 	for _, v := range items {
 		r, ok := v.(map[string]any)
 		if !ok {
-			return nil, routerError(fmt.Sprintf(messageROSListFormat, path))
+			// A corrupt row has no trustworthy identity. Keep healthy peers but
+			// do not use this partial scan as evidence that a host is absent.
+			complete = false
+			continue
 		}
 		rows = append(rows, Row(r))
 	}
-	return rows, nil
+	return rows, complete, nil
 }
 func (d *RouterOS) confirmClients(ctx context.Context, r *routerdoc.Reading, candidates []clientProbe, lan map[string]bool, opts ClientReadOptions) []string {
 	if len(candidates) == 0 {
@@ -296,7 +300,7 @@ func (d *RouterOS) confirmClients(ctx context.Context, r *routerdoc.Reading, can
 	if len(silent) > 0 {
 		now := map[string]string{}
 		if budget := clientBudget(opts.Deadline); budget > 0 {
-			rows, err := d.clientList(ctx, "/ip/arp", budget)
+			rows, _, err := d.clientList(ctx, "/ip/arp", budget)
 			if err == nil {
 				for _, row := range rows {
 					if lan[rosText(row["interface"])] {
@@ -343,7 +347,11 @@ func (d *RouterOS) ReadClients(ctx context.Context, opts ClientReadOptions) (*ro
 		if left < time.Second {
 			return nil, routerError(messageClientsSlow)
 		}
-		return d.clientList(ctx, path, min(rosTimeout, left))
+		rows, complete, err := d.clientList(ctx, path, min(rosTimeout, left))
+		if !complete {
+			r.Complete = false
+		}
+		return rows, err
 	}
 	arp, err := listing("/ip/arp")
 	if err != nil {
@@ -360,7 +368,7 @@ func (d *RouterOS) ReadClients(ctx context.Context, opts ClientReadOptions) (*ro
 	addresses, a := optional("/ip/address", " IP 地址")
 	servers, b := optional("/ip/dhcp-server", " DHCP 服务")
 	leases, c := optional("/ip/dhcp-server/lease", " DHCP 租约")
-	r.Complete = a && b && c
+	r.Complete = r.Complete && a && b && c
 	lan := clientLAN(servers, nil, nil)
 	if len(lan) == 0 {
 		members, _ := listing("/interface/list/member")
