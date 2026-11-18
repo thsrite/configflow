@@ -84,7 +84,7 @@ func parseSnapshot(ctx context.Context, data []byte, expected deploy.Manifest, e
 	archive := tar.NewReader(budget)
 	files := make(map[string]deploy.Content, len(expectedFiles))
 	seen := make(map[string]bool, len(expectedFiles)+1)
-	var manifest *deploy.Manifest
+	var manifest *snapshotManifest
 	total := int64(0)
 	for {
 		if err = ctx.Err(); err != nil {
@@ -112,7 +112,7 @@ func parseSnapshot(ctx context.Context, data []byte, expected deploy.Manifest, e
 			if e != nil {
 				return nil, refuse(msgSnapshotVerify)
 			}
-			var v deploy.Manifest
+			var v snapshotManifest
 			if json.Unmarshal(raw, &v) != nil {
 				return nil, refuse(msgSnapshotVerify)
 			}
@@ -147,23 +147,38 @@ func parseSnapshot(ctx context.Context, data []byte, expected deploy.Manifest, e
 	if manifest == nil || len(files) != len(expectedFiles) {
 		return nil, refuse(msgSnapshotIncomplete)
 	}
-	m := *manifest
+	m := manifest.protocol()
 	if m.ProtocolVersion != expected.ProtocolVersion || m.DeploymentID != expected.DeploymentID || m.AgentID != expected.AgentID || m.ProfileID != expected.ProfileID || m.ServiceType != expected.ServiceType || m.ConfigPath != expected.ConfigPath {
 		return nil, refuse(msgSnapshotChanged)
 	}
-	if len(m.Files) != len(files) {
+	var entries []snapshotFile
+	if json.Unmarshal(manifest.Files, &entries) != nil || entries == nil || len(entries) != len(files) {
 		return nil, refuse(msgManifestIncomplete)
 	}
 	checked := make(map[string]bool, len(files))
-	for _, entry := range m.Files {
-		file, ok := files[entry.Path]
-		if checked[entry.Path] || !ok {
+	for _, entry := range entries {
+		if entry.Path == nil {
+			return nil, refuse(msgSnapshotVerify)
+		}
+		path := *entry.Path
+		file, ok := files[path]
+		if checked[path] || !ok {
 			return nil, refuse(msgManifestInvalid)
 		}
-		checked[entry.Path] = true
-		if entry.Role != file.Role || entry.Size != int64(len(file.Data)) || entry.SHA256 != digest(file.Data) {
+		checked[path] = true
+		if len(entry.Role) == 0 || len(entry.Size) == 0 || len(entry.SHA256) == 0 {
+			return nil, refuse(msgSnapshotVerify)
+		}
+		var role *deploy.Role
+		var size *int64
+		var sha *string
+		roleErr := json.Unmarshal(entry.Role, &role)
+		sizeErr := json.Unmarshal(entry.Size, &size)
+		shaErr := json.Unmarshal(entry.SHA256, &sha)
+		if roleErr != nil || sizeErr != nil || shaErr != nil || role == nil || size == nil || sha == nil || *role != file.Role || *size != int64(len(file.Data)) || *sha != digest(file.Data) {
 			return nil, refuse(msgSnapshotDigest)
 		}
+		m.Files = append(m.Files, deploy.File{Path: path, Role: *role, Size: *size, SHA256: *sha, Name: entry.Name})
 	}
 	main, ok := files[expected.ConfigPath]
 	if !ok {
@@ -177,4 +192,30 @@ func parseSnapshot(ctx context.Context, data []byte, expected deploy.Manifest, e
 		return nil, refuse(msgSnapshotVerify)
 	}
 	return deploy.Pack(m, files, sum, nil)
+}
+
+// Snapshot metadata is decoded in validation order: malformed file sizes are
+// digest refusals, independently of the trusted deploy.File codec's strictness.
+type snapshotManifest struct {
+	ProtocolVersion int             `json:"protocol_version"`
+	DeploymentID    string          `json:"deployment_id"`
+	AgentID         string          `json:"agent_id"`
+	ProfileID       string          `json:"profile_id"`
+	ServiceType     string          `json:"service_type"`
+	ConfigPath      string          `json:"config_path"`
+	Files           json.RawMessage `json:"files"`
+	ReloadOnly      bool            `json:"reload_only"`
+	FinalConfig     bool            `json:"final_config"`
+}
+
+func (m snapshotManifest) protocol() deploy.Manifest {
+	return deploy.Manifest{ProtocolVersion: m.ProtocolVersion, DeploymentID: m.DeploymentID, AgentID: m.AgentID, ProfileID: m.ProfileID, ServiceType: m.ServiceType, ConfigPath: m.ConfigPath, ReloadOnly: m.ReloadOnly, FinalConfig: m.FinalConfig}
+}
+
+type snapshotFile struct {
+	Path   *string         `json:"path"`
+	Size   json.RawMessage `json:"size"`
+	Role   json.RawMessage `json:"role"`
+	SHA256 json.RawMessage `json:"sha256"`
+	Name   string          `json:"name"`
 }

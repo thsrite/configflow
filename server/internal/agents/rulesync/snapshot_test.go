@@ -6,6 +6,9 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"testing"
 
 	"configflow/internal/deploy"
@@ -115,4 +118,69 @@ func FuzzSnapshotArchive(f *testing.F) {
 		}
 		_, _ = parseSnapshot(context.Background(), data, m, files, m.Files[0].SHA256)
 	})
+}
+
+func TestSnapshotAgainstPython(t *testing.T) {
+	if os.Getenv("CONFIGFLOW_DIFF") != "1" {
+		t.Skip("set CONFIGFLOW_DIFF=1")
+	}
+	root, e := filepath.Abs("../../../..")
+	if e != nil {
+		t.Fatal(e)
+	}
+	cmd := exec.Command(filepath.Join(os.Getenv("HOME"), "cf-test/.venv/bin/python"), "server/internal/agents/rulesync/testdata/snapshot_reference.py")
+	cmd.Dir = root
+	cmd.Env = append(os.Environ(), "PYTHONPATH=.")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	raw, e := cmd.Output()
+	if e != nil {
+		t.Fatalf("snapshot Python %v %s", e, stderr.String())
+	}
+	type file struct {
+		Data []byte
+		Role deploy.Role
+	}
+	var cases []struct {
+		Name, Version, Error string
+		Archive              []byte
+		Expected             deploy.Manifest
+		Files, Result        map[string]file
+	}
+	if e = json.Unmarshal(raw, &cases); e != nil {
+		t.Fatal(e)
+	}
+	if len(cases) == 0 {
+		t.Fatal("empty snapshot oracle")
+	}
+	for _, tt := range cases {
+		t.Run(tt.Name, func(t *testing.T) {
+			files := map[string]deploy.Content{}
+			for p, f := range tt.Files {
+				files[p] = deploy.Content{Data: f.Data, Role: f.Role}
+			}
+			out, e := parseSnapshot(context.Background(), tt.Archive, tt.Expected, files, tt.Version)
+			if tt.Error != "" {
+				if e == nil || e.Error() != tt.Error {
+					t.Fatalf("got %v want %q", e, tt.Error)
+				}
+				return
+			}
+			if e != nil {
+				t.Fatal(e)
+			}
+			got, e := out.Contents()
+			if e != nil {
+				t.Fatal(e)
+			}
+			if len(got) != len(tt.Result) {
+				t.Fatal("files differ")
+			}
+			for path, f := range tt.Result {
+				if g, ok := got[path]; !ok || g.Role != f.Role || !bytes.Equal(g.Data, f.Data) {
+					t.Fatalf("file %s differs", path)
+				}
+			}
+		})
+	}
 }

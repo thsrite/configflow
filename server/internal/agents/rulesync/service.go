@@ -312,11 +312,11 @@ func (s *Service) saveState(ctx context.Context, id string, next model.RuleSyncS
 	previous := stateOf(a)
 	// Compare the complete state excluding the timestamp, including unknown state
 	// members. Replacement deliberately removes old per-run fields.
-	before, e := stateWithoutTime(previous)
+	before, e := stateWithoutTime(previous, false)
 	if e != nil {
 		return e
 	}
-	after, e := stateWithoutTime(&next)
+	after, e := stateWithoutTime(&next, true)
 	if e != nil {
 		return e
 	}
@@ -342,8 +342,11 @@ func (s *Service) saveState(ctx context.Context, id string, next model.RuleSyncS
 	}
 	return e
 }
-func stateWithoutTime(state *model.RuleSyncState) (json.RawMessage, error) {
-	raw, e := encodeState(state)
+func stateWithoutTime(state *model.RuleSyncState, replacement bool) (json.RawMessage, error) {
+	raw, e := json.Marshal(state)
+	if replacement {
+		raw, e = encodeState(state)
+	}
 	if e != nil {
 		return nil, e
 	}
