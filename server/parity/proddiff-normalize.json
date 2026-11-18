@@ -171,5 +171,12 @@
     "tolerance": 120,
     "reason": "R15 policy preview stamps each request with the local second-resolution clock; every generated policy object and source remains compared.",
     "timestamp_format": "request-clock"
+  },
+  {
+    "route": "/api/client-devices/discovery",
+    "path": "checked_at",
+    "tolerance": 120,
+    "timestamp_format": "request-clock",
+    "reason": "R16 stamps a new router snapshot from its collection request clock; cache hits retain that origin. Compare close independent capture times with exact second/offset format, while cached/stale/error and all device evidence remain strict. Discovery comparisons run serially to align cold/hit transitions."
   }
 ]

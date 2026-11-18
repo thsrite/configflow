@@ -691,6 +691,7 @@ _REQUEST_SECOND = r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}'
 REQUEST_CLOCK_FORMATS = {
     ('/api/agents/<agent_id>/ipv6-readiness', 'refresh_error.at'): _REQUEST_SECOND + r'[+-]\d{2}:\d{2}',
     ('/api/agents/<agent_id>/upstream-routers', 'checked_at'): _REQUEST_SECOND + r'[+-]\d{2}:\d{2}',
+    ('/api/client-devices/discovery', 'checked_at'): _REQUEST_SECOND + r'[+-]\d{2}:\d{2}',
     ('/api/notifications', 'checked_at'): _REQUEST_SECOND + r'\.\d{6}\+00:00',
     ('/api/routers/<router_id>/policy', 'generated_at'): _REQUEST_SECOND,
 }
@@ -764,10 +765,23 @@ def load_rules(rows):
 
 
 def phase(case):
-    """Reads first (parallel), then read-only POSTs that may stage artifacts (parallel),
-    then log readers serially: they observe what every earlier request logged."""
+    """Align discovery cold/hit transitions before parallel reads and artifact POSTs.
+    Log readers run last so they observe all preceding requests."""
     method, route = case[0], case[1]
+    if method == 'GET' and route == '/api/client-devices/discovery':
+        return -1
     return 2 if route.startswith('/api/logs/') else 1 if method != 'GET' else 0
+
+
+def comparison_results(all_cases, compare):
+    # Default-profile and explicit-profile discovery requests share a cache.
+    # Parallelizing them independently in each server can compare cold vs hit.
+    # Keep both cold and cached responses strict by issuing the same sequence.
+    yield from map(compare, [case for case in all_cases if phase(case) == -1])
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+        for stage in (0, 1):
+            yield from pool.map(compare, [case for case in all_cases if phase(case) == stage])
+    yield from map(compare, [case for case in all_cases if phase(case) == 2])
 
 
 def compare_http(python, go, diffs, bracket=False, attempts=3):
@@ -986,10 +1000,7 @@ def main():
                                               bracket=method == 'GET' and route in bracket)
 
             def results():
-                with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
-                    for stage in (0, 1):
-                        yield from pool.map(compare, [case for case in all_cases if phase(case) == stage])
-                yield from map(compare, [case for case in all_cases if phase(case) == 2])
+                yield from comparison_results(all_cases, compare)
 
             json_sample = None
             transport_retries = {'python': 0, 'go': 0}

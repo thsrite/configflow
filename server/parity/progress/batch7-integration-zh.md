@@ -316,3 +316,18 @@ DB对照发现ipv6_verification_requested字段不一致，synthetic live尚未�
 修复只涉及测试/oracle，产品源码相对已通过预检、16场景、基准的bb6cb1b00未变。
 `CONFIGFLOW_DIFF=1 go test -race -count=1 -timeout=10m ./internal/api/agents/difftest -run "^TestPublishHTTPAgainstFlask$"`
 → `ok configflow/internal/api/agents/difftest 8.634s`。现在重新执行完整compare全部阶段。
+
+### discovery 冷缓存比较顺序收尾
+
+下一轮compare在proddiff停下：new=2/stale=0，双方retries仍0，两个字段仅为
+GET /api/client-devices/discovery 的cached和checked_at。代码核对表明60秒只是stale标记，
+已有快照不因TTL自动重读；并非产品缓存过期错误。根因是harness并发发出同一profile的
+显式/default查询，两边独立调度，可能把冷读取和已命中读取互相比较。
+
+仅把此精确GET路由的case按原序串行，先对齐冷/命中转换，其余GET/POST仍按原阶段并行，
+日志最后串行。cached/stale/refresh_error/devices继续严格比较，没有加baseline或忽略字段。
+checked_at确由首次采集请求的时钟产生，命中时保留该采集时刻；为该精确route/path增加
+相同120秒及秒级偏移格式约束，解释采集请求时间，非任意持久数据时间。synthetic测试
+实际执行同一调度函数，验证冷→命中、日志最后，并证明缓存标志/错误/设备变化仍被检测。
+`python -m unittest discover -s server/tools/proddiff -p test_proddiff.py` →55 tests，0.324s，OK。
+本轮修复仍只有harness/规则/测试，已验证的产品树bb6cb1b00没有变化。

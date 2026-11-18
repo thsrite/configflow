@@ -329,11 +329,12 @@ class ComparatorTests(unittest.TestCase):
         expected = {
             ('/api/agents/<agent_id>/ipv6-readiness', 'refresh_error.at'),
             ('/api/agents/<agent_id>/upstream-routers', 'checked_at'),
+            ('/api/client-devices/discovery', 'checked_at'),
             ('/api/notifications', 'checked_at'),
             ('/api/routers/<router_id>/policy', 'generated_at'),
         }
         selected = [rule for rule in configured if (rule['route'], rule.get('path')) in expected]
-        self.assertEqual(4, len(selected))
+        self.assertEqual(5, len(selected))
         for rule in selected:
             with self.subTest(route=rule['route']):
                 self.assertEqual(120, rule['tolerance'])
@@ -373,6 +374,38 @@ class ComparatorTests(unittest.TestCase):
                     with mock.patch.object(pd.Path, 'read_text', return_value=json.dumps([mutation])):
                         with self.assertRaises(RuntimeError):
                             pd.load_rules(rows)
+
+    def test_discovery_comparison_aligns_cold_and_hit_without_masking_cache_state(self):
+        route = '/api/client-devices/discovery'
+        cases = [('GET', '/ordinary', '/ordinary', None, False),
+                 ('POST', '/artifact', '/artifact', {}, False),
+                 ('GET', '/api/logs/info', '/api/logs/info', None, False),
+                 ('GET', route, route + '?profile_id=synthetic', None, False),
+                 ('GET', route, route, None, False)]
+        calls = []
+        seen = 0
+        def compare(case):
+            nonlocal seen
+            calls.append(case[2])
+            if case[1] == route:
+                result = {'cached': seen != 0, 'stale': False, 'refresh_error': '', 'devices': []}
+                seen += 1
+                return result
+            return case[1]
+        answers = list(pd.comparison_results(cases, compare))
+        self.assertEqual([route + '?profile_id=synthetic', route], calls[:2])
+        self.assertEqual('/api/logs/info', calls[-1])
+        self.assertFalse(answers[0]['cached'])
+        self.assertTrue(answers[1]['cached'])
+        rules = [r for r in json.loads((pd.PARITY / 'proddiff-normalize.json').read_text()) if r['route'] == route]
+        base = {'cached': True, 'stale': False, 'refresh_error': '', 'devices': [],
+                'checked_at': '2026-01-01T00:00:00+00:00'}
+        for changed in [dict(base, cached=False), dict(base, stale=True),
+                        dict(base, refresh_error='failed'), dict(base, devices=[{'ip': '192.0.2.1'}])]:
+            with self.subTest(changed=changed):
+                self.assertTrue(pd.response_diffs(reply(base), reply(changed), route, rules))
+        self.assertEqual(0, pd.phase(('GET', '/api/client-devices', '/', None, False)))
+        self.assertEqual(1, pd.phase(('POST', route, '/', {}, False)))
 
     def test_normalization_preserves_type_changes(self):
         rule = [{'route': '/synthetic', 'path': 'size', 'reason': 'test'}]
