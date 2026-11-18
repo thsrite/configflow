@@ -16,7 +16,7 @@ type collaborators struct {
 	saveRule        func(ctx context.Context, item libraryItem) error
 	validateContent func(item libraryItem) error
 	cachedContent   func(ctx context.Context, item libraryItem) ([]byte, error)
-	matcherOptions  func() rules.MatcherCacheOptions
+	matcherOptions  func() rules.CacheOptions
 	localMatcher    func(ctx context.Context, id string) (func(string) *Match, error)
 	supported       func(version, minimum string) bool
 	loadTraffic     func(ctx context.Context, a Agent, full bool) (traffic, error)

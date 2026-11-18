@@ -83,9 +83,7 @@ func RememberDownload(ctx context.Context, sub model.Subscription, result *Sourc
 	if err := validateSourceYAMLPolicy(result.Text); err != nil {
 		return nil, err
 	}
-	if sub.URL == "" {
-		return nil, repo.NewValidationError(msgSourceIdentity)
-	}
+
 	result = makeResult(result.Text, result.Source, result.Traffic, result.FetchedAt)
 	data, err := json.Marshal(struct {
 		Text      string   `json:"text"`
@@ -110,7 +108,7 @@ func DownloadNodes(ctx context.Context, sub model.Subscription) ([]model.Node, *
 	if err := ctx.Err(); err != nil {
 		return nil, nil, nil, err
 	}
-	if sub.ID == "" || sub.URL == "" {
+	if sub.ID == "" {
 		return nil, nil, nil, repo.NewValidationError(msgSourceIdentity)
 	}
 	env := refreshEnv()
@@ -130,7 +128,7 @@ func DownloadNodes(ctx context.Context, sub model.Subscription) ([]model.Node, *
 		return nil, nil, nil, err
 	}
 	if len(nodes) == 0 {
-		return nil, nil, nil, repo.NewValidationError(msgNoSourceNodes)
+		return nil, nil, nil, &SourceValidationError{Message: msgNoSourceNodes}
 	}
 	for i := range nodes {
 		nodes[i].SubscriptionID = sub.ID
@@ -177,16 +175,24 @@ func cacheURL(cache *NodeCache) (*string, bool) {
 	if cache == nil {
 		return nil, false
 	}
-	raw := rawMember(*cache, "metadata")
-	if len(raw) == 0 {
-		return nil, false
-	}
-	var metadata map[string]json.RawMessage
-	if json.Unmarshal(raw, &metadata) != nil || metadata == nil {
+	var raw json.RawMessage
+	var present bool
+	var err error
+	if cache.Metadata == nil {
+		raw, present, err = cache.Raw.MemberJSON("metadata", cache.Metadata)
+		if err != nil {
+			return nil, true
+		}
+		if !present {
+			return nil, false
+		}
 		return nil, true
 	}
-	raw = metadata["url"]
-	if len(raw) == 0 || string(raw) == "null" {
+	raw, present, err = cache.Metadata.Raw.MemberJSON("url", cache.Metadata.URL)
+	if err != nil {
+		return nil, true
+	}
+	if !present || string(raw) == "null" {
 		return nil, false
 	}
 	var address string
@@ -229,6 +235,9 @@ func FetchSource(ctx context.Context, sub model.Subscription, fetch FetchSourceF
 			}
 			return nil, &rules.StrategyReferenceError{Message: fmt.Sprintf(msgNoManualCache, name)}
 		}
+		if err := convert.ConfigShapes(&model.Config{Profile: &model.Profile{}, Nodes: cache.Nodes}, false); err != nil {
+			return nil, &SourceValidationError{Message: err.Error(), Cause: err, CacheShape: true}
+		}
 		main := yamlx.Map()
 		proxies := yamlx.Seq()
 		// NodeProxy consumes native stored records and keeps the existing converter
@@ -252,12 +261,10 @@ func FetchSource(ctx context.Context, sub model.Subscription, fetch FetchSourceF
 		}
 		return makeResult(string(data), "cache", nil, ""), nil
 	}
-	if sub.URL == "" {
-		return nil, repo.NewValidationError(msgSourceIdentity)
-	}
+
 	if data, err := readSharedData(ctx, DownloadCachePath(sub.URL)); err == nil {
 		var receipt TransportReceipt
-		if json.Unmarshal(data, &receipt) == nil && !model.IssueUnder(model.Issues(receipt), "text") && fresh(receipt.FetchedAt, interval) {
+		if json.Unmarshal(data, &receipt) == nil && !model.IssueUnder(model.Issues(receipt), "text") && strictReceiptFresh(receipt, interval) {
 			if err := validateSourceYAMLPolicy(receipt.Text); err != nil {
 				return nil, err
 			}
@@ -289,4 +296,16 @@ func validateSourceYAMLPolicy(text string) error {
 		return &repo.Error{Kind: repo.ErrValidation, Message: fmt.Sprintf(msgSourceYAML, err), Cause: err}
 	}
 	return nil
+}
+
+func strictReceiptFresh(receipt TransportReceipt, interval int64) bool {
+	text, _, err := receipt.Raw.MemberJSON("text", receipt.Text)
+	if err != nil || len(text) == 0 || text[0] != '"' {
+		return false
+	}
+	at, _, err := receipt.Raw.MemberJSON("fetched_at", receipt.FetchedAt)
+	if err != nil || len(at) == 0 || at[0] != '"' {
+		return false
+	}
+	return fresh(receipt.FetchedAt, interval)
 }

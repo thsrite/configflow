@@ -37,6 +37,10 @@ func migrationFixture(t *testing.T) (context.Context, *repo.Repository, *jsonx.O
 }
 func TestNativeCacheMigrationPreservesOfflineFallback(t *testing.T) {
 	ctx, r, rule, old, native := migrationFixture(t)
+	stamp := time.Unix(1700000000, 123456789)
+	if err := os.Chtimes(old, stamp, stamp); err != nil {
+		t.Fatal(err)
+	}
 	before, err := r.Shared(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -60,6 +64,10 @@ func TestNativeCacheMigrationPreservesOfflineFallback(t *testing.T) {
 	afterJSON, _ := model.Marshal(after)
 	if string(beforeJSON) != string(afterJSON) {
 		t.Fatal("migration committed DB/revision changes")
+	}
+	info, err := os.Stat(native)
+	if err != nil || !info.ModTime().Equal(stamp) {
+		t.Fatal("migration extended source freshness", err)
 	}
 	// The native cache now works after the old file disappears.
 	if err := os.Remove(old); err != nil {
@@ -230,4 +238,48 @@ func FuzzTypedRuleContent(f *testing.F) {
 		rule := model.RuleConfig{Behavior: &behavior, Format: &format}
 		_ = ValidateRemote(Content{Data: []byte(source)}, rule, nil, format)
 	})
+}
+
+func TestLegacyCacheMigrationUsesHeldReadSnapshot(t *testing.T) {
+	ctx, r, rule, _, native := migrationFixture(t)
+	err := r.WithReadSnapshot(ctx, func(held context.Context) error {
+		data, err := ReadValidatedRuleCacheWithFormat(held, rule, nil, "yaml")
+		if err != nil {
+			return err
+		}
+		if string(data) != "payload: [example.com]\n" {
+			t.Fatal("lost validated old bytes")
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(native); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("read-only snapshot wrote cache")
+	}
+	if _, err := ReadValidatedRuleCacheWithFormat(ctx, rule, nil, "yaml"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(native); err != nil {
+		t.Fatal("writable read did not migrate cache", err)
+	}
+}
+func TestKnownFormatNeverDecodesInferenceLibrary(t *testing.T) {
+	ctx, r, rule := func() (context.Context, *repo.Repository, *jsonx.Object) {
+		rule := remoteSource()
+		ctx, r := cacheRepo(t, rule)
+		return ctx, r, rule
+	}()
+	if _, err := WriteValidatedRuleCache(ctx, rule, []byte("example.com\n"), nil); err != nil {
+		t.Fatal(err)
+	}
+	// This deliberately non-JSON transient value would make even marshaling
+	// the library fail. A caller-known format must not touch that field.
+	config := jsonx.Obj("rule_library", []any{jsonx.Obj("id", "unused", "content", make(chan int))})
+	data, err := ReadValidatedRuleCacheWithFormat(ctx, rule, config, "text")
+	if err != nil || string(data) != "example.com\n" {
+		t.Fatal("known format visited library", err)
+	}
+	_ = r
 }

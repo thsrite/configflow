@@ -40,6 +40,9 @@ type CacheOptions struct {
 	// StoredLibrary returns the current shared rule_library from the
 	// repository (RuleCacheReadPath consults it for legacy cache names).
 	StoredLibrary func() []model.RuleLibraryItem
+	// ReadPath lets a native owner validate a current declaration inside its
+	// borrowed repository View. When set, StoredLibrary is never copied/read.
+	ReadPath func(model.RuleConfig, []model.RuleLibraryItem, string) string
 	// ValidateRemote checks a url source's cache file against its
 	// declaration; an error marks the file unusable. nil accepts everything.
 	ValidateRemote func(content string, rule model.RuleConfig) error
@@ -53,6 +56,13 @@ type CacheOptions struct {
 	// Tunables, normally the Default* constants (tests shrink them).
 	MaxMatchers, MaxHostResults                    int
 	IdleSeconds, ReadRetrySeconds, CleanupInterval float64
+}
+
+func (c *Cache) readPath(rule model.RuleConfig, library, stored []model.RuleLibraryItem, directory string) string {
+	if c.opt.ReadPath != nil {
+		return c.opt.ReadPath(rule, library, directory)
+	}
+	return CacheReadPath(rule, library, stored, directory)
 }
 
 // Cache is the process-wide registry of Cached values, keyed by
@@ -202,7 +212,11 @@ func (s *localSource) load(item *model.RuleConfig, library *model.RuleLibraryIte
 		source = LibraryRule(*library)
 	}
 	if nameOf(library, item) != "" {
-		path := CacheReadPath(source, s.library, s.cache.opt.StoredLibrary(), s.rulesDir)
+		var stored []model.RuleLibraryItem
+		if s.cache.opt.ReadPath == nil {
+			stored = s.cache.opt.StoredLibrary()
+		}
+		path := s.cache.readPath(source, s.library, stored, s.rulesDir)
 		key := readKeyOf(item, library)
 		if previous, ok := s.paths[key]; ok && previous != path {
 			s.retry(item, library)
@@ -385,7 +399,10 @@ func (c *Cache) signature(input MatcherInput, rulesDir string) ([32]byte, map[st
 	referenced := make([]*model.RuleLibraryItem, 0)
 	stamps := map[string]*fileStamp{}
 	paths := map[readKey]string{}
-	stored := c.opt.StoredLibrary()
+	var stored []model.RuleLibraryItem
+	if c.opt.ReadPath == nil {
+		stored = c.opt.StoredLibrary()
+	}
 	for i := range input.Rules {
 		item := &input.Rules[i]
 		if ruleKind(item) != "ruleset" || !ruleEnabled(item) {
@@ -400,7 +417,7 @@ func (c *Cache) signature(input MatcherInput, rulesDir string) ([32]byte, map[st
 		if source != nil {
 			target = LibraryRule(*source)
 		}
-		path := CacheReadPath(target, input.CacheLibrary, stored, rulesDir)
+		path := c.readPath(target, input.CacheLibrary, stored, rulesDir)
 		paths[readKeyOf(item, source)] = path
 		info, err := os.Stat(path)
 		if err != nil {

@@ -41,6 +41,9 @@ def loopback(self, method, url, **kwargs):
     return original_request(self, method, url, **kwargs)
 requests.sessions.Session.request = loopback
 
+from server.internal.rules.testdata.d2_http_cache import CachePaths
+cache_paths=CachePaths(repository,root)
+
 def state():
     files = {}
     for path in root.rglob('*'):
@@ -54,7 +57,8 @@ def state():
     with sqlite3.connect(root / 'configflow.sqlite3') as connection:
         sections = connection.execute('SELECT scope, owner, position FROM sections ORDER BY scope, owner').fetchall()
         fields = [(scope,owner,field,position,json.loads(value)) for scope,owner,field,position,value in connection.execute('SELECT scope, owner, field, position, value FROM fields ORDER BY scope, owner, field')]
-    return {'document': repository.export_all(), 'files': files, 'sections': sections, 'fields': fields}
+    cache_paths.update()
+    return {'document': repository.export_all(), 'files': cache_paths.files(files), 'sections': sections, 'fields': fields}
 
 for line in sys.stdin:
     try:
@@ -82,6 +86,9 @@ for line in sys.stdin:
                 reply = app.test_client().open(request['path'], method=request['method'], headers=headers, data=request.get('body'))
                 body = '' if request['method'] == 'HEAD' else reply.get_json() if reply.is_json else reply.get_data(as_text=True)
                 answer = {'status': reply.status_code, 'headers': dict(reply.headers), 'body': body, 'state': state()}
+        if request['method']=='POST' and urlsplit(request['path']).path.endswith('/rule-library/cache'):
+            answer['body']=cache_paths.cache_reply(answer['body'])
+        answer['cache_paths']=dict(cache_paths.aliases)
         print(json.dumps(answer, ensure_ascii=False), flush=True)
     except Exception as error:
         print(json.dumps({'oracle_error': str(error)}), flush=True)

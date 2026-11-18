@@ -4,6 +4,7 @@ import (
 	"configflow/internal/instance"
 	"configflow/internal/lifecycle"
 	"configflow/internal/lifecycle/lifecycletest"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/rules"
 	"configflow/internal/tasks"
@@ -174,13 +175,12 @@ func TestReviewProductionMatcherLimitsAndRelease(t *testing.T) {
 	clock := lifecycletest.NewClock(time.Unix(0, 0))
 	opts.Clock = clock
 	opts.Spawner = nil // This test drives eviction explicitly for deterministic GC.
-	bounded := rules.NewMatcherCache(opts)
+	bounded := rules.NewCache(opts)
 	t.Cleanup(bounded.Clear)
-	config, err := object(map[string]any{"rule_configs": []ruleConfig{{ID: "rule", ItemType: "rule", RuleType: "DOMAIN-SUFFIX", Value: "example.com", Policy: "DIRECT", Enabled: true}}, "rule_library": []libraryItem{}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	refs := []weak.Pointer[rules.CachedMatcher]{}
+	enabled := true
+	policy := "DIRECT"
+	config := rules.MatcherInput{Rules: []model.RuleConfig{{ID: "rule", ItemType: "rule", RuleType: "DOMAIN-SUFFIX", Value: "example.com", Policy: &policy, Enabled: &enabled}}}
+	refs := []weak.Pointer[rules.Cached]{}
 	for profile := range 60 {
 		func() {
 			matcher := bounded.LocalMatcher(config, fmt.Sprintf("profile-%d", profile))

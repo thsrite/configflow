@@ -10,7 +10,7 @@ import (
 )
 
 var matcherMu sync.Mutex
-var matcherCache *rules.MatcherCache
+var matcherCache *rules.Cache
 
 func activateMatcherCache(ctx context.Context) {
 	matcherMu.Lock()
@@ -20,16 +20,16 @@ func activateMatcherCache(ctx context.Context) {
 	}
 	opts := matcherOptions()
 	opts.Clock = lifecycle.ClockFrom(ctx)
-	matcherCache = rules.NewMatcherCache(opts)
+	matcherCache = rules.NewCache(opts)
 }
 
-func cache(ctx context.Context) *rules.MatcherCache {
+func cache(ctx context.Context) *rules.Cache {
 	matcherMu.Lock()
 	defer matcherMu.Unlock()
 	if matcherCache == nil {
 		opts := matcherOptions()
 		opts.Clock = lifecycle.ClockFrom(ctx)
-		matcherCache = rules.NewMatcherCache(opts)
+		matcherCache = rules.NewCache(opts)
 	}
 	return matcherCache
 }
@@ -59,7 +59,7 @@ func (matcherSpawner) Spawn(ctx context.Context, name string, fn func(context.Co
 	return lifecycle.Spawn(ctx, name, fn)
 }
 
-func matcherOptions() rules.MatcherCacheOptions {
+func matcherOptions() rules.CacheOptions {
 	options := collaboration.matcherOptions()
 	options.Clock = lifecycle.ClockFrom(context.Background())
 	options.Spawner = matcherSpawner{}

@@ -1053,15 +1053,7 @@ func MihomoEnvironmentFromLegacy(old MihomoEnv) MihomoEnvironment {
 		return &result, nil
 	}
 	env.RenderMembers = func(group model.ProxyGroup, config *model.Config) (*yamlx.Node, error) {
-		source, err := decodeLegacy[*jsonx.Object](group)
-		if err != nil {
-			return nil, err
-		}
-		logical, err := legacyDialerView(config)
-		if err != nil {
-			return nil, err
-		}
-		return yamlbridge.Encode(rules.RenderMembers(source, logical))
+		return rules.RenderGroupDocument(group, rules.GroupResources(config)), nil
 	}
 	env.ProviderHealth = func(health *model.ProviderHealthCheck) (*yamlx.Node, error) {
 		wire, err := decodeLegacy[*jsonx.Object](health)
@@ -1075,11 +1067,7 @@ func MihomoEnvironmentFromLegacy(old MihomoEnv) MihomoEnvironment {
 		return yamlbridge.Encode(result)
 	}
 	env.FilterGroups = func(config *model.Config, document *yamlx.Node) error {
-		logical, err := legacyDialerView(config)
-		if err != nil {
-			return err
-		}
-		return adaptDocument(document, func(main *jsonx.Object) error { rules.LowerGroupProviderFilters(logical, main); return nil })
+		return rules.LowerProviderFilters(rules.GroupResources(config), document)
 	}
 	env.ChainProviders = func(config *model.Config, document *yamlx.Node) error {
 		logical, err := legacyDialerView(config)
@@ -1244,13 +1232,7 @@ func MihomoEnvironmentFromLegacy(old MihomoEnv) MihomoEnvironment {
 		return yamlbridge.Encode(report)
 	}
 	env.ValidateRules = func(config *model.Config, names []string, client string) error {
-		wire, err := decodeLegacy[*jsonx.Object](struct {
-			Rules []model.RuleConfig `json:"rule_configs"`
-		}{config.Profile.RuleConfigs})
-		if err != nil {
-			return err
-		}
-		return rules.ValidateRulePolicies(wire, names, client)
+		return rules.ValidatePolicies(config.Profile.RuleConfigs, names, client)
 	}
 	env.ValidateListeners = func(document *yamlx.Node) error {
 		wire, err := legacyProxy(document)
@@ -1673,23 +1655,7 @@ func legacyClientCallbacks() ClientCollaborators {
 			return result, nil
 		},
 		FilterNodes: func(nodes []model.Node, include, exclude *string) ([]model.Node, error) {
-			wire, err := encodeLegacy(nodes)
-			if err != nil {
-				return nil, err
-			}
-			values, _ := wire.([]any)
-			var includeValue, excludeValue any
-			if include != nil {
-				includeValue = *include
-			}
-			if exclude != nil {
-				excludeValue = *exclude
-			}
-			filtered, err := rules.FilterCandidates(values, includeValue, excludeValue)
-			if err != nil {
-				return nil, err
-			}
-			return decodeLegacy[[]model.Node](filtered)
+			return rules.Filter(nodes, include, exclude, func(node model.Node) string { return node.Name })
 		},
 	}
 }

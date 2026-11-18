@@ -76,6 +76,10 @@ func SourceCacheAt(ctx context.Context, sub model.Subscription) (*string, error)
 	if malformed || url == nil || *url != sub.URL {
 		return nil, nil
 	}
+	raw, _, err := cache.Raw.MemberJSON("updated_at", cache.UpdatedAt)
+	if err != nil || len(raw) == 0 || raw[0] != '"' {
+		return nil, nil
+	}
 	return cache.UpdatedAt, nil
 }
 

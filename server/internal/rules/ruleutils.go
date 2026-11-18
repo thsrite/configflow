@@ -101,14 +101,13 @@ func CacheReadPath(rule model.RuleConfig, library, stored []model.RuleLibraryIte
 	// proposed edits and stale publication snapshots cannot claim these bytes.
 	var current *model.RuleLibraryItem
 	for i := range stored {
-		if stored[i].ID == rule.ID {
+		if stored[i].ID == rule.ID && originalMemberEqual(LibraryRule(stored[i]), rule, "id") {
 			current = &stored[i]
 			break
 		}
 	}
-	same := func() bool {
-		return sameOptional(current.URL, rule.URL) && sameOptional(current.Behavior, rule.Behavior) && sameOptional(current.Format, rule.Format) && sameOptional(current.SourceType, rule.SourceType)
-	}
+	same := func() bool { return SameSourceDeclaration(LibraryRule(*current), rule) }
+
 	if current != nil && same() {
 		// This fixed-schema digest is read-only migration metadata, never a
 		// writer's filename. Do not attribute an old declaration to a new one.
@@ -203,15 +202,19 @@ func LegacyCacheFilename(rule model.RuleConfig) (string, bool) {
 	}
 	// Preserve explicit nulls in old declarations. Only the current stored
 	// declaration may use this read-side address (see CacheReadPath).
-	if raw, ok := members["source_type"]; ok && string(raw) != "\"url\"" {
-		return "", false
+	if raw, ok := members["source_type"]; ok {
+		var source string
+		if json.Unmarshal(raw, &source) != nil || source != "url" {
+			return "", false
+		}
 	}
 	id := rule.LibraryRuleID
 	if id == "" {
-		id = rule.ID
-	}
-	if id == "" {
-		id = rule.Name
+		if raw, present := members["id"]; present && string(raw) != "null" {
+			id = rule.ID
+		} else {
+			id = rule.Name
+		}
 	}
 	behavior := members["behavior"]
 	if len(behavior) == 0 {
@@ -223,10 +226,71 @@ func LegacyCacheFilename(rule model.RuleConfig) (string, bool) {
 		encoder := json.NewEncoder(&b)
 		encoder.SetEscapeHTML(false)
 		_ = encoder.Encode(value)
-		return strings.TrimSuffix(b.String(), "\n")
+		encoded := strings.TrimSuffix(b.String(), "\n")
+		// Historical cache keys used literal UTF-8 line separators. This
+		// read-only four-scalar address must not retain JSON's optional JS
+		// safety escapes; escaped backslashes remain literal backslashes.
+		var out strings.Builder
+		for i := 0; i < len(encoded); i++ {
+			if encoded[i] == '\\' && i+1 < len(encoded) {
+				if encoded[i+1] == '\\' {
+					out.WriteString(encoded[i : i+2])
+					i++
+					continue
+				}
+				if strings.HasPrefix(encoded[i:], `\u2028`) {
+					out.WriteRune('\u2028')
+					i += 5
+					continue
+				}
+				if strings.HasPrefix(encoded[i:], `\u2029`) {
+					out.WriteRune('\u2029')
+					i += 5
+					continue
+				}
+			}
+			out.WriteByte(encoded[i])
+		}
+		return out.String()
+	}
+	if string(behavior) != "null" {
+		var value string
+		if json.Unmarshal(behavior, &value) != nil {
+			return "", false
+		}
+		behavior = json.RawMessage(quote(value))
 	}
 	// Native scalar encoders plus the historical four-field separators; this
 	// is not a general legacy JSON serializer and is never used for new writes.
 	text := "[" + quote(id) + ", " + quote(*rule.URL) + ", " + string(behavior) + ", " + quote(format) + "]"
 	return "by-source/" + sha256Hex(text) + ".list", true
+}
+
+// SameSourceDeclaration compares original declaration evidence for migration.
+// R5 text coercion is not proof that an old identity cache belongs to a source.
+func SameSourceDeclaration(a, b model.RuleConfig) bool {
+	for _, field := range []string{"url", "behavior", "format", "source_type"} {
+		if !originalMemberEqual(a, b, field) {
+			return false
+		}
+	}
+	return true
+}
+func originalMemberEqual(a, b model.RuleConfig, field string) bool {
+	member := func(rule model.RuleConfig) json.RawMessage {
+		data, _ := model.Marshal(rule)
+		var fields map[string]json.RawMessage
+		_ = json.Unmarshal(data, &fields)
+		value := fields[field]
+		if string(value) == "null" {
+			return nil
+		}
+		return value
+	}
+	left, right := member(a), member(b)
+	if len(left) > 0 && len(right) > 0 && left[0] == '"' && right[0] == '"' {
+		var x, y string
+		return json.Unmarshal(left, &x) == nil && json.Unmarshal(right, &y) == nil && x == y
+	}
+	return bytes.Equal(left, right)
 }

@@ -616,9 +616,11 @@ func (c *Client) wait(ctx context.Context, delay time.Duration) error {
 		c.Sleep(delay)
 		return ctx.Err()
 	}
-	source:=c.Clock
- if source==nil{source=clock.Real{}}
- timer := source.NewTimer(delay)
+	source := c.Clock
+	if source == nil {
+		source = clock.Real{}
+	}
+	timer := source.NewTimer(delay)
 	defer timer.Stop()
 	select {
 	case <-ctx.Done():

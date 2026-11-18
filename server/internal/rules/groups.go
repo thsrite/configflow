@@ -514,11 +514,7 @@ func LowerProviderFilters(catalog GroupCatalog, main *yamlx.Node) error {
 					name = fmt.Sprintf("%s (%d)", base, suffix)
 				}
 				occupied[name] = true
-				data, err := yamlx.Marshal(yamlx.Get(providers, item.name))
-				if err != nil {
-					return err
-				}
-				provider, err := yamlx.Parse(data)
+				provider, err := yamlx.Encode(yamlx.Get(providers, item.name))
 				if err != nil {
 					return err
 				}
@@ -537,6 +533,12 @@ func LowerProviderFilters(catalog GroupCatalog, main *yamlx.Node) error {
 			use.Content = append(use.Content, yamlx.Str(clones[key]))
 		}
 		yamlx.Set(group, "use", use)
+	}
+	if len(clones) > 0 {
+		// A provider may refer to an anchor elsewhere in the input document.
+		// Encode copied that bounded graph; materialize its first consumer
+		// and make copied anchor names unique in the complete owned document.
+		yamlx.MaterializeAliases(main)
 	}
 	return nil
 }
@@ -746,3 +748,40 @@ func MergeGroup(original model.ProxyGroup, patch model.Fields) (model.ProxyGroup
 }
 
 func trimFilter(value string) string { return strings.TrimSpace(value) }
+
+// GroupResources borrows only the consumed catalogs of a resolved snapshot.
+// The returned slices remain read-only and must not outlive that snapshot.
+func GroupResources(config *model.Config) GroupCatalog {
+	if config == nil {
+		return GroupCatalog{}
+	}
+	result := GroupCatalog{Nodes: config.Nodes, Subscriptions: config.Subscriptions, Aggregations: config.Aggregations}
+	if config.Profile != nil {
+		result.Groups = config.Profile.ProxyGroups
+	}
+	return result
+}
+
+// RenderGroupDocument returns an owned engine mapping of managed members.
+func RenderGroupDocument(group model.ProxyGroup, catalog GroupCatalog) *yamlx.Node {
+	members := RenderGroup(group, catalog)
+	result := yamlx.Map()
+	if len(members.Proxies) > 0 {
+		sequence := yamlx.Seq()
+		for _, name := range members.Proxies {
+			sequence.Content = append(sequence.Content, yamlx.Str(name))
+		}
+		yamlx.Set(result, "proxies", sequence)
+	}
+	if len(members.Use) > 0 {
+		sequence := yamlx.Seq()
+		for _, name := range members.Use {
+			sequence.Content = append(sequence.Content, yamlx.Str(name))
+		}
+		yamlx.Set(result, "use", sequence)
+	}
+	if members.Filter != "" {
+		yamlx.Set(result, "filter", yamlx.Str(members.Filter))
+	}
+	return result
+}

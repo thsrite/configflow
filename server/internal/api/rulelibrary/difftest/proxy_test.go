@@ -68,13 +68,27 @@ func TestUnavailableRefreshKeepsRawCacheAndPreferences(t *testing.T) {
 	}))
 	defer origin.Close()
 	w := newWorld(t, seed(t))
-	w.call("POST", "/api/rule-library", body(map[string]string{"id": "retained", "name": "Retained", "source_type": "url", "behavior": "domain", "format": "text", "url": origin.URL + "/source"}), true)
+	created := w.call("POST", "/api/rule-library", body(map[string]string{"id": "retained", "name": "Retained", "source_type": "url", "behavior": "domain", "format": "text", "url": origin.URL + "/source"}), true)
 	// Creation runs sequentially on the two real servers. Set the fixture's
 	// physical cache timestamp equally before testing its retained-cache notice.
 	// The notice, raw file bytes and every other stored field still compare exactly.
 	stamp := fixedClock{}.Now()
 	for _, root := range []string{w.srv.DataDir, w.pyDir} {
-		cache := filepath.Join(root, "shared", "rules", rules.RuleCacheFilename(jsonx.Obj("id", "retained", "source_type", "url", "url", origin.URL+"/source", "behavior", "domain", "format", "text")))
+		name := rules.RuleCacheFilename(jsonx.Obj("id", "retained", "source_type", "url", "url", origin.URL+"/source", "behavior", "domain", "format", "text"))
+		if root == w.pyDir {
+			matched := false
+			for python, native := range created.CachePaths {
+				if native == name {
+					name = python
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				t.Fatal("independent Python filename missing")
+			}
+		}
+		cache := filepath.Join(root, "shared", "rules", name)
 		if err := os.Chtimes(cache, stamp, stamp); err != nil {
 			t.Fatal(err)
 		}

@@ -4,12 +4,13 @@ package rulefetch
 // the page metadata an Agent returns.
 
 import (
+	"bytes"
+	"encoding/json"
+	"fmt"
 	"regexp"
 	"strings"
 
 	"configflow/internal/health/check"
-	"configflow/internal/jsonx"
-	"configflow/internal/pystr"
 	"configflow/internal/rules"
 	"configflow/internal/weburl"
 )
@@ -59,7 +60,7 @@ func CleanText(value string, limit int) string {
 	var b strings.Builder
 	space := false
 	for _, r := range text {
-		if pystr.IsSpace(r) {
+		if ruleSpace(r) {
 			if !space {
 				b.WriteByte(' ')
 			}
@@ -76,84 +77,110 @@ func CleanText(value string, limit int) string {
 	return text
 }
 
-// KnownService is known_service(host): the built-in service owning host at
-// a domain boundary, or nil.
-func KnownService(host string) *jsonx.Object {
-	for _, service := range check.Services { // region_check.SERVICES
+// ServiceIdentity describes an offline catalog match.
+type ServiceIdentity struct {
+	Name     string `json:"name"`
+	Source   string `json:"source"`
+	Category string `json:"category"`
+	Evidence string `json:"evidence"`
+}
+
+// LookupService identifies a host at a DNS label boundary without network I/O.
+func LookupService(host string) *ServiceIdentity {
+	for _, service := range check.Services {
 		for _, suffix := range service.Domains {
 			if host == suffix || strings.HasSuffix(host, "."+suffix) {
 				name := service.Name
 				if service.ID == "youtube" {
 					name = "YouTube"
 				}
-				category := "视频服务"
+				category := msgVideoService
 				if service.ID == "openai" || service.ID == "claude" {
-					category = "AI 服务"
+					category = msgAIService
 				}
-				return jsonx.Obj("name", name, "source", "catalog", "category", category, "evidence", "内置服务域名："+suffix)
+				return &ServiceIdentity{Name: name, Source: "catalog", Category: category, Evidence: msgServiceDomain + suffix}
 			}
 		}
 	}
 	return nil
 }
 
-// PageIdentity is page_identity(result, host, checked_at): page content is
-// self-reported, never verified ownership. result nil is None.
-func PageIdentity(result *jsonx.Object, host string, checkedAt any) *jsonx.Object {
-	if result == nil {
-		result = jsonx.NewObject()
-	}
-	markers := result.GetObject("markers")
-	status := result.Value("status")
-	identity := jsonx.Obj("source", "page", "host", host, "checked_at", checkedAt,
-		"name", "", "description", "", "reason", "", "status", status)
-	if failure := result.Value("error"); jsonx.Truthy(failure) {
-		identity.Set("reason", "访问失败："+jsonx.Str(failure))
-		return identity
-	}
-	code := 0.0
-	if n, ok := status.(jsonx.Number); ok {
-		code = n.Float64()
-	} else if b, ok := status.(bool); ok && b {
-		code = 1
-	}
-	if !(code >= 200 && code < 300) {
-		shown := any("未知")
-		if jsonx.Truthy(status) {
-			shown = status
-		}
-		identity.Set("reason", "页面未成功返回（HTTP "+jsonx.Str(shown)+"）")
-		return identity
-	}
-	if jsonx.Truthy(markers.Value("challenge")) {
-		identity.Set("reason", "页面要求人机验证，无法识别")
-		return identity
-	}
-	title := CleanText(stringValue(markers.Value("title")), 200)
-	if errorTitle.Search(title) {
-		identity.Set("reason", "返回错误页，无法识别")
-		return identity
-	}
-	name := metaContent(stringValue(markers.Value("site")))
-	if name == "" {
-		name = SiteTitle(title)
-	}
-	identity.Set("name", name)
-	identity.Set("description", metaContent(stringValue(markers.Value("description"))))
-	finalHost := host
-	if finalURL, ok := result.Value("final_url").(string); ok {
-		if parsed, err := weburl.Parse(finalURL); err == nil && weburl.Hostname(parsed) != "" {
-			finalHost = weburl.Hostname(parsed)
-		}
-	}
-	identity.Set("final_host", finalHost)
-	if name == "" {
-		identity.Set("reason", "未找到网站名称，可能是 API 或资源域名")
-	}
-	return identity
+// PageProbe carries the Agent's website markers. Status remains an opaque
+// response member; only a JSON number authorizes the successful-page branch.
+type PageProbe struct {
+	Status   json.RawMessage            `json:"status"`
+	Error    string                     `json:"error"`
+	Markers  map[string]json.RawMessage `json:"markers"`
+	FinalURL string                     `json:"final_url"`
 }
 
-func stringValue(v any) string {
-	text, _ := v.(string)
-	return text
+// PageInfo is unverified, self-reported website identity.
+type PageInfo struct {
+	Source      string          `json:"source"`
+	Host        string          `json:"host"`
+	CheckedAt   string          `json:"checked_at"`
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	Reason      string          `json:"reason"`
+	Status      json.RawMessage `json:"status"`
+	FinalHost   *string         `json:"final_host,omitempty"`
+}
+
+// IdentifyPage derives display metadata from a typed probe; it does not prove
+// ownership or perform requests.
+func IdentifyPage(result PageProbe, host, checkedAt string) PageInfo {
+	identity := PageInfo{Source: "page", Host: host, CheckedAt: checkedAt, Status: bytes.Clone(result.Status)}
+	if result.Error != "" {
+		identity.Reason = msgPageAccess + result.Error
+		return identity
+	}
+	var code float64
+	if json.Unmarshal(result.Status, &code) != nil || !(code >= 200 && code < 300) {
+		shown := msgUnknownStatus
+		var text string
+		if len(result.Status) > 0 && string(result.Status) != "null" && string(result.Status) != "false" && string(result.Status) != "0" {
+			if json.Unmarshal(result.Status, &text) == nil {
+				if text != "" {
+					shown = text
+				}
+			} else {
+				shown = string(result.Status)
+			}
+		}
+		identity.Reason = fmt.Sprintf(msgPageStatus, shown)
+		return identity
+	}
+	var challenge bool
+	var challengeText string
+	raw := result.Markers["challenge"]
+	_ = json.Unmarshal(raw, &challenge)
+	_ = json.Unmarshal(raw, &challengeText)
+	if challenge || challengeText != "" {
+		identity.Reason = msgPageChallenge
+		return identity
+	}
+	text := func(key string) string {
+		var value string
+		_ = json.Unmarshal(result.Markers[key], &value)
+		return value
+	}
+	title := CleanText(text("title"), 200)
+	if errorTitle.Search(title) {
+		identity.Reason = msgPageError
+		return identity
+	}
+	identity.Name = metaContent(text("site"))
+	if identity.Name == "" {
+		identity.Name = SiteTitle(title)
+	}
+	identity.Description = metaContent(text("description"))
+	finalHost := host
+	if parsed, err := weburl.Parse(result.FinalURL); err == nil && weburl.Hostname(parsed) != "" {
+		finalHost = weburl.Hostname(parsed)
+	}
+	identity.FinalHost = &finalHost
+	if identity.Name == "" {
+		identity.Reason = msgPageNoName
+	}
+	return identity
 }

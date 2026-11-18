@@ -41,7 +41,11 @@ func NextDue(entry *taskstatus.Receipt, interval model.Int, baseline *string, no
 	if entry == nil {
 		entry = &taskstatus.Receipt{}
 	}
-	last, ok := parseStamp(textOr(entry.LastRunAt, ""))
+	lastText := textOr(entry.LastRunAt, "")
+	if raw, present, err := entry.Raw.MemberJSON("last_run_at", entry.LastRunAt); err != nil || (present && (len(raw) == 0 || raw[0] != '"')) {
+		lastText = ""
+	}
+	last, ok := parseStamp(lastText)
 	if !ok {
 		last, ok = parseStamp(textOr(baseline, ""))
 	}

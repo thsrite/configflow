@@ -139,3 +139,14 @@ func TestRuleCacheReadPathLegacyNameCaches(t *testing.T) {
 		t.Error("an unknown spelling claimed the legacy file")
 	}
 }
+
+func TestLegacyIdentityCacheDoesNotTreatR5CoercionAsOwnership(t *testing.T) {
+	root := t.TempDir()
+	current := obj("id", "r", "name", "Synthetic", "url", jsonx.Int(5), "source_type", "url", "behavior", "domain")
+	proposed := current.DeepCopy()
+	proposed.Set("url", "5")
+	old := writeCache(t, root, "by-id/"+hexOf("r")+".list", "old.example")
+	if got := RuleCacheReadPath(proposed, seq(current), seq(current), root); got == old {
+		t.Fatal("R5-equivalent URL claimed old identity bytes")
+	}
+}

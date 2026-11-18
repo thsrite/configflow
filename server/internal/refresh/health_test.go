@@ -149,24 +149,28 @@ func TestHealthFileEdges(t *testing.T) {
 			t.Fatal(text, health, err)
 		}
 	}
-	os.WriteFile(path, []byte(`{"s": {"history": "ab"}, "t": {"history": {"x": 1}}, "u": 5}`), 0o644)
-	entry, err := RecordFetch(f.ctx, "s", FetchRecord{Count: "3"})
-	if err != nil || !jsonx.Equal(entry.GetList("history")[:2], []any{"a", "b"}) ||
-		entry.GetList("history")[2].(*jsonx.Object).GetInt("count") != 3 ||
-		entry.GetList("history")[2].(*jsonx.Object).Value("status") != "fail" {
-		t.Fatal(jsonx.Repr(entry), err)
-	}
-	entry, _ = RecordFetch(f.ctx, "t", FetchRecord{})
-	if entry.GetList("history")[0] != "x" {
-		t.Fatal(jsonx.Repr(entry))
-	}
-	entry, _ = RecordFetch(f.ctx, "u", FetchRecord{OK: true, FromCache: true})
-	if entry.GetList("history")[0].(*jsonx.Object).Value("status") != "cache" {
-		t.Fatal(jsonx.Repr(entry))
-	}
-	os.WriteFile(path, []byte(`{"s": {"history": 7}}`), 0o644)
-	if _, err := RecordFetch(f.ctx, "s", FetchRecord{}); err == nil || err.Error() != "'int' object is not iterable" {
-		t.Fatal(err)
+	// R5: the real-Python archive remains unchanged; the independent fixture
+	// runs these same writes on typed history/count projections.
+	refs := loadNativeReferences(t)
+	edge := refs.GetObject("edge")
+	os.WriteFile(path, []byte(edge.GetObject("files").GetString("health")), 0o644)
+	t.Cleanup(SetEnv(&Env{Clock: &fakeClock{now: corpusNow}}))
+	for i, item := range edge.GetList("output") {
+		call := item.(*jsonx.Object)
+		parsed, err := jsonx.Parse([]byte(call.GetString("call")))
+		if err != nil {
+			t.Fatal(err)
+		}
+		args := parsed.([]any)
+		options := args[1].(*jsonx.Object)
+		_, err = RecordFetch(f.ctx, args[0].(string), FetchRecord{OK: options.Value("ok") == true, FromCache: options.Value("from_cache") == true, Count: options.Value("count")})
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := refs.GetList("edge_native")[i].(*jsonx.Object).Value("output")
+		if !jsonx.Equal(readHealth(t, f.repo), want) {
+			t.Fatalf("edge %d: %s, want %s", i, jsonx.Repr(readHealth(t, f.repo)), jsonx.Repr(want))
+		}
 	}
 	os.WriteFile(path, []byte(`{"s": null}`), 0o644)
 	Forget(f.ctx, "s")

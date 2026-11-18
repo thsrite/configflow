@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"strconv"
 	"syscall"
 
 	"configflow/internal/repo"
@@ -72,35 +71,6 @@ func pythonClassOf(err error) string {
 	}
 	return ""
 }
-
-// isValueError is isinstance(err, ValueError) for those errors (plain errors
-// of this package are ValueErrors: URL syntax, redirects, the size limit).
-func isValueError(err error) bool {
-	switch pythonClassOf(err) {
-	case "", "ValueError", "UnicodeDecodeError", "UnicodeEncodeError", "RemoteRuleValidationError",
-		"ProfileValidationError", "ProfileExists", "ProfileInUse", "NodeDeletionChanged":
-		return true
-	}
-	return false
-}
-
-// safeExceptionDetails is url_utils.safe_exception_details: the class and,
-// for an exception carrying a response (an HTTPError of raise_for_status),
-// its status. A RuleFetchError has no response even when its last attempt
-// had one.
-func safeExceptionDetails(err error) string {
-	details := "exception_type=" + PythonClass(err)
-	var fetch *FetchError
-	if errors.As(err, &fetch) && fetch.Status != 0 {
-		var ruleFetch *RuleFetchError
-		if !errors.As(err, &ruleFetch) {
-			details += " status=" + itoa(fetch.Status)
-		}
-	}
-	return details
-}
-
-func itoa(n int) string { return strconv.Itoa(n) }
 
 // latin1EncodeError is str(UnicodeEncodeError) of text.encode('latin1'),
 // "" when text encodes.

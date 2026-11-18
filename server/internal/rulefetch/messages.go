@@ -42,3 +42,17 @@ const (
 	msgSourceChanged   = "规则订阅地址已变更，请重新生成并发布配置。"
 	msgSourceAmbiguous = "同一订阅地址对应多个不同规则类型或格式，无法确定当前来源；请重新生成并发布配置。"
 )
+
+const msgCacheMigrationDeferred = "规则缓存名称迁移暂缓：%s"
+
+const (
+	msgVideoService  = "视频服务"
+	msgAIService     = "AI 服务"
+	msgServiceDomain = "内置服务域名："
+	msgPageAccess    = "访问失败："
+	msgUnknownStatus = "未知"
+	msgPageStatus    = "页面未成功返回（HTTP %s）"
+	msgPageChallenge = "页面要求人机验证，无法识别"
+	msgPageError     = "返回错误页，无法识别"
+	msgPageNoName    = "未找到网站名称，可能是 API 或资源域名"
+)

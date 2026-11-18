@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -110,5 +111,31 @@ func TestNativeMatcherOwnsHitCopy(t *testing.T) {
 	second := matcher.Match("example.com")
 	if second.Policy != "DIRECT" || *second.RuleID != "r" {
 		t.Fatal("borrowed cached result")
+	}
+}
+
+func TestNativeCacheReadPathOwnsBorrowedSnapshot(t *testing.T) {
+	directory := t.TempDir()
+	path := filepath.Join(directory, "validated.list")
+	if err := os.WriteFile(path, []byte("example.com\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var rule model.RuleConfig
+	if err := json.Unmarshal([]byte(`{"id":"r","name":"Synthetic","itemType":"ruleset","source_type":"url","url":"https://example.com/rules","behavior":"domain","format":"text","policy":"DIRECT"}`), &rule); err != nil {
+		t.Fatal(err)
+	}
+	reads := 0
+	cache := NewCache(CacheOptions{RulesDir: func() string { return directory }, StoredLibrary: func() []model.RuleLibraryItem { t.Fatal("native read path copied the entire library"); return nil }, ReadPath: func(received model.RuleConfig, _ []model.RuleLibraryItem, root string) string {
+		reads++
+		if received.ID != "r" || root != directory {
+			t.Fatal("lost declaration or namespace")
+		}
+		return path
+	}})
+	t.Cleanup(cache.Clear)
+	matcher := cache.LocalMatcher(MatcherInput{Rules: []model.RuleConfig{rule}}, "default")
+	hit := matcher.Match("example.com")
+	if hit == nil || hit.Policy != "DIRECT" || reads < 2 {
+		t.Fatalf("native path not used by signature and lazy load: hit=%v reads=%d", hit, reads)
 	}
 }

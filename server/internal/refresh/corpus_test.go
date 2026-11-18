@@ -113,6 +113,7 @@ func TestReferenceCorpus(t *testing.T) {
 	t.Cleanup(SetEnv(&Env{Clock: clock}))
 	given := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
 	counts := map[string]int{}
+	refs := loadNativeReferences(t)
 	for i, row := range loadCorpus(t) {
 		fn := row.GetString("fn")
 		input := row.Value("input")
@@ -152,14 +153,14 @@ func TestReferenceCorpus(t *testing.T) {
 		case "host":
 			got = outcome(host(input), nil)
 		case "scenario":
-			checkScenario(t, clock, row)
+			checkScenario(t, clock, row, nativeReference(t, refs, i, row))
 			counts[fn]++
 			continue
 		default:
 			t.Fatalf("unknown fn %s", fn)
 		}
 		counts[fn]++
-		want := expected(row)
+		want := nativeReference(t, refs, i, row)
 		if fn == "host" {
 			if text, ok := input.(string); ok && (text == "http://host.test:abc/" || text == "http://%41.test/") &&
 				got.GetString("output") == "" && want.GetString("output") != "" {
@@ -189,7 +190,7 @@ func TestReferenceCorpus(t *testing.T) {
 
 // checkScenario replays a repository scenario: the files Python started
 // from, then each call; outputs are compared with key order (Compact).
-func checkScenario(t *testing.T, clock *fakeClock, row *jsonx.Object) {
+func checkScenario(t *testing.T, clock *fakeClock, row *jsonx.Object, native *jsonx.Object) {
 	name := row.GetString("input")
 	r, err := repo.Open(t.TempDir(), repo.Options{})
 	if err != nil {
@@ -226,7 +227,7 @@ func checkScenario(t *testing.T, clock *fakeClock, row *jsonx.Object) {
 			os.Chtimes(path, stamp, stamp)
 		}
 	}
-	for _, item := range row.GetList("output") {
+	for callIndex, item := range row.GetList("output") {
 		call := item.(*jsonx.Object)
 		label := call.GetString("call")
 		var got *jsonx.Object
@@ -273,7 +274,7 @@ func checkScenario(t *testing.T, clock *fakeClock, row *jsonx.Object) {
 			}
 			got = outcome(value, err)
 		}
-		want := expected(call)
+		want := expected(native.GetList("output")[callIndex].(*jsonx.Object))
 		gotText, _ := jsonx.Compact(got)
 		wantText, _ := jsonx.Compact(want)
 		if !yamlxtest.EqualJSON(got, want) {

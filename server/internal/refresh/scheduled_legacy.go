@@ -8,6 +8,7 @@ import (
 	"configflow/internal/taskstatus"
 	"context"
 	"errors"
+	"math"
 	"time"
 )
 
@@ -30,13 +31,26 @@ func errorFromLegacy(err error) error {
 
 // NextRunAt adapts the legacy scalar and receipt boundary to NextDue.
 func NextRunAt(entry any, interval jsonx.Number, baseline any, now *time.Time) (*time.Time, error) {
-	seconds, ok := interval.Int64()
-	if !ok {
-		return nil, ErrScheduleTime
-	}
 	receipt := &taskstatus.Receipt{}
 	_ = decodeLegacy(entry, receipt)
 	text, _ := baseline.(string)
+	seconds, ok := interval.Int64()
+	if !ok {
+		// Overflowing intervals still have the same scheduling short circuits:
+		// no previous run is due now, and failed sources cap positive intervals.
+		_, hasLast := parseStamp(textOr(receipt.LastRunAt, ""))
+		if !hasLast {
+			_, hasLast = parseStamp(text)
+		}
+		if !hasLast {
+			return NextDue(receipt, 1, optionalText(text), now)
+		}
+		value, integer := interval.BigInt()
+		if !integer || value.Sign() < 0 || textOr(receipt.LastStatus, "") != "failed" {
+			return nil, ErrScheduleTime
+		}
+		seconds = math.MaxInt64
+	}
 	return NextDue(receipt, model.Int(seconds), optionalText(text), now)
 }
 func parseTime(value any) (time.Time, bool) { text, _ := value.(string); return parseStamp(text) }
@@ -142,3 +156,10 @@ func RunNow(ctx context.Context, kind, id string) (string, error) {
 func (e *TaskBusy) PythonClass() string       { return "TaskBusy" }
 func (e *LookupError) PythonClass() string    { return "LookupError" }
 func (e *StaleRuleCache) PythonClass() string { return "StaleRuleCache" }
+
+func (e *SourceValidationError) PythonClass() string {
+	if e.CacheShape {
+		return "DialerReferenceError"
+	}
+	return "ValueError"
+}

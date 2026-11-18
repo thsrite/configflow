@@ -13,10 +13,7 @@ import (
 	"configflow/internal/health"
 	"configflow/internal/health/check"
 	"configflow/internal/jsonx"
-	"configflow/internal/lifecycle"
-	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
-	"configflow/internal/rules"
 )
 
 func decode(v any, out any) error {
@@ -43,103 +40,6 @@ func object(v any) (*jsonx.Object, error) {
 		return nil, fmt.Errorf("expected JSON object")
 	}
 	return o, nil
-}
-
-// legacyLibraryObject projects only the consumed typed members. Storage's R2
-// provenance stays on libraryItem; old collaborators must not reinterpret an
-// original numeric token after the shared model has decoded it as text.
-func legacyLibraryObject(item libraryItem) (*jsonx.Object, error) {
-	value, err := object(item)
-	if err != nil {
-		return nil, err
-	}
-	value.Set("id", item.ID)
-	value.Set("name", item.Name)
-	value.Set("source_type", item.SourceType)
-	value.Set("behavior", item.Behavior)
-	value.Set("content", item.Content)
-	return value, nil
-}
-
-func legacySaveRule(ctx context.Context, item libraryItem) error {
-	v, err := legacyLibraryObject(item)
-	if err != nil {
-		return err
-	}
-	_, err = rulefetch.SaveRuleToLocal(lifecycle.Detach(ctx), v, nil)
-	return err
-}
-func legacyValidateContent(item libraryItem) error {
-	v, err := legacyLibraryObject(item)
-	if err != nil {
-		return err
-	}
-	return rulefetch.ValidateDomainContent(v, nil)
-}
-func legacyCachedContent(ctx context.Context, item libraryItem) ([]byte, error) {
-	v, err := legacyLibraryObject(item)
-	if err != nil {
-		return nil, err
-	}
-	b, err := rulefetch.ReadValidatedRuleCache(ctx, v, nil)
-	if err != nil {
-		return nil, err
-	}
-	return b, nil
-}
-
-func legacyMatcherOptions() rules.MatcherCacheOptions {
-	return rules.MatcherCacheOptions{
-		StoredLibrary: func() []any {
-			r, err := repo.GetRepository(context.Background())
-			if err != nil {
-				return nil
-			}
-			o, err := r.Shared(context.Background())
-			if err != nil {
-				return nil
-			}
-			values := make([]any, 0, len(o.RuleLibrary))
-			for _, item := range o.RuleLibrary {
-				value, err := legacy(item)
-				if err != nil {
-					return nil
-				}
-				values = append(values, value)
-			}
-			return values
-		},
-		ValidateRemote: func(content string, rule *jsonx.Object) error {
-			return rulefetch.ValidateRemoteRuleContent(content, rule, nil, "")
-		},
-	}
-}
-
-func legacyLocalMatcher(ctx context.Context, id string) (func(string) *Match, error) {
-	r, err := repo.GetRepository(ctx)
-	if err != nil {
-		return nil, err
-	}
-	view, err := r.Config(ctx, id, nil)
-	if err != nil {
-		return nil, err
-	}
-	c, err := object(view)
-	if err != nil {
-		return nil, err
-	}
-	m := cache(ctx).LocalMatcher(c, id)
-	return func(host string) *Match {
-		v := m.Match(host)
-		if v == nil {
-			return nil
-		}
-		var out Match
-		if decode(v, &out) != nil {
-			return nil
-		}
-		return &out
-	}, nil
 }
 
 func legacySupported(version, minimum string) bool {
@@ -242,23 +142,6 @@ func legacyEditRegion(ctx context.Context, id string, edit func(*regionRecord) e
 		o.Update(v)
 		return nil
 	}, now())
-}
-func legacyKnownService(host string) json.RawMessage {
-	v := rulefetch.KnownService(host)
-	if v == nil {
-		return nil
-	}
-	b, _ := jsonx.Compact(v)
-	return json.RawMessage(b)
-}
-func legacyPageIdentity(result RegionResult, host, at string) (WebsitePage, error) {
-	v, err := object(result)
-	if err != nil {
-		return WebsitePage{}, err
-	}
-	var out WebsitePage
-	err = decode(rulefetch.PageIdentity(v, host, at), &out)
-	return out, err
 }
 func legacyPublicServices() json.RawMessage {
 	b, _ := jsonx.Compact(check.PublicServices())
@@ -482,11 +365,11 @@ func legacyWebsiteMarkers() map[string]string {
 
 func init() {
 	collaboration = collaborators{
-		saveRule:        legacySaveRule,
-		validateContent: legacyValidateContent,
-		cachedContent:   legacyCachedContent,
-		matcherOptions:  legacyMatcherOptions,
-		localMatcher:    legacyLocalMatcher,
+		saveRule:        nativeSaveRule,
+		validateContent: nativeValidateContent,
+		cachedContent:   nativeCachedContent,
+		matcherOptions:  nativeMatcherOptions,
+		localMatcher:    nativeLocalMatcher,
 		supported:       legacySupported,
 		loadTraffic:     legacyLoadTraffic,
 		probes:          legacyProbes,
@@ -494,8 +377,8 @@ func init() {
 		judge:           legacyJudge,
 		regionData:      legacyRegionData,
 		editRegion:      legacyEditRegion,
-		knownService:    legacyKnownService,
-		pageIdentity:    legacyPageIdentity,
+		knownService:    nativeKnownService,
+		pageIdentity:    nativePageIdentity,
 		publicServices:  legacyPublicServices,
 		probeControls:   legacyProbeControls,
 		pickTargets:     legacyPickTargets,

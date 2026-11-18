@@ -3,6 +3,7 @@ package refresh
 import (
 	"bytes"
 	"configflow/internal/agents/diag"
+	"configflow/internal/convert"
 	"configflow/internal/logx"
 	"configflow/internal/model"
 	"configflow/internal/repo"
@@ -43,6 +44,10 @@ func FailureReason(err error) string {
 	if errors.As(err, &status) && status.HTTPStatus() != 0 {
 		return fmt.Sprintf(msgUpstreamStatus, status.HTTPStatus())
 	}
+	var aggregate *rulefetch.RuleFetchError
+	if errors.As(err, &aggregate) {
+		return fmt.Sprintf(msgRefreshFailed, "RuleFetchError")
+	}
 	kind := ""
 	var fetch *rulefetch.FetchError
 	var request *substore.RequestError
@@ -61,14 +66,19 @@ func FailureReason(err error) string {
 	case "ConnectionError", "ProxyError":
 		return msgSourceConnection
 	}
+	var dialer *convert.DialerReferenceError
+	if errors.As(err, &dialer) {
+		return fmt.Sprintf(msgRefreshFailed, "DialerReferenceError")
+	}
 	var public *PublicFailure
 	var stale *StaleRuleCache
 	var remote *rulefetch.RemoteRuleValidationError
 	var strategy *rules.StrategyReferenceError
-	if errors.As(err, &public) || errors.As(err, &stale) || errors.As(err, &remote) || errors.As(err, &strategy) || errors.Is(err, repo.ErrValidation) {
+	var invalid *SourceValidationError
+	if errors.As(err, &public) || errors.As(err, &stale) || errors.As(err, &remote) || errors.As(err, &strategy) || errors.As(err, &invalid) {
 		return diag.EventText(err.Error())
 	}
-	return fmt.Sprintf(msgRefreshFailed, strings.TrimPrefix(weburl.SafeErrorDetails(err), "exception_type="))
+	return fmt.Sprintf(msgRefreshFailed, strings.TrimSuffix(strings.TrimPrefix(weburl.SafeErrorDetails(err), "exception_type="), " status=0"))
 }
 func safeName(name, id string) string {
 	if name == "" {
@@ -100,3 +110,13 @@ func equalStoredMembers(a, b model.RuleLibraryItem, fields []string) bool {
 	}
 	return true
 }
+
+// SourceValidationError reports a controlled source/cache validation failure.
+type SourceValidationError struct {
+	Message    string
+	Cause      error
+	CacheShape bool
+}
+
+func (e *SourceValidationError) Error() string { return e.Message }
+func (e *SourceValidationError) Unwrap() error { return errors.Join(repo.ErrValidation, e.Cause) }

@@ -67,3 +67,39 @@ func BenchmarkMemberJSONUnrelatedPayload(b *testing.B) {
 		})
 	}
 }
+
+func FuzzMemberJSONEvidence(f *testing.F) {
+	for _, seed := range []string{`{}`, `{"url":false}`, `{"url":123,"content":"unrelated"}`, `{"url":"https://example.com/\\u4e2d"}`, `{"url":null}`} {
+		f.Add([]byte(seed), byte(0))
+	}
+	f.Fuzz(func(t *testing.T, data []byte, edit byte) {
+		if len(data) > 1<<20 {
+			t.Skip()
+		}
+		var rule RuleConfig
+		if json.Unmarshal(data, &rule) != nil {
+			return
+		}
+		if edit%3 == 1 {
+			text := "edited"
+			rule.URL = &text
+		} else if edit%3 == 2 {
+			if err := rule.Clear("url"); err != nil {
+				t.Fatal(err)
+			}
+		}
+		encoded, err := rule.MarshalJSON()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var fields map[string]json.RawMessage
+		if json.Unmarshal(encoded, &fields) != nil {
+			t.Fatal("invalid record JSON")
+		}
+		actual, present, err := rule.raw.MemberJSON("url", rule.URL)
+		want, has := fields["url"]
+		if err != nil || present != has || string(actual) != string(want) {
+			t.Fatalf("member=%s/%v record=%s/%v error=%v", actual, present, want, has, err)
+		}
+	})
+}

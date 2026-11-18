@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/lifecycle/lifecycletest"
 	"configflow/internal/rules"
@@ -26,9 +25,9 @@ func TestProductionMatcherWiringStopsBeforeDrain(t *testing.T) {
 	dir := t.TempDir()
 	opts.RulesDir = func() string { return dir }
 	opts.StoredLibrary = nil
-	bounded := rules.NewMatcherCache(opts)
+	bounded := rules.NewCache(opts)
 	reg.RegisterShutdown(matcherShutdown(bounded.Clear))
-	bounded.LocalMatcher(jsonx.Obj("rule_configs", []any{}, "rule_library", []any{}), "default")
+	bounded.LocalMatcher(rules.MatcherInput{}, "default")
 	if clock.Pending() != 1 || !bounded.CleanupScheduled() {
 		t.Fatal("cleanup not owned")
 	}

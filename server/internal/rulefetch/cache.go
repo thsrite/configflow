@@ -122,9 +122,16 @@ func ReadCacheWithFormat(ctx context.Context, rule model.RuleConfig, config *Sou
 	if err != nil {
 		return nil, err
 	}
-	if cachePath != filepath.Join(root, rules.CacheFilename(rule)) {
+	if textOr(rule.SourceType, "url") == "url" && cachePath != filepath.Join(root, rules.CacheFilename(rule)) {
 		if err := migrateCache(ctx, rule, content, cachePath); err != nil {
-			return nil, err
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return nil, ctxErr
+			}
+			// Compatibility reads must keep working in read-only snapshots or when
+			// an optional migration write fails. A later writable read retries it.
+			if !errors.Is(err, repo.ErrReadOnlySnapshot) {
+				utilsLogger.Warningf(msgCacheMigrationDeferred, weburl.SafeErrorDetails(err))
+			}
 		}
 	}
 	return content, nil
@@ -349,39 +356,47 @@ func migrateCache(ctx context.Context, rule model.RuleConfig, data []byte, oldPa
 	if err != nil {
 		return err
 	}
-	returnErr := r.UpdateShared(ctx, func(tx context.Context, shared *model.Shared) error {
-		if err := tx.Err(); err != nil {
+	err = r.UpdateShared(ctx, func(held context.Context, shared *model.Shared) error {
+		if err := held.Err(); err != nil {
 			return err
 		}
-		// Resolve with the current catalog a second time; an edit/receipt that
-		// occurred after the read forbids publishing those old bytes.
 		if rules.CacheReadPath(rule, nil, shared.RuleLibrary, root) != oldPath {
 			return errInlineCacheOnly
 		}
 		found := false
 		for _, item := range shared.RuleLibrary {
 			if item.ID == rule.ID {
-				found = sameDeclaration(rule, rules.LibraryRule(item))
+				found = rules.SameSourceDeclaration(rule, rules.LibraryRule(item))
 				break
 			}
 		}
 		if !found {
 			return errInlineCacheOnly
 		}
-		if err := tx.Err(); err != nil {
+		if err := held.Err(); err != nil {
 			return err
 		}
-		_, err := r.WriteSharedTextIfChanged(tx, path.Join("rules", rules.CacheFilename(rule)), data)
+		original, err := os.Stat(oldPath)
 		if err != nil {
+			return err
+		}
+		current, err := os.ReadFile(oldPath)
+		if err != nil {
+			return err
+		}
+		if !bytes.Equal(current, data) {
+			return errInlineCacheOnly
+		}
+		if err := held.Err(); err != nil {
+			return err
+		}
+		if _, err := r.WriteSharedTextIfMissing(held, path.Join("rules", rules.CacheFilename(rule)), data, original.ModTime()); err != nil {
 			return err
 		}
 		return errInlineCacheOnly
 	})
-	if errors.Is(returnErr, errInlineCacheOnly) {
+	if errors.Is(err, errInlineCacheOnly) {
 		return nil
 	}
-	return returnErr
-}
-func sameDeclaration(a, b model.RuleConfig) bool {
-	return textOr(a.URL, "") == textOr(b.URL, "") && textOr(a.SourceType, "url") == textOr(b.SourceType, "url") && textOr(a.Behavior, "domain") == textOr(b.Behavior, "domain") && textOr(a.Format, "") == textOr(b.Format, "")
+	return err
 }

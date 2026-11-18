@@ -43,11 +43,12 @@ import (
 const secret = "c33-synthetic-secret"
 
 type answer struct {
-	Status  int               `json:"status"`
-	Headers map[string]string `json:"headers"`
-	Body    any               `json:"body"`
-	State   any               `json:"state"`
-	Error   string            `json:"oracle_error"`
+	Status     int               `json:"status"`
+	Headers    map[string]string `json:"headers"`
+	Body       any               `json:"body"`
+	State      any               `json:"state"`
+	Error      string            `json:"oracle_error"`
+	CachePaths map[string]string `json:"cache_paths"`
 }
 type world struct {
 	t       *testing.T

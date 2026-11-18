@@ -349,7 +349,7 @@ var retiredRuleLockGlob = filepath.Join("shared", "rules", "by-source", strings.
 
 // files lists the data written below dir that the module owns, excluding
 // Python's retiredRuleLockGlob resource locks.
-func files(t *testing.T, dir string) map[string]any {
+func files(t *testing.T, dir string, cacheNames map[string]string) map[string]any {
 	out := map[string]any{"task-status.json": mask(readJSON(t, filepath.Join(dir, "task-status.json")), "")}
 	for _, pattern := range []string{"shared/subscription_health.json", "shared/subscribes/*.json",
 		"shared/subscription-downloads/*.json"} {
@@ -366,6 +366,9 @@ func files(t *testing.T, dir string) map[string]any {
 				return nil
 			}
 			data, _ := os.ReadFile(path)
+			if key, known := cacheNames[rel]; known {
+				rel = key
+			}
 			out[rel] = string(data)
 		}
 		return nil
@@ -508,7 +511,8 @@ func TestDifferentialTaskRoutes(t *testing.T) {
 	if len(locks) != 0 {
 		t.Errorf("Go created retired rule cache locks: %v", locks)
 	}
-	pyFiles, goFiles := files(t, pyDir), files(t, goDir)
+	pyNames, goNames := referenceCacheNames(t, up.URL+"/list.txt")
+	pyFiles, goFiles := files(t, pyDir, pyNames), files(t, goDir, goNames)
 	var names []string
 	for name := range pyFiles {
 		names = append(names, name)

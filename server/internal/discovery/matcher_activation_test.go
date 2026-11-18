@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/lifecycle/lifecycletest"
+	"configflow/internal/rules"
 )
 
 func TestMatcherUsesEachPeriodicActivationClock(t *testing.T) {
@@ -37,7 +37,7 @@ func TestMatcherUsesEachPeriodicActivationClock(t *testing.T) {
 			t.Fatal("matcher activation missing")
 		}
 		owner := cache(runner.BindRequest(context.Background()))
-		owner.LocalMatcher(jsonx.Obj("rule_configs", []any{}, "rule_library", []any{}), "default")
+		owner.LocalMatcher(rules.MatcherInput{}, "default")
 		deadline := time.Now().Add(5 * time.Second)
 		for source.Pending() != 2 {
 			if time.Now().After(deadline) {

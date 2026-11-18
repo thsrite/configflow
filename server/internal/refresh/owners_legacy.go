@@ -129,7 +129,7 @@ func refreshEnvFromLegacy(e *Env) *RefreshEnv {
 				return nil, errors.New("subscription fetch owner unavailable")
 			}
 			result, err := e.FetchSubscription(ctx, id, url, options)
-			return typedResult(result), err
+			return typedResult(result), errorFromLegacy(err)
 		},
 		ParseNodes: func(ctx context.Context, text string) ([]model.Node, error) {
 			if err := ctx.Err(); err != nil {
@@ -312,7 +312,7 @@ func FetchSubscriptionSource(ctx context.Context, sub *jsonx.Object, fetch Sourc
 	if fetch != nil {
 		native = func(ctx context.Context, id, url string) (*SourceResult, error) {
 			result, err := fetch(ctx, id, url)
-			return typedResult(result), err
+			return typedResult(result), errorFromLegacy(err)
 		}
 	}
 	result, err := FetchSource(ctx, sourceRecord(sub), native)

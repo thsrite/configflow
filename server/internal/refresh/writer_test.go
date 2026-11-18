@@ -2,6 +2,7 @@ package refresh
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"configflow/internal/jsonx"
@@ -71,7 +72,7 @@ func TestSourceWriterComparison(t *testing.T) {
 	}
 }
 
-// Only this migrated file changes from byte comparison to JSON structure.
+// Only migrated owner channels change from byte comparison to JSON structure.
 // Other files, output values and errors retain the original comparator.
 func taskReceiptOutcome(value *jsonx.Object) *jsonx.Object {
 	result := value.Clone()
@@ -81,7 +82,7 @@ func taskReceiptOutcome(value *jsonx.Object) *jsonx.Object {
 	}
 	files := after.Clone()
 	for key, raw := range after.All() {
-		if filepath.Base(key) != "task-status.json" {
+		if filepath.Base(key) != "task-status.json" && filepath.Base(key) != "subscription_health.json" && !strings.HasPrefix(key, "subscribes/") && !strings.HasPrefix(key, "subscription-downloads/") {
 			continue
 		}
 		text, ok := raw.(string)
@@ -111,5 +112,30 @@ func TestTaskReceiptComparisonPreservesValues(t *testing.T) {
 		if sourceWriterOutcomeEqual("refresh_subscription", want, got) != tc.equal {
 			t.Fatal(tc)
 		}
+	}
+}
+
+func TestSourceCacheComparisonPreservesEveryValue(t *testing.T) {
+	for _, path := range []string{"subscribes/s.json", "subscription-downloads/x.json", "subscription_health.json"} {
+		want := jsonx.Obj("after", jsonx.Obj(path, `{"id":"n","metadata":{"url":"https://example.com/a"},"nodes":[{"name":"A","port":80}]}`))
+		for _, tc := range []struct {
+			raw   string
+			equal bool
+		}{
+			{`{"metadata":{"url":"https://example.com/a"},"nodes":[{"port":80,"name":"A"}],"id":"n"}`, true},
+			{`{"metadata":{"url":"https://example.com/b"},"nodes":[{"port":80,"name":"A"}],"id":"n"}`, false},
+			{`{"metadata":{"url":"https://example.com/a"},"nodes":[{"port":80,"name":"A"}],"id":"changed"}`, false},
+			{`{"metadata":{"url":"https://example.com/a"},"nodes":[{"port":"80","name":"A"}],"id":"n"}`, false},
+			{`{"metadata":{"url":"https://example.com/a"},"nodes":[{"port":80}],"id":"n"}`, false},
+		} {
+			if sourceWriterOutcomeEqual("refresh_subscription", want, jsonx.Obj("after", jsonx.Obj(path, tc.raw))) != tc.equal {
+				t.Fatal(path, tc)
+			}
+		}
+	}
+	want := jsonx.Obj("after", jsonx.Obj("unowned.json", `{"a":1,"b":2}`))
+	got := jsonx.Obj("after", jsonx.Obj("unowned.json", `{"b":2,"a":1}`))
+	if sourceWriterOutcomeEqual("refresh_subscription", want, got) {
+		t.Fatal("relaxed unowned file comparison")
 	}
 }

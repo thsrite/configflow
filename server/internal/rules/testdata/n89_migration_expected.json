@@ -1,0 +1,26 @@
+[
+  {
+    "input": "{\"id\":\"r1\",\"url\":\"https://example.com/rules?x=<a>&q=中\",\"behavior\":\"dom\\u0061in\",\"format\":\"text\",\"source_type\":\"\\u0075rl\"}",
+    "filename": "by-source/4a4c5f26205039f1838da617cb6bbbab88611a4bc84f34d14c16bda5372912c6.list"
+  },
+  {
+    "input": "{\"id\":\"\",\"name\":\"Display\",\"url\":\"https://example.com/rules\",\"behavior\":\"domain\",\"format\":\"text\"}",
+    "filename": "by-source/e3111a654e1cd45007fe93c52fa853afc00e251b9d2e94553696a6267d9fb5a3.list"
+  },
+  {
+    "input": "{\"id\":\"line\\u2028separator\",\"url\":\"https://example.com/rules\",\"behavior\":\"domain\",\"format\":\"text\"}",
+    "filename": "by-source/ea0cf88f8df7a6d8258764e65316b991665da5631ffb8e42764b204cb37fdb72.list"
+  },
+  {
+    "input": "{\"id\":\"line\\u2029separator\",\"url\":\"https://example.com/rules\",\"behavior\":\"domain\",\"format\":\"text\"}",
+    "filename": "by-source/305a914533646b44d1ee640a4dbda6f3ade0fbe0d0a9d6c4b10d03805665f09a.list"
+  },
+  {
+    "input": "{\"id\":\"literal\\\\u2028\",\"url\":\"https://example.com/rules\",\"behavior\":\"domain\",\"format\":\"text\"}",
+    "filename": "by-source/b89bc34896259cdb08638065cb4b23d14507089f1f7b74b72ed0a4833a567504.list"
+  },
+  {
+    "input": "{\"id\":null,\"name\":\"Name\",\"url\":\"https://example.com/rules\",\"behavior\":null}",
+    "filename": "by-source/f21dff11ea201a4ccd25a11b26ff443105882564494824c2650b1c6771a0bf58.list"
+  }
+]

@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"gopkg.in/yaml.v3"
 	"os"
 	"strings"
 	"testing"
@@ -127,5 +128,122 @@ func FuzzTypedGroupCandidates(f *testing.F) {
 		_ = SelectMembers(group)
 		_ = RenderGroup(group, GroupCatalog{})
 		_ = CheckCandidates(group, GroupCatalog{}, nil)
+	})
+}
+
+func aliasProviderFixture(t *testing.T) (GroupCatalog, *yamlx.Node, *jsonx.Object) {
+	t.Helper()
+	data, err := os.ReadFile("testdata/n89_alias_expected.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := jsonx.Parse(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixture := parsed.(*jsonx.Object)
+	document, err := yamlx.Parse([]byte(fixture.GetString("source")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return groupCatalog(fixture.GetObject("config")), document, fixture.GetObject("native")
+}
+func TestProviderCopyPreservesExternalAliasesAndSource(t *testing.T) {
+	catalog, document, expected := aliasProviderFixture(t)
+	if err := LowerProviderFilters(catalog, document); err != nil {
+		t.Fatal("valid external alias failed", err)
+	}
+	raw, err := yamlx.ToJSON(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	actual, err := jsonx.Parse(raw)
+	if err != nil || !jsonx.Equal(actual, expected) {
+		t.Fatal("external alias differs from real Python", err)
+	}
+	providers := yamlx.Get(document, "proxy-providers")
+	group := yamlx.Get(document, "proxy-groups").Content[0]
+	name := yamlx.Get(group, "use").Content[0].Value
+	clone := yamlx.Get(providers, name)
+	original := yamlx.Resolve(yamlx.Get(yamlx.Get(providers, "Synthetic"), "health-check"))
+	copied := yamlx.Resolve(yamlx.Get(clone, "health-check"))
+	if copied == original {
+		t.Fatal("private provider retained caller nodes")
+	}
+	yamlx.Set(copied, "interval", yamlx.Int(999))
+	if yamlx.Get(original, "interval").Value != "300" || yamlx.Get(yamlx.Get(document, "shared"), "interval").Value != "300" {
+		t.Fatal("private edit changed original/shared health")
+	}
+	if yamlx.Get(yamlx.Get(clone, "extension"), "interval").Value != "999" {
+		t.Fatal("copied alias sharing was lost")
+	}
+	rendered, err := yamlx.Marshal(document)
+	if err != nil {
+		t.Fatal("copied graph cannot be emitted", err)
+	}
+	again, err := yamlx.Parse(rendered)
+	if err != nil || !yamlx.Equal(document, again) || !strings.Contains(string(rendered), "keep health") {
+		t.Fatal("alias binding/comment/meaning changed", err)
+	}
+}
+func TestProviderCopyRejectsManualAliasBomb(t *testing.T) {
+	for _, self := range []bool{false, true} {
+		catalog, document, _ := aliasProviderFixture(t)
+		target := yamlx.Seq(yamlx.Str("entry"))
+		target.Anchor = "a0"
+		if self {
+			target.Content = append(target.Content, &yamlx.Node{Kind: yaml.AliasNode, Value: target.Anchor, Alias: target})
+		} else {
+			for i := 1; i <= 40; i++ {
+				next := yamlx.Seq(&yamlx.Node{Kind: yaml.AliasNode, Value: target.Anchor, Alias: target}, &yamlx.Node{Kind: yaml.AliasNode, Value: target.Anchor, Alias: target})
+				next.Anchor = fmt.Sprintf("a%d", i)
+				target = next
+			}
+		}
+		provider := yamlx.Get(yamlx.Get(document, "proxy-providers"), "Synthetic")
+		yamlx.Set(provider, "extension", target)
+		if err := LowerProviderFilters(catalog, document); err == nil {
+			t.Fatal("manual alias graph bypassed copy budget", self)
+		}
+	}
+}
+
+func FuzzProviderAliasCopy(f *testing.F) {
+	data, err := os.ReadFile("testdata/n89_alias_expected.json")
+	if err != nil {
+		f.Fatal(err)
+	}
+	var fixture struct {
+		Source string `json:"source"`
+	}
+	if json.Unmarshal(data, &fixture) != nil {
+		f.Fatal("invalid alias seed")
+	}
+	f.Add(fixture.Source)
+	f.Add("proxy-providers: {Synthetic: {type: http}}\nproxy-groups: [{name: Group, use: [Synthetic, Other]}]\n")
+	exclude := "Ads"
+	subscriptions := []string{"s"}
+	catalog := GroupCatalog{Groups: []model.ProxyGroup{{ID: "g", Name: "Group", Subscriptions: &subscriptions, ExcludeRegex: &exclude}}, Subscriptions: []model.Subscription{{ID: "s", Name: "Synthetic"}}}
+	f.Fuzz(func(t *testing.T, source string) {
+		if len(source) > 65536 {
+			return
+		}
+		document, err := yamlx.Parse([]byte(source))
+		if err != nil {
+			return
+		}
+		if err := LowerProviderFilters(catalog, document); err != nil {
+			return
+		}
+		rendered, err := yamlx.Marshal(document)
+		// Copying may move a graph over the shared output budget. Refusal is safe;
+		// successful output must preserve the whole graph's meaning and bindings.
+		if err != nil {
+			return
+		}
+		again, err := yamlx.Parse(rendered)
+		if err != nil || !yamlx.Equal(document, again) {
+			t.Fatalf("copied graph failed closure: %v", err)
+		}
 	})
 }

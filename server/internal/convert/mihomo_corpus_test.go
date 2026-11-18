@@ -422,6 +422,7 @@ func TestMihomoCorpus(t *testing.T) {
 	oracle := loadWriterOracle(t)
 	inputPatches := loadInputPatches(t)
 	patched := 0
+	paths := providerPathReferences(t)
 	counts := map[string]int{}
 	typedStorage := map[string]int{}
 	failures := 0
@@ -507,6 +508,7 @@ func TestMihomoCorpus(t *testing.T) {
 			typedStorage["explicit native listener parse"]++
 		}
 
+		row = providerPathReference(t, paths, i, row)
 		if msg := runMihomoRow(t, row, oracle); msg != "" {
 			failures++
 			byFunction[row.fn]++
