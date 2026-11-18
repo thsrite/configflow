@@ -1915,3 +1915,20 @@ world 保留旧文件。原 archive 不改；独立 Python 参考绑定完整 ar
   和row2125共4条，明确在任何图修改前拒绝，完整未修改图进入独立native期待。
   MosDNS三份Python参考只刷新已删除/新增代码的依赖元数据；2863/0/5个既有exact entries、
   声明输入hash及venv依赖hash均与git原文件相同，未修改Python业务答案。
+
+### N8-9 subs — Agent未知版本生成边界与原生生产接线（2026-11-19）
+
+- 协调者批准的版本门禁同时影响Mihomo生成：mihomo_corpus的12条既有输入、review_mihomo/471。
+  使用真实Python完整生成器，仅注入已批准的“非空未知Agent版本拒绝”守卫，捕获完整错误、
+  部分report与逻辑profile状态；逐行/source/原字节清单SHA绑定。正常版本不变。
+- 原4548项字节manifest完全不改。其中9项含alpha-abc机器版本，现在单独逐项断言完整
+  EasyTierSettingsError、原baseline SHA和空输出；其余4539项仍逐字节比较。Mihomo仍保留
+  原2353项覆盖计数（2344字节比较+9明确拒绝），Loon1064、Surge1131及既有8c例外不变。
+  没有全局比较器豁免，没有从失败的Go输出重录字节期待。
+- 临时目录原生环境边界已获协调者明确批准：首个非空TMPDIR/TEMP/TMP选定后不回退、不写
+  探测文件。首次实际使用检查目录存在/类型/写入与遍历权限（含内核ACL/只读挂载检查），
+  RuntimeDirectoryError明确显示变量名、绝对路径和中文原因，并保留原IO错误链。内置运行时
+  启动接线即发告警；未启动/关机后的写入仍按原取消闸门拒绝，不因诊断创建新目录或state。
+- 生产mihomoenv.NativeEnv直接接substore.LoadCache与NativeConverter，移除这两条已迁移owner
+  的JSONx往返。活跃Default仍按调用时解析；Runtime关机错误不会在旧无error转换签名中丢失。
+  provider/refresh未迁移的回调仍只走原owner薄codec，不复制其业务。

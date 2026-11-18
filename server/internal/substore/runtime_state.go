@@ -6,6 +6,7 @@ import (
 	"configflow/internal/model"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -53,8 +54,18 @@ type RuntimeStatus struct {
 }
 
 func (r *Runtime) loadState() (*runtimeState, error) {
+	if err := r.checkTempDirectory(); err != nil {
+		return nil, err
+	}
 	data, err := os.ReadFile(filepath.Join(r.Root(), "state.json"))
 	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			var directory *RuntimeDirectoryError
+			failure := r.directoryFailure(err)
+			if errors.As(failure, &directory) {
+				return nil, failure
+			}
+		}
 		return &runtimeState{}, nil
 	}
 	var raw json.RawMessage
@@ -85,7 +96,8 @@ func (r *runtimeState) empty() bool {
 func (r *Runtime) writeState(ctx context.Context, patch runtimePatch) error {
 	return r.writeStateUsing(ctx, patch, nil)
 }
-func (r *Runtime) writeStateUsing(ctx context.Context, patch runtimePatch, beforeReplace func()) error {
+func (r *Runtime) writeStateUsing(ctx context.Context, patch runtimePatch, beforeReplace func()) (failure error) {
+	defer func() { failure = r.directoryFailure(failure) }()
 	if err := ctx.Err(); err != nil {
 		return err
 	}

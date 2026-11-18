@@ -50,6 +50,3 @@ func Env() convert.MihomoEnv {
 		},
 	}
 }
-
-// NativeEnv registers typed callbacks around the sole implementations in owners.
-func NativeEnv() convert.MihomoEnvironment { return convert.MihomoEnvironmentFromLegacy(Env()) }

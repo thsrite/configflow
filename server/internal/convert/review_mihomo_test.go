@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -90,6 +91,7 @@ func TestMihomoReviewEmptyLibraryURLUsesRuleFormat(t *testing.T) {
 }
 
 func TestMihomoReviewBoundaryReferences(t *testing.T) {
+	nativeVersions := nativeAgentGenerationCases(t, "review_mihomo")
 	readers := loadMihomoReaderOracle(t)
 	rows := loadJSONLines(t, "testdata/review_mihomo.jsonl.gz")
 	oracle := loadWriterOracle(t)
@@ -126,7 +128,7 @@ func TestMihomoReviewBoundaryReferences(t *testing.T) {
 				t.Log("shared quoted provider interval: native boundary coverage")
 				return
 			}
-			if msg := runMihomoReviewBoundary(t, readers.row(t, "review_mihomo.jsonl.gz", index, rowOf(entry)), oracle); msg != "" {
+			if msg := runMihomoReviewBoundary(t, applyNativeAgentGeneration(readers.row(t, "review_mihomo.jsonl.gz", index, rowOf(entry)), nativeVersions.GetObject(fmt.Sprintf("review_mihomo/%d", index))), oracle); msg != "" {
 				t.Fatal(msg)
 			}
 		})

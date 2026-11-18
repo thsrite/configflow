@@ -63,3 +63,16 @@ const (
 )
 
 const msgManageUnavailable = "无法管理内置 Sub-Store，请检查容器服务状态"
+
+const (
+	msgRuntimeDirectory             = "环境变量 %s 指向的 Sub-Store 临时目录「%s」不可用：%v"
+	msgRuntimeDirectoryNotDirectory = "路径不是目录"
+)
+
+const (
+	msgRuntimeDirectoryMissing    = "目录不存在"
+	msgRuntimeDirectoryPermission = "目录不可写或无法访问"
+	msgRuntimeDirectoryIO         = "文件系统操作失败"
+)
+
+const msgRuntimeDirectoryReadOnly = "目录位于只读文件系统"

@@ -65,6 +65,7 @@ func NativeConverter() convert.NodeConverter { return Default().Client }
 func Wire() {
 	service := Default()
 	if service.Env.IsBuiltinAvailable() {
+		service.Runtime.warnTempDirectory()
 		lifecycle.RegisterPeriodic(service.Runtime.idlePeriodic())
 	}
 	RegisterStartup()

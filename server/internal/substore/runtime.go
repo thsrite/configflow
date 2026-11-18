@@ -110,17 +110,7 @@ func NewRuntime(env *Env, directory string, idleSeconds float64) *Runtime {
 // valid existing state file stays at the same location. Selection is read-only:
 // an unusable configured directory fails at the actual write, without probing
 // files or silently starting a second runtime under a different directory.
-func runtimeTempRoot() string {
-	for _, key := range []string{"TMPDIR", "TEMP", "TMP"} {
-		if value := os.Getenv(key); value != "" {
-			if absolute, err := filepath.Abs(value); err == nil {
-				return absolute
-			}
-			return value
-		}
-	}
-	return os.TempDir()
-}
+func runtimeTempRoot() string { return selectedRuntimeTempDirectory().path }
 
 // Root is the runtime's directory: Directory, or
 // <tempdir>/configflow-sub-store-<sha256(abspath(DATA_DIR))[:12]>.
@@ -156,6 +146,9 @@ var leaseOwners = struct {
 }{entries: make(map[string]*runtimeLeases)}
 
 func (r *Runtime) pinLeases() (string, *runtimeLeases, func(), error) {
+	if err := r.checkTempDirectory(); err != nil {
+		return "", nil, nil, err
+	}
 	root, err := repo.ResolveDataDir(r.Root())
 	if err != nil {
 		return "", nil, nil, err
@@ -255,7 +248,7 @@ func (r *Runtime) runWork(ctx context.Context, root string, exclusive bool, fn f
 		return err
 	}
 	if err := os.MkdirAll(root, 0700); err != nil {
-		return osError(err, root)
+		return r.directoryFailure(osError(err, root))
 	}
 	lease := &workLease{root: root, exclusive: exclusive}
 	lease.active.Store(true)
@@ -278,7 +271,7 @@ func (r *Runtime) withControl(ctx context.Context, fn func(context.Context) erro
 		return err
 	}
 	if err := os.MkdirAll(root, 0700); err != nil {
-		return osError(err, root)
+		return r.directoryFailure(osError(err, root))
 	}
 	return fn(held)
 }

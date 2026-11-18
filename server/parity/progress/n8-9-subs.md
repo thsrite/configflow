@@ -360,3 +360,28 @@ routers62.832s/oxidns21.363s/规则与仓储等。
 - `go test -race -p 4 -count=1 -timeout=6m ./internal/convert ./internal/substore ./internal/refresh
   -run "TestN89AgentVersion|TestN89CallerReference|TestN89ProxyReader|TestN89FetchWithout|TestN89NativeProxyRecords"`
   → convert5.167s/substore1.035s/refresh1.024s。
+
+### 最后两项裁定与生产接线
+
+- 新版本裁定级联到Mihomo生成的13条现有输入。n89_agent_generation_reference.py调用真实
+  Python完整生成器，仅注入新Agent版本守卫；完整err/report/profile状态由Python产生，
+  Go只读期待。原archive/N7资料/原4548字节manifest均未改。9个alpha机器版本样本改为逐项
+  完整错误+原byte SHA+零输出断言，其余4539项仍逐字节比较；覆盖计数仍2353/1064/1131。
+- `go test -race -p 4 -count=1 -timeout=8m ./internal/substore ./internal/convert -run
+  "TestN89RuntimeDirectory|TestN89RuntimeTempRoot|TestN89RuntimeState|TestWireRegistersIdle|TestN89AgentGenerationReferences"`
+  →substore2.547s/convert6.533s；全部13个完整生成参照实际消费。
+- 非race `go test -p 4 -count=1 -timeout=8m ./internal/convert -run
+  "^(TestMihomoCorpus|TestMihomoReviewBoundaryReferences|TestN88GenerationBytes|TestNativeMihomoOriginalInputsUnchanged)$"`
+  →convert41.463s；不把早期“2353均输出成功”的历史结果用于当前政策，明确9条拒绝。
+- TMPDIR/TEMP/TMP原生选择已获协调者批准；新增RuntimeDirectoryError，首次使用明确中文
+  变量名/绝对路径/不可用原因，启动Wire告警。检查只做Stat/内核Access，不写探测文件、不
+  创建不存在的环境目录、不静默回退；实际后续IO失败同样带环境上下文，原cause不丢。
+  六条真实不存在/不可写 × 三环境变量专例检查告警、Snapshot、Use、零命令/零文件写入。
+- 补上内核ACL/只读挂载检查后的完整substore非语料race（不重复Python参考矩阵）55.463s，
+  convert/substore定向vet退出0。真实Runtime取消、锁、rename/tmp清理回归在同一包完整跑过。
+- 生产mihomoenv.NativeEnv的Converter/LoadSubscriptionCache直接接typed owner，避免已迁移
+  owner再走旧无error转换签名。新增真实RuntimeShutdown与真实repo cache读回接线回归。
+  `go test -race -p 4 -count=1 -timeout=5m ./internal/convert/mihomoenv` →2.037s；
+  三包mihomoenv/substore/convert vet退出0。额外convert改动仅mihomoenv/native.go及旧函数移出。
+- 第二轮全跨包只余上述新政策级联的13条输入；mosdns、provider、refresh及其他包已绿。
+  HTTP/fuzz因前面的&&门未执行，不提前记通过。随后在最终树重跑全跨包、HTTP、fuzz、静态检查。
