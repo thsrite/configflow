@@ -431,6 +431,7 @@ func TestDifferentialMosDNSRoutes(t *testing.T) {
 		}
 	}
 	pyFiles, goFiles := written(t, pyDir), written(t, goDir)
+	applyNativeCachePaths(t, up.URL, pyFiles)
 	for name := range mergeKeys(pyFiles, goFiles) {
 		if !reflect.DeepEqual(pyFiles[name], goFiles[name]) {
 			failed++
@@ -459,4 +460,45 @@ func mergeKeys(a, b map[string]any) map[string]bool {
 		out[k] = true
 	}
 	return out
+}
+
+// applyNativeCachePaths binds only the two sources this test downloads. Real
+// Python supplies its own address; independent canonical JSON supplies D2's
+// native address. Cache bytes and every other stored path remain strict.
+func applyNativeCachePaths(t *testing.T, base string, files map[string]any) {
+	t.Helper()
+	python := os.Getenv("CONFIGFLOW_DIFF_PYTHON")
+	if python == "" {
+		home, _ := os.UserHomeDir()
+		python = filepath.Join(home, "cf-test/.venv/bin/python")
+	}
+	const script = `import hashlib,json,sys
+from backend.utils.rule_utils import rule_cache_filename
+result={}
+for ident,endpoint,behavior in [('remote','/list.txt','domain'),('classical','/classical.txt','classical')]:
+ rule={'id':ident,'url':sys.argv[1]+endpoint,'behavior':behavior,'format':'text','source_type':'url'}
+ old=rule_cache_filename(rule)
+ native=json.dumps([ident,rule['url'],behavior,'text'],ensure_ascii=False,separators=(',',':'))
+ result['shared/rules/'+old]='shared/rules/by-source/'+hashlib.sha256(native.encode()).hexdigest()+'.list'
+print(json.dumps(result))`
+	root, _ := filepath.Abs("../../../..")
+	cmd := exec.Command(python, "-c", script, base)
+	cmd.Dir = root
+	cmd.Env = append(os.Environ(), "PYTHONPATH=.", "PYTHONDONTWRITEBYTECODE=1")
+	output, err := cmd.Output()
+	if err != nil {
+		t.Fatal("independent D2 cache reference", err)
+	}
+	var paths map[string]string
+	if err := json.Unmarshal(output, &paths); err != nil || len(paths) != 2 {
+		t.Fatal("invalid exact D2 cache addresses", err)
+	}
+	for old, native := range paths {
+		content, ok := files[old]
+		if !ok || files[native] != nil || old == native {
+			t.Fatal("D2 reference does not bind a unique original cache")
+		}
+		delete(files, old)
+		files[native] = content
+	}
 }

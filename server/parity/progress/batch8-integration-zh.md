@@ -2,7 +2,7 @@
 
 基底 go@d4fab6441，工作树 configflow-go-batch-8，分支 batch-8；不 push。
 指定 a–g 七个集成项已分别提交；协调者补充的 profile-local 旧缓存认领和九条精确
-C28 D2 预期已在 23c83a970 关闭，当前继续参考指纹和最终验收。core/race 由协调者跑。
+C28 D2 预期已在 23c83a970 关闭，当前参考指纹与 preflight 已通过，继续完整 compare 验收。core/race 由协调者跑。
 
 ## 叠入范围
 
@@ -23,7 +23,7 @@ C28 D2 预期已在 23c83a970 关闭，当前继续参考指纹和最终验收�
 
 - DNS cache.go：保留 rules 正式 SourceConfig / ReadCacheWithFormat 和迁移/receipt/路径校验，
   不退回 DNS 过渡 JSON adapter；a 提交再移除 IP-presence 的剩余 JSON 选址桥。
-- 三份 MosDNS pyref 二进制冲突保留 DNS 已复核的 typed 参考输入/输出；最终在整合树
+- 三份 MosDNS pyref 二进制冲突保留 DNS 已复核的 typed 参考输入/输出；在整合树
   重新做只读真实 Python check，指纹按复核后的实际依赖刷新，不合并孤立旧输入或重写期望。
 - configgen/generate.go：保留普通 Build 直接加载 typed repository 的路径；冻结 Capture
   使用同一次捕获快照的 build，二者共用 materialize，不重新读取当前配置。MosDNS 只在
@@ -98,12 +98,12 @@ PREFLIGHT PASS、完整 GATE_ONLY=compare（proddiff new/stale 0、difftest 与 
 
 ### 最终产品树分配与快照认领统计
 
-产品树为 dead8fcdb（随后仅文档更新不改变产品）。同主测试服务器、GOMAXPROCS=4、
+产品树为 dead8fcdb（随后仅回放测试和文档更新，不改变产品）。同主测试服务器、GOMAXPROCS=4、
 benchtime=3x、count=3，完整生产链基准：
-- Mihomo 128 nodes / 512 rules：64,609,285–64,623,469 B/op，611001–611038 allocs/op，
+- Mihomo 128 nodes / 512 rules：64,577,634–64,687,274 B/op，611016–611042 allocs/op，
   相比基底约76MB/710k下降，没有回升。
-- OxiDNS cold metadata chain：unused0 42,838,613–42,877,677 B/op，470839–470909 allocs/op；
-  unused2MiB 42,823,472–42,831,917 B/op，470850–470855 allocs/op。
+- OxiDNS cold metadata chain：unused0 42,814,437–42,849,157 B/op，470843–470874 allocs/op；
+  unused2MiB 42,797,861–42,843,274 B/op，470824–470852 allocs/op。
   相比独立 DNS 分支约61.3MB/749.5k下降，2MiB未消费字段没有放大。
 - 实际命令：`GOMAXPROCS=4 go test -run "^$" -bench "^BenchmarkMihomoGenerationProfile/128$" -benchmem -benchtime=3x -count=3 ./internal/convert`；
   `GOMAXPROCS=4 go test -run "^$" -bench "^BenchmarkOxiDNSMetadataChain$" -benchmem -benchtime=3x -count=3 ./internal/oxidns`。
@@ -140,3 +140,21 @@ N8-1 rule digest 尚未激活已批准 D2，convert 字节/录制回放没有接
 - 定向检查：convert 35.005s / httpx 0.004s / ippresence 1.818s，均通过。
 
 剩余：最终完整 preflight 与 compare。
+
+### 最终预检
+
+最终树 868703c80，按用户指定：
+`RT_HOST=<固定主测试服务器> rt sync` 后执行
+`ssh <固定主测试服务器> 'bash /tmp/preflight.sh program__configflow-go-batch-8 -p 6'`。
+两种 tag vet 与全部非 race 测试完成，退出0，最终行 **PREFLIGHT PASS**。
+随后执行 `RT_HOST=<固定主测试服务器> rt -e GATE_ONLY=compare -- bash -lc 'server/scripts/gate.sh -p 6'`，
+等待 proddiff、difftest、全部 synthetic live 完成。未执行 core/race。
+
+### 完整 compare 首轮与 MosDNS HTTP 存储断言
+
+proddiff 已返回 `baseline: new=0 stale=0`，全部 self-check PASS。全部 difftest 中仅
+MosDNS HTTP 的缓存文件名仍按旧 Python digest 比较：55个响应相同，两份完整缓存内容
+相同，四条路径缺失/新增构成两对既定 D2 地址。测试现在调用真实 Python filename，
+再独立计算 JSON digest，仅在这两个确切来源上重命名期望 key，不修剪内容/放宽文件集。
+`CONFIGFLOW_DIFF=1 go test -count=1 -timeout=5m -run "^TestDifferentialMosDNSRoutes$" ./internal/mosdns/difftest`
+通过，`mosdns/difftest 4.241s`。首轮 synthetic 尚未运行，不算完整通过；将整段 compare 重跑。
