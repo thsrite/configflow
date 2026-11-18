@@ -28,8 +28,8 @@ R11对RouterOS.Apply另加入口取消检查，后续rebase保留；不改R11私
 2. R04–R10现存write/rollback owner清除WithoutCancel，补真实Runtime回归；
    复用回环fake和生产参数，验证停止不写/不改proof、断开仍完成、L2等待可取消。
 3. R10/6c合入后rebase，验证repo的真实BeforeCommit取消及并发发布互斥，保留R11集成约定。
-4. .32或.64定向race、全仓vet；最终server/scripts/gate.sh（.64 -p6）。
-   排队超过15分钟只停自己的排队进程并交回，由协调者cf-gate。
+4. 按更新后的AGENT-BRIEF（go@215ab6b04）：.32或.64只跑gofmt、全仓vet、改动包及直接调用方race、相关difftest；新增fuzz才跑60秒。
+   agent不跑完整gate，定向通过即交回，由协调者按批次跑cf-gate。
 
 ## 当前进度
 
@@ -118,3 +118,11 @@ IPv6 PD address-list加入rosSingleRowPaths，scoped/inScope按list限定，与I
 ND最终payload沿用R11的ipv6DNSFlag严格拒绝未知/null及dynamic/invalid标志，不回退rosTruthy宽松判断。
 这些改动依赖R11私有pdLists/ipv6DNSFlag等定义，后续整分支集成，不能只复制共享文件补丁。
 R11 owner回报完整共享包race/Python/mutation已通过；此处仅登记其报告和差异审阅，不冒称本分支已跑R11。
+
+### 流程更新（协调者，go@215ab6b04）
+
+已读更新后的AGENT-BRIEF。后续不再发送中途进度消息；只有需裁定、交回或阻塞时联系协调者。
+长测试以一条阻塞前台命令等待结果，不进行模型回合中的日志轮询。
+O3-6b仍等待R10和O3-6c正式合入通知；之后rebase go、应用28子例草稿，跑定向验证即交回，
+不运行gate.sh/proddiff/全仓race。当前尚无新fuzz目标，不为本步凭空增加解析器fuzz。
+以上覆盖本文前面旧的最终gate/15分钟排队计划；已完成的历史定向结果保留。
