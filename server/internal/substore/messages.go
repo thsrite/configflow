@@ -37,3 +37,13 @@ const (
 	msgRuntimeStateLastUsed = "Sub-Store 运行状态的 last_used 必须是有限数字"
 	msgRuntimeModeInvalid   = "运行模式必须是 on_demand 或 always"
 )
+
+const (
+	msgDirectYAML       = "订阅 URL 未直接返回有效的 proxies YAML。响应预览: %s"
+	msgConvertedYAML    = "Sub-Store 返回了非 YAML 内容（可能是 HTML 页面），请检查 Sub-Store URL 配置是否正确。响应预览: %s"
+	msgBodyConversion   = "已拉取的订阅正文无法转换为目标 YAML"
+	msgProxyList        = "订阅 proxies 必须是数组，当前值：%s"
+	msgProxyObject      = "订阅节点必须是对象，当前值：%s"
+	msgProxyType        = "节点 type 必须是字符串，当前值：%s"
+	msgTrafficNonfinite = "订阅流量 %s 必须是有限数字"
+)

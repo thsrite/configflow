@@ -1,0 +1,43 @@
+{
+  "sources": {
+    "corpus.json": "132f840096ea8a23a96b910660e213b0f177bba7294eb306503dde723d991b1d",
+    "review_reference.json": "7c5e45903e5972601716190ab84c606ed0371d874a637ec717249c2d0775a329"
+  },
+  "cases": {
+    "corpus/6": {
+      "error": "*substore.TrafficError",
+      "message": "订阅流量 upload 必须是有限数字"
+    },
+    "corpus/23": {
+      "output": null
+    },
+    "corpus/147": {
+      "error": "*substore.ProxyShapeError",
+      "message": "订阅 proxies 必须是数组，当前值：\"\""
+    },
+    "corpus/148": {
+      "error": "*substore.ProxyShapeError",
+      "message": "订阅 proxies 必须是数组，当前值：\"\""
+    },
+    "corpus/151": {
+      "error": "*substore.ProxyShapeError",
+      "message": "订阅 proxies 必须是数组，当前值：{}"
+    },
+    "corpus/152": {
+      "error": "*substore.ProxyShapeError",
+      "message": "订阅 proxies 必须是数组，当前值：{}"
+    },
+    "corpus/155": {
+      "error": "*substore.ProxyShapeError",
+      "message": "订阅节点必须是对象，当前值：null"
+    },
+    "review/userinfo/17": {
+      "error": "*substore.TrafficError",
+      "message": "订阅流量 total 必须是有限数字"
+    },
+    "review/userinfo/18": {
+      "error": "*substore.TrafficError",
+      "message": "订阅流量 total 必须是有限数字"
+    }
+  }
+}

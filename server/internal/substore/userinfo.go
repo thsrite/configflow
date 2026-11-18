@@ -6,23 +6,28 @@ import (
 	"strconv"
 	"unicode/utf8"
 
-	"configflow/internal/jsonx"
+	"encoding/json"
+	"fmt"
+	"strings"
+	"unicode"
 )
 
 // userinfoFields is subscription_health._USERINFO_FIELDS.
 var userinfoFields = map[string]bool{"upload": true, "download": true, "total": true, "expire": true}
 
-// ParseUserinfo is subscription_health.parse_userinfo (C15's module; the
-// client needs it): `upload=1; download=2; total=3; expire=4` → the fields
-// present, nil (None) when there are none. Matches are found like
-// re.findall(r'(\w+)\s*=\s*([0-9.eE+]+)') with Unicode \w and \s; values are
-// int(float(v)). A value float() reads as infinity is OverflowError, as in
-// Python.
-func ParseUserinfo(header string) (*jsonx.Object, error) {
+// TrafficError identifies a non-finite traffic counter.
+type TrafficError struct{ Field string }
+
+// Error describes the affected protocol field.
+func (e *TrafficError) Error() string { return fmt.Sprintf(msgTrafficNonfinite, e.Field) }
+
+// ReadUserinfo parses the source header using native numeric conversion.
+func ReadUserinfo(header string) (*Traffic, error) {
 	if header == "" {
 		return nil, nil
 	}
-	info := jsonx.NewObject()
+	info := &Traffic{}
+	found := false
 	for pos := 0; pos < len(header); {
 		key, value, end, ok := matchUserinfo(header, pos)
 		if !ok {
@@ -31,7 +36,7 @@ func ParseUserinfo(header string) (*jsonx.Object, error) {
 			continue
 		}
 		pos = end
-		key = pyLower(key)
+		key = strings.ToLower(key)
 		if !userinfoFields[key] {
 			continue
 		}
@@ -40,16 +45,23 @@ func ParseUserinfo(header string) (*jsonx.Object, error) {
 			continue // ValueError
 		}
 		if math.IsInf(f, 0) {
-			return nil, pyErr("OverflowError", "cannot convert float infinity to integer")
+			return nil, &TrafficError{Field: key}
 		}
 		n, _ := new(big.Float).SetFloat64(f).Int(nil)
-		if n.IsInt64() {
-			info.Set(key, jsonx.Int(n.Int64()))
-		} else {
-			info.Set(key, jsonx.BigInt(n))
+		number := json.Number(n.String())
+		switch key {
+		case "upload":
+			info.Upload = &number
+		case "download":
+			info.Download = &number
+		case "total":
+			info.Total = &number
+		case "expire":
+			info.Expire = &number
 		}
+		found = true
 	}
-	if info.Len() == 0 {
+	if !found {
 		return nil, nil
 	}
 	return info, nil
@@ -64,7 +76,7 @@ func matchUserinfo(s string, pos int) (key, value string, end int, ok bool) {
 	i := pos
 	for i < len(s) {
 		r, size := utf8.DecodeRuneInString(s[i:])
-		if !isPyWord(r) {
+		if !(unicode.IsLetter(r) || unicode.IsNumber(r) || r == '_') {
 			break
 		}
 		i += size
@@ -76,7 +88,7 @@ func matchUserinfo(s string, pos int) (key, value string, end int, ok bool) {
 	skip := func() {
 		for i < len(s) {
 			r, size := utf8.DecodeRuneInString(s[i:])
-			if !pyIsSpace(r) {
+			if !unicode.IsSpace(r) {
 				break
 			}
 			i += size

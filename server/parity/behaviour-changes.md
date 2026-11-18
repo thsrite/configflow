@@ -1714,3 +1714,21 @@ world 保留旧文件。原 archive 不改；独立 Python 参考绑定完整 ar
 - 原 review_reference.json 及 checkOutcome 比较器未变。128条逐行 native 参照由原文件哈希锁定，
   真正的 Python生命周期函数读取 model 消费视图；真实 Python writer 继续操作原文件，
   避免无关字段被投影规范化。精确期望改变一个 mode 的负控能使实际测试失败。
+
+
+### N8-9 subs/substore：原生客户端边界（2026-11-19）
+
+- 下载结果、转换缓存直接保存 typed Traffic / yamlx.Node，legacy API 仅转码。订阅临时对象
+  POST 改用共享 jsonresp DTO 编码：字段、值、顺序、URL、noFlow、下载/删除命令不变，JSON
+  framing 为原生紧凑 UTF-8；新测试逐字节检查 POST 和无 body 的 DELETE。
+- 删除 CPython OverflowError：非有限流量计数器现在是 `*substore.TrafficError`，明确指出
+  upload/total 字段，原有限数字的 float→整数协议和精度保持。精确 native fixture 覆盖
+  corpus 的 `upload=1e400`、review 的两条 total 溢出；只变错误类型/引擎文字。
+- CPython 特有 U+001C 不再当 Unicode 空白：`total\x1c=1` 无合法流量字段，返回 null。
+  标准 Unicode 空白、有限计数器和其他 sibling 字段不变。精确 fixture 列明该唯一 corpus 项。
+- typed proxies 是对象数组。旧引擎把空字符串/空映射当空结果、把 null 节点跳过的私有
+  动态行为不再保留；显式拒绝并在中文消息带原值。native fixture 逐项固定 corpus
+  147/148/151/152/155；其余 corpus 和 N7 原始 YAML 参考及比较器不修改。proxy type 仍为
+  严格身份字段；name/server 使用共享 String，port 使用共享 Int，开放 Params 不改原 tag。
+- 关机取消不再形成共享下载的上游失败 cooldown，不再写入转换结果；等待同一 flight 的
+  请求可立即响应 Runtime 关机。请求断开仍完成原工作。真实 Runtime 回归覆盖 fetch/convert。

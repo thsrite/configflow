@@ -146,10 +146,10 @@ func TestConcurrentAndRecentRefreshesAcrossIDsShareOneGet(t *testing.T) {
 		w.Write([]byte(testYAML))
 	})
 	u := airport.url()
-	results := make([]*SubscriptionResult, 5)
+	results := make([]*FetchResult, 5)
 	var wg sync.WaitGroup
 	wg.Add(1)
-	go func() { defer wg.Done(); results[0] = fetch(t, c, "manual", u, FetchOptions{}) }()
+	go func() { defer wg.Done(); results[0] = fetchNative(t, c, "manual", u, FetchOptions{}) }()
 	if !waitFor(t, entered, 5*time.Second) {
 		t.Fatal("not entered")
 	}
@@ -157,7 +157,7 @@ func TestConcurrentAndRecentRefreshesAcrossIDsShareOneGet(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			results[i] = fetch(t, c, fmt.Sprintf("agg-%d", i), u, FetchOptions{Refresh: true})
+			results[i] = fetchNative(t, c, fmt.Sprintf("agg-%d", i), u, FetchOptions{Refresh: true})
 		}(i)
 	}
 	time.Sleep(50 * time.Millisecond)
@@ -168,7 +168,7 @@ func TestConcurrentAndRecentRefreshesAcrossIDsShareOneGet(t *testing.T) {
 			t.Fatal("results differ")
 		}
 	}
-	if fetch(t, c, "another-profile", u, FetchOptions{}) != results[0] {
+	if fetchNative(t, c, "another-profile", u, FetchOptions{}) != results[0] {
 		t.Fatal("recent result not reused")
 	}
 	if airport.count() != 1 {
@@ -234,7 +234,7 @@ func TestConversionFailureDoesNotRedownloadBody(t *testing.T) {
 	if airport.count() != 1 {
 		t.Fatalf("airport hit %d times", airport.count())
 	}
-	if fetchErr.DirectError.Error() != "已拉取的订阅正文无法转换为目标 YAML" || pythonClass(fetchErr.DirectError) != "ValueError" {
+	if !errors.Is(fetchErr.DirectError, ErrBodyConversion) {
 		t.Fatalf("direct error %v", fetchErr.DirectError)
 	}
 	if !strings.HasPrefix(fetchErr.SubStoreError.Error(), "Sub-Store 返回了非 YAML 内容（可能是 HTML 页面），请检查 Sub-Store URL 配置是否正确。响应预览: <html>failure</html>") {
@@ -280,12 +280,12 @@ func TestFailureBackoffCapsAndSuccessResetsIt(t *testing.T) {
 	h, c := external(t)
 	var seen []float64
 	failing := true
-	c.fetch = func(context.Context, string, string, string) (*SubscriptionResult, error) {
+	c.fetch = func(context.Context, string, string, string) (*FetchResult, error) {
 		seen = append(seen, h.clock.Monotonic())
 		if failing {
 			return nil, &SubscriptionFetchError{nil, &RequestError{Class: "Timeout", Message: ""}}
 		}
-		return NewSubscriptionResult(testYAML, "direct_yaml", nil, "", h.clock), nil
+		return newFetchResult(testYAML, "direct_yaml", nil, "", h.clock), nil
 	}
 	const u = "https://airport.test/sub?token=private"
 	ctx := context.Background()
@@ -566,4 +566,13 @@ func TestSweepDropsExpiredResultsAndOldFailures(t *testing.T) {
 	if c.results.len() != 1 {
 		t.Fatalf("%d results after 15 minutes", c.results.len())
 	}
+}
+
+func fetchNative(t *testing.T, c *Client, id, url string, opts FetchOptions) *FetchResult {
+	t.Helper()
+	v, err := c.Fetch(context.Background(), id, url, "", opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return v
 }

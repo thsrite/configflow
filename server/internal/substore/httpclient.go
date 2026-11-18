@@ -20,6 +20,7 @@ import (
 
 	"configflow/internal/jsonx"
 	"configflow/internal/weburl"
+	"encoding/json"
 )
 
 func isASCIIText(s string) bool {
@@ -55,7 +56,7 @@ type Request struct {
 	Header http.Header
 	// JSON is the json= body (encoded like requests: json.dumps, ASCII);
 	// nil = no body.
-	JSON    any
+	JSON    json.RawMessage
 	Timeout Timeout
 	// Proxy is proxies={'http': p, 'https': p}; "" = the environment's
 	// proxies (requests' trust_env).
@@ -358,6 +359,9 @@ func (RequestsClient) Do(ctx context.Context, request *Request) (*Response, erro
 	// asked has gone: a cancelled request context must not abort a fetch
 	// whose result (or failure cooldown) other callers share.
 	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	prepared, prepareErr := PrepareURL(strings.TrimLeftFunc(request.URL, pyIsSpace), request.Params)
 	if err := checkURL(prepared); err != nil {
 		return nil, err
@@ -373,11 +377,10 @@ func (RequestsClient) Do(ctx context.Context, request *Request) (*Response, erro
 	var body io.Reader
 	var payload []byte
 	if request.JSON != nil {
-		encoded, err := jsonx.Default(request.JSON)
-		if err != nil {
-			return nil, &RequestError{Class: "InvalidJSONError", Message: err.Error(), Err: err}
+		if !json.Valid(request.JSON) {
+			return nil, &RequestError{Class: "InvalidJSONError", Message: "invalid request JSON"}
 		}
-		payload = encoded
+		payload = request.JSON
 		body = bytes.NewReader(payload)
 	}
 	req, err := http.NewRequestWithContext(ctx, request.Method, prepared, body)
@@ -435,11 +438,20 @@ func (RequestsClient) Do(ctx context.Context, request *Request) (*Response, erro
 		return nil
 	}}
 	resp, err := client.Do(req)
+	if canceled := ctx.Err(); canceled != nil {
+		if resp != nil {
+			resp.Body.Close()
+		}
+		return nil, canceled
+	}
 	if err != nil {
 		return nil, classifyRequestError(err, viaProxy, connected)
 	}
 	defer resp.Body.Close()
 	data, err := io.ReadAll(resp.Body)
+	if canceled := ctx.Err(); canceled != nil {
+		return nil, canceled
+	}
 	if err != nil {
 		return nil, classifyBodyError(err)
 	}

@@ -55,9 +55,8 @@ func SetDefault(s *Service) (restore func()) {
 	}
 }
 
-// Converter is the Sub-Store node converter for convert.ConvertNodeToMihomo
-// and convert.RejectSurgeDialers (sub_store_client.convert_proxy_string).
-func Converter() convert.ProxyStringConverter { return Default().Client }
+// NativeConverter supplies the shared typed node-conversion collaborator.
+func NativeConverter() convert.NodeConverter { return Default().Client }
 
 // Wire registers the startup work of backend/app.py::initialize_app that
 // belongs to this module: the Sub-Store idle monitor (only with the bundled

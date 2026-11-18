@@ -59,6 +59,7 @@ func bytesOf(list []any) []byte {
 func TestPythonCorpus(t *testing.T) {
 	rows := loadCorpus(t)
 	oracle := nativeReaderCases(t)
+	native := nativeClientExpectations(t)
 	counts := map[string]int{}
 	for i, row := range rows {
 		counts[row.fn]++
@@ -139,6 +140,10 @@ func TestPythonCorpus(t *testing.T) {
 			}
 		default:
 			t.Fatalf("unknown fn %s", row.fn)
+		}
+		if expected := native.GetObject(fmt.Sprintf("corpus/%d", i)); expected != nil {
+			checkOutcome(t, fmt.Sprintf("native/corpus/%d", i), expected, got, err, true)
+			continue
 		}
 		if row.fn == "is_yaml_response" || row.fn == "parse_proxies_from_yaml" || row.fn == "proxies_to_nodes" {
 			assertNativeReaderCase(t, oracle, fmt.Sprintf("substore/corpus/%d", i), got, err)

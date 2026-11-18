@@ -16,6 +16,7 @@ import (
 
 	"configflow/internal/convert"
 	"configflow/internal/jsonx"
+	"configflow/internal/yamlx"
 )
 
 const (
@@ -39,7 +40,7 @@ type conversionStore struct {
 func newConversionStore(t *testing.T) *conversionStore {
 	h := newHarness(t, harnessOptions{builtin: true, version: "2.42.3"})
 	s := &conversionStore{h: h, c: h.service.Client, fail: map[string]bool{}}
-	s.c.convert = func(_ context.Context, proxyString, target string) *jsonx.Object {
+	s.c.convert = func(_ context.Context, proxyString, target string) (*yamlx.Node, error) {
 		s.mu.Lock()
 		s.asked = append(s.asked, asked{proxyString, target})
 		during := s.during
@@ -48,14 +49,18 @@ func newConversionStore(t *testing.T) *conversionStore {
 			during()
 		}
 		if s.fail[proxyString] {
-			return nil
+			return nil, nil
 		}
 		server := proxyString
 		if r := []rune(server); len(r) > 12 {
 			server = string(r[len(r)-12:])
 		}
-		return jsonx.Obj("name", "from-uri", "type", "anytls", "server", server, "port", jsonx.Int(443),
-			"converted-by", s.version(), "target", target, "alpn", []any{"h2"})
+		data, err := jsonx.Compact(jsonx.Obj("name", "from-uri", "type", "anytls", "server", server, "port", jsonx.Int(443),
+			"converted-by", s.version(), "target", target, "alpn", []any{"h2"}))
+		if err != nil {
+			return nil, err
+		}
+		return yamlx.FromJSON(data)
 	}
 	return s
 }
@@ -171,11 +176,11 @@ func TestNothingIsKeptWithoutAKnownVersion(t *testing.T) {
 			} else {
 				os.Remove(filepath.Join(s.h.builtin, "VERSION"))
 			}
-			s.c.convert = func(_ context.Context, proxyString, target string) *jsonx.Object {
+			s.c.convert = func(_ context.Context, proxyString, target string) (*yamlx.Node, error) {
 				s.mu.Lock()
 				defer s.mu.Unlock()
 				s.asked = append(s.asked, asked{proxyString, target})
-				return jsonx.Obj("type", "anytls")
+				return yamlx.FromJSON([]byte(`{"type":"anytls"}`))
 			}
 			s.convert(testNode)
 			s.convert(testNode)

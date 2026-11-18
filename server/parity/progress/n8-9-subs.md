@@ -69,3 +69,22 @@ owner 暂时仍调用的原有 helper，后续必须一起删除，不能据此�
   - 迁移后：5320/5800/5800 B/op，115/116/116 allocs/op。
   模式读取没有随无关配置增大；缓存后测试回归预算为大配置不能多出64KiB/op。
   这不代替后续完整订阅/代理链生成路径的配置分配基准。
+
+
+## 客户端阶段
+
+- 新增 Fetch/FetchResult、ConvertProxy/ConvertTarget（实现共享 convert.NodeConverter）、
+  ParseProxyNodes/ProxyNodes；native core 不再导入 jsonx 或 any。旧下载/转换/批次入口
+  仅留 legacy.go 转码；临时 YAML→jsonx 中转文件已删除。wire 新增 NativeConverter。
+- 默认 fake 的有效业务/请求/日志断言不改。共享结果指针身份测试改为直接调用 Fetch；
+  fake callback 只换 typed 类型，原请求次数、版本LRU、深拷贝、流量和文件期待不改。
+- 节点零值输出保留完整 name/type/server/port/params，开放参数保留 tag；严格 type、共享
+  数字文本和带引号整数回归通过。完整 proxies 子树先做 yamlx 预算检查，避免 alias 解开后
+  克隆静默变 null。原三条 alias 放大/子树预算测试保持。
+- 精确 native_client fixture 绑定原 corpus/review SHA，只列批准的9处边界；原 corpus、
+  N7 oracle、比较器不改。固定中文业务前缀保留。详见 ledger。
+- 主服务器 `GOMAXPROCS=4 go test -race -p 4 -count=1 -timeout=5m ./internal/substore -run
+  "TestN89NativeProxyRecords|TestN89ClientOwnerLifetime|TestN89TemporarySubscriptionRawRequests|TestN89FlightWaiter|TestPythonCorpus|TestReviewParseUserinfo|TestProxyYAML|TestConversionFailure"`
+  → `ok configflow/internal/substore 2.890s`；同次定向 vet 退出0。
+- 另一次完整客户端正常复用/退避/版本转换/日志/alias 定向 race → 9.392s。
+  env/http 响应与 dependencies 的旧动态消费、subs 核心仍待迁移；不能据此交回完成。

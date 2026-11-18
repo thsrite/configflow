@@ -62,12 +62,16 @@ func checkOutcome(t *testing.T, label string, row *jsonx.Object, got any, err er
 }
 
 func TestReviewParseUserinfo(t *testing.T) {
-	for _, item := range reviewReference(t).GetList("parse_userinfo") {
+	native := nativeClientExpectations(t)
+	for i, item := range reviewReference(t).GetList("parse_userinfo") {
 		row := item.(*jsonx.Object)
 		info, err := ParseUserinfo(row.GetString("input"))
 		var got any
 		if info != nil {
 			got = info
+		}
+		if expected := native.GetObject(fmt.Sprintf("review/userinfo/%d", i)); expected != nil {
+			row = expected
 		}
 		checkOutcome(t, "parse_userinfo "+jsonx.Repr(row.Value("input")), row, got, err, true)
 	}
@@ -212,11 +216,11 @@ func coalescingClient(t *testing.T, limit int) (*Client, *fakeClock, *string, *i
 	}
 	outcome := new(string)
 	count := new(int)
-	c.fetch = func(_ context.Context, _, _, _ string) (*SubscriptionResult, error) {
+	c.fetch = func(_ context.Context, _, _, _ string) (*FetchResult, error) {
 		*count++
 		switch *outcome {
 		case "ok":
-			return &SubscriptionResult{Text: "r" + jsonx.Str(jsonx.Int(*count)), Source: "direct_yaml", FetchedAt: "t"}, nil
+			return &FetchResult{Text: "r" + jsonx.Str(jsonx.Int(*count)), Source: "direct_yaml", FetchedAt: "t"}, nil
 		case "fail":
 			return nil, &SubscriptionFetchError{pyErr("ValueError", "s"), pyErr("ValueError", "d")}
 		}
@@ -311,12 +315,12 @@ func TestReviewInflightWaitersIgnoreFlags(t *testing.T) {
 	release := make(chan struct{})
 	var mu sync.Mutex
 	calls := 0
-	c.fetch = func(context.Context, string, string, string) (*SubscriptionResult, error) {
+	c.fetch = func(context.Context, string, string, string) (*FetchResult, error) {
 		mu.Lock()
 		calls++
 		mu.Unlock()
 		<-release
-		return &SubscriptionResult{Text: "shared", Source: "direct_yaml", FetchedAt: "t"}, nil
+		return &FetchResult{Text: "shared", Source: "direct_yaml", FetchedAt: "t"}, nil
 	}
 	var wg sync.WaitGroup
 	got := []string{}

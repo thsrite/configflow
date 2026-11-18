@@ -1,21 +1,25 @@
 package substore
 
 import (
-	"configflow/internal/lifecycle"
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"net/http"
 	"strings"
 	"sync"
+	"unicode"
 	"unicode/utf8"
 
 	"configflow/internal/convert"
-	"configflow/internal/jsonx"
+	"configflow/internal/jsonresp"
+	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
 	"configflow/internal/weburl"
 	"configflow/internal/yamlx"
-	"gopkg.in/yaml.v3"
+
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 // Reuse windows and bounds of sub_store_client.py. Shared by manual
@@ -33,29 +37,25 @@ const (
 
 var clientLog = logx.Get("backend.utils.sub_store_client")
 
-// SubscriptionResult is sub_store_client.SubscriptionResult: the target
-// format text, its real source (rendered_yaml, direct_yaml, sub_store,
-// direct_url_fallback), the traffic read from the same response (nil =
-// None) and when it was fetched (ISO time).
-type SubscriptionResult struct {
+// FetchResult is the text and metadata obtained from one upstream response.
+type FetchResult struct {
 	Text      string
 	Source    string
-	Traffic   *jsonx.Object
+	Traffic   *Traffic
 	FetchedAt string
 }
 
-// NewSubscriptionResult is SubscriptionResult(text, source, traffic,
-// fetched_at); an empty fetchedAt is now (datetime.now(timezone.utc).isoformat()).
-func NewSubscriptionResult(text, source string, traffic *jsonx.Object, fetchedAt string, clock Clock) *SubscriptionResult {
+func newFetchResult(text, source string, traffic *Traffic, fetchedAt string, clock Clock) *FetchResult {
 	if fetchedAt == "" {
 		fetchedAt = isoFormat(clock.Now())
 	}
-	return &SubscriptionResult{Text: text, Source: source, Traffic: traffic, FetchedAt: fetchedAt}
+	return &FetchResult{Text: text, Source: source, Traffic: traffic, FetchedAt: fetchedAt}
 }
 
-// SubscriptionFetchError is the safe public error retaining both
-// underlying failures (SubStoreError may be nil). Unwrap is __cause__, the
-// direct error.
+// ErrBodyConversion identifies a fetched body that could not be converted.
+var ErrBodyConversion = errors.New(msgBodyConversion)
+
+// SubscriptionFetchError retains both conversion and direct-fetch failures.
 type SubscriptionFetchError struct {
 	SubStoreError error
 	DirectError   error
@@ -64,8 +64,7 @@ type SubscriptionFetchError struct {
 func (e *SubscriptionFetchError) Error() string {
 	return "subscription fetch failed via Sub-Store and direct fallback"
 }
-func (e *SubscriptionFetchError) Unwrap() error       { return e.DirectError }
-func (e *SubscriptionFetchError) PythonClass() string { return "SubscriptionFetchError" }
+func (e *SubscriptionFetchError) Unwrap() error { return e.DirectError }
 
 // FetchOptions are the keyword arguments of get_subscription_proxies_yaml.
 type FetchOptions struct {
@@ -73,16 +72,16 @@ type FetchOptions struct {
 	PreferCached bool // background work: reuse for 15 minutes
 }
 
-// flight is the concurrent.futures.Future of one fetch.
+// flight shares one in-progress fetch and its immutable result.
 type flight struct {
 	done   chan struct{}
-	result *SubscriptionResult
+	result *FetchResult
 	err    error
 }
 
 func newFlight() *flight { return &flight{done: make(chan struct{})} }
 
-func (f *flight) finish(result *SubscriptionResult, err error) {
+func (f *flight) finish(result *FetchResult, err error) {
 	f.result, f.err = result, err
 	close(f.done)
 }
@@ -126,28 +125,28 @@ type Client struct {
 	cacheLimit int
 
 	convMu          sync.Mutex
-	conversions     *omap[convKey, *jsonx.Object]
+	conversions     *omap[convKey, *yamlx.Node]
 	conversionLimit int
 
 	// Replaceable steps (tests): _get_subscription_proxies_yaml and
 	// _convert_proxy_string.
-	fetch   func(ctx context.Context, subID, url, target string) (*SubscriptionResult, error)
-	convert func(ctx context.Context, proxyString, target string) *jsonx.Object
+	fetch   func(ctx context.Context, subID, url, target string) (*FetchResult, error)
+	convert func(ctx context.Context, proxyString, target string) (*yamlx.Node, error)
 }
 
 // NewClient returns a client on env using runtime for leases.
 func NewClient(env *Env, runtime *Runtime) *Client {
 	return &Client{env: env, runtime: runtime, results: newOmap[fetchKey, fetchEntry](),
 		failures: newOmap[fetchKey, failureEntry](), cacheLimit: FetchCacheLimit,
-		conversions: newOmap[convKey, *jsonx.Object](), conversionLimit: NodeConversionLimit}
+		conversions: newOmap[convKey, *yamlx.Node](), conversionLimit: NodeConversionLimit}
 }
 
-var _ convert.ProxyStringConverter = (*Client)(nil)
+var _ convert.NodeConverter = (*Client)(nil)
 
 // isYAMLResponse is _is_yaml_response: text that looks like proxies YAML,
 // not an HTML page.
 func isYAMLResponse(text string) bool {
-	stripped := pyStrip(text)
+	stripped := strings.TrimSpace(text)
 	if strings.HasPrefix(stripped, "<!") || strings.HasPrefix(stripped, "<html") ||
 		strings.Contains(runePrefix(stripped, 500), "<head>") {
 		return false
@@ -164,6 +163,9 @@ func preview(text string) string {
 }
 
 func (c *Client) get(ctx context.Context, url string, header http.Header, params []Param, timeout float64) (*Response, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	resp, err := c.env.HTTP.Do(ctx, &Request{Method: "GET", URL: url, Header: header, Params: params, Timeout: Seconds(timeout)})
 	if err != nil {
 		return nil, err
@@ -185,7 +187,7 @@ func (c *Client) fetchDirectSubscriptionYAML(ctx context.Context, url string) (s
 	}
 	text := resp.Text()
 	if !isYAMLResponse(text) {
-		return "", pyErr("Exception", "订阅 URL 未直接返回有效的 proxies YAML。响应预览: "+preview(text))
+		return "", fmt.Errorf(msgDirectYAML, preview(text))
 	}
 	clientLog.Info("订阅 URL 直接返回有效 YAML，跳过 Sub-Store 转换")
 	return text, nil
@@ -195,13 +197,26 @@ func (c *Client) fetchDirectSubscriptionYAML(ctx context.Context, url string) (s
 // subscription; #noFlow skips Sub-Store's traffic request. content (when
 // given) is converted instead of the upstream URL.
 func (c *Client) createSubscription(ctx context.Context, base, subID, url string, content *string) bool {
+	if ctx.Err() != nil {
+		return false
+	}
 	if !strings.Contains(url, "#") {
 		url += "#noFlow"
 	}
-	payload := jsonx.Obj("name", subID, "url", url, "noFlow", true)
-	if content != nil {
-		payload.Set("source", "local")
-		payload.Set("content", *content)
+	payload, err := jsonresp.Encode(struct {
+		Name    string  `json:"name"`
+		URL     string  `json:"url"`
+		NoFlow  bool    `json:"noFlow"`
+		Source  string  `json:"source,omitempty"`
+		Content *string `json:"content,omitempty"`
+	}{subID, url, true, func() string {
+		if content != nil {
+			return "local"
+		}
+		return ""
+	}(), content})
+	if err != nil {
+		return false
 	}
 	clientLog.Info("Sub-Store 创建临时订阅 '" + subID + "'")
 	resp, err := c.env.HTTP.Do(ctx, &Request{Method: "POST", URL: base + "/api/subs", JSON: payload, Timeout: Seconds(10)})
@@ -218,6 +233,9 @@ func (c *Client) createSubscription(ctx context.Context, base, subID, url string
 
 // deleteSubscription is _delete_subscription (used and deleted at once).
 func (c *Client) deleteSubscription(ctx context.Context, base, subID string) {
+	if ctx.Err() != nil {
+		return
+	}
 	resp, err := c.env.HTTP.Do(ctx, &Request{Method: "DELETE", URL: base + "/api/sub/" + QuotePath(subID), Timeout: Seconds(10)})
 	if err != nil {
 		clientLog.Debug("Sub-Store 删除订阅失败（可忽略）: " + safeExceptionDetails(err))
@@ -230,15 +248,18 @@ func (c *Client) deleteSubscription(ctx context.Context, base, subID string) {
 	}
 }
 
-// GetSubscriptionProxiesYAML is get_subscription_proxies_yaml(sub_id, url,
+// Fetch is get_subscription_proxies_yaml(sub_id, url,
 // target, refresh=, prefer_cached=): concurrent requests for the same URL /
 // format / Sub-Store share one download; a success is reused for 5 minutes
 // (30 s for an explicit refresh, 15 minutes for background work), a failure
 // blocks retries for a growing cooldown (3 s doubling to 5 minutes; at
 // least 60 s when the upstream answered 403/429). The shared result must
 // not be modified.
-func (c *Client) GetSubscriptionProxiesYAML(ctx context.Context, subID, url, target string, opts FetchOptions) (*SubscriptionResult, error) {
+func (c *Client) Fetch(ctx context.Context, subID, url, target string, opts FetchOptions) (*FetchResult, error) {
 	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if target == "" {
 		target = "ClashMeta"
 	}
@@ -249,6 +270,10 @@ func (c *Client) GetSubscriptionProxiesYAML(ctx context.Context, subID, url, tar
 	key := fetchKey{url, target, base}
 	inf := math.Inf(1)
 	c.mu.Lock()
+	if err := ctx.Err(); err != nil {
+		c.mu.Unlock()
+		return nil, err
+	}
 	now := c.env.Clock.Monotonic()
 	for _, old := range c.failures.keys() {
 		if entry, _ := c.failures.get(old); now-entry.last >= 3600 {
@@ -304,10 +329,17 @@ func (c *Client) GetSubscriptionProxiesYAML(ctx context.Context, subID, url, tar
 	c.mu.Unlock()
 	if !owner {
 		clientLog.Info("复用订阅近期结果或等待正在进行的拉取")
-		<-f.done
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-f.done:
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		return f.result, f.err
 	}
-	var result *SubscriptionResult
+	var result *FetchResult
 	completed := false
 	defer func() {
 		if !completed {
@@ -321,12 +353,21 @@ func (c *Client) GetSubscriptionProxiesYAML(ctx context.Context, subID, url, tar
 		result, err = c.fetchSubscription(ctx, subID, url, target)
 	}
 	completed = true
+	if canceled := ctx.Err(); canceled != nil {
+		err = canceled
+	}
 	if err != nil {
 		c.failed(key, f, tracked, err)
 		return nil, err
 	}
-	f.finish(result, nil)
 	c.mu.Lock()
+	if err := ctx.Err(); err != nil {
+		c.results.delete(key)
+		f.finish(nil, err)
+		c.mu.Unlock()
+		return nil, err
+	}
+	f.finish(result, nil)
 	c.failures.delete(key)
 	if tracked {
 		c.results.set(key, fetchEntry{f, c.env.Clock.Monotonic() + FetchReuseSeconds})
@@ -339,6 +380,10 @@ func (c *Client) failed(key fetchKey, f *flight, tracked bool, err error) {
 	f.finish(nil, err)
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		c.results.delete(key)
+		return
+	}
 	if !tracked {
 		return
 	}
@@ -374,15 +419,15 @@ func blocked(err error) bool {
 // and traffic); when it is not already the target YAML, Sub-Store converts
 // the downloaded body. URLs with a fragment (Sub-Store options) go to
 // Sub-Store first and are downloaded directly only when it fails.
-func (c *Client) fetchSubscription(ctx context.Context, subID, url, target string) (*SubscriptionResult, error) {
+func (c *Client) fetchSubscription(ctx context.Context, subID, url, target string) (*FetchResult, error) {
 	var rawText *string
-	var traffic *jsonx.Object
+	var traffic *Traffic
 	var directErr error
-	lowered := pyLower(url)
+	lowered := strings.ToLower(url)
 	directAttempted := !strings.Contains(url, "#") &&
 		(strings.HasPrefix(lowered, "http://") || strings.HasPrefix(lowered, "https://"))
 	if directAttempted {
-		result, err := func() (*SubscriptionResult, error) {
+		result, err := func() (*FetchResult, error) {
 			clientLog.Info("拉取订阅正文与流量信息（单次请求）")
 			resp, err := c.get(ctx, url, clashHeader(), nil, 30)
 			if err != nil {
@@ -390,17 +435,17 @@ func (c *Client) fetchSubscription(ctx context.Context, subID, url, target strin
 			}
 			text := resp.Text()
 			rawText = &text
-			parsed, err := ParseUserinfo(resp.HeaderValue("subscription-userinfo"))
+			parsed, err := ReadUserinfo(resp.HeaderValue("subscription-userinfo"))
 			if err != nil {
 				return nil, err
 			}
 			traffic = parsed
 			if isYAMLResponse(text) && target == "ClashMeta" {
 				source := "direct_yaml"
-				if strings.Contains(pyLower(resp.HeaderValue("x-powered-by")), "sub-store") {
+				if strings.Contains(strings.ToLower(resp.HeaderValue("x-powered-by")), "sub-store") {
 					source = "rendered_yaml"
 				}
-				return NewSubscriptionResult(text, source, traffic, "", c.env.Clock), nil
+				return newFetchResult(text, source, traffic, "", c.env.Clock), nil
 			}
 			return nil, nil
 		}()
@@ -408,6 +453,9 @@ func (c *Client) fetchSubscription(ctx context.Context, subID, url, target strin
 			return result, nil
 		}
 		if err != nil {
+			if canceled := ctx.Err(); canceled != nil {
+				return nil, canceled
+			}
 			directErr = err
 			if blocked(err) {
 				// A blocked/rate-limited upstream must not be retried through
@@ -427,7 +475,7 @@ func (c *Client) fetchSubscription(ctx context.Context, subID, url, target strin
 	// A prefix and a random suffix: no clash with the user's subscriptions
 	// nor with concurrent requests for the same subscription.
 	tempName := "_cf_tmp_" + subID + "_" + c.env.RandomHex()
-	var result *SubscriptionResult
+	var result *FetchResult
 	subStoreErr := c.runtime.Use(ctx, func(ctx context.Context) error {
 		c.createSubscription(ctx, base, tempName, url, rawText)
 		defer c.deleteSubscription(ctx, base, tempName)
@@ -439,19 +487,21 @@ func (c *Client) fetchSubscription(ctx context.Context, subID, url, target strin
 		}
 		text := resp.Text()
 		if !isYAMLResponse(text) {
-			return pyErr("Exception", "Sub-Store 返回了非 YAML 内容（可能是 HTML 页面），请检查 Sub-Store URL 配置是否正确。响应预览: "+
-				preview(text))
+			return fmt.Errorf(msgConvertedYAML, preview(text))
 		}
 		if traffic == nil {
-			parsed, err := ParseUserinfo(resp.HeaderValue("subscription-userinfo"))
+			parsed, err := ReadUserinfo(resp.HeaderValue("subscription-userinfo"))
 			if err != nil {
 				return err
 			}
 			traffic = parsed
 		}
-		result = NewSubscriptionResult(text, "sub_store", traffic, "", c.env.Clock)
+		result = newFetchResult(text, "sub_store", traffic, "", c.env.Clock)
 		return nil
 	})
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if subStoreErr == nil {
 		return result, nil
 	}
@@ -460,7 +510,7 @@ func (c *Client) fetchSubscription(ctx context.Context, subID, url, target strin
 	// Do not re-download a URL already attempted above, even on conversion failure.
 	if directAttempted {
 		if directErr == nil {
-			directErr = pyErr("ValueError", "已拉取的订阅正文无法转换为目标 YAML")
+			directErr = ErrBodyConversion
 		}
 		return nil, &SubscriptionFetchError{subStoreErr, directErr}
 	}
@@ -469,7 +519,7 @@ func (c *Client) fetchSubscription(ctx context.Context, subID, url, target strin
 		clientLog.Warning("直接拉取订阅失败: " + safeExceptionDetails(err))
 		return nil, &SubscriptionFetchError{subStoreErr, err}
 	}
-	return NewSubscriptionResult(text, "direct_url_fallback", nil, "", c.env.Clock), nil
+	return newFetchResult(text, "direct_url_fallback", nil, "", c.env.Clock), nil
 }
 
 // nodeConversionVersion is _node_conversion_version: the bundled
@@ -485,65 +535,76 @@ func (c *Client) nodeConversionVersion() string {
 	return version
 }
 
-// ConvertProxyString is convert_proxy_string(s) (target ClashMeta); it
-// implements convert.ProxyStringConverter.
-func (c *Client) ConvertProxyString(ctx context.Context, proxyString string) *jsonx.Object {
-	return c.ConvertProxyStringTarget(ctx, proxyString, "ClashMeta")
+// ConvertProxy converts an opaque node through Sub-Store to a caller-owned YAML graph.
+func (c *Client) ConvertProxy(ctx context.Context, text string) (*yamlx.Node, error) {
+	return c.ConvertTarget(ctx, text, "ClashMeta")
 }
 
-// ConvertProxyStringTarget is convert_proxy_string(s, target): one node
-// string converted by Sub-Store to a Mihomo proxy (nil on failure).
-// Successful results are remembered per bundled Sub-Store version (LRU of
-// NodeConversionLimit); callers get their own copy.
-func (c *Client) ConvertProxyStringTarget(ctx context.Context, proxyString, target string) *jsonx.Object {
+// ConvertTarget caches successful independent node graphs by bundle version and target.
+func (c *Client) ConvertTarget(ctx context.Context, text, target string) (*yamlx.Node, error) {
 	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	version := c.nodeConversionVersion()
-	key := convKey{version, target, proxyString}
+	key := convKey{version, target, text}
 	if version != "" {
 		c.convMu.Lock()
+		if err := ctx.Err(); err != nil {
+			c.convMu.Unlock()
+			return nil, err
+		}
 		kept, ok := c.conversions.get(key)
 		if ok {
 			c.conversions.moveToEnd(key)
 			c.convMu.Unlock()
-			return kept.DeepCopy()
+			return yamlx.Clone(kept), nil
 		}
 		c.convMu.Unlock()
 	}
-	var proxy *jsonx.Object
+	var proxy *yamlx.Node
+	var err error
 	if c.convert != nil {
-		proxy = c.convert(ctx, proxyString, target)
+		proxy, err = c.convert(ctx, text, target)
 	} else {
-		proxy = c.convertProxyString(ctx, proxyString, target)
+		proxy, err = c.convertProxy(ctx, text, target)
 	}
-	// An online update in between means another program may have answered.
+	if canceled := ctx.Err(); canceled != nil {
+		return nil, canceled
+	}
+	if err != nil {
+		return nil, err
+	}
 	if proxy != nil && version != "" && c.nodeConversionVersion() == version {
 		c.convMu.Lock()
-		c.conversions.set(key, proxy.DeepCopy())
+		defer c.convMu.Unlock()
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		c.conversions.set(key, yamlx.Clone(proxy))
 		c.conversions.moveToEnd(key)
 		for c.conversions.len() > c.conversionLimit {
 			c.conversions.delete(c.conversions.keys()[0])
 		}
-		c.convMu.Unlock()
 	}
-	return proxy
+	return proxy, nil
 }
 
-// convertProxyString is _convert_proxy_string. The log lines carry only the
+// convertProxy requests one temporary conversion. The log lines carry only the
 // scheme and the length, never the node string.
-func (c *Client) convertProxyString(ctx context.Context, proxyString, target string) *jsonx.Object {
+func (c *Client) convertProxy(ctx context.Context, proxyString, target string) (*yamlx.Node, error) {
 	base, err := c.env.BaseURL()
 	if err != nil {
-		// Python raises the ValueError of an invalid SUB_STORE_BACKEND_API_PORT
-		// here; the converter interface has no error, so the node fails.
+		// Invalid local configuration fails before creating a temporary subscription.
 		clientLog.Warning("节点转换失败: " + err.Error())
-		return nil
+		return nil, err
 	}
 	proxyType := proxyTypeOf(proxyString)
 	inputLength := utf8.RuneCountInString(proxyString)
 	clientLog.Info(fmt.Sprintf("节点转换开始: proxy_type=%s input_length=%d", proxyType, inputLength))
 
 	tempName := "_cf_tmp_node_convert_" + c.env.RandomHex()
-	var converted *jsonx.Object
+	var converted *yamlx.Node
 	err = c.runtime.Use(ctx, func(ctx context.Context) error {
 		c.createSubscription(ctx, base, tempName, "https://example.com", nil)
 		defer c.deleteSubscription(ctx, base, tempName)
@@ -558,20 +619,13 @@ func (c *Client) convertProxyString(ctx context.Context, proxyString, target str
 			clientLog.Warning(fmt.Sprintf("节点转换返回无效内容: proxy_type=%s input_length=%d", proxyType, inputLength))
 			return nil
 		}
-		proxies, err := ParseProxiesFromYAML(text)
+		proxies, err := ParseProxyNodes(text)
 		if err != nil {
 			return err
 		}
 		if len(proxies) > 0 {
 			clientLog.Info(fmt.Sprintf("节点转换成功: proxy_type=%s input_length=%d", proxyType, inputLength))
-			var ok bool
-			if converted, ok = proxies[0].(*jsonx.Object); !ok {
-				// Only a falsy item (0, "", [], None) gets past
-				// fix_proxy_fields. Python returns and remembers it; every
-				// caller only tests its truthiness, so an empty object
-				// stands in for it (also remembered).
-				converted = jsonx.NewObject()
-			}
+			converted = proxies[0]
 			return nil
 		}
 		clientLog.Warning(fmt.Sprintf("节点转换结果为空: proxy_type=%s input_length=%d", proxyType, inputLength))
@@ -579,104 +633,20 @@ func (c *Client) convertProxyString(ctx context.Context, proxyString, target str
 	})
 	if err != nil {
 		clientLog.Warning(fmt.Sprintf("节点转换失败: proxy_type=%s input_length=%d", proxyType, inputLength))
-		return nil
+		return nil, err
 	}
-	return converted
+	return converted, nil
 }
 
 // proxyTypeOf is the scheme _convert_proxy_string logs (at most 32
 // characters, "unknown" unless alphanumeric apart from "+", "-", ".").
 func proxyTypeOf(proxyString string) string {
 	if scheme, _, found := strings.Cut(proxyString, "://"); found {
-		candidate := pyLower(scheme)
+		candidate := cases.Lower(language.Und).String(scheme)
 		stripped := strings.NewReplacer("+", "", "-", "", ".", "").Replace(candidate)
-		if pyIsAlnum(stripped) {
+		if strings.IndexFunc(stripped, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsNumber(r) }) < 0 && stripped != "" {
 			return runePrefix(candidate, 32)
 		}
 	}
 	return "unknown"
-}
-
-// ParseProxiesFromYAML is parse_proxies_from_yaml: the proxies list of
-// Sub-Store's YAML with fix_proxy_fields applied (empty when the document
-// is not a mapping). A YAML error is returned, as are Python's failures on
-// a proxies value that is not a list (None, numbers: TypeError; a
-// non-empty string or mapping: AttributeError of fix_proxy_fields).
-func ParseProxiesFromYAML(text string) ([]any, error) {
-	n, err := yamlx.Parse([]byte(text))
-	if err != nil {
-		return nil, fmt.Errorf(msgInvalidYAML, err)
-	}
-	if n.Kind != yaml.MappingNode {
-		return []any{}, nil
-	}
-	proxiesNode := yamlx.Get(n, "proxies")
-	if proxiesNode == nil {
-		return []any{}, nil
-	}
-	value, err := proxyYAMLValue(proxiesNode)
-	if err != nil {
-		return nil, fmt.Errorf(msgInvalidYAML, err)
-	}
-	switch proxies := value.(type) {
-	case []any:
-		for _, proxy := range proxies {
-			if err := fixProxy(proxy); err != nil {
-				return nil, err
-			}
-		}
-		return proxies, nil
-	case string:
-		if proxies == "" {
-			return []any{}, nil
-		}
-		return nil, attributeError(proxies, "get")
-	case *jsonx.Object:
-		for key := range proxies.All() {
-			if err := fixProxy(key); err != nil {
-				return nil, err
-			}
-		}
-		return []any{}, nil
-	}
-	return nil, pyErr("TypeError", fmt.Sprintf("'%s' object is not iterable", typeName(value)))
-}
-
-// fixProxy is fix_proxy_fields on one list item (falsy items are skipped,
-// other non-mappings fail at proxy.get).
-func fixProxy(proxy any) error {
-	if object, ok := proxy.(*jsonx.Object); ok {
-		convert.FixProxyFields(object)
-		return nil
-	}
-	if !jsonx.Truthy(proxy) {
-		return nil
-	}
-	return attributeError(proxy, "get")
-}
-
-// ProxiesToNodes is proxies_to_nodes: Mihomo proxies → the internal node
-// format (name, type, server, port, params).
-func ProxiesToNodes(proxies []any) ([]any, error) {
-	nodes := make([]any, 0, len(proxies))
-	for _, item := range proxies {
-		proxy, ok := item.(*jsonx.Object)
-		if !ok {
-			return nil, attributeError(item, "get")
-		}
-		rawType := proxy.GetOr("type", "")
-		typeText, ok := rawType.(string)
-		if !ok {
-			return nil, attributeError(rawType, "lower")
-		}
-		params := jsonx.NewObject()
-		for key, value := range proxy.All() {
-			if key != "name" && key != "type" && key != "server" && key != "port" {
-				params.Set(key, value)
-			}
-		}
-		nodes = append(nodes, jsonx.Obj("name", proxy.GetOr("name", "Unnamed"), "type", pyLower(typeText),
-			"server", proxy.GetOr("server", ""), "port", proxy.GetOr("port", jsonx.Int(0)), "params", params))
-	}
-	return nodes, nil
 }
