@@ -354,7 +354,7 @@ func (c *Client) requestOnce(ctx context.Context, url string, r *DownloadRequest
 			}
 			if local != nil {
 				response = &Response{StatusCode: local.StatusCode, Reason: local.Reason, Header: local.Header,
-					URL: local.URL, Body: local.Body}
+					URL: local.URL, Body: boundDecodedBody(local.Body)}
 			}
 		}
 		if response == nil {
@@ -364,6 +364,7 @@ func (c *Client) requestOnce(ctx context.Context, url string, r *DownloadRequest
 			if err != nil {
 				return nil, err
 			}
+			response.Body = boundDecodedBody(response.Body)
 			if !r.Stream {
 				// requests.get/head without stream=True: Session.send reads the
 				// body. On the plain path a redirect first goes through
@@ -482,7 +483,7 @@ func localError(err error) error {
 	return &FetchError{Class: "InvalidURL", Message: err.Error(), Err: err}
 }
 
-// ErrSizeLimit is the ValueError for a body above max_bytes.
+// ErrSizeLimit rejects a decoded body over the global or caller-supplied limit.
 var ErrSizeLimit = errors.New("Resource exceeds deployment file size limit")
 
 var retryDelays = []time.Duration{time.Second, 2 * time.Second}

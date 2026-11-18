@@ -313,7 +313,7 @@ func (h HTTPTransport) Do(ctx context.Context, req TransportRequest) (*Response,
 		header[key] = decoded
 	}
 	_, reason, _ := strings.Cut(res.Status, " ")
-	return &Response{StatusCode: res.StatusCode, Reason: latin1Text(reason), Header: header, URL: prepared, Body: body}, nil
+	return &Response{StatusCode: res.StatusCode, Reason: latin1Text(reason), Header: header, URL: prepared, Body: boundDecodedBody(body)}, nil
 }
 
 // loadBundle reads a CA file or every file of a CA directory (capath).
@@ -411,6 +411,9 @@ func decodeBody(res *http.Response) (io.ReadCloser, error) {
 			} else {
 				reader = &pyDeflateReader{source: reader}
 			}
+			// Bound every decoded layer, including intermediate bytes that a
+			// later decoder might discard while draining trailing input.
+			reader = &decodedLimitBody{source: io.NopCloser(reader), remaining: MaxDecodedBytes}
 		}
 	}
 	return &decodedBody{Reader: reader, closer: res.Body}, nil
@@ -446,7 +449,7 @@ type decodedBody struct {
 // their class) and turns decoder failures into ContentDecodingError.
 func (d *decodedBody) Read(p []byte) (int, error) {
 	n, err := d.Reader.Read(p)
-	if err == nil || err == io.EOF {
+	if err == nil || err == io.EOF || errors.Is(err, ErrSizeLimit) {
 		return n, err
 	}
 	var source *sourceError
@@ -712,6 +715,9 @@ func classifyRequestError(err error, viaProxy bool) error {
 
 // classifyBodyError maps a failure while reading the body.
 func classifyBodyError(err error) error {
+	if errors.Is(err, ErrSizeLimit) {
+		return err
+	}
 	var fetch *FetchError
 	if errors.As(err, &fetch) {
 		return err
