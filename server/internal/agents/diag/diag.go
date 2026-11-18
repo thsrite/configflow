@@ -293,3 +293,12 @@ func SplitLinesKeepEnds(text string) []string {
 	}
 	return lines
 }
+
+// EventText exposes the shared diagnostic visitor to typed notification producers.
+func EventText(text string, secrets ...string) string {
+	values := make([]any, len(secrets))
+	for i, secret := range secrets {
+		values[i] = secret
+	}
+	return EventMessage(text, values)
+}
