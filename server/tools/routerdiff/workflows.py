@@ -284,15 +284,17 @@ def job_lock_worlds(options):
             gate, pending = 'job-' + vendor + '-' + label, 'probe-' + vendor + '-' + label
             body = {'version': '7.24.5', 'board-name': 'synthetic-gated-router'} if vendor == 'routeros' else {
                 'Result': 10000, 'code': 1005, 'message': 'synthetic gated refusal'}
+            busy_entries = ('H1278',) + ((route + '-F11',) if route in ('R009', 'R010') else ())
             items = (Case(route + '/busy-before-body-' + vendor + '-' + label, route, method, target,
-                409, ('H1278',), document=['invalid-before-lookup'], message=busy,
+                409, busy_entries, document=['invalid-before-lookup'], message=busy,
+                profile='beta' if label == 'shared-connection' else 'alpha',
                 prepare=({'action': 'fault', 'match': {'peer': peer, 'path': path},
                           'gate': gate, 'status': 200, 'body': body},
                          {'rpc': 'begin', 'ident': pending, 'method': 'POST', 'path': '/api/routers/' + router_id + '/probe'},
                          {'rpc': 'await_gate', 'ident': pending, 'gate': gate})),
                 Case('R017/gated-probe-finish-' + vendor + '-' + label, 'R017', 'POST',
                     '/api/routers/' + router_id + '/probe', 200 if vendor == 'routeros' else 502,
-                    ('R017-S01', 'H1278') if vendor == 'routeros' else ('R017-S90', 'H1278'),
+                    (('R017-S01',) if vendor == 'routeros' else ('R017-S90',)) + busy_entries,
                     prepare=({'action': 'release', 'gate': gate},), join=pending,
                     capture_before_prepare=True, unchanged=False, effect='profile-write',
                     checks={'success': vendor == 'routeros', 'probe/ok': vendor == 'routeros'},

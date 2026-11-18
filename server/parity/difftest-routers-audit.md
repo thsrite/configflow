@@ -550,3 +550,21 @@ Store commit identity comparator:
   Rotating only the native token in its OWN stopped disposable DB, then restarting
   and returning normal HTTP200, is detected as store-head corruption. This
   deliberate oracle fault is not a native finding or matrix recipe.
+
+Router draft lifecycle and protected-field route audits:
+-5 independent profile-selection worlds delete each vendor's draft record and
+  verify a repeat404, exact remaining/empty lists and the protected same-ID
+  foreign profile. Every mutation preserves full device tables and sends zero
+  device HTTP; names/DNS/fixed bindings and foreign SQL stay unchanged. The
+  target with5 empty manifests deletes, while a foreign active manifest stays.
+- R009-F13–F17 each require their actual active refusal and separate empty
+  deletion control. R010-F14 requires both endpoint/type edits for all5 active
+  and empty manifest kinds; S04 covers all10 actual empty-manifest changes.
+- R010-B01 now requires all5 fields with null/object/list input, plus forged id,
+  probe/release and unknown values. Fifteen accepted real writes preserve the
+  original id/manifest and prove absent forged metadata in actual SQL.
+- Busy mutation route audits use real public probes inside entered device gates;
+  malformed bodies get409 first, and each probe finishes after gate release.
+  No elapsed-sleep surrogate/private lock is used. Cross-profile shared endpoint
+  is an extra R010 control, not proof of waiting-lock/repository races. R009 F12/
+  F18/B04 and R010 F15/B06 remain open.

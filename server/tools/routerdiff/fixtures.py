@@ -142,9 +142,9 @@ def receipts():
 def stored_guards():
     for index, (field, update_helper, delete_helper, delete_message, update_message) in enumerate(MANIFESTS):
         path = '/api/routers/protected-' + str(index)
-        yield Case('R009/' + field, 'R009', 'DELETE', path, 409, (delete_helper,), message=delete_message)
+        yield Case('R009/' + field, 'R009', 'DELETE', path, 409, (delete_helper, 'R009-F' + str(13 + index)), message=delete_message)
         for key, value in (('type', 'ikuai'), ('endpoint', 'http://10.44.0.2:18081')):
-            yield Case('R010/' + field + '/' + key, 'R010', 'PUT', path, 400, (update_helper,),
+            yield Case('R010/' + field + '/' + key, 'R010', 'PUT', path, 400, (update_helper, 'R010-F14'),
                        document={key: value}, message=update_message)
     yield Case('R007-S03/legacy-record', 'R007', 'GET', '/api/routers', 200,
                ('R007-S03', 'R007-S04', 'R007-B04', 'R007-B05'),
@@ -185,6 +185,16 @@ def stored_guards():
                    unchanged=False, effect='profile-write', checks={'success': True, 'router/id': ident},
                    stored={root + '/id': ident, root + '/' + field: {'version': 1, 'resources': []}},
                    stored_absent=(root + '/injected_unknown',))
+    for index, (field, update_helper, *_) in enumerate(MANIFESTS):
+        ident = 'protected-' + str(index)
+        root = 'routers/items/' + str(index + 2)
+        for label, value in (('object', {'version': 99, 'resources': [{'opaque': 'injected'}]}), ('list', [None])):
+            yield Case('R010-B01/preserve-' + field + '-' + label, 'R010', 'PUT', '/api/routers/' + ident, 200,
+                       ('R010-B01',), document={'id': 'injected-id', field: value,
+                           'last_probe': {'ok': True}, 'last_release': {'ok': True}, 'injected_unknown': {'opaque': 'injected'}},
+                       unchanged=False, effect='profile-write', checks={'success': True, 'router/id': ident},
+                       stored={root + '/id': ident, root + '/' + field: {'version': 1, 'resources': []}},
+                       stored_absent=(root + '/injected_unknown', root + '/last_probe', root + '/last_release'))
 
 
 
@@ -197,12 +207,12 @@ def empty_manifests():
     for index, (field, update_helper, delete_helper, *_) in enumerate(MANIFESTS):
         path = '/api/routers/empty-' + str(index)
         for label, document in (('endpoint', {'endpoint': 'http://10.44.0.1:18082'}), ('type', {'type': 'ikuai'})):
-            yield Case('R010/empty-' + field + '-' + label, 'R010', 'PUT', path, 200, (update_helper, 'R010-S04'),
+            yield Case('R010/empty-' + field + '-' + label, 'R010', 'PUT', path, 200, (update_helper, 'R010-S04', 'R010-F14'),
                 document=document, unchanged=False, effect='profile-write',
                 stored={'routers/items/0/' + field: {}},
                 checks={'router/' + key: value for key, value in document.items()},
                 expected_requests=({'match': {'peer': 'ros'}, 'count': 0}, {'match': {'peer': 'ikuai'}, 'count': 0}))
-        yield Case('R009/empty-' + field + '-delete', 'R009', 'DELETE', path, 200, (delete_helper, 'R009-S01'),
+        yield Case('R009/empty-' + field + '-delete', 'R009', 'DELETE', path, 200, (delete_helper, 'R009-S01', 'R009-F' + str(13 + index)),
             unchanged=False, effect='router-delete')
 
 def agent_options():

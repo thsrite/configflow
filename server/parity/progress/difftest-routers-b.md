@@ -2,8 +2,8 @@
 
 Status: in progress; NOT ready for acceptance hand-back. Branch go-difftest-routers-b.
 Latest clean integration rebase: goa9d6ce86c; normal public binary built from it.
-Current declarations:465 executed-variant audits plus9 explicit source-unreachable
-proofs plus2 O6 review-superseded entries;1825 remaining if all increments and
+Current declarations:481 executed-variant audits plus9 explicit source-unreachable
+proofs plus2 O6 review-superseded entries;1809 remaining if all increments and
 controls are composed. Last FULL composition still37937739:3054
 recipes/301 audits. Newer subsets do not replace that full evidence; latest
 large subset2470 recipes/327 audits. All observed26 domain routes remain absent
@@ -2012,3 +2012,37 @@ known nested-schema reference bug reproduced. Actual domain manifest still0/26.
 465 declarations+9 source proofs+2 O6 corrections/1825 pending if composed.
 No command pending. Full composition and remaining matrix still open; no final
 Go gate, no private snapshot read, no push. Continue remaining domain coverage.
+
+Router record lifecycle increment:
+- Read R009/R010 handlers, settings/job-lock wrapper, store.normalize and relevant
+  profile middleware/repository contract.45 new real HTTP recipes across5 worlds:
+  default alpha, profile beta, profile_id beta, header beta and query profile alpha
+  winning over both beta selectors. Same IDs/endpoints have distinct profile names;
+  the foreign ROS record has an active manifest and remains untouched.
+- Both vendors: initial missing404, delete200, repeat404, ordered remaining row,
+  empty target and intact foreign list. Deletion changes exactly one record and
+  one profile revision, retains DNS/names/fixed bindings and performs zero device
+  I/O, even while fake tables contain managed and foreign resources. Header world
+  independently proves five simultaneous empty manifests cannot block deletion.
+- All5 protected manifest fields: existing409 delete/400 endpoint/type refusals
+  paired with empty-manifest successes. Added10 actual draft writes attempting
+  object/list manifest replacement and forged id/probe/release/unknown metadata;
+  original private data survives and forged fields stay absent. Existing null
+  injection controls retained, giving15 R010-B01 inputs.
+- Reused5 actual entered-device-gate busy worlds, now with explicit R009/R010
+  route audits. Each must observe409 before malformed-body validation, then the
+  own held probe must complete after explicit release. Includes same endpoint
+  across profiles; corrected the busy beta Case.profile metadata. No sleeps/
+  private locks. Waiting-router-lock/repository-expected race audits stay open.
+-16 new audits: R009 S01/F10/F11/F13–F17/B01/B02/B03/B05, R010 F11/F14/S04/B01.
+  These are named-reference coverage declarations, not native-route passes.
+
+.64 final command:
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY="$HOME/.cache/routerdiff-build-302rx1dg-a9d6ce86c/configflow"; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python -m unittest -v test_audits test_recipes; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world-prefix router-delete- --world stored --world empty-manifests --world job-lock-routeros-R009 --world job-lock-ikuai-R009 --world job-lock-routeros-R010 --world job-lock-ikuai-R010 --world job-lock-routeros-shared-connection --output "$HOME/.cache/routerdiff-reports/302rx1dg/router-lifecycle-audits.json"'`
+=> Ran44 tests15.229s/OK;135 actual recipes/allGo-unimplemented,40 references,
+26 audits in this subset (16 new+10 prior guard audits),2275 pending/complete=false,
+no new reference finding. Source exception cases already in stored remain
+unchanged; their broader O12 handling/classification remains pending.
+481 declarations+9 source proofs+2 O6 corrections/1809 pending if composed.
+Historical full3054/301 stays unchanged. No command pending. Continue remaining
+matrix/dynamic binding/background work before final composition/gate/rebase.

@@ -18,6 +18,7 @@ import dhcp_guards
 import gateway
 import disconnect
 import routing
+import router_lifecycle
 import policy_view
 import returns
 import persistence
@@ -39,6 +40,28 @@ from bugs import BUGS
 
 
 class RecipeTests(unittest.TestCase):
+    def test_router_delete_sequences_preserve_same_id_foreign_profile_and_devices(self):
+        _, entries = load()
+        worlds = router_lifecycle.worlds()
+        self.assertEqual(len(worlds), 5)
+        seen = set()
+        for world, options, groups in worlds:
+            rows = [case for group in groups for case in group()]
+            self.assertEqual(len(rows), 9)
+            self.assertEqual([case.expected for case in rows], [200, 404, 200, 404, 200, 200, 404, 200, 200])
+            target = rows[0].profile
+            foreign = 'beta' if target == 'alpha' else 'alpha'
+            self.assertTrue(options[foreign]['routers']['items'][0]['ros_policy_state'])
+            self.assertEqual(rows[-1].profile, foreign)
+            for case in rows:
+                self.assertNotIn(case.ident, seen)
+                seen.add(case.ident)
+                self.assertTrue(set(case.entries) <= set(entries))
+                self.assertEqual(len(case.expected_requests), 3)
+                self.assertTrue(all(item['count'] == 0 for item in case.expected_requests))
+            self.assertEqual([case.effect for case in rows if case.method == 'DELETE' and case.expected == 200],
+                             ['router-delete', 'router-delete'])
+
     def test_dhcp_evidence_variants_refuse_confirmation_before_any_device_write(self):
         _, entries = load()
         seen = set()

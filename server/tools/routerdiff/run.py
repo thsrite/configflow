@@ -27,6 +27,7 @@ import dhcp_guards
 import gateway
 import disconnect
 import routing
+import router_lifecycle
 import policy_view
 import returns
 import persistence
@@ -946,6 +947,7 @@ def main():
               ('auth-off-sync', auth_off(sync.options()), (sync.manual_refresh,)),
               ('stored', fixtures.stored_options(), (fixtures.receipts, fixtures.stored_guards))]
     worlds += device_policy.worlds()
+    worlds += router_lifecycle.worlds()
     worlds += fixed_setup.worlds()
     worlds += fixed_sources.router_worlds()
     worlds += fixed_sources.binding_worlds()

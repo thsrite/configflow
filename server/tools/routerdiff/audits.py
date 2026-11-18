@@ -1072,6 +1072,66 @@ def declared():
             'confirmation409 refuses before fingerprint/device writes. Healthy controls have pending DNS and no '
             'plan blockers. All boundaries compare full storage/device state; only loopback synthetic evidence. '
             'Does not claim DHCP firmware acceptance or successful DNS write/readback.', dhcp_rows(blocked, healthy))
+    lifecycle_selectors = ('default', 'profile', 'profile-id', 'header', 'precedence')
+    def delete_steps(labels, status=200):
+        return tuple(('router-delete-' + selector, 'R009/lifecycle-' + selector + '-' + label, status)
+                     for selector in lifecycle_selectors for label in labels)
+    deletion_sources = ('backend/routes/routers.py:160', 'backend/common/profile_context.py:53',
+                        'backend/common/config_repository.py:1006', 'backend/routers/store.py:54')
+    for ident, required, detail in (
+        ('R009-S01', delete_steps(('before', 'delete-ros', 'remaining', 'delete-ikuai', 'empty')),
+         'Both vendors delete exactly one selected draft row and commit one profile revision; empty manifests also permit deletion.'),
+        ('R009-F10', delete_steps(('missing', 'repeat-ros', 'repeat-ikuai'), 404),
+         'Initially nonexistent router and repeated deletion after actual success both404 with exact message and unchanged full state.'),
+        ('R009-B01', delete_steps(('repeat-ros', 'repeat-ikuai'), 404),
+         'Each repeated deletion follows its own actual successful deletion on both vendors, never an invented missing-ID fixture.'),
+        ('R009-B02', delete_steps(('delete-ros', 'delete-ikuai')),
+         'Deleting a draft record performs zero device HTTP and retains complete fake tables, including managed and foreign existing resources; names/DNS/fixed bindings stay unchanged.'),
+        ('R009-B03', delete_steps(('delete-ros', 'delete-ikuai', 'foreign')),
+         'Same IDs/endpoints exist in alpha and beta with distinct names; the foreign ROS record has an active manifest which must neither block target deletion nor change itself.'),
+        ('R009-B05', delete_steps(('before', 'delete-ros', 'delete-ikuai', 'empty', 'foreign')),
+         'Five independent worlds: default alpha, explicit profile beta, profile_id beta, header beta and profile alpha taking precedence over both beta selectors. Scope header and exact retained foreign rows prove selection.')):
+        audits[ident] = Audit(deletion_sources, detail + ' Full SQL/files/device state remains compared.', required)
+    for route in ('R009', 'R010'):
+        ident = route + '-F11'
+        required = []
+        for vendor, label in ((vendor, route) for vendor in ('routeros', 'ikuai')):
+            world = 'job-lock-' + vendor + '-' + label
+            required += [(world, route + '/busy-before-body-' + vendor + '-' + label, 409),
+                         (world, 'R017/gated-probe-finish-' + vendor + '-' + label, 200 if vendor == 'routeros' else 502)]
+        if route == 'R010':
+            required += [('job-lock-routeros-shared-connection', 'R010/busy-before-body-routeros-shared-connection', 409),
+                         ('job-lock-routeros-shared-connection', 'R017/gated-probe-finish-routeros-shared-connection', 200)]
+        audits[ident] = Audit(('backend/routes/routers.py:36', 'backend/routers/rule_sync_store.py:49'),
+            'Hold the real public probe inside an entered device gate, then attempt this draft mutation '
+            'with a non-object body:409 must precede body validation. Both vendors complete only after '
+            'explicit gate release; iKuai deliberate login refusal still persists its failed probe. '
+            'R010 additionally proves the same endpoint across profiles. No fixed-sleep race or private lock helper.', tuple(required))
+    protected_fields = ('ros_policy_state', 'ipv6_fakeip_state', 'ipv6_routes_state', 'dns_guard_state', 'ipv6_pd_guard_state')
+    connection_guards = []
+    for number, field in enumerate(protected_fields, 13):
+        ident = 'R009-F' + str(number)
+        audits[ident] = Audit(deletion_sources,
+            'Truthful stored ' + field + ' independently refuses409 with its exact withdrawal message. '
+            'A separate empty-manifest record updates its connection and deletes successfully. '
+            'No device/storage write on refusal; no object teardown on deletion.',
+            (('stored', 'R009/' + field, 409), ('empty-manifests', 'R009/empty-' + field + '-delete', 200)))
+        connection_guards += [('stored', 'R010/' + field + '/' + member, 400) for member in ('type', 'endpoint')]
+        connection_guards += [('empty-manifests', 'R010/empty-' + field + '-' + member, 200) for member in ('endpoint', 'type')]
+    audits['R010-F14'] = Audit(deletion_sources,
+        'All five active manifests: each independently prevents type and endpoint change with its own exact400. '
+        'All five empty manifests independently permit both connection changes; no device I/O.', tuple(connection_guards))
+    audits['R010-S04'] = Audit(deletion_sources,
+        'Every empty manifest kind permits endpoint then vendor change, persists the changed public settings '
+        'and commits one profile revision per edit without device I/O.',
+        tuple(('empty-manifests', 'R010/empty-' + field + '-' + member, 200)
+              for field in protected_fields for member in ('endpoint', 'type')))
+    audits['R010-B01'] = Audit(deletion_sources,
+        'All five active manifest fields receive null, forged nonempty object and nonobject list. '
+        'Body id/last_probe/last_release/unknown values cannot replace or add stored private metadata; '
+        'the original id/manifest survive each accepted draft edit. Exact SQL absence/retention is asserted.',
+        tuple(('stored', 'R010-B01/preserve-' + field + suffix, 200)
+              for field in protected_fields for suffix in ('', '-object', '-list')))
     return audits
 
 

@@ -25,10 +25,35 @@ import fixed_sources
 import probe_workflows
 import probe_guards
 import probes
+import router_lifecycle
 import dhcp_guards
 
 
 class AuditTests(unittest.TestCase):
+    def test_router_deletion_audits_need_actual_lifecycle_and_every_manifest_operand(self):
+        actual = {(world, case.ident): case for world, _, groups in router_lifecycle.worlds()
+                  for group in groups for case in group()}
+        actual.update({('stored', case.ident): case for case in fixtures.stored_guards()})
+        actual.update({(world, case.ident): case for world, _, groups in workflows.job_lock_worlds({})
+                       for group in groups for case in group()})
+        actual.update({('empty-manifests', case.ident): case for case in fixtures.empty_manifests()})
+        counts = {'R009-S01': 25, 'R009-F10': 15, 'R009-B01': 10, 'R009-B02': 10,
+                  'R009-B03': 15, 'R009-B05': 25, 'R009-F11': 4, 'R010-F11': 6, 'R010-F14': 20, 'R010-S04': 10, 'R010-B01': 15,
+                  **{'R009-F' + str(number): 2 for number in range(13, 18)}}
+        for ident, count in counts.items():
+            required = declared()[ident].requirements
+            self.assertEqual(len(required), count, ident)
+            for world, name, status in required:
+                case = actual[world, name]
+                self.assertEqual(case.expected, status, (ident, name))
+                self.assertIn(ident, case.entries, (ident, name))
+            evidence = [{'world': world, 'case': name, 'entries': [ident], 'python': {'status': status},
+                         'status': 'go-unimplemented'} for world, name, status in required]
+            self.assertEqual(evaluate(evidence)[ident]['audit'], 'variants-audited')
+            self.assertEqual(evaluate(evidence[:-1])[ident]['audit'], 'variants-pending')
+        for ident in ('R009-F12', 'R009-F18', 'R009-B04', 'R010-F15', 'R010-B06'):
+            self.assertNotIn(ident, declared())  # No claim about waiting-lock/repository races.
+
     def test_dhcp_evidence_audits_require_real_report_plan_and_refused_confirmation(self):
         actual = {case.ident: case for case in dhcp_guards.cases()}
         counts = {'H0849': 11, 'H0850': 20, 'H0851': 23, 'H0852': 5, 'H0853': 9, 'H0854': 17,
@@ -283,7 +308,7 @@ class AuditTests(unittest.TestCase):
 
     def test_auth_audits_require_every_explicit_real_reference_variant(self):
         audits = declared()
-        self.assertEqual(len(audits), 465)  # Named declarations; matrix parsing grants no coverage.
+        self.assertEqual(len(audits), 481)  # Named declarations; matrix parsing grants no coverage.
         self.assertFalse(set(audits) - set(load()[1]))
         self.assertEqual({value['audit'] for value in evaluate([]).values()},
                          {'variants-pending', 'source-proof-controls-pending', 'review-proof-controls-pending'})
