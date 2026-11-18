@@ -235,3 +235,13 @@ EXEC TRACE PASS: ordinary tests start zero Python; deliberate Python negative co
 ```
 
 Those elapsed values include ptrace overhead and are **not** speed comparisons.
+
+Latest .64 final targeted harness checks passed: changed-path gofmt clean,
+`bash -n tools/pyref/measure-a.sh`, `go vet ./...`, and
+`go test -race -count=1 ./internal/testgolden ./tools/pyref`
+(`4.259s`, `1.323s`). Full gate is coordinator-owned under the updated workflow.
+
+Waiting dependency for the required unbiased paired measurement: go is still
+`215ab6b04`; the independently owned gate-performance branch has handed back
+at `019204508`. Coordinator asked to remeasure only after integrating it. The
+first high-load/pre-index baseline was explicitly discarded, not used as evidence.
