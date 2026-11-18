@@ -814,3 +814,9 @@ PD 恢复 PUT 回复已经证明新 ID、但紧接着的 GET 失败时，Go 仍�
   （Python 用 `==`）。参照集 30 例中 3 例结果改变（`reference_test.go` 列出）；正常界面数据不会混用这些类型。
 - **修订号写入规则按 R8。** 整数值的浮点写法（如 `60.0`）是有效修订号；Python 写入校验拒绝它。负数、字符串、
   null、缺失仍拒绝，布尔仍按 Python 接受。
+
+## N8-5b — typed profile/shared writes
+
+- **共享资源写入保留 shared 节的未知成员。** Python 每次 `update_shared_transaction` 只写回四类资源和 `_revision`，
+  会丢掉 shared 节里其他成员；Go 按 R1 保留。
+- **按类型读取的名称。** 资源被引用时的提示与 usages 中，名称存为 `null` 或错误类型时显示资源 ID（Python 原样返回该值）。
