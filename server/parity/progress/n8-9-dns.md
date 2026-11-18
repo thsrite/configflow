@@ -24,3 +24,13 @@
 - rulefetch 仅 `cache.go` 增加过渡入口：`ReadValidatedRuleCacheWithFormat(ctx, rule, config *jsonx.Object, format string) ([]byte,error)`；原入口委托 format=""。按协调者指定增加同文件最小 `SourceConfig` 和 `ReadCacheWithFormat(ctx, model.RuleConfig, *SourceConfig, string) ([]byte,error)`；已知 format 不再解码 library。batch-8 先叠 rules 后叠 DNS，这份过渡实现应取 rules 分支的同名 native 版本，不保留两份。
 
 - Native Reader / R5 的旧异常形状与极值语料仍在逐项核对；不能把它们直接视为已通过。当前没有改 proddiff/configdiff baseline。
+
+## 变基与新增的原生边界
+
+已变基到 `go@d4fab6441`。合并冲突保留 O3 新 Runtime worker 跟踪、configgen 故障钩子；没有改 Agent/dnsha 文件。发现并修复 typed 投影漏掉退休 rule-proxy token 的问题：不再阻止经过证明的旧生成链接更新到新域名/当前 token。能力证据继续要求原始 JSON 字符串。
+
+动态设置按协调者的严格请求/宽容存储裁定实施：新增 `Profile.FieldIssues()`，只记录路径与 IssueType；API 400 不提交；读取/生成做 owned projection，数字 token 文本和 0/1 保留明确语义，错误容器停用该项。冻结录制未改，99 条精确输入的新拒绝另存原生期望索引。真实 Python 对照覆盖 0/1、数字路由表、数字网关、数组路由表、对象网关；完整投影结果比较，原始存储不变。
+
+当前定向检查继续收尾；最终命令和尾行待补。
+
+原生边界收尾补充：新 reader 索引登记 108 个源 SHA，未知新文本仍失败且必须完整匹配共享 facade 图；52 条诊断、2 条 capability 独立新期望均保留其他完整输出。录制和随机差分发现并修掉 alias 序列子项漏校验、非文本 cert/file/key 被静默跳过、数值零检查丢掉 0.0、非空 form 漏做互斥校验等实际问题。正常模板中非字符串扩展键仍用完整 YAML 语义对比；不使用原生文档的安全字段名检查器替代生成结果比较。

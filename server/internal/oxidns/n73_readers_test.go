@@ -118,6 +118,18 @@ func n73ReaderClass(caller, source string) (string, error) {
 		return yamlxtest.SyntaxRange, nil
 	}
 	class, err := yamlxtest.Classify(source)
+	if err != nil && newErr == nil && newOK {
+		// The former OxiDNS-specific scalar resolver is gone. Verify the
+		// complete returned graph against the shared facade, without extending
+		// the frozen N7 source index or accepting arbitrary output deltas.
+		shared, sharedErr := yamlx.Parse([]byte(source))
+		if sharedErr == nil {
+			yamlx.MaterializeAliases(shared)
+			if yamlx.Equal(shared, after) {
+				return registeredNativeReaderSource(source)
+			}
+		}
+	}
 	if err != nil {
 		return "", err
 	}

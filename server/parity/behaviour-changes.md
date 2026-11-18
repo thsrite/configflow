@@ -1559,3 +1559,13 @@ N8-9 D2 provider私有路径的跨包对照：convert的独立真实Python参考
 中的精确provider path；39条当前正常生成/下载行直接验证，原有N7/R5错误路径继续完整比较。
 生成文件内容、URL、过滤表达式、顺序、host与节点语义均不得借D2豁免。首次Go生成/推送会
 引用新的私有provider文件名，与既定D2一次性重新发布计划一致。
+
+
+## N8-9 DNS — 原生字段消费与 OxiDNS 动态设置
+
+- MosDNS 读取 typed model 的 R5 字段，不再使用 Python truthiness、任意类型 ID 相等或私有整数/字符串转换。正常配置的生成语义、文件名、规则顺序和 provider 鉴权不变。空/非字符串能力 token 不能经数字转字符串获得权限；退休 token 只作为重建已知生成链接的证据，不新增公开入口权限。
+- MosDNS profile URL 路径段用 `url.PathEscape` 编码；畸形非 slug 的历史 ID 不再原样插进 URL。URL query 仍保留协议字段及顺序。数值/错误形状的旧元数据按共享 R5 消费；原录制不改，以独立 typed 输入投影调用真实 Python、比较完整输出。
+- OxiDNS 原有私有 YAML 标量解析器被共享 yamlx 替代。`0123` 是八进制 83，timestamp/binary/未知标量的 JSON 边界是原文本；所有读取仍执行共享别名预算、安全字段名及 native 文档大小/深度/有限数校验。源 YAML 原文不因读取而回写。新原生结果单独登记，N7 的冻结历史语料不修改。
+- 协调者裁定：OxiDNS API 写入时，`custom_matches[].enabled` 必须是 bool；`ros_route.args.routing_table/gateway4/gateway6` 必须是文本。错误返回 400 和集中中文消息，不提交 DB 或文件。原 Python 接受的非原生类型按精确输入指纹单独登记在 `internal/oxidns/testdata/native-request-expectations.json`；原 C05/随机录制不改。
+- 已存储的上述值按兼容投影读取，不使整份 DNS 生成失败、不改原始字节：enabled 的数字 0/1 分别取 false/true；数字路由表/网关取原数字 token 文本；无效容器关闭这条 RouterOS 路由功能。其他非布尔 enabled 无效并停用该匹配。每个问题产生不含值的 `model.FieldIssue` 和路径告警。数字转文本会使生成 YAML 从数字变为字符串；无效 RouterOS 容器从 Python 的错误类型参数变为不交付该功能，其余输出由真实 Python 投影逐字段对照。用户编辑保存时应提交 bool 和文本以修复旧值。
+- 补充原生诊断：布尔 false 不再作为数值零触发第二条 range 错误，错误形状的日期列表只由 schema 报类型错误；完整其他诊断和顺序不变，52 条精确输入结果另存 `native-validation-expectations.json`。UDP 的非文本 entry 不再被用于自动创建 TCP，2 条完整结果另存 capability 索引，并有真实 Python 的错误可编辑状态及正确文本正控。

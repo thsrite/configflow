@@ -88,3 +88,12 @@ const (
 
 const messageSafeFieldNames = "OxiDNS YAML 字段名必须为安全文本"
 const messageFiniteNumbers = "OxiDNS YAML 数字必须为有限值"
+
+const (
+	// MatchEnabledTypeMessage rejects a non-boolean request toggle.
+	MatchEnabledTypeMessage = "自定义匹配 enabled 必须为布尔值"
+	RouteFieldTextMessage   = "RouterOS %s 必须为文本"
+	messageStoredFieldIssue = "配置字段类型不匹配，已按兼容语义读取：%s（%s）"
+)
+
+const messageTCPPrerequisites = "缺少可复用的 UDP 监听地址和处理入口，请在监听服务中配置 TCP"

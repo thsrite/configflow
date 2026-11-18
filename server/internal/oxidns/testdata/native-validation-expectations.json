@@ -1,0 +1,6135 @@
+{
+  "collect_plugin_issues:0e1922d0604084bf9c252e2e88acfb853eab9d8decfd6594c4667fce6656dc27": {
+    "fn": "collect_plugin_issues",
+    "out": [
+      {
+        "code": "probe-method",
+        "message": "探测方法应为 ping、none 或 tcp:1–65535",
+        "path": [
+          "plugins",
+          6,
+          "args",
+          "probe_methods"
+        ],
+        "severity": "error"
+      }
+    ],
+    "reason": "native scalar and day-list type constraints"
+  },
+  "collect_plugin_issues:2fa7c5a968ae226fb6408becc2d80f771ccb3844fb98abf90956d7127d718c65": {
+    "fn": "collect_plugin_issues",
+    "out": [],
+    "reason": "native scalar and day-list type constraints"
+  },
+  "collect_plugin_issues:3326159db328ba80484e32434ba2c52579741f528acd69c4c05e76b2a72152b7": {
+    "fn": "collect_plugin_issues",
+    "out": [],
+    "reason": "native scalar and day-list type constraints"
+  },
+  "collect_plugin_issues:41aa3cf4ae9a0e769d10b67dc6cb46e18cf59af76a23c2b9f915eb7a995b6f9b": {
+    "fn": "collect_plugin_issues",
+    "out": [],
+    "reason": "native scalar and day-list type constraints"
+  },
+  "collect_plugin_issues:4ba6e3c078c21e33beee9e0fefc63a857580a16bbecb07173b43f8e56fba8bd5": {
+    "fn": "collect_plugin_issues",
+    "out": [],
+    "reason": "native scalar and day-list type constraints"
+  },
+  "collect_plugin_issues:54121cad59027bd20523ee7e51553f535919f50715dedb74a78f31e49cf8783f": {
+    "fn": "collect_plugin_issues",
+    "out": [],
+    "reason": "native scalar and day-list type constraints"
+  },
+  "collect_plugin_issues:5ead7ccfcff95a41fbe87ba6bc4da74a4bfb88789eeacc811d4f410f846bb939": {
+    "fn": "collect_plugin_issues",
+    "out": [
+      {
+        "code": "range-order",
+        "message": "min_positive_ttl 不能大于 max_positive_ttl",
+        "path": [
+          "plugins",
+          6,
+          "args",
+          "min_positive_ttl"
+        ],
+        "severity": "error"
+      }
+    ],
+    "reason": "native scalar and day-list type constraints"
+  },
+  "collect_plugin_issues:7bfa5e110f91c3b54088078e86697e837308c8b51c1dbcc7e3d2a4d562cf9453": {
+    "fn": "collect_plugin_issues",
+    "out": [],
+    "reason": "native scalar and day-list type constraints"
+  },
+  "collect_plugin_issues:94d54798c53089804eb82bb1108211c00a95e359e6625c15cd8fee74207c4990": {
+    "fn": "collect_plugin_issues",
+    "out": [
+      {
+        "code": "required",
+        "message": "至少配置一种探测方法",
+        "path": [
+          "plugins",
+          9,
+          "args",
+          "probe_methods"
+        ],
+        "severity": "error"
+      }
+    ],
+    "reason": "native scalar and day-list type constraints"
+  },
+  "collect_plugin_issues:956bb5f9e42b16835eede962cda2d65bb4c707b659807b3a6116d64d77a24d84": {
+    "fn": "collect_plugin_issues",
+    "out": [],
+    "reason": "native scalar and day-list type constraints"
+  },
+  "collect_plugin_issues:a8368402d01efc029b26b83b75602949827f9fc06ca51d581a0283fc33895106": {
+    "fn": "collect_plugin_issues",
+    "out": [],
+    "reason": "native scalar and day-list type constraints"
+  },
+  "collect_plugin_issues:c706e9c80e5dcb1a3584ae3b58fc905ebc05f1ddafe1b84de30389397016e939": {
+    "fn": "collect_plugin_issues",
+    "out": [],
+    "reason": "native scalar and day-list type constraints"
+  },
+  "collect_plugin_issues:cead1650cfd19a48e35d24d1f0b7dbcd4591f865b1294ba6657380b8a3f8d504": {
+    "fn": "collect_plugin_issues",
+    "out": [
+      {
+        "code": "probe-method",
+        "message": "探测方法应为 ping、none 或 tcp:1–65535",
+        "path": [
+          "plugins",
+          5,
+          "args",
+          "probe_methods"
+        ],
+        "severity": "error"
+      }
+    ],
+    "reason": "native scalar and day-list type constraints"
+  },
+  "collect_plugin_issues:d1919467139cc53c0f8766c9c8076ae19e9e27d07806c72df7dedf4884f9f1a1": {
+    "fn": "collect_plugin_issues",
+    "out": [],
+    "reason": "native scalar and day-list type constraints"
+  },
+  "collect_plugin_issues:da9882d0528977f1454bdf4e773660f8ff3a46816c3c908ae7379fc9bec973b7": {
+    "fn": "collect_plugin_issues",
+    "out": [],
+    "reason": "native scalar and day-list type constraints"
+  },
+  "require_valid_document:20957b2d30a94138e595820d5963161268d65745f0886e5b2dbc55e85cfadd03": {
+    "err": [
+      "OxidnsValidationError",
+      "OxiDNS 配置校验未通过：api.http.listen 地址格式无效，请检查主机、端口及 IPv6 方括号"
+    ],
+    "fn": "require_valid_document",
+    "issues": [
+      {
+        "code": "format",
+        "message": "地址格式无效，请检查主机、端口及 IPv6 方括号",
+        "path": [
+          "api",
+          "http",
+          "listen"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "format",
+        "message": "需要有效的 1–64 位插件标识",
+        "path": [
+          "plugins",
+          0,
+          "tag"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "length",
+        "message": "文本长度不足",
+        "path": [
+          "plugins",
+          0,
+          "args",
+          "address"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "format",
+        "message": "必须填写非空文本",
+        "path": [
+          "plugins",
+          0,
+          "args",
+          "address"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "length",
+        "message": "文本长度不足",
+        "path": [
+          "plugins",
+          0,
+          "args",
+          "password"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "format",
+        "message": "必须填写非空文本",
+        "path": [
+          "plugins",
+          0,
+          "args",
+          "password"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "format",
+        "message": "时长须为非负整数秒或整数加 ms、s、m、h、d 单位",
+        "path": [
+          "plugins",
+          0,
+          "args",
+          "wait_timeout"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "required",
+        "message": "至少配置 address_list4 或 address_list6",
+        "path": [
+          "plugins",
+          0,
+          "args",
+          "address_list4"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 string / null",
+        "path": [
+          "plugins",
+          3,
+          "args",
+          "upstreams",
+          0,
+          "tag"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "format",
+        "message": "必须为有效 IP 地址",
+        "path": [
+          "plugins",
+          3,
+          "args",
+          "upstreams",
+          0,
+          "dial_addr"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "format",
+        "message": "时长须为非负整数秒或整数加 ms、s、m、h、d 单位",
+        "path": [
+          "plugins",
+          3,
+          "args",
+          "upstreams",
+          0,
+          "timeout"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "format",
+        "message": "URL/上游地址无效或协议不受支持",
+        "path": [
+          "plugins",
+          3,
+          "args",
+          "upstreams",
+          1,
+          "addr"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "format",
+        "message": "地址格式无效，请检查主机、端口及 IPv6 方括号",
+        "path": [
+          "plugins",
+          3,
+          "args",
+          "upstreams",
+          1,
+          "socks5"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "range",
+        "message": "不能大于 4096",
+        "path": [
+          "plugins",
+          3,
+          "args",
+          "upstreams",
+          2,
+          "min_conns"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 integer / null",
+        "path": [
+          "plugins",
+          5,
+          "args",
+          "cache_ttl"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "constraint",
+        "message": "必须填写非空文本",
+        "path": [
+          "api",
+          "http",
+          "ssl",
+          "cert"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "constraint",
+        "message": "启用 TLS 时必须同时配置证书和私钥",
+        "path": [
+          "api",
+          "http",
+          "ssl",
+          "key"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "format",
+        "message": "引导 DNS 必须为 IP:端口 或 [IPv6]:端口",
+        "path": [
+          "plugins",
+          3,
+          "args",
+          "upstreams",
+          1,
+          "bootstrap"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "constraint",
+        "message": "不能大于有效 max_conns（未配置时为 64）",
+        "path": [
+          "plugins",
+          3,
+          "args",
+          "upstreams",
+          2,
+          "min_conns"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "reference-kind",
+        "message": "引用目标必须为 provider 类型插件",
+        "path": [
+          "plugins",
+          1,
+          "args",
+          "sets",
+          0
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "deferred",
+        "message": "含动态占位符，实际值需由目标环境解析；静态校验无法确认展开后的参数",
+        "path": [
+          "api",
+          "http",
+          "ssl",
+          "client_ca"
+        ],
+        "severity": "warning"
+      },
+      {
+        "code": "deferred",
+        "message": "含动态占位符，实际值需由目标环境解析；静态校验无法确认展开后的参数",
+        "path": [
+          "plugins",
+          3,
+          "args",
+          "upstreams",
+          2,
+          "tag"
+        ],
+        "severity": "warning"
+      },
+      {
+        "code": "unknown-field",
+        "message": "扩展字段已保留，不在当前版本的校验目录中",
+        "path": [
+          "plugins",
+          4,
+          "args",
+          "extra_field"
+        ],
+        "severity": "warning"
+      }
+    ],
+    "reason": "native scalar and day-list type constraints"
+  },
+  "require_valid_document:620929876036bbf7f6db3989ca6490f77469736e59dfa55eaa70298a2b38bda1": {
+    "err": [
+      "OxidnsValidationError",
+      "OxiDNS 配置校验未通过：plugins[0] 参数类型无效，需要 object"
+    ],
+    "fn": "require_valid_document",
+    "issues": [
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 object",
+        "path": [
+          "plugins",
+          0
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "format",
+        "message": "必须填写非空文本",
+        "path": [
+          "plugins",
+          3,
+          "type"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 integer / null",
+        "path": [
+          "plugins",
+          1,
+          "args",
+          "dump_interval"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 integer / null",
+        "path": [
+          "plugins",
+          1,
+          "args",
+          "max_positive_ttl"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "range-order",
+        "message": "min_positive_ttl 不能大于 max_positive_ttl",
+        "path": [
+          "plugins",
+          1,
+          "args",
+          "min_positive_ttl"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "required",
+        "message": "至少需要 1 个条目",
+        "path": [
+          "plugins",
+          2,
+          "args",
+          "jobs"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "timezone",
+        "message": "需要有效的 IANA 时区，例如 Asia/Shanghai",
+        "path": [
+          "plugins",
+          2,
+          "args",
+          "timezone"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "length",
+        "message": "文本长度不足",
+        "path": [
+          "plugins",
+          3,
+          "type"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "required",
+        "message": "至少配置一个匹配值",
+        "path": [
+          "plugins",
+          4,
+          "args"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "enum",
+        "message": "解析器简写只支持 system",
+        "path": [
+          "network",
+          "outbound",
+          "profiles",
+          "p1",
+          "resolver"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "enum",
+        "message": "代理简写只支持 none 或 direct",
+        "path": [
+          "network",
+          "outbound",
+          "profiles",
+          "p1",
+          "proxy"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "constraint",
+        "message": "出站配置名称必须为不含首尾空白的非空文本",
+        "path": [
+          "network",
+          "outbound",
+          "profiles",
+          ""
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "enum",
+        "message": "解析器简写只支持 system",
+        "path": [
+          "network",
+          "outbound",
+          "profiles",
+          "",
+          "resolver"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "enum",
+        "message": "代理简写只支持 none 或 direct",
+        "path": [
+          "network",
+          "outbound",
+          "profiles",
+          "",
+          "proxy"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "deferred",
+        "message": "含动态占位符，实际值需由目标环境解析；静态校验无法确认展开后的参数",
+        "path": [
+          "network",
+          "outbound",
+          "default"
+        ],
+        "severity": "warning"
+      },
+      {
+        "code": "unknown-plugin",
+        "message": "插件未在当前校验目录中，发布时需由目标核心确认支持",
+        "path": [
+          "plugins",
+          3,
+          "type"
+        ],
+        "severity": "warning"
+      }
+    ],
+    "reason": "native scalar and day-list type constraints"
+  },
+  "require_valid_document:e2a0bd7e93a2e072b79912edaf54ffa4918f6391015f4f9a4adc807e670530ee": {
+    "err": [
+      "OxidnsValidationError",
+      "OxiDNS 配置校验未通过：plugins[0].type 参数类型无效，需要 string"
+    ],
+    "fn": "require_valid_document",
+    "issues": [
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 string",
+        "path": [
+          "plugins",
+          0,
+          "type"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "required",
+        "message": "缺少必填参数",
+        "path": [
+          "plugins",
+          1,
+          "tag"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "format",
+        "message": "必须填写非空文本",
+        "path": [
+          "plugins",
+          2,
+          "type"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "format",
+        "message": "地址格式无效，请检查主机、端口及 IPv6 方括号",
+        "path": [
+          "api",
+          "http",
+          "listen"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 string",
+        "path": [
+          "network",
+          "outbound",
+          "profiles",
+          "p4",
+          "proxy",
+          "socks5"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 integer / null",
+        "path": [
+          "plugins",
+          1,
+          "args",
+          "cache",
+          "failure_ttl"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "length",
+        "message": "文本长度不足",
+        "path": [
+          "plugins",
+          2,
+          "type"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "provider-reference",
+        "message": "这里只接受 $tag 形式的 Provider 引用",
+        "path": [
+          "plugins",
+          3,
+          "args"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 string",
+        "path": [
+          "plugins",
+          4,
+          "args"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "required",
+        "message": "至少配置一个匹配值",
+        "path": [
+          "plugins",
+          4,
+          "args"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "constraint",
+        "message": "要求客户端证书时必须配置 client_ca",
+        "path": [
+          "api",
+          "http",
+          "ssl",
+          "client_ca"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "reference",
+        "message": "引用的出站配置未在 network.outbound.profiles 中定义",
+        "path": [
+          "network",
+          "outbound",
+          "default"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "constraint",
+        "message": "出站配置名称必须为不含首尾空白的非空文本",
+        "path": [
+          "network",
+          "outbound",
+          "profiles",
+          ""
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "reference",
+        "message": "引用的插件 tag 不存在",
+        "path": [
+          "plugins",
+          3,
+          "args"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "deferred",
+        "message": "含动态占位符，实际值需由目标环境解析；静态校验无法确认展开后的参数",
+        "path": [
+          "log",
+          "level"
+        ],
+        "severity": "warning"
+      },
+      {
+        "code": "unknown-plugin",
+        "message": "插件未在当前校验目录中，发布时需由目标核心确认支持",
+        "path": [
+          "plugins",
+          0,
+          "type"
+        ],
+        "severity": "warning"
+      },
+      {
+        "code": "deferred",
+        "message": "含动态占位符，实际值需由目标环境解析；静态校验无法确认展开后的参数",
+        "path": [
+          "plugins",
+          1,
+          "args",
+          "probe_methods"
+        ],
+        "severity": "warning"
+      },
+      {
+        "code": "unknown-plugin",
+        "message": "插件未在当前校验目录中，发布时需由目标核心确认支持",
+        "path": [
+          "plugins",
+          2,
+          "type"
+        ],
+        "severity": "warning"
+      }
+    ],
+    "reason": "native scalar and day-list type constraints"
+  },
+  "require_valid_document:ec4824248a6d6472eb1999970bbc62ebb3f25f9bd08f85c43ab4b6f460a8481e": {
+    "err": [
+      "OxidnsValidationError",
+      "OxiDNS 配置校验未通过：plugins[4].type 缺少必填参数"
+    ],
+    "fn": "require_valid_document",
+    "issues": [
+      {
+        "code": "required",
+        "message": "缺少必填参数",
+        "path": [
+          "plugins",
+          4,
+          "type"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 string",
+        "path": [
+          "plugins",
+          5,
+          "type"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 object",
+        "path": [
+          "log"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "format",
+        "message": "地址格式无效，请检查主机、端口及 IPv6 方括号",
+        "path": [
+          "api",
+          "http",
+          "listen"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 array / null",
+        "path": [
+          "plugins",
+          0,
+          "args",
+          "periods",
+          0,
+          "weekdays"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "ip",
+        "message": "需要有效的 IP 或 CIDR",
+        "path": [
+          "plugins",
+          1,
+          "args"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "format",
+        "message": "需要有效的 1–64 位插件标识",
+        "path": [
+          "plugins",
+          2,
+          "tag"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "ip",
+        "message": "需要有效的 IP 或 CIDR",
+        "path": [
+          "plugins",
+          2,
+          "args"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "regexp",
+        "message": "OxiDNS 的正则不支持反向引用或前后查找",
+        "path": [
+          "plugins",
+          3,
+          "args",
+          "rules",
+          0
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "reference",
+        "message": "引用的插件 tag 不存在",
+        "path": [
+          "plugins",
+          1,
+          "args"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "reference",
+        "message": "引用的插件 tag 不存在",
+        "path": [
+          "plugins",
+          2,
+          "args"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "deferred",
+        "message": "含动态占位符，实际值需由目标环境解析；静态校验无法确认展开后的参数",
+        "path": [
+          "network",
+          "outbound",
+          "profiles",
+          "p2",
+          "proxy"
+        ],
+        "severity": "warning"
+      },
+      {
+        "code": "unknown-field",
+        "message": "扩展字段已保留，不在当前版本的校验目录中",
+        "path": [
+          "plugins",
+          0,
+          "args",
+          "unknown"
+        ],
+        "severity": "warning"
+      },
+      {
+        "code": "unknown-plugin",
+        "message": "插件未在当前校验目录中，发布时需由目标核心确认支持",
+        "path": [
+          "plugins",
+          4,
+          "type"
+        ],
+        "severity": "warning"
+      },
+      {
+        "code": "unknown-plugin",
+        "message": "插件未在当前校验目录中，发布时需由目标核心确认支持",
+        "path": [
+          "plugins",
+          5,
+          "type"
+        ],
+        "severity": "warning"
+      }
+    ],
+    "reason": "native scalar and day-list type constraints"
+  },
+  "validate_expanded_document:6e2732463e657ba52b68ec7ff72526b85efae919e4ad6366634740f9168d77f0": {
+    "fn": "validate_expanded_document",
+    "out": [
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 string",
+        "path": [
+          "plugins",
+          2,
+          "type"
+        ],
+        "severity": "error",
+        "source": "inc/a.yaml"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 string",
+        "path": [
+          "plugins",
+          0,
+          "type"
+        ],
+        "severity": "error",
+        "source": "config.yaml"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 object",
+        "path": [
+          "plugins",
+          1
+        ],
+        "severity": "error",
+        "source": "inc/a.yaml"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 string",
+        "path": [
+          "plugins",
+          3,
+          "tag"
+        ],
+        "severity": "error",
+        "source": "config.yaml"
+      },
+      {
+        "code": "required",
+        "message": "缺少必填参数",
+        "path": [
+          "plugins",
+          3,
+          "args",
+          "command"
+        ],
+        "severity": "error",
+        "source": "config.yaml"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 string",
+        "path": [
+          "plugins",
+          3,
+          "args",
+          "args",
+          2
+        ],
+        "severity": "error",
+        "source": "config.yaml"
+      },
+      {
+        "code": "template",
+        "message": "占位符名称不能为空",
+        "path": [
+          "plugins",
+          3,
+          "args",
+          "args",
+          0
+        ],
+        "severity": "error",
+        "source": "config.yaml"
+      },
+      {
+        "code": "required",
+        "message": "环境变量名称不能为空",
+        "path": [
+          "plugins",
+          3,
+          "args",
+          "env",
+          ""
+        ],
+        "severity": "error",
+        "source": "config.yaml"
+      },
+      {
+        "code": "template",
+        "message": "占位符缺少右花括号",
+        "path": [
+          "plugins",
+          3,
+          "args",
+          "env",
+          ""
+        ],
+        "severity": "error",
+        "source": "config.yaml"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 integer / null",
+        "path": [
+          "plugins",
+          3,
+          "args",
+          "cache_ttl"
+        ],
+        "severity": "error",
+        "source": "config.yaml"
+      },
+      {
+        "code": "format",
+        "message": "需要有效的 1–64 位插件标识",
+        "path": [
+          "plugins",
+          3,
+          "args",
+          "probe_executor"
+        ],
+        "severity": "error",
+        "source": "config.yaml"
+      },
+      {
+        "code": "enum",
+        "message": "日志级别必须为 off、trace、debug、info、warn 或 error",
+        "path": [
+          "log",
+          "level"
+        ],
+        "severity": "error",
+        "source": "config.yaml"
+      },
+      {
+        "code": "constraint",
+        "message": "必须填写非空文本",
+        "path": [
+          "api",
+          "http",
+          "ssl",
+          "key"
+        ],
+        "severity": "error",
+        "source": "config.yaml"
+      },
+      {
+        "code": "reference",
+        "message": "引用的出站配置未在 network.outbound.profiles 中定义",
+        "path": [
+          "network",
+          "outbound",
+          "default"
+        ],
+        "severity": "error",
+        "source": "config.yaml"
+      },
+      {
+        "code": "deferred",
+        "message": "含动态占位符，实际值需由目标环境解析；静态校验无法确认展开后的参数",
+        "path": [
+          "api",
+          "http",
+          "ssl",
+          "cert"
+        ],
+        "severity": "warning",
+        "source": "config.yaml"
+      },
+      {
+        "code": "deferred",
+        "message": "含动态占位符，实际值需由目标环境解析；静态校验无法确认展开后的参数",
+        "path": [
+          "api",
+          "http",
+          "ssl",
+          "client_ca"
+        ],
+        "severity": "warning",
+        "source": "config.yaml"
+      },
+      {
+        "code": "unknown-plugin",
+        "message": "插件未在当前校验目录中，发布时需由目标核心确认支持",
+        "path": [
+          "plugins",
+          2,
+          "type"
+        ],
+        "severity": "warning",
+        "source": "inc/a.yaml"
+      },
+      {
+        "code": "unknown-plugin",
+        "message": "插件未在当前校验目录中，发布时需由目标核心确认支持",
+        "path": [
+          "plugins",
+          0,
+          "type"
+        ],
+        "severity": "warning",
+        "source": "config.yaml"
+      },
+      {
+        "code": "unknown-expression",
+        "message": "尚未识别的快捷表达式，请由目标核心确认",
+        "path": [
+          "plugins",
+          1,
+          "args"
+        ],
+        "severity": "warning",
+        "source": "config.yaml"
+      }
+    ],
+    "reason": "native scalar and day-list type constraints"
+  },
+  "validate_expanded_document:8d4d4cc5b9553c59aa1c9d798a358916902505fca145ab5f18687b89bfa98f75": {
+    "fn": "validate_expanded_document",
+    "out": [
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 object",
+        "path": [
+          "plugins",
+          2
+        ],
+        "severity": "error",
+        "source": "config.yaml"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 string",
+        "path": [
+          "plugins",
+          0,
+          "args",
+          1,
+          "matches"
+        ],
+        "severity": "error",
+        "source": "inc/a.yaml"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 string",
+        "path": [
+          "plugins",
+          2,
+          "args",
+          0,
+          "matches"
+        ],
+        "severity": "error",
+        "source": "config.yaml"
+      },
+      {
+        "code": "expression",
+        "message": "字符串表达式的来源字段无效",
+        "path": [
+          "plugins",
+          3,
+          "args"
+        ],
+        "severity": "error",
+        "source": "inc/a.yaml"
+      },
+      {
+        "code": "expression",
+        "message": "zl 不接受参数；其他操作至少需要一个参数",
+        "path": [
+          "plugins",
+          3,
+          "args"
+        ],
+        "severity": "error",
+        "source": "inc/a.yaml"
+      },
+      {
+        "code": "required",
+        "message": "至少需要 1 个条目",
+        "path": [
+          "plugins",
+          3,
+          "args",
+          "upstreams"
+        ],
+        "severity": "error",
+        "source": "config.yaml"
+      },
+      {
+        "code": "rule",
+        "message": "重定向规则需恰好填写域名规则和目标域名",
+        "path": [
+          "plugins",
+          1,
+          "args",
+          "rules",
+          0
+        ],
+        "severity": "error",
+        "source": "inc/a.yaml"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 string",
+        "path": [
+          "plugins",
+          3,
+          "args"
+        ],
+        "severity": "error",
+        "source": "inc/a.yaml"
+      },
+      {
+        "code": "required",
+        "message": "至少配置一个匹配值",
+        "path": [
+          "plugins",
+          3,
+          "args"
+        ],
+        "severity": "error",
+        "source": "inc/a.yaml"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 integer / null",
+        "path": [
+          "plugins",
+          3,
+          "args",
+          "cache_ttl"
+        ],
+        "severity": "error",
+        "source": "config.yaml"
+      },
+      {
+        "code": "constraint",
+        "message": "出站配置名称不能包含首尾空白",
+        "path": [
+          "network",
+          "outbound",
+          "default"
+        ],
+        "severity": "error",
+        "source": "config.yaml"
+      },
+      {
+        "code": "reference-kind",
+        "message": "引用目标必须为 executor 类型插件",
+        "path": [
+          "plugins",
+          0,
+          "args",
+          0,
+          "exec"
+        ],
+        "severity": "error",
+        "source": "inc/a.yaml"
+      },
+      {
+        "code": "expression-kind",
+        "message": "此处需要 matcher 表达式",
+        "path": [
+          "plugins",
+          0,
+          "args",
+          0,
+          "matches",
+          0
+        ],
+        "severity": "error",
+        "source": "inc/a.yaml"
+      },
+      {
+        "code": "expression-kind",
+        "message": "此处需要 executor 表达式",
+        "path": [
+          "plugins",
+          0,
+          "args",
+          1,
+          "exec"
+        ],
+        "severity": "error",
+        "source": "inc/a.yaml"
+      },
+      {
+        "code": "mutually-exclusive",
+        "message": "只有 custom 模式可以配置 ips",
+        "path": [
+          "plugins",
+          0,
+          "args",
+          2,
+          "exec"
+        ],
+        "severity": "error",
+        "source": "inc/a.yaml"
+      },
+      {
+        "code": "expression-kind",
+        "message": "此处需要 executor 表达式",
+        "path": [
+          "plugins",
+          2,
+          "args",
+          0,
+          "exec"
+        ],
+        "severity": "error",
+        "source": "config.yaml"
+      },
+      {
+        "code": "expression-kind",
+        "message": "此处需要 executor 表达式",
+        "path": [
+          "plugins",
+          2,
+          "args",
+          1,
+          "exec"
+        ],
+        "severity": "error",
+        "source": "config.yaml"
+      },
+      {
+        "code": "expression",
+        "message": "字符串表达式的来源字段无效",
+        "path": [
+          "plugins",
+          2,
+          "args",
+          1,
+          "matches",
+          0
+        ],
+        "severity": "error",
+        "source": "config.yaml"
+      },
+      {
+        "code": "expression",
+        "message": "字符串表达式的操作无效",
+        "path": [
+          "plugins",
+          2,
+          "args",
+          1,
+          "matches",
+          0
+        ],
+        "severity": "error",
+        "source": "config.yaml"
+      },
+      {
+        "code": "expression-kind",
+        "message": "此处需要 matcher 表达式",
+        "path": [
+          "plugins",
+          2,
+          "args",
+          1,
+          "matches",
+          1
+        ],
+        "severity": "error",
+        "source": "config.yaml"
+      },
+      {
+        "code": "reference",
+        "message": "引用的插件 tag 不存在",
+        "path": [
+          "plugins",
+          3,
+          "args",
+          "probe_executor"
+        ],
+        "severity": "error",
+        "source": "config.yaml"
+      },
+      {
+        "code": "deferred",
+        "message": "含动态占位符，实际值需由目标环境解析；静态校验无法确认展开后的参数",
+        "path": [
+          "network",
+          "outbound",
+          "profiles",
+          "p2",
+          "resolver"
+        ],
+        "severity": "warning",
+        "source": "config.yaml"
+      },
+      {
+        "code": "deferred",
+        "message": "含动态占位符，实际值需由目标环境解析；静态校验无法确认展开后的参数",
+        "path": [
+          "plugins",
+          0,
+          "args",
+          3,
+          "exec"
+        ],
+        "severity": "warning",
+        "source": "inc/a.yaml"
+      },
+      {
+        "code": "unknown-expression",
+        "message": "尚未识别的快捷表达式，请由目标核心确认",
+        "path": [
+          "plugins",
+          0,
+          "args",
+          3,
+          "matches",
+          1
+        ],
+        "severity": "warning",
+        "source": "inc/a.yaml"
+      }
+    ],
+    "reason": "native scalar and day-list type constraints"
+  },
+  "validate_expanded_document:ce31d2e2ac490ecf2c18b7660e8f224377c5d67e7b9e1b1d2cebbf6a1f69f79e": {
+    "fn": "validate_expanded_document",
+    "out": [
+      {
+        "code": "format",
+        "message": "必须填写非空文本",
+        "path": [
+          "plugins",
+          1,
+          "type"
+        ],
+        "severity": "error",
+        "source": "config.yaml"
+      },
+      {
+        "code": "required",
+        "message": "缺少必填参数",
+        "path": [
+          "plugins",
+          1,
+          "tag"
+        ],
+        "severity": "error",
+        "source": "config.yaml"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 string",
+        "path": [
+          "plugins",
+          2,
+          "type"
+        ],
+        "severity": "error",
+        "source": "inc/a.yaml"
+      },
+      {
+        "code": "format",
+        "message": "地址格式无效，请检查主机、端口及 IPv6 方括号",
+        "path": [
+          "api",
+          "http",
+          "listen"
+        ],
+        "severity": "error",
+        "source": "config.yaml"
+      },
+      {
+        "code": "required",
+        "message": "至少需要 1 个条目",
+        "path": [
+          "network",
+          "outbound",
+          "profiles",
+          "",
+          "resolver",
+          "nameservers"
+        ],
+        "severity": "error",
+        "source": "config.yaml"
+      },
+      {
+        "code": "length",
+        "message": "文本长度不足",
+        "path": [
+          "plugins",
+          1,
+          "type"
+        ],
+        "severity": "error",
+        "source": "config.yaml"
+      },
+      {
+        "code": "ip",
+        "message": "需要有效的 IP 地址",
+        "path": [
+          "plugins",
+          0,
+          "args",
+          "ips",
+          2
+        ],
+        "severity": "error",
+        "source": "config.yaml"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 integer / null",
+        "path": [
+          "plugins",
+          3,
+          "args",
+          "cache_ttl"
+        ],
+        "severity": "error",
+        "source": "config.yaml"
+      },
+      {
+        "code": "format",
+        "message": "需要有效的 1–64 位插件标识",
+        "path": [
+          "plugins",
+          2,
+          "tag"
+        ],
+        "severity": "error",
+        "source": "inc/a.yaml"
+      },
+      {
+        "code": "constraint",
+        "message": "必须填写非空文本",
+        "path": [
+          "api",
+          "http",
+          "ssl",
+          "key"
+        ],
+        "severity": "error",
+        "source": "config.yaml"
+      },
+      {
+        "code": "constraint",
+        "message": "要求客户端证书时必须配置 client_ca",
+        "path": [
+          "api",
+          "http",
+          "ssl",
+          "client_ca"
+        ],
+        "severity": "error",
+        "source": "config.yaml"
+      },
+      {
+        "code": "constraint",
+        "message": "出站配置名称不能包含首尾空白",
+        "path": [
+          "network",
+          "outbound",
+          "default"
+        ],
+        "severity": "error",
+        "source": "config.yaml"
+      },
+      {
+        "code": "reference",
+        "message": "引用的出站配置未在 network.outbound.profiles 中定义",
+        "path": [
+          "network",
+          "outbound",
+          "default"
+        ],
+        "severity": "error",
+        "source": "config.yaml"
+      },
+      {
+        "code": "constraint",
+        "message": "出站配置名称必须为不含首尾空白的非空文本",
+        "path": [
+          "network",
+          "outbound",
+          "profiles",
+          ""
+        ],
+        "severity": "error",
+        "source": "config.yaml"
+      },
+      {
+        "code": "enum",
+        "message": "代理简写只支持 none 或 direct",
+        "path": [
+          "network",
+          "outbound",
+          "profiles",
+          "",
+          "proxy"
+        ],
+        "severity": "error",
+        "source": "config.yaml"
+      },
+      {
+        "code": "constraint",
+        "message": "使用 profile 代理时，当前出站配置必须设置 socks5 代理",
+        "path": [
+          "network",
+          "outbound",
+          "profiles",
+          "",
+          "resolver",
+          "proxy"
+        ],
+        "severity": "error",
+        "source": "config.yaml"
+      },
+      {
+        "code": "reference",
+        "message": "引用的插件 tag 不存在",
+        "path": [
+          "plugins",
+          3,
+          "args",
+          "probe_executor"
+        ],
+        "severity": "error",
+        "source": "config.yaml"
+      },
+      {
+        "code": "deferred",
+        "message": "含动态占位符，实际值需由目标环境解析；静态校验无法确认展开后的参数",
+        "path": [
+          "api",
+          "http",
+          "ssl",
+          "cert"
+        ],
+        "severity": "warning",
+        "source": "config.yaml"
+      },
+      {
+        "code": "unknown-plugin",
+        "message": "插件未在当前校验目录中，发布时需由目标核心确认支持",
+        "path": [
+          "plugins",
+          1,
+          "type"
+        ],
+        "severity": "warning",
+        "source": "config.yaml"
+      },
+      {
+        "code": "deferred",
+        "message": "含动态占位符，实际值需由目标环境解析；静态校验无法确认展开后的参数",
+        "path": [
+          "plugins",
+          0,
+          "args",
+          "ips",
+          0
+        ],
+        "severity": "warning",
+        "source": "config.yaml"
+      },
+      {
+        "code": "deferred",
+        "message": "含动态占位符，实际值需由目标环境解析；静态校验无法确认展开后的参数",
+        "path": [
+          "plugins",
+          0,
+          "args",
+          "ips",
+          1
+        ],
+        "severity": "warning",
+        "source": "config.yaml"
+      },
+      {
+        "code": "null-mode",
+        "message": "mode 为空时 OxiDNS 会按 nxdomain 处理；黑洞请写 \"null\"（带引号）",
+        "path": [
+          "plugins",
+          0,
+          "args",
+          "mode"
+        ],
+        "severity": "warning",
+        "source": "config.yaml"
+      },
+      {
+        "code": "unknown-plugin",
+        "message": "插件未在当前校验目录中，发布时需由目标核心确认支持",
+        "path": [
+          "plugins",
+          2,
+          "type"
+        ],
+        "severity": "warning",
+        "source": "inc/a.yaml"
+      }
+    ],
+    "reason": "native scalar and day-list type constraints"
+  },
+  "validate_expanded_document:e9c6e51c7a551ca03d267df595e46f1f062de48bb9de8afb920ee084c19b1cfb": {
+    "fn": "validate_expanded_document",
+    "out": [
+      {
+        "code": "required",
+        "message": "缺少必填参数",
+        "path": [
+          "plugins",
+          2,
+          "tag"
+        ],
+        "severity": "error",
+        "source": "inc/a.yaml"
+      },
+      {
+        "code": "format",
+        "message": "必须填写非空文本",
+        "path": [
+          "plugins",
+          2,
+          "type"
+        ],
+        "severity": "error",
+        "source": "inc/a.yaml"
+      },
+      {
+        "code": "format",
+        "message": "必须填写非空文本",
+        "path": [
+          "plugins",
+          2,
+          "tag"
+        ],
+        "severity": "error",
+        "source": "inc/a.yaml"
+      },
+      {
+        "code": "required",
+        "message": "缺少必填参数",
+        "path": [
+          "plugins",
+          2,
+          "args",
+          "address"
+        ],
+        "severity": "error",
+        "source": "config.yaml"
+      },
+      {
+        "code": "required",
+        "message": "缺少必填参数",
+        "path": [
+          "plugins",
+          2,
+          "args",
+          "username"
+        ],
+        "severity": "error",
+        "source": "config.yaml"
+      },
+      {
+        "code": "required",
+        "message": "缺少必填参数",
+        "path": [
+          "plugins",
+          2,
+          "args",
+          "password"
+        ],
+        "severity": "error",
+        "source": "config.yaml"
+      },
+      {
+        "code": "length",
+        "message": "文本长度不足",
+        "path": [
+          "plugins",
+          2,
+          "type"
+        ],
+        "severity": "error",
+        "source": "inc/a.yaml"
+      },
+      {
+        "code": "range",
+        "message": "不能大于 32",
+        "path": [
+          "plugins",
+          1,
+          "args",
+          "mask4"
+        ],
+        "severity": "error",
+        "source": "config.yaml"
+      },
+      {
+        "code": "range",
+        "message": "不能小于 0",
+        "path": [
+          "plugins",
+          1,
+          "args",
+          "dump_interval"
+        ],
+        "severity": "error",
+        "source": "config.yaml"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 integer / null",
+        "path": [
+          "plugins",
+          2,
+          "args",
+          "cache_ttl"
+        ],
+        "severity": "error",
+        "source": "config.yaml"
+      },
+      {
+        "code": "format",
+        "message": "需要有效的 1–64 位插件标识",
+        "path": [
+          "plugins",
+          2,
+          "tag"
+        ],
+        "severity": "error",
+        "source": "inc/a.yaml"
+      },
+      {
+        "code": "length",
+        "message": "文本长度不足",
+        "path": [
+          "plugins",
+          0,
+          "args",
+          "path"
+        ],
+        "severity": "error",
+        "source": "config.yaml"
+      },
+      {
+        "code": "format",
+        "message": "必须填写非空文本",
+        "path": [
+          "plugins",
+          0,
+          "args",
+          "path"
+        ],
+        "severity": "error",
+        "source": "config.yaml"
+      },
+      {
+        "code": "dependency-cycle",
+        "message": "插件依赖形成循环，无法初始化",
+        "path": [
+          "plugins",
+          2,
+          "args",
+          "probe_executor"
+        ],
+        "severity": "error",
+        "source": "config.yaml"
+      },
+      {
+        "code": "unknown-plugin",
+        "message": "插件未在当前校验目录中，发布时需由目标核心确认支持",
+        "path": [
+          "plugins",
+          2,
+          "type"
+        ],
+        "severity": "warning",
+        "source": "inc/a.yaml"
+      },
+      {
+        "code": "ignored-family",
+        "message": "未设置该地址族的目标，OxiDNS 会忽略此常驻地址",
+        "path": [
+          "plugins",
+          2,
+          "args",
+          "persistent",
+          "ips",
+          0
+        ],
+        "severity": "warning",
+        "source": "config.yaml"
+      },
+      {
+        "code": "unknown-plugin",
+        "message": "插件未在当前校验目录中，发布时需由目标核心确认支持",
+        "path": [
+          "plugins",
+          2,
+          "type"
+        ],
+        "severity": "warning",
+        "source": "inc/a.yaml"
+      },
+      {
+        "code": "unknown-plugin",
+        "message": "插件未在当前校验目录中，发布时需由目标核心确认支持",
+        "path": [
+          "plugins",
+          2,
+          "type"
+        ],
+        "severity": "warning",
+        "source": "inc/a.yaml"
+      }
+    ],
+    "reason": "native scalar and day-list type constraints"
+  },
+  "validate_expanded_document:f7734b6f3f7f943bbdefee3d691bdd1fa94e3666c717473003b1b16d276150e6": {
+    "fn": "validate_expanded_document",
+    "out": [
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 string",
+        "path": [
+          "plugins",
+          1,
+          "type"
+        ],
+        "severity": "error",
+        "source": "inc/a.yaml"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 string",
+        "path": [
+          "plugins",
+          1,
+          "args",
+          "probe_methods"
+        ],
+        "severity": "error",
+        "source": "inc/a.yaml"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 integer / null",
+        "path": [
+          "plugins",
+          1,
+          "args",
+          "cache",
+          "failure_ttl"
+        ],
+        "severity": "error",
+        "source": "inc/a.yaml"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 string",
+        "path": [
+          "log",
+          "level"
+        ],
+        "severity": "error",
+        "source": "inc/a.yaml"
+      },
+      {
+        "code": "unknown-plugin",
+        "message": "插件未在当前校验目录中，发布时需由目标核心确认支持",
+        "path": [
+          "plugins",
+          1,
+          "type"
+        ],
+        "severity": "warning",
+        "source": "inc/a.yaml"
+      },
+      {
+        "code": "deferred",
+        "message": "含动态占位符，实际值需由目标环境解析；静态校验无法确认展开后的参数",
+        "path": [
+          "api",
+          "http",
+          "ssl",
+          "client_ca"
+        ],
+        "severity": "warning",
+        "source": "inc/a.yaml"
+      },
+      {
+        "code": "deferred",
+        "message": "含动态占位符，实际值需由目标环境解析；静态校验无法确认展开后的参数",
+        "path": [
+          "network",
+          "outbound",
+          "profiles",
+          "",
+          "proxy"
+        ],
+        "severity": "warning",
+        "source": "inc/a.yaml"
+      },
+      {
+        "code": "deferred",
+        "message": "含动态占位符，实际值需由目标环境解析；静态校验无法确认展开后的参数",
+        "path": [
+          "network",
+          "outbound",
+          "profiles",
+          "p1",
+          "resolver",
+          "nameservers",
+          1,
+          "addr"
+        ],
+        "severity": "warning",
+        "source": "inc/a.yaml"
+      }
+    ],
+    "reason": "native scalar and day-list type constraints"
+  },
+  "validate_native_config:05af6a9ea73429bbb3f0b21e73f4f1ca52ff77d0eb87d6bd939d7847f8c653ff": {
+    "fn": "validate_native_config",
+    "out": [
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 string",
+        "path": [
+          "plugins",
+          3,
+          "type"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "format",
+        "message": "地址格式无效，请检查主机、端口及 IPv6 方括号",
+        "path": [
+          "api",
+          "http",
+          "listen"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "format",
+        "message": "需要有效的 1–64 位插件标识",
+        "path": [
+          "plugins",
+          1,
+          "tag"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 integer / null",
+        "path": [
+          "plugins",
+          4,
+          "args",
+          "cache_ttl"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "length",
+        "message": "文本长度不足",
+        "path": [
+          "plugins",
+          6,
+          "args",
+          "path"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "format",
+        "message": "必须填写非空文本",
+        "path": [
+          "plugins",
+          6,
+          "args",
+          "path"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "range",
+        "message": "不能小于 1",
+        "path": [
+          "plugins",
+          6,
+          "args",
+          "reader_concurrency"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "constraint",
+        "message": "启用 TLS 时必须同时配置证书和私钥",
+        "path": [
+          "api",
+          "http",
+          "ssl",
+          "cert"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "constraint",
+        "message": "必须填写非空文本",
+        "path": [
+          "api",
+          "http",
+          "ssl",
+          "key"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "reference",
+        "message": "引用的出站配置未在 network.outbound.profiles 中定义",
+        "path": [
+          "network",
+          "outbound",
+          "default"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "constraint",
+        "message": "出站配置名称必须为不含首尾空白的非空文本",
+        "path": [
+          "network",
+          "outbound",
+          "profiles",
+          " p3"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "enum",
+        "message": "代理简写只支持 none 或 direct",
+        "path": [
+          "network",
+          "outbound",
+          "profiles",
+          " p3",
+          "proxy"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "reference",
+        "message": "引用的插件 tag 不存在",
+        "path": [
+          "plugins",
+          4,
+          "args",
+          "probe_executor"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "unknown-plugin",
+        "message": "插件未在当前校验目录中，发布时需由目标核心确认支持",
+        "path": [
+          "plugins",
+          3,
+          "type"
+        ],
+        "severity": "warning"
+      },
+      {
+        "code": "unknown-field",
+        "message": "扩展字段已保留，不在当前版本的校验目录中",
+        "path": [
+          "plugins",
+          6,
+          "args",
+          "extra_field"
+        ],
+        "severity": "warning"
+      }
+    ],
+    "reason": "native scalar and day-list type constraints"
+  },
+  "validate_native_config:074d56ec977aca06c902289c9dc96d0f12a429a49c12cb1ab45c82fb630ab55f": {
+    "fn": "validate_native_config",
+    "out": [
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 string",
+        "path": [
+          "plugins",
+          1,
+          "tag"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "required",
+        "message": "缺少必填参数",
+        "path": [
+          "plugins",
+          2,
+          "tag"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 boolean / null",
+        "path": [
+          "api",
+          "http",
+          "ssl",
+          "require_client_cert"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "ip",
+        "message": "需要有效的 IP 地址",
+        "path": [
+          "plugins",
+          2,
+          "args",
+          "preset"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 string",
+        "path": [
+          "plugins",
+          3,
+          "args"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "dns-code",
+        "message": "DNS 类型、类别或响应码无效",
+        "path": [
+          "plugins",
+          4,
+          "args"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 integer / null",
+        "path": [
+          "plugins",
+          5,
+          "args",
+          "cache",
+          "failure_ttl"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "constraint",
+        "message": "必须填写非空文本",
+        "path": [
+          "api",
+          "http",
+          "ssl",
+          "cert"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "constraint",
+        "message": "启用 TLS 时必须同时配置证书和私钥",
+        "path": [
+          "api",
+          "http",
+          "ssl",
+          "key"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "constraint",
+        "message": "出站配置名称不能为空",
+        "path": [
+          "network",
+          "outbound",
+          "default"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "deferred",
+        "message": "含动态占位符，实际值需由目标环境解析；静态校验无法确认展开后的参数",
+        "path": [
+          "log",
+          "level"
+        ],
+        "severity": "warning"
+      },
+      {
+        "code": "deferred",
+        "message": "含动态占位符，实际值需由目标环境解析；静态校验无法确认展开后的参数",
+        "path": [
+          "network",
+          "outbound",
+          "profiles",
+          "p4",
+          "resolver"
+        ],
+        "severity": "warning"
+      },
+      {
+        "code": "unknown-plugin",
+        "message": "插件未在当前校验目录中，发布时需由目标核心确认支持",
+        "path": [
+          "plugins",
+          0,
+          "type"
+        ],
+        "severity": "warning"
+      }
+    ],
+    "reason": "native scalar and day-list type constraints"
+  },
+  "validate_native_config:0cc5bafc441c4e3327a2111e66f0b5239b5cf788b7f5bc471e431aa1bca6e467": {
+    "fn": "validate_native_config",
+    "out": [
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 string",
+        "path": [
+          "plugins",
+          7,
+          "type"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "required",
+        "message": "缺少插件必填参数",
+        "path": [
+          "plugins",
+          3,
+          "args"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "required",
+        "message": "缺少必填参数",
+        "path": [
+          "plugins",
+          5,
+          "args",
+          "file"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 string",
+        "path": [
+          "plugins",
+          5,
+          "args",
+          "selectors",
+          0
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 integer / null",
+        "path": [
+          "plugins",
+          6,
+          "args",
+          "cache_ttl"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "reference-kind",
+        "message": "引用目标必须为 executor 类型插件",
+        "path": [
+          "plugins",
+          6,
+          "args",
+          "probe_executor"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "unknown-plugin",
+        "message": "插件未在当前校验目录中，发布时需由目标核心确认支持",
+        "path": [
+          "plugins",
+          7,
+          "type"
+        ],
+        "severity": "warning"
+      }
+    ],
+    "reason": "native scalar and day-list type constraints"
+  },
+  "validate_native_config:11693c68c50d95e44c1e86f3326d956b2fb1e3abbf65e4cff3bd3d9b831e2fc6": {
+    "fn": "validate_native_config",
+    "out": [
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 object",
+        "path": [
+          "log"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 string",
+        "path": [
+          "plugins",
+          1,
+          "args"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "required",
+        "message": "至少配置一个匹配表达式",
+        "path": [
+          "plugins",
+          1,
+          "args"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 integer / null",
+        "path": [
+          "plugins",
+          2,
+          "args",
+          "dump_interval"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "constraint",
+        "message": "出站配置名称不能为空",
+        "path": [
+          "network",
+          "outbound",
+          "default"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "enum",
+        "message": "解析器简写只支持 system",
+        "path": [
+          "network",
+          "outbound",
+          "profiles",
+          "p2",
+          "resolver"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "deferred",
+        "message": "含动态占位符，实际值需由目标环境解析；静态校验无法确认展开后的参数",
+        "path": [
+          "network",
+          "outbound",
+          "profiles",
+          "p2",
+          "proxy"
+        ],
+        "severity": "warning"
+      }
+    ],
+    "reason": "native scalar and day-list type constraints"
+  },
+  "validate_native_config:148318ff11d6b193aea351c1e6d2f13e5498df9c7b6dad2a0bd488767cf6825d": {
+    "fn": "validate_native_config",
+    "out": [
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 string",
+        "path": [
+          "network",
+          "outbound",
+          "profiles",
+          "",
+          "proxy",
+          "socks5"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 array",
+        "path": [
+          "plugins",
+          0,
+          "args",
+          "files"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "ip",
+        "message": "需要有效的 IP 或 CIDR",
+        "path": [
+          "plugins",
+          0,
+          "args",
+          "ips",
+          0
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 integer / null",
+        "path": [
+          "plugins",
+          1,
+          "args",
+          "cache_ttl"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 object",
+        "path": [
+          "plugins",
+          2,
+          "args"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "provider-reference",
+        "message": "这里只接受 $tag 形式的 Provider 引用",
+        "path": [
+          "plugins",
+          3,
+          "args"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 string",
+        "path": [
+          "plugins",
+          4,
+          "args"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 integer / null",
+        "path": [
+          "plugins",
+          5,
+          "args",
+          "max_output_bytes"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "reference",
+        "message": "引用的出站配置未在 network.outbound.profiles 中定义",
+        "path": [
+          "network",
+          "outbound",
+          "default"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "constraint",
+        "message": "出站配置名称必须为不含首尾空白的非空文本",
+        "path": [
+          "network",
+          "outbound",
+          "profiles",
+          " p3"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "constraint",
+        "message": "出站配置名称必须为不含首尾空白的非空文本",
+        "path": [
+          "network",
+          "outbound",
+          "profiles",
+          ""
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "reference",
+        "message": "引用的插件 tag 不存在",
+        "path": [
+          "plugins",
+          1,
+          "args",
+          "probe_executor"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "reference-kind",
+        "message": "引用目标必须为 provider 类型插件",
+        "path": [
+          "plugins",
+          3,
+          "args"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "deferred",
+        "message": "含动态占位符，实际值需由目标环境解析；静态校验无法确认展开后的参数",
+        "path": [
+          "plugins",
+          0,
+          "args",
+          "sets",
+          0
+        ],
+        "severity": "warning"
+      },
+      {
+        "code": "deferred",
+        "message": "含动态占位符，实际值需由目标环境解析；静态校验无法确认展开后的参数",
+        "path": [
+          "plugins",
+          0,
+          "args",
+          "sets",
+          1
+        ],
+        "severity": "warning"
+      },
+      {
+        "code": "deferred",
+        "message": "含动态占位符，实际值需由目标环境解析；静态校验无法确认展开后的参数",
+        "path": [
+          "plugins",
+          0,
+          "args",
+          "sets",
+          2
+        ],
+        "severity": "warning"
+      }
+    ],
+    "reason": "native scalar and day-list type constraints"
+  },
+  "validate_native_config:151e8c4f8618d57052f6ae166190e81008a1f82761253e0bf49d0ba5e18bff75": {
+    "fn": "validate_native_config",
+    "out": [
+      {
+        "code": "format",
+        "message": "必须填写非空文本",
+        "path": [
+          "plugins",
+          0,
+          "tag"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "format",
+        "message": "需要有效的 1–64 位插件标识",
+        "path": [
+          "plugins",
+          0,
+          "tag"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "length",
+        "message": "文本长度不足",
+        "path": [
+          "plugins",
+          0,
+          "args",
+          "address"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "format",
+        "message": "必须填写非空文本",
+        "path": [
+          "plugins",
+          0,
+          "args",
+          "address"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "length",
+        "message": "文本长度不足",
+        "path": [
+          "plugins",
+          0,
+          "args",
+          "username"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "format",
+        "message": "必须填写非空文本",
+        "path": [
+          "plugins",
+          0,
+          "args",
+          "username"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "length",
+        "message": "文本长度不足",
+        "path": [
+          "plugins",
+          0,
+          "args",
+          "password"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "format",
+        "message": "必须填写非空文本",
+        "path": [
+          "plugins",
+          0,
+          "args",
+          "password"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "required",
+        "message": "至少配置 gateway4 或 gateway6",
+        "path": [
+          "plugins",
+          0,
+          "args",
+          "gateway4"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 integer / null",
+        "path": [
+          "plugins",
+          1,
+          "args",
+          "dump_interval"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 integer / null",
+        "path": [
+          "plugins",
+          1,
+          "args",
+          "min_positive_ttl"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "format",
+        "message": "需要有效的 1–64 位插件标识",
+        "path": [
+          "plugins",
+          5,
+          "tag"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "length",
+        "message": "文本长度不足",
+        "path": [
+          "plugins",
+          5,
+          "args",
+          "address"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "format",
+        "message": "必须填写非空文本",
+        "path": [
+          "plugins",
+          5,
+          "args",
+          "address"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "length",
+        "message": "文本长度不足",
+        "path": [
+          "plugins",
+          5,
+          "args",
+          "username"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "format",
+        "message": "必须填写非空文本",
+        "path": [
+          "plugins",
+          5,
+          "args",
+          "username"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "length",
+        "message": "文本长度不足",
+        "path": [
+          "plugins",
+          5,
+          "args",
+          "password"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "format",
+        "message": "必须填写非空文本",
+        "path": [
+          "plugins",
+          5,
+          "args",
+          "password"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 string",
+        "path": [
+          "plugins",
+          7,
+          "args",
+          0
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 string",
+        "path": [
+          "plugins",
+          7,
+          "args",
+          1
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "range",
+        "message": "标记必须是 0–4294967295 的整数",
+        "path": [
+          "plugins",
+          7,
+          "args"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "deferred",
+        "message": "含动态占位符，实际值需由目标环境解析；静态校验无法确认展开后的参数",
+        "path": [
+          "plugins",
+          6,
+          "args"
+        ],
+        "severity": "warning"
+      }
+    ],
+    "reason": "native scalar and day-list type constraints"
+  },
+  "validate_native_config:19e08792a763cf4ccee83def9400c4bd1cf343b55e7579319777b051c7aa1b19": {
+    "fn": "validate_native_config",
+    "out": [
+      {
+        "code": "format",
+        "message": "地址格式无效，请检查主机、端口及 IPv6 方括号",
+        "path": [
+          "api",
+          "http",
+          "listen"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 string",
+        "path": [
+          "plugins",
+          0,
+          "args",
+          0
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 string",
+        "path": [
+          "plugins",
+          0,
+          "args",
+          1
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "range",
+        "message": "标记必须是 0–4294967295 的整数",
+        "path": [
+          "plugins",
+          0,
+          "args"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 integer / null",
+        "path": [
+          "plugins",
+          1,
+          "args",
+          "cache_ttl"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "format",
+        "message": "需要有效的 1–64 位插件标识",
+        "path": [
+          "plugins",
+          1,
+          "args",
+          "probe_executor"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "provider-reference",
+        "message": "这里只接受 $tag 形式的 Provider 引用",
+        "path": [
+          "plugins",
+          3,
+          "args"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "format",
+        "message": "需要有效的 1–64 位插件标识",
+        "path": [
+          "plugins",
+          4,
+          "tag"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 string",
+        "path": [
+          "plugins",
+          4,
+          "args",
+          "sets",
+          2
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "domain-rule",
+        "message": "域名规则不能为空",
+        "path": [
+          "plugins",
+          4,
+          "args",
+          "exps",
+          0
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "constraint",
+        "message": "启用 TLS 时必须同时配置证书和私钥",
+        "path": [
+          "api",
+          "http",
+          "ssl",
+          "cert"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "reference",
+        "message": "引用的出站配置未在 network.outbound.profiles 中定义",
+        "path": [
+          "network",
+          "outbound",
+          "default"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "reference",
+        "message": "引用的插件 tag 不存在",
+        "path": [
+          "plugins",
+          1,
+          "args",
+          "probe_executor"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "reference",
+        "message": "引用的插件 tag 不存在",
+        "path": [
+          "plugins",
+          4,
+          "args",
+          "sets",
+          0
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "reference",
+        "message": "引用的插件 tag 不存在",
+        "path": [
+          "plugins",
+          4,
+          "args",
+          "sets",
+          1
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "deferred",
+        "message": "含动态占位符，实际值需由目标环境解析；静态校验无法确认展开后的参数",
+        "path": [
+          "network",
+          "outbound",
+          "profiles",
+          "p4",
+          "proxy"
+        ],
+        "severity": "warning"
+      }
+    ],
+    "reason": "native scalar and day-list type constraints"
+  },
+  "validate_native_config:29f9d8959a6110fbfa0df7b285c6ae76e775be7f68ed9b9b700dcc49cc6032c6": {
+    "fn": "validate_native_config",
+    "out": [
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 object",
+        "path": [
+          "plugins",
+          1
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 string",
+        "path": [
+          "plugins",
+          4,
+          "type"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "required",
+        "message": "缺少必填参数",
+        "path": [
+          "plugins",
+          0,
+          "args",
+          "command"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 string",
+        "path": [
+          "plugins",
+          0,
+          "args",
+          "args",
+          2
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "template",
+        "message": "占位符名称不能为空",
+        "path": [
+          "plugins",
+          0,
+          "args",
+          "args",
+          0
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "required",
+        "message": "环境变量名称不能为空",
+        "path": [
+          "plugins",
+          0,
+          "args",
+          "env",
+          ""
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "template",
+        "message": "占位符缺少右花括号",
+        "path": [
+          "plugins",
+          0,
+          "args",
+          "env",
+          ""
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "expression",
+        "message": "zl 不接受参数；其他操作至少需要一个参数",
+        "path": [
+          "plugins",
+          2,
+          "args"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 integer / null",
+        "path": [
+          "plugins",
+          3,
+          "args",
+          "cache",
+          "failure_ttl"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "required",
+        "message": "至少配置一种探测方法",
+        "path": [
+          "plugins",
+          3,
+          "args",
+          "probe_methods"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "enum",
+        "message": "日志级别必须为 off、trace、debug、info、warn 或 error",
+        "path": [
+          "log",
+          "level"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "unknown-plugin",
+        "message": "插件未在当前校验目录中，发布时需由目标核心确认支持",
+        "path": [
+          "plugins",
+          4,
+          "type"
+        ],
+        "severity": "warning"
+      }
+    ],
+    "reason": "native scalar and day-list type constraints"
+  },
+  "validate_native_config:2f968bd6fc66ec33e7efccd0e03854039882c06d65df98898079256d3d5e42b9": {
+    "fn": "validate_native_config",
+    "out": [
+      {
+        "code": "required",
+        "message": "缺少必填参数",
+        "path": [
+          "plugins",
+          1,
+          "type"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 integer / null",
+        "path": [
+          "plugins",
+          3,
+          "args",
+          "cache_ttl"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "ip",
+        "message": "需要有效的 IP 或 CIDR",
+        "path": [
+          "plugins",
+          4,
+          "args"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "duplicate-tag",
+        "message": "插件 tag 重复，必须全局唯一",
+        "path": [
+          "plugins",
+          4,
+          "tag"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "reference",
+        "message": "引用的插件 tag 不存在",
+        "path": [
+          "plugins",
+          4,
+          "args"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "unknown-plugin",
+        "message": "插件未在当前校验目录中，发布时需由目标核心确认支持",
+        "path": [
+          "plugins",
+          1,
+          "type"
+        ],
+        "severity": "warning"
+      },
+      {
+        "code": "unknown-reference",
+        "message": "目标是尚未识别的插件类型，由目标核心确认其能力",
+        "path": [
+          "plugins",
+          3,
+          "args",
+          "probe_executor"
+        ],
+        "severity": "warning"
+      }
+    ],
+    "reason": "native scalar and day-list type constraints"
+  },
+  "validate_native_config:331a5f3a0dbca330df6d4995cc18464ad589c3999b5a871bb04a9a74f899e77e": {
+    "fn": "validate_native_config",
+    "out": [
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 string",
+        "path": [
+          "log",
+          "level"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "format",
+        "message": "地址格式无效，请检查主机、端口及 IPv6 方括号",
+        "path": [
+          "api",
+          "http",
+          "listen"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 integer / null",
+        "path": [
+          "plugins",
+          0,
+          "args",
+          "cache",
+          "failure_ttl"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "mutually-exclusive",
+        "message": "none 不能与其他探测方法同时使用",
+        "path": [
+          "plugins",
+          0,
+          "args",
+          "probe_methods"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "constraint",
+        "message": "必须填写非空文本",
+        "path": [
+          "api",
+          "http",
+          "ssl",
+          "key"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "constraint",
+        "message": "必须填写非空文本",
+        "path": [
+          "api",
+          "http",
+          "ssl",
+          "client_ca"
+        ],
+        "severity": "error"
+      }
+    ],
+    "reason": "native scalar and day-list type constraints"
+  },
+  "validate_native_config:33736b3fddbfdf1a392c96b582409a6aa7e43cfbde3f25f18dd3b34353f58cd9": {
+    "fn": "validate_native_config",
+    "out": [
+      {
+        "code": "required",
+        "message": "缺少必填参数",
+        "path": [
+          "plugins",
+          4,
+          "tag"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 boolean / null",
+        "path": [
+          "plugins",
+          0,
+          "args",
+          "cache"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 integer / null",
+        "path": [
+          "plugins",
+          0,
+          "args",
+          "cache_ttl"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "format",
+        "message": "需要有效的 1–64 位插件标识",
+        "path": [
+          "plugins",
+          0,
+          "args",
+          "probe_executor"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "required",
+        "message": "缺少必填参数",
+        "path": [
+          "plugins",
+          1,
+          "args",
+          "method"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "dependency",
+        "message": "content_type 仅用于原始 body",
+        "path": [
+          "plugins",
+          1,
+          "args",
+          "content_type"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "template",
+        "message": "占位符缺少右花括号",
+        "path": [
+          "plugins",
+          1,
+          "args",
+          "url"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "http-header",
+        "message": "HTTP 请求头名称无效",
+        "path": [
+          "plugins",
+          1,
+          "args",
+          "headers",
+          "bad header"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "required",
+        "message": "名称不能为空",
+        "path": [
+          "plugins",
+          1,
+          "args",
+          "headers",
+          " "
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "http-header",
+        "message": "HTTP 请求头名称无效",
+        "path": [
+          "plugins",
+          1,
+          "args",
+          "headers",
+          " "
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "required",
+        "message": "请求模板值不能为空",
+        "path": [
+          "plugins",
+          1,
+          "args",
+          "headers",
+          " "
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "template",
+        "message": "占位符缺少右花括号",
+        "path": [
+          "plugins",
+          1,
+          "args",
+          "query_params",
+          "q"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "format",
+        "message": "地址格式无效，请检查主机、端口及 IPv6 方括号",
+        "path": [
+          "plugins",
+          2,
+          "args",
+          "socks5"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 object / null",
+        "path": [
+          "plugins",
+          2,
+          "args",
+          "cache"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 integer / null",
+        "path": [
+          "plugins",
+          3,
+          "args",
+          "cache_ttl"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "range",
+        "message": "标记必须是 0–4294967295 的整数",
+        "path": [
+          "plugins",
+          5,
+          "args"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "constraint",
+        "message": "出站配置名称不能为空",
+        "path": [
+          "network",
+          "outbound",
+          "default"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "reference",
+        "message": "引用的插件 tag 不存在",
+        "path": [
+          "plugins",
+          0,
+          "args",
+          "probe_executor"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "reference",
+        "message": "引用的插件 tag 不存在",
+        "path": [
+          "plugins",
+          3,
+          "args",
+          "probe_executor"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "deferred",
+        "message": "含动态占位符，实际值需由目标环境解析；静态校验无法确认展开后的参数",
+        "path": [
+          "plugins",
+          1,
+          "args",
+          "headers",
+          "X-A"
+        ],
+        "severity": "warning"
+      }
+    ],
+    "reason": "native scalar and day-list type constraints"
+  },
+  "validate_native_config:3909a23717aebb6c82bb4079abfcbe3c32a43ce53ce3516e6d06cd066b026d1b": {
+    "fn": "validate_native_config",
+    "out": [
+      {
+        "code": "format",
+        "message": "必须填写非空文本",
+        "path": [
+          "plugins",
+          6,
+          "type"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "format",
+        "message": "需要有效的 1–64 位插件标识",
+        "path": [
+          "plugins",
+          2,
+          "args",
+          "probe_executor"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "range",
+        "message": "启用探测缓存时 TTL 必须大于 0",
+        "path": [
+          "plugins",
+          2,
+          "args",
+          "cache_ttl"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "mutually-exclusive",
+        "message": "schedule 和 interval 必须且只能填写一个",
+        "path": [
+          "plugins",
+          3,
+          "args",
+          "jobs",
+          0
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 integer / null",
+        "path": [
+          "plugins",
+          5,
+          "args",
+          "dump_interval"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 integer / null",
+        "path": [
+          "plugins",
+          5,
+          "args",
+          "max_positive_ttl"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "range-order",
+        "message": "min_positive_ttl 不能大于 max_positive_ttl",
+        "path": [
+          "plugins",
+          5,
+          "args",
+          "min_positive_ttl"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "length",
+        "message": "文本长度不足",
+        "path": [
+          "plugins",
+          6,
+          "type"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "reference",
+        "message": "引用的插件 tag 不存在",
+        "path": [
+          "plugins",
+          2,
+          "args",
+          "probe_executor"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "reference",
+        "message": "引用的插件 tag 不存在",
+        "path": [
+          "plugins",
+          3,
+          "args",
+          "jobs",
+          0,
+          "executors",
+          0
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "deferred",
+        "message": "含动态占位符，实际值需由目标环境解析；静态校验无法确认展开后的参数",
+        "path": [
+          "plugins",
+          0,
+          "args",
+          "files",
+          0
+        ],
+        "severity": "warning"
+      },
+      {
+        "code": "unknown-field",
+        "message": "扩展字段已保留，不在当前版本的校验目录中",
+        "path": [
+          "plugins",
+          0,
+          "args",
+          "extra_field"
+        ],
+        "severity": "warning"
+      },
+      {
+        "code": "adguard-rule",
+        "message": "规则含 OxiDNS 不支持的修饰符，整条规则会跳过",
+        "path": [
+          "plugins",
+          4,
+          "args",
+          "rules",
+          0
+        ],
+        "severity": "warning"
+      },
+      {
+        "code": "unknown-plugin",
+        "message": "插件未在当前校验目录中，发布时需由目标核心确认支持",
+        "path": [
+          "plugins",
+          6,
+          "type"
+        ],
+        "severity": "warning"
+      }
+    ],
+    "reason": "native scalar and day-list type constraints"
+  },
+  "validate_native_config:404fb6218d167dac075b29c4a064bf6f5a71a61b807e21769445f021de61684d": {
+    "fn": "validate_native_config",
+    "out": [
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 string",
+        "path": [
+          "plugins",
+          0,
+          "type"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "format",
+        "message": "必须填写非空文本",
+        "path": [
+          "plugins",
+          5,
+          "type"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "format",
+        "message": "需要有效的 1–64 位插件标识",
+        "path": [
+          "plugins",
+          2,
+          "tag"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 array / null",
+        "path": [
+          "plugins",
+          2,
+          "args"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 integer / null",
+        "path": [
+          "plugins",
+          3,
+          "args",
+          "cache_ttl"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "length",
+        "message": "文本长度不足",
+        "path": [
+          "plugins",
+          4,
+          "args",
+          "file"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "format",
+        "message": "必须填写非空文本",
+        "path": [
+          "plugins",
+          4,
+          "args",
+          "file"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "length",
+        "message": "文本长度不足",
+        "path": [
+          "plugins",
+          5,
+          "type"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "unknown-plugin",
+        "message": "插件未在当前校验目录中，发布时需由目标核心确认支持",
+        "path": [
+          "plugins",
+          0,
+          "type"
+        ],
+        "severity": "warning"
+      },
+      {
+        "code": "unknown-plugin",
+        "message": "插件未在当前校验目录中，发布时需由目标核心确认支持",
+        "path": [
+          "plugins",
+          5,
+          "type"
+        ],
+        "severity": "warning"
+      }
+    ],
+    "reason": "native scalar and day-list type constraints"
+  },
+  "validate_native_config:50a4e281ef065910b1fc7f1b534ac443d512c0dec4062fe97e4f09e4b4913e36": {
+    "fn": "validate_native_config",
+    "out": [
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 integer / null",
+        "path": [
+          "plugins",
+          0,
+          "args",
+          "cache",
+          "failure_ttl"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 integer / null",
+        "path": [
+          "plugins",
+          2,
+          "args",
+          "mask4"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "required",
+        "message": "缺少必填参数",
+        "path": [
+          "plugins",
+          2,
+          "args",
+          "ipv4",
+          "table_family"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "required",
+        "message": "缺少必填参数",
+        "path": [
+          "plugins",
+          2,
+          "args",
+          "ipv4",
+          "table_name"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "required",
+        "message": "缺少必填参数",
+        "path": [
+          "plugins",
+          2,
+          "args",
+          "ipv4",
+          "set_name"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "range",
+        "message": "前缀长度不能超过 128",
+        "path": [
+          "plugins",
+          2,
+          "args",
+          "mask6"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "range",
+        "message": "EDNS0 代码必须为 0–65535 的整数",
+        "path": [
+          "plugins",
+          3,
+          "args"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "length",
+        "message": "文本长度不足",
+        "path": [
+          "plugins",
+          5,
+          "args",
+          "jobs",
+          0,
+          "executors",
+          1
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "format",
+        "message": "必须填写非空文本",
+        "path": [
+          "plugins",
+          5,
+          "args",
+          "jobs",
+          0,
+          "executors",
+          1
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "length",
+        "message": "文本长度不足",
+        "path": [
+          "plugins",
+          5,
+          "args",
+          "jobs",
+          2,
+          "name"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "format",
+        "message": "必须填写非空文本",
+        "path": [
+          "plugins",
+          5,
+          "args",
+          "jobs",
+          2,
+          "name"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "required",
+        "message": "至少需要 1 个条目",
+        "path": [
+          "plugins",
+          5,
+          "args",
+          "jobs",
+          2,
+          "executors"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "mutually-exclusive",
+        "message": "schedule 和 interval 必须且只能填写一个",
+        "path": [
+          "plugins",
+          5,
+          "args",
+          "jobs",
+          0
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "duplicate",
+        "message": "任务名称重复",
+        "path": [
+          "plugins",
+          5,
+          "args",
+          "jobs",
+          1,
+          "name"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "mutually-exclusive",
+        "message": "schedule 和 interval 必须且只能填写一个",
+        "path": [
+          "plugins",
+          5,
+          "args",
+          "jobs",
+          1
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "mutually-exclusive",
+        "message": "schedule 和 interval 必须且只能填写一个",
+        "path": [
+          "plugins",
+          5,
+          "args",
+          "jobs",
+          2
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "constraint",
+        "message": "出站配置名称不能为空",
+        "path": [
+          "network",
+          "outbound",
+          "default"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "constraint",
+        "message": "出站配置名称必须为不含首尾空白的非空文本",
+        "path": [
+          "network",
+          "outbound",
+          "profiles",
+          ""
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "reference",
+        "message": "引用的插件 tag 不存在",
+        "path": [
+          "plugins",
+          5,
+          "args",
+          "jobs",
+          0,
+          "executors",
+          0
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "expression",
+        "message": "表达式不能为空",
+        "path": [
+          "plugins",
+          5,
+          "args",
+          "jobs",
+          0,
+          "executors",
+          1
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "reference",
+        "message": "引用的插件 tag 不存在",
+        "path": [
+          "plugins",
+          5,
+          "args",
+          "jobs",
+          0,
+          "executors",
+          2
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "reference",
+        "message": "引用的插件 tag 不存在",
+        "path": [
+          "plugins",
+          5,
+          "args",
+          "jobs",
+          1,
+          "executors",
+          0
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "reference",
+        "message": "引用的插件 tag 不存在",
+        "path": [
+          "plugins",
+          5,
+          "args",
+          "jobs",
+          1,
+          "executors",
+          1
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "deferred",
+        "message": "含动态占位符，实际值需由目标环境解析；静态校验无法确认展开后的参数",
+        "path": [
+          "network",
+          "outbound",
+          "profiles",
+          "",
+          "proxy"
+        ],
+        "severity": "warning"
+      }
+    ],
+    "reason": "native scalar and day-list type constraints"
+  },
+  "validate_native_config:5148bd09cbf367fd48aa6b5ad7c859edb9a6dec97c2c8ae503bf2afb9dd3906c": {
+    "fn": "validate_native_config",
+    "out": [
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 string",
+        "path": [
+          "plugins",
+          0,
+          "args",
+          0
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "required",
+        "message": "至少配置一个匹配表达式",
+        "path": [
+          "plugins",
+          0,
+          "args"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 integer / null",
+        "path": [
+          "plugins",
+          1,
+          "args",
+          "cache",
+          "failure_ttl"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "probe-method",
+        "message": "探测方法应为 ping、none 或 tcp:1–65535",
+        "path": [
+          "plugins",
+          1,
+          "args",
+          "probe_methods"
+        ],
+        "severity": "error"
+      }
+    ],
+    "reason": "native scalar and day-list type constraints"
+  },
+  "validate_native_config:518c160c04af9918ab1572e54308e8f0e229cacb325093e4439d78aed5c7273f": {
+    "fn": "validate_native_config",
+    "out": [
+      {
+        "code": "required",
+        "message": "缺少插件必填参数",
+        "path": [
+          "plugins",
+          0,
+          "args"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "required",
+        "message": "至少配置一个匹配表达式",
+        "path": [
+          "plugins",
+          0,
+          "args"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 integer / null",
+        "path": [
+          "plugins",
+          1,
+          "args",
+          "cache_ttl"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "required",
+        "message": "缺少必填参数",
+        "path": [
+          "plugins",
+          3,
+          "args",
+          "command"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 string",
+        "path": [
+          "plugins",
+          3,
+          "args",
+          "args",
+          2
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "template",
+        "message": "占位符名称不能为空",
+        "path": [
+          "plugins",
+          3,
+          "args",
+          "args",
+          0
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "required",
+        "message": "环境变量名称不能为空",
+        "path": [
+          "plugins",
+          3,
+          "args",
+          "env",
+          ""
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "template",
+        "message": "占位符缺少右花括号",
+        "path": [
+          "plugins",
+          3,
+          "args",
+          "env",
+          ""
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "format",
+        "message": "需要有效的 1–64 位插件标识",
+        "path": [
+          "plugins",
+          5,
+          "tag"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "constraint",
+        "message": "出站配置名称必须为不含首尾空白的非空文本",
+        "path": [
+          "network",
+          "outbound",
+          "profiles",
+          ""
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "enum",
+        "message": "解析器简写只支持 system",
+        "path": [
+          "network",
+          "outbound",
+          "profiles",
+          "p1",
+          "resolver"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "duplicate-tag",
+        "message": "插件 tag 重复，必须全局唯一",
+        "path": [
+          "plugins",
+          3,
+          "tag"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "reference-kind",
+        "message": "引用目标必须为 executor 类型插件",
+        "path": [
+          "plugins",
+          1,
+          "args",
+          "probe_executor"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "deferred",
+        "message": "含动态占位符，实际值需由目标环境解析；静态校验无法确认展开后的参数",
+        "path": [
+          "network",
+          "outbound",
+          "profiles",
+          "p4",
+          "proxy"
+        ],
+        "severity": "warning"
+      }
+    ],
+    "reason": "native scalar and day-list type constraints"
+  },
+  "validate_native_config:584cbee7d4e91041fb9229410327f8121b69c2235b90e2d200941af57403149e": {
+    "fn": "validate_native_config",
+    "out": [
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 string",
+        "path": [
+          "log",
+          "level"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "format",
+        "message": "需要有效的 1–64 位插件标识",
+        "path": [
+          "plugins",
+          0,
+          "tag"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 integer / null",
+        "path": [
+          "plugins",
+          0,
+          "args",
+          "cache_ttl"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "provider-reference",
+        "message": "这里只接受 $tag 形式的 Provider 引用",
+        "path": [
+          "plugins",
+          1,
+          "args"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "constraint",
+        "message": "必须填写非空文本",
+        "path": [
+          "api",
+          "http",
+          "ssl",
+          "client_ca"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "reference",
+        "message": "引用的插件 tag 不存在",
+        "path": [
+          "plugins",
+          0,
+          "args",
+          "probe_executor"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "reference",
+        "message": "引用的插件 tag 不存在",
+        "path": [
+          "plugins",
+          1,
+          "args"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "deferred",
+        "message": "含动态占位符，实际值需由目标环境解析；静态校验无法确认展开后的参数",
+        "path": [
+          "api",
+          "http",
+          "ssl",
+          "cert"
+        ],
+        "severity": "warning"
+      }
+    ],
+    "reason": "native scalar and day-list type constraints"
+  },
+  "validate_native_config:5ed73df8fb208d4a1819f19843f8c6eb5ba7f3b7daff6e4373f52cb0d51bfc3e": {
+    "fn": "validate_native_config",
+    "out": [
+      {
+        "code": "format",
+        "message": "需要有效的 1–64 位插件标识",
+        "path": [
+          "plugins",
+          1,
+          "tag"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "domain-rule",
+        "message": "正则表达式语法无效",
+        "path": [
+          "plugins",
+          1,
+          "args"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 integer / null",
+        "path": [
+          "plugins",
+          2,
+          "args",
+          "dump_interval"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 integer / null",
+        "path": [
+          "plugins",
+          2,
+          "args",
+          "max_positive_ttl"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "range-order",
+        "message": "min_positive_ttl 不能大于 max_positive_ttl",
+        "path": [
+          "plugins",
+          2,
+          "args",
+          "min_positive_ttl"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "ip",
+        "message": "需要有效的 IP 或 CIDR",
+        "path": [
+          "plugins",
+          3,
+          "args"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 string",
+        "path": [
+          "plugins",
+          4,
+          "args",
+          1
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "ip",
+        "message": "需要有效的 IP 或 CIDR",
+        "path": [
+          "plugins",
+          4,
+          "args"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "ip",
+        "message": "需要有效的 IP 或 CIDR",
+        "path": [
+          "plugins",
+          5,
+          "args"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "required",
+        "message": "至少配置一个匹配值",
+        "path": [
+          "plugins",
+          6,
+          "args"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "format",
+        "message": "地址格式无效，请检查主机、端口及 IPv6 方括号",
+        "path": [
+          "plugins",
+          7,
+          "args",
+          "socks5"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "format",
+        "message": "URL/上游地址无效或协议不受支持",
+        "path": [
+          "plugins",
+          7,
+          "args",
+          "downloads",
+          0,
+          "url"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "required",
+        "message": "URL 无法推导文件名，请填写 filename",
+        "path": [
+          "plugins",
+          7,
+          "args",
+          "downloads",
+          0,
+          "filename"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "constraint",
+        "message": "启用 TLS 时必须同时配置证书和私钥",
+        "path": [
+          "api",
+          "http",
+          "ssl",
+          "key"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "reference",
+        "message": "引用的插件 tag 不存在",
+        "path": [
+          "plugins",
+          0,
+          "args"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "reference-kind",
+        "message": "引用目标必须为 provider 类型插件",
+        "path": [
+          "plugins",
+          1,
+          "args"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "reference",
+        "message": "引用的插件 tag 不存在",
+        "path": [
+          "plugins",
+          1,
+          "args"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "reference-kind",
+        "message": "引用目标必须为 provider 类型插件",
+        "path": [
+          "plugins",
+          3,
+          "args"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "deferred",
+        "message": "含动态占位符，实际值需由目标环境解析；静态校验无法确认展开后的参数",
+        "path": [
+          "plugins",
+          0,
+          "args",
+          0
+        ],
+        "severity": "warning"
+      },
+      {
+        "code": "deferred",
+        "message": "含动态占位符，实际值需由目标环境解析；静态校验无法确认展开后的参数",
+        "path": [
+          "plugins",
+          1,
+          "args"
+        ],
+        "severity": "warning"
+      },
+      {
+        "code": "deferred",
+        "message": "含动态占位符，实际值需由目标环境解析；静态校验无法确认展开后的参数",
+        "path": [
+          "api",
+          "http",
+          "ssl",
+          "client_ca"
+        ],
+        "severity": "warning"
+      }
+    ],
+    "reason": "native scalar and day-list type constraints"
+  },
+  "validate_native_config:60db552a77213c5d6f3919d37d6c8da307affab3c4e23c94d2ecf32fafe669d8": {
+    "fn": "validate_native_config",
+    "out": [
+      {
+        "code": "required",
+        "message": "缺少必填参数",
+        "path": [
+          "plugins",
+          4,
+          "tag"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 object / null",
+        "path": [
+          "plugins",
+          0,
+          "args"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 object / null",
+        "path": [
+          "plugins",
+          1,
+          "args"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 integer / null",
+        "path": [
+          "plugins",
+          2,
+          "args",
+          "cache_ttl"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "reference",
+        "message": "引用的插件 tag 不存在",
+        "path": [
+          "plugins",
+          2,
+          "args",
+          "probe_executor"
+        ],
+        "severity": "error"
+      }
+    ],
+    "reason": "native scalar and day-list type constraints"
+  },
+  "validate_native_config:6f0394d6b6ab49d95c78a9d64842a62733a45981224cceebfbecc2d6fb435901": {
+    "fn": "validate_native_config",
+    "out": [
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 string",
+        "path": [
+          "plugins",
+          0,
+          "type"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 string",
+        "path": [
+          "plugins",
+          2,
+          "type"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "required",
+        "message": "缺少必填参数",
+        "path": [
+          "plugins",
+          3,
+          "tag"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "required",
+        "message": "缺少必填参数",
+        "path": [
+          "plugins",
+          3,
+          "type"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 integer / null",
+        "path": [
+          "plugins",
+          1,
+          "args",
+          "cache",
+          "failure_ttl"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "constraint",
+        "message": "启用 TLS 时必须同时配置证书和私钥",
+        "path": [
+          "api",
+          "http",
+          "ssl",
+          "cert"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "constraint",
+        "message": "要求客户端证书时必须配置 client_ca",
+        "path": [
+          "api",
+          "http",
+          "ssl",
+          "client_ca"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "constraint",
+        "message": "出站配置名称不能包含首尾空白",
+        "path": [
+          "network",
+          "outbound",
+          "default"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "constraint",
+        "message": "出站配置名称必须为不含首尾空白的非空文本",
+        "path": [
+          "network",
+          "outbound",
+          "profiles",
+          " p3"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "enum",
+        "message": "代理简写只支持 none 或 direct",
+        "path": [
+          "network",
+          "outbound",
+          "profiles",
+          " p3",
+          "proxy"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "deferred",
+        "message": "含动态占位符，实际值需由目标环境解析；静态校验无法确认展开后的参数",
+        "path": [
+          "plugins",
+          4,
+          "args",
+          0
+        ],
+        "severity": "warning"
+      },
+      {
+        "code": "deferred",
+        "message": "含动态占位符，实际值需由目标环境解析；静态校验无法确认展开后的参数",
+        "path": [
+          "api",
+          "http",
+          "ssl",
+          "key"
+        ],
+        "severity": "warning"
+      },
+      {
+        "code": "unknown-plugin",
+        "message": "插件未在当前校验目录中，发布时需由目标核心确认支持",
+        "path": [
+          "plugins",
+          0,
+          "type"
+        ],
+        "severity": "warning"
+      },
+      {
+        "code": "unknown-plugin",
+        "message": "插件未在当前校验目录中，发布时需由目标核心确认支持",
+        "path": [
+          "plugins",
+          2,
+          "type"
+        ],
+        "severity": "warning"
+      },
+      {
+        "code": "unknown-plugin",
+        "message": "插件未在当前校验目录中，发布时需由目标核心确认支持",
+        "path": [
+          "plugins",
+          3,
+          "type"
+        ],
+        "severity": "warning"
+      }
+    ],
+    "reason": "native scalar and day-list type constraints"
+  },
+  "validate_native_config:8d2812a839d08b965479ed36b11ed465d4a4e8bc942de25c58cd3759a99266e0": {
+    "fn": "validate_native_config",
+    "out": [
+      {
+        "code": "format",
+        "message": "需要有效的 1–64 位插件标识",
+        "path": [
+          "plugins",
+          1,
+          "tag"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "format",
+        "message": "地址格式无效，请检查主机、端口及 IPv6 方括号",
+        "path": [
+          "plugins",
+          1,
+          "args",
+          "socks5"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 integer / null",
+        "path": [
+          "plugins",
+          2,
+          "args",
+          "cache_ttl"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "reference",
+        "message": "引用的出站配置未在 network.outbound.profiles 中定义",
+        "path": [
+          "plugins",
+          1,
+          "args",
+          "outbound"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "dependency-cycle",
+        "message": "插件依赖形成循环，无法初始化",
+        "path": [
+          "plugins",
+          2,
+          "args",
+          "probe_executor"
+        ],
+        "severity": "error"
+      }
+    ],
+    "reason": "native scalar and day-list type constraints"
+  },
+  "validate_native_config:93f0a4f1f3154329215a33767bdff236f4c6066789bdcd519a494a619ecb266e": {
+    "fn": "validate_native_config",
+    "out": [
+      {
+        "code": "expression",
+        "message": "字符串表达式的来源字段无效",
+        "path": [
+          "plugins",
+          0,
+          "args"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "expression",
+        "message": "字符串表达式的操作无效",
+        "path": [
+          "plugins",
+          0,
+          "args"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 integer / null",
+        "path": [
+          "plugins",
+          1,
+          "args",
+          "cache_ttl"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "length",
+        "message": "文本长度不足",
+        "path": [
+          "plugins",
+          4,
+          "args",
+          "username"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "format",
+        "message": "必须填写非空文本",
+        "path": [
+          "plugins",
+          4,
+          "args",
+          "username"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "required",
+        "message": "至少配置 address_list4 或 address_list6",
+        "path": [
+          "plugins",
+          4,
+          "args",
+          "address_list4"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "provider-reference",
+        "message": "这里只接受 $tag 形式的 Provider 引用",
+        "path": [
+          "plugins",
+          6,
+          "args"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "constraint",
+        "message": "出站配置名称必须为不含首尾空白的非空文本",
+        "path": [
+          "network",
+          "outbound",
+          "profiles",
+          " p3"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "duplicate-tag",
+        "message": "插件 tag 重复，必须全局唯一",
+        "path": [
+          "plugins",
+          2,
+          "tag"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "reference-kind",
+        "message": "引用目标必须为 executor 类型插件",
+        "path": [
+          "plugins",
+          1,
+          "args",
+          "probe_executor"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "reference",
+        "message": "引用的插件 tag 不存在",
+        "path": [
+          "plugins",
+          3,
+          "args",
+          "entry"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "reference",
+        "message": "引用的插件 tag 不存在",
+        "path": [
+          "plugins",
+          6,
+          "args"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "deferred",
+        "message": "含动态占位符，实际值需由目标环境解析；静态校验无法确认展开后的参数",
+        "path": [
+          "plugins",
+          5,
+          "args"
+        ],
+        "severity": "warning"
+      },
+      {
+        "code": "deferred",
+        "message": "含动态占位符，实际值需由目标环境解析；静态校验无法确认展开后的参数",
+        "path": [
+          "network",
+          "outbound",
+          "default"
+        ],
+        "severity": "warning"
+      },
+      {
+        "code": "deferred",
+        "message": "含动态占位符，实际值需由目标环境解析；静态校验无法确认展开后的参数",
+        "path": [
+          "network",
+          "outbound",
+          "profiles",
+          " p3",
+          "resolver"
+        ],
+        "severity": "warning"
+      },
+      {
+        "code": "unknown-plugin",
+        "message": "插件未在当前校验目录中，发布时需由目标核心确认支持",
+        "path": [
+          "plugins",
+          2,
+          "type"
+        ],
+        "severity": "warning"
+      },
+      {
+        "code": "deferred",
+        "message": "含动态占位符，实际值需由目标环境解析；静态校验无法确认展开后的参数",
+        "path": [
+          "plugins",
+          3,
+          "args",
+          "listen"
+        ],
+        "severity": "warning"
+      }
+    ],
+    "reason": "native scalar and day-list type constraints"
+  },
+  "validate_native_config:9bdd9bddebd55d13d6e84a0c9eaaeb0d925bbcab5b3c33f8533c81fe0aa80670": {
+    "fn": "validate_native_config",
+    "out": [
+      {
+        "code": "format",
+        "message": "必须填写非空文本",
+        "path": [
+          "plugins",
+          1,
+          "tag"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 integer / null",
+        "path": [
+          "plugins",
+          0,
+          "args",
+          "cache_ttl"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "format",
+        "message": "需要有效的 1–64 位插件标识",
+        "path": [
+          "plugins",
+          1,
+          "tag"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "constraint",
+        "message": "启用 TLS 时必须同时配置证书和私钥",
+        "path": [
+          "api",
+          "http",
+          "ssl",
+          "cert"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "constraint",
+        "message": "必须填写非空文本",
+        "path": [
+          "api",
+          "http",
+          "ssl",
+          "key"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "reference",
+        "message": "引用的插件 tag 不存在",
+        "path": [
+          "plugins",
+          0,
+          "args",
+          "probe_executor"
+        ],
+        "severity": "error"
+      }
+    ],
+    "reason": "native scalar and day-list type constraints"
+  },
+  "validate_native_config:aad9492d947e55d00a146448dc263894997b03651214e1c4090675c6b244aec8": {
+    "fn": "validate_native_config",
+    "out": [
+      {
+        "code": "format",
+        "message": "必须填写非空文本",
+        "path": [
+          "plugins",
+          1,
+          "type"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 string",
+        "path": [
+          "plugins",
+          5,
+          "tag"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "format",
+        "message": "地址格式无效，请检查主机、端口及 IPv6 方括号",
+        "path": [
+          "api",
+          "http",
+          "listen"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "length",
+        "message": "文本长度不足",
+        "path": [
+          "plugins",
+          1,
+          "type"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "required",
+        "message": "至少需要 1 个条目",
+        "path": [
+          "plugins",
+          2,
+          "args",
+          "downloads"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "length",
+        "message": "文本长度不足",
+        "path": [
+          "plugins",
+          4,
+          "args",
+          "url"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "format",
+        "message": "必须填写非空文本",
+        "path": [
+          "plugins",
+          4,
+          "args",
+          "url"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "length",
+        "message": "文本长度不足",
+        "path": [
+          "plugins",
+          4,
+          "args",
+          "body"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "format",
+        "message": "必须填写非空文本",
+        "path": [
+          "plugins",
+          4,
+          "args",
+          "body"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "url",
+        "message": "需要有效的 HTTP / HTTPS URL",
+        "path": [
+          "plugins",
+          4,
+          "args",
+          "url"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 string",
+        "path": [
+          "plugins",
+          6,
+          "args",
+          "probe_methods",
+          1
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 integer / null",
+        "path": [
+          "plugins",
+          6,
+          "args",
+          "cache",
+          "failure_ttl"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "probe-method",
+        "message": "探测方法应为 ping、none 或 tcp:1–65535",
+        "path": [
+          "plugins",
+          6,
+          "args",
+          "probe_methods"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "duplicate-tag",
+        "message": "插件 tag 重复，必须全局唯一",
+        "path": [
+          "plugins",
+          4,
+          "tag"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "unknown-plugin",
+        "message": "插件未在当前校验目录中，发布时需由目标核心确认支持",
+        "path": [
+          "plugins",
+          1,
+          "type"
+        ],
+        "severity": "warning"
+      },
+      {
+        "code": "deferred",
+        "message": "含动态占位符，实际值需由目标环境解析；静态校验无法确认展开后的参数",
+        "path": [
+          "plugins",
+          4,
+          "args",
+          "method"
+        ],
+        "severity": "warning"
+      }
+    ],
+    "reason": "native scalar and day-list type constraints"
+  },
+  "validate_native_config:c0eabf1dc9fbf3d9159be6bad0fe94fafa07055e0efea1d97ed4668adc80010f": {
+    "fn": "validate_native_config",
+    "out": [
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 string",
+        "path": [
+          "plugins",
+          4,
+          "type"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "format",
+        "message": "必须填写非空文本",
+        "path": [
+          "plugins",
+          5,
+          "type"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "length",
+        "message": "文本长度不足",
+        "path": [
+          "plugins",
+          2,
+          "args",
+          "username"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "format",
+        "message": "必须填写非空文本",
+        "path": [
+          "plugins",
+          2,
+          "args",
+          "username"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "length",
+        "message": "文本长度不足",
+        "path": [
+          "plugins",
+          2,
+          "args",
+          "password"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "format",
+        "message": "必须填写非空文本",
+        "path": [
+          "plugins",
+          2,
+          "args",
+          "password"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "length",
+        "message": "文本长度不足",
+        "path": [
+          "plugins",
+          2,
+          "args",
+          "persistent",
+          "files",
+          0
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "format",
+        "message": "必须填写非空文本",
+        "path": [
+          "plugins",
+          2,
+          "args",
+          "persistent",
+          "files",
+          0
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 string",
+        "path": [
+          "plugins",
+          2,
+          "args",
+          "persistent",
+          "files",
+          1
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 integer / null",
+        "path": [
+          "plugins",
+          2,
+          "args",
+          "min_ttl"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "range",
+        "message": "不能小于 0",
+        "path": [
+          "plugins",
+          2,
+          "args",
+          "fixed_ttl"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 integer / null",
+        "path": [
+          "plugins",
+          3,
+          "args",
+          "cache",
+          "failure_ttl"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "length",
+        "message": "文本长度不足",
+        "path": [
+          "plugins",
+          5,
+          "type"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "duplicate-tag",
+        "message": "插件 tag 重复，必须全局唯一",
+        "path": [
+          "plugins",
+          2,
+          "tag"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "unknown-plugin",
+        "message": "插件未在当前校验目录中，发布时需由目标核心确认支持",
+        "path": [
+          "plugins",
+          4,
+          "type"
+        ],
+        "severity": "warning"
+      },
+      {
+        "code": "unknown-plugin",
+        "message": "插件未在当前校验目录中，发布时需由目标核心确认支持",
+        "path": [
+          "plugins",
+          5,
+          "type"
+        ],
+        "severity": "warning"
+      }
+    ],
+    "reason": "native scalar and day-list type constraints"
+  },
+  "validate_native_config:c6a64c9cc91796ccf9ea63b226caddb7d037096ef465aae30755cbf528fd3df9": {
+    "fn": "validate_native_config",
+    "out": [
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 string",
+        "path": [
+          "plugins",
+          1,
+          "args",
+          2
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 string",
+        "path": [
+          "plugins",
+          1,
+          "args",
+          3
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "domain-rule",
+        "message": "域名规则不能为空",
+        "path": [
+          "plugins",
+          1,
+          "args"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 integer / null",
+        "path": [
+          "plugins",
+          2,
+          "args",
+          "cache",
+          "failure_ttl"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "mutually-exclusive",
+        "message": "none 不能与其他探测方法同时使用",
+        "path": [
+          "plugins",
+          2,
+          "args",
+          "probe_methods"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "range",
+        "message": "启用探测缓存时 TTL 必须大于 0",
+        "path": [
+          "plugins",
+          5,
+          "args",
+          "cache_ttl"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "reference-kind",
+        "message": "引用目标必须为 executor 类型插件",
+        "path": [
+          "plugins",
+          0,
+          "args",
+          "primary"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "reference-kind",
+        "message": "引用目标必须为 executor 类型插件",
+        "path": [
+          "plugins",
+          0,
+          "args",
+          "secondary"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "reference-type",
+        "message": "引用目标必须为 sequence 插件",
+        "path": [
+          "plugins",
+          4,
+          "args",
+          0,
+          "exec"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "expression",
+        "message": "mark/set_mark 至少需要一个 0–4294967295 整数",
+        "path": [
+          "plugins",
+          4,
+          "args",
+          1,
+          "exec"
+        ],
+        "severity": "error"
+      }
+    ],
+    "reason": "native scalar and day-list type constraints"
+  },
+  "validate_native_config:d06085965159fb8afac8b4f514dbb9da467f54e9c4195c3d4da7b50756646895": {
+    "fn": "validate_native_config",
+    "out": [
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 object",
+        "path": [
+          "plugins",
+          0
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "format",
+        "message": "必须填写非空文本",
+        "path": [
+          "plugins",
+          1,
+          "type"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "required",
+        "message": "缺少必填参数",
+        "path": [
+          "plugins",
+          3,
+          "tag"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "format",
+        "message": "地址格式无效，请检查主机、端口及 IPv6 方括号",
+        "path": [
+          "api",
+          "http",
+          "listen"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 boolean / null",
+        "path": [
+          "api",
+          "http",
+          "ssl",
+          "require_client_cert"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "length",
+        "message": "文本长度不足",
+        "path": [
+          "plugins",
+          1,
+          "type"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "required",
+        "message": "至少需要 1 个条目",
+        "path": [
+          "plugins",
+          4,
+          "args",
+          "jobs"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "timezone",
+        "message": "需要有效的 IANA 时区，例如 Asia/Shanghai",
+        "path": [
+          "plugins",
+          4,
+          "args",
+          "timezone"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 string",
+        "path": [
+          "plugins",
+          5,
+          "args",
+          "ipv4",
+          "table_family"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "length",
+        "message": "文本长度不足",
+        "path": [
+          "plugins",
+          5,
+          "args",
+          "ipv4",
+          "table_name"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "format",
+        "message": "必须填写非空文本",
+        "path": [
+          "plugins",
+          5,
+          "args",
+          "ipv4",
+          "table_name"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "range",
+        "message": "不能小于 1",
+        "path": [
+          "plugins",
+          6,
+          "args",
+          "batch_size"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 integer / null",
+        "path": [
+          "plugins",
+          7,
+          "args",
+          "cache_ttl"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "constraint",
+        "message": "启用 TLS 时必须同时配置证书和私钥",
+        "path": [
+          "api",
+          "http",
+          "ssl",
+          "cert"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "constraint",
+        "message": "必须填写非空文本",
+        "path": [
+          "api",
+          "http",
+          "ssl",
+          "key"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "reference",
+        "message": "引用的出站配置未在 network.outbound.profiles 中定义",
+        "path": [
+          "network",
+          "outbound",
+          "default"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "constraint",
+        "message": "出站配置名称必须为不含首尾空白的非空文本",
+        "path": [
+          "network",
+          "outbound",
+          "profiles",
+          ""
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "duplicate-tag",
+        "message": "插件 tag 重复，必须全局唯一",
+        "path": [
+          "plugins",
+          7,
+          "tag"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "reference",
+        "message": "引用的插件 tag 不存在",
+        "path": [
+          "plugins",
+          7,
+          "args",
+          "probe_executor"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "deferred",
+        "message": "含动态占位符，实际值需由目标环境解析；静态校验无法确认展开后的参数",
+        "path": [
+          "log",
+          "level"
+        ],
+        "severity": "warning"
+      },
+      {
+        "code": "deferred",
+        "message": "含动态占位符，实际值需由目标环境解析；静态校验无法确认展开后的参数",
+        "path": [
+          "network",
+          "outbound",
+          "profiles",
+          "p1",
+          "resolver"
+        ],
+        "severity": "warning"
+      },
+      {
+        "code": "unknown-plugin",
+        "message": "插件未在当前校验目录中，发布时需由目标核心确认支持",
+        "path": [
+          "plugins",
+          1,
+          "type"
+        ],
+        "severity": "warning"
+      }
+    ],
+    "reason": "native scalar and day-list type constraints"
+  },
+  "validate_native_config:e3daac0a5f951042544dcbd58c85520debb669dd2131a92e9ea8e1aec685dcaf": {
+    "fn": "validate_native_config",
+    "out": [
+      {
+        "code": "format",
+        "message": "地址格式无效，请检查主机、端口及 IPv6 方括号",
+        "path": [
+          "api",
+          "http",
+          "listen"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 boolean / null",
+        "path": [
+          "api",
+          "http",
+          "ssl",
+          "require_client_cert"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "type",
+        "message": "参数类型无效，需要 integer / null",
+        "path": [
+          "plugins",
+          1,
+          "args",
+          "cache_ttl"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "constraint",
+        "message": "启用 TLS 时必须同时配置证书和私钥",
+        "path": [
+          "api",
+          "http",
+          "ssl",
+          "cert"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "constraint",
+        "message": "必须填写非空文本",
+        "path": [
+          "api",
+          "http",
+          "ssl",
+          "client_ca"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "reference",
+        "message": "引用的插件 tag 不存在",
+        "path": [
+          "plugins",
+          1,
+          "args",
+          "probe_executor"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "deferred",
+        "message": "含动态占位符，实际值需由目标环境解析；静态校验无法确认展开后的参数",
+        "path": [
+          "plugins",
+          0,
+          "args"
+        ],
+        "severity": "warning"
+      },
+      {
+        "code": "deferred",
+        "message": "含动态占位符，实际值需由目标环境解析；静态校验无法确认展开后的参数",
+        "path": [
+          "api",
+          "http",
+          "ssl",
+          "key"
+        ],
+        "severity": "warning"
+      }
+    ],
+    "reason": "native scalar and day-list type constraints"
+  }
+}

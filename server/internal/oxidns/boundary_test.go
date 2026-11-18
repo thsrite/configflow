@@ -25,7 +25,9 @@ import (
 	"unicode"
 
 	"configflow/internal/model"
+	"configflow/internal/testgolden"
 	"configflow/internal/yamlx"
+	"configflow/internal/yamlx/yamlxtest"
 	"gopkg.in/yaml.v3"
 )
 
@@ -58,7 +60,7 @@ type row struct {
 func readRows(t *testing.T, name string, fns map[string]bool) []row {
 	t.Helper()
 	var rows []row
-	checked, total, err := scanRows(t.Context(), name, fns, func(r row) error {
+	checked, total, err := scanRows(t, t.Context(), name, fns, func(r row) error {
 		rows = append(rows, r)
 		return nil
 	})
@@ -71,8 +73,8 @@ func readRows(t *testing.T, name string, fns map[string]bool) []row {
 
 // scanRows reads every input line once, without race-only sampling. The visitor
 // lets parallel suites bound their queue instead of retaining the entire corpus.
-func scanRows(ctx context.Context, name string, fns map[string]bool, visit func(row) error) (checked, total int, err error) {
-	file, err := os.Open(testdataDir + name)
+func scanRows(t testing.TB, ctx context.Context, name string, fns map[string]bool, visit func(row) error) (checked, total int, err error) {
+	file, err := testgolden.Open(t, testdataDir+name)
 	if err != nil {
 		return 0, 0, fmt.Errorf("open %s: %w", name, err)
 	}
@@ -170,7 +172,7 @@ func profileOf(n *Node) *Profile {
 	if err != nil {
 		return &Profile{doc: n, source: &model.Config{Profile: &model.Profile{}}}
 	}
-	p.doc = n
+	p.notesChanged = func(notes *Node) { set(n, "device_notes", notes) }
 	return p
 }
 
@@ -231,11 +233,21 @@ var yamlTextKeys = map[string]bool{"native_config": true, "template_base_config"
 
 // canon parses YAML texts inside settings so formatting does not count.
 func canon(n *Node, yamlText bool) *Node {
+	n = yamlx.Resolve(n)
 	switch {
 	case isStr(n) && yamlText:
 		if parsed, err := parseYAML(n.Value, errors.New("syntax")); err == nil {
 			return M("$yaml", canon(parsed, false))
 		}
+	case isTag(n, tagFloat) && !strings.ContainsAny(n.Value, ".eE") && json.Valid([]byte(n.Value)):
+		// yaml.v3 tags integers beyond uint64 as float, but the shared JSON
+		// writer preserves their integral number token at the HTTP boundary.
+		if data, err := yamlx.ToJSON(n); err == nil {
+			if value, err := yamlx.FromJSON(data); err == nil {
+				return value
+			}
+		}
+
 	case n != nil && n.Kind == yaml.ScalarNode && !isStr(n) && !isNum(n) && !isBool(n) && !isNone(n) && !isTag(n, tagUnsupported):
 		data, err := yamlx.ToJSON(n)
 		if err == nil {
@@ -355,6 +367,9 @@ func compareFrozen(r row, got *Node, err error) string {
 // equal trees. Exact structural equality is sufficient; otherwise the complete
 // existing YAML canonical comparison still decides the result.
 func canonicalDifference(got, want *Node, yamlText bool, path string) string {
+	if yamlText && isStr(got) && isStr(want) && yamlxtest.SemanticEqual(str(got), str(want)) {
+		return ""
+	}
 	if identicalBoundaryTree(got, want) {
 		return ""
 	}
@@ -598,7 +613,11 @@ func call(t *testing.T, r row, a []*Node) (*Node, error, bool) {
 		n, changed, err := ReconcileNativeWithdrawals(a[0], a[1], a[2], a[3], profileOf(a[4]))
 		return L(n, changed), err, true
 	case "rebase_native_rule_sources":
-		changed, err := RebaseNativeRuleSources(profileOf(a[0]), profileOf(a[1]))
+		after := profileOf(a[1])
+		changed, err := RebaseNativeRuleSources(profileOf(a[0]), after)
+		if err == nil && changed {
+			set(a[1], "oxidns", after.Settings())
+		}
 		return B(changed), err, true
 	case "revision":
 		return S(Revision(a[0])), nil, true
@@ -669,7 +688,7 @@ func runBoundary(t *testing.T, file string, fns ...string) {
 	go func() {
 		defer close(done)
 		defer close(rows)
-		checked, total, readErr = scanRows(ctx, file, wanted, func(r row) error {
+		checked, total, readErr = scanRows(t, ctx, file, wanted, func(r row) error {
 			select {
 			case rows <- r:
 				return nil

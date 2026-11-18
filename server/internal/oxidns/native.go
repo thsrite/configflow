@@ -7,7 +7,6 @@ import (
 	"math"
 	"path"
 	"regexp"
-	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -77,8 +76,9 @@ func loadNative(text *Node, label string) (*Node, error) {
 		case n.Tag == tagUnsupported:
 			return fail("OxiDNS YAML 只支持普通对象、数组和标量")
 		case n.Tag == tagFloat:
-			if f, _ := strconv.ParseFloat(n.Value, 64); math.IsInf(f, 0) || math.IsNaN(f) {
-				return fail("OxiDNS YAML 数字必须为有限值")
+			var f float64
+			if err := yamlx.Decode(n, &f); err != nil || math.IsInf(f, 0) || math.IsNaN(f) {
+				return fail(messageFiniteNumbers)
 			}
 		}
 		return nil
@@ -106,7 +106,10 @@ func parseYAML(text string, syntax error) (*Node, error) {
 	var validate func(*Node) error
 	validate = func(node *Node) error {
 		node = yamlx.Resolve(node)
-        if seen[node] { return nil }; seen[node] = true
+		if seen[node] {
+			return nil
+		}
+		seen[node] = true
 		if node.Kind == yaml.MappingNode {
 			for key, value := range yamlx.AllPairs(node) {
 				key = yamlx.Resolve(key)
@@ -131,13 +134,13 @@ func parseYAML(text string, syntax error) (*Node, error) {
 		case tagStr, tagBool, tagNull, tagInt, "!!timestamp", "!!binary":
 			return nil
 		case tagFloat:
-			var value float64
-			if err := yamlx.Decode(node, &value); err != nil || math.IsInf(value, 0) || math.IsNaN(value) {
-				return fail(messageFiniteNumbers)
-			}
+			// Finiteness is the bounded native document's schema check, not a
+			// second scalar resolver in the shared reader path.
 			return nil
 		default:
-			return errUnsupportedYAML
+			// Unknown/non-JSON scalar tags are retained by the native facade.
+			// Their JSON boundary is scalar text, as for timestamp and binary.
+			return nil
 		}
 	}
 	if err := validate(root); err != nil {
@@ -412,7 +415,7 @@ func ResourceReferences(document *Node) ([]string, error) {
 			return nil, err
 		}
 		for _, key := range []string{"file", "cert", "key"} {
-			if str(get(args, key)) != "" {
+			if resourcePresent(get(args, key)) {
 				if err := add(get(args, key)); err != nil {
 					return nil, err
 				}
@@ -426,7 +429,7 @@ func ResourceReferences(document *Node) ([]string, error) {
 			if err := files(nested); err != nil {
 				return nil, err
 			}
-			if str(get(nested, "ca")) != "" {
+			if resourcePresent(get(nested, "ca")) {
 				if err := add(get(nested, "ca")); err != nil {
 					return nil, err
 				}
@@ -450,7 +453,7 @@ func ResourceReferences(document *Node) ([]string, error) {
 	}
 	if ssl := get(http, "ssl"); isMap(ssl) {
 		for _, key := range []string{"cert", "key", "client_ca"} {
-			if str(get(ssl, key)) != "" {
+			if resourcePresent(get(ssl, key)) {
 				if err := add(get(ssl, key)); err != nil {
 					return nil, err
 				}

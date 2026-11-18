@@ -80,3 +80,23 @@ func BenchmarkTypedMosDNSUnrelatedFields(b *testing.B) {
 		})
 	}
 }
+
+func TestProxyCredentialEvidenceStaysLiteral(t *testing.T) {
+	for _, source := range []string{`{"rule_proxy_token":5}`, `{"rule_proxy_token":true}`, `{"rule_proxy_token":null}`, `{"rule_proxy_token":[]}`} {
+		var system model.SystemConfig
+		if err := json.Unmarshal([]byte(source), &system); err != nil {
+			t.Fatal(err)
+		}
+		if got := ProxyCredentials(system); got.Current != "" {
+			t.Fatal("R5 fallback became credential evidence")
+		}
+	}
+	var system model.SystemConfig
+	if err := json.Unmarshal([]byte(`{"rule_proxy_token":"current","retired_rule_proxy_tokens":["retired",5,null,{},true]}`), &system); err != nil {
+		t.Fatal(err)
+	}
+	got := ProxyCredentials(system)
+	if got.Current != "current" || len(got.Retired) != 1 || got.Retired[0] != "retired" {
+		t.Fatalf("literal evidence=%#v", got)
+	}
+}

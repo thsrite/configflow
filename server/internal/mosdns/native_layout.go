@@ -260,7 +260,7 @@ func layoutFor(config *model.Config) (nativeLayout, error) {
 
 // RuleProxyURL constructs a profile-scoped provider URL in protocol query order.
 func RuleProxyURL(config *model.Config, baseURL, sourceURL, part, sourceID string) (string, error) {
-	if config == nil || credentialMember(storedMembers(config.SystemConfig), "rule_proxy_token") == "" {
+	if config == nil || ProxyCredentials(config.SystemConfig).Current == "" {
 		return "", ErrRuleProxyToken
 	}
 	endpoint := "/api/mosdns/rule-proxy"

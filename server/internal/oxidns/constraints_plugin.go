@@ -319,7 +319,6 @@ func collectPluginIssues(plugin *Node, index int) []Issue {
 			errorAt(at, "占位符缺少右花括号", "template")
 		}
 	}
-	zero := I(0)
 
 	switch kind {
 	case "qname", "cname", "client_ip", "ptr_ip", "resp_ip", "question", "qtype", "qclass", "rcode", "mark", "random", "reload_provider":
@@ -537,12 +536,12 @@ func collectPluginIssues(plugin *Node, index int) []Issue {
 	}
 	switch kind {
 	case "cache":
-		if !isNone(get(args, "dump_file")) && equal(get(args, "dump_interval"), zero) {
+		if !isNone(get(args, "dump_file")) && numericZero(get(args, "dump_interval")) {
 			errorAt(P("dump_interval"), "配置持久化文件时，保存间隔必须大于 0", "range")
 		}
 		compare("min_positive_ttl", "max_positive_ttl", [2]*Node{})
 	case "prefer_ipv4", "prefer_ipv6":
-		if isTrue(nullable(args, "cache", B(true))) && equal(get(args, "cache_ttl"), zero) {
+		if isTrue(nullable(args, "cache", B(true))) && numericZero(get(args, "cache_ttl")) {
 			errorAt(P("cache_ttl"), "启用探测缓存时 TTL 必须大于 0", "range")
 		}
 	case "ip_selector":
@@ -586,7 +585,7 @@ func collectPluginIssues(plugin *Node, index int) []Issue {
 		}
 		if cache := get(args, "cache"); isMap(cache) && isTrue(nullable(cache, "enabled", B(true))) {
 			for _, key := range []string{"size", "ttl", "failure_ttl"} {
-				if equal(get(cache, key), zero) {
+				if numericZero(get(cache, key)) {
 					errorAt(P("cache", key), "启用缓存时此值必须大于 0", "range")
 				}
 			}
@@ -771,7 +770,7 @@ func collectPluginIssues(plugin *Node, index int) []Issue {
 	switch kind {
 	case "http_request":
 		count := 0
-		for _, present := range []bool{!isNone(get(args, "body")), !isNone(get(args, "json")), (str(get(args, "form")) != "")} {
+		for _, present := range []bool{!isNone(get(args, "body")), !isNone(get(args, "json")), (isMap(get(args, "form")) && mapSize(get(args, "form")) > 0)} {
 			if present {
 				count++
 			}
@@ -779,7 +778,7 @@ func collectPluginIssues(plugin *Node, index int) []Issue {
 		if count > 1 {
 			errorAt(P("body"), "body、json 和非空 form 不能同时配置", "mutually-exclusive")
 		}
-		if !isNone(get(args, "content_type")) && (!isNone(get(args, "json")) || (str(get(args, "form")) != "")) {
+		if !isNone(get(args, "content_type")) && (!isNone(get(args, "json")) || (isMap(get(args, "form")) && mapSize(get(args, "form")) > 0)) {
 			errorAt(P("content_type"), "content_type 仅用于原始 body", "dependency")
 		}
 		for _, key := range []string{"url", "body", "content_type"} {
@@ -902,7 +901,11 @@ func collectPluginIssues(plugin *Node, index int) []Issue {
 			if isStr(start) && isStr(end) && !deferred(start) && strings.TrimSpace(start.Value) == strings.TrimSpace(end.Value) {
 				errorAt(P("periods", j, "end"), "开始和结束时间不能相同", "range")
 			}
-			if isNone(start) && !(len(items(get(period, "weekdays"))) > 0) && !(len(items(get(period, "monthdays"))) > 0) {
+			weekdays, monthdays := get(period, "weekdays"), get(period, "monthdays")
+			// Wrong container types already have a schema diagnostic. Only
+			// meaningful day-list shapes participate in the cross-field rule.
+			dayLists := (isNone(weekdays) || isSeq(weekdays)) && (isNone(monthdays) || isSeq(monthdays))
+			if isNone(start) && dayLists && len(items(weekdays)) == 0 && len(items(monthdays)) == 0 {
 				errorAt(P("periods", j), "省略时间段时至少设置星期或月日", "required")
 			}
 			for k, day := range items(get(period, "weekdays")) {

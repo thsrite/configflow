@@ -18,6 +18,7 @@ import (
 
 	"configflow/internal/netipx"
 	"configflow/internal/weburl"
+	"configflow/internal/yamlx"
 )
 
 // Validation follows the pinned OxiDNS 1.6.1 schema embedded in schemas/ (checked against backend/schemas/oxidns).
@@ -426,6 +427,7 @@ func numberText(n json.Number) string {
 
 // ValidateSchema checks value against schema; issues are errors first.
 func ValidateSchema(value *Node, schema *Schema, at Path) []Issue {
+	value = yamlx.Resolve(value)
 	var issues []Issue
 	add := func(message, code, severity string, where Path) {
 		issues = append(issues, Issue{Path: append(Path{}, where...), Message: message, Code: code, Severity: severity})

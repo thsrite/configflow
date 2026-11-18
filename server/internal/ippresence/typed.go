@@ -1,8 +1,10 @@
 package ippresence
 
 import (
+	"configflow/internal/store"
 	"context"
 	"errors"
+	"os"
 
 	"configflow/internal/model"
 	"configflow/internal/rulefetch"
@@ -53,7 +55,8 @@ func TypedClassicalIPLines(ctx context.Context, rule model.RuleConfig, library [
 	item, config := cacheMetadata(rule, library)
 	path, err := rulefetch.RuleCacheReadPath(ctx, item, config.GetList("rule_library"))
 	if err != nil {
-		if caught(err) {
+		var pathError *os.PathError
+		if errors.As(err, &pathError) || errors.Is(err, store.ErrStorage) {
 			return nil, nil
 		}
 		return nil, err

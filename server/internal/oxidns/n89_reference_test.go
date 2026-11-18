@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"configflow/internal/testgolden"
+	"configflow/internal/yamlx"
 	"configflow/internal/yamlx/yamlxtest"
 )
 
@@ -16,7 +17,7 @@ import (
 func nativeReference(t *testing.T, original row) (row, bool) {
 	t.Helper()
 	switch original.Fn {
-	case "normalize", "load_native_yaml", "native_document", "generate", "downloads", "custom_files", "resource_references", "validate_resource_files", "read_common_settings", "apply_common_settings", "read_routing", "resource_downloads", "prepare_editor":
+	case "normalize", "load_native_yaml", "native_document", "generate", "downloads", "custom_files", "unavailable_rulesets", "resource_references", "validate_resource_files", "read_common_settings", "apply_common_settings", "read_routing", "apply_routing", "resource_downloads", "prepare_editor":
 	default:
 		return row{}, false
 	}
@@ -45,8 +46,14 @@ func nativeReference(t *testing.T, original row) (row, bool) {
 		case map[string]any:
 			// Full native drafts are YAML. Template DNS lines may use a separate text
 			// syntax, so they are intentionally outside this reader-only projection.
-			if text, ok := v["native_config"].(string); ok {
-				v["native_config"] = normalize(text)
+			for _, key := range []string{"native_config", "custom_config", "local_dns", "remote_dns", "fallback_dns"} {
+				if text, ok := v[key].(string); ok {
+					if key == "native_config" || key == "custom_config" {
+						v[key] = normalize(text)
+					} else if root, err := yamlx.Parse([]byte(text)); err == nil && referenceDNSContainer(root) {
+						v[key] = normalize(text)
+					}
+				}
 			}
 			for _, child := range v {
 				visit(child)
@@ -63,7 +70,8 @@ func nativeReference(t *testing.T, original row) (row, bool) {
 			args[0] = normalize(text)
 		}
 	}
-	if len(replacements) == 0 {
+	metadataChanged := projectReferenceMetadata(original.Fn, args)
+	if len(replacements) == 0 && !metadataChanged {
 		return row{}, false
 	}
 	input, err := json.Marshal(struct {
@@ -117,6 +125,12 @@ func nativeReference(t *testing.T, original row) (row, bool) {
 
 func compare(t *testing.T, r row, got *Node, err error) string {
 	t.Helper()
+	if nativeValidationExpectation(t, r, got, err) || nativeCapabilityExpectation(t, r, got, err) {
+		return ""
+	}
+	if nativeRequestExpectation(t, r, err) {
+		return ""
+	}
 	difference := compareFrozen(r, got, err)
 	if difference == "" {
 		return ""
@@ -147,4 +161,18 @@ func nativeOracle(t *testing.T) *testgolden.Lines {
 	nativeOracles.byTest[t] = oracle
 	t.Cleanup(func() { nativeOracles.Lock(); delete(nativeOracles.byTest, t); nativeOracles.Unlock() })
 	return oracle
+}
+
+func referenceDNSContainer(root *Node) bool {
+	if isMap(root) {
+		return has(root, "addr")
+	}
+	if isSeq(root) {
+		for _, item := range items(root) {
+			if isStr(item) || isMap(item) && has(item, "addr") {
+				return true
+			}
+		}
+	}
+	return false
 }

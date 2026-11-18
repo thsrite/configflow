@@ -100,7 +100,7 @@ func Build(ctx context.Context, id string, engine Engine, baseURL string) (Downl
 	if err := ctx.Err(); err != nil {
 		return Download{}, err
 	}
-faultprobe.Point(ctx, faultprobe.GenerateBuild)
+	faultprobe.Point(ctx, faultprobe.GenerateBuild)
 	var config *jsonx.Object
 	var native *model.Config
 	var out Output

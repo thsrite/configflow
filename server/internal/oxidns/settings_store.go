@@ -84,6 +84,7 @@ func ReadSettings(ctx context.Context, profileID string) (StoredSettings, error)
 	if err != nil {
 		return StoredSettings{}, err
 	}
+	node, _ = storedProjection(node)
 	normalized, err := NormalizeSettings(node, false)
 	if err != nil {
 		return StoredSettings{}, err

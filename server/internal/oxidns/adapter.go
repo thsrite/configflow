@@ -20,6 +20,7 @@ type Profile struct {
 	presenceMu      sync.Mutex
 	presenceVersion uint64
 	presence        nativeIPResolver
+	issues          []model.FieldIssue
 }
 
 // NewTypedProfile projects the consumed members without encoding model.Raw or
@@ -34,6 +35,8 @@ func NewTypedProfile(source *model.Config) (*Profile, error) {
 	if err != nil {
 		return nil, err
 	}
+	var issues []model.FieldIssue
+	settings, issues = storedProjection(settings)
 	if !isNone(settings) {
 		set(doc, "oxidns", settings)
 	}
@@ -64,7 +67,8 @@ func NewTypedProfile(source *model.Config) (*Profile, error) {
 		}
 	}
 	system := source.SystemConfig
-	set(doc, "system_config", M("server_domain", system.ServerDomain, "rule_proxy_token", system.RuleProxyToken, "config_token", system.ConfigToken, "default_profile_id", text(system.DefaultProfileID, "default"), "node_test_dns", strs(system.NodeTestDNS)))
+	credentials := mosdns.ProxyCredentials(system)
+	set(doc, "system_config", M("server_domain", system.ServerDomain, "rule_proxy_token", credentials.Current, "retired_rule_proxy_tokens", strs(credentials.Retired), "config_token", system.ConfigToken, "default_profile_id", text(system.DefaultProfileID, "default"), "node_test_dns", strs(system.NodeTestDNS)))
 	if system.NodeTestDNSConfig != nil {
 		v := system.NodeTestDNSConfig
 		set(get(doc, "system_config"), "node_test_dns_config", M("mode", v.Mode, "servers", strs(v.Servers)))
@@ -120,7 +124,7 @@ func NewTypedProfile(source *model.Config) (*Profile, error) {
 	}
 	set(doc, "subscription_aggregations", aggregations)
 
-	return &Profile{doc: doc, source: source}, nil
+	return &Profile{doc: doc, source: source, issues: issues}, nil
 }
 
 func text(value *string, fallback string) string {
@@ -251,11 +255,22 @@ func ProfileFromJSON(data []byte) (*Profile, error) {
 		source.RuleLibrary = shared.RuleLibrary
 	}
 	if raw, ok := fields.Get("agents"); ok {
-		if err = json.Unmarshal(raw, &source.Agents); err != nil {
+		var projection model.Fields
+		if err := projection.Set("agents", raw); err != nil {
 			return nil, err
 		}
+		data, err := projection.MarshalJSON()
+		if err != nil {
+			return nil, err
+		}
+		var system model.System
+		if err := json.Unmarshal(data, &system); err != nil {
+			return nil, err
+		}
+		source.Agents = system.Agents
 		source.HasAgents = true
 	}
+
 	var resources model.Fields
 	for _, key := range []string{"nodes", "subscriptions", "subscription_aggregations"} {
 		if raw, ok := fields.Get(key); ok {

@@ -91,3 +91,29 @@ func TestC29HEADReturnsGETHeadersWithoutSaving(t *testing.T) {
 		}
 	}
 }
+
+func TestNativeRequestTypesReturn400WithoutWrites(t *testing.T) {
+	srv := httpxtest.New(t, httpxtest.Options{Register: []func(*httpx.Router){api.Register}})
+	for _, body := range []string{`{"custom_matches":[{"enabled":0}]}`, `{"ros_route":{"args":{"routing_table":5}}}`, `{"ros_route":{"args":{"gateway4":[]}}}`} {
+		before, err := srv.Repo.ExportAll(srv.Context(), false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req := httptest.NewRequest("POST", "/api/oxidns/settings", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		response := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(response, req)
+		if response.Code != 400 {
+			t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+		}
+		after, err := srv.Repo.ExportAll(srv.Context(), false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		a, _ := before.MarshalJSON()
+		b, _ := after.MarshalJSON()
+		if string(a) != string(b) {
+			t.Fatal("rejected request wrote database")
+		}
+	}
+}

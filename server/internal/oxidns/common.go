@@ -1126,7 +1126,7 @@ func readCommon(document, settings *Node, p *Profile) (CommonView, error) {
 		(str(get(get(parkedTCP, "args"), "listen")) != "") && (str(get(get(parkedTCP, "args"), "entry")) != "")
 	if tcp == nil && !restorable && (c.plugin("server_udp") == nil || !c.allowed("server_udp", "").Editable ||
 		!isMap(udp) || !(str(get(udp, "listen")) != "") || !(str(get(udp, "entry")) != "")) {
-		caps["tcp_enabled"] = capability(false, "缺少可复用的 UDP 监听地址和处理入口，请在监听服务中配置 TCP", "server_tcp")
+		caps["tcp_enabled"] = capability(false, messageTCPPrerequisites, "server_tcp")
 	}
 	if tcp != nil && c.plugin("server_udp") != nil && (!isMap(udp) || !isMap(get(tcp, "args")) ||
 		!equal(get(get(tcp, "args"), "listen"), get(values, "listen")) || !equal(get(get(tcp, "args"), "entry"), get(udp, "entry"))) {
@@ -1378,7 +1378,7 @@ func (c *commonContext) patchDirect(field string, value *Node) error {
 		}
 		holder = get(plugin, "args")
 	}
-	if field == "cache_lazy_ttl" && equal(value, I(0)) {
+	if field == "cache_lazy_ttl" && numericZero(value) {
 		value = nil
 	}
 	if containsString([]string{"log.file", "rule_update.args.timeout", "rule_update.args.outbound", "rule_update.args.socks5"}, field) && equal(value, S("")) {

@@ -399,3 +399,9 @@ func externalIncludes(document *Node) bool {
 	return !isNone(value) && (!isSeq(value) || len(value.Content) > 0)
 }
 func positive(value *Node) bool { number, ok := ratOf(value); return ok && number.Sign() > 0 }
+
+// numericZero checks a quantity without making bool and int interchangeable.
+func numericZero(node *Node) bool {
+	value, ok := ratOf(node)
+	return ok && value.Sign() == 0
+}

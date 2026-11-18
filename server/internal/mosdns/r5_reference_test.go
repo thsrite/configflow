@@ -130,7 +130,12 @@ func r5Arguments(fn string, args []any) ([]any, bool) {
 		}
 		for _, key := range []string{"rules", "rule_sets"} {
 			if old, ok := original.Get(key); ok {
-				rules, sets, err := SplitRules(native)
+				data, err := jsonx.Compact(jsonx.Obj("rules", original.Value("rules"), "rule_sets", original.Value("rule_sets")))
+				var lists ruleLists
+				if err == nil {
+					err = json.Unmarshal(data, &lists)
+				}
+				rules, sets := lists.Rules, lists.RuleSets
 				if err == nil {
 					value := rules
 					if key == "rule_sets" {

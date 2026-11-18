@@ -18,11 +18,16 @@ def call(name, a):
         sources = {} if len(a) > 2 and a[2] else None
         document = nv.native_document(a[0], validate_arguments=a[1] if len(a) > 1 else True, sources=sources)
         return {'document': document, 'sources': sources}
+    if name == 'apply_routing':
+        notices = a[6] if len(a) > 6 else None
+        document, settings = rt.apply_routing(*a[:5], before_config=a[5] if len(a) > 5 else None, notices=notices)
+        return [document, settings, notices]
     functions = {
         'load_native_yaml': nv.load_native_yaml,
         'generate': cv.generate_oxidns_config,
         'downloads': cv.get_oxidns_ruleset_downloads,
         'custom_files': cv.get_oxidns_custom_files,
+        'unavailable_rulesets': cv.unavailable_rulesets,
         'resource_references': nv.resource_references,
         'validate_resource_files': nv.validate_resource_files,
         'read_common_settings': cm.read_common_settings,
