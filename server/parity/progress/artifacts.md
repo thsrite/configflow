@@ -1,4 +1,4 @@
-# 手动冻结 artifact 接线（HR，ported，待独立 Opus 复核）
+# 手动冻结 artifact 接线（HR，verified：独立 Opus 复核见 ../review-artifacts.md）
 
 分支 `go-port-artifacts`，起点 `go@03257978f`。本报告只描述三个手动导出入口；原 C34
 其余入口的既有复核结论保持。所有验证固定在指定 .32 测试服务器，使用合成夹具；

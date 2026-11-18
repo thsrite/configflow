@@ -91,6 +91,16 @@ class ArtifactProofTests(unittest.TestCase):
         self.assertTrue(diffs)
         self.assertFalse(any('invalid-artifact-proof' in kind for _, kind in diffs))
 
+    def test_main_config_semantic_difference_is_reported(self):
+        # Review negative control: replacing body.content with the proven main
+        # file projection must not hide a real main-config difference.
+        import shutil
+        shutil.rmtree(self.bfolder)
+        self.b, _ = fixture(self.roots[1], self.b['id'], b'dns:\n  enable: false\n')
+        diffs = self.compare()
+        self.assertTrue(any(path.startswith('body.content') for path, _ in diffs), diffs)
+        self.assertFalse(any('invalid-artifact-proof' in kind for _, kind in diffs))
+
     def test_cached_proof_rejects_an_unstable_public_record(self):
         proofs = pd.ArtifactProofs(self.roots, pd.parsed)
         proofs.prove(1, self.b)

@@ -77,8 +77,8 @@ batch-7 实际补齐的模块如下，均非“有意不做”：
 batch-7 `proddiff-baseline.txt` **仍有34条精确 deferred→A14/A21**，全部属于 artifact
 比较，指34个字段/状态差异而不是34条路由。接线后必须删除并确认 stale=0，不能保留豁免。
 
-**后续接线（go-port-artifacts，ported，待独立 HR 复核）**：上述三个 artifact 成功入口已复用
-A14 frozen owner 接通，34条延期基线已删除。这里的基线/批次盘点属于历史固定快照；
+**后续接线（go-port-artifacts，verified）**：上述三个 artifact 成功入口已复用
+A14 frozen owner 接通，34条延期基线已删除；独立 Opus HR 复核 0 high（[review-artifacts.md](review-artifacts.md)）。这里的基线/批次盘点属于历史固定快照；
 本次实现、逐类风险、定向验证和 compare 结果见 [progress/artifacts.md](progress/artifacts.md)。
 
 ### 1.4 账面错标和有意不移植

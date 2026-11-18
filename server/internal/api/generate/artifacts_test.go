@@ -237,3 +237,62 @@ func TestCompleteC34RegistrationHasOneOwner(t *testing.T) {
 		t.Fatalf("C34 owns %d methods, want 59", count)
 	}
 }
+
+// Review (artifacts HR): only a canonical lowercase 32-hex capability selects a
+// directory. Each variant has a planted, otherwise valid record under exactly
+// that name, so a looser ID check would serve it instead of 409.
+func TestArtifactPreviewIDVariantsNeverSelectPlantedRecords(t *testing.T) {
+	s := artifactServer(t)
+	artifact := createArtifact(t, s, "/api/generate/surge/artifact")
+	root := filepath.Join(s.DataDir, ".generated-previews")
+	source := filepath.Join(root, artifact.ID)
+	raw, err := os.ReadFile(filepath.Join(source, "record.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	archive, err := os.ReadFile(filepath.Join(source, "bundle.tar.gz"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct{ name, id string }{
+		{"uppercase", strings.ToUpper(artifact.ID)},
+		{"trailing-newline", artifact.ID + "\n"},
+		{"short", artifact.ID[:31]},
+		{"long", artifact.ID + "0"},
+		{"dot-prefix", "." + artifact.ID[1:]},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var record map[string]any
+			if err := json.Unmarshal(raw, &record); err != nil {
+				t.Fatal(err)
+			}
+			record["id"] = tt.id
+			planted, err := json.Marshal(record)
+			if err != nil {
+				t.Fatal(err)
+			}
+			folder := filepath.Join(root, tt.id)
+			if err := os.Mkdir(folder, 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(folder, "record.json"), planted, 0600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(folder, "bundle.tar.gz"), archive, 0600); err != nil {
+				t.Fatal(err)
+			}
+			for _, action := range []string{"file?path=surge.conf", "download"} {
+				result := s.Get("/api/generate/artifacts/" + url.PathEscape(tt.id) + "/" + action).WantStatus(409)
+				var body struct {
+					Code string `json:"code"`
+				}
+				if err := json.Unmarshal(result.Body, &body); err != nil || body.Code != "preview_changed" {
+					t.Fatalf("%s: planted record selected: %s", action, result.Body)
+				}
+			}
+		})
+	}
+	// Positive control: the canonical ID with the same bytes is served.
+	s.Get("/api/generate/artifacts/" + artifact.ID + "/file?path=surge.conf").WantStatus(200)
+}
