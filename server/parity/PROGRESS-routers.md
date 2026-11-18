@@ -842,7 +842,7 @@ Tests: `test_router_rule_sync.py` (27), `test_routeros_nat_list_sync.py` (6), `t
 
 Routes: none here (`GET|PUT|POST /api/routers/<id>/rule-sync` handlers are R15).
 
-Notes for porter: registers `repo.Hooks.JobLock` (= `rule_sync_store.job_lock`: non-blocking in-process lock + `flock` on `DATA_DIR/router-rule-sync/<token>.lock`; keep the lock file, PORTING rule 7), `tasks.SetRows(tasks.SlotRouters, …)`, `tasks.SetRunner("router_rule_sync", …)` (RouterError → `*tasks.Conflict`), `lifecycle.Loop` for `rule_sync.start_loop` (app.py). Receipts `DATA_DIR/router-rule-sync/*.json` byte-identical. `capture_manual`, `needs_baseline`, `start_job`, `paused_message` are used by R13/R15. Idle CPU history (#534–#537): keep the loop's idle gating exactly. Task status through `notifications.TaskStatus`.
+Notes for porter: reuse O3-6b `RouterJobLock` (the sole routers-owned L1 Keyed shared with `repo.Hooks.JobLock`); do not add a second lock map or recreate `router-rule-sync/*.lock` files. Existing Python locks stay untouched. Register `tasks.SetRows(tasks.SlotRouters, …)`, `tasks.SetRunner("router_rule_sync", …)` (RouterError → `*tasks.Conflict`), `lifecycle.Periodic` for `rule_sync.start_loop` (O3 table: 30 s first/interval, first authenticated request activation). Receipts `DATA_DIR/router-rule-sync/*.json` byte-identical. `capture_manual`, `needs_baseline`, `start_job`, `paused_message` are used by R13/R15. Idle CPU history (#534–#537): keep the loop's idle gating exactly. Task status through `notifications.TaskStatus`.
 
 ## R15 — router HTTP routes, policy workspace, upstream-router reminder route
 
@@ -859,7 +859,7 @@ Routes (21, 0 done):
 
 `GET /api/routers`; `POST /api/routers`; `PUT /api/routers/<router_id>`; `DELETE /api/routers/<router_id>`; `POST /api/routers/<router_id>/probe`; `GET /api/routers/<router_id>/report`; `POST /api/routers/<router_id>/plan`; `POST /api/routers/<router_id>/apply`; `GET /api/routers/<router_id>/routes`; `POST /api/routers/<router_id>/routes/plan`; `POST /api/routers/<router_id>/routes/apply`; `GET /api/routers/<router_id>/policy`; `GET /api/routers/<router_id>/policy-settings`; `PUT /api/routers/<router_id>/policy-settings`; `POST /api/routers/<router_id>/policy-settings/preview`; `GET /api/routers/<router_id>/rule-sync`; `PUT /api/routers/<router_id>/rule-sync`; `POST /api/routers/<router_id>/rule-sync`; `GET /api/routers/gateway-forwarding`; `POST /api/routers/gateway-forwarding`; `GET /api/agents/<agent_id>/upstream-routers`
 
-Notes for porter: **rule 4b is critical here**: probe, apply, routes/apply, rule-sync, settings PUT/DELETE must run to completion with `context.WithoutCancel(ctx)` even if the browser disconnects — a half-finished publish on a router is the worst outcome. `_manual_sync_lock` / `_router_settings_lock` decorators take `job_lock` (409 texts). `Cache-Control: no-store` on gateway-forwarding and upstream-routers. `gateway-forwarding` calls A20 (`gateway_forwarding_entry`, `persist_gateway_forwarding`) directly from this API package (no cycle); until A20 exists it fails closed (500 with a "not wired" error), never silently. The `/api/profiles/<id>/…` forms do not exist for routers (profile via `X-ConfigFlow-Profile`/`?profile=`).
+Notes for porter: **rule 4b is critical here**: probe, apply, routes/apply, rule-sync, settings PUT/DELETE must call owners that start with `lifecycle.Detach(ctx)` and check before commits; browser disconnects do not abort work, Runtime shutdown does — a half-finished publish on a router is the worst outcome. `_manual_sync_lock` / `_router_settings_lock` decorators take `job_lock` (409 texts). `Cache-Control: no-store` on gateway-forwarding and upstream-routers. `gateway-forwarding` calls A20 (`gateway_forwarding_entry`, `persist_gateway_forwarding`) directly from this API package (no cycle); until A20 exists it fails closed (500 with a "not wired" error), never silently. The `/api/profiles/<id>/…` forms do not exist for routers (profile via `X-ConfigFlow-Profile`/`?profile=`).
 
 ## R16 — client devices and discovery
 
@@ -894,11 +894,11 @@ Notes for porter: preview tokens are `itsdangerous.URLSafeTimedSerializer(JWT_SE
 
 | Declared in | Go signature | Python | Provided by |
 |---|---|---|---|
-| `repo.Hooks` (C03) | `JobLock func(profileID, routerID string, router *jsonx.Object) (release func(), acquired bool)` — default *always acquired* | `routers/rule_sync_store.job_lock` | R14 (must be wired before any Go router write route registers, i.e. before R15) |
+| `repo.Hooks` (C03/O3-6b) | `JobLock func(ctx context.Context, profileID, routerID string, router *jsonx.Object) (release func(), acquired bool)` — unwired default rejects | `routers/rule_sync_store.job_lock` | O3-6b: `routers.Wire` adapts the unique `RouterJobLock`; R12/R14/R15 reuse this L1 before L2, never reacquire it in driver methods |
 | `repo.Hooks` (C04/C34) | `RedactRouters func(routers any) any` — default: `ExportAll(desensitize)` refuses | `routers/store.redact_routers` | R01 |
 | `notifications.Sources` (C07) | `Summarize func(report, plan *jsonx.Object) *jsonx.Object` — default: error "not wired" | `routers/pending.summarize` | R13 |
 | `tasks` (C07) | `SetRows(tasks.SlotRouters, RowsFunc)`; `SetRunner("router_rule_sync", RunFunc)` with `*tasks.Conflict` for RouterError | `routes/tasks._router_rows`, `rule_sync.start_job` | R14 |
-| `lifecycle` (C06) | `lifecycle.Loop("router_rule_sync", func(ctx))` | `app.py` → `rule_sync.start_loop` | R14 |
+| `lifecycle` (O3) | `lifecycle.Periodic` plus request-triggered `Spawn` | `app.py` → `rule_sync.start_loop` | R14 (O3 table 30/30, first authenticated request) |
 | `convert.MihomoHooks` (C18) | `IsFullTun func(config *jsonx.Object) (bool, error)` | `router_split.is_full_tun` | R02 |
 | `oxidns` (C22 stub, C27 owner) | proposed `ClassicalIPLines func(ctx context.Context, item, config any) any` (nil/true/false) | `rule_ip_presence.classical_ip_lines` | R02 (C27 declares the hook when it replaces the stub) |
 | `notifications/compat.go`, `repo/compat_oxidns.go` | replace copies by imports of `routerdoc.RoutersOf`, `routerdoc.IPv4`, `NormalizeMAC`, `ValidateBindings` | `store.routers_of`, `lan_clients`, `validate_bindings` | R01, R17 (they edit only their own packages; the coordinator switches repo/notifications) |

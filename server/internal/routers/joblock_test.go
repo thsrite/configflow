@@ -139,7 +139,7 @@ func TestO36bJobHookInsideRepositoryAndLegacySentinel(t *testing.T) {
 	if _, duplicate := jobLockHook(held, "alias", "alias", connection); duplicate {
 		t.Fatal("commit guard bypassed the publisher's key")
 	}
-	if lockx.Violations() != violations {
+	if lockx.Violations() != violations || violations != 0 {
 		t.Fatal("nonblocking commit guard reported an order violation")
 	}
 

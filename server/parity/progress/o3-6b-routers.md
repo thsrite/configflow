@@ -69,3 +69,24 @@ RT_HOST=sunbroke@192.168.0.32 rt --back server/internal/routers -- bash -lc 'cd 
 ```
   退出0，`ok configflow/internal/routers 30.676s`。
 下一步：真实I/O中途取消、L2等待、repo caller-held提交与并发发布压力；R10/6c合入后rebase及最终门禁。
+
+## 实际I/O、等待和并发集成
+
+- TestO36bIkuaiWriteInFlightRuntimeBoundary：真实devhttp与回环HTTP；设备收到delete后阻塞但未处理。
+  Runtime关机取消抵达服务端request，返回原生context.Canceled，device不变；只断开客户端时I/O仍等待，放行回复后完整删除。
+  未缩短生产10秒timeout。TestO36bOperationWaitRuntimeBoundary：实际L2持锁等待，停止不等释放就取消，
+  断开后仍等待并在释放后完成，不将context.Canceled误映射成busy。
+- TestO36bConcurrentPublicationsShareJobLock：真实Runtime中首个owner持L1→L2，设备Apply证明后在DB BeforeCommit阻塞；
+  24个其他profile/router别名同时try，全部立即冲突、零额外设备I/O；首个提交后锁释放，下一owner可完成device补偿与DB撤回。
+  结果channel在持锁函数的所有defer执行后发送，避免把测试唤醒与解锁顺序做成竞态。
+- TestO36bNATAndEmptyOwnerRuntimeBoundary：R07地址/NAT更新与恢复、R04空restore/ApplyMany，真实Runtime停止后
+  零I/O/零journal/零touched；断开后更新+恢复完整完成。正常路径明确断言lockx.Violations()==0。
+- .32 新I/O/等待/并发组race3通过7.164s、vet通过；随后全部TestO36b组合race3通过33.644s、vet通过。
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt --back server/internal/routers/joblock_test.go --back server/internal/routers/joblock_repo_test.go --back server/internal/routers/o36b_io_test.go --back server/internal/routers/o36b_fastpath_test.go -- bash -lc 'cd server && gofmt -w internal/routers/joblock_test.go internal/routers/joblock_repo_test.go internal/routers/o36b_io_test.go internal/routers/o36b_fastpath_test.go && go vet ./internal/routers/ && go test -race -count=3 -run "^TestO36b" ./internal/routers/'
+```
+更新PROGRESS-routers中已过时的R14 flock/JobLock默认放行、旧签名及handler WithoutCancel指引，防止后续重复造锁。
+
+既定关机边界仍保留（review-r09 F6）：已经发送到设备的写入可能留下部分状态，关机后补偿也是写入，不能绕过取消；
+后续R12恢复/人工核验负责该状态，不把本步取消闸门宣称为完整发布事务原子性。
+接下来跑当前合并树routers/devhttp/routersplit完整相关包race，等待R10与6c正式合入通知后rebase。
