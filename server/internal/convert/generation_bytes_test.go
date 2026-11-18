@@ -124,6 +124,9 @@ func TestN88GenerationBytes(t *testing.T) {
 			t.Fatalf("source archive changed: %s", source)
 		}
 	}
+	if err := validateGenerationByteCoverage(expected, rows); err != nil {
+		t.Fatal(err)
+	}
 	counts := map[string]int{}
 	for _, sample := range expected.Cases {
 		entries, ok := rows[sample.Source]
@@ -142,4 +145,34 @@ func TestN88GenerationBytes(t *testing.T) {
 		}
 	}
 	t.Logf("original Go byte comparisons: %v", counts)
+}
+
+// The frozen baseline covers all three engines. A shortened or duplicated
+// manifest must fail before it can silently turn a missing engine into a pass.
+func validateGenerationByteCoverage(fixture generationByteFixture, rows map[string][]*jsonx.Object) error {
+	counts := map[string]int{}
+	seen := map[string]bool{}
+	for _, sample := range fixture.Cases {
+		entries, ok := rows[sample.Source]
+		if !ok || sample.Row < 0 || sample.Row >= len(entries) {
+			return fmt.Errorf("invalid source row: %s/%d", sample.Source, sample.Row)
+		}
+		key := fmt.Sprintf("%s/%d", sample.Source, sample.Row)
+		digest, err := hex.DecodeString(sample.SHA256)
+		if seen[key] || err != nil || len(digest) != sha256.Size {
+			return fmt.Errorf("invalid or duplicate byte baseline entry: %s", key)
+		}
+		seen[key] = true
+		counts[entries[sample.Row].GetString("fn")]++
+	}
+	want := map[string]int{"generate": 2353, "loon": 1064, "surge": 1131}
+	if len(counts) != len(want) {
+		return fmt.Errorf("byte baseline engine coverage changed: %v", counts)
+	}
+	for name, count := range want {
+		if counts[name] != count {
+			return fmt.Errorf("byte baseline %s coverage=%d, want %d", name, counts[name], count)
+		}
+	}
+	return nil
 }

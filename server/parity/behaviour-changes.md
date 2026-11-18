@@ -1100,3 +1100,12 @@ Provider 改名规则里的非 ASCII 分组序号（如 `<$١>`、`<$１>`）保
 属于 PORTING 已批准的 CPython 专有 Unicode 范围。旧 golden 不改；两条 review 行和
 含 `$1$0$١` 的八条旧语料各有完整 native 期望。ASCII `$1`、`$01`、`$0` 及越界仍按原业务验证。
 override 和改名规则按精确大小写键读取，未知大小写拼法继续忽略。
+
+### N8-8a review — displaced YAML anchor repair
+
+MaterializeAliases now also handles a definition moved after its first consumer,
+rather than deleted. The first consumer remains the definition and the old
+physical occurrence loses its duplicate Anchor; later aliases keep their exact
+binding. This restores valid Edit behavior without weakening Marshal policy or
+adding a production Parse/Equal pass. Normal converter byte expectations and the
+31 explicit input-immutability paths are unchanged.

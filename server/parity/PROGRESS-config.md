@@ -2523,6 +2523,13 @@ centralized within yamlxtest; the empty-stream contract has a regression test.
 
 ## N8-8a — typed convert foundations (2026-11-18)
 
+独立复核（`go-review-n8-8a`，作者基线 `3f328827`）已完成，1 medium、1 low 均已修，0 open：
+MaterializeAliases 在原定义移到首次 alias 后面时正确撤掉旧 Anchor，公开 Edit 可闭合；
+字节门新增三种引擎精确数量和 source/row 去重检查，防止缩成 10 条 Mihomo 而虚假通过。
+旧基线/当前树各抽三引擎首中末共 9 样本，均匹配冻结原始字节 SHA；31 路径副作用夹具无额外放宽。
+.32 gofmt/vet、复核新增测试与风险代表定向 race 全绿；未重跑作者整套 corpus/fuzz/4548 输出。
+详细结论、命令和剩余迁移边界：[review-n8-8a.md](review-n8-8a.md)。
+
 Completed on `go-n8-8a`, rebased onto `go@fbbe382ec` (batch-4 included).
 Common rules, node conversion/caches, dialer resource graphs/Provider topology and
 EasyTier consume typed model records and native Nodes; old signatures are codecs

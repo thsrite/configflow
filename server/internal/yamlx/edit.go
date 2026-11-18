@@ -221,7 +221,16 @@ func MaterializeAliases(doc *Node) {
 	}
 	var walk func(*Node)
 	walk = func(n *Node) {
-		if n == nil || emitted[n] {
+		if n == nil {
+			return
+		}
+		if emitted[n] {
+			// A preceding consumer may now own this definition. If the old
+			// definition was moved rather than removed, do not emit its anchor
+			// again: later aliases have already been bound to the first copy.
+			if definitions[n] != n {
+				n.Anchor = ""
+			}
 			return
 		}
 		if n.Kind == yaml.AliasNode && n.Alias != nil {
