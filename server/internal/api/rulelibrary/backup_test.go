@@ -9,7 +9,6 @@ import (
 
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/rulefetch"
-	"configflow/internal/rules"
 )
 
 func assertCacheBackup(t *testing.T, path, want string) {
@@ -75,10 +74,31 @@ func TestCacheBackupParticipatesInUnchangedCheck(t *testing.T) {
 	if err = os.Chtimes(path, stamp, stamp); err != nil {
 		t.Fatal(err)
 	}
-	if rules.TouchUnchangedCache(path, current) {
+	assertCacheBackup(t, path, "+.old.example\n")
+	shared, err := s.Repo.SharedPath(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	relative, err := filepath.Rel(shared, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	written, err := s.Repo.WriteSharedTextIfChanged(s.Context(), relative, current)
+	if err != nil || written != path {
+		t.Fatal(written, err)
+	}
+	replaced, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if os.SameFile(previous, replaced) {
 		t.Fatal("previous-version backup incorrectly qualified as unchanged")
 	}
-	assertCacheBackup(t, path, "+.old.example\n")
+	assertCacheBackup(t, path, string(current))
 	if _, err = (&Service{client: rulefetch.DefaultClient}).Cache(s.Context(), recordJSON(t, `{"rule_ids":["manual"]}`)); err != nil {
 		t.Fatal(err)
 	}
@@ -90,12 +110,21 @@ func TestCacheBackupParticipatesInUnchangedCheck(t *testing.T) {
 	if err = os.Chtimes(path, stamp, stamp); err != nil {
 		t.Fatal(err)
 	}
-	if !rules.TouchUnchangedCache(path, current) {
-		t.Fatal("matching primary and backup did not qualify as unchanged")
+	backupBefore, err := os.Stat(path + ".bak")
+	if err != nil {
+		t.Fatal(err)
+	}
+	written, err = s.Repo.WriteSharedTextIfChanged(s.Context(), relative, current)
+	if err != nil || written != path {
+		t.Fatal(written, err)
 	}
 	after, err := os.Stat(path)
 	if err != nil || !os.SameFile(before, after) || !after.ModTime().After(stamp) {
 		t.Fatal("unchanged cache was replaced or not touched", err)
+	}
+	backupAfter, err := os.Stat(path + ".bak")
+	if err != nil || !os.SameFile(backupBefore, backupAfter) || !backupBefore.ModTime().Equal(backupAfter.ModTime()) {
+		t.Fatal("unchanged backup was replaced or touched", err)
 	}
 }
 
