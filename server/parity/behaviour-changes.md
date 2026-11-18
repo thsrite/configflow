@@ -1204,6 +1204,12 @@ already preserve these counts. Unchanged numeric notation, invalid-field R5
 provenance and finite/unknown siblings remain intact. These corrections add no
 new D2 signature transition and do not change the documented null rollback risk.
 
+## N8-9 discovery — typed boundaries
+
+- 畸形存储值改为类型校验：discovery 的布尔开关只接受 bool，错型使用 R5 缺省值。合成差分夹具的 `auto_probe: 1` 从 Python 的 true 变为 false，下次保存设置时写回 false；普通 true/false 不变。HTTP 差分只对这个字段逐项断言，其余响应、Agent 请求和落盘数据严格比较。
+- 规则库 id/name/source_type/behavior/content、规则 id/itemType/rule_type/value/library_rule_id/policy、策略组 id/name 和参与操作的 Agent 标识字段，只有 model 记录错型时才拒绝，错误为「<资源> <id> 的 <字段> 必须是字符串，当前值：<存储 JSON>」。数字文本和整数字符串使用 model 的共享解码规则；合法空值、缺失和 null 不额外收紧。
+- discovery 的 11 个写请求使用 native BindSilent：畸形、空 body 和任何位置的 NaN/±Infinity 均在写入前返回中文 400「请求必须是 JSON 对象」。33 个逐词 HTTP 断言保留真实 Flask 的 200/400 证据，Go 全部返回 400。其他 legacy 请求调用方不受影响。
+
 ## A21 — gateway onboarding
 
 - 同属「HEAD 只读」类别。Python `gateway_onboarding` 只区分 GET 与其他方法，带合法 JSON 的 HEAD 会保存 Mihomo/OxiDNS 草稿并增加 revision。Go HEAD 走 GET，只返回相同状态与 headers，不返回 body，DB、业务文件、revision 不变。`api/gatewayonboarding.TestHEADIsReadOnlyAndMatchesGET` 与真实 Flask 的 `TestFlaskHEADExpectedReadOnlyDifference` 显式验证。

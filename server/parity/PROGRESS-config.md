@@ -2630,3 +2630,13 @@ owner (N8-8d/N8-9/N8-11) are in the linked progress file and
 `internal/convert/testdata/n88c_cases.md`. Direct-callers race and three HTTP diff
 packages passed on .32; only the previously reproduced8a provider corpus and four
 subscription malformed graphs are excluded, with exact exclusions documented.
+
+### N8-9 discovery native swap
+
+Branch `go-n8-9-discovery`, based on batch-6 `8ec68fd4d`. Native repo Config,
+Shared/System and section transactions replace discovery's stored JSON-object
+access. The task owner uses SetRowBuilder, Snapshot/Receipt and ProjectHistory;
+response DTOs replace heterogeneous maps. R5 bool and malformed/nonfinite request
+changes are explicit HTTP expectations; Python's seed and business are unchanged.
+Callback deletion owners, checks and shared-model integration are recorded in
+[progress/n8-9-discovery.md](progress/n8-9-discovery.md).
