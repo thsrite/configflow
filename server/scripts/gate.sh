@@ -2,13 +2,13 @@
 # Merge gate; run on a test server, never on the Mac. See gate.md.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-umask 077
 pflag=()
 if [[ ${1:-} == -p ]]; then pflag=(-p="${2:?missing -p value}"); shift 2; fi
 stage=${GATE_ONLY:-all}
 case "$stage" in all|core|compare|proddiff|difftest) ;; *) echo "Unknown GATE_ONLY stage: $stage" >&2; exit 2 ;; esac
 logs=${GATE_LOGS:-$(mktemp -d "${TMPDIR:-/tmp}/gate.XXXXXX")}
 mkdir -p "$logs"
+chmod 700 "$logs"
 logs=$(realpath "$logs")
 echo "gate: stage=$stage logs=$logs"; uptime
 slots=${GATE_SLOTS:-1}

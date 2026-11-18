@@ -77,3 +77,22 @@ the real crosscheck repair and must report 23/23 required entries with zero skip
 Pending: exact three core results/durations/cache-hit lists, final compare,
 final rebase/clean check and hand-back to new coordinator
 `f8801d39-a5bb-4c3f-bb7d-4b9eca9cc4b5`.
+
+### First trial and correction
+
+The initial real FULL attempt exited 1 (wall 1809.50s, including queue), so it did
+**not** create the full-success stamp. Three package failures:
+
+- installer DockerHA corpus expected mode 0644, got 0600;
+- store TestCopyFileKeepsTimes expected 0640, got 0600;
+- routersplit TestEdgeCorpus could not find its gzip golden in the earlier
+  speed-a snapshot used by the temporary tree.
+
+The first two exposed an implementation error in the gate: global `umask 077`
+changed the test processes' permissions. Fixed by preserving inherited umask,
+restricting only the log directory to 0700, and creating the WebDAV trace as 0600
+inside a subshell. Two new real-shell/strace controls guard inherited 0022 and
+private trace permissions. All **10 routing + 6 evidence** controls now pass.
+The missing edge corpus exists in the completed speed-a branch; update only the
+temporary dependency tree before restarting the unchanged-tree timing matrix.
+No product code or assertions were changed to hide these failures.

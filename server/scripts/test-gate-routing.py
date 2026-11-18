@@ -22,6 +22,9 @@ elif args == ["list", "./..."]:
 elif args[:1] == ["clean"]:
  (home / "cached").unlink(missing_ok=True)
 elif "-race" in args:
+ previous_umask = os.umask(0)
+ os.umask(previous_umask)
+ (home / "test-umask").write_text(str(previous_umask))
  if os.getenv("FAIL_RACE"): sys.exit(1)
  print("ok  configflow/internal/fake  " + ("(cached)" if (home / "cached").exists() else "1.00s"))
  (home / "cached").touch()
@@ -55,7 +58,7 @@ class RoutingTests(unittest.TestCase):
 
     def run_gate(self, **env):
         return subprocess.run(["bash", str(self.server / "scripts/gate.sh"), "-p", "6"],
-                              env=dict(self.env, **env), text=True, capture_output=True, timeout=10)
+                              env=dict(self.env, **env), text=True, capture_output=True, timeout=10, umask=0o022)
 
     def calls(self):
         return [json.loads(line) for line in (self.root / "calls.jsonl").read_text().splitlines()]
@@ -76,6 +79,24 @@ class RoutingTests(unittest.TestCase):
         self.assertEqual(len(race), 3)
         self.assertTrue(all("-count=1" not in args and fp == "synthetic-fingerprint" for args, fp in race))
         self.assertEqual(sum(args == ["clean", "-testcache"] for args, _ in self.calls()), 2)
+
+    def test_gate_preserves_test_process_umask(self):
+        result = self.run_gate(GATE_ONLY="core")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual((self.root / "test-umask").read_text(), str(0o022))
+        self.assertEqual((self.root / "logs").stat().st_mode & 0o777, 0o700)
+
+    def test_trace_keeps_original_umask_and_private_trace(self):
+        trace = self.root / "trace.log"
+        binary = self.root / "webdav.test"
+        binary.write_text('#!/bin/bash\numask\n')
+        binary.chmod(0o755)
+        result = subprocess.run(["bash", str(SOURCE.with_name("gate-test-exec.sh")), str(binary)],
+                                env=dict(os.environ, GATE_LIVE_TRACE=str(trace)),
+                                text=True, capture_output=True, timeout=10, umask=0o022)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stdout.strip(), "0022")
+        self.assertEqual(trace.stat().st_mode & 0o777, 0o600)
 
     def test_stale_and_future_stamp_force_full(self):
         stamp = self.root / "rt/.gate-last-full"
