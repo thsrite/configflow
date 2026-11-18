@@ -54,7 +54,71 @@ the hand-back. If no notification arrives within ~3 h, check status once more.
 | 19338c67-c336-40c7-98a9-b4532a66af68 | C19/C20 Surge/Loon adversarial review | wks_0d8cd06808daac1f, branch `go-review-c19c20` |
 | 3112fbeb-e43a-4d16-ad1a-bc88670b1099 | C37 domain discovery port | wks_0dcc037efd16c502, branch `go-port-c37` |
 | e46d698f-6345-41b9-8a38-06d61b6622d3 | config black-box difftest, Step A coverage matrix (→ Opus O6 review) | wks_223d2a53f6e7abbb, branch `go-difftest-config` |
-## >>> CURRENT STATE — 2026-11-17 evening (read this first; everything below is history) <<<
+## >>> CURRENT STATE — 2026-11-18 ~10:30 CST (read this first; everything below is history) <<<
+
+**Process (all new today, maintainer-approved; see WORKFLOW.md last three sections + AGENT-BRIEF):**
+- Merge batching: ready branches are stacked into `batch-N` (rebase each onto the previous; `.md` conflicts keep
+  both sides via /tmp/rebase_md.py), one `cf-gate` on the stacked tree, ff-merge on PASS. Docs/test-tooling-only
+  commits (parity docs, configdiff) merge after their own checks. A batch gated on an older `go` must be re-gated
+  after rebasing if `go` gained Go product code meanwhile (every merged commit passes a full gate on its exact tree).
+- Agents never run the full gate: targeted checks only, then hand back. No progress messages (only decision /
+  hand-back / blocked). Long tests = one blocking command, never polling. (Token cost was the reason.)
+- Leaner verification: reviewers don't re-run the author's suites; no per-module mutation gates; Python
+  comparisons = normal paths + one case per error class. Non-HR independent review is KEPT.
+- gate.sh: 1 agent gate per server (coordinator cf-gate may add one: CF_GATE_SLOTS=2). Background cf-gate needs
+  Bash timeout 7200000 (30-min default killed 4 gates once).
+- Proddiff Python-side caching was evaluated and rejected (proddiff cold = 72 s; see progress/proddiff-cache-evaluation.md).
+  The gate's time is almost all the full `-race` stage.
+
+**Module status on go (37aad7f6), PROGRESS summary tables now synced with sections:** config 34 verified,
+C07 partial, C34/C36 missing; agents 16 verified, 8 missing; routers 9 verified, 8 missing. 59/78 verified.
+Routes 228/380 done on go (C34 alone adds 59).
+
+**Gates running at handoff (coordinator background tasks; results in /tmp/*-gate.log on the Mac):**
+- batch-1 (worktree ~/program/configflow-go-batch-1, branch batch-1 = go@215ab6b0 + A20 review + C07 review +
+  N8-7 batch 1 + go-batch1-fix d7f3a15a [A20 adopts N8-7 redact API]) — /tmp/batch1-gate.log, on .32.
+- O3-6c (~/program/configflow-go-verify-o36c, tmp-verify-o36c = go-o3-6c@426f6edd rebased) — /tmp/o36c-gate.log, .32.
+- batch-3 PASSED on old base 215ab6b0 (~/program/configflow-go-batch-3: R10 review + R11 review). Not merged.
+**Next merge step:** when batch-1 and O3-6c finish, stack on current go: batch-1 + batch-3 + O3-6c (go-o3-6c@426f6edd)
++ N8-5 (a)(b) (go-n8-5-6c@5e08cfb2, already stacked on O3-6c) → one cf-gate → ff-merge. Then notify: O3-6b
+(6e5c7760; rebase + 28 subcases), R12/R13 (694df9d0), N8-5 (24d62bfc, start rebasing (c)), N8-7 batch 2 + N8-8a
+(097eba4e), A21 (95eb529e; also needs C34 for DNSLoop), C36 (89c495b3; needs A20 setupflow + C34), A16/A17
+(0d31fb93/2a90a68e; need A14), A14 reviewer 06515315 (finish A20 integration: drop duplicate reader in deploy.Wire,
+register deploy.SetGatewayGuards, un-skip the O3-6c BeforeCommit regression, narrow the A18 baseline row).
+**Batch after that:** go-review-c34 (4ad74cf4), go-test-speed-a@6fad06fc, go-test-speed-b@198a1c4e,
+go-fix-repo-crosscheck@b4e8a2e7, A14 (after integration), go-gate-speed (6e5c7760, when handed back).
+
+**In flight (agent → branch):**
+- 6e5c7760: go-gate-speed (gate.sh: race test cache via PYREF_INPUT_FINGERPRINT, full = `go clean -testcache` then
+  normal run on GATE_FULL=1 / 24 h stamp; GATE_ONLY=core|compare split; new synthetic-live stage for PY/REPO/DIFF
+  tests the gate never ran — see parity/gate-env-coverage.md). Then O3-6b (go-o3-6b@91c5291f, waits R10+6c).
+  Coordinator then updates ~/.local/bin/cf-gate: set GATE_FULL=1 when backend/ or shared core (lockx, repo,
+  lifecycle, ctxx, yamlx, model, httpx) changed vs go; optionally split core/compare across .32/.64.
+- 24d62bfc (Opus): N8-5 (c) on go-n8-5-6c.
+- 097eba4e: N8-8(a) on go-n8-8a (from go-n8-5-6c); N8-7 batch 2 after O3-6c + C07 merge.
+- 95eb529e: A21 on go-port-a21 (from batch-1). Clarified: C36 hook missing → 503 only when an unfinished setup
+  session exists (reader fail-closed); DNSLoop wired after C34 merges (TODO(C34)).
+- 694df9d0: R13 on go-port-r13 (from go-port-r12). Use C07's notifications.TransactionContext (in batch-1).
+- 66383b28 (Opus): R12 HR review on go-opus-review-r12. R12 carries r12-batch-allowlist.patch (4th batch exception
+  routers:saveAbortedPublication, D-R12-3 kept) to apply after O3-6c merges.
+- 89c495b3: C36 port on go-port-c36 (from go-review-c34).
+- 0d31fb93: A16 on go-port-a16; 2a90a68e: A17 on go-port-a17 (both from go-opus-review-a14).
+- e46d698f / a5567935: test-speed A/B timing (docs-only, only when both servers' 1-min load < 10).
+**Not started:** A18, A22, A23, R14–R17 (deps in flight). Then labs L2–L6, O9, O12, O14 switch.
+
+**Decisions today (beyond those recorded in design Clarified sections):** HEAD read-only extended to C06/C34;
+non-object JSON bodies 400 except Python's intentional null/missing default (per engine, as Python behaves);
+base_url non-string 400; JWT junk chars 401; nonfinite stored numbers read as null; CFG-06 dedupe within one
+call only; C33 keeps `.list.bak`; R11 F3 (block on edited owned script) accepted; R12 D-R12-3 kept as 4th batch
+exception; O14 follow-up: apply the same pattern to R04–R11 F6; CFG-01 LOW: host aliases / DNS rebinding not
+guarded in Python or Go (post-switch item).
+
+**Open question to the maintainer (asked, unanswered):** three speed options — (1) incremental switch: Go serves
+ported routes and proxies the rest to Python; (2) risk-tiered verification (lighter for logs/stats/settings);
+(3) stop fixing non-security Python bugs during the port (record only). Coordinator recommended all three, (1)
+first, with a "minimum module set for switch" estimate.
+
+## (history) CURRENT STATE — 2026-11-17 evening
 
 **First action for a new coordinator session:** completion notifications of running agents go to the session that
 started them. Re-route them by sending every running agent below a one-line `mcp__paseo__send_agent_prompt` with
