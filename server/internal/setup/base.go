@@ -77,7 +77,13 @@ func (s *Service) mihomoBase(source string, fullTUN bool, reserved map[string]st
 	if original.Kind != yaml.MappingNode {
 		return "", nil, failure(msgBaseMapping, 400)
 	}
-	document, err := s.owners.DNS.PrepareMihomoDNS(yamlx.Clone(original))
+	// Encode validates the alias budget and copies the graph without expanding
+	// aliases. The DNS owner may mutate its independent temporary document.
+	prepared, err := yamlx.Encode(original)
+	if err != nil {
+		return "", nil, ownerValidation(err)
+	}
+	document, err := s.owners.DNS.PrepareMihomoDNS(prepared)
 	if err != nil {
 		return "", nil, ownerValidation(err)
 	}
