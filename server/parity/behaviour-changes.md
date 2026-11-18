@@ -1047,3 +1047,10 @@ A17 复核（2026-11-18，[review-a17.md](review-a17.md)）补充：
 - 失败 child 的 `error_details` 先用全部 Agent 凭据脱敏再交给 A01（Python 只用目标自己的 token，属 Python 漏洞）。
 - DNS 接口回复逐成员解码：类型不对的成员按缺失处理，给出与 Python 相同的具体拒绝文本；非字符串的 `message`
   按缺失处理（落到「请升级 Agent…」默认文本），不复刻 Python 的 `str()` 表示。
+
+## N8-8a — 畸形存储值改为类型校验
+
+规则集格式推断的 typed 入口不再模拟 Python 的 truthiness 或动态 ID 相等。
+URL 为 0、false、空数组/对象等非字符串值时明确拒绝（5 等原有错误仍保留 URL 类型错误类别）；
+引用 ID/name 为非字符串、规则库元素为非 object 时按 R5 或明确类型校验处理。
+legacy 边界先解码整份规则库，因此匹配项之后的非 object 也会拒绝。正常输入的格式输出不变。

@@ -3,24 +3,14 @@
 package rulesetfmt
 
 import (
+	"encoding/json"
+	"errors"
 	"strings"
 	"unicode"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/weburl"
 )
-
-// URLTypeError reports a non-string URL in a stored rule-set record.
-type URLTypeError struct{ Value any }
-
-func (e *URLTypeError) Error() string { return "rule-set URL must be a string" }
-
-// LibraryEntryTypeError reports a non-object encountered before a matching
-// rule-library entry. Python's ruleset_format calls .get on each entry and
-// stops as soon as one matches.
-type LibraryEntryTypeError struct{ Value any }
-
-func (e *LibraryEntryTypeError) Error() string { return "rule-library entry must be an object" }
 
 // URLParseError retains the URL parse error while exposing a format inferred
 // from the original text to callers that can continue without a parsed URL.
@@ -57,78 +47,106 @@ func HasYAMLPayload(content string) bool {
 	return false
 }
 
-// Format determines the declared or inferred format of a rule-set reference.
-// library is the rule_library list; sourceURL overrides the rule URL when the
-// matched library entry has no URL. Malformed URL types and parse errors are
-// returned so the converter can report invalid stored input.
-func Format(rule *jsonx.Object, library []any, sourceURL string) (string, error) {
-	return format(rule, library, sourceURL, false)
-}
-
-// FormatSkippingInvalidEntries is the tolerant form used by the matcher,
-// whose previous implementation ignored malformed library entries.
-func FormatSkippingInvalidEntries(rule *jsonx.Object, library []any, sourceURL string) string {
-	format, _ := format(rule, library, sourceURL, true)
-	return format
-}
-
-func format(rule *jsonx.Object, library []any, sourceURL string, skipInvalid bool) (string, error) {
-	found := jsonx.NewObject()
-	libraryID := rule.Value("library_rule_id")
-	for _, entry := range library {
-		item, ok := entry.(*jsonx.Object)
-		if !ok {
-			if !skipInvalid {
-				return "", &LibraryEntryTypeError{Value: entry}
+// RuleFormat determines format using typed stored records. Malformed members
+// either follow model R5 or produce a typed validation error when inspected.
+func RuleFormat(rule model.RuleConfig, library []model.RuleLibraryItem, sourceURL string) (string, error) {
+	var found *model.RuleLibraryItem
+	if len(library) > 0 && model.IssueUnder(model.Issues(rule), "library_rule_id") {
+		return "", errors.New(msgReferenceIDType)
+	}
+	for i := range library {
+		item := &library[i]
+		if rule.LibraryRuleID != "" {
+			if model.IssueUnder(model.Issues(item), "id") {
+				return "", errors.New(msgReferenceIDType)
 			}
-			continue
+		} else if model.IssueUnder(model.Issues(item), "name") || model.IssueUnder(model.Issues(rule), "name") {
+			return "", errors.New(msgReferenceNameType)
 		}
-		match := jsonx.Truthy(libraryID) && jsonx.Equal(item.Value("id"), libraryID)
-		if !jsonx.Truthy(libraryID) {
-			match = jsonx.Equal(item.Value("name"), rule.Value("name"))
-		}
-		if match {
-			found = item
+		if rule.LibraryRuleID != "" && item.ID == rule.LibraryRuleID || rule.LibraryRuleID == "" && item.Name == rule.Name {
+			data, err := model.Marshal(item)
+			if err != nil {
+				return "", err
+			}
+			var members map[string]json.RawMessage
+			if err := json.Unmarshal(data, &members); err != nil {
+				return "", err
+			}
+			if len(members) != 0 {
+				found = item
+			}
 			break
 		}
 	}
-	for _, source := range []*jsonx.Object{found, rule} {
-		if declared, ok := source.Value("format").(string); ok && oneOf(declared, "yaml", "text", "mrs") {
-			return declared, nil
-		}
+	if found != nil && validFormat(text(found.Format)) {
+		return text(found.Format), nil
 	}
-	source := found
-	if found.Len() == 0 {
-		source = rule
+	if validFormat(text(rule.Format)) {
+		return text(rule.Format), nil
 	}
-	if source.Value("source_type") == "content" {
-		if content, ok := source.Value("content").(string); ok && HasYAMLPayload(content) {
+	sourceType, content := text(rule.SourceType), text(rule.Content)
+	if found != nil {
+		sourceType, content = text(found.SourceType), text(found.Content)
+	}
+	if sourceType == "content" {
+		if HasYAMLPayload(content) {
 			return "yaml", nil
 		}
 		return "text", nil
 	}
-	var address any
-	switch {
-	case jsonx.Truthy(found.Value("url")):
-		address = found.Value("url")
-	case sourceURL != "":
+	address := ""
+	if found != nil {
+		if model.IssueUnder(model.Issues(found), "url") {
+			data, err := model.Marshal(found)
+			if err != nil {
+				return "", err
+			}
+			return "text", invalidURL(data)
+		}
+		address = text(found.URL)
+	}
+	if address == "" {
 		address = sourceURL
-	case jsonx.Truthy(rule.Value("url")):
-		address = rule.Value("url")
-	default:
-		address = ""
 	}
-	text, ok := address.(string)
-	if !ok {
-		return "text", &URLTypeError{Value: address}
+	if address == "" {
+		if model.IssueUnder(model.Issues(rule), "url") {
+			data, err := model.Marshal(rule)
+			if err != nil {
+				return "", err
+			}
+			return "text", invalidURL(data)
+		}
+		address = text(rule.URL)
 	}
-	path := text
-	if parsed, err := weburl.Parse(text); err == nil {
-		path = weburl.RawPath(parsed)
+	if parsed, err := weburl.Parse(address); err == nil {
+		return inferPath(weburl.RawPath(parsed)), nil
 	} else {
-		return inferPath(path), &URLParseError{Text: text, Err: err}
+		return inferPath(address), &URLParseError{Text: address, Err: err}
 	}
-	return inferPath(path), nil
+}
+
+func text(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+func validFormat(value string) bool { return value == "yaml" || value == "text" || value == "mrs" }
+
+// ErrURLType identifies a non-string URL encountered during format inference.
+var ErrURLType = errors.New(msgURLType)
+
+// URLValueError preserves opaque invalid-field evidence for a legacy boundary.
+type URLValueError struct{ Raw json.RawMessage }
+
+func (e *URLValueError) Error() string { return msgURLType }
+func (e *URLValueError) Unwrap() error { return ErrURLType }
+func invalidURL(data []byte) error {
+	var members map[string]json.RawMessage
+	if err := json.Unmarshal(data, &members); err != nil {
+		return err
+	}
+	return &URLValueError{Raw: members["url"]}
 }
 
 func inferPath(path string) string {
@@ -141,13 +159,4 @@ func inferPath(path string) string {
 	default:
 		return "text"
 	}
-}
-
-func oneOf(value string, options ...string) bool {
-	for _, option := range options {
-		if value == option {
-			return true
-		}
-	}
-	return false
 }

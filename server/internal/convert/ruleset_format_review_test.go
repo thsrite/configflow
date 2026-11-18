@@ -6,7 +6,7 @@ import (
 	"configflow/internal/jsonx"
 )
 
-func TestRulesetFormatStopsAtFirstMatchingLibraryEntry(t *testing.T) {
+func TestRulesetFormatRejectsMalformedLibraryAfterMatch(t *testing.T) {
 	for _, rule := range []*jsonx.Object{
 		jsonx.Obj("name", "Edge 15"),
 		jsonx.Obj("library_rule_id", "edge-15"),
@@ -16,8 +16,8 @@ func TestRulesetFormatStopsAtFirstMatchingLibraryEntry(t *testing.T) {
 			nil,
 		})
 		got, err := RulesetFormat(rule, config, "")
-		if err != nil || got != "text" {
-			t.Fatalf("RulesetFormat(%v): got %q, %v; want text, nil", rule, got, err)
+		if err == nil || got != "" {
+			t.Fatalf("RulesetFormat(%v): got %q, %v; want typed validation error", rule, got, err)
 		}
 	}
 }
