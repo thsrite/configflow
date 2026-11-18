@@ -80,11 +80,10 @@ func overlaps(ctx context.Context, config document) ([]string, error) {
 	return gateway.NewConfig(raw).DirectOverlapWarnings(ctx, nil)
 }
 func safeValue(key string, value json.RawMessage, seeds redact.Secrets) (json.RawMessage, error) {
-	original, err := jsonx.Parse(value)
-	if err != nil {
-		return nil, err
+	if !json.Valid(value) {
+		return nil, errors.New("gateway draft: display value is not JSON")
 	}
-	seeds = redact.CollectCredentials(jsonx.Obj(key, original), seeds)
+	seeds = redact.CollectCredentials(map[string]any{key: value}, seeds)
 	node, err := yamlx.FromJSON(value)
 	if err != nil {
 		return nil, err
@@ -118,8 +117,7 @@ func safeValue(key string, value json.RawMessage, seeds redact.Secrets) (json.Ra
 			}
 		}
 		if n.Kind == yaml.ScalarNode && n.ShortTag() == "!!str" {
-			safe := redact.SanitizeCredentials(jsonx.Obj("text", n.Value), seeds)
-			n.Value = safe.GetString("text")
+			n.Value = sanitizedText(n.Value, seeds)
 			return nil
 		}
 		if n.Kind == yaml.MappingNode {
@@ -144,13 +142,9 @@ func safeValue(key string, value json.RawMessage, seeds redact.Secrets) (json.Ra
 	if err != nil {
 		return nil, err
 	}
-	projected, err := jsonx.Parse(data)
-	if err != nil {
-		return nil, err
-	}
 	// Scan metadata keys too, after named fields have their Chinese mask.
 	// This pass never discovers credentials from projected placeholders.
-	return jsonx.Compact(redact.SanitizeWithSecrets(projected, seeds, true))
+	return json.Marshal(redact.SanitizeWithSecrets(json.RawMessage(data), seeds, true))
 }
 
 // hiddenKeyWords are the field-name words the preview has always masked by
@@ -169,11 +163,7 @@ func hiddenKey(key string) bool {
 func sourceCredentials(config, candidate document) (redact.Secrets, error) {
 	var seeds redact.Secrets
 	for _, input := range []document{config, candidate} {
-		raw, err := legacy(input)
-		if err != nil {
-			return nil, err
-		}
-		seeds = redact.CollectCredentials(raw, seeds)
+		seeds = redact.CollectCredentials(json.RawMessage(encode(input)), seeds)
 	}
 	return seeds, nil
 }
@@ -186,20 +176,25 @@ func generatedCredentials(before, after *yamlx.Node, seeds redact.Secrets) (reda
 		if err != nil {
 			return nil, err
 		}
-		value, err := jsonx.Parse(raw)
-		if err != nil {
-			return nil, err
-		}
-		object, ok := value.(*jsonx.Object)
-		if !ok {
+		if fields(raw) == nil {
 			return nil, errors.New("gateway draft: generated configuration is not an object")
 		}
-		seeds = redact.CollectCredentials(object, seeds)
+		seeds = redact.CollectCredentials(json.RawMessage(raw), seeds)
 	}
 	return seeds, nil
 }
 func failureText(err error, seeds redact.Secrets) string {
-	return redact.SanitizeCredentials(jsonx.Obj("message", err.Error()), seeds).GetString("message")
+	return sanitizedText(err.Error(), seeds)
+}
+
+// sanitizedText passes one display string through the shared credential
+// sanitizer, which returns the redacted value as encoded JSON.
+func sanitizedText(text string, seeds redact.Secrets) string {
+	var out string
+	if json.Unmarshal(redact.SanitizeCredentials(text, seeds), &out) != nil {
+		return redact.Redacted
+	}
+	return out
 }
 
 func (s *Service) guard(legacyContext *jsonx.Object, current, candidate document, restore bool, forwarding func() (string, error)) error {

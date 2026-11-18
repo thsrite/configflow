@@ -189,16 +189,10 @@ func (b *Bridge) Request(ctx context.Context, raw *jsonx.Object, operation, meth
 	}
 	// The raw API has extensible status fields. Use the common redactor rather
 	// than introducing a second credential grammar at this boundary.
-	legacy, err := jsonx.Parse(response.Body)
-	if err != nil {
-		return nil, err
+	safe := redact.SanitizeCredentials(json.RawMessage(response.Body), redact.NewSecrets([]string{raw.GetString("token")}))
+	if result = object(safe); result == nil {
+		return nil, fail("INVALID_RESPONSE", 502, msgShape)
 	}
-	safe := redact.SanitizeCredentials(legacy.(*jsonx.Object), redact.NewSecrets([]string{raw.GetString("token")}))
-	data, err := jsonx.Compact(safe)
-	if err != nil {
-		return nil, err
-	}
-	result = object(data)
 	if response.StatusCode >= 400 {
 		message := text(result["message"])
 		if message == "" {
