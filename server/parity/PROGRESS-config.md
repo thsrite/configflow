@@ -363,7 +363,7 @@ Rules for O3-5..O3-8 are in the review's last section.
 | C31 | aggregation routes, device notes | 722 | verified | C30, C26 | 11 (11 done) |
 | C32 | rule routes | 1107 | verified | C09, C14, C27 | 21 (0 done) |
 | C33 | rule library and proxy group routes | 976 | verified | C32 | 25 (25 done) |
-| C34 | generate, config and profile routes, config export | 1443 | verified | C18, C19, C20, C28, C29, C31, C33 | 59 (0 done) |
+| C34 | generate, config and profile routes, config export | 1443 | ported | C18, C19, C20, C28, C29, C31, C33 | 59 (59 done) |
 | C35 | config importer, WebDAV backup | 1375 | verified | C04, C06 | – |
 | C36 | setup flow | 1372 | verified | C34, C35 | 5 (5 done) |
 | C37 | domain discovery | 1658 | verified | C14, C16 | 17 (17 done) |
@@ -2133,12 +2133,12 @@ Python：完整两路由 `backend/routes/rule_library.py`（540行）、`proxy_g
 
 ## C34 — generate, config and profile routes, config export
 
-**独立复核（2026-11-18，修复 `da3883a33`）**：2 high / 2 medium 全部修复，56个常规方法通过；3个artifact保持已约定503/wip。逐引擎null/空body裁定、凭据出口、dry_run及请求默认修复，59方法认证与18个外部别名分派证据见 [review-c34.md](review-c34.md)。A14/Previews/O3-6c外部分工不变；只跑定向race/vet/真实Flask，无完整gate。
+**独立复核（原 C34 范围，2026-11-18，修复 `da3883a33`）**：2 high / 2 medium 全部修复，56个常规方法通过；3个artifact当时保持已约定503/wip（下述后续工作接通，待 HR 复核）。逐引擎null/空body裁定、凭据出口、dry_run及请求默认修复，59方法认证与18个外部别名分派证据见 [review-c34.md](review-c34.md)。A14/Previews/O3-6c外部分工不变；只跑定向race/vet/真实Flask，无完整gate。
 
-**Status: `partial`** · prereqs: C18, C19, C20, C28, C29, C31, C33 · Go: internal/api/generate, api/config, api/profiles, internal/configexport (new; internal/redact exists)
+**Status: `ported`** · prereqs: C18, C19, C20, C28, C29, C31, C33 · Go: internal/api/generate, api/config, api/profiles, internal/configexport (new; internal/redact exists)
 
 
-**Clarified in C34 (2026-11-18):** HEAD uses the GET read-only branch for profile collections/items and all custom-config routes: no DB, business-file, revision or generation-cache changes. These fix Python dispatch bugs and have explicit expected differences. Artifact routes are registered before A14 integration and return 503 「等待 Agent 发布模块」; unknown services remain 400 and unknown actions 404. Frozen-artifact success coverage awaits A14, without copying its implementation. `repo.Hooks.SanitizeExternalPayload` gains a first `context.Context` parameter; desensitized ExportAll reads credentials from the same repository snapshot as the exported document. N8-5b was notified; N8-5c retains this contract. A11 Previews gets a separate shared-leaf-lock/shutdown fix **after O3-6c merges**, with real Runtime reproductions; the A14 reviewer has been notified. Commit sequence: export wiring, profiles, custom config, generation/live config, artifact integration. Shared commit points remain known and assigned to O3-6c; final gate queue limit is 15 minutes.
+**Clarified in C34 (2026-11-18):** HEAD uses the GET read-only branch for profile collections/items and all custom-config routes: no DB, business-file, revision or generation-cache changes. These fix Python dispatch bugs and have explicit expected differences. Artifact routes originally returned an approved 503 before A14 integration; the artifacts follow-up below replaces it with the shared frozen owner. Unknown services remain 400 and unknown actions 404. `repo.Hooks.SanitizeExternalPayload` gains a first `context.Context` parameter; desensitized ExportAll reads credentials from the same repository snapshot as the exported document. N8-5b was notified; N8-5c retains this contract. A11 Previews gets a separate shared-leaf-lock/shutdown fix **after O3-6c merges**, with real Runtime reproductions; the A14 reviewer has been notified. Commit sequence: export wiring, profiles, custom config, generation/live config, artifact integration. Shared commit points remain known and assigned to O3-6c; final gate queue limit is 15 minutes.
 
 Files:
 - `backend/routes/generate.py` (320)
@@ -2148,13 +2148,13 @@ Files:
 
 Tests: `test_agent_log_redaction.py` (2), `test_flow_ui_apis.py` (9), `test_profile_api.py` (19), `test_profile_generation.py` (10), `test_profile_scoped_artifacts.py` (16), `test_sensitive_config_exports.py` (25)
 
-Routes (59, 56 done, 3 registered wip pending A14):
+Routes (59, 59 done; frozen artifacts await independent HR review):
 
 `GET /api/config/<profile_id>/loon`; `GET /api/config/<profile_id>/loon/<filename>`; `GET /api/config/<profile_id>/mihomo`; `GET /api/config/<profile_id>/mosdns`; `GET /api/config/<profile_id>/oxidns`; `GET /api/config/<profile_id>/surge`; `GET /api/config/export`; `POST /api/config/import`; `GET /api/config/loon`; `GET /api/config/mihomo`; `GET /api/config/mosdns`; `GET /api/config/oxidns`; `POST /api/config/reset`; `GET /api/config/surge`; `GET /api/custom-config/loon`; `POST /api/custom-config/loon`; `GET /api/custom-config/mihomo`; `POST /api/custom-config/mihomo`; `GET /api/custom-config/mosdns`; `POST /api/custom-config/mosdns`; `GET /api/custom-config/oxidns`; `POST /api/custom-config/oxidns`; `GET /api/custom-config/surge`; `POST /api/custom-config/surge`; `POST /api/generate/<service>/artifact`; `GET /api/generate/artifacts/<preview_id>/<action>`; `POST /api/generate/loon`; `POST /api/generate/loon/preview`; `POST /api/generate/mihomo`; `POST /api/generate/mihomo/preview`; `POST /api/generate/mosdns`; `POST /api/generate/mosdns/preview`; `POST /api/generate/oxidns`; `POST /api/generate/oxidns/preview`; `POST /api/generate/surge`; `POST /api/generate/surge/preview`; `GET /api/profiles`; `POST /api/profiles`; `DELETE /api/profiles/<profile_id>`; `GET /api/profiles/<profile_id>`; `PUT /api/profiles/<profile_id>`; `GET /api/profiles/<profile_id>/agents`; `POST /api/profiles/<profile_id>/agents/rebind`; `POST /api/profiles/<profile_id>/clone`; `POST /api/profiles/<profile_id>/default`; `GET /api/profiles/<profile_id>/export`; `POST /api/profiles/<profile_id>/generate/<service>/artifact`; `POST /api/profiles/<profile_id>/generate/loon`; `POST /api/profiles/<profile_id>/generate/loon/preview`; `POST /api/profiles/<profile_id>/generate/mihomo`; `POST /api/profiles/<profile_id>/generate/mihomo/preview`; `POST /api/profiles/<profile_id>/generate/mosdns`; `POST /api/profiles/<profile_id>/generate/mosdns/preview`; `POST /api/profiles/<profile_id>/generate/oxidns`; `POST /api/profiles/<profile_id>/generate/oxidns/preview`; `POST /api/profiles/<profile_id>/generate/surge`; `POST /api/profiles/<profile_id>/generate/surge/preview`; `POST /api/profiles/<profile_id>/import`; `POST /api/profiles/import-client`
 
 Evidence: all 59 methods registered; HANDOFF 3c ownership/precedence and authentication matrix cover the complete app. Implementation, source mapping and validation: [progress/c34.md](progress/c34.md).
 
-Missing / deferred: A14 frozen artifact success wiring (three explicit 503 routes); A11 shared Previews shutdown/keyed-lock fix waits for O3-6c merge notification. C34 ordinary endpoints implemented.
+Missing / deferred: no artifact implementation remains deferred. Independent HR review of the new artifact wiring is pending; earlier C34 review remains valid for its original scope.
 
 Notes for porter: Own routes: `routes/config.py` (24), `routes/generate.py` (12), `routes/profiles.py` CRUD/import/export/agents/generate wrappers (23). `routes/generate.py` calls `agents.deployment_bundle._pack` and `routes.agents.download_final_agent_config/read_final_agent_file` (agents domain) for artifacts; `routes/profiles.py` uses `agents.manager.AgentDeploymentConflict` and the agent manager. `config_export` → `internal/redact` already has the response-redaction part; this module adds `sanitize_config_for_output`, `redact_oxidns_settings` and registers the repo redaction hooks.
 
@@ -2167,6 +2167,8 @@ C35 supplies native `importer.Parse/Build` for `/api/profiles/import-client` (AP
 **C34 hand-back (2026-11-18, go-port-c34 rebased on go@215ab6b04):** 56 implemented methods + 3 registered artifact503 methods. Final .64 targeted API/configgen/configexport/server race, real Flask DB/files differential, full vet and clean formatting PASS; shared DNS-loop direct Python corpus509 + targeted race PASS; fuzz60s227,427 executions PASS. Repo race PASS233s. Entire gateway race hit default10m in the pre-existing N7 frozen-history archive decoder; targeted C34 gateway checks pass, the broader timeout remains explicit. Per the latest coordinator instruction, no agent full gate; batch gate belongs to the coordinator. Previews keyed-lock/shutdown delta is deliberately the next step after O3-6c notification. Detailed source/test mapping, exact commands, output and commit list: [progress/c34.md](progress/c34.md).
 
 **Clarified in C34 base_url:** missing/null means no override; strings including empty stay unchanged; other field types return400 with no DB/file/cache commit. This fixes invalid Python string-coerced URL prefixes and OxiDNS500; other fields and profile/generate empty-body defaults are unchanged. Explicit Flask expectations are in TestC34BaseURLInputAlternatives.
+
+**Artifacts follow-up (2026-11-18, `ported`, HR review pending):** all three artifact methods now share configgen capture and A14's Manager-owned Previews/Pack/Load/Zip/File. Profile identity/revision and generated bytes are frozen before saving; no generated-path read-back, device reservation or publication. Auth, one-hour expiration, owner and path checks, no-store and unknown-action404 are retained. Real Runtime disconnect/shutdown and queued preview commit tests; real Flask five-engine/two-prefix success plus error-class comparison. Removed exactly 34 A14/A21 artifact deferred baseline rows. Evidence and issue-class checklist: [progress/artifacts.md](progress/artifacts.md).
 
 ## C35 — config importer, WebDAV backup
 

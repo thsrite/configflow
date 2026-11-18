@@ -30,6 +30,7 @@ import urllib.request
 import zipfile
 import yaml
 from generators import run_workers, self_check, successful_output_regressions
+from artifact_policy import ArtifactProofs, ROUTES as ARTIFACT_ROUTES
 
 ROOT = Path.cwd()
 PARITY = ROOT / 'server/parity'
@@ -406,7 +407,7 @@ def same_agent_transport_target(python_message, go_message):
     return path is None or path.group(1) == target.path
 
 
-def response_diffs(left, right, route, rules, agent_identities=None):
+def response_diffs(left, right, route, rules, agent_identities=None, artifact_proofs=None):
     if approved_c07_readiness(left, right, route):
         # Compare the approved availability contract instead of exposing a
         # partial task list. Keep both original content types and headers.
@@ -443,6 +444,8 @@ def response_diffs(left, right, route, rules, agent_identities=None):
          'header': {k: v for k, v in (left[3] if len(left) > 3 else {}).items() if k not in IGNORED_HEADERS}}
     b = {'body': values[1] if len(values) == 2 else None,
          'header': {k: v for k, v in (right[3] if len(right) > 3 else {}).items() if k not in IGNORED_HEADERS}}
+    if artifact_proofs is not None and route in ARTIFACT_ROUTES and left[0] == right[0] == 200:
+        out.extend(artifact_proofs.normalize(a['body'], b['body']))
     if len(values) == 2 and isinstance(a['body'], dict) and isinstance(b['body'], dict):
         # Generated YAML embedded in JSON is compared structurally too.
         for key in ('content', 'config', 'compose'):
@@ -963,6 +966,7 @@ def main():
             all_cases = list(cases(rows, doc, copies[0]))
 
             agent_identities = AgentComparisonIdentities()
+            artifact_proofs = ArtifactProofs(copies, parsed)
             transport_trace_lock = threading.Lock()
             transport_trace = report / 'transport-attempts.jsonl'
 
@@ -996,7 +1000,7 @@ def main():
                     return case, None, None, 0, [0, 0]
                 python = lambda timeout: ask(0, method, route, path, body, timeout)
                 go = lambda timeout: ask(1, method, route, path, body, timeout)
-                return (case,) + compare_http(python, go, lambda a, b: response_diffs(a, b, route, rules, agent_identities),
+                return (case,) + compare_http(python, go, lambda a, b: response_diffs(a, b, route, rules, agent_identities, artifact_proofs),
                                               bracket=method == 'GET' and route in bracket)
 
             def results():
@@ -1055,7 +1059,7 @@ def main():
                             failures[label + '-connection-failed'] += 1
                     if left[0] == 0 or right[0] == 0:
                         failures['both-transport-failure' if left[0] == right[0] == 0 else 'one-sided-transport-failure'] += 1
-                    for field, kind in response_diffs(left, right, route, rules, agent_identities):
+                    for field, kind in response_diffs(left, right, route, rules, agent_identities, artifact_proofs):
                         found.add((key, field, kind))
                         domain = 'agents' if '/agents' in route or route.startswith('GENERATOR agent-') else 'routers' if '/routers' in route or route.startswith('GENERATOR router-') else 'config'
                         counts[domain + ':' + kind] += 1
