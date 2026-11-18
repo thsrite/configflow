@@ -17,6 +17,7 @@ import (
 // Register installs global backup routes.
 func Register(r *httpx.Router) {
 	registerCustom(r)
+	registerLive(r)
 	r.GET("/api/config/export", "config.export_config", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
 		repository, err := repo.GetRepository(c.Context())
 		if err != nil {
