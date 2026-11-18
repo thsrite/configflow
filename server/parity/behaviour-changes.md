@@ -509,7 +509,7 @@ their hidden view stays secret-free. Global ExternalPayloadSecrets / JSON-hook p
 
 
 
-## HEAD 只读（C07 / C29 / C31 / C32）
+## HEAD 只读（C07 / C29 / C31 / C32 / C34）
 
 协调者确认的共同类别：HEAD 按 GET 的只读语义处理，沿用 GET 的状态和 headers，不返回 body。
 C29 的 Python settings 路由自动接受 HEAD，但把非 GET 请求都当作保存；携带 JSON 的 HEAD
@@ -890,3 +890,5 @@ PD 恢复 PUT 回复已经证明新 ID、但紧接着的 GET 失败时，Go 仍�
   (`无法解析上游路由差异报告，请重新检查。`) where Python's `summarize` either
   tolerated the shape or raised and `safely` skipped the receipt. Only Go's own
   marshalled Report/Plan reach the hook, so this path is not reachable in practice.
+
+C34 同类修复：`/api/profiles` 的 HEAD 不再创建 profile，`/api/profiles/<profile_id>` 的 HEAD 不再删除；全部 profile GET 路径走读取分支。回归 `api/profiles.TestProfileHEADIsReadOnly` 比较 GET headers，并断言 DB、revision、业务文件和生成缓存不变。真实 Flask 预期差异另见 C34 差分测试。
