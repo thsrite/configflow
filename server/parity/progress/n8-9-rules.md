@@ -1,7 +1,8 @@
 # N8-9 rules / rulefetch / refresh / rulesetfmt
 
 完成，待独立复核。分支 `go-n8-9-rules`，已变基到 `go@d4fab6441`。
-产品收口提交 `fcc671d9d`；共享字段证据/迁移文件 API 为 `55f13acb7`。
+产品主体收口 `fcc671d9d`；共享字段证据/迁移文件 API 为 `55f13acb7`。
+最终提交另补稳定matcher路径不打开View及已知format的bytes/op自动阈值。
 前置分段提交：`378791c18`、`64415feec`、`64bf4f22a`、`f343883b8`。
 测试全部固定 `.32`，没有本机测试、完整 gate、push 或子 agent。
 
@@ -75,7 +76,8 @@ O12的离线兼容和mtime说明已写behaviour-changes.md及progress/o14-switch
 
 - 窄matcher输入：0 / 20000个无关nodes均188 allocs/op，约14.6KB/op。
 - 已知format读取：空 / 1MiB无关library均409 allocs/op，约35.4KB/op；不可JSON编码的无关
-  transient成员负控证明没有隐式遍历。错误format仍拒绝缓存。
+  transient成员用例另行保留；bytes/op阈值负控也防止“分配次数不变但复制整块payload”的回归。
+  错误format仍拒绝缓存。
 - 字段原始证据读取：空 / 1MiB无关payload均16 allocs/op、1344 B/op。
 - DNS可直接用：
   `ReadValidatedRuleCacheWithFormat(ctx, rule, config *jsonx.Object, format string) ([]byte,error)`；
@@ -128,3 +130,11 @@ O12的离线兼容和mtime说明已写behaviour-changes.md及progress/o14-switch
 
 最终scope：类型迁移和必要callbacks完成，原archives保留，R5/D2/R8与O12均登记。
 N9/N10及未迁移外部owner的接口收口按原计划继续；本报告不宣称整个N8或生产切换完成。
+
+最后性能约束增量：稳定matcher cache与invalid receipt在访问repo.View之前处理，避免超大
+配置因超出repository decoded-cache预算而被每个ruleset重复解码。注入read callback负控
+要求稳定路径不打开View；旧名称回退读取失败仍fail-closed。discovery完整race19.533s通过。
+已知format除了allocs/read，新增bytes/read自动阈值（无关1MiB payload增量不得超过64KiB），
+防止“buffer次数相同但复制整个payload”。其race实测小/大437/438 allocs、56278/56197
+bytes/read，3.594s通过；原普通benchmark409 allocs、约35.4KB的口径保持不变。
+增量后全仓go vet与pyref审计通过（后者0.568s）。

@@ -39,6 +39,28 @@ func TestKnownFormatReadAllocationsIgnoreUnrelatedLibrary(t *testing.T) {
 		t.Fatalf("unrelated library allocations: small=%g large=%g", a, b)
 	}
 	t.Logf("small=%g large=%g allocs/read", a, b)
+	// Allocation counts alone can miss a copied megabyte when the number of
+	// buffers stays constant. Guard bytes/op as well as reporting the benchmark.
+	bytesPerRead := func(config *jsonx.Object) int64 {
+		result := testing.Benchmark(func(b *testing.B) {
+			for b.Loop() {
+				data, err := ReadValidatedRuleCacheWithFormat(ctx, rule, config, "text")
+				if err != nil || string(data) != "example.com\n" {
+					b.Fatal("known-format read changed", err)
+				}
+			}
+		})
+		if result.N == 0 {
+			t.Fatal("allocation benchmark failed")
+		}
+		return result.AllocedBytesPerOp()
+	}
+	smallBytes, largeBytes := bytesPerRead(small), bytesPerRead(large)
+	if largeBytes > smallBytes+(64<<10) {
+		t.Fatalf("unrelated library copied: small=%d large=%d bytes/read", smallBytes, largeBytes)
+	}
+	t.Logf("small=%d large=%d bytes/read", smallBytes, largeBytes)
+
 	// Known format is validation authority, never an instruction to accept a
 	// cached file under any interpretation.
 	data, err := ReadValidatedRuleCacheWithFormat(ctx, rule, large, "mrs")

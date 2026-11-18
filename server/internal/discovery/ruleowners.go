@@ -7,6 +7,8 @@ import (
 	"configflow/internal/rules"
 	"context"
 	"encoding/json"
+	"errors"
+	"os"
 	"path/filepath"
 )
 
@@ -50,29 +52,46 @@ func nativeCachedContent(ctx context.Context, item libraryItem) ([]byte, error) 
 func nativeMatcherOptions() rules.CacheOptions {
 	return rules.CacheOptions{
 		ReadPath: func(rule model.RuleConfig, library []model.RuleLibraryItem, directory string) string {
-			unavailable := filepath.Join(directory, rules.CacheFilename(rule)+".invalid", "unavailable")
-			ctx := context.Background()
-			r, err := repo.GetRepository(ctx)
-			if err != nil {
-				return unavailable
-			}
-			var selected string
-			err = r.View(ctx, func(view *model.Document) error {
-				// Consume borrowed declarations entirely inside View; return
-				// only the resulting path, never copy/decode the whole library.
-				selected = rules.CacheReadPath(rule, library, view.Shared.RuleLibrary, directory)
-				return nil
+			return matcherCachePath(context.Background(), rule, library, directory, func(ctx context.Context, visit func(*model.Document) error) error {
+				r, err := repo.GetRepository(ctx)
+				if err != nil {
+					return err
+				}
+				return r.View(ctx, visit)
 			})
-			if err != nil {
-				return unavailable
-			}
-			return selected
 		},
 		ValidateRemote: func(content string, rule model.RuleConfig) error {
 			return rulefetch.ValidateRemote(rulefetch.Content{Data: []byte(content), Text: true}, rule, nil, "")
 		},
 	}
 }
+
+// matcherCachePath avoids even opening a View on a stable file. Oversized
+// repository documents intentionally are not cached, so consulting View for
+// every stable ruleset would otherwise decode the whole configuration again.
+func matcherCachePath(ctx context.Context, rule model.RuleConfig, library []model.RuleLibraryItem, directory string, read func(context.Context, func(*model.Document) error) error) string {
+	native := filepath.Join(directory, rules.CacheFilename(rule))
+	unavailable := filepath.Join(native+".invalid", "unavailable")
+	if ctx.Err() != nil {
+		return unavailable
+	}
+	_, fileErr := os.Stat(native)
+	_, receiptErr := os.Stat(native + ".invalid")
+	if fileErr == nil || !errors.Is(receiptErr, os.ErrNotExist) {
+		return rules.CacheReadPath(rule, library, nil, directory)
+	}
+	var selected string
+	err := read(ctx, func(document *model.Document) error {
+		// Borrowed declarations never escape the read-only callback.
+		selected = rules.CacheReadPath(rule, library, document.Shared.RuleLibrary, directory)
+		return nil
+	})
+	if err != nil {
+		return unavailable
+	}
+	return selected
+}
+
 func nativeLocalMatcher(ctx context.Context, id string) (func(string) *Match, error) {
 	r, err := repo.GetRepository(ctx)
 	if err != nil {
