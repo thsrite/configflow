@@ -504,6 +504,7 @@ func xcOperationsFile(t *testing.T, file string) (goDir, pyDir string) {
 	// The layout holds random directory names in sorted order: compare it
 	// as a sorted list of masked names, apart from the cumulative comparison.
 	last := len(golang) - 1
+	xcBindNativeCachePath(t, file, goDir, pyDir, python[last].(*jsonx.Object))
 	xcSame(t, "layout", xcMaskedLayout(t, golang[last], false), xcMaskedLayout(t, python[last], true))
 	golang, python = golang[:last], python[:last]
 	// Decision (HANDOFF, "Python 500s become proper 4xx"): where Python

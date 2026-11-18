@@ -1,0 +1,14 @@
+{
+  "repo_crosscheck_ops.json": {
+    "source_sha256": "766d22fde8f2c27c7ad9336d84241460ec672bebd7aadace6b24538ed74a765d",
+    "index": 47,
+    "old": "shared/rules/by-source/a93c2fafd26571ac34969e5deeff6db4fa871997a46e523d0d8e0a78fce87b1e.list",
+    "native": "shared/rules/by-source/d0b06a069e6248aeb848d1d0f014fd4e9ab75c6d20487ad0354a60992e3a5ef5.list"
+  },
+  "repo_crosscheck_c04_ops.json": {
+    "source_sha256": "1c6b95e5b17b1ce5c4a605eeb599d397a9cac1a4dd7edd35bcce22cc75038ce6",
+    "index": 189,
+    "old": "shared/rules/by-source/79129ae75dcb9be783f1086e973cd01f01f275e9e631ea976df07a07afbd7cd6.list",
+    "native": "shared/rules/by-source/4371538be2e8f1be793ad76fa8d8d3110f739c00149fef2682058633199c7f13.list"
+  }
+}

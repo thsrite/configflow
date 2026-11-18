@@ -148,7 +148,7 @@ N8-1 rule digest 尚未激活已批准 D2，convert 字节/录制回放没有接
 `ssh <固定主测试服务器> 'bash /tmp/preflight.sh program__configflow-go-batch-8 -p 6'`。
 两种 tag vet 与全部非 race 测试完成，退出0，最终行 **PREFLIGHT PASS**。
 随后执行 `RT_HOST=<固定主测试服务器> rt -e GATE_ONLY=compare -- bash -lc 'server/scripts/gate.sh -p 6'`，
-等待 proddiff、difftest、全部 synthetic live 完成。未执行 core/race。
+等待 proddiff、difftest、全部 synthetic live 完成。未执行完整 core 门禁；compare 内置 synthetic live 自带的定向 race 按原脚本执行。
 
 ### 完整 compare 首轮与 MosDNS HTTP 存储断言
 
@@ -158,3 +158,15 @@ MosDNS HTTP 的缓存文件名仍按旧 Python digest 比较：55个响应相同
 再独立计算 JSON digest，仅在这两个确切来源上重命名期望 key，不修剪内容/放宽文件集。
 `CONFIGFLOW_DIFF=1 go test -count=1 -timeout=5m -run "^TestDifferentialMosDNSRoutes$" ./internal/mosdns/difftest`
 通过，`mosdns/difftest 4.241s`。首轮 synthetic 尚未运行，不算完整通过；将整段 compare 重跑。
+
+### synthetic live 中的 repository D2 布局接线
+
+第二次完整 compare：proddiff new=0/stale=0、全部24个 difftest package 通过；synthetic live
+在3条 repo crosscheck 的最终目录布局发现旧 cache digest。没有数据库/操作结果差异。
+对两份原操作文件的特定 create_rule_library_item（index47/189）调用真实 Python filename，
+独立计算 JSON digest，并绑定完整 source SHA。只修改 Python 期望中那个具体布局 entry；
+新增完整两端缓存 byte equality，以及旧/新交叉地址均不存在的断言。
+继续定向运行这3条真实 Python race 回归，然后整段 compare 重跑，不能把部分通过当完整通过。
+
+三条定向真实 Python repo race 回归完成：`repo 233.027s`，PASS。
+为使交回验证覆盖最终测试树，将依次重新执行用户指定 preflight 与完整 compare。
