@@ -10,6 +10,7 @@ package discovery
 import "testing"
 
 func TestRegistrableDomainUsesPublicSuffixList(t *testing.T) {
+	t.Parallel()
 	for input, want := range map[string]string{
 		"a.b.example.co.uk": "example.co.uk",
 		"www.google.com":    "google.com",

@@ -162,3 +162,14 @@ server's Go module root, so bare cached `go test` does not recheck those reads.
 Actual executions (including current gate's -count=1) do validate hashes. Asked
 coordinator to approve a shared native-fingerprint test wrapper for cache-enabled
 daily runs; no gate script changes proposed.
+
+## discovery — parallel pure port parsing
+
+No ordinary Python oracle exists here; the explicit HTTP/storage differential
+stays live. Pure port-YAML graph/depth/schema/migration tests and registrable-
+domain checks are input-local and now use t.Parallel. Job histories/restart/
+matcher tests retain sequential ordering because jobFixture resets shared
+jobState, some tests replace the default repository and several assert GC liveness.
+No timeout, depth, case count or assertion changes. .64 targeted race of the
+four non-history parser/domain suites passed `2.049s`; complete paired race run
+will include the migration check after the independent frozen index lands.
