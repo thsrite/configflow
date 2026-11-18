@@ -2,8 +2,8 @@
 
 Status: in progress; NOT ready for acceptance hand-back. Branch go-difftest-routers-b.
 Latest clean integration rebase: goa08c4cc27; normal public binary built from it.
-Current declarations:443 executed-variant audits plus5 explicit source-unreachable
-proofs plus2 O6 review-superseded entries;1851 remaining if all increments and
+Current declarations:465 executed-variant audits plus9 explicit source-unreachable
+proofs plus2 O6 review-superseded entries;1825 remaining if all increments and
 controls are composed. Last FULL composition still37937739:3054
 recipes/301 audits. Newer subsets do not replace that full evidence; latest
 large subset2470 recipes/327 audits. All observed26 domain routes remain absent
@@ -1897,3 +1897,36 @@ Auxiliary HTTP transport and healthy public-process oracle increment:
 kill negative control. Native product findings/routers compared counts unchanged.
 443 executed declarations+5 source proofs+2 O6 entries;1851 pending if composed.
 Full composition, remaining matrix, final gate/rebase still pending.
+
+DHCP DNS evidence and abstract-driver reachability increment:
+- New dhcp_guards.py drives real HTTP report/plan/apply from full synthetic
+  RouterOS tables. Unknown evidence must remain visible as report200 unknown,
+  plan200 exact blockers and confirmation409 without any device/storage write.
+-22 new named audits H0849–H0863/H0904–H0910. Cases separate server/RADIUS,
+  missing/duplicate ID, network parsing and dynamic flags, DNS suppression/list
+  types, all9 names call positions, four option6 layers, incomplete/ambiguous
+  references, every option-code type/range and actual5000-digit integer limit.
+  Accepted defaults/lists/canonical networks/vendor-specific option43 and ignored
+  out-of-scope/disabled/ordinary lease/matcher controls prevent blanket refusal.
+- H0128–H0131 are four NEW source-unreachable proofs, separate from executions:
+  production constructs only the fixed two concrete classes; both override
+  probe/read_state/read_dhcp_dns/apply, with no super/base call or method/map
+  mutation. Real both-vendor operation controls are required before proof status.
+- First390 real HTTP recipes passed Python preconditions (361.74s). The initial
+  attempted no-store header assertion was a fixture assumption, corrected after
+  reading the actual report handler; no Cache-Control normalization was added.
+- Integrity self-test initially caught its old443 declaration-count expectation;
+  updated explicit count465. Current targeted run has44 self-tests passing
+  (16.270s) and is executing the expanded DHCP vectors plus all four proofs'
+  concrete controls. Final output/commit is recorded only after it completes.
+
+Expanded final .64 command:
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY="$HOME/.cache/routerdiff-build-302rx1dg-a08c4cc27/configflow"; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python -m unittest -v test_audits test_recipes test_reachability; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world dhcp-evidence-guards --world probe-guard-controls --world release-ros --world release-ik-plain --world dhcp-ikuai-plain --output "$HOME/.cache/routerdiff-reports/302rx1dg/dhcp-evidence-audits.json"'`
+=> Ran44 tests16.270s/OK; DHCP group441 requests429.91s; total484 actual
+recipes/allGo-unimplemented,47 references,24 executed audits (22 new DHCP plus2
+existing probe controls),4 new source proofs,2273 pending in this subset,
+complete=false/no bug. All four new source proofs' both-vendor controls executed.
+No command pending.465 declarations+9 source proofs+2 O6 corrections;1825 remain
+if all increments/controls are composed. Historical full3054/301 still stands;
+this subset does not replace it. Next: remaining route/driver/schema/dynamic/
+background matrix, full composition, final gate/rebase/clean hand-back.

@@ -14,6 +14,7 @@ import clients
 import sync
 import upstream
 import dns
+import dhcp_guards
 import gateway
 import disconnect
 import routing
@@ -38,6 +39,31 @@ from bugs import BUGS
 
 
 class RecipeTests(unittest.TestCase):
+    def test_dhcp_evidence_variants_refuse_confirmation_before_any_device_write(self):
+        _, entries = load()
+        seen = set()
+        rows = list(dhcp_guards.cases())
+        for case in rows:
+            self.assertNotIn(case.ident, seen)
+            seen.add(case.ident)
+            self.assertEqual(len(case.entries), len(set(case.entries)))
+            self.assertTrue(set(case.entries) <= set(entries))
+            self.assertEqual(case.effect, 'device-read')
+            self.assertFalse(case.unchanged)
+            if case.route == 'R011':
+                self.assertEqual(case.expected, 409)
+                self.assertIsNone(case.document)
+                self.assertTrue(case.message)
+            elif case.route == 'R018':
+                self.assertEqual(case.expected, 200)
+                self.assertEqual(case.times, ('generated_at',))
+            else:
+                self.assertEqual(case.route, 'R012')
+                self.assertEqual(case.expected, 200)
+        self.assertGreater(len(rows), 400)
+        oversized = next(seed for name, _, seed, _ in dhcp_guards.vectors() if name == 'code-oversized')
+        self.assertEqual(oversized['ros'][dhcp_guards.OPTION][0]['code'], '0' * 5000)
+
     def test_capability_refusal_keeps_probe_success_and_iteration_continues_after_late_bad_rows(self):
         failures = [case for group in (probes.routeros, probes.ikuai) for case in group()
                     if 'R017-S03' in case.entries]

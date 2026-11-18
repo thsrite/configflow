@@ -1007,6 +1007,71 @@ def declared():
         'their own loop audits. Does not claim database write failures, unhandled non-RouterError '
         'crashes, real permission acceptance or all malformed nested peer schemas.',
         ros_fatal + ik_fatal + tls_controls + ros_good + ik_good)
+    # DHCP evidence audits are enumerated independently of recipe tags. All
+    # three public boundaries must observe each blocking vector; a plan alone
+    # never proves confirmation refuses to write.
+    def dhcp_rows(labels, healthy=()):
+        result = []
+        for label in labels:
+            result += [('dhcp-evidence-guards', route + '/dhcp-evidence-' + label, status)
+                       for route, status in (('R018', 200), ('R012', 200), ('R011', 409))]
+        for label in healthy:
+            result += [('dhcp-evidence-guards', route + '/dhcp-evidence-' + label, 200)
+                       for route in ('R018', 'R012')]
+        return tuple(result)
+    dhcp_specs = {
+        'H0849': (tuple('servers-' + label for label in ('missing', 'disabled-bool', 'disabled-upper')), ('healthy',),
+                  'No active servers: empty table and boolean/text disabled. Healthy enabled LAN is the positive control.'),
+        'H0850': (tuple('server-' + label for label in ('missing-name', 'empty-name', 'null-name', 'no-name-or-id', 'invalid-bool', 'invalid-text')), ('healthy',),
+                  'Both name-missing and invalid disjuncts, id and unknown display fallbacks, boolean/text invalid and valid name.'),
+        'H0851': (tuple('radius-' + str(index) for index in range(5)), tuple('radius-accepted-' + label for label in ('no', 'false', 'accounting', 'upper')),
+                  'Unknown/true/numeric/null RADIUS evidence refuses; no/false/accounting and case normalization remain usable.'),
+        'H0852': (('option6-layer-0',), ('healthy',), 'Server option6 overrides network DNS; ordinary server without overrides permits preview.'),
+        'H0853': (('option6-layer-3',), ('healthy', 'matcher-ignored-disabled', 'matcher-ignored-disabled-server'),
+                  'Active matcher option set blocks globally; disabled matcher and matcher attached to disabled server are ignored.'),
+        'H0854': (tuple('network-id-' + label for label in ('empty', 'null', 'zero', 'missing', 'duplicate')), ('healthy',),
+                  'Missing/falsy and duplicate IDs refuse before guessing target identity; valid unique ID remains usable.'),
+        'H0855': (tuple('network-address-' + str(index) for index in range(7)), ('healthy', 'network-address-accepted-host-bits', 'network-address-accepted-netmask'),
+                  'All invalid network value kinds and IPv6 refuse; host bits and dotted mask canonicalize to the actual LAN.'),
+        'H0856': (tuple('network-address-' + str(index) for index in range(7)), ('healthy', 'network-address-accepted-host-bits', 'network-address-accepted-netmask'),
+                  'The raised network-address error reaches report unknown and exact plan/apply refusal.'),
+        'H0857': (tuple('network-' + member + '-' + kind for member in ('dynamic', 'invalid') for kind in ('bool', 'text')), ('healthy', 'network-flags-false'),
+                  'Each dynamic/invalid operand independently blocks, using real bool and RouterOS text flags; explicit false flags permit preview.'),
+        'H0858': (('option6-layer-1',), ('healthy',), 'Network-scoped custom option6 cannot be overwritten by changing only dns-server.'),
+        'H0859': (tuple('lease-radius-' + label for label in ('invalid', 'null', 'empty', 'ipv6', 'pool')), ('lease-ignored-outside', 'lease-ignored-disabled', 'lease-ignored-disabled-server', 'lease-ignored-ordinary-dynamic'),
+                  'Invalid/pool/null/IPv6 lease scope is conservative; known outside, disabled lease/server and ordinary dynamic lease do not block this LAN.'),
+        'H0860': (tuple('lease-radius-' + label for label in ('invalid', 'null', 'empty', 'ipv6', 'pool', 'unspecified', 'inside')), ('healthy', 'lease-ignored-outside', 'lease-ignored-disabled', 'lease-ignored-disabled-server', 'lease-ignored-ordinary-dynamic'),
+                  'Scoped and unknown RADIUS lease evidence blocks; every explicit exclusion remains usable.'),
+        'H0861': (('option6-layer-2',), ('healthy', 'lease-ignored-outside', 'lease-ignored-disabled', 'lease-ignored-disabled-server', 'lease-ignored-ordinary-dynamic'),
+                  'Lease custom option6 blocks and unselected/disabled/ordinary leases do not introduce a false network override.'),
+        'H0862': (tuple('dns-invalid-' + str(index) for index in range(4)), tuple('dns-accepted-' + label for label in ('list', 'csv', 'filtered-list')),
+                  'Bad IPv4 DNS in strings/lists and IPv6 refuse; actual string/list parsing retains valid IPv4 DNS and ignores empty/none elements.'),
+        'H0863': (tuple('dns-invalid-' + str(index) for index in range(4)), tuple('dns-accepted-' + label for label in ('list', 'csv', 'filtered-list')),
+                  'DNS-address exception reaches all three public boundaries, distinct from names-container shape refusal.'),
+        'H0904': (tuple('names-' + str(position) + '-' + kind for position in range(9) for kind in ('null', 'bool', 'number', 'object', 'mixed-list')),
+                  tuple('names-accepted-' + str(position) + '-' + kind for position in range(9) for kind in ('empty-list', 'ignored-names')),
+                  'Every real names call position: server/network/lease direct and set references, matcher set, nested set options and DNS. Wrong JSON types and late mixed row refuse; empty/list-string filters succeed.'),
+        'H0905': (tuple('dns-none-' + str(index) for index in range(7)), tuple('dns-none-accepted-' + label for label in ('bool-true', 'bool-false', 'true', 'false', 'yes', 'no')),
+                  'Both accepted boolean values and four exact firmware strings; null/numbers/case/unknown/container values fail closed.'),
+        'H0906': (tuple('set-' + label for label in ('missing', 'duplicate', 'no-options')), tuple('code-accepted-' + label for label in ('one', 'maximum', 'number-string', 'vendor')),
+                  'Missing/multiple set matches and missing options separately block; valid lookup by .id with string-list options succeeds.'),
+        'H0907': (('option-missing', 'option-duplicate'), tuple('code-accepted-' + label for label in ('one', 'maximum', 'number-string', 'vendor')),
+                  'Zero/multiple option matches block; unique .id reference and repeated names are resolved without guessing.'),
+        'H0908': (('code-oversized',), ('code-accepted-number-string',),
+                  'Literal5000-digit decimal triggers real Python integer conversion limit inside this catch; ordinary decimal code succeeds. No exception helper is simulated.'),
+        'H0909': (('option6-layer-0', 'option6-layer-1', 'option6-layer-2', 'option6-layer-3', 'code-six', 'code-padded-six'), tuple('code-accepted-' + label for label in ('one', 'maximum', 'number-string', 'vendor')),
+                  'Option6 integer at all four layers plus decimal and padded-decimal strings; non-DNS standard/vendor-specific codes remain usable.'),
+        'H0910': (tuple('code-' + label for label in ('null', 'false', 'true', 'zero', 'negative', 'too-large', 'float', 'array', 'object', 'whitespace', 'sign', 'unknown', 'oversized')),
+                  tuple('code-accepted-' + label for label in ('one', 'maximum', 'number-string', 'vendor')),
+                  'Unknown JSON types, bool-not-int, out-of-range and non-decimal/oversized strings; exact1/254 bounds, numeric string and vendor-specific43 controls.'),
+    }
+    for ident, (blocked, healthy, rationale) in dhcp_specs.items():
+        audits[ident] = Audit(('backend/routers/routeros.py:295', 'backend/routers/routeros.py:760',
+                              'backend/routers/dhcp_dns.py:107', 'backend/routes/routers.py:304'),
+            rationale + ' Real HTTP report200 preserves unknown diagnostics, plan200 exposes exact blockers, '
+            'confirmation409 refuses before fingerprint/device writes. Healthy controls have pending DNS and no '
+            'plan blockers. All boundaries compare full storage/device state; only loopback synthetic evidence. '
+            'Does not claim DHCP firmware acceptance or successful DNS write/readback.', dhcp_rows(blocked, healthy))
     return audits
 
 

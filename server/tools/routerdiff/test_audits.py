@@ -25,9 +25,33 @@ import fixed_sources
 import probe_workflows
 import probe_guards
 import probes
+import dhcp_guards
 
 
 class AuditTests(unittest.TestCase):
+    def test_dhcp_evidence_audits_require_real_report_plan_and_refused_confirmation(self):
+        actual = {case.ident: case for case in dhcp_guards.cases()}
+        counts = {'H0849': 11, 'H0850': 20, 'H0851': 23, 'H0852': 5, 'H0853': 9, 'H0854': 17,
+                  'H0855': 27, 'H0856': 27, 'H0857': 16, 'H0858': 5, 'H0859': 23, 'H0860': 31,
+                  'H0861': 13, 'H0862': 18, 'H0863': 18, 'H0904': 171, 'H0905': 33, 'H0906': 17,
+                  'H0907': 14, 'H0908': 5, 'H0909': 26, 'H0910': 47}
+        for ident, count in counts.items():
+            required = declared()[ident].requirements
+            self.assertEqual(len(required), count, ident)
+            for world, name, status in required:
+                case = actual[name]
+                self.assertEqual(world, 'dhcp-evidence-guards')
+                self.assertEqual(case.expected, status)
+                self.assertIn(ident, case.entries, (ident, name))
+                self.assertEqual(case.effect, 'device-read')
+            evidence = [{'world': world, 'case': name, 'entries': [ident], 'python': {'status': status},
+                         'status': 'go-unimplemented'} for world, name, status in required]
+            self.assertEqual(evaluate(evidence)[ident]['audit'], 'variants-audited')
+            self.assertEqual(evaluate(evidence[:-1])[ident]['audit'], 'variants-pending')
+        # Successful DNS publication and hardware permission acceptance are
+        # deliberately not granted by this evidence-only audit increment.
+        self.assertNotIn('R011-S06', declared())
+
     def test_probe_guard_audits_require_fatal_persistence_and_per_capability_downgrades(self):
         actual = {('probe-errors', case.ident): case for group in (probes.routeros, probes.ikuai) for case in group()}
         actual.update({('probe-guard-controls', case.ident): case for group in
@@ -259,7 +283,7 @@ class AuditTests(unittest.TestCase):
 
     def test_auth_audits_require_every_explicit_real_reference_variant(self):
         audits = declared()
-        self.assertEqual(len(audits), 26 * 7 + 25 * 3 + 5 + 14 + 12 + 5 + 8 + 23 + 1 + 5 + 4 + 6 + 4 + 4 + 10 + 24 + 1 + 13 + 2 + 12 + 9 + 3 + 8 + 1 + 12)
+        self.assertEqual(len(audits), 465)  # Named declarations; matrix parsing grants no coverage.
         self.assertFalse(set(audits) - set(load()[1]))
         self.assertEqual({value['audit'] for value in evaluate([]).values()},
                          {'variants-pending', 'source-proof-controls-pending', 'review-proof-controls-pending'})

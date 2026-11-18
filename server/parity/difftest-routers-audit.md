@@ -457,7 +457,7 @@ Persisted probe-clock/public-view boundary:
 Native main-request failure classification:
 - Actual worker exception class and actual child running/exit state establish a
   transport observation; never classify by a substring of exception prose.
-  Only main request/join concrete connection/read/protocol failures qualify.
+  Only concrete request/join connection/read/protocol failures qualify.
   Unknown RPC/fixture errors and Python reference failures stay fixture failures.
 - No complete HTTP observation means go=null plus typed transport details,
   different and blocked subsequent dependencies. No manufactured500/empty JSON,
@@ -465,7 +465,8 @@ Native main-request failure classification:
   cannot prove quiescence, completed work or compensation, even after child exit.
 - Real own-namespace -9 negative control uses an actually registered auth route;
   it is not a router case or product finding. Main HTTP polls/joins are covered;
-  auxiliary setup and post-response settling transport distinctions remain open.
+  auxiliary setup and post-response settling failures are now also retained,
+  with a completed main response kept separately and later dependencies blocked.
 
 Probe fatal errors versus capability downgrades:
 - Every capability loop member has actual peer refusal/HTTP/non-JSON/disconnect/
@@ -484,3 +485,26 @@ Probe fatal errors versus capability downgrades:
   differences still require lower-load/other-host recheck; slow in-budget and
   upper-bound device tests remain open. All new source controls ran on real
   Python; purpose-broken oracle tests are separate from product findings.
+
+DHCP evidence guard increment (author audit, not native parity):
+- Read RouterOS read_dhcp_dns, _dhcp_names/_dhcp_network_attributes/_dhcp_overrides,
+  shared build_dns_report/matching_networks and the actual _inspect/plan/apply
+  boundary.22 explicit H audits require named report/plan/confirmation variants.
+- Server absence/disabled, missing identity/invalid flags/RADIUS, network IDs/
+  address parsing/dynamic flags, malformed DNS and dns-none are separate inputs.
+  Every names invocation position has wrong JSON kinds plus actual accepted lists.
+  Each option6 layer and missing/ambiguous/incomplete set/option references is
+  exercised; integer/string/bool/range/vendor-specific/5000-digit option codes
+  are literal device evidence, never an application-helper substitute.
+- Unknown lease scope is conservative. Outside/disabled lease, disabled server,
+  ordinary dynamic renewal and disabled matcher are independent healthy controls.
+  Report200 retains exact unknown diagnostic, plan200 retains exact blocker,
+  apply409 refuses without a fingerprint and without changing device/storage.
+  These evidence-only guards do not prove actual firmware DNS acceptance.
+- Four abstract RouterDriver defaults (H0128–H0131) are source-unreachable:
+  all application construction uses the two-class _driver map, both concrete
+  classes override each method and never call super/base. Device error responses
+  cannot change method dispatch. No production base instance/map/method mutation
+  exists. Real both-vendor probe/read/selected-DHCP/successful-write controls are
+  required by reachability.py; no control is tagged as executing a base error.
+  This is separate source proof, not a test pass or package verification.

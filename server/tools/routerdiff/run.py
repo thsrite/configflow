@@ -22,6 +22,7 @@ import clients
 import sync
 import upstream
 import dns
+import dhcp_guards
 import gateway
 import disconnect
 import routing
@@ -870,6 +871,7 @@ def main():
               ('rule-sync-proxy', sync.proxy_options(), (sync.proxy_refresh,)),
               ('upstream-linked', upstream.options(), (upstream.linked,)),
               ('dns-guard', dns.options(), (dns.guard,)),
+              ('dhcp-evidence-guards', dns.options(), (dhcp_guards.cases,)),
               ('dhcp-ikuai-plain', dns.ikuai_options(), (dns.ikuai_dhcp,)),
               ('dns-ha', dns.ha_options(), (dns.ha,)),
               ('disconnect-release', releases.options(), (disconnect.release,)),
@@ -947,6 +949,8 @@ def main():
                         result = execute(pair, case, available or set(), routes)
                         result['world'] = name
                         results.append(result)
+                        if len(results) % 50 == 0:
+                            print(name + ': ' + str(len(results)) + ' cumulative recipes; last=' + case.ident, flush=True)
                     report(args.output, results, available, announce=False)
                     print(name + '/' + group.__name__ + ': ' + str(len(results)) + ' cumulative recipes, '
                           + format(time.monotonic() - started, '.2f') + 's', flush=True)

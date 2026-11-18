@@ -92,6 +92,37 @@ def declared():
             'newer/leading-zero/suffixless success, and a5000-digit zero-major refusal. That last '
             'control does not claim an inner exception was externally observed. No helper/exception '
             'or Python comparison output is simulated.', version_controls)
+    # The abstract base defaults are not a third production device adapter.
+    # All application construction funnels through the fixed public map, and
+    # both concrete classes override each method without calling super().
+    base_controls = {
+        'H0128': (('probe-guard-controls', 'R017/routeros/guard-version-minimum', 200),
+                  ('probe-guard-controls', 'R017/ikuai/guard-version-minimum', 200)),
+        'H0129': (('release-ros', 'R012/fake-ip-preview-routeros', 200),
+                  ('release-ik-plain', 'R012/fake-ip-preview-ikuai', 200)),
+        'H0130': (('dhcp-evidence-guards', 'R018/dhcp-evidence-healthy', 200),
+                  ('dhcp-ikuai-plain', 'R018/iKuai-dhcp-plain-mask-synced', 200)),
+        'H0131': (('release-ros', 'R011/fake-ip-publish-routeros', 200),
+                  ('release-ik-plain', 'R011/fake-ip-publish-ikuai', 200)),
+    }
+    for ident, method in (('H0128', 'probe'), ('H0129', 'read_state'),
+                           ('H0130', 'read_dhcp_dns'), ('H0131', 'apply')):
+        proofs[ident] = SourceProof(('backend/routers/base.py:272', 'backend/routes/routers.py:29',
+                                    'backend/routes/routers.py:79', 'backend/common/client_discovery.py:28',
+                                    'backend/routers/pending.py:121', 'backend/routers/rule_sync.py:300',
+                                    'backend/routers/routeros.py:69', 'backend/routers/ikuai.py:184'),
+            'The only production construction path is routes.routers._driver (also imported by '
+            'discovery, pending and rule_sync), whose fixed map contains only RouterOSDriver and '
+            'IKuaiDriver. Both concrete classes define ' + method + ' and neither delegates this '
+            'method to RouterDriver or super(). No production code instantiates RouterDriver, '
+            'replaces the map, changes these method attributes or explicitly calls the base method. '
+            'Unknown/corrupt stored vendor names cannot instantiate the abstract base: guarded '
+            'paths refuse, and unguarded map lookup raises before any base dispatch. Device HTTP '
+            'errors still execute the concrete adapter and cannot select its inherited default. '
+            'Thus this defensive base error is source-unreachable through current normal public '
+            'inputs. Named real HTTP controls exercise the corresponding concrete operation on '
+            'both vendors; they do not execute/tag this H branch. Future adapters require reproof.',
+            base_controls[ident])
     return proofs
 
 
