@@ -76,12 +76,12 @@ func wireSetupInstallation() {
 				return nil, ownerError(ctx, s, e)
 			}
 			var response struct {
-				Session *setup.InstallationState `json:"session"`
+				Session json.RawMessage `json:"session"`
 			}
 			if e = json.Unmarshal(b, &response); e != nil {
 				return nil, e
 			}
-			return response.Session, nil
+			return installationState(response.Session)
 		},
 		HasInstallation: func(ctx context.Context, r *repo.Repository, profile string) (bool, error) {
 			s := &installation.Service{Repository: r}
@@ -110,4 +110,39 @@ func wireSetupInstallation() {
 			return status, e
 		},
 	}})
+}
+
+// installationState reads A22's public view as Python's check does: Agent
+// members are raw registry values, so only a JSON false is "disabled" and a
+// member of another type is a non-matching value, never a decoding failure.
+func installationState(view json.RawMessage) (*setup.InstallationState, error) {
+	var v struct {
+		ID            string                     `json:"id"`
+		Phase         string                     `json:"phase"`
+		ConfigChanged bool                       `json:"config_changed"`
+		TargetChanged bool                       `json:"target_changed"`
+		Agents        map[string]json.RawMessage `json:"agents"`
+	}
+	if err := json.Unmarshal(view, &v); err != nil {
+		return nil, err
+	}
+	if v.ID == "" {
+		return nil, nil
+	}
+	agent := func(b json.RawMessage) setup.InstalledAgent {
+		var fields map[string]json.RawMessage
+		_ = json.Unmarshal(b, &fields)
+		member := func(key string) string {
+			var s string
+			_ = json.Unmarshal(fields[key], &s)
+			return s
+		}
+		a := setup.InstalledAgent{ID: member("id"), Name: member("name"), Host: member("host"), Status: member("status")}
+		if string(fields["enabled"]) == "false" {
+			disabled := false
+			a.Enabled = &disabled
+		}
+		return a
+	}
+	return &setup.InstallationState{ID: v.ID, Phase: v.Phase, ConfigChanged: v.ConfigChanged, TargetChanged: v.TargetChanged, Agents: setup.AgentPair{Mihomo: agent(v.Agents["mihomo"]), OxiDNS: agent(v.Agents["oxidns"])}}, nil
 }

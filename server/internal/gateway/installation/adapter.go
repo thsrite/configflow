@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/netip"
 	"strings"
 	"time"
@@ -51,12 +52,9 @@ func decodeAgent(r *agents.Record) (*agent, error) {
 	if err != nil {
 		return nil, err
 	}
-	var a agent
-	if err = json.Unmarshal(b, &a); err != nil {
-		return nil, err
-	}
-	a.record = r
 	o := object(b)
+	a := agentFields(o)
+	a.record = r
 	p := map[string]json.RawMessage{}
 	for _, key := range []string{"id", "name", "host", "port", "profile_id", "service_type", "enabled", "version"} {
 		p[key] = o[key]
@@ -69,6 +67,28 @@ func decodeAgent(r *agents.Record) (*agent, error) {
 	a.public = raw(p)
 	a.usable = agents.IsUsable(r, &now)
 	return &a, nil
+}
+
+// agentFields reads the identity members Python only compares for equality.
+// A member of another JSON type (an Agent edited to a string port, a legacy
+// record) never matches an installation target, and it must not turn every
+// registration or status read into a server error.
+func agentFields(o map[string]json.RawMessage) agent {
+	var latest task
+	if l := object(o["latest_deployment"]); l != nil {
+		latest = task{DeploymentID: text(l["deployment_id"]), Status: text(l["status"])}
+	}
+	deployments := object(o["deployments"])
+	return agent{ID: text(o["id"]), Name: text(o["name"]), Host: text(o["host"]), Port: port(o["port"]), Token: text(o["token"]), ProfileID: text(o["profile_id"]), ServiceType: text(o["service_type"]), DeploymentMethod: text(o["deployment_method"]), InstallationID: text(o["gateway_installation_id"]), Latest: latest, Deployments: deployments}
+}
+
+// port is an integral JSON number (Python 8080.0 == 8080), otherwise -1.
+func port(b json.RawMessage) int {
+	var f float64
+	if json.Unmarshal(b, &f) != nil || f != math.Trunc(f) || f < 0 || f > 65535 {
+		return -1
+	}
+	return int(f)
 }
 func (s *Service) agent(ctx context.Context, id string) (*agent, error) {
 	r, err := s.Manager.GetAgentByID(ctx, id, true)
@@ -258,12 +278,15 @@ func (s *Service) bind(ctx context.Context, r *Record, proofs map[string]json.Ra
 		}
 		found := []binding{}
 		index := map[string]*jsonx.Object{}
-		targets := map[[2]string]string{}
+		// Python refuses when any other Agent holds the target, so keep every
+		// holder: a last-wins index misses a duplicate listed before the proof.
+		targets := map[[2]string][]string{}
 		for _, item := range *records {
 			a, _ := item.(*jsonx.Object)
 			if a != nil {
 				index[a.GetString("id")] = a
-				targets[[2]string{a.GetString("name"), a.GetString("host")}] = a.GetString("id")
+				key := [2]string{a.GetString("name"), a.GetString("host")}
+				targets[key] = append(targets[key], a.GetString("id"))
 			}
 		}
 		for _, service := range services {
@@ -293,8 +316,10 @@ func (s *Service) bind(ctx context.Context, r *Record, proofs map[string]json.Ra
 			if r.AgentIDs[service] != "" && changed {
 				return nil, failure(msgBoundMetadata, 409)
 			}
-			if other := targets[[2]string{expectedName, r.Network.Address}]; other != "" && other != id {
-				return nil, failure(msgDuplicate, 409)
+			for _, other := range targets[[2]string{expectedName, r.Network.Address}] {
+				if other != id {
+					return nil, failure(msgDuplicate, 409)
+				}
 			}
 			if changed {
 				busy := agents.UpgradeBusy(a) || agents.DNSFollowBusy(*records, id)

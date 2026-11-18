@@ -43,10 +43,9 @@ func (s *Service) registrationProfile(ctx context.Context, id, token string, dat
 	if err = s.authorize(ctx, r, token); err != nil {
 		return nil, nil, err
 	}
-	var a agent
-	if json.Unmarshal(data, &a) != nil {
-		return nil, nil, failure(msgIdentity, 409)
-	}
+	// Python reads registration members with dict.get: an unrelated or wrongly
+	// typed member never turns the service check into an identity refusal.
+	a := agentFields(object(data))
 	if a.ServiceType != "mihomo" && a.ServiceType != "oxidns" {
 		return nil, nil, failure(msgService, 403)
 	}
