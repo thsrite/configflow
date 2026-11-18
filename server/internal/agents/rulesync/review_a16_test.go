@@ -200,3 +200,46 @@ func TestShutdownDuringStructurePublicationConverges(t *testing.T) {
 		}
 	}
 }
+
+// R5: stored rule_sync members of the wrong type read as absent; reads and
+// a worker round neither fail nor rewrite unrelated members.
+func TestWrongTypeRuleSyncMembersReadAsAbsent(t *testing.T) {
+	shapes := []struct {
+		name  string
+		value any
+		on    bool
+	}{
+		{"null", nil, false},
+		{"list", []any{}, false},
+		{"string", "x", false},
+		{"settings list", jsonx.Obj("settings", []any{true}), false},
+		{"state null", jsonx.Obj("settings", jsonx.Obj("library", true, "rules", false), "state", nil), true},
+		{"state list", jsonx.Obj("settings", jsonx.Obj("library", true, "rules", false), "state", []any{"x"}), true},
+		{"state wrong members", jsonx.Obj("settings", jsonx.Obj("library", true, "rules", false), "state", jsonx.Obj("status", 5, "retry_at", "soon", "noticed_at", nil, "native_task", 7, "force_refresh", "yes")), true},
+	}
+	for _, tt := range shapes {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, s := fixtureService(t)
+			_, e := s.m.UpdateAgents(ctx, "", func(_ context.Context, list *[]any) (any, error) {
+				(*list)[0].(*jsonx.Object).Set("rule_sync", tt.value)
+				return nil, nil
+			})
+			if e != nil {
+				t.Fatal(e)
+			}
+			view, e := s.Status(ctx, "device")
+			if e != nil {
+				t.Fatal(e)
+			}
+			if view.Settings.Any() != tt.on {
+				t.Fatalf("settings %+v", view.Settings)
+			}
+			if e = s.Run(ctx, "device"); e != nil {
+				t.Fatalf("worker: %v", e)
+			}
+			if _, e = s.Configure(ctx, "device", []byte(`{"library":false,"rules":true}`)); e != nil {
+				t.Fatalf("configure: %v", e)
+			}
+		})
+	}
+}
