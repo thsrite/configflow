@@ -250,6 +250,9 @@ func TestO9RegistrationCapacityExpiryAndShutdown(t *testing.T) {
 	runtime.Start(context.Background())
 	request, cancel := context.WithCancel(runtime.BindRequest(s.Context()))
 	cancel()
+	if _, err := m.CreateRegistrationCredentials(request, []model.AgentRegistrationSession{identity}); err != nil {
+		t.Fatalf("disconnected credential issuance: %v", err)
+	}
 	proof := core.RegistrationAuthorization{Credential: tokens[0]}
 	if _, err := m.RegisterAuthorizedAgent(request, o9Body(), nil, proof); err != nil {
 		t.Fatalf("disconnected request: %v", err)
