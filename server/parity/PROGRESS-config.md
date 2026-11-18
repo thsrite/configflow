@@ -2113,6 +2113,8 @@ Python：完整两路由 `backend/routes/rule_library.py`（540行）、`proxy_g
 
 ## C34 — generate, config and profile routes, config export
 
+**独立复核（2026-11-18）**：2 high / 2 medium 全部修复，56个常规方法通过；3个artifact保持已约定503/wip。逐引擎null/空body裁定、凭据出口、dry_run及请求默认修复，59方法认证与18个外部别名分派证据见 [review-c34.md](review-c34.md)。A14/Previews/O3-6c外部分工不变；只跑定向race/vet/真实Flask，无完整gate。
+
 **Status: `partial`** · prereqs: C18, C19, C20, C28, C29, C31, C33 · Go: internal/api/generate, api/config, api/profiles, internal/configexport (new; internal/redact exists)
 
 
@@ -2139,7 +2141,7 @@ Notes for porter: Own routes: `routes/config.py` (24), `routes/generate.py` (12)
 C35 supplies native `importer.Parse/Build` for `/api/profiles/import-client` (API reference in PORTING.md). Run `test_config_import.py::test_import_route_dry_run_and_commit` at the HTTP boundary when C34 lands. C35 already compares all four client parse/build outputs and real repository commit/rollback; the route itself remains C34's responsibility.
 
 
-**Clarified in C34 JSON shape follow-up:** only the five custom-config routes accept null/missing bodies as empty updates (200, revision+1) and reject every other non-object JSON with 400/no writes. Ordinary object values stay with existing business validators. Explicit Python-200/no-field and Python-500 shape classes are separately recorded in behaviour-changes and asserted by real Flask tests. No Python container-membership emulation.
+**Clarified in C34 JSON shape follow-up:** the five custom-config routes reject non-null non-object JSON with 400/no writes. Null/missing body follows each real Flask engine: Surge/Loon JSON null is an empty update (200, unchanged fields, revision+1); Mihomo/MosDNS JSON null is 500/no writes; empty bodies with or without JSON media are 500/no writes for all four engines; OxiDNS null/empty is 400/no writes. Explicit {} separately clears Mihomo/MosDNS custom_config (200, revision+1), leaves Surge/Loon fields unchanged (200, revision+1), and is 400/no writes for OxiDNS. This supersedes the author's unified null/missing update decision, per the maintainer’s review clarification. Ordinary object values stay with existing business validators. Explicit Python-200/no-field and Python-500 shape classes are separately recorded in behaviour-changes and asserted by real Flask tests. No Python container-membership emulation.
 
 
 **C34 hand-back (2026-11-18, go-port-c34 rebased on go@215ab6b04):** 56 implemented methods + 3 registered artifact503 methods. Final .64 targeted API/configgen/configexport/server race, real Flask DB/files differential, full vet and clean formatting PASS; shared DNS-loop direct Python corpus509 + targeted race PASS; fuzz60s227,427 executions PASS. Repo race PASS233s. Entire gateway race hit default10m in the pre-existing N7 frozen-history archive decoder; targeted C34 gateway checks pass, the broader timeout remains explicit. Per the latest coordinator instruction, no agent full gate; batch gate belongs to the coordinator. Previews keyed-lock/shutdown delta is deliberately the next step after O3-6c notification. Detailed source/test mapping, exact commands, output and commit list: [progress/c34.md](progress/c34.md).

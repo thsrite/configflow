@@ -132,13 +132,13 @@ func TestC34ExpectedDifferenceCustomJSONShapes(t *testing.T) {
 					}
 					wantGo := 400
 					if shape.null {
-						wantGo = 200
+						wantGo = wantPy
 					}
 					if py.Status != wantPy || got.Status != wantGo {
 						t.Fatalf("%s: Python=%d want %d, Go=%d want %d", shape.name, py.Status, wantPy, got.Status, wantGo)
 					}
 					assertUpdateEffect(t, "Python", beforePy.State, py.State, py.Status == 200)
-					assertUpdateEffect(t, "Go", beforeGo.State, got.State, shape.null)
+					assertUpdateEffect(t, "Go", beforeGo.State, got.State, wantGo == 200)
 					t.Logf("expected_difference=custom_json_schema shape=%s Python=%d Go=%d", shape.name, py.Status, got.Status)
 				})
 			}

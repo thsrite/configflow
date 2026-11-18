@@ -178,9 +178,15 @@ func TestCustomObjectShapeContract(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			s.Post(path, httpxtest.Body([]byte(body), "application/json")).WantStatus(200)
+			status, delta := 500, int64(0)
+			if engine == "oxidns" {
+				status = 400
+			} else if body == "null" && (engine == "surge" || engine == "loon") {
+				status, delta = 200, 1
+			}
+			s.Post(path, httpxtest.Body([]byte(body), "application/json")).WantStatus(status)
 			after, err := s.Repo.ConfigRevision(s.Context(), "default")
-			if err != nil || after != revision+1 {
+			if err != nil || after != revision+delta {
 				t.Fatal("empty update did not commit exactly once")
 			}
 		}
@@ -188,7 +194,7 @@ func TestCustomObjectShapeContract(t *testing.T) {
 }
 
 func TestEmptyCustomUpdateRuntime(t *testing.T) {
-	for _, engine := range []string{"mihomo", "surge", "loon", "mosdns", "oxidns"} {
+	for _, engine := range []string{"surge", "loon"} {
 		for _, shutdown := range []bool{true, false} {
 			t.Run(engine+map[bool]string{true: "/shutdown", false: "/disconnect"}[shutdown], func(t *testing.T) {
 				s := exportApp(t)
@@ -204,7 +210,7 @@ func TestEmptyCustomUpdateRuntime(t *testing.T) {
 				} else {
 					cancel()
 				}
-				_, err := saveCustom(ctx, "default", engine, customRequest{Noop: true})
+				_, err := saveCustom(ctx, "default", engine, customRequest{})
 				if shutdown {
 					if err == nil || stored(t, s) != before {
 						t.Fatal("empty update committed after shutdown")

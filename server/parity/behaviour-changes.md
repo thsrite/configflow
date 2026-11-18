@@ -901,7 +901,7 @@ C34 自定义配置五条路径同样将 HEAD 分派给 GET：Mihomo、Surge、M
 
 - **Python 200 的无字段非对象请求**：Surge/Loon 将部分字符串、数组、数字、布尔（包括 `""`、`0`、`false`、`[]`）误当无字段补丁，未改业务字段却递增 revision。Go 一律 400，DB、文件、revision 不变。
 - **Python 500 的非对象请求**：Mihomo/MosDNS 的属性访问，以及 Surge/Loon 的不可迭代值或含字段名的字符串/数组，会抛内部异常。Go 一律 400，DB、文件、revision 不变。OxiDNS 原已 400，继续拒绝；消息明确要求 JSON 对象。
-- **null / 缺失 body**：五条路由统一执行空更新，返回 200、revision 恰好 +1，业务字段和文件不变。Surge/Loon 的 JSON null 本来如此；Mihomo/MosDNS 的 null 和严格解析缺失 body 原为 500，OxiDNS 原为 400，也按本次显式裁定统一修正。
+- **null / 缺失 body**：独立复核时维护者撤销统一空更新裁定，要求逐引擎严格匹配真实 Flask。Surge/Loon 的 JSON null 返回200、业务字段不变、revision+1；Mihomo/MosDNS 的 JSON null 返回500、无写入；四者缺失 body（带 JSON Content-Type 或不带）均500、无写入。OxiDNS 的 null/缺失均400、无写入。显式 `{}` 是另一输入：Mihomo/MosDNS 清空 custom_config 并 revision+1；Surge/Loon 空更新并 revision+1；OxiDNS 400。null/缺失不再登记为 Python 功能差异，错误内部诊断文字不模拟。
 - 普通对象的每个字段值仍交给现有业务 validator；不把 Python 容器成员关系移植为新 helper。profile create/generate 不采用本项新 schema。
 
 `api/config/difftest.TestC34ExpectedDifferenceCustomJSONShapes` 对五个引擎逐项断言十二种 shape 的 Python/Go 状态码，以及两边各自的 DB、完整字段、revision、文件效果。`TestC34ObjectFieldValues` 单独对照对象里的 null/false/0/空数组/空对象/true/数字，避免 DTO 意外收窄业务输入。严格畸形 JSON 400 / 非 JSON 媒体类型 415 沿用 N8-6 的迁移决策。YAML `yes` 为字符串、重复键和 alias 预算沿用 N7 §5.7，不作为未知差异。
@@ -911,3 +911,12 @@ C34 自定义配置五条路径同样将 HEAD 分派给 GET：Mihomo、Surge、M
 协调者裁定（2026-11-18）：缺失/null 不覆盖，字符串（含空串）照常使用，其他 JSON 类型统一 400，且不提交 DB、业务文件、生成缓存。仅限 `base_url` 字段，不改变其他字段，也不扩大 custom-config 的 body schema 到 profile create/generate 的空 body 默认行为。
 
 Python 的 Surge 等生成器将 null/false/数字/容器隐式转成文本，可生成 `None/api/…`、`False/api/…`、`3/api/…` 之类的无效 URL；OxiDNS 的同类预览请求因字符串属性访问返回 500。Go 用共享的 `configgen.RequestBaseURL` 读取精确字段名并校验类型，不移植这些 Python 文本转换。`TestC34BaseURLInputAlternatives` 明确断言五个引擎十种输入的 Python/Go 状态、Surge 的 None URL 证据、Go null 等同缺失、合法字符串输出一致、预览及两个下载前缀均无非法输入提交。
+
+
+## C34 独立复核 — profile 绑定元数据凭据
+
+profile 列表、Agent绑定列表和改绑结果的 host 可能是旧的 Basic-auth userinfo 形式，
+Python及原Go投影均原样显示；改绑冲突名称中的 password=... 也会进入错误JSON。
+这四个公共出口现在复用 redact.SanitizeCredentials；原存储/完整管理员备份仍保留连接信息。
+这是凭据安全修正，单独回归 TestReviewC34BindingCredentials，不放宽普通Flask差分。
+custom null/缺失裁定见上文最新逐引擎合同，dry_run及profile默认/校验修复均恢复Python行为。

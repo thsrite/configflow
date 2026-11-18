@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"strings"
 
 	"configflow/internal/agents"
@@ -16,6 +17,7 @@ import (
 	"configflow/internal/importer"
 	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
+	"configflow/internal/redact"
 	"configflow/internal/repo"
 )
 
@@ -29,14 +31,18 @@ func Register(r *httpx.Router) {
 		}
 		if c.Method() != "POST" {
 			out, err := repository.ListProfiles(c.Context())
-			return reply(out, err, 200)
+			return reply(publicBindings(out), err, 200)
 		}
 		body, err := objectBody(c, true)
 		if err != nil {
 			return nil, err
 		}
+		cloneFrom, textSource := body.Value("clone_from").(string)
+		if !textSource && jsonx.Truthy(body.Value("clone_from")) {
+			return nil, repo.ValidateProfileID("")
+		}
 		out, err := mutate(c.Context(), func(ctx context.Context, r *repo.Repository) (*jsonx.Object, error) {
-			return r.CreateProfile(ctx, body, body.GetString("clone_from"))
+			return r.CreateProfile(ctx, body, cloneFrom)
 		})
 		return reply(out, err, 201)
 	}))
@@ -97,7 +103,7 @@ func Register(r *httpx.Router) {
 			return nil, err
 		}
 		out, err := r.GetProfileAgentBindings(c.Context(), c.Param("profile_id"))
-		return reply(out, err, 200)
+		return reply(publicBindings(out), err, 200)
 	}))
 	r.POST("/api/profiles/<profile_id>/agents/rebind", "profiles.rebind_profile_agents", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
 		body, err := objectBody(c, false)
@@ -117,7 +123,7 @@ func Register(r *httpx.Router) {
 		if err == nil {
 			out.Set("success", true)
 		}
-		return reply(out, err, 200)
+		return reply(publicBindings(out), err, 200)
 	}))
 	r.GET("/api/profiles/<profile_id>/export", "profiles.export_profile", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
 		r, err := repo.GetRepository(c.Context())
@@ -154,11 +160,17 @@ func Register(r *httpx.Router) {
 	r.POST("/api/profiles/import-client", "profiles.import_client_profile", auth.Require(importClient))
 }
 
+// Binding summaries can include credentials inside a legacy host or label.
+// Use the shared public-metadata policy without changing stored connections.
+func publicBindings(value any) any {
+	return redact.SanitizeCredentials(jsonx.Obj("bindings", value), nil).Value("bindings")
+}
+
 func reply(out any, err error, status int) (*httpx.Response, error) {
 	if err != nil {
 		var conflict *agents.DeploymentConflict
 		if errors.As(err, &conflict) {
-			return httpx.Message(409, false, err.Error()), nil
+			return httpx.JSONStatus(409, redact.SanitizeCredentials(jsonx.Obj("success", false, "message", err.Error()), nil)), nil
 		}
 		return nil, err
 	}
@@ -178,12 +190,24 @@ func objectBody(c *httpx.Ctx, fallback bool) (*jsonx.Object, error) {
 	}
 	if fallback {
 		switch string(raw) {
-		case `false`, `0`, `0.0`, `""`, `[]`:
+		case `false`, `""`, `[]`:
 			return jsonx.NewObject(), nil
+		}
+		var number json.Number
+		if len(raw) > 0 && raw[0] != '"' && json.Unmarshal(raw, &number) == nil {
+			if value, err := strconv.ParseFloat(string(number), 64); err == nil && value == 0 {
+				return jsonx.NewObject(), nil
+			}
 		}
 	}
 	var out *jsonx.Object
 	if err := json.Unmarshal(raw, &out); err != nil || out == nil {
+		// Metadata update/clone validation is owned by repo. Unlike the
+		// collection and DELETE adapters, Python passes these values through
+		// and the owner rejects their shape with its normal validation error.
+		if fallback && (c.Method() == "PUT" || c.Endpoint == "profiles.clone_profile") {
+			return nil, nil
+		}
 		status := 400
 		if fallback {
 			status = 500
@@ -218,7 +242,7 @@ func importClient(c *httpx.Ctx) (*httpx.Response, error) {
 	}
 	var ids []string
 	rawIDs := body.Value("default_subscription_ids")
-	if rawIDs != nil {
+	if jsonx.Truthy(rawIDs) {
 		list, ok := jsonx.AsList(rawIDs)
 		if !ok {
 			return httpx.Message(400, false, msgSubscriptions), nil
@@ -226,7 +250,7 @@ func importClient(c *httpx.Ctx) (*httpx.Response, error) {
 		for _, value := range list {
 			id, ok := value.(string)
 			if !ok {
-				return httpx.Message(400, false, msgSubscriptions), nil
+				continue // Non-string values cannot name a stored subscription.
 			}
 			ids = append(ids, id)
 		}
@@ -259,7 +283,7 @@ func importClient(c *httpx.Ctx) (*httpx.Response, error) {
 		return &out, nil
 	}
 	var out *jsonx.Object
-	if body.GetBool("dry_run") {
+	if jsonx.Truthy(body.Value("dry_run")) {
 		r, err := repo.GetRepository(c.Context())
 		if err != nil {
 			return nil, err

@@ -23,7 +23,6 @@ import (
 )
 
 type customRequest struct {
-	Noop        bool
 	Config      json.RawMessage
 	SmartGroups json.RawMessage
 	Interval    json.RawMessage
@@ -57,7 +56,10 @@ func registerCustom(r *httpx.Router) {
 				return nil, err
 			}
 			if len(data) == 0 {
-				body.Noop = true
+				if engine == "oxidns" {
+					return httpx.Message(400, false, msgYAMLText), nil
+				}
+				return httpx.Message(500, false, msgObject), nil
 			} else {
 				var raw json.RawMessage
 				if engine == "oxidns" {
@@ -70,7 +72,12 @@ func registerCustom(r *httpx.Router) {
 					}
 				}
 				if string(raw) == "null" {
-					body.Noop = true
+					switch engine {
+					case "oxidns":
+						return httpx.Message(400, false, msgYAMLText), nil
+					case "mihomo", "mosdns":
+						return httpx.Message(500, false, msgObject), nil
+					}
 				} else {
 					if len(raw) == 0 || raw[0] != '{' {
 						return httpx.Message(400, false, msgObject), nil
@@ -168,31 +175,6 @@ func saveCustom(ctx context.Context, id, engine string, body customRequest) (*js
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, err
-	}
-	if body.Noop {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		r, err := repo.GetRepository(ctx)
-		if err != nil {
-			return nil, err
-		}
-		resolved, err := repo.ResolveProfileID(ctx, id)
-		if err != nil {
-			return nil, err
-		}
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		_, revision, err := r.UpdateProfileTransaction(ctx, resolved, func(ctx context.Context, _ *jsonx.Object) (*jsonx.Object, error) { return nil, ctx.Err() })
-		if err != nil {
-			return nil, err
-		}
-		repo.ResetConfigContext(ctx)
-		if engine == "mihomo" || engine == "surge" || engine == "mosdns" {
-			return jsonx.Obj("expected_profile_id", resolved, "expected_service_type", engine, "expected_config_revision", jsonx.Int(revision)), nil
-		}
-		return nil, nil
 	}
 	if engine == "oxidns" {
 		var text string
