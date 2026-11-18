@@ -42,6 +42,16 @@ diagnosis and strict other fields/storage; no aggregation runtime code changes. 
 - Python lazily imports in cycles (e.g. converters ↔ provider delivery ↔ route files, the whole OxiDNS cluster). Go needs a DAG: the prerequisite order below breaks the cycles; when a module needs a function of a later module, put a `compat.go` copy (`TODO(port)`) or an interface/hook and list it here.
 - Cross-domain calls (config → agents/routers code) are listed per module; they are the main blockers for C18, C27, C34, C36, C37.
 
+## N7-3d — frozen-reader gate performance (in progress)
+
+- Independent follow-up `go-n73-gate-perf` from go@c31fbf306, after N8-7 first
+  batch handoff. Eight callers currently decode all21343 frozen graph records
+  even for a few selected sources. Keep all caller inputs; move full archive
+  embedding/replay to the helper test and use a compact derived fingerprint
+  index at callers. No product behavior or coverage changes.
+- Same-host before/after race timing and full-source coverage evidence:
+  [progress/n73-gate-perf.md](progress/n73-gate-perf.md).
+
 ## N7-3d — final reader/legacy cleanup (complete; coordinator verification pending)
 
 Branch go-n7-3d was initially stacked on N7-4; now rebased onto go@28e6e0c12

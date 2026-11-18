@@ -8,28 +8,38 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"reflect"
 	"sync"
 
 	"configflow/internal/yamlx"
 )
 
 // Historical comparisons were recorded while both Go loaders still existed.
-// Their old graphs/errors are data, never another legacy YAML implementation.
-//
-//go:embed testdata/n73_frozen.json.gz
-var frozenBytes []byte
+// Callers need only a compact fingerprint of their own inputs. The complete
+// archive is embedded by history_test.go and replayed once in this package.
+const (
+	frozenArchiveSHA = "2289da8b3711546f68a7a4c0f440c05d005e6ecc60598a3fb259b64321992222"
+	frozenRevision   = "7d58ac61"
+	frozenCount      = 21343
+)
+
+//go:generate go run ./testdata/frozenindex
+
+//go:embed testdata/n73_index.json.gz
+var frozenIndexBytes []byte
 
 //go:embed testdata/reader_history.json.gz
 var readerHistoryBytes []byte
 
-type frozenReader struct {
-	Source      string      `json:"source"`
-	Category    string      `json:"category"`
-	Native      []ParseNode `json:"native"`
-	NativeError string      `json:"native_error"`
-	Unknown     bool        `json:"unknown"`
-	Revision    string      `json:"revision"`
+type frozenSummary struct {
+	Category    string `json:"category"`
+	NativeSHA   string `json:"native_sha256"`
+	NativeError string `json:"native_error"`
+}
+
+type frozenIndex struct {
+	ArchiveSHA string                   `json:"archive_sha256"`
+	Revision   string                   `json:"revision"`
+	Records    map[string]frozenSummary `json:"records"`
 }
 
 func readArchive(data []byte, dst any) error {
@@ -41,30 +51,40 @@ func readArchive(data []byte, dst any) error {
 	return json.NewDecoder(reader).Decode(dst)
 }
 
-var frozenReaders = sync.OnceValues(func() (map[string]frozenReader, error) {
-	if fmt.Sprintf("%x", sha256.Sum256(frozenBytes)) != "2289da8b3711546f68a7a4c0f440c05d005e6ecc60598a3fb259b64321992222" {
-		return nil, fmt.Errorf("historical YAML comparison archive changed")
+var frozenSummaries = sync.OnceValues(func() (map[string]frozenSummary, error) {
+	if fmt.Sprintf("%x", sha256.Sum256(frozenIndexBytes)) != "47e7732d7e632eacae626e6a99ecc2e136a5873c8d2297a68c0c8e5f9c45134b" {
+		return nil, fmt.Errorf("historical YAML comparison index changed")
 	}
-	var records map[string]frozenReader
-	if err := readArchive(frozenBytes, &records); err != nil {
+	var index frozenIndex
+	if err := readArchive(frozenIndexBytes, &index); err != nil {
 		return nil, err
 	}
-	if len(records) != 21343 {
-		return nil, fmt.Errorf("historical input count changed: %d", len(records))
+	if index.ArchiveSHA != frozenArchiveSHA || index.Revision != frozenRevision || len(index.Records) != frozenCount {
+		return nil, fmt.Errorf("historical YAML comparison index metadata changed")
 	}
-	return records, nil
+	return index.Records, nil
 })
 
+func auditSHA(nodes []ParseNode) (string, error) {
+	data, err := json.Marshal(nodes)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%x", sha256.Sum256(data)), nil
+}
+
 // Classify verifies today's Parse against a frozen actual old/new comparison.
+// It decodes only the compact index, then parses and audits this caller's source;
+// history_test.go independently verifies the index against every full record.
 // Unrecorded sources fail; no new input silently acquires a historical exemption.
 func Classify(source string) (string, error) {
-	records, err := frozenReaders()
+	records, err := frozenSummaries()
 	if err != nil {
 		return "", err
 	}
 	id := fmt.Sprintf("%x", sha256.Sum256([]byte(source)))
 	record, ok := records[id]
-	if !ok || record.Source != source || record.Unknown || record.Category == "" || record.Revision != "7d58ac61" {
+	if !ok || record.Category == "" {
 		return "", fmt.Errorf("missing or invalid historical YAML input %s", id)
 	}
 	node, err := yamlx.Parse([]byte(source))
@@ -72,8 +92,14 @@ func Classify(source string) (string, error) {
 		if err.Error() != record.NativeError {
 			return "", fmt.Errorf("native YAML refusal changed for %s: %w", id, err)
 		}
-	} else if record.NativeError != "" || !reflect.DeepEqual(ParseAudit(node), record.Native) {
-		return "", fmt.Errorf("native YAML physical graph changed for %s", id)
+	} else {
+		digest, err := auditSHA(ParseAudit(node))
+		if err != nil {
+			return "", err
+		}
+		if record.NativeError != "" || digest != record.NativeSHA {
+			return "", fmt.Errorf("native YAML physical graph changed for %s", id)
+		}
 	}
 	return record.Category, nil
 }
