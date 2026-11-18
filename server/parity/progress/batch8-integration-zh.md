@@ -1,8 +1,8 @@
-# batch-8 集成交接（进行中）
+# batch-8 集成交接（已完成）
 
 基底 go@d4fab6441，工作树 configflow-go-batch-8，分支 batch-8；不 push。
 指定 a–g 七个集成项已分别提交；协调者补充的 profile-local 旧缓存认领和九条精确
-C28 D2 预期已在 23c83a970 关闭，当前参考指纹与 preflight 已通过，继续完整 compare 验收。core/race 由协调者跑。
+C28 D2 预期已在 23c83a970 关闭，当前参考指纹、最终 preflight 与完整 compare 全部通过，可交协调者跑 core。core/race 由协调者跑。
 
 ## 叠入范围
 
@@ -70,13 +70,14 @@ C28 D2 预期已在 23c83a970 关闭，当前参考指纹与 preflight 已通过
 - go@d4fab6441 Mihomo 128 节点+512规则：75,947,720–76,008,229 B/op，710397–710428 allocs/op。
 - 原 DNS@2afc61ece OxiDNS 冷缓存链，128 rules：unused0 61,374,738–61,389,080 B/op、
   749512–749517 allocs/op；unused2MiB 61,316,677–61,381,077 B/op、749479–749531 allocs/op。
-  原分支只读运行，没有修改其文件或引用。最终树需按同一命令复测。
+  原分支只读运行，没有修改其文件或引用。最终树已按同一命令复测，见下文。
 
-## 最终验收待完成
+## 最终验收状态
 
-profile-local 认领回归、C28 精确 D2 对照、参考指纹、生产快照认领数量、两个最终基准、
-PREFLIGHT PASS、完整 GATE_ONLY=compare（proddiff new/stale 0、difftest 与 synthetic live 全过）。
-所有重负载均在固定主测试服务器，不运行完整 core/race。
+profile-local 认领回归、C28 精确 D2 对照、参考指纹、生产快照认领统计和两个最终基准均完成。
+最终产品及测试树 5d5aef480：PREFLIGHT PASS；完整 GATE_ONLY=compare PASS。
+所有重负载均在指定的固定主测试服务器；完整 core 门禁由协调者执行。
+下文保留各轮检查及修复记录，历史“待完成”表述不代表当前有剩余工作。
 
 ### 补充验证记录
 
@@ -191,3 +192,39 @@ SpawnerFrom 取得实际默认Runtime；WaitIdle 后直接断言报告完成，�
 idle=true、CommitCount不变断言。没有提高等待阈值或增加sleep，也没有改产品。
 最终 `go test -race -count=5 -timeout=10m ./internal/agents/ipv6` 整包通过，113.870s。
 最后一项同步提交已整理为最终实现，接着重跑 preflight 与完整 compare。
+
+## 最终交回
+
+全部七个源分支已按指定顺序叠入，原引用未修改，没有推送。a–g 提交见前表；补充提交：
+
+| 提交 | 内容 |
+| --- | --- |
+| 23c83a970 | 当前存储 profile-local URL 旧缓存归属与 C28 精确 D2 |
+| dead8fcdb | 合并后的真实 source 依赖和参考元数据 |
+| 868703c80 | 冻结 convert/IP-presence 对照的精确 D2/R5 接线，原 archive 不变 |
+| 36362a874 | HTTP cache 写入的两对精确 D2 地址，内容仍逐字节比较 |
+| 68bf40352 | repository live 布局的精确 D2 地址及完整 cache bytes 对照 |
+| 5d5aef480 | IPv6 scheduler 测试等待实际默认 owner，登记新增 live oracle |
+
+生产 captured config 对应当前已保存配置。C28 #72/#78 的“只在 captured args 有声明”
+属于冻结构造或预览未保存编辑，不是当前生产声明；按批准 D2 拒绝认领。
+当前离线生产快照的 profile-local URL 旧缓存认领数为 **0**，正负控由合成 SQLite 回归证明。
+
+最终在 5d5aef480（随后仅本报告更新）执行：
+
+1. `RT_HOST=<固定主测试服务器> rt sync`，然后
+   `ssh <固定主测试服务器> 'bash /tmp/preflight.sh program__configflow-go-batch-8 -p 6'`。
+   两种 tag 的 vet 和全量非 race 测试完成，退出0：`PREFLIGHT PASS`。
+2. `RT_HOST=<固定主测试服务器> rt -e GATE_ONLY=compare -- bash -lc 'server/scripts/gate.sh -p 6'`。
+   最终私有日志组 `gate.R67dWp`，完整执行完毕，退出0：
+
+```text
+baseline: new=0 stale=0
+SYNTHETIC LIVE PASS: 23 required entries ran and passed; 0 skips; repo Python subtest and WebDAV Python exec verified
+GATE STAGE PASS: compare
+```
+
+proddiff self-check 全部PASS；全部24个 difftest package通过；synthetic live全部23项执行，
+无skip，repo真实Python子测试和WebDAV真实Python exec证据均验证。
+Mihomo128节点+512规则与OxiDNS冷缓存分配均低于基线，见上文最终测量；没有分配回升。
+未运行完整 core 门禁。无未解决集成项；可由协调者独立运行 core。
