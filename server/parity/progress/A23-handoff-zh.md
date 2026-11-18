@@ -2,7 +2,7 @@
 
 状态：`ported`；功能与定向检查完成，待新的 Opus 独立 HR 复核。
 
-分支 `go-port-a23`，基底为协调者指定 `go-r17-base-v2@673851659`（含 R14 与复核后的 R16）。没有重复叠入 A22。提交：`3bd37be66` 保存配置/候选投影；`dd58e8664` 主体 owner/接线；最后修正及测试提交在文末记录。未 push、无子 agent；仅在任务固定的第一台测试服务器运行，网络全部为 loopback fake，未访问生产或实验设备。源码、夹具与本报告使用合成标识。
+分支 `go-port-a23`，基底为协调者指定 `go-r17-base-v2@673851659`（含 R14 与复核后的 R16）。没有重复叠入 A22。提交：`3bd37be66` 保存配置/候选投影；`dd58e8664` 主体 owner/接线；`8a9384781` 捕获证据/取消边界修正、完整测试、文档/ported状态。未 push、无子 agent；仅在任务固定的第一台测试服务器运行，网络全部为 loopback fake，未访问生产或实验设备。源码、夹具与本报告使用合成标识。
 
 ## 实现范围
 
@@ -72,3 +72,11 @@ RT_HOST="$A23_TEST_HOST" rt -- bash -lc 'cd server && CONFIGFLOW_DIFF=1 go test 
 | 锁与后台生命周期 | 锁组原锁排序去重、逆序释放、反序并发；全局8 slots/2 worker；workers/watchers 都由 Runtime 跟踪且 fanout 全部 join，panic 无敏感日志；调度器0/5秒、IdleRounds、Manager close 清理且换 Manager 后不会继续使用旧闭包。 |
 
 L4 的真实主机重启、ROS 实流/运营商网络恢复仍由协调者安排新的 Opus 在隔离实验网执行；这里没有把 loopback 相关性测试写成真实端到端通过证明。
+
+## 最终提交
+
+- `3bd37be66` — saved configuration/probe target projection。
+- `dd58e8664` — readiness、客户端证据、verification、锁组/薄导出、HTTP/server接线。
+- `8a9384781` — 捕获凭据、完整 Runtime 写 owner、R13 host bridge、坏记录与数值证明、Python/Flask/HTTP/race 回归、操作文档、PROGRESS/routes登记。
+
+交回分支 `go-port-a23`；本段之后的提交只记录交接提交号。工作树干净，无 push。新的 Opus 应从该分支 tip 开始 HR 复核；临时依赖基底仍按协调者通知处理。

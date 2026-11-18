@@ -1988,6 +1988,8 @@ Routes (5): `GET /api/agents/<agent_id>/ipv6-readiness`; `POST /api/agents/<agen
 
 分支 `go-port-a23`，从协调者指定 `go-r17-base-v2@673851659` 新建。完整就绪/缓存/prepare/probe、客户端相关证据、settings/result/start/enroll/0-5秒调度、8 slots/2 workers、HTTP五方法及R13 host/A14/A13接线已实现。setup18→Agent19→router20→repo，批量锁组复用原锁，设计见 O3 Clarified in A23。真实 Python/Flask、原始HTTP、真实Runtime断连/关机、坏行/旧凭据隔离、定向race/vet/gofmt及60秒fuzz通过。尚待新的Opus HR复核、依赖通知后的rebase与batch gate/L4；详见 [A23交接](progress/A23-handoff-zh.md)。
 
+Commits: `3bd37be66`, `dd58e8664`, `8a9384781`；交接文档提交在其后。
+
 Hooks installed: `agents.OnManagerInit` (`ipv6_verification.start_loop`, last); `ipv6_verification.enroll` is called from A14 `_publish_deployment` (A14 declares a hook with a no-op default, registered here). Routers' `routes/routers.py` imports `agents.ipv6_readiness` (interface for the routers domain).
 
 ## A24 — client tools, OxiDNS device policies, domain-discovery toggles
