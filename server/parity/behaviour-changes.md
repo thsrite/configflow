@@ -1473,3 +1473,22 @@ port/interval 使用 model.Int；不再保留私有数字文本解码或待接�
 返回包含节点、id、字段和原 JSON 的类型错误，不再静默省略该节点；原 Python 也因类型错误
 失败（15488/15489）。遗留 rule_sets=false（5230）按已有类型化规则列表校验拒绝，保留中文
 「规则列表必须为规则对象数组」上下文。上述 malformed/native 边界均不修改旧 golden。
+
+## N8-9 health/check — typed 边界与原生诊断
+
+- health/check 的存储消费按共享 model R5/R8 解码：numeric text 无损，Int 使用共享的
+  数值/严格十进制字符串规则，wrong bool/容器按 schema fallback；身份字段和写入时间戳
+  另作业务校验。错误不再伪装成 Python TypeError/KeyError。请求健康检查仍执行严格的
+  JSON token 类型校验，worker version/latency 仍作协议验证，不能借存储宽容规则通过。
+- 评分的 delay 是 float64，超范围值按 R5；不再保留 Python 任意精度运算。节点 worker
+  的正整数 latency 仍以 json.Number 保留大数精度。具体 typed 差异均在独立合成参考中
+  逐条断言，原三份 corpus 不改；见 progress/n8-9-health.md。
+- 非法 worker UTF-8 仍失败（HTTP 400），消息由 Python codec 字节异常改成固定中文
+  “测速组件输出不是有效 UTF-8”，不显示 worker 内容。Flask 差分分别断言双方完整错误体。
+- 环境变量 CONFIGFLOW_NODE_TEST_TIMEOUT_MS 使用 strconv 的十进制语法，不再接受
+  Python 的下划线或 Unicode 数字写法。非法值仍用原中文设置错误和503。
+- worker 的失败 error 字段按协议要求为非空字符串；非字符串 truthy 容器不再被当作
+  有效失败记录接受。版本缺失/不匹配的原中文区分保留；非有限 JSON 明确拒绝。
+- node-probe JSON stdin 使用 D2 的 Go 原生编码；空白和 Unicode 转义可不同，JSON 字段、
+  数值、argv、预算、环境、结果和持久化仍严格比较。目录删除保留 errno 与“不删除目录”的
+  约束，使用 N8-7 jsonstore 的原生错误，不拼装 Python OSError 文本。

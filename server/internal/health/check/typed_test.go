@@ -55,7 +55,7 @@ func TestCheckCoreHasNoLegacyOrUntypedDependency(t *testing.T) {
 			t.Fatalf("parse %s: %v", name, err)
 		}
 		for _, imp := range file.Imports {
-			if strings.Contains(imp.Path.Value, "jsonx") {
+			if strings.Contains(imp.Path.Value, "jsonx") || strings.Contains(imp.Path.Value, "pystr") {
 				t.Errorf("%s imports legacy %s", name, imp.Path.Value)
 			}
 		}

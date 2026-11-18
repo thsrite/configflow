@@ -1125,6 +1125,11 @@ Commands (review):
 
 **Status: `verified`** (review 2026-11-16, commit b579c790; see "Review C16") · prereqs: C12, C13 · Go: `internal/health/check` (leaf: no repo import), `internal/health`, routes in `internal/api/nodes`
 
+**N8-9 typed 接手（待独立复核）**：Gemini 未验证草稿已保存为 WIP，Codex 已逐行审查并修正；
+采用共享 model codec、原生 worker/DTO/存储消费，Python 仿真移除；原 corpus 保持不变，
+typed 差异改为独立精确参考。更正清单、适配边界和定向验证见
+[progress/n8-9-health.md](progress/n8-9-health.md)。C16 原验证记录保留作迁移前基线。
+
 Files → Go:
 - `backend/utils/health_check.py` (82) → `check/healthcheck.go`: `ProviderDefaults()`, `GroupDefaults()`, `GroupHealthTypes`/`IsGroupHealthType`, `InitializeGroupHealth`, `InitializeProviderHealth`, `ValidateHealth(values, provider)` (`*check.ValueError`), `ProviderHealthCheck` (missing key → `*check.KeyError`), `UserInfo`.
 - `backend/utils/region_check.py` (367) → `check/region.go`: constants, `ExitRequest`, `GroupTypes`/`NonNodeTypes`/`ExcludedTargets`, `RegionRules`, `RegionOfName`/`RegionOfNameValue`, `RegionLabel`, `Services` (+`ServiceByID`, `Service.Requests()`, `Service.Evaluate(byID)`), `ServiceRequests`, `EvaluateServices`, `ExitInfo`, `PublicServices`, `BlockPattern`, `DomainRequest`, `ClassifyDomainResult`, `SummarizeDomain`, `PickTargets`, `RegionStore` (`NewRegionStore(dir)`, `Update(id, mutate, now)`, `Load`, `Delete`, `Path`), `NaiveISOSeconds`. Python regexes via `rules.CompilePyRegex` (look-behind, Unicode IGNORECASE).

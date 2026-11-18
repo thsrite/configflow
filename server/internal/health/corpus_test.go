@@ -178,6 +178,7 @@ func TestReferenceCorpus(t *testing.T) {
 	ctx := repo.WithRepository(context.Background(), r)
 	failures := 0
 	classified := map[string]int{}
+	native := nativeExpectations(t, "testdata/corpus.json")
 	rows := parsed.(*jsonx.Object).GetList("rows")
 	storeDir := t.TempDir()
 	probeStore, regionStore := check.NewProbeStore(storeDir), check.NewRegionStore(storeDir)
@@ -334,9 +335,9 @@ func TestReferenceCorpus(t *testing.T) {
 		if fn == "region_of_name" && strings.ContainsAny(encode(args), "İıſ") {
 			continue
 		}
-		if issueClass := classifyReplayInput(fn, args, nil, nil); issueClass != "" {
-			classified[issueClass]++
-			assertClassifiedContract(t, i, label, issueClass, callErr)
+		if expected, ok := native[i]; ok {
+			classified[expected.Contract]++
+			assertNativeExpectation(t, expected, fn, out, callErr)
 			continue
 		}
 
@@ -382,22 +383,14 @@ func TestReferenceCorpus(t *testing.T) {
 			t.Errorf("row %d %s:\n want %s\n got  %s", i, label, encode(want), encode(normalizeOut(out)))
 		}
 	}
-	t.Logf("%d rows, %d differences, classified=%v", len(rows), failures, classified)
-}
-
-func assertClassifiedContract(t *testing.T, row int, label, issueClass string, err error) {
-	t.Helper()
-	switch issueClass {
-	case classIdentityWrongType, classStoreWriteValidation:
-		var ve *check.ValueError
-		if !errors.As(err, &ve) {
-			t.Errorf("row %d (%s) [%s]: expected *check.ValueError, got %v", row, label, issueClass, err)
-		}
-	case classNumericAsText:
-		if err != nil {
-			t.Errorf("row %d (%s) [%s]: expected lossless numeric-as-text acceptance, got error %v", row, label, issueClass, err)
-		}
+	nativeCount := 0
+	for _, n := range classified {
+		nativeCount += n
 	}
+	if nativeCount != len(native) {
+		t.Errorf("typed reference entries exercised=%d, want %d", nativeCount, len(native))
+	}
+	t.Logf("%d rows, %d differences, classified=%v", len(rows), failures, classified)
 }
 
 func normalizeOut(v any) any {

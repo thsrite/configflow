@@ -4,7 +4,8 @@
 // run on copies of one data directory and call the same fake node-probe
 // worker (a shell script named by CONFIGFLOW_NODE_PROBE_BIN whose stdout,
 // exit code and delay the test sets before each request; it records its
-// stdin). Sub-Store is a closed loopback port, so URI nodes fail conversion
+// stdin). Invalid UTF-8 has an explicitly asserted native diagnostic; other
+// response values remain equal. Sub-Store is a closed loopback port, so URI nodes fail conversion
 // on both sides. Statuses, JSON bodies (times masked), the worker's stdin
 // and the stored data (shared/node_latency.json, system_config) must match.
 //
@@ -384,6 +385,7 @@ func TestDifferentialLatencyRoutes(t *testing.T) {
 		{name: "results final", method: "GET", path: L},
 	}
 	failed := 0
+	nativeContracts := 0
 	for _, r := range requests {
 		inputs := [2]string{}
 		var outcomes [2]struct {
@@ -412,6 +414,15 @@ func TestDifferentialLatencyRoutes(t *testing.T) {
 		}
 		p, g := outcomes[0], outcomes[1]
 		same := p.status == g.status && ((p.value != nil && g.value != nil && jsonx.Equal(mask(p.value), mask(g.value))) || bytes.Equal(p.body, g.body))
+		if r.name == "worker invalid utf-8" {
+			pythonExpected := jsonx.Obj("success", false, "message", "'utf-8' codec can't decode byte 0xff in position 0: invalid start byte")
+			goExpected := jsonx.Obj("success", false, "message", health.WorkerOutputEncodingError)
+			same = p.status == 400 && g.status == 400 && jsonx.Equal(p.value, pythonExpected) && jsonx.Equal(g.value, goExpected)
+			if same {
+				nativeContracts++
+			}
+		}
+
 		if !same {
 			failed++
 			pm, _ := jsonx.Compact(mask(p.value))
@@ -421,7 +432,7 @@ func TestDifferentialLatencyRoutes(t *testing.T) {
 			failed++
 			t.Errorf("DIFF worker stdin %s:\n  python %s\n  go     %s", r.name, inputs[0], inputs[1])
 		} else {
-			t.Logf("same %-30s %s %s → %d", r.name, r.method, r.path, p.status)
+			t.Logf("checked %-30s %s %s → %d", r.name, r.method, r.path, p.status)
 		}
 		if strings.Contains(string(g.body), "secret") {
 			t.Errorf("%s: Go response leaks the worker's stderr", r.name)
@@ -436,5 +447,19 @@ func TestDifferentialLatencyRoutes(t *testing.T) {
 			t.Logf("same file %s", name)
 		}
 	}
-	t.Logf("%d requests, %d files, %d differences", len(requests), len(pyFiles), failed)
+	if nativeContracts != 1 {
+		t.Errorf("native UTF-8 boundary assertions=%d, want 1", nativeContracts)
+	}
+	t.Logf("%d requests, %d files, %d unexplained differences, %d exact native boundary", len(requests), len(pyFiles), failed, nativeContracts)
+}
+
+func TestWorkerJSONComparisonRejectsChangedValues(t *testing.T) {
+	if !sameWorkerStdin(`{"name":"\u4e2d","port":80}`, `{"name":"中","port":80}`) {
+		t.Fatal("native encoding rejected")
+	}
+	for _, changed := range []string{`{"name":"中","port":81}`, `{"name":"中"}`, `not json`} {
+		if sameWorkerStdin(`{"name":"中","port":80}`, changed) {
+			t.Fatalf("changed worker payload accepted: %s", changed)
+		}
+	}
 }

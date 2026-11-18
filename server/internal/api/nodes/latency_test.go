@@ -820,10 +820,15 @@ func TestDNSCheckUsesOnlyUnsavedDNSConfigAndPreservesHistory(t *testing.T) {
 	if r.Object().Value("success") != true {
 		t.Fatal(r.Text())
 	}
-	if len(f.runner.calls) != 1 || string(f.runner.calls[0].Stdin) !=
-		`{"operation": "dns_check", "timeout_ms": 5000, "dns_servers": ["tls://dns.example"], "dns_bootstrap": ["192.0.2.53"]}` {
-		t.Fatalf("%s", f.runner.calls[0].Stdin)
+	if len(f.runner.calls) != 1 {
+		t.Fatalf("worker calls=%d", len(f.runner.calls))
 	}
+	input, err := jsonx.Parse(f.runner.calls[0].Stdin)
+	want := jsonx.Obj("operation", "dns_check", "timeout_ms", jsonx.Int(5000), "dns_servers", []any{"tls://dns.example"}, "dns_bootstrap", []any{"192.0.2.53"})
+	if err != nil || !jsonx.Equal(input, want) {
+		t.Fatalf("worker input=%s (%v)", f.runner.calls[0].Stdin, err)
+	}
+
 	if !jsonx.Equal(systemWithoutRevision(t, f.srv.Repo), before) {
 		t.Fatal("saved")
 	}

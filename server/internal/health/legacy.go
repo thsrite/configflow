@@ -14,6 +14,7 @@ import (
 	"configflow/internal/repo"
 	"configflow/internal/subs"
 	"configflow/internal/substore"
+	"configflow/internal/yamlx"
 )
 
 func init() {
@@ -22,61 +23,17 @@ func init() {
 
 func defaultCollaborators(converterFn func() convert.ProxyStringConverter) Collaborators {
 	return Collaborators{
-		// Removed by N8-8a (convert typed migration).
-		NeedsRemoteConversion: func(proxyString string) bool {
-			if proxyString == "" {
-				return false
-			}
-			parsed, err := convert.ParseStructuredProxyString(proxyString)
-			return err == nil && parsed == nil
-		},
-		// Removed by N8-8a + N8-9 S-subs/substore (convert + substore typed migration).
-		ConvertNode: func(ctx context.Context, nodeRaw json.RawMessage) (fields model.Fields, ok bool) {
-			defer func() {
-				if recover() != nil {
-					fields = model.Fields{}
-					ok = false
-				}
-			}()
-			parsed, err := jsonx.Parse(nodeRaw)
-			if err != nil {
-				return model.Fields{}, false
-			}
-			node, isObj := parsed.(*jsonx.Object)
-			if !isObj || node == nil {
-				return model.Fields{}, false
-			}
-			node = node.DeepCopy()
-			var conv convert.ProxyStringConverter
+		NeedsRemoteConversion: needsRemoteProxyString,
+		// Remove the Sub-Store transcode when its owner supplies NodeConverter.
+		ConvertNode: func(ctx context.Context, raw json.RawMessage) (model.Fields, bool) {
+			var converter convert.ProxyStringConverter
 			if converterFn != nil {
-				conv = converterFn()
+				converter = converterFn()
 			}
-			if conv == nil {
-				conv = substore.Converter()
+			if converter == nil {
+				converter = substore.Converter()
 			}
-			var proxy *jsonx.Object
-			if jsonx.Truthy(node.Value("proxy_string")) || node.Has("params") {
-				converted, err := convert.ConvertNodeToMihomo(ctx, node, conv)
-				if err != nil {
-					return model.Fields{}, false
-				}
-				proxy = converted
-			} else {
-				proxy = node
-				convert.FixProxyFields(proxy)
-			}
-			if proxy == nil || !jsonx.Truthy(proxy.Value("type")) {
-				return model.Fields{}, false
-			}
-			proxy.Set("name", node.Value("name"))
-			encoded, err := jsonx.Compact(proxy)
-			if err != nil {
-				return model.Fields{}, false
-			}
-			if err := json.Unmarshal(encoded, &fields); err != nil {
-				return model.Fields{}, false
-			}
-			return fields, true
+			return convertProbeNode(ctx, raw, legacyProbeConverter{converter})
 		},
 		// Removed by N8-9 S-subs/substore (substore typed migration).
 		LoadSubscriptionCache: func(ctx context.Context, subID string) (json.RawMessage, error) {
@@ -150,6 +107,25 @@ func defaultCollaborators(converterFn func() convert.ProxyStringConverter) Colla
 			return err
 		},
 	}
+}
+
+// legacyProbeConverter only transcodes the neighbouring Sub-Store callback.
+// Node parsing, branch selection and fixing remain in the native health owner.
+type legacyProbeConverter struct{ converter convert.ProxyStringConverter }
+
+func (c legacyProbeConverter) ConvertProxy(ctx context.Context, text string) (*yamlx.Node, error) {
+	if c.converter == nil {
+		return nil, nil
+	}
+	proxy := c.converter.ConvertProxyString(ctx, text)
+	if proxy == nil {
+		return nil, nil
+	}
+	raw, err := jsonx.Compact(proxy)
+	if err != nil {
+		return nil, err
+	}
+	return yamlx.FromJSON(raw)
 }
 
 // Env is the legacy environment configuration retained for api/nodes tests.
@@ -511,7 +487,7 @@ func runProbe(ctx context.Context, proxies []*jsonx.Object, options *jsonx.Objec
 			return nil, err
 		}
 	}
-	var typedOptions model.Fields
+	var typedOptions ProbeSettings
 	if options != nil {
 		raw, err := jsonx.Compact(options)
 		if err != nil {

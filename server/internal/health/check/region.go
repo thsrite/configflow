@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"configflow/internal/jsonresp"
 	"configflow/internal/jsonstore"
 	"configflow/internal/model"
 	"configflow/internal/rules"
@@ -221,6 +222,12 @@ type ServiceVerdict struct {
 	Region   NullableText `json:"region"`
 	Reason   string       `json:"reason"`
 	Evidence []string     `json:"evidence"`
+}
+
+// MarshalJSON encodes the response DTO when used as an ordered map value.
+func (v ServiceVerdict) MarshalJSON() ([]byte, error) {
+	type wire ServiceVerdict
+	return jsonresp.Encode(wire(v))
 }
 
 func makeVerdict(status string, region NullableText, reason string, evidence []string) ServiceVerdict {
@@ -557,7 +564,7 @@ func BuildServiceRequests() []PageRequest {
 func indexResultsByID(results []RegionResult) (map[string]RegionResult, error) {
 	index := make(map[string]RegionResult, len(results))
 	for _, entry := range results {
-		if !entry.hasID {
+		if !entry.hasID && entry.ID == "" {
 			return nil, valueError(msgRegionResultIDMissing)
 		}
 		index[entry.ID] = entry
@@ -593,7 +600,7 @@ type ExitSummary struct {
 func SummarizeExit(results []RegionResult) (ExitSummary, error) {
 	var exit *RegionResult
 	for i := range results {
-		if !results[i].hasID {
+		if !results[i].hasID && results[i].ID == "" {
 			return ExitSummary{}, valueError(msgRegionResultIDMissing)
 		}
 		if exit == nil && results[i].ID == "exit" {
@@ -945,10 +952,10 @@ func (s *RegionStore) readData(agentID string) RegionData {
 	if err := json.Unmarshal(encoded, &data); err != nil {
 		return newEmptyRegionData()
 	}
-	if !hasDomains || model.IssueUnder(data.raw.Issues(), "domains") || isNullTimedMap(data.Domains) {
+	if !hasDomains || hasRootIssue(data.raw.Issues(), "domains") || isNullTimedMap(data.Domains) {
 		_ = model.SetMemberJSON(&data, &data.raw, "domains", json.RawMessage("{}"))
 	}
-	if !hasWebsites || model.IssueUnder(data.raw.Issues(), "websites") || isNullTimedMap(data.Websites) {
+	if !hasWebsites || hasRootIssue(data.raw.Issues(), "websites") || isNullTimedMap(data.Websites) {
 		_ = model.SetMemberJSON(&data, &data.raw, "websites", json.RawMessage("{}"))
 	}
 	return data
@@ -987,13 +994,32 @@ func (s *RegionStore) UpdateData(agentID string, mutate func(*RegionData) error,
 	if err := mutate(&data); err != nil {
 		return err
 	}
-	issues := model.Issues(&data)
-	if model.IssueUnder(issues, "domains") || isNullTimedMap(data.Domains) || len(model.Issues(data.Domains)) > 0 {
+	encoded, err := model.Marshal(data)
+	if err != nil {
+		return err
+	}
+	var current RegionData
+	if err := json.Unmarshal(encoded, &current); err != nil {
+		return err
+	}
+	if hasRootIssue(model.Issues(current), "domains") || hasRootIssue(model.Issues(current), "websites") {
 		return valueError(msgInvalidRegionStore)
 	}
-	if model.IssueUnder(issues, "websites") || isNullTimedMap(data.Websites) || len(model.Issues(data.Websites)) > 0 {
+
+	if !validTimedRecords(data.Domains) {
 		return valueError(msgInvalidRegionStore)
 	}
+	if !validTimedRecords(data.Websites) {
+		return valueError(msgInvalidRegionStore)
+	}
+	for _, records := range []model.Map[TimedRecord]{data.Domains, data.Websites} {
+		for _, record := range records.All() {
+			if !validTimestamp(record) {
+				return valueError(msgInvalidRegionStore)
+			}
+		}
+	}
+
 	bound := oldest(now, RegionRetentionDays)
 	var domains model.Map[TimedRecord]
 	for host, entry := range data.Domains.All() {

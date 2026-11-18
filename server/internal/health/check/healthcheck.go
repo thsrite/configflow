@@ -15,10 +15,10 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"configflow/internal/jsonresp"
 	"configflow/internal/model"
-	"configflow/internal/pystr"
 	"configflow/internal/weburl"
 )
 
@@ -218,7 +218,7 @@ func ValidateProviderHealth(hc *model.ProviderHealthCheck) error {
 	if err != nil {
 		return fmt.Errorf("marshal provider health check: %w", err)
 	}
-	return ValidateHealthJSON(raw, true)
+	return validateStoredHealth(raw, healthValues{Enable: hc.Enable, URL: hc.URL, Interval: hc.Interval, Timeout: hc.Timeout, Lazy: hc.Lazy, ExpectedStatus: hc.ExpectedStatus}, true)
 }
 
 // ValidateGroupHealth validates the health-check fields of a stored proxy group.
@@ -230,7 +230,52 @@ func ValidateGroupHealth(group *model.ProxyGroup) error {
 	if err != nil {
 		return fmt.Errorf("marshal proxy group health: %w", err)
 	}
-	return ValidateHealthJSON(raw, false)
+	return validateStoredHealth(raw, healthValues{URL: group.URL, Interval: group.Interval, Timeout: group.Timeout, Lazy: group.Lazy, ExpectedStatus: group.ExpectedStatus, Tolerance: group.Tolerance}, false)
+}
+
+// healthValues contains the decoded values used by stored-data validation.
+// The original member set supplies presence; R5 provenance is never reinterpreted.
+type healthValues struct {
+	Enable         *bool      `json:"enable"`
+	URL            *string    `json:"url"`
+	Interval       *model.Int `json:"interval"`
+	Timeout        *model.Int `json:"timeout"`
+	Lazy           *bool      `json:"lazy"`
+	ExpectedStatus *string    `json:"expected-status"`
+	Tolerance      *model.Int `json:"tolerance"`
+}
+
+func validateStoredHealth(raw json.RawMessage, values healthValues, provider bool) error {
+	var original rawJSONObject
+	if err := json.Unmarshal(raw, &original); err != nil {
+		return err
+	}
+	canonical, err := jsonresp.Encode(values)
+	if err != nil {
+		return err
+	}
+	var decoded rawJSONObject
+	if err := json.Unmarshal(canonical, &decoded); err != nil {
+		return err
+	}
+	allowed := groupKeys
+	if provider {
+		allowed = providerKeys
+	}
+	var fields model.Fields
+	for key, rawValue := range original.Fields.All() {
+		if containsKey(allowed, key) {
+			rawValue, _ = decoded.Fields.Get(key)
+		}
+		if err := fields.Set(key, rawValue); err != nil {
+			return err
+		}
+	}
+	encoded, err := fields.MarshalJSON()
+	if err != nil {
+		return err
+	}
+	return ValidateHealthJSON(encoded, provider)
 }
 
 func validateFieldJSON(key string, raw json.RawMessage) error {
@@ -261,7 +306,7 @@ func validateFieldJSON(key string, raw json.RawMessage) error {
 			return valueError(msgHealthInvalidURL)
 		}
 		for _, r := range string(text) {
-			if pystr.IsSpace(r) || r < 32 {
+			if unicode.IsSpace(r) || r < 32 {
 				return valueError(msgHealthInvalidURL)
 			}
 		}
@@ -300,15 +345,6 @@ func validProbeURL(text string) bool {
 		parsed.User == nil && parsed.Fragment == "" && (!hasPort || port >= 1)
 }
 
-type providerHealthOverlay struct {
-	Enable         *bool   `json:"enable"`
-	URL            *string `json:"url"`
-	Interval       *int64  `json:"interval"`
-	Timeout        *int64  `json:"timeout"`
-	Lazy           *bool   `json:"lazy"`
-	ExpectedStatus *string `json:"expected-status"`
-}
-
 // ResolveProviderHealth validates source's health_check and overlays it onto
 // DefaultProviderHealth. Missing health_check returns ErrMissingHealthCheck.
 func ResolveProviderHealth(source *model.Fields) (ProviderHealth, error) {
@@ -319,12 +355,12 @@ func ResolveProviderHealth(source *model.Fields) (ProviderHealth, error) {
 	if !ok {
 		return ProviderHealth{}, ErrMissingHealthCheck
 	}
-	if err := ValidateHealthJSON(raw, true); err != nil {
-		return ProviderHealth{}, err
-	}
-	var overlay providerHealthOverlay
+	var overlay model.ProviderHealthCheck
 	if err := json.Unmarshal(raw, &overlay); err != nil {
-		return ProviderHealth{}, fmt.Errorf("decode provider health_check: %w", err)
+		return ProviderHealth{}, valueError(msgHealthMustBeObject)
+	}
+	if err := ValidateProviderHealth(&overlay); err != nil {
+		return ProviderHealth{}, err
 	}
 	result := DefaultProviderHealth()
 	if overlay.Enable != nil {
@@ -334,10 +370,10 @@ func ResolveProviderHealth(source *model.Fields) (ProviderHealth, error) {
 		result.URL = *overlay.URL
 	}
 	if overlay.Interval != nil {
-		result.Interval = *overlay.Interval
+		result.Interval = int64(*overlay.Interval)
 	}
 	if overlay.Timeout != nil {
-		result.Timeout = *overlay.Timeout
+		result.Timeout = int64(*overlay.Timeout)
 	}
 	if overlay.Lazy != nil {
 		result.Lazy = *overlay.Lazy

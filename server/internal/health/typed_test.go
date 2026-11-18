@@ -2,6 +2,7 @@ package health
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,30 +19,32 @@ import (
 )
 
 func TestHealthCoreHasNoLegacyOrUntypedDependency(t *testing.T) {
-	coreFiles := []string{"messages.go", "values.go", "wire.go", "ipaddr.go", "runner.go", "dns.go", "latency.go"}
-	forbiddenImports := []string{"jsonx", "internal/convert", "internal/subs", "internal/substore"}
+	coreFiles := []string{"messages.go", "values.go", "conversion.go", "wire.go", "ipaddr.go", "runner.go", "dns.go", "latency.go"}
+	forbiddenImports := []string{"jsonx", "pystr", "internal/subs", "internal/substore"}
 	forbiddenNames := map[string]bool{
-		"any":                  true,
-		"pyTypeError":          true,
-		"typeName":             true,
-		"subscript":            true,
-		"pyList":               true,
-		"pythonOSError":        true,
-		"osError":              true,
-		"Env":                  true,
-		"DefaultEnv":           true,
-		"SetEnv":               true,
-		"CurrentEnv":           true,
-		"FindProbeBinary":      true,
-		"NormalizeDNSServers":  true,
-		"NormalizeConfig":      true,
-		"LoadConfig":           true,
-		"EffectiveSettings":    true,
-		"DescribeSettings":     true,
-		"SaveConfig":           true,
-		"CheckSettings":        true,
-		"DNSSettings":          true,
-		"Settings":             true,
+		"any":           true,
+		"Env":           true,
+		"Settings":      true,
+		"pyTypeError":   true,
+		"typeName":      true,
+		"subscript":     true,
+		"pyList":        true,
+		"pythonOSError": true,
+		"osError":       true,
+
+		"DefaultEnv":          true,
+		"SetEnv":              true,
+		"CurrentEnv":          true,
+		"FindProbeBinary":     true,
+		"NormalizeDNSServers": true,
+		"NormalizeConfig":     true,
+		"LoadConfig":          true,
+		"EffectiveSettings":   true,
+		"DescribeSettings":    true,
+		"SaveConfig":          true,
+		"CheckSettings":       true,
+		"DNSSettings":         true,
+
 		"CollectCandidates":    true,
 		"LoadResults":          true,
 		"RunTests":             true,
@@ -68,8 +71,25 @@ func TestHealthCoreHasNoLegacyOrUntypedDependency(t *testing.T) {
 		selected := map[*ast.Ident]bool{}
 		ast.Inspect(file, func(n ast.Node) bool {
 			if sel, ok := n.(*ast.SelectorExpr); ok {
+				if pkg, ok := sel.X.(*ast.Ident); ok && pkg.Name == "convert" {
+					switch sel.Sel.Name {
+					case "ParseStructuredProxyString", "ConvertNodeToMihomo", "FixProxyFields", "ProxyStringConverter":
+						t.Errorf("%s uses legacy convert API %s", name, sel.Sel.Name)
+					}
+				}
 				selected[sel.Sel] = true
 			}
+			if field, ok := n.(*ast.Field); ok {
+				for _, name := range field.Names {
+					selected[name] = true
+				}
+			}
+			if pair, ok := n.(*ast.KeyValueExpr); ok {
+				if key, ok := pair.Key.(*ast.Ident); ok {
+					selected[key] = true
+				}
+			}
+
 			if iface, ok := n.(*ast.InterfaceType); ok && (iface.Methods == nil || len(iface.Methods.List) == 0) {
 				t.Errorf("%s contains an empty interface{} literal", name)
 			}
@@ -138,17 +158,25 @@ func TestHealthLegacyWrappersDelegateToTypedCore(t *testing.T) {
 func seedSharedRaw(t *testing.T, r *repo.Repository, rawJSON string) context.Context {
 	t.Helper()
 	ctx := repo.WithScope(repo.WithRepository(context.Background(), r))
-	err := r.UpdateShared(ctx, func(_ context.Context, shared *model.Shared) error {
-		var next model.Shared
-		if err := json.Unmarshal([]byte(rawJSON), &next); err != nil {
-			return err
-		}
-		*shared = next
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("seed shared: %v", err)
+	var patch model.Fields
+	if err := json.Unmarshal([]byte(rawJSON), &patch); err != nil {
+		t.Fatal(err)
 	}
+	// Imported malformed identities must be seeded as stored rows, not through a validating writer.
+	db, err := sql.Open("sqlite", r.DatabasePath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	for field, raw := range patch.All() {
+		if _, err := db.ExecContext(ctx, "UPDATE fields SET value = ?, revision = revision + 1 WHERE scope = 'shared' AND owner = '' AND field = ?", string(raw), field); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := db.ExecContext(ctx, "UPDATE meta SET value = CAST(value AS INTEGER) + 1 WHERE key = 'generation'"); err != nil {
+		t.Fatal(err)
+	}
+
 	repo.ResetConfigContext(ctx)
 	return ctx
 }
@@ -383,7 +411,7 @@ func TestR5StoredFallbacksAndSystemPreservation(t *testing.T) {
 	if !ok {
 		t.Fatal("missing result A")
 	}
-	rawHistory, _ := entry.Fields.Get("history")
+	rawHistory, _ := json.Marshal(entry.History)
 	if string(rawHistory) != "[33]" {
 		t.Fatalf("expected R5 reset history [33], got %s", rawHistory)
 	}

@@ -41,24 +41,15 @@ func (s strictString) MarshalJSON() ([]byte, error) {
 	return jsonresp.Encode(string(s))
 }
 
-func decodeNonNullText(trimmed []byte) (string, error) {
-	if len(trimmed) == 0 {
+func decodeNonNullText(data []byte) (string, error) {
+	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
 		return "", errors.New(msgTextScalarRequired)
 	}
-	if trimmed[0] == '"' {
-		var value string
-		if err := json.Unmarshal(trimmed, &value); err != nil {
-			return "", err
-		}
-		return value, nil
+	var text model.String
+	if err := json.Unmarshal(data, &text); err != nil {
+		return "", err
 	}
-	if trimmed[0] == '-' || (trimmed[0] >= '0' && trimmed[0] <= '9') {
-		if !json.Valid(trimmed) {
-			return "", errors.New(msgTextScalarRequired)
-		}
-		return string(trimmed), nil
-	}
-	return "", errors.New(msgTextScalarRequired)
+	return string(text), nil
 }
 
 func parseNonNegativeJSONInt(data []byte) (json.Number, bool) {
@@ -91,4 +82,9 @@ func compactRaw(raw json.RawMessage) string {
 		return string(bytes.TrimSpace(raw))
 	}
 	return buf.String()
+}
+
+func isStringToken(raw json.RawMessage) bool {
+	trimmed := bytes.TrimSpace(raw)
+	return len(trimmed) > 0 && trimmed[0] == '"'
 }

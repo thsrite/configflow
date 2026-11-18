@@ -68,7 +68,7 @@ func ProbeURL(host string, port int) string {
 	if port == 80 {
 		return "http://" + host + "/"
 	}
-	if port <= 0 || port == 443 {
+	if port == 0 || port == 443 {
 		return "https://" + host + "/"
 	}
 	return "https://" + host + ":" + strconv.Itoa(port) + "/"
@@ -425,10 +425,45 @@ func (s *ProbeStore) readFile(agentID string) probeFile {
 		return newEmptyProbeFile()
 	}
 	var file probeFile
-	if err := json.Unmarshal(encoded, &file); err != nil || model.IssueUnder(file.raw.Issues(), "hosts") || isNullTimedMap(file.Hosts) {
+	if err := json.Unmarshal(encoded, &file); err != nil || hasRootIssue(file.raw.Issues(), "hosts") || isNullTimedMap(file.Hosts) {
 		return newEmptyProbeFile()
 	}
 	return file
+}
+
+func validTimedRecords(records model.Map[TimedRecord]) bool {
+	raw, err := records.MarshalJSON()
+	if err != nil {
+		return false
+	}
+	var current model.Map[TimedRecord]
+	if json.Unmarshal(raw, &current) != nil || isNullTimedMap(current) || len(model.Issues(current)) > 0 {
+		return false
+	}
+	for _, entry := range current.All() {
+		if !validTimestamp(entry) {
+			return false
+		}
+	}
+	return true
+}
+
+func validTimestamp(entry TimedRecord) bool {
+	raw, err := model.Marshal(entry)
+	if err != nil {
+		return false
+	}
+	var object rawJSONObject
+	if json.Unmarshal(raw, &object) != nil {
+		return false
+	}
+	value, present := object.Fields.Get("checked_at")
+	// Missing timestamps expire during pruning; an explicitly malformed one is invalid.
+	if !present {
+		return true
+	}
+	var stamp StrictString
+	return json.Unmarshal(value, &stamp) == nil
 }
 
 func pruneHosts(hosts *model.Map[TimedRecord], now time.Time) {
@@ -461,9 +496,15 @@ func (s *ProbeStore) SaveEntries(agentID string, results model.Map[TimedRecord],
 	if now.IsZero() {
 		now = time.Now()
 	}
-	if isNullTimedMap(results) || len(model.Issues(results)) > 0 {
+	if !validTimedRecords(results) {
 		return valueError(msgInvalidProbeEntry)
 	}
+	for _, entry := range results.All() {
+		if !validTimestamp(entry) {
+			return valueError(msgInvalidProbeEntry)
+		}
+	}
+
 	probeLock.Lock()
 	defer probeLock.Unlock()
 	file := s.readFile(agentID)

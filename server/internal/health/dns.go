@@ -11,18 +11,17 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"math/big"
 	"net/netip"
 	"net/url"
 	"regexp"
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"configflow/internal/jsonresp"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
-	"configflow/internal/pystr"
 	"configflow/internal/repo"
 	"configflow/internal/rules"
 	"configflow/internal/weburl"
@@ -63,24 +62,25 @@ func isASCIIDecimal(s string) bool {
 }
 
 func ipv4ServerString(text, message string) (string, error) {
-	host, port, separator := strings.Cut(pystr.Strip(text), ":")
+	host, port, separator := strings.Cut(strings.TrimSpace(text), ":")
 	address, ok := parseIPv4(host)
 	if !ok || !usableIPv4(address) {
 		return "", valueError(message)
 	}
-	var portValue *big.Int
+	var portValue uint64
 	if separator {
 		if !isASCIIDecimal(port) {
 			return "", valueError(message)
 		}
-		portValue, _ = new(big.Int).SetString(port, 10)
-		if portValue.Cmp(big.NewInt(1)) < 0 || portValue.Cmp(big.NewInt(65535)) > 0 {
+		var err error
+		portValue, err = strconv.ParseUint(port, 10, 16)
+		if err != nil || portValue == 0 {
 			return "", valueError(message)
 		}
 	}
 	out := address.String()
-	if separator && portValue.Int64() != 53 {
-		out += ":" + portValue.String()
+	if separator && portValue != 53 {
+		out += ":" + strconv.FormatUint(portValue, 10)
 	}
 	return out, nil
 }
@@ -91,7 +91,7 @@ var (
 )
 
 func serverString(raw string) (string, error) {
-	text := pystr.Strip(raw)
+	text := strings.TrimSpace(raw)
 	if text == "" {
 		return "", valueError(DNSError)
 	}
@@ -112,7 +112,7 @@ func encryptedServer(text string) (string, bool) {
 		return "", false
 	}
 	for _, r := range text {
-		if pystr.IsSpace(r) || r < 32 || r == 127 {
+		if unicode.IsSpace(r) || r < 32 || r == 127 {
 			return "", false
 		}
 	}
@@ -434,6 +434,9 @@ func DescribeDNSSettingsJSON(ctx context.Context, raw json.RawMessage) (DNSSetti
 // node_test_dns mirror into system_config.
 func SaveDNSConfigJSON(ctx context.Context, raw json.RawMessage) (DNSSettingsView, error) {
 	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return DNSSettingsView{}, err
+	}
 	cfg, err := NormalizeDNSConfigJSON(raw)
 	if err != nil {
 		return DNSSettingsView{}, err
@@ -528,6 +531,9 @@ type dnsCheckPayload struct {
 // DNS settings (or saved settings when raw is empty or null).
 func CheckDNSSettingsJSON(ctx context.Context, raw json.RawMessage) (DNSCheckResult, error) {
 	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return DNSCheckResult{}, err
+	}
 	env := CurrentProbeEnv()
 	options, err := EffectiveDNSSettingsJSON(ctx, raw)
 	if err != nil {
@@ -596,6 +602,9 @@ func checkWorkerVersion(top rawObject) error {
 		return &ProbeUnavailable{Message: msgVersionMismatch}
 	}
 	var version model.Int
+	if len(trimmed) == 0 || trimmed[0] == '"' {
+		return &ProbeUnavailable{Message: msgVersionMismatch}
+	}
 	if err := json.Unmarshal(trimmed, &version); err != nil || version != 4 {
 		return &ProbeUnavailable{Message: msgVersionMismatch}
 	}

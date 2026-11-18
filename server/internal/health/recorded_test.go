@@ -1,5 +1,13 @@
 package health
 
+// Record & replay (PORTING rule 4): every call the whole Python test suite
+// made to C16's public functions, recorded by testdata/c16_record.py (with
+// the worker calls, environment, system_config fields, store files and a
+// frozen clock), replayed here with 0 differences. Regenerate on the test
+// server:
+//
+//	rt --back server/internal/health/testdata/c16_recorded.jsonl.gz -- bash -lc 'rm -rf /tmp/c16rec && C16_RECORD_DIR=/tmp/c16rec PYTHONPATH=.:server/internal/health/testdata ~/cf-test/.venv/bin/python -m pytest backend -q -n 10 --dist=worksteal -p c16_record -p no:cacheprovider && PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/health/testdata/c16_record.py merge /tmp/c16rec'
+
 import (
 	"bufio"
 	"bytes"
@@ -171,10 +179,10 @@ func replayRecordedFile(t *testing.T, name string) map[string]int {
 	t.Helper()
 	t.Parallel()
 	rows := loadRecordedRows(t, name)
-	return replayRecordedRows(t, rows)
+	return replayRecordedRows(t, rows, nativeExpectations(t, name))
 }
 
-func replayRecordedRows(t *testing.T, rows []*jsonx.Object) map[string]int {
+func replayRecordedRows(t *testing.T, rows []*jsonx.Object, native map[int]typedExpectation) map[string]int {
 	t.Helper()
 	var defaults *repo.Repository
 	counts := map[string]int{}
@@ -360,9 +368,12 @@ func replayRecordedRows(t *testing.T, rows []*jsonx.Object) map[string]int {
 			}
 		}()
 
-		if issueClass := classifyReplayInput(fn, nil, args, row.GetObject("mutated")); issueClass != "" {
-			classified[issueClass]++
-			assertClassifiedContract(t, i, fn+" "+string(mustCompact(args)), issueClass, err)
+		if expected, ok := native[i]; ok {
+			classified[expected.Contract]++
+			assertNativeExpectation(t, expected, fn, value, err)
+			if len(runner.mismatch) > 0 {
+				t.Errorf("worker contract: %v", runner.mismatch)
+			}
 			continue
 		}
 
@@ -401,6 +412,13 @@ func replayRecordedRows(t *testing.T, rows []*jsonx.Object) map[string]int {
 			}
 		}
 		counts[fn]++
+	}
+	nativeCount := 0
+	for _, n := range classified {
+		nativeCount += n
+	}
+	if nativeCount != len(native) {
+		t.Errorf("typed reference entries exercised=%d, want %d", nativeCount, len(native))
 	}
 	if failures > 0 {
 		t.Errorf("%d of %d recorded calls differ", failures, len(rows))

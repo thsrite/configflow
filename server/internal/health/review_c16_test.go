@@ -1,5 +1,8 @@
 package health
 
+// Regression tests of the adversarial review of C16 (PROGRESS-config.md,
+// "Review C16").
+
 import (
 	"context"
 	"errors"

@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -14,7 +16,6 @@ import (
 	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
 	"configflow/internal/model"
-	"configflow/internal/pystr"
 	"configflow/internal/repo"
 	"configflow/internal/weburl"
 )
@@ -77,7 +78,7 @@ func isValueError(err error) bool {
 func ResolveSettings(ctx context.Context) (ProbeSettings, error) {
 	env := CurrentProbeEnv()
 	invalid := &ProbeUnavailable{Message: msgProbeInvalidSettings}
-	url := pystr.Strip(env.getenv("CONFIGFLOW_NODE_TEST_URL", "https://www.gstatic.com/generate_204"))
+	url := strings.TrimSpace(env.getenv("CONFIGFLOW_NODE_TEST_URL", "https://www.gstatic.com/generate_204"))
 	parsed, err := weburl.Parse(url)
 	if err != nil {
 		return ProbeSettings{}, invalid
@@ -88,8 +89,8 @@ func ResolveSettings(ctx context.Context) (ProbeSettings, error) {
 	if _, _, err := weburl.Port(parsed); err != nil {
 		return ProbeSettings{}, invalid
 	}
-	timeout, err := pystr.Int(env.getenv("CONFIGFLOW_NODE_TEST_TIMEOUT_MS", "5000"), 10)
-	if err != nil || !timeout.IsInt64() || timeout.Int64() < 500 || timeout.Int64() > 10000 {
+	timeout, err := strconv.ParseInt(strings.TrimSpace(env.getenv("CONFIGFLOW_NODE_TEST_TIMEOUT_MS", "5000")), 10, 64)
+	if err != nil || timeout < 500 || timeout > 10000 {
 		return ProbeSettings{}, invalid
 	}
 	dns, err := EffectiveDNSSettings(ctx, nil)
@@ -99,10 +100,10 @@ func ResolveSettings(ctx context.Context) (ProbeSettings, error) {
 		}
 		return ProbeSettings{}, err
 	}
-	unified := pystr.Lower(env.getenv("CONFIGFLOW_NODE_TEST_UNIFIED_DELAY", "1"))
+	unified := strings.ToLower(env.getenv("CONFIGFLOW_NODE_TEST_UNIFIED_DELAY", "1"))
 	return ProbeSettings{
 		URL:          url,
-		TimeoutMS:    timeout.Int64(),
+		TimeoutMS:    timeout,
 		DNSServers:   dns.DNSServers,
 		DNSBootstrap: dns.DNSBootstrap,
 		UnifiedDelay: unified != "0" && unified != "false",
@@ -177,7 +178,7 @@ func collectCandidateSet(ctx context.Context) (*candidateSet, error) {
 		if err := json.Unmarshal(rawNode, &nodeObj); err != nil {
 			return nil, fmt.Errorf("parse shared node: %w", err)
 		}
-		if hasFieldIssue(issues, "id") {
+		if rawID, present := nodeObj.Fields.Get("id"); present && !isStringToken(rawID) {
 			rawID, _ := nodeObj.Fields.Get("id")
 			return nil, valueError(fmt.Sprintf(msgStoredNodeIDInvalid, compactRaw(rawID)))
 		}
@@ -190,19 +191,9 @@ func collectCandidateSet(ctx context.Context) (*candidateSet, error) {
 		name := node.Name
 		if hasFieldIssue(issues, "name") {
 			rawName, _ := nodeObj.Fields.Get("name")
-			decodedName, err := decodeNonNullText(bytes.TrimSpace(rawName))
-			if err != nil {
-				return nil, valueError(fmt.Sprintf(msgStoredNodeNameInvalid, node.ID, compactRaw(rawName)))
-			}
-			name = decodedName
-			encodedName, err := jsonresp.Encode(name)
-			if err == nil {
-				_ = nodeObj.Fields.Set("name", encodedName)
-				if updatedRaw, err := nodeObj.MarshalJSON(); err == nil {
-					rawNode = updatedRaw
-				}
-			}
+			return nil, valueError(fmt.Sprintf(msgStoredNodeNameInvalid, node.ID, compactRaw(rawName)))
 		}
+
 		if name == "" {
 			continue
 		}
@@ -227,17 +218,18 @@ func collectCandidateSet(ctx context.Context) (*candidateSet, error) {
 		if sub.Enabled != nil && !*sub.Enabled {
 			continue
 		}
-		issues := model.Issues(sub)
-		if hasFieldIssue(issues, "id") {
-			rawSub, err := model.Marshal(sub)
-			if err != nil {
-				return nil, fmt.Errorf("marshal subscription: %w", err)
-			}
-			var subObj rawObject
-			_ = json.Unmarshal(rawSub, &subObj)
-			rawID, _ := subObj.Fields.Get("id")
+		rawSub, err := model.Marshal(sub)
+		if err != nil {
+			return nil, err
+		}
+		var subObj rawObject
+		if err := json.Unmarshal(rawSub, &subObj); err != nil {
+			return nil, err
+		}
+		if rawID, present := subObj.Fields.Get("id"); present && !isStringToken(rawID) {
 			return nil, valueError(fmt.Sprintf(msgStoredSubIDInvalid, compactRaw(rawID)))
 		}
+
 		if sub.ID == "" {
 			continue
 		}
@@ -319,6 +311,17 @@ func collectCandidateSet(ctx context.Context) (*candidateSet, error) {
 	return out, nil
 }
 
+func convertCandidate(ctx context.Context, collaborators Collaborators, raw json.RawMessage) (fields model.Fields, ok bool) {
+	defer func() {
+		if recover() != nil {
+			fields = model.Fields{}
+			ok = false
+			latencyLog.Error(msgNodeWorkerPanic)
+		}
+	}()
+	return collaborators.ConvertNode(ctx, raw)
+}
+
 func needsRemoteConversion(env *ProbeEnv, node CandidateNode) bool {
 	if node.ProxyString == "" || env.Collaborators.NeedsRemoteConversion == nil {
 		return false
@@ -329,136 +332,77 @@ func needsRemoteConversion(env *ProbeEnv, node CandidateNode) bool {
 // LatencyEntry holds a stored or freshly measured node latency record,
 // retaining worker extension fields and member order.
 type LatencyEntry struct {
-	Fields model.Fields
+	Name         string            `json:"name"`
+	Latency      *json.Number      `json:"latency"`
+	Error        json.RawMessage   `json:"error"`
+	ErrorCode    string            `json:"error_code"`
+	Method       string            `json:"method"`
+	TestedAt     string            `json:"tested_at"`
+	History      []json.RawMessage `json:"history"`
+	URL          string            `json:"url"`
+	TimeoutMS    model.Int         `json:"timeout_ms"`
+	DNSServers   []string          `json:"dns_servers"`
+	DNSBootstrap []string          `json:"dns_bootstrap"`
+	UnifiedDelay bool              `json:"unified_delay"`
+	Fields       model.Fields
+	raw          model.Raw
 }
 
-// UnmarshalJSON decodes LatencyEntry preserving member order and raw bytes.
-func (e *LatencyEntry) UnmarshalJSON(data []byte) error {
-	return json.Unmarshal(data, &e.Fields)
-}
+// UnmarshalJSON decodes typed latency attributes while retaining extension fields.
+func (e *LatencyEntry) UnmarshalJSON(data []byte) error { return model.DecodeRecord(data, e, &e.raw) }
 
-// MarshalJSON encodes LatencyEntry preserving member order and raw bytes.
-func (e LatencyEntry) MarshalJSON() ([]byte, error) {
-	return e.Fields.MarshalJSON()
-}
+// MarshalJSON preserves stored member order and untouched R5 values.
+func (e LatencyEntry) MarshalJSON() ([]byte, error) { return model.EncodeRecord(&e, &e.raw) }
 
-func (e LatencyEntry) method() string {
-	raw, ok := e.Fields.Get("method")
-	if !ok {
-		return ""
-	}
-	var m strictString
-	if json.Unmarshal(raw, &m) != nil {
-		return ""
-	}
-	return string(m)
+func (e *LatencyEntry) set(field string, raw json.RawMessage) error {
+	return model.SetMemberJSON(e, &e.raw, field, raw)
 }
 
 func (e LatencyEntry) sameTestSettings(settings ProbeSettings) bool {
-	rawURL, ok := e.Fields.Get("url")
-	if !ok {
+	for _, field := range []string{"url", "unified_delay", "dns_servers", "dns_bootstrap"} {
+		if model.IssueUnder(model.Issues(e), field) {
+			return false
+		}
+	}
+	// The flag is part of the history identity; absence must not equal false.
+	raw, err := model.Marshal(e)
+	if err != nil {
 		return false
 	}
-	var url strictString
-	if json.Unmarshal(rawURL, &url) != nil || string(url) != settings.URL {
+	var record rawObject
+	if json.Unmarshal(raw, &record) != nil || !record.Fields.Has("unified_delay") {
 		return false
 	}
-	rawUnified, ok := e.Fields.Get("unified_delay")
-	if !ok {
-		return false
-	}
-	trimmedUnified := bytes.TrimSpace(rawUnified)
-	var unified bool
-	switch {
-	case bytes.Equal(trimmedUnified, []byte("true")):
-		unified = true
-	case bytes.Equal(trimmedUnified, []byte("false")):
-		unified = false
-	default:
-		return false
-	}
-	if unified != settings.UnifiedDelay {
-		return false
-	}
-	servers, ok := e.stringListOrEmpty("dns_servers")
-	if !ok || !slices.Equal(servers, settings.DNSServers) {
-		return false
-	}
-	bootstrap, ok := e.stringListOrEmpty("dns_bootstrap")
-	if !ok || !slices.Equal(bootstrap, settings.DNSBootstrap) {
-		return false
-	}
-	return true
+	return e.URL == settings.URL && e.UnifiedDelay == settings.UnifiedDelay &&
+		slices.Equal(e.DNSServers, settings.DNSServers) && slices.Equal(e.DNSBootstrap, settings.DNSBootstrap)
 }
 
-func (e LatencyEntry) stringListOrEmpty(field string) ([]string, bool) {
-	raw, ok := e.Fields.Get(field)
-	if !ok {
-		return []string{}, true
-	}
-	trimmed := bytes.TrimSpace(raw)
-	if len(trimmed) == 0 || trimmed[0] != '[' {
-		return nil, false
-	}
-	var items []strictString
-	if err := json.Unmarshal(trimmed, &items); err != nil {
-		return nil, false
-	}
-	out := make([]string, len(items))
-	for i, item := range items {
-		out[i] = string(item)
-	}
-	return out, true
-}
-
-func (e LatencyEntry) history() []json.RawMessage {
-	raw, ok := e.Fields.Get("history")
-	if !ok {
-		return nil
-	}
-	trimmed := bytes.TrimSpace(raw)
-	if len(trimmed) == 0 || trimmed[0] != '[' {
-		return nil
-	}
-	var items []json.RawMessage
-	if err := json.Unmarshal(trimmed, &items); err != nil {
-		return nil
-	}
-	return items
-}
-
-func runProbeFields(ctx context.Context, proxies []model.Fields, options model.Fields) (model.Map[LatencyEntry], error) {
+func runProbeFields(ctx context.Context, proxies []model.Fields, options ProbeSettings) (model.Map[LatencyEntry], error) {
 	var empty model.Map[LatencyEntry]
 	env := CurrentProbeEnv()
 	binary, err := env.probeBinary()
 	if err != nil {
 		return empty, err
 	}
-	proxiesJSON, err := jsonresp.EncodeUTF8(proxies)
-	if err != nil {
-		return empty, err
-	}
-	payload := options
-	if err := payload.Set("nodes", proxiesJSON); err != nil {
-		return empty, err
-	}
+	payload := struct {
+		ProbeSettings
+		Nodes []model.Fields `json:"nodes"`
+	}{ProbeSettings: options, Nodes: proxies}
 	data, err := jsonresp.EncodeUTF8(payload)
 	if err != nil {
 		return empty, err
 	}
+
 	if len(data) > 8*1024*1024 {
 		return empty, valueError(msgBatchPayloadTooLarge)
 	}
-	var timeoutMS float64
-	if rawTimeout, ok := options.Get("timeout_ms"); ok {
-		_ = json.Unmarshal(rawTimeout, &timeoutMS)
-	}
-	batches := float64((len(proxies) + MaxWorkers - 1) / MaxWorkers)
-	budget := batches*timeoutMS/1000 + 5
+	batches := (len(proxies) + MaxWorkers - 1) / MaxWorkers
+	budget := time.Duration(batches)*time.Duration(options.TimeoutMS)*time.Millisecond + 5*time.Second
+
 	process, err := env.Runner.Run(ctx, Command{
 		Argv:    []string{binary},
 		Stdin:   data,
-		Timeout: time.Duration(budget * float64(time.Second)),
+		Timeout: budget,
 		Env:     env.workerEnv(),
 	})
 	if errors.Is(err, ErrTimeout) {
@@ -491,23 +435,9 @@ func runProbeFields(ctx context.Context, proxies []model.Fields, options model.F
 	return results, nil
 }
 
-func isTruthyWorkerError(raw json.RawMessage) bool {
-	trimmed := bytes.TrimSpace(raw)
-	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) || bytes.Equal(trimmed, []byte("false")) {
-		return false
-	}
-	if trimmed[0] == '"' {
-		var s string
-		return json.Unmarshal(trimmed, &s) == nil && s != ""
-	}
-	if trimmed[0] == '[' || trimmed[0] == '{' {
-		return len(trimmed) > 2
-	}
-	var n float64
-	if json.Unmarshal(trimmed, &n) == nil {
-		return n != 0
-	}
-	return false
+func hasWorkerError(raw json.RawMessage) bool {
+	var text string
+	return json.Unmarshal(raw, &text) == nil && text != ""
 }
 
 func uniqueProxyNames(proxies []model.Fields) []string {
@@ -556,7 +486,15 @@ func parseProbeResults(stdout string, proxies []model.Fields) (model.Map[Latency
 		if err := json.Unmarshal(rawName, &name); err != nil {
 			return results, errors.New("non-string result name")
 		}
-		results.Set(string(name), LatencyEntry{Fields: entry.Fields})
+		rawEntry, err := entry.MarshalJSON()
+		if err != nil {
+			return results, err
+		}
+		var typedEntry LatencyEntry
+		if err := json.Unmarshal(rawEntry, &typedEntry); err != nil {
+			return results, err
+		}
+		results.Set(string(name), typedEntry)
 	}
 	expectedNames := uniqueProxyNames(proxies)
 	if results.Len() != len(expectedNames) {
@@ -568,14 +506,22 @@ func parseProbeResults(stdout string, proxies []model.Fields) (model.Map[Latency
 		}
 	}
 	for _, entry := range results.All() {
-		rawLatency, ok := entry.Fields.Get("latency")
+		rawEntry, err := model.Marshal(entry)
+		if err != nil {
+			return results, err
+		}
+		var original rawObject
+		if err := json.Unmarshal(rawEntry, &original); err != nil {
+			return results, err
+		}
+		rawLatency, ok := original.Fields.Get("latency")
 		if !ok {
 			return results, errors.New("missing latency")
 		}
 		trimmedLatency := bytes.TrimSpace(rawLatency)
 		if bytes.Equal(trimmedLatency, []byte("null")) {
-			rawErr, hasErr := entry.Fields.Get("error")
-			if !hasErr || !isTruthyWorkerError(rawErr) {
+			rawErr, hasErr := original.Fields.Get("error")
+			if !hasErr || !hasWorkerError(rawErr) {
 				return results, errors.New("null latency without error")
 			}
 			continue
@@ -607,7 +553,7 @@ func LoadLatencyResults(ctx context.Context) model.Map[LatencyEntry] {
 		if err := json.Unmarshal(rawEntry, &entry); err != nil {
 			continue
 		}
-		if entry.method() == Method {
+		if entry.Method == Method {
 			out.Set(name, entry)
 		}
 	}
@@ -642,6 +588,9 @@ type TestOutcome struct {
 // (nil for both tests all enabled candidates).
 func RunLatencyTests(ctx context.Context, names, keys []string) (TestOutcome, error) {
 	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return TestOutcome{}, err
+	}
 	if !testLock.TryLock() {
 		return TestOutcome{}, &ProbeBusy{Message: msgProbeBusy}
 	}
@@ -662,12 +611,12 @@ func dedupeStrings(items []string) []string {
 }
 
 func buildFailedMeasurement() LatencyEntry {
-	var fields model.Fields
-	_ = fields.Set("latency", json.RawMessage("null"))
-	_ = fields.Set("error_code", json.RawMessage(`"config"`))
-	msgJSON, _ := jsonresp.Encode(msgNodeConversionFailed)
-	_ = fields.Set("error", msgJSON)
-	return LatencyEntry{Fields: fields}
+	var entry LatencyEntry
+	_ = entry.set("latency", json.RawMessage("null"))
+	_ = entry.set("error_code", json.RawMessage(`"config"`))
+	message, _ := jsonresp.Encode(msgNodeConversionFailed)
+	_ = entry.set("error", message)
+	return entry
 }
 
 func runLatencyTestsLocked(ctx context.Context, names, keys []string) (TestOutcome, error) {
@@ -770,14 +719,10 @@ func runLatencyTestsLocked(ctx context.Context, names, keys []string) (TestOutco
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				defer func() {
-					if recovered := recover(); recovered != nil {
-						latencyLog.Errorf("node conversion worker recovered panic: %v", recovered)
-					}
-				}()
+
 				for idx := range jobs {
 					if env.Collaborators.ConvertNode != nil {
-						proxy, ok := env.Collaborators.ConvertNode(ctx, candidates.byKey[wanted[idx]].Raw)
+						proxy, ok := convertCandidate(ctx, env.Collaborators, candidates.byKey[wanted[idx]].Raw)
 						converted[idx] = convResult{proxy: proxy, ok: ok}
 					}
 				}
@@ -806,7 +751,7 @@ func runLatencyTestsLocked(ctx context.Context, names, keys []string) (TestOutco
 			}
 		}
 		if len(proxies) > 0 {
-			batchResults, err := runProbeFields(ctx, proxies, settingsFields)
+			batchResults, err := runProbeFields(ctx, proxies, settings)
 			if err != nil {
 				return TestOutcome{}, err
 			}
@@ -831,15 +776,15 @@ func runLatencyTestsLocked(ctx context.Context, names, keys []string) (TestOutco
 		prev, hasPrev := stored.Get(key)
 		history := []json.RawMessage{}
 		if hasPrev && prev.sameTestSettings(settings) {
-			previous := prev.history()
+			previous := prev.History
 			if len(previous) > HistorySize-1 {
 				previous = previous[len(previous)-(HistorySize-1):]
 			}
 			history = append(history, previous...)
 		}
-		latencyRaw, ok := m.Fields.Get("latency")
-		if !ok {
-			latencyRaw = json.RawMessage("null")
+		latencyRaw := json.RawMessage("null")
+		if m.Latency != nil {
+			latencyRaw = json.RawMessage(m.Latency.String())
 		}
 		history = append(history, latencyRaw)
 		historyJSON, err := jsonresp.Encode(history)
@@ -847,15 +792,25 @@ func runLatencyTestsLocked(ctx context.Context, names, keys []string) (TestOutco
 			return TestOutcome{}, err
 		}
 
-		record := m.Fields
-		record.Delete("name")
-		_ = record.Set("method", methodJSON)
-		_ = record.Set("tested_at", stampJSON)
-		_ = record.Set("history", historyJSON)
-		for field, value := range settingsFields.All() {
-			_ = record.Set(field, value)
+		record := m
+		if err := model.ClearMember(&record, &record.raw, "name"); err != nil {
+			return TestOutcome{}, err
 		}
-		stored.Set(key, LatencyEntry{Fields: record})
+		if err := record.set("method", methodJSON); err != nil {
+			return TestOutcome{}, err
+		}
+		if err := record.set("tested_at", stampJSON); err != nil {
+			return TestOutcome{}, err
+		}
+		if err := record.set("history", historyJSON); err != nil {
+			return TestOutcome{}, err
+		}
+		for field, value := range settingsFields.All() {
+			if err := record.set(field, value); err != nil {
+				return TestOutcome{}, err
+			}
+		}
+		stored.Set(key, record)
 	}
 
 	var kept model.Map[LatencyEntry]
@@ -863,6 +818,9 @@ func runLatencyTestsLocked(ctx context.Context, names, keys []string) (TestOutco
 		if candidates.has(key) {
 			kept.Set(key, entry)
 		}
+	}
+	if err := ctx.Err(); err != nil {
+		return TestOutcome{}, err
 	}
 	saveLatencyResults(ctx, kept)
 

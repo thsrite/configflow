@@ -15,8 +15,11 @@ import (
 // ProviderHealthCheck (removed when convert drops legacy health helpers).
 type KeyError struct{ Key string }
 
-// Error formats Key using Python string representation for legacy callers.
-func (e *KeyError) Error() string { return jsonx.Repr(e.Key) }
+// Error returns the native missing-health configuration message.
+func (e *KeyError) Error() string { return msgMissingHealthCheck }
+
+// Unwrap preserves the native missing-member cause for transitional callers.
+func (e *KeyError) Unwrap() error { return ErrMissingHealthCheck }
 
 func decodeLegacy[T any](value any, dst *T) error {
 	raw, err := jsonx.Compact(value)
@@ -143,6 +146,12 @@ func ProviderHealthCheck(source *jsonx.Object) (*jsonx.Object, error) {
 	var rawObj rawJSONObject
 	if err := decodeLegacy(source, &rawObj); err != nil {
 		return nil, err
+	}
+	// Transitional callers still expose the raw request validator contract.
+	if health, present := rawObj.Fields.Get("health_check"); present {
+		if err := ValidateHealthJSON(health, true); err != nil {
+			return nil, err
+		}
 	}
 	resolved, err := ResolveProviderHealth(&rawObj.Fields)
 	if err != nil {

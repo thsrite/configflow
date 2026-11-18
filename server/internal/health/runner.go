@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -38,7 +37,7 @@ type Runner interface {
 }
 
 // ErrTimeout reports that a worker subprocess exceeded its execution budget.
-var ErrTimeout = errors.New("subprocess.TimeoutExpired")
+var ErrTimeout = errors.New("worker execution timed out")
 
 // OSError wraps an operating-system failure when starting the worker process.
 type OSError struct{ Err error }
@@ -52,27 +51,30 @@ func (e *OSError) Unwrap() error { return e.Err }
 // ExecRunner executes worker commands via os/exec.
 type ExecRunner struct{}
 
-// Run starts command, feeds Stdin, captures output, and kills the process if
-// Timeout elapses. Request context cancellation does not abort a started run.
-func (ExecRunner) Run(_ context.Context, command Command) (Result, error) {
-	cmd := exec.Command(command.Argv[0], command.Argv[1:]...)
+// Run executes a worker within both the command budget and the owner context.
+// The caller detaches request cancellation while preserving Runtime shutdown.
+func (ExecRunner) Run(ctx context.Context, command Command) (Result, error) {
+	if len(command.Argv) == 0 {
+		return Result{}, &OSError{Err: errors.New("missing worker command")}
+	}
+	budget, cancel := context.WithTimeout(ctx, command.Timeout)
+	defer cancel()
+	cmd := exec.CommandContext(budget, command.Argv[0], command.Argv[1:]...)
+	cmd.WaitDelay = time.Second
 	cmd.Env = command.Env
 	cmd.Stdin = bytes.NewReader(command.Stdin)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	if err := cmd.Start(); err != nil {
-		return Result{}, &OSError{Err: err}
+	err := cmd.Run()
+	if ctx.Err() != nil {
+		return Result{}, ctx.Err()
 	}
-	done := make(chan error, 1)
-	go func() { done <- cmd.Wait() }()
-	timer := time.NewTimer(command.Timeout)
-	defer timer.Stop()
-	select {
-	case <-done:
-	case <-timer.C:
-		_ = cmd.Process.Kill()
-		<-done
+	if budget.Err() != nil {
 		return Result{}, ErrTimeout
+	}
+	var exit *exec.ExitError
+	if err != nil && !errors.As(err, &exit) {
+		return Result{}, &OSError{Err: err}
 	}
 	code := cmd.ProcessState.ExitCode()
 	if status, ok := cmd.ProcessState.Sys().(syscall.WaitStatus); ok && status.Signaled() {
@@ -199,64 +201,8 @@ type ValueError struct{ Message string }
 func (e *ValueError) Error() string { return e.Message }
 
 func decodeText(data []byte) (string, error) {
-	for i := 0; i < len(data); {
-		if data[i] < utf8.RuneSelf {
-			i++
-			continue
-		}
-		r, size := utf8.DecodeRune(data[i:])
-		if r != utf8.RuneError || size > 1 {
-			i += size
-			continue
-		}
-		end, reason := utf8ErrorSpan(data, i)
-		message := fmt.Sprintf("can't decode byte 0x%02x in position %d: %s", data[i], i, reason)
-		if end-i > 1 {
-			message = fmt.Sprintf("can't decode bytes in position %d-%d: %s", i, end-1, reason)
-		}
-		return "", &ValueError{Message: "'utf-8' codec " + message}
+	if !utf8.Valid(data) {
+		return "", valueError(WorkerOutputEncodingError)
 	}
 	return string(data), nil
-}
-
-func utf8ErrorSpan(data []byte, start int) (int, string) {
-	b := data[start]
-	var need int
-	low, high := byte(0x80), byte(0xBF)
-	switch {
-	case b >= 0xC2 && b <= 0xDF:
-		need = 1
-	case b >= 0xE0 && b <= 0xEF:
-		need = 2
-		if b == 0xE0 {
-			low = 0xA0
-		} else if b == 0xED {
-			high = 0x9F
-		}
-	case b >= 0xF0 && b <= 0xF4:
-		need = 3
-		if b == 0xF0 {
-			low = 0x90
-		} else if b == 0xF4 {
-			high = 0x8F
-		}
-	default:
-		return start + 1, "invalid start byte"
-	}
-	i := start + 1
-	for k := 0; k < need; k++ {
-		if i >= len(data) {
-			return len(data), "unexpected end of data"
-		}
-		c := data[i]
-		lo, hi := byte(0x80), byte(0xBF)
-		if k == 0 {
-			lo, hi = low, high
-		}
-		if c < lo || c > hi {
-			return i, "invalid continuation byte"
-		}
-		i++
-	}
-	return i, "invalid continuation byte"
 }
