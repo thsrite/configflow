@@ -65,6 +65,16 @@ func (r *Repository) View(ctx context.Context, fn func(document *model.Document)
 	return result
 }
 
+// read is View for the legacy readers, which keep their behaviour until their
+// callers migrate: like Python they do not stop for a cancelled context.
+func (r *Repository) read(ctx context.Context, fn func(document *model.Document) error) error {
+	document, err := r.viewDocument(ctx)
+	if err != nil {
+		return err
+	}
+	return fn(document)
+}
+
 // viewDocument is the document a reader with ctx sees.
 func (r *Repository) viewDocument(ctx context.Context) (*model.Document, error) {
 	if document, ok, err := r.workingModel(ctx); ok || err != nil {

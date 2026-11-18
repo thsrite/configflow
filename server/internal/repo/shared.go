@@ -18,7 +18,7 @@ import (
 // GetShared is get_shared(): a copy of the shared section (subscriptions,
 // nodes, subscription_aggregations, rule_library, _revision).
 func (r *Repository) GetShared(ctx context.Context) (result *jsonx.Object, err error) {
-	err = r.View(ctx, func(document *model.Document) error {
+	err = r.read(ctx, func(document *model.Document) error {
 		result, err = legacyObject(&document.Shared)
 		return err
 	})
@@ -262,7 +262,7 @@ func (r *Repository) GetResourceUsage(ctx context.Context, resourceType, resourc
 	if !known {
 		return nil, validationError("未知资源类型")
 	}
-	err = r.View(ctx, func(document *model.Document) error {
+	err = r.read(ctx, func(document *model.Document) error {
 		usages, err := resourceUsage(document, resourceType, resourceID)
 		if err != nil {
 			return err

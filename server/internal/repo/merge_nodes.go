@@ -2,6 +2,7 @@ package repo
 
 import (
 	"fmt"
+	"slices"
 
 	"gopkg.in/yaml.v3"
 
@@ -50,22 +51,35 @@ func isSequence(n *yamlx.Node) bool {
 	return n != nil && n.Kind == yaml.SequenceNode
 }
 
-func cloneOrNull(n *yamlx.Node) *yamlx.Node {
+// The trees come from yamlx.FromJSON (no aliases or merge keys) and are
+// owned by one MergeJSON call. The result shares unchanged subtrees with its
+// inputs; a mapping is copied (one level, copy-on-write) before it is changed,
+// and no node of an input is ever modified.
+
+func orNull(n *yamlx.Node) *yamlx.Node {
 	if n == nil {
 		return yamlx.Null()
 	}
-	return yamlx.Clone(n)
+	return n
+}
+
+// shallowMapping copies a mapping's pair list so it can be changed.
+func shallowMapping(n *yamlx.Node) *yamlx.Node {
+	n = yamlx.Resolve(n)
+	copied := *n
+	copied.Content = slices.Clone(n.Content)
+	return &copied
 }
 
 // deepMergeNodes returns a copy of base with override's members laid over it;
 // objects present on both sides are merged recursively.
 func deepMergeNodes(base, override *yamlx.Node) *yamlx.Node {
-	result := yamlx.Clone(base)
+	result := shallowMapping(base)
 	for key, value := range yamlx.Pairs(override) {
 		if existing := yamlx.Get(result, key); isMapping(existing) && isMapping(value) {
 			yamlx.Set(result, key, deepMergeNodes(existing, value))
 		} else {
-			yamlx.Set(result, key, yamlx.Clone(value))
+			yamlx.Set(result, key, value)
 		}
 	}
 	return result
@@ -121,7 +135,7 @@ func (k *keyedItems) has(key string) bool { _, ok := k.values[key]; return ok }
 //   - anything else: proposed replaces current.
 func mergeNodes(current, baseline, proposed *yamlx.Node) *yamlx.Node {
 	if yamlx.Equal(proposed, baseline) {
-		return cloneOrNull(current)
+		return orNull(current)
 	}
 	switch {
 	case isMapping(current) && isMapping(baseline) && isMapping(proposed):
@@ -129,11 +143,11 @@ func mergeNodes(current, baseline, proposed *yamlx.Node) *yamlx.Node {
 	case isSequence(current) && isSequence(baseline) && isSequence(proposed):
 		return mergeSequences(current, baseline, proposed)
 	}
-	return cloneOrNull(proposed)
+	return orNull(proposed)
 }
 
 func mergeMappings(current, baseline, proposed *yamlx.Node) *yamlx.Node {
-	result := yamlx.Clone(current)
+	result := shallowMapping(current)
 	for key, old := range yamlx.Pairs(baseline) {
 		if yamlx.Get(proposed, key) != nil {
 			continue
@@ -147,7 +161,7 @@ func mergeMappings(current, baseline, proposed *yamlx.Node) *yamlx.Node {
 		existing := yamlx.Get(result, key)
 		switch {
 		case old == nil && existing == nil:
-			yamlx.Set(result, key, yamlx.Clone(value))
+			yamlx.Set(result, key, value)
 		case old == nil:
 			if isMapping(existing) && isMapping(value) {
 				yamlx.Set(result, key, deepMergeNodes(existing, value))
@@ -173,7 +187,7 @@ func mergeSequences(current, baseline, proposed *yamlx.Node) *yamlx.Node {
 		if baselineItems.has(key) && !proposedItems.has(key) {
 			continue
 		}
-		result = append(result, yamlx.Clone(item))
+		result = append(result, item)
 	}
 	positions := map[string]int{}
 	for index, item := range result {
@@ -184,7 +198,7 @@ func mergeSequences(current, baseline, proposed *yamlx.Node) *yamlx.Node {
 		index, inResult := positions[key]
 		if !baselineItems.has(key) {
 			if !inResult {
-				result = append(result, yamlx.Clone(item))
+				result = append(result, item)
 				positions[key] = len(result) - 1
 			}
 		} else if old := baselineItems.values[key]; inResult && !yamlx.Equal(item, old) {

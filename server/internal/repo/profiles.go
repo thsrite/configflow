@@ -26,7 +26,7 @@ func metadataOf(profile *jsonx.Object) *jsonx.Object {
 // DefaultProfileID is default_profile_id(): system_config.default_profile_id,
 // "default" when it was never switched.
 func (r *Repository) DefaultProfileID(ctx context.Context) (result string, err error) {
-	err = r.View(ctx, func(document *model.Document) error {
+	err = r.read(ctx, func(document *model.Document) error {
 		result = defaultProfileIn(document)
 		return nil
 	})
@@ -127,7 +127,7 @@ func (r *Repository) GetProfileAgentBindings(ctx context.Context, profileID stri
 // existence check (ErrNotFound, or ErrValidation for a malformed id).
 func (r *Repository) ProfileMetadata(ctx context.Context, profileID string) (result *jsonx.Object, err error) {
 	r.metadataReads.Add(1)
-	err = r.View(ctx, func(document *model.Document) error {
+	err = r.read(ctx, func(document *model.Document) error {
 		profile, err := profileFor(document, profileID)
 		if err != nil {
 			return err
@@ -141,7 +141,7 @@ func (r *Repository) ProfileMetadata(ctx context.Context, profileID string) (res
 // GetProfile is get_profile(): a copy of the stored profile (references
 // only, no shared resources).
 func (r *Repository) GetProfile(ctx context.Context, profileID string) (result *jsonx.Object, err error) {
-	err = r.View(ctx, func(document *model.Document) error {
+	err = r.read(ctx, func(document *model.Document) error {
 		profile, err := profileFor(document, profileID)
 		if err != nil {
 			return err
@@ -161,7 +161,7 @@ func (r *Repository) ExportProfile(ctx context.Context, profileID string) (*json
 // configuration; it grows when the profile or the shared resources change
 // and tells whether an Agent is out of date.
 func (r *Repository) ConfigRevision(ctx context.Context, profileID string) (result int64, err error) {
-	err = r.View(ctx, func(document *model.Document) error {
+	err = r.read(ctx, func(document *model.Document) error {
 		profile, err := profileFor(document, profileID)
 		if err != nil {
 			return err
@@ -176,7 +176,7 @@ func (r *Repository) ConfigRevision(ctx context.Context, profileID string) (resu
 // compat view and its config revision from the same read snapshot.
 // agents=false leaves the Agent records out.
 func (r *Repository) GetPublishSnapshot(ctx context.Context, profileID string, agents bool) (config *jsonx.Object, revision int64, err error) {
-	err = r.View(ctx, func(document *model.Document) error {
+	err = r.read(ctx, func(document *model.Document) error {
 		profile, err := profileFor(document, profileID)
 		if err != nil {
 			return err
@@ -206,7 +206,7 @@ func (r *Repository) Config(ctx context.Context, profileID string, roots Resourc
 // GetCompatConfig is get_compat_config(profile_id, resource_roots=...):
 // Config as a *jsonx.Object.
 func (r *Repository) GetCompatConfig(ctx context.Context, profileID string, roots ResourceRoots) (result *jsonx.Object, err error) {
-	err = r.View(ctx, func(document *model.Document) error {
+	err = r.read(ctx, func(document *model.Document) error {
 		result, err = legacyConfig(document, profileID, roots, true)
 		return err
 	})
