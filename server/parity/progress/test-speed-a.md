@@ -144,3 +144,11 @@ detail budgets and paging lists remain independent; all 32 recorded Python test
 identities, minimum-row guard and exact comparison/paging assertions remain.
 No runtime Python reference existed here. .64 selected-test race run passed
 `17.209s` (complete package timing pending paired measurement).
+
+## deploy/contentsync — parallel histories
+
+The nine recorded histories now run as parallel independent subtests. Each
+history constructs its own checker, clock, fake worker queue, limits, config,
+agent, preparation failures and version map. Every action and expected job/call/
+entry/detail count still executes in its original within-history order.
+No runtime Python reference existed. .64 selected-test race run passed `1.630s`.

@@ -29,6 +29,7 @@ type observation struct {
 }
 
 func TestPythonCheckerHistories(t *testing.T) {
+	t.Parallel()
 	data, err := os.ReadFile("testdata/checker.json")
 	if err != nil {
 		t.Fatal(err)
@@ -50,6 +51,7 @@ func TestPythonCheckerHistories(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.Name, func(t *testing.T) {
+			t.Parallel()
 			f := newFixture(t, func(o *Options) { o.MaxEntries = tc.Limits.Entries; o.MaxDetails = tc.Limits.Details })
 			failures := map[deploy.InputKey]bool{}
 			base := f.prepare
