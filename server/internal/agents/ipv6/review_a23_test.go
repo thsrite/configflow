@@ -95,3 +95,35 @@ func TestPrepareFailureUsesCapturedCredentials(t *testing.T) {
 		t.Fatal("prepare failure leaked replaced peer credentials", string(public))
 	}
 }
+
+// Review A23 F3: Python compares the parsed client and gateway addresses, so a
+// differently spelled gateway address is never offered as a client source.
+func TestPolicyCandidateExcludesGatewayAddressSpelling(t *testing.T) {
+	startRuntime(t)
+	s, ctx := fixture(t)
+	addClient(t, s, ctx)
+	for id, host := range map[string]string{"source": "2001:db8::1", "client": "2001:db8:0::1"} {
+		if e := s.update(ctx, id, func(_ context.Context, a Document, _ []Document) error {
+			a["host"] = raw(host)
+			if id == "source" {
+				a["ipv6_verification_settings"] = raw(Settings{ClientAgentID: "client"})
+			}
+			return nil
+		}); e != nil {
+			t.Fatal(e)
+		}
+	}
+	a, e := s.agent(ctx, "source", "default")
+	if e != nil {
+		t.Fatal(e)
+	}
+	config, _, e := s.snapshot(ctx, "default")
+	if e != nil {
+		t.Fatal(e)
+	}
+	for _, c := range s.policy(ctx, config, a).Clients {
+		if c.SourceCandidate {
+			t.Fatalf("gateway address offered as client candidate: %+v", c)
+		}
+	}
+}

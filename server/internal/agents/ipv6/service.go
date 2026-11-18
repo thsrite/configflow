@@ -83,7 +83,10 @@ func (s *Service) policy(ctx context.Context, config, a Document) routers.Policy
 		for _, c := range p.Clients {
 			exists = exists || c.Address == address.String()
 		}
-		if e == nil && !address.IsUnspecified() && !address.IsLoopback() && !address.IsMulticast() && !exists {
+		// Python also compares parsed addresses: another spelling of the gateway
+		// address is the gateway itself, never a client source candidate.
+		source, sourceError := netip.ParseAddr(text(a["host"]))
+		if e == nil && (sourceError != nil || address != source) && !address.IsUnspecified() && !address.IsLoopback() && !address.IsMulticast() && !exists {
 			p.Clients = append([]routers.PolicyClient{{Address: address.String(), SourceCandidate: true, SourceNote: msgCandidate}}, p.Clients...)
 			if len(p.Clients) > 32 {
 				p.Clients = p.Clients[:32]

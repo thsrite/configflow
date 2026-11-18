@@ -77,7 +77,7 @@ Same as `PROGRESS-config.md`: status `missing` / `partial` (exact list of what i
 
 | A21 | gateway onboarding | 751 | missing | HR | A19, A20, C18, C22, C23, C24, C05, routers (`router_split`) | 3 | internal/gateway, api/gatewayonboarding (new) |
 | A22 | gateway installation | 809 | missing | HR | A08, A14, A20, A21, C17 | 7 | internal/gateway, api/agents |
-| A23 | IPv6 readiness, client evidence, verification | 1344 | ported | HR | A06, A13, A14, C16, routers (`ipv6_readiness`, `routeros`, `route_editor`, `rule_sync_store`, `store`, `client_devices`) | 5 | internal/agents/ipv6, internal/api/ipv6 |
+| A23 | IPv6 readiness, client evidence, verification | 1344 | verified | HR | A06, A13, A14, C16, routers (`ipv6_readiness`, `routeros`, `route_editor`, `rule_sync_store`, `store`, `client_devices`) | 5 | internal/agents/ipv6, internal/api/ipv6 |
 | A24 | client tools, OxiDNS device policies, domain-discovery toggles | 198 | verified | | A05, C09, C26, C31, C37 | 8 | api/agents |
 
 ¹ A05 needs only `utils/domain_discovery.registrable_domain` (C37's file; a thin wrapper over `subs.ExtractDomain`). Ask the coordinator to have it exported early from the C37 package, or port A05 after C37.
@@ -1989,6 +1989,8 @@ Routes (5): `GET /api/agents/<agent_id>/ipv6-readiness`; `POST /api/agents/<agen
 分支 `go-port-a23`，从协调者指定 `go-r17-base-v2@673851659` 新建。完整就绪/缓存/prepare/probe、客户端相关证据、settings/result/start/enroll/0-5秒调度、8 slots/2 workers、HTTP五方法及R13 host/A14/A13接线已实现。setup18→Agent19→router20→repo，批量锁组复用原锁，设计见 O3 Clarified in A23。真实 Python/Flask、原始HTTP、真实Runtime断连/关机、坏行/旧凭据隔离、定向race/vet/gofmt及60秒fuzz通过。尚待新的Opus HR复核、依赖通知后的rebase与batch gate/L4；详见 [A23交接](progress/A23-handoff-zh.md)。
 
 Commits: `3bd37be66`, `dd58e8664`, `8a9384781`；交接文档提交在其后。
+
+Opus HR 复核（分支 `go-opus-review-a23`，见 `review-a23.md`）：3 条发现（1 medium、2 low），全部修复并有先失败的回归测试；未达到回退门槛（0 high）。状态 `verified`；L4 实机项仍待实验网批次。
 
 Hooks installed: `agents.OnManagerInit` (`ipv6_verification.start_loop`, last); `ipv6_verification.enroll` is called from A14 `_publish_deployment` (A14 declares a hook with a no-op default, registered here). Routers' `routes/routers.py` imports `agents.ipv6_readiness` (interface for the routers domain).
 
