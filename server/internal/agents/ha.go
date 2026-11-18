@@ -1,9 +1,9 @@
 package agents
 
 import (
-	"configflow/internal/jsonx"
 	"context"
 	"errors"
+	"reflect"
 )
 
 // ErrPairIncomplete means saved HA members no longer form a reciprocal pair.
@@ -19,7 +19,7 @@ func (m *Manager) HAPair(ctx context.Context, agentID string) ([]*Record, error)
 	if err != nil {
 		return nil, err
 	}
-	byID := make(map[string]*jsonx.Object, len(records))
+	byID := make(map[string]*Record, len(records))
 	for _, r := range records {
 		byID[r.GetString("id")] = r
 	}
@@ -30,7 +30,7 @@ func (m *Manager) HAPair(ctx context.Context, agentID string) ([]*Record, error)
 	ha := agent.GetObject("oxidns_ha")
 	peer := byID[ha.GetString("peer_id")]
 	other := peer.GetObject("oxidns_ha")
-	if peer == nil || !HAEnabled(peer) || ha.GetString("group_id") == "" || ha.GetString("group_id") != other.GetString("group_id") || other.GetString("peer_id") != agentID || !jsonx.Equal(peer.Value("profile_id"), agent.Value("profile_id")) {
+	if peer == nil || !HAEnabled(peer) || ha.GetString("group_id") == "" || ha.GetString("group_id") != other.GetString("group_id") || other.GetString("peer_id") != agentID || !reflect.DeepEqual(peer.Value("profile_id"), agent.Value("profile_id")) {
 		return nil, ErrPairIncomplete
 	}
 	return []*Record{agent, peer}, nil
