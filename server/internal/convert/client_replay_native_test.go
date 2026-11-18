@@ -13,7 +13,7 @@ import (
 // ClientNodeReplayIssue classifies stored-type inputs outside the normal Python
 // byte contract. It uses the production model/options decoders, not a second
 // parser. The immutable 2195-config byte gate still executes every source row.
-func ClientNodeReplayIssue(value any) string {
+func ClientNodeReplayIssue(value any, target string) string {
 	node, err := decodeLegacy[model.Node](value)
 	object, ok := value.(*jsonx.Object)
 	if !ok || object == nil {
@@ -57,9 +57,9 @@ func ClientNodeReplayIssue(value any) string {
 			return "parsed node." + issues[0].Path + " R5"
 		}
 	}
-	return clientOptionsReplayIssue(node.Type, params)
+	return clientOptionsReplayIssue(node.Type, params, target)
 }
-func clientOptionsReplayIssue(kind string, params *yamlx.Node) string {
+func clientOptionsReplayIssue(kind string, params *yamlx.Node, target string) string {
 	options, err := decodeClientOptions(params)
 	if err != nil {
 		return "node.params schema"
@@ -78,17 +78,17 @@ func clientOptionsReplayIssue(kind string, params *yamlx.Node) string {
 		}
 	}
 	kind = strings.ToLower(kind)
-	if kind == "tuic" || kind == "tuic-v5" {
-		if n := yamlx.Get(params, "alpn"); n != nil && n.ShortTag() == "!!seq" {
+	if target == "surge" && (kind == "tuic" || kind == "tuic-v5") {
+		if n := yamlx.Get(params, "alpn"); n != nil && n.ShortTag() == "!!seq" && len(n.Content) > 0 {
 			return "Surge TUIC ALPN list bug"
 		}
 	}
-	if kind == "wg" || kind == "wireguard" {
+	if target == "surge" && (kind == "wg" || kind == "wireguard") {
 		if n := yamlx.Get(params, "reserved"); n != nil && n.ShortTag() == "!!seq" && len(n.Content) > 0 {
 			return "Surge WireGuard numeric reserved bug"
 		}
 	}
-	if kind == "hysteria2" && options.Down != nil {
+	if target == "loon" && kind == "hysteria2" && options.Down != nil {
 		text := string(*options.Down)
 		if text != "" && text[0] >= 128 {
 			return "native non-ASCII down"
@@ -142,7 +142,7 @@ func ClientProfileReplayIssue(config *jsonx.Object, target string) string {
 		return "profile record"
 	}
 	for _, node := range config.GetList("nodes") {
-		if issue := ClientNodeReplayIssue(node); issue != "" {
+		if issue := ClientNodeReplayIssue(node, target); issue != "" {
 			return issue
 		}
 	}

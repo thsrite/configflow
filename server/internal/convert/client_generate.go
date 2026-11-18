@@ -61,19 +61,21 @@ func SurgeConfig(ctx context.Context, config *model.Config, base string) (string
 			continue
 		}
 		for _, id := range stringList(source.ManualNodes) {
-			selected[id] = true
-			direct[id] = true
+			if clientNodeRef(id).kind == "node" {
+				selected[id] = true
+				direct[id] = true
+			}
 		}
 		for _, id := range stringList(source.Aggregations) {
 			aggregations[id] = true
 		}
 		for _, ref := range refList(group.ProxiesOrder) {
-			if ref.Type == "node" {
+			if ref.Type == "node" && clientNodeRef(ref.ID).kind == "node" {
 				selected[ref.ID] = true
 			}
 		}
 		for _, ref := range refList(source.ProxiesOrder) {
-			if ref.Type == "node" {
+			if ref.Type == "node" && clientNodeRef(ref.ID).kind == "node" {
 				direct[ref.ID] = true
 			}
 		}

@@ -59,8 +59,12 @@ func executeClientBoundary(t *testing.T, entry *jsonx.Object) (any, error) {
 func clientEntryIssue(t *testing.T, entry *jsonx.Object) string {
 	t.Helper()
 	fn := entry.GetString("fn")
+	target := fn
+	if index := strings.LastIndexByte(fn, '_'); index >= 0 {
+		target = fn[index+1:]
+	}
 	profileIssue := func(profile *jsonx.Object) string {
-		if issue := convert.ClientProfileReplayIssue(profile, fn); strings.HasPrefix(issue, "pending shared") {
+		if issue := convert.ClientProfileReplayIssue(profile, target); strings.HasPrefix(issue, "pending shared") {
 			return issue
 		}
 		if issue := convert.CommonReplayIssue(profile); issue != "" {
@@ -72,7 +76,7 @@ func clientEntryIssue(t *testing.T, entry *jsonx.Object) string {
 		if issue := convert.DialerProfileReplayIssue(profile); issue != "" {
 			return issue
 		}
-		return convert.ClientProfileReplayIssue(profile, fn)
+		return convert.ClientProfileReplayIssue(profile, target)
 	}
 	if fn == "surge" || fn == "loon" {
 		return profileIssue(entry.GetObject("args").GetObject("profile"))
@@ -80,7 +84,7 @@ func clientEntryIssue(t *testing.T, entry *jsonx.Object) string {
 	args := entry.GetList("args")
 	switch fn {
 	case "node_surge", "node_loon":
-		return convert.ClientNodeReplayIssue(args[0])
+		return convert.ClientNodeReplayIssue(args[0], target)
 	case "group_surge", "group_nodes":
 		if issue := convert.ClientGroupReplayIssue(args[0], "surge"); issue != "" {
 			return issue
@@ -106,7 +110,7 @@ func clientEntryIssue(t *testing.T, entry *jsonx.Object) string {
 			return ""
 		}
 		for _, node := range nodes {
-			if issue := convert.ClientNodeReplayIssue(node); issue != "" {
+			if issue := convert.ClientNodeReplayIssue(node, target); issue != "" {
 				return "subscription " + issue
 			}
 		}

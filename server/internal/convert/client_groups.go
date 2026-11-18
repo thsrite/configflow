@@ -1,6 +1,7 @@
 package convert
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -8,6 +9,9 @@ import (
 )
 
 func clientGroupSource(group model.ProxyGroup, config *model.Config) (*model.ProxyGroup, error) {
+	if config == nil {
+		return nil, fmt.Errorf("%s", msgClientConfig)
+	}
 	for _, member := range []string{"name", "type", "follow_group"} {
 		if err := storedText(&group, kindGroup, group.ID, member); err != nil {
 			return nil, err
@@ -16,7 +20,7 @@ func clientGroupSource(group model.ProxyGroup, config *model.Config) (*model.Pro
 	if stringValue(group.FollowGroup) == "" {
 		return &group, nil
 	}
-	source := followed(config.Profile.ProxyGroups, *group.FollowGroup)
+	source := followed(configGroups(config), *group.FollowGroup)
 	if source == nil {
 		return nil, nil
 	}
@@ -171,7 +175,7 @@ func SurgeGroup(group model.ProxyGroup, config *model.Config, base string, smart
 				}
 			}
 		case "strategy":
-			if g := followed(config.Profile.ProxyGroups, ref.id); g != nil {
+			if g := followed(configGroups(config), ref.id); g != nil {
 				if err := storedText(g, kindGroup, g.ID, "name"); err != nil {
 					return "", err
 				}

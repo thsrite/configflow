@@ -83,7 +83,10 @@ func TestClientTypedSurgeALPNWarnings(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { root.Close(); _, _ = logx.Setup(logx.Config{Level: logx.Critical}) })
-	for _, raw := range []string{`["h2","http/1.1"]`, `["h3",1]`} {
+	if value := surgeALPN(clientOptions{ALPNRaw: json.RawMessage(`[]`)}, "Synthetic node"); value != "" || logs.Len() != 0 {
+		t.Fatal("empty ALPN list should remain unconfigured", value, logs.String())
+	}
+	for _, raw := range []string{`["h2","http/1.1"]`, `["h3",1]`, `[null]`} {
 		options := clientOptions{ALPNRaw: json.RawMessage(raw)}
 		if value := surgeALPN(options, "Synthetic node"); value != "" {
 			t.Fatal(value)

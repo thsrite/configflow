@@ -69,6 +69,9 @@ func ClientProxyText(proxies []*yamlx.Node, decode ClientNodeDecoder, target str
 
 // ClientGroupNodes returns filtered subscription names followed by explicit members.
 func ClientGroupNodes(group model.ProxyGroup, config *model.Config) ([]string, error) {
+	if config == nil {
+		return nil, fmt.Errorf("%s", msgClientConfig)
+	}
 	var names []string
 	subscriptions := map[string]bool{}
 	for _, id := range stringList(group.Subscriptions) {

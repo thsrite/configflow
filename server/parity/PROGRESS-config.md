@@ -2602,9 +2602,9 @@ in all client cores and require legacy entries to reach the sole typed body.
 Exact gate remains2353 Mihomo/1064 Loon/1131 Surge. All4548 execute; C typed/old
 entry results are byte-equal.107 approved exact per-row patches (source SHA,
 old lines/offsets, classes and native SHA) leave old manifests/goldens unchanged.
-A read-only34697-row helper gate has10864 strict rows and23833 input-only indexed
-classifications, including5103 explicitly pending shared integer-string rows.
-The306 extra boundary rows have257 strict/49 classified;128 recorded Python calls
+A read-only34697-row helper gate has10894 strict rows and23803 input-only indexed
+classifications, including5119 explicitly pending shared integer-string rows.
+The306 extra boundary rows have272 strict/34 classified;128 recorded Python calls
 remain entirely strict. Family counts and the107-row overlapping field counts
 are in [progress/n8-8c.md](progress/n8-8c.md), together with the124 source rows
 containing numeric Node.Name/Server (126 fields). No pending shared coercion is

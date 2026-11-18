@@ -271,9 +271,14 @@ func surgeALPN(options clientOptions, name string) string {
 	if json.Unmarshal(raw, &scalar) == nil {
 		return scalar
 	}
-	var values []string
-	if json.Unmarshal(raw, &values) == nil && len(values) == 1 {
-		return values[0]
+	var values []*string
+	if json.Unmarshal(raw, &values) == nil {
+		if len(values) == 0 {
+			return ""
+		}
+		if len(values) == 1 && values[0] != nil {
+			return *values[0]
+		}
 	}
 	logx.Get("backend.converters.surge").Warningf(msgSurgeALPN, name, string(raw))
 	return ""
