@@ -709,7 +709,7 @@ F1：补偿 DELETE 回复丢失但设备已删除时，Fake-IP 回滚跳过旧�
 
 ## R11 — IPv6 PD guard, IPv6 DNS, RouterOS IPv6 readiness
 
-**Status: `missing`** · HR · prereqs: R10 · Go: internal/routers
+**Status: `ported`** · HR · prereqs: R10 · Go: internal/routers
 
 Files:
 - `backend/routers/ipv6_pd_guard.py` (635), `backend/routers/ipv6_dns.py` (232), `backend/routers/ipv6_readiness.py` (294)
@@ -719,6 +719,26 @@ Tests: `test_router_ipv6_pd_guard.py` (8), `test_router_ipv6_pd_guard_integratio
 Routes: none.
 
 Notes for porter: PD guard script/scheduler on the router (prefix change on reboot — see the maintainer's cf-pd script history), `ipv6_readiness` RouterOS reader (`_list`) used by agents A23 — export it.
+
+移植提交：`1c8e874c2`、`214ed3bc4`、`d214fb515`（基底 R10 review@f368fa1b9；R10尚未合入go，合入后再变基）。
+PD/DNS/readiness、typed plan/check/ops、RouterState/report、Manifests/Apply handler均齐；无新HTTP路由。
+80个真实Python计划/报告/undo/写序列/最终表序列、3组模板原始字节、raw devhttp/10s透传、18个真实Runtime
+边界、部分恢复/外改/原证明/未知字段/SQLite已验。最新.64定向race：routers27.887s、repo25.853s；vet clean。
+.32共享包race：routers990.855s、routersplit56.088s、devhttp3.948s、repo448.124s、model48.181s；全仓gofmt/vet
+通过。最新产品两个新fuzz各60s通过（219613/257393次）；5类编译变异5/5检出，编译失败不计数。
+
+复核类别逐项：R06 F1=timeout透传，F2=共享脱敏且用户名保留，F3=raw空body/headers，F4=严格接口/ID/flags，
+F5=typed DTO；R07 F1=不复制脱敏+共享分支回归，F2=netip身份，F3=snapshot/引用列表与PD scoped状态，
+F4=报告/manifest副本，F5=逐对象完整证明/唯一性；R08 F1/F2=失败不当空、禁止猜ID，F3=presence/数组，
+F4=无空LAN角色，F5=verify错误保留，F6=关机后补偿停止；R09 F1=部分成功也remap，F2–F4=PD运行时保留
+namespace残余记L5，F5=按表nil/empty复用，F6=O14残余；R10 F1=DELETE失败新GET仅404作证明，F2=严格route
+helper不改原文案，F3=PD逐步补偿并保留未完成证明，F4=共享默认分支不变，F5=关机残留不声称修复，L5-D
+扩到PD端点/响应证明；A24 F1=共享凭据脱敏，F2=Detach后/每个commit前ctx.Err真实Runtime；N8-4ef=raw
+proof/R5契约、未知字段与Set/null；O3=无新锁/goroutine/flock，已同6b约定统一上层L1→L2、底层不重入。
+详见 [中文交接](progress/R11-handoff-zh.md)、[测试映射](r11-test-map.md)、behaviour-changes 的R11台账。
+R12 stage调度/跨阶段回滚、R14自动同步、A23 HTTP/缓存不在本模块冒领验收。最终gate在.64单agent槽位
+排队满900s未获槽，自动终止，rt退出124，未执行完整门禁；自身进程已清理。由协调者在batch树跑cf-gate，
+不能宣称最新合并树全门禁通过。R10合入go后再变基；待新Opus复核与L5。
 
 ## R12 — release plan and staged execution
 
