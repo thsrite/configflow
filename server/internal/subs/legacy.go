@@ -6,6 +6,7 @@ import (
 	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/yamlx"
+	"context"
 	"encoding/json"
 	"math/big"
 )
@@ -474,4 +475,84 @@ func AdaptSubscriptionProxies(subscription string, proxies []any, main, record *
 	}
 	out, _ := value.([]any)
 	return out
+}
+
+// DialerRecord adapts the old cache/read collaborator at its public boundary.
+func DialerRecord(sub, cache *jsonx.Object, downloaded func(string) (string, bool)) (*jsonx.Object, error) {
+	source, err := decodeLegacy[model.Subscription](sub)
+	if err != nil {
+		return nil, err
+	}
+	loaded, err := decodeLegacy[*SubscriptionCache](cache)
+	if err != nil {
+		return nil, err
+	}
+	var read func(context.Context, string) (string, bool)
+	if downloaded != nil {
+		read = func(_ context.Context, url string) (string, bool) { return downloaded(url) }
+	}
+	record, err := SourceDialers(context.Background(), source, loaded, read)
+	if err != nil || record == nil {
+		return nil, err
+	}
+	return encodeLegacy(record)
+}
+
+// DialerDeps is the old API's typed-collaborator codec boundary.
+type DialerDeps struct {
+	LoadCache      func(string) *jsonx.Object
+	ConvertNode    func(*jsonx.Object) *jsonx.Object
+	DownloadedText func(string) (string, bool)
+}
+
+// AddDialerGroups adapts the config once and each collaborator's own record only.
+func AddDialerGroups(main, config *jsonx.Object, deps DialerDeps) (*jsonx.Object, error) {
+	graph, err := legacyNode(main)
+	if err != nil {
+		return nil, err
+	}
+	native, err := legacyConfig(config)
+	if err != nil {
+		return nil, err
+	}
+	inputs := DialerInputs{}
+	if deps.LoadCache != nil {
+		inputs.LoadCache = func(_ context.Context, id string) (*SubscriptionCache, error) {
+			return decodeLegacy[*SubscriptionCache](deps.LoadCache(id))
+		}
+	}
+	if deps.ConvertNode != nil {
+		inputs.Convert = func(_ context.Context, node model.Node) (*yamlx.Node, error) {
+			wire, err := encodeLegacy(node)
+			if err != nil {
+				return nil, err
+			}
+			return legacyNode(deps.ConvertNode(wire))
+		}
+	}
+	if deps.DownloadedText != nil {
+		inputs.DownloadedText = func(_ context.Context, url string) (string, bool) { return deps.DownloadedText(url) }
+	}
+	report, failure := AddGroups(context.Background(), graph, native, inputs)
+	// Business failures expose the same generated prefix through this old API.
+	for _, field := range []string{"proxies", "proxy-groups"} {
+		if value := yamlx.Get(graph, field); value != nil {
+			data, err := yamlx.ToJSON(value)
+			if err != nil {
+				return nil, err
+			}
+			decoded, err := jsonx.Parse(data)
+			if err != nil {
+				return nil, err
+			}
+			main.Set(field, decoded)
+		}
+	}
+	if failure != nil {
+		return nil, failure
+	}
+	if report == nil {
+		return nil, nil
+	}
+	return encodeLegacy(report)
 }

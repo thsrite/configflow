@@ -42,3 +42,8 @@ const (
 	msgSubscriptionList = "订阅 %s 必须是列表"
 	msgDialerSkipped    = "订阅「%s」跳过 %d 个链式节点：%s"
 )
+
+const (
+	msgDialerNameConflict = "名称「%s」已被使用，与订阅「%s」自动生成的中转分组冲突，请改名后重新生成"
+	msgDialerMissing      = "订阅链式节点：%d 个节点的中转分组未能补上（%s）"
+)

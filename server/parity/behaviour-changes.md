@@ -1853,3 +1853,16 @@ world 保留旧文件。原 archive 不改；独立 Python 参考绑定完整 ar
 - AdaptProxies 返回原始开放图节点，只在需要拥有 dialer-proxy 替换时克隆该节点。使用共享
   yamlx.Encode 检查图/alias预算而非把整个开放参数强制转 JSON，保留合法非字符串 YAML键。
   同样调整已迁移 hosts/DNS 克隆前的图验证；新增非字符串开放参数和原记录不变回归。
+
+### N8-9 subs — typed 中转组生成（2026-11-19）
+
+- AddGroups / DialerInputs / DialerReport / SourceDialers 直接消费 typed 配置及缓存，引用解析走
+  convert 唯一实现。metadata.dialers 的缺失与显式 null/错误值保持区别：后两者不回头读取
+  downloaded 缓存。记录存在但没有可确认成员（空、错型 members 或错型 target）时，不再
+  生成空中转组；保留该节点 missing 提示并暂不交付。这修复 Python 在损坏 metadata 上构造
+  空 group 的问题。有效源/成员/顺序不变；未知数据不被当作有效空集合。
+- 缓存健康字段按声明的 String/Int/bool消费后写入生成图，metadata原始字节由 model保留；
+  开放节点 Params 不做标量强制改写。Provider 名称字面量过滤使用 regexp.QuoteMeta 加
+  既有 portable punctuation 转义，保持生成 filter 的字节和反引号排序语法。
+- 业务名称冲突仍保留已经生成的代理前缀；本次未生成的 group 不伪造成功。Source cache 与
+  model.Config 不修改。Runtime关机在读缓存返回后立即阻止继续转换和图提交，取消保持原样。

@@ -1139,74 +1139,35 @@ func MihomoEnvironmentFromLegacy(old MihomoEnv) MihomoEnvironment {
 		return subs.LogHostReport(profileID, &report)
 	}
 	env.DialerGroups = func(ctx context.Context, document *yamlx.Node, config *model.Config, deps DialerCollaborators) (*yamlx.Node, error) {
-		main, err := legacyProxy(document)
-		if err != nil {
-			return nil, err
+		inputs := subs.DialerInputs{Convert: deps.Convert, DownloadedText: deps.DownloadedText}
+		if deps.LoadCache != nil {
+			inputs.LoadCache = func(ctx context.Context, id string) (*subs.SubscriptionCache, error) {
+				data, err := deps.LoadCache(ctx, id)
+				if err != nil {
+					return nil, err
+				}
+				if len(data) == 0 || string(data) == "null" {
+					return nil, nil
+				}
+				var cache subs.SubscriptionCache
+				if err := json.Unmarshal(data, &cache); err != nil {
+					return nil, err
+				}
+				return &cache, nil
+			}
 		}
-		logical, err := legacyDialerView(config)
-		if err != nil {
-			return nil, err
-		}
-		var failure error
-		report, err := subs.AddDialerGroups(main, logical, subs.DialerDeps{
-			LoadCache: func(id string) *jsonx.Object {
-				if deps.LoadCache == nil {
-					failure = &HookMissingError{Hook: "load_subscription_cache", Provider: "convert/mihomoenv"}
-					return nil
-				}
-				raw, err := deps.LoadCache(ctx, id)
-				if err != nil {
-					failure = err
-					return nil
-				}
-				wire, err := legacyCache(raw)
-				if err != nil {
-					failure = err
-				}
-				return wire
-			},
-			ConvertNode: func(value *jsonx.Object) *jsonx.Object {
-				if deps.Convert == nil {
-					failure = &HookMissingError{Hook: "convert_node", Provider: "convert/mihomoenv"}
-					return nil
-				}
-				node, err := decodeLegacy[model.Node](value)
-				if err != nil {
-					failure = err
-					return nil
-				}
-				proxy, err := deps.Convert(ctx, node)
-				if err != nil {
-					failure = err
-					return nil
-				}
-				wire, err := legacyProxy(proxy)
-				if err != nil {
-					failure = err
-				}
-				return wire
-			},
-			DownloadedText: func(url string) (string, bool) {
-				if deps.DownloadedText == nil {
-					failure = &HookMissingError{Hook: "downloaded_text", Provider: "convert/mihomoenv"}
-					return "", false
-				}
-				return deps.DownloadedText(ctx, url)
-			},
-		})
-		if failure != nil {
-			return nil, failure
-		}
+		report, err := subs.AddGroups(ctx, document, config, inputs)
 		if err != nil {
 			return nil, subsError(err)
-		}
-		if err = replaceLegacyDocument(document, main); err != nil {
-			return nil, err
 		}
 		if report == nil {
 			return nil, nil
 		}
-		return yamlbridge.Encode(report)
+		data, err := jsonresp.Encode(report)
+		if err != nil {
+			return nil, err
+		}
+		return yamlx.FromJSON(data)
 	}
 	env.ValidateRules = func(config *model.Config, names []string, client string) error {
 		return rules.ValidatePolicies(config.Profile.RuleConfigs, names, client)

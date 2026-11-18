@@ -242,3 +242,23 @@ owner 暂时仍调用的原有 helper，后续必须一起删除，不能据此�
   未修改共享 yamlx 产品代码。新增交付开放键/原节点不变、原生错误精确消息、实际共享
   identity校验及 bounded DAG 回归。剩余：AddDialerGroups、LowerProxyChains、LowerChainProviders、
   删除私有copy与 Python模拟helper、最终完整管线分配基准及跨包Corpus/HTTP/fuzz。
+
+## typed 中转组生成阶段
+
+- AddGroups / DialerInputs / DialerReport / SourceDialers 已替换旧 AddDialerGroups 与 DialerRecord
+  算法，旧入口只转码各自记录。dialers.go 不再引用 jsonx/any/Python iteration；删除已无用的
+  iterate/isScalarSetting/notIterable/nodeDialer 和私有 re.escape，使用 regexp.QuoteMeta 加
+  显式 portable punctuation 的既有输出规则。旧 chains 对转义函数的单次调用改名，没有改
+  convert 生成器。Native env 的 DialerGroups callback 不再编码整个配置或文档。
+- 原 dialer corpus 全通过；Mihomo原始语料+输入不变/2353字节门非race通过29.145s。
+  新回归固定显式null/坏record不得fallback、每源恰好1次cache读取、config不变、冲突保留已
+  生成前缀、无确认成员不能伪造空组。真实Runtime关机发生在cache返回之前，零转换且图不变。
+- 主服务器，GOMAXPROCS=4、-p4：
+  `go test -race -p 4 -count=1 -timeout 5m ./internal/subs ./internal/convert ./internal/substore -run
+  "TestN89AddGroups|TestN89SourceDialer|TestN89DialerGeneration|TestDialersCorpus|TestN89DialerNative|TestSubscription|TestN89Airport"`
+  → subs13.110s / convert1.047s（该pattern无测试）/ substore1.285s；三包vet退出0。
+- BenchmarkN89DialerGeneration，8/32/128源、配置另有1MiB无关字段：254344/920632/3647664
+  B/op，2098/8173/32367 allocs/op，输入四倍时分配近四倍。16源的0/1MiB无关配置增量
+  不得超过32KiB的实际B/op回归通过，不允许每个源重新编码完整配置。
+- 剩余核心仅链降级/链provider和compat/pyconv/yaml_reader旧模拟删除；随后统一原生
+  collaborator接线文件、完整Mihomo管线分配基准、最终跨包Corpus|Reference|Golden、HTTP、fuzz。

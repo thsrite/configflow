@@ -629,7 +629,7 @@ func LowerChainProviders(runtime, main *jsonx.Object) error {
 				rules := []any{}
 				for rank, pattern := range patterns {
 					rules = append(rules, jsonx.Obj(
-						"pattern", fmt.Sprintf(`^(?!%s)(?=[\s\S]*?(?:%s))([\s\S]*)$`, pyReEscape(orderTag), pattern),
+						"pattern", fmt.Sprintf(`^(?!%s)(?=[\s\S]*?(?:%s))([\s\S]*)$`, quoteProviderLiteral(orderTag), pattern),
 						"target", fmt.Sprintf("%s%d_$%d", orderTag, rank+1, captures[rank]+1)))
 				}
 				override.Set("proxy-name", rules)
