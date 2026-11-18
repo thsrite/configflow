@@ -113,34 +113,6 @@ func (r *Repository) committedSource(ctx context.Context) (document *jsonx.Objec
 	return entry.Document, true, nil
 }
 
-// ensureLegacyRuleProxyToken runs ensureRuleProxyToken on the legacy view of
-// the proposed document and, when it changed the settings, stores them in the
-// typed working copy too (N8-5c migrates it to the typed system section).
-func ensureLegacyRuleProxyToken(tx *transaction, legacy *jsonx.Object) error {
-	system, err := compatObject(legacy.Value("system"))
-	if err != nil {
-		return err
-	}
-	changed, err := ensureRuleProxyToken(system)
-	if err != nil || !changed {
-		return err
-	}
-	encoded, err := jsonx.Compact(system.Value("system_config"))
-	if err != nil {
-		return err
-	}
-	var settings model.SystemConfig
-	if err := json.Unmarshal(encoded, &settings); err != nil {
-		return err
-	}
-	// Only these two members belong to token maintenance. Replacing the
-	// entire record would borrow provenance from the legacy encoding and
-	// normalize every untouched member (including R5 values and unknowns).
-	tx.document.System.SystemConfig.RuleProxyToken = settings.RuleProxyToken
-	tx.document.System.SystemConfig.RetiredRuleProxyTokens = settings.RetiredRuleProxyTokens
-	return nil
-}
-
 // threeWayMerge is MergeJSON for jsonx values (nil = absent).
 func threeWayMerge(current, baseline, proposed any) (any, error) {
 	var encoded [3][]byte

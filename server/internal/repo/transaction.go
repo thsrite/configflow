@@ -165,7 +165,7 @@ func (r *Repository) transactLocked(ctx context.Context, options writeOptions, f
 			return err
 		}
 	}
-	if err := ensureLegacyRuleProxyToken(tx, legacy); err != nil {
+	if _, err := ensureSystemTokens(&tx.document.System); err != nil {
 		return err
 	}
 	if err := validateDocument(tx.document); err != nil {

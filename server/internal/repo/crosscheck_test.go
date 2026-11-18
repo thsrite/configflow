@@ -476,6 +476,9 @@ func xcRun(t *testing.T, directory, mode string, operations []any) []any {
 	return append(records, jsonx.Obj("op", "layout", "result", xcLayout(t, directory)))
 }
 
+// xcPythonCrash are Python's internal exception classes (a 500 there).
+var xcPythonCrash = map[string]bool{"AttributeError": true, "TypeError": true, "KeyError": true, "IndexError": true}
+
 // xcOperations runs the scripted sequence on both sides, on copies of one
 // data directory created by Python, and returns the two directories.
 func xcOperations(t *testing.T) (goDir, pyDir string) {
@@ -503,6 +506,24 @@ func xcOperationsFile(t *testing.T, file string) (goDir, pyDir string) {
 	last := len(golang) - 1
 	xcSame(t, "layout", xcMaskedLayout(t, golang[last], false), xcMaskedLayout(t, python[last], true))
 	golang, python = golang[:last], python[:last]
+	// Decision (HANDOFF, "Python 500s become proper 4xx"): where Python
+	// crashed with an internal exception, Go refuses with a validation or
+	// in-use error. Both must leave the database as it was; the record then
+	// compares as Python's.
+	for index := range golang {
+		g, p := golang[index].(*jsonx.Object), python[index].(*jsonx.Object)
+		pyClass, goClass := p.GetObject("error").GetString("class"), g.GetObject("error").GetString("class")
+		if !xcPythonCrash[pyClass] || (goClass != "ProfileValidationError" && goClass != "ProfileInUse") {
+			continue
+		}
+		if index > 0 && (xcText(t, g.Value("dump")) != xcText(t, golang[index-1].(*jsonx.Object).Value("dump")) ||
+			xcText(t, p.Value("dump")) != xcText(t, python[index-1].(*jsonx.Object).Value("dump"))) {
+			t.Fatalf("step %d: a refused operation wrote", index)
+		}
+		t.Logf("step %d (%s): Python %s, Go %s: %s", index, g.GetString("op"), pyClass, goClass,
+			g.GetObject("error").GetString("message"))
+		g.Set("error", p.Value("error"))
+	}
 	// Random values are numbered in order of first appearance over the
 	// whole run, so the records are compared cumulatively: the whole run at
 	// once, and step by step only to locate a difference.

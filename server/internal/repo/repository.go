@@ -355,8 +355,11 @@ func (r *Repository) openLocked(ctx context.Context) error {
 	if err := validateDocument(entry.Model); err != nil {
 		return nil
 	}
-	system, _ := jsonx.AsObject(jsonx.DeepCopy(entry.Document.Value("system")))
-	if changed, err := ensureRuleProxyToken(system); err != nil {
+	system, err := copyRecord(&entry.Model.System)
+	if err != nil {
+		return err
+	}
+	if changed, err := ensureSystemTokens(system); err != nil {
 		return err
 	} else if changed {
 		return r.transactLocked(ctx, writeOptions{}, func(context.Context, *transaction) error { return nil })
@@ -383,7 +386,7 @@ func (r *Repository) createFreshLocked() error {
 	if err != nil {
 		return err
 	}
-	if _, err := ensureRuleProxyToken(document.GetObject("system")); err != nil {
+	if _, err := ensureLegacyRuleProxyToken(document.GetObject("system")); err != nil {
 		return err
 	}
 	if err := ValidateDocument(document); err != nil {

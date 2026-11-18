@@ -6,8 +6,11 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
+	"slices"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/store"
 )
 
@@ -53,10 +56,65 @@ var tokenURLSafe = func() string {
 	return base64.RawURLEncoding.EncodeToString(raw)
 }
 
-// ensureRuleProxyToken is _ensure_rule_proxy_token: it normalises the retired
-// token list and creates (or, when it equals config_token, rotates) the rule
-// proxy token. It reports whether system changed.
-func ensureRuleProxyToken(system *jsonx.Object) (bool, error) {
+// ensureRuleProxyToken is _ensure_rule_proxy_token on the typed settings: it
+// normalises the retired token list (its non-empty strings, distinct; a
+// retired token must never be forgotten, so the strings of a stored list
+// that also holds other values are kept) and creates the rule proxy token,
+// or rotates it when it equals config_token. retired is the stored list
+// member. It touches no other member and reports whether it changed anything.
+func ensureRuleProxyToken(settings *model.SystemConfig, retired json.RawMessage) bool {
+	var stored []json.RawMessage
+	isList := jsonKind(retired) == '[' && json.Unmarshal(retired, &stored) == nil
+	normalized := []string{}
+	clean := isList
+	for _, item := range stored {
+		token, ok := jsonString(item)
+		if !ok || token == "" || slices.Contains(normalized, token) {
+			clean = false
+			continue
+		}
+		normalized = append(normalized, token)
+	}
+	changed := false
+	if !clean {
+		settings.RetiredRuleProxyTokens = normalized
+		changed = true
+	}
+	if token := settings.RuleProxyToken; token != "" {
+		if token != settings.ConfigToken {
+			return changed
+		}
+		if !slices.Contains(normalized, token) {
+			settings.RetiredRuleProxyTokens = append(normalized, token)
+		}
+	}
+	for {
+		if token := tokenURLSafe(); token != settings.ConfigToken {
+			settings.RuleProxyToken = token
+			return true
+		}
+	}
+}
+
+// ensureSystemTokens runs ensureRuleProxyToken when system_config is stored
+// as an object; a malformed one is left for write validation to refuse.
+func ensureSystemTokens(system *model.System) (bool, error) {
+	view, err := viewOf(system)
+	if err != nil || (view.has("system_config") && view.kind("system_config") != '{') {
+		return false, err
+	}
+	settings, err := viewOf(&system.SystemConfig)
+	if err != nil {
+		return false, err
+	}
+	retired, _ := settings.get("retired_rule_proxy_tokens")
+	return ensureRuleProxyToken(&system.SystemConfig, retired), nil
+}
+
+// ensureLegacyRuleProxyToken is ensureRuleProxyToken for a document still
+// built as jsonx (fresh data directories and imports, until N8-5c moves
+// them); it reports whether system changed.
+func ensureLegacyRuleProxyToken(system *jsonx.Object) (bool, error) {
 	settings, err := compatObject(system.SetDefault("system_config", jsonx.NewObject()))
 	if err != nil {
 		return false, err
@@ -290,30 +348,57 @@ func (r *Repository) GetSystemWithSource(ctx context.Context) (result, source *j
 // the committed section.
 func (r *Repository) UpdateSystemTransaction(ctx context.Context, updater Updater) (result *jsonx.Object, err error) {
 	ctx = ctxx.Detach(ctx)
-	err = r.update(ctx, writeOptions{}, func(ctx context.Context, document *jsonx.Object) error {
-		current := document.GetObject("system")
-		updated, err := applyUpdater(ctx, current.DeepCopy(), updater)
-		if err != nil {
-			return err
-		}
-		system := jsonx.NewObject()
-		for _, key := range systemSections {
-			system.Set(key, jsonx.DeepCopy(updated.GetOr(key, current.Value(key))))
-		}
-		system.Set("_revision", jsonx.Int(revisionOf(current)+1))
-		document.Set("system", system)
-		if _, isObject := jsonx.AsObject(system.Value("system_config")); isObject {
-			if _, err := ensureRuleProxyToken(system); err != nil {
+	err = r.Update(ctx, func(ctx context.Context, document *model.Document) error {
+		system, err := applySystemIn(document, func(system *model.System) error {
+			view, err := legacyObject(system)
+			if err != nil {
 				return err
 			}
+			original := view.DeepCopy()
+			updated, err := applyUpdater(ctx, view, updater)
+			if err != nil {
+				return err
+			}
+			return setChanged(systemSections, original, updated, system.SetJSON)
+		})
+		if err == nil {
+			result, err = legacyObject(system)
 		}
-		result = system.DeepCopy()
-		return nil
+		return err
 	})
 	if err != nil {
 		return nil, err
 	}
 	return result, nil
+}
+
+// UpdateSystem runs fn on a copy of the system section (settings, backup and
+// Agents) in one write transaction; the system revision advances by one and
+// the rule proxy token is maintained.
+func (r *Repository) UpdateSystem(ctx context.Context, fn func(ctx context.Context, s *model.System) error) error {
+	ctx = ctxx.Detach(ctx)
+	return r.Update(ctx, func(ctx context.Context, document *model.Document) error {
+		_, err := applySystemIn(document, func(s *model.System) error { return fn(ctx, s) })
+		return err
+	})
+}
+
+// applySystemIn edits a copy of the system section that then replaces it,
+// with the revision advanced and the rule proxy token maintained.
+func applySystemIn(document *model.Document, fn func(s *model.System) error) (*model.System, error) {
+	proposed, err := copyRecord(&document.System)
+	if err != nil {
+		return nil, err
+	}
+	if err := fn(proposed); err != nil {
+		return nil, err
+	}
+	proposed.Revision = document.System.Revision + 1
+	if _, err := ensureSystemTokens(proposed); err != nil {
+		return nil, err
+	}
+	document.System = *proposed
+	return &document.System, nil
 }
 
 // revisionConflict is the optimistic check of the save_* methods: without a

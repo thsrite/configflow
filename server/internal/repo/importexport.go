@@ -100,7 +100,7 @@ func (r *Repository) prepareImport(data *jsonx.Object) (*jsonx.Object, error) {
 	if err != nil {
 		return nil, err
 	}
-	if _, err := ensureRuleProxyToken(document.GetObject("system")); err != nil {
+	if _, err := ensureLegacyRuleProxyToken(document.GetObject("system")); err != nil {
 		return nil, err
 	}
 	if err := ValidateDocument(document); err != nil {
