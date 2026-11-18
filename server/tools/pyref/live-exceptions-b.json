@@ -328,5 +328,45 @@
     "guard": "Python audit callback runs only with CONFIGFLOW_PY and CONFIGFLOW_REPO; native typed-update assertions always run",
     "kind": "cross-language",
     "reason": "Real Python opens the actual Go-written SQLite state after typed updates and checks the stored document; retain generation, per-row revision and untouched byte preservation checks. This is storage interoperability, not a pure Python calculation."
+  },
+  {
+    "id": "B-A17-LIVE",
+    "file": "server/internal/agents/dnsfollow/difftest/diff_test.go",
+    "function": "TestPythonRoutesAndArtifacts",
+    "callee": "exec.CommandContext",
+    "count": 2,
+    "kind": "differential",
+    "guard": "CONFIGFLOW_DIFF=1 before either process; t.Context owns both commands",
+    "reason": "A17 live Flask route, loopback device transcript, actual uploaded artifact and persisted state comparison; fixture pin helper is checked against the real Python contract before scenarios."
+  },
+  {
+    "id": "B-A16-ISOLATION",
+    "file": "server/internal/agents/rulesync/isolation_test.go",
+    "function": "TestIsolationAgainstPython",
+    "callee": "exec.Command",
+    "count": 1,
+    "kind": "differential",
+    "guard": "CONFIGFLOW_DIFF=1; cmd.Output waits and reaps the process",
+    "reason": "Explicit A16 real Python isolation boundary comparison, including generated structured documents/archive bytes and representative refusal classes; default tests skip the oracle."
+  },
+  {
+    "id": "B-A16-PROJECTION",
+    "file": "server/internal/agents/rulesync/projection_test.go",
+    "function": "TestProjectionAgainstPython",
+    "callee": "exec.Command",
+    "count": 1,
+    "kind": "differential",
+    "guard": "CONFIGFLOW_DIFF=1; cmd.Output waits and reaps the process",
+    "reason": "Explicit A16 real Python projection boundary comparison, including generated structured documents/archive bytes and representative refusal classes; default tests skip the oracle."
+  },
+  {
+    "id": "B-A16-SNAPSHOT",
+    "file": "server/internal/agents/rulesync/snapshot_test.go",
+    "function": "TestSnapshotAgainstPython",
+    "callee": "exec.Command",
+    "count": 1,
+    "kind": "differential",
+    "guard": "CONFIGFLOW_DIFF=1; cmd.Output waits and reaps the process",
+    "reason": "Explicit A16 real Python snapshot boundary comparison, including generated structured documents/archive bytes and representative refusal classes; default tests skip the oracle."
   }
 ]
