@@ -16,8 +16,29 @@ import (
 	"configflow/internal/repo"
 )
 
+func resetJobRuntime(t *testing.T) {
+	t.Helper()
+	options := lifecycle.Options{Registry: lifecycle.NewRegistry(), Grace: time.Millisecond}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		err := lifecycle.Configure(options)
+		if err == nil {
+			return
+		}
+		// A worker releases its busy key before Runtime finishes its scope
+		// cleanup. Wait for that tracked tail, rather than replacing live work.
+		if !errors.Is(err, lifecycle.ErrRunning) || time.Now().After(deadline) {
+			t.Fatal(err)
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
 func jobFixture(t *testing.T) context.Context {
 	t.Helper()
+	// Async jobs use DefaultSpawner. Give each fixture an empty Runtime as
+	// well as fresh metadata; a preceding shutdown must stay local to its test.
+	resetJobRuntime(t)
 	r, err := repo.Open(t.TempDir(), repo.Options{})
 	if err != nil {
 		t.Fatal(err)
@@ -26,9 +47,42 @@ func jobFixture(t *testing.T) context.Context {
 	old := jobState.jobs
 	jobState.jobs = nil
 	jobState.Unlock()
-	t.Cleanup(func() { jobState.Lock(); jobState.jobs = old; jobState.Unlock() })
+	t.Cleanup(func() {
+		defer func() { jobState.Lock(); jobState.jobs = old; jobState.Unlock() }()
+		lifecycle.Stop(time.Second)
+		// Leave the process default idle and admitting, just like a fresh
+		// process, also for tests that use it without opening a job fixture.
+		resetJobRuntime(t)
+	})
 	return repo.WithRepository(context.Background(), r)
 }
+
+func TestJobFixtureStartsFreshRuntimeAfterShutdown(t *testing.T) {
+	var stopped context.Context
+	t.Run("previous owner", func(t *testing.T) {
+		resetJobRuntime(t)
+		lifecycle.Start(context.Background())
+		stopped = lifecycle.BindRequest(context.Background())
+		lifecycle.Stop(time.Second)
+	})
+	t.Run("next fixture", func(t *testing.T) {
+		ctx := jobFixture(t)
+		j, _, err := startJob(ctx, "default", "probe", false, func(context.Context, func(int, int)) (outcome, error) { return outcome{}, nil })
+		if err != nil {
+			t.Fatalf("fresh fixture inherited stopped Runtime: %v", err)
+		}
+		if saved := awaitJob(t, j.ID, "default"); saved.Status != "done" {
+			t.Fatal(saved)
+		}
+		if _, _, err := startJob(stopped, "default", "probe", false, func(context.Context, func(int, int)) (outcome, error) {
+			t.Error("old generation was revived")
+			return outcome{}, nil
+		}); !errors.Is(err, context.Canceled) {
+			t.Fatalf("old generation lost shutdown cancellation: %v", err)
+		}
+	})
+}
+
 func awaitJob(t *testing.T, id, profile string) *Job {
 	t.Helper()
 	for end := time.Now().Add(3 * time.Second); time.Now().Before(end); {

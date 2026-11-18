@@ -237,12 +237,8 @@ func (f *reviewBlockedClient) Probe(ctx context.Context, a Agent, p ProbeRequest
 }
 
 func TestReviewManualAutoTaskKeepsWorkValuesWithFreshScope(t *testing.T) {
-	if err := lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry(), Grace: time.Millisecond}); err != nil {
-		t.Fatal(err)
-	}
-	lifecycle.Start(context.Background())
-	t.Cleanup(func() { lifecycle.Stop(time.Second) })
 	ctx := jobFixture(t)
+	lifecycle.Start(context.Background())
 	r, _ := repo.GetRepository(ctx)
 	repo.SetRepository(r)
 	t.Cleanup(func() { repo.SetRepository(nil) })
