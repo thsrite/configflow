@@ -85,7 +85,7 @@ func int64Of(n *Node) (int64, bool) {
 
 // ratOf reads a validated YAML number for exact schema range checks.
 func ratOf(n *Node) (*big.Rat, bool) {
-	if !isInt(n) && !isTag(n, tagFloat) {
+	if !isNum(n) {
 		return nil, false
 	}
 	data, err := yamlx.ToJSON(n)

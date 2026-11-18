@@ -102,9 +102,11 @@ func parseYAML(text string, syntax error) (*Node, error) {
 		}
 		return nil, yamlReaderFailure(err)
 	}
+	seen := make(map[*Node]bool)
 	var validate func(*Node) error
 	validate = func(node *Node) error {
 		node = yamlx.Resolve(node)
+        if seen[node] { return nil }; seen[node] = true
 		if node.Kind == yaml.MappingNode {
 			for key, value := range yamlx.AllPairs(node) {
 				key = yamlx.Resolve(key)

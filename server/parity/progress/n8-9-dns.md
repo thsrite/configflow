@@ -19,5 +19,8 @@
 - ZIP 原录制 86 条全部通过，包含匹配缓存回退和文件副作用；未放宽断言。
 - `yamlx.CopyGraph` 经协调者批准，直接复用 Edit 的 copyGraph；共享关系、别名预算、源不变、并发编辑与放大负控 race 通过，未改 Clone 架构门。
 - CopyGraph 物理图基准（100 次）：深度 8 / 64 / 256 分别为 5,064 / 41,256 / 164,456 B/op，38 / 268 / 1,040 allocs/op，与物理图规模成比例。
-- OxiDNS `Generate → ippresence → rulefetch / RulesetFormat` 基准（真实离线 hook，128 条规则，3 次）：无无关字段 5,919,816 B/op、22,495 allocs/op；增加 2 MiB 无关字段 5,932,349 B/op、22,497 allocs/op。构建 profile 在计时之外，生成链没有整配置解码。基点数字和最终复验待补。
+- OxiDNS 冷缓存全链 `Generate → ippresence → rulefetch / RulesetFormat`（128 条 URL 来源，128 份真实验证缓存，native config，3 次）原窄 metadata bridge 仍为 1,034,492,202 B/op、12,736,634 allocs/op。typed presence + 已知 format 读取后降为 54,275,613 B/op、648,782 allocs/op；加 2 MiB 无关字段 54,293,730 B/op、648,774 allocs/op。每次清 memo，并断言至少 128 次 presence 调用；分配回归测试限制 80 MiB/900000 次分配及无关宽度增量。此前 5.9 MB 的 template/inline 样本未经过远程验证缓存，不作全链证据。
+- `ippresence.TypedClassicalIPLines(ctx, model.RuleConfig, []model.RuleLibraryItem) (*bool, error)` 共用原 inline/cache/memo/UTF8/IP 判断，保留旧 any 入口。真实 Wire 切 typed hook；不访问网络。
+- rulefetch 仅 `cache.go` 增加过渡入口：`ReadValidatedRuleCacheWithFormat(ctx, rule, config *jsonx.Object, format string) ([]byte,error)`；原入口委托 format=""。按协调者指定增加同文件最小 `SourceConfig` 和 `ReadCacheWithFormat(ctx, model.RuleConfig, *SourceConfig, string) ([]byte,error)`；已知 format 不再解码 library。batch-8 先叠 rules 后叠 DNS，这份过渡实现应取 rules 分支的同名 native 版本，不保留两份。
+
 - Native Reader / R5 的旧异常形状与极值语料仍在逐项核对；不能把它们直接视为已通过。当前没有改 proddiff/configdiff baseline。

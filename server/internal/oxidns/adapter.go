@@ -14,9 +14,12 @@ import (
 // Profile is an owned DNS projection of one captured typed repository view.
 // OxiDNS settings are deliberately schema-free; resource metadata is typed.
 type Profile struct {
-	doc          *Node
-	source       *model.Config
-	notesChanged func(*Node)
+	doc             *Node
+	source          *model.Config
+	notesChanged    func(*Node)
+	presenceMu      sync.Mutex
+	presenceVersion uint64
+	presence        nativeIPResolver
 }
 
 // NewTypedProfile projects the consumed members without encoding model.Raw or
@@ -203,16 +206,34 @@ func ProfileFromJSON(data []byte) (*Profile, error) {
 	}
 	source := &model.Config{Profile: profile}
 	if raw, ok := fields.Get("profile_id"); ok {
-		var id model.String
-		if err = json.Unmarshal(raw, &id); err != nil {
+		var projection model.Fields
+		if err = projection.Set("profile_id", raw); err != nil {
 			return nil, err
 		}
-		source.ProfileID = string(id)
+		data, err := projection.MarshalJSON()
+		if err != nil {
+			return nil, err
+		}
+		var identity profileIdentity
+		if err = json.Unmarshal(data, &identity); err != nil {
+			return nil, err
+		}
+		source.ProfileID = identity.ID
 	}
 	if raw, ok := fields.Get("system_config"); ok {
-		if err = json.Unmarshal(raw, &source.SystemConfig); err != nil {
+		var projection model.Fields
+		if err = projection.Set("system_config", raw); err != nil {
 			return nil, err
 		}
+		data, err := projection.MarshalJSON()
+		if err != nil {
+			return nil, err
+		}
+		var system model.System
+		if err = json.Unmarshal(data, &system); err != nil {
+			return nil, err
+		}
+		source.SystemConfig = system.SystemConfig
 	}
 	if raw, ok := fields.Get("rule_library"); ok {
 		var shared model.Shared
@@ -328,34 +349,75 @@ func (p *Profile) renderMembers(group *Node) *Node { return legacyMembers(group,
 // NativeClassicalIPLinesFunc queries offline content from typed metadata only.
 type NativeClassicalIPLinesFunc func(context.Context, model.RuleConfig, []model.RuleLibraryItem) (*bool, error)
 
+type nativeIPResolver func(context.Context, model.RuleConfig) (*bool, error)
+type nativeIPFactory func([]model.RuleLibraryItem) nativeIPResolver
+
 var classicalHook struct {
 	sync.RWMutex
-	fn NativeClassicalIPLinesFunc
+	factory nativeIPFactory
+	version uint64
 }
 
-// SetNativeClassicalIPLines installs the offline metadata callback and returns a restore function.
+// SetNativeClassicalIPLines installs the typed offline metadata callback.
 func SetNativeClassicalIPLines(fn NativeClassicalIPLinesFunc) func() {
+	if fn == nil {
+		return setIPFactory(nil)
+	}
+	return setIPFactory(func(library []model.RuleLibraryItem) nativeIPResolver {
+		return func(ctx context.Context, item model.RuleConfig) (*bool, error) { return fn(ctx, item, library) }
+	})
+}
+func setIPFactory(factory nativeIPFactory) func() {
 	classicalHook.Lock()
-	previous := classicalHook.fn
-	classicalHook.fn = fn
+	previous := classicalHook.factory
+	classicalHook.factory = factory
+	classicalHook.version++
 	classicalHook.Unlock()
-	return func() { classicalHook.Lock(); classicalHook.fn = previous; classicalHook.Unlock() }
+	return func() {
+		classicalHook.Lock()
+		classicalHook.factory = previous
+		classicalHook.version++
+		classicalHook.Unlock()
+	}
 }
 func (p *Profile) classicalWithoutIP(item *Node) bool {
 	classicalHook.RLock()
-	fn := classicalHook.fn
+	factory, version := classicalHook.factory, classicalHook.version
 	classicalHook.RUnlock()
-	if fn == nil {
+	if factory == nil {
 		return false
 	}
-	var rule model.RuleConfig
-	if err := json.Unmarshal(ToJSON(item), &rule); err != nil {
-		return false
+	p.presenceMu.Lock()
+	if p.presence == nil || p.presenceVersion != version {
+		p.presence = factory(p.source.RuleLibrary)
+		p.presenceVersion = version
 	}
-	value, err := fn(context.Background(), rule, p.source.RuleLibrary)
+	resolver := p.presence
+	p.presenceMu.Unlock()
+	rule := model.RuleConfig{ID: str(get(item, "id")), Name: str(get(item, "name")), LibraryRuleID: str(get(item, "library_rule_id"))}
+	for _, member := range []struct {
+		key         string
+		destination **string
+	}{{"url", &rule.URL}, {"format", &rule.Format}, {"source_type", &rule.SourceType}, {"content", &rule.Content}, {"behavior", &rule.Behavior}} {
+		if value := get(item, member.key); isStr(value) {
+			text := str(value)
+			*member.destination = &text
+		}
+	}
+	value, err := resolver(context.Background(), rule)
 	return err == nil && value != nil && !*value
 }
 
 func emptyProfile() *Profile {
 	return &Profile{doc: M(), source: &model.Config{Profile: &model.Profile{}}}
+}
+
+type profileIdentity struct {
+	ID     string `json:"profile_id"`
+	Fields model.Fields
+	raw    model.Raw
+}
+
+func (v *profileIdentity) UnmarshalJSON(data []byte) error {
+	return model.DecodeRecord(data, v, &v.raw)
 }

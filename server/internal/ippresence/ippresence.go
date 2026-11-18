@@ -268,16 +268,11 @@ func ClassicalIPLines(ctx context.Context, itemValue, configValue any) (any, err
 		if !ok {
 			return nil, nil
 		}
-		sum := sha256.Sum256([]byte(text))
-		key := memoKey{kind: "content", value: hex.EncodeToString(sum[:])}
-		if value, ok := lookup(key); ok {
-			return value, nil
-		}
-		has, err := hasIPLines(text)
-		if err != nil {
+		value, err := inlineIPLines(text)
+		if value == nil {
 			return nil, err
 		}
-		return remember(key, has), nil
+		return *value, err
 	}
 	if !jsonx.Equal(sourceType, "url") || !jsonx.Truthy(item.Value("url")) {
 		return nil, nil
@@ -331,18 +326,43 @@ func ClassicalIPLines(ctx context.Context, itemValue, configValue any) (any, err
 		}
 		return nil, err
 	}
+	value, err := cachedIPLines(path, func() ([]byte, error) {
+		return rulefetch.ReadValidatedRuleCache(ctx, item, config)
+	})
+	if value == nil {
+		return nil, err
+	}
+	return *value, err
+}
+
+func inlineIPLines(text string) (*bool, error) {
+	sum := sha256.Sum256([]byte(text))
+	key := memoKey{kind: "content", value: hex.EncodeToString(sum[:])}
+	if value, ok := lookup(key); ok {
+		return &value, nil
+	}
+	has, err := hasIPLines(text)
+	if err != nil {
+		return nil, err
+	}
+	remember(key, has)
+	return &has, nil
+}
+
+func cachedIPLines(path string, read func() ([]byte, error)) (*bool, error) {
 	info, err := os.Stat(path)
 	if err != nil {
 		return nil, nil
 	}
 	key := memoKey{kind: "cache", value: path, mtime: info.ModTime().UnixNano(), size: info.Size()}
 	if value, ok := lookup(key); ok {
-		return value, nil
+		return &value, nil
 	}
-	data, err := rulefetch.ReadValidatedRuleCache(ctx, item, config)
+	data, err := read()
 	if err != nil {
 		return nil, err
 	}
+
 	if data == nil {
 		return nil, nil
 	}
@@ -354,5 +374,6 @@ func ClassicalIPLines(ctx context.Context, itemValue, configValue any) (any, err
 	if err != nil {
 		return nil, err
 	}
-	return remember(key, has), nil
+	remember(key, has)
+	return &has, nil
 }

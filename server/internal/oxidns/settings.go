@@ -299,7 +299,7 @@ func checkTemplate(s *Node) error {
 		if !isMap(entry) {
 			return fail("自定义匹配条目必须为对象")
 		}
-		if enabled := get(entry, "enabled"); has(entry, "enabled") && !(isTrue(enabled)) {
+		if enabled := get(entry, "enabled"); has(entry, "enabled") && same(enabled, B(false)) {
 			continue
 		}
 		matches := get(entry, "matches")

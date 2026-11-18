@@ -1,8 +1,6 @@
 package ippresence
 
 import (
-	"context"
-
 	"configflow/internal/convert"
 	"configflow/internal/jsonx"
 	"configflow/internal/oxidns"
@@ -16,9 +14,7 @@ import (
 // internal/oxidns.
 func Wire() {
 	convert.RegisterMihomoHooks(convert.MihomoHooks{IsFullTun: isFullTun})
-	oxidns.SetClassicalIPLines(func(ctx context.Context, item, config any) (any, error) {
-		return ClassicalIPLines(ctx, item, config)
-	})
+	oxidns.SetNativeClassicalIPLines(TypedClassicalIPLines)
 }
 
 func isFullTun(config *jsonx.Object) (bool, error) {

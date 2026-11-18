@@ -10,7 +10,6 @@ import (
 	"configflow/internal/rules"
 	"configflow/internal/yamlx"
 	"context"
-	"encoding/json"
 )
 
 // NewProfile transcodes a legacy snapshot; new owners use NewTypedProfile.
@@ -71,26 +70,25 @@ type ClassicalIPLinesFunc func(context.Context, any, any) (any, error)
 // SetClassicalIPLines transcodes old registered router/test callbacks.
 func SetClassicalIPLines(fn ClassicalIPLinesFunc) func() {
 	if fn == nil {
-		return SetNativeClassicalIPLines(nil)
+		return setIPFactory(nil)
 	}
-	return SetNativeClassicalIPLines(func(ctx context.Context, item model.RuleConfig, library []model.RuleLibraryItem) (*bool, error) {
-		rule := ruleNode(item)
+	return setIPFactory(func(library []model.RuleLibraryItem) nativeIPResolver {
+		// Immutable callback metadata is transcoded once per profile/hook version,
+		// not once per routed ruleset. No unrelated configuration enters this view.
 		entries := L()
 		for _, entry := range library {
 			entries.Content = append(entries.Content, libraryNode(entry))
 		}
-		value, err := fn(ctx, ToJSONX(rule), ToJSONX(M("rule_library", entries)))
-		result, known := value.(bool)
-		if err != nil || !known {
-			return nil, err
+		config := ToJSONX(M("rule_library", entries))
+		return func(ctx context.Context, item model.RuleConfig) (*bool, error) {
+			value, err := fn(ctx, ToJSONX(ruleNode(item)), config)
+			result, known := value.(bool)
+			if err != nil || !known {
+				return nil, err
+			}
+			return &result, nil
 		}
-		return &result, nil
 	})
-}
-
-func legacyRule(node *Node) (model.RuleConfig, error) {
-	var item model.RuleConfig
-	return item, json.Unmarshal(ToJSON(node), &item)
 }
 
 // BuildZIP transcodes the pre-N8 configgen captured snapshot.
