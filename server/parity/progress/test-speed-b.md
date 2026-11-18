@@ -61,3 +61,10 @@ pair; both immutable snapshots mustbeprepared first, logsoutsidebothroots.
 Thispreparationdoesnotstartmeasurement or reserveA'swindow. Formaldata remains
 pendingafterAwindow+bothload<10. Next:remote syntaxcheckafterwindow, rebase latestgo,
 prepareimmutable before/after snapshotsandrunoneblockingpair, appendreportdocs.
+
+Ahasreleaseditswindow: firstpairinvalidatedbyhigher-prioritygate-speed-accept;
+Athenwaited908sandhandedbackunmeasured. Newcoordinatorf880mustscheduleBwindow.
+Bsingle-readinesscheckafterrelease: .32load1=4.06/noaccept; .64load1=10.58/accept
+active. Conditionsnotmet; noBpairlaunched. Windowrequestsenttof880 withbaseline
+e0e9d9d45, Bmeasure-b.shsequentialmethod/logsoutsidebothsnapshots. Awaitexplicit
+reservationandaccepttermination,bothload1<10. No backgroundmeasurement/test.
