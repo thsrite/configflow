@@ -613,3 +613,7 @@ new_domain / 宽松 enabled 值直接写入 INFO 日志。请求校验、响应�
 Python接受。Go按本次安全修复要求统一拒绝这些歧义，保留Invalid remote URL的400出口，
 不复制Python的边界缺陷。具体向量和原始路径见rulefetch/testdata/cfg01.json；待独立
 安全复核，不用此条泛化豁免其他URL/响应/存储差异。
+安全复核补充（review-cfg-c14-security.md）：带主机的重定向Location按原始写法判断是否进入内部API，
+外部源跳到`/api/../`后再逃逸与Python同样拒绝（Go在请求该跳前即400）；非ASCII主机名按IDNA lookup形式比较，
+因此punycode/全角写法的面板地址也按内部处理（Python当外部）。反斜杠只在作分隔符读会离开API时拒绝，
+含`\`的规则名称内部地址与Python一样可用；`Location: http:ok`这类无主机的绝对引用按原生net/url返回400。
