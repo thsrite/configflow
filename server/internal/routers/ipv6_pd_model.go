@@ -113,7 +113,9 @@ type IPv6PDSpec struct {
 }
 
 // IPv6PDResource records a table-qualified ID and its stable proof. Config is
-// optional only when reading a legacy Python ID-only manifest.
+// optional only when reading a legacy Python ID-only manifest. For the hook
+// role it only records the dhcp-client at write time: the client is the user's
+// object, so later ownership checks identify it by ID alone.
 type IPv6PDResource struct {
 	Role   string `json:"role"`
 	Path   string `json:"path"`
@@ -494,6 +496,18 @@ func pdOwned(d *RouterOS, raw json.RawMessage, live pdLive) (map[string]Row, err
 		if row == nil {
 			continue
 		}
+		if entry.Role == "hook" {
+			// The dhcp-client is the user's object; ConfigFlow owns only its hook
+			// line. pdHookState gates every write of that line and each write
+			// still proves the preview snapshot. A recorded client config is no
+			// ownership proof: use-peer-dns, a pool rename or disabling the client
+			// when the prefix moves must not block both update and withdrawal.
+			if payload(path, row) == nil {
+				return nil, payloadError(path, row)
+			}
+			out[entry.Role] = row
+			continue
+		}
 		if entry.Config == nil {
 			// Legacy IDs have no byte-for-byte proof. Accept only a recognised template,
 			// never a merely same-named script or scheduler that could execute foreign code.
@@ -503,8 +517,6 @@ func pdOwned(d *RouterOS, raw json.RawMessage, live pdLive) (map[string]Row, err
 				valid = m.Spec != nil && pdScriptState(row, m.Spec).state == "ok"
 			case "scheduler":
 				valid = pdSchedulerState(row).state == "ok"
-			case "hook":
-				valid = slices.Contains([]string{"ok", "update"}, pdHookState(row).state)
 			}
 			if !valid {
 				return nil, routerError(messagePDOwnership)
