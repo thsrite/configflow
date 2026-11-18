@@ -976,3 +976,11 @@ JSON 类型比较保存 0。`TestC34ObjectFieldValues` 对四个宽松引擎分�
   A repository-consumer contract test proves this error can be saved as the
   sole last_probe replacement with exactly one revision increment; R15 HTTP
   remains unported and is not claimed verified here.
+
+## N8-5c — typed validation, router guard, imports
+
+- **写入校验的类型错误消息。** 名称不是字符串时，提示里显示其 JSON 文本（`null`、`true`、`{"a":1}`），Python 显示 repr（`None`、`True`）。
+  Python 因内部异常返回 500 的输入（例如 `system_config` 不是对象、路由器 ID 是对象、旧备份里用对象作名称）改为 400 校验错误，或（旧格式导入）正常转换。
+- **路由器保护按 JSON 类型比较。** `verify_tls` 从 `true` 改为 `1` 等类型变化视为连接变化，会先取发布锁；格式错误的发布记录仍视为存在（不允许删除或改地址）。
+- **名称去除首尾控制字符。** 配置空间名称去掉首尾空白与控制字符（含 U+001C–U+001F，与 Python 的 strip 一致）。
+- **停用标志按存储值判断。** `enabled` 存为 `0` 等非布尔值时按其真假判断（与 Python 相同），不按缺省“启用”处理。
