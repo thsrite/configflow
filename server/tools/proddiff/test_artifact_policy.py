@@ -58,6 +58,14 @@ class ArtifactProofTests(unittest.TestCase):
         self.assertEqual([], self.compare())
         self.assertTrue(self.compare(route='/api/other'))
 
+    def test_root_sequence_yaml_uses_manifest_format_not_a_text_heuristic(self):
+        import shutil
+        shutil.rmtree(self.afolder)
+        shutil.rmtree(self.bfolder)
+        self.a, _ = fixture(self.roots[0], self.a['id'], b'- tag: sample\n  args: {n: 1}\n')
+        self.b, _ = fixture(self.roots[1], self.b['id'], b'- tag: sample\n  args:\n    n: 1\n')
+        self.assertEqual([], self.compare())
+
     def test_public_digest_cannot_be_normalized_without_actual_bytes(self):
         changed = copy.deepcopy(self.b)
         changed['files'][0]['sha256'] = '0' * 64

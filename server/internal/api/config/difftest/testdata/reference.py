@@ -59,12 +59,14 @@ for line in sys.stdin:
                 headers=request.get('headers', {}), data=request.get('body'))
             text = reply.get_data(as_text=True) if not reply.mimetype == 'application/zip' else ''
             body = '' if request['method'] == 'HEAD' else reply.get_json() if reply.is_json else text
+            zip_modes = None
             if reply.mimetype == 'application/zip':
                 with zipfile.ZipFile(io.BytesIO(reply.get_data())) as z:
                     body = {name: z.read(name).decode() for name in z.namelist() if not name.endswith('/')}
+                    zip_modes = {entry.filename: entry.external_attr >> 16 for entry in z.infolist()}
             if request['method'] != 'HEAD' and reply.mimetype == 'application/json' and isinstance(body,str):
                 body=json.loads(body)
-            result = {'status': reply.status_code, 'headers': dict(reply.headers), 'body': body, 'state': state()}
+            result = {'status': reply.status_code, 'headers': dict(reply.headers), 'body': body, 'state': state(), 'zip_modes': zip_modes}
         print(json.dumps(json_safe(result), ensure_ascii=False, allow_nan=False), flush=True)
     except Exception as error:
         print(json.dumps({'oracle_error': str(error)}), flush=True)

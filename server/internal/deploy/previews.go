@@ -391,7 +391,9 @@ func (pv *Preview) Zip() ([]byte, error) {
 	var b bytes.Buffer
 	zw := zip.NewWriter(&b)
 	for _, p := range order {
-		w, err := zw.CreateHeader(&zip.FileHeader{Name: p, Method: zip.Deflate})
+		// Frozen exports contain configuration credentials. Match Python's
+		// writestr permissions instead of the ZIP reader's default 0666.
+		w, err := zw.CreateHeader(&zip.FileHeader{Name: p, Method: zip.Deflate, CreatorVersion: 3 << 8, ExternalAttrs: 0600 << 16})
 		if err != nil {
 			return nil, err
 		}

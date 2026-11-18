@@ -19,6 +19,13 @@ proddiff 仅在既有断网命名空间内读取离线快照副本。没有设�
   `code=preview_changed`，未知 action404。HEAD 只读取，正文为空。
 - 增补共享 reader 的根目录 symlink 拒绝：只拒绝最后一级 artifact 目录/文件不足以防止
   `.generated-previews` 自身指向另一仓库。原文件/目录防护、归档摘要校验不变。
+- ZIP 成员权限显式设置 Unix `0600`，与真实 Flask 的 writestr 一致。原共享导出 helper
+  的零值 header 会让读取方采用宽松默认权限；现在不让含凭据的配置解压后扩大权限。
+  真 Flask oracle 只额外观测 ZIP external_attr，不更改响应；两侧逐成员断言真实权限值。
+
+本次补修两项 medium：预览根目录 symlink 跟随、ZIP 私有权限缺失。均有真实路径/产物断言；
+没有待解决的已知产品发现。
+
 - 三个 routes.tsv 从 wip 改 done；C34 新范围标 ported。精确删除34条 deferred→A14/A21
   artifact baseline，不增加替代豁免。
 
@@ -60,7 +67,45 @@ record、tar manifest、归档 SHA256、全部成员大小/摘要和主配置字
 ## 验证命令与结果
 
 执行前固定指定测试服务器的 RT_HOST；下列命令省略实际主机字面量。所有 Go 并发 `-p 2`。
-最终命令及末行在交回前补齐。
+已 rebase 到最新本地 `go@95440b69e`；新增基底只有剩余工作盘点文档，产品代码与被测树相同。
+代码/测试提交 `71e2f9abb`，比较器/基线及首版报告 `cb3848319`。
+
+定向验证（退出0，server 工作目录）：
+
+```sh
+gofmt -w internal/configgen/candidate.go internal/deploy/artifacts.go internal/deploy/previews.go internal/api/generate/artifacts_test.go internal/api/config/difftest/artifacts_test.go
+go vet -p 2 ./internal/configgen ./internal/deploy ./internal/api/generate ./internal/api/agents ./internal/api/config/difftest
+go test -race -p 2 -count=1 -timeout=4m ./internal/configgen ./internal/api/generate
+go test -race -p 2 -count=1 -timeout=3m ./internal/deploy -run "^Test(ManualArtifact|Previews|LegacyPreview)"
+go test -race -p 2 -count=1 -timeout=3m ./internal/api/agents -run "^TestDeployHTTPPublishPreviewAndGuards$"
+CONFIGFLOW_DIFF=1 go test -race -p 2 -count=1 -timeout=5m ./internal/api/config/difftest -run "^TestArtifacts"
+```
+
+对应末行：configgen 2.942s、api/generate 17.014s、deploy 14.679s、api/agents 4.463s、
+api/config/difftest 24.852s，均 `ok`。根目录真实 Python 工具自检：
+
+```sh
+"$HOME/cf-test/.venv/bin/python" -m unittest discover -q -s server/tools/proddiff -p "test_artifact_policy.py"
+```
+
+`Ran 5 tests in 0.014s / OK`。首次工具自检误从工具子目录启动，因比较器 ROOT 必须是仓库根目录
+而找不到 parity 文件；改用上述 root/discover 命令后通过，没有修改 oracle 或放宽断言。
+
+compare 单独运行（仓库根目录，脚本内没有运行 core）：
+
+```sh
+rt -- bash -lc 'GOFLAGS="-p=2" GOMAXPROCS=2 GATE_ONLY=compare GATE_LOGS="$HOME/.cache/configflow-artifacts-compare-$(date +%s)" server/scripts/gate.sh -p 2'
+```
+
+首轮 observer/self-check 全部 PASS，`baseline: new=726 stale=0`；726项全部是 artifact
+`body.content[]` 的通用文本投影，没有 frozen_files、身份/摘要证明或其他路由差异。
+修正比较器：artifact 的主配置直接采用其已证明 manifest 主路径对应的结构化投影，
+不再用通用路由 `<service>` 的正文启发式猜 YAML；根为 sequence 的 YAML 有单独合成控制。
+没有修改 normalize 文件、baseline 豁免或真实响应。
+
+补修 ZIP 权限后的 targeted race/真实 Flask 结果：api/generate 5.053s、deploy 14.419s、
+api/config/difftest 25.341s，均 `ok`；工具5个控制 `OK`。后续增加根 sequence 控制，
+再跑相关调用方及最终 compare，完成后补录。
 
 首次 `gofmt`、`go vet -p 2 ./...` 通过。首次扩大到完整 deploy/api/agents 包的 race
 用例集合在8分钟总上限耗尽（其中 api/agents 正在既有

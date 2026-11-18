@@ -103,6 +103,9 @@ func checkArtifactFiles(t *testing.T, a answer, v deploy.Artifact) map[string]an
 			t.Fatal("missing/duplicate file")
 		}
 		seen[file.Path] = true
+		if a.ZIPModes[file.Path] != 0600 {
+			t.Fatal("frozen ZIP file permissions differ from private configuration contract")
+		}
 		sum := sha256.Sum256([]byte(data))
 		if int64(len(data)) != file.Size || hex.EncodeToString(sum[:]) != file.SHA256 {
 			t.Fatal("digest/size do not describe frozen bytes")

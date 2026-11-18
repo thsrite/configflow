@@ -76,6 +76,9 @@ func TestArtifactSuccessfulPathsAndFrozenBytes(t *testing.T) {
 					t.Fatal("file list mismatch")
 				}
 				for i, file := range archive.File {
+					if file.ExternalAttrs>>16 != 0600 {
+						t.Fatal("configuration ZIP must keep private file permissions")
+					}
 					reader, err := file.Open()
 					if err != nil {
 						t.Fatal(err)

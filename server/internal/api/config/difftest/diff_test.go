@@ -41,11 +41,12 @@ type request struct {
 	Headers map[string]string `json:"headers"`
 }
 type answer struct {
-	Status  int               `json:"status"`
-	Headers map[string]string `json:"headers"`
-	Body    any               `json:"body"`
-	State   any               `json:"state"`
-	Error   string            `json:"oracle_error"`
+	Status   int               `json:"status"`
+	Headers  map[string]string `json:"headers"`
+	Body     any               `json:"body"`
+	State    any               `json:"state"`
+	Error    string            `json:"oracle_error"`
+	ZIPModes map[string]uint32 `json:"zip_modes"`
 }
 type oracle struct {
 	stdin   io.WriteCloser
@@ -250,12 +251,14 @@ func sendGo(t *testing.T, s *httpxtest.Server, r request) answer {
 	data, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
 	var value any = string(data)
+	var zipModes map[string]uint32
 	if strings.HasPrefix(resp.Header.Get("Content-Type"), "application/zip") {
 		archive, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 		if err != nil {
 			t.Fatal(err)
 		}
 		entries := map[string]any{}
+		zipModes = map[string]uint32{}
 		for _, file := range archive.File {
 			in, err := file.Open()
 			if err != nil {
@@ -267,6 +270,7 @@ func sendGo(t *testing.T, s *httpxtest.Server, r request) answer {
 				t.Fatal(err)
 			}
 			entries[file.Name] = string(content)
+			zipModes[file.Name] = file.ExternalAttrs >> 16
 		}
 		value = entries
 	}
@@ -279,7 +283,7 @@ func sendGo(t *testing.T, s *httpxtest.Server, r request) answer {
 	for k, v := range resp.Header {
 		headers[http.CanonicalHeaderKey(k)] = strings.Join(v, ", ")
 	}
-	return answer{Status: rec.Code, Body: value, Headers: headers, State: snapshot(t, s)}
+	return answer{Status: rec.Code, Body: value, Headers: headers, State: snapshot(t, s), ZIPModes: zipModes}
 }
 func normalize(value any, key string) any {
 	switch v := value.(type) {

@@ -113,5 +113,6 @@ class ArtifactProofs:
             body['expires_at'] = '<proven-one-hour-expiration>'
             for file in body['files']:
                 file['size'] = file['sha256'] = '<verified-frozen-bytes>'
+            body['content'] = next(file['content'] for file in files if file['path'] == body['config_path'])
             body['frozen_files'] = files
         return []
