@@ -1,8 +1,10 @@
 package lifecycle
 
 import (
-	"configflow/internal/ctxx"
 	"context"
+
+	"configflow/internal/ctxx"
+	"configflow/internal/lockx"
 )
 
 // ClockFrom returns the originating Runtime's clock, or the real clock for
@@ -61,3 +63,13 @@ func Tracked(ctx context.Context) bool {
 }
 
 type trackedKey struct{}
+
+// SpawnerFrom returns the originating Runtime, or DefaultSpawner outside one.
+// A stopped originating generation rejects admission; it never falls back to
+// the default Runtime. Owners use this to keep jobs with their source lifetime.
+func SpawnerFrom(ctx context.Context) lockx.Spawner {
+	if g, ok := ctx.Value(generationKey{}).(*generation); ok {
+		return g.runtime
+	}
+	return DefaultSpawner{}
+}

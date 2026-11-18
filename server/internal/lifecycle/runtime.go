@@ -340,6 +340,10 @@ func (r *Runtime) round(ctx context.Context, g *generation, p Periodic) (err err
 // open while Drain and existing work finish; it closes at the drain deadline.
 func (r *Runtime) Spawn(ctx context.Context, name string, fn func(context.Context)) error {
 	r.mu.Lock()
+	if origin, ok := ctx.Value(generationKey{}).(*generation); ok && origin.runtime == r && (origin.closed || origin != r.current) {
+		r.mu.Unlock()
+		return ErrStopping
+	}
 	g := r.generation(context.Background())
 	if !g.admit || g.closed {
 		r.mu.Unlock()

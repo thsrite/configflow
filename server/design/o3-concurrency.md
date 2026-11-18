@@ -806,3 +806,34 @@ repo.DeleteProfile 自带 profile-operation（LevelDevice）锁，因此不能�
 AdoptOwnedWrite 与自身流程共用该锁；A21 在释放 L3 后才调用它。只读 A20
 ProfileSessions 不取得操作锁；未来若需要取得，必须复用 C36 的同一锁与级别，
 不得另造一把相同资源、不同级别的锁。
+
+
+### Clarified in O3-7 (coordinator, 2026-11-18)
+
+- `localhttp.Do` can return a lazy stream before its handler finishes, so it is
+  not a joined fan-out. `Register(handler, spawner lockx.Spawner)` injects the
+  tracked owner; missing spawner fails closed. `httpx.App.RegisterLocal` always
+  injects `lifecycle.DefaultSpawner`. Direct imports would form the cycle
+  lifecycle → repo → rules → rulefetch → localhttp → lifecycle.
+- Local callback handlers still receive a fresh context: no caller transaction,
+  authentication or other values are inherited. Only job shutdown cancellation
+  is bridged into that fresh context (and its Detach parent); request disconnect
+  does not cancel it. Closing the returned stream still cancels that handler.
+  Runtime tracks the handler until it returns, including lazy streams and early
+  caller returns; shutdown also unblocks a pipe writer.
+- `lifecycle.SpawnerFrom(ctx)` mirrors ClockFrom: return the originating Runtime
+  when ctx has a generation, otherwise DefaultSpawner. Owners which must retain
+  their source Runtime use this instead of adding per-owner Options injection.
+  A closed/stale generation rejects admission with ErrStopping, even after that
+  Runtime starts a new generation; it never falls back to the default instance.
+  MosDNS archive workers use this because early failures preserve fail-fast
+  return while other admitted downloads finish or receive shutdown cancellation.
+- The parser gate scans server-owned non-test Go files (all build tags, including
+  tooling and fake-server packages; dependencies and hidden output directories
+  are excluded). Import aliases and function-value references are checked;
+  relevant dot imports are rejected. Generated script strings are not Go calls.
+  Exemptions in `internal/lifecycle/gate_test.go` use file:func plus a reason and
+  fail when stale. Only joined fan-outs may retain bare go; production periodic
+  loops/retry scheduling use Clock. Non-periodic device inactivity timers, the
+  existing injected Sub-Store real-clock adapter, SQLite backup busy polling and
+  wall-clock fault delays in loopback test helpers remain explicit exceptions.
