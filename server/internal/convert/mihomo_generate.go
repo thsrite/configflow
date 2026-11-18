@@ -845,13 +845,18 @@ func generateMihomoDocument(ctx context.Context, logical *jsonx.Object, opts Gen
 	if effectiveBaseURL == "" {
 		effectiveBaseURL = opts.BaseURL
 	}
+	var formatConfig *model.Config
 	for _, ruleSet := range iterate(ruleSetsList) {
 		if !jsonx.Truthy(dictGet(ruleSet, "enabled", true)) {
 			continue
 		}
-		url, originalURL := mihomoRulesetURL(config, ruleSet, ruleLibrary, effectiveBaseURL, typedConfig)
+		if formatConfig == nil {
+			formatConfig = mustValue(ruleLibraryConfigFromLegacy(config))
+			formatConfig.SystemConfig = mustValue(githubConfigFromLegacy(config)).SystemConfig
+		}
+		url, originalURL := mihomoRulesetURL(config, ruleSet, ruleLibrary, effectiveBaseURL, formatConfig)
 		behavior := dictGet(ruleSet, "behavior", "domain")
-		ruleFormat := mustValue(rulesetFormat(ruleSet.(*jsonx.Object), typedConfig, originalURL))
+		ruleFormat := mustValue(rulesetFormat(ruleSet.(*jsonx.Object), formatConfig, originalURL))
 		extension := ruleFormat
 		if ruleFormat == "text" {
 			extension = "list"
@@ -873,7 +878,8 @@ func generateMihomoDocument(ctx context.Context, logical *jsonx.Object, opts Gen
 	must(applyLinuxGateway(mihomoConfig, config, effectiveBaseURL))
 
 	ruleLines := []any{}
-	emitted := mustValue(emittedRules(typedConfig))
+	ruleConfig := mustValue(rulesConfigFromLegacy(config))
+	emitted := mustValue(emittedRules(ruleConfig))
 	for _, item := range emitted {
 		if !jsonx.Truthy(dictGet(item, "enabled", true)) || !jsonx.Truthy(dictGet(item, "library_enabled", true)) {
 			continue
@@ -914,7 +920,7 @@ func generateMihomoDocument(ctx context.Context, logical *jsonx.Object, opts Gen
 			}
 		}
 	}
-	if FallbackPolicy(typedConfig) == "REJECT" {
+	if FallbackPolicy(ruleConfig) == "REJECT" {
 		ruleLines = append(ruleLines, "NETWORK,udp,REJECT")
 	}
 	mihomoConfig.Set("rules", ruleLines)
@@ -994,12 +1000,13 @@ func generateMihomoDocument(ctx context.Context, logical *jsonx.Object, opts Gen
 // mihomoRulesetURL is the URL logic shared by generate_mihomo_config and
 // get_mihomo_ruleset_downloads: (url, original_url).
 func mihomoRulesetURL(config *jsonx.Object, ruleSet, ruleLibrary any, effectiveBaseURL string, typedConfig *model.Config) (any, string) {
-	// Non-generator callers retain their lazy decoding and validation order.
-	resolve := func() *model.Config {
+	// Non-generator callers retain their lazy decoding and validation order,
+	// using the same narrow codecs as the public metadata helpers.
+	format := func(sourceURL string) string {
 		if typedConfig != nil {
-			return typedConfig
+			return mustValue(rulesetFormat(ruleSet.(*jsonx.Object), typedConfig, sourceURL))
 		}
-		return mustValue(configFromLegacy(config))
+		return mustValue(RulesetFormat(ruleSet.(*jsonx.Object), config, sourceURL))
 	}
 	libraryRuleID := dictGet(ruleSet, "library_rule_id", nil)
 	url := dictGet(ruleSet, "url", "")
@@ -1017,7 +1024,7 @@ func mihomoRulesetURL(config *jsonx.Object, ruleSet, ruleLibrary any, effectiveB
 			ruleName := dictGet(libraryRule, "name", "")
 			if jsonx.Truthy(ruleName) {
 				url = profileAPIPath(config, "/rules/local/"+fstr(ruleName))
-				if mustValue(rulesetFormat(ruleSet.(*jsonx.Object), resolve(), sourceURLText(originalURL))) != "mrs" {
+				if format(sourceURLText(originalURL)) != "mrs" {
 					url = appendURLQuery(url.(string), [][2]any{{"target", "mihomo"}})
 				}
 			}
@@ -1028,7 +1035,11 @@ func mihomoRulesetURL(config *jsonx.Object, ruleSet, ruleLibrary any, effectiveB
 		if strings.HasPrefix(text, "/") && effectiveBaseURL != "" {
 			url = effectiveBaseURL + text
 		} else if strings.HasPrefix(text, "http") {
-			url = mustValue(GitHubURL(text, resolve()))
+			if typedConfig != nil {
+				url = mustValue(GitHubURL(text, typedConfig))
+			} else {
+				url = mustValue(ApplyGithubProxyDomain(text, config))
+			}
 		}
 	}
 	return url, sourceURLText(originalURL)

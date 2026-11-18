@@ -48,7 +48,7 @@ func TestBatch6R5GenerationRejectsRuleIdentityTypes(t *testing.T) {
 
 func TestBatch6R5RuleIdentityValidationPreservesStorage(t *testing.T) {
 	const source = `{"rule_configs":[{"itemType":"rule","rule_type":"DST-PORT","value":"5","policy":"DIRECT","future":1e3}]}`
-	config, err := configFromLegacy(mustJSON(t, source))
+	config, err := rulesConfigFromLegacy(mustJSON(t, source))
 	if err != nil {
 		t.Fatal(err)
 	}

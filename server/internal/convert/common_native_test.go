@@ -118,7 +118,7 @@ func TestCommonTypedDefaultsAndMalformedStorage(t *testing.T) {
 		{`{"rule_configs":[1]}`, "", "", false, 0},
 		{`{"rule_configs":[{"itemType":"rule","rule_type":"MATCH","enabled":0,"udp_fallback":"DIRECT"}]}`, "DIRECT", "", false, 1},
 	} {
-		config, err := configFromLegacy(mustJSON(t, tt.raw))
+		config, err := rulesConfigFromLegacy(mustJSON(t, tt.raw))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -134,7 +134,7 @@ func TestCommonTypedDefaultsAndMalformedStorage(t *testing.T) {
 		t.Fatalf("got %q want %q", got, want)
 	}
 	for _, raw := range []string{`null`, `1`, `false`, `[]`, `"bad"`} {
-		config, err := configFromLegacy(mustJSON(t, `{"rule_library":[`+raw+`]}`))
+		config, err := ruleLibraryConfigFromLegacy(mustJSON(t, `{"rule_library":[`+raw+`]}`))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -157,7 +157,7 @@ func TestCommonCoreHasNoLegacyDependency(t *testing.T) {
 				t.Errorf("%s imports legacy %s", name, imp.Path.Value)
 			}
 		}
-		forbidden := map[string]bool{"any": true, "dictGet": true, "raise": true, "catch": true, "must": true, "pyError": true, "decodeLegacy": true, "configFromLegacy": true, "encodeLegacy": true, "FixProxyFields": true, "ApplyGithubProxyDomain": true, "MihomoUsedPorts": true, "MihomoListenPorts": true, "ParseStructuredProxyString": true, "InspectStructuredProxyString": true, "ConvertNodeToMihomo": true, "ProxyStringConverter": true, "ConversionResults": true, "WithNodeConversions": true, "EnsureNodeConversions": true, "readDocumentYAML": true, "ValidateShapes": true, "ValidateDialers": true, "DependencyGraph": true, "RawDialer": true, "DialerTarget": true, "GroupMembers": true, "GroupDependencies": true, "CheckCycles": true, "IncomingDialers": true, "ResolveDialer": true, "OverlayDialer": true, "FilterProviderCandidates": true, "ProviderProxyName": true, "ValidateEmitted": true, "RejectSurgeDialers": true, "DependencyNodeIDs": true}
+		forbidden := map[string]bool{"any": true, "dictGet": true, "raise": true, "catch": true, "must": true, "pyError": true, "decodeLegacy": true, "rulesConfigFromLegacy": true, "ruleLibraryConfigFromLegacy": true, "githubConfigFromLegacy": true, "dialerConfigFromLegacy": true, "easyTierProfileFromLegacy": true, "encodeLegacy": true, "FixProxyFields": true, "ApplyGithubProxyDomain": true, "MihomoUsedPorts": true, "MihomoListenPorts": true, "ParseStructuredProxyString": true, "InspectStructuredProxyString": true, "ConvertNodeToMihomo": true, "ProxyStringConverter": true, "ConversionResults": true, "WithNodeConversions": true, "EnsureNodeConversions": true, "readDocumentYAML": true, "ValidateShapes": true, "ValidateDialers": true, "DependencyGraph": true, "RawDialer": true, "DialerTarget": true, "GroupMembers": true, "GroupDependencies": true, "CheckCycles": true, "IncomingDialers": true, "ResolveDialer": true, "OverlayDialer": true, "FilterProviderCandidates": true, "ProviderProxyName": true, "ValidateEmitted": true, "RejectSurgeDialers": true, "DependencyNodeIDs": true}
 		ast.Inspect(file, func(n ast.Node) bool {
 			if id, ok := n.(*ast.Ident); ok && forbidden[id.Name] {
 				t.Errorf("%s references %s", name, id.Name)
@@ -205,7 +205,7 @@ func TestCommonLegacyOnlyCallsTypedEntries(t *testing.T) {
 			}
 			if name.Name == target {
 				called = true
-			} else if name.Name != "configFromLegacy" && name.Name != "decodeLegacy" && name.Name != "encodeLegacy" {
+			} else if name.Name != "rulesConfigFromLegacy" && name.Name != "ruleLibraryConfigFromLegacy" && name.Name != "decodeLegacy" && name.Name != "encodeLegacy" {
 				t.Errorf("%s calls %s", function.Name.Name, name.Name)
 			}
 			return true

@@ -15,7 +15,7 @@ import (
 
 func typedDialerConfig(t *testing.T, text string) *model.Config {
 	t.Helper()
-	config, err := configFromLegacy(mustJSON(t, text))
+	config, err := dialerConfigFromLegacy(mustJSON(t, text))
 	if err != nil {
 		t.Fatal(err)
 	}

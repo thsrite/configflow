@@ -87,7 +87,7 @@ func ApplyGithubProxyDomain(address string, value *jsonx.Object) (string, error)
 	if value == nil {
 		return GitHubURL(address, nil)
 	}
-	config, err := configFromLegacy(value)
+	config, err := githubConfigFromLegacy(value)
 	if err != nil {
 		return "", err
 	}
@@ -214,20 +214,50 @@ func encodeLegacy(value any) (any, error) {
 	return jsonx.Parse(data)
 }
 
-func configFromLegacy(value *jsonx.Object) (*model.Config, error) {
-	profile, err := decodeLegacy[model.Profile](value)
+// legacyMembers projects only a codec's inputs, preserving absent members.
+func legacyMembers(value *jsonx.Object, names ...string) *jsonx.Object {
+	selected := jsonx.NewObject()
+	for _, name := range names {
+		if member, present := value.Get(name); present {
+			selected.Set(name, member)
+		}
+	}
+	return selected
+}
+
+func rulesConfigFromLegacy(value *jsonx.Object) (*model.Config, error) {
+	profile, err := decodeLegacy[model.Profile](legacyMembers(value, "rule_configs"))
+	return &model.Config{Profile: &profile}, err
+}
+
+func ruleLibraryConfigFromLegacy(value *jsonx.Object) (*model.Config, error) {
+	shared, err := decodeLegacy[model.Shared](legacyMembers(value, "rule_library"))
+	return &model.Config{RuleLibrary: shared.RuleLibrary}, err
+}
+
+func githubConfigFromLegacy(value *jsonx.Object) (*model.Config, error) {
+	wire, err := decodeLegacy[model.System](legacyMembers(value, "system_config"))
+	return &model.Config{SystemConfig: wire.SystemConfig}, err
+}
+
+func dialerConfigFromLegacy(value *jsonx.Object) (*model.Config, error) {
+	profile, err := decodeLegacy[model.Profile](legacyMembers(value, "proxy_groups"))
 	if err != nil {
 		return nil, err
 	}
-	shared, err := decodeLegacy[model.Shared](value)
-	if err != nil {
-		return nil, err
+	shared, err := decodeLegacy[model.Shared](legacyMembers(value, "nodes", "subscriptions", "subscription_aggregations"))
+	return &model.Config{Profile: &profile, Nodes: shared.Nodes, Subscriptions: shared.Subscriptions, Aggregations: shared.Aggregations}, err
+}
+
+func easyTierProfileFromLegacy(value any) (*model.Profile, error) {
+	if object, ok := value.(*jsonx.Object); ok {
+		selected := legacyMembers(object, "mihomo")
+		if mihomo, ok := selected.Value("mihomo").(*jsonx.Object); ok {
+			selected.Set("mihomo", legacyMembers(mihomo, "easytier"))
+		}
+		value = selected
 	}
-	wire, err := decodeLegacy[model.System](value)
-	if err != nil {
-		return nil, err
-	}
-	return &model.Config{Profile: &profile, ProfileID: value.GetString("profile_id"), SystemConfig: wire.SystemConfig, Backup: wire.Backup, Agents: wire.Agents, HasAgents: value.Has("agents"), Nodes: shared.Nodes, Subscriptions: shared.Subscriptions, Aggregations: shared.Aggregations, RuleLibrary: shared.RuleLibrary}, nil
+	return decodeLegacy[*model.Profile](value)
 }
 
 // NTPDirectRule adapts the built-in typed rule for remaining legacy callers.
@@ -239,7 +269,7 @@ func NTPDirectRule() *jsonx.Object {
 
 // UDPFallback adapts the resolved view to FallbackPolicy.
 func UDPFallback(value *jsonx.Object) (string, error) {
-	config, err := configFromLegacy(value)
+	config, err := rulesConfigFromLegacy(value)
 	if err != nil {
 		return "", err
 	}
@@ -248,7 +278,7 @@ func UDPFallback(value *jsonx.Object) (string, error) {
 
 // NTPDirect adapts the resolved view to DirectNTP.
 func NTPDirect(value *jsonx.Object) (bool, error) {
-	config, err := configFromLegacy(value)
+	config, err := rulesConfigFromLegacy(value)
 	if err != nil {
 		return false, err
 	}
@@ -257,7 +287,7 @@ func NTPDirect(value *jsonx.Object) (bool, error) {
 
 // EmittedRules adapts typed emitted rules to the legacy generator boundary.
 func EmittedRules(value *jsonx.Object) ([]any, error) {
-	config, err := configFromLegacy(value)
+	config, err := rulesConfigFromLegacy(value)
 	if err != nil {
 		return nil, err
 	}
@@ -281,7 +311,7 @@ func AfterMatchComment(value *jsonx.Object) string {
 
 // RulesetFormat adapts stored rule records to the shared typed implementation.
 func RulesetFormat(rule, value *jsonx.Object, sourceURL string) (string, error) {
-	config, err := configFromLegacy(value)
+	config, err := ruleLibraryConfigFromLegacy(value)
 	if err != nil {
 		return "", err
 	}
@@ -338,7 +368,7 @@ func NormalizeEasyTierSettings(value any) (*jsonx.Object, error) {
 
 // EasyTierSettings adapts the old resolved view to ConfigEasyTier.
 func EasyTierSettings(value any) (*jsonx.Object, error) {
-	profile, err := decodeLegacy[*model.Profile](value)
+	profile, err := easyTierProfileFromLegacy(value)
 	if err != nil {
 		return nil, err
 	}
@@ -372,7 +402,7 @@ func ApplyEasyTier(document *jsonx.Object, value any, forAgent bool, version any
 	if err != nil {
 		return nil, err
 	}
-	profile, err := decodeLegacy[*model.Profile](value)
+	profile, err := easyTierProfileFromLegacy(value)
 	if err != nil {
 		return nil, err
 	}
@@ -436,7 +466,7 @@ func shapeConfigFromLegacy(value *jsonx.Object) (*model.Config, error) {
 			}
 		}
 	}
-	return configFromLegacy(value)
+	return dialerConfigFromLegacy(value)
 }
 
 // validateGenerationRules only transcodes the legacy generation boundary.
@@ -494,7 +524,7 @@ func RawDialer(value *jsonx.Object) (any, error) {
 
 // DialerTarget transcodes the view and node to NodeDialerTarget.
 func DialerTarget(value, nodeValue *jsonx.Object) (*Ref, error) {
-	config, err := configFromLegacy(value)
+	config, err := dialerConfigFromLegacy(value)
 	if err != nil {
 		return nil, err
 	}
@@ -524,7 +554,7 @@ func groupMembers(value *jsonx.Object) ([]Ref, error) {
 
 // GroupDependencies transcodes a logical group to GroupSources.
 func GroupDependencies(value, groupValue *jsonx.Object) ([]Ref, error) {
-	config, err := configFromLegacy(value)
+	config, err := dialerConfigFromLegacy(value)
 	if err != nil {
 		return nil, err
 	}
@@ -551,7 +581,7 @@ func IncomingDialers(value *jsonx.Object, kind, id string) ([]Ref, error) {
 
 // ResolveDialer transcodes the old view/node to ResolveNodeDialer.
 func ResolveDialer(value, nodeValue *jsonx.Object) (any, error) {
-	config, err := configFromLegacy(value)
+	config, err := dialerConfigFromLegacy(value)
 	if err != nil {
 		return nil, err
 	}
@@ -568,7 +598,7 @@ func ResolveDialer(value, nodeValue *jsonx.Object) (any, error) {
 
 // OverlayDialer preserves the old in-place result at the codec boundary.
 func OverlayDialer(value, nodeValue, proxyValue *jsonx.Object) (*jsonx.Object, error) {
-	config, err := configFromLegacy(value)
+	config, err := dialerConfigFromLegacy(value)
 	if err != nil {
 		return nil, err
 	}
@@ -691,7 +721,7 @@ func ValidateEmitted(value *jsonx.Object, opts EmitOptions) error {
 
 // RejectSurgeDialers adapts old collaborators to RejectUnsupportedDialers.
 func RejectSurgeDialers(ctx context.Context, value *jsonx.Object, client string, converter ProxyStringConverter) error {
-	config, err := configFromLegacy(value)
+	config, err := dialerConfigFromLegacy(value)
 	if err != nil {
 		return err
 	}
