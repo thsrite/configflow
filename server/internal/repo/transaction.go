@@ -36,9 +36,6 @@ type transaction struct {
 	// legacy is the *jsonx.Object working copy while a legacy updater runs
 	// (legacy.go); it is authoritative until converted back into document.
 	legacy *jsonx.Object
-	// proposed, when set, is a legacy view equal to document (the legacy
-	// updater's result); validation uses it instead of converting again.
-	proposed *jsonx.Object
 }
 
 type txKey struct{ repository *Repository }
@@ -108,32 +105,52 @@ func (r *Repository) transact(ctx context.Context, options writeOptions, fn func
 	if r.InTransaction(ctx) {
 		return inUse(nestedWriteMessage)
 	}
-	var previous, current *jsonx.Object
+	var base storedEntry
+	var proposed *model.Document
 	err := withLock(ctx, r.lockFile, func(ctx context.Context) error {
 		return r.transactLocked(ctx, options, func(ctx context.Context, tx *transaction) error {
 			if err := fn(ctx, tx); err != nil {
 				return err
 			}
-			previous = tx.base.Document
+			base, proposed = tx.base, tx.document
 			return nil
-		}, &current)
+		})
 	})
 	if err != nil {
 		return err
 	}
-	if jsonx.Truthy(current.GetObject("system").GetObject("backup").Value("auto_backup")) {
-		if committed := currentHooks().ConfigurationCommitted; committed != nil {
-			committed(r, previous, current)
-		}
-	}
+	r.configurationCommitted(base, proposed)
 	return nil
 }
 
+// configurationCommitted runs the ConfigurationCommitted hook (WebDAV auto
+// backup) when the committed backup settings enable it. The commit has
+// happened: a failure here is logged, never returned.
+func (r *Repository) configurationCommitted(base storedEntry, proposed *model.Document) {
+	committed := currentHooks().ConfigurationCommitted
+	if committed == nil || proposed == nil {
+		return
+	}
+	backup, err := viewOf(&proposed.System.Backup)
+	if err == nil {
+		if raw, _ := backup.get("auto_backup"); !jsonTruthy(raw) {
+			return
+		}
+	}
+	var current *jsonx.Object
+	if err == nil {
+		current, err = legacyModelDocument(proposed)
+	}
+	if err != nil {
+		logger.Errorf(msgCommittedHookSkipped, err)
+		return
+	}
+	committed(r, base.Document, current)
+}
+
 // transactLocked is _write_locked: one write transaction; the caller holds
-// .config.lock. When proposed is not nil it receives the legacy view of the
-// document that was validated (and committed, unless nothing changed).
-func (r *Repository) transactLocked(ctx context.Context, options writeOptions, fn func(ctx context.Context, tx *transaction) error,
-	proposed ...**jsonx.Object) error {
+// .config.lock.
+func (r *Repository) transactLocked(ctx context.Context, options writeOptions, fn func(ctx context.Context, tx *transaction) error) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -157,21 +174,21 @@ func (r *Repository) transactLocked(ctx context.Context, options writeOptions, f
 	if options.batch != nil && *options.batch {
 		ctx = ctxx.Uninterruptible(ctx)
 	}
-	// Business validation and the router guard still run on the legacy view
-	// until their owners are migrated (N8-5b/c).
-	legacy := tx.proposed
-	if legacy == nil {
-		if legacy, err = legacyModelDocument(tx.document); err != nil {
-			return err
-		}
-	}
 	if _, err := ensureSystemTokens(&tx.document.System); err != nil {
 		return err
 	}
 	if err := validateDocument(tx.document); err != nil {
 		return err
 	}
-	release, err := r.routerCommitGuard(ctx, base.Document, legacy, options.lockedRouters, options.policyRouter)
+	oldRouters, err := routerRecordsIn(base.Model)
+	if err != nil {
+		return err
+	}
+	newRouters, err := routerRecordsIn(tx.document)
+	if err != nil {
+		return err
+	}
+	release, err := r.routerGuard(ctx, base.Model, oldRouters, newRouters, options.lockedRouters, options.policyRouter)
 	if err != nil {
 		return err
 	}
@@ -187,9 +204,6 @@ func (r *Repository) transactLocked(ctx context.Context, options writeOptions, f
 	if changed {
 		r.setCache(committed)
 		r.commitCount.Add(1)
-	}
-	for _, target := range proposed {
-		*target = legacy
 	}
 	return nil
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"configflow/internal/ctxx"
@@ -551,63 +552,77 @@ func (r *Repository) DeleteProfile(ctx context.Context, profileID, newDefaultID 
 		}
 		lockedRouters := map[routerKey]bool{}
 		batch := false
-		err = r.update(ctx, writeOptions{lockedRouters: lockedRouters, batch: &batch}, func(ctx context.Context, document *jsonx.Object) error {
-			profile, err := profileOf(document, profileID)
+		err = r.transact(ctx, writeOptions{lockedRouters: lockedRouters, batch: &batch}, func(ctx context.Context, tx *transaction) error {
+			document := tx.document
+			profile, err := profileFor(document, profileID)
 			if err != nil {
 				return err
 			}
-			profiles := document.GetObject("profiles")
-			isDefault := profileID == defaultProfileIDOf(document)
+			isDefault := profileID == defaultProfileIn(document)
 			if isDefault {
-				if profiles.Len() < 2 {
+				if len(document.Profiles) < 2 {
 					return inUse("只有一个配置空间时不能删除默认配置")
 				}
 				if newDefaultID == "" {
 					return inUse("删除默认配置时需要指定新的默认配置空间")
 				}
-				if newDefaultID == profileID || !profiles.Has(newDefaultID) {
+				if newDefaultID == profileID || profileByKey(document, newDefaultID) == nil {
 					return validationError("新的默认配置空间不存在：" + newDefaultID)
 				}
 			}
 			var usages []any
 			var names []string
-			for _, item := range document.GetObject("system").GetList("agents") {
-				agent, _ := jsonx.AsObject(item)
-				if agent.Value("profile_id") != profileID {
+			systemView, err := viewOf(&document.System)
+			if err != nil {
+				return err
+			}
+			agentsRaw, _ := systemView.get("agents")
+			agents, err := itemsOf(agentsRaw, "Agent")
+			if err != nil {
+				return err
+			}
+			for _, id := range agents.ids {
+				agent := agents.byID[id]
+				if bound, _ := jsonString(mustGet(agent, "profile_id")); bound != profileID {
 					continue
 				}
-				name := agent.Value("name")
-				if !jsonx.Truthy(name) {
-					name = agent.Value("id")
+				var name any = id
+				if raw, _ := agent.get("name"); jsonTruthy(raw) {
+					name = storedValue(agent, "name", id)
 				}
-				usages = append(usages, jsonx.Obj("kind", "agent", "id", agent.Value("id"), "name", name,
-					"profile_id", profileID, "profile_name", profile.Value("name")))
+				usages = append(usages, jsonx.Obj("kind", "agent", "id", id, "name", name,
+					"profile_id", profileID, "profile_name", profile.Name))
 				names = append(names, jsonx.Str(name))
 			}
 			if len(usages) > 0 {
-				return inUse("配置「"+jsonx.Str(profile.Value("name"))+"」仍被以下 Agent 使用："+strings.Join(names, "、"), usages...)
+				return inUse("配置「"+profile.Name+"」仍被以下 Agent 使用："+strings.Join(names, "、"), usages...)
 			}
 			// Keep job locks until after the document commits, and take
 			// them before moving profile-local artifacts out of the way.
-			remaining := jsonx.NewObject()
-			for key, value := range profiles.All() {
-				if key != profileID {
-					remaining.Set(key, value)
+			records, err := routerRecordsIn(document)
+			if err != nil {
+				return err
+			}
+			remaining := routerRecordSet{values: map[routerKey]memberView{}}
+			for _, key := range records.keys {
+				if key.ProfileID != profileID {
+					remaining.keys = append(remaining.keys, key)
+					remaining.values[key] = records.values[key]
 				}
 			}
-			release, err := r.routerCommitGuard(ctx, document, jsonx.Obj("profiles", remaining), nil, nil)
+			release, err := r.routerGuard(ctx, document, records, remaining, nil, nil)
 			if err != nil {
 				return err
 			}
 			releases = append(releases, release)
-			records, err := routerRecordsOf(document)
-			if err != nil {
-				return err
-			}
 			for _, key := range records.keys {
 				if key.ProfileID == profileID {
 					lockedRouters[key] = true
 				}
+			}
+			exportedProfile, err := legacyObject(profile)
+			if err != nil {
+				return err
 			}
 			if err := beginCommitBatch(ctx, &batch); err != nil {
 				return err
@@ -630,7 +645,7 @@ func (r *Repository) DeleteProfile(ctx context.Context, profileID, newDefaultID 
 			if pathExists(exported) {
 				exported = filepath.Join(tombstone, "deleted-profile-"+randomHex(32)+".json")
 			}
-			text, err := fileJSON(profile)
+			text, err := fileJSON(exportedProfile)
 			if err != nil {
 				return err
 			}
@@ -645,11 +660,11 @@ func (r *Repository) DeleteProfile(ctx context.Context, profileID, newDefaultID 
 			if err := fsyncDir(tombstone); err != nil {
 				return err
 			}
-			profiles.Delete(profileID)
+			document.Profiles = slices.DeleteFunc(document.Profiles, func(p *model.Profile) bool { return p.Key() == profileID })
 			if isDefault {
-				system := document.GetObject("system")
-				system.GetObject("system_config").Set("default_profile_id", newDefaultID)
-				bumpRevision(system)
+				id := newDefaultID
+				document.System.SystemConfig.DefaultProfileID = &id
+				document.System.Revision++
 			}
 			return nil
 		})
@@ -836,35 +851,39 @@ func (r *Repository) SaveRouterSettings(ctx context.Context, profileID string, e
 		return err
 	}
 	key := routerKey{profileID, routerID}
-	return r.update(ctx, writeOptions{lockedRouters: map[routerKey]bool{key: true}}, func(_ context.Context, document *jsonx.Object) error {
-		profile, err := profileOf(document, profileID)
+	return r.transact(ctx, writeOptions{lockedRouters: map[routerKey]bool{key: true}}, func(_ context.Context, tx *transaction) error {
+		profile, err := profileFor(tx.document, profileID)
 		if err != nil {
 			return err
 		}
-		records, err := routerRecordsOf(document)
+		records, err := routerRecordsIn(tx.document)
 		if err != nil {
 			return err
 		}
 		current, found := records.values[key]
-		if !found || !isString || !jsonx.Equal(current, expectedRouter) {
+		if !found || !isString || !sameRouter(current, expectedRouter) {
 			return inUse("路由器设置已变化，请刷新后重试")
 		}
 		if replacement != nil && replacement.Value("id") != routerID {
 			return validationError("不能修改路由器 ID")
 		}
-		routers := profile.GetObject("routers")
-		items := routers.GetList("items")
-		updated := make([]any, 0, len(items))
-		for _, item := range items {
-			if item != any(current) {
-				updated = append(updated, item)
-			} else if replacement != nil {
-				updated = append(updated, replacement.DeepCopy())
+		items := make([]model.Router, 0, len(profile.Routers.Items))
+		for _, item := range profile.Routers.Items {
+			if item.ID != routerID {
+				items = append(items, item)
+				continue
+			}
+			if replacement != nil {
+				var router model.Router
+				if err := decodeLegacyRecord(replacement, &router); err != nil {
+					return err
+				}
+				items = append(items, router)
 			}
 		}
-		routers.Set("items", updated)
-		bumpRevision(profile)
-		profile.Set("updated_at", nowISO())
+		profile.Routers.Items = items
+		profile.Revision++
+		profile.UpdatedAt = nowISO()
 		return nil
 	})
 }
@@ -882,20 +901,30 @@ func (r *Repository) SaveRouterPublication(ctx context.Context, profileID string
 	}
 	key := routerKey{profileID, routerID}
 	options := writeOptions{lockedRouters: map[routerKey]bool{key: true}, policyRouter: &key}
-	return r.update(ctx, options, func(_ context.Context, document *jsonx.Object) error {
-		profile, err := profileOf(document, profileID)
+	return r.transact(ctx, options, func(_ context.Context, tx *transaction) error {
+		profile, err := profileFor(tx.document, profileID)
 		if err != nil {
 			return err
 		}
-		records, err := routerRecordsOf(document)
+		records, err := routerRecordsIn(tx.document)
 		if err != nil {
 			return err
 		}
-		current := records.values[key]
-		if !isString {
-			current = nil // router ids are strings: no record has this one
+		current, found := records.values[key]
+		expected, err := viewOfLegacy(expectedRouter)
+		if err != nil {
+			return err
 		}
-		if current == nil || fieldsDiffer(current, expectedRouter, RouterConnectionFields) {
+		if !isString || !found || routerFieldsDiffer(current, &expected, RouterConnectionFields) {
+			return inUse("路由器连接已变化，无法保存发布回读记录")
+		}
+		var router *model.Router
+		for index := range profile.Routers.Items {
+			if profile.Routers.Items[index].ID == routerID {
+				router = &profile.Routers.Items[index]
+			}
+		}
+		if router == nil {
 			return inUse("路由器连接已变化，无法保存发布回读记录")
 		}
 		states := []Optional{publication.Manifest, publication.DNSGuard, publication.IPv6FakeIP, publication.IPv6Routes,
@@ -905,17 +934,22 @@ func (r *Repository) SaveRouterPublication(ctx context.Context, profileID string
 			if !state.Set {
 				continue
 			}
-			if jsonx.Truthy(state.Value) {
-				current.Set(field, jsonx.DeepCopy(state.Value))
-			} else {
-				current.Delete(field)
+			// A set but falsy state removes the record (Python: pop).
+			if !jsonx.Truthy(state.Value) {
+				if err := router.Clear(field); err != nil {
+					return err
+				}
+			} else if err := setLegacy(router.SetJSON, field, state.Value); err != nil {
+				return err
 			}
 		}
 		if publication.LastRelease.Set {
-			current.Set("last_release", jsonx.DeepCopy(publication.LastRelease.Value))
+			if err := setLegacy(router.SetJSON, "last_release", publication.LastRelease.Value); err != nil {
+				return err
+			}
 		}
-		bumpRevision(profile)
-		profile.Set("updated_at", nowISO())
+		profile.Revision++
+		profile.UpdatedAt = nowISO()
 		return nil
 	})
 }

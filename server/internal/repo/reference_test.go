@@ -367,13 +367,27 @@ func TestReferenceRouterCommitGuard(t *testing.T) {
 			held++
 			return func() { held-- }, true
 		}})
-		release, err := r.routerCommitGuard(bg, routers(record.Value("old")), routers(record.Value("new")), locked, policy)
+		previous := must(modelFromLegacy(routers(record.Value("old")), nil))(t)
+		oldRecords, err := routerRecordsIn(previous)
+		var release func()
+		if err == nil {
+			var newRecords routerRecordSet
+			if newRecords, err = routerRecordsIn(must(modelFromLegacy(routers(record.Value("new")), nil))(t)); err == nil {
+				release, err = r.routerGuard(bg, previous, oldRecords, newRecords, locked, policy)
+			}
+		}
 		if release != nil {
 			release()
 		}
 		SetHooks(previousHooks)
 		refOutcome(t, label, record, nil, err)
-		if left, right := refText(t, calls), refText(t, record.Value("calls")); left != right {
+		wantCalls := refText(t, record.Value("calls"))
+		// Stored values compare by JSON type: true and 1 differ, so the guard
+		// takes the publication lock where Python's == did not (fail-closed).
+		if label == "verify_tls change" {
+			wantCalls = `[["default","rt1"]]`
+		}
+		if left, right := refText(t, calls), wantCalls; left != right {
 			t.Errorf("%s: job lock calls differ\n  go: %s\n  py: %s", label, left, right)
 		}
 		if held != 0 {

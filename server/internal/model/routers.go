@@ -1,5 +1,7 @@
 package model
 
+import "encoding/json"
+
 // Routers is the profile-scoped router collection, including unknown container members.
 type Routers struct {
 	Items  []Router `json:"items"`
@@ -55,6 +57,11 @@ func (r *Router) Clear(member string) error { return ClearMember(r, &r.raw, memb
 
 // MarshalJSON preserves unknown and unchanged Router members.
 func (r Router) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
+
+// SetJSON stores a JSON value as a member of the router; see SetMemberJSON.
+func (r *Router) SetJSON(member string, data json.RawMessage) error {
+	return SetMemberJSON(r, &r.raw, member, data)
+}
 
 // RouterDNSGuard retains explicit settings, including an absent failover default.
 type RouterDNSGuard struct {

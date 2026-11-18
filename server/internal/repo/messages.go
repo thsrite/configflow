@@ -20,3 +20,7 @@ const (
 	msgProfileIDMismatch      = "配置内容与 ID 不一致"
 	msgRevisionInvalid        = "配置修订号无效"
 )
+
+// msgCommittedHookSkipped is logged when the committed document cannot be
+// handed to the ConfigurationCommitted hook.
+const msgCommittedHookSkipped = "配置已保存，但无法交给自动备份：%v"

@@ -81,8 +81,6 @@ func (r *Repository) update(ctx context.Context, options writeOptions, fn func(c
 		if tx.document, err = modelFromLegacy(legacy, tx.base.Entry.Document); err != nil {
 			return err
 		}
-		// legacy is exactly the converted working copy: validation reuses it.
-		tx.proposed = legacy
 		return nil
 	})
 }
@@ -310,4 +308,48 @@ func dialerValidation(err error) error {
 		return &Error{Kind: ErrValidation, Message: reference.Message, Cause: err}
 	}
 	return err
+}
+
+// legacyRaw is a stored JSON object as a *jsonx.Object (hook arguments that
+// still take jsonx).
+func legacyRaw(raw json.RawMessage) (*jsonx.Object, error) {
+	value, err := jsonx.Parse(raw)
+	if err != nil {
+		return nil, err
+	}
+	object, ok := jsonx.AsObject(value)
+	if !ok {
+		return nil, validationError(msgStoreDocumentObject)
+	}
+	return object, nil
+}
+
+// viewOfLegacy is the member view of a jsonx object (a record a legacy caller
+// read earlier and hands back for comparison).
+func viewOfLegacy(object *jsonx.Object) (memberView, error) {
+	data, err := jsonx.Compact(object)
+	if err != nil {
+		return memberView{}, err
+	}
+	return viewOfJSON(data), nil
+}
+
+// sameRouter reports whether a stored router equals a legacy caller's copy.
+func sameRouter(current memberView, expected *jsonx.Object) bool {
+	stored, err := current.fields.MarshalJSON()
+	if err != nil {
+		return false
+	}
+	given, err := jsonx.Compact(expected)
+	return err == nil && sameStored(stored, given)
+}
+
+// decodeLegacyRecord decodes a jsonx object into a model record (members of
+// a wrong type kept as given, R5).
+func decodeLegacyRecord(object *jsonx.Object, record any) error {
+	data, err := jsonx.Compact(object)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(data, record)
 }

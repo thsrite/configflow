@@ -478,38 +478,6 @@ func resolveProfile(document *jsonx.Object, profileID string, roots ResourceRoot
 }
 
 // routerKey is (profile_id, router_id).
-type routerKey struct{ ProfileID, RouterID string }
-
-type routerRecords struct {
-	keys   []routerKey
-	values map[routerKey]*jsonx.Object
-}
-
-// routerRecordsOf is _router_records.
-func routerRecordsOf(document *jsonx.Object) (*routerRecords, error) {
-	records := &routerRecords{values: map[routerKey]*jsonx.Object{}}
-	for profileID, value := range document.GetObject("profiles").All() {
-		profile, _ := jsonx.AsObject(value)
-		var routers *jsonx.Object
-		if raw := profile.Value("routers"); jsonx.Truthy(raw) {
-			object, ok := jsonx.AsObject(raw)
-			if !ok {
-				return nil, validationError("路由器设置必须是对象")
-			}
-			routers = object
-		}
-		items, err := itemsByID(routers.GetOr("items", []any{}), "路由器")
-		if err != nil {
-			return nil, err
-		}
-		for _, routerID := range items.keys {
-			key := routerKey{profileID, routerID}
-			records.keys = append(records.keys, key)
-			records.values[key] = items.values[routerID]
-		}
-	}
-	return records, nil
-}
 
 // asValidation converts the helper exceptions Python catches at a call site
 // into ProfileValidationError(str(error)).
