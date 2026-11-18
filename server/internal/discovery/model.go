@@ -58,9 +58,9 @@ func (s *Settings) UnmarshalJSON(b []byte) error {
 	var ignored, history []json.RawMessage
 	_ = json.Unmarshal(fields["ignored"], &ignored)
 	for _, raw := range ignored {
-		var value *string
-		if json.Unmarshal(raw, &value) == nil && value != nil {
-			p.Ignored = append(p.Ignored, *value)
+		var value model.String
+		if json.Unmarshal(raw, &value) == nil && CleanDomain(string(value)) != "" {
+			p.Ignored = append(p.Ignored, string(value))
 		}
 	}
 	_ = json.Unmarshal(fields["history"], &history)

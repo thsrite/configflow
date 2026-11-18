@@ -3,10 +3,10 @@ package discovery
 // This file is the boundary to the pre-N8 repository, matcher and health APIs.
 // Business logic uses native structs; these conversions disappear with N8.
 import (
+	"configflow/internal/model"
 	"context"
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 
 	"configflow/internal/agents"
 	"configflow/internal/agents/trafficstore"
@@ -90,8 +90,6 @@ func legacyCachedContent(ctx context.Context, item libraryItem) ([]byte, error) 
 
 func legacyMatcherOptions() rules.MatcherCacheOptions {
 	return rules.MatcherCacheOptions{
-		Clock: lifecycle.ClockFrom(context.Background()), Spawner: matcherSpawner{},
-		RulesDir: func() string { return filepath.Join(repo.DataDir(), "shared", "rules") },
 		StoredLibrary: func() []any {
 			r, err := repo.GetRepository(context.Background())
 			if err != nil {
@@ -114,7 +112,6 @@ func legacyMatcherOptions() rules.MatcherCacheOptions {
 		ValidateRemote: func(content string, rule *jsonx.Object) error {
 			return rulefetch.ValidateRemoteRuleContent(content, rule, nil, "")
 		},
-		MaxMatchers: 4, MaxHostResults: 1024, IdleSeconds: 300,
 	}
 }
 
@@ -372,17 +369,45 @@ func legacyPickTargets(ts []AvailableTarget, preferred *string) ([]RegionTarget,
 	err = decode(picked, &out)
 	return out, err
 }
-func legacyRegionRequests(services bool, plan []ProbeTarget) ([]PageRequest, error) {
-	requests := []any{check.ExitRequest()}
-	if services {
-		requests = check.ServiceRequests()
-	}
-	for i, h := range plan {
-		requests = append(requests, check.DomainRequest(fmt.Sprintf("domain-%d", i), h.URL))
-	}
-	var out []PageRequest
-	err := decode(requests, &out)
+func legacyExitRequest() (PageRequest, error) {
+	var out PageRequest
+	err := decode(check.ExitRequest(), &out)
 	return out, err
+}
+func legacyServiceRequests() ([]PageRequest, error) {
+	var out []PageRequest
+	err := decode(check.ServiceRequests(), &out)
+	return out, err
+}
+func legacyDomainRequest(id, url string) (PageRequest, error) {
+	var out PageRequest
+	err := decode(check.DomainRequest(id, url), &out)
+	return out, err
+}
+func legacyRegistryAgents(ctx context.Context) ([]model.Agent, error) {
+	manager, err := agents.Get(ctx)
+	if err != nil {
+		return nil, err
+	}
+	records, err := manager.GetAllAgents(ctx, false)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]model.Agent, 0, len(records))
+	for _, record := range records {
+		view := jsonx.NewObject()
+		for _, field := range []string{"id", "name", "profile_id", "service_type", "domain_discovery_enabled", "version", "last_heartbeat"} {
+			if value, present := record.Get(field); present {
+				view.Set(field, value)
+			}
+		}
+		var projected model.Agent
+		if err := decode(view, &projected); err != nil {
+			return nil, err
+		}
+		out = append(out, projected)
+	}
+	return out, nil
 }
 func legacyExitInfo(rows []RegionResult) (json.RawMessage, error) {
 	v, err := legacy(rows)
@@ -474,7 +499,10 @@ func init() {
 		publicServices:  legacyPublicServices,
 		probeControls:   legacyProbeControls,
 		pickTargets:     legacyPickTargets,
-		regionRequests:  legacyRegionRequests,
+		exitRequest:     legacyExitRequest,
+		serviceRequests: legacyServiceRequests,
+		domainRequest:   legacyDomainRequest,
+		registryAgents:  legacyRegistryAgents,
 		exitInfo:        legacyExitInfo,
 		serviceMatrix:   legacyServiceMatrix,
 		classifyRegion:  legacyClassifyRegion,

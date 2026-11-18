@@ -367,7 +367,15 @@ func TestHTTPAndStorageParity(t *testing.T) {
 			middle := len(calls)
 			mu.Unlock()
 			gc, gv, gh, gb := callResponse(t, goServer.URL, q.method, path, q.body)
-			if pc != gc {
+			typedRootError := q.method == "POST" && (q.path == "apply" || q.path == "probe") && q.body == `[1]`
+			if typedRootError {
+				if pc != 500 || gc != 400 {
+					t.Fatalf("explicit non-object request: Python=%d Go=%d", pc, gc)
+				}
+				if body, ok := gv.(map[string]any); !ok || body["success"] != false || body["message"] != "请求必须是 JSON 对象" {
+					t.Fatalf("typed root diagnostic: %v", gv)
+				}
+			} else if pc != gc {
 				t.Errorf("status Flask=%d Go=%d", pc, gc)
 			}
 			if pc == 202 && gc == 202 {
@@ -414,7 +422,7 @@ func TestHTTPAndStorageParity(t *testing.T) {
 				left["auto_probe"] = false
 			}
 			// Step B #3: only the exact public error envelope changes format.
-			if !httpxtest.MigratedAPIError(q.method, pc, gc, ph, gh, pb, gb) {
+			if !typedRootError && !httpxtest.MigratedAPIError(q.method, pc, gc, ph, gh, pb, gb) {
 				equal(t, "response", remap(pv, pyIDs), remap(gv, goIDs))
 			}
 		})

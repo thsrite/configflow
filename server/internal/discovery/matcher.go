@@ -2,8 +2,10 @@ package discovery
 
 import (
 	"configflow/internal/lifecycle"
+	"configflow/internal/repo"
 	"configflow/internal/rules"
 	"context"
+	"path/filepath"
 	"sync"
 )
 
@@ -55,4 +57,13 @@ func (matcherSpawner) Spawn(ctx context.Context, name string, fn func(context.Co
 	default:
 	}
 	return lifecycle.Spawn(ctx, name, fn)
+}
+
+func matcherOptions() rules.MatcherCacheOptions {
+	options := collaboration.matcherOptions()
+	options.Clock = lifecycle.ClockFrom(context.Background())
+	options.Spawner = matcherSpawner{}
+	options.RulesDir = func() string { return filepath.Join(repo.DataDir(), "shared", "rules") }
+	options.MaxMatchers, options.MaxHostResults, options.IdleSeconds = 4, 1024, 300
+	return options
 }

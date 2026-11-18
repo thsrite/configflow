@@ -55,7 +55,7 @@ func payload(c *httpx.Ctx) (requestDTO, error) {
 		if !discovery.JSONOptionEnabled(raw) {
 			return requestDTO{}, nil
 		}
-		return requestDTO{}, errors.New("request payload must be a JSON object")
+		return requestDTO{}, repo.NewValidationError(msgObject)
 	}
 	return requestDTO{Targets: fields["targets"], ProxyPolicy: fields["proxy_policy"], Items: fields["items"], Value: fields["value"], Target: fields["target"], Values: fields["values"], Domains: fields["domains"], Services: fields["services"], Kind: fields["kind"], Policy: fields["policy"]}, nil
 }

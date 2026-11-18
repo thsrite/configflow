@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 
+	"configflow/internal/agents"
+	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/repo"
 )
@@ -75,8 +77,8 @@ func TestNativeStoredR5AndSharedNumbers(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{"proxy_groups":[{"id":"g","name":123.50}],"domain_discovery":{"region_probe_port":"18003"}}`), &record); err != nil {
 		t.Fatal(err)
 	}
-	if len(model.Issues(record)) != 0 {
-		t.Skip("await approved 8a model numeric-text/integer-string decoder")
+	if issues := model.Issues(record); len(issues) != 0 {
+		t.Fatalf("shared scalar decode reported issues: %+v", issues)
 	}
 	view, err := configFromModel(&model.Config{Profile: &record})
 	if err != nil || view.Groups[0].Name != "123.50" || view.Settings.RegionPort != 18003 {
@@ -208,4 +210,35 @@ func FuzzNativeConfigProjection(f *testing.F) {
 			t.Fatal("projection mutated model input")
 		}
 	})
+}
+
+func TestNativeRegistryRetainsHeartbeatOverlay(t *testing.T) {
+	ctx := jobFixture(t)
+	repository, err := repo.GetRepository(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = repository.UpdateSystem(ctx, func(_ context.Context, system *model.System) error {
+		system.Agents = []model.Agent{{ID: "runtime-agent", Name: "Synthetic", ProfileID: "default", ServiceType: "mihomo", DomainDiscoveryEnabled: ptr(true), LastHeartbeat: "2000-01-01T00:00:00Z", Version: "1.0.0"}}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := agents.Get(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager.Runtime().Seed("runtime-agent", 4070908800, "2099-01-01T00:00:00Z", jsonx.Obj("version", minRegionVersion))
+	records, err := profileAgents(ctx, "default")
+	if err != nil || len(records) != 1 {
+		t.Fatalf("registry: %+v %v", records, err)
+	}
+	if records[0].Heartbeat != "2099-01-01T00:00:00Z" || records[0].Version != minRegionVersion {
+		t.Fatalf("lost runtime overlay: %+v", records[0])
+	}
+	stored, err := repository.System(ctx)
+	if err != nil || stored.Agents[0].LastHeartbeat != "2000-01-01T00:00:00Z" {
+		t.Fatal("test did not distinguish runtime and stored state")
+	}
 }

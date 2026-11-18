@@ -4,12 +4,15 @@ package discovery
 // landed. Only legacy.go knows their dynamic signatures; discovery owns no copy
 // of their business rules. See progress/n8-9-discovery.md for removal owners.
 import (
+	"configflow/internal/model"
 	"configflow/internal/rules"
 	"context"
 	"encoding/json"
+	"fmt"
 )
 
 type collaborators struct {
+	registryAgents  func(context.Context) ([]model.Agent, error)
 	saveRule        func(ctx context.Context, item libraryItem) error
 	validateContent func(item libraryItem) error
 	cachedContent   func(ctx context.Context, item libraryItem) ([]byte, error)
@@ -27,7 +30,9 @@ type collaborators struct {
 	publicServices  func() json.RawMessage
 	probeControls   func() ([]ProbeTarget, error)
 	pickTargets     func(ts []AvailableTarget, preferred *string) ([]RegionTarget, error)
-	regionRequests  func(services bool, plan []ProbeTarget) ([]PageRequest, error)
+	exitRequest     func() (PageRequest, error)
+	serviceRequests func() ([]PageRequest, error)
+	domainRequest   func(id, url string) (PageRequest, error)
 	exitInfo        func(rows []RegionResult) (json.RawMessage, error)
 	serviceMatrix   func(rows []RegionResult) (json.RawMessage, error)
 	classifyRegion  func(result *RegionResult, url string) (json.RawMessage, error)
@@ -49,8 +54,6 @@ func cachedContent(ctx context.Context, item libraryItem) ([]byte, error) {
 	}
 	return data, err
 }
-
-func matcherOptions() rules.MatcherCacheOptions { return collaboration.matcherOptions() }
 
 func localMatcher(ctx context.Context, id string) (func(string) *Match, error) {
 	return collaboration.localMatcher(ctx, id)
@@ -97,7 +100,26 @@ func pickTargets(ts []AvailableTarget, preferred *string) ([]RegionTarget, error
 }
 
 func regionRequests(services bool, plan []ProbeTarget) ([]PageRequest, error) {
-	return collaboration.regionRequests(services, plan)
+	var requests []PageRequest
+	var err error
+	if services {
+		requests, err = collaboration.serviceRequests()
+	} else {
+		var request PageRequest
+		request, err = collaboration.exitRequest()
+		requests = []PageRequest{request}
+	}
+	if err != nil {
+		return nil, err
+	}
+	for i, target := range plan {
+		request, err := collaboration.domainRequest(fmt.Sprintf("domain-%d", i), target.URL)
+		if err != nil {
+			return nil, err
+		}
+		requests = append(requests, request)
+	}
+	return requests, nil
 }
 
 func exitInfo(rows []RegionResult) (json.RawMessage, error) { return collaboration.exitInfo(rows) }

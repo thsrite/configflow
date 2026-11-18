@@ -153,7 +153,7 @@ func profileAgents(ctx context.Context, id string) ([]Agent, error) {
 	if err != nil {
 		return nil, err
 	}
-	system, err := r.System(ctx)
+	records, err := collaboration.registryAgents(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -162,7 +162,10 @@ func profileAgents(ctx context.Context, id string) ([]Agent, error) {
 		return nil, err
 	}
 	out := []Agent{}
-	for _, a := range system.Agents {
+	for _, a := range records {
+		if err := storedStrings(a, "Agent", a.ID, "profile_id", "service_type"); err != nil {
+			return nil, err
+		}
 		profileID := a.ProfileID
 		if profileID == "" {
 			profileID = def
