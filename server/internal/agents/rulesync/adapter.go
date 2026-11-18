@@ -373,6 +373,14 @@ func workerAgent(ctx context.Context, m *agents.Manager, id string) (*agents.Rec
 		return record, e
 	}
 	record.Set("status", agents.OnlineStatus(record, nil))
+	record.Set("enabled", jsonx.Truthy(record.GetOr("enabled", true)))
+	if record.GetString("profile_id") == "" {
+		profile, e := m.Repository().DefaultProfileID(ctx)
+		if e != nil {
+			return nil, e
+		}
+		record.Set("profile_id", profile)
+	}
 	return record, nil
 }
 func repositorySource(ctx context.Context, r *repo.Repository, profileID string) (*deploy.Source, error) {

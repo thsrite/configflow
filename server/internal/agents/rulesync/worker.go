@@ -164,7 +164,7 @@ func (s *Service) unchanged(ctx context.Context, record *agents.Record, settings
 	if e != nil {
 		return false, e
 	}
-	latest, e := s.m.GetAgentByID(ctx, old.ID, false)
+	latest, e := workerAgent(ctx, s.m, old.ID)
 	if e != nil || latest == nil {
 		return false, e
 	}
