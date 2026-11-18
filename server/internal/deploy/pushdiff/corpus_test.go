@@ -127,6 +127,7 @@ func withoutRaw(v any) any {
 	return v
 }
 func TestPythonCorpus(t *testing.T) {
+	t.Parallel()
 	f, err := os.Open("testdata/python.json.gz")
 	if err != nil {
 		t.Fatal(err)
@@ -149,6 +150,7 @@ func TestPythonCorpus(t *testing.T) {
 	}
 	for i, row := range corpus.Rows {
 		t.Run(fmt.Sprintf("%02d-%s-%s", i, row.Kind, row.Name), func(t *testing.T) {
+			t.Parallel()
 			var got any
 			switch row.Kind {
 			case "config":

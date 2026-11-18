@@ -136,3 +136,11 @@ own repository, input Source, downloads and all original manifest/file/YAML/erro
 assertions. The read-only HTTP response table is shared once; server shutdown is
 a parent cleanup, after all child subtests finish. Existing recorded references
 already require no Python process. .64 selected-test race run passed `5.628s`.
+
+## deploy/pushdiff — parallel recorded corpus
+
+`TestPythonCorpus` and each row now use t.Parallel. Row-local bundles, receipts,
+detail budgets and paging lists remain independent; all 32 recorded Python test
+identities, minimum-row guard and exact comparison/paging assertions remain.
+No runtime Python reference existed here. .64 selected-test race run passed
+`17.209s` (complete package timing pending paired measurement).
