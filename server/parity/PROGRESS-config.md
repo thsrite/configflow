@@ -2141,6 +2141,11 @@ C35 supplies native `importer.Parse/Build` for `/api/profiles/import-client` (AP
 
 **Clarified in C34 JSON shape follow-up:** only the five custom-config routes accept null/missing bodies as empty updates (200, revision+1) and reject every other non-object JSON with 400/no writes. Ordinary object values stay with existing business validators. Explicit Python-200/no-field and Python-500 shape classes are separately recorded in behaviour-changes and asserted by real Flask tests. No Python container-membership emulation.
 
+
+**C34 hand-back (2026-11-18, go-port-c34 rebased on go@215ab6b04):** 56 implemented methods + 3 registered artifact503 methods. Final .64 targeted API/configgen/configexport/server race, real Flask DB/files differential, full vet and clean formatting PASS; shared DNS-loop direct Python corpus509 + targeted race PASS; fuzz60s227,427 executions PASS. Repo race PASS233s. Entire gateway race hit default10m in the pre-existing N7 frozen-history archive decoder; targeted C34 gateway checks pass, the broader timeout remains explicit. Per the latest coordinator instruction, no agent full gate; batch gate belongs to the coordinator. Previews keyed-lock/shutdown delta is deliberately the next step after O3-6c notification. Detailed source/test mapping, exact commands, output and commit list: [progress/c34.md](progress/c34.md).
+
+**Clarified in C34 base_url:** missing/null means no override; strings including empty stay unchanged; other field types return400 with no DB/file/cache commit. This fixes invalid Python string-coerced URL prefixes and OxiDNS500; other fields and profile/generate empty-body defaults are unchanged. Explicit Flask expectations are in TestC34BaseURLInputAlternatives.
+
 ## C35 — config importer, WebDAV backup
 
 **Status: `verified`** · prereqs: C04, C06 · Go: internal/importer, internal/webdav, internal/api/settings
