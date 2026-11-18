@@ -10,20 +10,20 @@
 
 | 分支 | 取用区间 | 叠入后 tip |
 |---|---|---|
-| a22 | 663d271bb..9791bc8d | d91c219de5 |
-| r14 | c5f5ff349..a08a120b | 1d55ae951d |
-| r16 | c5f5ff349..1b28b662 | 214abefbf5 |
-| r17 | 673851659..b78bbb38 | 3e7d5a4e3c |
-| r15 | a08a120b..9df1a9a4 | 2fdedbcc1d |
-| o37 | cdca79def..a1d3e1b7 | 6ecbea848b |
-| o38 | a1d3e1b7..b8f6cbeb | da161d9088 |
-| pyref | c5f5ff349..06a25922 | ed4a22b44a |
-| 8b | 6e9d0b738..fbd9993c | d3f110ab75 |
-| 8c | 7d27bfa11..b1efee615 | ff8547b6f1 |
-| discovery | 9b72fc898..778442e4d | 478bb5022e |
-| health | 824189f07..372840ba8 | e04a39de21 |
-| a18 | e84063f9c..74935690 | 9fb89fc22b |
-| a23 | 673851659..3ce4338d | 06f2e87376 |
+| go-opus-review-a22 | 663d271bb..9791bc8d | d91c219de5 |
+| go-opus-review-r14 | c5f5ff349..a08a120b | 1d55ae951d |
+| go-review-r16 | c5f5ff349..1b28b662 | 214abefbf5 |
+| go-opus-review-r17 | 673851659..b78bbb38 | 3e7d5a4e3c |
+| go-opus-review-r15 | a08a120b..9df1a9a4 | 2fdedbcc1d |
+| go-o3-7 | cdca79def..a1d3e1b7 | 6ecbea848b |
+| go-o3-8 | a1d3e1b7..b8f6cbeb | da161d9088 |
+| go-pyref-narrow | c5f5ff349..06a25922 | ed4a22b44a |
+| go-opus-review-n8-8b | 6e9d0b738..fbd9993c | d3f110ab75 |
+| go-n8-8c | 7d27bfa11..b1efee615 | ff8547b6f1 |
+| go-n8-9-discovery | 9b72fc898..778442e4d | 478bb5022e |
+| go-review-n8-9-health | 824189f07..372840ba8 | e04a39de21 |
+| go-opus-review-a18 | e84063f9c..74935690 | 9fb89fc22b |
+| go-opus-review-a23 | 673851659..3ce4338d | 06f2e87376 |
 
 - R14 264ffbb55 与 batch-6 8ec68fd4d 补丁等价，显式丢弃。
 - R17/A23 从 673851659 后取用，不重复叠 R14 作者与已复核 R16 临时基底。
@@ -98,3 +98,16 @@ runner 当前登记恰好 16 项，实际输出 `FAULTS PASS: 16/16`，没有运
 取消下载无配置变更，SQLite/已提交前缀可读。1000 请求（100 断连）后 goroutine 14→14。
 production-isolation、SIGTERM/SIGKILL、锁等待、写故障和所有断连收敛对照均通过。
 报告位于本次 runner 打印的测试服务器私有 cache 目录；未复制设备/生产数据到仓库。
+
+### pyref 叠入后的来源声明更新（已完成）
+
+只读 live check 确认 MosDNS 47072 corpus 行、5436 recorded 调用和 router-split 全部边界 0 differ；
+失败仅为来源 metadata 变化（各 golden exact input 数不变）。三个未受影响的包检查已通过。
+依据 -suggest-sources 的 AST 依赖建议新增 typed convert/model/health 和 writer 图源文件，
+删除实际已移除的 clients.go、health/check/num.go、health/check/pyerr.go；产品边界豁免未变。
+显式 record 后再次只读 check：mosdns 51.046s、routersplit 1.391s 均 ok。
+本机仅作 blob 哈希查看，确认 10 个 transcript、2916 个 exact input/output 字节全不变，改动仅为 metadata。
+
+元数据更新命令（主测试服务器）：
+`PYREF_MODE=record PYREF_ACCEPT=1 go test -count=1 -p 6 -timeout=20m ./internal/mosdns ./internal/routersplit -run "^(TestCorpus|TestRecordedPythonTests|TestReviewUnholdableYAMLOutsideTheOutputMatchesPython|TestN73SharedUpstreamMetadataMatchesPython|TestEdgeCorpus)$"`
+随后同参数 `PYREF_MODE=check`。源声明更新前后 product_symbols/imports/members 均未放宽。
