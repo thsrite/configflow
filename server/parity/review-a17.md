@@ -111,7 +111,7 @@
 5. 旧版 Agent（无 `dns/*` 接口）→ `请升级 Agent 至 1.8.24-go…`。
 6. HA 主备目标的联动（依赖 A18 的 pair publisher）留到 A18 复核后的 L3。
 
-## 5. 运行记录（全部 `RT_HOST=sunbroke@192.168.0.32`）
+## 5. 运行记录（全部固定在 .32 测试服务器，`RT_HOST` 指向它）
 
 ```sh
 rt -e GOMAXPROCS=4 -e CONFIGFLOW_DIFF=1 -- bash -lc 'set -e; cd server; test -z "$(gofmt -l internal/agents/dnsfollow internal/api/agents)"; go vet ./internal/agents/dnsfollow/... ./internal/api/agents ./internal/server; go test -race -p 4 -count=1 -timeout=20m ./internal/agents/dnsfollow/...; go test -race -count=1 -run TestDNSFollow ./internal/api/agents; go test -count=1 -run "^$" ./internal/server'
