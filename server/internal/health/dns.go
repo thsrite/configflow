@@ -1,49 +1,50 @@
-// Package health is C16's repository-facing half: node latency through the
-// bundled node-probe worker (backend/utils/node_latency.py), the global
-// node-test DNS settings and their check (backend/utils/node_dns.py), the
-// locations of the per-Agent domain probe and region check stores, and the
-// wiring (Agent delete hooks). The pure parts are in internal/health/check.
+// Package health implements repository-backed node latency probing through the
+// standalone node-probe worker, global node-test DNS settings and validation,
+// and per-Agent probe/region store wiring.
+//
+// Pure health-check validation, region-check verdicts, and domain-probe scoring
+// live in internal/health/check; HTTP route handlers live in internal/api/nodes.
 package health
 
 import (
-	"configflow/internal/lifecycle"
+	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"math/big"
 	"net/netip"
 	"net/url"
 	"regexp"
+	"slices"
+	"strconv"
 	"strings"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/jsonresp"
+	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 	"configflow/internal/pystr"
 	"configflow/internal/repo"
 	"configflow/internal/rules"
 	"configflow/internal/weburl"
 )
 
-// ConfigKey is node_dns.CONFIG_KEY.
+// ConfigKey is the SystemConfig field key storing structured node-test DNS settings.
 const ConfigKey = "node_test_dns_config"
 
-// DirectDoH is node_dns.DIRECT_DOH (IP-form DoH on port 443: not taken over
-// by a gateway's DNS hijack, no bootstrap lookup).
+// DirectDoH lists fallback IP-based DoH endpoints that need no bootstrap lookup.
 var DirectDoH = []string{"https://223.5.5.5/dns-query", "https://1.12.12.12/dns-query"}
 
-const (
-	DNSError       = "测速 DNS 须为 IPv4[:端口]、https://DoH 或 tls://DoT，最多 4 个；不支持凭据、查询参数或片段"
-	BootstrapError = "引导 DNS 须为 IPv4 或 IPv4:端口，最多 4 个"
-)
-
-// CheckMessages is CHECK_MESSAGES.
+// CheckMessages maps worker DNS check error codes to user-facing Chinese messages.
 var CheckMessages = map[string]string{
-	"config":        "DNS 设置无效，请检查地址和引导 DNS",
-	"dns_bootstrap": "引导 DNS 无法解析上游地址，请检查引导 DNS",
-	"dns_fake_ip":   "DNS 返回了 Fake-IP，请改用返回真实 IP 的解析路径",
-	"timeout":       "DNS 查询超时，请检查网络和服务状态",
-	"tls":           "DNS TLS 验证失败，请检查上游地址和证书",
-	"dns":           "DNS 未返回有效地址，请检查解析路径",
+	"config":        msgCheckConfig,
+	"dns_bootstrap": msgCheckDNSBootstrap,
+	"dns_fake_ip":   msgCheckDNSFakeIP,
+	"timeout":       msgCheckTimeout,
+	"tls":           msgCheckTLS,
+	"dns":           msgCheckDNS,
 }
 
-func valueError(message string) error { return &ValueError{message} }
+func valueError(message string) error { return &ValueError{Message: message} }
 
 func usableIPv4(addr netip.Addr) bool {
 	return !addr.IsUnspecified() && !addr.IsMulticast()
@@ -61,12 +62,7 @@ func isASCIIDecimal(s string) bool {
 	return true
 }
 
-// ipv4Server is _ipv4_server(value, message).
-func ipv4Server(value any, message string) (string, error) {
-	text, ok := value.(string)
-	if !ok {
-		return "", valueError(message)
-	}
+func ipv4ServerString(text, message string) (string, error) {
 	host, port, separator := strings.Cut(pystr.Strip(text), ":")
 	address, ok := parseIPv4(host)
 	if !ok || !usableIPv4(address) {
@@ -74,7 +70,6 @@ func ipv4Server(value any, message string) (string, error) {
 	}
 	var portValue *big.Int
 	if separator {
-		// port.isascii() and port.isdecimal(): ASCII digits only.
 		if !isASCIIDecimal(port) {
 			return "", valueError(message)
 		}
@@ -95,15 +90,13 @@ var (
 	invalidChars = "?#\\"
 )
 
-// server is _server(value).
-func server(value any) (string, error) {
-	text, ok := value.(string)
-	if !ok || pystr.Strip(text) == "" {
+func serverString(raw string) (string, error) {
+	text := pystr.Strip(raw)
+	if text == "" {
 		return "", valueError(DNSError)
 	}
-	text = pystr.Strip(text)
 	if !strings.Contains(text, "://") {
-		return ipv4Server(text, DNSError)
+		return ipv4ServerString(text, DNSError)
 	}
 	if out, ok := encryptedServer(text); ok {
 		return out, nil
@@ -115,8 +108,6 @@ func encryptedServer(text string) (string, bool) {
 	if len([]rune(text)) > 2048 || strings.ContainsAny(text, invalidChars) {
 		return "", false
 	}
-	// urllib accepts stray percent signs in a URL path, but node_dns._server
-	// rejects malformed percent escapes before accepting a DoH endpoint.
 	if _, err := url.Parse(text); err != nil {
 		return "", false
 	}
@@ -165,7 +156,7 @@ func encryptedServer(text string) (string, bool) {
 	}
 	authority := host
 	if hasPort && port != defaultPort {
-		authority += ":" + jsonx.Int(port).String()
+		authority += ":" + strconv.Itoa(port)
 	}
 	path := ""
 	if parsed.Scheme == "https" {
@@ -177,44 +168,55 @@ func encryptedServer(text string) (string, bool) {
 	return parsed.Scheme + "://" + authority + path, true
 }
 
-// NormalizeDNSServers is normalize_dns_servers(value, bootstrap=…): at most
-// four canonical addresses, duplicates removed.
-func NormalizeDNSServers(value any, bootstrap bool) ([]any, error) {
+// NormalizeServerList validates and deduplicates up to 4 DNS or bootstrap server strings.
+func NormalizeServerList(servers []string, bootstrap bool) ([]string, error) {
 	message := DNSError
 	if bootstrap {
 		message = BootstrapError
 	}
-	list, ok := value.([]any)
-	if !ok || len(list) > 4 {
+	if len(servers) > 4 {
 		return nil, valueError(message)
 	}
-	result := []any{}
-	for _, entry := range list {
+	result := []string{}
+	for _, entry := range servers {
 		var normalized string
 		var err error
 		if bootstrap {
-			normalized, err = ipv4Server(entry, message)
+			normalized, err = ipv4ServerString(entry, message)
 		} else {
-			normalized, err = server(entry)
+			normalized, err = serverString(entry)
 		}
 		if err != nil {
 			return nil, err
 		}
-		seen := false
-		for _, kept := range result {
-			if kept == normalized {
-				seen = true
-				break
-			}
-		}
-		if !seen {
+		if !slices.Contains(result, normalized) {
 			result = append(result, normalized)
 		}
 	}
 	return result, nil
 }
 
-// needsBootstrap is _needs_bootstrap(server).
+// NormalizeDNSServersJSON validates a raw JSON array of DNS or bootstrap server strings.
+func NormalizeDNSServersJSON(raw json.RawMessage, bootstrap bool) ([]string, error) {
+	message := DNSError
+	if bootstrap {
+		message = BootstrapError
+	}
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || trimmed[0] != '[' {
+		return nil, valueError(message)
+	}
+	var items []strictString
+	if err := json.Unmarshal(trimmed, &items); err != nil {
+		return nil, valueError(message)
+	}
+	plain := make([]string, len(items))
+	for i, item := range items {
+		plain[i] = string(item)
+	}
+	return NormalizeServerList(plain, bootstrap)
+}
+
 func needsBootstrap(server string) bool {
 	if !strings.Contains(server, "://") {
 		return false
@@ -227,311 +229,471 @@ func needsBootstrap(server string) bool {
 	return !ok
 }
 
-// NormalizeConfig is normalize_config(value).
-func NormalizeConfig(value any) (*jsonx.Object, error) {
-	object, ok := value.(*jsonx.Object)
-	mode := object.Value("mode")
-	if !ok || object == nil || !(jsonx.Equal(mode, "system") || jsonx.Equal(mode, "custom")) {
-		return nil, valueError("请选择系统 DNS 或自定义 DNS")
-	}
-	result := jsonx.Obj("mode", mode, "servers", []any{}, "bootstrap", []any{})
-	if jsonx.Equal(mode, "custom") {
-		servers, err := NormalizeDNSServers(object.GetOr("servers", []any{}), false)
-		if err != nil {
-			return nil, err
-		}
-		result.Set("servers", servers)
-		bootstrap, err := NormalizeDNSServers(object.GetOr("bootstrap", []any{}), true)
-		if err != nil {
-			return nil, err
-		}
-		result.Set("bootstrap", bootstrap)
-		if len(servers) == 0 {
-			return nil, valueError("自定义 DNS 至少需要一个服务器地址")
-		}
-		needs := false
-		for _, entry := range servers {
-			if needsBootstrap(entry.(string)) {
-				needs = true
-			}
-		}
-		if needs && len(bootstrap) == 0 {
-			return nil, valueError("域名形式的 DoH / DoT 需要指定引导 DNS（IPv4 或 IPv4:端口）")
-		}
-	}
-	return result, nil
+// DNSConfig holds normalized node-test DNS settings.
+type DNSConfig struct {
+	Mode      string   `json:"mode"`
+	Servers   []string `json:"servers"`
+	Bootstrap []string `json:"bootstrap"`
 }
 
-// LoadConfig is load_config(): the saved setting; before it existed (or
-// with the removed "managed" mode) the legacy node_test_dns list, read
-// without rewriting anything.
-func LoadConfig(ctx context.Context) (*jsonx.Object, error) {
-	system, err := repo.GetSystemConfig(ctx)
+// EffectiveDNS holds the active DNS server and bootstrap lists passed to node-probe.
+type EffectiveDNS struct {
+	DNSServers   []string `json:"dns_servers"`
+	DNSBootstrap []string `json:"dns_bootstrap"`
+}
+
+// DNSSettingsView combines normalized DNSConfig with its effective server lists.
+type DNSSettingsView struct {
+	DNS          DNSConfig `json:"dns"`
+	DNSServers   []string  `json:"dns_servers"`
+	DNSBootstrap []string  `json:"dns_bootstrap"`
+}
+
+// NormalizeDNSConfig validates and canonicalizes a typed DNSConfig.
+func NormalizeDNSConfig(cfg DNSConfig) (DNSConfig, error) {
+	if cfg.Mode != "system" && cfg.Mode != "custom" {
+		return DNSConfig{}, valueError(msgSelectDNSMode)
+	}
+	out := DNSConfig{
+		Mode:      cfg.Mode,
+		Servers:   []string{},
+		Bootstrap: []string{},
+	}
+	if cfg.Mode == "custom" {
+		servers, err := NormalizeServerList(cfg.Servers, false)
+		if err != nil {
+			return DNSConfig{}, err
+		}
+		bootstrap, err := NormalizeServerList(cfg.Bootstrap, true)
+		if err != nil {
+			return DNSConfig{}, err
+		}
+		if len(servers) == 0 {
+			return DNSConfig{}, valueError(msgCustomDNSMinOne)
+		}
+		if slices.ContainsFunc(servers, needsBootstrap) && len(bootstrap) == 0 {
+			return DNSConfig{}, valueError(msgCustomDNSNeedsBoot)
+		}
+		out.Servers = servers
+		out.Bootstrap = bootstrap
+	}
+	return out, nil
+}
+
+// NormalizeDNSConfigJSON validates and canonicalizes a raw JSON DNS settings object.
+func NormalizeDNSConfigJSON(raw json.RawMessage) (DNSConfig, error) {
+	var object rawObject
+	if err := json.Unmarshal(raw, &object); err != nil {
+		return DNSConfig{}, valueError(msgSelectDNSMode)
+	}
+	rawMode, ok := object.Fields.Get("mode")
+	if !ok {
+		return DNSConfig{}, valueError(msgSelectDNSMode)
+	}
+	var mode strictString
+	if err := json.Unmarshal(rawMode, &mode); err != nil || (mode != "system" && mode != "custom") {
+		return DNSConfig{}, valueError(msgSelectDNSMode)
+	}
+	if mode == "system" {
+		return DNSConfig{
+			Mode:      "system",
+			Servers:   []string{},
+			Bootstrap: []string{},
+		}, nil
+	}
+	servers := []string{}
+	if rawServers, ok := object.Fields.Get("servers"); ok {
+		var err error
+		servers, err = NormalizeDNSServersJSON(rawServers, false)
+		if err != nil {
+			return DNSConfig{}, err
+		}
+	}
+	bootstrap := []string{}
+	if rawBootstrap, ok := object.Fields.Get("bootstrap"); ok {
+		var err error
+		bootstrap, err = NormalizeDNSServersJSON(rawBootstrap, true)
+		if err != nil {
+			return DNSConfig{}, err
+		}
+	}
+	return NormalizeDNSConfig(DNSConfig{
+		Mode:      "custom",
+		Servers:   servers,
+		Bootstrap: bootstrap,
+	})
+}
+
+func checkSystemConfigRoot(system *model.System) error {
+	for _, issue := range model.Issues(system) {
+		if issue.Path == "system_config" {
+			return valueError(msgStoredSystemCfgInvalid)
+		}
+	}
+	return nil
+}
+
+// LoadDNSConfig loads and normalizes the saved node-test DNS configuration from
+// the repository, falling back to the legacy node_test_dns list when needed.
+func LoadDNSConfig(ctx context.Context) (DNSConfig, error) {
+	repository, err := repo.GetRepository(ctx)
 	if err != nil {
-		return nil, err
+		return DNSConfig{}, err
 	}
-	settings := system.GetOr("system_config", jsonx.NewObject())
-	settingsObject, ok := settings.(*jsonx.Object)
-	if !ok || settingsObject == nil {
-		return nil, &pyTypeError{"'" + typeName(settings) + "' object has no attribute 'get'"}
-	}
-	saved := settingsObject.Value(ConfigKey)
-	if savedObject, ok := saved.(*jsonx.Object); ok && savedObject != nil && !jsonx.Equal(savedObject.Value("mode"), "managed") {
-		return NormalizeConfig(savedObject)
-	}
-	servers, err := NormalizeDNSServers(settingsObject.GetOr("node_test_dns", []any{}), false)
+	system, err := repository.System(ctx)
 	if err != nil {
-		return nil, err
+		return DNSConfig{}, err
+	}
+	if err := checkSystemConfigRoot(system); err != nil {
+		return DNSConfig{}, err
+	}
+	saved := system.SystemConfig.NodeTestDNSConfig
+	if saved != nil && saved.Mode != "managed" {
+		rawSaved, err := model.Marshal(saved)
+		if err != nil {
+			return DNSConfig{}, err
+		}
+		return NormalizeDNSConfigJSON(rawSaved)
+	}
+	rawSettings, err := model.Marshal(&system.SystemConfig)
+	if err != nil {
+		return DNSConfig{}, err
+	}
+	var settingsObj rawObject
+	if err := json.Unmarshal(rawSettings, &settingsObj); err != nil {
+		return DNSConfig{}, err
+	}
+	servers := []string{}
+	if rawLegacy, ok := settingsObj.Fields.Get("node_test_dns"); ok {
+		servers, err = NormalizeDNSServersJSON(rawLegacy, false)
+		if err != nil {
+			return DNSConfig{}, err
+		}
 	}
 	mode := "system"
 	if len(servers) > 0 {
 		mode = "custom"
 	}
-	return NormalizeConfig(jsonx.Obj("mode", mode, "servers", servers))
+	return NormalizeDNSConfig(DNSConfig{Mode: mode, Servers: servers, Bootstrap: []string{}})
 }
 
-// configOf is `load_config() if value is None else normalize_config(value)`.
-func configOf(ctx context.Context, value any) (*jsonx.Object, error) {
-	if value == nil {
-		return LoadConfig(ctx)
+func resolveConfigJSON(ctx context.Context, raw json.RawMessage) (DNSConfig, error) {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		return LoadDNSConfig(ctx)
 	}
-	return NormalizeConfig(value)
+	return NormalizeDNSConfigJSON(trimmed)
 }
 
-// EffectiveSettings is effective_settings(value): dns_servers and
-// dns_bootstrap; value nil reads the saved setting.
-func EffectiveSettings(ctx context.Context, value any) (*jsonx.Object, error) {
-	config, err := configOf(ctx, value)
-	if err != nil {
-		return nil, err
+// EffectiveDNSSettings resolves effective DNS server and bootstrap lists from
+// override (or loads saved settings when override is nil).
+func EffectiveDNSSettings(ctx context.Context, override *DNSConfig) (EffectiveDNS, error) {
+	var cfg DNSConfig
+	var err error
+	if override == nil {
+		cfg, err = LoadDNSConfig(ctx)
+	} else {
+		cfg, err = NormalizeDNSConfig(*override)
 	}
-	return jsonx.Obj("dns_servers", config.Value("servers"), "dns_bootstrap", config.Value("bootstrap")), nil
+	if err != nil {
+		return EffectiveDNS{}, err
+	}
+	return EffectiveDNS{
+		DNSServers:   slices.Clone(cfg.Servers),
+		DNSBootstrap: slices.Clone(cfg.Bootstrap),
+	}, nil
 }
 
-// DescribeSettings is describe_settings(value).
-func DescribeSettings(ctx context.Context, value any) (*jsonx.Object, error) {
-	config, err := configOf(ctx, value)
+// EffectiveDNSSettingsJSON resolves effective DNS lists from raw JSON (loading
+// saved settings when raw is empty or null).
+func EffectiveDNSSettingsJSON(ctx context.Context, raw json.RawMessage) (EffectiveDNS, error) {
+	cfg, err := resolveConfigJSON(ctx, raw)
 	if err != nil {
-		return nil, err
+		return EffectiveDNS{}, err
 	}
-	effective, err := EffectiveSettings(ctx, config)
-	if err != nil {
-		return nil, err
-	}
-	out := jsonx.Obj("dns", config)
-	out.Update(effective)
-	return out, nil
+	return EffectiveDNS{
+		DNSServers:   slices.Clone(cfg.Servers),
+		DNSBootstrap: slices.Clone(cfg.Bootstrap),
+	}, nil
 }
 
-// SaveConfig is save_config(value): stores the normalized setting and the
-// node_test_dns mirror in system_config.
-func SaveConfig(ctx context.Context, value any) (*jsonx.Object, error) {
-	ctx = lifecycle.Detach(ctx) // never interrupted by a gone client, like Python
-	config, err := NormalizeConfig(value)
+// DescribeDNSSettingsJSON returns normalized DNSConfig alongside effective lists.
+func DescribeDNSSettingsJSON(ctx context.Context, raw json.RawMessage) (DNSSettingsView, error) {
+	cfg, err := resolveConfigJSON(ctx, raw)
 	if err != nil {
-		return nil, err
+		return DNSSettingsView{}, err
 	}
-	effective, err := EffectiveSettings(ctx, config)
+	return DNSSettingsView{
+		DNS:          cfg,
+		DNSServers:   slices.Clone(cfg.Servers),
+		DNSBootstrap: slices.Clone(cfg.Bootstrap),
+	}, nil
+}
+
+// SaveDNSConfigJSON validates and persists raw DNS settings and the legacy
+// node_test_dns mirror into system_config.
+func SaveDNSConfigJSON(ctx context.Context, raw json.RawMessage) (DNSSettingsView, error) {
+	ctx = lifecycle.Detach(ctx)
+	cfg, err := NormalizeDNSConfigJSON(raw)
 	if err != nil {
-		return nil, err
+		return DNSSettingsView{}, err
 	}
 	repository, err := repo.GetRepository(ctx)
 	if err != nil {
-		return nil, err
+		return DNSSettingsView{}, err
 	}
-	_, err = repository.UpdateSystemTransaction(ctx, func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		target := system.SetDefault("system_config", jsonx.NewObject())
-		targetObject, ok := target.(*jsonx.Object)
-		if !ok || targetObject == nil {
-			return nil, &pyTypeError{"'" + typeName(target) + "' object does not support item assignment"}
+	cfgJSON, err := jsonresp.Encode(cfg)
+	if err != nil {
+		return DNSSettingsView{}, err
+	}
+	serversJSON, err := jsonresp.Encode(cfg.Servers)
+	if err != nil {
+		return DNSSettingsView{}, err
+	}
+	err = repository.UpdateSystem(ctx, func(_ context.Context, system *model.System) error {
+		if err := checkSystemConfigRoot(system); err != nil {
+			return err
 		}
-		targetObject.Set(ConfigKey, config.DeepCopy())
-		targetObject.Set("node_test_dns", jsonx.DeepCopy(effective.Value("dns_servers")))
-		return nil, nil
+		if err := system.SystemConfig.SetJSON(ConfigKey, cfgJSON); err != nil {
+			return err
+		}
+		return system.SystemConfig.SetJSON("node_test_dns", serversJSON)
 	})
 	if err != nil {
-		return nil, err
+		return DNSSettingsView{}, err
 	}
 	repo.ResetConfigContext(ctx)
-	out := jsonx.Obj("dns", config)
-	out.Update(effective)
-	return out, nil
+	return DNSSettingsView{
+		DNS:          cfg,
+		DNSServers:   slices.Clone(cfg.Servers),
+		DNSBootstrap: slices.Clone(cfg.Bootstrap),
+	}, nil
 }
 
-// CheckSettings is check_settings(value): one query of a fixed public name
-// through the worker's resolver with the given (unsaved) setting.
-func CheckSettings(ctx context.Context, value any) (*jsonx.Object, error) {
-	ctx = lifecycle.Detach(ctx) // never interrupted by a gone client, like Python
-	env := currentEnv
-	options, err := EffectiveSettings(ctx, value)
-	if err != nil {
-		return nil, err
+// DNSCheckResult holds the outcome of a live DNS check via node-probe.
+type DNSCheckResult struct {
+	Success    bool
+	Addresses  []string
+	LatencyMS  *json.Number
+	ErrorCode  string
+	Message    string
+	hasLatency bool
+}
+
+// MarshalJSON encodes DNSCheckResult, omitting latency_ms on subprocess timeout
+// and keeping explicit null when the worker returned no latency_ms.
+func (r DNSCheckResult) MarshalJSON() ([]byte, error) {
+	addresses := r.Addresses
+	if addresses == nil {
+		addresses = []string{}
 	}
-	payload := jsonx.Obj("operation", "dns_check", "timeout_ms", jsonx.Int(5000))
-	payload.Update(options)
-	data, err := jsonx.Default(payload)
+	if !r.hasLatency {
+		type timeoutWire struct {
+			Success   bool     `json:"success"`
+			Addresses []string `json:"addresses"`
+			ErrorCode string   `json:"error_code,omitempty"`
+			Message   string   `json:"message"`
+		}
+		return jsonresp.Encode(timeoutWire{
+			Success:   r.Success,
+			Addresses: addresses,
+			ErrorCode: r.ErrorCode,
+			Message:   r.Message,
+		})
+	}
+	type workerWire struct {
+		Success   bool         `json:"success"`
+		Addresses []string     `json:"addresses"`
+		LatencyMS *json.Number `json:"latency_ms"`
+		ErrorCode string       `json:"error_code,omitempty"`
+		Message   string       `json:"message"`
+	}
+	return jsonresp.Encode(workerWire{
+		Success:   r.Success,
+		Addresses: addresses,
+		LatencyMS: r.LatencyMS,
+		ErrorCode: r.ErrorCode,
+		Message:   r.Message,
+	})
+}
+
+type dnsCheckPayload struct {
+	Operation    string   `json:"operation"`
+	TimeoutMS    int64    `json:"timeout_ms"`
+	DNSServers   []string `json:"dns_servers"`
+	DNSBootstrap []string `json:"dns_bootstrap"`
+}
+
+// CheckDNSSettingsJSON executes a live DNS check against the worker using raw
+// DNS settings (or saved settings when raw is empty or null).
+func CheckDNSSettingsJSON(ctx context.Context, raw json.RawMessage) (DNSCheckResult, error) {
+	ctx = lifecycle.Detach(ctx)
+	env := CurrentProbeEnv()
+	options, err := EffectiveDNSSettingsJSON(ctx, raw)
 	if err != nil {
-		return nil, err
+		return DNSCheckResult{}, err
+	}
+	data, err := jsonresp.EncodeUTF8(dnsCheckPayload{
+		Operation:    "dns_check",
+		TimeoutMS:    5000,
+		DNSServers:   options.DNSServers,
+		DNSBootstrap: options.DNSBootstrap,
+	})
+	if err != nil {
+		return DNSCheckResult{}, err
 	}
 	binary, err := env.probeBinary()
 	if err != nil {
-		return nil, err
+		return DNSCheckResult{}, err
 	}
-	process, err := env.Runner.Run(ctx, Command{Argv: []string{binary}, Stdin: data, Timeout: checkTimeout, Env: env.workerEnv()})
-	if err == ErrTimeout {
-		return jsonx.Obj("success", false, "addresses", []any{}, "error_code", "timeout", "message", CheckMessages["timeout"]), nil
+	process, err := env.Runner.Run(ctx, Command{
+		Argv:    []string{binary},
+		Stdin:   data,
+		Timeout: checkTimeout,
+		Env:     env.workerEnv(),
+	})
+	if errors.Is(err, ErrTimeout) {
+		return DNSCheckResult{
+			Success:   false,
+			Addresses: []string{},
+			ErrorCode: "timeout",
+			Message:   CheckMessages["timeout"],
+		}, nil
 	}
 	if err != nil {
-		return nil, &ProbeUnavailable{"测速组件无法启动，请检查可执行权限和 CPU 架构"}
+		return DNSCheckResult{}, &ProbeUnavailable{Message: msgProbeStartFailed}
 	}
 	stdout, err := decodeText(process.Stdout)
 	if err != nil {
-		return nil, err
+		return DNSCheckResult{}, err
 	}
 	if _, err := decodeText(process.Stderr); err != nil {
-		return nil, err
+		return DNSCheckResult{}, err
 	}
 	if process.ReturnCode != 0 {
-		return nil, &ProbeUnavailable{"DNS 检测组件异常退出，请检查组件版本后重试"}
+		return DNSCheckResult{}, &ProbeUnavailable{Message: msgDNSCheckExitFailed}
 	}
-	result, err := parseCheck(stdout)
+	result, err := parseCheckResult(stdout)
 	if err != nil {
-		if _, ok := err.(*ProbeUnavailable); ok {
-			return nil, err
+		var unavailable *ProbeUnavailable
+		if errors.As(err, &unavailable) {
+			return DNSCheckResult{}, err
 		}
-		return nil, &ProbeUnavailable{"DNS 检测组件返回了无效结果，请检查组件版本"}
+		return DNSCheckResult{}, &ProbeUnavailable{Message: msgDNSCheckInvalidOutput}
 	}
 	return result, nil
 }
 
 var fakeIPNet = netip.MustParsePrefix("198.18.0.0/15")
 
-// parseCheck validates the worker's dns_check answer; any non-nil error
-// that is not a *ProbeUnavailable is Python's ValueError/TypeError/KeyError/
-// AttributeError.
-func parseCheck(stdout string) (*jsonx.Object, error) {
-	parsed, err := jsonx.Parse([]byte(stdout))
-	if err != nil {
-		return nil, err
+func checkWorkerVersion(top rawObject) error {
+	rawVersion, ok := top.Fields.Get("version")
+	if !ok {
+		return errors.New("missing worker version")
 	}
-	version, err := subscript(parsed, "version")
-	if err != nil {
-		return nil, err
+	trimmed := bytes.TrimSpace(rawVersion)
+	if bytes.Equal(trimmed, []byte("null")) {
+		return &ProbeUnavailable{Message: msgVersionMismatch}
 	}
-	if !jsonx.Equal(version, jsonx.Int(4)) {
-		return nil, &ProbeUnavailable{versionMismatch}
+	var version model.Int
+	if err := json.Unmarshal(trimmed, &version); err != nil || version != 4 {
+		return &ProbeUnavailable{Message: msgVersionMismatch}
 	}
-	resultValue, err := subscript(parsed, "dns_check")
-	if err != nil {
-		return nil, err
+	return nil
+}
+
+func parseCheckResult(stdout string) (DNSCheckResult, error) {
+	var top rawObject
+	if err := json.Unmarshal([]byte(stdout), &top); err != nil {
+		return DNSCheckResult{}, err
 	}
-	result, ok := resultValue.(*jsonx.Object)
-	if !ok || result == nil {
-		return nil, &pyTypeError{"no attribute 'get'"}
+	if err := checkWorkerVersion(top); err != nil {
+		return DNSCheckResult{}, err
 	}
-	success, isBool := result.Value("success").(bool)
-	addressList, isList := result.Value("addresses").([]any)
-	if !isBool || !isList {
-		return nil, valueError("")
+	rawCheck, ok := top.Fields.Get("dns_check")
+	if !ok {
+		return DNSCheckResult{}, errors.New("missing dns_check")
 	}
-	for _, address := range addressList {
-		if _, ok := address.(string); !ok {
-			return nil, valueError("")
-		}
+	var checkObj rawObject
+	if err := json.Unmarshal(rawCheck, &checkObj); err != nil {
+		return DNSCheckResult{}, err
 	}
-	addresses := []any{}
-	var parsedAddresses []netip.Addr
-	for _, address := range addressList {
-		addr, scope, ok := ipAddress(address.(string))
-		if !ok {
-			return nil, valueError("")
+	rawSuccess, ok := checkObj.Fields.Get("success")
+	if !ok {
+		return DNSCheckResult{}, errors.New("missing success")
+	}
+	trimmedSuccess := bytes.TrimSpace(rawSuccess)
+	if !bytes.Equal(trimmedSuccess, []byte("true")) && !bytes.Equal(trimmedSuccess, []byte("false")) {
+		return DNSCheckResult{}, errors.New("invalid success")
+	}
+	success := bytes.Equal(trimmedSuccess, []byte("true"))
+
+	rawAddresses, ok := checkObj.Fields.Get("addresses")
+	if !ok || len(bytes.TrimSpace(rawAddresses)) == 0 || bytes.TrimSpace(rawAddresses)[0] != '[' {
+		return DNSCheckResult{}, errors.New("invalid addresses")
+	}
+	var rawAddrList []strictString
+	if err := json.Unmarshal(rawAddresses, &rawAddrList); err != nil {
+		return DNSCheckResult{}, err
+	}
+	addresses := []string{}
+	for _, rawAddr := range rawAddrList {
+		addr, scope, valid := ipAddress(string(rawAddr))
+		if !valid {
+			return DNSCheckResult{}, errors.New("invalid ip address")
 		}
 		text := ipString(addr, scope)
-		parsedAddresses = append(parsedAddresses, addr)
-		duplicate := false
-		for _, kept := range addresses {
-			if kept == text {
-				duplicate = true
-			}
-		}
-		if !duplicate {
+		if !slices.Contains(addresses, text) {
 			addresses = append(addresses, text)
 		}
 	}
-	latency := result.Value("latency_ms")
-	if latency != nil {
-		number, ok := latency.(jsonx.Number)
-		if !ok || !number.IsInt() || strings.HasPrefix(number.String(), "-") {
-			return nil, valueError("")
+
+	var latencyMS *json.Number
+	if rawLatency, ok := checkObj.Fields.Get("latency_ms"); ok && !bytes.Equal(bytes.TrimSpace(rawLatency), []byte("null")) {
+		parsedLatency, valid := parseNonNegativeJSONInt(rawLatency)
+		if !valid {
+			return DNSCheckResult{}, errors.New("invalid latency_ms")
 		}
+		latencyMS = &parsedLatency
 	}
+
 	if success {
 		if len(addresses) == 0 {
-			return nil, valueError("")
+			return DNSCheckResult{}, errors.New("empty addresses on success")
 		}
-		for _, address := range addresses {
-			addr, _, _ := ipAddress(address.(string))
+		for _, text := range addresses {
+			addr, _, _ := ipAddress(text)
 			if addr.Is4() && fakeIPNet.Contains(addr) {
-				return nil, valueError("")
+				return DNSCheckResult{}, errors.New("fake ip address")
 			}
 		}
 	}
-	code := result.GetOr("error_code", "dns")
-	switch code.(type) {
-	case []any, *jsonx.Object:
-		return nil, &pyTypeError{"unhashable type"}
+
+	codeText := "dns"
+	if rawCode, ok := checkObj.Fields.Get("error_code"); ok {
+		trimmedCode := bytes.TrimSpace(rawCode)
+		if len(trimmedCode) > 0 && (trimmedCode[0] == '[' || trimmedCode[0] == '{') {
+			return DNSCheckResult{}, errors.New("invalid error_code container")
+		}
+		var parsedCode strictString
+		if err := json.Unmarshal(trimmedCode, &parsedCode); err == nil {
+			if _, known := CheckMessages[string(parsedCode)]; known {
+				codeText = string(parsedCode)
+			}
+		}
 	}
-	codeText, isString := code.(string)
-	if _, known := CheckMessages[codeText]; !known || !isString {
-		codeText = "dns"
+
+	out := DNSCheckResult{
+		Success:    success,
+		Addresses:  addresses,
+		LatencyMS:  latencyMS,
+		hasLatency: true,
 	}
-	out := jsonx.Obj("success", success, "addresses", addresses, "latency_ms", latency)
 	if success {
-		out.Set("message", "解析成功，返回真实 IP")
+		out.Message = msgCheckSuccess
 	} else {
-		out.Set("error_code", codeText)
-		out.Set("message", CheckMessages[codeText])
+		out.ErrorCode = codeText
+		out.Message = CheckMessages[codeText]
 	}
 	return out, nil
-}
-
-const versionMismatch = "测速组件版本不匹配，请更新 ConfigFlow 镜像；源码部署请重新构建 backend/node-probe"
-
-// subscript is value[key] of a parsed JSON document: KeyError/TypeError as
-// errors.
-func subscript(value any, key string) (any, error) {
-	object, ok := value.(*jsonx.Object)
-	if !ok || object == nil {
-		return nil, &pyTypeError{"not subscriptable by str"}
-	}
-	found, ok := object.Get(key)
-	if !ok {
-		return nil, &pyTypeError{"KeyError " + key}
-	}
-	return found, nil
-}
-
-type pyTypeError struct{ message string }
-
-func (e *pyTypeError) Error() string { return e.message }
-
-func typeName(v any) string {
-	switch v.(type) {
-	case nil:
-		return "NoneType"
-	case bool:
-		return "bool"
-	case string:
-		return "str"
-	case []any:
-		return "list"
-	case *jsonx.Object:
-		return "dict"
-	case jsonx.Number:
-		if v.(jsonx.Number).IsInt() {
-			return "int"
-		}
-		return "float"
-	}
-	return "object"
 }

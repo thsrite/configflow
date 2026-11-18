@@ -1,69 +1,94 @@
 package check
 
 import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"configflow/internal/jsonstore"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/rules"
 	"configflow/internal/weburl"
 )
 
-// Region check (backend/utils/region_check.py): the Agent only fetches pages
-// through a given target and matches markers; every verdict is made here.
-// Results that are not dicts, ids that are unhashable and other malformed
-// Agent answers return the *PyError (or *KeyError) Python raises.
-
 const (
+	// RegionRetentionDays is the retention window in days for stored region checks.
 	RegionRetentionDays = 30
-	MaxGroupTargets     = 4
-	MaxRegionTargets    = 8
-	MaxDomainsPerCheck  = 10
-	CheckTimeoutMS      = 8000
+	// MaxGroupTargets is the maximum number of strategy groups probed per check.
+	MaxGroupTargets = 4
+	// MaxRegionTargets is the maximum number of per-region nodes probed per check.
+	MaxRegionTargets = 8
+	// MaxDomainsPerCheck is the maximum number of custom domains per region check.
+	MaxDomainsPerCheck = 10
+	// CheckTimeoutMS is the per-request timeout in milliseconds for region checks.
+	CheckTimeoutMS = 8000
 )
 
-// ExitRequest is a fresh copy of EXIT_REQUEST.
-func ExitRequest() *jsonx.Object {
-	return jsonx.Obj("id", "exit", "url", "https://www.cloudflare.com/cdn-cgi/trace",
-		"markers", jsonx.Obj("loc", `loc=([A-Z]{2})`, "ip", `ip=([0-9a-fA-F:.]+)`))
+// PageRequest describes a single HTTP page fetch and regex marker map for the Agent.
+type PageRequest struct {
+	ID      string            `json:"id"`
+	URL     string            `json:"url"`
+	Headers model.Map[string] `json:"headers,omitzero"`
+	Markers model.Map[string] `json:"markers,omitzero"`
 }
 
-// GroupTypes is GROUP_TYPES; NonNodeTypes is NON_NODE_TYPES;
-// ExcludedTargets is EXCLUDED_TARGETS.
-var (
-	GroupTypes      = []string{"Selector", "URLTest", "Fallback", "LoadBalance", "Relay", "Smart"}
-	NonNodeTypes    = append(append([]string{}, GroupTypes...), "Direct", "Reject", "RejectDrop", "Pass", "PassRule", "Compatible", "Dns")
-	ExcludedTargets = []string{"GLOBAL", "ConfigFlow-Region-Probe"}
-)
+func stringMap(pairs ...string) model.Map[string] {
+	var m model.Map[string]
+	for i := 0; i+1 < len(pairs); i += 2 {
+		m.Set(pairs[i], pairs[i+1])
+	}
+	return m
+}
 
-// RegionRule is one entry of REGION_RULES.
+// DefaultExitRequest returns a fresh copy of the Cloudflare trace exit request.
+func DefaultExitRequest() PageRequest {
+	return PageRequest{
+		ID:      "exit",
+		URL:     "https://www.cloudflare.com/cdn-cgi/trace",
+		Markers: stringMap("loc", `loc=([A-Z]{2})`, "ip", `ip=([0-9a-fA-F:.]+)`),
+	}
+}
+
+// GroupTypes lists Mihomo strategy-group adapter types.
+var GroupTypes = []string{"Selector", "URLTest", "Fallback", "LoadBalance", "Relay", "Smart"}
+
+// NonNodeTypes lists Mihomo adapter types that are not individual proxy nodes.
+var NonNodeTypes = append(append([]string{}, GroupTypes...), "Direct", "Reject", "RejectDrop", "Pass", "PassRule", "Compatible", "Dns")
+
+// ExcludedTargets lists strategy-group names excluded from automatic region checks.
+var ExcludedTargets = []string{"GLOBAL", "ConfigFlow-Region-Probe"}
+
+// RegionRule maps a two-letter ISO region code and Chinese name to its name regex.
 type RegionRule struct{ Code, Name, Pattern string }
 
-// RegionRules is REGION_RULES (same as the frontend's lib/regions.ts).
+// RegionRules lists supported region recognition patterns in priority order.
 var RegionRules = []RegionRule{
-	{"HK", "香港", `港|(?<![A-Za-z])HK(?![A-Za-z])|Hong\s?Kong`},
-	{"TW", "台湾", `台湾|台北|(?<![A-Za-z])TW(?![A-Za-z])|Taiwan`},
-	{"JP", "日本", `日本|东京|大阪|(?<![A-Za-z])JP(?![A-Za-z])|Japan|Tokyo`},
-	{"SG", "新加坡", `新加坡|狮城|(?<![A-Za-z])SG(?![A-Za-z])|Singapore`},
-	{"US", "美国", `美国|洛杉矶|硅谷|(?<![A-Za-z])US(?![A-Za-z])|United\s?States|America`},
-	{"KR", "韩国", `韩国|首尔|(?<![A-Za-z])KR(?![A-Za-z])|Korea`},
-	{"GB", "英国", `英国|伦敦|(?<![A-Za-z])(UK|GB)(?![A-Za-z])|Britain|London`},
-	{"DE", "德国", `德国|法兰克福|(?<![A-Za-z])DE(?![A-Za-z])|Germany`},
-	{"CA", "加拿大", `加拿大|(?<![A-Za-z])CA(?![A-Za-z])|Canada`},
-	{"AU", "澳大利亚", `澳大利亚|澳洲|悉尼|(?<![A-Za-z])AU(?![A-Za-z])|Australia`},
-	{"FR", "法国", `法国|巴黎|(?<![A-Za-z])FR(?![A-Za-z])|France`},
-	{"NL", "荷兰", `荷兰|阿姆斯特丹|(?<![A-Za-z])NL(?![A-Za-z])|Netherlands`},
-	{"IN", "印度", `印度|(?<![A-Za-z])IN(?![A-Za-z])|India`},
-	{"MY", "马来西亚", `马来|(?<![A-Za-z])MY(?![A-Za-z])|Malaysia`},
-	{"TH", "泰国", `泰国|(?<![A-Za-z])TH(?![A-Za-z])|Thailand`},
-	{"VN", "越南", `越南|(?<![A-Za-z])VN(?![A-Za-z])|Vietnam`},
-	{"PH", "菲律宾", `菲律宾|(?<![A-Za-z])PH(?![A-Za-z])|Philippines`},
-	{"TR", "土耳其", `土耳其|(?<![A-Za-z])TR(?![A-Za-z])|Turkey|Türkiye`},
-	{"AR", "阿根廷", `阿根廷|(?<![A-Za-z])AR(?![A-Za-z])|Argentina`},
-	{"BR", "巴西", `巴西|(?<![A-Za-z])BR(?![A-Za-z])|Brazil`},
+	{"HK", regionNameHK, `港|(?<![A-Za-z])HK(?![A-Za-z])|Hong\s?Kong`},
+	{"TW", regionNameTW, `台湾|台北|(?<![A-Za-z])TW(?![A-Za-z])|Taiwan`},
+	{"JP", regionNameJP, `日本|东京|大阪|(?<![A-Za-z])JP(?![A-Za-z])|Japan|Tokyo`},
+	{"SG", regionNameSG, `新加坡|狮城|(?<![A-Za-z])SG(?![A-Za-z])|Singapore`},
+	{"US", regionNameUS, `美国|洛杉矶|硅谷|(?<![A-Za-z])US(?![A-Za-z])|United\s?States|America`},
+	{"KR", regionNameKR, `韩国|首尔|(?<![A-Za-z])KR(?![A-Za-z])|Korea`},
+	{"GB", regionNameGB, `英国|伦敦|(?<![A-Za-z])(UK|GB)(?![A-Za-z])|Britain|London`},
+	{"DE", regionNameDE, `德国|法兰克福|(?<![A-Za-z])DE(?![A-Za-z])|Germany`},
+	{"CA", regionNameCA, `加拿大|(?<![A-Za-z])CA(?![A-Za-z])|Canada`},
+	{"AU", regionNameAU, `澳大利亚|澳洲|悉尼|(?<![A-Za-z])AU(?![A-Za-z])|Australia`},
+	{"FR", regionNameFR, `法国|巴黎|(?<![A-Za-z])FR(?![A-Za-z])|France`},
+	{"NL", regionNameNL, `荷兰|阿姆斯特丹|(?<![A-Za-z])NL(?![A-Za-z])|Netherlands`},
+	{"IN", regionNameIN, `印度|(?<![A-Za-z])IN(?![A-Za-z])|India`},
+	{"MY", regionNameMY, `马来|(?<![A-Za-z])MY(?![A-Za-z])|Malaysia`},
+	{"TH", regionNameTH, `泰国|(?<![A-Za-z])TH(?![A-Za-z])|Thailand`},
+	{"VN", regionNameVN, `越南|(?<![A-Za-z])VN(?![A-Za-z])|Vietnam`},
+	{"PH", regionNamePH, `菲律宾|(?<![A-Za-z])PH(?![A-Za-z])|Philippines`},
+	{"TR", regionNameTR, `土耳其|(?<![A-Za-z])TR(?![A-Za-z])|Turkey|Türkiye`},
+	{"AR", regionNameAR, `阿根廷|(?<![A-Za-z])AR(?![A-Za-z])|Argentina`},
+	{"BR", regionNameBR, `巴西|(?<![A-Za-z])BR(?![A-Za-z])|Brazil`},
 }
 
 func mustCompile(pattern string, ignoreCase bool) *rules.PyRegex {
@@ -91,274 +116,371 @@ func compiled() {
 	})
 }
 
-// regionOfName is region_of_name inside a catch: "" for None.
-func regionOfName(name any) string {
+// RegionOfName extracts the two-letter region code from a node or group name,
+// returning "" when no region pattern matches.
+func RegionOfName(name string) string {
 	compiled()
-	text := ""
-	if jsonx.Truthy(name) {
-		value, ok := name.(string)
-		if !ok {
-			raise("TypeError", "expected string or bytes-like object, got '"+TypeName(name)+"'")
-		}
-		text = value
+	if name == "" {
+		return ""
 	}
 	for i, pattern := range regionPatterns {
-		if pattern.Search(text) {
+		if pattern.Search(name) {
 			return RegionRules[i].Code
 		}
 	}
 	return ""
 }
 
-// RegionOfName is region_of_name: the region code of a node or group name,
-// or "" (None).
-func RegionOfName(name string) string { return regionOfName(name) }
-
-// RegionOfNameValue is region_of_name for any value: the TypeError of a
-// truthy non-str name.
-func RegionOfNameValue(name any) (code string, err error) {
-	defer catch(&err)
-	return regionOfName(name), nil
-}
-
-// RegionLabel is region_label(code): the Chinese name of a code; an unknown
-// code itself, '未知' for a falsy one.
-func RegionLabel(code any) any {
+// RegionLabel returns the Chinese display label for code, code itself when
+// unrecognized, or "未知" when code is empty.
+func RegionLabel(code string) string {
+	if code == "" {
+		return labelUnknownRegion
+	}
 	for _, rule := range RegionRules {
-		if jsonx.Equal(code, rule.Code) {
+		if rule.Code == code {
 			return rule.Name
 		}
-	}
-	if jsonx.Truthy(code) {
-		return code
-	}
-	return "未知"
-}
-
-// ---------- results ----------
-
-func regionValue(code any) any {
-	if text, ok := code.(string); ok && text == "" {
-		return nil
 	}
 	return code
 }
 
-func result(status string, region any, reason string, evidence []any) *jsonx.Object {
-	if evidence == nil {
-		evidence = []any{}
-	}
-	return jsonx.Obj("status", status, "region", region, "reason", reason, "evidence", evidence)
+// RegionResult holds the Agent's response for one PageRequest.
+type RegionResult struct {
+	ID        string                  `json:"id"`
+	Status    *model.Int              `json:"status"`
+	FinalURL  string                  `json:"final_url"`
+	Redirects []string                `json:"redirects"`
+	Markers   model.Map[NullableText] `json:"markers"`
+	Error     string                  `json:"error"`
+	hasID     bool
+	empty     bool
 }
 
-func evidence(result any) string {
-	if !jsonx.Truthy(result) {
-		return "没有结果"
+func isNullMarkersMap(m model.Map[NullableText]) bool {
+	encoded, err := m.MarshalJSON()
+	return err == nil && bytes.Equal(bytes.TrimSpace(encoded), []byte("null"))
+}
+
+// UnmarshalJSON decodes a RegionResult, enforcing that a present id is a valid
+// textual or numeric identifier and applying R5 fallbacks to auxiliary fields.
+func (r *RegionResult) UnmarshalJSON(data []byte) error {
+	var rawObj rawJSONObject
+	if err := json.Unmarshal(data, &rawObj); err != nil {
+		return err
 	}
-	if jsonx.Truthy(get(result, "error", nil)) {
-		return jsonx.Str(item(result, "id")) + "：" + jsonx.Str(item(result, "error"))
+	out := RegionResult{empty: rawObj.Fields.Len() == 0}
+	if rawID, ok := rawObj.Fields.Get("id"); ok {
+		out.hasID = true
+		id, err := decodeNonNullText(bytes.TrimSpace(rawID))
+		if err != nil {
+			return valueError(fmt.Sprintf(msgRegionResultIDInvalid, compactRaw(rawID)))
+		}
+		out.ID = id
 	}
-	text := jsonx.Str(item(result, "id")) + "：HTTP " + jsonx.Str(get(result, "status", nil))
-	if jsonx.Truthy(get(result, "final_url", nil)) && jsonx.Truthy(get(result, "redirects", nil)) {
-		text += " → " + jsonx.Str(item(result, "final_url"))
+	if rawStatus, ok := rawObj.Fields.Get("status"); ok && !bytes.Equal(bytes.TrimSpace(rawStatus), []byte("null")) {
+		var code model.Int
+		if err := json.Unmarshal(rawStatus, &code); err == nil {
+			out.Status = &code
+		}
 	}
-	if jsonx.Truthy(get(result, "markers", nil)) {
-		text += "，命中 " + sortedJoin("、", item(result, "markers"))
+	if rawURL, ok := rawObj.Fields.Get("final_url"); ok {
+		var finalURL Text
+		if err := json.Unmarshal(rawURL, &finalURL); err == nil {
+			out.FinalURL = string(finalURL)
+		}
+	}
+	if rawRedirects, ok := rawObj.Fields.Get("redirects"); ok {
+		var redirects []Text
+		if err := json.Unmarshal(rawRedirects, &redirects); err == nil && redirects != nil {
+			out.Redirects = make([]string, len(redirects))
+			for i, item := range redirects {
+				out.Redirects[i] = string(item)
+			}
+		}
+	}
+	if rawMarkers, ok := rawObj.Fields.Get("markers"); ok {
+		var markers model.Map[NullableText]
+		if err := json.Unmarshal(rawMarkers, &markers); err == nil && !isNullMarkersMap(markers) {
+			out.Markers = markers
+		}
+	}
+	if rawErr, ok := rawObj.Fields.Get("error"); ok {
+		var errText StrictString
+		if err := json.Unmarshal(rawErr, &errText); err == nil {
+			out.Error = string(errText)
+		}
+	}
+	*r = out
+	return nil
+}
+
+// ServiceVerdict is the unlock verdict for one streaming/AI service.
+type ServiceVerdict struct {
+	Status   string       `json:"status"`
+	Region   NullableText `json:"region"`
+	Reason   string       `json:"reason"`
+	Evidence []string     `json:"evidence"`
+}
+
+func makeVerdict(status string, region NullableText, reason string, evidence []string) ServiceVerdict {
+	if evidence == nil {
+		evidence = []string{}
+	}
+	return ServiceVerdict{
+		Status:   status,
+		Region:   region,
+		Reason:   reason,
+		Evidence: evidence,
+	}
+}
+
+func formatStatus(code *model.Int) string {
+	if code == nil {
+		return "None"
+	}
+	return strconv.FormatInt(int64(*code), 10)
+}
+
+func formatEvidence(entry *RegionResult) string {
+	if entry == nil || entry.empty {
+		return msgNoResult
+	}
+	if entry.Error != "" {
+		return entry.ID + "：" + entry.Error
+	}
+	text := entry.ID + "：HTTP " + formatStatus(entry.Status)
+	if entry.FinalURL != "" && len(entry.Redirects) > 0 {
+		text += " → " + entry.FinalURL
+	}
+	if entry.Markers.Len() > 0 {
+		keys := entry.Markers.Keys()
+		slices.Sort(keys)
+		text += "，命中 " + strings.Join(keys, "、")
 	}
 	return text
 }
 
-func marker(result any, name string) any {
-	if !jsonx.Truthy(result) {
-		result = jsonx.NewObject()
+func markerOf(entry *RegionResult, name string) NullableText {
+	if entry == nil {
+		return NullableText{}
 	}
-	return get(get(result, "markers", jsonx.NewObject()), name, nil)
+	value, ok := entry.Markers.Get(name)
+	if !ok {
+		return NullableText{}
+	}
+	return value
 }
 
-// status is _status: an erroneous request has no trustworthy status code.
-func status(result any) any {
-	if !jsonx.Truthy(result) || jsonx.Truthy(get(result, "error", nil)) {
+func markerTruthy(entry *RegionResult, name string) bool {
+	m := markerOf(entry, name)
+	return m.Valid && m.Value != ""
+}
+
+func trustedStatus(entry *RegionResult) (int64, bool) {
+	if entry == nil || entry.empty || entry.Error != "" || entry.Status == nil {
+		return 0, false
+	}
+	return int64(*entry.Status), true
+}
+
+func hasTrustedStatus(entry *RegionResult, want int64) bool {
+	got, ok := trustedStatus(entry)
+	return ok && got == want
+}
+
+func lookupResult(results map[string]RegionResult, id string) *RegionResult {
+	entry, ok := results[id]
+	if !ok {
 		return nil
 	}
-	return get(result, "status", nil)
+	return &entry
 }
-
-func is(value any, code int) bool { return jsonx.Equal(value, jsonx.Int(code)) }
-
-// lookup is results.get(id) on the by-id dict.
-type byID map[string]any
-
-func (b byID) get(id string) any { return b["s"+id] }
 
 // ---------- services ----------
 
-func evaluateOpenAI(results byID) *jsonx.Object {
-	compliance, ios, trace := results.get("openai-compliance"), results.get("openai-ios"), results.get("openai-trace")
-	ev := []any{evidence(compliance), evidence(ios)}
-	region := marker(trace, "loc")
-	if jsonx.Truthy(marker(compliance, "unsupported")) || jsonx.Truthy(marker(ios, "unsupported")) {
-		return result("blocked", region, "所在地区不受支持", ev)
+func evaluateOpenAI(results map[string]RegionResult) (ServiceVerdict, error) {
+	compliance := lookupResult(results, "openai-compliance")
+	ios := lookupResult(results, "openai-ios")
+	trace := lookupResult(results, "openai-trace")
+	ev := []string{formatEvidence(compliance), formatEvidence(ios)}
+	region := markerOf(trace, "loc")
+	if markerTruthy(compliance, "unsupported") || markerTruthy(ios, "unsupported") {
+		return makeVerdict("blocked", region, msgOpenAIUnsupported, ev), nil
 	}
-	if jsonx.Truthy(marker(ios, "vpn")) {
-		return result("blocked", region, "被识别为代理 / VPN", ev)
+	if markerTruthy(ios, "vpn") {
+		return makeVerdict("blocked", region, msgOpenAIVPN, ev), nil
 	}
-	if is(status(compliance), 200) && marker(compliance, "consent") != nil {
+	if hasTrustedStatus(compliance, 200) && markerOf(compliance, "consent").Valid {
 		reason := ""
-		if jsonx.Truthy(marker(ios, "dc")) {
-			reason = "App 端可能受限（被识别为数据中心 IP）"
+		if markerTruthy(ios, "dc") {
+			reason = msgOpenAIDatacenter
 		}
-		return result("available", region, reason, ev)
+		return makeVerdict("available", region, reason, ev), nil
 	}
-	return result("unknown", region, "响应不符合已知模式", ev)
+	return makeVerdict("unknown", region, msgResponseUnknown, ev), nil
 }
 
-func evaluateClaude(results byID) *jsonx.Object {
-	web, trace := results.get("claude-web"), results.get("claude-trace")
-	ev := []any{evidence(web)}
-	region := marker(trace, "loc")
-	if !jsonx.Truthy(web) || jsonx.Truthy(get(web, "error", nil)) {
-		return result("unknown", region, "请求失败", ev)
+func evaluateClaude(results map[string]RegionResult) (ServiceVerdict, error) {
+	web := lookupResult(results, "claude-web")
+	trace := lookupResult(results, "claude-trace")
+	ev := []string{formatEvidence(web)}
+	region := markerOf(trace, "loc")
+	if web == nil || web.empty || web.Error != "" {
+		return makeVerdict("unknown", region, msgRequestFailed, ev), nil
 	}
-	finalURL := get(web, "final_url", nil)
-	if !jsonx.Truthy(finalURL) {
-		finalURL = ""
+	if strings.Contains(web.FinalURL, "app-unavailable-in-region") {
+		return makeVerdict("blocked", region, msgClaudeBlocked, ev), nil
 	}
-	redirects := get(web, "redirects", []any{})
-	switch redirects.(type) {
-	case []any, string, *jsonx.Object:
-	default:
-		// [x, *value] of a non-iterable value.
-		raise("TypeError", "Value after * must be an iterable, not "+TypeName(redirects))
-	}
-	urls := append([]any{finalURL}, iterate(redirects)...)
-	for _, url := range urls {
-		if contains(url, "app-unavailable-in-region") {
-			return result("blocked", region, "跳转到「所在地区不可用」页面", ev)
+	for _, redirect := range web.Redirects {
+		if strings.Contains(redirect, "app-unavailable-in-region") {
+			return makeVerdict("blocked", region, msgClaudeBlocked, ev), nil
 		}
 	}
-	if is(status(web), 200) {
-		return result("available", region, "", ev)
+	if hasTrustedStatus(web, 200) {
+		return makeVerdict("available", region, "", ev), nil
 	}
-	if is(status(web), 403) {
-		return result("unknown", region, "Cloudflare 质询，无法判断", ev)
+	if hasTrustedStatus(web, 403) {
+		return makeVerdict("unknown", region, msgClaudeChallenge, ev), nil
 	}
-	return result("unknown", region, "响应不符合已知模式", ev)
+	return makeVerdict("unknown", region, msgResponseUnknown, ev), nil
 }
 
-func splitPath(url any) string {
-	text, ok := url.(string)
-	if !ok {
-		raise("AttributeError", "'"+TypeName(url)+"' object has no attribute 'decode'")
-	}
-	parts, err := weburl.Parse(text)
+func splitPath(rawURL string) (string, error) {
+	parts, err := weburl.Parse(rawURL)
 	if err != nil {
-		raise("ValueError", err.Error())
+		return "", valueError(err.Error())
 	}
-	return weburl.RawPath(parts)
+	return weburl.RawPath(parts), nil
 }
 
-func netflixRegionOf(result any) any {
+func netflixRegionOf(entry *RegionResult) (NullableText, error) {
 	compiled()
-	if !jsonx.Truthy(result) || !jsonx.Truthy(get(result, "final_url", nil)) {
-		return nil
+	if entry == nil || entry.empty || entry.FinalURL == "" {
+		return NullableText{}, nil
 	}
-	path := splitPath(item(result, "final_url"))
+	path, err := splitPath(entry.FinalURL)
+	if err != nil {
+		return NullableText{}, err
+	}
 	if match, err := netflixRegion.Match(path); err == nil && match != nil {
 		code, _ := match.Group(1)
-		return strings.ToUpper(code)
+		return NullableText{Value: strings.ToUpper(code), Valid: true}, nil
 	}
-	if strings.HasPrefix(path, "/title/") && is(status(result), 200) {
-		return "US"
+	if strings.HasPrefix(path, "/title/") && hasTrustedStatus(entry, 200) {
+		return NullableText{Value: "US", Valid: true}, nil
 	}
-	return nil
+	return NullableText{}, nil
 }
 
-func evaluateNetflix(results byID) *jsonx.Object {
-	licensed := []any{results.get("netflix-licensed-1"), results.get("netflix-licensed-2")}
-	original := results.get("netflix-original")
-	all := append(append([]any{}, licensed...), original)
-	ev := make([]any, len(all))
-	for i, entry := range all {
-		ev[i] = evidence(entry)
+func evaluateNetflix(results map[string]RegionResult) (ServiceVerdict, error) {
+	licensed := []*RegionResult{
+		lookupResult(results, "netflix-licensed-1"),
+		lookupResult(results, "netflix-licensed-2"),
 	}
-	var region any
+	original := lookupResult(results, "netflix-original")
+	all := []*RegionResult{licensed[0], licensed[1], original}
+	ev := make([]string, len(all))
+	for i, entry := range all {
+		ev[i] = formatEvidence(entry)
+	}
+	var region NullableText
 	for _, entry := range all {
-		if jsonx.Truthy(netflixRegionOf(entry)) {
-			region = netflixRegionOf(entry)
+		detected, err := netflixRegionOf(entry)
+		if err != nil {
+			return ServiceVerdict{}, err
+		}
+		if detected.Valid && detected.Value != "" {
+			region = detected
 			break
 		}
 	}
-	var statuses []any
+	var statuses []int64
 	for _, entry := range all {
-		if status(entry) != nil {
-			statuses = append(statuses, status(entry))
+		if code, ok := trustedStatus(entry); ok {
+			statuses = append(statuses, code)
 		}
 	}
 	for _, entry := range licensed {
-		if is(status(entry), 200) {
-			return result("available", region, "完整解锁", ev)
+		if hasTrustedStatus(entry, 200) {
+			return makeVerdict("available", region, msgNetflixFull, ev), nil
 		}
 	}
-	if is(status(original), 200) {
-		return result("partial", region, "仅自制剧", ev)
+	if hasTrustedStatus(original, 200) {
+		return makeVerdict("partial", region, msgNetflixOriginal, ev), nil
 	}
-	every := func(code int) bool {
-		for _, value := range statuses {
-			if !is(value, code) {
+	every := func(want int64) bool {
+		for _, code := range statuses {
+			if code != want {
 				return false
 			}
 		}
 		return true
 	}
 	if len(statuses) > 0 && every(403) {
-		return result("blocked", region, "Netflix 拒绝访问（403）", ev)
+		return makeVerdict("blocked", region, msgNetflix403, ev), nil
 	}
 	if len(statuses) > 0 && every(404) {
-		return result("blocked", region, "所在地区没有可播放的内容", ev)
+		return makeVerdict("blocked", region, msgNetflix404, ev), nil
 	}
-	return result("unknown", region, "响应不符合已知模式", ev)
+	return makeVerdict("unknown", region, msgResponseUnknown, ev), nil
 }
 
-func evaluateYouTube(results byID) *jsonx.Object {
-	page := results.get("youtube-premium")
-	ev := []any{evidence(page)}
-	region := marker(page, "gl")
-	if jsonx.Truthy(marker(page, "blocked")) {
-		return result("blocked", region, "Premium 在所在地区不可用", ev)
+func evaluateYouTube(results map[string]RegionResult) (ServiceVerdict, error) {
+	page := lookupResult(results, "youtube-premium")
+	ev := []string{formatEvidence(page)}
+	region := markerOf(page, "gl")
+	if markerTruthy(page, "blocked") {
+		return makeVerdict("blocked", region, msgYouTubeBlocked, ev), nil
 	}
-	if jsonx.Equal(region, "CN") {
-		return result("blocked", region, "识别为中国大陆", ev)
+	if region.Valid && region.Value == "CN" {
+		return makeVerdict("blocked", region, msgYouTubeCN, ev), nil
 	}
-	if jsonx.Truthy(region) {
-		return result("available", region, "", ev)
+	if region.Valid && region.Value != "" {
+		return makeVerdict("available", region, "", ev), nil
 	}
-	return result("unknown", nil, "页面里没有地区信息", ev)
+	return makeVerdict("unknown", NullableText{}, msgYouTubeNoRegion, ev), nil
 }
 
-// Service is one entry of SERVICES.
+// Service defines a built-in streaming/AI service checked during region probes.
 type Service struct {
 	ID, Name string
 	Domains  []string
-	requests func() []any
-	evaluate func(byID) *jsonx.Object
+	requests func() []PageRequest
+	evaluate func(map[string]RegionResult) (ServiceVerdict, error)
 }
 
-// Requests is service['requests'] (fresh copies).
-func (s Service) Requests() []any { return s.requests() }
+// Requests returns fresh PageRequest definitions for this service.
+func (s Service) Requests() []PageRequest { return s.requests() }
 
-// Services is SERVICES in order.
+// Evaluate computes the ServiceVerdict from request results keyed by request ID.
+func (s Service) Evaluate(results map[string]RegionResult) (ServiceVerdict, error) {
+	return s.evaluate(results)
+}
+
+// Services lists all built-in region-check services in display order.
 var Services = []Service{
 	{
 		ID: "openai", Name: "ChatGPT",
 		Domains: []string{"openai.com", "chatgpt.com", "oaistatic.com", "oaiusercontent.com", "sora.com"},
-		requests: func() []any {
-			return []any{
-				jsonx.Obj("id", "openai-compliance", "url", "https://api.openai.com/compliance/cookie_requirements",
-					"headers", jsonx.Obj("Authorization", "Bearer null"),
-					"markers", jsonx.Obj("unsupported", "unsupported_country", "consent", "cookie_consent_required")),
-				jsonx.Obj("id", "openai-ios", "url", "https://ios.chat.openai.com/",
-					"markers", jsonx.Obj("unsupported", "unsupported_country", "vpn", "VPN", "dc", `"type"\s*:\s*"dc"`)),
-				jsonx.Obj("id", "openai-trace", "url", "https://chatgpt.com/cdn-cgi/trace", "markers", jsonx.Obj("loc", `loc=([A-Z]{2})`)),
+		requests: func() []PageRequest {
+			return []PageRequest{
+				{
+					ID:      "openai-compliance",
+					URL:     "https://api.openai.com/compliance/cookie_requirements",
+					Headers: stringMap("Authorization", "Bearer null"),
+					Markers: stringMap("unsupported", "unsupported_country", "consent", "cookie_consent_required"),
+				},
+				{
+					ID:      "openai-ios",
+					URL:     "https://ios.chat.openai.com/",
+					Markers: stringMap("unsupported", "unsupported_country", "vpn", "VPN", "dc", `"type"\s*:\s*"dc"`),
+				},
+				{
+					ID:      "openai-trace",
+					URL:     "https://chatgpt.com/cdn-cgi/trace",
+					Markers: stringMap("loc", `loc=([A-Z]{2})`),
+				},
 			}
 		},
 		evaluate: evaluateOpenAI,
@@ -366,23 +488,29 @@ var Services = []Service{
 	{
 		ID: "claude", Name: "Claude",
 		Domains: []string{"claude.ai", "claude.com", "anthropic.com"},
-		requests: func() []any {
-			return []any{
-				jsonx.Obj("id", "claude-web", "url", "https://claude.ai/"),
-				jsonx.Obj("id", "claude-trace", "url", "https://claude.ai/cdn-cgi/trace", "markers", jsonx.Obj("loc", `loc=([A-Z]{2})`)),
+		requests: func() []PageRequest {
+			return []PageRequest{
+				{ID: "claude-web", URL: "https://claude.ai/"},
+				{
+					ID:      "claude-trace",
+					URL:     "https://claude.ai/cdn-cgi/trace",
+					Markers: stringMap("loc", `loc=([A-Z]{2})`),
+				},
 			}
 		},
 		evaluate: evaluateClaude,
 	},
 	{
 		ID: "netflix", Name: "Netflix",
-		Domains: []string{"netflix.com", "netflix.net", "nflxext.com", "nflximg.com", "nflximg.net", "nflxso.net",
-			"nflxvideo.net"},
-		requests: func() []any {
-			return []any{
-				jsonx.Obj("id", "netflix-licensed-1", "url", "https://www.netflix.com/title/81280792"),
-				jsonx.Obj("id", "netflix-licensed-2", "url", "https://www.netflix.com/title/70143836"),
-				jsonx.Obj("id", "netflix-original", "url", "https://www.netflix.com/title/80018499"),
+		Domains: []string{
+			"netflix.com", "netflix.net", "nflxext.com", "nflximg.com",
+			"nflximg.net", "nflxso.net", "nflxvideo.net",
+		},
+		requests: func() []PageRequest {
+			return []PageRequest{
+				{ID: "netflix-licensed-1", URL: "https://www.netflix.com/title/81280792"},
+				{ID: "netflix-licensed-2", URL: "https://www.netflix.com/title/70143836"},
+				{ID: "netflix-original", URL: "https://www.netflix.com/title/80018499"},
 			}
 		},
 		evaluate: evaluateNetflix,
@@ -390,19 +518,24 @@ var Services = []Service{
 	{
 		ID: "youtube", Name: "YouTube Premium",
 		Domains: []string{"youtube.com", "googlevideo.com", "ytimg.com", "youtu.be", "youtube-nocookie.com"},
-		requests: func() []any {
-			return []any{
-				jsonx.Obj("id", "youtube-premium", "url", "https://www.youtube.com/premium",
-					"headers", jsonx.Obj("Accept-Language", "en"),
-					"markers", jsonx.Obj("blocked", "Premium is not available in your country",
-						"gl", `"INNERTUBE_CONTEXT_GL"\s*:\s*"([A-Z]{2})"`)),
+		requests: func() []PageRequest {
+			return []PageRequest{
+				{
+					ID:      "youtube-premium",
+					URL:     "https://www.youtube.com/premium",
+					Headers: stringMap("Accept-Language", "en"),
+					Markers: stringMap(
+						"blocked", "Premium is not available in your country",
+						"gl", `"INNERTUBE_CONTEXT_GL"\s*:\s*"([A-Z]{2})"`,
+					),
+				},
 			}
 		},
 		evaluate: evaluateYouTube,
 	},
 }
 
-// ServiceByID is SERVICES_BY_ID[id].
+// ServiceByID looks up a built-in Service by ID.
 func ServiceByID(id string) (Service, bool) {
 	for _, service := range Services {
 		if service.ID == id {
@@ -412,150 +545,208 @@ func ServiceByID(id string) (Service, bool) {
 	return Service{}, false
 }
 
-// ServiceRequests is service_requests(): the exit request, then every
-// service request.
-func ServiceRequests() []any {
-	out := []any{ExitRequest()}
+// BuildServiceRequests returns DefaultExitRequest followed by every Service's requests.
+func BuildServiceRequests() []PageRequest {
+	out := []PageRequest{DefaultExitRequest()}
 	for _, service := range Services {
 		out = append(out, service.Requests()...)
 	}
 	return out
 }
 
-func indexByID(results []any) byID {
-	out := byID{}
+func indexResultsByID(results []RegionResult) (map[string]RegionResult, error) {
+	index := make(map[string]RegionResult, len(results))
 	for _, entry := range results {
-		out[hashKey(item(entry, "id"))] = entry
+		if !entry.hasID {
+			return nil, valueError(msgRegionResultIDMissing)
+		}
+		index[entry.ID] = entry
 	}
-	return out
+	return index, nil
 }
 
-// Evaluate is SERVICES_BY_ID[id]['evaluate'](by_id) for a by-id dict.
-func (s Service) Evaluate(results *jsonx.Object) (out *jsonx.Object, err error) {
-	defer catch(&err)
-	index := byID{}
-	for key, value := range results.All() {
-		index["s"+key] = value
+// EvaluateServiceList evaluates every built-in Service against results.
+func EvaluateServiceList(results []RegionResult) (model.Map[ServiceVerdict], error) {
+	var out model.Map[ServiceVerdict]
+	index, err := indexResultsByID(results)
+	if err != nil {
+		return out, err
 	}
-	return s.evaluate(index), nil
-}
-
-// EvaluateServices is evaluate_services(results): service id → verdict.
-func EvaluateServices(results []any) (out *jsonx.Object, err error) {
-	defer catch(&err)
-	index := indexByID(results)
-	out = jsonx.NewObject()
 	for _, service := range Services {
-		out.Set(service.ID, service.evaluate(index))
+		verdict, err := service.Evaluate(index)
+		if err != nil {
+			return out, err
+		}
+		out.Set(service.ID, verdict)
 	}
 	return out, nil
 }
 
-// ExitInfo is exit_info(results).
-func ExitInfo(results []any) (out *jsonx.Object, err error) {
-	defer catch(&err)
-	var exit any
-	for _, entry := range results {
-		if jsonx.Equal(item(entry, "id"), "exit") {
-			exit = entry
-			break
-		}
-	}
-	var errorValue any
-	if exit != nil {
-		errorValue = get(exit, "error", nil)
-	}
-	if !jsonx.Truthy(errorValue) {
-		errorValue = nil
-	}
-	return jsonx.Obj("loc", marker(exit, "loc"), "ip", marker(exit, "ip"), "error", errorValue), nil
+// ExitSummary holds exit IP location and error details extracted from trace results.
+type ExitSummary struct {
+	Loc   NullableText `json:"loc"`
+	IP    NullableText `json:"ip"`
+	Error NullableText `json:"error"`
 }
 
-// PublicServices is public_services().
-func PublicServices() []any {
-	out := make([]any, len(Services))
+// SummarizeExit extracts ExitSummary from the first result with ID "exit".
+func SummarizeExit(results []RegionResult) (ExitSummary, error) {
+	var exit *RegionResult
+	for i := range results {
+		if !results[i].hasID {
+			return ExitSummary{}, valueError(msgRegionResultIDMissing)
+		}
+		if exit == nil && results[i].ID == "exit" {
+			exit = &results[i]
+		}
+	}
+	var errVal NullableText
+	if exit != nil && exit.Error != "" {
+		errVal = NullableText{Value: exit.Error, Valid: true}
+	}
+	return ExitSummary{
+		Loc:   markerOf(exit, "loc"),
+		IP:    markerOf(exit, "ip"),
+		Error: errVal,
+	}, nil
+}
+
+// PublicService is the public API representation of a built-in Service.
+type PublicService struct {
+	ID      string   `json:"id"`
+	Name    string   `json:"name"`
+	Domains []string `json:"domains"`
+}
+
+// PublicServiceList returns public metadata for all built-in Services.
+func PublicServiceList() []PublicService {
+	out := make([]PublicService, len(Services))
 	for i, service := range Services {
-		out[i] = jsonx.Obj("id", service.ID, "name", service.Name, "domains", jsonx.ListOf(service.Domains))
+		out[i] = PublicService{
+			ID:      service.ID,
+			Name:    service.Name,
+			Domains: slices.Clone(service.Domains),
+		}
 	}
 	return out
 }
 
 // ---------- arbitrary domains ----------
 
-// BlockPattern is BLOCK_PATTERN (matched by the Agent).
+// BlockPattern is the page body regex matched by the Agent for geo-blocked domains.
 const BlockPattern = `(?i)(not|isn't|is not) available in your (country|region|location)` +
 	`|unavailable in your (country|region|location)` +
 	`|not available in (this|the) (country|region)` +
 	`|地区不可用|所在的?地区|所在国家`
 
-// DomainRequest is domain_request(request_id, url).
-func DomainRequest(requestID, url string) *jsonx.Object {
-	return jsonx.Obj("id", requestID, "url", url, "markers", jsonx.Obj("block", BlockPattern))
-}
-
-func lessThan500(value any) bool {
-	switch v := value.(type) {
-	case bool:
-		return true
-	case jsonx.Number:
-		return less(numberOf(v), intNum(500))
+// BuildDomainRequest builds a PageRequest for probing an arbitrary domain URL.
+func BuildDomainRequest(requestID, url string) PageRequest {
+	return PageRequest{
+		ID:      requestID,
+		URL:     url,
+		Markers: stringMap("block", BlockPattern),
 	}
-	raise("TypeError", "'<' not supported between instances of '"+TypeName(value)+"' and 'int'")
-	return false
 }
 
-// ClassifyDomainResult is classify_domain_result(result, original_url):
-// ok / restricted / denied / error for one target.
-func ClassifyDomainResult(result any, originalURL string) (out *jsonx.Object, err error) {
-	defer catch(&err)
+// DomainClassification describes the region-restriction classification for one target.
+type DomainClassification struct {
+	State    string       `json:"state"`
+	Detail   string       `json:"detail"`
+	Status   *model.Int   `json:"status"`
+	FinalURL NullableText `json:"final_url"`
+}
+
+// ClassifyDomain classifies a single target's RegionResult for originalURL into
+// ok, restricted, denied, or error.
+func ClassifyDomain(result *RegionResult, originalURL string) (DomainClassification, error) {
 	compiled()
-	if !jsonx.Truthy(result) || jsonx.Truthy(get(result, "error", nil)) {
-		var detail any = "没有结果"
-		if jsonx.Truthy(result) {
-			detail = get(result, "error", nil)
+	if result == nil || result.empty || result.Error != "" {
+		detail := msgNoResult
+		if result != nil && !result.empty {
+			detail = result.Error
 		}
-		return jsonx.Obj("state", "error", "detail", detail, "status", nil, "final_url", nil), nil
+		return DomainClassification{
+			State:  "error",
+			Detail: detail,
+		}, nil
 	}
-	statusValue := get(result, "status", nil)
-	finalURL := get(result, "final_url", nil)
-	if !jsonx.Truthy(finalURL) {
-		finalURL = ""
-	}
-	detail := "HTTP " + jsonx.Str(statusValue)
+	detail := "HTTP " + formatStatus(result.Status)
 	moved := false
-	if jsonx.Truthy(finalURL) && regionURLHint.Search(splitPath(finalURL)) {
-		moved = !regionURLHint.Search(splitPath(originalURL))
+	if result.FinalURL != "" {
+		finalPath, err := splitPath(result.FinalURL)
+		if err != nil {
+			return DomainClassification{}, err
+		}
+		if regionURLHint.Search(finalPath) {
+			origPath, err := splitPath(originalURL)
+			if err != nil {
+				return DomainClassification{}, err
+			}
+			moved = !regionURLHint.Search(origPath)
+		}
 	}
+	hasCode := func(want int64) bool {
+		return result.Status != nil && int64(*result.Status) == want
+	}
+	block := markerOf(result, "block")
 	var state string
 	switch {
-	case is(statusValue, 451):
-		state, detail = "restricted", "HTTP 451（因法律原因不可用）"
-	case jsonx.Truthy(marker(result, "block")) && (is(statusValue, 200) || is(statusValue, 403)):
-		state, detail = "restricted", "HTTP "+jsonx.Str(statusValue)+"，页面提示："+jsonx.Str(marker(result, "block"))
+	case hasCode(451):
+		state, detail = "restricted", msgDomain451
+	case block.Valid && block.Value != "" && (hasCode(200) || hasCode(403)):
+		state, detail = "restricted", fmt.Sprintf(msgDomainBlockMarker, formatStatus(result.Status), block.Value)
 	case moved:
-		state, detail = "restricted", "跳转到 "+jsonx.Str(finalURL)
-	case is(statusValue, 403):
+		state, detail = "restricted", fmt.Sprintf(msgDomainMoved, result.FinalURL)
+	case hasCode(403):
 		state = "denied"
-	case jsonx.Truthy(statusValue) && lessThan500(statusValue):
+	case result.Status != nil && *result.Status != 0 && *result.Status < 500:
 		state = "ok"
 	default:
 		state = "error"
 	}
-	return jsonx.Obj("state", state, "detail", detail, "status", statusValue, "final_url", finalURL), nil
+	return DomainClassification{
+		State:    state,
+		Detail:   detail,
+		Status:   result.Status,
+		FinalURL: NullableText{Value: result.FinalURL, Valid: true},
+	}, nil
 }
 
-// SummarizeDomain is summarize_domain(per_target).
-func SummarizeDomain(perTarget *jsonx.Object) (out *jsonx.Object, err error) {
-	defer catch(&err)
-	restricted, usable := []any{}, []any{}
+// TargetState holds the classified state of a domain on one target.
+type TargetState struct {
+	State  Text `json:"state"`
+	Fields model.Fields
+	raw    model.Raw
+}
+
+// UnmarshalJSON decodes TargetState under model R5 rules.
+func (s *TargetState) UnmarshalJSON(data []byte) error {
+	return model.DecodeRecord(data, s, &s.raw)
+}
+
+// MarshalJSON encodes TargetState preserving stored member order.
+func (s TargetState) MarshalJSON() ([]byte, error) {
+	return model.EncodeRecord(&s, &s.raw)
+}
+
+// DomainSummary summarizes domain availability differences across targets.
+type DomainSummary struct {
+	Verdict    string   `json:"verdict"`
+	Restricted []string `json:"restricted"`
+	Usable     []string `json:"usable"`
+}
+
+// SummarizeTargets aggregates per-target classifications into a DomainSummary.
+func SummarizeTargets(perTarget model.Map[TargetState]) DomainSummary {
+	restricted := []string{}
+	usable := []string{}
 	total := 0
 	for name, entry := range perTarget.All() {
 		total++
-		state := item(entry, "state")
-		if jsonx.Equal(state, "restricted") {
+		if entry.State == "restricted" {
 			restricted = append(restricted, name)
 		}
-		if jsonx.Equal(state, "ok") {
+		if entry.State == "ok" {
 			usable = append(usable, name)
 		}
 	}
@@ -568,61 +759,113 @@ func SummarizeDomain(perTarget *jsonx.Object) (out *jsonx.Object, err error) {
 	case len(usable) > 0 && len(restricted) == 0:
 		verdict = "no_difference"
 	}
-	return jsonx.Obj("verdict", verdict, "restricted", restricted, "usable", usable), nil
+	return DomainSummary{
+		Verdict:    verdict,
+		Restricted: restricted,
+		Usable:     usable,
+	}
 }
 
 // ---------- target choice ----------
 
-func inSet(value any, set []string) bool {
-	hashKey(value)
-	text, ok := value.(string)
-	if !ok {
-		return false
-	}
-	for _, element := range set {
-		if element == text {
-			return true
-		}
-	}
-	return false
+// AvailableTarget describes an available Mihomo adapter reported by an Agent.
+type AvailableTarget struct {
+	Name  string `json:"name"`
+	Type  string `json:"type"`
+	Alive bool   `json:"alive"`
 }
 
-// PickTargets is pick_targets(targets, preferred_group): DIRECT, up to 4
-// strategy groups (preferred first) and one live node per region (at most 8
-// regions). preferredGroup nil is None.
-func PickTargets(targets []any, preferredGroup any) (picked []any, err error) {
-	defer catch(&err)
+// UnmarshalJSON decodes AvailableTarget, requiring a non-null string or numeric
+// name and applying R5 defaults for type ("") and alive (true).
+func (t *AvailableTarget) UnmarshalJSON(data []byte) error {
+	var rawObj rawJSONObject
+	if err := json.Unmarshal(data, &rawObj); err != nil {
+		return err
+	}
+	rawName, ok := rawObj.Fields.Get("name")
+	if !ok {
+		return valueError(msgTargetNameMissing)
+	}
+	name, err := decodeNonNullText(bytes.TrimSpace(rawName))
+	if err != nil {
+		return valueError(fmt.Sprintf(msgTargetNameInvalid, compactRaw(rawName)))
+	}
+	out := AvailableTarget{Name: name, Alive: true}
+	if rawType, ok := rawObj.Fields.Get("type"); ok {
+		var kind StrictString
+		if err := json.Unmarshal(rawType, &kind); err == nil {
+			out.Type = string(kind)
+		}
+	}
+	if rawAlive, ok := rawObj.Fields.Get("alive"); ok {
+		trimmed := bytes.TrimSpace(rawAlive)
+		if bytes.Equal(trimmed, []byte("true")) {
+			out.Alive = true
+		} else if bytes.Equal(trimmed, []byte("false")) {
+			out.Alive = false
+		}
+	}
+	*t = out
+	return nil
+}
+
+// RegionTarget is a selected target path for a region check.
+type RegionTarget struct {
+	Name       string       `json:"name"`
+	Kind       string       `json:"kind"`
+	RegionHint NullableText `json:"region_hint"`
+}
+
+func nullableRegion(code string) NullableText {
+	if code == "" {
+		return NullableText{}
+	}
+	return NullableText{Value: code, Valid: true}
+}
+
+// ChooseTargets selects DIRECT, up to MaxGroupTargets strategy groups (with
+// preferredGroup first when non-empty), and one live node per region (up to
+// MaxRegionTargets).
+func ChooseTargets(targets []AvailableTarget, preferredGroup string) []RegionTarget {
 	compiled()
-	picked = []any{}
-	names := map[string]bool{}
+	picked := []RegionTarget{}
+	hasDirect := false
 	for _, target := range targets {
-		names[hashKey(item(target, "name"))] = true
+		if target.Name == "DIRECT" {
+			hasDirect = true
+			break
+		}
 	}
-	if names["sDIRECT"] {
-		picked = append(picked, jsonx.Obj("name", "DIRECT", "kind", "direct", "region_hint", nil))
+	if hasDirect {
+		picked = append(picked, RegionTarget{Name: "DIRECT", Kind: "direct"})
 	}
-	var groups []any
+	var groups []AvailableTarget
 	for _, target := range targets {
-		if inSet(get(target, "type", nil), GroupTypes) && !inSet(item(target, "name"), ExcludedTargets) {
+		if slices.Contains(GroupTypes, target.Type) && !slices.Contains(ExcludedTargets, target.Name) {
 			groups = append(groups, target)
 		}
 	}
-	sort.SliceStable(groups, func(i, j int) bool {
-		return jsonx.Equal(item(groups[i], "name"), preferredGroup) && !jsonx.Equal(item(groups[j], "name"), preferredGroup)
-	})
+	if preferredGroup != "" {
+		sort.SliceStable(groups, func(i, j int) bool {
+			return groups[i].Name == preferredGroup && groups[j].Name != preferredGroup
+		})
+	}
 	if len(groups) > MaxGroupTargets {
 		groups = groups[:MaxGroupTargets]
 	}
 	for _, target := range groups {
-		name := item(target, "name")
-		picked = append(picked, jsonx.Obj("name", name, "kind", "group", "region_hint", regionValue(regionOfName(name))))
+		picked = append(picked, RegionTarget{
+			Name:       target.Name,
+			Kind:       "group",
+			RegionHint: nullableRegion(RegionOfName(target.Name)),
+		})
 	}
-	byRegion := map[string]any{}
+	byRegion := map[string]AvailableTarget{}
 	for _, target := range targets {
-		if inSet(get(target, "type", nil), NonNodeTypes) || !jsonx.Truthy(get(target, "alive", true)) {
+		if slices.Contains(NonNodeTypes, target.Type) || !target.Alive {
 			continue
 		}
-		if code := regionOfName(item(target, "name")); code != "" {
+		if code := RegionOfName(target.Name); code != "" {
 			if _, seen := byRegion[code]; !seen {
 				byRegion[code] = target
 			}
@@ -635,124 +878,180 @@ func PickTargets(targets []any, preferredGroup any) (picked []any, err error) {
 			continue
 		}
 		count++
-		picked = append(picked, jsonx.Obj("name", item(target, "name"), "kind", "node", "region_hint", rule.Code))
+		picked = append(picked, RegionTarget{
+			Name:       target.Name,
+			Kind:       "node",
+			RegionHint: NullableText{Value: rule.Code, Valid: true},
+		})
 	}
-	return picked, nil
+	return picked
 }
 
 // ---------- store ----------
 
+// RegionData holds an Agent's stored service matrix, domain checks, and website identities.
+type RegionData struct {
+	Services json.RawMessage        `json:"services"`
+	Domains  model.Map[TimedRecord] `json:"domains"`
+	Websites model.Map[TimedRecord] `json:"websites"`
+	Fields   model.Fields
+	raw      model.Raw
+}
+
+// UnmarshalJSON decodes RegionData preserving extra members and order.
+func (d *RegionData) UnmarshalJSON(data []byte) error {
+	return model.DecodeRecord(data, d, &d.raw)
+}
+
+// MarshalJSON encodes RegionData preserving stored member order and raw bytes.
+func (d RegionData) MarshalJSON() ([]byte, error) {
+	return model.EncodeRecord(&d, &d.raw)
+}
+
+func newEmptyRegionData() RegionData {
+	var data RegionData
+	_ = model.SetMemberJSON(&data, &data.raw, "services", json.RawMessage("null"))
+	_ = model.SetMemberJSON(&data, &data.raw, "domains", json.RawMessage("{}"))
+	_ = model.SetMemberJSON(&data, &data.raw, "websites", json.RawMessage("{}"))
+	return data
+}
+
 var regionLock sync.Mutex
 
-// RegionStore keeps, per Agent, the latest service matrix and the region
-// differences of each domain (RegionStore).
+// RegionStore persists per-Agent region-check matrices and domain/website results.
 type RegionStore struct{ files *jsonstore.Store }
 
-// NewRegionStore is RegionStore(data_dir).
-func NewRegionStore(dir string) *RegionStore { return &RegionStore{jsonstore.New(dir)} }
+// NewRegionStore creates a RegionStore rooted at dir.
+func NewRegionStore(dir string) *RegionStore { return &RegionStore{files: jsonstore.New(dir)} }
 
-// Path is the file of an Agent.
+// Path returns the JSON file path for agentID.
 func (s *RegionStore) Path(agentID string) string { return s.files.Path(agentID) }
 
-func (s *RegionStore) read(agentID string) *jsonx.Object {
-	var data *jsonx.Object
-	if !s.files.Read(agentID, &data) {
-		data = jsonx.NewObject()
+func (s *RegionStore) readData(agentID string) RegionData {
+	var rawObj rawJSONObject
+	if !s.files.Read(agentID, &rawObj) {
+		return newEmptyRegionData()
 	}
-	data.SetDefault("services", nil)
-	if _, ok := data.Value("domains").(*jsonx.Object); !ok {
-		data.Set("domains", jsonx.NewObject())
+	if !rawObj.Fields.Has("services") {
+		_ = rawObj.Fields.Set("services", json.RawMessage("null"))
 	}
-	if _, ok := data.Value("websites").(*jsonx.Object); !ok {
-		data.Set("websites", jsonx.NewObject())
+	hasDomains := rawObj.Fields.Has("domains")
+	hasWebsites := rawObj.Fields.Has("websites")
+	encoded, err := rawObj.MarshalJSON()
+	if err != nil {
+		return newEmptyRegionData()
+	}
+	var data RegionData
+	if err := json.Unmarshal(encoded, &data); err != nil {
+		return newEmptyRegionData()
+	}
+	if !hasDomains || model.IssueUnder(data.raw.Issues(), "domains") || isNullTimedMap(data.Domains) {
+		_ = model.SetMemberJSON(&data, &data.raw, "domains", json.RawMessage("{}"))
+	}
+	if !hasWebsites || model.IssueUnder(data.raw.Issues(), "websites") || isNullTimedMap(data.Websites) {
+		_ = model.SetMemberJSON(&data, &data.raw, "websites", json.RawMessage("{}"))
 	}
 	return data
 }
 
-// NaiveISOSeconds is a naive local datetime's isoformat(timespec='seconds').
+// NaiveISOSeconds formats t's wall-clock fields as YYYY-MM-DDTHH:MM:SS.
 func NaiveISOSeconds(t time.Time) string { return t.Format("2006-01-02T15:04:05") }
 
-// oldest is (now - timedelta(days)).isoformat(timespec='seconds') on a naive
-// local datetime (wall-clock arithmetic, no DST adjustment).
+// oldest computes (now - days) in wall-clock time without DST shifts.
 func oldest(now time.Time, days int) string {
 	wall := time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute(), now.Second(), now.Nanosecond(), time.UTC)
 	return NaiveISOSeconds(wall.Add(-time.Duration(days) * 24 * time.Hour))
 }
 
-func checkedAtAtLeast(entry any, bound string) bool {
-	value := get(entry, "checked_at", "")
-	text, ok := value.(string)
-	if !ok {
-		raise("TypeError", "'>=' not supported between instances of '"+TypeName(value)+"' and 'str'")
+func hasEncodedMember(data *RegionData, name string) bool {
+	encoded, err := data.MarshalJSON()
+	if err != nil {
+		return false
 	}
-	return text >= bound
+	var rawObj rawJSONObject
+	if err := json.Unmarshal(encoded, &rawObj); err != nil {
+		return false
+	}
+	return rawObj.Fields.Has(name)
 }
 
-// Update is update(agent_id, mutate, now): mutate the stored data, drop
-// domain and website entries older than 30 days, keep the newest 1000
-// websites, write. A zero now is datetime.now().
-func (s *RegionStore) Update(agentID string, mutate func(*jsonx.Object) error, now time.Time) (err error) {
+// UpdateData mutates agentID's stored RegionData, prunes entries older than
+// RegionRetentionDays, bounds websites to the newest 1000, and writes atomically.
+func (s *RegionStore) UpdateData(agentID string, mutate func(*RegionData) error, now time.Time) error {
 	if now.IsZero() {
 		now = time.Now()
 	}
 	regionLock.Lock()
 	defer regionLock.Unlock()
-	defer catch(&err)
-	data := s.read(agentID)
-	if err := mutate(data); err != nil {
+	data := s.readData(agentID)
+	if err := mutate(&data); err != nil {
 		return err
 	}
+	issues := model.Issues(&data)
+	if model.IssueUnder(issues, "domains") || isNullTimedMap(data.Domains) || len(model.Issues(data.Domains)) > 0 {
+		return valueError(msgInvalidRegionStore)
+	}
+	if model.IssueUnder(issues, "websites") || isNullTimedMap(data.Websites) || len(model.Issues(data.Websites)) > 0 {
+		return valueError(msgInvalidRegionStore)
+	}
 	bound := oldest(now, RegionRetentionDays)
-	domains := jsonx.NewObject()
-	for host, entry := range iterItems(data.Value("domains")) {
-		if checkedAtAtLeast(entry, bound) {
+	var domains model.Map[TimedRecord]
+	for host, entry := range data.Domains.All() {
+		if string(entry.CheckedAt) >= bound {
 			domains.Set(host, entry)
 		}
 	}
-	data.Set("domains", domains)
-	type pair struct {
+	type websitePair struct {
 		host  string
-		entry any
+		entry TimedRecord
 	}
-	var entries []pair
-	for host, entry := range iterItems(data.Value("websites")) {
-		if checkedAtAtLeast(entry, bound) {
-			entries = append(entries, pair{host, entry})
+	var entries []websitePair
+	for host, entry := range data.Websites.All() {
+		if string(entry.CheckedAt) >= bound {
+			entries = append(entries, websitePair{host: host, entry: entry})
 		}
 	}
 	sort.SliceStable(entries, func(i, j int) bool {
-		return item(entries[i].entry, "checked_at").(string) < item(entries[j].entry, "checked_at").(string)
+		return string(entries[i].entry.CheckedAt) < string(entries[j].entry.CheckedAt)
 	})
 	if len(entries) > 1000 {
 		entries = entries[len(entries)-1000:]
 	}
-	websites := jsonx.NewObject()
-	for _, p := range entries {
-		websites.Set(p.host, p.entry)
+	var websites model.Map[TimedRecord]
+	for _, pair := range entries {
+		websites.Set(pair.host, pair.entry)
 	}
-	data.Set("websites", websites)
-	_, err = s.files.Write(agentID, data, false)
+	if len(bytes.TrimSpace(data.Services)) == 0 {
+		_ = model.SetMemberJSON(&data, &data.raw, "services", json.RawMessage("null"))
+	} else if !hasEncodedMember(&data, "services") {
+		_ = model.SetMemberJSON(&data, &data.raw, "services", data.Services)
+	}
+	domainsJSON, err := domains.MarshalJSON()
+	if err != nil {
+		return fmt.Errorf("encode region domains: %w", err)
+	}
+	websitesJSON, err := websites.MarshalJSON()
+	if err != nil {
+		return fmt.Errorf("encode region websites: %w", err)
+	}
+	if err := model.SetMemberJSON(&data, &data.raw, "domains", domainsJSON); err != nil {
+		return fmt.Errorf("set region domains: %w", err)
+	}
+	if err := model.SetMemberJSON(&data, &data.raw, "websites", websitesJSON); err != nil {
+		return fmt.Errorf("set region websites: %w", err)
+	}
+	_, err = s.files.Write(agentID, &data, false)
 	return err
 }
 
-// iterItems is .items() of a value mutate left in place: a dict, or the
-// AttributeError of anything else.
-func iterItems(v any) func(func(string, any) bool) {
-	object, ok := v.(*jsonx.Object)
-	if !ok || object == nil {
-		raise("AttributeError", "'"+TypeName(v)+"' object has no attribute 'items'")
-	}
-	return object.All()
-}
-
-// Load is load(agent_id).
-func (s *RegionStore) Load(agentID string) *jsonx.Object {
+// LoadData returns agentID's stored RegionData with normalized defaults.
+func (s *RegionStore) LoadData(agentID string) RegionData {
 	regionLock.Lock()
 	defer regionLock.Unlock()
-	return s.read(agentID)
+	return s.readData(agentID)
 }
 
-// Delete is delete(agent_id).
+// Delete removes the region store file for agentID.
 func (s *RegionStore) Delete(agentID string) error {
 	regionLock.Lock()
 	defer regionLock.Unlock()

@@ -1,46 +1,36 @@
 package health
 
 import (
-	"configflow/internal/lifecycle"
+	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
-	"strings"
+	"slices"
 	"sync"
 	"time"
 
-	"configflow/internal/convert"
-	"configflow/internal/jsonx"
+	"configflow/internal/jsonresp"
+	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
+	"configflow/internal/model"
 	"configflow/internal/pystr"
 	"configflow/internal/repo"
-	"configflow/internal/subs"
-	"configflow/internal/substore"
 	"configflow/internal/weburl"
 )
 
-// Node latency (backend/utils/node_latency.py): real proxy latency through
-// the independent node-probe worker, with complete node credentials, never
-// the running Mihomo controller.
-//
-// Worker protocol (version 4), for image package #40:
-//   - argv: [<binary>] only; credentials never on the command line.
-//   - stdin: json.dumps({url, timeout_ms, dns_servers, dns_bootstrap,
-//     unified_delay, nodes: [<Mihomo proxy with name = source key>…]},
-//     ensure_ascii=False) for latency; json.dumps({operation: "dns_check",
-//     timeout_ms: 5000, dns_servers, dns_bootstrap}) for the DNS check.
-//   - env: os.environ plus GOMAXPROCS=2 and GOMEMLIMIT=128MiB unless set.
-//   - timeout: ceil(n/20) * timeout_ms/1000 + 5 s (latency), 10 s (check).
-//   - stdout: {"version": 4, "results": [{name, latency: int>=1 | null,
-//     error?, error_code?, …}]} or {"version": 4, "dns_check": {success,
-//     addresses, latency_ms?, error_code?}}; return code 3 = invalid DNS
-//     settings; stderr is never shown.
-
 const (
-	LatencyFile         = "node_latency.json"
-	Method              = "proxy_http_v2"
-	HistorySize         = 14
-	MaxNodes            = 20
-	MaxWorkers          = MaxNodes
+	// LatencyFile is the shared JSON filename persisting node latency results.
+	LatencyFile = "node_latency.json"
+	// Method identifies the current standalone worker probe format.
+	Method = "proxy_http_v2"
+	// HistorySize is the maximum number of latency samples retained per node.
+	HistorySize = 14
+	// MaxNodes is the maximum number of nodes allowed in a single test batch.
+	MaxNodes = 20
+	// MaxWorkers is the worker concurrency per probe batch.
+	MaxWorkers = MaxNodes
+	// MaxConversionWorker bounds concurrent Sub-Store conversions per test run.
 	MaxConversionWorker = 5
 	checkTimeout        = 10 * time.Second
 )
@@ -50,370 +40,616 @@ var (
 	testLock   sync.Mutex
 )
 
-// LockForTest holds the test lock like a running test would (tests);
-// release with the returned function.
+// LockForTest acquires the process-wide latency test mutex for test isolation
+// and returns a release callback.
 func LockForTest() (release func()) {
 	testLock.Lock()
 	return testLock.Unlock
 }
 
-// DNSSettings is dns_settings().
-func DNSSettings(ctx context.Context) (any, error) {
-	settings, err := EffectiveSettings(ctx, nil)
-	if err != nil {
-		return nil, err
-	}
-	return settings.Value("dns_servers"), nil
+// ProbeSettings holds the resolved URL, timeout, DNS, and delay settings for a probe batch.
+type ProbeSettings struct {
+	URL          string   `json:"url"`
+	TimeoutMS    int64    `json:"timeout_ms"`
+	DNSServers   []string `json:"dns_servers"`
+	DNSBootstrap []string `json:"dns_bootstrap"`
+	UnifiedDelay bool     `json:"unified_delay"`
 }
 
-// Settings is settings(): the probe URL, timeout, DNS and unified delay.
-func Settings(ctx context.Context) (*jsonx.Object, error) {
-	env := currentEnv
-	invalid := &ProbeUnavailable{"节点测速设置无效，请检查测试地址及超时（500–10000 毫秒）"}
-	url := pystr.Strip(env.getenv("CONFIGFLOW_NODE_TEST_URL", "https://www.gstatic.com/generate_204"))
-	parsed, err := weburl.Parse(url)
+// ResolveDNSSettings returns the active node-test DNS server list.
+func ResolveDNSSettings(ctx context.Context) ([]string, error) {
+	effective, err := EffectiveDNSSettings(ctx, nil)
 	if err != nil {
-		return nil, invalid
-	}
-	if (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" || weburl.HasCredentials(parsed) {
-		return nil, invalid
-	}
-	if _, _, err := weburl.Port(parsed); err != nil {
-		return nil, invalid
-	}
-	timeout, err := pystr.Int(env.getenv("CONFIGFLOW_NODE_TEST_TIMEOUT_MS", "5000"), 10)
-	if err != nil || !timeout.IsInt64() || timeout.Int64() < 500 || timeout.Int64() > 10000 {
-		return nil, invalid
-	}
-	dns, err := EffectiveSettings(ctx, nil)
-	if err != nil {
-		if isValueError(err) {
-			return nil, &ProbeUnavailable{err.Error()}
-		}
 		return nil, err
 	}
-	unified := pystr.Lower(env.getenv("CONFIGFLOW_NODE_TEST_UNIFIED_DELAY", "1"))
-	out := jsonx.Obj("url", url, "timeout_ms", jsonx.Int(timeout.Int64()))
-	out.Update(dns)
-	out.Set("unified_delay", unified != "0" && unified != "false")
-	return out, nil
+	return effective.DNSServers, nil
 }
 
 func isValueError(err error) bool {
-	switch err.(type) {
-	case *ValueError:
+	var ve *ValueError
+	if errors.As(err, &ve) {
 		return true
 	}
 	return repo.IsValueError(err)
 }
 
-// candidate is one entry of collect_candidates (key → node).
-type candidates struct {
-	keys  []string
-	nodes map[string]*jsonx.Object
-}
-
-func (c *candidates) add(node any, identity []any) error {
-	object, ok := node.(*jsonx.Object)
-	if !ok || object == nil || !jsonx.Truthy(object.Value("name")) {
-		return nil
-	}
-	if value, isBool := object.Value("enabled").(bool); isBool && !value { // `is not False`
-		return nil
-	}
-	data, err := jsonx.Encode(identity, jsonx.Options{Compact: true})
+// ResolveSettings resolves ProbeSettings from environment variables and saved DNS config.
+func ResolveSettings(ctx context.Context) (ProbeSettings, error) {
+	env := CurrentProbeEnv()
+	invalid := &ProbeUnavailable{Message: msgProbeInvalidSettings}
+	url := pystr.Strip(env.getenv("CONFIGFLOW_NODE_TEST_URL", "https://www.gstatic.com/generate_204"))
+	parsed, err := weburl.Parse(url)
 	if err != nil {
-		return err
+		return ProbeSettings{}, invalid
 	}
-	key := string(data)
-	if _, seen := c.nodes[key]; !seen {
-		c.keys = append(c.keys, key)
-		c.nodes[key] = object
+	if (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" || weburl.HasCredentials(parsed) {
+		return ProbeSettings{}, invalid
 	}
-	return nil
-}
-
-func (c *candidates) has(key string) bool { _, ok := c.nodes[key]; return ok }
-
-// CollectCandidates is collect_candidates(): complete nodes keyed by
-// source (`["node",id]`, `["subscription",sub_id,name]`), in order.
-func CollectCandidates(ctx context.Context) ([]string, map[string]*jsonx.Object, error) {
-	c, err := collectCandidates(ctx)
+	if _, _, err := weburl.Port(parsed); err != nil {
+		return ProbeSettings{}, invalid
+	}
+	timeout, err := pystr.Int(env.getenv("CONFIGFLOW_NODE_TEST_TIMEOUT_MS", "5000"), 10)
+	if err != nil || !timeout.IsInt64() || timeout.Int64() < 500 || timeout.Int64() > 10000 {
+		return ProbeSettings{}, invalid
+	}
+	dns, err := EffectiveDNSSettings(ctx, nil)
 	if err != nil {
-		return nil, nil, err
+		if isValueError(err) {
+			return ProbeSettings{}, &ProbeUnavailable{Message: err.Error()}
+		}
+		return ProbeSettings{}, err
 	}
-	return c.keys, c.nodes, nil
+	unified := pystr.Lower(env.getenv("CONFIGFLOW_NODE_TEST_UNIFIED_DELAY", "1"))
+	return ProbeSettings{
+		URL:          url,
+		TimeoutMS:    timeout.Int64(),
+		DNSServers:   dns.DNSServers,
+		DNSBootstrap: dns.DNSBootstrap,
+		UnifiedDelay: unified != "0" && unified != "false",
+	}, nil
 }
 
-func collectCandidates(ctx context.Context) (*candidates, error) {
-	config, err := repo.GetSharedConfig(ctx)
+// CandidateNode represents an enabled manual or subscription node eligible for probing.
+type CandidateNode struct {
+	Key         string
+	Name        string
+	ProxyString string
+	Raw         json.RawMessage
+}
+
+type candidateSet struct {
+	list  []CandidateNode
+	byKey map[string]CandidateNode
+}
+
+func (c *candidateSet) add(node CandidateNode) {
+	if _, seen := c.byKey[node.Key]; seen {
+		return
+	}
+	c.byKey[node.Key] = node
+	c.list = append(c.list, node)
+}
+
+func (c *candidateSet) has(key string) bool {
+	_, ok := c.byKey[key]
+	return ok
+}
+
+func hasFieldIssue(issues []model.FieldIssue, field string) bool {
+	for _, issue := range issues {
+		if issue.Path == field {
+			return true
+		}
+	}
+	return false
+}
+
+// CollectCandidateNodes gathers enabled manual and cached subscription nodes
+// keyed by canonical JSON source identifiers.
+func CollectCandidateNodes(ctx context.Context) ([]CandidateNode, error) {
+	set, err := collectCandidateSet(ctx)
 	if err != nil {
 		return nil, err
 	}
-	c := &candidates{nodes: map[string]*jsonx.Object{}}
-	for _, node := range config.GetList("nodes") {
-		if object, ok := node.(*jsonx.Object); ok && object != nil && jsonx.Truthy(object.Value("id")) {
-			if err := c.add(object, []any{"node", object.Value("id")}); err != nil {
+	return set.list, nil
+}
+
+func collectCandidateSet(ctx context.Context) (*candidateSet, error) {
+	env := CurrentProbeEnv()
+	repository, err := repo.GetRepository(ctx)
+	if err != nil {
+		return nil, err
+	}
+	shared, err := repository.Shared(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := &candidateSet{byKey: map[string]CandidateNode{}}
+
+	for i := range shared.Nodes {
+		node := &shared.Nodes[i]
+		issues := model.Issues(node)
+		rawNode, err := model.Marshal(node)
+		if err != nil {
+			return nil, fmt.Errorf("marshal shared node: %w", err)
+		}
+		var nodeObj rawObject
+		if err := json.Unmarshal(rawNode, &nodeObj); err != nil {
+			return nil, fmt.Errorf("parse shared node: %w", err)
+		}
+		if hasFieldIssue(issues, "id") {
+			rawID, _ := nodeObj.Fields.Get("id")
+			return nil, valueError(fmt.Sprintf(msgStoredNodeIDInvalid, compactRaw(rawID)))
+		}
+		if node.ID == "" {
+			continue
+		}
+		if node.Enabled != nil && !*node.Enabled {
+			continue
+		}
+		name := node.Name
+		if hasFieldIssue(issues, "name") {
+			rawName, _ := nodeObj.Fields.Get("name")
+			decodedName, err := decodeNonNullText(bytes.TrimSpace(rawName))
+			if err != nil {
+				return nil, valueError(fmt.Sprintf(msgStoredNodeNameInvalid, node.ID, compactRaw(rawName)))
+			}
+			name = decodedName
+			encodedName, err := jsonresp.Encode(name)
+			if err == nil {
+				_ = nodeObj.Fields.Set("name", encodedName)
+				if updatedRaw, err := nodeObj.MarshalJSON(); err == nil {
+					rawNode = updatedRaw
+				}
+			}
+		}
+		if name == "" {
+			continue
+		}
+		keyBytes, err := jsonresp.Encode([]string{"node", node.ID})
+		if err != nil {
+			return nil, fmt.Errorf("encode manual node key: %w", err)
+		}
+		var proxyStr string
+		if node.ProxyString != nil {
+			proxyStr = *node.ProxyString
+		}
+		out.add(CandidateNode{
+			Key:         string(keyBytes),
+			Name:        name,
+			ProxyString: proxyStr,
+			Raw:         rawNode,
+		})
+	}
+
+	for i := range shared.Subscriptions {
+		sub := &shared.Subscriptions[i]
+		if sub.Enabled != nil && !*sub.Enabled {
+			continue
+		}
+		issues := model.Issues(sub)
+		if hasFieldIssue(issues, "id") {
+			rawSub, err := model.Marshal(sub)
+			if err != nil {
+				return nil, fmt.Errorf("marshal subscription: %w", err)
+			}
+			var subObj rawObject
+			_ = json.Unmarshal(rawSub, &subObj)
+			rawID, _ := subObj.Fields.Get("id")
+			return nil, valueError(fmt.Sprintf(msgStoredSubIDInvalid, compactRaw(rawID)))
+		}
+		if sub.ID == "" {
+			continue
+		}
+		if env.Collaborators.LoadSubscriptionCache == nil {
+			continue
+		}
+		cacheRaw, err := env.Collaborators.LoadSubscriptionCache(ctx, sub.ID)
+		if err != nil {
+			return nil, err
+		}
+		var cachedNodes []json.RawMessage
+		trimmedCache := bytes.TrimSpace(cacheRaw)
+		if len(trimmedCache) > 0 && !bytes.Equal(trimmedCache, []byte("null")) {
+			var cacheObj rawObject
+			if err := json.Unmarshal(trimmedCache, &cacheObj); err == nil {
+				if rawNodes, ok := cacheObj.Fields.Get("nodes"); ok {
+					trimmedNodes := bytes.TrimSpace(rawNodes)
+					if !bytes.Equal(trimmedNodes, []byte("null")) && !bytes.Equal(trimmedNodes, []byte("false")) && !bytes.Equal(trimmedNodes, []byte("0")) {
+						if len(trimmedNodes) == 0 || trimmedNodes[0] != '[' {
+							return nil, valueError(fmt.Sprintf(msgCachedNodesMustBeArray, sub.ID, compactRaw(rawNodes)))
+						}
+						if err := json.Unmarshal(trimmedNodes, &cachedNodes); err != nil {
+							return nil, valueError(fmt.Sprintf(msgCachedNodesMustBeArray, sub.ID, compactRaw(rawNodes)))
+						}
+					}
+				}
+			}
+		}
+		filtered := cachedNodes
+		if env.Collaborators.FilterSubscriptionNodes != nil {
+			filtered, err = env.Collaborators.FilterSubscriptionNodes(*sub, cachedNodes)
+			if err != nil {
 				return nil, err
 			}
 		}
-	}
-	for _, entry := range config.GetList("subscriptions") {
-		sub, ok := entry.(*jsonx.Object)
-		if !ok || sub == nil {
-			return nil, &pyTypeError{"'" + typeName(entry) + "' object has no attribute 'get'"}
-		}
-		if value, isBool := sub.Value("enabled").(bool); (isBool && !value) || !jsonx.Truthy(sub.Value("id")) {
-			continue
-		}
-		subID, ok := sub.Value("id").(string)
-		if !ok {
-			return nil, &pyTypeError{"'" + typeName(sub.Value("id")) + "' object has no attribute 'replace'"}
-		}
-		cache, err := substore.LoadSubscriptionCache(ctx, subID)
-		if err != nil {
-			return nil, err
-		}
-		var nodes []any
-		if cache != nil {
-			switch value := cache.GetOr("nodes", []any{}).(type) {
-			case []any:
-				nodes = value
-			case bool, jsonx.Number:
-				if jsonx.Truthy(value) {
-					return nil, &pyTypeError{"'" + typeName(value) + "' object is not iterable"}
+		for _, itemRaw := range filtered {
+			var itemObj rawObject
+			if err := json.Unmarshal(itemRaw, &itemObj); err != nil {
+				continue
+			}
+			if rawEnabled, ok := itemObj.Fields.Get("enabled"); ok && bytes.Equal(bytes.TrimSpace(rawEnabled), []byte("false")) {
+				continue
+			}
+			rawName, ok := itemObj.Fields.Get("name")
+			if !ok || bytes.Equal(bytes.TrimSpace(rawName), []byte("null")) {
+				continue
+			}
+			name, err := decodeNonNullText(bytes.TrimSpace(rawName))
+			if err != nil {
+				return nil, valueError(fmt.Sprintf(msgCachedNodeNameInvalid, sub.ID, compactRaw(rawName)))
+			}
+			if name == "" {
+				continue
+			}
+			if rawName[0] != '"' {
+				if encodedName, err := jsonresp.Encode(name); err == nil {
+					_ = itemObj.Fields.Set("name", encodedName)
+					if updatedItem, err := itemObj.MarshalJSON(); err == nil {
+						itemRaw = updatedItem
+					}
 				}
 			}
-		}
-		for _, node := range subs.FilterSubscriptionItems(sub, nodes) {
-			if object, ok := node.(*jsonx.Object); ok && object != nil {
-				if err := c.add(object, []any{"subscription", subID, object.Value("name")}); err != nil {
-					return nil, err
-				}
+			var proxyStr strictString
+			if rawPS, ok := itemObj.Fields.Get("proxy_string"); ok {
+				_ = json.Unmarshal(rawPS, &proxyStr)
 			}
+			keyBytes, err := jsonresp.Encode([]string{"subscription", sub.ID, name})
+			if err != nil {
+				return nil, fmt.Errorf("encode subscription node key: %w", err)
+			}
+			out.add(CandidateNode{
+				Key:         string(keyBytes),
+				Name:        name,
+				ProxyString: string(proxyStr),
+				Raw:         itemRaw,
+			})
 		}
 	}
-	return c, nil
+	return out, nil
 }
 
-// proxyOf is _proxy_of(node): the complete Mihomo proxy, nil when the node
-// cannot be converted (a malformed node must not stop the others).
-func proxyOf(ctx context.Context, node *jsonx.Object, converter convert.ProxyStringConverter) (proxy *jsonx.Object) {
-	defer func() {
-		if recover() != nil {
-			proxy = nil
-		}
-	}()
-	node = node.DeepCopy()
-	if jsonx.Truthy(node.Value("proxy_string")) || node.Has("params") {
-		converted, err := convert.ConvertNodeToMihomo(ctx, node, converter)
-		if err != nil {
-			return nil
-		}
-		proxy = converted
-	} else {
-		proxy = node
-		convert.FixProxyFields(proxy)
-	}
-	if proxy == nil || !jsonx.Truthy(proxy.Value("type")) {
-		return nil
-	}
-	proxy.Set("name", node.Value("name"))
-	return proxy
-}
-
-// needsSubStore is _needs_sub_store(node).
-func needsSubStore(node *jsonx.Object) bool {
-	raw, ok := node.Value("proxy_string").(string)
-	if !ok || raw == "" {
+func needsRemoteConversion(env *ProbeEnv, node CandidateNode) bool {
+	if node.ProxyString == "" || env.Collaborators.NeedsRemoteConversion == nil {
 		return false
 	}
-	parsed, err := convert.ParseStructuredProxyString(raw)
-	return err == nil && parsed == nil
+	return env.Collaborators.NeedsRemoteConversion(node.ProxyString)
 }
 
-// runProbe is _run_probe(proxies, options): ordered name → result.
-func runProbe(ctx context.Context, proxies []*jsonx.Object, options *jsonx.Object) (*jsonx.Object, error) {
-	env := currentEnv
+// LatencyEntry holds a stored or freshly measured node latency record,
+// retaining worker extension fields and member order.
+type LatencyEntry struct {
+	Fields model.Fields
+}
+
+// UnmarshalJSON decodes LatencyEntry preserving member order and raw bytes.
+func (e *LatencyEntry) UnmarshalJSON(data []byte) error {
+	return json.Unmarshal(data, &e.Fields)
+}
+
+// MarshalJSON encodes LatencyEntry preserving member order and raw bytes.
+func (e LatencyEntry) MarshalJSON() ([]byte, error) {
+	return e.Fields.MarshalJSON()
+}
+
+func (e LatencyEntry) method() string {
+	raw, ok := e.Fields.Get("method")
+	if !ok {
+		return ""
+	}
+	var m strictString
+	if json.Unmarshal(raw, &m) != nil {
+		return ""
+	}
+	return string(m)
+}
+
+func (e LatencyEntry) sameTestSettings(settings ProbeSettings) bool {
+	rawURL, ok := e.Fields.Get("url")
+	if !ok {
+		return false
+	}
+	var url strictString
+	if json.Unmarshal(rawURL, &url) != nil || string(url) != settings.URL {
+		return false
+	}
+	rawUnified, ok := e.Fields.Get("unified_delay")
+	if !ok {
+		return false
+	}
+	trimmedUnified := bytes.TrimSpace(rawUnified)
+	var unified bool
+	switch {
+	case bytes.Equal(trimmedUnified, []byte("true")):
+		unified = true
+	case bytes.Equal(trimmedUnified, []byte("false")):
+		unified = false
+	default:
+		return false
+	}
+	if unified != settings.UnifiedDelay {
+		return false
+	}
+	servers, ok := e.stringListOrEmpty("dns_servers")
+	if !ok || !slices.Equal(servers, settings.DNSServers) {
+		return false
+	}
+	bootstrap, ok := e.stringListOrEmpty("dns_bootstrap")
+	if !ok || !slices.Equal(bootstrap, settings.DNSBootstrap) {
+		return false
+	}
+	return true
+}
+
+func (e LatencyEntry) stringListOrEmpty(field string) ([]string, bool) {
+	raw, ok := e.Fields.Get(field)
+	if !ok {
+		return []string{}, true
+	}
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || trimmed[0] != '[' {
+		return nil, false
+	}
+	var items []strictString
+	if err := json.Unmarshal(trimmed, &items); err != nil {
+		return nil, false
+	}
+	out := make([]string, len(items))
+	for i, item := range items {
+		out[i] = string(item)
+	}
+	return out, true
+}
+
+func (e LatencyEntry) history() []json.RawMessage {
+	raw, ok := e.Fields.Get("history")
+	if !ok {
+		return nil
+	}
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || trimmed[0] != '[' {
+		return nil
+	}
+	var items []json.RawMessage
+	if err := json.Unmarshal(trimmed, &items); err != nil {
+		return nil
+	}
+	return items
+}
+
+func runProbeFields(ctx context.Context, proxies []model.Fields, options model.Fields) (model.Map[LatencyEntry], error) {
+	var empty model.Map[LatencyEntry]
+	env := CurrentProbeEnv()
 	binary, err := env.probeBinary()
 	if err != nil {
-		return nil, err
+		return empty, err
 	}
-	payload := options.Clone()
-	nodes := make([]any, len(proxies))
-	for i, proxy := range proxies {
-		nodes[i] = proxy
-	}
-	payload.Set("nodes", nodes)
-	data, err := jsonx.Encode(payload, jsonx.Options{})
+	proxiesJSON, err := jsonresp.EncodeUTF8(proxies)
 	if err != nil {
-		return nil, err
+		return empty, err
+	}
+	payload := options
+	if err := payload.Set("nodes", proxiesJSON); err != nil {
+		return empty, err
+	}
+	data, err := jsonresp.EncodeUTF8(payload)
+	if err != nil {
+		return empty, err
 	}
 	if len(data) > 8*1024*1024 {
-		return nil, valueError("本批节点配置过大，请减少每批节点数")
+		return empty, valueError(msgBatchPayloadTooLarge)
 	}
-	timeoutMS := options.Value("timeout_ms").(jsonx.Number).Float64()
+	var timeoutMS float64
+	if rawTimeout, ok := options.Get("timeout_ms"); ok {
+		_ = json.Unmarshal(rawTimeout, &timeoutMS)
+	}
 	batches := float64((len(proxies) + MaxWorkers - 1) / MaxWorkers)
 	budget := batches*timeoutMS/1000 + 5
-	process, err := env.Runner.Run(ctx, Command{Argv: []string{binary}, Stdin: data,
-		Timeout: time.Duration(budget * float64(time.Second)), Env: env.workerEnv()})
-	if err == ErrTimeout {
-		return nil, &ProbeUnavailable{"测速组件执行超时，已结束本批测试，请重试"}
+	process, err := env.Runner.Run(ctx, Command{
+		Argv:    []string{binary},
+		Stdin:   data,
+		Timeout: time.Duration(budget * float64(time.Second)),
+		Env:     env.workerEnv(),
+	})
+	if errors.Is(err, ErrTimeout) {
+		return empty, &ProbeUnavailable{Message: msgProbeTimeout}
 	}
 	if err != nil {
-		return nil, &ProbeUnavailable{"测速组件无法启动，请检查可执行权限和 CPU 架构"}
+		return empty, &ProbeUnavailable{Message: msgProbeStartFailed}
 	}
 	stdout, err := decodeText(process.Stdout)
 	if err != nil {
-		return nil, err
+		return empty, err
 	}
 	if _, err := decodeText(process.Stderr); err != nil {
-		return nil, err
+		return empty, err
 	}
-	// Worker stderr and the input are never exposed (node credentials).
 	if process.ReturnCode == 3 {
-		return nil, &ProbeUnavailable{"节点测速 DNS 设置无效，请检查服务器地址及引导 DNS"}
+		return empty, &ProbeUnavailable{Message: msgProbeBadDNS}
 	}
 	if process.ReturnCode != 0 {
-		return nil, &ProbeUnavailable{"测速组件异常退出，请检查组件版本后重试"}
+		return empty, &ProbeUnavailable{Message: msgProbeExitFailed}
 	}
-	results, err := parseResults(stdout, proxies)
+	results, err := parseProbeResults(stdout, proxies)
 	if err != nil {
-		if _, ok := err.(*ProbeUnavailable); ok {
-			return nil, err
+		var unavailable *ProbeUnavailable
+		if errors.As(err, &unavailable) {
+			return empty, err
 		}
-		return nil, &ProbeUnavailable{"测速组件返回了无效结果，请检查组件版本"}
+		return empty, &ProbeUnavailable{Message: msgProbeInvalidOutput}
 	}
 	return results, nil
 }
 
-// parseResults validates the worker's answer; errors other than
-// *ProbeUnavailable are Python's ValueError/TypeError/KeyError.
-func parseResults(stdout string, proxies []*jsonx.Object) (*jsonx.Object, error) {
-	parsed, err := jsonx.Parse([]byte(stdout))
-	if err != nil {
-		return nil, err
+func isTruthyWorkerError(raw json.RawMessage) bool {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) || bytes.Equal(trimmed, []byte("false")) {
+		return false
 	}
-	version, err := subscript(parsed, "version")
-	if err != nil {
-		return nil, err
+	if trimmed[0] == '"' {
+		var s string
+		return json.Unmarshal(trimmed, &s) == nil && s != ""
 	}
-	if !jsonx.Equal(version, jsonx.Int(4)) {
-		return nil, &ProbeUnavailable{versionMismatch}
+	if trimmed[0] == '[' || trimmed[0] == '{' {
+		return len(trimmed) > 2
 	}
-	resultsValue, err := subscript(parsed, "results")
-	if err != nil {
-		return nil, err
+	var n float64
+	if json.Unmarshal(trimmed, &n) == nil {
+		return n != 0
 	}
-	list, ok := resultsValue.([]any)
-	if !ok {
-		return nil, valueError("")
-	}
-	results := jsonx.NewObject()
-	for _, entry := range list {
-		object, ok := entry.(*jsonx.Object)
-		if !ok || object == nil {
-			return nil, &pyTypeError{"indices"}
-		}
-		name, ok := object.Get("name")
-		if !ok {
-			return nil, &pyTypeError{"KeyError name"}
-		}
-		switch name.(type) {
-		case []any, *jsonx.Object:
-			return nil, &pyTypeError{"unhashable"}
-		}
-		text, isString := name.(string)
-		if !isString {
-			return nil, valueError("") // never equals a proxy name
-		}
-		results.Set(text, object)
-	}
-	if results.Len() != len(uniqueNames(proxies)) {
-		return nil, valueError("")
-	}
-	for _, name := range uniqueNames(proxies) {
-		if !results.Has(name) {
-			return nil, valueError("")
-		}
-	}
-	for _, entry := range results.Values() {
-		object := entry.(*jsonx.Object)
-		latency, ok := object.Get("latency")
-		if !ok {
-			return nil, &pyTypeError{"KeyError latency"}
-		}
-		if latency != nil {
-			number, isNumber := latency.(jsonx.Number)
-			value, fits := number.Int64()
-			if !isNumber || !number.IsInt() || (fits && value < 1) || strings.HasPrefix(number.String(), "-") {
-				return nil, valueError("")
-			}
-		}
-		if latency == nil && !jsonx.Truthy(object.Value("error")) {
-			return nil, valueError("")
-		}
-	}
-	return results, nil
+	return false
 }
 
-func uniqueNames(proxies []*jsonx.Object) []string {
+func uniqueProxyNames(proxies []model.Fields) []string {
 	var names []string
 	seen := map[string]bool{}
 	for _, proxy := range proxies {
-		name := proxy.GetString("name")
-		if !seen[name] {
-			seen[name] = true
-			names = append(names, name)
+		rawName, ok := proxy.Get("name")
+		if !ok {
+			continue
+		}
+		var name strictString
+		if json.Unmarshal(rawName, &name) != nil {
+			continue
+		}
+		if !seen[string(name)] {
+			seen[string(name)] = true
+			names = append(names, string(name))
 		}
 	}
 	return names
 }
 
-// LoadResults is load_results(): stored results of the current probe
-// method; anything unreadable is empty.
-func LoadResults(ctx context.Context) *jsonx.Object {
-	out := jsonx.NewObject()
-	repository, err := repo.GetRepository(ctx)
-	if err != nil {
+func parseProbeResults(stdout string, proxies []model.Fields) (model.Map[LatencyEntry], error) {
+	var results model.Map[LatencyEntry]
+	var top rawObject
+	if err := json.Unmarshal([]byte(stdout), &top); err != nil {
+		return results, err
+	}
+	if err := checkWorkerVersion(top); err != nil {
+		return results, err
+	}
+	rawResults, ok := top.Fields.Get("results")
+	if !ok || len(bytes.TrimSpace(rawResults)) == 0 || bytes.TrimSpace(rawResults)[0] != '[' {
+		return results, errors.New("invalid results list")
+	}
+	var list []rawObject
+	if err := json.Unmarshal(rawResults, &list); err != nil {
+		return results, err
+	}
+	for _, entry := range list {
+		rawName, ok := entry.Fields.Get("name")
+		if !ok {
+			return results, errors.New("missing result name")
+		}
+		var name strictString
+		if err := json.Unmarshal(rawName, &name); err != nil {
+			return results, errors.New("non-string result name")
+		}
+		results.Set(string(name), LatencyEntry{Fields: entry.Fields})
+	}
+	expectedNames := uniqueProxyNames(proxies)
+	if results.Len() != len(expectedNames) {
+		return results, errors.New("result count mismatch")
+	}
+	for _, name := range expectedNames {
+		if _, found := results.Get(name); !found {
+			return results, errors.New("missing expected proxy result")
+		}
+	}
+	for _, entry := range results.All() {
+		rawLatency, ok := entry.Fields.Get("latency")
+		if !ok {
+			return results, errors.New("missing latency")
+		}
+		trimmedLatency := bytes.TrimSpace(rawLatency)
+		if bytes.Equal(trimmedLatency, []byte("null")) {
+			rawErr, hasErr := entry.Fields.Get("error")
+			if !hasErr || !isTruthyWorkerError(rawErr) {
+				return results, errors.New("null latency without error")
+			}
+			continue
+		}
+		if _, valid := parsePositiveJSONInt(trimmedLatency); !valid {
+			return results, errors.New("invalid positive latency")
+		}
+	}
+	return results, nil
+}
+
+// LoadLatencyResults reads persisted node latency entries of the current probe Method.
+func LoadLatencyResults(ctx context.Context) model.Map[LatencyEntry] {
+	var out model.Map[LatencyEntry]
+	env := CurrentProbeEnv()
+	if env.Collaborators.ReadLatencyFile == nil {
 		return out
 	}
-	data, err := repository.ReadSharedJSON(ctx, LatencyFile)
-	if err != nil || data == nil {
+	raw, ok := env.Collaborators.ReadLatencyFile(ctx)
+	if !ok {
 		return out
 	}
-	for name, entry := range data.All() {
-		if object, ok := entry.(*jsonx.Object); ok && object != nil && jsonx.Equal(object.Value("method"), Method) {
-			out.Set(name, object)
+	var top rawObject
+	if err := json.Unmarshal(raw, &top); err != nil {
+		return out
+	}
+	for name, rawEntry := range top.Fields.All() {
+		var entry LatencyEntry
+		if err := json.Unmarshal(rawEntry, &entry); err != nil {
+			continue
+		}
+		if entry.method() == Method {
+			out.Set(name, entry)
 		}
 	}
 	return out
 }
 
-func saveResults(ctx context.Context, results *jsonx.Object) {
-	repository, err := repo.GetRepository(ctx)
-	if err == nil {
-		_, err = repository.WriteSharedJSON(ctx, LatencyFile, results)
+func saveLatencyResults(ctx context.Context, results model.Map[LatencyEntry]) {
+	env := CurrentProbeEnv()
+	if env.Collaborators.WriteLatencyFile == nil {
+		latencyLog.Error(msgSaveLatencyFailed)
+		return
 	}
+	encoded, err := jsonresp.Encode(results)
 	if err != nil {
-		latencyLog.Error("写入节点延迟结果失败")
+		latencyLog.Error(msgSaveLatencyFailed)
+		return
+	}
+	if err := env.Collaborators.WriteLatencyFile(ctx, encoded); err != nil {
+		latencyLog.Error(msgSaveLatencyFailed)
 	}
 }
 
-// RunTests is run_tests(names, keys=keys): nil slices are None. One test
-// at a time per process (ProbeBusy otherwise).
-func RunTests(ctx context.Context, names, keys []string) (*jsonx.Object, error) {
-	// A started test finishes and stores its results even when the request
-	// is cancelled (Python's request thread is never interrupted).
+// TestOutcome is the API result of a RunLatencyTests execution.
+type TestOutcome struct {
+	TestedAt string                  `json:"tested_at"`
+	Results  model.Map[LatencyEntry] `json:"results"`
+	Missing  []string                `json:"missing"`
+	Settings ProbeSettings           `json:"settings"`
+}
+
+// RunLatencyTests executes an exclusive node latency probe for names or keys
+// (nil for both tests all enabled candidates).
+func RunLatencyTests(ctx context.Context, names, keys []string) (TestOutcome, error) {
 	ctx = lifecycle.Detach(ctx)
 	if !testLock.TryLock() {
-		return nil, &ProbeBusy{"已有节点测速正在进行，请稍后重试"}
+		return TestOutcome{}, &ProbeBusy{Message: msgProbeBusy}
 	}
 	defer testLock.Unlock()
-	return runTests(ctx, names, keys)
+	return runLatencyTestsLocked(ctx, names, keys)
 }
 
-func dedupe(items []string) []string {
+func dedupeStrings(items []string) []string {
 	var out []string
 	seen := map[string]bool{}
 	for _, item := range items {
@@ -425,44 +661,51 @@ func dedupe(items []string) []string {
 	return out
 }
 
-func runTests(ctx context.Context, names, keys []string) (*jsonx.Object, error) {
-	env := currentEnv
-	c, err := collectCandidates(ctx)
+func buildFailedMeasurement() LatencyEntry {
+	var fields model.Fields
+	_ = fields.Set("latency", json.RawMessage("null"))
+	_ = fields.Set("error_code", json.RawMessage(`"config"`))
+	msgJSON, _ := jsonresp.Encode(msgNodeConversionFailed)
+	_ = fields.Set("error", msgJSON)
+	return LatencyEntry{Fields: fields}
+}
+
+func runLatencyTestsLocked(ctx context.Context, names, keys []string) (TestOutcome, error) {
+	env := CurrentProbeEnv()
+	candidates, err := collectCandidateSet(ctx)
 	if err != nil {
-		return nil, err
+		return TestOutcome{}, err
 	}
 	if names != nil && keys != nil {
-		return nil, valueError("names 与 keys 不能同时指定")
+		return TestOutcome{}, valueError(msgNamesAndKeysConflict)
 	}
-	requestedIDs := keys
-	if names != nil {
+	var requestedIDs []string
+	switch {
+	case names != nil:
 		requestedIDs = names
+	case keys != nil:
+		requestedIDs = keys
+	default:
+		requestedIDs = make([]string, len(candidates.list))
+		for i, c := range candidates.list {
+			requestedIDs[i] = c.Key
+		}
 	}
-	if names == nil && keys == nil {
-		requestedIDs = c.keys
-	}
-	requested := dedupe(requestedIDs)
+	requested := dedupeStrings(requestedIDs)
 	if len(requested) > MaxNodes {
-		return nil, valueError(fmt.Sprintf("单次最多测试 %d 个节点，请分批测试", MaxNodes))
+		return TestOutcome{}, valueError(fmt.Sprintf(msgMaxNodesExceeded, MaxNodes))
 	}
-	// identities: requested id → source key (ordered).
+
 	var identityIDs []string
 	identity := map[string]string{}
 	if names != nil {
 		byName := map[string][]string{}
-		for _, key := range c.keys {
-			name := c.nodes[key].Value("name")
-			switch name.(type) {
-			case []any, *jsonx.Object:
-				return nil, &pyTypeError{"unhashable type: '" + typeName(name) + "'"}
-			}
-			if text, ok := name.(string); ok {
-				byName[text] = append(byName[text], key)
-			}
+		for _, c := range candidates.list {
+			byName[c.Name] = append(byName[c.Name], c.Key)
 		}
 		for _, name := range requested {
 			if len(byName[name]) > 1 {
-				return nil, valueError("存在同名节点，请使用 keys 指定节点来源后重试")
+				return TestOutcome{}, valueError(msgDuplicateNodeName)
 			}
 		}
 		for _, name := range requested {
@@ -473,48 +716,70 @@ func runTests(ctx context.Context, names, keys []string) (*jsonx.Object, error) 
 		}
 	} else {
 		for _, key := range requested {
-			if c.has(key) {
+			if candidates.has(key) {
 				identityIDs = append(identityIDs, key)
 				identity[key] = key
 			}
 		}
 	}
+
 	wanted := make([]string, len(identityIDs))
 	for i, id := range identityIDs {
 		wanted[i] = identity[id]
 	}
 	remote := 0
 	for _, key := range wanted {
-		if needsSubStore(c.nodes[key]) {
+		if needsRemoteConversion(env, candidates.byKey[key]) {
 			remote++
 		}
 	}
 	if remote > MaxConversionWorker {
-		return nil, valueError(fmt.Sprintf("单次最多测试 %d 个需要 Sub-Store 转换的节点，请分批测试", MaxConversionWorker))
+		return TestOutcome{}, valueError(fmt.Sprintf(msgMaxRemoteConversions, MaxConversionWorker))
 	}
-	options, err := Settings(ctx)
+
+	settings, err := ResolveSettings(ctx)
 	if err != nil {
-		return nil, err
+		return TestOutcome{}, err
 	}
-	measured := jsonx.NewObject()
+	settingsBytes, err := jsonresp.Encode(settings)
+	if err != nil {
+		return TestOutcome{}, err
+	}
+	var settingsFields model.Fields
+	if err := json.Unmarshal(settingsBytes, &settingsFields); err != nil {
+		return TestOutcome{}, err
+	}
+
+	var measured model.Map[LatencyEntry]
 	if len(wanted) > 0 {
-		if _, err := env.probeBinary(); err != nil { // fail before conversion if missing
-			return nil, err
+		if _, err := env.probeBinary(); err != nil {
+			return TestOutcome{}, err
 		}
-		converted := make([]*jsonx.Object, len(wanted))
+		type convResult struct {
+			proxy model.Fields
+			ok    bool
+		}
+		converted := make([]convResult, len(wanted))
 		workers := MaxConversionWorker
 		if len(wanted) < workers {
 			workers = len(wanted)
 		}
 		jobs := make(chan int)
 		var wg sync.WaitGroup
-		converter := env.converter()
 		for w := 0; w < workers; w++ {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				for i := range jobs {
-					converted[i] = proxyOf(ctx, c.nodes[wanted[i]], converter)
+				defer func() {
+					if recovered := recover(); recovered != nil {
+						latencyLog.Errorf("node conversion worker recovered panic: %v", recovered)
+					}
+				}()
+				for idx := range jobs {
+					if env.Collaborators.ConvertNode != nil {
+						proxy, ok := env.Collaborators.ConvertNode(ctx, candidates.byKey[wanted[idx]].Raw)
+						converted[idx] = convResult{proxy: proxy, ok: ok}
+					}
 				}
 			}()
 		}
@@ -523,110 +788,104 @@ func runTests(ctx context.Context, names, keys []string) (*jsonx.Object, error) 
 		}
 		close(jobs)
 		wg.Wait()
-		var proxies []*jsonx.Object
+
+		var proxies []model.Fields
 		for i, key := range wanted {
-			if proxy := converted[i]; proxy != nil {
-				// The worker correlates by name; source keys keep same-name
-				// nodes apart.
-				proxy.Set("name", key)
+			if converted[i].ok {
+				proxy := converted[i].proxy
+				keyJSON, err := jsonresp.Encode(key)
+				if err != nil {
+					return TestOutcome{}, err
+				}
+				if err := proxy.Set("name", keyJSON); err != nil {
+					return TestOutcome{}, err
+				}
 				proxies = append(proxies, proxy)
 			} else {
-				measured.Set(key, jsonx.Obj("latency", nil, "error_code", "config",
-					"error", "无法解析完整节点配置，请检查格式或 Sub-Store 服务"))
+				measured.Set(key, buildFailedMeasurement())
 			}
 		}
 		if len(proxies) > 0 {
-			results, err := runProbe(ctx, proxies, options)
+			batchResults, err := runProbeFields(ctx, proxies, settingsFields)
 			if err != nil {
-				return nil, err
+				return TestOutcome{}, err
 			}
-			measured.Update(results)
+			for key, entry := range batchResults.All() {
+				measured.Set(key, entry)
+			}
 		}
 	}
 
 	stamp := isoUTC(env.Now())
-	stored := LoadResults(ctx)
-	for key, measurement := range measured.All() {
-		m := measurement.(*jsonx.Object)
-		entry, _ := stored.Value(key).(*jsonx.Object)
-		if entry == nil {
-			entry = jsonx.NewObject()
-		}
-		sameTest := jsonx.Equal(entry.Value("url"), options.Value("url")) &&
-			jsonx.Equal(entry.Value("unified_delay"), options.Value("unified_delay")) &&
-			jsonx.Equal(entry.GetOr("dns_servers", []any{}), options.Value("dns_servers")) &&
-			jsonx.Equal(entry.GetOr("dns_bootstrap", []any{}), options.Value("dns_bootstrap"))
-		history := []any{}
-		if sameTest {
-			previous, err := pyList(entry.Value("history"))
-			if err != nil {
-				return nil, err
-			}
+	stampJSON, err := jsonresp.Encode(stamp)
+	if err != nil {
+		return TestOutcome{}, err
+	}
+	methodJSON, err := jsonresp.Encode(Method)
+	if err != nil {
+		return TestOutcome{}, err
+	}
+
+	stored := LoadLatencyResults(ctx)
+	for key, m := range measured.All() {
+		prev, hasPrev := stored.Get(key)
+		history := []json.RawMessage{}
+		if hasPrev && prev.sameTestSettings(settings) {
+			previous := prev.history()
 			if len(previous) > HistorySize-1 {
 				previous = previous[len(previous)-(HistorySize-1):]
 			}
 			history = append(history, previous...)
 		}
-		history = append(history, m.Value("latency"))
-		record := jsonx.NewObject()
-		for field, value := range m.All() {
-			if field != "name" {
-				record.Set(field, value)
-			}
+		latencyRaw, ok := m.Fields.Get("latency")
+		if !ok {
+			latencyRaw = json.RawMessage("null")
 		}
-		record.Set("method", Method)
-		record.Set("tested_at", stamp)
-		record.Set("history", history)
-		for field, value := range options.All() {
-			record.Set(field, jsonx.DeepCopy(value))
+		history = append(history, latencyRaw)
+		historyJSON, err := jsonresp.Encode(history)
+		if err != nil {
+			return TestOutcome{}, err
 		}
-		stored.Set(key, record)
+
+		record := m.Fields
+		record.Delete("name")
+		_ = record.Set("method", methodJSON)
+		_ = record.Set("tested_at", stampJSON)
+		_ = record.Set("history", historyJSON)
+		for field, value := range settingsFields.All() {
+			_ = record.Set(field, value)
+		}
+		stored.Set(key, LatencyEntry{Fields: record})
 	}
-	kept := jsonx.NewObject()
+
+	var kept model.Map[LatencyEntry]
 	for key, entry := range stored.All() {
-		if c.has(key) {
+		if candidates.has(key) {
 			kept.Set(key, entry)
 		}
 	}
-	saveResults(ctx, kept)
-	results := jsonx.NewObject()
+	saveLatencyResults(ctx, kept)
+
+	var outcomeResults model.Map[LatencyEntry]
 	for _, id := range identityIDs {
-		results.Set(id, kept.Value(identity[id]))
+		if entry, ok := kept.Get(identity[id]); ok {
+			outcomeResults.Set(id, entry)
+		}
 	}
-	missing := []any{}
+	missing := []string{}
 	for _, id := range requested {
 		if _, ok := identity[id]; !ok {
 			missing = append(missing, id)
 		}
 	}
-	return jsonx.Obj("tested_at", stamp, "results", results, "missing", missing, "settings", options), nil
+	return TestOutcome{
+		TestedAt: stamp,
+		Results:  outcomeResults,
+		Missing:  missing,
+		Settings: settings,
+	}, nil
 }
 
-// pyList is list(value or []).
-func pyList(value any) ([]any, error) {
-	if !jsonx.Truthy(value) {
-		return nil, nil
-	}
-	switch v := value.(type) {
-	case []any:
-		return append([]any{}, v...), nil
-	case string:
-		var out []any
-		for _, r := range v {
-			out = append(out, string(r))
-		}
-		return out, nil
-	case *jsonx.Object:
-		var out []any
-		for key := range v.All() {
-			out = append(out, key)
-		}
-		return out, nil
-	}
-	return nil, &pyTypeError{"'" + typeName(value) + "' object is not iterable"}
-}
-
-// isoUTC is datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z').
 func isoUTC(t time.Time) string {
 	t = t.UTC()
 	if t.Nanosecond()/1000 == 0 {

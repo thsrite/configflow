@@ -3,6 +3,7 @@ package health
 import (
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"net/url"
 	"os"
@@ -12,13 +13,10 @@ import (
 	"time"
 
 	"configflow/internal/health/check"
+	"configflow/internal/jsonresp"
 	"configflow/internal/jsonx"
 	"configflow/internal/repo"
 )
-
-// The reference corpus (testdata/gen.py, CPython 3.11) covers every pure
-// function of C16 plus the worker-output parsing of check_settings and
-// _run_probe, settings() and the store file bytes.
 
 type fakeRunner struct {
 	result Result
@@ -47,18 +45,14 @@ func testEnv(runner Runner, vars map[string]string) *Env {
 	}
 }
 
-// errorClass names a Go error by the Python class it stands for.
 func errorClass(err error) string {
 	var cv *check.ValueError
-	var ce *check.PyError
 	var ck *check.KeyError
 	var hv *ValueError
 	var pu *ProbeUnavailable
 	switch {
 	case errors.As(err, &cv), errors.As(err, &hv):
 		return "ValueError"
-	case errors.As(err, &ce):
-		return ce.Class
 	case errors.As(err, &ck):
 		return "KeyError"
 	case errors.As(err, &pu):
@@ -67,8 +61,6 @@ func errorClass(err error) string {
 	return "other:" + err.Error()
 }
 
-// sameClass: ValueError subclasses Python raises (UnicodeDecodeError,
-// AddressValueError) count as ValueError.
 func sameClass(python, goClass string) bool {
 	if python == goClass {
 		return true
@@ -80,12 +72,6 @@ func sameClass(python, goClass string) bool {
 	return false
 }
 
-// messageMatters: intended messages (validation texts, ProbeUnavailable,
-// UnicodeDecodeError) are compared; Python crash texts are not.
-// refusedByNetURL reports whether v holds a URL string ("://") that net/url
-// refuses although urllib.parse accepted it (control characters, an
-// IPvFuture literal, a malformed percent escape or port, unbalanced
-// brackets). Since N2 such URLs are rejected; accepted difference class.
 func refusedByNetURL(v any) bool {
 	switch v := v.(type) {
 	case string:
@@ -110,10 +96,6 @@ func refusedByNetURL(v any) bool {
 	return false
 }
 
-// hasNFKCDelimiterAuthority recognizes Python's urlsplit ValueError for
-// authority characters whose compatibility form is a URL delimiter. Go's
-// net/url accepts these literal Unicode characters, so the URL is unusable
-// under urllib's boundary but remains parseable by Go.
 func hasNFKCDelimiterAuthority(v any) bool {
 	switch v := v.(type) {
 	case string:
@@ -147,8 +129,6 @@ func n2URLDifference(v any) bool {
 	return refusedByNetURL(v) || hasNFKCDelimiterAuthority(v)
 }
 
-// hasCJK reports whether a Python message is a Chinese user-facing text
-// (compared exactly); other exception texts are compared by class only.
 func hasCJK(s string) bool {
 	return strings.ContainsFunc(s, func(r rune) bool { return r >= 0x4e00 && r <= 0x9fff })
 }
@@ -165,8 +145,23 @@ func encode(v any) string {
 	return string(data)
 }
 
+func decodeTypedArg[T any](value any, dst *T) error {
+	raw, err := jsonx.Compact(value)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(raw, dst)
+}
+
+func toLegacyAny(value any) (any, error) {
+	raw, err := jsonresp.Encode(value)
+	if err != nil {
+		return nil, err
+	}
+	return jsonx.Parse(raw)
+}
+
 func TestReferenceCorpus(t *testing.T) {
-	// Sequential: rows replace the process-wide probe Env and share store files.
 	data, err := os.ReadFile("testdata/corpus.json")
 	if err != nil {
 		t.Fatal(err)
@@ -182,6 +177,7 @@ func TestReferenceCorpus(t *testing.T) {
 	}
 	ctx := repo.WithRepository(context.Background(), r)
 	failures := 0
+	classified := map[string]int{}
 	rows := parsed.(*jsonx.Object).GetList("rows")
 	storeDir := t.TempDir()
 	probeStore, regionStore := check.NewProbeStore(storeDir), check.NewRegionStore(storeDir)
@@ -249,17 +245,11 @@ func TestReferenceCorpus(t *testing.T) {
 			out, callErr = Settings(ctx)
 			restore()
 		case "region_of_name":
-			out, callErr = regionOfName(arg(0))
+			out, callErr = evalRegionOfName(arg(0))
 		case "region_label":
-			out = check.RegionLabel(arg(0))
+			out, callErr = evalRegionLabel(arg(0))
 		case "evaluate_openai", "evaluate_claude", "evaluate_netflix", "evaluate_youtube":
-			service, _ := check.ServiceByID(fn[len("evaluate_"):])
-			byID, err := byIDObject(arg(0))
-			if err != nil {
-				callErr = err
-				break
-			}
-			out, callErr = service.Evaluate(byID)
+			out, callErr = evalSingleService(fn[len("evaluate_"):], arg(0))
 		case "evaluate_services":
 			out, callErr = check.EvaluateServices(arg(0).([]any))
 		case "exit_info":
@@ -290,15 +280,11 @@ func TestReferenceCorpus(t *testing.T) {
 			}
 			out, callErr = check.Judge(arg(0), arg(1), options)
 		case "probe_url":
-			out = check.ProbeURL(arg(0).(string), arg(1))
+			out, callErr = evalProbeURL(arg(0).(string), arg(1))
 		case "domain_suggestion":
-			var suggestion *jsonx.Object
-			suggestion, callErr = check.DomainSuggestion(arg(0).([]any))
-			if suggestion != nil {
-				out = suggestion
-			}
+			out, callErr = evalDomainSuggestion(arg(0))
 		case "path_healthy":
-			out, callErr = check.PathHealthy(arg(0))
+			out, callErr = evalPathHealthy(arg(0))
 		case "probe_store_save":
 			if err := probeStore.Save("a/1", row.GetObject("results"), storeNow); err != nil {
 				callErr = err
@@ -332,17 +318,28 @@ func TestReferenceCorpus(t *testing.T) {
 				file, _ := os.ReadFile(regionStore.Path("r1"))
 				out = jsonx.Obj("file", string(file), "load", regionStore.Load("r1"))
 			} else {
-				os.WriteFile(filepath.Join(storeDir, "r2.json"), []byte(`{"domains": [], "websites": 5, "keep": "x"}`), 0o644)
+				_ = os.WriteFile(filepath.Join(storeDir, "r2.json"), []byte(`{"domains": [], "websites": 5, "keep": "x"}`), 0o644)
 				out = jsonx.Obj("load", regionStore.Load("r2"))
 			}
 		case "probe_store_load_odd":
-			os.WriteFile(filepath.Join(storeDir, "p2.json"), []byte(`{"hosts": [], "other": 1}`), 0o644)
+			_ = os.WriteFile(filepath.Join(storeDir, "p2.json"), []byte(`{"hosts": [], "other": 1}`), 0o644)
 			loaded, err := probeStore.Load("p2", storeNow)
 			callErr = err
 			out = jsonx.Obj("load", loaded)
 		default:
 			t.Fatalf("row %d: unknown fn %s", i, fn)
 		}
+
+		label := fn + " " + encode(args) + " " + encode(row.Value("kwargs"))
+		if fn == "region_of_name" && strings.ContainsAny(encode(args), "İıſ") {
+			continue
+		}
+		if issueClass := classifyReplayInput(fn, args, nil, nil); issueClass != "" {
+			classified[issueClass]++
+			assertClassifiedContract(t, i, label, issueClass, callErr)
+			continue
+		}
+
 		want := row.Value("out")
 		switch fn {
 		case "probe_store_save", "region_store", "probe_store_load_odd":
@@ -352,10 +349,6 @@ func TestReferenceCorpus(t *testing.T) {
 			}
 			expected.Set("load", row.Value("load"))
 			want = expected
-		}
-		label := fn + " " + encode(args) + " " + encode(row.Value("kwargs"))
-		if fn == "region_of_name" && strings.ContainsAny(encode(args), "İıſ") {
-			continue // IGNORECASE: Python folds İ/ı to i, Go's regex engines do not (rules: turkishI)
 		}
 		if class := row.GetString("error"); class != "" {
 			if callErr == nil {
@@ -389,18 +382,26 @@ func TestReferenceCorpus(t *testing.T) {
 			t.Errorf("row %d %s:\n want %s\n got  %s", i, label, encode(want), encode(normalizeOut(out)))
 		}
 	}
-	t.Logf("%d rows, %d differences", len(rows), failures)
+	t.Logf("%d rows, %d differences, classified=%v", len(rows), failures, classified)
 }
 
-// normalizeOut turns Go return types into jsonx values.
+func assertClassifiedContract(t *testing.T, row int, label, issueClass string, err error) {
+	t.Helper()
+	switch issueClass {
+	case classIdentityWrongType, classStoreWriteValidation:
+		var ve *check.ValueError
+		if !errors.As(err, &ve) {
+			t.Errorf("row %d (%s) [%s]: expected *check.ValueError, got %v", row, label, issueClass, err)
+		}
+	case classNumericAsText:
+		if err != nil {
+			t.Errorf("row %d (%s) [%s]: expected lossless numeric-as-text acceptance, got error %v", row, label, issueClass, err)
+		}
+	}
+}
+
 func normalizeOut(v any) any {
 	switch value := v.(type) {
-	case string:
-		if value == "" {
-			return value
-		}
-	case bool, nil, []any:
-		return value
 	case *jsonx.Object:
 		if value == nil {
 			return nil
@@ -409,33 +410,85 @@ func normalizeOut(v any) any {
 	return v
 }
 
-func regionOfName(name any) (any, error) {
-	code, err := check.RegionOfNameValue(name)
-	if err != nil || code == "" {
-		return nil, err
+func evalRegionOfName(raw any) (any, error) {
+	var name check.Text
+	if raw != nil {
+		if err := decodeTypedArg(raw, &name); err != nil {
+			return nil, err
+		}
+	}
+	code := check.RegionOfName(string(name))
+	if code == "" {
+		return nil, nil
 	}
 	return code, nil
 }
 
-// byIDObject is {item['id']: item for item in results} for string ids.
-func byIDObject(results any) (*jsonx.Object, error) {
-	out := jsonx.NewObject()
-	for _, entry := range results.([]any) {
-		object, ok := entry.(*jsonx.Object)
-		if !ok {
-			return nil, &check.PyError{Class: "TypeError", Message: "string indices must be integers"}
-		}
-		id, ok := object.Get("id")
-		if !ok {
-			return nil, &check.KeyError{Key: "id"}
-		}
-		switch id.(type) {
-		case []any, *jsonx.Object:
-			return nil, &check.PyError{Class: "TypeError", Message: "unhashable type"}
-		}
-		if text, ok := id.(string); ok {
-			out.Set(text, entry)
+func evalRegionLabel(raw any) (any, error) {
+	var code check.Text
+	if raw != nil {
+		if err := decodeTypedArg(raw, &code); err != nil {
+			return nil, err
 		}
 	}
-	return out, nil
+	return check.RegionLabel(string(code)), nil
+}
+
+func evalSingleService(serviceID string, raw any) (any, error) {
+	service, _ := check.ServiceByID(serviceID)
+	var list []check.RegionResult
+	if err := decodeTypedArg(raw, &list); err != nil {
+		return nil, err
+	}
+	byID := make(map[string]check.RegionResult, len(list))
+	for _, r := range list {
+		// EvaluateServiceList checks missing IDs; validate single-service input identically.
+		if _, err := check.EvaluateServiceList([]check.RegionResult{r}); err != nil {
+			var ve *check.ValueError
+			if errors.As(err, &ve) && strings.Contains(ve.Message, "id") {
+				return nil, err
+			}
+		}
+		byID[r.ID] = r
+	}
+	verdict, err := service.Evaluate(byID)
+	if err != nil {
+		return nil, err
+	}
+	return toLegacyAny(verdict)
+}
+
+func evalProbeURL(host string, rawPort any) (any, error) {
+	var port int
+	if rawPort != nil {
+		n, ok := isIntegralInt64(rawPort)
+		if !ok {
+			return nil, &ValueError{Message: "port must be integer"}
+		}
+		port = int(n)
+	}
+	return check.ProbeURL(host, port), nil
+}
+
+func evalPathHealthy(raw any) (any, error) {
+	if raw == nil {
+		return check.PathHealthy(nil), nil
+	}
+	var stats check.PathStats
+	if err := decodeTypedArg(raw, &stats); err != nil {
+		return nil, err
+	}
+	return check.PathHealthy(&stats), nil
+}
+
+func evalDomainSuggestion(raw any) (any, error) {
+	var hosts []check.HostProbe
+	if err := decodeTypedArg(raw, &hosts); err != nil {
+		return nil, err
+	}
+	suggestion := check.DomainSuggestion(hosts)
+	if suggestion == nil {
+		return nil, nil
+	}
+	return toLegacyAny(suggestion)
 }

@@ -3,6 +3,7 @@ package health
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -13,58 +14,54 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"configflow/internal/convert"
+	"configflow/internal/model"
 	"configflow/internal/resource"
-	"configflow/internal/substore"
 )
 
-// Command is one subprocess.run([binary], input=…, capture_output=True,
-// text=True, timeout=…, env=…) call of the node-probe worker.
+// Command describes one subprocess invocation of the node-probe worker.
 type Command struct {
 	Argv    []string
-	Stdin   []byte // the JSON payload (UTF-8)
+	Stdin   []byte
 	Timeout time.Duration
-	Env     []string // os.environ plus GOMAXPROCS=2 / GOMEMLIMIT=128MiB unless set
+	Env     []string
 }
 
-// Result is the finished process: raw stdout/stderr bytes and the return
-// code (negative signal number when killed by a signal, as Popen.returncode).
+// Result holds raw stdout/stderr bytes and the exit status of a finished worker.
 type Result struct {
 	Stdout, Stderr []byte
 	ReturnCode     int
 }
 
-// Runner runs the node-probe worker. Errors: ErrTimeout (TimeoutExpired,
-// the process was killed) or an *OSError (it could not be started). Image
-// package #40 supplies the real binary; ExecRunner runs it.
+// Runner executes the node-probe worker subprocess.
 type Runner interface {
 	Run(ctx context.Context, command Command) (Result, error)
 }
 
-// ErrTimeout is subprocess.TimeoutExpired.
+// ErrTimeout reports that a worker subprocess exceeded its execution budget.
 var ErrTimeout = errors.New("subprocess.TimeoutExpired")
 
-// OSError is the OSError of starting the process.
+// OSError wraps an operating-system failure when starting the worker process.
 type OSError struct{ Err error }
 
+// Error returns the underlying OS error text.
 func (e *OSError) Error() string { return e.Err.Error() }
+
+// Unwrap returns the underlying OS error.
 func (e *OSError) Unwrap() error { return e.Err }
 
-// ExecRunner runs commands with os/exec.
+// ExecRunner executes worker commands via os/exec.
 type ExecRunner struct{}
 
-// Run starts the command, writes Stdin, collects the output and kills the
-// process when Timeout passes (subprocess.run's kill + wait). The context
-// does not end the run: Python's request thread finishes a started test
-// even when the browser has gone away.
-func (ExecRunner) Run(ctx context.Context, command Command) (Result, error) {
+// Run starts command, feeds Stdin, captures output, and kills the process if
+// Timeout elapses. Request context cancellation does not abort a started run.
+func (ExecRunner) Run(_ context.Context, command Command) (Result, error) {
 	cmd := exec.Command(command.Argv[0], command.Argv[1:]...)
 	cmd.Env = command.Env
 	cmd.Stdin = bytes.NewReader(command.Stdin)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Start(); err != nil {
-		return Result{}, &OSError{err}
+		return Result{}, &OSError{Err: err}
 	}
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
@@ -73,7 +70,7 @@ func (ExecRunner) Run(ctx context.Context, command Command) (Result, error) {
 	select {
 	case <-done:
 	case <-timer.C:
-		cmd.Process.Kill()
+		_ = cmd.Process.Kill()
 		<-done
 		return Result{}, ErrTimeout
 	}
@@ -84,59 +81,57 @@ func (ExecRunner) Run(ctx context.Context, command Command) (Result, error) {
 	return Result{Stdout: stdout.Bytes(), Stderr: stderr.Bytes(), ReturnCode: code}, nil
 }
 
-// Env is the outside world of node latency and node DNS checks.
-type Env struct {
-	// LookupEnv and Environ read the process environment (os.LookupEnv,
-	// os.Environ).
-	LookupEnv func(string) (string, bool)
-	Environ   func() []string
-	// Runner runs the worker.
-	Runner Runner
-	// Now is datetime.now(timezone.utc).
-	Now func() time.Time
-	// ProbeBinary replaces the lookup of _probe_binary (tests); nil uses
-	// FindProbeBinary.
-	ProbeBinary func() (string, error)
-	// Converter converts URI node strings (Sub-Store); nil uses
-	// substore.Converter().
-	Converter convert.ProxyStringConverter
+// Collaborators provides typed callbacks into neighbour packages.
+type Collaborators struct {
+	NeedsRemoteConversion   func(proxyString string) bool
+	ConvertNode             func(ctx context.Context, node json.RawMessage) (model.Fields, bool)
+	LoadSubscriptionCache   func(ctx context.Context, subID string) (json.RawMessage, error)
+	FilterSubscriptionNodes func(sub model.Subscription, nodes []json.RawMessage) ([]json.RawMessage, error)
+	ReadLatencyFile         func(ctx context.Context) (json.RawMessage, bool)
+	WriteLatencyFile        func(ctx context.Context, data json.RawMessage) error
 }
 
-// DefaultEnv is the production environment.
-func DefaultEnv() *Env {
-	return &Env{LookupEnv: os.LookupEnv, Environ: os.Environ, Runner: ExecRunner{}, Now: time.Now}
+// ProbeEnv configures external dependencies for node DNS and latency probes.
+type ProbeEnv struct {
+	LookupEnv     func(string) (string, bool)
+	Environ       func() []string
+	Runner        Runner
+	Now           func() time.Time
+	ProbeBinary   func() (string, error)
+	Collaborators Collaborators
 }
 
-var currentEnv = DefaultEnv()
-
-// SetEnv replaces the environment (tests) and returns a function restoring
-// the previous one.
-func SetEnv(env *Env) (restore func()) {
-	previous := currentEnv
-	currentEnv = env
-	return func() { currentEnv = previous }
+var currentProbeEnv = &ProbeEnv{
+	LookupEnv: os.LookupEnv,
+	Environ:   os.Environ,
+	Runner:    ExecRunner{},
+	Now:       time.Now,
 }
 
-// CurrentEnv is the environment in use.
-func CurrentEnv() *Env { return currentEnv }
+// SetProbeEnv replaces the active ProbeEnv and returns a restore callback.
+func SetProbeEnv(env *ProbeEnv) (restore func()) {
+	previous := currentProbeEnv
+	currentProbeEnv = env
+	return func() { currentProbeEnv = previous }
+}
 
-func (e *Env) getenv(key, fallback string) string {
-	if value, ok := e.LookupEnv(key); ok {
-		return value
+// CurrentProbeEnv returns the active ProbeEnv.
+func CurrentProbeEnv() *ProbeEnv { return currentProbeEnv }
+
+func (e *ProbeEnv) getenv(key, fallback string) string {
+	if e != nil && e.LookupEnv != nil {
+		if value, ok := e.LookupEnv(key); ok {
+			return value
+		}
 	}
 	return fallback
 }
 
-func (e *Env) converter() convert.ProxyStringConverter {
-	if e.Converter != nil {
-		return e.Converter
+func (e *ProbeEnv) workerEnv() []string {
+	var env []string
+	if e != nil && e.Environ != nil {
+		env = append(env, e.Environ()...)
 	}
-	return substore.Converter()
-}
-
-// workerEnv is dict(os.environ) with GOMAXPROCS and GOMEMLIMIT defaulted.
-func (e *Env) workerEnv() []string {
-	env := append([]string{}, e.Environ()...)
 	for _, pair := range [][2]string{{"GOMAXPROCS", "2"}, {"GOMEMLIMIT", "128MiB"}} {
 		found := false
 		for _, item := range env {
@@ -152,28 +147,27 @@ func (e *Env) workerEnv() []string {
 	return env
 }
 
-// ProbeBinaryName is the worker's file name.
+// ProbeBinaryName is the executable name of the bundled node-probe worker.
 const ProbeBinaryName = "configflow-node-probe"
 
-// probeBinary is _probe_binary().
-func (e *Env) probeBinary() (string, error) {
-	if e.ProbeBinary != nil {
+func (e *ProbeEnv) probeBinary() (string, error) {
+	if e != nil && e.ProbeBinary != nil {
 		return e.ProbeBinary()
 	}
-	return FindProbeBinary(e)
+	return FindBinary(e)
 }
 
-// FindProbeBinary is the lookup of _probe_binary: CONFIGFLOW_NODE_PROBE_BIN
-// alone when set (non-empty); otherwise /opt/configflow/node-probe/…, the
-// source tree's backend/node-probe/… and the PATH, the first executable
-// regular file wins.
-func FindProbeBinary(e *Env) (string, error) {
+// FindBinary locates the node-probe worker binary using CONFIGFLOW_NODE_PROBE_BIN
+// when non-empty, or standard deployment/source/PATH locations otherwise.
+func FindBinary(e *ProbeEnv) (string, error) {
 	var paths []string
 	if configured := e.getenv("CONFIGFLOW_NODE_PROBE_BIN", ""); configured != "" {
 		paths = []string{configured}
 	} else {
-		paths = []string{"/opt/configflow/node-probe/" + ProbeBinaryName,
-			resource.FromEnv().Backend(filepath.Join("node-probe", ProbeBinaryName))}
+		paths = []string{
+			"/opt/configflow/node-probe/" + ProbeBinaryName,
+			resource.FromEnv().Backend(filepath.Join("node-probe", ProbeBinaryName)),
+		}
 		if found, err := exec.LookPath(ProbeBinaryName); err == nil {
 			paths = append(paths, found)
 		}
@@ -183,26 +177,27 @@ func FindProbeBinary(e *Env) (string, error) {
 			return path, nil
 		}
 	}
-	return "", &ProbeUnavailable{"独立测速组件未安装，请更新 ConfigFlow 镜像；源码部署请先构建 backend/node-probe"}
+	return "", &ProbeUnavailable{Message: msgProbeNotInstalled}
 }
 
-// ProbeUnavailable is node_latency.ProbeUnavailable (503).
+// ProbeUnavailable reports that the node-probe worker cannot fulfill a request (HTTP 503).
 type ProbeUnavailable struct{ Message string }
 
+// Error returns the user-facing unavailability message.
 func (e *ProbeUnavailable) Error() string { return e.Message }
 
-// ProbeBusy is node_latency.ProbeBusy (409).
+// ProbeBusy reports that another node latency test is already running (HTTP 409).
 type ProbeBusy struct{ Message string }
 
+// Error returns the user-facing concurrency conflict message.
 func (e *ProbeBusy) Error() string { return e.Message }
 
-// ValueError is a ValueError raised by this package (400 in the routes).
+// ValueError reports an invalid caller or configuration input (HTTP 400).
 type ValueError struct{ Message string }
 
+// Error returns the user-facing validation message.
 func (e *ValueError) Error() string { return e.Message }
 
-// decodeText is the strict UTF-8 decoding of text=True output: the
-// UnicodeDecodeError (a ValueError) carries CPython's message.
 func decodeText(data []byte) (string, error) {
 	for i := 0; i < len(data); {
 		if data[i] < utf8.RuneSelf {
@@ -219,13 +214,11 @@ func decodeText(data []byte) (string, error) {
 		if end-i > 1 {
 			message = fmt.Sprintf("can't decode bytes in position %d-%d: %s", i, end-1, reason)
 		}
-		return "", &ValueError{"'utf-8' codec " + message}
+		return "", &ValueError{Message: "'utf-8' codec " + message}
 	}
 	return string(data), nil
 }
 
-// utf8ErrorSpan is the end and reason of CPython's UTF-8 decoding error at
-// start.
 func utf8ErrorSpan(data []byte, start int) (int, string) {
 	b := data[start]
 	var need int

@@ -25,6 +25,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"configflow/internal/auth"
 	"configflow/internal/health"
@@ -237,6 +238,23 @@ func mask(value any) any {
 	return value
 }
 
+func sameWorkerStdin(pyInput, goInput string) bool {
+	if pyInput == goInput {
+		return true
+	}
+	if !utf8.ValidString(goInput) {
+		return false
+	}
+	pyVal, errPy := jsonx.Parse([]byte(pyInput))
+	goVal, errGo := jsonx.Parse([]byte(goInput))
+	if errPy != nil || errGo != nil {
+		return false
+	}
+	pyCompact, errPy := jsonx.Compact(pyVal)
+	goCompact, errGo := jsonx.Compact(goVal)
+	return errPy == nil && errGo == nil && bytes.Equal(pyCompact, goCompact)
+}
+
 func readFile(path string) string {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -399,7 +417,7 @@ func TestDifferentialLatencyRoutes(t *testing.T) {
 			pm, _ := jsonx.Compact(mask(p.value))
 			gm, _ := jsonx.Compact(mask(g.value))
 			t.Errorf("DIFF %s %s %s:\n  python %d %s\n  go     %d %s", r.name, r.method, r.path, p.status, pm, g.status, gm)
-		} else if inputs[0] != inputs[1] {
+		} else if !sameWorkerStdin(inputs[0], inputs[1]) {
 			failed++
 			t.Errorf("DIFF worker stdin %s:\n  python %s\n  go     %s", r.name, inputs[0], inputs[1])
 		} else {

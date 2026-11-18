@@ -1,0 +1,390 @@
+package health
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"strings"
+	"testing"
+	"time"
+
+	"configflow/internal/jsonresp"
+	"configflow/internal/model"
+	"configflow/internal/repo"
+)
+
+func TestHealthCoreHasNoLegacyOrUntypedDependency(t *testing.T) {
+	coreFiles := []string{"messages.go", "values.go", "wire.go", "ipaddr.go", "runner.go", "dns.go", "latency.go"}
+	forbiddenImports := []string{"jsonx", "internal/convert", "internal/subs", "internal/substore"}
+	forbiddenNames := map[string]bool{
+		"any":                  true,
+		"pyTypeError":          true,
+		"typeName":             true,
+		"subscript":            true,
+		"pyList":               true,
+		"pythonOSError":        true,
+		"osError":              true,
+		"Env":                  true,
+		"DefaultEnv":           true,
+		"SetEnv":               true,
+		"CurrentEnv":           true,
+		"FindProbeBinary":      true,
+		"NormalizeDNSServers":  true,
+		"NormalizeConfig":      true,
+		"LoadConfig":           true,
+		"EffectiveSettings":    true,
+		"DescribeSettings":     true,
+		"SaveConfig":           true,
+		"CheckSettings":        true,
+		"DNSSettings":          true,
+		"Settings":             true,
+		"CollectCandidates":    true,
+		"LoadResults":          true,
+		"RunTests":             true,
+		"toRawJSON":            true,
+		"encodeToLegacyValue":  true,
+		"encodeToLegacyObject": true,
+		"encodeToLegacySlice":  true,
+		"proxyOf":              true,
+		"needsSubStore":        true,
+		"runProbe":             true,
+	}
+	for _, name := range coreFiles {
+		file, err := parser.ParseFile(token.NewFileSet(), name, nil, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", name, err)
+		}
+		for _, imp := range file.Imports {
+			for _, bad := range forbiddenImports {
+				if strings.Contains(imp.Path.Value, bad) {
+					t.Errorf("%s imports forbidden package %s", name, imp.Path.Value)
+				}
+			}
+		}
+		selected := map[*ast.Ident]bool{}
+		ast.Inspect(file, func(n ast.Node) bool {
+			if sel, ok := n.(*ast.SelectorExpr); ok {
+				selected[sel.Sel] = true
+			}
+			if iface, ok := n.(*ast.InterfaceType); ok && (iface.Methods == nil || len(iface.Methods.List) == 0) {
+				t.Errorf("%s contains an empty interface{} literal", name)
+			}
+			return true
+		})
+		ast.Inspect(file, func(n ast.Node) bool {
+			if id, ok := n.(*ast.Ident); ok && !selected[id] && forbiddenNames[id.Name] {
+				t.Errorf("%s references forbidden identifier %s", name, id.Name)
+			}
+			return true
+		})
+	}
+}
+
+func TestHealthLegacyWrappersDelegateToTypedCore(t *testing.T) {
+	file, err := parser.ParseFile(token.NewFileSet(), "legacy.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectedTargets := map[string]string{
+		"FindProbeBinary":     "FindBinary",
+		"NormalizeDNSServers": "NormalizeDNSServersJSON",
+		"NormalizeConfig":     "NormalizeDNSConfigJSON",
+		"LoadConfig":          "LoadDNSConfig",
+		"EffectiveSettings":   "EffectiveDNSSettingsJSON",
+		"DescribeSettings":    "DescribeDNSSettingsJSON",
+		"SaveConfig":          "SaveDNSConfigJSON",
+		"CheckSettings":       "CheckDNSSettingsJSON",
+		"DNSSettings":         "ResolveDNSSettings",
+		"Settings":            "ResolveSettings",
+		"LoadResults":         "LoadLatencyResults",
+		"RunTests":            "RunLatencyTests",
+	}
+	for _, decl := range file.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok {
+			continue
+		}
+		target, tracked := expectedTargets[fn.Name.Name]
+		if !tracked {
+			continue
+		}
+		called := false
+		ast.Inspect(fn.Body, func(n ast.Node) bool {
+			if _, ok := n.(*ast.ForStmt); ok {
+				t.Errorf("legacy %s contains a for loop", fn.Name.Name)
+			}
+			if _, ok := n.(*ast.RangeStmt); ok {
+				t.Errorf("legacy %s contains a range loop", fn.Name.Name)
+			}
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			if callee, ok := call.Fun.(*ast.Ident); ok && callee.Name == target {
+				called = true
+			}
+			return true
+		})
+		if !called {
+			t.Errorf("legacy %s does not call typed target %s", fn.Name.Name, target)
+		}
+	}
+}
+
+func seedSharedRaw(t *testing.T, r *repo.Repository, rawJSON string) context.Context {
+	t.Helper()
+	ctx := repo.WithScope(repo.WithRepository(context.Background(), r))
+	err := r.UpdateShared(ctx, func(_ context.Context, shared *model.Shared) error {
+		var next model.Shared
+		if err := json.Unmarshal([]byte(rawJSON), &next); err != nil {
+			return err
+		}
+		*shared = next
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("seed shared: %v", err)
+	}
+	repo.ResetConfigContext(ctx)
+	return ctx
+}
+
+func TestWrongTypedCandidateIdentitiesFailWithOffendingValue(t *testing.T) {
+	tests := []struct {
+		name      string
+		sharedRaw string
+		cacheRaw  string
+		want      string
+	}{
+		{
+			name:      "manual node numeric id",
+			sharedRaw: `{"nodes":[{"id":7,"name":"A","type":"http","server":"a.example.test","port":80}]}`,
+			want:      fmt.Sprintf(msgStoredNodeIDInvalid, "7"),
+		},
+		{
+			name:      "manual node array id",
+			sharedRaw: `{"nodes":[{"id":["n1"],"name":"A","type":"http","server":"a.example.test","port":80}]}`,
+			want:      fmt.Sprintf(msgStoredNodeIDInvalid, `["n1"]`),
+		},
+		{
+			name:      "manual node array name",
+			sharedRaw: `{"nodes":[{"id":"n1","name":["A"],"type":"http","server":"a.example.test","port":80}]}`,
+			want:      fmt.Sprintf(msgStoredNodeNameInvalid, "n1", `["A"]`),
+		},
+		{
+			name:      "manual node bool name",
+			sharedRaw: `{"nodes":[{"id":"n1","name":true,"type":"http","server":"a.example.test","port":80}]}`,
+			want:      fmt.Sprintf(msgStoredNodeNameInvalid, "n1", "true"),
+		},
+		{
+			name:      "subscription numeric id",
+			sharedRaw: `{"subscriptions":[{"id":9,"name":"S","url":"https://sub.example.test/a"}]}`,
+			want:      fmt.Sprintf(msgStoredSubIDInvalid, "9"),
+		},
+		{
+			name:      "cached node array name",
+			sharedRaw: `{"subscriptions":[{"id":"s1","name":"S","url":"https://sub.example.test/a"}]}`,
+			cacheRaw:  `{"nodes":[{"name":["HK"],"type":"http","server":"hk.example.test","port":80}]}`,
+			want:      fmt.Sprintf(msgCachedNodeNameInvalid, "s1", `["HK"]`),
+		},
+		{
+			name:      "cached node bool name",
+			sharedRaw: `{"subscriptions":[{"id":"s1","name":"S","url":"https://sub.example.test/a"}]}`,
+			cacheRaw:  `{"nodes":[{"name":false,"type":"http","server":"hk.example.test","port":80}]}`,
+			want:      fmt.Sprintf(msgCachedNodeNameInvalid, "s1", "false"),
+		},
+		{
+			name:      "cached nodes non-array",
+			sharedRaw: `{"subscriptions":[{"id":"s1","name":"S","url":"https://sub.example.test/a"}]}`,
+			cacheRaw:  `{"nodes":"bad"}`,
+			want:      fmt.Sprintf(msgCachedNodesMustBeArray, "s1", `"bad"`),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r, err := repo.Open(t.TempDir(), repo.Options{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx := seedSharedRaw(t, r, tt.sharedRaw)
+			probeEnv := &ProbeEnv{
+				LookupEnv:   func(string) (string, bool) { return "", false },
+				Environ:     func() []string { return nil },
+				Runner:      &fakeRunner{},
+				Now:         time.Now,
+				ProbeBinary: func() (string, error) { return "/test/probe", nil },
+				Collaborators: Collaborators{
+					LoadSubscriptionCache: func(context.Context, string) (json.RawMessage, error) {
+						if tt.cacheRaw == "" {
+							return nil, nil
+						}
+						return json.RawMessage(tt.cacheRaw), nil
+					},
+					FilterSubscriptionNodes: func(_ model.Subscription, nodes []json.RawMessage) ([]json.RawMessage, error) {
+						return nodes, nil
+					},
+				},
+			}
+			restore := SetProbeEnv(probeEnv)
+			defer restore()
+
+			_, err = CollectCandidateNodes(ctx)
+			var ve *ValueError
+			if !errors.As(err, &ve) || ve.Message != tt.want {
+				t.Fatalf("CollectCandidateNodes: want ValueError %q, got %v", tt.want, err)
+			}
+			_, err = RunLatencyTests(ctx, nil, nil)
+			if !errors.As(err, &ve) || ve.Message != tt.want {
+				t.Fatalf("RunLatencyTests: want ValueError %q, got %v", tt.want, err)
+			}
+		})
+	}
+}
+
+func TestNumericNodeNamesAcceptedLosslessly(t *testing.T) {
+	const (
+		manualBig = "9007199254740993"
+		cachedBig = "9007199254740994"
+	)
+	r, err := repo.Open(t.TempDir(), repo.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := seedSharedRaw(t, r, `{
+		"nodes":[{"id":"n1","name":`+manualBig+`,"type":"http","server":"a.example.test","port":80}],
+		"subscriptions":[{"id":"s1","name":"Feed","url":"https://sub.example.test/a"}]
+	}`)
+
+	var storedFile json.RawMessage
+	runner := &fakeRunner{
+		fn: func(cmd Command) (Result, error) {
+			var payload rawObject
+			if err := json.Unmarshal(cmd.Stdin, &payload); err != nil {
+				return Result{}, err
+			}
+			rawNodes, _ := payload.Fields.Get("nodes")
+			var proxies []rawObject
+			if err := json.Unmarshal(rawNodes, &proxies); err != nil {
+				return Result{}, err
+			}
+			var results []map[string]any
+			for _, p := range proxies {
+				nameRaw, _ := p.Fields.Get("name")
+				var name string
+				_ = json.Unmarshal(nameRaw, &name)
+				results = append(results, map[string]any{"name": name, "latency": 25})
+			}
+			stdout, _ := jsonresp.Encode(map[string]any{"version": 4, "results": results})
+			return Result{Stdout: stdout}, nil
+		},
+	}
+
+	collabs := defaultCollaborators(nil)
+	collabs.LoadSubscriptionCache = func(context.Context, string) (json.RawMessage, error) {
+		return json.RawMessage(`{"nodes":[{"name":` + cachedBig + `,"type":"http","server":"b.example.test","port":80}]}`), nil
+	}
+	collabs.ReadLatencyFile = func(context.Context) (json.RawMessage, bool) {
+		return storedFile, len(storedFile) > 0
+	}
+	collabs.WriteLatencyFile = func(_ context.Context, data json.RawMessage) error {
+		storedFile = append(json.RawMessage(nil), data...)
+		return nil
+	}
+
+	restore := SetProbeEnv(&ProbeEnv{
+		LookupEnv:     func(string) (string, bool) { return "", false },
+		Environ:       func() []string { return nil },
+		Runner:        runner,
+		Now:           func() time.Time { return time.Date(2026, 11, 18, 0, 0, 0, 0, time.UTC) },
+		ProbeBinary:   func() (string, error) { return "/test/probe", nil },
+		Collaborators: collabs,
+	})
+	defer restore()
+
+	candidates, err := CollectCandidateNodes(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(candidates) != 2 || candidates[0].Name != manualBig || candidates[1].Name != cachedBig {
+		t.Fatalf("unexpected candidates: %+v", candidates)
+	}
+
+	outcome, err := RunLatencyTests(ctx, []string{manualBig, cachedBig}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := outcome.Results.Get(manualBig); !ok {
+		t.Fatalf("missing manual numeric node result: %+v", outcome)
+	}
+	if _, ok := outcome.Results.Get(cachedBig); !ok {
+		t.Fatalf("missing cached numeric node result: %+v", outcome)
+	}
+}
+
+func TestR5StoredFallbacksAndSystemPreservation(t *testing.T) {
+	r, err := repo.Open(t.TempDir(), repo.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := seedSharedRaw(t, r, `{"nodes":[{"id":"n1","name":"A","type":"http","server":"a.example.test","port":80}]}`)
+
+	// Seed SystemConfig with an extra unknown member and verify SaveDNSConfigJSON preserves it.
+	err = r.UpdateSystem(ctx, func(_ context.Context, sys *model.System) error {
+		sys.SystemConfig.ServerDomain = "panel.example.test"
+		return sys.SystemConfig.Fields.Set("custom_extra", json.RawMessage(`"kept"`))
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo.ResetConfigContext(ctx)
+
+	if _, err := SaveDNSConfigJSON(ctx, json.RawMessage(`{"mode":"custom","servers":["192.0.2.53"]}`)); err != nil {
+		t.Fatal(err)
+	}
+	sysAfter, err := r.System(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	extra, hasExtra := sysAfter.SystemConfig.Fields.Get("custom_extra")
+	if sysAfter.SystemConfig.ServerDomain != "panel.example.test" || !hasExtra || string(extra) != `"kept"` {
+		t.Fatalf("SaveDNSConfigJSON clobbered SystemConfig fields: domain=%q extra=%s", sysAfter.SystemConfig.ServerDomain, extra)
+	}
+
+	// Stored node_latency.json with non-list history falls back to empty history under R5 instead of iterating string chars.
+	storedFile := json.RawMessage(`{"[\"node\",\"n1\"]":{"latency":10,"history":"corrupt","method":"proxy_http_v2","url":"https://www.gstatic.com/generate_204","unified_delay":true,"dns_servers":["192.0.2.53"],"dns_bootstrap":[]}}`)
+	collabs := defaultCollaborators(nil)
+	collabs.ReadLatencyFile = func(context.Context) (json.RawMessage, bool) { return storedFile, true }
+	collabs.WriteLatencyFile = func(_ context.Context, data json.RawMessage) error {
+		storedFile = append(json.RawMessage(nil), data...)
+		return nil
+	}
+	restore := SetProbeEnv(&ProbeEnv{
+		LookupEnv: func(string) (string, bool) { return "", false },
+		Environ:   func() []string { return nil },
+		Runner: &fakeRunner{
+			result: Result{Stdout: []byte(`{"version":4,"results":[{"name":"[\"node\",\"n1\"]","latency":33}]}`)},
+		},
+		Now:           func() time.Time { return time.Date(2026, 11, 18, 0, 0, 0, 0, time.UTC) },
+		ProbeBinary:   func() (string, error) { return "/test/probe", nil },
+		Collaborators: collabs,
+	})
+	defer restore()
+
+	outcome, err := RunLatencyTests(ctx, []string{"A"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry, ok := outcome.Results.Get("A")
+	if !ok {
+		t.Fatal("missing result A")
+	}
+	rawHistory, _ := entry.Fields.Get("history")
+	if string(rawHistory) != "[33]" {
+		t.Fatalf("expected R5 reset history [33], got %s", rawHistory)
+	}
+}

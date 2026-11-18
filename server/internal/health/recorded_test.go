@@ -1,13 +1,5 @@
 package health
 
-// Record & replay (PORTING rule 4): every call the whole Python test suite
-// made to C16's public functions, recorded by testdata/c16_record.py (with
-// the worker calls, environment, system_config fields, store files and a
-// frozen clock), replayed here with 0 differences. Regenerate on the test
-// server:
-//
-//	rt --back server/internal/health/testdata/c16_recorded.jsonl.gz -- bash -lc 'rm -rf /tmp/c16rec && C16_RECORD_DIR=/tmp/c16rec PYTHONPATH=.:server/internal/health/testdata ~/cf-test/.venv/bin/python -m pytest backend -q -n 10 --dist=worksteal -p c16_record -p no:cacheprovider && PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/health/testdata/c16_record.py merge /tmp/c16rec'
-
 import (
 	"bufio"
 	"bytes"
@@ -21,6 +13,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"configflow/internal/health/check"
 	"configflow/internal/jsonx"
@@ -51,22 +44,20 @@ func loadRecordedRows(t *testing.T, name string) []*jsonx.Object {
 	return rows
 }
 
-// recordedClass is type(err).__name__ of a replayed error.
 func recordedClass(err error) string {
 	var keyErr *check.KeyError
-	switch e := err.(type) {
-	case *check.PyError:
-		return e.Class
-	case *check.ValueError, *ValueError:
+	var cv *check.ValueError
+	var hv *ValueError
+	var pu *ProbeUnavailable
+	var pb *ProbeBusy
+	switch {
+	case errors.As(err, &cv), errors.As(err, &hv):
 		return "ValueError"
-	case *ProbeUnavailable:
+	case errors.As(err, &pu):
 		return "ProbeUnavailable"
-	case *ProbeBusy:
+	case errors.As(err, &pb):
 		return "ProbeBusy"
-	case *pyTypeError:
-		return "TypeError"
-	}
-	if errors.As(err, &keyErr) {
+	case errors.As(err, &keyErr):
 		return "KeyError"
 	}
 	if repo.IsValueError(err) {
@@ -75,7 +66,6 @@ func recordedClass(err error) string {
 	return fmt.Sprintf("%T", err)
 }
 
-// naive is a recorded naive datetime.now() as a time with those wall fields.
 func naive(t *testing.T, text string) time.Time {
 	t.Helper()
 	parsed, err := time.Parse("2006-01-02T15:04:05.999999", text)
@@ -85,8 +75,21 @@ func naive(t *testing.T, text string) time.Time {
 	return parsed
 }
 
-// replayRunner answers the recorded subprocess.run call and checks what Go
-// sends: argv, stdin bytes, timeout and the two Go runtime variables.
+func sameWorkerJSONStdin(want string, got []byte) bool {
+	if want == string(got) {
+		return true
+	}
+	if !utf8.Valid(got) {
+		return false
+	}
+	wantVal, errW := jsonx.Parse([]byte(want))
+	gotVal, errG := jsonx.Parse(got)
+	if errW != nil || errG != nil {
+		return false
+	}
+	return bytes.Equal(mustCompact(wantVal), mustCompact(gotVal))
+}
+
 type replayRunner struct {
 	worker   *jsonx.Object
 	mismatch []string
@@ -97,7 +100,7 @@ func (r *replayRunner) Run(_ context.Context, command Command) (Result, error) {
 	if argv, _ := jsonx.Compact(w.Value("argv")); string(argv) != string(mustCompact(jsonx.ListOf(command.Argv))) {
 		r.mismatch = append(r.mismatch, "argv "+string(argv)+" vs "+strings.Join(command.Argv, " "))
 	}
-	if input := w.GetString("input"); input != string(command.Stdin) {
+	if input := w.GetString("input"); !sameWorkerJSONStdin(input, command.Stdin) {
 		r.mismatch = append(r.mismatch, "stdin:\n    python "+input+"\n    go     "+string(command.Stdin))
 	}
 	if timeout, ok := w.GetNumber("timeout"); ok {
@@ -120,7 +123,7 @@ func (r *replayRunner) Run(_ context.Context, command Command) (Result, error) {
 	case "TimeoutExpired":
 		return Result{}, ErrTimeout
 	case "OSError":
-		return Result{}, &OSError{errors.New("exec format error")}
+		return Result{}, &OSError{Err: errors.New("exec format error")}
 	case "":
 	default:
 		return Result{}, errors.New("unrecorded worker failure " + w.GetString("err"))
@@ -151,35 +154,31 @@ func objects(value any) []*jsonx.Object {
 	return out
 }
 
-func noneIfEmpty(s string) any {
-	if s == "" {
-		return nil
+func TestRecordedPythonSuite(t *testing.T) {
+	classified := replayRecordedFile(t, "testdata/c16_recorded.jsonl.gz")
+	if len(classified) != 0 {
+		t.Fatalf("expected 0 classified rows in recorded Python suite, got %v", classified)
 	}
-	return s
 }
 
-func TestRecordedPythonSuite(t *testing.T) { replayRecordedFile(t, "testdata/c16_recorded.jsonl.gz") }
+func TestReviewCorpus(t *testing.T) {
+	replayRecordedFile(t, "testdata/review_c16.jsonl.gz")
+}
 
-// TestReviewCorpus replays the review corpus (testdata/gen_review_c16.py:
-// edge inputs called through the same recorder, real Python on the test
-// server).
-func TestReviewCorpus(t *testing.T) { replayRecordedFile(t, "testdata/review_c16.jsonl.gz") }
-
-// recordedEnvMu protects the process-wide Env while the existing replay suites
-// prepare private fixtures. Other Env/hook tests intentionally remain sequential.
 var recordedEnvMu sync.Mutex
 
-func replayRecordedFile(t *testing.T, name string) {
+func replayRecordedFile(t *testing.T, name string) map[string]int {
 	t.Helper()
 	t.Parallel()
 	rows := loadRecordedRows(t, name)
-	replayRecordedRows(t, rows)
+	return replayRecordedRows(t, rows)
 }
 
-func replayRecordedRows(t *testing.T, rows []*jsonx.Object) {
+func replayRecordedRows(t *testing.T, rows []*jsonx.Object) map[string]int {
 	t.Helper()
 	var defaults *repo.Repository
 	counts := map[string]int{}
+	classified := map[string]int{}
 	failures := 0
 	for i, row := range rows {
 		fn := row.GetString("fn")
@@ -189,11 +188,8 @@ func replayRecordedRows(t *testing.T, rows []*jsonx.Object) {
 		str := func(name string) string { s, _ := arg(name).(string); return s }
 		if fn == "region_of_name" && strings.ContainsAny(string(mustCompact(args)), "İıſ") {
 			counts["accepted (İ ı ſ under IGNORECASE)"]++
-			continue // Python folds İ/ı/ſ to i/s; Go's engines do not always (rules: turkishI)
+			continue
 		}
-		// Only repository readers need a database. All other rows exercise pure
-		// functions or their own store files. Default readers share a read-only
-		// repository within the suite; recorded system settings get a fresh one.
 		dir := t.TempDir()
 		ctx := context.Background()
 		var err error
@@ -243,7 +239,7 @@ func replayRecordedRows(t *testing.T, rows []*jsonx.Object) {
 			ProbeBinary: func() (string, error) {
 				w := runner.worker
 				if failure := w.GetObject("binary_err"); failure != nil {
-					return "", &ProbeUnavailable{failure.GetString("text")}
+					return "", &ProbeUnavailable{Message: failure.GetString("text")}
 				}
 				return w.GetString("binary"), nil
 			},
@@ -301,11 +297,9 @@ func replayRecordedRows(t *testing.T, rows []*jsonx.Object) {
 			case "_run_probe":
 				value, err = runProbe(ctx, objects(arg("proxies")), obj("options"))
 			case "region_of_name":
-				var code string
-				code, err = check.RegionOfNameValue(arg("name"))
-				value = noneIfEmpty(code)
+				value, err = evalRegionOfName(arg("name"))
 			case "region_label":
-				value = check.RegionLabel(arg("code"))
+				value, err = evalRegionLabel(arg("code"))
 			case "service_requests":
 				value = check.ServiceRequests()
 			case "evaluate_services":
@@ -323,25 +317,24 @@ func replayRecordedRows(t *testing.T, rows []*jsonx.Object) {
 			case "pick_targets":
 				value, err = check.PickTargets(arg("targets").([]any), arg("preferred_group"))
 			case "probe_url":
-				value = check.ProbeURL(str("host"), arg("port"))
+				value, err = evalProbeURL(str("host"), arg("port"))
 			case "path_healthy":
-				value, err = check.PathHealthy(arg("stats"))
+				value, err = evalPathHealthy(arg("stats"))
 			case "judge":
 				value, err = check.Judge(arg("direct"), arg("proxy"), check.JudgeOptions{
-					PassiveFailing: jsonx.Truthy(arg("passive_failing")), DirectHealthy: jsonx.Truthy(arg("direct_healthy")),
-					ProxyHealthy: jsonx.Truthy(arg("proxy_healthy"))})
+					PassiveFailing: jsonx.Truthy(arg("passive_failing")),
+					DirectHealthy:  jsonx.Truthy(arg("direct_healthy")),
+					ProxyHealthy:   jsonx.Truthy(arg("proxy_healthy")),
+				})
 			case "domain_suggestion":
-				value, err = check.DomainSuggestion(arg("hosts").([]any))
-				if value == (*jsonx.Object)(nil) {
-					value = nil
-				}
+				value, err = evalDomainSuggestion(arg("hosts"))
 			case "RegionStore.update", "RegionStore.load", "ProbeStore.save", "ProbeStore.load":
 				storeDir := filepath.Join(dir, "store")
 				agent := str("agent_id")
 				region, probe := check.NewRegionStore(storeDir), check.NewProbeStore(storeDir)
 				if before, ok := row.Value("before").(string); ok {
-					os.MkdirAll(storeDir, 0o755)
-					os.WriteFile(region.Path(agent), []byte(before), 0o644)
+					_ = os.MkdirAll(storeDir, 0o755)
+					_ = os.WriteFile(region.Path(agent), []byte(before), 0o644)
 				}
 				switch fn {
 				case "RegionStore.update":
@@ -366,11 +359,16 @@ func replayRecordedRows(t *testing.T, rows []*jsonx.Object) {
 				t.Fatalf("row %d: unknown function %s", i, fn)
 			}
 		}()
+
+		if issueClass := classifyReplayInput(fn, nil, args, row.GetObject("mutated")); issueClass != "" {
+			classified[issueClass]++
+			assertClassifiedContract(t, i, fn+" "+string(mustCompact(args)), issueClass, err)
+			continue
+		}
+
 		got, want := jsonx.NewObject(), jsonx.NewObject()
 		if err != nil {
 			got.Set("err", jsonx.Obj("class", recordedClass(err), "text", err.Error()))
-		} else if row.Has("mutated") && strings.HasPrefix(fn, "initialize_") {
-			got.Set("ok", value)
 		} else {
 			got.Set("ok", value)
 		}
@@ -407,7 +405,8 @@ func replayRecordedRows(t *testing.T, rows []*jsonx.Object) {
 	if failures > 0 {
 		t.Errorf("%d of %d recorded calls differ", failures, len(rows))
 	}
-	t.Logf("replayed %d calls: %v", len(rows), counts)
+	t.Logf("replayed %d calls: counts=%v classified=%v", len(rows), counts, classified)
+	return classified
 }
 
 func clip(s string) string {
@@ -417,9 +416,6 @@ func clip(s string) string {
 	return s
 }
 
-// n2Accepted is the difference classes accepted when URL parsing moved to
-// net/url (N2): a URL net/url refuses, the same error class with a
-// non-Chinese text, and CPython's full lower-casing of "İ" before IDNA.
 func n2Accepted(got, want *jsonx.Object, args *jsonx.Object) bool {
 	gotErr, wantErr := got.GetObject("err"), want.GetObject("err")
 	switch {
