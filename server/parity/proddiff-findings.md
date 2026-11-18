@@ -7,7 +7,7 @@ entries `stale` and the baseline must then be re-recorded.
 
 | ID | Route template | Key path / type | Status |
 |---|---|---|---|
-| F1 | `GET /api/agents/<agent_id>/oxidns/rules/update` | `status` value, `Content-Type` value, `body` type, `header.Cache-Control` missing-in-go | open |
+| F1 | `GET /api/agents/<agent_id>/oxidns/rules/update` | `status` value, `Content-Type` value, `body` type, `header.Cache-Control` missing-in-go | closed (A18) |
 
 ## F1 — OxiDNS rule update returns 500 for HA members (A18 not ported)
 
@@ -23,3 +23,11 @@ entries `stale` and the baseline must then be re-recorded.
 - Consequence entries: `GET /api/logs/info body.size` and `GET /api/logs/tail` (`total_lines`,
   `filtered_lines`, `logs` length, `logs[0]`, `logs[1]`) differ because Go logs the two request exceptions.
 - Owner: agents domain (A18). Until A18 lands, the route should not be treated as accepted.
+
+## F1 closure — A18（2026-11-18）
+
+A18 已注册真实 HA rules owner，最终配置生成会验证两端适配并记录两个目标身份。
+在隔离网络及只读源快照内执行 `server/scripts/proddiff.sh --a18-proof`，仅选择 HA 成员的
+rules/update、generate-config 与日志后果：`cases=6 new=0 stale=12 remaining=0 self-check=PASS`。
+负控更改 task.status 会被原比较器识别。已删掉全部 12 条 `deferred → A18`，其他基线行未变；
+删除理由 `F1 closed by A18-2`。完整门禁仍由协调者在合并批次执行。

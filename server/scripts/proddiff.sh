@@ -5,16 +5,18 @@ umask 077
 root=$(cd "$(dirname "$0")/../.." && pwd)
 python=${CONFIGFLOW_DIFF_PYTHON:-$HOME/cf-test/.venv/bin/python}
 if [[ ${1:-} == --help ]]; then
- printf '%s\n' 'Usage: rt -- server/scripts/proddiff.sh [snapshot-data-directory] [--record-baseline | --a13-proof]'
+ printf '%s\n' 'Usage: rt -- server/scripts/proddiff.sh [snapshot-data-directory] [--record-baseline | --a13-proof | --a18-proof]'
  exit 0
 fi
 snapshot=$HOME/cf-prod-snapshot/20261116/data
 if (($#)) && [[ $1 != --* ]]; then snapshot=$1; shift; fi
 a13proof=0
+a18proof=0
 for option in "$@"; do
  case $option in
   --record-baseline) ;;
   --a13-proof) a13proof=1 ;;
+  --a18-proof) a18proof=1 ;;
   *) printf '%s\n' 'Unknown option'; exit 2 ;;
  esac
 done
@@ -22,6 +24,11 @@ runner=server/tools/proddiff/run.py
 if ((a13proof)); then
  [[ $# == 1 ]] || { printf '%s\n' '--a13-proof cannot record a baseline'; exit 2; }
  runner=server/tools/proddiff/a13_proof.py
+ shift
+fi
+if ((a18proof)); then
+ [[ $# == 1 ]] || { printf '%s\n' '--a18-proof cannot record a baseline'; exit 2; }
+ runner=server/tools/proddiff/a18_proof.py
  shift
 fi
 snapshot=$(realpath "$snapshot")
