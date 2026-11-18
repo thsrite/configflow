@@ -149,6 +149,7 @@ func refBase(t *testing.T) *jsonx.Object {
 }
 
 func TestReferenceThreeWayMerge(t *testing.T) {
+	t.Parallel()
 	// Python compared with ==, so 1, 1.0 and True were one value. The Go merge
 	// compares JSON values by type (yamlx.Equal); these Python answers change.
 	goAnswers := map[int]string{
@@ -178,6 +179,7 @@ func TestReferenceThreeWayMerge(t *testing.T) {
 }
 
 func TestReferenceDeepMerge(t *testing.T) {
+	t.Parallel()
 	for index, item := range refLoad(t).GetList("deep_merge") {
 		values := item.([]any)
 		got := DeepMerge(values[0].(*jsonx.Object), values[1].(*jsonx.Object))
@@ -216,6 +218,7 @@ func TestReferenceLegacyDefaults(t *testing.T) {
 }
 
 func TestReferenceValidateDocument(t *testing.T) {
+	t.Parallel()
 	// R8 (design n7-n8 2.3): an integral JSON number in any notation is a
 	// stored integer, so Go accepts the revision 1.0 that Python refused.
 	acceptedByGo := map[string]bool{"revision float": true}
@@ -236,6 +239,7 @@ func TestReferenceValidateDocument(t *testing.T) {
 }
 
 func TestReferenceCollectResourceRefs(t *testing.T) {
+	t.Parallel()
 	for _, item := range refLoad(t).GetList("collect_refs") {
 		record := item.(*jsonx.Object)
 		document := refBase(t)
@@ -273,6 +277,7 @@ func TestReferenceCollectResourceRefs(t *testing.T) {
 }
 
 func TestReferencePruneRuleDNS(t *testing.T) {
+	t.Parallel()
 	for index, item := range refLoad(t).GetList("prune_rule_dns") {
 		values := item.([]any)
 		profile := values[0].(*jsonx.Object).DeepCopy()
@@ -284,6 +289,7 @@ func TestReferencePruneRuleDNS(t *testing.T) {
 }
 
 func TestReferenceResourceUsage(t *testing.T) {
+	t.Parallel()
 	// Usages read names by type (R5): a null name shows the id, where
 	// Python passed the stored null on.
 	goAnswers := map[int]string{
@@ -384,6 +390,7 @@ func TestReferenceConvertImport(t *testing.T) {
 }
 
 func TestReferenceFileIsCurrent(t *testing.T) {
+	t.Parallel()
 	// The generator's own sanity check: the base document validates in Go too.
 	noError(t, ValidateDocument(refBase(t)))
 }

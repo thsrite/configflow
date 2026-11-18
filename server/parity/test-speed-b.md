@@ -68,3 +68,9 @@ A10 233 个 deflate 输入（42,197,691 字节）和 60 个 ZIP 的参考输出�
 断言保留。输入 key 包含逐成员长度、字节与 ZIP manifest 指纹，路径只是传输。最终现场 check 零 diff（.64 1.984s）。
 六个只渲染/比较静态 corpus 的测试与纯压缩测试并行；改 enrollment 时钟/随机数、真实 issue/enroll IO 的测试
 仍串行。被测 bootstrap/migration Python 与 shell stub 保留真实执行，不改成 golden。
+
+## repo
+
+七个对独立 DeepCopy/本地输入做运算的 reference 测试并行，原有解码 corpus 已经是 sync.Once，共用后不修改。
+修改 randomHex/nowISO/环境、锁和共享 hook 的测试保持串行；跨语言读写、锁/crash 仍受原有显式变量控制。
+`.64` 参考/复核定向 race 3.481s PASS。私人快照模式未运行；现场耗时仅使用合成数据库。
