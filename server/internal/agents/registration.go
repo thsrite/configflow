@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"configflow/internal/jsonx"
@@ -24,9 +25,6 @@ const MaxRegistrationSessions = 100
 
 // ErrRegistrationAuthorization rejects absent, expired, used or mismatched proofs.
 var ErrRegistrationAuthorization = errors.New("agent registration authorization required")
-
-// ErrRegistrationSessionsFull leaves unexpired capabilities intact at capacity.
-var ErrRegistrationSessionsFull = errors.New("agent registration session capacity reached")
 
 // RegistrationAuthorization is supplied by the HTTP authentication boundary,
 // never decoded from registration JSON. Existing Agent tokens still prove ownership.
@@ -60,6 +58,9 @@ func (m *Manager) CreateRegistrationCredentials(ctx context.Context, identities 
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	if len(identities) > MaxRegistrationSessions {
+		return nil, fmt.Errorf("registration batch exceeds %d identities", MaxRegistrationSessions)
+	}
 	tokens := make(map[string]string, len(identities))
 	sessions := make([]model.AgentRegistrationSession, len(identities))
 	now := lifecycle.ClockFrom(ctx).Now()
@@ -87,8 +88,11 @@ func (m *Manager) CreateRegistrationCredentials(ctx context.Context, identities 
 			return err
 		}
 		active := activeRegistrationSessions(system.RegistrationSessions, now.Unix())
-		if len(active)+len(sessions) > MaxRegistrationSessions {
-			return ErrRegistrationSessionsFull
+		// All sessions have the same TTL, so expiry orders issuance times.
+		// Stable ordering preserves insertion order for same-second batches.
+		sort.SliceStable(active, func(i, j int) bool { return active[i].Expires < active[j].Expires })
+		if excess := len(active) + len(sessions) - MaxRegistrationSessions; excess > 0 {
+			active = active[excess:]
 		}
 		system.RegistrationSessions = append(active, sessions...)
 		return ctx.Err()

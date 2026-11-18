@@ -485,17 +485,54 @@ func dockerResponse(text string, err error, contentType string) *httpx.Response 
 	return httpx.Bytes(200, contentType, []byte(text))
 }
 
+// dockerInstallCommands is the Go-native paired response; legacy text responses
+// remain the default unless the authenticated caller explicitly asks for both.
+type dockerInstallCommands struct {
+	Compose string `json:"compose"`
+	Run     string `json:"run"`
+}
+
 func getDockerAgentCompose(c *httpx.Ctx) (*httpx.Response, error) {
+	if format, _ := c.Arg("format"); format == "both" {
+		options, failed := prepareDockerAgentOptions(c, installer.GenerateDockerAgentCompose, installer.GenerateDockerAgentRun)
+		if failed != nil {
+			return failed, nil
+		}
+		compose, err := installer.GenerateDockerAgentCompose(options)
+		if err != nil {
+			return dockerResponse("", err, ""), nil
+		}
+		run, err := installer.GenerateDockerAgentRun(options)
+		if err != nil {
+			return dockerResponse("", err, ""), nil
+		}
+		return httpx.JSON(dockerInstallCommands{Compose: compose, Run: run}).NoStore(), nil
+	}
 	return dockerAgentResponse(c, installer.GenerateDockerAgentCompose, "text/yaml; charset=utf-8")
 }
 func getDockerAgentRun(c *httpx.Ctx) (*httpx.Response, error) {
 	return dockerAgentResponse(c, installer.GenerateDockerAgentRun, "text/plain; charset=utf-8")
 }
 func dockerAgentResponse(c *httpx.Ctx, render func(installer.DockerOptions) (string, error), contentType string) (*httpx.Response, error) {
-	options := dockerOptions(c)
+	options, failed := prepareDockerAgentOptions(c, render)
+	if failed != nil {
+		return failed, nil
+	}
 	text, err := render(options)
-	if err != nil {
-		return dockerResponse(text, err, contentType), nil
+	response := dockerResponse(text, err, contentType)
+	if len(options.RegistrationTokens) > 0 {
+		response.NoStore()
+	}
+	return response, nil
+}
+
+func prepareDockerAgentOptions(c *httpx.Ctx, renderers ...func(installer.DockerOptions) (string, error)) (installer.DockerOptions, *httpx.Response) {
+	options := dockerOptions(c)
+	// Validate every requested representation before minting any credential.
+	for _, render := range renderers {
+		if _, err := render(options); err != nil {
+			return options, dockerResponse("", err, "")
+		}
 	}
 	if auth.IsAuthEnabled() {
 		var identities []model.AgentRegistrationSession
@@ -514,15 +551,11 @@ func dockerAgentResponse(c *httpx.Ctx, render func(installer.DockerOptions) (str
 		}
 		tokens, failed := issueRegistration(c, identities)
 		if failed != nil {
-			return failed, nil
+			return options, failed
 		}
 		options.RegistrationTokens = tokens
-		text, err = render(options)
 	}
-	if len(options.RegistrationTokens) > 0 {
-		return dockerResponse(text, err, contentType).NoStore(), nil
-	}
-	return dockerResponse(text, err, contentType), nil
+	return options, nil
 }
 
 func shellRegistrationIdentities(params installParams) []model.AgentRegistrationSession {
@@ -548,9 +581,6 @@ func issueRegistration(c *httpx.Ctx, identities []model.AgentRegistrationSession
 		return nil, failure(500, msgRegistrationStore)
 	}
 	tokens, err := manager.CreateRegistrationCredentials(c.Context(), identities)
-	if errors.Is(err, agents.ErrRegistrationSessionsFull) {
-		return nil, failure(503, msgRegistrationCapacity)
-	}
 	if err != nil {
 		return nil, failure(500, msgRegistrationStore)
 	}

@@ -236,7 +236,7 @@ func TestO9RegistrationCapacityExpiryAndShutdown(t *testing.T) {
 	if _, err := m.CreateRegistrationCredentials(s.Context(), identities); err != nil {
 		t.Fatal(err)
 	}
-	s.Post("/api/agents/install-command", s.Login(), httpxtest.JSON(jsonx.Obj())).WantStatus(503)
+	s.Post("/api/agents/install-command", s.Login(), httpxtest.JSON(jsonx.Obj())).WantStatus(200)
 	if err := s.Repo.UpdateSystem(s.Context(), func(_ context.Context, system *model.System) error {
 		for i := range system.RegistrationSessions {
 			system.RegistrationSessions[i].Expires = 1
@@ -504,4 +504,79 @@ func TestO9AnonymousRefusalDoesNotRevealExistingIdentity(t *testing.T) {
 	if sessions := mustO9System(t, s).RegistrationSessions; len(sessions) != 1 {
 		t.Fatalf("ownership refusal consumed the proof: %d sessions", len(sessions))
 	}
+}
+
+// Both formats are alternatives for one installation, not two issuances.
+func TestO9DockerPairedCommandsShareOneProofPerService(t *testing.T) {
+	s := o9Server(t)
+	path := "/api/agents/docker-agent-compose?format=both&server_url=https://panel.example.com&agent_name=paired-device&agent_ip=192.0.2.30&enable_oxidns=true"
+	s.Get(path).WantStatus(401)
+	if len(mustO9System(t, s).RegistrationSessions) != 0 {
+		t.Fatal("anonymous issuance")
+	}
+	response := s.Get(path, s.Login()).WantStatus(200)
+	if response.Header.Get("Cache-Control") != "no-store" {
+		t.Fatal("cacheable credentials")
+	}
+	body := response.Object()
+	re := regexp.MustCompile(`AGENT_(MIHOMO|OXIDNS)_REGISTRATION_TOKEN=([A-Za-z0-9_-]{43})`)
+	compose := re.FindAllStringSubmatch(body.GetString("compose"), -1)
+	run := re.FindAllStringSubmatch(body.GetString("run"), -1)
+	if len(compose) != 2 || len(run) != 2 || compose[0][2] == compose[1][2] {
+		t.Fatal("missing independent service proofs")
+	}
+	if len(mustO9System(t, s).RegistrationSessions) != 2 {
+		t.Fatal("duplicate issuance for alternative formats")
+	}
+	for i, match := range compose {
+		if match[1] != run[i][1] || match[2] != run[i][2] {
+			t.Fatal("formats use different credentials")
+		}
+		service := strings.ToLower(match[1])
+		registration := o9Body()
+		registration.Set("name", "paired-device-"+service)
+		registration.Set("deployment_method", "docker")
+		registration.Set("service_type", service)
+		registration.Set("registration_token", match[2])
+		if service == "oxidns" {
+			registration.Set("port", 8082)
+		}
+		s.Post("/api/agents/register", httpxtest.JSON(registration)).WantStatus(200)
+	}
+	if len(mustO9System(t, s).RegistrationSessions) != 0 {
+		t.Fatal("unspent duplicate credential")
+	}
+}
+
+func TestO9RegistrationCapacityEvictsOldestCommand(t *testing.T) {
+	t.Setenv("AGENT_REGISTRATION_KEY", "")
+	core.ResetRuntime()
+	t.Cleanup(core.ResetRuntime)
+	s := httpxtest.New(t, httpxtest.Options{Auth: true, Register: httpxtest.Routes(Register)})
+	t.Setenv("DATA_DIR", s.DataDir)
+	authorization := s.Login()
+	path := "/api/agents/docker-agent-compose?format=both&server_url=https://panel.example.com&agent_name=new-device&agent_ip=192.0.2.30"
+	re := regexp.MustCompile(`AGENT_MIHOMO_REGISTRATION_TOKEN=([A-Za-z0-9_-]{43})`)
+	var oldest, latest string
+	for i := 0; i <= core.MaxRegistrationSessions; i++ {
+		body := s.Get(path, authorization).WantStatus(200).Object()
+		match := re.FindStringSubmatch(body.GetString("compose"))
+		if len(match) != 2 {
+			t.Fatal("missing credential")
+		}
+		latest = match[1]
+		if i == 0 {
+			oldest = latest
+		}
+	}
+	if len(mustO9System(t, s).RegistrationSessions) != core.MaxRegistrationSessions {
+		t.Fatal("unbounded sessions")
+	}
+	registration := o9Body()
+	registration.Set("name", "new-device-mihomo")
+	registration.Set("deployment_method", "docker")
+	registration.Set("registration_token", oldest)
+	s.Post("/api/agents/register", httpxtest.JSON(registration)).WantStatus(403).WantJSON(jsonx.Obj("success", false, "message", RegistrationLocked))
+	registration.Set("registration_token", latest)
+	s.Post("/api/agents/register", httpxtest.JSON(registration)).WantStatus(200)
 }

@@ -17,8 +17,7 @@ const (
 )
 
 // RegistrationLocked gives the recovery path for missing or invalid bootstrap proof.
-const RegistrationLocked = "Agent 注册凭据无效、已使用或已过期，请在面板重新生成安装命令或设置注册密钥。"
-const msgRegistrationCapacity = "未使用的 Agent 注册凭据已达 100 个，请使用已有安装命令或等待 24 小时后重新生成。"
+const RegistrationLocked = "安装命令已失效，请在面板重新生成安装命令或设置注册密钥。"
 const msgRegistrationStore = "无法保存 Agent 注册凭据，请检查数据目录后重新生成安装命令。"
 const msgGeneratedFileMissing = "生成结果中没有这个文件。"
 

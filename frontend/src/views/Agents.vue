@@ -2353,6 +2353,7 @@ const generateScript = async () => {
       const serverUrl = localStorage.getItem('serverDomain') || window.location.origin
 
       const dockerParams = {
+        format: 'both',
         server_url: serverUrl,
         agent_name: scriptForm.value.containerName || scriptForm.value.name,
         agent_ip: scriptForm.value.agent_ip || '',
@@ -2378,14 +2379,11 @@ const generateScript = async () => {
       }
 
       // 使用统一的 Docker API
-      const [composeResponse, runResponse] = await Promise.all([
-        api.get('/agents/docker-agent-compose', { params: dockerParams }),
-        api.get('/agents/docker-agent-run', { params: dockerParams })
-      ])
+      const response = await api.get<{ compose: string; run: string }>('/agents/docker-agent-compose', { params: dockerParams })
 
       if (request !== scriptRequest || !scriptDialogVisible.value) return
-      dockerComposeContent.value = composeResponse.data
-      dockerRunCommand.value = runResponse.data
+      dockerComposeContent.value = response.data.compose
+      dockerRunCommand.value = response.data.run
       notify.success('Docker 部署命令已生成，请复制到目标机器执行')
     } else {
       let serverUrl = localStorage.getItem('serverDomain') || window.location.origin
