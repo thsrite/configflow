@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -235,5 +236,64 @@ func TestTaskRowAndPinnedWithheld(t *testing.T) {
 	held, e = PinnedWithheld(ctx, f.s.m.Repository(), f.s.receipts, "default", []string{"set-a"})
 	if e != nil || held {
 		t.Fatal("disabled scopes still withheld", e)
+	}
+}
+
+func TestRoundAdmissionRotationAndDrain(t *testing.T) {
+	ctx, s := fixtureService(t)
+	_, e := s.m.UpdateAgents(ctx, "", func(_ context.Context, list *[]any) (any, error) {
+		first := (*list)[0].(*jsonx.Object)
+		first.Set("rule_sync", jsonx.Obj("settings", jsonx.Obj("library", true, "rules", false)))
+		for i := 1; i < 5; i++ {
+			record := first.DeepCopy()
+			record.Set("id", fmt.Sprintf("device-%d", i))
+			*list = append(*list, record)
+		}
+		return nil, nil
+	})
+	if e != nil {
+		t.Fatal(e)
+	}
+	lifecycle.Stop(20 * time.Second)
+	if e = lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry()}); e != nil {
+		t.Fatal(e)
+	}
+	t.Cleanup(func() {
+		lifecycle.Stop(20 * time.Second)
+		_ = lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry()})
+	})
+	for round, want := range []int{2, 4, 5} {
+		lifecycle.Start(ctx)
+		if e = s.Round(lifecycle.BindRequest(ctx)); e != nil {
+			t.Fatal(e)
+		}
+		lifecycle.Stop(20 * time.Second)
+		records, e := s.m.GetAllAgents(ctx, false)
+		if e != nil {
+			t.Fatal(e)
+		}
+		changed := 0
+		for _, r := range records {
+			a, e := decodeAgent(r)
+			if e != nil {
+				t.Fatal(e)
+			}
+			if stateOf(a).Message == msgOffline {
+				changed++
+			}
+		}
+		if changed != want {
+			t.Fatalf("round %d touched %d want %d", round, changed, want)
+		}
+		s.mu.Lock()
+		if len(s.pending) > 2 {
+			t.Error("more than two admitted jobs")
+		}
+		for id, running := range s.pending {
+			if running {
+				t.Errorf("worker %s leaked through drain", id)
+			}
+		}
+		s.mu.Unlock()
 	}
 }

@@ -403,6 +403,38 @@ func TestStructurePublicationPinsNonRuleConfiguration(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
+	record, e := f.s.m.GetAgentByID(f.ctx, "device", false)
+	if e != nil {
+		t.Fatal(e)
+	}
+	current, e := publishSource(f.ctx, f.s.m, "default")
+	if e != nil {
+		t.Fatal(e)
+	}
+	projected, e := ProjectRuleChanges(f.source, current, Settings{Rules: true}, "mihomo", nil)
+	if e != nil {
+		t.Fatal(e)
+	}
+	receipt, e := f.s.receipts.Load(f.ctx, record, true)
+	if e != nil || receipt == nil {
+		t.Fatal(receipt, e)
+	}
+	live, e := FetchSnapshot(f.ctx, f.s.m, record, Baseline{receipt, receipt.Bundle})
+	if e != nil {
+		t.Fatal(e)
+	}
+	beforePreview := systemBytes(t, f.s)
+	preview, e := PrepareCandidate(f.ctx, deploy.NewTarget(record), projected, Baseline{receipt, live}, Settings{Rules: true}, "preview", false)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if !bytes.Equal(beforePreview, systemBytes(t, f.s)) {
+		t.Fatal("preview wrote database")
+	}
+	previewFiles, e := preview.Contents()
+	if e != nil {
+		t.Fatal(e)
+	}
 	if e = f.s.Run(f.ctx, "device"); e != nil {
 		t.Fatal(e)
 	}
@@ -433,6 +465,16 @@ func TestStructurePublicationPinsNonRuleConfiguration(t *testing.T) {
 		if e != nil {
 			t.Fatal(e)
 		}
+		if len(files) != len(previewFiles) {
+			t.Fatal("preview/execution file count differs")
+		}
+		for path, want := range previewFiles {
+			got, ok := files[path]
+			if !ok || got.Role != want.Role || !bytes.Equal(got.Data, want.Data) {
+				t.Fatalf("preview/execution differs for %s", path)
+			}
+		}
+
 		main := string(files[call.Manifest.ConfigPath].Data)
 		if !strings.Contains(main, "new-inline.example.com") || strings.Contains(main, "192.0.2.99") || strings.Contains(main, "mode: global") {
 			t.Fatal("rule boundary crossed", main)

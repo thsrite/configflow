@@ -226,6 +226,11 @@ func (s *Service) Round(ctx context.Context) error {
 	}
 	agents.ObservePresence(records)
 	s.mu.Lock()
+	for id, running := range s.pending {
+		if !running {
+			delete(s.pending, id)
+		}
+	}
 	ids := map[string]bool{}
 	for _, r := range records {
 		ids[recordID(r)] = true
@@ -267,7 +272,7 @@ func (s *Service) Round(ctx context.Context) error {
 			return e
 		}
 		e = lifecycle.Spawn(ctx, "agent-rule-sync-"+id, func(job context.Context) {
-			defer func() { s.mu.Lock(); delete(s.pending, id); s.mu.Unlock() }()
+			defer func() { s.mu.Lock(); s.pending[id] = false; s.mu.Unlock() }()
 			_ = s.Run(job, id)
 		})
 		if e != nil {
