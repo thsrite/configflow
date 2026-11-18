@@ -191,6 +191,22 @@ func (r *Repository) GetPublishSnapshot(ctx context.Context, profileID string, a
 	return config, revision, nil
 }
 
+// PublishConfig is GetPublishSnapshot on typed values: the resolved view of
+// a profile (Agents only when agents is set) and its config revision, from
+// one generation. The value belongs to the caller.
+func (r *Repository) PublishConfig(ctx context.Context, profileID string, agents bool) (config *model.Config, revision int64, err error) {
+	err = r.View(ctx, func(document *model.Document) error {
+		profile, err := profileFor(document, profileID)
+		if err != nil {
+			return err
+		}
+		revision = int64(profile.Revision) + int64(document.Shared.Revision)
+		config, err = resolveConfig(document, profileID, nil, agents)
+		return err
+	})
+	return config, revision, err
+}
+
 // Config returns the resolved view of a profile (Python's compat config):
 // its own members, system_config, backup, the Agents, the shared resources
 // its composition selects plus roots, the whole rule library, and rulesets
