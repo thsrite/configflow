@@ -51,4 +51,4 @@ for line in sys.stdin:
             if hasattr(error, field):
                 answer[field] = conv(getattr(error, field))
     answer['args_after'] = conv(args)
-    print(json.dumps(answer, ensure_ascii=False), flush=True)
+    print(json.dumps(answer, ensure_ascii=False, sort_keys=True), flush=True)

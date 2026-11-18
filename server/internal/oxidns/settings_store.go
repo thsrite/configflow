@@ -84,6 +84,7 @@ func ReadSettings(ctx context.Context, profileID string) (StoredSettings, error)
 	if err != nil {
 		return StoredSettings{}, err
 	}
+	etag := settingsETag(node)
 	node, _ = storedProjection(node)
 	normalized, err := NormalizeSettings(node, false)
 	if err != nil {
@@ -93,7 +94,7 @@ func ReadSettings(ctx context.Context, profileID string) (StoredSettings, error)
 	if err != nil {
 		return StoredSettings{}, err
 	}
-	return StoredSettings{Settings: result, ETag: settingsETag(node)}, nil
+	return StoredSettings{Settings: result, ETag: etag}, nil
 }
 
 // SaveSettings owns the detached whole-object transaction. The stale-validator

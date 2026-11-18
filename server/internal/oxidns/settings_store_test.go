@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 )
 
@@ -112,5 +113,33 @@ func TestC29IfMatchSerializesWholeDraftSaves(t *testing.T) {
 	}
 	if saved.Guard.ConfigRevision != after+1 || saved.Guard.ProfileID != "default" || saved.Guard.ServiceType != "oxidns" {
 		t.Fatalf("publication guard: %#v", saved.Guard)
+	}
+}
+
+func TestStoredSettingsProjectionKeepsStoredValidator(t *testing.T) {
+	ctx, r := settingsRepository(t)
+	value := M("custom_matches", L(M("enabled", I(1), "matches", L("qname example.com"), "exec", "accept")))
+	_, err := r.UpdateProfile(ctx, "default", func(_ context.Context, p *model.Profile) error {
+		return p.OxiDNS.SetNode(value)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	read, err := ReadSettings(repo.WithScope(ctx), "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if read.ETag != settingsETag(value) {
+		t.Fatal("reader used projected settings as stored validator")
+	}
+	projected, err := read.Settings.Node()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = SaveSettings(repo.WithScope(ctx), "default", projected, read.ETag); err != nil {
+		t.Fatalf("editor cannot repair compatible stored settings: %v", err)
+	}
+	if _, err = SaveSettings(repo.WithScope(ctx), "default", projected, read.ETag); !errors.Is(err, ErrSettingsChanged) {
+		t.Fatalf("old stored validator remained valid after repair: %v", err)
 	}
 }
