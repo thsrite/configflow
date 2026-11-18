@@ -1569,3 +1569,9 @@ N8-9 D2 provider私有路径的跨包对照：convert的独立真实Python参考
 - 协调者裁定：OxiDNS API 写入时，`custom_matches[].enabled` 必须是 bool；`ros_route.args.routing_table/gateway4/gateway6` 必须是文本。错误返回 400 和集中中文消息，不提交 DB 或文件。原 Python 接受的非原生类型按精确输入指纹单独登记在 `internal/oxidns/testdata/native-request-expectations.json`；原 C05/随机录制不改。
 - 已存储的上述值按兼容投影读取，不使整份 DNS 生成失败、不改原始字节：enabled 的数字 0/1 分别取 false/true；数字路由表/网关取原数字 token 文本；无效容器关闭这条 RouterOS 路由功能。其他非布尔 enabled 无效并停用该匹配。每个问题产生不含值的 `model.FieldIssue` 和路径告警。数字转文本会使生成 YAML 从数字变为字符串；无效 RouterOS 容器从 Python 的错误类型参数变为不交付该功能，其余输出由真实 Python 投影逐字段对照。用户编辑保存时应提交 bool 和文本以修复旧值。
 - 补充原生诊断：布尔 false 不再作为数值零触发第二条 range 错误，错误形状的日期列表只由 schema 报类型错误；完整其他诊断和顺序不变，52 条精确输入结果另存 `native-validation-expectations.json`。UDP 的非文本 entry 不再被用于自动创建 TCP，2 条完整结果另存 capability 索引，并有真实 Python 的错误可编辑状态及正确文本正控。
+
+### N8-9 MosDNS：原生规则文本空白与大小写
+
+MosDNS 的经典规则关键字、域名模式、规则内容不再导入 pystr；首尾空白用 strings.TrimSpace，大小写用 x/text/cases 的语言无关完整映射。真实 Python 对照确认 ß 关键字大写、土耳其 i/ı/İ、域名中的 İ 和最终 sigma、NBSP、普通域名规则输出不变。
+
+明确差异逐项登记：ParseClashRuleValue 的 U+001C、U+001D、U+001E、U+001F 首尾字符在 Go 中保留，Python strip 会删除。例如每个控制字符 c 的输入 c+"DOMAIN,example.com"+c，Go 返回 [c+"DOMAIN", "example.com"+c]，Python 返回 ["DOMAIN", "example.com"]。完整转换里 U+001C/U+001D/U+001E 原本就是共享换行语法，输出仍相同；U+001F 不是换行，输入 "DOMAIN,example.com\x1f" 在 Go 输出 "full:example.com\x1f"，Python 输出 "full:example.com"。15 个真实 Python 精确正负控覆盖上述每项；冻结语料不改。用户应移除规则首尾控制字符，普通空格、制表符和 Unicode 空白按原合同处理。

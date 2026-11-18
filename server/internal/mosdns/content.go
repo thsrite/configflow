@@ -5,9 +5,10 @@ import (
 	"strings"
 
 	"configflow/internal/convert"
-	"configflow/internal/pystr"
 	"configflow/internal/rules"
 	"configflow/internal/yamlx"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 
 	"gopkg.in/yaml.v3"
 )
@@ -60,10 +61,10 @@ func inList(s string, list []string) bool {
 // DOMAIN-REGEX keeps every remaining comma in its payload.
 func ParseClashRuleValue(line string) (kind, value string) {
 	kind, value, _ = strings.Cut(line, ",")
-	kind, value = pystr.Upper(pystr.Strip(kind)), pystr.Strip(value)
+	kind, value = cases.Upper(language.Und).String(strings.TrimSpace(kind)), strings.TrimSpace(value)
 	if kind != "DOMAIN-REGEX" {
 		first, _, _ := strings.Cut(value, ",")
-		value = pystr.Strip(first)
+		value = strings.TrimSpace(first)
 	}
 	return kind, value
 }
@@ -101,7 +102,7 @@ func DomainPatternForMosDNS(pattern string) (string, bool) {
 	if !rules.ValidPattern(pattern) {
 		return "", false
 	}
-	pattern = pystr.Lower(pattern)
+	pattern = cases.Lower(language.Und).String(pattern)
 	if strings.HasPrefix(pattern, "+.") && !strings.Contains(pattern, "*") {
 		return "domain:" + pattern[2:], true
 	}
@@ -156,7 +157,7 @@ func ConvertRuleContentForMosDNS(content string, part ...string) (out string, er
 	if !isYAMLFormat {
 		sampleCount := 0
 		for _, line := range convert.PySplitlines(content) {
-			line = pystr.Strip(line)
+			line = strings.TrimSpace(line)
 			if line == "" || strings.HasPrefix(line, "#") {
 				continue
 			}
@@ -166,7 +167,7 @@ func ConvertRuleContentForMosDNS(content string, part ...string) (out string, er
 			}
 			if strings.Contains(line, ":") {
 				before, _, _ := strings.Cut(line, ":")
-				prefix := pystr.Lower(pystr.Strip(before))
+				prefix := cases.Lower(language.Und).String(strings.TrimSpace(before))
 				if inList(prefix, mosdnsDomainPrefixes) || prefix == "ip" {
 					isMosdnsFormat = true
 					break
@@ -240,21 +241,21 @@ func ConvertRuleContentForMosDNS(content string, part ...string) (out string, er
 
 	converted := []string{}
 	for _, line := range ruleLines {
-		line = pystr.Strip(line)
+		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "//") {
 			continue
 		}
 
 		nativePrefix, nativeValue, separator := strings.Cut(line, ":")
-		if separator && inList(pystr.Lower(nativePrefix), mosdnsDomainPrefixes) {
+		if separator && inList(cases.Lower(language.Und).String(nativePrefix), mosdnsDomainPrefixes) {
 			if wantDomain && nativeValue != "" {
-				converted = append(converted, pystr.Lower(nativePrefix)+":"+nativeValue)
+				converted = append(converted, cases.Lower(language.Und).String(nativePrefix)+":"+nativeValue)
 			}
 			continue
 		}
-		if separator && pystr.Lower(nativePrefix) == "ip" {
-			if wantIP && isIPOrCIDR(pystr.Strip(nativeValue)) {
-				converted = append(converted, pystr.Strip(nativeValue))
+		if separator && cases.Lower(language.Und).String(nativePrefix) == "ip" {
+			if wantIP && isIPOrCIDR(strings.TrimSpace(nativeValue)) {
+				converted = append(converted, strings.TrimSpace(nativeValue))
 			}
 			continue
 		}

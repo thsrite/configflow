@@ -38,6 +38,8 @@ for line in sys.stdin:
             result = m.convert_rule_content_for_mosdns(*args)
         else:
             functions = {
+                'domain_pattern': m.domain_pattern_for_mosdns,
+                'parse_clash': m.parse_clash_rule_value,
                 'downloads': m.get_mosdns_ruleset_downloads,
                 'custom_files': m.get_mosdns_custom_files,
                 'split': m.split_rules_and_rulesets,
