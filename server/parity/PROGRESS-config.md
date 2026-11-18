@@ -55,6 +55,16 @@ diagnosis and strict other fields/storage; no aggregation runtime code changes. 
 - Timings, historical scope/load caveats and direct discovery comparison:
   [progress/n73-gate-perf.md](progress/n73-gate-perf.md).
 
+## N8-7 — early consumers, second batch
+
+Native taskstatus, tasks, notifications/store, weblistener and
+api/{logs,stats,notifications,tasks}; thin legacy hook codecs only, one business
+implementation. O3-6c/C07 ownership/ctx/rename checks retained. Native D2 identities
+activate here; notifications reappear once, router checks can be stale, no new
+sync/publication pending/waiting job. File null repair and Python rollback caveats
+are in [O14](progress/o14-switch.md) and the ledger. Targeted verification only
+on .32; coordinator owns the batch gate. Full report: [progress/n8-7b.md](progress/n8-7b.md).
+
 ## N8-7 — early consumers, first batch (ported; final acceptance running)
 
 ## N8-7 — early consumers, first batch (ported; coordinator acceptance pending)

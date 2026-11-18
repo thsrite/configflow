@@ -1124,3 +1124,39 @@ adding a production Parse/Equal pass. Normal converter byte expectations and the
   NaN/Infinity in task-status.json becomes null on read; a later counter update
   counts on from zero, while unrelated fields and receipts remain present.
   Counter errors use ordinary Go error chains rather than Python class names.
+
+### N8-7 second batch — D2 and file readers
+
+- **D2 / 一次性身份变化**：notification fingerprint 和 RouterSignature 改用
+  encoding/json 的原生编码（对象键由标准库排序，数字保留 json.Number）。
+  不保留 Python 编码器。升级后仍存在的问题会使已忽略通知重新出现一次；
+  在 Go 中再次确认后，相同问题不会反复出现。路由器旧检查通知可能标为 stale，
+  下次检查/预览会刷新它。该签名仅服务于通知，不进入规则同步或发布的任务、
+  baseline、状态机；不会因此触发同步、发布或新增 pending/waiting 任务。
+  无需为了编码变化手动同步或重新发布。独立进程重启测试锁住两个新签名。
+- **持久化 nonfinite**：task-status.json 的计数/时长及其他成员、notifications.json
+  的 occurrences/failure_count/evidence 及未知成员、各配置空间 stats_history.json
+  的 samples[].subscriptions/nodes/proxyGroups/rules 及未知成员，读取时将裸
+  NaN/Infinity/-Infinity 转为 null，有限数据和数字原文保留，首次重写变为合法 JSON。
+  字符串里的这些单词不变。请求绑定不调用此修复入口。
+- 统计历史的超大数（例如 1e400 或 4301 位整数）仍原样存储；超出有限绘图范围
+  的投影点为 null，不再让 /api/stats/overview 因浮点溢出返回 500。正常计数仍与
+  Python 严格对照；坏的十进制计数字符串仍给出明确验证错误。
+- R5：错型任务/报告/统计历史成员用类型化读取或明确错误处理，不再模拟
+  Python 的 len/str/truthiness 或异常类。任务计数器的原 168 行语料不改，
+  8 行 CPython Unicode 数字改为显式拒绝；12 行 nonfinite 使用显式原生预期。
+  其余字段继续严格比较。通知的非 object 单项仍是 500，非法 store 容器仍是 503。
+- task-status、通知、统计历史文件的空白和键顺序可以改变；读回结构与普通字段
+  值保持一致，未知成员保留。统计历史重写现在也保留根的未知成员（R1），
+  Python 原实现会丢掉它们。通知 store 或无效计数的校验错误不覆盖原文件；
+  task-status/可选 stats 的损坏文件沿用原先的静默默认策略。
+
+紧急回滚补充：task-status 和 stats 的 null 计数可由 Python 的 `int(value or 0)`
+消费；真实 Python 互通测试覆盖读取和保存。notifications 的正常生产 occurrences
+始终是整数；若手工/损坏文件原来含 nonfinite，Go 重写后该值为 null，Python
+`observe` 的 `occurrences += 1` 在下一次不同 evidence 时会抛 TypeError，可能使
+通知列表返回 500 或后台通知刷新失败。此类未解决通知没有统一的自动保留期，
+需要删除 notifications.json 中对应坏项后重新观察；无需删除任务状态或配置。
+真实 Python 回归固定“能加载保存、递增时 TypeError”。O14 清单见
+[progress/o14-switch.md](progress/o14-switch.md)。第一批 metrics/traffic 的 24 小时
+回滚注意事项仍适用。
