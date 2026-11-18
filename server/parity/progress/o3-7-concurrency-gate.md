@@ -1,6 +1,6 @@
 # O3-7 concurrency source gate
 
-Status: implementation complete, final targeted verification in progress.
+Status: implementation and targeted verification complete; waiting for the coordinator's batch-6 merge notification before rebasing to go.
 Branch `go-o3-7`, created from the then-current `batch-6@cdca79def`; no push.
 The coordinator will notify when batch-6 is merged before the final rebase to go.
 
@@ -83,4 +83,55 @@ API conditional reference covered 3000 dates/3000 requests (919 Werkzeug refusal
 `server/internal/api/agents/dnsfollow_test.go` (pre-existing batch-6 input).
 Log `pyref-check.log` in the same directory. Re-record only after this review;
 independently assert entries/input/dependencies unchanged, then ordinary replay.
-Remaining tag and two real Flask differentials are running in the same foreground command.
+
+Final follow-up passed:
+- Explicit record mode after check, with an independent before/after JSON assertion:
+  **5 files, entries/input/dependencies unchanged**. Only the two reviewed Go source
+  fingerprints changed; the api/agents update adds exactly the batch-6 dnsfollow_test.go
+  hash. No expected response/input bytes were accepted or edited.
+- Ordinary race/count1 replay: MosDNS39.233s, api/agents1.497s. All formerly blocked
+  oracle regressions now pass, alongside the broad run's remaining successful tests.
+- Lifecycle tests under configflow_proddiff and configflow_difftest: both0.536s.
+- Actual Flask differentials: mosdns9.345s and httpx29.424s, both pass; JSON validates
+  exactly two package passes and zero skip/fail events.
+- Final AST scan: **784 non-test Go files**, **8 go + 7 wall-time exemptions**,
+  passed0.236s; final line `O37 TARGETED PASS`.
+
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc '
+set -e; cd server
+export CONFIGFLOW_PY=$HOME/cf-test/.venv/bin/python CONFIGFLOW_REPO=$(dirname "$PWD") CONFIGFLOW_DIFF_PYTHON=$HOME/cf-test/.venv/bin/python PYTHONDONTWRITEBYTECODE=1
+unset CONFIGFLOW_SNAPSHOT CONFIGFLOW_DIFF
+selection="^(TestRecordedPythonTests|TestReviewUnholdableYAMLOutsideTheOutputMatchesPython|TestCorpus|TestN73SharedUpstreamMetadataMatchesPython|TestReviewConditionalMatchesWerkzeug)$"
+# First run read-only check (expected nonzero for source metadata only).
+# PYREF_MODE=check go test -race -count=1 -v -run "$selection" -timeout=15m ./internal/mosdns/ ./internal/api/agents/
+# Then, after inspecting zero output differences, record through the original tool.
+PYREF_MODE=record PYREF_ACCEPT=1 go test -race -count=1 -v -run "$selection" -timeout=15m ./internal/mosdns/ ./internal/api/agents/
+go test -race -count=1 -run "$selection" -timeout=15m ./internal/mosdns/ ./internal/api/agents/
+for tag in configflow_proddiff configflow_difftest; do go test -tags "$tag" -count=1 ./internal/lifecycle/; done
+CONFIGFLOW_DIFF=1 go test -json -p=2 -count=1 -timeout=20m ./internal/mosdns/difftest/ ./internal/httpx/difftest/
+go test -v -count=1 -run "^TestConcurrencyFacadeBoundary$" ./internal/lifecycle/
+'
+```
+
+The actual foreground wrapper retained `pyref-before.json`, `pyref-check.log`,
+`pyref-record.log`, `pyref-replay.log`, both `tag-*.log`, and `diff.json` under
+`.32:~/.cache/o37-targeted.wVn4IU/`. Its post-record assertion compares the full
+entries maps and version exactly, dependencies/input hashes exactly, and permits
+only the two named source keys. All commands remain on .32; no reference output
+was invented, no assertion or timeout was relaxed.
+
+## Commits and integration
+
+- 5a0871af4: SpawnerFrom + stale generation rejection, approved design notes/tests.
+- 25df64076: localhttp injected tracked callbacks + HTTP production wiring/tests.
+- 4b83f2a6b: archive Spawn and Clock-based production retries/tests.
+- 13d8b7e0e: canonical AST gate and contributor pointers.
+- Final commit: provenance-only oracle refresh and this completed report.
+
+No outstanding product finding. The only failed broad checks were the stale
+source fingerprints described above, all now replay-green. No new dependency,
+flock, periodic loop, hidden loop switch or unapproved job API was added. Wait for
+batch-6 merge notice before rebase; do not rebase onto the still-older go or copy
+other branches. Final hand-back names the branch tip; do not push.
+
