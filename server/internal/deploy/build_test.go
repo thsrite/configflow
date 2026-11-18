@@ -30,6 +30,7 @@ func testContext(t *testing.T) context.Context {
 	return repo.WithRepository(context.Background(), r)
 }
 func TestPythonBuild(t *testing.T) {
+	t.Parallel()
 	raw, err := os.ReadFile("testdata/build.json")
 	if err != nil {
 		t.Fatal(err)
@@ -46,7 +47,7 @@ func TestPythonBuild(t *testing.T) {
 		}
 		_, _ = w.Write([]byte(text))
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 	raw = bytes.ReplaceAll(raw, []byte("@RULE_SERVER@"), []byte(srv.URL))
 	var corpus struct {
 		Rows []struct {
@@ -82,6 +83,7 @@ func TestPythonBuild(t *testing.T) {
 	}
 	for _, row := range corpus.Rows {
 		t.Run(row.Name, func(t *testing.T) {
+			t.Parallel()
 			cfg, err := jsonx.Parse(row.Source)
 			if err != nil {
 				t.Fatal(err)

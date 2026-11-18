@@ -128,3 +128,11 @@ measurement and does not include the N7-3 gate test).
 go test -race -count=1 -timeout=30m -json ./internal/provider ./internal/deploy/... -run '^(TestCorpus|TestRecordedPythonTests|TestCorpusRepositoryCopiesCannotLeakState|TestPythonBuild|TestPythonCorpus|TestPythonCheckerHistories)$'
 configflow/internal/provider pass 90
 ```
+
+## deploy — parallel build corpus
+
+`TestPythonBuild` and each independent row now use t.Parallel. Each row keeps its
+own repository, input Source, downloads and all original manifest/file/YAML/error
+assertions. The read-only HTTP response table is shared once; server shutdown is
+a parent cleanup, after all child subtests finish. Existing recorded references
+already require no Python process. .64 selected-test race run passed `5.628s`.
