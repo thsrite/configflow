@@ -1802,6 +1802,9 @@ Routes (3): `GET|POST /api/profiles/<profile_id>/gateway-onboarding`; `POST /api
 
 Evidence: no Go code. Provides for config: `mihomo_dns_loop` (C18 `mihomo_base_settings`), `assert_gateway_onboarding_ready` (A22), setup flow helpers (C36) — via interfaces declared in C18/C36. The route's lazy call into C36 `setup_flow.adopt_owned_write` needs an interface here (C36 comes later).
 
+**Clarified in C34 (2026-11-18):** `gateway_onboarding.mihomo_dns_loop` is a pure function of the supplied DNS tree and host-address list (standard URL/IP parsing only; no repository, device, session, probe or onboarding runtime state). C34 provides `gateway.MihomoDNSLoop` and wires `convert.MihomoHooks.MihomoDNSLoop` through gateway.Hooks. A21 must reuse this function, not rewrite it. Real Python direct comparisons cover ordinary/local/host IPv4 and IPv6, domains, ports, udp/tcp/tls/https/quic and malformed addresses. Other A21 functions/routes remain this module's responsibility.
+
+
 ## A22 — gateway installation
 
 **Status: `missing`** · HR · prereqs: A08 (`gateway_install_script`, `install_command_store`, `install_output`), A14 (`_prepare_transactional_content`), A20, A21, A06 (`MonitorError`), C17 (`commit_provider_bundle`), C18 (`_default_mihomo_template`, `mihomo_listen_ports`), routers (`router_split.is_full_tun`) · Go: internal/gateway, api/agents
