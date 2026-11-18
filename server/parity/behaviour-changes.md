@@ -1583,3 +1583,5 @@ MosDNS 的经典规则关键字、域名模式、规则内容不再导入 pystr�
 媒体类型非 JSON、畸形 JSON、JSON 数组以及非 cache 接口的 null，Python 旧路由内部异常500；Go 返回明确的400，无写入。cache-settings 的 JSON null 特例继续与 Python 一致：恢复默认、200、正常递增 revision。rulesets 的不存在引用由 Python500改为Go409，保留同一中文说明，增加 usages；两边均不写入。比较器和 proddiff baseline 不改。
 
 原接口允许 custom_matches 中的字符串元素原样保存、显示，生成时忽略；现由 model.MosDNSMatch 的字符串/对象 union 保留该合同。DeviceNotes 的 R5 消费值不能充当写入合法性的证据：写入前使用原字段类型诊断和单独备注字段的原始成员验证，无效 null/[]/bool 继续与 Python 同样拒绝；不使无关 OxiDNS 生成失败。
+
+上述 MosDNS 缓存 bool 严格校验包含显式字段 null：cache_enabled/cache_dump_enabled 的 null 和 whole-editor 的 cache_enabled:null 均为 Python200、Go400、无写入。它们与整个 cache-settings 请求体为 JSON null 的有效默认重置（两侧200）分别测试，不能混用。
