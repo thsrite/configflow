@@ -191,3 +191,35 @@ ok configflow/internal/api/config/difftest 10.881s
 新增测试文件：config/difftest/review_test.go（121行）、generate/review_test.go（121行）、profiles/review_test.go（62行）。
 
 代码与测试修复提交：`da3883a33`。结束前执行 `git rebase go`，输出 `Current branch go-review-c34 is up to date.`；本地go仍为 `215ab6b049`，代码未变化。分支 `go-review-c34`；无push，交回时工作树干净。
+
+## Batch-4 后最终衔接（2026-11-18）
+
+已 rebase 到 `go@c939a5f61`（含 A20 reader / O3-6c）。重放时保留 A20 的
+linuxgateway 路由、setupflow.Wire 和其 routes.tsv 完成状态，HEAD 行为记录取并集。
+原修复 `da3883a33` 重放为 `533ba9dbf`；原复核结论提交 `4ad74cf47` 重放为
+`720245be5`。无新增未结发现。
+
+N8 衔接修复提交 `391361ba7`：
+- 元数据更新沿用 repo 新名称 UpdateProfileMetadata，不误调 typed UpdateProfile。
+- 新脱敏 owner 返回原生 JSON / 原生有序字段，公共 bindings 直接消费 RawMessage；
+  导出 hook 只做原生结果到 repo 旧边界的 JSON 序列化，ctx 和同一仓库 snapshot 不变；
+  OxiDNS preview 通过 yamlx.FromJSON 接原生结果，不再断言旧 jsonx 对象。
+- A20 也使用 custom_config 蓝图；C34 认证/注册测试按明确 owner 排除 A20 的 7 个方法，
+  仍覆盖 C34 的 59 个方法，且继续检查所有已注册路由没有重复。新增表测试锁住这个边界。
+- 真实差分显式断言 N8-5 已裁定的 0/false 三方合并类型区别，未放宽全局归一；
+  其余正常结果、DB/files、旧的按引擎 null/缺失 body 裁定不变。
+
+全部固定 .32，无 full gate。适配后的定向命令：
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt --back server/internal/api/profiles/profiles.go --back server/internal/api/config/live_test.go --back server/internal/api/generate/generate.go --back server/internal/api/generate/auth_test.go --back server/internal/api/generate/artifacts_test.go --back server/internal/configexport/export.go -- bash -lc 'cd server && gofmt -w internal/api/profiles/profiles.go internal/api/config/live_test.go internal/api/generate/generate.go internal/api/generate/auth_test.go internal/api/generate/artifacts_test.go internal/configexport/export.go && go vet ./... && go test -race -count=1 -timeout=4m ./internal/api/config ./internal/api/profiles ./internal/api/generate ./internal/configgen ./internal/configexport && CONFIGFLOW_DIFF=1 go test -race -count=1 -timeout=5m ./internal/api/config/difftest'
+```
+vet exit0；race 末行：api/config 12.915s、api/profiles 6.922s、api/generate 14.662s、
+configgen 2.982s、configexport 1.055s，全通过。完整差分首次 115.248s，唯一失败是
+TestC34ObjectFieldValues 尚未显式登记 N8-5 的 0/false 预期区别，其余组无失败；
+补齐四个引擎的精确状态断言后，按 Leaner verification 只重跑该失败组：
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt --back server/internal/api/config/difftest/routes_test.go -- bash -lc 'cd server && gofmt -w internal/api/config/difftest/routes_test.go && CONFIGFLOW_DIFF=1 go test -race -count=1 -timeout=2m ./internal/api/config/difftest -run ^TestC34ObjectFieldValues$'
+```
+末行 `ok configflow/internal/api/config/difftest 10.466s`。没有遗留失败；不重复已经
+通过的其他差分组。此次只改适配层/测试，没有新 parser/fuzz target，既有 60s 记录保留。
+C34 与 C36 一起交回 batch-5；不 push、不复制 A20/A21 文件。
