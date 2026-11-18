@@ -411,3 +411,9 @@ proddiff self_check PASS，Python/Go transport_retries均0；coverage_regression
 全部23个difftest包均ok，其中api/agents/difftest 283.736s；没有跳过A23 enrollment字段。
 本次gate的私有日志目录后缀为gate.TAy2Wm，数据未复制入仓库。
 最终提交前确认go@55c9794a0为祖先、无R14/A18 deferred残留，git差异空白检查通过。
+
+### core fuzz 后续修复
+
+协调者 rebase 到 go@95440b69e 后发现 Mihomo graph fuzz 的裸 `<<` 标量。
+根因修复、crasher、特殊字符串根/键/值回归和定向 race / 六目标 60s fuzz
+见 [batch7-fuzz-merge-zh.md](batch7-fuzz-merge-zh.md)。

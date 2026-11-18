@@ -44,7 +44,10 @@ func projectReadGraph(root *yamlx.Node, policy yamlx.JSONKeyMode) (*yamlx.Node, 
 			n.Tag = "!!seq"
 			n.Style = 0
 		}
-		if n.Kind == yaml.ScalarNode && n.ShortTag() != "!!merge" {
+		// ProjectJSONKeys has already materialized merge pairs and replaced
+		// mapping keys. Any remaining merge-tag scalar is a value (including
+		// a root or alias target), so apply ToJSON's string policy to it too.
+		if n.Kind == yaml.ScalarNode {
 			data, err := yamlx.ToJSON(n)
 			if err != nil {
 				return nil, err

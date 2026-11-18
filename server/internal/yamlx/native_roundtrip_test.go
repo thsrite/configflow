@@ -2,10 +2,30 @@ package yamlx
 
 import (
 	"bytes"
+	"strconv"
 	"testing"
 
 	"gopkg.in/yaml.v3"
 )
+
+func TestMarshalQuotedSpecialScalars(t *testing.T) {
+	for _, value := range []string{"<<", "~", "null", "true", "0x1", "1e3", "="} {
+		quoted := strconv.Quote(value)
+		for _, source := range []string{quoted + "\n", quoted + ": value\n", "key: " + quoted + "\n"} {
+			t.Run(source, func(t *testing.T) {
+				n := parseNative(t, source)
+				out, err := MarshalChecked(t, n)
+				if err != nil {
+					t.Fatal(err)
+				}
+				again, err := Parse(out)
+				if err != nil || !Equal(n, again) {
+					t.Fatalf("quoted string changed tag/value: %q -> %q: %v", source, out, err)
+				}
+			})
+		}
+	}
+}
 
 func TestMarshalCollectionKeyComments(t *testing.T) {
 	for _, source := range []string{"A:\n[]: # note", "A:\n{}: # note", "? [one, two] # note\n: value\n"} {

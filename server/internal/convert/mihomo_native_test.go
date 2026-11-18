@@ -183,7 +183,7 @@ func TestNativeMihomoDownloads(t *testing.T) {
 }
 
 func FuzzNativeMihomoGraph(f *testing.F) {
-	for _, text := range []string{"a: &a {secret: '0o17'}\nb: *a", "a: &a [*a]", "a: [1, true, 2001-01-01, .inf]", "a: {<<: {x: 1}, x: 2}"} {
+	for _, text := range []string{"a: &a {secret: '0o17'}\nb: *a", "a: &a [*a]", "a: [1, true, 2001-01-01, .inf]", "a: {<<: {x: 1}, x: 2}", "\"<<\"\n", "\"<<\": value\n", "key: \"<<\"\n"} {
 		f.Add(text)
 	}
 	f.Fuzz(func(t *testing.T, text string) {
