@@ -832,6 +832,8 @@ Notes for porter (pre-design, superseded where they conflict): `Driver(router)`,
 
 ## R14 — automatic rule sync
 
+**batch-6 集成（协调者 2026-11-18 裁定）：** A16/A17 已提供 agents 槽，C07 现在仅缺 `router_rule_sync`；没有槽注册丢失，也不得安装空 provider。`proddiff-baseline.txt` 中 GET `/api/notifications` 的 6 条和 GET `/api/tasks` 的 5 条 503 缺槽差异暂列 `deferred → R14`。R14 在 batch-7 接入真实 rows/runner 后必须删除这 11 行并复跑 compare（消失后 stale 会使门禁失败）；不得扩大到其他字段或路由。
+
 **Status: `missing`** · HR · prereqs: R13, C14, C07 (`tasks`) · Go: internal/routers
 
 Files:

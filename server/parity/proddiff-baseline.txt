@@ -23,6 +23,17 @@ GET /api/logs/tail	body.logs	length	deferred → A18：既有 F1 异常日志后
 GET /api/logs/tail	body.logs[0]	value	deferred → A18：既有 F1 异常日志后果；路由 owner C06；A18 接线后必须 stale（proddiff-findings.md F1）
 GET /api/logs/tail	body.logs[1]	value	deferred → A18：既有 F1 异常日志后果；路由 owner C06；A18 接线后必须 stale（proddiff-findings.md F1）
 GET /api/logs/tail	body.total_lines	value	deferred → A18：既有 F1 异常日志后果；路由 owner C06；A18 接线后必须 stale（proddiff-findings.md F1）
+GET /api/notifications	body.checked_at	missing-in-go	deferred → R14：A16/A17 已使 agents 槽就绪；真实 router_rule_sync owner 尚未合入，仅缺此槽返回 503；R14 合入必须删除本路由全部这些行（stale 会使门禁失败）
+GET /api/notifications	body.items	missing-in-go	deferred → R14：A16/A17 已使 agents 槽就绪；真实 router_rule_sync owner 尚未合入，仅缺此槽返回 503；R14 合入必须删除本路由全部这些行（stale 会使门禁失败）
+GET /api/notifications	body.message	extra-in-go	deferred → R14：A16/A17 已使 agents 槽就绪；真实 router_rule_sync owner 尚未合入，仅缺此槽返回 503；R14 合入必须删除本路由全部这些行（stale 会使门禁失败）
+GET /api/notifications	body.missing_slots	extra-in-go	deferred → R14：A16/A17 已使 agents 槽就绪；真实 router_rule_sync owner 尚未合入，仅缺此槽返回 503；R14 合入必须删除本路由全部这些行（stale 会使门禁失败）
+GET /api/notifications	body.success	value	deferred → R14：A16/A17 已使 agents 槽就绪；真实 router_rule_sync owner 尚未合入，仅缺此槽返回 503；R14 合入必须删除本路由全部这些行（stale 会使门禁失败）
+GET /api/notifications	status	value	deferred → R14：A16/A17 已使 agents 槽就绪；真实 router_rule_sync owner 尚未合入，仅缺此槽返回 503；R14 合入必须删除本路由全部这些行（stale 会使门禁失败）
+GET /api/tasks	body.message	extra-in-go	deferred → R14：A16/A17 已使 agents 槽就绪；真实 router_rule_sync owner 尚未合入，仅缺此槽返回 503；R14 合入必须删除本路由全部这些行（stale 会使门禁失败）
+GET /api/tasks	body.missing_slots	extra-in-go	deferred → R14：A16/A17 已使 agents 槽就绪；真实 router_rule_sync owner 尚未合入，仅缺此槽返回 503；R14 合入必须删除本路由全部这些行（stale 会使门禁失败）
+GET /api/tasks	body.success	value	deferred → R14：A16/A17 已使 agents 槽就绪；真实 router_rule_sync owner 尚未合入，仅缺此槽返回 503；R14 合入必须删除本路由全部这些行（stale 会使门禁失败）
+GET /api/tasks	body.tasks	missing-in-go	deferred → R14：A16/A17 已使 agents 槽就绪；真实 router_rule_sync owner 尚未合入，仅缺此槽返回 503；R14 合入必须删除本路由全部这些行（stale 会使门禁失败）
+GET /api/tasks	status	value	deferred → R14：A16/A17 已使 agents 槽就绪；真实 router_rule_sync owner 尚未合入，仅缺此槽返回 503；R14 合入必须删除本路由全部这些行（stale 会使门禁失败）
 POST /api/agents/<agent_id>/generate-config	body.message	a18-ha-refusal	deferred → A18：HA 最终生成在 A18 接入前按设计拒绝，接入后必须消失
 POST /api/generate/<service>/artifact	body.agent_id	missing-in-go	deferred → A14/A21：C34 Clarified 已批准 frozen artifact owner 暂缺时 503；正式接线后必须 stale
 POST /api/generate/<service>/artifact	body.config_path	missing-in-go	deferred → A14/A21：C34 Clarified 已批准 frozen artifact owner 暂缺时 503；正式接线后必须 stale
