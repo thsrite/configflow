@@ -1160,3 +1160,15 @@ adding a production Parse/Equal pass. Normal converter byte expectations and the
 真实 Python 回归固定“能加载保存、递增时 TypeError”。O14 清单见
 [progress/o14-switch.md](progress/o14-switch.md)。第一批 metrics/traffic 的 24 小时
 回滚注意事项仍适用。
+
+### N8-7 second-batch review corrections
+
+Invalid root/items notification containers retain ErrInvalidStore and HTTP 503
+with the native decode cause; invalid individual items retain their existing
+classification. Nullable legacy Agent inputs now reach the native owners'
+existing no-op/default-registration paths instead of failing during transcoding.
+Notification occurrences use arbitrary-precision JSON integer counts, fixing an
+inherited Go int64 wrap/reset at large finite values; Python integer increments
+already preserve these counts. Unchanged numeric notation, invalid-field R5
+provenance and finite/unknown siblings remain intact. These corrections add no
+new D2 signature transition and do not change the documented null rollback risk.

@@ -2561,3 +2561,12 @@ boundaries and nine 60-second fuzz targets. Coordinator runs full gate/proddiff
 on its batch tree under Leaner verification. Exact commands, output, commit map,
 class counts and remaining (b)/(c)/(d)/N8-9 adapters:
 [`progress/n8-8a.md`](progress/n8-8a.md).
+
+## N8-7 second batch independent review (2026-11-18)
+
+`go-review-n8-7b`, author ref `802c81c9`: 0 high; 1 medium (inherited occurrence
+integer overflow), 2 low (notification store container classification, nullable
+Agent codecs), all fixed, zero open. Runtime/leaf/observation-ticket/HEAD audit
+and native precision/D2 call graph verified with targeted .32 checks and two
+selected real-Flask cases. No repeat of the author's full suites. Report:
+[review-n8-7b.md](review-n8-7b.md).

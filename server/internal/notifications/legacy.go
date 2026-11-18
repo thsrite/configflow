@@ -226,20 +226,20 @@ func MarkReadContext(ctx context.Context, dataDir string, versions *jsonx.Object
 
 // RecordAgent adapts an unconverted deployment owner.
 func RecordAgent(ctx context.Context, agent *jsonx.Object, repository *repo.Repository) error {
-	value, err := decodeLegacy[model.Agent](agent)
+	value, err := decodeLegacy[*model.Agent](agent)
 	if err != nil {
 		return err
 	}
-	return SaveAgent(ctx, value, repository)
+	return SaveAgent(ctx, *value, repository)
 }
 
 // RecordRegistrationRejection adapts an unconverted registration owner.
 func RecordRegistrationRejection(ctx context.Context, repository *repo.Repository, data *jsonx.Object, reason string) error {
-	value, err := decodeLegacy[model.Agent](data)
+	value, err := decodeLegacy[*model.Agent](data)
 	if err != nil {
 		return err
 	}
-	return RejectRegistration(ctx, repository, value, reason)
+	return RejectRegistration(ctx, repository, *value, reason)
 }
 
 // RecordAgentAddress adapts an unconverted registry owner.

@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"math/big"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,7 +17,6 @@ import (
 	"configflow/internal/jsonresp"
 	"configflow/internal/lifecycle"
 	"configflow/internal/lockx"
-	"configflow/internal/model"
 	"configflow/internal/repo"
 )
 
@@ -267,12 +267,12 @@ func ObserveItem(items *Items, key string, observation *Item) error {
 			return err
 		}
 		if !equalEvidence(evidence, previous.Evidence) {
-			count := model.Int(0)
+			count := new(big.Int)
 			if previous.Occurrences != nil {
-				count = *previous.Occurrences
+				count.Set((*big.Int)(previous.Occurrences))
 			}
-			count++
-			result.Occurrences = &count
+			count.Add(count, big.NewInt(1))
+			result.Occurrences = (*OccurrenceCount)(count)
 			result.LastSeenAt = new(seen)
 		}
 		if changed != identity {
@@ -293,7 +293,7 @@ func ObserveItem(items *Items, key string, observation *Item) error {
 		result.Version = new(stamp)
 		result.FirstSeenAt = new(stamp)
 		result.LastSeenAt = new(seen)
-		result.Occurrences = new(model.Int(1))
+		result.Occurrences = (*OccurrenceCount)(big.NewInt(1))
 	}
 	result.Evidence = evidence
 	items.Set(key, result)

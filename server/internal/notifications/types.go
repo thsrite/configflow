@@ -2,7 +2,9 @@ package notifications
 
 import (
 	"encoding/json"
+	"errors"
 	"maps"
+	"math/big"
 	"slices"
 
 	"configflow/internal/model"
@@ -33,32 +35,59 @@ func Destination(path, label string, query map[string]string) *Navigation {
 	return n
 }
 
+// OccurrenceCount is an arbitrary-precision incident count. Integer JSON
+// literals never pass through int64 or float64; R8 integral notation keeps the
+// shared model.Int validation, and malformed stored values still follow R5.
+type OccurrenceCount big.Int
+
+// UnmarshalJSON accepts integer literals and the existing R8 integral notation.
+func (c *OccurrenceCount) UnmarshalJSON(data []byte) error {
+	var count big.Int
+	if err := count.UnmarshalJSON(data); err == nil {
+		*c = OccurrenceCount(count)
+		return nil
+	}
+	var integral model.Int
+	if err := json.Unmarshal(data, &integral); err != nil {
+		return err
+	}
+	count.SetInt64(int64(integral))
+	*c = OccurrenceCount(count)
+	return nil
+}
+
+// MarshalJSON emits the exact integer, leaving model.Raw to retain unedited notation.
+func (c OccurrenceCount) MarshalJSON() ([]byte, error) {
+	value := big.Int(c)
+	return value.MarshalJSON()
+}
+
 // Item is one incident or observation. Evidence remains opaque JSON; identifiers,
 // state and presentation fields are typed. Raw retains unowned stored members.
 type Item struct {
-	State        string          `json:"state"`
-	Source       string          `json:"source"`
-	Title        *string         `json:"title"`
-	Message      *string         `json:"message"`
-	Impact       *string         `json:"impact"`
-	StatusLabel  *string         `json:"status_label"`
-	Severity     *string         `json:"severity"`
-	Scope        *string         `json:"scope"`
-	ProfileID    *string         `json:"profile_id"`
-	ProfileName  *string         `json:"profile_name"`
-	Target       *Navigation     `json:"target"`
-	CheckedAt    json.RawMessage `json:"checked_at"`
-	FailureCount json.RawMessage `json:"failure_count"`
-	Signature    *string         `json:"signature"`
-	Evidence     json.RawMessage `json:"evidence"`
-	ID           string          `json:"id"`
-	Read         *bool           `json:"read"`
-	Version      *string         `json:"version"`
-	FirstSeenAt  *string         `json:"first_seen_at"`
-	LastSeenAt   *string         `json:"last_seen_at"`
-	Occurrences  *model.Int      `json:"occurrences"`
-	Fingerprint  *string         `json:"fingerprint"`
-	Stale        *bool           `json:"stale"`
+	State        string           `json:"state"`
+	Source       string           `json:"source"`
+	Title        *string          `json:"title"`
+	Message      *string          `json:"message"`
+	Impact       *string          `json:"impact"`
+	StatusLabel  *string          `json:"status_label"`
+	Severity     *string          `json:"severity"`
+	Scope        *string          `json:"scope"`
+	ProfileID    *string          `json:"profile_id"`
+	ProfileName  *string          `json:"profile_name"`
+	Target       *Navigation      `json:"target"`
+	CheckedAt    json.RawMessage  `json:"checked_at"`
+	FailureCount json.RawMessage  `json:"failure_count"`
+	Signature    *string          `json:"signature"`
+	Evidence     json.RawMessage  `json:"evidence"`
+	ID           string           `json:"id"`
+	Read         *bool            `json:"read"`
+	Version      *string          `json:"version"`
+	FirstSeenAt  *string          `json:"first_seen_at"`
+	LastSeenAt   *string          `json:"last_seen_at"`
+	Occurrences  *OccurrenceCount `json:"occurrences"`
+	Fingerprint  *string          `json:"fingerprint"`
+	Stale        *bool            `json:"stale"`
 	Extra        model.Fields
 	Raw          model.Raw
 }
@@ -76,7 +105,7 @@ type Items struct{ model.Map[*Item] }
 func (i *Items) UnmarshalJSON(data []byte) error {
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(data, &fields); err != nil {
-		return err
+		return errors.Join(ErrInvalidStore, err)
 	}
 	if fields == nil {
 		return ErrInvalidStore
@@ -107,7 +136,7 @@ func (d *storeDocument) UnmarshalJSON(data []byte) error {
 	// Reject wrong item shapes rather than letting record R5 discard the store.
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(data, &fields); err != nil {
-		return err
+		return errors.Join(ErrInvalidStore, err)
 	}
 	if fields == nil || fields["items"] == nil {
 		return ErrInvalidStore
