@@ -1,7 +1,7 @@
 # Routers Step B — independent public HTTP differential
 
 Status: in progress; NOT ready for acceptance hand-back. Branch go-difftest-routers-b.
-Latest clean integration rebase: goa9d6ce86c; normal public binary built from it.
+Latest clean integration rebase: goe0e9d9d45; normal public binary built from it.
 Current declarations:522 executed-variant audits plus14 explicit source-unreachable
 proofs plus2 O6 review-superseded entries;1763 remaining if all increments and
 controls are composed. Last FULL composition still37937739:3054
@@ -2246,3 +2246,16 @@ then remaining matrix, dynamic ownership/runtime/YAML comparisons and background
 concurrency. Keep opaque signatures/fingerprints literal until their exact
 protocol/compatibility obligation is established; never blanket-mask them.
 Final composition, gate/rebase/clean hand-back remain pending.
+
+Clean periodic integration refresh onto goe0e9d9d45 completed73 commits without
+conflicts. Latest increment commit after rebase:f03fae0a6; prior DHCP-write
+commit3da66fa19; transport commit5f1017b48. Python sources unchanged sincea9.
+Read latest brief/WORKFLOW Leaner verification and coordinator messaging rules;
+no progress messages to coordinator, no subagents/push. Targeted new-base check:
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1; uptime; ~/cf-test/.venv/bin/python server/tools/routerdiff/build.py "$HOME/.cache/routerdiff-build-302rx1dg-e0e9d9d45" --parallel 4; export ROUTERDIFF_BINARY="$HOME/.cache/routerdiff-build-302rx1dg-e0e9d9d45/configflow"; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python -m unittest -q test_boundary.BoundaryTests.test_real_native_config_write_pairs_only_content_bound_store_commit_ids; routerdiff_log="$HOME/.cache/routerdiff-reports/302rx1dg/rebase-e0e9d9d45-smoke.log"; if ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world runtime-reads --world client-drafts --world dhcp-ikuai-plain --world dhcp-ikuai-write-late-scope-network --world dns-target-ha-vip-documentation --world dns-target-single-null --output "$HOME/.cache/routerdiff-reports/302rx1dg/rebase-e0e9d9d45-smoke.json" > "$routerdiff_log" 2>&1; then tail -n 2 "$routerdiff_log"; else tail -n 12 "$routerdiff_log"; exit 1; fi'`
+=> load11.10/12.51/14.10;normal binary build success;Ran1 native store-head
+boundary test2.378s/OK;34 actual recipes/allGo-unimplemented,50 references,
+1 existing audit,2300 pending in subset,complete=false/no bug. Still0/26 domain
+routes in actual native public manifest; no broad duplicate suite was rerun.
+No active command; work remains (1763 matrix entries pending if increments
+compose), full composition/final verification/rebase still not done.
