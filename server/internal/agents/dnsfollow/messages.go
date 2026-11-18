@@ -64,6 +64,7 @@ const (
 	msgPrepareFailed     = "DNS 联动准备失败"
 	msgLog               = "OxiDNS %s DNS 联动：%s"
 	msgLoopFailed        = "DNS follow worker could not complete a round"
+	msgDefaultAgentName  = "Agent"
 )
 
 // UnpublishedChanges refuses following over other unpublished configuration or rules.

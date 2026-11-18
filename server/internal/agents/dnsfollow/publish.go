@@ -47,7 +47,7 @@ func (s *Service) endpoint(ctx context.Context, target, source *agent, b *model.
 		return "", refusal(msgListenerDisabled)
 	}
 	var port int
-	if json.Unmarshal(r.Port, &port) != nil || port < 1 || port > 65535 || r.Host == "" {
+	if json.Unmarshal(r.Port, &port) != nil || port < 1 || port > 65535 || !r.HostIsText {
 		return "", refusal(msgListenerInvalid)
 	}
 	ip, e := netip.ParseAddr(r.Host)

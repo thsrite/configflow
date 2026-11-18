@@ -64,7 +64,7 @@ func (s *Service) Options(ctx context.Context, id string) (OptionsView, error) {
 	out.State = target.stateRaw
 	for _, a := range list {
 		if a.ServiceType == "mihomo" && enabled(a) {
-			out.Sources = append(out.Sources, SourceView{a.ID, name(a), suggestedHost(a.Host)})
+			out.Sources = append(out.Sources, SourceView{a.ID, sourceName(a), suggestedHost(a.Host)})
 		}
 	}
 	for _, e := range entries(doc) {

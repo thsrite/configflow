@@ -209,6 +209,7 @@ type deviceReply struct {
 	DeploymentID string
 	Enabled      bool
 	Host         string
+	HostIsText   bool // host is a JSON string, possibly empty
 	Port         json.RawMessage
 	PeerAgentID  string
 	ServiceType  string
@@ -235,8 +236,10 @@ func (r *deviceReply) UnmarshalJSON(data []byte) error {
 	_ = json.Unmarshal(members["http_status"], &status) // 404 only when integral
 	var enabled bool
 	_ = json.Unmarshal(members["enabled"], &enabled)
+	var host string
+	hostIsText := json.Unmarshal(members["host"], &host) == nil && string(members["host"]) != "null"
 	*r = deviceReply{Success: truthy("success"), Failed: truthy("http_status"), HTTPStatus: status, Message: str("message"),
-		AgentID: str("agent_id"), DeploymentID: str("deployment_id"), Enabled: enabled, Host: str("host"), Port: members["port"],
+		AgentID: str("agent_id"), DeploymentID: str("deployment_id"), Enabled: enabled, Host: host, HostIsText: hostIsText, Port: members["port"],
 		PeerAgentID: str("peer_agent_id"), ServiceType: str("service_type")}
 	return nil
 }
@@ -253,7 +256,7 @@ func (s *Service) request(ctx context.Context, a *agent, path, deploymentID stri
 	if err != nil {
 		var transport *agents.TransportError
 		if errors.As(err, &transport) {
-			return out, refusal(fmt.Sprintf(msgUnreachable, name(a)))
+			return out, refusal(fmt.Sprintf(msgUnreachable, deviceName(a)))
 		}
 		return out, err
 	}
@@ -269,10 +272,33 @@ func (s *Service) request(ctx context.Context, a *agent, path, deploymentID stri
 		if message == "" || out.HTTPStatus == 404 {
 			message = msgUpgrade
 		}
-		return out, refusal(fmt.Sprintf(msgAgentFailure, name(a), message))
+		return out, refusal(fmt.Sprintf(msgAgentFailure, deviceName(a), message))
 	}
 	return out, nil
 }
+
+// deviceName labels Agent call failures: the stored name, or "Agent" when the
+// record has none (Python agent.get("name", "Agent")).
+func deviceName(a *agent) string {
+	if v, ok := a.target.Record.Get("name"); ok {
+		if text, ok := v.(string); ok {
+			return text
+		}
+	}
+	return msgDefaultAgentName
+}
+
+// sourceName is the selectable source label: the stored name when present,
+// else the Agent ID (Python agent.get("name", agent["id"])).
+func sourceName(a *agent) string {
+	if v, ok := a.target.Record.Get("name"); ok {
+		if text, ok := v.(string); ok {
+			return text
+		}
+	}
+	return a.ID
+}
+
 func (s *Service) tokens(list []*agent) []any {
 	secrets := redact.Secrets{}
 	for _, a := range list {

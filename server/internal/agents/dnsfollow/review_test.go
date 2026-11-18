@@ -2,6 +2,8 @@ package dnsfollow
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -60,6 +62,8 @@ func TestMalformedListenerReplyKeepsSpecificRefusal(t *testing.T) {
 		want  string
 	}{
 		{"numeric-host", map[string]any{"host": 53}, msgFailedPrefix + msgListenerInvalid},
+		{"null-host", map[string]any{"host": nil}, msgFailedPrefix + msgListenerInvalid},
+		{"empty-host", map[string]any{"host": ""}, msgFailedPrefix + msgListenerIP},
 		{"string-enabled", map[string]any{"enabled": "yes"}, msgFailedPrefix + msgListenerDisabled},
 		{"numeric-agent", map[string]any{"agent_id": 7}, msgFailedPrefix + msgListenerDisabled},
 		{"list-deployment", map[string]any{"deployment_id": []any{"source-next"}}, msgFailedPrefix + msgListenerDisabled},
@@ -140,4 +144,23 @@ func TestSourceMovingAfterDraftWriteStillRebindsSignature(t *testing.T) {
 	if st := state(a); st.Status != "succeeded" || st.Message != msgSucceeded || !value(st.DraftSynced) {
 		t.Fatalf("state %q %q", st.Status, st.Message)
 	}
+}
+
+// Python labels Agent call failures with agent.get("name", "Agent") and
+// selectable sources with agent.get("name", agent["id"]): a record without a
+// name says "Agent", and a stored empty name stays empty in the options.
+func TestDeviceAndSourceNamesFollowStoredRecord(t *testing.T) {
+	f := newFixture(t, Options{}, agentfake.Options{})
+	f.editAgent(t, "target", func(a *agents.Record) { a.Delete("name") })
+	f.editAgent(t, "source", func(a *agents.Record) { a.Set("name", "") })
+	view, err := f.s.Options(f.ctx, "target")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(view.Sources) != 1 || view.Sources[0].ID != "source" || view.Sources[0].Name != "" {
+		t.Fatalf("sources %+v", view.Sources)
+	}
+	f.target.server.Close()
+	_, err = f.s.Configure(f.ctx, "target", json.RawMessage(`{"source_agent_id":"source","upstream_tag":"forward_remote","upstream_index":1,"connection":"auto"}`))
+	wantRefusal(t, err, fmt.Sprintf(msgUnreachable, msgDefaultAgentName))
 }
