@@ -100,7 +100,7 @@ func loadCatalog() (*catalog, error) {
 			}
 		}
 		entry := model.RuleLibraryItem{Name: item.Name, SourceType: &source, Behavior: pointer(orText(item.Behavior, "domain")),
-			Format: pointer(orText(item.Format, "text")), Enabled: pointer(item.Enabled == nil || *item.Enabled)}
+			Format: pointer(orText(item.Format, "text")), Enabled: pointer(resourceEnabled(item, item.Enabled))}
 		if source == "content" {
 			entry.Content = pointer(text(item.Content))
 		} else {
@@ -120,7 +120,7 @@ func orText(value *string, fallback string) string {
 
 func supported(item model.RuleLibraryItem) bool {
 	u, err := url.Parse(text(item.URL))
-	return (item.Enabled == nil || *item.Enabled) && slices.Contains([]string{"domain", "classical"}, orText(item.Behavior, "domain")) &&
+	return (resourceEnabled(item, item.Enabled)) && slices.Contains([]string{"domain", "classical"}, orText(item.Behavior, "domain")) &&
 		slices.Contains([]string{"text", "yaml"}, orText(item.Format, "text")) && err == nil && !strings.HasSuffix(strings.ToLower(u.Path), ".mrs")
 }
 
@@ -281,7 +281,7 @@ func (c *catalog) options(shared model.Shared) []DomainOption {
 		for _, item := range shared.RuleLibrary {
 			if identities[item.ID] == builtin.Identity {
 				matches = append(matches, item)
-				usable = usable || item.Enabled == nil || *item.Enabled
+				usable = usable || resourceEnabled(item, item.Enabled)
 			}
 		}
 		if !supported(builtin.Item) || len(matches) > 0 && !usable {
@@ -375,7 +375,7 @@ func (c *catalog) ensureLibrary(ctx context.Context, r *repo.Repository, selecte
 		for i := range shared.RuleLibrary {
 			item := &shared.RuleLibrary[i]
 			if matcher.same(*item, wanted) {
-				if item.Enabled == nil || *item.Enabled {
+				if resourceEnabled(item, item.Enabled) {
 					return item
 				}
 				if found == nil {

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"sync/atomic"
 	"testing"
@@ -172,4 +173,102 @@ func TestRouteWarmupBudgetAndOriginShutdown(t *testing.T) {
 		t.Fatal("worker escaped origin shutdown", err)
 	}
 	<-stopped
+}
+
+func TestRouterDraftAttachmentAndManualManagedFinish(t *testing.T) {
+	s, ctx := preparedFixture(t, "router")
+	body := json.RawMessage(`{"domain_rules":{"direct":[],"proxy":[]},"local_dns":"https://192.0.2.53/dns-query"}`)
+	if _, err := s.Prepare(ctx, testSessionID, body, "http://localhost"); err != nil {
+		t.Fatal(err)
+	}
+	s.owners.Installation = installedOwner()
+	s.owners.Installation.GatewayStatus = func(context.Context, *repo.Repository, string, string) (GatewayStatus, error) {
+		return GatewayStatus{IPv4Forwarding: &ForwardingStatus{Current: "1", Persisted: pointer(true)}, TUN: &TUNStatus{Configured: pointer(true), Present: pointer(true)}}, nil
+	}
+	s.owners.ReadRouteContent = func(context.Context, json.RawMessage, routers.RuleSet, *routers.LibraryRule, RouteReadOptions) (string, error) {
+		t.Fatal("empty marker unexpectedly loaded rule content")
+		return "", nil
+	}
+	if _, err := s.SaveRouterDraft(ctx, testSessionID, json.RawMessage(`{"router":{"name":"Synthetic router","type":"ikuai","endpoint":"http://192.0.2.1","username":"operator","password":"synthetic-router-private"}}`)); err != nil {
+		t.Fatal(err)
+	}
+	record, _ := storeFor(s.repository).read(ctx, testSessionID)
+	var draft routers.Router
+	json.Unmarshal(record.RouterDraft, &draft)
+	for range 2 {
+		if _, err := s.Action(ctx, testSessionID, "check", json.RawMessage(`{}`), ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	record, _ = storeFor(s.repository).read(ctx, testSessionID)
+	profile, _ := s.repository.GetProfile(ctx, record.ProfileID)
+	raw, _ := json.Marshal(profile)
+	attached, err := findRouter(raw, draft.ID)
+	if err != nil || attached == nil || attached.ProxyGatewayAgentID != "synthetic-mihomo" || attached.DNSAgentID != "synthetic-oxidns" || len(record.RouterDraft) != 0 || len(profile.GetObject("routers").GetList("items")) != 1 {
+		t.Fatal("draft did not attach idempotently", err)
+	}
+	if _, err := s.Action(ctx, testSessionID, "finish", json.RawMessage(`{"router_mode":"manual"}`), ""); err == nil || err.Error() != msgAcknowledgeRoutes {
+		t.Fatal(err)
+	}
+	if _, err := s.Action(ctx, testSessionID, "finish", json.RawMessage(`{"router_mode":"manual","ack_routes":true,"ack_dns":true}`), ""); err != nil {
+		t.Fatal(err)
+	}
+	finish, _ := json.Marshal(map[string]string{"router_mode": "managed", "router_id": draft.ID})
+	if _, err := s.Action(ctx, testSessionID, "finish", finish, ""); err == nil || err.Error() != msgAwaitOwner {
+		t.Fatal("unregistered inspection owner succeeded", err)
+	}
+	s.owners.VerifyRouter = func(context.Context, *repo.Repository, json.RawMessage, *routers.Router) (RouterVerification, error) {
+		return RouterVerification{Empty: false}, nil
+	}
+	if _, err := s.Action(ctx, testSessionID, "finish", finish, ""); err == nil || err.Error() != msgRouterUnsynced {
+		t.Fatal(err)
+	}
+	s.owners.VerifyRouter = func(context.Context, *repo.Repository, json.RawMessage, *routers.Router) (RouterVerification, error) {
+		return RouterVerification{Empty: true}, nil
+	}
+	if _, err := s.Action(ctx, testSessionID, "finish", finish, ""); err != nil {
+		t.Fatal(err)
+	}
+	record, _ = storeFor(s.repository).read(ctx, testSessionID)
+	if text(record.RouterVerification) != "verified" {
+		t.Fatal("managed completion did not record proof")
+	}
+}
+
+func TestCheckPreservesAbandonedSessionAndRequiresFreshRouteAcknowledgement(t *testing.T) {
+	s, ctx := preparedFixture(t, "router")
+	body := json.RawMessage(`{"domain_rules":{"direct":[],"proxy":[]},"local_dns":"https://192.0.2.53/dns-query"}`)
+	if _, err := s.Prepare(ctx, testSessionID, body, "http://localhost"); err != nil {
+		t.Fatal(err)
+	}
+	s.owners.Installation = installedOwner()
+	s.owners.Installation.GatewayStatus = func(context.Context, *repo.Repository, string, string) (GatewayStatus, error) {
+		return GatewayStatus{IPv4Forwarding: &ForwardingStatus{Current: "1", Persisted: pointer(true)}, TUN: &TUNStatus{Configured: pointer(true), Present: pointer(true)}}, nil
+	}
+	s.owners.ReadRouteContent = func(context.Context, json.RawMessage, routers.RuleSet, *routers.LibraryRule, RouteReadOptions) (string, error) {
+		return "", nil
+	}
+	store := storeFor(s.repository)
+	record, _ := store.read(ctx, testSessionID)
+	record.Abandoned = pointer(true)
+	record.RouteInstructions = json.RawMessage(`{"missing_rule_sets":["Synthetic networks"]}`)
+	if err := store.write(ctx, record); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Action(ctx, testSessionID, "finish", json.RawMessage(`{"router_mode":"manual","ack_routes":true,"ack_dns":true}`), ""); err == nil || err.Error() != fmt.Sprintf(msgNewRoutes, "Synthetic networks") {
+		t.Fatal("new route table completed without acknowledgement", err)
+	}
+	if _, err := s.Action(ctx, testSessionID, "check", json.RawMessage(`{}`), ""); err != nil {
+		t.Fatal(err)
+	}
+	record, _ = store.read(ctx, testSessionID)
+	if !enabled(record.Abandoned) {
+		t.Fatal("automatic check reopened abandoned wizard")
+	}
+	if _, err := s.Action(ctx, testSessionID, "finish", json.RawMessage(`{"router_mode":"","ack_routes":true,"ack_dns":true}`), ""); err == nil || err.Error() != msgFinishRouterMode {
+		t.Fatal("explicit empty router mode became default", err)
+	}
+	if _, err := s.Action(ctx, testSessionID, "finish", json.RawMessage(`{"router_mode":"manual","ack_routes":true,"ack_dns":true}`), ""); err != nil {
+		t.Fatal(err)
+	}
 }

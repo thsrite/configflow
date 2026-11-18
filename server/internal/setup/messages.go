@@ -12,7 +12,9 @@ type Error struct {
 	Cause   error
 }
 
-func (e *Error) Error() string                 { return e.Message }
+func (e *Error) Error() string { return e.Message }
+
+// Unwrap retains the original owner failure for errors.Is/errors.As.
 func (e *Error) Unwrap() error                 { return e.Cause }
 func failure(message string, status int) error { return &Error{Message: message, Status: status} }
 

@@ -351,11 +351,11 @@ GET	/api/settings/subscription-aggregation	routes.settings.handle_subscription_a
 POST	/api/settings/subscription-aggregation	routes.settings.handle_subscription_aggregation	internal/api/settings	done
 GET	/api/settings/web-port	routes.settings.handle_web_port	internal/api/settings	done
 POST	/api/settings/web-port	routes.settings.handle_web_port	internal/api/settings	done
-GET	/api/setup	routes.setup.setup_sessions		todo
-POST	/api/setup	routes.setup.setup_sessions		todo
-GET	/api/setup/<session_id>	routes.setup.setup_session		todo
-PATCH	/api/setup/<session_id>	routes.setup.setup_session		todo
-POST	/api/setup/<session_id>/<operation>	routes.setup.setup_action		todo
+GET	/api/setup	routes.setup.setup_sessions	internal/api/setup	done
+POST	/api/setup	routes.setup.setup_sessions	internal/api/setup	done
+GET	/api/setup/<session_id>	routes.setup.setup_session	internal/api/setup	done
+PATCH	/api/setup/<session_id>	routes.setup.setup_session	internal/api/setup	done
+POST	/api/setup/<session_id>/<operation>	routes.setup.setup_action	internal/api/setup	done
 GET	/api/stats/overview	routes.stats.get_overview	internal/api/stats	done
 GET	/api/subscriptions	routes.subscriptions.handle_subscriptions	api/subscriptions	done
 POST	/api/subscriptions	routes.subscriptions.handle_subscriptions	api/subscriptions	done

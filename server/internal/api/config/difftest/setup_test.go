@@ -2,6 +2,7 @@ package difftest
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	apisetup "configflow/internal/api/setup"
@@ -23,6 +24,7 @@ func TestSetupFlaskHTTPStateAndAuthentication(t *testing.T) {
 	for _, body := range []string{"null", "[]", "true", `{"goal":"bad"}`, `{"goal":"router","name":" "}`, `{"id":"bad","goal":"router","name":"Synthetic"}`} {
 		call("POST", "/api/setup", body)
 	}
+	call("POST", "/api/setup", strings.Repeat(" ", 32769))
 	create := `{"id":"` + id + `","goal":"router","name":"Synthetic wizard"}`
 	call("POST", "/api/setup", create)
 	call("POST", "/api/setup", create)

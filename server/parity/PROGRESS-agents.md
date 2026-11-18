@@ -1893,7 +1893,7 @@ Config modules that call agents code — each declares an interface in its own p
 | C18 Mihomo generation | `linux_gateway.apply_linux_gateway/gateway_settings/fake_ip_network`, `gateway_onboarding.mihomo_dns_loop` | A19, A21 |
 | C27 rule DNS | `agents.rule_sync.settings_for` | A16 |
 | C34 generate/profiles | `deployment_bundle._pack`, `download_final_agent_config`, `read_final_agent_file`, `AgentDeploymentConflict`, manager rebind | A11, A14, A01 (ready) |
-| C36 setup flow | `gateway_installation`, `linux_gateway`, `gateway_onboarding`, `oxidns_monitor`, agent manager | A22, A19, A21, A06, A01 |
+| C36 setup flow | native `setup.ExternalOwners` callbacks; missing owner 503「等待首次使用向导模块」; A21 last merger registers AdoptOwnedWrite + DNSOwner; setup-session uses LevelSetupSession before device/profile operations | A22, A19, A21, A06, A01; [接线清单](progress/C36-handoff-zh.md) |
 | C37 domain discovery | `traffic_store`, `version.compare_versions`, agent manager | A05, A02 (ready), A01 (ready) |
 
 Agents ↔ routers (routers has no PROGRESS file yet; names are Python files): agents needs `router_split` (A14, A19, A20, A21, A22), `routers/store.routers_of` (A18, A20, A23), IPv6/RouterOS pieces (A23). Routers needs `agents.linux_gateway` (A20), `linux_gateway.LinuxGatewayError/TUN_FILTER_KEYS` (A19), `linux_gateway_draft.RESTORE_KEY` (A20), `agents.ipv6_readiness` (A23), `oxidns_monitor.MonitorError` (A06), `operation_events.event_message` (A02), agent manager (A01). `router_split` ↔ `linux_gateway` is a cycle: one side declares the interface; agree with the routers planner.

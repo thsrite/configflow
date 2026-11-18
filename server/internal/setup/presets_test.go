@@ -49,8 +49,14 @@ func TestSetupCatalogOptionsMatchPython(t *testing.T) {
 	if len(c.Items) != 25 {
 		t.Fatalf("template catalog size=%d", len(c.Items))
 	}
+	var nullEnabled model.RuleLibraryItem
+	if err := json.Unmarshal([]byte(`{"id":"null-enabled","name":"Synthetic null","enabled":null,"source_type":"content","content":"+.example.com"}`), &nullEnabled); err != nil {
+		t.Fatal(err)
+	}
+
 	for _, existing := range [][]model.RuleLibraryItem{
 		{},
+		{nullEnabled},
 		{{ID: "synthetic", Name: "Synthetic domains", SourceType: pointer("content"), Content: pointer("+.example.com"), Behavior: pointer("domain"), Format: pointer("text")}},
 		{{ID: "disabled", Name: c.Items[0].Item.Name, SourceType: c.Items[0].Item.SourceType, Content: c.Items[0].Item.Content, URL: c.Items[0].Item.URL, Behavior: c.Items[0].Item.Behavior, Format: c.Items[0].Item.Format, Enabled: pointer(false)}},
 		{{ID: "namesake", Name: c.Items[0].Item.Name, SourceType: pointer("content"), Content: pointer("+.example.com"), Behavior: pointer("domain"), Format: pointer("text")}},

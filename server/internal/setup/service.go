@@ -212,7 +212,7 @@ func (s *Service) Index(ctx context.Context) (Index, error) {
 		out.Subscriptions = append(out.Subscriptions, Choice{item.ID, item.Name})
 	}
 	for _, item := range shared.Nodes {
-		if item.Enabled == nil || *item.Enabled {
+		if resourceEnabled(item, item.Enabled) {
 			out.Nodes = append(out.Nodes, Choice{item.ID, item.Name})
 		}
 	}

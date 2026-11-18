@@ -28,7 +28,7 @@ func httpURL(value string) bool {
 func selectableSubscriptions(items []model.Subscription) []model.Subscription {
 	out := []model.Subscription{}
 	for _, item := range items {
-		if item.Enabled != nil && !*item.Enabled {
+		if !resourceEnabled(item, item.Enabled) {
 			continue
 		}
 		lines, valid := 0, true
@@ -122,10 +122,10 @@ func (s *Service) source(ctx context.Context, record *Record, fields map[string]
 	}
 	availableSubs, availableNodes, linked := map[string]bool{}, map[string]bool{}, map[string]bool{}
 	for _, item := range shared.Subscriptions {
-		availableSubs[item.ID] = item.Enabled == nil || *item.Enabled
+		availableSubs[item.ID] = resourceEnabled(item, item.Enabled)
 	}
 	for _, item := range shared.Nodes {
-		availableNodes[item.ID] = item.Enabled == nil || *item.Enabled
+		availableNodes[item.ID] = resourceEnabled(item, item.Enabled)
 	}
 	for _, item := range selectableSubscriptions(shared.Subscriptions) {
 		linked[item.ID] = true

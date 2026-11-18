@@ -2186,26 +2186,31 @@ Exact commands/tails, native differences and added-file counts: [C35-HANDOFF.md]
 
 A20/A14 已提供共享只读 reader：`internal/setupflow.ProfileSessions(ctx, dataDir, profileID)`（首版来自 `go-port-a14`，A20 复用并补强类型错误的 fail-closed 中文提示，服务器 `setupflow.Wire` 注入 routersplit）。C36 在此基础上实现写入与流程，不另建第二套 reader。会话是 `setup-sessions/*.json` 的原子替换文件；读取在 repo 写事务外，绑定 Agent/配置取 repo 一致快照。
 
-**Status: `missing`** · prereqs: C34, C35 · Go: internal/setup, internal/api/setup (new)
+**Status: `ported` (independent review pending; waiting batch-4 rebase)** · prereqs: C34, C35 · Go: `internal/setup`, `internal/api/setup`
 
-Files:
-- `backend/common/setup_flow.py` (600)
-- `backend/common/setup_presets.py` (319)
-- `backend/common/setup_completion.py` (236)
-- `backend/common/setup_abandon.py` (90)
-- `backend/routes/setup.py` (127)
+Sources: `setup_flow.py`, `setup_presets.py`, `setup_completion.py`, `setup_abandon.py`,
+`routes/setup.py` (1372 lines); Python `test_setup_flow.py` 76 families mapped in
+[交接](progress/C36-handoff-zh.md). Five methods registered (5/5); implicit HEAD is read-only.
+Native session records, ownership adoption, presets, prepare/base, check/finish,
+router draft checkpoints, default summary and abandon implemented and tested.
 
-Tests: `test_setup_flow.py` (76)
+**Clarified in C36:** Native external owner callbacks are `setup.ExternalOwners`.
+Unregistered required callbacks fail closed503「等待首次使用向导模块」; no substitute
+installation/router state. C32 public `ReadRulesetContent` is a thin sourceContent
+entry, wired from server; existing defaults/signatures remain unchanged. A21 last
+merger wires `onboarding.SetAdoptOwnedWrite(setup.AdoptOwnedWrite)` and the DNSOwner
+callbacks directly to LocalUpstreams/PrepareMihomoDNS/defaults and C34 shared DNSLoop.
+A21 owns the real revision+1 precondition test; C36 owns full/without-base digests and
+session operation serialization. `lockx.LevelSetupSession = LevelDevice-1` orders
+setup session → device/profile operation → repo (abandon retains the session lock
+through both deletions). A20 ProfileSessions remains a read-only leaf; no copied files.
 
-Routes (5, 0 done):
-
-`GET /api/setup`; `POST /api/setup`; `GET /api/setup/<session_id>`; `PATCH /api/setup/<session_id>`; `POST /api/setup/<session_id>/<operation>`
-
-Evidence: No Go package; no route registered.
-
-Missing / deferred: Everything in the files below.
-
-Notes for porter: **Cross-domain heavy:** setup flow uses `linux_gateway`, `gateway_onboarding`, `gateway_installation` (agents), `router_split`, `routers.store/plan/desired/base`, `routes.routers` (routers), `agents.oxidns_monitor`. Schedule after the routers and agents domains have those pieces, or with compat copies.
+Deferred external integration: A20 reader arrives in batch-4 (wait for coordinator
+then rebase); real A21 server hook/DNS registration and real A22 latest/has-installation/
+gateway status; real router Driver/Inspect/BuildPlan callback. Formal A21 server test
+must prove registered callbacks remove503. Current tests prove callback dispatch,
+independent orchestration and genuine Python boundary parity with synthetic data.
+See [进度与精确命令](progress/c36.md) and [接线与验证映射](progress/C36-handoff-zh.md).
 
 ## C37 — domain discovery
 

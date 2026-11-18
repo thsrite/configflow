@@ -243,10 +243,11 @@ func (s *Service) finish(ctx context.Context, record *Record, body map[string]js
 		return err
 	}
 	if record.Goal == "router" {
-		mode, valid := readString(body, "router_mode", text(record.RouterMode))
-		if mode == "" {
-			mode = "manual"
+		fallback := "manual"
+		if record.RouterMode != nil {
+			fallback = *record.RouterMode
 		}
+		mode, valid := readString(body, "router_mode", fallback)
 		if !valid {
 			return failure(msgFinishRouterMode, 400)
 		}

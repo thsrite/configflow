@@ -91,7 +91,7 @@ func TestPrepareFieldsMatchRealPythonAndRetainOwnership(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			body := json.RawMessage(`{"domain_rules":{"direct":[],"proxy":[]},"local_dns":"https://192.0.2.53/dns-query"}`)
+			body := json.RawMessage(`{"domain_rules":{"direct":["builtin:chinamax"],"proxy":["builtin:telegram"]},"local_dns":"https://192.0.2.53/dns-query"}`)
 			input, _ := json.Marshal(map[string]any{"profile": profile, "shared": shared, "session": record, "body": body})
 			want := pythonSetup(t, `import json,sys,tempfile;from backend.common.config_repository import ProfileRepository;from backend.common import setup_flow as flow
 x=json.load(sys.stdin)
