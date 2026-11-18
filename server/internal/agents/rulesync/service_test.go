@@ -384,12 +384,29 @@ func TestProfileFilteringKeepsLiteralDefaultAndDisabledAgents(t *testing.T) {
 }
 
 type unreadHistory struct{}
-func (unreadHistory) MarshalJSON()([]byte,error){return nil,errors.New("history must not be encoded")}
-func TestSettingsAndAgentViewNeverReadHistory(t *testing.T){
- tests:=[]struct{name string;settings *jsonx.Object;want Settings}{
- {"strict booleans",jsonx.Obj("library",true,"rules",false),Settings{Library:true}},
- {"historical wrong type",jsonx.Obj("library",true,"rules","true"),Settings{Library:true}},
- {"null",jsonx.Obj("library",nil,"rules",nil),Settings{}},
- }
- for _,tt:=range tests{t.Run(tt.name,func(t *testing.T){record:=jsonx.Obj("id","device","rule_sync",jsonx.Obj("settings",tt.settings),"deployments",unreadHistory{},"ipv6_verifications",unreadHistory{});if got:=SettingsFor(record);got!=tt.want{t.Fatalf("%+v want %+v",got,tt.want)};if _,e:=decodeAgent(record);e!=nil{t.Fatal(e)}})}
+
+func (unreadHistory) MarshalJSON() ([]byte, error) {
+	return nil, errors.New("history must not be encoded")
+}
+func TestSettingsAndAgentViewNeverReadHistory(t *testing.T) {
+	tests := []struct {
+		name     string
+		settings *jsonx.Object
+		want     Settings
+	}{
+		{"strict booleans", jsonx.Obj("library", true, "rules", false), Settings{Library: true}},
+		{"historical wrong type", jsonx.Obj("library", true, "rules", "true"), Settings{Library: true}},
+		{"null", jsonx.Obj("library", nil, "rules", nil), Settings{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			record := jsonx.Obj("id", "device", "rule_sync", jsonx.Obj("settings", tt.settings), "deployments", unreadHistory{}, "ipv6_verifications", unreadHistory{})
+			if got := SettingsFor(record); got != tt.want {
+				t.Fatalf("%+v want %+v", got, tt.want)
+			}
+			if _, e := decodeAgent(record); e != nil {
+				t.Fatal(e)
+			}
+		})
+	}
 }

@@ -540,11 +540,19 @@ func (w *worker) refresh(ctx context.Context, record *agents.Record, a *model.Ag
 		if e = ctx.Err(); e != nil {
 			return e
 		}
+		same, e = s.unchanged(ctx, record, settings, "")
+		if e != nil || !same {
+			return e
+		}
 		task, e := nativeCall(ctx, s.m, a.ID, "POST", paths)
 		var nativeErr *monitor.Error
 		if len(paths) > 0 && errors.As(e, &nativeErr) && nativeErr.Code == "RULE_UPDATE_TARGET_UNKNOWN" {
 			paths = nil
 			if e = ctx.Err(); e != nil {
+				return e
+			}
+			same, e = s.unchanged(ctx, record, settings, "")
+			if e != nil || !same {
 				return e
 			}
 			task, e = nativeCall(ctx, s.m, a.ID, "POST", nil)

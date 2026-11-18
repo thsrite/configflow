@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -30,6 +31,7 @@ type syncFake struct {
 	refreshes       int
 	posts           int
 	nativeStatus    string
+	onNativeGet     func()
 	requests        []agents.Request
 	providerPaths   []string
 	gate            chan struct{}
@@ -118,6 +120,12 @@ func newWorkerFixture(t *testing.T, service string) *syncFixture {
 				}
 			}
 			status := fake.nativeStatus
+			onGet := fake.onNativeGet
+			if r.Method == "GET" {
+				fake.onNativeGet = nil
+			} else {
+				onGet = nil
+			}
 			taskID := "native-task"
 			phase := "downloading"
 			if r.Method == "GET" && fake.posts == 0 {
@@ -129,6 +137,9 @@ func newWorkerFixture(t *testing.T, service string) *syncFixture {
 				phase = "done"
 			}
 			fake.mu.Unlock()
+			if onGet != nil {
+				onGet()
+			}
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "task": map[string]any{"id": taskID, "status": status, "phase": phase, "message": "", "updated_at": 1, "downloaded": 0, "download_total": 0, "reloaded": 0, "reload_total": 0}})
 			return
@@ -633,5 +644,36 @@ func TestWorkerUsesDerivedOfflineStatus(t *testing.T) {
 	}
 	if len(f.fake.requests) != 0 {
 		t.Fatal("offline worker made device requests")
+	}
+}
+
+func TestBindingChangeDuringNativeStatusPreventsDownload(t *testing.T) {
+	f := newWorkerFixture(t, "oxidns")
+	r := f.s.m.Repository()
+	if _, e := r.CreateProfile(f.ctx, jsonx.Obj("id", "other", "name", "Other"), ""); e != nil {
+		t.Fatal(e)
+	}
+	f.edit(t, "new.example.com")
+	if e := f.s.Run(f.ctx, "device"); e != nil {
+		t.Fatal(e)
+	}
+	f.now = f.now.Add(PollInterval)
+	var called atomic.Bool
+	f.fake.mu.Lock()
+	f.fake.onNativeGet = func() {
+		called.Store(true)
+		if _, e := f.s.m.UpdateAgent(f.ctx, "device", jsonx.Obj("profile_id", "other")); e != nil {
+			t.Error(e)
+		}
+	}
+	f.fake.mu.Unlock()
+	if e := f.s.Run(f.ctx, "device"); e != nil {
+		t.Fatal(e)
+	}
+	if !called.Load() {
+		t.Fatal("negative control: status request hook did not run")
+	}
+	if f.fake.posts != 0 {
+		t.Fatal("posted a download after profile changed")
 	}
 }
