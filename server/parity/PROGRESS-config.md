@@ -2634,7 +2634,7 @@ subscription malformed graphs are excluded, with exact exclusions documented.
 ### N8-9 discovery native swap
 
 Branch `go-n8-9-discovery`, based on batch-6 `8ec68fd4d`. Native repo Config,
-Shared/System and section transactions replace discovery's stored JSON-object
+Shared and section transactions replace discovery's stored JSON-object
 access. The task owner uses SetRowBuilder, Snapshot/Receipt and ProjectHistory;
 response DTOs replace heterogeneous maps. R5 bool and malformed/nonfinite request
 changes are explicit HTTP expectations; Python's seed and business are unchanged.

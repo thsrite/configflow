@@ -1206,6 +1206,7 @@ new D2 signature transition and do not change the documented null rollback risk.
 
 ## N8-9 discovery — typed boundaries
 
+- Python bug 修正：apply/probe 的非 object 根请求不再触发 AttributeError/500，而是返回明确的中文 400；原有两个 `[1]` HTTP 用例显式断言 Python 500、Go 400。忽略域名的存储列表使用共享 model.String 解码后按域名规则过滤，避免错型或无效主机名变成忽略规则；正常域名原文不变。
 - 畸形存储值改为类型校验：discovery 的布尔开关只接受 bool，错型使用 R5 缺省值。合成差分夹具的 `auto_probe: 1` 从 Python 的 true 变为 false，下次保存设置时写回 false；普通 true/false 不变。HTTP 差分只对这个字段逐项断言，其余响应、Agent 请求和落盘数据严格比较。
 - 规则库 id/name/source_type/behavior/content、规则 id/itemType/rule_type/value/library_rule_id/policy、策略组 id/name 和参与操作的 Agent 标识字段，只有 model 记录错型时才拒绝，错误为「<资源> <id> 的 <字段> 必须是字符串，当前值：<存储 JSON>」。数字文本和整数字符串使用 model 的共享解码规则；合法空值、缺失和 null 不额外收紧。
 - discovery 的 11 个写请求使用 native BindSilent：畸形、空 body 和任何位置的 NaN/±Infinity 均在写入前返回中文 400「请求必须是 JSON 对象」。33 个逐词 HTTP 断言保留真实 Flask 的 200/400 证据，Go 全部返回 400。其他 legacy 请求调用方不受影响。
