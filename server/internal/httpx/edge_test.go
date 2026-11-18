@@ -67,7 +67,7 @@ func TestFileResponsesHeadRangeAndUploads(t *testing.T) {
 	data, _ = io.ReadAll(resp.Body)
 	resp.Body.Close()
 	if resp.StatusCode != 206 || !bytes.Equal(data, body[100:200]) ||
-		resp.Header.Get("Content-Range") != "bytes 100-199/"+itoa(len(body)) {
+		resp.Header.Get("Content-Range") != "bytes 100-199/"+itoa(len(body)) || resp.Header.Get("Accept-Ranges") != "bytes" {
 		t.Fatal("range", resp.StatusCode, resp.Header)
 	}
 	resp = get("POST", "/static/upload", map[string]string{"Content-Type": "application/octet-stream"}, body)

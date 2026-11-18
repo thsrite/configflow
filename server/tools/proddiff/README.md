@@ -339,3 +339,20 @@ fingerprint 和文件摘要，再用真实 A14 准备结果的主 YAML 构建格
 `tools/proddiff/baseline.TestOriginalPythonBaselineRequiresOnePublish` 使用真实 Python oracle 的原
 YAML 基线，要求 Go content checker 返回 `changed`，push-diff 恰有一个主文件字节变更、零语义
 条目且为 formatting。值改变、键删除、非主字节改变和文件丢失均有拒绝回归。
+
+## PD-1 — 独立生成文件的运行时元数据（协调者，2026-11-18）
+
+两个进程分别生成文件，生成时刻和私有副本路径不同；send_file 的 Last-Modified、
+以及由 mtime/路径派生的 ETag 可以不同。这是对照框架的固有差异，不是产品行为变更。
+ETag 仍按具体生成路由、`header.ETag` 精确 baseline 登记，不能用 `header.<key>`。
+Last-Modified 则是 **归一规则，不是 baseline**：只在六条磁盘生成路由，
+`header.last-modified` 使用 `tolerance: 600`、`timestamp_format: http-date`。
+只有两边都是合法、规范的 GMT HTTP-date 且相差不超过600秒才归一；缺失、格式/类型
+错误或超窗仍严格报差异。静态 Last-Modified baseline 已移除，因为同秒生成会随机
+造成 stale；没有关闭或放宽其他 stale 检查。公开标准字段名加入 safe_header，
+未知头仍隐藏为 `<key>`。
+`httpx.TestGeneratedFileETagStabilityAndInvalidation` 要求同进程同文件两次 ETag
+相同，内容变化后不同，并以 If-None-Match 验证旧/新标签的 200/304 行为。
+
+`config.yaml` 是共享生成器代码明确规定的主文件名，允许作为公开结构键显示，以使
+config/export 的 D2/N7-4 摘要条目精确到该文件，其他未知文件名仍隐藏。

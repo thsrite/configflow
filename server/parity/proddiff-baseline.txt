@@ -1,13 +1,62 @@
-# Route template	key path	difference type	reason (entries marked open must be triaged before commit)
-GET /api/agents/<agent_id>/oxidns/rules/update	body.message	extra-in-go	Existing A18 F1: Python succeeds, Go has no oxidns_ha_publish.rules hook; Step B #3 changes only its 500 representation to JSON
-GET /api/agents/<agent_id>/oxidns/rules/update	body.success	value	Existing A18 F1: Python succeeds, Go has no oxidns_ha_publish.rules hook; Step B #3 changes only its 500 representation to JSON
-GET /api/agents/<agent_id>/oxidns/rules/update	body.task	missing-in-go	Existing A18 F1: Python succeeds, Go has no oxidns_ha_publish.rules hook; Step B #3 changes only its 500 representation to JSON
-GET /api/agents/<agent_id>/oxidns/rules/update	header.Cache-Control	missing-in-go	Go bug F1 (proddiff-findings.md): default-profile request reaches unported oxidns_ha_publish.rules (A18), 500 JSON after Step B #3
-GET /api/agents/<agent_id>/oxidns/rules/update	status	value	Go bug F1 (proddiff-findings.md): default-profile request reaches unported oxidns_ha_publish.rules (A18), 500 JSON after Step B #3
-GET /api/logs/info	body.size	value	Consequence of F1: Go logs two extra request exceptions; the remaining lines agree
-GET /api/logs/tail	body.filtered_lines	value	Consequence of F1: Go logs two extra request exceptions; the remaining lines agree
-GET /api/logs/tail	body.logs	length	Consequence of F1: Go logs two extra request exceptions; the remaining lines agree
-GET /api/logs/tail	body.logs[0]	value	Consequence of F1: Go logs two extra request exceptions; the remaining lines agree
-GET /api/logs/tail	body.logs[1]	value	Consequence of F1: Go logs two extra request exceptions; the remaining lines agree
-GET /api/logs/tail	body.total_lines	value	Consequence of F1: Go logs two extra request exceptions; the remaining lines agree
+# Route template	key path	difference type	reason
+GET /api/agents/<agent_id>/oxidns/rules/update	body.message	extra-in-go	deferred → A18：既有 F1，HA rules owner 尚缺；保留 Step B #3 的 JSON 500，接线后必须 stale
+GET /api/agents/<agent_id>/oxidns/rules/update	body.success	value	deferred → A18：既有 F1，HA rules owner 尚缺；保留 Step B #3 的 JSON 500，接线后必须 stale
+GET /api/agents/<agent_id>/oxidns/rules/update	body.task	missing-in-go	deferred → A18：既有 F1，HA rules owner 尚缺；保留 Step B #3 的 JSON 500，接线后必须 stale
+GET /api/agents/<agent_id>/oxidns/rules/update	header.Cache-Control	missing-in-go	deferred → A18：既有 F1，HA rules owner 尚缺；保留 Step B #3 的 JSON 500，接线后必须 stale
+GET /api/agents/<agent_id>/oxidns/rules/update	status	value	deferred → A18：既有 F1，HA rules owner 尚缺；保留 Step B #3 的 JSON 500，接线后必须 stale
+GET /api/config/export	body.system.agents[0].applied_content.files.config.yaml	value	D2/N7-4：私有 baseline-format 证明迁移只改主配置字节标识及依赖摘要；完整管理员备份保留真实可恢复状态
+GET /api/config/export	body.system.agents[0].applied_content.fingerprint	value	D2/N7-4：私有 baseline-format 证明迁移只改主配置字节标识及依赖摘要；完整管理员备份保留真实可恢复状态
+GET /api/config/export	body.system.agents[1].applied_content.deployed_config_sha256	value	D2/N7-4：私有 baseline-format 证明迁移只改主配置字节标识及依赖摘要；完整管理员备份保留真实可恢复状态
+GET /api/config/export	body.system.agents[1].applied_content.files.config.yaml	value	D2/N7-4：私有 baseline-format 证明迁移只改主配置字节标识及依赖摘要；完整管理员备份保留真实可恢复状态
+GET /api/config/export	body.system.agents[1].applied_content.fingerprint	value	D2/N7-4：私有 baseline-format 证明迁移只改主配置字节标识及依赖摘要；完整管理员备份保留真实可恢复状态
+GET /api/config/export	body.system.agents[2].applied_content.deployed_config_sha256	value	D2/N7-4：私有 baseline-format 证明迁移只改主配置字节标识及依赖摘要；完整管理员备份保留真实可恢复状态
+GET /api/config/export	body.system.agents[2].applied_content.files.config.yaml	value	D2/N7-4：私有 baseline-format 证明迁移只改主配置字节标识及依赖摘要；完整管理员备份保留真实可恢复状态
+GET /api/config/export	body.system.agents[2].applied_content.fingerprint	value	D2/N7-4：私有 baseline-format 证明迁移只改主配置字节标识及依赖摘要；完整管理员备份保留真实可恢复状态
+GET /api/custom-config/mihomo	body.default_config	value	N7-4（D3）：默认模板由 Go 原生 YAML writer 输出；结构相等，文本布局不同
+GET /api/generate/artifacts/<preview_id>/<action>	body.code	missing-in-go	deferred → A14/A21：C34 Clarified 已批准 frozen artifact owner 暂缺时 503；正式接线后必须 stale
+GET /api/generate/artifacts/<preview_id>/<action>	body.message	value	deferred → A14/A21：C34 Clarified 已批准 frozen artifact owner 暂缺时 503；正式接线后必须 stale
+GET /api/generate/artifacts/<preview_id>/<action>	header.Cache-Control	extra-in-go	deferred → A14/A21：C34 Clarified 已批准 frozen artifact owner 暂缺时 503；正式接线后必须 stale
+GET /api/generate/artifacts/<preview_id>/<action>	status	value	deferred → A14/A21：C34 Clarified 已批准 frozen artifact owner 暂缺时 503；正式接线后必须 stale
+GET /api/logs/info	body.size	value	deferred → A18：既有 F1 异常日志后果；路由 owner C06；A18 接线后必须 stale（proddiff-findings.md F1）
+GET /api/logs/tail	body.filtered_lines	value	deferred → A18：既有 F1 异常日志后果；路由 owner C06；A18 接线后必须 stale（proddiff-findings.md F1）
+GET /api/logs/tail	body.logs	length	deferred → A18：既有 F1 异常日志后果；路由 owner C06；A18 接线后必须 stale（proddiff-findings.md F1）
+GET /api/logs/tail	body.logs[0]	value	deferred → A18：既有 F1 异常日志后果；路由 owner C06；A18 接线后必须 stale（proddiff-findings.md F1）
+GET /api/logs/tail	body.logs[1]	value	deferred → A18：既有 F1 异常日志后果；路由 owner C06；A18 接线后必须 stale（proddiff-findings.md F1）
+GET /api/logs/tail	body.total_lines	value	deferred → A18：既有 F1 异常日志后果；路由 owner C06；A18 接线后必须 stale（proddiff-findings.md F1）
 POST /api/agents/<agent_id>/generate-config	body.message	a18-ha-refusal	deferred → A18：HA 最终生成在 A18 接入前按设计拒绝，接入后必须消失
+POST /api/generate/<service>/artifact	body.agent_id	missing-in-go	deferred → A14/A21：C34 Clarified 已批准 frozen artifact owner 暂缺时 503；正式接线后必须 stale
+POST /api/generate/<service>/artifact	body.config_path	missing-in-go	deferred → A14/A21：C34 Clarified 已批准 frozen artifact owner 暂缺时 503；正式接线后必须 stale
+POST /api/generate/<service>/artifact	body.content	missing-in-go	deferred → A14/A21：C34 Clarified 已批准 frozen artifact owner 暂缺时 503；正式接线后必须 stale
+POST /api/generate/<service>/artifact	body.deployment_id	missing-in-go	deferred → A14/A21：C34 Clarified 已批准 frozen artifact owner 暂缺时 503；正式接线后必须 stale
+POST /api/generate/<service>/artifact	body.expires_at	missing-in-go	deferred → A14/A21：C34 Clarified 已批准 frozen artifact owner 暂缺时 503；正式接线后必须 stale
+POST /api/generate/<service>/artifact	body.files	missing-in-go	deferred → A14/A21：C34 Clarified 已批准 frozen artifact owner 暂缺时 503；正式接线后必须 stale
+POST /api/generate/<service>/artifact	body.id	missing-in-go	deferred → A14/A21：C34 Clarified 已批准 frozen artifact owner 暂缺时 503；正式接线后必须 stale
+POST /api/generate/<service>/artifact	body.message	extra-in-go	deferred → A14/A21：C34 Clarified 已批准 frozen artifact owner 暂缺时 503；正式接线后必须 stale
+POST /api/generate/<service>/artifact	body.profile_id	missing-in-go	deferred → A14/A21：C34 Clarified 已批准 frozen artifact owner 暂缺时 503；正式接线后必须 stale
+POST /api/generate/<service>/artifact	body.service_type	missing-in-go	deferred → A14/A21：C34 Clarified 已批准 frozen artifact owner 暂缺时 503；正式接线后必须 stale
+POST /api/generate/<service>/artifact	body.subscription_dialers	missing-in-go	deferred → A14/A21：C34 Clarified 已批准 frozen artifact owner 暂缺时 503；正式接线后必须 stale
+POST /api/generate/<service>/artifact	body.subscription_hosts	missing-in-go	deferred → A14/A21：C34 Clarified 已批准 frozen artifact owner 暂缺时 503；正式接线后必须 stale
+POST /api/generate/<service>/artifact	body.success	value	deferred → A14/A21：C34 Clarified 已批准 frozen artifact owner 暂缺时 503；正式接线后必须 stale
+POST /api/generate/<service>/artifact	body.target_ids	missing-in-go	deferred → A14/A21：C34 Clarified 已批准 frozen artifact owner 暂缺时 503；正式接线后必须 stale
+POST /api/generate/<service>/artifact	status	value	deferred → A14/A21：C34 Clarified 已批准 frozen artifact owner 暂缺时 503；正式接线后必须 stale
+POST /api/generate/loon	header.ETag	value	PD-1（协调者 2026-11-18）：独立生成文件的 mtime/路径元数据；同进程稳定性、内容变更与 304 已由合成测试约束
+POST /api/generate/mihomo	header.ETag	value	PD-1（协调者 2026-11-18）：独立生成文件的 mtime/路径元数据；同进程稳定性、内容变更与 304 已由合成测试约束
+POST /api/generate/surge	header.ETag	value	PD-1（协调者 2026-11-18）：独立生成文件的 mtime/路径元数据；同进程稳定性、内容变更与 304 已由合成测试约束
+POST /api/profiles/<profile_id>/generate/<service>/artifact	body.agent_id	missing-in-go	deferred → A14/A21：C34 Clarified 已批准 frozen artifact owner 暂缺时 503；正式接线后必须 stale
+POST /api/profiles/<profile_id>/generate/<service>/artifact	body.config_path	missing-in-go	deferred → A14/A21：C34 Clarified 已批准 frozen artifact owner 暂缺时 503；正式接线后必须 stale
+POST /api/profiles/<profile_id>/generate/<service>/artifact	body.content	missing-in-go	deferred → A14/A21：C34 Clarified 已批准 frozen artifact owner 暂缺时 503；正式接线后必须 stale
+POST /api/profiles/<profile_id>/generate/<service>/artifact	body.deployment_id	missing-in-go	deferred → A14/A21：C34 Clarified 已批准 frozen artifact owner 暂缺时 503；正式接线后必须 stale
+POST /api/profiles/<profile_id>/generate/<service>/artifact	body.expires_at	missing-in-go	deferred → A14/A21：C34 Clarified 已批准 frozen artifact owner 暂缺时 503；正式接线后必须 stale
+POST /api/profiles/<profile_id>/generate/<service>/artifact	body.files	missing-in-go	deferred → A14/A21：C34 Clarified 已批准 frozen artifact owner 暂缺时 503；正式接线后必须 stale
+POST /api/profiles/<profile_id>/generate/<service>/artifact	body.id	missing-in-go	deferred → A14/A21：C34 Clarified 已批准 frozen artifact owner 暂缺时 503；正式接线后必须 stale
+POST /api/profiles/<profile_id>/generate/<service>/artifact	body.message	extra-in-go	deferred → A14/A21：C34 Clarified 已批准 frozen artifact owner 暂缺时 503；正式接线后必须 stale
+POST /api/profiles/<profile_id>/generate/<service>/artifact	body.profile_id	missing-in-go	deferred → A14/A21：C34 Clarified 已批准 frozen artifact owner 暂缺时 503；正式接线后必须 stale
+POST /api/profiles/<profile_id>/generate/<service>/artifact	body.service_type	missing-in-go	deferred → A14/A21：C34 Clarified 已批准 frozen artifact owner 暂缺时 503；正式接线后必须 stale
+POST /api/profiles/<profile_id>/generate/<service>/artifact	body.subscription_dialers	missing-in-go	deferred → A14/A21：C34 Clarified 已批准 frozen artifact owner 暂缺时 503；正式接线后必须 stale
+POST /api/profiles/<profile_id>/generate/<service>/artifact	body.subscription_hosts	missing-in-go	deferred → A14/A21：C34 Clarified 已批准 frozen artifact owner 暂缺时 503；正式接线后必须 stale
+POST /api/profiles/<profile_id>/generate/<service>/artifact	body.success	value	deferred → A14/A21：C34 Clarified 已批准 frozen artifact owner 暂缺时 503；正式接线后必须 stale
+POST /api/profiles/<profile_id>/generate/<service>/artifact	body.target_ids	missing-in-go	deferred → A14/A21：C34 Clarified 已批准 frozen artifact owner 暂缺时 503；正式接线后必须 stale
+POST /api/profiles/<profile_id>/generate/<service>/artifact	status	value	deferred → A14/A21：C34 Clarified 已批准 frozen artifact owner 暂缺时 503；正式接线后必须 stale
+POST /api/profiles/<profile_id>/generate/loon	header.ETag	value	PD-1（协调者 2026-11-18）：独立生成文件的 mtime/路径元数据；同进程稳定性、内容变更与 304 已由合成测试约束
+POST /api/profiles/<profile_id>/generate/mihomo	header.ETag	value	PD-1（协调者 2026-11-18）：独立生成文件的 mtime/路径元数据；同进程稳定性、内容变更与 304 已由合成测试约束
+POST /api/profiles/<profile_id>/generate/surge	header.ETag	value	PD-1（协调者 2026-11-18）：独立生成文件的 mtime/路径元数据；同进程稳定性、内容变更与 304 已由合成测试约束

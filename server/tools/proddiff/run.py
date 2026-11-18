@@ -4,6 +4,7 @@ import collections
 import contextlib
 import concurrent.futures
 import datetime
+import email.utils
 import errno
 import fcntl
 import hashlib
@@ -51,7 +52,9 @@ def safe_key(key):
     return key if isinstance(key, str) and key in KEYS else '<key>'
 
 
+KEYS.add('config.yaml')  # Public main-entry name, not a snapshot-derived key.
 HEADER_KEYS = {key.lower(): key for key in KEYS}
+HEADER_KEYS.update({name.lower(): name for name in ('ETag', 'Last-Modified', 'Accept-Ranges')})
 # Transport/framing headers of two different HTTP servers; everything else is compared.
 IGNORED_HEADERS = {'date', 'server', 'content-length', 'connection', 'keep-alive', 'transfer-encoding', 'content-type'}
 
@@ -200,10 +203,31 @@ def _timestamp(value):
     return None
 
 
+def _http_date(value):
+    # Generated Last-Modified uses canonical IMF-fixdate. Reject ambiguous or
+    # malformed timestamps rather than hiding an invalid protocol header.
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = email.utils.parsedate_to_datetime(value)
+        if parsed.tzinfo is None or parsed.utcoffset() != datetime.timedelta(0):
+            return None
+        if email.utils.format_datetime(parsed, usegmt=True) != value:
+            return None
+        return parsed.timestamp()
+    except (ValueError, TypeError, OverflowError):
+        return None
+
+
 def normalize_pair(rule, left, right):
     """Return the normalised pair, or None when the rule's preconditions do not hold (diff stays)."""
     if type(left) is not type(right) or isinstance(left, (dict, list)):
         return None
+    if 'tolerance' in rule and rule.get('timestamp_format') == 'http-date':
+        a, b = _http_date(left), _http_date(right)
+        if a is None or b is None or abs(a - b) > rule['tolerance']:
+            return None
+        return '<runtime-http-date>', '<runtime-http-date>'
     if 'tolerance' in rule:
         shape = lambda value: re.sub(r'\d', '9', value) if isinstance(value, str) else type(value).__name__
         a, b = _timestamp(left), _timestamp(right)
@@ -648,7 +672,10 @@ def digest_tree(root):
 PY_DISABLED_THREADS = {'dns-follow', 'oxidns-ha-publish', 'ipv6-verification-scheduler', 'agent-rule-sync-loop',
                        'metrics-history-flush', 'oxidns-ranking-history', 'domain-discovery-auto',
                        'scheduled-refresh', 'router-rule-sync', 'sub-store-idle'}
-RULE_FIELDS = {'route', 'path', 'reason', 'pattern', 'tolerance', 'bracket', 'unordered'}
+RULE_FIELDS = {'route', 'path', 'reason', 'pattern', 'tolerance', 'bracket', 'unordered', 'timestamp_format'}
+PD1_GENERATED_ROUTES = {prefix + '/' + service
+                        for prefix in ('/api/generate', '/api/profiles/<profile_id>/generate')
+                        for service in ('mihomo', 'surge', 'loon')}
 
 
 def assert_no_egress():
@@ -701,6 +728,11 @@ def load_rules(rows):
                  and '*' not in rule['route'] + rule.get('path', '')
                  and (('path' not in rule) if rule.get('bracket') else bool(rule.get('path')))
                  and sum(key in rule for key in ('pattern', 'tolerance', 'unordered')) <= 1)
+        if 'timestamp_format' in rule:
+            valid = (valid and rule['timestamp_format'] == 'http-date'
+                     and rule.get('path') == 'header.last-modified'
+                     and rule.get('route') in PD1_GENERATED_ROUTES
+                     and type(rule.get('tolerance')) is int and rule['tolerance'] == 600)
         if not valid:
             raise RuntimeError('normalization requires an exact route/path and reason')
         if 'pattern' in rule:

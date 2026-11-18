@@ -660,6 +660,9 @@ func writeZip(order []string, files map[string][]byte) ([]byte, error) {
 	for _, name := range order {
 		header := &zip.FileHeader{Name: name, Method: zip.Deflate, Modified: now}
 		header.SetMode(0o600)
+		// Writestr-style members carry private permissions without a redundant
+		// regular-file type bit; both DNS archives share this wire metadata.
+		header.ExternalAttrs = 0o600 << 16
 		writer, err := archive.CreateHeader(header)
 		if err == nil {
 			_, err = writer.Write(files[name])

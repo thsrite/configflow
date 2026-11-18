@@ -1004,3 +1004,17 @@ JSON 类型比较保存 0。`TestC34ObjectFieldValues` 对四个宽松引擎分�
 - **路由器保护按 JSON 类型比较。** `verify_tls` 从 `true` 改为 `1` 等类型变化视为连接变化，会先取发布锁；格式错误的发布记录仍视为存在（不允许删除或改地址）。
 - **名称去除首尾控制字符。** 配置空间名称去掉首尾空白与控制字符（含 U+001C–U+001F，与 Python 的 strip 一致）。
 - **停用标志按存储值判断。** `enabled` 存为 `0` 等非布尔值时按其真假判断（与 Python 相同），不按缺省“启用”处理。
+
+## C34 proddiff — N7-4 / D2 与 deferred owner 的精确映射
+
+- N7-4（D3）：`GET /api/custom-config/mihomo` 的 `default_config` 是默认模板的
+  原生 YAML 文本；文档结构不变，writer 布局可变。只登记这个字段。
+- D2/N7-4：proddiff 既有 baseline-format 证明在私有 Go 副本迁移主配置 YAML 的
+  字节表示。`GET /api/config/export` 仍导出副本中的可恢复真实状态，因此 Agents 的
+  applied_content.fingerprint、主文件 config.yaml 的文件摘要和存在时的
+  deployed_config_sha256 随之不同；只登记实际证明涉及的精确结构字段，不忽略整段 Agent。
+- C34 Clarified：两个 artifact POST 模板和 artifact GET 暂缺 frozen release owner
+  时明确 503，未知 service 仍400、未知 action 仍404。差分登记 deferred → A14/A21，
+  这些 owner 正式接线后条目必须 stale 并删除，不能作为永久豁免。
+- logs 路由 owner 是 C06；既有 A18 F1 产生的异常日志后果随 A18 延期，未批准忽略
+  普通日志内容。

@@ -47,7 +47,9 @@ func writeResponse(w http.ResponseWriter, req *http.Request, r *Response) {
 func writeFile(w http.ResponseWriter, req *http.Request, r *Response) {
 	f := r.file
 	h := w.Header()
-	h.Set("Accept-Ranges", "bytes")
+	if req.Method == "GET" || req.Method == "HEAD" {
+		h.Set("Accept-Ranges", "bytes")
+	}
 	if notModified(req, h, f.modTime, f.options.Path != "") {
 		for _, key := range []string{"Content-Type", "Content-Length", "Content-Disposition"} {
 			h.Del(key)
@@ -79,7 +81,7 @@ func writeFile(w http.ResponseWriter, req *http.Request, r *Response) {
 		reader = bytes.NewReader(f.data)
 	}
 	start, end, status := int64(0), f.size, r.Status
-	if rng := req.Header.Get("Range"); rng != "" && r.Status == 200 && ifRangeMatches(req, h, f.modTime) {
+	if rng := req.Header.Get("Range"); rng != "" && (req.Method == "GET" || req.Method == "HEAD") && r.Status == 200 && ifRangeMatches(req, h, f.modTime) {
 		if s, e, ok := parseRange(rng, f.size); ok {
 			start, end, status = s, e, http.StatusPartialContent
 			h.Set("Content-Range", "bytes "+strconv.FormatInt(s, 10)+"-"+strconv.FormatInt(e-1, 10)+"/"+strconv.FormatInt(f.size, 10))

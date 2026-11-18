@@ -101,5 +101,47 @@
     "path": "revision",
     "pattern": "^[0-9a-f]{64}$",
     "reason": "Maintainer-approved D2 ephemeral editor revision: native encoding/json hashing differs from Python ASCII/numeric spelling. Only this response field is normalized; C33 real Flask/Go tests separately prove per-side stability, invalidation and competing-submission rejection. See behaviour-changes.md D2 and difftest-c33.md."
+  },
+  {
+    "route": "/api/generate/mihomo",
+    "path": "header.last-modified",
+    "timestamp_format": "http-date",
+    "tolerance": 600,
+    "reason": "PD-1（协调者 2026-11-18）：独立生成文件的运行时元数据；仅规范 HTTP-date 且两边相差不超过600秒。缺失、错误格式/类型与超窗保持差异。"
+  },
+  {
+    "route": "/api/generate/surge",
+    "path": "header.last-modified",
+    "timestamp_format": "http-date",
+    "tolerance": 600,
+    "reason": "PD-1（协调者 2026-11-18）：独立生成文件的运行时元数据；仅规范 HTTP-date 且两边相差不超过600秒。缺失、错误格式/类型与超窗保持差异。"
+  },
+  {
+    "route": "/api/generate/loon",
+    "path": "header.last-modified",
+    "timestamp_format": "http-date",
+    "tolerance": 600,
+    "reason": "PD-1（协调者 2026-11-18）：独立生成文件的运行时元数据；仅规范 HTTP-date 且两边相差不超过600秒。缺失、错误格式/类型与超窗保持差异。"
+  },
+  {
+    "route": "/api/profiles/<profile_id>/generate/mihomo",
+    "path": "header.last-modified",
+    "timestamp_format": "http-date",
+    "tolerance": 600,
+    "reason": "PD-1（协调者 2026-11-18）：独立生成文件的运行时元数据；仅规范 HTTP-date 且两边相差不超过600秒。缺失、错误格式/类型与超窗保持差异。"
+  },
+  {
+    "route": "/api/profiles/<profile_id>/generate/surge",
+    "path": "header.last-modified",
+    "timestamp_format": "http-date",
+    "tolerance": 600,
+    "reason": "PD-1（协调者 2026-11-18）：独立生成文件的运行时元数据；仅规范 HTTP-date 且两边相差不超过600秒。缺失、错误格式/类型与超窗保持差异。"
+  },
+  {
+    "route": "/api/profiles/<profile_id>/generate/loon",
+    "path": "header.last-modified",
+    "timestamp_format": "http-date",
+    "tolerance": 600,
+    "reason": "PD-1（协调者 2026-11-18）：独立生成文件的运行时元数据；仅规范 HTTP-date 且两边相差不超过600秒。缺失、错误格式/类型与超窗保持差异。"
   }
 ]

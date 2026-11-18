@@ -27,6 +27,13 @@ def reply(body, content_type=JSON, status=200, headers=None):
 
 
 class ComparatorTests(unittest.TestCase):
+    def test_public_generated_file_schema_names_are_exact(self):
+        for name in ('ETag', 'Last-Modified', 'Accept-Ranges'):
+            self.assertEqual(name, pd.safe_header(name.lower()))
+        self.assertEqual('config.yaml', pd.safe_key('config.yaml'))
+        self.assertEqual('<key>', pd.safe_key('synthetic-private-file'))
+        self.assertEqual('<key>', pd.safe_header('synthetic-private-header'))
+
     def test_c07_readiness_exception_is_exact_and_preserves_headers(self):
         for route, field, message in [('/api/tasks', 'tasks', '任务模块尚未就绪：'),
                                        ('/api/notifications', 'items', '通知模块尚未就绪：')]:
@@ -321,6 +328,32 @@ class ComparatorTests(unittest.TestCase):
         rule = [{'route': '/synthetic', 'path': 'size', 'reason': 'test'}]
         self.assertEqual([('body.size', 'type')], pd.response_diffs(reply(b'{"size":1}'), reply(b'{"size":{}}'), '/synthetic', rule))
         self.assertEqual([('body.size', 'missing-in-go')], pd.response_diffs(reply(b'{"size":1}'), reply(b'{}'), '/synthetic', rule))
+
+    def test_pd1_http_date_tolerance_is_exact_and_keeps_negative_controls(self):
+        rules = [{'route': '/api/generate/mihomo', 'path': 'header.last-modified',
+                  'timestamp_format': 'http-date', 'tolerance': 600, 'reason': 'PD-1'}]
+        stamp = 'Thu, 01 Jan 2026 00:00:00 GMT'
+        left = reply({}, headers={'last-modified': stamp, 'etag': 'unchanged'})
+        boundary = reply({}, headers={'last-modified': 'Thu, 01 Jan 2026 00:10:00 GMT', 'etag': 'unchanged'})
+        self.assertEqual([], pd.response_diffs(left, boundary, '/api/generate/mihomo', rules))
+        for changed, expected in [
+            ({'etag': 'unchanged'}, ('header.Last-Modified', 'missing-in-go')),
+            ({'last-modified': 'invalid', 'etag': 'unchanged'}, ('header.Last-Modified', 'value')),
+            ({'last-modified': '2026-01-01T00:00:30Z', 'etag': 'unchanged'}, ('header.Last-Modified', 'value')),
+            ({'last-modified': 123, 'etag': 'unchanged'}, ('header.Last-Modified', 'value')),
+            ({'last-modified': 'Thu, 01 Jan 2026 00:10:01 GMT', 'etag': 'unchanged'}, ('header.Last-Modified', 'value')),
+            ({'last-modified': 'Thu, 01 Jan 2026 00:01:00 GMT', 'etag': 'changed'}, ('header.ETag', 'value')),
+        ]:
+            with self.subTest(expected=expected, changed=changed):
+                self.assertIn(expected, pd.response_diffs(left, reply({}, headers=changed), '/api/generate/mihomo', rules))
+        self.assertTrue(pd.response_diffs(left, boundary, '/api/generate/surge', rules))
+        with mock.patch.object(Path, 'read_text', return_value=json.dumps(rules)):
+            self.assertEqual(rules, pd.load_rules([['POST', '/api/generate/mihomo']]))
+        for mutation in [dict(rules[0], timestamp_format='other'), dict(rules[0], tolerance=601),
+                         dict(rules[0], path='header.etag'), dict(rules[0], route='/api/other')]:
+            with mock.patch.object(Path, 'read_text', return_value=json.dumps([mutation])):
+                with self.assertRaises(RuntimeError):
+                    pd.load_rules([['POST', mutation['route']]])
 
     def test_pattern_and_tolerance_normalization_stay_narrow(self):
         prefix = [{'route': '/r', 'path': 'message', 'pattern': '(?s)(?<=^Connection error: ).+', 'reason': 't'}]
@@ -666,7 +699,8 @@ class AggregationInventoryTests(unittest.TestCase):
 class BaselineExitTests(unittest.TestCase):
     def test_a13_deferrals_are_exact_or_removed_together_by_a14(self):
         rows = [line.split('\t', 3) for line in (pd.PARITY / 'proddiff-baseline.txt').read_text().splitlines()
-                if 'deferred → A14' in line]
+                if 'deferred → A14' in line and line.split('\t', 1)[0] in
+                {'GET ' + route for route in pd.AGENT_COMPARISON_ROUTES}]
         if not rows:
             return  # A14 removes all twenty-four after wiring real preparation.
         self.assertEqual(24, len(rows))
