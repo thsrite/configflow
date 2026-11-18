@@ -333,3 +333,49 @@ Registered `A-DIFF-7`, exactly
 `discovery/difftest/cfg06_test.go:TestCFG06DuplicateTargetDifference:exec.Command`:
 CONFIGFLOW_DIFF=1, executable cp, same synthetic seed copied to independent
 Flask/Go directories. A-group inventory is now ten precise source sites.
+
+## Batch-2 targeted verification and missing edge transcript repair
+
+The full A-package targeted race command caught a pre-existing omission in the
+first golden integration: `TestEdgeCorpus` was retained, but its distinct
+`TestEdgeCorpus.json.gz` transcript had not been recorded by the earlier selected
+run. The guard correctly failed instead of returning an empty reference. Added
+that transcript by running the actual unmodified Python oracle; separate live
+check is **22 exact inputs, diff 0**. No test or assertion was removed/relaxed.
+Only routersplit was rerun after this fixture-only repair, per lean verification.
+Current total: **8 transcripts, 2914 distinct live inputs, diff 0** (two fallback
+transcripts are empty; all their original static replay rows still execute).
+
+.64 validation (high-load targeted execution, **not** paired benchmark evidence):
+
+```
+RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -e; cd server; go run ./tools/pyref; test -z "$(gofmt -l internal/testgolden internal/mosdns internal/oxidns/archive_test.go internal/provider internal/deploy internal/discovery internal/routersplit/n73_reference_test.go tools/pyref)"; go vet ./...; result=0; go test -race -count=1 -p 2 -timeout=30m ./internal/mosdns ./internal/oxidns ./internal/provider ./internal/deploy/... ./internal/discovery ./internal/routersplit ./internal/testgolden ./tools/pyref > "$HOME/.cache/speed-a-batch2-race.log" 2>&1 || result=$?; tail -15 "$HOME/.cache/speed-a-batch2-race.log"; exit "$result"'
+ok configflow/internal/mosdns 70.299s
+ok configflow/internal/oxidns 722.546s
+ok configflow/internal/provider 118.269s
+ok configflow/internal/deploy 33.131s
+ok configflow/internal/deploy/contentsync 3.313s
+ok configflow/internal/deploy/pushdiff 28.801s
+ok configflow/internal/discovery 14.807s
+FAIL routersplit: missing TestEdgeCorpus.json.gz (fixed below)
+ok configflow/internal/testgolden 4.086s
+ok configflow/tools/pyref 1.126s
+```
+
+After the missing fixture was recorded:
+
+```
+PYREF_MODE=record PYREF_ACCEPT=1 go test -count=1 -v ./internal/routersplit -run '^TestEdgeCorpus$'
+PYREF_MODE=check go test -count=1 -v ./internal/routersplit -run '^TestEdgeCorpus$'
+PYREF equal: testdata/pyref/TestEdgeCorpus.json.gz (22 exact inputs)
+ok configflow/internal/routersplit 0.963s
+go test -race -count=1 ./internal/routersplit
+ok configflow/internal/routersplit 20.573s
+```
+
+Exact wrapper used for this repair:
+`RT_HOST=sunbroke@192.168.0.64 rt --back server/internal/routersplit/testdata/pyref -- bash -lc 'set -e; cd server; PYREF_MODE=record PYREF_ACCEPT=1 go test -count=1 -v ./internal/routersplit -run "^TestEdgeCorpus$" > "$HOME/.cache/speed-a-edge-record.log" 2>&1; PYREF_MODE=check go test -count=1 -v ./internal/routersplit -run "^TestEdgeCorpus$" > "$HOME/.cache/speed-a-edge-check.log" 2>&1; rg "PYREF equal:|^(ok|FAIL)" "$HOME/.cache/speed-a-edge-check.log"; go test -race -count=1 ./internal/routersplit'`.
+
+All eight A packages plus shared selfchecks now pass their relevant race runs;
+Go vet/gofmt and actual-repository process audit also pass. Formal timings remain
+待测 until **both** servers' one-minute load is below 10.
