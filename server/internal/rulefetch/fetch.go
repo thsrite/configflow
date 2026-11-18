@@ -19,10 +19,10 @@ import (
 	"configflow/internal/agents/diag"
 	"configflow/internal/clock"
 	"configflow/internal/convert"
-	"configflow/internal/jsonx"
 	"configflow/internal/localhttp"
 	"configflow/internal/logx"
-	"configflow/internal/pystr"
+	"configflow/internal/model"
+
 	"configflow/internal/repo"
 	"configflow/internal/weburl"
 
@@ -46,12 +46,12 @@ type Client struct {
 // DefaultClient uses the network, localhttp and the real retry clock.
 var DefaultClient = &Client{Transport: HTTPTransport{}, Local: localhttp.Do}
 
-// Request is the keyword arguments of request_rule.
-type Request struct {
+// DownloadRequest is the keyword arguments of request_rule.
+type DownloadRequest struct {
 	// Method is "get" (default when "") or "head".
 	Method string
 	// Config is config_data; nil reads get_system_config().
-	Config *jsonx.Object
+	Config *SourceConfig
 	// MaxRedirects is max_redirects; nil means 3.
 	MaxRedirects *int
 	// MaxBytes > 0 reads the body (bounded) inside the retry loop; 0 is None.
@@ -65,20 +65,19 @@ type Request struct {
 	HostURL string
 }
 
-// RuleFetchSettings is rule_fetch_settings(config_data): its system_config.
-func RuleFetchSettings(config *jsonx.Object) *jsonx.Object {
-	settings := config.GetObject("system_config")
-	if settings == nil {
-		return jsonx.NewObject()
-	}
-	return settings
-}
-
-func loadConfig(ctx context.Context, config *jsonx.Object) (*jsonx.Object, error) {
+func loadConfig(ctx context.Context, config *SourceConfig) (*SourceConfig, error) {
 	if config != nil {
 		return config, nil
 	}
-	return repo.GetSystemConfig(ctx)
+	repository, err := repo.GetRepository(ctx)
+	if err != nil {
+		return nil, err
+	}
+	system, err := repository.System(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &SourceConfig{Settings: system.SystemConfig}, nil
 }
 
 type origin struct {
@@ -119,20 +118,22 @@ func originHost(u *url.URL) string {
 	return host
 }
 
-// internalRuleBase is _internal_rule_base: the server origin whose API the
+// internalBase is _internal_rule_base: the server origin whose API the
 // URL addresses (server_domain, then the current request's host URL). The
 // error is for an unparsable URL or base or a malformed port; it propagates
 // to the caller.
-func internalRuleBase(rawURL string, config *jsonx.Object, hostURL string) (*url.URL, bool, error) {
-	settings := RuleFetchSettings(config)
+func internalBase(rawURL string, config *SourceConfig, hostURL string) (*url.URL, bool, error) {
+	settings := model.SystemConfig{}
+	if config != nil {
+		settings = config.Settings
+	}
 	var parsed *url.URL
-	bases := []any{settings.GetOr("server_domain", "")}
+	bases := []string{settings.ServerDomain}
 	if hostURL != "" {
 		bases = append(bases, hostURL)
 	}
-	for _, value := range bases {
-		base, isText := value.(string)
-		if !jsonx.Truthy(value) || !isText {
+	for _, base := range bases {
+		if base == "" {
 			// A non-string server_domain is a TypeError in Python (never stored:
 			// settings validation keeps it a string).
 			continue
@@ -170,43 +171,43 @@ func internalRuleBase(rawURL string, config *jsonx.Object, hostURL string) (*url
 	return nil, false, nil
 }
 
-// IsInternalRuleURLChecked is is_internal_rule_url: requests to ConfigFlow
+// InternalURL is is_internal_rule_url: requests to ConfigFlow
 // itself stay away from the download proxy. The error is Python's ValueError
 // for a URL (or server base) urlsplit cannot parse or with a malformed port.
-func IsInternalRuleURLChecked(url string, config *jsonx.Object, hostURL string) (bool, error) {
-	_, ok, err := internalRuleBase(url, config, hostURL)
+func InternalURL(url string, config *SourceConfig, hostURL string) (bool, error) {
+	_, ok, err := internalBase(url, config, hostURL)
 	return ok, err
 }
 
-// IsInternalRuleURL is IsInternalRuleURLChecked for URLs that already passed
+// InternalURLUnchecked is InternalURL for URLs that already passed
 // ValidateRuleURL (false when Python would raise).
-func IsInternalRuleURL(url string, config *jsonx.Object, hostURL string) bool {
-	ok, _ := IsInternalRuleURLChecked(url, config, hostURL)
+func InternalURLUnchecked(url string, config *SourceConfig, hostURL string) bool {
+	ok, _ := InternalURL(url, config, hostURL)
 	return ok
 }
 
-// GetRuleFetchProxy is get_rule_fetch_proxy(config_data).
-func GetRuleFetchProxy(config *jsonx.Object) (string, error) {
-	return NormalizeRuleFetchProxy(RuleFetchSettings(config).GetOr("rule_fetch_proxy", ""))
+// FetchProxy is get_rule_fetch_proxy(config_data).
+func FetchProxy(config *SourceConfig) (string, error) {
+	if config == nil {
+		return "", nil
+	}
+	return NormalizeProxy(config.Settings.RuleFetchProxy)
 }
 
-// RuleRequestProxyChecked is rule_request_options(url, config)['proxies'][scheme]:
+// ProxyFor is rule_request_options(url, config)['proxies'][scheme]:
 // "" (direct) for internal URLs, otherwise the configured proxy.
-func RuleRequestProxyChecked(url string, config *jsonx.Object, hostURL string) (string, error) {
-	internal, err := IsInternalRuleURLChecked(url, config, hostURL)
+func ProxyFor(url string, config *SourceConfig, hostURL string) (string, error) {
+	internal, err := InternalURL(url, config, hostURL)
 	if err != nil {
 		return "", err
 	}
 	if internal {
 		return "", nil
 	}
-	return GetRuleFetchProxy(config)
+	return FetchProxy(config)
 }
 
-// RuleRequestProxy is RuleRequestProxyChecked.
-func RuleRequestProxy(url string, config *jsonx.Object, hostURL string) (string, error) {
-	return RuleRequestProxyChecked(url, config, hostURL)
-}
+// ProxyFor is ProxyFor.
 
 // GithubHosts is GITHUB_HOSTS.
 var GithubHosts = []string{"github.com", "raw.githubusercontent.com", "gist.githubusercontent.com", "api.github.com"}
@@ -229,27 +230,30 @@ func IsGithubURL(url string) bool {
 // Candidate is one (label, url) download candidate.
 type Candidate struct{ Label, URL string }
 
-// GithubDownloadCandidates is github_download_candidates: the original URL,
+// DownloadCandidates is github_download_candidates: the original URL,
 // then the configured GitHub mirror for GitHub URLs. A URL already carrying
 // exactly that mirror prefix is unwrapped first.
-func GithubDownloadCandidates(url string, config *jsonx.Object, hostURL string) ([]Candidate, error) {
-	internal, err := IsInternalRuleURLChecked(url, config, hostURL)
+func DownloadCandidates(url string, config *SourceConfig, hostURL string) ([]Candidate, error) {
+	internal, err := InternalURL(url, config, hostURL)
 	if err != nil {
 		return nil, err
 	}
 	if internal {
 		return []Candidate{{"原始地址", url}}, nil
 	}
-	mirror, isText := RuleFetchSettings(config).GetOr("github_proxy_domain", "").(string)
-	if isText && pyStrip(mirror) != "" {
-		prefix := pyStrip(mirror)
+	mirror := ""
+	if config != nil {
+		mirror = config.Settings.GitHubProxyDomain
+	}
+	if strings.TrimSpace(mirror) != "" {
+		prefix := strings.TrimSpace(mirror)
 		if !hasAnyPrefix(prefix, "http://", "https://") {
 			prefix = "https://" + prefix
 		}
 		prefix = strings.TrimRight(prefix, "/") + "/"
 		if strings.HasPrefix(url, prefix) {
 			original := url[len(prefix):]
-			wrapped, err := convert.ApplyGithubProxyDomain(original, config)
+			wrapped, err := convert.GitHubURL(original, githubConfig(config))
 			if err != nil {
 				return nil, err
 			}
@@ -258,7 +262,7 @@ func GithubDownloadCandidates(url string, config *jsonx.Object, hostURL string) 
 			}
 		}
 	}
-	mirrored, err := convert.ApplyGithubProxyDomain(url, config)
+	mirrored, err := convert.GitHubURL(url, githubConfig(config))
 	if err != nil {
 		return nil, err
 	}
@@ -294,7 +298,7 @@ func (e *RuleFetchError) Unwrap() error { return e.LastError }
 func newRuleFetchError(attempts []Attempt, secrets []string) *RuleFetchError {
 	lines := make([]string, len(attempts))
 	for i, a := range attempts {
-		lines[i] = a.Label + "：" + PythonClass(a.Err) + ": " + a.Err.Error()
+		lines[i] = a.Label + "：" + errorKind(a.Err) + ": " + a.Err.Error()
 	}
 	anySecrets := make([]any, len(secrets))
 	for i, s := range secrets {
@@ -310,7 +314,7 @@ var redirectStatuses = map[int]bool{301: true, 302: true, 303: true, 307: true, 
 // again on every redirect hop. An empty proxy setting means direct; an
 // explicit proxy never falls back to direct. Internal API requests are
 // direct and may only redirect within that origin's API paths.
-func (c *Client) requestOnce(ctx context.Context, url string, r *Request, config *jsonx.Object) (*Response, error) {
+func (c *Client) requestOnce(ctx context.Context, url string, r *DownloadRequest, config *SourceConfig) (*Response, error) {
 	method := r.Method
 	if method == "" {
 		method = "get"
@@ -325,14 +329,17 @@ func (c *Client) requestOnce(ctx context.Context, url string, r *Request, config
 	current := url
 	var boundary *internalBoundary
 	for hop := 0; hop <= maxRedirects; hop++ {
-		parsed, base, nextBoundary, err := prepareRuleTarget(current, current, config, r.HostURL, boundary)
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		parsed, base, nextBoundary, err := prepareTarget(current, current, config, r.HostURL, boundary)
 		if err != nil {
 			return nil, err
 		}
 		boundary = nextBoundary
 		current = parsed.String()
 		internal := base != nil
-		proxy, err := RuleRequestProxy(current, config, r.HostURL)
+		proxy, err := ProxyFor(current, config, r.HostURL)
 		if err != nil {
 			return nil, err
 		}
@@ -388,7 +395,7 @@ func (c *Client) requestOnce(ctx context.Context, url string, r *Request, config
 			if err != nil {
 				return "", err
 			}
-			targetParts, _, nextBoundary, err := prepareRuleTarget(target, written, config, r.HostURL, boundary)
+			targetParts, _, nextBoundary, err := prepareTarget(target, written, config, r.HostURL, boundary)
 			if err != nil {
 				return "", err
 			}
@@ -405,14 +412,6 @@ func (c *Client) requestOnce(ctx context.Context, url string, r *Request, config
 	}
 	return nil, errors.New("Too many redirects")
 }
-
-// pyUnicodeDecodeError is the UnicodeDecodeError requests raises for a
-// Location header that is not UTF-8 (get_redirect_target re-encodes the
-// ISO-8859-1 header text and decodes it as UTF-8); not a RequestException.
-type pyUnicodeDecodeError struct{ message string }
-
-func (e *pyUnicodeDecodeError) Error() string       { return e.message }
-func (e *pyUnicodeDecodeError) PythonClass() string { return "UnicodeDecodeError" }
 
 // latin1Bytes reverses latin1Text (header text back to its bytes).
 func latin1Bytes(text string) []byte {
@@ -439,8 +438,8 @@ func readUnstreamed(response *Response, httpsProxy bool) error {
 		return err
 	}
 	raw := latin1Bytes(location)
-	if message := pystr.UTF8DecodeError(raw); message != "" {
-		return &pyUnicodeDecodeError{message}
+	if !utf8.Valid(raw) {
+		return ErrRedirectEncoding
 	}
 	target := string(raw)
 	if target == "" {
@@ -487,8 +486,11 @@ var ErrSizeLimit = errors.New("Resource exceeds deployment file size limit")
 var retryDelays = []time.Duration{time.Second, 2 * time.Second}
 
 // requestWithRetries is _request_rule_with_retries.
-func (c *Client) requestWithRetries(ctx context.Context, url string, r *Request, config *jsonx.Object, checkStatus bool) (*Response, error) {
+func (c *Client) requestWithRetries(ctx context.Context, url string, r *DownloadRequest, config *SourceConfig, checkStatus bool) (*Response, error) {
 	for attempt := 0; ; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		response, err := c.requestOnce(ctx, url, r, config)
 		if err == nil && checkStatus {
 			err = response.RaiseForStatus()
@@ -529,21 +531,8 @@ func (c *Client) requestWithRetries(ctx context.Context, url string, r *Request,
 		}
 		logger.Infof("规则下载连接中断（%s），%d 秒后重试第 %d 次：%s", fetch.Class,
 			int(retryDelays[attempt]/time.Second), attempt+1, weburl.SafeForLog(url))
-		if c.Sleep != nil {
-			c.Sleep(retryDelays[attempt])
-		} else {
-			source := c.Clock
-			if source == nil {
-				source = clock.Real{}
-			}
-			timer := source.NewTimer(retryDelays[attempt])
-			select {
-			case <-ctx.Done():
-				timer.Stop()
-				return nil, ctx.Err()
-			case <-timer.C():
-			}
-			timer.Stop()
+		if err := c.wait(ctx, retryDelays[attempt]); err != nil {
+			return nil, err
 		}
 	}
 }
@@ -554,12 +543,15 @@ func (c *Client) requestWithRetries(ctx context.Context, url string, r *Request,
 // disconnects after 1 s and 2 s. MaxBytes reads a bounded body inside the
 // retry so a broken stream is retried as well; without it a streamed body
 // stays lazy and its errors belong to the caller.
-func (c *Client) RequestRule(ctx context.Context, url string, r Request) (*Response, error) {
+func (c *Client) Download(ctx context.Context, url string, r DownloadRequest) (*Response, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	config, err := loadConfig(ctx, r.Config)
 	if err != nil {
 		return nil, err
 	}
-	candidates, err := GithubDownloadCandidates(url, config, r.HostURL)
+	candidates, err := DownloadCandidates(url, config, r.HostURL)
 	if err != nil {
 		return nil, err
 	}
@@ -574,7 +566,7 @@ func (c *Client) RequestRule(ctx context.Context, url string, r Request) (*Respo
 		}
 		attempts = append(attempts, Attempt{candidate.Label, err})
 		if index+1 < len(candidates) {
-			logger.Warningf("规则下载失败（%s），改用%s：%s", PythonClass(err), candidates[index+1].Label, weburl.SafeForLog(url))
+			logger.Warningf("规则下载失败（%s），改用%s：%s", errorKind(err), candidates[index+1].Label, weburl.SafeForLog(url))
 			continue
 		}
 		if len(attempts) == 1 {
@@ -600,7 +592,71 @@ func (c *Client) RequestRule(ctx context.Context, url string, r Request) (*Respo
 	return nil, fmt.Errorf("no download candidate")
 }
 
-// RequestRule is DefaultClient.RequestRule.
-func RequestRule(ctx context.Context, url string, r Request) (*Response, error) {
-	return DefaultClient.RequestRule(ctx, url, r)
+// Download is DefaultClient.Download.
+func Download(ctx context.Context, url string, r DownloadRequest) (*Response, error) {
+	return DefaultClient.Download(ctx, url, r)
+}
+func githubConfig(config *SourceConfig) *model.Config {
+	if config == nil {
+		return nil
+	}
+	return &model.Config{SystemConfig: config.Settings}
+}
+
+// ErrRedirectEncoding rejects a Location header that is not valid UTF-8.
+var ErrRedirectEncoding = errors.New("redirect Location is not valid UTF-8")
+
+func (c *Client) wait(ctx context.Context, delay time.Duration) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if c.Sleep != nil {
+		c.Sleep(delay)
+		return ctx.Err()
+	}
+	source:=c.Clock
+ if source==nil{source=clock.Real{}}
+ timer := source.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C():
+		return nil
+	}
+}
+
+// DownloadError reports a source download failure without echoing its URL,
+// proxy credentials, response body or native transport error text.
+type DownloadError struct {
+	Err  error
+	Kind string
+}
+
+func (e *DownloadError) Error() string { return "Rule download failed (" + e.Kind + ")" }
+func (e *DownloadError) Unwrap() error { return e.Err }
+func sourceDownloadError(err error) error {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+	var fetch *FetchError
+	var attempts *RuleFetchError
+	if errors.As(err, &fetch) || errors.As(err, &attempts) || errors.Is(err, ErrInvalidURL) || errors.Is(err, ErrInternalRedirect) || errors.Is(err, ErrSizeLimit) {
+		return &DownloadError{Err: err, Kind: errorKind(err)}
+	}
+	return err
+}
+func errorKind(err error) string {
+	var fetch *FetchError
+	var attempts *RuleFetchError
+	if errors.As(err, &attempts) {
+		return "RuleFetchError"
+	}
+	if errors.As(err, &fetch) {
+		return fetch.Class
+	}
+	if errors.Is(err, ErrRedirectEncoding) {
+		return "RedirectEncoding"
+	}
+	return "InvalidURL"
 }

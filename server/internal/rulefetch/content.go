@@ -5,6 +5,7 @@ package rulefetch
 // edit payload lists with splice-first source preservation.
 
 import (
+	"bytes"
 	"container/list"
 	"crypto/sha256"
 	"encoding/hex"
@@ -15,13 +16,16 @@ import (
 	"strings"
 	"sync"
 
-	"configflow/internal/convert"
-	"configflow/internal/jsonx"
-	"configflow/internal/pystr"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/rules"
+	"configflow/internal/rulesetfmt"
 	"configflow/internal/yamlx"
+	"encoding/json"
 	"gopkg.in/yaml.v3"
+	"slices"
+	"strconv"
+	"unicode/utf8"
 )
 
 // ResultCache is the thread-safe LRU for pure results keyed by content
@@ -99,19 +103,7 @@ func (c *ResultCache) Clear() {
 	c.size = 0
 }
 
-// ContentDigest is content_digest: "b"+sha256 for bytes, "s"+sha256 for
-// text, "" (None) for other values.
-func ContentDigest(content any) string {
-	switch v := content.(type) {
-	case []byte:
-		sum := sha256.Sum256(v)
-		return "b" + hex.EncodeToString(sum[:])
-	case string:
-		sum := sha256.Sum256([]byte(v))
-		return "s" + hex.EncodeToString(sum[:])
-	}
-	return ""
-}
+func dataDigest(data []byte) string { sum := sha256.Sum256(data); return hex.EncodeToString(sum[:]) }
 
 var (
 	validatedCache  = NewResultCache(1024, 0)
@@ -143,7 +135,7 @@ func domainLine(value string) (string, error) {
 	return value, nil
 }
 
-func classicalOrDomain(behavior any, value string) (string, error) {
+func classicalOrDomain(behavior string, value string) (string, error) {
 	if behavior == "classical" {
 		return rules.ClassicalLine(value)
 	}
@@ -152,14 +144,14 @@ func classicalOrDomain(behavior any, value string) (string, error) {
 
 // MetadataError is _metadata_error(behavior, rule_format, source_type) ("" for
 // None). Pass nil for a missing format.
-func MetadataError(behavior, ruleFormat, sourceType any) string {
+func metadataError(behavior, ruleFormat, sourceType string) string {
 	if sourceType != "content" && sourceType != "url" {
 		return "规则来源必须是 content 或 url。"
 	}
 	if behavior != "domain" && behavior != "ipcidr" && behavior != "classical" {
 		return "规则集类型必须是 domain、ipcidr 或 classical。"
 	}
-	if ruleFormat != nil && ruleFormat != "" && ruleFormat != "text" && ruleFormat != "yaml" && ruleFormat != "mrs" {
+	if ruleFormat != "" && ruleFormat != "text" && ruleFormat != "yaml" && ruleFormat != "mrs" {
 		return "规则集格式必须是 text、yaml 或 mrs。"
 	}
 	if ruleFormat == "mrs" && sourceType == "content" {
@@ -171,26 +163,51 @@ func MetadataError(behavior, ruleFormat, sourceType any) string {
 	return ""
 }
 
-func problemObject(line int, before *string, message string) *jsonx.Object {
-	o := jsonx.Obj("line", jsonx.Int(int64(line)))
-	if before != nil {
-		o.Set("before", *before)
-	}
-	o.Set("message", message)
-	return o
+// Problem is one line-numbered rule-content diagnostic.
+type Problem struct {
+	Line    int     `json:"line"`
+	Before  *string `json:"before,omitempty"`
+	Message string  `json:"message"`
 }
 
-func strp(s string) *string { return &s }
+// Change is one explicit, reviewable repair proposal.
+type Change struct {
+	Line   int    `json:"line"`
+	Before string `json:"before"`
+	After  string `json:"after"`
+}
 
-// NormalizeClassicalLines is normalize_classical_lines: the delivery-only
-// normalization and its warnings (warnings followed by errors).
-func NormalizeClassicalLines(content string) (string, []any, error) {
-	checked, err := InspectDomainContent(content, "classical", nil)
+// Inspection keeps the original content unless an explicit repair is available.
+type Inspection struct {
+	Content  string     `json:"content"`
+	Changes  []Change   `json:"changes"`
+	Errors   []Problem  `json:"errors"`
+	Warnings *[]Problem `json:"warnings,omitempty"`
+}
+
+func problemObject(line int, before *string, message string) Problem {
+	return Problem{line, before, message}
+}
+func strp(s string) *string { return &s }
+func cloneProblems(problems []Problem) []Problem {
+	result := slices.Clone(problems)
+	for i := range result {
+		if result[i].Before != nil {
+			value := *result[i].Before
+			result[i].Before = &value
+		}
+	}
+	return result
+}
+
+// NormalizeClassical returns delivery-only normalization and its diagnostics.
+func NormalizeClassical(content string) (string, []Problem, error) {
+	checked, err := Inspect(content, "classical", "")
 	if err != nil {
 		return "", nil, err
 	}
-	warnings := append(append([]any{}, checked.GetList("warnings")...), checked.GetList("errors")...)
-	return checked.GetString("content"), warnings, nil
+	warnings := append(append([]Problem{}, (*checked.Warnings)...), checked.Errors...)
+	return checked.Content, warnings, nil
 }
 
 func isPayloadKey(key *yamlx.Node) bool {
@@ -236,12 +253,12 @@ func walkRuleNodes(root *yamlx.Node, visit func(*yamlx.Node)) {
 
 // NormalizeMihomoYAML expands flow payloads for Mihomo's line-oriented reader.
 // Already-block documents and every refused input retain their original bytes.
-func NormalizeMihomoYAML(content string) (string, []any) {
+func NormalizeYAML(content string) (string, []Problem) {
 	result, err := normalizeMihomoYAML(content)
 	if err != nil {
-		return content, []any{problemObject(0, nil, err.Error())}
+		return content, []Problem{problemObject(0, nil, err.Error())}
 	}
-	return result, []any{}
+	return result, []Problem{}
 }
 
 func normalizeMihomoYAML(content string) (string, error) {
@@ -305,25 +322,25 @@ func normalizeMihomoYAML(content string) (string, error) {
 
 type normalized struct {
 	content  string
-	warnings []any
+	warnings []Problem
 }
 
 // NormalizeMihomoRuleset is normalize_mihomo_ruleset: delivery-only syntax
 // and YAML-layout compatibility, cached by content digest.
-func NormalizeMihomoRuleset(content string, behavior, ruleFormat any) (string, []any, error) {
+func NormalizeRuleset(content, behavior, ruleFormat string) (string, []Problem, error) {
 	if ruleFormat == "mrs" {
-		return content, []any{}, nil
+		return content, []Problem{}, nil
 	}
-	key := ContentDigest(content) + "\x00" + jsonx.Repr(behavior) + "\x00" + jsonx.Repr(ruleFormat)
+	key := dataDigest([]byte(content)) + "\x00" + behavior + "\x00" + ruleFormat
 	if cached, ok := normalizedCache.Get(key); ok {
 		entry := cached.(normalized)
-		return entry.content, jsonx.DeepCopy(entry.warnings).([]any), nil
+		return entry.content, cloneProblems(entry.warnings), nil
 	}
 	result, warnings, err := normalizeMihomoRuleset(content, behavior, ruleFormat)
 	if err != nil {
 		return "", nil, err
 	}
-	normalizedCache.Put(key, normalized{result, jsonx.DeepCopy(warnings).([]any)}, runeLen(result))
+	normalizedCache.Put(key, normalized{result, cloneProblems(warnings)}, runeLen(result))
 	return result, warnings, nil
 }
 
@@ -332,24 +349,24 @@ var (
 	crOnly         = regexp.MustCompile("\r([^\n]|$)")
 )
 
-func normalizeMihomoRuleset(content string, behavior, ruleFormat any) (string, []any, error) {
+func normalizeMihomoRuleset(content, behavior, ruleFormat string) (string, []Problem, error) {
 	content = strings.TrimPrefix(content, "\uFEFF")
 	pattern := crOnly
 	if ruleFormat == "text" {
 		pattern = textLineBreaks
 	}
 	content = replaceLoneCR(content, pattern)
-	warnings := []any{}
+	warnings := []Problem{}
 	if behavior == "classical" {
 		var err error
-		content, warnings, err = NormalizeClassicalLines(content)
+		content, warnings, err = NormalizeClassical(content)
 		if err != nil {
 			return "", nil, err
 		}
 	}
 	if ruleFormat == "yaml" {
-		var yamlWarnings []any
-		content, yamlWarnings = NormalizeMihomoYAML(content)
+		var yamlWarnings []Problem
+		content, yamlWarnings = NormalizeYAML(content)
 		warnings = append(warnings, yamlWarnings...)
 	}
 	return content, warnings, nil
@@ -400,25 +417,18 @@ func validationError(message string) error { return repo.NewValidationError(mess
 // repair proposal ({content, changes, errors[, warnings]}). content that is
 // not a string is a ProfileValidationError. Native YAML policy failures are
 // reported without changing the original text.
-func InspectDomainContent(contentValue, behavior, ruleFormat any) (*jsonx.Object, error) {
-	content, ok := contentValue.(string)
-	if !ok {
-		return nil, validationError("规则内容必须是文本。")
-	}
-	errorsList, changes, warnings := []any{}, []any{}, []any{}
-	result := jsonx.Obj("content", content, "changes", changes, "errors", errorsList)
-	finish := func() *jsonx.Object {
-		result.Set("changes", changes)
-		result.Set("errors", errorsList)
+func Inspect(content, behavior, ruleFormat string) (*Inspection, error) {
+	errorsList, changes, warnings := []Problem{}, []Change{}, []Problem{}
+	result := &Inspection{Content: content, Changes: changes, Errors: errorsList}
+	finish := func() *Inspection {
+		result.Changes = changes
+		result.Errors = errorsList
 		if behavior == "classical" {
-			result.Set("warnings", warnings)
+			result.Warnings = &warnings
 		}
 		return result
 	}
-	if behavior == "classical" {
-		result.Set("warnings", warnings)
-	}
-	if message := MetadataError(behavior, ruleFormat, "content"); message != "" {
+	if message := metadataError(behavior, ruleFormat, "content"); message != "" {
 		errorsList = append(errorsList, problemObject(0, nil, message))
 		return finish(), nil
 	}
@@ -450,7 +460,7 @@ func InspectDomainContent(contentValue, behavior, ruleFormat any) (*jsonx.Object
 			}
 			continue
 		}
-		if behavior == "classical" && (strings.Contains(value, ",") || rules.IsRuleType(pystr.Upper(stripped))) {
+		if behavior == "classical" && (strings.Contains(value, ",") || rules.IsRuleType(strings.ToUpper(stripped))) {
 			if message := rules.ClassicalLineError(stripped); message != "" {
 				errorsList = append(errorsList, problemObject(e.line, &value, message))
 			}
@@ -474,7 +484,7 @@ func InspectDomainContent(contentValue, behavior, ruleFormat any) (*jsonx.Object
 			continue
 		}
 		if updated != value {
-			changes = append(changes, jsonx.Obj("line", jsonx.Int(int64(e.line)), "before", value, "after", updated))
+			changes = append(changes, Change{e.line, value, updated})
 			if e.isYAML {
 				yamlChanges[[2]int{e.node.Line, e.node.Column}] = updated
 			} else {
@@ -495,7 +505,7 @@ func InspectDomainContent(contentValue, behavior, ruleFormat any) (*jsonx.Object
 		if err != nil {
 			return nil, err
 		}
-		result.Set("content", string(edited))
+		result.Content = string(edited)
 	}
 	if len(replacements) > 0 {
 		runes := []rune(content)
@@ -507,7 +517,7 @@ func InspectDomainContent(contentValue, behavior, ruleFormat any) (*jsonx.Object
 			cursor = r.end
 		}
 		b.WriteString(string(runes[cursor:]))
-		result.Set("content", b.String())
+		result.Content = b.String()
 	}
 	return finish(), nil
 }
@@ -559,39 +569,77 @@ func domainEntries(content string, asYAML bool) ([]entry, error) {
 
 // ValidateDomainContent is validate_domain_content(rule, previous); previous
 // nil is None.
-func ValidateDomainContent(rule, previous *jsonx.Object) error {
-	if previous != nil && previous.Len() > 0 {
-		same := true
-		for _, key := range []string{"source_type", "behavior", "content", "format"} {
-			if !jsonx.Equal(rule.Value(key), previous.Value(key)) {
-				same = false
-				break
-			}
-		}
-		if same {
-			return nil
-		}
-	}
-	behavior := rule.GetOr("behavior", "domain")
-	if message := MetadataError(behavior, rule.Value("format"), rule.GetOr("source_type", "url")); message != "" {
-		return validationError(message)
-	}
-	if rule.Value("source_type") != "content" {
+// ValidateContent validates an edited declaration and keeps unchanged stored
+// legacy values readable. Request shape validation belongs to the HTTP owner.
+func ValidateContent(rule model.RuleConfig, previous *model.RuleConfig) error {
+	if previous != nil && sameContent(rule, *previous) {
 		return nil
 	}
-	checked, err := InspectDomainContent(rule.GetOr("content", ""), behavior, rule.Value("format"))
+	// These members originate at an editor write boundary. Model R5 preserves
+	// malformed stored bytes, but does not authorize a new null/container enum.
+	data, _ := model.Marshal(rule)
+	var members map[string]json.RawMessage
+	_ = json.Unmarshal(data, &members)
+	for _, field := range []string{"source_type", "behavior", "format"} {
+		raw, present := members[field]
+		if !present || (field == "format" && string(raw) == "null") {
+			continue
+		}
+		var value string
+		if string(raw) == "null" || json.Unmarshal(raw, &value) != nil {
+			behavior, format, source := textOr(rule.Behavior, "domain"), textOr(rule.Format, ""), textOr(rule.SourceType, "url")
+			switch field {
+			case "behavior":
+				behavior = "\x00"
+			case "format":
+				format = "\x00"
+			case "source_type":
+				source = "\x00"
+			}
+			return validationError(metadataError(behavior, format, source))
+		}
+	}
+	behavior := textOr(rule.Behavior, "domain")
+	if message := metadataError(behavior, textOr(rule.Format, ""), textOr(rule.SourceType, "url")); message != "" {
+		return validationError(message)
+	}
+	if textOr(rule.SourceType, "") != "content" {
+		return nil
+	}
+	if raw, present := members["content"]; present {
+		var content string
+		if string(raw) == "null" || json.Unmarshal(raw, &content) != nil {
+			return validationError(msgContentText)
+		}
+	}
+	checked, err := Inspect(textOr(rule.Content, ""), behavior, textOr(rule.Format, ""))
 	if err != nil {
 		return err
 	}
-	if problems := checked.GetList("errors"); len(problems) > 0 {
-		first := problems[0].(*jsonx.Object)
-		line := first.GetInt("line")
-		if line != 0 {
-			return validationError(fmt.Sprintf("规则内容第 %d 行：%s", line, first.GetString("message")))
+	if len(checked.Errors) > 0 {
+		first := checked.Errors[0]
+		if first.Line != 0 {
+			return validationError(fmt.Sprintf(msgContentLine, first.Line, first.Message))
 		}
-		return validationError(first.GetString("message"))
+		return validationError(first.Message)
 	}
 	return nil
+}
+func sameContent(a, b model.RuleConfig) bool {
+	// Compare original stored members as raw JSON so an unchanged wrong-typed
+	// field may be grandfathered, but a different wrong value never is.
+	fields := []string{"source_type", "behavior", "content", "format"}
+	left, _ := model.Marshal(a)
+	right, _ := model.Marshal(b)
+	var x, y map[string]json.RawMessage
+	_ = json.Unmarshal(left, &x)
+	_ = json.Unmarshal(right, &y)
+	for _, field := range fields {
+		if !bytes.Equal(x[field], y[field]) {
+			return false
+		}
+	}
+	return true
 }
 
 // RemoteRuleValidationError is RemoteRuleValidationError: downloaded rules
@@ -599,9 +647,9 @@ func ValidateDomainContent(rule, previous *jsonx.Object) error {
 // ProfileValidationError (errors.Is(err, repo.ErrValidation)).
 type RemoteRuleValidationError struct {
 	Message    string
-	Errors     []any // of {line, before, message}
-	Behavior   any   // nil for the message-only form
-	RuleFormat any
+	Errors     []Problem
+	Behavior   *string
+	RuleFormat *string
 }
 
 func (e *RemoteRuleValidationError) Error() string { return e.Message }
@@ -612,45 +660,63 @@ func (e *RemoteRuleValidationError) Unwrap() error { return repo.NewValidationEr
 // NewRemoteRuleMessage is RemoteRuleValidationError(message).
 func NewRemoteRuleMessage(message string) *RemoteRuleValidationError {
 	return &RemoteRuleValidationError{Message: message,
-		Errors: []any{jsonx.Obj("line", jsonx.Int(0), "before", "", "message", message)}}
+		Errors: []Problem{remoteProblem(0, "", message)}}
 }
 
 // NewRemoteRuleError is RemoteRuleValidationError(rule, rule_format, errors).
-func NewRemoteRuleError(rule *jsonx.Object, ruleFormat any, problems []any) *RemoteRuleValidationError {
-	e := &RemoteRuleValidationError{Errors: problems, Behavior: rule.GetOr("behavior", "domain"), RuleFormat: ruleFormat}
-	name := rule.Value("name")
-	if !jsonx.Truthy(name) {
-		name = rule.Value("id")
+// NewRemoteError builds a typed, line-numbered download validation error.
+func NewRemoteError(rule model.RuleConfig, format string, problems []Problem) *RemoteRuleValidationError {
+	behavior := textOr(rule.Behavior, "domain")
+	e := &RemoteRuleValidationError{Errors: problems, Behavior: &behavior, RuleFormat: &format}
+	name := rule.Name
+	if name == "" {
+		name = rule.ID
 	}
-	if !jsonx.Truthy(name) {
-		name = "未命名规则集"
+	if name == "" {
+		name = msgUnnamedRuleset
 	}
-	first := problems[0].(*jsonx.Object)
-	location := "文件"
-	if line := first.Value("line"); jsonx.Truthy(line) {
-		location = "第 " + jsonx.Str(line) + " 行"
+	if len(problems) == 0 {
+		problems = []Problem{remoteProblem(0, "", msgInvalidRuleContent)}
+		e.Errors = problems
 	}
-	original := jsonx.Str(first.GetOr("before", ""))
+	first := problems[0]
+	location := msgRuleFile
+	if first.Line != 0 {
+		location = fmt.Sprintf(msgRuleLine, first.Line)
+	}
+	original := textOr(first.Before, "")
 	preview := original
 	if runes := []rune(original); len(runes) > 200 {
 		preview = string(runes[:200]) + "…"
 	}
 	detail := ""
 	if original != "" {
-		detail = "，原文 " + jsonx.Repr(preview)
+		detail = fmt.Sprintf(msgRulePreview, displayPreview(preview))
 	}
 	remainder := ""
 	if len(problems) > 1 {
-		remainder = fmt.Sprintf("（共 %d 处错误）", len(problems))
+		remainder = fmt.Sprintf(msgProblemCount, len(problems))
 	}
-	e.Message = "远端规则集「" + jsonx.Str(name) + "」声明为 " + jsonx.Str(e.Behavior) + "/" + jsonx.Str(ruleFormat) +
-		"，" + location + detail + "：" + jsonx.Str(first.Value("message")) + remainder
+	e.Message = fmt.Sprintf(msgRemoteRule, name, behavior, format, location, detail, first.Message, remainder)
 	return e
 }
 
-func remoteProblem(line int, before, message string) *jsonx.Object {
-	return jsonx.Obj("line", jsonx.Int(int64(line)), "before", before, "message", message)
+// displayPreview uses a fixed quoted field for the product's diagnostic text;
+// it is not a serializer for arbitrary Python/JSON values.
+func displayPreview(value string) string {
+	quote := byte('\'')
+	if strings.ContainsRune(value, '\'') && !strings.ContainsRune(value, '"') {
+		quote = '"'
+	}
+	escaped := strconv.Quote(value)
+	escaped = escaped[1 : len(escaped)-1]
+	if quote == '\'' {
+		escaped = strings.ReplaceAll(escaped, `\"`, `"`)
+		escaped = strings.ReplaceAll(escaped, "'", `\'`)
+	}
+	return string(quote) + escaped + string(quote)
 }
+func remoteProblem(line int, before, message string) Problem { return Problem{line, &before, message} }
 
 type textEntry struct {
 	line  int
@@ -658,9 +724,9 @@ type textEntry struct {
 }
 
 // remoteTextEntries is _remote_text_entries.
-func remoteTextEntries(content string, ruleFormat any) ([]textEntry, []any) {
+func remoteTextEntries(content, ruleFormat string) ([]textEntry, []Problem) {
 	sourceLines := splitLines(content, false)
-	var problems []any
+	var problems []Problem
 	problem := func(line int, message string) {
 		before := ""
 		if line > 0 && line <= len(sourceLines) {
@@ -689,7 +755,7 @@ func remoteTextEntries(content string, ruleFormat any) ([]textEntry, []any) {
 		}
 		return entries, problems
 	}
-	fail := func(err error) ([]textEntry, []any) {
+	fail := func(err error) ([]textEntry, []Problem) {
 		line, message := 0, err.Error()
 		var marked *yamlx.SyntaxError
 		if errors.As(err, &marked) {
@@ -741,68 +807,81 @@ func remoteTextEntries(content string, ruleFormat any) ([]textEntry, []any) {
 // config_data, rule_format=ruleFormat): content is string or []byte (other
 // values fail like Python); config nil is None; ruleFormat "" is None. It
 // never returns a normalized replacement.
-func ValidateRemoteRuleContent(content any, rule, config *jsonx.Object, ruleFormat string) error {
-	behavior := rule.GetOr("behavior", "domain")
-	declared := rule.Value("format")
-	var selected any = ruleFormat
-	if ruleFormat == "" {
-		if config == nil {
-			config = jsonx.NewObject()
-		}
-		format, err := convert.RulesetFormat(rule, config, "")
+// ValidateRemote checks complete bytes against the declared format before
+// they can replace a cache. The library is already decoded by the caller.
+func ValidateRemote(content Content, rule model.RuleConfig, library []model.RuleLibraryItem, format string) error {
+	behavior := textOr(rule.Behavior, "domain")
+	selected := format
+	if selected == "" {
+		var err error
+		selected, err = rulesetfmt.RuleFormat(rule, library, "")
 		if err != nil {
 			return err
 		}
-		selected = format
 	}
-	message := MetadataError(behavior, declared, "url")
+	message := metadataError(behavior, textOr(rule.Format, ""), "url")
 	if message == "" {
-		message = MetadataError(behavior, selected, "url")
+		message = metadataError(behavior, selected, "url")
 	}
 	if message != "" {
-		return NewRemoteRuleError(rule, selected, []any{remoteProblem(0, "", message)})
+		return NewRemoteError(rule, selected, []Problem{remoteProblem(0, "", message)})
 	}
-	digest := ContentDigest(content)
-	key := digest + "\x00" + jsonx.Repr(behavior) + "\x00" + jsonx.Repr(selected)
-	if digest != "" {
-		if _, ok := validatedCache.Get(key); ok {
-			return nil
-		}
+	key := dataDigest(content.Data) + "\x00" + behavior + "\x00" + selected
+	if content.Text {
+		key += "\x00text"
+	}
+	if _, ok := validatedCache.Get(key); ok {
+		return nil
 	}
 	if err := validateRemoteContent(content, rule, behavior, selected); err != nil {
 		return err
 	}
-	if digest != "" {
-		validatedCache.Put(key, true, 0)
-	}
+	validatedCache.Put(key, true, 0)
 	return nil
 }
 
 const textLineBreakChars = "\n\r\v\f\x1c\x1d\x1e\u0085  "
 
-func validateRemoteContent(content any, rule *jsonx.Object, behavior, selected any) error {
+func validateRemoteContent(content Content, rule model.RuleConfig, behavior, selected string) error {
 	if selected == "mrs" {
 		return validateRemoteMRS(content, rule)
 	}
-	if data, ok := content.([]byte); ok {
-		if start, end, bad := utf8ErrorRange(data); bad {
-			prefix := string(data[:start])
-			line := len(splitLines(prefix, false))
-			if prefix == "" || strings.ContainsRune(textLineBreakChars, []rune(prefix)[runeLen(prefix)-1]) {
-				line++
+	if !utf8.Valid(content.Data) {
+		offset := 0
+		for offset < len(content.Data) {
+			value, width := utf8.DecodeRune(content.Data[offset:])
+			if value == utf8.RuneError && width == 1 {
+				break
 			}
-			if line < 1 {
-				line = 1
-			}
-			return NewRemoteRuleError(rule, selected, []any{remoteProblem(line, bytesRepr(data[start:end]),
-				"内容不是有效 UTF-8 文本；请检查订阅链接、编码或是否误选了 MRS 格式。")})
+			offset += width
 		}
-		content = string(data)
+		prefix := string(content.Data[:offset])
+		line := len(splitLines(prefix, false))
+		if prefix == "" || strings.ContainsRune(textLineBreakChars, []rune(prefix)[runeLen(prefix)-1]) {
+			line++
+		}
+		if line < 1 {
+			line = 1
+		}
+		// Retain the editor's byte-evidence notation, restricted to this single
+		// invalid byte. No arbitrary bytes/objects are rendered through repr.
+		end := offset + 1
+		// FullRune treats an invalid prefix as complete. Retain only the
+		// still-incomplete prefix, stopping before the offending next byte.
+		for end < len(content.Data) && !utf8.FullRune(content.Data[offset:end+1]) {
+			end++
+		}
+		var bytes strings.Builder
+		bytes.WriteString("b'")
+		for _, value := range content.Data[offset:end] {
+			fmt.Fprintf(&bytes, `\x%02x`, value)
+		}
+		bytes.WriteByte('\'')
+		evidence := bytes.String()
+
+		return NewRemoteError(rule, selected, []Problem{remoteProblem(line, evidence, msgInvalidUTF8)})
 	}
-	text, ok := content.(string)
-	if !ok {
-		return NewRemoteRuleError(rule, selected, []any{remoteProblem(0, "", "规则内容必须是文本或字节。")})
-	}
+	text := string(content.Data)
 	entries, problems := remoteTextEntries(text, selected)
 	for _, e := range entries {
 		value := pyStrip(e.value)
@@ -813,7 +892,7 @@ func validateRemoteContent(content any, rule *jsonx.Object, behavior, selected a
 		switch {
 		case behavior == "ipcidr":
 			message = rules.CIDRError(value)
-		case behavior == "classical" && (strings.Contains(value, ",") || rules.IsRuleType(pystr.Upper(value))):
+		case behavior == "classical" && (strings.Contains(value, ",") || rules.IsRuleType(strings.ToUpper(value))):
 			message = rules.ClassicalLineError(value)
 		default:
 			if _, err := classicalOrDomain(behavior, value); err != nil {
@@ -826,11 +905,11 @@ func validateRemoteContent(content any, rule *jsonx.Object, behavior, selected a
 	}
 	if len(problems) > 0 {
 		sort.SliceStable(problems, func(i, j int) bool {
-			a := problems[i].(*jsonx.Object).GetInt("line")
-			b := problems[j].(*jsonx.Object).GetInt("line")
+			a := problems[i].Line
+			b := problems[j].Line
 			return a < b
 		})
-		return NewRemoteRuleError(rule, selected, problems)
+		return NewRemoteError(rule, selected, problems)
 	}
 	return nil
 }
@@ -952,26 +1031,6 @@ func RemoveRulePayload(content string, matches func(string) bool) (string, []str
 		return "", nil, payloadEditError(err)
 	}
 	return string(edited), removed, nil
-}
-
-// ReadRulePayloadAny and AppendRulePayloadAny adapt ReadRulePayload and
-// AppendRulePayload to rules.ConnectionDeps (payload is a *yamlx.Node or
-// nil).
-func ReadRulePayloadAny(content string) ([]string, any, error) {
-	lines, node, err := ReadRulePayload(content)
-	if node == nil {
-		return lines, nil, err
-	}
-	return lines, node, err
-}
-
-// AppendRulePayloadAny: see ReadRulePayloadAny.
-func AppendRulePayloadAny(content, line string, payload any) (string, error) {
-	node, ok := payload.(*yamlx.Node)
-	if payload != nil && !ok {
-		return content, validationError(msgUnreadablePayload)
-	}
-	return AppendRulePayload(content, line, node)
 }
 
 func payloadEditError(err error) error {

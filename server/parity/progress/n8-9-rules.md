@@ -38,3 +38,24 @@ invalid receipt和真实Runtime关机/断开测试。未完成前不交回。
 - rulefetch内容、下载、缓存和原生HTML/error迁移；一次性缓存读取闭环。
 - refresh仓储/DTO/任务行和ctx提交边界迁移（仅对未迁移owner保留薄adapter）。
 - 增量race、跨包Corpus|Reference|Golden、相关Flask和fuzz60s；完整go vet与最终报告。
+
+## 第二段：内容/下载/缓存核心（实施中）
+
+- rulefetch Content明确区分文本与二进制；Inspection/Problem/Change、SourceConfig、
+  typed CacheOptions/DownloadRequest/ResolveSource全部用原生类型。
+  API/deploy/substore旧调用只经过窄adapter，不再由core创建jsonx config；不改convert。
+- 默认重试等待使用ctx选择；写owner在Detach后和下载完成后的实际缓存提交前检查同一Runtime。
+- O12已补一次性读取闭环：旧摘要只用于读，校验内容后在repo事务中再次核对声明/receipt，
+  以native名称保存，旧文件保留便于回滚。事务以内部sentinel退出，不增加DB revision。
+  合成测试覆盖离线上游、迁移后去掉旧文件仍可读、坏内容、改URL/behavior、旧/新invalid receipt。
+- 真实Runtime.Start/BindRequest/Shutdown覆盖请求断开与关机；在下载回调结束、提交前触发关机
+  不写文件，浏览器断开仍完成已接管的写入。没有用普通cancel代替关机。
+- 内容DTO测试只改访问方法，不改原始期望。手写enum/content的null/数字仍由写入口严格拒绝；
+  曾发现typed回退把两个null编辑变成默认，以及数字content被转文本，已修产品验证。
+- 删除pystr.go中的JSON/bytes repr和Unicode异常仿真；规则文本仍保留已有分隔符集合。
+  无效UTF-8仍保留原中文消息、行号和有限字节证据；72849+13832+103734条原参考继续精确对照。
+- 仅一条requests内部英文异常改为原生ErrRedirectEncoding；原档案的完整UnicodeDecodeError
+  仍固定断言，同时逐字段断言原生拒绝与完整消息，网络请求transcript照常比较（R8）。
+
+远端原包最后通过：`go test -p 4 ./internal/rulefetch`，7.902s；
+新增迁移/Runtime/download owner子集通过2.176s。最终race/Flask/fuzz仍待整组完成。

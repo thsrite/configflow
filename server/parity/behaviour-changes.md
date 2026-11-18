@@ -1523,3 +1523,13 @@ O12发布说明：远端规则缓存参与生成时的离线兜底。切换不�
 旧摘要只作一次性兼容读取地址，在当前声明认领且内容通过校验后迁入native名称。
 拟议编辑、旧声明或invalid receipt均不得借用该旧文件。实现及回归闭环见
 `progress/n8-9-rules.md`（本项实施中，最终交回需补齐验证）。
+
+N8-9规则缓存O12闭环：`rulefetch.ReadCache`对当前声明下的旧摘要文件校验内容，
+repo事务里再次核对声明及旧/新invalid receipt，保存native文件且不提交DB/revision；
+旧文件保留供回滚。离线刷新可继续使用迁移后的有效旧内容。
+`TestNativeCacheMigrationPreservesOfflineFallback`、拒绝旧声明/坏内容/receipt的负控，
+以及真实Runtime下载后关机/请求断开测试覆盖发布切换风险。
+
+N8-9下载诊断R8：重定向Location为非UTF-8时仍拒绝，不再创建Python
+UnicodeDecodeError，改为原生ErrRedirectEncoding（`redirect Location is not valid UTF-8`）。
+只改变内部英文异常类别/文本，响应拒绝及loopback请求transcript不变；原Python完整诊断另有断言。

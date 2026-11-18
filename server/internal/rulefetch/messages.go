@@ -16,3 +16,29 @@ const (
 	msgUnreadablePayload = "规则集的 payload 格式无法读取，请先在规则仓库检查内容。"
 	msgReadPayloadYAML   = "规则集的 payload 格式无法读取，请先在规则仓库检查内容：%v"
 )
+
+const (
+	msgMissingSource = "请提供有效的规则来源和订阅地址"
+	msgStaleCache    = "规则 %s 更新失败，继续使用上一次有效缓存：%s"
+)
+
+const (
+	msgContentLine        = "规则内容第 %d 行：%s"
+	msgUnnamedRuleset     = "未命名规则集"
+	msgInvalidRuleContent = "规则内容无效。"
+	msgRuleFile           = "文件"
+	msgRuleLine           = "第 %d 行"
+	msgRulePreview        = "，原文 %s"
+	msgProblemCount       = "（共 %d 处错误）"
+	msgRemoteRule         = "远端规则集「%s」声明为 %s/%s，%s%s：%s%s"
+	msgContentText        = "规则内容必须是文本。"
+	msgContentBytes       = "规则内容必须是文本或字节。"
+	msgInvalidUTF8        = "内容不是有效 UTF-8 文本；请检查订阅链接、编码或是否误选了 MRS 格式。"
+)
+
+const (
+	msgSourceGone      = "规则来源已不存在，请重新生成并发布配置。"
+	msgSourceInline    = "规则来源已改为手写内容，请重新生成并发布配置。"
+	msgSourceChanged   = "规则订阅地址已变更，请重新生成并发布配置。"
+	msgSourceAmbiguous = "同一订阅地址对应多个不同规则类型或格式，无法确定当前来源；请重新生成并发布配置。"
+)

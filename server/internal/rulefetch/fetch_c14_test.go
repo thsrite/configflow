@@ -226,9 +226,12 @@ func TestFetchDifferentialAgainstRequests(t *testing.T) {
 			}
 			if err != nil {
 				class := PythonClass(err)
+				if errors.Is(err, ErrRedirectEncoding) {
+					class = "RedirectEncoding"
+				}
 				text := strings.ReplaceAll(err.Error(), server.port, "{PORT}")
 				var ruleFetch *RuleFetchError
-				if fetchDetailClasses[class] || errors.As(err, &ruleFetch) {
+				if (fetchDetailClasses[class] && !errors.Is(err, ErrRedirectEncoding)) || errors.As(err, &ruleFetch) {
 					text = ""
 				}
 				got["err"] = map[string]any{"class": class, "text": text}
@@ -238,6 +241,17 @@ func TestFetchDifferentialAgainstRequests(t *testing.T) {
 			if e, ok := want["err"].(map[string]any); ok && fetchDetailClasses[e["class"].(string)] {
 				want = map[string]any{"err": map[string]any{"class": e["class"], "text": ""}}
 			}
+			if sc.Name == "latin1 location" {
+				archived, _ := sc.Result["err"].(map[string]any)
+				if archived["class"] != "UnicodeDecodeError" || archived["text"] != "'utf-8' codec can't decode byte 0xe9 in position 4: unexpected end of data" {
+					t.Fatal("original redirect diagnostic drift")
+				}
+				if !errors.Is(err, ErrRedirectEncoding) {
+					t.Fatalf("native redirect refusal lost: %v", err)
+				}
+				want = map[string]any{"err": map[string]any{"class": "RedirectEncoding", "text": "redirect Location is not valid UTF-8"}}
+			}
+
 			// The url_requote case sends unreserved escapes in a different byte
 			// form. Compare those after decoding: the scripted loopback server
 			// receives the request and returns the same 200 response and body.

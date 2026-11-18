@@ -9,7 +9,7 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 )
 
 const (
@@ -21,12 +21,12 @@ const (
 // (magic, behavior, signed count, extra length) inside a complete zstd
 // stream (concatenated frames, checksums verified, 128 KiB window) without
 // decoding the rule tree.
-func validateRemoteMRS(content any, rule *jsonx.Object) error {
+func validateRemoteMRS(content Content, rule model.RuleConfig) error {
 	fail := func(message string) error {
-		return NewRemoteRuleError(rule, "mrs", []any{remoteProblem(0, "", message)})
+		return NewRemoteError(rule, "mrs", []Problem{remoteProblem(0, "", message)})
 	}
-	data, ok := content.([]byte)
-	if !ok {
+	data := content.Data
+	if content.Text {
 		return fail("MRS 必须按原始二进制读取，不能作为文本校验。")
 	}
 	header, total, err := decodeMRSStream(data)
@@ -56,9 +56,9 @@ func validateRemoteMRS(content any, rule *jsonx.Object) error {
 	if actual == "" {
 		return fail(fmt.Sprintf("MRS 文件包含未知规则类型标记 %d。", header[4]))
 	}
-	declared := rule.GetOr("behavior", "domain")
+	declared := textOr(rule.Behavior, "domain")
 	if declared != actual {
-		return fail(fmt.Sprintf("MRS 文件实际类型为 %s，与声明的 %s 不匹配。", actual, jsonx.Str(declared)))
+		return fail(fmt.Sprintf("MRS 文件实际类型为 %s，与声明的 %s 不匹配。", actual, declared))
 	}
 	count := int64(binary.BigEndian.Uint64(header[5:13]))
 	extra := int64(binary.BigEndian.Uint64(header[13:21]))

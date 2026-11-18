@@ -163,7 +163,12 @@ func sameOptional(a, b *string) bool {
 // LibraryRule projects the declaration fields used by cache and fetch into a
 // rule reference, retaining opaque extension fields without dynamic values.
 func LibraryRule(item model.RuleLibraryItem) model.RuleConfig {
-	return model.RuleConfig{ID: item.ID, Name: item.Name, Enabled: item.Enabled, SourceType: item.SourceType, Behavior: item.Behavior, Format: item.Format, URL: item.URL, Content: item.Content, Fields: item.Fields}
+	// This is a record-sized native projection, not a resolved Config decode.
+	// Preserve original declaration evidence for cache ownership/type checks.
+	data, _ := model.Marshal(item)
+	var rule model.RuleConfig
+	_ = json.Unmarshal(data, &rule)
+	return rule
 }
 
 // LegacyCacheFilename recognizes the previous fixed-schema cache key solely
@@ -185,6 +190,16 @@ func LegacyCacheFilename(rule model.RuleConfig) (string, bool) {
 	var members map[string]json.RawMessage
 	if json.Unmarshal(data, &members) != nil {
 		return "", false
+	}
+	for _, field := range []string{"id", "library_rule_id", "url", "behavior", "format", "source_type"} {
+		raw, present := members[field]
+		if !present || string(raw) == "null" {
+			continue
+		}
+		var value string
+		if json.Unmarshal(raw, &value) != nil {
+			return "", false
+		}
 	}
 	// Preserve explicit nulls in old declarations. Only the current stored
 	// declaration may use this read-side address (see CacheReadPath).

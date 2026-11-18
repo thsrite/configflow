@@ -38,7 +38,7 @@ func asRemote(t *testing.T, err error) *RemoteRuleValidationError {
 	return remote
 }
 
-func firstProblem(e *RemoteRuleValidationError) *jsonx.Object { return e.Errors[0].(*jsonx.Object) }
+func firstProblem(e *RemoteRuleValidationError) *jsonx.Object { return legacyObject(e.Errors[0]) }
 
 func rulePayloadYAML(t *testing.T, lines ...string) string {
 	t.Helper()
@@ -137,8 +137,8 @@ func TestTypeErrorsExposeOriginalLineAndReason(t *testing.T) {
 // test_reports_every_invalid_entry_without_accepting_partial_set
 func TestReportsEveryInvalidEntry(t *testing.T) {
 	e := asRemote(t, ValidateRemoteRuleContent("valid.test\nDOMAIN-SUFFIX,mixed.test\n192.0.2.0/24\nlast.test\n", remoteRule("domain", "text"), nil, ""))
-	if len(e.Errors) != 2 || e.Errors[0].(*jsonx.Object).GetInt("line") != 2 || e.Errors[1].(*jsonx.Object).GetInt("line") != 3 {
-		t.Fatal(encode(e.Errors))
+	if len(e.Errors) != 2 || e.Errors[0].Line != 2 || e.Errors[1].Line != 3 {
+		t.Fatal(encode(legacyProblems(e.Errors)))
 	}
 	if !strings.Contains(e.Error(), "共 2 处错误") {
 		t.Fatal(e.Error())
@@ -280,8 +280,8 @@ func TestMRSChecksumCorruption(t *testing.T) {
 // test_remote_error_supports_source_resolution_message
 func TestRemoteErrorMessageForm(t *testing.T) {
 	e := NewRemoteRuleMessage("来源配置有歧义")
-	if e.Error() != "来源配置有歧义" || encode(e.Errors) != `[{"line":0,"before":"","message":"来源配置有歧义"}]` {
-		t.Fatal(e.Error(), encode(e.Errors))
+	if e.Error() != "来源配置有歧义" || encode(legacyProblems(e.Errors)) != `[{"line":0,"before":"","message":"来源配置有歧义"}]` {
+		t.Fatal(e.Error(), encode(legacyProblems(e.Errors)))
 	}
 }
 
@@ -289,7 +289,7 @@ func TestRemoteErrorMessageForm(t *testing.T) {
 func TestTextErrorKeepsIndentation(t *testing.T) {
 	e := asRemote(t, ValidateRemoteRuleContent("valid.example\n  DOMAIN,wrong.example  \n", remoteRule("domain", "text"), nil, ""))
 	if firstProblem(e).GetString("before") != "  DOMAIN,wrong.example  " {
-		t.Fatal(encode(e.Errors))
+		t.Fatal(encode(legacyProblems(e.Errors)))
 	}
 }
 

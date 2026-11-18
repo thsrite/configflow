@@ -7,7 +7,6 @@ import (
 	"strings"
 	"unicode"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/weburl"
 )
 
@@ -55,12 +54,12 @@ type internalBoundary struct {
 	prefix string
 }
 
-// prepareRuleTarget validates raw (the URL about to be requested) and applies
+// prepareTarget validates raw (the URL about to be requested) and applies
 // the internal API boundary. written is the same URL as the caller or a
 // redirect spelled it (raw itself, or an absolute Location before its dot
 // segments were resolved). A chain enters the API when written, raw or the
 // prepared URL addresses it; from then on every hop must stay inside.
-func prepareRuleTarget(raw, written string, config *jsonx.Object, hostURL string, boundary *internalBoundary) (*url.URL, *url.URL, *internalBoundary, error) {
+func prepareTarget(raw, written string, config *SourceConfig, hostURL string, boundary *internalBoundary) (*url.URL, *url.URL, *internalBoundary, error) {
 	prepared, err := ValidateRuleURL(raw)
 	if err != nil {
 		return nil, nil, boundary, err
@@ -69,7 +68,7 @@ func prepareRuleTarget(raw, written string, config *jsonx.Object, hostURL string
 		var base *url.URL
 		internal := false
 		for _, candidate := range []string{written, raw, prepared.String()} {
-			if base, internal, err = internalRuleBase(candidate, config, hostURL); err != nil {
+			if base, internal, err = internalBase(candidate, config, hostURL); err != nil {
 				return nil, nil, boundary, err
 			}
 			if internal {
@@ -180,12 +179,8 @@ var (
 
 // NormalizeRuleFetchProxy is normalize_rule_fetch_proxy: "" for direct,
 // otherwise "scheme://authority" with the authority as written.
-func NormalizeRuleFetchProxy(value any) (string, error) {
-	text, ok := value.(string)
-	if !ok {
-		return "", ErrProxyNotString
-	}
-	text = pyStrip(text)
+func NormalizeProxy(text string) (string, error) {
+	text = strings.TrimSpace(text)
 	if text == "" {
 		return "", nil
 	}

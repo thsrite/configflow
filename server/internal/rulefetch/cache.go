@@ -4,7 +4,7 @@ package rulefetch
 // (get_rules_dir, read/write_validated_rule_cache, refresh_remote_rule,
 // read_rule_source_content, save_rule_to_local). The pure name/path helpers
 // are in internal/rules (SanitizeRuleName, RuleCacheFilename,
-// RuleCacheReadPath).
+// CacheReadPath).
 
 import (
 	"bytes"
@@ -15,12 +15,13 @@ import (
 	"path/filepath"
 	"time"
 
-	"configflow/internal/convert"
 	"configflow/internal/ctxx"
-	"configflow/internal/jsonx"
 	"configflow/internal/logx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/rules"
+	"configflow/internal/rulesetfmt"
+	"configflow/internal/weburl"
 )
 
 var utilsLogger = logx.Get("backend.utils.rule_utils")
@@ -34,9 +35,9 @@ func GetRulesDir(ctx context.Context) (string, error) {
 	return r.SharedRulesDir()
 }
 
-// RuleCacheReadPath is rule_cache_read_path(rule, library) with the stored
+// CacheReadPath is rule_cache_read_path(rule, library) with the stored
 // shared rule library; library nil is None.
-func RuleCacheReadPath(ctx context.Context, rule *jsonx.Object, library []any) (string, error) {
+func CacheReadPath(ctx context.Context, rule model.RuleConfig, library []model.RuleLibraryItem) (string, error) {
 	r, err := repo.GetRepository(ctx)
 	if err != nil {
 		return "", err
@@ -47,20 +48,20 @@ func RuleCacheReadPath(ctx context.Context, rule *jsonx.Object, library []any) (
 	}
 	// Python returns an existing current cache before it reads the shared
 	// document (a repository failure then does not matter).
-	current := filepath.Join(root, rules.RuleCacheFilename(rule))
+	current := filepath.Join(root, rules.CacheFilename(rule))
 	_, receiptErr := os.Stat(current + ".invalid")
 	if fileExists(current) || !errors.Is(receiptErr, os.ErrNotExist) {
-		return rules.RuleCacheReadPath(rule, library, nil, root), nil
+		return rules.CacheReadPath(rule, library, nil, root), nil
 	}
-	shared, err := r.GetShared(ctx)
+	shared, err := r.Shared(ctx)
 	if err != nil {
 		return "", err
 	}
-	stored := shared.GetList("rule_library")
+	stored := shared.RuleLibrary
 	if stored == nil {
-		stored = []any{}
+		stored = []model.RuleLibraryItem{}
 	}
-	return rules.RuleCacheReadPath(rule, library, stored, root), nil
+	return rules.CacheReadPath(rule, library, stored, root), nil
 }
 
 func fileExists(name string) bool {
@@ -68,27 +69,27 @@ func fileExists(name string) bool {
 	return err == nil
 }
 
-func contentBytes(content any) []byte {
-	switch v := content.(type) {
-	case string:
-		return []byte(v)
-	case []byte:
-		return v
-	}
-	return nil
+// Content is explicitly text or binary. An MRS source must be binary.
+type Content struct {
+	Data []byte
+	Text bool
 }
 
-// ReadValidatedRuleCache is read_validated_rule_cache: only cache bytes that
+// ReadCache is read_validated_rule_cache: only cache bytes that
 // satisfy the current remote declaration, else nil. config nil is None.
-func ReadValidatedRuleCache(ctx context.Context, rule, config *jsonx.Object) ([]byte, error) {
-	var library []any
+func ReadCache(ctx context.Context, rule model.RuleConfig, config *SourceConfig) ([]byte, error) {
+	ctx = ctxx.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	var library []model.RuleLibraryItem
 	if config != nil {
-		library = config.GetList("rule_library")
+		library = config.Library
 		if library == nil {
-			library = []any{}
+			library = []model.RuleLibraryItem{}
 		}
 	}
-	cachePath, err := RuleCacheReadPath(ctx, rule, library)
+	cachePath, err := CacheReadPath(ctx, rule, library)
 	if err != nil {
 		return nil, err
 	}
@@ -96,8 +97,8 @@ func ReadValidatedRuleCache(ctx context.Context, rule, config *jsonx.Object) ([]
 	if err != nil {
 		return nil, nil
 	}
-	if rule.GetOr("source_type", "url") == "url" {
-		if err := ValidateRemoteRuleContent(content, rule, config, ""); err != nil {
+	if textOr(rule.SourceType, "url") == "url" {
+		if err := validateBytes(Content{Data: content}, rule, config, ""); err != nil {
 			var remote *RemoteRuleValidationError
 			if errors.As(err, &remote) {
 				return nil, nil
@@ -105,24 +106,35 @@ func ReadValidatedRuleCache(ctx context.Context, rule, config *jsonx.Object) ([]
 			return nil, err
 		}
 	}
+	// Migrate an old name only after byte validation and another declaration
+	// check under the repository transaction. Keep the old file for rollback.
+	root, err := GetRulesDir(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if cachePath != filepath.Join(root, rules.CacheFilename(rule)) {
+		if err := migrateCache(ctx, rule, content, cachePath); err != nil {
+			return nil, err
+		}
+	}
 	return content, nil
 }
 
-// WriteValidatedRuleCache is write_validated_rule_cache: validate the
+// WriteCache is write_validated_rule_cache: validate the
 // complete response, then atomically replace the raw bytes (identical
 // bytes only get a new modification time). It returns the cache file name
 // relative to the rules directory.
-func WriteValidatedRuleCache(ctx context.Context, rule *jsonx.Object, content any, config *jsonx.Object) (string, error) {
+func WriteCache(ctx context.Context, rule model.RuleConfig, content Content, config *SourceConfig) (string, error) {
 	ctx = ctxx.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	if rule.GetOr("source_type", "url") == "url" {
-		if err := ValidateRemoteRuleContent(content, rule, config, ""); err != nil {
+	if textOr(rule.SourceType, "url") == "url" {
+		if err := validateBytes(content, rule, config, ""); err != nil {
 			return "", err
 		}
 	}
-	filename := rules.RuleCacheFilename(rule)
+	filename := rules.CacheFilename(rule)
 	relative := path.Join("rules", filename)
 	r, err := repo.GetRepository(ctx)
 	if err != nil {
@@ -132,12 +144,15 @@ func WriteValidatedRuleCache(ctx context.Context, rule *jsonx.Object, content an
 	if err != nil {
 		return "", err
 	}
-	data := contentBytes(content)
+	data := content.Data
 	write := func(locked context.Context) error {
+		if err := locked.Err(); err != nil {
+			return err
+		}
 		_, err := r.WriteSharedTextIfChanged(locked, relative, data)
 		return err
 	}
-	if rule.GetOr("source_type", "url") == "content" {
+	if textOr(rule.SourceType, "url") == "content" {
 		err = writeCurrentInline(ctx, r, rule, target, data, write)
 	} else {
 		err = write(ctx)
@@ -153,45 +168,41 @@ var errInlineCacheOnly = errors.New("inline cache write without document commit"
 // Every inline writer (including discovery and Agent tools) must serialize its
 // declaration check with DB edits. A stale caller may finish its request, but
 // must never replace the cache of a newer declaration or an active editor.
-func writeCurrentInline(ctx context.Context, r *repo.Repository, rule *jsonx.Object, target string, data []byte, write func(context.Context) error) error {
+func writeCurrentInline(ctx context.Context, r *repo.Repository, rule model.RuleConfig, target string, data []byte, write func(context.Context) error) error {
 	// A C33 publisher may hold L3 while an independently admitted reader
 	// finishes. Its receipt already forbids this write, so do not wait on L3.
 	if _, err := os.Stat(target + ".invalid"); !errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
-	id := rule.GetString("library_rule_id")
+	id := rule.LibraryRuleID
 	if id == "" {
-		id = rule.GetString("id")
+		id = rule.ID
 	}
 	if id == "" {
 		return write(ctx)
 	}
-	check := func(tx context.Context, catalog *jsonx.Object) error {
+	err := r.UpdateShared(ctx, func(tx context.Context, catalog *model.Shared) error {
 		if err := tx.Err(); err != nil {
 			return err
 		}
 		if _, err := os.Stat(target + ".invalid"); !errors.Is(err, os.ErrNotExist) {
-			return nil
+			return errInlineCacheOnly
 		}
-		for _, value := range catalog.GetList("rule_library") {
-			current, ok := value.(*jsonx.Object)
-			if !ok || current.GetString("id") != id {
+		for _, current := range catalog.RuleLibrary {
+			if current.ID != id {
 				continue
 			}
-			if current.GetOr("source_type", "url") == "content" && bytes.Equal(data, contentBytes(current.GetOr("content", ""))) {
-				return write(tx)
+			if textOr(current.SourceType, "url") == "content" && bytes.Equal(data, []byte(textOr(current.Content, ""))) {
+				if err := tx.Err(); err != nil {
+					return err
+				}
+				if err := write(tx); err != nil {
+					return err
+				}
 			}
 			break
 		}
-		return nil
-	}
-	_, err := r.UpdateSharedTransaction(ctx, func(tx context.Context, catalog *jsonx.Object) (*jsonx.Object, error) {
-		if err := check(tx, catalog); err != nil {
-			return nil, err
-		}
-		// This existing transaction only serializes cache I/O. Abort its
-		// unchanged candidate so no revision, SQLite write or hook is produced.
-		return nil, errInlineCacheOnly
+		return errInlineCacheOnly
 	})
 	if errors.Is(err, errInlineCacheOnly) {
 		return nil
@@ -199,24 +210,28 @@ func writeCurrentInline(ctx context.Context, r *repo.Repository, rule *jsonx.Obj
 	return err
 }
 
-// RefreshOptions are refresh_remote_rule's keyword arguments.
-type RefreshOptions struct {
+// CacheOptions are refresh_remote_rule's keyword arguments.
+type CacheOptions struct {
 	// Timeout is timeout= (10 s when 0).
 	Timeout time.Duration
 	// Fetch replaces the download (fetch=); it returns string or []byte.
-	Fetch func(url string) (any, error)
+	Fetch func(context.Context, string) (Content, error)
 	// AllowStale serves validated previous bytes when the refresh fails.
 	AllowStale bool
 	Client     *Client // nil: DefaultClient
 }
 
-// RefreshRemoteRule is refresh_remote_rule: the raw bytes, plus the refresh
+// RefreshRule is refresh_remote_rule: the raw bytes, plus the refresh
 // error when validated cache bytes are served instead (AllowStale).
-func RefreshRemoteRule(ctx context.Context, rule, config *jsonx.Object, opts RefreshOptions) ([]byte, error, error) {
-	content, err := func() (any, error) {
-		url := jsonx.Str(rule.GetOr("url", ""))
+func RefreshRule(ctx context.Context, rule model.RuleConfig, config *SourceConfig, opts CacheOptions) ([]byte, error, error) {
+	ctx = ctxx.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
+	content, err := func() (Content, error) {
+		address := textOr(rule.URL, "")
 		if opts.Fetch != nil {
-			return opts.Fetch(url)
+			return opts.Fetch(ctx, address)
 		}
 		timeout := opts.Timeout
 		if timeout == 0 {
@@ -226,100 +241,137 @@ func RefreshRemoteRule(ctx context.Context, rule, config *jsonx.Object, opts Ref
 		if client == nil {
 			client = DefaultClient
 		}
-		response, err := client.RequestRule(ctx, url, Request{Config: config, ConnectTimeout: timeout, ReadTimeout: timeout})
-		if err != nil {
-			return nil, err
-		}
-		if err := response.RaiseForStatus(); err != nil {
-			return nil, err
-		}
-		return response.Content()
+		return downloadContent(ctx, client, address, config, timeout)
 	}()
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return nil, nil, ctxErr
+	}
 	if err == nil {
-		if _, err = WriteValidatedRuleCache(ctx, rule, content, config); err == nil {
-			return contentBytes(content), nil, nil
+		if _, err = WriteCache(ctx, rule, content, config); err == nil {
+			return content.Data, nil, nil
 		}
 	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return nil, nil, err
+	}
 	if opts.AllowStale {
-		cached, readErr := ReadValidatedRuleCache(ctx, rule, config)
+		cached, readErr := ReadCache(ctx, rule, config)
 		if readErr != nil {
 			return nil, nil, readErr
 		}
 		if cached != nil {
-			detail := safeExceptionDetails(err)
-			var remote *RemoteRuleValidationError
-			if errors.As(err, &remote) {
-				detail = err.Error()
-			}
-			utilsLogger.Warningf("规则 %s 更新失败，继续使用上一次有效缓存：%s", jsonx.Str(rule.GetOr("name", "")), detail)
+			utilsLogger.Warningf(msgStaleCache, logx.LogText(rule.Name, 120), weburl.SafeErrorDetails(err))
 			return cached, err, nil
 		}
 	}
 	return nil, nil, err
 }
 
-// ReadRuleSourceContent is read_rule_source_content: validate a source
+// ReadSource is read_rule_source_content: validate a source
 // without publishing its catalog entry or cache. The result is the
 // handwritten content (string), the downloaded text (string) or MRS bytes
 // ([]byte), or nil (None) when there is no source to read. Transport
 // failures become a RequestException without details.
-func ReadRuleSourceContent(ctx context.Context, rule *jsonx.Object, client *Client) (any, error) {
-	sourceType := rule.GetOr("source_type", "url")
-	if sourceType == "content" {
-		return rule.GetOr("content", ""), nil
+func ReadSource(ctx context.Context, rule model.RuleConfig, client *Client) (*Content, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
-	if sourceType != "url" || !jsonx.Truthy(rule.Value("url")) {
+	source := textOr(rule.SourceType, "url")
+	if source == "content" {
+		return &Content{Data: []byte(textOr(rule.Content, "")), Text: true}, nil
+	}
+	if source != "url" || textOr(rule.URL, "") == "" {
 		return nil, nil
 	}
 	if client == nil {
 		client = DefaultClient
 	}
-	content, err := func() (any, error) {
-		response, err := client.RequestRule(ctx, jsonx.Str(rule.Value("url")), Request{ConnectTimeout: 10 * time.Second, ReadTimeout: 10 * time.Second})
-		if err != nil {
-			return nil, err
-		}
-		if err := response.RaiseForStatus(); err != nil {
-			return nil, err
-		}
-		data, err := response.Content()
-		if err != nil {
-			return nil, err
-		}
-		if err := ValidateRemoteRuleContent(data, rule, nil, ""); err != nil {
-			return nil, err
-		}
-		format, err := convert.RulesetFormat(rule, jsonx.NewObject(), "")
-		if err != nil {
-			return nil, err
-		}
-		if format == "mrs" {
-			return data, nil
-		}
-		return string(data), nil
-	}()
-	if err == nil {
-		return content, nil
+	content, err := downloadContent(ctx, client, *rule.URL, nil, 10*time.Second)
+	if err != nil {
+		return nil, sourceDownloadError(err)
 	}
-	var remote *RemoteRuleValidationError
-	if errors.As(err, &remote) || !(IsRequestException(err) || isValueError(err)) {
-		// RemoteRuleValidationError is re-raised; anything that is neither a
-		// RequestException nor a ValueError (storage errors) propagates.
+	if err := validateBytes(content, rule, nil, ""); err != nil {
 		return nil, err
 	}
-	// Never expose proxy credentials through transport error messages.
-	return nil, &FetchError{Class: "RequestException", Message: "Rule download failed (" + PythonClass(err) + ")"}
+	format, err := rulesetfmt.RuleFormat(rule, nil, "")
+	if err != nil {
+		return nil, err
+	}
+	content.Text = format != "mrs"
+	return &content, nil
 }
 
-// SaveRuleToLocal is save_rule_to_local: refresh a source; a failed
-// validation or download never changes its cache.
-func SaveRuleToLocal(ctx context.Context, rule *jsonx.Object, client *Client) (string, error) {
-	content, err := ReadRuleSourceContent(ctx, rule, client)
+// SaveSource validates and publishes a complete source; a failure keeps its cache.
+func SaveSource(ctx context.Context, rule model.RuleConfig, client *Client) (string, error) {
+	ctx = ctxx.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	content, err := ReadSource(ctx, rule, client)
 	if err != nil {
 		return "", err
 	}
 	if content == nil {
-		return "", errors.New("请提供有效的规则来源和订阅地址")
+		return "", errors.New(msgMissingSource)
 	}
-	return WriteValidatedRuleCache(ctx, rule, content, nil)
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	return WriteCache(ctx, rule, *content, nil)
+}
+func textOr(value *string, fallback string) string {
+	if value == nil {
+		return fallback
+	}
+	return *value
+}
+
+func migrateCache(ctx context.Context, rule model.RuleConfig, data []byte, oldPath string) error {
+	ctx = ctxx.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	r, err := repo.GetRepository(ctx)
+	if err != nil {
+		return err
+	}
+	root, err := r.SharedRulesDir()
+	if err != nil {
+		return err
+	}
+	returnErr := r.UpdateShared(ctx, func(tx context.Context, shared *model.Shared) error {
+		if err := tx.Err(); err != nil {
+			return err
+		}
+		// Resolve with the current catalog a second time; an edit/receipt that
+		// occurred after the read forbids publishing those old bytes.
+		if rules.CacheReadPath(rule, nil, shared.RuleLibrary, root) != oldPath {
+			return errInlineCacheOnly
+		}
+		found := false
+		for _, item := range shared.RuleLibrary {
+			if item.ID == rule.ID {
+				found = sameDeclaration(rule, rules.LibraryRule(item))
+				break
+			}
+		}
+		if !found {
+			return errInlineCacheOnly
+		}
+		if err := tx.Err(); err != nil {
+			return err
+		}
+		_, err := r.WriteSharedTextIfChanged(tx, path.Join("rules", rules.CacheFilename(rule)), data)
+		if err != nil {
+			return err
+		}
+		return errInlineCacheOnly
+	})
+	if errors.Is(returnErr, errInlineCacheOnly) {
+		return nil
+	}
+	return returnErr
+}
+func sameDeclaration(a, b model.RuleConfig) bool {
+	return textOr(a.URL, "") == textOr(b.URL, "") && textOr(a.SourceType, "url") == textOr(b.SourceType, "url") && textOr(a.Behavior, "domain") == textOr(b.Behavior, "domain") && textOr(a.Format, "") == textOr(b.Format, "")
 }

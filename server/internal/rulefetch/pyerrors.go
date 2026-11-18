@@ -17,11 +17,14 @@ import (
 // package, which stands for ValueError).
 func pythonClassOf(err error) string {
 	var classed interface{ PythonClass() string }
+	var download *DownloadError
 	var remote *RemoteRuleValidationError
 	var repoErr *repo.Error
 	var storeErr *store.Error
 	var pathErr *fs.PathError
 	switch {
+	case errors.As(err, &download):
+		return "RequestException"
 	case errors.As(err, &remote):
 		return "RemoteRuleValidationError"
 	case errors.As(err, &classed):

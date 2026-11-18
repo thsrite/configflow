@@ -28,7 +28,7 @@ func errorValue(err error) any {
 	var errs any
 	var remote *RemoteRuleValidationError
 	if errors.As(err, &remote) {
-		errs = remote.Errors
+		errs = legacyProblems(remote.Errors)
 	}
 	return jsonx.Obj("class", pyClass(err), "text", err.Error(), "errors", errs)
 }

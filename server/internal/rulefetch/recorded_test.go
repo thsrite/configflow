@@ -67,7 +67,7 @@ func recordedError(err error) any {
 	o := jsonx.Obj("class", recordedClass(err), "text", err.Error())
 	var remote *RemoteRuleValidationError
 	if errors.As(err, &remote) {
-		o.Set("errors", remote.Errors)
+		o.Set("errors", legacyProblems(remote.Errors))
 	}
 	return o
 }
