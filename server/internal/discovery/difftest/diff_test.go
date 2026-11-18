@@ -348,6 +348,7 @@ func TestHTTPAndStorageParity(t *testing.T) {
 		{"PUT", "settings", `{"direct_ruleset":false,"proxy_ruleset":0}`}, {"PUT", "settings", `{"direct_ruleset":{},"proxy_ruleset":[]}`},
 	}
 	pyIDs, goIDs := map[string]string{}, map[string]string{}
+	storedSettingsChanged := false
 	for i, q := range rs {
 		t.Run(fmt.Sprintf("%02d_%s_%s", i, q.method, q.path), func(t *testing.T) {
 			path := "/api/domain-discovery/" + q.path
@@ -382,6 +383,19 @@ func TestHTTPAndStorageParity(t *testing.T) {
 				gs := state(t, r, goDir)
 				pyIDs = identities(ps)
 				goIDs = identities(gs)
+				if q.method == "PUT" && q.path == "settings" && gc == 200 {
+					storedSettingsChanged = true
+				}
+				if storedSettingsChanged {
+					// The seed deliberately stores auto_probe: 1. Native R5
+					// decodes it as false; Python persists its truthy true.
+					left := ps.(map[string]any)["profile"].(map[string]any)["domain_discovery"].(map[string]any)
+					right := gs.(map[string]any)["profile"].(map[string]any)["domain_discovery"].(map[string]any)
+					if left["auto_probe"] != true || right["auto_probe"] != false {
+						t.Fatalf("explicit R5 auto_probe storage: Python=%v Go=%v", left["auto_probe"], right["auto_probe"])
+					}
+					left["auto_probe"] = false
+				}
 				equal(t, "storage", remap(ps, pyIDs), remap(gs, goIDs))
 			}
 			if q.path == "history" {
@@ -391,6 +405,13 @@ func TestHTTPAndStorageParity(t *testing.T) {
 						m["items"] = normalized(m["items"], "history")
 					}
 				}
+			}
+			if (q.path == "settings" || q.path == "rulesets/init") && pc == 200 && gc == 200 {
+				left, right := pv.(map[string]any), gv.(map[string]any)
+				if left["auto_probe"] != true || right["auto_probe"] != false {
+					t.Fatalf("explicit R5 auto_probe response: Python=%v Go=%v", left["auto_probe"], right["auto_probe"])
+				}
+				left["auto_probe"] = false
 			}
 			// Step B #3: only the exact public error envelope changes format.
 			if !httpxtest.MigratedAPIError(q.method, pc, gc, ph, gh, pb, gb) {

@@ -126,14 +126,23 @@ type HistoryEntry struct {
 
 // UnmarshalJSON retains a historical entry without filling absent legacy fields.
 func (h *HistoryEntry) UnmarshalJSON(b []byte) error {
-	type plain HistoryEntry
-	var p plain
-	if err := json.Unmarshal(b, &p); err != nil {
+	var record model.DiscoveryHistory
+	if err := json.Unmarshal(b, &record); err != nil {
 		return err
 	}
-	*h = HistoryEntry(p)
+	if err := storedStrings(record, "发现记录", record.RulesetID, "value", "rule_type", "target", "ruleset_id", "source", "applied_at"); err != nil {
+		return err
+	}
+	*h = HistoryEntry{Value: record.Value, RuleType: record.RuleType, Target: record.Target, RulesetID: record.RulesetID, Source: record.Source, AppliedAt: record.AppliedAt, Verdict: record.Verdict}
+	if record.Confidence != nil {
+		h.Confidence = ptr(int(*record.Confidence))
+	}
+	if r := record.Recheck; r != nil {
+		h.Recheck = &Recheck{At: r.At, Verdict: r.Verdict, Reason: r.Reason, SuggestRemove: r.SuggestRemove != nil && *r.SuggestRemove}
+	}
 	h.original = append(json.RawMessage(nil), b...)
-	known, err := json.Marshal(p)
+	type plain HistoryEntry
+	known, err := json.Marshal(plain(*h))
 	if err != nil {
 		return err
 	}
@@ -390,3 +399,37 @@ func proxyPath(c config) *string {
 	return nil
 }
 func ptr[T any](v T) *T { return &v }
+
+// Match is the public rule-match metadata attached to discovered hosts.
+type Match struct {
+	RuleID   string                     `json:"rule_id"`
+	Priority int                        `json:"priority"`
+	RuleName string                     `json:"rule_name"`
+	Policy   string                     `json:"policy"`
+	Extra    map[string]json.RawMessage `json:"-"`
+}
+
+// UnmarshalJSON decodes the known fields while retaining the original data.
+func (v *Match) UnmarshalJSON(b []byte) error {
+	type plain Match
+	var p plain
+	if err := json.Unmarshal(b, &p); err != nil {
+		return err
+	}
+	*v = Match(p)
+	return capture(b, &v.Extra, "rule_id", "priority", "rule_name", "policy")
+}
+
+// MarshalJSON preserves fields owned by other features or newer versions.
+func (v Match) MarshalJSON() ([]byte, error) { type plain Match; return preserve(plain(v), v.Extra) }
+
+// Agent is the small registry view retained while a discovery operation runs.
+type Agent struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	ProfileID   string `json:"profile_id"`
+	ServiceType string `json:"service_type"`
+	Enabled     bool   `json:"domain_discovery_enabled"`
+	Version     string `json:"version"`
+	Heartbeat   string `json:"last_heartbeat"`
+}

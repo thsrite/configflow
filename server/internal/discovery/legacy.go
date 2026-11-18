@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
-	"sync"
 
 	"configflow/internal/agents"
 	"configflow/internal/agents/trafficstore"
@@ -45,23 +44,40 @@ func object(v any) (*jsonx.Object, error) {
 	}
 	return o, nil
 }
-func saveRule(ctx context.Context, item libraryItem) error {
-	v, err := object(item)
+
+// legacyLibraryObject projects only the consumed typed members. Storage's R2
+// provenance stays on libraryItem; old collaborators must not reinterpret an
+// original numeric token after the shared model has decoded it as text.
+func legacyLibraryObject(item libraryItem) (*jsonx.Object, error) {
+	value, err := object(item)
+	if err != nil {
+		return nil, err
+	}
+	value.Set("id", item.ID)
+	value.Set("name", item.Name)
+	value.Set("source_type", item.SourceType)
+	value.Set("behavior", item.Behavior)
+	value.Set("content", item.Content)
+	return value, nil
+}
+
+func legacySaveRule(ctx context.Context, item libraryItem) error {
+	v, err := legacyLibraryObject(item)
 	if err != nil {
 		return err
 	}
 	_, err = rulefetch.SaveRuleToLocal(lifecycle.Detach(ctx), v, nil)
 	return err
 }
-func validateContent(item libraryItem) error {
-	v, err := object(item)
+func legacyValidateContent(item libraryItem) error {
+	v, err := legacyLibraryObject(item)
 	if err != nil {
 		return err
 	}
 	return rulefetch.ValidateDomainContent(v, nil)
 }
-func cachedContent(ctx context.Context, item libraryItem) ([]byte, error) {
-	v, err := object(item)
+func legacyCachedContent(ctx context.Context, item libraryItem) ([]byte, error) {
+	v, err := legacyLibraryObject(item)
 	if err != nil {
 		return nil, err
 	}
@@ -69,63 +85,10 @@ func cachedContent(ctx context.Context, item libraryItem) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if b == nil {
-		b = []byte(item.Content)
-	}
 	return b, nil
 }
 
-var matcherMu sync.Mutex
-var matcherCache *rules.MatcherCache
-
-func activateMatcherCache(ctx context.Context) {
-	matcherMu.Lock()
-	defer matcherMu.Unlock()
-	if matcherCache != nil {
-		matcherCache.Clear()
-	}
-	opts := matcherOptions()
-	opts.Clock = lifecycle.ClockFrom(ctx)
-	matcherCache = rules.NewMatcherCache(opts)
-}
-
-func cache(ctx context.Context) *rules.MatcherCache {
-	matcherMu.Lock()
-	defer matcherMu.Unlock()
-	if matcherCache == nil {
-		opts := matcherOptions()
-		opts.Clock = lifecycle.ClockFrom(ctx)
-		matcherCache = rules.NewMatcherCache(opts)
-	}
-	return matcherCache
-}
-
-func clearMatcherCache() {
-	matcherMu.Lock()
-	defer matcherMu.Unlock()
-	if matcherCache != nil {
-		matcherCache.Clear()
-	}
-}
-
-func matcherShutdown(clear func()) lifecycle.ShutdownHook {
-	return lifecycle.ShutdownHook{Name: "domain-discovery-cache", Phase: lifecycle.PhaseStopSignal, Run: func(context.Context) { clear() }}
-}
-
-// Cleanup is housekeeping: no new timer job is needed once shutdown starts.
-// The hook clears existing waits at T0, including jobs admitted just before it.
-type matcherSpawner struct{}
-
-func (matcherSpawner) Spawn(ctx context.Context, name string, fn func(context.Context)) error {
-	select {
-	case <-lifecycle.Stopping(ctx):
-		return lifecycle.ErrStopping
-	default:
-	}
-	return lifecycle.Spawn(ctx, name, fn)
-}
-
-func matcherOptions() rules.MatcherCacheOptions {
+func legacyMatcherOptions() rules.MatcherCacheOptions {
 	return rules.MatcherCacheOptions{
 		Clock: lifecycle.ClockFrom(context.Background()), Spawner: matcherSpawner{},
 		RulesDir: func() string { return filepath.Join(repo.DataDir(), "shared", "rules") },
@@ -134,11 +97,19 @@ func matcherOptions() rules.MatcherCacheOptions {
 			if err != nil {
 				return nil
 			}
-			o, err := r.GetShared(context.Background())
+			o, err := r.Shared(context.Background())
 			if err != nil {
 				return nil
 			}
-			return o.GetList("rule_library")
+			values := make([]any, 0, len(o.RuleLibrary))
+			for _, item := range o.RuleLibrary {
+				value, err := legacy(item)
+				if err != nil {
+					return nil
+				}
+				values = append(values, value)
+			}
+			return values
 		},
 		ValidateRemote: func(content string, rule *jsonx.Object) error {
 			return rulefetch.ValidateRemoteRuleContent(content, rule, nil, "")
@@ -147,30 +118,16 @@ func matcherOptions() rules.MatcherCacheOptions {
 	}
 }
 
-// Match is the public rule-match metadata attached to discovered hosts.
-type Match struct {
-	RuleID   string                     `json:"rule_id"`
-	Priority int                        `json:"priority"`
-	RuleName string                     `json:"rule_name"`
-	Policy   string                     `json:"policy"`
-	Extra    map[string]json.RawMessage `json:"-"`
-}
-
-// UnmarshalJSON decodes the known fields while retaining the original data.
-func (v *Match) UnmarshalJSON(b []byte) error {
-	type plain Match
-	var p plain
-	if err := json.Unmarshal(b, &p); err != nil {
-		return err
+func legacyLocalMatcher(ctx context.Context, id string) (func(string) *Match, error) {
+	r, err := repo.GetRepository(ctx)
+	if err != nil {
+		return nil, err
 	}
-	*v = Match(p)
-	return capture(b, &v.Extra, "rule_id", "priority", "rule_name", "policy")
-}
-
-// MarshalJSON preserves fields owned by other features or newer versions.
-func (v Match) MarshalJSON() ([]byte, error) { type plain Match; return preserve(plain(v), v.Extra) }
-func localMatcher(ctx context.Context, id string) (func(string) *Match, error) {
-	c, err := repo.GetConfig(ctx, id)
+	view, err := r.Config(ctx, id, nil)
+	if err != nil {
+		return nil, err
+	}
+	c, err := object(view)
 	if err != nil {
 		return nil, err
 	}
@@ -188,21 +145,10 @@ func localMatcher(ctx context.Context, id string) (func(string) *Match, error) {
 	}, nil
 }
 
-// Agent is the small registry view retained while a discovery operation runs.
-type Agent struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	ProfileID   string `json:"profile_id"`
-	ServiceType string `json:"service_type"`
-	Enabled     bool   `json:"domain_discovery_enabled"`
-	Version     string `json:"version"`
-	Heartbeat   string `json:"last_heartbeat"`
-}
-
-func supported(version, minimum string) bool {
+func legacySupported(version, minimum string) bool {
 	return version != "" && agents.CompareVersions(version, minimum) >= 0
 }
-func loadTraffic(ctx context.Context, a Agent, full bool) (traffic, error) {
+func legacyLoadTraffic(ctx context.Context, a Agent, full bool) (traffic, error) {
 	s, err := trafficstore.Get(ctx)
 	if err != nil {
 		return traffic{}, err
@@ -215,7 +161,7 @@ func loadTraffic(ctx context.Context, a Agent, full bool) (traffic, error) {
 	}
 	return out, err
 }
-func probes(ctx context.Context, as []Agent) (map[string]Probe, error) {
+func legacyProbes(ctx context.Context, as []Agent) (map[string]Probe, error) {
 	store, err := health.GetProbeStore(ctx)
 	if err != nil {
 		return nil, err
@@ -232,7 +178,7 @@ func probes(ctx context.Context, as []Agent) (map[string]Probe, error) {
 	err = decode(v, &out)
 	return out, err
 }
-func saveProbes(ctx context.Context, id string, ps map[string]Probe) error {
+func legacySaveProbes(ctx context.Context, id string, ps map[string]Probe) error {
 	store, err := health.GetProbeStore(ctx)
 	if err != nil {
 		return err
@@ -243,7 +189,7 @@ func saveProbes(ctx context.Context, id string, ps map[string]Probe) error {
 	}
 	return store.Save(id, v, now())
 }
-func judge(d, p *PathStats, failing, dh, ph bool) (Probe, error) {
+func legacyJudge(d, p *PathStats, failing, dh, ph bool) (Probe, error) {
 	dv, err := legacy(d)
 	if err != nil {
 		return Probe{}, err
@@ -259,7 +205,7 @@ func judge(d, p *PathStats, failing, dh, ph bool) (Probe, error) {
 	}
 	return out, err
 }
-func regionData(ctx context.Context, id string) (regionRecord, error) {
+func legacyRegionData(ctx context.Context, id string) (regionRecord, error) {
 	s, err := health.GetRegionStore(ctx)
 	var out regionRecord
 	if err == nil {
@@ -273,7 +219,7 @@ func regionData(ctx context.Context, id string) (regionRecord, error) {
 	}
 	return out, err
 }
-func editRegion(ctx context.Context, id string, edit func(*regionRecord) error) error {
+func legacyEditRegion(ctx context.Context, id string, edit func(*regionRecord) error) error {
 	s, err := health.GetRegionStore(ctx)
 	if err != nil {
 		return err
@@ -300,7 +246,7 @@ func editRegion(ctx context.Context, id string, edit func(*regionRecord) error) 
 		return nil
 	}, now())
 }
-func knownService(host string) json.RawMessage {
+func legacyKnownService(host string) json.RawMessage {
 	v := rulefetch.KnownService(host)
 	if v == nil {
 		return nil
@@ -308,7 +254,7 @@ func knownService(host string) json.RawMessage {
 	b, _ := jsonx.Compact(v)
 	return json.RawMessage(b)
 }
-func pageIdentity(result RegionResult, host, at string) (WebsitePage, error) {
+func legacyPageIdentity(result RegionResult, host, at string) (WebsitePage, error) {
 	v, err := object(result)
 	if err != nil {
 		return WebsitePage{}, err
@@ -317,7 +263,7 @@ func pageIdentity(result RegionResult, host, at string) (WebsitePage, error) {
 	err = decode(rulefetch.PageIdentity(v, host, at), &out)
 	return out, err
 }
-func publicServices() json.RawMessage {
+func legacyPublicServices() json.RawMessage {
 	b, _ := jsonx.Compact(check.PublicServices())
 	return json.RawMessage(b)
 }
@@ -397,7 +343,7 @@ func (managerClient) Region(ctx context.Context, a Agent, p RegionRequest) ([]Re
 	err = decode(res.Value("results"), &out)
 	return out, err
 }
-func probeControls() ([]ProbeTarget, error) {
+func legacyProbeControls() ([]ProbeTarget, error) {
 	v := check.ControlTargets()
 	out := []ProbeTarget{}
 	for _, key := range []string{"direct", "proxy"} {
@@ -409,7 +355,7 @@ func probeControls() ([]ProbeTarget, error) {
 	}
 	return out, nil
 }
-func pickTargets(ts []AvailableTarget, preferred *string) ([]RegionTarget, error) {
+func legacyPickTargets(ts []AvailableTarget, preferred *string) ([]RegionTarget, error) {
 	v, err := legacy(ts)
 	if err != nil {
 		return nil, err
@@ -426,7 +372,7 @@ func pickTargets(ts []AvailableTarget, preferred *string) ([]RegionTarget, error
 	err = decode(picked, &out)
 	return out, err
 }
-func regionRequests(services bool, plan []ProbeTarget) ([]PageRequest, error) {
+func legacyRegionRequests(services bool, plan []ProbeTarget) ([]PageRequest, error) {
 	requests := []any{check.ExitRequest()}
 	if services {
 		requests = check.ServiceRequests()
@@ -438,7 +384,7 @@ func regionRequests(services bool, plan []ProbeTarget) ([]PageRequest, error) {
 	err := decode(requests, &out)
 	return out, err
 }
-func exitInfo(rows []RegionResult) (json.RawMessage, error) {
+func legacyExitInfo(rows []RegionResult) (json.RawMessage, error) {
 	v, err := legacy(rows)
 	if err != nil {
 		return nil, err
@@ -450,7 +396,7 @@ func exitInfo(rows []RegionResult) (json.RawMessage, error) {
 	b, err := jsonx.Compact(result)
 	return json.RawMessage(b), err
 }
-func serviceMatrix(rows []RegionResult) (json.RawMessage, error) {
+func legacyServiceMatrix(rows []RegionResult) (json.RawMessage, error) {
 	v, err := legacy(rows)
 	if err != nil {
 		return nil, err
@@ -462,7 +408,7 @@ func serviceMatrix(rows []RegionResult) (json.RawMessage, error) {
 	b, err := jsonx.Compact(result)
 	return json.RawMessage(b), err
 }
-func classifyRegion(result *RegionResult, url string) (json.RawMessage, error) {
+func legacyClassifyRegion(result *RegionResult, url string) (json.RawMessage, error) {
 	var value any
 	var err error
 	if result != nil {
@@ -478,7 +424,7 @@ func classifyRegion(result *RegionResult, url string) (json.RawMessage, error) {
 	b, err := jsonx.Compact(classified)
 	return json.RawMessage(b), err
 }
-func summarizeRegion(names []string, per map[string]json.RawMessage) (domainVerdict, error) {
+func legacySummarizeRegion(names []string, per map[string]json.RawMessage) (domainVerdict, error) {
 	legacyValues := jsonx.NewObject()
 	for _, name := range names {
 		if raw, ok := per[name]; ok {
@@ -497,11 +443,44 @@ func summarizeRegion(names []string, per map[string]json.RawMessage) (domainVerd
 	return out, err
 }
 
-func serviceDomains(id string) ([]string, bool) { s, ok := check.ServiceByID(id); return s.Domains, ok }
-func websiteMarkers() map[string]string {
+func legacyServiceDomains(id string) ([]string, bool) {
+	s, ok := check.ServiceByID(id)
+	return s.Domains, ok
+}
+func legacyWebsiteMarkers() map[string]string {
 	out := map[string]string{}
 	for _, m := range rulefetch.PageMarkers {
 		out[m.Key] = m.Pattern
 	}
 	return out
+}
+
+func init() {
+	collaboration = collaborators{
+		saveRule:        legacySaveRule,
+		validateContent: legacyValidateContent,
+		cachedContent:   legacyCachedContent,
+		matcherOptions:  legacyMatcherOptions,
+		localMatcher:    legacyLocalMatcher,
+		supported:       legacySupported,
+		loadTraffic:     legacyLoadTraffic,
+		probes:          legacyProbes,
+		saveProbes:      legacySaveProbes,
+		judge:           legacyJudge,
+		regionData:      legacyRegionData,
+		editRegion:      legacyEditRegion,
+		knownService:    legacyKnownService,
+		pageIdentity:    legacyPageIdentity,
+		publicServices:  legacyPublicServices,
+		probeControls:   legacyProbeControls,
+		pickTargets:     legacyPickTargets,
+		regionRequests:  legacyRegionRequests,
+		exitInfo:        legacyExitInfo,
+		serviceMatrix:   legacyServiceMatrix,
+		classifyRegion:  legacyClassifyRegion,
+		summarizeRegion: legacySummarizeRegion,
+		serviceDomains:  legacyServiceDomains,
+		websiteMarkers:  legacyWebsiteMarkers,
+	}
+	client = managerClient{}
 }
