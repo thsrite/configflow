@@ -79,7 +79,7 @@ Python's `backend/routers` is one big import cycle (most cross-module imports ar
 
 | R09 | forced DNS (DNS guard), IPv4 same-port forward hint | 773 | ported | HR | R04, R07 | – | internal/routers |
 | R10 | IPv6 policy, IPv6 fake-IP, IPv6 rule-set routes | 1247 | verified | HR | R04, R09 | – | internal/routers |
-| R11 | IPv6 PD guard, IPv6 DNS, RouterOS IPv6 readiness | 1161 | missing | HR | R10 | – | internal/routers |
+| R11 | IPv6 PD guard, IPv6 DNS, RouterOS IPv6 readiness | 1161 | verified | HR | R10 | – | internal/routers |
 | R12 | release plan and staged execution | 1220 | missing | HR | R03–R11, A01 (return routing calls, ready) | – | internal/routers |
 | R13 | inspection service, return advisory, pending reminders | 713 | missing | HR | R12, C07 (`RecordRouter`, ready), A01, A06 (ready); A23⁴ | – | internal/routers |
 | R14 | automatic rule sync | 1043 | missing | HR | R13, C14 (ready), C07 (`tasks`, ready) | – (handlers in R15) | internal/routers |
@@ -709,7 +709,7 @@ F1：补偿 DELETE 回复丢失但设备已删除时，Fake-IP 回滚跳过旧�
 
 ## R11 — IPv6 PD guard, IPv6 DNS, RouterOS IPv6 readiness
 
-**Status: `ported`** · HR · prereqs: R10 · Go: internal/routers
+**Status: `verified`**（Opus 复核 2026-11-18，L5 待做）· HR · prereqs: R10 · Go: internal/routers
 
 Files:
 - `backend/routers/ipv6_pd_guard.py` (635), `backend/routers/ipv6_dns.py` (232), `backend/routers/ipv6_readiness.py` (294)
@@ -739,6 +739,17 @@ proof/R5契约、未知字段与Set/null；O3=无新锁/goroutine/flock，已同
 R12 stage调度/跨阶段回滚、R14自动同步、A23 HTTP/缓存不在本模块冒领验收。最终gate在.64单agent槽位
 排队满900s未获槽，自动终止，rt退出124，未执行完整门禁；自身进程已清理。由协调者在batch树跑cf-gate，
 不能宣称最新合并树全门禁通过。R10合入go后再变基；待新Opus复核与L5。
+
+
+### R11 独立 Opus 复核（2026-11-18）
+
+[review-r11.md](review-r11.md)：0 high、1 medium（已修）、1 low（已修）、4 low 记录。
+F1：hook 所在 dhcp-client 的整行配置被当成归属证明，用户改 use-peer-dns、改池名、换客户端或清 hook 后，
+PD 保护既不能更新也不能撤回（改池名后还会静默失效）；改为按 Python 只认 ID，hook 内容仍由状态把关。
+8 个 Python 对照探针修复前全部不同，修复后一致（`9591b838b`）。F2：readiness fingerprint 不再包含设备密码
+（`4be368394`）。记录：受管脚本/定时任务外改即阻断（设计）、补偿 PATCH 回复丢失不用 GET 确认、撤回回读时序、
+关机残留（O14）。定向检查（gofmt/vet、routers+repo 的 R09–R11 race、R11 Python 对照、FuzzR11PDInput 60s）通过；
+按新流程不跑完整 gate，由协调者批量 cf-gate。L5 清单见 review-r11.md。
 
 ## R12 — release plan and staged execution
 
