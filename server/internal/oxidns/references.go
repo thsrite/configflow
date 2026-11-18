@@ -2,6 +2,7 @@ package oxidns
 
 import (
 	"net/url"
+	"slices"
 	"strings"
 	"unicode/utf8"
 )
@@ -60,6 +61,20 @@ func mentions(s, tag string) bool {
 // ones it owns. Plugin tag/type declarations are not references; dynamic
 // also reports unexpanded ${...} references in reference fields.
 func ReferenceLocations(document *Node, tags []string, dynamic bool) []Reference {
+	return ReferenceLocationsWithOptions(document, tags, ReferenceOptions{Dynamic: dynamic})
+}
+
+// ReferenceOptions adds a caller's reference-bearing fields to the common
+// graph grammar. Existing editors keep their original default field set.
+type ReferenceOptions struct {
+	Dynamic          bool
+	AdditionalFields []string
+}
+
+// ReferenceLocationsWithOptions reuses the common graph traversal for a
+// caller such as onboarding, whose safety proof also includes nested tag fields.
+func ReferenceLocationsWithOptions(document *Node, tags []string, options ReferenceOptions) []Reference {
+	dynamic := options.Dynamic
 	var result []Reference
 	var walk func(value *Node, at Path, reference bool)
 	walk = func(value *Node, at Path, reference bool) {
@@ -72,7 +87,7 @@ func ReferenceLocations(document *Node, tags []string, dynamic bool) []Reference
 					}
 					return true
 				}
-				ref := containsString(referenceFields, key) || key == "args" && (isStr(item) || isSeq(item))
+				ref := containsString(referenceFields, key) || slices.Contains(options.AdditionalFields, key) || key == "args" && (isStr(item) || isSeq(item))
 				walk(item, at.with(key), ref)
 				return true
 			})
