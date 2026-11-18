@@ -10,11 +10,11 @@ import (
 	"configflow/internal/repo"
 )
 
-// Wire registers the hooks this package owns (listed in internal/server
-// wirePackages): desensitized router exports, the shared publication lock and
-// pending notification summaries. Later modules add the rule-sync task and loop.
+// Wire registers desensitized exports, the shared publication lock, pending
+// notification summaries and the rule-sync task slot and loop.
 func Wire() {
-	repo.RegisterHooks(repo.Hooks{RedactRouters: redactHook, JobLock: jobLockHook})
+ wireRuleSync()
+ repo.RegisterHooks(repo.Hooks{RedactRouters:redactHook,JobLock:jobLockHook})
 	notifications.SetSources(notifications.Sources{Summarize: pendingSummaryHook})
 }
 
