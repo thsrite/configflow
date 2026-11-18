@@ -606,6 +606,7 @@
       "server/internal/api/agents/deploy_disconnect_test.go": "d67abafb4b0589bcb1ae1e35f37f906d0e998c9b2dc330f4ce53e24bb2f1a9bf",
       "server/internal/api/agents/deploy_legacy_test.go": "86b608569b2fed7f3c1185deaeb06dfbb9a6af979b3bdf92acc0b86171dc6e2b",
       "server/internal/api/agents/deploy_test.go": "ee6174cbf8a4e39a2ba5855adeb9958c3a5b1c389e1e3f1c796632a967542f6c",
+      "server/internal/api/agents/dnsfollow_test.go": "fa0e63dc22775572e5079599b004839e598d5f4f459f014e27edcc8110b593e4",
       "server/internal/api/agents/docker_ha_test.go": "642285257ad9b766003bc6b51ea885bbf47fe8af578071171931d3a9a248f70e",
       "server/internal/api/agents/installer_forwarding_test.go": "7ccc8b91a145a0ea9a0492c6fe4f3101da3997b50f1a58a6c2ee217cbabf3a09",
       "server/internal/api/agents/installer_ha_test.go": "a6564995c4446c15d7278b79d827ae8e0d0b0f8afd7ac7f4b42a0c7e9d446312",
