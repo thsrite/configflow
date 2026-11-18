@@ -116,6 +116,11 @@ func MihomoRulesetDownloads(ctx context.Context, config *model.Config, baseURL s
 		if !enabled(rule.Enabled) {
 			continue
 		}
+		for _, member := range []string{"name", "behavior"} {
+			if err := storedText(&rule, kindRuleSet, rule.ID, member); err != nil {
+				return nil, err
+			}
+		}
 		url, original, err := ruleDownloadURL(config, rule, effective)
 		if err != nil {
 			return nil, err

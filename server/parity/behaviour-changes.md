@@ -1422,3 +1422,19 @@ R8 接受整数字值的浮点表示（Agent port、provider_update_interval）�
 共享的 typed URL/rules 边界也覆盖两条 Surge helper 畸形值：非数组 rule_sets
 返回明确中文类型错误；非字符串 profile_id 按 R5 缺省，生成 URL 不再拼进 Python 的
 列表 repr。各有一条原始 source row 的显式 native 期望；其他输出字节保持严格比较。
+
+## N8-8b 复核 — 生成键/规则文本的错型存储字段明确拒绝
+
+以下存储字段在 Mihomo 输出中成为 provider 键、策略组类型或规则行文本。错型时 R5 会读成
+空串/缺省，typed 生成器曾静默输出 `""` provider（`./providers/.yaml`，与策略组按原值渲染的
+`use` 不一致，多个错型名称互相覆盖）、`type: ""`、`RULE-SET,,G`、`DOMAIN,,G`，或把规则集
+`behavior` 换成 `domain`、把跟随组当普通组输出。现在统一返回
+「<资源> <id> 的 <字段> 必须是字符串，当前值：<存储 JSON>」：订阅/订阅聚合 `name`、规则集
+`name`/`behavior`、规则 `rule_type`/`value`（MATCH 不检查 value）、策略组 `type`/`follow_group`；
+规则集下载入口同样拒绝。Python 对这些值或写出非字符串键、或跳过跟随组、或输出 `7` 这样的文本，
+迁移前 Go 对 provider 名称已明确报错；正常字符串输入字节不变（字节门 4548/4548）。
+
+同一节补登 8b 已有、但先前未逐项列出的 R5/显式差异：`system_config.config_token` 错型时
+provider URL 不带 token；策略组引擎选项（`timeout`/`lazy`/`strategy` 等）错型时不写入输出；
+`region_probe_port` 为超出 1–65535 的整数时返回「区域检测端口必须为 1–65535 的整数」
+（Python 原样注入，Mihomo 加载时失败）。

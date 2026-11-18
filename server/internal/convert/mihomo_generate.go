@@ -220,6 +220,30 @@ func decodeRuleList(data json.RawMessage, output *[]model.RuleConfig) error {
 	return nil
 }
 
+// storedRecord lists the stored records whose text members storedText checks.
+type storedRecord interface {
+	model.Subscription | model.Aggregation | model.ProxyGroup | model.RuleConfig
+}
+
+// storedText rejects a wrong-typed stored member that becomes generated text.
+// R5 reads it as "", which would silently emit an empty provider key (out of
+// step with the group's stored `use` entry, colliding with other such
+// providers) or a broken rule line; the error carries the stored value.
+func storedText[T storedRecord](record *T, kind, id, member string) error {
+	if !model.IssueUnder(model.Issues(record), member) {
+		return nil
+	}
+	data, err := model.Marshal(record)
+	if err != nil {
+		return err
+	}
+	var members map[string]json.RawMessage
+	if err := json.Unmarshal(data, &members); err != nil {
+		return err
+	}
+	return fmt.Errorf(msgMihomoStoredText, kind, id, member, members[member])
+}
+
 func providerHealthNode(check *model.ProviderHealthCheck, address *string, env MihomoEnvironment) (*yamlx.Node, error) {
 	if check != nil {
 		if env.ProviderHealth == nil {
@@ -432,12 +456,20 @@ func mihomoGroups(config *model.Config, proxies *yamlx.Node, env MihomoEnvironme
 		if !enabled(group.Enabled) {
 			continue
 		}
+		for _, member := range []string{"type", "follow_group"} {
+			if err := storedText(&group, kindGroup, group.ID, member); err != nil {
+				return nil, err
+			}
+		}
 		target := yamlx.Map(yamlx.Str("name"), yamlx.Str(group.Name), yamlx.Str("type"), yamlx.Str(group.Type))
 		settings := &group
 		if id := stringValue(group.FollowGroup); id != "" {
 			settings = followed(config.Profile.ProxyGroups, id)
 			if settings == nil {
 				continue
+			}
+			if err := storedText(settings, kindGroup, settings.ID, "type"); err != nil {
+				return nil, err
 			}
 			yamlx.Set(target, "type", yamlx.Str(settings.Type))
 		}
@@ -483,7 +515,7 @@ func mihomoGroups(config *model.Config, proxies *yamlx.Node, env MihomoEnvironme
 	}
 	return result, nil
 }
-func mihomoRuleLines(config *model.Config) *yamlx.Node {
+func mihomoRuleLines(config *model.Config) (*yamlx.Node, error) {
 	lines := []string{}
 	for _, rule := range RulesForOutput(config) {
 		if !enabled(rule.Enabled) || !enabled(rule.LibraryEnabled) {
@@ -492,6 +524,14 @@ func mihomoRuleLines(config *model.Config) *yamlx.Node {
 		policy := stringValue(rule.Policy)
 		switch rule.ItemType {
 		case "rule":
+			if err := storedText(&rule, kindRule, rule.ID, "rule_type"); err != nil {
+				return nil, err
+			}
+			if rule.RuleType != "MATCH" {
+				if err := storedText(&rule, kindRule, rule.ID, "value"); err != nil {
+					return nil, err
+				}
+			}
 			switch {
 			case rule.RuleType == "MATCH":
 				lines = append(lines, "MATCH,"+policy)
@@ -510,6 +550,9 @@ func mihomoRuleLines(config *model.Config) *yamlx.Node {
 				lines = append(lines, line)
 			}
 		case "ruleset":
+			if err := storedText(&rule, kindRuleSet, rule.ID, "name"); err != nil {
+				return nil, err
+			}
 			if rule.Policy == nil {
 				policy = "PROXY"
 			}
@@ -523,7 +566,7 @@ func mihomoRuleLines(config *model.Config) *yamlx.Node {
 	if FallbackPolicy(config) == "REJECT" {
 		lines = append(lines, "NETWORK,udp,REJECT")
 	}
-	return stringSequence(lines)
+	return stringSequence(lines), nil
 }
 
 // MihomoDocument builds an owned output graph from one typed resolved snapshot.
@@ -636,6 +679,9 @@ func MihomoDocument(ctx context.Context, logical *model.Config, options MihomoOp
 	}
 	for _, sub := range config.Subscriptions {
 		if enabled(sub.Enabled) && selection.subscriptions[sub.ID] {
+			if err := storedText(&sub, kindSubscription, sub.ID, "name"); err != nil {
+				return nil, err
+			}
 			if err := provider(sub.Name, "/subscriptions/"+sub.ID+"/proxies", sub.HealthCheck, sub.HealthCheckURL); err != nil {
 				return nil, err
 			}
@@ -643,6 +689,9 @@ func MihomoDocument(ctx context.Context, logical *model.Config, options MihomoOp
 	}
 	for _, agg := range config.Aggregations {
 		if enabled(agg.Enabled) && selection.aggregations[agg.ID] {
+			if err := storedText(&agg, kindAggregation, agg.ID, "name"); err != nil {
+				return nil, err
+			}
 			if err := provider(agg.Name, "/aggregations/"+agg.ID+"/provider", agg.HealthCheck, agg.HealthCheckURL); err != nil {
 				return nil, err
 			}
@@ -660,6 +709,11 @@ func MihomoDocument(ctx context.Context, logical *model.Config, options MihomoOp
 	for _, rule := range ruleSets {
 		if !enabled(rule.Enabled) {
 			continue
+		}
+		for _, member := range []string{"name", "behavior"} {
+			if err := storedText(&rule, kindRuleSet, rule.ID, member); err != nil {
+				return nil, err
+			}
 		}
 		url, original, err := ruleDownloadURL(config, rule, baseURL)
 		if err != nil {
@@ -685,7 +739,11 @@ func MihomoDocument(ctx context.Context, logical *model.Config, options MihomoOp
 	if err := applyGateway(document, config, baseURL); err != nil {
 		return nil, err
 	}
-	yamlx.Set(document, "rules", mihomoRuleLines(config))
+	ruleLines, err := mihomoRuleLines(config)
+	if err != nil {
+		return nil, err
+	}
+	yamlx.Set(document, "rules", ruleLines)
 	if _, err := ApplyEasyTierNode(document, logical, options.ForAgent, options.CoreVersion); err != nil {
 		return nil, &EasyTierSettingsError{Message: err.Error()}
 	}
