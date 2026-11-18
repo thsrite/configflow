@@ -21,9 +21,13 @@ asked in; the maintainer reads Chinese.
   the same copy (e.g. `rt -- …` then `rt --no-sync -- …` while another agent shares the worktree), pin it with
   `RT_HOST=sunbroke@192.168.0.32` (or `.64`). A timing-sensitive failure seen on one host only is re-checked on the
   other before you call it a bug.
+- **You do not run the full gate (since 2026-11-18).** The coordinator runs `gate.sh` / `cf-gate` on batch trees
+  (WORKFLOW.md, "Merge batching"). You run only targeted checks for what you changed: `gofmt`, `go vet ./...`,
+  `go test -race` on the packages you touched and their direct callers, the related difftest/configdiff groups,
+  and your new fuzz targets for 60 s. Then hand back with the exact commands and last output lines. Waiting on a
+  full gate burns many tokens per poll and was the largest cost of the rewrite so far.
 - **Full gate script:** `server/scripts/gate.sh [-p N] [FuzzName:./pkg ...]` runs gofmt+vet, full `-race` and proddiff in
-  parallel, all difftest packages in one `go test`, and the given fuzz targets concurrently (60 s each). Use it for your
-  final hand-back run: `rt -- bash -lc 'server/scripts/gate.sh -p 6 FuzzX:./internal/x'` (`-p 6` on .64). The separate
+  parallel, all difftest packages in one `go test`, and the given fuzz targets concurrently (60 s each). Agents no longer use it for hand-back (see above); for reference: `rt -- bash -lc 'server/scripts/gate.sh -p 6 FuzzX:./internal/x'` (`-p 6` on .64). The separate
   non-race full run is no longer required (the race run executes every test).
   gate.sh runs at most 1 agent gate per server at once (the coordinator may add one more) and queues the rest. Never run a full `-race` or proddiff
   outside gate.sh; while iterating, test only the packages you changed. A proddiff difference seen only under high
@@ -89,11 +93,19 @@ uncommitted or non-compiling code: commit what compiles, revert the rest, write 
 PROGRESS file. If you fail the same problem 2–3 rounds, stop and report an escalation packet: failing command
 + trimmed output, file paths, one line per attempt and why it failed, branch/commit (WORKFLOW.md, last section).
 
+## Messages to the coordinator
+
+Send a message only when (a) you need a decision, (b) you hand back, or (c) you are blocked. Do not send
+progress updates ("still running", "package X passed") — each one wakes the coordinator with a long context.
+Put progress into your PROGRESS/report file instead.
+
 ## Never end your turn while waiting
 
-**Concretely: run `gate.sh` and every long test in the foreground with a long timeout (e.g. 3600000 ms), even
-while it waits for a gate slot. Do not start it in the background and do not use a Monitor/until-loop and then
-end your turn — two Opus reviewers stalled that way on 2026-11-18.**
+**Concretely: run every long test as ONE blocking foreground command with a long timeout (e.g. 3600000 ms) and
+read its result when it returns. Do not poll a log in a loop (each poll is a full model turn), do not start it in
+the background, and do not use a Monitor/until-loop and then end your turn — two Opus reviewers stalled that way
+on 2026-11-18.** If a tool moves a long command to the background anyway, wait for it with a single blocking
+`wait`/`tail --pid` style command, not repeated checks.
 
 Run tests and other long commands in the **foreground** with a long timeout (the test servers can be slow
 under load). Background-job notifications do not reliably wake an agent in this setup: if you end your turn
