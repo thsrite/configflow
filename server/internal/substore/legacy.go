@@ -2,6 +2,7 @@ package substore
 
 // Compatibility boundaries only. Native owners never call these adapters.
 import (
+	"configflow/internal/jsonresp"
 	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"context"
@@ -23,7 +24,7 @@ func decodeLegacy[T any](value any) (T, error) {
 	return result, err
 }
 func encodeLegacy(value any) (*jsonx.Object, error) {
-	data, err := model.Marshal(value)
+	data, err := jsonresp.Encode(value)
 	if err != nil {
 		return nil, err
 	}
@@ -113,4 +114,31 @@ func pyMakedirs(name string) error {
 		return err
 	}
 	return nil
+}
+
+// Status transcodes the lifecycle snapshot for unported response consumers.
+func (r *Runtime) Status(ctx context.Context, running bool) (*jsonx.Object, error) {
+	value, err := r.Snapshot(ctx, running)
+	if err != nil {
+		return nil, err
+	}
+	return encodeLegacy(value)
+}
+
+// read/write remain only for old test fixtures; native owners use state records.
+func (r *Runtime) read() any {
+	value, err := r.loadState()
+	if err != nil {
+		return nil
+	}
+	result, _ := encodeLegacy(value)
+	return result
+}
+func (r *Runtime) write(pairs ...any) error {
+	value := jsonx.Obj(pairs...)
+	patch, err := decodeLegacy[runtimePatch](value)
+	if err != nil {
+		return err
+	}
+	return r.writeState(context.Background(), patch)
 }

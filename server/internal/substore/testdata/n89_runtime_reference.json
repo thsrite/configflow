@@ -1,0 +1,993 @@
+{
+  "source_sha256": "7c5e45903e5972601716190ab84c606ed0371d874a637ec717249c2d0775a329",
+  "expectations": [
+    {
+      "output": null,
+      "commands": [
+        "status"
+      ],
+      "after": "{\"state\": \"running\", \"last_used\": 1000.0}"
+    },
+    {
+      "output": {
+        "managed": true,
+        "mode": "on_demand",
+        "state": "sleeping",
+        "idle_seconds": 300,
+        "error": ""
+      },
+      "commands": [],
+      "after": ""
+    },
+    {
+      "output": {
+        "managed": true,
+        "mode": "on_demand",
+        "state": "running",
+        "idle_seconds": 300,
+        "error": ""
+      },
+      "commands": [],
+      "after": ""
+    },
+    {
+      "output": null,
+      "commands": [],
+      "after": "{\"state\": \"running\", \"error\": \"\", \"last_used\": 1000.0}"
+    },
+    {
+      "error": "*substore.RuntimeStateError",
+      "message": "Sub-Store 运行状态必须是 JSON 对象",
+      "commands": [],
+      "after": "[]"
+    },
+    {
+      "error": "*substore.RuntimeStateError",
+      "message": "Sub-Store 运行状态必须是 JSON 对象",
+      "commands": [],
+      "after": "[]"
+    },
+    {
+      "error": "*substore.RuntimeStateError",
+      "message": "Sub-Store 运行状态必须是 JSON 对象",
+      "commands": [],
+      "after": "[]"
+    },
+    {
+      "error": "*substore.RuntimeStateError",
+      "message": "Sub-Store 运行状态必须是 JSON 对象",
+      "commands": [],
+      "after": "[]"
+    },
+    {
+      "error": "*substore.RuntimeStateError",
+      "message": "Sub-Store 运行状态必须是 JSON 对象",
+      "commands": [],
+      "after": "[1]"
+    },
+    {
+      "error": "*substore.RuntimeStateError",
+      "message": "Sub-Store 运行状态必须是 JSON 对象",
+      "commands": [],
+      "after": "[1]"
+    },
+    {
+      "error": "*substore.RuntimeStateError",
+      "message": "Sub-Store 运行状态必须是 JSON 对象",
+      "commands": [],
+      "after": "[1]"
+    },
+    {
+      "error": "*substore.RuntimeStateError",
+      "message": "Sub-Store 运行状态必须是 JSON 对象",
+      "commands": [],
+      "after": "[1]"
+    },
+    {
+      "output": null,
+      "commands": [
+        "status"
+      ],
+      "after": "{\"state\": \"running\", \"last_used\": 1000.0}"
+    },
+    {
+      "output": {
+        "managed": true,
+        "mode": "on_demand",
+        "state": "sleeping",
+        "idle_seconds": 300,
+        "error": ""
+      },
+      "commands": [],
+      "after": "{}"
+    },
+    {
+      "output": {
+        "managed": true,
+        "mode": "on_demand",
+        "state": "running",
+        "idle_seconds": 300,
+        "error": ""
+      },
+      "commands": [],
+      "after": "{}"
+    },
+    {
+      "output": null,
+      "commands": [],
+      "after": "{\"state\": \"running\", \"error\": \"\", \"last_used\": 1000.0}"
+    },
+    {
+      "error": "*substore.RuntimeStateError",
+      "message": "Sub-Store 运行状态必须是 JSON 对象",
+      "commands": [],
+      "after": "null"
+    },
+    {
+      "error": "*substore.RuntimeStateError",
+      "message": "Sub-Store 运行状态必须是 JSON 对象",
+      "commands": [],
+      "after": "null"
+    },
+    {
+      "error": "*substore.RuntimeStateError",
+      "message": "Sub-Store 运行状态必须是 JSON 对象",
+      "commands": [],
+      "after": "null"
+    },
+    {
+      "error": "*substore.RuntimeStateError",
+      "message": "Sub-Store 运行状态必须是 JSON 对象",
+      "commands": [],
+      "after": "null"
+    },
+    {
+      "error": "*substore.RuntimeStateError",
+      "message": "Sub-Store 运行状态必须是 JSON 对象",
+      "commands": [],
+      "after": "0"
+    },
+    {
+      "error": "*substore.RuntimeStateError",
+      "message": "Sub-Store 运行状态必须是 JSON 对象",
+      "commands": [],
+      "after": "0"
+    },
+    {
+      "error": "*substore.RuntimeStateError",
+      "message": "Sub-Store 运行状态必须是 JSON 对象",
+      "commands": [],
+      "after": "0"
+    },
+    {
+      "error": "*substore.RuntimeStateError",
+      "message": "Sub-Store 运行状态必须是 JSON 对象",
+      "commands": [],
+      "after": "0"
+    },
+    {
+      "error": "*substore.RuntimeStateError",
+      "message": "Sub-Store 运行状态必须是 JSON 对象",
+      "commands": [],
+      "after": "1"
+    },
+    {
+      "error": "*substore.RuntimeStateError",
+      "message": "Sub-Store 运行状态必须是 JSON 对象",
+      "commands": [],
+      "after": "1"
+    },
+    {
+      "error": "*substore.RuntimeStateError",
+      "message": "Sub-Store 运行状态必须是 JSON 对象",
+      "commands": [],
+      "after": "1"
+    },
+    {
+      "error": "*substore.RuntimeStateError",
+      "message": "Sub-Store 运行状态必须是 JSON 对象",
+      "commands": [],
+      "after": "1"
+    },
+    {
+      "error": "*substore.RuntimeStateError",
+      "message": "Sub-Store 运行状态必须是 JSON 对象",
+      "commands": [],
+      "after": "\"x\""
+    },
+    {
+      "error": "*substore.RuntimeStateError",
+      "message": "Sub-Store 运行状态必须是 JSON 对象",
+      "commands": [],
+      "after": "\"x\""
+    },
+    {
+      "error": "*substore.RuntimeStateError",
+      "message": "Sub-Store 运行状态必须是 JSON 对象",
+      "commands": [],
+      "after": "\"x\""
+    },
+    {
+      "error": "*substore.RuntimeStateError",
+      "message": "Sub-Store 运行状态必须是 JSON 对象",
+      "commands": [],
+      "after": "\"x\""
+    },
+    {
+      "error": "*substore.RuntimeStateError",
+      "message": "Sub-Store 运行状态必须是 JSON 对象",
+      "commands": [],
+      "after": "\"\""
+    },
+    {
+      "error": "*substore.RuntimeStateError",
+      "message": "Sub-Store 运行状态必须是 JSON 对象",
+      "commands": [],
+      "after": "\"\""
+    },
+    {
+      "error": "*substore.RuntimeStateError",
+      "message": "Sub-Store 运行状态必须是 JSON 对象",
+      "commands": [],
+      "after": "\"\""
+    },
+    {
+      "error": "*substore.RuntimeStateError",
+      "message": "Sub-Store 运行状态必须是 JSON 对象",
+      "commands": [],
+      "after": "\"\""
+    },
+    {
+      "error": "*substore.RuntimeStateError",
+      "message": "Sub-Store 运行状态必须是 JSON 对象",
+      "commands": [],
+      "after": "true"
+    },
+    {
+      "error": "*substore.RuntimeStateError",
+      "message": "Sub-Store 运行状态必须是 JSON 对象",
+      "commands": [],
+      "after": "true"
+    },
+    {
+      "error": "*substore.RuntimeStateError",
+      "message": "Sub-Store 运行状态必须是 JSON 对象",
+      "commands": [],
+      "after": "true"
+    },
+    {
+      "error": "*substore.RuntimeStateError",
+      "message": "Sub-Store 运行状态必须是 JSON 对象",
+      "commands": [],
+      "after": "true"
+    },
+    {
+      "error": "*substore.RuntimeStateError",
+      "message": "Sub-Store 运行状态必须是 JSON 对象",
+      "commands": [],
+      "after": "false"
+    },
+    {
+      "error": "*substore.RuntimeStateError",
+      "message": "Sub-Store 运行状态必须是 JSON 对象",
+      "commands": [],
+      "after": "false"
+    },
+    {
+      "error": "*substore.RuntimeStateError",
+      "message": "Sub-Store 运行状态必须是 JSON 对象",
+      "commands": [],
+      "after": "false"
+    },
+    {
+      "error": "*substore.RuntimeStateError",
+      "message": "Sub-Store 运行状态必须是 JSON 对象",
+      "commands": [],
+      "after": "false"
+    },
+    {
+      "error": "*substore.RuntimeStateError",
+      "message": "Sub-Store 运行状态的 last_used 必须是有限数字",
+      "commands": [],
+      "after": "{\"state\": \"running\", \"last_used\": \"x\"}"
+    },
+    {
+      "output": {
+        "managed": true,
+        "mode": "on_demand",
+        "state": "failed",
+        "idle_seconds": 300,
+        "error": ""
+      },
+      "commands": [],
+      "after": "{\"state\": \"running\", \"last_used\": \"x\"}"
+    },
+    {
+      "output": {
+        "managed": true,
+        "mode": "on_demand",
+        "state": "running",
+        "idle_seconds": 300,
+        "error": ""
+      },
+      "commands": [],
+      "after": "{\"state\": \"running\", \"last_used\": \"x\"}"
+    },
+    {
+      "output": null,
+      "commands": [],
+      "after": "{\"state\": \"running\", \"last_used\": 1000.0, \"error\": \"\"}"
+    },
+    {
+      "error": "*substore.RuntimeStateError",
+      "message": "Sub-Store 运行状态的 last_used 必须是有限数字",
+      "commands": [],
+      "after": "{\"state\": \"running\", \"last_used\": null}"
+    },
+    {
+      "output": {
+        "managed": true,
+        "mode": "on_demand",
+        "state": "failed",
+        "idle_seconds": 300,
+        "error": ""
+      },
+      "commands": [],
+      "after": "{\"state\": \"running\", \"last_used\": null}"
+    },
+    {
+      "output": {
+        "managed": true,
+        "mode": "on_demand",
+        "state": "running",
+        "idle_seconds": 300,
+        "error": ""
+      },
+      "commands": [],
+      "after": "{\"state\": \"running\", \"last_used\": null}"
+    },
+    {
+      "output": null,
+      "commands": [],
+      "after": "{\"state\": \"running\", \"last_used\": 1000.0, \"error\": \"\"}"
+    },
+    {
+      "error": "*substore.RuntimeStateError",
+      "message": "Sub-Store 运行状态的 last_used 必须是有限数字",
+      "commands": [],
+      "after": "{\"state\": \"running\", \"last_used\": 1e400}"
+    },
+    {
+      "output": {
+        "managed": true,
+        "mode": "on_demand",
+        "state": "failed",
+        "idle_seconds": 300,
+        "error": ""
+      },
+      "commands": [],
+      "after": "{\"state\": \"running\", \"last_used\": 1e400}"
+    },
+    {
+      "output": {
+        "managed": true,
+        "mode": "on_demand",
+        "state": "running",
+        "idle_seconds": 300,
+        "error": ""
+      },
+      "commands": [],
+      "after": "{\"state\": \"running\", \"last_used\": 1e400}"
+    },
+    {
+      "output": null,
+      "commands": [],
+      "after": "{\"state\": \"running\", \"last_used\": 1000.0, \"error\": \"\"}"
+    },
+    {
+      "error": "*substore.RuntimeStateError",
+      "message": "Sub-Store 运行状态的 last_used 必须是有限数字",
+      "commands": [],
+      "after": "{\"state\": \"running\", \"last_used\": 9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999}"
+    },
+    {
+      "output": {
+        "managed": true,
+        "mode": "on_demand",
+        "state": "failed",
+        "idle_seconds": 300,
+        "error": ""
+      },
+      "commands": [],
+      "after": "{\"state\": \"running\", \"last_used\": 9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999}"
+    },
+    {
+      "output": {
+        "managed": true,
+        "mode": "on_demand",
+        "state": "running",
+        "idle_seconds": 300,
+        "error": ""
+      },
+      "commands": [],
+      "after": "{\"state\": \"running\", \"last_used\": 9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999}"
+    },
+    {
+      "output": null,
+      "commands": [],
+      "after": "{\"state\": \"running\", \"last_used\": 1000.0, \"error\": \"\"}"
+    },
+    {
+      "error": "*substore.RuntimeStateError",
+      "message": "Sub-Store 运行状态的 last_used 必须是有限数字",
+      "commands": [],
+      "after": "{\"state\": \"running\", \"last_used\": true}"
+    },
+    {
+      "output": {
+        "managed": true,
+        "mode": "on_demand",
+        "state": "failed",
+        "idle_seconds": 300,
+        "error": ""
+      },
+      "commands": [],
+      "after": "{\"state\": \"running\", \"last_used\": true}"
+    },
+    {
+      "output": {
+        "managed": true,
+        "mode": "on_demand",
+        "state": "running",
+        "idle_seconds": 300,
+        "error": ""
+      },
+      "commands": [],
+      "after": "{\"state\": \"running\", \"last_used\": true}"
+    },
+    {
+      "output": null,
+      "commands": [],
+      "after": "{\"state\": \"running\", \"last_used\": 1000.0, \"error\": \"\"}"
+    },
+    {
+      "output": null,
+      "commands": [],
+      "after": "{\"state\": \"sleeping\", \"last_used\": \"x\"}"
+    },
+    {
+      "output": {
+        "managed": true,
+        "mode": "on_demand",
+        "state": "sleeping",
+        "idle_seconds": 300,
+        "error": ""
+      },
+      "commands": [],
+      "after": "{\"state\": \"sleeping\", \"last_used\": \"x\"}"
+    },
+    {
+      "output": {
+        "managed": true,
+        "mode": "on_demand",
+        "state": "running",
+        "idle_seconds": 300,
+        "error": ""
+      },
+      "commands": [],
+      "after": "{\"state\": \"sleeping\", \"last_used\": \"x\"}"
+    },
+    {
+      "output": null,
+      "commands": [],
+      "after": "{\"state\": \"running\", \"last_used\": 1000.0, \"error\": \"\"}"
+    },
+    {
+      "output": null,
+      "commands": [
+        "status",
+        "stop"
+      ],
+      "after": "{\"state\": \"sleeping\"}"
+    },
+    {
+      "output": {
+        "managed": true,
+        "mode": "on_demand",
+        "state": "failed",
+        "idle_seconds": 300,
+        "error": ""
+      },
+      "commands": [],
+      "after": "{\"state\": \"running\"}"
+    },
+    {
+      "output": {
+        "managed": true,
+        "mode": "on_demand",
+        "state": "running",
+        "idle_seconds": 300,
+        "error": ""
+      },
+      "commands": [],
+      "after": "{\"state\": \"running\"}"
+    },
+    {
+      "output": null,
+      "commands": [],
+      "after": "{\"state\": \"running\", \"error\": \"\", \"last_used\": 1000.0}"
+    },
+    {
+      "output": null,
+      "commands": [
+        "status",
+        "stop"
+      ],
+      "after": "{\"state\": \"failed\", \"error\": \"e\", \"last_used\": 0}"
+    },
+    {
+      "output": {
+        "managed": true,
+        "mode": "on_demand",
+        "state": "failed",
+        "idle_seconds": 300,
+        "error": "e"
+      },
+      "commands": [],
+      "after": "{\"state\": \"failed\", \"error\": \"e\", \"last_used\": 0}"
+    },
+    {
+      "output": {
+        "managed": true,
+        "mode": "on_demand",
+        "state": "running",
+        "idle_seconds": 300,
+        "error": ""
+      },
+      "commands": [],
+      "after": "{\"state\": \"failed\", \"error\": \"e\", \"last_used\": 0}"
+    },
+    {
+      "output": null,
+      "commands": [],
+      "after": "{\"state\": \"running\", \"error\": \"\", \"last_used\": 1000.0}"
+    },
+    {
+      "error": "*substore.RuntimeStateError",
+      "message": "Sub-Store 运行状态必须是 JSON 对象",
+      "commands": [],
+      "after": "NaN"
+    },
+    {
+      "error": "*substore.RuntimeStateError",
+      "message": "Sub-Store 运行状态必须是 JSON 对象",
+      "commands": [],
+      "after": "NaN"
+    },
+    {
+      "error": "*substore.RuntimeStateError",
+      "message": "Sub-Store 运行状态必须是 JSON 对象",
+      "commands": [],
+      "after": "NaN"
+    },
+    {
+      "error": "*substore.RuntimeStateError",
+      "message": "Sub-Store 运行状态必须是 JSON 对象",
+      "commands": [],
+      "after": "NaN"
+    },
+    {
+      "error": "*substore.RuntimeStateError",
+      "message": "Sub-Store 运行状态的 last_used 必须是有限数字",
+      "commands": [],
+      "after": "{\"last_used\": NaN, \"state\": \"running\"}"
+    },
+    {
+      "output": {
+        "managed": true,
+        "mode": "on_demand",
+        "state": "failed",
+        "idle_seconds": 300,
+        "error": ""
+      },
+      "commands": [],
+      "after": "{\"last_used\": NaN, \"state\": \"running\"}"
+    },
+    {
+      "output": {
+        "managed": true,
+        "mode": "on_demand",
+        "state": "running",
+        "idle_seconds": 300,
+        "error": ""
+      },
+      "commands": [],
+      "after": "{\"last_used\": NaN, \"state\": \"running\"}"
+    },
+    {
+      "output": null,
+      "commands": [],
+      "after": "{\"last_used\": 1000.0, \"state\": \"running\", \"error\": \"\"}"
+    },
+    {
+      "output": null,
+      "commands": [
+        "status"
+      ],
+      "after": "{\"state\": \"running\", \"last_used\": 1000.0}"
+    },
+    {
+      "output": {
+        "managed": true,
+        "mode": "on_demand",
+        "state": "sleeping",
+        "idle_seconds": 300,
+        "error": ""
+      },
+      "commands": [],
+      "after": "ÿ"
+    },
+    {
+      "output": {
+        "managed": true,
+        "mode": "on_demand",
+        "state": "running",
+        "idle_seconds": 300,
+        "error": ""
+      },
+      "commands": [],
+      "after": "ÿ"
+    },
+    {
+      "output": null,
+      "commands": [],
+      "after": "{\"state\": \"running\", \"error\": \"\", \"last_used\": 1000.0}"
+    },
+    {
+      "output": null,
+      "commands": [
+        "status",
+        "stop"
+      ],
+      "after": "{\"state\": \"sleeping\", \"last_used\": 0}"
+    },
+    {
+      "output": {
+        "managed": true,
+        "mode": "on_demand",
+        "state": "failed",
+        "idle_seconds": 300,
+        "error": ""
+      },
+      "commands": [],
+      "after": "{\"state\": 5, \"last_used\": 0}"
+    },
+    {
+      "output": {
+        "managed": true,
+        "mode": "on_demand",
+        "state": "running",
+        "idle_seconds": 300,
+        "error": ""
+      },
+      "commands": [],
+      "after": "{\"state\": 5, \"last_used\": 0}"
+    },
+    {
+      "output": null,
+      "commands": [],
+      "after": "{\"state\": \"running\", \"last_used\": 1000.0, \"error\": \"\"}"
+    },
+    {
+      "output": null,
+      "commands": [
+        "status",
+        "stop"
+      ],
+      "after": "{\"state\": \"sleeping\", \"last_used\": 0, \"error\": [\"x\"]}"
+    },
+    {
+      "output": {
+        "managed": true,
+        "mode": "on_demand",
+        "state": "failed",
+        "idle_seconds": 300,
+        "error": ""
+      },
+      "commands": [],
+      "after": "{\"state\": \"running\", \"last_used\": 0, \"error\": [\"x\"]}"
+    },
+    {
+      "output": {
+        "managed": true,
+        "mode": "on_demand",
+        "state": "running",
+        "idle_seconds": 300,
+        "error": ""
+      },
+      "commands": [],
+      "after": "{\"state\": \"running\", \"last_used\": 0, \"error\": [\"x\"]}"
+    },
+    {
+      "output": null,
+      "commands": [],
+      "after": "{\"state\": \"running\", \"last_used\": 1000.0, \"error\": \"\"}"
+    },
+    {
+      "output": null,
+      "commands": [],
+      "after": "{\"state\": \"running\", \"last_used\": 999.5}"
+    },
+    {
+      "output": {
+        "managed": true,
+        "mode": "on_demand",
+        "state": "failed",
+        "idle_seconds": 300,
+        "error": ""
+      },
+      "commands": [],
+      "after": "{\"state\": \"running\", \"last_used\": 999.5}"
+    },
+    {
+      "output": {
+        "managed": true,
+        "mode": "on_demand",
+        "state": "running",
+        "idle_seconds": 300,
+        "error": ""
+      },
+      "commands": [],
+      "after": "{\"state\": \"running\", \"last_used\": 999.5}"
+    },
+    {
+      "output": null,
+      "commands": [],
+      "after": "{\"state\": \"running\", \"last_used\": 1000.0, \"error\": \"\"}"
+    },
+    {
+      "output": null,
+      "commands": [
+        "status",
+        "stop"
+      ],
+      "after": "{\"state\": \"sleeping\", \"last_used\": 700}"
+    },
+    {
+      "output": {
+        "managed": true,
+        "mode": "on_demand",
+        "state": "failed",
+        "idle_seconds": 300,
+        "error": ""
+      },
+      "commands": [],
+      "after": "{\"state\": \"running\", \"last_used\": 700}"
+    },
+    {
+      "output": {
+        "managed": true,
+        "mode": "on_demand",
+        "state": "running",
+        "idle_seconds": 300,
+        "error": ""
+      },
+      "commands": [],
+      "after": "{\"state\": \"running\", \"last_used\": 700}"
+    },
+    {
+      "output": null,
+      "commands": [],
+      "after": "{\"state\": \"running\", \"last_used\": 1000.0, \"error\": \"\"}"
+    },
+    {
+      "output": null,
+      "commands": [
+        "status",
+        "stop"
+      ],
+      "after": "{\"state\": \"failed\", \"error\": \"u\"}"
+    },
+    {
+      "output": {
+        "managed": true,
+        "mode": "on_demand",
+        "state": "updating",
+        "idle_seconds": 300,
+        "error": ""
+      },
+      "commands": [],
+      "after": "{\"state\": \"updating\", \"error\": \"u\"}"
+    },
+    {
+      "output": {
+        "managed": true,
+        "mode": "on_demand",
+        "state": "updating",
+        "idle_seconds": 300,
+        "error": ""
+      },
+      "commands": [],
+      "after": "{\"state\": \"updating\", \"error\": \"u\"}"
+    },
+    {
+      "output": null,
+      "commands": [],
+      "after": "{\"state\": \"running\", \"error\": \"\", \"last_used\": 1000.0}"
+    },
+    {
+      "output": null,
+      "commands": [
+        "status",
+        "stop"
+      ],
+      "after": "{\"state\": \"failed\", \"error\": 7}"
+    },
+    {
+      "output": {
+        "managed": true,
+        "mode": "on_demand",
+        "state": "starting",
+        "idle_seconds": 300,
+        "error": ""
+      },
+      "commands": [],
+      "after": "{\"state\": \"starting\", \"error\": 7}"
+    },
+    {
+      "output": {
+        "managed": true,
+        "mode": "on_demand",
+        "state": "running",
+        "idle_seconds": 300,
+        "error": ""
+      },
+      "commands": [],
+      "after": "{\"state\": \"starting\", \"error\": 7}"
+    },
+    {
+      "output": null,
+      "commands": [],
+      "after": "{\"state\": \"running\", \"error\": \"\", \"last_used\": 1000.0}"
+    },
+    {
+      "output": null,
+      "commands": [
+        "status",
+        "stop"
+      ],
+      "after": "{\"state\": \"sleeping\"}"
+    },
+    {
+      "output": {
+        "managed": true,
+        "mode": "on_demand",
+        "state": "sleeping",
+        "idle_seconds": 300,
+        "error": ""
+      },
+      "commands": [],
+      "after": "{\"state\": null}"
+    },
+    {
+      "output": {
+        "managed": true,
+        "mode": "on_demand",
+        "state": "running",
+        "idle_seconds": 300,
+        "error": ""
+      },
+      "commands": [],
+      "after": "{\"state\": null}"
+    },
+    {
+      "output": null,
+      "commands": [],
+      "after": "{\"state\": \"running\", \"error\": \"\", \"last_used\": 1000.0}"
+    },
+    {
+      "output": null,
+      "commands": [
+        "status",
+        "stop"
+      ],
+      "after": "{\"error\": \"x\", \"state\": \"failed\"}"
+    },
+    {
+      "output": {
+        "managed": true,
+        "mode": "on_demand",
+        "state": "failed",
+        "idle_seconds": 300,
+        "error": "x"
+      },
+      "commands": [],
+      "after": "{\"error\": \"x\", \"state\": \"failed\"}"
+    },
+    {
+      "output": {
+        "managed": true,
+        "mode": "on_demand",
+        "state": "running",
+        "idle_seconds": 300,
+        "error": ""
+      },
+      "commands": [],
+      "after": "{\"error\": \"x\", \"state\": \"failed\"}"
+    },
+    {
+      "output": null,
+      "commands": [],
+      "after": "{\"error\": \"\", \"state\": \"running\", \"last_used\": 1000.0}"
+    },
+    {
+      "output": null,
+      "commands": [
+        "status",
+        "stop"
+      ],
+      "after": "{\"a\": 1, \"state\": \"sleeping\", \"last_used\": 0}"
+    },
+    {
+      "output": {
+        "managed": true,
+        "mode": "on_demand",
+        "state": "failed",
+        "idle_seconds": 300,
+        "error": ""
+      },
+      "commands": [],
+      "after": "{\"a\": 1, \"state\": \"running\", \"last_used\": 0}"
+    },
+    {
+      "output": {
+        "managed": true,
+        "mode": "on_demand",
+        "state": "running",
+        "idle_seconds": 300,
+        "error": ""
+      },
+      "commands": [],
+      "after": "{\"a\": 1, \"state\": \"running\", \"last_used\": 0}"
+    },
+    {
+      "output": null,
+      "commands": [],
+      "after": "{\"a\": 1, \"state\": \"running\", \"last_used\": 1000.0, \"error\": \"\"}"
+    },
+    {
+      "error": "*substore.RuntimeStateError",
+      "message": "Sub-Store 运行状态的 last_used 必须是有限数字",
+      "commands": [],
+      "after": "{\"state\":\"running\",\"last_used\":[1]}"
+    },
+    {
+      "output": {
+        "managed": true,
+        "mode": "on_demand",
+        "state": "failed",
+        "idle_seconds": 300,
+        "error": ""
+      },
+      "commands": [],
+      "after": "{\"state\":\"running\",\"last_used\":[1]}"
+    },
+    {
+      "output": {
+        "managed": true,
+        "mode": "on_demand",
+        "state": "running",
+        "idle_seconds": 300,
+        "error": ""
+      },
+      "commands": [],
+      "after": "{\"state\":\"running\",\"last_used\":[1]}"
+    },
+    {
+      "output": null,
+      "commands": [],
+      "after": "{\"state\": \"running\", \"last_used\": 1000.0, \"error\": \"\"}"
+    }
+  ],
+  "old_python_bytes": "{\"state\": \"failed\", \"error\": \"\\u65e7\\u72b6\\u6001\", \"last_used\": 123.5, \"future\": {\"number\": 9007199254740993123, \"text\": \"\\u4fdd\\u7559\"}}"
+}

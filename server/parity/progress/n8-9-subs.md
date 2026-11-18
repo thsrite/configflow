@@ -47,3 +47,25 @@ owner 暂时仍调用的原有 helper，后续必须一起删除，不能据此�
 本阶段未跑全量 corpus/HTTP/fuzz，留给全部迁移后的最终定向验证。
 
 缓存阶段受影响三包 `go vet -p 4 ./internal/substore ./internal/subs ./internal/repo` 和本阶段 gofmt 检查退出0、无输出。
+
+
+## runtime 阶段（进行中）
+
+- 状态读取/原子写入/Snapshot/saveMode/GetMode 改为 typed；工作/控制/跨副本叶锁原结构不变。
+  GetMode 只在 repo.View 中读取 mode，不创建整个 system 的旧 JSON 视图。
+- 原无ctx私有 read/write 和旧 Status 留在 legacy.go，仅转码旧测试/调用方；dependencies 核心
+  仍调用 Status，下一阶段改 Snapshot。旧错误工具/路径和时钟工具仍待客户端/dependencies一起清理。
+- 私有状态文件 framing 和 CPython内部错误按协调者同类裁定处理；正常字段/值/顺序/
+  supervisorctl 请求与效果不放宽。已核查部署读取方，旧 Python 原样字节读测试通过，详见 ledger。
+- Python引用：`PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/substore/testdata/n89_runtime_reference.py`
+  → `native runtime reference: 128 exact real-Python cases`；原 review_reference.json/生成器/比较器不改。
+- 定向 race（主服务器，GOMAXPROCS=4，-p4）：
+  `go test -race -p 4 -count=1 -timeout=5m ./internal/substore -run "TestReviewRuntimeMalformedState|TestN89Runtime|TestStateFileBytes|TestPolling|TestConcurrentConversions|TestUpdateWaits|TestStartFailure|TestStartTimesOut"`
+  → `ok configflow/internal/substore 9.556s`。
+  包含写完/关闭真实临时文件后 Runtime 关机/断开，主文件不变/正常提交、未知成员原字节保留、无临时文件残留。
+- 实际 reference 负控：仅改变128条中row1的返回 mode，原测试必须失败，已通过；finally恢复文件。
+- 同一公开 BenchmarkN89RuntimeMode，0/64KiB/1MiB 无关设置：
+  - 迁移前：6400/6400/5920 B/op，121/121/120 allocs/op。
+  - 迁移后：5320/5800/5800 B/op，115/116/116 allocs/op。
+  模式读取没有随无关配置增大；缓存后测试回归预算为大配置不能多出64KiB/op。
+  这不代替后续完整订阅/代理链生成路径的配置分配基准。

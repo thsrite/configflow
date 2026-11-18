@@ -5,8 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
-	"fmt"
-	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,10 +13,10 @@ import (
 	"time"
 
 	"configflow/internal/clock"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/lockx"
 	"configflow/internal/logx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 )
 
@@ -50,38 +48,35 @@ func GetMode(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	settings, err := r.GetSystemSettings(ctx)
-	if err != nil {
-		return "", err
-	}
-	if mode, ok := settings.Value("sub_store_mode").(string); ok && (mode == "on_demand" || mode == "always") {
-		return mode, nil
-	}
-	return "on_demand", nil
+	mode := "on_demand"
+	err = r.View(ctx, func(document *model.Document) error {
+		value := document.System.SystemConfig.SubStoreMode
+		if value != nil && (*value == "on_demand" || *value == "always") {
+			mode = *value
+		}
+		return nil
+	})
+	return mode, err
 }
 
-// saveMode is _save_mode: one system transaction setting sub_store_mode.
 func saveMode(ctx context.Context, mode string) error {
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	r, err := repo.GetRepository(ctx)
 	if err != nil {
 		return err
 	}
-	_, err = r.UpdateSystemTransaction(ctx, func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		value, present := system.Get("system_config")
-		if !present {
-			return nil, pyErr("KeyError", "'system_config'")
+	if err := r.UpdateSystem(ctx, func(ctx context.Context, system *model.System) error {
+		if err := ctx.Err(); err != nil {
+			return err
 		}
-		settings, ok := value.(*jsonx.Object)
-		if !ok {
-			return nil, attributeError(value, "update")
-		}
-		settings.Set("sub_store_mode", mode)
-		return nil, nil
-	})
-	if err != nil {
+		system.SystemConfig.SubStoreMode = new(mode)
+		return nil
+	}); err != nil {
 		return err
 	}
-	// reset_config_context() runs only after a successful transaction.
 	repo.ResetConfigContext(ctx)
 	return nil
 }
@@ -275,6 +270,9 @@ func (r *Runtime) tryWork(ctx context.Context, fn func(context.Context) error) e
 	defer unpin()
 	held, release, ok := leases.work.TryLock(ctx)
 	if !ok {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		return unavailable(msgRuntimeBusy)
 	}
 	defer release()
@@ -282,6 +280,9 @@ func (r *Runtime) tryWork(ctx context.Context, fn func(context.Context) error) e
 }
 
 func (r *Runtime) runWork(ctx context.Context, root string, exclusive bool, fn func(context.Context) error) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(root, 0700); err != nil {
 		return osError(err, root)
 	}
@@ -302,6 +303,9 @@ func (r *Runtime) withControl(ctx context.Context, fn func(context.Context) erro
 		return runtimeLockError(err)
 	}
 	defer release()
+	if err := held.Err(); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(root, 0700); err != nil {
 		return osError(err, root)
 	}
@@ -326,66 +330,22 @@ func (r *Runtime) wait(ctx context.Context, d time.Duration) error {
 	}
 }
 
-// read is _read: the JSON value of state.json, or an empty state when it
-// cannot be read or is not JSON (OSError, ValueError). A value that is not
-// an object is returned as it is: Python then fails where it uses it
-// (TypeError in _write, AttributeError at state.get), and so does Go.
-func (r *Runtime) read() any {
-	data, err := os.ReadFile(pyJoin(r.Root(), "state.json"))
-	if err != nil || utf8DecodeError(data) != "" {
-		return jsonx.NewObject()
-	}
-	value, err := jsonx.Parse(data)
-	if err != nil {
-		return jsonx.NewObject()
-	}
-	return value
-}
-
-// stateGet is state.get(key, fallback) on what read returned.
-func stateGet(state any, key string, fallback any) (any, error) {
-	object, ok := state.(*jsonx.Object)
-	if !ok {
-		return nil, attributeError(state, "get")
-	}
-	return object.GetOr(key, fallback), nil
-}
-
-// write is _write(**changes): merge and replace state.json atomically
-// (callers hold the control lock). Pairs are key, value.
-func (r *Runtime) write(pairs ...any) error {
-	state, ok := r.read().(*jsonx.Object)
-	if !ok {
-		return pyErr("TypeError", fmt.Sprintf("'%s' object is not a mapping", typeName(r.read())))
-	}
-	for i := 0; i+1 < len(pairs); i += 2 {
-		state.Set(pairs[i].(string), pairs[i+1])
-	}
-	encoded, err := jsonx.Default(state)
-	if err != nil {
-		return err
-	}
-	temp := pyJoin(r.Root(), "state.tmp")
-	if err := os.WriteFile(temp, encoded, 0o666); err != nil {
-		return osError(err, temp)
-	}
-	target := pyJoin(r.Root(), "state.json")
-	if err := os.Rename(temp, target); err != nil {
-		return osError(err, temp)
-	}
-	return nil
-}
-
-func (r *Runtime) monotonic() any { return jsonx.Float(r.env.Clock.Monotonic()) }
+func (r *Runtime) monotonic() float64 { return r.env.Clock.Monotonic() }
 
 // runCommand is _command(action): supervisorctl for the sub-store program.
 // status returns the state word; other actions their output.
 func (r *Runtime) runCommand(ctx context.Context, action string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	if r.command != nil {
 		return r.command(ctx, action)
 	}
 	result, err := r.env.Commands.Run(ctx, []string{"supervisorctl", "-c", SupervisorConfig, action, SubStoreProgram},
 		20*time.Second)
+	if ctx.Err() != nil {
+		return "", ctx.Err()
+	}
 	if err != nil {
 		var py *PyError
 		if errors.As(err, &py) && (py.Class == "TimeoutExpired" ||
@@ -431,9 +391,9 @@ func (r *Runtime) ensureRunning(ctx context.Context) error {
 		return err
 	}
 	if ready {
-		return r.write("state", "running", "error", "")
+		return r.writeState(ctx, runtimePatch{State: new("running"), Error: new("")})
 	}
-	if err := r.write("state", "starting", "error", ""); err != nil {
+	if err := r.writeState(ctx, runtimePatch{State: new("starting"), Error: new("")}); err != nil {
 		return err
 	}
 	err = func() error {
@@ -454,7 +414,7 @@ func (r *Runtime) ensureRunning(ctx context.Context) error {
 				return err
 			}
 			if ready {
-				return r.write("state", "running", "error", "")
+				return r.writeState(ctx, runtimePatch{State: new("running"), Error: new("")})
 			}
 			if err := r.wait(ctx, min(startupPoll, deadline.Sub(clock.Now()))); err != nil {
 				return err
@@ -464,7 +424,7 @@ func (r *Runtime) ensureRunning(ctx context.Context) error {
 	}()
 	var u *RuntimeUnavailable
 	if errors.As(err, &u) {
-		if werr := r.write("state", "failed", "error", u.Message); werr != nil {
+		if werr := r.writeState(ctx, runtimePatch{State: new("failed"), Error: new(u.Message)}); werr != nil {
 			return werr
 		}
 	}
@@ -476,6 +436,9 @@ func (r *Runtime) ensureRunning(ctx context.Context) error {
 // (also after a failure). Without the bundle fn just runs.
 func (r *Runtime) Use(ctx context.Context, fn func(context.Context) error) error {
 	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if lease := r.heldWork(ctx); lease != nil {
 		return fn(ctx)
 	}
@@ -488,7 +451,7 @@ func (r *Runtime) Use(ctx context.Context, fn func(context.Context) error) error
 		}
 		return func() (err error) {
 			defer func() {
-				if ferr := r.withControl(ctx, func(ctx context.Context) error { return r.write("last_used", r.monotonic()) }); ferr != nil {
+				if ferr := r.withControl(ctx, func(ctx context.Context) error { return r.writeState(ctx, runtimePatch{LastUsed: new(r.monotonic())}) }); ferr != nil {
 					err = ferr
 				}
 			}()
@@ -501,8 +464,13 @@ func (r *Runtime) Use(ctx context.Context, fn func(context.Context) error) error
 // exclusively; afterwards the state says whether Sub-Store answers.
 func (r *Runtime) Maintenance(ctx context.Context, fn func(context.Context) error) error {
 	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	return r.withWork(ctx, true, maintenanceWait, func(ctx context.Context) error {
-		if err := r.withControl(ctx, func(ctx context.Context) error { return r.write("state", "updating", "error", "") }); err != nil {
+		if err := r.withControl(ctx, func(ctx context.Context) error {
+			return r.writeState(ctx, runtimePatch{State: new("updating"), Error: new("")})
+		}); err != nil {
 			return err
 		}
 		return func() (err error) {
@@ -516,7 +484,7 @@ func (r *Runtime) Maintenance(ctx context.Context, fn func(context.Context) erro
 					if ready {
 						state, message = "running", ""
 					}
-					return r.write("state", state, "error", message, "last_used", r.monotonic())
+					return r.writeState(ctx, runtimePatch{State: new(state), Error: new(message), LastUsed: new(r.monotonic())})
 				})
 				if ferr != nil {
 					err = ferr
@@ -531,8 +499,11 @@ func (r *Runtime) Maintenance(ctx context.Context, fn func(context.Context) erro
 // saved in system_config.
 func (r *Runtime) SetMode(ctx context.Context, mode string) error {
 	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if mode != "on_demand" && mode != "always" {
-		return pyErr("ValueError", "运行模式必须是 on_demand 或 always")
+		return errors.New(msgRuntimeModeInvalid)
 	}
 	if !r.env.IsBuiltinAvailable() {
 		return unavailable("外部 Sub-Store 的运行模式由其部署环境管理")
@@ -548,10 +519,13 @@ func (r *Runtime) SetMode(ctx context.Context, mode string) error {
 			if save == nil {
 				save = saveMode
 			}
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			if err := save(ctx, mode); err != nil {
 				return err
 			}
-			return r.write("last_used", r.monotonic())
+			return r.writeState(ctx, runtimePatch{LastUsed: new(r.monotonic())})
 		})
 	})
 }
@@ -562,6 +536,9 @@ func (r *Runtime) SetMode(ctx context.Context, mode string) error {
 // them).
 func (r *Runtime) Tick(ctx context.Context) error {
 	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if !r.env.IsBuiltinAvailable() {
 		return nil
 	}
@@ -574,10 +551,12 @@ func (r *Runtime) Tick(ctx context.Context) error {
 			if mode == "always" {
 				return r.ensureRunning(ctx)
 			}
-			state := r.read()
+			state, err := r.loadState()
+			if err != nil {
+				return err
+			}
 			now := r.env.Clock.Monotonic()
-			if !jsonx.Truthy(state) {
-				// Also handles upgrades from the former autostart image.
+			if state.empty() {
 				status, err := r.runCommand(ctx, "status")
 				if err != nil {
 					return err
@@ -586,24 +565,15 @@ func (r *Runtime) Tick(ctx context.Context) error {
 				if status == "RUNNING" || status == "STARTING" {
 					current = "running"
 				}
-				return r.write("state", current, "last_used", jsonx.Float(now))
+				return r.writeState(ctx, runtimePatch{State: new(current), LastUsed: new(now)})
 			}
-			current, err := stateGet(state, "state", nil)
-			if err != nil {
-				return err
-			}
-			if jsonx.Equal(current, "sleeping") {
+			if state.State != nil && *state.State == "sleeping" {
 				return nil
 			}
-			used, err := stateGet(state, "last_used", jsonx.Int(0))
-			if err != nil {
-				return err
+			if state.invalidLastUsed || model.IssueUnder(model.Issues(state), "last_used") {
+				return &RuntimeStateError{Field: "last_used"}
 			}
-			elapsed, err := floatMinus(now, used)
-			if err != nil {
-				return err
-			}
-			if elapsed >= r.IdleSeconds {
+			if now-state.LastUsed >= r.IdleSeconds {
 				status, err := r.runCommand(ctx, "status")
 				if err != nil {
 					return err
@@ -613,12 +583,11 @@ func (r *Runtime) Tick(ctx context.Context) error {
 						return err
 					}
 				}
-				// Retain a startup/update failure for the UI and retry.
 				current := "sleeping"
-				if failure, _ := stateGet(state, "error", nil); jsonx.Truthy(failure) {
+				if state.Error != "" {
 					current = "failed"
 				}
-				return r.write("state", current)
+				return r.writeState(ctx, runtimePatch{State: new(current)})
 			}
 			return nil
 		})
@@ -633,73 +602,52 @@ func (r *Runtime) Tick(ctx context.Context) error {
 	return err
 }
 
-// floatMinus is `now - value` for a float now and a JSON value: numbers
-// (and bools) subtract, a huge int is OverflowError, anything else
-// TypeError, as in Python.
-func floatMinus(now float64, value any) (float64, error) {
-	switch v := value.(type) {
-	case bool:
-		if v {
-			return now - 1, nil
-		}
-		return now, nil
-	case jsonx.Number:
-		f := v.Float64()
-		if v.IsInt() && math.IsInf(f, 0) {
-			return 0, pyErr("OverflowError", "int too large to convert to float")
-		}
-		return now - f, nil
-	}
-	return 0, pyErr("TypeError", fmt.Sprintf("unsupported operand type(s) for -: 'float' and '%s'", typeName(value)))
-}
-
-// Status is status(running): what the dependency page shows. Observing
-// never starts Sub-Store or extends its idle time.
-func (r *Runtime) Status(ctx context.Context, running bool) (*jsonx.Object, error) {
+// Snapshot observes lifecycle state without starting or touching the service.
+func (r *Runtime) Snapshot(ctx context.Context, running bool) (*RuntimeStatus, error) {
 	managed := r.env.IsBuiltinAvailable()
-	var state any = jsonx.NewObject()
+	state := &runtimeState{}
 	if managed {
-		state = r.read()
+		var err error
+		state, err = r.loadState()
+		if err != nil {
+			return nil, err
+		}
 	}
-	current, err := stateGet(state, "state", nil)
-	if err != nil {
-		return nil, err
+	current := ""
+	if state.State != nil {
+		current = *state.State
 	}
-	if !jsonx.Equal(current, "updating") {
+	if current != "updating" {
 		if running {
 			current = "running"
-		} else if !jsonx.Equal(current, "starting") && !jsonx.Equal(current, "failed") {
+		} else if current != "starting" && current != "failed" {
 			sleeping := false
 			if managed {
 				mode, err := r.mode(ctx)
 				if err != nil {
 					return nil, err
 				}
-				sleeping = mode == "on_demand" && (current == nil || jsonx.Equal(current, "sleeping"))
+				sleeping = mode == "on_demand" && (state.State == nil || current == "sleeping")
 			}
+			current = "failed"
 			if sleeping {
 				current = "sleeping"
-			} else {
-				current = "failed"
 			}
 		}
 	}
 	mode := "external"
 	if managed {
 		var err error
-		if mode, err = r.mode(ctx); err != nil {
+		mode, err = r.mode(ctx)
+		if err != nil {
 			return nil, err
 		}
 	}
-	var idle any = jsonx.Float(r.IdleSeconds)
-	if r.IdleSeconds == math.Trunc(r.IdleSeconds) {
-		idle = jsonx.Int(int64(r.IdleSeconds))
+	message := ""
+	if current == "failed" {
+		message = state.Error
 	}
-	var errorText any = ""
-	if jsonx.Equal(current, "failed") {
-		errorText, _ = stateGet(state, "error", "")
-	}
-	return jsonx.Obj("managed", managed, "mode", mode, "state", current, "idle_seconds", idle, "error", errorText), nil
+	return &RuntimeStatus{Managed: managed, Mode: mode, State: current, IdleSeconds: r.IdleSeconds, Error: message}, nil
 }
 
 // idlePeriodic only drives Tick; work/control leases keep their existing

@@ -31,3 +31,9 @@ const (
 	msgCacheSubscriptionsShape = "检查订阅缓存失败，跳过清理: subscriptions 必须是数组"
 	msgCacheRootShape          = "缓存必须是 JSON 对象"
 )
+
+const (
+	msgRuntimeStateShape    = "Sub-Store 运行状态必须是 JSON 对象"
+	msgRuntimeStateLastUsed = "Sub-Store 运行状态的 last_used 必须是有限数字"
+	msgRuntimeModeInvalid   = "运行模式必须是 on_demand 或 always"
+)

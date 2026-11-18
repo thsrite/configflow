@@ -1693,3 +1693,24 @@ world 保留旧文件。原 archive 不改；独立 Python 参考绑定完整 ar
   使用 repo 现有文件叶锁，取得锁后/最后 unlink 前检查取消；不删除 Python 遗留 lock 文件。
   主文件、备份、未知字段和有效原始缓存字节的既有测试保持。作废内容核对的 panic 日志
   只输出固定业务文本，避免回显任意 panic 值中的节点凭据。
+
+
+### N8-9 subs/substore — 私有 runtime 状态文件（协调者裁定）
+
+- 私有 `<tempdir>/configflow-sub-store-<DATA_DIR sha256前12位>/state.json` 改用共享 model
+  记录和原生 UTF-8 JSON framing，不再复刻 Python json.dumps 的单行空格/ASCII 转义。
+  业务字段、值、成员顺序、有效 supervisorctl 命令和副作用不变；未知成员和原数字文本
+  继续按 R1/R2 保存。显式写入的字段通过 SetMemberJSON 修复，不能因值恰好为零而保留损坏值。
+- 生产读取方审计：旧 `backend/utils/sub_store_runtime.py::_read` 用 json.loads；新
+  `substore.loadState` 用共享 DecodeStored + model。`docker/sub-store-start.sh` 只选 bundle/VERSION，
+  Node 数据目录由 `docker/Dockerfile` 的 SUB_STORE_DATA_BASE_PATH=/data/sub-store 指定；
+  启动/安装脚本没有定位上述 hashed scratch state 文件，没有发现其他按字节匹配该文件的进程。
+- `n89_runtime_reference.py` 由真实 Python 原样写出旧格式（包括空格、Unicode ASCII 转义及
+  超过 2^53 的未知整数）；Go 读取测试检查字段/未知整数并确认读取不改写文件。
+- 非对象 state 根以 RuntimeStateError 明确拒绝，不再构造 CPython AttributeError/TypeError。
+  该无效根在任何服务控制前拒绝，文件保持原样。last_used 的 null/非有限数/错误类型
+  不能作为可停止服务的空闲证据；被真正消费时拒绝，未消费的读取/被覆盖路径仍可工作。
+  其他 R5 字符串/指针字段遵守共享 codec，而不是 Python truthiness。
+- 原 review_reference.json 及 checkOutcome 比较器未变。128条逐行 native 参照由原文件哈希锁定，
+  真正的 Python生命周期函数读取 model 消费视图；真实 Python writer 继续操作原文件，
+  避免无关字段被投影规范化。精确期望改变一个 mode 的负控能使实际测试失败。

@@ -133,7 +133,8 @@ func latin1Encode(s string) string {
 // (TypeError in _write, AttributeError at state.get, TypeError/OverflowError
 // at now - last_used) instead of being treated as empty.
 func TestReviewRuntimeMalformedState(t *testing.T) {
-	for _, item := range reviewReference(t).GetList("runtime") {
+	reference := nativeRuntimeReference(t)
+	for index, item := range reviewReference(t).GetList("runtime") {
 		row := item.(*jsonx.Object)
 		state, action, running := row.GetString("state"), row.GetString("action"), row.GetBool("running")
 		base := t.TempDir()
@@ -179,15 +180,14 @@ func TestReviewRuntimeMalformedState(t *testing.T) {
 		default:
 			err = r.Use(context.Background(), func(ctx context.Context) error { return nil })
 		}
+		expected := reference.GetList("expectations")[index].(*jsonx.Object)
 		label := action + " " + jsonx.Repr(state) + " running=" + jsonx.Repr(running)
-		checkOutcome(t, label, row, got, err, true)
-		if !jsonx.Equal(commands, row.Value("commands")) {
-			t.Errorf("%s: commands %s, Python %s", label, jsonx.Repr(commands), jsonx.Repr(row.Value("commands")))
+		checkOutcome(t, label, expected, got, err, true)
+		if !jsonx.Equal(commands, expected.Value("commands")) {
+			t.Errorf("%s: commands %s, Python %s", label, jsonx.Repr(commands), jsonx.Repr(expected.Value("commands")))
 		}
 		after, _ := os.ReadFile(filepath.Join(r.Directory, "state.json"))
-		if string(after) != latin1Encode(row.GetString("after")) {
-			t.Errorf("%s: state.json %q, Python %q", label, after, latin1Encode(row.GetString("after")))
-		}
+		compareRuntimeStateFile(t, label, after, []byte(latin1Encode(expected.GetString("after"))))
 	}
 }
 

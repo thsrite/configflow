@@ -398,7 +398,7 @@ func TestStateFileBytes(t *testing.T) {
 		return rt.write("last_used", jsonx.Float(12.5), "state", "sleeping")
 	})
 	data, _ := os.ReadFile(filepath.Join(rt.Root(), "state.json"))
-	if string(data) != `{"state": "sleeping", "error": "", "last_used": 12.5}` {
+	if string(data) != `{"state":"sleeping","error":"","last_used":12.5}` {
 		t.Fatalf("state.json %s", data)
 	}
 	for _, name := range []string{"work.lock", "control.lock"} {
