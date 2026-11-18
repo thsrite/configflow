@@ -1284,16 +1284,3 @@ func ruleMatches(groups []*IkuaiGroup, rule *GroupRule, c GroupRuleCheck) bool {
 	}
 	return sameNames(names, c.Groups)
 }
-
-// MarshalJSON retains the explicit null ID of a newly planned NAT rule;
-// policy group checks identify their rule by comment and omit ID entirely.
-func (c GroupRuleCheck) MarshalJSON() ([]byte, error) {
-	type plain GroupRuleCheck
-	if c.Func == "nat_rule" && c.ID == "" {
-		return json.Marshal(struct {
-			plain
-			ID *string `json:"id"`
-		}{plain: plain(c)})
-	}
-	return json.Marshal(plain(c))
-}

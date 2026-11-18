@@ -214,3 +214,35 @@ func TestR12ReviewStartPublishPanicIsLogged(t *testing.T) {
 		t.Fatalf("panic not logged safely: %q", text)
 	}
 }
+
+// The explicit null id of a newly planned NAT rule is a release-plan fact
+// (Python _grouped_nat_ops); the shared planner check echoes its input rules,
+// so GroupRuleCheck's own JSON keeps an absent id absent (R03 corpus).
+func TestR12ReviewNewNATRuleNullIDOnlyInPlanView(t *testing.T) {
+	rules := []GroupRuleCheck{
+		{Func: "nat_rule", Comment: "cf-mihomo", Groups: []string{"cf_nat_1"}, KeepForeign: true},
+		{Func: "nat_rule", ID: "11", Comment: "cf-mihomo", Groups: []string{"cf_nat_1"}, KeepForeign: true},
+		{Func: "stream_ipport", Comment: "cf-mihomo", Groups: []string{"cf_pa_1"}},
+	}
+	shared := r08Comparable(t, GroupStageCheck{Groups: map[string]string{}, Rules: rules, Removed: []string{}}).(map[string]any)
+	for i, rule := range shared["rules"].([]any) {
+		if _, present := rule.(map[string]any)["id"]; present != (i == 1) {
+			t.Fatalf("shared check rule %d id presence %v: %v", i, present, rule)
+		}
+	}
+	checks := Checks{Routes: []CIDRGateway{}, RemovedRoutes: []string{}, IkuaiGroups: map[string]GroupStageCheck{
+		StageNATBypass: {Groups: map[string]string{}, Rules: rules[:2], Removed: []string{}},
+		StageRoutes:    {Groups: map[string]string{}, Rules: rules[2:], Removed: []string{}},
+	}}
+	view := r08Comparable(t, checks).(map[string]any)["ikuai_groups"].(map[string]any)
+	nat := view[StageNATBypass].(map[string]any)["rules"].([]any)
+	if id, present := nat[0].(map[string]any)["id"]; !present || id != nil {
+		t.Fatalf("new NAT rule lost explicit null id: %v", nat[0])
+	}
+	if nat[1].(map[string]any)["id"] != "11" {
+		t.Fatalf("existing NAT rule id changed: %v", nat[1])
+	}
+	if _, present := view[StageRoutes].(map[string]any)["rules"].([]any)[0].(map[string]any)["id"]; present {
+		t.Fatal("policy check gained an id")
+	}
+}

@@ -1,6 +1,9 @@
 package routers
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"slices"
+)
 
 // Plan is the reviewable, ordered release and its readback requirements.
 type Plan struct {
@@ -157,12 +160,21 @@ func (c Checks) MarshalJSON() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !(c.ipv6DNSPresent && c.IPv6DNS == nil) && !(c.rosPolicyPresent && c.ROSPolicy == nil) {
+	newNATRule := false
+	for _, stage := range c.IkuaiGroups {
+		newNATRule = newNATRule || slices.ContainsFunc(stage.Rules, isNewNATRuleCheck)
+	}
+	if !(c.ipv6DNSPresent && c.IPv6DNS == nil) && !(c.rosPolicyPresent && c.ROSPolicy == nil) && !newNATRule {
 		return b, nil
 	}
 	var fields map[string]json.RawMessage
 	if err = json.Unmarshal(b, &fields); err != nil {
 		return nil, err
+	}
+	if newNATRule {
+		if fields["ikuai_groups"], err = releaseGroupChecks(c.IkuaiGroups); err != nil {
+			return nil, err
+		}
 	}
 	if c.ipv6DNSPresent && c.IPv6DNS == nil {
 		fields["ipv6_dns"] = json.RawMessage(`{}`)
@@ -171,4 +183,51 @@ func (c Checks) MarshalJSON() ([]byte, error) {
 		fields["ros_policy"] = json.RawMessage(`null`)
 	}
 	return json.Marshal(fields)
+}
+
+// isNewNATRuleCheck is the check of a NAT rule this release creates.
+func isNewNATRuleCheck(r GroupRuleCheck) bool { return r.Func == "nat_rule" && r.ID == "" }
+
+// releaseGroupChecks is the release view of the iKuai group checks. Python's
+// _grouped_nat_ops writes "id": null for a NAT rule it creates, while the
+// shared planner check echoes the rules it is given (policy checks have no id),
+// so the explicit null belongs to the plan, not to GroupRuleCheck's own JSON.
+func releaseGroupChecks(stages map[string]GroupStageCheck) (json.RawMessage, error) {
+	out := make(map[string]json.RawMessage, len(stages))
+	for key, stage := range stages {
+		b, err := json.Marshal(stage)
+		if err != nil {
+			return nil, err
+		}
+		if slices.ContainsFunc(stage.Rules, isNewNATRuleCheck) {
+			var fields map[string]json.RawMessage
+			if err = json.Unmarshal(b, &fields); err != nil {
+				return nil, err
+			}
+			rules := make([]json.RawMessage, len(stage.Rules))
+			for i, r := range stage.Rules {
+				if rules[i], err = json.Marshal(r); err != nil {
+					return nil, err
+				}
+				if isNewNATRuleCheck(r) {
+					var rule map[string]json.RawMessage
+					if err = json.Unmarshal(rules[i], &rule); err != nil {
+						return nil, err
+					}
+					rule["id"] = json.RawMessage("null")
+					if rules[i], err = json.Marshal(rule); err != nil {
+						return nil, err
+					}
+				}
+			}
+			if fields["rules"], err = json.Marshal(rules); err != nil {
+				return nil, err
+			}
+			if b, err = json.Marshal(fields); err != nil {
+				return nil, err
+			}
+		}
+		out[key] = b
+	}
+	return json.Marshal(out)
 }
