@@ -1539,3 +1539,23 @@ N8-9候选读取R5/D2：候选源列表及排序的读取按model schema回退�
 不能借回退绕过校验。provider私有副本的path由Python repr(tuple)摘要切换为原生JSON摘要，
 不改变命名冲突处理、URL、过滤表达式、引用顺序或其他provider字段。真实Python的1500条
 候选读取及688条lower完整文档对照有独立R5/D2预期，原输入/原档案保留。
+
+N8-9 refresh收口（R5/R8/D2）：interval与health count统一使用共享model.Int；非对象任务回执、
+非列表或混入非对象的health history按schema回退。调度继续复用taskstatus.Count，拒绝非ASCII
+计数文本及非空容器；非有限JSON不能成为有效回执。31条R5差异由真实Python对typed输入
+重录，另有2条原生诊断（fs.PathError、repo.Error）逐条固定预期。原1210条refresh档案和
+3150条记录不改，未变化的行仍用原期望。超大interval的无上次运行/失败退避短路、空URL
+注入回调、受控Dialer错误类别等实际回归已修代码，没有登记为有意差异。
+
+D2写入的subscription health、transport与nodes缓存仅JSON成员顺序/空白可以变化，
+完整JSON值继续相等；比较器负控包括URL、node ID、数字类型、字段删除及非owner文件。
+
+O12规则缓存迁移补充：原生文件必须保留旧cache mtime，迁移不能延长 freshness；在目标
+file锁内确认不存在才安装，已有新文件不覆盖。readonly snapshot中仍可使用通过内容和
+声明校验的旧缓存，暂缓迁移至下一次可写读取；迁移写失败不会破坏离线读取，真实关机
+取消仍传播且不得继续写入。不会修改DB/revision，也不会删除旧文件，便于回滚。
+
+N8-9 D2 provider私有路径的跨包对照：convert的独立真实Python参考只替换49条archive行
+中的精确provider path；39条当前正常生成/下载行直接验证，原有N7/R5错误路径继续完整比较。
+生成文件内容、URL、过滤表达式、顺序、host与节点语义均不得借D2豁免。首次Go生成/推送会
+引用新的私有provider文件名，与既定D2一次性重新发布计划一致。

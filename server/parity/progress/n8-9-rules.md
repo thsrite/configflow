@@ -1,93 +1,130 @@
 # N8-9 rules / rulefetch / refresh / rulesetfmt
 
-状态：实施中；基线 go@95440b69e（只比03257978f多盘点文档，batch-7未合入）。
-不依赖尚未落地的health/discovery typed API，不复制其他分支文件，不改convert。
+完成，待独立复核。分支 `go-n8-9-rules`，已变基到 `go@d4fab6441`。
+产品收口提交 `fcc671d9d`；共享字段证据/迁移文件 API 为 `55f13acb7`。
+前置分段提交：`378791c18`、`64415feec`、`64bf4f22a`、`f343883b8`。
+测试全部固定 `.32`，没有本机测试、完整 gate、push 或子 agent。
 
-## 第一段：规则索引和格式叶层
+## 实现
 
-- Matcher / Hit、Cache / Cached / MatcherInput 使用 model.RuleConfig / RuleLibraryItem；
-  旧 discovery 调用通过 matcher_legacy.go、cache_legacy.go 的窄边界衔接。
-- 删除 rulesetfmt/legacy.go，唯一剩余生产调用方 rules.RulesetFormat 改走原生RuleFormat。
-  保留原Python格式档案及逐字正常路径断言；不再以legacy输出当typed实现的参考。
-- 签名采用D2原生JSON；保留invalid receipt、当前声明检查、旧identity/name冲突协议。
-- typed policies / 泛型reorder已落地，旧调用方边界不复制核心规则。
-- 两种节点规模（0 / 20000个无关节点）的窄投影分配均为188 allocs/op，
-  14606 / 14580 B/op；另有AllocsPerRun负控约束无关配置大小不改变分配。
+- rules 的 Matcher/Hit、Cache/Cached/MatcherInput、GroupCatalog/GroupSelection、
+  Provider/RenderedMembers、IPDeps/IPTarget/IPResult、policy验证和泛型reorder使用native DTO。
+  jsonx只留在明确的legacy签名边界，核心不再绕回这些边界。
+- 删除rulesetfmt/legacy.go；其剩余生产调用方转RuleFormat。convert.RulesetFormat继续沿用
+  batch-6的窄rule_library codec，没有重新解码整份Config。
+- rulefetch的Content明确区分文本/bytes，SourceConfig、DownloadRequest、CacheOptions、
+  Inspection/Problem/Change、ResolveSource及下载/缓存/内容处理采用native类型。
+  删除被替换的JSON/bytes repr、Unicode异常仿真及已无调用的isValueError/safeExceptionDetails。
+- refresh采用RefreshEnv/SourceOwners、SourceResult/SourceMetadata/NodeCache、health/traffic/
+  receipt DTO、native仓储和task row builder。不再仿真Python history字符串/字典迭代。
+  所有写owner在Detach后、外部callback返回后及实际提交前检查同一Runtime generation；
+  重试保留batch-7的Clock timer和ctx等待，不以旧Sleep覆盖。
+- 已接batch-7 discovery的native规则保存、校验、缓存读取、Matcher/Cache、服务目录与page DTO。
+  CacheOptions.ReadPath在repo.View内校验当前声明，仅返回路径，不保留借用记录、不复制library。
+  signature和lazy load都有拒绝调用StoredLibrary的负控。没有每个ruleset重新解码Config/library。
+- 必要convert产品改动仅legacy.go四个callback：RenderMembers→RenderGroupDocument，
+  FilterGroups→LowerProviderFilters，ValidateRules→ValidatePolicies，FilterNodes→Filter。
+  不改其签名、生成算法或默认超时。额外convert测试/录制器只处理已批准的D2私有provider path。
+- 外部subs/substore、deploy、API与repo共享JSON文件接口仍有窄adapter；没有复制owner业务。
+  既有HTML parser/entity及requests异常分类依design/n7-n8.md §1属于N9/N10，本轮未重写，
+  不冒称已经删除。website核心现为PageProbe/PageInfo/ServiceIdentity原生DTO。
 
-协调者确认：原始语料不动，R5/D2用逐行独立预期验证。
-`testdata/n89_cache_reference.py` 调真实Python记录600条缓存名、7条namespace和114条policy；
-先对typed输入调用原Python，D2只采用约定的compact JSON声明摘要。
-Go测试逐行绑定原输入和原输出，不空跳过错误类别。
-缓存原始档案SHA256固定；policy行数/原输入绑定。
+## 独立参考与期望保护
 
-定向远端检查（.32，GOMAXPROCS=4）已通过：
-`go test -p 4 ./internal/rules ./internal/rulesetfmt`，末行2.272s / cached。
-rulefetch / refresh尚未改时各自原包通过6.539s /44.192s。
-尚未做最终race/vet/Flask/fuzz，不能作为交回结果。
+原始archives不改；正常行继续原期望。R5/D2另录逐行、绑定原输入/输出的独立预期：
 
-## O12切换检查（待第二段闭环）
+- 缓存名600条、namespace 7条、policy 114条；候选读取1500条、lower 600+88条。
+- refresh原corpus1210条、recorded 3150条：另录31条R5、2条R8。实际调度/history/task逻辑
+  由真实Python执行，Go测试不照实现计算答案。原history异常证据也单独保存。
+- 私有provider path的49条Mihomo参考由真实Python generator生成；只拦截其摘要输入。
+  录制器要求除精确path外整个文档/下载列表不变。当前39条正常生成/下载行直接对照；
+  原有N7/R5错误分支继续完整比较错误，不应用路径改写。
+- 新增6条真实Python旧缓存编码参考（显式空ID、转义字符串、UTF-8分隔符等）和1条外部anchor
+  provider复制参考。未知成员和未变化值仍保留原始JSON证据。
+- D2文件比较只放过已迁移owner JSON的成员顺序/空白；负控拒绝URL、ID、数字类型、缺失字段、
+  非owner文件的变化。Flask缓存路径投影只改已知cache文件key及results[].local_path；
+  未知namespace、额外文件、正文、错误、状态码、SQLite及其他字段均继续比较。
+- pyref人工审核suggest-sources结果：3个mosdns集合删已删除的legacy文件，补7个实际可达helper，
+  不扩大product白名单。三个gzip仅更新metadata；与go基线逐项比较2863+5份entries不变，
+  Recorded原有0份仍为0；N73共享upstream参考文件不变。真实Pythonrecord/check再次通过。
 
-生成路径会使用规则缓存；只更换摘要而无兼容读取，在上游离线时会失去旧缓存兜底。
-已增加旧fixed-schema摘要的只读寻址，限定当前存储声明认领；写入方不使用旧摘要。
-后续必须在rulefetch对旧文件内容校验、声明复核后写入native名称，并补离线、改声明、
-invalid receipt和真实Runtime关机/断开测试。未完成前不交回。
+## 已修风险
 
-## 剩余工作
+本次实现没有未修复的high/medium产品问题。以下均已修复并有回归（收口提交fcc671d9d；
+共享支持55f13acb7）：
 
-- rules组候选/连接DTO和验证，移除动态core。
-- rulefetch内容、下载、缓存和原生HTML/error迁移；一次性缓存读取闭环。
-- refresh仓储/DTO/任务行和ctx提交边界迁移（仅对未迁移owner保留薄adapter）。
-- 增量race、跨包Corpus|Reference|Golden、相关Flask和fuzz60s；完整go vet与最终报告。
+- **medium**：只换D2摘要会失去首次启动时的离线兜底。旧文件须在当前声明、内容及invalid
+  receipt校验后迁移；目标file锁内只安装缺失文件，不覆盖较新文件，不提交DB/revision。
+  保留旧mtime，不能因迁移延长freshness；旧文件留作回滚。readonly snapshot或迁移写失败
+  仍返回通过校验的旧bytes，下次可写读取再迁移；真正的关机取消继续传播。
+- **medium**：R5文本回退不能成为URL/时间戳ownership证明。新增Raw.MemberJSON，只读单个
+  有效原始字段，不编码整个cache。数字URL、文本/日期token及可解析数字日期有负控。
+- **medium**：callback结束后T0不能继续保存health/task receipt。真实Runtime覆盖
+  entry/fetch/metadata/save × 请求断开/关机，断开仍完成已接管写入，关机停止后续提交；
+  配置/revision不变，旧generation不能重新启动。
+- **medium**：Marshal/Parse复制私有provider会拒绝指向文档外anchor的有效YAML。
+  改用带预算的yamlx.Encode图复制，随后MaterializeAliases修复定义和唯一名称；不用Clone，
+  不展开alias。真实Python对照、修改副本不影响原节点、alias共享、comments及Marshal/Parse
+  闭环均验证；实际Lower入口拒绝手工40层放大链和自引用。
+- **low**：暂存实现曾提前拒绝空URL注入回调、漏写count=0、丢失超大interval调度短路、
+  错拆聚合下载错误/暴露Dialer详细错误。修产品代码，未将这些回归登记成R5。
 
-## 第二段：内容/下载/缓存核心（实施中）
+O12的离线兼容和mtime说明已写behaviour-changes.md及progress/o14-switch.md。
 
-- rulefetch Content明确区分文本与二进制；Inspection/Problem/Change、SourceConfig、
-  typed CacheOptions/DownloadRequest/ResolveSource全部用原生类型。
-  API/deploy/substore旧调用只经过窄adapter，不再由core创建jsonx config；不改convert。
-- 默认重试等待使用ctx选择；写owner在Detach后和下载完成后的实际缓存提交前检查同一Runtime。
-- O12已补一次性读取闭环：旧摘要只用于读，校验内容后在repo事务中再次核对声明/receipt，
-  以native名称保存，旧文件保留便于回滚。事务以内部sentinel退出，不增加DB revision。
-  合成测试覆盖离线上游、迁移后去掉旧文件仍可读、坏内容、改URL/behavior、旧/新invalid receipt。
-- 真实Runtime.Start/BindRequest/Shutdown覆盖请求断开与关机；在下载回调结束、提交前触发关机
-  不写文件，浏览器断开仍完成已接管的写入。没有用普通cancel代替关机。
-- 内容DTO测试只改访问方法，不改原始期望。手写enum/content的null/数字仍由写入口严格拒绝；
-  曾发现typed回退把两个null编辑变成默认，以及数字content被转文本，已修产品验证。
-- 删除pystr.go中的JSON/bytes repr和Unicode异常仿真；规则文本仍保留已有分隔符集合。
-  无效UTF-8仍保留原中文消息、行号和有限字节证据；72849+13832+103734条原参考继续精确对照。
-- 仅一条requests内部英文异常改为原生ErrRedirectEncoding；原档案的完整UnicodeDecodeError
-  仍固定断言，同时逐字段断言原生拒绝与完整消息，网络请求transcript照常比较（R8）。
+## 分配约束与DNS交接
 
-远端原包最后通过：`go test -p 4 ./internal/rulefetch`，7.902s；
-新增迁移/Runtime/download owner子集通过2.176s。最终race/Flask/fuzz仍待整组完成。
+- 窄matcher输入：0 / 20000个无关nodes均188 allocs/op，约14.6KB/op。
+- 已知format读取：空 / 1MiB无关library均409 allocs/op，约35.4KB/op；不可JSON编码的无关
+  transient成员负控证明没有隐式遍历。错误format仍拒绝缓存。
+- 字段原始证据读取：空 / 1MiB无关payload均16 allocs/op、1344 B/op。
+- DNS可直接用：
+  `ReadValidatedRuleCacheWithFormat(ctx, rule, config *jsonx.Object, format string) ([]byte,error)`；
+  native为`ReadCacheWithFormat(ctx, model.RuleConfig, *SourceConfig, string)`。
+  旧入口委托format=""。显式format跳过inference，stable路径不读library；旧名称回退仅为
+  名称消歧懒投影ID/name，ownership始终由当前存储声明证明。batch-8先rules后dns。
 
-## 第三段：候选/连接核心（实施中）
+## 定向验证
 
-- GroupCatalog/GroupSelection/GroupMember/Provider/RenderedMembers与IPDeps/IPTarget/
-  RulesetInfo/IPResult均为原生DTO。rules运行时只有明确的*_legacy.go边界引用jsonx。
-- CheckCandidates、CheckFilters、MergeGroup检查原始成员证据；源ID数组及排序项不能依赖
-  R5将非法写请求变成有效引用。显式健康字段删除保留未知成员和原始数值字节。
-- LowerProviderFilters在独占YAML Node上工作；必须复制的provider走yamlx.Marshal/Parse预算API，
-  不用Clone。provider私有path采用D2原生三字段JSON摘要。
-- `n89_group_reference.py` 调真实Python记录1500条typed reader输入、600条lower及88条复核lower。
-  D2仅拦截Python函数自身的tuple摘要输入并按约定native JSON编码，候选选择/过滤/命名/文档
-  全部仍由真实Python执行；逐行绑定原输入，原档案和未知期望不改。
-  原始受控写验证和merge期望继续原样比较，不将错误消息先后顺序变更登记为R5。
-- 定向包最后通过 `go test -p 4 ./internal/rules` 3.745s。
+命令均在任务worktree运行，统一前缀：
+`RT_HOST=sunbroke@192.168.0.32 rt -e GOMAXPROCS=4 -- bash -lc 'set -e; cd server; …'`。
+长命令在前台等待完成；没有使用完整gate。
 
-## 第四段：refresh native flow 检查点（未交回）
+1. `gofmt -l`覆盖全部修改Go文件/目录，无输出；`go vet ./...`通过。
+   `go test -count=1 ./tools/pyref -run TestAuditRepository`最终0.600s通过。
+2. 完整定向race：
+   `go test -race -p 4 -count=1 -timeout=20m ./internal/rules ./internal/rulefetch ./internal/refresh ./internal/rulesetfmt ./internal/model ./internal/discovery ./internal/api/rules ./internal/api/rulelibrary ./internal/api/proxygroups ./internal/api/tasks ./internal/convert/mihomoenv ./internal/server`
+   末行分别：39.474s /44.251s /184.220s /3.090s /13.822s /23.910s /88.576s /
+   65.907s /7.919s /7.125s /1.015s /20.610s，全部ok。
+3. 修复后的增量race：
+   `go test -race -p 3 ./internal/rules ./internal/convert/mihomoenv ./internal/server`
+   44.118s /1.020s /21.579s全部ok。新迁移API的repo/rulefetch子集race1.601s/4.664s；
+   新Runtime/字段证据/已知format/路径负控增量model、refresh、rulefetch、refresh/difftest
+   race1.015s/3.758s/1.587s/1.305s均ok。
+4. 跨包参考：
+   `go test -p 4 -count=1 -timeout=20m -run "Corpus|Reference|Golden" ./internal/convert ./internal/provider ./internal/subs ./internal/substore ./internal/health/... ./internal/mosdns ./internal/oxidns`
+   provider21.917s、subs4.677s、substore0.092s、health2.370s、oxidns18.180s通过；
+   D2/metadata收口后convert70.811s、mosdns4.889s通过。最后alias修复增量
+   `go test -p 3 -count=1 ./internal/convert -run "TestMihomoCorpus|TestD2Provider"`27.665s通过。
+5. 真实Pythonmetadata核对：
+   `PYREF_MODE=record PYREF_ACCEPT=1 go test -count=1 ./internal/mosdns -run "TestCorpus$|TestRecordedPythonTests$|TestReviewUnholdableYAMLOutsideTheOutputMatchesPython$"`
+   随后同选择器`PYREF_MODE=check`，最后59.324s /57.854s均ok。原entries逐项不变检查通过。
+6. 真实Flask：
+   `CONFIGFLOW_DIFF=1 go test -p 2 -count=1 -timeout=15m ./internal/refresh/difftest ./internal/discovery/difftest ./internal/api/rules/difftest ./internal/api/rulelibrary/difftest`
+   refresh5.306s、discovery11.301s；D2路径投影后的API增量rules67.041s、rulelibrary30.136s
+   均ok。refresh的31个HTTP请求状态/正文一致，缓存正文和备份继续比较。
+7. 每条均`go test -run "^$" -fuzz "^名称$" -fuzztime=60s -parallel=2 ./对应包`：
 
-已实现 RefreshEnv/SourceOwners、原生source/node/health/traffic/receipt DTO，Source/Rule任务行
-直接注册tasks.SetRowBuilder；Source/Rule流程、RunRound、手动任务均走typed仓储和同Runtime。
-健康记录历史的Python string/dict迭代仿真已删除，R5的独立参考与原测试接线还未收口。
-当前仅编译及正常子集通过：TestReviewTypedLookup / TestNextRunBacksOff /
-TestParseUserinfo / TestRoundJoins，0.416s。没有将原全包通过结果沿用给这次改动。
+   | 目标 | 包 | 末行 | executions |
+   |---|---|---|---:|
+   | FuzzTypedGroupCandidates | internal/rules | PASS /61.009s | 764377 |
+   | FuzzTypedRuleContent | internal/rulefetch | PASS /61.012s | 239917 |
+   | FuzzMemberJSONEvidence | internal/model | PASS /61.006s | 2137917 |
+   | FuzzSourceYAMLPolicy | internal/refresh | PASS /61.019s | 176532 |
+   | FuzzRuleFormat | internal/rulesetfmt | PASS /61.006s | 2355675 |
+   | FuzzProviderAliasCopy | internal/rules | PASS /61.013s | 508392 |
 
-与DNS owner的约定：提供ReadValidatedRuleCacheWithFormat(ctx,rule,config *jsonx.Object,format string)
-([]byte,error)；typed入口ReadCacheWithFormat(ctx,model.RuleConfig,*SourceConfig,string)。显式format
-跳过inference，当前stable文件不读取library；旧名称回退仅懒投影ID/name以保留碰撞协议。
-旧ReadValidatedRuleCache委托format=""。缓存/StoredRule读取改用repo.View读取所需目录，
-不为每条规则marshal/decode整个Shared。相应显式format测试/分配基准待本段收口。
+8. `PYTHONPATH=. $HOME/cf-test/.venv/bin/python -m unittest server.internal.rules.testdata.test_d2_http_cache`：
+   2 tests /OK。独立参考录制器也全部只在`.32`执行。`git diff --check`无输出。
 
-协调者已通知batch-7合入go@d4fab6441；接下来在此可编译检查点提交，rebase后再收口
-health/discovery/8b/8c现已可用的typed接口。尚需refresh独立参考、剩余rulefetch网页/错误
-残留整理、最终race/vet/Flask/fuzz，不是正式交回。
+最终scope：类型迁移和必要callbacks完成，原archives保留，R5/D2/R8与O12均登记。
+N9/N10及未迁移外部owner的接口收口按原计划继续；本报告不宣称整个N8或生产切换完成。
