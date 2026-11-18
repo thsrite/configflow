@@ -94,11 +94,14 @@ RT_HOST=sunbroke@192.168.0.32 rt --back server/internal/routers/joblock_test.go 
 ## 长任务检查点
 
 产品/测试提交：b8f34ccc7（共享JobLock）、c2b3e9991（owner取消与已批准旧测试语义）、
-a80e49197（实际I/O/等待/并发/空路径）。当前完整相关包命令仍在前台执行，未返回前不能算通过：
+a80e49197（实际I/O/等待/并发/空路径）。当前完整相关包命令已前台执行完成（退出0）：
 ```sh
 RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && export CONFIGFLOW_PY=$HOME/cf-test/.venv/bin/python CONFIGFLOW_REPO=$(dirname "$PWD"); test -z "$(gofmt -l internal tools cmd)" && go vet ./... && go test -race -p=4 -count=1 -timeout=60m ./internal/routers/ ./internal/devhttp/ ./internal/routersplit/'
 ```
-前台exec session75973。不要结束回合等待通知，继续跟到退出。
+前台exec session75973已退出0：gofmt全目录无输出、全仓vet通过；
+`ok configflow/internal/routers 845.104s`、`ok configflow/internal/devhttp 4.092s`、
+`ok configflow/internal/routersplit 36.519s`。包括当前R04–R10的共享驱动测试与真实Python参照；
+基线仍为指定R10复核分支f368fa1b9，不冒称已经过R10/6c合入后的最终gate。
 
 `/tmp/o36b-repo-runtime-draft.go`是后续集成测试草稿，尚未放进正式树：
 TestO36bRepositoryRuntimeCommitBoundary对generic-password/manifest/delete、caller-held settings/settings-delete/publication/withdrawal，
