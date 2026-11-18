@@ -371,6 +371,8 @@ func TestCorpusFilters(t *testing.T) {
 var corpusNodeNames = []string{"US-new", "US-expired", "HK-new", "HK-expired", "US`old", "EU 01", "香港-01", "sg", "", "US-expired-new", "hk-1", "日本 02", "Aé", "x_1", "123"}
 
 func TestCorpusGroupCandidates(t *testing.T) {
+	reference := groupReference(t)
+	referenceIndex := 0
 	skipped, compared := 0, 0
 	for _, record := range corpus(t)["group"] {
 		if record.GetString("what") == "merge" {
@@ -391,11 +393,9 @@ func TestCorpusGroupCandidates(t *testing.T) {
 		shared, profile := record.GetObject("shared"), record.GetObject("profile")
 		full := shared.Clone()
 		full.Update(profile)
-		if pythonIteratesNonList(group) {
-			skipped++
-			continue
-		}
-		if want := record.Value("members"); !isException(want) {
+		expected := groupRow(t, reference.Groups[referenceIndex], record)
+		referenceIndex++
+		if want := expected.Value("members"); !isException(want) {
 			selection := ManagedMembers(group)
 			var members []any
 			for _, member := range selection.Members {
@@ -404,19 +404,19 @@ func TestCorpusGroupCandidates(t *testing.T) {
 			if compact(t, jsonx.ListOf(members)) != compact(t, want) {
 				t.Errorf("managed_members(%s) = %s, want %s", compact(t, group), compact(t, members), compact(t, want))
 			}
-			wantSelection := record.GetObject("selection")
+			wantSelection := expected.GetObject("selection")
 			gotSelection := jsonx.Obj("nodes", selection.Nodes, "subscriptions", selection.Subscriptions,
 				"aggregations", selection.Aggregations, "groups", selection.Groups, "order", selection.Order)
 			if compact(t, gotSelection) != compact(t, wantSelection) {
 				t.Errorf("managed_members selection %s, want %s", compact(t, gotSelection), compact(t, wantSelection))
 			}
 		}
-		if want := record.Value("render"); !isException(want) {
+		if want := expected.Value("render"); !isException(want) {
 			if got := RenderMembers(group, full); compact(t, got) != compact(t, want) {
 				t.Errorf("render_members(%s) = %s, want %s", compact(t, group), compact(t, got), compact(t, want))
 			}
 		}
-		if want := record.Value("providers"); !isException(want) {
+		if want := expected.Value("providers"); !isException(want) {
 			var got []any
 			for _, p := range ManagedProviders(group, full) {
 				got = append(got, []any{p.Item.Value("id"), p.Include, p.Exclude})
@@ -441,18 +441,26 @@ func TestCorpusGroupCandidates(t *testing.T) {
 		compared++
 	}
 	t.Logf("validate_candidates: %d equal, %d skipped (Python raised, or non-list source fields)", compared, skipped)
+	if referenceIndex != len(reference.Groups) {
+		t.Fatal("typed group reference coverage drift")
+	}
 }
 
 func TestCorpusLowerGroupProviderFilters(t *testing.T) {
-	for _, record := range corpus(t)["lower"] {
+	reference := groupReference(t)
+	if len(reference.Lower) != len(corpus(t)["lower"]) {
+		t.Fatal("lower reference count drift")
+	}
+	for i, record := range corpus(t)["lower"] {
 		want := record.Value("result")
 		if isException(want) {
 			continue
 		}
+		expected := groupRow(t, *reference.Lower[i], record)
 		main := record.GetObject("main").DeepCopy()
 		LowerGroupProviderFilters(record.GetObject("config").DeepCopy(), main)
-		if compact(t, main) != compact(t, want) {
-			t.Errorf("lower_group_provider_filters:\n got  %s\n want %s\n config %s", compact(t, main), compact(t, want), compact(t, record.Value("config")))
+		if compact(t, main) != compact(t, expected) {
+			t.Errorf("lower_group_provider_filters:\n got  %s\n want %s\n config %s", compact(t, main), compact(t, expected), compact(t, record.Value("config")))
 		}
 	}
 }

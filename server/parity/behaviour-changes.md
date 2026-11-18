@@ -1533,3 +1533,9 @@ repo事务里再次核对声明及旧/新invalid receipt，保存native文件且
 N8-9下载诊断R8：重定向Location为非UTF-8时仍拒绝，不再创建Python
 UnicodeDecodeError，改为原生ErrRedirectEncoding（`redirect Location is not valid UTF-8`）。
 只改变内部英文异常类别/文本，响应拒绝及loopback请求transcript不变；原Python完整诊断另有断言。
+
+N8-9候选读取R5/D2：候选源列表及排序的读取按model schema回退，排序消费DTO的缺失type/id
+为字符串零值；数字文本使用已批准的model.String codec。新写请求仍严格验证数组、ID和排序项，
+不能借回退绕过校验。provider私有副本的path由Python repr(tuple)摘要切换为原生JSON摘要，
+不改变命名冲突处理、URL、过滤表达式、引用顺序或其他provider字段。真实Python的1500条
+候选读取及688条lower完整文档对照有独立R5/D2预期，原输入/原档案保留。

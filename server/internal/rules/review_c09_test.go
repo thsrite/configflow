@@ -142,12 +142,18 @@ func TestReviewC09ValidateFilters(t *testing.T) {
 }
 
 func TestReviewC09LowerGroupProviderFilters(t *testing.T) {
-	for _, entry := range loadReviewC09(t).GetList("lower") {
+	reference := groupReference(t)
+	rows := loadReviewC09(t).GetList("lower")
+	if len(rows) != len(reference.ReviewLower) {
+		t.Fatal("review lower count drift")
+	}
+	for i, entry := range rows {
 		record := entry.(*jsonx.Object)
+		expected := groupRow(t, reference.ReviewLower[i], record)
 		main := record.GetObject("main").DeepCopy()
 		LowerGroupProviderFilters(record.GetObject("config").DeepCopy(), main)
-		if compact(t, main) != compact(t, record.Value("result")) {
-			t.Errorf("lower_group_provider_filters:\n got  %s\n want %s", compact(t, main), compact(t, record.Value("result")))
+		if compact(t, main) != compact(t, expected) {
+			t.Errorf("lower_group_provider_filters:\n got  %s\n want %s", compact(t, main), compact(t, expected))
 		}
 	}
 }

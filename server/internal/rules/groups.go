@@ -8,7 +8,10 @@ import (
 	"fmt"
 	"strings"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
+	"configflow/internal/yamlx"
+	"encoding/json"
+	"slices"
 )
 
 // Managed proxy-group membership (backend/utils/group_candidates.py)
@@ -50,299 +53,283 @@ func contains(list []string, value string) bool {
 	return false
 }
 
-// iterate is the items of a JSON list; other values have none (write
-// validation rejects them).
-func iterate(value any) []any {
-	list, _ := value.([]any)
-	return list
-}
-
-func containsEqual(list []any, value any) bool {
-	for _, item := range list {
-		if jsonx.Equal(item, value) {
-			return true
+// Filter applies name filters without borrowing or replacing records.
+func Filter[T any](items []T, include, exclude *string, nameOf func(T) string) ([]T, error) {
+	keep, err := compileNameFilter(include)
+	if err != nil {
+		return nil, err
+	}
+	remove, err := compileNameFilter(exclude)
+	if err != nil {
+		return nil, err
+	}
+	var result []T
+	for _, item := range items {
+		name := nameOf(item)
+		if (keep == nil || keep.Search(name)) && (remove == nil || !remove.Search(name)) {
+			result = append(result, item)
 		}
 	}
-	return false
+	return result, nil
 }
-
-// compileFilter compiles one user name filter (a string or JSON null).
-func compileFilter(value any) (*Regex, error) {
-	if value != nil {
-		if _, ok := value.(string); !ok {
-			return nil, candidateError("正则筛选必须是字符串或 null")
-		}
-	}
-	text, _ := value.(string)
-	if strings.TrimSpace(text) == "" {
+func compileNameFilter(value *string) (*Regex, error) {
+	text := strings.TrimSpace(valueOr(value, ""))
+	if text == "" {
 		return nil, nil
 	}
-	re, err := CompilePyRegex(strings.TrimSpace(text), false)
+	re, err := CompilePyRegex(text, false)
 	if err != nil {
 		if !IsPyRegexError(err) {
-			// A valid pattern the engines cannot run (\N{name}) is accepted
-			// as a no-op. Oversized repeats are rejected by CompilePyRegex.
 			return nil, nil
 		}
-		return nil, candidateError("正则表达式无效")
+		return nil, candidateError(msgInvalidFilter)
 	}
 	return re, nil
 }
 
-// FilterCandidates applies name filters without changing source records or
-// their ordering. include and exclude are strings or nil (JSON null).
-func FilterCandidates(items []any, include, exclude any) ([]any, error) {
-	keep, err := compileFilter(include)
-	if err != nil {
-		return nil, err
+// GroupCatalog is the narrow catalog consumed by candidate resolution.
+type GroupCatalog struct {
+	Nodes         []model.Node
+	Subscriptions []model.Subscription
+	Aggregations  []model.Aggregation
+	Groups        []model.ProxyGroup
+}
+
+// GroupMember is the consumed kind/ID pair, independent of stored raw metadata.
+type GroupMember struct {
+	Type string `json:"type"`
+	ID   string `json:"id"`
+}
+
+// GroupSelection is the ordered set of managed source references.
+type GroupSelection struct {
+	Nodes, Subscriptions, Aggregations, Groups []string
+	Members, Order                             []GroupMember
+}
+
+func groupList(value *[]string) []string {
+	if value == nil {
+		return []string{}
 	}
-	remove, err := compileFilter(exclude)
-	if err != nil {
-		return nil, err
-	}
-	var out []any
-	for _, entry := range items {
-		item, _ := entry.(*jsonx.Object)
-		name := item.GetString("name")
-		if (keep == nil || keep.Search(name)) && (remove == nil || !remove.Search(name)) {
-			out = append(out, entry)
+	return *value
+}
+
+// SelectMembers resolves source precedence and explicit/manual member order.
+func SelectMembers(group model.ProxyGroup) GroupSelection {
+	result := GroupSelection{Nodes: groupList(group.ManualNodes), Subscriptions: groupList(group.Subscriptions), Aggregations: groupList(group.Aggregations), Groups: groupList(group.IncludeGroups), Order: []GroupMember{}}
+	if group.ProxiesOrder != nil {
+		for _, entry := range *group.ProxiesOrder {
+			result.Order = append(result.Order, GroupMember{entry.Type, entry.ID})
 		}
 	}
-	return out, nil
-}
-
-func filterValue(group *jsonx.Object, field string) string {
-	if value, ok := group.Value(field).(string); ok {
-		return strings.TrimSpace(value)
-	}
-	return ""
-}
-
-// ProviderSelection is one provider resource with its source-specific filters.
-type ProviderSelection struct {
-	Item             *jsonx.Object
-	Include, Exclude string
-}
-
-// Member is one (type, id) entry of the resolved member order; either may be
-// any JSON value (nil for a missing key).
-type Member struct{ Kind, ID any }
-
-// Selection is the result of ManagedMembers. The source lists keep their JSON
-// type because write validation must reject non-lists.
-type Selection struct {
-	Nodes, Subscriptions, Aggregations, Groups any
-	Members                                    []Member
-	Order                                      any
-}
-
-// ManagedMembers resolves source precedence and the exact ordering branch,
-// without mutation.
-func ManagedMembers(group *jsonx.Object) *Selection {
-	nodes := group.GetOr("manual_nodes", []any{})
-	subs := group.GetOr("subscriptions", []any{})
-	aggs := group.GetOr("aggregations", []any{})
-	groups := group.GetOr("include_groups", []any{})
-	if !jsonx.Truthy(nodes) && !jsonx.Truthy(subs) && !jsonx.Truthy(aggs) && !jsonx.Truthy(groups) {
-		switch group.Value("source") {
+	if len(result.Nodes)+len(result.Subscriptions)+len(result.Aggregations)+len(result.Groups) == 0 {
+		switch valueOr(group.Source, "") {
 		case "node":
-			nodes = group.GetOr("proxies", []any{})
+			result.Nodes = groupList(group.Proxies)
 		case "strategy":
-			groups = group.GetOr("proxies", []any{})
+			result.Groups = groupList(group.Proxies)
 		}
 	}
-	order := group.GetOr("proxies_order", []any{})
-	var members []Member
-	if jsonx.Truthy(order) {
-		for _, item := range iterate(order) {
-			if object, ok := item.(*jsonx.Object); ok {
-				members = append(members, Member{object.Value("type"), object.Value("id")})
-			}
-		}
+	if len(result.Order) > 0 {
+		result.Members = append(result.Members, result.Order...)
 	} else {
-		var nodeMembers, strategies []Member
-		for _, item := range iterate(nodes) {
-			nodeMembers = append(nodeMembers, Member{"node", item})
+		nodes, groups := []GroupMember{}, []GroupMember{}
+		for _, id := range result.Nodes {
+			nodes = append(nodes, GroupMember{Type: "node", ID: id})
 		}
-		for _, item := range iterate(groups) {
-			strategies = append(strategies, Member{"strategy", item})
+		for _, id := range result.Groups {
+			groups = append(groups, GroupMember{Type: "strategy", ID: id})
 		}
-		if group.Value("proxy_order") == "strategies_first" {
-			members = append(strategies, nodeMembers...)
+		if valueOr(group.ProxyOrder, "") == "strategies_first" {
+			result.Members = append(groups, nodes...)
 		} else {
-			members = append(nodeMembers, strategies...)
+			result.Members = append(nodes, groups...)
 		}
 	}
-	return &Selection{Nodes: nodes, Subscriptions: subs, Aggregations: aggs, Groups: groups, Members: members, Order: order}
+	return result
 }
 
-func objects(value any) []*jsonx.Object {
-	var out []*jsonx.Object
-	for _, entry := range iterate(value) {
-		if item, ok := entry.(*jsonx.Object); ok {
-			out = append(out, item)
-		}
-	}
-	return out
-}
+// Provider is a consumed subscription or aggregation and its name filters.
+type Provider struct{ ID, Name, Kind, Include, Exclude string }
 
-// ManagedProviders returns provider resources together with their
-// source-specific filters.
-func ManagedProviders(group, config *jsonx.Object) []ProviderSelection {
-	selection := ManagedMembers(group)
-	aggregationIDs := append([]any(nil), iterate(selection.Aggregations)...)
+func enabledResource(value *bool) bool { return value == nil || *value }
+func selectedAggregationIDs(selection GroupSelection) []string {
+	ids := append([]string(nil), selection.Aggregations...)
 	for _, member := range selection.Members {
-		if member.Kind == "aggregation" && !containsEqual(aggregationIDs, member.ID) {
-			aggregationIDs = append(aggregationIDs, member.ID)
+		if member.Type == "aggregation" && !slices.Contains(ids, member.ID) {
+			ids = append(ids, member.ID)
 		}
 	}
-	var aggregations []*jsonx.Object
-	for _, id := range aggregationIDs {
-		for _, item := range objects(config.Value("subscription_aggregations")) {
-			if jsonx.Equal(item.Value("id"), id) && on(item) {
-				aggregations = append(aggregations, item)
+	return ids
+}
+func groupAggregations(ids []string, catalog GroupCatalog) []model.Aggregation {
+	var result []model.Aggregation
+	for _, id := range ids {
+		for _, item := range catalog.Aggregations {
+			if item.ID == id && enabledResource(item.Enabled) {
+				result = append(result, item)
 			}
 		}
 	}
-	var covered []any
-	for _, agg := range aggregations {
-		covered = append(covered, iterate(agg.GetOr("subscriptions", []any{}))...)
+	return result
+}
+func coveredSubscriptions(aggregations []model.Aggregation) []string {
+	var result []string
+	for _, item := range aggregations {
+		result = append(result, item.Subscriptions...)
 	}
-	var subscriptions []*jsonx.Object
-	for _, id := range iterate(selection.Subscriptions) {
-		if containsEqual(covered, id) {
+	return result
+}
+
+// SelectProviders resolves provider coverage and source-specific filters.
+func SelectProviders(group model.ProxyGroup, catalog GroupCatalog) []Provider {
+	selection := SelectMembers(group)
+	aggregations := groupAggregations(selectedAggregationIDs(selection), catalog)
+	covered := coveredSubscriptions(aggregations)
+	var result []Provider
+	for _, id := range selection.Subscriptions {
+		if slices.Contains(covered, id) {
 			continue
 		}
-		for _, item := range objects(config.Value("subscriptions")) {
-			if jsonx.Equal(item.Value("id"), id) {
-				subscriptions = append(subscriptions, item)
+		for _, item := range catalog.Subscriptions {
+			if item.ID == id {
+				result = append(result, Provider{item.ID, item.Name, "subscription", strings.TrimSpace(valueOr(group.Regex, "")), strings.TrimSpace(valueOr(group.ExcludeRegex, ""))})
 			}
 		}
 	}
-	var out []ProviderSelection
-	for _, item := range subscriptions {
-		out = append(out, ProviderSelection{item, filterValue(group, "regex"), filterValue(group, "exclude_regex")})
-	}
 	for _, item := range aggregations {
-		out = append(out, ProviderSelection{item, filterValue(group, "aggregation_regex"), filterValue(group, "aggregation_exclude_regex")})
+		result = append(result, Provider{item.ID, item.Name, "aggregation", strings.TrimSpace(valueOr(group.AggregationRegex, "")), strings.TrimSpace(valueOr(group.AggregationExcludeRegex, ""))})
 	}
-	return out
+	return result
 }
 
-// RenderMembers returns exactly the consumed managed proxies/providers for
-// one source group: an object with optional "proxies", "use" and "filter".
-func RenderMembers(group, config *jsonx.Object) *jsonx.Object {
-	selection := ManagedMembers(group)
-	var proxies []any
-	aggregations := append([]any(nil), iterate(selection.Aggregations)...)
+// RenderedMembers is the engine-facing managed membership projection.
+type RenderedMembers struct {
+	Proxies []string `json:"proxies,omitempty"`
+	Use     []string `json:"use,omitempty"`
+	Filter  string   `json:"filter,omitempty"`
+}
+
+// RenderGroup returns exactly the proxies/providers consumed by the source group.
+func RenderGroup(group model.ProxyGroup, catalog GroupCatalog) RenderedMembers {
+	selection := SelectMembers(group)
+	result := RenderedMembers{}
 	for _, member := range selection.Members {
-		kind, _ := member.Kind.(string)
-		switch {
-		case kind == "aggregation":
-			if !containsEqual(aggregations, member.ID) {
-				aggregations = append(aggregations, member.ID)
+		switch member.Type {
+		case "node":
+			if member.ID == "DIRECT" || member.ID == "REJECT" {
+				result.Proxies = append(result.Proxies, member.ID)
+				continue
 			}
-		case kind == "node" && (member.ID == "DIRECT" || member.ID == "REJECT"):
-			proxies = append(proxies, member.ID)
-		case kind == "node" || kind == "strategy":
-			key := "proxy_groups"
-			if kind == "node" {
-				key = "nodes"
+			for _, item := range catalog.Nodes {
+				if item.ID == member.ID {
+					result.Proxies = append(result.Proxies, item.Name)
+					break
+				}
 			}
-			for _, item := range objects(config.Value(key)) {
-				if jsonx.Equal(item.Value("id"), member.ID) {
-					if jsonx.Truthy(item) {
-						proxies = append(proxies, item.Value("name"))
-					}
+		case "strategy":
+			for _, item := range catalog.Groups {
+				if item.ID == member.ID {
+					result.Proxies = append(result.Proxies, item.Name)
 					break
 				}
 			}
 		}
 	}
-	var aggItems []*jsonx.Object
-	for _, item := range objects(config.Value("subscription_aggregations")) {
-		if containsEqual(aggregations, item.Value("id")) && on(item) {
-			aggItems = append(aggItems, item)
+	// Rendering preserves catalog order for coverage, then selection order for use.
+	aggregationIDs := selectedAggregationIDs(selection)
+	var aggregations []model.Aggregation
+	for _, item := range catalog.Aggregations {
+		if slices.Contains(aggregationIDs, item.ID) && enabledResource(item.Enabled) {
+			aggregations = append(aggregations, item)
 		}
 	}
-	var covered []any
-	for _, agg := range aggItems {
-		covered = append(covered, iterate(agg.GetOr("subscriptions", []any{}))...)
+	covered := coveredSubscriptions(aggregations)
+	add := func(name string) {
+		if !slices.Contains(result.Use, name) {
+			result.Use = append(result.Use, name)
+		}
 	}
-	var use []any
-	for _, id := range iterate(selection.Subscriptions) {
-		if containsEqual(covered, id) {
+	for _, id := range selection.Subscriptions {
+		if slices.Contains(covered, id) {
 			continue
 		}
-		for _, item := range objects(config.Value("subscriptions")) {
-			if jsonx.Equal(item.Value("id"), id) {
-				use = append(use, item.Value("name"))
+		for _, item := range catalog.Subscriptions {
+			if item.ID == id {
+				add(item.Name)
 			}
 		}
 	}
-	for _, id := range aggregations {
-		for _, item := range aggItems {
-			if jsonx.Equal(item.Value("id"), id) {
-				use = append(use, item.Value("name"))
+	for _, id := range aggregationIDs {
+		for _, item := range aggregations {
+			if item.ID == id {
+				add(item.Name)
 			}
 		}
 	}
-	emitted := jsonx.NewObject()
-	if len(proxies) > 0 {
-		emitted.Set("proxies", proxies)
-	}
-	if len(use) > 0 {
-		var unique []any
-		for _, name := range use {
-			if !containsEqual(unique, name) {
-				unique = append(unique, name)
-			}
-		}
-		emitted.Set("use", unique)
+	if len(result.Use) > 0 {
 		var filters []string
-		for _, key := range []string{"regex", "aggregation_regex"} {
-			if value, ok := group.Value(key).(string); ok && strings.TrimSpace(value) != "" {
-				filters = append(filters, strings.TrimSpace(value))
+		for _, value := range []*string{group.Regex, group.AggregationRegex} {
+			if text := strings.TrimSpace(valueOr(value, "")); text != "" {
+				filters = append(filters, text)
 			}
 		}
 		if len(filters) == 1 {
-			emitted.Set("filter", filters[0])
+			result.Filter = filters[0]
 		} else if len(filters) > 1 {
-			wrapped := make([]string, len(filters))
-			for i, item := range filters {
-				wrapped[i] = "(" + item + ")"
+			for i := range filters {
+				filters[i] = "(" + filters[i] + ")"
 			}
-			emitted.Set("filter", strings.Join(wrapped, "|"))
+			result.Filter = strings.Join(filters, "|")
 		}
 	}
-	return emitted
+	return result
 }
-
-// on: a resource is enabled unless switched off.
-func on(item *jsonx.Object) bool { return jsonx.Truthy(item.GetOr("enabled", true)) }
-
-// sameJSON compares two JSON values strictly (1, 1.0 and true differ).
-func sameJSON(a, b any) bool {
-	encodedA, errA := jsonx.Compact(a)
-	encodedB, errB := jsonx.Compact(b)
-	return errA == nil && errB == nil && bytes.Equal(encodedA, encodedB)
+func recordMembers[T any](value T) map[string]json.RawMessage {
+	data, _ := model.Marshal(value)
+	var result map[string]json.RawMessage
+	_ = json.Unmarshal(data, &result)
+	return result
 }
-
-// ValidateFilters checks the four filter fields of a group. original, when
-// not nil, lets an unchanged legacy non-string value through.
-func ValidateFilters(group, original *jsonx.Object) error {
-	for _, field := range FilterFields {
-		if value := group.Value(field); value != nil {
-			if _, ok := value.(string); !ok {
-				// Unchanged legacy values are allowed only for final merged records.
-				if original == nil || !original.Has(field) || !sameJSON(original.Value(field), value) {
-					return candidateError("%s 必须是字符串或 null", field)
-				}
-			}
+func equalMembers(a, b map[string]json.RawMessage, fields []string) bool {
+	for _, field := range fields {
+		left, right := a[field], b[field]
+		if string(left) == "null" {
+			left = nil
 		}
-		if (field == "exclude_regex" || field == "aggregation_exclude_regex") && filterValue(group, field) != "" {
-			if _, err := CompilePyRegex(filterValue(group, field), false); IsPyRegexError(err) {
-				return candidateError("%s 正则表达式无效", field)
+		if string(right) == "null" {
+			right = nil
+		}
+		if !bytes.Equal(left, right) {
+			return false
+		}
+	}
+	return true
+}
+
+// CheckFilters validates edited filter types, grandfathering only unchanged
+// stored values. Raw evidence is inspected without converting to dynamic values.
+func CheckFilters(group model.ProxyGroup, original *model.ProxyGroup) error {
+	members := recordMembers(group)
+	var before map[string]json.RawMessage
+	if original != nil {
+		before = recordMembers(*original)
+	}
+	for _, field := range FilterFields {
+		raw := members[field]
+		if len(raw) == 0 || string(raw) == "null" {
+			continue
+		}
+		var value string
+		if json.Unmarshal(raw, &value) != nil {
+			if original == nil || len(before[field]) == 0 || !bytes.Equal(before[field], raw) {
+				return candidateError(msgFilterType, field)
+			}
+			continue
+		}
+		if (field == "exclude_regex" || field == "aggregation_exclude_regex") && strings.TrimSpace(value) != "" {
+			if _, err := CompilePyRegex(strings.TrimSpace(value), false); IsPyRegexError(err) {
+				return candidateError(msgFilterExpression, field)
 			}
 		}
 	}
@@ -422,311 +409,340 @@ func ExclusionFilter(include, exclude string) string {
 }
 
 type filterRule struct{ include, exclude string }
-
 type cloneKey struct{ original, include, exclude string }
 
-// LowerGroupProviderFilters keeps managed exclusions scoped to each live
-// provider, never manual nodes. Private definitions retain the original URL,
-// so refreshes and bundled provider delivery use the same source bytes.
-// Existing inclusion-only groups retain their historical rendering. main (the
-// Mihomo document) is modified in place.
-func LowerGroupProviderFilters(config, main *jsonx.Object) {
-	providers := main.GetObject("proxy-providers")
+// LowerProviderFilters scopes exclusions to provider copies in an exclusively
+// owned engine document. Copies pass through budgeted yamlx public APIs.
+func LowerProviderFilters(catalog GroupCatalog, main *yamlx.Node) error {
+	providers := yamlx.Get(main, "proxy-providers")
 	if providers == nil {
-		providers = jsonx.NewObject()
+		providers = yamlx.Map()
 	}
-	groups := map[string]*jsonx.Object{}
-	occupied := map[string]struct{}{}
-	for _, name := range providers.Keys() {
-		occupied[name] = struct{}{}
+	groups := map[string]*yamlx.Node{}
+	occupied := map[string]bool{}
+	for name := range yamlx.Pairs(providers) {
+		occupied[name] = true
 	}
-	for _, group := range objects(main.Value("proxy-groups")) {
-		name := group.GetString("name")
-		groups[name] = group
-		occupied[name] = struct{}{}
+	if sequence := yamlx.Get(main, "proxy-groups"); sequence != nil {
+		for _, group := range sequence.Content {
+			name := nodeText(yamlx.Get(group, "name"))
+			groups[name] = group
+			occupied[name] = true
+		}
 	}
-	for _, node := range objects(main.Value("proxies")) {
-		occupied[node.GetString("name")] = struct{}{}
+	if sequence := yamlx.Get(main, "proxies"); sequence != nil {
+		for _, node := range sequence.Content {
+			occupied[nodeText(yamlx.Get(node, "name"))] = true
+		}
 	}
-	sources := map[string]*jsonx.Object{}
-	for _, group := range objects(config.Value("proxy_groups")) {
-		sources[group.GetString("id")] = group
+	sources := map[string]model.ProxyGroup{}
+	for _, group := range catalog.Groups {
+		sources[group.ID] = group
 	}
 	clones := map[cloneKey]string{}
-	for _, record := range objects(config.Value("proxy_groups")) {
-		group := groups[record.GetString("name")]
+	for _, record := range catalog.Groups {
+		group := groups[record.Name]
 		if group == nil {
 			continue
 		}
 		source := record
-		if found, ok := sources[record.GetString("follow_group")]; ok {
-			source = found
+		if followed, ok := sources[valueOr(record.FollowGroup, "")]; ok {
+			source = followed
 		}
-		if filterValue(source, "exclude_regex") == "" && filterValue(source, "aggregation_exclude_regex") == "" {
+		if strings.TrimSpace(valueOr(source.ExcludeRegex, "")) == "" && strings.TrimSpace(valueOr(source.AggregationExcludeRegex, "")) == "" {
 			continue
 		}
 		selections := map[string]filterRule{}
-		for _, provider := range ManagedProviders(source, config) {
-			selections[provider.Item.GetString("name")] = filterRule{provider.Include, provider.Exclude}
+		for _, provider := range SelectProviders(source, catalog) {
+			selections[provider.Name] = filterRule{provider.Include, provider.Exclude}
 		}
 		type chosen struct {
 			name string
 			rule filterRule
 		}
 		var selected []chosen
-		useList := iterate(group.GetOr("use", []any{}))
-		for _, name := range useList {
-			text, _ := name.(string)
-			if rule, ok := selections[text]; ok && providers.Has(text) {
-				selected = append(selected, chosen{text, rule})
+		useList := yamlx.Get(group, "use")
+		if useList == nil {
+			continue
+		}
+		for _, entry := range useList.Content {
+			name := nodeText(entry)
+			if rule, ok := selections[name]; ok && yamlx.Get(providers, name) != nil {
+				selected = append(selected, chosen{name, rule})
 			}
 		}
 		if len(selected) == 0 {
 			continue
 		}
-		rules := map[filterRule]struct{}{}
-		includes := map[string]struct{}{}
+		rules := map[filterRule]bool{}
+		includes := map[string]bool{}
 		for _, item := range selected {
-			rules[item.rule] = struct{}{}
-			includes[item.rule.include] = struct{}{}
+			rules[item.rule] = true
+			includes[item.rule.include] = true
 		}
-		if len(rules) == 1 && len(selected) == len(useList) && !strings.Contains(selected[0].rule.include, "`") {
-			// Every provider shares one rule: the group filter expresses it, so
-			// the providers stay shared and no node is listed twice.
-			filterText := ExclusionFilter(selected[0].rule.include, selected[0].rule.exclude)
-			group.Delete("filter")
-			if filterText != "" {
-				group.Set("filter", filterText)
+		if len(rules) == 1 && len(selected) == len(useList.Content) && !strings.Contains(selected[0].rule.include, "`") {
+			text := ExclusionFilter(selected[0].rule.include, selected[0].rule.exclude)
+			yamlx.Delete(group, "filter")
+			if text != "" {
+				yamlx.Set(group, "filter", yamlx.Str(text))
 			}
 			continue
 		}
-		// A shared include stays at group level to preserve Mihomo's backtick
-		// bucket ordering, including when the group becomes a chain exit.
 		sharedInclude, hasShared := "", false
 		if len(includes) == 1 {
 			sharedInclude, hasShared = selected[0].rule.include, true
 		}
-		group.Delete("filter")
+		yamlx.Delete(group, "filter")
 		if hasShared && sharedInclude != "" {
-			group.Set("filter", sharedInclude)
+			yamlx.Set(group, "filter", yamlx.Str(sharedInclude))
 		}
-		var use []any
+		use := yamlx.Seq()
 		for _, item := range selected {
-			providerInclude := item.rule.include
+			include := item.rule.include
 			if hasShared {
-				providerInclude = ""
+				include = ""
 			}
-			if providerInclude == "" && item.rule.exclude == "" {
-				use = append(use, item.name)
+			if include == "" && item.rule.exclude == "" {
+				use.Content = append(use.Content, yamlx.Str(item.name))
 				continue
 			}
-			key := cloneKey{item.name, providerInclude, item.rule.exclude}
-			if _, ok := clones[key]; !ok {
-				base := source.GetString("name") + "_" + item.name + "_筛选"
-				name, suffix := base, 2
-				for {
-					if _, taken := occupied[name]; !taken {
-						break
-					}
+			key := cloneKey{item.name, include, item.rule.exclude}
+			if clones[key] == "" {
+				base := fmt.Sprintf(msgPrivateProviderName, source.Name, item.name)
+				name := base
+				for suffix := 2; occupied[name]; suffix++ {
 					name = fmt.Sprintf("%s (%d)", base, suffix)
-					suffix++
 				}
-				occupied[name] = struct{}{}
-				original, _ := providers.Value(item.name).(*jsonx.Object)
-				provider := original.DeepCopy()
-				// The provider path is the one existing configs use: a digest of
-				// the key's text ('name', 'include', 'exclude').
-				sum := sha256.Sum256([]byte("(" + jsonx.Repr(key.original) + ", " + jsonx.Repr(key.include) + ", " + jsonx.Repr(key.exclude) + ")"))
-				provider.Set("path", "./providers/group_filter_"+hex.EncodeToString(sum[:])[:20]+".yaml")
-				if providerInclude != "" {
-					provider.Set("filter", providerInclude)
+				occupied[name] = true
+				data, err := yamlx.Marshal(yamlx.Get(providers, item.name))
+				if err != nil {
+					return err
+				}
+				provider, err := yamlx.Parse(data)
+				if err != nil {
+					return err
+				}
+				encoded, _ := json.Marshal([3]string{key.original, key.include, key.exclude})
+				sum := sha256.Sum256(encoded)
+				yamlx.Set(provider, "path", yamlx.Str("./providers/group_filter_"+hex.EncodeToString(sum[:])[:20]+".yaml"))
+				if include != "" {
+					yamlx.Set(provider, "filter", yamlx.Str(include))
 				}
 				if item.rule.exclude != "" {
-					provider.Set("exclude-filter", literalBackticks(item.rule.exclude))
+					yamlx.Set(provider, "exclude-filter", yamlx.Str(literalBackticks(item.rule.exclude)))
 				}
-				providers.Set(name, provider)
+				yamlx.Set(providers, name, provider)
 				clones[key] = name
 			}
-			use = append(use, clones[key])
+			use.Content = append(use.Content, yamlx.Str(clones[key]))
 		}
-		group.Set("use", use)
+		yamlx.Set(group, "use", use)
 	}
+	return nil
+}
+func nodeText(node *yamlx.Node) string {
+	if node == nil {
+		return ""
+	}
+	return node.Value
 }
 
-// ValidateCandidates validates the final merged group, not raw incidental
-// source flags. profile and shared are the profile and shared documents;
-// original is the stored record being replaced, or nil.
-func ValidateCandidates(group, profile, shared, original *jsonx.Object) error {
-	if group.Value("type") == "chain" {
+// CheckCandidates validates the final merged group under the write owner's
+// transaction. Malformed source arrays cannot gain validity through R5 fallback.
+func CheckCandidates(group model.ProxyGroup, catalog GroupCatalog, original *model.ProxyGroup) error {
+	if group.Type == "chain" {
 		return nil
 	}
+	members := recordMembers(group)
 	for _, field := range []string{"manual_nodes", "subscriptions", "aggregations", "include_groups", "proxies", "proxies_order"} {
-		if group.Has(field) {
-			if _, ok := group.Value(field).([]any); !ok {
-				return candidateError("%s 必须是数组", field)
+		if raw, present := members[field]; present {
+			var list []json.RawMessage
+			if string(raw) == "null" || json.Unmarshal(raw, &list) != nil {
+				return candidateError(msgSourceArray, field)
 			}
 		}
 	}
-	if follow := group.Value("follow_group"); follow != nil {
-		if _, ok := follow.(string); !ok {
-			return candidateError("follow_group 必须是 ID 字符串")
+	if raw := members["follow_group"]; len(raw) > 0 && string(raw) != "null" {
+		var text string
+		if json.Unmarshal(raw, &text) != nil {
+			return candidateError(msgFollowID)
 		}
 	}
-	if err := ValidateFilters(group, original); err != nil {
+	if err := CheckFilters(group, original); err != nil {
 		return err
 	}
-	catalog := shared.Clone()
-	catalog.Set("proxy_groups", profile.GetOr("proxy_groups", []any{}))
 	source := group
-	follow := group.Value("follow_group")
-	if jsonx.Truthy(follow) {
-		source = nil
-		for _, item := range objects(catalog.Value("proxy_groups")) {
-			if jsonx.Equal(item.Value("id"), follow) && on(item) {
+	follow := valueOr(group.FollowGroup, "")
+	if follow != "" {
+		found := false
+		for _, item := range catalog.Groups {
+			if item.ID == follow && enabledResource(item.Enabled) {
 				source = item
+				found = true
 				break
 			}
 		}
-		if source == nil || source.Value("type") == "chain" || jsonx.Truthy(source.Value("follow_group")) {
-			return candidateError("跟随来源必须是有效启用的普通来源组")
+		if !found || source.Type == "chain" || valueOr(source.FollowGroup, "") != "" {
+			return candidateError(msgFollowSource)
 		}
 	}
-	selection := ManagedMembers(source)
-	type check struct {
-		values any
-		kind   string
-	}
-	for _, c := range []check{
-		{selection.Nodes, "nodes"}, {selection.Subscriptions, "subscriptions"},
-		{selection.Aggregations, "subscription_aggregations"}, {selection.Groups, "proxy_groups"},
-	} {
-		values, ok := c.values.([]any)
-		if !ok {
-			return candidateError("候选来源必须是 ID 数组")
-		}
-		available := map[string]struct{}{}
-		for _, item := range objects(catalog.Value(c.kind)) {
-			if on(item) {
-				if id, ok := item.Value("id").(string); ok {
-					available[id] = struct{}{}
+	selection := SelectMembers(source)
+	sourceMembers := recordMembers(source)
+	// Requests require string IDs even when a stored codec can read number text.
+	for _, field := range []string{"manual_nodes", "subscriptions", "aggregations", "include_groups", "proxies"} {
+		if raw, present := sourceMembers[field]; present {
+			var entries []json.RawMessage
+			if string(raw) == "null" || json.Unmarshal(raw, &entries) != nil {
+				return candidateError(msgCandidateIDs)
+			}
+			for _, entry := range entries {
+				var text string
+				if string(entry) == "null" || json.Unmarshal(entry, &text) != nil {
+					return candidateError(msgCandidateResource)
 				}
 			}
 		}
-		if c.kind == "nodes" {
-			available["DIRECT"], available["REJECT"] = struct{}{}, struct{}{}
+	}
+	available := map[string]map[string]bool{"nodes": {"DIRECT": true, "REJECT": true}, "subscriptions": {}, "aggregations": {}, "groups": {}}
+	for _, item := range catalog.Nodes {
+		if enabledResource(item.Enabled) {
+			available["nodes"][item.ID] = true
 		}
-		for _, value := range values {
-			text, isStr := value.(string)
-			if _, found := available[text]; !isStr || !found {
-				return candidateError("候选来源必须引用有效启用资源")
+	}
+	for _, item := range catalog.Subscriptions {
+		if enabledResource(item.Enabled) {
+			available["subscriptions"][item.ID] = true
+		}
+	}
+	for _, item := range catalog.Aggregations {
+		if enabledResource(item.Enabled) {
+			available["aggregations"][item.ID] = true
+		}
+	}
+	for _, item := range catalog.Groups {
+		if enabledResource(item.Enabled) {
+			available["groups"][item.ID] = true
+		}
+	}
+	for kind, ids := range map[string][]string{"nodes": selection.Nodes, "subscriptions": selection.Subscriptions, "aggregations": selection.Aggregations, "groups": selection.Groups} {
+		for _, id := range ids {
+			if !available[kind][id] {
+				return candidateError(msgCandidateResource)
 			}
 		}
 	}
-	order, ok := selection.Order.([]any)
-	if !ok {
-		return candidateError("proxies_order 必须是数组")
-	}
-	if len(order) > 0 {
-		allowed := map[string]map[string]struct{}{"node": {}, "strategy": {}, "aggregation": {}}
-		for kind, values := range map[string]any{"node": selection.Nodes, "strategy": selection.Groups, "aggregation": selection.Aggregations} {
-			for _, value := range values.([]any) {
-				allowed[kind][value.(string)] = struct{}{}
-			}
+	if raw, present := sourceMembers["proxies_order"]; present {
+		var entries []json.RawMessage
+		if string(raw) == "null" || json.Unmarshal(raw, &entries) != nil {
+			return candidateError(msgGroupOrderArray)
 		}
-		seen := map[[2]string]struct{}{}
-		for _, entry := range order {
-			item, isObject := entry.(*jsonx.Object)
-			if !isObject || item.Len() != 2 || !item.Has("type") || !item.Has("id") {
-				return candidateError("排序项必须包含且仅包含 type 和 id")
+		for _, entry := range entries {
+			var members map[string]json.RawMessage
+			if json.Unmarshal(entry, &members) != nil || len(members) != 2 || members["type"] == nil || members["id"] == nil {
+				return candidateError(msgOrderPair)
 			}
-			kind, kindOK := item.Value("type").(string)
-			ident, identOK := item.Value("id").(string)
-			if !kindOK || !identOK {
-				return candidateError("排序项必须与已选择的受支持来源一致")
-			}
-			set, known := allowed[kind]
-			if _, in := set[ident]; !known || !in {
-				return candidateError("排序项必须与已选择的受支持来源一致")
-			}
-			if _, dup := seen[[2]string{kind, ident}]; dup {
-				return candidateError("排序项不能重复")
-			}
-			seen[[2]string{kind, ident}] = struct{}{}
-		}
-		for _, value := range selection.Nodes.([]any) {
-			if _, ok := seen[[2]string{"node", value.(string)}]; !ok {
-				return candidateError("排序必须包含所有手动节点和引用策略组")
-			}
-		}
-		for _, value := range selection.Groups.([]any) {
-			if _, ok := seen[[2]string{"strategy", value.(string)}]; !ok {
-				return candidateError("排序必须包含所有手动节点和引用策略组")
+			var kind, id string
+			if string(members["type"]) == "null" || string(members["id"]) == "null" || json.Unmarshal(members["type"], &kind) != nil || json.Unmarshal(members["id"], &id) != nil {
+				return candidateError(msgOrderSource)
 			}
 		}
 	}
-	emitted := RenderMembers(source, catalog)
-	if !jsonx.Truthy(emitted.Value("proxies")) && !jsonx.Truthy(emitted.Value("use")) {
-		// Only an already empty record with unchanged source fields is grandfathered.
-		if original != nil {
-			same := true
-			for _, key := range SourceFields {
-				if !jsonx.Equal(original.Value(key), group.Value(key)) {
-					same = false
-					break
-				}
+	if len(selection.Order) > 0 {
+		allowed := map[string][]string{"node": selection.Nodes, "strategy": selection.Groups, "aggregation": selection.Aggregations}
+		seen := map[[2]string]bool{}
+		for _, entry := range selection.Order {
+			kind, id := entry.Type, entry.ID
+			if !slices.Contains(allowed[kind], id) {
+				return candidateError(msgOrderSource)
 			}
-			if same {
-				old := RenderMembers(original, catalog)
-				if !jsonx.Truthy(old.Value("proxies")) && !jsonx.Truthy(old.Value("use")) && !jsonx.Truthy(follow) {
-					return nil
-				}
+			key := [2]string{kind, id}
+			if seen[key] {
+				return candidateError(msgOrderRepeated)
+			}
+			seen[key] = true
+		}
+		for _, id := range selection.Nodes {
+			if !seen[[2]string{"node", id}] {
+				return candidateError(msgOrderComplete)
 			}
 		}
-		return candidateError("策略组必须选择实际消费的候选来源，不能隐式使用 DIRECT")
+		for _, id := range selection.Groups {
+			if !seen[[2]string{"strategy", id}] {
+				return candidateError(msgOrderComplete)
+			}
+		}
+	}
+	rendered := RenderGroup(source, catalog)
+	if len(rendered.Proxies)+len(rendered.Use) == 0 {
+		if original != nil && equalMembers(recordMembers(*original), members, SourceFields) && follow == "" {
+			old := RenderGroup(*original, catalog)
+			if len(old.Proxies)+len(old.Use) == 0 {
+				return nil
+			}
+		}
+		return candidateError(msgNoGroupCandidates)
 	}
 	return nil
 }
 
-// MergeGroupUpdate is a partial merge; optional health removal is an explicit,
-// validated operation (delete_fields).
-func MergeGroupUpdate(original, patch *jsonx.Object) (*jsonx.Object, error) {
-	if err := ValidateFilters(patch, nil); err != nil {
-		return nil, err
+// MergeGroup applies a raw request patch while preserving untouched field order
+// and explicit health-field deletion. Core membership remains typed.
+func MergeGroup(original model.ProxyGroup, patch model.Fields) (model.ProxyGroup, error) {
+	var zero model.ProxyGroup
+	data, err := patch.MarshalJSON()
+	if err != nil {
+		return zero, err
+	}
+	var requested model.ProxyGroup
+	if err := json.Unmarshal(data, &requested); err != nil {
+		return zero, err
+	}
+	if err := CheckFilters(requested, nil); err != nil {
+		return zero, err
 	}
 	var deletes []string
-	valid := true
-	value := patch.GetOr("delete_fields", []any{})
-	list, isList := value.([]any)
-	if !isList {
-		valid = false
-	}
-	seen := map[string]struct{}{}
-	for _, entry := range list {
-		key, isStr := entry.(string)
-		if !isStr || !contains(HealthFields, key) {
-			valid = false
-			break
-		}
-		if _, dup := seen[key]; dup {
-			valid = false
-			break
-		}
-		seen[key] = struct{}{}
-		deletes = append(deletes, key)
-	}
-	if !valid {
-		return nil, candidateError("delete_fields 必须是无重复的健康检查字段数组")
-	}
-	for _, key := range deletes {
-		if patch.Has(key) {
-			return nil, candidateError("同一字段不能同时赋值和删除")
+	if raw, present := patch.Get("delete_fields"); present {
+		if string(raw) == "null" || json.Unmarshal(raw, &deletes) != nil {
+			return zero, candidateError(msgDeleteFields)
 		}
 	}
-	merged := original.DeepCopy()
-	merged.Update(patch.DeepCopy())
-	merged.Delete("delete_fields")
-	for _, key := range deletes {
-		merged.Delete(key)
+	seen := map[string]bool{}
+	for _, field := range deletes {
+		if !slices.Contains(HealthFields, field) || seen[field] {
+			return zero, candidateError(msgDeleteFields)
+		}
+		seen[field] = true
 	}
-	return merged, nil
+	for _, field := range deletes {
+		if _, present := patch.Get(field); present {
+			return zero, candidateError(msgAssignDelete)
+		}
+	}
+	data, err = model.Marshal(original)
+	if err != nil {
+		return zero, err
+	}
+	var members model.Fields
+	if err := members.UnmarshalJSON(data); err != nil {
+		return zero, err
+	}
+	for field, value := range patch.All() {
+		if field != "delete_fields" {
+			if err := members.Set(field, value); err != nil {
+				return zero, err
+			}
+		}
+	}
+	for _, field := range deletes {
+		members.Delete(field)
+	}
+	data, err = members.MarshalJSON()
+	if err != nil {
+		return zero, err
+	}
+	var merged model.ProxyGroup
+	err = json.Unmarshal(data, &merged)
+	return merged, err
 }
+
+func trimFilter(value string) string { return strings.TrimSpace(value) }

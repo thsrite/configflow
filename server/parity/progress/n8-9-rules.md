@@ -59,3 +59,17 @@ invalid receipt和真实Runtime关机/断开测试。未完成前不交回。
 
 远端原包最后通过：`go test -p 4 ./internal/rulefetch`，7.902s；
 新增迁移/Runtime/download owner子集通过2.176s。最终race/Flask/fuzz仍待整组完成。
+
+## 第三段：候选/连接核心（实施中）
+
+- GroupCatalog/GroupSelection/GroupMember/Provider/RenderedMembers与IPDeps/IPTarget/
+  RulesetInfo/IPResult均为原生DTO。rules运行时只有明确的*_legacy.go边界引用jsonx。
+- CheckCandidates、CheckFilters、MergeGroup检查原始成员证据；源ID数组及排序项不能依赖
+  R5将非法写请求变成有效引用。显式健康字段删除保留未知成员和原始数值字节。
+- LowerProviderFilters在独占YAML Node上工作；必须复制的provider走yamlx.Marshal/Parse预算API，
+  不用Clone。provider私有path采用D2原生三字段JSON摘要。
+- `n89_group_reference.py` 调真实Python记录1500条typed reader输入、600条lower及88条复核lower。
+  D2仅拦截Python函数自身的tuple摘要输入并按约定native JSON编码，候选选择/过滤/命名/文档
+  全部仍由真实Python执行；逐行绑定原输入，原档案和未知期望不改。
+  原始受控写验证和merge期望继续原样比较，不将错误消息先后顺序变更登记为R5。
+- 定向包最后通过 `go test -p 4 ./internal/rules` 3.745s。
