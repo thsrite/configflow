@@ -872,3 +872,20 @@ PD 恢复 PUT 回复已经证明新 ID、但紧接着的 GET 失败时，Go 仍�
   Runtime shutdown cancels device reads and rejects cache/notification admission;
   C07 batch-1 owns the final cancellation checks under the notification leaf lock
   and before Rename. R13 does not duplicate that transaction implementation.
+- (R13 review F1) Linked routers are taken from the raw `routers.items` like Python's
+  `routers_of`: a missing or non-object `routers`/non-list `items` means no routers,
+  non-object items are skipped, and a record the typed router model cannot decode
+  (the repository accepts it with a type-mismatch warning) no longer fails the whole
+  reminder for every Agent. Unlinked records are ignored; a linked one is listed as
+  `unknown` with `读取失败：内部错误` and a log line naming only the router ID.
+- (R13 review F2) An empty Agent ID links nothing. Python's `== agent_id` would have
+  matched routers stored with an empty gateway (unreachable through Flask's route).
+- (R13 review F3) Timing at the read boundary: the first caller also waits at most 35 s
+  for the shared read (Python's owner had no bound; the read itself still ends at
+  25 s), and reads still running at the 25 s budget are cancelled instead of
+  continuing unobserved in background threads. An unsupported router type is logged.
+- (R13 review F4) The C07 Summarize hook decodes the public report/plan JSON with
+  typed fields; data it cannot decode yields an `unknown` change receipt
+  (`无法解析上游路由差异报告，请重新检查。`) where Python's `summarize` either
+  tolerated the shape or raised and `safely` skipped the receipt. Only Go's own
+  marshalled Report/Plan reach the hook, so this path is not reachable in practice.
