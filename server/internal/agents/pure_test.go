@@ -18,6 +18,7 @@ import (
 )
 
 func TestEventHistoryIsBoundedAndAdjacentUnchangedProgressDoesNotDuplicate(t *testing.T) {
+	t.Parallel()
 	var events any = []any{}
 	start := time.Date(2026, 10, 18, 0, 0, 0, 0, time.UTC)
 	for index := 0; index < 120; index++ {
@@ -35,6 +36,7 @@ func TestEventHistoryIsBoundedAndAdjacentUnchangedProgressDoesNotDuplicate(t *te
 func itoa(n int) string { return jsonx.Int(n).String() }
 
 func TestExternalEventsRejectInvalidShapesTimesAndStatusAndStripSecrets(t *testing.T) {
+	t.Parallel()
 	events := CleanEvents([]any{
 		nil, jsonx.NewObject(), jsonx.Obj("at", "not-time", "status", "checking"),
 		jsonx.Obj("at", "0001-01-01T00:00:00+14:00", "status", "checking"),
@@ -60,6 +62,7 @@ func TestExternalEventsRejectInvalidShapesTimesAndStatusAndStripSecrets(t *testi
 }
 
 func TestRepeatedWorkerJournalMergesWithoutReplayingStages(t *testing.T) {
+	t.Parallel()
 	events := AppendEvent([]any{}, "queued", nil, "2026-10-18T00:00:00Z", nil)
 	incoming := []any{jsonx.Obj("at", "2026-10-18T00:00:01Z", "status", "queued"),
 		jsonx.Obj("at", "2026-10-18T00:00:02Z", "status", "downloading", "message", "下载 Agent v1"),
@@ -75,6 +78,7 @@ func TestRepeatedWorkerJournalMergesWithoutReplayingStages(t *testing.T) {
 }
 
 func TestEventTimesSortWholeSecondsBeforeFractionalSeconds(t *testing.T) {
+	t.Parallel()
 	whole, _ := EventTime("2026-10-18T00:00:00Z")
 	fraction, _ := EventTime("2026-10-18T00:00:00.1Z")
 	next, _ := EventTime("2026-10-18T00:00:01Z")
@@ -87,6 +91,7 @@ func TestEventTimesSortWholeSecondsBeforeFractionalSeconds(t *testing.T) {
 }
 
 func TestPublicHistoryLocalizesErrorsWithoutMutatingSavedEvents(t *testing.T) {
+	t.Parallel()
 	raw := jsonx.Obj("events", []any{jsonx.Obj("at", "2026-10-18T00:00:00Z", "status", "failed", "message", "Agent download size or SHA-256 mismatch")})
 	public := PublicUpgradeState(raw)
 	if !strings.Contains(public.GetList("events")[0].(*jsonx.Object).GetString("message"), "校验失败") ||
@@ -100,6 +105,7 @@ func TestPublicHistoryLocalizesErrorsWithoutMutatingSavedEvents(t *testing.T) {
 }
 
 func TestKnownFailuresKeepTheExactOriginal(t *testing.T) {
+	t.Parallel()
 	for _, c := range [][2]string{
 		{"Deployment preparation failed", "准备发布文件失败"},
 		{"Upload outcome unknown; query deployment status", "暂时无法确认上传结果"},
@@ -122,6 +128,7 @@ func TestKnownFailuresKeepTheExactOriginal(t *testing.T) {
 }
 
 func TestUnknownCoreAndSourceErrorsAreNotTranslated(t *testing.T) {
+	t.Parallel()
 	for _, raw := range []string{
 		"yaml: unmarshal errors:\n  line 6: cannot unmarshal !!str into config.RawConfig",
 		"upstream https://dns.example/dns-query returned status 503: SERVFAIL",
@@ -136,6 +143,7 @@ func TestUnknownCoreAndSourceErrorsAreNotTranslated(t *testing.T) {
 }
 
 func TestUpgradeFailuresHaveActionableChineseMessages(t *testing.T) {
+	t.Parallel()
 	for _, c := range [][2]string{
 		{"Agent download connection failed", "无法连接 Agent 更新下载地址"},
 		{"Agent download HTTP 404", "服务器返回 HTTP 404"},

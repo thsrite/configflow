@@ -100,7 +100,7 @@ func newEnv(t *testing.T) *env {
 	ResetRuntime()
 	ResetHooks()
 	t.Cleanup(func() { ResetRuntime(); ResetHooks() })
-	dir := t.TempDir()
+	dir := seededAgentDirectory(t)
 	r := openRepo(t, dir)
 	m := newManager(t, r)
 	fake := &fakeAgent{}

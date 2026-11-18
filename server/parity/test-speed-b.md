@@ -43,3 +43,10 @@ go test -race -p=4 -count=1 -timeout=60m -json ./internal/agents/... ./internal/
 
 JSONL 和前后负载在 `.ci-results/test-speed-b-before/`。性能记录使用同机、同命令，不把 `.64` 试验当作可比收益。
 后续包的最终验证、逐包耗时、现场 Python 耗时和提交映射在交回前补齐。
+
+## agents
+
+newEnv 的完整初始仓库只生成一次，读取已 checkpoint 的私有文件镜像；每个测试复制到自己的 TempDir，
+仍调用真实 OpenDefault/New。没有共享 Repository、连接或可写文件，也没有改变已有 openRepo 的重开/迁移测试。
+模板出现 WAL/SHM 时直接失败，防止复制未 checkpoint 的 SQLite。新增双仓库修改隔离断言通过 race。
+八个只处理本地 event/message 输入的测试并行；改全局 hooks、runtime、环境、时钟的测试保持串行。
