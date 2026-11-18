@@ -57,6 +57,9 @@ class World:
 
         class Handler(BaseHTTPRequestHandler):
             protocol_version = 'HTTP/1.1'
+            # Send small JSON replies promptly on loopback. Slow-peer tests
+            # declare their delays through the existing explicit device gates.
+            disable_nagle_algorithm = True
 
             def log_message(self, *args):
                 pass

@@ -2139,3 +2139,19 @@ No active command. Remaining write/readback/undo (H0264+), signatures/ownership/
 fingerprints/YAML/runtime clocks, other matrix and background/concurrency,
 full composition and final gate/rebase remain open. Next check fake transport's
 avoidable packet delays before further large real-reference batches.
+
+Owned fake HTTP transport adjustment:
+- Handler now opts into socketserver's TCP_NODELAY flag. Small loopback JSON
+  headers/body are sent promptly; explicit peer gates, real timeout waits and
+  TLS verification remain unchanged. No product server flags or replies changed.
+- .64 foreground chain completed its full harness unittest discovery before
+  running the reference batch (set -e); the original verbose unittest tail was
+  lost to tool-output truncation, so no exact test-count/timing is claimed here.
+  Exact command:
+  `RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY="$HOME/.cache/routerdiff-build-302rx1dg-a9d6ce86c/configflow"; uptime; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python -m unittest discover -v; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world dhcp-ikuai-evidence --world probe-errors --world probe-tls --output "$HOME/.cache/routerdiff-reports/302rx1dg/peer-tcp-nodelay.json"'`
+- Completed synthetic report:779 recipes,allGo-unimplemented,0/26 native routes,
+  56 references,20 audits,2281 pending in this subset,complete=false,error=null,
+  no Python bug observation. This includes all637 iKuai evidence vectors and
+  142 real fatal/capability/TLS probe requests, including their timeout paths.
+  Original process has exited; no duplicate batch was launched. No new matrix
+  coverage or native parity is inferred from this transport-only rerun.
