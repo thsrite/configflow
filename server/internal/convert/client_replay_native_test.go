@@ -2,7 +2,6 @@ package convert
 
 import (
 	"encoding/json"
-	"strconv"
 	"strings"
 
 	"configflow/internal/jsonx"
@@ -23,10 +22,10 @@ func ClientNodeReplayIssue(value any, target string) string {
 		return "node record"
 	}
 	if issues := model.Issues(node); len(issues) > 0 {
-		if issues[0].Path == "port" && clientPendingInteger(node, "port") {
-			return "pending shared integer-string port"
-		}
 		return "node." + issues[0].Path + " R5"
+	}
+	if node.ProxyString == nil && clientProtocolType(node) != nil {
+		return "node.type discriminator"
 	}
 	for _, field := range []string{"name", "type", "server", "port", "params"} {
 		if raw, present := object.Get(field); present && raw == nil {
@@ -51,9 +50,6 @@ func ClientNodeReplayIssue(value any, target string) string {
 		}
 		node, params = nodes[0].Node, nodes[0].Params
 		if issues := model.Issues(node); len(issues) > 0 {
-			if issues[0].Path == "port" && clientPendingInteger(node, "port") {
-				return "pending shared integer-string port"
-			}
 			return "parsed node." + issues[0].Path + " R5"
 		}
 	}
@@ -105,9 +101,6 @@ func ClientGroupReplayIssue(value any, target string) string {
 		return "group record"
 	}
 	if issues := model.Issues(group); len(issues) > 0 {
-		if issues[0].Path == "interval" && clientPendingInteger(group, "interval") {
-			return "pending shared integer-string interval"
-		}
 		return "group." + issues[0].Path + " R5"
 	}
 	object, ok := value.(*jsonx.Object)
@@ -141,6 +134,14 @@ func ClientProfileReplayIssue(config *jsonx.Object, target string) string {
 	if err != nil {
 		return "profile record"
 	}
+	for _, key := range []string{"rules", "rule_sets"} {
+		if raw, present := profile.Fields.Get(key); present {
+			var items []model.RuleConfig
+			if json.Unmarshal(raw, &items) != nil {
+				return "profile." + key + " array"
+			}
+		}
+	}
 	for _, node := range config.GetList("nodes") {
 		if issue := ClientNodeReplayIssue(node, target); issue != "" {
 			return issue
@@ -157,23 +158,4 @@ func ClientProfileReplayIssue(config *jsonx.Object, target string) string {
 		}
 	}
 	return ""
-}
-
-// Only the pending-dependency index uses ParseInt here; runtime decoding is
-// exclusively owned by model and never copies this source-audit predicate.
-func clientPendingInteger(value any, field string) bool {
-	data, err := model.Marshal(value)
-	if err != nil {
-		return false
-	}
-	var members map[string]json.RawMessage
-	if json.Unmarshal(data, &members) != nil {
-		return false
-	}
-	var text string
-	if json.Unmarshal(members[field], &text) != nil || text == "" || text[0] == '+' {
-		return false
-	}
-	_, err = strconv.ParseInt(text, 10, 64)
-	return err == nil
 }

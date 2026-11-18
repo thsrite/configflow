@@ -229,7 +229,7 @@ func TestTypedClientSharedIntegerStrings(t *testing.T) {
 		t.Fatal(err)
 	}
 	if model.IssueUnder(model.Issues(node), "port") {
-		t.Skip("pending8a shared model integer-string entry")
+		t.Fatal("shared model integer-string entry did not decode port")
 	}
 	line, _, err := SurgeNode(node)
 	if err != nil || line != "N = http, example.com, 443" {
@@ -253,7 +253,7 @@ func TestTypedClientSharedNumericText(t *testing.T) {
 		t.Fatal(err)
 	}
 	if model.IssueUnder(model.Issues(node), "name") || model.IssueUnder(model.Issues(node), "server") {
-		t.Skip("pending8a shared model numeric-string entry")
+		t.Fatal("shared model numeric-string entry did not decode name/server")
 	}
 	line, _, err := SurgeNode(node)
 	if err != nil || line != "123 = http, 456, 443" {

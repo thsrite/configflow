@@ -85,6 +85,9 @@ func resolveClientNode(input model.Node) (*clientNode, error) {
 	if err := clientNodeText(node, "type", "server"); err != nil {
 		return nil, err
 	}
+	if err := clientProtocolType(node); err != nil {
+		return nil, err
+	}
 	options, err := decodeClientOptions(params)
 	if err != nil {
 		return nil, err
@@ -107,6 +110,28 @@ func resolveClientNode(input model.Node) (*clientNode, error) {
 	}
 	return &clientNode{node.Name, strings.ToLower(node.Type), node.Server, port, options}, nil
 }
+
+// clientProtocolType keeps enum discrimination strict while model.String owns
+// lossless text for names, addresses and protocol options. Null is absent.
+func clientProtocolType(node model.Node) error {
+	data, err := model.Marshal(node)
+	if err != nil {
+		return err
+	}
+	var members map[string]json.RawMessage
+	if err := json.Unmarshal(data, &members); err != nil {
+		return err
+	}
+	raw, present := members["type"]
+	if !present || string(raw) == "null" {
+		return nil
+	}
+	if err := identityString(raw, "type"); err != nil {
+		return fmt.Errorf(msgMihomoStoredText, kindNode, node.ID, "type", raw)
+	}
+	return nil
+}
+
 func clientQuantity(value *clientText) bool {
 	if value == nil || *value == "" {
 		return false
@@ -131,8 +156,8 @@ func clientValue(value string) string {
 	return value
 }
 func firstClientList(values clientTextList) string {
-	if len(values) > 0 {
-		return string(values[0])
+	if len(values.values) > 0 {
+		return string(values.values[0])
 	}
 	return ""
 }
@@ -173,8 +198,8 @@ func SurgeNode(input model.Node) (string, string, error) {
 		if clientOption(o.Network, "tcp") == "ws" {
 			path, host := "/", ""
 			if o.WS != nil {
-				if len(o.WS.Path) > 0 {
-					path = string(o.WS.Path[0])
+				if len(o.WS.Path.values) > 0 {
+					path = string(o.WS.Path.values[0])
 				}
 				host = firstClientList(o.WS.Headers.Host)
 			}
@@ -329,10 +354,10 @@ func SurgeNode(input model.Node) (string, string, error) {
 			section = append(section, "self-ip = "+address)
 		}
 		dns := o.DNS
-		if len(dns) == 0 {
+		if len(dns.values) == 0 {
 			dns = o.DNSServer
 		}
-		if len(dns) > 0 && strings.Join(dns.strings(), "") != "" {
+		if len(dns.values) > 0 && strings.Join(dns.strings(), "") != "" {
 			section = append(section, "dns-server = "+strings.Join(dns.strings(), ", "))
 		}
 		if clientQuantity(o.MTU) {
@@ -344,11 +369,11 @@ func SurgeNode(input model.Node) (string, string, error) {
 				endpoint = n.server + ":" + n.port
 			}
 			allowed := o.AllowedIPs
-			if len(allowed) == 0 || strings.Join(allowed.strings(), "") == "" {
+			if len(allowed.values) == 0 || strings.Join(allowed.strings(), "") == "" {
 				allowed = o.AllowedIPsAlt
 			}
 			allowedText := "0.0.0.0/0, ::/0"
-			if len(allowed) > 0 && strings.Join(allowed.strings(), "") != "" {
+			if len(allowed.values) > 0 && strings.Join(allowed.strings(), "") != "" {
 				allowedText = strings.Join(allowed.strings(), ", ")
 			}
 			peer := []string{"public-key = " + key, "endpoint = " + endpoint, `allowed-ips = "` + allowedText + `"`}
@@ -422,7 +447,7 @@ func clientTLS(o clientOptions) []string {
 		parts = append(parts, "sni="+clientValue(sni))
 	}
 	parts = append(parts, "skip-cert-verify="+flagText(clientFlag(o.SkipCertVerify)))
-	if len(o.ALPN) > 0 && strings.Join(o.ALPN.strings(), "") != "" {
+	if len(o.ALPN.values) > 0 && strings.Join(o.ALPN.strings(), "") != "" {
 		parts = append(parts, "alpn="+clientQuote(strings.Join(o.ALPN.strings(), ",")))
 	}
 	if o.Reality != nil && clientOption(o.Reality.PublicKey, "") != "" {
@@ -622,11 +647,11 @@ func LoonNode(input model.Node) (string, error) {
 			parts = append(parts, "keepalive="+value)
 		}
 		allowed := o.AllowedIPs
-		if len(allowed) == 0 || strings.Join(allowed.strings(), "") == "" {
+		if len(allowed.values) == 0 || strings.Join(allowed.strings(), "") == "" {
 			allowed = o.AllowedIPsAlt
 		}
 		allowedText := "0.0.0.0/0"
-		if len(allowed) > 0 && strings.Join(allowed.strings(), "") != "" {
+		if len(allowed.values) > 0 && strings.Join(allowed.strings(), "") != "" {
 			allowedText = strings.Join(allowed.strings(), ",")
 		}
 		endpoint := clientOption(o.Endpoint, "")

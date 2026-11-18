@@ -54,7 +54,7 @@ func TestClientTypedOptionsR5AndNull(t *testing.T) {
 	if !model.IssueUnder(model.Issues(options), "udp") || !model.IssueUnder(model.Issues(options), "tls") {
 		t.Fatal("missing invalid-bool metadata")
 	}
-	if strings.Join(options.ALPN.strings(), ",") != "h2,http/1.1" || options.WS == nil || options.WS.Headers.Host[0] != "example.com" {
+	if strings.Join(options.ALPN.strings(), ",") != "h2,http/1.1" || options.WS == nil || options.WS.Headers.Host.values[0] != "example.com" {
 		t.Fatal("nested options")
 	}
 	if !strings.Contains(logs.String(), fmt.Sprintf(msgClientBoolean, "udp")) || !strings.Contains(logs.String(), fmt.Sprintf(msgClientBoolean, "tls")) {

@@ -1,7 +1,9 @@
 package convert_test
 
 import (
+	"configflow/internal/model"
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -56,17 +58,21 @@ func executeClientBoundary(t *testing.T, entry *jsonx.Object) (any, error) {
 	t.Fatalf("unknown client call %s", fn)
 	return nil, nil
 }
-func clientEntryIssue(t *testing.T, entry *jsonx.Object) string {
+func clientEntryIssue(t *testing.T, entry *jsonx.Object) (issue string) {
 	t.Helper()
 	fn := entry.GetString("fn")
+	// Keep all production decoder/shape diagnoses first. Only a formerly
+	// failing, otherwise valid row can use the accepted numeric-text category.
+	defer func() {
+		if issue == "" && rowOf(entry).errClass != "" {
+			issue = clientAcceptedNumericText(entry)
+		}
+	}()
 	target := fn
 	if index := strings.LastIndexByte(fn, '_'); index >= 0 {
 		target = fn[index+1:]
 	}
 	profileIssue := func(profile *jsonx.Object) string {
-		if issue := convert.ClientProfileReplayIssue(profile, target); strings.HasPrefix(issue, "pending shared") {
-			return issue
-		}
 		if issue := convert.CommonReplayIssue(profile); issue != "" {
 			return issue
 		}
@@ -113,6 +119,45 @@ func clientEntryIssue(t *testing.T, entry *jsonx.Object) string {
 			if issue := convert.ClientNodeReplayIssue(node, target); issue != "" {
 				return "subscription " + issue
 			}
+		}
+	}
+	return ""
+}
+
+// The production scalar decoder is the authority; the index records input shape,
+// never a native business output. Type discriminators are deliberately excluded.
+func clientAcceptedNumericText(entry *jsonx.Object) string {
+	numeric := func(object *jsonx.Object, fields ...string) string {
+		if object == nil {
+			return ""
+		}
+		for _, field := range fields {
+			raw, _ := object.Get(field)
+			if _, ok := raw.(jsonx.Number); !ok {
+				continue
+			}
+			data, err := json.Marshal(raw)
+			if err != nil {
+				continue
+			}
+			var value model.String
+			if json.Unmarshal(data, &value) == nil {
+				return field
+			}
+		}
+		return ""
+	}
+	fn := entry.GetString("fn")
+	if fn == "node_surge" || fn == "node_loon" {
+		node, _ := entry.GetList("args")[0].(*jsonx.Object)
+		if field := numeric(node, "name", "server"); field != "" {
+			return "native numeric text node." + field
+		}
+	}
+	if fn == "surge" || fn == "loon" {
+		profile := entry.GetObject("args").GetObject("profile")
+		if field := numeric(profile.GetObject(fn), "custom_config"); field != "" {
+			return "native numeric text " + fn + "." + field
 		}
 	}
 	return ""

@@ -10,64 +10,46 @@ import (
 	"configflow/internal/yamlx"
 )
 
-// clientText decodes textual protocol options. Numeric YAML/JSON scalars are
-// accepted as exact text: passwords such as an unquoted 123 must keep working.
-// It never passes a number through float64 and never formats bools/containers.
-type clientText string
+// clientText uses the single shared lossless scalar codec.
+type clientText = model.String
 
-func (s *clientText) UnmarshalJSON(data []byte) error {
-	data = bytes.TrimSpace(data)
-	if len(data) == 0 {
-		return fmt.Errorf("%s", msgClientText)
-	}
-	if data[0] == '"' {
-		var value string
-		if err := json.Unmarshal(data, &value); err != nil {
-			return err
-		}
-		*s = clientText(value)
-		return nil
-	}
-	if data[0] == '-' || data[0] >= '0' && data[0] <= '9' {
-		if !json.Valid(data) {
-			return fmt.Errorf("%s", msgClientText)
-		}
-		*s = clientText(string(data))
-		return nil
-	}
-	return fmt.Errorf("%s", msgClientText)
-}
-func (s clientText) MarshalJSON() ([]byte, error) { return json.Marshal(string(s)) }
-
-// clientTextList accepts an engine option represented by one text/number or a
-// list of text/numbers (ALPN, DNS, HTTP paths). Null has no values.
-type clientTextList []clientText
+// clientTextList is the protocol's scalar-or-list union, not an ordinary model
+// slice. Its struct shape preserves this custom wire contract while each value
+// uses model.String. A null list is absent; null list members are invalid.
+type clientTextList struct{ values []model.String }
 
 func (s *clientTextList) UnmarshalJSON(data []byte) error {
 	data = bytes.TrimSpace(data)
 	if bytes.Equal(data, []byte("null")) {
-		*s = nil
+		s.values = nil
 		return nil
 	}
 	if len(data) > 0 && data[0] == '[' {
-		var result []clientText
-		if err := json.Unmarshal(data, &result); err != nil {
+		var values []*model.String
+		if err := json.Unmarshal(data, &values); err != nil {
 			return err
 		}
-		*s = result
+		result := make([]model.String, 0, len(values))
+		for _, value := range values {
+			if value == nil {
+				return fmt.Errorf("%s", msgClientText)
+			}
+			result = append(result, *value)
+		}
+		s.values = result
 		return nil
 	}
-	var value clientText
+	var value model.String
 	if err := json.Unmarshal(data, &value); err != nil {
 		return err
 	}
-	*s = []clientText{value}
+	s.values = []model.String{value}
 	return nil
 }
-func (s clientTextList) MarshalJSON() ([]byte, error) { return json.Marshal([]clientText(s)) }
+func (s clientTextList) MarshalJSON() ([]byte, error) { return json.Marshal(s.values) }
 func (s clientTextList) strings() []string {
-	result := make([]string, len(s))
-	for i, value := range s {
+	result := make([]string, len(s.values))
+	for i, value := range s.values {
 		result[i] = string(value)
 	}
 	return result

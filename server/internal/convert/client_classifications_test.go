@@ -27,8 +27,8 @@ const clientIndexPath = "testdata/n88c_helper_classifications.json.gz"
 
 func clientIssueFamily(issue string) string {
 	switch {
-	case strings.Contains(issue, "pending shared"):
-		return "pending shared integer-string"
+	case strings.HasPrefix(issue, "native numeric text"):
+		return "shared lossless numeric text"
 	case strings.Contains(issue, "TUIC ALPN"):
 		return "Surge TUIC ALPN list bug"
 	case strings.Contains(issue, "WireGuard numeric reserved"):
