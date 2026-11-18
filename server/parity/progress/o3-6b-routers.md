@@ -1,7 +1,7 @@
 # O3-6b — routers JobLock 与工作取消
 
-状态：implementing。分支go-o3-6b，从协调者指定的go-opus-review-r10@f368fa1b9建立；
-不push、不派子agent、本机不测试。最终需在R10及O3-6c正式合入后rebase go。
+状态：batch-4集成完成，定向验收中。分支go-o3-6b最初从协调者指定的go-opus-review-r10@f368fa1b9建立；
+已按正式通知变基go@c939a5f61（R10/R11与O3-6c已在其中）。不push、不派子agent、本机不测试。
 
 ## 范围与契约
 
@@ -148,3 +148,28 @@ beginCommitBatch三处，不能直接往map加Publish而谎称覆盖routers Sele
 扩为package:FuncDecl:callee精确条目（各恰好一次），保留三个repo marker并扫描routers所有ctxx.Uninterruptible，
 第四项登记实际本地Aborted publication私有函数，记录Clarified in R12；未登记调用失败。
 R12负责将条件/结果/零补偿I/O/单次提交/锁释放的真实Runtime回归与AST扩展一起交回，6b后续整合保留。
+
+
+## Batch-4 正式集成（2026-11-18）
+
+协调者f8801d39通知go@c939a5f61包含R10与O3-6c，继续本步，固定.32，只做定向检查。
+从指定的原R10复核tip f368fa1b9开始，用`git rebase --onto go f368fa1b9 go-o3-6b`
+只重放6b自己的10条提交，避免把已由cherry-pick集成、报告又修订过的R10提交重复带回。
+唯一自身冲突是设计中相邻的Clarified in O3-6b/6c：两段全部保留。
+RouterOS.Apply入口取消检查已在go的R11中，不重复添加；RESTORE递归guard、PD scoped表、
+ND严格flag均沿用最新go，不改R10/R11私有实现。本分支当前未包含未合入的R12。
+
+已落地`o36b_repo_runtime_test.go::TestO36bRepositoryRuntimeCommitBoundary`，
+7条入口（generic password/manifest/delete，caller-held settings/settings-delete/publication/withdrawal）
+×2个真实屏障（实际L3等待、Store.BeforeCommit）×2种事件（Runtime关机、仅客户端断开）=28子例。
+每例检查：关机原生context.Canceled、完整SQLite fingerprint/revision与所有非DB文件不变；
+断开仍完成对应字段/删除/manifest效果，且generation只加1；之后同设备L1能再取，Violations严格为0。
+保持SaveRouterSettings/SaveRouterPublication调用方持L1→L2、repo不重入L1的约定。
+
+首轮新增矩阵已在.32通过：
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt --back server/internal/routers/o36b_repo_runtime_test.go -- bash -lc 'cd server && gofmt -w internal/routers/o36b_repo_runtime_test.go && go test -race -count=3 -run "^TestO36bRepositoryRuntimeCommitBoundary$" -timeout=10m ./internal/routers/'
+```
+退出0，`ok configflow/internal/routers 62.272s`（28叶例各执行3轮）。
+下一步：全目录gofmt-l、全仓vet；routers及直接调用方/相关repo-devhttp集成race；
+相关api/rules、api/rulelibrary difftest，全部固定.32，不跑gate/proddiff/全仓race；无新fuzz目标。
