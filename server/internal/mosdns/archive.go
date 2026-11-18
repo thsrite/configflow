@@ -469,7 +469,7 @@ func BuildZIP(ctx context.Context, config *model.Config, yamlContent string, dow
 
 	// Downloads may outlive an early failure, so Runtime tracks each worker.
 	// At most MaxWorkers downloads stay in flight; results are buffered.
-	fetch := fetchCaptured
+	fetch := captureFetch()
 	results := make(chan fetched, len(sources))
 	next, pending := 0, 0
 	schedule := func() error {

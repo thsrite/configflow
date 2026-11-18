@@ -420,12 +420,21 @@ func fetchRemote(ctx context.Context, url string, config *jsonx.Object, host str
 	}
 	return fetchNative(ctx, url, native, host)
 }
-func fetchCaptured(ctx context.Context, url string, config *model.Config, host string) ([]byte, error) {
-	value, err := legacySourceConfig(config)
-	if err != nil {
-		return nil, err
+
+// captureFetch binds the collaborator before archive workers can outlive their
+// caller. A worker must not reread a subsequently replaced test/owner hook.
+func captureFetch() nativeFetchFunc {
+	fetch := fetchRemoteFn
+	return func(ctx context.Context, url string, config *model.Config, host string) ([]byte, error) {
+		value, err := legacySourceConfig(config)
+		if err != nil {
+			return nil, err
+		}
+		return fetch(ctx, url, value, host)
 	}
-	return fetchRemoteFn(ctx, url, value, host)
+}
+func fetchCaptured(ctx context.Context, url string, config *model.Config, host string) ([]byte, error) {
+	return captureFetch()(ctx, url, config, host)
 }
 func requestCaptured(ctx context.Context, url string, config *model.Config, request rulefetch.Request) (*rulefetch.Response, error) {
 	value, err := legacySourceConfig(config)
