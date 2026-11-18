@@ -380,6 +380,10 @@ func TestCorpus(t *testing.T) {
 			typedStorage[issue]++
 			continue
 		}
+		if issue := easyTierRowIssue(row); issue != "" {
+			typedStorage[issue]++
+			continue
+		}
 		result, mutated, err := runCorpusRow(row)
 		if nativeProxyReplay(t, "corpus", row, result, mutated, err) {
 			continue

@@ -243,6 +243,10 @@ func TestReviewC12References(t *testing.T) {
 			known++
 			continue
 		}
+		if easyTierRowIssue(row) != "" {
+			known++
+			continue
+		}
 		result, mutated, err := runReviewRow(row)
 		if nativePortReplay(t, row, result, err) {
 			known++
@@ -326,7 +330,7 @@ func TestReviewC12References(t *testing.T) {
 func TestCorpusExceptionMessages(t *testing.T) {
 	failures := 0
 	for i, row := range loadCorpus(t) {
-		if commonRowIssue(row) != "" || nodeRowIssue(row) != "" {
+		if commonRowIssue(row) != "" || nodeRowIssue(row) != "" || easyTierRowIssue(row) != "" {
 			continue
 		}
 		if row.errClass == "" || intentional(row.errClass) {

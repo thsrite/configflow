@@ -147,7 +147,7 @@ func TestCommonTypedDefaultsAndMalformedStorage(t *testing.T) {
 }
 
 func TestCommonCoreHasNoLegacyDependency(t *testing.T) {
-	for _, name := range []string{"common.go", "mihomo_nodes.go", "proxyyaml.go"} {
+	for _, name := range []string{"common.go", "mihomo_nodes.go", "proxyyaml.go", "easytier.go"} {
 		file, err := parser.ParseFile(token.NewFileSet(), name, nil, 0)
 		if err != nil {
 			t.Fatal(err)

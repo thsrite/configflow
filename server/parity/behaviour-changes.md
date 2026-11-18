@@ -1078,3 +1078,12 @@ legacy 边界先解码整份规则库，因此匹配项之后的非 object 也�
 JSON 的超大指数（如 1e400）仍按原文保留并能 JSON 读回，但 yaml.v3 无法按 float 标签解析它。
 Marshal 会返回中文 ErrPolicy，不再成功输出一份自己 Parse 不了的 YAML。
 正常有限 float、下溢数和大整数的读写闭合不变。
+
+## N8-8a — EasyTier typed settings
+
+正常设置的默认值、选项顺序、生成字节和中文验证消息保持不变。
+畸形根值、非数组生成节、非字符串版本改为明确类型校验；typed Config 里无法解码的
+EasyTier 字段按 R5 缺省，避免重建 Python truthiness 和容器遍历异常。
+整数选项和保活 interval 按 R8 接受整数字面量的浮点写法（如 1500.0、6e1）。
+保留标准 IPv4 net/host mask 和带前导零的前缀长度支持；不会替换成私有 IP 解析器。
+导出时 secret 成员即使存成错误类型也会脱敏（非 null、非空字符串），不再按动态 truthiness 决定。

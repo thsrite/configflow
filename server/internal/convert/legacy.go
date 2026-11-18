@@ -284,3 +284,111 @@ func RulesetFormat(rule, value *jsonx.Object, sourceURL string) (string, error) 
 	}
 	return RuleFormat(item, config, sourceURL)
 }
+
+// easyTierFromLegacy only decodes the obsolete polymorphic API boundary.
+func easyTierFromLegacy(value any) (*model.EasyTierSettings, error) {
+	result, err := decodeLegacy[*model.EasyTierSettings](value)
+	if err != nil {
+		return nil, easytierError(msgETSettingsObject)
+	}
+	return result, nil
+}
+func easyTierLegacyError(err error) error {
+	if err == nil {
+		return nil
+	}
+	return easytierError(err.Error())
+}
+
+// EasyTierDefaultSettings adapts the typed default to legacy callers.
+func EasyTierDefaultSettings() *jsonx.Object {
+	value, _ := encodeLegacy(DefaultEasyTier())
+	result, _ := value.(*jsonx.Object)
+	return result
+}
+
+// NormalizeEasyTierSettings decodes, validates and encodes the legacy settings boundary.
+func NormalizeEasyTierSettings(value any) (*jsonx.Object, error) {
+	settings, err := easyTierFromLegacy(value)
+	if err != nil {
+		return nil, err
+	}
+	normalized, err := NormalizeEasyTier(settings)
+	if err != nil {
+		return nil, easyTierLegacyError(err)
+	}
+	encoded, err := encodeLegacy(normalized)
+	if err != nil {
+		return nil, err
+	}
+	result, _ := encoded.(*jsonx.Object)
+	return result, nil
+}
+
+// EasyTierSettings adapts the old resolved view to ConfigEasyTier.
+func EasyTierSettings(value any) (*jsonx.Object, error) {
+	profile, err := decodeLegacy[*model.Profile](value)
+	if err != nil {
+		return nil, err
+	}
+	settings, err := ConfigEasyTier(&model.Config{Profile: profile})
+	if err != nil {
+		return nil, easyTierLegacyError(err)
+	}
+	encoded, err := encodeLegacy(settings)
+	if err != nil {
+		return nil, err
+	}
+	result, _ := encoded.(*jsonx.Object)
+	return result, nil
+}
+
+// EasyTierKeepaliveGroupName adapts the old settings object.
+func EasyTierKeepaliveGroupName(value *jsonx.Object) string {
+	settings, _ := decodeLegacy[model.EasyTierSettings](value)
+	return EasyTierGroupName(&settings)
+}
+
+// EasyTierApplies adapts stored settings to the typed delivery predicate.
+func EasyTierApplies(value *jsonx.Object, forAgent bool) bool {
+	settings, _ := decodeLegacy[model.EasyTierSettings](value)
+	return EasyTierFor(&settings, forAgent)
+}
+
+// ApplyEasyTier adapts the old document and polymorphic settings/version arguments.
+func ApplyEasyTier(document *jsonx.Object, value any, forAgent bool, version any) (*EasyTierResult, error) {
+	node, err := yamlbridge.Encode(document)
+	if err != nil {
+		return nil, err
+	}
+	profile, err := decodeLegacy[*model.Profile](value)
+	if err != nil {
+		return nil, err
+	}
+	raw, err := json.Marshal(version)
+	if err != nil {
+		return nil, err
+	}
+	result, err := ApplyEasyTierNode(node, &model.Config{Profile: profile}, forAgent, raw)
+	if encodeErr := replaceLegacyProxy(document, node); encodeErr != nil {
+		return nil, encodeErr
+	}
+	return result, easyTierLegacyError(err)
+}
+
+// RedactEasyTierSettings transcodes old export hooks to the typed redactor.
+func RedactEasyTierSettings(value any) any {
+	settings, err := decodeLegacy[*model.EasyTierSettings](value)
+	if err != nil {
+		return value
+	}
+	redacted, err := RedactEasyTier(settings)
+	if err != nil {
+		return value
+	}
+	encoded, err := encodeLegacy(redacted)
+	if err != nil {
+		return value
+	}
+	return encoded
+}

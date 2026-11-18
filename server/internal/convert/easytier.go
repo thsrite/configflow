@@ -1,21 +1,24 @@
 package convert
 
-// Port of backend/common/mihomo_easytier.py: profile-scoped EasyTier
-// networking for generated Mihomo configs (Mihomo v1.19.31 `type: easytier`
-// outbound). The setting lives at config['mihomo']['easytier']; every option
-// of the outbound is kept under "options" with Mihomo's kebab-case keys.
-
 import (
+	"encoding/json"
+	"errors"
+	"fmt"
 	"math/big"
+	"net"
+	"net/netip"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
-	"configflow/internal/jsonx"
-	"configflow/internal/pystr"
+	"configflow/internal/model"
 	"configflow/internal/subs"
+	"configflow/internal/yamlx"
+	"gopkg.in/yaml.v3"
 )
 
 // EasyTier constants (mihomo_easytier.py module level).
@@ -39,7 +42,7 @@ var (
 var (
 	easytierPeerSchemes = []string{"tcp", "udp", "ws", "wss", "wg", "quic", "faketcp", "txt", "srv", "http", "https"}
 	easytierHostname    = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,62})$`)
-	easytierKeepURL     = mustPyRegex(`^https?://\S+$`, false)
+	easytierKeepURL     = regexp.MustCompile(`^https?://[^\s]+$`)
 )
 
 // EasyTierField is one (key, kind) of FIELDS. Kinds: text, secret, bool,
@@ -73,473 +76,513 @@ func easytierFieldKind(key string) (string, bool) {
 	return "", false
 }
 
-// EasyTierDefaultSettings is default_settings().
-func EasyTierDefaultSettings() *jsonx.Object {
-	return jsonx.Obj(
-		"enabled", false,
-		"name", EasyTierDefaultName,
-		"apply_to", "subscription",
-		"routes", []any{},
-		"magic_dns", false,
-		"keepalive", jsonx.Obj("enabled", false, "url", "", "interval", jsonx.Int(EasyTierDefaultKeepaliveInterval)),
-		"options", jsonx.Obj("udp", true),
-	)
+// DefaultEasyTier returns an independent disabled profile overlay.
+func DefaultEasyTier() *model.EasyTierSettings {
+	var settings model.EasyTierSettings
+	_ = json.Unmarshal([]byte(`{"enabled":false,"name":"EasyTier","apply_to":"subscription","routes":[],"magic_dns":false,"keepalive":{"enabled":false,"url":"","interval":300},"options":{"udp":true}}`), &settings)
+	return &settings
 }
 
-func cleanText(value any, label string, required bool, limit int) (string, error) {
-	if value == nil {
-		value = ""
-	}
-	text, ok := value.(string)
-	if !ok {
-		return "", easytierError(label + " 必须是文本")
-	}
-	text = pystr.Strip(text)
-	if required && text == "" {
-		return "", easytierError("请填写" + label)
-	}
-	bad := utf8.RuneCountInString(text) > limit
-	for _, r := range text {
-		if r < 32 || r == 127 {
-			bad = true
+func easyTierText(node *yamlx.Node, label string, required bool, limit int) (string, error) {
+	text := ""
+	if node != nil && node.ShortTag() != "!!null" {
+		if node.Kind != yaml.ScalarNode || node.ShortTag() != "!!str" {
+			return "", fmt.Errorf(msgETText, label)
 		}
+		text = node.Value
 	}
-	if bad {
-		return "", easytierError(label + " 过长或包含控制字符")
+	text = strings.TrimSpace(text)
+	if required && text == "" {
+		return "", fmt.Errorf(msgETRequired, label)
+	}
+	if utf8.RuneCountInString(text) > limit || strings.ContainsFunc(text, func(r rune) bool { return r < 32 || r == 127 }) {
+		return "", fmt.Errorf(msgETTextLimit, label)
 	}
 	return text, nil
 }
-
-func cleanList(value any, label string) ([]string, error) {
-	if value == nil {
+func easyTierList(node *yamlx.Node, label string) ([]string, error) {
+	if node == nil || node.ShortTag() == "!!null" {
 		return []string{}, nil
 	}
-	list, ok := value.([]any)
-	if !ok || len(list) > easytierMaxList {
-		return nil, easytierError(label + " 必须是列表，最多 " + strconv.Itoa(easytierMaxList) + " 项")
+	if node.Kind != yaml.SequenceNode || len(node.Content) > easytierMaxList {
+		return nil, fmt.Errorf(msgETList, label, easytierMaxList)
 	}
-	items := make([]string, 0, len(list))
-	for _, item := range list {
-		text, err := cleanText(item, label, false, easytierMaxText)
+	result := []string{}
+	seen := map[string]bool{}
+	for _, value := range node.Content {
+		text, err := easyTierText(value, label, false, easytierMaxText)
 		if err != nil {
 			return nil, err
 		}
-		items = append(items, text)
-	}
-	seen := map[string]bool{}
-	out := []string{}
-	for _, item := range items {
-		if item != "" && !seen[item] {
-			seen[item] = true
-			out = append(out, item)
+		if text != "" && !seen[text] {
+			seen[text] = true
+			result = append(result, text)
 		}
 	}
-	return out, nil
+	return result, nil
 }
-
-func ipv4Network(value, label string) (string, error) {
+func easyTierBool(node *yamlx.Node, label string, fallback bool) (bool, error) {
+	if node == nil {
+		return fallback, nil
+	}
+	if node.ShortTag() != "!!bool" {
+		return false, fmt.Errorf(msgETBoolean, label)
+	}
+	return node.Value == "true", nil
+}
+func easyTierNetwork(value, label string) (string, error) {
 	if strings.Contains(value, "->") {
-		return "", easytierError(label + "「" + value + "」：Mihomo 的 EasyTier 不支持「->」网段映射，只能原样填写网段")
+		return "", fmt.Errorf(msgETNetworkMap, label, value)
 	}
-	canonical, version, ok := ipNetwork(value)
-	if !ok {
-		return "", easytierError(label + "「" + value + "」不是有效的网段")
+	network, err := easyTierPrefix(value)
+	if err != nil {
+		return "", fmt.Errorf(msgETNetwork, label, value)
 	}
-	if version != 4 {
-		return "", easytierError(label + "「" + value + "」：EasyTier 虚拟网只支持 IPv4")
+	if !network.Addr().Is4() {
+		return "", fmt.Errorf(msgETIPv4Network, label, value)
 	}
-	return canonical, nil
+	return network.Masked().String(), nil
 }
 
-func peerURI(value, label string) (string, error) {
-	scheme, rest, found := strings.Cut(value, "://")
-	if !found || !contains(easytierPeerSchemes, pystr.Lower(scheme)) || rest == "" {
-		return "", easytierError(label + "「" + value + "」格式不对，应类似 tcp://203.0.113.10:11010（支持 " +
-			strings.Join(easytierPeerSchemes[:7], ", ") + " 等）")
+// easyTierPrefix accepts addresses, CIDR prefixes and IPv4 net/host masks.
+// IPMask.Size validates contiguous masks without a private IP parser.
+func easyTierPrefix(value string) (netip.Prefix, error) {
+	if prefix, err := netip.ParsePrefix(value); err == nil {
+		return prefix, nil
+	}
+	if addr, err := netip.ParseAddr(value); err == nil {
+		return netip.PrefixFrom(addr, addr.BitLen()), nil
+	}
+	host, mask, _ := strings.Cut(value, "/")
+	addr, err := netip.ParseAddr(host)
+	if err != nil {
+		return netip.Prefix{}, fmt.Errorf(msgETNetwork, "", value)
+	}
+	if size, err := strconv.ParseUint(mask, 10, 8); err == nil && size <= uint64(addr.BitLen()) {
+		return netip.PrefixFrom(addr, int(size)), nil
+	}
+	if !addr.Is4() {
+		return netip.Prefix{}, fmt.Errorf(msgETNetwork, "", value)
+	}
+	parsed, err := netip.ParseAddr(mask)
+	if err != nil || !parsed.Is4() {
+		return netip.Prefix{}, fmt.Errorf(msgETNetwork, "", value)
+	}
+	bits := parsed.As4()
+	ones, width := net.IPMask(bits[:]).Size()
+	if width == 0 {
+		for i := range bits {
+			bits[i] = ^bits[i]
+		}
+		ones, width = net.IPMask(bits[:]).Size()
+	}
+	if width == 0 {
+		return netip.Prefix{}, fmt.Errorf(msgETNetwork, "", value)
+	}
+	return netip.PrefixFrom(addr, ones), nil
+}
+func easyTierPeer(value, label string) (string, error) {
+	scheme, rest, ok := strings.Cut(value, "://")
+	if !ok || !slices.Contains(easytierPeerSchemes, strings.ToLower(scheme)) || rest == "" {
+		return "", fmt.Errorf(msgETPeer, label, value, strings.Join(easytierPeerSchemes[:7], ", "))
 	}
 	return value, nil
 }
-
-func easytierOption(key, kind string, value any) (any, error) {
-	label := key
-	switch kind {
+func easyTierOption(field EasyTierField, node *yamlx.Node) (*yamlx.Node, error) {
+	key := field.Key
+	switch field.Kind {
 	case "bool":
-		if _, ok := value.(bool); !ok {
-			return nil, easytierError(label + " 必须是开或关")
+		if node.ShortTag() != "!!bool" {
+			return nil, fmt.Errorf(msgETSwitch, key)
 		}
-		return value, nil
+		return yamlx.Bool(node.Value == "true"), nil
 	case "int":
-		number, ok := value.(jsonx.Number)
-		if !ok || !number.IsInt() {
-			return nil, easytierError(label + " 必须是整数")
-		}
-		bounds := easytierIntRanges[key]
-		n, _ := number.BigInt()
-		if n.Cmp(big.NewInt(bounds[0])) < 0 || n.Cmp(big.NewInt(bounds[1])) > 0 {
-			return nil, easytierError(label + " 需在 " + strconv.FormatInt(bounds[0], 10) + " ~ " +
-				strconv.FormatInt(bounds[1], 10) + " 之间")
-		}
-		return value, nil
-	case "list":
-		items, err := cleanList(value, label)
+		// R8 accepts integral JSON float notation; no Python int lexical emulation.
+		data, err := yamlx.ToJSON(node)
 		if err != nil {
 			return nil, err
 		}
-		switch key {
-		case "peers", "listeners", "mapped-listeners":
-			for i, item := range items {
-				if items[i], err = peerURI(item, label); err != nil {
-					return nil, err
-				}
+		var number model.Int
+		if err = json.Unmarshal(data, &number); err != nil {
+			if node.ShortTag() == "!!int" {
+				bounds := easytierIntRanges[key]
+				return nil, fmt.Errorf(msgETRange, key, bounds[0], bounds[1])
 			}
-		case "proxy-networks":
-			for i, item := range items {
-				if items[i], err = ipv4Network(item, label); err != nil {
-					return nil, err
-				}
-			}
-		case "exit-nodes":
-			for _, item := range items {
-				if ipAddressVersion(item) != 4 {
-					return nil, easytierError("exit-nodes「" + item + "」应填写出口节点的虚拟 IPv4 地址")
-				}
-			}
+			return nil, fmt.Errorf(msgETInteger, key)
 		}
-		return jsonx.ListOf(items), nil
+		bounds := easytierIntRanges[key]
+		if int64(number) < bounds[0] || int64(number) > bounds[1] {
+			return nil, fmt.Errorf(msgETRange, key, bounds[0], bounds[1])
+		}
+		return yamlx.Int(int64(number)), nil
+	case "list":
+		items, err := easyTierList(node, key)
+		if err != nil {
+			return nil, err
+		}
+		result := yamlx.Seq()
+		for _, value := range items {
+			switch key {
+			case "peers", "listeners", "mapped-listeners":
+				value, err = easyTierPeer(value, key)
+			case "proxy-networks":
+				value, err = easyTierNetwork(value, key)
+			case "exit-nodes":
+				addr, e := netip.ParseAddr(value)
+				if e != nil || !addr.Is4() {
+					err = fmt.Errorf(msgETExitNode, value)
+				}
+			}
+			if err != nil {
+				return nil, err
+			}
+			result.Content = append(result.Content, yamlx.Str(value))
+		}
+		return result, nil
 	case "choice":
-		if !contains(EasyTierIPVersions, value) {
-			return nil, easytierError("ip-version 只能是 " + strings.Join(EasyTierIPVersions, " / "))
+		if node.ShortTag() != "!!str" || !slices.Contains(EasyTierIPVersions, node.Value) {
+			return nil, fmt.Errorf(msgETIPVersion, strings.Join(EasyTierIPVersions, " / "))
 		}
-		return value, nil
+		return yamlx.Str(node.Value), nil
 	}
 	limit := easytierMaxText
-	if kind == "secret" {
+	if field.Kind == "secret" {
 		limit = 4096
 	}
-	text, err := cleanText(value, label, false, limit)
+	text, err := easyTierText(node, key, false, limit)
 	if err != nil {
 		return nil, err
 	}
 	if key == "ipv4" && text != "" {
-		switch ipInterfaceVersion(text) {
-		case 0:
-			return nil, easytierError("ipv4「" + text + "」应类似 10.144.144.10 或 10.144.144.10/24")
-		case 6:
-			return nil, easytierError("ipv4 只能填写 IPv4 地址")
+		prefix, e := easyTierPrefix(text)
+		addr := prefix.Addr()
+		if e != nil {
+			return nil, fmt.Errorf(msgETIPv4, text)
+		}
+		if !addr.Is4() {
+			return nil, errors.New(msgETOnlyIPv4)
 		}
 	}
 	if key == "hostname" && text != "" && !easytierHostname.MatchString(text) {
-		return nil, easytierError("hostname 只能包含字母、数字和连字符，不超过 63 个字符")
+		return nil, errors.New(msgETHostname)
 	}
-	return text, nil
+	return yamlx.Str(text), nil
+}
+func easyTierSettingsNode(settings *model.EasyTierSettings) (*yamlx.Node, error) {
+	data, err := model.Marshal(settings)
+	if err != nil {
+		return nil, err
+	}
+	return yamlx.FromJSON(data)
+}
+func easyTierDefault(node *yamlx.Node, key string, fallback *yamlx.Node) *yamlx.Node {
+	value := yamlx.Get(node, key)
+	if value == nil {
+		return fallback
+	}
+	return value
 }
 
-// NormalizeEasyTierSettings is normalize_settings: validate a stored or
-// submitted setting and return its canonical form.
-func NormalizeEasyTierSettings(value any) (*jsonx.Object, error) {
-	if value == nil {
-		return EasyTierDefaultSettings(), nil
+// NormalizeEasyTier validates a typed stored overlay and returns canonical settings.
+// Raw member evidence is checked at this validation boundary rather than silently
+// passing a malformed stored option through to the generated configuration.
+func NormalizeEasyTier(settings *model.EasyTierSettings) (*model.EasyTierSettings, error) {
+	if settings == nil {
+		return DefaultEasyTier(), nil
 	}
-	input, ok := value.(*jsonx.Object)
-	if !ok {
-		return nil, easytierError("EasyTier 设置必须是对象")
+	input, err := easyTierSettingsNode(settings)
+	if err != nil {
+		return nil, err
 	}
-	result := EasyTierDefaultSettings()
-	enabledValue := input.GetOr("enabled", false)
-	enabled, ok := enabledValue.(bool)
-	if !ok {
-		return nil, easytierError("enabled 必须是布尔值")
+	enabled, err := easyTierBool(yamlx.Get(input, "enabled"), "enabled", false)
+	if err != nil {
+		return nil, err
 	}
-	result.Set("enabled", enabled)
-	name, err := cleanText(input.GetOr("name", EasyTierDefaultName), "节点名称", true, 64)
+	name, err := easyTierText(easyTierDefault(input, "name", yamlx.Str(EasyTierDefaultName)), msgETName, true, 64)
 	if err != nil {
 		return nil, err
 	}
 	if strings.Contains(name, ",") {
-		return nil, easytierError("节点名称不能包含英文逗号，否则规则无法引用")
+		return nil, errors.New(msgETNameComma)
 	}
-	result.Set("name", name)
-	applyTo := input.GetOr("apply_to", "subscription")
-	if !contains(EasyTierApplyTo, applyTo) {
-		return nil, easytierError("下发范围只能是 subscription、agent 或 all")
+	apply := easyTierDefault(input, "apply_to", yamlx.Str("subscription"))
+	if apply.ShortTag() != "!!str" || !slices.Contains(EasyTierApplyTo, apply.Value) {
+		return nil, errors.New(msgETApply)
 	}
-	result.Set("apply_to", applyTo)
-	routeItems, err := cleanList(input.Value("routes"), "走 EasyTier 的网段")
+	routes, err := easyTierList(yamlx.Get(input, "routes"), msgETRoutes)
 	if err != nil {
 		return nil, err
 	}
-	routes := make([]any, 0, len(routeItems))
-	for _, item := range routeItems {
-		network, err := ipv4Network(item, "走 EasyTier 的网段")
+	routeNodes := yamlx.Seq()
+	for _, value := range routes {
+		network, err := easyTierNetwork(value, msgETRoutes)
 		if err != nil {
 			return nil, err
 		}
-		routes = append(routes, network)
+		routeNodes.Content = append(routeNodes.Content, yamlx.Str(network))
 	}
-	result.Set("routes", routes)
-	magicDNS, ok := input.GetOr("magic_dns", false).(bool)
-	if !ok {
-		return nil, easytierError("magic_dns 必须是布尔值")
-	}
-	result.Set("magic_dns", magicDNS)
-
-	keepaliveValue := input.Value("keepalive")
-	if !jsonx.Truthy(keepaliveValue) {
-		keepaliveValue = jsonx.NewObject()
-	}
-	keepalive, ok := keepaliveValue.(*jsonx.Object)
-	if !ok {
-		return nil, easytierError("keepalive 必须是对象")
-	}
-	keepEnabled, ok := keepalive.GetOr("enabled", false).(bool)
-	if !ok {
-		return nil, easytierError("keepalive.enabled 必须是布尔值")
-	}
-	url, err := cleanText(keepalive.GetOr("url", ""), "保活检测地址", false, easytierMaxText)
+	magic, err := easyTierBool(yamlx.Get(input, "magic_dns"), "magic_dns", false)
 	if err != nil {
 		return nil, err
 	}
-	interval := keepalive.GetOr("interval", jsonx.Int(EasyTierDefaultKeepaliveInterval))
-	if number, ok := interval.(jsonx.Number); !ok || !number.IsInt() {
-		return nil, easytierError("保活检测间隔需为 10 ~ 86400 秒的整数")
-	} else if n, _ := number.BigInt(); n.Cmp(big.NewInt(10)) < 0 || n.Cmp(big.NewInt(86400)) > 0 {
-		return nil, easytierError("保活检测间隔需为 10 ~ 86400 秒的整数")
+	keep := yamlx.Get(input, "keepalive")
+	if keep == nil || keep.ShortTag() == "!!null" {
+		keep = yamlx.Map()
 	}
-	if url != "" && !easytierKeepURL.Search(url) {
-		return nil, easytierError("保活检测地址应为 http:// 或 https:// 开头的网址")
+	if keep.Kind != yaml.MappingNode {
+		return nil, errors.New(msgETKeepObject)
 	}
-	if keepEnabled && url == "" {
-		return nil, easytierError("开启保活时请填写检测地址，例如虚拟网内某台设备上的网页")
+	keepEnabled, err := easyTierBool(yamlx.Get(keep, "enabled"), "keepalive.enabled", false)
+	if err != nil {
+		return nil, err
 	}
-	result.Set("keepalive", jsonx.Obj("enabled", keepEnabled, "url", url, "interval", interval))
-
-	options, ok := input.GetOr("options", jsonx.NewObject()).(*jsonx.Object)
-	if !ok {
-		return nil, easytierError("options 必须是对象")
+	address, err := easyTierText(yamlx.Get(keep, "url"), msgETKeepURLLabel, false, easytierMaxText)
+	if err != nil {
+		return nil, err
 	}
-	var unknown []string
-	for _, key := range options.Keys() {
-		if _, known := easytierFieldKind(key); !known {
+	intervalNode := easyTierDefault(keep, "interval", yamlx.Int(EasyTierDefaultKeepaliveInterval))
+	var interval model.Int
+	rawInterval, err := yamlx.ToJSON(intervalNode)
+	if err != nil {
+		return nil, err
+	}
+	if json.Unmarshal(rawInterval, &interval) != nil || interval < 10 || interval > 86400 {
+		return nil, errors.New(msgETInterval)
+	}
+	if address != "" && (!easytierKeepURL.MatchString(address) || strings.ContainsFunc(address, unicode.IsSpace)) {
+		return nil, errors.New(msgETKeepURL)
+	}
+	if keepEnabled && address == "" {
+		return nil, errors.New(msgETKeepRequired)
+	}
+	options := easyTierDefault(input, "options", yamlx.Map())
+	if options.Kind != yaml.MappingNode {
+		return nil, errors.New(msgETOptionsObject)
+	}
+	unknown := []string{}
+	for key := range yamlx.Pairs(options) {
+		if _, ok := easytierFieldKind(key); !ok {
 			unknown = append(unknown, key)
 		}
 	}
 	if len(unknown) > 0 {
 		sort.Strings(unknown)
-		return nil, easytierError("不认识的 EasyTier 参数：" + strings.Join(unknown, ", "))
+		return nil, fmt.Errorf(msgETUnknown, strings.Join(unknown, ", "))
 	}
-	cleaned := jsonx.NewObject()
+	cleaned := yamlx.Map()
 	for _, field := range EasyTierFields {
-		raw, present := options.Get(field.Key)
-		if !present || raw == nil {
+		value := yamlx.Get(options, field.Key)
+		if value == nil || value.ShortTag() == "!!null" {
 			continue
 		}
-		item, err := easytierOption(field.Key, field.Kind, raw)
+		item, err := easyTierOption(field, value)
 		if err != nil {
 			return nil, err
 		}
-		if item == "" {
+		if item.ShortTag() == "!!str" && item.Value == "" || item.Kind == yaml.SequenceNode && len(item.Content) == 0 {
 			continue
 		}
-		if list, isList := item.([]any); isList && len(list) == 0 {
-			continue
-		}
-		cleaned.Set(field.Key, item)
+		yamlx.Set(cleaned, field.Key, item)
 	}
-	result.Set("options", cleaned)
-
 	if enabled {
-		if !jsonx.Truthy(cleaned.Value("network-name")) {
-			return nil, easytierError("请填写 network-name（EasyTier 网络名）")
+		if scalarText(yamlx.Get(cleaned, "network-name")) == "" {
+			return nil, errors.New(msgETNetworkName)
 		}
-		if jsonx.Truthy(cleaned.Value("listeners")) && cleaned.Value("no-listener") == true {
-			return nil, easytierError("填写了 listeners 时不能同时开启 no-listener")
+		listeners := yamlx.Get(cleaned, "listeners")
+		hasListeners := listeners != nil && len(listeners.Content) > 0
+		noListener := yamlx.Get(cleaned, "no-listener")
+		if hasListeners && noListener != nil && noListener.Value == "true" {
+			return nil, errors.New(msgETListenerConflict)
 		}
-		listening := jsonx.Truthy(cleaned.Value("listeners")) || cleaned.Value("no-listener") == false
-		if !jsonx.Truthy(cleaned.Value("peers")) && !listening {
-			return nil, easytierError("不监听端口时至少要填写一个 peers（入网节点）")
+		peers := yamlx.Get(cleaned, "peers")
+		if (peers == nil || len(peers.Content) == 0) && !hasListeners && (noListener == nil || noListener.Value != "false") {
+			return nil, errors.New(msgETPeersRequired)
 		}
-		if jsonx.Truthy(cleaned.Value("local-public-key")) && !jsonx.Truthy(cleaned.Value("local-private-key")) {
-			return nil, easytierError("local-public-key 需要和 local-private-key 一起填写")
-		}
-	}
-	return result, nil
-}
-
-// EasyTierSettings is easytier_settings(config).
-func EasyTierSettings(config any) (*jsonx.Object, error) {
-	var value any
-	if c, ok := config.(*jsonx.Object); ok && c != nil {
-		if mihomo, ok := c.Value("mihomo").(*jsonx.Object); ok && mihomo != nil {
-			value = mihomo.Value("easytier")
+		if scalarText(yamlx.Get(cleaned, "local-public-key")) != "" && scalarText(yamlx.Get(cleaned, "local-private-key")) == "" {
+			return nil, errors.New(msgETPrivateKey)
 		}
 	}
-	return NormalizeEasyTierSettings(value)
-}
-
-// EasyTierKeepaliveGroupName is keepalive_group_name.
-func EasyTierKeepaliveGroupName(settings *jsonx.Object) string {
-	return jsonx.Str(settings.Value("name")) + " 保活"
-}
-
-func easytierTLD(settings *jsonx.Object) string {
-	zone := settings.GetObject("options").Value("tld-dns-zone")
-	text, _ := zone.(string)
-	if !jsonx.Truthy(zone) {
-		text = EasyTierDefaultTLD
+	result := yamlx.Map(yamlx.Str("enabled"), yamlx.Bool(enabled), yamlx.Str("name"), yamlx.Str(name), yamlx.Str("apply_to"), yamlx.Str(apply.Value), yamlx.Str("routes"), routeNodes, yamlx.Str("magic_dns"), yamlx.Bool(magic), yamlx.Str("keepalive"), yamlx.Map(yamlx.Str("enabled"), yamlx.Bool(keepEnabled), yamlx.Str("url"), yamlx.Str(address), yamlx.Str("interval"), yamlx.Int(int64(interval))), yamlx.Str("options"), cleaned)
+	data, err := yamlx.ToJSON(result)
+	if err != nil {
+		return nil, err
 	}
-	if text = pyStripChars(text, "."); text == "" {
-		return EasyTierDefaultTLD
+	var normalized model.EasyTierSettings
+	if err = json.Unmarshal(data, &normalized); err != nil {
+		return nil, err
 	}
-	return text
+	return &normalized, nil
 }
 
-// EasyTierApplies is applies(settings, for_agent=...).
-func EasyTierApplies(settings *jsonx.Object, forAgent bool) bool {
-	if settings.Value("enabled") != true {
+// ConfigEasyTier validates the profile's optional overlay settings.
+func ConfigEasyTier(config *model.Config) (*model.EasyTierSettings, error) {
+	if config == nil || config.Profile == nil {
+		return NormalizeEasyTier(nil)
+	}
+	return NormalizeEasyTier(config.Profile.Mihomo.EasyTier)
+}
+
+// EasyTierGroupName is the generated fallback group's name.
+func EasyTierGroupName(settings *model.EasyTierSettings) string {
+	name := ""
+	if settings != nil && settings.Name != nil {
+		name = *settings.Name
+	}
+	return name + msgETKeepSuffix
+}
+
+// EasyTierFor reports whether normalized settings apply to this delivery target.
+func EasyTierFor(settings *model.EasyTierSettings, forAgent bool) bool {
+	if settings == nil || settings.Enabled == nil || !*settings.Enabled {
 		return false
 	}
-	applyTo := settings.Value("apply_to")
 	target := "subscription"
 	if forAgent {
 		target = "agent"
 	}
-	return applyTo == "all" || applyTo == target
+	return settings.ApplyTo != nil && (*settings.ApplyTo == "all" || *settings.ApplyTo == target)
 }
 
-// EasyTierResult is the summary apply_easytier returns.
+// EasyTierResult describes the overlay appended to a generated document.
 type EasyTierResult struct {
-	Proxy  string
-	Target string
-	Rules  int
+	Proxy, Target string
+	Rules         int
 }
 
-// ApplyEasyTier is apply_easytier: add the EasyTier proxy, keep-alive group,
-// rules and MagicDNS to mihomoConfig. It returns nil (and leaves the document
-// untouched) when the setting is off or not meant for this target. coreVersion
-// is the Agent's reported Mihomo version (nil when unknown).
-func ApplyEasyTier(mihomoConfig *jsonx.Object, config any, forAgent bool, coreVersion any) (*EasyTierResult, error) {
-	settings, err := EasyTierSettings(config)
+// ApplyEasyTierNode adds the validated overlay to an owned generated graph.
+func ApplyEasyTierNode(document *yamlx.Node, config *model.Config, forAgent bool, coreVersion json.RawMessage) (*EasyTierResult, error) {
+	settings, err := ConfigEasyTier(config)
 	if err != nil {
 		return nil, err
 	}
-	if !EasyTierApplies(settings, forAgent) {
+	if !EasyTierFor(settings, forAgent) {
 		return nil, nil
 	}
-	if parsed, ok := subs.ParseCoreVersion(coreVersion); ok {
-		older := false
+	var version string
+	if len(coreVersion) > 0 && string(coreVersion) != "null" {
+		if json.Unmarshal(coreVersion, &version) != nil {
+			return nil, errors.New(msgETVersionType)
+		}
+	}
+	if parsed, ok := subs.ParseCoreVersion(version); ok {
 		for i, part := range parsed {
-			if c := part.Cmp(big.NewInt(EasyTierMinCoreVersion[i])); c != 0 {
-				older = c < 0
+			if cmp := part.Cmp(big.NewInt(EasyTierMinCoreVersion[i])); cmp < 0 {
+				return nil, fmt.Errorf(msgETVersion, version)
+			} else if cmp > 0 {
 				break
 			}
 		}
-		if older {
-			return nil, easytierError("设备上的 Mihomo " + jsonx.Str(coreVersion) +
-				" 不支持 EasyTier 节点（需要 v1.19.31 或更新），请先更新内核，或在 EasyTier 设置里不再下发到 Agent")
-		}
 	}
-	name := settings.GetString("name")
-	proxiesValue := mihomoConfig.SetDefault("proxies", []any{})
-	groupsValue := mihomoConfig.SetDefault("proxy-groups", []any{})
+	if document == nil || document.Kind != yaml.MappingNode {
+		return nil, errors.New(msgETDocument)
+	}
+	proxies, groups := yamlx.Resolve(yamlx.Get(document, "proxies")), yamlx.Resolve(yamlx.Get(document, "proxy-groups"))
+	if proxies == nil {
+		proxies = yamlx.Seq()
+		yamlx.Set(document, "proxies", proxies)
+	}
+	if groups == nil {
+		groups = yamlx.Seq()
+		yamlx.Set(document, "proxy-groups", groups)
+	}
+	if proxies.Kind != yaml.SequenceNode || groups.Kind != yaml.SequenceNode {
+		return nil, errors.New(msgETDocument)
+	}
 	taken := map[string]bool{}
-	for _, source := range []any{proxiesValue, groupsValue} {
-		items, err := iterList(source)
-		if err != nil {
-			return nil, err
-		}
-		for _, item := range items {
-			obj, ok := item.(*jsonx.Object)
-			if !ok || obj == nil {
-				continue
+	for _, source := range []*yamlx.Node{proxies, groups} {
+		for _, item := range source.Content {
+			item = yamlx.Resolve(item)
+			if item == nil {
+				return nil, errors.New(msgETDocument)
 			}
-			value := obj.Value("name")
-			if err := hashable(value); err != nil {
-				return nil, err
-			}
-			if text, isText := value.(string); isText {
-				taken[text] = true
+			if item.Kind == yaml.MappingNode {
+				taken[scalarText(yamlx.Get(item, "name"))] = true
 			}
 		}
 	}
-	keepalive := settings.GetObject("keepalive")
-	keepEnabled := keepalive.Value("enabled") == true
+	name := *settings.Name
 	target := name
-	names := []string{name}
-	if keepEnabled {
-		target = EasyTierKeepaliveGroupName(settings)
-		names = append(names, target)
+	keep := settings.Keepalive
+	if keep.Enabled != nil && *keep.Enabled {
+		target = EasyTierGroupName(settings)
 	}
-	for _, item := range names {
-		if taken[item] {
-			return nil, easytierError("EasyTier 节点名「" + item + "」与已有节点或策略组重名，请在 EasyTier 设置里改名")
+	for _, value := range []string{name, target} {
+		if taken[value] {
+			return nil, fmt.Errorf(msgETNameConflict, value)
 		}
 	}
-	options := settings.GetObject("options")
-	if dialer, _ := options.Value("dialer-proxy").(string); dialer != "" && !taken[dialer] && dialer != "DIRECT" {
-		return nil, easytierError("EasyTier 的 dialer-proxy「" + dialer + "」不在生成的节点或策略组里")
+	if dialer := settings.Options.DialerProxy; dialer != "" && !taken[dialer] && dialer != "DIRECT" {
+		return nil, fmt.Errorf(msgETDialerMissing, dialer)
 	}
-
-	proxies, ok := proxiesValue.([]any)
-	if !ok {
-		return nil, attributeError(proxiesValue, "append")
+	normalized, err := easyTierSettingsNode(settings)
+	if err != nil {
+		return nil, err
 	}
-	proxy := jsonx.Obj("name", name, "type", "easytier")
-	for key, value := range options.DeepCopy().All() {
-		proxy.Set(key, value)
+	proxy := yamlx.Map(yamlx.Str("name"), yamlx.Str(name), yamlx.Str("type"), yamlx.Str("easytier"))
+	for key, value := range yamlx.Pairs(yamlx.Get(normalized, "options")) {
+		yamlx.Set(proxy, key, value)
 	}
-	mihomoConfig.Set("proxies", append(proxies, proxy))
-	if keepEnabled {
-		groups, ok := groupsValue.([]any)
-		if !ok {
-			return nil, attributeError(groupsValue, "append")
+	proxies.Content = append(proxies.Content, proxy)
+	if target != name {
+		groups.Content = append(groups.Content, yamlx.Map(yamlx.Str("name"), yamlx.Str(target), yamlx.Str("type"), yamlx.Str("fallback"), yamlx.Str("proxies"), yamlx.Seq(yamlx.Str(name)), yamlx.Str("url"), yamlx.Str(keep.URL), yamlx.Str("interval"), yamlx.Int(int64(*keep.Interval))))
+	}
+	added := yamlx.Seq()
+	for _, network := range settings.Routes {
+		added.Content = append(added.Content, yamlx.Str("IP-CIDR,"+network+","+target+",no-resolve"))
+	}
+	if settings.MagicDNS != nil && *settings.MagicDNS {
+		tld := strings.Trim(settings.Options.TLDDNSZone, ".")
+		if tld == "" {
+			tld = EasyTierDefaultTLD
 		}
-		mihomoConfig.Set("proxy-groups", append(groups, jsonx.Obj("name", target, "type", "fallback",
-			"proxies", []any{name}, "url", keepalive.Value("url"), "interval", keepalive.Value("interval"))))
-	}
-
-	var added []any
-	for _, network := range settings.GetList("routes") {
-		added = append(added, "IP-CIDR,"+jsonx.Str(network)+","+target+",no-resolve")
-	}
-	if settings.Value("magic_dns") == true {
-		tld := easytierTLD(settings)
-		added = append(added, "DOMAIN-SUFFIX,"+tld+","+target)
-		if dns, ok := mihomoConfig.Value("dns").(*jsonx.Object); ok && dns != nil {
-			policy := dns.Value("nameserver-policy")
-			if policy == nil {
-				policy = jsonx.NewObject()
-				dns.Set("nameserver-policy", policy)
+		added.Content = append(added.Content, yamlx.Str("DOMAIN-SUFFIX,"+tld+","+target))
+		if dns := yamlx.Resolve(yamlx.Get(document, "dns")); dns != nil && dns.Kind == yaml.MappingNode {
+			policy := yamlx.Resolve(yamlx.Get(dns, "nameserver-policy"))
+			if policy == nil || policy.ShortTag() == "!!null" {
+				policy = yamlx.Map()
+				yamlx.Set(dns, "nameserver-policy", policy)
 			}
-			if p, ok := policy.(*jsonx.Object); ok && p != nil {
-				p.SetDefault("+."+tld, "et://"+name)
+			if policy.Kind == yaml.MappingNode && yamlx.Get(policy, "+."+tld) == nil {
+				yamlx.Set(policy, "+."+tld, yamlx.Str("et://"+name))
 			}
 		}
 	}
-	existing := []any{}
-	if value := mihomoConfig.Value("rules"); jsonx.Truthy(value) {
-		if existing, err = iterList(value); err != nil {
-			return nil, err
+	count := len(added.Content)
+	existing := yamlx.Resolve(yamlx.Get(document, "rules"))
+	if existing != nil && existing.ShortTag() != "!!null" {
+		if existing.Kind != yaml.SequenceNode {
+			return nil, errors.New(msgETDocument)
 		}
+		added.Content = append(added.Content, existing.Content...)
 	}
-	rules := append(append([]any{}, added...), existing...)
-	mihomoConfig.Set("rules", rules)
-	return &EasyTierResult{Proxy: name, Target: target, Rules: len(added)}, nil
+	yamlx.Set(document, "rules", added)
+	return &EasyTierResult{Proxy: name, Target: target, Rules: count}, nil
 }
 
-// RedactEasyTierSettings is redact_settings: a copy for human-shareable
-// exports with secrets replaced and the shape kept.
-func RedactEasyTierSettings(value any) any {
-	input, ok := value.(*jsonx.Object)
-	if !ok || input == nil {
-		return value
+// RedactEasyTier returns a stored-member-preserving copy for human exports.
+func RedactEasyTier(settings *model.EasyTierSettings) (*model.EasyTierSettings, error) {
+	if settings == nil {
+		return nil, nil
 	}
-	result := input.DeepCopy()
-	if options, ok := result.Value("options").(*jsonx.Object); ok && options != nil {
+	node, err := easyTierSettingsNode(settings)
+	if err != nil {
+		return nil, err
+	}
+	options := yamlx.Get(node, "options")
+	if options != nil && options.Kind == yaml.MappingNode {
 		for _, key := range EasyTierSecretFields {
-			if jsonx.Truthy(options.Value(key)) {
-				options.Set(key, "[REDACTED]")
+			value := yamlx.Get(options, key)
+			// Invalid stored types are still secret material in an export.
+			if value != nil && value.ShortTag() != "!!null" && !(value.ShortTag() == "!!str" && value.Value == "") {
+				yamlx.Set(options, key, yamlx.Str("[REDACTED]"))
 			}
 		}
 	}
-	return result
+	data, err := yamlx.ToJSON(node)
+	if err != nil {
+		return nil, err
+	}
+	var result model.EasyTierSettings
+	err = json.Unmarshal(data, &result)
+	return &result, err
 }
