@@ -2,7 +2,6 @@ package oxidns
 
 import (
 	"archive/zip"
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/base64"
@@ -11,9 +10,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"reflect"
 	"sync"
 	"testing"
@@ -21,6 +17,7 @@ import (
 	"configflow/internal/jsonx"
 	"configflow/internal/mosdns"
 	"configflow/internal/repo"
+	"configflow/internal/testgolden"
 	"configflow/internal/yamlx"
 )
 
@@ -46,10 +43,7 @@ type archiveAnswer struct {
 func TestC29ArchivePythonBoundary(t *testing.T) {
 	var mu sync.Mutex
 	calls := map[string]int{}
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		mu.Lock()
-		calls[r.URL.Path]++
-		mu.Unlock()
+	respond := func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/down" {
 			http.Error(w, "down", 503)
 			return
@@ -59,42 +53,19 @@ func TestC29ArchivePythonBoundary(t *testing.T) {
 			return
 		}
 		io.WriteString(w, "DOMAIN,exact.example\nDOMAIN-SUFFIX,suffix.example\nIP-CIDR,192.0.2.0/24\n")
+	}
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		calls[r.URL.Path]++
+		mu.Unlock()
+		respond(w, r)
 	}))
 	defer upstream.Close()
-	python := os.Getenv("CONFIGFLOW_DIFF_PYTHON")
-	if python == "" {
-		home, _ := os.UserHomeDir()
-		python = filepath.Join(home, "cf-test/.venv/bin/python")
-	}
-	root, _ := filepath.Abs("../../..")
-	script, _ := filepath.Abs("testdata/c29_archive.py")
-	cmd := exec.Command(python, script)
-	cmd.Dir = root
-	dir := t.TempDir()
-	cmd.Env = append(os.Environ(), "PYTHONPATH="+root, "DATA_DIR="+dir, "PYTHONDONTWRITEBYTECODE=1", "LOG_FILE="+filepath.Join(dir, "app.log"))
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	if err := cmd.Start(); err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		stdin.Close()
-		cmd.Process.Kill()
-		cmd.Wait()
-		if t.Failed() {
-			t.Log(stderr.String())
-		}
-	}()
-	scanner := bufio.NewScanner(stdout)
-	scanner.Buffer(make([]byte, 65536), 8<<20)
+	pythonUpstream := httptest.NewServer(http.HandlerFunc(respond))
+	defer pythonUpstream.Close()
+	oracle := testgolden.NewLines(t, "server/internal/oxidns/testdata/c29_archive.py")
+	referenceFetches := map[string]int{}
+
 	r, err := repo.Open(t.TempDir(), repo.Options{})
 	if err != nil {
 		t.Fatal(err)
@@ -139,16 +110,21 @@ func TestC29ArchivePythonBoundary(t *testing.T) {
 				}
 			}
 			encoded, _ := json.Marshal(input)
-			if _, err := fmtFprintln(stdin, encoded); err != nil {
+			// Only the allocated loopback endpoint differs between recordings.
+			key := bytes.ReplaceAll(encoded, []byte(upstream.URL), []byte("http://127.0.0.1:PYREF_PORT"))
+			pythonInput := bytes.ReplaceAll(encoded, []byte(upstream.URL), []byte(pythonUpstream.URL))
+			var reference struct {
+				Answer  archiveAnswer  `json:"answer"`
+				Fetches map[string]int `json:"fetches"`
+			}
+			if err := json.Unmarshal(oracle.Call(t, pythonInput, key), &reference); err != nil {
 				t.Fatal(err)
 			}
-			if !scanner.Scan() {
-				t.Fatalf("Python ended %v: %s", scanner.Err(), stderr.String())
+			want := reference.Answer
+			for path, count := range reference.Fetches {
+				referenceFetches[path] += count
 			}
-			var want archiveAnswer
-			if err := json.Unmarshal(scanner.Bytes(), &want); err != nil {
-				t.Fatalf("%v %s", err, scanner.Text())
-			}
+
 			before, _ := jsonx.Compact(configs)
 			output, err := BuildZIP(ctx, configs, c.text, c.downloads, c.files, "http://config.example")
 			after, _ := jsonx.Compact(configs)
@@ -194,11 +170,13 @@ func TestC29ArchivePythonBoundary(t *testing.T) {
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	if calls["/raw"] != 2 {
-		t.Fatalf("one fetch per source per engine: %v", calls)
+	if calls["/raw"] != 1 || referenceFetches["/raw"] != 1 {
+		t.Fatalf("one fetch per source per engine: Go %v Python reference %v", calls, referenceFetches)
+	}
+	if !reflect.DeepEqual(calls, referenceFetches) {
+		t.Fatalf("fetch side effects Go %v Python reference %v", calls, referenceFetches)
 	}
 }
-func fmtFprintln(w io.Writer, data []byte) (int, error) { return w.Write(append(data, '\n')) }
 
 func TestC29ArchiveRejectsUnsafeYAML(t *testing.T) {
 	for _, text := range []string{"plugins: []\nplugins: []", "value: &a [*a]", "plugins: !!str []"} {

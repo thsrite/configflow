@@ -78,3 +78,19 @@ ok configflow/internal/mosdns 41.333s
 
 The public Flask differential stays live and unchanged. Final race timings and
 ordinary-path process tracing follow after shared N7-3 gate optimization lands.
+
+## oxidns — archive reference
+
+Converted the 18-case C29 archive oracle to a shared exact transcript. Python
+still uses its real archive builder and requests fetcher when recording/checking.
+Its isolated fake HTTP endpoint serves the same responses as the Go endpoint;
+only these two allocated loopback base URLs become a token in the input key.
+Output bytes, archive order/modes, input immutability and Chinese refusals retain
+all original assertions. The original combined `/raw == 2` assertion is now two
+independent `Go == 1 / Python reference == 1` assertions plus equality of the
+entire fetch-path/count map; a duplicate or missing Go fetch still fails.
+
+.64 live `PYREF_MODE=check` passed: **18 exact inputs, diff 0**, `0.527s`.
+Existing seven-way boundary workers and parallel suites are preserved; no unsafe
+shared repository/hook parallelism is added. Full package race timing pending
+integration of the independent YAML fixture optimization.
