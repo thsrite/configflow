@@ -461,7 +461,7 @@ func comparePublicationFiles(t *testing.T, a, b string, values []map[string]stri
 				}
 				return nil
 			}
-			if rel == "task-status.json.lock" || rel == ".dns-follow.lock" || rel == ".task-scheduler.lock" || rel == ".oxidns-rankings.lock" || rel == "router-rule-sync/.scheduler.lock" || rel == "probes/.auto.lock" {
+			if rel == "task-status.json.lock" || rel == ".dns-follow.lock" || rel == ".task-scheduler.lock" || rel == ".oxidns-rankings.lock" || rel == "router-rule-sync/.scheduler.lock" || rel == "probes/.auto.lock" || rel == "notifications.lock" {
 				raw, err := os.ReadFile(path)
 				if err != nil {
 					return err
