@@ -16,12 +16,13 @@ import (
 	"time"
 
 	"configflow/internal/convert"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/lockx"
 	"configflow/internal/logx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
+	"encoding/json"
 )
 
 var depsLog = logx.Get("backend.utils.dependencies")
@@ -37,8 +38,7 @@ const (
 // error that can be shown to the user as it is.
 type DependencyUpdateError struct{ Message string }
 
-func (e *DependencyUpdateError) Error() string       { return e.Message }
-func (e *DependencyUpdateError) PythonClass() string { return "DependencyUpdateError" }
+func (e *DependencyUpdateError) Error() string { return e.Message }
 
 // Dependencies is dependencies.py: the bundled Sub-Store's versions, the
 // latest release (cached 30 minutes) and the online update.
@@ -56,12 +56,13 @@ type Dependencies struct {
 
 	latestMu        sync.Mutex
 	latestCheckedAt float64
-	latestData      *jsonx.Object
+	latestData      *Release
 	latestError     string
 
-	updateLock *lockx.Mutex
-	stateMu    sync.Mutex
-	state      *jsonx.Object
+	updateLock   *lockx.Mutex
+	stateMu      sync.Mutex
+	state        UpdateState
+	beforeCommit func(stage string)
 }
 
 // NewDependencies returns the dependency manager.
@@ -69,7 +70,7 @@ func NewDependencies(env *Env, runtime *Runtime, client *Client) *Dependencies {
 	return &Dependencies{env: env, runtime: runtime, client: client,
 		LatestReleaseURL: fmt.Sprintf(latestAPIFormat, SubStoreRepo), MinBundleSize: minBundleSize,
 		Spawner: lifecycle.DefaultSpawner{}, updateLock: lockx.NewMutex(lockx.LevelJob, "sub-store-update"),
-		state: jsonx.Obj("state", "idle", "message", "", "target_version", "", "finished_at", jsonx.Float(0))}
+		state: UpdateState{State: "idle"}}
 }
 
 // nodeVersion is _node_version: `node --version`, "" on failure.
@@ -78,48 +79,58 @@ func (d *Dependencies) nodeVersion(ctx context.Context) string {
 	if err != nil || result.ReturnCode != 0 {
 		return ""
 	}
-	return pyStrip(result.Stdout)
+	return strings.TrimSpace(result.Stdout)
 }
 
 // requestProxy is _request_options: GitHub requests use the rule download
 // proxy ("" = none).
 func (d *Dependencies) requestProxy(ctx context.Context) string {
-	config, err := repo.GetSystemConfig(ctx)
+	r, err := repo.GetRepository(ctx)
 	if err != nil {
 		return ""
 	}
-	proxy, err := rulefetch.GetRuleFetchProxy(config)
+	var value string
+	if r.View(ctx, func(doc *model.Document) error { value = doc.System.SystemConfig.RuleFetchProxy; return nil }) != nil {
+		return ""
+	}
+	proxy, err := rulefetch.NormalizeRuleFetchProxy(value)
 	if err != nil {
 		return ""
 	}
 	return proxy
 }
 
-// downloadURL is _download_url: the GitHub proxy domain prefix applied to
-// a download URL (not to API requests).
-func (d *Dependencies) downloadURL(ctx context.Context, url any) any {
-	text, ok := url.(string)
-	if !ok {
-		return url
-	}
-	config, err := repo.GetSystemConfig(ctx)
+func (d *Dependencies) downloadURL(ctx context.Context, address string) string {
+	r, err := repo.GetRepository(ctx)
 	if err != nil {
-		return url
+		return address
 	}
-	proxied, err := convert.ApplyGithubProxyDomain(text, config)
+	var system model.SystemConfig
+	if r.View(ctx, func(doc *model.Document) error { system = doc.System.SystemConfig; return nil }) != nil {
+		return address
+	}
+	proxied, err := convert.GitHubURL(address, &model.Config{SystemConfig: system})
 	if err != nil {
-		return url
+		return address
 	}
 	return proxied
 }
 
-func (d *Dependencies) now() float64 { return pyTime(d.env.Clock.Now()) }
+func (d *Dependencies) now() float64 { return unixTime(d.env.Clock.Now()) }
 
-// FetchLatestRelease is fetch_latest_release(force): (release, error
+// Latest is fetch_latest_release(force): (release, error
 // text). A failure keeps returning the last successful release.
-func (d *Dependencies) FetchLatestRelease(ctx context.Context, force bool) (*jsonx.Object, string) {
+func (d *Dependencies) Latest(ctx context.Context, force bool) (*Release, string) {
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err.Error()
+	}
 	now := d.now()
 	d.latestMu.Lock()
+	if err := ctx.Err(); err != nil {
+		d.latestMu.Unlock()
+		return nil, err.Error()
+	}
 	if !force && d.latestData != nil && now-d.latestCheckedAt < latestTTL {
 		data := d.latestData
 		d.latestMu.Unlock()
@@ -129,6 +140,9 @@ func (d *Dependencies) FetchLatestRelease(ctx context.Context, force bool) (*jso
 	data, err := d.fetchRelease(ctx)
 	d.latestMu.Lock()
 	defer d.latestMu.Unlock()
+	if canceled := ctx.Err(); canceled != nil {
+		return d.latestData, canceled.Error()
+	}
 	if err != nil {
 		message := "检查更新失败：" + safeExceptionDetails(err)
 		depsLog.Warning("Sub-Store " + message)
@@ -140,7 +154,7 @@ func (d *Dependencies) FetchLatestRelease(ctx context.Context, force bool) (*jso
 	return data, ""
 }
 
-func (d *Dependencies) fetchRelease(ctx context.Context) (*jsonx.Object, error) {
+func (d *Dependencies) fetchRelease(ctx context.Context) (*Release, error) {
 	resp, err := d.env.HTTP.Do(ctx, &Request{Method: "GET", URL: d.LatestReleaseURL,
 		Header:  http.Header{"Accept": {"application/vnd.github+json"}, "User-Agent": {"ConfigFlow"}},
 		Timeout: Seconds(15), Proxy: d.requestProxy(ctx)})
@@ -150,104 +164,53 @@ func (d *Dependencies) fetchRelease(ctx context.Context) (*jsonx.Object, error) 
 	if err := resp.RaiseForStatus(); err != nil {
 		return nil, err
 	}
-	value, err := resp.JSON()
+	data, err := resp.JSONData()
 	if err != nil {
 		return nil, err
 	}
-	release, ok := value.(*jsonx.Object)
-	if !ok {
-		return nil, attributeError(value, "get")
+	var source releasePayload
+	if err := json.Unmarshal(data, &source); err != nil {
+		return nil, &ReleaseError{Message: msgReleaseShape, Cause: err}
 	}
-	assets, err := iterate(release.GetOr("assets", []any{}))
-	if err != nil {
-		return nil, err
+	for _, issue := range model.Issues(&source) {
+		return nil, &ReleaseError{Message: fmt.Sprintf(msgReleaseField, issue.Path)}
 	}
-	var asset *jsonx.Object
-	for _, item := range assets {
-		object, ok := item.(*jsonx.Object)
-		if !ok {
-			return nil, attributeError(item, "get")
+	for _, asset := range source.Assets {
+		if asset.Name != SubStoreAsset {
+			continue
 		}
-		if jsonx.Equal(object.Value("name"), SubStoreAsset) {
-			asset = object
-			break
+		sha := ""
+		if strings.HasPrefix(asset.Digest, "sha256:") {
+			sha = strings.TrimPrefix(asset.Digest, "sha256:")
 		}
+		return &Release{Version: strings.TrimLeft(source.TagName, "vV"), PublishedAt: source.PublishedAt, ReleaseURL: source.HTMLURL, Notes: runePrefix(source.Body, notesLimit), DownloadURL: asset.DownloadURL, Size: asset.Size, SHA256: sha}, nil
 	}
-	if asset == nil {
-		return nil, pyErr("ValueError", "最新 release 中没有 "+SubStoreAsset)
-	}
-	digest := asset.Value("digest")
-	if !jsonx.Truthy(digest) {
-		digest = ""
-	}
-	// The dict literal evaluates the notes before digest.startswith.
-	notes, err := slice2000(release.Value("body"))
-	if err != nil {
-		return nil, err
-	}
-	digestText, ok := digest.(string)
-	if !ok {
-		return nil, attributeError(digest, "startswith")
-	}
-	sha := ""
-	if strings.HasPrefix(digestText, "sha256:") {
-		sha = strings.SplitN(digestText, ":", 2)[1]
-	}
-	size := asset.Value("size")
-	if !jsonx.Truthy(size) {
-		size = jsonx.Int(0)
-	}
-	return jsonx.Obj(
-		"version", strings.TrimLeft(jsonx.Str(release.GetOr("tag_name", "")), "vV"),
-		"published_at", release.GetOr("published_at", ""),
-		"release_url", release.GetOr("html_url", ""),
-		"notes", notes,
-		"download_url", asset.GetOr("browser_download_url", ""),
-		"size", size,
-		"sha256", sha,
-	), nil
+	return nil, &ReleaseError{Message: msgReleaseMissing}
 }
 
-// slice2000 is (release.get('body') or ”)[:2000].
-func slice2000(value any) (any, error) {
-	if !jsonx.Truthy(value) {
-		return "", nil
-	}
-	switch v := value.(type) {
-	case string:
-		return runePrefix(v, notesLimit), nil
-	case []any:
-		if len(v) > notesLimit {
-			return v[:notesLimit], nil
-		}
-		return v, nil
-	}
-	return nil, pyErr("TypeError", fmt.Sprintf("'%s' object is not subscriptable", typeName(value)))
-}
-
-// GetUpdateState is get_update_state().
-func (d *Dependencies) GetUpdateState() *jsonx.Object {
+// UpdateSnapshot returns an independently owned status value.
+func (d *Dependencies) UpdateSnapshot() UpdateState {
 	d.stateMu.Lock()
 	defer d.stateMu.Unlock()
-	return d.state.Clone()
+	return d.state
 }
-
-// setState is _set_state.
-func (d *Dependencies) setState(state, message string, extra ...any) {
+func (d *Dependencies) setState(state, message string) {
 	d.stateMu.Lock()
 	defer d.stateMu.Unlock()
-	d.state.Set("state", state)
-	d.state.Set("message", message)
-	for i := 0; i+1 < len(extra); i += 2 {
-		d.state.Set(extra[i].(string), extra[i+1])
-	}
+	d.state.State = state
+	d.state.Message = message
 	if state == "success" || state == "failed" {
-		d.state.Set("finished_at", jsonx.Float(d.now()))
+		d.state.FinishedAt = d.now()
 	}
+}
+func (d *Dependencies) prepareUpdate(version string) {
+	d.stateMu.Lock()
+	defer d.stateMu.Unlock()
+	d.state = UpdateState{State: "running", Message: fmt.Sprintf(msgPreparingUpdate, version), TargetVersion: version}
 }
 
 // GetSubStoreStatus is get_sub_store_status(force_check).
-func (d *Dependencies) GetSubStoreStatus(ctx context.Context, forceCheck bool) (*jsonx.Object, error) {
+func (d *Dependencies) Snapshot(ctx context.Context, forceCheck bool) (*DependencyStatus, error) {
 	builtin := d.env.IsBuiltinAvailable()
 	base, err := d.env.BaseURL()
 	if err != nil {
@@ -268,12 +231,12 @@ func (d *Dependencies) GetSubStoreStatus(ctx context.Context, forceCheck bool) (
 	if current == "" {
 		current = bundleVersion
 	}
-	latest, latestError := d.FetchLatestRelease(ctx, forceCheck)
+	latest, latestError := d.Latest(ctx, forceCheck)
 	latestVersion := ""
 	if latest != nil {
-		latestVersion, _ = latest.Value("version").(string)
+		latestVersion = latest.Version
 	}
-	lifecycle, err := d.runtime.Status(ctx, runningVersion != "")
+	lifecycle, err := d.runtime.Snapshot(ctx, runningVersion != "")
 	if err != nil {
 		return nil, err
 	}
@@ -284,57 +247,46 @@ func (d *Dependencies) GetSubStoreStatus(ctx context.Context, forceCheck bool) (
 		}
 		runtimeVersion = d.nodeVersion(ctx)
 	}
-	fromLatest := func(key string) any {
-		if latest == nil {
-			return ""
-		}
-		return latest.Value(key)
+	published, releaseURL, notes := "", "", ""
+	if latest != nil {
+		published, releaseURL, notes = latest.PublishedAt, latest.ReleaseURL, latest.Notes
 	}
-	return jsonx.Obj(
-		"key", "sub-store",
-		"name", "Sub-Store",
-		"description", "订阅解析与节点格式转换",
-		"homepage", "https://github.com/"+SubStoreRepo,
-		"running", runningVersion != "",
-		"lifecycle", lifecycle,
-		"current_version", current,
-		"builtin_version", builtinVersion,
-		"online_updated", bundleDir != "" && bundleDir != d.env.BuiltinDir(),
-		"runtime", runtimeVersion,
-		"latest_version", latestVersion,
-		"latest_published_at", fromLatest("published_at"),
-		"release_url", fromLatest("release_url"),
-		"release_notes", fromLatest("notes"),
-		"check_error", latestError,
-		"has_update", current != "" && IsNewer(latestVersion, current),
-		// Development environments have no bundle: detection only.
-		"updatable", builtin,
-		"update", d.GetUpdateState(),
-	), nil
+	return &DependencyStatus{
+		Key: "sub-store", Name: "Sub-Store", Description: msgDependencyDescription, Homepage: "https://github.com/" + SubStoreRepo,
+		Running: runningVersion != "", Lifecycle: lifecycle, CurrentVersion: current, BuiltinVersion: builtinVersion,
+		OnlineUpdated: bundleDir != "" && bundleDir != d.env.BuiltinDir(), Runtime: runtimeVersion, LatestVersion: latestVersion,
+		LatestPublishedAt: published, ReleaseURL: releaseURL, ReleaseNotes: notes, CheckError: latestError,
+		HasUpdate: current != "" && VersionNewer(latestVersion, current), Updatable: builtin, Update: d.UpdateSnapshot()}, nil
 }
 
-// ListDependencies is list_dependencies(force_check).
-func (d *Dependencies) ListDependencies(ctx context.Context, forceCheck bool) ([]any, error) {
-	status, err := d.GetSubStoreStatus(ctx, forceCheck)
+// List returns the supported dependency statuses in UI order.
+func (d *Dependencies) List(ctx context.Context, forceCheck bool) ([]*DependencyStatus, error) {
+	value, err := d.Snapshot(ctx, forceCheck)
 	if err != nil {
 		return nil, err
 	}
-	return []any{status}, nil
+	return []*DependencyStatus{value}, nil
 }
 
 // restartSubStore is _restart_sub_store.
 func (d *Dependencies) restartSubStore(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	result, err := d.env.Commands.Run(ctx, []string{"supervisorctl", "-c", SupervisorConfig, "restart", SubStoreProgram},
 		60*time.Second)
 	if err != nil {
 		return err
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if result.ReturnCode != 0 {
-		message := pyStrip(result.Stdout + result.Stderr)
+		message := strings.TrimSpace(result.Stdout + result.Stderr)
 		if message == "" {
 			message = "supervisorctl restart 失败"
 		}
-		return pyErr("RuntimeError", message)
+		return errors.New(message)
 	}
 	return nil
 }
@@ -346,12 +298,15 @@ func (d *Dependencies) waitForVersion(ctx context.Context, expected string, time
 	deadline := d.now() + timeout
 	version := ""
 	for d.now() < deadline {
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
 		base, err := d.env.BuiltinSubStoreURL()
 		if err != nil {
 			return "", err
 		}
 		version = d.env.FetchRunningVersion(ctx, base, 3)
-		if version != "" && (expected == "" || sameVersion(ParseVersion(version), ParseVersion(expected))) {
+		if version != "" && (expected == "" || sameVersion(VersionParts(version), VersionParts(expected))) {
 			return version, nil
 		}
 		d.env.Clock.Sleep(time.Second)
@@ -360,12 +315,11 @@ func (d *Dependencies) waitForVersion(ctx context.Context, expected string, time
 }
 
 // downloadBundle is _download_bundle.
-func (d *Dependencies) downloadBundle(ctx context.Context, release *jsonx.Object, dest string) error {
-	url := d.downloadURL(ctx, release.Value("download_url"))
-	urlText, ok := url.(string)
-	if !ok {
-		urlText = jsonx.Str(url)
+func (d *Dependencies) downloadBundle(ctx context.Context, release *Release, dest string) error {
+	if err := ctx.Err(); err != nil {
+		return err
 	}
+	urlText := d.downloadURL(ctx, release.DownloadURL)
 	resp, err := d.env.HTTP.Do(ctx, &Request{Method: "GET", URL: urlText,
 		Timeout: Timeout{Connect: 15 * time.Second, Read: 120 * time.Second}, Proxy: d.requestProxy(ctx)})
 	if err != nil {
@@ -374,7 +328,10 @@ func (d *Dependencies) downloadBundle(ctx context.Context, release *jsonx.Object
 	if err := resp.RaiseForStatus(); err != nil {
 		return err
 	}
-	if err := os.WriteFile(dest, resp.Body, 0o666); err != nil {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := d.commit(ctx, "bundle-write", func() error { return os.WriteFile(dest, resp.Body, 0o666) }); err != nil {
 		return osError(err, dest)
 	}
 	size := int64(len(resp.Body))
@@ -382,7 +339,7 @@ func (d *Dependencies) downloadBundle(ctx context.Context, release *jsonx.Object
 		return &DependencyUpdateError{fmt.Sprintf("下载的文件过小（%d 字节），可能不是有效的 Sub-Store 后端", size)}
 	}
 	sum := sha256.Sum256(resp.Body)
-	if expected := release.Value("sha256"); jsonx.Truthy(expected) && !jsonx.Equal(hex.EncodeToString(sum[:]), expected) {
+	if expected := release.SHA256; expected != "" && hex.EncodeToString(sum[:]) != expected {
 		return &DependencyUpdateError{"文件校验失败（SHA256 不匹配），请检查 GitHub 代理设置"}
 	}
 	check, err := d.env.Commands.Run(ctx, []string{"node", "--check", dest}, 60*time.Second)
@@ -390,21 +347,21 @@ func (d *Dependencies) downloadBundle(ctx context.Context, release *jsonx.Object
 		return err
 	}
 	if check.ReturnCode != 0 {
-		return &DependencyUpdateError{"下载的文件不是有效的 JavaScript：" + runePrefix(pyStrip(check.Stderr), 200)}
+		return &DependencyUpdateError{"下载的文件不是有效的 JavaScript：" + runePrefix(strings.TrimSpace(check.Stderr), 200)}
 	}
 	return nil
 }
 
 // runUpdate is _run_update (the update lock is held by the caller and
 // released here).
-func (d *Dependencies) runUpdate(ctx context.Context, release *jsonx.Object, unlock func()) {
+func (d *Dependencies) runUpdate(ctx context.Context, release *Release, unlock func()) {
 	defer unlock()
 	err := func() (err error) {
 		// A panic must not take the server down: Python's thread caught the
 		// exception and recorded the failure.
 		defer func() {
 			if p := recover(); p != nil {
-				err = pyErr("Exception", "")
+				err = &DependencyUpdateError{msgUnexpectedUpdate}
 			}
 		}()
 		return d.runtime.Maintenance(ctx, func(ctx context.Context) error { return d.installRelease(ctx, release) })
@@ -422,7 +379,7 @@ func removeTree(path string) error {
 		return osError(err, path)
 	}
 	if !info.IsDir() {
-		return pyErr("NotADirectoryError", pyOSError(errNotDir, path))
+		return fmt.Errorf("remove tree %s: %w", path, errNotDir)
 	}
 	if err := os.RemoveAll(path); err != nil {
 		return osError(err, path)
@@ -434,7 +391,10 @@ var errNotDir = fs.ErrInvalid
 
 // copyTree is shutil.copytree(src, dst, ignore=ignore_patterns('*.download.js')):
 // symbolic links are followed, file modes and times copied.
-func copyTree(src, dst string) error {
+func copyTree(ctx context.Context, src, dst string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	entries, err := os.ReadDir(src)
 	if err != nil {
 		return osError(err, src)
@@ -442,6 +402,9 @@ func copyTree(src, dst string) error {
 	info, err := os.Stat(src)
 	if err != nil {
 		return osError(err, src)
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	if err := os.MkdirAll(dst, 0o777); err != nil {
 		return osError(err, dst)
@@ -456,38 +419,56 @@ func copyTree(src, dst string) error {
 			return osError(err, from)
 		}
 		if stat.IsDir() {
-			if err := copyTree(from, to); err != nil {
+			if err := copyTree(ctx, from, to); err != nil {
 				return err
 			}
 			continue
 		}
-		if err := copyFile(from, to, stat); err != nil {
+		if err := copyFile(ctx, from, to, stat); err != nil {
 			return err
 		}
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	os.Chmod(dst, info.Mode().Perm())
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	os.Chtimes(dst, info.ModTime(), info.ModTime())
 	return nil
 }
 
-func copyFile(from, to string, stat fs.FileInfo) error {
+func copyFile(ctx context.Context, from, to string, stat fs.FileInfo) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	in, err := os.Open(from)
 	if err != nil {
 		return osError(err, from)
 	}
 	defer in.Close()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	out, err := os.OpenFile(to, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o666)
 	if err != nil {
 		return osError(err, to)
 	}
-	if _, err := io.Copy(out, in); err != nil {
+	if _, err := io.Copy(out, &contextReader{ctx: ctx, reader: in}); err != nil {
 		out.Close()
 		return osError(err, to)
 	}
 	if err := out.Close(); err != nil {
 		return osError(err, to)
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	os.Chmod(to, stat.Mode().Perm())
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	os.Chtimes(to, stat.ModTime(), stat.ModTime())
 	return nil
 }
@@ -495,13 +476,13 @@ func copyFile(from, to string, stat fs.FileInfo) error {
 // installRelease is _install_release: download, keep the previous online
 // update for a rollback, swap, restart and wait for the new version; on
 // any failure roll back and record the reason.
-func (d *Dependencies) installRelease(ctx context.Context, release *jsonx.Object) error {
+func (d *Dependencies) installRelease(ctx context.Context, release *Release) error {
 	runtimeDir := d.env.RuntimeDir()
-	bundle := pyJoin(runtimeDir, SubStoreAsset)
-	versionFile := pyJoin(runtimeDir, "VERSION")
-	tmpBundle := pyJoin(runtimeDir, "sub-store.download.js") // node --check needs a .js suffix
+	bundle := filepath.Join(runtimeDir, SubStoreAsset)
+	versionFile := filepath.Join(runtimeDir, "VERSION")
+	tmpBundle := filepath.Join(runtimeDir, "sub-store.download.js") // node --check needs a .js suffix
 	backupDir := runtimeDir + ".bak"
-	target, _ := release.Value("version").(string)
+	target := release.Version
 	replaced, hadPrevious := false, false
 	_, previousVersion, err := d.env.ActiveBundle()
 	if err != nil {
@@ -511,10 +492,13 @@ func (d *Dependencies) installRelease(ctx context.Context, release *jsonx.Object
 		defer func() {
 			// An unexpected failure takes the `except Exception` path below.
 			if p := recover(); p != nil {
-				err = pyErr("Exception", fmt.Sprint(p))
+				err = &DependencyUpdateError{msgUnexpectedUpdate}
 			}
 		}()
-		if err := pyMakedirs(runtimeDir); err != nil {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := os.MkdirAll(runtimeDir, 0o777); err != nil {
 			path := runtimeDir
 			var pathErr *fs.PathError
 			if errors.As(err, &pathErr) {
@@ -527,18 +511,27 @@ func (d *Dependencies) installRelease(ctx context.Context, release *jsonx.Object
 			return err
 		}
 		// Keep the previous online update for a rollback.
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		os.RemoveAll(backupDir)
 		hadPrevious = isFile(bundle)
 		if hadPrevious {
-			if err := copyTree(runtimeDir, backupDir); err != nil {
+			if err := copyTree(ctx, runtimeDir, backupDir); err != nil {
 				return err
 			}
 		}
-		if err := os.Rename(tmpBundle, bundle); err != nil {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := d.commit(ctx, "bundle-replace", func() error { return os.Rename(tmpBundle, bundle) }); err != nil {
 			return osError(err, tmpBundle)
 		}
 		replaced = true
-		if err := os.WriteFile(versionFile, []byte(target+"\n"), 0o666); err != nil {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := d.commit(ctx, "version-write", func() error { return os.WriteFile(versionFile, []byte(target+"\n"), 0o666) }); err != nil {
 			return osError(err, versionFile)
 		}
 		d.setState("running", "正在重启 Sub-Store "+target+"…")
@@ -549,7 +542,10 @@ func (d *Dependencies) installRelease(ctx context.Context, release *jsonx.Object
 		if err != nil {
 			return err
 		}
-		if running != "" && sameVersion(ParseVersion(running), ParseVersion(target)) {
+		if running != "" && sameVersion(VersionParts(running), VersionParts(target)) {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			os.RemoveAll(backupDir)
 			previous := previousVersion
 			if previous == "" {
@@ -571,12 +567,22 @@ func (d *Dependencies) installRelease(ctx context.Context, release *jsonx.Object
 	if errors.As(err, &updateErr) && err == error(updateErr) {
 		detail = updateErr.Message
 	}
+	if canceled := ctx.Err(); canceled != nil {
+		d.setState("failed", msgUpdateUnavailable)
+		return canceled
+	}
 	if replaced {
 		rollback := func() (string, error) {
+			if err := ctx.Err(); err != nil {
+				return "", err
+			}
 			if err := removeTree(runtimeDir); err != nil {
 				return "", err
 			}
 			if hadPrevious {
+				if err := ctx.Err(); err != nil {
+					return "", err
+				}
 				if err := os.Rename(backupDir, runtimeDir); err != nil {
 					return "", osError(err, backupDir)
 				}
@@ -588,7 +594,7 @@ func (d *Dependencies) installRelease(ctx context.Context, release *jsonx.Object
 			if err != nil {
 				return "", err
 			}
-			if restored == "" || (previousVersion != "" && !sameVersion(ParseVersion(restored), ParseVersion(previousVersion))) {
+			if restored == "" || (previousVersion != "" && !sameVersion(VersionParts(restored), VersionParts(previousVersion))) {
 				return "", &DependencyUpdateError{"原版本仍未就绪"}
 			}
 			return restored, nil
@@ -608,23 +614,33 @@ func (d *Dependencies) installRelease(ctx context.Context, release *jsonx.Object
 
 // StartSubStoreUpdate is start_sub_store_update(): start the background
 // update; (ok, message).
-func (d *Dependencies) StartSubStoreUpdate(ctx context.Context) (bool, string) {
+func (d *Dependencies) StartUpdate(ctx context.Context) (string, error) {
 	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	if !d.env.IsBuiltinAvailable() {
-		return false, msgUpdateNoBuiltin
+		return "", &DependencyUpdateError{msgUpdateNoBuiltin}
 	}
 	held, unlock, ok := d.updateLock.TryLock(ctx)
 	if !ok {
-		return false, msgUpdateBusy
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
+		return "", &DependencyUpdateError{msgUpdateBusy}
 	}
 	ctx = held
-	release, err := func() (*jsonx.Object, error) {
-		release, message := d.FetchLatestRelease(ctx, true)
+	if err := ctx.Err(); err != nil {
+		unlock()
+		return "", err
+	}
+	release, err := func() (*Release, error) {
+		release, message := d.Latest(ctx, true)
 		if release == nil {
 			if message == "" {
 				message = msgLatestUnavailable
 			}
-			return nil, pyErr("RuntimeError", message)
+			return nil, errors.New(message)
 		}
 		base, err := d.env.BuiltinSubStoreURL()
 		if err != nil {
@@ -636,17 +652,25 @@ func (d *Dependencies) StartSubStoreUpdate(ctx context.Context) (bool, string) {
 				return nil, err
 			}
 		}
-		if current != "" && !IsNewer(release.Value("version"), current) {
-			return nil, pyErr("RuntimeError", fmt.Sprintf(msgAlreadyLatest, current))
+		if current != "" && !VersionNewer(release.Version, current) {
+			return nil, fmt.Errorf(msgAlreadyLatest, current)
 		}
 		return release, nil
 	}()
+	if canceled := ctx.Err(); canceled != nil {
+		unlock()
+		return "", canceled
+	}
 	if err != nil {
 		unlock()
-		return false, err.Error()
+		return "", err
 	}
-	version := jsonx.Str(release.Value("version"))
-	d.setState("running", fmt.Sprintf(msgPreparingUpdate, version), "target_version", release.Value("version"), "finished_at", jsonx.Float(0))
+	if err := ctx.Err(); err != nil {
+		unlock()
+		return "", err
+	}
+	version := release.Version
+	d.prepareUpdate(version)
 	spawner := d.Spawner
 	if spawner == nil {
 		spawner = lifecycle.DefaultSpawner{}
@@ -654,7 +678,32 @@ func (d *Dependencies) StartSubStoreUpdate(ctx context.Context) (bool, string) {
 	if err := spawner.Spawn(ctx, "sub-store-update", func(worker context.Context) { d.runUpdate(worker, release, unlock) }); err != nil {
 		unlock()
 		d.setState("failed", msgUpdateUnavailable)
-		return false, msgUpdateUnavailable
+		if canceled := ctx.Err(); canceled != nil {
+			return "", canceled
+		}
+		return "", &DependencyUpdateError{msgUpdateUnavailable}
 	}
-	return true, fmt.Sprintf(msgStartingUpdate, version)
+	return fmt.Sprintf(msgStartingUpdate, version), nil
+}
+
+func (d *Dependencies) commit(ctx context.Context, stage string, fn func() error) error {
+	if d.beforeCommit != nil {
+		d.beforeCommit(stage)
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return fn()
+}
+
+type contextReader struct {
+	ctx    context.Context
+	reader io.Reader
+}
+
+func (r *contextReader) Read(p []byte) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return r.reader.Read(p)
 }

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -30,8 +31,7 @@ var runtimeLog = logx.Get("backend.utils.sub_store_runtime")
 // RuntimeError): the message is shown to the user.
 type RuntimeUnavailable struct{ Message string }
 
-func (e *RuntimeUnavailable) Error() string       { return e.Message }
-func (e *RuntimeUnavailable) PythonClass() string { return "RuntimeUnavailable" }
+func (e *RuntimeUnavailable) Error() string { return e.Message }
 
 func unavailable(message string) error { return &RuntimeUnavailable{Message: message} }
 
@@ -162,7 +162,7 @@ func (r *Runtime) Root() string {
 		abs = r.env.DataDir()
 	}
 	sum := sha256.Sum256([]byte(abs))
-	return pyJoin(gettempdir(), "configflow-sub-store-"+hex.EncodeToString(sum[:])[:12])
+	return filepath.Join(gettempdir(), "configflow-sub-store-"+hex.EncodeToString(sum[:])[:12])
 }
 
 const (
@@ -347,15 +347,15 @@ func (r *Runtime) runCommand(ctx context.Context, action string) (string, error)
 		return "", ctx.Err()
 	}
 	if err != nil {
-		var py *PyError
-		if errors.As(err, &py) && (py.Class == "TimeoutExpired" ||
-			(strings.HasSuffix(py.Class, "Error") && py.Class != "UnicodeDecodeError")) {
-			return "", unavailable("无法管理内置 Sub-Store，请检查容器服务状态")
+		var path *os.PathError
+		var command *exec.Error
+		if errors.Is(err, os.ErrNotExist) || errors.Is(err, os.ErrPermission) || errors.Is(err, context.DeadlineExceeded) || errors.As(err, &path) || errors.As(err, &command) {
+			return "", unavailable(msgManageUnavailable)
 		}
 		return "", err
 	}
 	if action == "status" {
-		parts := pyFields(result.Stdout)
+		parts := strings.Fields(result.Stdout)
 		if len(parts) >= 2 && parts[0] == SubStoreProgram {
 			return parts[1], nil
 		}

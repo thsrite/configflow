@@ -9,12 +9,7 @@ import (
 	"configflow/internal/yamlx"
 	"context"
 	"encoding/json"
-	"errors"
-	"fmt"
-	"io/fs"
-	"os"
-	"path/filepath"
-	"strings"
+	"math/big"
 )
 
 func decodeLegacy[T any](value any) (T, error) {
@@ -69,53 +64,6 @@ func LoadSubscriptionCache(ctx context.Context, id string) (*jsonx.Object, error
 		return nil, err
 	}
 	return encodeLegacy(result)
-}
-
-func iterate(value any) ([]any, error) {
-	switch v := value.(type) {
-	case []any:
-		return v, nil
-	case *jsonx.Object:
-		keys := make([]any, 0, v.Len())
-		for key := range v.All() {
-			keys = append(keys, key)
-		}
-		return keys, nil
-	case string:
-		items := []any{}
-		for _, r := range v {
-			items = append(items, string(r))
-		}
-		return items, nil
-	}
-	return nil, pyErr("TypeError", fmt.Sprintf("'%s' object is not iterable", typeName(value)))
-}
-func pyMakedirs(name string) error {
-	head, tail := filepath.Split(name)
-	if tail == "" {
-		head, tail = filepath.Split(strings.TrimRight(head, "/"))
-	}
-	head = strings.TrimRight(head, "/")
-	if head == "" && strings.HasPrefix(name, "/") {
-		head = "/"
-	}
-	if head != "" && tail != "" {
-		if _, err := os.Stat(head); err != nil {
-			if err := pyMakedirs(head); err != nil && !errors.Is(err, fs.ErrExist) {
-				return err
-			}
-			if tail == "." {
-				return nil
-			}
-		}
-	}
-	if err := os.Mkdir(name, 0o777); err != nil {
-		if info, serr := os.Stat(name); serr == nil && info.IsDir() {
-			return nil
-		}
-		return err
-	}
-	return nil
 }
 
 // Status transcodes the lifecycle snapshot for unported response consumers.
@@ -265,4 +213,86 @@ func ParseUserinfo(text string) (*jsonx.Object, error) {
 		return nil, err
 	}
 	return encodeLegacy(value)
+}
+
+// ParseVersion adapts old dynamic input to the native version parser.
+func ParseVersion(value any) []*big.Int {
+	text, ok := value.(string)
+	if !ok {
+		return nil
+	}
+	return VersionParts(text)
+}
+
+// IsNewer adapts old dynamic version inputs.
+func IsNewer(candidate, current any) bool {
+	a, ok := candidate.(string)
+	if !ok {
+		return false
+	}
+	b, _ := current.(string)
+	return VersionNewer(a, b)
+}
+
+// JSON transcodes a native HTTP JSON payload for unported consumers.
+func (r *Response) JSON() (any, error) {
+	data, err := r.JSONData()
+	if err != nil {
+		return nil, err
+	}
+	return jsonx.Parse(data)
+}
+
+// FetchLatestRelease transcodes the selected release at the legacy response boundary.
+func (d *Dependencies) FetchLatestRelease(ctx context.Context, force bool) (*jsonx.Object, string) {
+	value, message := d.Latest(ctx, force)
+	if value == nil {
+		return nil, message
+	}
+	result, err := encodeLegacy(value)
+	if err != nil {
+		return nil, err.Error()
+	}
+	return result, message
+}
+
+// GetUpdateState transcodes the native observation for old HTTP owners.
+func (d *Dependencies) GetUpdateState() *jsonx.Object {
+	value, _ := encodeLegacy(d.UpdateSnapshot())
+	return value
+}
+
+// GetSubStoreStatus transcodes one complete native snapshot.
+func (d *Dependencies) GetSubStoreStatus(ctx context.Context, force bool) (*jsonx.Object, error) {
+	value, err := d.Snapshot(ctx, force)
+	if err != nil {
+		return nil, err
+	}
+	return encodeLegacy(value)
+}
+
+// ListDependencies transcodes the fixed native dependency list once per request.
+func (d *Dependencies) ListDependencies(ctx context.Context, force bool) ([]any, error) {
+	values, err := d.List(ctx, force)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]any, 0, len(values))
+	for _, value := range values {
+		item, err := encodeLegacy(value)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	return out, nil
+}
+
+// StartSubStoreUpdate adapts the native update error to the old (ok,message) interface.
+func (d *Dependencies) StartSubStoreUpdate(ctx context.Context) (bool, string) {
+	message, err := d.StartUpdate(ctx)
+	if err != nil {
+		return false, err.Error()
+	}
+	return true, message
 }

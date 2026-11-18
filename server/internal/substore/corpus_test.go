@@ -142,6 +142,17 @@ func TestPythonCorpus(t *testing.T) {
 			t.Fatalf("unknown fn %s", row.fn)
 		}
 		if expected := native.GetObject(fmt.Sprintf("corpus/%d", i)); expected != nil {
+			if expected.Has("version_components") {
+				parts := VersionParts(row.input.(string))
+				actual := make([]any, 0, len(parts))
+				for _, part := range parts {
+					actual = append(actual, part.String())
+				}
+				if !jsonx.Equal(actual, expected.Value("version_components")) {
+					t.Fatalf("native version components mismatch at %d", i)
+				}
+				continue
+			}
 			checkOutcome(t, fmt.Sprintf("native/corpus/%d", i), expected, got, err, true)
 			continue
 		}

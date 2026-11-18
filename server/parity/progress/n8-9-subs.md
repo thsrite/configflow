@@ -88,3 +88,27 @@ owner 暂时仍调用的原有 helper，后续必须一起删除，不能据此�
   → `ok configflow/internal/substore 2.890s`；同次定向 vet 退出0。
 - 另一次完整客户端正常复用/退避/版本转换/日志/alias 定向 race → 9.392s。
   env/http 响应与 dependencies 的旧动态消费、subs 核心仍待迁移；不能据此交回完成。
+
+
+## 环境、HTTP 与 dependencies 阶段
+
+- release/asset/UpdateState/DependencyStatus、Latest/Snapshot/List/StartUpdate 均 typed。
+  内部只用原生入口；legacy.go 旧接口仅转码。全包核心 jsonx 仅残留 legacy.go，泛型缓存的
+  `V any` 是类型参数，不是动态业务参数。删除319行 pystr.go；旧语料的错误标签仅在
+  legacy_errors_test.go 中作为测试数据，不参与产品路径。
+- repo.View 分别取 proxy 与 github 设置，不构造旧 system/config JSON。JSONData 只用原生
+  encoding/json，不调用 DecodeStored（远端 HTTP 不是持久化资料）。默认 HTTP UA/有效
+  headers/timeout 保持现有已验证协议，内部类别保留 native RequestError。
+- 真实更新测试使用生产 job lock、Maintenance 叶锁、Runtime.Spawn/BindRequest/Shutdown。
+  三提交点（下载文件写、bundle replace、VERSION write）× 关机/断开均通过；入口关机
+  不改 state、不建目录。关机无重启/补偿、tmp 清理、backup 保留、最终 L1 可重取。
+- 主服务器完整 substore race 48.605s 只发现2组旧边界断言（U+001C端口、review畸形节点）；
+  不把 FAIL 写成全包通过。修成逐项精确 native 期待后的定向 race：
+  `go test -race -p 4 -count=1 -timeout=5m ./internal/substore -run
+  "TestBuiltinPortForms|TestN89BuiltinPort|TestReviewParseProxiesFromYAML|TestUpdateRestoresPreviousBundleWhenRestartRaises|TestReviewUpdatePanic"`
+  → `ok configflow/internal/substore 3.935s`。三包定向 vet 同次退出0。
+  最终整体阶段还会重新跑受影响包，不能据此声称任务完成。
+- 版本及环境 native fixture 继续绑定原 archive SHA，逐项扩展；不修改原 corpus/N7 oracle
+  或任何比较器。4301位分量明确走 native 文本验证，不放开其他语料。
+- 此时 substore 已迁移，subs（parser/filter/hosts/dialers/chains/listeners/proxy DNS）尚未迁移；
+  下一阶段清除 subs 的私有 convert copy，保留业务功能和链路正常输出。

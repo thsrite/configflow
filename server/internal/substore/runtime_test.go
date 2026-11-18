@@ -12,6 +12,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -412,7 +413,7 @@ func TestStateFileBytes(t *testing.T) {
 func TestDefaultRoot(t *testing.T) {
 	env := &Env{DataDir: func() string { return "/data" }}
 	rt := NewRuntime(env, "", IdleSeconds)
-	want := pyJoin(gettempdir(), "configflow-sub-store-"+sha12("/data"))
+	want := filepath.Join(gettempdir(), "configflow-sub-store-"+sha12("/data"))
 	if rt.Root() != want {
 		t.Fatalf("root %s want %s", rt.Root(), want)
 	}
@@ -429,14 +430,14 @@ func TestCommandProtocol(t *testing.T) {
 		t.Fatalf("start %q", out)
 	}
 	want := []string{"supervisorctl", "-c", "/etc/supervisor/conf.d/supervisord.conf", "start", "sub-store"}
-	if got := h.commands.calls[len(h.commands.calls)-1]; jsonx.Repr(pyArgv(got)) != jsonx.Repr(pyArgv(want)) {
+	if got := h.commands.calls[len(h.commands.calls)-1]; !slices.Equal(got, want) {
 		t.Fatalf("argv %v", got)
 	}
-	h.commands.fail = &PyError{Class: "FileNotFoundError", Message: "[Errno 2] No such file or directory: 'supervisorctl'"}
+	h.commands.fail = os.ErrNotExist
 	if _, err := rt.runCommand(ctx, "status"); err == nil || err.Error() != "无法管理内置 Sub-Store，请检查容器服务状态" {
 		t.Fatalf("err %v", err)
 	}
-	h.commands.fail = pyErr("TimeoutExpired", "timed out")
+	h.commands.fail = context.DeadlineExceeded
 	if _, err := rt.runCommand(ctx, "stop"); err == nil || err.Error() != "无法管理内置 Sub-Store，请检查容器服务状态" {
 		t.Fatalf("err %v", err)
 	}

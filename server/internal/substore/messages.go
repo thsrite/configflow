@@ -47,3 +47,19 @@ const (
 	msgProxyType        = "节点 type 必须是字符串，当前值：%s"
 	msgTrafficNonfinite = "订阅流量 %s 必须是有限数字"
 )
+
+const (
+	msgBuiltinPort = "SUB_STORE_BACKEND_API_PORT must be an integer between 1 and 65535"
+	msgCommandUTF8 = "Sub-Store 命令输出必须是 UTF-8 文本"
+	msgVersionUTF8 = "Sub-Store VERSION 必须是 UTF-8 文本"
+)
+
+const (
+	msgReleaseShape          = "Sub-Store release 必须是 JSON 对象"
+	msgReleaseField          = "Sub-Store release 字段类型无效：%s"
+	msgReleaseMissing        = "最新 release 中没有 sub-store.bundle.js"
+	msgDependencyDescription = "订阅解析与节点格式转换"
+	msgUnexpectedUpdate      = "Sub-Store 更新发生内部错误"
+)
+
+const msgManageUnavailable = "无法管理内置 Sub-Store，请检查容器服务状态"

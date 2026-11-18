@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/lockx"
 )
@@ -106,7 +105,7 @@ func TestUpdateProductionSizeAndTimeoutsAreNotOverridden(t *testing.T) {
 		observed = request.Timeout
 		return &Response{StatusCode: 200, Body: []byte("small")}, nil
 	})
-	if err := h.d.downloadBundle(h.ctx, jsonx.Obj("download_url", "https://example.com/bundle.js"), filepath.Join(t.TempDir(), "bundle.js")); err == nil {
+	if err := h.d.downloadBundle(h.ctx, &Release{DownloadURL: "https://example.com/bundle.js"}, filepath.Join(t.TempDir(), "bundle.js")); err == nil {
 		t.Fatal("production size bound bypassed")
 	}
 	if observed != (Timeout{Connect: 15 * time.Second, Read: 120 * time.Second}) {

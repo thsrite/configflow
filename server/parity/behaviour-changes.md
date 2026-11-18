@@ -1732,3 +1732,31 @@ world 保留旧文件。原 archive 不改；独立 Python 参考绑定完整 ar
   严格身份字段；name/server 使用共享 String，port 使用共享 Int，开放 Params 不改原 tag。
 - 关机取消不再形成共享下载的上游失败 cooldown，不再写入转换结果；等待同一 flight 的
   请求可立即响应 Runtime 关机。请求断开仍完成原工作。真实 Runtime 回归覆盖 fetch/convert。
+
+
+### N8-9 subs/substore：原生环境、HTTP JSON 和在线更新（2026-11-19）
+
+- 删除 product 中的 pystr/pyInt、模拟异常类、CPython UTF-8 错误位置、os.makedirs / shutil
+  异常原文及动态 release 字段操作。原生进程错误保留 `%w`，关机取消可 errors.Is；非法
+  UTF-8 输出是 ErrCommandEncoding，非法 VERSION 是 ErrVersionEncoding。正常 argv、
+  超时、返回码、换行转换、文件和重启/回滚断言不变。只改旧引擎错误文字/类别断言。
+- 标准 Unicode 空白不包含 U+001C：原 `NBSP+3001+U+001C` 与 corpus 的 `3001+U+001C`
+  明确拒绝为 PortError。其他合法 ASCII 数字、前导零、标准前后空白和端口范围不变。
+- version 是原生十进制 dotted 协议，使用 big.Int.SetString，不再复制 Python int 的 Unicode
+  数字/underscore/分段空白和4300位限制。精确 corpus 边界逐行登记：`２.４２`、`2. 3`、
+  `2.NBSP3`、`2.U+00853`、`2.1_0`、`𝟘.1`、`٣.٤`、`U+001C2.1` 无有效版本；对应
+  `is_newer([２.43,2.42])` 为 false。4301位十进制分量保留原精度；fixture 用完整十进制文本
+  比较每个 native 分量，避免旧 jsonx parser 自身的 CPython 位数限制。其余版本字节/比较不变。
+- Release/asset 使用共享 model codec。错误 root/assets/body 形状是 ReleaseError，检查更新
+  的固定中文业务前缀、最后一次成功结果、正常字段/值/顺序/TTL 不变。数字 digest:5 按已定
+  String 规则读为文本 "5"，没有 sha256 前缀，SHA256 为空，精确测试固定完整 Release 零值。
+  更新内部 panic 不回显内容，保留“更新失败：”并给固定中文内部错误；原重启失败诊断类别
+  从 RuntimeError 改成 native errors.errorString，回滚效果及后缀不变。
+- 原 malformed node 参考三项精确列入 native fixture：review parse row21 的0节点明确拒绝，
+  不再把空对象当成功结果缓存；review nodes row18 的 name:1/server:2→文本、port:"x"→0；
+  row19 的 type:null 按字段不存在处理，输出空 type。有效输出五个字段及 Params 不改。
+- 取消闸门覆盖写下载文件、复制备份、替换 bundle、写 VERSION、文件 mode/time、重启、
+  回滚。关机后停止后续修改，不扩大不可中断范围；仅清理本次临时下载文件并更新进程内
+  terminal observation。已经替换 bundle 但还没写 VERSION 时保留旧 VERSION 和完整备份，
+  不再重启或破坏恢复证据；请求断开仍完成全部更新。真实 Runtime 的三提交点×两种取消
+  及入口关机回归验证这些状态和最终锁释放。

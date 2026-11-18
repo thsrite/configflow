@@ -16,8 +16,12 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
+	"encoding/json"
+	"errors"
+	"path/filepath"
+	"unicode/utf8"
 )
 
 // SUB_STORE_* constants of dependencies.py / sub_store_runtime.py.
@@ -64,11 +68,7 @@ type CommandResult struct {
 	ReturnCode int
 }
 
-// CommandRunner runs a program: subprocess.run(argv, capture_output=True,
-// text=True, timeout=timeout). Errors are what subprocess.run raises (a
-// *PyError of class FileNotFoundError/PermissionError/OSError when the
-// program cannot be started, TimeoutExpired after the timeout); a non-zero
-// exit is a result.
+// CommandRunner executes a bounded external command; a non-zero exit is a result.
 //
 // The process control of the bundled Sub-Store goes through this interface
 // only: `supervisorctl -c SupervisorConfig <status|start|stop|restart>
@@ -81,59 +81,48 @@ type CommandRunner interface {
 // ExecRunner runs programs with os/exec.
 type ExecRunner struct{}
 
+// ErrCommandEncoding identifies non-UTF-8 process output.
+var ErrCommandEncoding = errors.New(msgCommandUTF8)
+
+// ErrVersionEncoding identifies a non-UTF-8 VERSION file.
+var ErrVersionEncoding = errors.New(msgVersionUTF8)
+
 // Run implements CommandRunner.
 func (ExecRunner) Run(ctx context.Context, argv []string, timeout time.Duration) (CommandResult, error) {
-	// subprocess.run is not interrupted when the HTTP client goes away.
-	runCtx, cancel := context.WithTimeout(lifecycle.Detach(ctx), timeout)
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return CommandResult{}, err
+	}
+	if len(argv) == 0 {
+		return CommandResult{}, errors.New("empty command")
+	}
+	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	cmd := exec.CommandContext(runCtx, argv[0], argv[1:]...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	err := cmd.Run()
-	if runCtx.Err() == context.DeadlineExceeded {
-		return CommandResult{}, pyErr("TimeoutExpired", fmt.Sprintf("Command %s timed out after %s seconds",
-			jsonx.Repr(pyArgv(argv)), formatSeconds(timeout)))
+	if canceled := ctx.Err(); canceled != nil {
+		return CommandResult{}, canceled
 	}
-	if err != nil {
-		if _, ok := err.(*exec.ExitError); !ok {
-			if e, ok := err.(*exec.Error); ok {
-				return CommandResult{}, &PyError{Class: "FileNotFoundError", Err: err,
-					Message: fmt.Sprintf("[Errno 2] No such file or directory: %s", jsonx.Repr(e.Name))}
-			}
-			return CommandResult{}, osError(err, argv[0])
-		}
+	if canceled := runCtx.Err(); canceled != nil {
+		return CommandResult{}, fmt.Errorf("run %s: %w", argv[0], canceled)
 	}
-	// text=True: strict UTF-8 (stdout first) with universal newlines.
-	var result CommandResult
-	for _, stream := range []struct {
-		data []byte
-		into *string
-	}{{stdout.Bytes(), &result.Stdout}, {stderr.Bytes(), &result.Stderr}} {
-		if message := utf8DecodeError(stream.data); message != "" {
-			return CommandResult{}, pyErr("UnicodeDecodeError", message)
-		}
-		*stream.into = strings.ReplaceAll(strings.ReplaceAll(string(stream.data), "\r\n", "\n"), "\r", "\n")
+	var exit *exec.ExitError
+	if err != nil && !errors.As(err, &exit) {
+		return CommandResult{}, fmt.Errorf("run %s: %w", argv[0], err)
 	}
-	if exit, ok := err.(*exec.ExitError); ok {
+	if !utf8.Valid(stdout.Bytes()) || !utf8.Valid(stderr.Bytes()) {
+		return CommandResult{}, ErrCommandEncoding
+	}
+	normalize := func(text string) string {
+		return strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\r", "\n")
+	}
+	result := CommandResult{Stdout: normalize(stdout.String()), Stderr: normalize(stderr.String())}
+	if exit != nil {
 		result.ReturnCode = exit.ExitCode()
 	}
 	return result, nil
-}
-
-func pyArgv(argv []string) []any {
-	out := make([]any, len(argv))
-	for i, a := range argv {
-		out[i] = a
-	}
-	return out
-}
-
-func formatSeconds(d time.Duration) string {
-	s := d.Seconds()
-	if s == float64(int64(s)) {
-		return fmt.Sprint(int64(s))
-	}
-	return fmt.Sprint(s)
 }
 
 // Env is what dependencies.py reads from the process: the environment,
@@ -172,54 +161,31 @@ func (e *Env) BuiltinDir() string { return e.getenv("SUB_STORE_BUILTIN_DIR", Def
 
 // BuiltinSubStoreURL is builtin_sub_store_url(): the bundled Node process on
 // loopback, port SUB_STORE_BACKEND_API_PORT (default 3001). An invalid port
-// is a ValueError (*PyError).
+// returns a typed PortError.
 func (e *Env) BuiltinSubStoreURL() (string, error) {
-	raw := pyStrip(e.getenv("SUB_STORE_BACKEND_API_PORT", defaultPortSetting))
-	valid := raw != "" && len(raw) <= 5
-	for i := 0; valid && i < len(raw); i++ {
-		valid = raw[i] >= '0' && raw[i] <= '9'
-	}
-	port := 0
-	if valid {
-		port, _ = strconv.Atoi(raw)
-		valid = port >= 1 && port <= 65535
-	}
-	if !valid {
-		return "", pyErr("ValueError", "SUB_STORE_BACKEND_API_PORT must be an integer between 1 and 65535")
+	raw := strings.TrimSpace(e.getenv("SUB_STORE_BACKEND_API_PORT", defaultPortSetting))
+	var port model.Int
+	if len(raw) > 5 || port.UnmarshalJSON([]byte(strconv.Quote(raw))) != nil || port < 1 || port > 65535 {
+		return "", &PortError{Value: raw}
 	}
 	return fmt.Sprintf("http://127.0.0.1:%d", port), nil
 }
 
-// pyJoin is os.path.join.
-func pyJoin(parts ...string) string {
-	path := ""
-	for i, part := range parts {
-		switch {
-		case i == 0 || strings.HasPrefix(part, "/"):
-			path = part
-		case path == "" || strings.HasSuffix(path, "/"):
-			path += part
-		default:
-			path += "/" + part
-		}
-	}
-	return path
-}
+// PortError identifies an invalid local Sub-Store port setting.
+type PortError struct{ Value string }
+
+// Error describes the required range without echoing environment secrets.
+func (e *PortError) Error() string { return msgBuiltinPort }
 
 // RuntimeDir is sub_store_runtime_dir(): DATA_DIR/sub-store/runtime.
-func (e *Env) RuntimeDir() string { return pyJoin(e.DataDir(), "sub-store", "runtime") }
+func (e *Env) RuntimeDir() string { return filepath.Join(e.DataDir(), "sub-store", "runtime") }
 
-// ParseVersion is parse_version: '2.42.3' / 'v2.42.3' → [2 42 3]; nil when
-// a part is not an int().
-func ParseVersion(value any) []*big.Int {
-	text, ok := value.(string)
-	if !ok {
-		return nil
-	}
-	text = strings.TrimLeft(pyStrip(text), "vV")
+// VersionParts parses dotted arbitrary-precision decimal version components.
+func VersionParts(text string) []*big.Int {
+	text = strings.TrimLeft(strings.TrimSpace(text), "vV")
 	var parts []*big.Int
 	for _, part := range strings.Split(text, ".") {
-		n, ok := pyInt(part)
+		n, ok := new(big.Int).SetString(part, 10)
 		if !ok {
 			return nil
 		}
@@ -245,24 +211,24 @@ func sameVersion(a, b []*big.Int) bool {
 	return compareVersions(a, b) == 0
 }
 
-// IsNewer is is_newer(candidate, current).
-func IsNewer(candidate, current any) bool {
-	a, b := ParseVersion(candidate), ParseVersion(current)
+// VersionNewer compares two native version strings.
+func VersionNewer(candidate, current string) bool {
+	a, b := VersionParts(candidate), VersionParts(current)
 	return a != nil && (b == nil || compareVersions(a, b) > 0)
 }
 
 // readVersionFile is _read_version_file: VERSION stripped, "" when it
 // cannot be read; undecodable text is UnicodeDecodeError, as in Python.
 func readVersionFile(directory string) (string, error) {
-	data, err := os.ReadFile(pyJoin(directory, "VERSION"))
+	data, err := os.ReadFile(filepath.Join(directory, "VERSION"))
 	if err != nil {
 		return "", nil
 	}
-	if message := utf8DecodeError(data); message != "" {
-		return "", pyErr("UnicodeDecodeError", message)
+	if !utf8.Valid(data) {
+		return "", ErrVersionEncoding
 	}
 	text := strings.ReplaceAll(strings.ReplaceAll(string(data), "\r\n", "\n"), "\r", "\n")
-	return pyStrip(text), nil
+	return strings.TrimSpace(text), nil
 }
 
 func isFile(path string) bool {
@@ -272,7 +238,7 @@ func isFile(path string) bool {
 
 // IsBuiltinAvailable is is_builtin_available(): the bundle of the official
 // image exists.
-func (e *Env) IsBuiltinAvailable() bool { return isFile(pyJoin(e.BuiltinDir(), SubStoreAsset)) }
+func (e *Env) IsBuiltinAvailable() bool { return isFile(filepath.Join(e.BuiltinDir(), SubStoreAsset)) }
 
 // ActiveBundle is active_bundle(): (directory, version) chosen like
 // sub-store-start.sh — the online update when it is newer than the image's.
@@ -287,7 +253,7 @@ func (e *Env) ActiveBundle() (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
-	if isFile(pyJoin(runtimeDir, SubStoreAsset)) && IsNewer(runtimeVersion, builtinVersion) {
+	if isFile(filepath.Join(runtimeDir, SubStoreAsset)) && VersionNewer(runtimeVersion, builtinVersion) {
 		return runtimeDir, runtimeVersion, nil
 	}
 	return builtin, builtinVersion, nil
@@ -296,24 +262,34 @@ func (e *Env) ActiveBundle() (string, string, error) {
 // FetchRunningVersion is fetch_running_version(base_url, timeout): the
 // version /api/utils/env reports, "" on any failure.
 func (e *Env) FetchRunningVersion(ctx context.Context, baseURL string, timeout float64) string {
-	resp, err := e.HTTP.Do(ctx, &Request{Method: "GET", URL: baseURL + "/api/utils/env", Timeout: Seconds(timeout)})
-	if err != nil || resp.RaiseForStatus() != nil {
+	if ctx.Err() != nil {
 		return ""
 	}
-	data, err := resp.JSON()
+	resp, err := e.HTTP.Do(ctx, &Request{Method: "GET", URL: baseURL + "/api/utils/env", Timeout: Seconds(timeout)})
+	if ctx.Err() != nil || err != nil || resp.RaiseForStatus() != nil {
+		return ""
+	}
+	data, err := resp.JSONData()
 	if err != nil {
 		return ""
 	}
-	payload := any(jsonx.NewObject())
-	if object, ok := data.(*jsonx.Object); ok {
-		payload = object.GetOr("data", object)
+	var envelope struct {
+		Data    json.RawMessage `json:"data"`
+		Version model.String    `json:"version"`
 	}
-	object, ok := payload.(*jsonx.Object)
-	if !ok {
+	if json.Unmarshal(data, &envelope) != nil {
 		return ""
 	}
-	version, _ := object.GetOr("version", "").(string)
-	return version
+	if len(envelope.Data) != 0 {
+		var payload struct {
+			Version model.String `json:"version"`
+		}
+		if json.Unmarshal(envelope.Data, &payload) != nil {
+			return ""
+		}
+		return string(payload.Version)
+	}
+	return string(envelope.Version)
 }
 
 // BaseURL is sub_store_client._get_base_url(): the bundled Sub-Store in the

@@ -8,6 +8,7 @@ package substore
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +17,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -136,44 +138,45 @@ func TestReviewCommandOutputIsStrictUTF8(t *testing.T) {
 		t.Fatalf("%v %#v", err, result)
 	}
 	_, err = ExecRunner{}.Run(context.Background(), []string{"sh", "-c", `printf 'ok\377'`}, 5*time.Second)
-	if pythonClass(err) != "UnicodeDecodeError" || err.Error() != "'utf-8' codec can't decode byte 0xff in position 2: invalid start byte" {
+	if !errors.Is(err, ErrCommandEncoding) {
 		t.Fatalf("%v (%s)", err, pythonClass(err))
 	}
 	h := newHarness(t, harnessOptions{builtin: true})
 	rt := h.service.Runtime
 	rt.env.Commands = commandFunc(func([]string) (CommandResult, error) {
-		return CommandResult{}, pyErr("UnicodeDecodeError", "bad")
+		return CommandResult{}, ErrCommandEncoding
 	})
-	if _, err := rt.runCommand(context.Background(), "status"); IsRuntimeUnavailable(err) || pythonClass(err) != "UnicodeDecodeError" {
+	if _, err := rt.runCommand(context.Background(), "status"); IsRuntimeUnavailable(err) || !errors.Is(err, ErrCommandEncoding) {
 		t.Fatalf("%v", err)
 	}
 }
 
-// TestReviewMakedirsErrorTexts: os.makedirs(exist_ok=True) names the
-// directory whose mkdir failed, with Python's errno text.
-func TestReviewMakedirsErrorTexts(t *testing.T) {
+// TestReviewMakedirsNativeErrors retains file safety and actual errno classification.
+func TestReviewMakedirsNativeErrors(t *testing.T) {
 	dir := t.TempDir()
 	file := filepath.Join(dir, "f")
-	os.WriteFile(file, nil, 0o644)
-	err := pyMakedirs(file)
-	if got := osErrorText(err); got != "[Errno 17] File exists: '"+file+"'" {
-		t.Errorf("file in the way: %q", got)
+	if err := os.WriteFile(file, nil, 0644); err != nil {
+		t.Fatal(err)
 	}
-	err = pyMakedirs(filepath.Join(file, "sub", "subscribes"))
-	if got := osErrorText(err); got != "[Errno 20] Not a directory: '"+filepath.Join(file, "sub")+"'" {
-		t.Errorf("parent is a file: %q", got)
+	if err := os.MkdirAll(file, 0777); !errors.Is(err, syscall.ENOTDIR) {
+		t.Fatalf("file: %v", err)
 	}
-	if err := pyMakedirs(filepath.Join(dir, "a", "b", "c")); err != nil {
-		t.Errorf("nested: %v", err)
+	if err := os.MkdirAll(filepath.Join(file, "sub", "subscribes"), 0777); !errors.Is(err, syscall.ENOTDIR) {
+		t.Fatalf("parent: %v", err)
 	}
-	if err := pyMakedirs(filepath.Join(dir, "a", "b", "c")); err != nil {
-		t.Errorf("exists: %v", err)
+	nested := filepath.Join(dir, "a", "b", "c")
+	for range 2 {
+		if err := os.MkdirAll(nested, 0777); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !isFile(file) {
+		t.Fatal("existing file removed")
 	}
 }
 
-// TestReviewFalsyConversionIsRemembered: Sub-Store answering a falsy first
-// proxy (0) is "no node" for every caller, and Python remembers it like any
-// other answer instead of asking again.
+// TestReviewFalsyConversionIsRemembered now checks the explicit native object-array boundary:
+// an invalid response is rejected with its original value and never cached as a successful empty object.
 func TestReviewFalsyConversionIsRemembered(t *testing.T) {
 	h := newHarness(t, harnessOptions{builtin: true, version: "2.42.3"})
 	h.store.download = func(string, string, url.Values, *jsonx.Object) (int, string, http.Header) {
@@ -181,15 +184,15 @@ func TestReviewFalsyConversionIsRemembered(t *testing.T) {
 	}
 	c := h.service.Client
 	for i := 0; i < 2; i++ {
-		proxy := c.ConvertProxyString(context.Background(), "snell://x")
-		if proxy == nil || proxy.Len() != 0 {
-			t.Fatalf("round %d: %s", i, jsonx.Repr(proxy))
+		proxy, err := c.ConvertProxy(context.Background(), "snell://x")
+		if proxy != nil || err == nil || err.Error() != "订阅节点必须是对象，当前值：0" {
+			t.Fatalf("round %d: %v %v", i, proxy, err)
 		}
 	}
 	h.store.mu.Lock()
 	downloads := len(h.store.downloads)
 	h.store.mu.Unlock()
-	if downloads != 1 {
+	if downloads != 2 {
 		t.Fatalf("Sub-Store asked %d times", downloads)
 	}
 }
@@ -215,14 +218,14 @@ func TestReviewUpdatePanicIsAFailure(t *testing.T) {
 	if !locked {
 		t.Fatal("update lock busy")
 	}
-	d.runUpdate(held, jsonx.Obj("version", "2.41.0", "download_url", "https://example.test/x.js"), unlock)
+	d.runUpdate(held, &Release{Version: "2.41.0", DownloadURL: "https://example.test/x.js"}, unlock)
 	_, release, available := d.updateLock.TryLock(context.Background())
 	if !available {
 		t.Fatal("update lock kept")
 	}
 	release()
 	state := d.GetUpdateState()
-	if state.GetString("state") != "failed" || state.GetString("message") != "更新失败：exception_type=Exception" {
+	if state.GetString("state") != "failed" || state.GetString("message") != "更新失败："+msgUnexpectedUpdate {
 		t.Fatalf("state %s", jsonx.Repr(state))
 	}
 }

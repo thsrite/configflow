@@ -89,6 +89,7 @@ func TestReviewIsYAMLResponse(t *testing.T) {
 // with int/bool/None keys load as in Python (keys read as json.dumps writes
 // them, the form the subscription cache keeps).
 func TestReviewParseProxiesFromYAML(t *testing.T) {
+	native := nativeClientExpectations(t)
 	ref := reviewReference(t)
 	oracle := nativeReaderCases(t)
 	for _, fn := range []string{"parse_proxies_from_yaml", "proxies_to_nodes"} {
@@ -100,6 +101,10 @@ func TestReviewParseProxiesFromYAML(t *testing.T) {
 			var got any = proxies
 			if err == nil && fn == "proxies_to_nodes" {
 				got, err = ProxiesToNodes(proxies)
+			}
+			if expected := native.GetObject(fmt.Sprintf("review/%s/%d", fn, i)); expected != nil {
+				checkOutcome(t, label, expected, got, err, true)
+				continue
 			}
 			if row.Has("unserializable") {
 				// Python keeps a date key until json.dumps refuses it when

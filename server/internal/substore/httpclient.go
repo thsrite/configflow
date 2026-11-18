@@ -16,9 +16,9 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf16"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/weburl"
 	"encoding/json"
 )
@@ -105,7 +105,7 @@ func (r *Response) encoding() (string, bool) {
 	// charset wins.
 	charset, hasCharset := "", false
 	for _, param := range parts[1:] {
-		param = pyStrip(param)
+		param = strings.TrimSpace(param)
 		if param == "" {
 			continue
 		}
@@ -113,7 +113,7 @@ func (r *Response) encoding() (string, bool) {
 		if !found {
 			continue // value True: not a charset text
 		}
-		key = pyLower(strings.Trim(key, `"' `))
+		key = strings.ToLower(strings.Trim(key, `"' `))
 		if key == "charset" {
 			charset, hasCharset = strings.Trim(strings.Trim(value, `"' `), `'"`), true
 		}
@@ -215,11 +215,9 @@ func (r *Response) Text() string {
 	return decodeUTF8Replace(r.Body)
 }
 
-// JSON is response.json() (requests 2.31): without a charset in the headers
-// a body longer than 3 bytes is decoded with the guessed UTF codec (a UTF-8
-// BOM skipped); otherwise Text() is parsed. Failures are
-// requests.exceptions.JSONDecodeError.
-func (r *Response) JSON() (any, error) {
+// JSONData reads a JSON response using its declared charset or Unicode BOM.
+// Malformed JSON is a RequestError and is never repaired as stored data.
+func (r *Response) JSONData() ([]byte, error) {
 	text := ""
 	if _, ok := r.encoding(); !ok && len(r.Body) > 3 {
 		switch {
@@ -233,14 +231,15 @@ func (r *Response) JSON() (any, error) {
 	} else {
 		text = r.Text()
 	}
-	value, err := jsonx.ParseString(text)
+	var value json.RawMessage
+	err := json.Unmarshal([]byte(text), &value)
 	if err != nil {
 		return nil, &RequestError{Class: "JSONDecodeError", Message: err.Error(), Err: err}
 	}
 	return value, nil
 }
 
-// RequestError is a requests.RequestException (Class is its class name:
+// RequestError retains the HTTP diagnostic category, status and native cause:
 // ConnectionError, ConnectTimeout, ReadTimeout, SSLError, ProxyError,
 // ChunkedEncodingError, HTTPError, InvalidURL, MissingSchema,
 // InvalidSchema, TooManyRedirects, JSONDecodeError …). Message texts are
@@ -252,10 +251,10 @@ type RequestError struct {
 	Err     error
 }
 
-func (e *RequestError) Error() string       { return e.Message }
-func (e *RequestError) Unwrap() error       { return e.Err }
-func (e *RequestError) PythonClass() string { return e.Class }
-func (e *RequestError) HTTPStatus() int     { return e.Status }
+func (e *RequestError) Error() string { return e.Message }
+func (e *RequestError) Unwrap() error { return e.Err }
+
+func (e *RequestError) HTTPStatus() int { return e.Status }
 
 // StatusOf is getattr(getattr(exc, 'response', None), 'status_code', None)
 // (0 = none).
@@ -308,7 +307,7 @@ func (e *tunnelError) Error() string { return "Tunnel connection failed: " + e.s
 // checkURL reports it as having no connection adapter; an unparsable URL is
 // returned unchanged with the error.
 func PrepareURL(raw string, params []Param) (string, error) {
-	if strings.Contains(raw, ":") && !strings.HasPrefix(asciiLower(raw), "http") {
+	if strings.Contains(raw, ":") && !strings.HasPrefix(strings.ToLower(raw), "http") {
 		return raw, nil
 	}
 	pairs := make([][2]string, len(params))
@@ -330,8 +329,8 @@ func QuotePath(s string) string { return weburl.Quote(s) }
 // (InvalidSchema), no scheme is MissingSchema, no host InvalidURL, another
 // scheme InvalidSchema.
 func checkURL(raw string) error {
-	noAdapter := &RequestError{Class: "InvalidSchema", Message: fmt.Sprintf("No connection adapters were found for %s", jsonx.Repr(raw))}
-	if strings.Contains(raw, ":") && !strings.HasPrefix(pyLower(raw), "http") {
+	noAdapter := &RequestError{Class: "InvalidSchema", Message: fmt.Sprintf("No connection adapters were found for %s", fmt.Sprint(raw))}
+	if strings.Contains(raw, ":") && !strings.HasPrefix(strings.ToLower(raw), "http") {
 		return noAdapter
 	}
 	parsed, err := url.Parse(raw)
@@ -339,15 +338,15 @@ func checkURL(raw string) error {
 		return &RequestError{Class: "InvalidURL", Message: err.Error(), Err: err}
 	}
 	if parsed.Scheme == "" {
-		return &RequestError{Class: "MissingSchema", Message: fmt.Sprintf("Invalid URL %s: No scheme supplied. Perhaps you meant https://%s?", jsonx.Repr(raw), raw)}
+		return &RequestError{Class: "MissingSchema", Message: fmt.Sprintf("Invalid URL %s: No scheme supplied. Perhaps you meant https://%s?", fmt.Sprint(raw), raw)}
 	}
 	if parsed.Host == "" || parsed.Hostname() == "" {
-		return &RequestError{Class: "InvalidURL", Message: fmt.Sprintf("Invalid URL %s: No host supplied", jsonx.Repr(raw))}
+		return &RequestError{Class: "InvalidURL", Message: fmt.Sprintf("Invalid URL %s: No host supplied", fmt.Sprint(raw))}
 	}
 	if host := parsed.Hostname(); isASCIIText(host) && (strings.HasPrefix(host, "*") || strings.HasPrefix(host, ".")) {
 		return &RequestError{Class: "InvalidURL", Message: "URL has an invalid label."}
 	}
-	if scheme := asciiLower(parsed.Scheme); scheme != "http" && scheme != "https" {
+	if scheme := strings.ToLower(parsed.Scheme); scheme != "http" && scheme != "https" {
 		return noAdapter
 	}
 	return nil
@@ -362,7 +361,7 @@ func (RequestsClient) Do(ctx context.Context, request *Request) (*Response, erro
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	prepared, prepareErr := PrepareURL(strings.TrimLeftFunc(request.URL, pyIsSpace), request.Params)
+	prepared, prepareErr := PrepareURL(strings.TrimLeftFunc(request.URL, unicode.IsSpace), request.Params)
 	if err := checkURL(prepared); err != nil {
 		return nil, err
 	}

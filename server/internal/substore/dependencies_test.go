@@ -10,6 +10,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -21,6 +22,7 @@ import (
 	"testing"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 )
 
@@ -68,11 +70,9 @@ func (dh *depsHarness) writeRuntime(version string) {
 	os.WriteFile(filepath.Join(dh.runtime, "VERSION"), []byte(version+"\n"), 0o644)
 }
 
-func (dh *depsHarness) releaseFor(content []byte, version string) *jsonx.Object {
+func (dh *depsHarness) releaseFor(content []byte, version string) *Release {
 	sum := sha256.Sum256(content)
-	return jsonx.Obj("version", version, "download_url", dh.github.URL+"/x/sub-store.bundle.js",
-		"sha256", hex.EncodeToString(sum[:]), "published_at", "", "release_url", "", "notes", "",
-		"size", jsonx.Int(len(content)))
+	return &Release{Version: version, DownloadURL: dh.github.URL + "/x/sub-store.bundle.js", SHA256: hex.EncodeToString(sum[:]), Size: model.Int(len(content))}
 }
 
 func (dh *depsHarness) serve(content []byte) {
@@ -169,7 +169,7 @@ func TestInvalidBuiltinPortNeverFallsBackToAnUnrelatedService(t *testing.T) {
 			dh := newDepsHarness(t)
 			dh.setenv("SUB_STORE_BACKEND_API_PORT", value)
 			if _, err := dh.service.Env.BaseURL(); err == nil || !strings.Contains(err.Error(), "SUB_STORE_BACKEND_API_PORT") ||
-				pythonClass(err) != "ValueError" {
+				!func() bool { var invalid *PortError; return errors.As(err, &invalid) }() {
 				t.Fatalf("base url err %v", err)
 			}
 			if _, err := dh.service.Runtime.isReady(dh.ctx); err == nil || !strings.Contains(err.Error(), "SUB_STORE_BACKEND_API_PORT") {
@@ -185,7 +185,7 @@ func TestInvalidBuiltinPortNeverFallsBackToAnUnrelatedService(t *testing.T) {
 // Valid forms of the port (ASCII digits, surrounding whitespace, leading zeros).
 func TestBuiltinPortForms(t *testing.T) {
 	dh := newDepsHarness(t)
-	for value, want := range map[string]string{" 3001 ": "3001", "03001": "3001", "1": "1", "65535": "65535", " 3001\x1c": "3001"} {
+	for value, want := range map[string]string{" 3001 ": "3001", "03001": "3001", "1": "1", "65535": "65535"} {
 		dh.setenv("SUB_STORE_BACKEND_API_PORT", value)
 		if got := must[string](t)(dh.service.Env.BuiltinSubStoreURL()); got != "http://127.0.0.1:"+want {
 			t.Errorf("%q: %s", value, got)
@@ -213,7 +213,7 @@ func TestUpdateRefusedWithoutBundle(t *testing.T) {
 	}
 }
 
-func (dh *depsHarness) run(release *jsonx.Object) {
+func (dh *depsHarness) run(release *Release) {
 	held, unlock, ok := dh.d.updateLock.TryLock(dh.ctx)
 	if !ok {
 		dh.t.Fatal("update lock busy")
@@ -333,7 +333,7 @@ func TestUpdateRestoresPreviousBundleWhenRestartRaises(t *testing.T) {
 		t.Fatalf("restarts %d", dh.commands.restarts)
 	}
 	message := dh.d.GetUpdateState().GetString("message")
-	if message != "更新失败：exception_type=RuntimeError；已回滚到 2.40.5" {
+	if message != "更新失败：exception_type=errors.errorString；已回滚到 2.40.5" {
 		t.Fatalf("message %s", message)
 	}
 	if readText(t, filepath.Join(dh.runtime, SubStoreAsset)) != "runtime" ||
@@ -398,7 +398,11 @@ func TestFetchLatestRelease(t *testing.T) {
 	dh.release = fmt.Sprintf(`{"tag_name": "V2.43.1", "published_at": "2026-11-01T00:00:00Z", "html_url": "https://github.com/r",
 		"body": %q, "assets": [{"name": "other"}, {"name": "sub-store.bundle.js", "browser_download_url": "https://github.com/a/sub-store.bundle.js",
 		"size": 600000, "digest": "sha256:abc"}]}`, body)
-	data, message := dh.d.FetchLatestRelease(dh.ctx, false)
+	native, message := dh.d.Latest(dh.ctx, false)
+	data, err := encodeLegacy(native)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if message != "" {
 		t.Fatal(message)
 	}
@@ -418,22 +422,27 @@ func TestFetchLatestRelease(t *testing.T) {
 		t.Fatal("cache expired early")
 	}
 	dh.release = `{"assets": []}`
-	kept, message := dh.d.FetchLatestRelease(dh.ctx, true)
-	if kept != data || message != "检查更新失败：exception_type=ValueError" {
+	kept, message := dh.d.Latest(dh.ctx, true)
+	if kept != native || message != "检查更新失败：exception_type=ReleaseError" {
 		t.Fatalf("%v %s", kept, message)
 	}
 	for release, want := range map[string]string{
-		`[]`:                "检查更新失败：exception_type=AttributeError",
-		`{"assets": null}`:  "检查更新失败：exception_type=TypeError",
-		`{"assets": ["x"]}`: "检查更新失败：exception_type=AttributeError",
+		`[]`:                "检查更新失败：exception_type=ReleaseError",
+		`{"assets": null}`:  "检查更新失败：exception_type=ReleaseError",
+		`{"assets": ["x"]}`: "检查更新失败：exception_type=ReleaseError",
 		`not json`:          "检查更新失败：exception_type=JSONDecodeError",
-		`{"assets": [{"name": "sub-store.bundle.js", "digest": 5}]}`:      "检查更新失败：exception_type=AttributeError",
-		`{"body": {"a": 1}, "assets": [{"name": "sub-store.bundle.js"}]}`: "检查更新失败：exception_type=TypeError",
+
+		`{"body": {"a": 1}, "assets": [{"name": "sub-store.bundle.js"}]}`: "检查更新失败：exception_type=ReleaseError",
 	} {
 		dh.release = release
 		if _, message := dh.d.FetchLatestRelease(dh.ctx, true); message != want {
 			t.Errorf("%s: %s", release, message)
 		}
+	}
+	dh.release = `{"assets":[{"name":"sub-store.bundle.js","digest":5}]}`
+	numeric, message := dh.d.Latest(dh.ctx, true)
+	if message != "" || numeric == nil || *numeric != (Release{}) {
+		t.Fatalf("numeric digest projection %#v %s", numeric, message)
 	}
 	dh.github.Close()
 	if _, message := dh.d.FetchLatestRelease(dh.ctx, true); message != "检查更新失败：exception_type=ConnectionError" {
@@ -509,5 +518,15 @@ func TestStartSubStoreUpdateRunsTheUpdate(t *testing.T) {
 	fresh.github.Close()
 	if ok, message := fresh.d.StartSubStoreUpdate(fresh.ctx); ok || message != "检查更新失败：exception_type=ConnectionError" {
 		t.Fatalf("%v %s", ok, message)
+	}
+}
+
+func TestN89BuiltinPortCPythonWhitespaceBoundary(t *testing.T) {
+	h := newDepsHarness(t)
+	h.setenv("SUB_STORE_BACKEND_API_PORT", "\u00a03001\x1c")
+	value, err := h.service.Env.BuiltinSubStoreURL()
+	var invalid *PortError
+	if value != "" || !errors.As(err, &invalid) || err.Error() != msgBuiltinPort {
+		t.Fatalf("port %q: %v", value, err)
 	}
 }
