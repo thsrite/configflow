@@ -253,6 +253,9 @@ func applyRelease(ctx context.Context, raw json.RawMessage, d Driver, a ReturnAg
 		if err = checkReturnAllocation(status, &s); err != nil {
 			return nil, err
 		}
+		if !compensating && !returnPreviousHolds(status, op.Previous) {
+			return nil, routerError(messageReturnChanged)
+		}
 		if err = ctx.Err(); err != nil {
 			return nil, err
 		}
@@ -260,6 +263,9 @@ func applyRelease(ctx context.Context, raw json.RawMessage, d Driver, a ReturnAg
 	} else {
 		if blockers := ReturnSafetyBlockers(status, false); len(blockers) > 0 {
 			return nil, routerError(strings.Join(blockers, "；"))
+		}
+		if !compensating && !returnPreviousHolds(status, op.Previous) {
+			return nil, routerError(messageReturnChanged)
 		}
 		if err = ctx.Err(); err != nil {
 			return nil, err
@@ -451,6 +457,9 @@ func Execute(ctx context.Context, plan *Plan, d Driver, a ReturnAgent) *Result {
 						}
 					}
 				}
+				// From here a device or Agent write may land even if this attempt
+				// never proves it: shutdown must still record it (D-R12-3).
+				result.Wrote = true
 				if end-i > 1 {
 					invalidateRelease(d)
 					err := batch.ApplyMany(held, ops[i:end], func(op, undo json.RawMessage) { finished(op, undo, true) })
@@ -602,6 +611,25 @@ func emptyStageReadback(stage Stage, c *Checks) (string, string, bool) {
 		return releaseEmptyMessages[stage.Key], "verified", true
 	}
 	return "", "", false
+}
+
+// returnPreviousHolds proves that the Agent still holds the managed spec the
+// plan was built from. Another router sharing the Agent may have applied or
+// removed one since; a forward write must not remove or overwrite it, and its
+// undo must not restore a stale spec.
+func returnPreviousHolds(live *ReturnStatus, previous json.RawMessage) bool {
+	var current json.RawMessage
+	if live != nil && live.Managed != nil && live.Managed.TablePresent {
+		current = live.Managed.Spec
+	}
+	if !effectful(previous) || !effectful(current) {
+		return effectful(previous) == effectful(current)
+	}
+	var have, want struct {
+		ProxyDst []string `json:"proxy_dst"`
+	}
+	return returnSpecProof(current, previous) && json.Unmarshal(current, &have) == nil &&
+		json.Unmarshal(previous, &want) == nil && sameStrings(have.ProxyDst, want.ProxyDst)
 }
 
 func returnSpecProof(live, expected json.RawMessage) bool {

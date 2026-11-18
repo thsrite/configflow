@@ -88,6 +88,7 @@ const (
 	messagePublishLogFailed          = "主路由 %s 发布失败：阶段「%s」%s"
 	messagePublishRollbackFailed     = "主路由 %s 回滚未完成：%s"
 	messagePublishRolledBack         = "主路由 %s 已逆序撤销 %d 项已完成的变更"
+	messagePublishPanic              = "主路由 %s 发布任务异常终止，发布结果未记录"
 )
 
 const messageIPv6HostUnavailable = "无法读取代理网关的 IPv6 状态（功能未就绪）"

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -86,6 +87,8 @@ func StartPublish(ctx context.Context, req PublishRequest, unlock func()) (<-cha
 			}
 			defer func() {
 				if recover() != nil {
+					// The payload may carry credentials; record only that it happened.
+					releaseLogger.Errorf(messagePublishPanic, req.RouterID)
 					result = PublishOutcome{Err: lifecycle.ErrPanic}
 				}
 			}()
@@ -106,13 +109,40 @@ func StartPublish(ctx context.Context, req PublishRequest, unlock func()) (<-cha
 func releaseLabel(r *Router) string {
 	return diag.EventMessage(orText(r.Name, r.ID), []any{r.Password})
 }
-func captureRelease(ctx context.Context, req PublishRequest, cfg json.RawMessage, d Driver, desired *Desired) {
+func captureRelease(ctx context.Context, req PublishRequest, cfg json.RawMessage, r *Router, d Driver, desired *Desired) {
 	if err := ctx.Err(); err != nil {
 		return
 	}
-	if err := CaptureManual(ctx, req.ProfileID, cfg, req.Router, d, desired); err != nil {
-		releaseLogger.Warningf(messageCaptureFailed, releaseLabel(req.Router), diag.EventMessage(err.Error(), []any{req.Router.Password}))
+	if err := CaptureManual(ctx, req.ProfileID, cfg, captureRouter(r, d), d, desired); err != nil {
+		releaseLogger.Warningf(messageCaptureFailed, releaseLabel(r), diag.EventMessage(err.Error(), []any{r.Password}))
 	}
+}
+
+// captureRouter is the router as the rule-sync baseline must see it (Python
+// _capture_sync): the IPv6 manifests this release just published replace the
+// pre-release ones, so the control signature matches the stored record.
+func captureRouter(r *Router, d Driver) *Router {
+	holder, ok := d.(ManifestHolder)
+	if !ok {
+		return r
+	}
+	m := holder.Manifests()
+	out := *r
+	out.source = nil
+	out.Extra = maps.Clone(r.Extra)
+	if out.Extra == nil {
+		out.Extra = map[string]json.RawMessage{}
+	}
+	for key, v := range map[string]Manifest{"ipv6_fakeip_state": m.IPv6FakeIP, "ipv6_routes_state": m.IPv6Routes} {
+		if !v.Set {
+			continue
+		}
+		out.Extra[key] = json.RawMessage("null")
+		if len(v.Value) > 0 {
+			out.Extra[key] = slices.Clone(v.Value)
+		}
+	}
+	return &out
 }
 func refreshRelease(ctx context.Context) {
 	if ctx.Err() == nil {
@@ -200,7 +230,7 @@ func Publish(ctx context.Context, req PublishRequest) PublishOutcome {
 	}
 	result := &Result{OK: true, Log: []ReleaseEntry{}, Rollback: []ReleaseEntry{}}
 	if plan.Empty {
-		captureRelease(work, req, config, driver, inspection.Desired)
+		captureRelease(work, req, config, current, driver, inspection.Desired)
 	} else {
 		var agent ReturnAgent
 		needsAgent := current.ManageReturnRouting
@@ -263,7 +293,7 @@ func Publish(ctx context.Context, req PublishRequest) PublishOutcome {
 	if plan.Empty {
 		releaseLogger.Infof(messagePublishEmpty, label)
 	} else if result.OK {
-		captureRelease(work, req, config, driver, inspection.Desired)
+		captureRelease(work, req, config, current, driver, inspection.Desired)
 	}
 	if !result.OK {
 		outcome.Status = PublishFailed

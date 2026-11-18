@@ -144,7 +144,9 @@ type Result struct {
 	Log         []ReleaseEntry `json:"log"`
 	Rollback    []ReleaseEntry `json:"rollback"`
 	Aborted     bool           `json:"-"`
-	Wrote       bool           `json:"-"`
+	// Wrote is set as soon as an operation is attempted, not when it is
+	// proven: a write may land before shutdown cancels its proof.
+	Wrote bool `json:"-"`
 }
 
 // MarshalJSON preserves explicit empty and null feature checks independently
