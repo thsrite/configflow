@@ -245,3 +245,21 @@ Waiting dependency for the required unbiased paired measurement: go is still
 `215ab6b04`; the independently owned gate-performance branch has handed back
 at `019204508`. Coordinator asked to remeasure only after integrating it. The
 first high-load/pre-index baseline was explicitly discarded, not used as evidence.
+
+Actual guard for unwrapped cache-enabled tests also passed on .64: bare
+`go test -race -run '^TestC29ArchivePythonBoundary$' ./internal/oxidns` failed with
+`PYREF_INPUT_FINGERPRINT is missing`, rather than allowing an unsafe cached run.
+
+Live process lifecycle control passed under
+`PYREF_MODE=check strace -f -e trace=execve,wait4,waitid ...` for the 18 C29 archive
+inputs: diff 0; the real Python child exited 0 and its PID no longer existed
+under /proc after the test (no live or zombie process). Evidence:
+`~/.cache/speed-a-live-reap.log` and `~/.cache/speed-a-live-reap-test.log`.
+
+Resume after N73 integration: rebase go, review changed consumer test hashes,
+rerun real recording/check if metadata changed (do not waive the check); prepare
+a pristine latest-go baseline tree on the same server; execute
+`server/tools/pyref/measure-a.sh BASELINE_TREE LOG_DIRECTORY` once to run before
+and after sequentially with the identical race command. Summarize each package's
+Elapsed and slowest tests from JSON and both load samples. No valid before/after
+numbers are claimed yet; old high-load/pre-index baseline remains discarded.
