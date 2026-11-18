@@ -123,12 +123,13 @@ C34 负责修 A11 `Previews` 的共享提交检查（O3-6c 后在取得叶锁后
 要修的双实例交错，A14 不另做私有锁。只要 Save/Load 业务 API 与冻结产物语义不变，A14 无需改动；C34 合入后 A14
 的 generate/push-by-generation 测试应在合并树上重跑。
 
-## 第 6 节：A20 合入后的待办（本分支 rebase 后完成）
+## 第 6 节：A20 / O3-6c 合入后的待办（本分支 rebase 后完成）
 
 1. 删除 `deploy.Wire` 中的 `routersplit.SetProfileSessions` 注册，只保留 `setupflow.Wire`。
 2. 在 server wiring 中注册 `deploy.SetGatewayGuards`，回调用 `host.Bridge{…}.RequireForwardingKept` /
    `RequireGatewayOffKept`。
 3. 补测试：两个 guard 都能真正阻止发布；进程中只有一套 reader 注册。
+4. O3-6c 合入后删除 `TestShutdownAtSQLiteCommitKeepsWholeDocument` 的 skip 并在合并树上通过（HANDOFF 指派）。
 
 ## 验证命令与结果
 
