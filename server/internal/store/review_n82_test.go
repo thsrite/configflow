@@ -129,8 +129,9 @@ func TestN82ReviewLargeOpaqueRowsAndConcurrentRawCommits(t *testing.T) {
 	}
 }
 
-// Store has no request context: once accepted, a transaction finishes even
-// after its initiating request has gone away (PORTING 4b).
+// The compatibility Commit entry has no context and delegates to Background.
+// Cancelling an unrelated request must not change it; shutdown-aware owners use
+// CommitContext instead (O3-6c).
 func TestN82ReviewCommitFinishesAfterCancellation(t *testing.T) {
 	s := New(filepath.Join(t.TempDir(), Filename), seconds(5))
 	base := must(s.Create(rawFixture(t), nil))(t)

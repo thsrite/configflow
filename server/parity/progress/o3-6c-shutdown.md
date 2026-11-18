@@ -266,3 +266,57 @@ RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'cd server && gofmt -w internal/rep
 ```
 退出0，`ok configflow/internal/repo 7.107s`。六子例×三轮全部运行，没有skip。
 N8-5a仍须在typed事务移植完成后应用原patch复验；这项集成阻断不能提前写成closed。
+
+## 合并复验收尾：preparation 旧断言（test-only）
+
+协调者在d43cca6e4+29ba1917b的.64合并gate报告：fmt/vet/tags与proddiff(new=0,stale=0)通过，
+race仅TestPreparationLeaseReleasedOnCommitFailurePanicAndShutdown/shutdown失败，报context canceled / nil。
+原因是测试把带cancelParent的job在BeforeCommit中取消，却仍期待成功提交，锁定了6a的旧自动Uninterruptible语义。
+这不改变6c产品设计；本次只改测试与说明。
+
+- shutdown分支改为errors.Is(err,context.Canceled)，完整SQLite Fingerprint、system revision及整个持久system状态不变，
+  deployments中不存在本次ID，并保留preparationIdle验证lease释放。failure/panic分支的注入和原断言不变。
+- 新TestPreparationRequestDisconnectDuringCommitStillSucceeds使用真实Runtime.Start/BindRequest；BeforeCommit只取消request，
+  work ctx仍有效，部署preparing/latest_deployment和revision必须提交，lease持续持有，显式finish后Idle。
+- store的TestN82ReviewCommitFinishesAfterCancellation断言保留，仅纠正注释：无ctx的是兼容Commit入口，
+  不是整个Store；它转调Background，关机感知owner必须用CommitContext。
+
+### 全仓取消/提交断言审查
+
+搜索：`rg -n 'BeforeCommit' server --glob '*test.go'`；对命中文件再查
+`cancel\(|stop\(|Shutdown\(|WithParent|WithoutCancel|Uninterruptible`；另全仓查cancel/commit、
+IgnoresCancellation、FinishesAfterCancellation及中文“取消后提交/成功”。按调用所在测试函数区分，
+不把同一文件的不同测试粗暴归为同一窗口。
+
+| 命中/重点域 | 结论与处理 |
+|---|---|
+| agents/preparation_test.go shutdown | 唯一发现的普通工作父级在BeforeCommit取消后仍要求提交的过时断言；本次更新并补request对照 |
+| store/review_n82_test.go CommitFinishesAfterCancellation | 兼容Commit没有接收该request；保留成功断言，只修正注释，重新验证 |
+| repo/shutdown_commit_test.go（A14/C29等共享核心） | 已要求Runtime关机拒绝、断开完成，保持 |
+| repo/batch_runtime_test.go、ownership_test.go | 三处已批准FS+DB batch和显式Uninterruptible是刻意例外，保持完整提交控制 |
+| repo其他BeforeCommit：crosscheck/multi_profile/router_safety/open/cache | 故障注入或竞争barrier，没有取消后要求普通事务成功的组合，无需改 |
+| A13：api/agents的public/content/review_a13测试 | 当前树无BeforeCommit+cancel后提交成功断言；A24 CancelledOwners属于纯request断开，保留；A24 ShutdownRejectsWrites已经要求拒绝 |
+| A14：go-opus-review-a14/runtime_boundary_test.go | 未合入当前正式树；原SKIP回归已经期望context.Canceled和完整durable状态不变，无过时成功断言。仍由A14合入收尾去skip |
+| C29：api/oxidns与mosdns/archive | API侧未发现上述成功断言；共享archive Runtime回归已要求停止不交付、断开完成，保持 |
+| C33：rulelibrary fault/review_cache/runtime/review_context | BeforeCommit只注入失败或核验lease；纯request connectivity取消完成属4b；Runtime callbacks与cache阶段已要求拒绝，保持 |
+| C06：api/settings当前dependencies；go-port-c06-c11/runtime_test.go | 当前仅dependencies cleanup Shutdown；分支16个Runtime写owner控制已区分关机拒绝/断开成功，无过时成功断言；不复制尚未合入的测试 |
+| oxidns TestC27ReviewCanceledTransactionWaitsAndCommits | 取消的是request，带取消work parent的锁等待明确拒绝；保留 |
+| provider BundleAndCommitFinishWhenTheRequestIsCancelled | request取消 + 已批准本地不可中断provider批处理，保留 |
+| api/rules、api/nodes取消写入控制 | raw request取消仍完成；Runtime停止已拒绝，保留 |
+| webdav WaitCancellationDoesNotAbortUpload、aggregations coalesced fallback、contentsync | 取消等待者/request，不取消共享任务；另有Runtime停止控制，保留 |
+
+.64定向：
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt --back server/internal/agents/preparation_test.go -- bash -lc 'cd server && gofmt -w internal/agents/preparation_test.go && go test -race -count=1 ./internal/agents/ -run "Preparation|Deployment" && go vet ./...'
+```
+退出0：`ok configflow/internal/agents 69.293s`，全仓vet通过。其余审查命中包的相关定向race已退出0，命令与结果如下。
+遵守go@215ab6b04新流程，不运行完整gate，也不发中途进度消息。
+
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt --back server/internal/store/review_n82_test.go -- bash -lc 'cd server && gofmt -w internal/store/review_n82_test.go && test -z "$(gofmt -l internal tools cmd)" && go test -race -p=2 -count=1 -timeout=20m -run "^(TestN82ReviewCommitFinishesAfterCancellation|TestC27ReviewCanceledTransactionWaitsAndCommits|TestReviewBundleAndCommitFinishWhenTheRequestIsCancelled|TestClientNoteAndPolicyCancelledOwners|TestReviewA24ShutdownRejectsWrites|TestReviewTransactionCallbacksKeepOwnerShutdown|TestEveryWriteOwnerHonoursRuntimeShutdownAndRequestDisconnect|TestShutdownBetweenDBCommitAndCacheRenameIsFailClosed|TestO36cForgetStatusWhileWaiting|TestReviewWriteCancellation|TestReviewedDeletionSerializesConcurrentReferenceWrite|TestCloseDropsPendingButWaitCancellationDoesNotAbortUpload|TestRouteFallbackCoalescesAndFinishesAfterCancellation|TestErrorTTLRejectPanicAndCancellation|TestRuntimeShutdownCancelsAdmittedJobAndReleasesSlot|TestModeRouteValidationAndAtomicPersistence|TestO36cRepoBeforeCommitRuntimeBoundary|TestO36cExplicitBatchRuntimeBoundaries|TestOwnerLifetimeAndLocalBatch|TestO36cArchive.*)$" ./internal/store/ ./internal/oxidns/ ./internal/provider/ ./internal/api/agents/ ./internal/api/rulelibrary/ ./internal/api/rules/ ./internal/api/nodes/ ./internal/webdav/ ./internal/api/aggregations/ ./internal/deploy/contentsync/ ./internal/api/settings/ ./internal/repo/ ./internal/mosdns/'
+```
+最终全部ok：store1.223s、oxidns1.759s、provider1.310s、api/agents8.815s、rulelibrary32.439s、
+api/rules18.646s、api/nodes1.998s、webdav1.015s、api/aggregations1.688s、contentsync1.057s、
+api/settings1.552s、repo6.728s、mosdns2.097s。无新fuzz、无产品修改，无需完整gate。
+测试修正直接叠在协调者已验到的go-o3-6c@29ba1917b上，避免把其他尚未复验的合入改动混入该test-only修正。
+O3-6b分支保持1a1d03935不动；6c此修正交回后继续等待R10/6c正式合入再接后续28子例。
