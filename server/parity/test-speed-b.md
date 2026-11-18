@@ -74,3 +74,14 @@ A10 233 个 deflate 输入（42,197,691 字节）和 60 个 ZIP 的参考输出�
 七个对独立 DeepCopy/本地输入做运算的 reference 测试并行，原有解码 corpus 已经是 sync.Once，共用后不修改。
 修改 randomHex/nowISO/环境、锁和共享 hook 的测试保持串行；跨语言读写、锁/crash 仍受原有显式变量控制。
 `.64` 参考/复核定向 race 3.481s PASS。私人快照模式未运行；现场耗时仅使用合成数据库。
+
+## 自动审计、缓存键与负控
+
+B manifest 明列五棵包树（含当前没有 exec 的 ippresence），与 28 个精确 constructor group 的登记表配对。
+共同 `tools/pyref.TestAuditRepository` 在普通测试中读取真实源码，新增/消失或数量变化即失败；不是手工 CLI 约定。
+保留调用逐项说明 guard/kind/reason，包含显式 difftest 子目录、Go 自进程、产品脚本和 record-only callback。
+import alias、函数值、package initializer、exec.Cmd 字面量均审计；进程包 dot import 拒绝。
+
+共同 cache guard 解决模块外读取不进入 Go cache key 的边界：`tools/pyref -test -- ...` 原生计算 backend/venv
+fingerprint 并传入测试；普通缓存模式必须读取和核验该 env。没有 env 时只允许显式正数 `-count`（已禁用缓存），
+保持当前 gate 的 `-count=1`，不改 gate.sh。B 追加实际 consumer cache/漂移/strace 验证，结果在交回前补齐。

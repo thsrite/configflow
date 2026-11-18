@@ -1,0 +1,282 @@
+[
+  {
+    "id": "B-001",
+    "file": "server/internal/agents/a06_review_client_test.go",
+    "function": "TestNoProxyIgnoresTheEnvironment",
+    "callee": "exec.Command",
+    "count": 1,
+    "guard": "os.Args[0], fixed -test.run and self-process helper environment",
+    "kind": "go-subprocess",
+    "reason": "重启当前Go测试二进制，隔离进程全局环境、锁级别或仅一次日志语义；不启动Python。"
+  },
+  {
+    "id": "B-002",
+    "file": "server/internal/agents/proxy_diff_test.go",
+    "function": "TestProxyDifferentialAgainstRequests",
+    "callee": "exec.Command",
+    "count": 1,
+    "guard": "CONFIGFLOW_DIFF=1 explicit live HTTP differential",
+    "kind": "differential",
+    "reason": "保留真实Python HTTP/JSONL会话与Go请求、认证、状态和存储副作用对照；普通测试在显式guard处跳过。"
+  },
+  {
+    "id": "B-003",
+    "file": "server/internal/api/agents/a10_review_internal_test.go",
+    "function": "TestReviewConditionalMatchesWerkzeug",
+    "callee": "exec.Command",
+    "count": 1,
+    "guard": "testgolden.Spec.Run; PYREF_MODE=check|record only",
+    "kind": "record-only",
+    "reason": "纯参考计算；普通回放不调用Run，显式录制保留真实Python输出和原逐项断言。"
+  },
+  {
+    "id": "B-004",
+    "file": "server/internal/api/agents/client_tools_diff_test.go",
+    "function": "newClientWorldSetup",
+    "callee": "exec.Command",
+    "count": 2,
+    "guard": "CONFIGFLOW_DIFF=1 explicit live HTTP differential",
+    "kind": "differential",
+    "reason": "显式现场边界先以cp -a复制Go种子文件树，再启动真实Python JSONL HTTP客户端会话；两次构造均位于CONFIGFLOW_DIFF guard之后。"
+  },
+  {
+    "id": "B-005",
+    "file": "server/internal/api/agents/difftest/diff_test.go",
+    "function": "copyDir",
+    "callee": "exec.Command",
+    "count": 1,
+    "guard": "CONFIGFLOW_DIFF=1 explicit live HTTP differential",
+    "kind": "differential",
+    "reason": "现场差分的文件树复制或生成脚本shell语法/参数边界检查；不是纯参考计算。"
+  },
+  {
+    "id": "B-006",
+    "file": "server/internal/api/agents/difftest/diff_test.go",
+    "function": "startPythonArgs",
+    "callee": "exec.Command",
+    "count": 1,
+    "guard": "CONFIGFLOW_DIFF=1 explicit live HTTP differential",
+    "kind": "differential",
+    "reason": "显式difftest入口启动真实Python Flask或指定测试服务，核对Go的HTTP响应、认证与持久化副作用。"
+  },
+  {
+    "id": "B-007",
+    "file": "server/internal/api/agents/difftest/query_policy_test.go",
+    "function": "TestInvalidUTF8InstallerQueryRemainsShellSafe",
+    "callee": "exec.Command",
+    "count": 1,
+    "guard": "CONFIGFLOW_DIFF=1 explicit live HTTP differential",
+    "kind": "differential",
+    "reason": "现场差分的文件树复制或生成脚本shell语法/参数边界检查；不是纯参考计算。"
+  },
+  {
+    "id": "B-008",
+    "file": "server/internal/api/agents/difftest/query_policy_test.go",
+    "function": "assertNativeOutputSyntax",
+    "callee": "exec.Command",
+    "count": 1,
+    "guard": "CONFIGFLOW_DIFF=1 explicit live HTTP differential",
+    "kind": "differential",
+    "reason": "现场差分的文件树复制或生成脚本shell语法/参数边界检查；不是纯参考计算。"
+  },
+  {
+    "id": "B-009",
+    "file": "server/internal/api/agents/l1_shell_download_test.go",
+    "function": "TestL1ShellDownloadErrorsWithCurlAndShell",
+    "callee": "exec.CommandContext",
+    "count": 2,
+    "guard": "native shell/generated script under isolated t.TempDir fixtures",
+    "kind": "product-script",
+    "reason": "真实curl/curl|sh下载错误处理，执行产品shell，不计算Python参考答案。"
+  },
+  {
+    "id": "B-010",
+    "file": "server/internal/api/agents/public_agent_test.go",
+    "function": "TestPublicAgentPython",
+    "callee": "exec.Command",
+    "count": 1,
+    "guard": "CONFIGFLOW_DIFF=1 explicit live HTTP differential",
+    "kind": "differential",
+    "reason": "保留真实Python HTTP/JSONL会话与Go请求、认证、状态和存储副作用对照；普通测试在显式guard处跳过。"
+  },
+  {
+    "id": "B-011",
+    "file": "server/internal/installer/docker_ha_compose_shell_test.go",
+    "function": "composeExecuteBootstrap",
+    "callee": "exec.Command",
+    "count": 1,
+    "guard": "native shell/generated script under isolated t.TempDir fixtures",
+    "kind": "product-script",
+    "reason": "执行被测生成bootstrap.py及其Python运行环境；断言注册请求、容器文件和失败处理，不能换成参考答案。"
+  },
+  {
+    "id": "B-012",
+    "file": "server/internal/installer/docker_ha_guide_test.go",
+    "function": "TestAllGeneratedCommandsAreBashSyntaxAndComposeInterpolationSafe",
+    "callee": "exec.Command",
+    "count": 1,
+    "guard": "native shell/generated script under isolated t.TempDir fixtures",
+    "kind": "product-script",
+    "reason": "bash -n检查真实生成命令语法和Compose插值边界。"
+  },
+  {
+    "id": "B-013",
+    "file": "server/internal/installer/docker_ha_guide_test.go",
+    "function": "TestMigrationPreservesOldEnvironmentWithoutEchoingSecrets",
+    "callee": "exec.Command",
+    "count": 1,
+    "guard": "native shell/generated script under isolated t.TempDir fixtures",
+    "kind": "product-script",
+    "reason": "执行产品migrationCheck Python片段，验证旧环境变量迁移和秘密不回显。"
+  },
+  {
+    "id": "B-014",
+    "file": "server/internal/installer/docker_ha_preflight_test.go",
+    "function": "TestCollectorWithoutEncodingToolsNeverEmitsFalseCompleteBlock",
+    "callee": "exec.Command",
+    "count": 1,
+    "guard": "native shell/generated script under isolated t.TempDir fixtures",
+    "kind": "product-script",
+    "reason": "执行真实collector验证编码工具缺失时安全失败，保留产品控制流。"
+  },
+  {
+    "id": "B-015",
+    "file": "server/internal/installer/docker_ha_preflight_test.go",
+    "function": "runCollector",
+    "callee": "exec.Command",
+    "count": 1,
+    "guard": "native shell/generated script under isolated t.TempDir fixtures",
+    "kind": "product-script",
+    "reason": "执行真实生成的preflight collector，fakeHost工具隔离系统依赖，断言最终收集结果。"
+  },
+  {
+    "id": "B-016",
+    "file": "server/internal/installer/gateway_probe_test.go",
+    "function": "TestProbeHasPOSIXSyntaxAndNoPrivilegedCommands",
+    "callee": "exec.Command",
+    "count": 1,
+    "guard": "native shell/generated script under isolated t.TempDir fixtures",
+    "kind": "product-script",
+    "reason": "sh -n检查真实产品探测脚本的POSIX语法。"
+  },
+  {
+    "id": "B-017",
+    "file": "server/internal/installer/harness_test.go",
+    "function": "runShell",
+    "callee": "exec.CommandContext",
+    "count": 1,
+    "guard": "native shell/generated script under isolated t.TempDir fixtures",
+    "kind": "product-script",
+    "reason": "执行被测渲染shell；Python可能是已登记产品bootstrap或fakeHost依赖stub，保留真实脚本控制流。"
+  },
+  {
+    "id": "B-018",
+    "file": "server/internal/installer/l1_container_test.go",
+    "function": "l1Docker",
+    "callee": "exec.CommandContext",
+    "count": 1,
+    "guard": "CONFIGFLOW_L1_CONTAINERS=1 explicit container lab; skipped by speed tests",
+    "kind": "product-script",
+    "reason": "CONFIGFLOW_L1显式实验容器驱动；sudo docker运行被测安装脚本，默认跳过，不作为Pythonoracle。"
+  },
+  {
+    "id": "B-019",
+    "file": "server/internal/installer/native_aio_test.go",
+    "function": "renderedAgentUnit",
+    "callee": "exec.Command",
+    "count": 1,
+    "guard": "native shell/generated script under isolated t.TempDir fixtures",
+    "kind": "product-script",
+    "reason": "真实sh执行渲染的服务单元参数，验证shell传参语义，不计算参考答案。"
+  },
+  {
+    "id": "B-020",
+    "file": "server/internal/installer/review_a10_test.go",
+    "function": "TestReviewDeflateAndZipMatchPython",
+    "callee": "exec.Command",
+    "count": 1,
+    "guard": "testgolden.Spec.Run; PYREF_MODE=check|record only",
+    "kind": "record-only",
+    "reason": "纯参考计算；普通回放不调用Run，显式录制保留真实Python输出和原逐项断言。"
+  },
+  {
+    "id": "B-021",
+    "file": "server/internal/repo/crosscheck_test.go",
+    "function": "TestCrossCheckLockExcludesPythonAndGo",
+    "callee": "exec.Command",
+    "count": 1,
+    "guard": "CONFIGFLOW_PY and CONFIGFLOW_REPO explicitly set",
+    "kind": "cross-language",
+    "reason": "真实Python进程持有或竞争SQLite写锁，保留跨语言锁阻塞和释放断言。"
+  },
+  {
+    "id": "B-022",
+    "file": "server/internal/repo/crosscheck_test.go",
+    "function": "TestCrossCheckPythonWriterKilledBeforeCommit",
+    "callee": "exec.Command",
+    "count": 1,
+    "guard": "CONFIGFLOW_PY and CONFIGFLOW_REPO explicitly set",
+    "kind": "cross-language",
+    "reason": "真实Python事务进程在提交前被终止，保留数据库无半提交的crash断言。"
+  },
+  {
+    "id": "B-023",
+    "file": "server/internal/repo/crosscheck_test.go",
+    "function": "xcPython",
+    "callee": "exec.Command",
+    "count": 1,
+    "guard": "CONFIGFLOW_PY and CONFIGFLOW_REPO explicitly set",
+    "kind": "cross-language",
+    "reason": "真实Python仓库建立/写入/读取，与Go操作后的SQLite行、文件布局互相验证，静态输出不能证明存储互通。"
+  },
+  {
+    "id": "B-024",
+    "file": "server/internal/repo/model_roundtrip_test.go",
+    "function": "TestStoredRoundTrip",
+    "callee": "exec.Command",
+    "count": 1,
+    "guard": "CONFIGFLOW_PY and CONFIGFLOW_REPO explicitly set",
+    "kind": "cross-language",
+    "reason": "真实Python读写Go生成的SQLite行并核验未知字段和类型回环；速度验收仅合成分支，不启用私人快照。"
+  },
+  {
+    "id": "B-025",
+    "file": "server/internal/repo/model_rows_test.go",
+    "function": "TestModelIssuesLoggedOncePerRevision",
+    "callee": "exec.Command",
+    "count": 1,
+    "guard": "os.Args[0], fixed -test.run and self-process helper environment",
+    "kind": "go-subprocess",
+    "reason": "重启当前Go测试二进制，隔离进程全局环境、锁级别或仅一次日志语义；不启动Python。"
+  },
+  {
+    "id": "B-026",
+    "file": "server/internal/repo/multi_profile_test.go",
+    "function": "mpHelper",
+    "callee": "exec.Command",
+    "count": 1,
+    "guard": "os.Args[0], fixed -test.run and self-process helper environment",
+    "kind": "go-subprocess",
+    "reason": "重启当前Go测试二进制，隔离进程全局环境、锁级别或仅一次日志语义；不启动Python。"
+  },
+  {
+    "id": "B-027",
+    "file": "server/internal/repo/ownership_test.go",
+    "function": "repositoryChild",
+    "callee": "exec.CommandContext",
+    "count": 1,
+    "guard": "os.Args[0], fixed -test.run and self-process helper environment",
+    "kind": "go-subprocess",
+    "reason": "重启当前Go测试二进制，隔离进程全局环境、锁级别或仅一次日志语义；不启动Python。"
+  },
+  {
+    "id": "B-028",
+    "file": "server/internal/repo/review_n82_test.go",
+    "function": "TestN82ReviewPrivateRepositoryInterchange",
+    "callee": "exec.Command",
+    "count": 1,
+    "guard": "CONFIGFLOW_PY and CONFIGFLOW_REPO explicitly set and CONFIGFLOW_SNAPSHOT (not enabled by speed tests)",
+    "kind": "cross-language",
+    "reason": "显式私人快照互通测试，保留原现场Python读取/写入合同；本任务未运行私人快照。"
+  }
+]

@@ -1,0 +1,7 @@
+[
+  "server/internal/agents",
+  "server/internal/api/agents",
+  "server/internal/installer",
+  "server/internal/ippresence",
+  "server/internal/repo"
+]
