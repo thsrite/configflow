@@ -10,6 +10,7 @@ import (
 	"configflow/internal/convert"
 	"configflow/internal/jsonx"
 	"configflow/internal/logx"
+	"configflow/internal/rulesetfmt"
 	"configflow/internal/yamlx"
 )
 
@@ -61,6 +62,12 @@ func TestMihomoReviewEmptyLibraryURLUsesRuleFormat(t *testing.T) {
 				"rule_configs", []any{jsonx.Obj("id", "r", "name", "Rules", "itemType", "ruleset", "library_rule_id", "lib", "url", "/fallback.yaml", "policy", "DIRECT")},
 			)
 			doc, err := convert.GenerateMihomoDocument(context.Background(), config, convert.GenerateOptions{SkipProviderPreflight: true})
+			if test.url != nil && test.name != "empty" {
+				if !errors.Is(err, rulesetfmt.ErrURLType) {
+					t.Fatalf("want native URL type validation, got %v", err)
+				}
+				return
+			}
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -82,6 +89,14 @@ func TestMihomoReviewBoundaryReferences(t *testing.T) {
 	oracle := loadWriterOracle(t)
 	for index, entry := range rows {
 		t.Run(entry.GetString("case")+"/"+entry.GetString("fn"), func(t *testing.T) {
+			// These four malformed URL classes have explicit native assertions
+			// above. Archived Python truthiness is not the typed format oracle.
+			if strings.HasPrefix(entry.GetString("case"), "empty-library-url-") {
+				suffix := strings.TrimPrefix(entry.GetString("case"), "empty-library-url-")
+				if suffix == "bool" || suffix == "int" || suffix == "list" || suffix == "dict" {
+					return
+				}
+			}
 			if msg := runMihomoReviewBoundary(t, readers.row(t, "review_mihomo.jsonl.gz", index, rowOf(entry)), oracle); msg != "" {
 				t.Fatal(msg)
 			}

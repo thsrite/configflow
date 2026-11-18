@@ -1,316 +1,192 @@
 package convert
 
-// Port of backend/converters/common.py: small input conversions shared by the
-// client configuration generators.
-
 import (
-	"errors"
+	"encoding/json"
+	"net/netip"
+	"regexp"
+	"slices"
 	"strings"
+	"unicode"
 
-	"configflow/internal/jsonx"
-	"configflow/internal/pystr"
+	"configflow/internal/model"
 	"configflow/internal/rules"
 	"configflow/internal/rulesetfmt"
+
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
-// UDPFallbackPolicies are the values udp_fallback accepts.
+// UDPFallbackPolicies are the accepted fallback policies.
 var UDPFallbackPolicies = []string{"DIRECT", "REJECT"}
 
-// LogicTypes are the logic rule types.
+// LogicTypes are the composite rule types.
 var LogicTypes = []string{"AND", "OR", "NOT"}
 
-// PortRuleTypes are the rule types that take a port.
+// PortRuleTypes are the rules whose value describes a port.
 var PortRuleTypes = []string{"DST-PORT", "SRC-PORT", "IN-PORT"}
 
-// The patterns run on rules.CompilePyRegex: with re.IGNORECASE Python also
-// matches "ı" for I and "ſ" for S (IN-PORT, DST-PORT), which RE2 does not.
 const (
 	networkConditionPattern = `\(\s*NETWORK\s*,\s*(tcp|udp)\s*\)`
 	portConditionPattern    = `\(\s*(?:DST|DEST|SRC|IN)-PORT\s*,\s*([^()]*)\)`
 )
 
-func mustPyRegex(pattern string, ignoreCase bool) *rules.PyRegex {
-	re, err := rules.CompilePyRegex(pattern, ignoreCase)
-	if err != nil {
+func effectiveRule(config *model.Config) *model.RuleConfig {
+	if config == nil || config.Profile == nil {
+		return nil
+	}
+	for i := range config.Profile.RuleConfigs {
+		rule := &config.Profile.RuleConfigs[i]
+		if rule.ItemType == "rule" && rule.RuleType == "MATCH" && enabled(rule.Enabled) {
+			return rule
+		}
+	}
+	return nil
+}
+
+func enabled(value *bool) bool { return value == nil || *value }
+func stringValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
+// FallbackPolicy returns the first enabled MATCH rule's UDP fallback.
+func FallbackPolicy(config *model.Config) string {
+	if rule := effectiveRule(config); rule != nil && slices.Contains(UDPFallbackPolicies, stringValue(rule.UDPFallback)) {
+		return *rule.UDPFallback
+	}
+	return ""
+}
+
+// DirectNTP reports whether the effective MATCH enables direct NTP traffic.
+func DirectNTP(config *model.Config) bool {
+	rule := effectiveRule(config)
+	return rule != nil && rule.NTPDirect != nil && *rule.NTPDirect
+}
+
+// BuiltinNTPRule constructs the direct NTP rule emitted before stored rules.
+func BuiltinNTPRule() model.RuleConfig {
+	rule := builtinNTPRule
+	policy, on := *rule.Policy, *rule.Enabled
+	rule.Policy, rule.Enabled = &policy, &on
+	return rule
+}
+
+// The stored-member codec retains this public section's established member
+// order as well as its values. This is a constant document, not user input.
+var builtinNTPRule = func() model.RuleConfig {
+	var rule model.RuleConfig
+	if err := json.Unmarshal([]byte(`{"id":"builtin-ntp-direct","itemType":"rule","rule_type":"AND","value":"((NETWORK,udp),(DST-PORT,123))","policy":"DIRECT","enabled":true}`), &rule); err != nil {
 		panic(err)
 	}
-	return re
+	return rule
+}()
+
+// RulesForOutput returns stored rules in order, preceded by direct NTP if enabled.
+func RulesForOutput(config *model.Config) []model.RuleConfig {
+	var result []model.RuleConfig
+	if DirectNTP(config) {
+		result = append(result, BuiltinNTPRule())
+	}
+	if config != nil && config.Profile != nil {
+		result = append(result, config.Profile.RuleConfigs...)
+	}
+	return result
 }
 
-// AfterMatchNote is AFTER_MATCH_NOTE.
-const AfterMatchNote = "仅 Mihomo 生效（位于 MATCH 之后，只匹配节点不支持 UDP 而跳过的连接），已忽略"
-
-// NTPDirectRule returns a fresh copy of NTP_DIRECT_RULE: NTP only needs the
-// real time server address, so it goes first, outside proxy rules.
-func NTPDirectRule() *jsonx.Object {
-	return jsonx.Obj("id", "builtin-ntp-direct", "itemType", "rule", "rule_type", "AND",
-		"value", "((NETWORK,udp),(DST-PORT,123))", "policy", "DIRECT", "enabled", true)
-}
-
-func contains(list []string, v any) bool {
-	s, ok := v.(string)
-	if !ok {
-		return false
-	}
-	for _, item := range list {
-		if item == s {
-			return true
-		}
-	}
-	return false
-}
-
-// iterList is `for x in value` over a list field; nil when the value is
-// missing. Non-lists give the TypeError/AttributeError Python would raise.
-func iterList(v any) ([]any, error) {
-	switch value := v.(type) {
-	case []any:
-		return value, nil
-	case string:
-		out := make([]any, 0, len(value))
-		for _, r := range value {
-			out = append(out, string(r))
-		}
-		return out, nil
-	case *jsonx.Object:
-		return jsonx.ListOf(value.Keys()), nil
-	}
-	return nil, pyError("TypeError", "'"+pyTypeName(v)+"' object is not iterable")
-}
-
-// asObject is the receiver of a `.get`: anything but a dict raises
-// AttributeError in Python.
-func asObject(v any) (*jsonx.Object, error) {
-	if o, ok := v.(*jsonx.Object); ok && o != nil {
-		return o, nil
-	}
-	return nil, attributeError(v, "get")
-}
-
-// effectiveMatch is _effective_match: the first enabled MATCH rule.
-func effectiveMatch(config *jsonx.Object) (*jsonx.Object, error) {
-	items, err := iterList(config.GetOr("rule_configs", []any{}))
-	if err != nil {
-		return nil, err
-	}
-	for _, v := range items {
-		item, err := asObject(v)
-		if err != nil {
-			return nil, err
-		}
-		if jsonx.Equal(item.Value("itemType"), "rule") && jsonx.Equal(item.Value("rule_type"), "MATCH") &&
-			jsonx.Truthy(item.GetOr("enabled", true)) {
-			return item, nil
-		}
-	}
-	return jsonx.NewObject(), nil
-}
-
-// UDPFallback is udp_fallback: DIRECT or REJECT chosen on the effective MATCH
-// rule; "" (None) follows the client default.
-func UDPFallback(config *jsonx.Object) (string, error) {
-	match, err := effectiveMatch(config)
-	if err != nil {
-		return "", err
-	}
-	if choice := match.Value("udp_fallback"); contains(UDPFallbackPolicies, choice) {
-		return choice.(string), nil
-	}
-	return "", nil
-}
-
-// NTPDirect is ntp_direct.
-func NTPDirect(config *jsonx.Object) (bool, error) {
-	match, err := effectiveMatch(config)
-	if err != nil {
-		return false, err
-	}
-	return match.Value("ntp_direct") == true, nil
-}
-
-// EmittedRules is emitted_rules: rule items in output order, with the
-// built-in NTP rule first when enabled. The items are the stored objects
-// (list(...) is a shallow copy).
-func EmittedRules(config *jsonx.Object) ([]any, error) {
-	ntp, err := NTPDirect(config)
-	if err != nil {
-		return nil, err
-	}
-	var out []any
-	if ntp {
-		out = append(out, NTPDirectRule())
-	}
-	items, err := iterList(config.GetOr("rule_configs", []any{}))
-	if err != nil {
-		return nil, err
-	}
-	return append(out, items...), nil
-}
-
-// AfterMatchComment is after_match_comment: Surge and Loon have no rules past
-// FINAL; keep the Mihomo-only line visible.
-func AfterMatchComment(item *jsonx.Object) string {
+// RuleComment renders the explanatory comment for a rule after MATCH.
+func RuleComment(rule model.RuleConfig) string {
 	var line string
-	if jsonx.Equal(item.Value("itemType"), "ruleset") {
-		line = "RULE-SET," + jsonx.Str(item.GetOr("name", "")) + "," + jsonx.Str(item.GetOr("policy", ""))
+	if rule.ItemType == "ruleset" {
+		line = "RULE-SET," + rule.Name + "," + stringValue(rule.Policy)
 	} else {
-		line = jsonx.Str(item.GetOr("rule_type", "")) + "," + jsonx.Str(item.GetOr("value", "")) + "," +
-			jsonx.Str(item.GetOr("policy", ""))
+		line = rule.RuleType + "," + rule.Value + "," + stringValue(rule.Policy)
 	}
 	return "# " + AfterMatchNote + ": " + line
 }
 
-// NetworkAsProtocol is network_as_protocol: Surge and Loon match the
-// transport with PROTOCOL,TCP/UDP instead of NETWORK.
-func NetworkAsProtocol(ruleType, value string) (string, string) {
-	if ruleType == "NETWORK" {
-		return "PROTOCOL", pystr.Upper(pystr.Strip(value))
+// RuleFormat determines a rule set's format from the resolved typed view.
+func RuleFormat(rule model.RuleConfig, config *model.Config, sourceURL string) (string, error) {
+	if config == nil {
+		return rulesetfmt.RuleFormat(rule, nil, sourceURL)
 	}
-	if contains(LogicTypes, ruleType) {
-		out, err := mustPyRegex(networkConditionPattern, true).Sub(value, func(m *rules.Match) (string, error) {
-			group, _ := m.Group(1)
-			return "(PROTOCOL," + pystr.Upper(group) + ")", nil
-		}, 0)
-		if err != nil { // only a match timeout, which these patterns cannot reach
-			return ruleType, value
-		}
-		return ruleType, out
-	}
-	return ruleType, value
+	return rulesetfmt.RuleFormat(rule, config.RuleLibrary, sourceURL)
 }
 
-// findAllGroup1 is pattern.findall(value) for a pattern with one group.
-func findAllGroup1(re *rules.PyRegex, value string) []string {
-	var found []string
-	_, _ = re.Sub(value, func(m *rules.Match) (string, error) {
+// NetworkAsProtocol maps transport conditions to Surge/Loon protocol conditions.
+func NetworkAsProtocol(ruleType, value string) (string, string) {
+	if ruleType == "NETWORK" {
+		return "PROTOCOL", cases.Upper(language.Und).String(strings.TrimSpace(value))
+	}
+	if !slices.Contains(LogicTypes, ruleType) {
+		return ruleType, value
+	}
+	re, err := rules.CompilePyRegex(networkConditionPattern, true)
+	if err != nil {
+		return ruleType, value
+	}
+	out, err := re.Sub(value, func(m *rules.Match) (string, error) {
 		group, _ := m.Group(1)
-		found = append(found, group)
+		return "(PROTOCOL," + cases.Upper(language.Und).String(group) + ")", nil
+	}, 0)
+	if err != nil {
+		return ruleType, value
+	}
+	return ruleType, out
+}
+
+// HasPortList identifies lists unsupported by Surge/Loon's single-port rules.
+func HasPortList(ruleType, value string) bool {
+	if slices.Contains(PortRuleTypes, ruleType) {
+		return strings.ContainsAny(value, "/,")
+	}
+	if !slices.Contains(LogicTypes, ruleType) {
+		return false
+	}
+	re, err := rules.CompilePyRegex(portConditionPattern, true)
+	if err != nil {
+		return false
+	}
+	found := false
+	_, _ = re.Sub(value, func(m *rules.Match) (string, error) {
+		part, _ := m.Group(1)
+		found = found || strings.ContainsAny(part, "/,")
 		return "", nil
 	}, 0)
 	return found
 }
 
-// HasPortList is has_port_list: Surge and Loon take one port, range or
-// comparison per rule, not a / or , list.
-func HasPortList(ruleType, value string) bool {
-	var values []string
-	switch {
-	case contains(PortRuleTypes, ruleType):
-		values = []string{value}
-	case contains(LogicTypes, ruleType):
-		values = findAllGroup1(mustPyRegex(portConditionPattern, true), value)
-	default:
-		return false
-	}
-	for _, item := range values {
-		if strings.Contains(item, "/") || strings.Contains(item, ",") {
-			return true
-		}
-	}
-	return false
-}
-
-// SetGeneralOption is set_general_option: add "key = value" to a [General]
-// section unless it already sets the key.
+// SetGeneralOption appends a missing option to a client's General section.
 func SetGeneralOption(section, key, value string) string {
-	if mustPyRegex(`(?m)^\s*`+pyReEscape(key)+`\s*=`, false).Search(section) {
+	re, err := rules.CompilePyRegex(`(?m)^\s*`+regexp.QuoteMeta(key)+`\s*=`, false)
+	if err == nil && re.Search(section) {
 		return section
 	}
-	return strings.TrimRightFunc(section, pystr.IsSpace) + "\n" + key + " = " + value
+	return strings.TrimRightFunc(section, unicode.IsSpace) + "\n" + key + " = " + value
 }
 
-// pyReEscape is re.escape (Python 3.7+).
-func pyReEscape(s string) string {
-	var b strings.Builder
-	for _, r := range s {
-		if r < 128 && strings.ContainsRune("()[]{}?*+-|^$\\.&~# \t\n\r\v\f", r) {
-			b.WriteByte('\\')
-		}
-		b.WriteRune(r)
-	}
-	return b.String()
-}
-
-// RulesetFormat is ruleset_format: prefer the declared format; infer
-// handwritten payloads or legacy URL paths. sourceURL "" is None.
-func RulesetFormat(rule, config *jsonx.Object, sourceURL string) (string, error) {
-	items, err := iterList(config.GetOr("rule_library", []any{}))
-	if err != nil {
-		return "", err
-	}
-	format, err := rulesetfmt.Format(rule, items, sourceURL)
-	if err == nil {
-		return format, nil
-	}
-	var libraryEntry *rulesetfmt.LibraryEntryTypeError
-	if errors.As(err, &libraryEntry) {
-		return "", attributeError(libraryEntry.Value, "get")
-	}
-	var urlType *rulesetfmt.URLTypeError
-	if errors.As(err, &urlType) {
-		switch urlType.Value.(type) {
-		case []any, *jsonx.Object:
-			return "", pyError("TypeError", "unhashable type: '"+pyTypeName(urlType.Value)+"'")
-		default:
-			return "", attributeError(urlType.Value, "decode")
-		}
-	}
-	var urlParse *rulesetfmt.URLParseError
-	if errors.As(err, &urlParse) {
-		return "", pyError("ValueError", urlParse.Err.Error())
-	}
-	return "", err
-}
-
-// HostsPair is one (domain, address) row of ParseHostsPairs.
+// HostsPair is one domain/address row of a hosts editor.
 type HostsPair struct{ Domain, Address string }
 
-// ParseHostsPairs is parse_hosts_pairs: domain/address and legacy
-// address/domain rows, for IPv4 and IPv6.
+// ParseHostsPairs accepts both domain/address and legacy address/domain rows.
 func ParseHostsPairs(text string) []HostsPair {
-	isIP := func(value string) bool {
-		if _, ok := parseIPv4(value); ok {
-			return true
-		}
-		return validIPv6(value)
+	var result []HostsPair
+	isAddress := func(text string) bool {
+		address, err := netip.ParseAddr(text)
+		return err == nil && !strings.Contains(address.Zone(), "%")
 	}
-	var pairs []HostsPair
-	for _, line := range pySplitlines(text) {
-		before, _, _ := strings.Cut(line, "#")
-		fields := strings.FieldsFunc(before, pystr.IsSpace)
+	for _, line := range strings.FieldsFunc(text, func(r rune) bool { return strings.ContainsRune("\r\n\v\f\x1c\x1d\x1e\u0085\u2028\u2029", r) }) {
+		line, _, _ = strings.Cut(line, "#")
+		fields := strings.Fields(line)
 		if len(fields) < 2 {
 			continue
 		}
-		first, second := fields[0], fields[1]
-		if isIP(second) {
-			pairs = append(pairs, HostsPair{first, second})
-		} else if isIP(first) {
-			pairs = append(pairs, HostsPair{second, first})
+		if isAddress(fields[1]) {
+			result = append(result, HostsPair{fields[0], fields[1]})
+		} else if isAddress(fields[0]) {
+			result = append(result, HostsPair{fields[1], fields[0]})
 		}
 	}
-	return pairs
-}
-
-// pySplitlines is str.splitlines().
-func pySplitlines(s string) []string {
-	var lines []string
-	runes := []rune(s)
-	start := 0
-	for i := 0; i < len(runes); i++ {
-		switch runes[i] {
-		case '\n', '\x0b', '\x0c', '\x1c', '\x1d', '\x1e', '\x85', ' ', ' ':
-			lines = append(lines, string(runes[start:i]))
-			start = i + 1
-		case '\r':
-			lines = append(lines, string(runes[start:i]))
-			if i+1 < len(runes) && runes[i+1] == '\n' {
-				i++
-			}
-			start = i + 1
-		}
-	}
-	if start < len(runes) {
-		lines = append(lines, string(runes[start:]))
-	}
-	return lines
+	return result
 }

@@ -421,11 +421,18 @@ func TestMihomoCorpus(t *testing.T) {
 	rows := loadMihomoCorpus(t)
 	oracle := loadWriterOracle(t)
 	counts := map[string]int{}
+	typedStorage := map[string]int{}
 	failures := 0
 	generated := 0
 	for i, row := range rows {
 		row = readers.row(t, "mihomo_corpus.jsonl.gz", i, row)
 		counts[row.fn]++
+		if row.fn == "generate" {
+			if issue := convert.CommonReplayIssue(row.entry.GetObject("args").GetObject("profile")); issue != "" {
+				typedStorage[issue]++
+				continue
+			}
+		}
 		if row.fn == "generate" && row.errClass == "" {
 			generated++
 		}
@@ -436,7 +443,7 @@ func TestMihomoCorpus(t *testing.T) {
 			}
 		}
 	}
-	t.Logf("%d rows (%d generated configurations), %v; %d differ", len(rows), generated, counts, failures)
+	t.Logf("%d rows (%d generated configurations), %v; %d differ; typed storage classes %v", len(rows), generated, counts, failures, typedStorage)
 	if failures > 0 {
 		t.Errorf("%d of %d rows differ", failures, len(rows))
 	}

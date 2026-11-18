@@ -10,6 +10,7 @@ import (
 
 	"configflow/internal/jsonx"
 	"configflow/internal/pystr"
+	"configflow/internal/rules"
 )
 
 // pyStripChars is str.strip(chars).
@@ -172,4 +173,83 @@ func parseIPv4(text string) (netip.Addr, bool) {
 		b[i] = byte(value)
 	}
 	return netip.AddrFrom4(b), true
+}
+
+// TODO(N8-8b/c): remove compatibility helpers as their remaining callers migrate.
+func mustPyRegex(pattern string, ignoreCase bool) *rules.PyRegex {
+	re, err := rules.CompilePyRegex(pattern, ignoreCase)
+	if err != nil {
+		panic(err)
+	}
+	return re
+}
+
+func contains(list []string, v any) bool {
+	s, ok := v.(string)
+	if !ok {
+		return false
+	}
+	for _, item := range list {
+		if item == s {
+			return true
+		}
+	}
+	return false
+}
+
+func iterList(v any) ([]any, error) {
+	switch value := v.(type) {
+	case []any:
+		return value, nil
+	case string:
+		out := make([]any, 0, len(value))
+		for _, r := range value {
+			out = append(out, string(r))
+		}
+		return out, nil
+	case *jsonx.Object:
+		return jsonx.ListOf(value.Keys()), nil
+	}
+	return nil, pyError("TypeError", "'"+pyTypeName(v)+"' object is not iterable")
+}
+
+func asObject(v any) (*jsonx.Object, error) {
+	if o, ok := v.(*jsonx.Object); ok && o != nil {
+		return o, nil
+	}
+	return nil, attributeError(v, "get")
+}
+
+func pyReEscape(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if r < 128 && strings.ContainsRune("()[]{}?*+-|^$\\.&~# \t\n\r\v\f", r) {
+			b.WriteByte('\\')
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
+func pySplitlines(s string) []string {
+	var lines []string
+	runes := []rune(s)
+	start := 0
+	for i := 0; i < len(runes); i++ {
+		switch runes[i] {
+		case '\n', '\x0b', '\x0c', '\x1c', '\x1d', '\x1e', '\x85', ' ', ' ':
+			lines = append(lines, string(runes[start:i]))
+			start = i + 1
+		case '\r':
+			lines = append(lines, string(runes[start:i]))
+			if i+1 < len(runes) && runes[i+1] == '\n' {
+				i++
+			}
+			start = i + 1
+		}
+	}
+	if start < len(runes) {
+		lines = append(lines, string(runes[start:]))
+	}
+	return lines
 }

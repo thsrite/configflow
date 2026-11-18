@@ -1,5 +1,8 @@
 package convert
 
+// AfterMatchNote explains why a rule after MATCH is omitted from Surge/Loon.
+const AfterMatchNote = "仅 Mihomo 生效（位于 MATCH 之后，只匹配节点不支持 UDP 而跳过的连接），已忽略"
+
 const (
 	msgIPv6Boolean       = "ipv6 必须为 true 或 false，不能是字符串或拼写错误的值"
 	msgDNSIPv6Boolean    = "dns 下的 ipv6 必须为 true 或 false，不能是字符串或拼写错误的值"

@@ -182,6 +182,7 @@ func TestSurgeLoonCorpus(t *testing.T) {
 	rows := loadJSONLines(t, "testdata/surge_loon_corpus.jsonl.gz")
 	native := yamlxtest.ReaderCases(t, "../subs/testdata/n7_reader_expected.json.gz")
 	counts := map[string]int{}
+	typedStorage := map[string]int{}
 	generated := map[string]int{}
 	failures := 0
 	for i, entry := range rows {
@@ -208,6 +209,18 @@ func TestSurgeLoonCorpus(t *testing.T) {
 		}
 		row := rowOf(entry)
 		counts[row.fn]++
+		var profile *jsonx.Object
+		if row.fn == "surge" || row.fn == "loon" {
+			profile = entry.GetObject("args").GetObject("profile")
+		} else if row.fn == "build_rules" {
+			profile, _ = entry.GetList("args")[0].(*jsonx.Object)
+		}
+		if profile != nil {
+			if issue := convert.CommonReplayIssue(profile); issue != "" {
+				typedStorage[issue]++
+				continue
+			}
+		}
 		if row.errClass == "" && (row.fn == "surge" || row.fn == "loon") {
 			generated[row.fn]++
 		}
@@ -218,7 +231,7 @@ func TestSurgeLoonCorpus(t *testing.T) {
 			}
 		}
 	}
-	t.Logf("%d rows %v; generated configurations %v; %d differ", len(rows), counts, generated, failures)
+	t.Logf("%d rows %v; generated configurations %v; %d differ; typed storage classes %v", len(rows), counts, generated, failures, typedStorage)
 	if failures > 0 {
 		t.Errorf("%d of %d rows differ", failures, len(rows))
 	}

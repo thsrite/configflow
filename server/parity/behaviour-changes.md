@@ -1054,3 +1054,9 @@ A17 复核（2026-11-18，[review-a17.md](review-a17.md)）补充：
 URL 为 0、false、空数组/对象等非字符串值时明确拒绝（5 等原有错误仍保留 URL 类型错误类别）；
 引用 ID/name 为非字符串、规则库元素为非 object 时按 R5 或明确类型校验处理。
 legacy 边界先解码整份规则库，因此匹配项之后的非 object 也会拒绝。正常输入的格式输出不变。
+
+- common 的错误类型字段按 R5 读零值：如畸形 rule_configs/规则库列表读为空列表，
+  非字符串规则值/策略在注释中读为空串，错误类型的 enabled 读默认启用；原存储字节仍由 model 保留。
+- `SetGeneralOption` 只用 Unicode 空白集合清理段落末尾；U+001C/U+001D 不再被当作空白删除。
+  5 条旧语料显式断言原生输出，属于 PORTING 已批准的 CPython 专有范围；正常 INI 字节不变。
+  大写转换改用原生 `x/text/cases`，10 条完整 Unicode 一对多映射结果保持原样。

@@ -368,9 +368,14 @@ func goClass(err error) string {
 func TestCorpus(t *testing.T) {
 	rows := loadCorpus(t)
 	counts := map[string]int{}
+	typedStorage := map[string]int{}
 	classDiff := map[string]int{}
 	for i, row := range rows {
 		counts[row.fn]++
+		if issue := commonRowIssue(row); issue != "" {
+			typedStorage[issue]++
+			continue
+		} // malformed storage: explicit typed tests, not a Python oracle
 		result, mutated, err := runCorpusRow(row)
 		if nativeProxyReplay(t, "corpus", row, result, mutated, err) {
 			continue
@@ -407,7 +412,7 @@ func TestCorpus(t *testing.T) {
 			}
 		}
 	}
-	t.Logf("%d rows: %v", len(rows), counts)
+	t.Logf("%d rows: %v; explicit typed storage classes: %v", len(rows), counts, typedStorage)
 	if len(classDiff) > 0 {
 		t.Logf("unintended exception classes that differ (Python->Go): %v", classDiff)
 	}

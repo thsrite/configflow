@@ -8,11 +8,13 @@ package convert
 import (
 	"bufio"
 	"compress/gzip"
+	"errors"
 	"os"
 	"strings"
 	"testing"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/rulesetfmt"
 )
 
 func loadRows(t *testing.T, path string) []corpusRow {
@@ -229,11 +231,26 @@ func TestReviewC12References(t *testing.T) {
 	rows := loadRows(t, "testdata/review_c12.jsonl.gz")
 	failures, known := 0, 0
 	for i, row := range rows {
+		if commonRowIssue(row) != "" {
+			known++
+			continue
+		}
 		if reason := reviewKnown(t, row); reason != "" {
 			known++
 			continue
 		}
 		result, mutated, err := runReviewRow(row)
+		if nativeGeneralReplay(t, row, result, mutated, err) {
+			known++
+			continue
+		}
+		if row.fn == "ruleset_format" && row.errClass == "ValueError" {
+			var invalid *rulesetfmt.URLParseError
+			if !errors.As(err, &invalid) {
+				t.Fatalf("invalid URL was not rejected: %v", err)
+			}
+			continue // native URL diagnostic, not a Python exception class
+		}
 		if nativeProxyReplay(t, "review", row, result, mutated, err) {
 			continue
 		}
@@ -295,6 +312,9 @@ func TestReviewC12References(t *testing.T) {
 func TestCorpusExceptionMessages(t *testing.T) {
 	failures := 0
 	for i, row := range loadCorpus(t) {
+		if commonRowIssue(row) != "" {
+			continue
+		}
 		if row.errClass == "" || intentional(row.errClass) {
 			continue
 		}
