@@ -141,7 +141,6 @@ func DomainPatternForMosDNS(pattern string) (string, bool) {
 // The error is Python's TypeError when a YAML payload is a scalar that
 // cannot be iterated.
 func ConvertRuleContentForMosDNS(content string, part ...string) (out string, err error) {
-	defer catch(&err)
 	hasPart := len(part) > 0
 	p := ""
 	if hasPart {
@@ -180,7 +179,7 @@ func ConvertRuleContentForMosDNS(content string, part ...string) (out string, er
 		return content, nil
 	}
 
-	var ruleLines []any
+	var ruleLines []string
 	if isYAMLFormat {
 		document, loadErr := yamlx.Parse([]byte(content))
 		if loadErr != nil && rejectYAML(loadErr) {
@@ -226,7 +225,7 @@ func ConvertRuleContentForMosDNS(content string, part ...string) (out string, er
 					if err := yamlx.Decode(payload, &value); err != nil {
 						return "", err
 					}
-					if truthy(value) {
+					if value != nil && value != false && value != 0 && value != 0.0 {
 						return "", errors.New(PayloadCollectionMessage)
 					}
 				}
@@ -240,11 +239,7 @@ func ConvertRuleContentForMosDNS(content string, part ...string) (out string, er
 	}
 
 	converted := []string{}
-	for _, raw := range ruleLines {
-		line, ok := raw.(string)
-		if !ok {
-			continue
-		}
+	for _, line := range ruleLines {
 		line = pystr.Strip(line)
 		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "//") {
 			continue

@@ -55,9 +55,10 @@ func archiveErr(message string) error { return &ArchiveError{Message: message} }
 // Download is one rule file to materialize (an entry of
 // GetMosDNSRulesetDownloads).
 type Download struct {
-	URL       string `json:"url"`
 	Name      string `json:"name"`
+	URL       string `json:"url"`
 	LocalPath string `json:"local_path"`
+	Behavior  string `json:"behavior,omitempty"`
 }
 
 // File is a file stored as is (GetMosDNSCustomFiles, OxiDNS attachments).

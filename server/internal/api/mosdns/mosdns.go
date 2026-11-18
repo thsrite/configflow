@@ -1,21 +1,15 @@
-// Package mosdns holds the routes of backend/routes/mosdns.py (MosDNS
-// editor settings and the public rule proxy) and the profile wrapper
-// /api/profiles/<profile_id>/mosdns/rule-proxy of routes/profiles.py.
+// Package mosdns exposes the MosDNS editor and authenticated rule resources.
 package mosdns
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
-	"math/big"
-	"regexp"
-	"strconv"
-	"strings"
+	"net/http"
 
 	"configflow/internal/auth"
 	"configflow/internal/httpx"
-	"configflow/internal/jsonx"
+	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 	"configflow/internal/mosdns"
 	"configflow/internal/repo"
 )
@@ -31,235 +25,238 @@ func Register(r *httpx.Router) {
 	r.GET("/api/profiles/<profile_id>/mosdns/rule-proxy", "profiles.profile_mosdns_rule_proxy", ruleProxy)
 }
 
-// field is a stored setting, its name in the request/response and its
-// default (JSON).
-type field struct{ key, name, def string }
-
-// section is one editor route: GET returns its fields, POST stores them.
-type section struct {
-	path, endpoint string
-	fields         []field
-	cache          bool // cache-settings: normalized, answers a publish guard
-}
+type section struct{ path, endpoint string }
 
 var sections = []section{
-	{"rulesets", "handle_mosdns_rulesets", []field{{"direct_rulesets", "direct_rulesets", "[]"},
-		{"proxy_rulesets", "proxy_rulesets", "[]"}, {"direct_rules", "direct_rules", "[]"}, {"proxy_rules", "proxy_rules", "[]"}}, false},
-	{"custom-matches", "handle_mosdns_custom_matches", []field{{"custom_matches", "custom_matches", "[]"},
-		{"custom_match_position", "position", `"tail"`}}, false},
-	{"dns-servers", "handle_mosdns_dns_servers", []field{{"local_dns", "local_dns", `""`}, {"remote_dns", "remote_dns", `""`},
-		{"fallback_dns", "fallback_dns", `""`}, {"default_forward", "default_forward", `"forward_remote"`},
-		{"custom_hosts", "custom_hosts", `""`}}, false},
-	{"log-settings", "handle_mosdns_log_settings", []field{{"log_enabled", "log_enabled", "true"},
-		{"log_level", "log_level", `"info"`}, {"log_file", "log_file", `""`}}, false},
-	{"api-settings", "handle_mosdns_api_settings", []field{{"api_enabled", "api_enabled", "true"},
-		{"api_address", "api_address", `":8080"`}}, false},
-	{"cache-settings", "handle_mosdns_cache_settings", []field{{"cache_enabled", "cache_enabled", "true"},
-		{"cache_size", "cache_size", "10240"}, {"cache_lazy_ttl", "cache_lazy_ttl", "21600"},
-		{"cache_dump_enabled", "cache_dump_enabled", "true"}, {"cache_dump_file", "cache_dump_file", `"./cache.dump"`},
-		{"cache_dump_interval", "cache_dump_interval", "300"}}, true},
+	{"rulesets", "handle_mosdns_rulesets"},
+	{"custom-matches", "handle_mosdns_custom_matches"},
+	{"dns-servers", "handle_mosdns_dns_servers"},
+	{"log-settings", "handle_mosdns_log_settings"},
+	{"api-settings", "handle_mosdns_api_settings"},
+	{"cache-settings", "handle_mosdns_cache_settings"},
 }
 
-// baseDefaults seed a profile without MosDNS settings (plus the route's
-// own fields).
-var baseDefaults = append(append([]field{}, sections[0].fields...), field{"local_dns", "", `""`}, field{"remote_dns", "", `""`},
-	field{"fallback_dns", "", `""`}, field{"default_forward", "", `"forward_remote"`}, field{"custom_hosts", "", `""`},
-	field{"custom_config", "", `""`})
-
-func value(raw string) any {
-	v, _ := jsonx.Parse([]byte(raw))
-	return v
+func pointer[T any](value T) *T { return &value }
+func or[T any](value *T, fallback T) T {
+	if value == nil {
+		return fallback
+	}
+	return *value
+}
+func array[T any](value []T) []T {
+	if value == nil {
+		return []T{}
+	}
+	return value
 }
 
-// body is the request's JSON object; empty for a falsy body when
-// allowEmpty (`request.json or {}`).
-func body(c *httpx.Ctx, allowEmpty bool) (map[string]json.RawMessage, error) {
-	parsed, err := c.JSON()
+type rulesetDTO struct {
+	DirectSets []string `json:"direct_rulesets"`
+	ProxySets  []string `json:"proxy_rulesets"`
+	Direct     []string `json:"direct_rules"`
+	Proxy      []string `json:"proxy_rules"`
+}
+type matchesDTO struct {
+	Matches  []model.MosDNSMatch `json:"custom_matches"`
+	Position string              `json:"position"`
+}
+type serversDTO struct {
+	Local    string `json:"local_dns"`
+	Remote   string `json:"remote_dns"`
+	Fallback string `json:"fallback_dns"`
+	Default  string `json:"default_forward"`
+	Hosts    string `json:"custom_hosts"`
+}
+type logDTO struct {
+	Enabled bool   `json:"log_enabled"`
+	Level   string `json:"log_level"`
+	File    string `json:"log_file"`
+}
+type apiDTO struct {
+	Enabled bool   `json:"api_enabled"`
+	Address string `json:"api_address"`
+}
+type cacheDTO struct {
+	Enabled  bool      `json:"cache_enabled"`
+	Size     model.Int `json:"cache_size"`
+	TTL      model.Int `json:"cache_lazy_ttl"`
+	Dump     bool      `json:"cache_dump_enabled"`
+	File     string    `json:"cache_dump_file"`
+	Interval model.Int `json:"cache_dump_interval"`
+}
+type successDTO struct {
+	Success bool                 `json:"success"`
+	Guard   *mosdns.PublishGuard `json:"publish_guard,omitempty"`
+}
+
+func sectionResponse(name string, s model.MosDNSSettings) *httpx.Response {
+	switch name {
+	case "rulesets":
+		return httpx.JSON(rulesetDTO{array(s.DirectRulesets), array(s.ProxyRulesets), array(s.DirectRules), array(s.ProxyRules)})
+	case "custom-matches":
+		return httpx.JSON(matchesDTO{array(s.CustomMatches), or(s.CustomMatchPosition, "tail")})
+	case "dns-servers":
+		return httpx.JSON(serversDTO{s.LocalDNS, s.RemoteDNS, s.FallbackDNS, or(s.DefaultForward, "forward_remote"), s.CustomHosts})
+	case "log-settings":
+		return httpx.JSON(logDTO{or(s.LogEnabled, true), or(s.LogLevel, "info"), or(s.LogFile, "")})
+	case "api-settings":
+		return httpx.JSON(apiDTO{or(s.APIEnabled, true), or(s.APIAddress, or(s.APIAddr, ":8080"))})
+	default:
+		return httpx.JSON(cacheDTO{or(s.CacheEnabled, true), or(s.CacheSize, 10240), or(s.CacheLazyTTL, 21600), or(s.CacheDumpEnabled, true), or(s.CacheDumpFile, "./cache.dump"), or(s.CacheDumpInterval, 300)})
+	}
+}
+func requestSettings(c *httpx.Ctx, name string) (model.MosDNSSettings, error) {
+	var value model.MosDNSSettings
+	data, err := c.Data()
 	if err != nil {
-		return nil, err
+		return value, err
 	}
-	if allowEmpty && !jsonx.Truthy(parsed) {
-		return map[string]json.RawMessage{}, nil
+	if !c.IsJSON() {
+		return value, repo.NewValidationError(messageSettingsObject)
 	}
-	data, _ := c.Data()
-	var out map[string]json.RawMessage
-	if json.Unmarshal(data, &out) != nil || out == nil {
-		return nil, errors.New("request body is not a JSON object")
+	var fields model.Fields
+	if err = json.Unmarshal(data, &fields); err != nil {
+		return value, repo.NewValidationError(messageSettingsObject)
 	}
-	return out, nil
-}
-
-func (s section) handle(c *httpx.Ctx) (*httpx.Response, error) {
-	ctx := c.Context()
-	config, err := repo.GetConfig(ctx, "")
-	if err != nil {
-		return nil, err
-	}
-	if !config.Has("mosdns") {
-		defaults := jsonx.NewObject()
-		for _, f := range append(append([]field{}, baseDefaults...), s.fields...) {
-			defaults.Set(f.key, value(f.def))
-		}
-		config.Set("mosdns", defaults)
-	}
-	settings, ok := config.Value("mosdns").(*jsonx.Object)
-	if !ok || settings == nil {
-		return nil, errors.New("mosdns settings are not an object")
-	}
-	for _, f := range s.fields {
-		if s.cache && !settings.Has(f.key) { // older configurations lack them
-			settings.Set(f.key, value(f.def))
-		}
-	}
-	if c.Request.Method == "GET" {
-		out := jsonx.NewObject()
-		for _, f := range s.fields {
-			def := value(f.def)
-			if f.key == "api_address" { // legacy field name
-				def = settings.GetOr("api_addr", def)
+	if name == "custom-matches" {
+		if raw, ok := fields.Get("position"); ok {
+			if err = fields.Set("custom_match_position", raw); err != nil {
+				return value, err
 			}
-			out.Set(f.name, settings.GetOr(f.key, def))
 		}
-		return httpx.JSON(out), nil
 	}
-	if c.Request.Method != "POST" {
-		return nil, nil // HEAD: Flask's view returns None (500)
-	}
-	data, err := body(c, s.cache)
+	data, err = fields.MarshalJSON()
 	if err != nil {
-		return httpx.Message(500, false, err.Error()), nil
+		return value, err
 	}
-	if s.cache {
-		normalizeCache(settings, data)
-		guard, err := repo.SaveConfigWithPublishGuard(ctx, config, "mosdns", "")
+	if err = json.Unmarshal(data, &value); err != nil {
+		return value, repo.NewValidationError(messageSettingsObject)
+	}
+	return value, nil
+}
+func (s section) handle(c *httpx.Ctx) (*httpx.Response, error) {
+	if c.Request.Method == http.MethodGet || c.Request.Method == http.MethodHead {
+		r, err := repo.GetRepository(c.Context())
 		if err != nil {
-			return httpx.Message(500, false, err.Error()), nil
+			return nil, err
 		}
-		return httpx.JSON(jsonx.Obj("success", true, "publish_guard", guard)), nil
-	}
-	for _, f := range s.fields {
-		settings.Set(f.key, fromBody(data, f.name, f.def))
-	}
-	if s.path == "api-settings" {
-		settings.Delete("api_addr")
-	}
-	if err := repo.SaveConfig(ctx, config, ""); err != nil {
-		return httpx.Message(500, false, err.Error()), nil
-	}
-	return httpx.JSON(jsonx.Obj("success", true)), nil
-}
-
-func fromBody(data map[string]json.RawMessage, name, def string) any {
-	if raw, ok := data[name]; ok {
-		return value(string(raw))
-	}
-	return value(def)
-}
-
-// normalizeCache stores the cache fields of a save, normalized the same
-// way for whole-editor and cache-only saves.
-func normalizeCache(settings *jsonx.Object, data map[string]json.RawMessage) {
-	interval := intOf(data["cache_dump_interval"], 300)
-	if interval.Sign() <= 0 {
-		interval = big.NewInt(300)
-	}
-	dumpFile := "./cache.dump"
-	if raw, ok := data["cache_dump_file"]; ok && string(raw) != "null" {
-		if json.Unmarshal(raw, &dumpFile) != nil {
-			dumpFile = string(raw)
+		id, err := repo.ResolveProfileID(c.Context(), "")
+		if err != nil {
+			return nil, err
 		}
-	}
-	settings.Set("cache_enabled", truthy(data["cache_enabled"]))
-	settings.Set("cache_dump_enabled", truthy(data["cache_dump_enabled"]))
-	settings.Set("cache_size", jsonx.BigInt(intOf(data["cache_size"], 10240)))
-	settings.Set("cache_lazy_ttl", jsonx.BigInt(intOf(data["cache_lazy_ttl"], 21600)))
-	settings.Set("cache_dump_interval", jsonx.BigInt(interval))
-	settings.Set("cache_dump_file", dumpFile)
-}
-
-// truthy is the truth value of a JSON value (true when absent).
-func truthy(raw json.RawMessage) bool {
-	if raw == nil {
-		return true
-	}
-	v, _ := jsonx.Parse(raw)
-	return jsonx.Truthy(v)
-}
-
-var integerText = regexp.MustCompile(`^[+-]?[0-9]+(_[0-9]+)*$`)
-
-// intOf is an integer setting (any size): a number (truncated), a boolean
-// or a decimal string; anything else is the default.
-func intOf(raw json.RawMessage, def int64) *big.Int {
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.UseNumber()
-	var v any
-	if raw == nil || decoder.Decode(&v) != nil {
-		return big.NewInt(def)
-	}
-	switch x := v.(type) {
-	case bool:
-		if x {
-			return big.NewInt(1)
+		profile, err := r.Profile(c.Context(), id)
+		if err != nil {
+			return nil, err
 		}
-		return big.NewInt(0)
-	case json.Number:
-		if n, ok := new(big.Int).SetString(string(x), 10); ok {
-			return n
+		if c.Request.Method == http.MethodHead {
+			return nil, nil
 		}
-		if f, err := strconv.ParseFloat(string(x), 64); err == nil {
-			n, _ := big.NewFloat(f).Int(nil)
-			return n
-		}
-	case string:
-		if text := strings.TrimSpace(x); integerText.MatchString(text) {
-			n, _ := new(big.Int).SetString(strings.ReplaceAll(text, "_", ""), 10)
-			return n
-		}
+		return sectionResponse(s.path, profile.MosDNS), nil
 	}
-	return big.NewInt(def)
-}
-
-func saveSettings(c *httpx.Ctx) (*httpx.Response, error) {
-	ctx := c.Context()
-	var data map[string]json.RawMessage
-	if raw, err := c.Data(); err != nil || !c.IsJSON() || json.Unmarshal(raw, &data) != nil || data == nil {
-		return nil, repo.NewValidationError("MosDNS 设置必须是 JSON 对象")
-	}
-	profileID, err := repo.ResolveProfileID(ctx, "")
+	value, err := requestSettings(c, s.path)
 	if err != nil {
 		return nil, err
+	}
+	guard, err := save(c.Context(), s.path, value)
+	if err != nil {
+		return nil, err
+	}
+	result := successDTO{Success: true}
+	if s.path == "cache-settings" {
+		result.Guard = &guard
+	}
+	return httpx.JSON(result), nil
+}
+func saveSettings(c *httpx.Ctx) (*httpx.Response, error) {
+	value, err := requestSettings(c, "")
+	if err != nil {
+		return nil, err
+	}
+	guard, err := save(c.Context(), "", value)
+	if err != nil {
+		return nil, err
+	}
+	return httpx.JSON(successDTO{Success: true, Guard: &guard}), nil
+}
+
+// save is the sole write owner. Request cancellation is detached; Runtime
+// shutdown remains visible before the transaction and its final assignment.
+func save(ctx context.Context, section string, in model.MosDNSSettings) (mosdns.PublishGuard, error) {
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return mosdns.PublishGuard{}, err
 	}
 	r, err := repo.GetRepository(ctx)
 	if err != nil {
-		return nil, err
+		return mosdns.PublishGuard{}, err
 	}
-	// The whole editor draft in one transaction.
-	_, revision, err := r.UpdateProfileTransaction(ctx, profileID, func(_ context.Context, profile *jsonx.Object) (*jsonx.Object, error) {
-		settings, ok := profile.Value("mosdns").(*jsonx.Object)
-		if !ok || settings == nil {
-			if profile.Has("mosdns") {
-				return nil, errors.New("mosdns settings are not an object")
-			}
-			settings = jsonx.NewObject()
-			profile.Set("mosdns", settings)
+	id, err := repo.ResolveProfileID(ctx, "")
+	if err != nil {
+		return mosdns.PublishGuard{}, err
+	}
+	if err = ctx.Err(); err != nil {
+		return mosdns.PublishGuard{}, err
+	}
+	revision, err := r.UpdateProfile(ctx, id, func(ctx context.Context, p *model.Profile) error {
+		if err := ctx.Err(); err != nil {
+			return err
 		}
-		settings.Set("custom_config", fromBody(data, "custom_config", `""`))
-		for _, s := range sections[:5] {
-			for _, f := range s.fields {
-				settings.Set(f.key, fromBody(data, f.key, f.def))
+		s := p.MosDNS
+		if section == "" {
+			s.CustomConfig = in.CustomConfig
+		}
+		if section == "" || section == "rulesets" {
+			s.DirectRulesets = array(in.DirectRulesets)
+			s.ProxyRulesets = array(in.ProxyRulesets)
+			s.DirectRules = array(in.DirectRules)
+			s.ProxyRules = array(in.ProxyRules)
+		}
+		if section == "" || section == "custom-matches" {
+			s.CustomMatches = array(in.CustomMatches)
+			s.CustomMatchPosition = pointer(or(in.CustomMatchPosition, "tail"))
+		}
+		if section == "" || section == "dns-servers" {
+			s.LocalDNS = in.LocalDNS
+			s.RemoteDNS = in.RemoteDNS
+			s.FallbackDNS = in.FallbackDNS
+			s.DefaultForward = pointer(or(in.DefaultForward, "forward_remote"))
+			s.CustomHosts = in.CustomHosts
+		}
+		if section == "" || section == "log-settings" {
+			s.LogEnabled = pointer(or(in.LogEnabled, true))
+			s.LogLevel = pointer(or(in.LogLevel, "info"))
+			s.LogFile = pointer(or(in.LogFile, ""))
+		}
+		if section == "" || section == "api-settings" {
+			s.APIEnabled = pointer(or(in.APIEnabled, true))
+			s.APIAddress = pointer(or(in.APIAddress, ":8080"))
+			if err := s.Clear("api_addr"); err != nil {
+				return err
 			}
 		}
-		normalizeCache(settings, data)
-		settings.Delete("api_addr")
-		return nil, nil
+		if section == "" || section == "cache-settings" {
+			s.CacheEnabled = pointer(or(in.CacheEnabled, true))
+			s.CacheDumpEnabled = pointer(or(in.CacheDumpEnabled, true))
+			s.CacheSize = pointer(or(in.CacheSize, 10240))
+			s.CacheLazyTTL = pointer(or(in.CacheLazyTTL, 21600))
+			interval := or(in.CacheDumpInterval, 300)
+			if interval <= 0 {
+				interval = 300
+			}
+			s.CacheDumpInterval = pointer(interval)
+			s.CacheDumpFile = pointer(or(in.CacheDumpFile, "./cache.dump"))
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		p.MosDNS = s
+		return nil
 	})
 	if err != nil {
-		return nil, err
+		return mosdns.PublishGuard{}, err
 	}
 	repo.ResetConfigContext(ctx)
-	return httpx.JSON(jsonx.Obj("success", true, "publish_guard", jsonx.Obj("expected_profile_id", profileID,
-		"expected_service_type", "mosdns", "expected_config_revision", jsonx.Int(revision)))), nil
+	return mosdns.PublishGuard{ProfileID: id, ServiceType: "mosdns", ConfigRevision: revision}, nil
 }
 
 func ruleProxy(c *httpx.Ctx) (*httpx.Response, error) {
@@ -271,11 +268,7 @@ func ruleProxy(c *httpx.Ctx) (*httpx.Response, error) {
 	})
 	response := httpx.Text(result.Status, result.Text)
 	if result.JSON != nil {
-		object := jsonx.NewObject()
-		for key, v := range result.JSON {
-			object.Set(key, v)
-		}
-		response = httpx.JSONStatus(result.Status, object)
+		response = httpx.JSONStatus(result.Status, result.JSON)
 	}
 	if result.NoStore {
 		response.NoStore()
