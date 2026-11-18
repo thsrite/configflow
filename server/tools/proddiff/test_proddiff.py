@@ -559,6 +559,41 @@ class ComparatorTests(unittest.TestCase):
             with self.subTest(missing=missing), self.assertRaises(RuntimeError):
                 self_check(real, {k: v for k, v in samples.items() if k != missing}, pd.response_diffs, pd.safe_key, pd.safe_header)
 
+    def test_yaml_redump_control_keeps_real_response_metadata_and_rejects_loss(self):
+        from generators import self_check
+        import yaml
+        samples = {'text': reply(b'first\nsecond\n', 'text/plain'),
+                   'headers': reply({}, headers={'cache-control': 'no-store'}),
+                   'http-json': reply({'items': [{'id': 'a'}, {'id': 'b'}]})}
+        real = reply({'auth_enabled': True})
+        for content_type, status in [('text/yaml', 200), ('application/yaml; charset=utf-8', 200),
+                                     ('application/x-yaml', 201)]:
+            with self.subTest(content_type=content_type, status=status):
+                sample = reply(b'dns: {port: 53}\nenabled: true\n', content_type, status)
+                checks = self_check(real, dict(samples, yaml=sample), pd.response_diffs, pd.safe_key, pd.safe_header)
+                self.assertEqual('PASS', checks['control-yaml-redumped'])
+                self.assertEqual('PASS', checks['yaml-leaf'])
+                self.assertEqual('PASS', checks['yaml-duplicate-key'])
+        # Even valid YAML need not survive this transform: PyYAML re-dumps an
+        # ordered mapping as plain nested sequences, losing the tagged type.
+        ordered = reply(b'ordered: !!omap\n- alpha: 1\n- beta: 2\n', 'application/yaml')
+        redumped = reply(yaml.safe_dump(yaml.safe_load(ordered[2]), sort_keys=True).encode(), ordered[1])
+        self.assertIn(('body.ordered[0]', 'type'), pd.response_diffs(ordered, redumped, '/self-check', []))
+        with self.assertRaisesRegex(RuntimeError, 'control-yaml-redumped'):
+            self_check(real, dict(samples, yaml=ordered), pd.response_diffs, pd.safe_key, pd.safe_header)
+        # PyYAML's non-strict loader also drops duplicate entries during a re-dump.
+        # This is an actual lossy transform, not a formatting-only control:
+        # a consumer-rejected document becomes accepted and one value is lost.
+        lossy = reply(b'dns: {port: 53, port: 54}\n', 'application/yaml')
+        redumped = reply(yaml.safe_dump(yaml.safe_load(lossy[2]), sort_keys=True).encode(), lossy[1])
+        self.assertIn(('body', 'parse-python'), pd.response_diffs(lossy, redumped, '/self-check', []))
+        with self.assertRaisesRegex(RuntimeError, 'control-yaml-redumped'):
+            self_check(real, dict(samples, yaml=lossy), pd.response_diffs, pd.safe_key, pd.safe_header)
+        # Fixing the control's metadata must not make real metadata changes equal.
+        self.assertIn(('Content-Type', 'value'), pd.response_diffs(
+            reply(b'dns: {port: 53}\n', 'application/yaml'),
+            reply(b'dns: {port: 53}\n', 'text/yaml'), '/self-check', []))
+
     def test_generator_inventory_and_http_takeover(self):
         from generators import inventory
         doc = {'system': {'system_config': {'default_profile_id': 'one'},

@@ -231,19 +231,26 @@ def self_check(real_status, samples, compare, safe_key=str, safe_header=str):
         checks['json-real-list-order'] = bool(found) and all(path.startswith(prefix) for path, _ in found)
 
     # Real YAML: a re-dump is no difference, a leaf change is reported at its path, duplicates fail.
-    loaded = yaml.safe_load(samples['yaml'][2])
+    sample = samples['yaml'][:3]
+    loaded = yaml.safe_load(sample[2])
     if not isinstance(loaded, dict) or not loaded:
         raise RuntimeError('YAML self-check needs a top-level mapping')
-    agrees('control-yaml-redumped', samples['yaml'][:3], (200, 'text/yaml', yaml.safe_dump(loaded, allow_unicode=True, sort_keys=True).encode()))
+    # HTTP takeover may supply a different valid YAML media type (or 2xx
+    # status) than generator workers. Reformat only the body: changing response
+    # metadata would turn the formatting control into an unrelated mutation.
+    def yaml_reply(value, *, sort_keys=False):
+        return sample[:2] + (yaml.safe_dump(value, allow_unicode=True, sort_keys=sort_keys).encode(),)
+
+    agrees('control-yaml-redumped', sample, yaml_reply(loaded, sort_keys=True))
     leaves = [(keys, value) for keys, value in _walk_values(loaded) if keys and value is not None and not isinstance(value, (dict, list))]
     if not leaves:
         raise RuntimeError('no YAML leaf available for self-check')
     keys, old = leaves[0]
     changed = copy.deepcopy(loaded)
     _locate(changed, keys[:-1])[keys[-1]] = bump(old)
-    detects('yaml-leaf', samples['yaml'][:3], (200, 'text/yaml', yaml.safe_dump(changed, allow_unicode=True).encode()), (shown(loaded, keys), kind(old, bump(old))))
-    duplicate = samples['yaml'][2].rstrip(b'\n') + b'\n' + yaml.safe_dump({next(iter(loaded)): None}).encode()
-    detects('yaml-duplicate-key', samples['yaml'][:3], (200, 'text/yaml', duplicate), ('body', 'parse-go'))
+    detects('yaml-leaf', sample, yaml_reply(changed), (shown(loaded, keys), kind(old, bump(old))))
+    duplicate = sample[2].rstrip(b'\n') + b'\n' + yaml.safe_dump({next(iter(loaded)): None}).encode()
+    detects('yaml-duplicate-key', sample, sample[:2] + (duplicate,), ('body', 'parse-go'))
 
     # Real text: one changed line, one inserted line and CRLF line endings are all reported.
     lines = samples['text'][2].decode().splitlines()
