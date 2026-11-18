@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 
 	"configflow/internal/model"
@@ -58,5 +59,16 @@ func TestTypedClientSharedCustomConfigText(t *testing.T) {
 	}
 	if len(model.Issues(profile)) != 0 || profile.Surge.CustomConfig != "1.5" || profile.Loon.CustomConfig != "2" {
 		t.Fatalf("shared numeric text: %+v", model.Issues(profile))
+	}
+}
+
+func TestTypedClientLegacyRuleListShape(t *testing.T) {
+	var profile model.Profile
+	if err := json.Unmarshal([]byte(`{"rule_sets":false}`), &profile); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err := MihomoRuleLists(&model.Config{Profile: &profile})
+	if err == nil || !strings.Contains(err.Error(), msgMihomoRules) {
+		t.Fatalf("invalid open rule list was not diagnosed: %v", err)
 	}
 }

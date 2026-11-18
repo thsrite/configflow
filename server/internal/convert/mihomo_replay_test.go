@@ -51,14 +51,17 @@ func MihomoReplayIssue(profile *jsonx.Object) string {
 }
 
 func TestNativeMihomoStoredMemberFallbacks(t *testing.T) {
-	cases := []struct{ source, path string }{
-		{`{"mihomo":{"custom_config":5}}`, "mihomo.custom_config"},
-		{`{"mihomo":{"provider_update_interval":"300"}}`, "mihomo.provider_update_interval"},
-		{`{"proxy_groups":[{"id":"g","type":"select","interval":"300"}]}`, "proxy_groups[0].interval"},
-		{`{"subscriptions":[{"id":"s","health_check":"x"}]}`, "subscriptions[0].health_check"},
-		{`{"subscription_aggregations":[{"id":"a","health_check_url":5}]}`, "subscription_aggregations[0].health_check_url"},
-		{`{"mosdns":{"custom_hosts":false}}`, "mosdns.custom_hosts"},
-		{`{"domain_discovery":{"region_probe_port":"300"}}`, "domain_discovery.region_probe_port"},
+	cases := []struct {
+		source, path string
+		compatible   bool
+	}{
+		{`{"mihomo":{"custom_config":5}}`, "mihomo.custom_config", true},
+		{`{"mihomo":{"provider_update_interval":"300"}}`, "mihomo.provider_update_interval", true},
+		{`{"proxy_groups":[{"id":"g","type":"select","interval":"300"}]}`, "proxy_groups[0].interval", true},
+		{`{"subscriptions":[{"id":"s","health_check":"x"}]}`, "subscriptions[0].health_check", false},
+		{`{"subscription_aggregations":[{"id":"a","health_check_url":5}]}`, "subscription_aggregations[0].health_check_url", true},
+		{`{"mosdns":{"custom_hosts":false}}`, "mosdns.custom_hosts", false},
+		{`{"domain_discovery":{"region_probe_port":"300"}}`, "domain_discovery.region_probe_port", true},
 	}
 	for _, tt := range cases {
 		t.Run(tt.path, func(t *testing.T) {
@@ -71,37 +74,37 @@ func TestNativeMihomoStoredMemberFallbacks(t *testing.T) {
 				t.Fatal(err)
 			}
 			issues := append(model.Issues(profile), model.Issues(shared)...)
-			if !model.IssueUnder(issues, tt.path) {
-				t.Fatalf("missing typed diagnostic: %v", issues)
+			if model.IssueUnder(issues, tt.path) == tt.compatible {
+				t.Fatalf("shared scalar compatibility=%v diagnostics=%v", tt.compatible, issues)
 			}
 			switch tt.path {
 			case "mihomo.custom_config":
-				if profile.Mihomo.CustomConfig != "" {
-					t.Fatal("non-text base accepted")
+				if profile.Mihomo.CustomConfig != "5" {
+					t.Fatal("numeric base text not decoded")
 				}
 			case "mihomo.provider_update_interval":
-				if profile.Mihomo.ProviderUpdateInterval != nil {
-					t.Fatal("non-number interval accepted")
+				if profile.Mihomo.ProviderUpdateInterval == nil || *profile.Mihomo.ProviderUpdateInterval != 300 {
+					t.Fatal("quoted provider interval not decoded")
 				}
 			case "proxy_groups[0].interval":
-				if profile.ProxyGroups[0].Interval != nil {
-					t.Fatal("non-number group interval accepted")
+				if profile.ProxyGroups[0].Interval == nil || *profile.ProxyGroups[0].Interval != 300 {
+					t.Fatal("quoted group interval not decoded")
 				}
 			case "subscriptions[0].health_check":
 				if shared.Subscriptions[0].HealthCheck != nil {
 					t.Fatal("non-object health accepted")
 				}
 			case "subscription_aggregations[0].health_check_url":
-				if shared.Aggregations[0].HealthCheckURL != nil {
-					t.Fatal("non-text health URL accepted")
+				if shared.Aggregations[0].HealthCheckURL == nil || *shared.Aggregations[0].HealthCheckURL != "5" {
+					t.Fatal("numeric health URL text not decoded")
 				}
 			case "mosdns.custom_hosts":
 				if profile.MosDNS.CustomHosts != "" {
 					t.Fatal("non-text hosts accepted")
 				}
 			case "domain_discovery.region_probe_port":
-				if profile.DomainDiscovery.RegionProbePort != nil {
-					t.Fatal("non-number probe port accepted")
+				if profile.DomainDiscovery.RegionProbePort == nil || *profile.DomainDiscovery.RegionProbePort != 300 {
+					t.Fatal("quoted probe port not decoded")
 				}
 			}
 			raw, err := model.Marshal(profile)

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"configflow/internal/model"
 )
 
 // TestN88bReviewWrongTypedOutputIdentities covers stored members that become an
@@ -34,14 +36,14 @@ func TestN88bReviewWrongTypedOutputIdentities(t *testing.T) {
 		want  string
 	}{
 		{"valid", -1, "", ""},
-		{"subscription name", 0, `7`, fmt.Sprintf(msgMihomoStoredText, kindSubscription, "s1", "name", "7")},
+		{"subscription name", 0, `false`, fmt.Sprintf(msgMihomoStoredText, kindSubscription, "s1", "name", "false")},
 		{"aggregation name", 1, `["A"]`, fmt.Sprintf(msgMihomoStoredText, kindAggregation, "a", "name", `["A"]`)},
-		{"group type", 2, `7`, fmt.Sprintf(msgMihomoStoredText, kindGroup, "g", "type", "7")},
-		{"follow group", 3, `7`, fmt.Sprintf(msgMihomoStoredText, kindGroup, "g2", "follow_group", "7")},
-		{"rule set name", 4, `7`, fmt.Sprintf(msgMihomoStoredText, kindRuleSet, "r1", "name", "7")},
-		{"rule set behavior", 5, `7`, fmt.Sprintf(msgMihomoStoredText, kindRuleSet, "r1", "behavior", "7")},
-		{"rule type", 6, `7`, fmt.Sprintf(msgMihomoStoredText, kindRule, "r2", "rule_type", "7")},
-		{"rule value", 7, `443`, fmt.Sprintf(msgMihomoStoredText, kindRule, "r2", "value", "443")},
+		{"group type", 2, `7`, fmt.Sprintf(msgIdentityString, "type", "7")},
+		{"follow group", 3, `false`, fmt.Sprintf(msgMihomoStoredText, kindGroup, "g2", "follow_group", "false")},
+		{"rule set name", 4, `false`, fmt.Sprintf(msgMihomoStoredText, kindRuleSet, "r1", "name", "false")},
+		{"rule set behavior", 5, `false`, fmt.Sprintf(msgMihomoStoredText, kindRuleSet, "r1", "behavior", "false")},
+		{"rule type", 6, `false`, fmt.Sprintf(msgMihomoStoredText, kindRule, "r2", "rule_type", "false")},
+		{"rule value", 7, `false`, fmt.Sprintf(msgMihomoStoredText, kindRule, "r2", "value", "false")},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -73,5 +75,22 @@ func TestN88bReviewWrongTypedOutputIdentities(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// Numeric rule values are legitimate strings under the approved shared codec;
+// keep the F1 negative cases above on incompatible bool/container input instead.
+func TestN88bReviewNumericRuleValueUsesSharedCodec(t *testing.T) {
+	t.Cleanup(SetMihomoEnvironment(nativeGenerationEnv(t)))
+	var profile model.Profile
+	if err := json.Unmarshal([]byte(`{"rule_configs":[{"id":"port","itemType":"rule","rule_type":"DST-PORT","value":443,"policy":"DIRECT"}]}`), &profile); err != nil {
+		t.Fatal(err)
+	}
+	if profile.RuleConfigs[0].Value != "443" {
+		t.Fatal("shared scalar text not used")
+	}
+	output, err := MihomoConfig(context.Background(), &model.Config{Profile: &profile}, MihomoOptions{SkipProviderPreflight: true})
+	if err != nil || !strings.Contains(output, "DST-PORT,443,DIRECT") {
+		t.Fatalf("numeric rule value: %v %s", err, output)
 	}
 }
