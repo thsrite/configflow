@@ -183,17 +183,37 @@ func TestPreviewAndSaveHaveSameDrafts(t *testing.T) {
 	}
 }
 func TestOnboardingRuntimeShutdownAndDisconnect(t *testing.T) {
-	for _, stage := range []string{"shutdown-before", "shutdown-during", "disconnect"} {
+	for _, stage := range []string{"shutdown-before", "shutdown-during", "shutdown-at-commit", "disconnect", "disconnect-at-commit"} {
 		t.Run(stage, func(t *testing.T) {
 			s := testService(t)
 			before := stored(t, s)
 			beforeFiles := encode(files(t, s))
+			beforeDB, err := s.Repository.Store().Fingerprint()
+			if err != nil {
+				t.Fatal(err)
+			}
 			runtime := lifecycle.NewRuntime(lifecycle.Options{Mode: lifecycle.ModeManual, Registry: lifecycle.NewRegistry()})
 			runtime.Start(context.Background())
 			defer runtime.Shutdown(context.Background())
 			request, cancel := context.WithCancel(context.Background())
 			ctx := runtime.BindRequest(request)
-			cancel()
+			defer cancel()
+			commitCalls := 0
+			atCommit := strings.HasSuffix(stage, "-at-commit")
+			if atCommit {
+				s.Repository.Store().BeforeCommit = func() error {
+					commitCalls++
+					if stage == "shutdown-at-commit" {
+						runtime.Shutdown(context.Background())
+					} else {
+						cancel()
+					}
+					return nil
+				}
+				t.Cleanup(func() { s.Repository.Store().BeforeCommit = nil })
+			} else {
+				cancel()
+			}
 			if stage == "shutdown-before" {
 				runtime.Shutdown(context.Background())
 			}
@@ -203,12 +223,19 @@ func TestOnboardingRuntimeShutdownAndDisconnect(t *testing.T) {
 					return false, nil
 				}
 			}
-			_, err := s.Execute(ctx, testOperation())
-			if stage == "disconnect" {
+			_, err = s.Execute(ctx, testOperation())
+			if atCommit && commitCalls != 1 {
+				t.Fatalf("shared final COMMIT boundary reached %d times", commitCalls)
+			}
+			afterDB, fingerprintErr := s.Repository.Store().Fingerprint()
+			if fingerprintErr != nil {
+				t.Fatal(fingerprintErr)
+			}
+			if strings.HasPrefix(stage, "disconnect") {
 				if err != nil || stored(t, s) == before {
 					t.Fatalf("request disconnect aborted save %v", err)
 				}
-			} else if !errors.Is(err, context.Canceled) || stored(t, s) != before || !bytes.Equal(beforeFiles, encode(files(t, s))) {
+			} else if !errors.Is(err, context.Canceled) || beforeDB != afterDB || stored(t, s) != before || !bytes.Equal(beforeFiles, encode(files(t, s))) {
 				t.Fatalf("shutdown committed err=%v changed=%v", err, stored(t, s) != before)
 			}
 		})

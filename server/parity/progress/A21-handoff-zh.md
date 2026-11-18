@@ -1,6 +1,6 @@
 # A21 gateway onboarding 交接
 
-状态：独立部分已实现并完成定向验收，HR 未复核；等待 batch-1/C34 合入后最终接线，暂不可标 ported 或合入。分支 `go-port-a21` 从 `batch-1@778d8f8e2` 建立。
+状态：独立部分已实现并完成定向验收，HR 未复核；已 rebase batch-4（含 batch-1/O3-6c），等待 C34/C36 合入后最终接线，暂不可标 ported 或合入。分支 `go-port-a21` 从 `batch-1@778d8f8e2` 建立。
 
 ## Clarified in A21
 
@@ -51,7 +51,7 @@ Python HTTP 对照复用 A20 的 Flask oracle；SQLite 字段/位置由独立短
 - 复用 A19 editor/selection/overlap，A20 的 setupflow reader，routersplit marker/完整 TUN，C18 Mihomo generator，C22–C25 OxiDNS normalize/common/validation/reference engine。`jsonx` 仅留在 adapter 与尚未迁移的 repo/convert/routersplit 边界。
 - OxiDNS 仅新增共享 upstream reader 的导出入口，以及允许额外引用字段的 `ReferenceOptions`；既有 `ReferenceLocations` 默认语义不变。A21 的动态引用证明还包含嵌套 tag，复用同一遍历，不复制引用 parser。
 - 候选仅替换 Mihomo/OxiDNS 两段；保存前再次比较 config revision 与 marker 状态，并在同一 repo 事务生成/验证两份服务配置。Report 不返回 candidate 或原生备份。管理 API 的启用/半份认证清理、fallback 恢复、显式模板转换保留全部备份、query recorder、策略可达性及 DIRECT overlap 均有边界对照。
-- save owner Detach 后检查 ctx，在事务前、回调开头、回调交回前、C36 hook 前再次检查。真实 Runtime 覆盖先关机、事务内生成时关机、请求断开继续完成。未改共享 repo/leaf 提交结构；O3-6c 的最终共享提交窗口已知、已分派，待其合入后复验。
+- save owner Detach 后检查 ctx，在事务前、回调开头、回调交回前、C36 hook 前再次检查。真实 Runtime 覆盖先关机、事务内生成时关机、请求断开继续完成。未改共享 repo/leaf 提交结构；batch-4 合入后沿用 O3-6c 的最终 CommitContext 检查，合并态验证见文末。
 - HTTP 注册 3 个方法入口，auth.Require，HEAD 只读；256 KiB 实际/声明长度限制，按 Python 的 raw json.loads 契约忽略媒体类型，统一走 BindSilent。畸形/非对象/non-finite body 回归均检查无写入；GET/HEAD headers 一致，响应 no-store。
 - 脱敏从同一个配置快照显式取当前/退役 rule token、Agent token、subscription token 与 fetch proxy，再由共享 CollectCredentials/SanitizeWithSecrets 处理命名凭据、环境 registration key、编码引用。这样不会因公共投影先丢弃敏感字段而遗漏旧 token。
 
@@ -73,8 +73,8 @@ Python HTTP 对照复用 A20 的 Flask oracle；SQLite 字段/位置由独立短
 ## 尚未闭合（不能标 ported）
 
 1. C34 合入后 rebase，生产 `Register` 与 A22 的 `AssertReady` 统一接共享 DNSLoop；补齐生产 checker 注入并更新 TODO（公共 helper 的 nil 拒绝保护仍保留），补实际循环/非循环代表与主机地址对照。当前非回环独立 corpus 与 HTTP 测试显式注入纯 seam，不证明 DNSLoop 已接线。
-2. batch-1 尚未合入 go，合入后 rebase；之后按最终依赖树复查共享提交检查。
-3. C36 拥有 session 文件锁、digest、adopt 的真实实现；当前裁定的 503 只是安全衔接，不是永久替代状态。
+2. batch-4（含 batch-1/O3-6c）已 rebase；共享最终提交入口的合并态验证见文末。
+3. C36 拥有 session 文件锁、digest、adopt 的真实实现；合入后由 A21 按 C36 交接清单负责 server 的 SetAdoptOwnedWrite(setup.AdoptOwnedWrite) 和 DNS callbacks 注册，并补 server 级回归证明注册后 503 消失。当前裁定的 503 只是安全衔接，不是永久替代状态。
 4. 独立 Opus HR 复核、协调者批次完整 gate、A22 安装/设备执行及 lab 行为不在本次已验证范围。
 
 ## C36 已对齐的准确接口
@@ -109,7 +109,7 @@ Mihomo leaf 不 I/O、不写 repo；输入是 caller 独占、经 yamlx 解析�
 - 已裁定差异：HEAD 只读修正；C36 暂缺 owner 的 503 安全衔接。除此之外，已覆盖的正常 HTTP、双服务候选/生成结果、存储结果无差异。
 - 请求 JSON 遵守 N8-6 的原生标准 JSON 契约：NaN/Infinity 不模拟 Python json.loads 的非标准接受行为，返回 400 无写入。Go 回归覆盖，不新增 Python 形状矩阵。
 - 作者自查修复：域名候选独立 DTO，避免多出 IP editor 的 selected 字段；显式 null 开关/行为不用于有效来源证明；退役凭据种子在投影前收集；default_forward=null 拒绝；损坏的非对象 Mihomo 段不被修成可保存的空配置。
-- 仍未完成/未复核：C34 checker 接线，batch-1 合入后的 rebase，O3-6c 共享提交点的合并态复验，C36 真实 adoption owner，以及独立 Opus HR 复核。
+- 仍未完成/未复核：C34 checker 接线，C36 真实 adoption owner/server 注册及成功回归，以及独立 Opus HR 复核。O3-6c 合并态复验见文末。
 - N8-5 后续迁移位置：`onboarding/adapter.go` 的 legacy repo/generator/router-split 桥、`service.go` 的 GetPublishSnapshot/GetProfile/UpdateProfileTransaction callback；业务 request/report、DNS/原生图算法不应随之重写。
 
 ## 最终 leaf / difftest 定向复验
@@ -140,3 +140,32 @@ ok configflow/internal/gateway/onboarding                  61.027s
 - 工作分支 `go-port-a21`，起点 `batch-1@778d8f8e2`；当前 `go@e0e9d9d45` 仍不包含 batch-1，按原裁定等其合入后再 rebase。C34 DNSLoop 也尚未合入 go。
 - 这是依赖未解除时的可审阅 checkpoint，不是已完成/已验证的 A21。生产 Register 的 checker 仍为 TODO(C34)，准备/保存会拒绝绕过它；路由清单和模块状态保持 wip，不能直接合入或宣称成功闭环。
 - 需要协调者在 batch-1、O3-6c、C34 合入后提供提交号；随后接线、做代表性实际 DNSLoop/owner 合并态验证，再正式交给新的 Opus HR 复核。
+
+
+## batch-4 rebase 与共享入口衔接（2026-11-18）
+
+- 已变基到本地 `go@fbbe382ec`（含协调者通知的 `c939a5f6`、batch-1 和 O3-6c）。原起点 batch-1 的 A20 提交已由合并树重写，因此只重放 A21 的三个提交，避免把旧 A20 再引入。behaviour-changes 文档冲突保留双方条目；未覆盖其他 owner 的实现。
+- 变基后 A21 原提交依次为 `315c24784`、`c77a6624a`、`5b54fc8f0`，替代上文历史提交号。
+- 自有生产调用链已核对：`Service.Execute` 的 detached Runtime ctx → `UpdateProfileTransaction` → typed `Repository.Update` → `transactLocked` → `commitStore(ctx, ...)` → `Store.CommitContext`，最终 COMMIT 前保留相同 generation 的取消检查。A21 无 taskstatus Record/Forget 或文件 replace 直写，不需要额外转换到 Context 入口，也没有新增 helper/屏蔽取消。
+- `TestOnboardingRuntimeShutdownAndDisconnect` 增加 final COMMIT 屏障的两种真实 Runtime 场景；关机检查 SQLite Fingerprint、完整文档/revision 和业务文件均不变；请求断开仍提交。显式断言屏障恰好触发一次，避免假通过。
+- DNSLoop 仍保留 TODO(C34)，等待 batch-5/C34 通知；不 cherry-pick。
+- 最新衔接裁定：C36 先交自有部分，callback 未注册时 503；A21 最终负责 server 中 `onboarding.SetAdoptOwnedWrite(setup.AdoptOwnedWrite)` 与 DNS callbacks，按 C36 handoff 做，并补 server 级测试证明注册后不再 503。
+
+
+本轮定向命令（.64，退出 0；无新 fuzz/产品逻辑改动，不重跑已完成的 fuzz）：
+
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt --back server/internal/gateway/onboarding/service_test.go -- bash -lc 'cd server && gofmt -w internal/gateway/onboarding/service_test.go && gofmt -l internal/gateway/onboarding internal/api/gatewayonboarding && go vet ./... && CONFIGFLOW_DIFF=1 go test -race -p 4 -count=1 -timeout 5m ./internal/gateway/onboarding ./internal/api/gatewayonboarding/... ./internal/server && go test -race -count=1 -timeout 3m -run "^TestO36cRepo(BeforeCommitRuntimeBoundary|LockWaitRuntimeBoundary|OwnerRuntimeMatrix)$" ./internal/repo'
+```
+
+`gofmt -l` 无输出，全仓 vet 通过；最后输出：
+
+```text
+ok configflow/internal/gateway/onboarding                 15.121s
+ok configflow/internal/api/gatewayonboarding               3.978s
+ok configflow/internal/api/gatewayonboarding/difftest       4.162s
+ok configflow/internal/server                              1.512s
+ok configflow/internal/repo                                2.662s
+```
+
+本轮未发现新增产品差异；原生 typed repo 兼容入口保留现有 A21 边界，不趁衔接扩展迁移。

@@ -1949,7 +1949,8 @@ Routes (3): `GET|POST /api/profiles/<profile_id>/gateway-onboarding`; `POST /api
 
 - DNSLoop 不 cherry-pick、不重写；C34 复核可能改共享函数。合入后 rebase 再接线，保留 TODO(C34)。当前缺省 checker 拒绝准备；非回环独立测试注入明确的 seam，不冒充完整接线测试。
 - C36 仅有 `setupflow.ProfileSessions` 只读 reader。保留 `SetAdoptOwnedWrite` hook；无未完成 session 的正常保存不受阻。存在未完成 session 或 reader 失败/损坏时，profile 提交前返回 503「等待首次使用向导模块」，不改变 DB、文件或 revision。GET/preview 不走这个保存就绪分支。不计算 digest、不创建替代会话。
-- C36 实现 hook 后须对照 Python 的 `_revision+1` 条件和会话 ownership digest；session 文件锁及写入归 C36 owner，A21 在调用前检查 shutdown。
+- C36 实现 hook 后须对照 Python 的 `_revision+1` 条件和会话 ownership digest；session 文件锁及写入归 C36 owner，A21 在调用前检查 shutdown。C36 合入后由 A21 按其 handoff 做 server 的 adopt/DNS callbacks 最终注册，并补 server 级回归证明注册后 503 消失。
+- batch-4（含 batch-1/O3-6c）已 rebase 到本地 go@fbbe382ec；沿用 repo 的 CommitContext 最终提交检查，真实 Runtime 最终 COMMIT 屏障回归见 A21 handoff。DNSLoop 仍等 C34 合入。
 - HEAD 按 GET 只读，忽略 body，不改 DB、业务文件或 revision；真实 Flask 显式复现旧版 HEAD 进入保存事务，属于已有 HEAD 只读类别。
 
 **Clarified in C34 (2026-11-18):** `gateway_onboarding.mihomo_dns_loop` is a pure function of the supplied DNS tree and host-address list (standard URL/IP parsing only; no repository, device, session, probe or onboarding runtime state). C34 provides `gateway.MihomoDNSLoop` and wires `convert.MihomoHooks.MihomoDNSLoop` through gateway.Hooks. A21 must reuse this function, not rewrite it. Real Python direct comparisons cover ordinary/local/host IPv4 and IPv6, domains, ports, udp/tcp/tls/https/quic and malformed addresses. Other A21 functions/routes remain this module's responsibility.
