@@ -1,15 +1,89 @@
-# A17 DNS follow 交回材料（进行中）
+# A17 DNS follow 移植交回
 
-当前状态：partial，尚未交回。分支 go-port-a17，从 go-opus-review-a14@b6ce4ac29 起步；A14尚未合入go，按协调者要求待其合入后再变基。只用合成数据及回环Agent，不push、不创建子agent；按Leaner verification只做定向验证。
+状态：**ported，待独立 Opus HR 复核及 A14 合入后的集成复验**。分支 `go-port-a17`，首个提交 `8dec20f39`，基于 `go-opus-review-a14@b6ce4ac29`。协调者 2026-11-18 明确要求在 batch-4 → A14 收尾 → 下一批合入之前不拉入 A14 的后续改动；A14 进 go 后再 rebase。本文记录的是独立 A17 树，不代表依赖合并后的门禁。
 
-已读：A17 PROGRESS、A14复核及HANDOFF、C26覆盖核对、O3-6锁/owner说明、AGENT-BRIEF、最新go的WORKFLOW Leaner verification、A16–A18设计的A17/共享接口部分；Python dns_follow.py及四条路由、test_dns_follow.py完整分支（70测试函数/参数化）。D-A17-1已裁定B：沿用Go-native CanonicalDigest，切换后已有binding需重新选择一次；不仿真Python JSON编码。
+## 实现与边界
 
-已通过Paseo与A16（0d31fb93）对齐：A17不依赖rulesync设备FetchSnapshot；复用A14 Source.Raw/Member/WithMember、SourceFromJSON、CanonicalDigest、PrepareContent/Publish及model.Agent/DNSFollow*。A16负责RuleSyncRow/PinnedWithheld及HAEnabled/HAPair导出；A17负责DNSFollowRow/runner。api/agents各用独立文件，注册/server/routes合并保留双方接线。
+完整阅读 Python `backend/agents/dns_follow.py`、路由 162–191 行和 `backend/test_dns_follow.py`（70 个函数/参数化定义）；对照 A14 复核/HANDOFF、C26、O3-6 locks、A16–A18 设计及 WORKFLOW Leaner verification。
 
-已实现：internal/agents/dnsfollow的绑定/解除/重试、options投影、C26文档/来源检查、IdleRounds、状态/事件去重、child reservation/job/publish/resume、profile CAS及ownership复检；四条auth路由；C07 SetDNSFollowRow/SetRunner；boot periodic。只有adapter.go接触jsonx；不增加锁文件或裸goroutine。Wire(m)初始化manager owner，Register()是server的无参数组合入口。旧manager关闭后从pool移除，L1 keyed锁按数据目录共享。
+`internal/agents/dnsfollow` 提供 `Options/Configure/Disable/Retry/Tick`、`ForManager/Wire/Register`。绑定、来源和目标 profile、连接信息、基准、资源摘要以及成功发布归属都在写入前重新核对。A14 提供真正的 PrepareContent/Publish、reservation、receipt、Agent 协议和缓存提交；C26 提供文档/生成检查。无自制 YAML/JSON parser，无新依赖。未改共享 taskstatus.Store.Now，避免多个 owner 写共享时钟字段。只有 `adapter.go` 接触旧 registry/repo 的 jsonx API；业务类型使用 model 和 deploy Source。
 
-初轮定向：.64经rt，gofmt；go test -race -count=1 ./internal/agents/dnsfollow，通过51.915s（两条真实SQLite/回环Agent/A14 prepare/publish用例）：只改选定上游且重复tick无重复上传；已验证未变地址不prepare/download。API/server组合编译通过（-run ^$）。新fixture初版误用只允许元数据的UpdateProfile、以及将fake的202/verifying误作同步终态，已分别改为真实UpdateProfileTransaction和真实GetDeployment确认，不改生产参数。
+四条路由全部通过 panel auth：GET/PUT/DELETE `/api/agents/<agent_id>/dns-follow`，POST `/api/agents/<agent_id>/dns-follow/retry`。HEAD 走只读 options；PUT 使用 BindSilent，与 Flask silent JSON 一致；retry 成功 202，拒绝 409。options 不返回私有 job，只投影来源公共字段。绑定索引接受整数且不接受 bool/null/浮点；保存数据里的 R5 错类型回退也不能成为 upstream 0 的所有权证据。
 
-待完成：真实Python HTTP/状态/文件对照；空闲轮次commit计数；丢响应/重启/并发所有权及漂移、泄露、绑定/任务路由边界；写owner真实Runtime取消/断连回归；定向格式/vet/race及必要负控；A14进go后的最终变基与共享Context入口衔接。当前parent仍有已分派O3-6c的共享提交窗口，不能用本模块测试声称该窗口已修；合并时使用RecordContext传owner ctx。
+已通过 Paseo 与 A16 对齐：A16 独占 RuleSyncRow/PinnedWithheld、设备 snapshot 与 `agents.HAEnabled/HAPair`，A17 不依赖私有设备快照。不新增重复 HA 导出；A17 独立 `api/agents/dnsfollow.go`，server/routes 合并时保留双方接线。A17 注册 DNSFollowRow 和 dns_follow runner；没有伪造空 RuleSyncRow 来骗过 C07 readiness。`Wire(m)` 是 manager 初始化入口；无参数 `Register()` 是 server 组合入口。
 
-完成后补齐：Python测试覆盖映射、差异清单、精确命令及最终输出、修复/交回提交和已知依赖。独立Opus HR及完整批次门禁由协调者安排。
+## 并发、恢复和取消
+
+L1 try-lock 按 repository canonical DataDir 共享，跨 Manager/Service 排他，忙冲突在参数校验之前返回；不增加 flock/锁文件。UpdateAgents 和 profile 事务 callback 不做网络；来源/目标网络请求都走 Manager 的实际 HTTP client 和生产超时。boot 首轮零延迟，之后 5 秒；IdleRounds 600 秒复查，稳定结果不重写时间、事件或 taskstatus。
+
+child ID 由 binding/source/attempt 确定；预留后保存私有 job、提交证据，再上传同一 prepared bundle。丢响应保留 submitted 任务，重启只 poll；rollback_failed 非终态，禁止重复 retry/upload；仅 failed/rolled_back/succeeded 为终态。成功后 profile 做 settings CAS，期间新草稿保留并报告 draft_synced=false。finalize 在 profile L3 事务中再读归属，避免核验与写入之间让旧 child 覆盖新归属。
+
+所有写 owner 通过 deploy.RunDetached；已绑定请求断连会完成工作，Runtime 关闭则拒绝新工作。真实 Runtime 用例在 DNS 响应/Agent 接受上传后停机，比较完整 DB 文档与非 SQLite 辅助文件，确认晚到响应不提交状态/job/profile/taskstatus；已接受的上传保留不确定证据以待下次恢复。无裸后台 goroutine，ForManager 在 Manager.Close 时移除 pool entry；回环测试的 goroutine 只用于触发真实并发。
+
+当前 A14 parent 尚无 taskstatus.RecordContext；adapter 使用 notifications 的真实 TaskStatus store 和 Record。共享 SQLite/原子文件/taskstatus 最后窗口属于 O3-6c，不能拿 A17 定向测试声称它已修。**A14 合入 go 后必须把 Record 换成 RecordContext(owner ctx)，在合并树补跑关机后 taskstatus 不写及本包定向 race/live difftest。** 协调者已明确这个顺序。
+
+## 脱敏与行为差异
+
+状态、事件、options、task runner/HTTP error 使用共享 redact/FailureText，包含所有当前 Agent token 和私有 proof 中的凭据；日志 label 也用同一组 secrets。读取凭据失败时只给通用错误，不回传未经脱敏的原始 error。private job 和原始凭据保留在磁盘，不出现在公共视图；更新只改 A17 的三个成员，其他 Agent 字段和已知成员中的未来字段不丢。
+
+- **D-A17-1 已裁定 B**：原生 `deploy.CanonicalDigest/SettingsDigest`；不复刻 CPython JSON 序列化。切换时所有既有 DNS binding 需重新选择一次，按设计列入 O12/O14。YAML 字节排版不追平，配置结构和实际文件语义一致。
+- **R05-3**：空 identity/proof 不授权提交；错类型/null 索引不按 0 处理。损坏记录拒绝并保留现场。
+- finalize 增加同事务归属检查，封住 Python 先核验再写的竞态；并发 draft 编辑仍保持 Python 的成功带警告行为。扩展凭据脱敏沿用 A24 安全合同。
+- 不改比较器来抹去业务差异。差分只归一化 A17 具名 binding UUID、entry digest、确定性 child ID 和合法时间；任意其他 hex 字符串与地址仍精确比较。负控改变地址、无关 64 位字符串均能检出。
+
+## 测试映射（按 Leaner verification 分组）
+
+真实差分 `difftest.TestPythonRoutesAndArtifacts`：7 个隔离合成场景，实际 Flask、ProfileRepository、AgentManager、A14 prepare/publish，Agent 为同一 Go 协议 fake 的两个独立回环实例，真实 HTTP，未替换 Python 业务函数，仅固定 `_now`。正常、地址未变、未发布草稿、监听停用、peer 错误、null index、非对象输入。对照所有 4 条路由的结果、HEAD/auth、binding/state/events、草稿、实际归档的每个 files 成员与上传次数。两边摘要由各自原生算法验证，不比较 YAML/JSON 排版。Python HTTP guard 禁止回环之外的网络。
+
+| Python test_dns_follow.py 行/行为组 | Go 证据 |
+|---|---|
+| 149–195 options、地址建议；494 candidates | live diff 初始 options、auth、HEAD；BindingValidation、NetworkAndHASelection |
+| 196–259 发布触发、只改一项、幂等、rule-sync 基准 | ConfirmedFollowChangesOnlySelectedUpstream；live diff success 归档；沿用 A14 applied_content 基准 |
+| 260–296 丢响应重启、失败重试 | LostAcceptedReplyRestartAndRollbackFailedNeverUploadTwice；FailedChildRetryCreatesOneDistinctAttempt |
+| 297–420 草稿/生成/规则漂移、设备基准、并发新草稿 | DraftDriftAndConcurrentEditPreserved、OwnershipChangedDuringVerificationRejectsChild；live diff drift；生成/资源分支复用 A14/C26 的真实 prepare/digests |
+| 445–617 auto/network/HA、监听、绑定变化、pinned/parked、禁用 | NetworkAndHASelection、BindingValidationIsStrictAndDoesNotWrite、RetryNullSourceAndPrivateProjection；live diff wrong-peer/disabled-listener；C26 pinned/source 行为 |
+| 618–998 noop 不准备、不下载、证据及归属 | UnchangedVerifiedAddressSkipsPreparation；OwnershipChangedDuringVerificationRejectsChild；PrepareUsesProductionOptionsAndRechecksOwnership；live diff unchanged |
+| 999–1080 凭据、private job、auth、rollback_failed、注册保留 | OutcomeRedactsCredentialsAndPreservesUnknownFields、RetryNullSourceAndPrivateProjection、LostAcceptedReplyRestartAndRollbackFailedNeverUploadTwice；live diff auth；api/agents 的 EveryRouteRequiresPanelAuthAndHEADIsReadOnly 覆盖 GET/HEAD/PUT/DELETE/POST 未登录和 Agent token 拒绝 |
+| 1081–1289 来源/目标变化、资源和 finalization 竞争 | PrepareUsesProductionOptionsAndRechecksOwnership；BindingChangedAfterUploadCannotFinalizeDraft；DraftDriftAndConcurrentEditPreserved；A02/A14 共享发布操作 guards |
+| 1290–1341 跨 worker lock、loop/init 一次 | BusyOwnerAcrossManagersPrecedesValidation；C07RunnerAndManagerOwnerLifecycle；named lifecycle periodic 去重合同 |
+| 1342–1752 空闲、broken 修复、pending polling、去重、重查 | SettledAndBrokenRoundsRestWithoutWrites；StateDedupeIncludesFieldsButIgnoresTime；LostAcceptedReplyRestartAndRollbackFailedNeverUploadTwice；真实 shared IdleRounds |
+| Flask 之外 O3 写 owner 合同 | RuntimeStoppedRejectsEveryFollowWrite；DisconnectedBoundRequestFinishesBindingAndFollow；ShutdownDuringFollowIOLeavesNoLateCommit；ShutdownBetweenRetryCommitsRetainsCompleteWaitingState |
+
+未逐项重复 Python 参数笛卡尔积、CPython/PyYAML 内部异常文本、既有共享层测试；本轮不跑模块 mutation suite 或完整 gate。A17 不负责 A16 snapshot/投影和 A18 HA pair，HA pair 最终执行仍依赖 A18。
+
+
+## 自查修复
+
+- Medium：旧/导入 Agent 的 task row 名称可能含另一 Agent 的 token，原始 row 不使用所有 Agent 的凭据集合清理。负控实际检出 `synthetic-source-token`，已在 taskRow 使用共享 CollectCredentials/SanitizeCredentials；state/events/options/error/log label 同集合检查，未知非敏感字段和磁盘私有 job 保留。回归 `TestOutcomeRedactsCredentialsAndPreservesUnknownFields`。
+- Medium：JSON null 索引/标签不能落到 Go 零值；存储中的 R5 错类型/null 索引也不能成为 upstream 0 证据。回归 BindingValidation 与 StoredIndexFallback；合法整数 0 正控保留。
+- Low：retry 在尚无来源发布时需显式写入 source_deployment_id:null，避免遗漏字段；删除中的 target 不再进入 nil 解引用。回归 RetryNullSourceAndPrivateProjection、CancelledContextDoesNotEnterOwner。null 状态解码还曾清掉预设 waiting，已把状态赋值放到解码后；真实 Runtime 在 reset 提交后、queued event 提交前停机，断言中间记录完整 waiting/attempt/retry/null，且无晚到 taskstatus 或辅助文件写入（ShutdownBetweenRetryCommitsRetainsCompleteWaitingState）。
+- 测试夹具修复没有修改生产 timeout/PrepareOptions、比较器业务字段或 repo 校验；没有以替身返回 ready 来绕过真实 A14。
+
+## 定向结果
+
+早期用 rt 在 `.64`，收到协调者计时保留要求后切到 `.32`；最终命令固定 `.32`。所有用例与 fixture 只含合成数据/回环设备，无生产访问；不 push，不开子 agent。
+
+- 初轮 `go test -race -count=1 ./internal/agents/dnsfollow` 两个正常路径通过（51.915s）。
+- 组合编译 `go test -count=1 -run '^$' ./internal/agents/dnsfollow/...` 通过。
+- `CONFIGFLOW_DIFF=1 go test -race -count=1 -timeout=12m ./internal/agents/dnsfollow/...`：live difftest **ok 88.685s**；parent 回归暴露两项夹具错误（规则使用 type 而不是 itemType；fake 把已失败 child 当作当前 active），修正后 .32 复验通过，见下面最终结果。Runtime 各边界在该轮均执行通过。
+- 策略 pin fixture 曾连续被真实 repo 校验挡住，已按 AGENT-BRIEF 发送 escalation packet，协调者要求改为使用真实 Python helper。现通过 `testdata/pin_reference.py` 在 .32 的真实 ProfileRepository 调用 `backend.test_dns_follow.pin_rule` 生成 `testdata/pinned.json`，不再手写行或 action 字段。Go 只把生成记录接到既有默认 profile，保留原规则引用；live diff 再运行同一 helper 验证 fixture 未过期。
+- `.32`：`go test -race -count=1 -run 'TestBindingValidation|TestOutcomeRedacts' ./internal/agents/dnsfollow` **ok 29.074s**。
+- `.64` 的收尾命令收到指令后中止（143），不算通过；其中 vet 已先完成，最终仍在 .32 重跑。
+- 最终 `.32`，gofmt 无输出、`go vet ./...` 退出 0：
+
+  ```sh
+  RT_HOST=sunbroke@192.168.0.32 rt -e GOMAXPROCS=4 -e CONFIGFLOW_DIFF=1 -- bash -lc 'set -e; cd server; go test -race -p 4 -count=1 -timeout=12m ./internal/agents/dnsfollow/... ./internal/api/agents ./internal/server'
+  ```
+
+  `ok configflow/internal/agents/dnsfollow 440.750s`；`ok .../dnsfollow/difftest 151.565s`；`ok .../api/agents 358.929s`；`ok .../server 1.836s`。包含 22 个本包测试、7 个 live 场景及归一化负控、真实 Python pin fixture 新鲜度检查，API/server 接线回归。
+- 随后只修改 retry 的中间状态赋值顺序、取消后日志检查并新增对应 Runtime/逐路由 auth 用例，按 Leaner verification 只复验重叠路径；最终再次 gofmt 无输出、全仓 vet 退出 0：
+
+  ```sh
+  RT_HOST=sunbroke@192.168.0.32 rt -e GOMAXPROCS=4 -e CONFIGFLOW_DIFF=1 -- bash -lc 'set -e; cd server; go vet ./...; go test -race -count=1 -run "TestShutdownBetweenRetry|TestRetryNull|TestOutcomeRedacts" ./internal/agents/dnsfollow; go test -race -count=1 -run TestDNSFollowEveryRoute ./internal/api/agents; go test -race -count=1 -run "TestPythonRoutesAndArtifacts/(drift|disabled-listener)$" ./internal/agents/dnsfollow/difftest'
+  ```
+
+  依次 `ok .../dnsfollow 31.931s`、`ok .../api/agents 1.465s`、`ok .../dnsfollow/difftest 35.706s`。当前本包共 23 个测试函数（另含参数化子例），全为合成数据。新 Runtime 用例最初过度限定了取消后的纯时钟读取次数，已删除该实现细节断言；仍严格检查真实取消、提交数和 durable waiting 状态。
+
+提交：`8dec20f39` 为主体；后续边界修复、差分、真实 Runtime 和交回说明在本报告所在的验收提交。工作树最终保持干净，未 push。
+
+没有申请 full gate；协调者安排独立 Opus HR 和后续合并批次门禁。当前不能越过 A14 未合入的依赖声称合并复验已完成。

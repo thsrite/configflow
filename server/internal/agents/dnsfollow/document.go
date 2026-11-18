@@ -1,6 +1,7 @@
 package dnsfollow
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/netip"
@@ -74,6 +75,16 @@ func entries(doc *yamlx.Node) []upstream {
 	return out
 }
 func boundEntry(doc *yamlx.Node, b *model.DNSFollowBinding) (*yamlx.Node, error) {
+	// Stored R5 fallback values are not selection evidence. In particular a
+	// wrong-type or null index must never become a claim to upstream zero.
+	raw, err := json.Marshal(b)
+	var selected struct {
+		Tag   *string `json:"upstream_tag"`
+		Index *int64  `json:"upstream_index"`
+	}
+	if err != nil || json.Unmarshal(raw, &selected) != nil || selected.Tag == nil || selected.Index == nil || *selected.Index < 0 {
+		return nil, refusal(msgRemoved)
+	}
 	for _, e := range entries(doc) {
 		if e.tag == b.UpstreamTag && int64(e.index) == int64(b.UpstreamIndex) {
 			return e.entry, nil
@@ -89,8 +100,13 @@ func scheme(address string) (string, error) {
 	if err != nil || u == nil {
 		return "", refusal(msgScheme)
 	}
+	credentials := false
+	if u.User != nil {
+		password, _ := u.User.Password()
+		credentials = u.User.Username() != "" || password != ""
+	}
 	s := strings.ToLower(u.Scheme)
-	if (s != "udp" && s != "tcp") || u.Hostname() == "" || u.User != nil || (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" {
+	if (s != "udp" && s != "tcp") || u.Hostname() == "" || credentials || (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" {
 		return "", refusal(msgScheme)
 	}
 	return s, nil
@@ -181,7 +197,7 @@ func selection(f model.Fields) (*model.DNSFollowBinding, error) {
 	raw, ok := f.Get("upstream_index")
 	tagRaw, tagPresent := f.Get("upstream_tag")
 	var tag string
-	if !ok || json.Unmarshal(raw, &index) != nil || index < 0 || !tagPresent || json.Unmarshal(tagRaw, &tag) != nil {
+	if !ok || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) || json.Unmarshal(raw, &index) != nil || index < 0 || !tagPresent || bytes.Equal(bytes.TrimSpace(tagRaw), []byte("null")) || json.Unmarshal(tagRaw, &tag) != nil {
 		return nil, refusal(msgSelection)
 	}
 	connection := stringMember(f, "connection")

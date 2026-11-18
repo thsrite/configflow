@@ -266,7 +266,7 @@ func (s *Service) safe(message string, list []*agent) string {
 func (s *Service) FailureMessage(ctx context.Context, err error) string {
 	rows, e := s.m.GetAllAgents(ctx, true)
 	if e != nil {
-		return agents.FailureText(err.Error(), nil, 0)
+		return msgUnexpected
 	}
 	secrets := redact.Secrets{}
 	for _, r := range rows {
@@ -323,15 +323,14 @@ func (s *Service) recordOutcome(ctx context.Context, id, status, message string)
 		return e
 	}
 	store := notifications.TaskStatus(ctx, s.m.Repository().DataDir())
-	store.Now = s.now
 	_, err := store.Record("dns_follow:"+id, taskstatus.Result{OK: status == "succeeded", Trigger: "event", Error: message})
 	return err
 }
-func (s *Service) logState(a *agent, previous model.DNSFollowState, current model.DNSFollowState) {
+func (s *Service) logState(a *agent, previous model.DNSFollowState, current model.DNSFollowState, list []*agent) {
 	if previous.Status == current.Status && previous.Message == current.Message {
 		return
 	}
-	label := logx.LogText(name(a), 0)
+	label := logx.LogText(s.safe(name(a), list), 0)
 	message := logx.LogText(current.Message, 300)
 	switch current.Status {
 	case "failed":
@@ -414,7 +413,21 @@ func taskRow(ctx context.Context, raw *agents.Record, statuses *jsonx.Object) (*
 	}
 	row := tasks.Row(key, "dns_follow", label, "resource_id", id, "enabled", isEnabled, "schedule_text", msgSchedule, "can_run", isEnabled && status == "failed", "run_hint", hint, "running", running(status), "link", "/agents", "state_message", message)
 	row.Update(history)
-	return row, nil
+	// Old imported names/history may contain another Agent's credentials too.
+	m, err := agents.Get(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := m.GetAllAgents(ctx, true)
+	if err != nil {
+		return nil, err
+	}
+	secrets := redact.Secrets{}
+	for _, a := range rows {
+		secrets = redact.CollectCredentials(a, secrets)
+		secrets = append(secrets, a.GetString("token"))
+	}
+	return redact.SanitizeCredentials(row, secrets), nil
 }
 
 func timestamp(t time.Time) string {

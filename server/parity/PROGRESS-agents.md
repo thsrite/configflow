@@ -68,6 +68,9 @@ Same as `PROGRESS-config.md`: status `missing` / `partial` (exact list of what i
 | A15 | upgrades, Agent operations, address follow | 745 | verified | HR | A01, A02 | 15 (15 done) | internal/agents/upgrades (new), api/agents |
 | A16 | Agent rule sync, projection, snapshot | 1371 | ported | HR | A07, A14, C25, C27 | 2 | internal/agents/rulesync (new), api/agents |
 | A17 | DNS follow | 760 | missing | HR | A14, C26 | 4 | internal/agents/dnsfollow (new), api/agents |
+
+| A16 | Agent rule sync, projection, snapshot | 1371 | missing | HR | A07, A14, C25, C27 | 2 | internal/agents/rulesync (new), api/agents |
+| A17 | DNS follow | 760 | ported | HR | A14, C26 | 4 | internal/agents/dnsfollow (new), api/agents |
 | A18 | DNS HA (keepalived pair, handoff, pair publication) | 1529 | missing | HR | A16, A17, C26, routers (`routers/store.py`) | 4 | internal/agents/dnsha (new), api/agents |
 | A19 | Linux gateway core (common/linux_gateway.py) | 518 | verified | HR | C05, C08, routers (`router_split.check_generation`) | – | internal/gateway (new) |
 | A20 | Agent gateway bridge, gateway draft, gateway routes | 1110 | verified | HR | A19, A06, C18, routers (`router_split`, `routers/store.py`) | 18 | internal/gateway, api/agents, api/linuxgateway (new) |
@@ -1642,9 +1645,9 @@ Original author product tip: `c241f2938`; original .64 targeted checks: rulesync
 
 ## A17 — DNS follow
 
-**Status: `partial` — Codex移植中** · HR · prereqs: A14 (`_prepare_transactional_content`), A11, A02 (IdleRounds, events), C26 (`oxidns_editor.prepare_editor`), C22 (`load_native_yaml`, `generate_oxidns_config`) · Go: internal/agents/dnsfollow (new), api/agents
+**Status: `ported` — 待独立 Opus HR 与依赖合并复验** · HR · prereqs: A14 (`_prepare_transactional_content`), A11, A02 (IdleRounds, events), C26 (`oxidns_editor.prepare_editor`), C22 (`load_native_yaml`, `generate_oxidns_config`) · Go: internal/agents/dnsfollow (new), api/agents
 
-**Design:** `server/design/a16-a18-sync-follow-ha.md` (Opus, 2026-11-17) covers A16, A17 and A18 — package map, stored types, Agent protocol, loops, locks, failure/rollback, steps A16-0…A18-4, acceptance (fake pair, Python transcript differential, F1 closure, L3). Port to it; contract changes need the designer's or coordinator's agreement. Open maintainer decisions: D-A17-1, D-A18-1.
+**Design:** `server/design/a16-a18-sync-follow-ha.md` (Opus, 2026-11-17) covers A16, A17 and A18 — package map, stored types, Agent protocol, loops, locks, failure/rollback, steps A16-0…A18-4, acceptance (fake pair, Python transcript differential, F1 closure, L3). Port to it; contract changes need the designer's or coordinator's agreement. D-A17-1 已裁定 B（Go-native canonical JSON，切换后重新选择 binding）；D-A18-1 属于 A18。
 
 Files:
 - `backend/agents/dns_follow.py` (730)
@@ -1654,7 +1657,7 @@ Tests: `test_dns_follow.py` (70)
 
 Routes (4): `GET|PUT|DELETE /api/agents/<agent_id>/dns-follow`; `POST /api/agents/<agent_id>/dns-follow/retry`
 
-Evidence: go-port-a17 从 go-opus-review-a14@b6ce4ac29 起步；已实现owner、4条auth路由、C07 row/runner和boot loop，真实SQLite/回环Agent/A14 prepare/publish初轮2用例race通过51.915s。A16接口已通过Paseo对齐；真实Python差分、Runtime/恢复/脱敏及最终检查尚在进行，不能标ported。进度与后续验收见 [A17-handoff-zh.md](progress/A17-handoff-zh.md)。
+Evidence: go-port-a17 基于 go-opus-review-a14@b6ce4ac29，主体 8dec20f39，后续验收提交附真实 Flask/Go 7 场景差分、23 个 owner/Runtime/恢复/脱敏测试及逐路由 auth/HEAD 检查。最终 .32：全仓 vet/gofmt 通过；本包 race 440.750s、live difftest 151.565s、api/agents race 358.929s、server 1.836s；retry 最后修正定向 31.931s、HTTP auth 1.465s、重试 live diff 35.706s。Python pin fixture 由真实 helper 生成并检查新鲜度。A16 接口已对齐，没有伪造 RuleSyncRow；不 push/不开子 agent。A14 仍未入 go，遵协调者指令不拉入其后续变动；收到通知后 rebase，切 RecordContext(owner ctx) 并补集成定向验证。本轮按 Leaner 不跑完整 gate。测试映射、差异与共享窗口说明见 [A17-handoff-zh.md](progress/A17-handoff-zh.md)。
 
 Hooks to provide: `agents.SetDNSFollowRow` (dns_follow row; with A16's row this completes the `agent` task slot), `tasks.SetRunner("dns_follow", dns_follow.retry)`, `agents.OnManagerInit` (`dns_follow.start_loop`, registered first: Python order dns_follow → HA publication → IPv6 verification). `settings_digest` is used by A14 `_remember_deployment_content` (export it; A14 needs it → port the digest helper in A14 or give A14 a hook).
 

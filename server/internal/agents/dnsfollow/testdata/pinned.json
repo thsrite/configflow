@@ -1,0 +1,62 @@
+{
+  "active": {
+    "rules": [
+      {
+        "id": "rule-a",
+        "itemType": "rule",
+        "rule_type": "DOMAIN",
+        "value": "a.test",
+        "policy": "DIRECT"
+      },
+      {
+        "id": "rule-b",
+        "itemType": "rule",
+        "rule_type": "DOMAIN",
+        "value": "b.test",
+        "policy": "Proxy",
+        "enabled": true
+      }
+    ],
+    "key": "rule_actions",
+    "actions": {
+      "rule-b": {
+        "action": "upstream",
+        "source": "remote",
+        "upstream": {
+          "addr": "udp://127.0.0.1:1053",
+          "timeout": "5s"
+        }
+      }
+    }
+  },
+  "parked": {
+    "rules": [
+      {
+        "id": "rule-a",
+        "itemType": "rule",
+        "rule_type": "DOMAIN",
+        "value": "a.test",
+        "policy": "DIRECT"
+      },
+      {
+        "id": "rule-b",
+        "itemType": "rule",
+        "rule_type": "DOMAIN",
+        "value": "b.test",
+        "policy": "Proxy",
+        "enabled": false
+      }
+    ],
+    "key": "rule_dns_parked",
+    "actions": {
+      "rule-b": {
+        "action": "upstream",
+        "source": "remote",
+        "upstream": {
+          "addr": "udp://127.0.0.1:1053",
+          "timeout": "5s"
+        }
+      }
+    }
+  }
+}

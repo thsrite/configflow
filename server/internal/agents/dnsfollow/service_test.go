@@ -49,6 +49,7 @@ type peer struct {
 	activeID                                    string
 	listenerEnabled, peerMatches, activeMatches bool
 	paths                                       []string
+	loseUploadResponse, pollOffline             bool
 	hook                                        func(*http.Request)
 }
 
@@ -62,6 +63,7 @@ func newPeer(t *testing.T, id, service string, o agentfake.Options) *peer {
 		p.mu.Lock()
 		p.paths = append(p.paths, r.Method+" "+r.URL.RequestURI())
 		hook := p.hook
+		lose, offline := p.loseUploadResponse, p.pollOffline
 		host, port, active, enabled, same, matches := p.listenerHost, p.listenerPort, p.activeID, p.listenerEnabled, p.peerMatches, p.activeMatches
 		p.mu.Unlock()
 		if hook != nil {
@@ -92,6 +94,22 @@ func newPeer(t *testing.T, id, service string, o agentfake.Options) *peer {
 			}
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(reply)
+			return
+		}
+		if offline && r.Method == "GET" && strings.HasPrefix(r.URL.Path, "/api/deployments/") {
+			http.Error(w, "synthetic offline", http.StatusServiceUnavailable)
+			return
+		}
+		if lose && r.Method == "POST" && r.URL.Path == "/api/deployments" {
+			recorder := httptest.NewRecorder()
+			p.fake.ServeHTTP(recorder, r)
+			p.mu.Lock()
+			p.activeID = r.Header.Get("X-Deployment-ID")
+			p.mu.Unlock()
+			conn, _, err := w.(http.Hijacker).Hijack()
+			if err == nil {
+				_ = conn.Close()
+			}
 			return
 		}
 		p.fake.ServeHTTP(w, r)

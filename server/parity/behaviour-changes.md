@@ -1027,3 +1027,15 @@ JSON 类型比较保存 0。`TestC34ObjectFieldValues` 对四个宽松引擎分�
 - 按 O12 不再创建 worker.lock 或仅供加锁的目录；实际 receipt/归档路径仍兼容。batch-5 集成后任务记录已使用 RecordContext(owner ctx)，共享 SQLite/taskstatus 最终取消检查与真实 Runtime 锁等待取消回归均通过。
 
 A16 收尾的两条并发可靠性修正：HA enable 在初次检查之后才提交时，settings 事务仍会拒绝并整批回滚；OxiDNS GET 状态期间绑定/设置变化时，首次及回退 POST 前重新校验，不继续发起旧来源下载。Python 的这两个检查只在较早位置，分别有修复前失败的 SQLite/loopback 回归，见 A16-handoff-zh.md。
+
+## A17 — DNS-follow 摘要与写归属
+
+按设计最终裁定 **D-A17-1 → B（2026-11-17）**，DNS binding/私有 job 使用 A14 的 Go-native
+CanonicalDigest/SettingsDigest。切换后旧 binding 需重新选择一次（O12/O14 发布说明项）；不仿真
+CPython JSON 编码。配置与 Agent 归档按解析后语义相等验证，排版不追平。
+
+R05-3 的非空证明要求应用到 DNS follow：空 binding/child/job proof、错类型或 null 索引不授权对
+upstream 0 的写入。finalization 在同一 profile 事务内重新核对来源、目标及 binding，封住 Python
+核验后再写的归属变化窗口；用户在发布期间编辑的新草稿仍保留，报告成功但 draft_synced=false。
+公共 options、状态、事件、任务错误和日志 label 扩展使用 A24 的共享凭据脱敏合同，磁盘私有 job
+保留。见 [A17 交回](progress/A17-handoff-zh.md)。

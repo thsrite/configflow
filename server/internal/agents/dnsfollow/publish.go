@@ -15,6 +15,7 @@ import (
 	"configflow/internal/deploy"
 	"configflow/internal/model"
 	"configflow/internal/oxidns"
+	"configflow/internal/repo"
 	"configflow/internal/yamlx"
 )
 
@@ -236,6 +237,9 @@ func (s *Service) finishUnchanged(ctx context.Context, target, source *agent, b 
 	return e
 }
 func (s *Service) run(ctx context.Context, target, source *agent, b *model.DNSFollowBinding, sourceState model.Deployment) error {
+	if target == nil {
+		return refusal("oxidns" + msgMissingAgent)
+	}
 	sourceID := sourceState.DeploymentID
 	previous := state(target)
 	attempt := model.Int(0)
@@ -435,7 +439,7 @@ func (s *Service) finalize(ctx context.Context, target *agent, st model.DNSFollo
 		if !IsUserError(e) {
 			return e
 		}
-		if e.Error() != msgDraftEdited {
+		if e.Error() != msgDraftEdited && !repo.IsValueError(e) {
 			return e
 		}
 		warning = e.Error()

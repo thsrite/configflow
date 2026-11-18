@@ -232,6 +232,10 @@ func (s *Service) Retry(ctx context.Context, id string) (out RetryView, err erro
 				a.DNSFollowJob = nil
 				a.dropJob = true
 				a.DNSFollowState = newState()
+				// Preserve source_deployment_id:null for pre-publication failures.
+				if err := json.Unmarshal([]byte(`{"events":[],"source_deployment_id":null}`), a.DNSFollowState); err != nil {
+					return err
+				}
 				a.DNSFollowState.Status = "waiting"
 				a.DNSFollowState.SourceDeploymentID = previous.SourceDeploymentID
 				a.DNSFollowState.RetryRequested = ptr(true)
@@ -311,6 +315,7 @@ func applyPatch(st model.DNSFollowState, p statePatch) (model.DNSFollowState, er
 func (s *Service) saveState(ctx context.Context, id, status, message string, p statePatch, before func(context.Context, []*agent) error) (out *model.DNSFollowState, written bool, err error) {
 	var prior model.DNSFollowState
 	var target *agent
+	var logAgents []*agent
 	err = s.update(ctx, func(tx context.Context, list []*agent) error {
 		if before != nil {
 			if e := before(tx, list); e != nil {
@@ -321,6 +326,7 @@ func (s *Service) saveState(ctx context.Context, id, status, message string, p s
 		if target == nil {
 			return refusal("oxidns" + msgMissingAgent)
 		}
+		logAgents = list
 		prior = state(target)
 		next, e := applyPatch(prior, p)
 		if e != nil {
@@ -357,6 +363,9 @@ func (s *Service) saveState(ctx context.Context, id, status, message string, p s
 			return out, true, e
 		}
 	}
-	s.logState(target, prior, *out)
+	if e := ctx.Err(); e != nil {
+		return out, true, e
+	}
+	s.logState(target, prior, *out, logAgents)
 	return out, written, nil
 }
