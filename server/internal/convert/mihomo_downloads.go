@@ -2,103 +2,130 @@ package convert
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
-	"configflow/internal/jsonx"
-	"configflow/internal/pystr"
+	"configflow/internal/model"
+	"configflow/internal/yamlx"
+
+	"gopkg.in/yaml.v3"
 )
 
-// Download is one entry of get_mihomo_provider_downloads /
-// get_mihomo_ruleset_downloads: {'name', 'url', 'local_path'}.
-type Download struct {
+// ResourceDownload is a typed generated resource, with deployment consumer metadata.
+type ResourceDownload struct {
 	Name      string
-	URL       any
-	LocalPath any
-	// Behavior and Format carry the final consumer metadata for deployment builds.
-	// Object deliberately retains the existing public download representation.
-	Behavior string `json:"behavior,omitempty"`
-	Format   string `json:"format,omitempty"`
+	URL       string
+	LocalPath string
+	Behavior  string
+	Format    string
 }
 
-// Object is the Python dict of the entry.
-func (d Download) Object() *jsonx.Object {
-	return jsonx.Obj("name", d.Name, "url", d.URL, "local_path", d.LocalPath)
-}
-
-// GetMihomoProviderDownloads is get_mihomo_provider_downloads(config,
-// base_url, main_config=main): every proxy provider of the generated
-// configuration that has a URL. main nil generates it (preflight off).
-func GetMihomoProviderDownloads(ctx context.Context, config *jsonx.Object, baseURL string, main *jsonx.Object) (out []Download, err error) {
+// MihomoProviderDownloads lists proxy providers from an owned generated document.
+func MihomoProviderDownloads(ctx context.Context, config *model.Config, baseURL string, main *yamlx.Node) ([]ResourceDownload, error) {
 	if main == nil {
-		main, err = GenerateMihomoDocument(ctx, config, GenerateOptions{BaseURL: baseURL, SkipProviderPreflight: true})
+		var err error
+		main, err = MihomoDocument(ctx, config, MihomoOptions{BaseURL: baseURL, SkipProviderPreflight: true})
 		if err != nil {
 			return nil, err
 		}
 	}
-	defer catch(&err)
-	return providerDownloads(main, "proxy-providers", false), nil
+	return documentDownloads(main, "proxy-providers", false)
 }
-
-func providerDownloads(main *jsonx.Object, field string, httpOnly bool) []Download {
-	out := []Download{}
-	providers := dictGet(main, field, jsonx.NewObject())
-	obj, ok := providers.(*jsonx.Object)
-	if !ok {
-		raise(attributeError(providers, "items"))
+func documentDownloads(main *yamlx.Node, key string, httpOnly bool) ([]ResourceDownload, error) {
+	if _, err := yamlx.Encode(main); err != nil {
+		return nil, err
 	}
-	for name, provider := range obj.All() {
-		if httpOnly && !jsonx.Equal(dictGet(provider, "type", nil), "http") {
+	out := []ResourceDownload{}
+	providers := yamlx.Resolve(yamlx.Get(main, key))
+	if providers == nil {
+		return out, nil
+	}
+	if providers.Kind != yaml.MappingNode {
+		return nil, fmt.Errorf(msgMihomoDownload, key)
+	}
+	for name, provider := range yamlx.Pairs(providers) {
+		kind, _ := textNode(yamlx.Get(provider, "type"))
+		if httpOnly && kind != "http" {
 			continue
 		}
-		if !jsonx.Truthy(dictGet(provider, "url", nil)) {
+		address := yamlx.Get(provider, "url")
+		if address == nil || nullNode(address) {
 			continue
 		}
-		d := Download{Name: name, URL: dictItem(provider, "url"), LocalPath: dictItem(provider, "path")}
-		if field == "rule-providers" {
-			d.Behavior, _ = dictGet(provider, "behavior", "").(string)
-			d.Format, _ = dictGet(provider, "format", "yaml").(string)
+		url, ok := textNode(address)
+		if !ok {
+			return nil, fmt.Errorf(msgMihomoDownload, name)
 		}
-		out = append(out, d)
+		if url == "" {
+			continue
+		}
+		path, ok := textNode(yamlx.Get(provider, "path"))
+		if !ok {
+			return nil, fmt.Errorf(msgMihomoDownload, name)
+		}
+		item := ResourceDownload{Name: name, URL: url, LocalPath: path}
+		if key == "rule-providers" {
+			item.Behavior, _ = textNode(yamlx.Get(provider, "behavior"))
+			item.Format = "yaml"
+			if format := yamlx.Get(provider, "format"); format != nil {
+				var ok bool
+				item.Format, ok = textNode(format)
+				if !ok {
+					return nil, fmt.Errorf(msgMihomoDownload, name)
+				}
+			}
+		}
+		out = append(out, item)
 	}
-	return out
+	return out, nil
 }
 
-// GetMihomoRulesetDownloads is get_mihomo_ruleset_downloads(config, base_url):
-// the rule-set files a Mihomo device downloads. With the Linux gateway on, the
-// generated rule-providers are used (their stable URLs).
-func GetMihomoRulesetDownloads(ctx context.Context, config *jsonx.Object, baseURL string) (out []Download, err error) {
-	enabled, err := gatewayEnabled(config)
+// MihomoRulesetDownloads lists the stable consumer resources for a typed profile.
+func MihomoRulesetDownloads(ctx context.Context, config *model.Config, baseURL string) ([]ResourceDownload, error) {
+	if config == nil || config.Profile == nil {
+		return nil, fmt.Errorf("%s", msgMihomoConfig)
+	}
+	on, err := gatewayActive(config)
 	if err != nil {
 		return nil, err
 	}
-	if enabled {
-		main, err := GenerateMihomoDocument(ctx, config, GenerateOptions{BaseURL: baseURL, SkipProviderPreflight: true})
+	if on {
+		main, err := MihomoDocument(ctx, config, MihomoOptions{BaseURL: baseURL, SkipProviderPreflight: true})
 		if err != nil {
 			return nil, err
 		}
-		defer catch(&err)
-		return providerDownloads(main, "rule-providers", true), nil
+		return documentDownloads(main, "rule-providers", true)
 	}
-	defer catch(&err)
-	out = []Download{}
-	serverDomain := pystr.Strip(strMethod(dictGet(dictGet(config, "system_config", jsonx.NewObject()), "server_domain", ""), "strip"))
-	effectiveBaseURL := serverDomain
-	if effectiveBaseURL == "" {
-		effectiveBaseURL = baseURL
+	out := []ResourceDownload{}
+	effective := strings.TrimSpace(config.SystemConfig.ServerDomain)
+	if effective == "" {
+		effective = baseURL
 	}
-	_, ruleSets := splitRulesAndRulesets(config)
-	ruleLibrary := dictGet(config, "rule_library", []any{})
-	for _, ruleSet := range iterate(ruleSets) {
-		if !jsonx.Truthy(dictGet(ruleSet, "enabled", true)) {
+	_, sets, err := MihomoRuleLists(config)
+	if err != nil {
+		return nil, err
+	}
+	for _, rule := range sets {
+		if !enabled(rule.Enabled) {
 			continue
 		}
-		url, originalURL := mihomoRulesetURL(config, ruleSet, ruleLibrary, effectiveBaseURL, nil)
-		ruleFormat := mustValue(RulesetFormat(ruleSet.(*jsonx.Object), config, originalURL))
-		extension := ruleFormat
-		if ruleFormat == "text" {
+		url, original, err := ruleDownloadURL(config, rule, effective)
+		if err != nil {
+			return nil, err
+		}
+		format, err := RuleFormat(rule, config, original)
+		if err != nil {
+			return nil, err
+		}
+		extension := format
+		if extension == "text" {
 			extension = "list"
 		}
-		name := dictItem(ruleSet, "name")
-		out = append(out, Download{Name: providerKey(name), URL: url, LocalPath: "./ruleset/" + fstr(name) + "." + extension, Behavior: fstr(dictGet(ruleSet, "behavior", "domain")), Format: ruleFormat})
+		behavior := "domain"
+		if rule.Behavior != nil {
+			behavior = *rule.Behavior
+		}
+		out = append(out, ResourceDownload{Name: rule.Name, URL: url, LocalPath: "./ruleset/" + rule.Name + "." + extension, Behavior: behavior, Format: format})
 	}
 	return out, nil
 }

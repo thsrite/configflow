@@ -14,7 +14,12 @@ func readProxyNode(text string) (*yamlx.Node, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := yamlx.ProjectJSONKeys(root, yamlx.StringifyScalarKeys); err != nil {
+	return projectReadGraph(root, yamlx.StringifyScalarKeys)
+}
+
+// projectReadGraph applies the shared scalar/key policy to an owned physical graph.
+func projectReadGraph(root *yamlx.Node, policy yamlx.JSONKeyMode) (*yamlx.Node, error) {
+	if err := yamlx.ProjectJSONKeys(root, policy); err != nil {
 		return nil, err
 	}
 	pending := []*yamlx.Node{root}

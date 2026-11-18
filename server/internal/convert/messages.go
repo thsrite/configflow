@@ -152,3 +152,16 @@ const (
 	msgBaseFakeRange        = "dns.fake-ip-range 需为 IPv4 网段（/8 至 /30），例如 198.18.0.1/16，不能是回环、多播或链路本地地址"
 	msgBaseAgentPort        = "%s Agent「%s」的端口"
 )
+
+const (
+	msgMihomoMapping  = "基础 YAML 必须为 mapping，得到 %s"
+	msgMihomoConfig   = "Mihomo 配置必须包含有效的配置空间"
+	msgMihomoRules    = "规则列表必须为规则对象数组"
+	msgMihomoHosts    = "订阅 hosts 协作未返回有效结果"
+	msgMihomoSections = "生成的代理和策略组必须为数组"
+	msgMihomoName     = "生成的代理和策略组名称必须为字符串"
+	msgMihomoURL      = "Invalid IPv6 URL"
+	msgMihomoDownload = "Mihomo 下载项 %s 的 URL 和 path 必须为文本"
+	msgRegionPort     = "区域检测端口必须为 1–65535 的整数"
+	msgRegionConflict = "区域检测入口端口 %d 与已有入站冲突，本次未注入"
+)

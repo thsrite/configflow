@@ -39,7 +39,7 @@ type MihomoEnvironment struct {
 	Preflight             func(context.Context, *model.Config, *yamlx.Node) error
 	LowerChains           func(*model.Config) (*model.Config, error)
 	RenderMembers         func(model.ProxyGroup, *model.Config) (*yamlx.Node, error)
-	ProviderHealth        func(json.RawMessage) (*yamlx.Node, error)
+	ProviderHealth        func(*model.ProviderHealthCheck) (*yamlx.Node, error)
 	FilterGroups          func(*model.Config, *yamlx.Node) error
 	ChainProviders        func(*model.Config, *yamlx.Node) error
 	MergeHosts            func(context.Context, *yamlx.Node, *model.Config, []string, []string, []InlineNode, CacheReader) (*HostsResult, error)

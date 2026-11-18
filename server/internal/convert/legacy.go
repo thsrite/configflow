@@ -7,13 +7,18 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"gopkg.in/yaml.v3"
 	"net/netip"
+	"sync"
 
+	"configflow/internal/health/check"
 	"configflow/internal/jsonx"
 	"configflow/internal/model"
+	"configflow/internal/rules"
+	"configflow/internal/subs"
 	"configflow/internal/yamlbridge"
 	"configflow/internal/yamlx"
+
+	"gopkg.in/yaml.v3"
 )
 
 func decodeLegacy[T any](value any) (T, error) {
@@ -36,7 +41,7 @@ type legacyNodeConverter struct{ converter ProxyStringConverter }
 
 func (c legacyNodeConverter) ConvertProxy(ctx context.Context, text string) (*yamlx.Node, error) {
 	if c.converter == nil {
-		return nil, nil
+		return nil, &HookMissingError{Hook: "convert_proxy_string", Provider: "convert/mihomoenv"}
 	}
 	proxy := c.converter.ConvertProxyString(ctx, text)
 	if proxy == nil {
@@ -213,6 +218,25 @@ func encodeLegacy(value any) (any, error) {
 		return nil, err
 	}
 	return jsonx.Parse(data)
+}
+
+// configFromLegacy decodes the complete view at public generation boundaries.
+// Metadata helpers below use their own narrow projections; hot per-node and
+// per-ruleset paths pass the already decoded native config.
+func configFromLegacy(value *jsonx.Object) (*model.Config, error) {
+	profile, err := decodeLegacy[model.Profile](value)
+	if err != nil {
+		return nil, err
+	}
+	shared, err := decodeLegacy[model.Shared](value)
+	if err != nil {
+		return nil, err
+	}
+	wire, err := decodeLegacy[model.System](value)
+	if err != nil {
+		return nil, err
+	}
+	return &model.Config{Profile: &profile, ProfileID: value.GetString("profile_id"), SystemConfig: wire.SystemConfig, Backup: wire.Backup, Agents: wire.Agents, HasAgents: value.Has("agents"), Nodes: shared.Nodes, Subscriptions: shared.Subscriptions, Aggregations: shared.Aggregations, RuleLibrary: shared.RuleLibrary}, nil
 }
 
 // legacyMembers projects only a codec's inputs, preserving absent members.
@@ -885,4 +909,684 @@ func registerLegacyMihomoHooks(hooks MihomoHooks) func() {
 		}
 	}
 	return SetMihomoIntegrations(native)
+}
+
+func legacyConfigObject(config *model.Config) (*jsonx.Object, error) {
+	value, err := encodeLegacy(config)
+	if err != nil {
+		return nil, err
+	}
+	result, _ := value.(*jsonx.Object)
+	return result, nil
+}
+func replaceLegacyDocument(document *yamlx.Node, value *jsonx.Object) error {
+	result, err := yamlbridge.Encode(value)
+	if err != nil {
+		return err
+	}
+	*document = *result
+	return nil
+}
+func adaptDocument(document *yamlx.Node, callback func(*jsonx.Object) error) error {
+	value, err := legacyProxy(document)
+	if err != nil {
+		return err
+	}
+	if err = callback(value); err != nil {
+		return err
+	}
+	return replaceLegacyDocument(document, value)
+}
+func legacyCache(data json.RawMessage) (*jsonx.Object, error) {
+	if len(data) == 0 {
+		return nil, nil
+	}
+	value, err := jsonx.Parse(data)
+	if err != nil {
+		return nil, err
+	}
+	result, _ := value.(*jsonx.Object)
+	return result, nil
+}
+
+// MihomoEnvironmentFromLegacy registers the one temporary codec for each N8-9
+// collaborator. No external business implementation is copied into convert.
+func MihomoEnvironmentFromLegacy(old MihomoEnv) MihomoEnvironment {
+	env := MihomoEnvironment{Converter: legacyNodeConverter{old.Converter}, DownloadedText: old.DownloadedText}
+	if old.ProviderInterval != nil {
+		env.ProviderInterval = func(settings model.MihomoSettings) (int64, error) {
+			wire, err := decodeLegacy[*jsonx.Object](settings)
+			if err != nil {
+				return 0, err
+			}
+			if settings.ProviderUpdateInterval != nil {
+				wire.Set("provider_update_interval", int64(*settings.ProviderUpdateInterval))
+			}
+			return old.ProviderInterval(wire)
+		}
+	}
+	if old.LoadSubscriptionCache != nil {
+		env.LoadSubscriptionCache = func(ctx context.Context, id string) (json.RawMessage, error) {
+			cache, err := old.LoadSubscriptionCache(ctx, id)
+			if err != nil {
+				return nil, err
+			}
+			if cache == nil {
+				return nil, nil
+			}
+			return json.Marshal(cache)
+		}
+	}
+	if old.PrepareProviderBundle != nil {
+		env.Preflight = func(ctx context.Context, config *model.Config, document *yamlx.Node) error {
+			logical, err := legacyConfigObject(config)
+			if err != nil {
+				return err
+			}
+			main, err := legacyProxy(document)
+			if err != nil {
+				return err
+			}
+			return old.PrepareProviderBundle(ctx, logical, main)
+		}
+	}
+	env.LowerChains = func(config *model.Config) (*model.Config, error) {
+		wire, err := legacyConfigObject(config)
+		if err != nil {
+			return nil, err
+		}
+		lowered, err := subs.LowerProxyChains(wire)
+		if err != nil {
+			return nil, subsError(err)
+		}
+		return configFromLegacy(lowered)
+	}
+	env.RenderMembers = func(group model.ProxyGroup, config *model.Config) (*yamlx.Node, error) {
+		source, err := decodeLegacy[*jsonx.Object](group)
+		if err != nil {
+			return nil, err
+		}
+		logical, err := legacyConfigObject(config)
+		if err != nil {
+			return nil, err
+		}
+		return yamlbridge.Encode(rules.RenderMembers(source, logical))
+	}
+	env.ProviderHealth = func(health *model.ProviderHealthCheck) (*yamlx.Node, error) {
+		wire, err := decodeLegacy[*jsonx.Object](health)
+		if err != nil {
+			return nil, err
+		}
+		result, err := check.ProviderHealthCheck(jsonx.Obj("health_check", wire))
+		if err != nil {
+			return nil, err
+		}
+		return yamlbridge.Encode(result)
+	}
+	env.FilterGroups = func(config *model.Config, document *yamlx.Node) error {
+		logical, err := legacyConfigObject(config)
+		if err != nil {
+			return err
+		}
+		return adaptDocument(document, func(main *jsonx.Object) error { rules.LowerGroupProviderFilters(logical, main); return nil })
+	}
+	env.ChainProviders = func(config *model.Config, document *yamlx.Node) error {
+		logical, err := legacyConfigObject(config)
+		if err != nil {
+			return err
+		}
+		return adaptDocument(document, func(main *jsonx.Object) error { return subsError(subs.LowerChainProviders(logical, main)) })
+	}
+	env.MergeHosts = func(ctx context.Context, document *yamlx.Node, config *model.Config, userKeys, mosdnsKeys []string, inline []InlineNode, load CacheReader) (*HostsResult, error) {
+		main, err := legacyProxy(document)
+		if err != nil {
+			return nil, err
+		}
+		logical, err := legacyConfigObject(config)
+		if err != nil {
+			return nil, err
+		}
+		values := make([]subs.InlineProxy, 0, len(inline))
+		for _, item := range inline {
+			node, err := decodeLegacy[*jsonx.Object](item.Node)
+			if err != nil {
+				return nil, err
+			}
+			proxy, err := legacyProxy(item.Proxy)
+			if err != nil {
+				return nil, err
+			}
+			values = append(values, subs.InlineProxy{Node: node, Proxy: proxy})
+		}
+		merged := jsonx.NewObject()
+		var failure error
+		report := subs.MergeSubscriptionHosts(main, logical, userKeys, mosdnsKeys, values, merged, func(sub *jsonx.Object) *subs.HostsIndex {
+			if load == nil {
+				failure = &HookMissingError{Hook: "load_subscription_cache", Provider: "convert/mihomoenv"}
+				return nil
+			}
+			data, err := load(ctx, sub.GetString("id"))
+			if err != nil {
+				failure = err
+				return nil
+			}
+			cache, err := legacyCache(data)
+			if err != nil {
+				failure = err
+				return nil
+			}
+			if cache == nil {
+				return nil
+			}
+			return subs.NewHostsIndex(cache).ForURL(sub)
+		})
+		if failure != nil {
+			return nil, failure
+		}
+		if err = replaceLegacyDocument(document, main); err != nil {
+			return nil, err
+		}
+		reportNode, err := yamlbridge.Encode(report)
+		if err != nil {
+			return nil, err
+		}
+		mergedNode, err := yamlbridge.Encode(merged)
+		if err != nil {
+			return nil, err
+		}
+		return &HostsResult{Report: reportNode, Merged: mergedNode}, nil
+	}
+	env.NodeDNS = func(document, merged *yamlx.Node, version string) (*yamlx.Node, error) {
+		main, err := legacyProxy(document)
+		if err != nil {
+			return nil, err
+		}
+		hosts, err := legacyProxy(merged)
+		if err != nil {
+			return nil, err
+		}
+		report := subs.ApplyNodeDNS(main, hosts, version)
+		if err = replaceLegacyDocument(document, main); err != nil {
+			return nil, err
+		}
+		if report == nil {
+			return nil, nil
+		}
+		return yamlbridge.Encode(report)
+	}
+	env.LogHosts = func(profileID string, report *yamlx.Node) error {
+		wire, err := legacyProxy(report)
+		if err != nil {
+			return err
+		}
+		subs.LogReport(profileID, wire)
+		return nil
+	}
+	env.DialerGroups = func(ctx context.Context, document *yamlx.Node, config *model.Config, deps DialerCollaborators) (*yamlx.Node, error) {
+		main, err := legacyProxy(document)
+		if err != nil {
+			return nil, err
+		}
+		logical, err := legacyConfigObject(config)
+		if err != nil {
+			return nil, err
+		}
+		var failure error
+		report, err := subs.AddDialerGroups(main, logical, subs.DialerDeps{
+			LoadCache: func(id string) *jsonx.Object {
+				if deps.LoadCache == nil {
+					failure = &HookMissingError{Hook: "load_subscription_cache", Provider: "convert/mihomoenv"}
+					return nil
+				}
+				raw, err := deps.LoadCache(ctx, id)
+				if err != nil {
+					failure = err
+					return nil
+				}
+				wire, err := legacyCache(raw)
+				if err != nil {
+					failure = err
+				}
+				return wire
+			},
+			ConvertNode: func(value *jsonx.Object) *jsonx.Object {
+				if deps.Convert == nil {
+					failure = &HookMissingError{Hook: "convert_node", Provider: "convert/mihomoenv"}
+					return nil
+				}
+				node, err := decodeLegacy[model.Node](value)
+				if err != nil {
+					failure = err
+					return nil
+				}
+				proxy, err := deps.Convert(ctx, node)
+				if err != nil {
+					failure = err
+					return nil
+				}
+				wire, err := legacyProxy(proxy)
+				if err != nil {
+					failure = err
+				}
+				return wire
+			},
+			DownloadedText: func(url string) (string, bool) {
+				if deps.DownloadedText == nil {
+					failure = &HookMissingError{Hook: "downloaded_text", Provider: "convert/mihomoenv"}
+					return "", false
+				}
+				return deps.DownloadedText(ctx, url)
+			},
+		})
+		if failure != nil {
+			return nil, failure
+		}
+		if err != nil {
+			return nil, subsError(err)
+		}
+		if err = replaceLegacyDocument(document, main); err != nil {
+			return nil, err
+		}
+		if report == nil {
+			return nil, nil
+		}
+		return yamlbridge.Encode(report)
+	}
+	env.ValidateRules = func(config *model.Config, names []string, client string) error {
+		wire, err := legacyConfigObject(config)
+		if err != nil {
+			return err
+		}
+		return rules.ValidateRulePolicies(wire, names, client)
+	}
+	env.ValidateListeners = func(document *yamlx.Node) error {
+		wire, err := legacyProxy(document)
+		if err != nil {
+			return err
+		}
+		return subs.ValidateListenerPolicies(wire)
+	}
+	return env
+}
+
+// GenerateOptions are the keyword arguments of generate_mihomo_config.
+type GenerateOptions struct {
+	// BaseURL is base_url (used when system_config.server_domain is empty).
+	BaseURL string
+	// SyncLANHosts is sync_lan_hosts: add the MosDNS custom hosts (Agent pushes only).
+	SyncLANHosts bool
+	// SkipProviderPreflight is preflight_providers=False.
+	SkipProviderPreflight bool
+	// RegionProbe is region_probe=True.
+	RegionProbe bool
+	// Report, when non-nil, receives subscription_hosts / subscription_dialers.
+	Report *jsonx.Object
+	// MihomoCoreVersion is mihomo_core_version (nil = None).
+	MihomoCoreVersion any
+	// ForAgent is for_agent=True.
+	ForAgent bool
+}
+
+// GenerateMihomoConfig adapts a resolved legacy profile to the typed generator.
+func GenerateMihomoConfig(ctx context.Context, value *jsonx.Object, options GenerateOptions) (string, error) {
+	config, err := configFromLegacy(value)
+	if err != nil {
+		return "", err
+	}
+	native, report, err := legacyMihomoOptions(options)
+	if err != nil {
+		return "", err
+	}
+	text, err := MihomoConfig(ctx, config, native)
+	if copyErr := copyMihomoReport(options.Report, report); err == nil {
+		err = copyErr
+	}
+	return text, err
+}
+
+// GenerateMihomoDocument adapts the documented generated-text readback boundary.
+func GenerateMihomoDocument(ctx context.Context, value *jsonx.Object, options GenerateOptions) (*jsonx.Object, error) {
+	config, err := configFromLegacy(value)
+	if err != nil {
+		return nil, err
+	}
+	native, report, err := legacyMihomoOptions(options)
+	if err != nil {
+		return nil, err
+	}
+	text, err := MihomoConfig(ctx, config, native)
+	if copyErr := copyMihomoReport(options.Report, report); err == nil {
+		err = copyErr
+	}
+	if err != nil {
+		return nil, err
+	}
+	node, err := readMihomoBase(text)
+	if err != nil {
+		return nil, err
+	}
+	return legacyProxy(node)
+}
+func legacyMihomoOptions(options GenerateOptions) (MihomoOptions, *GenerationReport, error) {
+	var version json.RawMessage
+	if options.MihomoCoreVersion != nil {
+		raw, err := json.Marshal(options.MihomoCoreVersion)
+		if err != nil {
+			return MihomoOptions{}, nil, err
+		}
+		version = raw
+	}
+	var report *GenerationReport
+	if options.Report != nil {
+		report = &GenerationReport{}
+	}
+	return MihomoOptions{BaseURL: options.BaseURL, SyncLANHosts: options.SyncLANHosts, SkipProviderPreflight: options.SkipProviderPreflight, RegionProbe: options.RegionProbe, ForAgent: options.ForAgent, CoreVersion: version, Report: report}, report, nil
+}
+func copyMihomoReport(target *jsonx.Object, report *GenerationReport) error {
+	if target == nil || report == nil {
+		return nil
+	}
+	if report.SubscriptionHosts != nil {
+		wire, err := legacyProxy(report.SubscriptionHosts)
+		if err != nil {
+			return err
+		}
+		target.Set("subscription_hosts", wire)
+	}
+	if report.SubscriptionDialers != nil {
+		wire, err := legacyProxy(report.SubscriptionDialers)
+		if err != nil {
+			return err
+		}
+		target.Set("subscription_dialers", wire)
+	}
+	return nil
+}
+
+// DefaultMihomoTemplate adapts the native built-in document.
+func DefaultMihomoTemplate() *jsonx.Object { value, _ := legacyProxy(MihomoTemplate()); return value }
+
+// ValidateIPv6Flags adapts free-form legacy configuration input.
+func ValidateIPv6Flags(value any) error {
+	node, err := yamlbridge.Encode(value)
+	if err != nil {
+		return err
+	}
+	return ValidateIPv6Node(node)
+}
+
+// NormalizeFindProcessMode adapts an old mutable document.
+func NormalizeFindProcessMode(value *jsonx.Object) {
+	_ = adaptDocumentValue(value, NormalizeProcessMode)
+}
+func adaptDocumentValue(value *jsonx.Object, fn func(*yamlx.Node) error) error {
+	node, err := yamlbridge.Encode(value)
+	if err != nil {
+		return err
+	}
+	if err = fn(node); err != nil {
+		return err
+	}
+	wire, err := legacyProxy(node)
+	if err != nil {
+		return err
+	}
+	for _, key := range value.Keys() {
+		value.Delete(key)
+	}
+	value.Update(wire)
+	return nil
+}
+
+// ParseMosdnsCustomHosts adapts the native hosts mapping.
+func ParseMosdnsCustomHosts(text string) *jsonx.Object {
+	value, _ := legacyProxy(mosdnsHosts(text))
+	return value
+}
+
+// SyncMosdnsHosts adapts the old mutable generation helper.
+func SyncMosdnsHosts(document, logical *jsonx.Object) error {
+	config, err := configFromLegacy(logical)
+	if err != nil {
+		return err
+	}
+	return adaptDocumentValue(document, func(node *yamlx.Node) error { return syncMihomoHosts(node, config) })
+}
+
+// InjectRegionProbe adapts an old integer and mutable document.
+func InjectRegionProbe(document *jsonx.Object, port jsonx.Number) (bool, error) {
+	value, ok := port.Int64()
+	if !ok {
+		return false, fmt.Errorf("%s", msgRegionPort)
+	}
+	var injected bool
+	err := adaptDocumentValue(document, func(node *yamlx.Node) error { var err error; injected, err = addRegionProbe(node, value); return err })
+	return injected, err
+}
+
+// BuildProviderHealthCheck adapts one legacy provider record.
+func BuildProviderHealthCheck(source *jsonx.Object) (*jsonx.Object, error) {
+	record, err := decodeLegacy[model.Subscription](source)
+	if err != nil {
+		return nil, err
+	}
+	node, err := providerHealthNode(record.HealthCheck, record.HealthCheckURL, MihomoEnvironmentFromLegacy(CurrentMihomoEnv()))
+	if err != nil {
+		return nil, err
+	}
+	return legacyProxy(node)
+}
+
+// SplitRulesAndRulesets adapts the typed split for remaining clients.
+func SplitRulesAndRulesets(value *jsonx.Object) (any, any, error) {
+	config, err := configFromLegacy(value)
+	if err != nil {
+		return nil, nil, err
+	}
+	a, b, err := MihomoRuleLists(config)
+	if err != nil {
+		return nil, nil, err
+	}
+	left, err := encodeLegacy(a)
+	if err != nil {
+		return nil, nil, err
+	}
+	right, err := encodeLegacy(b)
+	return left, right, err
+}
+func splitRulesAndRulesets(value *jsonx.Object) (any, any) {
+	a, b, err := SplitRulesAndRulesets(value)
+	if err != nil {
+		raise(err)
+	}
+	return a, b
+}
+func profileAPIPath(value *jsonx.Object, suffix string) string {
+	config, err := configFromLegacy(value)
+	if err != nil {
+		return ""
+	}
+	return profilePath(config, suffix)
+}
+
+// MihomoEnv holds the config-domain collaborators of generation.
+type MihomoEnv struct {
+	// Converter is Sub-Store's convert_proxy_string (substore.Converter()).
+	Converter ProxyStringConverter
+	// ProviderInterval is validate_refresh_interval(
+	// mihomo.get('provider_update_interval', DEFAULT_PROVIDER_INTERVAL),
+	// 'Mihomo 订阅同步间隔') (C15 refresh) for the profile's `mihomo` object.
+	ProviderInterval func(mihomo *jsonx.Object) (int64, error)
+	// LoadSubscriptionCache is subscription_cache.load_subscription_cache
+	// (C13 substore): nil when there is no cache.
+	LoadSubscriptionCache func(ctx context.Context, subID string) (*jsonx.Object, error)
+	// DownloadedText is the `text` of the shared download cache of a URL
+	// (subscription_dialers.dialer_record's fallback read; C15 refresh's
+	// _download_cache_path through the repository); ok false when it cannot
+	// be read or holds no text.
+	DownloadedText func(ctx context.Context, url string) (string, bool)
+	// PrepareProviderBundle is provider_delivery.prepare_provider_bundle(
+	// logical_config, mihomo_config) with default options (C17 provider).
+	PrepareProviderBundle func(ctx context.Context, config, main *jsonx.Object) error
+}
+
+// MihomoHooks are the functions of other domains the generator and the base
+// settings checks call. Register them with RegisterMihomoHooks from the
+// providing module; a nil field keeps the default described on it.
+type MihomoHooks struct {
+	// ApplyLinuxGateway is common/linux_gateway.apply_linux_gateway(mihomo,
+	// config, base_url), which first calls routers' router_split
+	// .check_generation(config). Provided by agents A19/A21 (Linux gateway)
+	// together with routers (router_split).
+	// Default: a no-op when config.mihomo has no `linux_gateway` (or it is
+	// null) and no `router_split` marker — exactly where Python does nothing;
+	// otherwise *HookMissingError.
+	ApplyLinuxGateway func(mihomo, config *jsonx.Object, baseURL string) error
+	// GatewayEnabled is linux_gateway.gateway_settings(config)['enabled']
+	// (agents A19/A21); the error is the LinuxGatewayError of a malformed
+	// setting. Default: false when config.mihomo has no `linux_gateway` or
+	// it is null; otherwise *HookMissingError.
+	GatewayEnabled func(config *jsonx.Object) (bool, error)
+	// FakeIPNetworkError is linux_gateway.fake_ip_network({'dns':
+	// {'fake-ip-range': value}}) for a string value: nil when Python returns,
+	// non-nil when it raises LinuxGatewayError (agents A19/A21).
+	// Default: *HookMissingError.
+	FakeIPNetworkError func(value string) error
+	// MihomoDNSLoop is gateway_onboarding.mihomo_dns_loop(dns, host_addresses)
+	// (agents, gateway onboarding): the first (key, upstream) that resolves
+	// through this host. Default: *HookMissingError.
+	MihomoDNSLoop func(dns *jsonx.Object, hostAddresses []netip.Addr) (key string, upstream any, found bool, err error)
+	// IsFullTun is router_split.is_full_tun(config) (routers, clients/split).
+	// Default: false when config.mihomo has no `router_split` marker;
+	// otherwise *HookMissingError.
+	IsFullTun func(config *jsonx.Object) (bool, error)
+}
+
+var (
+	mihomoMu  sync.RWMutex
+	mihomoEnv MihomoEnv
+)
+
+// SetMihomoEnv installs the config-domain collaborators and returns a
+// function that restores the previous ones (for tests).
+func SetMihomoEnv(env MihomoEnv) (restore func()) {
+	restoreNative := SetMihomoEnvironment(MihomoEnvironmentFromLegacy(env))
+	mihomoMu.Lock()
+	previous := mihomoEnv
+	mihomoEnv = env
+	mihomoMu.Unlock()
+	return func() {
+		restoreNative()
+		mihomoMu.Lock()
+		mihomoEnv = previous
+		mihomoMu.Unlock()
+	}
+}
+
+// CurrentMihomoEnv returns the installed collaborators.
+func CurrentMihomoEnv() MihomoEnv {
+	mihomoMu.RLock()
+	defer mihomoMu.RUnlock()
+	return mihomoEnv
+}
+
+// RegisterMihomoHooks sets the non-nil fields of hooks and returns a function
+// that restores the previous hooks (for tests).
+func RegisterMihomoHooks(hooks MihomoHooks) func() { return registerLegacyMihomoHooks(hooks) }
+
+func applyLinuxGateway(main, logical *jsonx.Object, url string) error {
+	config, err := configFromLegacy(logical)
+	if err != nil {
+		return err
+	}
+	return adaptDocumentValue(main, func(node *yamlx.Node) error { return applyGateway(node, config, url) })
+}
+func gatewayEnabled(value *jsonx.Object) (bool, error) {
+	config, err := configFromLegacy(value)
+	if err != nil {
+		return false, err
+	}
+	return gatewayActive(config)
+}
+func isFullTun(value *jsonx.Object) (bool, error) {
+	config, err := configFromLegacy(value)
+	if err != nil {
+		return false, err
+	}
+	return fullTunActive(config)
+}
+
+// Download is one entry of get_mihomo_provider_downloads /
+// get_mihomo_ruleset_downloads: {'name', 'url', 'local_path'}.
+type Download struct {
+	Name      string
+	URL       any
+	LocalPath any
+	// Behavior and Format carry the final consumer metadata for deployment builds.
+	// Object deliberately retains the existing public download representation.
+	Behavior string `json:"behavior,omitempty"`
+	Format   string `json:"format,omitempty"`
+}
+
+// Object is the Python dict of the entry.
+func (d Download) Object() *jsonx.Object {
+	return jsonx.Obj("name", d.Name, "url", d.URL, "local_path", d.LocalPath)
+}
+
+func legacyDownloads(values []ResourceDownload, err error) ([]Download, error) {
+	if err != nil {
+		return nil, err
+	}
+	result := make([]Download, 0, len(values))
+	for _, value := range values {
+		result = append(result, Download{Name: value.Name, URL: value.URL, LocalPath: value.LocalPath, Behavior: value.Behavior, Format: value.Format})
+	}
+	return result, nil
+}
+
+// GetMihomoProviderDownloads transcodes a resolved profile and optional document.
+func GetMihomoProviderDownloads(ctx context.Context, value *jsonx.Object, baseURL string, main *jsonx.Object) ([]Download, error) {
+	config, err := configFromLegacy(value)
+	if err != nil {
+		return nil, err
+	}
+	var document *yamlx.Node
+	if main != nil {
+		document, err = yamlbridge.Encode(main)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return legacyDownloads(MihomoProviderDownloads(ctx, config, baseURL, document))
+}
+
+// GetMihomoRulesetDownloads transcodes the old ruleset download boundary.
+func GetMihomoRulesetDownloads(ctx context.Context, value *jsonx.Object, baseURL string) ([]Download, error) {
+	config, err := configFromLegacy(value)
+	if err != nil {
+		return nil, err
+	}
+	return legacyDownloads(MihomoRulesetDownloads(ctx, config, baseURL))
+}
+
+// nativeClientConverter is removed with the Surge/Loon adapters in N8-8c.
+// Both client families read the same typed production registration.
+type nativeClientConverter struct{ converter NodeConverter }
+
+func (c nativeClientConverter) ConvertProxyString(ctx context.Context, text string) *jsonx.Object {
+	node, err := c.converter.ConvertProxy(ctx, text)
+	if err != nil {
+		raise(err)
+	}
+	result, err := legacyProxy(node)
+	if err != nil {
+		raise(err)
+	}
+	return result
+}
+func clientConverter() ProxyStringConverter {
+	if converter := CurrentMihomoEnvironment().Converter; converter != nil {
+		return nativeClientConverter{converter}
+	}
+	return missingConverter{}
 }

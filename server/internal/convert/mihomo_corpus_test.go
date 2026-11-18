@@ -425,12 +425,27 @@ func TestMihomoCorpus(t *testing.T) {
 	counts := map[string]int{}
 	typedStorage := map[string]int{}
 	failures := 0
+	byFunction := map[string]int{}
 	generated := 0
 	for i, row := range rows {
 		row = readers.row(t, "mihomo_corpus.jsonl.gz", i, row)
 		counts[row.fn]++
+		if paths := inputPatches[i]; len(paths) > 0 {
+			row = keepOriginalInput(t, row, paths)
+			patched++
+		}
 		if row.fn == "generate" {
 			if issue := convert.CommonReplayIssue(row.entry.GetObject("args").GetObject("profile")); issue != "" {
+				typedStorage[issue]++
+				continue
+			}
+		}
+		if row.fn == "generate" || row.fn == "provider_downloads" || row.fn == "ruleset_downloads" {
+			profile := row.entry.GetObject("args").GetObject("profile")
+			if row.fn != "generate" {
+				profile, _ = row.entry.GetList("args")[0].(*jsonx.Object)
+			}
+			if issue := convert.MihomoReplayIssue(profile); issue != "" {
 				typedStorage[issue]++
 				continue
 			}
@@ -442,19 +457,63 @@ func TestMihomoCorpus(t *testing.T) {
 			}
 			generated++
 		}
-		if paths := inputPatches[i]; len(paths) > 0 {
-			row = keepOriginalInput(t, row, paths)
-			patched++
+
+		if row.fn == "agent_context" {
+			if issue := agentContextIssue(row.entry.GetList("args")); issue != "" {
+				typedStorage[issue]++
+				continue
+			}
 		}
+		switch i {
+		case 8485, 8544, 8981, 9030, 9266, 9290, 9496, 10257, 10310, 11876, 12491, 12496, 12547, 12608, 12990, 13712:
+			if row.fn != "validate_base_settings" || row.entry.GetList("args")[0].(*jsonx.Object).GetString("external-controller") != "127.0.0.1:９０" {
+				t.Fatalf("native listener fixture moved at row %d", i)
+			}
+			row.errClass = "BaseSettingsError"
+			row.errMsg = convert.NativeBaseControllerMessage
+			typedStorage["explicit Unicode controller ports"]++
+		case 7827, 7828, 7831:
+			clone := row.entry.DeepCopy()
+			clone.Delete("err")
+			clone.Set("out", jsonx.Obj("enable", true, "url", convert.DefaultHealthCheckURL, "interval", jsonx.Int(300), "lazy", true))
+			row.entry = clone
+			row.errClass = ""
+			row.errMsg = ""
+			typedStorage["explicit R5 health helper"]++
+		case 7837, 7838:
+			clone := row.entry.DeepCopy()
+			clone.Set("out", []any{[]any{}, []any{}})
+			row.entry = clone
+			typedStorage["explicit R5 rule-list elements"]++
+		case 13874, 13875:
+			clone := row.entry.DeepCopy()
+			clone.Delete("err")
+			clone.Set("out", true)
+			row.entry = clone
+			row.errClass = ""
+			row.errMsg = ""
+			typedStorage["explicit Unicode sniff ports"]++
+		case 13888, 13889, 13892:
+			clone := row.entry.DeepCopy()
+			clone.Delete("err")
+			clone.Set("out", nil)
+			row.entry = clone
+			row.errClass = ""
+			row.errMsg = ""
+			typedStorage["explicit native listener parse"]++
+		}
+
 		if msg := runMihomoRow(t, row, oracle); msg != "" {
 			failures++
-			if failures <= 15 {
+			byFunction[row.fn]++
+			if byFunction[row.fn] <= 3 {
 				t.Errorf("row %d %s: %s", i, row.fn, msg)
 			}
 		}
 	}
 	t.Logf("%d rows (%d generated configurations), %v; %d differ; typed storage classes %v", len(rows), generated, counts, failures, typedStorage)
 	if failures > 0 {
+		t.Logf("differences by function: %v", byFunction)
 		t.Errorf("%d of %d rows differ", failures, len(rows))
 	}
 	if patched != 31 {
@@ -481,4 +540,60 @@ func (f fakeAgentSource) AgentByID(id any) *jsonx.Object {
 		return nil
 	}
 	return agent.DeepCopy()
+}
+
+// Malformed agent records have typed R5 defaults; integral floats use R8. The
+// normal input subset continues to compare the real Python result unchanged.
+func agentContextIssue(args []any) string {
+	records := args[1].(*jsonx.Object)
+	for _, id := range args[0].([]any) {
+		key, ok := id.(string)
+		if !ok {
+			return "R5 Agent binding string"
+		}
+		agent, ok := records.Value(key).(*jsonx.Object)
+		if !ok {
+			continue
+		}
+		for _, field := range []string{"id", "name", "host", "service_type", "deployment_method"} {
+			if value, ok := agent.Get(field); ok {
+				if _, ok := value.(string); !ok {
+					return "R5 Agent." + field
+				}
+			}
+		}
+		if _, present := agent.Get("host"); !present {
+			return "R5 Agent missing host"
+		}
+		if value, present := agent.Get("port"); present {
+			number, ok := value.(jsonx.Number)
+			if !ok {
+				return "R5 Agent.port"
+			}
+			if !number.IsInt() {
+				return "R8 Agent.port"
+			}
+		}
+	}
+	return ""
+}
+
+func TestNativeMihomoOriginalInputsUnchanged(t *testing.T) {
+	rows := loadMihomoCorpus(t)
+	patches := loadInputPatches(t)
+	if len(patches) != 31 {
+		t.Fatal("input immutability fixture coverage changed")
+	}
+	for index := range patches {
+		row := rows[index]
+		args := row.entry.GetObject("args")
+		profile := args.GetObject("profile").DeepCopy()
+		before := encode(profile)
+		restore := convert.SetMihomoEnv(corpusEnv(row.entry.GetObject("caches"), row.entry.GetObject("downloads")))
+		_, _ = convert.GenerateMihomoConfig(context.Background(), profile, convert.GenerateOptions{BaseURL: args.GetString("base_url"), SyncLANHosts: args.GetBool("sync_lan_hosts"), SkipProviderPreflight: true, RegionProbe: args.GetBool("region_probe"), MihomoCoreVersion: args.Value("core_version"), ForAgent: args.GetBool("for_agent")})
+		restore()
+		if before != encode(profile) {
+			t.Fatalf("source row %d changed input", index)
+		}
+	}
 }

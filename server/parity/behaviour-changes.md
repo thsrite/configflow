@@ -1405,3 +1405,16 @@ batch-6 codec 窄化：格式查询只解规则库，继续使用 model.Shared �
   这是 PORTING 已批准的 CPython-only Unicode 边界。正常 ASCII 端口不变。
 - Agent 上下文只读取 typed Agent 字段；错型/无效的 Agent 端口与地址按 R5
   处理，不再模拟 Python 的“整数作为 IP 地址”等动态调用语义。
+
+## N8-8b — typed Mihomo generation and downloads
+
+正常存储输入的 Mihomo 生成、订阅与规则集下载顺序、URL 和字节不变。畸形存储字段
+按 R5 使用 typed 缺省并保留原存储字节：非数值的组 interval、非对象 health_check、
+非文本 health_check_url/custom_config/custom_hosts、错误类型的区域检测端口不再进入
+Python 动态类型逻辑。旧 rules/rule_sets 开放列表中的非对象项按 R5 忽略，其余项保留。
+R8 接受整数字值的浮点表示（Agent port、provider_update_interval），不复制 int() 的
+字符串转换规则。下载项 URL/path 明确要求文本，错误类型返回验证错误。
+
+端口解析使用 net.SplitHostPort 和 ASCII 整数：全角/阿拉伯数字及上标数字不再作为
+端口，非法的 `a]:1` 不再作为监听地址。16 条基础设置及5 条 helper 归档显式断言
+原生结果（旧 golden 不改）；基础设置仍返回既有中文提示，未改字段的校验规则不变。

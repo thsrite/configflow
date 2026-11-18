@@ -213,8 +213,10 @@ func TestProviderPreflightGetsLogicalProfileAndFinishedDocument(t *testing.T) {
 	if _, err := convert.GenerateMihomoConfig(context.Background(), config, convert.GenerateOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	if gotConfig != config {
-		t.Fatal("preflight did not receive the logical profile")
+	for key, value := range config.All() {
+		if !jsonx.Equal(gotConfig.Value(key), value) {
+			t.Fatalf("preflight did not receive logical field %s", key)
+		}
 	}
 	if gotMain == nil || len(gotMain.GetList("proxies")) == 0 || gotMain.Value("rules") == nil {
 		t.Fatalf("preflight did not receive the finished document: %v", gotMain)

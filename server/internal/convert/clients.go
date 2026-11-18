@@ -329,13 +329,6 @@ func (missingConverter) ConvertProxyString(context.Context, string) *jsonx.Objec
 	return nil
 }
 
-func clientConverter() ProxyStringConverter {
-	if c := CurrentMihomoEnv().Converter; c != nil {
-		return c
-	}
-	return missingConverter{}
-}
-
 // resolveProxyString is the proxy_string step shared by convert_node_to_surge
 // and loon._resolve_node: parse_uri_list(node['proxy_string'])[0] with the
 // outer name; ok false when Python returns None (no node, or any exception

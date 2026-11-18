@@ -294,3 +294,13 @@ func hashID(v any) (string, error) {
 	}
 	return "\x00" + jsonx.Repr(v), nil
 }
+
+// containsString remains a client helper until the Surge/Loon migration.
+func containsString(values []string, value string) bool {
+	for _, entry := range values {
+		if entry == value {
+			return true
+		}
+	}
+	return false
+}

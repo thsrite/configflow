@@ -2,12 +2,10 @@ package convert
 
 import (
 	"fmt"
-	"net/netip"
 	"strings"
 
 	"configflow/internal/jsonx"
 	"configflow/internal/pystr"
-	"configflow/internal/weburl"
 )
 
 // Python-semantics helpers of the C18 generator. The generator is written
@@ -237,65 +235,28 @@ func (s *orderedSet) repr() string { return pySetRepr(s.keys, s.values) }
 // "%" or Chinese), so nothing else needs parsing. A server domain whose host
 // has an invalid bracketed IPv6 host is refused instead of producing URLs no
 // client can use. Only the authority is inspected: a rule path is not a URL.
-func appendURLQuery(url string, params [][2]any) string {
-	rest, fragment, _ := strings.Cut(url, "#")
-	base, query, _ := strings.Cut(rest, "?")
-	if _, after, found := strings.Cut(base, "//"); found {
-		authority, _, _ := strings.Cut(after, "/")
-		if strings.Contains(authority, "[") != strings.Contains(authority, "]") {
-			raise(pyError("ValueError", "Invalid IPv6 URL"))
-		}
-		host := authority
-		if at := strings.LastIndexByte(host, '@'); at >= 0 {
-			host = host[at+1:]
-		}
-		if start := strings.IndexByte(host, '['); start >= 0 {
-			literal, _, _ := strings.Cut(host[start+1:], "]")
-			// net/url handles escaped IPv6 zone IDs; netip also ensures that
-			// a bracketed IPv4 address or arbitrary name cannot become a URL.
-			parsed, err := weburl.Parse("http://[" + literal + "]")
-			if err != nil {
-				raise(pyError("ValueError", "Invalid IPv6 URL"))
-			}
-			address, err := netip.ParseAddr(parsed.Hostname())
-			if err != nil || !address.Is6() {
-				raise(pyError("ValueError", "Invalid IPv6 URL"))
-			}
-		}
-	}
-	var items []string
-	for _, nameValue := range strings.Split(query, "&") {
-		if nameValue == "" {
-			continue
-		}
-		name, value, _ := strings.Cut(nameValue, "=")
-		items = append(items, weburl.Quote(weburl.UnquotePlus(name))+"="+weburl.Quote(weburl.UnquotePlus(value)))
-	}
-	for _, p := range params {
-		k := weburl.Quote(fstr(p[0]))
-		switch v := p[1].(type) {
-		case string:
-			items = append(items, k+"="+weburl.Quote(v))
+func appendURLQuery(address string, params [][2]any) string {
+	pairs := [][2]string{}
+	for _, pair := range params {
+		key := fstr(pair[0])
+		switch value := pair[1].(type) {
 		case []any:
-			for _, elt := range v {
-				items = append(items, k+"="+weburl.Quote(fstr(elt)))
+			for _, item := range value {
+				pairs = append(pairs, [2]string{key, fstr(item)})
 			}
 		case *jsonx.Object:
-			for _, elt := range v.Keys() {
-				items = append(items, k+"="+weburl.Quote(elt))
+			for _, item := range value.Keys() {
+				pairs = append(pairs, [2]string{key, item})
 			}
 		default:
-			items = append(items, k+"="+weburl.Quote(fstr(v)))
+			pairs = append(pairs, [2]string{key, fstr(value)})
 		}
 	}
-	out := base
-	if len(items) > 0 {
-		out += "?" + strings.Join(items, "&")
+	result, err := appendProfileQuery(address, pairs)
+	if err != nil {
+		raise(pyError("ValueError", err.Error()))
 	}
-	if fragment != "" {
-		out += "#" + fragment
-	}
-	return out
+	return result
 }
 
 // pyIntOf is int(v) for the values a profile can hold.
