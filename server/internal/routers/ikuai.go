@@ -154,7 +154,7 @@ func (d *Ikuai) post(ctx context.Context, path string, body any, timeout float64
 		return nil, routerError(message)
 	}
 	if response.Status != http.StatusOK {
-		return nil, routerError(ikuaiHTTPError(response, target))
+		return nil, ikuaiHTTPError(response, target)
 	}
 	var data any
 	if err := response.JSON(&data); err != nil {
@@ -193,24 +193,28 @@ func ikuaiOrigin(u *url.URL) string {
 	return u.Scheme + "://" + host
 }
 
-func ikuaiHTTPError(response *devhttp.Response, target string) string {
+func ikuaiHTTPError(response *devhttp.Response, target string) error {
 	code := fmt.Sprintf(messageIkuaiHTTPCode, response.Status)
 	switch response.Status {
 	case 301, 302, 303, 307, 308:
 		base, err := url.Parse(target)
 		if err != nil {
-			return fmt.Sprintf(messageIkuaiRedirect, code)
+			return routerError(fmt.Sprintf(messageIkuaiRedirect, code))
 		}
 		redirect := ""
 		if location := response.Header.Get("Location"); location != "" {
-			if ref, err := url.Parse(location); err == nil {
-				redirect = ikuaiOrigin(base.ResolveReference(ref))
+			ref, err := url.Parse(location)
+			if err != nil {
+				// Location is untrusted and may contain credentials. Do not wrap
+				// url.Parse's error or echo the response header.
+				return &RouterError{Kind: KindInvalidResponse, Message: messageIkuaiRedirectFormat}
 			}
+			redirect = ikuaiOrigin(base.ResolveReference(ref))
 		}
 		if redirect != "" && redirect != ikuaiOrigin(base) {
-			return fmt.Sprintf(messageIkuaiRedirectTarget, redirect, code)
+			return routerError(fmt.Sprintf(messageIkuaiRedirectTarget, redirect, code))
 		}
-		return fmt.Sprintf(messageIkuaiRedirect, code)
+		return routerError(fmt.Sprintf(messageIkuaiRedirect, code))
 	}
 	reason, ok := ikuaiHTTPReasons[response.Status]
 	if !ok {
@@ -219,7 +223,7 @@ func ikuaiHTTPError(response *devhttp.Response, target string) string {
 			reason = messageIkuaiHTTPServer
 		}
 	}
-	return fmt.Sprintf(messageIkuaiHTTP, reason, code)
+	return routerError(fmt.Sprintf(messageIkuaiHTTP, reason, code))
 }
 
 // --- replies -------------------------------------------------------------------
@@ -467,7 +471,10 @@ func (d *Ikuai) Probe(ctx context.Context) (*RouterInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	verinfo, _ := results["verinfo"].(map[string]any)
+	verinfo, ok := results["verinfo"].(map[string]any)
+	if !ok && results["verinfo"] != nil {
+		return nil, &RouterError{Kind: KindInvalidResponse, Message: messageIkuaiVersionFormat}
+	}
 	version := nonEmptyText(Row(verinfo)["version"])
 	if !strings.HasPrefix(version, "4.") {
 		return nil, routerError(fmt.Sprintf(messageIkuaiVersion, cmp.Or(version, messageUnknown)))
@@ -485,9 +492,17 @@ func (d *Ikuai) Probe(ctx context.Context) (*RouterInfo, error) {
 		Capabilities: capabilities}, nil
 }
 
+// ikuaiRouteMask removes static_rt's presentation suffix, as its edit form
+// already does. Only the mask token is configuration; the remaining fields
+// still participate in ownership checks without normalization.
+func ikuaiRouteMask(mask string) string {
+	mask, _, _ = strings.Cut(mask, " ")
+	return mask
+}
+
 // ikuaiNetwork is a row's dst_addr/netmask as a network (host bits cleared).
 func ikuaiNetwork(row Row) (string, bool) {
-	network, ok := netipx.ParseNetwork(row.text("dst_addr")+"/"+row.text("netmask"), false)
+	network, ok := netipx.ParseNetwork(row.text("dst_addr")+"/"+ikuaiRouteMask(row.text("netmask")), false)
 	if !ok {
 		return "", false
 	}

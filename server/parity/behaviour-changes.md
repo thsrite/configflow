@@ -926,3 +926,29 @@ C34 rebase 到 N8-5 后补充实证：custom-config 先保存 `config:false`，�
 JSON 类型比较保存 0。`TestC34ObjectFieldValues` 对四个宽松引擎分别断言这个差异，
 仅替换这一字段建立预期快照后继续比较完整 DB/files；OxiDNS 仍按其文本合同拒绝。
 这沿用 N8-5 的类型裁定，不放宽其他请求或状态差分。
+
+### R05 Step B — iKuai response presentation and failed probes (Python bugs fixed)
+
+- `IKUAI_NETMASK_SUFFIX_ROLLBACK` (medium): static_rt network reads, add
+  confirmation and compensation compare the mask token without the UI display
+  suffix, matching the existing edit-form convention. Plain-mask replies remain
+  supported. Compensation still requires the unique tag and every recorded
+  configuration field, and deletes the ID read from that matching device row;
+  external changes are not adopted. The default suffix fake is retained.
+  Python's confirmation and undo both failed on the suffixed reply and left the
+  newly created route. Real-firmware presentation and cleanup remain L5 items.
+- `IKUAI_PROBE_NESTED_SCHEMA_CRASH` (low): a non-object, non-null verinfo is
+  rejected as `*RouterError{Kind: KindInvalidResponse}` with
+  `iKuai 版本信息格式无法识别，请检查固件版本和管理接口。`, rather than Python's
+  AttributeError/HTML 500. Missing/null verinfo keeps the unsupported-version
+  diagnostic. No untrusted value is echoed.
+- `IKUAI_PROBE_REDIRECT_PARSE_CRASH` (low): malformed Location is a
+  `KindInvalidResponse` RouterError with
+  `iKuai 重定向地址格式无法识别，请在浏览器核对管理地址、协议和端口。`. Go already
+  returned malformed redirects without following them; the explicit response
+  error also covers a malformed port. Python requests could throw ValueError
+  before its RouterError handler and skip recording last_probe. R15 must catch
+  all RouterError variants, persist the failed probe, then map its HTTP status.
+  A repository-consumer contract test proves this error can be saved as the
+  sole last_probe replacement with exactly one revision increment; R15 HTTP
+  remains unported and is not claimed verified here.

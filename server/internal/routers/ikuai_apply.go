@@ -198,10 +198,20 @@ func (d *Ikuai) snapshot(ctx context.Context, freshTags bool) (map[string]Row, e
 	return b.rows, nil
 }
 
-// matchesRow: every match field equals the decoded row's.
-func matchesRow(row, match Row) bool {
+// matchesRow compares every ownership field, ignoring only static_rt's
+// netmask display suffix. Other tables and all other fields remain exact.
+func matchesRow(funcName string, row, match Row) bool {
 	for key, value := range match {
-		if !jsonEqual(row[key], value) {
+		actual := row[key]
+		if funcName == "static_rt" && key == "netmask" {
+			if mask, ok := actual.(string); ok {
+				actual = ikuaiRouteMask(mask)
+			}
+			if mask, ok := value.(string); ok {
+				value = ikuaiRouteMask(mask)
+			}
+		}
+		if !jsonEqual(actual, value) {
 			return false
 		}
 	}
@@ -240,7 +250,7 @@ func (d *Ikuai) confirmAdded(ctx context.Context, added []*ikuaiAddUndo) error {
 	var missing []string
 	for _, undo := range added {
 		tagged := byName[undo.Match.text("tagname")]
-		if len(tagged) != 1 || !matchesRow(tagged[0], undo.Match) {
+		if len(tagged) != 1 || !matchesRow("static_rt", tagged[0], undo.Match) {
 			missing = append(missing, undo.CIDR)
 			// A complete read without the (unique) name proves nothing was created.
 			undo.Confirmed = len(tagged) > 0
@@ -349,7 +359,7 @@ func (d *Ikuai) newID(ctx context.Context, funcName string, undo *ikuaiAddUndo) 
 		return "", withUndo(err, undo)
 	}
 	tagged := taggedRows(decodeRows(rows), undo.Match["tagname"])
-	if len(tagged) == 1 && matchesRow(tagged[0], undo.Match) {
+	if len(tagged) == 1 && matchesRow(funcName, tagged[0], undo.Match) {
 		return tagged[0].text("id"), nil
 	}
 	lost := *undo
@@ -385,7 +395,7 @@ func (d *Ikuai) revertAdd(ctx context.Context, op ikuaiOp) (any, error) {
 		}
 		return noUndo, nil
 	}
-	if len(tagged) != 1 || !matchesRow(tagged[0], op.Match) {
+	if len(tagged) != 1 || !matchesRow(op.Func, tagged[0], op.Match) {
 		return nil, routerError(fmt.Sprintf(messageIkuaiAddChanged, op.Func, tag))
 	}
 	param := Row{"id": tagged[0]["id"]}
@@ -441,7 +451,7 @@ func anyList(values []string) []any {
 func IkuaiRoutePayload(row, changes Row) Row {
 	payload := pick(row, IkuaiRouteFields)
 	maps.Copy(payload, changes)
-	payload["netmask"], _, _ = strings.Cut(nonEmptyText(payload["netmask"]), " ")
+	payload["netmask"] = ikuaiRouteMask(nonEmptyText(payload["netmask"]))
 	return payload
 }
 

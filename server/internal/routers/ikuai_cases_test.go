@@ -263,8 +263,18 @@ func ikuaiSessionCases() []ikuaiCase {
 		"//router.example:8080/login", "HTTPS://Router.Example:08443/x", "https://router.example:99999/x",
 		"", "/login?token=secret-token", "../login", "{origin}/login",
 		"https://router.example:bad-port/login", "javascript:secret-token", "ftp://router.example/x"} {
-		add(ikuaiCase{name: fmt.Sprintf("redirect_location_%d", i), action: "probe", state: routerfake.IkuaiState{
-			Faults: []routerfake.IkuaiFault{{Func: "login", Status: 302, Location: location}}}})
+		tc := ikuaiCase{name: fmt.Sprintf("redirect_location_%d", i), action: "probe", state: routerfake.IkuaiState{
+			Faults: []routerfake.IkuaiFault{{Func: "login", Status: 302, Location: location}}}}
+		if i == 10 { // Both reject a malformed port; Go identifies malformed response data.
+			tc.fixed = "malformed Location has an explicit native response error"
+			tc.check = func(t *testing.T, py, goResult ikuaiOutcome, pyState, goState routerfake.IkuaiState) {
+				wantFixed(t, py.Error != nil && py.Error.Class == "RouterError" && strings.Contains(py.Error.Message, "HTTP 302"), "Python: %s", outcomeText(py))
+				wantFixed(t, goResult.Error != nil && goResult.Error.Message == "iKuai 重定向地址格式无法识别，请在浏览器核对管理地址、协议和端口。", "Go: %s", outcomeText(goResult))
+				compareIkuai(t, "requests", pyState.Calls, goState.Calls)
+				compareIkuai(t, "tables", pyState.Tables, goState.Tables)
+			}
+		}
+		add(tc)
 	}
 	add(ikuaiCase{name: "redirect_after_login", action: "probe", state: routerfake.IkuaiState{
 		Faults: []routerfake.IkuaiFault{{Func: "sysstat", Status: 302, Location: "/login"}}}})
@@ -423,6 +433,8 @@ func ikuaiListCases() []ikuaiCase {
 		Stale: rows{{"id": 9000, "dst_addr": "198.51.100.8", "netmask": "255.255.255.255", "gateway": ikGateway, "interface": "lan1", "prio": 20},
 			{"id": 9001, "dst_addr": "bad", "netmask": "", "gateway": ikGateway}},
 	}})
+	cases[len(cases)-1].fixed = "Python silently omitted the static_rt mask display suffix"
+	cases[len(cases)-1].check = checkIkuaiSuffixState
 	return cases
 }
 
@@ -837,8 +849,7 @@ func ikuaiFixedCases() []ikuaiCase {
 		fixed: "requests raised ValueError (500) parsing a Location it was told not to follow",
 		check: func(t *testing.T, py, golang ikuaiOutcome, _, _ routerfake.IkuaiState) {
 			wantFixed(t, py.Error != nil && py.Error.Class != "RouterError", "Python crashes: %s", outcomeText(py))
-			wantFixed(t, golang.Error != nil && golang.Error.Message == "iKuai 将请求转到了其他页面（HTTP 302）。请在浏览器打开管理页面，"+
-				"核对最终地址的协议和端口；若地址无误，请检查管理入口或反向代理的跳转设置。", "Go explains it: %s", outcomeText(golang))
+			wantFixed(t, golang.Error != nil && golang.Error.Message == "iKuai 重定向地址格式无法识别，请在浏览器核对管理地址、协议和端口。", "Go explains it: %s", outcomeText(golang))
 		}})
 	reused := tables("route_object", rows{ikGroup(5, "office", "", "192.0.2.0/24")}, "nat_rule", rows{ikNAT(1, "cf-mihomo", addressField(nil))})
 	record := ikNAT(1, "cf-mihomo", addressField(nil, ref("IPGP5", "cf_nat_1")))

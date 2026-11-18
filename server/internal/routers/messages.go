@@ -170,6 +170,8 @@ const (
 	messageIkuaiWriteFailed     = "iKuai %s %s 失败：%s"
 	messageIkuaiListIncomplete  = "iKuai %s列表读取不完整或读取期间发生变化，请重试"
 	messageIkuaiListIDs         = "iKuai %s列表缺少唯一有效 ID，无法安全编辑"
+	messageIkuaiVersionFormat   = "iKuai 版本信息格式无法识别，请检查固件版本和管理接口。"
+	messageIkuaiRedirectFormat  = "iKuai 重定向地址格式无法识别，请在浏览器核对管理地址、协议和端口。"
 	messageIkuaiVersion         = "只支持 iKuai 4.x，当前版本 %s"
 	messageIkuaiOperationFormat = "iKuai 操作格式无法识别"
 	messageIkuaiRowMissing      = "iKuai %s 中找不到 id=%s，可能已被手动删除"

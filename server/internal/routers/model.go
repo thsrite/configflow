@@ -24,6 +24,7 @@ const (
 	KindMissingResource                   // the requested RouterOS resource is unavailable
 	KindPingNotPermitted                  // RouterOS account lacks the test policy
 	KindRejected                          // the device answered and refused the write: nothing changed
+	KindInvalidResponse                   // the device response is malformed; retain failed probe evidence
 )
 
 // RouterError is a failure whose message is safe to show to users (use errors.As).

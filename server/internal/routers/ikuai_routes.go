@@ -17,7 +17,7 @@ func editIkuaiEntry(raw Row) *EditableRoute {
 	snapshot := decodeIkuaiRow(raw)
 	delete(snapshot, "status")
 	if mask, ok := snapshot["netmask"].(string); ok {
-		snapshot["netmask"], _, _ = strings.Cut(mask, " ")
+		snapshot["netmask"] = ikuaiRouteMask(mask)
 	}
 	reasons := []string{}
 	missing, unknown := []string{}, []string{}

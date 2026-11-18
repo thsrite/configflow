@@ -363,6 +363,12 @@ Remaining module boundaries: R07 replaces plain address-list reads with digest p
 
 **Status: `verified`** (O4 HR review, 2026-11-17, `parity/review-r05.md`; zero open findings; L5 lab items below) · HR · prereqs: R01, R03; shared device client `internal/devhttp` (R04) · Go: internal/routers, internal/routers/routerfake, internal/devhttp
 
+Step B follow-up（`go-fix-r05-stepb`，基线 `batch-4@3b8d2c03b`，已修待协调者复核）：修复 static_rt 显示后缀导致
+发布确认/补偿不匹配和状态漏读；新增 `KindInvalidResponse` 标识异常 verinfo / Location，中文诊断不回显响应或凭据。
+见 [progress/r05-stepb-fix-zh.md](progress/r05-stepb-fix-zh.md)。只改 R05 与共享掩码 helper，不移植 R15 HTTP；
+R15 必须把 RouterError（包括新 Kind）保存为失败 last_probe，再映射 HTTP，不把设备错误直接走 500。
+修复前失败、修复后通过的 loopback 回归、真实 Python 后缀残留对照已完成；.32 共用路径 race、vet、TestR03Corpus 全绿。
+
 O4 review summary: 5 findings, all fixed with tests (commit `go(routers): R05 review fixes …`) — Medium: F1 devhttp no longer sent credentials from the management URL as Basic auth after switching to the transport (Python requests and Go before R05 did; login-protected reverse proxy in front of iKuai), F2 `route_delete`/`route_add` refusals were plain English errors, not `RouterError` (a release that rolls back only on `RouterError`, as Python's does, would keep the stage's earlier writes); Low: F3 an add or `add_undo` without a name had no ownership proof (a nameless undo deleted the user's nameless rule; Python raised KeyError before writing), F4 (Python bug) `route_restore`/`nat_restore`/`policy_route_restore` wrote the before-image onto whatever row held the id — now refused unless the row still has the record's `tagname`, F5 the batch read-back compared every row with every new route (now indexed by name). The porter's five intended differences, the absent-add proofs, 1008 re-login, rejected/uncertain split, paging, request size, cancellation and the devhttp transport change were checked and are recorded in the review. Tests added: `r05_review_test.go`, `ikuaiReviewCases` in the corpus (now 307 cases, 6 intended differences), `TestURLUserinfoIsBasicAuth` in devhttp. Final run on `.32` (rebased on `go` aeff9d75): gofmt clean, vet ok, `-race` routers/devhttp ok, `go test ./...` ok except the known load-dependent `internal/importer` resource-bounds timeout (ok alone), 9 difftest packages ok, proddiff `new=0 stale=0`.
 
 Files: `backend/routers/ikuai.py` (1179). Tests: `test_ikuai_connection_errors.py` (7), `test_ikuai_dhcp_dns.py` (16), `test_ikuai_scale.py` (29); driver tests in other files: `test_routers.py` (2 iKuai), `test_router_release.py` (`test_encode_matches_ikuai_ui`, `test_ikuai_error_details_surface_in_message`). Routes: none.
@@ -427,6 +433,7 @@ L5 lab items (only a real iKuai 4.x VM can prove; difftest L5-A/B/C):
 9. TLS: HTTPS management with self-signed certificates, verify on/off.
 10. (O4 review) Whether iKuai reuses the id of a deleted static_rt/nat_rule/stream_ipport row (and the gid of a deleted route_object) for the next add; if it does, R12 should prove the name before a `*_delete` undo of an added rule.
 11. (O4 review) Management address with credentials behind a Basic-auth reverse proxy (`http://user:pass@host`): login, session cookie, 401 message.
+12. (Step B) 真实 iKuai 固件读回 static_rt 是否带后缀：记录有/无显示后缀及不同固件的形态；确认发布、随后阶段失败、写入回复丢失后的补偿均能识别实际记录，最终无新增路由残留；外改下一跳/掩码时不得删除。
 
 Commands (from the worktree root; iterate on .63, final run on .32):
 - corpus + Go-only tests: `RT_HOST=sunbroke@192.168.0.63 rt -- bash -lc 'cd server && go test -count=1 -run TestIkuai ./internal/routers/'`
