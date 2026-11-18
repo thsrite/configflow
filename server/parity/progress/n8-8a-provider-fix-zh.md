@@ -1,6 +1,7 @@
 # N8-8a 调用方与通用标量修复交接
 
-分支：`go-fix-n8-8a-provider`；基线：`go-review-n8-8a@6e9d0b738`。
+分支：`go-fix-n8-8a-provider`；当前基线：`batch-6@8ec68fd4d`。
+原基线为 `go-review-n8-8a@6e9d0b738`，现已按 `--onto batch-6 6e9d0b73` 换基。
 提交按模型入口、拓扑/投递、检查服务/参考夹具分开；提交号见交回消息。
 固定测试机 `sunbroke@192.168.0.32`，所有测试、格式和 vet 都通过 rt 前台运行。
 无完整 gate、无 push、无子 agent、无真实设备/生产访问。
@@ -68,7 +69,7 @@
 - 首轮跨包检查另发现 ippresence 28+15 项及 repo 调用方差异；已逐类修复/登记。
   随后跨包又发现空库/损坏尾项 9 项被过早拦截，已修产品而非放宽夹具。
 
-## 验证
+## 原基线验证（历史证据）
 
 以下命令 body 均通过 `RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc '…'` 执行。
 格式检查覆盖所有修改 Go 文件，`go vet ./...` 已通过；不运行完整 gate。
@@ -122,4 +123,35 @@ ok configflow/internal/yamlx         0.485s
 ok configflow/internal/yamlx/yamlxtest 0.037s
 ```
 
-没有尚待集成的 patch、stub 或未解决失败。完整批次 gate 由协调者执行。
+原基线检查全部完成。当前合并基线的验证见下；完整批次 gate 仍由协调者执行。
+
+## batch-6 换基与冲突处理
+
+- 基线固定为 `8ec68fd4d`，未改动 batch-6 分支。
+- 保持 N8-5(c) 删除 compat_dialers.go/native_replay_test.go 的决定；没有恢复旧业务/异常桥。
+  repo `nodeRawDialer` 直接使用 typed `convert.NodeDialer`，legacy import 入口只 JSON 转码；
+  `checkDialers` 直接使用 typed `convert.ConfigDialers`，保留 ErrInUse 和 YAML 错误原有映射。
+  `TestTypedDialerNumericProxyString` 同时检查 typed 节点与旧格式 import 入口接受数值 proxy_string。
+- provider 保留 `corpusRepositoryFactory` 和 `nativeSnapshotExpectations`。
+  ippresence 也同时保留 batch-6 的 replayRepository/reset 隔离守卫与逐项 native 期望。
+- N8-5(c) 已删除 compat golden 测试，因此不再改动其归档 native YAML 期望。
+  reference 的精确期望独立放在 reference_native_scalars_test.go；保留 N8-5(c) 的 typed
+  validateDocument 调用及五条名称显示期望。
+- schema str 现在按通用 model.Int 规则接受；subscription_id:0 读成 "0" 后，由 typed
+  resolver 拒绝不存在的 subscriptions/0（ProfileInUse）。夹具固定完整 Python record 和
+  新 typed 消息/错误类型，不放宽其他 reference 行。
+
+换基后的检查固定 `.32`，同一条前台命令顺序运行：gofmt、全仓 vet、下列 race 与 difftest，最后全 internal 语料。
+
+- `go test -race -count=1 -timeout=10m ./internal/model`：PASS 13.092s。
+- convert 定向 race（typed dialer/数值文本/拓扑/密码/端口/精确 native 参考/字节门覆盖）：PASS 15.440s。
+- repo 定向 race（`TestTypedDialerNumericProxyString|Corpus|Reference|Golden`）：PASS 21.990s。
+- ippresence 定向 race（unknown、fixture 隔离）：PASS 1.717s。
+- 5 组 HTTP difftest：PASS aggregations 62.513s、rulelibrary 46.212s、rules 106.485s、
+  subscriptions 165.303s、provider 53.047s。
+
+合并树全 internal `go test -p 6 -count=1 -timeout=30m -run 'Corpus|Reference|Golden' ./internal/...`
+**全部通过，退出码 0**：convert 128.425s、provider 47.748s、ippresence 2.609s、repo 7.854s、
+routers 78.184s、yamlx 0.224s，最后一行 `ok configflow/internal/yamlx/yamlxtest 0.013s`。
+
+最终工作树只包含本次修复和集成适配；无待解决冲突、无失败/跳过的必跑项目。未 push。

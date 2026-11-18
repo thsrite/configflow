@@ -1279,3 +1279,12 @@ GitHub 代理域名的数值 `5` 现在读成 `"5"`，不再忽略，因此启�
 - `repo/testdata/reference_native_scalars.json` 逐项固定完整 Python record 和 native 结果：
   node name int、node proxy_string int、node subscription zero、group name int、group manual int、
   order id int。兼容解码不会绕过后续的来源归属、legacy 结构约束和资源存在性验证。
+
+
+### N8-8a 修复换到 N8-5(c) 之后
+
+旧 compat_dialers/native golden 测试已删除，以上旧行号留作原基线历史证据；不恢复旧文件，
+也不继续改动未被执行的 compat_native_yaml 归档。typed repo 的 nodeRawDialer/legacy import
+改用共享 NodeDialer；checkDialers 直接调用 ConfigDialers。通用标量和业务校验本身不变。
+reference_native_scalars 的 schema str 明确接受严格整数字符串版本号；subscription zero
+由新 resolver 报 ProfileInUse「引用的共享资源不存在：subscriptions/0」，保留完整 profile 上下文。

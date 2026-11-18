@@ -40,8 +40,8 @@
       ],
       "result": null
     },
-    "native_error": "配置 默认配置: 代理链仅支持共享手动节点，订阅请通过策略组使用",
-    "native_class": "DialerReferenceError"
+    "native_error": "配置 默认配置: 引用的共享资源不存在：subscriptions/0",
+    "native_class": "ProfileInUse"
   },
   {
     "label": "group name int",
@@ -149,5 +149,26 @@
     },
     "native_error": "资源引用必须是非空 ID",
     "native_class": "ProfileValidationError"
+  },
+  {
+    "label": "schema str",
+    "record": {
+      "label": "schema str",
+      "patch": [
+        {
+          "path": [
+            "schema_version"
+          ],
+          "set": "5"
+        }
+      ],
+      "error": {
+        "class": "ProfileValidationError",
+        "message": "配置存储版本不匹配",
+        "usages": null
+      }
+    },
+    "native_error": null,
+    "native_class": null
   }
 ]

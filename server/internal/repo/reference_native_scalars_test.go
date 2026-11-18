@@ -1,10 +1,10 @@
 package repo
 
 import (
-"errors"
-"os"
-"testing"
-"configflow/internal/jsonx"
+	"configflow/internal/jsonx"
+	"errors"
+	"os"
+	"testing"
 )
 
 func nativeReferenceScalar(t *testing.T, record *jsonx.Object, err error) bool {
@@ -31,11 +31,10 @@ func nativeReferenceScalar(t *testing.T, record *jsonx.Object, err error) bool {
 			}
 		} else if err == nil || err.Error() != fixture.GetString("native_error") ||
 			(fixture.GetString("native_class") == "ProfileValidationError" && !errors.Is(err, ErrValidation)) ||
-			(fixture.GetString("native_class") == "DialerReferenceError" && !errors.Is(err, ErrInUse)) {
+			(fixture.GetString("native_class") == "ProfileInUse" && !errors.Is(err, ErrInUse)) {
 			t.Fatalf("native reference %s: %v", fixture.GetString("label"), err)
 		}
 		return true
 	}
 	return false
 }
-
