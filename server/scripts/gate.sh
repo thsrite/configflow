@@ -1,119 +1,134 @@
 #!/usr/bin/env bash
-# gate.sh — the full merge gate for the Go server, run on a test server (via rt), never on the Mac.
-#
-#   server/scripts/gate.sh [-p N] [FuzzName:./pkg ...]
-#
-# Steps: gofmt + vet, both build tags (build ./..., vet + lifecycle tests), then in parallel (a) full `go test -race` and (b) proddiff, then all
-# difftest packages in one `go test` (packages run in parallel), then the given fuzz targets
-# concurrently for 60 s each. The race run already executes every test, so there is no separate
-# non-race run. Exit code 0 only when every step passed; logs stay in $GATE_LOGS (printed).
-#
-#   -p N     package parallelism for race/difftest (default: go's default = GOMAXPROCS).
-#            Use -p 6 on .64 (20 GB RAM + swap; full -race at default -p was OOM-killed once at 15 GB).
-# Env: GATE_FUZZTIME (default 60s), GATE_FUZZ_PARALLEL (default 2 workers per target).
-# GATE_ONLY=proddiff or difftest runs only that stage, under the same slot limit.
-set -u
-cd "$(dirname "$0")/.."            # server/
-
+# Merge gate; run on a test server, never on the Mac. See gate.md.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+umask 077
 pflag=()
-if [ "${1:-}" = "-p" ]; then pflag=(-p="$2"); shift 2; fi
-fuzztime="${GATE_FUZZTIME:-60s}"
-fuzzpar="${GATE_FUZZ_PARALLEL:-2}"
-stage="${GATE_ONLY:-all}"
-case "$stage" in all|proddiff|difftest) ;; *) echo "Unknown GATE_ONLY stage: $stage" >&2; exit 2 ;; esac
-logs="${GATE_LOGS:-$(mktemp -d "${TMPDIR:-/tmp}/gate.XXXXXX")}"
+if [[ ${1:-} == -p ]]; then pflag=(-p="${2:?missing -p value}"); shift 2; fi
+stage=${GATE_ONLY:-all}
+case "$stage" in all|core|compare|proddiff|difftest) ;; *) echo "Unknown GATE_ONLY stage: $stage" >&2; exit 2 ;; esac
+logs=${GATE_LOGS:-$(mktemp -d "${TMPDIR:-/tmp}/gate.XXXXXX")}
 mkdir -p "$logs"
-echo "gate: logs in $logs"; uptime
-
-# At most GATE_SLOTS full gates per test server at once (default 1; the coordinator's cf-gate uses 2):
-# three concurrent gates on the 12-core .32 pushed installer/provider past the 60-minute race timeout,
-# and before that a dozen agents running full
-# -race + proddiff together pushed the load past 100 on 12 cores and produced timing-only diffs.
-slots="${GATE_SLOTS:-1}"
+logs=$(realpath "$logs")
+echo "gate: stage=$stage logs=$logs"; uptime
+slots=${GATE_SLOTS:-1}
+[[ $slots =~ ^[1-9][0-9]*$ ]] || { echo 'Invalid GATE_SLOTS' >&2; exit 2; }
 mkdir -p "$HOME/rt/.gate-slots"
 waited=0
 while :; do
-  for i in $(seq 1 "$slots"); do
+  for ((i=1; i<=slots; i++)); do
     exec 8>"$HOME/rt/.gate-slots/$i"
     if flock -n 8; then got=$i; break 2; fi
     exec 8>&-
   done
-  [ "$waited" -eq 0 ] && echo "gate: $slots gate(s) already running on this server; waiting for a slot..."
+  if ((waited == 0)); then echo "gate: $slots gate(s) running; waiting for a slot..."; fi
   waited=1; sleep 20
 done
 echo "gate: slot $got of $slots"
+fail() { echo "GATE FAIL: $*" >&2; exit 1; }
 
-fail() { echo "GATE FAIL: $*"; exit 1; }
-quiet() { grep -v -E '^ok |no test files' "$1"; }
+# Decide once for the entire invocation; compare-only does not refresh the stamp.
+full=0
+stamp=$HOME/rt/.gate-last-full
+now=$(date +%s)
+last=$(stat -c %Y "$stamp" 2>/dev/null || echo 0)
+if [[ ${GATE_FULL:-0} == 1 ]]; then
+  full=1; reason=GATE_FULL
+elif ((last == 0 || now-last >= 86400 || last > now)); then
+  full=1; reason='no successful full core within 24h'
+else
+  reason='successful full core within 24h'
+fi
+if ((full)); then echo "gate: FULL mode ($reason)"; else echo "gate: CACHE mode ($reason)"; fi
 
-if [ "$stage" != all ]; then
-  echo "== $stage (only; other stages are not run)"
-  if [ "$stage" = proddiff ]; then
-    ( cd .. && server/scripts/proddiff.sh >"$logs/proddiff.log" 2>&1 )
-    result=$?
-    tail -30 "$logs/proddiff.log"
+run_core() {
+  local out tag
+  echo '== gofmt'
+  out=$(gofmt -l internal/ tools/ cmd/) || fail gofmt
+  [[ -z $out ]] || { echo "$out"; fail gofmt; }
+  echo '== vet'
+  go vet ./... || fail vet
+  echo '== build tags'
+  for tag in configflow_proddiff configflow_difftest; do
+    go build -tags "$tag" ./... || fail "build -tags $tag"
+    go vet -tags "$tag" ./internal/lifecycle/... ./cmd/... || fail "vet -tags $tag"
+    go test -tags "$tag" -count=1 ./internal/lifecycle/... >"$logs/tag-$tag.log" 2>&1 \
+      || { cat "$logs/tag-$tag.log"; fail "lifecycle tests -tags $tag"; }
+  done
+  if [[ -d tools/pyref ]]; then
+    PYREF_INPUT_FINGERPRINT=$(go run ./tools/pyref -fingerprint) || fail 'pyref fingerprint'
+    [[ -n $PYREF_INPUT_FINGERPRINT ]] || fail 'empty pyref fingerprint'
+    export PYREF_INPUT_FINGERPRINT
+    echo "gate: PYREF_INPUT_FINGERPRINT=$PYREF_INPUT_FINGERPRINT"
   else
-    CONFIGFLOW_DIFF=1 go test "${pflag[@]}" -count=1 -timeout=40m $(go list ./... | grep difftest) >"$logs/diff.log" 2>&1
-    result=$?
-    grep -E '^(ok|FAIL|---)' "$logs/diff.log" || true
+    echo 'gate: pyref fingerprint entry not integrated; not setting PYREF_INPUT_FINGERPRINT'
   fi
-  [ "$result" -eq 0 ] || fail "$stage (see $logs)"
-  uptime
-  echo "GATE STAGE PASS: $stage"
-  exit 0
-fi
-
-echo "== gofmt"
-out="$(gofmt -l internal/ tools/ cmd/)"; [ -z "$out" ] || { echo "$out"; fail gofmt; }
-echo "== vet"
-go vet ./... || fail vet
-
-echo "== build tags (configflow_proddiff, configflow_difftest)"
-for tag in configflow_proddiff configflow_difftest; do
-  go build -tags "$tag" ./... || fail "build -tags $tag"
-  go vet -tags "$tag" ./internal/lifecycle/... ./cmd/... || fail "vet -tags $tag"
-  go test -tags "$tag" -count=1 ./internal/lifecycle/... >"$logs/tag-$tag.log" 2>&1 \
-    || { cat "$logs/tag-$tag.log"; fail "lifecycle tests -tags $tag"; }
-done
-
-echo "== proddiff observer self-checks"
-go test -tags configflow_proddiff -count=1 -run '^TestProddiff(Content|WaitsForFreshProvider)' ./internal/api/agents ./cmd/configflow \
-  >"$logs/observer.log" 2>&1 || { cat "$logs/observer.log"; fail "proddiff observer self-checks"; }
-
-echo "== race + proddiff (parallel)"
-( cd .. && server/scripts/proddiff.sh >"$logs/proddiff.log" 2>&1; echo $? >"$logs/proddiff.rc" ) &
-pd=$!
-go test -race "${pflag[@]}" -count=1 -timeout=60m ./... >"$logs/race.log" 2>&1
-race=$?
-quiet "$logs/race.log"
-wait "$pd"
-tail -1 "$logs/proddiff.log"
-[ "$race" -eq 0 ] || fail "race (see $logs/race.log; 'signal: killed' = OOM, rerun that package)"
-[ "$(cat "$logs/proddiff.rc")" = 0 ] || { tail -30 "$logs/proddiff.log"; fail proddiff; }
-
-echo "== difftest"
-mapfile_pkgs() { go list ./... | grep difftest; }
-CONFIGFLOW_DIFF=1 go test "${pflag[@]}" -count=1 -timeout=40m $(mapfile_pkgs) >"$logs/diff.log" 2>&1
-diff=$?
-cat "$logs/diff.log" | grep -E '^(ok|FAIL|---)'
-[ "$diff" -eq 0 ] || fail difftest
-
-if [ $# -gt 0 ]; then
-  echo "== fuzz ($# targets, $fuzztime each, concurrent)"
-  pids=(); names=()
-  for t in "$@"; do
-    name="${t%%:*}"; pkg="${t#*:}"
-    go test -run '^$' -fuzz="^${name}\$" -fuzztime="$fuzztime" -parallel="$fuzzpar" "$pkg" \
-      >"$logs/fuzz-$name.log" 2>&1 &
-    pids+=($!); names+=("$name")
-  done
-  bad=0
-  for i in "${!pids[@]}"; do
-    if wait "${pids[$i]}"; then echo "${names[$i]} $(tail -1 "$logs/fuzz-${names[$i]}.log")"
-    else echo "FUZZ FAIL ${names[$i]}"; tail -20 "$logs/fuzz-${names[$i]}.log"; bad=1; fi
-  done
-  [ "$bad" -eq 0 ] || fail fuzz
-fi
-
+  echo '== race'
+  if ((full)); then
+    echo 'gate: go clean -testcache (shared host cache; results will be repopulated)'
+    go clean -testcache || fail 'clean test cache'
+  fi
+  go test -race "${pflag[@]}" -timeout=60m ./... >"$logs/race.log" 2>&1 \
+    || { cat "$logs/race.log"; fail "race (see $logs/race.log)"; }
+  cat "$logs/race.log"
+  awk '/^ok[[:space:]]/ && /\(cached\)/ { print $2 }' "$logs/race.log" >"$logs/race-cached.txt"
+  echo "gate: race cache hits=$(wc -l <"$logs/race-cached.txt")"
+  cat "$logs/race-cached.txt"
+  if (($#)); then
+    echo "== fuzz ($# targets, ${GATE_FUZZTIME:-60s} each)"
+    local target name pkg i bad=0
+    local pids=() names=()
+    for target in "$@"; do
+      [[ $target == Fuzz*:* ]] || fail "invalid fuzz target: $target"
+      name=${target%%:*}; pkg=${target#*:}
+      go test -run '^$' -fuzz="^${name}\$" -fuzztime="${GATE_FUZZTIME:-60s}" \
+        -parallel="${GATE_FUZZ_PARALLEL:-2}" "$pkg" >"$logs/fuzz-$name.log" 2>&1 &
+      pids+=("$!"); names+=("$name")
+    done
+    for i in "${!pids[@]}"; do
+      if wait "${pids[$i]}"; then tail -1 "$logs/fuzz-${names[$i]}.log"
+      else cat "$logs/fuzz-${names[$i]}.log"; bad=1; fi
+    done
+    ((bad == 0)) || fail fuzz
+  fi
+  # A failed vet/build/race/fuzz never makes the next run cache-eligible.
+  if ((full)); then touch "$stamp"; echo "gate: full core stamp updated: $stamp"; fi
+}
+run_proddiff() {
+  echo '== proddiff observer self-checks'
+  go test -tags configflow_proddiff -count=1 -run '^TestProddiff(Content|WaitsForFreshProvider)' \
+    ./internal/api/agents ./cmd/configflow >"$logs/observer.log" 2>&1 \
+    || { cat "$logs/observer.log"; fail 'proddiff observer self-checks'; }
+  local args=()
+  if ((full)); then
+    # Older proddiff has no cache at all. Once the cache interface lands, bypass it.
+    if grep -q -- '--no-cache' scripts/proddiff.sh; then args+=(--no-cache)
+    else echo 'gate: proddiff response cache not integrated; already runs live'; fi
+  fi
+  echo "== proddiff ${args[*]}"
+  (cd .. && server/scripts/proddiff.sh "${args[@]}") >"$logs/proddiff.log" 2>&1 \
+    || { tail -30 "$logs/proddiff.log"; fail proddiff; }
+  tail -30 "$logs/proddiff.log"
+}
+run_difftest() {
+  echo '== difftest (uncached)'
+  local packages
+  packages=$(go list ./... | grep '/difftest$') || fail 'no difftest packages'
+  # Intentional splitting: go list produces whitespace-free import paths.
+  CONFIGFLOW_DIFF=1 go test "${pflag[@]}" -count=1 -timeout=40m $packages >"$logs/diff.log" 2>&1 \
+    || { cat "$logs/diff.log"; fail difftest; }
+  cat "$logs/diff.log"
+}
+run_live() {
+  echo '== synthetic live (uncached, required JSON execution manifest)'
+  "${CONFIGFLOW_DIFF_PYTHON:-$HOME/cf-test/.venv/bin/python}" scripts/gate-live.py "$logs" "${pflag[@]}" || fail 'synthetic live'
+}
+case "$stage" in
+  all) run_core "$@"; run_proddiff; run_difftest; run_live ;;
+  core) run_core "$@" ;;
+  compare) run_proddiff; run_difftest; run_live ;;
+  proddiff) run_proddiff ;;
+  difftest) run_difftest ;;
+esac
 uptime
-echo "GATE PASS"
+echo "GATE STAGE PASS: $stage"
