@@ -355,6 +355,10 @@ class AgentComparisonIdentities:
 AGENT_COMPARISON_ROUTES = {'/api/agents', '/api/agents/<agent_id>', '/api/agents/<agent_id>/push-diff'}
 
 
+# deploy.ErrPairPublisherMissing as generate-config reports it (failure_text).
+A18_HA_REFUSAL = 'deploy: DNS HA pair publication is not available (A18)'
+
+
 def same_agent_transport_target(python_message, go_message):
     """Recognize native offline-Agent exception text, retaining the target proof."""
     if not isinstance(python_message, str) or not isinstance(go_message, str):
@@ -455,6 +459,16 @@ def response_diffs(left, right, route, rules, agent_identities=None):
             and a['body'].get('success') is False and b['body'].get('success') is False
             and same_agent_transport_target(a['body'].get('message'), b['body'].get('message'))):
         a['body']['message'] = b['body']['message'] = '<same-target-native-transport-error>'
+    # Until A18 wires HA final generation, Go refuses it by design (A14 review L3).
+    # Only that exact refusal on an otherwise identical failed 400 envelope gets
+    # its own difference type, so the deferred baseline row cannot hide any other
+    # generate-config message difference; it turns stale once A18 lands.
+    if (route == '/api/agents/<agent_id>/generate-config' and left[0] == right[0] == 400
+            and isinstance(a['body'], dict) and isinstance(b['body'], dict)
+            and a['body'].get('success') is False and b['body'].get('success') is False
+            and b['body'].get('message') == A18_HA_REFUSAL and a['body'].get('message') != A18_HA_REFUSAL):
+        out.append(('body.message', 'a18-ha-refusal'))
+        a['body']['message'] = b['body']['message']
     if agent_identities is not None and route in AGENT_COMPARISON_ROUTES:
         agent_identities.normalize(a['body'], b['body'], route)
     apply_rules(rules, route, a, b)

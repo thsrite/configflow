@@ -129,6 +129,19 @@ class ComparatorTests(unittest.TestCase):
         wrong_status = reply({'success': False, 'message': json.loads(native[2])['message']}, status=500)
         self.assertTrue(pd.response_diffs(py, wrong_status, route, []))
 
+    def test_a18_ha_refusal_is_its_own_difference_type(self):
+        route = '/api/agents/<agent_id>/generate-config'
+        py = reply({'success': False, 'message': "HTTPConnectionPool(host='agent.example.com', port=8080): Max retries exceeded"}, status=400)
+        refusal = reply({'success': False, 'message': pd.A18_HA_REFUSAL}, status=400)
+        self.assertEqual([('body.message', 'a18-ha-refusal')], pd.response_diffs(py, refusal, route, []))
+        # Any other message, field or status difference stays an ordinary difference.
+        other = reply({'success': False, 'message': '目标设备配置已改变，请重新生成最终配置后推送。'}, status=400)
+        self.assertEqual([('body.message', 'value')], pd.response_diffs(py, other, route, []))
+        extra = reply({'success': False, 'message': pd.A18_HA_REFUSAL, 'code': 'x'}, status=400)
+        self.assertIn(('body.code', 'extra-in-go'), pd.response_diffs(py, extra, route, []))
+        self.assertIn(('status', 'value'), pd.response_diffs(py, reply({'success': False, 'message': pd.A18_HA_REFUSAL}, status=500), route, []))
+        self.assertEqual([('body.message', 'value')], pd.response_diffs(py, refusal, '/api/agents/<agent_id>/push-config', []))
+
     def test_baseline_migration_patches_only_private_identity_without_revision(self):
         import tempfile
         import copy

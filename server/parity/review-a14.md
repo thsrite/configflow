@@ -5,7 +5,7 @@
 
 ## 结论
 
-- **A14 自身 high：0 条。** medium 1 条（M1，Python 同样存在），low 3 条（L1、L2 已修；L3 为基线粒度建议）。
+- **A14 自身 high：0 条。** medium 1 条（M1，Python 同样存在），low 3 条（L1、L2 已修；L3 基线行已收窄）。
 - 共享 BeforeCommit 关机窗口（已分派 O3-6c）不计入；已复验报告写清、SKIP 的回归确实复现（见第 4 节）。
 - A20 合入后的两项接线（去掉 deploy.Wire 重复注册的 reader、注册 `deploy.SetGatewayGuards`）及其测试，
   按协调者指示在 rebase 到含 A20 的 go 后完成，见第 6 节；在那之前 A14 结论不依赖它们。
@@ -45,12 +45,14 @@
   500 分支的测试：`TestReviewA14UnexpectedPushFailureIsLoggedAndRecorded`（A18 前 HA 成员按设计 fail closed）
   断言 500 外形、`failed`/`preparing` 记录、设备未收到上传、日志有类名且不含错误文本；去掉日志行时失败。
   提交 `6871cd22a`。
-- **L3 — 新增的 A18 基线行粒度大于其理由（未改，建议）。** 行
+- **L3 — 新增的 A18 基线行粒度大于其理由（已收窄）。** 原行
   `POST /api/agents/<agent_id>/generate-config · body.message · value` 的说明是「HA 最终生成按设计拒绝」，但
-  proddiff 基线按 route/键路径/类型匹配，会同时掩盖**任何** Agent 在 generate-config 上的 message 值差异（非 HA
-  Agent 的回归也看不见），直到 A18 接入后变 stale。该行经协调者批准，且当前 proddiff 证明只有四个 HA 用例触发；
-  建议 A18 前若再有 generate-config 相关改动，在 `run.py` 中把这一行限定为「Go message 恰为 A18 拒绝文本」，或
-  尽早由 A18 删除。
+  proddiff 基线按 route/键路径/类型匹配，会同时掩盖**任何** Agent 在 generate-config 上的 message 值差异。
+  按协调者 HANDOFF 要求收窄：`run.py` 只在 Go 返回**恰为** `ErrPairPublisherMissing` 文本、双方都是失败的 400
+  信封时输出专用类型 `a18-ha-refusal`，基线行改为该类型；其他 message、字段、状态差异仍是普通差异。A18 接入后
+  该类型不再出现，行变 stale，强制删除（PROGRESS-agents 的 A18 义务已同步）。测试
+  `test_a18_ha_refusal_is_its_own_difference_type`；真实快照 proddiff 由协调者的 cf-gate 确认该行仍恰好匹配四个 HA
+  用例（Go 拒绝文本由 `GenerateFinal` 经 `failure_text` 原样返回，未经其他改写）。
 
 ## 逐项核对（任务重点 1–8）
 
@@ -88,7 +90,7 @@
 5. **延期基线。** 删除的 24 行 = list 三台 × {checked_at, reason, status} 9 行 + detail 3 行 + push-diff 12 行，
    正是 A13 登记的「PrepareFunc 未接线」条目，无通配；真实 PrepareFunc 已经 `WireContentSync` 接线，
    handoff 记录的实际 proddiff `new=0 stale=0`。新增一行 A18 精确 message 行，状态码/其他字段一致的说法与
-   `run.py` 比较逻辑相符，A18 删除义务已写入 PROGRESS-agents；粒度问题见 L3。
+   `run.py` 比较逻辑相符，A18 删除义务已写入 PROGRESS-agents；该行已按 L3 收窄为专用类型。
 6. **C36 只读 reader。** 只有一套：`internal/setupflow.ProfileSessions`。与 Python `profile_sessions` 对照：
    文件名 32 位小写 hex、非对象/其他 profile 跳过、按 `updated_at` 倒序、不取向导锁；损坏 JSON/非 UTF-8 fail closed
    为 `ErrInvalidSession` 并计入 400 准备失败（Python 的 JSONDecodeError/UnicodeDecodeError 均为 ValueError）；
