@@ -173,7 +173,7 @@ func (s *Service) Prepare(ctx context.Context, id, profile string, body json.Raw
 		return nil, failure("INVALID_REQUEST", 400, msgCheckFirst)
 	}
 	var result *Report
-	e := deploy.RunDetached(ctx, "ipv6-prepare", func(ctx context.Context) error {
+	e := deploy.RunDetached(ctx, "ipv6-prepare", func(ctx context.Context) (resultError error) {
 		held, release, e := operations.Lock(ctx, id, 0)
 		if e != nil {
 			return e
@@ -191,6 +191,13 @@ func (s *Service) Prepare(ctx context.Context, id, profile string, body json.Raw
 		if e != nil {
 			return e
 		}
+		// Agent-supplied prepare failures use the captured seeds, like status and
+		// probe, so a credential replaced during the request is still hidden.
+		defer func() {
+			if resultError != nil {
+				resultError = s.capturedError(ctx, config, a, resultError)
+			}
+		}()
 		rs := linked(config, id)
 		slices.SortFunc(rs, func(a, b *routers.Router) int { return strings.Compare(a.ID, b.ID) })
 		// Try-only job locks retain L1 semantics even under the Agent operation.

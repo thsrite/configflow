@@ -12,6 +12,7 @@ import (
 	"configflow/internal/deploy/contentsync"
 	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
+	"configflow/internal/model"
 )
 
 var logger = logx.Get("backend.agents.ipv6_verification")
@@ -31,13 +32,19 @@ func (s *Service) Enroll(ctx context.Context, id, did string, config Document) e
 		if a == nil {
 			return nil
 		}
-		tasks := object(a["deployments"])
-		task := object(tasks[did])
+		// The history map is trimmed by insertion order (A14 keeps the newest
+		// 30); an ordered map keeps that order and unknown tasks unchanged.
+		var tasks model.Map[json.RawMessage]
+		if json.Unmarshal(a["deployments"], &tasks) != nil {
+			return nil
+		}
+		b, _ := tasks.Get(did)
+		task := object(b)
 		if task == nil {
 			return nil
 		}
 		task["ipv6_verification_requested"] = raw(true)
-		tasks[did] = raw(task)
+		tasks.Set(did, raw(task))
 		a["deployments"] = raw(tasks)
 		if text(object(a["latest_deployment"])["deployment_id"]) == did {
 			a["latest_deployment"] = raw(task)
