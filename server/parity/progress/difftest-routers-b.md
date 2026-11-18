@@ -2,8 +2,8 @@
 
 Status: in progress; NOT ready for acceptance hand-back. Branch go-difftest-routers-b.
 Latest clean integration rebase: goa9d6ce86c; normal public binary built from it.
-Current declarations:501 executed-variant audits plus9 explicit source-unreachable
-proofs plus2 O6 review-superseded entries;1789 remaining if all increments and
+Current declarations:511 executed-variant audits plus9 explicit source-unreachable
+proofs plus2 O6 review-superseded entries;1779 remaining if all increments and
 controls are composed. Last FULL composition still37937739:3054
 recipes/301 audits. Newer subsets do not replace that full evidence; latest
 large subset2470 recipes/327 audits. All observed26 domain routes remain absent
@@ -2155,3 +2155,38 @@ Owned fake HTTP transport adjustment:
   142 real fatal/capability/TLS probe requests, including their timeout paths.
   Original process has exited; no duplicate batch was launched. No new matrix
   coverage or native parity is inferred from this transport-only rerun.
+
+DHCP write/readback/compensation increment:
+- New ikuai_dhcp_writes.py drives18 independent worlds through actual public
+  previews/confirmations.43-field DHCP before-images and the unrelated static
+  binding survive; owned route/NAT/group state is clean after compensation.
+- Real peer gates pause edit/read requests, never product helpers. Readback zero/
+  duplicate IDs, changed attributes vs independent runtime blocker, unavailable
+  primary/recovery reads, lost applied acknowledgement, failed restore and a
+  later stage-verification failure have separate actual outcomes. The later
+  failure exercises the ordinary outer undo of a completed DHCP operation.
+- An external DHCP domain edit while the fresh scope read is gated is retained;
+  the final expected-attributes guard refuses before any DHCP edit. All four
+  authorization/session codes and generic rejection detail/fallback forms are
+  explicit;1008 makes two edit attempts. This is not firmware expiry acceptance.
+- Async begin accepts a structured JSON document so each side's own fingerprint
+  is resolved/encoded independently. An adversarial runner oracle confirms own
+  token/body/header handling; conflicting raw+structured body is refused.
+-10 new audits H0264/H0265/H0268/H0273–H0279 require every named failed branch
+  AND an independent successful full edit. O6 default mask suffix stays unchanged;
+  this write family explicitly uses the independent plain-mask variant.
+- Initial28 and expanded34 actual reference requests passed. Full harness
+  discovery then found ONLY its frozen declaration count501 vs510; corrected
+  to511 after the added external-edit audit. It was a test inventory assertion,
+  not a product difference. Targeted rerun passed83 tests15.197s/OK.
+
+Exact .64 verification:
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY="$HOME/.cache/routerdiff-build-302rx1dg-a9d6ce86c/configflow"; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python -m unittest -q test_audits test_recipes test_runner; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world-prefix dhcp-ikuai-write- --world dhcp-ikuai-plain --output "$HOME/.cache/routerdiff-reports/302rx1dg/ikuai-dhcp-write-audits.json"'`
+=> Ran83 tests15.197s/OK;39 actual recipes/allGo-unimplemented,0/26 native,
+14 references/10 new audits,2291 pending in this subset,complete=false/no bug.
+No active command.511 declarations+9 proofs+2 corrections/1779 pending if all
+increments compose. This does not replace historical full composition or mark
+any Go module verified. Remaining corrupt-operation reachability proofs require
+complete producer analysis (do not assume legacy Agent host types are strings),
+then signatures/ownership/fingerprints/YAML/runtime clocks, other matrix and
+background/concurrency, full composition and final gate/rebase remain open.

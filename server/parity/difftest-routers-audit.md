@@ -639,3 +639,12 @@ iKuai complete DHCP evidence / shared scope guards:
 - All report200/plan200/confirmation409 messages and full DB/device invariants
   passed. No DNS delivery/write/readback/compensation or firmware acceptance is
   inferred. Default static_rt netmask display suffix remains enabled unchanged.
+
+DHCP write evidence extension (Step B): H0264/H0265/H0268/H0273–H0279 now
+require the explicitly named public release worlds in audits.py and an actual
+successful full-form DHCP edit. Peer-gated external domain drift refuses without
+DHCP writes; full readback and clean/failed compensation retain real device state.
+A forged private operation is never submitted. Plain-mask controls are separately
+named; the default realistic static-mask suffix and its known Python bug remain.
+These10 entries have39 actual synthetic HTTP observations in the focused .64 run;
+native routers registration remains absent, so they do not claim Go parity.

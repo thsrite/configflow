@@ -109,7 +109,8 @@ def ikuai_dhcp():
     yield Case(preview, 'R012', 'POST', '/api/routers/r-ik/plan', 200, ('R012-S04', 'G13'),
                prepare=(seed, online()), unchanged=False, effect='device-read',
                checks={'plan/blockers': [], 'plan/checks/dhcp_dns/dns': ['10.44.0.53']})
-    yield Case('R011/iKuai-dhcp-plain-mask', 'R011', 'POST', '/api/routers/r-ik/apply', 200, ('R011-S06', 'G13'),
+    yield Case('R011/iKuai-dhcp-plain-mask', 'R011', 'POST', '/api/routers/r-ik/apply', 200,
+               ('R011-S06', 'G13', 'H0264', 'H0265', 'H0268', 'H0273', 'H0274', 'H0275', 'H0276', 'H0277', 'H0278', 'H0279'),
                document={'fingerprint': Ref(preview, '/body/plan/fingerprint')}, requires=('R012',),
                unchanged=False, effect='profile-write-device', checks={'success': True},
                foreign=(('ikuai', 'dhcp_static', 'id', 70),),

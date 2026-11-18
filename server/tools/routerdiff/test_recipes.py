@@ -16,6 +16,7 @@ import upstream
 import dns
 import dhcp_guards
 import ikuai_dhcp_guards
+import ikuai_dhcp_writes
 import gateway
 import disconnect
 import routing
@@ -41,6 +42,30 @@ from bugs import BUGS
 
 
 class RecipeTests(unittest.TestCase):
+    def test_ikuai_dhcp_writes_use_actual_edit_gate_and_complete_before_image(self):
+        _, entries = load()
+        worlds = ikuai_dhcp_writes.worlds()
+        self.assertEqual(len(worlds), 18)
+        for world, options, groups in worlds:
+            rows = [case for group in groups for case in group()]
+            self.assertEqual(len(rows), 2)
+            preview, confirmation = rows
+            self.assertEqual(preview.expected, 200)
+            self.assertEqual(confirmation.expected, 502)
+            self.assertEqual(confirmation.document['fingerprint'], cases.Ref(preview.ident, '/body/plan/fingerprint'))
+            self.assertEqual(preview.prepare[0]['presentation'], {'static_mask_suffix': False})
+            self.assertEqual(set(confirmation.fake_checks['ikuai/dhcp_server/0']) - {'status', 'available'},
+                             set(ikuai_dhcp_guards.FIELDS))
+            self.assertTrue(set(confirmation.entries) <= set(entries))
+            if confirmation.join:
+                controls = confirmation.prepare
+                self.assertEqual([row.get('rpc', row.get('action')) for row in controls[:3]],
+                                 ['fault', 'begin', 'await_gate'])
+                self.assertEqual(controls[1]['document'], confirmation.document)
+                self.assertTrue(controls[0]['apply'])
+                self.assertTrue(controls[0]['passthrough'])
+                self.assertEqual(controls[-1], {'action': 'release', 'gate': confirmation.join})
+
     def test_router_delete_sequences_preserve_same_id_foreign_profile_and_devices(self):
         _, entries = load()
         worlds = router_lifecycle.worlds()

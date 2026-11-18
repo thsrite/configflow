@@ -28,9 +28,32 @@ import probes
 import router_lifecycle
 import dhcp_guards
 import ikuai_dhcp_guards
+import ikuai_dhcp_writes
+import dns
 
 
 class AuditTests(unittest.TestCase):
+    def test_ikuai_dhcp_write_audits_need_independent_readback_and_compensation_evidence(self):
+        actual = {(world, case.ident): case for world, _, groups in ikuai_dhcp_writes.worlds()
+                  for group in groups for case in group()}
+        actual.update({('dhcp-ikuai-plain', case.ident): case for case in dns.ikuai_dhcp()})
+        counts = {'H0264': 3, 'H0265': 3, 'H0268': 2, 'H0273': 17, 'H0274': 2, 'H0275': 2,
+                  'H0276': 2, 'H0277': 16, 'H0278': 5, 'H0279': 5}
+        for ident, count in counts.items():
+            required = declared()[ident].requirements
+            self.assertEqual(len(required), count, ident)
+            for world, name, status in required:
+                case = actual[world, name]
+                self.assertEqual(case.expected, status, (ident, name))
+                self.assertIn(ident, case.entries)
+                self.assertEqual(case.effect, 'profile-write-device')
+            observations = [{'world': world, 'case': name, 'entries': [ident], 'python': {'status': status},
+                             'status': 'go-unimplemented'} for world, name, status in required]
+            self.assertEqual(evaluate(observations)[ident]['audit'], 'variants-audited')
+            self.assertEqual(evaluate(observations[:-1])[ident]['audit'], 'variants-pending')
+        for ident in ('H0266', 'H0267', 'H0269', 'H0270', 'H0271', 'H0272'):
+            self.assertNotIn(ident, declared())  # Corrupt operations are not a public HTTP input.
+
     def test_router_deletion_audits_need_actual_lifecycle_and_every_manifest_operand(self):
         actual = {(world, case.ident): case for world, _, groups in router_lifecycle.worlds()
                   for group in groups for case in group()}
@@ -74,7 +97,8 @@ class AuditTests(unittest.TestCase):
                          'status': 'go-unimplemented'} for world, name, status in required]
             self.assertEqual(evaluate(evidence)[ident]['audit'], 'variants-audited')
             self.assertEqual(evaluate(evidence[:-1])[ident]['audit'], 'variants-pending')
-        self.assertNotIn('H0264', declared())  # Write/readback/undo paths remain separate.
+        self.assertNotIn('H0264', {ident: value for ident, value in declared().items()
+                                  if any(world == 'dhcp-ikuai-evidence' for world, _, _ in value.requirements)})
 
     def test_dhcp_evidence_audits_require_real_report_plan_and_refused_confirmation(self):
         actual = {case.ident: case for case in dhcp_guards.cases()}
@@ -330,7 +354,7 @@ class AuditTests(unittest.TestCase):
 
     def test_auth_audits_require_every_explicit_real_reference_variant(self):
         audits = declared()
-        self.assertEqual(len(audits), 501)  # Named declarations; matrix parsing grants no coverage.
+        self.assertEqual(len(audits), 511)  # Named declarations; matrix parsing grants no coverage.
         self.assertFalse(set(audits) - set(load()[1]))
         self.assertEqual({value['audit'] for value in evaluate([]).values()},
                          {'variants-pending', 'source-proof-controls-pending', 'review-proof-controls-pending'})

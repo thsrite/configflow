@@ -25,6 +25,7 @@ import upstream
 import dns
 import dhcp_guards
 import ikuai_dhcp_guards
+import ikuai_dhcp_writes
 import gateway
 import disconnect
 import routing
@@ -272,6 +273,12 @@ def execute(pair, case, available, routes):
                                               'response': response_view(reply)})
                 elif control.get('rpc') == 'begin':
                     values = {key: value for key, value in control.items() if key != 'rpc'}
+                    if 'document' in values:
+                        if 'body' in values:
+                            raise ValueError('async public request cannot specify both document and encoded body')
+                        values['body'] = base64.b64encode(json.dumps(values.pop('document'), ensure_ascii=False,
+                            separators=(',', ':')).encode()).decode()
+                        values['headers'] = {'Content-Type': 'application/json', **values.get('headers', {})}
                     ident = values['ident']
                     side.pending[ident] = {'before': logical_snapshot(side.rpc('snapshot')), 'started': time.time(),
                                            'started_monotonic': time.monotonic(),
@@ -956,6 +963,7 @@ def main():
               ('stored', fixtures.stored_options(), (fixtures.receipts, fixtures.stored_guards))]
     worlds += device_policy.worlds()
     worlds += router_lifecycle.worlds()
+    worlds += ikuai_dhcp_writes.worlds()
     worlds += fixed_setup.worlds()
     worlds += fixed_sources.router_worlds()
     worlds += fixed_sources.binding_worlds()

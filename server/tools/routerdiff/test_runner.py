@@ -50,6 +50,37 @@ def pair(python=None, go=None):
 
 
 class RunnerTests(unittest.TestCase):
+    def test_async_document_uses_each_sides_own_reference_and_json_headers(self):
+        class AsyncSide(ObservationSide):
+            def __init__(self, fingerprint):
+                super().__init__()
+                self.token = 'synthetic-admin-token'
+                self.observations['preview'] = {'body': {'fingerprint': fingerprint}}
+                self.sent = None
+
+            def rpc(self, operation, **values):
+                if operation == 'async':
+                    self.sent = values
+                    return {'headers_sent': True}
+                if operation == 'join':
+                    response = self.request(method='POST', path='/api/routers/r-ik/apply')
+                    return {key: response[key] for key in ('status', 'headers', 'body')}
+                return super().rpc(operation, **values)
+
+        case = Case('async-own-body', 'R011', 'POST', '/api/routers/r-ik/apply', 200,
+            join='release', prepare=({'rpc': 'begin', 'ident': 'release', 'method': 'POST',
+                'path': '/api/routers/r-ik/apply', 'document': {'fingerprint': Ref('preview', '/body/fingerprint'),
+                'note': '保留 Unicode🧪'}},))
+        world = pair(AsyncSide('python-own-preview'), AsyncSide('native-own-preview'))
+        result = execute(world, case, {('POST', '/api/routers/{}/apply')}, load()[0])
+        self.assertEqual(result['status'], 'compared')
+        for side, expected in ((world.python, 'python-own-preview'), (world.go, 'native-own-preview')):
+            self.assertNotIn('document', side.sent)
+            self.assertEqual(json.loads(base64.b64decode(side.sent['body'])),
+                             {'fingerprint': expected, 'note': '保留 Unicode🧪'})
+            self.assertEqual(side.sent['headers']['Content-Type'], 'application/json')
+            self.assertEqual(side.sent['headers']['Authorization'], 'Bearer synthetic-admin-token')
+
     def test_explicit_wait_constraint_is_checked_on_native_response_too(self):
         class WaitingSide(ObservationSide):
             def __init__(self, seconds):

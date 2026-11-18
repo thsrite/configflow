@@ -1201,6 +1201,43 @@ def declared():
             rationale + ' Complete synthetic firmware4.x forms and actual public server only; all three stages '
             'compare complete DB/files/device state and perform no device write. Read/plan evidence does not '
             'claim firmware acceptance, DNS delivery or successful publication.', ik_dhcp_rows(blocked, healthy))
+    # Successful writes are required alongside every actual failed edit/readback
+    # family. The default firmware mask-suffix case is not weakened for these
+    # independently named plain-mask success/control worlds.
+    refused = tuple('refused-' + str(code) for code in (1001, 1002, 1003, 1008, 3001)) + (
+        'refused-empty-details', 'refused-mixed-details', 'refused-code-only')
+    local_failures = refused + ('lost-ack', 'missing-readback', 'duplicate-readback', 'changed-readback',
+                               'blocked-readback', 'readback-unavailable', 'recovery-read-unavailable')
+    write_specs = {
+        'H0264': (('missing-readback', 'duplicate-readback'),
+                  'Readback returns zero or two matching IDs after the real edit; both refuse and restore the full before-image.'),
+        'H0265': (('changed-readback', 'blocked-readback'),
+                  'Independent OR operands: changed lease with otherwise healthy evidence, and unchanged submitted attributes with a runtime blocker.'),
+        'H0268': (('prechecked-domain-change',),
+                  'An actual peer read gate permits an external DHCP domain edit after the preview is rebuilt. The final expected-attributes check refuses before any DHCP edit and preserves the external change while earlier route/NAT work compensates. The ID inequality operand cannot independently fail: checked_dns_target has just matched the same scope ID, and build_plan assigns that same entry ID to the operation.'),
+        'H0273': (local_failures + ('rollback-refused',),
+                  'Caught edit rejection, lost acknowledgement and every readback failure family; recovery unchanged skips rewriting, changed state restores, unreadable state also restores. Partial rollback failure is separately retained.'),
+        'H0274': (('recovery-read-unavailable',),
+                  'Both post-edit readback and recovery read fail via real503; the known complete before-image still permits a verified restoration.'),
+        'H0275': (('rollback-refused',),
+                  'The recovery edit alone is refused by matching its old DNS payload, leaving the actual new DNS and an explicit failed compensation entry.'),
+        'H0276': (('rollback-refused',),
+                  'RouterRollbackError reaches HTTP502 with the exact combined primary/recovery message, failed DHCP rollback and actual retained DNS; earlier route/NAT stages still compensate.'),
+        'H0277': (local_failures,
+                  'After a clean no-change or successful restore, the original failure still reaches HTTP502. No fake success is inferred from clean device state.'),
+        'H0278': (tuple('refused-' + str(code) for code in (1001, 1002, 1003, 1008)),
+                  'All four account/interface/session rejection codes retain their exact user message.1008 makes exactly two edit attempts after relogin. This response-injection test does not claim firmware cookie-expiry fidelity.'),
+        'H0279': (('refused-3001', 'refused-empty-details', 'refused-mixed-details', 'refused-code-only'),
+                  'Other rejection codes cover message/code fallback, empty details, dict and non-dict detail rows, missing dict members and ordered field diagnostics.'),
+    }
+    for ident, (labels, rationale) in write_specs.items():
+        audits[ident] = Audit(('backend/routers/ikuai.py:463', 'backend/routers/ikuai.py:532',
+                              'backend/routers/release.py:354', 'backend/routes/routers.py:437'),
+            rationale + ' Actual public preview/confirmation and independent fake edit gate; no helper injection. '
+            'Complete43-field server row, unrelated static binding, route/NAT/group cleanup, profile publication '
+            'and full DB/files/device snapshots remain asserted. These are protocol safety checks, not real firmware acceptance.',
+            tuple(('dhcp-ikuai-write-' + label, 'R011/ikuai-dhcp-write-' + label, 502) for label in labels)
+            + (('dhcp-ikuai-plain', 'R011/iKuai-dhcp-plain-mask', 200),))
     return audits
 
 
