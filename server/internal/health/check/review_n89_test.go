@@ -131,22 +131,47 @@ func TestReviewN89RegionTimestampRetainsSiblings(t *testing.T) {
 }
 
 func TestReviewN89RegionUpdateChecksLifetimeAfterMutator(t *testing.T) {
- for _,shutdown:=range []bool{true,false} {
-  name:="disconnect";if shutdown{name="shutdown"}
-  t.Run(name,func(t *testing.T){
-   runtime:=lifecycle.NewRuntime(lifecycle.Options{Registry:lifecycle.NewRegistry()});runtime.Start(context.Background());t.Cleanup(func(){runtime.Shutdown(context.Background())})
-   request,disconnect:=context.WithCancel(runtime.BindRequest(context.Background()));defer disconnect()
-   store:=check.NewRegionStore(t.TempDir())
-   const before=`{"services":{"keep":true},"domains":{},"websites":{}}`
-   if err:=os.WriteFile(store.Path("synthetic"),[]byte(before),0600);err!=nil{t.Fatal(err)}
-   err:=store.UpdateDataContext(lifecycle.Detach(request),"synthetic",func(data *check.RegionData)error{
-    data.Services=json.RawMessage(`{"new":true}`)
-    if shutdown{runtime.Shutdown(context.Background())}else{disconnect()};return nil
-   },time.Date(2030,1,2,0,0,0,0,time.UTC))
-   if shutdown && !errors.Is(err,context.Canceled){t.Fatalf("shutdown error: %v",err)};if !shutdown && err!=nil{t.Fatal(err)}
-   raw,readErr:=os.ReadFile(store.Path("synthetic"));if readErr!=nil{t.Fatal(readErr)}
-   if shutdown && string(raw)!=before{t.Fatalf("late region publication: %s",raw)}
-   if !shutdown && string(raw)==before{t.Fatal("disconnect prevented publication")}
-  })
- }
+	for _, shutdown := range []bool{true, false} {
+		name := "disconnect"
+		if shutdown {
+			name = "shutdown"
+		}
+		t.Run(name, func(t *testing.T) {
+			runtime := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
+			runtime.Start(context.Background())
+			t.Cleanup(func() { runtime.Shutdown(context.Background()) })
+			request, disconnect := context.WithCancel(runtime.BindRequest(context.Background()))
+			defer disconnect()
+			store := check.NewRegionStore(t.TempDir())
+			const before = `{"services":{"keep":true},"domains":{},"websites":{}}`
+			if err := os.WriteFile(store.Path("synthetic"), []byte(before), 0600); err != nil {
+				t.Fatal(err)
+			}
+			err := store.UpdateDataContext(lifecycle.Detach(request), "synthetic", func(data *check.RegionData) error {
+				data.Services = json.RawMessage(`{"new":true}`)
+				if shutdown {
+					runtime.Shutdown(context.Background())
+				} else {
+					disconnect()
+				}
+				return nil
+			}, time.Date(2030, 1, 2, 0, 0, 0, 0, time.UTC))
+			if shutdown && !errors.Is(err, context.Canceled) {
+				t.Fatalf("shutdown error: %v", err)
+			}
+			if !shutdown && err != nil {
+				t.Fatal(err)
+			}
+			raw, readErr := os.ReadFile(store.Path("synthetic"))
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+			if shutdown && string(raw) != before {
+				t.Fatalf("late region publication: %s", raw)
+			}
+			if !shutdown && string(raw) == before {
+				t.Fatal("disconnect prevented publication")
+			}
+		})
+	}
 }

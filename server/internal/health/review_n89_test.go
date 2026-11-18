@@ -185,21 +185,60 @@ func TestReviewN89RealWorkerLifetimeControlsPersistence(t *testing.T) {
 }
 
 func TestReviewN89DNSWriteRespectsOwnerLifetime(t *testing.T) {
- for _,shutdown:=range []bool{true,false}{
-  name:="disconnect";if shutdown{name="shutdown"}
-  t.Run(name,func(t *testing.T){
-   r,err:=repo.Open(t.TempDir(),repo.Options{});if err!=nil{t.Fatal(err)}
-   base:=repo.WithRepository(context.Background(),r)
-   before,err:=r.System(base);if err!=nil{t.Fatal(err)};beforeJSON,err:=model.Marshal(before);if err!=nil{t.Fatal(err)}
-   runtime:=lifecycle.NewRuntime(lifecycle.Options{Registry:lifecycle.NewRegistry()});runtime.Start(context.Background());t.Cleanup(func(){runtime.Shutdown(context.Background())})
-   request,disconnect:=context.WithCancel(runtime.BindRequest(base));defer disconnect()
-   if shutdown{runtime.Shutdown(context.Background())}else{disconnect()}
-   _,err=SaveDNSConfigJSON(request,json.RawMessage(`{"mode":"custom","servers":["192.0.2.53"]}`))
-   if shutdown && !errors.Is(err,context.Canceled){t.Fatalf("shutdown error: %v",err)};if !shutdown && err!=nil{t.Fatal(err)}
-   repo.ResetConfigContext(base)
-   after,err:=r.System(base);if err!=nil{t.Fatal(err)};afterJSON,err:=model.Marshal(after);if err!=nil{t.Fatal(err)}
-   if shutdown && string(beforeJSON)!=string(afterJSON){t.Fatal("shutdown changed system")}
-   if !shutdown{config,err:=LoadDNSConfig(base);if err!=nil || config.Mode!="custom" || len(config.Servers)!=1 || config.Servers[0]!="192.0.2.53"{t.Fatalf("disconnect lost settings: %+v %v",config,err)}}
-  })
- }
+	for _, shutdown := range []bool{true, false} {
+		name := "disconnect"
+		if shutdown {
+			name = "shutdown"
+		}
+		t.Run(name, func(t *testing.T) {
+			r, err := repo.Open(t.TempDir(), repo.Options{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			base := repo.WithRepository(context.Background(), r)
+			before, err := r.System(base)
+			if err != nil {
+				t.Fatal(err)
+			}
+			beforeJSON, err := model.Marshal(before)
+			if err != nil {
+				t.Fatal(err)
+			}
+			runtime := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
+			runtime.Start(context.Background())
+			t.Cleanup(func() { runtime.Shutdown(context.Background()) })
+			request, disconnect := context.WithCancel(runtime.BindRequest(base))
+			defer disconnect()
+			if shutdown {
+				runtime.Shutdown(context.Background())
+			} else {
+				disconnect()
+			}
+			_, err = SaveDNSConfigJSON(request, json.RawMessage(`{"mode":"custom","servers":["192.0.2.53"]}`))
+			if shutdown && !errors.Is(err, context.Canceled) {
+				t.Fatalf("shutdown error: %v", err)
+			}
+			if !shutdown && err != nil {
+				t.Fatal(err)
+			}
+			repo.ResetConfigContext(base)
+			after, err := r.System(base)
+			if err != nil {
+				t.Fatal(err)
+			}
+			afterJSON, err := model.Marshal(after)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if shutdown && string(beforeJSON) != string(afterJSON) {
+				t.Fatal("shutdown changed system")
+			}
+			if !shutdown {
+				config, err := LoadDNSConfig(base)
+				if err != nil || config.Mode != "custom" || len(config.Servers) != 1 || config.Servers[0] != "192.0.2.53" {
+					t.Fatalf("disconnect lost settings: %+v %v", config, err)
+				}
+			}
+		})
+	}
 }

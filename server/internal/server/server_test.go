@@ -54,8 +54,8 @@ func TestNewAppRegistersImplementedRoutes(t *testing.T) {
 		"settings.list_third_party_dependencies", "settings.update_sub_store_dependency", "settings.set_sub_store_mode",
 		"logs.get_logs", "logs.get_log_info", "logs.clear_logs", "stats.get_overview",
 		"notifications.read_notifications", "notifications.list_notifications", "tasks.get_tasks", "tasks.run_task", "tasks.set_interval",
- "agents.gateway_installations","agents.gateway_installation_status","agents.gateway_installation_network",
- "agents.gateway_installation_publish","agents.gateway_installation_enroll","agents.gateway_installation_script"} {
+		"agents.gateway_installations", "agents.gateway_installation_status", "agents.gateway_installation_network",
+		"agents.gateway_installation_publish", "agents.gateway_installation_enroll", "agents.gateway_installation_script"} {
 		if !app.Router.HasEndpoint(endpoint) {
 			t.Errorf("missing %s", endpoint)
 		}

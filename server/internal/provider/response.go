@@ -13,7 +13,7 @@ import (
 	"unicode/utf8"
 
 	"configflow/internal/clock"
- "configflow/internal/faultprobe"
+	"configflow/internal/faultprobe"
 	"configflow/internal/httpx"
 	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
@@ -217,7 +217,7 @@ func runFlight(ctx context.Context, fallback bool, profileID, kind, itemID strin
 		return nil, ctx.Err()
 	}
 	defer func() { <-pool }()
- faultprobe.Point(ctx, faultprobe.ProviderRender)
+	faultprobe.Point(ctx, faultprobe.ProviderRender)
 	rendered, err := render(ctx)
 	if err != nil {
 		return nil, err
