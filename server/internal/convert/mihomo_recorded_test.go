@@ -270,11 +270,17 @@ func replayRow(t *testing.T, entry *jsonx.Object, oracle writerOracle) string {
 // generator itself must produce the same YAML semantics, report, errors and mutations.
 func TestMihomoRecordedPythonTests(t *testing.T) {
 	rows := loadRecorded(t)
+	paths := recordedProviderReferences(t)
+	usedPaths := 0
 	oracle := loadWriterOracle(t)
 	failures, skipped := 0, 0
 	counts := map[string]int{}
 	index := map[string]int{}
-	for _, entry := range rows {
+	for rowIndex, entry := range rows {
+		if paths.Has(strconv.Itoa(rowIndex)) {
+			usedPaths++
+		}
+		entry = recordedProviderReference(t, paths, rowIndex, entry)
 		test := entry.GetString("test")
 		counts[entry.GetString("fn")]++
 		name := fmt.Sprintf("%s#%d", strings.TrimPrefix(test, "backend/"), index[test])
@@ -291,6 +297,9 @@ func TestMihomoRecordedPythonTests(t *testing.T) {
 				t.Errorf("%s (%s): %s", name, entry.GetString("fn"), msg)
 			}
 		}
+	}
+	if usedPaths != paths.Len() {
+		t.Fatal("unused recorded provider references")
 	}
 	t.Logf("%d recorded calls from %d Python tests %v; %d skipped (patched internals); %d differ",
 		len(rows), len(index), counts, skipped, failures)

@@ -2,7 +2,7 @@
 
 基底 go@d4fab6441，工作树 configflow-go-batch-8，分支 batch-8；不 push。
 指定 a–g 七个集成项已分别提交；协调者补充的 profile-local 旧缓存认领和九条精确
-C28 D2 预期已在 449863aeb 关闭，当前继续参考指纹和最终验收。core/race 由协调者跑。
+C28 D2 预期已在 23c83a970 关闭，当前继续参考指纹和最终验收。core/race 由协调者跑。
 
 ## 叠入范围
 
@@ -43,8 +43,8 @@ C28 D2 预期已在 449863aeb 关闭，当前继续参考指纹和最终验收�
 | c | a23b3c539 | MosDNS archive/ruleproxy 以 typed failures 判状态和下载错误元数据 |
 | d | 5c8a6cf5e | 删除已被 H1/M1/H2 正式回归取代的两个 tagged 文件；带 o9repro 的正式回归通过 |
 | e | cf1377319 | bootstrap_installer_baseline 先于 expected_headers；四条 Python 组合规则测试通过 |
-| f | ea97c10fb | 统一解压后 64 MiB 边界；promote gzip bomb 为正式回归，cache 保留旧有效内容 |
-| g | dbea59dc3 | current/config/retired credential 均走固定尺寸恒时摘要比较 |
+| f | bf6e40db1 | 统一解压后 64 MiB 边界；promote gzip bomb 为正式回归，cache 保留旧有效内容 |
+| g | 65d696738 | current/config/retired credential 均走固定尺寸恒时摘要比较 |
 
 ## 独立正负控
 
@@ -95,3 +95,48 @@ PREFLIGHT PASS、完整 GATE_ONLY=compare（proddiff new/stale 0、difftest 与 
   非 metadata 字段逐值哈希相同（14份文件需更新指纹，2份原样）。最终 live check：MosDNS
   53.523s / OxiDNS 30.533s / routersplit 1.949s 均通过，metadata record 前一次分别
   56.673s / 33.144s / 1.890s。没有改 oracle 输入、输出或条数。
+
+### 最终产品树分配与快照认领统计
+
+产品树为 dead8fcdb（随后仅文档更新不改变产品）。同主测试服务器、GOMAXPROCS=4、
+benchtime=3x、count=3，完整生产链基准：
+- Mihomo 128 nodes / 512 rules：64,609,285–64,623,469 B/op，611001–611038 allocs/op，
+  相比基底约76MB/710k下降，没有回升。
+- OxiDNS cold metadata chain：unused0 42,838,613–42,877,677 B/op，470839–470909 allocs/op；
+  unused2MiB 42,823,472–42,831,917 B/op，470850–470855 allocs/op。
+  相比独立 DNS 分支约61.3MB/749.5k下降，2MiB未消费字段没有放大。
+- 实际命令：`GOMAXPROCS=4 go test -run "^$" -bench "^BenchmarkMihomoGenerationProfile/128$" -benchmem -benchtime=3x -count=3 ./internal/convert`；
+  `GOMAXPROCS=4 go test -run "^$" -bench "^BenchmarkOxiDNSMetadataChain$" -benchmem -benchtime=3x -count=3 ./internal/oxidns`。
+
+对和 proddiff 相同的离线生产快照建立私有临时副本，在无网络命名空间调用当前正式
+SplitRules / CacheReadPath / PeekCacheWithFormat，统计已启用 profile-local URL rulesets。
+结果：候选0条，旧路径认领0条，验证可用旧缓存0条、涉及profile0个。当前快照没有这类
+历史记录，功能正负控由独立合成 SQLite 存储回归证明；没有把生产数据做成 fixture。
+源快照前后完整树摘要相同，副本、统计临时 Go 工具及 binary 全部清理；仅保留聚合数字。
+
+### 解码链复核补充
+
+额外发现仅在最终 Body 计数仍允许中间解压层产生超大 padding 后被后续 gzip reader
+丢弃。f 提交已合并逐层64MiB限额；两个独立回归构造 tiny 有效 gzip member 加超过64MiB
+padding，外层分别 gzip / deflate，最终正文只有4字节。仅临时去掉逐层计数而保留最终
+Body 限额时，两例都失败；恢复逐层限额后通过。超限保持 typed size refusal 并关闭来源。
+第一次 preflight 在 full non-race 阶段被主动停止，以便补齐该发现；没有把部分结果当通过。
+将按用户命令在最终产品树重跑完整 preflight。
+
+### 整合预检发现的旧参考接线修正
+
+完整预检第一次返回 tests FAIL（两种 tag vet 均通过）：四份 pyref 仍带旧模块指纹，
+N8-1 rule digest 尚未激活已批准 D2，convert 字节/录制回放没有接既有 D2 provider
+路径参考，IP-presence 冻结 world 的旧缓存缺当前所有者。已按根因补齐测试接线：
+- 四份额外 live Python 对照功能全部0差异；18份 transcript 的全部非 metadata
+  payload SHA 逐一相同，只刷新指纹。
+- byte gate 只逆向替换独立 Python 已绑定 provider path，其余每个输出字节仍受原摘要校验；
+  recorded replay 9条路径经真实 Python lowerer 捕获 preimage，另2条数字0筛选 hook
+  经共享 R5 输入投影调用真实 Python render_members，精确为 `(0)|(0)`。
+- presence 独立参考调用真实 Python declaration/cache filename，确认旧缓存存在但当前
+  library 没有相同ID及来源声明，绑定原 archive 和 raw line SHA：recorded7、corpus237、
+  edge30。后5个 edge 输入是数字/bool引用，原Python解析也不能提供当前存储归属；
+  与协调者已批准 captured-only D2 相同，结果精确为 unknown，其余输出/错误不豁免。
+- 定向检查：convert 35.005s / httpx 0.004s / ippresence 1.818s，均通过。
+
+剩余：最终完整 preflight 与 compare。

@@ -1,0 +1,110 @@
+{
+  "archive_sha256": "b0c05e054db8fff7791505deb0c085195577b82e33c9a9482c7cf2f74545cb73",
+  "rows": {
+    "801": {
+      "test": "backend/test_group_exclusion_generation.py::test_bucketed_include_or_differing_source_rules_keep_the_source_copy[fields0]",
+      "sha256": "604fd6b69870d4578e4784c8da2076f1b380b768b41ef6caec279cf629bdd3da",
+      "paths": {
+        "./providers/group_filter_c8a830ad267d4a67169a.yaml": "./providers/group_filter_e8d6002e5471b8b463e6.yaml"
+      },
+      "gateway_filters": []
+    },
+    "802": {
+      "test": "backend/test_group_exclusion_generation.py::test_bucketed_include_or_differing_source_rules_keep_the_source_copy[fields1]",
+      "sha256": "286bb91a90c2f12f00e28bad23bc16fa5b138cc5ea380bd6f388dc2130e30484",
+      "paths": {
+        "./providers/group_filter_c8a830ad267d4a67169a.yaml": "./providers/group_filter_e8d6002e5471b8b463e6.yaml"
+      },
+      "gateway_filters": []
+    },
+    "806": {
+      "test": "backend/test_group_exclusion_generation.py::test_chain_inherits_exclusions_on_refresh_and_keeps_manual_candidates[(?i)^us-expired(?:-new)?$-^US-`^HK-]",
+      "sha256": "9b38d5f4459e6eae855b5bdaee911218da47729d45f70063052deeccdca1f0ba",
+      "paths": {
+        "./providers/group_filter_c10f6df30ce073aee6d2.yaml": "./providers/group_filter_00a17de91c005982bbf6.yaml"
+      },
+      "gateway_filters": []
+    },
+    "808": {
+      "test": "backend/test_group_exclusion_generation.py::test_chain_inherits_exclusions_on_refresh_and_keeps_manual_candidates[^US-expired(?:-new)?$-^US-`^HK-]",
+      "sha256": "95182151ca4ce5c7d21dae3458d64dfa590b49c2a9d9c48a5fa3152a33ebc38a",
+      "paths": {
+        "./providers/group_filter_0b2ca621b3f3ac4711d9.yaml": "./providers/group_filter_50433f460fcf041595de.yaml"
+      },
+      "gateway_filters": []
+    },
+    "810": {
+      "test": "backend/test_group_exclusion_generation.py::test_chain_inherits_exclusions_on_refresh_and_keeps_manual_candidates[expired-^US-`^HK-]",
+      "sha256": "44039362787f6729c0c59698dd0f6e5ca145303e13303397a05bb0bc108a91ee",
+      "paths": {
+        "./providers/group_filter_c8a830ad267d4a67169a.yaml": "./providers/group_filter_e8d6002e5471b8b463e6.yaml"
+      },
+      "gateway_filters": []
+    },
+    "811": {
+      "test": "backend/test_group_exclusion_generation.py::test_exclusion_only_keeps_other_sources_and_literal_backticks[expired|US\\\\`old]",
+      "sha256": "c3941b4bba41d922684ff0be498ddad30b34c8a799097f9a35d1b0105497c259",
+      "paths": {
+        "./providers/group_filter_6ab15dc28acf13d9e43a.yaml": "./providers/group_filter_f35feb29f47b7e67e295.yaml"
+      },
+      "gateway_filters": []
+    },
+    "812": {
+      "test": "backend/test_group_exclusion_generation.py::test_exclusion_only_keeps_other_sources_and_literal_backticks[expired|US`old]",
+      "sha256": "76e23846ca3a0b7e6dcb4d990451e7bca0be905cd802e0d2cc52832d0fb81675",
+      "paths": {
+        "./providers/group_filter_cd9f95f4f8a7a325c75d.yaml": "./providers/group_filter_c3465d65405cefad352a.yaml"
+      },
+      "gateway_filters": []
+    },
+    "813": {
+      "test": "backend/test_group_exclusion_generation.py::test_exclusion_validation_and_rendering_trim_inline_flags_consistently",
+      "sha256": "a8b361fa8ac09efb32eb9f220f87caafcad843603e3c8dc00541aff1ce09bfb6",
+      "paths": {
+        "./providers/group_filter_b1a1ed4c1bfb45ef7aa6.yaml": "./providers/group_filter_5f53d27c79beac975d0e.yaml"
+      },
+      "gateway_filters": []
+    },
+    "814": {
+      "test": "backend/test_group_exclusion_generation.py::test_mihomo_source_filters_are_independent_and_followed_without_filtering_manual_nodes",
+      "sha256": "7ef68a489ac410b7ceb41365784db938674ab7174cc845d3e1c18be3aeda2755",
+      "paths": {
+        "./providers/group_filter_b38921b13853873569c6.yaml": "./providers/group_filter_3cdf2be467d9bb232121.yaml",
+        "./providers/group_filter_ff646ab0a5d90c7665d8.yaml": "./providers/group_filter_5a8a4bd7afc731ce0974.yaml"
+      },
+      "gateway_filters": []
+    },
+    "832": {
+      "test": "backend/test_health_review_re2.py::test_legacy_falsy_filter_generation[0-False]",
+      "sha256": "e1b97795e2b799c1ff91e324108417145ab84c077c5ef6eda550c0ff0a2b1564",
+      "paths": {},
+      "gateway_filters": [
+        {
+          "call": 0,
+          "group": 0,
+          "name": "A",
+          "filter": "(0)|(0)"
+        }
+      ]
+    },
+    "833": {
+      "test": "backend/test_health_review_re2.py::test_legacy_falsy_filter_generation[0-True]",
+      "sha256": "f37d17f8577381a8790f0251f721949d1032c3554025379cc3f126c8aad249fd",
+      "paths": {},
+      "gateway_filters": [
+        {
+          "call": 0,
+          "group": 0,
+          "name": "A",
+          "filter": "(0)|(0)"
+        },
+        {
+          "call": 0,
+          "group": 1,
+          "name": "F",
+          "filter": "(0)|(0)"
+        }
+      ]
+    }
+  }
+}

@@ -1660,7 +1660,7 @@ Flask 差分只为安装脚本 JSON 的 `registration_token` 与 Docker 的
 
 ### batch-8 O9-M2 — 规则响应解压大小限制
 
-规则下载及缓存刷新的共享 rulefetch 解码边界现在统一限制解压后最多 64 MiB。
+规则下载及缓存刷新的共享 rulefetch 解码边界现在统一限制每个解压层及最终正文最多 64 MiB。
 Content-Length、gzip/deflate 压缩大小及调用者的 streaming 选择均不能绕过；更小的
 部署文件限制仍生效。超限关闭响应，返回 typed size refusal，不把部分内容写进缓存，
 保留上一份已验证内容。O12 发布说明需列出这个上限；Sub-Store 专属路径另由 subs 组处理。

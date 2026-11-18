@@ -1,13 +1,14 @@
 package convert_test
 
 import (
-	"configflow/internal/jsonx"
-	"configflow/internal/yamlx"
 	"crypto/sha256"
 	"fmt"
 	"os"
 	"strconv"
 	"testing"
+
+	"configflow/internal/jsonx"
+	"configflow/internal/yamlx"
 )
 
 func providerPathReferences(t *testing.T) *jsonx.Object {
@@ -90,4 +91,38 @@ func TestD2ProviderPathReferencesBoundToOriginalRows(t *testing.T) {
 	for index, row := range loadMihomoCorpus(t) {
 		_ = providerPathReference(t, refs, index, row)
 	}
+}
+
+// Only reverse the independently recorded path scalars for the original byte
+// manifest. Edit keeps every other byte (and typed/legacy agreement) observable.
+func providerByteReference(t *testing.T, refs *jsonx.Object, index int, output string) string {
+	t.Helper()
+	reference := refs.GetObject(strconv.Itoa(index))
+	if reference == nil {
+		return output
+	}
+	if reference.GetString("fn") != "generate" {
+		t.Fatal("byte reference is not a generated document")
+	}
+	paths := reference.GetObject("paths")
+	reversed := 0
+	data, err := yamlx.Edit([]byte(output), func(document *yamlx.Node) error {
+		for _, provider := range yamlx.Pairs(yamlx.Get(document, "proxy-providers")) {
+			field := yamlx.Get(provider, "path")
+			if field == nil || field.ShortTag() != "!!str" {
+				continue
+			}
+			for old, native := range paths.All() {
+				if field.Value == native {
+					field.Value = old
+					reversed++
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil || reversed != paths.Len() {
+		t.Fatalf("exact provider byte paths %d: %d/%d %v", index, reversed, paths.Len(), err)
+	}
+	return string(data)
 }

@@ -60,6 +60,8 @@ func replay(t *testing.T, path string) {
 	scanner.Buffer(make([]byte, 1<<20), 64<<20)
 	identical, differ, notExpressible := 0, 0, 0
 	native, applied := nativePresenceExpectations(t, filepath.Base(path)), 0
+	cacheReferences := presenceCacheReferences(t, path)
+	usedCaches := 0
 	tests, files := map[string]bool{}, map[string]bool{}
 	outcomes := map[string]int{}
 	for scanner.Scan() {
@@ -92,6 +94,19 @@ func replay(t *testing.T, path string) {
 		ClearMemo()
 		args := row.GetObject("args")
 		out, err := ClassicalIPLines(ctx, args.Value("item"), args.Value("config"))
+		if ref, ok := cacheReferences[fmt.Sprintf("%x", sha256.Sum256(scanner.Bytes()))]; ok {
+			if ref.Kind != "D2 unowned legacy cache" || ref.NativeOutput != nil || !jsonx.Equal(row.Value("out"), ref.PythonOutput) || row.Has("err") {
+				t.Fatal("unowned cache reference lost its exact old outcome")
+			}
+			if out != nil || err != nil {
+				t.Errorf("unowned legacy cache must be unknown: %v %v", out, err)
+				differ++
+			} else {
+				identical++
+			}
+			usedCaches++
+			continue
+		}
 		if fixture := native[test]; fixture != nil {
 			if fmt.Sprintf("%x", sha256.Sum256(scanner.Bytes())) != fixture.GetString("sha256") || !jsonx.Equal(row.Value("err"), fixture.Value("python_error")) {
 				t.Fatalf("native presence row %s changed", test)
@@ -137,6 +152,9 @@ func replay(t *testing.T, path string) {
 	}
 	if err := scanner.Err(); err != nil {
 		t.Fatal(err)
+	}
+	if usedCaches != len(cacheReferences) {
+		t.Fatalf("unused exact cache references: %d/%d", usedCaches, len(cacheReferences))
 	}
 	if applied != len(native) {
 		t.Fatalf("applied %d of %d native presence rows", applied, len(native))
