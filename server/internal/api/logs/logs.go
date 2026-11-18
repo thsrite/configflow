@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -265,14 +266,14 @@ func getLogInfo(c *httpx.Ctx) (*httpx.Response, error) {
 	size := info.Size()
 	modified, created := fileTimes(info)
 	return httpx.JSON(struct {
-		Success  bool    `json:"success"`
-		Exists   bool    `json:"exists"`
-		Path     string  `json:"path"`
-		Size     int64   `json:"size"`
-		SizeMB   float64 `json:"size_mb"`
-		Modified string  `json:"modified"`
-		Created  string  `json:"created"`
-	}{true, true, logPath, size, pyRound2(float64(size) / (1024 * 1024)), isoformat(modified), isoformat(created)}), nil
+		Success  bool        `json:"success"`
+		Exists   bool        `json:"exists"`
+		Path     string      `json:"path"`
+		Size     int64       `json:"size"`
+		SizeMB   json.Number `json:"size_mb"`
+		Modified string      `json:"modified"`
+		Created  string      `json:"created"`
+	}{true, true, logPath, size, logSizeMB(size), isoformat(modified), isoformat(created)}), nil
 }
 
 // pyRound2 is round(x, 2): correctly rounded, ties to even.
@@ -318,4 +319,13 @@ func clearLog(ctx context.Context) (*httpx.Response, error) {
 		return errorResponse(err, false), nil
 	}
 	return httpx.Message(200, true, msgCleared), nil
+}
+
+// logSizeMB keeps the response's decimal number form, including whole values.
+func logSizeMB(size int64) json.Number {
+	text := strconv.FormatFloat(pyRound2(float64(size)/(1024*1024)), 'f', -1, 64)
+	if !strings.Contains(text, ".") {
+		text += ".0"
+	}
+	return json.Number(text)
 }

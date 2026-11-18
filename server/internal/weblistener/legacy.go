@@ -2,9 +2,10 @@ package weblistener
 
 // TODO(N8-9/10): remove when the remaining server/settings callers use native APIs.
 import (
-	"configflow/internal/jsonx"
 	"context"
 	"encoding/json"
+
+	"configflow/internal/jsonx"
 )
 
 func legacyInformation(value *Information) (*jsonx.Object, error) {

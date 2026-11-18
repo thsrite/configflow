@@ -2,10 +2,11 @@ package taskstatus
 
 // TODO(N8-9): remove adapters after all task producers accept native receipts.
 import (
-	"configflow/internal/jsonx"
 	"context"
 	"encoding/json"
 	"time"
+
+	"configflow/internal/jsonx"
 )
 
 // ParseTime adapts the legacy optional timestamp.
