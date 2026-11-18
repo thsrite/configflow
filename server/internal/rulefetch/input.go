@@ -8,10 +8,11 @@ import (
 
 // SourceConfig is the consumed rule/download projection of a config snapshot.
 type SourceConfig struct {
-	Settings model.SystemConfig
-	Library  []model.RuleLibraryItem
-	Rules    []model.RuleConfig
-	RuleSets []model.RuleConfig
+	cacheLibrary func() []model.RuleLibraryItem
+	Settings     model.SystemConfig
+	Library      []model.RuleLibraryItem
+	Rules        []model.RuleConfig
+	RuleSets     []model.RuleConfig
 }
 
 func validateBytes(content Content, rule model.RuleConfig, config *SourceConfig, format string) error {

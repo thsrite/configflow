@@ -1,225 +1,167 @@
 package refresh
 
-// The subscription and rule-source rows of backend/routes/tasks.py
-// (_subscription_rows, _rule_rows), their "run now" (run_task →
-// scheduled_refresh.run_now) and the scheduler loop (start_loop).
-
 import (
-	"context"
-	"errors"
-	"strings"
-	"time"
-
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/repo"
 	"configflow/internal/tasks"
+	"configflow/internal/taskstatus"
 	"configflow/internal/weburl"
+	"context"
+	"encoding/json"
+	"errors"
+	"strings"
+	"time"
 )
 
-// isNotFalse is `value is not False`.
-func isNotFalse(value any) bool {
-	b, ok := value.(bool)
-	return !ok || b
-}
-
-// historyOf is _history(entry) for `statuses.get(key) or {}`.
-func historyOf(entry any) (*jsonx.Object, error) {
-	object, ok := entry.(*jsonx.Object)
-	if !ok {
-		return nil, attributeGet(entry)
-	}
-	return tasks.History(object)
-}
-
-// host is routes/tasks._host(url): the host name, "" when there is none or
-// the address does not parse.
-func host(url any) string {
-	text, _ := orDefault(url, "").(string)
-	parts, err := weburl.Parse(text)
+func sourceHost(address string) string {
+	parts, err := weburl.Parse(address)
 	if err != nil {
 		return ""
 	}
 	return weburl.Hostname(parts)
 }
 
-func sharedOf(ctx context.Context) (*jsonx.Object, error) {
+// SubscriptionTasks projects native task rows from the shared source snapshot.
+func SubscriptionTasks(ctx context.Context, statuses taskstatus.Snapshot) ([]*tasks.Task, error) {
 	r, err := repo.GetRepository(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return r.GetShared(ctx)
-}
-
-func requiredValue(item *jsonx.Object, key string) (any, error) {
-	value, present := item.Get(key)
-	if !present {
-		return nil, pyErr("KeyError", "%s", jsonx.Repr(key))
-	}
-	return value, nil
-}
-
-// SubscriptionRows is routes/tasks._subscription_rows(shared, statuses).
-func SubscriptionRows(ctx context.Context, statuses *jsonx.Object) ([]*jsonx.Object, error) {
-	shared, err := sharedOf(ctx)
+	shared, err := r.Shared(ctx)
 	if err != nil {
 		return nil, err
 	}
-	items, err := objectsOf(shared.GetOr("subscriptions", []any{}))
-	if err != nil {
-		return nil, err
-	}
-	rows := []*jsonx.Object{}
-	for _, sub := range items {
-		id, err := requiredValue(sub, "id")
-		if err != nil {
-			return nil, err
-		}
-		key := SubscriptionKey(id)
-		entry := entryOr(statuses, key)
-		interval := SubscriptionInterval(sub)
-		hasURL := jsonx.Truthy(sub.Value("url"))
-		enabled := isNotFalse(sub.GetOr("enabled", true)) && hasURL
+	rows := make([]*tasks.Task, 0, len(shared.Subscriptions))
+	for _, sub := range shared.Subscriptions {
+		key := SourceTaskKey(sub.ID)
+		entry := statuses.Entry(key)
+		interval := SourceInterval(sub)
+		hasURL := sub.URL != ""
+		enabled := enabledResource(sub.Enabled) && hasURL
 		var due *time.Time
 		if enabled {
-			baseline, err := SubscriptionCacheTime(ctx, sub)
+			baseline, err := SourceCacheAt(ctx, sub)
 			if err != nil {
 				return nil, err
 			}
-			if due, err = NextRunAt(entry, interval, baseline, nil); err != nil {
+			due, err = NextDue(entry, interval, baseline, nil)
+			if err != nil {
 				return nil, err
 			}
 		}
-		history, err := historyOf(entry)
+		history, err := tasks.ProjectHistory(entry)
 		if err != nil {
 			return nil, err
+		}
+		name := sub.Name
+		if name == "" {
+			name = sub.ID
 		}
 		hint, message := "", ""
 		if !hasURL {
-			hint = "没有订阅地址"
+			hint = msgNoURL
 		}
-		if !isNotFalse(sub.GetOr("enabled", true)) {
-			message = "订阅已停用"
+		if !enabledResource(sub.Enabled) {
+			message = msgSubscriptionDisabled
 		}
-		fields := []any{"name", orDefault(sub.Value("name"), id), "resource_id", id,
-			"enabled", enabled && jsonx.Truthy(interval), "interval_seconds", interval, "editable", hasURL,
-			"notifications_enabled", enabled, "can_run", hasURL, "run_hint", hint,
-			"running", IsRunning(key), "next_run_at", tasks.ISO(due), "state_message", message,
-			"link", "/subscriptions"}
-		rows = append(rows, tasks.Row(key, "subscription", "", append(fields, tasks.Spread(history)...)...))
+		seconds, _ := json.Marshal(interval)
+		link := "/subscriptions"
+		rows = append(rows, &tasks.Task{Key: key, Category: "subscription", Name: name, ResourceID: sub.ID, Enabled: enabled && interval != 0, IntervalSeconds: seconds, Editable: hasURL, CanRun: hasURL, RunHint: hint, Running: IsRunning(key), NextRunAt: tasks.Timestamp(due), StateMessage: message, Link: &link, NotificationsEnabled: &enabled, HistoryData: history})
 	}
 	return rows, nil
 }
 
-// RuleRows is routes/tasks._rule_rows(shared, statuses).
-func RuleRows(ctx context.Context, statuses *jsonx.Object) ([]*jsonx.Object, error) {
-	shared, err := sharedOf(ctx)
+// RuleTasks projects native task rows for URL-backed library sources.
+func RuleTasks(ctx context.Context, statuses taskstatus.Snapshot) ([]*tasks.Task, error) {
+	r, err := repo.GetRepository(ctx)
 	if err != nil {
 		return nil, err
 	}
-	items, err := objectsOf(shared.GetOr("rule_library", []any{}))
+	shared, err := r.Shared(ctx)
 	if err != nil {
 		return nil, err
 	}
-	rows := []*jsonx.Object{}
-	for _, rule := range items {
-		if !isURLSource(rule) || !jsonx.Truthy(rule.Value("url")) {
+	rows := make([]*tasks.Task, 0, len(shared.RuleLibrary))
+	for _, rule := range shared.RuleLibrary {
+		if !urlRule(rule) || textOr(rule.URL, "") == "" {
 			continue
 		}
-		id, err := requiredValue(rule, "id")
-		if err != nil {
-			return nil, err
-		}
-		key := RuleSourceKey(id)
-		entry := entryOr(statuses, key)
-		interval := RuleInterval(rule)
-		enabled := isNotFalse(rule.GetOr("enabled", true))
+		key := RuleTaskKey(rule.ID)
+		entry := statuses.Entry(key)
+		interval := RemoteInterval(rule)
+		enabled := enabledResource(rule.Enabled)
 		var due *time.Time
 		if enabled {
-			baseline, err := RuleCacheTime(ctx, rule)
+			baseline, err := RuleCacheAt(ctx, rule)
 			if err != nil {
 				return nil, err
 			}
-			if due, err = NextRunAt(entry, interval, baseline, nil); err != nil {
+			due, err = NextDue(entry, interval, baseline, nil)
+			if err != nil {
 				return nil, err
 			}
 		}
-		history, err := historyOf(entry)
+		history, err := tasks.ProjectHistory(entry)
 		if err != nil {
 			return nil, err
 		}
-		if !jsonx.Truthy(history.Value("cache_updated_at")) {
-			updated, err := RuleCacheTime(ctx, rule)
+		if history.CacheUpdatedAt == nil || *history.CacheUpdatedAt == "" {
+			history.CacheUpdatedAt, err = RuleCacheAt(ctx, rule)
 			if err != nil {
 				return nil, err
 			}
-			history.Set("cache_updated_at", updated)
+		}
+		name := rule.Name
+		if name == "" {
+			name = rule.ID
 		}
 		message := ""
 		if !enabled {
-			message = "规则集已停用"
+			message = msgRuleDisabled
 		}
-		fields := []any{"name", orDefault(rule.Value("name"), id), "resource_id", id,
-			"detail", host(rule.Value("url")), "enabled", enabled && jsonx.Truthy(interval),
-			"interval_seconds", interval, "notifications_enabled", enabled, "editable", true, "can_run", true,
-			"running", IsRunning(key), "next_run_at", tasks.ISO(due), "state_message", message,
-			"link", "/rule-library"}
-		rows = append(rows, tasks.Row(key, "rule_source", "", append(fields, tasks.Spread(history)...)...))
+		seconds, _ := json.Marshal(interval)
+		link := "/rule-library"
+		rows = append(rows, &tasks.Task{Key: key, Category: "rule_source", Name: name, ResourceID: rule.ID, Detail: sourceHost(textOr(rule.URL, "")), Enabled: enabled && interval != 0, IntervalSeconds: seconds, Editable: true, CanRun: true, Running: IsRunning(key), NextRunAt: tasks.Timestamp(due), StateMessage: message, Link: &link, NotificationsEnabled: &enabled, HistoryData: history})
 	}
 	return rows, nil
 }
-
-// runTask is the subscription / rule_source branch of routes/tasks.run_task.
-func runTask(ctx context.Context, key, resource string) error {
+func runTask(ctx context.Context, key, id string) error {
 	category, _, _ := strings.Cut(key, ":")
-	_, err := RunNow(ctx, category, resource)
+	_, err := RunResourceNow(ctx, category, id)
 	var busy *TaskBusy
 	var lookup *LookupError
-	var value *PyError
 	switch {
 	case err == nil:
 		return nil
 	case errors.As(err, &busy):
 		return &tasks.Busy{Message: busy.Message}
 	case errors.As(err, &lookup):
-		return &tasks.NotFound{Message: strings.Trim(lookup.Message, "'")}
-	case errors.As(err, &value) && value.Class == "ValueError":
-		return &tasks.Invalid{Message: value.Message}
-	case repo.IsValueError(err):
+		return &tasks.NotFound{Message: lookup.Message}
+	case errors.Is(err, repo.ErrValidation):
 		return &tasks.Invalid{Message: err.Error()}
 	}
 	return err
 }
-
-// round is one iteration of start_loop's loop.
 func round(ctx context.Context) {
 	scope := repo.WithScope(ctx)
 	defer repo.ResetConfigContext(scope)
 	defer func() {
-		if p := recover(); p != nil {
-			logger.Errorf("Scheduled refresh round failed\n%v", p)
+		if recover() != nil {
+			logger.Errorf(msgRoundPanic)
 		}
 	}()
-	if _, err := RunRound(scope, nil); err != nil {
-		logger.Exception("Scheduled refresh round failed", err)
+	if _, err := RunRound(scope, nil); err != nil && !errors.Is(err, context.Canceled) {
+		logger.Errorf(msgRoundFailed, weburl.SafeErrorDetails(err))
 	}
 }
-
 func periodic() lifecycle.Periodic {
-	return lifecycle.Periodic{
-		Name: "scheduled-refresh", Start: lifecycle.AtBoot,
-		FirstDelay: FirstDelaySeconds * time.Second,
-		Interval:   func(context.Context) time.Duration { return TickSeconds * time.Second },
-		Round:      func(ctx context.Context) error { round(ctx); return nil },
-	}
+	return lifecycle.Periodic{Name: "scheduled-refresh", Start: lifecycle.AtBoot, FirstDelay: FirstDelaySeconds * time.Second, Interval: func(context.Context) time.Duration { return TickSeconds * time.Second }, Round: func(ctx context.Context) error { round(ctx); return nil }}
 }
 
-// Wire is C15's entry in internal/server wirePackages: the subscription
-// and rule-source rows of the task list with their "run now", and the
-// scheduler loop (started once).
+// Wire registers native task builders/runners and the tracked refresh loop.
 func Wire() {
-	tasks.SetRows(tasks.SlotSubscriptions, SubscriptionRows)
-	tasks.SetRows(tasks.SlotRuleSources, RuleRows)
+	tasks.SetRowBuilder(tasks.SlotSubscriptions, SubscriptionTasks)
+	tasks.SetRowBuilder(tasks.SlotRuleSources, RuleTasks)
 	tasks.SetRunner("subscription", runTask)
 	tasks.SetRunner("rule_source", runTask)
 	lifecycle.RegisterPeriodic(periodic())

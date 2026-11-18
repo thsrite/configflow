@@ -38,6 +38,12 @@ func GetRulesDir(ctx context.Context) (string, error) {
 // CacheReadPath is rule_cache_read_path(rule, library) with the stored
 // shared rule library; library nil is None.
 func CacheReadPath(ctx context.Context, rule model.RuleConfig, library []model.RuleLibraryItem) (string, error) {
+	return cacheReadPath(ctx, rule, func() []model.RuleLibraryItem { return library })
+}
+func cacheReadPath(ctx context.Context, rule model.RuleConfig, library func() []model.RuleLibraryItem) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	r, err := repo.GetRepository(ctx)
 	if err != nil {
 		return "", err
@@ -46,22 +52,19 @@ func CacheReadPath(ctx context.Context, rule model.RuleConfig, library []model.R
 	if err != nil {
 		return "", err
 	}
-	// Python returns an existing current cache before it reads the shared
-	// document (a repository failure then does not matter).
 	current := filepath.Join(root, rules.CacheFilename(rule))
 	_, receiptErr := os.Stat(current + ".invalid")
 	if fileExists(current) || !errors.Is(receiptErr, os.ErrNotExist) {
-		return rules.CacheReadPath(rule, library, nil, root), nil
+		return rules.CacheReadPath(rule, nil, nil, root), nil
 	}
-	shared, err := r.Shared(ctx)
-	if err != nil {
-		return "", err
-	}
-	stored := shared.RuleLibrary
-	if stored == nil {
-		stored = []model.RuleLibraryItem{}
-	}
-	return rules.CacheReadPath(rule, library, stored, root), nil
+	// View is read-only. Copying Shared here would marshal and decode every
+	// unrelated node/subscription for each ruleset miss.
+	var result string
+	err = r.View(ctx, func(document *model.Document) error {
+		result = rules.CacheReadPath(rule, library(), document.Shared.RuleLibrary, root)
+		return nil
+	})
+	return result, err
 }
 
 func fileExists(name string) bool {
@@ -78,18 +81,25 @@ type Content struct {
 // ReadCache is read_validated_rule_cache: only cache bytes that
 // satisfy the current remote declaration, else nil. config nil is None.
 func ReadCache(ctx context.Context, rule model.RuleConfig, config *SourceConfig) ([]byte, error) {
+	return ReadCacheWithFormat(ctx, rule, config, "")
+}
+
+// ReadCacheWithFormat validates a cached source with a caller-known format.
+// A nonempty format never runs inference or decodes a rule-library payload.
+func ReadCacheWithFormat(ctx context.Context, rule model.RuleConfig, config *SourceConfig, format string) ([]byte, error) {
 	ctx = ctxx.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	var library []model.RuleLibraryItem
-	if config != nil {
-		library = config.Library
-		if library == nil {
-			library = []model.RuleLibraryItem{}
+	cachePath, err := cacheReadPath(ctx, rule, func() []model.RuleLibraryItem {
+		if config == nil {
+			return nil
 		}
-	}
-	cachePath, err := CacheReadPath(ctx, rule, library)
+		if config.cacheLibrary != nil {
+			return config.cacheLibrary()
+		}
+		return config.Library
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -98,7 +108,7 @@ func ReadCache(ctx context.Context, rule model.RuleConfig, config *SourceConfig)
 		return nil, nil
 	}
 	if textOr(rule.SourceType, "url") == "url" {
-		if err := validateBytes(Content{Data: content}, rule, config, ""); err != nil {
+		if err := validateBytes(Content{Data: content}, rule, config, format); err != nil {
 			var remote *RemoteRuleValidationError
 			if errors.As(err, &remote) {
 				return nil, nil

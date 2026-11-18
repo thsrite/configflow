@@ -58,29 +58,26 @@ func TestReviewCancelledRequestContextFinishesTheRefresh(t *testing.T) {
 	}
 }
 
-// is_library_source / find_resource use next(): the search stops at the
-// first match, so an item that is not an object after it does not fail.
-func TestReviewNextStopsAtTheFirstMatch(t *testing.T) {
-	t.Parallel()
-	match := func(item *jsonx.Object) bool { return item.Value("id") == "a" }
-	found, err := nextObject([]any{jsonx.Obj("id", "a"), "junk"}, match)
-	if err != nil || found == nil {
+// StoredRule/LookupResource use native model lists rather than Python iteration.
+// Public found/missing behavior and declaration changes remain covered through
+// repository-backed tests; malformed collections follow the shared R5 codec.
+func TestReviewTypedLookupUsesCurrentDeclaration(t *testing.T) {
+	f := setup(t, jsonx.Int(86400))
+	found, err := LookupResource(f.ctx, "subscription", "s")
+	if err != nil || found.Subscription == nil || found.Subscription.ID != "s" {
 		t.Fatal(found, err)
 	}
-	if _, err := nextObject([]any{"junk", jsonx.Obj("id", "a")}, match); pythonClass(err) != "AttributeError" ||
-		err.Error() != "'str' object has no attribute 'get'" {
-		t.Fatal(err)
+	if _, err := LookupResource(f.ctx, "subscription", "missing"); err == nil {
+		t.Fatal("missing source was found")
 	}
-	if found, err := nextObject([]any{jsonx.Obj("id", "b")}, match); found != nil || err != nil {
-		t.Fatal(found, err)
+	current := libraryRecord(ruleDecl())
+	stored, err := StoredRule(f.ctx, current)
+	if err != nil || !stored {
+		t.Fatal(stored, err)
 	}
-	for _, c := range []struct {
-		value any
-		class string
-	}{{nil, "TypeError"}, {"", ""}, {"x", "AttributeError"}, {jsonx.Int(1), "TypeError"}, {jsonx.NewObject(), ""}} {
-		_, err := nextObject(c.value, match)
-		if (err == nil) != (c.class == "") || (err != nil && pythonClass(err) != c.class) {
-			t.Errorf("%v: %v", c.value, err)
-		}
+	changed := "https://example.com/changed.list"
+	current.URL = &changed
+	if stored, err := StoredRule(f.ctx, current); err != nil || stored {
+		t.Fatal("changed declaration claimed stored cache", err)
 	}
 }

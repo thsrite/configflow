@@ -73,3 +73,21 @@ invalid receipt和真实Runtime关机/断开测试。未完成前不交回。
   全部仍由真实Python执行；逐行绑定原输入，原档案和未知期望不改。
   原始受控写验证和merge期望继续原样比较，不将错误消息先后顺序变更登记为R5。
 - 定向包最后通过 `go test -p 4 ./internal/rules` 3.745s。
+
+## 第四段：refresh native flow 检查点（未交回）
+
+已实现 RefreshEnv/SourceOwners、原生source/node/health/traffic/receipt DTO，Source/Rule任务行
+直接注册tasks.SetRowBuilder；Source/Rule流程、RunRound、手动任务均走typed仓储和同Runtime。
+健康记录历史的Python string/dict迭代仿真已删除，R5的独立参考与原测试接线还未收口。
+当前仅编译及正常子集通过：TestReviewTypedLookup / TestNextRunBacksOff /
+TestParseUserinfo / TestRoundJoins，0.416s。没有将原全包通过结果沿用给这次改动。
+
+与DNS owner的约定：提供ReadValidatedRuleCacheWithFormat(ctx,rule,config *jsonx.Object,format string)
+([]byte,error)；typed入口ReadCacheWithFormat(ctx,model.RuleConfig,*SourceConfig,string)。显式format
+跳过inference，当前stable文件不读取library；旧名称回退仅懒投影ID/name以保留碰撞协议。
+旧ReadValidatedRuleCache委托format=""。缓存/StoredRule读取改用repo.View读取所需目录，
+不为每条规则marshal/decode整个Shared。相应显式format测试/分配基准待本段收口。
+
+协调者已通知batch-7合入go@d4fab6441；接下来在此可编译检查点提交，rebase后再收口
+health/discovery/8b/8c现已可用的typed接口。尚需refresh独立参考、剩余rulefetch网页/错误
+残留整理、最终race/vet/Flask/fuzz，不是正式交回。

@@ -73,11 +73,13 @@ func loadConfig(ctx context.Context, config *SourceConfig) (*SourceConfig, error
 	if err != nil {
 		return nil, err
 	}
-	system, err := repository.System(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return &SourceConfig{Settings: system.SystemConfig}, nil
+	result := &SourceConfig{}
+	err = repository.View(ctx, func(document *model.Document) error {
+		settings := document.System.SystemConfig
+		result.Settings = model.SystemConfig{ServerDomain: settings.ServerDomain, GitHubProxyDomain: settings.GitHubProxyDomain, RuleFetchProxy: settings.RuleFetchProxy}
+		return nil
+	})
+	return result, err
 }
 
 type origin struct {

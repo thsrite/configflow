@@ -77,7 +77,30 @@ func RuleCacheReadPath(ctx context.Context, rule *jsonx.Object, library []any) (
 
 // ReadValidatedRuleCache adapts a legacy rule to the typed cache owner.
 func ReadValidatedRuleCache(ctx context.Context, rule, config *jsonx.Object) ([]byte, error) {
-	return ReadCache(ctx, legacyRule(rule), sourceConfig(config))
+	return ReadValidatedRuleCacheWithFormat(ctx, rule, config, "")
+}
+
+// ReadValidatedRuleCacheWithFormat skips inference for a caller-known format.
+// The ordinary stable-file path does not touch library at all. Legacy-name
+// fallback projects only the already-decoded IDs/names, never source bodies.
+func ReadValidatedRuleCacheWithFormat(ctx context.Context, rule, config *jsonx.Object, format string) ([]byte, error) {
+	if format == "" {
+		return ReadCacheWithFormat(ctx, legacyRule(rule), sourceConfig(config), "")
+	}
+	var input *SourceConfig
+	if config != nil {
+		input = &SourceConfig{cacheLibrary: func() []model.RuleLibraryItem {
+			entries := config.GetList("rule_library")
+			result := make([]model.RuleLibraryItem, 0, len(entries))
+			for _, entry := range entries {
+				if object, ok := entry.(*jsonx.Object); ok {
+					result = append(result, model.RuleLibraryItem{ID: object.GetString("id"), Name: object.GetString("name")})
+				}
+			}
+			return result
+		}}
+	}
+	return ReadCacheWithFormat(ctx, legacyRule(rule), input, format)
 }
 
 // WriteValidatedRuleCache adapts text/binary content without Python value rules.

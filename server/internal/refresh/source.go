@@ -1,313 +1,288 @@
 package refresh
 
-// Port of backend/utils/subscription_refresh.py: upstream subscription
-// refresh kept apart from client/provider polling.
-
 import (
+	"configflow/internal/convert"
+	"configflow/internal/lifecycle"
+	"configflow/internal/model"
+	"configflow/internal/repo"
+	"configflow/internal/rules"
+	"configflow/internal/substore"
+	"configflow/internal/yamlx"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
-
-	"configflow/internal/convert"
-	"configflow/internal/jsonx"
-	"configflow/internal/repo"
-	"configflow/internal/rules"
-	"configflow/internal/subs"
-	"configflow/internal/substore"
-	"configflow/internal/taskstatus"
-	"configflow/internal/yamlbridge"
-	"configflow/internal/yamlx"
 )
 
-// requiredString is sub[key] for a key the code indexes directly: KeyError
-// when missing; a value that is not a string cannot be used as an id or an
-// address (Python fails later with a TypeError/AttributeError of its own).
-func requiredString(item *jsonx.Object, key string) (string, error) {
-	value, present := item.Get(key)
-	if !present {
-		return "", pyErr("KeyError", "%s", jsonx.Repr(key))
+func makeResult(text, source string, traffic *Traffic, at string) *SourceResult {
+	if at == "" {
+		at = isoMicro(refreshEnv().Clock.Now())
 	}
-	text, ok := value.(string)
-	if !ok {
-		return "", pyErr("TypeError", "%s must be str, not %s", key, pyTypeName(value))
-	}
-	return text, nil
+	return &SourceResult{Text: text, Source: source, Traffic: traffic, FetchedAt: at}
 }
-
-// newResult is SubscriptionResult(text, source, traffic, fetched_at) with
-// the environment's clock for a missing fetched_at.
-func newResult(text, source string, traffic *jsonx.Object, fetchedAt string) *substore.SubscriptionResult {
-	if fetchedAt == "" {
-		fetchedAt = isoMicro(currentEnv().Clock.Now())
-	}
-	return &substore.SubscriptionResult{Text: text, Source: source, Traffic: traffic, FetchedAt: fetchedAt}
-}
-
-// fetchedAtValue is getattr(result, 'fetched_at', None).
-func fetchedAtValue(result *substore.SubscriptionResult) any {
-	if result.FetchedAt == "" {
+func optionalText(value string) *string {
+	if value == "" {
 		return nil
 	}
-	return result.FetchedAt
+	return &value
+}
+func rawMember[T any](value T, name string) json.RawMessage {
+	data, _ := model.Marshal(value)
+	var fields map[string]json.RawMessage
+	_ = json.Unmarshal(data, &fields)
+	return fields[name]
 }
 
-// SourceCacheMetadata is source_cache_metadata(sub, result). Only a
-// downloaded body can carry the subscription's own top-level hosts and the
-// groups its chained nodes need; Sub-Store conversions and cache renders
-// contain proxies alone.
-func SourceCacheMetadata(sub *jsonx.Object, result *substore.SubscriptionResult) (*jsonx.Object, error) {
+// CacheMetadata records only downloaded bodies' hosts and dialer metadata.
+func CacheMetadata(ctx context.Context, sub model.Subscription, result *SourceResult) (*SourceMetadata, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if result == nil {
+		return nil, errors.New("subscription fetch returned no result")
+	}
 	if err := validateSourceYAMLPolicy(result.Text); err != nil {
 		return nil, err
 	}
-	metadata := jsonx.Obj("subscription_name", sub.GetOr("name", ""), "url", sub.Value("url"),
-		"fetched_at", fetchedAtValue(result))
+	// These nullable members are always present on a newly created receipt.
+	var metadata SourceMetadata
+	_ = json.Unmarshal([]byte(`{"subscription_name":"","url":null,"fetched_at":null}`), &metadata)
+	metadata.SubscriptionName = sub.Name
+	metadata.FetchedAt = optionalText(result.FetchedAt)
+	if raw := rawMember(sub, "url"); len(raw) > 0 && string(raw) != "null" {
+		address := sub.URL
+		metadata.URL = &address
+	}
 	if result.Source != "cache" && result.Source != "prepared_yaml" {
-		if hosts := subs.ExtractSubscriptionHosts(result.Text); hosts != nil {
-			metadata.Set("hosts", hosts)
-		}
-		dialers, err := subs.ExtractSubscriptionDialers(result.Text)
+		var err error
+		metadata.Hosts, metadata.Dialers, err = refreshEnv().Sources.Metadata(ctx, result.Text)
 		if err != nil {
 			return nil, err
 		}
-		if dialers != nil {
-			metadata.Set("dialers", dialers)
-		}
 	}
-	return metadata, nil
+	return &metadata, nil
 }
 
-// isFresh is _is_fresh(timestamp, interval): fetched less than interval
-// seconds ago (and not in the future).
-func isFresh(timestamp any, interval int64) bool {
-	updated, ok := taskstatus.ParseTime(timestamp)
-	if !ok {
-		return false
-	}
-	now := currentEnv().Clock.Now()
-	micros := (now.Unix()-updated.Unix())*1_000_000 + int64(now.Nanosecond()/1000) - int64(updated.Nanosecond()/1000)
-	return micros >= 0 && micros < interval*1_000_000
-}
-
-// DownloadCachePath is _download_cache_path(url): the transport cache of a
-// subscription address (shared-relative). It is separate from validated
-// node caches and bounds upstream requests of dry previews and checks.
-func DownloadCachePath(url string) string {
-	sum := sha256.Sum256([]byte(url))
+// DownloadCachePath is the transport-only cache address, separate from nodes.
+func DownloadCachePath(address string) string {
+	sum := sha256.Sum256([]byte(address))
 	return "subscription-downloads/" + hex.EncodeToString(sum[:]) + ".json"
 }
 
-// RememberSourceDownload is remember_source_download(sub, result): store
-// the downloaded text with its time and traffic in the transport cache and
-// return the result with its fetched_at fixed.
-func RememberSourceDownload(ctx context.Context, sub *jsonx.Object, result *substore.SubscriptionResult) (*substore.SubscriptionResult, error) {
-	ctx = detached(ctx)
+// RememberDownload writes a source transport receipt without promoting nodes.
+func RememberDownload(ctx context.Context, sub model.Subscription, result *SourceResult) (*SourceResult, error) {
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if result == nil {
+		return nil, errors.New("subscription fetch returned no result")
+	}
 	if err := validateSourceYAMLPolicy(result.Text); err != nil {
 		return nil, err
 	}
-	result = newResult(result.Text, result.Source, result.Traffic, result.FetchedAt)
-	url, err := requiredString(sub, "url")
+	if sub.URL == "" {
+		return nil, repo.NewValidationError(msgSourceIdentity)
+	}
+	result = makeResult(result.Text, result.Source, result.Traffic, result.FetchedAt)
+	data, err := json.Marshal(struct {
+		Text      string   `json:"text"`
+		FetchedAt string   `json:"fetched_at"`
+		Traffic   *Traffic `json:"traffic"`
+	}{result.Text, result.FetchedAt, result.Traffic})
 	if err != nil {
 		return nil, err
 	}
-	r, err := repo.GetRepository(ctx)
-	if err != nil {
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	var traffic any
-	if result.Traffic != nil {
-		traffic = result.Traffic
-	}
-	if _, err := r.WriteSharedJSON(ctx, DownloadCachePath(url), jsonx.Obj(
-		"text", result.Text, "fetched_at", result.FetchedAt, "traffic", traffic)); err != nil {
+	if err := writeSharedData(ctx, DownloadCachePath(sub.URL), data); err != nil {
 		return nil, err
 	}
 	return result, nil
 }
 
-// errNoNodes is the ValueError of download_subscription_nodes.
-func errNoNodes() error {
-	return pyErr("ValueError", "订阅没有返回任何节点，已保留原有缓存")
-}
-
-// DownloadSubscriptionNodes is download_subscription_nodes(sub): download,
-// parse and store a subscription; it returns (nodes, result, cache). A
-// failure returns before anything is stored, so the previous nodes stay.
-func DownloadSubscriptionNodes(ctx context.Context, sub *jsonx.Object) ([]any, *substore.SubscriptionResult, *jsonx.Object, error) {
-	ctx = detached(ctx)
-	id, err := requiredString(sub, "id")
+// DownloadNodes validates a complete subscription before replacing node bytes.
+func DownloadNodes(ctx context.Context, sub model.Subscription) ([]model.Node, *SourceResult, *NodeCache, error) {
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, nil, nil, err
+	}
+	if sub.ID == "" || sub.URL == "" {
+		return nil, nil, nil, repo.NewValidationError(msgSourceIdentity)
+	}
+	env := refreshEnv()
+	fetched, err := env.Sources.Fetch(ctx, sub.ID, sub.URL, substore.FetchOptions{Refresh: true})
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	url, err := requiredString(sub, "url")
+	if err := ctx.Err(); err != nil {
+		return nil, nil, nil, err
+	}
+	result, err := RememberDownload(ctx, sub, fetched)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	e := currentEnv()
-	fetched, err := e.FetchSubscription(ctx, id, url, substore.FetchOptions{Refresh: true})
+	nodes, err := env.Sources.ParseNodes(ctx, result.Text)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	result, err := RememberSourceDownload(ctx, sub, fetched)
-	if err != nil {
-		return nil, nil, nil, err
+	if len(nodes) == 0 {
+		return nil, nil, nil, repo.NewValidationError(msgNoSourceNodes)
 	}
-	proxies, err := substore.ParseProxiesFromYAML(result.Text)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	if len(proxies) == 0 {
-		return nil, nil, nil, errNoNodes()
-	}
-	nodes, err := substore.ProxiesToNodes(proxies)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	name, present := sub.Get("name")
-	if !present && len(nodes) > 0 {
-		return nil, nil, nil, pyErr("KeyError", "'name'")
-	}
-	for _, item := range nodes {
-		node := item.(*jsonx.Object)
-		node.Set("subscription_id", id)
-		node.Set("subscription_name", name)
-		// setdefault's default is evaluated for every node (uuid4 each time).
-		generated := "node_" + e.RandomHex()
-		if !node.Has("id") {
-			node.Set("id", generated)
+	for i := range nodes {
+		nodes[i].SubscriptionID = sub.ID
+		nodes[i].SubscriptionName = sub.Name
+		generated := "node_" + env.RandomHex()
+		if len(rawMember(nodes[i], "id")) == 0 {
+			nodes[i].ID = generated
 		}
 	}
-	metadata, err := SourceCacheMetadata(sub, result)
+	metadata, err := CacheMetadata(ctx, sub, result)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	cache, err := substore.SaveSubscriptionNodes(ctx, id, nodes, metadata)
+	if err := ctx.Err(); err != nil {
+		return nil, nil, nil, err
+	}
+	cache, err := env.Sources.SaveNodes(ctx, sub.ID, nodes, metadata)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 	return nodes, result, cache, nil
 }
 
-// SourceFetch is the fetch= argument of fetch_subscription_source:
-// fetch(sub_id, url).
-type SourceFetch func(ctx context.Context, subID, url string) (*substore.SubscriptionResult, error)
+// FetchSourceFn fetches one source within the admitted owner generation.
+type FetchSourceFn func(context.Context, string, string) (*SourceResult, error)
 
-// cacheMetadataURL is cache.get('metadata', {}).get('url'): a metadata
-// value that is not an object is Python's AttributeError.
-func cacheMetadataURL(cache *jsonx.Object) (any, error) {
-	value, present := cache.Get("metadata")
-	if !present {
-		return nil, nil
-	}
-	metadata, ok := value.(*jsonx.Object)
-	if !ok {
-		return nil, pyErr("AttributeError", "'%s' object has no attribute 'get'", pyTypeName(value))
-	}
-	return metadata.Value("url"), nil
+// TransportReceipt is the typed read projection of a downloaded source.
+type TransportReceipt struct {
+	Text      string   `json:"text"`
+	FetchedAt string   `json:"fetched_at"`
+	Traffic   *Traffic `json:"traffic"`
+	Fields    model.Fields
+	Raw       model.Raw
 }
 
-// FetchSubscriptionSource is fetch_subscription_source(sub, fetch=):
-// automatic delivery uses the stored nodes of the current address (the
-// scheduled task refreshes them); in manual mode (interval 0) only those.
-// Otherwise a fresh transport cache is reused before fetch is called.
-// Returned cached content still goes through each consumer's filtering and
-// validation; a poll never rewrites a timestamp.
-func FetchSubscriptionSource(ctx context.Context, sub *jsonx.Object, fetch SourceFetch) (*substore.SubscriptionResult, error) {
-	ctx = detached(ctx)
-	interval, err := ValidateRefreshInterval(sub.GetOr("interval", jsonx.Int(DefaultSourceInterval)), "")
+func (r *TransportReceipt) UnmarshalJSON(data []byte) error {
+	return model.DecodeRecord(data, r, &r.Raw)
+}
+func (r TransportReceipt) MarshalJSON() ([]byte, error) { return model.EncodeRecord(&r, &r.Raw) }
+
+// cacheURL retains the declaration protocol: malformed non-null URLs are not
+// "unknown" legacy URLs and must not claim a cache through R5 fallback.
+func cacheURL(cache *NodeCache) (*string, bool) {
+	if cache == nil {
+		return nil, false
+	}
+	raw := rawMember(*cache, "metadata")
+	if len(raw) == 0 {
+		return nil, false
+	}
+	var metadata map[string]json.RawMessage
+	if json.Unmarshal(raw, &metadata) != nil || metadata == nil {
+		return nil, true
+	}
+	raw = metadata["url"]
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil, false
+	}
+	var address string
+	if json.Unmarshal(raw, &address) != nil {
+		return nil, true
+	}
+	return &address, false
+}
+
+// FetchSource serves current validated nodes, then a fresh transport receipt,
+// and only then calls the fetch owner. Reads do not refresh cache timestamps.
+func FetchSource(ctx context.Context, sub model.Subscription, fetch FetchSourceFn) (*SourceResult, error) {
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	interval, err := CheckInterval(SourceInterval(sub), "")
 	if err != nil {
 		return nil, &rules.StrategyReferenceError{Message: err.Error()}
 	}
-	id, err := requiredString(sub, "id")
+	if sub.ID == "" {
+		return nil, repo.NewValidationError(msgSourceIdentity)
+	}
+	env := refreshEnv()
+	cache, err := env.Sources.LoadNodes(ctx, sub.ID)
 	if err != nil {
 		return nil, err
 	}
-	cache, err := substore.LoadSubscriptionCache(ctx, id)
-	if err != nil {
-		return nil, err
+	address, malformed := cacheURL(cache)
+	if malformed || (address != nil && *address != sub.URL) {
+		cache = nil
 	}
-	if cache != nil && cache.Len() > 0 {
-		url, err := cacheMetadataURL(cache)
-		if err != nil {
-			return nil, err
-		}
-		if url != nil && !jsonx.Equal(url, sub.Value("url")) {
-			cache = nil
-		}
-	}
-	var cachedNodes []any
-	usable := false
-	if cache != nil && cache.Len() > 0 {
-		cachedNodes, usable = cache.Value("nodes").([]any)
-		usable = usable && len(cachedNodes) > 0
-	}
-	current := false
-	if usable {
-		url, err := cacheMetadataURL(cache)
-		if err != nil {
-			return nil, err
-		}
-		current = jsonx.Equal(url, sub.Value("url"))
-	}
+	usable := cache != nil && len(cache.Nodes) > 0
+	current := usable && address != nil && *address == sub.URL
 	if interval == 0 || current {
 		if !usable {
-			name := sub.GetOr("name", id)
-			return nil, &rules.StrategyReferenceError{Message: "订阅「" + jsonx.Str(name) +
-				"」已关闭自动更新，且没有当前订阅地址的可用缓存。请先在「订阅来源」中手动更新，再重新发布或同步。"}
+			name := sub.Name
+			if name == "" {
+				name = sub.ID
+			}
+			return nil, &rules.StrategyReferenceError{Message: fmt.Sprintf(msgNoManualCache, name)}
 		}
-		if err := convert.ValidateShapes(jsonx.Obj("nodes", cachedNodes), false); err != nil {
-			return nil, err
-		}
-		proxies := []any{}
-		for _, item := range cachedNodes {
-			proxy, err := convert.ConvertNodeToMihomo(ctx, item.(*jsonx.Object), currentEnv().converter())
+		main := yamlx.Map()
+		proxies := yamlx.Seq()
+		// NodeProxy consumes native stored records and keeps the existing converter
+		// collaborator through the baseline's thin adapter, without a Config decode.
+		for _, node := range cache.Nodes {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			proxy, err := convert.NodeProxy(ctx, node, env.Sources.Converter)
 			if err != nil {
 				return nil, err
 			}
-			if proxy != nil && proxy.Len() > 0 {
-				proxies = append(proxies, proxy)
+			if proxy != nil && len(proxy.Content) > 0 {
+				proxies.Content = append(proxies.Content, proxy)
 			}
 		}
-		node, err := yamlbridge.Encode(jsonx.Obj("proxies", proxies))
+		yamlx.Set(main, "proxies", proxies)
+		data, err := yamlx.Marshal(main)
 		if err != nil {
 			return nil, err
 		}
-		data, err := yamlx.Marshal(node)
-		text := string(data)
-		if err != nil {
-			return nil, err
-		}
-		return newResult(text, "cache", nil, ""), nil
+		return makeResult(string(data), "cache", nil, ""), nil
 	}
-	url, err := requiredString(sub, "url")
-	if err != nil {
-		return nil, err
+	if sub.URL == "" {
+		return nil, repo.NewValidationError(msgSourceIdentity)
 	}
-	if r, err := repo.GetRepository(ctx); err != nil {
-		return nil, err
-	} else if downloaded, err := r.ReadSharedJSON(ctx, DownloadCachePath(url)); err == nil {
-		text, isText := downloaded.Value("text").(string)
-		if isText && isFresh(downloaded.Value("fetched_at"), interval) {
-			if err := validateSourceYAMLPolicy(text); err != nil {
+	if data, err := readSharedData(ctx, DownloadCachePath(sub.URL)); err == nil {
+		var receipt TransportReceipt
+		if json.Unmarshal(data, &receipt) == nil && !model.IssueUnder(model.Issues(receipt), "text") && fresh(receipt.FetchedAt, interval) {
+			if err := validateSourceYAMLPolicy(receipt.Text); err != nil {
 				return nil, err
 			}
-			traffic, _ := downloaded.Value("traffic").(*jsonx.Object)
-			return newResult(text, "source_cache", traffic, downloaded.Value("fetched_at").(string)), nil
+			return makeResult(receipt.Text, "source_cache", receipt.Traffic, receipt.FetchedAt), nil
 		}
 	} else if !isRepositoryOrOSError(err) {
 		return nil, err
 	}
-	fetched, err := fetch(ctx, id, url)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if fetch == nil {
+		return nil, errors.New("subscription fetch owner unavailable")
+	}
+	result, err := fetch(ctx, sub.ID, sub.URL)
 	if err != nil {
 		return nil, err
 	}
-	return RememberSourceDownload(ctx, sub, fetched)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return RememberDownload(ctx, sub, result)
 }
 
-// validateSourceYAMLPolicy runs before any downloaded text can replace a cache.
-// Syntax fallback remains a caller decision; shared policy and alias refusals
-// cannot be mistaken for missing hosts, an empty subscription, or a good cache.
+// validateSourceYAMLPolicy runs before any source can replace a cache.
 func validateSourceYAMLPolicy(text string) error {
 	_, err := yamlx.Parse([]byte(text))
 	if errors.Is(err, yamlx.ErrPolicy) || errors.Is(err, yamlx.ErrAliasRecursion) || errors.Is(err, yamlx.ErrAliasBudget) {

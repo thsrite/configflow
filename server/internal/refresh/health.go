@@ -1,24 +1,18 @@
 package refresh
 
-// Port of backend/utils/subscription_health.py: one record per subscription
-// fetch (success / failure / fallback to the cache), the last HistorySize
-// kept for the health bar, and the traffic of the provider's
-// `subscription-userinfo` header.
-
 import (
+	"configflow/internal/lifecycle"
+	"configflow/internal/logx"
+	"configflow/internal/model"
+	"configflow/internal/substore"
+	"configflow/internal/weburl"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 	"time"
-	"unicode/utf8"
-
-	"configflow/internal/jsonx"
-	"configflow/internal/logx"
-	"configflow/internal/pystr"
-	"configflow/internal/repo"
-	"configflow/internal/substore"
 )
 
 // Constants of subscription_health.py.
@@ -46,66 +40,108 @@ func isoMicro(t time.Time) string {
 
 // healthNow is subscription_health._now().
 func healthNow() string {
-	return strings.Replace(isoMicro(currentEnv().Clock.Now()), "+00:00", "Z", 1)
+	return strings.Replace(isoMicro(refreshEnv().Clock.Now()), "+00:00", "Z", 1)
 }
 
-// ParseUserinfo is parse_userinfo (ported with the Sub-Store client, which
-// needs it).
-func ParseUserinfo(header string) (*jsonx.Object, error) { return substore.ParseUserinfo(header) }
-
-// FetchUserinfo is fetch_userinfo(url): only the response headers matter;
-// any request failure is nil (None). A value that is not a string or not an
-// http(s) address is nil without a request. The Go client reads the body
-// too (requests streamed it and closed without reading).
-func FetchUserinfo(ctx context.Context, url any) (*jsonx.Object, error) {
-	text, ok := url.(string)
-	lower := pystr.Lower(text)
-	if !ok || !(strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://")) {
+// FetchTraffic reads provider quota headers; non-HTTP sources are ignored.
+func FetchTraffic(ctx context.Context, address string) (*Traffic, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	lower := strings.ToLower(address)
+	if !strings.HasPrefix(lower, "http://") && !strings.HasPrefix(lower, "https://") {
 		return nil, nil
 	}
-	resp, err := currentEnv().HTTP.Do(ctx, &substore.Request{Method: "GET", URL: text,
-		Header: http.Header{"User-Agent": {UserinfoUserAgent}}, Timeout: substore.Seconds(UserinfoTimeout)})
+	response, err := refreshEnv().HTTP.Do(ctx, &substore.Request{Method: "GET", URL: address, Header: http.Header{"User-Agent": {UserinfoUserAgent}}, Timeout: substore.Seconds(UserinfoTimeout)})
 	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
 		var request *substore.RequestError
 		if errors.As(err, &request) {
-			healthLog.Infof("读取订阅流量信息失败: %s", pythonClass(request))
+			healthLog.Infof(msgTrafficFailed, weburl.SafeErrorDetails(err))
 			return nil, nil
 		}
 		return nil, err
 	}
-	if resp.StatusCode >= 400 {
+	if response.StatusCode >= 400 {
 		return nil, nil
 	}
-	return substore.ParseUserinfo(resp.HeaderValue("subscription-userinfo"))
+	return parseTraffic(response.Header.Get("subscription-userinfo"))
 }
 
-// LoadHealth is load_health(): the stored records, {} when the file is
-// missing, unreadable or not an object.
-func LoadHealth(ctx context.Context) (*jsonx.Object, error) {
-	ctx = detached(ctx)
-	r, err := repo.GetRepository(ctx)
-	if err != nil {
+// FetchEvent is a bounded health-history point.
+type FetchEvent struct {
+	At     string     `json:"at"`
+	Status string     `json:"status"`
+	Count  *model.Int `json:"count"`
+	Fields model.Fields
+	Raw    model.Raw
+}
+
+func (r *FetchEvent) UnmarshalJSON(data []byte) error { return model.DecodeRecord(data, r, &r.Raw) }
+func (r FetchEvent) MarshalJSON() ([]byte, error)     { return model.EncodeRecord(&r, &r.Raw) }
+
+// HealthEntry is one subscription's history and latest traffic.
+type HealthEntry struct {
+	History   []FetchEvent `json:"history"`
+	Traffic   *Traffic     `json:"traffic"`
+	TrafficAt *string      `json:"traffic_at"`
+	Fields    model.Fields
+	Raw       model.Raw
+}
+
+func (r *HealthEntry) UnmarshalJSON(data []byte) error { return model.DecodeRecord(data, r, &r.Raw) }
+func (r HealthEntry) MarshalJSON() ([]byte, error)     { return model.EncodeRecord(&r, &r.Raw) }
+
+// HealthSnapshot retains unowned members and entries as raw JSON.
+type HealthSnapshot map[string]json.RawMessage
+
+// Entry returns an independent typed entry, following model R5 for wrong fields.
+func (s HealthSnapshot) Entry(id string) *HealthEntry {
+	var entry HealthEntry
+	_ = json.Unmarshal(s[id], &entry)
+	return &entry
+}
+
+// ReadHealth reads health history without writing or creating a directory.
+func ReadHealth(ctx context.Context) (HealthSnapshot, error) {
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	data, err := r.ReadSharedJSON(ctx, HealthFile)
+	data, err := readSharedData(ctx, HealthFile)
 	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
 		if isRepositoryOrOSError(err) {
-			return jsonx.NewObject(), nil
+			return HealthSnapshot{}, nil
 		}
 		return nil, err
 	}
-	return data, nil
+	var result HealthSnapshot
+	if json.Unmarshal(data, &result) != nil || result == nil {
+		return HealthSnapshot{}, nil
+	}
+	return result, nil
 }
-
-// saveHealth is _save_health: a write failure is only logged.
-func saveHealth(ctx context.Context, data *jsonx.Object) error {
-	r, err := repo.GetRepository(ctx)
+func saveHealthData(ctx context.Context, data HealthSnapshot) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	raw, err := json.Marshal(data)
 	if err != nil {
 		return err
 	}
-	if _, err := r.WriteSharedJSON(ctx, HealthFile, data); err != nil {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := writeSharedData(ctx, HealthFile, raw); err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
 		if isRepositoryOrOSError(err) {
-			healthLog.Errorf("写入订阅健康记录失败: %s", errorText(err))
+			healthLog.Errorf(msgHealthWriteFailed, weburl.SafeErrorDetails(err))
 			return nil
 		}
 		return err
@@ -113,96 +149,85 @@ func saveHealth(ctx context.Context, data *jsonx.Object) error {
 	return nil
 }
 
-// FetchRecord is the keyword arguments of record_fetch.
-type FetchRecord struct {
+// FetchEventInput is the outcome of one admitted source fetch.
+type FetchEventInput struct {
 	OK        bool
-	Count     any // int(count or 0); nil is 0
+	Count     model.Int
 	FromCache bool
-	Traffic   *jsonx.Object
+	Traffic   *Traffic
 }
 
-// pyList is list(value) for a value read from the file (`… or []` already
-// applied): a list, the characters of a string, the keys of an object.
-func pyList(value any) ([]any, error) {
-	switch v := value.(type) {
-	case []any:
-		return append([]any(nil), v...), nil
-	case string:
-		out := make([]any, 0, utf8.RuneCountInString(v))
-		for _, r := range v {
-			out = append(out, string(r))
-		}
-		return out, nil
-	case *jsonx.Object:
-		out := make([]any, 0, v.Len())
-		for _, key := range v.Keys() {
-			out = append(out, key)
-		}
-		return out, nil
+// RecordHealth appends one event and commits under the originating generation.
+func RecordHealth(ctx context.Context, id string, input FetchEventInput) (*HealthEntry, error) {
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
-	return nil, pyErr("TypeError", "'%s' object is not iterable", pyTypeName(value))
-}
-
-// RecordFetch is record_fetch(sub_id, ok=, count=, from_cache=, traffic=):
-// append one fetch record (status ok / cache / fail) and, with traffic,
-// update the traffic. It returns the subscription's latest health entry
-// ({} without an id).
-func RecordFetch(ctx context.Context, subID string, rec FetchRecord) (*jsonx.Object, error) {
-	ctx = detached(ctx)
-	if subID == "" {
-		return jsonx.NewObject(), nil
+	if id == "" {
+		return &HealthEntry{}, nil
 	}
-	data, err := LoadHealth(ctx)
+	data, err := ReadHealth(ctx)
 	if err != nil {
 		return nil, err
 	}
-	entry, ok := data.Value(subID).(*jsonx.Object)
-	if !ok {
-		entry = jsonx.NewObject()
-	}
-	history, err := pyList(orDefault(entry.Value("history"), []any{}))
-	if err != nil {
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	entry := data.Entry(id)
+	history := append([]FetchEvent(nil), entry.History...)
 	if keep := HistorySize - 1; len(history) > keep {
 		history = history[len(history)-keep:]
 	}
 	status := "fail"
-	switch {
-	case rec.OK && !rec.FromCache:
-		status = "ok"
-	case rec.FromCache:
+	if input.FromCache {
 		status = "cache"
+	} else if input.OK {
+		status = "ok"
 	}
-	count, err := pyIntValue(orDefault(rec.Count, jsonx.Int(0)))
+	count := input.Count
+	entry.History = append(history, FetchEvent{At: healthNow(), Status: status, Count: &count})
+	if input.Traffic != nil {
+		raw, err := model.Marshal(input.Traffic)
+		if err != nil {
+			return nil, err
+		}
+		if len(raw) > 2 {
+			entry.Traffic = input.Traffic
+			at := healthNow()
+			entry.TrafficAt = &at
+		}
+	}
+	raw, err := model.Marshal(entry)
 	if err != nil {
 		return nil, err
 	}
-	history = append(history, jsonx.Obj("at", healthNow(), "status", status, "count", jsonx.BigInt(count)))
-	entry.Set("history", history)
-	if rec.Traffic != nil && rec.Traffic.Len() > 0 {
-		entry.Set("traffic", rec.Traffic)
-		entry.Set("traffic_at", healthNow())
+	data[id] = raw
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
-	data.Set(subID, entry)
-	if err := saveHealth(ctx, data); err != nil {
+	if err := saveHealthData(ctx, data); err != nil {
 		return nil, err
 	}
 	return entry, nil
 }
 
-// Forget is forget(sub_id): drop the subscription's records (saved only
-// when there was a non-null entry).
-func Forget(ctx context.Context, subID string) error {
-	ctx = detached(ctx)
-	data, err := LoadHealth(ctx)
+// ForgetHealth deletes one entry; null/absent entries cause no write.
+func ForgetHealth(ctx context.Context, id string) error {
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	data, err := ReadHealth(ctx)
 	if err != nil {
 		return err
 	}
-	value, present := data.Get(subID)
-	data.Delete(subID)
-	if present && value != nil {
-		return saveHealth(ctx, data)
+	raw, present := data[id]
+	if !present || string(raw) == "null" {
+		return nil
 	}
-	return nil
+	delete(data, id)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return saveHealthData(ctx, data)
 }

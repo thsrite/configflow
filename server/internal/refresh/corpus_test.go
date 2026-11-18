@@ -254,7 +254,7 @@ func checkScenario(t *testing.T, clock *fakeClock, row *jsonx.Object) {
 			jobs, err := due(repo.WithScope(ctx), &given)
 			keys := []any{}
 			for _, j := range jobs {
-				keys = append(keys, j.key)
+				keys = append(keys, j.key())
 			}
 			got = outcome(keys, err)
 		case strings.HasPrefix(label, "forget "):
