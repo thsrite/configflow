@@ -54,3 +54,8 @@ This AST inventory complements a runtime exec trace of **ordinary** tests. A
 registration alone is not proof of a recording guard: ordinary runs must show no
 Python oracle exec, and live modes must reap all child processes. `NewLines`
 transcripts use gzip-compressed JSON; one-shot `Spec` may also set `Compress`.
+
+The audit scans constructor references in package initializers and function
+values as well as direct calls. Dot imports of process packages are rejected;
+literal `exec.Cmd{...}` construction is inventoried too. Runtime exec tracing
+still verifies the ordinary path; the registry is not a reflection/shell proof.

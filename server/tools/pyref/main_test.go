@@ -49,3 +49,26 @@ func TestAuditRejectsNewAndStaleCallSites(t *testing.T) {
 		t.Fatal("stale registration silently allowed")
 	}
 }
+
+func TestAuditRejectsInitializerAndFunctionValueBypasses(t *testing.T) {
+	calls, err := inspect("x_test.go", []byte(`package test
+import ("os/exec")
+var process = exec.Command("python")
+var start = exec.Command
+func TestExample(){run:=exec.CommandContext;run(nil,"python"); _ = exec.Cmd{Path:"python"}}
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for key, want := range map[string]int{"x_test.go:<package>:exec.Command": 2, "x_test.go:TestExample:exec.CommandContext": 1, "x_test.go:TestExample:exec.Cmd": 1} {
+		if calls[key] != want {
+			t.Fatalf("missed %s: %v", key, calls)
+		}
+	}
+	if _, err := inspect("dot_test.go", []byte(`package test
+import . "os/exec"
+func TestExample(){Command("python")}
+`)); err == nil {
+		t.Fatal("dot import bypass silently allowed")
+	}
+}

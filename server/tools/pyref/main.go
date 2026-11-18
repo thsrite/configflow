@@ -42,39 +42,64 @@ func inspect(path string, data []byte) (map[string]int, error) {
 		if spec.Name != nil {
 			alias = spec.Name.Name
 		}
+		if alias == "." && (name == "os/exec" || name == "os" || name == "syscall" || name == "configflow/internal/yamlx/yamlxtest") {
+			return nil, fmt.Errorf("%s: dot-import of process/live-oracle package %s is forbidden", path, name)
+		}
 		imports[alias] = name
 	}
 	calls := map[string]int{}
-	for _, decl := range file.Decls {
-		fn, ok := decl.(*ast.FuncDecl)
+	ast.Inspect(file, func(n ast.Node) bool {
+		selector, ok := n.(*ast.SelectorExpr)
 		if !ok {
-			continue
-		}
-		ast.Inspect(fn.Body, func(n ast.Node) bool {
-			call, ok := n.(*ast.CallExpr)
-			if !ok {
-				return true
-			}
-			selector, ok := call.Fun.(*ast.SelectorExpr)
-			if !ok {
-				return true
-			}
-			owner, ok := selector.X.(*ast.Ident)
-			if !ok {
-				return true
-			}
-			pkg := imports[owner.Name]
-			name := selector.Sel.Name
-			watched := pkg == "os/exec" && (name == "Command" || name == "CommandContext") || pkg == "os" && name == "StartProcess" || pkg == "syscall" && (name == "Exec" || name == "ForkExec" || name == "StartProcess") || pkg == "configflow/internal/yamlx/yamlxtest" && name == "NewOracle"
-			if watched {
-				canonical := filepath.Base(pkg) + "." + name
-				calls[path+":"+fn.Name.Name+":"+canonical]++
-			}
 			return true
-		})
-	}
+		}
+		owner, ok := selector.X.(*ast.Ident)
+		if !ok {
+			return true
+		}
+		pkg := imports[owner.Name]
+		name := selector.Sel.Name
+		watched := pkg == "os/exec" && (name == "Command" || name == "CommandContext") || pkg == "os" && name == "StartProcess" || pkg == "syscall" && (name == "Exec" || name == "ForkExec" || name == "StartProcess") || pkg == "configflow/internal/yamlx/yamlxtest" && name == "NewOracle"
+		if !watched {
+			return true
+		}
+		function := "<package>"
+		for _, decl := range file.Decls {
+			if fn, ok := decl.(*ast.FuncDecl); ok && fn.Pos() <= selector.Pos() && selector.End() <= fn.End() {
+				function = fn.Name.Name
+				break
+			}
+		}
+		calls[path+":"+function+":"+filepath.Base(pkg)+"."+name]++
+		return true
+	})
+	// A literal exec.Cmd can bypass Command/CommandContext completely.
+	ast.Inspect(file, func(n ast.Node) bool {
+		literal, ok := n.(*ast.CompositeLit)
+		if !ok {
+			return true
+		}
+		typ, ok := literal.Type.(*ast.SelectorExpr)
+		if !ok || typ.Sel.Name != "Cmd" {
+			return true
+		}
+		owner, ok := typ.X.(*ast.Ident)
+		if !ok || imports[owner.Name] != "os/exec" {
+			return true
+		}
+		function := "<package>"
+		for _, decl := range file.Decls {
+			if fn, ok := decl.(*ast.FuncDecl); ok && fn.Pos() <= literal.Pos() && literal.End() <= fn.End() {
+				function = fn.Name.Name
+				break
+			}
+		}
+		calls[path+":"+function+":exec.Cmd"]++
+		return true
+	})
 	return calls, nil
 }
+
 func audit(root string, scopes []string, registry []exception) error {
 	found := map[string]int{}
 	for _, scope := range scopes {

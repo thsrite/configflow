@@ -50,3 +50,8 @@ Shared follow-up targeted validation (.64):
 `go test -race -count=1 ./internal/testgolden ./tools/pyref` passed
 (`4.129s`, `1.012s`); targeted vet passed. Negative controls use child Go test
 processes and a synthetic venv directory; they execute no Python themselves.
+
+Additional shared audit controls (B-group review): package-level constructors,
+constructor function values and aliased imports cannot bypass registration.
+Dot imports of process packages are rejected. Literal exec.Cmd construction is
+also inventoried. A registered callback is still verified by runtime tracing.
