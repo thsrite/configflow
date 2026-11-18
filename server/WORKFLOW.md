@@ -479,3 +479,11 @@ gate before every merge). What changes is how much each agent re-runs:
    paths plus one representative case per error class (malformed JSON, non-object body, wrong type, missing
    field, conflict, cancellation). Do not enumerate every shape x every engine. When an error class has a
    per-engine or per-route difference in Python, cover each distinct behaviour once.
+
+## Pre-flight = full non-race suite (maintainer, 2026-11-18)
+
+Before every full batch gate the coordinator runs `vet` (both tag sets) and the **full** `go test ./...`
+without `-race` on the stacked tree (~15 min; script /tmp/preflight.sh on the servers). The earlier pre-flight
+only ran `Corpus|Reference|Golden` tests and let batch-6's first gate fail on stale R5 expectations, a yamlx
+facade violation and unregistered pyref oracles — all visible without `-race`. The gate starts only after a
+clean pre-flight.
