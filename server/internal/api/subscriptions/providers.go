@@ -67,11 +67,11 @@ func combinedHeader(details []subscriptionDetail, count int) string {
 	b.WriteByte('\n')
 	return b.String()
 }
-func providerFailure(err error) (*httpx.Response, error) {
+func providerFailure(ctx context.Context, err error) (*httpx.Response, error) {
 	if referenceError(err) {
 		return httpx.Message(400, false, err.Error()), nil
 	}
-	logProviderFailure(err)
+	logProviderFailure(ctx, err)
 	return httpx.Message(500, false, msgProviderFailed), nil
 }
 func hasDialer(proxies []object) bool {
@@ -89,10 +89,10 @@ func combinedProxies(c *httpx.Ctx) (*httpx.Response, error) {
 	ctx := materializeContext(c.Context())
 	delivery, list, err := resource(ctx, nil)
 	if err != nil {
-		return providerFailure(err)
+		return providerFailure(ctx, err)
 	}
 	if err := delivery.capture(ctx); err != nil {
-		return providerFailure(err)
+		return providerFailure(ctx, err)
 	}
 	all := []object{}
 	prepared := map[string][]object{}
@@ -107,31 +107,31 @@ func combinedProxies(c *httpx.Ctx) (*httpx.Response, error) {
 		if fetchErr == nil {
 			proxies, err = filter(sub, raw)
 			if err != nil {
-				return providerFailure(err)
+				return providerFailure(ctx, err)
 			}
 			update, err := stageNodes(sub, raw, result, false)
 			if err != nil {
-				return providerFailure(err)
+				return providerFailure(ctx, err)
 			}
 			updates = append(updates, update)
 		} else {
 			if referenceError(fetchErr) {
-				return providerFailure(fetchErr)
+				return providerFailure(ctx, fetchErr)
 			}
 			cached, err := loadCache(ctx, sub.text("id"))
 			if err != nil {
-				return providerFailure(err)
+				return providerFailure(ctx, err)
 			}
 			if cached != nil {
 				proxies, err = cachedProxies(ctx, sub, cached.Nodes, true)
 				if err != nil {
-					return providerFailure(err)
+					return providerFailure(ctx, err)
 				}
 			}
 		}
 		proxies, err = delivery.adapt(ctx, sub, proxies, true)
 		if err != nil {
-			return providerFailure(err)
+			return providerFailure(ctx, err)
 		}
 		if len(proxies) == 0 {
 			continue
@@ -141,19 +141,19 @@ func combinedProxies(c *httpx.Ctx) (*httpx.Response, error) {
 		details = append(details, subscriptionDetail{sub.text("name"), len(proxies), generatedStamp()})
 	}
 	if err := delivery.validate(all, nil); err != nil {
-		return providerFailure(err)
+		return providerFailure(ctx, err)
 	}
 	chains, err := delivery.hasChains()
 	if err != nil {
-		return providerFailure(err)
+		return providerFailure(ctx, err)
 	}
 	if chains || hasDialer(all) {
 		if err := delivery.validateBundle(ctx, nil, prepared, all); err != nil {
-			return providerFailure(err)
+			return providerFailure(ctx, err)
 		}
 	}
 	if err := commitStaged(ctx, updates); err != nil {
-		return providerFailure(err)
+		return providerFailure(ctx, err)
 	}
 	return providerResponse(all, "", combinedHeader(details, len(all)))
 }
@@ -164,7 +164,7 @@ func subscriptionProxies(c *httpx.Ctx) (*httpx.Response, error) {
 	id := c.Param("sub_id")
 	delivery, list, err := resource(c.Context(), &id)
 	if err != nil {
-		logProviderFailure(err)
+		logProviderFailure(c.Context(), err)
 		return httpx.Message(500, false, msgProviderFailed), nil
 	}
 	sub := findSubscription(list, id)
@@ -179,16 +179,16 @@ func subscriptionProxies(c *httpx.Ctx) (*httpx.Response, error) {
 	return delivery.serve(c, id, func(ctx context.Context) (*httpx.Response, error) {
 		ctx = materializeContext(ctx)
 		if err := delivery.capture(ctx); err != nil {
-			return providerFailure(err)
+			return providerFailure(ctx, err)
 		}
 		chains, err := delivery.hasChains()
 		if err != nil {
-			return providerFailure(err)
+			return providerFailure(ctx, err)
 		}
 		if chains {
 			content, err := delivery.chainedContent(ctx, sub, format)
 			if err != nil {
-				return providerFailure(err)
+				return providerFailure(ctx, err)
 			}
 			return httpx.Bytes(200, "text/yaml; charset=utf-8; charset=utf-8", []byte(content)), nil
 		}
@@ -237,7 +237,7 @@ func (d *delivery) renderSingle(ctx context.Context, sub object, format string, 
 		}
 		if fetchErr != nil {
 			if referenceError(fetchErr) {
-				return providerFailure(fetchErr)
+				return providerFailure(ctx, fetchErr)
 			}
 			fetchError = failureDetail(fetchErr)
 			proxies = nil
@@ -246,7 +246,7 @@ func (d *delivery) renderSingle(ctx context.Context, sub object, format string, 
 	if proxies == nil {
 		cached, err := loadCache(ctx, sub.text("id"))
 		if err != nil {
-			return providerFailure(err)
+			return providerFailure(ctx, err)
 		}
 		if sub.text("url") != "" {
 			count := 0
@@ -254,7 +254,7 @@ func (d *delivery) renderSingle(ctx context.Context, sub object, format string, 
 				_ = json.Unmarshal(cached.Count, &count)
 			}
 			if err := recordFetch(ctx, sub.text("id"), false, cached != nil, count); err != nil {
-				return providerFailure(err)
+				return providerFailure(ctx, err)
 			}
 		}
 		if cached == nil {
@@ -269,15 +269,15 @@ func (d *delivery) renderSingle(ctx context.Context, sub object, format string, 
 		// Validate all filtered node shapes before forgiving individual conversion failures.
 		filtered, err := filter(sub, cached.Nodes)
 		if err != nil {
-			return providerFailure(err)
+			return providerFailure(ctx, err)
 		}
 		proxies, err = cachedProxies(ctx, sub, filtered, false)
 		if err != nil {
-			return providerFailure(err)
+			return providerFailure(ctx, err)
 		}
 		proxies, err = d.adapt(ctx, sub, proxies, !alternate)
 		if err != nil {
-			return providerFailure(err)
+			return providerFailure(ctx, err)
 		}
 	}
 	var alternativeText string
@@ -285,23 +285,23 @@ func (d *delivery) renderSingle(ctx context.Context, sub object, format string, 
 		var err error
 		alternativeText, err = alternative(format, proxies)
 		if err != nil {
-			return providerFailure(err)
+			return providerFailure(ctx, err)
 		}
 	}
 	if !cacheUpdated {
 		if err := d.validateSingle(ctx, sub, proxies); err != nil {
-			return providerFailure(err)
+			return providerFailure(ctx, err)
 		}
 	}
 	if alternate {
 		if filters != nil {
 			filtered, err := filterResponse(proxies, filters)
 			if err != nil {
-				return providerFailure(err)
+				return providerFailure(ctx, err)
 			}
 			alternativeText, err = alternative(format, filtered)
 			if err != nil {
-				return providerFailure(err)
+				return providerFailure(ctx, err)
 			}
 		}
 		return httpx.Text(200, alternativeText), nil

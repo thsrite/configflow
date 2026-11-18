@@ -530,6 +530,9 @@ func materializeContext(ctx context.Context) context.Context {
 	return convert.WithNodeConversions(ctx, convert.NewConversionResults(), true)
 }
 
-func logProviderFailure(err error) {
+func logProviderFailure(ctx context.Context, err error) {
+	if cause := ctx.Err(); cause != nil && errors.Is(err, cause) {
+		return
+	}
 	logx.Get("backend.routes.subscriptions").Error(msgProviderFailed + ": " + weburl.SafeErrorDetails(err))
 }

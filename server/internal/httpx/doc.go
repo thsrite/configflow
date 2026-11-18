@@ -87,7 +87,9 @@
 // *HTTPError renders Werkzeug's page (BadRequest(""), NotFound(), or
 // &HTTPError{Code, Description}); anything else, a panic, or a nil response
 // is logged as "Exception on <path> [<method>]" and answered with the 500
-// page. Views that catch exceptions in Python (`except Exception as e:
+// page. A returned cancellation matching an ended HTTP request is not logged
+// as an application exception. Unrelated errors, panics and cancellations on
+// live requests still are. Views that catch exceptions in Python (`except Exception as e:
 // return {'success': False, 'message': str(e)}, 500`) do the same in Go
 // with err.Error(). App.HandleError adds handlers for other error types.
 //

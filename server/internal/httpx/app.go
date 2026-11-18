@@ -182,7 +182,12 @@ func (a *App) handleError(c *Ctx, err error) *Response {
 }
 
 func (a *App) internalError(c *Ctx, err error) *Response {
-	a.Logger.Error("Exception on " + c.path + " [" + c.Request.Method + "]\n" + err.Error())
+	// net/http cancels the request when the client disconnects. That matching
+	// cancellation is an ended wait, not a failed application operation. Keep
+	// logging internal cancellations and unrelated failures on a live request.
+	if cause := c.Request.Context().Err(); cause == nil || !errors.Is(err, cause) {
+		a.Logger.Error("Exception on " + c.path + " [" + c.Request.Method + "]\n" + err.Error())
+	}
 	return (&HTTPError{Code: 500, Description: DescInternal}).response(c.path)
 }
 
