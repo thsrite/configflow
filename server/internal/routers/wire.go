@@ -13,7 +13,7 @@ import (
 // wirePackages): desensitized router exports and pending notification summaries.
 // Later modules add the job lock, the rule-sync task slot and loop here.
 func Wire() {
-	repo.RegisterHooks(repo.Hooks{RedactRouters: redactHook})
+	repo.RegisterHooks(repo.Hooks{RedactRouters: redactHook, JobLock: jobLockHook})
 	notifications.SetSources(notifications.Sources{Summarize: pendingSummaryHook})
 }
 
@@ -90,4 +90,15 @@ func recordPendingNotice(ctx context.Context, db *repo.Repository, profileID str
 		// leaf cancellation guard here or introduce a parallel JSON writer API.
 		return notifications.RecordRouter(work, profileID, records[0], records[1], records[2], records[3], "")
 	})
+}
+
+// jobLockHook only tries the routers-owned L1 lock, even when called under L3.
+// It never reads the repository; router is the immutable transaction snapshot.
+func jobLockHook(ctx context.Context, profileID, routerID string, router *jsonx.Object) (func(), bool) {
+ var connection *Router
+ if router != nil {
+  connection = &Router{RouterSettings: RouterSettings{Type: router.GetString("type"), Endpoint: router.GetString("endpoint")}}
+ }
+ _, release, err := RouterJobLock(ctx, profileID, routerID, connection)
+ return release, err == nil
 }

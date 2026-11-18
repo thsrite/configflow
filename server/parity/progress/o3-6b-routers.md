@@ -33,4 +33,14 @@ R11对RouterOS.Apply另加入口取消检查，后续rebase保留；不改R11私
 
 ## 当前进度
 
-已完成只读预检与R11接口协调。未改产品；测试待实现后在远端运行。
+已实现RouterJobLock与Wire的JobLock适配，所有入口共享唯一L1表。未改repo的已持锁豁免。
+测试证明：未Wire仍fail-closed；Wire后空闲连接修改、初次manifest、删除可提交；
+同设备不同profile/router别名互斥，释放后可提交；持L1→L2调用SaveRouterSettings/Publication/withdraw/delete不重复取锁。
+L3内部try不报反序；fallback键独立；Runtime停止拒绝/客户端断开可取；真实repo DATA_DIR里的旧锁哨兵内容/inode/mtime不变且不新增锁文件。
+
+.32命令（含远端gofmt，取回格式化后的测试文件）：
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt --back server/internal/routers/joblock_test.go --back server/internal/routers/joblock_repo_test.go -- bash -lc 'cd server && gofmt -w internal/routers/joblock_test.go internal/routers/joblock_repo_test.go && go vet ./internal/routers/ && go test -race -count=3 -run "^TestO36b" ./internal/routers/'
+```
+退出0：`ok configflow/internal/routers 24.301s`。更早纯JobLock组race3通过1.150s。
+下一步迁移旧driver的WithoutCancel并加真实Runtime I/O/rollback/lock-wait回归。
