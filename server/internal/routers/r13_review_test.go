@@ -1,11 +1,18 @@
 package routers
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
+
+	"configflow/internal/jsonx"
+	"configflow/internal/notifications"
 )
 
 // TestR13ReviewMalformedRouterIsolated: Python reads routers_of(config) as raw
@@ -96,5 +103,77 @@ func TestR13ReviewEmptyAgentMatchesNothing(t *testing.T) {
 	}
 	if n := len(l.first.Calls()) + len(l.second.Calls()); n != 0 {
 		t.Fatalf("device read for an empty Agent ID: %d calls", n)
+	}
+}
+
+type r13CloseDriver struct {
+	Driver
+	closed *atomic.Int32
+}
+
+func (d r13CloseDriver) Close() { d.Driver.Close(); d.closed.Add(1) }
+
+// TestR13ReviewNoticeWaitingForLeafLock (P1, after C07 batch-1): the owner has
+// read every router and waits for the notification leaf lock. Shutdown while
+// it waits must not write a receipt; a request disconnect must still write it.
+func TestR13ReviewNoticeWaitingForLeafLock(t *testing.T) {
+	for _, mode := range []string{"shutdown", "disconnect"} {
+		t.Run(mode, func(t *testing.T) {
+			l := r13Fixture(t)
+			rt := r13Runtime(t)
+			req := l.request(t)
+			req.Cache = NewPendingCache(rt, nil)
+			req.ProfileID = pointer("default")
+			var closed atomic.Int32
+			req.NewDriver = func(r *Router) Driver { return r13CloseDriver{NewDriver(r), &closed} }
+			held, release := make(chan struct{}), make(chan struct{})
+			blocker := make(chan error, 1)
+			go func() {
+				blocker <- notifications.TransactionContext(context.Background(), l.db.DataDir(), func(*jsonx.Object) error {
+					close(held)
+					<-release
+					return nil
+				})
+			}()
+			<-held
+			request, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			done := make(chan error, 1)
+			go func() { _, e := AgentRouters(rt.BindRequest(request), req); done <- e }()
+			r13Eventually(t, func() bool { return closed.Load() == 1 })
+			// The read is finished; the owner now only marshals the receipt and
+			// waits for the leaf lock (held well below its 5 s limit).
+			time.Sleep(300 * time.Millisecond)
+			path := filepath.Join(l.db.DataDir(), "notifications.json")
+			if mode == "shutdown" {
+				rt.Shutdown(t.Context())
+				close(release)
+				if e := <-blocker; e != nil {
+					t.Fatal(e)
+				}
+				if e := <-done; e == nil {
+					t.Fatal("shutdown lost cancellation")
+				}
+				if _, e := os.Stat(path); !errors.Is(e, os.ErrNotExist) {
+					t.Fatal("receipt written after shutdown", e)
+				}
+				return
+			}
+			cancel()
+			if e := <-done; !errors.Is(e, context.Canceled) {
+				t.Fatal(e)
+			}
+			close(release)
+			if e := <-blocker; e != nil {
+				t.Fatal(e)
+			}
+			if e := rt.WaitIdle(t.Context()); e != nil {
+				t.Fatal(e)
+			}
+			data, e := os.ReadFile(path)
+			if e != nil || !strings.Contains(string(data), "router:default:synthetic:changes") {
+				t.Fatal("detached owner did not write its receipt", e)
+			}
+		})
 	}
 }
