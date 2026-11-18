@@ -8,7 +8,7 @@
 - **A14 自身 high：0 条。** medium 1 条（M1，Python 同样存在），low 3 条（L1、L2 已修；L3 基线行已收窄）。
 - 共享 BeforeCommit 关机窗口（已分派 O3-6c）不计入；已复验报告写清、SKIP 的回归确实复现（见第 4 节）。
 - A20 合入后的两项接线（去掉 deploy.Wire 重复注册的 reader、注册 `deploy.SetGatewayGuards`）及其测试，
-  按协调者指示在 rebase 到含 A20 的 go 后完成，见第 6 节；在那之前 A14 结论不依赖它们。
+  已在 rebase 到 batch-4 后完成，见第 6 节。
 
 ## 发现
 
@@ -123,15 +123,50 @@ C34 负责修 A11 `Previews` 的共享提交检查（O3-6c 后在取得叶锁后
 要修的双实例交错，A14 不另做私有锁。只要 Save/Load 业务 API 与冻结产物语义不变，A14 无需改动；C34 合入后 A14
 的 generate/push-by-generation 测试应在合并树上重跑。
 
-## 第 6 节：A20 / O3-6c 合入后的待办（本分支 rebase 后完成）
+## 第 6 节：rebase 到 batch-4（go@c939a5f6，含 A20 / O3-6c / N8-7 第 1 批 / N8-5）后的接线（已完成）
 
-1. 删除 `deploy.Wire` 中的 `routersplit.SetProfileSessions` 注册，只保留 `setupflow.Wire`。
-2. 在 server wiring 中注册 `deploy.SetGatewayGuards`，回调用 `host.Bridge{…}.RequireForwardingKept` /
-   `RequireGatewayOffKept`。
-3. 补测试：两个 guard 都能真正阻止发布；进程中只有一套 reader 注册。
-4. O3-6c 合入后删除 `TestShutdownAtSQLiteCommitKeepsWholeDocument` 的 skip 并在合并树上通过（HANDOFF 指派）。
+1. **单一 reader。** rebase 时 `deploy.Wire` 中的 `routersplit.SetProfileSessions` 注册已删除（落在 rebase 后的
+   A14-4 “close setup reader” 提交里，A20 的 `setupflow` 包与测试原样保留），只由 `setupflow.Wire` 注册。
+   `TestWireKeepsTheSingleSetupSessionReader`：先装哨兵 reader，再调 `deploy.Wire`，`routersplit.LegacyContext`
+   仍调用哨兵。`IsPreparationFailure` 继续识别 A20 链上的 `setupflow.ErrInvalidSession`。
+2. **网关 guard。** `server.gatewayGuards()` 把 `deploy.SetGatewayGuards` 的两个回调接到
+   `(&host.Bridge{Repository: m.Repository(), Manager: m}).RequireForwardingKept/RequireGatewayOffKept(ctx, t.ID, t.ProfileID)`，
+   在 wirePackages 的 `setupflow.Wire` 之后注册（host 不依赖 deploy）。
+3. **测试。** `TestGatewayGuardsRefuseUnsafePublication`：真实 Manager + loopback Agent，两 guard 在 Agent 报告
+   「不保留转发」的网关记录时返回 `*gateway.Error` 且计入 `IsPreparationFailure`（push 400、任务 failed/preparing），
+   设备只收到只读 `GET /api/linux-gateway/status`；无记录时放行。`TestNewAppGatewayGuardBlocksFullTunPublication`：
+   经 `NewApp()` 的生产接线，full-TUN profile 的 `PushConfig` 返回 400，设备只收到状态读取、没有上传。
+4. **O3-6c 回归。** `TestShutdownAtSQLiteCommitKeepsWholeDocument` 已去掉 skip，在合并树上通过。
+5. **rebase 合并说明。** 准备锁采用 go 上 O3-6 的 `preparationLease`（`deploy` 无改动需求）；M1 的 `rollbackKeys`
+   并入同一文件。O3-6c 的 `ctxx.Uninterruptible` 保留，A14 的关机检查放在取得叶锁之后、不可中断段之前
+   （receipts、previews；与 C34 的约定一致），provider 两个提交入口先 `lifecycle.Detach` 再查 ctx。公开部署投影改用
+   N8-7 的 `agents.SanitizePublicMetadata`，仍先 `redact.CollectCredentials`。
+6. **setup session 锁。** A14 不取任何 setup session 锁：只经 `setupflow.ProfileSessions` 无锁读取（原子替换文件）。
+   C36 新增的 `lockx.LevelSetupSession` 与 A14 无交叉。
 
 ## 验证命令与结果
+
+### batch-4 rebase 后定向验证（192.168.0.32）
+
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt -e CONFIGFLOW_DIFF=1 -- bash -lc 'cd server && test -z "$(gofmt -l internal cmd)" && go build ./... && go vet ./internal/... && go test -race -count=1 -p 4 ./internal/deploy ./internal/api/agents ./internal/server ./internal/setupflow ./internal/gateway/... ./internal/routersplit'
+RT_HOST=sunbroke@192.168.0.32 rt -e CONFIGFLOW_DIFF=1 -- bash -lc 'cd server && go test -race -count=1 -run "^(TestContentChangesAgainstFlask|TestPublishHTTPAgainstFlask|TestPublishLegacyProxyAgainstFlask)$" ./internal/api/agents/difftest && go test -race -count=1 -timeout 40m ./internal/agents'
+RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && go test -race -count=1 ./internal/provider'
+RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'PYTHONPATH=server/tools/proddiff ~/cf-test/.venv/bin/python -m unittest test_proddiff'
+```
+```text
+VET-OK
+ok  configflow/internal/deploy 419.705s · api/agents 427.051s · server 4.461s · setupflow 1.016s
+ok  gateway 18.272s · gateway/draft 6.596s · gateway/host 13.300s · routersplit 12.890s
+ok  configflow/internal/api/agents/difftest 18.673s
+ok  configflow/internal/agents 577.173s   (并发跑时触发默认 10 分钟超时，单独以 -timeout 40m 重跑通过)
+ok  configflow/internal/provider 508.868s
+proddiff Python: OK
+```
+difftest 首次在合并树上失败：Python 新建空 `notifications.lock`，Go 的通知存储（batch-4）是进程内锁、不建文件；
+已按其他 Python 空进程锁同样排除（非空仍失败）。完整 gate 未跑，由协调者在 batch-5 执行。
+
+
 
 全部在 192.168.0.64（经 `rt`）执行：
 
