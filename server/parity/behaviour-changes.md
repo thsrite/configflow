@@ -1585,3 +1585,13 @@ MosDNS 的经典规则关键字、域名模式、规则内容不再导入 pystr�
 原接口允许 custom_matches 中的字符串元素原样保存、显示，生成时忽略；现由 model.MosDNSMatch 的字符串/对象 union 保留该合同。DeviceNotes 的 R5 消费值不能充当写入合法性的证据：写入前使用原字段类型诊断和单独备注字段的原始成员验证，无效 null/[]/bool 继续与 Python 同样拒绝；不使无关 OxiDNS 生成失败。
 
 上述 MosDNS 缓存 bool 严格校验包含显式字段 null：cache_enabled/cache_dump_enabled 的 null 和 whole-editor 的 cache_enabled:null 均为 Python200、Go400、无写入。它们与整个 cache-settings 请求体为 JSON null 的有效默认重置（两侧200）分别测试，不能混用。
+
+## MCP #39 — typed 请求和凭据权限边界
+
+- 管理凭据必须是原始JSON字符串，不能由model的R5零值/数字文本推导授权；损坏的
+  config_token拒绝配置令牌认证，仍可在启用登录时使用有效JWT。0/false/空容器不被视为匿名配置。
+- MCP arguments/params及工具字段采用原生DTO，非法false/0/空数组不模拟Python的 `or {}`；
+  非有限JSON拒绝为400，内部异常返回固定中文，不复刻Python异常文本。
+- 路由段ID拒绝分隔符和点目录；Oxi对象递归merge最多128层。正常工具、profile、权限、
+  partial/reorder/事务和内部凭据脱敏合同不变。详细边界与真实Flask证据见
+  [MCP交回](progress/mcp.md)，待Opus HR复核。

@@ -45,7 +45,7 @@ user's network; these are verified in the VM lab after the Go tests pass. Status
 | 36 | router DNS, IPv6 (HR) | `dns_guard`, `dhcp_dns`, `ipv6_dns`, `fakeip`, `pd_guard`, `policy`, `routes`, `readiness` | 3.2k | 34 | todo |
 | 37 | router publish, rule sync (HR) | `release`, `routers/rule_sync*`, `routes/routers`, `upstream_router_pending` | 2.3k | 33–36 | todo |
 | 38 | clients, split | `client_devices`, `client_discovery`, `_cache`, `client_fixed_ip`, `router_split`, `rule_ip_presence`, client routes | 1.4k | 32–35 | todo |
-| 39 | MCP | `mcp_server/*` | 1.8k | all routes | todo |
+| 39 | MCP (HR) | `mcp_server/*` | 1.8k | all routes | ported — [handoff](progress/mcp.md), awaiting Opus |
 | 40 | image, entrypoint | `docker/*`, nginx replacement or config, supervisord, auto-update | – | all | todo |
 
 ## Not ported (maintainer's decision, 2026-11-14)
