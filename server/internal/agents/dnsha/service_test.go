@@ -23,14 +23,14 @@ import (
 )
 
 const config = `plugins:
-  - tag: response
+  - tag: sequence_main
     type: sequence
     args:
       - exec: reject 3
   - tag: udp
     type: udp_server
     args:
-      entry: response
+      entry: sequence_main
       listen: 0.0.0.0:53
 `
 const primaryHost = "192.0.2.20"
@@ -100,7 +100,7 @@ type fixture struct {
 
 func fixtureNew(t *testing.T, options Options, paired bool, deviceOptions map[string]agentfake.Options) *fixture {
 	t.Helper()
-	r, e := repo.OpenDefault(t.TempDir())
+	r, e := repo.Open(t.TempDir(), repo.Options{DefaultConfig: repo.GetDefaultConfig})
 	if e != nil {
 		t.Fatal(e)
 	}

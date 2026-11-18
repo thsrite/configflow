@@ -454,6 +454,12 @@ func (s *Service) advance(ctx context.Context, id string) (*model.HAPublicationS
 	if held.Err() != nil {
 		return nil, held.Err()
 	}
+	// Election waits also stop at the initial shutdown signal, before the
+	// Runtime's drain deadline cancels the job context. This is an interrupted
+	// owner, not a failed publication; keep its durable intent for restart.
+	if errors.Is(e, context.Canceled) && !agents.IsTransportError(e) {
+		return nil, e
+	}
 	if e != nil {
 		var hp *HandoffPending
 		switch {

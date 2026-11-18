@@ -185,3 +185,8 @@ func PublicUpgradeState(state *jsonx.Object) *jsonx.Object {
 
 const msgHAPairIncomplete = "DNS 高可用配对不完整，请先修复主备关系"
 const installationIdentityChanged = "设备身份、地址、服务类型或配置空间已改变，请检查本次安装目标。"
+
+const (
+	msgHAConflict  = "DNS 主备正在同步，请等待两台发布完成"
+	msgHAUninstall = "请先停用 DNS 高可用，再卸载成员"
+)

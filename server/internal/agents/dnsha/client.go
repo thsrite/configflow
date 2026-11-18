@@ -38,16 +38,14 @@ func (o object) strings(k string) []string {
 	}
 	return out
 }
-func (o object) truthy(k string) bool {
-	b := strings.TrimSpace(string(o[k]))
-	return b != "" && b != "null" && b != "false" && b != "0" && b != "0.0" && b != `""` && b != "[]" && b != "{}"
-}
+func (o object) truthy(k string) bool { return truthyJSON(o[k]) }
+
 func runtimeOf(o object) *Runtime {
 	b := o["runtime"]
-	if len(parseObject(b)) == 0 {
+	var r object
+	if json.Unmarshal(b, &r) != nil || r == nil {
 		return nil
 	}
-	r := parseObject(b)
 	return &Runtime{VIPPresent: r.isTrue("vip_present"), Running: r.isTrue("keepalived_running"), Healthy: r.isTrue("healthy"), VIPHealthy: r.isTrue("vip_healthy"), raw: b}
 }
 func hasProtocol(o object, key string) bool {

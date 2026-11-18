@@ -203,7 +203,7 @@ func (s *Service) enableFailure(ctx context.Context, attempted []*agent, n norma
 		e = s.recordLeftover(ctx, ids, msg)
 	}
 	if e != nil && ctx.Err() == nil {
-		logger.Error("DNS 高可用无法记录失败状态")
+		logger.Error(msgFailureRecord)
 	}
 	return refuse(msg)
 }

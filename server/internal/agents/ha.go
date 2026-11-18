@@ -4,7 +4,6 @@ import (
 	"configflow/internal/jsonx"
 	"context"
 	"errors"
-	"reflect"
 )
 
 // ErrPairIncomplete means saved HA members no longer form a reciprocal pair.
@@ -31,7 +30,7 @@ func (m *Manager) HAPair(ctx context.Context, agentID string) ([]*Record, error)
 	ha := agent.GetObject("oxidns_ha")
 	peer := byID[ha.GetString("peer_id")]
 	other := peer.GetObject("oxidns_ha")
-	if peer == nil || !HAEnabled(peer) || ha.GetString("group_id") == "" || ha.GetString("group_id") != other.GetString("group_id") || other.GetString("peer_id") != agentID || !reflect.DeepEqual(peer.Value("profile_id"), agent.Value("profile_id")) {
+	if peer == nil || !HAEnabled(peer) || ha.GetString("group_id") == "" || ha.GetString("group_id") != other.GetString("group_id") || other.GetString("peer_id") != agentID || !jsonx.Equal(peer.Value("profile_id"), agent.Value("profile_id")) {
 		return nil, ErrPairIncomplete
 	}
 	return []*Record{agent, peer}, nil
@@ -57,7 +56,7 @@ func haConflict(agent *jsonx.Object, deploymentID any) *jsonx.Object {
 	job, _ := agent.Value(haField).(*jsonx.Object)
 	children, _ := job.Value("children").(*jsonx.Object)
 	if haActive(agent) && !jsonx.Equal(children.Value(jsonx.Str(agent.Value("id"))), deploymentID) {
-		return jsonx.Obj("success", false, "http_status", jsonx.Int(409), "message", "DNS 主备正在同步，请等待两台发布完成",
+		return jsonx.Obj("success", false, "http_status", jsonx.Int(409), "message", msgHAConflict,
 			"ha_publication", HASummary(job))
 	}
 	return nil
@@ -96,7 +95,7 @@ func haChild(agent *jsonx.Object, agentID string) any {
 }
 
 // defaultServiceOperation is service_operation without the pair lock file:
-// only #29 publishes pairs, and it registers the locked version.
+// The production HA owner registers the pair/member leased version.
 func defaultServiceOperation(ctx context.Context, m *Manager, agentID string, operation func() (*jsonx.Object, error), uninstall bool) (*jsonx.Object, error) {
 	agent, err := m.GetAgentByID(ctx, agentID, true)
 	if err != nil {
@@ -106,7 +105,7 @@ func defaultServiceOperation(ctx context.Context, m *Manager, agentID string, op
 		return rejection, nil
 	}
 	if uninstall && haEnabled(agent) {
-		return jsonx.Obj("success", false, "http_status", jsonx.Int(409), "message", "请先停用 DNS 高可用，再卸载成员"), nil
+		return jsonx.Obj("success", false, "http_status", jsonx.Int(409), "message", msgHAUninstall), nil
 	}
 	return operation()
 }

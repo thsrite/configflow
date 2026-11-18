@@ -131,3 +131,5 @@ const (
 	msgEnvironmentConnection = "无法连接 Agent，请先检查容器日志和网络"
 	msgEnvironmentFailed     = "Agent 能力检查失败，请确认 Agent 已上线"
 )
+
+const msgFailureRecord = "DNS 高可用无法记录失败状态"

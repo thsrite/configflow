@@ -9,7 +9,13 @@ import (
 )
 
 func (s *Service) prepareHandoff(ctx context.Context, j *model.HAJournal, members []*agent, b *deploy.Bundle) error {
-	if _, present := parseObject(rawObject(j))["handoff_required"]; present {
+	if raw, present := parseObject(rawObject(j))["handoff_required"]; present {
+		if !booleanProof(raw) {
+			return refuse(msgJournalChanged)
+		}
+		if j.Handoff != nil && !handoffFlags(j.Handoff) {
+			return refuse(msgHandoffChanged)
+		}
 		return nil
 	}
 	if j.HandoffProtocol == nil || *j.HandoffProtocol != 1 {
@@ -100,6 +106,9 @@ func (s *Service) ensureHandoff(ctx context.Context, j *model.HAJournal, members
 		j.Handoff = &model.HAHandoff{OperationID: j.ID, SourceAgentID: source, TargetAgentID: target, RequestedAt: float64(s.now().UnixNano()) / 1e9, Confirmed: ptr(false), Released: ptr(false)}
 	}
 	h := j.Handoff
+	if !handoffFlags(h) {
+		return refuse(msgHandoffChanged)
+	}
 	if h.OperationID == "" || h.OperationID != j.ID || h.SourceAgentID != source || h.TargetAgentID != target {
 		return refuse(msgHandoffChanged)
 	}
@@ -159,7 +168,13 @@ func (s *Service) ensureHandoff(ctx context.Context, j *model.HAJournal, members
 }
 func (s *Service) releaseHandoff(ctx context.Context, j *model.HAJournal) error {
 	h := j.Handoff
-	if h == nil || yes(h.Released) {
+	if h == nil {
+		return nil
+	}
+	if !handoffFlags(h) {
+		return &HandoffPending{msgHandoffChanged, true}
+	}
+	if yes(h.Released) {
 		return nil
 	}
 	if h.OperationID == "" || h.OperationID != j.ID {
@@ -261,4 +276,21 @@ func (s *Service) settleFailure(ctx context.Context, j *model.HAJournal) error {
 		return &HandoffPending{Message: msgFailureSettle}
 	}
 	return nil
+}
+
+// Corrupt saved proof flags must never turn a required/released handoff into
+// false through the stored model's tolerant decoder. Null remains Python's
+// false value; unknown journal fields remain preserved.
+func booleanProof(raw []byte) bool {
+	v := string(raw)
+	return v == "true" || v == "false" || v == "null"
+}
+func handoffFlags(h *model.HAHandoff) bool {
+	o := parseObject(rawObject(h))
+	for _, key := range []string{"confirmed", "released"} {
+		if raw, ok := o[key]; ok && !booleanProof(raw) {
+			return false
+		}
+	}
+	return true
 }

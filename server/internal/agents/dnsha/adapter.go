@@ -188,7 +188,7 @@ func (s *Service) safe(ctx context.Context, text string) string {
 	for _, a := range rows {
 		tokens = append(tokens, a.GetString("token"))
 	}
-	return agents.FailureText(text, jsonx.ListOf(tokens), 2000)
+	return agents.FailureText(text, jsonx.ListOf(tokens), 0)
 }
 
 // FailureMessage sanitizes user errors against every registry credential.
@@ -318,23 +318,23 @@ func (s *Service) routersUsing(ctx context.Context, ids []string) ([]model.HARou
 		if e != nil {
 			return nil, e
 		}
-		for _, v := range r.GetList("routers") {
-			item, ok := v.(*jsonx.Object)
-			if !ok {
-				continue
-			}
+		var profileView model.Profile
+		if e = json.Unmarshal(rawObject(r), &profileView); e != nil {
+			return nil, e
+		}
+		for _, item := range profileView.Routers.Items {
 			match := false
 			for _, id := range ids {
-				if item.GetString("dns_agent_id") == id {
+				if item.DNSAgentID == id {
 					match = true
 				}
 			}
 			if match {
-				name := item.GetString("name")
+				name := item.Name
 				if name == "" {
-					name = item.GetString("id")
+					name = item.ID
 				}
-				out = append(out, model.HARouter{ID: item.GetString("id"), Name: name, ProfileID: profile})
+				out = append(out, model.HARouter{ID: item.ID, Name: name, ProfileID: profile})
 			}
 		}
 	}
@@ -384,4 +384,9 @@ func rulesResult(id, status, phase string, j *model.HAJournal) *agents.Result {
 		r.Set("ha_publication", v)
 	}
 	return r
+}
+
+func truthyJSON(raw json.RawMessage) bool {
+	v, e := jsonx.Parse(raw)
+	return e == nil && jsonx.Truthy(v)
 }

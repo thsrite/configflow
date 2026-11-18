@@ -230,7 +230,8 @@ func lanAddress(t *testing.T) string {
 }
 
 func upgradesSeed(t *testing.T, dir string, port, closed int, lan string) {
-	r, err := repo.OpenDefault(dir)
+	// Keep unrelated demo subscription jobs out of this Agent-only transcript.
+	r, err := repo.Open(dir, repo.Options{DefaultConfig: repo.GetDefaultConfig})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -612,12 +613,12 @@ func TestUpgradesDifferentialAgainstFlask(t *testing.T) {
 		failed++
 		t.Errorf("DIFF notifications.json:\n  python %s\n  go     %s", py, gor)
 	}
-	// The DNS HA pair lock files Python's service_operation creates for
-	// restart/uninstall belong to A18 (oxidns_ha_publish); excluded here.
+	// Python uses flock files; Go uses L1 leases by the O3 design. Ignore
+	// only those lock artifacts, retaining every HA payload/journal in the diff.
 	withoutHALocks := func(files []string) string {
 		var out []string
 		for _, file := range files {
-			if !strings.HasPrefix(file, ".oxidns-ha-publications/") {
+			if !(strings.HasPrefix(file, ".oxidns-ha-publications/") && strings.HasSuffix(file, "/lock")) {
 				out = append(out, file)
 			}
 		}

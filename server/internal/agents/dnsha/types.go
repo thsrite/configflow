@@ -59,6 +59,7 @@ type Error struct {
 	CanForce bool
 }
 
+// Error implements error.
 func (e *Error) Error() string { return e.Message }
 
 // Unwrap makes all HA safety refusals preparation failures for deploy callers.
@@ -77,6 +78,7 @@ type HandoffPending struct {
 	Unknown bool
 }
 
+// Error implements error.
 func (e *HandoffPending) Error() string { return e.Message }
 
 // ErrStatusUnavailable keeps an uncertain health probe retryable.
@@ -232,6 +234,7 @@ type EnvironmentProof struct {
 }
 
 type payload struct {
+	extra      map[string]json.RawMessage
 	ID         string          `json:"id"`
 	Source     json.RawMessage `json:"source_snapshot"`
 	Resource   json.RawMessage `json:"resource_config"`

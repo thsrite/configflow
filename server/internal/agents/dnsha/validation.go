@@ -52,7 +52,7 @@ func normalize(body json.RawMessage, a, b *agent, list []*agent) (normalized, er
 			return out, refuse(fmt.Sprintf(msgDisabled, name(m)))
 		}
 	}
-	if !equal(a.identity.ProfileID, b.identity.ProfileID) {
+	if !equal(parseObject(rawObject(a.identity))["profile_id"], parseObject(rawObject(b.identity))["profile_id"]) {
 		return out, refuse(msgProfile)
 	}
 	ha, ok := unicast(a.Host)

@@ -76,7 +76,7 @@ func (s *Service) member(ctx context.Context, a *agent, role *string, problem st
 	managed := o.obj("managed")
 	if o.truthy("error") {
 		v.Error = s.safe(ctx, o.text("error"))
-	} else if len(managed) == 0 {
+	} else if managedRaw, ok := o["managed"]; !ok || string(managedRaw) == "null" || len(managed) == 0 && string(managedRaw) != "{}" {
 		v.Error = msgNoManaged
 	} else if !managed.isTrue("active") || managed.isTrue("pending") {
 		v.Error = msgPendingManaged
@@ -90,7 +90,7 @@ func health(members []MemberView, state *model.HAState) string {
 		if m.Error != "" {
 			clean = false
 		}
-		if m.Runtime == nil {
+		if m.Runtime == nil || string(m.Runtime.raw) == "{}" {
 			continue
 		}
 		runtimes++
