@@ -65,8 +65,8 @@ POST	/api/agents/<agent_id>/push-config	routes.agents.push_config_to_agent	inter
 GET	/api/agents/<agent_id>/push-diff	routes.agents.agent_push_diff	api/agents	done
 GET	/api/agents/<agent_id>/push-diff/entries	routes.agents.agent_push_diff_entries	api/agents	done
 POST	/api/agents/<agent_id>/restart	routes.agents.restart_agent	api/agents	done
-GET	/api/agents/<agent_id>/rule-sync	routes.agents.agent_rule_sync	27	todo
-PUT	/api/agents/<agent_id>/rule-sync	routes.agents.agent_rule_sync	27	todo
+GET	/api/agents/<agent_id>/rule-sync	routes.agents.agent_rule_sync	internal/api/agents	ported
+PUT	/api/agents/<agent_id>/rule-sync	routes.agents.agent_rule_sync	internal/api/agents	ported
 GET	/api/agents/<agent_id>/status	routes.agents.get_agent_status	api/agents	done
 DELETE	/api/agents/<agent_id>/traffic-history	routes.agents.clear_agent_traffic_history	api/agents	done
 GET	/api/agents/<agent_id>/traffic-history	routes.agents.get_agent_traffic_history	api/agents	done

@@ -48,6 +48,7 @@ func Register(r *httpx.Router) {
 	r.Handle([]string{"GET", "PUT", "DELETE"}, "/api/agents/<agent_id>", "agents.handle_agent_item", auth.Require(handleAgentItem))
 	registerContentRoutes(r)
 	registerDeployRoutes(r)
+	registerRuleSync(r)
 	registerMetrics(r)
 	registerTraffic(r)
 	registerOxidns(r)

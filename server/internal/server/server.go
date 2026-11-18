@@ -20,6 +20,7 @@ import (
 	"configflow/internal/agents"
 	"configflow/internal/agents/metrics"
 	"configflow/internal/agents/monitor"
+	"configflow/internal/agents/rulesync"
 	"configflow/internal/agents/upgrades"
 	"configflow/internal/aggregations"
 	apiagents "configflow/internal/api/agents"
@@ -99,6 +100,7 @@ var lateRoutePackages = []func(*httpx.Router){
 var wirePackages = []func(){
 	deploy.Wire,
 	configexport.Wire,
+	rulesync.Wire,
 	apiagents.WireContentSync,
 	wireCore,
 	webdav.Wire,
