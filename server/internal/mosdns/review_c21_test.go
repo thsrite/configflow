@@ -12,12 +12,12 @@ import (
 	"configflow/internal/jsonx"
 	"configflow/internal/yamlbridge"
 	"configflow/internal/yamlx"
-	"configflow/internal/yamlx/yamlxtest"
 )
 
 // Old review values are compared structurally; unsafe graphs now use the
 // explicitly approved refusal path, including graphs in replaced sections.
 func TestReviewUnholdableYAMLOutsideTheOutputMatchesPython(t *testing.T) {
+	t.Parallel()
 	data, err := os.ReadFile("testdata/review_c21_ref.json")
 	if err != nil {
 		t.Fatal(err)
@@ -26,7 +26,7 @@ func TestReviewUnholdableYAMLOutsideTheOutputMatchesPython(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	oracle := yamlxtest.NewOracle(t, "server/internal/mosdns/testdata/n73_reference.py")
+	oracle := newGoldenOracle(t, "server/internal/mosdns/testdata/n73_reference.py")
 	for key, want := range value.(*jsonx.Object).All() {
 		kind, source, _ := strings.Cut(key, ":")
 		row := jsonx.Obj()

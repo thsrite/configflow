@@ -197,7 +197,7 @@ func callRow(fn string, args []any) (out any, err error, ok bool) {
 
 // compareRow returns "" when Go matches the row, else a description.
 // accepted reports an independently checked native schema or output comparison.
-func compareRow(t *testing.T, oracle *yamlxtest.Oracle, entry *jsonx.Object) (msg string, accepted, supported bool) {
+func compareRow(t *testing.T, oracle *goldenOracle, entry *jsonx.Object) (msg string, accepted, supported bool) {
 	fn := entry.GetString("fn")
 	args := entry.GetList("args")
 	out, err, ok := callRow(fn, args)
@@ -251,7 +251,8 @@ func compareRow(t *testing.T, oracle *yamlxtest.Oracle, entry *jsonx.Object) (ms
 }
 
 func TestCorpus(t *testing.T) {
-	oracle := yamlxtest.NewOracle(t, "server/internal/mosdns/testdata/n73_reference.py")
+	t.Parallel()
+	oracle := newGoldenOracle(t, "server/internal/mosdns/testdata/n73_reference.py")
 	rows := loadRows(t, "testdata/corpus.jsonl.gz")
 	failures, accepted, unsupported := 0, 0, 0
 	counts := map[string]int{}

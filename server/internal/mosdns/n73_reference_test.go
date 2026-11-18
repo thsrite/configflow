@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/testgolden"
 	"configflow/internal/yamlx"
 	"configflow/internal/yamlx/yamlxtest"
 
@@ -47,7 +48,7 @@ func sameMosDNSOutput(fn string, want, got any) bool {
 
 // nativeMosDNSOutcome permits only an independently classified input change;
 // all generated values are compared against the actual Python converter.
-func nativeMosDNSOutcome(t *testing.T, oracle *yamlxtest.Oracle, row *jsonx.Object, got any, actualErr error) bool {
+func nativeMosDNSOutcome(t *testing.T, oracle *goldenOracle, row *jsonx.Object, got any, actualErr error) bool {
 	t.Helper()
 	fn := row.GetString("fn")
 	args := row.GetList("args")
@@ -156,4 +157,26 @@ func nativeDNSContainer(node *yamlx.Node) bool {
 		}
 	}
 	return false
+}
+
+// goldenOracle retains the JSON-lines reference boundary without running Python
+// in ordinary tests. Live checks use the exact same script and request bytes.
+type goldenOracle struct{ lines *testgolden.Lines }
+
+func newGoldenOracle(t *testing.T, script string) *goldenOracle {
+	t.Helper()
+	return &goldenOracle{lines: testgolden.NewLines(t, script)}
+}
+func (o *goldenOracle) Call(t *testing.T, request any) *jsonx.Object {
+	t.Helper()
+	input, err := jsonx.Compact(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	output := o.lines.Call(t, input, nil)
+	value, err := jsonx.Parse(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return value.(*jsonx.Object)
 }

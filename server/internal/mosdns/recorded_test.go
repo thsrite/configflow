@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"strings"
 	"testing"
-
-	"configflow/internal/yamlx/yamlxtest"
 )
 
 // TestRecordedPythonTests replays every top-level call of the MosDNS
@@ -14,7 +12,8 @@ import (
 // Python test that made the call; Go must give the same bytes, values and
 // errors.
 func TestRecordedPythonTests(t *testing.T) {
-	oracle := yamlxtest.NewOracle(t, "server/internal/mosdns/testdata/n73_reference.py")
+	t.Parallel()
+	oracle := newGoldenOracle(t, "server/internal/mosdns/testdata/n73_reference.py")
 	rows := loadRows(t, "testdata/recorded.jsonl.gz")
 	failures, accepted, unsupported, notExpressible := 0, 0, 0, 0
 	counts := map[string]int{}

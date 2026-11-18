@@ -55,3 +55,26 @@ Additional shared audit controls (B-group review): package-level constructors,
 constructor function values and aliased imports cannot bypass registration.
 Dot imports of process packages are rejected. Literal exec.Cmd construction is
 also inventoried. A registered callback is still verified by runtime tracing.
+
+## mosdns — recorded pure references
+
+Converted the four policy-reference consumers to shared `testgolden.NewLines`;
+all old corpus rows, structural/native comparisons and assertions remain. The
+four input-local converter suites now run in parallel after sequential archive
+hook tests. No archive globals are parallelized. Generated transcript JSON is
+compressed (about 1.8 MiB total, rather than 13 MiB uncompressed).
+
+On .64, first recording passed (`40.430s`). A separate live read-only check then
+passed, **zero transcript/metadata diffs**: 2863 corpus inputs, 5 review inputs,
+1 upstream metadata input and an empty recorded-test fallback transcript (the
+original static recorded rows still all execute). Selected-package `41.333s` is
+live-reference validation, **not** the final race speed measurement.
+
+```
+PYREF_MODE=check go test -count=1 -timeout=30m -v ./internal/mosdns ./internal/oxidns ./internal/routersplit -run '^(TestRecordedPythonTests|TestCorpus|TestN73SharedUpstreamMetadataMatchesPython|TestReviewUnholdableYAMLOutsideTheOutputMatchesPython|TestC29ArchivePythonBoundary)$'
+PYREF equal: testdata/pyref/TestCorpus.json.gz (2863 exact inputs)
+ok configflow/internal/mosdns 41.333s
+```
+
+The public Flask differential stays live and unchanged. Final race timings and
+ordinary-path process tracing follow after shared N7-3 gate optimization lands.
