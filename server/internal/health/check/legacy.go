@@ -1,6 +1,7 @@
 package check
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -194,6 +195,11 @@ func Judge(direct, proxy any, options JudgeOptions) (*jsonx.Object, error) {
 // Save adapts legacy jsonx probe results to ProbeStore.SaveEntries.
 // Removed in N8-11 when discovery/bridge.go calls SaveEntries directly.
 func (s *ProbeStore) Save(agentID string, results *jsonx.Object, now time.Time) error {
+	return s.SaveContext(context.Background(), agentID, results, now)
+}
+
+// SaveContext adapts legacy probe entries while preserving the owner's lifetime.
+func (s *ProbeStore) SaveContext(ctx context.Context, agentID string, results *jsonx.Object, now time.Time) error {
 	if results == nil {
 		return valueError(msgInvalidProbeEntry)
 	}
@@ -201,7 +207,7 @@ func (s *ProbeStore) Save(agentID string, results *jsonx.Object, now time.Time) 
 	if err := decodeLegacy(results, &entries); err != nil {
 		return err
 	}
-	return s.SaveEntries(agentID, entries, now)
+	return s.SaveEntriesContext(ctx, agentID, entries, now)
 }
 
 // Load adapts ProbeStore.LoadEntries to a legacy *jsonx.Object.
@@ -332,7 +338,12 @@ func (s *RegionStore) Load(agentID string) *jsonx.Object {
 // Update adapts a legacy *jsonx.Object mutator to RegionStore.UpdateData.
 // Removed in N8-11 when discovery/bridge.go calls UpdateData directly.
 func (s *RegionStore) Update(agentID string, mutate func(*jsonx.Object) error, now time.Time) error {
-	return s.UpdateData(agentID, func(data *RegionData) error {
+	return s.UpdateContext(context.Background(), agentID, mutate, now)
+}
+
+// UpdateContext adapts a legacy region mutator while preserving the owner's lifetime.
+func (s *RegionStore) UpdateContext(ctx context.Context, agentID string, mutate func(*jsonx.Object) error, now time.Time) error {
+	return s.UpdateDataContext(ctx, agentID, func(data *RegionData) error {
 		obj, err := encodeLegacyObject(data)
 		if err != nil {
 			return err

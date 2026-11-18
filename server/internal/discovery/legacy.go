@@ -84,7 +84,7 @@ func legacySaveProbes(ctx context.Context, id string, ps map[string]Probe) error
 	if err != nil {
 		return err
 	}
-	return store.Save(id, v, now())
+	return store.SaveContext(ctx, id, v, now())
 }
 func legacyJudge(d, p *PathStats, failing, dh, ph bool) (Probe, error) {
 	dv, err := legacy(d)
@@ -121,7 +121,7 @@ func legacyEditRegion(ctx context.Context, id string, edit func(*regionRecord) e
 	if err != nil {
 		return err
 	}
-	return s.Update(id, func(o *jsonx.Object) error {
+	return s.UpdateContext(ctx, id, func(o *jsonx.Object) error {
 		var out regionRecord
 		if err := decode(o, &out); err != nil {
 			return err

@@ -49,6 +49,10 @@
 
 ## Medium 后续 F1：共享 jsonstore 的最终提交窗口及 discovery 接线（本次不改）
 
+后续处理：`go-fix-jsonstore-ctx` 已完成叶层 Context API、health/discovery 接线和真实 Runtime 回归，
+定向 race 通过；实现、失败回归及验证命令见 [jsonstore-ctx.md](progress/jsonstore-ctx.md)。
+以下保留原复核时的范围与规格。
+
 协调者明确裁定：本次只修 health 自己层的检查；共享叶层 Context API 和 discovery
 两处 adapter 在 batch-7 合入后另派，避免与 `go-n8-9-discovery` 冲突。
 这仍是实际待办，不能因本次范围通过就写成整个关机协议 verified。

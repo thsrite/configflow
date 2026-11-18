@@ -92,7 +92,8 @@ func TestCheckLegacyWrappersOnlyCallTypedEntries(t *testing.T) {
 		"ProviderHealthCheck":      "ResolveProviderHealth",
 		"ControlTargets":           "DefaultControlTargets",
 		"Judge":                    "JudgePath",
-		"Save":                     "SaveEntries",
+		"Save":                     "SaveContext",
+		"SaveContext":              "SaveEntriesContext",
 		"Load":                     "", // method name overloaded across ProbeStore and RegionStore
 		"LatestProbes":             "LatestProbeEntries",
 		"ExitRequest":              "DefaultExitRequest",
@@ -104,7 +105,8 @@ func TestCheckLegacyWrappersOnlyCallTypedEntries(t *testing.T) {
 		"EvaluateServices":         "EvaluateServiceList",
 		"ClassifyDomainResult":     "ClassifyDomain",
 		"SummarizeDomain":          "SummarizeTargets",
-		"Update":                   "UpdateData",
+		"Update":                   "UpdateContext",
+		"UpdateContext":            "UpdateDataContext",
 	}
 	for _, decl := range file.Decls {
 		fn, ok := decl.(*ast.FuncDecl)

@@ -1082,7 +1082,7 @@ func (s *RegionStore) UpdateDataContext(ctx context.Context, agentID string, mut
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	_, err = s.files.Write(agentID, &data, false)
+	_, err = s.files.WriteContext(ctx, agentID, &data, false)
 	return err
 }
 
@@ -1108,5 +1108,5 @@ func (s *RegionStore) DeleteContext(ctx context.Context, agentID string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	return s.files.Remove(agentID)
+	return s.files.RemoveContext(ctx, agentID)
 }

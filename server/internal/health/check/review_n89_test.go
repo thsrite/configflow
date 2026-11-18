@@ -175,3 +175,99 @@ func TestReviewN89RegionUpdateChecksLifetimeAfterMutator(t *testing.T) {
 		})
 	}
 }
+
+// reviewCommitContext simulates preemption after the health owner's final check
+// has captured nil, before it calls jsonstore. Only the leaf sees cancellation.
+type reviewCommitContext struct {
+	context.Context
+	checks int
+	at     int
+	pause  func()
+}
+
+func (c *reviewCommitContext) Err() error {
+	err := c.Context.Err()
+	c.checks++
+	if c.checks == c.at {
+		c.pause()
+	}
+	return err
+}
+
+func TestReviewN89LeafCommitLifetime(t *testing.T) {
+	for _, operation := range []string{"probe-save", "region-update", "probe-delete", "region-delete"} {
+		for _, shutdown := range []bool{true, false} {
+			name := "disconnect"
+			if shutdown {
+				name = "shutdown"
+			}
+			t.Run(operation+"/"+name, func(t *testing.T) {
+				r := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
+				r.Start(context.Background())
+				t.Cleanup(func() { r.Shutdown(context.Background()) })
+				request, disconnect := context.WithCancel(r.BindRequest(context.Background()))
+				t.Cleanup(disconnect)
+				probe, region := check.NewProbeStore(t.TempDir()), check.NewRegionStore(t.TempDir())
+				path := probe.Path("synthetic")
+				if operation == "region-update" || operation == "region-delete" {
+					path = region.Path("synthetic")
+				}
+				const before = `{"services":null,"hosts":{},"domains":{},"websites":{}}`
+				if err := os.WriteFile(path, []byte(before), 0600); err != nil {
+					t.Fatal(err)
+				}
+				at := 3
+				if operation == "probe-delete" || operation == "region-delete" {
+					at = 2
+				}
+				paused := false
+				ctx := &reviewCommitContext{Context: lifecycle.Detach(request), at: at, pause: func() {
+					paused = true
+					if shutdown {
+						r.Shutdown(context.Background())
+					} else {
+						disconnect()
+					}
+				}}
+				now := time.Date(2030, 1, 2, 0, 0, 0, 0, time.UTC)
+				var err error
+				switch operation {
+				case "probe-save":
+					var entries model.Map[check.TimedRecord]
+					entries.Set("example.com", check.TimedRecord{CheckedAt: "2030-01-02T00:00:00"})
+					err = probe.SaveEntriesContext(ctx, "synthetic", entries, now)
+				case "region-update":
+					err = region.UpdateDataContext(ctx, "synthetic", func(data *check.RegionData) error { data.Services = json.RawMessage(`{"new":true}`); return nil }, now)
+				case "probe-delete":
+					err = probe.DeleteContext(ctx, "synthetic")
+				case "region-delete":
+					err = region.DeleteContext(ctx, "synthetic")
+				}
+				if !paused {
+					t.Fatal("final health check was not reached")
+				}
+				if shutdown && !errors.Is(err, context.Canceled) {
+					t.Errorf("shutdown error: %v", err)
+				}
+				if !shutdown && err != nil {
+					t.Fatal(err)
+				}
+				raw, readErr := os.ReadFile(path)
+				if shutdown {
+					if readErr != nil || string(raw) != before {
+						t.Errorf("late publication: %s %v", raw, readErr)
+					}
+				} else if operation == "probe-delete" || operation == "region-delete" {
+					if !errors.Is(readErr, os.ErrNotExist) {
+						t.Errorf("disconnect prevented delete: %v", readErr)
+					}
+				} else if readErr != nil || string(raw) == before {
+					t.Errorf("disconnect prevented write: %s %v", raw, readErr)
+				}
+				if _, err := os.Stat(path + ".tmp"); !errors.Is(err, os.ErrNotExist) {
+					t.Errorf("temp remains: %v", err)
+				}
+			})
+		}
+	}
+}

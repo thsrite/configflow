@@ -528,7 +528,7 @@ func (s *ProbeStore) SaveEntriesContext(ctx context.Context, agentID string, res
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	_, err := s.files.Write(agentID, &file, false)
+	_, err := s.files.WriteContext(ctx, agentID, &file, false)
 	return err
 }
 
@@ -560,7 +560,7 @@ func (s *ProbeStore) DeleteContext(ctx context.Context, agentID string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	return s.files.Remove(agentID)
+	return s.files.RemoveContext(ctx, agentID)
 }
 
 // LatestProbeEntries returns the newest probe entry per host across agentIDs,

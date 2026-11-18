@@ -8,6 +8,7 @@ package jsonstore
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 
 	"errors"
@@ -29,6 +30,10 @@ type Store struct {
 	// afterReplace runs between the rename and the verification of a signed
 	// write; tests use it to play the part of an external writer.
 	afterReplace func(path string)
+
+	// Tests pause real I/O at publication boundaries without replacing it.
+	afterTempWrite func()
+	beforeCommit   func()
 }
 
 // New returns a store for dataDir (JsonFileStore.__init__).
@@ -86,6 +91,17 @@ func readErrorCategory(err error) string {
 // nil means "written, but no trustworthy signature". Without it the file is
 // closed before the rename and the result is always nil.
 func (s *Store) Write(id string, data any, verifySignature bool) (*Signature, error) {
+	return s.WriteContext(context.Background(), id, data, verifySignature)
+}
+
+// WriteContext writes atomically within ctx's lifetime. Cancellation before
+// publication leaves the existing file unchanged; verification after a successful
+// rename completes even if ctx is then cancelled. Callers supply an owner context
+// detached from request cancellation when the write must outlive a disconnect.
+func (s *Store) WriteContext(ctx context.Context, id string, data any, verifySignature bool) (*Signature, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if err := os.MkdirAll(s.DataDir, 0o777); err != nil {
 		return nil, err
 	}
@@ -103,17 +119,35 @@ func (s *Store) Write(id string, data any, verifySignature bool) (*Signature, er
 	if err != nil {
 		return nil, err
 	}
-	if _, err := handle.Write(encoded); err != nil {
+	committed := false
+	defer func() {
 		handle.Close()
+		if !committed {
+			_ = os.Remove(temp)
+		}
+	}()
+	if _, err := handle.Write(encoded); err != nil {
 		return nil, err
+	}
+	if s.afterTempWrite != nil {
+		s.afterTempWrite()
 	}
 	if !verifySignature {
 		if err := handle.Close(); err != nil {
 			return nil, err
 		}
-		return nil, os.Rename(temp, path)
+		if s.beforeCommit != nil {
+			s.beforeCommit()
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if err := os.Rename(temp, path); err != nil {
+			return nil, err
+		}
+		committed = true
+		return nil, nil
 	}
-	defer handle.Close()
 	before, err := signature(handle)
 	if err != nil {
 		return nil, err
@@ -127,9 +161,16 @@ func (s *Store) Write(id string, data any, verifySignature bool) (*Signature, er
 		return nil, err
 	}
 	stableBefore := before == again
+	if s.beforeCommit != nil {
+		s.beforeCommit()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if err := os.Rename(temp, path); err != nil {
 		return nil, err
 	}
+	committed = true
 	if s.afterReplace != nil {
 		s.afterReplace(path)
 	}
@@ -156,8 +197,23 @@ func (s *Store) Write(id string, data any, verifySignature bool) (*Signature, er
 // directory in its place fails with EISDIR, empty or not, where Go's
 // os.Remove would rmdir it); a missing file is fine.
 func (s *Store) Remove(id string) error {
+	return s.RemoveContext(context.Background(), id)
+}
+
+// RemoveContext unlinks id only while ctx is active. It preserves Remove's
+// missing-file and directory semantics and checks cancellation on each retry.
+func (s *Store) RemoveContext(ctx context.Context, id string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	path := s.Path(id)
 	for {
+		if s.beforeCommit != nil {
+			s.beforeCommit()
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		err := syscall.Unlink(path)
 		switch {
 		case err == nil:
