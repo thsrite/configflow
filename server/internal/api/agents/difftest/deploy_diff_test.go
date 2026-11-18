@@ -151,6 +151,15 @@ func TestPublishHTTPAgainstFlask(t *testing.T) {
 				values[i][did] = "@deployment"
 			}
 		}
+		if r.name == "stage" {
+			for _, value := range []any{av, bv} {
+				task, ok := value.(map[string]any)
+				if !ok || task["ipv6_verification_requested"] != true {
+					t.Fatal("A23 enrollment missing from staged publication")
+				}
+			}
+		}
+
 		normalizePublication(av, values[0])
 		normalizePublication(bv, values[1])
 		if !reflect.DeepEqual(av, bv) {

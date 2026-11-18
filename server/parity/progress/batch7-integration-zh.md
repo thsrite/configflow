@@ -288,3 +288,31 @@ SetExternalOwners(empty)验证503且DB/文件不变，恢复真实A22后再与Fl
 detached I/O贯穿drain、stopJobs后6.004s取消；取消下载无配置变更。1000请求/100断连后
 14→14 goroutines，所有SQLite/JSON/metrics已提交前缀可读且重启后可再次工作。
 未增加或跳过场景，报告保留在runner打印的私有cache路径中。
+
+### 最终 preflight
+
+最终基底 `go@55c9794a0`，验证树bb6cb1b00。严格按指定顺序：
+`RT_HOST="$BATCH_TEST_HOST" rt sync`
+然后在同一主测试服务器运行：
+`bash /tmp/preflight.sh program__configflow-go-batch-7 -p 6`
+
+退出0，最终输出：
+```
+== vet
+== full non-race tests (-p 6)
+PREFLIGHT PASS
+```
+两组tag的vet和全量非race通过；未执行完整core/race。现在仅执行完整`GATE_ONLY=compare`。
+
+### 最终 compare 首轮的测试接线收尾
+
+同一产品树首轮完整compare：proddiff `baseline: new=0 stale=0`、self_check PASS，
+Python/Go retries均0。23个difftest包中22个通过；agents/difftest的A14发布用例在stage及完整
+DB对照发现ipv6_verification_requested字段不一致，synthetic live尚未执行。
+根因是旧publish_app.py显式把Python A23 enrollment设为no-op（当时A23未移植），集成树
+的Go已经接入真实A23 hook。移除该临时禁用，使用完整真实Flask；另明确断言双方stage响应
+必须有true标记，原DB/文件和Agent请求对照保留，没有忽略该字段或禁用Go功能。
+
+修复只涉及测试/oracle，产品源码相对已通过预检、16场景、基准的bb6cb1b00未变。
+`CONFIGFLOW_DIFF=1 go test -race -count=1 -timeout=10m ./internal/api/agents/difftest -run "^TestPublishHTTPAgainstFlask$"`
+→ `ok configflow/internal/api/agents/difftest 8.634s`。现在重新执行完整compare全部阶段。

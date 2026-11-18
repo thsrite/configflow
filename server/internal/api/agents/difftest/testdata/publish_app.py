@@ -1,5 +1,4 @@
-"""A14 route oracle with the designed unregistered A23 hook (out of scope)."""
+"""A14/A23 publication oracle with real IPv6 enrollment and Flask routes."""
 import runpy
-from backend.agents import ipv6_verification
-ipv6_verification.enroll=lambda *args,**kwargs: None
-runpy.run_module('backend.app',run_name='__main__')
+
+runpy.run_module('backend.app', run_name='__main__')
