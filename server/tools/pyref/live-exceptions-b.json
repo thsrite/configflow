@@ -368,5 +368,65 @@
     "kind": "differential",
     "guard": "CONFIGFLOW_DIFF=1; cmd.Output waits and reaps the process",
     "reason": "Explicit A16 real Python snapshot boundary comparison, including generated structured documents/archive bytes and representative refusal classes; default tests skip the oracle."
+  },
+  {
+    "id": "B-BATCH7-A18",
+    "file": "server/internal/agents/dnsha/difftest/diff_test.go",
+    "function": "python",
+    "callee": "exec.Command",
+    "count": 1,
+    "guard": "CONFIGFLOW_DIFF=1 in TestHAHTTPAgainstFlask before python is called",
+    "kind": "differential",
+    "reason": "Retain A18 real Flask HTTP and storage comparison against separate loopback fake devices."
+  },
+  {
+    "id": "B-BATCH7-GROUP-NEGATIVE",
+    "file": "server/internal/routers/operation_group_test.go",
+    "function": "TestRouterOperationGroupNestingNegativeControl",
+    "callee": "exec.Command",
+    "count": 1,
+    "guard": "os.Args[0], fixed -test.run and CONFIGFLOW_GROUP_LOCK_NEGATIVE self-process flag",
+    "kind": "go-subprocess",
+    "reason": "Keep the deliberate equal-level lock violation isolated from publication tests that require a zero global violation count; no Python process."
+  },
+  {
+    "id": "B-BATCH7-A18-FORCED",
+    "file": "server/internal/agents/dnsha/forced_rules_test.go",
+    "function": "assertPythonForcedLibrary",
+    "callee": "exec.Command",
+    "count": 1,
+    "guard": "CONFIGFLOW_DIFF=1 at the owning test before constructing the Python command",
+    "kind": "differential",
+    "reason": "Keep the reviewed A18/A23 explicit live boundary reference. Ordinary tests retain their native assertions and do not start Python."
+  },
+  {
+    "id": "B-BATCH7-A18-VALIDATE",
+    "file": "server/internal/agents/dnsha/reference_test.go",
+    "function": "TestValidationAgainstPython",
+    "callee": "exec.Command",
+    "count": 1,
+    "guard": "CONFIGFLOW_DIFF=1 at the owning test before constructing the Python command",
+    "kind": "differential",
+    "reason": "Keep the reviewed A18/A23 explicit live boundary reference. Ordinary tests retain their native assertions and do not start Python."
+  },
+  {
+    "id": "B-BATCH7-A23-CONFIG",
+    "file": "server/internal/agents/ipv6/config_test.go",
+    "function": "TestConfigurationAndTargetsPython",
+    "callee": "exec.CommandContext",
+    "count": 1,
+    "guard": "CONFIGFLOW_DIFF=1 at the owning test before constructing the Python command",
+    "kind": "differential",
+    "reason": "Keep the reviewed A18/A23 explicit live boundary reference. Ordinary tests retain their native assertions and do not start Python."
+  },
+  {
+    "id": "B-BATCH7-A23-EVIDENCE",
+    "file": "server/internal/agents/ipv6/evidence_test.go",
+    "function": "comparePython",
+    "callee": "exec.CommandContext",
+    "count": 1,
+    "guard": "CONFIGFLOW_DIFF=1 at the owning test before constructing the Python command",
+    "kind": "differential",
+    "reason": "Keep the reviewed A18/A23 explicit live boundary reference. Ordinary tests retain their native assertions and do not start Python."
   }
 ]

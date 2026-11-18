@@ -16,14 +16,14 @@ import (
 // Each exemption is file:func (methods include their receiver). It applies only
 // to joined control/fan-out work, never work abandoned when the caller returns.
 var joinedGo = map[string]string{
-	"cmd/configflow/service.go:run":                    "Both HTTP Serve and shutdown workers are joined before run returns (force exit terminates the process).",
-	"cmd/configflow/service.go:acquireInstance":        "The signal watcher is joined via watched before returning, including signal races.",
-	"cmd/configflow/service.go:drainServers":           "Every Shutdown worker sends one result and all results are consumed before returning.",
-	"internal/aggregations/render.go:render":           "All bounded subscription workers join through workers.Wait before results are used.",
-	"internal/health/latency.go:runTests":              "All conversion workers join through wg.Wait before measurement or persistence.",
-	"internal/health/runner.go:ExecRunner.Run":         "cmd.Wait is consumed on success and after killing a timed-out process.",
-	"internal/refresh/scheduled.go:RunRound":           "All claimed workers join through wg.Wait, including the stopping branches.",
-	"internal/rulefetch/transport.go:timeoutBody.Read": "Each read joins done; timeout closes the body and still consumes done before returning.",
+	"internal/agents/ipv6/verification.go:Service.verificationSettings": "Every candidate capability worker waits through wg.Wait before returning; at most four capability RPCs run concurrently.",
+	"cmd/configflow/service.go:run":                                     "Both HTTP Serve and shutdown workers are joined before run returns (force exit terminates the process).",
+	"cmd/configflow/service.go:acquireInstance":                         "The signal watcher is joined via watched before returning, including signal races.",
+	"cmd/configflow/service.go:drainServers":                            "Every Shutdown worker sends one result and all results are consumed before returning.",
+	"internal/aggregations/render.go:render":                            "All bounded subscription workers join through workers.Wait before results are used.",
+	"internal/health/latency.go:runLatencyTestsLocked":                  "All conversion workers join through wg.Wait before measurement or persistence.",
+	"internal/refresh/scheduled.go:RunRound":                            "All claimed workers join through wg.Wait, including the stopping branches.",
+	"internal/rulefetch/transport.go:timeoutBody.Read":                  "Each read joins done; timeout closes the body and still consumes done before returning.",
 }
 
 // These are non-periodic I/O/clock primitives or deliberately wall-clock fault

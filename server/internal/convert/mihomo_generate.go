@@ -430,12 +430,22 @@ func groupEngineOptions(target *yamlx.Node, group model.ProxyGroup) error {
 	}
 	return nil
 }
-func groupDefaults(target *yamlx.Node, group model.ProxyGroup) {
+func groupDefaults(target *yamlx.Node, group model.ProxyGroup) error {
 	if stringValue(group.URL) != "" {
 		yamlx.Set(target, "url", yamlx.Str(*group.URL))
 	}
 	if group.Interval != nil && *group.Interval != 0 {
-		yamlx.Set(target, "interval", yamlx.Int(int64(*group.Interval)))
+		// A followed group may omit interval. In that case the local stored
+		// override survives with its YAML scalar type, including quoted text.
+		raw, err := model.Marshal(group)
+		if err != nil {
+			return err
+		}
+		source, err := yamlx.FromJSON(raw)
+		if err != nil {
+			return err
+		}
+		yamlx.Set(target, "interval", yamlx.Get(source, "interval"))
 	}
 	if group.Type == "url-test" {
 		yamlx.Set(target, "tolerance", yamlx.Int(100))
@@ -449,6 +459,7 @@ func groupDefaults(target *yamlx.Node, group model.ProxyGroup) {
 			yamlx.Set(target, "lazy", yamlx.Bool(*group.Lazy))
 		}
 	}
+	return nil
 }
 func mihomoGroups(config *model.Config, proxies *yamlx.Node, env MihomoEnvironment) (*yamlx.Node, error) {
 	result := yamlx.Seq()
@@ -481,9 +492,13 @@ func mihomoGroups(config *model.Config, proxies *yamlx.Node, env MihomoEnvironme
 			yamlx.Set(target, key, value)
 		}
 		if settings != &group {
-			groupDefaults(target, *settings)
+			if err := groupDefaults(target, *settings); err != nil {
+				return nil, err
+			}
 		}
-		groupDefaults(target, group)
+		if err := groupDefaults(target, group); err != nil {
+			return nil, err
+		}
 		if err := groupEngineOptions(target, *settings); err != nil {
 			return nil, err
 		}

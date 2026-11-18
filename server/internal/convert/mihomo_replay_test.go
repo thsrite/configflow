@@ -8,6 +8,7 @@ import (
 
 	"configflow/internal/jsonx"
 	"configflow/internal/model"
+	"configflow/internal/yamlx"
 )
 
 // MihomoReplayIssue only classifies the shapes owned by N8-8b. This is test-only:
@@ -43,8 +44,22 @@ func MihomoReplayIssue(profile *jsonx.Object) string {
 		}
 	}
 	if settings := profile.GetObject("mihomo"); settings != nil {
+		if _, ok := settings.Value("provider_update_interval").(string); ok {
+			return "R8 quoted provider interval"
+		}
+
 		if n, ok := settings.Value("provider_update_interval").(jsonx.Number); ok && !n.IsInt() {
 			return "R8 provider_update_interval integer"
+		}
+	}
+
+	for _, key := range []string{"subscriptions", "subscription_aggregations"} {
+		for _, item := range profile.GetList(key) {
+			if row, ok := item.(*jsonx.Object); ok {
+				if _, numeric := row.Value("health_check_url").(jsonx.Number); numeric {
+					return "shared numeric health URL text"
+				}
+			}
 		}
 	}
 	return ""
@@ -139,3 +154,63 @@ const NativeBaseControllerMessage = msgBaseController
 
 // NativeMihomoRulesMessage exposes the typed rule-list diagnostic for old client boundary tests.
 const NativeMihomoRulesMessage = msgMihomoRules
+
+func TestSharedScalarMihomoOutputBoundaries(t *testing.T) {
+	env := nativeGenerationEnv(t)
+	t.Cleanup(SetMihomoEnvironment(env))
+	config, err := configFromLegacy(mustJSON(t, `{"mihomo":{"provider_update_interval":"3600"},"proxy_groups":[{"id":"g","name":"G","type":"url-test","interval":"300","manual_nodes":["DIRECT"]}],"subscriptions":[{"id":"s","name":"S","health_check_url":5}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := MihomoEnv{ProviderInterval: func(settings *jsonx.Object) (int64, error) {
+		value, ok := settings.Value("provider_update_interval").(jsonx.Number)
+		if !ok || !value.IsInt() {
+			t.Fatalf("adapter did not lower shared integer: %T", settings.Value("provider_update_interval"))
+		}
+		n, _ := value.Int64()
+		return n, nil
+	}}
+	if value, err := MihomoEnvironmentFromLegacy(legacy).ProviderInterval(config.Profile.Mihomo); err != nil || value != 3600 {
+		t.Fatalf("quoted interval: %d %v", value, err)
+	}
+	doc, err := MihomoDocument(t.Context(), config, MihomoOptions{SkipProviderPreflight: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, group := range yamlx.Get(doc, "proxy-groups").Content {
+		if yamlx.Get(group, "name").Value == "G" {
+			interval := yamlx.Get(group, "interval")
+			found = interval != nil && interval.ShortTag() == "!!str" && interval.Value == "300"
+		}
+	}
+	if !found {
+		data, _ := yamlx.Marshal(doc)
+		t.Fatalf("quoted group interval lost its stored YAML override: %s", data)
+	}
+	address := config.Subscriptions[0].HealthCheckURL
+	health, err := providerHealthNode(nil, address, env)
+	if err != nil || yamlx.Get(health, "url").Value != "5" {
+		t.Fatalf("numeric URL text: %v", err)
+	}
+}
+
+func TestMihomoFollowKeepsLocalQuotedInterval(t *testing.T) {
+	t.Cleanup(SetMihomoEnvironment(nativeGenerationEnv(t)))
+	config, err := configFromLegacy(mustJSON(t, `{"proxy_groups":[{"id":"f","name":"Follower","type":"url-test","follow_group":"s","interval":"300"},{"id":"s","name":"Source","type":"url-test","manual_nodes":["DIRECT"]}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := MihomoDocument(t.Context(), config, MihomoOptions{SkipProviderPreflight: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	groups := yamlx.Get(doc, "proxy-groups")
+	if len(groups.Content) != 2 {
+		t.Fatalf("groups: %v", groups)
+	}
+	interval := yamlx.Get(groups.Content[0], "interval")
+	if interval == nil || interval.ShortTag() != "!!str" || interval.Value != "300" {
+		t.Fatalf("interval: %v", interval)
+	}
+}

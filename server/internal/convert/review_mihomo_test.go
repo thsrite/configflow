@@ -114,21 +114,17 @@ func TestMihomoReviewBoundaryReferences(t *testing.T) {
 				}
 				return
 			}
-			// R5: the archived string probe port is not a number. Keep its source
-			// bytes, explicitly expect the typed default at this one output path.
-			if entry.GetString("case") == "probe-18001" && entry.GetString("fn") == "generate" {
-				entry = entry.DeepCopy()
-				count := 0
-				for _, item := range entry.GetObject("document").GetList("listeners") {
-					listener := item.(*jsonx.Object)
-					if listener.GetString("name") == convert.RegionProbeListener {
-						listener.Set("port", jsonx.Int(convert.DefaultRegionProbePort))
-						count++
-					}
+			// The shared Int codec now accepts quoted provider intervals. Its
+			// typed output/bounds are checked separately; the old Python rejects strings.
+			profile := entry.GetObject("args").GetObject("profile")
+			if entry.GetString("fn") != "generate" {
+				if args := entry.GetList("args"); len(args) > 0 {
+					profile, _ = args[0].(*jsonx.Object)
 				}
-				if count != 1 {
-					t.Fatal("probe-port fixture path moved")
-				}
+			}
+			if convert.MihomoReplayIssue(profile) == "R8 quoted provider interval" {
+				t.Log("shared quoted provider interval: native boundary coverage")
+				return
 			}
 			if msg := runMihomoReviewBoundary(t, readers.row(t, "review_mihomo.jsonl.gz", index, rowOf(entry)), oracle); msg != "" {
 				t.Fatal(msg)

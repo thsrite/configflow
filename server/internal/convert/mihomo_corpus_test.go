@@ -472,10 +472,14 @@ func TestMihomoCorpus(t *testing.T) {
 			row.errClass = "BaseSettingsError"
 			row.errMsg = convert.NativeBaseControllerMessage
 			typedStorage["explicit Unicode controller ports"]++
-		case 7827, 7828, 7831:
+		case 7826, 7827, 7828, 7831:
 			clone := row.entry.DeepCopy()
 			clone.Delete("err")
-			clone.Set("out", jsonx.Obj("enable", true, "url", convert.DefaultHealthCheckURL, "interval", jsonx.Int(300), "lazy", true))
+			address := convert.DefaultHealthCheckURL
+			if n, ok := row.entry.GetList("args")[0].(*jsonx.Object).Value("health_check_url").(jsonx.Number); ok {
+				address = n.String()
+			}
+			clone.Set("out", jsonx.Obj("enable", true, "url", address, "interval", jsonx.Int(300), "lazy", true))
 			row.entry = clone
 			row.errClass = ""
 			row.errMsg = ""

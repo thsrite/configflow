@@ -111,3 +111,28 @@ production-isolation、SIGTERM/SIGKILL、锁等待、写故障和所有断连收
 元数据更新命令（主测试服务器）：
 `PYREF_MODE=record PYREF_ACCEPT=1 go test -count=1 -p 6 -timeout=20m ./internal/mosdns ./internal/routersplit -run "^(TestCorpus|TestRecordedPythonTests|TestReviewUnholdableYAMLOutsideTheOutputMatchesPython|TestN73SharedUpstreamMetadataMatchesPython|TestEdgeCorpus)$"`
 随后同参数 `PYREF_MODE=check`。源声明更新前后 product_symbols/imports/members 均未放宽。
+
+### 首次 preflight 集成缺陷与修复
+
+首次预检两组 vet 通过，完整非 race 暴露以下叠入问题，未进入 core/race：
+
+- N8-8b 的 standalone 客户端转换缺少默认解析回调，Snell JSON 导入失败；默认只注册既有
+  legacyClientCallbacks，其他必需回调继续由正式 Wire 安装，空环境仍按原测试拒绝。
+- batch-6 R5 的严格 rule identity 校验保留，并让带 ID 的错误沿用 N8-8b 可定位诊断。
+  数字 value 仍能无损读写，但生成时拒绝；没有回退成宽松 discriminator。
+- 共享 model.Int/String 已批准接受 quoted 整数、数字文本。旧参考中 provider interval、health URL
+  的这两类差异明确分类；新增 typed 边界证明 interval 的范围验证不变、health URL 输出文本。
+  probe-18001 删除旧测试补丁，恢复直接对比原 Python 18001 输出；无 reference blob 改写。
+- 实际生成发现 follow_group 缺少 interval 时，本组 quoted override 被转成数值。修复只保留
+  该组字段的存储标量类型；所有原始 corpus 组 interval 对照继续执行，没有加入跳过类。
+  YAML 失败诊断新增结构路径，避免首条文本引号差异掩盖真正字段类型问题。
+- yamlx 审计：客户端边界测试改用 yamlx.Parse/Decode；未增加 raw YAML parser 豁免。
+- 生命周期审计：按准确 file:function 更新 health joined worker 名称，增加 IPv6 最多四个
+  RPC 且 WaitGroup 收敛的精确说明，删去已同步执行命令的旧 Runner 豁免。
+- A23 故意制造 L2 违规的负向控制移入同测试二进制子进程，保留其检测能力，避免全局
+  Violations 计数污染 R12 的零违规断言；没有重置计数或放宽 R12。
+- pyref live audit 精确登记 A18/A23 已有 CONFIGFLOW_DIFF=1 保护的 Python 调用和上述
+  固定 self-process，未增加包级/通配豁免。
+
+首次定向修复回归：lifecycle 0.751s、yamlx 1.168s、clients 8.925s、routers 0.829s、
+importer 0.005s、convert 原 R5/身份校验相关 0.032s 均 ok。后续整树 preflight/compare 仍待完成。

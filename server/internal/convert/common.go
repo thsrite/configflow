@@ -2,6 +2,7 @@ package convert
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/netip"
 	"regexp"
 	"slices"
@@ -110,6 +111,9 @@ func validateRuleIdentities(rules []model.RuleConfig) error {
 		for _, field := range []struct{ key, label string }{{"rule_type", msgRuleTypeField}, {"value", msgRuleValueField}} {
 			if raw, present := fields[field.key]; present {
 				if err := identityString(raw, field.label); err != nil {
+					if rule.ID != "" {
+						return fmt.Errorf(msgMihomoStoredText, kindRule, rule.ID, field.key, raw)
+					}
 					return err
 				}
 			}

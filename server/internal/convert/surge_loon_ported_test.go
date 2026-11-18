@@ -554,7 +554,7 @@ func TestSurgeLoonFailClosedWithoutSubStore(t *testing.T) {
 func TestProxiesTextSkipsFailingNodes(t *testing.T) {
 	proxies := []any{
 		jsonx.Obj("name", "A", "type", "ss", "server", "a.test", "port", jsonx.Int(1), "cipher", "aes-128-gcm", "password", "p"),
-		jsonx.Obj("name", "B", "type", "ss", "server", jsonx.Int(5), "port", jsonx.Int(1)), // join of a non-str server fails
+		jsonx.Obj("name", "B", "type", "ss", "server", false, "port", jsonx.Int(1)), // incompatible stored server type is skipped; numeric text uses the shared codec
 		jsonx.Obj("name", "W", "type", "wireguard", "server", "w.test", "port", jsonx.Int(1)),
 	}
 	text, err := convert.ConvertProxiesToSurgeText(proxies, substore.ProxiesToNodes)

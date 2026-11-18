@@ -51,10 +51,10 @@ type MihomoEnvironment struct {
 	ValidateListeners     func(*yamlx.Node) error
 }
 
-var environmentState struct {
+var environmentState = struct {
 	sync.RWMutex
 	value MihomoEnvironment
-}
+}{value: MihomoEnvironment{Clients: legacyClientCallbacks()}}
 
 // SetMihomoEnvironment installs a typed environment and returns a restoration.
 func SetMihomoEnvironment(env MihomoEnvironment) func() {

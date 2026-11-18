@@ -21,7 +21,7 @@ import (
 	"configflow/internal/jsonx"
 	"configflow/internal/oxidns"
 	"configflow/internal/repo"
-	"gopkg.in/yaml.v3"
+	"configflow/internal/yamlx"
 )
 
 type boundaryRequest struct {
@@ -103,7 +103,7 @@ func normalizeJSON(v any) {
 			if k == "native_config" || k == "template_base_config" {
 				if text, ok := item.(string); ok && text != "" {
 					var doc any
-					if yaml.Unmarshal([]byte(text), &doc) == nil {
+					if node, err := yamlx.Parse([]byte(text)); err == nil && yamlx.Decode(node, &doc) == nil {
 						v[k] = doc
 					}
 				}

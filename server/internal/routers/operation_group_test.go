@@ -3,6 +3,8 @@ package routers
 import (
 	"context"
 	"errors"
+	"os"
+	"os/exec"
 	"reflect"
 	"sync"
 	"testing"
@@ -86,13 +88,26 @@ func TestRouterOperationGroupOppositeOrder(t *testing.T) {
 	if delta := lockx.Violations() - before; delta != 0 {
 		t.Fatalf("group violations=%d", delta)
 	}
-	// The internal group exception must not permit external equal-level nesting.
-	held, release, err := RouterOperationLocks(ctx, []*Router{a}, false)
+}
+
+func TestRouterOperationGroupNestingNegativeControl(t *testing.T) {
+	if os.Getenv("CONFIGFLOW_GROUP_LOCK_NEGATIVE") == "" {
+		cmd := exec.Command(os.Args[0], "-test.run=^TestRouterOperationGroupNestingNegativeControl$", "-test.count=1")
+		cmd.Env = append(os.Environ(), "CONFIGFLOW_GROUP_LOCK_NEGATIVE=1")
+		if output, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("negative control: %v %s", err, output)
+		}
+		return
+	}
+	// Isolate the deliberate violation so normal publication tests keep asserting zero.
+	a := &Router{RouterSettings: RouterSettings{Type: "routeros", Endpoint: "https://a.example"}}
+	b := &Router{RouterSettings: RouterSettings{Type: "routeros", Endpoint: "https://b.example"}}
+	held, release, err := RouterOperationLocks(t.Context(), []*Router{a}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer release()
-	before = lockx.Violations()
+	before := lockx.Violations()
 	_, unlock, err := RouterOperationLock(held, *b, false)
 	if err != nil {
 		t.Fatal(err)

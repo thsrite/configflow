@@ -78,9 +78,9 @@ func TestN88bReviewWrongTypedOutputIdentities(t *testing.T) {
 	}
 }
 
-// Numeric rule values are legitimate strings under the approved shared codec;
-// keep the F1 negative cases above on incompatible bool/container input instead.
-func TestN88bReviewNumericRuleValueUsesSharedCodec(t *testing.T) {
+// Shared scalar decoding preserves numeric text; batch-6 keeps rule identity
+// rejection at generation, while the stored source remains lossless.
+func TestN88bReviewNumericRuleValuePreservesDecodeButRejectsGeneration(t *testing.T) {
 	t.Cleanup(SetMihomoEnvironment(nativeGenerationEnv(t)))
 	var profile model.Profile
 	if err := json.Unmarshal([]byte(`{"rule_configs":[{"id":"port","itemType":"rule","rule_type":"DST-PORT","value":443,"policy":"DIRECT"}]}`), &profile); err != nil {
@@ -90,7 +90,7 @@ func TestN88bReviewNumericRuleValueUsesSharedCodec(t *testing.T) {
 		t.Fatal("shared scalar text not used")
 	}
 	output, err := MihomoConfig(context.Background(), &model.Config{Profile: &profile}, MihomoOptions{SkipProviderPreflight: true})
-	if err != nil || !strings.Contains(output, "DST-PORT,443,DIRECT") {
+	if err == nil || err.Error() != fmt.Sprintf(msgMihomoStoredText, kindRule, "port", "value", "443") || output != "" {
 		t.Fatalf("numeric rule value: %v %s", err, output)
 	}
 }

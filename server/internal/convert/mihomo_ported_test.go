@@ -2,6 +2,7 @@ package convert_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -9,6 +10,7 @@ import (
 	"configflow/internal/convert"
 	"configflow/internal/convert/mihomoenv"
 	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/refresh"
 	"configflow/internal/rules"
 )
@@ -313,5 +315,30 @@ func TestCandidateFilterPreservesRecordsOrderAndEmptyInclude(t *testing.T) {
 	var candidate *rules.CandidateValidationError
 	if _, err := rules.FilterCandidates(nodes, nil, "["); !errors.As(err, &candidate) {
 		t.Fatalf("invalid exclude: %v", err)
+	}
+}
+
+func TestTypedMihomoProviderInterval(t *testing.T) {
+	for _, tt := range []struct {
+		name, source string
+		want         int64
+		invalid      bool
+	}{
+		{"quoted", `{"provider_update_interval":"3600"}`, 3600, false},
+		{"zero", `{"provider_update_interval":0}`, 0, false},
+		{"below", `{"provider_update_interval":59}`, 0, true},
+		{"one", `{"provider_update_interval":1}`, 0, true},
+		{"above", `{"provider_update_interval":604801}`, 0, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var settings model.MihomoSettings
+			if err := json.Unmarshal([]byte(tt.source), &settings); err != nil {
+				t.Fatal(err)
+			}
+			got, err := convert.MihomoEnvironmentFromLegacy(mihomoenv.Env()).ProviderInterval(settings)
+			if (err != nil) != tt.invalid || (!tt.invalid && got != tt.want) {
+				t.Fatalf("got %d %v", got, err)
+			}
+		})
 	}
 }

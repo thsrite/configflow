@@ -69,9 +69,49 @@ func (oracle writerOracle) compare(want, got string) string {
 		return fmt.Sprintf("Go YAML cannot be parsed: %v", err)
 	}
 	if !yamlx.Equal(a, b) {
-		return "YAML semantics differ:\n" + firstDiff(want, got)
+		return "YAML semantics differ: " + writerDifference(a, b, "$", 0) + "\n" + firstDiff(want, got)
 	}
 	return ""
+}
+
+// writerDifference locates a structural mismatch; textual quoting differences can
+// precede the actual failure and are not useful diagnostics by themselves.
+func writerDifference(a, b *yamlx.Node, path string, depth int) string {
+	a, b = yamlx.Resolve(a), yamlx.Resolve(b)
+	if yamlx.Equal(a, b) {
+		return ""
+	}
+	if a == nil || b == nil {
+		return path + ": missing value"
+	}
+	if a.Kind != b.Kind || a.ShortTag() != b.ShortTag() {
+		return fmt.Sprintf("%s: %s %q vs %s %q", path, a.ShortTag(), a.Value, b.ShortTag(), b.Value)
+	}
+	if depth < 32 {
+		switch a.ShortTag() {
+		case "!!map":
+			for key, value := range yamlx.Pairs(a) {
+				if got := yamlx.Get(b, key); !yamlx.Equal(value, got) {
+					return writerDifference(value, got, path+"."+key, depth+1)
+				}
+			}
+			for key := range yamlx.Pairs(b) {
+				if yamlx.Get(a, key) == nil {
+					return path + "." + key + ": extra value"
+				}
+			}
+		case "!!seq":
+			if len(a.Content) != len(b.Content) {
+				return fmt.Sprintf("%s: length %d vs %d", path, len(a.Content), len(b.Content))
+			}
+			for i, value := range a.Content {
+				if !yamlx.Equal(value, b.Content[i]) {
+					return writerDifference(value, b.Content[i], fmt.Sprintf("%s[%d]", path, i), depth+1)
+				}
+			}
+		}
+	}
+	return fmt.Sprintf("%s: %s %q vs %s %q", path, a.ShortTag(), a.Value, b.ShortTag(), b.Value)
 }
 
 func TestGeneratedYAMLComparison(t *testing.T) {
