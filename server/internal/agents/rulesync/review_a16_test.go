@@ -1,13 +1,18 @@
 package rulesync
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"configflow/internal/agents"
 	"configflow/internal/deploy"
 	"configflow/internal/jsonx"
+	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 )
 
@@ -98,5 +103,100 @@ func TestFalsyEnabledRuleIsNotAnEffectiveChange(t *testing.T) {
 	kind, _, _, e := RuleChanges(source("old.example.com", true), source("new.example.com", true), "mihomo", Settings{Rules: true})
 	if e != nil || kind != Structure {
 		t.Fatalf("negative control: kind %s %v", kind, e)
+	}
+}
+
+type snapshotBlocker struct {
+	inner   agents.Client
+	block   atomic.Bool
+	entered chan struct{}
+}
+
+func (c *snapshotBlocker) Do(ctx context.Context, r agents.Request) (*agents.Response, error) {
+	if strings.HasSuffix(r.URL, "/api/rule-sync/snapshot") && c.block.Load() {
+		c.entered <- struct{}{}
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	return c.inner.Do(ctx, r)
+}
+
+// A shutdown while a structural publication reads the live snapshot lands no
+// write after it (no failure record, no state), and the next process converges
+// through A01's interrupted-preparation classification without a second upload.
+func TestShutdownDuringStructurePublicationConverges(t *testing.T) {
+	f := newWorkerFixture(t, "mihomo")
+	if _, e := f.s.Configure(f.ctx, "device", []byte(`{"library":false,"rules":true}`)); e != nil {
+		t.Fatal(e)
+	}
+	_, _, e := f.s.m.Repository().UpdateProfileTransaction(f.ctx, "default", func(_ context.Context, doc *jsonx.Object) (*jsonx.Object, error) {
+		for _, entry := range doc.GetList("rule_configs") {
+			if r := entry.(*jsonx.Object); r.GetString("id") == "single" {
+				r.Set("value", "new-inline.example.com")
+			}
+		}
+		return nil, nil
+	})
+	if e != nil {
+		t.Fatal(e)
+	}
+	if e = f.s.Run(f.ctx, "device"); e != nil {
+		t.Fatal(e)
+	}
+	f.now = f.now.Add(PollInterval)
+	blocker := &snapshotBlocker{inner: f.fake, entered: make(chan struct{}, 1)}
+	blocker.block.Store(true)
+	f.s.m.SetClient(blocker)
+	lifecycle.Stop(4 * time.Second)
+	if e = lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry()}); e != nil {
+		t.Fatal(e)
+	}
+	lifecycle.Start(f.ctx)
+	t.Cleanup(func() {
+		lifecycle.Stop(4 * time.Second)
+		_ = lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry()})
+	})
+	done := make(chan error, 1)
+	go func() { done <- f.s.Run(lifecycle.BindRequest(f.ctx), "device") }()
+	select {
+	case <-blocker.entered:
+	case <-time.After(30 * time.Second):
+		t.Fatalf("publication did not read the snapshot, state %+v", f.state(t))
+	}
+	before := systemBytes(t, f.s)
+	state := f.state(t)
+	if state.Status != "running" || value(state.DeploymentID) == "" {
+		t.Fatalf("running state %s %s", state.Status, state.Message)
+	}
+	id := value(state.DeploymentID)
+	lifecycle.Stop(4 * time.Second)
+	if e = <-done; e == nil {
+		t.Fatal("shutdown publication succeeded")
+	}
+	if !bytes.Equal(before, systemBytes(t, f.s)) {
+		t.Fatal("a write landed after shutdown")
+	}
+	// Next process: fresh Runtime and owner, the device answers again.
+	_ = lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry()})
+	lifecycle.Start(f.ctx)
+	blocker.block.Store(false)
+	resumed := New(f.s.m, nil, Options{Now: func() time.Time { return f.now }})
+	if e = resumed.Run(f.ctx, "device"); e != nil {
+		t.Fatal(e)
+	}
+	r, e := f.s.m.GetDeployment(f.ctx, "device", id)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if r.GetString("status") != "failed" {
+		t.Fatalf("interrupted preparation %s", r.GetString("status"))
+	}
+	if state = f.state(t); state.Status != "failed" || state.Message != msgReloadFailed || value(state.RetryAt) == 0 {
+		t.Fatalf("resumed state %s %s", state.Status, state.Message)
+	}
+	for _, call := range f.agent.Calls() {
+		if call.Manifest != nil && call.Manifest.DeploymentID == id {
+			t.Fatal("interrupted candidate was uploaded")
+		}
 	}
 }
