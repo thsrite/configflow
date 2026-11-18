@@ -126,3 +126,13 @@ R11 owner回报完整共享包race/Python/mutation已通过；此处仅登记其
 O3-6b仍等待R10和O3-6c正式合入通知；之后rebase go、应用28子例草稿，跑定向验证即交回，
 不运行gate.sh/proddiff/全仓race。当前尚无新fuzz目标，不为本步凭空增加解析器fuzz。
 以上覆盖本文前面旧的最终gate/15分钟排队计划；已完成的历史定向结果保留。
+
+### R12 开工接口确认
+
+R12 owner694df9d0从go-opus-review-r11建立go-port-r12；已再次确认RouterJobLock现签名稳定，
+不需要提前改基到未集成6b，也不复制公共文件或另new Keyed。其设计中的typed lock collaborator
+默认fail-closed过渡，6b正式合入后rebase直接接唯一公共入口，并移除临时默认stub。
+Publish先Detach/检查，读取快照选key但在404/参数错误返回前try L1（缺记录传nil fallback），
+再取L2并下传held ctx；driver/ReturnAgent/rollback不重入L1，SaveRouterPublication沿用caller-held约定。
+忙为KindConflict/messageEditBusy，Runtime取消保留原生ctx.Err，不能改成busy或继续补偿写。
+6c的合并复验旧preparation测试已在独立分支go-o3-6c@426f6edd0 test-only修正交回；不把它误当成正式go合入。
