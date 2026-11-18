@@ -648,3 +648,14 @@ A forged private operation is never submitted. Plain-mask controls are separatel
 named; the default realistic static-mask suffix and its known Python bug remain.
 These10 entries have39 actual synthetic HTTP observations in the focused .64 run;
 native routers registration remains absent, so they do not claim Go parity.
+
+DNS target/scope extension: H0140–H0146/H0150–H0153 require named actual public
+vectors, including valid boundary controls, gateway guard ordering, every shared
+matching error family, late cardinality/identity/network/blocker/DNS verification
+and full outer compensation. Five separate execution_claim=false producer proofs
+cover H0266/H0269–H0272; controls include real ordinary edits and verified outer
+undo, not forged operations. H0267 remains open because legacy stored Agent host
+values must not be assumed typed. Focused .64 evidence:354 requests/8 executed
+plus5 source proofs, then53 requests/13 executed (10 prior+3 new) plus1 proof.
+No new reference bug and still0/26 native domain routes. These focused reports
+are not a complete matrix composition or a Go parity claim.

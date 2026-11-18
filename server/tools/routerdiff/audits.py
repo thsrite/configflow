@@ -1238,6 +1238,72 @@ def declared():
             'and full DB/files/device snapshots remain asserted. These are protocol safety checks, not real firmware acceptance.',
             tuple(('dhcp-ikuai-write-' + label, 'R011/ikuai-dhcp-write-' + label, 502) for label in labels)
             + (('dhcp-ikuai-plain', 'R011/iKuai-dhcp-plain-mask', 200),))
+    target_kinds = ('null', 'false', 'true', 'integer', 'number', 'array', 'object')
+    target_bad = ('empty', 'text', 'ipv6', 'mapped', 'cidr', 'space', 'leading-zero', 'unspecified',
+                  'loopback-start', 'loopback-end', 'multicast-start', 'multicast-end', 'broadcast')
+    target_forbidden = ('unspecified', 'loopback-start', 'loopback-end', 'multicast-start', 'multicast-end', 'broadcast')
+    target_good = ('ordinary', 'documentation', 'below-loopback', 'above-loopback', 'below-multicast',
+                   'above-multicast', 'below-broadcast', 'above-unspecified')
+    target_specs = {
+        'H0140': (('single-',), target_kinds),
+        'H0141': (('single-',), target_forbidden),
+        'H0142': (('single-',), target_kinds + target_bad),
+        'H0143': (('ha-vip-', 'ha-primary-', 'ha-peer-'), target_kinds),
+        'H0144': (('ha-vip-', 'ha-primary-', 'ha-peer-'), target_kinds + target_bad),
+    }
+    for ident, (prefixes, invalid) in target_specs.items():
+        requirements = tuple(('dns-target-' + prefix + label, route + '/dns-target-' + prefix + label, status)
+            for prefix in prefixes for label in invalid
+            for route, status in (('R018', 200), ('R012', 200), ('R011', 409)))
+        requirements += tuple(('dns-target-' + prefix + label, route + '/dns-target-' + prefix + label, 200)
+            for prefix in prefixes for label in target_good for route in ('R018', 'R012'))
+        audits[ident] = Audit(('backend/routers/dhcp_dns.py:12', 'backend/routers/dhcp_dns.py:35',
+                              'backend/routers/dhcp_dns.py:49', 'backend/routes/routers.py:230'),
+            'Actual stored Agent host/VIP values reach real report, plan and rejected confirmation. '
+            'Every JSON type, malformed/IPv6/mapped/CIDR/whitespace/leading-zero form and all four '
+            'excluded IPv4 classes are explicit; boundary-adjacent accepted IPv4/documentation '
+            'controls remain pending without writes. HA VIP and each member host are independently '
+            'exercised with a complete reciprocal successfully-deployed pair. No private helper or '
+            'ipaddress exception is simulated. Report target/blocker and plan/refusal messages remain '
+            'strict; all rejected confirmations assert no add/edit/delete. This does not claim '
+            'the DNS Agent serves real DNS packets or the HA deployment itself works.', requirements)
+    bad_gateways = ('null', 'false', 'zero', 'empty', 'text', 'ipv6', 'mapped', 'cidr', 'space', 'array', 'object')
+    gateway_rows = tuple(('dns-gateway-' + label, route + '/dns-gateway-' + label, status)
+        for label in bad_gateways for route, status in (('R018', 200), ('R012', 200), ('R011', 409)))
+    healthy_match = (('dhcp-ikuai-plain', 'R018/iKuai-dhcp-plain-mask-synced', 200),)
+    for ident in ('H0145', 'H0146'):
+        audits[ident] = Audit(('backend/routers/dhcp_dns.py:80', 'backend/routes/routers.py:251',
+                              'backend/routers/plan.py:510'),
+            'Actual legacy stored gateway JSON types/falsy values and malformed IPv4 forms make '
+            'matching_networks fail in the report. Plan then separately blocks at its earlier '
+            'gateway guard (missing vs invalid messages); confirmation refuses without writes. '
+            'A valid scoped synced report is required as control. Real JSON values drive real '
+            'ipaddress parsing; no exception or private DhcpDnsState is manufactured.', gateway_rows + healthy_match)
+    audits['H0150'] = Audit(('backend/routers/dhcp_dns.py:80', 'backend/routers/dhcp_dns.py:119',
+                            'backend/routers/ikuai.py:381', 'backend/routes/routers.py:251'),
+        'All matching exception families survive the public report catch: invalid gateway, missing '
+        'and duplicate enabled IDs (including duplicate outside the chosen LAN), unknown subnet '
+        'with the original pool diagnostics. Each report/plan/refusal tuple and a valid synced '
+        'report are required. Zero/multiple matching networks are separate normal return paths, '
+        'not falsely claimed executions of this exception handler.', gateway_rows + healthy_match +
+        tuple(('dns-matching-failures', route + '/ikuai-dhcp-' + label, status)
+            for label in ('missing-id', 'server-id-duplicate', 'server-id-duplicate-outside', 'pool-empty')
+            for route, status in (('R018', 200), ('R012', 200), ('R011', 409))))
+    for ident, labels, rationale in (
+        ('H0151', ('late-verification-failure', 'late-scope-multiple', 'late-scope-id', 'late-scope-network', 'late-scope-outside'),
+         'After a completed verified DHCP edit, the final scope read independently loses the sole target, gains two matching subnets, changes its ID, changes its network with the gateway still inside, or moves outside the gateway. Each mismatch fails and performs verified outer undo.'),
+        ('H0152', ('late-blocker',),
+         'The final scope still uniquely matches ID/network, but fresh runtime status introduces a blocker. Exact prefixed diagnostic and successful complete outer undo are required.'),
+        ('H0153', ('late-dns-different', 'late-dns-inherited'),
+         'Independent OR operands: both explicit DNS slots point elsewhere, or the effective singleton target matches but one slot is empty/inherited. Both fail the final verification and restore the prior complete form.'),
+    ):
+        audits[ident] = Audit(('backend/routers/dhcp_dns.py:145', 'backend/routers/release.py:156',
+                              'backend/routers/release.py:395', 'backend/routers/ikuai.py:476'),
+            rationale + ' Public preview/confirmation only; read fault is armed after the actual '
+            'DHCP edit request reaches its peer gate. Full unrelated device state and DB/files remain '
+            'compared. Separate ordinary successful DHCP publication is mandatory.',
+            tuple(('dhcp-ikuai-write-' + label, 'R011/ikuai-dhcp-write-' + label, 502) for label in labels)
+            + (('dhcp-ikuai-plain', 'R011/iKuai-dhcp-plain-mask', 200),))
     return audits
 
 

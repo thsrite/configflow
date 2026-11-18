@@ -123,6 +123,51 @@ def declared():
             'inputs. Named real HTTP controls exercise the corresponding concrete operation on '
             'both vendors; they do not execute/tag this H branch. Future adapters require reproof.',
             base_controls[ident])
+    proofs['H0266'] = SourceProof(('backend/routers/ikuai.py:476', 'backend/routers/ikuai.py:507',
+        'backend/routers/ikuai.py:525', 'backend/routers/plan.py:589', 'backend/routers/release.py:222',
+        'backend/routers/release.py:389', 'backend/routers/rule_sync_write.py:47',
+        'backend/routes/routers.py:438'),
+        'No public request accepts DHCP operation/undo dictionaries. Confirmation rebuilds build_plan; '
+        'the only producer of dhcp_dns_restore is _dhcp_apply returning its actual entry.attributes '
+        'before-image. checked_dns_target rejects blockers before editing, so that before-image has '
+        'exactly all43 DHCP_FIELDS: missing/unknown members and wrong types were already blockers '
+        'in read_dhcp_dns. payload is a new dict and encode_value recursively constructs new values, '
+        'so submission cannot mutate that before-image. Undo is an in-memory done-list entry, not a '
+        'user-edited/persisted manifest. The outer rollback passes it directly back to the same driver. '
+        'Automatic rule sync rejects non-route stages with operations and cannot supply a forged DHCP '
+        'undo either. Thus malformed restore records are unreachable through current public inputs. '
+        'Controls require both successful full-form publication and a later verification failure after '
+        'a completed DHCP edit, whose actual outer undo restores the complete old server configuration.',
+        (('dhcp-ikuai-plain', 'R011/iKuai-dhcp-plain-mask', 200),
+         ('dhcp-ikuai-write-late-verification-failure', 'R011/ikuai-dhcp-write-late-verification-failure', 502)))
+    kinds = ('null', 'false', 'true', 'integer', 'number', 'array', 'object')
+    bad = ('empty', 'text', 'ipv6', 'mapped', 'cidr', 'space', 'leading-zero', 'unspecified',
+           'loopback-start', 'loopback-end', 'multicast-start', 'multicast-end', 'broadcast')
+    good = ('ordinary', 'documentation', 'below-loopback', 'above-loopback', 'below-multicast',
+            'above-multicast', 'below-broadcast', 'above-unspecified')
+    dns_controls = tuple(('dns-target-' + prefix + label, 'R018/dns-target-' + prefix + label, 200)
+        for prefix in ('single-', 'ha-vip-', 'ha-primary-', 'ha-peer-') for label in kinds + bad + good)
+    dns_controls += tuple(('dns-target-' + prefix + label, 'R011/dns-target-' + prefix + label, 409)
+        for prefix in ('single-', 'ha-vip-', 'ha-primary-', 'ha-peer-') for label in kinds + bad)
+    dns_controls += (('dhcp-ikuai-plain', 'R011/iKuai-dhcp-plain-mask', 200),)
+    for ident in ('H0269', 'H0270', 'H0271', 'H0272'):
+        proofs[ident] = SourceProof(('backend/routers/dhcp_dns.py:12', 'backend/routers/dhcp_dns.py:35',
+            'backend/routers/dhcp_dns.py:49', 'backend/routers/dhcp_dns.py:109', 'backend/routers/plan.py:574',
+            'backend/routers/ikuai.py:496', 'backend/routes/routers.py:230', 'backend/routes/routers.py:438',
+            'backend/routers/rule_sync_write.py:47'),
+            'The only dhcp_dns_update producer is build_plan, never a submitted operation. It adds an '
+            'operation only when build_dns_report is pending without errors. desired_dns is always a '
+            'new singleton list of target_dns. Single-Agent dns_agent_settings validates a built-in '
+            'string IPv4 and rejects unspecified/loopback/multicast/all-ones broadcast; HA settings '
+            'uses _client_ipv4 for VIP and both hosts with the same exclusions. Every caught invalid '
+            'address leaves dns_error, so report cannot be pending and no DHCP update is produced. '
+            'The target list/string therefore cannot be malformed or fail _dhcp_apply address checks; '
+            'neither a fake device reply nor later Agent edits mutate this already-built local list. '
+            'Automatic sync also refuses DHCP changes. Controls cover all JSON type kinds, parse '
+            'failures, each excluded class and both sides of its boundary in all four producer address '
+            'positions, with actual confirmation refusal for invalid targets and a real successful '
+            'full-form write. This is a producer proof, not execution of the defensive driver error.',
+            dns_controls)
     return proofs
 
 

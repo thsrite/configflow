@@ -14,6 +14,7 @@ import clients
 import sync
 import upstream
 import dns
+import dns_targets
 import dhcp_guards
 import ikuai_dhcp_guards
 import ikuai_dhcp_writes
@@ -42,10 +43,27 @@ from bugs import BUGS
 
 
 class RecipeTests(unittest.TestCase):
+    def test_dns_target_guards_separate_single_and_every_ha_address_position(self):
+        worlds = dns_targets.worlds()
+        self.assertEqual(len(worlds), 112)
+        _, entries = load()
+        for world, options, groups in worlds:
+            rows = [case for group in groups for case in group()]
+            self.assertEqual(len(rows), 2 if rows[0].checks['report/dhcp_dns/status'] == 'pending' else 3)
+            self.assertTrue(all(set(case.entries) <= entries.keys() for case in rows))
+            self.assertEqual(rows[0].prepare[0].get('presentation'), None)
+            self.assertTrue(all(case.effect == 'device-read' for case in rows))
+            self.assertEqual(options['alpha']['routers']['items'][1]['dns_agent_id'], 'dns')
+            if len(rows) == 3:
+                self.assertEqual(rows[-1].expected, 409)
+                self.assertEqual(rows[-1].expected_requests,
+                    tuple({'match': {'peer': 'ikuai', '/body/action': action}, 'count': 0}
+                          for action in ('add', 'edit', 'del')))
+
     def test_ikuai_dhcp_writes_use_actual_edit_gate_and_complete_before_image(self):
         _, entries = load()
         worlds = ikuai_dhcp_writes.worlds()
-        self.assertEqual(len(worlds), 18)
+        self.assertEqual(len(worlds), 25)
         for world, options, groups in worlds:
             rows = [case for group in groups for case in group()]
             self.assertEqual(len(rows), 2)

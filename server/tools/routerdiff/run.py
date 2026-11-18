@@ -23,6 +23,7 @@ import clients
 import sync
 import upstream
 import dns
+import dns_targets
 import dhcp_guards
 import ikuai_dhcp_guards
 import ikuai_dhcp_writes
@@ -926,6 +927,7 @@ def main():
               ('dhcp-evidence-guards', dns.options(), (dhcp_guards.cases,)),
               ('dhcp-ikuai-evidence', dns.ikuai_options(), (ikuai_dhcp_guards.cases,)),
               ('dhcp-ikuai-plain', dns.ikuai_options(), (dns.ikuai_dhcp,)),
+              ('dns-matching-failures', dns_targets.matching_options(), (dns_targets.matching_cases,)),
               ('dns-ha', dns.ha_options(), (dns.ha,)),
               ('disconnect-release', releases.options(), (disconnect.release,)),
               ('disconnect-fixed', clients.options(), (disconnect.fixed,)),
@@ -964,6 +966,8 @@ def main():
     worlds += device_policy.worlds()
     worlds += router_lifecycle.worlds()
     worlds += ikuai_dhcp_writes.worlds()
+    worlds += dns_targets.worlds()
+    worlds += dns_targets.gateway_worlds()
     worlds += fixed_setup.worlds()
     worlds += fixed_sources.router_worlds()
     worlds += fixed_sources.binding_worlds()

@@ -30,14 +30,47 @@ import dhcp_guards
 import ikuai_dhcp_guards
 import ikuai_dhcp_writes
 import dns
+import dns_targets
 
 
 class AuditTests(unittest.TestCase):
+    def test_dns_target_audits_need_every_json_kind_and_both_sides_of_address_boundaries(self):
+        actual = {(world, case.ident): case for world, _, groups in dns_targets.worlds()
+                  for group in groups for case in group()}
+        for ident, count in {'H0140': 37, 'H0141': 34, 'H0142': 76, 'H0143': 111, 'H0144': 228}.items():
+            required = declared()[ident].requirements
+            self.assertEqual(len(required), count, ident)
+            for world, name, status in required:
+                case = actual[world, name]
+                self.assertEqual(case.expected, status, (ident, name))
+                self.assertIn(ident, case.entries)
+            observations = [{'world': world, 'case': name, 'entries': [ident], 'python': {'status': status},
+                             'status': 'go-unimplemented'} for world, name, status in required]
+            self.assertEqual(evaluate(observations)[ident]['audit'], 'variants-audited')
+            self.assertEqual(evaluate(observations[:-1])[ident]['audit'], 'variants-pending')
+
+    def test_dhcp_matching_catch_audit_needs_all_reachable_error_families(self):
+        actual = {(world, case.ident): case for world, _, groups in dns_targets.gateway_worlds()
+                  for group in groups for case in group()}
+        actual.update({('dns-matching-failures', case.ident): case for case in dns_targets.matching_cases()})
+        actual.update({('dhcp-ikuai-plain', case.ident): case for case in dns.ikuai_dhcp()})
+        for ident, count in {'H0145': 34, 'H0146': 34, 'H0150': 46}.items():
+            required = declared()[ident].requirements
+            self.assertEqual(len(required), count, ident)
+            for world, name, status in required:
+                self.assertEqual(actual[world, name].expected, status)
+                self.assertIn(ident, actual[world, name].entries)
+            observations = [{'world': world, 'case': name, 'entries': [ident], 'python': {'status': status},
+                             'status': 'go-unimplemented'} for world, name, status in required]
+            self.assertEqual(evaluate(observations)[ident]['audit'], 'variants-audited')
+            self.assertEqual(evaluate(observations[:-1])[ident]['audit'], 'variants-pending')
+
     def test_ikuai_dhcp_write_audits_need_independent_readback_and_compensation_evidence(self):
         actual = {(world, case.ident): case for world, _, groups in ikuai_dhcp_writes.worlds()
                   for group in groups for case in group()}
         actual.update({('dhcp-ikuai-plain', case.ident): case for case in dns.ikuai_dhcp()})
-        counts = {'H0264': 3, 'H0265': 3, 'H0268': 2, 'H0273': 17, 'H0274': 2, 'H0275': 2,
+        counts = {'H0151': 6, 'H0152': 2, 'H0153': 3,
+                  'H0264': 3, 'H0265': 3, 'H0268': 2, 'H0273': 17, 'H0274': 2, 'H0275': 2,
                   'H0276': 2, 'H0277': 16, 'H0278': 5, 'H0279': 5}
         for ident, count in counts.items():
             required = declared()[ident].requirements
@@ -354,7 +387,7 @@ class AuditTests(unittest.TestCase):
 
     def test_auth_audits_require_every_explicit_real_reference_variant(self):
         audits = declared()
-        self.assertEqual(len(audits), 511)  # Named declarations; matrix parsing grants no coverage.
+        self.assertEqual(len(audits), 522)  # Named declarations; matrix parsing grants no coverage.
         self.assertFalse(set(audits) - set(load()[1]))
         self.assertEqual({value['audit'] for value in evaluate([]).values()},
                          {'variants-pending', 'source-proof-controls-pending', 'review-proof-controls-pending'})

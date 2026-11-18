@@ -110,13 +110,14 @@ def ikuai_dhcp():
                prepare=(seed, online()), unchanged=False, effect='device-read',
                checks={'plan/blockers': [], 'plan/checks/dhcp_dns/dns': ['10.44.0.53']})
     yield Case('R011/iKuai-dhcp-plain-mask', 'R011', 'POST', '/api/routers/r-ik/apply', 200,
-               ('R011-S06', 'G13', 'H0264', 'H0265', 'H0268', 'H0273', 'H0274', 'H0275', 'H0276', 'H0277', 'H0278', 'H0279'),
+               ('R011-S06', 'G13', 'H0151', 'H0152', 'H0153', 'H0264', 'H0265', 'H0268',
+                'H0273', 'H0274', 'H0275', 'H0276', 'H0277', 'H0278', 'H0279'),
                document={'fingerprint': Ref(preview, '/body/plan/fingerprint')}, requires=('R012',),
                unchanged=False, effect='profile-write-device', checks={'success': True},
                foreign=(('ikuai', 'dhcp_static', 'id', 70),),
                fake_checks={'ikuai/dhcp_server/0': {**ikuai_server(), 'dns1': '10.44.0.53', 'dns2': '10.44.0.53'}})
     yield Case('R018/iKuai-dhcp-plain-mask-synced', 'R018', 'GET', '/api/routers/r-ik/report', 200,
-               ('R018-S05',), unchanged=False, effect='device-read',
+               ('R018-S05', 'H0145', 'H0146', 'H0150'), unchanged=False, effect='device-read',
                checks={'report/dhcp_dns/status': 'synced', 'report/dhcp_dns/target_dns': '10.44.0.53'})
 
 

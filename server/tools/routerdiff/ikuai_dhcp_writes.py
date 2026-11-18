@@ -29,7 +29,20 @@ def variants():
     yield 'readback-unavailable', {'read_errors': 1}
     yield 'recovery-read-unavailable', {'read_errors': 2}
     yield 'rollback-refused', {'rows': [{**row, 'lease': 121}], 'rollback_refused': True}
-    yield 'late-verification-failure', {'rows': [], 'read_number': 2}
+    yield 'late-verification-failure', {'rows': [], 'read_number': 2, 'late': True, 'entry': 'H0151',
+        'message': '回读校验失败：DHCP DNS 的目标网段发生变化'}
+    for label, rows in (
+        ('multiple', [row, {**row, 'id': 2}]), ('id', [{**row, 'id': 2}]),
+        ('network', [{**row, 'addr_pool': '10.44.0.100-10.44.1.200', 'netmask': '255.255.254.0'}]),
+        ('outside', [{**row, 'addr_pool': '10.55.0.100-10.55.0.200', 'gateway': '10.55.0.1'}]),
+    ):
+        yield 'late-scope-' + label, {'rows': rows, 'read_number': 2, 'late': True, 'entry': 'H0151',
+            'message': '回读校验失败：DHCP DNS 的目标网段发生变化'}
+    yield 'late-blocker', {'rows': [{**row, 'status': 0}], 'read_number': 2, 'late': True, 'entry': 'H0152',
+        'message': '回读校验失败：iKuai DHCP 服务未生效或无法确认运行状态'}
+    for label, first, second in (('different', '10.44.0.54', '10.44.0.54'), ('inherited', '10.44.0.53', '')):
+        yield 'late-dns-' + label, {'rows': [{**row, 'dns1': first, 'dns2': second}],
+            'read_number': 2, 'late': True, 'entry': 'H0153', 'message': '回读校验失败：DHCP DNS 与所选服务器不一致'}
 
 
 def cases(label, spec):
@@ -77,7 +90,9 @@ def cases(label, spec):
         ]
         entries += ['H0264'] if label in ('missing-readback', 'duplicate-readback') else []
         entries += ['H0265'] if label in ('changed-readback', 'blocked-readback', 'rollback-refused') else []
-        if label != 'late-verification-failure':
+        if spec.get('late'):
+            entries += [spec['entry']]
+        else:
             entries += ['H0273', 'H0277'] if not spec.get('rollback_refused') else ['H0273', 'H0275', 'H0276']
         if spec.get('read_errors'):
             for _ in range(spec['read_errors']):
@@ -103,10 +118,10 @@ def cases(label, spec):
     if spec.get('rollback_refused'):
         checks['result/rollback/0/status'] = 'failed'
         checks['result/log/-1/summary'] = READBACK + '；DHCP DNS 局部撤销失败：iKuai dhcp_server edit 失败：synthetic DHCP rollback refused'
-    elif label == 'late-verification-failure':
+    elif spec.get('late'):
         checks['result/rollback/0/stage'] = 'dhcp_dns'
         checks['result/rollback/0/status'] = 'ok'
-        checks['result/log/-1/summary'] = '回读校验失败：DHCP DNS 的目标网段发生变化'
+        checks['result/log/-1/summary'] = spec['message']
     if 'write_code' in spec:
         summaries = {
             1001: 'iKuai 账号没有 dhcp_server 的访问权限（错误码 1001）。请在 iKuai 的用户组中授予读取权限，或改用管理员账号。',

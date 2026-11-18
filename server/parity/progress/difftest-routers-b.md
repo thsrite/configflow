@@ -2,8 +2,8 @@
 
 Status: in progress; NOT ready for acceptance hand-back. Branch go-difftest-routers-b.
 Latest clean integration rebase: goa9d6ce86c; normal public binary built from it.
-Current declarations:511 executed-variant audits plus9 explicit source-unreachable
-proofs plus2 O6 review-superseded entries;1779 remaining if all increments and
+Current declarations:522 executed-variant audits plus14 explicit source-unreachable
+proofs plus2 O6 review-superseded entries;1763 remaining if all increments and
 controls are composed. Last FULL composition still37937739:3054
 recipes/301 audits. Newer subsets do not replace that full evidence; latest
 large subset2470 recipes/327 audits. All observed26 domain routes remain absent
@@ -2190,3 +2190,59 @@ any Go module verified. Remaining corrupt-operation reachability proofs require
 complete producer analysis (do not assume legacy Agent host types are strings),
 then signatures/ownership/fingerprints/YAML/runtime clocks, other matrix and
 background/concurrency, full composition and final gate/rebase remain open.
+
+DNS target/scope follow-on (in progress, not committed/hand-back yet):
+- Initial112 single/HA address worlds completed304 real requests with no
+  fixture error or Python bug,allGo-unimplemented. Stored wrong JSON types,
+  malformed/IPv6/mapped addresses and exact IPv4 excluded classes are exercised
+  independently for single DNS host, HA VIP, primary host and peer host. Eight
+  boundary-adjacent valid controls per position remain pending without writes.
+- Eleven legacy gateway forms completed33 report/plan/refusal requests. The
+  report preserves the DHCP scope failure while plan/refusal independently use
+  the earlier missing/invalid gateway diagnostic. Public repository import,
+  ordinary server and real ipaddress are used; no helper or exception patch.
+- Added five producer source proofs: malformed DHCP restore before-image and
+  malformed/invalid update target cannot originate from current public plan/
+  in-memory undo producers. They require actual named positive/negative public
+  controls and remain separate execution_claim=false outcomes. H0267 is still
+  open: do not casually assume legacy stored Agent host values are strings.
+- Added later DHCP verification variants (scope cardinality/id/network,
+  blockers, different DNS vs inherited slot), to be verified next with their
+  complete outer compensation. No passing claim for these unrun additions yet.
+- Prior committed state passed full harness discovery146 tests61.194s/OK.
+  Target/proof integrity then passed52 tests23.074s/OK and its initial33 gateway
+  requests. Current foreground .64 chain passed full discovery149 tests50.333s
+  and is executing354 target/gateway/matching/positive/undo observations in one
+  report (dns-target-audits.json). Follow to completion; no background hand-back.
+- Latest local go now adds WORKFLOW Leaner verification: future Python cases
+  cover normal paths and distinct error classes without multiplying every shape
+  by every engine. Existing synthetic vectors remain valid; avoid duplicate full
+  re-verification of unchanged areas. Coordinator handles batch gates per newer
+  brief, while this task's explicit user final-gate instruction remains recorded.
+
+DNS target/scope follow-on completed as an increment (overall Step B still open):
+-354 actual observations completed: allGo-unimplemented,28 references,8 new
+  executed audits plus5 source-unreachable proofs,2288 pending in that subset,
+  no Python bugs/error. Exact .64 command:
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY="$HOME/.cache/routerdiff-build-302rx1dg-a9d6ce86c/configflow"; uptime; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python -m unittest discover -q; routerdiff_log="$HOME/.cache/routerdiff-reports/302rx1dg/dns-target-audits.log"; if ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world-prefix dns-target- --world-prefix dns-gateway- --world dns-matching-failures --world dhcp-ikuai-plain --world dhcp-ikuai-write-late-verification-failure --output "$HOME/.cache/routerdiff-reports/302rx1dg/dns-target-audits.json" > "$routerdiff_log" 2>&1; then tail -n 2 "$routerdiff_log"; else tail -n 12 "$routerdiff_log"; exit 1; fi'`
+=> load17.69/14.23/16.26;Ran149 tests50.333s/OK;354 cumulative recipes,
+implemented_routes=0,audited_entries=8,source_unreachable_entries=5,
+remaining_audits=2288,complete=false,python_bugs=[].
+- Seven later-scope verification variants then joined the existing DHCP write
+  family. All disjuncts of target cardinality/ID/network, a fresh blocker and both
+  wrong-DNS/inherited-slot cases performed a verified full outer restore.53
+  actual requests completed,13 execution audits (10 prior+3 new) plus1 source
+  proof,20 references,2287 pending in this subset,no bug/error.
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY="$HOME/.cache/routerdiff-build-302rx1dg-a9d6ce86c/configflow"; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python -m unittest -q test_recipes test_audits test_reachability; routerdiff_log="$HOME/.cache/routerdiff-reports/302rx1dg/dhcp-scope-audits.log"; if ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world-prefix dhcp-ikuai-write- --world dhcp-ikuai-plain --output "$HOME/.cache/routerdiff-reports/302rx1dg/dhcp-scope-audits.json" > "$routerdiff_log" 2>&1; then tail -n 2 "$routerdiff_log"; else tail -n 12 "$routerdiff_log"; exit 1; fi'`
+=> Ran53 tests17.614s/OK;53 cumulative recipes,implemented_routes=0,
+audited_entries=13,source_unreachable_entries=1,remaining_audits=2287,
+complete=false,python_bugs=[]. No active command, no implementation changes.
+-11 new execution declarations H0140–H0146/H0150–H0153,5 new source proofs
+  H0266/H0269–H0272. Current522+14+2/1763 pending if all increments compose.
+  These are independently executed focused reports; historical full composition
+  is unchanged. No native routers parity/ported-module verification is claimed.
+Next synchronize latest go and rebuild only the normal public observer binary;
+then remaining matrix, dynamic ownership/runtime/YAML comparisons and background/
+concurrency. Keep opaque signatures/fingerprints literal until their exact
+protocol/compatibility obligation is established; never blanket-mask them.
+Final composition, gate/rebase/clean hand-back remain pending.
