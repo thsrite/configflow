@@ -52,8 +52,7 @@ func TypedClassicalIPLines(ctx context.Context, rule model.RuleConfig, library [
 	if format == "mrs" {
 		return nil, nil
 	}
-	item, config := cacheMetadata(rule, library)
-	path, err := rulefetch.RuleCacheReadPath(ctx, item, config.GetList("rule_library"))
+	path, err := rulefetch.CacheReadPath(ctx, rule, library)
 	if err != nil {
 		var pathError *os.PathError
 		if errors.As(err, &pathError) || errors.Is(err, store.ErrStorage) {
