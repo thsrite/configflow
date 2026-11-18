@@ -668,6 +668,19 @@ Python接受。Go按本次安全修复要求统一拒绝这些歧义，保留Inv
 
 See PROGRESS-agents A20 for per-class checks, commands and the L4 boundary.
 
+## C26 — URI 协议名不再误报为插件引用（Python bug 修正）
+
+当主监听插件 tag 为 `udp` 时，Python 把独立旁路上游 `udp://…` 中的协议名当成插件引用，
+错误推导该旁路会调用 sequence_main，导致 ReadPolicies 不可编辑、ApplyPolicies 拒绝合法配置。
+Go 的共享引用扫描通过 `net/url` 识别紧接 `://` 的 scheme，只排除协议 token，继续扫描后面的
+真实引用。`$udp`、`jump udp`、URI 后的 `$udp` 和真实的主链依赖仍会阻止不安全的编辑；
+不是全局忽略名为 udp 的插件，也不改 YAML 内容。
+
+证据：`TestStepBC26ProtocolSchemeIsNotReference` 的协议/真实引用对照，及
+`TestStepBC26IndependentSidePolicyLifecycle` 的公开编辑边界全流程。主监听 tag=udp、独立旁路
+使用 udp 上游时，添加/修改/撤销设备策略均成功，保留 side_entries、旁路配置和注释。
+加入真实 `$udp` 引用的负控仍不允许编辑和保存。Python 源码和原比较规则不变。
+
 ## C07 — 状态列表就绪与只读 HEAD
 
 协调者批准：tasks 和 notifications 的四条入口立即注册。真实 task slot 尚未齐备时，

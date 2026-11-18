@@ -1,6 +1,7 @@
 package oxidns
 
 import (
+	"net/url"
 	"strings"
 	"unicode/utf8"
 )
@@ -27,7 +28,7 @@ type Reference struct {
 
 func isTagRune(r rune) bool { return isWordRune(r) || r == '.' || r == '-' }
 
-// mentions is (?<![\w.\-])\$?<tag>(?![\w.\-]) searched in s.
+// mentions finds bounded plugin names, excluding URI scheme tokens.
 func mentions(s, tag string) bool {
 	for from := 0; from <= len(s); {
 		i := strings.Index(s[from:], tag)
@@ -38,6 +39,15 @@ func mentions(s, tag string) bool {
 		before, _ := utf8.DecodeLastRuneInString(s[:i])
 		after, _ := utf8.DecodeRuneInString(s[i+len(tag):])
 		if (i == 0 || !isTagRune(before)) && (i+len(tag) == len(s) || !isTagRune(after)) {
+			// A URI scheme names a protocol, not a plugin. Keep explicit $tag
+			// references and continue scanning for real references after the URI.
+			if (i == 0 || before != '$') && strings.HasPrefix(s[i+len(tag):], "://") {
+				u, err := url.Parse(tag + "://")
+				if err == nil && u.Scheme != "" {
+					from = i + len(tag)
+					continue
+				}
+			}
 			return true
 		}
 		_, width := utf8.DecodeRuneInString(s[i:])
