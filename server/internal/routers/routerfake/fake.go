@@ -256,6 +256,17 @@ func writeFault(w http.ResponseWriter, fault Fault) {
 }
 
 func (f *Fake) serveLocked(method, path string, query url.Values, body any, fault *Fault) (int, any, bool) {
+	if method == http.MethodPost && path == "/ip/dhcp-server/lease/make-static" {
+		id := text(asRow(body)[".id"])
+		rows := f.tables["/ip/dhcp-server/lease"]
+		index := rowIndex(rows, id)
+		if index < 0 {
+			return http.StatusNotFound, Row{"message": "Not Found"}, false
+		}
+		rows[index]["dynamic"] = "false"
+		return http.StatusOK, []Row{}, false
+	}
+
 	if path == "/ip/dns" && method == http.MethodGet {
 		if rows, ok := f.tables[path]; ok && len(rows) == 1 {
 			return http.StatusOK, cloneRow(rows[0]), false
