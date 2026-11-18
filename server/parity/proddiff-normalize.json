@@ -148,24 +148,28 @@
     "route": "/api/agents/<agent_id>/ipv6-readiness",
     "path": "refresh_error.at",
     "tolerance": 120,
-    "reason": "A23 refresh failure records the current request time after a failed live retry; retained cached report data and error code/message remain compared."
+    "reason": "A23 refresh failure records the current request time after a failed live retry; retained cached report data and error code/message remain compared.",
+    "timestamp_format": "request-clock"
   },
   {
     "route": "/api/agents/<agent_id>/upstream-routers",
     "path": "checked_at",
     "tolerance": 120,
-    "reason": "R16 discovery stamps the start of each request using the local second-resolution clock; sources, device results and errors remain compared."
+    "reason": "R16 discovery stamps the start of each request using the local second-resolution clock; sources, device results and errors remain compared.",
+    "timestamp_format": "request-clock"
   },
   {
     "route": "/api/notifications",
     "path": "checked_at",
     "tolerance": 120,
-    "reason": "Notification list receipt stamps this request in UTC with microseconds; incident timestamps, versions and all items remain compared."
+    "reason": "Notification list receipt stamps this request in UTC with microseconds; incident timestamps, versions and all items remain compared.",
+    "timestamp_format": "request-clock"
   },
   {
     "route": "/api/routers/<router_id>/policy",
     "path": "generated_at",
     "tolerance": 120,
-    "reason": "R15 policy preview stamps each request with the local second-resolution clock; every generated policy object and source remains compared."
+    "reason": "R15 policy preview stamps each request with the local second-resolution clock; every generated policy object and source remains compared.",
+    "timestamp_format": "request-clock"
   }
 ]

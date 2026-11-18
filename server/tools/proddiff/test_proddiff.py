@@ -347,11 +347,17 @@ class ComparatorTests(unittest.TestCase):
                         node = node[part]
                     node[parts[-1]] = value
                     return result
-                first, second = '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:01+00:00'
+                self.assertEqual('request-clock', rule['timestamp_format'])
+                def stamp(seconds):
+                    suffix = ('+00:00' if rule['route'] != '/api/routers/<router_id>/policy' else '')
+                    micros = '.000000' if rule['route'] == '/api/notifications' else ''
+                    return '2026-01-01T00:' + seconds + micros + suffix
+                first, second = stamp('00:00'), stamp('00:01')
                 source, target = body(first), body(second)
                 self.assertEqual([], pd.response_diffs(reply(source), reply(target), rule['route'], [rule]))
-                for invalid in ['bad', 1, '2026-01-01T00:02:01+00:00']:
+                for invalid in ['bad', 1, '2026-01-01', '2026-01-01T00:00:00Z', stamp('02:01')]:
                     self.assertTrue(pd.response_diffs(reply(source), reply(body(invalid)), rule['route'], [rule]))
+                self.assertTrue(pd.response_diffs(reply(body(1)), reply(body(2)), rule['route'], [rule]))
                 missing = body(second)
                 node = missing
                 for part in parts[:-1]:
@@ -362,6 +368,11 @@ class ComparatorTests(unittest.TestCase):
                 changed['payload']['keep'] = 'changed'
                 self.assertTrue(pd.response_diffs(reply(source), reply(changed), rule['route'], [rule]))
                 self.assertTrue(pd.response_diffs(reply(source), reply(target), '/other', [rule]))
+                rows = [('GET', route, '') for route in {r['route'] for r in configured}]
+                for mutation in [dict(rule, route='/other'), dict(rule, path='other'), dict(rule, tolerance=121), dict(rule, timestamp_format='other')]:
+                    with mock.patch.object(pd.Path, 'read_text', return_value=json.dumps([mutation])):
+                        with self.assertRaises(RuntimeError):
+                            pd.load_rules(rows)
 
     def test_normalization_preserves_type_changes(self):
         rule = [{'route': '/synthetic', 'path': 'size', 'reason': 'test'}]

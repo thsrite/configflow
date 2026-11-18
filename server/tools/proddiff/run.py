@@ -228,6 +228,11 @@ def normalize_pair(rule, left, right):
         if a is None or b is None or abs(a - b) > rule['tolerance']:
             return None
         return '<runtime-http-date>', '<runtime-http-date>'
+    if rule.get('timestamp_format') == 'request-clock':
+        pattern = REQUEST_CLOCK_FORMATS.get((rule.get('route'), rule.get('path')))
+        if (pattern is None or not isinstance(left, str) or not isinstance(right, str)
+                or re.fullmatch(pattern, left) is None or re.fullmatch(pattern, right) is None):
+            return None
     if 'tolerance' in rule:
         shape = lambda value: re.sub(r'\d', '9', value) if isinstance(value, str) else type(value).__name__
         a, b = _timestamp(left), _timestamp(right)
@@ -680,6 +685,17 @@ PD1_GENERATED_ROUTES = {prefix + '/' + service
                         for service in ('mihomo', 'surge', 'loon')}
 
 
+# New read-only routes stamp only these request-owned fields. Keep their actual
+# wire formats strict: no numeric epochs, missing offsets or precision changes.
+_REQUEST_SECOND = r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}'
+REQUEST_CLOCK_FORMATS = {
+    ('/api/agents/<agent_id>/ipv6-readiness', 'refresh_error.at'): _REQUEST_SECOND + r'[+-]\d{2}:\d{2}',
+    ('/api/agents/<agent_id>/upstream-routers', 'checked_at'): _REQUEST_SECOND + r'[+-]\d{2}:\d{2}',
+    ('/api/notifications', 'checked_at'): _REQUEST_SECOND + r'\.\d{6}\+00:00',
+    ('/api/routers/<router_id>/policy', 'generated_at'): _REQUEST_SECOND,
+}
+
+
 def assert_no_egress():
     """Prove the namespace has no route out: interfaces, host IPC resolvers, DNS and TCP."""
     if [name for _, name in socket.if_nameindex()] != ['lo']:
@@ -731,10 +747,15 @@ def load_rules(rows):
                  and (('path' not in rule) if rule.get('bracket') else bool(rule.get('path')))
                  and sum(key in rule for key in ('pattern', 'tolerance', 'unordered')) <= 1)
         if 'timestamp_format' in rule:
-            valid = (valid and rule['timestamp_format'] == 'http-date'
-                     and rule.get('path') == 'header.last-modified'
-                     and rule.get('route') in PD1_GENERATED_ROUTES
-                     and type(rule.get('tolerance')) is int and rule['tolerance'] == 600)
+            if rule['timestamp_format'] == 'http-date':
+                valid = (valid and rule.get('path') == 'header.last-modified'
+                         and rule.get('route') in PD1_GENERATED_ROUTES
+                         and type(rule.get('tolerance')) is int and rule['tolerance'] == 600)
+            elif rule['timestamp_format'] == 'request-clock':
+                valid = (valid and (rule.get('route'), rule.get('path')) in REQUEST_CLOCK_FORMATS
+                         and type(rule.get('tolerance')) is int and rule['tolerance'] == 120)
+            else:
+                valid = False
         if not valid:
             raise RuntimeError('normalization requires an exact route/path and reason')
         if 'pattern' in rule:
