@@ -124,8 +124,6 @@ func TestShutdownRejectsEveryPublishCommit(t *testing.T) {
 }
 
 func TestShutdownAtSQLiteCommitKeepsWholeDocument(t *testing.T) {
-	// Coordinator-assigned shared fix: remove this skip when O3-6c lands.
-	t.Skip("等 O3-6c：共享 SQLite 最终提交窗口已知，修复合入后删除本 skip")
 	f := newPublish(t, agentfake.Options{}, nil)
 	startGlobalPublishRuntime(t, f.ctx)
 	ctx := lifecycle.BindRequest(f.ctx)

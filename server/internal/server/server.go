@@ -11,6 +11,7 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"os"
 	"strconv"
@@ -49,6 +50,7 @@ import (
 	"configflow/internal/deploy"
 	"configflow/internal/discovery"
 	"configflow/internal/gateway"
+	"configflow/internal/gateway/host"
 	"configflow/internal/health"
 	"configflow/internal/httpx"
 	"configflow/internal/ippresence"
@@ -115,10 +117,27 @@ var wirePackages = []func(){
 	ippresence.Wire, // routers R02: convert.MihomoHooks.IsFullTun, oxidns classical_ip_lines
 	routers.Wire,    // routers R01: repo.Hooks.RedactRouters
 	wireSetupContent,
-	apirules.Wire,  // config C32: shared source loader for gateway providers
-	gateway.Wire,   // agents A19: convert.MihomoHooks Linux gateway
-	setupflow.Wire, // agents A20 / config C36: routersplit setup-session reader
+	apirules.Wire,     // config C32: shared source loader for gateway providers
+	gateway.Wire,      // agents A19: convert.MihomoHooks Linux gateway
+	setupflow.Wire,    // agents A20 / config C36: routersplit setup-session reader
+	wireGatewayGuards, // agents A14 publication ← A20 live host guards
 }
+
+// gatewayGuards connects A14's publication guards to A20's live host checks.
+// host cannot import deploy, so the server owns this composition.
+func gatewayGuards() deploy.GatewayGuards {
+	bridge := func(m *agents.Manager) *host.Bridge { return &host.Bridge{Repository: m.Repository(), Manager: m} }
+	return deploy.GatewayGuards{
+		RequireForwardingKept: func(ctx context.Context, m *agents.Manager, t deploy.Target) error {
+			return bridge(m).RequireForwardingKept(ctx, t.ID, t.ProfileID)
+		},
+		RequireGatewayOffKept: func(ctx context.Context, m *agents.Manager, t deploy.Target) error {
+			return bridge(m).RequireGatewayOffKept(ctx, t.ID, t.ProfileID)
+		},
+	}
+}
+
+func wireGatewayGuards() { deploy.SetGatewayGuards(gatewayGuards()) }
 
 func wireCore() {
 	notifications.SetSources(notifications.Sources{ListTasks: tasks.AvailableTasks, MissingTasks: tasks.Missing})
