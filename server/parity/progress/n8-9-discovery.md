@@ -1,7 +1,7 @@
 # N8-9 discovery
 
 Base: batch-6 `8ec68fd4d`, rebased onto the approved shared-model/provider fix
-`0a0aa27f8`; branch `go-n8-9-discovery`.
+`9b72fc898` (includes `0a0aa27f8`); branch `go-n8-9-discovery`.
 Targeted verification only, fixed `RT_HOST=sunbroke@192.168.0.32`.
 
 ## Changes
@@ -129,3 +129,26 @@ not a claimed full api/agents race pass. The chained corpus/Flask stages did not
 run in that aborted command and were executed explicitly in the successful run.
 
 No full gate, production snapshot read, baseline change, push or sub-agent.
+
+### Final rebase check
+
+Rebased onto the coordinator's reviewed shared fix `9b72fc898` (includes
+`0a0aa27f8`). No pending shared-model skips remain in discovery.
+
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'set -e; cd server; test -z "$(gofmt -l internal/ tools/)"; go vet ./...; go test -race -count=1 ./internal/discovery ./internal/api/domaindiscovery; go test -count=1 -run "Corpus|Reference|Golden" ./internal/convert ./internal/discovery/... ./internal/api/domaindiscovery/...'
+```
+
+Exit 0; gofmt/vet silent. Discovery race 30.740s, HTTP race 15.012s;
+convert cross-package Corpus/Reference/Golden 150.031s. Discovery/HTTP packages
+have no tests matching that last name filter (their full race ran immediately
+before it). Rules/rulefetch/health corpus and enabled Flask comparisons are the
+successful separate runs above. No full gate rerun.
+
+Code commits after this rebase:
+`4c494cb82` typed repo/task/response boundary;
+`2819f2984` native binding and isolated collaborators;
+`76ac7de7c` shared scalar entry, live runtime overlay and strict root diagnostics.
+Documentation commits `f1d8c281d`, `92800668b`, plus this final report commit.
+Branch is ready for independent review on its explicitly stacked dependency;
+no push was made.
