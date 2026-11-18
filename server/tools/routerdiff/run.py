@@ -540,6 +540,8 @@ def execute(pair, case, available, routes):
                     raise RuntimeError(case.ident + ': expected retained device objects changed or disappeared')
             if getattr(pair, 'store_heads', None) is not None:
                 pair.store_heads.reference(before, after)
+            if getattr(pair, 'policy_revisions', None) is not None:
+                pair.policy_revisions.reference(case, observations[name], after)
             if case.unchanged:
                 changed = differences(before, after)
                 if changed:
@@ -581,8 +583,12 @@ def execute(pair, case, available, routes):
         found += pair.probe_clocks.record(case, resolved_requests, observations, snapshots, response_windows)
         projected = {side: pair.probe_clocks.response(side, case.profile, case.route, timed_observations[side])
                      for side in ('python', 'go')}
-        found += differences(pair.router_ids.response('python', case.profile, case.route, projected['python']),
-                             pair.router_ids.response('go', case.profile, case.route, projected['go']), '/http')
+        projected = {side: pair.router_ids.response(side, case.profile, case.route, projected[side])
+                     for side in ('python', 'go')}
+        if getattr(pair, 'policy_revisions', None) is not None:
+            projected, revision_differences = pair.policy_revisions.pair(case, observations, snapshots, projected)
+            found += revision_differences
+        found += differences(projected['python'], projected['go'], '/http')
         projected_states = {side: pair.router_ids.snapshot(side,
                             pair.probe_clocks.snapshot(side, snapshots[side]['after'])) for side in ('python', 'go')}
         if getattr(pair, 'store_heads', None) is not None:

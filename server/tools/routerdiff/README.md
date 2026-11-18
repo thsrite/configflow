@@ -68,3 +68,11 @@ no generic UUID replacement. Physical revisions, generations, stable metadata,
 config values and file contents stay strict. Metadata-only commits and literal
 legacy missing/null/empty IDs are handled separately. Real native write/read and
 owned-store corruption controls test this rule without entering routers counts.
+
+R002 GET/R003 PUT oxidns_revision is an approved Go-native canonical content
+hash. Its own stored-settings relation must be deterministic and collision-free
+across observations; only equal settings and equal other response members permit
+pairing the hash text. Names and counters are excluded dependencies. All real
+Pairs validate the reference even without Go, and raw own-side references stay
+untouched. HEAD/OPTIONS have no body token. Workspace hashes and signed previews
+are separate pending binding contracts.

@@ -2046,3 +2046,32 @@ unchanged; their broader O12 handling/classification remains pending.
 481 declarations+9 source proofs+2 O6 corrections/1809 pending if composed.
 Historical full3054/301 stays unchanged. No command pending. Continue remaining
 matrix/dynamic binding/background work before final composition/gate/rebase.
+
+Client-device deterministic OxiDNS revision binding:
+- Read common/client_devices.py, routes/client_devices.py, common/device_notes.py,
+  common/oxidns_device_policy revision/read/apply and full policy_workspace.py.
+  S-oxidns's approved native canonical hash must be treated as a content token.
+- New PolicyRevisions narrowly covers R002 GET/R003 PUT oxidns_revision. Validate
+  lowercase SHA256 shape and own stored oxidns dependency stability/collision
+  freedom; alias only when complete dependency and other response members match.
+  Never compute/emulate Python's or Go's returned hash. Raw observations/Refs,
+  all config fields, unknown settings and response values remain intact.
+- Names/bindings/router/probe/profile counters are excluded exactly as the source
+  contract. Actual effective response profile handles query-Agent pinning. Own
+  dependency keys preserve signed-zero/numeric distinctions. Purpose-broken
+  native token/constant/reuse/cross-scope/content/body controls fail; native
+  implementation-format differences alone pair. Bad Python contract aborts even
+  with absent Go. Initial source check wrongly included HEAD; fixed to only
+  GET/PUT because HEAD/OPTIONS contain no observable body token, with regression.
+
+.64 final command:
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY="$HOME/.cache/routerdiff-build-302rx1dg-a9d6ce86c/configflow"; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python -m unittest -v test_policy_revisions test_runner; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world client-drafts --world client-mode-notes --world client-canonical-names --world stored-policy-legacy --world agent-scope --world fixed-ip --world fixed-ip-normalization --output "$HOME/.cache/routerdiff-reports/302rx1dg/client-policy-revisions.json"'`
+=> Ran40 tests1.562s/OK;170 real recipes/allGo-unimplemented,63 references,
+14 existing audits,complete=false/no new bug. Native encoding negatives are
+oracle tests only; no native domain handler exists to claim product parity.
+Counts481 declarations+9 source proofs+2 O6 entries/1809 pending unchanged.
+No command pending. Next: extend content binding to all3 R014/R015 workspace
+hash paths together (router excluding last_probe plus full oxidns; names token
+from actual ordered public IP/name rows), then other dynamics/matrix/background.
+Current client-only binder does NOT claim to close those workspace hashes.
+Full composition, final gate/rebase and remaining matrix are still pending.

@@ -19,6 +19,7 @@ import jwt
 from inventory import ROOT
 from seed import ADMIN, PASSWORD, JWT_SECRET
 from store_heads import StoreHeads
+from policy_revisions import PolicyRevisions
 
 HERE = Path(__file__).resolve().parent
 
@@ -156,6 +157,7 @@ class Pair:
         self.sides = {}
         self.go_startup_failure = None
         self.store_heads = StoreHeads()
+        self.policy_revisions = PolicyRevisions()
         options = options or {}
         seed_dir = self.root / 'seed'
         option_path = self.root / 'options.json'

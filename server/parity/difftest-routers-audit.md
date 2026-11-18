@@ -568,3 +568,26 @@ Router draft lifecycle and protected-field route audits:
   No elapsed-sleep surrogate/private lock is used. Cross-profile shared endpoint
   is an extra R010 control, not proof of waiting-lock/repository races. R009 F12/
   F18/B04 and R010 F15/B06 remain open.
+
+Client-device OxiDNS revision comparison:
+- The maintainer-authorized S-oxidns change uses a Go-native canonical hash, so
+  R002 GET/R003 PUT hashes cannot be compared as literal Python encodings.
+  PolicyRevisions validates SHA256 text shape and the observed deterministic,
+  collision-free relation with the OWN effective profile's complete stored
+  oxidns settings. It never computes either returned hash or calls a helper.
+- Unchanged settings must retain a token; different observed settings cannot
+  reuse it. Names/bindings/router/probe/profile counters are not dependencies.
+  Own-input provenance preserves numeric representation distinctions, including
+  signed zero. Pinned Agent responses use their actual body profile, which can
+  differ from the selected request/header scope.
+- Pairing requires equal settings AND the entire response except that exact
+  oxidns_revision member, after independent clock/resource projections. Other
+  response/storage differences are retained. Raw responses/own Ref values never
+  change. Invalid/stale/reused native tokens are contract differences; bad
+  reference invariants stay fixture errors even when Go is absent.
+- HEAD/OPTIONS have no observable body revision and are not token-binding
+  events; their actual header/body/storage checks remain in the normal runner.
+  Initial HEAD fixture assumption was corrected, not added as a product finding.
+- Narrow scope: workspace revision/names_revision/oxidns_revision, plan
+  fingerprints and signed fixed-IP previews remain later work. This client
+  binding adds no matrix coverage or native domain parity claim by itself.
