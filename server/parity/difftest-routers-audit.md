@@ -591,3 +591,28 @@ Client-device OxiDNS revision comparison:
 - Narrow scope: workspace revision/names_revision/oxidns_revision, plan
   fingerprints and signed fixed-IP previews remain later work. This client
   binding adds no matrix coverage or native domain parity claim by itself.
+
+Workspace revision extension (R014 GET/R015 PUT):
+- Bind three explicit members together: workspace.oxidns_revision to full stored
+  settings (same token namespace as R002/R003), workspace.revision to full stored
+  router excluding ONLY last_probe plus those settings, workspace.names_revision
+  to actual ordered public policy IP/name rows. Do not mirror a hash algorithm.
+- Own raw dependency history remains separate from resource/clock comparison
+  copies. A generated router ID must first be established by RouterIDs in both
+  storage/public views; then workspace scope equality can use that alias. Probe
+  metadata is excluded by source, while every other private router member stays
+  a dependency. The independent probe-clock/storage contract remains enforced.
+- All sibling tokens must validate before aliasing; a different valid native
+  hash cannot block comparison of the other two, nor can one hash hide wrong
+  settings/router/names/profile/content. Reference checks stay enabled without
+  native handlers. Only body-bearing actual GET/PUT methods create bindings.
+- Integrated execute oracle writes both real own-side raw optimistic tokens
+  back to its same side; projection strings never reach a request. Deliberately
+  changed tokens on unchanged inputs, malformed/missing fields, wrong owner,
+  corrupted private setting and names fail. Actual reference probe/name/router
+  edit workflows validate intended invalidation relations.
+- These controlled workflows use settled storage for response provenance.
+  Deliberately overlapping config writers still need explicit response/storage
+  linearization evidence before T02/T08 can be closed; no universal concurrent
+  snapshot claim is made. Signed previews, plan fingerprints, YAML semantics,
+  runtime publication/receipt clocks and ownership nonces remain pending.

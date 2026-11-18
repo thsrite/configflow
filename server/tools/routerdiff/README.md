@@ -74,5 +74,5 @@ hash. Its own stored-settings relation must be deterministic and collision-free
 across observations; only equal settings and equal other response members permit
 pairing the hash text. Names and counters are excluded dependencies. All real
 Pairs validate the reference even without Go, and raw own-side references stay
-untouched. HEAD/OPTIONS have no body token. Workspace hashes and signed previews
-are separate pending binding contracts.
+untouched. HEAD/OPTIONS have no body token. R014/R015 workspace hashes have their own router/settings/names scopes and
+are paired together; signed previews remain a separate pending binding contract.

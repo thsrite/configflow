@@ -585,12 +585,12 @@ def execute(pair, case, available, routes):
                      for side in ('python', 'go')}
         projected = {side: pair.router_ids.response(side, case.profile, case.route, projected[side])
                      for side in ('python', 'go')}
-        if getattr(pair, 'policy_revisions', None) is not None:
-            projected, revision_differences = pair.policy_revisions.pair(case, observations, snapshots, projected)
-            found += revision_differences
-        found += differences(projected['python'], projected['go'], '/http')
         projected_states = {side: pair.router_ids.snapshot(side,
                             pair.probe_clocks.snapshot(side, snapshots[side]['after'])) for side in ('python', 'go')}
+        if getattr(pair, 'policy_revisions', None) is not None:
+            projected, revision_differences = pair.policy_revisions.pair(case, observations, snapshots, projected, projected_states)
+            found += revision_differences
+        found += differences(projected['python'], projected['go'], '/http')
         if getattr(pair, 'store_heads', None) is not None:
             projected_states, head_differences = pair.store_heads.pair(snapshots, projected_states)
             found += head_differences

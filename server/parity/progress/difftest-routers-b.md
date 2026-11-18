@@ -2075,3 +2075,29 @@ hash paths together (router excluding last_probe plus full oxidns; names token
 from actual ordered public IP/name rows), then other dynamics/matrix/background.
 Current client-only binder does NOT claim to close those workspace hashes.
 Full composition, final gate/rebase and remaining matrix are still pending.
+
+Workspace hashes joined to content-bound revision comparator:
+- Extended PolicyRevisions to R014 GET/R015 PUT's3 explicit paths, validated and
+  projected together. OxiDNS dependency/token is shared with client API; workspace
+  depends on the entire own stored router except last_probe and full settings;
+  names depends on actual ordered public policy IP/name rows. Never recompute
+  either algorithm or replace arbitrary SHA-looking strings.
+- Raw own dependency history is distinct from independently projected router/
+  probe copies. Wrong owner/duplicate target/missing or malformed token/private
+  setting mismatch cannot establish pairing. Probe changes leave workspace hash
+  stable; note-only changes update names hash; router edits update workspace hash.
+- New integrated execute oracle confirms optimistic PUT receives each side's own
+  raw revision/names token, not the projection. An over-eager native new token
+  for unchanged input is a difference. No native handler/product pass inferred.
+- Overlapping writer linearization/storage provenance remains a separate open
+  concern for future T02/T08. Current controlled workflows settle their writes;
+  this does not assert every post-response snapshot is its request's exact state.
+
+.64 actual reference command:
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY="$HOME/.cache/routerdiff-build-302rx1dg-a9d6ce86c/configflow"; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python -m unittest -v test_policy_revisions test_runner test_probe_clocks; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world workspace-drafts --world client-mode-notes --world probe-clock-roundtrip --world native-policy-valid --world native-owned-valid --world-prefix probe-edit- --output "$HOME/.cache/routerdiff-reports/302rx1dg/workspace-policy-revisions.json"'`
+=> Ran46 tests2.189s/OK;69 actual recipes/allGo-unimplemented,34 references,
+1 existing audit,complete=false/no bug. After adding integrated own-token PUT
+oracle, same rt command with only unittest portion=>Ran47 tests3.041s/OK.
+No active command.481 declarations+9 source proofs+2 O6 corrections/1809 pending
+unchanged. Remaining signatures/fingerprints/YAML/ownership/runtime clocks and
+matrix/background/concurrency, full composition and final gate/rebase still open.

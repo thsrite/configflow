@@ -28,6 +28,22 @@ def inputs(left=None, right=None):
     return observations, snapshots
 
 
+def workspace_state(router_id='r-ros'):
+    policy = {'ip': '10.44.0.21', 'name': '现存备注🧪', 'mode': 'direct'}
+    value = state({'device_policies': [policy]})
+    value['database']['fields']['rows'].append(['profile', 'alpha', 'routers', 2,
+        {'items': [{'id': router_id, 'name': '合成路由器🧪', 'password': 'synthetic-private-password'}]}, 1])
+    return value
+
+
+def workspace_view(native=False, router_id='r-ros'):
+    tokens = ('d', 'e', 'f') if native else ('a', 'b', 'c')
+    return {'status': 200, 'kind': 'json', 'headers': {}, 'body': {'success': True, 'workspace': {
+        'profile_id': 'alpha', 'router': {'id': router_id, 'name': '合成路由器🧪'},
+        'sources': {'policies': [{'ip': '10.44.0.21', 'name': '现存备注🧪', 'mode': 'direct'}]},
+        'oxidns_revision': tokens[0] * 64, 'revision': tokens[1] * 64, 'names_revision': tokens[2] * 64}}}
+
+
 class RevisionTests(unittest.TestCase):
     def setUp(self):
         self.case = Case('revision-control', 'R002', 'GET', '/api/client-devices', 200)
@@ -119,6 +135,137 @@ class RevisionTests(unittest.TestCase):
             observations[side]['body']['oxidns_revision'] = token * 64
         self.assertEqual(model.pair(self.case, observations, snapshots, observations)[1], [])
         self.assertEqual(len(model.records['python']), 2)
+
+    def test_workspace_hashes_pair_together_with_distinct_source_dependencies(self):
+        case = Case('workspace', 'R014', 'GET', '/api/routers/r-ros/policy-settings', 200)
+        model = PolicyRevisions()
+        observations = {side: workspace_view(side == 'go') for side in ('python', 'go')}
+        snapshots = {side: {'after': workspace_state()} for side in ('python', 'go')}
+        raw = copy.deepcopy(observations)
+        paired, found = model.pair(case, observations, snapshots, observations)
+        self.assertEqual(found, [])
+        self.assertEqual(differences(paired['python'], paired['go']), [])
+        self.assertEqual(len(model.aliases), 3)
+        self.assertEqual(observations, raw)
+        # A shared client read must expose the SAME own settings token as the
+        # workspace; the API path is not a different hash namespace.
+        clients = {side: view(('d' if side == 'go' else 'a') * 64) for side in ('python', 'go')}
+        self.assertEqual(model.pair(self.case, clients, snapshots, clients)[1], [])
+        self.assertEqual(len(model.records['python']), 3)
+        # Name-only edits change only the names dependency. Profile counters,
+        # legacy names saved inside OxiDNS and router config stay untouched.
+        for side, letter in (('python', '0'), ('go', '1')):
+            observations[side]['body']['workspace']['sources']['policies'][0]['name'] = '新备注🧪'
+            observations[side]['body']['workspace']['names_revision'] = letter * 64
+            snapshots[side]['after']['database']['fields']['rows'].append(
+                ['profile', 'alpha', 'device_notes', 3, {'10.44.0.21': '新备注🧪'}, 2])
+        paired, found = model.pair(case, observations, snapshots, observations)
+        self.assertEqual(found, [])
+        self.assertEqual(differences(paired['python'], paired['go']), [])
+        self.assertEqual(len(model.records['python']), 4)
+        # Changing only the selected router invalidates workspace revision,
+        # with independent OxiDNS/names tokens retained.
+        for side, letter in (('python', '2'), ('go', '3')):
+            snapshots[side]['after']['database']['fields']['rows'][2][4]['items'][0]['name'] = '改路由器名字🧪'
+            observations[side]['body']['workspace']['router']['name'] = '改路由器名字🧪'
+            observations[side]['body']['workspace']['revision'] = letter * 64
+        self.assertEqual(model.pair(case, observations, snapshots, observations)[1], [])
+        self.assertEqual(len(model.records['python']), 5)
+
+    def test_workspace_revision_excludes_probe_and_uses_independently_projected_ids(self):
+        case = Case('workspace', 'R014', 'GET', '/api/routers/r-ros/policy-settings', 200)
+        model = PolicyRevisions()
+        observations = {side: workspace_view(side == 'go', side + '-router') for side in ('python', 'go')}
+        snapshots = {side: {'after': workspace_state(side + '-router')} for side in ('python', 'go')}
+        copies = copy.deepcopy(observations)
+        states = {side: copy.deepcopy(value['after']) for side, value in snapshots.items()}
+        for side in states:
+            copies[side]['body']['workspace']['router']['id'] = '<independently proven resource identity>'
+            states[side]['database']['fields']['rows'][2][4]['items'][0]['id'] = '<independently proven resource identity>'
+        paired, found = model.pair(case, observations, snapshots, copies, states)
+        self.assertEqual(found, [])
+        self.assertEqual(differences(paired['python'], paired['go']), [])
+        for side in snapshots:
+            snapshots[side]['after']['database']['fields']['rows'][2][4]['items'][0]['last_probe'] = {
+                'ok': True, 'at': side + '-real-request-clock'}
+        # Probe is excluded from this token's dependency. It still has its own
+        # raw storage/public clock contract in ProbeClocks, never masked here.
+        self.assertEqual(model.pair(case, observations, snapshots, copies, states)[1], [])
+        self.assertEqual(len(model.records['python']), 3)
+        self.assertNotEqual(observations['python']['body']['workspace']['router']['id'],
+                            observations['go']['body']['workspace']['router']['id'])
+
+    def test_workspace_wrong_hash_owner_names_or_stale_token_never_get_paired(self):
+        case = Case('workspace', 'R014', 'GET', '/api/routers/r-ros/policy-settings', 200)
+        for wrong in ('name-token', 'missing-token', 'profile', 'router', 'policy-row', 'private-setting'):
+            observations = {side: workspace_view(side == 'go') for side in ('python', 'go')}
+            snapshots = {side: {'after': workspace_state()} for side in ('python', 'go')}
+            native = observations['go']['body']['workspace']
+            if wrong == 'name-token':
+                native['names_revision'] = False
+            elif wrong == 'missing-token':
+                del native['revision']
+            elif wrong == 'profile':
+                native['profile_id'] = 'missing-profile'
+            elif wrong == 'router':
+                native['router']['id'] = 'missing-router'
+            elif wrong == 'policy-row':
+                native['sources']['policies'][0]['name'] = 1
+            else:
+                snapshots['go']['after']['database']['fields']['rows'][2][4]['items'][0]['password'] = 'corrupted'
+            paired, found = PolicyRevisions().pair(case, observations, snapshots, observations)
+            self.assertTrue(found or differences(paired['python'], paired['go']), wrong)
+        for changed in ('names', 'workspace', 'oxidns'):
+            model = PolicyRevisions()
+            observations = {side: workspace_view(side == 'go') for side in ('python', 'go')}
+            snapshots = {side: {'after': workspace_state()} for side in ('python', 'go')}
+            model.pair(case, observations, snapshots, observations)
+            path = {'names': 'names_revision', 'workspace': 'revision', 'oxidns': 'oxidns_revision'}[changed]
+            observations['go']['body']['workspace'][path] = '9' * 64
+            _, found = model.pair(case, observations, snapshots, observations)
+            self.assertEqual(found[0].category, 'revision', changed)
+
+    def test_execute_workspace_keeps_each_sides_real_optimistic_tokens(self):
+        class WorkspaceSide(ObservationSide):
+            def __init__(self, native=False, break_token=False):
+                super().__init__()
+                self.native, self.break_token = native, break_token
+                self.before['database']['fields'] = workspace_state()['database']['fields']
+                self.before['database']['sections'] = {'columns': ['scope', 'owner'], 'rows': [['profile', 'alpha']]}
+                self.after = copy.deepcopy(self.before)
+
+            def request(self, **values):
+                expected = workspace_view(self.native)['body']
+                if values['method'] == 'PUT':
+                    for key in ('revision', 'names_revision'):
+                        if values['document'][key] != expected['workspace'][key]:
+                            raise AssertionError('comparison projection leaked into the own HTTP write')
+                    self.after = copy.deepcopy(self.after)
+                    self.after['database']['fields']['rows'][0][4:] = [2, 2]
+                    if self.break_token:
+                        expected['workspace']['revision'] = '9' * 64
+                self.content = expected
+                return super().request(**values)
+
+        from cases import Ref
+        routes, _ = load()
+        available = {('GET', '/api/routers/{}/policy-settings'), ('PUT', '/api/routers/{}/policy-settings')}
+        read = Case('workspace-read', 'R014', 'GET', '/api/routers/r-ros/policy-settings', 200)
+        write = Case('workspace-own-write', 'R015', 'PUT', read.path, 200, requires=('R014',),
+                     document={'revision': Ref(read.ident, '/body/workspace/revision'),
+                               'names_revision': Ref(read.ident, '/body/workspace/names_revision')},
+                     unchanged=False, effect='profile-write')
+        for broken in (False, True):
+            world = pair(WorkspaceSide(), WorkspaceSide(True, broken))
+            world.policy_revisions = PolicyRevisions()
+            self.assertEqual(execute(world, read, available, routes)['status'], 'compared')
+            result = execute(world, write, available, routes)
+            self.assertEqual(result['status'], 'different' if broken else 'compared')
+            self.assertEqual(world.python.requests[1]['document']['revision'], 'b' * 64)
+            self.assertEqual(world.go.requests[1]['document']['revision'], 'e' * 64)
+            self.assertEqual(world.go.requests[1]['document']['names_revision'], 'f' * 64)
+            if broken:
+                self.assertIn('revision', {item['category'] for item in result['differences']})
 
     def test_execute_pairs_different_native_hash_encoding_but_retains_own_body_references(self):
         class PolicySide(ObservationSide):
