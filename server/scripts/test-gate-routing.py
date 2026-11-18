@@ -10,7 +10,7 @@ import unittest
 
 SOURCE = Path(__file__).with_name("gate.sh")
 FAKE_GO = '''#!/usr/bin/env python3
-import json, os, pathlib, sys
+import fcntl, json, os, pathlib, sys, time
 home = pathlib.Path(os.environ["HOME"])
 args = sys.argv[1:]
 with (home / "calls.jsonl").open("a") as f:
@@ -22,12 +22,34 @@ elif args == ["list", "./..."]:
 elif args[:1] == ["clean"]:
  (home / "cached").unlink(missing_ok=True)
 elif "-race" in args:
+ (home / "race-temp.json").write_text(json.dumps({"tmp": os.getenv("TMPDIR"), "go": os.getenv("GOTMPDIR")}))
  previous_umask = os.umask(0)
  os.umask(previous_umask)
  (home / "test-umask").write_text(str(previous_umask))
  if os.getenv("FAIL_RACE"): sys.exit(1)
  print("ok  configflow/internal/fake  " + ("(cached)" if (home / "cached").exists() else "1.00s"))
  (home / "cached").touch()
+elif any(a.startswith("-fuzz=") for a in args):
+ def update(delta):
+  with (home / "fuzz.lock").open("a+") as lock:
+   fcntl.flock(lock, fcntl.LOCK_EX)
+   statefile = home / "fuzz.json"
+   state = json.loads(statefile.read_text()) if statefile.exists() else {"active": 0, "peak": 0, "starts": [], "finished": 0}
+   state["active"] += delta
+   state["peak"] = max(state["peak"], state["active"])
+   if delta == 1:
+    state["starts"].append({"tmp": os.environ["TMPDIR"], "go": os.environ["GOTMPDIR"], "args": args})
+   else:
+    state["finished"] += 1
+   statefile.write_text(json.dumps(state))
+ update(1)
+ name = next(a for a in args if a.startswith("-fuzz="))
+ for key in ("TMPDIR", "GOTMPDIR"):
+  (pathlib.Path(os.environ[key]) / str(os.getpid())).write_text("synthetic fuzz work")
+ time.sleep(0.25)
+ update(-1)
+ if os.getenv("FAIL_FUZZ") and "Fuzz0$" in name: sys.exit(1)
+ print("PASS synthetic fuzz")
 '''
 
 
@@ -53,11 +75,12 @@ class RoutingTests(unittest.TestCase):
         (binary / "gofmt").chmod(0o755)
         self.env = dict(os.environ, HOME=str(self.root), PATH=str(binary) + ":" + os.environ["PATH"],
                         GATE_LOGS=str(self.root / "logs"), CONFIGFLOW_DIFF_PYTHON=shutil.which("python3"))
-        for key in ("GATE_ONLY", "GATE_FULL", "GATE_SLOTS", "FAIL_RACE", "EMPTY_FINGERPRINT"):
+        for key in ("GATE_ONLY", "GATE_FULL", "GATE_SLOTS", "FAIL_RACE", "EMPTY_FINGERPRINT",
+                    "GATE_FUZZ_JOBS", "GATE_FUZZ_PARALLEL", "GATE_FUZZTIME", "FAIL_FUZZ"):
             self.env.pop(key, None)
 
-    def run_gate(self, **env):
-        return subprocess.run(["bash", str(self.server / "scripts/gate.sh"), "-p", "6"],
+    def run_gate(self, targets=(), **env):
+        return subprocess.run(["bash", str(self.server / "scripts/gate.sh"), "-p", "6", *targets],
                               env=dict(self.env, **env), text=True, capture_output=True, timeout=10, umask=0o022)
 
     def calls(self):
@@ -144,6 +167,63 @@ class RoutingTests(unittest.TestCase):
         result = self.run_gate(GATE_ONLY="typo")
         self.assertEqual(result.returncode, 2)
         self.assertFalse((self.root / "calls.jsonl").exists())
+
+    def assert_fuzz_work(self, count, limit):
+        state = json.loads((self.root / "fuzz.json").read_text())
+        self.assertEqual(len(state["starts"]), count)
+        self.assertEqual(state["finished"], count)
+        self.assertEqual(state["active"], 0)
+        self.assertGreater(state["peak"], 0)
+        self.assertLessEqual(state["peak"], limit)
+        roots = set()
+        for start in state["starts"]:
+            for key in ("go", "tmp"):
+                path = Path(start[key])
+                self.assertEqual(path.parent.parent, self.root / ".cache/configflow-gate")
+                self.assertFalse(path.exists(), "fuzz work was not removed")
+                roots.add(path.parent)
+        self.assertEqual(len(roots), 1)
+        return state
+
+    def test_fuzz_default_cap_disk_temp_and_cleanup(self):
+        result = self.run_gate(targets=[f"Fuzz{i}:./internal/fake" for i in range(41)], GATE_ONLY="core",
+                               TMPDIR="/tmp", GOTMPDIR="/tmp")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("at most 8 jobs", result.stdout)
+        state = self.assert_fuzz_work(41, 8)
+        self.assertTrue(all("-parallel=2" in s["args"] for s in state["starts"]))
+        # Only fuzz inherits the private paths; earlier stages keep the caller's env.
+        self.assertEqual(json.loads((self.root / "race-temp.json").read_text()), {"tmp": "/tmp", "go": "/tmp"})
+
+    def test_fuzz_override_and_failure_still_reaps_and_cleans(self):
+        result = self.run_gate(targets=[f"Fuzz{i}:./internal/fake" for i in range(5)], GATE_ONLY="core",
+                               GATE_FUZZ_JOBS="2", GATE_FUZZ_PARALLEL="3", FAIL_FUZZ="1")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("at most 2 jobs", result.stdout)
+        self.assertIn("GATE FAIL: fuzz", result.stderr)
+        state = self.assert_fuzz_work(5, 2)
+        self.assertTrue(all("-parallel=3" in s["args"] for s in state["starts"]))
+        self.assertFalse((self.root / "rt/.gate-last-full").exists())
+
+    def test_fuzz_one_job_and_unique_run_directories(self):
+        targets = ["Fuzz0:./internal/fake", "Fuzz1:./internal/fake"]
+        first = self.run_gate(targets=targets, GATE_ONLY="core", GATE_FUZZ_JOBS="1")
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        state = self.assert_fuzz_work(2, 1)
+        first_root = Path(state["starts"][0]["tmp"]).parent
+        (self.root / "fuzz.json").unlink()
+        second = self.run_gate(targets=targets, GATE_ONLY="core", GATE_FUZZ_JOBS="1")
+        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+        state = self.assert_fuzz_work(2, 1)
+        self.assertNotEqual(first_root, Path(state["starts"][0]["tmp"]).parent)
+
+    def test_invalid_fuzz_concurrency_starts_no_fuzz(self):
+        for value in ("0", "-1", "invalid"):
+            with self.subTest(value=value):
+                result = self.run_gate(targets=["Fuzz0:./internal/fake"], GATE_ONLY="core", GATE_FUZZ_JOBS=value)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("Invalid GATE_FUZZ_JOBS", result.stderr)
+                self.assertFalse((self.root / "fuzz.json").exists())
 
 
 if __name__ == "__main__":

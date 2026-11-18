@@ -17,6 +17,32 @@ lifecycle tests), whole-repository race, supplied fuzz targets (60s by default).
 Compare: observer self-checks + proddiff, every `/difftest` package, synthetic live.
 Legacy `GATE_ONLY=proddiff` and `difftest` keep their narrow meaning.
 
+## Fuzz temporary space and concurrency
+
+Fuzz runs use a fresh `~/.cache/configflow-gate/fuzz.XXXXXX` directory on the
+home disk, with separate `go/` and `tmp/` children exported as `GOTMPDIR` and
+`TMPDIR`. This overrides a caller's `/tmp` settings for the fuzz stage only;
+race/build/compare keep their existing environment. The private directory is
+removed when the fuzz stage finishes, including a failing target. Persistent
+`GATE_LOGS/fuzz-<name>.log` files remain available for diagnosis. Go's build cache
+and failing-input corpus are not placed in this temporary directory.
+
+At most **8 fuzz targets** run simultaneously by default. Set
+`GATE_FUZZ_JOBS` to a positive integer to override that target limit. Every target
+still runs; a failed target is reported after the other targets finish, and a
+failed fuzz stage does not refresh the full-core timestamp. This limit is separate
+from `GATE_FUZZ_PARALLEL` (workers per target, default 2) and `-p` (package build/test
+parallelism). Each target's fuzz budget remains `GATE_FUZZTIME` (default 60s).
+
+```sh
+GATE_ONLY=core GATE_FUZZ_JOBS=4 server/scripts/gate.sh -p 6 FuzzNativeRoundTrip:./internal/yamlx
+```
+
+The routing controls use the real gate shell and fake Go commands to prove the
+8-target default, overrides, disk paths even with caller `/tmp`, per-run isolation,
+success/failure cleanup, invalid limits and retention of every target's execution.
+They do not run a full gate or alter product tests.
+
 ## Race result cache
 
 Core computes and exports `PYREF_INPUT_FINGERPRINT` via `go run ./tools/pyref
@@ -91,3 +117,20 @@ propagation/failure/fallback, compare's live proddiff invocation, and invalid st
 ```sh
 PYTHONDONTWRITEBYTECODE=1 python scripts/test-gate-routing.py
 ```
+
+## Fuzz resource regression verification (2026-11-18)
+
+On `.32`, the following targeted command passed (no full gate or product change):
+
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'set -e; cd server; bash -n scripts/gate.sh scripts/gate-test-exec.sh; PYTHONDONTWRITEBYTECODE=1 python scripts/test-gate-routing.py; PYTHONDONTWRITEBYTECODE=1 python scripts/test-gate-live.py'
+```
+
+Shell syntax passed; routing controls: **14 tests, OK (7.655s)**; live validator
+controls: **6 tests, OK**. The default-cap case submits 41 fake fuzz targets:
+all 41 start and finish, observed concurrency never exceeds 8, both temporary
+environment paths are under the per-run home-cache directory, and that directory
+is gone afterwards. Other cases prove an override of 2 with a failing target,
+a limit of 1, distinct directories on repeated runs, unchanged per-target worker
+settings, no leaked active commands, and rejection of zero/negative/noninteger
+limits. The earlier core environment and full-run timestamp rules stay covered.

@@ -41,6 +41,52 @@ else
 fi
 if ((full)); then echo "gate: FULL mode ($reason)"; else echo "gate: CACHE mode ($reason)"; fi
 
+# Keep fuzz work off /tmp even when the caller did not source ~/.rt-env.
+# A subshell scopes both temporary environment variables and cleanup traps.
+run_fuzz() (
+  local jobs=${GATE_FUZZ_JOBS:-8} target name pkg fuzz_tmp bad=0
+  local pids=() names=()
+  [[ $jobs =~ ^[1-9][0-9]*$ ]] || { echo 'Invalid GATE_FUZZ_JOBS' >&2; exit 2; }
+  for target in "$@"; do
+    [[ $target == Fuzz*:* ]] || fail "invalid fuzz target: $target"
+  done
+  mkdir -p "$HOME/.cache/configflow-gate" || exit 1
+  fuzz_tmp=$(mktemp -d "$HOME/.cache/configflow-gate/fuzz.XXXXXX") || exit 1
+  cleanup_fuzz() {
+    # Reap tracked fuzz commands before removing their temporary directories.
+    # jobs reports only live children, avoiding stale numeric PID reuse.
+    local active
+    active=$(jobs -pr)
+    if [[ -n $active ]]; then
+      # Intentional splitting: jobs -pr produces whitespace-separated PIDs.
+      kill $active 2>/dev/null || true
+    fi
+    wait || true
+    rm -rf -- "$fuzz_tmp"
+  }
+  trap cleanup_fuzz EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  export GOTMPDIR="$fuzz_tmp/go" TMPDIR="$fuzz_tmp/tmp"
+  mkdir -p "$GOTMPDIR" "$TMPDIR" || exit 1
+  echo "== fuzz ($# targets, ${GATE_FUZZTIME:-60s} each, at most $jobs jobs; tmp=$fuzz_tmp)"
+  wait_first_fuzz() {
+    if wait "${pids[0]}"; then tail -1 "$logs/fuzz-${names[0]}.log"
+    else cat "$logs/fuzz-${names[0]}.log"; bad=1; fi
+    pids=("${pids[@]:1}")
+    names=("${names[@]:1}")
+  }
+  for target in "$@"; do
+    name=${target%%:*}; pkg=${target#*:}
+    go test -run '^$' -fuzz="^${name}\$" -fuzztime="${GATE_FUZZTIME:-60s}" \
+      -parallel="${GATE_FUZZ_PARALLEL:-2}" "$pkg" >"$logs/fuzz-$name.log" 2>&1 &
+    pids+=("$!"); names+=("$name")
+    if ((${#pids[@]} >= jobs)); then wait_first_fuzz; fi
+  done
+  while ((${#pids[@]})); do wait_first_fuzz; done
+  ((bad == 0))
+)
+
 run_core() {
   local out tag
   echo '== gofmt'
@@ -74,23 +120,7 @@ run_core() {
   awk '/^ok[[:space:]]/ && /\(cached\)/ { print $2 }' "$logs/race.log" >"$logs/race-cached.txt"
   echo "gate: race cache hits=$(wc -l <"$logs/race-cached.txt")"
   cat "$logs/race-cached.txt"
-  if (($#)); then
-    echo "== fuzz ($# targets, ${GATE_FUZZTIME:-60s} each)"
-    local target name pkg i bad=0
-    local pids=() names=()
-    for target in "$@"; do
-      [[ $target == Fuzz*:* ]] || fail "invalid fuzz target: $target"
-      name=${target%%:*}; pkg=${target#*:}
-      go test -run '^$' -fuzz="^${name}\$" -fuzztime="${GATE_FUZZTIME:-60s}" \
-        -parallel="${GATE_FUZZ_PARALLEL:-2}" "$pkg" >"$logs/fuzz-$name.log" 2>&1 &
-      pids+=("$!"); names+=("$name")
-    done
-    for i in "${!pids[@]}"; do
-      if wait "${pids[$i]}"; then tail -1 "$logs/fuzz-${names[$i]}.log"
-      else cat "$logs/fuzz-${names[$i]}.log"; bad=1; fi
-    done
-    ((bad == 0)) || fail fuzz
-  fi
+  if (($#)); then run_fuzz "$@" || fail fuzz; fi
   # A failed vet/build/race/fuzz never makes the next run cache-eligible.
   if ((full)); then touch "$stamp"; echo "gate: full core stamp updated: $stamp"; fi
 }
