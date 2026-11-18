@@ -7,7 +7,7 @@ log directory. Exit 0 means all selected work passed; it does not mean unselecte
 stages ran.
 
 ```sh
-GATE_ONLY=core server/scripts/gate.sh -p 6 FuzzParse:./internal/example
+GATE_ONLY=core server/scripts/gate.sh -p 6 FuzzNativeRoundTrip:./internal/yamlx
 GATE_ONLY=compare server/scripts/gate.sh -p 6
 # No GATE_ONLY: core followed by compare, under one slot.
 ```

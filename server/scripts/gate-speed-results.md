@@ -108,7 +108,7 @@ store1.009s, routersplit2.024s. Real inherited umask was0022.
 |---|---|---|---:|---:|---|
 | first-full | retry-full | FULL, GATE_FULL=1, clean test cache | 1047.89 | 0/100 | PASS |
 | second-cache | retry-cache | CACHE, real first-run full-success stamp | 68.07 | 100/100 | PASS |
-| forced-full | retry-forced | FULL, GATE_FULL=1 | pending | pending | running |
+| forced-full | retry-forced | FULL, GATE_FULL=1, clean test cache | 995.24 | 0/100 | PASS |
 
 Cached wall time is 93.50% lower (15.39x faster), including the same three
 60-second fuzz runs and fresh tag/lifecycle checks in both calls. All 100
@@ -119,5 +119,6 @@ ran in core. Exact cached package list: [gate-speed-cache-packages.txt](gate-spe
 The core itself prints this same list and saves `race-cached.txt`.
 
 All three fuzz targets passed in both completed calls (~61s each, concurrently).
-The third forced call is still in progress; compare remains queued behind this
-single project's core matrix, not running another heavy task concurrently.
+The third forced call also passed, refreshed the successful-full timestamp and
+reported zero race cache hits. Compare now runs after the completed core matrix
+on the same .64 project, without a concurrent heavy task from this agent.
