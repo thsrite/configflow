@@ -328,6 +328,9 @@ func RuleFiles(config *model.Config, baseURL string, item model.RuleConfig, stem
 func MatchEntries(matches []model.MosDNSMatch) []*yamlx.Node {
 	out := []*yamlx.Node{}
 	for _, item := range matches {
+		if item.Text != nil {
+			continue
+		}
 		if !flag(item.Enabled) {
 			continue
 		}

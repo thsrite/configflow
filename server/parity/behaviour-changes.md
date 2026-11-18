@@ -1575,3 +1575,11 @@ N8-9 D2 provider私有路径的跨包对照：convert的独立真实Python参考
 MosDNS 的经典规则关键字、域名模式、规则内容不再导入 pystr；首尾空白用 strings.TrimSpace，大小写用 x/text/cases 的语言无关完整映射。真实 Python 对照确认 ß 关键字大写、土耳其 i/ı/İ、域名中的 İ 和最终 sigma、NBSP、普通域名规则输出不变。
 
 明确差异逐项登记：ParseClashRuleValue 的 U+001C、U+001D、U+001E、U+001F 首尾字符在 Go 中保留，Python strip 会删除。例如每个控制字符 c 的输入 c+"DOMAIN,example.com"+c，Go 返回 [c+"DOMAIN", "example.com"+c]，Python 返回 ["DOMAIN", "example.com"]。完整转换里 U+001C/U+001D/U+001E 原本就是共享换行语法，输出仍相同；U+001F 不是换行，输入 "DOMAIN,example.com\x1f" 在 Go 输出 "full:example.com\x1f"，Python 输出 "full:example.com"。15 个真实 Python 精确正负控覆盖上述每项；冻结语料不改。用户应移除规则首尾控制字符，普通空格、制表符和 Unicode 空白按原合同处理。
+
+### N8-9 MosDNS 请求边界（协调者裁定）
+
+前端 Generate.vue 的 cache-size/cache-ttl/cache-dump-interval 使用 v-model.number，加载时 Number(...)，Switch 绑定 bool；保存 /mosdns/settings 时直接传 draft 的数字/布尔。严格 ASCII 十进制整数字符串仍由共享 model.Int 接受（HTTP 正控使用 "128" / "60" / "20"）。整数的 60.9、true、超 int64 值、" 1_000 "、"+60"、"60.9"，以及 bool 字段的 0，Go 400、不写 DB 行/revision/业务文件；Python 的缓存接口会自动转换或回退默认并返回200。每个向量使用独立合成夹具，真实 Flask/Go 逐项断言，避免拒绝写入造成后续 revision 级联差异。
+
+媒体类型非 JSON、畸形 JSON、JSON 数组以及非 cache 接口的 null，Python 旧路由内部异常500；Go 返回明确的400，无写入。cache-settings 的 JSON null 特例继续与 Python 一致：恢复默认、200、正常递增 revision。rulesets 的不存在引用由 Python500改为Go409，保留同一中文说明，增加 usages；两边均不写入。比较器和 proddiff baseline 不改。
+
+原接口允许 custom_matches 中的字符串元素原样保存、显示，生成时忽略；现由 model.MosDNSMatch 的字符串/对象 union 保留该合同。DeviceNotes 的 R5 消费值不能充当写入合法性的证据：写入前使用原字段类型诊断和单独备注字段的原始成员验证，无效 null/[]/bool 继续与 Python 同样拒绝；不使无关 OxiDNS 生成失败。

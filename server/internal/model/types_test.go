@@ -415,6 +415,9 @@ func runTypesInterchange(t *testing.T, rows []interchangeRow, private bool) {
 func FuzzStoredTypes(f *testing.F) {
 	for i, typ := range storedRecordTypes() {
 		f.Add(uint8(i), typeJSON(typ, false))
+		if typ == reflect.TypeFor[MosDNSMatch]() {
+			f.Add(uint8(i), []byte(`"qname\u0020example.com"`))
+		}
 	}
 	f.Fuzz(func(t *testing.T, index uint8, data []byte) {
 		types := storedRecordTypes()
@@ -426,6 +429,19 @@ func FuzzStoredTypes(f *testing.F) {
 		encoded, err := Marshal(value.Interface())
 		if err != nil || !bytes.Equal(encoded, data) {
 			t.Fatal("type no-op changed bytes")
+		}
+		if match, ok := value.Interface().(*MosDNSMatch); ok && match.Text != nil {
+			expected := *match.Text + " edited"
+			match.Text = &expected
+			changed, err := Marshal(match)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var decoded string
+			if json.Unmarshal(changed, &decoded) != nil || decoded != expected {
+				t.Fatal("scalar union edit lost value")
+			}
+			return
 		}
 		_, before := fuzzMembers(t, data)
 		schema := schemaFor(typ)
@@ -588,6 +604,26 @@ func assertStoredTree(t *testing.T, source []byte, value reflect.Value, counts m
 				}
 			}
 			break
+		}
+	}
+}
+
+func TestMosDNSMatchScalarForm(t *testing.T) {
+	for _, source := range []string{`"qname example.com"`, `"qname\u0020example.com"`, `""`} {
+		var settings MosDNSSettings
+		raw := []byte(`{"custom_matches":[` + source + `,{"matches":["qtype 28"],"exec":"return"}]}`)
+		if err := json.Unmarshal(raw, &settings); err != nil {
+			t.Fatal(err)
+		}
+		if issues := Issues(settings); len(issues) != 0 {
+			t.Fatalf("valid union rejected: %v", issues)
+		}
+		if len(settings.CustomMatches) != 2 || settings.CustomMatches[0].Text == nil {
+			t.Fatal("scalar match form lost")
+		}
+		encoded, err := Marshal(settings)
+		if err != nil || !bytes.Equal(raw, encoded) {
+			t.Fatalf("union bytes changed: %s %v", encoded, err)
 		}
 	}
 }

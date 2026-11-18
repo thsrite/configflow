@@ -17,6 +17,7 @@ type Profile struct {
 	doc             *Node
 	source          *model.Config
 	notesChanged    func(*Node)
+	notesInvalid    bool
 	presenceMu      sync.Mutex
 	presenceVersion uint64
 	presence        nativeIPResolver
@@ -84,13 +85,22 @@ func NewTypedProfile(source *model.Config) (*Profile, error) {
 	set(doc, "proxy_groups", groups)
 	selectors := profile.MosDNS
 	set(doc, "mosdns", M("direct_rulesets", strs(selectors.DirectRulesets), "proxy_rulesets", strs(selectors.ProxyRulesets), "direct_rules", strs(selectors.DirectRules), "proxy_rules", strs(selectors.ProxyRules)))
-	if profile.DeviceNotes.Len() > 0 {
-		notes := M()
-		for key, value := range profile.DeviceNotes.All() {
-			set(notes, key, S(value))
+	notesInvalid := false
+	for _, issue := range model.Issues(profile) {
+		if issue.Path == "device_notes" {
+			notesInvalid = true
 		}
-		set(doc, "device_notes", notes)
 	}
+	notesJSON, err := profile.DeviceNotes.MarshalJSON()
+	if err != nil {
+		return nil, err
+	}
+	notes, err := yamlx.FromJSON(notesJSON)
+	if err != nil {
+		return nil, err
+	}
+	set(doc, "device_notes", notes)
+
 	agents := L()
 	for _, agent := range source.Agents {
 		// Agent rows are an opaque foreign-owner DTO: public display names and the
@@ -124,7 +134,7 @@ func NewTypedProfile(source *model.Config) (*Profile, error) {
 	}
 	set(doc, "subscription_aggregations", aggregations)
 
-	return &Profile{doc: doc, source: source, issues: issues}, nil
+	return &Profile{doc: doc, source: source, issues: issues, notesInvalid: notesInvalid}, nil
 }
 
 func text(value *string, fallback string) string {

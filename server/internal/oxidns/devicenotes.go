@@ -37,6 +37,9 @@ func policyRowsNode(rows []devicenotes.Policy) *Node {
 	return result
 }
 func notesState(p *Profile) (devicenotes.State, error) {
+	if p.notesInvalid {
+		return devicenotes.State{}, fail(devicenotes.NotesMessage)
+	}
 	notes, policies := p.get("device_notes"), get(p.Settings(), "device_policies")
 	if !has(p.doc, "device_notes") {
 		notes = M()

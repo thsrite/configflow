@@ -1,5 +1,10 @@
 package model
 
+import (
+	"bytes"
+	"encoding/json"
+)
+
 // MihomoSettings stores the editable YAML text and profile-level provider/EasyTier settings; text is parsed only by consumers.
 type MihomoSettings struct {
 	CustomConfig           string            `json:"custom_config"`
@@ -205,25 +210,50 @@ func (r *MosDNSSettings) Clear(member string) error { return ClearMember(r, &r.r
 // MarshalJSON preserves unknown and unchanged MosDNSSettings members.
 func (r MosDNSSettings) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
-// MosDNSMatch is one editable sequence entry; matches retains its string or list representation.
+// MosDNSMatch retains an editor string or editable sequence object.
+// A scalar Text is stored and displayed but ignored by generators; object
+// matches retain their string or list representation.
 type MosDNSMatch struct {
-	ID      string    `json:"id"`
-	Enabled *bool     `json:"enabled"`
-	Matches TextLines `json:"matches"`
-	Exec    string    `json:"exec"`
-	Fields  Fields
-	raw     Raw
+	// Text retains the legacy scalar form for the editor; generators ignore it.
+	Text         *string `json:"-"`
+	textSource   json.RawMessage
+	textOriginal string
+	ID           string    `json:"id"`
+	Enabled      *bool     `json:"enabled"`
+	Matches      TextLines `json:"matches"`
+	Exec         string    `json:"exec"`
+	Fields       Fields
+	raw          Raw
 }
 
 // UnmarshalJSON decodes MosDNSMatch with stored-member preservation and R5 fallback.
-func (r *MosDNSMatch) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
+func (r *MosDNSMatch) UnmarshalJSON(data []byte) error {
+	text := bytes.TrimSpace(data)
+	if len(text) > 0 && text[0] == '"' {
+		var value string
+		if err := json.Unmarshal(data, &value); err != nil {
+			return err
+		}
+		*r = MosDNSMatch{Text: &value, textSource: bytes.Clone(data), textOriginal: value}
+		return nil
+	}
+	return DecodeRecord(data, r, &r.raw)
+}
 
 // Clear drops a declared member (by JSON name) when MosDNSMatch is written, even if
 // it is stored as null or with a wrong type; see ClearMember.
 func (r *MosDNSMatch) Clear(member string) error { return ClearMember(r, &r.raw, member) }
 
 // MarshalJSON preserves unknown and unchanged MosDNSMatch members.
-func (r MosDNSMatch) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
+func (r MosDNSMatch) MarshalJSON() ([]byte, error) {
+	if r.Text != nil {
+		if *r.Text == r.textOriginal && r.textSource != nil {
+			return bytes.Clone(r.textSource), nil
+		}
+		return json.Marshal(*r.Text)
+	}
+	return EncodeRecord(&r, &r.raw)
+}
 
 // DomainDiscovery holds profile discovery choices, user-keyed notes and applied-rule history.
 type DomainDiscovery struct {

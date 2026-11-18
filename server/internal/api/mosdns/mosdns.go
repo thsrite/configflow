@@ -2,6 +2,7 @@
 package mosdns
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -112,11 +113,14 @@ func requestSettings(c *httpx.Ctx, name string) (model.MosDNSSettings, error) {
 		return value, err
 	}
 	if !c.IsJSON() {
-		return value, repo.NewValidationError(messageSettingsObject)
+		return value, repo.NewValidationError(SettingsObjectMessage)
+	}
+	if name == "cache-settings" && bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+		data = []byte("{}")
 	}
 	var fields model.Fields
 	if err = json.Unmarshal(data, &fields); err != nil {
-		return value, repo.NewValidationError(messageSettingsObject)
+		return value, repo.NewValidationError(SettingsObjectMessage)
 	}
 	if name == "custom-matches" {
 		if raw, ok := fields.Get("position"); ok {
@@ -130,10 +134,10 @@ func requestSettings(c *httpx.Ctx, name string) (model.MosDNSSettings, error) {
 		return value, err
 	}
 	if err = json.Unmarshal(data, &value); err != nil {
-		return value, repo.NewValidationError(messageSettingsObject)
+		return value, repo.NewValidationError(SettingsObjectMessage)
 	}
 	if len(model.Issues(value)) > 0 {
-		return value, repo.NewValidationError(messageSettingsObject)
+		return value, repo.NewValidationError(SettingsFieldTypeMessage)
 	}
 	return value, nil
 }
