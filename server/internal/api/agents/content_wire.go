@@ -104,3 +104,7 @@ func WireContentSync() {
 	substore.SetContentSyncInvalidator(func(context.Context) error { contentChecks.dispatcher.Invalidate(); return nil })
 	lifecycle.RegisterShutdown(lifecycle.ShutdownHook{Name: "agent-content-sync-close", Phase: lifecycle.PhaseClose, Run: func(context.Context) { contentChecks.close() }})
 }
+
+// ContentChecker returns the Manager-owned shared publication comparison cache.
+// Composition callers must not create a second checker for the same Manager.
+func ContentChecker(m *core.Manager) *contentsync.Checker { return contentChecks.checker(m) }

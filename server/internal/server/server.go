@@ -20,6 +20,7 @@ import (
 	"configflow/internal/agents"
 	"configflow/internal/agents/dnsfollow"
 	"configflow/internal/agents/dnsha"
+	agentipv6 "configflow/internal/agents/ipv6"
 	"configflow/internal/agents/metrics"
 	"configflow/internal/agents/monitor"
 	"configflow/internal/agents/rulesync"
@@ -33,6 +34,7 @@ import (
 	apidiscovery "configflow/internal/api/domaindiscovery"
 	apigatewayonboarding "configflow/internal/api/gatewayonboarding"
 	apigenerate "configflow/internal/api/generate"
+	apiipv6 "configflow/internal/api/ipv6"
 	apilinuxgateway "configflow/internal/api/linuxgateway"
 	apilogs "configflow/internal/api/logs"
 	apimosdns "configflow/internal/api/mosdns"
@@ -84,6 +86,7 @@ var routePackages = []func(*httpx.Router){
 	apiproxygroups.Register,
 	apiagents.Register,
 	apirouters.Register,
+	apiipv6.Register,
 	apilinuxgateway.Register,
 	apiconfig.Register,
 	apigenerate.Register,
@@ -137,6 +140,7 @@ var wirePackages = []func(){
 	gateway.Wire,      // agents A19: convert.MihomoHooks Linux gateway
 	setupflow.Wire,    // agents A20 / config C36: routersplit setup-session reader
 	wireGatewayGuards, // agents A14 publication ← A20 live host guards
+	wireIPv6,          // A23 Manager-init hook is registered last
 }
 
 // gatewayGuards connects A14's publication guards to A20's live host checks.
@@ -152,6 +156,8 @@ func gatewayGuards() deploy.GatewayGuards {
 		},
 	}
 }
+
+func wireIPv6() { agentipv6.Wire(apiagents.ContentChecker) }
 
 func wireGatewayGuards() { deploy.SetGatewayGuards(gatewayGuards()) }
 

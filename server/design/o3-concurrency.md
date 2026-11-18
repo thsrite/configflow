@@ -797,7 +797,7 @@ post-cancellation device I/O, and lock release; AST alone cannot prove these sem
 
 ### Clarified in C36 — setup session L2 suborder
 
-`lockx.LevelSetupSession = LevelDevice - 1` 是 L2 的前序：
+`lockx.LevelSetupSession = 18` 是 L2 的前序：
 setup session → device/profile operation → repository。反向阻塞取得 session
 锁算违规，try-only 保持既有规则。首次向导 abandon 必须一直持有同一把 keyed
 session 操作锁，直到 profile 和 session 都删除完成，避免并发 prepare 重写；
@@ -871,3 +871,17 @@ ProfileSessions 不取得操作锁；未来若需要取得，必须复用 C36 �
 - Shutdown scenarios must use the integrated lifecycle semantics, including R14
   M1 (264ffbb5): detached work is cancelled at stopJobs, not at shutdown entry.
   After batch-6 merges, rebase and repeat the black-box scenarios on that tree.
+
+### Clarified in A23 — Agent operations and router lock groups
+
+协调者裁定：setup session（18）→ Agent operation（19）→ router/device（20）→
+repository（30）。`LevelAgentOperation` 用于 A23 的按 Agent 串行化；C36 外部
+owner 可以在持有 setup session 时调用它。反向及包外同级阻塞仍由 checker 报违规。
+
+`routers.RouterOperationLocks` 复用 route editor 的 `routeLocks`，按规范化
+type + endpoint 排序、去重后作为一个组取得。组内各次取得只检查原始祖先，
+固定排序保证组内无死锁；返回 context 保留 device 级别，例外不扩散到调用者。
+中途失败或取消按逆序释放已取得的全部锁。克隆连接只取得一次。
+
+A23 通过受限的 RouterOS connection-table 读取导出复用 R16 坏行隔离，
+通过 composition layer 注入 A13 的共享 content checker，不复制比较缓存。

@@ -30,3 +30,10 @@
 - Go原生canonical digest代替Python JSON字节hash，check_token/fingerprints是不透明证明；对照使用各侧真实签发的token，不写Pythonhash仿真。
 - 系统密钥整份脱敏；用户/peer凭据在诊断及公开显示元数据里先收集再投影，结构键/操作字段不能被短密码破坏；不要复制私有脱敏器。
 - 尚未完成完整移植，不标ported。
+
+## 第二个可构建阶段
+
+- 已实现协调者裁定的 18→19→20→30、routers 锁组（共享锁、排序去重、半途取消释放）、受限 ReadConnections、共享 ContentChecker getter；O3 Clarified 已落盘。
+- 锁组/lockx 定向 race：`ok configflow/internal/lockx 5.456s`、`ok configflow/internal/routers 549.301s`。routers 包含既有耗时测试；没有跑全仓 race。
+- 已接 readiness/status 缓存/prepare/probe、原生 tuple 证据、verification settings/result/reserve/workers/enroll/tick、HTTP/server 注册。代码编译与 `go vet ./...` 通过；Python config 对照仍通过。主体行为和真实 Runtime 测试尚待补齐，仍是 wip，不能作为 ported 交回。
+- 最新定向命令 `CONFIGFLOW_DIFF=1 go test -race -count=1 ./internal/agents/ipv6 ./internal/api/ipv6 && go vet ./...` 输出：`ok configflow/internal/agents/ipv6 1.327s`，API 暂无测试。

@@ -23,6 +23,11 @@ func TestSetupSessionSuborder(t *testing.T) {
 		try          bool
 		want         int64
 	}{
+		{"session-to-agent", LevelSetupSession, LevelAgentOperation, false, 0},
+		{"agent-to-device", LevelAgentOperation, LevelDevice, false, 0},
+		{"agent-to-repo", LevelAgentOperation, LevelRepository, false, 0},
+		{"agent-to-session", LevelAgentOperation, LevelSetupSession, false, 1},
+		{"device-to-agent", LevelDevice, LevelAgentOperation, false, 1},
 		{"session-to-profile", LevelSetupSession, LevelDevice, false, 0},
 		{"session-to-repo", LevelSetupSession, LevelRepository, false, 0},
 		{"profile-to-session", LevelDevice, LevelSetupSession, false, 1},

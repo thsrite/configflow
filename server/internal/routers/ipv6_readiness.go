@@ -26,6 +26,7 @@ type IPv6ReadinessConfiguration struct {
 
 // IPv6ReadinessCheck is a RouterOS diagnostic or static policy result.
 type IPv6ReadinessCheck struct {
+	Scope    string   `json:"scope,omitempty"`
 	ID       string   `json:"id"`
 	Label    string   `json:"label"`
 	Status   string   `json:"status"`
