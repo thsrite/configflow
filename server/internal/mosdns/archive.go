@@ -361,13 +361,26 @@ func safeDetails(err error) string {
 			return weburl.SafeErrorDetails(cause)
 		}
 	}
-	class := rulefetch.PythonClass(err) // shown to users: Python's names
-	if errors.Is(err, errNotUTF8) {
-		class = "UnicodeDecodeError"
-	}
-	details := "exception_type=" + class
+	// These labels are part of the existing download failure message. Select
+	// them by the source owner's typed failures, never a dynamic class method.
+	class := "ValueError"
+	var download *rulefetch.DownloadError
 	var fetch *rulefetch.FetchError
 	var ruleFetch *rulefetch.RuleFetchError
+	var remote *rulefetch.RemoteRuleValidationError
+	switch {
+	case errors.Is(err, errNotUTF8):
+		class = "UnicodeDecodeError"
+	case errors.As(err, &download):
+		class = "RequestException"
+	case errors.As(err, &ruleFetch):
+		class = "RuleFetchError"
+	case errors.As(err, &remote):
+		class = "RemoteRuleValidationError"
+	case errors.As(err, &fetch):
+		class = fetch.Class
+	}
+	details := "exception_type=" + class
 	if errors.As(err, &fetch) && fetch.Status != 0 && !errors.As(err, &ruleFetch) {
 		details += " status=" + strconv.Itoa(fetch.Status)
 	}

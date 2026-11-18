@@ -213,22 +213,25 @@ func isBadRequest(err error) bool {
 	var storeErr *store.Error
 	var pathErr *fs.PathError
 	var linkErr *os.LinkError
+	var download *rulefetch.DownloadError
+	var fetch *rulefetch.FetchError
+	var attempts *rulefetch.RuleFetchError
 	switch {
 	case errors.As(err, &linkErr), errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 		// Native receipt/rename failures and owner cancellation are server
 		// failures, never URL validation, even through wrapped error chains.
 		return false
 	case repo.IsValueError(err), errors.Is(err, errSizeLimit), errors.Is(err, errContentLength),
-		errors.Is(err, errNotUTF8), errors.Is(err, rulefetch.ErrInvalidURL):
+		errors.Is(err, errNotUTF8), errors.Is(err, rulefetch.ErrInvalidURL),
+		errors.Is(err, rulefetch.ErrInvalidProxy), errors.Is(err, rulefetch.ErrProxyNotString),
+		errors.Is(err, rulefetch.ErrInternalRedirect), errors.Is(err, rulefetch.ErrRedirectEncoding), errors.Is(err, rulefetch.ErrSizeLimit):
 		return true
-	case errors.As(err, &repoErr), errors.As(err, &storeErr), errors.As(err, &pathErr), rulefetch.IsRequestException(err):
+	case errors.As(err, &repoErr), errors.As(err, &storeErr), errors.As(err, &pathErr),
+		errors.As(err, &download), errors.As(err, &fetch), errors.As(err, &attempts):
 		return false
 	}
-	// TODO(N9): rulefetch reports URL syntax, redirect and size refusals as
-	// untyped errors (its "ValueError"); other packages' errors still carry
-	// Python class names.
-	class := rulefetch.PythonClass(err)
-	return class == "ValueError" || class == "UnicodeDecodeError"
+	// Remaining plain validation errors keep the existing 400 contract.
+	return true
 }
 
 func ruleProxy(ctx context.Context, request RuleProxyRequest) (*RuleProxyResponse, error) {
