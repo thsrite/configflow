@@ -211,15 +211,25 @@ func encodeLegacy(value any) (any, error) {
 // Metadata helpers below use their own narrow projections; hot per-node and
 // per-ruleset paths pass the already decoded native config.
 func configFromLegacy(value *jsonx.Object) (*model.Config, error) {
-	profile, err := decodeLegacy[model.Profile](value)
+	if value == nil {
+		value = jsonx.NewObject()
+	}
+	// A resolved view is composed of three stored sections. Decode each
+	// member only in its owner, rather than retaining the whole view as
+	// unknown fields in all three records.
+	profileMembers := value.Clone()
+	for _, key := range []string{"profile_id", "system_config", "backup", "agents", "nodes", "subscriptions", "subscription_aggregations", "rule_library"} {
+		profileMembers.Delete(key)
+	}
+	profile, err := decodeLegacy[model.Profile](profileMembers)
 	if err != nil {
 		return nil, err
 	}
-	shared, err := decodeLegacy[model.Shared](value)
+	shared, err := decodeLegacy[model.Shared](legacyMembers(value, "nodes", "subscriptions", "subscription_aggregations", "rule_library"))
 	if err != nil {
 		return nil, err
 	}
-	wire, err := decodeLegacy[model.System](value)
+	wire, err := decodeLegacy[model.System](legacyMembers(value, "system_config", "backup", "agents"))
 	if err != nil {
 		return nil, err
 	}
@@ -464,21 +474,37 @@ func (r Ref) IDValue() any { return r.ID }
 // shapeConfigFromLegacy decodes non-null resource arrays strictly at the old
 // untyped boundary; model.Config itself can only contain typed resource slices.
 func shapeConfigFromLegacy(value *jsonx.Object) (*model.Config, error) {
+	if err := validateLegacyResourceArrays(value); err != nil {
+		return nil, err
+	}
+	return dialerConfigFromLegacy(value)
+}
+
+func validateLegacyResourceArrays(value *jsonx.Object) error {
 	for _, key := range []string{"nodes", "proxy_groups"} {
 		if raw, present := value.Get(key); present {
 			items, err := decodeLegacy[[]json.RawMessage](raw)
 			if err != nil || items == nil {
-				return nil, &DialerReferenceError{Message: fmt.Sprintf(msgResourceArray, key), cause: err}
+				return &DialerReferenceError{Message: fmt.Sprintf(msgResourceArray, key), cause: err}
 			}
 			for _, item := range items {
 				var object map[string]json.RawMessage
 				if err := json.Unmarshal(item, &object); err != nil || object == nil {
-					return nil, &DialerReferenceError{Message: msgResourceObject, cause: err}
+					return &DialerReferenceError{Message: msgResourceObject, cause: err}
 				}
 			}
 		}
 	}
-	return dialerConfigFromLegacy(value)
+	return nil
+}
+
+// clientConfigFromLegacy is a complete public generation boundary. Keeping it
+// separate from the metadata-only dialer codec preserves client rules/settings.
+func clientConfigFromLegacy(value *jsonx.Object) (*model.Config, error) {
+	if err := validateLegacyResourceArrays(value); err != nil {
+		return nil, err
+	}
+	return configFromLegacy(value)
 }
 
 // validateGenerationRules only transcodes the legacy generation boundary.
@@ -906,6 +932,32 @@ func legacyConfigObject(config *model.Config) (*jsonx.Object, error) {
 	result, _ := value.(*jsonx.Object)
 	return result, nil
 }
+
+// legacyDialerView contains the complete owned records used by chain, group,
+// host and provider collaborators. Unrelated rule/Agent histories are excluded.
+func legacyDialerView(config *model.Config) (*jsonx.Object, error) {
+	source := struct {
+		Groups        []model.ProxyGroup   `json:"proxy_groups"`
+		Nodes         []model.Node         `json:"nodes"`
+		Subscriptions []model.Subscription `json:"subscriptions"`
+		Aggregations  []model.Aggregation  `json:"subscription_aggregations"`
+	}{config.Profile.ProxyGroups, config.Nodes, config.Subscriptions, config.Aggregations}
+	// The model boundary represents absent native lists as empty arrays.
+	if source.Groups == nil {
+		source.Groups = []model.ProxyGroup{}
+	}
+	if source.Nodes == nil {
+		source.Nodes = []model.Node{}
+	}
+	if source.Subscriptions == nil {
+		source.Subscriptions = []model.Subscription{}
+	}
+	if source.Aggregations == nil {
+		source.Aggregations = []model.Aggregation{}
+	}
+	return decodeLegacy[*jsonx.Object](source)
+}
+
 func replaceLegacyDocument(document *yamlx.Node, value *jsonx.Object) error {
 	result, err := yamlbridge.Encode(value)
 	if err != nil {
@@ -981,7 +1033,7 @@ func MihomoEnvironmentFromLegacy(old MihomoEnv) MihomoEnvironment {
 		}
 	}
 	env.LowerChains = func(config *model.Config) (*model.Config, error) {
-		wire, err := legacyConfigObject(config)
+		wire, err := legacyDialerView(config)
 		if err != nil {
 			return nil, err
 		}
@@ -989,14 +1041,23 @@ func MihomoEnvironmentFromLegacy(old MihomoEnv) MihomoEnvironment {
 		if err != nil {
 			return nil, subsError(err)
 		}
-		return configFromLegacy(lowered)
+		projection, err := dialerConfigFromLegacy(lowered)
+		if err != nil {
+			return nil, err
+		}
+		result := *config
+		profile := *config.Profile
+		profile.ProxyGroups = projection.Profile.ProxyGroups
+		result.Profile = &profile
+		result.Nodes, result.Subscriptions, result.Aggregations = projection.Nodes, projection.Subscriptions, projection.Aggregations
+		return &result, nil
 	}
 	env.RenderMembers = func(group model.ProxyGroup, config *model.Config) (*yamlx.Node, error) {
 		source, err := decodeLegacy[*jsonx.Object](group)
 		if err != nil {
 			return nil, err
 		}
-		logical, err := legacyConfigObject(config)
+		logical, err := legacyDialerView(config)
 		if err != nil {
 			return nil, err
 		}
@@ -1014,14 +1075,14 @@ func MihomoEnvironmentFromLegacy(old MihomoEnv) MihomoEnvironment {
 		return yamlbridge.Encode(result)
 	}
 	env.FilterGroups = func(config *model.Config, document *yamlx.Node) error {
-		logical, err := legacyConfigObject(config)
+		logical, err := legacyDialerView(config)
 		if err != nil {
 			return err
 		}
 		return adaptDocument(document, func(main *jsonx.Object) error { rules.LowerGroupProviderFilters(logical, main); return nil })
 	}
 	env.ChainProviders = func(config *model.Config, document *yamlx.Node) error {
-		logical, err := legacyConfigObject(config)
+		logical, err := legacyDialerView(config)
 		if err != nil {
 			return err
 		}
@@ -1032,7 +1093,7 @@ func MihomoEnvironmentFromLegacy(old MihomoEnv) MihomoEnvironment {
 		if err != nil {
 			return nil, err
 		}
-		logical, err := legacyConfigObject(config)
+		logical, err := legacyDialerView(config)
 		if err != nil {
 			return nil, err
 		}
@@ -1117,7 +1178,7 @@ func MihomoEnvironmentFromLegacy(old MihomoEnv) MihomoEnvironment {
 		if err != nil {
 			return nil, err
 		}
-		logical, err := legacyConfigObject(config)
+		logical, err := legacyDialerView(config)
 		if err != nil {
 			return nil, err
 		}
@@ -1183,7 +1244,9 @@ func MihomoEnvironmentFromLegacy(old MihomoEnv) MihomoEnvironment {
 		return yamlbridge.Encode(report)
 	}
 	env.ValidateRules = func(config *model.Config, names []string, client string) error {
-		wire, err := legacyConfigObject(config)
+		wire, err := decodeLegacy[*jsonx.Object](struct {
+			Rules []model.RuleConfig `json:"rule_configs"`
+		}{config.Profile.RuleConfigs})
 		if err != nil {
 			return err
 		}
@@ -1668,7 +1731,7 @@ func BuildLoonRules(value *jsonx.Object, base string) ([]string, []string, error
 
 // GenerateSurgeConfig transcodes to the typed Surge generator.
 func GenerateSurgeConfig(ctx context.Context, value *jsonx.Object, base string) (string, error) {
-	config, err := shapeConfigFromLegacy(value)
+	config, err := clientConfigFromLegacy(value)
 	if err != nil {
 		return "", err
 	}
@@ -1677,7 +1740,7 @@ func GenerateSurgeConfig(ctx context.Context, value *jsonx.Object, base string) 
 
 // GenerateLoonConfig transcodes to the typed Loon generator.
 func GenerateLoonConfig(ctx context.Context, value *jsonx.Object, base string) (string, error) {
-	config, err := shapeConfigFromLegacy(value)
+	config, err := clientConfigFromLegacy(value)
 	if err != nil {
 		return "", err
 	}

@@ -67,6 +67,16 @@ func TestGenerationRetainsAllNodesAndSource(t *testing.T) {
 			t.Fatalf("proxy %d changed order/name", i)
 		}
 	}
+	rules := doc.GetList("rules")
+	if len(rules) != 512 {
+		t.Fatalf("got %d rules", len(rules))
+	}
+	for i, rule := range rules {
+		if rule != fmt.Sprintf("DOMAIN,d%d.example,DIRECT", i) {
+			t.Fatalf("rule %d changed order/content", i)
+		}
+	}
+
 	after, err := jsonx.Compact(cfg)
 	if err != nil {
 		t.Fatal(err)

@@ -208,3 +208,45 @@ Go 有18次重试，本轮结束负载高，尚未执行后续 difftest/live。�
 新增 old-heartbeat 客户端通过真实 Flask HTTP 对照；旧报告与新报告检查分别通过。
 pyref audit 0.571s 通过；proddiff 全部54项 synthetic 自测 `Ran 54 tests ... OK`，
 包括4条时间规则的类型、格式、缺失、超120秒、其他字段和其他路由负向控制。
+
+### 等待最终基底期间的限定验证
+
+协调者明确要求：batch-6 代码 tip 尚未确定，等待它交回前暂停全量 preflight/compare，只继续
+冲突、定向验证和128节点基准。第三轮过渡树 preflight 两组 vet 已过，按此指示主动终止本树
+的进程及子进程（旧产品树9733ee0a5；exit 255），不把它记作 PASS 或产品失败；未动其他任务。
+
+预先 rebase e5cbeb6be 的窄 codec 优化。N8-8b 的完整原生生成器替换旧生成器，保留其直接
+ApplyNodeDialer/RuleFormat/RulesForOutput 路径；legacyMembers、rules/rule-library/github/dialer/
+EasyTier 的窄投影全部保留。configFromLegacy 只恢复在公共生成/interop入口按调用一次的全量
+转换，未把任何每节点/每规则集路径改回全量解码。common_native AST 禁用表保留双方并集。
+本次两个冲突：mihomo_generate.go、common_native_test.go；没有丢弃窄 codec 的回归或基准。
+
+e5 定向验证发现的真实集成问题：shapeConfigFromLegacy 收窄后，旧 Surge/Loon 全量生成入口
+仍调用它，会丢失规则/客户端设置。抽出同一原数组形状校验，仅这两个完整生成入口走
+clientConfigFromLegacy；元数据入口继续窄解码。严格 R5 拒绝恢复，未放宽校验。
+
+首次128节点基准约156.9 MB，profile 指向 N8-8b 各协作者适配器反复编码完整配置。
+按实际 owner 输入收窄：group/chain/hosts/provider 协作者只传完整四类目录；规则校验只传
+rule_configs；lowering 结果仅替换原生目录和 proxy_groups，保留其他 typed profile/settings/
+rules/unknown 原样。完整公开入口按 profile/shared/system 各自拥有的字段解码，避免三份
+record 把同一完整 view 都当 unknown fields 保留。没有复制 owner 业务逻辑、绕过回调、
+移除校验、跨请求缓存，或在每节点/每规则集恢复全配置解码。
+
+主测试服务器、GOMAXPROCS=4、同一公开 BenchmarkMihomoGenerationProfile、128节点+512规则：
+
+| 树 | ns/op | B/op | allocs/op |
+|---|---:|---:|---:|
+| batch-6 e5 作者结果（同基准） | 72,510,587 | 77,159,944 | 763,421 |
+| batch-7 第1次 | 64,733,090 | 75,989,080 | 710,420 |
+| batch-7 第2次 | 66,089,995 | 75,851,712 | 710,374 |
+| batch-7 第3次 | 70,195,770 | 75,989,688 | 710,452 |
+
+分配没有回升。RulesetFormat 面对0/1/16 MiB无关历史，约29–44 KB/op（冷缓存采样差异），
+不随历史大小增长。新增同一公开128节点回归明确验证全部512规则的数量/顺序/内容，避免
+用漏输出来降低分配。定向 race convert 7.294s 通过，54项 proddiff synthetic 自测0.284s通过。
+
+窄适配器改动后，定向执行所有受影响生成器的历史边界：
+`go test -count=1 -timeout=20m ./internal/convert -run "^(TestCorpus|TestMihomoCorpus|TestMihomoRecordedPythonTests|TestSurgeLoonCorpus|TestSurgeLoonRecordedPythonTests|TestGenerationRetainsAllNodesAndSource)$"`
+→ `ok configflow/internal/convert 74.484s`，包含完整512规则输出回归。
+最终来源指纹更新留到协调者交付固定基底后，避免对不断变化的 legacy.go 重复录制；所有
+原始 oracle 输入/输出继续保持，下一次只允许 metadata 变化且须先确认 live 输出0差异。
