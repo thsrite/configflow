@@ -50,7 +50,7 @@
    删除 syncJobs 与 R14 hook；KindConflict 保持各入口原中文提示，关停/取消错误原样传播。
    有记录按连接、无记录按 profile+id；HTTP 继续先取锁再执行 404/请求体校验。
 2. A22 完整注册：待真实路由优先级及 NewApp 验证。
-3. baseline：待删除所有 deferred→R14/A18。
+3. baseline：已删除 11 条 deferred→R14 和 12 条 deferred→A18；其余分类保留。最终 compare 检验 new/stale。
 4. O3-8：待跑 16 个 scenarios，验证已包含 R14 M1 的关停次序。
 5. A14 节流：集成树初次独立 race count=3 通过（14.714s）；为消除慢磁盘/负载造成的真实时间依赖，
    仅测试接入既有生命周期 fake Clock，验证 999ms 不写、1000ms 写及强制阶段写，不修改生产阈值。
@@ -68,3 +68,9 @@ batch-6 若追加日志修复，需要在最终预检前再 rebase 到其最新 
 末行：routers 3.747s，clients 5.479s，api/routers 6.169s 均 ok；ipv6 编译通过但本正则无测试。
 首次编译发现 R17/A23 重复 RouterOperationLocks，统一后上述实际守卫与多设备锁/取消用例全部通过。
 本提交包含合并冲突代码的 gofmt 收尾；A14 fake Clock 和 baseline 删除各留下一项独立提交。
+
+### 集成 3 baseline 清理
+
+按 baseline 原理由精确删除 23 行，没有扩大正则或增加新豁免；A14/A21/C34 的其他 deferred
+条目仍保留，必须由最终 compare 判断是否还有效。A18 原分支的删除在 rebase 冲突中暂缓，
+现在与 R14 一起集中记录，避免漏删旧 logs 路由的 A18 后果行。
