@@ -2,7 +2,6 @@ package dnsfollow
 
 // This file alone adapts the legacy repository/registry/event/task APIs.
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -38,39 +37,65 @@ func (s *Service) decodeAgent(ctx context.Context, raw *agents.Record) (*agent, 
 	if err = json.Unmarshal(encoded, &a); err != nil {
 		return nil, err
 	}
+	return s.modelAgent(ctx, &a)
+}
+
+func (s *Service) modelAgent(ctx context.Context, a *model.Agent) (*agent, error) {
+	if a == nil {
+		return nil, nil
+	}
+	target, err := deploy.NewTypedTarget(a)
+	if err != nil {
+		return nil, err
+	}
 	if a.ProfileID == "" {
 		a.ProfileID, err = s.m.Repository().DefaultProfileID(ctx)
 		if err != nil {
 			return nil, err
 		}
 	}
-	binding, _ := json.Marshal(raw.Value("dns_follow"))
-	state, _ := json.Marshal(raw.Value("dns_follow_state"))
-	target := deploy.NewTarget(raw)
+	binding, _, err := a.MemberJSON("dns_follow")
+	if err != nil {
+		return nil, err
+	}
+	state, _, err := a.MemberJSON("dns_follow_state")
+	if err != nil {
+		return nil, err
+	}
+	if binding == nil {
+		binding = json.RawMessage("null")
+	}
+	if state == nil {
+		state = json.RawMessage("null")
+	}
 	target.ProfileID = a.ProfileID
-	return &agent{Agent: &a, target: target, bindingRaw: binding, stateRaw: state, isEnabled: jsonx.Truthy(raw.GetOr("enabled", true))}, nil
+	return &agent{Agent: a, target: target, bindingRaw: binding, stateRaw: state, isEnabled: agents.AgentEnabledModel(a)}, nil
 }
 func (s *Service) all(ctx context.Context) ([]*agent, error) {
-	rows, err := s.m.GetAllAgents(ctx, true)
+	rows, err := s.m.ReadAgents(ctx, true, nil)
 	if err != nil {
 		return nil, err
 	}
 	out := make([]*agent, 0, len(rows))
-	for _, r := range rows {
-		a, e := s.decodeAgent(ctx, r)
-		if e != nil {
-			return nil, e
+	for i := range rows {
+		// Listing historically derives offline; individual reads keep stored status.
+		if !agents.FreshHeartbeat(rows[i].LastHeartbeat, nil) {
+			rows[i].Status = "offline"
+		}
+		a, err := s.modelAgent(ctx, &rows[i])
+		if err != nil {
+			return nil, err
 		}
 		out = append(out, a)
 	}
 	return out, nil
 }
 func (s *Service) get(ctx context.Context, id string) (*agent, error) {
-	a, e := s.m.GetAgentByID(ctx, id, true)
-	if e != nil {
-		return nil, e
+	a, err := s.m.ReadAgent(ctx, id, true)
+	if err != nil {
+		return nil, err
 	}
-	return s.decodeAgent(ctx, a)
+	return s.modelAgent(ctx, a)
 }
 func (s *Service) require(ctx context.Context, id, service string) (*agent, error) {
 	a, e := s.get(ctx, id)
@@ -86,66 +111,38 @@ func (s *Service) require(ctx context.Context, id, service string) (*agent, erro
 // update writes only A17-owned members. Other fields and future members remain
 // in their original records; the pure callback can inspect the full current list.
 func (s *Service) update(ctx context.Context, fn func(context.Context, []*agent) error) error {
-	if e := ctx.Err(); e != nil {
-		return e
+	if err := ctx.Err(); err != nil {
+		return err
 	}
-	_, err := s.m.UpdateAgents(ctx, "", func(tx context.Context, rows *[]any) (any, error) {
-		if e := ctx.Err(); e != nil {
-			return nil, e
-		}
+	return s.m.EditAgents(ctx, "", func(tx context.Context, rows *[]model.Agent) error {
 		list := make([]*agent, 0, len(*rows))
-		raws := make([]*agents.Record, 0, len(*rows))
-		before := make([][3][]byte, 0, len(*rows))
-		for _, v := range *rows {
-			r, ok := v.(*jsonx.Object)
-			if !ok {
-				continue
-			}
-			a, e := s.decodeAgent(tx, r)
-			if e != nil {
-				return nil, e
+		for i := range *rows {
+			copy := (*rows)[i]
+			a, err := s.modelAgent(tx, &copy)
+			if err != nil {
+				return err
 			}
 			list = append(list, a)
-			raws = append(raws, r)
-			b, _ := json.Marshal(a.DNSFollow)
-			st, _ := json.Marshal(a.DNSFollowState)
-			j, _ := json.Marshal(a.DNSFollowJob)
-			before = append(before, [3][]byte{b, st, j})
 		}
-		if e := fn(tx, list); e != nil {
-			return nil, e
+		if err := fn(tx, list); err != nil {
+			return err
 		}
 		for i, a := range list {
-			members := []struct {
-				key   string
-				value any
-				drop  bool
-			}{{"dns_follow", a.DNSFollow, a.dropBinding}, {"dns_follow_state", a.DNSFollowState, a.dropState}, {"dns_follow_job", a.DNSFollowJob, a.dropJob}}
-			for j, m := range members {
-				if m.drop {
-					raws[i].Delete(m.key)
-					continue
+			record := &(*rows)[i]
+			record.DNSFollow, record.DNSFollowState, record.DNSFollowJob = a.DNSFollow, a.DNSFollowState, a.DNSFollowJob
+			for _, member := range []struct {
+				key  string
+				drop bool
+			}{{"dns_follow", a.dropBinding}, {"dns_follow_state", a.dropState}, {"dns_follow_job", a.dropJob}} {
+				if member.drop {
+					if err := record.Clear(member.key); err != nil {
+						return err
+					}
 				}
-				b, e := json.Marshal(m.value)
-				if e != nil {
-					return nil, e
-				}
-				if bytes.Equal(b, before[i][j]) {
-					continue
-				}
-				v, e := jsonx.Parse(b)
-				if e != nil {
-					return nil, e
-				}
-				raws[i].Set(m.key, v)
 			}
 		}
-		if e := ctx.Err(); e != nil {
-			return nil, e
-		}
-		return nil, nil
+		return tx.Err()
 	})
-	return err
 }
 
 func (s *Service) config(ctx context.Context, a *agent) (*deploy.Source, error) {
@@ -162,9 +159,9 @@ func (s *Service) snapshot(ctx context.Context, profile string) (*deploy.Source,
 	}
 	return deploy.NewSource(raw, &revision), &deploy.Revision{Value: revision}, nil
 }
-func activeHA(a *agent) bool { return a != nil && agents.HAActive(a.target.Record) }
+func activeHA(a *agent) bool { return a != nil && agents.HAActiveModel(a.Agent) }
 func haEnabled(a *agent) bool {
-	return a != nil && a.target.Record.GetObject("oxidns_ha").Value("enabled") == true
+	return a != nil && agents.HAEnabledModel(a.Agent)
 }
 func (s *Service) poll(ctx context.Context, a *agent, id string) (model.Deployment, error) {
 	raw, e := s.m.GetDeployment(ctx, a.ID, id)

@@ -130,10 +130,11 @@ func isASCII(s string) bool {
 // given (naive) now is a TypeError, i.e. stale. Both sides have microsecond
 // precision, like datetime.
 func HeartbeatFresh(agent *jsonx.Object, now *time.Time) bool {
-	text, ok := agent.Value("last_heartbeat").(string)
-	if !ok {
-		return false
-	}
+	return FreshHeartbeat(agent.GetString("last_heartbeat"), now)
+}
+
+// FreshHeartbeat applies the registry freshness rule to a typed timestamp.
+func FreshHeartbeat(text string, now *time.Time) bool {
 	heartbeat, naive, ok := fromISO(text)
 	if !ok {
 		return false
@@ -330,17 +331,42 @@ func (m *Manager) agents(ctx context.Context, history bool) ([]*jsonx.Object, er
 }
 
 func (m *Manager) agentsInspect(ctx context.Context, history bool, inspect func(*jsonx.Object)) ([]*jsonx.Object, error) {
-	list, err := m.repository.GetAgentsInspect(ctx, history, inspect)
+	var inspectErr error
+	var inspectModel func(*model.Agent)
+	if inspect != nil {
+		inspectModel = func(record *model.Agent) {
+			if inspectErr != nil {
+				return
+			}
+			raw, err := agentObject(record)
+			if err != nil {
+				inspectErr = err
+				return
+			}
+			inspect(raw)
+		}
+	}
+	records, err := m.ReadAgents(ctx, history, inspectModel)
 	if err != nil {
 		return nil, err
 	}
-	agents := make([]*jsonx.Object, 0, len(list))
-	for _, item := range list {
-		if agent, ok := item.(*jsonx.Object); ok {
-			agents = append(agents, agent)
-		}
+	if inspectErr != nil {
+		return nil, inspectErr
 	}
-	return m.runtime.Overlay(agents), nil
+	result := make([]*jsonx.Object, 0, len(records))
+	for i := range records {
+		raw, err := agentObject(&records[i])
+		if err != nil {
+			return nil, err
+		}
+		if !history {
+			for _, key := range repo.AgentHistoryFields {
+				raw.Set(key, repo.AgentHistoryNotRead)
+			}
+		}
+		result = append(result, raw)
+	}
+	return result, nil
 }
 
 // Agents is _agents(history=...): every record with its heartbeat state,
@@ -680,16 +706,17 @@ func (m *Manager) GetAllAgentsInspect(ctx context.Context, history bool, inspect
 // GetAgentByID is get_agent_by_id(agent_id, history=...): the record with
 // its stored status (never derived offline), nil when unknown.
 func (m *Manager) GetAgentByID(ctx context.Context, agentID string, history bool) (*jsonx.Object, error) {
-	agents, err := m.agents(ctx, history)
-	if err != nil {
+	record, err := m.ReadAgent(ctx, agentID, history)
+	if err != nil || record == nil {
 		return nil, err
 	}
-	for _, agent := range agents {
-		if agent.Value("id") == agentID {
-			return agent, nil
+	raw, err := agentObject(record)
+	if err == nil && !history {
+		for _, key := range repo.AgentHistoryFields {
+			raw.Set(key, repo.AgentHistoryNotRead)
 		}
 	}
-	return nil, nil
+	return raw, err
 }
 
 // GetAgentByToken is get_agent_by_token(token).
@@ -906,42 +933,13 @@ func (m *Manager) DeleteAgent(ctx context.Context, agentID string) (bool, error)
 // was deleted meanwhile).
 func (m *Manager) UpdateHeartbeat(ctx context.Context, agentID string, heartbeat *jsonx.Object) (bool, error) {
 	if heartbeat == nil {
-		heartbeat = jsonx.NewObject()
+		return m.ObserveHeartbeat(ctx, agentID, nil)
 	}
-	mark := m.runtime.Mark()
-	list, err := m.repository.GetAgents(ctx, false)
+	fields, err := agentModel(heartbeat)
 	if err != nil {
 		return false, err
 	}
-	agent, _ := findAgent(list, agentID)
-	// 查到 Agent 之后它又被删除时，不能把心跳状态再记回去
-	if agent == nil || !m.recordHeartbeat(agent, heartbeat, mark) {
-		return false, nil
-	}
-	// config_version 是发布基线；version 决定更新检查和版本门槛，重启后不能退回注册时的值。
-	changes := jsonx.NewObject()
-	for _, key := range []string{"version", "config_version"} {
-		if value, ok := heartbeat.Get(key); ok && !jsonx.Equal(value, agent.Value(key)) {
-			changes.Set(key, value)
-		}
-	}
-	if changes.Len() > 0 {
-		saved, err := m.saveReportedFields(ctx, map[string]*jsonx.Object{agentID: changes})
-		if err != nil {
-			return false, err
-		}
-		if len(saved) == 0 {
-			return false, nil
-		}
-	}
-	if metrics, ok := heartbeat.Get("system_metrics"); ok {
-		if add := currentHooks().AddMetrics; add != nil {
-			if err := add(m, agentID, metrics); err != nil {
-				logger.Warningf("Agent %s 的监控历史保存失败：%s", agentLabel(agent), err)
-			}
-		}
-	}
-	return true, nil
+	return m.ObserveHeartbeat(ctx, agentID, fields)
 }
 
 // recordHeartbeat is the seam tests use to interleave a delete.

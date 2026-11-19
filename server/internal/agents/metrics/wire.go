@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"context"
+	"encoding/json"
 	"path/filepath"
 	"sync"
 
@@ -64,6 +65,32 @@ func addMetrics(m *agents.Manager, agentID string, metrics any) error {
 	return err
 }
 
+func addMetricsJSON(ctx context.Context, m *agents.Manager, agentID string, sample json.RawMessage) error {
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	dataDir := m.Repository().DataDir()
+	historiesMu.Lock()
+	history := histories[dataDir]
+	if history == nil {
+		var err error
+		history, err = newHistoryContext(ctx, filepath.Join(dataDir, "metrics"), MaxPointsPerAgent)
+		if err != nil {
+			historiesMu.Unlock()
+			return err
+		}
+		if err := ctx.Err(); err != nil {
+			historiesMu.Unlock()
+			return err
+		}
+		histories[dataDir] = history
+	}
+	historiesMu.Unlock()
+	_, err := history.AddSample(ctx, agentID, sample)
+	return err
+}
+
 func deleteHistory(m *agents.Manager, agentID string) {
 	ForManager(m).DeleteAgentHistory(agentID)
 }
@@ -73,7 +100,7 @@ func deleteHistory(m *agents.Manager, agentID string) {
 // the task-list row with "run now" and the interval edit, the flush loop,
 // and the two phased saves at shutdown.
 func Wire() {
-	agents.RegisterHooks(agents.Hooks{AddMetrics: addMetrics, DeleteMetricsHistory: deleteHistory})
+	agents.RegisterHooks(agents.Hooks{AddMetrics: addMetrics, AddMetricsJSON: addMetricsJSON, DeleteMetricsHistory: deleteHistory})
 	RegisterStartup()
 	tasks.SetRows(tasks.SlotMetrics, Rows)
 	tasks.SetRunner(TaskKey, runNow)

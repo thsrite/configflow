@@ -15,9 +15,11 @@ package agents
 
 import (
 	"bytes"
+	"configflow/internal/model"
 	"context"
 	"database/sql"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -77,109 +79,116 @@ func timestampOf(value any) float64 {
 	return math.Inf(-1)
 }
 
-// RuntimeEntry is one remembered heartbeat.
-type RuntimeEntry struct {
+// heartbeatEntry is an immutable, owned runtime projection. It never contains
+// deployment history, credentials or the configuration document.
+type heartbeatEntry struct {
 	HeartbeatAt   float64
 	LastHeartbeat string
-	Fields        *jsonx.Object
+	Fields        model.Agent
 }
 
-// RuntimeState is AgentRuntimeState.
+// RuntimeState owns live heartbeats for a data directory.
 type RuntimeState struct {
-	mu      sync.Mutex
-	entries map[string]RuntimeEntry
-	// Bumped by each delete, so a heartbeat that looked the Agent up before its
-	// deletion cannot put the entry back afterwards.
+	mu        sync.Mutex
+	entries   map[string]heartbeatEntry
 	deletions int64
 	deleted   map[string]int64
 }
 
-// NewRuntimeState returns an empty state (one process-wide per data
-// directory: use RuntimeFor).
+// NewRuntimeState returns an empty in-memory heartbeat store.
 func NewRuntimeState() *RuntimeState {
-	return &RuntimeState{entries: map[string]RuntimeEntry{}, deleted: map[string]int64{}}
+	return &RuntimeState{entries: map[string]heartbeatEntry{}, deleted: map[string]int64{}}
 }
 
-func (s *RuntimeState) newer(agent *jsonx.Object) (RuntimeEntry, bool) {
-	id, _ := agent.Value("id").(string)
-	entry, ok := s.entries[id]
-	if ok && entry.HeartbeatAt > timestampOf(agent.Value("last_heartbeat")) {
-		return entry, true
-	}
-	return RuntimeEntry{}, false
+func (s *RuntimeState) newerModel(agent *model.Agent) (heartbeatEntry, bool) {
+	entry, ok := s.entries[agent.ID]
+	return entry, ok && entry.HeartbeatAt > timestampOf(agent.LastHeartbeat)
 }
 
-// Overlay lays newer heartbeat state over the given (copied) Agents in place.
-func (s *RuntimeState) Overlay(agents []*jsonx.Object) []*jsonx.Object {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for _, agent := range agents {
-		if entry, ok := s.newer(agent); ok {
-			agent.Update(entry.Fields.DeepCopy())
-			agent.Set("last_heartbeat", entry.LastHeartbeat)
-			agent.Set("status", "online")
+func runtimeProjection(source *model.Agent) (model.Agent, error) {
+	var result model.Agent
+	for _, key := range RuntimeFields {
+		data, present, err := source.MemberJSON(key)
+		if err != nil {
+			return result, err
+		}
+		if present {
+			if err := result.SetJSON(key, data); err != nil {
+				return result, err
+			}
 		}
 	}
-	return agents
+	return result, nil
 }
 
-// Mark is taken before looking the Agent up; pass it to RecordHeartbeat.
+// Mark is taken before the repository lookup, preventing deletion races.
 func (s *RuntimeState) Mark() int64 {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.deletions
 }
 
-// RecordHeartbeat merges one heartbeat into the newer of the remembered and
-// registered state. It returns false, recording nothing, when the Agent was
-// deleted after mark.
-func (s *RuntimeState) RecordHeartbeat(agent, payload *jsonx.Object, mark int64) bool {
+func (s *RuntimeState) recordModel(ctx context.Context, agent, payload *model.Agent, mark int64) (bool, error) {
 	now := nowTimestamp()
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	id, _ := agent.Value("id").(string)
-	if s.deleted[id] > mark {
-		return false
+	if err := ctx.Err(); err != nil {
+		return false, err
 	}
-	var fields *jsonx.Object
-	if entry, ok := s.newer(agent); ok {
-		fields = entry.Fields.DeepCopy()
-	} else {
-		fields = jsonx.NewObject()
-		for _, key := range RuntimeFields {
-			if value, ok := agent.Get(key); ok {
-				fields.Set(key, jsonx.DeepCopy(value))
+	if s.deleted[agent.ID] > mark {
+		return false, nil
+	}
+	source := agent
+	if previous, ok := s.newerModel(agent); ok {
+		source = &previous.Fields
+	}
+	fields, err := runtimeProjection(source)
+	if err != nil {
+		return false, err
+	}
+	for _, key := range []string{"version", "service_status", "system_metrics"} {
+		data, present, err := payload.MemberJSON(key)
+		if err != nil {
+			return false, err
+		}
+		if !present {
+			continue
+		}
+		if err := fields.SetJSON(key, data); err != nil {
+			return false, err
+		}
+		if key == "system_metrics" && payload.SystemMetrics != nil {
+			var metrics model.Fields
+			if err := json.Unmarshal(data, &metrics); err != nil {
+				return false, err
 			}
-		}
-	}
-	// Fields a heartbeat leaves out keep their last value.
-	for _, key := range []string{"version", "service_status"} {
-		if value, ok := payload.Get(key); ok {
-			fields.Set(key, value)
-		}
-	}
-	if value, ok := payload.Get("system_metrics"); ok {
-		metrics := jsonx.DeepCopy(value)
-		fields.Set("system_metrics", metrics)
-		if object, ok := metrics.(*jsonx.Object); ok {
-			for _, key := range metricFields {
-				if item, ok := object.Get(key); ok {
-					fields.Set(key, item)
+			for _, component := range metricFields {
+				if raw, exists := metrics.Get(component); exists {
+					if err := fields.SetJSON(component, raw); err != nil {
+						return false, err
+					}
 				}
 			}
 		}
 	}
-	s.entries[id] = RuntimeEntry{HeartbeatAt: now, LastHeartbeat: isoformat(fromTimestamp(now), false), Fields: fields}
-	return true
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	s.entries[agent.ID] = heartbeatEntry{HeartbeatAt: now, LastHeartbeat: isoformat(fromTimestamp(now), false), Fields: fields}
+	return true, nil
 }
 
-// Seed restores a heartbeat remembered elsewhere unless a newer one arrived.
-func (s *RuntimeState) Seed(agentID string, heartbeatAt float64, lastHeartbeat string, fields *jsonx.Object) {
+func (s *RuntimeState) seedModel(agentID string, heartbeatAt float64, lastHeartbeat string, fields *model.Agent) error {
+	projection, err := runtimeProjection(fields)
+	if err != nil {
+		return err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if entry, ok := s.entries[agentID]; !ok || entry.HeartbeatAt < heartbeatAt {
-		s.entries[agentID] = RuntimeEntry{HeartbeatAt: heartbeatAt, LastHeartbeat: lastHeartbeat, Fields: fields.DeepCopy()}
+		s.entries[agentID] = heartbeatEntry{HeartbeatAt: heartbeatAt, LastHeartbeat: lastHeartbeat, Fields: projection}
 	}
+	return nil
 }
 
 // Delete forgets an Agent and blocks heartbeats looked up before it.
@@ -191,28 +200,6 @@ func (s *RuntimeState) Delete(agentID string) {
 	s.deleted[agentID] = s.deletions
 }
 
-// Entries returns a copy of the remembered heartbeats (Python's _entries,
-// for tests and diagnostics).
-func (s *RuntimeState) Entries() map[string]RuntimeEntry {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	out := make(map[string]RuntimeEntry, len(s.entries))
-	for id, entry := range s.entries {
-		out[id] = entry
-	}
-	return out
-}
-
-// SetEntry replaces one remembered heartbeat (tests).
-func (s *RuntimeState) SetEntry(agentID string, entry RuntimeEntry) {
-	s.mu.Lock()
-	s.entries[agentID] = entry
-	s.mu.Unlock()
-}
-
-// pyResolve is str(Path(path).resolve()): os.path.realpath(path,
-// strict=False). Symlinks are resolved as far as the path exists; a missing
-// remainder is appended as written ("." dropped, ".." taken lexically).
 func pyResolve(path string) string {
 	resolved, _ := joinRealPath("", path, map[string]*string{})
 	if !filepath.IsAbs(resolved) {

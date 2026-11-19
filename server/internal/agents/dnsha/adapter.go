@@ -2,7 +2,6 @@ package dnsha
 
 // The legacy registry/repository bridge is confined to this file.
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -17,71 +16,101 @@ import (
 
 var logger = logx.Get("backend.agents.oxidns_ha_publish")
 
-func decodeAgent(r *agents.Record) (*agent, error) {
-	if r == nil {
+func decodeAgent(raw *agents.Record) (*agent, error) {
+	if raw == nil {
 		return nil, nil
 	}
-	b, e := json.Marshal(r)
-	if e != nil {
-		return nil, e
+	data, err := json.Marshal(raw)
+	if err != nil {
+		return nil, err
 	}
-	var m model.Agent
-	if e = json.Unmarshal(b, &m); e != nil {
-		return nil, e
+	var a model.Agent
+	if err = json.Unmarshal(data, &a); err != nil {
+		return nil, err
 	}
-	identity := jsonx.NewObject()
-	for _, k := range []string{"host", "port", "profile_id", "service_type", "enabled"} {
-		identity.Set(k, r.Value(k))
+	return modelAgent(&a)
+}
+
+func modelAgent(a *model.Agent) (*agent, error) {
+	if a == nil {
+		return nil, nil
 	}
-	ib, e := json.Marshal(identity)
-	if e != nil {
-		return nil, e
+	target, err := deploy.NewTypedTarget(a)
+	if err != nil {
+		return nil, err
 	}
-	var i model.HAIdentity
-	if e = json.Unmarshal(ib, &i); e != nil {
-		return nil, e
+	var fields model.Fields
+	for _, key := range []string{"host", "port", "profile_id", "service_type", "enabled"} {
+		data, present, err := a.MemberJSON(key)
+		if err != nil {
+			return nil, err
+		}
+		if !present {
+			data = []byte("null")
+		}
+		if err = fields.Set(key, data); err != nil {
+			return nil, err
+		}
 	}
-	hb, e := json.Marshal(r.Value("oxidns_ha"))
-	if e != nil {
-		return nil, e
+	data, err := fields.MarshalJSON()
+	if err != nil {
+		return nil, err
 	}
-	return &agent{Agent: &m, target: deploy.NewTarget(r), identity: i, haRaw: hb, enabled: jsonx.Truthy(r.GetOr("enabled", true)), hasHAState: r.Has("oxidns_ha_state")}, nil
+	var identity model.HAIdentity
+	if err = json.Unmarshal(data, &identity); err != nil {
+		return nil, err
+	}
+	ha, _, err := a.MemberJSON("oxidns_ha")
+	if err != nil {
+		return nil, err
+	}
+	if ha == nil {
+		ha = []byte("null")
+	}
+	_, hasState, err := a.MemberJSON("oxidns_ha_state")
+	if err != nil {
+		return nil, err
+	}
+	return &agent{Agent: a, target: target, identity: identity, haRaw: ha, enabled: agents.AgentEnabledModel(a), hasHAState: hasState}, nil
 }
 func (s *Service) all(ctx context.Context) ([]*agent, error) {
-	rs, e := s.m.GetAllAgents(ctx, true)
-	if e != nil {
-		return nil, e
+	records, err := s.m.ReadAgents(ctx, true, nil)
+	if err != nil {
+		return nil, err
 	}
-	out := make([]*agent, 0, len(rs))
-	for _, r := range rs {
-		a, e := decodeAgent(r)
-		if e != nil {
-			return nil, e
+	out := make([]*agent, 0, len(records))
+	for i := range records {
+		if !agents.FreshHeartbeat(records[i].LastHeartbeat, nil) {
+			records[i].Status = "offline"
+		}
+		a, err := modelAgent(&records[i])
+		if err != nil {
+			return nil, err
 		}
 		out = append(out, a)
 	}
 	return out, nil
 }
 func (s *Service) get(ctx context.Context, id string) (*agent, error) {
-	r, e := s.m.GetAgentByID(ctx, id, true)
-	if e != nil {
-		return nil, e
+	record, err := s.m.ReadAgent(ctx, id, true)
+	if err != nil {
+		return nil, err
 	}
-	return decodeAgent(r)
+	return modelAgent(record)
 }
 func (s *Service) pair(ctx context.Context, id string) ([]*agent, error) {
-	rs, e := s.m.HAPair(ctx, id)
-	if e != nil {
-		if errors.Is(e, agents.ErrPairIncomplete) {
-			return nil, refuse(e.Error())
+	records, err := s.m.ReadHAPair(ctx, id)
+	if err != nil {
+		if errors.Is(err, agents.ErrPairIncomplete) {
+			return nil, refuse(err.Error())
 		}
-		return nil, e
+		return nil, err
 	}
-	var out []*agent
-	for _, r := range rs {
-		a, e := decodeAgent(r)
-		if e != nil {
-			return nil, e
+	out := make([]*agent, 0, len(records))
+	for i := range records {
+		a, err := modelAgent(&records[i])
+		if err != nil {
+			return nil, err
 		}
 		out = append(out, a)
 	}
@@ -103,59 +132,36 @@ func ownedBytes(a *agent) ([][]byte, error) {
 	return out, nil
 }
 func (s *Service) update(ctx context.Context, fn func([]*agent) error) error {
-	if e := ctx.Err(); e != nil {
-		return e
+	if err := ctx.Err(); err != nil {
+		return err
 	}
-	_, e := s.m.UpdateAgents(ctx, "", func(tx context.Context, rows *[]any) (any, error) {
-		if e := ctx.Err(); e != nil {
-			return nil, e
-		}
-		list := []*agent{}
-		raws := []*agents.Record{}
-		before := [][][]byte{}
-		for _, v := range *rows {
-			r, ok := v.(*jsonx.Object)
-			if !ok {
-				continue
-			}
-			a, e := decodeAgent(r)
-			if e != nil {
-				return nil, e
-			}
-			b, e := ownedBytes(a)
-			if e != nil {
-				return nil, e
+	return s.m.EditAgents(ctx, "", func(tx context.Context, rows *[]model.Agent) error {
+		list := make([]*agent, 0, len(*rows))
+		for i := range *rows {
+			copy := (*rows)[i]
+			a, err := modelAgent(&copy)
+			if err != nil {
+				return err
 			}
 			list = append(list, a)
-			raws = append(raws, r)
-			before = append(before, b)
 		}
-		if e := fn(list); e != nil {
-			return nil, e
+		if err := fn(list); err != nil {
+			return err
 		}
 		for i, a := range list {
-			b, e := ownedBytes(a)
-			if e != nil {
-				return nil, e
-			}
-			for j, key := range owned {
-				if a.dropHA && j < 3 {
-					raws[i].Delete(key)
-					continue
+			record := &(*rows)[i]
+			record.OxiDNSHA, record.OxiDNSHAState, record.OxiDNSHAPublication = a.OxiDNSHA, a.OxiDNSHAState, a.OxiDNSHAPublication
+			record.RuleSync, record.Deployments, record.LatestDeployment = a.RuleSync, a.Deployments, a.LatestDeployment
+			if a.dropHA {
+				for _, key := range owned[:3] {
+					if err := record.Clear(key); err != nil {
+						return err
+					}
 				}
-				if bytes.Equal(b[j], before[i][j]) {
-					continue
-				}
-				v, e := jsonx.Parse(b[j])
-				if e != nil {
-					return nil, e
-				}
-				raws[i].Set(key, v)
 			}
 		}
-		return nil, ctx.Err()
+		return tx.Err()
 	})
-	return e
 }
 func (s *Service) source(ctx context.Context, a *agent, snapshot bool) (*deploy.Source, *deploy.Revision, error) {
 	id := a.ProfileID

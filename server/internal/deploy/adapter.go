@@ -19,6 +19,7 @@ import (
 	"configflow/internal/convert"
 	"configflow/internal/gateway"
 	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/mosdns"
 	"configflow/internal/oxidns"
 	"configflow/internal/provider"
@@ -36,11 +37,14 @@ import (
 
 // Source is an immutable profile snapshot until the typed repository lands.
 type Source struct {
-	legacy    *jsonx.Object
-	revision  *int64
-	inputOnce sync.Once
-	inputKey  InputKey
-	inputErr  error
+	legacy      *jsonx.Object
+	revision    *int64
+	inputOnce   sync.Once
+	inputKey    InputKey
+	inputErr    error
+	modelOnce   sync.Once
+	modelConfig *model.Config
+	modelErr    error
 }
 
 // NewSource captures a legacy profile and its optional revision.
@@ -957,4 +961,50 @@ func (s *Source) dnsProfile() (*oxidns.Profile, error) {
 		return nil, err
 	}
 	return oxidns.ProfileFromJSON(data)
+}
+
+// NewTypedTarget captures a typed Agent for the remaining deploy consumers.
+// Only this compatibility edge transcodes it; Agent owners keep the model.
+func NewTypedTarget(record *model.Agent) (Target, error) {
+	if record == nil {
+		return Target{}, nil
+	}
+	data, err := model.Marshal(record)
+	if err != nil {
+		return Target{}, err
+	}
+	value, err := jsonx.Parse(data)
+	if err != nil {
+		return Target{}, err
+	}
+	raw, ok := value.(*jsonx.Object)
+	if !ok {
+		return Target{}, fmt.Errorf("invalid Agent target")
+	}
+	port, _, err := record.MemberJSON("port")
+	if err != nil {
+		return Target{}, err
+	}
+	return Target{ID: record.ID, Name: record.Name, ProfileID: record.ProfileID, ServiceType: record.ServiceType, DeploymentMethod: record.DeploymentMethod, Version: record.Version, Host: record.Host, Port: port, Token: record.Token, DomainDiscovery: record.DomainDiscoveryEnabled != nil && *record.DomainDiscoveryEnabled, Record: raw}, nil
+}
+
+// ViewConfig reads the cached typed view of an immutable captured snapshot.
+// fn must neither modify nor retain the model. The snapshot is decoded once,
+// rather than once per generator/Agent operation on the same Source.
+func (s *Source) ViewConfig(fn func(*model.Config) error) error {
+	if s == nil {
+		return fmt.Errorf("missing captured configuration")
+	}
+	s.modelOnce.Do(func() {
+		raw, err := s.Raw()
+		if err != nil {
+			s.modelErr = err
+			return
+		}
+		s.modelConfig, s.modelErr = model.DecodeConfig(raw)
+	})
+	if s.modelErr != nil {
+		return s.modelErr
+	}
+	return fn(s.modelConfig)
 }

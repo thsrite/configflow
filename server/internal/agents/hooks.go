@@ -8,6 +8,7 @@ package agents
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"sort"
 	"sync"
@@ -33,6 +34,9 @@ type Hooks struct {
 	// heartbeat that carries system_metrics; an error is logged as a warning.
 	// Default: nothing is kept.
 	AddMetrics func(m *Manager, agentID string, metrics any) error
+	// AddMetricsJSON is the context-aware native sample boundary. Installed
+	// owners check Runtime shutdown again at the in-memory append point.
+	AddMetricsJSON func(ctx context.Context, m *Manager, agentID string, sample json.RawMessage) error
 	// DeleteMetricsHistory is metrics_history.delete_agent_history (#21).
 	DeleteMetricsHistory func(m *Manager, agentID string)
 	// DeleteTrafficHistory is traffic_history.delete (#21); an error is
@@ -90,6 +94,10 @@ func RegisterHooks(h Hooks) {
 	}
 	if h.AddMetrics != nil {
 		hooks.AddMetrics = h.AddMetrics
+		hooks.AddMetricsJSON = nil
+	}
+	if h.AddMetricsJSON != nil {
+		hooks.AddMetricsJSON = h.AddMetricsJSON
 	}
 	if h.DeleteMetricsHistory != nil {
 		hooks.DeleteMetricsHistory = h.DeleteMetricsHistory

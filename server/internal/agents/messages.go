@@ -190,3 +190,5 @@ const (
 	msgHAConflict  = "DNS 主备正在同步，请等待两台发布完成"
 	msgHAUninstall = "请先停用 DNS 高可用，再卸载成员"
 )
+
+const msgMetricsHistoryFailure = "Agent %s 的监控历史保存失败：%s"

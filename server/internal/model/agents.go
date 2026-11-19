@@ -177,3 +177,102 @@ func (r *LegacyDNSEndpoint) Clear(member string) error { return ClearMember(r, &
 
 // MarshalJSON preserves unknown and unchanged LegacyDNSEndpoint members.
 func (r LegacyDNSEndpoint) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
+
+// SetJSON replaces one Agent member through the shared model codec. It retains
+// explicit null/zero assignments and clears the previous member's R5 diagnostic.
+func (r *Agent) SetJSON(member string, data []byte) error {
+	return SetMemberJSON(r, &r.raw, member, data)
+}
+
+// MemberJSON returns an owned effective member, including original null/type
+// evidence, without encoding the rest of this Agent or its history.
+func (r *Agent) MemberJSON(member string) ([]byte, bool, error) {
+	switch member {
+	case "id":
+		return r.raw.MemberJSON(member, r.ID)
+	case "name":
+		return r.raw.MemberJSON(member, r.Name)
+	case "host":
+		return r.raw.MemberJSON(member, r.Host)
+	case "port":
+		return r.raw.MemberJSON(member, r.Port)
+	case "token":
+		return r.raw.MemberJSON(member, r.Token)
+	case "service_type":
+		return r.raw.MemberJSON(member, r.ServiceType)
+	case "profile_id":
+		return r.raw.MemberJSON(member, r.ProfileID)
+	case "deployment_method":
+		return r.raw.MemberJSON(member, r.DeploymentMethod)
+	case "enabled":
+		return r.raw.MemberJSON(member, r.Enabled)
+	case "created_at":
+		return r.raw.MemberJSON(member, r.CreatedAt)
+	case "updated_at":
+		return r.raw.MemberJSON(member, r.UpdatedAt)
+	case "status":
+		return r.raw.MemberJSON(member, r.Status)
+	case "last_heartbeat":
+		return r.raw.MemberJSON(member, r.LastHeartbeat)
+	case "version":
+		return r.raw.MemberJSON(member, r.Version)
+	case "config_version":
+		return r.raw.MemberJSON(member, r.ConfigVersion)
+	case "config_revision":
+		return r.raw.MemberJSON(member, r.ConfigRevision)
+	case "pushed_at":
+		return r.raw.MemberJSON(member, r.PushedAt)
+	case "gateway_installation_id":
+		return r.raw.MemberJSON(member, r.GatewayInstallationID)
+	case "docker_ha_installation_id":
+		return r.raw.MemberJSON(member, r.DockerHAInstallationID)
+	case "domain_discovery_enabled":
+		return r.raw.MemberJSON(member, r.DomainDiscoveryEnabled)
+	case "traffic_history_enabled":
+		return r.raw.MemberJSON(member, r.TrafficHistoryEnabled)
+	case "traffic_history_since":
+		return r.raw.MemberJSON(member, r.TrafficHistorySince)
+	case "deployments":
+		return r.raw.MemberJSON(member, r.Deployments)
+	case "latest_deployment":
+		return r.raw.MemberJSON(member, r.LatestDeployment)
+	case "applied_content":
+		return r.raw.MemberJSON(member, r.AppliedContent)
+	case "latest_upgrade":
+		return r.raw.MemberJSON(member, r.LatestUpgrade)
+	case "rule_sync":
+		return r.raw.MemberJSON(member, r.RuleSync)
+	case "dns_follow":
+		return r.raw.MemberJSON(member, r.DNSFollow)
+	case "dns_follow_state":
+		return r.raw.MemberJSON(member, r.DNSFollowState)
+	case "dns_follow_job":
+		return r.raw.MemberJSON(member, r.DNSFollowJob)
+	case "oxidns_ha":
+		return r.raw.MemberJSON(member, r.OxiDNSHA)
+	case "oxidns_ha_state":
+		return r.raw.MemberJSON(member, r.OxiDNSHAState)
+	case "oxidns_ha_publication":
+		return r.raw.MemberJSON(member, r.OxiDNSHAPublication)
+	case "ipv6_verification_settings":
+		return r.raw.MemberJSON(member, r.IPv6VerificationSettings)
+	case "ipv6_verifications":
+		return r.raw.MemberJSON(member, r.IPv6Verifications)
+	case "node_test_dns_endpoints":
+		return r.raw.MemberJSON(member, r.NodeTestDNSEndpoints)
+	case "service_status":
+		return r.raw.MemberJSON(member, r.ServiceStatus)
+	case "system_metrics":
+		return r.raw.MemberJSON(member, r.SystemMetrics)
+	case "cpu":
+		return r.raw.MemberJSON(member, r.CPU)
+	case "memory":
+		return r.raw.MemberJSON(member, r.Memory)
+	case "disk":
+		return r.raw.MemberJSON(member, r.Disk)
+	case "network":
+		return r.raw.MemberJSON(member, r.Network)
+	}
+	raw, ok := r.Fields.Get(member)
+	return raw, ok, nil
+}

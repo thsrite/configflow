@@ -25,6 +25,7 @@ package metrics
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -156,11 +157,22 @@ type History struct {
 // without permission it falls back to a directory under the temporary
 // directory, as Python does.
 func NewHistory(dataDir string, maxPoints int) *History {
+	h, _ := newHistoryContext(context.Background(), dataDir, maxPoints)
+	return h
+}
+
+func newHistoryContext(ctx context.Context, dataDir string, maxPoints int) (*History, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	h := &History{DataDir: dataDir, maxPoints: maxPoints, points: map[string][]point{}, pending: map[string]int{},
 		fileLines: map[string]int{}, rewrite: map[string]bool{}, legacy: map[string]string{}}
 	if err := os.MkdirAll(h.DataDir, 0o777); err != nil {
 		if errors.Is(err, os.ErrPermission) {
 			h.DataDir = filepath.Join(os.TempDir(), "configflow_metrics")
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
 			if err := os.MkdirAll(h.DataDir, 0o777); err != nil {
 				historyLogger.Warningf("监控历史目录创建失败：%s", DescribeOSError(err))
 			}
@@ -171,7 +183,7 @@ func NewHistory(dataDir string, maxPoints int) *History {
 			historyLogger.Warningf("监控历史目录创建失败：%s", DescribeOSError(err))
 		}
 	}
-	return h
+	return h, nil
 }
 
 func (h *History) agentFile(agentID string) string  { return h.DataDir + "/" + agentID + FileSuffix }
@@ -594,31 +606,12 @@ func (h *History) AddMetrics(agentID string, systemMetrics any) (bool, error) {
 	if !ok || metrics == nil {
 		return false, &AttributeError{fmt.Sprintf("'%s' object has no attribute 'get'", pyTypeName(systemMetrics))}
 	}
-	at := naiveNow()
-	get := func(key string) any {
-		if value, present := metrics.Get(key); present {
-			return value
-		}
-		return jsonx.NewObject()
-	}
-	dataPoint := jsonx.Obj("timestamp", isoformat(at), "cpu", get("cpu"), "memory", get("memory"),
-		"disk", get("disk"), "network", get("network"))
-	// 查询时解析这一行，结果与以前从文件读回的一致，也不与心跳数据共享可变对象
-	line, err := jsonresp.Encode(dataPoint)
+	data, err := jsonresp.Encode(metrics)
 	if err != nil {
 		historyLogger.Warningf("Agent %s 的监控数据无法保存：%s", agentID, err)
 		return false, nil
 	}
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	points := append(h.points[agentID], point{at, string(line)})
-	if len(points) > h.maxPoints {
-		points = points[len(points)-h.maxPoints:]
-	}
-	h.points[agentID] = points
-	h.pending[agentID] = min(h.pending[agentID]+1, len(points))
-	h.prune(agentID)
-	return true, nil
+	return h.AddSample(context.Background(), agentID, data)
 }
 
 // AttributeError is Python's AttributeError (its text is str(error)).

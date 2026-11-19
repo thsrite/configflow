@@ -78,75 +78,66 @@ func persistSync(ctx context.Context, m *agents.Manager, id string, settings *Se
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	_, err := m.UpdateAgents(ctx, "", func(tx context.Context, list *[]any) (any, error) {
-		if err := tx.Err(); err != nil {
-			return nil, err
-		}
-		for _, entry := range *list {
-			record, ok := entry.(*jsonx.Object)
-			if !ok || record.GetString("id") != id {
+	return m.EditAgents(ctx, "", func(tx context.Context, list *[]model.Agent) error {
+		for i := range *list {
+			record := &(*list)[i]
+			if record.ID != id {
 				continue
 			}
-			if settings != nil && pairEnabling(record) {
-				return nil, refuse(msgPairEnabling)
+			if settings != nil && agents.HAActiveModel(record) && record.OxiDNSHAPublication.Enable != nil {
+				return refuse(msgPairEnabling)
 			}
-			sync := record.GetObject("rule_sync")
-			if sync == nil {
-				sync = jsonx.NewObject()
+			sync := model.AgentRuleSync{}
+			if record.RuleSync != nil {
+				sync = *record.RuleSync
 			}
 			if settings != nil {
-				sync.Set("settings", jsonx.Obj("library", settings.Library, "rules", settings.Rules))
+				sync.Settings = model.RuleSyncSettings{Library: &settings.Library, Rules: &settings.Rules}
 			}
 			if state != nil {
-				raw, err := encodeState(state)
+				data, err := encodeState(state)
 				if err != nil {
-					return nil, err
+					return err
 				}
-				value, err := jsonx.Parse(raw)
-				if err != nil {
-					return nil, err
+				var next model.RuleSyncState
+				if err = json.Unmarshal(data, &next); err != nil {
+					return err
 				}
-				sync.Set("state", value)
+				sync.State = &next
 			}
-			record.Set("rule_sync", sync)
-			return nil, tx.Err()
+			record.RuleSync = &sync
+			return tx.Err()
 		}
-		return nil, ErrAgentNotFound
+		return ErrAgentNotFound
 	})
-	return err
 }
 
-func renderCandidate(ctx context.Context, target deploy.Target, source *deploy.Source, baseURL string) (string, []convert.Download, error) {
-	raw, err := source.Raw()
-	if err != nil {
-		return "", nil, err
-	}
-	value, err := jsonx.Parse(raw)
-	if err != nil {
-		return "", nil, err
-	}
-	config, ok := value.(*jsonx.Object)
-	if !ok {
-		return "", nil, refuse(msgSnapshotVerify)
-	}
-	if target.ServiceType == "mihomo" {
-		content, err := convert.GenerateMihomoConfig(ctx, config, convert.GenerateOptions{BaseURL: baseURL, SyncLANHosts: true, SkipProviderPreflight: true, ForAgent: true, RegionProbe: target.DomainDiscovery})
-		return content, nil, err
-	}
-	p := oxidns.NewProfile(config)
-	content, err := oxidns.Generate(p, baseURL)
-	if err != nil {
-		return "", nil, err
-	}
-	entries, err := oxidns.RulesetDownloads(p, baseURL)
-	if err != nil {
-		return "", nil, err
-	}
-	downloads := make([]convert.Download, 0, len(entries))
-	for _, e := range entries {
-		downloads = append(downloads, convert.Download{URL: e.URL, LocalPath: e.LocalPath})
-	}
-	return content, downloads, nil
+func renderCandidate(ctx context.Context, target deploy.Target, source *deploy.Source, baseURL string) (content string, downloads []convert.Download, err error) {
+	err = source.ViewConfig(func(config *model.Config) error {
+		if target.ServiceType == "mihomo" {
+			var e error
+			content, e = convert.MihomoConfig(ctx, config, convert.MihomoOptions{BaseURL: baseURL, SyncLANHosts: true, SkipProviderPreflight: true, ForAgent: true, RegionProbe: target.DomainDiscovery})
+			return e
+		}
+		profile, e := oxidns.NewTypedProfile(config)
+		if e != nil {
+			return e
+		}
+		content, e = oxidns.Generate(profile, baseURL)
+		if e != nil {
+			return e
+		}
+		entries, e := oxidns.RulesetDownloads(profile, baseURL)
+		if e != nil {
+			return e
+		}
+		downloads = make([]convert.Download, 0, len(entries))
+		for _, entry := range entries {
+			downloads = append(downloads, convert.Download{URL: entry.URL, LocalPath: entry.LocalPath})
+		}
+		return nil
+	})
+	return content, downloads, err
 }
 
 func recordID(r *agents.Record) string { return r.GetString("id") }
@@ -362,7 +353,11 @@ func profileAgents(ctx context.Context, r *repo.Repository, profileID string) ([
 	selected := oxidns.ProfileAgents(source)
 	out := make([]*agents.Record, 0, len(selected))
 	for _, node := range selected {
-		record, ok := oxidns.ToJSONX(node).(*jsonx.Object)
+		value, err := jsonx.Parse(oxidns.ToJSON(node))
+		if err != nil {
+			return nil, err
+		}
+		record, ok := value.(*jsonx.Object)
 		if !ok {
 			return nil, refuse(msgSnapshotVerify)
 		}

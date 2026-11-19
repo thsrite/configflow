@@ -1,8 +1,8 @@
 package agents
 
 import (
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 	"context"
 	"encoding/json"
 )
@@ -14,43 +14,58 @@ func (m *Manager) RememberPreparedContent(ctx context.Context, agentID, deployme
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
-	value, err := jsonx.Parse(prepared)
-	if err != nil {
+	var identity struct {
+		ProfileID   string `json:"profile_id"`
+		ServiceType string `json:"service_type"`
+	}
+	if err := json.Unmarshal(prepared, &identity); err != nil {
 		return err
 	}
-	proof, ok := value.(*jsonx.Object)
-	if !ok || proof.GetString("profile_id") == "" || proof.GetString("service_type") == "" {
+	var proof model.PreparedContent
+	if err := json.Unmarshal(prepared, &proof); err != nil {
+		return err
+	}
+	if identity.ProfileID == "" || identity.ServiceType == "" || len(model.Issues(&proof)) != 0 {
 		return &ValueError{Message: "Deployment ownership changed during preparation"}
 	}
-	var validation any
+	var validation *model.OxiDNSValidationReceipt
 	if len(receipt) > 0 {
-		validation, err = jsonx.Parse(receipt)
-		if err != nil {
+		validation = new(model.OxiDNSValidationReceipt)
+		if err := json.Unmarshal(receipt, validation); err != nil {
 			return err
 		}
+		if len(model.Issues(validation)) != 0 {
+			return &ValueError{Message: "Invalid deployment validation receipt"}
+		}
 	}
-	_, err = m.UpdateAgents(ctx, "", func(ctx context.Context, list *[]any) (any, error) {
-		a, _ := findAgent(*list, agentID)
-		state := taskOf(a, deploymentID)
-		if a == nil || state == nil {
-			return nil, &ValueError{Message: "Deployment ownership changed during preparation"}
+	return m.EditAgents(ctx, "", func(tx context.Context, list *[]model.Agent) error {
+		a := registryAgent(*list, agentID)
+		if a == nil {
+			return &ValueError{Message: "Deployment ownership changed during preparation"}
 		}
-		profile, e := m.profileOf(ctx, a)
-		if e != nil {
-			return nil, e
+		state, ok := a.Deployments.Get(deploymentID)
+		if !ok {
+			return &ValueError{Message: "Deployment ownership changed during preparation"}
 		}
-		if state.GetString("profile_id") != proof.GetString("profile_id") || profile != proof.GetString("profile_id") || a.GetString("service_type") != proof.GetString("service_type") {
-			return nil, &ValueError{Message: "Deployment ownership changed during preparation"}
+		profile := a.ProfileID
+		if profile == "" {
+			var err error
+			profile, err = m.defaultProfileID(tx)
+			if err != nil {
+				return err
+			}
 		}
-		// Another poll can finish an interrupted preparation. Never revive it.
-		if state.GetBool("submitted") || state.GetString("status") != "preparing" {
-			return nil, &ValueError{Message: "Deployment ownership changed during preparation"}
+		if state.ProfileID != proof.ProfileID || profile != proof.ProfileID || a.ServiceType != proof.ServiceType || state.Submitted != nil && *state.Submitted || state.Status != "preparing" {
+			return &ValueError{Message: "Deployment ownership changed during preparation"}
 		}
-		state.Set("prepared_content", proof.DeepCopy())
-		if len(receipt) > 0 {
-			state.Set("oxidns_validation_receipt", jsonx.DeepCopy(validation))
+		if err := tx.Err(); err != nil {
+			return err
 		}
-		return nil, nil
+		state.PreparedContent = &proof
+		if validation != nil {
+			state.OxiDNSValidationReceipt = validation
+		}
+		a.Deployments.Set(deploymentID, state)
+		return tx.Err()
 	})
-	return err
 }
