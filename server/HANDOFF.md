@@ -54,7 +54,50 @@ the hand-back. If no notification arrives within ~3 h, check status once more.
 | 19338c67-c336-40c7-98a9-b4532a66af68 | C19/C20 Surge/Loon adversarial review | wks_0d8cd06808daac1f, branch `go-review-c19c20` |
 | 3112fbeb-e43a-4d16-ad1a-bc88670b1099 | C37 domain discovery port | wks_0dcc037efd16c502, branch `go-port-c37` |
 | e46d698f-6345-41b9-8a38-06d61b6622d3 | config black-box difftest, Step A coverage matrix (→ Opus O6 review) | wks_223d2a53f6e7abbb, branch `go-difftest-config` |
-## >>> CURRENT STATE — 2026-11-19 (coordinator 94c212e6; read this first) <<<
+## >>> CURRENT STATE — 2026-11-19 (handoff to a fresh session; read this first) <<<
+
+**Why this handoff:** the previous coordinator session (94c212e6, Opus) got safety-routed down to Opus 4.8
+because its context accumulated security material (an O9 security review + a user question about LAN packet
+capture). A FRESH session avoids that context and should stay on Opus 5.5. Start here.
+
+**go = 12150a402** (pushed). Merged since the last entry: batch-7, batch-8, batch-9, batch-10.
+- **Route parity is COMPLETE** — MCP #39 (6 routes) and the 3 artifact routes were the last gaps, both merged
+  with Opus HR review. Every Python route now exists in Go.
+- **O9 security round 1 done & merged**: Go 1.26.11 toolchain, all-routes auth test, H1 CORS same-origin-only
+  (never rejects; reverse proxy OK), H2 Agent registration needs key/JWT/one-time 24 h credential (hash only,
+  cap 100 evicting oldest), M1 backend body limits, M2 decoded-download caps, M3 placeholder/short JWT key →
+  random + warning, L1/L3/L5/L6.
+- **N8 refactor**: N8-1..N8-8d done; N8-9 all seven groups done; N8-10 **core-1 done** (Opus HR verified).
+- **JSON case-sensitivity sweep**: encoding/json matches struct fields case-INsensitively and takes the last of
+  duplicate keys; Python matches exact keys. Fixed heartbeat (batch-10) then swept all 223 call sites to a shared
+  exact-key `jsondecode` (go-audit-json-case@32120955f + Codex review go-review-json-case@37a1a4840, +3 fixes).
+- **Allocations**: Mihomo 128n ~46 MB, OxiDNS cold ~43 MB, heartbeat ~6.8 KB. O10 has two residual follow-ups
+  (MemberJSON scalar encode, typed View fixed read cost).
+
+**batch-11 candidates (both already reviewed, ready to stack):**
+- go-review-json-case@37a1a4840 (JSON exact-key sweep + its Codex review)
+- go-n8-10-core (8019dda1, IN FLIGHT) — N8-10 core-2: manager register/edit, deployments, remote/diagnostics/
+  events. Rebased onto go@12150a402. Rulings given: non-ASCII/Unicode version numbers fail closed (machine values,
+  no CPython int emulation); stored-ownership identity fields compare original text only (M1 from core-1); any JSON
+  from Agents parsed by exact key, never struct-decoded; heartbeat alloc ceilings must hold. When it hands back:
+  dispatch a fresh-Opus HR review, then stack into batch-11.
+
+**Integrator:** b6fa1f80 (Codex) builds each batch in ~/program/configflow-go-batch-N, runs preflight
+(/tmp/preflight.sh on the servers = vet both tags + full non-race suite) + split gate (core on .64, compare on .32,
+setsid nohup). Coordinator ff-merges on PASS and pushes.
+
+**Still to do after batch-11:** N8-10 monitor/upgrades/installer/api-agents (parallel after core-2); N8-11
+(delete jsonx/pystr/legacy + grep gate); then O9 round 2 (MCP/artifact + full tree), O10, O13 feature-completeness
+audit, O15 ARCHITECTURE.md, O17 code-size audit, O12 release notes (draft at server/parity/o12-release-notes.md,
+13 maintainer-confirm items), labs L2–L6, O14 switch. remaining-work.md has the full list with sizes.
+
+**Account/model note (maintainer 2026-11-19):** using the Pro account `solarsear`. Opus 5.5 can get safety-routed
+to 4.8 when context is security-heavy — keep coordinator sessions focused, `/clear` or hand off when a session's
+context fills with security review material. HR reviews stay Opus; non-HR reviews Codex. Create agents with
+`paseo run --new-workspace worktree --worktree-mode checkout-branch` so they show in the sidebar; never delete an
+agent's cwd worktree.
+
+## (history) CURRENT STATE — 2026-11-19 (coordinator 94c212e6) <<<
 
 **go = 690e97995** (pushed). batch-7 merged 2026-11-18 night (R14–R17, A18/A22/A23, N8-8b/c, N8-9 health+discovery,
 O3-7/8; fuzz found quoted "<<" merge-key bug, fixed). **batch-8 merged 2026-11-19**: N8-9 rules + dns, MCP #39
