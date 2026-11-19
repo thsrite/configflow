@@ -97,8 +97,9 @@ func bindMount(source, target string, readonly, create bool) composeMount {
 }
 
 type composeEnvironment struct {
-	Entries []string
-	Mapping bool
+	Entries     []string
+	Mapping     bool
+	TypedValues map[string]*yamlx.Node
 }
 
 func (e composeEnvironment) MarshalYAML() (any, error) {
@@ -108,7 +109,11 @@ func (e composeEnvironment) MarshalYAML() (any, error) {
 	node := yamlx.Map()
 	for _, entry := range e.Entries {
 		key, value, _ := strings.Cut(entry, "=")
-		yamlx.Set(node, key, yamlx.Str(value))
+		if typed, ok := e.TypedValues[key]; ok {
+			yamlx.Set(node, key, typed)
+		} else {
+			yamlx.Set(node, key, yamlx.Str(value))
+		}
 	}
 	return node, nil
 }

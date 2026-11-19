@@ -20,6 +20,7 @@ type GuideOptions struct {
 	identity                                            model.Fields
 	addressNode                                         *yamlx.Node
 	addressDisplay                                      string
+	imageRaw                                            json.RawMessage
 }
 
 // GuideRequest contains inputs consumed by the selected installation mode.
@@ -31,6 +32,7 @@ type GuideRequest struct {
 	AgentMount, CoreMount                                  composeMount
 	Options                                                GuideOptions
 	Output, VIP                                            string
+	imageRaw                                               json.RawMessage
 }
 
 // GuideBlock is one copyable step in the installation guide.
@@ -61,6 +63,7 @@ type ComposeBundle struct {
 // GuideResult is the installation HTTP response. Read-only actions omit the
 // generation fields rather than materializing an empty installation.
 type GuideResult struct {
+	EnrollmentExpiresAt *json.Number       `json:"enrollment_expires_at,omitempty"`
 	Success             bool               `json:"success"`
 	PreflightReport     *PreflightReport   `json:"preflight_report,omitempty"`
 	InspectionCommand   *string            `json:"inspection_command,omitempty"`
@@ -115,7 +118,7 @@ func DecodeGuideRequest(data json.RawMessage) (GuideRequest, error) {
 	request := GuideRequest{}
 	var fields model.Fields
 	if err := json.Unmarshal(data, &fields); err != nil {
-		return request, valueError("请提交 JSON 对象")
+		return request, valueError(msgGuideObject)
 	}
 	request.Action, _ = textOr(fields, "action", "generate")
 	request.Options.NetworkMode, _ = textOr(fields, "network_mode", "host")
@@ -123,7 +126,7 @@ func DecodeGuideRequest(data json.RawMessage) (GuideRequest, error) {
 	case "check":
 		text, ok := fieldText(fields, "output")
 		if !ok {
-			return request, valueError("output 须为检查命令的文本输出")
+			return request, valueError(msgPreflightOutputType)
 		}
 		request.Output = text
 		return request, nil
@@ -132,7 +135,7 @@ func DecodeGuideRequest(data json.RawMessage) (GuideRequest, error) {
 		if !ok {
 			raw, _ := fields.Get("container_name")
 			if !emptyInspectionName(raw) {
-				return request, valueError("原容器名只能包含字母、数字、点、下划线或短横线")
+				return request, valueError(msgOriginalContainerName)
 			}
 		}
 		request.ContainerName = text
@@ -141,39 +144,39 @@ func DecodeGuideRequest(data json.RawMessage) (GuideRequest, error) {
 		raw, _ := fields.Get("vip")
 		ip, _, _, ok := decodeIPv4Value(raw)
 		if !ok {
-			return request, valueError("请填写有效的虚拟 IPv4 地址")
+			return request, valueError(msgVirtualIPv4)
 		}
 		request.VIP = ip
 		return request, nil
 	}
 	request.Mode, _ = textOr(fields, "mode", "new")
 	if request.Action != "generate" || (request.Mode != "new" && request.Mode != "migrate") {
-		return request, valueError("安装步骤或模式无效")
+		return request, valueError(msgGuideAction)
 	}
 	request.InstallMethod, _ = textOr(fields, "install_method", "script")
 	switch request.InstallMethod {
 	case "script", "compose", "compose_direct", "compose_compact":
 	default:
-		return request, valueError("install_method 须为 script、compose、compose_direct 或 compose_compact")
+		return request, valueError(msgGuideMethod)
 	}
 	if request.InstallMethod != "script" && request.Mode != "new" {
-		return request, valueError("Compose 安装包仅支持新安装；已有容器请使用迁移脚本")
+		return request, valueError(msgComposeNewOnly)
 	}
 	request.Image, _ = textOr(fields, "image", DockerHAImage)
 	if !isImageName(request.Image) {
-		return request, valueError("Docker 镜像名称无效")
+		return request, valueError(msgDockerImage)
 	}
 	p := &request.Options
 	p.ServerURL, _ = textOr(fields, "server_url", "")
 	if !isServerURL(p.ServerURL) {
-		return request, valueError("请填写完整的 ConfigFlow HTTP(S) 地址")
+		return request, valueError(msgServerURL)
 	}
 	parsed, err := weburl.Parse(p.ServerURL)
 	if err != nil {
 		return request, valueError(err.Error())
 	}
 	if weburl.HasCredentials(parsed) || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.Hostname() == "" {
-		return request, valueError("ConfigFlow 地址不能包含登录凭据、查询参数或片段")
+		return request, valueError(msgServerURLComponents)
 	}
 	p.ServerURL = strings.TrimRight(p.ServerURL, "/")
 	port, ok := fieldNumber(fields, "oxidns_port")
@@ -181,7 +184,7 @@ func DecodeGuideRequest(data json.RawMessage) (GuideRequest, error) {
 		port, ok = "8082", true
 	}
 	if !ok || strings.ContainsAny(port.String(), ".eE") {
-		return request, valueError("Agent 端口须为整数")
+		return request, valueError(msgAgentPortInteger)
 	}
 	p.OxidnsPort = port
 	// Preserve the exact historical plan members for identity hashing, including
@@ -233,7 +236,7 @@ func DecodeGuideRequest(data json.RawMessage) (GuideRequest, error) {
 	if request.InstallMethod != "compose_compact" {
 		raw, present := fields.Get("create_host_identity")
 		if present && (!bytesBoolean(raw) || json.Unmarshal(raw, &request.CreateHostIdentity) != nil) {
-			return request, valueError("create_host_identity 须为布尔值")
+			return request, valueError(msgCreateIdentityBoolean)
 		}
 	}
 	if request.InstallMethod != "compose_compact" && !(request.InstallMethod == "compose_direct" && request.CreateHostIdentity) {
@@ -248,7 +251,7 @@ func DecodeGuideRequest(data json.RawMessage) (GuideRequest, error) {
 		}
 		request.ExistingAgentName, ok = fieldText(fields, "existing_agent_name")
 		if !ok {
-			return request, valueError("请填写原 Agent 完整名称")
+			return request, valueError(msgOriginalAgentName)
 		}
 		if err := ValidateAgentName(request.ExistingAgentName); err != nil {
 			return request, err
@@ -277,11 +280,11 @@ func DecodeGuideRequest(data json.RawMessage) (GuideRequest, error) {
 		}
 	}
 	if raw, _ := p.identity.Get("agent_name"); len(raw) > 0 && raw[0] != '"' {
-		return request, &TypeError{Message: msgRendererText}
+		return request, &RenderError{Message: msgRendererText}
 	}
 	if p.NetworkMode == "macvlan" {
 		if raw, _ := p.identity.Get("ha_parent"); len(raw) > 0 && raw[0] != '"' {
-			return request, &TypeError{Message: msgRendererText}
+			return request, &RenderError{Message: msgRendererText}
 		}
 	}
 	return request, nil
@@ -291,6 +294,13 @@ func bytesBoolean(raw []byte) bool { return string(raw) == "true" || string(raw)
 func planHash(options GuideOptions, extra map[string]string, compact bool) (string, error) {
 	fields := options.identity
 	for key, value := range extra {
+		if key == "image" && len(options.imageRaw) > 0 {
+			if err := fields.Set(key, options.imageRaw); err != nil {
+				return "", err
+			}
+			continue
+		}
+
 		if err := setSessionField(&fields, key, value); err != nil {
 			return "", err
 		}
@@ -307,7 +317,7 @@ func planHash(options GuideOptions, extra map[string]string, compact bool) (stri
 }
 
 // GenerateGuideJSON renders an installation guide from an exact-key DTO.
-func GenerateGuideJSON(data json.RawMessage, enrollment *Enrollment) (*GuideResult, error) {
+func GenerateGuideJSON(data json.RawMessage, enrollment *Capability) (*GuideResult, error) {
 	request, err := DecodeGuideRequest(data)
 	if err != nil {
 		return nil, err
@@ -315,7 +325,7 @@ func GenerateGuideJSON(data json.RawMessage, enrollment *Enrollment) (*GuideResu
 	return renderGuide(request, enrollment)
 }
 
-func renderGuide(request GuideRequest, enrollment *Enrollment) (*GuideResult, error) {
+func renderGuide(request GuideRequest, enrollment *Capability) (*GuideResult, error) {
 	result := &GuideResult{Success: true}
 	p := request.Options
 	switch request.Action {
@@ -330,7 +340,7 @@ func renderGuide(request GuideRequest, enrollment *Enrollment) (*GuideResult, er
 	case "verify":
 		vip, err := parseIPv4(request.VIP)
 		if err != nil || !usableAddress(vip) {
-			return nil, valueError("请填写有效的虚拟 IPv4 地址")
+			return nil, valueError(msgVirtualIPv4)
 		}
 		command := strings.ReplaceAll(haVerification, "{{VIP}}", ipv4Text(vip))
 		result.VerificationCommand = &command
@@ -453,4 +463,13 @@ func emptyInspectionName(raw json.RawMessage) bool {
 		return true
 	}
 	return false
+}
+
+func imageNode(request GuideRequest) *yamlx.Node {
+	if len(request.imageRaw) > 0 {
+		if node, err := yamlx.FromJSON(request.imageRaw); err == nil {
+			return node
+		}
+	}
+	return yamlx.Str(request.Image)
 }

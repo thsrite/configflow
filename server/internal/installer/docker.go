@@ -9,10 +9,11 @@ import (
 // Port of backend/agents/install_script.py: the Docker Compose file and the
 // Docker run installer of the Docker Agent.
 
-// DockerOptions are the arguments of generate_docker_agent_compose /
+// DockerInstallOptions are the arguments of generate_docker_agent_compose /
 // generate_docker_agent_run. Ports hold Python ints (int, int64, *big.Int);
-// NewDockerOptions fills the Python defaults.
-type DockerOptions struct {
+// DefaultDockerOptions fills the Python defaults.
+// DockerInstallOptions contains the validated native renderer input.
+type DockerInstallOptions struct {
 	RegistrationTokens map[string]string
 	ServerURL          string
 	AgentName          string
@@ -21,10 +22,10 @@ type DockerOptions struct {
 	NetworkMode        string
 	EnableMihomo       bool
 	EnableMosdns       bool
-	MihomoPort         any
-	MosdnsPort         any
+	MihomoPort         string
+	MosdnsPort         string
 	EnableOxidns       bool
-	OxidnsPort         any
+	OxidnsPort         string
 	EnableDNSHA        bool
 	HAParent           string
 	HASubnet           string
@@ -32,11 +33,11 @@ type DockerOptions struct {
 	HAHostIDPath       string
 }
 
-// NewDockerOptions returns the Python defaults.
-func NewDockerOptions(serverURL string) DockerOptions {
-	return DockerOptions{
+// DefaultDockerOptions returns the Python defaults.
+func DefaultDockerOptions(serverURL string) DockerInstallOptions {
+	return DockerInstallOptions{
 		ServerURL: serverURL, AgentName: "agent", DataDir: "./agent_data", NetworkMode: "host",
-		EnableMihomo: true, MihomoPort: 8080, MosdnsPort: 8081, OxidnsPort: 8082,
+		EnableMihomo: true, MihomoPort: "8080", MosdnsPort: "8081", OxidnsPort: "8082",
 		HAHostIDPath: "/etc/machine-id",
 	}
 }
@@ -70,24 +71,24 @@ func isHAParent(parent string) bool {
 }
 
 // dockerHANetwork is _docker_ha_network.
-func dockerHANetwork(o DockerOptions) (*haNetwork, error) {
+func dockerHANetwork(o DockerInstallOptions) (*haNetwork, error) {
 	if !o.EnableOxidns || o.EnableMihomo || o.EnableMosdns {
-		return nil, valueError("Docker DNS 高可用仅支持单独运行 OxiDNS")
+		return nil, valueError(msgDockerHAOxidnsOnly)
 	}
 	if o.NetworkMode != "host" && o.NetworkMode != "macvlan" {
-		return nil, valueError("Docker DNS 高可用需选择 Host 或 Macvlan，不支持 bridge")
+		return nil, valueError(msgDockerHANetwork)
 	}
 	address, err := parseIPv4(o.AgentIP)
 	if err != nil || isLoopback(address) || isMulticast(address) || isLinkLocal(address) || isUnspecified(address) || isReserved(address) {
-		return nil, valueError("请填写有效的固定局域网 IPv4 地址；Host 模式填写宿主机地址，Macvlan 模式填写容器地址")
+		return nil, valueError(msgFixedIPv4)
 	}
 	if o.NetworkMode == "host" {
 		return nil, nil
 	}
 	if !isHAParent(o.HAParent) {
-		return nil, valueError("请填写有效的宿主机网卡名称，如 eth0 或 enp1s0")
+		return nil, valueError(msgHAParent)
 	}
-	invalid := valueError("请填写有效的 IPv4 局域网网段、容器固定地址和可选网关；容器地址须在该网段内且不能与网关相同")
+	invalid := valueError(msgHASubnet)
 	subnet, err := parseIPv4Network(o.HASubnet)
 	if err != nil {
 		return nil, invalid
@@ -126,15 +127,15 @@ func dockerHANetwork(o DockerOptions) (*haNetwork, error) {
 // dockerHAIdentity is _docker_ha_identity(path).
 func dockerHAIdentity(path string) (composeMount, error) {
 	if !strings.HasPrefix(path, "/") || strings.ContainsAny(path, ",:\x00\r\n") {
-		return composeMount{}, valueError("宿主机身份文件须为绝对路径，且不能包含逗号、冒号或换行")
+		return composeMount{}, valueError(msgDockerIdentityPath)
 	}
 	return bindMount(path, "/run/configflow-host-machine-id", true, false), nil
 }
 
-func checkHAPort(port any) error {
-	n, err := pyInt(port)
+func checkHAPort(port string) error {
+	n, err := parseInstallInteger(port)
 	if err != nil || !inRange(n, 1024, 65535) {
-		return valueError("OxiDNS Agent 端口须为 1024–65535")
+		return valueError(msgDockerHAPort)
 	}
 	return nil
 }
@@ -147,7 +148,7 @@ func boolText(b bool) string {
 }
 
 // GenerateDockerAgentCompose is generate_docker_agent_compose.
-func GenerateDockerAgentCompose(o DockerOptions) (string, error) {
+func RenderDockerCompose(o DockerInstallOptions) (string, error) {
 	document, err := dockerCompose(o)
 	if err != nil {
 		return "", err
@@ -155,7 +156,7 @@ func GenerateDockerAgentCompose(o DockerOptions) (string, error) {
 	return composeYAML(document, false)
 }
 
-func dockerCompose(o DockerOptions) (*composeDocument, error) {
+func dockerCompose(o DockerInstallOptions) (*composeDocument, error) {
 	if err := ValidateAgentName(o.AgentName); err != nil {
 		return nil, err
 	}
@@ -174,7 +175,7 @@ func dockerCompose(o DockerOptions) (*composeDocument, error) {
 		}
 	}
 	if o.EnableMosdns && o.EnableOxidns {
-		return nil, valueError("MosDNS 与 OxiDNS 默认都监听 53 端口，请使用独立容器或只启用一个 DNS 核心")
+		return nil, valueError(msgDNSServiceConflict)
 	}
 	var services []string
 	if o.EnableMihomo {
@@ -191,7 +192,7 @@ func dockerCompose(o DockerOptions) (*composeDocument, error) {
 		suffix = strings.Join(services, "-")
 	}
 	containerName := o.AgentName + "-" + suffix
-	mihomoPort, mosdnsPort, oxidnsPort := pyStr(o.MihomoPort), pyStr(o.MosdnsPort), pyStr(o.OxidnsPort)
+	mihomoPort, mosdnsPort, oxidnsPort := o.MihomoPort, o.MosdnsPort, o.OxidnsPort
 	environment := []string{
 		"SERVER_URL=" + o.ServerURL,
 		"TZ=Asia/Shanghai",
@@ -300,7 +301,7 @@ func shellWord(value string, plain bool) string {
 }
 
 // GenerateDockerAgentRun is generate_docker_agent_run.
-func GenerateDockerAgentRun(o DockerOptions) (string, error) {
+func RenderDockerRun(o DockerInstallOptions) (string, error) {
 	if err := ValidateAgentName(o.AgentName); err != nil {
 		return "", err
 	}
@@ -315,10 +316,10 @@ func GenerateDockerAgentRun(o DockerOptions) (string, error) {
 		if _, err := dockerHAIdentity(o.HAHostIDPath); err != nil {
 			return "", err
 		}
-		return generateDockerHARun(o, pyStr(o.OxidnsPort), network), nil
+		return generateDockerHARun(o, o.OxidnsPort, network), nil
 	}
 	if o.EnableMosdns && o.EnableOxidns {
-		return "", valueError("MosDNS 与 OxiDNS 默认都监听 53 端口，请使用独立容器或只启用一个 DNS 核心")
+		return "", valueError(msgDNSServiceConflict)
 	}
 	var services []string
 	if o.EnableMihomo {
@@ -353,7 +354,7 @@ func GenerateDockerAgentRun(o DockerOptions) (string, error) {
 			desc = "OxiDNS"
 		}
 	}
-	mihomoPort, mosdnsPort, oxidnsPort := pyStr(o.MihomoPort), pyStr(o.MosdnsPort), pyStr(o.OxidnsPort)
+	mihomoPort, mosdnsPort, oxidnsPort := o.MihomoPort, o.MosdnsPort, o.OxidnsPort
 	portsArgs := ""
 	if o.NetworkMode == "bridge" {
 		var ports []string
@@ -431,7 +432,7 @@ func GenerateDockerAgentRun(o DockerOptions) (string, error) {
 
 // generateDockerHARun is _generate_docker_ha_run: a new HA installation,
 // never an in-place container upgrade.
-func generateDockerHARun(o DockerOptions, port string, network *haNetwork) string {
+func generateDockerHARun(o DockerInstallOptions, port string, network *haNetwork) string {
 	quote := shlexQuote
 	setup := ""
 	if network != nil {

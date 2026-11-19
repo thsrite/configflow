@@ -4,18 +4,20 @@
 // gateway_install_script.py) and keeps the short-lived install links
 // (install_command_store.py).
 //
-// Users run the rendered scripts as root, so every renderer must produce the
-// same bytes as the Python code for the same inputs. The shell templates are
-// embedded from scripts/, a copy of backend/agents/scripts/ that
-// TestScriptsMatchBackend keeps identical.
-//
-// Errors a Python generator raises as ValueError are *ValueError here; the
-// routes answer them with their text, as Flask does with str(exc).
+// Renderers preserve shell commands and effects. JSON/YAML configuration and
+// archive payloads are compared structurally; formatting and compression use
+// native Go libraries. Embedded shell templates remain synchronized with backend.
 package installer
 
-// ValueError is a ValueError raised by a Python generator; Error() is str(exc).
-type ValueError struct{ Message string }
+// ValidationError is an installer input refusal exposed as HTTP 400.
+type ValidationError struct{ Message string }
 
-func (e *ValueError) Error() string { return e.Message }
+func (e *ValidationError) Error() string { return e.Message }
+func valueError(message string) error    { return &ValidationError{Message: message} }
 
-func valueError(message string) error { return &ValueError{Message: message} }
+// RenderError rejects a malformed internal renderer or stored capability shape.
+// It carries a native diagnostic, never an interpreter exception or credential.
+type RenderError struct{ Message string }
+
+func (e *RenderError) Error() string { return e.Message }
+func typeError(message string) error { return &RenderError{Message: message} }

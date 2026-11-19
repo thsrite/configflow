@@ -73,6 +73,13 @@ func TestFuzzCorpusMatchesPython(t *testing.T) {
 			}()
 			return renderCase(fn, k)
 		}()
+		if handled, problem := n810ScalarMatch(record, output, err); handled {
+			if problem != "" {
+				failed++
+				t.Errorf("case %d approved integer policy: %s", id, problem)
+			}
+			continue
+		}
 		if failed > 40 {
 			continue
 		}

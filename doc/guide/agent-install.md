@@ -284,6 +284,8 @@ Docker 镜像已经带核心，界面不提供普通 Shell 的“同时安装核
 | 数据目录 | 单服务默认 `./mihomo_data`、`./oxidns_data`、`./mosdns_data`；双服务默认 `./aio_data`，下面分别保存 Agent 与核心数据 | 这些路径相对于 Compose 文件所在目录；NAS 建议改成明确绝对路径。重建时保留原挂载 |
 | Docker 镜像输入框 | 默认空；当前普通生成器实际使用 `thsrite/config-flow-agent:latest` | 以生成内容中的 `image` 为准。当前仅改变输入框不会替换生成镜像；确需自定义时应修改生成后的 Compose，并自行确认兼容性 |
 
+OxiDNS 高可用 Compose 安装必须使用专用持久子目录。系统目录和共享根目录（包括双斜线、末尾斜线或 `..` 等等价写法）会在生成前被拒绝；身份文件与数据目录、迁移备份目录也不能重叠。
+
 OxiDNS 和 MosDNS 都默认使用 DNS 53；不要在同一容器同时启用二者。分开容器时，也要使用独立地址或不冲突的宿主端口。All-in-One 当前选择的是 OxiDNS。
 
 </template>

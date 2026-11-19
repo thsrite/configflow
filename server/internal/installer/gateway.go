@@ -94,21 +94,23 @@ func httpURL(value, name string) (string, error) {
 	return strings.TrimRight(value, "/"), nil
 }
 
-// GatewayOptions are the arguments of generate_gateway_install_script.
+// GatewayInstallOptions are the arguments of generate_gateway_install_script.
 // AgentChecksums nil is None (hash the local binaries); a non-nil empty
 // map is an explicit empty dict. Ports nil mean 8080 / 8082.
-type GatewayOptions struct {
+// GatewayInstallOptions contains the validated native renderer input.
+type GatewayInstallOptions struct {
 	ServerURL         string
 	AgentName         string
 	AgentIP           string
 	BinaryDownloadURL string
-	MihomoAgentPort   any
-	OxidnsAgentPort   any
+	MihomoAgentPort   int
+	OxidnsAgentPort   int
 	EnrollmentURL     string
 	EnrollmentToken   string
 	AgentChecksums    map[string]string
 	InstallationID    string
 	FullTun           bool
+	portError         error
 }
 
 func isSHA256Hex(s string) bool {
@@ -123,8 +125,8 @@ func isSHA256Hex(s string) bool {
 	return true
 }
 
-// GenerateGatewayInstallScript is generate_gateway_install_script.
-func GenerateGatewayInstallScript(o GatewayOptions) (string, error) {
+// RenderGatewayInstall is generate_gateway_install_script.
+func RenderGatewayInstall(o GatewayInstallOptions) (string, error) {
 	serverURL, err := httpURL(o.ServerURL, "server_url")
 	if err != nil {
 		return "", err
@@ -176,20 +178,21 @@ func GenerateGatewayInstallScript(o GatewayOptions) (string, error) {
 		}
 	}
 	if len(checksums) == 0 {
-		return "", valueError("ConfigFlow 尚未提供 Linux Agent 二进制，请先构建/部署最新版 Agent 后重试。")
+		return "", valueError(msgAgentBinaryUnavailable)
 	}
 	for arch, digest := range checksums {
 		if (arch != "linux-amd64" && arch != "linux-arm64") || !isSHA256Hex(digest) {
 			return "", valueError("Invalid Agent architecture or SHA256 digest")
 		}
 	}
-	aioOptions := NewAIOOptions(serverURL, o.AgentName)
+	aioOptions := DefaultAIOOptions(serverURL, o.AgentName)
+	aioOptions.portError = o.portError
 	aioOptions.AgentIP = o.AgentIP
 	aioOptions.BinaryDownloadURL = binaryDownloadURL
-	if o.MihomoAgentPort != nil {
+	if o.MihomoAgentPort != 0 {
 		aioOptions.MihomoAgentPort = o.MihomoAgentPort
 	}
-	if o.OxidnsAgentPort != nil {
+	if o.OxidnsAgentPort != 0 {
 		aioOptions.OxidnsAgentPort = o.OxidnsAgentPort
 	}
 	aioOptions.MihomoServiceBinary = "/usr/local/bin/mihomo"
@@ -208,7 +211,7 @@ func GenerateGatewayInstallScript(o GatewayOptions) (string, error) {
 	} else {
 		aioOptions.InstallationDescription = "为上一步准备好的 Mihomo 和 OxiDNS 安装 Agent，不改核心配置、不重启核心。"
 	}
-	aio, err := GenerateGoAIOInstallScript(aioOptions)
+	aio, err := RenderAIOInstall(aioOptions)
 	if err != nil {
 		return "", err
 	}

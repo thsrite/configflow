@@ -221,7 +221,25 @@ func TestReviewDeflateAndZipMatchPython(t *testing.T) {
 			}
 		case "zip":
 			zips++
-			got := pyZipArchive(entries[row.ID])
+			got, err := composeArchive(entries[row.ID])
+			// A directory with a nonempty payload is an internal zipfile
+			// artifact, never one of the five installation package members.
+			// archive/zip refuses it; retain its frozen Python answer.
+			nonemptyDirectory := false
+			for _, entry := range entries[row.ID] {
+				if strings.HasSuffix(entry.name, "/") && len(entry.data) != 0 {
+					nonemptyDirectory = true
+				}
+			}
+			if nonemptyDirectory {
+				if err == nil {
+					t.Error("nonempty directory archive member was accepted")
+				}
+				continue
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
 			if !nativeArchivePayload(got, entries[row.ID]) {
 				t.Errorf("zip case %d: Go %d bytes, Python %d bytes", row.ID, len(got), row.Size)
 			}

@@ -1,6 +1,7 @@
 package agents
 
 import (
+"unicode"
 	"errors"
 	"fmt"
 	"math/big"
@@ -233,11 +234,11 @@ func renderInstallScript(c *httpx.Ctx, params installParams) (string, error) {
 	agentName := paramDefault(params, "name", "My-Agent")
 	serviceType := paramDefault(params, "type", "mihomo")
 	var agentPort any = paramInt(params, "port", 8080)
-	agentIP := installer.PyStrip(paramDefault(params, "agent_ip", ""))
+	agentIP := pystr.Strip(paramDefault(params, "agent_ip", ""))
 	configPath := paramDefault(params, "config_path", "/etc/"+serviceType+"/config.yaml")
 	restartCommand := paramDefault(params, "restart_command", "systemctl restart "+serviceType)
 
-	agentType := installer.PyStrip(pyLowerText(paramDefault(params, "agent_type", "go")))
+	agentType := pystr.Strip(pyLowerText(paramDefault(params, "agent_type", "go")))
 	if err := requireGoAgent(agentType); err != nil {
 		return "", err
 	}
@@ -279,7 +280,7 @@ func renderInstallScript(c *httpx.Ctx, params installParams) (string, error) {
 
 	logger.Infof("生成安装脚本请求 - 名称: %s, 类型: %s, 端口: %s, Agent类型: %s", agentName, serviceType, installer.PyStr(agentPort), agentType)
 
-	serverURL := installer.PyStrip(paramDefault(params, "server_url", ""))
+	serverURL := pystr.Strip(paramDefault(params, "server_url", ""))
 	if serverURL == "" {
 		serverURL = strings.TrimRight(latin1(c.URLRoot()), "/")
 		proto, _ := c.Header("X-Forwarded-Proto")
@@ -289,6 +290,11 @@ func renderInstallScript(c *httpx.Ctx, params installParams) (string, error) {
 		}
 	}
 
+ if serviceType!="aio"{
+  names:=[]string{"deployment_health_timeout"}
+  if !installCore{names=append(names,"port")}
+  for _,name:=range names{if err:=rejectNonASCIIMachineNumber(params,name);err!=nil{return "",err}}
+ }
 	var script string
 	var err error
 	if serviceType == "aio" {
@@ -300,15 +306,15 @@ func renderInstallScript(c *httpx.Ctx, params installParams) (string, error) {
 		o.MihomoAgentPort = paramDefault(params, "mihomo_agent_port", "8080")
 		o.OxidnsAgentPort = paramDefault(params, "oxidns_agent_port", "8082")
 		o.InstallCore = installCore
-		o.MihomoConfigPath = installer.PyStrip(paramDefault(params, "mihomo_config_path", "/etc/mihomo/config.yaml"))
-		o.MihomoServiceUnit = installer.PyStrip(paramDefault(params, "mihomo_service_unit", "mihomo"))
-		o.MihomoServiceBinary = installer.PyStrip(paramDefault(params, "mihomo_service_binary", "mihomo"))
-		o.OxidnsConfigPath = installer.PyStrip(paramDefault(params, "oxidns_config_path", "/etc/oxidns/config.yaml"))
-		o.OxidnsServiceUnit = installer.PyStrip(paramDefault(params, "oxidns_service_unit", "oxidns"))
-		o.OxidnsServiceBinary = installer.PyStrip(paramDefault(params, "oxidns_service_binary", "oxidns"))
+		o.MihomoConfigPath = pystr.Strip(paramDefault(params, "mihomo_config_path", "/etc/mihomo/config.yaml"))
+		o.MihomoServiceUnit = pystr.Strip(paramDefault(params, "mihomo_service_unit", "mihomo"))
+		o.MihomoServiceBinary = pystr.Strip(paramDefault(params, "mihomo_service_binary", "mihomo"))
+		o.OxidnsConfigPath = pystr.Strip(paramDefault(params, "oxidns_config_path", "/etc/oxidns/config.yaml"))
+		o.OxidnsServiceUnit = pystr.Strip(paramDefault(params, "oxidns_service_unit", "oxidns"))
+		o.OxidnsServiceBinary = pystr.Strip(paramDefault(params, "oxidns_service_binary", "oxidns"))
 		script, err = installer.GenerateGoAIOInstallScript(o)
 	} else {
-		strip := func(name string) string { return installer.PyStrip(paramDefault(params, name, "")) }
+		strip := func(name string) string { return pystr.Strip(paramDefault(params, name, "")) }
 		forwarding := installer.ForwardingOff
 		if serviceType == "mihomo" {
 			forwarding = manageForwarding
@@ -467,10 +473,10 @@ func dockerOptions(c *httpx.Ctx) installer.DockerOptions {
 		EnableOxidns: utilx.StrToBool(paramDefault(q, "enable_oxidns", "false")),
 		OxidnsPort:   paramInt(q, "oxidns_port", 8082),
 		EnableDNSHA:  utilx.StrToBool(paramDefault(q, "enable_dns_ha", "false")),
-		HAParent:     installer.PyStrip(paramDefault(q, "ha_parent", "")),
-		HASubnet:     installer.PyStrip(paramDefault(q, "ha_subnet", "")),
-		HAGateway:    installer.PyStrip(paramDefault(q, "ha_gateway", "")),
-		HAHostIDPath: installer.PyStrip(paramDefault(q, "ha_host_id_path", "/etc/machine-id")),
+		HAParent:     pystr.Strip(paramDefault(q, "ha_parent", "")),
+		HASubnet:     pystr.Strip(paramDefault(q, "ha_subnet", "")),
+		HAGateway:    pystr.Strip(paramDefault(q, "ha_gateway", "")),
+		HAHostIDPath: pystr.Strip(paramDefault(q, "ha_host_id_path", "/etc/machine-id")),
 	}
 }
 
@@ -528,6 +534,9 @@ func dockerAgentResponse(c *httpx.Ctx, render func(installer.DockerOptions) (str
 
 func prepareDockerAgentOptions(c *httpx.Ctx, renderers ...func(installer.DockerOptions) (string, error)) (installer.DockerOptions, *httpx.Response) {
 	options := dockerOptions(c)
+ for _,field:=range []struct{name string;enabled bool}{{"mihomo_port",options.EnableMihomo},{"mosdns_port",options.EnableMosdns},{"oxidns_port",options.EnableOxidns}}{
+  if field.enabled{if err:=rejectNonASCIIMachineNumber(queryParams{c},field.name);err!=nil{return options,dockerResponse("",err,"")}}
+ }
 	// Validate every requested representation before minting any credential.
 	for _, render := range renderers {
 		if _, err := render(options); err != nil {
@@ -561,7 +570,7 @@ func prepareDockerAgentOptions(c *httpx.Ctx, renderers ...func(installer.DockerO
 func shellRegistrationIdentities(params installParams) []model.AgentRegistrationSession {
 	service := paramDefault(params, "type", "mihomo")
 	name := paramDefault(params, "name", "My-Agent")
-	host := installer.PyStrip(paramDefault(params, "agent_ip", ""))
+	host := pystr.Strip(paramDefault(params, "agent_ip", ""))
 	if service == "aio" {
 		return []model.AgentRegistrationSession{
 			{Name: name + "-mihomo", Host: host, Port: registrationPort(params, "mihomo_agent_port", 8080), ServiceType: "mihomo", DeploymentMethod: "shell"},
@@ -585,4 +594,12 @@ func issueRegistration(c *httpx.Ctx, identities []model.AgentRegistrationSession
 		return nil, failure(500, msgRegistrationStore)
 	}
 	return tokens, nil
+}
+
+// rejectNonASCIIMachineNumber keeps an invalid machine number from silently
+// becoming the query converter's default before it reaches the typed renderer.
+func rejectNonASCIIMachineNumber(params installParams,name string)error{
+ text,present:=params.get(name)
+ if present&&strings.ContainsFunc(text,func(r rune)bool{return r>127&&unicode.IsDigit(r)}){return &installer.ValidationError{Message:"Invalid installer integer"}}
+ return nil
 }

@@ -2,9 +2,8 @@ package installer
 
 import (
 	"encoding/json"
+	"path"
 	"strings"
-
-	"configflow/internal/yamlx"
 )
 
 const (
@@ -22,7 +21,7 @@ type composeInstallSettings struct {
 	Token        *string `json:"token,omitempty"`
 }
 
-func generateDirectNative(params GuideOptions, request GuideRequest, enrollment *Enrollment) (string, *ComposeDeployment, error) {
+func generateDirectNative(params GuideOptions, request GuideRequest, enrollment *Capability) (string, *ComposeDeployment, error) {
 	data := params.DataDir
 	if composeDataDirRefused(data) {
 		return "", nil, valueError(composeDataDirMessage)
@@ -31,8 +30,14 @@ func generateDirectNative(params GuideOptions, request GuideRequest, enrollment 
 	if request.CreateHostIdentity {
 		identityMode = "docker-volume"
 	}
-	if identityMode == "file" && (params.HAHostIDPath == data || strings.HasPrefix(params.HAHostIDPath, data+"/")) {
-		return "", nil, valueError("单文件 Compose 的现有宿主身份文件须位于应用数据目录之外")
+	if identityMode == "file" {
+		if raw, present := params.identity.Get("ha_host_id_path"); present && len(raw) > 0 && raw[0] != '"' {
+			return "", nil, typeError(msgRendererText)
+		}
+	}
+	identityCheck, dataCheck := path.Clean(params.HAHostIDPath), path.Clean(data)
+	if identityMode == "file" && (identityCheck == dataCheck || strings.HasPrefix(identityCheck, dataCheck+"/")) {
+		return "", nil, valueError(msgDirectIdentityLocation)
 	}
 	normalized := params
 	if identityMode != "file" {
@@ -65,7 +70,7 @@ func generateDirectNative(params GuideOptions, request GuideRequest, enrollment 
 	host := params.NetworkMode == "host"
 	empty := []string{}
 	for name, service := range compose.Services.all() {
-		service.Image = yamlx.Str(request.Image)
+		service.Image = imageNode(request)
 		service.Labels = map[string]string{ComposeLabel: owner}
 		helper := name == "ha-companion"
 		service.Volumes = []composeMount{bindMount(data+"/agent", "/opt/configflow-agent", helper, true), bindMount(data+"/oxidns", "/etc/oxidns", helper, true), bindMount(data+"/ha", "/var/lib/configflow-ha", false, true), identityMount(true)}
@@ -98,7 +103,7 @@ func generateDirectNative(params GuideOptions, request GuideRequest, enrollment 
 	if err != nil {
 		return "", nil, err
 	}
-	compose.Services.Init = &composeService{Image: yamlx.Str(request.Image), Entrypoint: []string{"python3", ComposeRuntime, "prepare"}, Command: &empty,
+	compose.Services.Init = &composeService{Image: imageNode(request), Entrypoint: []string{"python3", ComposeRuntime, "prepare"}, Command: &empty,
 		Restart: "no", NetworkMode: "none", ReadOnly: true, User: "0:0", CapDrop: []string{"ALL"}, CapAdd: []string{"DAC_OVERRIDE", "FOWNER"}, SecurityOpt: []string{"no-new-privileges:true"},
 		Environment: composeEnvironment{Entries: []string{"CONFIGFLOW_COMPOSE_INSTALL=" + string(initSettings), "PYTHONDONTWRITEBYTECODE=1"}, Mapping: true},
 		Volumes:     []composeMount{bindMount(data, "/configflow-data", false, true), identityMount(false)}, Labels: map[string]string{ComposeLabel: owner}, Logging: &composeLogging{Driver: "json-file", Options: composeLogOptions{"5m", "2"}}}

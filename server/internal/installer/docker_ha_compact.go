@@ -5,6 +5,7 @@ package installer
 // with maintenance notes above the YAML entries.
 
 import (
+	"path"
 	"regexp"
 	"strconv"
 	"strings"
@@ -26,6 +27,10 @@ var (
 // composeDataDirRefused is the system-directory check shared by
 // generate_compact and generate_direct. [0-9] is ASCII in Python too.
 func composeDataDirRefused(data string) bool {
+	data = path.Clean(data)
+	if data == "/" {
+		return true
+	}
 	for _, root := range composeSystemRoots {
 		if data == root || strings.HasPrefix(data, root+"/") {
 			return true
@@ -41,7 +46,7 @@ func composeDataDirRefused(data string) bool {
 
 const composeDataDirMessage = "请为应用选择专用持久子目录，不能读写挂载系统目录或共享根目录"
 
-func generateCompactNative(params GuideOptions, request GuideRequest, enrollment *Enrollment) (string, *ComposeDeployment, error) {
+func generateCompactNative(params GuideOptions, request GuideRequest, enrollment *Capability) (string, *ComposeDeployment, error) {
 	data, err := guidePath(params.DataDir, "持久数据根目录", false)
 	if err != nil {
 		return "", nil, err
@@ -55,7 +60,7 @@ func generateCompactNative(params GuideOptions, request GuideRequest, enrollment
 	if err != nil {
 		return "", nil, err
 	}
-	image := yamlx.Str(request.Image)
+	image := imageNode(request)
 	image.Anchor = "agent_image"
 	name := params.AgentName + "-oxidns"
 	key, session := "", ""
@@ -65,7 +70,7 @@ func generateCompactNative(params GuideOptions, request GuideRequest, enrollment
 			session = session[i+1:]
 		}
 		if !composeSessionRe.MatchString(session) || !composeTokenRe.MatchString(enrollment.Token) {
-			return "", nil, valueError("安装凭据格式无效")
+			return "", nil, valueError(msgCapabilityFormat)
 		}
 		key = session + "." + enrollment.Token
 	}
@@ -113,6 +118,9 @@ func generateCompactNative(params GuideOptions, request GuideRequest, enrollment
 		for _, network := range compose.Networks {
 			network.Name = project + "-dns-ha"
 		}
+	}
+	if params.addressNode != nil {
+		main.Environment.TypedValues = map[string]*yamlx.Node{"AGENT_IP": params.addressNode}
 	}
 	var node yamlx.Node
 	if err := node.Encode(compose); err != nil {

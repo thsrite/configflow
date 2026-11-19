@@ -1293,20 +1293,30 @@
       "backend",
       "server/go.mod",
       "server/go.sum",
+      "server/internal/installer/archive_native_test.go",
+      "server/internal/installer/native_aio_test.go",
       "server/internal/installer/review_a10_test.go",
       "server/internal/installer/testdata/review_a10_deflate.py",
+      "server/internal/jsonx/decode.go",
+      "server/internal/jsonx/doc.go",
+      "server/internal/jsonx/encode.go",
+      "server/internal/jsonx/json.go",
+      "server/internal/jsonx/number.go",
+      "server/internal/jsonx/object.go",
+      "server/internal/jsonx/printable_table.go",
+      "server/internal/jsonx/repr.go",
+      "server/internal/jsonx/value.go",
       "server/internal/testgolden/fingerprint.go",
       "server/internal/testgolden/golden.go",
       "server/internal/testgolden/lines.go",
       "server/internal/testgolden/sources.go"
     ],
     "product_symbols": [
+      "composeArchive",
       "composeBootstrap",
       "composePrepareBlocks",
-      "pyZipArchive",
       "shlexQuote",
-      "zipEntry",
-      "zlibDeflate"
+      "zipEntry"
     ]
   },
   {

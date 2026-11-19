@@ -14,13 +14,6 @@ func zlibDeflate(data []byte) []byte {
 	_ = writer.Close()
 	return output.Bytes()
 }
-func pyZipArchive(entries []zipEntry) []byte {
-	data, err := composeArchive(entries)
-	if err != nil {
-		panic(err)
-	}
-	return data
-}
 func nativeDeflatePayload(data, want []byte) bool {
 	reader := flate.NewReader(bytes.NewReader(data))
 	defer reader.Close()

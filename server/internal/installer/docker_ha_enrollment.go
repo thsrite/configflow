@@ -4,14 +4,10 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
-	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
-	"unicode/utf8"
 )
 
 // Port of backend/agents/docker_ha_enrollment.py: short-lived, single-device
@@ -48,23 +44,36 @@ const (
 )
 
 // randomBytes is os.urandom(n) (uuid4, token_urlsafe), replaceable in tests.
-var randomBytes = func(n int) []byte {
+var randomBytes = func(n int) ([]byte, error) {
 	b := make([]byte, n)
 	if _, err := rand.Read(b); err != nil {
-		panic("installer: no randomness: " + err.Error())
+		return nil, fmt.Errorf("generate installation entropy: %w", err)
 	}
-	return b
+	return b, nil
 }
 
 // haTokenURLSafe is secrets.token_urlsafe(n).
-func haTokenURLSafe(n int) string { return base64.RawURLEncoding.EncodeToString(randomBytes(n)) }
-
-// uuid4Hex is uuid.uuid4().hex.
-func uuid4Hex() string {
-	b := randomBytes(16)
-	b[6] = b[6]&0x0f | 0x40
-	b[8] = b[8]&0x3f | 0x80
-	return hex.EncodeToString(b)
+func haTokenURLSafe(n int) (string, error) {
+	data, err := randomBytes(n)
+	if err != nil {
+		return "", err
+	}
+	if len(data) != n {
+		return "", fmt.Errorf("installation entropy: expected %d bytes", n)
+	}
+	return base64.RawURLEncoding.EncodeToString(data), nil
+}
+func uuid4Hex() (string, error) {
+	b, err := randomBytes(16)
+	if err != nil {
+		return "", err
+	}
+	if len(b) != 16 {
+		return "", fmt.Errorf("installation entropy: expected 16 bytes")
+	}
+	b[6] = b[6]&15 | 64
+	b[8] = b[8]&63 | 128
+	return hex.EncodeToString(b), nil
 }
 
 func isSessionID(s string) bool {
@@ -90,33 +99,6 @@ func isEnrollmentToken(s string) bool {
 		}
 	}
 	return true
-}
-
-// pathExists is pathlib.Path.exists() of Python 3.11: stat errors other than
-// ENOENT, ENOTDIR, EBADF and ELOOP are raised.
-func pathExists(path string) (bool, error) {
-	_, err := os.Stat(path)
-	if err == nil {
-		return true, nil
-	}
-	var errno syscall.Errno
-	if errors.As(err, &errno) && (errno == syscall.ENOENT || errno == syscall.ENOTDIR || errno == syscall.EBADF || errno == syscall.ELOOP) {
-		return false, nil
-	}
-	return false, err
-}
-
-// readText is Path.read_text() (UTF-8, strict): notFound for
-// FileNotFoundError, a *ValueError for invalid UTF-8, other errors as they are.
-func readText(path string) (text string, notFound bool, err error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return "", errors.Is(err, os.ErrNotExist), err
-	}
-	if !utf8.Valid(data) {
-		return "", false, valueError(msgInstallationEncoding)
-	}
-	return string(data), false, nil
 }
 
 var issueMu sync.Mutex
@@ -172,7 +154,7 @@ with os.fdopen(fd, 'w') as output:
 print('本机 Agent 身份已登记；启动后等待真实心跳与高可用环境检查。')
 `
 
-func bootstrapNative(enrollment *Enrollment, request GuideRequest) (string, error) {
+func bootstrapNative(enrollment *Capability, request GuideRequest) (string, error) {
 	dataDir := strings.TrimRight(request.Options.DataDir, "/") + "/agent"
 	image := request.Image
 	network := []string{"--network", "host"}

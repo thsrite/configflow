@@ -3,7 +3,6 @@ package installer
 import (
 	"context"
 	"encoding/json"
-	"strings"
 
 	"configflow/internal/jsonx"
 	"configflow/internal/model"
@@ -69,19 +68,4 @@ func Enroll(ctx context.Context, dataDir string, manager AgentUpdater, sessionID
 		return nil, err
 	}
 	return jsonx.Obj("agent_id", result.AgentID, "token", result.Token), nil
-}
-
-func sessionPaths(root, id string) (string, string, error) {
-	if strings.ContainsRune(id, 0) {
-		return "", "", valueError("embedded null byte")
-	}
-	path := root + "/" + id + ".json"
-	if strings.HasPrefix(id, "/") {
-		path = id + ".json"
-	}
-	temp := strings.TrimSuffix(path, ".json") + ".tmp"
-	if name := path[strings.LastIndex(path, "/")+1:]; name == ".json" {
-		temp = path + ".tmp"
-	}
-	return path, temp, nil
 }

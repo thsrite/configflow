@@ -1,11 +1,13 @@
 package installer
 
 import (
+	"configflow/internal/lifecycle"
 	"context"
 	"crypto/rand"
 	"database/sql"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -59,12 +61,12 @@ func (s *Store) fingerprint() string {
 }
 
 // tokenURLSafe is secrets.token_urlsafe(16): 22 base64url characters.
-func tokenURLSafe() string {
+func tokenURLSafe() (string, error) {
 	raw := make([]byte, 16)
 	if _, err := rand.Read(raw); err != nil {
-		panic(err)
+		return "", fmt.Errorf("generate install command token: %w", err)
 	}
-	return base64.RawURLEncoding.EncodeToString(raw)
+	return base64.RawURLEncoding.EncodeToString(raw), nil
 }
 
 // DatabasePath is _database_path().
@@ -85,6 +87,9 @@ func (c *storeConn) close() {
 // open is _database(): private directory and file, the table (with the
 // generator column), BEGIN IMMEDIATE and the removal of expired links.
 func (s *Store) open(ctx context.Context) (*storeConn, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	path := s.DatabasePath()
 	dir := filepath.Dir(path)
 	// Path.mkdir(mode=0o700, parents=True, exist_ok=True): missing parents get
@@ -97,10 +102,16 @@ func (s *Store) open(ctx context.Context) (*storeConn, error) {
 			return nil, err
 		}
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if err := os.Chmod(dir, 0o700); err != nil {
 		return nil, err
 	}
 	// Create privately before sqlite opens it, even with a permissive umask.
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return nil, err
@@ -175,21 +186,29 @@ func (s *Store) open(ctx context.Context) (*storeConn, error) {
 // persist the text; only a random capability is public. expiresAt nil is
 // now + 24 h; otherwise it must lie within the next 24 hours.
 func (s *Store) SaveInstallScript(ctx context.Context, script string, expiresAt *int64) (string, int64, error) {
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return "", 0, err
+	}
 	if len(script) > MaxScriptBytes {
-		return "", 0, valueError("安装脚本过大，请减少自定义参数后重试。")
+		return "", 0, valueError(msgInstallScriptSize)
 	}
 	token := ""
 	if s.Token != nil {
 		token = s.Token()
 	} else {
-		token = tokenURLSafe()
+		var err error
+		token, err = tokenURLSafe()
+		if err != nil {
+			return "", 0, err
+		}
 	}
 	now := s.now()
 	var expires int64
 	if expiresAt == nil {
 		expires = now + TTLSeconds
 	} else if !(now < *expiresAt && *expiresAt <= now+TTLSeconds) {
-		return "", 0, valueError("安装链接有效期必须在未来 24 小时内。")
+		return "", 0, valueError(msgInstallLinkExpiry)
 	} else {
 		expires = *expiresAt
 	}
@@ -226,6 +245,10 @@ func isToken(token string) bool { return len(token) == 22 && matchesClass(token,
 // LoadInstallScript is load_install_script(token): the script, StaleScript
 // for a link an older generator made, or ok false when unknown or expired.
 func (s *Store) LoadInstallScript(ctx context.Context, token string) (string, bool, error) {
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return "", false, err
+	}
 	if !isToken(token) {
 		return "", false, nil
 	}

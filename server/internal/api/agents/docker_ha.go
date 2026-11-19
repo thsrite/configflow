@@ -22,8 +22,10 @@ func registerDockerHA(r *httpx.Router) {
 }
 
 const (
-	dockerHABodyTooLarge = "安装请求内容过大。"
-	dockerHANeedsObject  = "安装请求需要 JSON 对象。"
+	dockerHABodyTooLarge     = "安装请求内容过大。"
+	dockerHANeedsObject      = "安装请求需要 JSON 对象。"
+	dockerHAEnrollmentNotice = "新装命令的本机安装凭据有效期为 24 小时；过期后重新生成。生成命令不会创建设备记录。"
+	dockerHAEnrollmentNoBody = "安装登记无需提交设备信息，目标由生成命令时固定。"
 )
 
 // dockerHABody is _body(allow_check).
@@ -65,7 +67,7 @@ func isPythonValueError(err error) bool {
 }
 
 // dockerHARespond is _respond(callback).
-func dockerHARespond(callback func() (*jsonx.Object, error)) (*httpx.Response, error) {
+func dockerHARespond(callback func() (any, error)) (*httpx.Response, error) {
 	result, err := callback()
 	status := 200
 	if err != nil {
@@ -83,12 +85,16 @@ func dockerHARespond(callback func() (*jsonx.Object, error)) (*httpx.Response, e
 }
 
 func dockerOxidnsHAGuide(c *httpx.Ctx) (*httpx.Response, error) {
-	return dockerHARespond(func() (*jsonx.Object, error) {
+	return dockerHARespond(func() (any, error) {
 		body, err := dockerHABody(c, true)
 		if err != nil {
 			return nil, err
 		}
-		result, err := installer.GenerateGuide(body, nil)
+		raw, err := jsonx.Default(body)
+		if err != nil {
+			return nil, err
+		}
+		result, err := installer.GenerateGuideJSON(raw, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -107,28 +113,28 @@ func dockerOxidnsHAGuide(c *httpx.Ctx) (*httpx.Response, error) {
 			if err != nil {
 				return nil, err
 			}
-			capability, err := installer.IssueEnrollment(c.Context(), repository.DataDir(), body, profileID)
+			capability, err := installer.IssueCapability(c.Context(), repository.DataDir(), raw, profileID)
 			if err != nil {
 				return nil, err
 			}
-			if result, err = installer.GenerateGuide(body, capability); err != nil {
+			if result, err = installer.GenerateGuideJSON(raw, capability); err != nil {
 				return nil, err
 			}
-			result.Set("enrollment_expires_at", capability.ExpiresAt)
-			result.Set("warnings", append(result.GetList("warnings"), "新装命令的本机安装凭据有效期为 24 小时；过期后重新生成。生成命令不会创建设备记录。"))
+			result.EnrollmentExpiresAt = new(capability.ExpiresAt)
+			result.Warnings = append(result.Warnings, dockerHAEnrollmentNotice)
 		}
 		return result, nil
 	})
 }
 
 func dockerOxidnsHAEnroll(c *httpx.Ctx) (*httpx.Response, error) {
-	return dockerHARespond(func() (*jsonx.Object, error) {
+	return dockerHARespond(func() (any, error) {
 		body, err := dockerHABody(c, false)
 		if err != nil {
 			return nil, err
 		}
 		if body.Len() != 0 {
-			return nil, &installer.ValueError{Message: "安装登记无需提交设备信息，目标由生成命令时固定。"}
+			return nil, &installer.ValueError{Message: dockerHAEnrollmentNoBody}
 		}
 		ctx := c.Context()
 		repository, err := repo.GetRepository(ctx)
@@ -141,12 +147,13 @@ func dockerOxidnsHAEnroll(c *httpx.Ctx) (*httpx.Response, error) {
 		}
 		header, present := c.Header("Authorization")
 		token, ok := auth.ParseBearerToken(header, present)
-		identity, err := installer.Enroll(ctx, repository.DataDir(), manager, c.Param("session_id"), token, ok)
+		identity, err := installer.EnrollIdentity(ctx, repository.DataDir(), manager, c.Param("session_id"), token, ok)
 		if err != nil {
 			return nil, err
 		}
-		result := jsonx.Obj("success", true)
-		result.Update(identity)
-		return result, nil
+		return struct {
+			Success bool `json:"success"`
+			installer.AgentIdentity
+		}{true, identity}, nil
 	})
 }

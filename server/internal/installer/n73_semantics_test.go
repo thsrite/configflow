@@ -55,6 +55,9 @@ func nativeFieldValue(value any, key string) (any, error) {
 			if err != nil {
 				return nil, err
 			}
+			if err := normalizeComposeSettings(node); err != nil {
+				return nil, err
+			}
 			data, err := yamlx.ToJSON(node)
 			if err != nil {
 				return nil, err

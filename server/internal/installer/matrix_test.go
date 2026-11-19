@@ -205,6 +205,12 @@ func TestRenderMatrixMatchesPython(t *testing.T) {
 		fn := record.GetString("fn")
 		k := kwargs{record.GetObject("kwargs")}
 		output, err := renderCase(fn, k)
+		if handled, problem := n810ScalarMatch(record, output, err); handled {
+			if problem != "" {
+				t.Errorf("case %d approved integer policy: %s", id, problem)
+			}
+			continue
+		}
 		if err != nil && deliberateAgentNameFix(k.Object, err) {
 			deliberate++ // decision 6: one trailing "\n" in agent_name is refused in Go
 			continue

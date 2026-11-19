@@ -2,6 +2,7 @@ package installer
 
 import (
 	"path"
+	"strconv"
 	"strings"
 
 	"encoding/json"
@@ -10,18 +11,17 @@ import (
 // Port of backend/agents/go_install_script.py, generate_go_aio_install_script:
 // two isolated native Agents (Mihomo + OxiDNS), optionally installing cores.
 
-// AIOOptions are the arguments of generate_go_aio_install_script. The
-// *Set flags tell an explicit value from the Python default; NewAIOOptions
-// fills the defaults.
-type AIOOptions struct {
+// AIOInstallOptions contains the native two-Agent renderer input.
+// DefaultAIOOptions supplies the standard ports, paths and lifecycle settings.
+type AIOInstallOptions struct {
 	RegistrationTokens      map[string]string
 	RegistrationKey         string
 	ServerURL               string
 	AgentName               string
 	AgentIP                 string
 	BinaryDownloadURL       string
-	MihomoAgentPort         any // int or str, as Python receives it
-	OxidnsAgentPort         any
+	MihomoAgentPort         int
+	OxidnsAgentPort         int
 	MihomoConfigPath        string
 	OxidnsConfigPath        string
 	MihomoServiceUnit       string
@@ -37,14 +37,15 @@ type AIOOptions struct {
 	ManageTun               bool
 	InstallationDescription string
 	TunPrepareAssumeEnabled bool
+	portError               error
 }
 
 // DefaultAIODescription is the default installation_description.
 const DefaultAIODescription = "此安装器只接管已安装的 Mihomo 和 OxiDNS，不安装核心、不改核心配置、不重启核心。"
 
-// NewAIOOptions returns the Python defaults for the given server and name.
-func NewAIOOptions(serverURL, agentName string) AIOOptions {
-	return AIOOptions{
+// DefaultAIOOptions returns the standard settings for the given server and name.
+func DefaultAIOOptions(serverURL, agentName string) AIOInstallOptions {
+	return AIOInstallOptions{
 		ServerURL: serverURL, AgentName: agentName,
 		MihomoAgentPort: 8080, OxidnsAgentPort: 8082,
 		MihomoConfigPath: "/etc/mihomo/config.yaml", OxidnsConfigPath: "/etc/oxidns/config.yaml",
@@ -101,8 +102,8 @@ func insideAgentDirectory(value string) bool {
 	return normalized == "/opt/configflow-agent" || strings.HasPrefix(normalized, "/opt/configflow-agent/")
 }
 
-// GenerateGoAIOInstallScript is generate_go_aio_install_script.
-func GenerateGoAIOInstallScript(o AIOOptions) (string, error) {
+// RenderAIOInstall is generate_go_aio_install_script.
+func RenderAIOInstall(o AIOInstallOptions) (string, error) {
 	if o.TunPrepareAssumeEnabled && !(o.ManageTun && o.VerifiedAgentPath != "") {
 		return "", valueError("assume-tun-enabled is only supported inside the gateway installer")
 	}
@@ -124,19 +125,15 @@ func GenerateGoAIOInstallScript(o AIOOptions) (string, error) {
 	if !matchesClass(o.AgentName, "_-") {
 		return "", valueError("Invalid agent name: use letters, numbers, hyphens or underscores")
 	}
+	if o.portError != nil {
+		return "", o.portError
+	}
 	var ports []string
-	for _, port := range []any{o.MihomoAgentPort, o.OxidnsAgentPort} {
-		if _, isBool := port.(bool); isBool || !asciiDigits(pyStr(port)) {
+	for _, port := range []int{o.MihomoAgentPort, o.OxidnsAgentPort} {
+		if port < 1 || port > 65535 {
 			return "", valueError("Invalid Agent port")
 		}
-		n, err := pyInt(port)
-		if err != nil {
-			return "", err
-		}
-		if !inRange(n, 1, 65535) {
-			return "", valueError("Invalid Agent port")
-		}
-		ports = append(ports, n.String())
+		ports = append(ports, strconv.Itoa(port))
 	}
 	if ports[0] == ports[1] {
 		return "", valueError("Mihomo and OxiDNS Agent ports must be different")
@@ -144,7 +141,7 @@ func GenerateGoAIOInstallScript(o AIOOptions) (string, error) {
 	if o.InstallCore {
 		for _, port := range ports {
 			if port == "53" || port == "1053" {
-				return "", valueError("两个 Agent 端口均不能使用核心 DNS 监听端口 53 或 1053")
+				return "", valueError(msgAIOCoreDNSPorts)
 			}
 		}
 	}
@@ -232,7 +229,7 @@ cf_step_done "TUN 准备完成（具体处理结果见日志）"`),
 		}
 		if o.InstallCore && (s.path != "/etc/"+s.name+"/config.yaml" || unit != s.name ||
 			(s.binary != s.name && s.binary != "/usr/local/bin/"+s.name)) {
-			return "", valueError("同时安装两个核心需要默认配置路径、服务名和核心路径；自定义部署请取消同时安装核心")
+			return "", valueError(msgAIOCoreDefaults)
 		}
 		cfg := aioAgentConfig{
 			ServerURL: o.ServerURL, AgentName: o.AgentName + "-" + s.name,

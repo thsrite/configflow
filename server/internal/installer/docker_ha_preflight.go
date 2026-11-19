@@ -5,6 +5,7 @@ import (
 	"unicode/utf8"
 
 	"configflow/internal/model"
+	"configflow/internal/netipx"
 	"encoding/json"
 	"math/big"
 	"unicode"
@@ -358,15 +359,15 @@ type preflightValue struct {
 func preflightDecode(output any) (map[string]preflightValue, string, error) {
 	text, isString := output.(string)
 	if !isString {
-		return nil, "", valueError("output 须为检查命令的文本输出")
+		return nil, "", valueError(msgPreflightOutputType)
 	}
 	// A Go string holds no lone surrogate; invalid UTF-8 stands for the
 	// str Python cannot encode.
 	if !utf8.ValidString(text) {
-		return nil, "", valueError("检查输出包含无效文本编码")
+		return nil, "", valueError(msgPreflightUTF8)
 	}
 	if len(text) > PreflightMaxOutputBytes {
-		return nil, "", valueError("检查输出超过 96 KiB，请只粘贴本次检查结果")
+		return nil, "", valueError(msgPreflightSize)
 	}
 	lines := pySplitLines(strings.ReplaceAll(text, "\r\n", "\n"))
 	for i, line := range lines {
@@ -657,42 +658,17 @@ func matchAddressLine(line string) (name, address string, ok bool) {
 // parseIPv4Interface is ipaddress.IPv4Interface(text) for a str: the address
 // and the prefix length (decimal, netmask or hostmask; /32 when absent).
 func parseIPv4Interface(text string) (uint32, int, bool) {
-	parts := strings.Split(text, "/")
-	if len(parts) > 2 {
-		return 0, 0, false
-	}
-	address, err := parseIPv4(parts[0])
-	if err != nil {
-		return 0, 0, false
-	}
-	if len(parts) == 1 {
-		return address, 32, true
-	}
-	p := parts[1]
-	if p != "" && asciiDigits(p) {
-		n, err := pyInt(p)
-		if err == nil && inRange(n, 0, 32) {
-			return address, int(n.Int64()), true
-		}
-	}
-	mask, err := parseIPv4(p)
-	if err != nil {
-		return 0, 0, false
-	}
-	if prefix, ok := prefixFromInt(mask); ok {
-		return address, prefix, true
-	}
-	if prefix, ok := prefixFromInt(mask ^ ^uint32(0)); ok {
-		return address, prefix, true
-	}
-	return 0, 0, false
+	addressText, _, _ := strings.Cut(text, "/")
+	address, err := parseIPv4(addressText)
+	prefix, ok := netipx.ParseNetwork4(text, false)
+	return address, prefix.Bits(), err == nil && ok
 }
 
-// ParsePreflightReport is parse_report(output, network_mode): the report, or
-// a *ValueError (wrong mode, type, encoding or size, or an int() digit limit).
+// EvaluatePreflight evaluates bounded collector text without contacting a host.
+// Incomplete or malformed machine evidence produces an unknown check.
 func EvaluatePreflight(output, mode string) (*PreflightReport, error) {
 	if mode != "host" && mode != "macvlan" {
-		return nil, valueError("network_mode 须为 host 或 macvlan")
+		return nil, valueError(msgPreflightNetwork)
 	}
 	values, reason, err := preflightDecode(output)
 	if err != nil {

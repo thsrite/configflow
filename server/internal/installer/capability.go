@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -47,6 +48,7 @@ type installationSession struct {
 
 func fieldText(fields model.Fields, key string) (string, bool) {
 	raw, ok := fields.Get(key)
+	raw = bytes.TrimSpace(raw)
 	if !ok || len(raw) == 0 || raw[0] != '"' {
 		return "", false
 	}
@@ -70,9 +72,6 @@ func fieldNumber(fields model.Fields, key string) (json.Number, bool) {
 	if json.Unmarshal(raw, &n) != nil {
 		return "", false
 	}
-	if _, err := n.Float64(); err != nil {
-		return "", false
-	}
 	return n, true
 }
 
@@ -90,36 +89,42 @@ func decodeInstallationSession(data []byte) (installationSession, error) {
 		return s, fmt.Errorf("decode installation: %w", err)
 	}
 	var ok bool
-	for _, field := range []struct {
-		key    string
-		target *string
-	}{
-		{"id", &s.id}, {"profile_id", &s.profileID}, {"name", &s.name}, {"host", &s.host},
-	} {
-		if *field.target, ok = fieldText(s.fields, field.key); !ok {
-			return s, errors.New(msgInstallationIdentity)
-		}
-	}
-	if !isSessionID(s.id) {
+	if s.id, ok = fieldText(s.fields, "id"); !ok || !isSessionID(s.id) {
 		return s, errors.New(msgInstallationIdentity)
 	}
-	if s.port, ok = fieldNumber(s.fields, "port"); !ok {
-		return s, errors.New(msgInstallationIdentity)
-	}
-	if _, err := strconv.ParseUint(s.port.String(), 10, 16); err != nil {
-		return s, errors.New(msgInstallationIdentity)
-	}
+	s.profileID, _ = fieldText(s.fields, "profile_id")
+	s.name, _ = fieldText(s.fields, "name")
+	s.host, _ = fieldText(s.fields, "host")
+	s.port, _ = fieldNumber(s.fields, "port")
 	s.token, _ = fieldText(s.fields, "token")
 	s.tokenHash, _ = fieldText(s.fields, "token_hash")
-	if s.expires, ok = fieldNumber(s.fields, "expires"); !ok {
-		return s, errors.New(msgInstallationExpiry)
-	}
+	s.expires, _ = fieldNumber(s.fields, "expires")
+
 	return s, nil
 }
 
-func sessionExpired(s installationSession, now float64) bool {
-	expiry, err := s.expires.Float64()
-	return err != nil || now >= expiry
+func sessionExpired(s installationSession, now float64, allowMissing bool) (bool, error) {
+	raw, present := s.fields.Get("expires")
+	if !present {
+		if allowMissing {
+			return true, nil
+		}
+		return false, typeError(msgInstallationExpiry)
+	}
+	text := string(bytes.TrimSpace(raw))
+	if text == "true" {
+		text = "1"
+	} else if text == "false" {
+		text = "0"
+	}
+	if len(text) == 0 || text[0] == '"' {
+		return false, typeError(msgInstallationExpiry)
+	}
+	expiry, valid := new(big.Rat).SetString(text)
+	if !valid {
+		return false, typeError(msgInstallationExpiry)
+	}
+	return expiry.Cmp(new(big.Rat).SetFloat64(now)) <= 0, nil
 }
 
 // IssueCapability retains an installation identity across retries. Request keys
@@ -135,6 +140,19 @@ func IssueCapability(ctx context.Context, dataDir string, request json.RawMessag
 	var fields model.Fields
 	if err := json.Unmarshal(request, &fields); err != nil {
 		return nil, fmt.Errorf("decode installation request: %w", err)
+	}
+	name, nameOK := fieldText(fields, "agent_name")
+	if !fields.Has("agent_name") {
+		name, nameOK = "agent", true
+	}
+	host, hostOK := fieldText(fields, "agent_ip")
+	port, portOK := fieldNumber(fields, "oxidns_port")
+	if !fields.Has("oxidns_port") {
+		port, portOK = "8082", true
+	}
+	portValue, portErr := strconv.ParseUint(port.String(), 10, 16)
+	if !nameOK || !hostOK || !portOK || portErr != nil || portValue < 1024 {
+		return nil, typeError(msgInstallationIdentity)
 	}
 	server, _ := fieldText(fields, "server_url")
 	spec := fields
@@ -183,33 +201,21 @@ func IssueCapability(ctx context.Context, dataDir string, request json.RawMessag
 		}
 		data, err := os.ReadFile(filepath.Join(root, string(indexed)+".json"))
 		if err != nil {
-			return nil, enrollmentError(enrollmentUnreadable, 409)
+			if errors.Is(err, os.ErrNotExist) {
+				return nil, enrollmentError(enrollmentUnreadable, 409)
+			}
+			return nil, err
 		}
 		session, err = decodeInstallationSession(data)
 		if err != nil || session.id != string(indexed) {
 			return nil, enrollmentError(enrollmentUnreadable, 409)
 		}
 	} else {
-		name, ok := fieldText(fields, "agent_name")
-		if !fields.Has("agent_name") {
-			name, ok = "agent", true
+		id, err := uuid4Hex()
+		if err != nil {
+			return nil, err
 		}
-		if !ok {
-			return nil, errors.New(msgInstallationIdentity)
-		}
-		host, ok := fieldText(fields, "agent_ip")
-		if !ok {
-			return nil, errors.New(msgInstallationIdentity)
-		}
-		port, ok := fieldNumber(fields, "oxidns_port")
-		if !fields.Has("oxidns_port") {
-			port, ok = "8082", true
-		}
-		n, err := strconv.ParseUint(port.String(), 10, 16)
-		if !ok || err != nil || n < 1024 {
-			return nil, errors.New(msgInstallationIdentity)
-		}
-		session = installationSession{id: uuid4Hex(), profileID: profileID, name: name + "-oxidns", host: host, port: port, expires: "0"}
+		session = installationSession{id: id, profileID: profileID, name: name + "-oxidns", host: host, port: port, expires: "0"}
 		for _, field := range []struct {
 			key   string
 			value any
@@ -221,8 +227,18 @@ func IssueCapability(ctx context.Context, dataDir string, request json.RawMessag
 			}
 		}
 	}
-	if sessionExpired(session, enrollmentNow()) {
-		session.token = haTokenURLSafe(32)
+	expired, err := sessionExpired(session, enrollmentNow(), true)
+	if err != nil {
+		return nil, err
+	}
+	if expired {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		session.token, err = haTokenURLSafe(32)
+		if err != nil {
+			return nil, err
+		}
 		sum := sha256.Sum256([]byte(session.token))
 		session.tokenHash = hex.EncodeToString(sum[:])
 		session.expires = json.Number(strconv.FormatInt(int64(enrollmentNow())+EnrollmentTTL, 10))
@@ -256,8 +272,8 @@ func IssueCapability(ctx context.Context, dataDir string, request json.RawMessag
 			return nil, err
 		}
 	}
-	if !isEnrollmentToken(session.token) {
-		return nil, errors.New(msgInstallationIdentity)
+	if _, ok := fieldText(session.fields, "token"); !ok {
+		return nil, typeError(msgInstallationIdentity)
 	}
 	if !exists {
 		if err := ctx.Err(); err != nil {
@@ -300,15 +316,42 @@ func EnrollIdentity(ctx context.Context, dataDir string, manager AgentEditor, se
 	if err != nil || session.id != sessionID {
 		return result, enrollmentError(enrollmentInvalid, 401)
 	}
-	if sessionExpired(session, enrollmentNow()) {
+	expired, err := sessionExpired(session, enrollmentNow(), false)
+	if err != nil {
+		return result, err
+	}
+	if expired {
 		return result, enrollmentError(enrollmentExpired, 401)
+	}
+	if _, ok := fieldText(session.fields, "token_hash"); !ok || strings.ContainsFunc(session.tokenHash, func(r rune) bool { return r > 127 }) {
+		return result, typeError(msgInstallationIdentity)
 	}
 	sum := sha256.Sum256([]byte(token))
 	if subtle.ConstantTimeCompare([]byte(hex.EncodeToString(sum[:])), []byte(session.tokenHash)) != 1 {
 		return result, enrollmentError(enrollmentExpired, 401)
 	}
+	if !session.fields.Has("profile_id") {
+		return result, typeError(msgInstallationIdentity)
+	}
+	if _, ok := fieldText(session.fields, "profile_id"); !ok {
+		return result, repo.NewValidationError("Invalid profile id")
+	}
 	if err := repo.ValidateProfileID(session.profileID); err != nil {
 		return result, err
+	}
+	for _, key := range []string{"name", "host", "port"} {
+		if !session.fields.Has(key) {
+			return result, typeError(msgInstallationIdentity)
+		}
+	}
+	for _, key := range []string{"name", "host"} {
+		if _, ok := fieldText(session.fields, key); !ok {
+			return result, enrollmentError(msgInstallationChanged, 409)
+		}
+	}
+	port, valid := new(big.Rat).SetString(session.port.String())
+	if !valid || !port.IsInt() || port.Sign() <= 0 || port.Cmp(big.NewRat(65535, 1)) > 0 {
+		return result, enrollmentError(msgInstallationChanged, 409)
 	}
 	if manager == nil {
 		return result, errors.New("installation registry is unavailable")
@@ -351,7 +394,15 @@ func EnrollIdentity(ctx context.Context, dataDir string, manager AgentEditor, se
 			}
 		}
 		a := model.Agent{}
-		id, credential := "agent_"+uuid4Hex(), haTokenURLSafe(24)
+		suffix, err := uuid4Hex()
+		if err != nil {
+			return err
+		}
+		credential, err := haTokenURLSafe(24)
+		if err != nil {
+			return err
+		}
+		id := "agent_" + suffix
 		for _, field := range []struct {
 			key   string
 			value any

@@ -9,11 +9,11 @@ import (
 func ParsePreflightReport(output, networkMode any) (*jsonx.Object, error) {
 	mode, _ := networkMode.(string)
 	if mode != "host" && mode != "macvlan" {
-		return nil, valueError("network_mode 须为 host 或 macvlan")
+		return nil, valueError(msgPreflightNetwork)
 	}
 	text, ok := output.(string)
 	if !ok {
-		return nil, valueError("output 须为检查命令的文本输出")
+		return nil, valueError(msgPreflightOutputType)
 	}
 	report, err := EvaluatePreflight(text, mode)
 	if err != nil {

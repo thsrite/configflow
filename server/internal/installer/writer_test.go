@@ -75,7 +75,13 @@ func writerYAMLEqual(want, got string) bool {
 		return false
 	}
 	b, err := yamlx.Parse([]byte(got))
-	return err == nil && yamlx.Equal(a, b)
+	if err != nil {
+		return false
+	}
+	if normalizeComposeSettings(a) != nil || normalizeComposeSettings(b) != nil {
+		return false
+	}
+	return yamlx.Equal(a, b)
 }
 
 func writerHashCaseMatches(fn string, args any, output, oldHash string, length int64) (bool, error) {
@@ -367,4 +373,24 @@ func historicalBootstrapSettings(text string) (string, error) {
 		start = first + len(normalized)
 	}
 	return text, nil
+}
+
+func normalizeComposeSettings(root *yamlx.Node) error {
+	for _, service := range yamlx.Pairs(yamlx.Get(root, "services")) {
+		environment := yamlx.Get(service, "environment")
+		value := yamlx.Get(environment, "CONFIGFLOW_COMPOSE_INSTALL")
+		if value == nil {
+			continue
+		}
+		settings, err := jsonx.ParseString(nodeText(value))
+		if err != nil {
+			return err
+		}
+		raw, err := jsonx.Encode(settings, jsonx.Options{EnsureASCII: true, Compact: true})
+		if err != nil {
+			return err
+		}
+		yamlx.Set(environment, "CONFIGFLOW_COMPOSE_INSTALL", yamlx.Str(string(raw)))
+	}
+	return nil
 }

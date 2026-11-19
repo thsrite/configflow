@@ -2172,3 +2172,30 @@ session.id 必须都是 32 位小写 hex 且相同。损坏记录（含 null、�
 enroll 返回 401 `安装凭据无效，请重新生成安装命令。`，均拒绝且无写入。
 Python `backend/agents/docker_ha_enrollment.py:58` 唯一合法生成入口为 `uuid.uuid4().hex`。
 测试服务器离线快照统计：会话数 0，非规范 ID 数 0；没有复制任何快照内容。
+
+### N8-10 installer — native machine text and scalar admission
+
+按协调者裁定，网卡序号、ss 计数、版本分量只认 ASCII 数字，空白使用 Go
+strings.Fields/TrimSpace；非规范探测值为 unknown，不能放行 preflight。安装端口和
+timeout 复用 taskstatus.Count，保留 ASCII 有符号/下划线十进制，拒绝非 ASCII 数字，
+不模拟 CPython 4300 位限制。timeout 超出 int64 或 time.Duration 秒数承载范围
+（±9223372036）明确拒绝，绝不回绕。Go Agent 端口为 1..65535，HA 保留 1024..65535。
+脚本尾空白使用 strings.TrimRightFunc(unicode.IsSpace)；1c–1f 不再模拟 Python 空白。
+这些差异仅以人工旧行的完整 archive/row SHA 绑定，保留原 Python 输出；独立参考保存
+完整新字节/错误，shell 其余字节严格比较。真实脚本模板固定 LF 结尾。
+
+### N8-10 installer — corrupt registry and early capability admission
+
+与 core-2 repo 的坏成员 fail-closed 规则一致：Agent registry 含非对象成员时拒绝
+500、无写入，不复刻 Python 找到前方 owned Agent 后忽略坏尾部的短路行为。
+IssueCapability 在创建目录前拒绝 name/host/port 错型；四条旧 helper 人工行的原输出
+和目录副作用完整 SHA 绑定，新行为为原生错误且无目录写入。HTTP guide 原本先验证，
+合法请求行为不变。
+
+### N8-10 installer — normalized dangerous directory checks
+
+Python bug 修正：拒绝危险目录前用 path.Clean 归一化，仅用于比较；`//etc`、`//opt`、
+`/etc/`、`/./etc`、`/opt/../etc`、`//` 等别名不能绕过系统/共享根目录保护。
+身份文件与数据目录、迁移目录之间的重叠检查同样归一化，防止双斜线别名绕过。
+拒绝使用已有中文提示，发生在生成与持久化之前。合法请求保留原始路径和既有 D2
+owner/hash，`//srv/native` 的合法安装身份没有重发。回归只用合成路径。

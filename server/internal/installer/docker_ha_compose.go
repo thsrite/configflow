@@ -8,6 +8,7 @@ package installer
 
 import (
 	"encoding/base64"
+	"path"
 	"strings"
 
 	"encoding/json"
@@ -16,7 +17,7 @@ import (
 // ComposeLabel is LABEL.
 const ComposeLabel = "io.configflow.dns-ha.installation"
 
-func enrollmentToken(e *Enrollment) string {
+func enrollmentToken(e *Capability) string {
 	if e == nil {
 		return ""
 	}
@@ -99,7 +100,7 @@ var composeManagedParts = []string{"agent", "oxidns", "ha", ".ha-compose", ".ha-
 // GenerateBundle is generate_bundle(params, request, enrollment): the
 // Compose text and the bundle dict (filename, project_name, content_base64,
 // prepare_command, start_command).
-func generateBundleNative(params GuideOptions, request GuideRequest, enrollment *Enrollment) (string, *ComposeBundle, error) {
+func generateBundleNative(params GuideOptions, request GuideRequest, enrollment *Capability) (string, *ComposeBundle, error) {
 	image := request.Image
 	owner, err := planHash(params, map[string]string{"image": image, "enrollment_url": enrollmentURL(enrollment), "install_method": "compose"}, true)
 	if err != nil {
@@ -108,15 +109,19 @@ func generateBundleNative(params GuideOptions, request GuideRequest, enrollment 
 	project := "cf-oxidns-" + owner[:16]
 	data := params.DataDir
 	state := data + "/.ha-compose"
+	if raw, present := params.identity.Get("ha_host_id_path"); present && len(raw) > 0 && raw[0] != '"' {
+		return "", nil, typeError(msgRendererText)
+	}
 	identity := params.HAHostIDPath
-	aliased := identity == data
+	identityCheck, dataCheck := path.Clean(identity), path.Clean(data)
+	aliased := identityCheck == dataCheck
 	for _, part := range composeManagedParts {
-		if identity == data+"/"+part || strings.HasPrefix(identity, data+"/"+part+"/") {
+		if identityCheck == dataCheck+"/"+part || strings.HasPrefix(identityCheck, dataCheck+"/"+part+"/") {
 			aliased = true
 		}
 	}
 	if aliased {
-		return "", nil, valueError("宿主身份文件不能放在本实例的受管数据子目录内，请选择独立持久文件")
+		return "", nil, valueError(msgBundleIdentityLocation)
 	}
 	compose, err := guideComposeNative(params)
 	if err != nil {
@@ -125,7 +130,7 @@ func generateBundleNative(params GuideOptions, request GuideRequest, enrollment 
 	compose.Version = ""
 	compose.Name = project
 	for key, service := range compose.Services.all() {
-		service.Image = yamlString(image)
+		service.Image = imageNode(request)
 		service.Labels = map[string]string{ComposeLabel: owner}
 		readonly := key == "ha-companion"
 		volumes := []composeMount{bindMount(data+"/agent", "/opt/configflow-agent", readonly, false), bindMount(data+"/oxidns", "/etc/oxidns", readonly, false), bindMount(data+"/ha", "/var/lib/configflow-ha", false, false), bindMount(identity, "/run/configflow-host-machine-id", true, false)}

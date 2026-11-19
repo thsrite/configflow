@@ -110,6 +110,15 @@ func TestDockerHACorpusMatchesPython(t *testing.T) {
 				t.Errorf("case %s (%s %.300s): "+format, append([]any{id, record.GetString("kind"), jsonx.Repr(input)}, args...)...)
 			}
 		}
+		if expected, present, problem := n810PreflightExpected(record); problem != nil {
+			t.Fatal(problem)
+		} else if present {
+			if err != nil || !jsonx.Equal(expected, result) {
+				fail("approved native report differs: %v", err)
+			}
+			counts["approved native machine grammar"]++
+			continue
+		}
 		if request := input.GetObject("request"); request != nil && err != nil {
 			if l1CompactColonRefusal(request, err) {
 				counts["deliberate (L1 D1 compact colon refusal)"]++

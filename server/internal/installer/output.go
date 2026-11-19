@@ -55,8 +55,8 @@ func withInstallOutput(script, beforeBody string) string {
 	if len(lines) > 0 {
 		header = lines[0]
 	} else {
-		// lines[0] of an empty script is an IndexError in Python.
-		panic("with_install_output: empty script")
+		// There is no executable body to wrap.
+		return ""
 	}
 	body := strings.Join(lines[1:], "")
 	if len(lines) > 1 && strings.HasPrefix(lines[1], "# ConfigFlow") {

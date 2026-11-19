@@ -9,6 +9,26 @@ import (
 	"configflow/internal/yamlx"
 )
 
+// ValueError is the compatibility name for ValidationError.
+type ValueError = ValidationError
+
+// TypeError is the compatibility name for RenderError.
+type TypeError = RenderError
+
+// Enrollment is the compatibility response for callers not yet using Capability.
+type Enrollment struct {
+	URL       string
+	Token     string
+	ExpiresAt any
+}
+
+func nativeCapability(e *Enrollment) *Capability {
+	if e == nil {
+		return nil
+	}
+	return &Capability{URL: e.URL, Token: e.Token}
+}
+
 func legacyResponse(value any) (*jsonx.Object, error) {
 	raw, err := json.Marshal(value)
 	if err != nil {
@@ -27,7 +47,7 @@ func GenerateGuide(value any, enrollment *Enrollment) (*jsonx.Object, error) {
 	if err != nil {
 		return nil, err
 	}
-	result, err := GenerateGuideJSON(raw, enrollment)
+	result, err := GenerateGuideJSON(raw, nativeCapability(enrollment))
 	if err != nil {
 		return nil, err
 	}
@@ -38,7 +58,7 @@ func GenerateGuide(value any, enrollment *Enrollment) (*jsonx.Object, error) {
 func IdentityCommand(value any) (string, error) {
 	text, ok := value.(string)
 	if !ok {
-		return "", valueError("宿主身份文件须为规范的绝对路径，不能包含逗号、冒号或换行")
+		return "", valueError(msgIdentityPathCanonical)
 	}
 	return identityCommand(text)
 }
@@ -50,7 +70,7 @@ func InspectionCommand(value any) (string, error) {
 	}
 	text, ok := value.(string)
 	if !ok {
-		return "", valueError("原容器名只能包含字母、数字、点、下划线或短横线")
+		return "", valueError(msgOriginalContainerName)
 	}
 	return inspectionCommand(text)
 }
@@ -64,28 +84,44 @@ func legacyGuideInputs(params, request *jsonx.Object, method string) (GuideOptio
 	if err := json.Unmarshal(raw, &fields); err != nil {
 		return GuideOptions{}, GuideRequest{}, err
 	}
+	p := GuideOptions{identity: fields}
+	for _, field := range []struct {
+		key    string
+		target *string
+	}{
+		{"server_url", &p.ServerURL}, {"agent_name", &p.AgentName}, {"agent_ip", &p.AgentIP}, {"data_dir", &p.DataDir}, {"network_mode", &p.NetworkMode}, {"ha_parent", &p.HAParent}, {"ha_subnet", &p.HASubnet}, {"ha_gateway", &p.HAGateway}, {"ha_host_id_path", &p.HAHostIDPath},
+	} {
+		*field.target, _ = fieldText(fields, field.key)
+	}
+	p.OxidnsPort, _ = fieldNumber(fields, "oxidns_port")
+	addressRaw, _ := fields.Get("agent_ip")
+	if address, node, display, ok := decodeIPv4Value(addressRaw); ok {
+		p.AgentIP = address
+		p.addressNode = node
+		p.addressDisplay = display
+	}
+	gatewayRaw, _ := fields.Get("ha_gateway")
+	if emptyInspectionName(gatewayRaw) {
+		p.HAGateway = ""
+	} else if gateway, _, _, ok := decodeIPv4Value(gatewayRaw); ok {
+		p.HAGateway = gateway
+	} else {
+		p.HAGateway = "invalid-gateway"
+	}
+	r := GuideRequest{Options: p, InstallMethod: method, Image: DockerHAImage}
 	if request != nil {
-		for _, key := range []string{"image", "create_host_identity"} {
-			if value, present := request.Get(key); present {
-				raw, err := jsonx.Default(value)
-				if err != nil {
-					return GuideOptions{}, GuideRequest{}, err
-				}
-				if err := fields.Set(key, raw); err != nil {
-					return GuideOptions{}, GuideRequest{}, err
-				}
+		r.CreateHostIdentity = jsonx.Truthy(request.GetOr("create_host_identity", nil))
+		if image, present := request.Get("image"); present {
+			r.Image, _ = image.(string)
+			r.imageRaw, err = jsonx.Default(image)
+			if err != nil {
+				return GuideOptions{}, GuideRequest{}, err
 			}
+			p.imageRaw = r.imageRaw
 		}
 	}
-	if err := setSessionField(&fields, "install_method", method); err != nil {
-		return GuideOptions{}, GuideRequest{}, err
-	}
-	raw, err = json.Marshal(fields)
-	if err != nil {
-		return GuideOptions{}, GuideRequest{}, err
-	}
-	decoded, err := DecodeGuideRequest(raw)
-	return decoded.Options, decoded, err
+	r.Options = p
+	return p, r, nil
 }
 
 // GenerateCompact adapts the legacy renderer arguments to a typed plan.
@@ -94,7 +130,7 @@ func GenerateCompact(params, request *jsonx.Object, enrollment *Enrollment) (str
 	if err != nil {
 		return "", nil, err
 	}
-	text, info, err := generateCompactNative(p, r, enrollment)
+	text, info, err := generateCompactNative(p, r, nativeCapability(enrollment))
 	if err != nil {
 		return "", nil, err
 	}
@@ -108,7 +144,7 @@ func GenerateDirect(params, request *jsonx.Object, enrollment *Enrollment) (stri
 	if err != nil {
 		return "", nil, err
 	}
-	text, info, err := generateDirectNative(p, r, enrollment)
+	text, info, err := generateDirectNative(p, r, nativeCapability(enrollment))
 	if err != nil {
 		return "", nil, err
 	}
@@ -122,7 +158,7 @@ func GenerateBundle(params, request *jsonx.Object, enrollment *Enrollment) (stri
 	if err != nil {
 		return "", nil, err
 	}
-	text, info, err := generateBundleNative(p, r, enrollment)
+	text, info, err := generateBundleNative(p, r, nativeCapability(enrollment))
 	if err != nil {
 		return "", nil, err
 	}
@@ -146,7 +182,7 @@ func BootstrapCommand(enrollment *Enrollment, request *jsonx.Object) (string, er
 	p.AgentName, _ = textOr(fields, "agent_name", "agent")
 	p.AgentIP, _ = fieldText(fields, "agent_ip")
 	p.NetworkMode, _ = fieldText(fields, "network_mode")
-	return bootstrapNative(enrollment, GuideRequest{Options: p, Image: image})
+	return bootstrapNative(nativeCapability(enrollment), GuideRequest{Options: p, Image: image})
 }
 
 func annotateCompose(text string, compose *jsonx.Object) (string, error) {

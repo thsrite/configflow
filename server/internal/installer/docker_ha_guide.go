@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"path"
 	"strings"
 
 	"unicode"
@@ -15,24 +16,7 @@ import (
 // DockerHAImage is IMAGE.
 const DockerHAImage = "thsrite/config-flow-agent:latest"
 
-// TypeError is a Python exception other than ValueError (TypeError,
-// KeyError, AttributeError …) raised by the guide or enrollment code: the
-// route answers it with the 500 page. Error() is only logged.
-type TypeError struct{ Message string }
-
-func (e *TypeError) Error() string { return e.Message }
-
-func typeError(message string) error { return &TypeError{Message: message} }
-
-// Enrollment is the capability dict docker_ha_enrollment.issue returns
-// ({'url', 'token', 'expires_at'}); nil is None.
-type Enrollment struct {
-	URL       string
-	Token     string
-	ExpiresAt any
-}
-
-func enrollmentURL(e *Enrollment) string {
+func enrollmentURL(e *Capability) string {
 	if e == nil {
 		return ""
 	}
@@ -268,7 +252,11 @@ func usableAddress(v uint32) bool {
 }
 
 func guideComposeNative(p GuideOptions) (*composeDocument, error) {
-	options := NewDockerOptions(p.ServerURL)
+	if raw, present := p.identity.Get("agent_name"); present && len(raw) > 0 && raw[0] != '"' {
+		return nil, typeError(msgRendererText)
+	}
+
+	options := DefaultDockerOptions(p.ServerURL)
 	options.AgentName = p.AgentName
 	options.DataDir = p.DataDir
 	options.AgentIP = p.AgentIP
@@ -283,6 +271,9 @@ func guideComposeNative(p GuideOptions) (*composeDocument, error) {
 	options.HAHostIDPath = p.HAHostIDPath
 	document, err := dockerCompose(options)
 	if err != nil {
+		if raw, present := p.identity.Get("ha_parent"); present && len(raw) > 0 && raw[0] != '"' && err.Error() == msgHAParent {
+			return nil, typeError(msgRendererText)
+		}
 		return nil, err
 	}
 	if p.addressNode != nil {
@@ -362,7 +353,7 @@ func joinQuoted(args []string) string {
 
 // newInstall is _new_install(params, request, enrollment): replay only this
 // setup's immutable plan and captured container IDs.
-func newInstallNative(params GuideOptions, request GuideRequest, enrollment *Enrollment) (string, string, error) {
+func newInstallNative(params GuideOptions, request GuideRequest, enrollment *Capability) (string, string, error) {
 	compose, err := guideComposeNative(params)
 	if err != nil {
 		return "", "", err
@@ -532,13 +523,14 @@ func migrationNative(params GuideOptions, request GuideRequest) (string, string,
 	}
 	for i, left := range directories {
 		for _, right := range directories[i+1:] {
-			if common := posixCommonpath(left, right); common == left || common == right {
-				return "", "", "", valueError("Agent、OxiDNS、HA 和备份目录须彼此独立，不能相同或互相包含")
+			leftCheck, rightCheck := path.Clean(left), path.Clean(right)
+			if common := posixCommonpath(leftCheck, rightCheck); common == leftCheck || common == rightCheck {
+				return "", "", "", valueError(msgMigrationDirectories)
 			}
 		}
 	}
 	if agent.Type == core.Type && agent.Source == core.Source {
-		return "", "", "", valueError("Agent 和 OxiDNS 必须使用不同的数据挂载")
+		return "", "", "", valueError(msgMigrationMounts)
 	}
 	params.DataDir = "/unused-migration-path"
 	compose, err := guideComposeNative(params)

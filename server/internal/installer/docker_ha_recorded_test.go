@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 )
 
@@ -239,6 +240,14 @@ func replayRecorded(t *testing.T, entry *jsonx.Object) (string, string) {
 		return compareOutcome(entry, CollectorScript(), nil)
 	case "parse_report":
 		got, err := ParsePreflightReport(args[0], args[1])
+		if expected, present, problem := n810PreflightExpected(entry); problem != nil {
+			return "oracle", problem.Error()
+		} else if present {
+			if err != nil || !jsonx.Equal(expected, got) {
+				return "native report", fmt.Sprintf("native report differs: %v", err)
+			}
+			return "approved native machine grammar", ""
+		}
 		return compareOutcome(entry, got, err)
 	case "bootstrap_command":
 		e, _ := args[0].(*jsonx.Object)
@@ -281,17 +290,17 @@ func (c *recordedClock) install(t *testing.T) {
 		c.times = c.times[1:]
 		return value
 	}
-	randomBytes = func(n int) []byte {
+	randomBytes = func(n int) ([]byte, error) {
 		if len(c.random) == 0 {
 			c.fail("go drew random bytes more often than python")
-			return make([]byte, n)
+			return make([]byte, n), nil
 		}
 		data, _ := hex.DecodeString(c.random[0].(string))
 		c.random = c.random[1:]
 		if len(data) != n {
 			c.fail("go drew %d random bytes, python %d", n, len(data))
 		}
-		return data
+		return data, nil
 	}
 	enrollmentLocalNow = func() time.Time {
 		if len(c.now) == 0 {
@@ -479,6 +488,7 @@ func replayIO(t *testing.T, entry *jsonx.Object) (string, string) {
 	writeTree(t, root, entry.GetObject("before"))
 	clock := &recordedClock{times: entry.GetList("times"), random: entry.GetList("random"), now: entry.GetList("now")}
 	clock.install(t)
+	beforeNative := canonical(readTree(root))
 	var outcome, problem string
 	switch entry.GetString("fn") {
 	case "issue":
@@ -488,6 +498,12 @@ func replayIO(t *testing.T, entry *jsonx.Object) (string, string) {
 			return "unsupported", ""
 		}
 		capability, err := IssueEnrollment(context.Background(), dataDir, body, profileID)
+		if expected, present, problem := n810SessionExpected(entry); problem != nil {
+			return "oracle", problem.Error()
+		} else if present {
+			return checkN810SessionRefusal(expected, err, capability == nil, beforeNative, root, false)
+		}
+
 		// Accepted difference: a hand-edited, unexpired session whose token is
 		// not a string is echoed by Python; Go refuses it (500).
 		if out, isObject := entry.Value("out").(*jsonx.Object); isObject {
@@ -515,15 +531,21 @@ func replayIO(t *testing.T, entry *jsonx.Object) (string, string) {
 		}
 		manager := &recordedManager{record: entry.GetObject("manager")}
 		got, err := Enroll(context.Background(), dataDir, manager, sessionID, token, present)
+		if expected, present, problem := n810SessionExpected(entry); problem != nil {
+			return "oracle", problem.Error()
+		} else if present {
+			return checkN810SessionRefusal(expected, err, got == nil, beforeNative, root, manager.called)
+		}
+
 		outcome, problem = compareOutcome(entry, got, err)
 		if problem == "" {
 			problem = manager.problem
 		}
-		if problem == "" && !manager.called && entry.GetObject("manager") != nil {
+		if problem == "" && err == nil && !manager.called && entry.GetObject("manager") != nil {
 			problem = "python called the Agent manager, go did not"
 		}
 	}
-	if problem == "" {
+	if problem == "" && entry.Has("out") {
 		problem = clock.leftover()
 	}
 	if problem == "" {
@@ -538,9 +560,59 @@ func replayIO(t *testing.T, entry *jsonx.Object) (string, string) {
 		if tree, ok := haveTree.(*jsonx.Object); ok {
 			tree.Delete(".issue.lock")
 		}
-		if want, have := canonical(wantTree), canonical(haveTree); want != have {
+		if want, have := canonical(n810SessionTreeJSON(wantTree)), canonical(n810SessionTreeJSON(haveTree)); want != have {
 			problem = "files afterwards: " + recordedDifference(want, have)
 		}
 	}
 	return outcome, problem
+}
+
+func checkN810SessionRefusal(expected *jsonx.Object, err error, empty bool, before, root string, called bool) (string, string) {
+	var refusal *EnrollmentError
+	var malformed *RenderError
+	status := int(expected.GetInt("status"))
+	valid := errors.As(err, &refusal) && refusal.Status == status && refusal.Message == expected.GetString("message")
+	if status == 500 {
+		valid = errors.As(err, &malformed) && malformed.Message == expected.GetString("message")
+		if expected.GetString("class") == "model-type" {
+			valid = errors.Is(err, model.ErrType)
+		}
+	}
+	if !valid {
+		return "native session", fmt.Sprintf("wrong refusal: %v", err)
+	}
+	if !empty || called != expected.GetBool("registry") || canonical(readTree(root)) != before {
+		return "native session", "refusal returned credentials, called registry or wrote files"
+	}
+	return "approved exact session-ID refusal", ""
+}
+func n810SessionTreeJSON(value any) any {
+	tree, ok := value.(*jsonx.Object)
+	if !ok {
+		return value
+	}
+	result := tree.DeepCopy()
+	for name, item := range result.All() {
+		if !strings.HasSuffix(name, ".json") {
+			continue
+		}
+		entry, ok := item.([]any)
+		if !ok || len(entry) != 3 || entry[0] != "file" {
+			continue
+		}
+		text, ok := entry[2].(string)
+		if !ok {
+			continue
+		}
+		raw, err := hex.DecodeString(text)
+		if err != nil {
+			continue
+		}
+		decoded, err := jsonx.Parse(raw)
+		if err != nil {
+			continue
+		}
+		entry[2] = decoded
+	}
+	return result
 }

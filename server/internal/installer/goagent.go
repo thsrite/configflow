@@ -2,8 +2,10 @@ package installer
 
 import (
 	"errors"
+	"math"
 	"math/big"
 	"strings"
+	"time"
 
 	"encoding/json"
 )
@@ -21,16 +23,13 @@ const (
 	ForwardingOn                     // True
 )
 
-// GoAgentOptions are the arguments of generate_go_agent_install_script.
-// AgentPort and DeploymentHealthTimeout hold what Python receives: an int
-// (int, int64, *big.Int) or, for AgentPort, a str (the route passes the raw
-// text when a core is installed too). Nil means the Python default
-// (8080 / 30). Empty ConfigPath / RestartCommand are Python's None.
-type GoAgentOptions struct {
+// AgentInstallOptions contains the native single-Agent renderer input.
+// A nil DeploymentHealthTimeout selects 30 seconds.
+type AgentInstallOptions struct {
 	ServerURL               string
 	AgentName               string
 	ServiceType             string
-	AgentPort               any
+	AgentPort               int
 	AgentIP                 string
 	ConfigPath              string
 	RestartCommand          string
@@ -44,12 +43,14 @@ type GoAgentOptions struct {
 	HealthURL               string
 	HealthDNSAddress        string
 	HealthDNSName           string
-	DeploymentHealthTimeout any
+	DeploymentHealthTimeout *big.Int
 	InstallCore             bool
 	ManageIPv4Forwarding    Forwarding
 	PrepareDNSHA            bool
 	RegistrationToken       string
 	RegistrationKey         string
+	portError, timeoutError error
+	invalidCorePort         bool
 }
 
 // standaloneForwardingFunctions is _standalone_forwarding_functions().
@@ -70,31 +71,28 @@ func standaloneForwardingFunctions() (string, error) {
 
 var serviceLabels = map[string]string{"mihomo": "Mihomo", "oxidns": "OxiDNS", "mosdns": "MosDNS"}
 
-// GenerateGoAgentInstallScript is generate_go_agent_install_script: an
+// RenderAgentInstall is generate_go_agent_install_script: an
 // installer with explicit service lifecycle and deployment checks.
-func GenerateGoAgentInstallScript(o GoAgentOptions) (string, error) {
+func RenderAgentInstall(o AgentInstallOptions) (string, error) {
 	agentPort := o.AgentPort
-	if agentPort == nil {
-		agentPort = 8080
-	}
-	timeout := o.DeploymentHealthTimeout
-	if timeout == nil {
-		timeout = 30
+	timeoutValue := o.DeploymentHealthTimeout
+	if timeoutValue == nil {
+		timeoutValue = big.NewInt(30)
 	}
 	serviceType := o.ServiceType
 	if serviceType != "mihomo" && serviceType != "mosdns" && serviceType != "oxidns" {
 		return "", valueError("Go Agent transactional deployment supports mihomo, mosdns and oxidns")
 	}
 	if o.PrepareDNSHA && serviceType != "oxidns" {
-		return "", valueError("仅 OxiDNS 单服务 Go Agent 支持准备 DNS 高可用环境")
+		return "", valueError(msgHARequiresOxidns)
 	}
 	if !matchesClass(o.AgentName, "_-") {
 		return "", valueError("Invalid agent name: use letters, numbers, hyphens or underscores")
 	}
-	port, err := pyInt(agentPort)
-	if err != nil {
-		return "", err
+	if o.portError != nil {
+		return "", o.portError
 	}
+	port := big.NewInt(int64(agentPort))
 	if !inRange(port, 1, 65535) {
 		return "", valueError("Invalid Agent port")
 	}
@@ -114,15 +112,15 @@ func GenerateGoAgentInstallScript(o GoAgentOptions) (string, error) {
 		o.RestartCommand == "systemctl restart "+unit+".service" || o.RestartCommand == "rc-service "+unit+" restart"
 	if o.InstallCore {
 		if serviceType != "mihomo" && serviceType != "oxidns" {
-			return "", valueError("仅单服务 Mihomo 或 OxiDNS Go Agent 支持同时安装核心")
+			return "", valueError(msgInstallCoreService)
 		}
 		if (o.ConfigPath != "" && o.ConfigPath != "/etc/"+serviceType+"/config.yaml") ||
 			unit != serviceType || serviceManager != "" || !standardRestart ||
 			(o.ServiceBinary != "" && o.ServiceBinary != serviceType && o.ServiceBinary != "/usr/local/bin/"+serviceType) ||
 			o.StopCommand != "" || o.StartCommand != "" || o.StatusCommand != "" {
-			return "", valueError("同时安装核心需要默认配置路径、服务名、核心路径和自动识别服务管理器，不能使用自定义启停命令")
+			return "", valueError(msgInstallCoreDefaults)
 		}
-		if _, isBool := agentPort.(bool); isBool || !asciiDigits(pyStr(agentPort)) {
+		if o.invalidCorePort {
 			return "", valueError("Invalid Agent port")
 		}
 		dnsPort := int64(53)
@@ -130,7 +128,7 @@ func GenerateGoAgentInstallScript(o GoAgentOptions) (string, error) {
 			dnsPort = 1053
 		}
 		if port.Cmp(big.NewInt(dnsPort)) == 0 {
-			return "", valueError("Agent 端口不能与所安装核心的 DNS 监听端口相同")
+			return "", valueError(msgCoreDNSPortConflict)
 		}
 	}
 	if serviceManager == "" {
@@ -141,7 +139,7 @@ func GenerateGoAgentInstallScript(o GoAgentOptions) (string, error) {
 		}
 	}
 	if o.PrepareDNSHA && serviceManager == "command" {
-		return "", valueError("DNS 高可用安装需要原生 systemd/OpenRC，不能使用自定义启停命令")
+		return "", valueError(msgHANativeLifecycle)
 	}
 	if serviceManager == "command" && (o.StopCommand == "" || o.StartCommand == "" || o.StatusCommand == "") {
 		return "", valueError("Custom lifecycle requires stop_command, start_command and status_command; a restart command alone cannot support rollback")
@@ -153,9 +151,11 @@ func GenerateGoAgentInstallScript(o GoAgentOptions) (string, error) {
 	} else if manageForwarding && !forwardingSupported {
 		return "", valueError(StandaloneForwardingUnsupported)
 	}
-	timeoutValue, err := pyInt(timeout)
-	if err != nil {
-		return "", err
+	if o.timeoutError != nil {
+		return "", o.timeoutError
+	}
+	if !timeoutValue.IsInt64() || timeoutValue.Cmp(big.NewInt(math.MaxInt64/int64(time.Second))) > 0 || timeoutValue.Cmp(big.NewInt(math.MinInt64/int64(time.Second))) < 0 {
+		return "", valueError("Invalid deployment health timeout")
 	}
 	configPath := o.ConfigPath
 	if configPath == "" {
