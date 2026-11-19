@@ -41,15 +41,87 @@ O10 后续保留两项：MemberJSON 标量编码、typed View 固定读取成本
 - 真实负控：远端仅临时替换回叠入后原始 `9193c4376` 的六个产品文件（trap 恢复），同一新分配回归得到 public 28,084 B/412、native 20,856 B/317，均明确因 allocation regression 失败；控制脚本输出 NEGATIVE CONTROL PASS，无编译/超时假阳性，原文件已恢复。
 - 共享模型 scalar fast-path 独立回归比较声明字段的完整 Marshal 证据，覆盖原始 null、错类型、escaped 文本、bool、赋值和 Clear。
 
-## 下一步
+## 交回状态
 
-候选已单独提交 `3380a1c28` 并交 fresh Opus；定向检查完成，接下来最终树预检和完整 compare。
-所有检查固定测试服务器，经 rt 运行；不跑完整 core。
+授权的集成、定向验证、最终预检和完整 compare 全部完成，未 push，源分支未移动。
+产品/测试树为 `6a7a29561`，之后仅修改本交接文件；最终 tip 以 batch-10 分支为准。
+心跳候选 `3380a1c28` 已交协调者安排 fresh Opus，只复核该集成提交；结果由协调者接收，本报告不提前声明 verified。
+完整 core 留给协调者，未自行运行完整 core/race。
+所有检查均固定测试服务器 `.32` 经 rt/SSH 执行，本机只有编辑、git、轻量核对。
 
 ## 最终树来源与集成检查
 
 - 最后真实 Python record：MosDNS 69.950s / OxiDNS 60.189s；check：69.648s / 60.721s，全部退出 0。
-- 与基底完整核对 13 份 transcript 共 18,491 条 entries/version/input/venv SHA 不变；只刷新当前 Go 来源 SHA，无 corpus、byte manifest 或 baseline 改写。
+- 与基底完整核对 13 份 transcript 共 18,462 条 entries/version/input/venv SHA 不变；只刷新当前 Go 来源 SHA，无 corpus、byte manifest 或 baseline 改写。
 - 一个来源刷新 SSH 会话失去远端进程但本机连接未退出，终止该会话（exit 255，不计通过）后重开连接，以上完整 record/check 为有效运行。
 - 最终 gofmt 全 internal/tools/cmd 静默；agents/model 定向 vet 静默；还原负控后 allocation 正控 6.037s；tagged C37 Agent IP SIGKILL 与编辑交错回归 2.296s，均 PASS。
 - 四组最终分配日志测试服务器 `~/.cache/batch10-final-bench.log`；基底 `~/.cache/batch10-baseline-bench.log`。固定 GOMAXPROCS=4、benchtime=3x、count=3。Mihomo 45.83–45.89 MB/op；OxiDNS 42.80–42.89 MB/op，与基底字节区间重叠（次数从约 470.9k 到 471.6k，约 +0.16%，如实保留）；routers 1/16/64 的 projection 约 20.8k/252k/993k B，不随 1 MiB 无关配置放大；心跳 public 8,304–8,821 B/177–180，native 7,434–7,792 B/162–163，HA guard 0 B/0。
+
+## 叠入清单
+
+| 源分支与指定 tip | 叠入后的范围 | 提交数 |
+| --- | --- | ---: |
+| go-review-c37-a24-crash@4b8ec848f | 1fd89e1c1..5dbbca869 | 2 |
+| go-opus-review-n8-10-core@e871b2fe3 | 5dbbca869..3840838f0 | 5 |
+| go-opus-review-n8-8d-deploy@d41dfdaac | 57e03036a..9193c4376 | 4 |
+
+11 个源提交全部保留，无重复提交被二次叠入，无跳过。使用 detached source tip 进行 rebase，再 fast-forward batch-10，不移动源分支。
+两处 patch-id 不等仅因相应 source commit 的 pyref 二进制来源元数据保留当前组合，随后用真实 Python 刷新；所有产品改动完整叠入。
+
+本批集成提交：`57e03036a`（第一组来源冲突/指纹）、`3380a1c28`（经裁定的心跳候选及回归）、`6a7a29561`（最终来源验证）。
+Agent adapter 以 `git diff 9a0b4dfcd HEAD -- server/internal/api/agents/client_tools_adapter.go` 独立核对，无输出；不存在用整文件 checkout 误丢其他分支修改的问题。
+旧 batch-8 rulefetch 限额、PeekCacheWithFormat、typed errors 与 profile-local 缓存认领均未改写。
+只增加共享 publication owner 及调用接线，原存储/缓存 D2 baseline 无变动。
+临时 baseline worktree 与其 rt 副本已清理，基准原始日志与旧 HA fixture adapter 保留于仓库外。
+
+## 预检与 compare
+
+产品/测试树 `6a7a29561`，预检实际固定测试服务器，先 `RT_HOST=<test-host> rt sync`，再：
+
+    ssh <test-host> 'bash /tmp/preflight.sh program__configflow-go-batch-10 -p 6'
+
+脚本两种 tag vet + 全量非 race 测试已输出 `PREFLIGHT PASS`，退出 0。
+135 个有测试包通过；无失败包。完整测试日志保留 `~/.cache/batch10-preflight-tests.log`，脚本输出 `~/.cache/batch10-preflight.log`。
+
+随后执行完整 compare（全部完成，退出 0）：
+
+    RT_HOST=<test-host> rt -e GATE_ONLY=compare -- bash -lc 'set -o pipefail; server/scripts/gate.sh -p 6 | tee "$HOME/.cache/batch10-compare.log"'
+
+日志组 `gate.HXNOyK`。observer 和全部 proddiff self-check 均 PASS，205 routes / 2,831 cases，coverage_regressions=0。
+24 个 difftest 包全部通过（API agents 377.437s）；synthetic live 全部 23 项真实执行、0 skips，repo Python 子用例与 WebDAV Python exec 均由执行 manifest 校验。
+
+最终输出行：
+
+    PREFLIGHT PASS
+    baseline: new=0 stale=0
+    SYNTHETIC LIVE PASS: 23 required entries ran and passed; 0 skips; repo Python subtest and WebDAV Python exec verified
+    GATE STAGE PASS: compare
+
+baseline、时间字段归一化、原 byte manifest 和原压缩 corpus 均未修改。
+未运行完整 core；gate 启动行 FULL mode 是缓存资格提示，不代表 compare 执行了 core。
+
+## 完整分配摘要
+
+同一服务器、同一夹具，单位 B/op / allocs/op；每行合并重复样本及无关配置 padding 两组。
+
+| 边界 | 基底 1fd89e1c1 | 最终产品树 |
+| --- | --- | --- |
+| Mihomo 128节点/512规则 | 45,855,424–45,870,477 / 410,325–410,348 | 45,828,034–45,890,200 / 410,336–410,351 |
+| OxiDNS 冷缓存 0/2MiB | 42,835,693–42,890,546 / 470,879–470,908 | 42,804,445–42,885,520 / 471,605–471,662 |
+| routers projection 1 | 20,840 / 263 | 20,840–23,037 / 263–268 |
+| routers projection 16 | 252,256–258,914 / 2,457–2,471 | 252,256–254,453 / 2,457–2,462 |
+| routers projection 64 | 992,992–997,952 / 9,467–9,479 | 992,992–1,002,426 / 9,467–9,489 |
+| sources 1 | 56,493–57,277 / 706–709 | 56,493–57,053 / 706–710 |
+| sources 16 | 891,032–909,304 / 10,770–10,812 | 891,005–921,813 / 10,772–10,819 |
+| sources 64 | 3,595,288–3,651,981 / 43,073–43,265 | 3,603,629–3,637,480 / 43,072–43,130 |
+| Heartbeat public 0/2MiB | 6,730–7,248 / 134–136 | 8,304–8,821 / 177–180 |
+| Heartbeat native 0/2MiB | 无此入口 | 7,434–7,792 / 162–163 |
+| HA guard 0/2MiB | 0 / 0 | 0 / 0 |
+
+routers/rules 源规划产品代码未改，少量池化/GC 分配波动区间重叠；未出现随无关配置放大的复制。心跳增量按协调者明确裁定接受，O10 两处余量如上记录。
+
+## 覆盖与文件
+
+源模块的 Python 文件/测试映射沿用 [C37/A24](c37-a24-crash.md)、[core-1](n8-10-core.md)、[N8-8d](n8-8d.md) 及各自 review；没有新增功能缺口、依赖或未登记行为变化。
+本集成新增文件：`internal/agents/batch10_alloc_bench_test.go` 56 行、`batch10_alloc_norace_test.go` 52 行、`batch10_runtime_test.go` 63 行；共享模型回归追加在 `internal/model/member_test.go`。
+基底旧 HA guard 只用相同夹具调用迁移前生产 guard 表达式（临时 benchmark adapter），fixture 解码在计时外；native benchmark 同样先 warm schema，因此冷初始化不污染 0 B/0 allocs 的 steady-state 比较。
