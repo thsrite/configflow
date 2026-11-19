@@ -45,6 +45,7 @@ type Deployment struct {
 	Submitted                 *bool                    `json:"submitted"`
 	PreviousRunning           *bool                    `json:"previous_running"`
 	Health                    json.RawMessage          `json:"health"`
+	Pending                   *bool                    `json:"pending"`
 	HTTPStatus                *Int                     `json:"http_status"`
 	ManualRollback            *bool                    `json:"manual_rollback"`
 	RollbackRejected          *bool                    `json:"rollback_rejected"`

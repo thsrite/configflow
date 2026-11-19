@@ -273,3 +273,54 @@ repo 3.529s、agents 30.418s、api/agents 2.231s。
 repo 3.558s、store 1.092s。包含 oversized registry 本身超过 cache budget 的重复读取、
 凭据热缓存不解码整库、原始字段类型、cancellation、nested native/legacy txn read、
 abort、外部提交与 pinned snapshot、不允许修改共享回调值等独立验证。
+
+## typed deployment actions 块
+
+前块提交 269f9ac6c。本块迁移 deployment read/poll、候选激活、manual rollback reservation、
+恢复、明确拒绝后的 journal 复原和 deployment HTTP request。旧 Manager 入口仅 codec；
+新入口分别 ReadDeploymentModel、ActivateDeploymentModel、RollbackDeploymentModel、
+RecoverDeploymentModel、DeploymentRequestModel。设备 endpoint 只接受原始字符串 host/token，
+Authorization header override 规范化后与请求 body 原样传入 transport。尚未改动 runtime 表示。
+
+- 保留 profile/service/task latest ownership、preparation lease、404 上传登记竞态、ambiguous
+  rollback 重投、只有精确 busy 的限时重试、明确拒绝与 unknown 的区别、旧版本恢复命令。
+  全部 durable identity 都核验原始字符串；HTTP error code 也用 stdlib 数值 type probe，
+  不能把 R5 的 `"404"` 投影当 404。新增独立字节 fixture 已先复现这个问题，原期望未改。
+- native outcome DTO 强制发送 success:false 的存在性；model.Pending 仅为已有公开 pending
+  语义添加 typed 字段。未新增 persisted 字段或修改旧 scalar/corpus 期望。
+- 候选与 monitor checkpoint 仍经 deployment_hook_bridge 的纯 codec 接既有 hook；这是
+  deploy/monitor 后续 S 边界，不含两份状态机。monitor/upgrades/installer 本块未修改。
+- 删除旧 dynamic poll/activate/rollback/recover，以及不用的 merge/status helper。
+  nil Agent 的旧 CPython 内部错误按已批准策略保留原调用、原异常文本与 SHA 精确绑定，
+  核验原 TypeError 类、native refusal、非 transport error、事务不写入。
+- lifecycle regression 核验 request disconnect 后仍能完成 rollback；Runtime shutdown 在
+  device reply 返回前发生时保持 rolling_back reservation，拒绝 receipt commit 和后续
+  旧 generation 恢复。测试初稿错误地在 shutdown 后才 BindRequest（API 明确会返回无
+  generation 的原 ctx），已修正 fixture 在 live generation 先绑定，拒绝期望未放松。
+
+### 本块验证（定向）
+
+首轮 .64 native actions race：deploy 74.997s、dnsha 29.119s PASS；agents 中 pending 的
+未声明字段暴露实现缺口，并暴露 nil CPython message 断言。补 typed pending 和批准的
+精确 nil reference comparison 后：
+
+    RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -e; cd server; gofmt -w internal/agents/deployment_actions.go internal/agents/deployment_remote.go internal/agents/deployment_actions_test.go internal/agents/deployments.go internal/agents/a01_reference_test.go internal/agents/status_reference_native_test.go internal/model/agentdeploy.go; GOMAXPROCS=4 go vet -p 4 ./internal/agents ./internal/model; GOMAXPROCS=4 go test -race -p 4 -count=1 -timeout=20m -run "TypedDeploymentActions|TypedDeploymentHTTPStatus|AgentDeletedDuringRollback|PollBeforeUpload|ManualRollbackBusy|ReviewA14Manual|PreparationInterruption|Recover|WarningReport|Candidate" ./internal/agents ./internal/deploy'
+
+Exit 0：agents 66.943s、deploy 68.950s。所有原正常回归期望不变。
+
+    RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'set -e; cd server; gofmt -w internal/agents/deployment_actions_fuzz_test.go; GOMAXPROCS=4 go test -count=1 -run "^$" -fuzz "^FuzzDeploymentRouteBinding$" -fuzztime=60s -parallel=2 ./internal/agents'
+
+Exit 0：679,706 executions，PASS 60.056s。核验原始 task/service 证明、大小写别名隔离、
+optional 的 absent 与 null 区别、getter 不改变原始 journal。
+
+    RT_HOST=sunbroke@192.168.0.64 rt -e CONFIGFLOW_DIFF=1 -- bash -lc 'cd server && GOMAXPROCS=4 go test -p 4 -count=1 -timeout=20m -run "^TestPublishHTTPAgainstFlask$|^TestDifferentialAgainstFlask$" ./internal/api/agents/difftest'
+
+Exit 0：agents API difftest 9.068s。发布比较完整 DB、private files、设备实际原始调用，
+其原请求 raw body/header 比较未修改。
+
+真实 HTTP busy 两次请求（中文、2.00、空白、换行 body）及小写 Authorization override
+原字节相同，caller header 不修改。首轮该测试已 PASS；同轮 lifecycle fixture 错误已如上修正。
+
+    RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'set -e; cd server; gofmt -w internal/agents/deployment_lifecycle_test.go; GOMAXPROCS=4 go vet -p 4 ./internal/agents ./internal/model ./internal/deploy; GOMAXPROCS=4 go test -race -p 4 -count=1 -timeout=15m -run "^TestTypedRollbackDisconnectAndShutdownCommitBoundary$" ./internal/agents'
+
+Exit 0：agents 10.278s。

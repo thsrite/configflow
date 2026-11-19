@@ -340,9 +340,14 @@ func TestHeartbeatFreshNowNilUsesWallClockAndMicroseconds(t *testing.T) {
 // _deployment_request(None, ...) raises TypeError (not a RequestException).
 func TestAgentDeletedDuringRollbackIsAnErrorNotAnUnknownOutcome(t *testing.T) {
 	e := newEnv(t)
-	if _, err := e.m.DeploymentRequest(context.Background(), nil, "POST", "deployments/x/rollback", nil, nil, nil); err == nil ||
-		IsTransportError(err) || err.Error() != "'NoneType' object is not subscriptable" {
-		t.Fatalf("%v", err)
+	before, err := e.repo.Store().Fingerprint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = e.m.DeploymentRequest(context.Background(), nil, "POST", "deployments/x/rollback", nil, nil, nil)
+	verifyDeletedAgentRequestReference(t, err)
+	if after, readErr := e.repo.Store().Fingerprint(); readErr != nil || after != before {
+		t.Fatal("deleted Agent request wrote transaction", readErr)
 	}
 }
 

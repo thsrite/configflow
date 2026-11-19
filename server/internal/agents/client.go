@@ -82,14 +82,20 @@ type Response struct {
 // application/json body keeps its BOM (and fails) and invalid bytes become
 // U+FFFD. The error text is json.loads' message.
 func (r *Response) JSON() (any, error) {
+	return jsonx.Parse(r.jsonData())
+}
+
+// jsonData owns the decoded JSON transport bytes. Protocol DTOs use the
+// standard JSON decoder; only the old public JSON adapter uses jsonx.
+func (r *Response) jsonData() []byte {
 	if _, ok := r.encoding(); !ok && len(r.Body) > 3 {
 		if codec := guessJSONUTF(r.Body); codec != "" {
 			if text, ok := pyDecode(r.Body, codec, true); ok {
-				return jsonx.ParseString(text)
+				return []byte(text)
 			}
 		}
 	}
-	return jsonx.ParseString(r.Text())
+	return []byte(r.Text())
 }
 
 // Text is response.text: the body decoded with the charset of the headers

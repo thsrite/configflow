@@ -2016,3 +2016,9 @@ SHA 和各自 compact row SHA 精确绑定，分别核验 Python 错误类别、
 其余正常行和标量行继续原期望比较。真实 HTTP 两条回归分别发送 list/object status，
 比较设备实际收到的 method、request URI、Bearer header 和空 body 原字节，断言结构化
 502、脱敏与数据库 fingerprint 不变。
+
+部署操作在原始 journal 的 `deployment_id`、`profile_id`、`service_type` 不匹配时拒绝
+跨绑定的查询/激活/回滚；数字文本投影、大写别名不能作为该证明。损坏的非空 HA marker
+不能放开成员单独回滚。原先并发删除 Agent 之后触发的 CPython NoneType 内部异常，
+现在使用原生 endpoint refusal；原 nil 调用及 Python TypeError 原文另以完整单行 SHA
+绑定，继续验证拒绝、非 transport error 和事务不写入。

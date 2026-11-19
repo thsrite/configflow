@@ -2,6 +2,7 @@ package agents
 
 import (
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -49,5 +50,25 @@ func verifyNativeRecordStatusRow(t *testing.T, index int, row *jsonx.Object, got
 	}
 	if !errors.Is(got, ErrInvalidDeploymentStatus) {
 		t.Fatalf("row=%d native did not reject upstream shape: %v", index, got)
+	}
+}
+
+// The original single nil-Agent call and Python TypeError text are pinned here;
+// the exception implementation is retired, while refusal and no-write remain.
+func verifyDeletedAgentRequestReference(t *testing.T, got error) {
+	t.Helper()
+	const original = `{"agent":null,"method":"POST","suffix":"deployments/x/rollback","python_error":"TypeError: 'NoneType' object is not subscriptable"}`
+	if fmt.Sprintf("%x", sha256.Sum256([]byte(original))) != "a8817226ddcc49c6a74c6cc05fd0bad64ca0b6e7cad911f17150f95cc9cc183f" {
+		t.Fatal("original nil Agent reference changed")
+	}
+	var reference struct {
+		Error string `json:"python_error"`
+	}
+	if err := json.Unmarshal([]byte(original), &reference); err != nil {
+		t.Fatal(err)
+	}
+	class, _, _ := strings.Cut(reference.Error, ": ")
+	if class != "TypeError" || !errors.Is(got, ErrAgentEndpoint) || IsTransportError(got) {
+		t.Fatalf("native deleted Agent refusal=%v, Python class=%s", got, class)
 	}
 }

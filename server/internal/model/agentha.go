@@ -296,3 +296,8 @@ func (r *HAJournal) MemberJSON(name string) (json.RawMessage, bool, error) {
 func (r *HAPublicationSummary) SetJSON(name string, value json.RawMessage) error {
 	return SetMemberJSON(r, &r.raw, name, value)
 }
+
+// HasMembers reports effective JSON object presence without encoding payloads.
+func (r *HAPublicationSummary) HasMembers() bool {
+	return r != nil && recordHasMembers(r, &r.raw)
+}
