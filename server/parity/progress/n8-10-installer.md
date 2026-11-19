@@ -1,9 +1,9 @@
 # N8-10 installer S pass
 
-状态：实现完成，最终定向验证进行中；待 fresh Opus HR，未宣称 verified。
+状态：实现及定向验证完成，已交回；待 fresh Opus HR 与 batch gate，未宣称 verified。
 分支 `go-n8-10-installer`，先接 core-2 HR tip `70cea1eb6`，后按通知 rebase 到
 `origin/go@ae00b71f1`（含 batch-11 精确 JSON 与 Go 1.27.4）。
-变基后实现提交 `5fbf92230`、`81f7f43f8`、`242160675`；最终收尾提交见分支 log。未 push。
+变基后实现提交 `5fbf92230`、`81f7f43f8`、`242160675`、`bae7b9314`；最终报告提交见分支 log。未 push。
 
 ## 完成边界
 
@@ -135,7 +135,7 @@ source metadata 不同，再显式 record metadata，随后 check PASS。旧 inp
   10 registered call sites、1 scope，无未登记 process/live oracle。
 
 集成点：fresh HR 安全复核及协调者 batch gate；upgrades 改接上述 typed 协议；邻居消费方
-完成后删 legacy codec。core zoneinfo live oracle 登记已由 batch-11 `dd5041faa` 修复，
+完成后删 options codec。core zoneinfo live oracle 登记已由 batch-11 `dd5041faa` 修复，
 本分支没有改公共 registry；变基后的仓库级审计结果见最终验证。
 
 ## 变基到 ae00b71f1 后的最终验证
@@ -148,7 +148,8 @@ source metadata 不同，再显式 record metadata，随后 check PASS。旧 inp
   PASS 0.677s，旧 zoneinfo 缺项已随新基底解决。
 - `GOMAXPROCS=4 PYREF_MODE=check go test -count=1 -run
   "^TestReviewDeflateAndZipMatchPython$" ./internal/installer`：PASS 1.289s；变基后
-  无需再次 record，旧 input/venv/entries 仍不变。
+  当时无需再次 record；后续测试 codec 移动只新增两条 source metadata，
+  重新 check→record→check，旧 input/venv/entries 仍不变。
 - `GOMAXPROCS=4 CONFIGFLOW_DIFF=1 go test -v -p 4 -count=1 -timeout=20m -run
   "InstallerDifferential|InstallerFuzz|DockerHADifferential|L1CompactColon"
   ./internal/api/agents/difftest`：PASS 119.291s。HA 239/0、installer 293/0、
@@ -170,4 +171,31 @@ source metadata 不同，再显式 record metadata，随后 check PASS。旧 inp
 此处保留所有 unknown 成员和 D2 身份输入的替代。最后这次机械接线另执行 native
 边界/Corpus/Reference 的 race：installer 42.682s、API 20.742s、difftest 1.151s PASS；
 全仓 vet 静默、pyref audit 0.650s、ZIP live check 1.207s PASS；fuzz 60s PASS 61.019s，
-313813 executions。移除生产 JSON facade 后再做最终编译/race/HA differential。
+313813 executions。生产 JSON facade、base64/posixpath 仿真移除后的最终结果如下。
+
+## 最终收口（代码 tip bae7b9314）
+
+- .32：`RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server &&
+  GOMAXPROCS=4 go vet -p 4 ./... && GOMAXPROCS=4 go test -race -p 4 -count=1
+  -timeout=15m -run "N810|DockerHA|ComposeReviewCorpus|ReviewIntOfPort|FuzzCorpus|Matrix|InstallationIdentityJSONGolden"
+  ./internal/installer ./internal/api/agents ./internal/gateway/installation'`：PASS，
+  installer 133.160s、API 47.836s；gateway/installation 编译/race 启动 1.096s
+  （此窄 regex 无匹配测试；其新基底更广组的 3.338s PASS 见上）。gofmt -l 静默。
+- 同次 .32：`GOMAXPROCS=4 CONFIGFLOW_DIFF=1 go test -count=1 -timeout=10m
+  -run "DockerHADifferential|L1CompactColon" ./internal/api/agents/difftest`：PASS 8.701s。
+- .64：`GOMAXPROCS=4 go test -count=1 -run "^TestAuditRepository$" ./tools/pyref`：
+  PASS 0.659s。两个移动后的测试 codec 是真实 helper source，已明确登记，无新豁免。
+- .64：ZIP pyref 先 live check，233 个 deflate 输入、60 个 ZIP payload/mode 全相等，
+  仅缺两条新 test-helper source metadata；显式 record 后再 check：PASS 1.224s / 1.233s。
+  与 origin/go 逐项核对：version、entries、input_sha256、venv_dependencies_sha256 全不变。
+- .64：`GOMAXPROCS=4 go test -race -count=1 -run "N810MachineEncoding"
+  ./internal/installer`：PASS 1.017s。标准采集输出须 pass，额外 base64 padding、C0/Unicode
+  分隔必须 unknown，证明坏文本不会被当作空证据放行。
+- .64：`GOMAXPROCS=4 go test -count=1 -run "^$" -fuzz
+  "^FuzzInstallerNativeProtocols$" -fuzztime=60s -parallel=2 ./internal/installer`：
+  PASS 61.022s，308462 executions。
+
+最终生产 grep：installer 非 test Go 文件的 jsonx / pystr / PythonClass / posixpath /
+binascii 均无命中；JSON facade 只在测试，D2 identityJSON 专用编码保留。没有修改原始
+corpus/pyref entries，没有降低 allocation 阈值，无额外未完成实现；fresh HR 与集成门禁由
+协调者安排。没有 push。
