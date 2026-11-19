@@ -3,7 +3,6 @@ package rulefetch
 import (
 	"encoding/base64"
 	"errors"
-	"fmt"
 	"io/fs"
 	"syscall"
 
@@ -11,11 +10,9 @@ import (
 	"configflow/internal/store"
 )
 
-// pythonClassOf is type(err).__name__ for the errors C14's code paths can
-// see, "" when err carries no Python class (a plain Go error of this
-// package, which stands for ValueError).
-func pythonClassOf(err error) string {
-	var classed interface{ PythonClass() string }
+// errorClassOf preserves diagnostic labels while using native error chains.
+func errorClassOf(err error) string {
+	var classed interface{ ErrorClass() string }
 	var download *DownloadError
 	var remote *RemoteRuleValidationError
 	var repoErr *repo.Error
@@ -27,7 +24,7 @@ func pythonClassOf(err error) string {
 	case errors.As(err, &remote):
 		return "RemoteRuleValidationError"
 	case errors.As(err, &classed):
-		return classed.PythonClass()
+		return classed.ErrorClass()
 	case errors.As(err, &repoErr):
 		switch {
 		case errors.Is(err, repo.ErrNodeDeletionChanged):
@@ -72,36 +69,30 @@ func pythonClassOf(err error) string {
 	return ""
 }
 
-// latin1EncodeError is str(UnicodeEncodeError) of text.encode('latin1'),
-// "" when text encodes.
-func latin1EncodeError(text string) string {
-	runes := []rune(text)
-	for start, r := range runes {
-		if r <= 0xff {
-			continue
-		}
-		end := start + 1
-		for end < len(runes) && runes[end] > 0xff {
-			end++
-		}
-		if end-start == 1 {
-			escaped := fmt.Sprintf(`\u%04x`, r)
-			if r > 0xffff {
-				escaped = fmt.Sprintf(`\U%08x`, r)
-			}
-			return fmt.Sprintf("'latin-1' codec can't encode character '%s' in position %d: ordinal not in range(256)", escaped, start)
-		}
-		return fmt.Sprintf("'latin-1' codec can't encode characters in position %d-%d: ordinal not in range(256)", start, end-1)
-	}
-	return ""
-}
-
-// basicAuthHeader is requests.auth._basic_auth_str (latin-1; username first).
+// basicAuthHeader encodes HTTP Basic credentials using ISO-8859-1.
 func basicAuthHeader(user, password string) (string, error) {
-	for _, part := range []string{user, password} {
-		if message := latin1EncodeError(part); message != "" {
-			return "", &pyOSError{class: "UnicodeEncodeError", message: message}
+	for _, r := range user + password {
+		if r > 255 {
+			return "", &credentialError{}
 		}
 	}
 	return "Basic " + base64.StdEncoding.EncodeToString(latin1Bytes(user+":"+password)), nil
 }
+
+type credentialError struct{}
+
+func (*credentialError) Error() string {
+	return "HTTP Basic credentials must use ISO-8859-1 characters"
+}
+func (*credentialError) ErrorClass() string { return "UnicodeEncodeError" }
+
+// ErrorClass returns the stable rule-validation diagnostic label.
+func (e *RemoteRuleValidationError) ErrorClass() string { return "RemoteRuleValidationError" }
+
+type certificateBundleError struct{ err error }
+
+func (e *certificateBundleError) Error() string {
+	return "invalid TLS CA certificate bundle: " + e.err.Error()
+}
+func (e *certificateBundleError) Unwrap() error      { return e.err }
+func (e *certificateBundleError) ErrorClass() string { return "OSError" }

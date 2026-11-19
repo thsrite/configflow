@@ -65,8 +65,17 @@ func TestReviewC09ApplyIPRule(t *testing.T) {
 				}
 				return nil
 			},
-			ReadRulePayload:   rulefetch.ReadRulePayloadAny,
-			AppendRulePayload: rulefetch.AppendRulePayloadAny,
+			ReadRulePayload: func(content string) ([]string, any, error) {
+				lines, payload, err := rulefetch.ReadRulePayload(content)
+				if payload == nil {
+					return lines, nil, err
+				}
+				return lines, payload, err
+			},
+			AppendRulePayload: func(content, line string, payload any) (string, error) {
+				node, _ := payload.(*yamlx.Node)
+				return rulefetch.AppendRulePayload(content, line, node)
+			},
 		}
 		if strings.Contains(record.GetString("content"), "%") {
 			continue // scopedNetwork: zones inside networks are refused by net/netip

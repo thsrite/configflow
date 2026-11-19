@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 
 	"configflow/internal/jsonx"
@@ -23,6 +24,9 @@ type nativeReplayCase struct {
 
 func nativeReplayDifference(t *testing.T, suite, fn string, args any, got, want string) string {
 	t.Helper()
+	if category := nativeHTMLDifference(t, suite, fn, args, got); category != "" {
+		return category
+	}
 	source := nativeReplaySource(fn, args)
 	_, parseErr := yamlx.Parse([]byte(source))
 	if (errors.Is(parseErr, yamlx.ErrPolicy) || errors.Is(parseErr, yamlx.ErrAliasRecursion) || errors.Is(parseErr, yamlx.ErrAliasBudget)) && boundaryHasDiagnostic(got, parseErr.Error()) && boundaryRefusedSource(got, source) {
@@ -252,4 +256,54 @@ func sameFailureMetadata(got, want string) bool {
 	g.Delete("text")
 	w.Delete("text")
 	return encode(g) == encode(w)
+}
+
+var nativeHTMLCases = sync.OnceValues(func() (map[string]nativeReplayCase, error) {
+	data, err := os.ReadFile("testdata/n811_native_html_differences.json")
+	if err != nil {
+		return nil, err
+	}
+	var rows []nativeReplayCase
+	if err := json.Unmarshal(data, &rows); err != nil {
+		return nil, err
+	}
+	cases := make(map[string]nativeReplayCase, len(rows))
+	for _, row := range rows {
+		if previous, ok := cases[row.ID]; ok && previous != row {
+			return nil, fmt.Errorf("conflicting HTML difference %s", row.ID)
+		}
+		cases[row.ID] = row
+	}
+	return cases, nil
+})
+
+func nativeHTMLDifference(t *testing.T, suite, fn string, args any, got string) string {
+	t.Helper()
+	if !(suite == "review" && (fn == "unescape" || fn == "meta_content" || fn == "clean_text") || suite == "corpus" && fn == "page_identity") {
+		return ""
+	}
+	cases, err := nativeHTMLCases()
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := fmt.Sprintf("%x", sha256.Sum256([]byte(suite+"/"+fn+"/"+encode(args))))
+	row, ok := cases[id]
+	if !ok {
+		return ""
+	}
+	digest := fmt.Sprintf("%x", sha256.Sum256([]byte(got)))
+	if row.Native != digest {
+		return ""
+	}
+	return row.Category
+}
+
+func TestN811HTMLReplayNegativeControl(t *testing.T) {
+	args := []any{"&#1;"}
+	if got := nativeHTMLDifference(t, "review", "unescape", args, encode("\x01")); got != "N8-11 native HTML" {
+		t.Fatalf("native HTML case not checked: %q", got)
+	}
+	if got := nativeHTMLDifference(t, "review", "unescape", args, encode("wrong")); got != "" {
+		t.Fatal("changed native HTML output bypassed replay")
+	}
 }

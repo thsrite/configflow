@@ -500,3 +500,25 @@ func TestNormalizeAndOptions(t *testing.T) {
 		t.Fatal("github")
 	}
 }
+
+func RuleFetchSettings(config *jsonx.Object) *jsonx.Object {
+	settings := config.GetObject("system_config")
+	if settings == nil {
+		return jsonx.NewObject()
+	}
+	return settings
+}
+
+func GetRuleFetchProxy(config *jsonx.Object) (string, error) { return FetchProxy(sourceConfig(config)) }
+
+func RuleRequestProxyChecked(url string, config *jsonx.Object, host string) (string, error) {
+	return ProxyFor(url, sourceConfig(config), host)
+}
+
+func RuleRequestProxy(url string, config *jsonx.Object, host string) (string, error) {
+	return RuleRequestProxyChecked(url, config, host)
+}
+
+func IsInternalRuleURLChecked(url string, config *jsonx.Object, host string) (bool, error) {
+	return InternalURL(url, sourceConfig(config), host)
+}

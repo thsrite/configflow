@@ -1,6 +1,7 @@
 package rules
 
-// Only this boundary handles legacy repository, syntax and Agent record values.
+// Request records delegate rule semantics to typed owners. Profile writes retain
+// the repository compatibility boundary until W1 supplies resolved transactions.
 import (
 	"bytes"
 	"context"
@@ -13,6 +14,7 @@ import (
 	"configflow/internal/agents"
 	"configflow/internal/httpx"
 	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/mosdns"
 	"configflow/internal/oxidns"
 	"configflow/internal/repo"
@@ -29,40 +31,41 @@ func native(value any) (record, error) {
 	err = json.Unmarshal(raw, &out)
 	return out, err
 }
-func legacy(value record) (*jsonx.Object, error) {
+func ruleRecord(value record) (model.RuleConfig, error) {
 	raw, err := json.Marshal(value)
-	if err != nil {
-		return nil, err
+	var out model.RuleConfig
+	if err == nil {
+		err = json.Unmarshal(raw, &out)
 	}
-	v, err := jsonx.Parse(raw)
-	if err != nil {
-		return nil, err
-	}
-	out, ok := v.(*jsonx.Object)
-	if !ok {
-		return nil, errors.New("expected configuration object")
-	}
-	return out, nil
+	return out, err
 }
 func readBody(c *httpx.Ctx, silent bool) (record, error) {
-	var value any
-	var err error
+	var raw json.RawMessage
 	if silent {
-		value = c.JSONSilent()
-	} else {
-		value, err = c.JSON()
-		if err != nil {
-			return nil, err
+		if !c.BindSilent(&raw) {
+			return nil, nil
 		}
+	} else if err := c.Bind(&raw); err != nil {
+		return nil, err
 	}
-	if _, ok := value.(*jsonx.Object); !ok {
+	var out record
+	if len(raw) == 0 || raw[0] != '{' {
 		return nil, nil
 	}
-	return native(value)
+	err := json.Unmarshal(raw, &out)
+	return out, err
 }
 
 func loadProfile(ctx context.Context, id string) (record, error) {
-	value, err := repo.GetConfig(ctx, id)
+	r, err := repo.GetRepository(ctx)
+	if err != nil {
+		return nil, err
+	}
+	id, err = repo.ResolveProfileID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	value, err := r.Config(ctx, id, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -127,17 +130,17 @@ func sameJSONValue(before, after json.RawMessage) (bool, error) {
 	return reflect.DeepEqual(values[0], values[1]), nil
 }
 func validateSyntax(item record) error {
-	raw, err := legacy(item)
-	if err != nil {
-		return err
-	}
-	kind, ok := raw.Value("rule_type").(string)
+	kind, ok := textValue(item["rule_type"])
 	if !ok {
-		return invalid(fmt.Sprintf(msgUnknownKind, jsonx.Str(raw.Value("rule_type"))))
+		return invalid(fmt.Sprintf(msgUnknownKind, shared.InvalidValueText(item["rule_type"])))
 	}
-	value, ok := raw.GetOr("value", "").(string)
-	if !ok {
-		return invalid(msgSingleLine)
+	value := ""
+	if raw, exists := item["value"]; exists {
+		var valid bool
+		value, valid = textValue(raw)
+		if !valid {
+			return invalid(msgSingleLine)
+		}
 	}
 	if message := shared.RuleValueError(kind, value); message != "" {
 		return invalid(message)
@@ -161,15 +164,7 @@ func reorderSelected(items []record, selection []json.RawMessage, position strin
 			return nil, nil, &fault{500, httpx.DescInternal}
 		}
 	}
-	raw, err := json.Marshal(items)
-	if err != nil {
-		return nil, nil, err
-	}
-	value, err := jsonx.Parse(raw)
-	if err != nil {
-		return nil, nil, err
-	}
-	ordered, unknown := shared.ReorderByIDs(value.([]any), ids, position)
+	ordered, unknown := shared.Reorder(items, ids, position, func(item record) string { return item.text("id") })
 	unknownSet := map[string]bool{}
 	for _, id := range unknown {
 		unknownSet[id] = true
@@ -181,14 +176,7 @@ func reorderSelected(items []record, selection []json.RawMessage, position strin
 			missing = append(missing, raw)
 		}
 	}
-	out := make([]record, len(ordered))
-	for i, item := range ordered {
-		out[i], err = native(item)
-		if err != nil {
-			return nil, nil, err
-		}
-	}
-	return out, missing, nil
+	return ordered, missing, nil
 }
 
 func hydrated(profile, item record) (record, error) {
@@ -374,42 +362,57 @@ func routeKind(route string) string {
 }
 
 func udpChoice(raw json.RawMessage) (string, bool) {
-	if len(raw) == 0 {
+	if !shared.EnabledField(raw, false) {
 		return "", true
 	}
-	value, err := jsonx.Parse(raw)
-	if err != nil {
-		return "", false
-	}
-	if !jsonx.Truthy(value) {
-		return "", true
-	}
-	text, ok := value.(string)
-	return text, ok
+	return textValue(raw)
 }
 func missingSelected(ids []json.RawMessage) string {
-	raw, err := json.Marshal(ids)
-	if err != nil {
-		return msgOrderIDs
-	}
-	value, err := jsonx.Parse(raw)
-	if err != nil {
-		return msgOrderIDs
-	}
-	return fmt.Sprintf(msgOrderMissing, jsonx.Repr(value))
+	return fmt.Sprintf(msgOrderMissing, selectedText(ids))
 }
 
 func dnsChoice(raw json.RawMessage) (string, error) {
-	value, err := jsonx.Parse(raw)
-	if err != nil {
+	if len(raw) == 0 || !json.Valid(raw) {
 		return "", invalid(msgDNSRoutes)
 	}
-	choice, ok := value.(string)
+	choice, ok := textValue(raw)
 	if !ok {
-		return "", invalid(fmt.Sprintf(msgDNSUnsupported, jsonx.Str(value)))
+		return "", invalid(fmt.Sprintf(msgDNSUnsupported, shared.InvalidValueText(raw)))
 	}
 	if err := oxidns.CheckDNSChoice(choice); err != nil {
 		return choice, dnsError(err)
 	}
 	return choice, nil
+}
+
+func selectedText(ids []json.RawMessage) string {
+	stringsOnly := make([]string, len(ids))
+	for i, raw := range ids {
+		if text, ok := textValue(raw); ok {
+			stringsOnly[i] = text
+		} else {
+			encoded, _ := json.Marshal(ids)
+			return string(encoded)
+		}
+	}
+	return shared.IdentifierList(stringsOnly)
+}
+func rawFlag(item record, key string, fallback bool) bool {
+	return shared.EnabledField(item[key], fallback)
+}
+
+func legacy(value record) (*jsonx.Object, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	v, err := jsonx.Parse(raw)
+	if err != nil {
+		return nil, err
+	}
+	out, ok := v.(*jsonx.Object)
+	if !ok {
+		return nil, errors.New("expected configuration object")
+	}
+	return out, nil
 }

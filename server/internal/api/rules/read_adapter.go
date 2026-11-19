@@ -1,9 +1,8 @@
 package rules
 
-// Repository and legacy rule-engine adaptation stays at this boundary. The scan
-// keeps only small projections; hydrated source content is never JSON-copied.
+// Rule readers consume captured model snapshots. The scan keeps small projections;
+// the remaining Scope/captured-record bridges are isolated at the end of this file.
 import (
-	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 	"errors"
@@ -14,17 +13,19 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"configflow/internal/convert"
 	"configflow/internal/gateway"
+	"configflow/internal/jsondecode"
 	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
+	"configflow/internal/model"
 	"configflow/internal/redact"
 	"configflow/internal/refresh"
 	"configflow/internal/repo"
 	"configflow/internal/routers"
 	"configflow/internal/rulefetch"
 	shared "configflow/internal/rules"
+	"configflow/internal/rulesetfmt"
 	"configflow/internal/weburl"
 )
 
@@ -36,33 +37,33 @@ type sourceOptions struct {
 	boundDeadline  bool
 }
 
-func (s *Service) sourceContent(ctx context.Context, config, item, library *jsonx.Object, options sourceOptions) (string, error) {
+func (s *Service) readSource(ctx context.Context, config *rulefetch.SourceConfig, item model.RuleConfig, library *model.RuleLibraryItem, options sourceOptions) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	source := library
-	if source == nil {
-		source = item
+	source := item
+	if library != nil {
+		source = shared.LibraryRule(*library)
 	}
-	cached, err := rulefetch.ReadValidatedRuleCache(ctx, source, config)
+	cached, err := rulefetch.ReadCache(ctx, source, config)
 	if err != nil {
 		return "", err
 	}
 	if cached != nil {
 		return sourceText(cached), nil
 	}
-	if source.GetString("source_type") == "content" {
-		return source.GetString("content"), nil
+	if sourceField(source.SourceType, "") == "content" {
+		return sourceField(source.Content, ""), nil
 	}
 	if options.offline {
 		return "", nil
 	}
-	address := source.GetString("url")
+	address := sourceField(source.URL, "")
 	if address == "" {
 		return "", nil
 	}
 	if strings.HasPrefix(address, "/") {
-		address = strings.TrimRight(config.GetObject("system_config").GetString("server_domain"), "/") + address
+		address = strings.TrimRight(config.Settings.ServerDomain, "/") + address
 	}
 	connect, read := options.connectTimeout, options.readTimeout
 	if connect == 0 {
@@ -72,7 +73,7 @@ func (s *Service) sourceContent(ctx context.Context, config, item, library *json
 		read = 30 * time.Second
 	}
 	fetch := s.fetchWithTimeouts(ctx, config, options.host, connect, read, options.boundDeadline)
-	content, _, err := rulefetch.RefreshRemoteRule(ctx, source, config, rulefetch.RefreshOptions{Client: s.client, Timeout: 30 * time.Second, Fetch: func(string) (any, error) { return fetch(address) }})
+	content, _, err := rulefetch.RefreshRule(ctx, source, config, rulefetch.CacheOptions{Client: s.client, Timeout: 30 * time.Second, Fetch: func(ctx context.Context, _ string) (rulefetch.Content, error) { return fetch(address) }})
 	if err == nil {
 		return sourceText(content), nil
 	}
@@ -84,68 +85,69 @@ func (s *Service) sourceContent(ctx context.Context, config, item, library *json
 		return "", err
 	}
 	// Download diagnostics are already logged by the fetch owner with redaction.
-	if alternate := item.GetString("url"); library != nil && alternate != "" && alternate != library.GetString("url") {
-		mirror := library.Clone()
-		mirror.Set("url", alternate)
-		format, err := convert.RulesetFormat(library, config, "")
+	if alternate := sourceField(item.URL, ""); library != nil && alternate != "" && alternate != sourceField(library.URL, "") {
+		mirror := shared.LibraryRule(*library)
+		mirror.URL = &alternate
+		format, err := rulesetfmt.RuleFormat(shared.LibraryRule(*library), config.Library, "")
 		if err != nil {
 			return "", err
 		}
-		mirror.Set("format", format)
-		return s.sourceContent(ctx, config, mirror, nil, options)
+		mirror.Format = &format
+		return s.readSource(ctx, config, mirror, nil, options)
 	}
 	return "", nil
 }
-func (s *Service) fetch(ctx context.Context, config *jsonx.Object, host string, timeout time.Duration) func(string) (any, error) {
+func (s *Service) fetch(ctx context.Context, config *rulefetch.SourceConfig, host string, timeout time.Duration) func(string) (rulefetch.Content, error) {
 	return s.fetchWithTimeouts(ctx, config, host, timeout, timeout, false)
 }
 
-func (s *Service) fetchWithTimeouts(ctx context.Context, config *jsonx.Object, host string, connect, read time.Duration, boundDeadline bool) func(string) (any, error) {
-	return func(address string) (any, error) {
+func (s *Service) fetchWithTimeouts(ctx context.Context, config *rulefetch.SourceConfig, host string, connect, read time.Duration, boundDeadline bool) func(string) (rulefetch.Content, error) {
+	return func(address string) (rulefetch.Content, error) {
 		if err := ctx.Err(); err != nil {
-			return nil, err
+			return rulefetch.Content{}, err
 		}
 		connectTimeout, readTimeout := connect, read
 		if deadline, ok := ctx.Deadline(); boundDeadline && ok {
 			remaining := time.Until(deadline)
 			if remaining <= 0 {
-				return nil, context.DeadlineExceeded
+				return rulefetch.Content{}, context.DeadlineExceeded
 			}
 			connectTimeout, readTimeout = min(connect, remaining), min(read, remaining)
 		}
-		response, err := s.client.RequestRule(ctx, address, rulefetch.Request{Config: config, HostURL: host, ConnectTimeout: connectTimeout, ReadTimeout: readTimeout})
+		response, err := s.client.Download(ctx, address, rulefetch.DownloadRequest{Config: config, HostURL: host, ConnectTimeout: connectTimeout, ReadTimeout: readTimeout})
 		if err != nil {
-			return nil, err
+			return rulefetch.Content{}, err
 		}
 		defer response.Close()
 		if err = response.RaiseForStatus(); err != nil {
-			return nil, err
+			return rulefetch.Content{}, err
 		}
 		content, err := response.Content()
 		if err == nil {
 			err = ctx.Err()
 		}
-		return content, err
+		return rulefetch.Content{Data: content}, err
 	}
 }
 func (s *Service) local(ctx context.Context, id, name, target, host string) (delivery, error) {
-	config, err := repo.GetConfig(ctx, id)
+	config, err := scopedLocalConfig(ctx, id)
 	if err != nil {
 		return delivery{}, err
 	}
-	library := config.GetList("rule_library")
-	var source *jsonx.Object
-	for _, value := range library {
-		if row, ok := value.(*jsonx.Object); ok && row.GetString("name") == name {
-			source = row
+	library := config.RuleLibrary
+	var source *model.RuleLibraryItem
+	for _, row := range library {
+		if row.Name == name {
+			value := row
+			source = &value
 			break
 		}
 	}
-	cacheSource := source
-	if cacheSource == nil {
-		cacheSource = jsonx.Obj("name", name)
+	cacheSource := model.RuleConfig{Name: name}
+	if source != nil {
+		cacheSource = shared.LibraryRule(*source)
 	}
-	filename, err := rulefetch.RuleCacheReadPath(ctx, cacheSource, library)
+	filename, err := rulefetch.CacheReadPath(ctx, cacheSource, library)
 	if err != nil {
 		return delivery{}, &fault{500, msgLocalFailed}
 	}
@@ -156,8 +158,10 @@ func (s *Service) local(ctx context.Context, id, name, target, host string) (del
 		if errors.Is(err, os.ErrNotExist) {
 			return delivery{}, missing(fmt.Sprintf(msgLocalMissing, name))
 		}
-	} else if source.GetOr("source_type", "url") == "url" {
-		content, stale, err = refresh.ReadRuleSource(ctx, source, refresh.RuleOptions{Config: config, Fetch: s.fetch(ctx, config, host, 2*time.Second), Timeout: 2 * time.Second})
+	} else if sourceField(source.SourceType, "url") == "url" {
+		content, stale, err = refresh.ReadRemote(ctx, *source, refresh.RuleReadOptions{Config: fetchConfig(config), Fetch: func(ctx context.Context, address string) (rulefetch.Content, error) {
+			return s.fetch(ctx, fetchConfig(config), host, 2*time.Second)(address)
+		}, Timeout: 2 * time.Second})
 		if err != nil {
 			if validation := remoteFault(err); validation != nil {
 				validation.CacheRetained = boolPointer(false)
@@ -166,16 +170,16 @@ func (s *Service) local(ctx context.Context, id, name, target, host string) (del
 			return delivery{}, &sourceFailure{Status: 502, Message: weburl.SafeErrorDetails(err), CacheRetained: boolPointer(false)}
 		}
 	} else {
-		content, err = rulefetch.ReadValidatedRuleCache(ctx, source, config)
+		content, err = rulefetch.ReadCache(ctx, shared.LibraryRule(*source), fetchConfig(config))
 		if err == nil && content == nil {
 			// The committed inline declaration remains authoritative if an edit
 			// could not replace its stable cache. Never try the legacy cache again.
-			content = []byte(source.GetString("content"))
+			content = []byte(sourceField(source.Content, ""))
 			// This reader has no editor lease. Publishing its snapshot could race
 			// a draft's DB commit/rename and overwrite the newly published cache.
 			// Cold-cache population resolves the current DB declaration and the
 			// shared writer checks it again under the repository lock.
-			populateInlineCache(ctx, source)
+			populateInlineCache(ctx, shared.LibraryRule(*source))
 		}
 	}
 	if err != nil {
@@ -184,11 +188,11 @@ func (s *Service) local(ctx context.Context, id, name, target, host string) (del
 	if source != nil && target == "mihomo" && !utf8.Valid(content) {
 		logger.Warningf(msgLocalUTF8, localLogName(ctx, config, name))
 	} else if source != nil && target == "mihomo" {
-		format, err := convert.RulesetFormat(source, config, "")
+		format, err := rulesetfmt.RuleFormat(shared.LibraryRule(*source), config.RuleLibrary, "")
 		if err != nil {
 			return delivery{}, &fault{500, msgLocalFailed}
 		}
-		normalized, warnings, err := rulefetch.NormalizeMihomoRuleset(string(content), source.GetOr("behavior", "domain"), format)
+		normalized, warnings, err := rulefetch.NormalizeRuleset(string(content), sourceField(source.Behavior, "domain"), format)
 		if err != nil {
 			return delivery{}, &fault{500, msgLocalFailed}
 		}
@@ -196,11 +200,7 @@ func (s *Service) local(ctx context.Context, id, name, target, host string) (del
 		if len(warnings) > 0 {
 			lines := make([]string, 0, min(10, len(warnings)))
 			for _, warning := range warnings[:min(10, len(warnings))] {
-				line := "?"
-				if item, ok := warning.(*jsonx.Object); ok {
-					line = strconv.FormatInt(item.GetInt("line"), 10)
-				}
-				lines = append(lines, line)
+				lines = append(lines, strconv.Itoa(warning.Line))
 			}
 			logger.Warningf(msgLocalReview, localLogName(ctx, config, name), len(warnings), strings.Join(lines, ", "))
 		}
@@ -208,7 +208,7 @@ func (s *Service) local(ctx context.Context, id, name, target, host string) (del
 	return delivery{Content: content, Stale: stale != nil}, nil
 }
 
-func populateInlineCache(ctx context.Context, source *jsonx.Object) {
+func populateInlineCache(ctx context.Context, source model.RuleConfig) {
 	if ctx.Err() != nil {
 		return
 	}
@@ -216,32 +216,30 @@ func populateInlineCache(ctx context.Context, source *jsonx.Object) {
 	if err != nil {
 		return
 	}
-	catalog, err := r.GetShared(ctx)
+	catalog, err := r.Shared(ctx)
 	if err != nil {
 		return
 	}
-	for _, value := range catalog.GetList("rule_library") {
-		current, ok := value.(*jsonx.Object)
-		if !ok || current.GetString("id") != source.GetString("id") {
+	for _, current := range catalog.RuleLibrary {
+		if current.ID != source.ID {
 			continue
 		}
-		if current.GetOr("source_type", "url") == "content" && ctx.Err() == nil {
-			// Never fetch a source that became remote while this read waited.
-			_, _ = rulefetch.SaveRuleToLocal(ctx, current, nil)
+		if sourceField(current.SourceType, "url") == "content" && ctx.Err() == nil {
+			_, _ = rulefetch.SaveSource(ctx, shared.LibraryRule(current), nil)
 		}
 		break
 	}
 }
 
-func localLogName(ctx context.Context, config *jsonx.Object, name string) string {
-	secrets, err := redact.ExternalPayloadSecrets(ctx, config.GetObject("system_config"))
+func localLogName(ctx context.Context, config *model.Config, name string) string {
+	secrets, err := redact.ExternalPayloadSecrets(ctx, config.SystemConfig)
 	if err != nil {
 		return redact.Redacted
 	}
 	var public struct {
 		Name string `json:"name"`
 	}
-	if jsondecode.Unmarshal(redact.SanitizeCredentials(jsonx.Obj("name", name), secrets), &public) != nil {
+	if jsondecode.Unmarshal(redact.SanitizeCredentials(map[string]any{"name": name}, secrets), &public) != nil {
 		return redact.Redacted
 	}
 	return logx.LogText(public.Name, 120)
@@ -259,22 +257,22 @@ func remoteFault(err error) *sourceFailure {
 	return &sourceFailure{Message: validation.Error(), Errors: raw}
 }
 func (s *Service) match(ctx context.Context, id, query, host string) (record, error) {
-	config, err := repo.GetConfig(ctx, id)
+	config, err := resolvedConfig(ctx, id)
 	if err != nil {
 		return nil, err
 	}
 	var invalidSource error
-	matcher := shared.NewRuleConfigMatcher(config.GetList("rule_configs"), config.GetList("rule_library"), func(item, library *jsonx.Object) (string, error) {
-		content, err := s.sourceContent(ctx, config, item, library, sourceOptions{host: host})
+	matcher := shared.NewMatcher(config.Profile.RuleConfigs, config.RuleLibrary, func(item *model.RuleConfig, library *model.RuleLibraryItem) (string, error) {
+		content, err := s.readSource(ctx, fetchConfig(config), *item, library, sourceOptions{host: host})
 		// C14 accepts these source line boundaries and normalizes them for client
 		// delivery. Feed the same records to C09's CR/LF text index, keeping the
 		// common ASCII path allocation-free and leaving the raw cache untouched.
 		if err == nil && strings.ContainsAny(content, "\v\f\x1c\x1d\x1e\u0085\u2028\u2029") {
-			source := library
-			if source == nil {
-				source = item
+			source := *item
+			if library != nil {
+				source = shared.LibraryRule(*library)
 			}
-			format, formatErr := convert.RulesetFormat(source, config, "")
+			format, formatErr := rulesetfmt.RuleFormat(source, config.RuleLibrary, "")
 			if formatErr != nil {
 				err = formatErr
 			} else if format == "text" {
@@ -299,40 +297,36 @@ func (s *Service) match(ctx context.Context, id, query, host string) (record, er
 	return native(matched)
 }
 func (s *Service) scanRows(ctx context.Context, id, host string) ([]scanRow, func(int) (string, error), error) {
-	config, err := repo.GetConfig(ctx, id)
+	config, err := resolvedConfig(ctx, id)
 	if err != nil {
 		return nil, nil, err
 	}
-	items := config.GetList("rule_configs")
+	items := config.Profile.RuleConfigs
 	rows := make([]scanRow, len(items))
-	library := map[string]*jsonx.Object{}
-	for _, value := range config.GetList("rule_library") {
-		if row, ok := value.(*jsonx.Object); ok {
-			if _, exists := library[row.GetString("id")]; !exists {
-				library[row.GetString("id")] = row
-			}
+	library := map[string]*model.RuleLibraryItem{}
+	for i := range config.RuleLibrary {
+		row := &config.RuleLibrary[i]
+		if _, exists := library[row.ID]; !exists {
+			library[row.ID] = row
 		}
 	}
-	for i, value := range items {
-		item, ok := value.(*jsonx.Object)
-		if !ok {
-			return nil, nil, errors.New("rule record is not an object")
-		}
-		policy, err := json.Marshal(item.GetOr("policy", "DIRECT"))
+	for i, item := range items {
+		policy, err := json.Marshal(sourceField(item.Policy, "DIRECT"))
 		if err != nil {
 			return nil, nil, err
 		}
-		rows[i] = scanRow{ID: item.GetString("id"), Name: item.GetString("name"), Kind: item.GetString("itemType"), Type: item.GetString("rule_type"), Value: item.GetString("value"), Policy: policy, Enabled: jsonx.Truthy(item.GetOr("enabled", true)) && jsonx.Truthy(item.GetOr("library_enabled", true))}
-		if _, ok := item.Get("name"); !ok {
-			rows[i].Name = msgRuleset
+		raw, err := native(item)
+		if err != nil {
+			return nil, nil, err
 		}
-		if _, ok := item.Get("itemType"); !ok {
-			rows[i].Kind = "rule"
+		rows[i] = scanRow{ID: item.ID, Name: item.Name, Kind: defaultText(raw, "itemType", "rule"), Type: item.RuleType, Value: item.Value, Policy: policy, Enabled: rawFlag(raw, "enabled", true) && rawFlag(raw, "library_enabled", true)}
+		if _, ok := raw["name"]; !ok {
+			rows[i].Name = msgRuleset
 		}
 	}
 	return rows, func(index int) (string, error) {
-		item := items[index].(*jsonx.Object)
-		return s.sourceContent(ctx, config, item, library[item.GetString("library_rule_id")], sourceOptions{host: host})
+		item := items[index]
+		return s.readSource(ctx, fetchConfig(config), item, library[item.LibraryRuleID], sourceOptions{host: host})
 	}, nil
 }
 
@@ -349,35 +343,60 @@ func sourceText(content []byte) string {
 func Wire() {
 	s := &Service{client: rulefetch.DefaultClient}
 	routers.RulesetContent = func(ctx context.Context, profile json.RawMessage, item routers.RuleSet, library *routers.LibraryRule) (string, error) {
-		config, err := sourceObject(profile)
+		config, err := model.DecodeConfig(profile)
 		if err != nil {
 			return "", err
 		}
-		row, err := sourceObject(item.Raw)
-		if err != nil {
+		var row model.RuleConfig
+		if err := json.Unmarshal(item.Raw, &row); err != nil {
 			return "", err
 		}
-		var lib *jsonx.Object
+		var lib *model.RuleLibraryItem
 		if library != nil {
-			lib, err = sourceObject(library.Raw)
-			if err != nil {
+			lib = &model.RuleLibraryItem{}
+			if err := json.Unmarshal(library.Raw, lib); err != nil {
 				return "", err
 			}
 		}
-		return s.sourceContent(lifecycle.Detach(ctx), config, row, lib, sourceOptions{offline: true})
+		return s.readSource(lifecycle.Detach(ctx), fetchConfig(config), row, lib, sourceOptions{offline: true})
 	}
-
-	gateway.SetRulesetContent(func(ctx context.Context, item, library, config *jsonx.Object) (string, error) {
+	gateway.SetRuleSourceReader(func(ctx context.Context, item model.RuleConfig, library *model.RuleLibraryItem, config *rulefetch.SourceConfig) (string, error) {
 		ctx = lifecycle.Detach(ctx)
 		if config == nil {
 			var err error
-			config, err = repo.GetConfig(ctx, "")
+			profile, getErr := resolvedConfig(ctx, "")
+			err = getErr
 			if err != nil {
 				return "", err
 			}
+			config = fetchConfig(profile)
 		}
-		return s.sourceContent(ctx, config, item, library, sourceOptions{})
+		return s.readSource(ctx, config, item, library, sourceOptions{})
 	})
+}
+
+func resolvedConfig(ctx context.Context, id string) (*model.Config, error) {
+	r, err := repo.GetRepository(ctx)
+	if err != nil {
+		return nil, err
+	}
+	id, err = repo.ResolveProfileID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return r.Config(ctx, id, nil)
+}
+func fetchConfig(config *model.Config) *rulefetch.SourceConfig {
+	if config == nil {
+		return nil
+	}
+	return &rulefetch.SourceConfig{Settings: config.SystemConfig, Library: config.RuleLibrary}
+}
+func sourceField(value *string, fallback string) string {
+	if value == nil {
+		return fallback
+	}
+	return *value
 }
 
 func sourceObject(raw json.RawMessage) (*jsonx.Object, error) {
@@ -390,4 +409,51 @@ func sourceObject(raw json.RawMessage) (*jsonx.Object, error) {
 		return nil, errors.New("rule source snapshot must be an object")
 	}
 	return object, nil
+}
+
+// sourceContent remains only for ReadRulesetContent's captured legacy facade.
+// Its caller migration is pending ownership confirmation from the coordinator.
+func (s *Service) sourceContent(ctx context.Context, config, item, library *jsonx.Object, options sourceOptions) (string, error) {
+	raw, err := json.Marshal(config)
+	if err != nil {
+		return "", err
+	}
+	profile, err := model.DecodeConfig(raw)
+	if err != nil {
+		return "", err
+	}
+	raw, err = json.Marshal(item)
+	if err != nil {
+		return "", err
+	}
+	var rule model.RuleConfig
+	if err := json.Unmarshal(raw, &rule); err != nil {
+		return "", err
+	}
+	var declaration *model.RuleLibraryItem
+	if library != nil {
+		raw, err = json.Marshal(library)
+		if err != nil {
+			return "", err
+		}
+		declaration = &model.RuleLibraryItem{}
+		if err := json.Unmarshal(raw, declaration); err != nil {
+			return "", err
+		}
+	}
+	return s.readSource(ctx, fetchConfig(profile), rule, declaration, options)
+}
+
+// scopedLocalConfig retains the admitted request's existing Scope snapshot until
+// repo provides the equivalent scoped model read. No source/cache logic lives here.
+func scopedLocalConfig(ctx context.Context, id string) (*model.Config, error) {
+	config, err := repo.GetConfig(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	raw, err := json.Marshal(config)
+	if err != nil {
+		return nil, err
+	}
+	return model.DecodeConfig(raw)
 }

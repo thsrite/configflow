@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/model"
 )
 
 // rule_utils' pure parts. Python covers them through the remote cache and
@@ -149,4 +150,15 @@ func TestLegacyIdentityCacheDoesNotTreatR5CoercionAsOwnership(t *testing.T) {
 	if got := RuleCacheReadPath(proposed, seq(current), seq(current), root); got == old {
 		t.Fatal("R5-equivalent URL claimed old identity bytes")
 	}
+}
+
+func ValidateRulePolicies(config *jsonx.Object, names []string, format string) error {
+	var records []model.RuleConfig
+	for _, entry := range config.GetList("rule_configs") {
+		var rule model.RuleConfig
+		if decodeRecord(entry, &rule) == nil {
+			records = append(records, rule)
+		}
+	}
+	return ValidatePolicies(records, names, format)
 }

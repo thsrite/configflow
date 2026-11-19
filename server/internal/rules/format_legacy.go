@@ -3,11 +3,12 @@ package rules
 // This boundary is temporary while convert, discovery and API records still
 // use jsonx. Only the two consumed collections are decoded; never Config.
 import (
+	"encoding/json"
+
 	"configflow/internal/jsondecode"
 	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/rulesetfmt"
-	"encoding/json"
 )
 
 // RulesetFormat adapts an unported caller to the typed format leaf.
@@ -64,16 +65,4 @@ func legacyLibrary(source []any) []model.RuleLibraryItem {
 		}
 	}
 	return result
-}
-
-// ValidateRulePolicies projects only policy rules for unported converters.
-func ValidateRulePolicies(config *jsonx.Object, names []string, format string) error {
-	var records []model.RuleConfig
-	for _, entry := range config.GetList("rule_configs") {
-		var rule model.RuleConfig
-		if decodeRecord(entry, &rule) == nil {
-			records = append(records, rule)
-		}
-	}
-	return ValidatePolicies(records, names, format)
 }

@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net"
 	"net/http"
 	"net/url"
@@ -21,7 +22,6 @@ import (
 	"syscall"
 	"time"
 
-	"configflow/internal/pystr"
 	"configflow/internal/weburl"
 )
 
@@ -46,8 +46,8 @@ type FetchError struct {
 func (e *FetchError) Error() string { return e.Message }
 func (e *FetchError) Unwrap() error { return e.Err }
 
-// PythonClass is type(exc).__name__.
-func (e *FetchError) PythonClass() string { return e.Class }
+// ErrorClass returns the stable diagnostic label.
+func (e *FetchError) ErrorClass() string { return e.Class }
 
 // HTTPStatus is exc.response.status_code for an HTTPError (0 otherwise).
 func (e *FetchError) HTTPStatus() int { return e.Status }
@@ -69,7 +69,7 @@ func IsRequestException(err error) bool {
 // PythonClass is type(err).__name__ for the errors of this package and the
 // repository errors it passes on; plain errors are ValueError.
 func PythonClass(err error) string {
-	if class := pythonClassOf(err); class != "" {
+	if class := errorClassOf(err); class != "" {
 		return class
 	}
 	return "ValueError"
@@ -174,14 +174,6 @@ type tunnelError struct{ message string }
 
 func (e *tunnelError) Error() string { return e.message }
 
-// pyOSError is an error raised outside requests' exception hierarchy (a
-// missing CA bundle, unencodable proxy credentials): not a
-// RequestException, so neither retried nor answered by the GitHub mirror.
-type pyOSError struct{ class, message string }
-
-func (e *pyOSError) Error() string       { return e.message }
-func (e *pyOSError) PythonClass() string { return e.class }
-
 // verifyBundle is the verify value requests ends up with: verify=<path>, else
 // REQUESTS_CA_BUNDLE or CURL_CA_BUNDLE (merge_environment_settings), "" for
 // the default trust.
@@ -227,11 +219,10 @@ func (h HTTPTransport) Do(ctx context.Context, req TransportRequest) (*Response,
 		switch {
 		case statErr != nil && chosen != nil && chosen.Scheme == "https":
 			// _request_with_https_proxy: ssl.create_default_context(cafile=...)
-			return nil, &pyOSError{class: "FileNotFoundError", message: "[Errno 2] No such file or directory"}
+			return nil, &os.PathError{Op: "stat", Path: bundle, Err: os.ErrNotExist}
 		case statErr != nil && strings.HasPrefix(strings.ToLower(prepared), "https"):
 			// HTTPAdapter.cert_verify (https URLs only).
-			return nil, &pyOSError{class: "OSError",
-				message: "Could not find a suitable TLS CA certificate bundle, invalid path: " + bundle}
+			return nil, &certificateBundleError{err: statErr}
 		case statErr == nil:
 			tlsConfig.RootCAs = loadBundle(bundle)
 		}
@@ -382,7 +373,7 @@ func decodeBody(res *http.Response) (io.ReadCloser, error) {
 	if len(values) == 0 {
 		return res.Body, nil
 	}
-	encoding := pystr.Lower(latin1Text(strings.Join(values, ", ")))
+	encoding := strings.ToLower(latin1Text(strings.Join(values, ", ")))
 	known := map[string]bool{"gzip": true, "x-gzip": true, "deflate": true}
 	var codings []string
 	switch {
@@ -391,7 +382,7 @@ func decodeBody(res *http.Response) (io.ReadCloser, error) {
 	case strings.Contains(encoding, ","):
 		any := false
 		for _, part := range strings.Split(encoding, ",") {
-			part = pystr.Strip(part)
+			part = strings.TrimSpace(part)
 			codings = append(codings, part)
 			any = any || known[part]
 		}
@@ -745,4 +736,13 @@ func urlBasicAuth(u *url.URL) (string, string, bool) {
 		return "", "", false
 	}
 	return u.User.Username(), password, true
+}
+
+// Charset returns the declared response charset using native MIME parsing.
+func (r *Response) Charset() string {
+	_, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil {
+		return ""
+	}
+	return strings.ToLower(strings.TrimSpace(params["charset"]))
 }

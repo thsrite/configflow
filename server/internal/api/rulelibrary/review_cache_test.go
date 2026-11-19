@@ -415,14 +415,14 @@ func TestReviewOtherInlineWritersCannotOverwriteCommittedDraft(t *testing.T) {
 	if _, err = (&Service{client: rulefetch.DefaultClient}).SaveDraft(s.Context(), "manual", body); err != nil {
 		t.Fatal(err)
 	}
-	raw, err := legacy(old)
+	raw, err := ruleRecord(old)
 	if err != nil {
 		t.Fatal(err)
 	}
 	before := doc(t, s)
 	// Discovery/Agent/compose owners can finish their post-commit cache work
 	// after a newer C33 edit. Exercise their actual shared write entry point.
-	if _, err = rulefetch.SaveRuleToLocal(s.Context(), raw, nil); err != nil {
+	if _, err = rulefetch.SaveSource(s.Context(), raw, nil); err != nil {
 		t.Fatal(err)
 	}
 	if got := s.Get("/api/rules/local/Manual", s.Login()).WantStatus(200).Text(); got != "+.committed.example\n" {

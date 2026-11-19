@@ -125,7 +125,7 @@ func (s *rawServer) close() {
 // fetchDetailClasses are compared by class only because their non-Chinese
 // error detail is library-specific or outside the user-facing contract.
 var fetchDetailClasses = map[string]bool{"ConnectionError": true, "ChunkedEncodingError": true, "ContentDecodingError": true,
-	"ProxyError": true, "SSLError": true, "ConnectTimeout": true, "ReadTimeout": true, "ValueError": true}
+	"ProxyError": true, "SSLError": true, "ConnectTimeout": true, "ReadTimeout": true, "ValueError": true, "OSError": true, "FileNotFoundError": true, "UnicodeEncodeError": true}
 
 func decodeUnreservedEscapes(s string) string {
 	// Dot remains encoded so comparison does not collapse path segments before

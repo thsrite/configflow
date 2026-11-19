@@ -358,7 +358,7 @@ func (f *fixture) listRows() map[string]*jsonx.Object {
 // test_scheduled_tasks.py::test_failed_rule_refresh_survives_a_reload_with_reason_and_retained_cache
 func TestFailedRuleRefreshSurvivesAReloadWithReasonAndRetainedCache(t *testing.T) {
 	f := setup(t, jsonx.Int(86400))
-	if _, err := rulefetch.WriteValidatedRuleCache(f.ctx, ruleDecl(), []byte("+.old.test\n"), nil); err != nil {
+	if _, err := rulefetch.WriteCache(f.ctx, refreshCacheRule(t, ruleDecl()), rulefetch.Content{Data: []byte("+.old.test\n")}, nil); err != nil {
 		t.Fatal(err)
 	}
 	_, _, err := RefreshRuleSource(f.ctx, ruleDecl(), "schedule", RuleOptions{Fetch: func(string) (any, error) { return nil, timeoutError() }})
@@ -446,7 +446,7 @@ func TestDeviceReadsUseTheCacheAndOnlyAMissingCacheDownloadsNow(t *testing.T) {
 // (StaleRuleCache with the recorded reason).
 func TestDeviceReadOfAFailedSourceIsStale(t *testing.T) {
 	f := setup(t, jsonx.Int(86400))
-	rulefetch.WriteValidatedRuleCache(f.ctx, ruleDecl(), []byte("+.old.test\n"), nil)
+	rulefetch.WriteCache(f.ctx, refreshCacheRule(t, ruleDecl()), rulefetch.Content{Data: []byte("+.old.test\n")}, nil)
 	RefreshRuleSource(f.ctx, ruleDecl(), "schedule", RuleOptions{Fetch: func(string) (any, error) { return nil, timeoutError() }})
 	content, stale, err := ReadRuleSource(f.ctx, ruleDecl(), RuleOptions{})
 	var staleErr *StaleRuleCache
@@ -839,7 +839,7 @@ func awaitRefresh(t *testing.T, condition func() bool) {
 // cache retained and the offending line in the reason.
 func TestInvalidRefreshKeepsTheValidCache(t *testing.T) {
 	f := setup(t, jsonx.Int(86400))
-	rulefetch.WriteValidatedRuleCache(f.ctx, ruleDecl(), []byte("+.valid.example\n"), nil)
+	rulefetch.WriteCache(f.ctx, refreshCacheRule(t, ruleDecl()), rulefetch.Content{Data: []byte("+.valid.example\n")}, nil)
 	_, _, err := RefreshRuleSource(f.ctx, ruleDecl(), "schedule", RuleOptions{Fetch: func(string) (any, error) {
 		return []byte("DOMAIN,bad.example"), nil
 	}})
@@ -1261,4 +1261,17 @@ func fixtureParseProxiesFromYAML(text string) ([]any, error) {
 		out = append(out, parsed)
 	}
 	return out, nil
+}
+
+func refreshCacheRule(tb testing.TB, value any) model.RuleConfig {
+	tb.Helper()
+	data, err := json.Marshal(value)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	var rule model.RuleConfig
+	if err := json.Unmarshal(data, &rule); err != nil {
+		tb.Fatal(err)
+	}
+	return rule
 }

@@ -7,6 +7,7 @@ package gateway
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"strconv"
@@ -14,6 +15,7 @@ import (
 	"sync"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/routersplit"
 	"configflow/internal/rulefetch"
 	"configflow/internal/yamlx"
@@ -186,8 +188,9 @@ type RulesetContentFunc func(ctx context.Context, item, library, config *jsonx.O
 var ErrRulesetContentUnavailable = errors.New("gateway: rule set content reader is not available (config C32)")
 
 var (
-	contentMu      sync.RWMutex
-	rulesetContent RulesetContentFunc
+	contentMu        sync.RWMutex
+	rulesetContent   RulesetContentFunc
+	ruleSourceReader RuleSourceReader
 )
 
 // SetRulesetContent installs the default rule content reader and returns a
@@ -211,15 +214,77 @@ func SetRulesetContent(fn RulesetContentFunc) (restore func()) {
 func (c *Config) storedContent(ctx context.Context, item, library *Rule, requireCache bool) (string, error) {
 	contentMu.RLock()
 	read := rulesetContent
+	sourceReader := ruleSourceReader
 	contentMu.RUnlock()
-	if read == nil {
+	if read == nil && sourceReader == nil {
 		return "", ErrRulesetContentUnavailable
 	}
 	var libraryRaw *jsonx.Object
 	if library != nil {
 		libraryRaw = library.raw
 	}
-	content, err := read(ctx, item.raw, libraryRaw, c.raw)
+	var content string
+	var err error
+	if sourceReader != nil {
+		var rule model.RuleConfig
+		raw, encodeErr := json.Marshal(item.raw)
+		if encodeErr != nil {
+			return "", encodeErr
+		}
+		if err = json.Unmarshal(raw, &rule); err != nil {
+			return "", err
+		}
+		var declaration *model.RuleLibraryItem
+		if libraryRaw != nil {
+			raw, err = json.Marshal(libraryRaw)
+			if err != nil {
+				return "", err
+			}
+			declaration = &model.RuleLibraryItem{}
+			if err = json.Unmarshal(raw, declaration); err != nil {
+				return "", err
+			}
+		}
+		// Only fetch settings and cache identities cross this reader boundary.
+		// Never serialize node parameters or every library's source content per rule.
+		config := &rulefetch.SourceConfig{}
+		if settings := c.raw.GetObject("system_config"); settings != nil {
+			raw, err = json.Marshal(settings)
+			if err != nil {
+				return "", err
+			}
+			if err = json.Unmarshal(raw, &config.Settings); err != nil {
+				return "", err
+			}
+		}
+		if _, ok := c.raw.Value("rule_library").([]any); ok {
+			config.Library = []model.RuleLibraryItem{}
+		}
+		for _, entry := range c.raw.GetList("rule_library") {
+			row, ok := entry.(*jsonx.Object)
+			if !ok {
+				continue
+			}
+			metadata := jsonx.NewObject()
+			for _, key := range []string{"id", "name"} {
+				if value, ok := row.Get(key); ok {
+					metadata.Set(key, value)
+				}
+			}
+			raw, err = json.Marshal(metadata)
+			if err != nil {
+				return "", err
+			}
+			var identity model.RuleLibraryItem
+			if err = json.Unmarshal(raw, &identity); err != nil {
+				return "", err
+			}
+			config.Library = append(config.Library, identity)
+		}
+		content, err = sourceReader(ctx, rule, declaration, config)
+	} else {
+		content, err = read(ctx, item.raw, libraryRaw, c.raw)
+	}
 	if err != nil || content != "" || !requireCache {
 		return content, err
 	}

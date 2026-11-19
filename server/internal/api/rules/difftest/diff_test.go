@@ -426,6 +426,20 @@ func (w *world) callHeaders(method, path, body string, headers map[string]string
 		pyBytes = []byte(text)
 	}
 	migrated := httpxtest.MigratedAPIError(method, py.Status, got.Status, http.Header{"Content-Type": []string{py.Headers["Content-Type"]}}, got.Header, pyBytes, got.Body)
+	// N8-11 keeps the missing-ID rejection and storage effects, rendering invalid
+	// non-string IDs as JSON. Check both exact messages before accepting this one
+	// approved native presentation difference.
+	if method == "POST" && path == "/api/rules/reorder?profile=other" && body == `{"ids":[null,"missing"]}` && py.Status == 404 && got.Status == 404 {
+		expectedPython := "<p>以下规则 id 不存在: [None, &#39;missing&#39;]</p>"
+		if !bytes.Contains(pyBytes, []byte(expectedPython)) {
+			t.Fatalf("unexpected Python missing-ID message: %s", pyBytes)
+		}
+		var native map[string]any
+		if err := json.Unmarshal(got.Body, &native); err != nil || len(native) != 2 || native["success"] != false || native["message"] != `以下规则 id 不存在: [null,"missing"]` || !strings.Contains(got.Header.Get("Content-Type"), "application/json") {
+			t.Fatalf("unexpected native missing-ID response: %s", got.Body)
+		}
+		migrated = true
+	}
 	if !migrated {
 		if text, ok := py.Body.(string); ok && strings.Contains(path, "target=mihomo") && strings.HasPrefix(strings.TrimSpace(text), "payload:") {
 			var a, b any

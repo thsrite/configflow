@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/rules"
 )
@@ -272,4 +273,71 @@ func TestReadRuleSourceContentAndSaveRuleToLocal(t *testing.T) {
 	if _, err := SaveRuleToLocal(ctx, jsonx.Obj("source_type", "url"), client); err == nil || err.Error() != "请提供有效的规则来源和订阅地址" {
 		t.Fatal(err)
 	}
+}
+
+func legacyConfig(config *SourceConfig) *jsonx.Object {
+	if config == nil {
+		return nil
+	}
+	return legacyObject(struct {
+		Settings model.SystemConfig      `json:"system_config"`
+		Library  []model.RuleLibraryItem `json:"rule_library"`
+		Rules    []model.RuleConfig      `json:"rule_configs"`
+		RuleSets []model.RuleConfig      `json:"rule_sets"`
+	}{config.Settings, config.Library, config.Rules, config.RuleSets})
+}
+
+func contentBytes(value any) []byte { content, _ := legacyContent(value); return content.Data }
+
+func ReadRuleSourceContent(ctx context.Context, rule *jsonx.Object, client *Client) (any, error) {
+	content, err := ReadSource(ctx, legacyRule(rule), client)
+	if err != nil {
+		return nil, err
+	}
+	if content == nil {
+		return nil, nil
+	}
+	if content.Text {
+		return string(content.Data), nil
+	}
+	return content.Data, nil
+}
+
+func WriteValidatedRuleCache(ctx context.Context, rule *jsonx.Object, value any, config *jsonx.Object) (string, error) {
+	content, err := legacyContent(value)
+	if err != nil {
+		return "", err
+	}
+	return WriteCache(ctx, legacyRule(rule), content, sourceConfig(config))
+}
+
+func SaveRuleToLocal(ctx context.Context, rule *jsonx.Object, client *Client) (string, error) {
+	return SaveSource(ctx, legacyRule(rule), client)
+}
+
+func RefreshRemoteRule(ctx context.Context, rule, config *jsonx.Object, opt RefreshOptions) ([]byte, error, error) {
+	native := CacheOptions{Timeout: opt.Timeout, AllowStale: opt.AllowStale, Client: opt.Client}
+	if opt.Fetch != nil {
+		native.Fetch = func(ctx context.Context, url string) (Content, error) {
+			if err := ctx.Err(); err != nil {
+				return Content{}, err
+			}
+			value, err := opt.Fetch(url)
+			if err != nil {
+				return Content{}, err
+			}
+			if err := ctx.Err(); err != nil {
+				return Content{}, err
+			}
+			return legacyContent(value)
+		}
+	}
+	return RefreshRule(ctx, legacyRule(rule), sourceConfig(config), native)
+}
+
+type RefreshOptions struct {
+	Timeout    time.Duration
+	Fetch      func(string) (any, error)
+	AllowStale bool
+	Client     *Client
 }

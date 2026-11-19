@@ -13,7 +13,9 @@ import (
 
 	"configflow/internal/gateway"
 	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
+	"configflow/internal/rulefetch"
 	"configflow/internal/rules"
 )
 
@@ -250,5 +252,64 @@ func TestHooks(t *testing.T) {
 				t.Fatalf("got %v, %v", enabled, err)
 			}
 		})
+	}
+}
+
+func TestN811RuleReaderPrecedence(t *testing.T) {
+	legacyCalls, typedCalls := 0, 0
+	t.Cleanup(gateway.SetRulesetContent(func(context.Context, *jsonx.Object, *jsonx.Object, *jsonx.Object) (string, error) {
+		legacyCalls++
+		return "192.0.2.0/24", nil
+	}))
+	restore := gateway.SetRuleSourceReader(func(ctx context.Context, item model.RuleConfig, library *model.RuleLibraryItem, config *rulefetch.SourceConfig) (string, error) {
+		typedCalls++
+		if item.ID != "r" || library == nil || library.ID != "lib" || config.Settings.ServerDomain != "https://config.example" {
+			t.Fatal("typed snapshot lost source identity")
+		}
+		return "198.51.100.0/24", nil
+	})
+	raw := snapshot(true)
+	source := raw.GetList("rule_library")[0].(*jsonx.Object)
+	source.Set("source_type", "url")
+	source.Set("url", "https://example.com/rules")
+	source.Delete("content")
+	config := gateway.NewConfig(raw)
+	if _, err := config.ProviderPayload(t.Context(), "r", nil); err != nil {
+		t.Fatal(err)
+	}
+	if typedCalls != 1 || legacyCalls != 0 {
+		t.Fatalf("readers called typed=%d legacy=%d", typedCalls, legacyCalls)
+	}
+	restore()
+	if _, err := config.ProviderPayload(t.Context(), "r", nil); err != nil {
+		t.Fatal(err)
+	}
+	if typedCalls != 1 || legacyCalls != 1 {
+		t.Fatalf("restore called typed=%d legacy=%d", typedCalls, legacyCalls)
+	}
+}
+
+func TestN811ReaderProjectionExcludesUnconsumedContent(t *testing.T) {
+	raw := snapshot(true)
+	raw.Delete("system_config")
+	source := raw.GetList("rule_library")[0].(*jsonx.Object)
+	source.Set("source_type", "url")
+	source.Set("url", "https://example.com/rules")
+	source.Delete("content")
+	raw.Set("rule_library", append(raw.GetList("rule_library"), jsonx.Obj("id", "unused", "name", "Unused", "content", strings.Repeat("x", 1<<20))))
+	raw.Set("nodes", []any{jsonx.Obj("id", "unused", "params", jsonx.Obj("password", strings.Repeat("x", 1<<20)))})
+	calls := 0
+	t.Cleanup(gateway.SetRuleSourceReader(func(ctx context.Context, item model.RuleConfig, library *model.RuleLibraryItem, config *rulefetch.SourceConfig) (string, error) {
+		calls++
+		if len(config.Library) != 2 || config.Library[1].ID != "unused" || config.Library[1].Name != "Unused" || config.Library[1].Content != nil {
+			t.Fatal("reader did not receive only cache identity metadata")
+		}
+		return "198.51.100.0/24", nil
+	}))
+	if _, err := gateway.NewConfig(raw).ProviderPayload(t.Context(), "r", nil); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 {
+		t.Fatalf("reader called %d times", calls)
 	}
 }

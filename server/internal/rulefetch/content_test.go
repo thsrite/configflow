@@ -13,12 +13,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/klauspost/compress/zstd"
-
 	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/rules"
 	"configflow/internal/yamlx"
+
+	"github.com/klauspost/compress/zstd"
 	"gopkg.in/yaml.v3"
 )
 
@@ -974,4 +975,56 @@ func TestFailureIsNotAWebsiteName(t *testing.T) {
 			t.Errorf("%s", encode(entry))
 		}
 	}
+}
+
+func ContentDigest(value any) string {
+	content, err := legacyContent(value)
+	if err != nil {
+		return ""
+	}
+	prefix := "b"
+	if content.Text {
+		prefix = "s"
+	}
+	return prefix + dataDigest(content.Data)
+}
+
+func NormalizeClassicalLines(content string) (string, []any, error) {
+	result, problems, err := NormalizeClassical(content)
+	return result, legacyProblems(problems), err
+}
+
+func NormalizeMihomoYAML(content string) (string, []any) {
+	result, problems := NormalizeYAML(content)
+	return result, legacyProblems(problems)
+}
+
+func ReadRulePayloadAny(content string) ([]string, any, error) {
+	lines, node, err := ReadRulePayload(content)
+	if node == nil {
+		return lines, nil, err
+	}
+	return lines, node, err
+}
+
+func AppendRulePayloadAny(content, line string, payload any) (string, error) {
+	node, ok := payload.(*yamlx.Node)
+	if payload != nil && !ok {
+		return content, validationError(msgUnreadablePayload)
+	}
+	return AppendRulePayload(content, line, node)
+}
+
+func MetadataError(behavior, format, source any) string {
+	return metadataError(legacyText(behavior), legacyFormat(format), legacyText(source))
+}
+
+func ValidateDomainContent(rule, previous *jsonx.Object) error {
+	typed := legacyRule(rule)
+	var before *model.RuleConfig
+	if previous != nil && previous.Len() > 0 {
+		value := legacyRule(previous)
+		before = &value
+	}
+	return ValidateContent(typed, before)
 }

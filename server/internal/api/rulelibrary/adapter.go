@@ -1,6 +1,7 @@
 package rulelibrary
 
-// Only this boundary deals with legacy repository and rule-engine objects.
+// Record DTOs delegate source semantics to typed owners. Creation and coupled
+// profile transactions retain repository compatibility until W1 supplies them.
 import (
 	"context"
 	"encoding/json"
@@ -13,6 +14,7 @@ import (
 	"configflow/internal/ctxx"
 	"configflow/internal/httpx"
 	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/oxidns"
 	"configflow/internal/refresh"
 	"configflow/internal/repo"
@@ -61,47 +63,56 @@ func readBody(c *httpx.Ctx) (record, bool, error) {
 	return out, true, err
 }
 func sharedConfig(ctx context.Context) (record, error) {
-	r, err := repo.GetSharedConfig(ctx)
+	r, err := repo.GetRepository(ctx)
 	if err != nil {
 		return record{}, err
 	}
-	return native(r)
+	value, err := r.Shared(ctx)
+	if err != nil {
+		return record{}, err
+	}
+	return native(value)
 }
 func systemConfig(ctx context.Context) (record, error) {
-	r, err := repo.GetSystemConfig(ctx)
+	r, err := repo.GetRepository(ctx)
 	if err != nil {
 		return record{}, err
 	}
-	return native(r)
+	value, err := r.System(ctx)
+	if err != nil {
+		return record{}, err
+	}
+	return native(value)
 }
 func editShared(ctx context.Context, fn func(context.Context, *record) error) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	_, err := repo.UpdateSharedConfigTransaction(ctx, func(tx context.Context, raw *jsonx.Object) (*jsonx.Object, error) {
-		// The repository's SQL batch is atomic; this owner's callback and
-		// file staging still stop with its original work lifetime.
+	r, err := repo.GetRepository(ctx)
+	if err != nil {
+		return err
+	}
+	return r.UpdateShared(ctx, func(tx context.Context, shared *model.Shared) error {
 		tx = ctxx.Detach(ctxx.WithParent(tx, ctx))
 		if err := tx.Err(); err != nil {
-			return nil, err
+			return err
 		}
-		r, err := native(raw)
+		value, err := native(shared)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		if err = fn(tx, &r); err != nil {
-			return nil, err
+		if err = fn(tx, &value); err != nil {
+			return err
 		}
-		next, err := legacy(r)
-		if err != nil {
-			return nil, err
+		for _, key := range repo.SharedFields {
+			if raw, ok := value.Get(key); ok {
+				if err := shared.SetJSON(key, raw); err != nil {
+					return err
+				}
+			}
 		}
-		if err = tx.Err(); err != nil {
-			return nil, err
-		}
-		return next, nil
+		return tx.Err()
 	})
-	return err
 }
 func editSystem(ctx context.Context, fn func(*record) error) error {
 	if err := ctx.Err(); err != nil {
@@ -111,65 +122,56 @@ func editSystem(ctx context.Context, fn func(*record) error) error {
 	if err != nil {
 		return err
 	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	_, err = r.UpdateSystemTransaction(ctx, func(tx context.Context, raw *jsonx.Object) (*jsonx.Object, error) {
+	return r.UpdateSystem(ctx, func(tx context.Context, system *model.System) error {
 		tx = ctxx.Detach(ctxx.WithParent(tx, ctx))
 		if err := tx.Err(); err != nil {
-			return nil, err
+			return err
 		}
-		v, err := native(raw)
-		if err != nil {
-			return nil, err
-		}
-		if err = fn(&v); err != nil {
-			return nil, err
-		}
-		next, err := legacy(v)
-		if err != nil {
-			return nil, err
-		}
-		if err = tx.Err(); err != nil {
-			return nil, err
-		}
-		return next, nil
-	})
-	return err
-}
-func validateContent(item record, old *record) error {
-	r, err := legacy(item)
-	if err != nil {
-		return err
-	}
-	var previous *jsonx.Object
-	if old != nil {
-		previous, err = legacy(*old)
+		value, err := native(system)
 		if err != nil {
 			return err
 		}
+		if err := fn(&value); err != nil {
+			return err
+		}
+		if err := tx.Err(); err != nil {
+			return err
+		}
+		encoded, err := json.Marshal(value)
+		if err != nil {
+			return err
+		}
+		if err := json.Unmarshal(encoded, system); err != nil {
+			return err
+		}
+		return tx.Err()
+	})
+}
+func validateContent(item record, old *record) error {
+	rule, err := ruleRecord(item)
+	if err != nil {
+		return err
 	}
-	return rulefetch.ValidateDomainContent(r, previous)
+	var previous *model.RuleConfig
+	if old != nil {
+		value, err := ruleRecord(*old)
+		if err != nil {
+			return err
+		}
+		previous = &value
+	}
+	return rulefetch.ValidateContent(rule, previous)
 }
 func (s *Service) readSource(ctx context.Context, item record) ([]byte, error) {
-	raw, err := legacy(item)
+	rule, err := ruleRecord(item)
 	if err != nil {
 		return nil, err
 	}
-	v, err := rulefetch.ReadRuleSourceContent(ctx, raw, s.client)
-	if err != nil {
+	content, err := rulefetch.ReadSource(ctx, rule, s.client)
+	if err != nil || content == nil {
 		return nil, err
 	}
-	switch content := v.(type) {
-	case nil:
-		return nil, nil
-	case string:
-		return []byte(content), nil
-	case []byte:
-		return content, nil
-	default:
-		return nil, errors.New("invalid source content")
-	}
+	return content.Data, nil
 }
 func create(ctx context.Context, item record, content []byte) error {
 	if err := ctx.Err(); err != nil {
@@ -225,61 +227,40 @@ func inspect(content string, lines []string, body record) (record, error) {
 			return record{}, err
 		}
 	}
-	r, err := legacy(body)
-	if err != nil {
-		return record{}, err
-	}
-	out, err := rulefetch.InspectDomainContent(content, r.Value("behavior"), r.Value("format"))
+	out, err := rulefetch.Inspect(content, text(body, "behavior"), text(body, "format"))
 	if err != nil {
 		return record{}, err
 	}
 	if text(body, "behavior") == "classical" {
-		out.Set("content", content)
-		out.Set("changes", []any{})
+		out.Content = content
+		out.Changes = []rulefetch.Change{}
 	}
 	return native(out)
 }
 func reorder(items []record, body record) ([]record, []string, error) {
-	current := make([]any, len(items))
-	for i, item := range items {
-		r, err := legacy(item)
-		if err != nil {
-			return nil, nil, err
-		}
-		current[i] = r
+	request := map[string]json.RawMessage{}
+	for key, raw := range body.All() {
+		request[key] = raw
 	}
-	r, err := legacy(body)
+	ids, err := rules.OrderIDs(request, "rules")
 	if err != nil {
-		return nil, nil, err
+		return items, []string{err.Error()}, nil
 	}
-	ordered, missing := rules.ResolveNewOrder(current, r, "rules")
-	out := make([]record, len(ordered))
-	for i, item := range ordered {
-		out[i], err = native(item)
-		if err != nil {
-			return nil, nil, err
-		}
-	}
-	return out, missing, nil
+	ordered, missing := rules.Reorder(items, ids, orderPosition(body), func(item record) string { return text(item, "id") })
+	return ordered, missing, nil
 }
-func missingText(ids []string) string {
-	out := make([]any, len(ids))
-	for i, id := range ids {
-		out[i] = id
-	}
-	return jsonx.Repr(out)
-}
+func missingText(ids []string) string { return rules.IdentifierList(ids) }
 
 func cachePath(ctx context.Context, item record) (string, error) {
 	r, err := repo.GetRepository(ctx)
 	if err != nil {
 		return "", err
 	}
-	raw, err := legacy(item)
+	raw, err := ruleRecord(item)
 	if err != nil {
 		return "", err
 	}
-	return r.SharedPath("rules/" + rules.RuleCacheFilename(raw))
+	return r.SharedPath("rules/" + rules.CacheFilename(raw))
 }
 func usage(ctx context.Context, id string) (int, error) {
 	r, err := repo.GetRepository(ctx)
@@ -291,24 +272,24 @@ func usage(ctx context.Context, id string) (int, error) {
 }
 
 func readCache(ctx context.Context, item record) ([]byte, error) {
-	raw, err := legacy(item)
+	raw, err := ruleRecord(item)
 	if err != nil {
 		return nil, err
 	}
-	return rulefetch.ReadValidatedRuleCache(ctx, raw, nil)
+	return rulefetch.ReadCache(ctx, raw, nil)
 }
 func writeCache(ctx context.Context, item record, content []byte) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	raw, err := legacy(item)
+	raw, err := ruleRecord(item)
 	if err != nil {
 		return err
 	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	_, err = rulefetch.WriteValidatedRuleCache(ctx, raw, content, nil)
+	_, err = rulefetch.WriteCache(ctx, raw, rulefetch.Content{Data: content}, nil)
 	return err
 }
 func forget(ctx context.Context, id string) error {
@@ -323,7 +304,7 @@ func forget(ctx context.Context, id string) error {
 		return err
 	}
 	// The status owner rechecks cancellation after leaf-lock admission.
-	return taskstatus.New(r.DataDir()).ForgetContext(ctx, refresh.RuleSourceKey(id))
+	return taskstatus.New(r.DataDir()).ForgetContext(ctx, refresh.RuleTaskKey(id))
 }
 func removeCache(ctx context.Context, item record) error {
 	if err := ctx.Err(); err != nil {
@@ -526,11 +507,15 @@ func (s *Service) requestStatus(ctx context.Context, address string, system reco
 	if err := ctx.Err(); err != nil {
 		return 0, err
 	}
-	raw, err := legacy(system)
+	encoded, err := json.Marshal(system)
+	var settings model.System
+	if err == nil {
+		err = json.Unmarshal(encoded, &settings)
+	}
 	if err != nil {
 		return 0, err
 	}
-	address, err = convert.ApplyGithubProxyDomain(address, raw)
+	address, err = convert.GitHubURL(address, &model.Config{SystemConfig: settings.SystemConfig})
 	if err != nil {
 		return 0, err
 	}
@@ -541,7 +526,7 @@ func (s *Service) requestStatus(ctx context.Context, address string, system reco
 	if err := ctx.Err(); err != nil {
 		return 0, err
 	}
-	response, err := s.client.RequestRule(ctx, address, rulefetch.Request{Config: raw, Method: method, ConnectTimeout: 5 * time.Second, ReadTimeout: 5 * time.Second})
+	response, err := s.client.Download(ctx, address, rulefetch.DownloadRequest{Config: &rulefetch.SourceConfig{Settings: settings.SystemConfig}, Method: method, ConnectTimeout: 5 * time.Second, ReadTimeout: 5 * time.Second})
 	if err != nil {
 		return 0, err
 	}
@@ -557,7 +542,7 @@ func (s *Service) cacheOne(ctx context.Context, item record) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	raw, err := legacy(item)
+	raw, err := ruleRecord(item)
 	if err != nil {
 		return "", err
 	}
@@ -567,24 +552,25 @@ func (s *Service) cacheOne(ctx context.Context, item record) (string, error) {
 		}
 		// A manual refresh resolves global fetch settings, just like the
 		// scheduler. Passing a shared catalog here would erase proxy settings.
-		_, _, err := refresh.RefreshRuleSource(ctx, raw, "manual", refresh.RuleOptions{Fetch: func(url string) (any, error) {
+		_, _, err := refresh.RefreshRemote(ctx, libraryRecord(raw), "manual", refresh.RuleReadOptions{Fetch: func(ctx context.Context, url string) (rulefetch.Content, error) {
 			if err := ctx.Err(); err != nil {
-				return nil, err
+				return rulefetch.Content{}, err
 			}
-			response, err := s.client.RequestRule(ctx, url, rulefetch.Request{ConnectTimeout: 30 * time.Second, ReadTimeout: 30 * time.Second})
+			response, err := s.client.Download(ctx, url, rulefetch.DownloadRequest{ConnectTimeout: 30 * time.Second, ReadTimeout: 30 * time.Second})
 			if err != nil {
-				return nil, err
+				return rulefetch.Content{}, err
 			}
 			defer response.Close()
 			if err = response.RaiseForStatus(); err != nil {
-				return nil, err
+				return rulefetch.Content{}, err
 			}
-			return response.Content()
+			data, err := response.Content()
+			return rulefetch.Content{Data: data}, err
 		}})
 		if err != nil {
 			return "", err
 		}
-		return rules.RuleCacheFilename(raw), nil
+		return rules.CacheFilename(raw), nil
 	}
 	content, err := s.readSource(ctx, item)
 	if err != nil {
@@ -600,23 +586,20 @@ func (s *Service) cacheOne(ctx context.Context, item record) (string, error) {
 	if err = stage.commit(ctx); err != nil {
 		return "", err
 	}
-	return rules.RuleCacheFilename(raw), nil
+	return rules.CacheFilename(raw), nil
 }
-func describeFailure(err error) string { return refresh.DescribeFailure(err) }
+func describeFailure(err error) string { return refresh.FailureReason(err) }
 
 func requestURL(body record) (string, error) {
-	value, err := jsonx.Parse(field(body, "url"))
-	if err != nil {
-		return "", err
-	}
-	if !jsonx.Truthy(value) {
+	raw := field(body, "url")
+	if !rules.EnabledField(raw, false) {
 		return "", fail(400, "URL is required")
 	}
-	address, ok := value.(string)
-	if !ok {
+	var address *string
+	if json.Unmarshal(raw, &address) != nil || address == nil {
 		return "", fail(500, httpx.DescInternal)
 	}
-	return address, nil
+	return *address, nil
 }
 
 // readCaughtBody preserves the error boundary of endpoints that deliberately
@@ -636,8 +619,34 @@ func readReorderBody(c *httpx.Ctx) (record, error) {
 	}
 	// Python's `body or {}` defaults only empty values. A nonempty scalar or
 	// array still fails before resolving IDs; do not report a missing resource.
-	if jsonx.Truthy(c.JSONSilent()) {
+	if boundNonempty(c) {
 		return record{}, fail(500, "reorder request must be a JSON object")
 	}
 	return record{}, nil
+}
+
+func ruleRecord(item record) (model.RuleConfig, error) {
+	raw, err := json.Marshal(item)
+	var out model.RuleConfig
+	if err == nil {
+		err = json.Unmarshal(raw, &out)
+	}
+	return out, err
+}
+func libraryRecord(rule model.RuleConfig) model.RuleLibraryItem {
+	data, _ := model.Marshal(rule)
+	var item model.RuleLibraryItem
+	_ = json.Unmarshal(data, &item)
+	return item
+}
+func boundNonempty(c *httpx.Ctx) bool {
+	var raw json.RawMessage
+	return c.BindSilent(&raw) && rules.EnabledField(raw, false)
+}
+
+func orderPosition(body record) string {
+	if !body.Has("position") {
+		return "top"
+	}
+	return text(body, "position")
 }

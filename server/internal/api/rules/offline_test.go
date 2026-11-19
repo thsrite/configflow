@@ -27,7 +27,7 @@ func TestRouterOfflineSourceOrderAndZeroNetwork(t *testing.T) {
 	transport := &refusingTransport{}
 	previousClient, previousLoader := rulefetch.DefaultClient, routers.RulesetContent
 	rulefetch.DefaultClient = &rulefetch.Client{Transport: transport}
-	t.Cleanup(gateway.SetRulesetContent(nil))
+	t.Cleanup(gateway.SetRuleSourceReader(nil))
 	Wire()
 	t.Cleanup(func() { rulefetch.DefaultClient = previousClient; routers.RulesetContent = previousLoader })
 	// The same source carries an URL and inline text: offline still stops before
@@ -72,7 +72,7 @@ func TestRouterOfflineSourceOrderAndZeroNetwork(t *testing.T) {
 func TestRouterMissingCacheIsAnIncompletePlan(t *testing.T) {
 	s := fixture(t)
 	previousLoader := routers.RulesetContent
-	t.Cleanup(gateway.SetRulesetContent(nil))
+	t.Cleanup(gateway.SetRuleSourceReader(nil))
 	Wire()
 	t.Cleanup(func() { routers.RulesetContent = previousLoader })
 	config := jsonx.Obj("profile_id", "other", "rule_configs", []any{jsonx.Obj("id", "remote", "name", "Remote", "itemType", "ruleset", "library_rule_id", "offline", "policy", "PROXY")}, "rule_library", []any{jsonx.Obj("id", "offline", "name", "Remote", "source_type", "url", "url", "http://127.0.0.1:1/forbidden", "behavior", "ipcidr", "format", "text")})

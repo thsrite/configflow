@@ -2,6 +2,7 @@ package repo_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 
 	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
 	"configflow/internal/rules"
@@ -82,7 +84,7 @@ func TestO36cRuleTouchLockRuntimeBoundary(t *testing.T) {
 				"url", "https://rules.example.com/o3.txt", "behavior", "domain", "format", "text", "enabled", true)
 			content := []byte("example.com\n")
 			for range 2 {
-				if _, err := rulefetch.WriteValidatedRuleCache(base, rule, content, nil); err != nil {
+				if _, err := rulefetch.WriteCache(base, fileCacheRule(t, rule), rulefetch.Content{Data: content}, nil); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -112,7 +114,7 @@ func TestO36cRuleTouchLockRuntimeBoundary(t *testing.T) {
 			defer disconnect()
 			done := make(chan error, 1)
 			go func() {
-				_, err := rulefetch.WriteValidatedRuleCache(ctx, rule, content, nil)
+				_, err := rulefetch.WriteCache(ctx, fileCacheRule(t, rule), rulefetch.Content{Data: content}, nil)
 				done <- err
 			}()
 			escaped := false
@@ -156,7 +158,7 @@ func TestO36cRuleTouchAfterShutdown(t *testing.T) {
 	rule := jsonx.Obj("id", "closed-rule", "name", "Closed", "source_type", "url",
 		"url", "https://rules.example.com/closed.txt", "behavior", "domain", "format", "text")
 	for range 2 {
-		if _, err := rulefetch.WriteValidatedRuleCache(base, rule, "example.com\n", nil); err != nil {
+		if _, err := rulefetch.WriteCache(base, fileCacheRule(t, rule), rulefetch.Content{Data: []byte("example.com\n"), Text: true}, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -170,7 +172,7 @@ func TestO36cRuleTouchAfterShutdown(t *testing.T) {
 	}
 	ctx := runtime.BindRequest(base)
 	runtime.Shutdown(context.Background())
-	_, err = rulefetch.WriteValidatedRuleCache(ctx, rule, "example.com\n", nil)
+	_, err = rulefetch.WriteCache(ctx, fileCacheRule(t, rule), rulefetch.Content{Data: []byte("example.com\n"), Text: true}, nil)
 	info, statErr := os.Stat(path)
 	if !errors.Is(err, context.Canceled) || statErr != nil || !info.ModTime().Equal(old) {
 		t.Fatalf("closed Runtime touched rule freshness: %v, %v", err, statErr)
@@ -269,4 +271,17 @@ func TestO36cFileOwnerLockRuntimeBoundary(t *testing.T) {
 			})
 		}
 	}
+}
+
+func fileCacheRule(tb testing.TB, value any) model.RuleConfig {
+	tb.Helper()
+	data, err := json.Marshal(value)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	var rule model.RuleConfig
+	if err := json.Unmarshal(data, &rule); err != nil {
+		tb.Fatal(err)
+	}
+	return rule
 }

@@ -5,7 +5,6 @@ package rules
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -29,11 +28,11 @@ func prepareLibrary(raw json.RawMessage) (record, error) {
 	}
 	library["name"] = stringJSON(strings.TrimSpace(name))
 	library["enabled"] = boolJSON(notFalse(library["enabled"]))
-	value, err := legacy(library)
+	value, err := ruleRecord(library)
 	if err != nil {
 		return nil, err
 	}
-	if err := rulefetch.ValidateDomainContent(value, nil); err != nil {
+	if err := rulefetch.ValidateContent(value, nil); err != nil {
 		return nil, err
 	}
 	if defaultText(library, "source_type", "url") == "url" {
@@ -47,11 +46,11 @@ func (s *Service) prepareRemote(ctx context.Context, library record) ([]byte, er
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	value, err := legacy(library)
+	value, err := ruleRecord(library)
 	if err != nil {
 		return nil, err
 	}
-	content, err := rulefetch.ReadRuleSourceContent(ctx, value, s.client)
+	content, err := rulefetch.ReadSource(ctx, value, s.client)
 	if canceled := ctx.Err(); canceled != nil {
 		return nil, canceled
 	}
@@ -61,29 +60,23 @@ func (s *Service) prepareRemote(ctx context.Context, library record) ([]byte, er
 		}
 		return nil, err
 	}
-	switch content := content.(type) {
-	case nil:
+	if content == nil {
 		return nil, nil
-	case string:
-		return []byte(content), nil
-	case []byte:
-		return content, nil
-	default:
-		return nil, errors.New("invalid rule source bytes")
 	}
+	return content.Data, nil
 }
 func (s *Service) cacheComposed(ctx context.Context, library record, prepared []byte) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	value, err := legacy(library)
+	value, err := ruleRecord(library)
 	if err != nil {
 		return err
 	}
 	if prepared != nil {
-		_, err = rulefetch.WriteValidatedRuleCache(ctx, value, prepared, nil)
+		_, err = rulefetch.WriteCache(ctx, value, rulefetch.Content{Data: prepared}, nil)
 	} else {
-		_, err = rulefetch.SaveRuleToLocal(ctx, value, s.client)
+		_, err = rulefetch.SaveSource(ctx, value, s.client)
 	}
 	return err
 }
@@ -140,5 +133,10 @@ func editSharedProfile(ctx context.Context, id string, sharedEdit func(record) e
 	return err
 }
 func libraryInUse(id string, index int) error {
-	return repo.NewInUse(fmt.Sprintf(msgLibraryUsed, index), []any{jsonx.Obj("kind", "rule", "code", "ruleset_already_used", "id", id, "index", index)})
+	return repo.NewInUse(fmt.Sprintf(msgLibraryUsed, index), []any{struct {
+		Kind  string `json:"kind"`
+		Code  string `json:"code"`
+		ID    string `json:"id"`
+		Index int    `json:"index"`
+	}{"rule", "ruleset_already_used", id, index}})
 }

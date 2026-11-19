@@ -1,12 +1,6 @@
 package oxidns_test
 
 import (
-	"configflow/internal/ippresence"
-	"configflow/internal/jsonx"
-	"configflow/internal/model"
-	"configflow/internal/repo"
-	"configflow/internal/rulefetch"
-	"configflow/internal/yamlx"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -15,7 +9,13 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"configflow/internal/ippresence"
+	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/oxidns"
+	"configflow/internal/repo"
+	"configflow/internal/rulefetch"
+	"configflow/internal/yamlx"
 )
 
 func metadataProfile(t testing.TB, count, unusedBytes int) *oxidns.Profile {
@@ -90,7 +90,7 @@ func BenchmarkOxiDNSMetadataChain(b *testing.B) {
 	for i := 0; i < 128; i++ {
 		id := fmt.Sprintf("set-%d", i)
 		item := jsonx.Obj("id", id, "name", id, "source_type", "url", "behavior", "classical", "url", "https://rules.example/"+id)
-		if _, err := rulefetch.WriteValidatedRuleCache(ctx, item, "DOMAIN-SUFFIX,example.com", jsonx.Obj("rule_library", []any{})); err != nil {
+		if _, err := rulefetch.WriteCache(ctx, metadataCacheRule(b, item), rulefetch.Content{Data: []byte("DOMAIN-SUFFIX,example.com"), Text: true}, &rulefetch.SourceConfig{Library: []model.RuleLibraryItem{}}); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -132,7 +132,7 @@ func TestMetadataChainAllocationBound(t *testing.T) {
 	for i := 0; i < 128; i++ {
 		id := fmt.Sprintf("set-%d", i)
 		item := jsonx.Obj("id", id, "name", id, "source_type", "url", "behavior", "classical", "url", "https://rules.example/"+id)
-		if _, err := rulefetch.WriteValidatedRuleCache(ctx, item, "DOMAIN-SUFFIX,example.com", jsonx.Obj("rule_library", []any{})); err != nil {
+		if _, err := rulefetch.WriteCache(ctx, metadataCacheRule(t, item), rulefetch.Content{Data: []byte("DOMAIN-SUFFIX,example.com"), Text: true}, &rulefetch.SourceConfig{Library: []model.RuleLibraryItem{}}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -167,4 +167,17 @@ func TestMetadataChainAllocationBound(t *testing.T) {
 	if sizes[1] > sizes[0]+(4<<20) {
 		t.Fatalf("unrelated metadata amplified allocations: %v", sizes)
 	}
+}
+
+func metadataCacheRule(tb testing.TB, value any) model.RuleConfig {
+	tb.Helper()
+	data, err := json.Marshal(value)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	var rule model.RuleConfig
+	if err := json.Unmarshal(data, &rule); err != nil {
+		tb.Fatal(err)
+	}
+	return rule
 }

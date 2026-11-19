@@ -1,16 +1,15 @@
 package rules
 
 import (
-	"configflow/internal/jsonx"
-	"configflow/internal/model"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
+
+	"configflow/internal/jsonx"
+	"configflow/internal/model"
 )
 
 type cacheExpectedRow struct {
@@ -68,36 +67,6 @@ func assertCacheReferenceInput(t *testing.T, expected cacheExpectedRow, rule *js
 	}
 }
 
-func BenchmarkMatcherProjectionUnrelatedConfig(b *testing.B) {
-	for _, size := range []int{0, 20000} {
-		b.Run(fmt.Sprintf("nodes_%d", size), func(b *testing.B) {
-			config := jsonx.Obj("rule_configs", []any{jsonx.Obj("itemType", "ruleset", "library_rule_id", "r")}, "rule_library", []any{jsonx.Obj("id", "r", "url", "https://example.com/list.yaml")})
-			nodes := make([]any, size)
-			for i := range nodes {
-				nodes[i] = jsonx.Obj("name", strings.Repeat("n", 1024))
-			}
-			config.Set("nodes", nodes)
-			b.ReportAllocs()
-			b.ResetTimer()
-			for b.Loop() {
-				input := MatcherInputFromJSON(config)
-				if len(input.Library) != 1 {
-					b.Fatal("missing declaration")
-				}
-			}
-		})
-	}
-}
-func TestMatcherProjectionAllocationsIgnoreUnrelatedConfig(t *testing.T) {
-	small := jsonx.Obj("rule_configs", []any{jsonx.Obj("id", "r", "itemType", "rule", "rule_type", "MATCH")})
-	large := small.Clone()
-	large.Set("nodes", []any{jsonx.Obj("params", strings.Repeat("x", 4<<20))})
-	empty := testing.AllocsPerRun(10, func() { _ = MatcherInputFromJSON(small) })
-	huge := testing.AllocsPerRun(10, func() { _ = MatcherInputFromJSON(large) })
-	if huge > empty+1 {
-		t.Fatalf("unrelated config allocated: small=%g large=%g", empty, huge)
-	}
-}
 func TestNativeMatcherOwnsHitCopy(t *testing.T) {
 	cache := NewCache(CacheOptions{RulesDir: func() string { return t.TempDir() }})
 	t.Cleanup(cache.Clear)

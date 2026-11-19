@@ -12,6 +12,7 @@ import (
 
 	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
 )
@@ -58,7 +59,7 @@ func TestReviewSourceTimeoutAndMirror(t *testing.T) {
 				}
 				return reviewResponse(req, 200, "+.mirror.example.com\n"), nil
 			})}}
-			content, err := service.sourceContent(ctx, config, item, library, sourceOptions{})
+			content, err := service.readSource(ctx, fetchConfig(testSourceConfig(t, config)), testSourceRule(t, item), testSourceLibrary(t, library), sourceOptions{})
 			if invalid {
 				var validation *rulefetch.RemoteRuleValidationError
 				if !errors.As(err, &validation) || len(requests) != 1 {
@@ -115,7 +116,7 @@ func TestReviewShutdownDuringDownload(t *testing.T) {
 				if getErr != nil {
 					t.Fatal(getErr)
 				}
-				_, err = service.sourceContent(lifecycle.Detach(ctx), config, jsonx.Obj("url", "https://mirror.example.com/source"), source, sourceOptions{})
+				_, err = service.readSource(lifecycle.Detach(ctx), fetchConfig(testSourceConfig(t, config)), testSourceRule(t, jsonx.Obj("url", "https://mirror.example.com/source")), testSourceLibrary(t, source), sourceOptions{})
 			}
 			if !errors.Is(err, context.Canceled) || calls != 1 {
 				t.Fatalf("shutdown err=%v requests=%d", err, calls)
@@ -150,4 +151,41 @@ func TestReviewStoppedReadOwners(t *testing.T) {
 			}
 		})
 	}
+}
+
+func testSourceConfig(t *testing.T, value any) *model.Config {
+	t.Helper()
+	raw, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config, err := model.DecodeConfig(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return config
+}
+func testSourceRule(t *testing.T, value any) model.RuleConfig {
+	t.Helper()
+	raw, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rule model.RuleConfig
+	if err := json.Unmarshal(raw, &rule); err != nil {
+		t.Fatal(err)
+	}
+	return rule
+}
+func testSourceLibrary(t *testing.T, value any) *model.RuleLibraryItem {
+	t.Helper()
+	raw, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rule model.RuleLibraryItem
+	if err := json.Unmarshal(raw, &rule); err != nil {
+		t.Fatal(err)
+	}
+	return &rule
 }

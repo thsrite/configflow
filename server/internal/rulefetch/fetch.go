@@ -22,7 +22,6 @@ import (
 	"configflow/internal/localhttp"
 	"configflow/internal/logx"
 	"configflow/internal/model"
-
 	"configflow/internal/repo"
 	"configflow/internal/weburl"
 
@@ -291,8 +290,8 @@ type Attempt struct {
 
 func (e *RuleFetchError) Error() string { return e.message }
 
-// PythonClass is type(exc).__name__.
-func (e *RuleFetchError) PythonClass() string { return "RuleFetchError" }
+// ErrorClass returns the stable diagnostic label.
+func (e *RuleFetchError) ErrorClass() string { return "RuleFetchError" }
 
 // Unwrap is exc.last_error (for errors.As on the last cause).
 func (e *RuleFetchError) Unwrap() error { return e.LastError }

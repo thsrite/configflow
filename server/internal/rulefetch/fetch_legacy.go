@@ -1,9 +1,10 @@
 package rulefetch
 
 import (
-	"configflow/internal/jsonx"
 	"context"
 	"time"
+
+	"configflow/internal/jsonx"
 )
 
 // Request is the keyword arguments of request_rule.
@@ -35,37 +36,10 @@ func RequestRule(ctx context.Context, url string, r Request) (*Response, error) 
 	return DefaultClient.RequestRule(ctx, url, r)
 }
 
-// RuleFetchSettings retains the narrow legacy system projection.
-func RuleFetchSettings(config *jsonx.Object) *jsonx.Object {
-	settings := config.GetObject("system_config")
-	if settings == nil {
-		return jsonx.NewObject()
-	}
-	return settings
-}
-
-// IsInternalRuleURLChecked adapts URL classification to the native settings.
-func IsInternalRuleURLChecked(url string, config *jsonx.Object, host string) (bool, error) {
-	return InternalURL(url, sourceConfig(config), host)
-}
-
 // IsInternalRuleURL adapts URL classification for validated URLs.
 func IsInternalRuleURL(url string, config *jsonx.Object, host string) bool {
-	ok, _ := IsInternalRuleURLChecked(url, config, host)
+	ok, _ := InternalURL(url, sourceConfig(config), host)
 	return ok
-}
-
-// GetRuleFetchProxy adapts stored proxy settings.
-func GetRuleFetchProxy(config *jsonx.Object) (string, error) { return FetchProxy(sourceConfig(config)) }
-
-// RuleRequestProxyChecked adapts URL-specific proxy selection.
-func RuleRequestProxyChecked(url string, config *jsonx.Object, host string) (string, error) {
-	return ProxyFor(url, sourceConfig(config), host)
-}
-
-// RuleRequestProxy adapts URL-specific proxy selection.
-func RuleRequestProxy(url string, config *jsonx.Object, host string) (string, error) {
-	return RuleRequestProxyChecked(url, config, host)
 }
 
 // GithubDownloadCandidates adapts the existing converter boundary.

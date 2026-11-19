@@ -13,6 +13,7 @@ import (
 	"configflow/internal/health/check"
 	"configflow/internal/httpx"
 	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/oxidns"
 	"configflow/internal/repo"
 	shared "configflow/internal/rules"
@@ -29,20 +30,20 @@ func native(v any) (object, error) {
 	err = json.Unmarshal(raw, &out)
 	return out, err
 }
-func legacy(o object) (*jsonx.Object, error) {
+func configView(o object) (*model.Config, error) {
 	raw, err := json.Marshal(o)
 	if err != nil {
 		return nil, err
 	}
-	v, err := jsonx.Parse(raw)
-	if err != nil {
-		return nil, err
+	return model.DecodeConfig(raw)
+}
+func groupRecord(o object) (model.ProxyGroup, error) {
+	var group model.ProxyGroup
+	raw, err := json.Marshal(o)
+	if err == nil {
+		err = json.Unmarshal(raw, &group)
 	}
-	out, ok := v.(*jsonx.Object)
-	if !ok {
-		return nil, errors.New("expected object")
-	}
-	return out, nil
+	return group, err
 }
 func readBody(c *httpx.Ctx, silent bool) (object, bool, error) {
 	var raw json.RawMessage
@@ -68,17 +69,25 @@ func readReorderBody(c *httpx.Ctx) (object, error) {
 	if err != nil || ok {
 		return body, err
 	}
-	if jsonx.Truthy(c.JSONSilent()) {
+	if boundNonempty(c) {
 		return object{}, &fault{500, "reorder request must be a JSON object"}
 	}
 	return object{}, nil
 }
 func load(ctx context.Context, id string) (object, error) {
-	raw, err := repo.GetConfig(ctx, id)
+	r, err := repo.GetRepository(ctx)
 	if err != nil {
 		return object{}, err
 	}
-	return native(raw)
+	id, err = repo.ResolveProfileID(ctx, id)
+	if err != nil {
+		return object{}, err
+	}
+	value, err := r.Config(ctx, id, nil)
+	if err != nil {
+		return object{}, err
+	}
+	return native(value)
 }
 func edit(ctx context.Context, id string, fn func(context.Context, *object) error) error {
 	if err := ctx.Err(); err != nil {
@@ -111,72 +120,62 @@ func edit(ctx context.Context, id string, fn func(context.Context, *object) erro
 func healthKind(kind string) bool { return check.IsGroupHealthType(kind) }
 func healthFields() []string      { return shared.HealthFields }
 func initializeHealth(group object) (object, error) {
-	raw, err := legacy(group)
-	if err != nil {
-		return object{}, err
-	}
-	check.InitializeGroupHealth(raw)
-	return native(raw)
+	err := check.InitGroupHealth(&group)
+	return group, err
 }
 func validate(ctx context.Context, group, profile object, original *object) error {
-	g, err := legacy(group)
+	g, err := groupRecord(group)
 	if err != nil {
 		return err
 	}
-	p, err := legacy(profile)
+	p, err := configView(profile)
 	if err != nil {
 		return err
 	}
-	var old *jsonx.Object
+	var old *model.ProxyGroup
 	if original != nil {
-		old, err = legacy(*original)
+		v, err := groupRecord(*original)
 		if err != nil {
 			return err
 		}
+		old = &v
 	}
-	catalog, err := repo.GetSharedConfig(ctx)
+	r, err := repo.GetRepository(ctx)
 	if err != nil {
 		return err
 	}
-	return shared.ValidateCandidates(g, p, catalog, old)
+	catalog, err := r.Shared(ctx)
+	if err != nil {
+		return err
+	}
+	return shared.CheckCandidates(g, shared.GroupCatalog{Nodes: catalog.Nodes, Subscriptions: catalog.Subscriptions, Aggregations: catalog.Aggregations, Groups: p.Profile.ProxyGroups}, old)
 }
 func merge(original, patch object) (object, error) {
-	a, err := legacy(original)
+	group, err := groupRecord(original)
 	if err != nil {
 		return object{}, err
 	}
-	b, err := legacy(patch)
+	result, err := shared.MergeGroup(group, patch)
 	if err != nil {
 		return object{}, err
 	}
-	out, err := shared.MergeGroupUpdate(a, b)
-	if err != nil {
-		return object{}, err
-	}
-	return native(out)
+	return native(result)
 }
-func enabled(o object) bool {
-	raw, ok := o.Get("enabled")
-	if !ok {
-		return true
-	}
-	v, err := jsonx.Parse(raw)
-	return err == nil && jsonx.Truthy(v)
-}
+func enabled(o object) bool { return flag(o, "enabled", true) }
 func incoming(profile object, id string) (bool, error) {
-	p, err := legacy(profile)
+	p, err := configView(profile)
 	if err != nil {
 		return false, err
 	}
-	refs, err := convert.IncomingDialers(p, "group", id)
+	refs, err := convert.IncomingRefs(p, "group", id)
 	return len(refs) > 0, err
 }
 func relink(profile *object, old string, next *string) ([]string, error) {
-	p, err := legacy(*profile)
+	p, err := configView(*profile)
 	if err != nil {
 		return nil, err
 	}
-	changes, err := subs.RelinkGroupListeners(p, old, next)
+	changes, err := subs.RelinkListeners(p.Profile, old, next)
 	if err != nil {
 		return nil, err
 	}
@@ -185,55 +184,38 @@ func relink(profile *object, old string, next *string) ([]string, error) {
 }
 func validateHealthURL(body object) error {
 	raw, _ := body.Get("url")
-	var fields object
 	if len(raw) == 0 {
 		raw = json.RawMessage("null")
 	}
+	fields := object{}
 	if err := fields.Set("url", raw); err != nil {
 		return err
 	}
-	v, err := legacy(fields)
+	encoded, err := json.Marshal(fields)
 	if err != nil {
 		return err
 	}
-	return check.ValidateHealth(v, false)
+	return check.ValidateHealthJSON(encoded, false)
 }
 func reorder(groups []object, body object) ([]object, []string, error) {
-	items := make([]any, len(groups))
-	for i, g := range groups {
-		v, err := legacy(g)
-		if err != nil {
-			return nil, nil, err
-		}
-		items[i] = v
+	request := map[string]json.RawMessage{}
+	for key, raw := range body.All() {
+		request[key] = raw
 	}
-	request, err := legacy(body)
+	ids, err := shared.OrderIDs(request, "groups")
 	if err != nil {
-		return nil, nil, err
+		return groups, []string{err.Error()}, nil
 	}
-	ordered, missing := shared.ResolveNewOrder(items, request, "groups")
-	out := make([]object, len(ordered))
-	for i, v := range ordered {
-		out[i], err = native(v)
-		if err != nil {
-			return nil, nil, err
-		}
-	}
-	return out, missing, nil
+	returnOrder, missing := shared.Reorder(groups, ids, orderPosition(body), func(group object) string { return text(group, "id") })
+	return returnOrder, missing, nil
 }
-func missingText(ids []string) string {
-	values := make([]any, len(ids))
-	for i, id := range ids {
-		values[i] = id
-	}
-	return jsonx.Repr(values)
-}
+func missingText(ids []string) string { return shared.IdentifierList(ids) }
 func validateDialers(profile object) error {
-	p, err := legacy(profile)
+	p, err := configView(profile)
 	if err != nil {
 		return err
 	}
-	return convert.ValidateDialers(p)
+	return convert.DialerFailure(convert.ConfigDialers(p))
 }
 func profileView(p object) (*oxidns.Profile, error) {
 	raw, err := json.Marshal(p)
@@ -263,11 +245,7 @@ func syncFollow(ctx context.Context, before object, after *object, base string) 
 	if err != nil {
 		return nil, err
 	}
-	catalog, err := repo.GetSharedConfig(ctx)
-	if err != nil {
-		return nil, err
-	}
-	shared, err := native(catalog)
+	shared, err := sharedConfig(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -332,8 +310,7 @@ func flag(o object, key string, def bool) bool {
 	if !ok {
 		return def
 	}
-	v, err := jsonx.Parse(raw)
-	return err == nil && jsonx.Truthy(v)
+	return shared.EnabledField(raw, def)
 }
 
 func defaults() (struct {
@@ -344,107 +321,88 @@ func defaults() (struct {
 		Group    object `json:"group"`
 		Provider object `json:"provider"`
 	}{}
-	g := check.GroupDefaults()
-	g.Set("tolerance", jsonx.Int(50))
+	g := check.DefaultGroupHealth()
+	tolerance := int64(50)
+	g.Tolerance = &tolerance
 	var err error
 	out.Group, err = native(g)
 	if err != nil {
 		return out, err
 	}
-	out.Provider, err = native(check.ProviderDefaults())
+	out.Provider, err = native(check.DefaultProviderHealth())
 	return out, err
 }
+
 func sharedConfig(ctx context.Context) (object, error) {
-	raw, err := repo.GetSharedConfig(ctx)
+	r, err := repo.GetRepository(ctx)
 	if err != nil {
 		return object{}, err
 	}
-	return native(raw)
+	value, err := r.Shared(ctx)
+	if err != nil {
+		return object{}, err
+	}
+	return native(value)
 }
 
 func names(o object, key string) ([]string, error) {
-	selection, err := jsonx.Parse(raw(o, key))
-	if err != nil {
-		return nil, err
-	}
-	if !jsonx.Truthy(selection) {
+	raw := raw(o, key)
+	if !shared.EnabledField(raw, false) {
 		return nil, nil
 	}
-	entries, ok := selection.([]any)
-	if !ok {
+	var entries []json.RawMessage
+	if json.Unmarshal(raw, &entries) != nil {
 		return nil, bad(msgPreviewSelection)
 	}
 	ids := make([]string, 0, len(entries))
 	for _, entry := range entries {
-		// Like an unknown string ID, a value that cannot name a stored source
-		// has no match. Do not reject the other IDs of a mixed selection.
-		if id, ok := entry.(string); ok {
-			ids = append(ids, id)
+		var id *string
+		if json.Unmarshal(entry, &id) == nil && id != nil {
+			ids = append(ids, *id)
 		}
 	}
 	return ids, nil
 }
 func filterSubscription(sub object, nodes []object) ([]object, error) {
-	s, err := legacy(sub)
+	raw, err := json.Marshal(sub)
 	if err != nil {
 		return nil, err
 	}
-	rows := make([]any, len(nodes))
-	for i, node := range nodes {
-		rows[i], err = legacy(node)
-		if err != nil {
-			return nil, err
-		}
+	var source model.Subscription
+	if err := json.Unmarshal(raw, &source); err != nil {
+		return nil, err
 	}
-	rows = subs.FilterSubscriptionItems(s, rows)
-	out := make([]object, len(rows))
-	for i, row := range rows {
-		out[i], err = native(row)
-		if err != nil {
-			return nil, err
+	// Filtering is name-based; retain the original node records without copying parameters.
+	matcher := subs.CompileFilter(source)
+	out := make([]object, 0, len(nodes))
+	for _, node := range nodes {
+		if matcher == nil || matcher.Search(text(node, "name")) {
+			out = append(out, node)
 		}
 	}
 	return out, nil
 }
 func filterAggregation(nodes []object, pattern string) ([]object, error) {
-	rows := make([]any, len(nodes))
-	var err error
-	for i, node := range nodes {
-		rows[i], err = legacy(node)
-		if err != nil {
-			return nil, err
-		}
-	}
-	rows, err = shared.FilterCandidates(rows, pattern, "")
-	if err != nil {
-		return nil, err
-	}
-	out := make([]object, len(rows))
-	for i, row := range rows {
-		out[i], err = native(row)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return out, nil
+	empty := ""
+	return shared.Filter(nodes, &pattern, &empty, func(node object) string { return text(node, "name") })
 }
 
 func cachedNodes(ctx context.Context, id string) ([]object, error) {
-	cache, err := substore.LoadSubscriptionCache(ctx, id)
+	cache, err := substore.LoadCache(ctx, id)
 	if err != nil {
 		return nil, err
 	}
 	if cache == nil {
 		return []object{}, nil
 	}
-	if _, ok := cache.Value("nodes").([]any); !ok {
-		return []object{}, nil
+	out := make([]object, len(cache.Nodes))
+	for i, node := range cache.Nodes {
+		out[i], err = native(node)
+		if err != nil {
+			return nil, err
+		}
 	}
-	v, err := native(cache)
-	if err != nil {
-		return nil, err
-	}
-	return list(v, "nodes")
+	return out, nil
 }
 
 func readPreviewBody(c *httpx.Ctx) (object, bool, error) {
@@ -452,8 +410,36 @@ func readPreviewBody(c *httpx.Ctx) (object, bool, error) {
 	if err != nil {
 		return object{}, false, &fault{500, "invalid JSON request"}
 	}
-	if !ok && !jsonx.Truthy(c.JSONSilent()) {
+	if !ok && !boundNonempty(c) {
 		return object{}, true, nil
 	}
 	return body, ok, nil
+}
+
+func boundNonempty(c *httpx.Ctx) bool {
+	var raw json.RawMessage
+	return c.BindSilent(&raw) && shared.EnabledField(raw, false)
+}
+
+func legacy(o object) (*jsonx.Object, error) {
+	raw, err := json.Marshal(o)
+	if err != nil {
+		return nil, err
+	}
+	v, err := jsonx.Parse(raw)
+	if err != nil {
+		return nil, err
+	}
+	out, ok := v.(*jsonx.Object)
+	if !ok {
+		return nil, errors.New("expected object")
+	}
+	return out, nil
+}
+
+func orderPosition(body object) string {
+	if !body.Has("position") {
+		return "top"
+	}
+	return text(body, "position")
 }

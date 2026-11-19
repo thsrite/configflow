@@ -2354,3 +2354,21 @@ subscriptions 的创建、更新、排序、抓取，aggregations 的创建、�
 协调者已明确批准：W3 的 typed token 校验对损坏存储中被 model 标记类型错误的 `config_token` 采取 fail closed：即使全局登录关闭，也不把类型错误误当成空凭据而放行（返回既有 401/认证失败消息）；Python 对 false/0/空集合等假值可能当作未配置令牌。正常字符串凭据、内部能力优先拒绝顺序、JWT/公开 token 及轮换语义保持原状。有效的 retired token 即使邻居成员类型错误也仍会被识别并拒绝；对应 native 回归固定混合列表，不容许坏邻居造成内部能力公开。TestNativeMalformedConfigTokenFailsClosed 验证 false/0/[]/{} 拒绝，修复为空字符串后恢复未配置凭据的放行；TestGlobalGateAndProfileToken 覆盖正常凭据与轮换。此损坏凭据边界连同 provider/token 路径交 Opus 抽查。
 
 Opus 复核 L1 后协调者裁定收紧（2026-11-20）：判断依据改为存储的原始 JSON 类型，而不是 model 的 issue。只有 JSON 字符串是凭据；null 或缺失视为未配置。其他类型一律按损坏凭据 fail closed，包括数字、布尔、数组、对象。数字也在其中，虽然 model 的 R5 标量规则会把它读成文本，`?token=<同值>` 也不再通过。与 Python 的差异：Python 关闭登录时，假值（`false`、`0`、`[]`、`{}`）当作未配置，全部放行；Go 只放行内部调用和有效 JWT，其余返回 401。真值（`12345`、`true`）在 Python 里本来就无法用 `?token=` 匹配（字符串和数字不相等），只能用 JWT，Go 现在与之一致；收紧前，Go 会把 `?token=12345` 当作有效凭据。正常字符串 token、轮换、内部能力拒绝顺序不变。证据：`api/subscriptions/native_boundary_test.go::TestNativeMalformedConfigTokenFailsClosed` 对每种非字符串存储值都带上同值 token 请求，期望 401；字符串和空串、null 作为对照，期望 404，错误 token 期望 401。
+
+## N8-11 W4 — 原生 HTML 与规则输入提示（第一阶段）
+
+- 网站识别的实体解码、meta 分词改为标准库 `html.UnescapeString` 和 `golang.org/x/net/html`。
+  正常实体、注释、script/style 内容与末个 meta 的规则保持；控制码实体、无效 `&#x;`、重复属性和
+  畸形 markup 遵循原生库。例如 `&#1;` 保留 U+0001，`&#x;` 成为 U+FFFD，同一 meta 的重复
+  content 属性取原生分词器保留的首值。冻结的 C14 语料/pyref 不改；
+  `rulefetch/testdata/n811_native_html_differences.json` 精确锁定 2161 条已知差异的输入键与输出摘要
+  （unescape 1061、meta_content 653、clean_text 441，另含 page_identity 的 6 条派生 metadata 差异），输出变化不会被宽泛分类吞掉。
+- 固定中文重排提示仍用单引号字符串列表；单引号、反斜杠与换行显式转义。该函数只接受 `[]string`，
+  不提供通用 Python repr。非法规则类型/DNS 选择中的非字符串值用 JSON 文本表示
+  （null、true、数字、对象），HTTP 状态和中文模板不变；缺失 ID 混合列表使用完整 JSON 文本。
+  差分明确验证 Python `[None, 'missing']` 与 Go `[null,"missing"]` 两侧原文，并继续比较存储和其他头。
+- HTTP Basic 凭据仍要求可编码为 ISO-8859-1；不可编码凭据和无效 CA 文件改为普通 Go typed 错误，
+  不再仿造 CPython 异常文本。原来的诊断标签（RuleFetchError、ReadTimeout、OSError 等）保持。
+  Content-Encoding 使用原生 strings，响应 charset 声明用 mime.ParseMediaType；规则缓存仍保留源字节。
+- 请求改用 Bind/BindSilent。严格绑定拒绝非有限数并返回 400；既有 silent/caught 入口继续走原来的
+  malformed-body 错误边界（如 match-test 无可用对象返回 500）。没有另造请求 JSON 解析器。

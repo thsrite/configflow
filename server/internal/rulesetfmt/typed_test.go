@@ -2,13 +2,13 @@ package rulesetfmt
 
 import (
 	"bufio"
+	"bytes"
 	"compress/gzip"
 	"encoding/json"
 	"errors"
 	"os"
 	"testing"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 )
 
@@ -35,13 +35,30 @@ func TestTypedEntryMatchesPythonFormatCorpus(t *testing.T) {
 			Output   string            `json:"out"`
 			Error    json.RawMessage   `json:"err"`
 		}
-		// The archive contains non-JSON NaN in unrelated parser rows.
-		// Read only its discriminator through the archive's legacy reader.
-		kind, err := jsonx.Parse(s.Bytes())
-		if err != nil {
+		// Stop after the function discriminator: unrelated archived rows contain
+		// non-JSON non-finite values in arguments later in the object.
+		decoder := json.NewDecoder(bytes.NewReader(s.Bytes()))
+		if _, err := decoder.Token(); err != nil {
 			t.Fatal(err)
 		}
-		if kind.(*jsonx.Object).GetString("fn") != "ruleset_format" {
+		function := ""
+		for decoder.More() {
+			key, err := decoder.Token()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if key == "fn" {
+				if err := decoder.Decode(&function); err != nil {
+					t.Fatal(err)
+				}
+				break
+			}
+			var ignored json.RawMessage
+			if err := decoder.Decode(&ignored); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if function != "ruleset_format" {
 			continue
 		}
 		if err := json.Unmarshal(s.Bytes(), &row); err != nil {
