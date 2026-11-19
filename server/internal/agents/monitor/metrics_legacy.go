@@ -3,6 +3,7 @@ package monitor
 import (
 	"encoding/json"
 
+	"configflow/internal/jsondecode"
 	"configflow/internal/jsonx"
 )
 
@@ -11,7 +12,7 @@ func metricJSON(value any, target any) error {
 	if err != nil {
 		return err
 	}
-	return json.Unmarshal(raw, target)
+	return jsondecode.Unmarshal(raw, target)
 }
 func metricObject(value any) *jsonx.Object {
 	raw, err := json.Marshal(value)

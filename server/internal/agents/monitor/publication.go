@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 
+	"configflow/internal/jsondecode"
 	"configflow/internal/model"
 )
 
@@ -45,7 +46,7 @@ func storedObject(raw json.RawMessage, present bool, err error) error {
 		return nil
 	}
 	var fields model.Fields
-	if json.Unmarshal(raw, &fields) != nil {
+	if jsondecode.Unmarshal(raw, &fields) != nil {
 		return &StateError{msgPublicationDamaged}
 	}
 	return nil
@@ -165,7 +166,7 @@ func AdvanceState(previous *DashboardState, snapshot *SnapshotIdentity, core *Co
 			}
 			if present && !bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
 				var flag *bool
-				if json.Unmarshal(raw, &flag) != nil || flag == nil {
+				if jsondecode.Unmarshal(raw, &flag) != nil || flag == nil {
 					return nil, &StateError{msgPublicationDamaged}
 				}
 			}

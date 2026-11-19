@@ -10,6 +10,8 @@ import (
 	"math/big"
 	"strconv"
 	"strings"
+
+	"configflow/internal/jsondecode"
 )
 
 // errOverflow identifies arithmetic outside the finite float64 range.
@@ -173,7 +175,7 @@ func (n *MetricNumber) UnmarshalJSON(raw []byte) error {
 		return errors.New("metric value must be a JSON number")
 	}
 	var value json.Number
-	if err := json.Unmarshal(raw, &value); err != nil {
+	if err := jsondecode.Unmarshal(raw, &value); err != nil {
 		return err
 	}
 	text := value.String()

@@ -1,24 +1,26 @@
 # N8-10 monitor S pass
 
-状态：实现完成，最终定向检查收尾中；未标记 verified，待独立复核及协调者 batch gate。
-分支 `go-n8-10-monitor`，已 rebase 到 core-2 HR tip `70cea1eb6`。
-第一检查点 `884cb5980`；后续提交记录以本报告所在分支历史为准。无 push。
+状态：实现完成，batch-11 新基底定向检查收尾中；未标记 verified，待独立复核及协调者 batch gate。
+分支 `go-n8-10-monitor`，先接纳 core-2 HR tip `70cea1eb6`，后按协调通知
+rebase 到 batch-11 `origin/go@ae00b71f1`（Go 1.27.4、json-case/jsondecode.Select）。
+迁移主提交现为 `2a2f65a62`、边界/测试提交 `065da003b`，包注释 `600ef8553`；
+后续提交以本报告所在分支历史为准。无 push。
 
 ## 完成边界
 
 生产 owner 使用 `Registry.ReadAgent` / `model.Agent` 的原始 member、`model.Fields` 精确键名和
-原生 DTO。实现包含 cache / rule update / Mihomo panel、版本检查缓存、OxiDNS metrics、
+原生 DTO，所有产品 JSON 解码统一走 jsondecode.Unmarshal。实现包含 cache / rule update / Mihomo panel、版本检查缓存、OxiDNS metrics、
 dashboard 状态文件/CAS/发布检查点、overview/query/client/ranking、排行 SQLite 和后台 collector。
 主要类型是 `Observations`、`MetricNumber`、`MetricSummary`、`DashboardState`、
 `PendingPublication`、`Snapshot`、`Rankings`、`CacheResult`、`RuleTask`。
 未知响应字段只在协议允许的位置作为 RawMessage 保留；统计状态及已知业务字段逐项验证。
 
 生产主体没有 jsonx import、PythonClass、AttributeError/TypeError、对象 truthiness 或异常仿真。
-9 个 `*_legacy.go`（987 行）保留原导出签名及转码，供后续 API/upgrades/rulesync/dnsha 等
+9 个 `*_legacy.go`（1004 行）保留原导出签名及转码，供后续 API/upgrades/rulesync/dnsha 等
 consumer 的 S pass 使用；`FromAgents` 直接实现 typed registry，不做整个 Agent 的 jsonx 往返。
 HA rules 的旧回调签名暂在 codec 边界转码，没有改 core 公共 API。
 未迁移的用户文本/Unicode 数字输入兼容 helper 留在 `input_text.go`、panel 查询参数及既有表，属于 N10；
-机器版本入口独立 ASCII 校验。整个 monitor 产品代码 6325 → 7787 行（含适配，新增显式
+机器版本入口独立 ASCII 校验。以 batch-11 为基准，整个 monitor 产品代码 6325 → 7811 行（含适配，新增显式
 DTO、严格协议验证与 ctx 叶存储）；32 个产品 Go 文件，原 15 个。行数为信息，无预算变更。
 
 版本下载复用 native rulefetch.Download/localhttp；只投影实际消费的三个 SystemConfig 设置。
@@ -67,44 +69,52 @@ test-only adapter 中保留；生产状态仍严格 DecodeState，生产上游�
 ## 验证
 
 全部经 rt 在 .32/.64 执行；未在 Mac 跑测试、未跑完整门禁。
-修复组 race 已 PASS（25.375s），其余最终结果待以下两轮完成后填写。
+core-2 基底完整 monitor race PASS 447.797s，修复组 PASS 25.375s。
+以下为 batch-11 新基底检查；不是全仓门禁。新基底 monitor 第一轮所列筛选 race PASS
+80.521s；轻量记录修复后同组加 LegacyScalar 回归 PASS 82.428s。
+新基底 gofmt -l 全仓无输出、go vet ./... 静默通过；调用方 race 结果待填写。
 
 ### 最终产品/调用方检查
 
 ```sh
-# .32 monitor 最终完整 race（含全部旧 Corpus/Reference/Review/Golden 和新回归）
-RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && GOMAXPROCS=4 go test -race -p 4 -count=1 -timeout=20m ./internal/agents/monitor'
+# .64，新基底 monitor 定向 race（原语料及新边界）
+RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'cd server && GOMAXPROCS=4 go test -race -p 4 -count=1 -timeout=20m -run "Reference|Review|Corpus|Golden|Native|Damaged|PendingCheckpoint|CoreVersionCache|LegacyScalar" ./internal/agents/monitor'
 
-# .64 格式、全模块 vet、monitor 直接调用方 race；不是全仓 race
-RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -e; cd server; gofmt -w internal/agents/monitor/*.go; test -z "$(gofmt -l .)"; GOMAXPROCS=4 go vet -p 4 ./...; GOMAXPROCS=4 go test -race -p 4 -count=1 -timeout=20m ./internal/api/agents ./internal/agents/dnsha ./internal/agents/rulesync ./internal/agents/ipv6 ./internal/gateway/host ./internal/gateway/installation ./internal/server'
+# .64 格式与全模块 vet
+RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -e; cd server; gofmt -w internal/agents/monitor/*.go; test -z "$(gofmt -l .)"; GOMAXPROCS=4 go vet -p 4 ./...'
+
+# .32，七个直接调用方的完整 race
+RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && GOMAXPROCS=4 go test -race -p 4 -count=1 -timeout=20m ./internal/api/agents ./internal/agents/dnsha ./internal/agents/rulesync ./internal/agents/ipv6 ./internal/gateway/host ./internal/gateway/installation ./internal/server'
 ```
 
 此前最终完整 monitor run 暴露了 13 条 review 指标的 CPython digit-cap 和 17 条非法存储
 JSON 摘要旧期望；相同计数规则也传播到 1 条 overview。新增完整行 SHA 的 canonical
 需与 Go 一样转义 U+2028/U+2029；校正独立生成器后逐字节复现。排行私有 helper 的
 部分状态入参投影已移到 test-only adapter，不再误走生产文件 schema 验证。原期望不变，
-以上全部失败组先单独 race 验证，再运行最终整包 race。
+以上全部失败组先单独 race 验证，再运行完整 monitor race 并通过。
 
 ### Flask HTTP 差分
 
 ```sh
-RT_HOST=sunbroke@192.168.0.32 rt -e CONFIGFLOW_DIFF=1 -- bash -lc 'cd server && GOMAXPROCS=4 go test -p 4 -count=1 -timeout=20m -run "Test(PanelDifferential|OxidnsDifferential|RankingCollectorDifferential)AgainstFlask$" ./internal/api/agents/difftest'
+RT_HOST=sunbroke@192.168.0.64 rt -e CONFIGFLOW_DIFF=1 -- bash -lc 'cd server && GOMAXPROCS=4 go test -p 4 -count=1 -timeout=20m -run "Test(PanelDifferential|OxidnsDifferential|RankingCollectorDifferential)AgainstFlask$" ./internal/api/agents/difftest'
 ```
 
-PASS，71.808s；原差分逻辑不变。新增 `TestNativeMonitorHTTPWireBytes` 对真实 httptest +
+core-2 基底 PASS，71.808s；batch-11 新基底 PASS，74.160s。原差分逻辑不变。新增 `TestNativeMonitorHTTPWireBytes` 对真实 httptest +
 agents.HTTPClient 比较六条请求的原始 URI/method/Auth/Accept/Content-Type/body bytes，覆盖
 cache GET/POST、rules GET/POST、panel delay GET、selector PUT（含 Unicode 路径/名称）。
 
 ### Fuzz 与独立期望复现
 
 ```sh
-# .32，三个新 target 各运行 60s；最后再次运行 cache target（加强共享字节解码/BOM 种子）
-RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && GOMAXPROCS=4 go test -count=1 -run "^$" -fuzz "^FuzzMonitorCacheProtocol$" -fuzztime=60s -parallel=2 ./internal/agents/monitor'
+# .64，新基底三个 target 各运行 60s；cache 使用共享字节解码/BOM 种子
+RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'cd server && GOMAXPROCS=4 go test -count=1 -run "^$" -fuzz "^FuzzMonitorCacheProtocol$" -fuzztime=60s -parallel=2 ./internal/agents/monitor'
 # 同参数分别替换为 FuzzDashboardStateRoundTrip、FuzzTypedMetricsSnapshot
 ```
 
 首轮全部 PASS：cache 57,570 execs / 61.011s，state 895,260 / 61.015s，metrics 152,321 /
-61.014s。最终 cache 重跑及 generator byte-for-byte 复现结果待填写。
+61.014s。core-2 基底最终 cache 重跑 PASS 61.014s / 33,817 execs；generator 逐字节
+复现 PASS。batch-11 新基底三个 target 各 60s 全 PASS：cache 43,983 execs /
+61.014s，state 809,450 / 61.012s，metrics 51,089 / 61.013s。
 
 Python 测试覆盖映射：
 
@@ -119,5 +129,17 @@ Python 测试覆盖映射：
 | test_mihomo_panel.py | a07 reference/review、PanelDifferential、Unicode 空白无效响应与版本边界/cache 回归 |
 
 不更改已有超时、采集节拍、paused/timeout budget、查询缓存上限及核心分配阈值。
-合并注意：保持 core-2 HR 基点；剩余兼容 codec 随各 consumer 的后续 S pass 删除；本轮尚未
+合并注意：保持 batch-11 ae00b71f1 基点；剩余兼容 codec 随各 consumer 的后续 S pass 删除；本轮尚未
 独立复核，batch gate 由协调者运行。
+
+## batch-11 接纳与轻量记录边界
+
+新基底全部产品 JSON 解码已接入 jsondecode；model.Fields/自定义 codec 保留 duplicate
+拒绝与未知字段策略，未用普通 struct 解码绕过原始成员证明。没有改 jsondecode 或 core。
+`.64` 高负载的旧基底调用方 run 只有 rulesync 的
+`TestStructurePublicationPinsNonRuleConfiguration` 失败；在新基底 `.32` 安静环境复现，
+确认是 monitor 的 legacy AgentOrigin 将整条轻量记录编码，遇到不可序列化的
+`repo.AgentHistoryNotRead`。改为只投影 host/port；版本能力同样只投影 version。
+字段原始类型与 case alias 仍拒绝，原记录/历史标记不改，也没有将未读历史用作授权证明。
+新增 `TestLegacyScalarReadsDoNotSerializeUnreadHistory` 与原 rulesync 失败用例分别 PASS
+1.022s / 10.391s。未改 rulesync 的旧测试或期望，调试改动已撤回。

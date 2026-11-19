@@ -15,6 +15,7 @@ import (
 	"regexp"
 
 	"configflow/internal/agents"
+	"configflow/internal/jsondecode"
 	"configflow/internal/jsonresp"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
@@ -67,7 +68,7 @@ type RuleUpdateResult struct {
 func decodeRuleTask(raw json.RawMessage) (*RuleTask, error) {
 	invalid := RuleUpdateFail("INVALID_RESPONSE", 0)
 	var fields model.Fields
-	if json.Unmarshal(raw, &fields) != nil {
+	if jsondecode.Unmarshal(raw, &fields) != nil {
 		return nil, invalid
 	}
 	task := &RuleTask{ID: fieldText(fields, "id"), Status: fieldText(fields, "status"), Phase: fieldText(fields, "phase")}
@@ -86,7 +87,7 @@ func decodeRuleTask(raw json.RawMessage) (*RuleTask, error) {
 	} {
 		raw, _ := fields.Get(field.name)
 		var n *int64
-		if json.Unmarshal(raw, &n) != nil || n == nil || *n < 0 || *n > 1_000_000 {
+		if jsondecode.Unmarshal(raw, &n) != nil || n == nil || *n < 0 || *n > 1_000_000 {
 			return nil, invalid
 		}
 		*field.value = *n
@@ -140,7 +141,7 @@ func CallRuleUpdate(ctx context.Context, m Registry, id, method string, paths []
 	}
 	// A malformed stored HA config is neither an unpaired device nor authority
 	// to send an unguarded write. Keep it an explicit native validation refusal.
-	if present && !bytes.Equal(bytes.TrimSpace(raw), []byte("null")) && json.Unmarshal(raw, &ha) != nil {
+	if present && !bytes.Equal(bytes.TrimSpace(raw), []byte("null")) && jsondecode.Unmarshal(raw, &ha) != nil {
 		return nil, 0, errors.New(msgHAConfigDamaged)
 	}
 	if method == "POST" {
@@ -150,7 +151,7 @@ func CallRuleUpdate(ctx context.Context, m Registry, id, method string, paths []
 		}
 		if present && !bytes.Equal(bytes.TrimSpace(journal), []byte("null")) {
 			var fields model.Fields
-			if json.Unmarshal(journal, &fields) != nil {
+			if jsondecode.Unmarshal(journal, &fields) != nil {
 				return nil, 0, errors.New(msgHAPublicationDamaged)
 			}
 			status, _ := fields.Get("status")

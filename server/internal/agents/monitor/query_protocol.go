@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"configflow/internal/agents"
+	"configflow/internal/jsondecode"
 	"configflow/internal/model"
 )
 
@@ -121,14 +122,14 @@ func protocolInt(fields model.Fields, key string, minimum, maximum int64) (int64
 		return 0, false
 	}
 	var value *int64
-	if json.Unmarshal(raw, &value) != nil || value == nil || *value < minimum || *value > maximum {
+	if jsondecode.Unmarshal(raw, &value) != nil || value == nil || *value < minimum || *value > maximum {
 		return 0, false
 	}
 	return *value, true
 }
 func protocolNumber(raw json.RawMessage, maximum int64) *MetricNumber {
 	var value MetricNumber
-	if json.Unmarshal(raw, &value) != nil || value.num.less(intNum(0)) || intNum(maximum).less(value.num) {
+	if jsondecode.Unmarshal(raw, &value) != nil || value.num.less(intNum(0)) || intNum(maximum).less(value.num) {
 		return nil
 	}
 	finite, err := value.isFinite()
@@ -149,7 +150,7 @@ var recordFields = []string{"id", "created_at_ms", "elapsed_ms", "client_ip", "q
 func queryRecord(raw json.RawMessage, detail bool) (json.RawMessage, error) {
 	invalid := NewError("INVALID_RESPONSE", 0, "")
 	var fields model.Fields
-	if json.Unmarshal(raw, &fields) != nil {
+	if jsondecode.Unmarshal(raw, &fields) != nil {
 		return nil, invalid
 	}
 	if _, valid := protocolInt(fields, "id", 1, MaxInteger); !valid {
@@ -164,7 +165,7 @@ func queryRecord(raw json.RawMessage, detail bool) (json.RawMessage, error) {
 	for _, key := range []string{"questions_json", "answers_json"} {
 		raw, _ := fields.Get(key)
 		var list []json.RawMessage
-		if json.Unmarshal(raw, &list) != nil || list == nil {
+		if jsondecode.Unmarshal(raw, &list) != nil || list == nil {
 			return nil, invalid
 		}
 	}
@@ -177,7 +178,7 @@ func queryRecord(raw json.RawMessage, detail bool) (json.RawMessage, error) {
 	if detail {
 		raw, _ := fields.Get("steps")
 		var steps []json.RawMessage
-		if json.Unmarshal(raw, &steps) != nil || steps == nil {
+		if jsondecode.Unmarshal(raw, &steps) != nil || steps == nil {
 			return nil, invalid
 		}
 		_ = output.Set("steps", raw)
@@ -240,12 +241,12 @@ func ReadQueries(ctx context.Context, m Registry, id string, args [][2]string) (
 	invalid := NewError("INVALID_RESPONSE", 0, "")
 	raw, _ := fields.Get("records")
 	var rows []json.RawMessage
-	if !requiredBool(fields, "ok", true) || json.Unmarshal(raw, &rows) != nil || rows == nil || len(rows) > 100 {
+	if !requiredBool(fields, "ok", true) || jsondecode.Unmarshal(raw, &rows) != nil || rows == nil || len(rows) > 100 {
 		return nil, invalid
 	}
 	raw, present := fields.Get("next_cursor")
 	var cursor *string
-	if present && (json.Unmarshal(raw, &cursor) != nil || cursor != nil && !cursorRE.MatchString(*cursor)) {
+	if present && (jsondecode.Unmarshal(raw, &cursor) != nil || cursor != nil && !cursorRE.MatchString(*cursor)) {
 		return nil, invalid
 	}
 	recorder, _ := params.get("recorder")
@@ -310,7 +311,7 @@ func ReadClients(ctx context.Context, m Registry, id string, args [][2]string) (
 	sample, valid := protocolInt(fields, "sample_size", 0, ClientSampleLimit)
 	raw, _ := fields.Get("rows")
 	var rows []json.RawMessage
-	if !requiredBool(fields, "ok", true) || !validRecorderTag(recorder) || hasParam && selected != recorder || !valid || json.Unmarshal(raw, &rows) != nil || rows == nil || len(rows) > ClientSampleLimit {
+	if !requiredBool(fields, "ok", true) || !validRecorderTag(recorder) || hasParam && selected != recorder || !valid || jsondecode.Unmarshal(raw, &rows) != nil || rows == nil || len(rows) > ClientSampleLimit {
 		return nil, invalid
 	}
 	result := &ClientList{Success: true, Recorder: recorder, Clients: make([]ClientCount, 0, len(rows)), SampleSize: sample, SampleLimited: sample == ClientSampleLimit}
@@ -318,7 +319,7 @@ func ReadClients(ctx context.Context, m Registry, id string, args [][2]string) (
 	total := int64(0)
 	for _, raw := range rows {
 		var row model.Fields
-		if json.Unmarshal(raw, &row) != nil {
+		if jsondecode.Unmarshal(raw, &row) != nil {
 			return nil, invalid
 		}
 		ip := fieldText(row, "key")

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 
+	"configflow/internal/jsondecode"
 	"configflow/internal/jsonresp"
 	"configflow/internal/jsonx"
 	"configflow/internal/model"
@@ -24,7 +25,7 @@ func (m legacyRegistry) ReadAgent(ctx context.Context, id string, history bool) 
 		return nil, err
 	}
 	var a model.Agent
-	if err := json.Unmarshal(data, &a); err != nil {
+	if err := jsondecode.Unmarshal(data, &a); err != nil {
 		return nil, err
 	}
 	return &a, nil
@@ -129,7 +130,7 @@ func (m legacyRegistry) monitorReply(ctx context.Context, a *model.Agent, endpoi
 		return fields, err
 	}
 	raw, _ = jsonresp.NormalizeNonFinite(raw)
-	err = json.Unmarshal(raw, &fields)
+	err = jsondecode.Unmarshal(raw, &fields)
 	if err != nil {
 		return fields, NewError("INVALID_RESPONSE", 0, "")
 	}

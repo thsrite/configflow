@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 
+	"configflow/internal/jsondecode"
 	"configflow/internal/jsonresp"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
@@ -37,12 +38,12 @@ func readOverviewSnapshot(ctx context.Context, m Registry, a *model.Agent, dashb
 	invalid := NewError("INVALID_RESPONSE", 0, "")
 	raw, _ := fields.Get("health")
 	var health model.Fields
-	if json.Unmarshal(raw, &health) != nil {
+	if jsondecode.Unmarshal(raw, &health) != nil {
 		return nil, invalid
 	}
 	raw, _ = fields.Get("capabilities")
 	var capabilities model.Fields
-	if json.Unmarshal(raw, &capabilities) != nil {
+	if jsondecode.Unmarshal(raw, &capabilities) != nil {
 		return nil, invalid
 	}
 	raw, present := fields.Get("metrics")
@@ -59,13 +60,13 @@ func readOverviewSnapshot(ctx context.Context, m Registry, a *model.Agent, dashb
 	raw, _ = health.Get("uptime_ms")
 	snapshot.Core.UptimeMS = protocolNumber(raw, MaxInteger)
 	if raw, present := capabilities.Get("query_recorders"); present {
-		if json.Unmarshal(raw, &snapshot.Recorders) != nil || snapshot.Recorders == nil || len(snapshot.Recorders) > 64 {
+		if jsondecode.Unmarshal(raw, &snapshot.Recorders) != nil || snapshot.Recorders == nil || len(snapshot.Recorders) > 64 {
 			return nil, invalid
 		}
 		// json.Unmarshal into []string accepts null elements as an empty string;
 		// exact member decoding below requires original string tokens instead.
 		var tags []json.RawMessage
-		_ = json.Unmarshal(raw, &tags)
+		_ = jsondecode.Unmarshal(raw, &tags)
 		for _, tag := range tags {
 			if _, valid := originalString(tag, true, nil); !valid {
 				return nil, invalid
@@ -74,13 +75,13 @@ func readOverviewSnapshot(ctx context.Context, m Registry, a *model.Agent, dashb
 	}
 	if raw, present := fields.Get("upstream_labels"); present {
 		var labels []json.RawMessage
-		if json.Unmarshal(raw, &labels) != nil || labels == nil || len(labels) > ClientSampleLimit {
+		if jsondecode.Unmarshal(raw, &labels) != nil || labels == nil || len(labels) > ClientSampleLimit {
 			return nil, invalid
 		}
 		seen := map[groupKey]bool{}
 		for _, raw := range labels {
 			var fields model.Fields
-			if json.Unmarshal(raw, &fields) != nil {
+			if jsondecode.Unmarshal(raw, &fields) != nil {
 				return nil, invalid
 			}
 			var label UpstreamLabel
@@ -270,7 +271,7 @@ func ResetStatistics(ctx context.Context, m Registry, id string, body json.RawMe
 		return nil, err
 	}
 	var fields model.Fields
-	if json.Unmarshal(body, &fields) != nil || fields.Len() > 1 || fields.Len() == 1 && !fields.Has("recorder") {
+	if jsondecode.Unmarshal(body, &fields) != nil || fields.Len() > 1 || fields.Len() == 1 && !fields.Has("recorder") {
 		return nil, invalidQuery()
 	}
 	var params query

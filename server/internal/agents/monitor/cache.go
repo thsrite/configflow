@@ -14,6 +14,7 @@ import (
 	"slices"
 
 	"configflow/internal/agents"
+	"configflow/internal/jsondecode"
 	"configflow/internal/jsonresp"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
@@ -87,7 +88,7 @@ func validTags(tags []string, nonempty bool) bool {
 func answerTags(fields model.Fields, name string) ([]string, error) {
 	raw, _ := fields.Get(name)
 	var tags []string
-	if json.Unmarshal(raw, &tags) != nil || !validTags(tags, false) {
+	if jsondecode.Unmarshal(raw, &tags) != nil || !validTags(tags, false) {
 		return nil, CacheFail("INVALID_RESPONSE", 0)
 	}
 	return tags, nil

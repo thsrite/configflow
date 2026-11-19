@@ -9,8 +9,10 @@ import (
 
 	"configflow/internal/agents"
 	"configflow/internal/jsonresp"
+	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
+	"configflow/internal/repo"
 )
 
 type nativeRegistry struct {
@@ -212,5 +214,28 @@ func TestNativePanelRejectsNonJSONUnicodeWhitespace(t *testing.T) {
 			_, err := CallPanel(t.Context(), m, "dns", "version", "GET", nil, nil, "")
 			wantMonitorError(t, err, "INVALID_RESPONSE", 502)
 		})
+	}
+}
+
+func TestLegacyScalarReadsDoNotSerializeUnreadHistory(t *testing.T) {
+	a := jsonx.Obj("host", "127.0.0.1", "port", 8082, "version", "1.8.60-go")
+	for _, key := range repo.AgentHistoryFields {
+		a.Set(key, repo.AgentHistoryNotRead)
+	}
+	if origin, err := AgentOrigin(a); err != nil || origin != "http://127.0.0.1:8082" {
+		t.Fatalf("light endpoint: %s %v", origin, err)
+	}
+	if !HistorySupported(a) || !SupportsPaths(a) {
+		t.Fatal("light version read lost capabilities")
+	}
+	a.Set("host", jsonx.Int(7))
+	a.Set("Host", "example.com")
+	if _, err := AgentOrigin(a); err == nil {
+		t.Fatal("light-read codec accepted projected host identity")
+	}
+	for _, key := range repo.AgentHistoryFields {
+		if a.Value(key) != repo.AgentHistoryNotRead {
+			t.Fatal("light read mutated history marker")
+		}
 	}
 }

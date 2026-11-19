@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"configflow/internal/agents"
+	"configflow/internal/jsondecode"
 	"configflow/internal/jsonresp"
 	"configflow/internal/model"
 
@@ -30,7 +31,7 @@ func originalString(raw json.RawMessage, present bool, err error) (string, bool)
 		return "", false
 	}
 	var value *string
-	if json.Unmarshal(raw, &value) != nil || value == nil {
+	if jsondecode.Unmarshal(raw, &value) != nil || value == nil {
 		return "", false
 	}
 	return *value, true
@@ -74,7 +75,7 @@ func Origin(agent *model.Agent) (string, error) {
 	}
 	raw, present, err := agent.MemberJSON("port")
 	var port *int64
-	if err != nil || !present || json.Unmarshal(raw, &port) != nil || port == nil || *port < 1 || *port > 65535 {
+	if err != nil || !present || jsondecode.Unmarshal(raw, &port) != nil || port == nil || *port < 1 || *port > 65535 {
 		return "", unreachable()
 	}
 	return "http://" + host + ":" + strconv.FormatInt(int64(*port), 10), nil
@@ -101,7 +102,7 @@ func answerBool(fields model.Fields, key string) (bool, bool, bool) {
 		return false, false, true
 	}
 	var flag *bool
-	if json.Unmarshal(raw, &flag) != nil || flag == nil {
+	if jsondecode.Unmarshal(raw, &flag) != nil || flag == nil {
 		return false, true, false
 	}
 	return *flag, true, true
@@ -125,7 +126,7 @@ func protocolAnswer(response *agents.Response, limit int, fail func(string, int)
 	}
 	text, valid := agents.DecodeJSONBytes(response.Body)
 	normalized, _ := jsonresp.NormalizeNonFinite([]byte(text))
-	if !valid || json.Unmarshal(normalized, &fields) != nil {
+	if !valid || jsondecode.Unmarshal(normalized, &fields) != nil {
 		if status == 404 && (!valid || !json.Valid([]byte(text))) {
 			return fields, fail("UPGRADE_REQUIRED", 409)
 		}

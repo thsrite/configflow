@@ -22,6 +22,7 @@ import (
 	"sync"
 
 	"configflow/internal/agents"
+	"configflow/internal/jsondecode"
 	"configflow/internal/jsonresp"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
@@ -311,7 +312,7 @@ func panelPayload(resource, method string, body json.RawMessage) (json.RawMessag
 		return []byte("{}"), nil
 	}
 	var fields model.Fields
-	if json.Unmarshal(body, &fields) != nil || fields.Len() != 1 || !fields.Has(key) {
+	if jsondecode.Unmarshal(body, &fields) != nil || fields.Len() != 1 || !fields.Has(key) {
 		return nil, panelFail("INVALID_REQUEST", 400, message)
 	}
 	value := fieldText(fields, key)
@@ -323,7 +324,7 @@ func panelPayload(resource, method string, body json.RawMessage) (json.RawMessag
 
 func slimProxyJSON(raw json.RawMessage) json.RawMessage {
 	var fields model.Fields
-	if json.Unmarshal(raw, &fields) != nil {
+	if jsondecode.Unmarshal(raw, &fields) != nil {
 		return raw
 	}
 	var result model.Fields
@@ -334,17 +335,17 @@ func slimProxyJSON(raw json.RawMessage) json.RawMessage {
 	}
 	if raw, present := fields.Get("history"); present {
 		var history []json.RawMessage
-		if json.Unmarshal(raw, &history) == nil && !bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		if jsondecode.Unmarshal(raw, &history) == nil && !bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
 			_ = result.Set("history", lastHistory(history))
 		}
 	}
 	if raw, present := fields.Get("extra"); present {
 		var extra model.Fields
-		if json.Unmarshal(raw, &extra) == nil {
+		if jsondecode.Unmarshal(raw, &extra) == nil {
 			var out model.Fields
 			for name, raw := range extra.All() {
 				var entry model.Fields
-				if json.Unmarshal(raw, &entry) != nil {
+				if jsondecode.Unmarshal(raw, &entry) != nil {
 					continue
 				}
 				var item model.Fields
@@ -353,7 +354,7 @@ func slimProxyJSON(raw json.RawMessage) json.RawMessage {
 				}
 				historyRaw, _ := entry.Get("history")
 				var history []json.RawMessage
-				_ = json.Unmarshal(historyRaw, &history)
+				_ = jsondecode.Unmarshal(historyRaw, &history)
 				_ = item.Set("history", lastHistory(history))
 				encoded, _ := json.Marshal(item)
 				_ = out.Set(name, encoded)
@@ -383,12 +384,12 @@ func slimPanel(resource string, raw json.RawMessage) json.RawMessage {
 		return raw
 	}
 	var fields model.Fields
-	if json.Unmarshal(raw, &fields) != nil {
+	if jsondecode.Unmarshal(raw, &fields) != nil {
 		return raw
 	}
 	values, _ := fields.Get(key)
 	var entries model.Fields
-	if json.Unmarshal(values, &entries) != nil {
+	if jsondecode.Unmarshal(values, &entries) != nil {
 		return raw
 	}
 	var output model.Fields
@@ -397,14 +398,14 @@ func slimPanel(resource string, raw json.RawMessage) json.RawMessage {
 			value = slimProxyJSON(value)
 		} else {
 			var provider model.Fields
-			if json.Unmarshal(value, &provider) == nil {
+			if jsondecode.Unmarshal(value, &provider) == nil {
 				rawList, _ := provider.Get("proxies")
 				var list []json.RawMessage
-				if json.Unmarshal(rawList, &list) == nil && !bytes.Equal(bytes.TrimSpace(rawList), []byte("null")) {
+				if jsondecode.Unmarshal(rawList, &list) == nil && !bytes.Equal(bytes.TrimSpace(rawList), []byte("null")) {
 					compatible := fieldText(provider, "vehicleType") == "Compatible"
 					for i, item := range list {
 						var proxy model.Fields
-						if compatible && json.Unmarshal(item, &proxy) == nil {
+						if compatible && jsondecode.Unmarshal(item, &proxy) == nil {
 							name, present := proxy.Get("name")
 							if !present {
 								name = []byte("null")
@@ -721,7 +722,7 @@ func CoreUpdateCheck(ctx context.Context, m Registry, id string, force bool) (*P
 		return nil, err
 	}
 	var fields model.Fields
-	if json.Unmarshal(result.Data, &fields) != nil {
+	if jsondecode.Unmarshal(result.Data, &fields) != nil {
 		return nil, panelFail("INVALID_RESPONSE", 0, "")
 	}
 	current := fieldText(fields, "version")
@@ -849,7 +850,7 @@ func CallPanel(ctx context.Context, m Registry, id, resource, method string, arg
 		text, valid := agents.DecodeJSONBytes(response.Body)
 		normalized, _ := jsonresp.NormalizeNonFinite([]byte(text))
 		var parsed model.Dynamic
-		if !valid || json.Unmarshal(normalized, &parsed) != nil {
+		if !valid || jsondecode.Unmarshal(normalized, &parsed) != nil {
 			if status == 404 {
 				return nil, panelFail("UPGRADE_REQUIRED", 409, msgPanelEndpointUpgrade)
 			}
@@ -862,7 +863,7 @@ func CallPanel(ctx context.Context, m Registry, id, resource, method string, arg
 	}
 	if status >= 400 {
 		var fields model.Fields
-		isObject := json.Unmarshal(value, &fields) == nil
+		isObject := jsondecode.Unmarshal(value, &fields) == nil
 		success, present, valid := answerBool(fields, "success")
 		if isObject && present && valid && !success {
 			rawCode, _ := fields.Get("code")

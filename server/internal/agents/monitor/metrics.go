@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 
+	"configflow/internal/jsondecode"
 	"configflow/internal/model"
 )
 
@@ -617,7 +618,7 @@ func Summarize(current *Observations) *MetricSummary {
 // UnmarshalJSON decodes observation families by exact schema keys.
 func (o *Observations) UnmarshalJSON(raw []byte) error {
 	var fields model.Fields
-	if err := json.Unmarshal(raw, &fields); err != nil {
+	if err := jsondecode.Unmarshal(raw, &fields); err != nil {
 		return err
 	}
 	*o = Observations{}
@@ -626,7 +627,7 @@ func (o *Observations) UnmarshalJSON(raw []byte) error {
 		target any
 	}{{"servers", &o.Servers}, {"caches", &o.Caches}, {"upstreams", &o.Upstreams}} {
 		if value, present := fields.Get(family.name); present {
-			if err := json.Unmarshal(value, family.target); err != nil {
+			if err := jsondecode.Unmarshal(value, family.target); err != nil {
 				return err
 			}
 		}
@@ -637,47 +638,47 @@ func (o *Observations) UnmarshalJSON(raw []byte) error {
 // UnmarshalJSON decodes exact observation keys and retains member presence.
 func (row *ServerObservation) UnmarshalJSON(raw []byte) error {
 	var fields model.Fields
-	if err := json.Unmarshal(raw, &fields); err != nil {
+	if err := jsondecode.Unmarshal(raw, &fields); err != nil {
 		return err
 	}
 	*row = ServerObservation{}
 	if value, present := fields.Get("tag"); present {
-		if err := json.Unmarshal(value, &row.Tag); err != nil {
+		if err := jsondecode.Unmarshal(value, &row.Tag); err != nil {
 			return err
 		}
 	}
 	if value, present := fields.Get("protocol"); present {
-		if err := json.Unmarshal(value, &row.Protocol); err != nil {
+		if err := jsondecode.Unmarshal(value, &row.Protocol); err != nil {
 			return err
 		}
 	}
 	if value, present := fields.Get("requests"); present {
 		row.present[0] = true
-		if err := json.Unmarshal(value, &row.Requests); err != nil {
+		if err := jsondecode.Unmarshal(value, &row.Requests); err != nil {
 			return err
 		}
 	}
 	if value, present := fields.Get("failed"); present {
 		row.present[1] = true
-		if err := json.Unmarshal(value, &row.Failed); err != nil {
+		if err := jsondecode.Unmarshal(value, &row.Failed); err != nil {
 			return err
 		}
 	}
 	if value, present := fields.Get("inflight"); present {
 		row.present[2] = true
-		if err := json.Unmarshal(value, &row.Inflight); err != nil {
+		if err := jsondecode.Unmarshal(value, &row.Inflight); err != nil {
 			return err
 		}
 	}
 	if value, present := fields.Get("latency_sum_ms"); present {
 		row.present[3] = true
-		if err := json.Unmarshal(value, &row.LatencySumMS); err != nil {
+		if err := jsondecode.Unmarshal(value, &row.LatencySumMS); err != nil {
 			return err
 		}
 	}
 	if value, present := fields.Get("latency_count"); present {
 		row.present[4] = true
-		if err := json.Unmarshal(value, &row.LatencyCount); err != nil {
+		if err := jsondecode.Unmarshal(value, &row.LatencyCount); err != nil {
 			return err
 		}
 	}
@@ -687,48 +688,48 @@ func (row *ServerObservation) UnmarshalJSON(raw []byte) error {
 // UnmarshalJSON decodes exact observation keys and retains member presence.
 func (row *CacheObservation) UnmarshalJSON(raw []byte) error {
 	var fields model.Fields
-	if err := json.Unmarshal(raw, &fields); err != nil {
+	if err := jsondecode.Unmarshal(raw, &fields); err != nil {
 		return err
 	}
 	*row = CacheObservation{}
 	if value, present := fields.Get("tag"); present {
-		if err := json.Unmarshal(value, &row.Tag); err != nil {
+		if err := jsondecode.Unmarshal(value, &row.Tag); err != nil {
 			return err
 		}
 	}
 	if value, present := fields.Get("lookups"); present {
 		row.present[0] = true
-		if err := json.Unmarshal(value, &row.Lookups); err != nil {
+		if err := jsondecode.Unmarshal(value, &row.Lookups); err != nil {
 			return err
 		}
 	}
 	if value, present := fields.Get("fresh_hits"); present {
 		row.present[1] = true
-		if err := json.Unmarshal(value, &row.FreshHits); err != nil {
+		if err := jsondecode.Unmarshal(value, &row.FreshHits); err != nil {
 			return err
 		}
 	}
 	if value, present := fields.Get("stale_hits"); present {
 		row.present[2] = true
-		if err := json.Unmarshal(value, &row.StaleHits); err != nil {
+		if err := jsondecode.Unmarshal(value, &row.StaleHits); err != nil {
 			return err
 		}
 	}
 	if value, present := fields.Get("misses"); present {
 		row.present[3] = true
-		if err := json.Unmarshal(value, &row.Misses); err != nil {
+		if err := jsondecode.Unmarshal(value, &row.Misses); err != nil {
 			return err
 		}
 	}
 	if value, present := fields.Get("expired"); present {
 		row.present[4] = true
-		if err := json.Unmarshal(value, &row.Expired); err != nil {
+		if err := jsondecode.Unmarshal(value, &row.Expired); err != nil {
 			return err
 		}
 	}
 	if value, present := fields.Get("entries"); present {
 		row.present[5] = true
-		if err := json.Unmarshal(value, &row.Entries); err != nil {
+		if err := jsondecode.Unmarshal(value, &row.Entries); err != nil {
 			return err
 		}
 	}
@@ -738,41 +739,41 @@ func (row *CacheObservation) UnmarshalJSON(raw []byte) error {
 // UnmarshalJSON decodes exact observation keys and retains member presence.
 func (row *UpstreamObservation) UnmarshalJSON(raw []byte) error {
 	var fields model.Fields
-	if err := json.Unmarshal(raw, &fields); err != nil {
+	if err := jsondecode.Unmarshal(raw, &fields); err != nil {
 		return err
 	}
 	*row = UpstreamObservation{}
 	if value, present := fields.Get("tag"); present {
-		if err := json.Unmarshal(value, &row.Tag); err != nil {
+		if err := jsondecode.Unmarshal(value, &row.Tag); err != nil {
 			return err
 		}
 	}
 	if value, present := fields.Get("upstream"); present {
-		if err := json.Unmarshal(value, &row.Upstream); err != nil {
+		if err := jsondecode.Unmarshal(value, &row.Upstream); err != nil {
 			return err
 		}
 	}
 	if value, present := fields.Get("requests"); present {
 		row.present[0] = true
-		if err := json.Unmarshal(value, &row.Requests); err != nil {
+		if err := jsondecode.Unmarshal(value, &row.Requests); err != nil {
 			return err
 		}
 	}
 	if value, present := fields.Get("failed"); present {
 		row.present[1] = true
-		if err := json.Unmarshal(value, &row.Failed); err != nil {
+		if err := jsondecode.Unmarshal(value, &row.Failed); err != nil {
 			return err
 		}
 	}
 	if value, present := fields.Get("latency_sum_ms"); present {
 		row.present[2] = true
-		if err := json.Unmarshal(value, &row.LatencySumMS); err != nil {
+		if err := jsondecode.Unmarshal(value, &row.LatencySumMS); err != nil {
 			return err
 		}
 	}
 	if value, present := fields.Get("latency_count"); present {
 		row.present[3] = true
-		if err := json.Unmarshal(value, &row.LatencyCount); err != nil {
+		if err := jsondecode.Unmarshal(value, &row.LatencyCount); err != nil {
 			return err
 		}
 	}

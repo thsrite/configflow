@@ -38,17 +38,32 @@ func agentFor(ctx context.Context, m Manager, id, minimum string, history bool) 
 	return legacyAgent(a), nil
 }
 func versionAtLeast(raw *jsonx.Object, minimum string) bool {
-	a, err := typedAgent(raw)
+	a, err := typedAgent(agentMembers(raw, "version"))
 	return err == nil && a != nil && modelVersionAtLeast(a, minimum)
 }
 
 // AgentOrigin is the legacy registered-endpoint codec.
 func AgentOrigin(raw *jsonx.Object) (string, error) {
-	a, err := typedAgent(raw)
+	a, err := typedAgent(agentMembers(raw, "host", "port"))
 	if err != nil {
 		return "", unreachable()
 	}
 	return Origin(a)
+}
+
+// agentMembers projects only fields consumed by a legacy scalar read. Lazy
+// history sentinels and unrelated opaque values must never enter its JSON codec.
+func agentMembers(raw *jsonx.Object, names ...string) *jsonx.Object {
+	if raw == nil {
+		return nil
+	}
+	out := jsonx.NewObject()
+	for _, name := range names {
+		if value, present := raw.Get(name); present {
+			out.Set(name, value)
+		}
+	}
+	return out
 }
 
 var doRequest = request

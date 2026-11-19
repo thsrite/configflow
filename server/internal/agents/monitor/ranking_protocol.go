@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	"configflow/internal/jsondecode"
 	"configflow/internal/model"
 )
 
@@ -136,14 +137,14 @@ func unavailableRankings(code string) *Rankings {
 func decodeRankingSection(raw json.RawMessage, kind string, limit int) (*RankingSection, error) {
 	invalid := NewError("INVALID_RESPONSE", 0, "")
 	var fields model.Fields
-	if json.Unmarshal(raw, &fields) != nil {
+	if jsondecode.Unmarshal(raw, &fields) != nil {
 		return nil, invalid
 	}
 	sample, valid := protocolInt(fields, "sample_size", 0, ClientSampleLimit)
 	atLimit, present, flagValid := answerBool(fields, "at_limit")
 	rawRows, _ := fields.Get("rows")
 	var rows []json.RawMessage
-	if !valid || !present || !flagValid || atLimit != (sample == ClientSampleLimit) || json.Unmarshal(rawRows, &rows) != nil || rows == nil || len(rows) > limit {
+	if !valid || !present || !flagValid || atLimit != (sample == ClientSampleLimit) || jsondecode.Unmarshal(rawRows, &rows) != nil || rows == nil || len(rows) > limit {
 		return nil, invalid
 	}
 	factor := int64(65535)
@@ -155,7 +156,7 @@ func decodeRankingSection(raw json.RawMessage, kind string, limit int) (*Ranking
 	total := int64(0)
 	for _, raw := range rows {
 		var row model.Fields
-		if json.Unmarshal(raw, &row) != nil {
+		if jsondecode.Unmarshal(raw, &row) != nil {
 			return nil, invalid
 		}
 		key := fieldText(row, "key")
@@ -216,7 +217,7 @@ func liveRankings(ctx context.Context, m Registry, a *model.Agent, params query,
 	}
 	raw, _ := fields.Get("blocked")
 	var blocked model.Fields
-	if json.Unmarshal(raw, &blocked) != nil {
+	if jsondecode.Unmarshal(raw, &blocked) != nil {
 		return nil, invalid
 	}
 	available, present, valid := answerBool(blocked, "available")
@@ -249,7 +250,7 @@ func liveRankings(ctx context.Context, m Registry, a *model.Agent, params query,
 			b.MatcherTag = &tag
 		}
 		if raw, present := blocked.Get("matcher_tags"); present {
-			if json.Unmarshal(raw, &b.MatcherTags) != nil || len(b.MatcherTags) == 0 || len(b.MatcherTags) > BlockRankingMatcherLimit {
+			if jsondecode.Unmarshal(raw, &b.MatcherTags) != nil || len(b.MatcherTags) == 0 || len(b.MatcherTags) > BlockRankingMatcherLimit {
 				return nil, invalid
 			}
 			for _, tag := range b.MatcherTags {

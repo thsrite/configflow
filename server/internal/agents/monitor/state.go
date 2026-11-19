@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"configflow/internal/agents"
+	"configflow/internal/jsondecode"
 	"configflow/internal/lockx"
 	"configflow/internal/model"
 	"configflow/internal/repo"
@@ -133,7 +134,7 @@ func stateMember(fields model.Fields, key string, target any) error {
 	if !present || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
 		return stateInvalid()
 	}
-	if err := json.Unmarshal(raw, target); err != nil {
+	if err := jsondecode.Unmarshal(raw, target); err != nil {
 		return stateInvalid()
 	}
 	return nil
@@ -143,7 +144,7 @@ func stateMember(fields model.Fields, key string, target any) error {
 // before returning a typed boundary. Invalid state never resets counters silently.
 func DecodeState(raw []byte) (*DashboardState, error) {
 	var fields model.Fields
-	if json.Unmarshal(raw, &fields) != nil {
+	if jsondecode.Unmarshal(raw, &fields) != nil {
 		return nil, stateInvalid()
 	}
 	state := new(DashboardState)
@@ -193,7 +194,7 @@ func DecodeState(raw []byte) (*DashboardState, error) {
 		return state, nil
 	}
 	var checkpoint model.Fields
-	if json.Unmarshal(pending, &checkpoint) != nil || !exactFields(checkpoint, "deployment_id", "expected_revision", "collected_at_ms", "totals", "partial") {
+	if jsondecode.Unmarshal(pending, &checkpoint) != nil || !exactFields(checkpoint, "deployment_id", "expected_revision", "collected_at_ms", "totals", "partial") {
 		return nil, stateInvalid()
 	}
 	p := new(PendingPublication)
@@ -219,14 +220,14 @@ func DecodeState(raw []byte) (*DashboardState, error) {
 
 func decodeObservations(raw []byte) (*Observations, error) {
 	var fields model.Fields
-	if json.Unmarshal(raw, &fields) != nil || !exactFields(fields, "servers", "caches", "upstreams") {
+	if jsondecode.Unmarshal(raw, &fields) != nil || !exactFields(fields, "servers", "caches", "upstreams") {
 		return nil, stateInvalid()
 	}
 	total := 0
 	for _, family := range stateFields {
 		raw, _ := fields.Get(family.family)
 		var rows []json.RawMessage
-		if json.Unmarshal(raw, &rows) != nil || rows == nil {
+		if jsondecode.Unmarshal(raw, &rows) != nil || rows == nil {
 			return nil, stateInvalid()
 		}
 		total += len(rows)
@@ -236,7 +237,7 @@ func decodeObservations(raw []byte) (*Observations, error) {
 		seen := map[groupKey]bool{}
 		for _, raw := range rows {
 			var row model.Fields
-			if json.Unmarshal(raw, &row) != nil {
+			if jsondecode.Unmarshal(raw, &row) != nil {
 				return nil, stateInvalid()
 			}
 			for key := range row.All() {
@@ -266,7 +267,7 @@ func decodeObservations(raw []byte) (*Observations, error) {
 					continue
 				}
 				var n MetricNumber
-				if json.Unmarshal(raw, &n) != nil || n.num.less(intNum(0)) {
+				if jsondecode.Unmarshal(raw, &n) != nil || n.num.less(intNum(0)) {
 					return nil, stateInvalid()
 				}
 				finite, err := n.isFinite()
@@ -277,7 +278,7 @@ func decodeObservations(raw []byte) (*Observations, error) {
 		}
 	}
 	var observations Observations
-	if json.Unmarshal(raw, &observations) != nil {
+	if jsondecode.Unmarshal(raw, &observations) != nil {
 		return nil, stateInvalid()
 	}
 	return &observations, nil

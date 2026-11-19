@@ -2,12 +2,12 @@ package monitor
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"strconv"
 	"time"
 
 	"configflow/internal/agents"
+	"configflow/internal/jsondecode"
 	"configflow/internal/model"
 	"configflow/internal/redact"
 )
@@ -31,7 +31,7 @@ func readSlot(ctx context.Context, m Registry, a *model.Agent, recorder string, 
 	}
 	raw, _ := fields.Get("blocked")
 	var blocked model.Fields
-	if json.Unmarshal(raw, &blocked) != nil {
+	if jsondecode.Unmarshal(raw, &blocked) != nil {
 		return nil, ErrSlotIncomplete
 	}
 	available, present, valid := answerBool(blocked, "available")
