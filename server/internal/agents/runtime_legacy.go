@@ -76,7 +76,7 @@ func (s *RuntimeState) RecordHeartbeat(agent, payload *jsonx.Object, mark int64)
 func (s *RuntimeState) Seed(id string, at float64, heartbeat string, fields *jsonx.Object) {
 	record, err := agentModel(fields)
 	if err == nil {
-		_ = s.seedModel(id, at, heartbeat, record)
+		_ = s.seedModel(context.Background(), id, at, heartbeat, record)
 	}
 }
 

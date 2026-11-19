@@ -1,12 +1,14 @@
 package agents
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 
 	"configflow/internal/lifecycle"
+	"configflow/internal/logx"
 	"configflow/internal/model"
 	"configflow/internal/redact"
 	"configflow/internal/repo"
@@ -230,10 +232,14 @@ func agentIDProven(record *model.Agent) bool {
 		return false
 	}
 	var original string
-	return json.Unmarshal(raw, &original) == nil && original == record.ID
+	raw = bytes.TrimSpace(raw)
+	return len(raw) > 0 && raw[0] == '"' && json.Unmarshal(raw, &original) == nil && original == record.ID
 }
 
 func (m *Manager) logMetricsFailure(ctx context.Context, id, name string, failure error) {
+	if name == "" {
+		name = id
+	}
 	// Credential traversal is error-only. The steady heartbeat path never walks
 	// histories or the configuration to prepare a log it will not emit.
 	var secrets redact.Secrets
@@ -261,7 +267,7 @@ func (m *Manager) logMetricsFailure(ctx context.Context, id, name string, failur
 			view.Name, view.Error = redact.Redacted, redact.Redacted
 		}
 	}
-	logger.Warningf(msgMetricsHistoryFailure, view.Name, view.Error)
+	logger.Warningf(msgMetricsHistoryFailure, logx.LogText(view.Name, 120), logx.LogText(view.Error, DetailLimit))
 }
 
 // AgentEnabledModel defaults an omitted automation switch to on. An explicit

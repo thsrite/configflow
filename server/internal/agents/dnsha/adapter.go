@@ -119,18 +119,6 @@ func (s *Service) pair(ctx context.Context, id string) ([]*agent, error) {
 
 var owned = []string{"oxidns_ha", "oxidns_ha_state", "oxidns_ha_publication", "rule_sync", "deployments", "latest_deployment"}
 
-func ownedBytes(a *agent) ([][]byte, error) {
-	vs := []any{a.OxiDNSHA, a.OxiDNSHAState, a.OxiDNSHAPublication, a.RuleSync, a.Deployments, a.LatestDeployment}
-	out := make([][]byte, len(vs))
-	for i, v := range vs {
-		b, e := json.Marshal(v)
-		if e != nil {
-			return nil, e
-		}
-		out[i] = b
-	}
-	return out, nil
-}
 func (s *Service) update(ctx context.Context, fn func([]*agent) error) error {
 	if err := ctx.Err(); err != nil {
 		return err

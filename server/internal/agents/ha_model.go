@@ -1,7 +1,9 @@
 package agents
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 
 	"configflow/internal/model"
 )
@@ -16,12 +18,36 @@ func HAActiveModel(record *model.Agent) bool {
 	if record == nil || record.OxiDNSHAPublication == nil {
 		return false
 	}
+	// An empty journal was never an operation. Unknown nonempty journals remain
+	// active and fail closed, rather than relying on zero decoded identities.
+	if !record.OxiDNSHAPublication.HasMembers() {
+		return false
+	}
 	switch record.OxiDNSHAPublication.Status {
 	case "succeeded", "failed", "rollback_failed":
 		return false
 	default:
 		return true
 	}
+}
+
+// HAEnablingModel preserves the distinction between an empty enable object and
+// a nonempty enabling intent, without walking captured configuration payloads.
+func HAEnablingModel(record *model.Agent) bool {
+	if !HAActiveModel(record) {
+		return false
+	}
+	job := record.OxiDNSHAPublication
+	if job.Enable != nil {
+		return job.Enable.HasMembers()
+	}
+	// A malformed stored intent cannot authorize edits to a reserved pair.
+	for _, issue := range model.Issues(job) {
+		if issue.Path == "enable" {
+			return true
+		}
+	}
+	return false
 }
 
 // ReadHAPair returns an owned, reciprocal pair from one live registry view.
@@ -34,10 +60,48 @@ func (m *Manager) ReadHAPair(ctx context.Context, id string) ([]model.Agent, err
 	if !HAEnabledModel(record) {
 		return nil, nil
 	}
-	ha := record.OxiDNSHA
-	peer := registryAgent(records, ha.PeerID)
-	if !HAEnabledModel(peer) || ha.GroupID == "" || peer.OxiDNSHA.GroupID != ha.GroupID || peer.OxiDNSHA.PeerID != id || peer.ProfileID != record.ProfileID {
+	group, peerID, valid := haPairIdentity(record)
+	peer := registryAgent(records, peerID)
+	otherGroup, otherID, otherValid := haPairIdentity(peer)
+	if !valid || !otherValid || !HAEnabledModel(peer) || group != otherGroup || otherID != id || !haProfilesMatch(record, peer) {
 		return nil, ErrPairIncomplete
 	}
 	return []model.Agent{*record, *peer}, nil
+}
+
+// Pair identities are ownership evidence, not shared text coercions. Read the
+// original JSON token types so numeric R5 projections cannot form a pair.
+func haPairIdentity(record *model.Agent) (group, peer string, valid bool) {
+	if record == nil {
+		return "", "", false
+	}
+	raw, present, err := record.MemberJSON("oxidns_ha")
+	var identity struct {
+		GroupID string `json:"group_id"`
+		PeerID  string `json:"peer_id"`
+	}
+	if err != nil || !present || json.Unmarshal(raw, &identity) != nil {
+		return "", "", false
+	}
+	return identity.GroupID, identity.PeerID, identity.GroupID != "" && identity.PeerID != ""
+}
+
+func haProfilesMatch(left, right *model.Agent) bool {
+	read := func(record *model.Agent) (*string, bool) {
+		raw, present, err := record.MemberJSON("profile_id")
+		if err != nil {
+			return nil, false
+		}
+		if !present || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+			return nil, true
+		}
+		var profile string
+		if json.Unmarshal(raw, &profile) != nil {
+			return nil, false
+		}
+		return &profile, true
+	}
+	a, aOK := read(left)
+	b, bOK := read(right)
+	return aOK && bOK && (a == nil && b == nil || a != nil && b != nil && *a == *b)
 }

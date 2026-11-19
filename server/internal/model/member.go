@@ -7,6 +7,42 @@ import (
 	"reflect"
 )
 
+// recordHasMembers follows record presence rules without serializing member
+// payloads. In particular, preserved null/R5 members count, while a pointer
+// removed after loading and an explicitly cleared zero value do not.
+func recordHasMembers(rec any, raw *Raw) bool {
+	value, schema, err := recordValue(rec)
+	if err != nil || ownRaw(value, schema, raw) != nil {
+		return false
+	}
+	if schema.extra >= 0 && value.Field(schema.extra).Interface().(Fields).Len() > 0 {
+		return true
+	}
+	for _, original := range raw.members {
+		field, known := schema.byName[original.name]
+		if !known {
+			if schema.extra < 0 {
+				return true
+			}
+			continue
+		}
+		current := value.Field(field.index)
+		if original.cleared && isZero(current) {
+			continue
+		}
+		if current.Kind() == reflect.Pointer && current.IsNil() && !original.invalid && !bytes.Equal(original.baseline, []byte("null")) {
+			continue
+		}
+		return true
+	}
+	for _, field := range schema.fields {
+		if !isZero(value.Field(field.index)) {
+			return true
+		}
+	}
+	return false
+}
+
 // MemberJSON reads one effective declared member without encoding the enclosing
 // record. Pass that member's current typed field value. Unchanged nulls, wrong
 // types and numeric notation retain their original JSON, exactly as EncodeRecord

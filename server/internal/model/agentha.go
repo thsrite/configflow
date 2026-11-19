@@ -104,6 +104,11 @@ func (r *HAEnable) Clear(member string) error { return ClearMember(r, &r.raw, me
 // MarshalJSON preserves unknown and unchanged HAEnable members.
 func (r HAEnable) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
+// HasMembers reports effective JSON object presence without encoding payloads.
+func (r *HAEnable) HasMembers() bool {
+	return r != nil && recordHasMembers(r, &r.raw)
+}
+
 // HARouter identifies a router affected by a publication.
 type HARouter struct {
 	ID        string `json:"id"`
@@ -202,6 +207,11 @@ func (r *HAJournal) Clear(member string) error { return ClearMember(r, &r.raw, m
 
 // MarshalJSON preserves unknown and unchanged HAJournal members.
 func (r HAJournal) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
+
+// HasMembers reports effective JSON object presence without encoding payloads.
+func (r *HAJournal) HasMembers() bool {
+	return r != nil && recordHasMembers(r, &r.raw)
+}
 
 // HAPublicationSummary is the task projection of a journal, with no child or source graph.
 type HAPublicationSummary struct {

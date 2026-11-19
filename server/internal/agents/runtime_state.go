@@ -38,6 +38,7 @@ import (
 	"modernc.org/sqlite"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
 	"configflow/internal/repo"
 )
@@ -178,13 +179,16 @@ func (s *RuntimeState) recordModel(ctx context.Context, agent, payload *model.Ag
 	return true, nil
 }
 
-func (s *RuntimeState) seedModel(agentID string, heartbeatAt float64, lastHeartbeat string, fields *model.Agent) error {
+func (s *RuntimeState) seedModel(ctx context.Context, agentID string, heartbeatAt float64, lastHeartbeat string, fields *model.Agent) error {
 	projection, err := runtimeProjection(fields)
 	if err != nil {
 		return err
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if entry, ok := s.entries[agentID]; !ok || entry.HeartbeatAt < heartbeatAt {
 		s.entries[agentID] = heartbeatEntry{HeartbeatAt: heartbeatAt, LastHeartbeat: lastHeartbeat, Fields: projection}
 	}
@@ -566,6 +570,16 @@ func exists(path string) bool {
 // removeLegacyFile is the indirection tests use to refuse a removal.
 var removeLegacyFile = removeFiles
 
+func removeLegacyFiles(ctx context.Context, paths []string) error {
+	for _, path := range paths {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		removeLegacyFile([]string{path})
+	}
+	return ctx.Err()
+}
+
 // ImportLegacyDatabase is import_legacy_database(repository, state,
 // persist_versions): carry #369's on-disk heartbeat state into memory once,
 // then remove it. Agents newer there than in the document are seeded, and a
@@ -574,6 +588,10 @@ var removeLegacyFile = removeFiles
 // the Agent's next heartbeat.
 func ImportLegacyDatabase(ctx context.Context, repository *repo.Repository, state *RuntimeState,
 	persist func(ctx context.Context, changes map[string]*jsonx.Object) (map[string]bool, error)) error {
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	path := filepath.Join(repository.DataDir(), LegacyDatabase)
 	key := pyResolve(path)
 	statesMu.Lock()
@@ -598,7 +616,9 @@ func ImportLegacyDatabase(ctx context.Context, repository *repo.Repository, stat
 		rows = legacyRows(path)
 	}
 	// Listed after reading, which may leave a journal behind.
-	removeLegacyFile(legacyFiles(path))
+	if err := removeLegacyFiles(ctx, legacyFiles(path)); err != nil {
+		return err
+	}
 	if exists(path) {
 		runtimeLogger.Warningf("旧版 %s 无法删除，未导入其中的 Agent 心跳状态", LegacyDatabase)
 		return nil
@@ -634,7 +654,13 @@ func ImportLegacyDatabase(ctx context.Context, repository *repo.Repository, stat
 	}
 	for _, id := range ids {
 		row := current[id]
-		state.Seed(id, row.heartbeatAt, row.lastHeartbeat, row.fields)
+		fields, err := agentModel(row.fields)
+		if err != nil {
+			continue
+		}
+		if err := state.seedModel(ctx, id, row.heartbeatAt, row.lastHeartbeat, fields); err != nil {
+			return err
+		}
 	}
 	if len(versions) > 0 {
 		if _, err := persist(ctx, versions); err != nil {

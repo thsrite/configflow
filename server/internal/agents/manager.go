@@ -274,6 +274,10 @@ type Manager struct {
 // New is AgentManager(repository): it shares the runtime state of the data
 // directory and imports a legacy runtime.sqlite3 once.
 func New(ctx context.Context, repository *repo.Repository) (*Manager, error) {
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	m := &Manager{
 		repository:   repository,
 		runtime:      RuntimeFor(repository.DataDir()),
@@ -282,6 +286,9 @@ func New(ctx context.Context, repository *repo.Repository) (*Manager, error) {
 	}
 	m.preparationRunning = m.defaultPreparationRunning
 	if err := ImportLegacyDatabase(ctx, repository, m.runtime, m.saveReportedFields); err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	return m, nil
@@ -940,14 +947,6 @@ func (m *Manager) UpdateHeartbeat(ctx context.Context, agentID string, heartbeat
 		return false, err
 	}
 	return m.ObserveHeartbeat(ctx, agentID, fields)
-}
-
-// recordHeartbeat is the seam tests use to interleave a delete.
-func (m *Manager) recordHeartbeat(agent, payload *jsonx.Object, mark int64) bool {
-	if testRecordHeartbeat != nil {
-		return testRecordHeartbeat(m, agent, payload, mark)
-	}
-	return m.runtime.RecordHeartbeat(agent, payload, mark)
 }
 
 // testFailUpdate makes UpdateAgents fail (tests; Python patched

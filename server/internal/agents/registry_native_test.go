@@ -2,6 +2,7 @@ package agents
 
 import (
 	"bytes"
+	"configflow/internal/jsonx"
 	"configflow/internal/logx"
 	"context"
 	"encoding/json"
@@ -169,6 +170,8 @@ func TestTypedHeartbeatAllocationsIgnoreUnrelatedConfig(t *testing.T) {
 func FuzzTypedRuntimeProjection(f *testing.F) {
 	f.Add([]byte(`{"id":"device","version":"1.0.0","system_metrics":{"cpu":{"usage_percent":20}},"future":{"n":2.00}}`))
 	f.Add([]byte(`{"id":"device","version":0,"system_metrics":null,"deployments":{"old":{"status":"succeeded"}}}`))
+	f.Add([]byte(`{"id":"device","oxidns_ha_publication":{"status":"ready","enable":{"future_source":{"opaque":2.00}}}}`))
+	f.Add([]byte(`{"id":"device","oxidns_ha_publication":{}}`))
 	f.Fuzz(func(t *testing.T, data []byte) {
 		if len(data) > 32<<10 {
 			t.Skip()
@@ -180,6 +183,30 @@ func FuzzTypedRuntimeProjection(f *testing.F) {
 		before, err := model.Marshal(source)
 		if err != nil {
 			t.Skip()
+		}
+		checkPresence := func(journal *model.HAJournal) {
+			t.Helper()
+			raw, err := model.Marshal(journal)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var members map[string]json.RawMessage
+			if err := json.Unmarshal(raw, &members); err != nil {
+				t.Fatal(err)
+			}
+			if journal.HasMembers() != (len(members) > 0) {
+				t.Fatal("HA presence differs from native JSON")
+			}
+		}
+		if source.OxiDNSHAPublication != nil {
+			journal := *source.OxiDNSHAPublication
+			checkPresence(&journal)
+			journal.Enable = nil
+			checkPresence(&journal)
+			if err := journal.Clear("enable"); err != nil {
+				t.Fatal(err)
+			}
+			checkPresence(&journal)
 		}
 		state := NewRuntimeState()
 		if _, err := state.recordModel(context.Background(), &source, &source, state.Mark()); err != nil {
@@ -322,5 +349,159 @@ func TestTypedAutomationEnabledR5Rows(t *testing.T) {
 				t.Fatalf("read rewrote row: %s %v", after, err)
 			}
 		})
+	}
+}
+
+func TestTypedHAAuthoritativeJournalShapes(t *testing.T) {
+	tests := []struct {
+		raw    string
+		active bool
+	}{
+		{`{}`, false},
+		{`{"oxidns_ha_publication":null}`, false},
+		{`{"oxidns_ha_publication":{}}`, false},
+		{`{"oxidns_ha_publication":{"future":"operation"}}`, true},
+		{`{"oxidns_ha_publication":{"status":"preparing"}}`, true},
+		{`{"oxidns_ha_publication":{"status":"ready"}}`, true},
+		{`{"oxidns_ha_publication":{"status":"succeeded"}}`, false},
+		{`{"oxidns_ha_publication":{"status":"failed"}}`, false},
+		{`{"oxidns_ha_publication":{"status":"rollback_failed"}}`, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.raw, func(t *testing.T) {
+			var record model.Agent
+			if err := json.Unmarshal([]byte(tt.raw), &record); err != nil {
+				t.Fatal(err)
+			}
+			if got := HAActiveModel(&record); got != tt.active {
+				t.Fatalf("journal=%s active=%v want=%v", tt.raw, got, tt.active)
+			}
+		})
+	}
+	var nullID model.Agent
+	if err := json.Unmarshal([]byte(`{"id":null}`), &nullID); err != nil {
+		t.Fatal(err)
+	}
+	if agentIDProven(&nullID) {
+		t.Fatal("null became text identity evidence")
+	}
+}
+
+func TestTypedRuntimeLegacyImportHonorsSourceGeneration(t *testing.T) {
+	e, id := setupRuntime(t)
+	e.ageRegistration(5)
+	path := filepath.Join(e.dir, LegacyDatabase)
+	legacyDatabase(t, path, [][4]any{legacyRowOf(id, clock(), jsonx.Obj("version", "2.0.0"))})
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rt := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
+	rt.Start(e.ctx)
+	stopped := rt.BindRequest(e.ctx)
+	rt.Shutdown(context.Background())
+	ResetRuntime()
+	state := NewRuntimeState()
+	if err := ImportLegacyDatabase(stopped, e.repo, state, e.m.saveReportedFields); !errors.Is(err, context.Canceled) {
+		t.Fatal("shutdown imported legacy runtime", err)
+	}
+	if _, err := New(stopped, e.repo); !errors.Is(err, context.Canceled) {
+		t.Fatal("shutdown created manager", err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil || !bytes.Equal(before, after) || len(state.Entries()) != 0 {
+		t.Fatal("shutdown changed legacy runtime", err)
+	}
+	active := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
+	active.Start(e.ctx)
+	defer active.Shutdown(context.Background())
+	request, disconnect := context.WithCancel(active.BindRequest(e.ctx))
+	disconnect()
+	if err := ImportLegacyDatabase(request, e.repo, state, e.m.saveReportedFields); err != nil {
+		t.Fatal("disconnect stopped import", err)
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) || len(state.Entries()) != 1 {
+		t.Fatal("legacy import did not finish", err)
+	}
+}
+
+func TestTypedHAPairRequiresOriginalStringEvidence(t *testing.T) {
+	for _, tt := range []struct {
+		raw   string
+		valid bool
+	}{
+		{`{"oxidns_ha":{"group_id":"group","peer_id":"peer"}}`, true},
+		{`{"oxidns_ha":{"group_id":7,"peer_id":"peer"}}`, false},
+		{`{"oxidns_ha":{"group_id":null,"peer_id":"peer"}}`, false},
+		{`{"oxidns_ha":{"group_id":"group","peer_id":7}}`, false},
+		{`{"oxidns_ha":{"group_id":"","peer_id":"peer"}}`, false},
+	} {
+		var record model.Agent
+		if err := json.Unmarshal([]byte(tt.raw), &record); err != nil {
+			t.Fatal(err)
+		}
+		_, _, valid := haPairIdentity(&record)
+		if valid != tt.valid {
+			t.Fatalf("pair evidence=%s valid=%v want=%v", tt.raw, valid, tt.valid)
+		}
+	}
+	for _, tt := range []struct {
+		left, right string
+		match       bool
+	}{
+		{`{}`, `{"profile_id":null}`, true},
+		{`{"profile_id":"default"}`, `{"profile_id":"default"}`, true},
+		{`{"profile_id":""}`, `{"profile_id":null}`, false},
+		{`{"profile_id":7}`, `{"profile_id":7}`, false},
+		{`{"profile_id":7}`, `{"profile_id":"7"}`, false},
+	} {
+		var left, right model.Agent
+		if err := json.Unmarshal([]byte(tt.left), &left); err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal([]byte(tt.right), &right); err != nil {
+			t.Fatal(err)
+		}
+		if got := haProfilesMatch(&left, &right); got != tt.match {
+			t.Fatalf("profile evidence=%s/%s match=%v want=%v", tt.left, tt.right, got, tt.match)
+		}
+	}
+}
+
+func TestTypedHAEnablePresenceAndAllocationBound(t *testing.T) {
+	for _, tt := range []struct {
+		raw      string
+		enabling bool
+	}{
+		{`{"oxidns_ha_publication":{"status":"ready","enable":null}}`, false},
+		{`{"oxidns_ha_publication":{"status":"ready","enable":{}}}`, false},
+		{`{"oxidns_ha_publication":{"status":"ready","enable":{"peer_id":null}}}`, true},
+		{`{"oxidns_ha_publication":{"status":"ready","enable":7}}`, true},
+		{`{"oxidns_ha_publication":{"status":"succeeded","enable":{"peer_id":"peer"}}}`, false},
+	} {
+		var record model.Agent
+		if err := json.Unmarshal([]byte(tt.raw), &record); err != nil {
+			t.Fatal(err)
+		}
+		if got := HAEnablingModel(&record); got != tt.enabling {
+			t.Fatalf("input=%s enabling=%v want=%v", tt.raw, got, tt.enabling)
+		}
+	}
+	measure := func(unused int) float64 {
+		intent := &model.HAEnable{}
+		if err := intent.Fields.Set("captured_source", []byte(`"`+strings.Repeat("x", unused)+`"`)); err != nil {
+			t.Fatal(err)
+		}
+		record := &model.Agent{OxiDNSHAPublication: &model.HAJournal{Status: "ready", Enable: intent}}
+		return testing.AllocsPerRun(100, func() {
+			if !HAActiveModel(record) || !HAEnablingModel(record) {
+				t.Fatal("lost active intent")
+			}
+		})
+	}
+	small, large := measure(0), measure(2<<20)
+	t.Logf("HA guards unused=0: %g allocs/op; unused=2MiB: %g allocs/op", small, large)
+	if large > small+1 || large > 4 {
+		t.Fatal("HA guard walks captured payload")
 	}
 }

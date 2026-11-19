@@ -84,7 +84,7 @@ func persistSync(ctx context.Context, m *agents.Manager, id string, settings *Se
 			if record.ID != id {
 				continue
 			}
-			if settings != nil && agents.HAActiveModel(record) && record.OxiDNSHAPublication.Enable != nil {
+			if settings != nil && agents.HAEnablingModel(record) {
 				return refuse(msgPairEnabling)
 			}
 			sync := model.AgentRuleSync{}
