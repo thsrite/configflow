@@ -2317,3 +2317,5 @@ A05 domain-discovery traffic 文件的 present wrong-type `days`、当日 `hosts
 同一 native owner 对人工损坏 SQLite 计数器也 fail closed：冲突更新不允许把 TEXT/BLOB/null 静默当作数字；hour→day 聚合在原 SQL 扫描中验证输入类型和有限性，并拒绝 REAL SUM 溢出。原事务回滚、pending 恢复，查询仍逐条隔离坏值。可通过现有 per-Agent 流量历史清空恢复；不改 schema 或正常 INTEGER→REAL 累加语义。这些非有限级数/错型只来自人工数据，Agent 单项上报本就限制在 2**62 以下。
 
 N8-10 batch-13 后 API 收束：`traffic.go` 已改用 native `DecodeTrafficReport/AddTraffic/QueryTraffic/TrafficRetention/SetTrafficRetention` 与 `trafficstore.DecodeReport/GetNative/Add`；`service_type` 缺失→mihomo，present null/错型仍 400 的 guard 保留。`metrics.go` 改用原始样本与 typed summary，无新业务语义差异。`TestDifferentialAgainstFlask` 前四项批准差异由 `difftest/testdata/n810_metrics_http_native.jsonl` 的四行 original 原文 SHA256 绑定请求、fixture 源码和 Python 结果，分别检查 native 结果；live seed 同时验证。`agent-traffic.json` 仅改为结构比较，对象顺序可变，数组顺序、所有计数器和字段仍严格比较。无旧 corpus 或 pyref entries 变更。Agent 报告入口通过 jsondecode 的 native JSON last-member 规则接受重复 port 等字段；存量文件仍使用严格 Fields 校验，此项恢复原正常行为，不是新增损坏豁免。
+
+人工 SQLite 极值补充：有限 REAL 聚合可溢出为 Inf，或使用于排序的 up+down 成为 NaN。查询继续沿用非有限结果→JSON null 的 native 策略，节流告警；NaN 总值排在数值总值后，再按原 key 排序，不传给 big.Float 触发 panic。查询不写文件/数据库。Agent 单项计数限制使这些极值只能由人工数据构造；无旧期望修改。

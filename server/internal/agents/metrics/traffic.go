@@ -435,6 +435,20 @@ func (n counter) exact() *big.Float {
 
 // cmp compares exactly, as Python compares int and float.
 func (n counter) cmp(v counter) int {
+	// Finite manually edited REAL inputs can overflow while aggregating. NaN
+	// has no numeric order: put missing totals after numeric totals, then use
+	// the caller's stable key tie-breaker. Never pass NaN to big.Float.
+	nMissing := n.isFloat && math.IsNaN(n.f)
+	vMissing := v.isFloat && math.IsNaN(v.f)
+	if nMissing || vMissing {
+		if nMissing == vMissing {
+			return 0
+		}
+		if nMissing {
+			return -1
+		}
+		return 1
+	}
 	if n.isFloat || v.isFloat {
 		return n.exact().Cmp(v.exact())
 	}
@@ -1601,5 +1615,38 @@ func (h *TrafficHistory) QueryTraffic(ctx context.Context, agentID, rangeKey, by
 	if omitted < 0 {
 		omitted = 0
 	}
-	return &TrafficQuery{Range: rangeKey, By: by, Step: step, ChainSeparator: ChainSeparator, Start: isoUTC(start), Rows: rows, Omitted: omitted, Total: trafficTotals(totals), Outbounds: rowsOf(outbounds, len(outbounds.values)), Trend: points}, nil
+	result := &TrafficQuery{Range: rangeKey, By: by, Step: step, ChainSeparator: ChainSeparator, Start: isoUTC(start), Rows: rows, Omitted: omitted, Total: trafficTotals(totals), Outbounds: rowsOf(outbounds, len(outbounds.values)), Trend: points}
+	if queryMissingCounter(result) {
+		h.warnCorrupt(agentID, "aggregate")
+	}
+	return result, nil
+}
+
+// queryMissingCounter detects generated non-finite sums, which the JSON DTO
+// renders as null under the established native missing-value policy.
+func queryMissingCounter(q *TrafficQuery) bool {
+	missing := func(t TrafficTotals) bool {
+		return string(t.Up) == "null" || string(t.Down) == "null" || string(t.Conns) == "null"
+	}
+	if missing(q.Total) {
+		return true
+	}
+	for _, rows := range [][]TrafficRow{q.Rows, q.Outbounds} {
+		for _, row := range rows {
+			if missing(row.TrafficTotals) {
+				return true
+			}
+			for _, part := range row.Parts {
+				if missing(part.TrafficTotals) {
+					return true
+				}
+			}
+		}
+	}
+	for _, point := range q.Trend {
+		if string(point.Up) == "null" || string(point.Down) == "null" {
+			return true
+		}
+	}
+	return false
 }

@@ -118,3 +118,9 @@ RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && go test -count=1 ./in
 ```
 
 最后输出：metrics Reference PASS 1.540s、discovery/difftest PASS 10.155s、tasks/difftest PASS 9.952s、pyref PASS 0.822s；trafficstore 更新解码器后的 fuzz PASS 61.023s / 355,791 exec；原心跳阈值 PASS 6.306s。metrics 的 fuzz 在 owner 轮已跑 60 秒且解码器未改。无阈值放宽。
+
+### 最终人工 REAL 查询溢出回归
+
+收尾发现有限 REAL 汇总可使 up/down 溢出，排序用的 up+down 进一步成为 NaN，不能传给 big.Float。新增真实 SQLite 查询测试（两个极值链路 + 健康 source），missing 总值放在数值总值后、再按 key 稳定排序；DTO 继续按 native 既有策略输出 null，并通过现有限流器记 aggregate 告警，原始数据库行不变。只涉及人工极值，不改变机器报告数值限制。一次新测试因把 SQLite INTEGER affinity 的健康 REAL `1.0` 计入 REAL 行数而失败，修正为检查全部原行数；没有改原期望或语料。
+
+`.32 rt -- bash -lc 'cd server && gofmt -w internal/agents/metrics/native_service_test.go && go test -count=1 -race ./internal/agents/metrics && go vet ./... && CONFIGFLOW_DIFF=1 go test -count=1 -v ./internal/api/agents/difftest -run "^TestDifferentialAgainstFlask$"'` 最后 metrics PASS 21.069s，vet 无输出，HTTP 主差分再次 234 requests / 0 differences。大包并行 race 的快照为 `2c353f574` 的代码；最后这一局部查询防护另用本命令在最终代码上验证，没有重复无关长测。

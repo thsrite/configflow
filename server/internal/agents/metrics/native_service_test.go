@@ -256,3 +256,47 @@ func TestNativeSQLCompactionOverflowRollsBackAndClearRecovers(t *testing.T) {
 		t.Fatal(query, err)
 	}
 }
+
+func TestNativeTrafficQueryFiniteREALOverflowDoesNotPanic(t *testing.T) {
+	h := NewTrafficHistory(t.TempDir())
+	c, err := h.connect()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.close()
+	const bucket int64 = 1699999200
+	for _, row := range []struct {
+		source, chain string
+		up, down      float64
+	}{
+		{"manual", "one", 1e308, -1e308}, {"manual", "two", 1e308, -1e308}, {"healthy", "three", 1, 2},
+	} {
+		if _, err := c.exec("INSERT INTO traffic_usage VALUES(?,?,?,?,?,?,?,?)", "a", bucket, Hour, row.source, row.chain, row.up, row.down, 1); err != nil {
+			t.Fatal(err)
+		}
+	}
+	at := float64(bucket + 900)
+	result, err := h.QueryTraffic(context.Background(), "a", "24h", "source", &at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Rows) != 2 || result.Rows[0].Key != "healthy" || result.Rows[1].Key != "manual" {
+		t.Fatalf("native missing-total sort: %+v", result.Rows)
+	}
+	if string(result.Rows[1].Up) != "null" || string(result.Rows[1].Down) != "null" || string(result.Total.Up) != "null" {
+		t.Fatalf("overflow must be missing: %+v", result)
+	}
+	if _, err := json.Marshal(result); err != nil {
+		t.Fatal(err)
+	}
+	h.warnings.mu.Lock()
+	warnings := len(h.warnings.last)
+	h.warnings.mu.Unlock()
+	if warnings != 1 {
+		t.Fatalf("overflow warnings: %d", warnings)
+	}
+	var count int
+	if err := c.conn.QueryRowContext(context.Background(), "SELECT count(*) FROM traffic_usage").Scan(&count); err != nil || count != 3 {
+		t.Fatalf("query changed stored rows: %d %v", count, err)
+	}
+}
