@@ -2,7 +2,6 @@ package deploy
 
 import (
 	"configflow/internal/agents"
-	"configflow/internal/ctxx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/repo"
 	"context"
@@ -20,13 +19,16 @@ const maxReceiptBytes = 512 << 20
 // Receipts owns one data directory's rule-sync baselines. L4 locks serialize
 // files/pruning per Agent, never repository reads or writes.
 type Receipts struct {
-	dataDir string
+	dataDir   string
+	writeFile func(context.Context, string, []byte) error
 }
 
 var receiptDirectoryLocks leafLocks
 
 // NewReceipts creates the single receipt owner for a repository data directory.
-func NewReceipts(dataDir string) *Receipts { return &Receipts{dataDir: dataDir} }
+func NewReceipts(dataDir string) *Receipts {
+	return &Receipts{dataDir: dataDir, writeFile: atomicWrite}
+}
 func (r *Receipts) root(agentID string) string {
 	return filepath.Join(r.dataDir, ".agent-rule-sync", digest([]byte(agentID)))
 }
@@ -85,20 +87,19 @@ func (r *Receipts) Capture(ctx context.Context, agentID string, b *Bundle, src *
 	}
 	release := receiptDirectoryLocks.lock(r.root(agentID))
 	defer release()
-	// Shutdown while waiting for the leaf lock writes nothing; once started,
-	// the receipt directory is completed as a whole.
+	// Each replacement keeps shutdown cancellation. An archive published before
+	// cancellation can remain unreferenced; receipt.json is the enrollment point.
 	if err = ctx.Err(); err != nil {
 		return err
 	}
-	ctx = ctxx.Uninterruptible(ctx)
 	folder := r.folder(agentID, b.manifest.DeploymentID)
 	if err = privateDir(folder); err != nil {
 		return fmt.Errorf("create receipt directory: %w", err)
 	}
-	if err = atomicWrite(ctx, filepath.Join(folder, "bundle-"+sha+".tar.gz"), archive); err != nil {
+	if err = r.writeFile(ctx, filepath.Join(folder, "bundle-"+sha+".tar.gz"), archive); err != nil {
 		return err
 	}
-	if err = atomicWrite(ctx, filepath.Join(folder, "receipt.json"), metadata); err != nil {
+	if err = r.writeFile(ctx, filepath.Join(folder, "receipt.json"), metadata); err != nil {
 		return err
 	}
 	archives, err := filepath.Glob(filepath.Join(folder, "bundle-*.tar.gz"))

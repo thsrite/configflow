@@ -4,7 +4,6 @@ import (
 	"archive/zip"
 	"bytes"
 	"configflow/internal/agents"
-	"configflow/internal/ctxx"
 	"configflow/internal/lifecycle"
 	"context"
 	"encoding/json"
@@ -227,12 +226,11 @@ func (p *Previews) Save(ctx context.Context, in PreviewInput) (*Preview, error) 
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	// Shutdown while waiting for the store lock writes nothing; once started,
-	// save and eviction complete as a whole.
+	// Keep the originating lifetime through quota inspection, eviction and each
+	// atomic file replacement. Lock admission is not a publication point.
 	if err = ctx.Err(); err != nil {
 		return nil, err
 	}
-	ctx = ctxx.Uninterruptible(ctx)
 	if err = privateDir(p.root()); err != nil {
 		return nil, err
 	}

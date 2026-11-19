@@ -510,6 +510,18 @@ Implementation notes: [startup and shutdown](o3-startup-shutdown.md).
   that sequence on the merged C33 tree. Preserve F7's L3 declaration guard and F8's owner-context
   restoration; do not duplicate checks at the same action. Migrate C33 Forget to ForgetContext.
 
+**Clarified in N8-8d and its independent review (2026-11-19):**
+- The fourth standing item in WORKFLOW supersedes the older provider-batch
+  exception above: provider cache writes, bundle artifacts and last-good files
+  retain the originating Runtime through every leaf replacement. A completed
+  prefix is retained; shutdown prevents the next independent publication.
+- Deploy preview lock admission is not publication. Keep cancellation through
+  quota inspection, eviction and each atomic replacement. Receipt capture also
+  checks each replacement: a completed archive may remain unreferenced when
+  shutdown prevents `receipt.json` enrollment; do not mask the whole capture.
+- This does not change the three marked repo filesystem/DB batches, post-primary
+  rename durability/backup completion, or R12's documented aborted-write receipt.
+
 **Clarified in O3-6b (coordinator, 2026-11-18):**
 R12 integration on batch-5 uses the unique `RouterJobLock` held context at the caller
 boundary, then `Publish` acquires only L2. `StartPublish` transfers the L1 release and

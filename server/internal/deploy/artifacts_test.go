@@ -121,6 +121,7 @@ func TestManualArtifactUsesOwnerRepository(t *testing.T) {
 }
 
 func TestManualArtifactShutdownBeforePreviewCommit(t *testing.T) {
+	mihomoenv.Wire()
 	base, m := artifactManager(t)
 	startGlobalPublishRuntime(t, base)
 	ctx := lifecycle.BindRequest(base)
