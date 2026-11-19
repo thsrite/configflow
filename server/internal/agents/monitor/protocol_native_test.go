@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"configflow/internal/agents"
+	"configflow/internal/jsonresp"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 )
@@ -166,6 +167,7 @@ func FuzzMonitorCacheProtocol(f *testing.F) {
 	for _, seed := range []string{`{"success":true,"caches":["cache"]}`, `{"Success":true,"caches":[]}`, `{"success":true,"caches":[],"x":{"a":0,"a":1}}`, `null`, `[]`} {
 		f.Add(seed)
 	}
+	f.Add("\ufeff{\"success\":true,\"caches\":[]}")
 	f.Fuzz(func(t *testing.T, body string) {
 		if len(body) > CacheMaxResponseBytes+1 {
 			return
@@ -177,7 +179,12 @@ func FuzzMonitorCacheProtocol(f *testing.F) {
 				t.Fatal("unvalidated cache result")
 			}
 			var fields model.Fields
-			if json.Unmarshal([]byte(body), &fields) != nil {
+			decoded, valid := agents.DecodeJSONBytes([]byte(body))
+			if !valid {
+				t.Fatal("accepted unsupported response bytes")
+			}
+			normalized, _ := jsonresp.NormalizeNonFinite([]byte(decoded))
+			if json.Unmarshal(normalized, &fields) != nil {
 				t.Fatal("invalid/duplicate reply accepted")
 			}
 			success, present, valid := answerBool(fields, "success")
@@ -193,4 +200,17 @@ func FuzzMonitorCacheProtocol(f *testing.F) {
 			t.Fatal("request bytes changed")
 		}
 	})
+}
+
+func TestNativePanelRejectsNonJSONUnicodeWhitespace(t *testing.T) {
+	for _, body := range []string{"\u00a0", "\u2000", "\u3000"} {
+		t.Run(body, func(t *testing.T) {
+			m, _ := nativeFixture(t, body)
+			if err := m.agent.SetJSON("service_type", []byte(`"mihomo"`)); err != nil {
+				t.Fatal(err)
+			}
+			_, err := CallPanel(t.Context(), m, "dns", "version", "GET", nil, nil, "")
+			wantMonitorError(t, err, "INVALID_RESPONSE", 502)
+		})
+	}
 }

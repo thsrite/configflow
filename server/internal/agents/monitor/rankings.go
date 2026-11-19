@@ -25,7 +25,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -310,7 +309,7 @@ func (s *RankingStore) withContext(ctx context.Context, body func(c *rankConn) e
 	return nil
 }
 
-// Fetched is fetched(agent_id, recorder, starts): the slot starts among
+// FetchedContext is fetched(agent_id, recorder, starts): the slot starts among
 // starts already stored.
 func (s *RankingStore) FetchedContext(ctx context.Context, agentID, recorder string, starts []int64) (map[int64]bool, error) {
 	if err := ctx.Err(); err != nil {
@@ -345,7 +344,7 @@ func (s *RankingStore) FetchedContext(ctx context.Context, agentID, recorder str
 	return done, err
 }
 
-// AddSlot is add_slot(agent_id, recorder, start, slot): add one 15-minute
+// StoreSlot is add_slot(agent_id, recorder, start, slot): add one 15-minute
 // slot to its hour; false when the slot was stored before.
 func (s *RankingStore) StoreSlot(ctx context.Context, agentID, recorder string, start int64, slot *Slot) (bool, error) {
 	if err := ctx.Err(); err != nil {
@@ -362,7 +361,6 @@ func (s *RankingStore) StoreSlot(ctx context.Context, agentID, recorder string, 
 		if err != nil || inserted == 0 {
 			return err
 		}
-		s.version++
 		blocked, blockedSlots := int64(0), int64(0)
 		if slot.Blocked != nil {
 			blocked, blockedSlots = *slot.Blocked, 1
@@ -397,6 +395,9 @@ func (s *RankingStore) StoreSlot(ctx context.Context, agentID, recorder string, 
 	if err != nil {
 		return false, err
 	}
+	if added {
+		s.version++
+	}
 	return added, nil
 }
 
@@ -410,7 +411,7 @@ func nowOr(now *int64) int64 {
 	return nowSeconds()
 }
 
-// Maintain is maintain(agent_ids, now): merge old hours into days, drop
+// MaintainContext is maintain(agent_ids, now): merge old hours into days, drop
 // expired data and removed Agents; at most once per hour.
 func (s *RankingStore) MaintainContext(ctx context.Context, agentIDs []string, now *int64) error {
 	if err := ctx.Err(); err != nil {
@@ -598,7 +599,7 @@ func mergeDay(c *rankConn, agentID, recorder string, day int64) error {
 	return nil
 }
 
-// HasAny is has_any(agent_id, recorder): whether any slot of this recorder
+// HasAnyContext is has_any(agent_id, recorder): whether any slot of this recorder
 // is stored, without adding anything up.
 func (s *RankingStore) HasAnyContext(ctx context.Context, agentID, recorder string) (bool, error) {
 	if err := ctx.Err(); err != nil {
@@ -618,7 +619,7 @@ func (s *RankingStore) HasAnyContext(ctx context.Context, agentID, recorder stri
 	return found, err
 }
 
-// Query is query(agent_id, recorder, since, until): totals and the top
+// QueryContext is query(agent_id, recorder, since, until): totals and the top
 // entries of the stored periods starting in [since, until). Answers are
 // kept until the stored data changes; the returned answer is shared and
 // must not be modified.
@@ -847,7 +848,7 @@ func rankingRound(ctx context.Context) {
 	defer repo.ResetConfigContext(scope)
 	defer func() {
 		if p := recover(); p != nil {
-			rankingLogger.Exception("OxiDNS ranking collection round failed", fmt.Errorf("%v", p))
+			rankingLogger.Exception("OxiDNS ranking collection round failed", lifecycle.ErrPanic)
 		}
 	}()
 	manager, err := agents.Get(scope)

@@ -42,3 +42,43 @@ func TestDamagedPublicationCheckpointCanBeResetAndMonitoringResumes(t *testing.T
 		})
 	}
 }
+
+func TestPendingCheckpointDoesNotTrustProjectedStoredProofs(t *testing.T) {
+	for _, field := range []string{"agent-profile", "task-profile", "task-service", "latest-id", "manual-rollback"} {
+		t.Run(field, func(t *testing.T) {
+			e := newPubEnv(t)
+			e.checkpoint(t, "publish-one", revB)
+			saved := readFile(t, e.store.Path("one"))
+			change(e.f, 3000, 6, 60, revB, revE)
+			a := e.m.agent("one")
+			task := a.GetObject("deployments").GetObject("publish-one")
+			task.Set("status", "succeeded")
+			a.GetObject("latest_deployment").Set("status", "succeeded")
+			switch field {
+			case "agent-profile":
+				a.Set("profile_id", jsonx.Int(7))
+				task.Set("profile_id", jsonx.Int(7))
+				a.Set("Profile_ID", "default")
+			case "task-profile":
+				task.Set("profile_id", jsonx.Int(7))
+				task.Set("Profile_ID", "default")
+			case "task-service":
+				task.Set("service_type", jsonx.Int(7))
+				task.Set("Service_Type", "oxidns")
+			case "latest-id":
+				a.GetObject("latest_deployment").Set("deployment_id", jsonx.Int(7))
+				a.GetObject("latest_deployment").Set("Deployment_ID", "publish-one")
+			case "manual-rollback":
+				task.Set("manual_rollback", jsonx.Int(1))
+			}
+			_, err := Overview(ctx, e.m, "one", nil)
+			wantMonitorError(t, err, "DASHBOARD_STATE_ERROR", 500)
+			if !bytes.Equal(saved, readFile(t, e.store.Path("one"))) {
+				t.Fatal("bad original proof discarded pending state")
+			}
+			if _, err := ResetDashboard(ctx, e.m, "one", jsonx.Obj()); err != nil {
+				t.Fatal("explicit statistics reset could not recover", err)
+			}
+		})
+	}
+}

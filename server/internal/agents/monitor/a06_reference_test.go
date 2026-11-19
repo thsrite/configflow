@@ -63,6 +63,12 @@ func TestReferenceMetrics(t *testing.T) {
 			summary, _ := SummarizeMetrics(text)
 			result = jsonx.Obj("parsed", parsed, "summary", summary)
 		}
+		if want, bound := nativeStateExpectation(t, "metrics", c); bound {
+			if got := dumpSorted(t, result); got != want {
+				t.Errorf("native metric number: got %s want %s", got, want)
+			}
+			continue
+		}
 		if got := dumpSorted(t, result); got != c.GetString("result") {
 			t.Errorf("%q:\n got  %s\n want %s", text, got, c.GetString("result"))
 		}

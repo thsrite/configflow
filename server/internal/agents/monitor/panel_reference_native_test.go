@@ -11,9 +11,9 @@ import (
 	"configflow/internal/jsonx"
 )
 
-func nativePanelRefusal(t *testing.T, c *jsonx.Object, got any) bool {
+func nativePanelExpectation(t *testing.T, c *jsonx.Object, got any) bool {
 	t.Helper()
-	data, err := os.ReadFile("testdata/n810_panel_refusals.json")
+	data, err := os.ReadFile("testdata/n810_panel_native.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -21,7 +21,7 @@ func nativePanelRefusal(t *testing.T, c *jsonx.Object, got any) bool {
 		ArchiveSHA256 string          `json:"archive_sha256"`
 		Row           json.RawMessage `json:"row"`
 		RowSHA256     string          `json:"row_sha256"`
-		Native        json.RawMessage `json:"native"`
+		NativeText    string          `json:"native_text"`
 	}
 	if err := json.Unmarshal(data, &fixture); err != nil {
 		t.Fatal(err)
@@ -53,7 +53,7 @@ func nativePanelRefusal(t *testing.T, c *jsonx.Object, got any) bool {
 	if sum = sha256.Sum256(raw); sum != bound {
 		return false
 	}
-	expected, err := jsonx.Parse(fixture.Native)
+	expected, err := jsonx.ParseString(fixture.NativeText)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -18,7 +18,6 @@ import (
 	"math/big"
 	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 
@@ -29,6 +28,7 @@ import (
 	"configflow/internal/redact"
 	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
+	"configflow/internal/taskstatus"
 	"configflow/internal/weburl"
 )
 
@@ -85,8 +85,6 @@ var PanelResourceMinVersion = map[string]string{
 	"logs":                  "1.8.56-go",
 }
 
-var panelResourceFeature = map[string]string{"providers/proxy/delay": "订阅节点测速", "flow": "实时流量", "logs": "实时日志"}
-
 var (
 	panelLogLevels       = []string{"debug", "info", "warning", "error"}
 	panelResourceTimeout = map[string]float64{"configs/reload": 70, "upgrade": 200}
@@ -94,17 +92,6 @@ var (
 	// panelProxyFields is PROXY_FIELDS: what the panel reads from a node or group.
 	panelProxyFields = []string{"name", "type", "udp", "alive", "now", "all", "fixed", "testUrl", "hidden", "icon"}
 )
-
-// PanelMessages is MESSAGES of mihomo_panel.py.
-var PanelMessages = map[string]string{
-	"CONTROLLER_UNAVAILABLE": "Agent 未找到 Mihomo 控制接口，请确认配置里启用了 external-controller。",
-	"CORE_UNREACHABLE":       "暂时无法连接 Mihomo 控制接口，请检查 Mihomo 运行状态。",
-	"CORE_AUTH_FAILED":       "Mihomo 控制接口拒绝了 Agent 的 secret，请检查配置。",
-	"AGENT_UNREACHABLE":      "暂时无法连接 Agent，请检查网络和 Agent 运行状态。",
-	"AGENT_AUTH_FAILED":      "Agent 认证失败，请检查注册状态。",
-	"INVALID_RESPONSE":       "Mihomo 返回的数据格式异常。",
-	"INVALID_REQUEST":        "请求参数无效。",
-}
 
 // panelFail is _fail(code, status, message).
 func panelFail(code string, status int, message string) *Error {
@@ -263,7 +250,7 @@ const maxIntDigits = 4300
 func panelLogsQuery(args [][2]string) (query, error) {
 	level := argGet(args, "level", "info")
 	if !contains(panelLogLevels, level) {
-		return nil, panelFail("INVALID_REQUEST", 400, "日志等级只能是 debug、info、warning 或 error。")
+		return nil, panelFail("INVALID_REQUEST", 400, msgLogLevel)
 	}
 	after := argGet(args, "after", "0")
 	if !pyIsDigit(after) || runeLen(after) > 18 {
@@ -285,7 +272,7 @@ func panelQuery(resource string, args [][2]string) (query, error) {
 		testURL = PanelDefaultTestURL
 	}
 	if !(strings.HasPrefix(testURL, "http://") || strings.HasPrefix(testURL, "https://")) || runeLen(testURL) > 2048 {
-		return nil, panelFail("INVALID_REQUEST", 400, "测速地址必须是 http(s) 链接。")
+		return nil, panelFail("INVALID_REQUEST", 400, msgTestURL)
 	}
 	timeout := big.NewInt(5000)
 	if text, ok := lookupArg(args, "timeout"); ok {
@@ -296,7 +283,7 @@ func panelQuery(resource string, args [][2]string) (query, error) {
 		timeout = value
 	}
 	if timeout.Cmp(big.NewInt(500)) < 0 || timeout.Cmp(big.NewInt(30000)) > 0 {
-		return nil, panelFail("INVALID_REQUEST", 400, "测速超时需在 500–30000 毫秒之间。")
+		return nil, panelFail("INVALID_REQUEST", 400, msgTestTimeout)
 	}
 	return query{{"url", testURL}, {"timeout", timeout.String()}}, nil
 }
@@ -550,55 +537,48 @@ func checkFailure(err error) string {
 		err = fetchErr.LastError // source and mirror both failed: report the last try
 	}
 	if rulefetch.IsTimeout(err) {
-		return "连接 GitHub 超时"
+		return msgGithubTimeout
 	}
 	var f *rulefetch.FetchError
 	if errors.As(err, &f) && f.Class == "HTTPError" && f.Status != 0 {
-		return "GitHub 返回 HTTP " + strconv.Itoa(f.Status)
+		return fmt.Sprintf(msgGithubHTTP, f.Status)
 	}
 	if rulefetch.IsRequestException(err) {
-		return "无法连接 GitHub"
+		return msgGithubUnreachable
 	}
-	return "version.txt 内容不是版本号"
+	return msgVersionContent
 }
 
-// releaseParts is _RELEASE.fullmatch: v?(\d+)\.(\d+)\.(\d+) with Unicode
-// decimal digits; the parts are the digit texts (ASCII).
+// releaseParts recognizes an ASCII dotted core release.
 func releaseParts(version string) ([]string, bool) {
-	version = strings.TrimPrefix(version, "v")
-	parts := strings.Split(version, ".")
+	parts := strings.Split(strings.TrimPrefix(version, "v"), ".")
 	if len(parts) != 3 {
 		return nil, false
 	}
-	out := make([]string, 3)
-	for i, part := range parts {
+	for _, part := range parts {
 		if part == "" {
 			return nil, false
 		}
-		var digits strings.Builder
 		for _, r := range part {
-			d := pyDecimalValue(r)
-			if d < 0 {
+			if r < '0' || r > '9' {
 				return nil, false
 			}
-			digits.WriteByte(byte('0' + d))
 		}
-		out[i] = digits.String()
 	}
-	return out, true
+	return parts, true
 }
 
-// releaseInts is tuple(map(int, match.groups())): int() refuses a text of
-// more than 4300 digits (ValueError, not caught by the panel: 500).
 func releaseInts(parts []string) ([]*big.Int, error) {
-	out := make([]*big.Int, len(parts))
+	result := make([]*big.Int, len(parts))
 	for i, part := range parts {
-		if len(part) > maxIntDigits {
-			return nil, fmt.Errorf("ValueError: Exceeds the limit (%d digits) for integer string conversion: value has %d digits; use sys.set_int_max_str_digits() to increase the limit", maxIntDigits, len(part))
+		raw, _ := json.Marshal(part)
+		value, err := taskstatus.Count(raw)
+		if err != nil {
+			return nil, fmt.Errorf("parse core release component: %w", err)
 		}
-		out[i], _ = new(big.Int).SetString(part, 10)
+		result[i] = value
 	}
-	return out, nil
+	return result, nil
 }
 
 // newerRelease is _newer_release(current, latest).
@@ -646,6 +626,9 @@ func usable(cached *coreCached, current string, now float64, settings *model.Sys
 // cachedLatest is _cached_latest(channel, current, force): (version,
 // error) from the cache unless forced or no longer usable.
 func cachedLatest(ctx context.Context, channel, current string, force bool) (string, string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", "", err
+	}
 	requested := monotonic()
 	settings, err := downloadSettings(ctx)
 	if err != nil {
@@ -670,6 +653,9 @@ func cachedLatest(ctx context.Context, channel, current string, force bool) (str
 		return cached.latest, cached.err, nil
 	}
 	defer lock.Unlock()
+	if err := ctx.Err(); err != nil {
+		return "", "", err
+	}
 	cached = coreCachedOf(channel)
 	// Fetched by another request after this one started: reuse it.
 	if cached != nil && sameDownloadSettings(cached.settings, settings) {
@@ -686,12 +672,19 @@ func cachedLatest(ctx context.Context, channel, current string, force bool) (str
 	}
 	latest, failure := "", ""
 	if version, err := latestCoreVersion(ctx, channel, settings); err != nil {
-		failure = "无法获取最新版本（" + checkFailure(err) + "），可检查设置里的「规则下载代理」和「GitHub 代理域名」。"
+		failure = fmt.Sprintf(msgCoreFetchFailure, checkFailure(err))
 	} else {
 		latest = version
 	}
+	if err := ctx.Err(); err != nil {
+		return "", "", err
+	}
 	entry := &coreCached{finishedAt: monotonic(), latest: latest, err: failure, settings: settings}
 	coreLatestMu.Lock()
+	if err := ctx.Err(); err != nil {
+		coreLatestMu.Unlock()
+		return "", "", err
+	}
 	coreLatest[channel] = entry
 	coreLatestMu.Unlock()
 	return latest, failure, nil
@@ -719,6 +712,10 @@ type CoreUpdate struct {
 
 // CoreUpdateCheck compares the running version with its core update channel.
 func CoreUpdateCheck(ctx context.Context, m Registry, id string, force bool) (*PanelResult, error) {
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	result, err := CallPanel(ctx, m, id, "version", "GET", nil, nil, PanelResourceMinVersion["upgrade"])
 	if err != nil {
 		return nil, err
@@ -730,7 +727,7 @@ func CoreUpdateCheck(ctx context.Context, m Registry, id string, force bool) (*P
 	current := fieldText(fields, "version")
 	// Machine versions are ASCII, including alpha revisions. A Unicode lookalike
 	// cannot authorize an upgrade or suppress one through numeric coercion.
-	if current == "" || strings.ContainsFunc(current, func(r rune) bool { return r > 127 }) {
+	if !coreVersionPattern.MatchString(current) {
 		return nil, panelFail("INVALID_RESPONSE", 0, "")
 	}
 	channel := "release"
@@ -848,10 +845,11 @@ func CallPanel(ctx context.Context, m Registry, id, resource, method string, arg
 		return nil, panelFail("AGENT_AUTH_FAILED", 0, "")
 	}
 	value := json.RawMessage("null")
-	if len(bytes.TrimSpace(response.Body)) > 0 {
+	if len(bytes.Trim(response.Body, " \t\n\r\v\f")) > 0 {
 		text, valid := agents.DecodeJSONBytes(response.Body)
+		normalized, _ := jsonresp.NormalizeNonFinite([]byte(text))
 		var parsed model.Dynamic
-		if !valid || json.Unmarshal([]byte(text), &parsed) != nil {
+		if !valid || json.Unmarshal(normalized, &parsed) != nil {
 			if status == 404 {
 				return nil, panelFail("UPGRADE_REQUIRED", 409, msgPanelEndpointUpgrade)
 			}
@@ -859,7 +857,7 @@ func CallPanel(ctx context.Context, m Registry, id, resource, method string, arg
 				return nil, panelFail("INVALID_RESPONSE", 0, "")
 			}
 		} else {
-			value = []byte(text)
+			value = normalized
 		}
 	}
 	if status >= 400 {

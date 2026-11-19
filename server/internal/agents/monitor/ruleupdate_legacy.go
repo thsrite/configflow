@@ -1,11 +1,12 @@
 package monitor
 
 import (
-	"configflow/internal/jsonx"
 	"context"
 	"encoding/json"
 	"errors"
 	"sync"
+
+	"configflow/internal/jsonx"
 )
 
 // HABusyError is the ValueError of oxidns_ha_publish.rules: the route
@@ -49,16 +50,9 @@ func currentHARules() HARulesFunc {
 	return haRules
 }
 
-var haTerminal = map[string]bool{"succeeded": true, "failed": true, "rollback_failed": true}
-
 // SupportsPaths is the legacy model adapter.
 func SupportsPaths(agent *jsonx.Object) bool {
 	return versionAtLeast(agent, RuleUpdatePathsMinAgentVersion)
-}
-
-func strIn(value any, options []string) bool {
-	s, ok := value.(string)
-	return ok && contains(options, s)
 }
 
 func ruleUpdateTask(value any) (*jsonx.Object, error) {

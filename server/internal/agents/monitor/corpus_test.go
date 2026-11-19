@@ -2,7 +2,7 @@ package monitor
 
 import (
 	"compress/gzip"
-	"configflow/internal/model"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/model"
 )
 
 type referenceCorpus struct {
@@ -142,4 +143,32 @@ func publicUpstreams(rows, labels []any) ([]any, error) {
 		out = append(out, result)
 	}
 	return out, nil
+}
+
+// dashboardRankings adapts the historical private-helper corpus, which supplies
+// only the state fields consumed by liveRankings rather than a persisted file.
+// Production always enters through ReadOverview and its strict DecodeState.
+func dashboardRankings(ctx context.Context, m Manager, raw *jsonx.Object, params query, snapshot, state *jsonx.Object, recorders []any) (*jsonx.Object, error) {
+	a, err := typedAgent(raw)
+	if err != nil {
+		return nil, err
+	}
+	var stamp SnapshotIdentity
+	if err := metricJSON(snapshot, &stamp); err != nil {
+		return nil, err
+	}
+	var base stateBase
+	if err := metricJSON(state, &base); err != nil {
+		return nil, err
+	}
+	tags, valid := nativeTags(recorders)
+	if !valid {
+		return nil, invalidQuery()
+	}
+	s := DashboardState{StartedAtMS: base.StartedAtMS, Generation: base.Generation, InstanceID: base.InstanceID, SourceRevision: base.SourceRevision, RuntimeRevision: base.RuntimeRevision}
+	result, err := liveRankings(ctx, registryFor(m), a, params, &stamp, &s, tags)
+	if err != nil {
+		return nil, err
+	}
+	return metricObject(result), nil
 }

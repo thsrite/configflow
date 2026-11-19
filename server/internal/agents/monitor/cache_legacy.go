@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 
+	"configflow/internal/jsonresp"
 	"configflow/internal/jsonx"
 	"configflow/internal/model"
 )
@@ -105,6 +106,9 @@ func CacheCall(ctx context.Context, m Manager, agentID, method string, value any
 
 func (m legacyRegistry) monitorReply(ctx context.Context, a *model.Agent, endpoint string, params query, minimum string) (model.Fields, error) {
 	var fields model.Fields
+	if err := ctx.Err(); err != nil {
+		return fields, err
+	}
 	raw, err := json.Marshal(a)
 	if err != nil {
 		return fields, err
@@ -121,6 +125,10 @@ func (m legacyRegistry) monitorReply(ctx context.Context, a *model.Agent, endpoi
 	if err != nil {
 		return fields, err
 	}
+	if err := ctx.Err(); err != nil {
+		return fields, err
+	}
+	raw, _ = jsonresp.NormalizeNonFinite(raw)
 	err = json.Unmarshal(raw, &fields)
 	if err != nil {
 		return fields, NewError("INVALID_RESPONSE", 0, "")

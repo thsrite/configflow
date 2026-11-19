@@ -1,8 +1,9 @@
 package monitor
 
 import (
-	"configflow/internal/jsonx"
 	"context"
+
+	"configflow/internal/jsonx"
 )
 
 // ValidateState validates the legacy representation through the typed owner.
@@ -91,3 +92,6 @@ func exceedsDigitLimit(value any) bool {
 	}
 	return false
 }
+
+// maxStrDigits remains only for the unmigrated HTTP request binder.
+const maxStrDigits = 4300

@@ -1,9 +1,10 @@
 package monitor
 
 import (
-	"configflow/internal/weburl"
 	"strconv"
 	"strings"
+
+	"configflow/internal/weburl"
 )
 
 func displayAddress(value string) string {
@@ -24,18 +25,18 @@ func displayAddress(value string) string {
 		}
 		parsed, err := weburl.Parse(scheme + "://" + authority + tail)
 		if err != nil {
-			return "上游服务器"
+			return msgUpstreamServer
 		}
 		host := weburl.Hostname(parsed)
 		if host == "" {
-			return "上游服务器"
+			return msgUpstreamServer
 		}
 		if strings.Contains(host, ":") {
 			host = "[" + host + "]"
 		}
 		port, hasPort, err := weburl.Port(parsed)
 		if err != nil {
-			return "上游服务器"
+			return msgUpstreamServer
 		}
 		netloc := host
 		if hasPort {

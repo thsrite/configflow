@@ -1,9 +1,10 @@
 package monitor
 
 import (
-	"configflow/internal/jsonx"
 	"context"
 	"encoding/json"
+
+	"configflow/internal/jsonx"
 )
 
 // PanelCall is the compatibility codec for API/agents and rulesync.

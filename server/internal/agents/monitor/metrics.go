@@ -3,6 +3,7 @@ package monitor
 // OxiDNS Prometheus snapshots and dashboard arithmetic use typed observations.
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -13,7 +14,6 @@ import (
 	"strings"
 
 	"configflow/internal/model"
-	"encoding/json"
 )
 
 // Limits of parse_metrics (variables so tests can lower them like the
@@ -156,14 +156,10 @@ func toASCIIDigits(text string) (ascii string, digits int) {
 	return b.String(), digits
 }
 
-// maxStrDigits is sys.get_int_max_str_digits() (int() of a longer text
-// raises ValueError).
-const maxStrDigits = 4300
-
 // metricNumber is _number: nil for anything that is not a finite,
 // non-negative number; integer texts stay exact ints.
 func metricNumberNative(text string) *MetricNumber {
-	ascii, digits := toASCIIDigits(text)
+	ascii, _ := toASCIIDigits(text)
 	if !numberRE.MatchString(ascii) {
 		return nil
 	}
@@ -175,9 +171,6 @@ func metricNumberNative(text string) *MetricNumber {
 		return nil
 	}
 	if integerRE.MatchString(ascii) {
-		if digits > maxStrDigits {
-			return nil
-		}
 		i, ok := new(big.Int).SetString(ascii, 10)
 		if !ok {
 			return nil
@@ -640,6 +633,8 @@ func (o *Observations) UnmarshalJSON(raw []byte) error {
 	}
 	return nil
 }
+
+// UnmarshalJSON decodes exact observation keys and retains member presence.
 func (row *ServerObservation) UnmarshalJSON(raw []byte) error {
 	var fields model.Fields
 	if err := json.Unmarshal(raw, &fields); err != nil {
@@ -688,6 +683,8 @@ func (row *ServerObservation) UnmarshalJSON(raw []byte) error {
 	}
 	return nil
 }
+
+// UnmarshalJSON decodes exact observation keys and retains member presence.
 func (row *CacheObservation) UnmarshalJSON(raw []byte) error {
 	var fields model.Fields
 	if err := json.Unmarshal(raw, &fields); err != nil {
@@ -737,6 +734,8 @@ func (row *CacheObservation) UnmarshalJSON(raw []byte) error {
 	}
 	return nil
 }
+
+// UnmarshalJSON decodes exact observation keys and retains member presence.
 func (row *UpstreamObservation) UnmarshalJSON(raw []byte) error {
 	var fields model.Fields
 	if err := json.Unmarshal(raw, &fields); err != nil {
@@ -780,6 +779,7 @@ func (row *UpstreamObservation) UnmarshalJSON(raw []byte) error {
 	return nil
 }
 
+// MarshalJSON preserves absent numeric members separately from explicit nulls.
 func (row ServerObservation) MarshalJSON() ([]byte, error) {
 	var fields model.Fields
 	raw, err := json.Marshal(row.Tag)
@@ -830,6 +830,7 @@ func (row ServerObservation) MarshalJSON() ([]byte, error) {
 	return json.Marshal(fields)
 }
 
+// MarshalJSON preserves absent numeric members separately from explicit nulls.
 func (row CacheObservation) MarshalJSON() ([]byte, error) {
 	var fields model.Fields
 	raw, err := json.Marshal(row.Tag)
@@ -882,6 +883,7 @@ func (row CacheObservation) MarshalJSON() ([]byte, error) {
 	return json.Marshal(fields)
 }
 
+// MarshalJSON preserves absent numeric members separately from explicit nulls.
 func (row UpstreamObservation) MarshalJSON() ([]byte, error) {
 	var fields model.Fields
 	raw, err := json.Marshal(row.Tag)

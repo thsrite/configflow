@@ -76,7 +76,21 @@ func statePublication(agent *model.Agent, pending *PendingPublication) (*model.D
 	if !stored || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) || present && profile == "" {
 		profile = "default"
 	} else if !present {
-		return nil, nil
+		return nil, &StateError{msgPublicationDamaged}
+	}
+	for _, member := range []struct {
+		record *model.Deployment
+		name   string
+	}{{latest, "deployment_id"}, {&task, "profile_id"}, {&task, "service_type"}} {
+		raw, present, err := member.record.MemberJSON(member.name)
+		if err != nil {
+			return nil, err
+		}
+		if present {
+			if _, valid := originalString(raw, present, nil); !valid {
+				return nil, &StateError{msgPublicationDamaged}
+			}
+		}
 	}
 	latestID := originalText(latest.MemberJSON("deployment_id"))
 	status := originalText(task.MemberJSON("status"))
@@ -143,6 +157,18 @@ func AdvanceState(previous *DashboardState, snapshot *SnapshotIdentity, core *Co
 			expected = pending.ExpectedRevision
 		case "rolled_back":
 			expected = previous.SourceRevision
+		}
+		if task != nil {
+			raw, present, err := task.MemberJSON("manual_rollback")
+			if err != nil {
+				return nil, err
+			}
+			if present && !bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+				var flag *bool
+				if json.Unmarshal(raw, &flag) != nil || flag == nil {
+					return nil, &StateError{msgPublicationDamaged}
+				}
+			}
 		}
 		manualRollback := task != nil && task.ManualRollback != nil && *task.ManualRollback
 		if reason != "" && expected != "" && expected == snapshot.SourceRevision && !manualRollback {

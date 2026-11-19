@@ -2116,8 +2116,9 @@ HTTP 检查实际 method/path/Authorization/Content-Type/body 字节，并验证
 异常文本仿真。a07_review 原档案和期望不变，六条完整原行/source SHA 绑定 native 拒绝；
 现有 HA 停用清除损坏字段后规则更新恢复的回归覆盖空串、0、string、array。
 
-Mihomo Agent 回包使用标准 JSON；原 a07/135 含 NaN 的非标准 JSON 成功回包现在拒绝为
-INVALID_RESPONSE/502。原档案/该行/设备请求原字节均完整 SHA 绑定，其他原始行不放宽。
+Mihomo Agent 回包继续遵循 N8-1 的逐值 NaN/Infinity → null 响应约定，复用共享
+jsonresp.NormalizeNonFinite；字符串和有限字段不改。原 a07/135 完整 archive/row/设备请求
+SHA 绑定提前归一化后的 native 结果；HTTP 差分仍沿原 N8-1 比较，无新增 NaN 拒绝规则。
 
 ### N8-10 monitor — pending publication checkpoints and native JSON
 
@@ -2130,6 +2131,31 @@ DASHBOARD_STATE_ERROR/500 显示；不以 R5 零值或 Python falsy 值作为丢
 
 状态文件中的真实重复 member（包括 escaped 同名）现在明确按损坏文件拒绝，避免不同
 消费者选中不同统计起点；a06_review 的三条重复字段成功行完整保留并单独 SHA 绑定。
-Agent 回包采用标准 JSON 和严格 boolean 协议标志；a06 的两条 queries NaN 回包、四条
-responses 非标准 JSON/重复 member/数字 boolean 行绑定明确 INVALID_RESPONSE/502。
-原档案及正常/其他错误行的期待不改，未知普通 JSON 字段仍按原合同过滤或保留。
+Agent 回包采用精确键名和严格 boolean 协议标志；a06 的三条 responses 重复 member/
+数字 boolean 行绑定 INVALID_RESPONSE/502。另一个 responses NaN 行只绑定 N8-1 允许的
+逐值 null 修复，有限字段及原始档案不变；queries 中未使用的 NaN 字段照原合同丢弃。
+普通未知 JSON 字段仍按各 DTO 的原合同过滤或保留。
+
+统计接续同样拒绝原始 profile/service/deployment 身份为非字符串、或 manual_rollback 为
+非 boolean 的损坏证明；unknown 大小写别名不能覆盖它。五条独立回归核验原始 number
+及 alias、checkpoint 文件字节不变，并验证显式重置可以恢复。现有 UI 仅在已加载统计时
+显示重置按钮；首次加载错误时的管理员恢复 API 已补入 doc/manual/oxidns-panel.md。
+
+### N8-10 monitor — native machine release versions
+
+Mihomo release 分量使用共享 taskstatus.Count，不再复刻 CPython 的 4300 位限制或 ValueError
+文本。机器版本只认 ASCII；公开 core/update 对当前版本沿用 version.txt 的同一字母表和
+64 字节上限，错误返回 INVALID_RESPONSE/502，且不会读取/覆盖远端版本缓存。受支持
+Mihomo 的短 release/alpha 版本不变。原 a07 的 1 条 Unicode helper、3 条超长分量和8条
+公开 current-version 行完整保留；独立 Python ASCII/任意精度 policy generator 逐项绑定
+archive/完整 row SHA 和 native 结果，不读取 Go 输出。用户测速/日志参数原兼容路径留待 N10。
+
+指标整数也不再使用解释器的 4300 位位数上限；原 a06_reference 的 2 条及 a06_review
+的 13 条超长前导零样本现在得到精确计数。真实 Python 业务仅关闭 sys int digit cap 后重跑，完整 parsed/
+summary 与 archive/row SHA 独立绑定；同一计数规则传播到 1 条 overview_snapshot，
+也用真实 Python 结果和完整行 SHA 单独绑定。原语料不改。metrics 仍受原响应、行长、样本数及
+有限数值上限约束，不接受溢出/负值计数。
+
+存储身份摘要只接受标准 JSON；a06_review 的 17 条含裸 NaN/Infinity 的旧私有 target
+helper 行不再生成摘要，完整行和 archive SHA 单独绑定拒绝。该输入不是有效的存储 JSON；
+设备 HTTP 回包仍采用 N8-1 的逐值 null 归一化，未扩大设备端拒绝范围。

@@ -10,6 +10,7 @@ package monitor
 import (
 	"compress/gzip"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -85,6 +86,12 @@ func TestReviewMetrics(t *testing.T) {
 		} else {
 			summary, _ := SummarizeMetrics(text)
 			result = jsonx.Obj("parsed", parsed, "summary", summary)
+		}
+		if want, bound := nativeStateExpectation(t, "metrics", c); bound {
+			if got := dumpSorted(t, result); got != want {
+				t.Errorf("native metric: got %s want %s", got, want)
+			}
+			continue
 		}
 		if got := dumpSorted(t, result); got != c.GetString("result") {
 			f.add("%q:\n got  %s\n want %s", text, got, c.GetString("result"))
@@ -254,12 +261,7 @@ func TestReviewClientsQueriesAndQuery(t *testing.T) {
 		seen := answering(t, c.GetString("data"))
 		m := &fakeManager{agents: map[string]*jsonx.Object{"oxi": reviewAgent(c.GetString("version"))}, dataDir: t.TempDir()}
 		result, err := Queries(ctx, m, "oxi", pairs(c.Value("args")))
-		if want, bound := nativeStateExpectation(t, "queries", c); bound {
-			if got := answerResult(t, result, err, seen); got != want {
-				t.Errorf("native JSON refusal: got %s want %s", got, want)
-			}
-			continue
-		}
+
 		if got := answerResult(t, result, err, seen); got != c.GetString("result") {
 			f.add("queries %s %s:\n got  %s\n want %s", jsonx.Repr(c.Value("args")), c.GetString("data"), got, c.GetString("result"))
 		}
@@ -291,6 +293,12 @@ func TestReviewOverviewSnapshots(t *testing.T) {
 				summary.Set("upstreams", upstreams)
 				result = jsonx.Obj("core", snap.core, "recorders", snap.recorders, "summary", summary)
 			}
+		}
+		if want, bound := nativeStateExpectation(t, "overview_snapshot", c); bound {
+			if got := answerResult(t, result, err, seen); got != want {
+				t.Errorf("native overview: got %s want %s", got, want)
+			}
+			continue
 		}
 		if got := answerResult(t, result, err, seen); got != c.GetString("result") {
 			f.add("dashboard=%v %s:\n got  %s\n want %s", c.Value("dashboard"), c.GetString("data"), got, c.GetString("result"))
@@ -381,6 +389,13 @@ func TestReviewTargetDigests(t *testing.T) {
 	for _, item := range all {
 		pair := item.([]any)
 		digest, err := target(parseText(t, pair[0].(string)).(*jsonx.Object))
+		if want, bound := nativeStateExpectation(t, "target", pair); bound {
+			var syntax *json.SyntaxError
+			if want != dumpSorted(t, jsonx.Obj("refused", true)) || err == nil || digest != "" || !errors.As(err, &syntax) {
+				t.Errorf("invalid stored identity was hashed: digest=%s error=%v", digest, err)
+			}
+			continue
+		}
 		if err != nil || digest != pair[1] {
 			f.add("%s: got %s %v want %s", pair[0], digest, err, pair[1])
 		}

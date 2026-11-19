@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"sync"
 	"testing"
@@ -16,7 +17,7 @@ var stateRefOnce sync.Once
 var stateRefIndex map[string]map[[32]byte]string
 var stateRefErr error
 
-func nativeStateExpectation(t *testing.T, section string, row *jsonx.Object) (string, bool) {
+func nativeStateExpectation(t *testing.T, section string, row any) (string, bool) {
 	t.Helper()
 	stateRefOnce.Do(func() {
 		data, err := os.ReadFile("testdata/n810_state_native.json")
@@ -27,11 +28,12 @@ func nativeStateExpectation(t *testing.T, section string, row *jsonx.Object) (st
 		var fixture struct {
 			Sources map[string]string `json:"sources"`
 			Rows    []struct {
-				Source  string          `json:"source"`
-				Section string          `json:"section"`
-				SHA256  string          `json:"sha256"`
-				Row     json.RawMessage `json:"row"`
-				Want    json.RawMessage `json:"want"`
+				Source   string          `json:"source"`
+				Section  string          `json:"section"`
+				SHA256   string          `json:"sha256"`
+				Row      json.RawMessage `json:"row"`
+				Want     json.RawMessage `json:"want"`
+				WantText string          `json:"want_text"`
 			} `json:"rows"`
 		}
 		if err = json.Unmarshal(data, &fixture); err != nil {
@@ -63,10 +65,14 @@ func nativeStateExpectation(t *testing.T, section string, row *jsonx.Object) (st
 			}
 			sum := sha256.Sum256(raw)
 			if hex.EncodeToString(sum[:]) != row.SHA256 {
-				stateRefErr = errStateSource
+				stateRefErr = fmt.Errorf("%w: %s %s row hash got %s want %s", errStateSource, row.Source, row.Section, hex.EncodeToString(sum[:]), row.SHA256)
 				return
 			}
-			value, err := jsonx.Parse(row.Want)
+			want := row.Want
+			if row.WantText != "" {
+				want = []byte(row.WantText)
+			}
+			value, err := jsonx.Parse(want)
 			if err != nil {
 				stateRefErr = err
 				return
@@ -76,8 +82,8 @@ func nativeStateExpectation(t *testing.T, section string, row *jsonx.Object) (st
 			}
 			stateRefIndex[row.Section][sum] = dumpSorted(t, value)
 		}
-		if len(stateRefIndex["advance"]) != 88 || len(stateRefIndex["state_files"]) != 3 {
-			stateRefErr = errStateSource
+		if len(stateRefIndex["advance"]) != 88 || len(stateRefIndex["state_files"]) != 3 || len(stateRefIndex["responses"]) != 4 || len(stateRefIndex["metrics"]) != 15 || len(stateRefIndex["target"]) != 17 || len(stateRefIndex["overview_snapshot"]) != 1 {
+			stateRefErr = fmt.Errorf("%w: counts advance=%d state=%d response=%d metric=%d target=%d", errStateSource, len(stateRefIndex["advance"]), len(stateRefIndex["state_files"]), len(stateRefIndex["responses"]), len(stateRefIndex["metrics"]), len(stateRefIndex["target"]))
 		}
 	})
 	if stateRefErr != nil {

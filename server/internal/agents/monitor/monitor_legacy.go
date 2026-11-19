@@ -1,10 +1,12 @@
 package monitor
 
 import (
-	"configflow/internal/agents"
-	"configflow/internal/jsonx"
 	"context"
 	"encoding/json"
+
+	"configflow/internal/agents"
+	"configflow/internal/jsonx"
+
 	"golang.org/x/text/encoding/charmap"
 )
 
@@ -137,33 +139,6 @@ func rankingSectionRows(value any, kind string, limit int) (*jsonx.Object, error
 		return nil, err
 	}
 	return metricObject(section), nil
-}
-func dashboardRankings(ctx context.Context, m Manager, raw *jsonx.Object, params query, snapshot, state *jsonx.Object, recorders []any) (*jsonx.Object, error) {
-	a, err := typedAgent(raw)
-	if err != nil {
-		return nil, err
-	}
-	var stamp SnapshotIdentity
-	if err := metricJSON(snapshot, &stamp); err != nil {
-		return nil, err
-	}
-	data, err := jsonx.Compact(state)
-	if err != nil {
-		return nil, err
-	}
-	s, err := DecodeState(data)
-	if err != nil {
-		return nil, err
-	}
-	tags, valid := nativeTags(recorders)
-	if !valid {
-		return nil, invalidQuery()
-	}
-	result, err := liveRankings(ctx, registryFor(m), a, params, &stamp, s, tags)
-	if err != nil {
-		return nil, err
-	}
-	return metricObject(result), nil
 }
 func verifyTarget(ctx context.Context, m Manager, id, expected string) error {
 	return verifyNativeTarget(ctx, registryFor(m), id, expected)

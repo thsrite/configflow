@@ -68,25 +68,6 @@ var RcodeFilterText = map[string]string{
 	"BADCOOKIE": "Bad server cookie",
 }
 
-// Messages is MESSAGES.
-var Messages = map[string]string{
-	"UPGRADE_REQUIRED":        "请将此 Agent 升级到 1.7.0-go 或更新版本后使用 DNS 监控。",
-	"API_NOT_CONFIGURED":      "OxiDNS 管理 API 未启用。请在 OxiDNS 设置的「API / 日志」中开启，保存后发布到此 Agent。",
-	"RECORDER_NOT_CONFIGURED": "查询记录未启用，请在 OxiDNS 设置中开启查询记录并推送配置。",
-	"TLS_UNSUPPORTED":         "此监控连接暂不支持当前 OxiDNS API 的 TLS 配置。",
-	"CORE_UNREACHABLE":        "暂时无法连接 OxiDNS 管理 API，请检查核心运行状态。",
-	"CORE_AUTH_FAILED":        "OxiDNS 管理 API 认证失败，请检查核心配置中的认证设置。",
-	"AGENT_UNREACHABLE":       "暂时无法连接 Agent，请检查网络和 Agent 运行状态。",
-	"AGENT_AUTH_FAILED":       "Agent 认证失败，请检查注册状态。",
-	"INVALID_RESPONSE":        "监控数据格式异常，请检查 Agent 和 OxiDNS 版本。",
-	"INVALID_QUERY":           "查询条件无效，请检查筛选内容。",
-	"RECORD_NOT_FOUND":        "这条查询记录已不存在，可能已超过保留期限。",
-	"DASHBOARD_STATE_ERROR":   "无法读取或保存 DNS 面板统计起点，请检查数据目录并刷新面板确认状态。",
-	"DASHBOARD_CHANGED":       "设备或统计起点已改变，请重新载入 DNS 面板。",
-	"SNAPSHOT_CHANGED":        "采集期间核心或配置发生变化，请稍后刷新。",
-	"CONFIG_UNSUPPORTED":      "当前核心 API 配置无法用于监控，请检查监听地址与认证设置。",
-}
-
 // Error is MonitorError: Code, HTTP Status and the user Message.
 type Error struct {
 	Code    string
@@ -112,14 +93,14 @@ func NewError(code string, status int, message string) *Error {
 }
 
 func upgradeRequired(minVersion string) *Error {
-	feature := "DNS 监控"
+	feature := msgDNSMonitor
 	switch minVersion {
 	case MinClientsAgentVersion:
-		feature = "客户端 IP 选择与筛选"
+		feature = msgClientsFeature
 	case MinDashboardAgentVersion:
-		feature = "DNS 排行与统计重置"
+		feature = msgDashboardFeature
 	}
-	return NewError("UPGRADE_REQUIRED", 409, "请将此 Agent 升级到 "+minVersion+" 或更新版本后使用"+feature+"。")
+	return NewError("UPGRADE_REQUIRED", 409, fmt.Sprintf(msgPanelUpgrade, minVersion, feature))
 }
 
 var hostnameRE = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$`)

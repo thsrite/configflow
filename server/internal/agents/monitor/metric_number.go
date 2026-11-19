@@ -1,34 +1,28 @@
 package monitor
 
-// Python numbers and strings as oxidns_metrics.py, oxidns_dashboard_state.py
-// and oxidns_monitor.py use them: ints are exact (any size), floats float64,
-// mixed arithmetic converts the int with correct rounding (OverflowError
-// beyond the float range), comparisons between int and float are exact.
+// Metric arithmetic retains exact integral counters and finite float64 samples.
+// It does not convert an integral counter through float64 for comparisons.
 
 import (
+	"encoding/json"
 	"errors"
 	"math"
 	"math/big"
-	"sort"
-	"strings"
-	"unicode"
-
-	"encoding/json"
 	"strconv"
+	"strings"
 )
 
-// errOverflow is Python's OverflowError (int too large to convert to float,
-// or a true division result too large for a float).
+// errOverflow identifies arithmetic outside the finite float64 range.
 var errOverflow = errors.New("metric number is outside float64 range")
 
-// num is a Python int (exact) or float.
+// num is an exact integral counter or a floating sample.
 type num struct {
 	isFloat bool
 	i       *big.Int
 	f       float64
 }
 
-// toFloat is float(n): PyLong_AsDouble for an int.
+// toFloat converts a counter to a finite floating value.
 func (n num) toFloat() (float64, error) {
 	if n.isFloat {
 		return n.f, nil
@@ -40,8 +34,7 @@ func (n num) toFloat() (float64, error) {
 	return f, nil
 }
 
-// isFinite is math.isfinite(n): an int beyond the float range is an
-// OverflowError.
+// isFinite checks a value against the finite float64 range.
 func (n num) isFinite() (bool, error) {
 	f, err := n.toFloat()
 	if err != nil {
@@ -60,8 +53,7 @@ func (n num) rat() *big.Rat {
 	return new(big.Rat).SetInt(n.i)
 }
 
-// cmp compares exactly like Python (no NaN: callers exclude it). Infinite
-// floats are beyond every int.
+// cmp compares exact values; callers exclude NaN.
 func (n num) cmp(m num) int {
 	if !n.isFloat && !m.isFloat {
 		return n.i.Cmp(m.i)
@@ -128,8 +120,7 @@ func (n num) sub(m num) (num, error) {
 	return num{isFloat: true, f: a - b}, nil
 }
 
-// trueDiv is n / m for m != 0: an int quotient is correctly rounded
-// (long_true_divide), OverflowError when it does not fit a float.
+// trueDiv rounds an exact rational quotient to float64 and checks its range.
 func (n num) trueDiv(m num) (float64, error) {
 	if !n.isFloat && !m.isFloat {
 		f, _ := new(big.Rat).SetFrac(n.i, m.i).Float64()
@@ -154,75 +145,11 @@ func (n num) trueDiv(m num) (float64, error) {
 	return a / b, nil
 }
 
-// pyDecimalValue is the decimal value of a str.isdecimal() character of
-// CPython 3.11 (Unicode 14), -1 for any other character.
-func pyDecimalValue(r rune) int {
-	if r >= '0' && r <= '9' {
-		return int(r - '0')
-	}
-	if r < 0x660 {
-		return -1
-	}
-	i := sort.Search(len(pyDecimalStarts), func(i int) bool { return pyDecimalStarts[i] > r }) - 1
-	if i >= 0 && r-pyDecimalStarts[i] < 10 {
-		return int(r - pyDecimalStarts[i])
-	}
-	return -1
-}
-
-// pyIsSpace is str.isspace() for one character (also re's \s for str
-// patterns).
-func pyIsSpace(r rune) bool { return unicode.IsSpace(r) || (r >= 0x1c && r <= 0x1f) }
-
-// pyStrip is str.strip().
-func pyStrip(s string) string { return strings.TrimFunc(s, pyIsSpace) }
-
-// pySplitLines is str.splitlines().
-func pySplitLines(s string) []string {
-	var lines []string
-	start := 0
-	runes := []rune(s)
-	for i := 0; i < len(runes); i++ {
-		switch runes[i] {
-		case '\n', '\x0b', '\x0c', '\x1c', '\x1d', '\x1e', '\x85', ' ', ' ':
-		case '\r':
-			lines = append(lines, string(runes[start:i]))
-			if i+1 < len(runes) && runes[i+1] == '\n' {
-				i++
-			}
-			start = i + 1
-			continue
-		default:
-			continue
-		}
-		lines = append(lines, string(runes[start:i]))
-		start = i + 1
-	}
-	if start < len(runes) {
-		lines = append(lines, string(runes[start:]))
-	}
-	return lines
-}
-
-// runeLen is len(str).
-func runeLen(s string) int { return len([]rune(s)) }
-
-// pySlice is s[:limit] by code points.
-func pySlice(s string, limit int) string {
-	n := 0
-	for i := range s {
-		if n == limit {
-			return s[:i]
-		}
-		n++
-	}
-	return s
-}
-
 // MetricNumber retains exact integral counters and finite floating samples.
 // A nil pointer denotes an unknown observation, distinct from zero.
 type MetricNumber struct{ num }
 
+// MarshalJSON preserves integral counters and floating sample kinds.
 func (n MetricNumber) MarshalJSON() ([]byte, error) {
 	if n.isFloat {
 		if math.IsNaN(n.f) || math.IsInf(n.f, 0) {
@@ -239,6 +166,8 @@ func (n MetricNumber) MarshalJSON() ([]byte, error) {
 	}
 	return []byte(n.i.String()), nil
 }
+
+// UnmarshalJSON accepts only native JSON number tokens.
 func (n *MetricNumber) UnmarshalJSON(raw []byte) error {
 	if len(raw) == 0 || raw[0] != '-' && (raw[0] < '0' || raw[0] > '9') {
 		return errors.New("metric value must be a JSON number")
@@ -307,4 +236,15 @@ func metricRatio(n, d *MetricNumber, percentage bool) *MetricNumber {
 		return nil
 	}
 	return &MetricNumber{num: num{isFloat: true, f: value}}
+}
+
+func cloneMetric(n *MetricNumber) *MetricNumber {
+	if n == nil {
+		return nil
+	}
+	out := *n
+	if n.i != nil {
+		out.i = new(big.Int).Set(n.i)
+	}
+	return &out
 }

@@ -8,13 +8,12 @@ package monitor
 
 import (
 	"context"
-	"regexp"
-
-	"configflow/internal/agents"
 	"encoding/json"
 	"errors"
+	"regexp"
 	"slices"
 
+	"configflow/internal/agents"
 	"configflow/internal/jsonresp"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
@@ -33,27 +32,6 @@ const (
 // cacheTagRE is _TAG without its length lookahead (checked separately):
 // the Agent's oxMonitorSafeTag.
 var cacheTagRE = regexp.MustCompile(`^` + cacheSegment + `(?:\.` + cacheSegment + `)*$`)
-
-// CacheMessages is MESSAGES of oxidns_cache.py.
-var CacheMessages = map[string]string{
-	"UPGRADE_REQUIRED":        "请将此 Agent 升级到 " + CacheMinAgentVersion + " 或更新版本后清理缓存。",
-	"AGENT_NOT_FOUND":         "未找到这台 Agent。",
-	"WRONG_SERVICE":           "清理缓存仅适用于 OxiDNS Agent。",
-	"AGENT_UNREACHABLE":       "暂时无法连接 Agent，请检查网络后重试。",
-	"AGENT_AUTH_FAILED":       "Agent 认证失败，请检查注册状态。",
-	"INVALID_REQUEST":         "清理缓存请求无效。",
-	"INVALID_RESPONSE":        "缓存操作结果格式异常，请检查 Agent 和 OxiDNS 版本。",
-	"API_NOT_CONFIGURED":      "OxiDNS 管理 API 未启用，请在设置中启用并发布一次。",
-	"TLS_UNSUPPORTED":         "清理缓存暂不支持当前 OxiDNS API 的 TLS 配置。",
-	"CONFIG_UNSUPPORTED":      "当前 OxiDNS 配置无法用于清理缓存，请检查管理 API 配置。",
-	"CACHE_UNKNOWN":           "设备当前配置中没有这个缓存实例，请刷新面板后重试。",
-	"CACHE_FLUSH_UNSUPPORTED": "当前 OxiDNS 核心不支持清理缓存接口，请升级核心后重试。",
-	"CORE_UNREACHABLE":        "暂时无法连接 OxiDNS 管理 API，请检查核心运行状态。",
-	"CORE_AUTH_FAILED":        "OxiDNS 管理 API 认证失败，请检查核心配置。",
-	"CORE_BUSY":               "OxiDNS 缓存正忙，请稍后重试。",
-	"SERVICE_BUSY":            "此设备正在发布、重启或更新，请等待当前操作结束。",
-	"CACHE_FLUSH_FAILED":      "清理缓存失败，请检查 OxiDNS 日志后重试。",
-}
 
 // CacheFail is oxidns_cache._fail(code, status).
 func CacheFail(code string, status int) *Error {
@@ -81,7 +59,10 @@ type CacheOperationError struct {
 	Flushed []string
 }
 
+// Error returns the public failure message.
 func (e *CacheOperationError) Error() string { return e.Err.Message }
+
+// Unwrap exposes the structured monitor error.
 func (e *CacheOperationError) Unwrap() error { return e.Err }
 
 func validCacheTag(value any) bool {

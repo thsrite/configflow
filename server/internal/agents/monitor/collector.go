@@ -1,13 +1,15 @@
 package monitor
 
 import (
-	"configflow/internal/agents"
-	"configflow/internal/model"
 	"context"
 	"encoding/json"
 	"errors"
 	"strconv"
 	"time"
+
+	"configflow/internal/agents"
+	"configflow/internal/model"
+	"configflow/internal/redact"
 )
 
 func readSlot(ctx context.Context, m Registry, a *model.Agent, recorder string, since, until int64) (*Slot, error) {
@@ -82,6 +84,9 @@ func readSlot(ctx context.Context, m Registry, a *model.Agent, recorder string, 
 // CollectAgentHistory fills missing slots under the originating runtime context.
 func CollectAgentHistory(ctx context.Context, m Registry, store *RankingStore, agent *model.Agent, recorders []string,
 	now *int64, budget, retentionDays int, pause time.Duration) (int, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
 	end := LastCompleteSlotEnd(nowOr(now))
 	if retentionDays == 0 {
 		retentionDays = RankingCoreRetentionDays
@@ -128,7 +133,8 @@ func CollectAgentHistory(ctx context.Context, m Registry, store *RankingStore, a
 					reason = monitorErr.Code
 				}
 				// The device is busy or away: try again next round.
-				rankingLogger.Infof("OxiDNS 排行统计暂未取到 %s 的时段（%s），下一轮再试", name, reason)
+				name = redact.DiagnosticText(name, redact.Secrets{originalText(agent.MemberJSON("token"))}, 128)
+				rankingLogger.Infof(msgRankingUnavailable, name, reason)
 				return stored, nil
 			}
 			added, err := store.StoreSlot(ctx, agentID, recorder, start, slot)

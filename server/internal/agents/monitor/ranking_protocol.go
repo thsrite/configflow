@@ -36,6 +36,7 @@ type BlockedRanking struct {
 	Unavailable  *Rankings
 }
 
+// MarshalJSON writes the available or unavailable block-path variant.
 func (b BlockedRanking) MarshalJSON() ([]byte, error) {
 	if b.Unavailable != nil {
 		return json.Marshal(b.Unavailable)
@@ -74,6 +75,7 @@ type Rankings struct {
 	History, HistoryVersion                          string
 }
 
+// MarshalJSON writes precisely the fields of a live, history or unavailable result.
 func (r Rankings) MarshalJSON() ([]byte, error) {
 	if !r.Available {
 		var since, until *int64
@@ -301,6 +303,9 @@ func cloneRankings(r *Rankings) *Rankings {
 		}
 		out := *s
 		out.Rows = append([]RankingRow{}, s.Rows...)
+		for i := range out.Rows {
+			out.Rows[i].Share = cloneMetric(s.Rows[i].Share)
+		}
 		return &out
 	}
 	out.Clients, out.Domains = cloneSection(r.Clients), cloneSection(r.Domains)
@@ -318,6 +323,9 @@ func cloneRankings(r *Rankings) *Rankings {
 	return &out
 }
 func cachedRankings(ctx context.Context, m Registry, a *model.Agent, params query, stamp *SnapshotIdentity, state *DashboardState, recorders []string, manual bool) (*Rankings, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	id := rankingCacheIdentity{m.DataDir(), originalText(a.MemberJSON("id"))}
 	selected, _ := params.get("recorder")
 	encoded, _ := json.Marshal(recorders)

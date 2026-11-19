@@ -1,8 +1,9 @@
 package monitor
 
 import (
-	"configflow/internal/jsonx"
 	"encoding/json"
+
+	"configflow/internal/jsonx"
 )
 
 func metricJSON(value any, target any) error {

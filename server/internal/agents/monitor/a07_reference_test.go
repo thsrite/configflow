@@ -135,7 +135,7 @@ func compareCall(t *testing.T, label string, c *jsonx.Object, result any, err er
 		return
 	}
 	got := outcomeOf(result, err)
-	if nativePanelRefusal(t, c, got) {
+	if nativePanelExpectation(t, c, got) {
 		if g, w := sortedDump(t, seenOf(client)), normalizeSeen(t, c.GetString("seen")); g != w {
 			t.Fatalf("native refusal request changed: %s vs %s", g, w)
 		}
@@ -208,6 +208,17 @@ func TestReferencePanelHelpers(t *testing.T) {
 	ref := loadA07(t, "core_version_texts", "last_complete_slot_end", "newer_release")
 	for _, item := range ref.GetList("newer_release") {
 		c := item.([]any)
+		raw, encodeErr := jsonx.Compact(c)
+		if encodeErr != nil {
+			t.Fatal(encodeErr)
+		}
+		if native, bound := nativeVersionExpected(t, "newer_release", raw); bound {
+			got, err := newerRelease(c[0].(string), c[1].(string))
+			if err != nil || got != native.Value("result") {
+				t.Errorf("native release: %v %v want %v", got, err, native)
+			}
+			continue
+		}
 		if got, err := newerRelease(c[0].(string), c[1].(string)); err != nil || got != c[2].(bool) {
 			t.Errorf("newer_release(%q, %q) = %v", c[0], c[1], got)
 		}

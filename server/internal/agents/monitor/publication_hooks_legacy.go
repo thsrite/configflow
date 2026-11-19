@@ -1,10 +1,11 @@
 package monitor
 
 import (
-	"configflow/internal/agents"
-	"configflow/internal/jsonx"
 	"context"
 	"errors"
+
+	"configflow/internal/agents"
+	"configflow/internal/jsonx"
 )
 
 // Checkpoint is the legacy hook codec; invalid optional revisions are ignored.

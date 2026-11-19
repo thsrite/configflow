@@ -1,13 +1,13 @@
 package monitor
 
 import (
+	"context"
+	"encoding/json"
+	"time"
+
 	"configflow/internal/agents"
 	"configflow/internal/jsonx"
 	"configflow/internal/model"
-	"context"
-	"encoding/json"
-	"errors"
-	"time"
 )
 
 func legacyAgent(a *model.Agent) *jsonx.Object {
@@ -78,24 +78,6 @@ var (
 	}
 	rankingIsUsable = func(agent *jsonx.Object) bool { return agents.IsUsable(agent, nil) }
 )
-
-func historySupportedStrict(a *jsonx.Object) (bool, error) {
-	record, err := typedAgent(a)
-	if err != nil {
-		return false, err
-	}
-	if record == nil {
-		return false, nil
-	}
-	raw, present, err := record.MemberJSON("version")
-	if err != nil {
-		return false, err
-	}
-	if present && len(raw) > 0 && raw[0] != '"' && string(raw) != "null" {
-		return false, errors.New("invalid stored Agent version")
-	}
-	return modelVersionAtLeast(record, HistoryAgentVersion), nil
-}
 
 type legacyRoundRegistry struct {
 	legacyRegistry

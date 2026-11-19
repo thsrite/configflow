@@ -8,7 +8,9 @@ import (
 	"strings"
 
 	"configflow/internal/agents"
+	"configflow/internal/jsonresp"
 	"configflow/internal/model"
+
 	"golang.org/x/text/encoding/charmap"
 )
 
@@ -122,7 +124,8 @@ func protocolAnswer(response *agents.Response, limit int, fail func(string, int)
 		return fields, fail("AGENT_UNREACHABLE", 0)
 	}
 	text, valid := agents.DecodeJSONBytes(response.Body)
-	if !valid || json.Unmarshal([]byte(text), &fields) != nil {
+	normalized, _ := jsonresp.NormalizeNonFinite([]byte(text))
+	if !valid || json.Unmarshal(normalized, &fields) != nil {
 		if status == 404 && (!valid || !json.Valid([]byte(text))) {
 			return fields, fail("UPGRADE_REQUIRED", 409)
 		}

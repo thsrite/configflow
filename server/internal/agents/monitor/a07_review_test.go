@@ -64,15 +64,20 @@ func sameOutcome(t *testing.T, label string, got map[string]any, want map[string
 	}
 }
 
-// _newer_release converts the version parts with int(): a part of more than
-// 4300 digits is a ValueError (the panel route answers 500), checked only
-// when both versions match the release pattern.
+// Original Python limit rows stay frozen; exact native bindings remove the
+// interpreter digit cap while the public machine-version budget fails closed.
 func TestReviewNewerReleaseDigitLimit(t *testing.T) {
 	for _, raw := range loadA07Review(t).NewerRelease {
 		var c []any
 		json.Unmarshal(raw, &c)
 		want := c[2].(map[string]any)
 		got, err := newerRelease(c[0].(string), c[1].(string))
+		if native, bound := nativeVersionExpected(t, "newer_release", raw); bound {
+			if err != nil || got != native.Value("result") {
+				t.Errorf("native release count: %v %v want %v", got, err, native)
+			}
+			continue
+		}
 		if exception, ok := want["exception"]; ok {
 			if err == nil || !strings.HasPrefix(err.Error(), exception.(string)+":") {
 				t.Errorf("newer_release(%.12q, %.12q): %v, %v; want %v", c[0], c[1], got, err, exception)
@@ -83,9 +88,8 @@ func TestReviewNewerReleaseDigitLimit(t *testing.T) {
 	}
 }
 
-// check_core_update with a core version whose release part exceeds the
-// digit limit: the error comes from _usable before a fetch (cached, not
-// forced) or from the answer after the fetch was stored.
+// A malformed machine version cannot fetch or overwrite a cached release.
+// Original Python outcomes and side effects are retained in the bound fixture.
 func TestReviewCoreUpdateDigitLimitFollowsPython(t *testing.T) {
 	for _, raw := range loadA07Review(t).CoreUpdate {
 		var c []any
@@ -103,7 +107,17 @@ func TestReviewCoreUpdateDigitLimitFollowsPython(t *testing.T) {
 		if force {
 			args = append(args, [2]string{"force", "1"})
 		}
+		before := coreCachedOf("release")
 		result, err := panelCall(m, "core/update", "GET", args, nil)
+		if native, bound := nativeVersionExpected(t, "core_update", raw); bound {
+			if got := outcomeOf(result, err); sortedDump(t, got) != sortedDump(t, native) {
+				t.Errorf("native machine version: %v want %v", got, native)
+			}
+			if latest.count() != 0 || coreCachedOf("release") != before {
+				t.Fatal("invalid machine version fetched or changed cached release")
+			}
+			continue
+		}
 		label := pySlice(current, 8) + " cached=" + jsonx.Str(cached) + " force=" + jsonx.Str(force)
 		if want["exception"] != nil {
 			sameOutcome(t, label, reviewOutcome(err), want)
