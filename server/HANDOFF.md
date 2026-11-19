@@ -56,6 +56,22 @@ the hand-back. If no notification arrives within ~3 h, check status once more.
 | e46d698f-6345-41b9-8a38-06d61b6622d3 | config black-box difftest, Step A coverage matrix (→ Opus O6 review) | wks_223d2a53f6e7abbb, branch `go-difftest-config` |
 ## >>> CURRENT STATE — 2026-11-19 (handoff to a fresh session; read this first) <<<
 
+**Update 2026-11-19 ~18:30 (coordinator 2f0cdf04): batch-11 MERGED, go = a25020826.** Contents: json-case sweep
+(go-review-json-case), N8-10 core-2 + Opus HR review (high 0, M1 re-registration kept non-Python members incl.
+docker_ha_installation_id → fixed; node_test_dns_endpoints dropped like Python — field dead since upstream #569),
+toolchain Go 1.27.4 (go.mod go 1.27.0, x/text direct, Dockerfile golang:1.27.4; govulncheck v1.10.0 clean),
+jsondecode.Select (narrow exact-name owned capture; fixes 8.4 MB N8-9 sync alloc regression from objectMembers;
+Codex-reviewed by be408111), zoneinfo oracle registration, pyref refresh. Gate: preflight + compare .32 PASS on
+0bf663323 (new=0 stale=0, 24 difftest, 23 live); core FULL .64 PASS (race + 94 fuzz). Final tip adds docs only.
+Monitor (1cc7e926) and installer (7e69d031) are on 70cea1eb6 → rebase onto go. Rulings for them: corrupt stored
+guards (oxidns_ha_publication, dashboard checkpoints, non-object registry members, NaN expires) fail closed with a
+tested recovery path; installer session ids must be 32 lowercase hex, index == session.id (prod snapshot 0/0);
+installer data_dir dangerous-dir check normalises with path.Clean; numeric agent_ip → 400; machine text/numbers
+native ASCII rules (no CPython tables, no 4300-digit limit, no int64 overflow); kept named D2 identity encoder for
+published install hashes (not a legacy facade). UI follow-up: dashboard StateError on first load has no recovery
+button (admin uses stats reset API). Plan kept by maintainer: batch-12 = monitor + installer (installer needs Opus HR,
+security fixes), batch-13 = upgrades + api/agents, N8-11 separate.
+
 **Update 2026-11-19 ~16:40 (coordinator 2f0cdf04, Opus 5.5):** core-2 handed back as `go-n8-10-core-2@a75dd4a1d`
 (based on go@d9515f7fe, 20 commits, report progress/n8-10-core-2.md, status "partial" with explicit deferred list).
 Rulings today: traffic domain lowercasing = x/text cases.Lower, Unicode 17 only, test hard-asserts 17.0.0 (55
