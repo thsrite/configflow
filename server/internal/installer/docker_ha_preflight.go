@@ -4,8 +4,10 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"configflow/internal/jsonx"
-	"configflow/internal/pystr"
+	"configflow/internal/model"
+	"encoding/json"
+	"math/big"
+	"unicode"
 )
 
 // Port of backend/agents/docker_ha_preflight.py: the bounded, read-only
@@ -160,19 +162,30 @@ printf '%s\n' 'CONFIGFLOW_DOCKER_HA_PREFLIGHT_V1_END'
 
 // preflightCheck is _check(ident, label, status, detail, remedy); remedy ""
 // is None.
-func preflightCheck(ident, label, status, detail, remedy string) *jsonx.Object {
-	result := jsonx.Obj("id", ident, "label", label, "status", status, "detail", detail)
-	if remedy != "" {
-		result.Set("remedy", remedy)
-	}
-	return result
+// PreflightCheck describes one host requirement.
+type PreflightCheck struct {
+	ID     string `json:"id"`
+	Label  string `json:"label"`
+	Status string `json:"status"`
+	Detail string `json:"detail"`
+	Remedy string `json:"remedy,omitempty"`
 }
 
-// preflightUnknown is _unknown(reason).
-func preflightUnknown(reason string) *jsonx.Object {
-	return jsonx.Obj("status", "unknown", "summary", "输出不完整或无法识别，尚不能判断基础环境是否符合。",
-		"checks", []any{preflightCheck("output", "采集输出", "unknown", reason,
-			"重新运行当前页面的检查命令，粘贴包含 V1_BEGIN 到 V1_END 的完整输出。")})
+// PreflightReport is the bounded host collector's evaluation.
+type PreflightReport struct {
+	Status          string           `json:"status"`
+	Summary         string           `json:"summary"`
+	Checks          []PreflightCheck `json:"checks"`
+	HostFingerprint string           `json:"host_fingerprint,omitempty"`
+}
+
+func preflightCheck(ident, label, status, detail, remedy string) PreflightCheck {
+	return PreflightCheck{ident, label, status, detail, remedy}
+}
+func preflightUnknown(reason string) *PreflightReport {
+	return &PreflightReport{Status: "unknown", Summary: "输出不完整或无法识别，尚不能判断基础环境是否符合。",
+		Checks: []PreflightCheck{preflightCheck("output", "采集输出", "unknown", reason,
+			"重新运行当前页面的检查命令，粘贴包含 V1_BEGIN 到 V1_END 的完整输出。")}}
 }
 
 func isBlankTab(c byte) bool { return c == ' ' || c == '\t' }
@@ -361,7 +374,7 @@ func preflightDecode(output any) (map[string]preflightValue, string, error) {
 	}
 	var starts, ends []int
 	for i, line := range lines {
-		switch pystr.Strip(line) {
+		switch strings.TrimSpace(line) {
 		case PreflightBegin:
 			starts = append(starts, i)
 		case PreflightEnd:
@@ -424,25 +437,39 @@ func isPreflightField(key string) bool {
 
 // preflightJSON is _json_value(item, expected_type): the decoded value when
 // the probe succeeded and it is a dict (object) or list, else nil.
-func preflightJSON(item preflightValue, object bool) any {
+func preflightObject(item preflightValue) model.Fields {
+	var fields model.Fields
 	if item.code != 0 {
-		return nil
+		return fields
 	}
-	value, err := jsonx.Parse([]byte(item.text))
-	if err != nil {
-		return nil
+	if json.Unmarshal([]byte(item.text), &fields) != nil {
+		return model.Fields{}
 	}
-	if o, ok := value.(*jsonx.Object); ok && object {
-		return o
-	}
-	if l, ok := value.([]any); ok && !object {
-		return l
-	}
-	return nil
+	return fields
 }
 
-// pyFields is str.split() without arguments.
-func pyFields(s string) []string { return strings.FieldsFunc(s, pystr.IsSpace) }
+func probeSecurity(item preflightValue) ([]string, bool) {
+	if item.code != 0 {
+		return nil, false
+	}
+	var raw []json.RawMessage
+	if json.Unmarshal([]byte(item.text), &raw) != nil || raw == nil || len(raw) > 32 {
+		return nil, false
+	}
+	result := make([]string, 0, len(raw))
+	for _, value := range raw {
+		if len(value) == 0 || value[0] != '"' {
+			return nil, false
+		}
+		var text string
+		if json.Unmarshal(value, &text) != nil {
+			return nil, false
+		}
+		result = append(result, text)
+	}
+	return result, true
+}
+func pyFields(s string) []string { return strings.Fields(s) }
 
 func isUpperHex(s string) bool {
 	for i := 0; i < len(s); i++ {
@@ -454,7 +481,7 @@ func isUpperHex(s string) bool {
 }
 
 // preflightPortCheck is _port_check(values, proto, mode).
-func preflightPortCheck(values map[string]preflightValue, proto, mode string) *jsonx.Object {
+func preflightPortCheck(values map[string]preflightValue, proto, mode string) PreflightCheck {
 	lower := strings.ToLower(proto)
 	ident := lower + "53"
 	item := values[ident]
@@ -502,7 +529,7 @@ func preflightPortCheck(values map[string]preflightValue, proto, mode string) *j
 	case "ss":
 		var kept []string
 		for _, line := range lines {
-			if pystr.Strip(line) != "" {
+			if strings.TrimSpace(line) != "" {
 				kept = append(kept, line)
 			}
 		}
@@ -516,7 +543,7 @@ func preflightPortCheck(values map[string]preflightValue, proto, mode string) *j
 			if len(columns) > 0 && (columns[0] == "udp" || columns[0] == "tcp") {
 				columns = columns[1:]
 			}
-			if len(columns) != 5 || columns[0] != state || !pystr.IsDigit(columns[1]) || !pystr.IsDigit(columns[2]) || !strings.HasSuffix(columns[3], ":53") {
+			if len(columns) != 5 || columns[0] != state || !asciiDigits(columns[1]) || !asciiDigits(columns[2]) || !strings.HasSuffix(columns[3], ":53") {
 				return preflightCheck(ident, label, "unknown", "无法识别 ss 的监听输出，尚未确认端口状态。", "重新运行页面提供的命令，不要手工改写检查项。")
 			}
 		}
@@ -587,7 +614,7 @@ func interfaceName(raw string) string {
 func matchAddressLine(line string) (name, address string, ok bool) {
 	runes := []rune(line)
 	i := 0
-	for i < len(runes) && pystr.Decimal(runes[i]) >= 0 {
+	for i < len(runes) && runes[i] >= '0' && runes[i] <= '9' {
 		i++
 	}
 	if i == 0 || i >= len(runes) || runes[i] != ':' {
@@ -596,14 +623,14 @@ func matchAddressLine(line string) (name, address string, ok bool) {
 	i++
 	spaces := func() bool {
 		j := i
-		for i < len(runes) && pystr.IsSpace(runes[i]) {
+		for i < len(runes) && unicode.IsSpace(runes[i]) {
 			i++
 		}
 		return i > j
 	}
 	word := func() string {
 		j := i
-		for i < len(runes) && !pystr.IsSpace(runes[i]) {
+		for i < len(runes) && !unicode.IsSpace(runes[i]) {
 			i++
 		}
 		return string(runes[j:i])
@@ -663,8 +690,7 @@ func parseIPv4Interface(text string) (uint32, int, bool) {
 
 // ParsePreflightReport is parse_report(output, network_mode): the report, or
 // a *ValueError (wrong mode, type, encoding or size, or an int() digit limit).
-func ParsePreflightReport(output, networkMode any) (*jsonx.Object, error) {
-	mode, _ := networkMode.(string)
+func EvaluatePreflight(output, mode string) (*PreflightReport, error) {
 	if mode != "host" && mode != "macvlan" {
 		return nil, valueError("network_mode 须为 host 或 macvlan")
 	}
@@ -675,8 +701,8 @@ func ParsePreflightReport(output, networkMode any) (*jsonx.Object, error) {
 	if reason != "" {
 		return preflightUnknown(reason), nil
 	}
-	var checks []any
-	add := func(c *jsonx.Object) { checks = append(checks, c) }
+	var checks []PreflightCheck
+	add := func(c PreflightCheck) { checks = append(checks, c) }
 	pick := func(cond bool, yes, no string) string {
 		if cond {
 			return yes
@@ -685,13 +711,13 @@ func ParsePreflightReport(output, networkMode any) (*jsonx.Object, error) {
 	}
 
 	kernel := values["kernel"]
-	linux := kernel.code == 0 && pystr.Strip(kernel.text) == "Linux"
+	linux := kernel.code == 0 && strings.TrimSpace(kernel.text) == "Linux"
 	add(preflightCheck("linux", "Linux 宿主环境", pick(kernel.code != 0, "unknown", pick(linux, "pass", "fail")),
 		pick(linux, "当前内核为 Linux。", "未确认 Linux 宿主；macOS/Windows 上的 Docker Desktop 不支持此 HA 部署。"),
 		pick(linux, "", "请在实际 Linux/NAS Docker 宿主机的终端重新采集。")))
 
 	endpointItem := values["docker_endpoint"]
-	endpoint := pystr.Strip(endpointItem.text)
+	endpoint := strings.TrimSpace(endpointItem.text)
 	local := endpointItem.code == 0 && endpoint == "local-unix"
 	add(preflightCheck("docker_endpoint", "Docker 检查目标",
 		pick(endpointItem.code != 0 || (endpoint != "local-unix" && endpoint != "remote"), "unknown", pick(endpoint == "local-unix", "pass", "fail")),
@@ -700,10 +726,10 @@ func ParsePreflightReport(output, networkMode any) (*jsonx.Object, error) {
 
 	versionItem := values["docker_version"]
 	validVersion := false
-	if version, _ := preflightJSON(versionItem, true).(*jsonx.Object); version != nil && version.Len() > 0 {
+	if version := preflightObject(versionItem); version.Len() > 0 {
 		validVersion = true
 		for _, k := range []string{"client", "server"} {
-			text, isString := version.GetOr(k, nil).(string)
+			text, isString := fieldText(version, k)
 			if _, ok := isVersionText(text, false); !isString || !ok {
 				validVersion = false
 				break
@@ -716,18 +742,18 @@ func ParsePreflightReport(output, networkMode any) (*jsonx.Object, error) {
 		pick(validVersion, "", "先确认 Docker 服务已启动、当前用户有访问权限，并能运行 docker version 读取 Server 信息。")))
 
 	osItem := values["daemon_os"]
-	linuxOS := osItem.code == 0 && pystr.Strip(osItem.text) == "linux"
+	linuxOS := osItem.code == 0 && strings.TrimSpace(osItem.text) == "linux"
 	add(preflightCheck("docker_os", "Docker 容器系统", pick(osItem.code != 0, "unknown", pick(linuxOS, "pass", "fail")),
 		pick(linuxOS, "Docker daemon 使用 Linux 容器。", "未确认 daemon 为 Linux 容器模式。"),
 		pick(linuxOS, "", "使用实际 Linux/NAS 上的 rootful Docker Engine。")))
 
 	platformValid, desktop := false, false
-	if platform, _ := preflightJSON(values["daemon_platform"], true).(*jsonx.Object); platform != nil && platform.Len() > 0 {
-		osText, osOK := platform.GetOr("os", nil).(string)
-		kernelText, kernelOK := platform.GetOr("kernel", nil).(string)
-		platformValid = osOK && pystr.Strip(osText) != "" && kernelOK && pystr.Strip(kernelText) != ""
+	if platform := preflightObject(values["daemon_platform"]); platform.Len() > 0 {
+		osText, osOK := fieldText(platform, "os")
+		kernelText, kernelOK := fieldText(platform, "kernel")
+		platformValid = osOK && strings.TrimSpace(osText) != "" && kernelOK && strings.TrimSpace(kernelText) != ""
 		if platformValid {
-			combined := pystr.Lower(osText + " " + kernelText)
+			combined := strings.ToLower(osText + " " + kernelText)
 			for _, term := range []string{"docker desktop", "docker-desktop", "linuxkit"} {
 				if strings.Contains(combined, term) {
 					desktop = true
@@ -740,21 +766,15 @@ func ParsePreflightReport(output, networkMode any) (*jsonx.Object, error) {
 		pick(desktop || !platformValid, "请在 Linux/NAS 原生 Docker Engine 上部署。", "")))
 
 	validSecurity, rootless := false, false
-	if security, isList := preflightJSON(values["daemon_security"], false).([]any); isList {
-		validSecurity = len(security) <= 32
-		for _, x := range security {
-			if _, isString := x.(string); !isString {
-				validSecurity = false
-			}
-		}
-		if validSecurity {
-			for _, x := range security {
-				if strings.Contains(pystr.Lower(x.(string)), "rootless") {
-					rootless = true
-				}
+	if security, valid := probeSecurity(values["daemon_security"]); valid {
+		validSecurity = true
+		for _, text := range security {
+			if strings.Contains(strings.ToLower(text), "rootless") {
+				rootless = true
 			}
 		}
 	}
+
 	add(preflightCheck("docker_rootful", "Rootful Docker", pick(!validSecurity, "unknown", pick(rootless, "fail", "pass")),
 		pick(rootless, "检测到 rootless Docker，无法提供所需网络能力。", pick(validSecurity, "服务端未启用 rootless 模式。", "无法读取 daemon 的安全模式。")),
 		pick(rootless || !validSecurity, "使用宿主机的 rootful Docker 服务；不要用 privileged 代替环境检查。", "")))
@@ -762,14 +782,14 @@ func ParsePreflightReport(output, networkMode any) (*jsonx.Object, error) {
 	composeItem := values["compose"]
 	modernCompose := false
 	if composeItem.code == 0 {
-		if parts, ok := isVersionText(pystr.Strip(composeItem.text), true); ok {
+		if parts, ok := isVersionText(strings.TrimSpace(composeItem.text), true); ok {
 			// tuple(map(int, match.groups())) >= (2, 30, 0); int() keeps its
 			// digit limit (a ValueError the route answers with 400).
 			var numbers [3]int64
 			for i, part := range parts {
-				n, err := pystr.Int(part, 10)
-				if err != nil {
-					return nil, valueError(err.Error())
+				n, ok := new(big.Int).SetString(part, 10)
+				if !ok {
+					return nil, valueError("Invalid Compose version")
 				}
 				if !n.IsInt64() || n.Int64() > 1<<40 {
 					numbers[i] = 1 << 40
@@ -790,7 +810,7 @@ func ParsePreflightReport(output, networkMode any) (*jsonx.Object, error) {
 	malformed := false
 	if ipv4Item.code == 0 {
 		for _, line := range pySplitLines(ipv4Item.text) {
-			if pystr.Strip(line) == "" {
+			if strings.TrimSpace(line) == "" {
 				continue
 			}
 			rawName, address, matched := matchAddressLine(line)
@@ -844,7 +864,7 @@ func ParsePreflightReport(output, networkMode any) (*jsonx.Object, error) {
 
 	statuses := map[string]bool{}
 	for _, c := range checks {
-		statuses[c.(*jsonx.Object).GetString("status")] = true
+		statuses[c.Status] = true
 	}
 	status := "pass"
 	for _, s := range []string{"fail", "unknown", "warning"} {
@@ -859,9 +879,9 @@ func ParsePreflightReport(output, networkMode any) (*jsonx.Object, error) {
 		"fail":    "发现需要处理的基础环境问题；处理后请重新采集。",
 		"unknown": "部分必要检查未完成，尚不能判断基础环境是否符合。",
 	}[status]
-	result := jsonx.Obj("status", status, "summary", summary, "checks", checks)
+	result := &PreflightReport{Status: status, Summary: summary, Checks: checks}
 	if fingerprintOK {
-		result.Set("host_fingerprint", fingerprintItem.text)
+		result.HostFingerprint = fingerprintItem.text
 	}
 	return result, nil
 }

@@ -5,7 +5,7 @@ import (
 	"math/big"
 	"strings"
 
-	"configflow/internal/jsonx"
+	"encoding/json"
 )
 
 // Port of backend/agents/go_install_script.py, generate_go_agent_install_script:
@@ -169,38 +169,18 @@ func GenerateGoAgentInstallScript(o GoAgentOptions) (string, error) {
 	if serviceBinary == "" {
 		serviceBinary = serviceType
 	}
-	cfg := jsonx.Obj(
-		"server_url", o.ServerURL,
-		"agent_name", o.AgentName,
-		"agent_host", "0.0.0.0",
-		"agent_port", jsonx.BigInt(port),
-		"agent_ip", o.AgentIP,
-		"service_type", serviceType,
-		"deployment_method", "shell",
-		"service_name", serviceType,
-		"config_path", configPath,
-		"restart_command", restart,
-		"service_manager", serviceManager,
-		"service_unit", unit,
-		"service_binary", serviceBinary,
-		"stop_command", o.StopCommand,
-		"start_command", o.StartCommand,
-		"status_command", o.StatusCommand,
-		"health_url", o.HealthURL,
-		"health_dns_address", o.HealthDNSAddress,
-		"health_dns_name", o.HealthDNSName,
-		"deployment_health_timeout", jsonx.BigInt(timeoutValue),
-		"heartbeat_interval", 30,
-		"agent_id", "__CONFIGFLOW_AGENT_ID__",
-		"token", "__CONFIGFLOW_TOKEN__",
-	)
-	if o.RegistrationToken != "" {
-		cfg.Set("registration_token", o.RegistrationToken)
+	cfg := singleAgentConfig{
+		ServerURL: o.ServerURL, AgentName: o.AgentName, AgentHost: "0.0.0.0",
+		AgentPort: json.Number(port.String()), AgentIP: o.AgentIP, ServiceType: serviceType,
+		DeploymentMethod: "shell", ServiceName: serviceType, ConfigPath: configPath,
+		RestartCommand: restart, ServiceManager: serviceManager, ServiceUnit: unit,
+		ServiceBinary: serviceBinary, StopCommand: o.StopCommand, StartCommand: o.StartCommand,
+		StatusCommand: o.StatusCommand, HealthURL: o.HealthURL, HealthDNSAddress: o.HealthDNSAddress,
+		HealthDNSName: o.HealthDNSName, DeploymentHealthTimeout: json.Number(timeoutValue.String()),
+		HeartbeatInterval: 30, AgentID: "__CONFIGFLOW_AGENT_ID__", Token: "__CONFIGFLOW_TOKEN__",
+		RegistrationToken: o.RegistrationToken, RegistrationKey: o.RegistrationKey,
 	}
-	if o.RegistrationKey != "" {
-		cfg.Set("registration_key", o.RegistrationKey)
-	}
-	configJSON, err := jsonx.Encode(cfg, jsonx.Options{EnsureASCII: true, Indent: 2})
+	configJSON, err := renderConfigJSON(cfg)
 	if err != nil {
 		return "", err
 	}

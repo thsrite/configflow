@@ -3,14 +3,10 @@ package installer
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"math/big"
+	"encoding/json"
 	"strings"
 
-	"configflow/internal/jsonx"
-	"configflow/internal/pystr"
-	"configflow/internal/weburl"
-	"configflow/internal/yamlbridge"
-	"configflow/internal/yamlx"
+	"unicode"
 )
 
 // Port of backend/agents/docker_ha_guide.py: copyable Docker HA setup steps;
@@ -102,13 +98,12 @@ func posixCommonpath(left, right string) string {
 }
 
 // guidePath is _path(value, label, allow_colon).
-func guidePath(value any, label string, allowColon bool) (string, error) {
-	text, isString := value.(string)
+func guidePath(text string, label string, allowColon bool) (string, error) {
 	bad := ",:\x00\r\n"
 	if allowColon {
 		bad = ",\x00\r\n"
 	}
-	if !isString || !strings.HasPrefix(text, "/") || text == "/" || posixNormpath(text) != text || strings.ContainsAny(text, bad) {
+	if !strings.HasPrefix(text, "/") || text == "/" || posixNormpath(text) != text || strings.ContainsAny(text, bad) {
 		if allowColon {
 			return "", valueError(label + "须为规范的绝对路径，不能包含逗号或换行")
 		}
@@ -123,81 +118,27 @@ func isGuideName(value string) bool {
 }
 
 // guideName is _name(value, label).
-func guideName(value any, label string) (string, error) {
-	text, isString := value.(string)
-	if !isString || !isGuideName(text) {
+func guideName(text string, label string) (string, error) {
+	if !isGuideName(text) {
 		return "", valueError(label + "只能包含字母、数字、点、下划线或短横线")
 	}
 	return text, nil
 }
 
-// guideMount is _mount(value, label): {'type', 'source'}.
-func guideMount(value any, label string) (*jsonx.Object, error) {
-	o, isObject := value.(*jsonx.Object)
-	kind, _ := o.GetOr("type", nil).(string)
-	if !isObject || (kind != "bind" && kind != "volume") {
-		return nil, valueError(label + "请选择 bind 目录或 Docker 命名卷")
+func guideVolume(mount composeMount, target string, readonly bool) composeMount {
+	mount.Target = target
+	mount.ReadOnly = readonly
+	if mount.Type == "bind" {
+		mount.Bind = &composeBind{false}
 	}
-	var source string
-	var err error
-	if kind == "bind" {
-		source, err = guidePath(o.GetOr("source", nil), label, false)
-	} else {
-		source, err = guideName(o.GetOr("source", nil), label)
-	}
-	if err != nil {
-		return nil, err
-	}
-	return jsonx.Obj("type", kind, "source", source), nil
+	return mount
 }
-
-// guideVolume is _volume(mount, target, readonly).
-func guideVolume(mount *jsonx.Object, target string, readonly bool) *jsonx.Object {
-	result := mount.Clone()
-	result.Set("target", target)
-	result.Set("read_only", readonly)
-	if mount.GetString("type") == "bind" {
-		result.Set("bind", jsonx.Obj("create_host_path", false))
-	}
-	return result
-}
-
-// mountArg is _mount_arg(mount).
-func mountArg(mount *jsonx.Object) (string, error) {
-	var parts [3]string
-	for i, key := range []string{"type", "source", "target"} {
-		text, isString := mount.GetOr(key, nil).(string)
-		if !isString {
-			return "", typeError("can only concatenate str (not \"" + pyTypeName(mount.GetOr(key, nil)) + "\") to str")
-		}
-		parts[i] = text
-	}
-	text := "type=" + parts[0] + ",src=" + parts[1] + ",dst=" + parts[2]
-	if jsonx.Truthy(mount.GetOr("read_only", nil)) {
+func mountArg(mount composeMount) (string, error) {
+	text := "type=" + mount.Type + ",src=" + mount.Source + ",dst=" + mount.Target
+	if mount.ReadOnly {
 		text += ",readonly"
 	}
 	return text, nil
-}
-
-func pyTypeName(v any) string {
-	switch x := v.(type) {
-	case nil:
-		return "NoneType"
-	case bool:
-		return "bool"
-	case string:
-		return "str"
-	case jsonx.Number:
-		if x.IsInt() {
-			return "int"
-		}
-		return "float"
-	case []any:
-		return "list"
-	case *jsonx.Object:
-		return "dict"
-	}
-	return "object"
 }
 
 // Q is shlex.quote.
@@ -219,7 +160,7 @@ func haIdentityCheck(path string) string {
 
 // IdentityCommand is identity_command(path). Bash noclobber creates with
 // O_EXCL, including for dangling symlinks.
-func IdentityCommand(value any) (string, error) {
+func identityCommand(value string) (string, error) {
 	path, err := guidePath(value, "宿主身份文件", false)
 	if err != nil {
 		return "", err
@@ -236,9 +177,9 @@ func IdentityCommand(value any) (string, error) {
 }
 
 // InspectionCommand is inspection_command(container_name).
-func InspectionCommand(containerName any) (string, error) {
+func inspectionCommand(containerName string) (string, error) {
 	command := CollectorScript()
-	if jsonx.Truthy(containerName) {
+	if containerName != "" {
 		name, err := guideName(containerName, "原容器名")
 		if err != nil {
 			return "", err
@@ -265,27 +206,14 @@ type shellArg struct {
 	raw  bool
 }
 
-func haString(v any) (string, error) {
-	text, isString := v.(string)
-	if !isString {
-		return "", typeError("expected string or bytes-like object, got '" + pyTypeName(v) + "'")
-	}
-	return text, nil
-}
-
-// haRun is _run(service, cid_file, env_file, cid_variable).
-func haRun(service *jsonx.Object, cidFile, envFile, cidVariable string) (string, error) {
+func haRun(service *composeService, cidFile, envFile, cidVariable string) (string, error) {
 	var args []shellArg
 	add := func(values ...string) {
 		for _, v := range values {
 			args = append(args, shellArg{text: v})
 		}
 	}
-	name, err := haString(service.GetOr("container_name", nil))
-	if err != nil {
-		return "", err
-	}
-	add("docker", "run", "-d", "--name", name, "--restart", "unless-stopped", "--stop-timeout", "30")
+	add("docker", "run", "-d", "--name", service.ContainerName, "--restart", "unless-stopped", "--stop-timeout", "30")
 	if cidFile != "" {
 		add("--cidfile", cidFile)
 	}
@@ -296,56 +224,34 @@ func haRun(service *jsonx.Object, cidFile, envFile, cidVariable string) (string,
 	if envFile != "" {
 		add("--env-file", envFile)
 	}
-	if owner := service.GetOr("_owner", nil); jsonx.Truthy(owner) {
-		add("--label", "io.configflow.dns-ha.installation="+owner.(string))
+	if service.owner != "" {
+		add("--label", ComposeLabel+"="+service.owner)
 	}
-	if mode := service.GetOr("network_mode", nil); jsonx.Truthy(mode) {
-		text, err := haString(mode)
-		if err != nil {
-			return "", err
-		}
-		add("--network", text)
+	if service.NetworkMode == "" && service.Networks["dns-ha"].IPv4Address.Tag != "!!str" {
+		return "", typeError(msgRendererText)
+	}
+	if service.NetworkMode != "" {
+		add("--network", service.NetworkMode)
 	} else {
-		network, err := haString(service.GetOr("_network_name", nil))
-		if err != nil {
-			return "", err
-		}
-		ip, err := haString(jsonx.Path(service, "networks", "dns-ha", "ipv4_address"))
-		if err != nil {
-			return "", err
-		}
-		add("--network", network, "--ip", ip)
+		add("--network", service.networkName, "--ip", nodeText(service.Networks["dns-ha"].IPv4Address))
 	}
-	for _, capability := range service.GetList("cap_add") {
-		text, err := haString(capability)
-		if err != nil {
-			return "", err
-		}
-		add("--cap-add", text)
+	for _, capability := range service.CapAdd {
+		add("--cap-add", capability)
 	}
-	for _, mount := range service.GetList("volumes") {
-		o, _ := mount.(*jsonx.Object)
-		if o == nil {
-			return "", typeError("string indices must be integers, not 'str'")
+	for _, mount := range service.Volumes {
+		if mount.Short != "" {
+			return "", typeError(msgRendererMount)
 		}
-		text, err := mountArg(o)
+		text, err := mountArg(mount)
 		if err != nil {
 			return "", err
 		}
 		add("--mount", text)
 	}
-	for _, env := range service.GetList("environment") {
-		text, err := haString(env)
-		if err != nil {
-			return "", err
-		}
-		add("-e", text)
+	for _, env := range service.Environment.Entries {
+		add("-e", env)
 	}
-	image, err := haString(service.GetOr("image", nil))
-	if err != nil {
-		return "", err
-	}
-	add(image)
+	add(service.Image.Value)
 	words := make([]string, len(args))
 	for i, arg := range args {
 		if arg.raw {
@@ -357,127 +263,41 @@ func haRun(service *jsonx.Object, cidFile, envFile, cidVariable string) (string,
 	return strings.Join(words, " \\\n  ") + "\n", nil
 }
 
-// pyIPv4FromInt is ipaddress.IPv4Address(int) (bool is an int): the address
-// when 0 <= value < 2**32.
-func pyIPv4FromInt(value any) (uint32, bool, bool) {
-	var n *big.Int
-	switch x := value.(type) {
-	case bool:
-		n = big.NewInt(0)
-		if x {
-			n = big.NewInt(1)
-		}
-	case jsonx.Number:
-		if !x.IsInt() {
-			return 0, false, false
-		}
-		n, _ = x.BigInt()
-	default:
-		return 0, false, false
-	}
-	if n.Sign() < 0 || n.BitLen() > 32 {
-		return 0, true, false
-	}
-	return uint32(n.Uint64()), true, true
-}
-
 func usableAddress(v uint32) bool {
 	return !(isLoopback(v) || isMulticast(v) || isLinkLocal(v) || isUnspecified(v) || isReserved(v))
 }
 
-// guideCompose is yaml.safe_load(generate_docker_agent_compose(**params))
-// for the guide's params dict. Values of a JSON body that are not strings
-// follow Python: ipaddress accepts ints for the addresses, re raises a
-// TypeError for the name and parent, other values are invalid addresses.
-func guideCompose(params *jsonx.Object) (*jsonx.Object, error) {
-	agentName, isString := params.GetOr("agent_name", nil).(string)
-	if !isString {
-		return nil, typeError("expected string or bytes-like object, got '" + pyTypeName(params.GetOr("agent_name", nil)) + "'")
-	}
-	options := NewDockerOptions(params.GetString("server_url"))
-	options.AgentName = agentName
-	options.DataDir = params.GetString("data_dir")
-	options.EnableMihomo, options.EnableOxidns, options.EnableDNSHA = false, true, true
-	if port, ok := params.GetNumber("oxidns_port"); ok {
-		options.OxidnsPort, _ = port.BigInt()
-	}
-	if mode, isString := params.GetOr("network_mode", nil).(string); isString {
-		options.NetworkMode = mode
-	} else {
-		options.NetworkMode = "\x00" // not in ("host", "macvlan")
-	}
-	rawIP := params.GetOr("agent_ip", nil)
-	intIP := false
-	switch x := rawIP.(type) {
-	case string:
-		options.AgentIP = x
-	default:
-		options.AgentIP = "x" // str() of the value is no address
-		if v, isInt, inRange := pyIPv4FromInt(x); isInt && inRange && usableAddress(v) {
-			options.AgentIP, intIP = ipv4Text(v), true
-		}
-	}
-	rawParent := params.GetOr("ha_parent", nil)
-	if text, isString := rawParent.(string); isString {
-		options.HAParent = text
-	} else {
-		options.HAParent = "\x00"
-	}
-	if text, isString := params.GetOr("ha_subnet", nil).(string); isString {
-		options.HASubnet = text
-	} else {
-		options.HASubnet = "x" // IPv4Network(int) is a /32: refused like any non-address
-	}
-	switch x := params.GetOr("ha_gateway", nil).(type) {
-	case string:
-		options.HAGateway = x
-	default:
-		if jsonx.Truthy(x) {
-			options.HAGateway = "x"
-			if v, isInt, inRange := pyIPv4FromInt(x); isInt && inRange {
-				options.HAGateway = ipv4Text(v)
-			}
-		}
-	}
-	if text, isString := params.GetOr("ha_host_id_path", nil).(string); isString {
-		options.HAHostIDPath = text
-	} else {
-		options.HAHostIDPath = "" // not isinstance(path, str)
-	}
-	text, err := GenerateDockerAgentCompose(options)
-	if err != nil {
-		var ve *ValueError
-		if _, isString := rawParent.(string); !isString && asValueError(err, &ve) && ve.Message == "请填写有效的宿主机网卡名称，如 eth0 或 enp1s0" {
-			return nil, typeError("expected string or bytes-like object, got '" + pyTypeName(rawParent) + "'")
-		}
-		return nil, err
-	}
-	compose, err := readCompose(text)
+func guideComposeNative(p GuideOptions) (*composeDocument, error) {
+	options := NewDockerOptions(p.ServerURL)
+	options.AgentName = p.AgentName
+	options.DataDir = p.DataDir
+	options.AgentIP = p.AgentIP
+	options.NetworkMode = p.NetworkMode
+	options.EnableMihomo = false
+	options.EnableOxidns = true
+	options.EnableDNSHA = true
+	options.OxidnsPort = p.OxidnsPort.String()
+	options.HAParent = p.HAParent
+	options.HASubnet = p.HASubnet
+	options.HAGateway = p.HAGateway
+	options.HAHostIDPath = p.HAHostIDPath
+	document, err := dockerCompose(options)
 	if err != nil {
 		return nil, err
 	}
-	if intIP {
-		// f"AGENT_IP={agent_ip}" and ipv4_address keep the int itself.
-		agent := jsonx.Path(compose, "services", "agent").(*jsonx.Object)
-		environment := agent.GetList("environment")
-		for i, item := range environment {
-			if item == "AGENT_IP="+options.AgentIP {
-				environment[i] = "AGENT_IP=" + jsonx.Str(rawIP)
+	if p.addressNode != nil {
+		if p.addressDisplay != p.AgentIP {
+			for i, entry := range document.Services.Agent.Environment.Entries {
+				if entry == "AGENT_IP="+p.AgentIP {
+					document.Services.Agent.Environment.Entries[i] = "AGENT_IP=" + p.addressDisplay
+				}
 			}
 		}
-		if network, _ := jsonx.Path(agent, "networks", "dns-ha").(*jsonx.Object); network != nil {
-			network.Set("ipv4_address", rawIP)
+		if document.Services.Agent.Networks != nil {
+			document.Services.Agent.Networks["dns-ha"] = composeAddress{IPv4Address: p.addressNode}
 		}
 	}
-	return compose, nil
-}
-
-func asValueError(err error, target **ValueError) bool {
-	ve, ok := err.(*ValueError)
-	if ok {
-		*target = ve
-	}
-	return ok
+	return document, nil
 }
 
 func haSHA256Hex(data []byte) string {
@@ -486,21 +306,10 @@ func haSHA256Hex(data []byte) string {
 }
 
 // haDumpCompose renders the compose graph and escapes Compose interpolation.
-func haDumpCompose(compose *jsonx.Object) (string, error) {
-	node, err := yamlbridge.Encode(compose)
-	if err != nil {
-		return "", err
-	}
-	data, err := yamlx.Marshal(node)
-	text := string(data)
-	if err != nil {
-		return "", err
-	}
-	return strings.ReplaceAll(text, "$", "$$"), nil
-}
+func haDumpCompose(compose *composeDocument) (string, error) { return composeYAML(compose, true) }
 
 // bootstrapCommand is docker_ha_enrollment.bootstrap_command (replaceable in tests).
-var bootstrapCommand = BootstrapCommand
+var bootstrapCommand = bootstrapNative
 
 const ownedContainerFunction = `
 # Only a recorded exact ID plus the immutable setup label permits reuse.
@@ -553,78 +362,60 @@ func joinQuoted(args []string) string {
 
 // newInstall is _new_install(params, request, enrollment): replay only this
 // setup's immutable plan and captured container IDs.
-func newInstall(params, request *jsonx.Object, enrollment *Enrollment) (string, string, error) {
-	compose, err := guideCompose(params)
+func newInstallNative(params GuideOptions, request GuideRequest, enrollment *Enrollment) (string, string, error) {
+	compose, err := guideComposeNative(params)
 	if err != nil {
 		return "", "", err
 	}
-	image := request.GetOr("image", DockerHAImage).(string)
-	plan := params.Clone()
-	plan.Set("image", image)
-	plan.Set("enrollment_url", enrollmentURL(enrollment))
-	planJSON, err := jsonx.Encode(plan, jsonx.Options{EnsureASCII: true, SortKeys: true, Compact: true})
+	image := request.Image
+	owner, err := planHash(params, map[string]string{"image": image, "enrollment_url": enrollmentURL(enrollment)}, true)
 	if err != nil {
 		return "", "", err
 	}
-	owner := haSHA256Hex(planJSON)
-	data := params.GetString("data_dir")
+	data := params.DataDir
 	state := data + "/.ha-install"
-	services := compose.GetObject("services")
-	for key, value := range services.All() {
-		service := value.(*jsonx.Object)
-		service.Set("image", image)
-		service.Set("labels", jsonx.Obj("io.configflow.dns-ha.installation", owner))
-		service.Set("_owner", owner)
+	services := &compose.Services
+	for key, service := range services.all() {
+		service.Image = yamlString(image)
+		service.Labels = map[string]string{ComposeLabel: owner}
+		service.owner = owner
 		readonly := key == "ha-companion"
-		volumes := []any{
-			guideVolume(jsonx.Obj("type", "bind", "source", data+"/agent"), "/opt/configflow-agent", readonly),
-			guideVolume(jsonx.Obj("type", "bind", "source", data+"/oxidns"), "/etc/oxidns", readonly),
-			guideVolume(jsonx.Obj("type", "bind", "source", data+"/ha"), "/var/lib/configflow-ha", false),
-			jsonx.Obj("type", "bind", "source", params.GetOr("ha_host_id_path", nil),
-				"target", "/run/configflow-host-machine-id", "read_only", true,
-				"bind", jsonx.Obj("create_host_path", false)),
+		volumes := []composeMount{bindMount(data+"/agent", "/opt/configflow-agent", readonly, false),
+			bindMount(data+"/oxidns", "/etc/oxidns", readonly, false), bindMount(data+"/ha", "/var/lib/configflow-ha", false, false),
+			bindMount(params.HAHostIDPath, "/run/configflow-host-machine-id", true, false)}
+		if key == "agent" && params.NetworkMode == "host" {
+			volumes = append(volumes, bindMount("/proc/1/ns/net", "/run/configflow-host-netns", true, false))
 		}
-		if key == "agent" && params.GetOr("network_mode", nil) == "host" {
-			volumes = append(volumes, jsonx.Obj("type", "bind", "source", "/proc/1/ns/net", "target", "/run/configflow-host-netns",
-				"read_only", true, "bind", jsonx.Obj("create_host_path", false)))
-		}
-		service.Set("volumes", volumes)
+		service.Volumes = volumes
 	}
-	hostIDPath, _ := params.GetOr("ha_host_id_path", nil).(string)
+	hostIDPath := params.HAHostIDPath
 	script := haHeader() + haDaemonCheck() + haIdentityCheck(hostIDPath)
 	script += "cf_data=" + q(data) + "\ncf_state=" + q(state) + "\ncf_owner=" + q(owner) + "\n"
 	script += `[ ! -L "$cf_data" ] && [ ! -L "$cf_state" ] && [ ! -L "$cf_state/setup" ] || ` + haFail("安装目录或标记为软链接；拒绝继续") + "\n"
 	script += `if [ -e "$cf_state/setup" ]; then` + "\n" + `  [ -f "$cf_state/setup" ] && [ "$(cat "$cf_state/setup")" = "$cf_owner" ] || ` + haFail("数据目录属于另一份安装设置，请保留原命令续装或使用迁移") + "\nelse\n"
 	script += `  [ ! -e "$cf_state" ] && [ ! -e "$cf_data/agent/config-oxidns.json" ] && [ ! -L "$cf_data/agent/config-oxidns.json" ] || ` + haFail("目录已有身份或未识别的安装状态；请使用原命令或迁移，不能接管") + "\n"
-	agentName := params.GetString("agent_name")
+	agentName := params.AgentName
 	for _, name := range []string{agentName + "-oxidns", agentName + "-oxidns-ha"} {
 		script += "  ! docker container inspect " + q(name) + " >/dev/null 2>&1 || " + haFail("同名容器已存在且不属于本次安装："+name) + "\n"
 	}
 	script += `  mkdir -p -- "$cf_data"` + "\n" + `  mkdir -- "$cf_state"` + "\n" + `  (set -o noclobber; printf "%s\n" "$cf_owner" > "$cf_state/setup")` + "\nfi\n"
 	script += ownedContainerFunction + haStartupChecks
-	main := services.GetObject("agent")
-	mainName, err := haString(main.GetOr("container_name", nil))
-	if err != nil {
-		return "", "", err
-	}
+	main := services.Agent
+	mainName := main.ContainerName
 	script += "cf_main_id=$(cf_owned_container main " + q(mainName) + ")\n"
-	companion := services.GetObject("ha-companion")
+	companion := services.Companion
 	if companion != nil {
-		name, err := haString(companion.GetOr("container_name", nil))
-		if err != nil {
-			return "", "", err
-		}
+		name := companion.ContainerName
 		script += "cf_companion_id=$(cf_owned_container companion " + q(name) + ")\n"
 	}
-	if networks := compose.GetOr("networks", nil); jsonx.Truthy(networks) {
-		network := jsonx.Path(networks, "dns-ha").(*jsonx.Object)
-		network.Set("labels", jsonx.Obj("io.configflow.dns-ha.installation", owner))
-		name := network.GetString("name")
-		main.Set("_network_name", name)
-		ipam := jsonx.Path(network, "ipam", "config").([]any)[0].(*jsonx.Object)
-		parent := jsonx.Path(network, "driver_opts", "parent").(string)
-		subnet := ipam.GetString("subnet")
-		gateway := ipam.GetString("gateway")
+	if network := compose.Networks["dns-ha"]; network != nil {
+		network.Labels = map[string]string{ComposeLabel: owner}
+		name := network.Name
+		main.networkName = name
+		ipam := network.IPAM.Config[0]
+		parent := network.DriverOpts.Parent
+		subnet := ipam.Subnet
+		gateway := ipam.Gateway
 		script += "if docker network inspect " + q(name) + " >/dev/null 2>&1; then\n"
 		checks := [][2]string{{"{{.Driver}}", "macvlan"}, {`{{index .Options "parent"}}`, parent},
 			{`{{index .Labels "io.configflow.dns-ha.installation"}}`, owner},
@@ -644,7 +435,7 @@ func newInstall(params, request *jsonx.Object, enrollment *Enrollment) (string, 
 		script += "  " + joinQuoted(append(args, name)) + "\nfi\n"
 	}
 	script += "docker image inspect " + q(image) + " >/dev/null 2>&1 || docker pull " + q(image) + "\n"
-	if params.GetString("network_mode") == "host" {
+	if params.NetworkMode == "host" {
 		script += haPortCheck(image)
 	}
 	for _, dirname := range []string{"agent", "oxidns", "ha"} {
@@ -659,7 +450,7 @@ func newInstall(params, request *jsonx.Object, enrollment *Enrollment) (string, 
 			return "", "", err
 		}
 		script += `if [ -z "$cf_main_id" ]; then` + "\n" + bootstrap + "\nelse\n"
-		proofMount, _ := mountArg(guideVolume(jsonx.Obj("type", "bind", "source", data+"/agent"), "/opt/configflow-agent", true))
+		proofMount, _ := mountArg(bindMount(data+"/agent", "/opt/configflow-agent", true, false))
 		args := []string{"docker", "run", "--rm", "--network", "none", "--entrypoint", "python3", "--mount", proofMount,
 			image, "-c", enrollmentProof, enrollment.URL}
 		script += "  " + joinQuoted(args) + "\nfi\n"
@@ -668,7 +459,7 @@ func newInstall(params, request *jsonx.Object, enrollment *Enrollment) (string, 
 	}
 	for _, role := range []struct {
 		name    string
-		service *jsonx.Object
+		service *composeService
 	}{{"companion", companion}, {"main", main}} {
 		if role.service == nil {
 			continue
@@ -687,11 +478,7 @@ func newInstall(params, request *jsonx.Object, enrollment *Enrollment) (string, 
 	}
 	script += haNewReadiness(mainName)
 	script += `printf "%s\n" "本次安装的容器已启动或恢复；请回到页面检查真实心跳和高可用环境，再配对。相同命令可安全续装，不会接管同名其他容器。"` + "\n"
-	for _, value := range services.All() {
-		service := value.(*jsonx.Object)
-		service.Delete("_owner")
-		service.Delete("_network_name")
-	}
+
 	text, err := haDumpCompose(compose)
 	if err != nil {
 		return "", "", err
@@ -733,38 +520,14 @@ for key,value in original.items():
 `
 
 // migration is _migration(params, request): compose, install and rollback.
-func migration(params, request *jsonx.Object) (string, string, string, error) {
-	old, err := guideName(request.GetOr("container_name", nil), "原容器名")
-	if err != nil {
-		return "", "", "", err
-	}
-	oldAgent, isString := request.GetOr("existing_agent_name", nil).(string)
-	if !isString {
-		return "", "", "", valueError("请填写原 Agent 完整名称")
-	}
-	if err := ValidateAgentName(oldAgent); err != nil {
-		return "", "", "", err
-	}
-	agent, err := guideMount(request.GetOr("agent_mount", nil), "原 Agent 挂载")
-	if err != nil {
-		return "", "", "", err
-	}
-	core, err := guideMount(request.GetOr("core_mount", nil), "原 OxiDNS 挂载")
-	if err != nil {
-		return "", "", "", err
-	}
-	haDir, err := guidePath(request.GetOr("ha_data_dir", nil), "新增 HA 目录", false)
-	if err != nil {
-		return "", "", "", err
-	}
-	backup, err := guidePath(request.GetOr("backup_dir", nil), "备份目录", false)
-	if err != nil {
-		return "", "", "", err
-	}
+func migrationNative(params GuideOptions, request GuideRequest) (string, string, string, error) {
+	old, oldAgent := request.ContainerName, request.ExistingAgentName
+	agent, core := request.AgentMount, request.CoreMount
+	haDir, backup := request.HADataDir, request.BackupDir
 	directories := []string{haDir, backup}
-	for _, m := range []*jsonx.Object{agent, core} {
-		if m.GetString("type") == "bind" {
-			directories = append(directories, m.GetString("source"))
+	for _, m := range []composeMount{agent, core} {
+		if m.Type == "bind" {
+			directories = append(directories, m.Source)
 		}
 	}
 	for i, left := range directories {
@@ -774,21 +537,19 @@ func migration(params, request *jsonx.Object) (string, string, string, error) {
 			}
 		}
 	}
-	if jsonx.Equal(agent, core) {
+	if agent.Type == core.Type && agent.Source == core.Source {
 		return "", "", "", valueError("Agent 和 OxiDNS 必须使用不同的数据挂载")
 	}
-	params = params.Clone()
-	params.Set("data_dir", "/unused-migration-path")
-	compose, err := guideCompose(params)
+	params.DataDir = "/unused-migration-path"
+	compose, err := guideComposeNative(params)
 	if err != nil {
 		return "", "", "", err
 	}
-	services := compose.GetObject("services")
-	main := services.GetObject("agent")
-	main.Set("container_name", old)
-	var environment []any
-	for _, item := range main.GetList("environment") {
-		v, _ := item.(string)
+	services := &compose.Services
+	main := services.Agent
+	main.ContainerName = old
+	var environment []string
+	for _, v := range main.Environment.Entries {
 		if strings.HasPrefix(v, "TZ=") {
 			continue
 		}
@@ -797,41 +558,40 @@ func migration(params, request *jsonx.Object) (string, string, string, error) {
 		}
 		environment = append(environment, v)
 	}
-	main.Set("environment", environment)
-	main.Set("env_file", []any{jsonx.Obj("path", backup+"/runtime.env", "format", "raw")})
-	private := jsonx.Obj("type", "bind", "source", haDir)
-	image := request.GetOr("image", DockerHAImage).(string)
-	for key, value := range services.All() {
-		service := value.(*jsonx.Object)
+	main.Environment.Entries = environment
+	main.EnvFile = []composeEnvFile{{backup + "/runtime.env", "raw"}}
+	private := composeMount{Type: "bind", Source: haDir}
+	image := request.Image
+	for key, service := range services.all() {
 		readonly := key == "ha-companion"
-		service.Set("image", image)
-		volumes := []any{guideVolume(agent, "/opt/configflow-agent", readonly), guideVolume(core, "/etc/oxidns", readonly),
+		service.Image = yamlString(image)
+		volumes := []composeMount{guideVolume(agent, "/opt/configflow-agent", readonly), guideVolume(core, "/etc/oxidns", readonly),
 			guideVolume(private, "/var/lib/configflow-ha", false)}
-		for _, v := range service.GetList("volumes") {
-			if _, isObject := v.(*jsonx.Object); isObject {
+		for _, v := range service.Volumes {
+			if v.Short == "" {
 				volumes = append(volumes, v)
 			}
 		}
-		service.Set("volumes", volumes)
+		service.Volumes = volumes
 		if readonly {
-			service.Set("container_name", old+"-ha")
+			service.ContainerName = old + "-ha"
 		}
 	}
-	networks := compose.GetOr("networks", nil)
-	if jsonx.Truthy(networks) {
-		main.Set("_network_name", jsonx.Path(networks, "dns-ha", "name"))
+	network := compose.Networks["dns-ha"]
+	if network != nil {
+		main.networkName = network.Name
 	}
-	external := jsonx.NewObject()
-	for _, m := range []*jsonx.Object{agent, core} {
-		if m.GetString("type") == "volume" {
-			external.Set(m.GetString("source"), jsonx.Obj("external", true, "name", m.GetString("source")))
+	external := map[string]composeNamedVolume{}
+	for _, m := range []composeMount{agent, core} {
+		if m.Type == "volume" {
+			external[m.Source] = composeNamedVolume{External: true, Name: m.Source}
 		}
 	}
-	if external.Len() > 0 {
-		compose.Set("volumes", external)
+	if len(external) > 0 {
+		compose.Volumes = external
 	}
 	previous, failed, companion := old+"-pre-ha", old+"-failed-ha", old+"-ha"
-	hostIDPath, _ := params.GetOr("ha_host_id_path", nil).(string)
+	hostIDPath := params.HAHostIDPath
 	script := haHeader() + haDaemonCheck() + haIdentityCheck(hostIDPath)
 	script += haStartupChecks
 	script += "cf_old=" + q(old) + "\ncf_backup=" + q(backup) + "\n"
@@ -842,12 +602,12 @@ func migration(params, request *jsonx.Object) (string, string, string, error) {
 	}
 	script += `[ "$(docker inspect --format '{{len .Mounts}}' "$cf_old_id")" = 2 ] || ` + haFail("仅支持只有 Agent 与 OxiDNS 两个挂载的单核心容器；请先核对额外挂载或已有 HA 配置") + "\n"
 	for _, pair := range []struct {
-		mount  *jsonx.Object
+		mount  composeMount
 		target string
 	}{{agent, "/opt/configflow-agent"}, {core, "/etc/oxidns"}} {
-		targetJSON, _ := jsonx.Default(pair.target)
+		targetJSON, _ := json.Marshal(pair.target)
 		format := "{{range .Mounts}}{{if eq .Destination " + string(targetJSON) + `}}{{.Type}}|{{if eq .Type "volume"}}{{.Name}}{{else}}{{.Source}}{{end}}|{{.RW}}{{end}}{{end}}`
-		kind, source := pair.mount.GetString("type"), pair.mount.GetString("source")
+		kind, source := pair.mount.Type, pair.mount.Source
 		script += `[ "$(docker inspect --format ` + q(format) + ` "$cf_old_id")" = ` + q(kind+"|"+source+"|true") + " ] || " + haFail("实际挂载与所填信息不一致："+pair.target+"；未执行迁移") + "\n"
 		if kind == "bind" {
 			script += "[ -d " + q(source) + " ] && [ ! -L " + q(source) + " ] || " + haFail("原数据目录不存在或是软链接；未执行迁移") + "\n"
@@ -858,31 +618,30 @@ func migration(params, request *jsonx.Object) (string, string, string, error) {
 		format := "{{json .Config." + field + "}}"
 		script += `[ "$(docker inspect --format ` + q(format) + ` "$cf_old_id")" = "$(docker image inspect --format ` + q(format) + ` "$cf_old_image")" ] || ` + haFail("原容器有自定义启动命令，请保留原 Compose 手动调整，不执行自动迁移") + "\n"
 	}
-	port, _ := params.GetNumber("oxidns_port")
+	port := params.OxidnsPort
 	checkCommand := `docker inspect --format '{{json .Config.Env}}' "$cf_old_id" | docker exec -i "$cf_old_id" python3 -c ` + q(migrationCheck) + " " +
-		joinQuoted([]string{oldAgent, params.GetString("server_url"), port.String()})
+		joinQuoted([]string{oldAgent, params.ServerURL, port.String()})
 	script += "cf_runtime_env=$(" + checkCommand + ")\n"
 	script += "docker image inspect " + q(image) + " >/dev/null 2>&1 || docker pull " + q(image) + "\n"
 	script += "[ ! -e " + q(haDir) + " ] && [ ! -L " + q(haDir) + " ] || " + haFail("请选择全新 HA 目录，不能复用已有 HA 状态") + "\n"
 	script += "mkdir -p -- " + q(posixDirname(backup)) + "\nmkdir -- \"$cf_backup\"\n"
 	script += `printf "%s\n" "$cf_old_id" > "$cf_backup/old-id"` + "\n" + `printf "%s\n" "$cf_runtime_env" > "$cf_backup/runtime.env"` + "\n"
 	script += `docker inspect --format '{{.HostConfig.RestartPolicy.Name}}:{{.HostConfig.RestartPolicy.MaximumRetryCount}}' "$cf_old_id" > "$cf_backup/restart-policy"` + "\n"
-	if jsonx.Truthy(networks) {
-		network := jsonx.Path(networks, "dns-ha").(*jsonx.Object)
-		ipam := jsonx.Path(network, "ipam", "config").([]any)[0].(*jsonx.Object)
-		args := []string{"docker", "network", "create", "--driver", "macvlan", "--subnet", ipam.GetString("subnet"), "--opt",
-			"parent=" + jsonx.Path(network, "driver_opts", "parent").(string)}
-		if gateway := ipam.GetString("gateway"); gateway != "" {
+	if network != nil {
+		ipam := network.IPAM.Config[0]
+		args := []string{"docker", "network", "create", "--driver", "macvlan", "--subnet", ipam.Subnet, "--opt",
+			"parent=" + network.DriverOpts.Parent}
+		if gateway := ipam.Gateway; gateway != "" {
 			args = append(args, "--gateway", gateway)
 		}
-		script += joinQuoted(append(args, network.GetString("name"))) + "\n"
+		script += joinQuoted(append(args, network.Name)) + "\n"
 	}
 	script += "mkdir -p -- " + q(posixDirname(haDir)) + "\nmkdir -- " + q(haDir) + "\n"
 	script += "docker update --restart=no \"$cf_old_id\" >/dev/null\ndocker stop \"$cf_old_id\" >/dev/null\n"
 	script += "mkdir \"$cf_backup/agent\" \"$cf_backup/oxidns\"\n"
 	script += "docker cp \"$cf_old_id:/opt/configflow-agent/.\" \"$cf_backup/agent/\"\ndocker cp \"$cf_old_id:/etc/oxidns/.\" \"$cf_backup/oxidns/\"\n"
 	script += "docker rename \"$cf_old_id\" " + q(previous) + "\n"
-	if helper := services.GetObject("ha-companion"); helper != nil {
+	if helper := services.Companion; helper != nil {
 		run, err := haRun(helper, backup+"/companion-id", "", "")
 		if err != nil {
 			return "", "", "", err
@@ -914,7 +673,7 @@ func migration(params, request *jsonx.Object) (string, string, string, error) {
 	rollback += "cf_policy=$(cat \"$cf_backup/restart-policy\")\ncase \"$cf_policy\" in no:0|always:0|unless-stopped:0) cf_policy=${cf_policy%:0} ;; on-failure:[0-9]*) ;; *) exit 1 ;; esac\n"
 	rollback += "docker update --restart=\"$cf_policy\" \"$cf_old_id\" >/dev/null\ndocker start \"$cf_old_id\"\n"
 	rollback += `printf "%s\n" "已恢复原容器与重启策略；数据卷保持原位，原配置备份与失败容器均保留。"` + "\n"
-	main.Delete("_network_name")
+	main.networkName = ""
 	text, err := haDumpCompose(compose)
 	if err != nil {
 		return "", "", "", err
@@ -941,206 +700,8 @@ func isServerURL(server string) bool {
 	if rest, found = strings.CutPrefix(rest, "://"); !found {
 		return false
 	}
-	return rest != "" && !strings.ContainsFunc(rest, pystr.IsSpace)
+	return rest != "" && !strings.ContainsFunc(rest, unicode.IsSpace)
 }
 
 // A10's generators (docker_ha_compact.generate_compact,
 // docker_ha_compose_direct.generate_direct, docker_ha_compose.generate_bundle).
-var (
-	generateCompact func(params, request *jsonx.Object, enrollment *Enrollment) (string, *jsonx.Object, error)
-	generateDirect  func(params, request *jsonx.Object, enrollment *Enrollment) (string, *jsonx.Object, error)
-	generateBundle  func(params, request *jsonx.Object, enrollment *Enrollment) (string, any, error)
-)
-
-// ErrComposeVariantNotPorted is returned for the Compose install methods
-// until module A10 provides their generators.
-var ErrComposeVariantNotPorted = typeError("Docker HA Compose variants are not ported yet (A10)")
-
-// GenerateGuide is generate_guide(request, enrollment): the guide answer, or
-// a *ValueError (400) or *TypeError (500).
-func GenerateGuide(value any, enrollment *Enrollment) (*jsonx.Object, error) {
-	request, isObject := value.(*jsonx.Object)
-	if !isObject {
-		return nil, valueError("请提交 JSON 对象")
-	}
-	action := request.GetOr("action", "generate")
-	switch action {
-	case "check":
-		report, err := ParsePreflightReport(request.GetOr("output", nil), request.GetOr("network_mode", "host"))
-		if err != nil {
-			return nil, err
-		}
-		return jsonx.Obj("success", true, "preflight_report", report), nil
-	case "inspect":
-		command, err := InspectionCommand(request.GetOr("container_name", ""))
-		if err != nil {
-			return nil, err
-		}
-		return jsonx.Obj("success", true, "inspection_command", command), nil
-	case "verify":
-		raw := request.GetOr("vip", nil)
-		var vip uint32
-		valid := false
-		if text, isString := raw.(string); isString {
-			v, err := parseIPv4(text)
-			vip, valid = v, err == nil
-		} else if v, isInt, inRange := pyIPv4FromInt(raw); isInt && inRange {
-			vip, valid = v, true
-		}
-		if !valid || !usableAddress(vip) {
-			return nil, valueError("请填写有效的虚拟 IPv4 地址")
-		}
-		return jsonx.Obj("success", true, "verification_command", strings.ReplaceAll(haVerification, "{{VIP}}", ipv4Text(vip))), nil
-	}
-	mode := request.GetOr("mode", "new")
-	if action != "generate" || (mode != "new" && mode != "migrate") {
-		return nil, valueError("安装步骤或模式无效")
-	}
-	method := request.GetOr("install_method", "script")
-	if method != "script" && method != "compose" && method != "compose_direct" && method != "compose_compact" {
-		return nil, valueError("install_method 须为 script、compose、compose_direct 或 compose_compact")
-	}
-	if method != "script" && mode != "new" {
-		return nil, valueError("Compose 安装包仅支持新安装；已有容器请使用迁移脚本")
-	}
-	image, isString := request.GetOr("image", DockerHAImage).(string)
-	if !isString || !isImageName(image) {
-		return nil, valueError("Docker 镜像名称无效")
-	}
-	server, isString := request.GetOr("server_url", "").(string)
-	if !isString || !isServerURL(server) {
-		return nil, valueError("请填写完整的 ConfigFlow HTTP(S) 地址")
-	}
-	parsed, err := weburl.Parse(server)
-	if err != nil {
-		return nil, valueError(err.Error())
-	}
-	if weburl.HasCredentials(parsed) || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.Hostname() == "" {
-		return nil, valueError("ConfigFlow 地址不能包含登录凭据、查询参数或片段")
-	}
-	server = strings.TrimRight(server, "/")
-	port := request.GetOr("oxidns_port", jsonx.Int(8082))
-	if number, isNumber := port.(jsonx.Number); !isNumber || !number.IsInt() {
-		return nil, valueError("Agent 端口须为整数")
-	}
-	params := jsonx.Obj("server_url", server, "agent_name", request.GetOr("agent_name", "agent"),
-		"agent_ip", request.GetOr("agent_ip", ""), "data_dir", request.GetOr("data_dir", ""),
-		"network_mode", request.GetOr("network_mode", "host"),
-		"enable_mihomo", false, "enable_oxidns", true, "enable_dns_ha", true, "oxidns_port", port,
-		"ha_parent", request.GetOr("ha_parent", ""), "ha_subnet", request.GetOr("ha_subnet", ""),
-		"ha_gateway", request.GetOr("ha_gateway", ""), "ha_host_id_path", request.GetOr("ha_host_id_path", "/etc/machine-id"))
-	var createIdentity any = false
-	if method != "compose_compact" {
-		createIdentity = request.GetOr("create_host_identity", false)
-	}
-	create, isBool := createIdentity.(bool)
-	if !isBool {
-		return nil, valueError("create_host_identity 须为布尔值")
-	}
-	if method != "compose_compact" && !(method == "compose_direct" && create) {
-		if _, err := guidePath(params.Value("ha_host_id_path"), "宿主身份文件", false); err != nil {
-			return nil, err
-		}
-	}
-	identity := ""
-	if create && method != "compose_direct" && method != "compose_compact" {
-		if identity, err = IdentityCommand(params.Value("ha_host_id_path")); err != nil {
-			return nil, err
-		}
-	}
-	var compose, install, rollback string
-	var direct *jsonx.Object
-	if mode == "migrate" {
-		if compose, install, rollback, err = migration(params, request); err != nil {
-			return nil, err
-		}
-	} else {
-		dataDir, err := guidePath(params.Value("data_dir"), "持久数据根目录", false)
-		if err != nil {
-			return nil, err
-		}
-		params.Set("data_dir", dataDir)
-		switch method {
-		case "compose_compact", "compose_direct":
-			generator := generateCompact
-			if method == "compose_direct" {
-				generator = generateDirect
-			}
-			if generator == nil {
-				return nil, ErrComposeVariantNotPorted
-			}
-			if compose, direct, err = generator(params, request, enrollment); err != nil {
-				return nil, err
-			}
-			install, _ = direct.GetOr("command", nil).(string)
-		default:
-			if compose, install, err = newInstall(params, request, enrollment); err != nil {
-				return nil, err
-			}
-		}
-	}
-	var containerName any = ""
-	if mode == "migrate" {
-		containerName = request.GetOr("container_name", "")
-	}
-	inspection, err := InspectionCommand(containerName)
-	if err != nil {
-		return nil, err
-	}
-	logs := "docker compose logs --tail 80\n"
-	if method != "compose_direct" && method != "compose_compact" {
-		logsName := params.GetString("agent_name") + "-oxidns"
-		if mode == "migrate" {
-			logsName = request.GetString("container_name")
-		}
-		logs = "docker logs --tail 80 " + q(logsName) + "\n"
-	}
-	blocks := []any{jsonx.Obj("id", "inspect", "title", "只读检查宿主机与原容器", "command", inspection)}
-	if identity != "" {
-		blocks = append(blocks, jsonx.Obj("id", "identity", "title", "仅在身份文件缺失时创建一次", "command", identity))
-	}
-	installTitle := "安装当前主机"
-	if mode == "migrate" {
-		installTitle = "备份并迁移当前主机"
-	}
-	blocks = append(blocks, jsonx.Obj("id", "install", "title", installTitle, "command", install),
-		jsonx.Obj("id", "logs", "title", "查看启动日志", "command", logs))
-	if rollback != "" {
-		blocks = append(blocks, jsonx.Obj("id", "rollback", "title", "需要时恢复原容器", "command", rollback))
-	}
-	warnings := []any{"首次安装请先执行安装命令完成安全注册；Compose 仅供查看或后续维护，直接 Compose up 不会执行注册步骤。"}
-	if mode == "migrate" {
-		warnings = []any{"迁移仅适用于 ConfigFlow 单 OxiDNS 默认启动容器；先执行迁移脚本，不要直接 Compose up 跳过原挂载核对和备份。",
-			"已有高可用组请先在页面处理虚拟 IP 与停用；脚本拒绝迁移仍有 HA 记录的容器。",
-			"备份包含 Agent 身份与配置，请保护备份目录；旧容器和数据不会被删除。",
-			"迁移 Compose 的 raw 环境文件格式需要 Docker Compose 2.30+；安装命令使用 Docker Run，不依赖 Compose 版本。"}
-	}
-	result := jsonx.Obj("success", true, "inspection_command", inspection, "identity_command", identity, "compose", compose,
-		"install_command", install, "rollback_command", rollback, "command_blocks", blocks, "warnings", warnings)
-	switch method {
-	case "compose":
-		if generateBundle == nil {
-			return nil, ErrComposeVariantNotPorted
-		}
-		bundleCompose, bundle, err := generateBundle(params, request, enrollment)
-		if err != nil {
-			return nil, err
-		}
-		result.Set("compose", bundleCompose)
-		result.Set("compose_bundle", bundle)
-		result.Set("warnings", []any{"安装包仅支持新安装：解压后先执行 sudo bash prepare.sh，再运行 docker compose up -d；需要 Compose 2.20+。",
-			"安装包包含限定本机的首次登记凭据，请勿公开分享；已登记并持久保存身份后，重启不依赖该凭据或登记 API。",
-			"请在 Compose 安装包和备用安装脚本中选择一种方式，不要对同一数据目录混用。"})
-	case "compose_direct":
-		result.Set("compose_deployment", direct)
-		result.Set("warnings", []any{"只需保存 compose.yaml 并运行 docker compose up -d；需要包含内置安装器的新镜像和 Compose 2.20+。",
-			"YAML 包含仅用于本设备的24小时登记凭据，也可被 Docker inspect 读取；请勿公开分享。已保存 Agent 身份后重启不依赖该凭据。",
-			"初始化仅写应用数据目录；选用自动身份时还使用固定 Docker 身份卷。不要复制或删除该共享身份卷，不要运行 down -v。"})
-	case "compose_compact":
-		result.Set("compose_deployment", direct)
-		result.Set("warnings", []any{"保存一份 compose.yaml 后启动即可；需要支持精简安装的新镜像与 Compose 2.20+。",
-			"INSTALL_KEY 是本设备的限时安装凭据，请勿分享。首次登记完成后可移除，重建继续复用持久身份。",
-			"安装身份保存在 Agent 数据目录中；两端需提供只读宿主校验信息，旧安装请沿用原 Compose 或使用迁移入口。"})
-	}
-	return result, nil
-}

@@ -3,8 +3,6 @@ package installer
 import (
 	"strings"
 
-	"configflow/internal/jsonx"
-	"configflow/internal/yamlbridge"
 	"configflow/internal/yamlx"
 )
 
@@ -60,14 +58,9 @@ type haNetwork struct {
 	name, parent, subnet, gateway string
 }
 
-func (n *haNetwork) object() *jsonx.Object {
-	ipam := jsonx.Obj("subnet", n.subnet)
-	if n.gateway != "" {
-		ipam.Set("gateway", n.gateway)
-	}
-	return jsonx.Obj("name", n.name, "driver", "macvlan",
-		"driver_opts", jsonx.Obj("parent", n.parent),
-		"ipam", jsonx.Obj("config", []any{ipam}))
+func (n *haNetwork) object() *composeNetwork {
+	return &composeNetwork{Name: n.name, Driver: "macvlan", DriverOpts: composeDriverOpts{n.parent},
+		IPAM: composeIPAM{[]composeSubnet{{Subnet: n.subnet, Gateway: n.gateway}}}}
 }
 
 func isHAParent(parent string) bool {
@@ -131,12 +124,11 @@ func dockerHANetwork(o DockerOptions) (*haNetwork, error) {
 }
 
 // dockerHAIdentity is _docker_ha_identity(path).
-func dockerHAIdentity(path string) (*jsonx.Object, error) {
+func dockerHAIdentity(path string) (composeMount, error) {
 	if !strings.HasPrefix(path, "/") || strings.ContainsAny(path, ",:\x00\r\n") {
-		return nil, valueError("宿主机身份文件须为绝对路径，且不能包含逗号、冒号或换行")
+		return composeMount{}, valueError("宿主机身份文件须为绝对路径，且不能包含逗号、冒号或换行")
 	}
-	return jsonx.Obj("type", "bind", "source", path, "target", "/run/configflow-host-machine-id",
-		"read_only", true, "bind", jsonx.Obj("create_host_path", false)), nil
+	return bindMount(path, "/run/configflow-host-machine-id", true, false), nil
 }
 
 func checkHAPort(port any) error {
@@ -156,25 +148,33 @@ func boolText(b bool) string {
 
 // GenerateDockerAgentCompose is generate_docker_agent_compose.
 func GenerateDockerAgentCompose(o DockerOptions) (string, error) {
-	if err := ValidateAgentName(o.AgentName); err != nil {
+	document, err := dockerCompose(o)
+	if err != nil {
 		return "", err
 	}
+	return composeYAML(document, false)
+}
+
+func dockerCompose(o DockerOptions) (*composeDocument, error) {
+	if err := ValidateAgentName(o.AgentName); err != nil {
+		return nil, err
+	}
 	var network *haNetwork
-	var identity *jsonx.Object
+	var identity composeMount
 	if o.EnableDNSHA {
 		var err error
 		if network, err = dockerHANetwork(o); err != nil {
-			return "", err
+			return nil, err
 		}
 		if err := checkHAPort(o.OxidnsPort); err != nil {
-			return "", err
+			return nil, err
 		}
 		if identity, err = dockerHAIdentity(o.HAHostIDPath); err != nil {
-			return "", err
+			return nil, err
 		}
 	}
 	if o.EnableMosdns && o.EnableOxidns {
-		return "", valueError("MosDNS 与 OxiDNS 默认都监听 53 端口，请使用独立容器或只启用一个 DNS 核心")
+		return nil, valueError("MosDNS 与 OxiDNS 默认都监听 53 端口，请使用独立容器或只启用一个 DNS 核心")
 	}
 	var services []string
 	if o.EnableMihomo {
@@ -192,7 +192,7 @@ func GenerateDockerAgentCompose(o DockerOptions) (string, error) {
 	}
 	containerName := o.AgentName + "-" + suffix
 	mihomoPort, mosdnsPort, oxidnsPort := pyStr(o.MihomoPort), pyStr(o.MosdnsPort), pyStr(o.OxidnsPort)
-	environment := []any{
+	environment := []string{
 		"SERVER_URL=" + o.ServerURL,
 		"TZ=Asia/Shanghai",
 		"ENABLE_MIHOMO=" + boolText(o.EnableMihomo),
@@ -216,45 +216,38 @@ func GenerateDockerAgentCompose(o DockerOptions) (string, error) {
 	if o.EnableOxidns {
 		environment = append(environment, "AGENT_OXIDNS_NAME="+o.AgentName+"-oxidns", "AGENT_OXIDNS_PORT="+oxidnsPort)
 	}
-	volumes := []any{o.DataDir + "/agent:/opt/configflow-agent"}
+	volumes := []composeMount{{Short: o.DataDir + "/agent:/opt/configflow-agent"}}
 	if o.EnableMihomo {
-		volumes = append(volumes, o.DataDir+"/mihomo:/etc/mihomo")
+		volumes = append(volumes, composeMount{Short: o.DataDir + "/mihomo:/etc/mihomo"})
 	}
 	if o.EnableMosdns {
-		volumes = append(volumes, o.DataDir+"/mosdns:/etc/mosdns")
+		volumes = append(volumes, composeMount{Short: o.DataDir + "/mosdns:/etc/mosdns"})
 	}
 	if o.EnableOxidns {
-		volumes = append(volumes, o.DataDir+"/oxidns:/etc/oxidns")
+		volumes = append(volumes, composeMount{Short: o.DataDir + "/oxidns:/etc/oxidns"})
 	}
 	if o.EnableDNSHA {
 		environment = append(environment, "CONFIGFLOW_DNS_HA=1", "CONFIGFLOW_DNS_HA_NETWORK="+o.NetworkMode)
-		volumes = append(volumes, o.DataDir+"/ha:/var/lib/configflow-ha", identity)
+		volumes = append(volumes, composeMount{Short: o.DataDir + "/ha:/var/lib/configflow-ha"}, identity)
 		if o.NetworkMode == "host" {
-			volumes = append(volumes, jsonx.Obj("type", "bind", "source", "/proc/1/ns/net", "target", "/run/configflow-host-netns",
-				"read_only", true, "bind", jsonx.Obj("create_host_path", false)))
+			volumes = append(volumes, bindMount("/proc/1/ns/net", "/run/configflow-host-netns", true, false))
 		}
 	}
-	logging := jsonx.Obj("driver", "json-file", "options", jsonx.Obj("max-size", "10m", "max-file", "3"))
-	service := jsonx.Obj(
-		"image", "thsrite/config-flow-agent:latest",
-		"container_name", containerName,
-		"restart", "unless-stopped",
-		"network_mode", o.NetworkMode,
-		"environment", environment,
-		"volumes", volumes,
-		"logging", logging,
-	)
+	logging := &composeLogging{Driver: "json-file", Options: composeLogOptions{"10m", "3"}}
+	service := &composeService{Image: yamlx.Str(DockerHAImage), ContainerName: containerName, Restart: "unless-stopped",
+		NetworkMode: o.NetworkMode, Environment: composeEnvironment{Entries: environment}, Volumes: volumes, Logging: logging}
 	if network != nil {
-		service.Delete("network_mode")
-		service.Set("cap_add", []any{"NET_ADMIN", "NET_RAW"})
-		service.Set("stop_grace_period", "30s")
-		service.Set("networks", jsonx.Obj("dns-ha", jsonx.Obj("ipv4_address", o.AgentIP)))
+		service.NetworkMode = ""
+		service.CapAdd = []string{"NET_ADMIN", "NET_RAW"}
+		service.StopGracePeriod = "30s"
+		service.Networks = map[string]composeAddress{"dns-ha": {IPv4Address: yamlx.Str(o.AgentIP)}}
 	} else if o.EnableDNSHA {
-		service.Set("stop_grace_period", "30s")
-		service.Set("depends_on", []any{"ha-companion"})
+		service.StopGracePeriod = "30s"
+		service.DependsOn.Names = []string{"ha-companion"}
 	}
+
 	if o.NetworkMode == "bridge" {
-		var mappings []any
+		var mappings []string
 		has := func(v string) bool {
 			for _, m := range mappings {
 				if m == v {
@@ -279,33 +272,20 @@ func GenerateDockerAgentCompose(o DockerOptions) (string, error) {
 			}
 		}
 		if len(mappings) > 0 {
-			service.Set("ports", mappings)
+			service.Ports = mappings
 		}
 	}
-	compose := jsonx.Obj("version", "3.8", "services", jsonx.Obj("agent", service))
+	document := &composeDocument{Version: "3.8", Services: composeServices{Agent: service}}
 	if network != nil {
-		compose.Set("networks", jsonx.Obj("dns-ha", network.object()))
+		document.Networks = map[string]*composeNetwork{"dns-ha": network.object()}
 	} else if o.EnableDNSHA {
-		compose.GetObject("services").Set("ha-companion", jsonx.Obj(
-			"image", "thsrite/config-flow-agent:latest",
-			"container_name", containerName+"-ha",
-			"restart", "unless-stopped",
-			"network_mode", "host",
-			"cap_add", []any{"NET_ADMIN", "NET_RAW"},
-			"stop_grace_period", "30s",
-			"environment", []any{"SERVICE_TYPE=ha-companion", "CONFIGFLOW_DNS_HA=1",
-				"CONFIGFLOW_DNS_HA_NETWORK=host", "TZ=Asia/Shanghai"},
-			"volumes", []any{o.DataDir + "/agent:/opt/configflow-agent:ro", o.DataDir + "/oxidns:/etc/oxidns:ro",
-				o.DataDir + "/ha:/var/lib/configflow-ha", identity},
-			"logging", logging,
-		))
+		document.Services.Companion = &composeService{
+			Image: yamlx.Str(DockerHAImage), ContainerName: containerName + "-ha", Restart: "unless-stopped", NetworkMode: "host",
+			CapAdd: []string{"NET_ADMIN", "NET_RAW"}, StopGracePeriod: "30s",
+			Environment: composeEnvironment{Entries: []string{"SERVICE_TYPE=ha-companion", "CONFIGFLOW_DNS_HA=1", "CONFIGFLOW_DNS_HA_NETWORK=host", "TZ=Asia/Shanghai"}},
+			Volumes:     []composeMount{{Short: o.DataDir + "/agent:/opt/configflow-agent:ro"}, {Short: o.DataDir + "/oxidns:/etc/oxidns:ro"}, {Short: o.DataDir + "/ha:/var/lib/configflow-ha"}, identity}, Logging: logging}
 	}
-	node, err := yamlbridge.Encode(compose)
-	if err != nil {
-		return "", err
-	}
-	data, err := yamlx.Marshal(node)
-	return string(data), err
+	return document, nil
 }
 
 // shellWord is _shell_word(value, plain): ordinary values keep their form.

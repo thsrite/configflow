@@ -7,45 +7,14 @@ package installer
 // docker_ha_compose_text.go.
 
 import (
-	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"strings"
 
-	"configflow/internal/jsonx"
+	"encoding/json"
 )
 
 // ComposeLabel is LABEL.
 const ComposeLabel = "io.configflow.dns-ha.installation"
-
-func init() {
-	generateCompact = GenerateCompact
-	generateDirect = GenerateDirect
-	generateBundle = func(params, request *jsonx.Object, enrollment *Enrollment) (string, any, error) {
-		return GenerateBundle(params, request, enrollment)
-	}
-}
-
-// pyJSONHash is hashlib.sha256(json.dumps(value, sort_keys=True,
-// separators=...).encode()).hexdigest() (ensure_ascii=True).
-func pyJSONHash(value any, compact bool) (string, error) {
-	data, err := jsonx.Encode(value, jsonx.Options{EnsureASCII: true, SortKeys: true, Compact: compact})
-	if err != nil {
-		return "", err
-	}
-	sum := sha256.Sum256(data)
-	return hex.EncodeToString(sum[:]), nil
-}
-
-// pyConcat is the str + str of the Python generators: a TypeError for a
-// value that is not a str.
-func pyConcat(value any) (string, error) {
-	text, isString := value.(string)
-	if !isString {
-		return "", typeError("can only concatenate str (not \"" + pyTypeName(value) + "\") to str")
-	}
-	return text, nil
-}
 
 func enrollmentToken(e *Enrollment) string {
 	if e == nil {
@@ -54,83 +23,61 @@ func enrollmentToken(e *Enrollment) string {
 	return e.Token
 }
 
-// requestImage is request.get('image', 'thsrite/config-flow-agent:latest').
-func requestImage(request *jsonx.Object) any {
-	return request.GetOr("image", DockerHAImage)
-}
-
 // composePrepare is _prepare(params, request, owner, project, compose).
-func composePrepare(params, request *jsonx.Object, owner, project string, compose *jsonx.Object) (string, error) {
-	data := params.GetString("data_dir")
+func composePrepare(params GuideOptions, request GuideRequest, owner, project string, compose *composeDocument) (string, error) {
+	data := params.DataDir
 	state := data + "/.ha-compose"
-	identityPath := params.GetString("ha_host_id_path")
+	identityPath := params.HAHostIDPath
 	script := haHeader() + composePrepareBlocks[0]
 	script += haDaemonCheck()
 	script += composePrepareBlocks[1]
 	script += "cf_data=" + q(data) + "\ncf_state=" + q(state) + "\ncf_owner=" + q(owner) + "\ncf_project=" + q(project) + "\ncf_identity_source=" + q(identityPath) + "\n"
 	script += "cf_no_links \"$cf_data\"\ncf_no_links " + q(identityPath) + "\n"
 	script += composePrepareBlocks[2]
-	for key, value := range compose.GetObject("services").All() {
-		service := value.(*jsonx.Object)
-		containerName, err := pyConcat(service.Value("container_name"))
-		if err != nil {
-			return "", err
-		}
+	for key, service := range compose.Services.all() {
+		containerName := service.ContainerName
 		name := q(containerName)
 		script += "if docker container inspect " + name + " >/dev/null 2>&1; then\n"
 		script += "  [ \"$cf_known\" = true ] || " + haFail("同名容器已存在，拒绝接管："+containerName) + "\n"
 		checks := [][2]string{{`{{index .Config.Labels "` + ComposeLabel + `"}}`, owner},
 			{`{{index .Config.Labels "com.docker.compose.project"}}`, project},
 			{`{{index .Config.Labels "com.docker.compose.service"}}`, key}}
-		for _, item := range service.GetList("volumes") {
-			mount := item.(*jsonx.Object)
-			target, err := jsonx.Default(mount.Value("target"))
+		for _, mount := range service.Volumes {
+			target, err := json.Marshal(mount.Target)
 			if err != nil {
 				return "", err
 			}
 			rw := "true"
-			if jsonx.Truthy(mount.GetOr("read_only", nil)) {
+			if mount.ReadOnly {
 				rw = "false"
 			}
 			format := `{{range .Mounts}}{{if eq .Destination ` + string(target) + `}}{{.Type}}|{{.Source}}|{{.RW}}{{end}}{{end}}`
-			checks = append(checks, [2]string{format, "bind|" + mount.GetString("source") + "|" + rw})
+			checks = append(checks, [2]string{format, "bind|" + mount.Source + "|" + rw})
 		}
 		for _, check := range checks {
 			script += "  [ \"$(docker container inspect --format " + q(check[0]) + " " + name + ")\" = " + q(check[1]) + " ] || " + haFail("现有容器的项目、归属或挂载与本次安装不符；未修改容器") + "\n"
 		}
 		script += "fi\n"
 	}
-	for _, value := range compose.GetObject("networks").All() {
-		network := value.(*jsonx.Object)
-		name := q(network.GetString("name"))
+	for _, network := range compose.Networks {
+		name := q(network.Name)
 		script += "if docker network inspect " + name + " >/dev/null 2>&1; then\n"
 		script += "  [ \"$cf_known\" = true ] || " + haFail("同名网络已存在，拒绝接管") + "\n"
-		ipam := network.GetObject("ipam").GetList("config")[0].(*jsonx.Object)
-		parent, err := pyConcat(network.GetObject("driver_opts").Value("parent"))
-		if err != nil {
-			return "", err
-		}
-		subnet, err := pyConcat(ipam.Value("subnet"))
-		if err != nil {
-			return "", err
-		}
+		ipam := network.IPAM.Config[0]
+		parent, subnet := network.DriverOpts.Parent, ipam.Subnet
 		checks := [][2]string{{"{{.Driver}}", "macvlan"}, {`{{index .Options "parent"}}`, parent},
 			{`{{index .Labels "` + ComposeLabel + `"}}`, owner},
 			{`{{index .Labels "com.docker.compose.project"}}`, project},
 			{"{{len .IPAM.Config}}", "1"}, {"{{(index .IPAM.Config 0).Subnet}}", subnet}}
-		if gateway := ipam.GetOr("gateway", nil); jsonx.Truthy(gateway) {
-			text, err := pyConcat(gateway)
-			if err != nil {
-				return "", err
-			}
-			checks = append(checks, [2]string{"{{(index .IPAM.Config 0).Gateway}}", text})
+		if ipam.Gateway != "" {
+			checks = append(checks, [2]string{"{{(index .IPAM.Config 0).Gateway}}", ipam.Gateway})
 		}
 		for _, check := range checks {
 			script += "  [ \"$(docker network inspect --format " + q(check[0]) + " " + name + ")\" = " + q(check[1]) + " ] || " + haFail("现有网络参数或项目归属不符，拒绝复用") + "\n"
 		}
 		script += "fi\n"
 	}
-	if jsonx.Truthy(request.GetOr("create_host_identity", nil)) {
+	if request.CreateHostIdentity {
 		script += "if [ ! -e " + q(identityPath) + " ] && [ ! -L " + q(identityPath) + " ]; then\n"
 		command, err := IdentityCommand(identityPath)
 		if err != nil {
@@ -152,23 +99,16 @@ var composeManagedParts = []string{"agent", "oxidns", "ha", ".ha-compose", ".ha-
 // GenerateBundle is generate_bundle(params, request, enrollment): the
 // Compose text and the bundle dict (filename, project_name, content_base64,
 // prepare_command, start_command).
-func GenerateBundle(params, request *jsonx.Object, enrollment *Enrollment) (string, *jsonx.Object, error) {
-	image := requestImage(request)
-	plan := params.Clone()
-	plan.Set("image", image)
-	plan.Set("enrollment_url", enrollmentURL(enrollment))
-	plan.Set("install_method", "compose")
-	owner, err := pyJSONHash(plan, true)
+func generateBundleNative(params GuideOptions, request GuideRequest, enrollment *Enrollment) (string, *ComposeBundle, error) {
+	image := request.Image
+	owner, err := planHash(params, map[string]string{"image": image, "enrollment_url": enrollmentURL(enrollment), "install_method": "compose"}, true)
 	if err != nil {
 		return "", nil, err
 	}
 	project := "cf-oxidns-" + owner[:16]
-	data := params.GetString("data_dir")
+	data := params.DataDir
 	state := data + "/.ha-compose"
-	identity, err := pyConcat(params.Value("ha_host_id_path")) // identity.startswith: AttributeError
-	if err != nil {
-		return "", nil, err
-	}
+	identity := params.HAHostIDPath
 	aliased := identity == data
 	for _, part := range composeManagedParts {
 		if identity == data+"/"+part || strings.HasPrefix(identity, data+"/"+part+"/") {
@@ -178,40 +118,37 @@ func GenerateBundle(params, request *jsonx.Object, enrollment *Enrollment) (stri
 	if aliased {
 		return "", nil, valueError("宿主身份文件不能放在本实例的受管数据子目录内，请选择独立持久文件")
 	}
-	compose, err := guideCompose(params)
+	compose, err := guideComposeNative(params)
 	if err != nil {
 		return "", nil, err
 	}
-	compose.Delete("version")
-	compose.Set("name", project)
-	for key, value := range compose.GetObject("services").All() {
-		service := value.(*jsonx.Object)
-		service.Set("image", image)
-		service.Set("labels", jsonx.Obj(ComposeLabel, owner))
+	compose.Version = ""
+	compose.Name = project
+	for key, service := range compose.Services.all() {
+		service.Image = yamlString(image)
+		service.Labels = map[string]string{ComposeLabel: owner}
 		readonly := key == "ha-companion"
-		bind := func(source string) *jsonx.Object { return jsonx.Obj("type", "bind", "source", source) }
-		volumes := []any{guideVolume(bind(data+"/agent"), "/opt/configflow-agent", readonly),
-			guideVolume(bind(data+"/oxidns"), "/etc/oxidns", readonly),
-			guideVolume(bind(data+"/ha"), "/var/lib/configflow-ha", false),
-			guideVolume(bind(identity), "/run/configflow-host-machine-id", true)}
+		volumes := []composeMount{bindMount(data+"/agent", "/opt/configflow-agent", readonly, false), bindMount(data+"/oxidns", "/etc/oxidns", readonly, false), bindMount(data+"/ha", "/var/lib/configflow-ha", false, false), bindMount(identity, "/run/configflow-host-machine-id", true, false)}
 		if key == "agent" {
-			if params.Value("network_mode") == "host" {
-				volumes = append(volumes, guideVolume(bind("/proc/1/ns/net"), "/run/configflow-host-netns", true))
+			if params.NetworkMode == "host" {
+				volumes = append(volumes, bindMount("/proc/1/ns/net", "/run/configflow-host-netns", true, false))
 			}
-			volumes = append(volumes, guideVolume(bind(state), "/run/configflow-compose", true))
-			service.Set("volumes", volumes)
-			service.Set("entrypoint", []any{"python3", "/run/configflow-compose/bootstrap.py"})
-			service.Set("command", []any{})
-		} else {
-			service.Set("volumes", volumes)
+			volumes = append(volumes, bindMount(state, "/run/configflow-compose", true, false))
+			service.Entrypoint = []string{"python3", "/run/configflow-compose/bootstrap.py"}
+			empty := []string{}
+			service.Command = &empty
 		}
+		service.Volumes = volumes
 	}
-	for _, value := range compose.GetObject("networks").All() {
-		network := value.(*jsonx.Object)
-		network.Set("name", project+"-dns-ha")
-		network.Set("labels", jsonx.Obj(ComposeLabel, owner))
+	for _, network := range compose.Networks {
+		network.Name = project + "-dns-ha"
+		network.Labels = map[string]string{ComposeLabel: owner}
 	}
-	settings := jsonx.Obj("owner", owner, "url", enrollmentURL(enrollment), "token", enrollmentToken(enrollment))
+	settings := struct {
+		Owner string `json:"owner"`
+		URL   string `json:"url"`
+		Token string `json:"token"`
+	}{owner, enrollmentURL(enrollment), enrollmentToken(enrollment)}
 	content, err := haDumpCompose(compose)
 	if err != nil {
 		return "", nil, err
@@ -220,19 +157,17 @@ func GenerateBundle(params, request *jsonx.Object, enrollment *Enrollment) (stri
 	if err != nil {
 		return "", nil, err
 	}
-	settingsJSON, err := jsonx.Encode(settings, jsonx.Options{EnsureASCII: true, Indent: 2})
+	settingsJSON, err := renderConfigJSON(settings)
 	if err != nil {
 		return "", nil, err
 	}
 	readme := composeReadme[0] + composeReadme[1] + project + composeReadme[2]
-	archive := pyZipArchive([]zipEntry{
+	archive, err := composeArchive([]zipEntry{
 		{"compose.yaml", []byte(content), 0o600},
 		{"prepare.sh", []byte(prepare), 0o700},
 		{"bootstrap.py", []byte(composeBootstrap), 0o600},
 		{"enrollment.json", append(settingsJSON, '\n'), 0o600},
 		{"README.txt", []byte(readme), 0o600},
 	})
-	return content, jsonx.Obj("filename", project+".zip", "project_name", project,
-		"content_base64", base64.StdEncoding.EncodeToString(archive),
-		"prepare_command", "sudo bash prepare.sh", "start_command", "docker compose up -d"), nil
+	return content, &ComposeBundle{Filename: project + ".zip", ProjectName: project, ContentBase64: base64.StdEncoding.EncodeToString(archive), PrepareCommand: "sudo bash prepare.sh", StartCommand: "docker compose up -d"}, nil
 }

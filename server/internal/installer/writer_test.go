@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -87,6 +88,10 @@ func writerHashCaseMatches(fn string, args any, output, oldHash string, length i
 			want, ok := value.(string)
 			return ok && writerYAMLEqual(want, output), nil
 		}
+	}
+	output, err := historicalEmbeddedJSON(output)
+	if err != nil {
+		return false, err
 	}
 	sum := sha256.Sum256([]byte(output))
 	return hex.EncodeToString(sum[:]) == oldHash && int64(len(output)) == length, nil
@@ -285,4 +290,81 @@ func TestWriterComparisonPreservesScalarTags(t *testing.T) {
 			}
 		})
 	}
+}
+
+// historicalEmbeddedJSON normalizes only the JSON heredocs for comparison with
+// the frozen byte hashes. Every shell byte outside these delimiters is retained.
+func historicalEmbeddedJSON(text string) (string, error) {
+	for _, marker := range []string{"CONFIGFLOW_JSON_EOF", "CONFIGFLOW_MIHOMO_JSON_EOF", "CONFIGFLOW_OXIDNS_JSON_EOF"} {
+		opening := "<<'" + marker + "'\n"
+		start := 0
+		for {
+			offset := strings.Index(text[start:], opening)
+			if offset < 0 {
+				break
+			}
+			first := start + offset + len(opening)
+			end := strings.Index(text[first:], "\n"+marker+"\n")
+			if end < 0 {
+				return "", fmt.Errorf("unterminated config heredoc")
+			}
+			last := first + end
+			value, err := jsonx.Parse([]byte(text[first:last]))
+			if err != nil {
+				return "", err
+			}
+			data, err := jsonx.Encode(value, jsonx.Options{EnsureASCII: true, Indent: 2})
+			if err != nil {
+				return "", err
+			}
+			text = text[:first] + string(data) + text[last:]
+			start = first + len(data) + len(marker) + 2
+		}
+	}
+	return text, nil
+}
+
+func historicalBootstrapSettings(text string) (string, error) {
+	const prefix = "settings = json.loads("
+	start := 0
+	for {
+		found := strings.Index(text[start:], prefix)
+		if found < 0 {
+			break
+		}
+		first := start + found + len(prefix)
+		end := strings.Index(text[first:], ")\npath = ")
+		if end < 0 {
+			start = first
+			continue
+		}
+		last := first + end
+		literal := text[first:last]
+		if len(literal) < 2 || (literal[0] != '\'' && literal[0] != '"') || literal[len(literal)-1] != literal[0] {
+			return "", fmt.Errorf("invalid bootstrap settings literal")
+		}
+		quote := literal[0]
+		source := literal[1 : len(literal)-1]
+		var raw strings.Builder
+		for source != "" {
+			r, _, tail, err := strconv.UnquoteChar(source, quote)
+			if err != nil {
+				return "", err
+			}
+			raw.WriteRune(r)
+			source = tail
+		}
+		value, err := jsonx.ParseString(raw.String())
+		if err != nil {
+			return "", err
+		}
+		encoded, err := jsonx.Default(value)
+		if err != nil {
+			return "", err
+		}
+		normalized := jsonx.Repr(string(encoded))
+		text = text[:first] + normalized + text[last:]
+		start = first + len(normalized)
+	}
+	return text, nil
 }

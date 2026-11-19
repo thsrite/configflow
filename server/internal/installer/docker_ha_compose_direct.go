@@ -1,152 +1,117 @@
 package installer
 
-// Port of backend/agents/docker_ha_compose_direct.py (module A10):
-// single-file Compose for new installs; all preparation runs inside the image.
-
 import (
+	"encoding/json"
 	"strings"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/yamlx"
 )
 
 const (
-	// ComposeRuntime is RUNTIME.
+	// ComposeRuntime is the installation entry point shipped in the image.
 	ComposeRuntime = "/usr/local/lib/configflow/docker-compose-install.py"
-	// ComposeIdentityVolume is IDENTITY_VOLUME.
+	// ComposeIdentityVolume is shared by installations on the same Docker host.
 	ComposeIdentityVolume = "configflow-ha-host-identity"
 )
 
-// GenerateDirect is generate_direct(params, request, enrollment).
-func GenerateDirect(params, request *jsonx.Object, enrollment *Enrollment) (string, *jsonx.Object, error) {
-	data := params.GetString("data_dir")
+type composeInstallSettings struct {
+	Protocol     int     `json:"protocol"`
+	Owner        string  `json:"owner"`
+	URL          string  `json:"url"`
+	IdentityMode string  `json:"identity_mode"`
+	Token        *string `json:"token,omitempty"`
+}
+
+func generateDirectNative(params GuideOptions, request GuideRequest, enrollment *Enrollment) (string, *ComposeDeployment, error) {
+	data := params.DataDir
 	if composeDataDirRefused(data) {
 		return "", nil, valueError(composeDataDirMessage)
 	}
 	identityMode := "file"
-	if jsonx.Truthy(request.GetOr("create_host_identity", nil)) {
+	if request.CreateHostIdentity {
 		identityMode = "docker-volume"
 	}
-	if identityMode == "file" {
-		identityPath, err := pyConcat(params.Value("ha_host_id_path"))
-		if err != nil {
+	if identityMode == "file" && (params.HAHostIDPath == data || strings.HasPrefix(params.HAHostIDPath, data+"/")) {
+		return "", nil, valueError("单文件 Compose 的现有宿主身份文件须位于应用数据目录之外")
+	}
+	normalized := params
+	if identityMode != "file" {
+		if err := setSessionField(&normalized.identity, "ha_host_id_path", ""); err != nil {
 			return "", nil, err
 		}
-		if identityPath == data || strings.HasPrefix(identityPath, data+"/") {
-			return "", nil, valueError("单文件 Compose 的现有宿主身份文件须位于应用数据目录之外")
-		}
 	}
-	image := requestImage(request)
-	normalized := params.Clone()
-	if identityMode != "file" {
-		normalized.Set("ha_host_id_path", "")
-	}
-	plan := normalized.Clone()
-	plan.Set("image", image)
-	plan.Set("enrollment_url", enrollmentURL(enrollment))
-	plan.Set("install_method", "compose_direct")
-	plan.Set("identity_mode", identityMode)
-	owner, err := pyJSONHash(plan, true)
+	owner, err := planHash(normalized, map[string]string{"image": request.Image, "enrollment_url": enrollmentURL(enrollment), "install_method": "compose_direct", "identity_mode": identityMode}, true)
 	if err != nil {
 		return "", nil, err
 	}
 	project := "cf-oxidns-" + owner[:16]
-	base := params.Clone()
+	base := params
 	if identityMode != "file" {
-		base.Set("ha_host_id_path", "/etc/machine-id")
+		base.HAHostIDPath = "/etc/machine-id"
 	}
-	compose, err := guideCompose(base)
+	compose, err := guideComposeNative(base)
 	if err != nil {
 		return "", nil, err
 	}
-	compose.Delete("version")
-	compose.Set("name", project)
-	settings := jsonx.Obj("protocol", 1, "owner", owner, "url", enrollmentURL(enrollment), "identity_mode", identityMode)
-
-	bind := func(source, target string, readonly, create bool) *jsonx.Object {
-		result := guideVolume(jsonx.Obj("type", "bind", "source", source), target, readonly)
-		result.GetObject("bind").Set("create_host_path", create)
-		return result
-	}
-	identityMount := func(readonly bool) *jsonx.Object {
+	compose.Version = ""
+	compose.Name = project
+	settings := composeInstallSettings{Protocol: 1, Owner: owner, URL: enrollmentURL(enrollment), IdentityMode: identityMode}
+	identityMount := func(readonly bool) composeMount {
 		if identityMode == "file" {
-			return bind(params.GetString("ha_host_id_path"), "/run/configflow-host-machine-id", true, false)
+			return bindMount(params.HAHostIDPath, "/run/configflow-host-machine-id", true, false)
 		}
-		return jsonx.Obj("type", "volume", "source", "host-identity", "target", "/run/configflow-host-identity",
-			"read_only", readonly, "volume", jsonx.Obj("nocopy", true))
+		return composeMount{Type: "volume", Source: "host-identity", Target: "/run/configflow-host-identity", ReadOnly: readonly, Volume: &composeVolumeOptions{true}}
 	}
-	host := params.Value("network_mode") == "host"
-	for name, value := range compose.GetObject("services").All() {
-		service := value.(*jsonx.Object)
-		service.Set("image", image)
-		service.Set("labels", jsonx.Obj(ComposeLabel, owner))
+	host := params.NetworkMode == "host"
+	empty := []string{}
+	for name, service := range compose.Services.all() {
+		service.Image = yamlx.Str(request.Image)
+		service.Labels = map[string]string{ComposeLabel: owner}
 		helper := name == "ha-companion"
-		volumes := []any{bind(data+"/agent", "/opt/configflow-agent", helper, true),
-			bind(data+"/oxidns", "/etc/oxidns", helper, true),
-			bind(data+"/ha", "/var/lib/configflow-ha", false, true), identityMount(true)}
-		service.Set("volumes", volumes)
-		env := jsonx.NewObject()
-		for _, item := range service.GetList("environment") {
-			entry, _ := item.(string)
-			k, v, found := strings.Cut(entry, "=")
-			if !found {
-				return "", nil, valueError("dictionary update sequence element has length 1; 2 is required")
-			}
-			env.Set(k, v)
-		}
+		service.Volumes = []composeMount{bindMount(data+"/agent", "/opt/configflow-agent", helper, true), bindMount(data+"/oxidns", "/etc/oxidns", helper, true), bindMount(data+"/ha", "/var/lib/configflow-ha", false, true), identityMount(true)}
+		env := &service.Environment
+		env.Mapping = true
 		if identityMode == "docker-volume" {
-			env.Set("CONFIGFLOW_DNS_HA_IDENTITY", "volume")
+			env.set("CONFIGFLOW_DNS_HA_IDENTITY", "volume")
 		}
+		service.DependsOn = composeDependencies{Conditions: []composeDependency{{"install-init", "service_completed_successfully"}}}
 		if name == "agent" {
-			volumes = append(volumes, bind("/proc/sys/kernel/random/boot_id", "/run/configflow-host-boot-id", true, false))
+			service.Volumes = append(service.Volumes, bindMount("/proc/sys/kernel/random/boot_id", "/run/configflow-host-boot-id", true, false))
 			if host {
-				volumes = append(volumes, bind("/proc/1/ns/net", "/run/configflow-host-netns", true, false))
+				service.Volumes = append(service.Volumes, bindMount("/proc/1/ns/net", "/run/configflow-host-netns", true, false))
 			}
-			service.Set("volumes", volumes)
-			service.Set("entrypoint", []any{"python3", ComposeRuntime, "run"})
-			service.Set("command", []any{})
-			agentSettings := settings.Clone()
-			agentSettings.Set("token", enrollmentToken(enrollment))
-			encoded, err := jsonx.Encode(agentSettings, jsonx.Options{EnsureASCII: true, Compact: true})
+			service.Entrypoint = []string{"python3", ComposeRuntime, "run"}
+			service.Command = &empty
+			agentSettings := settings
+			agentSettings.Token = new(enrollmentToken(enrollment))
+			encoded, err := json.Marshal(agentSettings)
 			if err != nil {
 				return "", nil, err
 			}
-			env.Set("CONFIGFLOW_COMPOSE_INSTALL", string(encoded))
-			dependencies := jsonx.Obj("install-init", jsonx.Obj("condition", "service_completed_successfully"))
+			env.set("CONFIGFLOW_COMPOSE_INSTALL", string(encoded))
 			if host {
-				dependencies.Set("ha-companion", jsonx.Obj("condition", "service_started"))
+				service.DependsOn.Conditions = append(service.DependsOn.Conditions, composeDependency{"ha-companion", "service_started"})
 			}
-			service.Set("depends_on", dependencies)
-		} else {
-			service.Set("depends_on", jsonx.Obj("install-init", jsonx.Obj("condition", "service_completed_successfully")))
 		}
-		service.Set("environment", env)
 	}
-	initSettings, err := jsonx.Encode(settings, jsonx.Options{EnsureASCII: true, Compact: true})
+	initSettings, err := json.Marshal(settings)
 	if err != nil {
 		return "", nil, err
 	}
-	compose.GetObject("services").Set("install-init", jsonx.Obj(
-		"image", image, "entrypoint", []any{"python3", ComposeRuntime, "prepare"}, "command", []any{},
-		"restart", "no", "network_mode", "none", "read_only", true, "user", "0:0",
-		"cap_drop", []any{"ALL"}, "cap_add", []any{"DAC_OVERRIDE", "FOWNER"},
-		"security_opt", []any{"no-new-privileges:true"},
-		"environment", jsonx.Obj("CONFIGFLOW_COMPOSE_INSTALL", string(initSettings), "PYTHONDONTWRITEBYTECODE", "1"),
-		"volumes", []any{bind(data, "/configflow-data", false, true), identityMount(false)},
-		"labels", jsonx.Obj(ComposeLabel, owner),
-		"logging", jsonx.Obj("driver", "json-file", "options", jsonx.Obj("max-size", "5m", "max-file", "2")),
-	))
+	compose.Services.Init = &composeService{Image: yamlx.Str(request.Image), Entrypoint: []string{"python3", ComposeRuntime, "prepare"}, Command: &empty,
+		Restart: "no", NetworkMode: "none", ReadOnly: true, User: "0:0", CapDrop: []string{"ALL"}, CapAdd: []string{"DAC_OVERRIDE", "FOWNER"}, SecurityOpt: []string{"no-new-privileges:true"},
+		Environment: composeEnvironment{Entries: []string{"CONFIGFLOW_COMPOSE_INSTALL=" + string(initSettings), "PYTHONDONTWRITEBYTECODE=1"}, Mapping: true},
+		Volumes:     []composeMount{bindMount(data, "/configflow-data", false, true), identityMount(false)}, Labels: map[string]string{ComposeLabel: owner}, Logging: &composeLogging{Driver: "json-file", Options: composeLogOptions{"5m", "2"}}}
 	if identityMode == "docker-volume" {
-		compose.Set("volumes", jsonx.Obj("host-identity", jsonx.Obj("name", ComposeIdentityVolume, "driver", "local")))
+		compose.Volumes = map[string]composeNamedVolume{"host-identity": {Name: ComposeIdentityVolume, Driver: "local"}}
 	}
-	for _, value := range compose.GetObject("networks").All() {
-		network := value.(*jsonx.Object)
-		network.Set("name", project+"-dns-ha")
-		network.Set("labels", jsonx.Obj(ComposeLabel, owner))
+	for _, network := range compose.Networks {
+		network.Name = project + "-dns-ha"
+		network.Labels = map[string]string{ComposeLabel: owner}
 	}
 	text, err := haDumpCompose(compose)
 	if err != nil {
 		return "", nil, err
 	}
-	return text, jsonx.Obj("filename", "compose.yaml", "project_name", project, "command", "docker compose up -d",
-		"identity_mode", identityMode), nil
+	return text, &ComposeDeployment{Filename: "compose.yaml", ProjectName: project, Command: "docker compose up -d", IdentityMode: identityMode}, nil
 }

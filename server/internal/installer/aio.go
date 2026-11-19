@@ -4,7 +4,7 @@ import (
 	"path"
 	"strings"
 
-	"configflow/internal/jsonx"
+	"encoding/json"
 )
 
 // Port of backend/agents/go_install_script.py, generate_go_aio_install_script:
@@ -234,27 +234,19 @@ cf_step_done "TUN 准备完成（具体处理结果见日志）"`),
 			(s.binary != s.name && s.binary != "/usr/local/bin/"+s.name)) {
 			return "", valueError("同时安装两个核心需要默认配置路径、服务名和核心路径；自定义部署请取消同时安装核心")
 		}
-		cfg := jsonx.Obj(
-			"server_url", o.ServerURL, "agent_name", o.AgentName+"-"+s.name,
-			"agent_host", "0.0.0.0", "agent_port", jsonx.Number(s.port), "agent_ip", o.AgentIP,
-			"service_type", s.name, "service_name", s.name, "deployment_method", "shell",
-			"native_aio", true, "agent_service_unit", "configflow-agent-"+s.name,
-			"config_path", s.path, "service_manager", "__CONFIGFLOW_INIT__", "service_unit", unit,
-			"service_binary", s.binary, "restart_command", "__CONFIGFLOW_RESTART__",
-			"heartbeat_interval", 30, "deployment_health_timeout", 30,
-			"agent_id", "__CONFIGFLOW_AGENT_ID__", "token", "__CONFIGFLOW_TOKEN__",
-		)
-		if token := o.RegistrationTokens[s.name]; token != "" {
-			cfg.Set("registration_token", token)
+		cfg := aioAgentConfig{
+			ServerURL: o.ServerURL, AgentName: o.AgentName + "-" + s.name,
+			AgentHost: "0.0.0.0", AgentPort: json.Number(s.port), AgentIP: o.AgentIP,
+			ServiceType: s.name, ServiceName: s.name, DeploymentMethod: "shell",
+			NativeAIO: true, AgentServiceUnit: "configflow-agent-" + s.name,
+			ConfigPath: s.path, ServiceManager: "__CONFIGFLOW_INIT__", ServiceUnit: unit,
+			ServiceBinary: s.binary, RestartCommand: "__CONFIGFLOW_RESTART__",
+			HeartbeatInterval: 30, DeploymentHealthTimeout: 30,
+			AgentID: "__CONFIGFLOW_AGENT_ID__", Token: "__CONFIGFLOW_TOKEN__",
+			RegistrationToken: o.RegistrationTokens[s.name], RegistrationKey: o.RegistrationKey,
+			InstallationID: o.InstallationID, InstallationToken: o.InstallationToken,
 		}
-		if o.RegistrationKey != "" {
-			cfg.Set("registration_key", o.RegistrationKey)
-		}
-		if o.InstallationID != "" {
-			cfg.Set("installation_id", o.InstallationID)
-			cfg.Set("installation_token", o.InstallationToken)
-		}
-		configJSON, err := jsonx.Encode(cfg, jsonx.Options{EnsureASCII: true, Indent: 2})
+		configJSON, err := renderConfigJSON(cfg)
 		if err != nil {
 			return "", err
 		}

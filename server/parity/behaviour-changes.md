@@ -2163,3 +2163,12 @@ summary 与 archive/row SHA 独立绑定；同一计数规则传播到 1 条 ove
 存储身份摘要只接受标准 JSON；a06_review 的 17 条含裸 NaN/Infinity 的旧私有 target
 helper 行不再生成摘要，完整行和 archive SHA 单独绑定拒绝。该输入不是有效的存储 JSON；
 设备 HTTP 回包仍采用 N8-1 的逐值 null 归一化，未扩大设备端拒绝范围。
+
+### N8-10 installer — installation session ownership
+
+协调者批准的 Python bug 修正（路径注入 + null 会话指针）：安装会话的 index 与
+session.id 必须都是 32 位小写 hex 且相同。损坏记录（含 null、父目录、绝对路径、
+不一致 ID）在 issue 返回 409 `安装记录无法读取，请保留现场并检查服务端数据。`，
+enroll 返回 401 `安装凭据无效，请重新生成安装命令。`，均拒绝且无写入。
+Python `backend/agents/docker_ha_enrollment.py:58` 唯一合法生成入口为 `uuid.uuid4().hex`。
+测试服务器离线快照统计：会话数 0，非规范 ID 数 0；没有复制任何快照内容。

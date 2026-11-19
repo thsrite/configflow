@@ -8,10 +8,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
 
-	"configflow/internal/jsonx"
-	"configflow/internal/pystr"
-	"configflow/internal/yamlbridge"
 	"configflow/internal/yamlx"
 
 	"gopkg.in/yaml.v3"
@@ -43,36 +41,23 @@ func composeDataDirRefused(data string) bool {
 
 const composeDataDirMessage = "请为应用选择专用持久子目录，不能读写挂载系统目录或共享根目录"
 
-// pyStrOf is str(value) for the jsonx values a request carries.
-func pyStrOf(value any) string { return jsonx.Str(value) }
-
-// GenerateCompact is generate_compact(params, request, enrollment).
-func GenerateCompact(params, request *jsonx.Object, enrollment *Enrollment) (string, *jsonx.Object, error) {
-	data, err := guidePath(params.Value("data_dir"), "持久数据根目录", false)
+func generateCompactNative(params GuideOptions, request GuideRequest, enrollment *Enrollment) (string, *ComposeDeployment, error) {
+	data, err := guidePath(params.DataDir, "持久数据根目录", false)
 	if err != nil {
 		return "", nil, err
 	}
 	if composeDataDirRefused(data) {
 		return "", nil, valueError(composeDataDirMessage)
 	}
-	baseParams := params.Clone()
-	baseParams.Set("ha_host_id_path", "/etc/machine-id")
-	base, err := guideCompose(baseParams)
+	baseParams := params
+	baseParams.HAHostIDPath = "/etc/machine-id"
+	base, err := guideComposeNative(baseParams)
 	if err != nil {
 		return "", nil, err
 	}
-	imageText, _ := requestImage(request).(string)
-	image := yamlx.Str(imageText)
+	image := yamlx.Str(request.Image)
 	image.Anchor = "agent_image"
-	flow := func(node *yamlx.Node) *yamlx.Node {
-		node.Style |= yaml.FlowStyle
-		return node
-	}
-	agentName, err := pyConcat(params.Value("agent_name"))
-	if err != nil {
-		return "", nil, err
-	}
-	name := agentName + "-oxidns"
+	name := params.AgentName + "-oxidns"
 	key, session := "", ""
 	if enrollment != nil {
 		session = enrollment.URL
@@ -84,85 +69,69 @@ func GenerateCompact(params, request *jsonx.Object, enrollment *Enrollment) (str
 		}
 		key = session + "." + enrollment.Token
 	}
-	identity := jsonx.NewObject()
-	for k, v := range params.All() {
-		if k != "ha_host_id_path" {
-			identity.Set(k, v)
-		}
-	}
-	identity.Set("session", session)
-	digest, err := pyJSONHash(identity, false)
+	identity := params
+	identity.identity.Delete("ha_host_id_path")
+	digest, err := planHash(identity, map[string]string{"session": session}, false)
 	if err != nil {
 		return "", nil, err
 	}
-	suffix := digest[:8]
-	lowered := []rune(pystr.Lower(agentName))
+	lowered := []rune(strings.ToLower(params.AgentName))
 	if len(lowered) > 32 {
 		lowered = lowered[:32]
 	}
-	project := "cf-oxidns-" + string(lowered) + "-" + suffix
-	host := params.Value("network_mode") == "host"
-
-	kernelMount := func(source, target string) *jsonx.Object {
-		return jsonx.Obj("type", "bind", "source", source, "target", target, "read_only", true,
-			"bind", flow(yamlx.Map(yamlx.Str("create_host_path"), yamlx.Bool(false))))
+	project := "cf-oxidns-" + string(lowered) + "-" + digest[:8]
+	host := params.NetworkMode == "host"
+	kernelMount := func(source, target string) composeMount {
+		m := bindMount(source, target, true, false)
+		m.flowBind = true
+		return m
 	}
-	directories := func(readonly bool) []any {
+	directories := func(readonly bool) []composeMount {
 		ro := ""
 		if readonly {
 			ro = ":ro"
 		}
-		return []any{data + "/agent:/opt/configflow-agent" + ro, data + "/oxidns:/etc/oxidns" + ro, data + "/ha:/var/lib/configflow-ha"}
+		return []composeMount{{Short: data + "/agent:/opt/configflow-agent" + ro}, {Short: data + "/oxidns:/etc/oxidns" + ro}, {Short: data + "/ha:/var/lib/configflow-ha"}}
 	}
-	portText := pyStrOf(params.Value("oxidns_port"))
-	main := jsonx.Obj("image", image, "container_name", name, "restart", "unless-stopped")
+	main := &composeService{Image: image, ContainerName: name, Restart: "unless-stopped",
+		Environment: composeEnvironment{Mapping: true, Entries: []string{"SERVICE_TYPE=oxidns-ha-" + params.NetworkMode, "SERVER_URL=" + params.ServerURL, "AGENT_NAME=" + name, "AGENT_IP=" + params.AgentIP, "AGENT_PORT=" + params.OxidnsPort.String(), "INSTALL_KEY=" + key}},
+		Volumes:     append(directories(false), kernelMount("/proc/sys/kernel/random/boot_id", "/run/configflow-host-boot-id")), StopGracePeriod: "30s", Logging: &composeLogging{Driver: "json-file", Options: composeLogOptions{"10m", "3"}}}
 	if host {
-		main.Set("network_mode", "host")
+		main.NetworkMode = "host"
 	} else {
-		main.Set("networks", jsonx.Path(base, "services", "agent", "networks"))
+		main.Networks = base.Services.Agent.Networks
+		main.CapAdd = []string{"NET_ADMIN", "NET_RAW"}
 	}
-	networkMode, _ := params.Value("network_mode").(string)
-	main.Set("environment", jsonx.Obj("SERVICE_TYPE", "oxidns-ha-"+networkMode,
-		"SERVER_URL", params.Value("server_url"), "AGENT_NAME", name,
-		"AGENT_IP", params.Value("agent_ip"), "AGENT_PORT", portText, "INSTALL_KEY", key))
-	main.Set("volumes", append(directories(false), kernelMount("/proc/sys/kernel/random/boot_id", "/run/configflow-host-boot-id")))
-	main.Set("stop_grace_period", "30s")
-	main.Set("logging", jsonx.Obj("driver", "json-file", "options", flow(yamlx.Map(yamlx.Str("max-size"), yamlx.Str("10m"), yamlx.Str("max-file"), yamlx.Str("3")))))
-	services := jsonx.Obj("agent", main)
+	compose := &composeDocument{Name: project, Services: composeServices{Agent: main}}
 	if host {
-		main.Set("volumes", append(main.GetList("volumes"), kernelMount("/proc/1/ns/net", "/run/configflow-host-netns")))
-		services.Set("ha-companion", jsonx.Obj("image", image, "container_name", name+"-ha", "restart", "unless-stopped",
-			"network_mode", "host", "environment", jsonx.Obj("SERVICE_TYPE", "ha-companion-compact", "INSTALL_SCOPE", session),
-			"cap_add", flow(yamlx.Seq(yamlx.Str("NET_ADMIN"), yamlx.Str("NET_RAW"))), "volumes", directories(true),
-			"stop_grace_period", "30s",
-			"logging", jsonx.Obj("driver", "json-file", "options", flow(yamlx.Map(yamlx.Str("max-size"), yamlx.Str("5m"), yamlx.Str("max-file"), yamlx.Str("2"))))))
+		main.Volumes = append(main.Volumes, kernelMount("/proc/1/ns/net", "/run/configflow-host-netns"))
+		compose.Services.Companion = &composeService{Image: image, ContainerName: name + "-ha", Restart: "unless-stopped", NetworkMode: "host",
+			Environment: composeEnvironment{Mapping: true, Entries: []string{"SERVICE_TYPE=ha-companion-compact", "INSTALL_SCOPE=" + session}},
+			CapAdd:      []string{"NET_ADMIN", "NET_RAW"}, Volumes: directories(true), StopGracePeriod: "30s", Logging: &composeLogging{Driver: "json-file", Options: composeLogOptions{"5m", "2"}}}
 	} else {
-		main.Set("cap_add", flow(yamlx.Seq(yamlx.Str("NET_ADMIN"), yamlx.Str("NET_RAW"))))
-	}
-	compose := jsonx.Obj("name", project, "services", services)
-	if !host {
-		networks := base.GetObject("networks")
-		compose.Set("networks", networks)
-		for _, value := range networks.All() {
-			value.(*jsonx.Object).Set("name", project+"-dns-ha")
+		compose.Networks = base.Networks
+		for _, network := range compose.Networks {
+			network.Name = project + "-dns-ha"
 		}
 	}
-	node, err := yamlbridge.Encode(compose)
+	var node yamlx.Node
+	if err := node.Encode(compose); err != nil {
+		return "", nil, err
+	}
+	encoded, err := yamlx.Marshal(&node)
 	if err != nil {
 		return "", nil, err
 	}
-	encoded, err := yamlx.Marshal(node)
-	text := string(encoded)
+	text := strings.ReplaceAll(string(encoded), "$", "$$")
+	annotated, err := annotateComposeNative(text, &node)
 	if err != nil {
 		return "", nil, err
 	}
-	text = strings.ReplaceAll(text, "$", "$$")
-	annotated, err := annotateCompose(text, compose)
-	if err != nil {
-		return "", nil, err
+	count := 1
+	if host {
+		count = 2
 	}
-	return annotated, jsonx.Obj("filename", "compose.yaml", "project_name", project, "command", "docker compose up -d",
-		"identity_mode", "installation", "service_count", services.Len()), nil
+	return annotated, &ComposeDeployment{Filename: "compose.yaml", ProjectName: project, Command: "docker compose up -d", IdentityMode: "installation", ServiceCount: &count}, nil
 }
 
 // notePath joins a node path (mapping keys and sequence indexes) into a map key.
@@ -183,10 +152,9 @@ func notePath(parts ...any) string {
 }
 
 // annotateCompose is _annotate_compose(text, compose).
-func annotateCompose(text string, compose *jsonx.Object) (string, error) {
+func annotateComposeNative(text string, compose *yamlx.Node) (string, error) {
 	notes := map[string]string{notePath("name"): "保持默认：项目名，重建时沿用"}
-	for role, value := range compose.GetObject("services").All() {
-		service := value.(*jsonx.Object)
+	for role, service := range yamlx.Pairs(yamlx.Get(compose, "services")) {
 		at := func(parts ...any) string { return notePath(append([]any{"services", role}, parts...)...) }
 		helper := role == "ha-companion"
 		pick := func(a, b string) string {
@@ -205,12 +173,12 @@ func annotateCompose(text string, compose *jsonx.Object) (string, error) {
 			{"volumes", pick("保持默认：与上方使用同一组目录，前两项只读", "核对：左侧是宿主机目录；安装后保留数据，右侧路径不改")},
 		}
 		for _, field := range fields {
-			if service.Has(field[0]) {
+			if yamlx.Get(service, field[0]) != nil {
 				notes[at(field[0])] = field[1]
 			}
 		}
 		agentIP := "核对：容器独立 IPv4"
-		if service.GetOr("network_mode", nil) == "host" {
+		if nodeText(yamlx.Get(service, "network_mode")) == "host" {
 			agentIP = "核对：宿主机固定 IPv4"
 		}
 		environments := map[string]string{
@@ -222,20 +190,20 @@ func annotateCompose(text string, compose *jsonx.Object) (string, error) {
 			"INSTALL_KEY":   "保持生成值：安装凭据，请勿分享；登记成功后可删",
 			"INSTALL_SCOPE": "保持默认：核对安装归属，不是密码",
 		}
-		for _, key := range service.GetObject("environment").Keys() {
+		for key := range yamlx.Pairs(yamlx.Get(service, "environment")) {
 			notes[at("environment", key)] = environments[key]
 		}
 		notes[at("logging", "driver")] = "保持默认：容器日志格式"
 		notes[at("logging", "options")] = pick("可改：每份 5 MB，最多 2 份", "可改：每份 10 MB，最多 3 份")
-		for index, item := range service.GetList("volumes") {
-			if _, isString := item.(string); isString {
+		for index, item := range yamlx.Get(service, "volumes").Content {
+			if item.Kind == yaml.ScalarNode {
 				notes[at("volumes", index)] = [3]string{"Agent 身份", "配置与规则", "高可用状态"}[index]
 				continue
 			}
-			mount := item.(*jsonx.Object)
+			mount := item
 			if index < 3 {
 				notes[at("volumes", index, "source")] = "核对：宿主机持久目录"
-			} else if strings.HasSuffix(mount.GetString("source"), "boot_id") {
+			} else if strings.HasSuffix(nodeText(yamlx.Get(mount, "source")), "boot_id") {
 				notes[at("volumes", index, "source")] = "保持默认：识别宿主，防止同机配对"
 			} else {
 				notes[at("volumes", index, "source")] = "保持默认：核对 Host 网络；不是文本文件"
@@ -243,7 +211,7 @@ func annotateCompose(text string, compose *jsonx.Object) (string, error) {
 			notes[at("volumes", index, "type")] = "保持默认：宿主路径直接挂载"
 			notes[at("volumes", index, "target")] = "保持默认：容器内路径，宿主机无需创建"
 			access := "允许保存数据"
-			if jsonx.Truthy(mount.GetOr("read_only", nil)) {
+			if nodeText(yamlx.Get(mount, "read_only")) == "true" {
 				access = "只读访问"
 			}
 			notes[at("volumes", index, "read_only")] = "保持默认：" + access
@@ -253,11 +221,11 @@ func annotateCompose(text string, compose *jsonx.Object) (string, error) {
 				notes[at("volumes", index, "bind")] = "保持默认：自动创建数据目录"
 			}
 		}
-		if service.Has("networks") {
+		if yamlx.Get(service, "networks") != nil {
 			notes[at("networks", "dns-ha", "ipv4_address")] = "核对：与 AGENT_IP 一致；需调整请重新生成"
 		}
 	}
-	if compose.Has("networks") {
+	if yamlx.Get(compose, "networks") != nil {
 		notes[notePath("networks", "dns-ha", "name")] = "保持默认：专用网络名称"
 		notes[notePath("networks", "dns-ha", "driver")] = "保持默认：容器使用独立局域网地址"
 		notes[notePath("networks", "dns-ha", "driver_opts", "parent")] = "核对：宿主机实际网卡"
@@ -313,7 +281,7 @@ func annotateCompose(text string, compose *jsonx.Object) (string, error) {
 		"# 已安装请保留原数据目录和身份；变更设备信息请使用迁移入口。"}
 	for index, line := range pySplitLines(text) {
 		if note := annotations[index]; note != "" {
-			trimmed := strings.TrimLeftFunc(line, pystr.IsSpace)
+			trimmed := strings.TrimLeftFunc(line, unicode.IsSpace)
 			lines = append(lines, line[:len(line)-len(trimmed)]+"# "+note)
 		}
 		lines = append(lines, line)

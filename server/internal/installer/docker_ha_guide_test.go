@@ -549,7 +549,7 @@ func newHost(t *testing.T, tmp, mode string, changes ...any) (*jsonx.Object, fak
 	state.Set("containers", jsonx.NewObject())
 	writeJSONFile(t, host.state, state)
 	previous := bootstrapCommand
-	bootstrapCommand = func(*Enrollment, *jsonx.Object) (string, error) {
+	bootstrapCommand = func(*Enrollment, GuideRequest) (string, error) {
 		return `printf bootstrap >> "$cf_state/bootstrap-count"` + "\n", nil
 	}
 	t.Cleanup(func() { bootstrapCommand = previous })
