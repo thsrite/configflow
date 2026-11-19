@@ -45,6 +45,9 @@ func operation(handler func(c *httpx.Ctx, m *agents.Manager) (*httpx.Response, e
 			response, err = handler(c, manager)
 		}
 		if err != nil {
+			if response, ok := deviceResponseFailure(err); ok {
+				return response, nil
+			}
 			return failure(500, err.Error()), nil
 		}
 		return response, nil

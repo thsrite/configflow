@@ -98,8 +98,7 @@ func request(ctx context.Context, m *agents.Manager, agent *jsonx.Object, method
 	// RequestException).
 	response, err := m.Client().Do(ctx, agents.Request{Method: method, URL: agents.AgentURL(agent, path), Header: header,
 		Body: body, Timeout: agents.Seconds(5), NoProxy: true, Latin1Headers: true})
-	var call *agents.CallError
-	if err != nil && !agents.IsTransportError(err) && !errors.As(err, &call) {
+	if err != nil && !agents.IsTransportError(err) && !errors.Is(err, agents.ErrHeaderEncoding) {
 		err = &agents.TransportError{Err: err}
 	}
 	return response, err

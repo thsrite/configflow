@@ -390,3 +390,13 @@ func (r *PreparedContent) MemberJSON(name string) (json.RawMessage, bool, error)
 func (r *AppliedContent) SetJSON(name string, value json.RawMessage) error {
 	return SetMemberJSON(r, &r.raw, name, value)
 }
+
+// MemberJSON reads an effective upgrade member without projecting its token type.
+func (r *AgentUpgrade) MemberJSON(name string) (json.RawMessage, bool, error) {
+	return recordMemberJSON(r, &r.raw, name)
+}
+
+// SetJSON applies an explicit JSON value to a declared upgrade member.
+func (r *AgentUpgrade) SetJSON(name string, data json.RawMessage) error {
+	return SetMemberJSON(r, &r.raw, name, data)
+}

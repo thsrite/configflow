@@ -24,7 +24,12 @@ func TestDirectAgentCallsAnswerLikePython(t *testing.T) {
 	call := func(name string, handle func(Request) (*Response, error), fn func() (any, error), want any) {
 		t.Helper()
 		e.fake.set(handle)
+		before := remoteReferenceHead(t, e)
 		got, err := fn()
+		response, _ := handle(Request{})
+		if verifyNativeRemoteReference(t, e, name, string(response.Body), response.StatusCode, want, err, before) {
+			return
+		}
 		if err != nil || !jsonx.Equal(got, want) {
 			t.Errorf("%s: %v %v, want %v", name, got, err, want)
 		}
@@ -64,7 +69,12 @@ func TestSetLoggingConfigLikePython(t *testing.T) {
 	fails := func(name, body, want string) {
 		t.Helper()
 		e.fake.set(raw(body, 200))
-		if _, err := e.m.SetLoggingConfig(e.ctx, id, true); err == nil || err.Error() != want {
+		before := remoteReferenceHead(t, e)
+		_, err := e.m.SetLoggingConfig(e.ctx, id, true)
+		if verifyNativeRemoteReference(t, e, "logging_"+name, body, 200, want, err, before) {
+			return
+		}
+		if err == nil || err.Error() != want {
 			t.Errorf("%s: %v, want %s", name, err, want)
 		}
 	}
@@ -88,7 +98,16 @@ func TestSetLoggingConfigLikePython(t *testing.T) {
 	}{{nil, "'NoneType' object does not support item assignment"}, {[]any{jsonx.Int(1)}, "list indices must be integers or slices, not str"}} {
 		e.editSystem(func(system *jsonx.Object) { e.firstAgent(system).Set("logging_config", c.existing) })
 		e.fake.set(raw(`{"success": true}`, 200))
-		if _, err := e.m.SetLoggingConfig(e.ctx, id, false); err == nil || err.Error() != c.want {
+		before := remoteReferenceHead(t, e)
+		_, err := e.m.SetLoggingConfig(e.ctx, id, false)
+		name := "logging_existing_none"
+		if c.existing != nil {
+			name = "logging_existing_list"
+		}
+		if verifyNativeRemoteReference(t, e, name, `{"success": true}`, 200, c.want, err, before) {
+			continue
+		}
+		if err == nil || err.Error() != c.want {
 			t.Errorf("existing %v: %v", c.existing, err)
 		}
 	}
@@ -101,7 +120,13 @@ func TestAgentJSONAndDNSHARequestsLikePython(t *testing.T) {
 	fails := func(name string, handle func(Request) (*Response, error), fn func() error, want string) {
 		t.Helper()
 		e.fake.set(handle)
-		if err := fn(); err == nil || err.Error() != want {
+		before := remoteReferenceHead(t, e)
+		err := fn()
+		response, _ := handle(Request{})
+		if verifyNativeRemoteReference(t, e, name, string(response.Body), response.StatusCode, want, err, before) {
+			return
+		}
+		if err == nil || err.Error() != want {
 			t.Errorf("%s: %v, want %s", name, err, want)
 		}
 	}
@@ -121,8 +146,12 @@ func TestAgentJSONAndDNSHARequestsLikePython(t *testing.T) {
 	fails("ha_404", raw("", 404), status, "Agent t 不支持 DNS 高可用，请升级")
 	fails("ha_false", raw(`{"success": false, "error": "bad `+agent.GetString("token")+`"}`, 200), status, "bad [REDACTED]")
 	e.fake.set(raw("[1]", 200))
-	if got := must[*jsonx.Object](t)(e.m.OxidnsHAStatus(e.ctx, agent)); got.Len() != 0 {
-		t.Errorf("ha_list %v", got)
+	before := remoteReferenceHead(t, e)
+	got, err := e.m.OxidnsHAStatus(e.ctx, agent)
+	if !verifyNativeRemoteReference(t, e, "ha_list", "[1]", 200, jsonx.NewObject(), err, before) {
+		if err != nil || got.Len() != 0 {
+			t.Errorf("ha_list %v %v", got, err)
+		}
 	}
 	if _, err := e.m.OxidnsHAHandoff(e.ctx, agent, "put", "x"); err == nil || err.Error() != "Unsupported DNS handoff operation" {
 		t.Errorf("handoff %v", err)

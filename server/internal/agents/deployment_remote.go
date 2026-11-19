@@ -20,6 +20,9 @@ var ErrAgentEndpoint = errors.New(msgAgentEndpoint)
 // CallAgent sends raw request bytes with the original stored string credential.
 // It never derives authorization from an R5 scalar projection.
 func (m *Manager) CallAgent(ctx context.Context, a *model.Agent, method, path string, header http.Header, body []byte, timeout Timeout) (*Response, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if a == nil {
 		return nil, ErrAgentEndpoint
 	}
@@ -36,8 +39,7 @@ func (m *Manager) CallAgent(ctx context.Context, a *model.Agent, method, path st
 	}
 	response, err := m.httpClient().Do(ctx, Request{Method: method, URL: "http://" + host + ":" + strconv.FormatInt(int64(a.Port), 10) + path, Header: h, Body: body, Timeout: timeout, Latin1Headers: true})
 	if err != nil {
-		var call *CallError
-		if !IsTransportError(err) && !errors.As(err, &call) {
+		if !IsTransportError(err) && !errors.Is(err, ErrHeaderEncoding) {
 			err = &TransportError{Err: err}
 		}
 	}

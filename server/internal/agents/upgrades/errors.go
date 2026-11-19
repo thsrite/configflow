@@ -37,9 +37,9 @@ func IsValueError(err error) bool {
 	if errors.As(err, &py) {
 		return py.Class == "ValueError" || py.Class == "UnicodeEncodeError"
 	}
-	var call *agents.CallError
-	if errors.As(err, &call) {
-		return call.Class == "UnicodeEncodeError"
+	// Compatibility classification remains in the deferred upgrades owner.
+	if errors.Is(err, agents.ErrHeaderEncoding) {
+		return true
 	}
 	var conflict *agents.DeploymentConflict
 	var value *agents.ValueError
@@ -53,9 +53,8 @@ func ErrorClass(err error) string {
 	if errors.As(err, &py) {
 		return py.Class
 	}
-	var call *agents.CallError
-	if errors.As(err, &call) {
-		return call.Class
+	if errors.Is(err, agents.ErrHeaderEncoding) {
+		return "UnicodeEncodeError"
 	}
 	if IsValueError(err) {
 		return "ValueError"

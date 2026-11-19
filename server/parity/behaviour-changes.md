@@ -2050,3 +2050,27 @@ Python 类别/errno、Go 拒绝、无部分行、事务不写入和目录不被�
 原生 MIME/IANA 文本 codec 取代私有 Python alias 与 Unicode decoder；受支持 Agent 的
 UTF-8 JSON/text 及旧 UTF-16/32 BLOB 原始语料保持不变。额外 IANA charset 由原生注册表
 处理，MIME 大小写按标准解析，不再局限手写的旧 codec 列表。
+
+### N8-10 core-2 — direct Agent protocol and preparation errors
+
+原生 RemoteRequest/CallAgent、RemoteCall、SetLoggingModel、AgentRequestModel、direct service
+operation 和 legacy config owner 取代动态业务。成功的 Agent 回复如果不是所需 object、
+不是 JSON、含真实重复键或 success 为非 boolean，拒绝为 INVALID_RESPONSE 中文 502；
+状态/日志原本允许的其他合法 JSON 值仍透明保留。HA state 本来不要求 success，仍允许
+省略；原先把 list 回复悄悄变成空成功 state 的异常路径现在同样拒绝。
+
+原 remote_ref.py 未修改；真实 Python 原输出单独冻结为 n810_remote_python.json。
+九条变动用完整 archive SHA、原完整 result/error row SHA、实际 body/status 逐项绑定。
+AttributeError/TypeError/JSONDecodeError 的原文和类别保留在 oracle；仅比较 native
+拒绝、错误类与事务无写入。损坏的已存 logging_config=null/list 继续拒绝且不写入，
+改为明确中文原生 validation reason；未把它当作上游错误或静默修复。
+
+CallError/PythonClass、KeyError 和 UnicodeEncodeError 的文本仿真删除。缺失/非字符串
+凭据按 ErrAgentEndpoint 拒绝；Latin-1 编码用 x/text ISO-8859-1，不能编码的 header 用
+ErrHeaderEncoding 拒绝。CR/LF 诊断不回显 header 凭据。原 Latin-1 字节契约保留，新增
+37 条原 A15 输入/输出完整行 SHA；upgrades 仅接原生 sentinel 到它已有的延后分类层，
+其四条原 encode error 行和原 archive SHA 精确绑定，其余 wire/class 期望不动。
+
+日志设置等写操作保留请求值但脱离浏览器断线，仍跟随 Runtime shutdown；真实日志配置
+HTTP 检查实际 method/path/Authorization/Content-Type/body 字节，并验证 502 脱敏和
+全库 fingerprint 不变。断线可完成、回包时关机不得提交、旧 generation 不得发新请求。

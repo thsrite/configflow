@@ -1,0 +1,494 @@
+[
+  {
+    "row": {
+      "name": "restart cjk token",
+      "missing": [],
+      "token": "密钥",
+      "payload": "",
+      "python_class": "UnicodeEncodeError",
+      "python_message": "'latin-1' codec can't encode characters in position 7-8: ordinal not in range(256)"
+    },
+    "sha256": "f0d62cb2927344047f67c64b5b1562ed248d215439807fbb9d2ba0c2eeffd2d7"
+  },
+  {
+    "row": {
+      "name": "uninstall cjk token",
+      "missing": [],
+      "token": "密钥",
+      "payload": "",
+      "python_class": "UnicodeEncodeError",
+      "python_message": "'latin-1' codec can't encode characters in position 7-8: ordinal not in range(256)"
+    },
+    "sha256": "9b2d49f6b2144ab1cd6198dcb2b6fbe25f02076266f44c0de9aa34c7695d254b"
+  },
+  {
+    "row": {
+      "name": "logs cjk token",
+      "missing": [],
+      "token": "密钥",
+      "payload": "",
+      "python_class": "UnicodeEncodeError",
+      "python_message": "'latin-1' codec can't encode characters in position 7-8: ordinal not in range(256)"
+    },
+    "sha256": "be6898feb305f05349f1aee0e9bc605332b6ffb823205d4da0f1b70d536c2798"
+  },
+  {
+    "row": {
+      "name": "log sources cjk token",
+      "missing": [],
+      "token": "密钥",
+      "payload": "",
+      "python_class": "UnicodeEncodeError",
+      "python_message": "'latin-1' codec can't encode characters in position 7-8: ordinal not in range(256)"
+    },
+    "sha256": "afc926a4447dcc6b99f7412860e9b09f311aca9195f8092aa1877f084bd66648"
+  },
+  {
+    "row": {
+      "name": "clear cjk token",
+      "missing": [],
+      "token": "密钥",
+      "payload": "",
+      "python_class": "UnicodeEncodeError",
+      "python_message": "'latin-1' codec can't encode characters in position 7-8: ordinal not in range(256)"
+    },
+    "sha256": "3b85f8c67bbb5849e81971be3c78b9037ae9df403c041892442fd21c9076700d"
+  },
+  {
+    "row": {
+      "name": "validate cjk token",
+      "missing": [],
+      "token": "密钥",
+      "payload": "",
+      "python_class": "UnicodeEncodeError",
+      "python_message": "'latin-1' codec can't encode characters in position 7-8: ordinal not in range(256)"
+    },
+    "sha256": "2fe90a5895405133baf0d2065331ad9157e4f2ea71483ba0d57301a38693b170"
+  },
+  {
+    "row": {
+      "name": "logging cjk token",
+      "missing": [],
+      "token": "密钥",
+      "payload": "",
+      "python_class": "UnicodeEncodeError",
+      "python_message": "'latin-1' codec can't encode characters in position 7-8: ordinal not in range(256)"
+    },
+    "sha256": "da0125b66033841922b77260e9de7b2d1032261449e8a74d893222bfc4c4c9cf"
+  },
+  {
+    "row": {
+      "name": "set logging cjk token",
+      "missing": [],
+      "token": "密钥",
+      "payload": "",
+      "python_class": "UnicodeEncodeError",
+      "python_message": "'latin-1' codec can't encode characters in position 7-8: ordinal not in range(256)"
+    },
+    "sha256": "538af7b08ffae75e7a9ac33f71dbf4e7ef9ec974d4aca1b263ffd2082290fc6d"
+  },
+  {
+    "row": {
+      "name": "status cjk token",
+      "missing": [],
+      "token": "密钥",
+      "payload": "",
+      "python_class": "UnicodeEncodeError",
+      "python_message": "'latin-1' codec can't encode characters in position 7-8: ordinal not in range(256)"
+    },
+    "sha256": "4887a96fb6ed6ee87aa25fdc49c37265fd0644e1963baee930ba2834416c9efc"
+  },
+  {
+    "row": {
+      "name": "restart without token",
+      "missing": [
+        "token"
+      ],
+      "token": "",
+      "payload": "",
+      "python_class": "KeyError",
+      "python_message": "'token'"
+    },
+    "sha256": "479e45fd4387f81791fab8ede6e5a95ddf96836e1088fbba40dec4910f36ad43"
+  },
+  {
+    "row": {
+      "name": "uninstall without token",
+      "missing": [
+        "token"
+      ],
+      "token": "",
+      "payload": "",
+      "python_class": "KeyError",
+      "python_message": "'token'"
+    },
+    "sha256": "310688827ce44506bf11c7d48ca2942b10b65454668f76e23353c1a967641f3f"
+  },
+  {
+    "row": {
+      "name": "logs without token",
+      "missing": [
+        "token"
+      ],
+      "token": "",
+      "payload": "",
+      "python_class": "KeyError",
+      "python_message": "'token'"
+    },
+    "sha256": "b3f0b3fea80646956c0a1523d7b473f7ef21787dad7081a6115aa09754c3ac87"
+  },
+  {
+    "row": {
+      "name": "log sources without token",
+      "missing": [
+        "token"
+      ],
+      "token": "",
+      "payload": "",
+      "python_class": "KeyError",
+      "python_message": "'token'"
+    },
+    "sha256": "d398b78274b906b7d335484edabe5ef2c7091ff721e0be69c9be3aa4e76736ca"
+  },
+  {
+    "row": {
+      "name": "clear without token",
+      "missing": [
+        "token"
+      ],
+      "token": "",
+      "payload": "",
+      "python_class": "KeyError",
+      "python_message": "'token'"
+    },
+    "sha256": "e0d308cd57651dcfc4bca206416c78237802428093ea8f2605afa3dc357b989b"
+  },
+  {
+    "row": {
+      "name": "validate without token",
+      "missing": [
+        "token"
+      ],
+      "token": "",
+      "payload": "",
+      "python_class": "KeyError",
+      "python_message": "'token'"
+    },
+    "sha256": "c12bd352afb6fab37b25ed2241021466096475f965187ad8ad606a92a9e78645"
+  },
+  {
+    "row": {
+      "name": "logging without token",
+      "missing": [
+        "token"
+      ],
+      "token": "",
+      "payload": "",
+      "python_class": "KeyError",
+      "python_message": "'token'"
+    },
+    "sha256": "6d890838bf452e396072cb16880276de1f8c65c8b7e4f1325829bcc81ff82285"
+  },
+  {
+    "row": {
+      "name": "set logging without token",
+      "missing": [
+        "token"
+      ],
+      "token": "",
+      "payload": "",
+      "python_class": "KeyError",
+      "python_message": "'token'"
+    },
+    "sha256": "fd862c087c22b82e1f1f2bbe053b8f2d92c9d4cea23bebedf6adb9569ef0004a"
+  },
+  {
+    "row": {
+      "name": "status without token",
+      "missing": [
+        "token"
+      ],
+      "token": "",
+      "payload": "",
+      "python_class": "KeyError",
+      "python_message": "'token'"
+    },
+    "sha256": "c74a519491af78b814d205edcc9d3eb4c23d8a0e9a6e18b5f22ac6d7d5c84cce"
+  },
+  {
+    "row": {
+      "name": "restart without port",
+      "missing": [
+        "token",
+        "port"
+      ],
+      "token": "",
+      "payload": "",
+      "python_class": "KeyError",
+      "python_message": "'port'"
+    },
+    "sha256": "cb59144fde1295987f3e727bc25649aab3c34c5c7fb2c3b68a7e251686878ed9"
+  },
+  {
+    "row": {
+      "name": "uninstall without port",
+      "missing": [
+        "token",
+        "port"
+      ],
+      "token": "",
+      "payload": "",
+      "python_class": "KeyError",
+      "python_message": "'port'"
+    },
+    "sha256": "4da499d6884901958eae08f8dcd574cf715eb4b1550e0a2fb445a1b5bcb20719"
+  },
+  {
+    "row": {
+      "name": "logs without port",
+      "missing": [
+        "token",
+        "port"
+      ],
+      "token": "",
+      "payload": "",
+      "python_class": "KeyError",
+      "python_message": "'port'"
+    },
+    "sha256": "ff517e135406027f0759715b9ffec2aa291054946d17f39eb551fc4c21213263"
+  },
+  {
+    "row": {
+      "name": "log sources without port",
+      "missing": [
+        "token",
+        "port"
+      ],
+      "token": "",
+      "payload": "",
+      "python_class": "KeyError",
+      "python_message": "'port'"
+    },
+    "sha256": "59c3a7835b83f115bf5b6f795835ae5fbdb8fb29e0d240e53401565f618bfdbc"
+  },
+  {
+    "row": {
+      "name": "clear without port",
+      "missing": [
+        "token",
+        "port"
+      ],
+      "token": "",
+      "payload": "",
+      "python_class": "KeyError",
+      "python_message": "'port'"
+    },
+    "sha256": "4a38e3204cb2dde6a71d73d864e51424bd18bf035006fe06eef78015231ad458"
+  },
+  {
+    "row": {
+      "name": "validate without port",
+      "missing": [
+        "token",
+        "port"
+      ],
+      "token": "",
+      "payload": "",
+      "python_class": "KeyError",
+      "python_message": "'port'"
+    },
+    "sha256": "a95c6f9befdb4c4f286ca8824af4aaa4d3fe1b76b70f6c744d1af0ab6b3c5032"
+  },
+  {
+    "row": {
+      "name": "logging without port",
+      "missing": [
+        "token",
+        "port"
+      ],
+      "token": "",
+      "payload": "",
+      "python_class": "KeyError",
+      "python_message": "'port'"
+    },
+    "sha256": "eeb4eb7f36810f24c21788383b7f2e21438f3223fa6ff1c48b9b7db0c96bea90"
+  },
+  {
+    "row": {
+      "name": "set logging without port",
+      "missing": [
+        "token",
+        "port"
+      ],
+      "token": "",
+      "payload": "",
+      "python_class": "KeyError",
+      "python_message": "'port'"
+    },
+    "sha256": "681bbacd60a8d7d4a6d225adf61bbb42d5171a2ce6f54bf951b23fa0c9bc6826"
+  },
+  {
+    "row": {
+      "name": "status without port",
+      "missing": [
+        "token",
+        "port"
+      ],
+      "token": "",
+      "payload": "",
+      "python_class": "KeyError",
+      "python_message": "'port'"
+    },
+    "sha256": "580582dcade934e31b5b03b999df41100b5e4566b888ccef4c9efcf5df8eb60e"
+  },
+  {
+    "row": {
+      "name": "restart without host",
+      "missing": [
+        "token",
+        "port",
+        "host"
+      ],
+      "token": "",
+      "payload": "",
+      "python_class": "KeyError",
+      "python_message": "'host'"
+    },
+    "sha256": "2a2877be5def238a2e479b02c98521a1e20e8c20159484ef2c88da9a25981038"
+  },
+  {
+    "row": {
+      "name": "uninstall without host",
+      "missing": [
+        "token",
+        "port",
+        "host"
+      ],
+      "token": "",
+      "payload": "",
+      "python_class": "KeyError",
+      "python_message": "'host'"
+    },
+    "sha256": "ec9eed5f15c4b0d7fb7a8382da79151a457a54db0bf98910050bcf7bcdc641f9"
+  },
+  {
+    "row": {
+      "name": "logs without host",
+      "missing": [
+        "token",
+        "port",
+        "host"
+      ],
+      "token": "",
+      "payload": "",
+      "python_class": "KeyError",
+      "python_message": "'host'"
+    },
+    "sha256": "c111a74e4a25229a1e01b5465720116ea0265a63426af969c8852819ba595da0"
+  },
+  {
+    "row": {
+      "name": "log sources without host",
+      "missing": [
+        "token",
+        "port",
+        "host"
+      ],
+      "token": "",
+      "payload": "",
+      "python_class": "KeyError",
+      "python_message": "'host'"
+    },
+    "sha256": "7ba7a477790993129efec5ca2f303bc2728033e667df3c5f6a2b0aeb6b369fa0"
+  },
+  {
+    "row": {
+      "name": "clear without host",
+      "missing": [
+        "token",
+        "port",
+        "host"
+      ],
+      "token": "",
+      "payload": "",
+      "python_class": "KeyError",
+      "python_message": "'host'"
+    },
+    "sha256": "1293a590425b4e156193cec899b2c28c8a83a636fd2587527628a7136d7d89ca"
+  },
+  {
+    "row": {
+      "name": "validate without host",
+      "missing": [
+        "token",
+        "port",
+        "host"
+      ],
+      "token": "",
+      "payload": "",
+      "python_class": "KeyError",
+      "python_message": "'host'"
+    },
+    "sha256": "cdb42460f17a30b19f547a0690ca125fcb435f72ebdd09df43bf51df7f087646"
+  },
+  {
+    "row": {
+      "name": "logging without host",
+      "missing": [
+        "token",
+        "port",
+        "host"
+      ],
+      "token": "",
+      "payload": "",
+      "python_class": "KeyError",
+      "python_message": "'host'"
+    },
+    "sha256": "4ac5b30fac8404e969cb1e211348de6cc5a5a65f61536960fbc9d52dd51b217d"
+  },
+  {
+    "row": {
+      "name": "set logging without host",
+      "missing": [
+        "token",
+        "port",
+        "host"
+      ],
+      "token": "",
+      "payload": "",
+      "python_class": "KeyError",
+      "python_message": "'host'"
+    },
+    "sha256": "70601eee1e87061356f42c27d1f5c8ee4e7fd9b9cbd59a153ead23807e138fba"
+  },
+  {
+    "row": {
+      "name": "status without host",
+      "missing": [
+        "token",
+        "port",
+        "host"
+      ],
+      "token": "",
+      "payload": "",
+      "python_class": "KeyError",
+      "python_message": "'host'"
+    },
+    "sha256": "4ea8482d3e1ad249b420cd16a7283bd6d7cce4ca5d084909bdd0fe297fbe6532"
+  },
+  {
+    "row": {
+      "name": "set logging NaN without host",
+      "missing": [
+        "token",
+        "port",
+        "host"
+      ],
+      "token": "",
+      "payload": "non-finite NaN",
+      "python_class": "KeyError",
+      "python_message": "'host'"
+    },
+    "sha256": "43077d6c155b55991201c4530cd14a9d8c557eb3971d4e88d85434aa81f236e3"
+  }
+]

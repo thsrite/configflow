@@ -5,6 +5,11 @@ package agents
 // kept (the tables are generated into messages_data.go).
 
 import (
+	"configflow/internal/model"
+	"configflow/internal/redact"
+	"encoding/json"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 	"regexp"
 	"strings"
 
@@ -44,6 +49,11 @@ func DeploymentMessage(message any) any {
 	if !ok {
 		return message
 	}
+	return ExplainDeployment(text)
+}
+
+// ExplainDeployment adds a localized explanation to a textual protocol error.
+func ExplainDeployment(text string) string {
 	explanation, found := lookup(deploymentMessages, text)
 	if !found || explanation == "" {
 		explanation = ""
@@ -69,44 +79,31 @@ func DeploymentMessage(message any) any {
 // PublicDeploymentMessages is public_deployment_messages(record): a shallow
 // copy with the display texts explained and the events cleaned.
 func PublicDeploymentMessages(record *jsonx.Object) *jsonx.Object {
-	result := record.Clone()
-	for _, key := range []string{"message", "error", "rollback_error", "rollback_message"} {
-		if value, ok := result.Get(key); ok {
-			result.Set(key, DeploymentMessage(value))
-		}
+	raw, err := json.Marshal(record)
+	if err != nil {
+		return record.Clone()
 	}
-	if events, ok := result.Get("events"); ok {
-		cleaned := CleanEvents(events, nil, nil)
-		for i, item := range cleaned {
-			event := item.(*jsonx.Object)
-			if jsonx.Truthy(event.Value("message")) {
-				event = event.Clone()
-				event.Set("message", DeploymentMessage(event.Value("message")))
-				cleaned[i] = event
-			}
-		}
-		result.Set("events", cleaned)
+	var input model.Deployment
+	if json.Unmarshal(raw, &input) != nil {
+		return record.Clone()
 	}
-	return result
-}
-
-// pyStrip is str.strip(): Python's whitespace includes U+001C–U+001F.
-func pyStrip(text string) string { return diag.PyStrip(text) }
-
-// pyLower is str.lower() for the containment checks against the ASCII
-// _SYSTEM_ERRORS keys: Python lowercases U+0130 to "i̇" (two characters),
-// Go's ToLower to a plain "i".
-func pyLower(text string) string {
-	return strings.ToLower(strings.ReplaceAll(text, "\u0130", "i\u0307"))
+	result, err := PublicDeploymentMessagesModel(&input)
+	if err != nil {
+		return record.Clone()
+	}
+	out, err := deploymentObject(result)
+	if err != nil {
+		return record.Clone()
+	}
+	return out
 }
 
 // upgradeExplanation is _upgrade_explanation(message).
-func upgradeExplanation(message any) string {
-	text, ok := message.(string)
-	if !ok || pyStrip(text) == "" {
+func upgradeExplanation(text string) string {
+	if diag.PyStrip(text) == "" {
 		return "Agent 更新遇到异常，请查看 Agent 日志。"
 	}
-	text = pyStrip(text)
+	text = diag.PyStrip(text)
 	if value, found := lookup(upgradeMessages, text); found {
 		return value
 	}
@@ -130,7 +127,7 @@ func upgradeExplanation(message any) string {
 	if recoveryRequired.MatchString(text) {
 		return "之前的配置发布尚未完成恢复，请先到发布记录中处理，再更新 Agent。"
 	}
-	lower := pyLower(text)
+	lower := cases.Lower(language.Und).String(text)
 	for _, pair := range upgradeSystemErrors {
 		if strings.Contains(lower, pair.key) {
 			return pair.value
@@ -148,11 +145,17 @@ func upgradeExplanation(message any) string {
 // UpgradeErrorMessage is upgrade_error_message(message): a Chinese
 // explanation followed by the complete original error.
 func UpgradeErrorMessage(message any) string {
-	if text, ok := message.(string); ok && han.MatchString(text) {
+	text, _ := message.(string)
+	return ExplainUpgradeFailure(text)
+}
+
+// ExplainUpgradeFailure localizes an upgrade failure while retaining its text.
+func ExplainUpgradeFailure(text string) string {
+	if han.MatchString(text) {
 		return text
 	}
-	explanation := upgradeExplanation(message)
-	if text, ok := message.(string); ok && pyStrip(text) != "" {
+	explanation := upgradeExplanation(text)
+	if diag.PyStrip(text) != "" {
 		return explanation + "\n原始错误：" + text
 	}
 	return explanation
@@ -163,24 +166,128 @@ var upgradeFailureStatuses = map[string]bool{"failed": true, "rolled_back": true
 // PublicUpgradeState is public_upgrade_state(state): a localized response
 // copy; the durable journal is never rewritten.
 func PublicUpgradeState(state *jsonx.Object) *jsonx.Object {
-	result := state.Clone()
-	if jsonx.Truthy(result.Value("error")) {
-		result.Set("error", UpgradeErrorMessage(FailureText(result.Value("error"), nil, 0)))
+	raw, err := json.Marshal(state)
+	if err != nil {
+		return state.Clone()
 	}
-	if jsonx.Truthy(result.Value("message")) {
-		result.Set("message", FailureText(result.Value("message"), nil, 0))
+	var input model.AgentUpgrade
+	if json.Unmarshal(raw, &input) != nil {
+		return state.Clone()
 	}
-	if events, ok := result.Get("events"); ok {
-		cleaned := CleanEvents(events, nil, nil)
-		for _, item := range cleaned {
-			event := item.(*jsonx.Object)
-			if upgradeFailureStatuses[event.GetString("status")] && jsonx.Truthy(event.Value("message")) {
-				event.Set("message", UpgradeErrorMessage(event.Value("message")))
+	result, err := PublicUpgradeStateModel(&input)
+	if err != nil {
+		return state.Clone()
+	}
+	raw, err = json.Marshal(result)
+	if err != nil {
+		return state.Clone()
+	}
+	var out jsonx.Object
+	if json.Unmarshal(raw, &out) != nil {
+		return state.Clone()
+	}
+	return &out
+}
+
+// PublicDeploymentMessagesModel returns an owned localized task; storage and
+// unknown members are preserved, and event validation has one native owner.
+func PublicDeploymentMessagesModel(record *model.Deployment) (*model.Deployment, error) {
+	result, err := copyDeployment(record)
+	if err != nil {
+		return nil, err
+	}
+	for _, key := range []string{"message", "error", "rollback_error", "rollback_message"} {
+		raw, present, err := result.MemberJSON(key)
+		if err != nil {
+			return nil, err
+		}
+		if text, valid := storedText(raw, present, nil); valid {
+			encoded, err := json.Marshal(ExplainDeployment(text))
+			if err != nil {
+				return nil, err
+			}
+			if err := result.SetJSON(key, encoded); err != nil {
+				return nil, err
 			}
 		}
-		result.Set("events", cleaned)
 	}
-	return result
+	if _, present, err := result.MemberJSON("events"); err != nil {
+		return nil, err
+	} else if present {
+		events := CleanOperationEvents(result.Events, nil, nil)
+		for i := range events {
+			if events[i].Message != nil && *events[i].Message != "" {
+				events[i].Message = new(ExplainDeployment(*events[i].Message))
+			}
+		}
+		raw, err := json.Marshal(events)
+		if err != nil {
+			return nil, err
+		}
+		if err := result.SetJSON("events", raw); err != nil {
+			return nil, err
+		}
+	}
+	return result, nil
+}
+
+// PublicUpgradeStateModel produces an owned display copy without changing the
+// durable upgrade journal, including original nontext diagnostic values.
+func PublicUpgradeStateModel(state *model.AgentUpgrade) (*model.AgentUpgrade, error) {
+	raw, err := model.Marshal(state)
+	if err != nil {
+		return nil, err
+	}
+	var result model.AgentUpgrade
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return nil, err
+	}
+	for _, key := range []string{"error", "message"} {
+		raw, present, err := result.MemberJSON(key)
+		if err != nil {
+			return nil, err
+		}
+		if !present {
+			continue
+		}
+		content, err := model.JSONHasContent(raw)
+		if err != nil {
+			return nil, err
+		}
+		if !content {
+			continue
+		}
+		text, _ := storedText(raw, true, nil)
+		text = redact.DiagnosticText(text, nil, 0)
+		if key == "error" {
+			text = ExplainUpgradeFailure(text)
+		}
+		encoded, err := json.Marshal(text)
+		if err != nil {
+			return nil, err
+		}
+		if err := result.SetJSON(key, encoded); err != nil {
+			return nil, err
+		}
+	}
+	if _, present, err := result.MemberJSON("events"); err != nil {
+		return nil, err
+	} else if present {
+		events := CleanOperationEvents(result.Events, nil, nil)
+		for i := range events {
+			if upgradeFailureStatuses[events[i].Status] && events[i].Message != nil && *events[i].Message != "" {
+				events[i].Message = new(ExplainUpgradeFailure(*events[i].Message))
+			}
+		}
+		raw, err := json.Marshal(events)
+		if err != nil {
+			return nil, err
+		}
+		if err := result.SetJSON("events", raw); err != nil {
+			return nil, err
+		}
+	}
+	return &result, nil
 }
 
 const msgHAPairIncomplete = "DNS 高可用配对不完整，请先修复主备关系"

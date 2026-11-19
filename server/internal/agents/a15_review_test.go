@@ -77,9 +77,11 @@ func TestA15ReviewCallRaisesLikePython(t *testing.T) {
 	}
 	wantMessage := func(name, want string, call func() (any, error)) {
 		t.Helper()
+		before := remoteReferenceHead(t, e)
 		value, err := call()
-		if err == nil || err.Error() != want {
-			t.Errorf("%s: %s, %v; Python raises %q", name, jsonx.Repr(value), err, want)
+		verifyNativeCallPreparation(t, e, name, want, err, before)
+		if record, ok := value.(*jsonx.Object); value != nil && (!ok || record != nil) {
+			t.Fatalf("native preparation returned a result despite refusal: %s", name)
 		}
 	}
 	operations := map[string]func() (any, error){

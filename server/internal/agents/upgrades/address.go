@@ -218,8 +218,7 @@ func agentRequest(agent *jsonx.Object, host string) (string, http.Header, error)
 // send as latin-1: not a RequestException, so it leaves _reaches/_ask (a
 // logged failure in _follow, a 500 in describe/change).
 func encodingFailure(err error) error {
-	var call *agents.CallError
-	if errors.As(err, &call) {
+	if errors.Is(err, agents.ErrHeaderEncoding) {
 		return err
 	}
 	return nil

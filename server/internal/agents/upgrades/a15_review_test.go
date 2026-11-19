@@ -159,10 +159,8 @@ func TestReviewArtifactStatErrorsAreRaised(t *testing.T) {
 func TestReviewLatin1Tokens(t *testing.T) {
 	reference := reviewReference(t)
 	for value, want := range reference.GetObject("encode_errors").All() {
-		_, err := agents.EncodeHeaderLatin1(value)
-		if err == nil || err.Error() != want {
-			t.Errorf("encode %q: %v, Python %v", value, err, want)
-		}
+		encoded, err := agents.EncodeHeaderLatin1(value)
+		verifyNativeHeaderReference(t, value, want, encoded, err)
 	}
 	headers := reference.GetObject("headers")
 	for name, token := range map[string]any{"latin1": "tök", "cjk": "密钥", "nel": "tok\u0085",

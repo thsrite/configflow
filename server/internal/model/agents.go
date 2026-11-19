@@ -1,7 +1,10 @@
 package model
 
+import "encoding/json"
+
 // Agent is a stored registry entry; liveness overlays and public projections are not synthesized here.
 type Agent struct {
+	LoggingConfig            *AgentLoggingConfig       `json:"logging_config"`
 	ID                       string                    `json:"id"`
 	Name                     string                    `json:"name"`
 	Host                     string                    `json:"host"`
@@ -188,6 +191,8 @@ func (r *Agent) SetJSON(member string, data []byte) error {
 // evidence, without encoding the rest of this Agent or its history.
 func (r *Agent) MemberJSON(member string) ([]byte, bool, error) {
 	switch member {
+	case "logging_config":
+		return r.raw.MemberJSON(member, r.LoggingConfig)
 	case "id":
 		return r.raw.MemberJSON(member, r.ID)
 	case "name":
@@ -276,3 +281,16 @@ func (r *Agent) MemberJSON(member string) ([]byte, bool, error) {
 	raw, ok := r.Fields.Get(member)
 	return raw, ok, nil
 }
+
+// AgentLoggingConfig holds the Agent's opaque logging switch and future options.
+type AgentLoggingConfig struct {
+	Enabled json.RawMessage `json:"enabled"`
+	Fields  Fields
+	raw     Raw
+}
+
+// UnmarshalJSON reads exact member names with stored provenance.
+func (r *AgentLoggingConfig) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
+
+// MarshalJSON preserves unknown and unchanged logging options.
+func (r AgentLoggingConfig) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }

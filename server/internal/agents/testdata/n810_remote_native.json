@@ -1,0 +1,68 @@
+{
+  "corpus_sha256": "c04d443c7537db5eea627c1e9b7c24256b4a3adf70e43be769ad8e83db16c357",
+  "rows": [
+    {
+      "name": "status_non_json",
+      "body": "not json",
+      "status": 200,
+      "python_class": "JSONDecodeError",
+      "sha256": "3c480c4ae56206354fd47570f356509abe93fea1150e761078db5cec61f47e8e"
+    },
+    {
+      "name": "uninstall_non_json",
+      "body": "oops",
+      "status": 200,
+      "python_class": "JSONDecodeError",
+      "sha256": "3c480c4ae56206354fd47570f356509abe93fea1150e761078db5cec61f47e8e"
+    },
+    {
+      "name": "logging_list",
+      "body": "[1]",
+      "status": 200,
+      "python_class": "AttributeError",
+      "sha256": "a6bd8718e07cfb753c40df6efdf7bbfdb09b92427f8811585611b1fa2541ed66"
+    },
+    {
+      "name": "logging_null",
+      "body": "null",
+      "status": 200,
+      "python_class": "AttributeError",
+      "sha256": "884d0cb9eafa5b6572cdbead35b771c27c6354708178866450355773479ec197"
+    },
+    {
+      "name": "logging_existing_none",
+      "body": "{\"success\": true}",
+      "status": 200,
+      "python_class": "TypeError",
+      "sha256": "2bdcf680302df0cb92acc5881f4b7d564d4e181e5cb1a8b55368b60d0a86704e"
+    },
+    {
+      "name": "logging_existing_list",
+      "body": "{\"success\": true}",
+      "status": 200,
+      "python_class": "TypeError",
+      "sha256": "24c216cdbc9652818077c8a56e93c38c71f9ff06184b8b3745d105a930f78851"
+    },
+    {
+      "name": "json_list",
+      "body": "[1]",
+      "status": 200,
+      "python_class": "AttributeError",
+      "sha256": "a6bd8718e07cfb753c40df6efdf7bbfdb09b92427f8811585611b1fa2541ed66"
+    },
+    {
+      "name": "json_null",
+      "body": "null",
+      "status": 200,
+      "python_class": "AttributeError",
+      "sha256": "884d0cb9eafa5b6572cdbead35b771c27c6354708178866450355773479ec197"
+    },
+    {
+      "name": "ha_list",
+      "body": "[1]",
+      "status": 200,
+      "python_class": "",
+      "sha256": "1c9d64ce7719748bf26cd81580ea58245e2a130baf32cd5fc92e08602626c26c"
+    }
+  ]
+}

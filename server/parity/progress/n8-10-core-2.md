@@ -574,3 +574,49 @@ JSON 编码前后原字节保持；不会把独立 HTTP 请求比对改为结构
 .32 的 DNS follow 整包 race 20m 到时未完成，最后仍在 commitStore/model.Marshal，
 不能记为通过；同条命令 IPv6 PASS 24.208s。后续需要给 DNS follow 足够时间完成，
 并核实 profile Source 的重复序列化成本；未调整测试期望或缩减该包的测试集合。
+
+## 原生 remote protocol、display DTO 和生命周期（进行中）
+
+remote.go 现在只留下旧 API 的参数/JSON codec 和 HA hook bridge；业务在 remote_model.go：
+RemoteRequest 保存原始 wire bytes，RemoteCall/RunDirectOperation/AgentRequestModel/
+SetLoggingModel/PushLegacyConfigModel 使用 typed registry、精确 Fields、strict success
+boolean、原 token 和原 profile/service 证明。正常 request body 的 D2 数值类型/UTF8/ASCII
+separator 通过 shared jsonresp 原生 device encoder 保持；新 EncodeDeviceUTF8 专供旧 config
+endpoint，不用另一份 Python serializer。CallError、PythonClass、私有 Latin-1 exception
+renderer、pyTypeName 已删。Call/AgentURL 只转旧 record 到 typed owner；upgrades 的四处
+必要接线将 ErrHeaderEncoding 接回其已有的 deferred error classification，未重做 upgrades。
+
+成功的 malformed response 走 DeviceResponseError 502；null/list stored logging_config 为
+明确中文 validation refusal，不写入。model.Agent 新增 LoggingConfig/AgentLoggingConfig，
+MemberJSON 同步补该声明，避免 unknown Fields 与 declared-field presence 分叉。日志设置
+与 direct operations Detach 浏览器断线但保留 Runtime shutdown，CallAgent 再检查 ctx。
+
+PublicDeploymentMessagesModel / PublicUpgradeStateModel 用 native journal/events/redact，旧
+函数只 codec；text explainer 现在只收 string，私有 lower 特判改为 x/text cases.Lower。
+共享 model.JSONHasContent 用标准 JSON scalars/containers 和 IEEE754 omission 判断旧的
+optional display/protocol 内容，不用于身份、所有权或鉴权。dnsfollow/dnsha 的原 Truthy
+入口也调用此 helper，没有新增 Python bool/int/float parser 或值比较层。
+
+    RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/agents/testdata/remote_ref.py >server/internal/agents/testdata/n810_remote_python.json'
+    RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/agents/testdata/gen_n810_remote_native.py'
+    RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/agents/testdata/gen_n810_call_preparation.py'
+
+均 Exit 0。原 remote_ref.py 与所有旧 corpus 保留；比较只对九条具体 remote 行、37 条
+已有 A15 preparation 行、upgrades 原 archive 四条 encode 行精确 SHA 绑定。曾因新增
+LoggingConfig 未同步 MemberJSON 的 switch，使 stored null 被误认 absent；补回共享
+member 接线后原 TypeError 两行的拒绝/no-write 通过，没有把期望改成成功。
+
+    RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && GOMAXPROCS=4 go test -race -p 4 -count=1 -timeout=15m -run "DirectAgentCalls|SetLoggingConfig|AgentJSONAndDNSHARequests|JSONBodies|PlainTextLegacy|LegacyErrors|OriginalHAIdentity|ProtocolPayload|MemberJSON" ./internal/agents ./internal/agents/dnsha ./internal/model ./internal/jsonresp'
+
+Exit 0：agents 21.893s、dnsha 1.046s、model 1.028s、jsonresp 1.009s（无匹配 tests）。
+
+    RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'cd server && GOMAXPROCS=4 go vet -p 4 ./internal/agents ./internal/agents/upgrades ./internal/agents/dnsfollow ./internal/agents/dnsha ./internal/model && GOMAXPROCS=4 go test -race -p 4 -count=1 -timeout=20m -run "A15ReviewCall|ReviewLatin1Tokens|DirectAgentCalls|SetLoggingConfig|AgentJSONAndDNSHARequests|JSONBodies|ReferenceMessages|Message|ResponseCopy|OriginalHAIdentity|ProtocolPayload|R04|MalformedListener|UnsupportedListener" ./internal/agents ./internal/agents/upgrades ./internal/agents/dnsfollow ./internal/agents/dnsha ./internal/model'
+
+Exit 0：agents 10.875s、upgrades 18.137s、dnsfollow 115.557s、dnsha 1.040s、model 1.017s
+（无匹配 tests）。旧 message / pure response / Latin-1 actual Authorization 期望不改。
+
+    RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && GOMAXPROCS=4 go test -race -p 4 -count=1 -timeout=20m -run "N810MalformedLogging|NativeLoggingDisconnect|JSONHasContent|MemberJSON|A15ReviewCall|ProtocolPayload|OriginalHAIdentity" ./internal/agents ./internal/api/agents ./internal/agents/dnsha ./internal/model'
+
+Exit 0：agents 10.310s、api/agents 4.239s、dnsha 1.050s、model 1.034s。真实 HTTP 六条坏
+logging reply 比较原始 POST/path/Bearer/Content-Type/`{"enabled": true}` bytes 和全库
+fingerprint；同时覆盖 disconnect、shutdown-in-reply 和旧 generation 再次发起拒绝。

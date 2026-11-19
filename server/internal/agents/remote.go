@@ -6,8 +6,7 @@ package agents
 
 import (
 	"context"
-	"crypto/md5"
-	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -16,96 +15,39 @@ import (
 
 	"configflow/internal/jsonresp"
 	"configflow/internal/jsonx"
-	"configflow/internal/lifecycle"
+	"configflow/internal/model"
+	"golang.org/x/text/encoding/charmap"
 )
 
-// AgentURL is f"http://{agent['host']}:{agent['port']}{path}".
+// AgentURL adapts the legacy address helper to stored typed fields.
 func AgentURL(agent *jsonx.Object, path string) string {
-	return "http://" + jsonx.Str(agent.Value("host")) + ":" + jsonx.Str(agent.Value("port")) + path
+	a, err := agentModel(agent)
+	if err != nil || a == nil {
+		return ""
+	}
+	return "http://" + a.Host + ":" + strconv.FormatInt(int64(a.Port), 10) + path
 }
 
-// Call sends one request to the Agent with its Bearer token: path is the
-// part after host:port ("/api/status"); body nil sends none. Errors are
-// *TransportError or *CallError.
-//
-// Like the Python callers, a record without host, port or token is a
-// KeyError and a token that latin-1 cannot encode a UnicodeEncodeError
-// (http.client sends header values as latin-1); both are *CallError, not
-// *TransportError, so the routes report them as Python does (an uncaught
-// exception) instead of as a connection failure.
+// Call adapts an old record to the single native request owner.
 func (m *Manager) Call(ctx context.Context, agent *jsonx.Object, method, path string, header http.Header, body []byte, timeout Timeout) (*Response, error) {
-	if err := agentKeys(agent); err != nil {
-		return nil, err
-	}
-	h := http.Header{}
-	h.Set("Authorization", "Bearer "+jsonx.Str(agent.Value("token")))
-	for key, values := range header {
-		h[http.CanonicalHeaderKey(key)] = values
-	}
-	response, err := m.httpClient().Do(ctx, Request{Method: method, URL: AgentURL(agent, path), Header: h, Body: body, Timeout: timeout,
-		Latin1Headers: true})
+	a, err := agentModel(agent)
 	if err != nil {
-		var call *CallError
-		if !IsTransportError(err) && !errors.As(err, &call) {
-			err = &TransportError{Err: err}
-		}
 		return nil, err
 	}
-	return response, nil
+	return m.CallAgent(ctx, a, method, path, header, body, timeout)
 }
 
-// CallError is a Python exception raised while a request to an Agent is
-// prepared (KeyError of a missing record field, UnicodeEncodeError of the
-// token); Error() is str(exc).
-type CallError struct {
-	Class   string
-	Message string
-}
+// ErrHeaderEncoding rejects a header outside the Agent's Latin-1 wire contract.
+var ErrHeaderEncoding = errors.New(msgAgentHeaderEncoding)
 
-func (e *CallError) Error() string { return e.Message }
-
-// PythonClass is the exception's class name.
-func (e *CallError) PythonClass() string { return e.Class }
-
-// agentKeys is the KeyError of f"http://{agent['host']}:{agent['port']}..."
-// and of f'Bearer {agent["token"]}', in that order.
-func agentKeys(agent *jsonx.Object) error {
-	for _, key := range []string{"host", "port", "token"} {
-		if !agent.Has(key) {
-			return &CallError{Class: "KeyError", Message: "'" + key + "'"}
-		}
-	}
-	return nil
-}
-
-// EncodeHeaderLatin1 is value.encode('latin-1') as http.client does for a
-// header value: the bytes as a Go string, or a *CallError with CPython's
-// UnicodeEncodeError text for the first run of characters above U+00FF.
+// EncodeHeaderLatin1 uses the native ISO-8859-1 codec. Invalid values are
+// rejected without repeating credentials or interpreter exception details.
 func EncodeHeaderLatin1(value string) (string, error) {
-	runes := []rune(value)
-	out := make([]byte, 0, len(value))
-	for i, r := range runes {
-		if r <= 0xff {
-			out = append(out, byte(r))
-			continue
-		}
-		end := i + 1
-		for end < len(runes) && runes[end] > 0xff {
-			end++
-		}
-		const reason = ": ordinal not in range(256)"
-		if end == i+1 {
-			escaped := fmt.Sprintf("\\u%04x", r)
-			if r > 0xffff {
-				escaped = fmt.Sprintf("\\U%08x", r)
-			}
-			return "", &CallError{Class: "UnicodeEncodeError", Message: "'latin-1' codec can't encode character '" + escaped +
-				"' in position " + strconv.Itoa(i) + reason}
-		}
-		return "", &CallError{Class: "UnicodeEncodeError", Message: "'latin-1' codec can't encode characters in position " +
-			strconv.Itoa(i) + "-" + strconv.Itoa(end-1) + reason}
+	encoded, err := charmap.ISO8859_1.NewEncoder().String(value)
+	if err != nil {
+		return "", fmt.Errorf("%w: %v", ErrHeaderEncoding, err)
 	}
-	return string(out), nil
+	return encoded, nil
 }
 
 // jsonBody is requests' json= encoding (json.dumps, ASCII, ", " separators)
@@ -120,31 +62,6 @@ func jsonBody(value any) (http.Header, []byte, error) {
 	return http.Header{"Content-Type": {"application/json"}}, body, nil
 }
 
-// responseJSON is response.json() inside `except RequestException`: a body
-// that is not JSON is a requests.JSONDecodeError, itself a RequestException.
-func responseJSON(response *Response) (any, error) {
-	value, err := response.JSON()
-	if err != nil {
-		return nil, &TransportError{Err: err}
-	}
-	return value, nil
-}
-
-func agentNotFound() *jsonx.Object {
-	return jsonx.Obj("success", false, "message", "Agent not found")
-}
-
-func httpFailure(status int) *jsonx.Object {
-	return jsonx.Obj("success", false, "message", "HTTP "+strconv.Itoa(status))
-}
-
-// connectionError is {'success': False, 'message': f'Connection error: {e}'}.
-func connectionError(err error) *jsonx.Object {
-	return jsonx.Obj("success", false, "message", "Connection error: "+err.Error())
-}
-
-// PushConfig are the arguments of push_config_to_agent besides agent_id and
-// config_content.
 type PushConfig struct {
 	// Extra is extra_data without the bundle (directories,
 	// ruleset_downloads, activate, base_url, resource_config,
@@ -155,216 +72,94 @@ type PushConfig struct {
 	ExpectedServiceType *string
 }
 
-// PushLegacyConfig sends only the legacy /api/config/update protocol.
-// Transactional service types fail closed; deploy.Push owns their publication.
-func (m *Manager) PushLegacyConfig(ctx context.Context, agentID, configContent string, push PushConfig) (*jsonx.Object, error) {
-	ctx = lifecycle.Detach(ctx)
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	agent, err := m.GetAgentByID(ctx, agentID, true)
+// remoteLegacyValue only encodes/decodes the API facade's opaque JSON values.
+func remoteLegacyValue(raw json.RawMessage, err error) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	if agent == nil {
-		return agentNotFound(), nil
-	}
-	if push.ExpectedProfileID != nil || push.ExpectedServiceType != nil {
-		mismatch := false
-		if push.ExpectedProfileID != nil {
-			profile, err := m.profileOf(ctx, agent)
-			if err != nil {
-				return nil, err
-			}
-			mismatch = !jsonx.Equal(profile, *push.ExpectedProfileID)
-		}
-		if !mismatch && push.ExpectedServiceType != nil {
-			mismatch = !jsonx.Equal(agent.GetOr("service_type", "mihomo"), *push.ExpectedServiceType)
-		}
-		if mismatch {
-			return jsonx.Obj("success", false, "message", "草稿已保存，但设备绑定已改变，请重新选择设备后发布。",
-				"http_status", jsonx.Int(409)), nil
-		}
-	}
-	service := agent.GetOr("service_type", "mihomo")
-	if service == "mihomo" || service == "mosdns" || service == "oxidns" {
-		return jsonx.Obj("success", false, "message", "A complete deployment bundle is required", "http_status", jsonx.Int(409)), nil
-	}
-
-	sum := md5.Sum([]byte(configContent))
-	configMD5 := hex.EncodeToString(sum[:])
-	payload := jsonx.Obj("config", configContent, "md5", configMD5)
-	if push.Extra.Len() > 0 {
-		payload.Update(push.Extra)
-	}
-	// 手动序列化JSON，确保中文不被转义
-	body, err := jsonx.Encode(payload, jsonx.Options{})
-	if err != nil {
-		return nil, err
-	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	response, err := m.Call(ctx, agent, "POST", "/api/config/update",
-		http.Header{"Content-Type": {"application/json; charset=utf-8"}}, body, Seconds(10))
-	if err != nil {
-		return jsonx.Obj("success", false, "message", "Unable to connect to Agent",
-			"error_details", FailureText(err.Error(), tokenSecrets(agent), 0)), nil
-	}
-	if response.StatusCode != 200 {
-		return ResponseFailure(response, "HTTP "+strconv.Itoa(response.StatusCode), tokenSecrets(agent)), nil
-	}
-	value, jsonErr := response.JSON()
-	result, isObject := value.(*jsonx.Object)
-	if jsonErr != nil || !isObject {
-		return ResponseFailure(response, "Invalid Agent response", tokenSecrets(agent)), nil
-	}
-	if !jsonx.Truthy(result.Value("success")) {
-		return ResponseFailure(response, "Config update failed", tokenSecrets(agent)), nil
-	}
-	_, err = m.UpdateAgents(ctx, "", func(_ context.Context, agents *[]any) (any, error) {
-		item, _ := findAgent(*agents, agentID)
-		if item == nil {
-			return false, nil
-		}
-		item.Set("config_version", configMD5[:8])
-		item.Set("pushed_at", utcNowZ())
-		if push.ConfigRevision != nil {
-			item.Set("config_revision", push.ConfigRevision)
-		}
-		return true, nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	return jsonx.Obj("success", true, "message", "Config pushed successfully"), nil
+	return jsonx.Parse(raw)
 }
-
-// RestartAgentService is restart_agent_service (through the DNS HA service
-// operation guard, #29).
-func (m *Manager) RestartAgentService(ctx context.Context, agentID string) (*jsonx.Object, error) {
-	return m.serviceOperation(ctx, agentID, func() (*jsonx.Object, error) { return m.restartAgentService(ctx, agentID) }, false)
-}
-
-func (m *Manager) serviceOperation(ctx context.Context, agentID string, operation func() (*jsonx.Object, error), uninstall bool) (*jsonx.Object, error) {
-	if hook := currentHooks().HAServiceOperation; hook != nil {
-		return hook(ctx, m, agentID, operation, uninstall)
-	}
-	return defaultServiceOperation(ctx, m, agentID, operation, uninstall)
-}
-
-func (m *Manager) restartAgentService(ctx context.Context, agentID string) (*jsonx.Object, error) {
-	agent, err := m.GetAgentByID(ctx, agentID, true)
+func remoteLegacyObject(raw json.RawMessage, err error) (*jsonx.Object, error) {
+	value, err := remoteLegacyValue(raw, err)
 	if err != nil {
 		return nil, err
 	}
-	if agent == nil {
-		return agentNotFound(), nil
+	result, ok := value.(*jsonx.Object)
+	if !ok {
+		return nil, ErrInvalidAgentReply
 	}
-	if upgradeBusy(agent) {
-		return jsonx.Obj("success", false, "message", "Agent update is in progress"), nil
-	}
-	response, err := m.Call(ctx, agent, "POST", "/api/restart", nil, nil, Seconds(10))
-	if err != nil && !IsTransportError(err) {
-		return nil, err
-	}
-	if err != nil {
-		return jsonx.Obj("success", false, "message", "Unable to connect to Agent",
-			"error_details", FailureText(err.Error(), tokenSecrets(agent), 0)), nil
-	}
-	if response.StatusCode != 200 {
-		return ResponseFailure(response, "HTTP "+strconv.Itoa(response.StatusCode), tokenSecrets(agent)), nil
-	}
-	value, jsonErr := response.JSON()
-	result, isObject := value.(*jsonx.Object)
-	if jsonErr != nil || !isObject {
-		return ResponseFailure(response, "Invalid Agent response", tokenSecrets(agent)), nil
-	}
-	if jsonx.Truthy(result.Value("success")) {
-		return result, nil
-	}
-	return ResponseFailure(response, "Restart failed", tokenSecrets(agent)), nil
+	return result, nil
 }
-
-// simpleGet is the shape of get_agent_status / get_logging_config: the JSON
-// of a 200, "HTTP <status>" otherwise, "Connection error: ..." on transport
-// failures (a non-JSON 200 included).
-func (m *Manager) simpleCall(ctx context.Context, agentID, method, path string, payload any, timeout Timeout,
-	onStatus func(status int) (any, bool)) (any, *jsonx.Object, error) {
-	agent, err := m.GetAgentByID(ctx, agentID, true)
-	if err != nil {
-		return nil, nil, err
-	}
-	if agent == nil {
-		return agentNotFound(), nil, nil
-	}
-	if err := agentKeys(agent); err != nil {
-		return nil, nil, err
-	}
+func (m *Manager) legacyRemote(ctx context.Context, id, method, path string, payload any, sources bool) (any, error) {
 	var header http.Header
 	var body []byte
 	if payload != nil {
-		if header, body, err = jsonBody(payload); err != nil {
-			if IsTransportError(err) {
-				return connectionError(err), agent, nil
-			}
-			return nil, nil, err
-		}
-	}
-	response, err := m.Call(ctx, agent, method, path, header, body, timeout)
-	if err != nil && !IsTransportError(err) {
-		return nil, nil, err
-	}
-	if err != nil {
-		return connectionError(err), agent, nil
-	}
-	if response.StatusCode == 200 {
-		value, err := responseJSON(response)
+		var err error
+		header, body, err = jsonBody(payload)
 		if err != nil {
-			return connectionError(err), agent, nil
-		}
-		return value, agent, nil
-	}
-	if onStatus != nil {
-		if value, ok := onStatus(response.StatusCode); ok {
-			return value, agent, nil
+			return nil, m.remotePayloadError(ctx, id, err)
 		}
 	}
-	return httpFailure(response.StatusCode), agent, nil
+	raw, _, err := m.RemoteCall(ctx, id, RemoteRequest{Method: method, Path: path, Header: header, Body: body, Timeout: Seconds(5), LegacyLogSources: sources})
+	return remoteLegacyValue(raw, err)
 }
 
-// GetAgentStatus is get_agent_status(agent_id): the Agent's /api/status JSON
-// (any JSON value) or a failure object.
-func (m *Manager) GetAgentStatus(ctx context.Context, agentID string) (any, error) {
-	value, _, err := m.simpleCall(ctx, agentID, "GET", "/api/status", nil, Seconds(5), nil)
-	return value, err
-}
-
-// GetAgentLogSources is get_agent_log_sources(agent_id): Agents without the
-// endpoint (404) give {'success': True, 'legacy': True, 'sources': []}.
-func (m *Manager) GetAgentLogSources(ctx context.Context, agentID string) (any, error) {
-	value, _, err := m.simpleCall(ctx, agentID, "GET", "/api/logs/sources", nil, Seconds(5), func(status int) (any, bool) {
-		if status == 404 {
-			return jsonx.Obj("success", true, "legacy", true, "sources", []any{}), true
+// PushLegacyConfig adapts old callers to the native publication owner.
+func (m *Manager) PushLegacyConfig(ctx context.Context, id, content string, push PushConfig) (*jsonx.Object, error) {
+	var extra model.Fields
+	if push.Extra != nil {
+		data, err := json.Marshal(push.Extra)
+		if err != nil {
+			return nil, err
 		}
-		return nil, false
-	})
-	return value, err
+		if err := json.Unmarshal(data, &extra); err != nil {
+			return nil, err
+		}
+	}
+	var revision json.RawMessage
+	if push.ConfigRevision != nil {
+		var err error
+		revision, err = json.Marshal(push.ConfigRevision)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return remoteLegacyObject(m.PushLegacyConfigModel(ctx, id, content, LegacyConfigOptions{Extra: extra, Revision: revision, ExpectedProfileID: push.ExpectedProfileID, ExpectedServiceType: push.ExpectedServiceType}))
 }
 
-// GetAgentLogs is get_agent_logs(agent_id, lines, log_path, source).
-func (m *Manager) GetAgentLogs(ctx context.Context, agentID string, lines any, logPath, source string) (any, error) {
+// RestartAgentService serializes the native operation with the HA guard.
+func (m *Manager) RestartAgentService(ctx context.Context, id string) (*jsonx.Object, error) {
+	return m.serviceOperation(ctx, id, func() (*jsonx.Object, error) {
+		return remoteLegacyObject(m.RunDirectOperation(ctx, id, RestartService, nil, nil))
+	}, false)
+}
+func (m *Manager) serviceOperation(ctx context.Context, id string, operation func() (*jsonx.Object, error), uninstall bool) (*jsonx.Object, error) {
+	if hook := currentHooks().HAServiceOperation; hook != nil {
+		return hook(ctx, m, id, operation, uninstall)
+	}
+	return defaultServiceOperation(ctx, m, id, operation, uninstall)
+}
+
+// GetAgentStatus returns the Agent's valid status JSON through the facade codec.
+func (m *Manager) GetAgentStatus(ctx context.Context, id string) (any, error) {
+	return m.legacyRemote(ctx, id, "GET", "/api/status", nil, false)
+}
+
+// GetAgentLogSources retains the legacy endpoint fallback for older Agents.
+func (m *Manager) GetAgentLogSources(ctx context.Context, id string) (any, error) {
+	return m.legacyRemote(ctx, id, "GET", "/api/logs/sources", nil, true)
+}
+
+// GetAgentLogs preserves the caller's log selection in its device request.
+func (m *Manager) GetAgentLogs(ctx context.Context, id string, lines any, logPath, source string) (any, error) {
 	path := "/api/logs?lines=" + jsonx.Str(lines)
 	if source != "" {
 		path += "&source=" + quote(source)
 	} else if logPath != "" {
 		path += "&log_path=" + quote(logPath)
 	}
-	value, _, err := m.simpleCall(ctx, agentID, "GET", path, nil, Seconds(5), nil)
-	return value, err
+	return m.legacyRemote(ctx, id, "GET", path, nil, false)
 }
-
-// quote is urllib.parse.quote(value) (safe='/').
 func quote(value string) string {
 	plus := url.QueryEscape(value)
 	// quote_plus encodes "/" and " "; quote keeps "/" and writes %20.
@@ -383,203 +178,88 @@ func quote(value string) string {
 	return string(out)
 }
 
-// ClearAgentLog is clear_agent_log(agent_id, log_path, source): any JSON
-// values, as the route passes them from the request body (a truthy source
-// wins).
-func (m *Manager) ClearAgentLog(ctx context.Context, agentID string, logPath, source any) (any, error) {
+// ClearAgentLog adapts the old source-or-path request envelope.
+func (m *Manager) ClearAgentLog(ctx context.Context, id string, logPath, source any) (any, error) {
 	payload := jsonx.Obj("log_path", logPath)
 	if jsonx.Truthy(source) {
 		payload = jsonx.Obj("source", source)
 	}
-	value, _, err := m.simpleCall(ctx, agentID, "POST", "/api/logs/clear", payload, Seconds(5), nil)
-	return value, err
+	return m.legacyRemote(ctx, id, "POST", "/api/logs/clear", payload, false)
 }
 
-// UninstallAgent is uninstall_agent (through the DNS HA service operation
-// guard, #29).
-func (m *Manager) UninstallAgent(ctx context.Context, agentID string) (*jsonx.Object, error) {
-	return m.serviceOperation(ctx, agentID, func() (*jsonx.Object, error) { return m.uninstallAgent(ctx, agentID) }, true)
+// UninstallAgent serializes removal through the HA service-operation guard.
+func (m *Manager) UninstallAgent(ctx context.Context, id string) (*jsonx.Object, error) {
+	return m.serviceOperation(ctx, id, func() (*jsonx.Object, error) {
+		return remoteLegacyObject(m.RunDirectOperation(ctx, id, UninstallService, nil, nil))
+	}, true)
 }
 
-func (m *Manager) uninstallAgent(ctx context.Context, agentID string) (*jsonx.Object, error) {
-	agent, err := m.GetAgentByID(ctx, agentID, true)
+// UpdateAgentVersion encodes the legacy binary-update envelope.
+func (m *Manager) UpdateAgentVersion(ctx context.Context, id, version, binaryURL string) (*jsonx.Object, error) {
+	header, body, err := jsonBody(struct {
+		Version string `json:"version"`
+		URL     string `json:"download_url"`
+	}{version, binaryURL})
 	if err != nil {
 		return nil, err
 	}
-	if agent == nil {
-		return agentNotFound(), nil
-	}
-	if upgradeBusy(agent) {
-		return jsonx.Obj("success", false, "message", "Agent update is in progress"), nil
-	}
-	response, err := m.Call(ctx, agent, "POST", "/api/uninstall", nil, nil, Seconds(10))
-	if err != nil && !IsTransportError(err) {
-		return nil, err
-	}
-	if err != nil {
-		return connectionError(err), nil
-	}
-	if response.StatusCode != 200 {
-		return httpFailure(response.StatusCode), nil
-	}
-	if _, err := responseJSON(response); err != nil {
-		return connectionError(err), nil
-	}
-	return jsonx.Obj("success", true, "message", "Agent uninstall started. The agent will be removed in a few seconds."), nil
-}
-
-// UpdateAgentVersion is update_agent_version (through the DNS HA service
-// operation guard, #29).
-func (m *Manager) UpdateAgentVersion(ctx context.Context, agentID, newVersion, binaryURL string) (*jsonx.Object, error) {
-	return m.serviceOperation(ctx, agentID, func() (*jsonx.Object, error) {
-		agent, err := m.GetAgentByID(ctx, agentID, true)
-		if err != nil {
-			return nil, err
-		}
-		if agent == nil {
-			return agentNotFound(), nil
-		}
-		header, body, err := jsonBody(jsonx.Obj("version", newVersion, "download_url", binaryURL))
-		if err != nil {
-			return nil, err
-		}
-		response, err := m.Call(ctx, agent, "POST", "/api/update", header, body, Seconds(10))
-		if err != nil {
-			return connectionError(err), nil
-		}
-		if response.StatusCode == 200 {
-			return jsonx.Obj("success", true, "message", "Agent update started"), nil
-		}
-		return httpFailure(response.StatusCode), nil
+	return m.serviceOperation(ctx, id, func() (*jsonx.Object, error) {
+		return remoteLegacyObject(m.RunDirectOperation(ctx, id, UpdateService, header, body))
 	}, false)
 }
 
-// ValidateAgentLogPath is validate_agent_log_path(agent_id, log_path)
-// (log_path any JSON value from the request body).
-func (m *Manager) ValidateAgentLogPath(ctx context.Context, agentID string, logPath any) (any, error) {
-	value, _, err := m.simpleCall(ctx, agentID, "POST", "/api/logs/validate", jsonx.Obj("path", logPath), Seconds(5), nil)
-	return value, err
+// ValidateAgentLogPath encodes an opaque legacy path request member.
+func (m *Manager) ValidateAgentLogPath(ctx context.Context, id string, path any) (any, error) {
+	return m.legacyRemote(ctx, id, "POST", "/api/logs/validate", jsonx.Obj("path", path), false)
 }
 
-// GetLoggingConfig is get_logging_config(agent_id).
-func (m *Manager) GetLoggingConfig(ctx context.Context, agentID string) (any, error) {
-	value, _, err := m.simpleCall(ctx, agentID, "GET", "/api/config/logging", nil, Seconds(5), nil)
-	return value, err
+// GetLoggingConfig reads the remote logging endpoint.
+func (m *Manager) GetLoggingConfig(ctx context.Context, id string) (any, error) {
+	return m.legacyRemote(ctx, id, "GET", "/api/config/logging", nil, false)
 }
 
-// SetLoggingConfig is set_logging_config(agent_id, enabled): a successful
-// answer is recorded as logging_config.enabled. enabled is any JSON value
-// (the route passes data.get('enabled', True) unchecked).
-func (m *Manager) SetLoggingConfig(ctx context.Context, agentID string, enabled any) (any, error) {
-	value, agent, err := m.simpleCall(ctx, agentID, "POST", "/api/config/logging", jsonx.Obj("enabled", enabled), Seconds(5), nil)
-	if err != nil || agent == nil {
-		return value, err
+// SetLoggingConfig adapts the facade input to the typed logging transaction.
+func (m *Manager) SetLoggingConfig(ctx context.Context, id string, enabled any) (any, error) {
+	header, body, err := jsonBody(jsonx.Obj("enabled", enabled))
+	if err != nil {
+		return nil, m.remotePayloadError(ctx, id, err)
 	}
-	// The failure objects of simpleCall carry success=False; a 200 answer
-	// that is JSON but not an object fails on result.get('success') with
-	// an AttributeError, which Python does not catch.
-	result, isObject := value.(*jsonx.Object)
-	if !isObject {
-		return nil, &RemoteError{Message: "'" + pyTypeName(value) + "' object has no attribute 'get'"}
+	raw, err := json.Marshal(enabled)
+	if err != nil {
+		return nil, err
 	}
-	if jsonx.Truthy(result.Value("success")) {
-		_, err = m.UpdateAgents(ctx, "", func(_ context.Context, agents *[]any) (any, error) {
-			item, _ := findAgent(*agents, agentID)
-			if item == nil {
-				return false, nil
-			}
-			// item.setdefault('logging_config', {})['enabled'] = enabled
-			if !item.Has("logging_config") {
-				item.Set("logging_config", jsonx.NewObject())
-			}
-			config, ok := item.Value("logging_config").(*jsonx.Object)
-			if !ok {
-				existing := item.Value("logging_config")
-				if _, isList := existing.([]any); isList {
-					return nil, &RemoteError{Message: "list indices must be integers or slices, not str"}
-				}
-				return nil, &RemoteError{Message: "'" + pyTypeName(existing) + "' object does not support item assignment"}
-			}
-			config.Set("enabled", enabled)
-			return true, nil
-		})
-		if err != nil {
-			return nil, err
-		}
-	}
-	return value, nil
+	return remoteLegacyValue(m.SetLoggingModel(ctx, id, raw, header, body))
 }
 
-// AgentJSONRequest is _agent_json_request(agent, method, path, timeout,
-// feature, ...): the domain discovery family of calls. Failures are errors
-// whose text can be shown to the user (a *TransportError for transport
-// failures, a *RemoteError otherwise).
+// AgentJSONRequest encodes an old feature payload and returns an opaque object.
 func (m *Manager) AgentJSONRequest(ctx context.Context, agent *jsonx.Object, method, path string, timeout float64, feature string, payload any, query string) (*jsonx.Object, error) {
+	a, err := agentModel(agent)
+	if err != nil {
+		return nil, err
+	}
 	var header http.Header
 	var body []byte
-	var err error
 	if payload != nil {
-		if header, body, err = jsonBody(payload); err != nil {
+		header, body, err = jsonBody(payload)
+		if err != nil {
 			return nil, err
 		}
 	}
 	if query != "" {
 		path += "?" + query
 	}
-	response, err := m.Call(ctx, agent, method, path, header, body, Seconds(timeout))
+	fields, err := m.AgentRequestModel(ctx, a, RemoteRequest{Method: method, Path: path, Timeout: Seconds(timeout), Header: header, Body: body}, feature, false)
 	if err != nil {
 		return nil, err
 	}
-	if response.StatusCode == 404 {
-		return nil, &RemoteError{Message: "Agent " + jsonx.Str(truthyOr(agent.Value("name"), agent.Value("id"))) + " 不支持" + feature + "，请升级"}
-	}
-	value, jsonErr := response.JSON()
-	if jsonErr != nil {
-		value = jsonx.NewObject()
-	}
-	if response.StatusCode == 409 && len(path) >= len("/api/region-check") && path[:len("/api/region-check")] == "/api/region-check" {
-		return nil, &RemoteError{Message: "Agent 上的 Mihomo 还没有检测入口，请为该 Agent 开启域名发现后部署一次配置"}
-	}
-	result, isObject := value.(*jsonx.Object)
-	if !isObject {
-		return nil, &RemoteError{Message: "'" + pyTypeName(value) + "' object has no attribute 'get'"}
-	}
-	if response.StatusCode != 200 || !jsonx.Truthy(result.Value("success")) {
-		message := result.Value("message")
-		if !jsonx.Truthy(message) {
-			message = "Agent 返回 HTTP " + strconv.Itoa(response.StatusCode)
-		}
-		return nil, &RemoteError{Message: jsonx.Str(message)}
-	}
-	return result, nil
+	raw, err := json.Marshal(fields)
+	return remoteLegacyObject(raw, err)
 }
 
-// RemoteError is the RuntimeError the Agent call helpers raise with a
-// message for the user.
+// RemoteError carries a safe user-facing device refusal.
 type RemoteError struct{ Message string }
 
 func (e *RemoteError) Error() string { return e.Message }
-
-func pyTypeName(value any) string {
-	switch value.(type) {
-	case nil:
-		return "NoneType"
-	case bool:
-		return "bool"
-	case string:
-		return "str"
-	case []any:
-		return "list"
-	case *jsonx.Object:
-		return "dict"
-	case jsonx.Number:
-		if value.(jsonx.Number).IsInt() {
-			return "int"
-		}
-		return "float"
-	}
-	return "object"
-}
 
 // ProbeDomains is probe_domains(agent, payload, timeout=200).
 func (m *Manager) ProbeDomains(ctx context.Context, agent *jsonx.Object, payload any, timeout float64) (*jsonx.Object, error) {
@@ -608,7 +288,7 @@ func (m *Manager) ReturnRoutingRemove(ctx context.Context, agent *jsonx.Object, 
 	return m.AgentJSONRequest(ctx, agent, "DELETE", "/api/return-routing", 60, "回流规则管理", nil, query)
 }
 
-// RegionTargets is region_targets(agent): the targets list (or []).
+// RegionTargets decodes the feature envelope's targets, defaulting null to [].
 func (m *Manager) RegionTargets(ctx context.Context, agent *jsonx.Object) (any, error) {
 	result, err := m.AgentJSONRequest(ctx, agent, "GET", "/api/region-check/targets", 15, "区域检测", nil, "")
 	if err != nil {
@@ -622,40 +302,26 @@ func (m *Manager) RegionCheck(ctx context.Context, agent *jsonx.Object, payload 
 	return m.AgentJSONRequest(ctx, agent, "POST", "/api/region-check", 120, "区域检测", payload, "")
 }
 
-// OxidnsHARequest is _oxidns_ha_request(agent, method, timeout, path, ...):
-// the DNS HA calls; a success answer is the state itself (no success field).
+// OxidnsHARequest adapts the old HA payload to the exact-key native protocol.
 func (m *Manager) OxidnsHARequest(ctx context.Context, agent *jsonx.Object, method string, timeout Timeout, path string, payload any) (*jsonx.Object, error) {
-	var header http.Header
-	var body []byte
-	var err error
-	if payload != nil {
-		if header, body, err = jsonBody(payload); err != nil {
-			return nil, err
-		}
-	}
-	response, err := m.Call(ctx, agent, method, "/api/oxidns-ha"+path, header, body, timeout)
+	a, err := agentModel(agent)
 	if err != nil {
 		return nil, err
 	}
-	if response.StatusCode == 404 {
-		return nil, &RemoteError{Message: "Agent " + jsonx.Str(truthyOr(agent.Value("name"), agent.Value("id"))) + " 不支持 DNS 高可用，请升级"}
-	}
-	value, _ := response.JSON()
-	result, isObject := value.(*jsonx.Object)
-	if !isObject {
-		result = jsonx.NewObject()
-	}
-	if response.StatusCode != 200 || result.Value("success") == false {
-		message := result.Value("error")
-		if !jsonx.Truthy(message) {
-			message = result.Value("message")
+	var header http.Header
+	var body []byte
+	if payload != nil {
+		header, body, err = jsonBody(payload)
+		if err != nil {
+			return nil, err
 		}
-		if !jsonx.Truthy(message) {
-			message = "Agent 返回 HTTP " + strconv.Itoa(response.StatusCode)
-		}
-		return nil, &RemoteError{Message: FailureText(jsonx.Str(message), tokenSecrets(agent), 0)}
 	}
-	return result, nil
+	fields, err := m.AgentRequestModel(ctx, a, RemoteRequest{Method: method, Path: "/api/oxidns-ha" + path, Timeout: timeout, Header: header, Body: body}, "", true)
+	if err != nil {
+		return nil, err
+	}
+	raw, err := json.Marshal(fields)
+	return remoteLegacyObject(raw, err)
 }
 
 // OxidnsHAStatus is oxidns_ha_status(agent).
