@@ -56,6 +56,14 @@ the hand-back. If no notification arrives within ~3 h, check status once more.
 | e46d698f-6345-41b9-8a38-06d61b6622d3 | config black-box difftest, Step A coverage matrix (→ Opus O6 review) | wks_223d2a53f6e7abbb, branch `go-difftest-config` |
 ## >>> CURRENT STATE — 2026-11-19 night (coordinator 2f0cdf04 → next coordinator; READ THIS FIRST) <<<
 
+**Update 2026-11-20 (later): batch-14 MERGED (metrics/trafficstore native + Opus HR ccaeca36: 0 high/0 medium; L2
+ruling: whole agent-traffic.json unparsable → fail-closed like corrupt days, reset recovers), then N8-11 plan
+(server/design/n8-11-plan.md + rulings 3.3) → go = ae18239d4. Gate: preflight/compare .32 PASS, core FULL .64 PASS.
+N8-10 is DONE. N8-11 is NOT S (157 prod files import jsonx): P0 → wave 1 (W1 repo HR ∥ W2 agents HR ∥ W3 resources ∥
+W4 rules) → wave 2 (W5 ∥ W6 HR ∥ W7 ∥ W8, after W1+W2 reviewed and merged) → W9 delete + hard gate + Opus O7.
+P0 (testjson + ratchet gate + ErrorClass) dispatched: Codex aa803cd5, branch go-n8-11-p0. Waiter gotcha: never
+`pgrep -f "gate.sh ..."` from an ssh loop (it matches itself); wait on the pid.
+
 **Update 2026-11-20: batch-13 MERGED, go = cf5ec02e7** (upgrades + api/agents + Opus HR review 7cf88da4: high 0,
 medium 0, low 8 — R1 stored status null stays null, R2 missing service_type = mihomo on traffic routes, R3 RunServiceOperation
 Runtime shutdown/disconnect test, R4 binary-download 500 text logged in behaviour-changes; L1 old address-follow /
