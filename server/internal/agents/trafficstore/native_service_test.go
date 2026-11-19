@@ -127,3 +127,51 @@ func FuzzNativeDiscoveryReport(f *testing.F) {
 		}
 	})
 }
+
+func TestNativeStoreShutdownAfterOwnerLockWait(t *testing.T) {
+	runtime := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
+	runtime.Start(t.Context())
+	defer runtime.Shutdown(context.Background())
+	bound := runtime.BindRequest(context.Background())
+	s := NewNative(t.TempDir())
+	report := nativeReport(t)
+	mu.Lock()
+	done := make(chan error, 1)
+	entered := make(chan struct{})
+	go func() { close(entered); _, err := s.Add(bound, "a", report, nil); done <- err }()
+	<-entered
+	select {
+	case err := <-done:
+		mu.Unlock()
+		t.Fatal("write ignored owner lock", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+	runtime.Shutdown(context.Background())
+	mu.Unlock()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(s.Path("a")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("shutdown lock waiter wrote", err)
+	}
+}
+
+func TestNativeReportEscapedASCIIAndNegativeZero(t *testing.T) {
+	r, err := DecodeReport([]byte(`{"schema":1,"status":"running","items":[{"host":"a.example.com","policy":"P","outlet":"direct","rule":"MATCH","network":"t\u0063p","port":-0,"conns":-0}]}`))
+	if err != nil || r == nil || len(r.Items) != 1 || r.Items[0].Port != 0 || r.Items[0].Counts[0].Sign() != 0 {
+		t.Fatal(r, err)
+	}
+}
+
+func TestNativeReadKeepsPartialLegacyBuckets(t *testing.T) {
+	s := NewNative(t.TempDir())
+	at := time.Date(2026, 11, 19, 12, 0, 0, 0, time.UTC)
+	raw := `{"status":{"value":"running"},"days":{"2026-11-19":{"hosts":{"a.example.com":{"first_seen":"2026-11-19T12:00:00","last_seen":"2026-11-19T12:00:00","by_route":{"MATCH\t\tdirect\tP":{"conns":1}}}}}}}`
+	if err := os.WriteFile(s.Path("a"), []byte(raw), 0600); err != nil {
+		t.Fatal(err)
+	}
+	day := s.LoadDocument("a", &at).Days()["2026-11-19"]
+	if len(day.Hosts) != 1 || string(day.Hosts["a.example.com"].ByRoute["MATCH\t\tdirect\tP"].Conns) != "1" {
+		t.Fatal("missing optional counters erased valid observations", day)
+	}
+}

@@ -493,6 +493,10 @@ func (h *History) LoadContext(ctx context.Context, agentIDs []string) (LoadResul
 	limit := retentionCutoff()
 	var migrate []string
 	h.flushMu.Lock()
+	if err := ctx.Err(); err != nil {
+		h.flushMu.Unlock()
+		return result, err
+	}
 	for _, agentID := range order {
 		k := found[agentID]
 		if !wanted[agentID] {
@@ -543,6 +547,11 @@ func (h *History) LoadContext(ctx context.Context, agentIDs []string) (LoadResul
 			points = points[len(points)-h.maxPoints:]
 		}
 		h.mu.Lock()
+		if err := ctx.Err(); err != nil {
+			h.mu.Unlock()
+			h.flushMu.Unlock()
+			return result, err
+		}
 		earlier := h.points[agentID]
 		merged := append(append([]point{}, points...), earlier...)
 		if len(merged) > h.maxPoints {
@@ -870,6 +879,10 @@ func (h *History) flushAgents(agentIDs []string) flushResult {
 func (h *History) flushAgentsContext(ctx context.Context, agentIDs []string) flushResult {
 	var jobs []flushJob
 	h.mu.Lock()
+	if ctx.Err() != nil {
+		h.mu.Unlock()
+		return flushResult{}
+	}
 	for _, agentID := range agentIDs {
 		points := h.prune(agentID)
 		pending := h.pending[agentID]
@@ -967,6 +980,10 @@ func (h *History) FlushContext(ctx context.Context) (FlushResult, error) {
 		return FlushResult{}, err
 	}
 	h.flushMu.Lock()
+	if err := ctx.Err(); err != nil {
+		h.flushMu.Unlock()
+		return FlushResult{}, err
+	}
 	h.mu.Lock()
 	ids := map[string]bool{}
 	for _, store := range []map[string]bool{keysOf(h.points), keysOf(h.fileLines), keysOf(h.legacy)} {

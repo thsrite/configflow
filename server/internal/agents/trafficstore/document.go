@@ -53,45 +53,84 @@ func readableDay(raw json.RawMessage) (model.Fields, bool) {
 		return day, false
 	}
 	for _, key := range []string{"ip_only_conns", "dropped"} {
-		if _, err = addNumber(member(day, key), zeroCount); err != nil {
-			return day, false
+		if value, exists := day.Get(key); exists && string(value) != "null" {
+			if _, err = addNumber(value, zeroCount); err != nil {
+				return day, false
+			}
 		}
 	}
-	hosts, err := object(member(day, "hosts"))
+	hosts, err := readRecords(member(day, "hosts"))
 	if err != nil {
 		return day, false
 	}
-	for name, raw := range hosts.All() {
+	for _, name := range hosts.keys() {
+		raw := recordMember(hosts, name)
 		host, err := object(raw)
 		if err != nil {
-			hosts.Delete(name)
+			hosts.delete(name)
 			continue
 		}
-		routes, err := object(member(host, "by_route"))
+		badHost := false
+		for _, key := range []string{"first_seen", "last_seen"} {
+			if raw, exists := host.Get(key); exists && string(raw) != "null" {
+				var value string
+				if jsondecode.Unmarshal(raw, &value) != nil {
+					badHost = true
+				}
+			}
+		}
+		if portsRaw, exists := host.Get("ports"); exists {
+			ports, err := readRecords(portsRaw)
+			if err != nil {
+				badHost = true
+			} else {
+				for _, port := range ports.keys() {
+					raw := recordMember(ports, port)
+					if _, err := parseCounter(raw); err != nil {
+						ports.delete(port)
+					}
+				}
+				if put(&host, "ports", ports) != nil {
+					badHost = true
+				}
+			}
+		}
+		if badHost {
+			hosts.delete(name)
+			continue
+		}
+		routes, err := readRecords(member(host, "by_route"))
 		if err != nil {
-			hosts.Delete(name)
+			hosts.delete(name)
 			continue
 		}
-		for key, raw := range routes.All() {
+		for _, key := range routes.keys() {
+			raw := recordMember(routes, key)
 			stats, err := object(raw)
 			if err != nil {
-				routes.Delete(key)
+				routes.delete(key)
 				continue
 			}
 			good := true
 			for _, name := range countFields {
-				if _, err = addNumber(member(stats, name), zeroCount); err != nil {
-					good = false
-					break
+				if value, exists := stats.Get(name); exists && string(value) != "null" {
+					if _, err = addNumber(value, zeroCount); err != nil {
+						good = false
+						break
+					}
 				}
 			}
 			if !good {
-				routes.Delete(key)
+				routes.delete(key)
 				continue
 			}
-			kinds, err := object(member(stats, "fail_kinds"))
+			kindsRaw, exists := stats.Get("fail_kinds")
+			if !exists || string(kindsRaw) == "null" {
+				continue
+			}
+			kinds, err := object(kindsRaw)
 			if err != nil {
-				routes.Delete(key)
+				routes.delete(key)
 				continue
 			}
 			for _, raw := range kinds.All() {
@@ -101,15 +140,15 @@ func readableDay(raw json.RawMessage) (model.Fields, bool) {
 				}
 			}
 			if !good {
-				routes.Delete(key)
+				routes.delete(key)
 			}
 		}
 		if err = put(&host, "by_route", routes); err != nil {
-			hosts.Delete(name)
+			hosts.delete(name)
 			continue
 		}
-		if err = put(&hosts, name, host); err != nil {
-			hosts.Delete(name)
+		if err = recordPut(&hosts, name, host); err != nil {
+			hosts.delete(name)
 		}
 	}
 	if put(&day, "hosts", hosts) != nil {

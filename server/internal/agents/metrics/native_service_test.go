@@ -9,6 +9,7 @@ import (
 	"math/big"
 	"os"
 	"testing"
+	"time"
 )
 
 func TestNativeTrafficReportExactKeysAndBounds(t *testing.T) {
@@ -138,4 +139,34 @@ func FuzzNativeTrafficReport(f *testing.F) {
 			t.Fatal("DTO round trip")
 		}
 	})
+}
+
+func TestNativeTrafficShutdownWhileWaitingForOwnerLock(t *testing.T) {
+	runtime := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
+	runtime.Start(t.Context())
+	defer runtime.Shutdown(context.Background())
+	bound := runtime.BindRequest(context.Background())
+	h := NewTrafficHistory(t.TempDir())
+	h.mu.Lock()
+	done := make(chan error, 1)
+	entered := make(chan struct{})
+	go func() {
+		close(entered)
+		done <- h.AddTraffic(bound, "a", &CleanedTraffic{Usage: []UsageRow{{Bucket: 1699999200, Up: 1}}})
+	}()
+	<-entered
+	select {
+	case err := <-done:
+		h.mu.Unlock()
+		t.Fatal("write ignored owner lock", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+	runtime.Shutdown(context.Background())
+	h.mu.Unlock()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
+	}
+	if h.PendingCount() != 0 {
+		t.Fatal("shutdown lock waiter appended")
+	}
 }

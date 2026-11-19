@@ -1,3 +1,3 @@
 package trafficstore
 
-const msgCorruptStore = "流量统计桶损坏，本次拒绝写入；请清理该统计桶后重试。"
+const msgCorruptStore = "流量统计写入失败，请检查上报或统计桶；重复告警已限频。"

@@ -690,10 +690,12 @@ func (s *NativeStore) Add(ctx context.Context, id string, r *Report, at *time.Ti
 	if err = inc(&day, "dropped", r.Dropped); err != nil {
 		return nil, err
 	}
-	hosts, err := object(member(day, "hosts"))
+	hosts, err := readRecords(member(day, "hosts"))
 	if err != nil {
 		return nil, err
 	}
+	modified := map[string]*hostMerge{}
+	var modifiedOrder []string
 	for _, item := range r.Items {
 		for _, count := range item.Counts {
 			if count == nil {
@@ -706,32 +708,18 @@ func (s *NativeStore) Add(ctx context.Context, id string, r *Report, at *time.Ti
 			}
 			return nil, &KeyError{Key: "rule"}
 		}
-		entry, err := defaultObject(hosts, item.Host, `{}`)
-		if err != nil {
-			return nil, err
-		}
-		for _, key := range []string{"first_seen", "last_seen"} {
-			if raw, ok := entry.Get(key); ok && string(raw) != "null" {
-				var value string
-				if jsondecode.Unmarshal(raw, &value) != nil {
-					return nil, &TypeError{Message: "invalid traffic host timestamp"}
-				}
-			}
-		}
-		if !entry.Has("first_seen") {
-			if err = put(&entry, "first_seen", stamp); err != nil {
+		host := modified[item.Host]
+		if host == nil {
+			host, err = openHost(hosts, item.Host, stamp)
+			if err != nil {
 				return nil, err
 			}
+			modified[item.Host] = host
+			modifiedOrder = append(modifiedOrder, item.Host)
 		}
-		if err = put(&entry, "last_seen", stamp); err != nil {
-			return nil, err
-		}
-		ports, err := defaultObject(entry, "ports", `{}`)
-		if err != nil {
-			return nil, err
-		}
+		ports := &host.ports
 		key := strconv.FormatInt(item.Port, 10)
-		value := member(ports, key)
+		value := recordMember(*ports, key)
 		if len(value) == 0 {
 			value = []byte("0")
 		}
@@ -741,39 +729,32 @@ func (s *NativeStore) Add(ctx context.Context, id string, r *Report, at *time.Ti
 				return nil, err
 			}
 		}
-		if err = ports.Set(key, value); err != nil {
-			return nil, err
-		}
-		if err = put(&entry, "ports", ports); err != nil {
-			return nil, err
-		}
-		routes, err := defaultObject(entry, "by_route", `{}`)
-		if hosts.Has(item.Host) && !entry.Has("by_route") {
-			return nil, &KeyError{Key: "by_route"}
-		}
-		if err != nil {
-			return nil, err
-		}
+		ports.setEncoded(key, value)
+		routes := &host.routes
 		payload := ""
 		if item.RulePayload != nil {
 			payload = *item.RulePayload
 		}
 		routeKey := RouteKey(*item.Rule, payload, item.Outlet, item.Policy)
-		stats, err := defaultObject(routes, routeKey, `{"conns":0,"fails":0,"zero_dl":0,"up":0,"down":0,"fail_kinds":{}}`)
+		statsRaw, exists := routes.get(routeKey)
+		if !exists {
+			statsRaw = []byte(`{"conns":0,"fails":0,"zero_dl":0,"up":0,"down":0,"fail_kinds":{}}`)
+		}
+		stats, err := readRecords(statsRaw)
 		if err != nil {
 			return nil, err
 		}
 		for i, key := range countFields {
-			if err = inc(&stats, key, item.Counts[i]); err != nil {
+			if err = incRecord(&stats, key, item.Counts[i]); err != nil {
 				return nil, err
 			}
 		}
-		kinds, err := object(member(stats, "fail_kinds"))
+		kinds, err := readRecords(recordMember(stats, "fail_kinds"))
 		if err != nil {
 			return nil, err
 		}
 		for key, n := range item.FailKinds {
-			value := member(kinds, key)
+			value := recordMember(kinds, key)
 			if len(value) == 0 {
 				value = []byte("0")
 			}
@@ -781,28 +762,32 @@ func (s *NativeStore) Add(ctx context.Context, id string, r *Report, at *time.Ti
 			if err != nil {
 				return nil, err
 			}
-			if err = kinds.Set(key, value); err != nil {
-				return nil, err
-			}
+			kinds.setEncoded(key, value)
 		}
-		if err = put(&stats, "fail_kinds", kinds); err != nil {
+		if err = recordPut(&stats, "fail_kinds", kinds); err != nil {
 			return nil, err
 		}
-		if err = put(&routes, routeKey, stats); err != nil {
-			return nil, err
-		}
-		if err = put(&entry, "by_route", routes); err != nil {
-			return nil, err
-		}
-		if err = put(&hosts, item.Host, entry); err != nil {
+		if err = recordPut(routes, routeKey, stats); err != nil {
 			return nil, err
 		}
 	}
-	if hosts.Len() > MaxHostsPerDay {
-		keys := hosts.Keys()
+	for _, name := range modifiedOrder {
+		host := modified[name]
+		if err = recordPut(&host.entry, "ports", host.ports); err != nil {
+			return nil, err
+		}
+		if err = recordPut(&host.entry, "by_route", host.routes); err != nil {
+			return nil, err
+		}
+		if err = recordPut(&hosts, name, host.entry); err != nil {
+			return nil, err
+		}
+	}
+	if hosts.len() > MaxHostsPerDay {
+		keys := hosts.keys()
 		weights := map[string]*big.Rat{}
 		for _, key := range keys {
-			w, err := weight(member(hosts, key))
+			w, err := weight(recordMember(hosts, key))
 			if err != nil {
 				return nil, err
 			}
@@ -810,7 +795,7 @@ func (s *NativeStore) Add(ctx context.Context, id string, r *Report, at *time.Ti
 		}
 		sort.SliceStable(keys, func(i, j int) bool { return weights[keys[i]].Cmp(weights[keys[j]]) > 0 })
 		for _, key := range keys[MaxHostsPerDay:] {
-			hosts.Delete(key)
+			hosts.delete(key)
 			if err = inc(&day, "dropped", big.NewInt(1)); err != nil {
 				return nil, err
 			}

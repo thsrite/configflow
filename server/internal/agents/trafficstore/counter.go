@@ -68,3 +68,12 @@ func (n storedCounter) rat() *big.Rat {
 	}
 	return new(big.Rat).SetFloat64(n.real)
 }
+
+func incRecord(r *records, key string, n *big.Int) error {
+	raw, err := addNumber(recordMember(*r, key), n)
+	if err != nil {
+		return err
+	}
+	r.setEncoded(key, raw)
+	return nil
+}
