@@ -2,6 +2,7 @@ package settings_test
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -108,7 +109,18 @@ func TestModeRouteRefusesExternalSubStore(t *testing.T) {
 func TestDependencyListRoute(t *testing.T) {
 	subStoreWorld(t, true, `{"tag_name": "v2.41.0", "assets": [{"name": "sub-store.bundle.js", "browser_download_url": "x"}]}`)
 	srv := newServer(t, false)
-	body := srv.Get("/api/settings/dependencies?refresh=1").WantStatus(200).Object()
+	response := srv.Get("/api/settings/dependencies?refresh=1").WantStatus(200)
+	var wire struct {
+		Dependencies []struct {
+			Update struct {
+				FinishedAt json.Number `json:"finished_at"`
+			} `json:"update"`
+		} `json:"dependencies"`
+	}
+	if err := json.Unmarshal(response.Body, &wire); err != nil || len(wire.Dependencies) != 1 || wire.Dependencies[0].Update.FinishedAt.String() != "0.0" {
+		t.Fatal("idle completion time lost its floating-point JSON token", string(response.Body), err)
+	}
+	body := response.Object()
 	list := body.GetList("dependencies")
 	if len(list) != 1 {
 		t.Fatalf("body %s", jsonx.Repr(body))

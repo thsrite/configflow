@@ -160,3 +160,12 @@ adapter：先Detach保留Runtime，普通转换失败仍无节点；来源owner�
 保留typed Client的错误契约，其他消费者不变。loopback HTTP503新回归在修复前两个引擎
 真实失败，修复后正常生成，原shutdown/cache回归也通过。不会把转换URL/凭据带进响应。
 root作用域只修NativeEnv适配，不给任意生成错误加忽略规则。
+
+根因2：dependencies.update.finished_at 的idle值经native float64→JSON→legacy Object变成
+整数token 0，原HTTP为0.0。只在现有legacy HTTP codec显式保留float标记，native观察值仍为
+float64；GetUpdateState/GetSubStoreStatus/ListDependencies共用同一窄边界处理。
+新增真实HTTP raw JSON token断言修复前失败、修复后通过；不归一化时间，不加baseline。
+整包api/settings12.264s、mihomoenv0.221s通过；精确GetSubStoreStatus0.284s、native失败/
+shutdown回归0.247s、source audit0.810s通过，gofmt全树通过。
+第一次复核命令中的TestGetUpdateState实际无匹配，不作为证据；HTTP raw token测试与
+GetSubStoreStatus为实际运行的正控。继续先定位验证proddiff，再最终preflight+完整compare。

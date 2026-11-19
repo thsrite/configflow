@@ -258,8 +258,22 @@ func (d *Dependencies) FetchLatestRelease(ctx context.Context, force bool) (*jso
 
 // GetUpdateState transcodes the native observation for old HTTP owners.
 func (d *Dependencies) GetUpdateState() *jsonx.Object {
-	value, _ := encodeLegacy(d.UpdateSnapshot())
+	state := d.UpdateSnapshot()
+	value, err := encodeLegacy(state)
+	if err == nil && value != nil {
+		value.Set("finished_at", jsonx.Float(state.FinishedAt))
+	}
 	return value
+}
+
+// legacyDependencyStatus retains the response's floating-point timestamp token,
+// including idle 0.0. The native observation remains an ordinary float64.
+func legacyDependencyStatus(status *DependencyStatus) (*jsonx.Object, error) {
+	value, err := encodeLegacy(status)
+	if err == nil && value != nil && status != nil {
+		value.GetObject("update").Set("finished_at", jsonx.Float(status.Update.FinishedAt))
+	}
+	return value, err
 }
 
 // GetSubStoreStatus transcodes one complete native snapshot.
@@ -268,7 +282,7 @@ func (d *Dependencies) GetSubStoreStatus(ctx context.Context, force bool) (*json
 	if err != nil {
 		return nil, err
 	}
-	return encodeLegacy(value)
+	return legacyDependencyStatus(value)
 }
 
 // ListDependencies transcodes the fixed native dependency list once per request.
@@ -279,7 +293,7 @@ func (d *Dependencies) ListDependencies(ctx context.Context, force bool) ([]any,
 	}
 	out := make([]any, 0, len(values))
 	for _, value := range values {
-		item, err := encodeLegacy(value)
+		item, err := legacyDependencyStatus(value)
 		if err != nil {
 			return nil, err
 		}
