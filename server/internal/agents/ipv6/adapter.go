@@ -5,7 +5,6 @@ package ipv6
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"os"
 	"time"
@@ -16,34 +15,21 @@ import (
 	"configflow/internal/convert"
 	"configflow/internal/deploy"
 	healthcheck "configflow/internal/health/check"
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/redact"
 	"configflow/internal/repo"
-	"configflow/internal/yamlbridge"
 	"configflow/internal/yamlx"
 )
 
-func defaultMihomo() (*yamlx.Node, error) { return yamlbridge.Encode(convert.DefaultMihomoTemplate()) }
+func defaultMihomo() (*yamlx.Node, error) { return convert.MihomoTemplate(), nil }
 
-// Registry and repository compatibility boundaries.
-func legacy(d Document) (*jsonx.Object, error) {
-	v, e := jsonx.Parse(raw(d))
-	if e != nil {
-		return nil, e
+// agentRecord reads the native record used by registry and deployment owners.
+func agentRecord(d Document) (*model.Agent, error) {
+	var a model.Agent
+	if err := json.Unmarshal(raw(d), &a); err != nil {
+		return nil, err
 	}
-	o, ok := v.(*jsonx.Object)
-	if !ok {
-		return nil, errors.New("ipv6: expected object")
-	}
-	return o, nil
-}
-func native(o *jsonx.Object) Document {
-	if o == nil {
-		return nil
-	}
-	b, _ := jsonx.Compact(o)
-	return object(b)
+	return &a, nil
 }
 func (s *Service) snapshot(ctx context.Context, profile string) (Document, int64, error) {
 	config, revision, err := s.Manager.Repository().PublishConfig(ctx, profile, true)
@@ -101,11 +87,11 @@ func online(a Document) bool {
 	return agents.FreshHeartbeat(text(a["last_heartbeat"]), nil) && text(a["status"]) != "offline"
 }
 func origin(a Document) (string, error) {
-	o, e := legacy(a)
+	o, e := agentRecord(a)
 	if e != nil {
 		return "", e
 	}
-	return monitor.AgentOrigin(o)
+	return monitor.Origin(o)
 }
 
 func (s *Service) publication(ctx context.Context, a, config Document, revision int64, wait bool) string {
@@ -124,7 +110,7 @@ func (s *Service) publication(ctx context.Context, a, config Document, revision 
 	if checker == nil {
 		return "unknown"
 	}
-	o, e := legacy(a)
+	o, e := agentRecord(a)
 	if e != nil {
 		return "unknown"
 	}
@@ -132,11 +118,15 @@ func (s *Service) publication(ctx context.Context, a, config Document, revision 
 	if e != nil {
 		return "unknown"
 	}
+	target, e := deploy.NewTypedTarget(o)
+	if e != nil {
+		return "unknown"
+	}
 	var status string
 	if wait {
-		status = checker.CompareNow(ctx, deploy.NewTarget(o), src, text(applied["base_url"])).Status
+		status = checker.CompareNow(ctx, target, src, text(applied["base_url"])).Status
 	} else {
-		status = checker.Status(ctx, deploy.NewTarget(o), src, text(applied["base_url"])).Status
+		status = checker.Status(ctx, target, src, text(applied["base_url"])).Status
 	}
 	if status == "synced" || status == "changed" || status == "checking" {
 		return status
@@ -266,30 +256,38 @@ func (s *Service) update(ctx context.Context, id string, fn func(context.Context
 	})
 }
 
-func validURL(value string) error { return healthcheck.ValidateHealth(jsonx.Obj("url", value), false) }
-func defaultURL() string          { return healthcheck.GroupDefaults().GetString("url") }
+func validURL(value string) error {
+	return healthcheck.ValidateHealthJSON(raw(struct {
+		URL string `json:"url"`
+	}{value}), false)
+}
+func defaultURL() string { return healthcheck.DefaultGroupHealth().URL }
 func (s *Service) capabilities(ctx context.Context, a Document) Document {
-	o, e := legacy(a)
+	o, e := agentRecord(a)
 	if e != nil {
 		return nil
 	}
-	answer, e := s.Manager.DeploymentRequest(ctx, o, http.MethodGet, "capabilities", nil, nil, &agents.Timeout{Connect: 2 * time.Second, Read: 3 * time.Second})
+	answer, e := s.Manager.DeploymentRequestModel(ctx, o, http.MethodGet, "capabilities", nil, nil, &agents.Timeout{Connect: 2 * time.Second, Read: 3 * time.Second})
 	if e != nil {
 		return nil
 	}
-	return native(answer)
+	data, e := model.Marshal(answer)
+	if e != nil {
+		return nil
+	}
+	return object(data)
 }
 func (s *Service) receipt(ctx context.Context, a Document) (*deploy.Receipt, error) {
-	o, e := legacy(a)
+	o, e := agentRecord(a)
 	if e != nil {
 		return nil, e
 	}
-	return deploy.NewReceipts(s.Manager.Repository().DataDir()).Load(ctx, o, false)
+	return deploy.NewReceipts(s.Manager.Repository().DataDir()).LoadAgent(ctx, o, false)
 }
 
 func (s *Service) systemSecrets(ctx context.Context) (redact.Secrets, error) {
 	ctx = repo.WithRepository(ctx, s.Manager.Repository())
-	system, e := repo.GetSystemConfig(ctx)
+	system, e := s.Manager.Repository().System(ctx)
 	if e != nil {
 		return nil, e
 	}

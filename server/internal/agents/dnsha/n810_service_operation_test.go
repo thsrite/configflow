@@ -14,10 +14,6 @@ func TestN810NativeServiceOperationRespectsBusyMemberLease(t *testing.T) {
 	t.Cleanup(agents.ResetHooks)
 	calls := 0
 	agents.RegisterHooks(agents.Hooks{
-		HAServiceOperation: func(context.Context, *agents.Manager, string, func() (*agents.Record, error), bool) (*agents.Record, error) {
-			t.Fatal("legacy HA hook triggered")
-			return nil, nil
-		},
 		HAServiceOperationTyped: func(ctx context.Context, m *agents.Manager, id string, run func() (json.RawMessage, error), uninstall bool) (json.RawMessage, error) {
 			calls++
 			return f.s.ServiceOperationJSON(ctx, id, run, uninstall)

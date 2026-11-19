@@ -7,7 +7,6 @@ import (
 
 	"configflow/internal/agents"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
 )
 
 func TestN810InstallationTypedHooksKeepArgumentOrderAndRunOnce(t *testing.T) {
@@ -15,14 +14,6 @@ func TestN810InstallationTypedHooksKeepArgumentOrderAndRunOnce(t *testing.T) {
 	profileCalls, registerCalls := 0, 0
 	const id, token, existing = "installation-id-A", "installation-token-B", "existing-token-C"
 	agents.RegisterHooks(agents.Hooks{
-		InstallationProfile: func(context.Context, *jsonx.Object, any, any, string) (any, error) {
-			t.Fatal("legacy profile triggered")
-			return nil, nil
-		},
-		InstallationRegister: func(context.Context, *agents.Manager, any, any, *jsonx.Object, any) (*jsonx.Object, error) {
-			t.Fatal("legacy register triggered")
-			return nil, nil
-		},
 		InstallationProfileTyped: func(_ context.Context, data json.RawMessage, gotID, gotToken, fallback string) (string, json.RawMessage, error) {
 			profileCalls++
 			if gotID != id || gotToken != token || fallback == "" || fallback == id || fallback == token {

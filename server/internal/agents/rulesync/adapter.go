@@ -1,70 +1,33 @@
 package rulesync
 
-// This file alone adapts legacy repository/Agent records. Reconciliation and
-// projection use typed native JSON, immutable deploy.Source and yamlx nodes.
+// Registry, task and deployment collaborators use owned native records.
+// Reconciliation consumes immutable deploy.Source values and yamlx nodes.
 import (
 	"configflow/internal/agents/monitor"
 	"configflow/internal/logx"
 	"configflow/internal/redact"
 	"configflow/internal/repo"
 	"configflow/internal/tasks"
+	"configflow/internal/taskstatus"
 	"context"
 	"encoding/json"
-	"fmt"
-	"slices"
 	"strings"
 
 	"configflow/internal/agents"
 	"configflow/internal/convert"
 	"configflow/internal/deploy"
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/oxidns"
 	"configflow/internal/yamlx"
 )
 
-func decodeAgent(record *agents.Record) (*model.Agent, error) {
-	raw, err := json.Marshal(agentView(record))
-	if err != nil {
-		return nil, fmt.Errorf("encode agent snapshot: %w", err)
-	}
-	var a model.Agent
-	if err = json.Unmarshal(raw, &a); err != nil {
-		return nil, fmt.Errorf("decode agent snapshot: %w", err)
-	}
-	return &a, nil
-}
-
-// SettingsFor reads strictly boolean scopes; historical wrong types are off.
-func SettingsFor(record *agents.Record) Settings {
-	sync := record.GetObject("rule_sync")
-	if sync == nil {
+// AgentSettings reads the typed per-Agent scopes. Malformed stored switches are off.
+func AgentSettings(record *model.Agent) Settings {
+	if record == nil || record.RuleSync == nil {
 		return Settings{}
 	}
-	raw, err := json.Marshal(sync.Value("settings"))
-	if err != nil {
-		return Settings{}
-	}
-	var s model.RuleSyncSettings
-	if json.Unmarshal(raw, &s) != nil {
-		return Settings{}
-	}
+	s := record.RuleSync.Settings
 	return Settings{Library: s.Library != nil && *s.Library, Rules: s.Rules != nil && *s.Rules}
-}
-
-// agentView deliberately omits history members; none of this package's typed
-// reads needs them, and the light-read sentinel must never enter a JSON codec.
-func agentView(record *agents.Record) *jsonx.Object {
-	out := jsonx.NewObject()
-	if record == nil {
-		return out
-	}
-	for key, v := range record.All() {
-		if !slices.Contains(repo.AgentHistoryFields, key) {
-			out.Set(key, v)
-		}
-	}
-	return out
 }
 
 func publishSource(ctx context.Context, m *agents.Manager, profileID string) (*deploy.Source, error) {
@@ -137,28 +100,30 @@ func renderCandidate(ctx context.Context, target deploy.Target, source *deploy.S
 	return content, downloads, err
 }
 
-func recordID(r *agents.Record) string { return r.GetString("id") }
-func recordSupported(r *agents.Record) bool {
-	return r.GetString("service_type") == "mihomo" || r.GetString("service_type") == "oxidns"
+func recordID(r *model.Agent) string {
+	if r == nil {
+		return ""
+	}
+	return r.ID
 }
-func compareLeader(a, b *agents.Record) int {
-	ap := a.GetObject("oxidns_ha").GetString("role") == "primary"
-	bp := b.GetObject("oxidns_ha").GetString("role") == "primary"
+func recordSupported(r *model.Agent) bool {
+	return r != nil && (r.ServiceType == "mihomo" || r.ServiceType == "oxidns")
+}
+func compareLeader(a, b *model.Agent) int {
+	ap := a.OxiDNSHA != nil && a.OxiDNSHA.Role == "primary"
+	bp := b.OxiDNSHA != nil && b.OxiDNSHA.Role == "primary"
 	if ap != bp {
 		if ap {
 			return -1
 		}
 		return 1
 	}
-	return strings.Compare(a.GetString("id"), b.GetString("id"))
+	return strings.Compare(a.ID, b.ID)
 }
-func configurePair(ctx context.Context, m *agents.Manager, members []*agents.Record, s Settings) error {
+func configurePair(ctx context.Context, m *agents.Manager, members []*model.Agent, s Settings) error {
 	expected := make([]*model.Agent, 0, len(members))
 	for _, member := range members {
-		a, err := decodeAgent(member)
-		if err != nil {
-			return err
-		}
+		a := member
 		if !agents.AgentMatchesID(a, a.ID) {
 			return refuse(msgPairChanged)
 		}
@@ -212,22 +177,34 @@ func configurePair(ctx context.Context, m *agents.Manager, members []*agents.Rec
 }
 func rawJSON(v any) json.RawMessage { raw, _ := json.Marshal(v); return raw }
 
-func safeText(ctx context.Context, m *agents.Manager, record *agents.Record, text string) string {
-	system, err := m.Repository().GetSystemSettings(ctx)
+func systemSecrets(ctx context.Context, m *agents.Manager) (redact.Secrets, error) {
+	system, err := m.Repository().System(ctx)
 	if err != nil {
+		return nil, err
+	}
+	raw, err := model.Marshal(&system.SystemConfig)
+	if err != nil {
+		return nil, err
+	}
+	return redact.ExternalPayloadSecrets(ctx, json.RawMessage(raw))
+}
+func safeText(ctx context.Context, m *agents.Manager, record *model.Agent, text string) string {
+	secrets, err := systemSecrets(ctx, m)
+	if err != nil {
+		return redact.Redacted
+	}
+
+	data, encodeErr := model.Marshal(record)
+	if encodeErr != nil {
 		return "[REDACTED]"
 	}
-	secrets, err := redact.ExternalPayloadSecrets(ctx, system)
-	if err != nil {
-		return "[REDACTED]"
-	}
-	secrets = redact.CollectCredentials(record, secrets)
+	secrets = redact.CollectCredentials(json.RawMessage(data), secrets)
 	return safeDisplay(text, secrets)
 }
-func logState(ctx context.Context, m *agents.Manager, record *agents.Record, status, message string) {
-	name := record.GetString("name")
+func logState(ctx context.Context, m *agents.Manager, record *model.Agent, status, message string) {
+	name, _ := agents.AgentName(record)
 	if name == "" {
-		name = record.GetString("id")
+		name = record.ID
 	}
 	name = safeText(ctx, m, record, name)
 	name = logx.LogText(name, 120)
@@ -241,60 +218,51 @@ func logState(ctx context.Context, m *agents.Manager, record *agents.Record, sta
 		logger.Debugf("Agent %s 规则自动同步：%s", name, message)
 	}
 }
-func taskRow(ctx context.Context, record *agents.Record, statuses *jsonx.Object) (*jsonx.Object, error) {
-	if !recordSupported(record) {
+func agentTaskRow(ctx context.Context, a *model.Agent, statuses taskstatus.Snapshot) (*tasks.Task, error) {
+	if !recordSupported(a) {
 		return nil, nil
 	}
-	id := recordID(record)
+	id := a.ID
 	key := "agent_rule_sync:" + id
-	enabled := SettingsFor(record).Any()
-	if !enabled && !statuses.Has(key) {
+	enabled := AgentSettings(a).Any()
+	_, recorded := statuses[key]
+	if !enabled && !recorded {
 		return nil, nil
-	}
-	a, e := decodeAgent(record)
-	if e != nil {
-		return nil, e
 	}
 	state := stateOf(a)
-	history, e := tasks.History(statuses.GetObject(key))
-	if e != nil {
-		return nil, e
+	history, err := tasks.ProjectHistory(statuses.Entry(key))
+	if err != nil {
+		return nil, err
 	}
-	message := state.Message
-	m, e := agents.Get(ctx)
-	if e != nil {
-		return nil, e
+	m, err := agents.Get(ctx)
+	if err != nil {
+		return nil, err
 	}
-	message = safeText(ctx, m, record, message)
+	message := safeText(ctx, m, a, state.Message)
 	if enabled && state.Status == "blocked" {
-		history.Set("last_status", "skipped")
-		history.Set("last_error", message)
+		last := "skipped"
+		history.LastStatus, history.LastError = &last, &message
 	} else if enabled && (state.Status == "succeeded" || state.Status == "failed") {
-		if state.Status == "succeeded" {
-			history.Set("last_status", "success")
-			history.Set("last_error", "")
-		} else {
-			history.Set("last_status", "failed")
-			history.Set("last_error", message)
+		last, detail := "success", ""
+		if state.Status == "failed" {
+			last, detail = "failed", message
 		}
+		history.LastStatus, history.LastError = &last, &detail
 	}
 	stateMessage := ""
 	if enabled && state.Status == "pending" {
 		stateMessage = message
 	}
-	name := a.Name
+	name, _ := agents.AgentName(a)
 	if name == "" {
 		name = id
 	}
-	name = safeText(ctx, m, record, name)
-	return tasks.Row(key, "agent_rule_sync", name, "resource_id", id, "enabled", enabled, "schedule_text", msgRowSchedule, "run_hint", msgRowHint, "running", enabled && state.Status == "running", "state_message", stateMessage, "link", "/agents", history, nil), nil
+	name = safeText(ctx, m, a, name)
+	link := "/agents"
+	return &tasks.Task{Key: key, Category: "agent_rule_sync", Name: name, ResourceID: id, Enabled: enabled, ScheduleText: msgRowSchedule, RunHint: msgRowHint, Running: enabled && state.Status == "running", StateMessage: stateMessage, Link: &link, HistoryData: history}, nil
 }
 func nativeCall(ctx context.Context, m *agents.Manager, id, method string, paths []string) (nativeTask, error) {
-	var selected any
-	if len(paths) > 0 {
-		selected = jsonx.ListOf(paths)
-	}
-	answer, _, err := monitor.RuleUpdateCall(ctx, monitor.FromAgents(m), id, method, selected)
+	answer, _, err := monitor.CallRuleUpdate(ctx, monitor.TypedFromAgents(m), id, method, paths)
 	if err != nil {
 		return nativeTask{}, err
 	}
@@ -317,16 +285,16 @@ func nativeCall(ctx context.Context, m *agents.Manager, id, method string, paths
 	return result, nil
 }
 func refreshProvider(ctx context.Context, m *agents.Manager, id, name string) error {
-	_, err := monitor.PanelCall(ctx, monitor.FromAgents(m), id, "providers/rule", "PUT", [][2]string{{"name", name}}, nil, "")
+	_, err := monitor.CallPanel(ctx, monitor.TypedFromAgents(m), id, "providers/rule", "PUT", [][2]string{{"name", name}}, nil, "")
 	return err
 }
 func resultStatus(r *agents.Result) string { return r.GetString("status") }
 func beginPublication(ctx context.Context, m *agents.Manager, id, deploymentID string) (bool, error) {
-	r, e := m.BeginDeployment(ctx, id, deploymentID)
+	r, e := m.ReserveDeployment(ctx, id, deploymentID)
 	if e != nil {
 		return false, e
 	}
-	return r.Value("success") == true, nil
+	return r != nil && r.Success, nil
 }
 func failUnsubmitted(ctx context.Context, m *agents.Manager, id, deploymentID string) error {
 	if e := ctx.Err(); e != nil {
@@ -351,8 +319,8 @@ func pollDeployment(ctx context.Context, m *agents.Manager, id, deploymentID str
 	return m.GetDeploymentModel(ctx, id, deploymentID)
 }
 
-func isOxi(record *agents.Record) bool { return record.GetString("service_type") == "oxidns" }
-func profileAgents(ctx context.Context, r *repo.Repository, profileID string) ([]*agents.Record, error) {
+func isOxi(record *model.Agent) bool { return record != nil && record.ServiceType == "oxidns" }
+func profileAgents(ctx context.Context, r *repo.Repository, profileID string) ([]*model.Agent, error) {
 	defaultID, err := r.DefaultProfileID(ctx)
 	if err != nil {
 		return nil, err
@@ -360,7 +328,7 @@ func profileAgents(ctx context.Context, r *repo.Repository, profileID string) ([
 	if profileID == "" {
 		profileID = defaultID
 	}
-	out := []*agents.Record{}
+	out := []*model.Agent{}
 	err = r.ViewAgents(ctx, func(records []model.Agent) error {
 		for i := range records {
 			a := &records[i]
@@ -392,7 +360,7 @@ func profileAgents(ctx context.Context, r *repo.Repository, profileID string) ([
 			if err != nil {
 				return err
 			}
-			var record agents.Record
+			var record model.Agent
 			if err := json.Unmarshal(data, &record); err != nil {
 				return err
 			}
@@ -402,7 +370,7 @@ func profileAgents(ctx context.Context, r *repo.Repository, profileID string) ([
 	})
 	return out, err
 }
-func workerAgent(ctx context.Context, m *agents.Manager, id string) (*agents.Record, error) {
+func workerAgent(ctx context.Context, m *agents.Manager, id string) (*model.Agent, error) {
 	a, err := m.ReadAgent(ctx, id, false)
 	if err != nil || a == nil {
 		return nil, err
@@ -416,15 +384,7 @@ func workerAgent(ctx context.Context, m *agents.Manager, id string) (*agents.Rec
 	}
 	a.Enabled = ptr(agents.AgentEnabledModel(a))
 	a.ProfileID = profile
-	data, err := model.Marshal(a)
-	if err != nil {
-		return nil, err
-	}
-	var record agents.Record
-	if err := json.Unmarshal(data, &record); err != nil {
-		return nil, err
-	}
-	return &record, nil
+	return a, nil
 }
 func repositorySource(ctx context.Context, r *repo.Repository, profileID string) (*deploy.Source, error) {
 	config, revision, err := r.PublishConfig(ctx, profileID, false)
@@ -438,54 +398,47 @@ func repositorySource(ctx context.Context, r *repo.Repository, profileID string)
 	return deploy.SourceFromJSON(raw, &revision)
 }
 
-func snapshotVersion(record *agents.Record) string {
-	applied := record.GetObject("applied_content")
-	if applied != nil && applied.Has("config_version") {
-		return applied.GetString("config_version")
+func snapshotVersion(a *model.Agent) string {
+	if a.AppliedContent != nil {
+		data, err := model.Marshal(a.AppliedContent)
+		var fields model.Fields
+		if err == nil {
+			err = json.Unmarshal(data, &fields)
+		}
+		raw, present := fields.Get("config_version")
+		if err == nil && present {
+			var version string
+			_ = json.Unmarshal(raw, &version)
+			return version
+		}
 	}
-	return record.GetString("config_version")
+	return a.ConfigVersion
 }
 
 // Presence uses the shared transition owner, with only its log-facing fields
 // projected and sanitized. No metrics/history or deployment graph is copied.
-func observePresence(ctx context.Context, m *agents.Manager, records []*agents.Record) {
-	settings, err := m.Repository().GetSystemSettings(ctx)
-	var secrets redact.Secrets
-	if err == nil {
-		secrets, err = redact.ExternalPayloadSecrets(ctx, settings)
-	}
-	for _, record := range records {
-		secrets = redact.CollectCredentials(record, secrets)
-	}
-	safe := make([]*agents.Record, 0, len(records))
-	for _, record := range records {
-		name := record.Value("name")
-		if !jsonx.Truthy(name) {
-			name = record.Value("id")
-		}
-		fields := jsonx.Obj("name", name, "last_heartbeat", record.Value("last_heartbeat"))
-		if err != nil {
-			fields.Set("name", redact.Redacted)
-			fields.Set("last_heartbeat", redact.Redacted)
+func observePresence(ctx context.Context, m *agents.Manager, records []*model.Agent) {
+	secrets, err := systemSecrets(ctx, m)
+	for _, a := range records {
+		data, failure := model.Marshal(a)
+		if failure != nil {
+			err = failure
 		} else {
-			for _, key := range []string{"name", "last_heartbeat"} {
-				if value, ok := fields.Value(key).(string); ok {
-					fields.Set(key, safeDisplay(value, secrets))
-				} else {
-					single := agents.SanitizePublicMetadata(jsonx.Obj("value", fields.Value(key)), secrets)
-					if single == nil {
-						fields.Set(key, redact.Redacted)
-					} else {
-						fields.Set(key, single.Value("value"))
-					}
-				}
-			}
+			secrets = redact.CollectCredentials(json.RawMessage(data), secrets)
 		}
-		fields.Set("id", record.Value("id"))
-		fields.Set("status", record.Value("status"))
-		safe = append(safe, fields)
 	}
-	agents.ObservePresence(safe)
+	if err != nil {
+		hidden := make([]agents.PresenceObservation, 0, len(records))
+		for _, a := range records {
+			if !agents.AgentMatchesID(a, a.ID) {
+				continue
+			}
+			hidden = append(hidden, agents.PresenceObservation{ID: a.ID, Status: a.Status, Name: redact.Redacted, LastHeartbeat: redact.Redacted})
+		}
+		agents.ObserveAgentPresence(hidden, nil)
+		return
+	}
+	agents.ObserveRegistryPresence(records, secrets)
 }
 
 func safeDisplay(text string, secrets redact.Secrets) string {
@@ -496,9 +449,7 @@ func safeDisplay(text string, secrets redact.Secrets) string {
 	return safe
 }
 
-func pairEnabling(record *agents.Record) bool {
-	return agents.HAActive(record) && jsonx.Truthy(record.GetObject(agents.HAField).Value("enable"))
-}
+func pairEnabling(record *model.Agent) bool { return agents.HAEnablingModel(record) }
 
 // UnmarshalJSON accepts exact protocol names without struct tag folding.
 func (task *nativeTask) UnmarshalJSON(raw []byte) error {
@@ -519,4 +470,21 @@ func (task *nativeTask) UnmarshalJSON(raw []byte) error {
 	}
 	*task = next
 	return nil
+}
+
+// Receipt stamp/content entry points still belong to deploy's W6 migration.
+// NewTypedTarget is the existing owner codec; no caller codec is introduced.
+func receiptStamp(store *deploy.Receipts, a *model.Agent) (deploy.Stamp, bool) {
+	target, err := deploy.NewTypedTarget(a)
+	if err != nil {
+		return deploy.Stamp{}, false
+	}
+	return store.Stamp(target.Record)
+}
+func advanceReceiptContent(ctx context.Context, store *deploy.Receipts, m *agents.Manager, a *model.Agent, source *deploy.Source, bundle *deploy.Bundle) (bool, error) {
+	target, err := deploy.NewTypedTarget(a)
+	if err != nil {
+		return false, err
+	}
+	return store.AdvanceContent(ctx, m, target.Record, source, bundle)
 }

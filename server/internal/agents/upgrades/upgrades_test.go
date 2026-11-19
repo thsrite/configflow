@@ -4,7 +4,9 @@ package upgrades
 // acceptance/health distinction and failure concurrency.
 
 import (
+	"configflow/internal/model"
 	"context"
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -86,7 +88,7 @@ func (e *upgradeEnv) restarted() *agents.Manager {
 
 func (e *upgradeEnv) heartbeat(version string) {
 	e.t.Helper()
-	if ok, err := e.m.UpdateHeartbeat(e.ctx, e.ident, jsonx.Obj("version", version)); !ok || err != nil {
+	if ok, err := e.m.ObserveHeartbeat(e.ctx, e.ident, agentModelForTest(e.t, jsonx.Obj("version", version))); !ok || err != nil {
 		e.t.Fatalf("heartbeat %v %v", ok, err)
 	}
 }
@@ -369,4 +371,17 @@ func TestStaleWorkerResponseDoesNotUndoNewerStateAndOldWorkerHasObservedEvents(t
 	if stale.Value("status") != "checking" || !jsonx.Equal(stale.Value("events"), current.Value("events")) || statuses(current.Value("events")) != "checking" {
 		t.Fatalf("stale %s current %s", jsonx.Repr(stale), jsonx.Repr(current))
 	}
+}
+
+func agentModelForTest(t testing.TB, value any) *model.Agent {
+	t.Helper()
+	raw, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var a model.Agent
+	if err := json.Unmarshal(raw, &a); err != nil {
+		t.Fatal(err)
+	}
+	return &a
 }

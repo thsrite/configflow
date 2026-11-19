@@ -5,6 +5,7 @@ import (
 	"configflow/internal/gateway"
 	"configflow/internal/yamlx"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -32,8 +33,29 @@ func Publish(ctx context.Context, m *agents.Manager, id string, b *Bundle, o Pub
 	err = RunDetached(ctx, "agent-publish-"+id, func(ctx context.Context) error {
 		publicationHooks.RLock()
 		pair := publicationHooks.pair
+		nativePair := publicationHooks.nativePair
 		publicationHooks.RUnlock()
-		if pair != nil {
+		if nativePair != nil {
+			result, handled, failure := nativePair(ctx, m, id, b, o)
+			if failure != nil || handled {
+				if failure != nil {
+					return failure
+				}
+				if result == nil {
+					return nil
+				}
+				data, failure := json.Marshal(result)
+				if failure != nil {
+					return failure
+				}
+				var legacy agents.Result
+				if failure = json.Unmarshal(data, &legacy); failure != nil {
+					return failure
+				}
+				answer = &legacy
+				return nil
+			}
+		} else if pair != nil {
 			r, handled, e := pair(ctx, m, id, b, o)
 			if e != nil || handled {
 				answer = r
@@ -47,7 +69,7 @@ func Publish(ctx context.Context, m *agents.Manager, id string, b *Bundle, o Pub
 		// Fail closed only without an owner. An installed owner that did not
 		// handle the Agent (no complete enabled pair, e.g. during a first enable)
 		// leaves it to PublishDirect, whose reservation answers the HA conflict.
-		if found && pair == nil && pairRequired(t) {
+		if found && pair == nil && nativePair == nil && pairRequired(t) {
 			return ErrPairPublisherMissing
 		}
 		answer, e = PublishDirect(ctx, m, id, b, o)

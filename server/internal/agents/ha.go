@@ -123,19 +123,7 @@ func (m *Manager) GetDeploymentModel(ctx context.Context, agentID, id string) (*
 		return nil, err
 	}
 	if hook := currentHooks().HADeployment; hook != nil {
-		result, err := hook(ctx, m, agentID, id)
-		if err != nil {
-			return nil, err
-		}
-		raw, err := json.Marshal(result)
-		if err != nil {
-			return nil, err
-		}
-		var task model.Deployment
-		if err := json.Unmarshal(raw, &task); err != nil {
-			return nil, err
-		}
-		return &task, nil
+		return hook(ctx, m, agentID, id)
 	}
 	return m.defaultHADeploymentModel(ctx, agentID, id)
 }
@@ -147,19 +135,7 @@ func (m *Manager) ActivateDeploymentModel(ctx context.Context, agentID, id strin
 		return nil, err
 	}
 	if hook := currentHooks().HAActivate; hook != nil {
-		result, err := hook(ctx, m, agentID, id)
-		if err != nil {
-			return nil, err
-		}
-		raw, err := json.Marshal(result)
-		if err != nil {
-			return nil, err
-		}
-		var task model.Deployment
-		if err := json.Unmarshal(raw, &task); err != nil {
-			return nil, err
-		}
-		return &task, nil
+		return hook(ctx, m, agentID, id)
 	}
 	return m.defaultHAActivateModel(ctx, agentID, id)
 }

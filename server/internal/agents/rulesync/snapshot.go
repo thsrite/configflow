@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"configflow/internal/jsondecode"
+	"configflow/internal/model"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -29,7 +30,7 @@ func ReadBundleFiles(b *deploy.Bundle) (map[string]deploy.Content, error) {
 
 // FetchSnapshot downloads authenticated managed live files without proxying,
 // redirects, extraction or accepting files outside the successful deployment.
-func FetchSnapshot(ctx context.Context, m *agents.Manager, agent *agents.Record, baseline Baseline) (*deploy.Bundle, error) {
+func FetchSnapshot(ctx context.Context, m *agents.Manager, agent *model.Agent, baseline Baseline) (*deploy.Bundle, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -41,13 +42,10 @@ func FetchSnapshot(ctx context.Context, m *agents.Manager, agent *agents.Record,
 	if err != nil {
 		return nil, err
 	}
-	origin, err := monitor.AgentOrigin(agent)
+	a := agent
+	origin, err := monitor.Origin(a)
 	if err != nil {
 		return nil, refuse(msgSnapshotVerify)
-	}
-	a, err := decodeAgent(agent)
-	if err != nil {
-		return nil, err
 	}
 	res, err := m.Client().Do(ctx, agents.Request{Method: http.MethodGet, URL: origin + "/api/rule-sync/snapshot", Header: http.Header{"Authorization": {"Bearer " + a.Token}, "Accept": {"application/gzip"}}, Timeout: agents.Pair(3, 90), NoProxy: true, NoRedirects: true, MaxBody: deploy.MaxTotalBytes + 8<<20})
 	if err != nil {

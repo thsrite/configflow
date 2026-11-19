@@ -1,38 +1,20 @@
 package monitor
 
-// Text/query compatibility retained from the existing input contract; N10 owns
-// Unicode table simplification. These helpers do not interpret JSON values.
+// Text boundaries retain the monitoring protocol's whitespace, line separators
+// and character limits. Numeric tokens are validated separately as ASCII.
 import (
-	"sort"
 	"strings"
 	"unicode"
 )
 
-// pyDecimalValue is the decimal value of a str.isdecimal() character of
-// CPython 3.11 (Unicode 14), -1 for any other character.
-func pyDecimalValue(r rune) int {
-	if r >= '0' && r <= '9' {
-		return int(r - '0')
-	}
-	if r < 0x660 {
-		return -1
-	}
-	i := sort.Search(len(pyDecimalStarts), func(i int) bool { return pyDecimalStarts[i] > r }) - 1
-	if i >= 0 && r-pyDecimalStarts[i] < 10 {
-		return int(r - pyDecimalStarts[i])
-	}
-	return -1
-}
+// textSpace recognizes Unicode whitespace and the legacy record separators.
+func textSpace(r rune) bool { return unicode.IsSpace(r) || (r >= 0x1c && r <= 0x1f) }
 
-// pyIsSpace is str.isspace() for one character (also re's \s for str
-// patterns).
-func pyIsSpace(r rune) bool { return unicode.IsSpace(r) || (r >= 0x1c && r <= 0x1f) }
+// trimText removes surrounding protocol whitespace.
+func trimText(s string) string { return strings.TrimFunc(s, textSpace) }
 
-// pyStrip is str.strip().
-func pyStrip(s string) string { return strings.TrimFunc(s, pyIsSpace) }
-
-// pySplitLines is str.splitlines().
-func pySplitLines(s string) []string {
+// splitMetricLines separates metrics records, treating CRLF as one separator.
+func splitMetricLines(s string) []string {
 	var lines []string
 	start := 0
 	runes := []rune(s)
@@ -58,11 +40,11 @@ func pySplitLines(s string) []string {
 	return lines
 }
 
-// runeLen is len(str).
+// runeLen measures user-visible limits in code points.
 func runeLen(s string) int { return len([]rune(s)) }
 
-// pySlice is s[:limit] by code points.
-func pySlice(s string, limit int) string {
+// truncateText bounds display text by code points.
+func truncateText(s string, limit int) string {
 	n := 0
 	for i := range s {
 		if n == limit {

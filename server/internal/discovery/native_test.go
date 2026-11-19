@@ -1,9 +1,11 @@
 package discovery
 
 import (
+	"configflow/internal/jsonx"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -13,7 +15,6 @@ import (
 	"testing"
 
 	"configflow/internal/agents"
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/repo"
 )
@@ -146,19 +147,10 @@ func TestNativeCoreBoundary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	legacy, err := parser.ParseFile(token.NewFileSet(), "legacy.go", nil, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
 	forbidden := map[string]bool{"dictGet": true, "raise": true, "catch": true, "must": true, "pyError": true}
-	for _, declaration := range legacy.Decls {
-		if f, ok := declaration.(*ast.FuncDecl); ok && f.Recv == nil && f.Name.Name != "init" {
-			forbidden[f.Name.Name] = true
-		}
-	}
 	for _, entry := range entries {
 		name := entry.Name()
-		if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") || name == "legacy.go" {
+		if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
 			continue
 		}
 		file, err := parser.ParseFile(token.NewFileSet(), name, nil, 0)
@@ -229,7 +221,9 @@ func TestNativeRegistryRetainsHeartbeatOverlay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	manager.Runtime().Seed("runtime-agent", 4070908800, "2099-01-01T00:00:00Z", jsonx.Obj("version", minRegionVersion))
+	if err := manager.Runtime().RestoreHeartbeat(ctx, "runtime-agent", 4070908800, "2099-01-01T00:00:00Z", &model.Agent{Version: minRegionVersion}); err != nil {
+		t.Fatal(err)
+	}
 	records, err := profileAgents(ctx, "default")
 	if err != nil || len(records) != 1 {
 		t.Fatalf("registry: %+v %v", records, err)
@@ -241,4 +235,20 @@ func TestNativeRegistryRetainsHeartbeatOverlay(t *testing.T) {
 	if err != nil || stored.Agents[0].LastHeartbeat != "2000-01-01T00:00:00Z" {
 		t.Fatal("test did not distinguish runtime and stored state")
 	}
+}
+
+func object(value any) (*jsonx.Object, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	parsed, err := jsonx.Parse(raw)
+	if err != nil {
+		return nil, err
+	}
+	out, ok := parsed.(*jsonx.Object)
+	if !ok {
+		return nil, fmt.Errorf("expected JSON object")
+	}
+	return out, nil
 }

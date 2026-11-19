@@ -401,3 +401,53 @@ func (m *Manager) saveReportedModels(ctx context.Context, changes map[string]mod
 func AgentMatchesID(record *model.Agent, id string) bool {
 	return record != nil && record.ID == id && agentIDProven(record)
 }
+
+// ListAgents returns owned live snapshots with freshness-derived listing status.
+// ReadAgent retains the stored status for individual reads.
+func (m *Manager) ListAgents(ctx context.Context, history bool) ([]model.Agent, error) {
+	records, err := m.ReadAgents(ctx, history, nil)
+	if err != nil {
+		return nil, err
+	}
+	for i := range records {
+		if !FreshHeartbeat(records[i].LastHeartbeat, nil) {
+			records[i].Status = "offline"
+		}
+	}
+	return records, nil
+}
+
+// AgentSnapshots returns owned listing records for consumers that retain pointers.
+func (m *Manager) AgentSnapshots(ctx context.Context, history bool) ([]*model.Agent, error) {
+	rows, err := m.ListAgents(ctx, history)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*model.Agent, len(rows))
+	for i := range rows {
+		out[i] = &rows[i]
+	}
+	return out, nil
+}
+
+// AgentPair returns owned reciprocal HA members for pointer-based consumers.
+func (m *Manager) AgentPair(ctx context.Context, id string) ([]*model.Agent, error) {
+	rows, err := m.ReadHAPair(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*model.Agent, len(rows))
+	for i := range rows {
+		out[i] = &rows[i]
+	}
+	return out, nil
+}
+
+// AgentName returns only an original stored string name, including an explicitly
+// empty string. Stored scalar projections are not a replacement for this evidence.
+func AgentName(a *model.Agent) (string, bool) {
+	if a == nil {
+		return "", false
+	}
+	return storedText(a.MemberJSON("name"))
+}

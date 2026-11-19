@@ -8,7 +8,10 @@ package agents_test
 // _ask themselves are in internal/agents/upgrades (address_test.go).
 
 import (
+	agentcore "configflow/internal/agents"
+	"configflow/internal/model"
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -418,7 +421,7 @@ func TestContainerWithAgentIPIsSentToItsEnvironment(t *testing.T) {
 
 func TestContainerWithoutAgentIPChangesOnlyTheRecord(t *testing.T) {
 	e := newAddressEnv(t)
-	if _, err := e.manager().UpdateAgent(e.s.Context(), e.agent.GetString("id"), jsonx.Obj("deployment_method", "docker")); err != nil {
+	if _, err := e.manager().EditAgent(e.s.Context(), e.agent.GetString("id"), agentEditsForTest(t, jsonx.Obj("deployment_method", "docker"))); err != nil {
 		t.Fatal(err)
 	}
 	d := newDevice(t, []string{oldHost, newHost}, "", false, 200)
@@ -501,4 +504,30 @@ func TestSameNamedRecordAtThatAddressBlocksTheChange(t *testing.T) {
 	if len(d.calls) != 0 || e.host() != oldHost {
 		t.Fatal("changed")
 	}
+}
+
+func agentModelForTest(t testing.TB, value any) *model.Agent {
+	t.Helper()
+	raw, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var a model.Agent
+	if err := json.Unmarshal(raw, &a); err != nil {
+		t.Fatal(err)
+	}
+	return &a
+}
+
+func agentEditsForTest(t testing.TB, value any) agentcore.AgentEdits {
+	t.Helper()
+	raw, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	edits, err := agentcore.DecodeAgentEdits(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return edits
 }

@@ -16,6 +16,7 @@ import (
 	"configflow/internal/agents"
 	"configflow/internal/agents/agentfake"
 	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 	"configflow/internal/provider"
 	"configflow/internal/repo"
 )
@@ -230,5 +231,37 @@ func TestDisconnectedBoundRequestCompletesPublicationAndArtifacts(t *testing.T) 
 	}
 	if len(f.fake.Journal()) != 1 {
 		t.Fatal("browser cancellation stopped upload")
+	}
+}
+
+func TestNativePairOwnerTakesPrecedenceAndRuntimeGuards(t *testing.T) {
+	f := newPublish(t, agentfake.Options{}, nil)
+	startGlobalPublishRuntime(t, f.ctx)
+	nativeCalls, legacyCalls := 0, 0
+	restoreLegacy := SetPairPublisher(func(context.Context, *agents.Manager, string, *Bundle, PublishOptions) (*agents.Result, bool, error) {
+		legacyCalls++
+		return nil, true, nil
+	})
+	defer restoreLegacy()
+	restoreNative := SetPairPublication(func(ctx context.Context, _ *agents.Manager, _ string, _ *Bundle, _ PublishOptions) (*model.Deployment, bool, error) {
+		nativeCalls++
+		if ctx.Err() != nil {
+			t.Fatal("stopped owner was dispatched")
+		}
+		var result model.Deployment
+		err := json.Unmarshal([]byte(`{"success":true,"deployment_id":"native-owner"}`), &result)
+		return &result, true, err
+	})
+	defer restoreNative()
+	bound := lifecycle.BindRequest(f.ctx)
+	request, disconnect := context.WithCancel(bound)
+	disconnect()
+	result, err := Publish(request, f.m, "publish-agent", nil, PublishOptions{})
+	if err != nil || result.GetString("deployment_id") != "native-owner" || nativeCalls != 1 || legacyCalls != 0 {
+		t.Fatal("native owner did not run once", result, err, nativeCalls, legacyCalls)
+	}
+	lifecycle.Stop(8 * time.Second)
+	if _, err = Publish(bound, f.m, "publish-agent", nil, PublishOptions{}); !errors.Is(err, context.Canceled) || nativeCalls != 1 || legacyCalls != 0 {
+		t.Fatal("shutdown dispatched owner", err, nativeCalls, legacyCalls)
 	}
 }

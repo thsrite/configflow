@@ -7,10 +7,11 @@ import (
 	"context"
 	"sync"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/notifications"
 	"configflow/internal/repo"
 	"configflow/internal/tasks"
+	"configflow/internal/taskstatus"
 )
 
 var (
@@ -67,7 +68,7 @@ func Init(ctx context.Context) (*Manager, error) {
 
 // AgentRowFunc builds the /api/tasks row of one Agent for one category, nil
 // when the Agent has none (statuses is the loaded task-status document).
-type AgentRowFunc func(ctx context.Context, agent *jsonx.Object, statuses *jsonx.Object) (*jsonx.Object, error)
+type AgentRowFunc func(ctx context.Context, agent *model.Agent, statuses taskstatus.Snapshot) (*tasks.Task, error)
 
 var (
 	rowsMu       sync.Mutex
@@ -89,25 +90,26 @@ func setAgentRow(slot *AgentRowFunc, fn AgentRowFunc) {
 	complete := ruleSyncRow != nil && dnsFollowRow != nil
 	rowsMu.Unlock()
 	if complete {
-		tasks.SetRows(tasks.SlotAgents, agentRows)
+		tasks.SetRowBuilder(tasks.SlotAgents, agentRows)
 	}
 }
 
 // agentRows is routes/tasks._agent_rows(get_agent_manager(), statuses).
-func agentRows(ctx context.Context, statuses *jsonx.Object) ([]*jsonx.Object, error) {
+func agentRows(ctx context.Context, statuses taskstatus.Snapshot) ([]*tasks.Task, error) {
 	manager, err := Get(ctx)
 	if err != nil {
 		return nil, err
 	}
-	agents, err := manager.GetAllAgents(ctx, true)
+	agents, err := manager.ListAgents(ctx, true)
 	if err != nil {
 		return nil, err
 	}
 	rowsMu.Lock()
 	builders := []AgentRowFunc{ruleSyncRow, dnsFollowRow}
 	rowsMu.Unlock()
-	rows := []*jsonx.Object{}
-	for _, agent := range agents {
+	rows := []*tasks.Task{}
+	for i := range agents {
+		agent := &agents[i]
 		for _, build := range builders {
 			row, err := build(ctx, agent, statuses)
 			if err != nil {
@@ -132,15 +134,15 @@ func Wire() {
 			logger.Errorf("初始化 Agent 管理器失败：%s", err)
 		}
 	}})
-	notifications.SetSources(notifications.Sources{Agents: NotificationAgents})
+	notifications.SetInputs(notifications.Inputs{Agents: NotificationAgents})
 }
 
 // NotificationAgents is the notification list's Agent source:
 // get_agent_manager().get_all_agents().
-func NotificationAgents(ctx context.Context) ([]*jsonx.Object, error) {
+func NotificationAgents(ctx context.Context) ([]model.Agent, error) {
 	manager, err := Get(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return manager.GetAllAgents(ctx, true)
+	return manager.ListAgents(ctx, true)
 }

@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
-	"time"
 	"unicode/utf8"
 )
 
@@ -19,16 +18,6 @@ type Store struct {
 	*NativeStore
 	ReadJSON  func(string) *jsonx.Object
 	WriteJSON func(string, *jsonx.Object) (*jsonstore.Signature, error)
-}
-
-func toObject(value any) (*jsonx.Object, error) {
-	raw, err := json.Marshal(value)
-	if err != nil {
-		return nil, err
-	}
-	var out *jsonx.Object
-	err = json.Unmarshal(raw, &out)
-	return out, err
 }
 
 // New returns the compatibility facade. Native callers use NewNative.
@@ -76,25 +65,17 @@ func Get(ctx context.Context) (*Store, error) {
 	return New(native.files.DataDir), nil
 }
 
-// Load returns a compatibility copy of the native document.
-func (s *Store) Load(id string, at *time.Time) *jsonx.Object {
-	out, _ := toObject(s.LoadDocument(id, at))
-	return out
-}
-
-// LoadStatus returns a compatibility copy of native metadata.
-func (s *Store) LoadStatus(id string) any {
+// StatusOf returns object metadata for legacy discovery consumers.
+func (s *Store) StatusOf(id string) *jsonx.Object {
 	raw := s.StatusJSON(id)
 	if len(raw) == 0 {
 		return nil
 	}
-	value, _ := jsonx.Parse(raw)
-	return value
-}
-
-// StatusOf returns object metadata for legacy discovery consumers.
-func (s *Store) StatusOf(id string) *jsonx.Object {
-	out, _ := s.LoadStatus(id).(*jsonx.Object)
+	value, err := jsonx.Parse(raw)
+	if err != nil {
+		return nil
+	}
+	out, _ := value.(*jsonx.Object)
 	return out
 }
 

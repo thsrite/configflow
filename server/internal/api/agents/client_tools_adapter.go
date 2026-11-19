@@ -434,7 +434,7 @@ func clearClientDiscovery(ctx context.Context, id string) (bool, error) {
 	if err != nil || agent == nil {
 		return false, err
 	}
-	traffic, err := trafficstore.Get(ctx)
+	traffic, err := trafficstore.GetNative(ctx)
 	if err != nil {
 		return false, err
 	}

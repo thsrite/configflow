@@ -1,6 +1,6 @@
 package dnsfollow
 
-// This file alone adapts the legacy repository/registry/event/task APIs.
+// Typed repository, registry, event and task collaborators.
 import (
 	"configflow/internal/jsondecode"
 	"context"
@@ -13,7 +13,6 @@ import (
 
 	"configflow/internal/agents"
 	"configflow/internal/deploy"
-	"configflow/internal/jsonx"
 	"configflow/internal/logx"
 	"configflow/internal/model"
 	"configflow/internal/notifications"
@@ -24,21 +23,6 @@ import (
 
 var logger = logx.Get("backend.agents.dns_follow")
 var errUnchanged = errors.New("follow state unchanged")
-
-func (s *Service) decodeAgent(ctx context.Context, raw *agents.Record) (*agent, error) {
-	if raw == nil {
-		return nil, nil
-	}
-	encoded, err := json.Marshal(raw)
-	if err != nil {
-		return nil, err
-	}
-	var a model.Agent
-	if err = json.Unmarshal(encoded, &a); err != nil {
-		return nil, err
-	}
-	return s.modelAgent(ctx, &a)
-}
 
 func (s *Service) modelAgent(ctx context.Context, a *model.Agent) (*agent, error) {
 	if a == nil {
@@ -288,7 +272,7 @@ func (s *Service) request(ctx context.Context, a *agent, path, deploymentID stri
 	if deploymentID != "" {
 		path += "?" + url.Values{"deployment_id": {deploymentID}}.Encode()
 	}
-	raw, err := s.m.DeploymentRequest(ctx, a.target.Record, http.MethodGet, path, nil, nil, nil)
+	raw, err := s.m.DeploymentRequestModel(ctx, a.Agent, http.MethodGet, path, nil, nil, nil)
 	if err != nil {
 		var transport *agents.TransportError
 		if errors.As(err, &transport) {
@@ -316,37 +300,18 @@ func (s *Service) request(ctx context.Context, a *agent, path, deploymentID stri
 // deviceName labels Agent call failures: the stored name, or "Agent" when the
 // record has none (Python agent.get("name", "Agent")).
 func deviceName(a *agent) string {
-	if v, ok := a.target.Record.Get("name"); ok {
-		if text, ok := v.(string); ok {
-			return text
-		}
+	if text, ok := agents.AgentName(a.Agent); ok {
+		return text
 	}
 	return msgDefaultAgentName
 }
-
-// sourceName is the selectable source label: the stored name when present,
-// else the Agent ID (Python agent.get("name", agent["id"])).
 func sourceName(a *agent) string {
-	if v, ok := a.target.Record.Get("name"); ok {
-		if text, ok := v.(string); ok {
-			return text
-		}
+	if text, ok := agents.AgentName(a.Agent); ok {
+		return text
 	}
 	return a.ID
 }
 
-func (s *Service) tokens(list []*agent) []any {
-	secrets := redact.Secrets{}
-	for _, a := range list {
-		secrets = redact.CollectCredentials(a.target.Record, secrets)
-		secrets = append(secrets, a.Token)
-	}
-	out := make([]any, len(secrets))
-	for i, v := range secrets {
-		out[i] = v
-	}
-	return out
-}
 func (s *Service) safe(message string, list []*agent) string {
 	return redact.DiagnosticText(message, s.secrets(list), 0)
 }
@@ -404,7 +369,7 @@ func (s *Service) recordOutcome(ctx context.Context, id, status, message string)
 		return e
 	}
 	store := notifications.TaskStatus(ctx, s.m.Repository().DataDir())
-	_, err := store.RecordContext(ctx, "dns_follow:"+id, taskstatus.Result{OK: status == "succeeded", Trigger: "event", Error: message})
+	_, err := store.SaveResult(ctx, "dns_follow:"+id, taskstatus.Result{OK: status == "succeeded", Trigger: "event", Error: message})
 	return err
 }
 func (s *Service) logState(a *agent, previous model.DNSFollowState, current model.DNSFollowState, list []*agent) {
@@ -427,29 +392,38 @@ func (s *Service) saveDraft(ctx context.Context, profile string, fn func(context
 	if e := ctx.Err(); e != nil {
 		return e
 	}
-	_, _, e := s.m.Repository().UpdateProfileTransaction(ctx, profile, func(tx context.Context, raw *jsonx.Object) (*jsonx.Object, error) {
-		if e := ctx.Err(); e != nil {
-			return nil, e
+	_, e := s.m.Repository().UpdateProfile(ctx, profile, func(tx context.Context, stored *model.Profile) error {
+		if e := tx.Err(); e != nil {
+			return e
 		}
-		next, e := fn(tx, deploy.NewSource(raw, nil))
+		data, e := model.Marshal(stored)
 		if e != nil {
-			return nil, e
+			return e
+		}
+		source, e := deploy.SourceFromJSON(data, nil)
+		if e != nil {
+			return e
+		}
+		next, e := fn(tx, source)
+		if e != nil {
+			return e
 		}
 		if next == nil {
-			return nil, errUnchanged
+			return errUnchanged
 		}
-		b, e := next.Raw()
+		data, e = next.Raw()
 		if e != nil {
-			return nil, e
+			return e
 		}
-		v, e := jsonx.Parse(b)
-		if e != nil {
-			return nil, e
+		var replacement model.Profile
+		if e = json.Unmarshal(data, &replacement); e != nil {
+			return e
 		}
-		if e := ctx.Err(); e != nil {
-			return nil, e
+		if e = tx.Err(); e != nil {
+			return e
 		}
-		return v.(*jsonx.Object), nil
+		*stored = replacement
+		return nil
 	})
 	if errors.Is(e, errUnchanged) {
 		return nil
@@ -457,33 +431,40 @@ func (s *Service) saveDraft(ctx context.Context, profile string, fn func(context
 	return e
 }
 
-func taskRow(ctx context.Context, raw *agents.Record, statuses *jsonx.Object) (*jsonx.Object, error) {
-	if raw.GetString("service_type") != "oxidns" {
+func agentTaskRow(ctx context.Context, a *model.Agent, statuses taskstatus.Snapshot) (*tasks.Task, error) {
+	if a.ServiceType != "oxidns" {
 		return nil, nil
 	}
-	id := raw.GetString("id")
+	id := a.ID
 	key := "dns_follow:" + id
-	isEnabled := jsonx.Truthy(raw.Value("dns_follow"))
-	if !isEnabled && !statuses.Has(key) {
-		return nil, nil
-	}
-	state := raw.GetObject("dns_follow_state")
-	status := state.GetString("status")
-	history, err := tasks.History(statuses.GetObject(key))
+	raw, _, err := a.MemberJSON("dns_follow")
 	if err != nil {
 		return nil, err
 	}
-	if status == "succeeded" || status == "failed" {
-		last := "success"
-		detail := ""
-		if status == "failed" {
-			last = "failed"
-			detail = state.GetString("message")
-		}
-		history.Set("last_status", last)
-		history.Set("last_error", detail)
+	enabled, err := model.JSONHasContent(raw)
+	if err != nil {
+		return nil, err
 	}
-	label := raw.GetString("name")
+	_, recorded := statuses[key]
+	if !enabled && !recorded {
+		return nil, nil
+	}
+	history, err := tasks.ProjectHistory(statuses.Entry(key))
+	if err != nil {
+		return nil, err
+	}
+	status, message := "", ""
+	if state := a.DNSFollowState; state != nil {
+		status, message = state.Status, state.Message
+	}
+	if status == "succeeded" || status == "failed" {
+		last, detail := "success", ""
+		if status == "failed" {
+			last, detail = "failed", message
+		}
+		history.LastStatus, history.LastError = &last, &detail
+	}
+	label, _ := agents.AgentName(a)
 	if label == "" {
 		label = id
 	}
@@ -491,31 +472,36 @@ func taskRow(ctx context.Context, raw *agents.Record, statuses *jsonx.Object) (*
 	if status == "failed" {
 		hint = ""
 	}
-	message := ""
+	stateMessage := ""
 	if status == "waiting" || running(status) {
-		message = state.GetString("message")
+		stateMessage = message
 	}
-	row := tasks.Row(key, "dns_follow", label, "resource_id", id, "enabled", isEnabled, "schedule_text", msgSchedule, "can_run", isEnabled && status == "failed", "run_hint", hint, "running", running(status), "link", "/agents", "state_message", message)
-	row.Update(history)
-	// Old imported names/history may contain another Agent's credentials too.
+	link := "/agents"
+	row := &tasks.Task{Key: key, Category: "dns_follow", Name: label, ResourceID: id, Enabled: enabled, ScheduleText: msgSchedule, CanRun: enabled && status == "failed", RunHint: hint, Running: running(status), Link: &link, StateMessage: stateMessage, HistoryData: history}
 	m, err := agents.Get(ctx)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := m.GetAllAgents(ctx, true)
+	rows, err := m.ReadAgents(ctx, true, nil)
 	if err != nil {
 		return nil, err
 	}
 	secrets := redact.Secrets{}
-	for _, a := range rows {
-		secrets = redact.CollectCredentials(a, secrets)
-		secrets = append(secrets, a.GetString("token"))
+	for i := range rows {
+		data, err := model.Marshal(rows[i])
+		if err != nil {
+			return nil, err
+		}
+		secrets = redact.CollectCredentials(json.RawMessage(data), secrets)
 	}
-	sanitized, err := jsonx.Parse(redact.SanitizeCredentials(row, secrets))
+	data, err := json.Marshal(row)
 	if err != nil {
 		return nil, err
 	}
-	return sanitized.(*jsonx.Object), nil
+	if err := json.Unmarshal(redact.SanitizeCredentials(json.RawMessage(data), secrets), row); err != nil {
+		return nil, err
+	}
+	return row, nil
 }
 
 func timestamp(t time.Time) string {

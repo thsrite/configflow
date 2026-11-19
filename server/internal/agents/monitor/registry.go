@@ -65,7 +65,7 @@ func Origin(agent *model.Agent) (string, error) {
 		return "", unreachable()
 	}
 	host = strings.TrimSuffix(strings.TrimPrefix(host, "["), "]")
-	if canonical, v6, valid := pyIPAddress(host); valid {
+	if canonical, v6, valid := parseIP(host); valid {
 		host = canonical
 		if v6 {
 			host = "[" + host + "]"
@@ -134,3 +134,13 @@ func protocolAnswer(response *agents.Response, limit int, fail func(string, int)
 	}
 	return fields, nil
 }
+
+type agentsManager struct{ *agents.Manager }
+
+func (m agentsManager) WithReadSnapshot(ctx context.Context, fn func(context.Context) error) error {
+	return m.Repository().WithReadSnapshot(ctx, fn)
+}
+
+func (m agentsManager) DataDir() string { return m.Repository().DataDir() }
+
+func (m agentsManager) RegistryManager() *agents.Manager { return m.Manager }

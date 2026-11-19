@@ -138,11 +138,15 @@ func (s *Service) Tick(ctx context.Context) (bool, error) {
 		status := text(latest["status"])
 		if status != "succeeded" && status != "failed" && status != "rolled_back" && status != "rollback_failed" {
 			idle = false
-			task, e := s.Manager.GetDeployment(ctx, text(a["id"]), did)
+			task, e := s.Manager.GetDeploymentModel(ctx, text(a["id"]), did)
 			if e != nil {
 				continue
 			}
-			latest = native(task)
+			data, err := model.Marshal(task)
+			if err != nil {
+				continue
+			}
+			latest = object(data)
 		}
 		if text(latest["status"]) != "succeeded" || yes(latest["manual_rollback"]) {
 			continue

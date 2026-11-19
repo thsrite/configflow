@@ -47,8 +47,8 @@ func Register() {
 	}})
 }
 
-// Publish reserves a pair, leaving single-device publications to deploy.
-func (s *Service) Publish(ctx context.Context, id string, b *deploy.Bundle, o deploy.PublishOptions) (out *agents.Result, handled bool, err error) {
+// PublishPair reserves a pair, leaving single-device publications to deploy.
+func (s *Service) PublishPair(ctx context.Context, id string, b *deploy.Bundle, o deploy.PublishOptions) (out *model.Deployment, handled bool, err error) {
 	err = deploy.RunDetached(ctx, "oxidns-ha-publish", func(ctx context.Context) error {
 		members, e := s.pair(ctx, id)
 		if e != nil {
@@ -171,12 +171,12 @@ func sameBaseline(members []*agent) bool {
 	return len(members) == 2
 }
 
-// Deployment aggregates the authoritative pair journal while retaining child details.
-func (s *Service) Deployment(ctx context.Context, id, did string) (out *agents.Result, err error) {
+// PairDeployment aggregates the authoritative pair journal while retaining child details.
+func (s *Service) PairDeployment(ctx context.Context, id, did string) (out *model.Deployment, err error) {
 	err = deploy.RunDetached(ctx, "oxidns-ha-deployment", func(ctx context.Context) error { var e error; out, e = s.deployment(ctx, id, did, true); return e })
 	return
 }
-func (s *Service) deployment(ctx context.Context, id, did string, reconcile bool) (*agents.Result, error) {
+func (s *Service) deployment(ctx context.Context, id, did string, reconcile bool) (*model.Deployment, error) {
 	a, e := s.get(ctx, id)
 	if e != nil {
 		return nil, e
@@ -190,16 +190,13 @@ func (s *Service) deployment(ctx context.Context, id, did string, reconcile bool
 		child, _ = journalChildID(j, id)
 	}
 	if child == "" || child != did {
-		r, e := s.m.GetDeploymentDirect(ctx, id, did)
+		r, e := s.m.ReadDeploymentModel(ctx, id, did)
 		if e != nil {
 			return nil, e
 		}
-		d, e := resultModel(r)
-		if e != nil {
-			return nil, e
-		}
+		d := r
 		if d.HAPublication != nil {
-			return aggregate(&d, d.HAPublication), nil
+			return aggregate(d, d.HAPublication), nil
 		}
 		return r, nil
 	}
@@ -225,8 +222,8 @@ func (s *Service) deployment(ctx context.Context, id, did string, reconcile bool
 	return aggregate(&d, summary(j)), nil
 }
 
-// Activate stages neither member twice and requires current VIP ownership proofs.
-func (s *Service) Activate(ctx context.Context, id, did string) (out *agents.Result, err error) {
+// ActivatePair stages neither member twice and requires current VIP ownership proofs.
+func (s *Service) ActivatePair(ctx context.Context, id, did string) (out *model.Deployment, err error) {
 	err = deploy.RunDetached(ctx, "oxidns-ha-activate", func(ctx context.Context) error {
 		a, e := s.get(ctx, id)
 		if e != nil {
@@ -245,7 +242,7 @@ func (s *Service) Activate(ctx context.Context, id, did string) (out *agents.Res
 				out = r
 				return nil
 			}
-			out, e = s.m.ActivateDeploymentDirect(ctx, id, did)
+			out, e = s.m.ActivateCandidateModel(ctx, id, did)
 			return e
 		}
 		held, release, ok := s.lease(ctx, keys(j))
@@ -299,25 +296,6 @@ func (s *Service) Activate(ctx context.Context, id, did string) (out *agents.Res
 	return
 }
 
-// ServiceOperation fences restart/update/uninstall against a pair reservation.
-func (s *Service) ServiceOperation(ctx context.Context, id string, op func() (*agents.Result, error), uninstall bool) (*agents.Result, error) {
-	raw, err := s.ServiceOperationJSON(ctx, id, func() (json.RawMessage, error) {
-		value, err := op()
-		if err != nil {
-			return nil, err
-		}
-		return json.Marshal(value)
-	}, uninstall)
-	if err != nil {
-		return nil, err
-	}
-	var result agents.Result
-	if err := json.Unmarshal(raw, &result); err != nil {
-		return nil, err
-	}
-	return &result, nil
-}
-
 // ServiceOperationJSON owns the HA lease for a native service operation.
 func (s *Service) ServiceOperationJSON(ctx context.Context, id string, op func() (json.RawMessage, error), uninstall bool) (out json.RawMessage, err error) {
 	err = deploy.RunDetached(ctx, "oxidns-ha-service-operation", func(ctx context.Context) error {
@@ -351,8 +329,8 @@ func (s *Service) ServiceOperationJSON(ctx context.Context, id string, op func()
 	return
 }
 
-// Rules presents pair publications through the native rule-update task envelope.
-func (s *Service) Rules(ctx context.Context, id, method string) (out *agents.Result, code int, err error) {
+// PairRules presents pair publications through the native rule-update task envelope.
+func (s *Service) PairRules(ctx context.Context, id, method string) (out *RuleResult, code int, err error) {
 	err = deploy.RunDetached(ctx, "oxidns-ha-rules", func(ctx context.Context) error {
 		members, e := s.pair(ctx, id)
 		if e != nil {
@@ -371,7 +349,7 @@ func (s *Service) Rules(ctx context.Context, id, method string) (out *agents.Res
 			if active(a) {
 				return refuse(msgRulesBusy)
 			}
-			receipt, e := deploy.NewReceipts(s.m.Repository().DataDir()).Load(ctx, a.target.Record, false)
+			receipt, e := deploy.NewReceipts(s.m.Repository().DataDir()).LoadAgent(ctx, a.Agent, false)
 			if e != nil {
 				return e
 			}

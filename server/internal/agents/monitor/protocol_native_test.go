@@ -239,3 +239,32 @@ func TestLegacyScalarReadsDoNotSerializeUnreadHistory(t *testing.T) {
 		}
 	}
 }
+
+func TestMonitorMachineNumbersRejectNonASCII(t *testing.T) {
+	for _, value := range []string{"１２", "١e٢", "²"} {
+		if metricNumberNative(value) != nil {
+			t.Fatalf("accepted non-ASCII metric %q", value)
+		}
+	}
+	observations, err := ReadMetrics(`server_request_total{plugin_tag="s",protocol="udp"} １２
+server_failed_total{plugin_tag="s",protocol="udp"} 2
+`)
+	if err != nil || len(observations.Servers) != 1 || observations.Servers[0].Requests != nil || observations.Servers[0].Failed == nil {
+		t.Fatalf("invalid metric replaced valid sibling: %#v %v", observations, err)
+	}
+	for _, tc := range []struct {
+		resource string
+		args     [][2]string
+	}{
+		{"logs", [][2]string{{"after", "١٢"}}},
+		{"proxy/delay", [][2]string{{"name", "edge"}, {"timeout", "３０００"}}},
+	} {
+		m, client := nativeFixture(t, `{"success":true}`)
+		m.agent.ServiceType = "mihomo"
+		_, err := CallPanel(context.Background(), m, "dns", tc.resource, "GET", tc.args, nil, "")
+		var failure *Error
+		if !errors.As(err, &failure) || failure.Code != "INVALID_REQUEST" || failure.Status != 400 || client.calls != 0 {
+			t.Fatalf("non-ASCII query: %v, calls %d", err, client.calls)
+		}
+	}
+}

@@ -1,7 +1,9 @@
 package metrics
 
 import (
+	"configflow/internal/model"
 	"context"
+	"encoding/json"
 	"errors"
 	"math/big"
 	"os"
@@ -89,7 +91,7 @@ func agentManager(t *testing.T) (*agents.Manager, *repo.Repository, context.Cont
 
 func heartbeat(t *testing.T, ctx context.Context, m *agents.Manager, metrics *jsonx.Object) {
 	t.Helper()
-	ok, err := m.UpdateHeartbeat(ctx, "agent_1", jsonx.Obj("system_metrics", metrics))
+	ok, err := m.ObserveHeartbeat(ctx, "agent_1", agentModelForTest(t, jsonx.Obj("system_metrics", metrics)))
 	if !ok || err != nil {
 		t.Fatalf("heartbeat %v %v", ok, err)
 	}
@@ -543,4 +545,17 @@ func historyStartupRegistry() *lifecycle.Registry {
 	reg := lifecycle.NewRegistry()
 	reg.RegisterStartup(historyStartup())
 	return reg
+}
+
+func agentModelForTest(t testing.TB, value any) *model.Agent {
+	t.Helper()
+	raw, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var a model.Agent
+	if err := json.Unmarshal(raw, &a); err != nil {
+		t.Fatal(err)
+	}
+	return &a
 }

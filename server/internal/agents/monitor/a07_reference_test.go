@@ -134,6 +134,15 @@ func compareCall(t *testing.T, label string, c *jsonx.Object, result any, err er
 		wantMonitorError(t, err, "AGENT_UNREACHABLE", 502)
 		return
 	}
+	// N8-11: machine query numbers are ASCII. Keep the frozen Python rows as
+	// evidence and assert the approved refusal before comparing other rows.
+	if numericQueryChange(c) {
+		wantMonitorError(t, err, "INVALID_REQUEST", 400)
+		if len(client.calls) != 0 {
+			t.Fatal("invalid numeric query reached device")
+		}
+		return
+	}
 	got := outcomeOf(result, err)
 	if nativePanelExpectation(t, c, got) {
 		if g, w := sortedDump(t, seenOf(client)), normalizeSeen(t, c.GetString("seen")); g != w {
@@ -226,7 +235,7 @@ func TestReferencePanelHelpers(t *testing.T) {
 	for _, item := range ref.GetList("core_version_texts") {
 		c := item.([]any)
 		raw, _ := base64.StdEncoding.DecodeString(c[0].(string))
-		version := pyStrip(agents.DecodeUTF8Replace(raw))
+		version := trimText(agents.DecodeUTF8Replace(raw))
 		var got any
 		if coreVersionPattern.MatchString(version) {
 			got = version
@@ -455,4 +464,23 @@ func TestReferenceRankingScenario(t *testing.T) {
 			t.Fatalf("op %d %s:\n go %s\n py %s", i, op.GetString("op"), g, w)
 		}
 	}
+}
+
+func numericQueryChange(c *jsonx.Object) bool {
+	resource := c.GetString("resource")
+	for _, pair := range pairsOf(c.GetList("args")) {
+		if resource == "logs" && pair[0] == "after" {
+			switch pair[1] {
+			case "١٢", "²", "①", "０":
+				return true
+			}
+		}
+		if strings.HasSuffix(resource, "/delay") && pair[0] == "timeout" {
+			switch pair[1] {
+			case "٣٠٠٠", "０５０００":
+				return true
+			}
+		}
+	}
+	return false
 }

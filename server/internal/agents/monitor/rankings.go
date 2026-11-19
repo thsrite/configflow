@@ -853,7 +853,7 @@ func rankingRound(ctx context.Context) {
 	}()
 	manager, err := agents.Get(scope)
 	if err == nil {
-		err = CollectRound(scope, RoundManagerFromAgents(manager), nil, nil)
+		err = CollectHistoryRound(scope, agentsManager{manager}, nil, nil)
 	}
 	if err != nil {
 		rankingLogger.Exception("OxiDNS ranking collection round failed", err)

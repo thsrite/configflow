@@ -63,6 +63,12 @@ func TestReferenceMetrics(t *testing.T) {
 			summary, _ := SummarizeMetrics(text)
 			result = jsonx.Obj("parsed", parsed, "summary", summary)
 		}
+		if want, changed := asciiMetricExpectation(text); changed {
+			if !jsonx.Equal(result, want) {
+				t.Fatalf("ASCII metric refusal %q: got %s want %s", text, dumpSorted(t, result), dumpSorted(t, want))
+			}
+			continue
+		}
 		if want, bound := nativeStateExpectation(t, "metrics", c); bound {
 			if got := dumpSorted(t, result); got != want {
 				t.Errorf("native metric number: got %s want %s", got, want)
@@ -127,7 +133,7 @@ func TestReferenceIPAddresses(t *testing.T) {
 	}
 	for _, item := range ref.GetList("ip") {
 		pair := item.([]any)
-		canonical, _, ok := pyIPAddress(pair[0].(string))
+		canonical, _, ok := parseIP(pair[0].(string))
 		var got any
 		if ok {
 			got = canonical
@@ -364,4 +370,31 @@ func TestReferenceAdvanceAndTotals(t *testing.T) {
 	if failures > 0 {
 		t.Errorf("%d advance cases differ", failures)
 	}
+}
+
+// asciiMetricExpectation binds only the frozen rows affected by N8-11's ASCII
+// decision. Expected null fields and remaining valid counters are explicit.
+func asciiMetricExpectation(text string) (any, bool) {
+	token := ""
+	for _, value := range []string{"１２", "٣", "1٣", "٣.٥", "١e٢", "𝟘𝟙", "7 ١٢٣"} {
+		if text == `cache_entry_count{plugin_tag="c"} `+value || text == serverText("s", "udp", value, 0, value, 4, 0) {
+			token = value
+			break
+		}
+	}
+	if token == "" {
+		return nil, false
+	}
+	servers, caches := []any{}, []any{}
+	summaryServers, summaryCaches := []any{}, []any{}
+	failed, inflight := any(nil), any(nil)
+	if strings.HasPrefix(text, "cache_") && token != "7 ١٢٣" {
+		caches = []any{jsonx.Obj("tag", "c", "lookups", nil, "fresh_hits", nil, "stale_hits", nil, "misses", nil, "expired", nil, "entries", nil)}
+		summaryCaches = []any{jsonx.Obj("tag", "c", "lookups", nil, "fresh_hits", nil, "stale_hits", nil, "misses", nil, "expired", nil, "entries", nil, "hits", nil, "hit_rate", nil)}
+	} else if strings.HasPrefix(text, "server_") {
+		failed, inflight = 0, 0
+		servers = []any{jsonx.Obj("tag", "s", "protocol", "udp", "requests", nil, "failed", 0, "inflight", 0, "latency_sum_ms", nil, "latency_count", 4)}
+		summaryServers = []any{jsonx.Obj("tag", "s", "protocol", "udp", "requests", nil, "failed", 0, "inflight", 0, "avg_latency_ms", nil)}
+	}
+	return jsonx.Obj("parsed", jsonx.Obj("servers", servers, "caches", caches, "upstreams", []any{}), "summary", jsonx.Obj("servers", summaryServers, "caches", summaryCaches, "upstreams", []any{}, "metrics", jsonx.Obj("requests_total", nil, "failed_total", failed, "inflight", inflight, "avg_latency_ms", nil, "cache_hit_rate", nil))), true
 }

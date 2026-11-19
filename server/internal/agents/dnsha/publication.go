@@ -134,7 +134,7 @@ func (s *Service) step(ctx context.Context, j *model.HAJournal) error {
 		return refuse(msgInFlightIdentity)
 	}
 	if b == nil && j.Kind != nil && *j.Kind == "rules" {
-		receipt, e := deploy.NewReceipts(s.m.Repository().DataDir()).Load(ctx, owner.target.Record, true)
+		receipt, e := deploy.NewReceipts(s.m.Repository().DataDir()).LoadAgent(ctx, owner.Agent, true)
 		if e != nil {
 			return e
 		}
@@ -142,7 +142,7 @@ func (s *Service) step(ctx context.Context, j *model.HAJournal) error {
 			return refuse(msgRuleBaseline)
 		}
 		baseline := rulesync.Baseline{Receipt: receipt}
-		baseline.Bundle, e = rulesync.FetchSnapshot(ctx, s.m, owner.target.Record, baseline)
+		baseline.Bundle, e = rulesync.FetchSnapshot(ctx, s.m, owner.Agent, baseline)
 		if e != nil {
 			return e
 		}

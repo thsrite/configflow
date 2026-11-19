@@ -96,7 +96,7 @@ func (s *Service) startEnable(ctx context.Context, a, b *agent, intent model.HAE
 	if e != nil {
 		return nil, e
 	}
-	settings := rulesync.SettingsFor(a.target.Record)
+	settings := rulesync.AgentSettings(a.Agent)
 	j.RuleSyncSettings = &model.RuleSyncSettings{Library: ptr(settings.Library), Rules: ptr(settings.Rules)}
 	j.Warnings = warnings
 	j.Routers = routers

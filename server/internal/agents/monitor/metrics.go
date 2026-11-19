@@ -5,7 +5,6 @@ package monitor
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"math"
 	"math/big"
 	"regexp"
@@ -71,28 +70,14 @@ func fieldNames(fields []fieldMap) []string {
 
 var cacheRowFields = []string{"lookups", "fresh_hits", "stale_hits", "misses", "expired", "entries"}
 
-// pySpaceClass is re's \s for str patterns (str.isspace, Unicode 14).
-const pySpaceClass = `\t\n\x0b\x0c\r\x1c-\x20\x85\xa0\x{1680}\x{2000}-\x{200a}\x{2028}\x{2029}\x{202f}\x{205f}\x{3000}`
-
-// sampleRE is _SAMPLE with Python's Unicode \S and \d.
-var sampleRE = regexp.MustCompile(`^([a-zA-Z_:][a-zA-Z0-9_:]*)(?:\{(.*)\})?[ \t]+([^` + pySpaceClass + `]+)(?:[ \t]+[+-]?[` + pyDigitClass() + `]+)?[ \t]*$`)
-
-// pyDigitClass is the contents of a character class matching re's \d for
-// str patterns (str.isdecimal of CPython 3.11).
-func pyDigitClass() string {
-	var b strings.Builder
-	for _, start := range pyDecimalStarts {
-		b.WriteString(fmt.Sprintf(`\x{%x}-\x{%x}`, start, start+9))
-	}
-	return b.String()
-}
+// sampleRE accepts Prometheus machine numbers and ASCII timestamps.
+var sampleRE = regexp.MustCompile(`^([a-zA-Z_:][a-zA-Z0-9_:]*)(?:\{(.*)\})?[ \t]+([^ \t\r\n]+)(?:[ \t]+[+-]?[0-9]+)?[ \t]*$`)
 
 var labelRE = regexp.MustCompile(`^([a-zA-Z_][a-zA-Z0-9_]*)[ \t]*=[ \t]*"((?:[^"\\]|\\["\\n])*)"`)
 
 var escapeRE = regexp.MustCompile(`\\(["\\n])`)
 
-// numberRE is _NUMBER on text whose Unicode decimal digits were replaced by
-// ASCII ones.
+// numberRE validates finite ASCII metric numbers before native parsing.
 var numberRE = regexp.MustCompile(`^[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?$`)
 
 var integerRE = regexp.MustCompile(`^[+-]?[0-9]+$`)
@@ -142,25 +127,10 @@ func labels(text string, present bool) map[string]string {
 	return result
 }
 
-// toASCIIDigits replaces the Unicode decimal digits Python's \d, float()
-// and int() accept with ASCII ones; digits counts them.
-func toASCIIDigits(text string) (ascii string, digits int) {
-	var b strings.Builder
-	for _, r := range text {
-		if v := pyDecimalValue(r); v >= 0 {
-			b.WriteByte(byte('0' + v))
-			digits++
-		} else {
-			b.WriteRune(r)
-		}
-	}
-	return b.String(), digits
-}
-
 // metricNumber is _number: nil for anything that is not a finite,
 // non-negative number; integer texts stay exact ints.
 func metricNumberNative(text string) *MetricNumber {
-	ascii, _ := toASCIIDigits(text)
+	ascii := text
 	if !numberRE.MatchString(ascii) {
 		return nil
 	}
@@ -310,11 +280,11 @@ func ReadMetrics(text string) (*Observations, error) {
 		row.present[index] = true
 	}
 	sampleCount := 0
-	for _, raw := range pySplitLines(text) {
+	for _, raw := range splitMetricLines(text) {
 		if runeLen(raw) > MaxLineLength {
 			return nil, &MetricsError{"OxiDNS metrics line exceeds size limit"}
 		}
-		line := pyStrip(raw)
+		line := trimText(raw)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
@@ -378,7 +348,7 @@ func ReadMetrics(text string) (*Observations, error) {
 // parseSample is _SAMPLE.fullmatch(line).
 func parseSample(line string) (name, labelText string, hasLabels bool, value string, ok bool) {
 	m := sampleRE.FindStringSubmatchIndex(line)
-	if m == nil {
+	if m == nil || strings.ContainsFunc(line[m[6]:m[7]], textSpace) {
 		return "", "", false, "", false
 	}
 	if m[4] >= 0 {

@@ -25,7 +25,7 @@ func TestWronglyTypedAgentMembersFollowPythonEquality(t *testing.T) {
 	must(t, err)
 	proofs := f.enroll(t) // registers both cores while the unrelated record exists
 	mihomoID := text(object(proofs["mihomo"])["id"])
-	_, err = f.s.Manager.UpdateAgent(f.ctx, mihomoID, jsonx.Obj("port", "8080"))
+	_, err = f.s.Manager.EditAgent(f.ctx, mihomoID, agentEditsForTest(t, jsonx.Obj("port", "8080")))
 	must(t, err)
 	view, err := f.s.Get(f.ctx, f.r.ID)
 	must(t, err)

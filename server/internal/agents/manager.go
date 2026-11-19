@@ -399,25 +399,17 @@ func objOr(value any) *jsonx.Object {
 // derived by the freshness rule (offline after two minutes without a
 // heartbeat). history=false leaves the publication history unread.
 func (m *Manager) GetAllAgents(ctx context.Context, history bool) ([]*jsonx.Object, error) {
-	return m.GetAllAgentsInspect(ctx, history, nil)
-}
-
-// GetAllAgentsInspect inspects each raw record before history projection,
-// preserving GetAllAgents' runtime overlay and online-status calculation.
-// inspect must not mutate or retain records; N8-5 must keep this capability.
-func (m *Manager) GetAllAgentsInspect(ctx context.Context, history bool, inspect func(*jsonx.Object)) ([]*jsonx.Object, error) {
-	agents, err := m.agentsInspect(ctx, history, inspect)
+	records, err := m.agents(ctx, history)
 	if err != nil {
 		return nil, err
 	}
-	for _, agent := range agents {
-		agent.Set("status", OnlineStatus(agent, nil))
+	for _, record := range records {
+		record.Set("status", OnlineStatus(record, nil))
 	}
-	return agents, nil
+	return records, nil
 }
 
-// GetAgentByID is get_agent_by_id(agent_id, history=...): the record with
-// its stored status (never derived offline), nil when unknown.
+// GetAgentByID adapts an individual native snapshot for remaining W5/W6 callers.
 func (m *Manager) GetAgentByID(ctx context.Context, agentID string, history bool) (*jsonx.Object, error) {
 	record, err := m.ReadAgent(ctx, agentID, history)
 	if err != nil || record == nil {
@@ -432,35 +424,10 @@ func (m *Manager) GetAgentByID(ctx context.Context, agentID string, history bool
 	return raw, err
 }
 
-// GetAgentByToken is get_agent_by_token(token).
-func (m *Manager) GetAgentByToken(ctx context.Context, token string) (*jsonx.Object, error) {
-	record, err := m.ReadAgentByToken(ctx, token)
-	if err != nil || record == nil {
-		return nil, err
-	}
-	return agentObject(record)
-}
-
 var editableFields = []string{"name", "host", "port", "enabled", "service_type", "profile_id"}
 var guardedFields = []string{"host", "port", "enabled", "service_type", "profile_id"}
 
-// UpdateAgent is update_agent(agent_id, updates): the editable fields only;
-// false when the Agent does not exist.
-func (m *Manager) UpdateAgent(ctx context.Context, agentID string, updates *jsonx.Object) (bool, error) {
-	data, err := json.Marshal(updates)
-	if err != nil {
-		return false, err
-	}
-	edits, err := DecodeAgentEdits(data)
-	if err != nil {
-		return false, err
-	}
-	return m.EditAgent(ctx, agentID, edits)
-}
-
-// RebindProfileAgents is rebind_profile_agents(source, target,
-// expected_agent_ids): move exactly the reviewed bindings together, under
-// the deployment transaction lock.
+// RebindProfileAgents adapts the remaining profile consumer to RebindProfiles.
 func (m *Manager) RebindProfileAgents(ctx context.Context, sourceProfileID, targetProfileID, expectedAgentIDs any) (*jsonx.Object, error) {
 	if err := validateProfileID(sourceProfileID); err != nil {
 		return nil, err
@@ -503,17 +470,6 @@ func (m *Manager) RebindProfileAgents(ctx context.Context, sourceProfileID, targ
 // kept in memory only; version and config_version are written to the
 // configuration only when they change. false when the Agent is unknown (or
 // was deleted meanwhile).
-func (m *Manager) UpdateHeartbeat(ctx context.Context, agentID string, heartbeat *jsonx.Object) (bool, error) {
-	payload, err := heartbeatFromObject(heartbeat)
-	if err != nil {
-		return false, err
-	}
-	return m.observeHeartbeat(ctx, agentID, payload, nil)
-}
-
-// heartbeatFromObject reads the reported members by their exact names (Python
-// heartbeat.get(key)); encoding/json struct decoding would fold case. Each
-// value is encoded on its own, giving the bytes the whole-object encoding has.
 func heartbeatFromObject(heartbeat *jsonx.Object) (heartbeatPayload, error) {
 	var payload heartbeatPayload
 	if heartbeat == nil {
@@ -547,19 +503,3 @@ var testRecordHeartbeat func(m *Manager, agent, payload *jsonx.Object, mark int6
 
 // SetDomainDiscovery is set_domain_discovery(agent_id, enabled): only mihomo
 // Agents can enable it. Returns the updated live record, nil when unknown.
-func (m *Manager) SetDomainDiscovery(ctx context.Context, agentID string, enabled bool) (*jsonx.Object, error) {
-	record, err := m.SetDomainDiscoveryModel(ctx, agentID, enabled)
-	if err != nil || record == nil {
-		return nil, err
-	}
-	return agentObject(record)
-}
-
-// SetTrafficHistory changes the management switch through the native registry.
-func (m *Manager) SetTrafficHistory(ctx context.Context, agentID string, enabled bool) (*jsonx.Object, error) {
-	record, err := m.SetTrafficHistoryModel(ctx, agentID, enabled)
-	if err != nil || record == nil {
-		return nil, err
-	}
-	return agentObject(record)
-}

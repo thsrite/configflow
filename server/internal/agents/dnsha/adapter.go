@@ -1,6 +1,6 @@
 package dnsha
 
-// The legacy registry/repository bridge is confined to this file.
+// Native registry/repository collaborators and typed HA result envelopes.
 import (
 	"bytes"
 	"context"
@@ -10,7 +10,6 @@ import (
 	"configflow/internal/agents"
 	"configflow/internal/agents/monitor"
 	"configflow/internal/deploy"
-	"configflow/internal/jsonx"
 	"configflow/internal/logx"
 	"configflow/internal/model"
 	"configflow/internal/redact"
@@ -18,21 +17,6 @@ import (
 )
 
 var logger = logx.Get("backend.agents.oxidns_ha_publish")
-
-func decodeAgent(raw *agents.Record) (*agent, error) {
-	if raw == nil {
-		return nil, nil
-	}
-	data, err := json.Marshal(raw)
-	if err != nil {
-		return nil, err
-	}
-	var a model.Agent
-	if err = json.Unmarshal(data, &a); err != nil {
-		return nil, err
-	}
-	return modelAgent(&a)
-}
 
 func modelAgent(a *model.Agent) (*agent, error) {
 	if a == nil {
@@ -221,14 +205,6 @@ func summary(j *model.HAJournal) *model.HAPublicationSummary {
 	}
 	return result
 }
-func resultModel(r *agents.Result) (model.Deployment, error) {
-	var d model.Deployment
-	b, e := json.Marshal(r)
-	if e == nil {
-		e = json.Unmarshal(b, &d)
-	}
-	return d, e
-}
 func (s *Service) poll(ctx context.Context, id, did string) (model.Deployment, error) {
 	result, err := s.m.ReadDeploymentModel(ctx, id, did)
 	if err != nil {
@@ -288,26 +264,26 @@ func (s *Service) retire(ctx context.Context, id, did, message string, only bool
 	_, err = s.m.RecordDeploymentModel(ctx, id, did, patch, agents.RecordOptions{OnlyUnsubmitted: only})
 	return err
 }
-func aggregate(d *model.Deployment, p *model.HAPublicationSummary) *agents.Result {
+func aggregate(d *model.Deployment, p *model.HAPublicationSummary) *model.Deployment {
 	result, err := agents.HAAggregateModel(d, p)
 	if err != nil {
 		return rejection(msgUnexpected)
 	}
-	var out agents.Result
-	if json.Unmarshal(rawObject(result), &out) != nil {
-		return rejection(msgUnexpected)
-	}
-	return &out
+	return result
 }
-func conflict(a *agent) *agents.Result {
+func conflict(a *agent) *model.Deployment {
 	if !active(a) {
 		return nil
 	}
-	p, _ := jsonx.Parse(rawObject(summary(a.OxiDNSHAPublication)))
-	return jsonx.Obj("success", false, "http_status", 409, "message", msgConflict, "ha_publication", p)
+	result := rejection(msgConflict)
+	result.HAPublication = summary(a.OxiDNSHAPublication)
+	return result
 }
-func rejection(message string) *agents.Result {
-	return jsonx.Obj("success", false, "http_status", 409, "message", message)
+func rejection(message string) *model.Deployment {
+	result := &model.Deployment{HTTPStatus: ptr(model.Int(409)), Message: &message}
+	// Presence of false is part of the response contract; the literal is valid JSON.
+	_ = result.SetJSON("success", []byte(`false`))
+	return result
 }
 func (s *Service) capabilities(ctx context.Context, a *agent) (json.RawMessage, error) {
 	if e := ctx.Err(); e != nil {
@@ -359,46 +335,54 @@ func (s *Service) routersUsing(ctx context.Context, ids []string) ([]model.HARou
 // Wire installs all cross-module hooks, with manager dispatch at the boundary.
 func Wire(m *agents.Manager) { ForManager(m) }
 func installHooks() {
-	deploy.SetPairPublisher(func(ctx context.Context, m *agents.Manager, id string, b *deploy.Bundle, o deploy.PublishOptions) (*agents.Result, bool, error) {
-		return ForManager(m).Publish(ctx, id, b, o)
+	deploy.SetPairPublication(func(ctx context.Context, m *agents.Manager, id string, b *deploy.Bundle, o deploy.PublishOptions) (*model.Deployment, bool, error) {
+		return ForManager(m).PublishPair(ctx, id, b, o)
 	})
 	agents.RegisterHooks(agents.Hooks{
-		HADeployment: func(ctx context.Context, m *agents.Manager, id, did string) (*agents.Result, error) {
-			return ForManager(m).Deployment(ctx, id, did)
+		HADeployment: func(ctx context.Context, m *agents.Manager, id, did string) (*model.Deployment, error) {
+			return ForManager(m).PairDeployment(ctx, id, did)
 		},
-		HAActivate: func(ctx context.Context, m *agents.Manager, id, did string) (*agents.Result, error) {
-			return ForManager(m).Activate(ctx, id, did)
+		HAActivate: func(ctx context.Context, m *agents.Manager, id, did string) (*model.Deployment, error) {
+			return ForManager(m).ActivatePair(ctx, id, did)
 		},
 		HAServiceOperationTyped: func(ctx context.Context, m *agents.Manager, id string, op func() (json.RawMessage, error), uninstall bool) (json.RawMessage, error) {
 			return ForManager(m).ServiceOperationJSON(ctx, id, op, uninstall)
 		},
 	})
-	monitor.SetHARules(func(ctx context.Context, m monitor.Manager, id, method string) (*agents.Result, int, error) {
+	monitor.SetHARulesJSON(func(ctx context.Context, m monitor.Registry, id, method string) (json.RawMessage, int, error) {
 		bridge, ok := m.(interface{ RegistryManager() *agents.Manager })
 		if !ok {
 			return nil, 0, errors.New("HA rules require registry manager")
 		}
 		real := bridge.RegistryManager()
-		r, code, e := ForManager(real).Rules(ctx, id, method)
+		r, code, e := ForManager(real).PairRules(ctx, id, method)
 		if IsUserError(e) {
 			return nil, 0, &monitor.HABusyError{Message: ForManager(real).FailureMessage(ctx, e)}
 		}
-		return r, code, e
+		if e != nil {
+			return nil, code, e
+		}
+		raw, e := json.Marshal(r)
+		return raw, code, e
 	})
 }
 
-func rulesResult(id, status, phase string, j *model.HAJournal) *agents.Result {
-	task := jsonx.Obj("id", id, "status", status, "phase", phase, "downloaded", 0, "download_total", 0, "reloaded", 0, "reload_total", 0)
+// RuleResult is the Agent rule-update envelope for an HA publication.
+type RuleResult struct {
+	Success       bool                        `json:"success"`
+	Task          monitor.RuleTask            `json:"task"`
+	HAPublication *model.HAPublicationSummary `json:"ha_publication,omitempty"`
+}
+
+func rulesResult(id, status, phase string, j *model.HAJournal) *RuleResult {
+	result := &RuleResult{Success: true, Task: monitor.RuleTask{ID: id, Status: status, Phase: phase}}
 	if status == "failed" {
-		task.Set("code", "RULE_UPDATE_FAILED")
-		task.Set("message", j.Message)
+		result.Task.Code, result.Task.Message = "RULE_UPDATE_FAILED", j.Message
 	}
-	r := jsonx.Obj("success", true, "task", task)
 	if j != nil {
-		v, _ := jsonx.Parse(rawObject(summary(j)))
-		r.Set("ha_publication", v)
+		result.HAPublication = summary(j)
 	}
-	return r
+	return result
 }
 
 func truthyJSON(raw json.RawMessage) bool {
@@ -515,4 +499,13 @@ func sameHAIdentity(left, right *model.HAIdentity) bool {
 	}
 	a.Port, b.Port = l, r
 	return equal(&a, &b)
+}
+
+func resultModel(r *agents.Result) (model.Deployment, error) {
+	var d model.Deployment
+	raw, err := json.Marshal(r)
+	if err == nil {
+		err = json.Unmarshal(raw, &d)
+	}
+	return d, err
 }

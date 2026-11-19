@@ -63,7 +63,7 @@ func TestMetricsRoutesServeTheLatestHistoryAndSummary(t *testing.T) {
 		"collected_at", "2026-08-31T00:00:00Z")
 	for _, cpu := range []any{12.5, 7} {
 		sent.GetObject("cpu").Set("usage_percent", cpu)
-		if ok, err := m.UpdateHeartbeat(s.Context(), "agent_1", jsonx.Obj("system_metrics", sent.DeepCopy())); !ok || err != nil {
+		if ok, err := m.ObserveHeartbeat(s.Context(), "agent_1", agentModelForTest(t, jsonx.Obj("system_metrics", sent.DeepCopy()))); !ok || err != nil {
 			t.Fatal(ok, err)
 		}
 	}

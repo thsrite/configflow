@@ -3,6 +3,9 @@ package agents
 // Agent presence is process-local: an Agent is followed after the first online
 // scan, and a restart never logs every offline record as a new transition.
 import (
+	"configflow/internal/jsonresp"
+	"configflow/internal/model"
+	"encoding/json"
 	"sync"
 
 	"configflow/internal/logx"
@@ -65,3 +68,46 @@ func ObserveAgentPresence(records []PresenceObservation, secrets redact.Secrets)
 	presenceKnown = current
 }
 func resetPresence() { presenceMu.Lock(); presenceKnown = map[string]presence{}; presenceMu.Unlock() }
+
+// ObserveRegistryPresence projects only original log metadata and sanitizes rich
+// imported values before rendering them. Histories never enter this projection.
+func ObserveRegistryPresence(records []*model.Agent, secrets redact.Secrets) {
+	observations := make([]PresenceObservation, 0, len(records))
+	for _, record := range records {
+		if record == nil {
+			continue
+		}
+		id, valid := storedText(record.MemberJSON("id"))
+		if !valid {
+			continue
+		}
+		status, _ := storedText(record.MemberJSON("status"))
+		name, present, err := record.MemberJSON("name")
+		content, contentErr := model.JSONHasContent(name)
+		if err == nil && contentErr == nil && (!present || !content) {
+			name, _, err = record.MemberJSON("id")
+		}
+		label := registryDisplay(name, err, secrets)
+		heartbeat, _, err := record.MemberJSON("last_heartbeat")
+		observations = append(observations, PresenceObservation{ID: id, Status: status, Name: label, LastHeartbeat: registryDisplay(heartbeat, err, secrets)})
+	}
+	ObserveAgentPresence(observations, secrets)
+}
+func registryDisplay(raw json.RawMessage, failure error, secrets redact.Secrets) string {
+	if failure != nil {
+		return redact.Redacted
+	}
+	if len(raw) == 0 || string(raw) == "null" {
+		return ""
+	}
+	var text *string
+	if json.Unmarshal(raw, &text) == nil && text != nil {
+		return *text
+	}
+	safe := redact.SanitizeCredentials(raw, secrets)
+	data, err := jsonresp.EncodeUTF8(safe)
+	if err != nil {
+		return redact.Redacted
+	}
+	return string(data)
+}

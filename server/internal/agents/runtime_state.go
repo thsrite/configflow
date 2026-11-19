@@ -561,3 +561,9 @@ func importLegacyDatabase(ctx context.Context, repository *repo.Repository, stat
 		LegacyDatabase, len(current), len(versions))
 	return nil
 }
+
+// RestoreHeartbeat imports a native saved heartbeat without replacing a newer
+// live entry. It preserves cancellation at the shared runtime commit point.
+func (s *RuntimeState) RestoreHeartbeat(ctx context.Context, id string, at float64, heartbeat string, fields *model.Agent) error {
+	return s.seedModel(ctx, id, at, heartbeat, fields)
+}

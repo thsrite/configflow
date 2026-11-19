@@ -609,7 +609,7 @@ func TestClientToolsRejectStaleBindingsAndNames(t *testing.T) {
 				if kind == "policy" {
 					id = "d"
 				}
-				_, err = manager.UpdateAgent(ctx, id, jsonx.Obj("profile_id", "default"))
+				_, err = manager.EditAgent(ctx, id, agentEditsForTest(t, jsonx.Obj("profile_id", "default")))
 			}
 			if err != nil {
 				t.Fatal(err)
@@ -640,7 +640,7 @@ func TestClientDiscoveryReturnsRuntimeOverlay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = manager.UpdateHeartbeat(ctx, "m", jsonx.Obj("version", "2.0.0-live", "service_status", "running", "system_metrics", jsonx.Obj("cpu", jsonx.Obj("usage_percent", 12)))); err != nil {
+	if _, err = manager.ObserveHeartbeat(ctx, "m", agentModelForTest(t, jsonx.Obj("version", "2.0.0-live", "service_status", "running", "system_metrics", jsonx.Obj("cpu", jsonx.Obj("usage_percent", 12))))); err != nil {
 		t.Fatal(err)
 	}
 	record, err := (clientTools{}).SetDiscovery(ctx, "m", true)
@@ -730,4 +730,29 @@ func nativeClientDNSProfile(t *testing.T, config *model.Config) *oxidns.Profile 
 		t.Fatal(err)
 	}
 	return p
+}
+
+func agentModelForTest(t testing.TB, value any) *model.Agent {
+	t.Helper()
+	raw, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var a model.Agent
+	if err := json.Unmarshal(raw, &a); err != nil {
+		t.Fatal(err)
+	}
+	return &a
+}
+func agentEditsForTest(t testing.TB, value any) registry.AgentEdits {
+	t.Helper()
+	raw, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	edits, err := registry.DecodeAgentEdits(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return edits
 }

@@ -164,7 +164,7 @@ func dashboardParams(args [][2]string) (query, error) {
 	var result query
 	for _, key := range uniqueKeys(args) {
 		values := getList(args, key)
-		if len(values) != 1 || key == "recorder" && !ValidRecorderTag(values[0]) ||
+		if len(values) != 1 || key == "recorder" && !validRecorderTag(values[0]) ||
 			key == "range" && !contains(RankingRanges, values[0]) || key != "recorder" && key != "range" {
 			return nil, invalidQuery()
 		}
@@ -241,7 +241,7 @@ func QueryParams(args [][2]string, detail bool) (query, error) {
 		if len(value) > 1024 || strings.ContainsFunc(value, func(r rune) bool { return r < 32 }) {
 			return nil, invalidQuery()
 		}
-		value = pyStrip(value)
+		value = trimText(value)
 		if value == "" {
 			continue
 		}
@@ -276,7 +276,7 @@ func QueryParams(args [][2]string, detail bool) (query, error) {
 			if strings.Contains(value, "%") {
 				return nil, invalidQuery()
 			}
-			canonical, _, ok := pyIPAddress(value)
+			canonical, _, ok := parseIP(value)
 			if !ok {
 				return nil, invalidQuery()
 			}
@@ -330,7 +330,7 @@ func ClientParams(args [][2]string) (query, error) {
 				return nil, invalidQuery()
 			}
 		case "recorder":
-			if !ValidRecorderTag(value) {
+			if !validRecorderTag(value) {
 				return nil, invalidQuery()
 			}
 		default:
@@ -341,7 +341,7 @@ func ClientParams(args [][2]string) (query, error) {
 				return nil, invalidQuery()
 			}
 		}
-		value = pyStrip(value)
+		value = trimText(value)
 		if value != "" {
 			result = result.set(key, value)
 		}

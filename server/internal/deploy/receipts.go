@@ -4,6 +4,7 @@ import (
 	"configflow/internal/agents"
 	"configflow/internal/jsondecode"
 	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"context"
 	"fmt"
@@ -143,6 +144,37 @@ func (r *Receipts) Capture(ctx context.Context, agentID string, b *Bundle, src *
 func (r *Receipts) Load(ctx context.Context, agent *agents.Record, withBundle bool) (*Receipt, error) {
 	view, err := receiptAgent(ctx, agent)
 	if err != nil {
+		return nil, err
+	}
+	return r.loadView(ctx, view, withBundle)
+}
+
+// LoadAgent reads the same receipt owner using an owned native Agent snapshot.
+func (r *Receipts) LoadAgent(ctx context.Context, agent *model.Agent, withBundle bool) (*Receipt, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	var view receiptAgentView
+	data, err := model.Marshal(agent)
+	if err != nil {
+		return nil, err
+	}
+	_ = jsondecode.Unmarshal(data, &view)
+	if view.ProfileID == "" {
+		repository, err := repo.GetRepository(ctx)
+		if err != nil {
+			return nil, err
+		}
+		view.ProfileID, err = repository.DefaultProfileID(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return r.loadView(ctx, view, withBundle)
+}
+
+func (r *Receipts) loadView(ctx context.Context, view receiptAgentView, withBundle bool) (*Receipt, error) {
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	a := view.Applied

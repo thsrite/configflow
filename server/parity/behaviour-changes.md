@@ -2336,3 +2336,9 @@ R3 确认沿用 HR 已补登的 HTTP 最短浮点文本，≥1e6 用指数形式
 - 文件读取保留原拒绝类别和配置文件名，OS/UTF-8 内部错误后缀使用 Go 原生诊断；写 JSON 文件使用 encoding/json 缩进。中文业务错误、HTTP 状态和正常文件内容含义不变；不仿 Python 异常文本。旧 file-reader 的非标准 NaN 兼容仅留在 legacy.go，W9 删除旧入口时收束，native API 不扩展 JSON 语法。
 
 W1 边界核对另外确认一项**既有差异，未在本包修改**：全局 import/reset 的设备归属冲突，Python 409 只返回 success/message，Go 409 还带 usages。在 P0 `212aeac09` 的独立基底也能复现，交 W5 的 api/config/global.go owner 修正；新增测试精确断言该附加成员后再比较其余响应及无写入状态，不能将这项当作 W1 新获准的 API 差异。见 progress/n8-11-w1.md。
+## N8-11 W2：Agent monitor 数字只接受 ASCII
+
+- 依据 `design/n8-11-plan.md` §3.3 裁定 2（Agent 自有 Go 二进制只发送 ASCII 数字）。删除 monitor 的 Unicode decimal/digit 表和转换。
+- panel `logs.after`、delay `timeout` 中的全角/阿拉伯/上标/圈号数字按同字段其他无效值返回 `INVALID_REQUEST` / 400；不向 Agent 发请求。ASCII 十进制、符号、原有单下划线分隔不变。
+- Prometheus metrics 的非 ASCII 数字值按原无效数值处理为未知（null）；含非 ASCII 时间戳的样本按原无效行跳过。合法同组样本保留。
+- 冻结 a06/a07 语料不改：`TestReferenceMetrics` / `TestReferencePanelCalls` 对受影响原始行显式断言上述 native 结果；`TestMonitorMachineNumbersRejectNonASCII` 独立回归。

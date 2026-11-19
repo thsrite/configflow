@@ -260,7 +260,7 @@ func discoveryReport(items ...any) *jsonx.Object {
 
 func (e trafficEnv) setDiscovery(t *testing.T, enabled bool) {
 	t.Helper()
-	if _, err := e.manager.SetDomainDiscovery(e.s.Context(), "gw", enabled); err != nil {
+	if _, err := e.manager.SetDomainDiscoveryModel(e.s.Context(), "gw", enabled); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -295,7 +295,12 @@ func TestReportRequiresTokenAndEnabledSwitch(t *testing.T) {
 	item.Set("fails", 5)
 	s.Post(url, httpxtest.JSON(discoveryReport(item)), agentAuth(trafficToken)).WantStatus(200).
 		WantJSON(jsonx.Obj("success", true, "enabled", true, "rule_providers", jsonx.NewObject()))
-	stored := trafficstore.New(filepath.Join(s.DataDir, "traffic")).LoadStatus("gw").(*jsonx.Object)
+	storedRaw := trafficstore.NewNative(filepath.Join(s.DataDir, "traffic")).StatusJSON("gw")
+	storedValue, err := jsonx.Parse(storedRaw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored := storedValue.(*jsonx.Object)
 	if stored.Value("value") != "running" || stored.Value("mihomo_version") != "v1.19.32" {
 		t.Fatal(jsonx.Repr(stored))
 	}

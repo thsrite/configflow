@@ -2,6 +2,7 @@ package rulesync
 
 import (
 	"bytes"
+	agentcore "configflow/internal/agents"
 	"context"
 	"encoding/json"
 	"io"
@@ -229,7 +230,7 @@ rules: ['RULE-SET,selected,DIRECT', 'DOMAIN,old-inline.example.com,DIRECT', 'MAT
 	s.m.SetClient(fake)
 	f := &syncFixture{ctx: ctx, s: s, fake: fake, agent: device, now: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC), source: source, baseline: baseline}
 	s.now = func() time.Time { return f.now }
-	_, e = s.m.UpdateHeartbeat(ctx, "device", jsonx.Obj("version", "1.8.60-go", "config_version", record.GetString("config_version")))
+	_, e = s.m.ObserveHeartbeat(ctx, "device", agentModelForTest(t, jsonx.Obj("version", "1.8.60-go", "config_version", record.GetString("config_version"))))
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -452,7 +453,7 @@ func TestStructurePublicationPinsNonRuleConfiguration(t *testing.T) {
 	if e != nil || receipt == nil {
 		t.Fatal(receipt, e)
 	}
-	live, e := FetchSnapshot(f.ctx, f.s.m, record, Baseline{receipt, receipt.Bundle})
+	live, e := fetchLegacySnapshot(f.ctx, f.s.m, record, Baseline{receipt, receipt.Bundle})
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -662,7 +663,7 @@ func TestBindingChangeDuringNativeStatusPreventsDownload(t *testing.T) {
 	f.fake.mu.Lock()
 	f.fake.onNativeGet = func() {
 		called.Store(true)
-		if _, e := f.s.m.UpdateAgent(f.ctx, "device", jsonx.Obj("profile_id", "other")); e != nil {
+		if _, e := f.s.m.EditAgent(f.ctx, "device", agentEditsForTest(t, jsonx.Obj("profile_id", "other"))); e != nil {
 			t.Error(e)
 		}
 	}
@@ -676,4 +677,30 @@ func TestBindingChangeDuringNativeStatusPreventsDownload(t *testing.T) {
 	if f.fake.posts != 0 {
 		t.Fatal("posted a download after profile changed")
 	}
+}
+
+func agentModelForTest(t testing.TB, value any) *model.Agent {
+	t.Helper()
+	raw, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var a model.Agent
+	if err := json.Unmarshal(raw, &a); err != nil {
+		t.Fatal(err)
+	}
+	return &a
+}
+
+func agentEditsForTest(t testing.TB, value any) agentcore.AgentEdits {
+	t.Helper()
+	raw, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	edits, err := agentcore.DecodeAgentEdits(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return edits
 }

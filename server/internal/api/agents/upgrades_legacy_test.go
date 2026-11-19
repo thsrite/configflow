@@ -54,11 +54,6 @@ func TestN810TypedHeartbeatHooksTakePrecedence(t *testing.T) {
 	h := newHeartbeat(t)
 	followed, confirmed := 0, 0
 	agents.RegisterHooks(agents.Hooks{
-		AddressFollow: func(context.Context, *agents.Manager, *jsonx.Object, string) error {
-			t.Fatal("legacy follow double-triggered")
-			return nil
-		},
-		AddressConfirmed: func(*jsonx.Object, string) string { t.Fatal("legacy confirmation double-triggered"); return "" },
 		AddressFollowTyped: func(_ context.Context, _ *agents.Manager, a *model.Agent, host string) error {
 			followed++
 			if a.ID != h.id || host != "192.0.2.50" {

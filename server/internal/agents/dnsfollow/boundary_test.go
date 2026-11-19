@@ -1,6 +1,7 @@
 package dnsfollow
 
 import (
+	"configflow/internal/taskstatus"
 	"context"
 	"encoding/json"
 	"errors"
@@ -383,4 +384,58 @@ func TestStoredIndexFallbackIsNeverUpstreamZeroEvidence(t *testing.T) {
 	if _, err := boundEntry(doc, &b); err != nil {
 		t.Fatal("genuine zero rejected", err)
 	}
+}
+
+func (s *Service) decodeAgent(ctx context.Context, raw *agents.Record) (*agent, error) {
+	if raw == nil {
+		return nil, nil
+	}
+	encoded, err := json.Marshal(raw)
+	if err != nil {
+		return nil, err
+	}
+	var a model.Agent
+	if err = json.Unmarshal(encoded, &a); err != nil {
+		return nil, err
+	}
+	return s.modelAgent(ctx, &a)
+}
+
+func (s *Service) tokens(list []*agent) []any {
+	secrets := s.secrets(list)
+	out := make([]any, len(secrets))
+	for i := range secrets {
+		out[i] = secrets[i]
+	}
+	return out
+}
+
+func taskRow(ctx context.Context, record *agents.Record, statuses *jsonx.Object) (*jsonx.Object, error) {
+	data, err := json.Marshal(record)
+	if err != nil {
+		return nil, err
+	}
+	var a model.Agent
+	if err := json.Unmarshal(data, &a); err != nil {
+		return nil, err
+	}
+	data, err = json.Marshal(statuses)
+	if err != nil {
+		return nil, err
+	}
+	var receipts taskstatus.Snapshot
+	if err := json.Unmarshal(data, &receipts); err != nil {
+		return nil, err
+	}
+	row, err := agentTaskRow(ctx, &a, receipts)
+	if err != nil || row == nil {
+		return nil, err
+	}
+	data, err = json.Marshal(row)
+	if err != nil {
+		return nil, err
+	}
+	var out jsonx.Object
+	err = json.Unmarshal(data, &out)
+	return &out, err
 }

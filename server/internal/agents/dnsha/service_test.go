@@ -159,7 +159,7 @@ func fixtureNew(t *testing.T, options Options, paired bool, deviceOptions map[st
 	t.Cleanup(m.Close)
 	m.SetClient(client)
 	for _, id := range []string{"primary", "secondary"} {
-		if _, e = m.UpdateHeartbeat(ctx, id, jsonx.Obj("service_status", "running")); e != nil {
+		if _, e = m.ObserveHeartbeat(ctx, id, agentModelForTest(t, jsonx.Obj("service_status", "running"))); e != nil {
 			t.Fatal(e)
 		}
 	}
@@ -366,4 +366,81 @@ func TestInitialEnableCapturesOneSource(t *testing.T) {
 	if a.OxiDNSHA != nil || b.OxiDNSHA != nil || a.OxiDNSHAPublication != nil || a.LatestDeployment.HAPublication == nil {
 		t.Fatal("disable shape/history")
 	}
+}
+
+func decodeAgent(raw *agents.Record) (*agent, error) {
+	if raw == nil {
+		return nil, nil
+	}
+	data, err := json.Marshal(raw)
+	if err != nil {
+		return nil, err
+	}
+	var a model.Agent
+	if err = json.Unmarshal(data, &a); err != nil {
+		return nil, err
+	}
+	return modelAgent(&a)
+}
+
+// ServiceOperation fences restart/update/uninstall against a pair reservation.
+func (s *Service) ServiceOperation(ctx context.Context, id string, op func() (*agents.Result, error), uninstall bool) (*agents.Result, error) {
+	raw, err := s.ServiceOperationJSON(ctx, id, func() (json.RawMessage, error) {
+		value, err := op()
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(value)
+	}, uninstall)
+	if err != nil {
+		return nil, err
+	}
+	var result agents.Result
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// Compatibility test codecs preserve the old assertions against the same native owner.
+func resultObject(value any, err error) (*agents.Result, error) {
+	if err != nil {
+		return nil, err
+	}
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var result agents.Result
+	err = json.Unmarshal(raw, &result)
+	return &result, err
+}
+func (s *Service) Publish(ctx context.Context, id string, b *deploy.Bundle, o deploy.PublishOptions) (*agents.Result, bool, error) {
+	result, handled, err := s.PublishPair(ctx, id, b, o)
+	value, err := resultObject(result, err)
+	return value, handled, err
+}
+func (s *Service) Deployment(ctx context.Context, id, did string) (*agents.Result, error) {
+	return resultObject(s.PairDeployment(ctx, id, did))
+}
+func (s *Service) Activate(ctx context.Context, id, did string) (*agents.Result, error) {
+	return resultObject(s.ActivatePair(ctx, id, did))
+}
+func (s *Service) Rules(ctx context.Context, id, method string) (*agents.Result, int, error) {
+	result, code, err := s.PairRules(ctx, id, method)
+	value, err := resultObject(result, err)
+	return value, code, err
+}
+
+func agentModelForTest(t testing.TB, value any) *model.Agent {
+	t.Helper()
+	raw, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var a model.Agent
+	if err := json.Unmarshal(raw, &a); err != nil {
+		t.Fatal(err)
+	}
+	return &a
 }

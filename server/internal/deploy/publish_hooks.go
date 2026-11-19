@@ -2,6 +2,7 @@ package deploy
 
 import (
 	"configflow/internal/agents"
+	"configflow/internal/model"
 	"context"
 	"errors"
 	"sync"
@@ -21,9 +22,10 @@ type GatewayGuards struct {
 
 var publicationHooks struct {
 	sync.RWMutex
-	guards GatewayGuards
-	pair   func(context.Context, *agents.Manager, string, *Bundle, PublishOptions) (*agents.Result, bool, error)
-	ipv6   func(context.Context, *agents.Manager, string, string, *Source) error
+	nativePair func(context.Context, *agents.Manager, string, *Bundle, PublishOptions) (*model.Deployment, bool, error)
+	guards     GatewayGuards
+	pair       func(context.Context, *agents.Manager, string, *Bundle, PublishOptions) (*agents.Result, bool, error)
+	ipv6       func(context.Context, *agents.Manager, string, string, *Source) error
 }
 
 // SetGatewayGuards installs the host safety checks and returns a restore function.
@@ -51,4 +53,14 @@ func SetIPv6Enroll(fn func(context.Context, *agents.Manager, string, string, *So
 	publicationHooks.ipv6 = fn
 	publicationHooks.Unlock()
 	return func() { publicationHooks.Lock(); publicationHooks.ipv6 = old; publicationHooks.Unlock() }
+}
+
+// SetPairPublication installs the native HA publication owner. It takes precedence
+// over the compatibility publisher and never invokes both for one request.
+func SetPairPublication(fn func(context.Context, *agents.Manager, string, *Bundle, PublishOptions) (*model.Deployment, bool, error)) func() {
+	publicationHooks.Lock()
+	old := publicationHooks.nativePair
+	publicationHooks.nativePair = fn
+	publicationHooks.Unlock()
+	return func() { publicationHooks.Lock(); publicationHooks.nativePair = old; publicationHooks.Unlock() }
 }

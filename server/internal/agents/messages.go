@@ -413,3 +413,10 @@ const (
 )
 
 const msgAgentHostInvalid = "Agent 主机名不是有效的国际化域名"
+
+const (
+	msgDomainProbe         = "域名探测"
+	msgRegionCheck         = "区域检测"
+	msgReturnRoutingStatus = "回流规则状态"
+	msgReturnRoutingManage = "回流规则管理"
+)

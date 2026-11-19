@@ -7,7 +7,11 @@ package agents
 // CPython 3.11 + requests on the test server).
 
 import (
+	"configflow/internal/model"
+	"context"
+	"encoding/json"
 	"net/http"
+	"strconv"
 	"testing"
 
 	"configflow/internal/jsonx"
@@ -157,3 +161,234 @@ func TestAgentJSONAndDNSHARequestsLikePython(t *testing.T) {
 		t.Errorf("handoff %v", err)
 	}
 }
+
+func (m *Manager) UninstallAgent(ctx context.Context, id string) (*jsonx.Object, error) {
+	return m.serviceOperation(ctx, id, func() (*jsonx.Object, error) {
+		return remoteLegacyObject(m.RunDirectOperation(ctx, id, UninstallService, nil, nil))
+	}, true)
+}
+
+// UpdateAgentVersion encodes the legacy binary-update envelope.
+
+func (m *Manager) UpdateAgentVersion(ctx context.Context, id, version, binaryURL string) (*jsonx.Object, error) {
+	header, body, err := jsonBody(struct {
+		Version string `json:"version"`
+		URL     string `json:"download_url"`
+	}{version, binaryURL})
+	if err != nil {
+		return nil, err
+	}
+	return m.serviceOperation(ctx, id, func() (*jsonx.Object, error) {
+		return remoteLegacyObject(m.RunDirectOperation(ctx, id, UpdateService, header, body))
+	}, false)
+}
+
+// ValidateAgentLogPath encodes an opaque legacy path request member.
+
+func (m *Manager) AgentJSONRequest(ctx context.Context, agent *jsonx.Object, method, path string, timeout float64, feature string, payload any, query string) (*jsonx.Object, error) {
+	a, err := agentModel(agent)
+	if err != nil {
+		return nil, err
+	}
+	var header http.Header
+	var body []byte
+	if payload != nil {
+		header, body, err = jsonBody(payload)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if query != "" {
+		path += "?" + query
+	}
+	fields, err := m.AgentRequestModel(ctx, a, RemoteRequest{Method: method, Path: path, Timeout: Seconds(timeout), Header: header, Body: body}, feature, false)
+	if err != nil {
+		return nil, err
+	}
+	raw, err := json.Marshal(fields)
+	return remoteLegacyObject(raw, err)
+}
+
+// RemoteError carries a safe user-facing device refusal.
+
+func (m *Manager) ProbeDomains(ctx context.Context, agent *jsonx.Object, payload any, timeout float64) (*jsonx.Object, error) {
+	if timeout == 0 {
+		timeout = 200
+	}
+	return m.AgentJSONRequest(ctx, agent, "POST", "/api/domain-probe", timeout, "域名探测", payload, "")
+}
+
+// ReturnRoutingStatus adapts the remaining router caller to the native owner.
+
+func (m *Manager) RegionTargets(ctx context.Context, agent *jsonx.Object) (any, error) {
+	result, err := m.AgentJSONRequest(ctx, agent, "GET", "/api/region-check/targets", 15, "区域检测", nil, "")
+	if err != nil {
+		return nil, err
+	}
+	value := result.Value("targets")
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	present, err := model.JSONHasContent(raw)
+	if err != nil {
+		return nil, err
+	}
+	if !present {
+		return []any{}, nil
+	}
+	return value, nil
+}
+
+// RegionCheck is region_check(agent, payload).
+
+func (m *Manager) RegionCheck(ctx context.Context, agent *jsonx.Object, payload any) (*jsonx.Object, error) {
+	return m.AgentJSONRequest(ctx, agent, "POST", "/api/region-check", 120, "区域检测", payload, "")
+}
+
+// OxidnsHARequest adapts the old HA payload to the exact-key native protocol.
+
+func (m *Manager) OxidnsHARequest(ctx context.Context, agent *jsonx.Object, method string, timeout Timeout, path string, payload any) (*jsonx.Object, error) {
+	a, err := agentModel(agent)
+	if err != nil {
+		return nil, err
+	}
+	var header http.Header
+	var body []byte
+	if payload != nil {
+		header, body, err = jsonBody(payload)
+		if err != nil {
+			return nil, err
+		}
+	}
+	fields, err := m.AgentRequestModel(ctx, a, RemoteRequest{Method: method, Path: "/api/oxidns-ha" + path, Timeout: timeout, Header: header, Body: body}, "", true)
+	if err != nil {
+		return nil, err
+	}
+	raw, err := json.Marshal(fields)
+	return remoteLegacyObject(raw, err)
+}
+
+// OxidnsHAStatus is oxidns_ha_status(agent).
+
+func (m *Manager) OxidnsHAStatus(ctx context.Context, agent *jsonx.Object) (*jsonx.Object, error) {
+	return m.OxidnsHARequest(ctx, agent, "GET", Pair(5, 15), "", nil)
+}
+
+// OxidnsHAPreview is oxidns_ha_preview(agent, spec).
+
+func (m *Manager) OxidnsHAPreview(ctx context.Context, agent *jsonx.Object, spec any) (*jsonx.Object, error) {
+	return m.OxidnsHARequest(ctx, agent, "POST", Pair(5, 30), "/preview", spec)
+}
+
+// OxidnsHAApply is oxidns_ha_apply(agent, spec).
+
+func (m *Manager) OxidnsHAApply(ctx context.Context, agent *jsonx.Object, spec any) (*jsonx.Object, error) {
+	return m.OxidnsHARequest(ctx, agent, "PUT", Pair(5, 90), "", spec)
+}
+
+// OxidnsHARemove is oxidns_ha_remove(agent).
+
+func (m *Manager) OxidnsHARemove(ctx context.Context, agent *jsonx.Object) (*jsonx.Object, error) {
+	return m.OxidnsHARequest(ctx, agent, "DELETE", Pair(5, 90), "", nil)
+}
+
+// OxidnsHAHandoff is oxidns_ha_handoff(agent, method, operation_id).
+
+func (m *Manager) OxidnsHAHandoff(ctx context.Context, agent *jsonx.Object, method, operationID string) (*jsonx.Object, error) {
+	switch method {
+	case "get":
+		return m.OxidnsHARequest(ctx, agent, "GET", Pair(5, 15), "/handoff", nil)
+	case "post", "delete":
+		upper := "POST"
+		if method == "delete" {
+			upper = "DELETE"
+		}
+		return m.OxidnsHARequest(ctx, agent, upper, Pair(5, 15), "/handoff", jsonx.Obj("operation_id", operationID))
+	}
+	return nil, &ValueError{Message: "Unsupported DNS handoff operation"}
+}
+
+func AgentURL(agent *jsonx.Object, path string) string {
+	a, err := agentModel(agent)
+	if err != nil || a == nil {
+		return ""
+	}
+	return "http://" + a.Host + ":" + strconv.FormatInt(int64(a.Port), 10) + path
+}
+
+// Call adapts an old record to the single native request owner.
+
+func (m *Manager) legacyRemote(ctx context.Context, id, method, path string, payload any, sources bool) (any, error) {
+	var header http.Header
+	var body []byte
+	if payload != nil {
+		var err error
+		header, body, err = jsonBody(payload)
+		if err != nil {
+			return nil, m.remotePayloadError(ctx, id, err)
+		}
+	}
+	raw, _, err := m.RemoteCall(ctx, id, RemoteRequest{Method: method, Path: path, Header: header, Body: body, Timeout: Seconds(5), LegacyLogSources: sources})
+	return remoteLegacyValue(raw, err)
+}
+
+// PushLegacyConfig adapts old callers to the native publication owner.
+
+func (m *Manager) GetAgentStatus(ctx context.Context, id string) (any, error) {
+	return m.legacyRemote(ctx, id, "GET", "/api/status", nil, false)
+}
+
+// GetAgentLogSources retains the legacy endpoint fallback for older Agents.
+
+func (m *Manager) GetAgentLogSources(ctx context.Context, id string) (any, error) {
+	return m.legacyRemote(ctx, id, "GET", "/api/logs/sources", nil, true)
+}
+
+// GetAgentLogs preserves the caller's log selection in its device request.
+
+func (m *Manager) GetAgentLogs(ctx context.Context, id string, lines any, logPath, source string) (any, error) {
+	path := "/api/logs?lines=" + jsonx.Str(lines)
+	if source != "" {
+		path += "&source=" + quote(source)
+	} else if logPath != "" {
+		path += "&log_path=" + quote(logPath)
+	}
+	return m.legacyRemote(ctx, id, "GET", path, nil, false)
+}
+
+func (m *Manager) ClearAgentLog(ctx context.Context, id string, logPath, source any) (any, error) {
+	payload := jsonx.Obj("log_path", logPath)
+	if jsonx.Truthy(source) {
+		payload = jsonx.Obj("source", source)
+	}
+	return m.legacyRemote(ctx, id, "POST", "/api/logs/clear", payload, false)
+}
+
+// UninstallAgent serializes removal through the HA service-operation guard.
+
+func (m *Manager) ValidateAgentLogPath(ctx context.Context, id string, path any) (any, error) {
+	return m.legacyRemote(ctx, id, "POST", "/api/logs/validate", jsonx.Obj("path", path), false)
+}
+
+// GetLoggingConfig reads the remote logging endpoint.
+
+func (m *Manager) GetLoggingConfig(ctx context.Context, id string) (any, error) {
+	return m.legacyRemote(ctx, id, "GET", "/api/config/logging", nil, false)
+}
+
+// SetLoggingConfig adapts the facade input to the typed logging transaction.
+
+func (m *Manager) SetLoggingConfig(ctx context.Context, id string, enabled any) (any, error) {
+	header, body, err := jsonBody(jsonx.Obj("enabled", enabled))
+	if err != nil {
+		return nil, m.remotePayloadError(ctx, id, err)
+	}
+	raw, err := json.Marshal(enabled)
+	if err != nil {
+		return nil, err
+	}
+	return remoteLegacyValue(m.SetLoggingModel(ctx, id, raw, header, body))
+}
+
+// AgentJSONRequest encodes an old feature payload and returns an opaque object.

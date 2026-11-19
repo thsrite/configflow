@@ -3,6 +3,7 @@ package rulesync
 import (
 	"bytes"
 	"configflow/internal/logx"
+	"configflow/internal/taskstatus"
 	"context"
 	"encoding/json"
 	"errors"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -19,6 +21,7 @@ import (
 	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
+	"configflow/internal/redact"
 	"configflow/internal/repo"
 )
 
@@ -188,7 +191,7 @@ func TestHASettingsPairAtomicity(t *testing.T) {
 		t.Fatal(e)
 	}
 	beforeEnable := systemBytes(t, s)
-	if e = configurePair(ctx, s.m, pair, Settings{Rules: true}); e == nil || e.Error() != msgPairEnabling {
+	if e = configureLegacyPair(ctx, s.m, pair, Settings{Rules: true}); e == nil || e.Error() != msgPairEnabling {
 		t.Fatalf("concurrent enable guard: %v", e)
 	}
 	if e = persistSync(ctx, s.m, "device", &Settings{Rules: true}, nil); e == nil || e.Error() != msgPairEnabling {
@@ -213,7 +216,7 @@ func TestHASettingsPairAtomicity(t *testing.T) {
 		t.Fatal(e)
 	}
 	before := systemBytes(t, s)
-	if e = configurePair(ctx, s.m, pair, Settings{Rules: true}); e == nil {
+	if e = configureLegacyPair(ctx, s.m, pair, Settings{Rules: true}); e == nil {
 		t.Fatal("changed pair accepted")
 	}
 	if !reflect.DeepEqual(before, systemBytes(t, s)) {
@@ -334,9 +337,9 @@ func TestPresenceUsesSharedCredentialRedaction(t *testing.T) {
 	}
 	defer root.Close()
 	record := jsonx.Obj("id", "a16-secret-presence", "name", "alice https://uri-user:presence-password@example.com/?token=synthetic-rule-token", "token", "synthetic-rule-token", "status", "online", "last_heartbeat", "2026-01-02T03:04:05Z")
-	observePresence(ctx, s.m, []*agents.Record{record})
+	observeLegacyPresence(ctx, s.m, []*agents.Record{record})
 	record.Set("status", "offline")
-	observePresence(ctx, s.m, []*agents.Record{record})
+	observeLegacyPresence(ctx, s.m, []*agents.Record{record})
 	output := logs.String()
 	if !strings.Contains(output, "已离线") || !strings.Contains(output, "alice") {
 		t.Fatal("presence transition/username missing", output)
@@ -355,9 +358,9 @@ func TestPresenceUsesSharedCredentialRedaction(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	observePresence(ctx, s.m, []*agents.Record{nested})
+	observeLegacyPresence(ctx, s.m, []*agents.Record{nested})
 	nested.Set("status", "offline")
-	observePresence(ctx, s.m, []*agents.Record{nested})
+	observeLegacyPresence(ctx, s.m, []*agents.Record{nested})
 	if output := logs.String(); !strings.Contains(output, "已离线") || !strings.Contains(output, "alice") || strings.Contains(output, "synthetic-rule-token") {
 		t.Fatal("nested presence metadata was lost or leaked", output)
 	}
@@ -427,5 +430,135 @@ func TestSettingsAndAgentViewNeverReadHistory(t *testing.T) {
 				t.Fatal(e)
 			}
 		})
+	}
+}
+
+func decodeAgent(record *agents.Record) (*model.Agent, error) {
+	raw, err := json.Marshal(agentView(record))
+	if err != nil {
+		return nil, fmt.Errorf("encode agent snapshot: %w", err)
+	}
+	var a model.Agent
+	if err = json.Unmarshal(raw, &a); err != nil {
+		return nil, fmt.Errorf("decode agent snapshot: %w", err)
+	}
+	return &a, nil
+}
+
+// SettingsFor reads strictly boolean scopes; historical wrong types are off.
+func SettingsFor(record *agents.Record) Settings {
+	sync := record.GetObject("rule_sync")
+	if sync == nil {
+		return Settings{}
+	}
+	raw, err := json.Marshal(sync.Value("settings"))
+	if err != nil {
+		return Settings{}
+	}
+	var s model.RuleSyncSettings
+	if json.Unmarshal(raw, &s) != nil {
+		return Settings{}
+	}
+	return Settings{Library: s.Library != nil && *s.Library, Rules: s.Rules != nil && *s.Rules}
+}
+
+// agentView deliberately omits history members; none of this package's typed
+// reads needs them, and the light-read sentinel must never enter a JSON codec.
+func agentView(record *agents.Record) *jsonx.Object {
+	out := jsonx.NewObject()
+	if record == nil {
+		return out
+	}
+	for key, v := range record.All() {
+		if !slices.Contains(repo.AgentHistoryFields, key) {
+			out.Set(key, v)
+		}
+	}
+	return out
+}
+
+func taskRow(ctx context.Context, record *agents.Record, statuses *jsonx.Object) (*jsonx.Object, error) {
+	a, err := decodeAgent(record)
+	if err != nil {
+		return nil, err
+	}
+	data, err := json.Marshal(statuses)
+	if err != nil {
+		return nil, err
+	}
+	var receipts taskstatus.Snapshot
+	if err := json.Unmarshal(data, &receipts); err != nil {
+		return nil, err
+	}
+	row, err := agentTaskRow(ctx, a, receipts)
+	if err != nil || row == nil {
+		return nil, err
+	}
+	data, err = json.Marshal(row)
+	if err != nil {
+		return nil, err
+	}
+	var out jsonx.Object
+	err = json.Unmarshal(data, &out)
+	return &out, err
+}
+func configureLegacyPair(ctx context.Context, m *agents.Manager, records []*agents.Record, settings Settings) error {
+	rows := make([]*model.Agent, 0, len(records))
+	for _, record := range records {
+		a, err := decodeAgent(record)
+		if err != nil {
+			return err
+		}
+		rows = append(rows, a)
+	}
+	return configurePair(ctx, m, rows, settings)
+}
+func observeLegacyPresence(ctx context.Context, m *agents.Manager, records []*agents.Record) {
+	rows := make([]*model.Agent, 0, len(records))
+	for _, record := range records {
+		a, err := decodeAgent(record)
+		if err != nil {
+			panic(err)
+		}
+		rows = append(rows, a)
+	}
+	observePresence(ctx, m, rows)
+}
+func fetchLegacySnapshot(ctx context.Context, m *agents.Manager, record *agents.Record, baseline Baseline) (*deploy.Bundle, error) {
+	a, err := decodeAgent(record)
+	if err != nil {
+		return nil, err
+	}
+	return FetchSnapshot(ctx, m, a, baseline)
+}
+
+func TestTypedRuleSyncSecretsUseSystemConfig(t *testing.T) {
+	ctx, s := fixtureService(t)
+	const proxy = "http://synthetic-user:synthetic-proxy-password@proxy.example.com:1080"
+	if err := s.m.Repository().UpdateSystem(ctx, func(_ context.Context, system *model.System) error {
+		system.SystemConfig.RuleFetchProxy = proxy
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	record, err := s.m.ReadAgent(ctx, "device", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy, err := s.m.Repository().GetSystemSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected, err := redact.ExternalPayloadSecrets(ctx, legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	actual, err := systemSecrets(ctx, s.m)
+	if err != nil || !actual.Equal(expected) {
+		t.Fatalf("native system secret projection changed: %v", err)
+	}
+	text := "prefix " + proxy + " suffix"
+	if got, want := safeText(ctx, s.m, record, text), safeDisplay(text, expected); got != want {
+		t.Fatalf("native redaction changed: %q vs %q", got, want)
 	}
 }

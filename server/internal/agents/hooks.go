@@ -56,9 +56,7 @@ type Hooks struct {
 	// AddressFollow and AddressConfirmed are address_follow.follow and
 	// address_follow.confirmed (#28), used by the heartbeat route when the
 	// Agent reports its host. Default: nothing followed, no confirmed_host.
-	AddressFollow    func(ctx context.Context, m *Manager, agent *jsonx.Object, host string) error
-	AddressConfirmed func(agent *jsonx.Object, host string) string
-	// AddressFollowTyped and AddressConfirmedTyped take precedence over legacy hooks.
+	// AddressFollowTyped and AddressConfirmedTyped are the native address owners.
 	AddressFollowTyped    func(context.Context, *Manager, *model.Agent, string) error
 	AddressConfirmedTyped func(*model.Agent, string) string
 
@@ -72,23 +70,20 @@ type Hooks struct {
 	// Defaults: the Python code path for Agents without an active pair
 	// publication (conflict checks included, without the pair lock file);
 	// an active pair publication fails closed with ErrHAOwnerMissing.
-	HAServiceOperation func(ctx context.Context, m *Manager, agentID string, operation func() (*jsonx.Object, error), uninstall bool) (*jsonx.Object, error)
 	// HAServiceOperationTyped fences native restart/uninstall operations with the
-	// same HA lease. A typed hook takes precedence over the legacy hook.
+	// same HA lease. No legacy operation hook is accepted.
 	HAServiceOperationTyped func(ctx context.Context, m *Manager, agentID string, operation func() (json.RawMessage, error), uninstall bool) (json.RawMessage, error)
 
-	HADeployment func(ctx context.Context, m *Manager, agentID, deploymentID string) (*jsonx.Object, error)
-	HAActivate   func(ctx context.Context, m *Manager, agentID, deploymentID string) (*jsonx.Object, error)
+	HADeployment func(ctx context.Context, m *Manager, agentID, deploymentID string) (*model.Deployment, error)
+	HAActivate   func(ctx context.Context, m *Manager, agentID, deploymentID string) (*model.Deployment, error)
 
 	// InstallationProfile and InstallationRegister are
 	// gateway_installation.registration_profile / register (#30), used by
 	// the registration route for gateway installs. Return *InstallationError
 	// for the user-facing refusals. Default: an InstallationError (501).
-	InstallationProfile  func(ctx context.Context, data *jsonx.Object, installationID, installationToken any, fallbackHost string) (any, error)
-	InstallationRegister func(ctx context.Context, m *Manager, installationID, installationToken any, data *jsonx.Object, existingToken any) (*jsonx.Object, error)
 	// InstallationProfileTyped validates native request bytes and returns the bound
 	// profile and updated bytes. Argument order: data, installation ID, token, peer host.
-	// A typed hook takes precedence over its legacy hook for the same event.
+	// Only the native owner is registered for this event.
 	InstallationProfileTyped func(ctx context.Context, data json.RawMessage, installationID, installationToken, fallbackHost string) (profileID string, updated json.RawMessage, err error)
 	// InstallationRegisterTyped commits native request bytes through the installation
 	// owner. Argument order after manager: installation ID, token, data, existing token.
@@ -144,20 +139,11 @@ func RegisterHooks(h Hooks) {
 	if h.AddressConfirmedTyped != nil {
 		hooks.AddressConfirmedTyped = h.AddressConfirmedTyped
 	}
-	if h.AddressFollow != nil {
-		hooks.AddressFollow = h.AddressFollow
-	}
-	if h.AddressConfirmed != nil {
-		hooks.AddressConfirmed = h.AddressConfirmed
-	}
 	if h.ReceiptMatches != nil {
 		hooks.ReceiptMatches = h.ReceiptMatches
 	}
 	if h.HAServiceOperationTyped != nil {
 		hooks.HAServiceOperationTyped = h.HAServiceOperationTyped
-	}
-	if h.HAServiceOperation != nil {
-		hooks.HAServiceOperation = h.HAServiceOperation
 	}
 	if h.HADeployment != nil {
 		hooks.HADeployment = h.HADeployment
@@ -170,12 +156,6 @@ func RegisterHooks(h Hooks) {
 	}
 	if h.InstallationRegisterTyped != nil {
 		hooks.InstallationRegisterTyped = h.InstallationRegisterTyped
-	}
-	if h.InstallationProfile != nil {
-		hooks.InstallationProfile = h.InstallationProfile
-	}
-	if h.InstallationRegister != nil {
-		hooks.InstallationRegister = h.InstallationRegister
 	}
 }
 

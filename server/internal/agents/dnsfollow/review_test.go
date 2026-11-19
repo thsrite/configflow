@@ -16,6 +16,7 @@ import (
 	"configflow/internal/deploy"
 	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/yamlx"
 )
@@ -177,7 +178,7 @@ func TestDeviceAndSourceNamesFollowStoredRecord(t *testing.T) {
 func TestPreparationFailureRecordHidesOtherAgentCredentials(t *testing.T) {
 	f := newFixture(t, Options{}, agentfake.Options{})
 	f.bind(t)
-	restore := deploy.SetPairPublisher(func(_ context.Context, _ *agents.Manager, id string, _ *deploy.Bundle, _ deploy.PublishOptions) (*agents.Result, bool, error) {
+	restore := deploy.SetPairPublication(func(_ context.Context, _ *agents.Manager, id string, _ *deploy.Bundle, _ deploy.PublishOptions) (*model.Deployment, bool, error) {
 		if id != "target" {
 			return nil, false, nil
 		}

@@ -37,7 +37,7 @@ func Wire(m *agents.Manager) { ForManager(m) }
 // missing rule-sync half of the Agent task slot.
 func Register() {
 	agents.OnManagerInit(func(_ context.Context, m *agents.Manager) { Wire(m) })
-	agents.SetDNSFollowRow(taskRow)
+	agents.SetDNSFollowRow(agentTaskRow)
 	tasks.SetRunner("dns_follow", func(ctx context.Context, _, id string) error {
 		m, e := agents.Get(ctx)
 		if e != nil {

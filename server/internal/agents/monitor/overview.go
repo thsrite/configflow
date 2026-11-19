@@ -56,7 +56,7 @@ func readOverviewSnapshot(ctx context.Context, m Registry, a *model.Agent, dashb
 		return nil, invalid
 	}
 	snapshot := &Snapshot{Recorders: []string{}, Observations: observations, Labels: []UpstreamLabel{}}
-	snapshot.Core = CoreStatus{Version: pySlice(fieldText(health, "version"), 64), Status: pySlice(fieldText(health, "status"), 32), InstanceID: pySlice(fieldText(health, "instance_id"), 128)}
+	snapshot.Core = CoreStatus{Version: truncateText(fieldText(health, "version"), 64), Status: truncateText(fieldText(health, "status"), 32), InstanceID: truncateText(fieldText(health, "instance_id"), 128)}
 	raw, _ = health.Get("uptime_ms")
 	snapshot.Core.UptimeMS = protocolNumber(raw, MaxInteger)
 	if raw, present := capabilities.Get("query_recorders"); present {

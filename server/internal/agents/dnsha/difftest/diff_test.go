@@ -5,6 +5,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"configflow/internal/model"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -198,7 +199,7 @@ func golang(t *testing.T, d *devices, requestBody string) any {
 	}
 	m.SetClient(localClient{d.urls})
 	for _, id := range []string{"primary", "secondary"} {
-		if _, e = m.UpdateHeartbeat(ctx, id, jsonx.Obj("service_status", "running")); e != nil {
+		if _, e = m.ObserveHeartbeat(ctx, id, agentModelForTest(t, jsonx.Obj("service_status", "running"))); e != nil {
 			t.Fatal(e)
 		}
 	}
@@ -420,4 +421,17 @@ func TestHAHTTPAgainstFlask(t *testing.T) {
 			}
 		})
 	}
+}
+
+func agentModelForTest(t testing.TB, value any) *model.Agent {
+	t.Helper()
+	raw, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var a model.Agent
+	if err := json.Unmarshal(raw, &a); err != nil {
+		t.Fatal(err)
+	}
+	return &a
 }

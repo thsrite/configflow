@@ -2,6 +2,7 @@ package installation
 
 import (
 	"bytes"
+	agentcore "configflow/internal/agents"
 	"context"
 	"encoding/json"
 	"errors"
@@ -238,7 +239,7 @@ func TestRegistrationCapabilitiesAndAtomicEnrollment(t *testing.T) {
 	// The first proof would change metadata; an invalid second proof must keep the
 	// entire registry document unchanged, proving the callback is atomic.
 	mihomoID := text(object(proofs["mihomo"])["id"])
-	_, err = f.s.Manager.UpdateAgent(f.ctx, mihomoID, jsonx.Obj("name", "prior-name"))
+	_, err = f.s.Manager.EditAgent(f.ctx, mihomoID, agentEditsForTest(t, jsonx.Obj("name", "prior-name")))
 	must(t, err)
 	enrollment := map[string]json.RawMessage{}
 	for _, service := range services {
@@ -857,4 +858,17 @@ func TestFullTUNTakeoverNeedsDistinctCapability(t *testing.T) {
 	f.r.ConfigRevision = revision
 	_, _, err = f.s.savedSnapshot(f.ctx, f.r)
 	refusal(t, err, 409, msgTakeoverChanged)
+}
+
+func agentEditsForTest(t testing.TB, value any) agentcore.AgentEdits {
+	t.Helper()
+	raw, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	edits, err := agentcore.DecodeAgentEdits(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return edits
 }

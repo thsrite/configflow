@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"regexp"
+	"sync"
 
 	"configflow/internal/agents"
 	"configflow/internal/jsondecode"
@@ -258,4 +259,43 @@ func (r RuleUpdateResult) MarshalJSON() ([]byte, error) {
 		Success bool      `json:"success"`
 		Task    *RuleTask `json:"task"`
 	}{r.Success, r.Task})
+}
+
+// HABusyError is the ValueError of oxidns_ha_publish.rules: the route
+// answers SERVICE_BUSY 409 with its text.
+type HABusyError struct{ Message string }
+
+func (e *HABusyError) Error() string { return e.Message }
+
+// ErrHARulesNotPorted is the default pair rule update until A18 (DNS HA)
+// registers oxidns_ha_publish.rules with SetHARulesJSON.
+var ErrHARulesNotPorted = errors.New("oxidns_ha_publish.rules is not ported yet (A18)")
+
+// HARulesJSONFunc supplies the HA owner's native result through the registry.
+type HARulesJSONFunc func(context.Context, Registry, string, string) (json.RawMessage, int, error)
+
+var haJSONMu sync.RWMutex
+var haJSON HARulesJSONFunc
+
+// SetHARulesJSON installs the native pair-rule owner and returns a restoration function.
+func SetHARulesJSON(fn HARulesJSONFunc) func() {
+	haJSONMu.Lock()
+	previous := haJSON
+	haJSON = fn
+	haJSONMu.Unlock()
+	return func() { haJSONMu.Lock(); haJSON = previous; haJSONMu.Unlock() }
+}
+func pairRules(ctx context.Context, m Registry, id, method string) (json.RawMessage, int, error) {
+	haJSONMu.RLock()
+	fn := haJSON
+	haJSONMu.RUnlock()
+	if fn == nil {
+		return nil, 0, ErrHARulesNotPorted
+	}
+	return fn(ctx, m, id, method)
+}
+
+// SupportsRulePaths reports support using the original stored version token.
+func SupportsRulePaths(a *model.Agent) bool {
+	return modelVersionAtLeast(a, RuleUpdatePathsMinAgentVersion)
 }

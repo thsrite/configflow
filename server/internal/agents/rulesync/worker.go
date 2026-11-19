@@ -52,17 +52,14 @@ func (w *worker) state(ctx context.Context, id, status, message string, fields m
 	return w.s.saveState(ctx, id, fields)
 }
 func (w *worker) failure(ctx context.Context, id string, cause error) error {
-	record, e := w.s.m.GetAgentByID(ctx, id, false)
+	record, e := w.s.m.ReadAgent(ctx, id, false)
 	if e != nil {
 		return e
 	}
 	if record == nil {
 		return nil
 	}
-	a, e := decodeAgent(record)
-	if e != nil {
-		return e
-	}
+	a := record
 	old := stateOf(a)
 	message := msgFailed
 	status := "failed"
@@ -81,16 +78,13 @@ func (w *worker) failure(ctx context.Context, id string, cause error) error {
 	}
 	return w.state(ctx, id, status, message, model.RuleSyncState{RetryAt: ptr(nowSeconds(w.s.now().Add(RetryAfter))), ForceRefresh: ptr(true), NativeTask: old.NativeTask, Key: old.Key})
 }
-func (s *Service) comparison(ctx context.Context, record *agents.Record, settings Settings) (comparison, string, error) {
+func (s *Service) comparison(ctx context.Context, record *model.Agent, settings Settings) (comparison, string, error) {
 	head, e := s.m.Repository().Head(ctx)
 	if e != nil {
 		return comparison{}, "", e
 	}
-	a, e := decodeAgent(record)
-	if e != nil {
-		return comparison{}, "", e
-	}
-	stamp, _ := s.receipts.Stamp(record)
+	a := record
+	stamp, _ := receiptStamp(s.receipts, record)
 	type cachedFile struct {
 		Path     string
 		Size     int64
@@ -159,20 +153,14 @@ func identity(a *model.Agent) string {
 	raw, _ := json.Marshal(targetIdentity{a.ID, a.ProfileID, a.ServiceType, a.Host, a.Port, a.Token, a.ConfigVersion, deployment})
 	return deploy.CanonicalDigest(raw)
 }
-func (s *Service) unchanged(ctx context.Context, record *agents.Record, settings Settings, deploymentID string) (bool, error) {
-	old, e := decodeAgent(record)
-	if e != nil {
-		return false, e
-	}
+func (s *Service) unchanged(ctx context.Context, record *model.Agent, settings Settings, deploymentID string) (bool, error) {
+	old := record
 	latest, e := workerAgent(ctx, s.m, old.ID)
 	if e != nil || latest == nil {
 		return false, e
 	}
-	a, e := decodeAgent(latest)
-	if e != nil {
-		return false, e
-	}
-	if identity(a) != identity(old) || SettingsFor(latest) != settings {
+	a := latest
+	if identity(a) != identity(old) || AgentSettings(latest) != settings {
 		return false, nil
 	}
 	task := a.LatestDeployment
@@ -184,18 +172,15 @@ func (w *worker) run(ctx context.Context, id string) error {
 	if e != nil || record == nil {
 		return e
 	}
-	a, e := decodeAgent(record)
-	if e != nil {
-		return e
-	}
+	a := record
 	if a.ServiceType != "mihomo" && a.ServiceType != "oxidns" {
 		return nil
 	}
-	if agents.HAActive(record) {
+	if agents.HAActiveModel(record) {
 		return advancePair(ctx, s.m, id)
 	}
-	if a.ServiceType == "oxidns" && agents.HAEnabled(record) {
-		members, e := s.m.HAPair(ctx, id)
+	if a.ServiceType == "oxidns" && agents.HAEnabledModel(record) {
+		members, e := s.m.AgentPair(ctx, id)
 		if e != nil {
 			return e
 		}
@@ -209,7 +194,7 @@ func (w *worker) run(ctx context.Context, id string) error {
 			}
 		}
 	}
-	settings := SettingsFor(record)
+	settings := AgentSettings(record)
 	if !settings.Any() {
 		return nil
 	}
@@ -250,14 +235,11 @@ func (w *worker) run(ctx context.Context, id string) error {
 		if e = w.state(ctx, id, "succeeded", msgReloadSuccess, model.RuleSyncState{}); e != nil {
 			return e
 		}
-		record, e = s.m.GetAgentByID(ctx, id, false)
+		record, e = s.m.ReadAgent(ctx, id, false)
 		if e != nil {
 			return e
 		}
-		a, e = decodeAgent(record)
-		if e != nil {
-			return e
-		}
+		a = record
 		old = stateOf(a)
 	}
 	resuming := old.NativeTask != nil && *old.NativeTask != "" || settings.Library && (value(old.ForceRefresh) || old.Status == "running")
@@ -275,7 +257,7 @@ func (w *worker) run(ctx context.Context, id string) error {
 		kind = None
 		withheld = remembered.Withheld
 	} else {
-		baseline, e := s.receipts.Load(ctx, record, false)
+		baseline, e := s.receipts.LoadAgent(ctx, record, false)
 		if e != nil {
 			return e
 		}
@@ -345,7 +327,7 @@ func (w *worker) run(ctx context.Context, id string) error {
 	if now-value(old.NoticedAt) < PollInterval.Seconds() {
 		return nil
 	}
-	receipt, e := s.receipts.Load(ctx, record, true)
+	receipt, e := s.receipts.LoadAgent(ctx, record, true)
 	if e != nil {
 		return e
 	}
@@ -361,7 +343,7 @@ func (w *worker) run(ctx context.Context, id string) error {
 func mustSettings(s Settings) json.RawMessage { raw, _ := json.Marshal(s); return raw }
 func mustString(s string) json.RawMessage     { raw, _ := json.Marshal(s); return raw }
 func stringsContains(text, part string) bool  { return strings.Contains(text, part) }
-func (w *worker) resumeNative(ctx context.Context, record *agents.Record, a *model.Agent, settings Settings, old *model.RuleSyncState, source *deploy.Source, key string) error {
+func (w *worker) resumeNative(ctx context.Context, record *model.Agent, a *model.Agent, settings Settings, old *model.RuleSyncState, source *deploy.Source, key string) error {
 	s := w.s
 	task, e := nativeCall(ctx, s.m, a.ID, "GET", nil)
 	if e != nil {
@@ -370,7 +352,7 @@ func (w *worker) resumeNative(ctx context.Context, record *agents.Record, a *mod
 	if task.ID == value(old.NativeTask) && task.Status == "running" {
 		return nil
 	}
-	receipt, e := s.receipts.Load(ctx, record, true)
+	receipt, e := s.receipts.LoadAgent(ctx, record, true)
 	if e != nil {
 		return e
 	}
@@ -394,7 +376,7 @@ func (w *worker) resumeNative(ctx context.Context, record *agents.Record, a *mod
 		if e = ctx.Err(); e != nil {
 			return e
 		}
-		if _, e = s.receipts.AdvanceContent(ctx, s.m, record, previous, snapshot); e != nil {
+		if _, e = advanceReceiptContent(ctx, s.receipts, s.m, record, previous, snapshot); e != nil {
 			return e
 		}
 		return w.state(ctx, a.ID, "idle", msgNativeEnded, model.RuleSyncState{})
@@ -415,7 +397,7 @@ func (w *worker) resumeNative(ctx context.Context, record *agents.Record, a *mod
 		if e = ctx.Err(); e != nil {
 			return e
 		}
-		advanced, e := s.receipts.AdvanceContent(ctx, s.m, record, source, snapshot)
+		advanced, e := advanceReceiptContent(ctx, s.receipts, s.m, record, source, snapshot)
 		if e != nil {
 			return e
 		}
@@ -440,9 +422,9 @@ func newDeploymentID() (string, error) {
 	}
 	return hex.EncodeToString(raw[:]), nil
 }
-func (w *worker) refresh(ctx context.Context, record *agents.Record, a *model.Agent, settings Settings, baseline Baseline, source *deploy.Source, key string) error {
+func (w *worker) refresh(ctx context.Context, record *model.Agent, a *model.Agent, settings Settings, baseline Baseline, source *deploy.Source, key string) error {
 	s := w.s
-	if a.ServiceType == "oxidns" && agents.HAEnabled(record) {
+	if a.ServiceType == "oxidns" && agents.HAEnabledModel(record) {
 		return w.publish(ctx, record, a, settings, baseline, source, key)
 	}
 	same, e := s.unchanged(ctx, record, settings, "")
@@ -511,7 +493,7 @@ func (w *worker) refresh(ctx context.Context, record *agents.Record, a *model.Ag
 			return w.state(ctx, a.ID, "pending", msgExisting, model.RuleSyncState{Key: &key, NoticedAt: ptr(nowSeconds(s.now().Add(-PollInterval)))})
 		}
 		var paths []string
-		if monitor.SupportsPaths(record) {
+		if monitor.SupportsRulePaths(a) {
 			base, e := deploy.SourceFromJSON(baseline.Receipt.Source, nil)
 			if e != nil {
 				return e
@@ -613,7 +595,7 @@ func (w *worker) refresh(ctx context.Context, record *agents.Record, a *model.Ag
 	if e = ctx.Err(); e != nil {
 		return e
 	}
-	advanced, e := s.receipts.AdvanceContent(ctx, s.m, record, source, snapshot)
+	advanced, e := advanceReceiptContent(ctx, s.receipts, s.m, record, source, snapshot)
 	if e != nil {
 		return e
 	}
@@ -622,7 +604,7 @@ func (w *worker) refresh(ctx context.Context, record *agents.Record, a *model.Ag
 	}
 	return w.state(ctx, a.ID, "succeeded", msgDownloaded, model.RuleSyncState{})
 }
-func (w *worker) publish(ctx context.Context, record *agents.Record, a *model.Agent, settings Settings, baseline Baseline, source *deploy.Source, key string) (err error) {
+func (w *worker) publish(ctx context.Context, record *model.Agent, a *model.Agent, settings Settings, baseline Baseline, source *deploy.Source, key string) (err error) {
 	s := w.s
 	id, e := newDeploymentID()
 	if e != nil {
@@ -656,7 +638,11 @@ func (w *worker) publish(ctx context.Context, record *agents.Record, a *model.Ag
 	// Python's worker never forces downloads here: the stored force_refresh only
 	// resumes an interrupted refresh. Forcing would unpin rule files of a scope
 	// that is off and refetch unchanged ones (A18 forces its own rule jobs).
-	bundle, e := s.prepare(ctx, deploy.NewTarget(record), source, baseline, settings, id, false)
+	target, e := deploy.NewTypedTarget(record)
+	if e != nil {
+		return e
+	}
+	bundle, e := s.prepare(ctx, target, source, baseline, settings, id, false)
 	if e != nil {
 		return e
 	}

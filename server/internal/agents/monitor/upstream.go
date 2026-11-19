@@ -8,7 +8,7 @@ import (
 )
 
 func displayAddress(value string) string {
-	s := pySlice(value, 2048)
+	s := truncateText(value, 2048)
 	if hasControl(s) {
 		return ""
 	}

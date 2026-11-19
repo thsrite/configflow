@@ -1,61 +1,42 @@
 package discovery
 
-// This file is the boundary to the pre-N8 repository, matcher and health APIs.
-// Business logic uses native structs; these conversions disappear with N8.
+// Native collaboration between discovery, registry and health owners.
 import (
 	"configflow/internal/jsondecode"
 	"configflow/internal/model"
 	"context"
 	"encoding/json"
-	"fmt"
 
 	"configflow/internal/agents"
 	"configflow/internal/agents/trafficstore"
 	"configflow/internal/health"
 	"configflow/internal/health/check"
-	"configflow/internal/jsonx"
 	"configflow/internal/rulefetch"
 )
 
-func decode(v any, out any) error {
-	b, err := jsonx.Compact(v)
+func project[A, B any](v A, out *B) error {
+	b, err := json.Marshal(v)
 	if err != nil {
 		return err
 	}
 	return jsondecode.Unmarshal([]byte(b), out)
 }
-func legacy(v any) (any, error) {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return nil, err
-	}
-	return jsonx.Parse(b)
-}
-func object(v any) (*jsonx.Object, error) {
-	x, err := legacy(v)
-	if err != nil {
-		return nil, err
-	}
-	o, ok := x.(*jsonx.Object)
-	if !ok {
-		return nil, fmt.Errorf("expected JSON object")
-	}
-	return o, nil
-}
-
 func legacySupported(version, minimum string) bool {
 	return version != "" && agents.CompareVersions(version, minimum) >= 0
 }
 func legacyLoadTraffic(ctx context.Context, a Agent, full bool) (traffic, error) {
-	s, err := trafficstore.Get(ctx)
+	s, err := trafficstore.GetNative(ctx)
 	if err != nil {
 		return traffic{}, err
 	}
 	var out traffic
 	if full {
-		err = decode(s.Load(a.ID, nil), &out)
+		err = project(s.LoadDocument(a.ID, nil), &out)
 	} else {
-		err = decode(s.LoadStatus(a.ID), &out.Status)
+		raw := s.StatusJSON(a.ID)
+		if len(raw) > 0 {
+			err = jsondecode.Unmarshal(raw, &out.Status)
+		}
 	}
 	return out, err
 }
@@ -64,16 +45,16 @@ func legacyProbes(ctx context.Context, as []Agent) (map[string]Probe, error) {
 	if err != nil {
 		return nil, err
 	}
-	ids := []string{}
-	for _, a := range as {
-		ids = append(ids, a.ID)
+	ids := make([]string, len(as))
+	for i, a := range as {
+		ids[i] = a.ID
 	}
-	v, err := check.LatestProbes(ids, store)
+	entries, err := check.LatestProbeEntries(ids, store)
 	if err != nil {
 		return nil, err
 	}
 	out := map[string]Probe{}
-	err = decode(v, &out)
+	err = project(entries, &out)
 	return out, err
 }
 func legacySaveProbes(ctx context.Context, id string, ps map[string]Probe) error {
@@ -81,33 +62,29 @@ func legacySaveProbes(ctx context.Context, id string, ps map[string]Probe) error
 	if err != nil {
 		return err
 	}
-	v, err := object(ps)
-	if err != nil {
+	var entries model.Map[check.TimedRecord]
+	if err := project(ps, &entries); err != nil {
 		return err
 	}
-	return store.SaveContext(ctx, id, v, now())
+	return store.SaveEntriesContext(ctx, id, entries, now())
 }
 func legacyJudge(d, p *PathStats, failing, dh, ph bool) (Probe, error) {
-	dv, err := legacy(d)
-	if err != nil {
+	var direct, proxy *check.PathStats
+	if err := project(d, &direct); err != nil {
 		return Probe{}, err
 	}
-	pv, err := legacy(p)
-	if err != nil {
+	if err := project(p, &proxy); err != nil {
 		return Probe{}, err
 	}
-	v, err := check.Judge(dv, pv, check.JudgeOptions{PassiveFailing: failing, DirectHealthy: dh, ProxyHealthy: ph})
 	var out Probe
-	if err == nil {
-		err = decode(v, &out)
-	}
+	err := project(check.JudgePath(direct, proxy, check.JudgeOptions{PassiveFailing: failing, DirectHealthy: dh, ProxyHealthy: ph}), &out)
 	return out, err
 }
 func legacyRegionData(ctx context.Context, id string) (regionRecord, error) {
 	s, err := health.GetRegionStore(ctx)
 	var out regionRecord
 	if err == nil {
-		err = decode(s.Load(id), &out)
+		err = project(s.LoadData(id), &out)
 	}
 	if out.Domains == nil {
 		out.Domains = map[string]json.RawMessage{}
@@ -122,9 +99,9 @@ func legacyEditRegion(ctx context.Context, id string, edit func(*regionRecord) e
 	if err != nil {
 		return err
 	}
-	return s.UpdateContext(ctx, id, func(o *jsonx.Object) error {
+	return s.UpdateDataContext(ctx, id, func(data *check.RegionData) error {
 		var out regionRecord
-		if err := decode(o, &out); err != nil {
+		if err := project(data, &out); err != nil {
 			return err
 		}
 		if out.Domains == nil {
@@ -136,26 +113,18 @@ func legacyEditRegion(ctx context.Context, id string, edit func(*regionRecord) e
 		if err := edit(&out); err != nil {
 			return err
 		}
-		v, err := object(out)
-		if err != nil {
+		// Preserve fields owned by future versions of the shared region store.
+		var next check.RegionData
+		if err := project(out, &next); err != nil {
 			return err
 		}
-		o.Update(v)
-		return nil
+		data.Services, data.Domains, data.Websites = next.Services, next.Domains, next.Websites
+		return ctx.Err()
 	}, now())
 }
 func legacyPublicServices() json.RawMessage {
-	b, _ := jsonx.Compact(check.PublicServices())
+	b, _ := json.Marshal(check.PublicServiceList())
 	return json.RawMessage(b)
-}
-
-// ProviderRevisions keeps the A05 Agent API compatible until its N8 conversion.
-func ProviderRevisions(ctx context.Context, id string) (*jsonx.Object, error) {
-	v, err := providerRevisions(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-	return object(v)
 }
 
 type managerClient struct{}
@@ -166,20 +135,21 @@ func (managerClient) Probe(ctx context.Context, a Agent, p ProbeRequest) ([]Prob
 	if err != nil {
 		return nil, err
 	}
-	agent, err := m.GetAgentByID(ctx, a.ID, false)
+	agent, err := m.ReadAgent(ctx, a.ID, false)
 	if err != nil {
 		return nil, err
 	}
-	v, err := legacy(p)
+	payload, err := json.Marshal(p)
 	if err != nil {
 		return nil, err
 	}
-	res, err := m.ProbeDomains(ctx, agent, v, 200)
+	res, err := m.ProbeDomainsModel(ctx, agent, payload, agents.Seconds(200))
 	if err != nil {
 		return nil, err
 	}
 	var rows []ProbeRow
-	err = decode(res.Value("results"), &rows)
+	raw, _ := res.Get("results")
+	err = jsondecode.Unmarshal(raw, &rows)
 	return rows, err
 }
 
@@ -189,16 +159,16 @@ func (managerClient) Targets(ctx context.Context, a Agent) ([]AvailableTarget, e
 	if err != nil {
 		return nil, err
 	}
-	agent, err := m.GetAgentByID(ctx, a.ID, false)
+	agent, err := m.ReadAgent(ctx, a.ID, false)
 	if err != nil {
 		return nil, err
 	}
-	res, err := m.RegionTargets(ctx, agent)
+	raw, err := m.RegionTargetsModel(ctx, agent)
 	if err != nil {
 		return nil, err
 	}
 	var out []AvailableTarget
-	err = decode(res, &out)
+	err = jsondecode.Unmarshal(raw, &out)
 	return out, err
 }
 
@@ -208,64 +178,55 @@ func (managerClient) Region(ctx context.Context, a Agent, p RegionRequest) ([]Re
 	if err != nil {
 		return nil, err
 	}
-	agent, err := m.GetAgentByID(ctx, a.ID, false)
+	agent, err := m.ReadAgent(ctx, a.ID, false)
 	if err != nil {
 		return nil, err
 	}
-	v, err := legacy(p)
+	payload, err := json.Marshal(p)
 	if err != nil {
 		return nil, err
 	}
-	res, err := m.RegionCheck(ctx, agent, v)
+	res, err := m.RegionCheckModel(ctx, agent, payload)
 	if err != nil {
 		return nil, err
 	}
 	var out []RegionResult
-	err = decode(res.Value("results"), &out)
+	raw, _ := res.Get("results")
+	err = jsondecode.Unmarshal(raw, &out)
 	return out, err
 }
 func legacyProbeControls() ([]ProbeTarget, error) {
-	v := check.ControlTargets()
-	out := []ProbeTarget{}
-	for _, key := range []string{"direct", "proxy"} {
-		var t ProbeTarget
-		if err := decode(v.Value(key), &t); err != nil {
-			return nil, err
-		}
-		out = append(out, t)
-	}
-	return out, nil
+	targets := check.DefaultControlTargets()
+	var out []ProbeTarget
+	err := project([]check.ProbeTarget{targets.Direct, targets.Proxy}, &out)
+	return out, err
 }
 func legacyPickTargets(ts []AvailableTarget, preferred *string) ([]RegionTarget, error) {
-	v, err := legacy(ts)
-	if err != nil {
+	var targets []check.AvailableTarget
+	if err := project(ts, &targets); err != nil {
 		return nil, err
 	}
-	var p any
+	group := ""
 	if preferred != nil {
-		p = *preferred
-	}
-	picked, err := check.PickTargets(v.([]any), p)
-	if err != nil {
-		return nil, err
+		group = *preferred
 	}
 	var out []RegionTarget
-	err = decode(picked, &out)
+	err := project(check.ChooseTargets(targets, group), &out)
 	return out, err
 }
 func legacyExitRequest() (PageRequest, error) {
 	var out PageRequest
-	err := decode(check.ExitRequest(), &out)
+	err := project(check.DefaultExitRequest(), &out)
 	return out, err
 }
 func legacyServiceRequests() ([]PageRequest, error) {
 	var out []PageRequest
-	err := decode(check.ServiceRequests(), &out)
+	err := project(check.BuildServiceRequests(), &out)
 	return out, err
 }
 func legacyDomainRequest(id, url string) (PageRequest, error) {
 	var out PageRequest
-	err := decode(check.DomainRequest(id, url), &out)
+	err := project(check.BuildDomainRequest(id, url), &out)
 	return out, err
 }
 func legacyRegistryAgents(ctx context.Context) ([]model.Agent, error) {
@@ -273,82 +234,54 @@ func legacyRegistryAgents(ctx context.Context) ([]model.Agent, error) {
 	if err != nil {
 		return nil, err
 	}
-	records, err := manager.GetAllAgents(ctx, false)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]model.Agent, 0, len(records))
-	for _, record := range records {
-		view := jsonx.NewObject()
-		for _, field := range []string{"id", "name", "profile_id", "service_type", "domain_discovery_enabled", "version", "last_heartbeat"} {
-			if value, present := record.Get(field); present {
-				view.Set(field, value)
-			}
-		}
-		var projected model.Agent
-		if err := decode(view, &projected); err != nil {
-			return nil, err
-		}
-		out = append(out, projected)
-	}
-	return out, nil
+	return manager.ReadAgents(ctx, false, nil)
 }
 func legacyExitInfo(rows []RegionResult) (json.RawMessage, error) {
-	v, err := legacy(rows)
+	var entries []check.RegionResult
+	if err := project(rows, &entries); err != nil {
+		return nil, err
+	}
+	result, err := check.SummarizeExit(entries)
 	if err != nil {
 		return nil, err
 	}
-	result, err := check.ExitInfo(v.([]any))
-	if err != nil {
-		return nil, err
-	}
-	b, err := jsonx.Compact(result)
-	return json.RawMessage(b), err
+	return json.Marshal(result)
 }
 func legacyServiceMatrix(rows []RegionResult) (json.RawMessage, error) {
-	v, err := legacy(rows)
+	var entries []check.RegionResult
+	if err := project(rows, &entries); err != nil {
+		return nil, err
+	}
+	result, err := check.EvaluateServiceList(entries)
 	if err != nil {
 		return nil, err
 	}
-	result, err := check.EvaluateServices(v.([]any))
-	if err != nil {
-		return nil, err
-	}
-	b, err := jsonx.Compact(result)
-	return json.RawMessage(b), err
+	return json.Marshal(result)
 }
 func legacyClassifyRegion(result *RegionResult, url string) (json.RawMessage, error) {
-	var value any
-	var err error
-	if result != nil {
-		value, err = legacy(result)
-		if err != nil {
-			return nil, err
-		}
+	var entry *check.RegionResult
+	if err := project(result, &entry); err != nil {
+		return nil, err
 	}
-	classified, err := check.ClassifyDomainResult(value, url)
+	classified, err := check.ClassifyDomain(entry, url)
 	if err != nil {
 		return nil, err
 	}
-	b, err := jsonx.Compact(classified)
-	return json.RawMessage(b), err
+	return json.Marshal(classified)
 }
 func legacySummarizeRegion(names []string, per map[string]json.RawMessage) (domainVerdict, error) {
-	legacyValues := jsonx.NewObject()
+	var entries model.Map[check.TargetState]
 	for _, name := range names {
 		if raw, ok := per[name]; ok {
-			value, err := jsonx.Parse(raw)
-			if err != nil {
+			var entry check.TargetState
+			if err := jsondecode.Unmarshal(raw, &entry); err != nil {
 				return domainVerdict{}, err
 			}
-			legacyValues.Set(name, value)
+			entries.Set(name, entry)
 		}
 	}
-	result, err := check.SummarizeDomain(legacyValues)
 	var out domainVerdict
-	if err == nil {
-		err = decode(result, &out)
-	}
+	err := project(check.SummarizeTargets(entries), &out)
 	return out, err
 }
 
@@ -395,4 +328,9 @@ func init() {
 		websiteMarkers:  legacyWebsiteMarkers,
 	}
 	client = managerClient{}
+}
+
+// ProviderRevisions returns provider hashes for the existing Agent traffic protocol.
+func ProviderRevisions(ctx context.Context, id string) (map[string]string, error) {
+	return providerRevisions(ctx, id)
 }

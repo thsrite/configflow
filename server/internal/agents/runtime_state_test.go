@@ -4,6 +4,7 @@ package agents
 // parts; the HTTP case is in internal/api/agents).
 
 import (
+	"configflow/internal/model"
 	"context"
 	"database/sql"
 	"errors"
@@ -650,5 +651,43 @@ func TestTimestampOfRejectsFutureAndGarbage(t *testing.T) {
 	if !math.IsInf(timestampOf("garbage"), -1) || !math.IsInf(timestampOf(5), -1) ||
 		!math.IsInf(timestampOf(isoformat(time.Now().Add(time.Hour), false)), -1) {
 		t.Fatal("timestamp")
+	}
+}
+
+// Overlay adapts legacy records to the single typed runtime owner.
+func (s *RuntimeState) Overlay(records []*jsonx.Object) []*jsonx.Object {
+	for _, raw := range records {
+		record, err := agentModel(raw)
+		if err != nil {
+			continue
+		}
+		overlaid := s.overlayModels([]model.Agent{*record})
+		result, err := agentObject(&overlaid[0])
+		if err == nil {
+			raw.Update(result)
+		}
+	}
+	return records
+}
+
+// RecordHeartbeat adapts a legacy heartbeat to the typed runtime owner.
+func (s *RuntimeState) RecordHeartbeat(agent, payload *jsonx.Object, mark int64) bool {
+	record, err := agentModel(agent)
+	if err != nil {
+		return false
+	}
+	fields, err := agentModel(payload)
+	if err != nil {
+		return false
+	}
+	ok, err := s.recordModel(context.Background(), record, fields, mark)
+	return err == nil && ok
+}
+
+// Seed imports a legacy heartbeat projection through the typed owner.
+func (s *RuntimeState) Seed(id string, at float64, heartbeat string, fields *jsonx.Object) {
+	record, err := agentModel(fields)
+	if err == nil {
+		_ = s.seedModel(context.Background(), id, at, heartbeat, record)
 	}
 }

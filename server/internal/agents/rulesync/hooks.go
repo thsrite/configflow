@@ -61,10 +61,10 @@ func PinnedWithheld(ctx context.Context, r *repo.Repository, receipts *deploy.Re
 	}
 	var current *deploy.Source
 	for _, record := range records {
-		if !isOxi(record) || !SettingsFor(record).Any() {
+		if !isOxi(record) || !AgentSettings(record).Any() {
 			continue
 		}
-		baseline, e := receipts.Load(ctx, record, false)
+		baseline, e := receipts.LoadAgent(ctx, record, false)
 		if e != nil {
 			return false, e
 		}
@@ -82,7 +82,7 @@ func PinnedWithheld(ctx context.Context, r *repo.Repository, receipts *deploy.Re
 			return false, e
 		}
 		held := map[string]bool{}
-		_, e = ProjectRuleChanges(base, current, SettingsFor(record), "oxidns", held)
+		_, e = ProjectRuleChanges(base, current, AgentSettings(record), "oxidns", held)
 		if e != nil {
 			if ctx.Err() != nil {
 				return false, ctx.Err()

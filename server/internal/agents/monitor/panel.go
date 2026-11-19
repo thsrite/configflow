@@ -17,7 +17,6 @@ import (
 	"fmt"
 	"math/big"
 	"regexp"
-	"sort"
 	"strings"
 	"sync"
 
@@ -167,85 +166,33 @@ func panelName(args [][2]string, key string) (string, error) {
 	return name, nil
 }
 
-// pyIsDigit is str.isdigit() of a non-empty str (CPython 3.11).
-func pyIsDigit(s string) bool {
+// asciiDigits requires a nonempty unsigned ASCII digit sequence.
+func asciiDigits(s string) bool {
 	if s == "" {
 		return false
 	}
-	for _, r := range s {
-		if pyDecimalValue(r) >= 0 {
-			continue
-		}
-		i := sort.Search(len(pyDigitExtra), func(i int) bool { return pyDigitExtra[i] >= r })
-		if i == len(pyDigitExtra) || pyDigitExtra[i] != r {
+	for i := range len(s) {
+		if s[i] < '0' || s[i] > '9' {
 			return false
 		}
 	}
 	return true
 }
 
-// pyIntStr is int(text) for a str in CPython 3.11: non-ASCII decimal
-// digits become ASCII digits and non-ASCII whitespace a space
-// (_PyUnicode_TransformDecimalAndSpaceToASCII; any other non-ASCII
-// character fails), then ASCII whitespace around an optional sign and
-// digits with single underscores between them; at most 4300 digits.
-func pyIntStr(text string) (*big.Int, bool) {
-	var b strings.Builder
-	for _, r := range text {
-		switch {
-		case r < 127:
-			b.WriteRune(r)
-		case pyIsSpace(r):
-			b.WriteByte(' ')
-		default:
-			d := pyDecimalValue(r)
-			if d < 0 {
-				return nil, false
-			}
-			b.WriteByte(byte('0' + d))
-		}
-	}
-	s := strings.Trim(b.String(), " \t\n\v\f\r")
-	negative := false
-	if s != "" && (s[0] == '+' || s[0] == '-') {
-		negative = s[0] == '-'
-		s = s[1:]
-	}
-	if s == "" {
-		return nil, false
-	}
-	var digits strings.Builder
-	previousUnderscore := true
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		switch {
-		case c == '_':
-			if previousUnderscore {
-				return nil, false
-			}
-			previousUnderscore = true
-		case c >= '0' && c <= '9':
-			digits.WriteByte(c)
-			previousUnderscore = false
-		default:
-			return nil, false
-		}
-	}
-	if previousUnderscore || digits.Len() > maxIntDigits {
-		return nil, false
-	}
-	value, ok := new(big.Int).SetString(digits.String(), 10)
-	if !ok {
-		return nil, false
-	}
-	if negative {
-		value.Neg(value)
-	}
-	return value, true
-}
+var decimalIntegerRE = regexp.MustCompile(`^[+-]?[0-9]+(?:_[0-9]+)*$`)
 
-// maxIntDigits is sys.get_int_max_str_digits() of CPython 3.11.
-const maxIntDigits = 4300
+// decimalInteger accepts bounded decimal input without interpreting Unicode digits.
+func decimalInteger(text string) (*big.Int, bool) {
+	text = strings.TrimSpace(text)
+	if !decimalIntegerRE.MatchString(text) {
+		return nil, false
+	}
+	digits := strings.ReplaceAll(text, "_", "")
+	if len(strings.TrimLeft(digits, "+-")) > 4300 {
+		return nil, false
+	}
+	return new(big.Int).SetString(digits, 10)
+}
 
 // panelLogsQuery is _logs_query(args).
 func panelLogsQuery(args [][2]string) (query, error) {
@@ -254,7 +201,7 @@ func panelLogsQuery(args [][2]string) (query, error) {
 		return nil, panelFail("INVALID_REQUEST", 400, msgLogLevel)
 	}
 	after := argGet(args, "after", "0")
-	if !pyIsDigit(after) || runeLen(after) > 18 {
+	if !asciiDigits(after) || runeLen(after) > 18 {
 		return nil, panelFail("INVALID_REQUEST", 400, "")
 	}
 	return query{{"level", level}, {"after", after}}, nil
@@ -277,7 +224,7 @@ func panelQuery(resource string, args [][2]string) (query, error) {
 	}
 	timeout := big.NewInt(5000)
 	if text, ok := lookupArg(args, "timeout"); ok {
-		value, ok := pyIntStr(text)
+		value, ok := decimalInteger(text)
 		if !ok {
 			return nil, panelFail("INVALID_REQUEST", 400, "")
 		}
@@ -521,7 +468,7 @@ var latestCoreVersion = func(ctx context.Context, channel string, settings *mode
 	if err != nil {
 		return "", err
 	}
-	version := pyStrip(agents.DecodeUTF8Replace(content))
+	version := trimText(agents.DecodeUTF8Replace(content))
 	if !coreVersionPattern.MatchString(version) {
 		return "", errNotAVersion
 	}
@@ -891,7 +838,7 @@ func CallPanel(ctx context.Context, m Registry, id, resource, method string, arg
 		case status < 500:
 			errStatus = 400
 		}
-		return nil, panelFail("CORE_ERROR", errStatus, pySlice(message, 300))
+		return nil, panelFail("CORE_ERROR", errStatus, truncateText(message, 300))
 	}
 	if method == "GET" {
 		value = slimPanel(resource, value)

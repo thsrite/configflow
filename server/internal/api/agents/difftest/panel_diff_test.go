@@ -417,6 +417,10 @@ func TestPanelDifferentialAgainstFlask(t *testing.T) {
 		if nativeDiffs, handled := n810CompareAPI(t, r.request, py, gor, pyCalls, goCalls); handled {
 			diffs = nativeDiffs
 		}
+		if numeric, handled := n811NumericPanel(t, r.request, py, gor, pyCalls, goCalls); handled {
+			diffs = numeric
+		}
+
 		if len(diffs) > 0 {
 			failed++
 			t.Errorf("DIFF %s %s %s:\n  %s", r.name, r.method, r.path, strings.Join(diffs, "\n  "))
@@ -584,4 +588,41 @@ func TestRankingCollectorDifferentialAgainstFlask(t *testing.T) {
 		t.Errorf("database files: python %v go %v", dataFiles(t, pyDir), dataFiles(t, goDir))
 	}
 	t.Logf("ranking collector: %d windows, %d stored lines, identical=%v", windows, strings.Count(pyRows, "\n")+1, pyRows == goRows)
+}
+
+// n811NumericPanel binds only the three approved ASCII query refusals. The
+// original requests and the Python reference remain unchanged.
+func n811NumericPanel(t *testing.T, r request, python, native response, pyCalls, goCalls []string) ([]string, bool) {
+	t.Helper()
+	paths := map[string]string{
+		"panel node delay":                "/api/agents/gw/mihomo/proxy/delay?name=HK&timeout=%D9%A3%D9%A0%D9%A0%D9%A0&url=http://127.0.0.1:1/204?a=b&extra=x",
+		"panel logs superscript cursor":   "/api/agents/gw56/mihomo/logs?after=%C2%B2",
+		"review panel logs Arabic cursor": "/api/agents/gw56/mihomo/logs?after=%D9%A1%D9%A2",
+	}
+	path, found := paths[r.name]
+	if !found {
+		return nil, false
+	}
+	if r.method != "GET" || r.path != path || r.body != "" {
+		t.Fatal("ASCII query binding changed", r.name)
+	}
+	py, err := jsonx.Parse(python.body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if python.status != 200 || py.(*jsonx.Object).Value("success") != true || len(pyCalls) != 1 {
+		t.Fatal("Python ASCII-change reference changed", r.name, python.status, pyCalls)
+	}
+	actual, err := jsonx.Parse(native.body)
+	want := jsonx.Obj("success", false, "code", "INVALID_REQUEST", "message", "请求参数无效。")
+	if err != nil || native.status != 400 || !jsonx.Equal(actual, want) || len(goCalls) != 0 {
+		return []string{fmt.Sprintf("ASCII numeric refusal: status=%d body=%s calls=%v", native.status, native.body, goCalls)}, true
+	}
+	for _, header := range []string{"Content-Type", "Cache-Control", "X-ConfigFlow-Profile"} {
+		if strings.Join(python.header.Values(header), ",") != strings.Join(native.header.Values(header), ",") {
+			return []string{"ASCII numeric refusal changed header " + header}, true
+		}
+	}
+
+	return nil, true
 }

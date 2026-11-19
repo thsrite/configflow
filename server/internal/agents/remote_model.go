@@ -437,13 +437,6 @@ func (m *Manager) RunServiceOperation(ctx context.Context, id string, operation 
 	if hook := currentHooks().HAServiceOperationTyped; hook != nil {
 		return hook(ctx, m, id, run, uninstall)
 	}
-	if hook := currentHooks().HAServiceOperation; hook != nil {
-		result, err := hook(ctx, m, id, func() (*Record, error) { return remoteLegacyObject(run()) }, uninstall)
-		if err != nil {
-			return nil, err
-		}
-		return json.Marshal(result)
-	}
 	a, err := m.ReadAgent(ctx, id, true)
 	if err != nil {
 		return nil, err
@@ -480,4 +473,66 @@ func AgentLogsPath(lines, logPath, source string) string {
 // a device payload. It performs no device request or state mutation.
 func (m *Manager) RemotePayloadError(ctx context.Context, id string, payloadErr error) error {
 	return m.remotePayloadError(ctx, id, payloadErr)
+}
+
+// FeatureRequestModel encodes a native JSON payload at the Agent transport owner.
+// A nil payload sends no body, including for GET and DELETE requests.
+func (m *Manager) FeatureRequestModel(ctx context.Context, a *model.Agent, request RemoteRequest, feature string, payload json.RawMessage) (model.Fields, error) {
+	if payload != nil {
+		header, body, err := jsonBody(payload)
+		if err != nil {
+			return model.Fields{}, err
+		}
+		request.Header, request.Body = header, body
+	}
+	return m.AgentRequestModel(ctx, a, request, feature, false)
+}
+
+// ProbeDomainsModel sends a bounded domain-probe batch through the native owner.
+func (m *Manager) ProbeDomainsModel(ctx context.Context, a *model.Agent, payload json.RawMessage, timeout Timeout) (model.Fields, error) {
+	if timeout == (Timeout{}) {
+		timeout = Seconds(200)
+	}
+	return m.FeatureRequestModel(ctx, a, RemoteRequest{Method: http.MethodPost, Path: "/api/domain-probe", Timeout: timeout}, msgDomainProbe, payload)
+}
+
+// RegionTargetsModel reads the Agent's available region paths; empty values become [].
+func (m *Manager) RegionTargetsModel(ctx context.Context, a *model.Agent) (json.RawMessage, error) {
+	fields, err := m.FeatureRequestModel(ctx, a, RemoteRequest{Method: http.MethodGet, Path: "/api/region-check/targets", Timeout: Seconds(15)}, msgRegionCheck, nil)
+	if err != nil {
+		return nil, err
+	}
+	raw, _ := fields.Get("targets")
+	present, err := model.JSONHasContent(raw)
+	if err != nil {
+		return nil, err
+	}
+	if !present {
+		return json.RawMessage("[]"), nil
+	}
+	return raw, nil
+}
+
+// RegionCheckModel sends one bounded region-check batch.
+func (m *Manager) RegionCheckModel(ctx context.Context, a *model.Agent, payload json.RawMessage) (model.Fields, error) {
+	return m.FeatureRequestModel(ctx, a, RemoteRequest{Method: http.MethodPost, Path: "/api/region-check", Timeout: Seconds(120)}, msgRegionCheck, payload)
+}
+
+// ReturnRoutingStatusModel reads the registered Agent's return-route state.
+func (m *Manager) ReturnRoutingStatusModel(ctx context.Context, a *model.Agent) (model.Fields, error) {
+	return m.FeatureRequestModel(ctx, a, RemoteRequest{Method: http.MethodGet, Path: "/api/return-routing", Timeout: Seconds(15)}, msgReturnRoutingStatus, nil)
+}
+
+// ReturnRoutingApplyModel applies a native return-route specification.
+func (m *Manager) ReturnRoutingApplyModel(ctx context.Context, a *model.Agent, spec json.RawMessage) (model.Fields, error) {
+	return m.FeatureRequestModel(ctx, a, RemoteRequest{Method: http.MethodPut, Path: "/api/return-routing", Timeout: Seconds(60)}, msgReturnRoutingManage, spec)
+}
+
+// ReturnRoutingRemoveModel removes return routes, optionally restoring old rules.
+func (m *Manager) ReturnRoutingRemoveModel(ctx context.Context, a *model.Agent, restore bool) (model.Fields, error) {
+	path := "/api/return-routing"
+	if restore {
+		path += "?restore_legacy=1"
+	}
+	return m.FeatureRequestModel(ctx, a, RemoteRequest{Method: http.MethodDelete, Path: path, Timeout: Seconds(60)}, msgReturnRoutingManage, nil)
 }

@@ -32,7 +32,7 @@ func Get(ctx context.Context) (*Service, error) {
 // Wire supplies the real C07 row, C32 withheld projection and request-activated
 // loop. It does not fill A17's independent row or task runner.
 func Wire() {
-	agents.SetRuleSyncRow(taskRow)
+	agents.SetRuleSyncRow(agentTaskRow)
 	agents.RegisterHooks(agents.Hooks{PinnedWithheld: func(ctx context.Context, profileID string, ruleIDs []string) (bool, error) {
 		r, e := repo.GetRepository(ctx)
 		if e != nil {

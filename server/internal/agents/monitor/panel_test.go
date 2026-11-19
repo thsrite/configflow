@@ -814,21 +814,27 @@ func TestPanelLookupsDoNotCopyTheHistoryButPublicationStatisticsDo(t *testing.T)
 
 // --- Python details beyond the ported cases ----------------------------------------
 
-func TestPanelIntAndDigitRulesFollowPython(t *testing.T) {
-	for text, want := range map[string]int64{"5000": 5000, " 7300 ": 7300, "+600": 600, "1_000": 1000, "٣٠٠٠": 3000,
-		"　5000　": 5000, "０５０００": 5000} {
-		got, ok := pyIntStr(text)
+func TestPanelASCIIIntegerRules(t *testing.T) {
+	for text, want := range map[string]int64{"5000": 5000, " 7300 ": 7300, "+600": 600, "1_000": 1000,
+		"　5000　": 5000} {
+		got, ok := decimalInteger(text)
 		if !ok || got.Int64() != want {
 			t.Fatal(text, got, ok)
 		}
 	}
-	for _, text := range []string{"", "1__0", "_1", "1_", "²", "1e3", "0x10", "\x1c5", "5 0", strings.Repeat("1", 4301)} {
-		if _, ok := pyIntStr(text); ok {
+	for _, text := range []string{"", "1__0", "_1", "1_", "²", "٣٠٠٠", "０５０００", "1e3", "0x10", "\x1c5", "5 0", strings.Repeat("1", 4301)} {
+		if _, ok := decimalInteger(text); ok {
 			t.Fatal(text)
 		}
 	}
-	for text, want := range map[string]bool{"7": true, "²": true, "١٢": true, "①": true, "": false, "-1": false, "1e3": false, "½": false} {
-		if pyIsDigit(text) != want {
+	// The bound counts digits; a sign and valid separators do not consume it.
+	for _, text := range []string{"+" + strings.Repeat("1", 4300), "-1" + strings.Repeat("_1", 4299)} {
+		if _, ok := decimalInteger(text); !ok {
+			t.Fatal("valid ASCII decimal rejected at the digit limit")
+		}
+	}
+	for text, want := range map[string]bool{"7": true, "²": false, "١٢": false, "①": false, "": false, "-1": false, "1e3": false, "½": false} {
+		if asciiDigits(text) != want {
 			t.Fatal(text)
 		}
 	}

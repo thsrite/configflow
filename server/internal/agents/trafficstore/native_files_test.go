@@ -54,3 +54,29 @@ print('traffic files read and written by Python')`, store.files.DataDir)
 		t.Fatal("native file changed in Python round trip")
 	}
 }
+
+func toObject(value any) (*jsonx.Object, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var out *jsonx.Object
+	err = json.Unmarshal(raw, &out)
+	return out, err
+}
+
+// Load returns a compatibility copy of the native document.
+func (s *Store) Load(id string, at *time.Time) *jsonx.Object {
+	out, _ := toObject(s.LoadDocument(id, at))
+	return out
+}
+
+// LoadStatus returns a compatibility copy of native metadata.
+func (s *Store) LoadStatus(id string) any {
+	raw := s.StatusJSON(id)
+	if len(raw) == 0 {
+		return nil
+	}
+	value, _ := jsonx.Parse(raw)
+	return value
+}

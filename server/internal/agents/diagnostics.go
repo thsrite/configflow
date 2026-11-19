@@ -87,3 +87,13 @@ func ResponseFailure(response *Response, fallback string, secrets []any) *jsonx.
 	// The old boundary cannot return an encoding error; keep its fallback bounded.
 	return jsonx.Obj("success", false, "message", redact.DiagnosticText(fallback, legacySecrets(secrets), 0))
 }
+
+func legacySecrets(values []any) redact.Secrets {
+	var secrets []string
+	for _, value := range values {
+		if text, ok := value.(string); ok {
+			secrets = append(secrets, text)
+		}
+	}
+	return redact.NewSecrets(secrets)
+}

@@ -66,28 +66,25 @@ type StatusView struct {
 	BaselineReady bool        `json:"baseline_ready"`
 }
 
-func (s *Service) leader(ctx context.Context, record *agents.Record) (*agents.Record, error) {
-	a, e := decodeAgent(record)
-	if e != nil {
-		return nil, e
-	}
-	if a.ServiceType != "oxidns" || !agents.HAEnabled(record) {
+func (s *Service) leader(ctx context.Context, record *model.Agent) (*model.Agent, error) {
+	a := record
+	if a.ServiceType != "oxidns" || !agents.HAEnabledModel(record) {
 		return record, nil
 	}
-	members, e := s.m.HAPair(ctx, a.ID)
+	members, e := s.m.AgentPair(ctx, a.ID)
 	if errors.Is(e, agents.ErrPairIncomplete) {
 		return record, nil
 	}
 	if e != nil {
 		return nil, e
 	}
-	eligible := []*agents.Record{}
+	eligible := []*model.Agent{}
 	for _, member := range members {
-		if SettingsFor(member).Any() {
+		if AgentSettings(member).Any() {
 			eligible = append(eligible, member)
 		}
 	}
-	slices.SortFunc(eligible, func(a, b *agents.Record) int { return compareLeader(a, b) })
+	slices.SortFunc(eligible, func(a, b *model.Agent) int { return compareLeader(a, b) })
 	if len(eligible) > 0 {
 		return eligible[0], nil
 	}
@@ -96,29 +93,23 @@ func (s *Service) leader(ctx context.Context, record *agents.Record) (*agents.Re
 
 // Status resolves a device's own profile and never trusts the active-profile header.
 func (s *Service) Status(ctx context.Context, id string) (StatusView, error) {
-	record, e := s.m.GetAgentByID(ctx, id, false)
+	record, e := s.m.ReadAgent(ctx, id, false)
 	if e != nil {
 		return StatusView{}, e
 	}
 	if record == nil {
 		return StatusView{}, ErrAgentNotFound
 	}
-	a, e := decodeAgent(record)
-	if e != nil {
-		return StatusView{}, e
-	}
+	a := record
 	if a.ServiceType != "mihomo" && a.ServiceType != "oxidns" {
 		return StatusView{}, refuse(msgService)
 	}
-	settings := SettingsFor(record)
+	settings := AgentSettings(record)
 	leader, e := s.leader(ctx, record)
 	if e != nil {
 		return StatusView{}, e
 	}
-	la, e := decodeAgent(leader)
-	if e != nil {
-		return StatusView{}, e
-	}
+	la := leader
 	view := PublicState{}
 	if la.RuleSync != nil && la.RuleSync.State != nil {
 		state := la.RuleSync.State
@@ -129,7 +120,7 @@ func (s *Service) Status(ctx context.Context, id string) (StatusView, error) {
 	} else if view.Status == "" && view.Message == "" && view.UpdatedAt == "" {
 		view = PublicState{Status: "pending", Message: msgWaiting}
 	}
-	baseline, e := s.receipts.Load(ctx, record, false)
+	baseline, e := s.receipts.LoadAgent(ctx, record, false)
 	return StatusView{Success: true, Settings: settings, State: view, BaselineReady: baseline != nil}, e
 }
 
@@ -153,14 +144,14 @@ func (s *Service) Configure(ctx context.Context, id string, body json.RawMessage
 		if e := jsondecode.Unmarshal(body, &settings); e != nil {
 			return refuse(msgSettings)
 		}
-		record, e := s.m.GetAgentByID(ctx, id, false)
+		record, e := s.m.ReadAgent(ctx, id, false)
 		if e != nil {
 			return e
 		}
 		if pairEnabling(record) {
 			return refuse(msgPairEnabling)
 		}
-		pair, e := s.m.HAPair(ctx, id)
+		pair, e := s.m.AgentPair(ctx, id)
 		if e != nil {
 			return e
 		}
@@ -218,7 +209,7 @@ func (s *Service) Run(ctx context.Context, id string) error {
 
 // Round observes presence and admits at most two tracked workers in round-robin order.
 func (s *Service) Round(ctx context.Context) error {
-	records, e := s.m.GetAllAgents(ctx, false)
+	records, e := s.m.AgentSnapshots(ctx, false)
 	if e != nil {
 		return e
 	}
@@ -245,7 +236,7 @@ func (s *Service) Round(ctx context.Context) error {
 		return nil
 	}
 	s.cursor %= n
-	ordered := append(append([]*agents.Record{}, records[s.cursor:]...), records[:s.cursor]...)
+	ordered := append(append([]*model.Agent{}, records[s.cursor:]...), records[:s.cursor]...)
 	s.mu.Unlock()
 	for _, r := range ordered {
 		id := recordID(r)
@@ -255,7 +246,7 @@ func (s *Service) Round(ctx context.Context) error {
 			break
 		}
 		s.cursor = (s.cursor + 1) % n
-		eligible := !s.pending[id] && recordSupported(r) && SettingsFor(r).Any()
+		eligible := !s.pending[id] && recordSupported(r) && AgentSettings(r).Any()
 		if eligible {
 			s.pending[id] = true
 		}
@@ -301,17 +292,14 @@ func (s *Service) saveState(ctx context.Context, id string, next model.RuleSyncS
 	if e := ctx.Err(); e != nil {
 		return e
 	}
-	record, e := s.m.GetAgentByID(ctx, id, false)
+	record, e := s.m.ReadAgent(ctx, id, false)
 	if e != nil {
 		return e
 	}
 	if record == nil {
 		return nil
 	}
-	a, e := decodeAgent(record)
-	if e != nil {
-		return e
-	}
+	a := record
 	previous := stateOf(a)
 	// Compare the complete state excluding the timestamp, including unknown state
 	// members. Replacement deliberately removes old per-run fields.
@@ -341,7 +329,7 @@ func (s *Service) saveState(ctx context.Context, id string, next model.RuleSyncS
 		if e = ctx.Err(); e != nil {
 			return e
 		}
-		_, e = notifications.TaskStatus(ctx, s.m.Repository().DataDir()).RecordContext(ctx, "agent_rule_sync:"+id, taskstatus.Result{OK: next.Status == "succeeded", Trigger: "event", Error: next.Message})
+		_, e = notifications.TaskStatus(ctx, s.m.Repository().DataDir()).SaveResult(ctx, "agent_rule_sync:"+id, taskstatus.Result{OK: next.Status == "succeeded", Trigger: "event", Error: next.Message})
 	}
 	return e
 }

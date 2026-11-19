@@ -8,28 +8,21 @@
 //
 // Get(ctx) is get_agent_manager() (one Manager per repository), Init(ctx)
 // init_agent_manager(), New(ctx, repository) AgentManager(repository). Every
-// method takes the request ctx first. Records are *jsonx.Object; errors are
+// method takes the request ctx first. Records are native model.Agent/model.Deployment values; errors are
 // *DeploymentConflict (AgentDeploymentConflict, 409), *PermissionError
 // (re-registration without the token, 401), *ValueError, *repo.Error,
 // *TransportError (requests.RequestException), *RemoteError (RuntimeError
 // with a message for the user).
 //
-//   - Registry: RegisterAgent, GetAllAgents (status derived by the two-minute
-//     rule), GetAgentByID (stored status), GetAgentByToken, Agents,
-//     UpdateAgent, RebindProfileAgents, DeleteAgent, UpdateHeartbeat,
-//     SetDomainDiscovery, SetTrafficHistory, UpdateAgents (_update_agents:
-//     edit the Agent list inside one system transaction).
-//   - Freshness: HeartbeatFresh, OnlineStatus, IsOnline, IsUsable.
-//   - Deployments: BeginDeployment, RecordDeployment(RecordOptions),
-//     FinishDeploymentPreparation, GetDeployment, ActivateDeployment,
-//     RollbackDeployment, RecoverDeployment, DeploymentRequest
-//     (_deployment_request), GetDeploymentDirect / ActivateDeploymentDirect
-//     (the underscore versions for #29) (the publishing chain lives in deploy).
-//   - Agent calls: Call (any request with the Bearer token), PushLegacyConfig,
-//     RestartAgentService, GetAgentStatus, GetAgentLogSources, GetAgentLogs,
-//     ClearAgentLog, UninstallAgent, UpdateAgentVersion, ValidateAgentLogPath,
-//     Get/SetLoggingConfig, AgentJSONRequest, ProbeDomains, ReturnRouting*,
-//     RegionTargets, RegionCheck, OxidnsHARequest and OxidnsHA*.
+//   - Registry: RegisterIdentity, ReadAgent/ReadAgents/ListAgents, ReadAgentByToken,
+//     EditAgents, RebindProfiles, DeleteAgentContext, ObserveHeartbeat and the
+//     model-based management switches. Snapshots are caller-owned.
+//   - Deployments: ReserveDeployment, RecordDeploymentModel, GetDeploymentModel,
+//     ActivateDeploymentModel, RollbackDeploymentModel, RecoverDeploymentModel,
+//     DeploymentRequestModel; preparation leases are always explicitly released.
+//   - Agent calls: CallAgent, RemoteCall, AgentRequestModel, FeatureRequestModel,
+//     ProbeDomainsModel, RegionTargetsModel, RegionCheckModel and ReturnRouting*Model.
+//     Compatibility methods still used by deployment/gateway owners are removed by N8-11 W9.
 //
 // # Agent HTTP client
 //
@@ -51,15 +44,14 @@
 // # Hooks for later packages
 //
 // RegisterHooks(Hooks{...}) from the owning package's wire function:
-// AddMetrics / DeleteMetricsHistory / DeleteTrafficHistory /
-// PublicationComplete / PublicationCheckpoint (#21), AddressFollow /
-// AddressConfirmed / ReceiptMatches (#28), HAServiceOperation /
-// HADeployment / HAActivate (#29),
-// InstallationProfile / InstallationRegister (#30). OnAgentDeleted adds the
-// stores the DELETE route clears (#21 traffic_store, #14 domain_probe and
-// region_check, in that order); OnManagerInit adds the loops
-// init_agent_manager starts (#28, #29, #31). SetRuleSyncRow (#27) and
-// SetDNSFollowRow (#28) provide the rows of the "agent" task slot; the slot
-// is installed when both are set (the registry owns no task rows).
-// compat.go holds the pure oxidns_ha_publish helpers until #29 lands.
+// AddMetricsJSON / DeleteMetricsHistoryContext / DeleteTrafficHistoryContext,
+// PublicationComplete / PublicationCheckpoint, AddressFollowTyped /
+// AddressConfirmedTyped, ReceiptMatches, HAServiceOperationTyped / HADeployment /
+// HAActivate, InstallationProfileTyped / InstallationRegisterTyped. Legacy-only
+// address, installation and HA-operation hook fields no longer exist; registering
+// an obsolete hook is a compile error. RegisterHooks replaces each supplied field
+// while leaving unrelated owners installed; ResetHooks clears all owners for tests.
+// OnAgentDeleted registers the per-Agent leaf stores to clear. OnManagerInit adds
+// lifecycle-managed initialization. SetRuleSyncRow / SetDNSFollowRow take native
+// Agent snapshots and task receipts and supply the shared Agent task slot.
 package agents

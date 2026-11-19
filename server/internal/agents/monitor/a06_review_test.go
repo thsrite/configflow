@@ -9,7 +9,10 @@ package monitor
 
 import (
 	"compress/gzip"
+	"configflow/internal/jsonresp"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,7 +22,9 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"configflow/internal/agents"
@@ -87,6 +92,12 @@ func TestReviewMetrics(t *testing.T) {
 			summary, _ := SummarizeMetrics(text)
 			result = jsonx.Obj("parsed", parsed, "summary", summary)
 		}
+		if want, bound := asciiReviewExpectation(t, "metrics", c); bound {
+			if got := dumpSorted(t, result); got != want {
+				t.Fatalf("ASCII native row: got %s want %s", got, want)
+			}
+			continue
+		}
 		if want, bound := nativeStateExpectation(t, "metrics", c); bound {
 			if got := dumpSorted(t, result); got != want {
 				t.Errorf("native metric: got %s want %s", got, want)
@@ -132,7 +143,7 @@ func TestReviewIPAddresses(t *testing.T) {
 	all := ref.GetList("ip")
 	for _, item := range all {
 		pair := item.([]any)
-		canonical, _, ok := pyIPAddress(pair[0].(string))
+		canonical, _, ok := parseIP(pair[0].(string))
 		var got any
 		if ok {
 			got = canonical
@@ -293,6 +304,12 @@ func TestReviewOverviewSnapshots(t *testing.T) {
 				summary.Set("upstreams", upstreams)
 				result = jsonx.Obj("core", snap.core, "recorders", snap.recorders, "summary", summary)
 			}
+		}
+		if want, bound := asciiReviewExpectation(t, "overview_snapshot", c); bound {
+			if got := answerResult(t, result, err, seen); got != want {
+				t.Fatalf("ASCII native row: got %s want %s", got, want)
+			}
+			continue
 		}
 		if want, bound := nativeStateExpectation(t, "overview_snapshot", c); bound {
 			if got := answerResult(t, result, err, seen); got != want {
@@ -550,4 +567,142 @@ func TestReviewOverviewFlows(t *testing.T) {
 		t.Fatalf("only %d steps replayed", total)
 	}
 	t.Logf("%d flows, %d steps", len(value.(*jsonx.Object).GetList("flows")), total)
+}
+
+type asciiReviewChange struct {
+	Path      []string `json:"path"`
+	EmptyList bool     `json:"empty_list"`
+}
+
+var asciiReviewOnce sync.Once
+var asciiReviewRows map[string][]asciiReviewChange
+var asciiReviewError error
+
+func loadASCIIReview() {
+	data, err := os.ReadFile("testdata/n811_ascii_native.json")
+	if err != nil {
+		asciiReviewError = err
+		return
+	}
+	var fixture struct {
+		SourceSHA string `json:"source_sha256"`
+		Rows      []struct {
+			Section string              `json:"section"`
+			SHA     string              `json:"sha256"`
+			Changes []asciiReviewChange `json:"changes"`
+		} `json:"rows"`
+	}
+	if err = json.Unmarshal(data, &fixture); err != nil {
+		asciiReviewError = err
+		return
+	}
+	source, err := os.ReadFile("testdata/a06_review.json.gz")
+	if err != nil {
+		asciiReviewError = err
+		return
+	}
+	digest := sha256.Sum256(source)
+	if hex.EncodeToString(digest[:]) != fixture.SourceSHA || len(fixture.Rows) != 44 {
+		asciiReviewError = fmt.Errorf("ASCII review archive/count binding changed")
+		return
+	}
+	asciiReviewRows = map[string][]asciiReviewChange{}
+	for _, row := range fixture.Rows {
+		key := row.Section + ":" + row.SHA
+		if len(row.Changes) == 0 || asciiReviewRows[key] != nil {
+			asciiReviewError = fmt.Errorf("invalid ASCII row binding")
+			return
+		}
+		asciiReviewRows[key] = row.Changes
+	}
+}
+func asciiReviewExpectation(t *testing.T, section string, row *jsonx.Object) (string, bool) {
+	t.Helper()
+	asciiReviewOnce.Do(loadASCIIReview)
+	if asciiReviewError != nil {
+		t.Fatal(asciiReviewError)
+	}
+	data, err := json.Marshal(row)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err = jsonresp.Canonical(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(data)
+	changes, found := asciiReviewRows[section+":"+hex.EncodeToString(sum[:])]
+	if !found {
+		return "", false
+	}
+	decoder := json.NewDecoder(strings.NewReader(row.GetString("result")))
+	decoder.UseNumber()
+	var expected any
+	if err := decoder.Decode(&expected); err != nil {
+		t.Fatal(err)
+	}
+	for _, change := range changes {
+		parent := expected
+		for _, step := range change.Path[:len(change.Path)-1] {
+			switch v := parent.(type) {
+			case map[string]any:
+				var ok bool
+				parent, ok = v[step]
+				if !ok {
+					t.Fatal("missing native path", change.Path)
+				}
+			case []any:
+				index, err := strconv.Atoi(step)
+				if err != nil || index < 0 || index >= len(v) {
+					t.Fatal("invalid native index", change.Path)
+				}
+				parent = v[index]
+			default:
+				t.Fatal("invalid native path", change.Path)
+			}
+		}
+		object, ok := parent.(map[string]any)
+		if !ok {
+			t.Fatal("invalid native patch parent", change.Path)
+		}
+		key := change.Path[len(change.Path)-1]
+		old, ok := object[key]
+		if !ok {
+			t.Fatal("missing native patch field", change.Path)
+		}
+		if change.EmptyList {
+			list, ok := old.([]any)
+			if !ok || len(list) != 1 {
+				t.Fatal("invalid timestamp row expectation", change.Path)
+			}
+			object[key] = []any{}
+		} else {
+			if _, ok := old.(json.Number); !ok {
+				t.Fatal("native numeric expectation was not numeric", change.Path)
+			}
+			object[key] = nil
+		}
+	}
+	data, err = json.Marshal(expected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, err := jsonx.Parse(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dumpSorted(t, value), true
+}
+func TestASCIIReviewBindingsHaveNoStaleRows(t *testing.T) {
+	counts := map[string]int{}
+	for _, section := range []string{"metrics", "overview_snapshot"} {
+		for _, row := range cases(loadReview(t, section), section) {
+			if _, found := asciiReviewExpectation(t, section, row); found {
+				counts[section]++
+			}
+		}
+	}
+	if counts["metrics"] != 40 || counts["overview_snapshot"] != 4 {
+		t.Fatal("stale/missing ASCII review rows", counts)
+	}
 }

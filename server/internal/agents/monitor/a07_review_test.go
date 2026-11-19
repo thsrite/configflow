@@ -118,7 +118,7 @@ func TestReviewCoreUpdateDigitLimitFollowsPython(t *testing.T) {
 			}
 			continue
 		}
-		label := pySlice(current, 8) + " cached=" + jsonx.Str(cached) + " force=" + jsonx.Str(force)
+		label := truncateText(current, 8) + " cached=" + jsonx.Str(cached) + " force=" + jsonx.Str(force)
 		if want["exception"] != nil {
 			sameOutcome(t, label, reviewOutcome(err), want)
 		} else if err != nil {

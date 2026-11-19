@@ -6,15 +6,20 @@ package monitor
 // are in internal/api/agents/oxidns_test.go.
 
 import (
+	"configflow/internal/agents"
+	"configflow/internal/jsondecode"
+	"configflow/internal/jsonresp"
+	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"context"
+	"encoding/json"
 	"errors"
+	"golang.org/x/text/encoding/charmap"
 	"net/url"
 	"strings"
 	"sync"
 	"testing"
-
-	"configflow/internal/agents"
-	"configflow/internal/jsonx"
+	"time"
 )
 
 func baseAgent() *jsonx.Object {
@@ -608,3 +613,866 @@ func (m *fakeManager) WithReadSnapshot(ctx context.Context, fn func(context.Cont
 	}
 	return fn(context.WithValue(ctx, fakeSnapshotKey{}, snapshot))
 }
+
+// Compatibility codecs are test-only; production uses the native owners.
+
+// Checkpoint is the legacy hook codec; invalid optional revisions are ignored.
+func Checkpoint(ctx context.Context, m Manager, id, deploymentID string, value any) error {
+	revision, _ := value.(string)
+	return CheckpointStatistics(ctx, registryFor(m), id, deploymentID, revision)
+}
+
+// Complete is the legacy terminal-status codec.
+func Complete(ctx context.Context, m Manager, id, deploymentID string, value any) error {
+	switch value.(type) {
+	case []any, *jsonx.Object:
+		return errors.New(msgPublicationDamaged)
+	}
+	status, _ := value.(string)
+	return CompleteStatistics(ctx, registryFor(m), id, deploymentID, status)
+}
+
+// verifyPublication is the legacy read-snapshot codec used by boundary tests.
+func verifyPublication(ctx context.Context, m Manager, id, digest string, raw *jsonx.Object) error {
+	var pending PendingPublication
+	if err := metricJSON(raw, &pending); err != nil {
+		return err
+	}
+	return verifyNativePublication(ctx, registryFor(m), id, digest, &pending)
+}
+
+func metricJSON(value any, target any) error {
+	raw, err := jsonx.Compact(value)
+	if err != nil {
+		return err
+	}
+	return jsondecode.Unmarshal(raw, target)
+}
+func metricObject(value any) *jsonx.Object {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil
+	}
+	decoded, err := jsonx.Parse(raw)
+	if err != nil {
+		return nil
+	}
+	return decoded.(*jsonx.Object)
+}
+func nativeObservations(value *jsonx.Object) *Observations {
+	var out Observations
+	_ = metricJSON(value, &out)
+	return &out
+}
+
+// ParseMetrics converts native observations for pending legacy callers.
+func ParseMetrics(text string) (*jsonx.Object, error) {
+	o, err := ReadMetrics(text)
+	if err != nil {
+		return nil, err
+	}
+	return metricObject(o), nil
+}
+
+// MetricsCountersRestarted reports reset counters through the legacy codec.
+func MetricsCountersRestarted(a, b *jsonx.Object) bool {
+	return CountersRestarted(nativeObservations(a), nativeObservations(b))
+}
+
+// ApplyMetricsBaseline adapts existing dashboard callers.
+func ApplyMetricsBaseline(a, b *jsonx.Object) (*jsonx.Object, bool, error) {
+	var x, y Observations
+	if err := metricJSON(a, &x); err != nil {
+		return nil, false, err
+	}
+	if err := metricJSON(b, &y); err != nil {
+		return nil, false, err
+	}
+	out, partial, err := ApplyBaseline(&x, &y)
+	if err != nil {
+		return nil, false, err
+	}
+	return metricObject(out), partial, nil
+}
+
+// ZeroBaseline adapts existing dashboard callers.
+func ZeroBaseline(a *jsonx.Object) *jsonx.Object {
+	return metricObject(ZeroObservations(nativeObservations(a)))
+}
+
+// AddObservations adapts existing dashboard callers.
+func AddObservations(a, b *jsonx.Object) *jsonx.Object {
+	return metricObject(CarryObservations(nativeObservations(a), nativeObservations(b)))
+}
+
+// SummarizeObservations adapts existing dashboard callers.
+func SummarizeObservations(a *jsonx.Object) *jsonx.Object {
+	return metricObject(Summarize(nativeObservations(a)))
+}
+
+// SummarizeMetrics adapts the legacy metrics entry point.
+func SummarizeMetrics(text string) (*jsonx.Object, error) {
+	o, err := ReadMetrics(text)
+	if err != nil {
+		return nil, err
+	}
+	return metricObject(Summarize(o)), nil
+}
+
+func identity(row *jsonx.Object, labels []string) string {
+	parts := make([]any, len(labels))
+	for i, key := range labels {
+		parts[i] = row.Value(key)
+	}
+	raw, _ := jsonx.Compact(parts)
+	return string(raw)
+}
+
+// ValidateState validates the legacy representation through the typed owner.
+func ValidateState(value any) bool {
+	raw, err := jsonx.Compact(value)
+	if err != nil {
+		return false
+	}
+	_, err = DecodeState(raw)
+	return err == nil
+}
+
+// ValidateObservations validates legacy observation input through the typed owner.
+func ValidateObservations(value any) bool {
+	raw, err := jsonx.Compact(value)
+	if err != nil {
+		return false
+	}
+	_, err = decodeObservations(raw)
+	return err == nil
+}
+func (s *StateStore) read(path string) (*jsonx.Object, error) {
+	state, err := s.readState(path)
+	if err != nil || state == nil {
+		return nil, err
+	}
+	return metricObject(state), nil
+}
+
+// Read is the legacy dashboard-state codec.
+func (s *StateStore) Read(ctx context.Context, id string) (*jsonx.Object, error) {
+	state, err := s.ReadState(ctx, id)
+	if err != nil || state == nil {
+		return nil, err
+	}
+	return metricObject(state), nil
+}
+
+// CompareAndSet is the legacy dashboard-state codec.
+func (s *StateStore) CompareAndSet(ctx context.Context, id, expected string, replacement *jsonx.Object) (*jsonx.Object, error) {
+	var state *DashboardState
+	if replacement != nil {
+		raw, err := jsonx.Compact(replacement)
+		if err != nil {
+			return nil, err
+		}
+		state, err = DecodeState(raw)
+		if err != nil {
+			return nil, &StateError{"Invalid DNS statistics state"}
+		}
+	}
+	result, err := s.CompareState(ctx, id, expected, state)
+	if err != nil || result == nil {
+		return nil, err
+	}
+	return metricObject(result), nil
+}
+
+// ExceedsDigitLimit is exceedsDigitLimit for the routes.
+func ExceedsDigitLimit(value any) bool { return exceedsDigitLimit(value) }
+
+// exceedsDigitLimit reports an int literal longer than 4300 digits, which
+// json.loads refuses with ValueError.
+func exceedsDigitLimit(value any) bool {
+	switch v := value.(type) {
+	case jsonx.Number:
+		if v.IsInt() {
+			text := v.String()
+			if len(text) > 0 && text[0] == '-' {
+				text = text[1:]
+			}
+			return len(text) > maxStrDigits
+		}
+	case []any:
+		for _, item := range v {
+			if exceedsDigitLimit(item) {
+				return true
+			}
+		}
+	case *jsonx.Object:
+		for _, item := range v.Values() {
+			if exceedsDigitLimit(item) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// maxStrDigits remains only for the unmigrated HTTP request binder.
+const maxStrDigits = 4300
+
+// PanelCall is the compatibility codec for API/agents and rulesync.
+func PanelCall(ctx context.Context, m Manager, id, resource, method string, args [][2]string, body any, minimum string) (*jsonx.Object, error) {
+	var raw []byte
+	var err error
+	if body != nil {
+		raw, err = jsonx.Compact(body)
+		if err != nil {
+			return nil, err
+		}
+	}
+	result, err := CallPanel(ctx, registryFor(m), id, resource, method, args, raw, minimum)
+	if err != nil {
+		return nil, err
+	}
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		return nil, err
+	}
+	value, err := jsonx.Parse(encoded)
+	if err != nil {
+		return nil, panelFail("INVALID_RESPONSE", 0, "")
+	}
+	return value.(*jsonx.Object), nil
+}
+
+// CheckCoreUpdate is the compatibility codec for the core version operation.
+func CheckCoreUpdate(ctx context.Context, m Manager, id string, force bool) (*jsonx.Object, error) {
+	args := [][2]string{}
+	if force {
+		args = append(args, [2]string{"force", "1"})
+	}
+	return PanelCall(ctx, m, id, "core/update", "GET", args, nil, "")
+}
+func panelAgent(ctx context.Context, m Manager, id, minimum, feature string) (*jsonx.Object, error) {
+	a, err := readPanelAgent(ctx, registryFor(m), id, minimum, feature)
+	if err != nil {
+		return nil, err
+	}
+	raw, err := json.Marshal(a)
+	if err != nil {
+		return nil, err
+	}
+	value, err := jsonx.Parse(raw)
+	if err != nil {
+		return nil, err
+	}
+	return value.(*jsonx.Object), nil
+}
+
+func legacyAgent(a *model.Agent) *jsonx.Object {
+	if a == nil {
+		return nil
+	}
+	raw, err := json.Marshal(a)
+	if err != nil {
+		return nil
+	}
+	value, err := jsonx.Parse(raw)
+	if err != nil {
+		return nil
+	}
+	return value.(*jsonx.Object)
+}
+func typedAgent(a *jsonx.Object) (*model.Agent, error) {
+	if a == nil {
+		return nil, nil
+	}
+	out := new(model.Agent)
+	return out, metricJSON(a, out)
+}
+func slotRanking(ctx context.Context, m Manager, a *jsonx.Object, recorder string, since, until int64) (*Slot, error) {
+	record, err := typedAgent(a)
+	if err != nil {
+		return nil, err
+	}
+	return readSlot(ctx, registryFor(m), record, recorder, since, until)
+}
+
+// CollectAgent is the legacy collection codec.
+func CollectAgent(ctx context.Context, m Manager, store *RankingStore, a *jsonx.Object, recorders []string, now *int64, budget, retention int, pause time.Duration) (int, error) {
+	record, err := typedAgent(a)
+	if err != nil {
+		return 0, err
+	}
+	return CollectAgentHistory(ctx, registryFor(m), store, record, recorders, now, budget, retention, pause)
+}
+
+// RoundManager is what collect_round needs of the Agent manager.
+type RoundManager interface {
+	Manager
+	GetAllAgents(ctx context.Context, history bool) ([]*jsonx.Object, error)
+}
+
+// RoundManagerFromAgents adapts the registry's Manager for CollectRound.
+func RoundManagerFromAgents(m *agents.Manager) RoundManager { return agentsManager{m} }
+
+// Seams of collect_round for tests (the Python tests patch _recorders,
+// collect_agent and manager.is_usable).
+var (
+	rankingRecorders = func(ctx context.Context, m Manager, agent *jsonx.Object) ([]string, error) {
+		snap, err := overviewSnapshot(ctx, m, agent, true)
+		if err != nil {
+			return nil, err
+		}
+		out := make([]string, len(snap.recorders))
+		for i, r := range snap.recorders {
+			out[i] = r.(string)
+		}
+		return out, nil
+	}
+	rankingCollectAgent = func(ctx context.Context, m Manager, store *RankingStore, agent *jsonx.Object, recorders []string, now *int64) error {
+		_, err := CollectAgent(ctx, m, store, agent, recorders, now, RankingSlotsPerRound, RankingCoreRetentionDays,
+			200*time.Millisecond)
+		return err
+	}
+	rankingIsUsable = func(agent *jsonx.Object) bool { return agents.IsUsable(agent, nil) }
+)
+
+type legacyRoundRegistry struct {
+	legacyRegistry
+	RoundManager
+}
+
+func (m legacyRoundRegistry) WithReadSnapshot(ctx context.Context, fn func(context.Context) error) error {
+	return m.RoundManager.WithReadSnapshot(ctx, fn)
+}
+func (m legacyRoundRegistry) DataDir() string       { return m.RoundManager.DataDir() }
+func (m legacyRoundRegistry) Client() agents.Client { return m.RoundManager.Client() }
+func (m legacyRoundRegistry) ReadAgents(ctx context.Context, history bool, inspect func(*model.Agent)) ([]model.Agent, error) {
+	list, err := m.GetAllAgents(ctx, history)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]model.Agent, 0, len(list))
+	for _, raw := range list {
+		a, err := typedAgent(raw)
+		if err != nil {
+			return nil, err
+		}
+		if inspect != nil {
+			inspect(a)
+		}
+		out = append(out, *a)
+	}
+	return out, nil
+}
+func (m legacyRoundRegistry) historyUsable(a *model.Agent) bool {
+	return rankingIsUsable(legacyAgent(a))
+}
+func (m legacyRoundRegistry) historyRecorders(ctx context.Context, a *model.Agent) ([]string, error) {
+	return rankingRecorders(ctx, m.RoundManager, legacyAgent(a))
+}
+func (m legacyRoundRegistry) historyCollect(ctx context.Context, store *RankingStore, a *model.Agent, recorders []string, now *int64) error {
+	return rankingCollectAgent(ctx, m.RoundManager, store, legacyAgent(a), recorders, now)
+}
+
+// CollectRound is the legacy collector entry point.
+func CollectRound(ctx context.Context, m RoundManager, store *RankingStore, now *int64) error {
+	if native, ok := m.(RoundRegistry); ok {
+		return CollectHistoryRound(ctx, native, store, now)
+	}
+	return CollectHistoryRound(ctx, legacyRoundRegistry{legacyRegistry{m}, m}, store, now)
+}
+
+// HistorySupported is supported(agent).
+func HistorySupported(agent *jsonx.Object) bool { return versionAtLeast(agent, HistoryAgentVersion) }
+
+// Manager is what the monitor needs of the Agent manager.
+type Manager interface {
+	// WithReadSnapshot excludes configuration writers during verification and leaf CAS.
+	WithReadSnapshot(context.Context, func(context.Context) error) error
+	GetAgentByID(ctx context.Context, agentID string, history bool) (*jsonx.Object, error)
+	DataDir() string
+	Client() agents.Client
+}
+
+// FromAgents adapts the registry's Manager.
+func FromAgents(m *agents.Manager) Manager { return agentsManager{m} }
+
+func agentFor(ctx context.Context, m Manager, id, minimum string, history bool) (*jsonx.Object, error) {
+	a, err := readDNSAgent(ctx, registryFor(m), id, minimum, history)
+	if err != nil {
+		return nil, err
+	}
+	return legacyAgent(a), nil
+}
+func versionAtLeast(raw *jsonx.Object, minimum string) bool {
+	a, err := typedAgent(agentMembers(raw, "version"))
+	return err == nil && a != nil && modelVersionAtLeast(a, minimum)
+}
+
+// agentMembers projects only fields consumed by a legacy scalar read. Lazy
+// history sentinels and unrelated opaque values must never enter its JSON codec.
+func agentMembers(raw *jsonx.Object, names ...string) *jsonx.Object {
+	if raw == nil {
+		return nil
+	}
+	out := jsonx.NewObject()
+	for _, name := range names {
+		if value, present := raw.Get(name); present {
+			out.Set(name, value)
+		}
+	}
+	return out
+}
+
+var doRequest = request
+
+func request(ctx context.Context, m Manager, raw *jsonx.Object, endpoint string, params query, minimum string) (*jsonx.Object, error) {
+	a, err := typedAgent(raw)
+	if err != nil {
+		return nil, err
+	}
+	fields, err := monitorRequest(ctx, registryFor(m), a, endpoint, params, minimum)
+	if err != nil {
+		return nil, err
+	}
+	encoded, err := json.Marshal(fields)
+	if err != nil {
+		return nil, NewError("INVALID_RESPONSE", 0, "")
+	}
+	value, err := jsonx.Parse(encoded)
+	if err != nil {
+		return nil, NewError("INVALID_RESPONSE", 0, "")
+	}
+	return value.(*jsonx.Object), nil
+}
+func latin1(value string) (string, bool) {
+	encoded, err := charmap.ISO8859_1.NewEncoder().String(value)
+	return encoded, err == nil
+}
+func text(value any, limit int) string {
+	s, ok := value.(string)
+	if !ok {
+		return ""
+	}
+	return truncateText(s, limit)
+}
+
+func displayUpstream(value any) string { return displayAddress(text(value, 2048)) }
+
+func target(raw *jsonx.Object) (string, error) {
+	a, err := typedAgent(raw)
+	if err != nil {
+		return "", err
+	}
+	return TargetIdentity(a)
+}
+
+type snapshotResult struct {
+	data, core, observations *jsonx.Object
+	recorders, labels        []any
+}
+
+func overviewSnapshot(ctx context.Context, m Manager, raw *jsonx.Object, dashboard bool) (*snapshotResult, error) {
+	a, err := typedAgent(raw)
+	if err != nil {
+		return nil, err
+	}
+	snapshot, err := readOverviewSnapshot(ctx, registryFor(m), a, dashboard)
+	if err != nil {
+		return nil, err
+	}
+	tags := make([]any, len(snapshot.Recorders))
+	for i, tag := range snapshot.Recorders {
+		tags[i] = tag
+	}
+	labels := make([]any, len(snapshot.Labels))
+	for i, label := range snapshot.Labels {
+		labels[i] = jsonx.Obj("plugin_tag", label.PluginTag, "upstream", label.Upstream, "address", label.Address)
+	}
+	return &snapshotResult{data: metricObject(snapshot.Identity), core: metricObject(snapshot.Core), observations: metricObject(snapshot.Observations), recorders: tags, labels: labels}, nil
+}
+func rankingsUnavailable(code string, fields ...any) *jsonx.Object {
+	r := unavailableRankings(code)
+	out := metricObject(r)
+	for i := 0; i+1 < len(fields); i += 2 {
+		out.Set(fields[i].(string), fields[i+1])
+	}
+	return out
+}
+func rankingSection(value any, kind string) (*jsonx.Object, error) {
+	return rankingSectionRows(value, kind, 10)
+}
+func rankingSectionRows(value any, kind string, limit int) (*jsonx.Object, error) {
+	raw, err := jsonx.Compact(value)
+	if err != nil {
+		return nil, err
+	}
+	section, err := decodeRankingSection(raw, kind, limit)
+	if err != nil {
+		return nil, err
+	}
+	return metricObject(section), nil
+}
+func verifyTarget(ctx context.Context, m Manager, id, expected string) error {
+	return verifyNativeTarget(ctx, registryFor(m), id, expected)
+}
+func compareState(ctx context.Context, m Manager, store *StateStore, id, expected string, replacement *jsonx.Object, verify func(context.Context) error) error {
+	var state *DashboardState
+	if replacement != nil {
+		raw, err := jsonx.Compact(replacement)
+		if err != nil {
+			return err
+		}
+		state, err = DecodeState(raw)
+		if err != nil {
+			return err
+		}
+	}
+	return compareDashboardState(ctx, registryFor(m), store, id, expected, state, verify)
+}
+func mapStateErrors(err error) error { return nativeStateError(err) }
+
+// ValidRecorderTag validates a legacy recorder value.
+func ValidRecorderTag(value any) bool {
+	text, ok := value.(string)
+	return ok && validRecorderTag(text)
+}
+
+// Overview is the legacy response codec.
+func Overview(ctx context.Context, m Manager, agentID string, args [][2]string) (*jsonx.Object, error) {
+	result, err := ReadOverview(ctx, registryFor(m), agentID, args)
+	if err != nil {
+		return nil, err
+	}
+	return metricObject(result), nil
+}
+
+// ResetDashboard is the legacy response codec.
+func ResetDashboard(ctx context.Context, m Manager, agentID string, body any) (*jsonx.Object, error) {
+	raw, err := jsonx.Compact(body)
+	if err != nil {
+		return nil, invalidQuery()
+	}
+	result, err := ResetStatistics(ctx, registryFor(m), agentID, raw)
+	if err != nil {
+		return nil, err
+	}
+	return metricObject(result), nil
+}
+
+// Queries is the legacy response codec.
+func Queries(ctx context.Context, m Manager, agentID string, args [][2]string) (*jsonx.Object, error) {
+	result, err := ReadQueries(ctx, registryFor(m), agentID, args)
+	if err != nil {
+		return nil, err
+	}
+	return metricObject(result), nil
+}
+
+// Query is the legacy response codec.
+func Query(ctx context.Context, m Manager, agentID, recordID string, args [][2]string) (*jsonx.Object, error) {
+	result, err := ReadQuery(ctx, registryFor(m), agentID, recordID, args)
+	if err != nil {
+		return nil, err
+	}
+	return metricObject(result), nil
+}
+
+// Clients is the legacy response codec.
+func Clients(ctx context.Context, m Manager, agentID string, args [][2]string) (*jsonx.Object, error) {
+	result, err := ReadClients(ctx, registryFor(m), agentID, args)
+	if err != nil {
+		return nil, err
+	}
+	return metricObject(result), nil
+}
+
+func record(value any, detail bool) (*jsonx.Object, error) {
+	raw, err := jsonx.Compact(value)
+	if err != nil {
+		return nil, err
+	}
+	out, err := queryRecord(raw, detail)
+	if err != nil {
+		return nil, err
+	}
+	decoded, err := jsonx.Parse(out)
+	if err != nil {
+		return nil, err
+	}
+	return decoded.(*jsonx.Object), nil
+}
+
+// Advance is the legacy pure state-transition codec.
+func Advance(previous, snapshot, core, observations *jsonx.Object, target string, agent *jsonx.Object, manual bool) (*jsonx.Object, error) {
+	var prev *DashboardState
+	if previous != nil {
+		raw, err := jsonx.Compact(previous)
+		if err != nil {
+			return nil, err
+		}
+		prev, err = DecodeState(raw)
+		if err != nil {
+			return nil, err
+		}
+	}
+	var a *model.Agent
+	if agent != nil {
+		a = new(model.Agent)
+		if err := metricJSON(agent, a); err != nil {
+			return nil, err
+		}
+	}
+	var stamp SnapshotIdentity
+	if err := metricJSON(snapshot, &stamp); err != nil {
+		return nil, err
+	}
+	var status CoreStatus
+	if err := metricJSON(core, &status); err != nil {
+		return nil, err
+	}
+	state, err := AdvanceState(prev, &stamp, &status, nativeObservations(observations), target, a, manual)
+	if err != nil {
+		return nil, err
+	}
+	if state == prev && previous != nil {
+		return previous, nil
+	}
+	return metricObject(state), nil
+}
+
+// Totals is the legacy period-total codec.
+func Totals(state, observations *jsonx.Object) (*jsonx.Object, bool, error) {
+	raw, err := jsonx.Compact(state)
+	if err != nil {
+		return nil, false, err
+	}
+	s, err := DecodeState(raw)
+	if err != nil {
+		return nil, false, err
+	}
+	adjusted, partial, err := StateTotals(s, nativeObservations(observations))
+	if err != nil {
+		return nil, false, err
+	}
+	return metricObject(adjusted), partial, nil
+}
+
+// HARulesFunc is oxidns_ha_publish.rules(manager, agent_id, method): the
+// task answer and its HTTP status; a *HABusyError for its ValueErrors.
+type HARulesFunc func(ctx context.Context, m Manager, agentID, method string) (*jsonx.Object, int, error)
+
+// SetHARules installs oxidns_ha_publish.rules (A18) and returns a function
+// restoring the previous one.
+func SetHARules(fn HARulesFunc) (restore func()) {
+	return SetHARulesJSON(func(ctx context.Context, m Registry, id, method string) (json.RawMessage, int, error) {
+		var old Manager
+		switch m := m.(type) {
+		case Manager:
+			old = m
+		case legacyRegistry:
+			old = m.Manager
+		default:
+			return nil, 0, ErrHARulesNotPorted
+		}
+		result, status, err := fn(ctx, old, id, method)
+		if err != nil {
+			return nil, status, err
+		}
+		raw, err := json.Marshal(result)
+		return raw, status, err
+	})
+}
+
+// SupportsPaths is the legacy model adapter.
+func SupportsPaths(agent *jsonx.Object) bool {
+	return versionAtLeast(agent, RuleUpdatePathsMinAgentVersion)
+}
+
+func ruleUpdateTask(value any) (*jsonx.Object, error) {
+	raw, err := jsonx.Compact(value)
+	if err != nil {
+		return nil, err
+	}
+	task, err := decodeRuleTask(raw)
+	if err != nil {
+		return nil, err
+	}
+	raw, err = json.Marshal(task)
+	if err != nil {
+		return nil, err
+	}
+	value, err = jsonx.Parse(raw)
+	if err != nil {
+		return nil, err
+	}
+	return value.(*jsonx.Object), nil
+}
+
+// RuleUpdateCall converts the legacy package representation once.
+func RuleUpdateCall(ctx context.Context, m Manager, id, method string, value any) (*jsonx.Object, int, error) {
+	var paths []string
+	if value != nil {
+		var ok bool
+		paths, ok = nativeTags(value)
+		if !ok {
+			return nil, 0, RuleUpdateFail("INVALID_REQUEST", 400)
+		}
+	}
+	result, status, err := CallRuleUpdate(ctx, registryFor(m), id, method, paths)
+	if err != nil {
+		return nil, status, err
+	}
+	var raw []byte
+	if result.Pair != nil {
+		raw = result.Pair
+	} else {
+		raw, err = json.Marshal(result)
+	}
+	if err != nil {
+		return nil, 0, err
+	}
+	decoded, err := jsonx.Parse(raw)
+	if err != nil {
+		return nil, 0, err
+	}
+	return decoded.(*jsonx.Object), status, nil
+}
+
+func ruleUpdateAgent(ctx context.Context, m Manager, id string) (*jsonx.Object, error) {
+	agent, err := agentFor(ctx, m, id, RuleUpdateMinAgentVersion, false)
+	return agent, err
+}
+
+type legacyRegistry struct{ Manager }
+
+func (m legacyRegistry) ReadAgent(ctx context.Context, id string, history bool) (*model.Agent, error) {
+	raw, err := m.GetAgentByID(ctx, id, history)
+	if err != nil || raw == nil {
+		return nil, err
+	}
+	data, err := jsonx.Compact(raw)
+	if err != nil {
+		return nil, err
+	}
+	var a model.Agent
+	if err := jsondecode.Unmarshal(data, &a); err != nil {
+		return nil, err
+	}
+	return &a, nil
+}
+func registryFor(m Manager) Registry {
+	if typed, ok := m.(Registry); ok {
+		return typed
+	}
+	return legacyRegistry{m}
+}
+
+func nativeTags(value any) ([]string, bool) {
+	list, ok := value.([]any)
+	if !ok {
+		return nil, false
+	}
+	tags := make([]string, len(list))
+	for i, value := range list {
+		tag, ok := value.(string)
+		if !ok {
+			return nil, false
+		}
+		tags[i] = tag
+	}
+	return tags, true
+}
+
+// ValidRequestTags validates the legacy request representation.
+func ValidRequestTags(value any) (bool, error) {
+	if list, ok := value.([]any); ok {
+		for _, tag := range list {
+			if _, ok := tag.([]any); ok {
+				return false, errors.New("cache tags must be strings")
+			}
+			if _, ok := tag.(*jsonx.Object); ok {
+				return false, errors.New("cache tags must be strings")
+			}
+		}
+	}
+	tags, ok := nativeTags(value)
+	return ok && validTags(tags, true), nil
+}
+
+// CacheCall converts the legacy request and response at the package boundary.
+func CacheCall(ctx context.Context, m Manager, agentID, method string, value any) (*jsonx.Object, error) {
+	var tags []string
+	if value != nil {
+		valid, err := ValidRequestTags(value)
+		if err != nil {
+			return nil, err
+		}
+		if !valid {
+			return nil, CacheFail("INVALID_REQUEST", 400)
+		}
+		tags, _ = nativeTags(value)
+	}
+	result, err := CallCache(ctx, registryFor(m), agentID, method, tags)
+	if err != nil {
+		var partial *CacheOperationError
+		if errors.As(err, &partial) {
+			flushed := make([]any, len(partial.Flushed))
+			for i, tag := range partial.Flushed {
+				flushed[i] = tag
+			}
+			return nil, &FlushError{Err: partial.Err, Flushed: flushed}
+		}
+		return nil, err
+	}
+	key, values := "caches", result.Caches
+	if method == "POST" {
+		key, values = "flushed", result.Flushed
+	}
+	out := make([]any, len(values))
+	for i, tag := range values {
+		out[i] = tag
+	}
+	return jsonx.Obj("success", result.Success, key, out), nil
+}
+
+func (m legacyRegistry) monitorReply(ctx context.Context, a *model.Agent, endpoint string, params query, minimum string) (model.Fields, error) {
+	var fields model.Fields
+	if err := ctx.Err(); err != nil {
+		return fields, err
+	}
+	raw, err := json.Marshal(a)
+	if err != nil {
+		return fields, err
+	}
+	decoded, err := jsonx.Parse(raw)
+	if err != nil {
+		return fields, err
+	}
+	answer, err := doRequest(ctx, m.Manager, decoded.(*jsonx.Object), endpoint, params, minimum)
+	if err != nil {
+		return fields, err
+	}
+	raw, err = jsonx.Compact(answer)
+	if err != nil {
+		return fields, err
+	}
+	if err := ctx.Err(); err != nil {
+		return fields, err
+	}
+	raw, _ = jsonresp.NormalizeNonFinite(raw)
+	err = jsondecode.Unmarshal(raw, &fields)
+	if err != nil {
+		return fields, NewError("INVALID_RESPONSE", 0, "")
+	}
+	return fields, nil
+}
+
+// FlushError is the legacy partial-flush response codec.
+type FlushError struct {
+	Err     *Error
+	Flushed []any
+}
+
+func (e *FlushError) Error() string { return e.Err.Message }
+func (e *FlushError) Unwrap() error { return e.Err }

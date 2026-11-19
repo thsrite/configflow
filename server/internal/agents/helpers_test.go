@@ -2,6 +2,7 @@ package agents
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"sync"
 	"testing"
@@ -179,4 +180,72 @@ func must[T any](t *testing.T) func(T, error) T {
 		}
 		return value
 	}
+}
+
+func (m *Manager) GetAllAgentsInspect(ctx context.Context, history bool, inspect func(*jsonx.Object)) ([]*jsonx.Object, error) {
+	agents, err := m.agentsInspect(ctx, history, inspect)
+	if err != nil {
+		return nil, err
+	}
+	for _, agent := range agents {
+		agent.Set("status", OnlineStatus(agent, nil))
+	}
+	return agents, nil
+}
+
+// GetAgentByID is get_agent_by_id(agent_id, history=...): the record with
+// its stored status (never derived offline), nil when unknown.
+
+func (m *Manager) GetAgentByToken(ctx context.Context, token string) (*jsonx.Object, error) {
+	record, err := m.ReadAgentByToken(ctx, token)
+	if err != nil || record == nil {
+		return nil, err
+	}
+	return agentObject(record)
+}
+
+func (m *Manager) UpdateAgent(ctx context.Context, agentID string, updates *jsonx.Object) (bool, error) {
+	data, err := json.Marshal(updates)
+	if err != nil {
+		return false, err
+	}
+	edits, err := DecodeAgentEdits(data)
+	if err != nil {
+		return false, err
+	}
+	return m.EditAgent(ctx, agentID, edits)
+}
+
+// RebindProfileAgents is rebind_profile_agents(source, target,
+// expected_agent_ids): move exactly the reviewed bindings together, under
+// the deployment transaction lock.
+
+func (m *Manager) UpdateHeartbeat(ctx context.Context, agentID string, heartbeat *jsonx.Object) (bool, error) {
+	payload, err := heartbeatFromObject(heartbeat)
+	if err != nil {
+		return false, err
+	}
+	return m.observeHeartbeat(ctx, agentID, payload, nil)
+}
+
+// heartbeatFromObject reads the reported members by their exact names (Python
+// heartbeat.get(key)); encoding/json struct decoding would fold case. Each
+// value is encoded on its own, giving the bytes the whole-object encoding has.
+
+func (m *Manager) SetDomainDiscovery(ctx context.Context, agentID string, enabled bool) (*jsonx.Object, error) {
+	record, err := m.SetDomainDiscoveryModel(ctx, agentID, enabled)
+	if err != nil || record == nil {
+		return nil, err
+	}
+	return agentObject(record)
+}
+
+// SetTrafficHistory changes the management switch through the native registry.
+
+func (m *Manager) SetTrafficHistory(ctx context.Context, agentID string, enabled bool) (*jsonx.Object, error) {
+	record, err := m.SetTrafficHistoryModel(ctx, agentID, enabled)
+	if err != nil || record == nil {
+		return nil, err
+	}
+	return agentObject(record)
 }
