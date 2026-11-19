@@ -112,3 +112,9 @@ ok configflow/internal/api/agents/difftest 8.932s
 ```
 
 协调者已复核原整包 agents race 默认 10m 超时来自包本身耗时（基底 771s、本分支 729s），非本改动回归。本轮整包 race 使用 `-timeout=30m`，结果待以下追加。
+
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && go test -count=1 ./internal/agents/metrics -run "Corpus|Reference|Golden" && CONFIGFLOW_DIFF=1 go test -count=1 ./internal/discovery/difftest ./internal/tasks/difftest && go test -count=1 ./tools/pyref -run "^TestAuditRepository$" && GOMAXPROCS=4 go test ./internal/agents/trafficstore -run "^$" -fuzz "^FuzzNativeDiscoveryReport$" -fuzztime=60s && go test -count=1 ./internal/agents -run "^TestBatch10HeartbeatAllocationCeilings$"'
+```
+
+最后输出：metrics Reference PASS 1.540s、discovery/difftest PASS 10.155s、tasks/difftest PASS 9.952s、pyref PASS 0.822s；trafficstore 更新解码器后的 fuzz PASS 61.023s / 355,791 exec；原心跳阈值 PASS 6.306s。metrics 的 fuzz 在 owner 轮已跑 60 秒且解码器未改。无阈值放宽。
