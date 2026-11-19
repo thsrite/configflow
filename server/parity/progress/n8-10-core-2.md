@@ -2,7 +2,9 @@
 
 状态：进行中。分支 go-n8-10-core-2，基于已交回的 core-1 tip
 7a3f1da4ebd606389c0142cf6f9134bc970fe0b5。core-1 报告见 n8-10-core.md；
-其 HR 复核由协调者另派，收到修复后在本分支接纳或由叠批处理。
+其 HR 复核结论 verified、无 high；复核报告见 review-n8-10-core.md。
+已 cherry-pick ec7c71865 / e871b2fe3 为 c2bd2fd6b / 3dd984086，保留原始
+stored identity string 证明和 heartbeat version/config_version 原始 JSON 比较修复。
 
 ## 当前顺序
 
@@ -51,3 +53,14 @@ Exit 0：agents 1.022s；API O9 77.821s（此前两次 O9 分别 73.284s / 88.96
     RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -e; cd server; gofmt -w internal/agents/registration.go internal/agents/registration_fuzz_test.go; GOMAXPROCS=4 go vet -p 4 ./internal/agents ./internal/api/agents; GOMAXPROCS=4 go test -count=1 -run "^$" -fuzz "^FuzzRegistrationClaimExactFields$" -fuzztime=60s -parallel=2 ./internal/agents'
 
 Exit 0，gofmt/vet 静默；fuzz 320,785 executions，PASS 61.012s。
+
+## core-1 HR 接纳及 L4
+
+- M1/L1 修复完整接纳，没有改原复核期望。后续所有权字段必须读取 original JSON
+  token，不能用 R5 text projection 作为证明。
+- L4：HA guard allocation bound 同时断言 B/op 和 allocs/op；0 与 2MiB
+  captured_source 的阈值均不随 payload 增长。
+
+    RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -e; cd server; gofmt -w internal/agents/registry_native_test.go; GOMAXPROCS=4 go test -race -p 4 -count=1 -run "Prepared.*Stored|Heartbeat.*Stored|Malformed.*Disable|TypedHAEnablePresenceAndAllocationBound|N810" ./internal/agents ./internal/agents/dnsha'
+
+Exit 0：agents 18.756s，dnsha 2.511s。

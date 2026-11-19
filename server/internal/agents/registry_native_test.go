@@ -487,21 +487,25 @@ func TestTypedHAEnablePresenceAndAllocationBound(t *testing.T) {
 			t.Fatalf("input=%s enabling=%v want=%v", tt.raw, got, tt.enabling)
 		}
 	}
-	measure := func(unused int) float64 {
+	measure := func(unused int) testing.BenchmarkResult {
 		intent := &model.HAEnable{}
 		if err := intent.Fields.Set("captured_source", []byte(`"`+strings.Repeat("x", unused)+`"`)); err != nil {
 			t.Fatal(err)
 		}
 		record := &model.Agent{OxiDNSHAPublication: &model.HAJournal{Status: "ready", Enable: intent}}
-		return testing.AllocsPerRun(100, func() {
-			if !HAActiveModel(record) || !HAEnablingModel(record) {
-				t.Fatal("lost active intent")
+		return testing.Benchmark(func(b *testing.B) {
+			b.ReportAllocs()
+			b.ResetTimer()
+			for range b.N {
+				if !HAActiveModel(record) || !HAEnablingModel(record) {
+					b.Fatal("lost active intent")
+				}
 			}
 		})
 	}
 	small, large := measure(0), measure(2<<20)
-	t.Logf("HA guards unused=0: %g allocs/op; unused=2MiB: %g allocs/op", small, large)
-	if large > small+1 || large > 4 {
+	t.Logf("HA guards unused=0: %d B/op %d allocs/op; unused=2MiB: %d B/op %d allocs/op", small.AllocedBytesPerOp(), small.AllocsPerOp(), large.AllocedBytesPerOp(), large.AllocsPerOp())
+	if large.AllocedBytesPerOp() > small.AllocedBytesPerOp()+1024 || large.AllocedBytesPerOp() > 1024 || large.AllocsPerOp() > small.AllocsPerOp()+1 || large.AllocsPerOp() > 4 {
 		t.Fatal("HA guard walks captured payload")
 	}
 }
