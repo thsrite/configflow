@@ -46,13 +46,34 @@ func Decode(data []byte, dst any) error {
 	return d.Decode(dst)
 }
 
-// borrowedJSON is confined to preparation: encoding/json passes each value's
+// Select returns owned JSON values for exact top-level member names. Unknown
+// members are scanned by encoding/json without copying their value bytes.
+// Duplicate names select the last complete value. Null yields an empty result;
+// other non-object roots return encoding/json's native type or syntax error.
+func Select(data []byte, exactNames ...string) (map[string]json.RawMessage, error) {
+	var fields map[string]borrowedJSON
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return nil, err
+	}
+	selected := make(map[string]json.RawMessage, len(exactNames))
+	for _, name := range exactNames {
+		if _, already := selected[name]; already {
+			continue
+		}
+		if raw, present := fields[name]; present {
+			selected[name] = bytes.Clone(raw)
+		}
+	}
+	return selected, nil
+}
+
+// borrowedJSON is confined to input scanning: encoding/json passes each value's
 // input span to custom codecs. Keeping that span avoids copying megabytes of
-// unrelated configuration merely to discard an unknown member. Nothing escapes
-// into the destination until its own native/custom decoder takes ownership.
+// unrelated configuration merely to discard an unknown member. The destination
+// decoder or Select copies each value before it can escape.
 type borrowedJSON []byte
 
-// UnmarshalJSON borrows a value only until preparation finishes.
+// UnmarshalJSON borrows a value only until the current scan finishes.
 func (b *borrowedJSON) UnmarshalJSON(data []byte) error { *b = data; return nil }
 
 func prepare(data []byte, typ reflect.Type, value reflect.Value) ([]byte, error) {

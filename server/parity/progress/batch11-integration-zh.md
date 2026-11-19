@@ -40,3 +40,19 @@ core 留给协调者。各项实际结果见下文，未完成的检查不计通
 - 独立核验全部 16 份 transcript 的完整 version/entries/input/venv SHA 不变，只改 Go 依赖来源指纹；原 byte manifest、录制 archive、proddiff baseline 未改。
 
 下一步在此产品/测试树跑完整 preflight，随后在服务器 setsid/nohup 启动完整 compare。不同于先前批次，compare 不依赖 rt 会话。
+
+## 首次预检失败与独立修复
+
+首次 full preflight 退出 1，三处失败：api/agents TestReviewConditionalMatchesWerkzeug、installer TestReviewDeflateAndZipMatchPython 是此前未覆盖的两份嵌套 pyref 指纹过期（a/b 改源码、c 改 go.mod 的组合元数据变化，待真实 record/check）；routers TestN89SyncPipelineAllocations 为 a 分支 jsondecode.objectMembers 的 Decoder 缓冲复制未知大值造成的真实回退。未进入 compare。
+
+经协调者裁定，新增共享窄接口 jsondecode.Select：用原生 json.Unmarshal + 已有 borrowedJSON 扫描 root map，按精确名字只复制被选值，返回全 owned RawMessage；普通重复键取最后完整值；null 为空结果，其他非对象/畸形根沿用原生 type/syntax 类。不改 Unmarshal/Decode 行为，不暴露借用，不写自制 parser。
+routers 的 withSyncEnvironment 和 selectedSyncSources 改用 Select，再解选中字段；Agent codec 与其 exact-name 规则未放宽。
+
+验证（.32、Go1.27.4、GOMAXPROCS=4）：
+
+- Select exact-input 11 组、所有权断言 PASS；0/1MiB 未选中值 856/860 B、8/8 allocs，原分配阈值检查 B/op 与 allocs/op。
+- routers 原 TestN89SyncPipelineAllocations PASS 11.835s：cache rules1=66,261/65,287 B；rules16=1,016,853/997,262 B；下载正路径 delta=3,692,384 B（<原6MiB），隐藏 environment 负控 delta=63,318,532 B（>原6MiB）；原64KiB/6MiB阈值全部保持。
+- FuzzSelectExactMembers 60.064s PASS，3,064,367 execs；对照原生 exact map，检查重复值、错误、输入不变与 owned 结果。
+- 真实负控仅临时在 Select 入口 bytes.Clone 整个 root，未改断言；0/1MiB 888/1,058,491 B、9/10 allocs，明确因 Select copied unselected payload 失败；trap 恢复后 targeted race 的 Select/Review 全通过 3.400s，相关 vet 静默。
+
+本修复按要求单独提交，交协调者安排 be408111 快速独立复核。其间继续补指纹与重新预检，复核认可后才进 compare。

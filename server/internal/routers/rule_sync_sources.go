@@ -30,8 +30,15 @@ func withSyncEnvironment(ctx context.Context, raw json.RawMessage) (context.Cont
 		System  json.RawMessage         `json:"system_config"`
 		Library []model.RuleLibraryItem `json:"rule_library"`
 	}
-	if err := jsondecode.Unmarshal(raw, &input); err != nil {
+	selected, err := jsondecode.Select(raw, "system_config", "rule_library")
+	if err != nil {
 		return nil, err
+	}
+	input.System = selected["system_config"]
+	if library, present := selected["rule_library"]; present {
+		if err := json.Unmarshal(library, &input.Library); err != nil {
+			return nil, err
+		}
 	}
 	cfg := &rulefetch.SourceConfig{Library: input.Library}
 	if len(input.System) > 0 && string(input.System) != "null" {

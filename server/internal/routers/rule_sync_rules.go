@@ -196,8 +196,19 @@ func selectedSyncSources(config json.RawMessage, r *Router) ([]syncSource, error
 		Rules   []json.RawMessage `json:"rule_configs"`
 		Library []json.RawMessage `json:"rule_library"`
 	}
-	if err := jsondecode.Unmarshal(config, &doc); err != nil {
+	projection, err := jsondecode.Select(config, "rule_configs", "rule_library")
+	if err != nil {
 		return nil, err
+	}
+	for _, field := range []struct {
+		name   string
+		target *[]json.RawMessage
+	}{{"rule_configs", &doc.Rules}, {"rule_library", &doc.Library}} {
+		if raw, present := projection[field.name]; present {
+			if err := json.Unmarshal(raw, field.target); err != nil {
+				return nil, err
+			}
+		}
 	}
 	rules, library := map[string]RuleSet{}, map[string]LibraryRule{}
 	for _, raw := range doc.Rules {
