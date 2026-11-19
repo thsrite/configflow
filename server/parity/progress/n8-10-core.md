@@ -2,8 +2,9 @@
 
 状态：**部分完成**，待协调者安排 fresh Opus HR 复核。不是完整 N8-10 S pass。
 协调者已批准拆分：本分支交 core-1；随后从本 tip 建 go-n8-10-core-2 继续剩余核心。
-分支 go-n8-10-core，基于 go@690e97995，已变基到 go@bcbb6e573（仅 HANDOFF 文档）。
-产品基础提交 6c73dc28f43665aa7dc87011c44626304728ea1b；补充提交见末尾。
+分支 go-n8-10-core，基于 go@690e97995，已变基到 go@08d8e6ff1。
+新增基线只有 HANDOFF / O12 ledger 文档，产品字节与验证树一致。
+产品基础提交 702b5b289；补充产品／metadata 提交 5b0afe1f7。
 未 push、未开复核 agent、未跑完整 gate、未接触生产。
 
 ## 已完成的边界
@@ -142,4 +143,5 @@ config_decode_test.go 44 行、presence_test.go 45 行。无调试／临时 test
 ## 交回
 
 core-1 的授权边界实现完成，整体 N8-10 状态仍为“部分完成”，无本步未关闭的已知失败。
-补充产品提交与最终 HTTP 结果将在交回前填入。core-2 从本分支最终 tip 创建，继续上述动态核心。
+产品提交 702b5b289、5b0afe1f7；本报告所在提交为最终交回 tip。
+core-2 从本分支最终 tip 创建，继续上述动态核心；core-1 HR 修复在 core-2 或叠批树接纳。
