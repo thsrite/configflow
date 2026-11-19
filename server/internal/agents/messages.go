@@ -285,3 +285,5 @@ const (
 	msgPresenceOnline  = "Agent %s 已恢复在线"
 	msgPresenceOffline = "Agent %s 已离线：超过 2 分钟没有心跳（最后心跳 %s）"
 )
+
+const msgInvalidDevicePayload = "Out of range float values are not JSON compliant"

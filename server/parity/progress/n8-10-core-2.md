@@ -380,3 +380,20 @@ private time/version/messages helpers、ipv6 / rulesync / metrics / traffic 剩�
 跨包 corpus/reference/golden、agents subtree race、agents difftest、source metadata 刷新。
 batch-10 尚未合入本机 go；收到的轻量 heartbeat runtime 修复仍待集成后 rebase，不改回
 完整 model.Agent runtime entry。core-2 不能宣称全部 agents core S 完成。
+
+## Agent wire JSON encoder
+
+新增共享 jsonresp.EncodeDevice：标准库 encoding/json 决定完整 JSON 值和成员顺序，
+json.Indent 加原生 ASCII escaping 保持设备协议中的 comma/colon 单空格、Unicode surrogate
+pairs、DEL 转义。没有自写 scalar decoder、Python coercion 或 nonfinite 遍历；jsonBody
+只负责该原生序列化与既有错误提示映射。原设备请求字节比较和 normal expected 全部保留。
+
+    RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'set -e; cd server; GOMAXPROCS=4 go vet -p 4 ./internal/jsonresp ./internal/agents; GOMAXPROCS=4 go test -race -p 4 -count=1 -timeout=15m -run "DeviceJSON|ReferenceJSONBodies|A15ReviewCall|DirectAgentCalls" ./internal/jsonresp ./internal/agents; GOMAXPROCS=4 go test -count=1 -run "^$" -fuzz "^FuzzDeviceJSONPreservesValues$" -fuzztime=60s -parallel=2 ./internal/jsonresp'
+
+Exit 0：jsonresp 1.011s、agents 10.103s；fuzz 741,948 executions，PASS 61.006s。
+追加 DEL typed-string 独立字节期望后，DeviceJSON|ReferenceJSONBodies race 再通过：
+jsonresp 1.008s、agents 3.933s。ASCII/UTF-16 surrogate、原始 2.00、URL/HTML 字符、
+literal backslash-u、空 containers、null、nonfinite 拒绝均有固定 byte fixture。
+
+已收到协调者 batch-10 合入 go@12150a402 通知。下一步先 rebase，保留窄 RawMessage
+runtime 及精确 heartbeat keys，再审核其他外部 JSON decoder 的大小写／重复键边界。

@@ -10,11 +10,11 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"math"
 	"net/http"
 	"net/url"
 	"strconv"
 
+	"configflow/internal/jsonresp"
 	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 )
@@ -113,39 +113,11 @@ func EncodeHeaderLatin1(value string) (string, error) {
 // infinities are refused before anything is sent with InvalidJSONError, a
 // RequestException: a *TransportError.
 func jsonBody(value any) (http.Header, []byte, error) {
-	if hasNonFinite(value) {
-		return nil, nil, &TransportError{Err: errors.New("Out of range float values are not JSON compliant")}
-	}
-	body, err := jsonx.Default(value)
+	body, err := jsonresp.EncodeDevice(value)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, &TransportError{Err: errors.New(msgInvalidDevicePayload)}
 	}
 	return http.Header{"Content-Type": {"application/json"}}, body, nil
-}
-
-func hasNonFinite(value any) bool {
-	switch v := value.(type) {
-	case *jsonx.Object:
-		for _, item := range v.Values() {
-			if hasNonFinite(item) {
-				return true
-			}
-		}
-	case []any:
-		for _, item := range v {
-			if hasNonFinite(item) {
-				return true
-			}
-		}
-	case jsonx.Number:
-		if v.IsFloat() {
-			f := v.Float64()
-			return math.IsNaN(f) || math.IsInf(f, 0)
-		}
-	case float64:
-		return math.IsNaN(v) || math.IsInf(v, 0)
-	}
-	return false
 }
 
 // responseJSON is response.json() inside `except RequestException`: a body
