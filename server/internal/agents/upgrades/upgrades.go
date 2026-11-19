@@ -351,9 +351,11 @@ func StartModel(ctx context.Context, m *agents.Manager, agentID string) (*model.
 	if !validVersion(target) || present && previous != "" && !validVersion(previous) {
 		return nil, agents.ErrInvalidAgentReply
 	}
-	if _, exists, e := a.MemberJSON("version"); e != nil {
+	// A registration may store an explicit null version (Python: agent.get('version', '')
+	// is None and the update proceeds); only a present non-null non-string is damaged.
+	if raw, exists, e := a.MemberJSON("version"); e != nil {
 		return nil, e
-	} else if exists && !present {
+	} else if exists && !present && string(bytes.TrimSpace(raw)) != "null" {
 		return nil, &CorruptStateError{Field: "version"}
 	}
 	id, err := updateIDSource()

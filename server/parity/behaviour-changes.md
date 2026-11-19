@@ -2247,3 +2247,7 @@ N8-11 删除。
 - 原生地址文本使用 strings.TrimSpace/netip，不保留私有 CPython whitespace/IP parser。
   protocol-1、durable ID、fresh heartbeat 回滚确认、未知结果继续查询保持。坏记录恢复步骤
   见 `doc/manual/agents.md`，本轮不新增 HTTP/UI 恢复入口。
+- HR 复核修正：Agent 记录的 `version` 为显式 null（注册原样保存 Agent 发来的 null）时，
+  Start 按缺失处理（previous_version 为空串）继续升级，不再报“操作记录损坏（version）”；
+  Python 以 None 继续。数字、数组等其他非字符串仍按损坏拒绝。回归
+  `TestReviewN810NullAgentVersionStillStartsUpgrade`。
