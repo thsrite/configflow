@@ -111,7 +111,7 @@ same traffic/agent-traffic.json (985 bytes)
 ok configflow/internal/api/agents/difftest 8.932s
 ```
 
-协调者已复核原整包 agents race 默认 10m 超时来自包本身耗时（基底 771s、本分支 729s），非本改动回归。本轮整包 race 使用 `-timeout=30m`，结果待以下追加。
+协调者已复核原整包 agents race 默认 10m 超时来自包本身耗时（基底 771s、本分支 729s），非本改动回归。本轮整包 race 使用 `-timeout=30m`，全部通过，输出见文末。
 
 ```sh
 RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && go test -count=1 ./internal/agents/metrics -run "Corpus|Reference|Golden" && CONFIGFLOW_DIFF=1 go test -count=1 ./internal/discovery/difftest ./internal/tasks/difftest && go test -count=1 ./tools/pyref -run "^TestAuditRepository$" && GOMAXPROCS=4 go test ./internal/agents/trafficstore -run "^$" -fuzz "^FuzzNativeDiscoveryReport$" -fuzztime=60s && go test -count=1 ./internal/agents -run "^TestBatch10HeartbeatAllocationCeilings$"'
@@ -124,3 +124,28 @@ RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && go test -count=1 ./in
 收尾发现有限 REAL 汇总可使 up/down 溢出，排序用的 up+down 进一步成为 NaN，不能传给 big.Float。新增真实 SQLite 查询测试（两个极值链路 + 健康 source），missing 总值放在数值总值后、再按 key 稳定排序；DTO 继续按 native 既有策略输出 null，并通过现有限流器记 aggregate 告警，原始数据库行不变。只涉及人工极值，不改变机器报告数值限制。一次新测试因把 SQLite INTEGER affinity 的健康 REAL `1.0` 计入 REAL 行数而失败，修正为检查全部原行数；没有改原期望或语料。
 
 `.32 rt -- bash -lc 'cd server && gofmt -w internal/agents/metrics/native_service_test.go && go test -count=1 -race ./internal/agents/metrics && go vet ./... && CONFIGFLOW_DIFF=1 go test -count=1 -v ./internal/api/agents/difftest -run "^TestDifferentialAgainstFlask$"'` 最后 metrics PASS 21.069s，vet 无输出，HTTP 主差分再次 234 requests / 0 differences。大包并行 race 的快照为 `2c353f574` 的代码；最后这一局部查询防护另用本命令在最终代码上验证，没有重复无关长测。
+
+## 最终交回
+
+最终代码提交 `b7db27f14`（HTTP 集成 `2c353f574`；验证文档 `71a67cea8`），加本报告收尾提交。分支 `go-n8-10-metrics-native`，工作区干净，未 push。owner、HTTP 接口切换、四行 SHA 绑定与第五项结构比较均完成，可进入 HR 复核。N8-11 仅留上述仍有生产读取调用方的 trafficstore facade。
+
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'cd server && gofmt -w cmd/configflow/service_test.go internal/agents/metrics/errors.go && test -z "$(gofmt -l internal/agents/metrics internal/agents/trafficstore internal/api/agents/traffic.go internal/api/agents/metrics.go internal/api/agents/traffic_test.go internal/api/agents/difftest/n810_metrics_policy_test.go internal/api/agents/difftest/diff_test.go internal/api/agents/difftest/traffic_test.go internal/tasks/difftest/c07_test.go cmd/configflow/service_test.go)" && go vet ./... && go test -count=1 -race -timeout=30m -p 4 ./internal/agents/metrics ./internal/agents/trafficstore ./internal/agents ./internal/api/agents ./internal/discovery ./internal/deploy ./internal/configgen ./internal/server ./cmd/configflow ./internal/tasks/difftest'
+```
+
+最后输出（退出码 0；gofmt/vet 无输出）：
+
+```text
+ok configflow/internal/agents/metrics 16.799s
+ok configflow/internal/agents/trafficstore 1.841s
+ok configflow/internal/agents 861.301s
+ok configflow/internal/api/agents 541.365s
+ok configflow/internal/discovery 15.049s
+ok configflow/internal/deploy 417.753s
+ok configflow/internal/configgen 2.525s
+ok configflow/internal/server 15.477s
+ok configflow/cmd/configflow 121.082s
+ok configflow/internal/tasks/difftest 1.017s
+```
+
+最后局部查询防护在最终代码上追加 metrics race/vet/HTTP 主差分（见上），最后主差分 PASS 8.724s、234 requests / 0 differences。未跑完整门禁，未改依赖、持久格式、旧 corpus、Python reference 或 pyref registry。
