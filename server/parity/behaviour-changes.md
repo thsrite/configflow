@@ -2027,3 +2027,14 @@ SHA 和各自 compact row SHA 精确绑定，分别核验 Python 错误类别、
 不再静默变为 pending；未知大小写别名不认作已知协议字段。注册／编辑／deployment patch
 的原生 RawMessage 入口拒绝真实重复键（含 escaped 同名与嵌套重复）；旧 API facade 自身的
 JSON materialization 属其后续 S 步骤，本块没有改写其 parser 或扩张准入。
+
+### N8-10 core-2 — machine version numbers
+
+按协调者裁定，Agent 版本来自 go-agent/client.go 的固定 AgentVersion（upgrade.Version），
+当前 migration.go 常量及 Python version.py 的 LATEST/changelog 均为 ASCII dotted 机器值；
+注册/心跳结构体没有版本表达式或 Unicode 数字入口。去掉 `-suffix`、不足位补 0、任一
+分量无法解析时按原文本比较的业务规则保留。整数分量统一使用 taskstatus.Count，不再
+模拟 Unicode Nd 或 CPython 4300 位限制。冻结 a02 的九条人为 Unicode/超长分量行因此
+改变比较方向；原档案、输入输出及 SHA 不变。gen_n810_version_native.py 的独立字面期望
+通过档案 SHA 和每条完整原行 SHA 绑定，其他行继续使用原 Python want。空分量仍走
+文本比较，不被共享 counter 的空值语义当作 0。

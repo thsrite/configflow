@@ -459,3 +459,29 @@ Exit 0：agents 3.863s。
     RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && GOMAXPROCS=4 go test -race -p 4 -count=1 -timeout=15m -run "ReferenceResponses|TypedResponseFailure|LegacyErrors|PlainTextLegacy|ResponseFailure" ./internal/agents'
 
 Exit 0：agents 13.535s，targeted go vet 与上述修改的远端 gofmt 通过。
+
+## 原生时间和机器版本（部分完成）
+
+删除 pytime.go 的 CPython local_to_seconds 重放，time.go 以 Go time.Date/Format、共享
+FromISOFormat 和明确的 zone offset 选择处理 gap/fold。存储时间、微秒、offset 秒与范围
+边界的原冻结期望全部不改；新增真实 Python zoneinfo 对照，逐行绑定 zone/text 输入，
+覆盖 NY/Berlin 两个 DST 边界、Lord Howe 半小时变化和 Apia 跳日。旧 helper 名仅留测试别名。
+
+CompareVersions 删除私有 Unicode Nd / 4300 位 int 仿真，改共享 taskstatus.Count。机器值
+证据和协调裁定已登记 behaviour-changes。九条变化使用独立 literal policy fixture，完整
+a02 archive SHA、原 compact row SHA、Python want 与 native want 四项绑定，未动旧语料。
+
+    RT_HOST=sunbroke@192.168.0.64 rt -e CONFIGFLOW_DIFF=1 -- bash -lc 'cd server && GOMAXPROCS=4 go test -race -p 4 -count=1 -run "LocalWallZoneTransitions|ReferenceTimestamps|A15ReviewISO|A15ReviewRuntime|ReferenceHeartbeatFreshness|ReferenceEventTime" ./internal/agents && GOMAXPROCS=4 go test -p 4 -count=1 -run "^TestBatch10HeartbeatAllocationCeilings$" -v ./internal/agents'
+
+Exit 0：agents 1.078s；allocation ceilings 5.640s，public 6,810/6,774 B/op、153 allocs，
+native 7,192/7,175 B/op、160 allocs（empty / 2MiB），阈值原样保留。
+
+    RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && GOMAXPROCS=4 go vet -p 4 ./internal/agents && GOMAXPROCS=4 go test -race -p 4 -count=1 -timeout=15m -run "ReferenceCompareVersions|NativeVersionBusinessRules|LocalWallZoneTransitions|ReferenceTimestamps|A15ReviewISO|A15ReviewRuntime" ./internal/agents'
+
+Exit 0：agents 1.185s；上述源文件远端 gofmt 完成。live oracle 已在 .64 的 CONFIGFLOW_DIFF=1
+命令执行；.32 未设变量时该 oracle 正常 skip。版本 fuzz 60s 结果后补。
+
+    RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && GOMAXPROCS=4 go test -count=1 -run "^$" -fuzz "^FuzzNativeVersionComparison$" -fuzztime=60s -parallel=2 ./internal/agents'
+
+Exit 0：351,732 executions，PASS 61.010s；验证反对称、自反、suffix 不变（混合数字/文本
+业务比较本身不保证传递性，未制造这项断言）。

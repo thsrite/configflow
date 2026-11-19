@@ -1,12 +1,12 @@
 package agents
 
 import (
+	"encoding/json"
 	"math/big"
 	"strings"
-	"unicode"
 
-	"configflow/internal/agents/diag"
 	"configflow/internal/jsonx"
+	"configflow/internal/taskstatus"
 )
 
 // ChangelogEntry is one VERSION_CHANGELOG item.
@@ -53,7 +53,7 @@ func GetLatestVersion() string { return LatestAgentVersion }
 
 // CompareVersions is compare_versions(version1, version2): -1, 0 or 1. The
 // "-suffix" is dropped, the dotted parts are padded with "0" and compared as
-// integers where both parse (Python int()), otherwise as strings.
+// ASCII decimal components through the shared counter codec, otherwise as strings.
 func CompareVersions(version1, version2 string) int {
 	v1 := strings.Split(strings.SplitN(version1, "-", 2)[0], ".")
 	v2 := strings.Split(strings.SplitN(version2, "-", 2)[0], ".")
@@ -64,8 +64,8 @@ func CompareVersions(version1, version2 string) int {
 		v2 = append(v2, "0")
 	}
 	for i := range v1 {
-		n1, ok1 := pyIntText(v1[i])
-		n2, ok2 := pyIntText(v2[i])
+		n1, ok1 := versionComponentNumber(v1[i])
+		n2, ok2 := versionComponentNumber(v2[i])
 		if ok1 && ok2 {
 			if c := n1.Cmp(n2); c != 0 {
 				return c
@@ -87,68 +87,19 @@ func HasUpdate(currentVersion string) bool {
 	return CompareVersions(currentVersion, LatestAgentVersion) < 0
 }
 
-// maxStrDigits is CPython 3.11's default sys.get_int_max_str_digits(): int()
-// of a longer decimal text raises ValueError.
-const maxStrDigits = 4300
-
-// pyIntText is int(text) for a str: surrounding whitespace, an optional
-// sign, decimal digits (any Unicode Nd) with single underscores between
-// them, at most 4300 digits. CPython rewrites non-ASCII whitespace to spaces
-// first and keeps ASCII characters, so whitespace is " \t\n\v\f\r" or a
-// non-ASCII str.isspace() character (U+001C–U+001F do not count).
-func pyIntText(text string) (*big.Int, bool) {
-	isSpace := func(r rune) bool {
-		return r == ' ' || (r >= '\t' && r <= '\r') || (r >= 127 && diag.IsPySpace(r))
-	}
-	s := strings.TrimFunc(text, isSpace)
-	negative := false
-	if s != "" && (s[0] == '+' || s[0] == '-') {
-		negative = s[0] == '-'
-		s = s[1:]
-	}
-	if s == "" {
+// versionComponentNumber delegates scalar handling to the shared native codec.
+// Empty dotted components retain the original lexical fallback, rather than
+// becoming counter zero. No Unicode integer grammar or interpreter digit cap
+// is part of a machine-generated software version.
+func versionComponentNumber(component string) (*big.Int, bool) {
+	component = strings.TrimSpace(component)
+	if component == "" {
 		return nil, false
 	}
-	var digits strings.Builder
-	previousUnderscore := true
-	for _, r := range s {
-		switch {
-		case r == '_':
-			if previousUnderscore {
-				return nil, false
-			}
-			previousUnderscore = true
-		case unicode.IsDigit(r):
-			digits.WriteByte(byte('0' + digitValue(r)))
-			previousUnderscore = false
-		default:
-			return nil, false
-		}
-	}
-	if previousUnderscore || digits.Len() > maxStrDigits {
+	raw, err := json.Marshal(component)
+	if err != nil {
 		return nil, false
 	}
-	value, ok := new(big.Int).SetString(digits.String(), 10)
-	if !ok {
-		return nil, false
-	}
-	if negative {
-		value.Neg(value)
-	}
-	return value, true
-}
-
-// digitValue is the decimal value of a Unicode Nd character. Nd characters
-// come in contiguous runs of complete 0–9 sequences (some runs hold several
-// sequences back to back, such as the mathematical digits U+1D7CE–U+1D7FF),
-// so the value is the distance from the start of the run modulo 10.
-func digitValue(r rune) int {
-	if r >= '0' && r <= '9' {
-		return int(r - '0')
-	}
-	start := r
-	for start > 0 && unicode.IsDigit(start-1) {
-		start--
-	}
-	return int(r-start) % 10
+	number, err := taskstatus.Count(raw)
+	return number, err == nil
 }

@@ -132,9 +132,9 @@ func TestReferenceDNSReportFields(t *testing.T) {
 }
 
 func TestReferenceCompareVersions(t *testing.T) {
-	for _, c := range referenceCases(t, "compare_versions") {
+	for i, c := range referenceCases(t, "compare_versions") {
 		a, b := c.GetString("a"), c.GetString("b")
-		if got, want := CompareVersions(a, b), intOf(c.Value("want")); got != want {
+		if got, want := CompareVersions(a, b), nativeVersionReferenceWant(t, i, c); got != want {
 			t.Errorf("compare_versions(%.40q, %q) = %d, want %d", a, b, got, want)
 		}
 	}
