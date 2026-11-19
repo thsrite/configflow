@@ -4,11 +4,13 @@ package agents
 // shared by Agent response paths.
 
 import (
+	"encoding/json"
 	"strings"
-	"unicode/utf8"
 
 	"configflow/internal/agents/diag"
 	"configflow/internal/jsonx"
+	"configflow/internal/model"
+	"configflow/internal/redact"
 )
 
 // Limits of diagnostics.py (UTF-8 bytes).
@@ -23,7 +25,8 @@ const (
 // FailureText is failure_text(value, secrets, limit); see diag.FailureText.
 // limit <= 0 is DetailLimit.
 func FailureText(value any, secrets []any, limit int) string {
-	return diag.FailureText(value, secrets, limit)
+	text, _ := value.(string)
+	return redact.DiagnosticText(text, legacySecrets(secrets), limit)
 }
 
 // tokenSecrets is the (agent.get('token'),) tuple.
@@ -32,51 +35,45 @@ func tokenSecrets(agent *jsonx.Object) []any { return []any{agent.Value("token")
 // DNSReportFields is dns_report_fields(payload, secrets): bounded, safe DNS
 // results, without inventing a result for old Agents.
 func DNSReportFields(payload *jsonx.Object, secrets []any) *jsonx.Object {
-	result := jsonx.NewObject()
-	if checks, ok := payload.Value("dns_checks").([]any); ok {
-		safeChecks := []any{}
-		incomplete := len(checks) > DNSCheckLimit
-		limit := min(len(checks), DNSCheckLimit)
-		for _, item := range checks[:limit] {
-			check, isObject := item.(*jsonx.Object)
-			level := check.Value("level")
-			name, nameOK := check.Value("name").(string)
-			message, messageOK := check.Value("message").(string)
-			if !isObject || check == nil || (level != "pass" && level != "warn" && level != "error") || !nameOK || !messageOK {
-				incomplete = true
+	var input model.Deployment
+	if items, present := payload.Value("dns_checks").([]any); present {
+		checks := make([]model.DeploymentDNSCheck, len(items))
+		for i, item := range items {
+			record, valid := item.(*Record)
+			if !valid || record == nil {
 				continue
 			}
-			name = FailureText(name, secrets, DNSNameLimit)
-			message = FailureText(message, secrets, DNSMessageLimit)
-			if name == "" || message == "" {
-				incomplete = true
-				continue
+			checks[i].Name, _ = record.Value("name").(string)
+			checks[i].Level, _ = record.Value("level").(string)
+			checks[i].Message, _ = record.Value("message").(string)
+			if fix, valid := record.Value("fix").(string); valid {
+				checks[i].Fix = new(fix)
 			}
-			safe := jsonx.Obj("name", name, "level", level, "message", message)
-			if fix, ok := check.Value("fix").(string); ok {
-				if fix = FailureText(fix, secrets, DNSFixLimit); fix != "" {
-					safe.Set("fix", fix)
-				}
-			}
-			safeChecks = append(safeChecks, safe)
 		}
-		if incomplete {
-			// A partial report must not look like an exhaustive all-pass result.
-			if len(safeChecks) > DNSCheckLimit-1 {
-				safeChecks = safeChecks[:DNSCheckLimit-1]
-			}
-			safeChecks = append(safeChecks, jsonx.Obj("name", "DNS 报告完整性", "level", "warn",
-				"message", "部分 DNS 检测结果格式无效或数量过多，未完整显示。",
-				"fix", "请减少重复监听配置，或检查 Agent 返回的 DNS 检测结果。"))
-		}
-		result.Set("dns_checks", safeChecks)
-	}
-	if checkedAt, ok := payload.Value("dns_checked_at").(string); ok && utf8.RuneCountInString(checkedAt) <= 64 && strings.Contains(checkedAt, "T") {
-		if _, naive, ok := fromISO(strings.ReplaceAll(checkedAt, "Z", "+00:00")); ok && !naive {
-			result.Set("dns_checked_at", checkedAt)
+		raw, err := json.Marshal(checks)
+		if err != nil || input.SetJSON("dns_checks", raw) != nil {
+			return jsonx.NewObject()
 		}
 	}
-	return result
+	if text, present := payload.Value("dns_checked_at").(string); present {
+		raw, err := json.Marshal(text)
+		if err != nil || input.SetJSON("dns_checked_at", raw) != nil {
+			return jsonx.NewObject()
+		}
+	}
+	report, err := SanitizeDNSReport(&input, legacySecrets(secrets))
+	if err != nil {
+		return jsonx.NewObject()
+	}
+	raw, err := json.Marshal(report)
+	if err != nil {
+		return jsonx.NewObject()
+	}
+	var result Record
+	if json.Unmarshal(raw, &result) != nil {
+		return jsonx.NewObject()
+	}
+	return &result
 }
 
 // ResponseFailure is response_failure(response, fallback=..., secrets=...):

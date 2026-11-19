@@ -179,6 +179,17 @@ func FailureText(value any, secrets []any, limit int) string {
 	if !ok {
 		return ""
 	}
+	var names []string
+	for _, value := range secrets {
+		if secret, ok := value.(string); ok {
+			names = append(names, secret)
+		}
+	}
+	return DiagnosticText(text, names, limit)
+}
+
+// DiagnosticText bounds readable failure details and removes credential values.
+func DiagnosticText(text string, secrets []string, limit int) string {
 	if limit <= 0 {
 		limit = DetailLimit
 	}
@@ -193,9 +204,9 @@ func FailureText(value any, secrets []any, limit int) string {
 	var names []string
 	seen := map[string]bool{}
 	for _, secret := range secrets {
-		if s, ok := secret.(string); ok && s != "" && !seen[s] {
-			seen[s] = true
-			names = append(names, s)
+		if secret != "" && !seen[secret] {
+			seen[secret] = true
+			names = append(names, secret)
 		}
 	}
 	// Python sorts a set, so the order of equally long secrets is arbitrary
@@ -214,7 +225,14 @@ func FailureText(value any, secrets []any, limit int) string {
 	text = replaceAtWordStart(text, secretPattern, 2, func(groups []string) string { return groups[1] + "[REDACTED]" })
 	text = PyStrip(text)
 	if len(text) > limit {
-		suffix := "\n[输出过长，已截断]"
+		suffix := messageTruncated
+		if limit < len(suffix) {
+			cut := []byte(suffix)[:limit]
+			for len(cut) > 0 && !utf8.Valid(cut) {
+				cut = cut[:len(cut)-1]
+			}
+			return string(cut)
+		}
 		cut := []byte(text)[:limit-len(suffix)]
 		for len(cut) > 0 && !utf8.Valid(cut) {
 			cut = cut[:len(cut)-1]
@@ -228,7 +246,7 @@ func FailureText(value any, secrets []any, limit int) string {
 // addresses hidden, then FailureText with MessageLimit.
 func EventMessage(value any, secrets []any) string {
 	if text, ok := value.(string); ok {
-		value = URLPattern.ReplaceAllString(text, "[下载地址已隐藏]")
+		value = URLPattern.ReplaceAllString(text, messageHiddenDownload)
 	}
 	return FailureText(value, secrets, MessageLimit)
 }
@@ -296,9 +314,5 @@ func SplitLinesKeepEnds(text string) []string {
 
 // EventText exposes the shared diagnostic visitor to typed notification producers.
 func EventText(text string, secrets ...string) string {
-	values := make([]any, len(secrets))
-	for i, secret := range secrets {
-		values[i] = secret
-	}
-	return EventMessage(text, values)
+	return DiagnosticText(URLPattern.ReplaceAllString(text, messageHiddenDownload), secrets, MessageLimit)
 }

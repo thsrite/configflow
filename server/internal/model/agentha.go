@@ -281,3 +281,8 @@ func (r *HAPayload) Clear(member string) error { return ClearMember(r, &r.raw, m
 
 // MarshalJSON preserves unknown and unchanged HAPayload members.
 func (r HAPayload) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
+
+// MemberJSON returns one effective HA identity member by its exact stored key.
+func (r *HASettings) MemberJSON(name string) (json.RawMessage, bool, error) {
+	return recordMemberJSON(r, &r.raw, name)
+}

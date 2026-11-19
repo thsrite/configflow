@@ -95,3 +95,24 @@ func memberJSONValue(value any) ([]byte, error) {
 		return Marshal(value)
 	}
 }
+
+// recordMemberJSON reads one member through the declared schema and the same
+// provenance owner as EncodeRecord. Reflection selects the typed field only;
+// it never encodes or traverses unrelated record members.
+func recordMemberJSON(rec any, raw *Raw, name string) (json.RawMessage, bool, error) {
+	value, schema, err := recordValue(rec)
+	if err != nil {
+		return nil, false, err
+	}
+	if err := ownRaw(value, schema, raw); err != nil {
+		return nil, false, err
+	}
+	if field, known := schema.byName[name]; known {
+		return raw.MemberJSON(name, value.Field(field.index).Interface())
+	}
+	if schema.extra >= 0 {
+		data, present := value.Field(schema.extra).Interface().(Fields).Get(name)
+		return data, present, nil
+	}
+	return nil, false, nil
+}

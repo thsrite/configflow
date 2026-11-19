@@ -114,3 +114,49 @@ Exit 0，agents 3.253s，API 6.520s；fuzz 804,516 executions，PASS 60.013s。
 
 Exit 0，agents 11.530s，gateway/installation 4.887s；包括 exact installation replay 正控、
 原始 SQLite R5 ID/profile 负例及原网关 atomic enrollment / text port / integral float 回归。
+
+## typed timeline / DNS report 与 original proof 收尾
+
+- registry/enrollment 块已提交 17a3e7e19。
+- Clean/Append/MergeOperationEvents 业务只接受 model.OperationEvent；events_legacy.go
+  仅转码。无效原项仍占用 last-80 窗口，unknown 非有限字段不丢弃有效事件；original
+  status/at/message 类型逐行绑定，输入不可变。Native DNSReport 只读原始 check strings，
+  限制 32 项，保留空数组/absent 区分，坏项输出原中文完整性警告，未知字段不外泄。
+- native 诊断入口统一 internal/redact.DiagnosticText/EventText；底层共享 diag formatter
+  不复制 credential policy。保留原 Failure/Event 参考所有期望。小于截断标记的 byte budget
+  原代码可能负切片 panic；现在保持 UTF-8 并严格限长，1..127 的独立单测通过。
+- model 单成员 getter 共用 recordMemberJSON，校验 provenance owner + exact schema key，
+  只编码选中的 typed member。部署、prepared、event、DNS、HA identity 均复用；没有
+  私有 scalar parser，没有每个 Agent/心跳解码整份配置。新增原始 null/number/bool、
+  unknown、Clear、copy ownership 及 0/2MiB opaque payload B/op+alloc bound。
+- 额外 M 级 integrity 风险已先复现后修复：旧 deploymentProfileJSON 用 std struct 解码
+  整份 journal，Profile_ID 可覆盖原始 profile_id=7 的 RawMessage；HA Group_ID/Peer_ID
+  也可能被当作证明，或覆盖正确小写字段。现在从 shared model 读取 exact original member。
+  另 submitted="true"/"false" 的 R5 pointer=nil 曾允许 RememberPreparedContent；现在仅
+  absent/null/original false 是可准备状态。六条 prepared 原行含 true 拒绝与 false/null 正控、
+  三条 HA alias 原行均固定期望，不改任何旧期望。失败事务 head 保持不变。
+
+### 证据（.64）
+
+    RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -e; cd server; gofmt -w internal/agents/diag/diag.go internal/agents/diag/messages.go internal/agents/events_native_test.go internal/agents/dns_reports_test.go internal/redact/diagnostic_test.go; GOMAXPROCS=4 go vet -p 4 ./internal/agents ./internal/redact ./internal/model; GOMAXPROCS=4 go test -race -p 4 -count=1 -timeout=15m -run "Event|ReferenceFailure|DNSReport|DNSFields|FailureText|DiagnosticTextSmall" ./internal/agents ./internal/redact; GOMAXPROCS=4 go test -count=1 -run "^$" -fuzz "^FuzzTypedOperationEvents$" -fuzztime=60s -parallel=2 ./internal/agents'
+
+Exit 0：agents 11.288s，redact 1.132s；fuzz 768,362 executions，PASS 60.156s。
+此前原 Event/Failure/Credential/Redact/Member 定向 race 同时覆盖 notifications：
+agents 15.526s、redact 1.021s、model 1.033s、notifications 1.022s，全部 PASS。
+
+    RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'cd server && gofmt -w internal/agents/ownership_alias_test.go && GOMAXPROCS=4 go test -race -p 4 -count=1 -timeout=10m -run "PreparedOwnershipOriginalMember|HAPairIdentityUsesExactStoredKeys" ./internal/agents'
+
+修复前独立期望复现（21.187s）：profile_id=7 + Profile_ID="7"、submitted="true"、
+submitted="false" 均错误 accepted=true；仅大写 Group_ID/Peer_ID 也错误 valid=true。
+测试保留，不替换期望。
+
+    RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -e; cd server; gofmt -w internal/model/member_native_test.go internal/model/agentdeploy.go internal/model/agentha.go internal/agents/prepared.go internal/agents/ha_model.go internal/agents/messages.go internal/agents/events_native_test.go; GOMAXPROCS=4 go vet -p 4 ./internal/agents ./internal/redact ./internal/model; GOMAXPROCS=4 go test -race -p 4 -count=1 -timeout=15m -run "PreparedOwnership|HAPairIdentity|TypedHAPair|ReviewN810|JournalMember|Event|DNSReport|DiagnosticTextSmall" ./internal/agents ./internal/model ./internal/redact ./internal/agents/dnsha'
+
+Exit 0：agents 40.962s，model 3.466s，redact 1.140s，dnsha 2.072s。
+
+### 当前边界
+
+完整 N8-10 仍部分完成。尚余 deployment 主状态机、remote/client 与 response decode、
+diagnostics.ResponseFailure、messages/version/time、runtime legacy importer/private codec、
+HA 其余 public projection、presence，以及各子包残留 adapter。只有 typed timeline 与 DNS
+report 业务本轮完成，不能据此宣称全部 diagnostics / agents core 已 S。

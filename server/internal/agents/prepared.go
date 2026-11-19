@@ -2,7 +2,6 @@ package agents
 
 import (
 	"bytes"
-	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 
@@ -17,19 +16,14 @@ func (m *Manager) RememberPreparedContent(ctx context.Context, agentID, deployme
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
-	var identity struct {
-		ProfileID   string `json:"profile_id"`
-		ServiceType string `json:"service_type"`
-	}
-	if err := jsondecode.Unmarshal(prepared, &identity); err != nil {
-		return err
-	}
 	var proof model.PreparedContent
 	if err := json.Unmarshal(prepared, &proof); err != nil {
 		return err
 	}
-	if identity.ProfileID == "" || identity.ServiceType == "" || len(model.Issues(&proof)) != 0 {
-		return &ValueError{Message: "Deployment ownership changed during preparation"}
+	profileID, profileOK := storedText(proof.MemberJSON("profile_id"))
+	serviceType, serviceOK := storedText(proof.MemberJSON("service_type"))
+	if !profileOK || !serviceOK || profileID == "" || serviceType == "" || len(model.Issues(&proof)) != 0 {
+		return &ValueError{Message: msgPreparationOwnershipChanged}
 	}
 	var validation *model.OxiDNSValidationReceipt
 	if len(receipt) > 0 {
@@ -38,23 +32,23 @@ func (m *Manager) RememberPreparedContent(ctx context.Context, agentID, deployme
 			return err
 		}
 		if len(model.Issues(validation)) != 0 {
-			return &ValueError{Message: "Invalid deployment validation receipt"}
+			return &ValueError{Message: msgInvalidValidationReceipt}
 		}
 	}
 	return m.EditAgents(ctx, "", func(tx context.Context, list *[]model.Agent) error {
 		a := registryAgent(*list, agentID)
 		if a == nil {
-			return &ValueError{Message: "Deployment ownership changed during preparation"}
+			return &ValueError{Message: msgPreparationOwnershipChanged}
 		}
 		state, ok := a.Deployments.Get(deploymentID)
 		if !ok {
-			return &ValueError{Message: "Deployment ownership changed during preparation"}
+			return &ValueError{Message: msgPreparationOwnershipChanged}
 		}
 		// Stored identities are ownership evidence: an originally numeric or
 		// null member must not match through its model text projection.
 		profile, profileOK := storedText(a.MemberJSON("profile_id"))
 		if !profileOK && !storedAbsent(a.MemberJSON("profile_id")) {
-			return &ValueError{Message: "Deployment ownership changed during preparation"}
+			return &ValueError{Message: msgPreparationOwnershipChanged}
 		}
 		if profile == "" {
 			var err error
@@ -63,10 +57,11 @@ func (m *Manager) RememberPreparedContent(ctx context.Context, agentID, deployme
 				return err
 			}
 		}
-		stateProfile, stateOK := storedText(deploymentProfileJSON(&state))
+		stateProfile, stateOK := storedText(state.MemberJSON("profile_id"))
 		service, serviceOK := storedText(a.MemberJSON("service_type"))
-		if !stateOK || !serviceOK || stateProfile != proof.ProfileID || profile != proof.ProfileID || service != proof.ServiceType || state.Submitted != nil && *state.Submitted || state.Status != "preparing" {
-			return &ValueError{Message: "Deployment ownership changed during preparation"}
+		status, statusOK := storedText(state.MemberJSON("status"))
+		if !stateOK || !serviceOK || !statusOK || stateProfile != proof.ProfileID || profile != proof.ProfileID || service != proof.ServiceType || !preparationUnsubmitted(&state) || status != "preparing" {
+			return &ValueError{Message: msgPreparationOwnershipChanged}
 		}
 		if err := tx.Err(); err != nil {
 			return err
@@ -95,18 +90,16 @@ func storedAbsent(raw json.RawMessage, present bool, err error) bool {
 	return err == nil && (!present || bytes.Equal(bytes.TrimSpace(raw), []byte("null")))
 }
 
-// deploymentProfileJSON returns the original stored profile_id of one journal
-// entry. Only this preparing entry is encoded, never the deployment history.
-func deploymentProfileJSON(state *model.Deployment) (json.RawMessage, bool, error) {
-	data, err := model.Marshal(state)
+// preparationUnsubmitted accepts only absent/null or an original JSON false.
+// A wrong-shaped R5 zero cannot authorize replacing server-owned evidence.
+func preparationUnsubmitted(state *model.Deployment) bool {
+	raw, present, err := state.MemberJSON("submitted")
 	if err != nil {
-		return nil, false, err
+		return false
 	}
-	var members struct {
-		ProfileID json.RawMessage `json:"profile_id"`
+	if storedAbsent(raw, present, nil) {
+		return true
 	}
-	if err := jsondecode.Unmarshal(data, &members); err != nil {
-		return nil, false, err
-	}
-	return members.ProfileID, members.ProfileID != nil, nil
+	var submitted *bool
+	return json.Unmarshal(raw, &submitted) == nil && submitted != nil && !*submitted
 }

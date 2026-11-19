@@ -219,3 +219,14 @@ const (
 	msgRebindChanged      = "Agent 绑定已变化，请刷新列表后重新确认"
 	msgRebindBusy         = "以下 Agent 正在发布、更新或等待恢复，请完成后再改绑："
 )
+
+const (
+	msgDNSIntegrityName    = "DNS 报告完整性"
+	msgDNSIntegrityMessage = "部分 DNS 检测结果格式无效或数量过多，未完整显示。"
+	msgDNSIntegrityFix     = "请减少重复监听配置，或检查 Agent 返回的 DNS 检测结果。"
+)
+
+const (
+	msgPreparationOwnershipChanged = "Deployment ownership changed during preparation"
+	msgInvalidValidationReceipt    = "Invalid deployment validation receipt"
+)

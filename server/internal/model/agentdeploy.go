@@ -359,3 +359,28 @@ func (r *AgentRuleSyncReceipt) Clear(member string) error { return ClearMember(r
 
 // MarshalJSON preserves unknown and unchanged AgentRuleSyncReceipt members.
 func (r AgentRuleSyncReceipt) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
+
+// MemberJSON returns an owned effective event member, retaining original types.
+func (r *OperationEvent) MemberJSON(name string) (json.RawMessage, bool, error) {
+	return recordMemberJSON(r, &r.raw, name)
+}
+
+// MemberJSON returns one effective deployment member without encoding its artifacts.
+func (r *Deployment) MemberJSON(name string) (json.RawMessage, bool, error) {
+	return recordMemberJSON(r, &r.raw, name)
+}
+
+// SetJSON replaces one deployment member using the shared stored-record codec.
+func (r *Deployment) SetJSON(name string, value json.RawMessage) error {
+	return SetMemberJSON(r, &r.raw, name, value)
+}
+
+// MemberJSON returns one original DNS report member without encoding extensions.
+func (r *DeploymentDNSCheck) MemberJSON(name string) (json.RawMessage, bool, error) {
+	return recordMemberJSON(r, &r.raw, name)
+}
+
+// MemberJSON returns one effective prepared-content proof member by exact key.
+func (r *PreparedContent) MemberJSON(name string) (json.RawMessage, bool, error) {
+	return recordMemberJSON(r, &r.raw, name)
+}

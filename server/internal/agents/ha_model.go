@@ -2,7 +2,6 @@ package agents
 
 import (
 	"bytes"
-	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 
@@ -76,15 +75,12 @@ func haPairIdentity(record *model.Agent) (group, peer string, valid bool) {
 	if record == nil {
 		return "", "", false
 	}
-	raw, present, err := record.MemberJSON("oxidns_ha")
-	var identity struct {
-		GroupID string `json:"group_id"`
-		PeerID  string `json:"peer_id"`
-	}
-	if err != nil || !present || jsondecode.Unmarshal(raw, &identity) != nil {
+	if record.OxiDNSHA == nil {
 		return "", "", false
 	}
-	return identity.GroupID, identity.PeerID, identity.GroupID != "" && identity.PeerID != ""
+	group, groupOK := storedText(record.OxiDNSHA.MemberJSON("group_id"))
+	peer, peerOK := storedText(record.OxiDNSHA.MemberJSON("peer_id"))
+	return group, peer, groupOK && peerOK && group != "" && peer != ""
 }
 
 func haProfilesMatch(left, right *model.Agent) bool {
