@@ -1,36 +1,28 @@
 package upgrades
 
-// Port of backend/agents/address_follow.py: follow an Agent whose host was
-// renumbered.
-//
-// An Agent reports the address it should be reached at with every heartbeat.
-// The record follows it once ConfigFlow has reached that address with the
-// Agent's own token, so a wrong interface or an unreachable address never
-// replaces a working one. Members of a DNS high-availability pair are only
-// reported: both devices' VRRP configuration and the router's exemptions
-// name the old address, and changing the record alone would hide a broken
-// pair.
-
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"net/netip"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"configflow/internal/agents"
-	"configflow/internal/jsonx"
+	"configflow/internal/jsondecode"
+	"configflow/internal/jsonresp"
 	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
+	"configflow/internal/model"
 	"configflow/internal/notifications"
-	"configflow/internal/pystr"
 	"configflow/internal/repo"
 )
 
-// Constants of address_follow.py.
+// Constants describe address-follow checks and the existing operator guidance.
 const (
 	VerifyTimeout = 4
 	HASteps       = "它是 DNS 高可用成员，面板没有修改记录：两台设备的主备配置和路由器的放行名单里写的都是旧地址。" +
@@ -40,15 +32,12 @@ const (
 		"请依次：1. 停用 DNS 高可用；2. 修改地址；3. 重新配对并开启高可用；4. 重新预览并发布上游路由。"
 	EnvEdit    = "这个容器的地址由环境变量 AGENT_IP 指定，容器每次启动都会用它。请修改 AGENT_IP 后重建容器，面板记录会自动更新。"
 	RouterHint = "如果上游路由关联了这台设备（代理网关或 DHCP DNS），请重新预览并发布上游路由。"
+	// DefaultRetrySeconds is the production address-follow throttle.
+	DefaultRetrySeconds = 120
 )
 
-// DefaultRetrySeconds is the production address-follow throttle.
-const DefaultRetrySeconds = 120
-
-// RetrySeconds is RETRY_SECONDS (a variable: tests set it to 0 as the
-// Python tests monkeypatch it).
+// RetrySeconds controls address-follow retries; tests restore it after use.
 var RetrySeconds float64 = DefaultRetrySeconds
-
 var addressLog = logx.Get("backend.agents.address_follow")
 
 type attempt struct {
@@ -58,20 +47,17 @@ type attempt struct {
 }
 
 var (
-	addressMu sync.Mutex
-	attempts  = map[string]attempt{} // agent id -> last attempt
-	reported  = map[string]bool{}    // agent ids with a pending "address changed" notice
+	addressMu   sync.Mutex
+	attempts    = map[string]attempt{}
+	reported    = map[string]bool{}
+	startThread = func(ctx context.Context, name string, fn func(context.Context)) error {
+		return lifecycle.SpawnerFrom(ctx).Spawn(ctx, name, fn)
+	}
+	reachesOverride func(*model.Agent, string) bool
+	askOverride     func(*model.Agent, string, string, []byte) (int, model.Fields)
 )
 
-// Test seams: startThread runs the background check (Python's daemon
-// thread), reachesHook and askHook replace _reaches and _ask.
-var (
-	startThread = lifecycle.Spawn
-	reachesHook func(agent *jsonx.Object, host string) bool
-	askHook     func(agent *jsonx.Object, host, method string, body *jsonx.Object) (int, *jsonx.Object)
-)
-
-// ResetAddressState forgets the attempts and pending notices (tests).
+// ResetAddressState forgets retry throttles and pending-notice memory.
 func ResetAddressState() {
 	addressMu.Lock()
 	defer addressMu.Unlock()
@@ -79,110 +65,64 @@ func ResetAddressState() {
 	reported = map[string]bool{}
 }
 
-// Usable is usable(value): a LAN IPv4 address ConfigFlow can connect to
-// ("" for None): not loopback, link-local, multicast, unspecified,
-// reserved or a Docker bridge address (172.17.0.0–172.31.255.255).
-func Usable(value any) string {
-	text, ok := value.(string)
-	if !ok { // IPv4Address(12) is 0.0.0.12
+// Usable returns a reachable LAN IPv4 candidate, excluding local-only and Docker bridge addresses.
+func Usable(text string) string {
+	ip, err := netip.ParseAddr(text)
+	if err != nil || !ip.Is4() || ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsMulticast() || ip.IsUnspecified() {
 		return ""
 	}
-	octets, ok := parseIPv4(text)
-	if !ok {
+	b := ip.As4()
+	if b[0] >= 240 || b[0] == 172 && b[1] >= 17 && b[1] <= 31 {
 		return ""
 	}
-	a, b := octets[0], octets[1]
-	switch {
-	case a == 127, // is_loopback
-		a == 169 && b == 254,           // is_link_local
-		a >= 224 && a <= 239,           // is_multicast
-		octets == [4]int{0, 0, 0, 0},   // is_unspecified
-		a >= 240,                       // is_reserved
-		a == 172 && b >= 17 && b <= 31: // in 172.16.0.0/12 and 17 <= packed[1] <= 31
-		return ""
-	}
-	return strconv.Itoa(a) + "." + strconv.Itoa(b) + "." + strconv.Itoa(octets[2]) + "." + strconv.Itoa(octets[3])
+	return ip.String()
 }
 
-// parseIPv4 is ipaddress.IPv4Address(text) of CPython 3.11: four ASCII
-// decimal octets of at most three digits, no leading zeros, each ≤ 255.
-func parseIPv4(text string) ([4]int, bool) {
-	var out [4]int
-	if text == "" || strings.Contains(text, "/") {
-		return out, false
-	}
-	parts := strings.Split(text, ".")
-	if len(parts) != 4 {
-		return out, false
-	}
-	for i, part := range parts {
-		if part == "" || len(part) > 3 {
-			return out, false
-		}
-		for j := 0; j < len(part); j++ {
-			if part[j] < '0' || part[j] > '9' {
-				return out, false
-			}
-		}
-		if part != "0" && part[0] == '0' {
-			return out, false
-		}
-		n, _ := strconv.Atoi(part)
-		if n > 255 {
-			return out, false
-		}
-		out[i] = n
-	}
-	return out, true
-}
-
-func agentIDOf(agent *jsonx.Object) (string, error) {
-	id, ok := agent.Get("id")
-	if !ok {
-		return "", keyError("id")
-	}
-	return jsonx.Str(id), nil
-}
-
-// Follow is follow(manager, agent, reported): called for every heartbeat
-// that reports a host; returns at once and verifies in the background.
-func Follow(ctx context.Context, m *agents.Manager, agent *jsonx.Object, reportedHost string) error {
+// FollowModel verifies a reported host in an originating-runtime background job.
+func FollowModel(ctx context.Context, m *agents.Manager, a *model.Agent, reportedHost string) error {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	host := Usable(reportedHost)
-	agentID, err := agentIDOf(agent)
-	if err != nil {
-		return err
+	id, ok := originalString(a.MemberJSON("id"))
+	if !ok || id == "" {
+		return agents.ErrAgentEndpoint
 	}
-	if host == "" || jsonx.Equal(host, agent.Value("host")) {
+	host := Usable(reportedHost)
+	old, _ := originalString(a.MemberJSON("host"))
+	if host == "" || host == old {
 		addressMu.Lock()
-		pending := reported[agentID]
+		pending := reported[id]
 		addressMu.Unlock()
 		if host != "" && pending {
-			resolve(ctx, m, agentID)
+			resolve(ctx, m, id)
 		}
 		return nil
 	}
-	member, err := haMember(agent)
+	member, err := memberHA(a)
 	if err != nil {
 		return err
 	}
-	now := lifecycle.ClockFrom(ctx).Now()
+	at := lifecycle.ClockFrom(ctx).Now()
 	addressMu.Lock()
-	previous, ok := attempts[agentID]
-	if ok && previous.host == host && previous.member == member && now.Sub(previous.at).Seconds() < RetrySeconds {
+	if err := ctx.Err(); err != nil {
+		addressMu.Unlock()
+		return err
+	}
+	prev, exists := attempts[id]
+	if exists && prev.host == host && prev.member == member && at.Sub(prev.at).Seconds() < RetrySeconds {
 		addressMu.Unlock()
 		return nil
 	}
-	attempts[agentID] = attempt{host, member, now}
+	attempts[id] = attempt{host, member, at}
 	addressMu.Unlock()
-	base := repo.WithRepository(context.Background(), m.Repository())
-	if err := startThread(base, "agent-address", func(worker context.Context) { followInBackground(worker, m, agentID, host) }); err != nil {
+	// Keep both repository values and the originating runtime; Background would
+	// allow an old generation to start a new job after shutdown.
+	base := repo.WithRepository(ctx, m.Repository())
+	if err := startThread(base, "agent-address", func(worker context.Context) { followInBackground(worker, m, id, host) }); err != nil {
 		addressMu.Lock()
-		if current := attempts[agentID]; current == (attempt{host, member, now}) {
-			delete(attempts, agentID)
+		if attempts[id] == (attempt{host, member, at}) {
+			delete(attempts, id)
 		}
 		addressMu.Unlock()
 		return fmt.Errorf("start Agent address check: %w", err)
@@ -190,178 +130,169 @@ func Follow(ctx context.Context, m *agents.Manager, agent *jsonx.Object, reporte
 	return nil
 }
 
-// Confirmed is confirmed(agent, reported): the reported address once the
-// record holds it ("" otherwise); the Agent may then store it in its config.
-func Confirmed(agent *jsonx.Object, reportedHost string) string {
+// ConfirmedModel returns a usable host only when the original stored host agrees.
+func ConfirmedModel(a *model.Agent, reportedHost string) string {
 	host := Usable(reportedHost)
-	if host != "" && jsonx.Equal(host, agent.Value("host")) {
+	old, ok := originalString(a.MemberJSON("host"))
+	if ok && host != "" && host == old {
 		return host
 	}
 	return ""
 }
-
-// agentPrefix is f"http://{host}:{agent['port']}" with the token header;
-// KeyError when the record has no port or token.
-func agentRequest(agent *jsonx.Object, host string) (string, http.Header, error) {
-	port, ok := agent.Get("port")
-	if !ok {
-		return "", nil, keyError("port")
+func addressRequest(ctx context.Context, m *agents.Manager, a *model.Agent, host, method, path string, body []byte) (*agents.Response, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
-	token, ok := agent.Get("token")
-	if !ok {
-		return "", nil, keyError("token")
+	token, ok := originalString(a.MemberJSON("token"))
+	port, present, err := a.MemberJSON("port")
+	if !ok || !present || err != nil {
+		return nil, agents.ErrAgentEndpoint
 	}
-	return "http://" + host + ":" + jsonx.Str(port), http.Header{"Authorization": {"Bearer " + jsonx.Str(token)}}, nil
+	header := http.Header{"Authorization": {"Bearer " + token}}
+	if len(body) > 0 {
+		header.Set("Content-Type", "application/json")
+	}
+	response, err := m.Client().Do(ctx, agents.Request{Method: method, URL: "http://" + host + ":" + rawText(port) + path, Header: header, Body: body, Timeout: agents.Seconds(VerifyTimeout), Latin1Headers: true})
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	return response, err
 }
-
-// encodingFailure is the UnicodeEncodeError of a token http.client cannot
-// send as latin-1: not a RequestException, so it leaves _reaches/_ask (a
-// logged failure in _follow, a 500 in describe/change).
-func encodingFailure(err error) error {
-	if errors.Is(err, agents.ErrHeaderEncoding) {
-		return err
-	}
-	return nil
-}
-
-// reaches is _reaches(agent, host): only the Agent holding this record's
-// token answers this authenticated endpoint. requests.get with the
-// environment's proxies (trust_env).
-func reaches(ctx context.Context, m *agents.Manager, agent *jsonx.Object, host string) (bool, error) {
-	if reachesHook != nil {
-		return reachesHook(agent, host), nil
-	}
-	base, header, err := agentRequest(agent, host)
-	if err != nil {
+func reachesModel(ctx context.Context, m *agents.Manager, a *model.Agent, host string) (bool, error) {
+	if err := ctx.Err(); err != nil {
 		return false, err
 	}
-	response, err := m.Client().Do(ctx, agents.Request{Method: "GET", URL: base + "/api/capabilities",
-		Header: header, Timeout: agents.Seconds(VerifyTimeout), Latin1Headers: true})
+	if reachesOverride != nil {
+		return reachesOverride(a, host), nil
+	}
+	r, err := addressRequest(ctx, m, a, host, "GET", "/api/capabilities", nil)
 	if err != nil {
 		if ctx.Err() != nil {
 			return false, ctx.Err()
 		}
-		return false, encodingFailure(err) // every other failure is a RequestException here
+		if errors.Is(err, agents.ErrHeaderEncoding) || errors.Is(err, agents.ErrAgentEndpoint) {
+			return false, err
+		}
+		return false, nil
 	}
-	return response.StatusCode == 200, nil
+	return r.StatusCode == 200, nil
 }
-
-// ask is _ask(agent, host, method, body): the Agent's own address endpoint;
-// status 0 is None (unreachable), the body a dict ({} otherwise).
-func ask(ctx context.Context, m *agents.Manager, agent *jsonx.Object, host, method string, body *jsonx.Object) (int, *jsonx.Object, error) {
-	if askHook != nil {
-		status, data := askHook(agent, host, method, body)
+func askModel(ctx context.Context, m *agents.Manager, a *model.Agent, host, method string, body []byte) (int, model.Fields, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, model.Fields{}, err
+	}
+	if askOverride != nil {
+		status, data := askOverride(a, host, method, body)
 		return status, data, nil
 	}
-	base, header, err := agentRequest(agent, host)
-	if err != nil {
-		return 0, nil, err
-	}
-	var payload []byte
-	if body != nil {
-		if payload, err = jsonx.Default(body); err != nil {
-			return 0, nil, err
-		}
-		header.Set("Content-Type", "application/json")
-	}
-	response, err := m.Client().Do(ctx, agents.Request{Method: method, URL: base + "/api/agent-address",
-		Header: header, Body: payload, Timeout: agents.Seconds(VerifyTimeout), Latin1Headers: true})
+	r, err := addressRequest(ctx, m, a, host, method, "/api/agent-address", body)
 	if err != nil {
 		if ctx.Err() != nil {
-			return 0, nil, ctx.Err()
+			return 0, model.Fields{}, ctx.Err()
 		}
-		if failure := encodingFailure(err); failure != nil {
-			return 0, nil, failure
+		if errors.Is(err, agents.ErrHeaderEncoding) || errors.Is(err, agents.ErrAgentEndpoint) {
+			return 0, model.Fields{}, err
 		}
-		return 0, jsonx.NewObject(), nil
+		return 0, model.Fields{}, nil
 	}
-	data, err := response.JSON()
-	object, ok := data.(*jsonx.Object)
-	if err != nil || !ok || object == nil {
-		object = jsonx.NewObject()
+	var fields model.Fields
+	if jsondecode.Unmarshal(responseData(r), &fields) != nil {
+		fields = model.Fields{}
 	}
-	return response.StatusCode, object, nil
+	return r.StatusCode, fields, nil
 }
-
-func followInBackground(ctx context.Context, m *agents.Manager, agentID, host string) {
+func followInBackground(ctx context.Context, m *agents.Manager, id, host string) {
 	defer func() {
-		if p := recover(); p != nil {
-			addressLog.Error("Could not follow the reported address of Agent " + agentID)
+		if recover() != nil {
+			addressLog.Error("Could not follow the reported address of Agent " + id)
 		}
 	}()
-	if err := follow(ctx, m, agentID, host); err != nil {
-		addressLog.Exception("Could not follow the reported address of Agent "+agentID, err)
+	if err := followModel(ctx, m, id, host); err != nil && ctx.Err() == nil {
+		addressLog.Exception("Could not follow the reported address of Agent "+id, err)
 	}
 }
-
-// sameNamedAt reports another record with the Agent's name at host.
-func sameNamedAt(ctx context.Context, m *agents.Manager, agent *jsonx.Object, agentID, host string) (bool, error) {
-	all, err := m.GetAllAgents(ctx, true)
+func sameNamedAtModel(ctx context.Context, m *agents.Manager, a *model.Agent, id, host string) (bool, error) {
+	name, valid := originalString(a.MemberJSON("name"))
+	if !valid {
+		return false, agents.ErrAgentEndpoint
+	}
+	rows, err := m.ReadAgents(ctx, false, nil)
 	if err != nil {
 		return false, err
 	}
-	for _, other := range all {
-		id, ok := other.Get("id")
-		if !ok {
-			return false, keyError("id")
-		}
-		if !jsonx.Equal(id, agentID) && jsonx.Equal(other.Value("name"), agent.Value("name")) && jsonx.Equal(other.Value("host"), host) {
+	for i := range rows {
+		otherID, idOK := originalString(rows[i].MemberJSON("id"))
+		otherName, nOK := originalString(rows[i].MemberJSON("name"))
+		otherHost, hOK := originalString(rows[i].MemberJSON("host"))
+		if idOK && nOK && hOK && otherID != id && otherName == name && otherHost == host {
 			return true, nil
 		}
 	}
 	return false, nil
 }
-
-func oldHost(agent *jsonx.Object) string {
-	if old := agent.Value("host"); jsonx.Truthy(old) {
-		return jsonx.Str(old)
+func changeRecord(ctx context.Context, m *agents.Manager, id, host string) (bool, error) {
+	data, err := json.Marshal(struct {
+		Host string `json:"host"`
+	}{host})
+	if err != nil {
+		return false, err
 	}
-	return ""
+	edits, err := agents.DecodeAgentEdits(data)
+	if err != nil {
+		return false, err
+	}
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	return m.EditAgent(ctx, id, edits)
 }
-
-// follow is _follow(manager, agent_id, host).
-func follow(ctx context.Context, m *agents.Manager, agentID, host string) error {
-	agent, err := m.GetAgentByID(ctx, agentID, true)
+func followModel(ctx context.Context, m *agents.Manager, id, host string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	a, err := m.ReadAgent(ctx, id, true)
 	if err != nil {
 		return err
 	}
-	if agent == nil || agent.Len() == 0 || jsonx.Equal(agent.Value("host"), host) {
+	if a == nil {
 		return nil
 	}
-	old, label := oldHost(agent), agents.AgentLabel(agent)
-	member, err := haMember(agent)
+	old, _ := originalString(a.MemberJSON("host"))
+	if old == host {
+		return nil
+	}
+	label := agentLabel(a)
+	member, err := memberHA(a)
 	if err != nil {
 		return err
 	}
 	if member {
-		addressLog.Warning("Agent " + label + " 上报地址由 " + old + " 变为 " + host + "；它是 DNS 高可用成员，记录未修改")
-		report(ctx, m, agent, host, "是 DNS 高可用成员，记录未修改", HASteps)
+		addressLog.Warning(fmt.Sprintf(msgFollowHA, label, old, host))
+		report(ctx, m, a, host, msgHAUnchanged, HASteps)
 		return nil
 	}
-	if taken, err := sameNamedAt(ctx, m, agent, agentID, host); err != nil {
-		return err
+	if taken, e := sameNamedAtModel(ctx, m, a, id, host); e != nil {
+		return e
 	} else if taken {
-		addressLog.Warning("Agent " + label + " 上报地址 " + host + " 与另一条同名记录相同，记录未修改")
+		addressLog.Warning(fmt.Sprintf(msgFollowDuplicate, label, host))
 		return nil
 	}
-	ok, err := reaches(ctx, m, agent, host)
+	ok, err := reachesModel(ctx, m, a, host)
 	if err != nil {
 		return err
 	}
 	if !ok {
-		addressLog.Warning("Agent " + label + " 上报地址由 " + old + " 变为 " + host + "，但面板用它的凭据连不上新地址，记录未修改")
-		report(ctx, m, agent, host, "面板连不上新地址，记录未修改",
-			"面板用这台 Agent 的凭据访问 "+host+":"+jsonx.Str(agent.Value("port"))+" 没有成功，所以仍按 "+old+" 联系它。"+
-				"请确认面板所在的机器能访问新地址和 Agent 端口；能访问后会自动更新。")
+		addressLog.Warning(fmt.Sprintf(msgFollowUnreachable, label, old, host))
+		port, _, _ := a.MemberJSON("port")
+		report(ctx, m, a, host, msgUnreachableUnchanged, fmt.Sprintf(msgFollowHelp, host, rawText(port), old))
 		return nil
 	}
-	updated, err := m.UpdateAgent(ctx, agentID, jsonx.Obj("host", host))
+	updated, err := changeRecord(ctx, m, id, host)
 	var conflict *agents.DeploymentConflict
 	if errors.As(err, &conflict) {
-		// A publication or update is in flight; the next heartbeat tries again.
-		addressLog.Info("Agent " + label + " 的地址暂未更新为 " + host + "：" + conflict.Error())
+		addressLog.Info(fmt.Sprintf(msgFollowConflict, label, host, conflict))
 		addressMu.Lock()
-		delete(attempts, agentID)
+		delete(attempts, id)
 		addressMu.Unlock()
 		return nil
 	}
@@ -371,240 +302,249 @@ func follow(ctx context.Context, m *agents.Manager, agentID, host string) error 
 	if !updated {
 		return nil
 	}
-	addressLog.Info("Agent " + label + " 的地址已由 " + old + " 更新为 " + host + "（Agent 上报，已用其凭据核实可连接）")
-	resolve(ctx, m, agentID)
-	name := agent.Value("name")
-	if !jsonx.Truthy(name) {
-		name = agentID
+	addressLog.Info(fmt.Sprintf(msgFollowUpdated, label, old, host))
+	resolve(ctx, m, id)
+	if err := ctx.Err(); err != nil {
+		return err
 	}
-	repository := m.Repository()
 	notifications.Safely(func() error {
-		return notifications.RecordNotice(ctx, repository, "notice:agent-address:"+agentID,
-			jsonx.Str(name)+" · Agent 地址已自动更新",
-			"设备的地址由 "+old+" 变为 "+host+"，面板已核实能用新地址连上它并更新了记录。"+
-				"如果上游路由关联了这台设备（代理网关或 DHCP DNS），请重新预览并发布上游路由。",
-			notifications.Target("/agents", "查看 Agent", "agent", agentID))
+		return notifications.SaveNotice(ctx, m.Repository(), "notice:agent-address:"+id, label+msgAddressNoticeTitle, fmt.Sprintf(msgAddressNotice, old, host), notifications.Destination("/agents", msgViewAgent, map[string]string{"agent": id}))
 	})
 	return nil
 }
-
-func report(ctx context.Context, m *agents.Manager, agent *jsonx.Object, host, label, message string) {
-	id, _ := agentIDOf(agent)
+func report(ctx context.Context, m *agents.Manager, a *model.Agent, host, label, message string) {
+	if ctx.Err() != nil {
+		return
+	}
 	addressMu.Lock()
-	reported[id] = true
+	if ctx.Err() != nil {
+		addressMu.Unlock()
+		return
+	}
+	reported[a.ID] = true
 	addressMu.Unlock()
-	repository := m.Repository()
-	notifications.Safely(func() error { return notifications.RecordAgentAddress(ctx, repository, agent, host, label, message) })
+	notifications.Safely(func() error { return notifications.SaveAgentAddress(ctx, m.Repository(), a, host, label, message) })
 }
-
-func resolve(ctx context.Context, m *agents.Manager, agentID string) {
+func resolve(ctx context.Context, m *agents.Manager, id string) {
+	if ctx.Err() != nil {
+		return
+	}
 	addressMu.Lock()
-	delete(reported, agentID)
+	if ctx.Err() != nil {
+		addressMu.Unlock()
+		return
+	}
+	delete(reported, id)
 	addressMu.Unlock()
-	repository := m.Repository()
-	notifications.Safely(func() error { return notifications.ResolveAgentAddress(ctx, repository, agentID) })
+	notifications.Safely(func() error { return notifications.ResolveAgentAddress(ctx, m.Repository(), id) })
 }
-
-// mode is _mode(agent, status, info): what changing the address changes.
-func mode(agent *jsonx.Object, status int, info *jsonx.Object) (string, string) {
-	if status == 200 && info.Value("writable") == true {
+func addressMode(a *model.Agent, status int, info model.Fields) (string, string) {
+	writable, _ := info.Get("writable")
+	if status == 200 && string(writable) == "true" {
 		return "agent", ""
 	}
-	if status == 200 && jsonx.Truthy(info.Value("configured")) {
+	configured, _ := info.Get("configured")
+	if status == 200 && hasContent(configured) {
 		return "env", EnvEdit
 	}
-	if jsonx.Equal(agent.Value("deployment_method"), "docker") {
-		return "record", "容器没有指定 AGENT_IP，这里只修改面板记录的地址（填宿主机的局域网地址）。"
+	method, _ := originalString(a.MemberJSON("deployment_method"))
+	if method == "docker" {
+		return "record", msgDockerAddress
 	}
 	if status == 404 {
-		return "record", "这台 Agent 版本较旧，只修改面板记录的地址；升级 Agent 后可同时写入设备上的配置文件。"
+		return "record", msgLegacyAddress
 	}
 	return "record", ""
 }
 
-// iterate is `for value in x` over a JSON value: list items, dict keys,
-// string characters; TypeError for numbers and booleans.
-func iterate(value any) ([]any, error) {
-	switch v := value.(type) {
-	case []any:
-		return v, nil
-	case *jsonx.Object:
-		out := make([]any, 0, v.Len())
-		for _, key := range v.Keys() {
-			out = append(out, key)
-		}
-		return out, nil
-	case string:
-		out := []any{}
-		for _, r := range v {
-			out = append(out, string(r))
-		}
-		return out, nil
-	}
-	return nil, typeError("'" + typeName(value) + "' object is not iterable")
+// AddressDescription is the existing address dialog response.
+type AddressDescription struct {
+	Host       string          `json:"host"`
+	Port       json.RawMessage `json:"port"`
+	Mode       string          `json:"mode"`
+	Message    string          `json:"message"`
+	Addresses  []string        `json:"addresses"`
+	Configured string          `json:"configured"`
+	Reachable  bool            `json:"reachable"`
 }
 
-// Describe is describe(agent): what the 修改地址 dialog shows before anything
-// is changed.
-func Describe(ctx context.Context, m *agents.Manager, agent *jsonx.Object) (*jsonx.Object, error) {
+// DescribeModel reads device address capabilities without modifying the record.
+func DescribeModel(ctx context.Context, m *agents.Manager, a *model.Agent) (*AddressDescription, error) {
 	ctx = lifecycle.Detach(ctx)
-	host := agent.Value("host")
-	if !jsonx.Truthy(host) {
-		host = ""
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
-	result := func(mode, message string, addresses []any, configured string, reachable bool) *jsonx.Object {
-		return jsonx.Obj("host", host, "port", agent.Value("port"), "mode", mode, "message", message,
-			"addresses", addresses, "configured", configured, "reachable", reachable)
+	host, _ := originalString(a.MemberJSON("host"))
+	port, _, _ := a.MemberJSON("port")
+	if len(port) == 0 {
+		port = []byte("null")
 	}
-	member, err := haMember(agent)
+	result := &AddressDescription{Host: host, Port: port, Addresses: []string{}}
+	member, err := memberHA(a)
 	if err != nil {
 		return nil, err
 	}
 	if member {
-		return result("ha", HAEdit, []any{}, "", false), nil
+		result.Mode = "ha"
+		result.Message = HAEdit
+		return result, nil
 	}
-	status, info, err := ask(ctx, m, agent, jsonx.Str(agent.Value("host")), "GET", nil)
+	status, info, err := askModel(ctx, m, a, host, "GET", nil)
 	if err != nil {
 		return nil, err
 	}
 	if status != 200 && status != 404 {
-		return result("unknown", "面板用当前地址 "+jsonx.Str(agent.Value("host"))+":"+jsonx.Str(agent.Value("port"))+
-			" 连不上这台 Agent。填写它现在的地址，保存时会先核实能连上。", []any{}, "", false), nil
+		result.Mode = "unknown"
+		result.Message = fmt.Sprintf(msgCurrentUnreachable, host, rawText(port))
+		return result, nil
 	}
-	chosen, message := mode(agent, status, info)
-	listed := info.Value("addresses")
-	if !jsonx.Truthy(listed) {
-		listed = []any{}
-	}
-	values, err := iterate(listed)
-	if err != nil {
-		return nil, err
-	}
-	addresses := []any{}
-	for _, value := range values {
-		if text, ok := value.(string); ok && Usable(text) != "" {
-			addresses = append(addresses, value)
+	result.Mode, result.Message = addressMode(a, status, info)
+	result.Reachable = true
+	if raw, ok := info.Get("addresses"); ok && result.Mode == "agent" {
+		var listed []string
+		if jsondecode.Unmarshal(raw, &listed) == nil {
+			for _, address := range listed {
+				if Usable(address) != "" {
+					result.Addresses = append(result.Addresses, address)
+				}
+			}
 		}
 	}
-	if chosen != "agent" {
-		addresses = []any{}
+	if raw, ok := info.Get("configured"); ok && hasContent(raw) {
+		result.Configured = rawText(raw)
 	}
-	configured := info.Value("configured")
-	if !jsonx.Truthy(configured) {
-		configured = ""
-	}
-	return result(chosen, message, addresses, jsonx.Str(configured), true), nil
+	return result, nil
 }
 
-func refusal(message any) *jsonx.Object { return jsonx.Obj("success", false, "message", message) }
+// AddressResult is the response of a verified address change.
+type AddressResult struct {
+	Success bool   `json:"success"`
+	Message string `json:"message"`
+	Host    string `json:"host,omitempty"`
+	Written *bool  `json:"written,omitempty"`
+	Changed *bool  `json:"changed,omitempty"`
+}
 
-// Change is change(manager, agent, value): set the address by hand — reach
-// the Agent there first, store it on the device, then in the record. It
-// returns the answer and its HTTP status.
-func Change(ctx context.Context, m *agents.Manager, agent *jsonx.Object, value any) (*jsonx.Object, int, error) {
+func refusalModel(message string) *AddressResult { return &AddressResult{Message: message} }
+
+// ChangeModel verifies a host, updates writable device settings, then edits the registry.
+func ChangeModel(ctx context.Context, m *agents.Manager, a *model.Agent, value string) (*AddressResult, int, error) {
 	ctx = lifecycle.Detach(ctx)
-	if text, ok := value.(string); ok {
-		value = pystr.Strip(text)
-	}
-	host := Usable(value)
-	if host == "" {
-		return refusal("请输入这台设备的局域网 IPv4 地址"), 400, nil
-	}
-	agentID, err := agentIDOf(agent)
-	if err != nil {
+	if err := ctx.Err(); err != nil {
 		return nil, 0, err
 	}
-	old, label := oldHost(agent), agents.AgentLabel(agent)
-	member, err := haMember(agent)
+	host := Usable(strings.TrimSpace(value))
+	if host == "" {
+		return refusalModel(msgEnterIPv4), 400, nil
+	}
+	id, ok := originalString(a.MemberJSON("id"))
+	if !ok || id == "" {
+		return nil, 0, agents.ErrAgentEndpoint
+	}
+	old, _ := originalString(a.MemberJSON("host"))
+	label := agentLabel(a)
+	member, err := memberHA(a)
 	if err != nil {
 		return nil, 0, err
 	}
 	if member {
-		return refusal(HAEdit), 409, nil
+		return refusalModel(HAEdit), 409, nil
 	}
-	if taken, err := sameNamedAt(ctx, m, agent, agentID, host); err != nil {
-		return nil, 0, err
+	if taken, e := sameNamedAtModel(ctx, m, a, id, host); e != nil {
+		return nil, 0, e
 	} else if taken {
-		return refusal("另一条同名的 Agent 记录已经在用 " + host), 409, nil
+		return refusalModel(msgDuplicateAddress + host), 409, nil
 	}
-	status, info, err := ask(ctx, m, agent, host, "GET", nil)
+	status, info, err := askModel(ctx, m, a, host, "GET", nil)
 	if err != nil {
 		return nil, 0, err
 	}
 	if status == 404 {
-		// An Agent without the address endpoint: prove it is this Agent another way.
-		ok, err := reaches(ctx, m, agent, host)
-		if err != nil {
-			return nil, 0, err
+		ok, e := reachesModel(ctx, m, a, host)
+		if e != nil {
+			return nil, 0, e
 		}
 		if !ok {
 			status = 0
 		}
 	}
-	port := jsonx.Str(agent.Value("port"))
+	raw, _, _ := a.MemberJSON("port")
+	port := rawText(raw)
 	if status == 0 {
-		return refusal("面板连不上 " + host + ":" + port + "，没有修改。请确认地址正确，且面板所在的机器能访问它。"), 502, nil
+		return refusalModel(fmt.Sprintf(msgNewUnreachable, host, port)), 502, nil
 	}
 	if status != 200 && status != 404 {
-		return refusal(host + ":" + port + " 有应答，但不是这台 Agent（凭据不匹配），没有修改。"), 502, nil
+		return refusalModel(fmt.Sprintf(msgWrongAgent, host, port)), 502, nil
 	}
-	chosen, message := mode(agent, status, info)
+	chosen, message := addressMode(a, status, info)
 	if chosen == "env" {
-		return refusal(message), 409, nil
+		return refusalModel(message), 409, nil
 	}
 	written := false
 	if chosen == "agent" {
-		status, reply, err := ask(ctx, m, agent, host, "POST", jsonx.Obj("host", host))
-		if err != nil {
-			return nil, 0, err
+		body, e := jsonresp.EncodeDevice(struct {
+			Host string `json:"host"`
+		}{host})
+		if e != nil {
+			return nil, 0, e
 		}
-		if status != 200 {
-			text := reply.Value("message")
-			if !jsonx.Truthy(text) {
-				answer := "无应答"
-				if status != 0 {
-					answer = strconv.Itoa(status)
+		code, reply, e := askModel(ctx, m, a, host, "POST", body)
+		if e != nil {
+			return nil, 0, e
+		}
+		if code != 200 {
+			text := ""
+			if raw, ok := reply.Get("message"); ok && hasContent(raw) {
+				text = rawText(raw)
+			}
+			if text == "" {
+				answer := msgNoReply
+				if code != 0 {
+					answer = strconv.Itoa(code)
 				}
-				text = "设备没有接受这个地址（" + answer + "），没有修改。"
+				text = fmt.Sprintf(msgAddressRejected, answer)
 			}
-			code := 502
-			if status == 400 {
-				code = 400
+			status := 502
+			if code == 400 {
+				status = 400
 			}
-			return refusal(text), code, nil
+			return refusalModel(text), status, nil
 		}
 		written = true
 	}
 	if host != old {
-		updated, err := m.UpdateAgent(ctx, agentID, jsonx.Obj("host", host))
+		updated, e := changeRecord(ctx, m, id, host)
 		var conflict *agents.DeploymentConflict
-		if errors.As(err, &conflict) {
-			return refusal(conflict.Error()), 409, nil
+		if errors.As(e, &conflict) {
+			return refusalModel(conflict.Error()), 409, nil
 		}
-		if err != nil {
-			return nil, 0, err
+		if e != nil {
+			return nil, 0, e
 		}
 		if !updated {
-			return refusal("Agent not found"), 404, nil
+			return refusalModel("Agent not found"), 404, nil
 		}
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, 0, err
+	}
 	addressMu.Lock()
-	delete(attempts, agentID)
+	delete(attempts, id)
 	addressMu.Unlock()
-	resolve(ctx, m, agentID)
+	resolve(ctx, m, id)
 	note := ""
 	if written {
-		note = "，已写入设备配置"
+		note = msgWrittenNote
 	}
-	addressLog.Info("Agent " + label + " 的地址已由 " + old + " 改为 " + host + "（手动修改，已核实可连接" + note + "）")
-	text := "地址已改为 " + host
+	addressLog.Info(fmt.Sprintf(msgManualAddress, label, old, host, note))
+	text := msgAddressChanged + host
 	if written {
-		text += "，并写入了设备上的 Agent 配置。"
+		text += msgDeviceWritten
 	} else {
-		text += "（只修改了面板记录）。"
+		text += msgRecordOnly
 	}
 	if host != old {
 		text += RouterHint
 	}
-	return jsonx.Obj("success", true, "host", host, "written", written, "changed", host != old, "message", text), 200, nil
+	return &AddressResult{Success: true, Host: host, Written: &written, Changed: new(host != old), Message: text}, 200, nil
 }

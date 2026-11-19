@@ -20,7 +20,7 @@ import (
 	"sync"
 	"syscall"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/resource"
 )
 
@@ -281,23 +281,23 @@ func artifactMetadata(path string) (*ArtifactInfo, error) {
 	return nil, nil
 }
 
-// Artifacts is artifacts(): {arch: {'sha256', 'size'}} for every usable
+// ArtifactsModel returns {arch: {'sha256', 'size'}} for every usable
 // executable, in Arches order. Each call returns new objects. Errors are
 // the OSError Python raises (unreadable file, ErrArtifactChanged).
-func Artifacts() (*jsonx.Object, error) {
-	result := jsonx.NewObject()
+func ArtifactsModel() (model.Map[model.UpgradeArtifact], error) {
+	var result model.Map[model.UpgradeArtifact]
 	for _, arch := range Arches {
 		// artifact_directory() is evaluated for every architecture.
 		directory, err := ArtifactDirectory()
 		if err != nil {
-			return nil, err
+			return result, err
 		}
 		metadata, err := artifactMetadata(joinPath(directory, "configflow-agent-"+arch))
 		if err != nil {
-			return nil, err
+			return result, err
 		}
 		if metadata != nil {
-			result.Set(arch, jsonx.Obj("sha256", metadata.SHA256, "size", jsonx.Int(metadata.Size)))
+			result.Set(arch, model.UpgradeArtifact{SHA256: metadata.SHA256, Size: model.Int(metadata.Size)})
 		}
 	}
 	return result, nil

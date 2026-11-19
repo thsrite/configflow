@@ -22,6 +22,7 @@ import (
 	"configflow/internal/httpx"
 	"configflow/internal/jsonx"
 	"configflow/internal/logx"
+	"configflow/internal/model"
 	"configflow/internal/notifications"
 	"configflow/internal/redact"
 	"configflow/internal/repo"
@@ -504,11 +505,11 @@ func heartbeat(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	agent, err := authenticatedAgent(c, manager, agentID)
+	agent, err := manager.ReadAgent(ctx, agentID, false)
 	if err != nil {
 		return nil, err
 	}
-	if agent == nil {
+	if !agentTokenMatches(c, agent) {
 		return failure(401, "Unauthorized"), nil
 	}
 	value, errorResponse := ReadJSONBody(c, HeartbeatMaxContentLength, "Invalid heartbeat data")
@@ -531,20 +532,39 @@ func heartbeat(c *httpx.Ctx) (*httpx.Response, error) {
 	if !ok {
 		return failure(404, "Agent not found"), nil
 	}
-	reply := jsonx.Obj("success", true, "domain_discovery_enabled", mihomoFlag(agent, "domain_discovery_enabled"),
-		"traffic_history_enabled", mihomoFlag(agent, "traffic_history_enabled"), "reads_host", true)
+	reply := jsonx.Obj("success", true, "domain_discovery_enabled", agent.ServiceType == "mihomo" && agent.DomainDiscoveryEnabled != nil && *agent.DomainDiscoveryEnabled,
+		"traffic_history_enabled", agent.ServiceType == "mihomo" && agent.TrafficHistoryEnabled != nil && *agent.TrafficHistoryEnabled, "reads_host", true)
 	if host, _ := reported.(string); host != "" {
 		hooks := agents.CurrentHooks()
-		if hooks.AddressFollow != nil {
-			if err := hooks.AddressFollow(ctx, manager, agent, host); err != nil {
+		var legacy *jsonx.Object
+		if hooks.AddressFollowTyped == nil && hooks.AddressFollow != nil || hooks.AddressConfirmedTyped == nil && hooks.AddressConfirmed != nil {
+			raw, err := model.Marshal(agent)
+			if err != nil {
+				return nil, err
+			}
+			parsed, err := jsonx.Parse(raw)
+			if err != nil {
+				return nil, err
+			}
+			legacy = parsed.(*jsonx.Object)
+		}
+		if hooks.AddressFollowTyped != nil {
+			if err := hooks.AddressFollowTyped(ctx, manager, agent, host); err != nil {
+				return nil, err
+			}
+		} else if hooks.AddressFollow != nil {
+			if err := hooks.AddressFollow(ctx, manager, legacy, host); err != nil {
 				return nil, err
 			}
 		}
-		// 记录里已经是 Agent 上报的地址时告诉它；Agent 据此把配置文件里失效的 agent_ip 改成这个地址。
-		if hooks.AddressConfirmed != nil {
-			if confirmed := hooks.AddressConfirmed(agent, host); confirmed != "" {
-				reply.Set("confirmed_host", confirmed)
-			}
+		confirmed := ""
+		if hooks.AddressConfirmedTyped != nil {
+			confirmed = hooks.AddressConfirmedTyped(agent, host)
+		} else if hooks.AddressConfirmed != nil {
+			confirmed = hooks.AddressConfirmed(legacy, host)
+		}
+		if confirmed != "" {
+			reply.Set("confirmed_host", confirmed)
 		}
 	}
 	return httpx.JSON(reply), nil

@@ -25,7 +25,7 @@ func TestReferenceUsable(t *testing.T) {
 	for _, item := range cases {
 		c := item.(*jsonx.Object)
 		want, _ := c.Value("output").(string)
-		if got := Usable(c.Value("input")); got != want {
+		if got := Usable(c.GetString("input")); got != want {
 			t.Errorf("usable(%s) = %q, Python %q", jsonx.Repr(c.Value("input")), got, want)
 		}
 	}

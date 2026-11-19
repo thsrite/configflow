@@ -1,19 +1,8 @@
 package upgrades
 
-import (
-	"context"
+import "configflow/internal/agents"
 
-	"configflow/internal/agents"
-	"configflow/internal/jsonx"
-)
-
-// Wire registers address_follow.follow / confirmed as the registry's
-// heartbeat hooks (listed in internal/server wirePackages).
+// Wire registers typed heartbeat address hooks without a JSON facade round trip.
 func Wire() {
-	agents.RegisterHooks(agents.Hooks{
-		AddressFollow: func(ctx context.Context, m *agents.Manager, agent *jsonx.Object, host string) error {
-			return Follow(ctx, m, agent, host)
-		},
-		AddressConfirmed: Confirmed,
-	})
+	agents.RegisterHooks(agents.Hooks{AddressFollowTyped: FollowModel, AddressConfirmedTyped: ConfirmedModel})
 }

@@ -43,7 +43,7 @@ func newUpgradeEnv(t *testing.T) *upgradeEnv {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(SetArtifactsForTest(func() (*jsonx.Object, error) {
+	t.Cleanup(setLegacyArtifactsForTest(func() (*jsonx.Object, error) {
 		out := jsonx.NewObject()
 		for _, arch := range Arches {
 			out.Set(arch, jsonx.Obj("sha256", strings.Repeat("a", 64), "size", 100))

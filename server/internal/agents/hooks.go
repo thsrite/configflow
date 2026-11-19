@@ -14,6 +14,7 @@ import (
 	"sync"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/model"
 )
 
 // InstallationError is gateway_installation.InstallationError (#30).
@@ -57,6 +58,9 @@ type Hooks struct {
 	// Agent reports its host. Default: nothing followed, no confirmed_host.
 	AddressFollow    func(ctx context.Context, m *Manager, agent *jsonx.Object, host string) error
 	AddressConfirmed func(agent *jsonx.Object, host string) string
+	// AddressFollowTyped and AddressConfirmedTyped take precedence over legacy hooks.
+	AddressFollowTyped    func(context.Context, *Manager, *model.Agent, string) error
+	AddressConfirmedTyped func(*model.Agent, string) string
 
 	// ReceiptMatches is oxidns_validation_receipt.receipt_matches (#28),
 	// checked before an OxiDNS candidate is activated. Default: false (fail
@@ -122,6 +126,12 @@ func RegisterHooks(h Hooks) {
 	}
 	if h.PublicationCheckpoint != nil {
 		hooks.PublicationCheckpoint = h.PublicationCheckpoint
+	}
+	if h.AddressFollowTyped != nil {
+		hooks.AddressFollowTyped = h.AddressFollowTyped
+	}
+	if h.AddressConfirmedTyped != nil {
+		hooks.AddressConfirmedTyped = h.AddressConfirmedTyped
 	}
 	if h.AddressFollow != nil {
 		hooks.AddressFollow = h.AddressFollow

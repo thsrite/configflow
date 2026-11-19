@@ -66,7 +66,7 @@ func newUpgradeApp(t *testing.T) *upgradeApp {
 			app.other = agent
 		}
 	}
-	t.Cleanup(upgrades.SetRequestForTest(func(*jsonx.Object, string, string, *jsonx.Object) (*agents.Response, error) {
+	t.Cleanup(legacyUpgradeSetRequestForTest(func(*jsonx.Object, string, string, *jsonx.Object) (*agents.Response, error) {
 		t.Fatal("unexpected Agent call")
 		return nil, nil
 	}))
@@ -116,7 +116,7 @@ func (a *upgradeApp) agentAuth() httpxtest.Option {
 }
 
 func (a *upgradeApp) respond(fn func(method, path string, payload *jsonx.Object) *agents.Response) {
-	a.t.Cleanup(upgrades.SetRequestForTest(func(_ *jsonx.Object, method, path string, payload *jsonx.Object) (*agents.Response, error) {
+	a.t.Cleanup(legacyUpgradeSetRequestForTest(func(_ *jsonx.Object, method, path string, payload *jsonx.Object) (*agents.Response, error) {
 		return fn(method, path, payload), nil
 	}))
 }
@@ -136,7 +136,7 @@ func TestLegacyAgentCanReadAndReportOwnUpgradeThenAdminConfirmsRollback(t *testi
 	}
 	a.s.Post("/api/agents/"+a.id()+"/heartbeat", a.agentAuth(), httpxtest.JSON(jsonx.Obj("version", "1.1.0-go"))).WantStatus(200)
 	a.respond(func(string, string, *jsonx.Object) *agents.Response {
-		return upgrades.AgentResponse(jsonx.NewObject(), 404)
+		return legacyUpgradeAgentResponse(jsonx.NewObject(), 404)
 	})
 	r := a.s.Get(path, a.admin).WantStatus(200)
 	if r.Object().Value("status") != "rolled_back" || r.Contains(a.agent.GetString("token")) || r.Contains(a.other.GetString("token")) {
@@ -255,16 +255,16 @@ func TestAdminStartsUpgradeForBothAgentProtocols(t *testing.T) {
 				if protocol == 1 {
 					status = 404
 				}
-				return upgrades.AgentResponse(jsonx.Obj("agent_id", a.id(), "deployment_method", "shell", "architecture", "linux-amd64"), status)
+				return legacyUpgradeAgentResponse(jsonx.Obj("agent_id", a.id(), "deployment_method", "shell", "architecture", "linux-amd64"), status)
 			}
 			if method != "POST" || path != "/api/update" {
 				t.Fatalf("%s %s", method, path)
 			}
 			submitted = append(submitted, payload)
 			if protocol == 2 {
-				return upgrades.AgentResponse(jsonx.NewObject(), 202)
+				return legacyUpgradeAgentResponse(jsonx.NewObject(), 202)
 			}
-			return upgrades.AgentResponse(jsonx.NewObject(), 200)
+			return legacyUpgradeAgentResponse(jsonx.NewObject(), 200)
 		})
 		state := a.s.Post("/api/agents/"+a.id()+"/update", a.admin, httpxtest.JSON(jsonx.NewObject())).WantStatus(202).Object()
 		if state.Value("status") != "queued" || !jsonx.Equal(state.Value("protocol"), protocol) ||
@@ -309,7 +309,7 @@ func TestReregisteredNewAgentCanConfirmPreservedUpgrade(t *testing.T) {
 	a.s.Post("/api/agents/register", a.agentAuth(), httpxtest.JSON(jsonx.Obj("name", "upgrading", "host", "127.0.0.1",
 		"port", 1234, "service_type", "mihomo", "deployment_method", "shell", "version", agents.GetLatestVersion()))).WantStatus(200)
 	a.respond(func(string, string, *jsonx.Object) *agents.Response {
-		return upgrades.AgentResponse(jsonx.Obj("agent_id", a.id(), "version", state.Value("target_version"), "migration_ready", true), 200)
+		return legacyUpgradeAgentResponse(jsonx.Obj("agent_id", a.id(), "version", state.Value("target_version"), "migration_ready", true), 200)
 	})
 	got := a.s.Get("/api/agents/"+a.id()+"/upgrade", a.admin).WantStatus(200).Object()
 	if got.Value("status") != "succeeded" || got.Value("update_id") != state.Value("update_id") ||
@@ -331,7 +331,7 @@ func TestStatusLocalizesOldRecordsWithoutRewritingThem(t *testing.T) {
 		a.setUpgrade(state)
 		original := a.stored(a.id()).GetObject("latest_upgrade").DeepCopy()
 		a.respond(func(string, string, *jsonx.Object) *agents.Response {
-			return upgrades.AgentResponse(jsonx.NewObject(), 404)
+			return legacyUpgradeAgentResponse(jsonx.NewObject(), 404)
 		})
 		progress := a.s.Get("/api/agents/"+a.id()+"/upgrade", a.admin).WantStatus(200).Object()
 		if progress.Value("error") != agents.UpgradeErrorMessage(raw) || progress.Value("status") != status ||
@@ -353,9 +353,9 @@ func TestRejectedUpdateResponseIsChineseButPersistedErrorIsOriginal(t *testing.T
 	raw := "another Agent update or service operation is active"
 	a.respond(func(method, path string, _ *jsonx.Object) *agents.Response {
 		if path == "/api/upgrade-info" {
-			return upgrades.AgentResponse(jsonx.Obj("agent_id", a.id(), "deployment_method", "shell", "architecture", "linux-amd64"), 200)
+			return legacyUpgradeAgentResponse(jsonx.Obj("agent_id", a.id(), "deployment_method", "shell", "architecture", "linux-amd64"), 200)
 		}
-		return upgrades.AgentResponse(jsonx.Obj("success", false, "message", raw), 409)
+		return legacyUpgradeAgentResponse(jsonx.Obj("success", false, "message", raw), 409)
 	})
 	result := a.s.Post("/api/agents/"+a.id()+"/update", a.admin, httpxtest.JSON(jsonx.NewObject())).WantStatus(409).Object()
 	if result.Value("status") != "failed" || result.Value("error") != agents.UpgradeErrorMessage(raw) ||
@@ -371,7 +371,7 @@ func TestLiveRollbackFailureIsLocalizedWithoutChangingResult(t *testing.T) {
 	a.setUpgrade(state)
 	raw := "Agent did not confirm expected version, identity and migration readiness; rollback: open /opt/agent/backup: no such file or directory"
 	a.respond(func(string, string, *jsonx.Object) *agents.Response {
-		return upgrades.AgentResponse(jsonx.Obj("update_id", state.Value("update_id"), "agent_id", a.id(), "status", "rollback_failed", "error", raw), 200)
+		return legacyUpgradeAgentResponse(jsonx.Obj("update_id", state.Value("update_id"), "agent_id", a.id(), "status", "rollback_failed", "error", raw), 200)
 	})
 	result := a.s.Get("/api/agents/"+a.id()+"/upgrade", a.admin).WantStatus(200).Object()
 	if result.Value("status") != "rollback_failed" || !strings.Contains(result.GetString("error"), "未能确认 Agent 的版本") ||
@@ -385,7 +385,7 @@ func TestLegacyMigrationFailureIsLocalizedWhenViewedByAdmin(t *testing.T) {
 	state := a.seedUpgrade()
 	raw := "automatic migration failed: systemctl operation failed: failed to start"
 	a.respond(func(string, string, *jsonx.Object) *agents.Response {
-		return upgrades.AgentResponse(jsonx.NewObject(), 404)
+		return legacyUpgradeAgentResponse(jsonx.NewObject(), 404)
 	})
 	path := "/api/agents/" + a.id() + "/upgrade"
 	a.s.Post(path+"/report", a.agentAuth(), httpxtest.JSON(jsonx.Obj("update_id", state.Value("update_id"), "status", "rolling_back", "error", raw))).WantStatus(200)

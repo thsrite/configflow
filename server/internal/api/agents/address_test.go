@@ -37,7 +37,7 @@ func newAddressEnv(t *testing.T) *addressEnv {
 	t.Cleanup(upgrades.ResetAddressState)
 	t.Cleanup(upgrades.RunInlineForTest())
 	e := &addressEnv{t: t, s: s, reachable: true}
-	t.Cleanup(upgrades.SetReachesForTest(func(record *jsonx.Object, host string) bool {
+	t.Cleanup(legacyUpgradeSetReachesForTest(func(record *jsonx.Object, host string) bool {
 		e.reached = append(e.reached, [2]string{record.GetString("token"), host})
 		return e.reachable
 	}))
@@ -267,7 +267,7 @@ type device struct {
 
 func newDevice(t *testing.T, addresses []string, configured string, writable bool, status int) *device {
 	d := &device{addresses: addresses, configured: configured, writable: writable, status: status}
-	t.Cleanup(upgrades.SetAskForTest(d.ask))
+	t.Cleanup(legacyUpgradeSetAskForTest(d.ask))
 	return d
 }
 

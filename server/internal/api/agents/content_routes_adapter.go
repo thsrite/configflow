@@ -103,7 +103,7 @@ func listContentAgents(c *httpx.Ctx) (*httpx.Response, error) {
 		}
 		result = append(result, public)
 	}
-	artifacts, err := upgrades.Artifacts()
+	artifacts, err := upgrades.ArtifactsModel()
 	if err != nil {
 		return nil, err
 	}

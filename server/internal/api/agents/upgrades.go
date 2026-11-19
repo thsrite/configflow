@@ -8,6 +8,10 @@ package agents
 // get_latest_agent_version.
 
 import (
+	"configflow/internal/jsondecode"
+	"configflow/internal/model"
+	"encoding/json"
+	"errors"
 	"strings"
 
 	"configflow/internal/agents"
@@ -99,25 +103,28 @@ func agentAddress(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	agent, err := manager.GetAgentByID(ctx, c.Param("agent_id"), true)
+	agent, err := manager.ReadAgent(ctx, c.Param("agent_id"), true)
 	if err != nil {
 		return nil, err
 	}
-	if agent == nil || agent.Len() == 0 {
+	if agent == nil {
 		return failure(404, "Agent not found"), nil
 	}
 	if c.Method() == "GET" {
-		data, err := upgrades.Describe(ctx, manager, agent)
+		data, err := upgrades.DescribeModel(ctx, manager, agent)
 		if err != nil {
 			return nil, err
 		}
-		return httpx.JSON(jsonx.Obj("success", true, "data", data)), nil
+		return httpx.JSON(struct {
+			Success bool                         `json:"success"`
+			Data    *upgrades.AddressDescription `json:"data"`
+		}{true, data}), nil
 	}
-	var host any
-	if body, ok := c.JSONSilent().(*jsonx.Object); ok && body != nil {
-		host = body.Value("host")
+	var body struct {
+		Host string `json:"host"`
 	}
-	result, status, err := upgrades.Change(ctx, manager, agent, host)
+	c.BindSilent(&body)
+	result, status, err := upgrades.ChangeModel(ctx, manager, agent, body.Host)
 	if err != nil {
 		return nil, err
 	}
@@ -287,7 +294,7 @@ func updateAgentVersion(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	result, err := upgrades.Start(ctx, manager, c.Param("agent_id"))
+	result, err := upgrades.StartModel(ctx, manager, c.Param("agent_id"))
 	if err != nil {
 		if upgrades.IsValueError(err) {
 			return failure(409, agents.UpgradeErrorMessage(err.Error())), nil
@@ -295,21 +302,28 @@ func updateAgentVersion(c *httpx.Ctx) (*httpx.Response, error) {
 		return nil, err
 	}
 	status := 202
-	if jsonx.Equal(result.Value("status"), "failed") {
+	if result.Status == "failed" {
 		status = 409
 	}
-	return httpx.JSONStatus(status, agents.PublicUpgradeState(result)), nil
+	public, err := agents.PublicUpgradeStateModel(result)
+	if err != nil {
+		return nil, err
+	}
+	return httpx.JSONStatus(status, public), nil
 }
 
 // agentTokenMatches is `agent and provided and
 // _constant_time_ascii_equal(provided, agent.get('token', ”))`.
-func agentTokenMatches(c *httpx.Ctx, agent *jsonx.Object) bool {
-	if agent == nil || agent.Len() == 0 {
+func agentTokenMatches(c *httpx.Ctx, agent *model.Agent) bool {
+	if agent == nil {
 		return false
 	}
 	header, present := c.Header("Authorization")
 	provided, ok := auth.ParseBearerToken(header, present)
-	return ok && provided != "" && agents.ConstantTimeASCIIEqual(provided, agent.GetOr("token", ""))
+	raw, present, err := agent.MemberJSON("token")
+	var token string
+	valid := err == nil && present && len(raw) > 0 && raw[0] == '"' && jsondecode.Unmarshal(raw, &token) == nil
+	return valid && ok && provided != "" && agents.ConstantTimeASCIIEqual(provided, token)
 }
 
 func getAgentUpgrade(c *httpx.Ctx) (*httpx.Response, error) {
@@ -319,27 +333,34 @@ func getAgentUpgrade(c *httpx.Ctx) (*httpx.Response, error) {
 		return nil, err
 	}
 	agentID := c.Param("agent_id")
-	agent, err := manager.GetAgentByID(ctx, agentID, true)
+	agent, err := manager.ReadAgent(ctx, agentID, true)
 	if err != nil {
 		return nil, err
 	}
 	if agentTokenMatches(c, agent) {
 		// Legacy bootstrap reads its own pending plan; no recursive Agent call.
-		state := agent.Value("latest_upgrade")
-		if !jsonx.Truthy(state) {
-			state = jsonx.NewObject()
+		state, present, err := agent.MemberJSON("latest_upgrade")
+		if err != nil {
+			return nil, err
+		}
+		if !present || string(state) == "null" {
+			state = json.RawMessage(`{}`)
 		}
 		return httpx.JSON(state), nil
 	}
 	return auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
-		state, err := upgrades.Poll(ctx, manager, agentID)
+		state, err := upgrades.PollModel(ctx, manager, agentID)
 		if err != nil {
 			if upgrades.IsValueError(err) {
 				return failure(404, agents.UpgradeErrorMessage(err.Error())), nil
 			}
 			return nil, err
 		}
-		return httpx.JSON(agents.PublicUpgradeState(state)), nil
+		public, err := agents.PublicUpgradeStateModel(state)
+		if err != nil {
+			return nil, err
+		}
+		return httpx.JSON(public), nil
 	})(c)
 }
 
@@ -353,7 +374,7 @@ func reportAgentUpgrade(c *httpx.Ctx) (*httpx.Response, error) {
 		return nil, err
 	}
 	agentID := c.Param("agent_id")
-	agent, err := manager.GetAgentByID(ctx, agentID, true)
+	agent, err := manager.ReadAgent(ctx, agentID, true)
 	if err != nil {
 		return nil, err
 	}
@@ -363,14 +384,13 @@ func reportAgentUpgrade(c *httpx.Ctx) (*httpx.Response, error) {
 	if length, ok := c.ContentLength(); !ok || length > ReportBodyLimit {
 		return httpx.JSONStatus(413, jsonx.Obj("success", false)), nil
 	}
-	payload, err := c.JSON()
-	if err != nil {
+	var payload json.RawMessage
+	if err := c.Bind(&payload); err != nil {
 		return nil, err
 	}
-	state, err := upgrades.ReportLegacy(ctx, manager, agentID, payload)
+	state, err := upgrades.ReportLegacyJSON(ctx, manager, agentID, payload)
 	if err != nil {
-		switch upgrades.ErrorClass(err) {
-		case "ValueError", "TypeError", "AttributeError":
+		if errors.Is(err, upgrades.ErrInvalidReport) || upgrades.IsValueError(err) {
 			return failure(400, "Agent 上报的更新结果格式无效。"), nil
 		}
 		return nil, err

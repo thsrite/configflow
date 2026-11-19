@@ -1,733 +1,622 @@
-// Package upgrades is the port of backend/agents/upgrades.py (durable,
-// version-confirmed Agent updates: acceptance is never success) and
-// backend/agents/address_follow.py (following a renumbered Agent).
+// Package upgrades owns durable, version-confirmed Agent updates and address following.
+// Acceptance is never success: worker completion also needs identity, version and migration proof.
 package upgrades
 
 import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
-	"net/http"
+	"fmt"
+	"math"
 
 	"configflow/internal/agents"
-	"configflow/internal/jsonx"
+	"configflow/internal/jsondecode"
+	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
+	"configflow/internal/model"
+	"configflow/internal/redact"
 )
 
 var logger = logx.Get("backend.agents.upgrades")
 
-// Terminal is TERMINAL.
+// Terminal lists all finished upgrade stages, including failed rollback.
 var Terminal = map[string]bool{"succeeded": true, "failed": true, "rolled_back": true, "rollback_failed": true}
-
-// terminalNotRollbackFailed is TERMINAL - {'rollback_failed'}.
 var terminalNotRollbackFailed = map[string]bool{"succeeded": true, "failed": true, "rolled_back": true}
 
-// Stages is STAGES.
-var Stages = map[string]bool{"queued": true, "downloading": true, "verifying": true, "backing_up": true, "migrating": true,
-	"replacing": true, "restarting": true, "checking": true, "rolling_back": true,
-	"succeeded": true, "failed": true, "rolled_back": true, "rollback_failed": true}
-
+// Stages lists the stages reported by an independent update worker.
+var Stages = map[string]bool{"queued": true, "downloading": true, "verifying": true, "backing_up": true, "migrating": true, "replacing": true, "restarting": true, "checking": true, "rolling_back": true, "succeeded": true, "failed": true, "rolled_back": true, "rollback_failed": true}
 var stagesOrUnknown = func() map[string]bool {
 	out := map[string]bool{"unknown": true}
-	for key := range Stages {
-		out[key] = true
+	for k := range Stages {
+		out[k] = true
 	}
 	return out
 }()
-
-type resultLevel struct {
-	level logx.Level
-	text  string
+var now = agents.NowTimestamp
+var artifactsFunc = ArtifactsModel
+var updateIDSource = func() (string, error) {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", fmt.Errorf("generate update id: %w", err)
+	}
+	b[6] = b[6]&0x0f | 0x40
+	b[8] = b[8]&0x3f | 0x80
+	return hex.EncodeToString(b[:]), nil
 }
 
-var resultLevels = map[string]resultLevel{
-	"succeeded":       {logx.Info, "成功"},
-	"failed":          {logx.Warning, "失败"},
-	"rolled_back":     {logx.Warning, "失败，已回滚到原版本"},
-	"rollback_failed": {logx.Error, "失败，且回滚失败"},
+type upgradePatch struct {
+	Status             string
+	Error              *string
+	Message            *string
+	Events             []model.OperationEvent
+	AgentUpdatedAt     *string
+	RecoveryReportedAt *float64
 }
 
-// Test seams.
-var (
-	now           = agents.NowTimestamp
-	artifactsFunc = Artifacts
-	newUpdateID   = func() string {
-		var b [16]byte
-		rand.Read(b[:])
-		b[6] = b[6]&0x0f | 0x40
-		b[8] = b[8]&0x3f | 0x80
-		return hex.EncodeToString(b[:])
-	}
-	// requestHook, when set, replaces _request (tests).
-	requestHook func(agent *jsonx.Object, method, path string, payload *jsonx.Object) (*agents.Response, error)
-)
-
-// request is _request(agent, method, path, json=payload): a control-plane
-// call that does not use proxies from the environment (trust_env=False),
-// timeout 5 s. Transport failures are *agents.TransportError.
-func request(ctx context.Context, m *agents.Manager, agent *jsonx.Object, method, path string, payload *jsonx.Object) (*agents.Response, error) {
-	for _, key := range []string{"host", "port"} {
-		if !agent.Has(key) {
-			return nil, keyError(key)
-		}
-	}
-	token, ok := agent.Get("token")
-	if !ok {
-		return nil, keyError("token")
-	}
-	text, ok := token.(string)
-	if !ok {
-		return nil, typeError("can only concatenate str (not \"" + typeName(token) + "\") to str")
-	}
-	if requestHook != nil {
-		return requestHook(agent, method, path, payload)
-	}
-	header := http.Header{"Authorization": {"Bearer " + text}}
-	var body []byte
-	if payload != nil {
-		encoded, err := jsonx.Default(payload)
-		if err != nil {
-			return nil, err
-		}
-		body = encoded
-		header.Set("Content-Type", "application/json")
-	}
-	// Latin1Headers: http.client sends header values as latin-1; a token it
-	// cannot encode is a UnicodeEncodeError (a ValueError, not a
-	// RequestException).
-	response, err := m.Client().Do(ctx, agents.Request{Method: method, URL: agents.AgentURL(agent, path), Header: header,
-		Body: body, Timeout: agents.Seconds(5), NoProxy: true, Latin1Headers: true})
-	if err != nil && !agents.IsTransportError(err) && !errors.Is(err, agents.ErrHeaderEncoding) {
-		err = &agents.TransportError{Err: err}
-	}
-	return response, err
-}
-
-// responseJSON is response.json(): a decoding failure is requests'
-// JSONDecodeError (a RequestException and a ValueError).
-func responseJSON(response *agents.Response) (any, error) {
-	value, err := response.JSON()
+func readState(a *model.Agent) (*model.AgentUpgrade, error) {
+	fields, err := optionalObject(a, "latest_upgrade")
 	if err != nil {
-		return nil, &agents.TransportError{Err: err}
+		return nil, err
 	}
-	return value, nil
+	if fields.Len() == 0 {
+		return nil, nil
+	}
+	if a.LatestUpgrade == nil {
+		return nil, &CorruptStateError{Field: "latest_upgrade"}
+	}
+	state := *a.LatestUpgrade
+	if _, ok := originalString(state.MemberJSON("status")); !ok {
+		return nil, &CorruptStateError{Field: "latest_upgrade.status"}
+	}
+	return &state, nil
+}
+func stateID(state *model.AgentUpgrade) (string, error) {
+	id, ok := originalString(state.MemberJSON("update_id"))
+	if !ok || id == "" {
+		return "", &CorruptStateError{Field: "latest_upgrade.update_id"}
+	}
+	return id, nil
+}
+func stateNumber(state *model.AgentUpgrade, key string, required bool) (float64, bool, error) {
+	raw, present, err := state.MemberJSON(key)
+	if err != nil {
+		return 0, false, err
+	}
+	if !present || string(raw) == "null" {
+		if required {
+			return 0, false, &CorruptStateError{Field: "latest_upgrade." + key}
+		}
+		return 0, false, nil
+	}
+	var n float64
+	if jsondecode.Unmarshal(raw, &n) != nil || math.IsNaN(n) || math.IsInf(n, 0) {
+		return 0, false, &CorruptStateError{Field: "latest_upgrade." + key}
+	}
+	return n, true, nil
+}
+func stateProtocol(state *model.AgentUpgrade) (model.Int, error) {
+	raw, present, err := state.MemberJSON("protocol")
+	if err != nil {
+		return 0, err
+	}
+	var n model.Int
+	if !present || len(raw) == 0 || raw[0] == '"' || jsondecode.Unmarshal(raw, &n) != nil {
+		return 0, &CorruptStateError{Field: "latest_upgrade.protocol"}
+	}
+	return n, nil
 }
 
-// requestFailed reports a requests.RequestException.
-func requestFailed(err error) bool { return agents.IsTransportError(err) }
-
-func tokenSecrets(agent *jsonx.Object) []any { return []any{agent.Value("token")} }
-
-// save is _save(manager, agent_id, update_id, patch, only_queued=...).
-func save(ctx context.Context, m *agents.Manager, agentID string, updateID any, patch *jsonx.Object, onlyQueued bool) (*jsonx.Object, error) {
-	type finishedState struct {
-		name  any
-		state *jsonx.Object
+func saveModel(ctx context.Context, m *agents.Manager, agentID, updateID string, patch upgradePatch, onlyQueued bool) (*model.AgentUpgrade, error) {
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
-	var finished []finishedState
-	value, err := m.UpdateAgents(ctx, "", func(_ context.Context, list *[]any) (any, error) {
-		agent, err := findAgent(*list, agentID)
+	var saved *model.AgentUpgrade
+	var finishedName string
+	var finished bool
+	err := m.EditAgents(ctx, "", func(tx context.Context, records *[]model.Agent) error {
+		if err := tx.Err(); err != nil {
+			return err
+		}
+		a, err := findModel(*records, agentID)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		state, err := orDict(agent.Value("latest_upgrade"))
+		state, err := readState(a)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		before := state.Value("status")
-		if !jsonx.Equal(state.Value("update_id"), updateID) {
-			return nil, valueError("Upgrade ownership changed")
+		if state == nil {
+			return valueError("Upgrade ownership changed")
 		}
-		done, err := in(state.Value("status"), terminalNotRollbackFailed)
+		id, err := stateID(state)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		if done {
-			return state.Clone(), nil
+		if id != updateID {
+			return valueError("Upgrade ownership changed")
 		}
-		if onlyQueued && !jsonx.Equal(state.Value("status"), "queued") {
-			return state.Clone(), nil
+		before := state.Status
+		saved = state
+		if terminalNotRollbackFailed[before] || onlyQueued && before != "queued" {
+			return tx.Err()
 		}
 		reportedAt := ""
-		if text, ok := patch.Value("agent_updated_at").(string); ok {
-			reportedAt, _ = agents.EventTime(text)
-		}
-		if reportedAt != "" && jsonx.Truthy(state.Value("agent_updated_at")) {
-			previous, ok := state.Value("agent_updated_at").(string)
-			if !ok {
-				return nil, typeError("'<' not supported between instances of 'str' and '" + typeName(state.Value("agent_updated_at")) + "'")
-			}
-			if reportedAt < previous {
-				return state.Clone(), nil
-			}
-		}
-		secrets := tokenSecrets(agent)
-		incoming := agents.CleanEvents(patch.Value("events"), secrets, stagesOrUnknown)
-		events := agents.MergeEvents(state.Value("events"), incoming, secrets, stagesOrUnknown)
-		if jsonx.Truthy(patch.Value("status")) && !patch.Has("message") {
-			state.Delete("message")
-		}
-		for key, value := range patch.All() {
-			switch key {
-			case "events", "agent_updated_at":
-			case "error", "message":
-				state.Set(key, agents.FailureText(value, secrets, 2048))
-			default:
-				state.Set(key, value)
-			}
+		if patch.AgentUpdatedAt != nil {
+			reportedAt, _ = agents.EventTime(*patch.AgentUpdatedAt)
 		}
 		if reportedAt != "" {
-			state.Set("agent_updated_at", reportedAt)
-		}
-		status := state.Value("status")
-		lastStatus := func(list []any) any { return list[len(list)-1].(*jsonx.Object).Value("status") }
-		if len(incoming) == 0 || !jsonx.Equal(lastStatus(incoming), status) || len(events) > 0 && !jsonx.Equal(lastStatus(events), status) {
-			message := state.Value("message")
-			if !jsonx.Truthy(message) {
-				message = state.Value("error")
+			raw, present, e := state.MemberJSON("agent_updated_at")
+			if e != nil {
+				return e
 			}
-			statusText, _ := status.(string)
-			events = agents.AppendEvent(events, statusText, message, "", secrets)
-		}
-		state.Set("events", events)
-		state.Set("updated_at", jsonx.Float(now()))
-		agent.Set("latest_upgrade", state)
-		if !jsonx.Equal(status, before) {
-			if text, ok := status.(string); ok {
-				if _, known := resultLevels[text]; known {
-					name := agent.Value("name")
-					if !jsonx.Truthy(name) {
-						name = agentID
-					}
-					finished = append(finished, finishedState{name, state.Clone()})
+			if present && string(raw) != "null" {
+				previous, valid := originalString(raw, true, nil)
+				if !valid {
+					return &CorruptStateError{Field: "latest_upgrade.agent_updated_at"}
+				}
+				if reportedAt < previous {
+					return tx.Err()
 				}
 			}
 		}
-		return state.Clone(), nil
+		secrets := agentSecrets(a)
+		incoming := agents.CleanOperationEvents(patch.Events, secrets, stagesOrUnknown)
+		events := agents.MergeOperationEvents(state.Events, incoming, secrets, stagesOrUnknown)
+		if patch.Status != "" {
+			state.Status = patch.Status
+			if patch.Message == nil {
+				if err := state.Clear("message"); err != nil {
+					return err
+				}
+			}
+		}
+		if patch.Error != nil {
+			state.Error = new(redact.DiagnosticText(*patch.Error, secrets, 2048))
+		}
+		if patch.Message != nil {
+			state.Message = new(redact.DiagnosticText(*patch.Message, secrets, 2048))
+		}
+		if patch.RecoveryReportedAt != nil {
+			state.RecoveryReportedAt = patch.RecoveryReportedAt
+		}
+		if reportedAt != "" {
+			state.AgentUpdatedAt = new(reportedAt)
+		}
+		if len(incoming) == 0 || incoming[len(incoming)-1].Status != state.Status || len(events) > 0 && events[len(events)-1].Status != state.Status {
+			message := ""
+			if state.Message != nil {
+				message = *state.Message
+			}
+			if message == "" && state.Error != nil {
+				message = *state.Error
+			}
+			events = agents.AppendOperationEvent(events, state.Status, message, "", secrets)
+		}
+		state.Events = events
+		state.UpdatedAt = now()
+		a.LatestUpgrade = state
+		finished = before != state.Status && Terminal[state.Status]
+		finishedName = agentLabel(a)
+		return tx.Err()
 	})
 	if err != nil {
 		return nil, err
 	}
-	if len(finished) > 0 {
-		last := finished[len(finished)-1]
-		state := last.state
-		detail := state.Value("error")
-		if !jsonx.Truthy(detail) {
-			detail = state.Value("message")
+	if finished {
+		level, text := logx.Warning, "失败"
+		switch saved.Status {
+		case "succeeded":
+			level, text = logx.Info, "成功"
+		case "rolled_back":
+			text = "失败，已回滚到原版本"
+		case "rollback_failed":
+			level, text = logx.Error, "失败，且回滚失败"
 		}
-		if !jsonx.Truthy(detail) {
-			detail = ""
+		detail := ""
+		if saved.Error != nil {
+			detail = *saved.Error
 		}
-		level := resultLevels[state.GetString("status")]
+		if detail == "" && saved.Message != nil {
+			detail = *saved.Message
+		}
 		suffix := ""
-		if jsonx.Truthy(detail) && state.GetString("status") != "succeeded" {
+		if detail != "" && saved.Status != "succeeded" {
 			suffix = "（" + logx.LogText(detail, 300) + "）"
 		}
-		logger.Log(level.level, "Agent "+logx.LogText(last.name, 120)+" 升级 "+logx.LogText(orText(state.Value("previous_version")), 40)+
-			" → "+logx.LogText(orText(state.Value("target_version")), 40)+" "+level.text+suffix)
+		logger.Log(level, fmt.Sprintf(msgResultLog, logx.LogText(finishedName, 120), logx.LogText(displayVersion(saved.PreviousVersion), 40), logx.LogText(displayVersion(saved.TargetVersion), 40), text, suffix))
 	}
-	return jsonx.DeepCopy(value).(*jsonx.Object), nil
+	return cloneState(saved)
 }
-
-// orText is `value or '?'`.
-func orText(value any) any {
-	if jsonx.Truthy(value) {
-		return value
+func cloneState(state *model.AgentUpgrade) (*model.AgentUpgrade, error) {
+	if state == nil {
+		return nil, nil
 	}
-	return "?"
-}
-
-// Start is start(manager, agent_id): reserve a durable update and submit it
-// to the Agent. ValueErrors (IsValueError) are the user-facing refusals.
-func Start(ctx context.Context, m *agents.Manager, agentID string) (*jsonx.Object, error) {
-	agent, err := m.GetAgentByID(ctx, agentID, true)
+	raw, err := model.Marshal(state)
 	if err != nil {
 		return nil, err
 	}
-	if agent == nil || agent.Len() == 0 {
+	var copy model.AgentUpgrade
+	if err := jsondecode.Unmarshal(raw, &copy); err != nil {
+		return nil, err
+	}
+	return &copy, nil
+}
+
+// StartModel reserves a durable update, then submits exactly that ID to the Agent.
+func StartModel(ctx context.Context, m *agents.Manager, agentID string) (*model.AgentUpgrade, error) {
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	a, err := m.ReadAgent(ctx, agentID, true)
+	if err != nil {
+		return nil, err
+	}
+	if a == nil {
 		return nil, valueError("Agent not found")
 	}
-	if jsonx.Equal(agent.Value("deployment_method"), "docker") {
-		return nil, valueError("Docker Agent 请更新镜像并重建容器；网页二进制更新不适用于 Docker")
+	method, _ := originalString(a.MemberJSON("deployment_method"))
+	if method == "docker" {
+		return nil, valueError(msgDockerUpgrade)
 	}
-	cannotConnect := valueError("无法连接 Agent 并确认更新能力")
-	infoResponse, err := request(ctx, m, agent, "GET", "/api/upgrade-info", nil)
+	response, err := requestModel(ctx, m, a, "GET", "/api/upgrade-info", nil)
 	if err != nil {
-		// except (requests.RequestException, ValueError)
-		if requestFailed(err) || IsValueError(err) {
-			return nil, cannotConnect
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		if agents.IsTransportError(err) || IsValueError(err) {
+			return nil, valueError(msgCannotConnect)
 		}
 		return nil, err
 	}
-	var info any
-	if infoResponse.StatusCode != 404 {
-		if infoResponse.StatusCode >= 400 && infoResponse.StatusCode < 600 { // raise_for_status
-			return nil, cannotConnect
+	var info Info
+	hasInfo := false
+	if response.StatusCode != 404 {
+		if response.StatusCode >= 400 && response.StatusCode < 600 {
+			return nil, valueError(msgCannotConnect)
 		}
-		if info, err = responseJSON(infoResponse); err != nil {
-			return nil, cannotConnect
+		data := responseData(response)
+		var fields model.Fields
+		if jsondecode.Unmarshal(data, &fields) != nil {
+			return nil, agents.ErrInvalidAgentReply
 		}
-	}
-	hasInfo := jsonx.Truthy(info)
-	var arch any
-	if hasInfo {
-		agentField, err := get(info, "agent_id")
-		if err != nil {
-			return nil, err
-		}
-		method, _ := get(info, "deployment_method")
-		if !jsonx.Equal(agentField, agentID) || !jsonx.Equal(method, "shell") {
-			return nil, valueError("Agent 身份或安装方式与网页记录不符")
+		hasInfo = fields.Len() > 0
+		if hasInfo && decodeProtocol(data, &info) != nil {
+			return nil, agents.ErrInvalidAgentReply
 		}
 	}
-	if !hasInfo && !jsonx.Equal(agent.Value("deployment_method"), "shell") {
-		return nil, valueError("旧 Agent 未报告 Shell 安装方式，无法安全选择更新流程")
+	if hasInfo && (info.AgentID != agentID || info.DeploymentMethod != "shell") {
+		return nil, valueError(msgIdentityMismatch)
+	}
+	if !hasInfo && method != "shell" {
+		return nil, valueError(msgLegacyMethod)
 	}
 	available, err := artifactsFunc()
 	if err != nil {
 		return nil, err
 	}
 	if hasInfo {
-		arch, _ = get(info, "architecture")
-	}
-	notReady := false
-	if jsonx.Truthy(arch) {
-		if unhashable(arch) {
-			return nil, typeError("unhashable type: '" + typeName(arch) + "'")
+		if _, ok := available.Get(info.Architecture); !ok {
+			return nil, valueError(msgArtifactsNotReady)
 		}
-		text, ok := arch.(string)
-		notReady = !ok || !available.Has(text)
-	}
-	if !notReady && !hasInfo {
-		notReady = available.Len() != len(Arches)
-		for _, name := range Arches {
-			if !available.Has(name) {
-				notReady = true
+	} else {
+		if available.Len() != len(Arches) {
+			return nil, valueError(msgArtifactsNotReady)
+		}
+		for _, arch := range Arches {
+			if _, ok := available.Get(arch); !ok {
+				return nil, valueError(msgArtifactsNotReady)
 			}
 		}
 	}
-	if notReady {
-		return nil, valueError("更新文件未准备就绪，请先更新 ConfigFlow 主服务镜像")
-	}
 	target := agents.GetLatestVersion()
-	protocol := 1
+	previous, present := originalString(a.MemberJSON("version"))
+	if !validVersion(target) || present && previous != "" && !validVersion(previous) {
+		return nil, agents.ErrInvalidAgentReply
+	}
+	if raw, exists, e := a.MemberJSON("version"); e != nil {
+		return nil, e
+	} else if exists && !present && string(raw) != "null" {
+		return nil, &CorruptStateError{Field: "version"}
+	}
+	id, err := updateIDSource()
+	if err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	protocol := model.Int(1)
 	if hasInfo {
 		protocol = 2
 	}
-	startedAt := now()
-	updatedAt := now()
-	state := jsonx.Obj("update_id", newUpdateID(), "target_version", target,
-		"previous_version", agent.GetOr("version", ""), "status", "queued",
-		"agent_id", agentID, "started_at", jsonx.Float(startedAt), "updated_at", jsonx.Float(updatedAt),
-		"protocol", jsonx.Int(int64(protocol)), "artifacts", available)
-	message := "正在提交 Agent " + target + " 更新请求"
-	if jsonx.Truthy(arch) {
-		message += "（" + jsonx.Str(arch) + "）"
+	message := fmt.Sprintf(msgSubmitting, target)
+	if hasInfo && info.Architecture != "" {
+		message += "（" + info.Architecture + "）"
 	}
-	state.Set("message", message)
-	state.Set("events", agents.AppendEvent([]any{}, "queued", message, "", nil))
-	updateID := state.Value("update_id")
-
-	_, err = m.UpdateAgents(ctx, "", func(_ context.Context, list *[]any) (any, error) {
-		current, err := findAgent(*list, agentID)
+	state := &model.AgentUpgrade{UpdateID: id, TargetVersion: target, PreviousVersion: previous, Status: "queued", AgentID: agentID, StartedAt: now(), UpdatedAt: now(), Protocol: protocol, Artifacts: available, Message: &message, Events: agents.AppendOperationEvent(nil, "queued", message, "", nil)}
+	// Explicit empty previous_version remains part of the persisted protocol contract.
+	rawPrevious, _ := json.Marshal(previous)
+	if err := state.SetJSON("previous_version", rawPrevious); err != nil {
+		return nil, err
+	}
+	err = m.EditAgents(ctx, "", func(tx context.Context, records *[]model.Agent) error {
+		current, err := findModel(*records, agentID)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		active, err := haActive(current)
+		active, err := activeHA(current)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if active {
-			return nil, valueError("DNS 主备正在同步，请等待两台发布完成后升级")
+			return valueError(msgHAActive)
 		}
-		previous, err := orDict(current.Value("latest_upgrade"))
+		prior, err := readState(current)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		previousUpgrade, err := orDict(agent.Value("latest_upgrade"))
+		snapshot, err := readState(a)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		if !jsonx.Equal(previous.Value("update_id"), previousUpgrade.Value("update_id")) {
-			return nil, valueError("当前更新任务已改变，请刷新后查看最新结果")
-		}
-		if previous.Len() > 0 {
-			terminal, err := in(previous.Value("status"), Terminal)
+		priorID, snapshotID := "", ""
+		if prior != nil {
+			priorID, err = stateID(prior)
 			if err != nil {
-				return nil, err
-			}
-			if !terminal || jsonx.Equal(previous.Value("status"), "rollback_failed") {
-				return nil, valueError("已有更新正在执行或等待恢复，请先查询结果")
+				return err
 			}
 		}
-		deployment, err := orDict(current.Value("latest_deployment"))
+		if snapshot != nil {
+			snapshotID, err = stateID(snapshot)
+			if err != nil {
+				return err
+			}
+		}
+		if priorID != snapshotID {
+			return valueError(msgUpgradeChanged)
+		}
+		if prior != nil && (!Terminal[prior.Status] || prior.Status == "rollback_failed") {
+			return valueError(msgUpgradeBusy)
+		}
+		deployment, err := optionalObject(current, "latest_deployment")
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if deployment.Len() > 0 {
-			finished, err := in(deployment.Value("status"), terminalNotRollbackFailed)
-			if err != nil {
-				return nil, err
+			status, ok := fieldString(deployment, "status")
+			if !ok {
+				return &CorruptStateError{Field: "latest_deployment.status"}
 			}
-			if !finished {
-				return nil, valueError("存在未结束的配置发布，请先完成或恢复")
+			if !terminalNotRollbackFailed[status] {
+				return valueError(msgDeploymentBusy)
 			}
 		}
-		current.Set("latest_upgrade", state.Clone())
-		return nil, nil
+		if err := tx.Err(); err != nil {
+			return err
+		}
+		current.LatestUpgrade = state
+		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	name := agent.Value("name")
-	if !jsonx.Truthy(name) {
-		name = agentID
-	}
-	logger.Info("开始升级 Agent " + logx.LogText(name, 120) + "：" + logx.LogText(orText(state.Value("previous_version")), 40) +
-		" → " + logx.LogText(target, 40))
-	payload := jsonx.Obj("version", target, "update_id", updateID)
+	logger.Info(fmt.Sprintf(msgStartLog, logx.LogText(agentLabel(a), 120), logx.LogText(displayVersion(previous), 40), logx.LogText(target, 40)))
+	payload := struct {
+		Version  string `json:"version"`
+		UpdateID string `json:"update_id"`
+		SHA256   string `json:"sha256,omitempty"`
+		Size     *int64 `json:"size,omitempty"`
+	}{Version: target, UpdateID: id}
 	if hasInfo {
-		text, ok := arch.(string)
-		if !ok {
-			if unhashable(arch) {
-				return nil, typeError("unhashable type: '" + typeName(arch) + "'")
-			}
-			return nil, &PyError{Class: "KeyError", Message: jsonx.Repr(arch)}
-		}
-		files, ok := available.Get(text)
-		if !ok {
-			return nil, &PyError{Class: "KeyError", Message: jsonx.Repr(arch)}
-		}
-		payload.Update(files.(*jsonx.Object))
+		artifact, _ := available.Get(info.Architecture)
+		payload.SHA256 = artifact.SHA256
+		payload.Size = new(int64(artifact.Size))
 	}
-	response, err := request(ctx, m, agent, "POST", "/api/update", payload)
+	response, err = requestModel(ctx, m, a, "POST", "/api/update", payload)
 	if err != nil {
-		if requestFailed(err) {
-			// The response may have been lost after acceptance. Keep the same ID
-			// pending and reconcile with the Agent instead of resubmitting.
-			return save(ctx, m, agentID, updateID, jsonx.Obj("status", "checking", "error", "请求结果待确认，正在查询 Agent"), true)
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		if agents.IsTransportError(err) {
+			return saveModel(ctx, m, agentID, id, upgradePatch{Status: "checking", Error: new(msgRequestUncertain)}, true)
 		}
 		return nil, err
 	}
 	if response.StatusCode != 200 && response.StatusCode != 202 {
-		var message any = "Agent rejected upgrade"
-		if value, err := response.JSON(); err == nil {
-			got, err := get(value, "message")
-			if err != nil {
-				return nil, err
-			}
-			if object := value.(*jsonx.Object); object.Has("message") {
-				message = got
+		message := "Agent rejected upgrade"
+		if fields, e := jsondecode.Select(responseData(response), "message"); e == nil {
+			if raw, ok := fields["message"]; ok {
+				message = rawText(raw)
 			}
 		}
-		return save(ctx, m, agentID, updateID, jsonx.Obj("status", "failed", "error", message), false)
+		return saveModel(ctx, m, agentID, id, upgradePatch{Status: "failed", Error: &message}, false)
 	}
-	// Acceptance alone does not prove that the independent worker is already
-	// downloading. A simultaneous poll may also have observed a later stage.
-	return save(ctx, m, agentID, updateID, jsonx.Obj("status", "queued",
-		"message", "Agent "+target+" 更新请求已送达，等待设备处理"), true)
+	return saveModel(ctx, m, agentID, id, upgradePatch{Status: "queued", Message: new(fmt.Sprintf(msgDelivered, target))}, true)
 }
 
-// number is a stored number as a float (int, float or bool) for
-// `value + 600` (op "+") or `confirmed > value` (op ">"), with Python's
-// TypeError texts otherwise.
-func number(value any, op string) (float64, error) {
-	switch v := value.(type) {
-	case jsonx.Number:
-		return v.Float64(), nil
-	case bool:
-		if v {
-			return 1, nil
-		}
-		return 0, nil
+// PollModel reconciles worker state and independent executable proof without resubmitting.
+func PollModel(ctx context.Context, m *agents.Manager, agentID string) (*model.AgentUpgrade, error) {
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
-	if op == ">" {
-		return 0, typeError("'>' not supported between instances of 'float' and '" + typeName(value) + "'")
-	}
-	switch value.(type) {
-	case string, []any:
-		name := typeName(value)
-		return 0, typeError("can only concatenate " + name + " (not \"int\") to " + name)
-	}
-	return 0, typeError("unsupported operand type(s) for +: '" + typeName(value) + "' and 'int'")
-}
-
-// heartbeatTimestamp is datetime.fromisoformat(agent.get('last_heartbeat',
-// ”)).timestamp(): ok false for Python's ValueError, an error for the
-// TypeError of a non-string.
-func heartbeatTimestamp(agent *jsonx.Object) (float64, bool, error) {
-	value := agent.GetOr("last_heartbeat", "")
-	text, isString := value.(string)
-	if !isString {
-		return 0, false, typeError("fromisoformat: argument must be str")
-	}
-	ts, ok := agents.ISOTimestamp(text)
-	return ts, ok, nil
-}
-
-// Poll is poll(manager, agent_id): reconcile the recorded update with the
-// Agent's worker and identity.
-func Poll(ctx context.Context, m *agents.Manager, agentID string) (*jsonx.Object, error) {
-	agent, err := m.GetAgentByID(ctx, agentID, true)
+	a, err := m.ReadAgent(ctx, agentID, true)
 	if err != nil {
 		return nil, err
 	}
-	if agent == nil || agent.Len() == 0 || !jsonx.Truthy(agent.Value("latest_upgrade")) {
+	if a == nil {
 		return nil, valueError("No upgrade recorded")
 	}
-	copied, err := pyDict(agent.Value("latest_upgrade"))
+	state, err := readState(a)
 	if err != nil {
 		return nil, err
 	}
-	state := copied.DeepCopy()
-	status, err := item(state, "status")
-	if err != nil {
-		return nil, err
+	if state == nil {
+		return nil, valueError("No upgrade recorded")
 	}
-	if done, err := in(status, terminalNotRollbackFailed); err != nil {
-		return nil, err
-	} else if done {
+	if terminalNotRollbackFailed[state.Status] {
 		return state, nil
 	}
-	if jsonx.Truthy(state.Value("recovery_reported_at")) {
-		previous, err := item(state, "previous_version")
-		if err != nil {
-			return nil, err
-		}
-		if jsonx.Equal(agent.Value("version"), previous) {
-			confirmed, ok, err := heartbeatTimestamp(agent)
-			if err != nil {
-				return nil, err
-			}
-			if ok {
-				reported, err := number(state.Value("recovery_reported_at"), ">")
-				if err != nil {
-					return nil, err
-				}
-				if confirmed > reported {
-					saved, err := save(ctx, m, agentID, state.Value("update_id"), jsonx.Obj("status", "rolled_back"), false)
-					if err == nil || !IsValueError(err) {
-						return saved, err
-					}
-				}
-			}
+	id, err := stateID(state)
+	if err != nil {
+		return nil, err
+	}
+	previous, pOK := originalString(state.MemberJSON("previous_version"))
+	target, tOK := originalString(state.MemberJSON("target_version"))
+	if !pOK || !tOK || previous != "" && !validVersion(previous) || !validVersion(target) {
+		return nil, &CorruptStateError{Field: "latest_upgrade.version"}
+	}
+	protocol, err := stateProtocol(state)
+	if err != nil {
+		return nil, err
+	}
+	recovery, present, err := stateNumber(state, "recovery_reported_at", false)
+	if err != nil {
+		return nil, err
+	}
+	version, versionOK := originalString(a.MemberJSON("version"))
+	if present && recovery != 0 && versionOK && version == previous && heartbeatAfterModel(a, recovery) {
+		saved, e := saveModel(ctx, m, agentID, id, upgradePatch{Status: "rolled_back"}, false)
+		if e == nil || !IsValueError(e) {
+			return saved, e
 		}
 	}
-	result, done, err := pollAgent(ctx, m, agent, agentID, state)
+	result, done, err := pollAgentModel(ctx, m, a, agentID, state, protocol)
 	if done || err != nil {
 		return result, err
 	}
-	startedAt, err := item(state, "started_at")
-	if err != nil {
-		return nil, err
-	}
-	started, err := number(startedAt, "+")
+	started, _, err := stateNumber(state, "started_at", true)
 	if err != nil {
 		return nil, err
 	}
 	deadline := started + 600
 	if now() > deadline {
-		// The Agent did not report this job in progress. A heartbeat sent after
-		// the deadline that still carries the old version proves the update
-		// never took effect, so release the lock and allow a retry.
-		previous, err := item(state, "previous_version")
-		if err != nil {
-			return nil, err
+		if versionOK && version == previous && heartbeatAfterModel(a, deadline) {
+			return saveModel(ctx, m, agentID, id, upgradePatch{Status: "failed", Error: new(fmt.Sprintf(msgUpgradeIneffective, previous))}, false)
 		}
-		if jsonx.Equal(agent.Value("version"), previous) {
-			after, err := heartbeatAfter(agent, deadline)
-			if err != nil {
-				return nil, err
-			}
-			if after {
-				return save(ctx, m, agentID, state.Value("update_id"), jsonx.Obj("status", "failed",
-					"error", "更新未生效：Agent 仍在运行 "+jsonx.Str(previous)+"，可重新更新；详情请查看 Agent 日志"), false)
-			}
-		}
-		// Do not claim rollback when the old executable cannot be reached.
-		if !jsonx.Equal(status, "unknown") {
-			return save(ctx, m, agentID, state.Value("update_id"), jsonx.Obj("status", "unknown",
-				"error", "升级结果未能确认，正在继续查询；请查看 Agent 日志"), false)
+		if state.Status != "unknown" {
+			return saveModel(ctx, m, agentID, id, upgradePatch{Status: "unknown", Error: new(msgUpgradeUnknown)}, false)
 		}
 	}
 	return state, nil
 }
-
-// pollAgent is the try block of poll: done=false when Python falls through
-// to the deadline check (a RequestException or ValueError, or nothing
-// conclusive).
-func pollAgent(ctx context.Context, m *agents.Manager, agent *jsonx.Object, agentID string, state *jsonx.Object) (*jsonx.Object, bool, error) {
-	// caught is `except (requests.RequestException, ValueError): pass`.
-	caught := func(err error) (*jsonx.Object, bool, error) {
-		if requestFailed(err) || IsValueError(err) {
+func pollAgentModel(ctx context.Context, m *agents.Manager, a *model.Agent, agentID string, state *model.AgentUpgrade, protocol model.Int) (*model.AgentUpgrade, bool, error) {
+	caught := func(err error) (*model.AgentUpgrade, bool, error) {
+		if ctx.Err() != nil {
+			return nil, true, ctx.Err()
+		}
+		if agents.IsTransportError(err) || IsValueError(err) || errors.Is(err, agents.ErrInvalidAgentReply) {
 			return nil, false, nil
 		}
 		return nil, true, err
 	}
-	var worker *jsonx.Object
-	var response *agents.Response
-	var result any
-	protocol, err := item(state, "protocol")
+	var worker *upgradePatch
+	var observation Worker
+	if protocol == 2 {
+		response, err := requestModel(ctx, m, a, "GET", "/api/update", nil)
+		if err != nil {
+			return caught(err)
+		}
+		if response.StatusCode == 200 {
+			if err := decodeProtocol(responseData(response), &observation); err != nil {
+				return caught(err)
+			}
+			if observation.UpdateID == state.UpdateID && observation.AgentID == agentID && Stages[observation.Status] {
+				worker = &upgradePatch{Status: observation.Status, Error: new(rawText(observation.Error)), Message: observation.Message, Events: observation.Events, AgentUpdatedAt: observation.UpdatedAt}
+				if observation.Status != "succeeded" {
+					saved, e := saveModel(ctx, m, agentID, state.UpdateID, *worker, false)
+					if e != nil {
+						return caught(e)
+					}
+					return saved, true, nil
+				}
+			}
+		}
+	}
+	response, err := requestModel(ctx, m, a, "GET", "/api/upgrade-info", nil)
 	if err != nil {
 		return caught(err)
 	}
-	if jsonx.Equal(protocol, jsonx.Int(2)) {
-		if response, err = request(ctx, m, agent, "GET", "/api/update", nil); err != nil {
+	if response.StatusCode == 200 {
+		var info Info
+		if err := decodeProtocol(responseData(response), &info); err != nil {
 			return caught(err)
+		}
+		if info.AgentID == agentID && validVersion(info.Version) && info.Version == state.TargetVersion && info.MigrationReady && (protocol == 1 || worker != nil && worker.Status == "succeeded") {
+			patch := upgradePatch{}
+			if worker != nil {
+				patch = *worker
+			}
+			patch.Status = "succeeded"
+			patch.Error = new("")
+			saved, e := saveModel(ctx, m, agentID, state.UpdateID, patch, false)
+			if e != nil {
+				return caught(e)
+			}
+			return saved, true, nil
 		}
 	}
-	if response != nil && response.StatusCode == 200 {
-		if result, err = responseJSON(response); err != nil {
-			return caught(err)
-		}
-		updateID, err := get(result, "update_id")
-		if err != nil {
-			return caught(err)
-		}
-		stateUpdateID, err := item(state, "update_id")
-		if err != nil {
-			return caught(err)
-		}
-		matches := jsonx.Equal(updateID, stateUpdateID)
-		if matches {
-			id, _ := get(result, "agent_id")
-			matches = jsonx.Equal(id, agentID)
-		}
-		if matches {
-			status, _ := get(result, "status")
-			if matches, err = in(status, Stages); err != nil {
-				return caught(err)
+	if worker != nil && worker.Status == "succeeded" {
+		worker.Status = "checking"
+		worker.Message = new(msgConfirming)
+		events := make([]model.OperationEvent, 0)
+		for _, event := range agents.CleanOperationEvents(worker.Events, nil, Stages) {
+			if !Terminal[event.Status] {
+				events = append(events, event)
 			}
 		}
-		if matches {
-			object := result.(*jsonx.Object)
-			worker = jsonx.Obj("status", object.Value("status"), "error", truncate(jsonx.Str(object.GetOr("error", "")), 2048),
-				"events", object.Value("events"), "agent_updated_at", object.Value("updated_at"))
-			if message, ok := object.Value("message").(string); ok {
-				worker.Set("message", message)
-			}
-			if !jsonx.Equal(object.Value("status"), "succeeded") {
-				saved, err := save(ctx, m, agentID, stateUpdateID, worker, false)
-				if err != nil {
-					return caught(err)
-				}
-				return saved, true, nil
-			}
-		}
-	}
-	infoResponse, err := request(ctx, m, agent, "GET", "/api/upgrade-info", nil)
-	if err != nil {
-		return caught(err)
-	}
-	if infoResponse.StatusCode == 200 {
-		info, err := responseJSON(infoResponse)
-		if err != nil {
-			return caught(err)
-		}
-		id, err := get(info, "agent_id")
-		if err != nil {
-			return caught(err)
-		}
-		matches := jsonx.Equal(id, agentID)
-		if matches {
-			target, err := item(state, "target_version")
-			if err != nil {
-				return caught(err)
-			}
-			version, _ := get(info, "version")
-			ready, _ := get(info, "migration_ready")
-			matches = jsonx.Equal(version, target) && ready == true
-		}
-		if matches {
-			// Protocol 2 also needs the independent worker's final result.
-			confirmed := jsonx.Equal(protocol, jsonx.Int(1))
-			if !confirmed {
-				if response == nil {
-					return caught(noAttribute(nil, "status_code"))
-				}
-				if response.StatusCode == 200 {
-					object := result.(*jsonx.Object)
-					confirmed = jsonx.Equal(object.Value("update_id"), state.Value("update_id")) && jsonx.Equal(object.Value("status"), "succeeded")
-				}
-			}
-			if confirmed {
-				patch := jsonx.NewObject()
-				if worker != nil {
-					patch = worker.Clone()
-				}
-				patch.Set("status", "succeeded")
-				patch.Set("error", "")
-				saved, err := save(ctx, m, agentID, state.Value("update_id"), patch, false)
-				if err != nil {
-					return caught(err)
-				}
-				return saved, true, nil
-			}
-		}
-	}
-	if worker != nil && jsonx.Equal(worker.Value("status"), "succeeded") {
-		worker.Set("status", "checking")
-		worker.Set("message", "Agent 已报告更新完成，正在确认版本、身份与迁移结果")
-		events := []any{}
-		for _, entry := range agents.CleanEvents(worker.Value("events"), nil, Stages) {
-			if !Terminal[entry.(*jsonx.Object).GetString("status")] {
-				events = append(events, entry)
-			}
-		}
-		worker.Set("events", events)
-		saved, err := save(ctx, m, agentID, state.Value("update_id"), worker, false)
-		if err != nil {
-			return caught(err)
+		worker.Events = events
+		saved, e := saveModel(ctx, m, agentID, state.UpdateID, *worker, false)
+		if e != nil {
+			return caught(e)
 		}
 		return saved, true, nil
 	}
 	return nil, false, nil
 }
 
-// heartbeatAfter is _heartbeat_after(agent, moment).
-func heartbeatAfter(agent *jsonx.Object, moment float64) (bool, error) {
-	ts, ok, err := heartbeatTimestamp(agent)
-	if err != nil || !ok {
-		return false, err
+// ReportLegacyJSON accepts only an exact-key protocol-1 report owned by the pending task.
+func ReportLegacyJSON(ctx context.Context, m *agents.Manager, agentID string, data json.RawMessage) (*model.AgentUpgrade, error) {
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
-	return ts > moment, nil
-}
-
-// ReportLegacy is report_legacy(manager, agent_id, payload): a protocol 1
-// Agent reports that it is rolling back. The route answers 400 for
-// ValueError, TypeError and AttributeError (ErrorClass).
-func ReportLegacy(ctx context.Context, m *agents.Manager, agentID string, payload any) (*jsonx.Object, error) {
-	agent, err := m.GetAgentByID(ctx, agentID, true)
+	var report LegacyReport
+	if decodeProtocol(data, &report) != nil {
+		return nil, ErrInvalidReport
+	}
+	a, err := m.ReadAgent(ctx, agentID, true)
 	if err != nil {
 		return nil, err
 	}
-	if agent == nil {
-		return nil, noAttribute(nil, "get")
+	if a == nil {
+		return nil, ErrInvalidReport
 	}
-	state, err := orDict(agent.Value("latest_upgrade"))
+	state, err := readState(a)
 	if err != nil {
 		return nil, err
 	}
-	invalid := valueError("Invalid legacy upgrade report")
-	if !jsonx.Equal(state.Value("protocol"), jsonx.Int(1)) {
-		return nil, invalid
+	if state == nil {
+		return nil, ErrInvalidReport
 	}
-	updateID, err := get(payload, "update_id")
+	protocol, err := stateProtocol(state)
 	if err != nil {
 		return nil, err
 	}
-	if !jsonx.Equal(updateID, state.Value("update_id")) {
-		return nil, invalid
-	}
-	if status, _ := get(payload, "status"); !jsonx.Equal(status, "rolling_back") {
-		return nil, invalid
-	}
-	stateUpdateID, err := item(state, "update_id")
+	id, err := stateID(state)
 	if err != nil {
 		return nil, err
 	}
-	reportedError := payload.(*jsonx.Object).GetOr("error", "Migration failed")
-	return save(ctx, m, agentID, stateUpdateID, jsonx.Obj("status", "rolling_back",
-		"recovery_reported_at", jsonx.Float(now()), "error", truncate(jsonx.Str(reportedError), 2048)), false)
+	if protocol != 1 || id != report.UpdateID || report.Status != "rolling_back" {
+		return nil, ErrInvalidReport
+	}
+	text := "Migration failed"
+	if len(report.Error) > 0 {
+		text = rawText(report.Error)
+	}
+	return saveModel(ctx, m, agentID, id, upgradePatch{Status: "rolling_back", RecoveryReportedAt: new(now()), Error: &text}, false)
 }
