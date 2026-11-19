@@ -5,6 +5,7 @@ by archive and row SHA-256; native reports run the same Python business parser
 with only Go whitespace and ASCII machine-number policy injected.
 """
 import copy
+import base64
 import gzip
 import hashlib
 import json
@@ -33,7 +34,23 @@ def native_match(pattern, text, *args, **kwargs):
     return re.match(pattern, text, *args, **kwargs)
 
 scope = dict(original.__dict__)
-exec(compile(Path(original.__file__).read_text(), original.__file__, 'exec'), scope)
+def native_lines(text):
+    if not text: return []
+    lines = str(text).split(chr(10))
+    if lines[-1] == '': lines.pop()
+    return [NativeText(line.removesuffix(chr(13))) for line in lines]
+source = Path(original.__file__).read_text()
+source = source.replace("output.replace('\\r\\n', '\\n').splitlines()", "native_lines(output.replace('\\r\\n', '\\n'))")
+source = source.replace('text.splitlines()', 'native_lines(text)').replace('addresses.splitlines()', 'native_lines(addresses)')
+assert '.splitlines()' not in source
+scope['native_lines'] = native_lines
+exec(compile(source, original.__file__, 'exec'), scope)
+def native_base64(data, validate=False):
+    if isinstance(data, bytes): data = data.decode('ascii')
+    if re.fullmatch(r'(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?', data) is None:
+        raise ValueError('invalid machine base64')
+    return base64.b64decode(data, validate=True)
+scope['base64'] = SimpleNamespace(b64decode=native_base64)
 real_decode = scope['_decode']
 def native_decode(output):
     values, reason = real_decode(output)

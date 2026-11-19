@@ -1,13 +1,13 @@
 package difftest
 
 import (
-	"configflow/internal/httpx"
 	"fmt"
 	"math/big"
 	"net/url"
 	"strings"
 	"unicode"
 
+	"configflow/internal/httpx"
 	"configflow/internal/jsonx"
 )
 

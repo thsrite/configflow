@@ -45,7 +45,7 @@ func authenticatedApp(t *testing.T) (*httpxtest.Server, *agents.Manager, httpxte
 	return srv, manager, srv.Login()
 }
 
-func capability(t *testing.T, srv *httpxtest.Server, body *jsonx.Object) *installer.Enrollment {
+func capability(t *testing.T, srv *httpxtest.Server, body *jsonx.Object) *installer.Capability {
 	t.Helper()
 	if body == nil {
 		body = dockerHABody()
@@ -54,16 +54,20 @@ func capability(t *testing.T, srv *httpxtest.Server, body *jsonx.Object) *instal
 	if err != nil {
 		t.Fatal(err)
 	}
-	enrollment, err := installer.IssueEnrollment(srv.Context(), srv.Repo.DataDir(), body, profileID)
+	raw, err := jsonx.Default(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	enrollment, err := installer.IssueCapability(srv.Context(), srv.Repo.DataDir(), raw, profileID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return enrollment
 }
 
-func sessionOf(e *installer.Enrollment) string { return e.URL[strings.LastIndex(e.URL, "/")+1:] }
+func sessionOf(e *installer.Capability) string { return e.URL[strings.LastIndex(e.URL, "/")+1:] }
 
-func enrollPath(e *installer.Enrollment) string {
+func enrollPath(e *installer.Capability) string {
 	return "/api/agents/docker-oxidns-ha-enroll/" + sessionOf(e)
 }
 
@@ -76,7 +80,7 @@ func allAgents(t *testing.T, srv *httpxtest.Server, manager *agents.Manager) []*
 	return list
 }
 
-func expireSession(t *testing.T, srv *httpxtest.Server, e *installer.Enrollment) string {
+func expireSession(t *testing.T, srv *httpxtest.Server, e *installer.Capability) string {
 	t.Helper()
 	path := filepath.Join(srv.Repo.DataDir(), "docker-ha-installations", sessionOf(e)+".json")
 	data, err := os.ReadFile(path)
@@ -223,19 +227,19 @@ func TestDockerHAEnrollmentRegenerationAndExpiryKeepExactInstallation(t *testing
 func TestDockerHAEnrollmentConcurrentRetriesCreateOneIdentity(t *testing.T) {
 	srv, manager, _ := authenticatedApp(t)
 	cap := capability(t, srv, nil)
-	values := make([]*jsonx.Object, 6)
+	values := make([]installer.AgentIdentity, 6)
 	errs := make([]error, 6)
 	var wg sync.WaitGroup
 	for i := range values {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			values[i], errs[i] = installer.Enroll(srv.Context(), srv.Repo.DataDir(), manager, sessionOf(cap), cap.Token, true)
+			values[i], errs[i] = installer.EnrollIdentity(srv.Context(), srv.Repo.DataDir(), manager, sessionOf(cap), cap.Token, true)
 		}(i)
 	}
 	wg.Wait()
 	for i := range values {
-		if errs[i] != nil || !jsonx.Equal(values[i], values[0]) {
+		if errs[i] != nil || values[i] != values[0] {
 			t.Fatalf("%d: %v %v", i, values[i], errs[i])
 		}
 	}

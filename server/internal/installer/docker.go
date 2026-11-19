@@ -145,7 +145,7 @@ func boolText(b bool) string {
 	return "false"
 }
 
-// GenerateDockerAgentCompose is generate_docker_agent_compose.
+// RenderDockerCompose renders the selected services as native Compose YAML.
 func RenderDockerCompose(o DockerInstallOptions) (string, error) {
 	document, err := dockerCompose(o)
 	if err != nil {
@@ -298,7 +298,7 @@ func shellWord(value string, plain bool) string {
 	return shlexQuote(value)
 }
 
-// GenerateDockerAgentRun is generate_docker_agent_run.
+// RenderDockerRun renders the selected services as Docker shell commands.
 func RenderDockerRun(o DockerInstallOptions) (string, error) {
 	if err := ValidateAgentName(o.AgentName); err != nil {
 		return "", err

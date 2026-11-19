@@ -173,7 +173,7 @@ GET `/api/stats/overview`、POST `/api/notifications/read`；九条 TSV 当前�
 | agents core | 部分完成：core-1 verified，core-2 待 fresh HR | progress/n8-10-core.md、progress/n8-10-core-2.md；typed registry/admission/deployment/remote owners 与六组 adapter；旧 consumer facade 保留 | M；core-2 定向验证后交回；monitor/upgrades/installer/api、完整 A05 engine 与邻居 consumer 仍按后续步骤迁移，未宣布 N8-10 全成 |
 | monitor | 未开始 S pass | agents/monitor11个文件import jsonx，仍PythonClass | M；agents core、native localhttp/cache，typed状态/缓存/指标 |
 | upgrades | 未开始 S pass | agents/upgrades6个文件import jsonx、1个pystr | M；agents core/installer/receipt协议；保持protocol-1和恢复语义 |
-| installer | S pass 已实现，待定向验证与 fresh HR | progress/n8-10-installer.md；typed renderer/command/capability、core-2 EditAgents；旧 consumer codec 单独保留 | M；保留 shell/L1；API binder、gateway/upgrades 旧输入消费方仍需后续迁移 |
+| installer | S pass 已实现，待 fresh HR | progress/n8-10-installer.md；typed renderer/command/capability、core-2 EditAgents；生产 jsonx/pystr/PythonClass 为零，旧 JSON codec 仅测试 | M；保留 shell/L1；API binder、gateway/upgrades 旧输入消费方仍需后续迁移 |
 | api/agents | 未开始主迁移，已有局部native DTO | api/agents10个文件import jsonx、4个pystr，content/client/public adapters | M；前四步、deploy、N8-9/8d、A24；切换c.Bind/typed服务并保留各场景HTTP状态/HEAD |
 
 五步均要求Opus HR review；同时处理 deploy、gateway/setup、configexport、其他 api/* 等仍调用
@@ -181,7 +181,7 @@ legacy facade 的邻居，或明确分配补充consumer任务，不能仅清掉�
 
 ### 3.4 N8-11 当前删除门槛：按包计数
 
-Installer 的 `identityJSON` 是**保留的 D2 身份编码，非 legacy facade**：只编码已发布 spec index 和 Compose owner/project，保持 sorted-key ASCII JSON 与既有空格，不 import jsonx/pystr。以后统一 D2 owner 时迁移，不能在删除 facade 时重发安装身份。installer 的 legacy codec 则待 API binder、gateway/upgrades 等旧 consumer 完成 S pass 后删除；本节旧计数为任务前审计快照。
+Installer 的 `identityJSON` 是**保留的 D2 身份编码，非 legacy facade**：只编码已发布 spec index 和 Compose owner/project，保持 sorted-key ASCII JSON 与既有空格，不 import jsonx/pystr。以后统一 D2 owner 时迁移，不能在删除 facade 时重发安装身份。installer 的 options codec（无 jsonx/pystr）待 API binder、gateway/installation 等旧 consumer 完成 S pass 后删除；原 JSON codec 已移入测试；本节旧计数为任务前审计快照。
 
 统计为**静态文本口径**，可复算：固定ref上 `git grep -I -n -E`，路径 `server/**/*.go`。
 下表排除 `_test.go`、`/testdata/`、`/difftest/`；仍包括非 `_test.go` 的工具/测试helper，

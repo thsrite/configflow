@@ -1,10 +1,11 @@
 package installer
 
 import (
-	"configflow/internal/netipx"
 	"encoding/binary"
 	"errors"
 	"net/netip"
+
+	"configflow/internal/netipx"
 )
 
 var errAddress = errors.New("invalid IPv4 address")

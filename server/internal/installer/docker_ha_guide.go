@@ -23,62 +23,28 @@ func enrollmentURL(e *Capability) string {
 	return e.URL
 }
 
-// posixNormpath is posixpath.normpath for a str.
-func posixNormpath(path string) string {
-	if path == "" {
-		return "."
+// canonicalInstallPath accepts the published double-leading-slash spelling,
+// while delegating component normalization to the native Linux path library.
+func canonicalInstallPath(value string) string {
+	cleaned := path.Clean(value)
+	if strings.HasPrefix(value, "//") && !strings.HasPrefix(value, "///") {
+		return "/" + cleaned
 	}
-	initial := 0
-	if strings.HasPrefix(path, "/") {
-		initial = 1
-		if strings.HasPrefix(path, "//") && !strings.HasPrefix(path, "///") {
-			initial = 2
-		}
-	}
-	var comps []string
-	for _, comp := range strings.Split(path, "/") {
-		if comp == "" || comp == "." {
-			continue
-		}
-		if comp != ".." || (initial == 0 && len(comps) == 0) || (len(comps) > 0 && comps[len(comps)-1] == "..") {
-			comps = append(comps, comp)
-		} else if len(comps) > 0 {
-			comps = comps[:len(comps)-1]
-		}
-	}
-	result := strings.Repeat("/", initial) + strings.Join(comps, "/")
-	if result == "" {
-		return "."
-	}
-	return result
+	return cleaned
 }
 
-// posixDirname is posixpath.dirname.
-func posixDirname(path string) string {
-	head := path[:strings.LastIndex(path, "/")+1]
-	if head != "" && head != strings.Repeat("/", len(head)) {
-		head = strings.TrimRight(head, "/")
+// installPathParent retains the reviewed raw spelling in generated commands.
+func installPathParent(value string) string {
+	parent, _ := path.Split(value)
+	if strings.Trim(parent, "/") == "" {
+		return parent
 	}
-	return head
+	return strings.TrimRight(parent, "/")
 }
 
-// posixCommonpath is posixpath.commonpath((left, right)) for two absolute paths.
-func posixCommonpath(left, right string) string {
-	parts := func(path string) []string {
-		var out []string
-		for _, c := range strings.Split(path, "/") {
-			if c != "" && c != "." {
-				out = append(out, c)
-			}
-		}
-		return out
-	}
-	a, b := parts(left), parts(right)
-	var common []string
-	for i := 0; i < len(a) && i < len(b) && a[i] == b[i]; i++ {
-		common = append(common, a[i])
-	}
-	return "/" + strings.Join(common, "/")
+func installPathsOverlap(left, right string) bool {
+	left, right = path.Clean(left), path.Clean(right)
+	return left == right || strings.HasPrefix(left, strings.TrimSuffix(right, "/")+"/") || strings.HasPrefix(right, strings.TrimSuffix(left, "/")+"/")
 }
 
 // guidePath is _path(value, label, allow_colon).
@@ -87,7 +53,7 @@ func guidePath(text string, label string, allowColon bool) (string, error) {
 	if allowColon {
 		bad = ",\x00\r\n"
 	}
-	if !strings.HasPrefix(text, "/") || text == "/" || posixNormpath(text) != text || strings.ContainsAny(text, bad) {
+	if !strings.HasPrefix(text, "/") || text == "/" || canonicalInstallPath(text) != text || strings.ContainsAny(text, bad) {
 		if allowColon {
 			return "", valueError(label + "须为规范的绝对路径，不能包含逗号或换行")
 		}
@@ -152,7 +118,7 @@ func identityCommand(value string) (string, error) {
 	return haHeader() + "cf_identity_path=" + q(path) + "\n" +
 		`[ ! -e "$cf_identity_path" ] && [ ! -L "$cf_identity_path" ] || ` +
 		haFail("目标已存在（包括软链接）；未改写，请沿用有效身份文件或另选路径") + "\n" +
-		"mkdir -p -- " + q(posixDirname(path)) + "\n" +
+		"mkdir -p -- " + q(installPathParent(path)) + "\n" +
 		`cf_identity=$(tr -cd "0123456789abcdefABCDEF" < /proc/sys/kernel/random/uuid)` + "\n" +
 		`[[ "$cf_identity" =~ ^[0-9a-fA-F]{32}$ ]] || ` + haFail("无法读取内核随机 UUID") + "\n" +
 		`(set -o noclobber; printf "%s\n" "$cf_identity" > "$cf_identity_path") || ` +
@@ -524,7 +490,7 @@ func migrationNative(params GuideOptions, request GuideRequest) (string, string,
 	for i, left := range directories {
 		for _, right := range directories[i+1:] {
 			leftCheck, rightCheck := path.Clean(left), path.Clean(right)
-			if common := posixCommonpath(leftCheck, rightCheck); common == leftCheck || common == rightCheck {
+			if installPathsOverlap(leftCheck, rightCheck) {
 				return "", "", "", valueError(msgMigrationDirectories)
 			}
 		}
@@ -616,7 +582,7 @@ func migrationNative(params GuideOptions, request GuideRequest) (string, string,
 	script += "cf_runtime_env=$(" + checkCommand + ")\n"
 	script += "docker image inspect " + q(image) + " >/dev/null 2>&1 || docker pull " + q(image) + "\n"
 	script += "[ ! -e " + q(haDir) + " ] && [ ! -L " + q(haDir) + " ] || " + haFail("请选择全新 HA 目录，不能复用已有 HA 状态") + "\n"
-	script += "mkdir -p -- " + q(posixDirname(backup)) + "\nmkdir -- \"$cf_backup\"\n"
+	script += "mkdir -p -- " + q(installPathParent(backup)) + "\nmkdir -- \"$cf_backup\"\n"
 	script += `printf "%s\n" "$cf_old_id" > "$cf_backup/old-id"` + "\n" + `printf "%s\n" "$cf_runtime_env" > "$cf_backup/runtime.env"` + "\n"
 	script += `docker inspect --format '{{.HostConfig.RestartPolicy.Name}}:{{.HostConfig.RestartPolicy.MaximumRetryCount}}' "$cf_old_id" > "$cf_backup/restart-policy"` + "\n"
 	if network != nil {
@@ -628,7 +594,7 @@ func migrationNative(params GuideOptions, request GuideRequest) (string, string,
 		}
 		script += joinQuoted(append(args, network.Name)) + "\n"
 	}
-	script += "mkdir -p -- " + q(posixDirname(haDir)) + "\nmkdir -- " + q(haDir) + "\n"
+	script += "mkdir -p -- " + q(installPathParent(haDir)) + "\nmkdir -- " + q(haDir) + "\n"
 	script += "docker update --restart=no \"$cf_old_id\" >/dev/null\ndocker stop \"$cf_old_id\" >/dev/null\n"
 	script += "mkdir \"$cf_backup/agent\" \"$cf_backup/oxidns\"\n"
 	script += "docker cp \"$cf_old_id:/opt/configflow-agent/.\" \"$cf_backup/agent/\"\ndocker cp \"$cf_old_id:/etc/oxidns/.\" \"$cf_backup/oxidns/\"\n"

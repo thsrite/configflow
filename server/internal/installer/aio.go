@@ -298,7 +298,7 @@ fi`
 `
 		replacements["core_install_phase"] = "echo \"先安装或保留两个核心，成功后继续安装两个 Agent。\"\n" +
 			"(\nset -- --core both\nCF_OUTPUT_OWNER=false\n" +
-			pyRstrip(core) + "\n)\n" +
+			trimScriptTail(core) + "\n)\n" +
 			"CORE_PHASE_COMPLETED=true\n" +
 			"# Minimal systems may not yet have /opt, needed for physical path checks.\nmkdir -p \"$(dirname \"$AGENT_ROOT\")\"\n"
 	}

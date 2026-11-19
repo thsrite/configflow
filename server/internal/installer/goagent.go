@@ -259,7 +259,7 @@ func RenderAgentInstall(o AgentInstallOptions) (string, error) {
 			"(\n" +
 			"set -- --core " + st + "\n" +
 			"CF_OUTPUT_OWNER=false\n" +
-			pyRstrip(core) + "\n)\n" +
+			trimScriptTail(core) + "\n)\n" +
 			"CORE_PHASE_COMPLETED=true\n" +
 			"CORE_BINARY=" + shlexQuote(serviceBinary) + "\n" +
 			"if [ ! -f /etc/" + st + "/config.yaml ] || [ ! -r /etc/" + st + "/config.yaml ] || ! command -v \"$CORE_BINARY\" >/dev/null 2>&1; then\n" +

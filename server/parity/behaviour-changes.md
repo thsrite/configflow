@@ -2181,6 +2181,9 @@ timeout 复用 taskstatus.Count，保留 ASCII 有符号/下划线十进制，�
 不模拟 CPython 4300 位限制。timeout 超出 int64 或 time.Duration 秒数承载范围
 （±9223372036）明确拒绝，绝不回绕。Go Agent 端口为 1..65535，HA 保留 1024..65535。
 脚本尾空白使用 strings.TrimRightFunc(unicode.IsSpace)；1c–1f 不再模拟 Python 空白。
+机器采集记录只按固定模板的 LF/CRLF 分行，base64 使用 encoding/base64 的标准语法；
+非规范 padding 与其他行分隔不再复刻 binascii/str.splitlines。固定采集模板只输出
+标准 base64 和 LF；人工旧行保留并以完整 archive/row SHA 绑定新 report/拒绝。
 这些差异仅以人工旧行的完整 archive/row SHA 绑定，保留原 Python 输出；独立参考保存
 完整新字节/错误，shell 其余字节严格比较。真实脚本模板固定 LF 结尾。
 

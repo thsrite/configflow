@@ -2,13 +2,14 @@ package installer
 
 import (
 	"bytes"
-	"configflow/internal/yamlx"
 	"encoding/json"
 	"strconv"
 	"strings"
 
+	"configflow/internal/jsondecode"
 	"configflow/internal/model"
 	"configflow/internal/weburl"
+	"configflow/internal/yamlx"
 )
 
 // GuideOptions is the validated renderer plan. The raw identity members are
@@ -92,7 +93,7 @@ func validateGuidePath(text string, valid bool, label string, allowColon bool) (
 }
 func decodeMount(raw json.RawMessage, label string) (composeMount, error) {
 	var fields model.Fields
-	if json.Unmarshal(raw, &fields) != nil {
+	if jsondecode.Unmarshal(raw, &fields) != nil {
 		return composeMount{}, valueError(label + "请选择 bind 目录或 Docker 命名卷")
 	}
 	kind, _ := fieldText(fields, "type")
@@ -117,7 +118,7 @@ func decodeMount(raw json.RawMessage, label string) (composeMount, error) {
 func DecodeGuideRequest(data json.RawMessage) (GuideRequest, error) {
 	request := GuideRequest{}
 	var fields model.Fields
-	if err := json.Unmarshal(data, &fields); err != nil {
+	if err := jsondecode.Unmarshal(data, &fields); err != nil {
 		return request, valueError(msgGuideObject)
 	}
 	request.Action, _ = textOr(fields, "action", "generate")
@@ -232,7 +233,7 @@ func DecodeGuideRequest(data json.RawMessage) (GuideRequest, error) {
 	}
 	if request.InstallMethod != "compose_compact" {
 		raw, present := fields.Get("create_host_identity")
-		if present && (!bytesBoolean(raw) || json.Unmarshal(raw, &request.CreateHostIdentity) != nil) {
+		if present && (!bytesBoolean(raw) || jsondecode.Unmarshal(raw, &request.CreateHostIdentity) != nil) {
 			return request, valueError(msgCreateIdentityBoolean)
 		}
 	}
@@ -437,7 +438,7 @@ func decodeIPv4Value(raw json.RawMessage) (string, *yamlx.Node, string, bool) {
 	}
 	if raw[0] == '"' {
 		var text string
-		if json.Unmarshal(raw, &text) != nil {
+		if jsondecode.Unmarshal(raw, &text) != nil {
 			return "", nil, "", false
 		}
 		return text, yamlx.Str(text), text, true

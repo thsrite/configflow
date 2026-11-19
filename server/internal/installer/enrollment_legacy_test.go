@@ -2,8 +2,8 @@ package installer
 
 import (
 	"context"
-	"encoding/json"
 
+	"configflow/internal/jsondecode"
 	"configflow/internal/jsonx"
 	"configflow/internal/model"
 )
@@ -36,7 +36,7 @@ func (e legacyAgentEditor) EditAgents(ctx context.Context, profileID string, edi
 			return nil, err
 		}
 		var agents []model.Agent
-		if err := json.Unmarshal(raw, &agents); err != nil {
+		if err := jsondecode.Unmarshal(raw, &agents); err != nil {
 			return nil, err
 		}
 		if err := edit(tx, &agents); err != nil {

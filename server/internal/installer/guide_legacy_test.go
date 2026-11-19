@@ -4,16 +4,11 @@ import (
 	"encoding/json"
 	"errors"
 
+	"configflow/internal/jsondecode"
 	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/yamlx"
 )
-
-// ValueError is the compatibility name for ValidationError.
-type ValueError = ValidationError
-
-// TypeError is the compatibility name for RenderError.
-type TypeError = RenderError
 
 // Enrollment is the compatibility response for callers not yet using Capability.
 type Enrollment struct {
@@ -62,7 +57,7 @@ func GenerateGuide(value any, enrollment *Enrollment) (*jsonx.Object, error) {
 // protocol decoder. Delete this codec with the remaining N8-11 consumers.
 func legacyGuideRequest(raw json.RawMessage) (GuideRequest, error) {
 	var fields model.Fields
-	if err := json.Unmarshal(raw, &fields); err != nil {
+	if err := jsondecode.Unmarshal(raw, &fields); err != nil {
 		return GuideRequest{}, valueError(msgGuideObject)
 	}
 	original, hasIP := fields.Get("agent_ip")
@@ -117,7 +112,7 @@ func legacyGuideInputs(params, request *jsonx.Object, method string) (GuideOptio
 		return GuideOptions{}, GuideRequest{}, err
 	}
 	var fields model.Fields
-	if err := json.Unmarshal(raw, &fields); err != nil {
+	if err := jsondecode.Unmarshal(raw, &fields); err != nil {
 		return GuideOptions{}, GuideRequest{}, err
 	}
 	p := GuideOptions{identity: fields}
@@ -209,7 +204,7 @@ func BootstrapCommand(enrollment *Enrollment, request *jsonx.Object) (string, er
 		return "", err
 	}
 	var fields model.Fields
-	if err := json.Unmarshal(raw, &fields); err != nil {
+	if err := jsondecode.Unmarshal(raw, &fields); err != nil {
 		return "", err
 	}
 	image, _ := textOr(fields, "image", DockerHAImage)

@@ -3,7 +3,7 @@ package difftest
 // A10 part of the Docker HA differential: the Compose install methods
 // (compose bundle, compose_direct, compose_compact). Their answers embed the
 // side's own random capability (and hashes of it: project names, owner), so
-// each side's answer is compared with installer.GenerateGuide run in this
+// each side's answer is compared with installer.GenerateGuideJSON run in this
 // process with the capability read back from that answer: Python's answer
 // against the Go generators given Python's capability (byte-for-byte,
 // including the bundle's zip), Go's answer against the same generators given
@@ -13,6 +13,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
@@ -24,7 +25,7 @@ import (
 )
 
 // composeEnrollment reads the capability a Compose answer carries.
-func composeEnrollment(method string, answer, body *jsonx.Object) (*installer.Enrollment, error) {
+func composeEnrollment(method string, answer, body *jsonx.Object) (*installer.Capability, error) {
 	environment := func(key string) (string, error) {
 		node, err := yamlx.Parse([]byte(answer.GetString("compose")))
 		if err != nil {
@@ -64,7 +65,7 @@ func composeEnrollment(method string, answer, body *jsonx.Object) (*installer.En
 				return nil, err
 			}
 			settings := value.(*jsonx.Object)
-			return &installer.Enrollment{URL: settings.GetString("url"), Token: settings.GetString("token")}, nil
+			return &installer.Capability{URL: settings.GetString("url"), Token: settings.GetString("token")}, nil
 		}
 		return nil, fmt.Errorf("no enrollment.json in the bundle")
 	case "compose_direct":
@@ -77,7 +78,7 @@ func composeEnrollment(method string, answer, body *jsonx.Object) (*installer.En
 			return nil, err
 		}
 		settings := value.(*jsonx.Object)
-		return &installer.Enrollment{URL: settings.GetString("url"), Token: settings.GetString("token")}, nil
+		return &installer.Capability{URL: settings.GetString("url"), Token: settings.GetString("token")}, nil
 	default:
 		key, err := environment("INSTALL_KEY")
 		if err != nil {
@@ -88,7 +89,7 @@ func composeEnrollment(method string, answer, body *jsonx.Object) (*installer.En
 			return nil, fmt.Errorf("INSTALL_KEY %q", key)
 		}
 		server := strings.TrimRight(body.GetString("server_url"), "/")
-		return &installer.Enrollment{URL: server + "/api/agents/docker-oxidns-ha-enroll/" + session, Token: token}, nil
+		return &installer.Capability{URL: server + "/api/agents/docker-oxidns-ha-enroll/" + session, Token: token}, nil
 	}
 }
 
@@ -108,7 +109,23 @@ func compareComposeAnswer(side string, body *jsonx.Object, r response) []string 
 	if err != nil {
 		return []string{side + " capability: " + err.Error()}
 	}
-	expected, err := installer.GenerateGuide(jsonx.DeepCopy(body), enrollment)
+	raw, err := jsonx.Default(body)
+	if err != nil {
+		return []string{side + " request: " + err.Error()}
+	}
+	result, err := installer.GenerateGuideJSON(raw, enrollment)
+	if err != nil {
+		return []string{side + " guide: " + err.Error()}
+	}
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		return []string{side + " response: " + err.Error()}
+	}
+	value, err := jsonx.Parse(encoded)
+	expected, ok := value.(*jsonx.Object)
+	if err == nil && !ok {
+		return []string{side + " non-object guide"}
+	}
 	if err != nil {
 		return []string{fmt.Sprintf("%s: go generators refused the request: %v", side, err)}
 	}

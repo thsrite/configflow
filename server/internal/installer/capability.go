@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 
+	"configflow/internal/jsondecode"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/repo"
@@ -53,7 +54,7 @@ func fieldText(fields model.Fields, key string) (string, bool) {
 		return "", false
 	}
 	var text string
-	if json.Unmarshal(raw, &text) != nil {
+	if jsondecode.Unmarshal(raw, &text) != nil {
 		return "", false
 	}
 	return text, true
@@ -69,7 +70,7 @@ func fieldNumber(fields model.Fields, key string) (json.Number, bool) {
 		return "", false
 	}
 	var n json.Number
-	if json.Unmarshal(raw, &n) != nil {
+	if jsondecode.Unmarshal(raw, &n) != nil {
 		return "", false
 	}
 	return n, true
@@ -85,7 +86,7 @@ func setSessionField(fields *model.Fields, name string, value any) error {
 
 func decodeInstallationSession(data []byte) (installationSession, error) {
 	var s installationSession
-	if err := json.Unmarshal(data, &s.fields); err != nil {
+	if err := jsondecode.Unmarshal(data, &s.fields); err != nil {
 		return s, fmt.Errorf("decode installation: %w", err)
 	}
 	var ok bool
@@ -138,7 +139,7 @@ func IssueCapability(ctx context.Context, dataDir string, request json.RawMessag
 		return nil, err
 	}
 	var fields model.Fields
-	if err := json.Unmarshal(request, &fields); err != nil {
+	if err := jsondecode.Unmarshal(request, &fields); err != nil {
 		return nil, fmt.Errorf("decode installation request: %w", err)
 	}
 	name, nameOK := fieldText(fields, "agent_name")
@@ -439,7 +440,7 @@ func originalAgentText(a *model.Agent, key string) (string, bool) {
 		return "", false
 	}
 	var text string
-	if json.Unmarshal(raw, &text) != nil {
+	if jsondecode.Unmarshal(raw, &text) != nil {
 		return "", false
 	}
 	return text, true
@@ -451,7 +452,7 @@ func numericPortEqual(raw json.RawMessage, want json.Number) bool {
 		return false
 	}
 	var number json.Number
-	if json.Unmarshal(raw, &number) != nil {
+	if jsondecode.Unmarshal(raw, &number) != nil {
 		return false
 	}
 	got, valid := new(big.Rat).SetString(number.String())

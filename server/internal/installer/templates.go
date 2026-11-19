@@ -96,11 +96,8 @@ func substitute(text string, values map[string]string) string {
 	}
 }
 
-// pyRstrip is str.rstrip() without arguments.
-func pyRstrip(text string) string { return strings.TrimRightFunc(text, unicode.IsSpace) }
-
-// pyStrip is str.strip() without arguments.
-func pyStrip(text string) string { return strings.TrimSpace(text) }
+// trimScriptTail removes native Unicode whitespace from a generated script.
+func trimScriptTail(text string) string { return strings.TrimRightFunc(text, unicode.IsSpace) }
 
 // splitLines is str.splitlines(keepends=True).
 func splitLines(text string) []string { return diag.SplitLinesKeepEnds(text) }
@@ -120,9 +117,6 @@ func codePoints(s string) int { return utf8.RuneCountInString(s) }
 
 // replaceOnce is str.replace(old, new, 1).
 func replaceOnce(s, old, replacement string) string { return strings.Replace(s, old, replacement, 1) }
-
-// PyStrip is str.strip() (exported for the routes).
-func PyStrip(text string) string { return pyStrip(text) }
 
 // SplitLines is str.splitlines(keepends=True) (exported for the routes).
 func SplitLines(text string) []string { return splitLines(text) }

@@ -2,7 +2,6 @@ package installer
 
 import (
 	"compress/gzip"
-	"configflow/internal/installer/installertest"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -14,6 +13,7 @@ import (
 	"sync"
 	"testing"
 
+	"configflow/internal/installer/installertest"
 	"configflow/internal/jsonx"
 )
 
@@ -125,7 +125,7 @@ func loadN810References(filename string, count int) (map[string]any, error) {
 	return result, nil
 }
 
-var n810PreflightReferences = sync.OnceValues(func() (map[string]any, error) { return loadN810References("n810_preflight_native.json.gz", 19) })
+var n810PreflightReferences = sync.OnceValues(func() (map[string]any, error) { return loadN810References("n810_preflight_native.json.gz", 846) })
 var n810SessionReferences = sync.OnceValues(func() (map[string]any, error) { return loadN810References("n810_session_native.json.gz", 70) })
 
 var n810ScalarReferences = sync.OnceValues(func() (map[string]any, error) { return loadN810References("n810_scalar_native.json.gz", 600) })
@@ -268,4 +268,45 @@ func n810PathRefusal(row *jsonx.Object, err error) (bool, error) {
 		return true, fmt.Errorf("native path refusal differs: %v", err)
 	}
 	return true, nil
+}
+
+var n810Base64References = sync.OnceValues(func() (map[string]any, error) { return loadN810References("n810_base64_native.json.gz", 24) })
+
+func n810Base64Expected(row *jsonx.Object) (*jsonx.Object, bool, error) {
+	refs, err := n810Base64References()
+	if err != nil {
+		return nil, false, err
+	}
+	raw, err := jsonx.Sorted(row)
+	if err != nil {
+		return nil, false, err
+	}
+	expected, present := refs[referenceSHA(raw)]
+	if !present {
+		return nil, false, nil
+	}
+	return expected.(*jsonx.Object), true, nil
+}
+
+func TestN810MachineEncodingCannotPassAsEmptyEvidence(t *testing.T) {
+	normal := preflightBlock(preflightEvidence())
+	report, err := EvaluatePreflight(normal, "host")
+	if err != nil || report.Status != "pass" {
+		t.Fatalf("normal machine output: %v", err)
+	}
+	for _, test := range []struct{ name, output string }{
+		{"extra padding", strings.Replace(normal, "Mi4zMC4z", "Mi4zMC4z=", 1)},
+		{"C0 record separator", strings.ReplaceAll(normal, "\n", "\x1f")},
+		{"Unicode record separator", strings.ReplaceAll(normal, "\n", "\u2028")},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if test.output == normal {
+				t.Fatal("negative control did not alter input")
+			}
+			report, err := EvaluatePreflight(test.output, "host")
+			if err != nil || report == nil || report.Status != "unknown" {
+				t.Fatalf("invalid machine encoding passed: %v, %v", report, err)
+			}
+		})
+	}
 }

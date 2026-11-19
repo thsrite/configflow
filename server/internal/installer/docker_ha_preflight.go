@@ -1,14 +1,16 @@
 package installer
 
 import (
-	"strings"
-	"unicode/utf8"
-
-	"configflow/internal/model"
-	"configflow/internal/netipx"
+	"encoding/base64"
 	"encoding/json"
 	"math/big"
+	"strings"
 	"unicode"
+	"unicode/utf8"
+
+	"configflow/internal/jsondecode"
+	"configflow/internal/model"
+	"configflow/internal/netipx"
 )
 
 // Port of backend/agents/docker_ha_preflight.py: the bounded, read-only
@@ -284,69 +286,32 @@ func preflightMarkdownLine(line string) string {
 	return line
 }
 
-// pySplitLines is str.splitlines() (line breaks removed).
-func pySplitLines(text string) []string {
-	lines := splitLines(text)
-	for i, line := range lines {
-		if strings.HasSuffix(line, "\r\n") {
-			lines[i] = line[:len(line)-2]
-			continue
-		}
-		_, size := utf8.DecodeLastRuneInString(line)
-		r, _ := utf8.DecodeLastRuneInString(line)
-		switch r {
-		case '\r', '\n', '\v', '\f', 0x1c, 0x1d, 0x1e, 0x85, 0x2028, 0x2029:
-			lines[i] = line[:len(line)-size]
-		}
+// machineLines reads the LF/CRLF records emitted by the fixed collectors.
+func machineLines(text string) []string {
+	if text == "" {
+		return nil
+	}
+	lines := strings.Split(text, "\n")
+	if lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
+	for i := range lines {
+		lines[i] = strings.TrimSuffix(lines[i], "\r")
 	}
 	return lines
 }
 
-// b64decodeValidate is base64.b64decode(s, validate=True) of a str already
-// matching [A-Za-z0-9+/]*={0,2} (CPython 3.11 binascii.a2b_base64, not
-// strict mode): leading padding is refused, pads before the third character
-// of a quad are ignored, the pad that completes a quad must be the last
-// character, leftover bits are dropped.
-func b64decodeValidate(s string) ([]byte, bool) {
-	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
-	if strings.HasPrefix(s, "=") {
-		return nil, false // "Leading padding not allowed" (CPython 3.11.17)
+func decodeProbeBase64(text string) ([]byte, bool) {
+	// Protocol rows already restrict the alphabet; standalone callers get the
+	// same machine grammar rather than the decoder's optional CR/LF tolerance.
+	if strings.ContainsAny(text, "\r\n") {
+		return nil, false
 	}
-	out := make([]byte, 0, len(s)*3/4)
-	quadPos, pads := 0, 0
-	var left byte
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if c == '=' {
-			if quadPos >= 2 {
-				pads++
-				if quadPos+pads >= 4 {
-					// "Excess data after padding" (CPython 3.11.17, also outside strict mode)
-					return out, i+1 == len(s)
-				}
-			}
-			continue
-		}
-		v := byte(strings.IndexByte(alphabet, c))
-		pads = 0
-		switch quadPos {
-		case 0:
-			quadPos, left = 1, v
-		case 1:
-			quadPos = 2
-			out = append(out, left<<2|v>>4)
-			left = v & 0x0f
-		case 2:
-			quadPos = 3
-			out = append(out, left<<4|v>>2)
-			left = v & 0x03
-		case 3:
-			quadPos = 0
-			out = append(out, left<<6|v)
-			left = 0
-		}
+	decoded, err := base64.StdEncoding.DecodeString(text)
+	if err != nil {
+		return nil, false
 	}
-	return out, quadPos == 0
+	return decoded, true
 }
 
 type preflightValue struct {
@@ -369,7 +334,7 @@ func preflightDecode(output any) (map[string]preflightValue, string, error) {
 	if len(text) > PreflightMaxOutputBytes {
 		return nil, "", valueError(msgPreflightSize)
 	}
-	lines := pySplitLines(strings.ReplaceAll(text, "\r\n", "\n"))
+	lines := machineLines(strings.ReplaceAll(text, "\r\n", "\n"))
 	for i, line := range lines {
 		lines[i] = preflightMarkdownLine(line)
 	}
@@ -406,7 +371,7 @@ func preflightDecode(output any) (map[string]preflightValue, string, error) {
 		}
 		var decoded []byte
 		if row.payload != "-" {
-			if decoded, ok = b64decodeValidate(row.payload); !ok {
+			if decoded, ok = decodeProbeBase64(row.payload); !ok {
 				return nil, "采集字段编码无效，请重新采集。", nil
 			}
 		}
@@ -443,7 +408,7 @@ func preflightObject(item preflightValue) model.Fields {
 	if item.code != 0 {
 		return fields
 	}
-	if json.Unmarshal([]byte(item.text), &fields) != nil {
+	if jsondecode.Unmarshal([]byte(item.text), &fields) != nil {
 		return model.Fields{}
 	}
 	return fields
@@ -454,7 +419,7 @@ func probeSecurity(item preflightValue) ([]string, bool) {
 		return nil, false
 	}
 	var raw []json.RawMessage
-	if json.Unmarshal([]byte(item.text), &raw) != nil || raw == nil || len(raw) > 32 {
+	if jsondecode.Unmarshal([]byte(item.text), &raw) != nil || raw == nil || len(raw) > 32 {
 		return nil, false
 	}
 	result := make([]string, 0, len(raw))
@@ -463,14 +428,13 @@ func probeSecurity(item preflightValue) ([]string, bool) {
 			return nil, false
 		}
 		var text string
-		if json.Unmarshal(value, &text) != nil {
+		if jsondecode.Unmarshal(value, &text) != nil {
 			return nil, false
 		}
 		result = append(result, text)
 	}
 	return result, true
 }
-func pyFields(s string) []string { return strings.Fields(s) }
 
 func isUpperHex(s string) bool {
 	for i := 0; i < len(s); i++ {
@@ -495,7 +459,7 @@ func preflightPortCheck(values map[string]preflightValue, proto, mode string) Pr
 		return preflightCheck(ident, label, "unknown", "未能读取当前网络命名空间的监听状态，不能视为端口空闲。",
 			"重新运行新版只读命令；它会先使用 ss，再尝试 /proc/net。若均不可读，请在实际 Docker 宿主机检查，勿直接停止服务。")
 	}
-	lines := pySplitLines(item.text)
+	lines := machineLines(item.text)
 	source := "ss"
 	if len(lines) > 0 && strings.HasPrefix(lines[0], "source=") {
 		source = strings.TrimPrefix(lines[0], "source=")
@@ -540,7 +504,7 @@ func preflightPortCheck(values map[string]preflightValue, proto, mode string) Pr
 			state = "UNCONN"
 		}
 		for _, line := range lines {
-			columns := pyFields(line)
+			columns := strings.Fields(line)
 			if len(columns) > 0 && (columns[0] == "udp" || columns[0] == "tcp") {
 				columns = columns[1:]
 			}
@@ -784,7 +748,7 @@ func EvaluatePreflight(output, mode string) (*PreflightReport, error) {
 	var candidates []candidate
 	malformed := false
 	if ipv4Item.code == 0 {
-		for _, line := range pySplitLines(ipv4Item.text) {
+		for _, line := range machineLines(ipv4Item.text) {
 			if strings.TrimSpace(line) == "" {
 				continue
 			}

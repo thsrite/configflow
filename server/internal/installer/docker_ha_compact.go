@@ -287,7 +287,7 @@ func annotateComposeNative(text string, compose *yamlx.Node) (string, error) {
 	}
 	lines := []string{"# 已按页面填写生成；地址、名称、端口或网络要调整，请回页面重新生成。",
 		"# 已安装请保留原数据目录和身份；变更设备信息请使用迁移入口。"}
-	for index, line := range pySplitLines(text) {
+	for index, line := range machineLines(text) {
 		if note := annotations[index]; note != "" {
 			trimmed := strings.TrimLeftFunc(line, unicode.IsSpace)
 			lines = append(lines, line[:len(line)-len(trimmed)]+"# "+note)

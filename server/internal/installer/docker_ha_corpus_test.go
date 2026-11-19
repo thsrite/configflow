@@ -85,6 +85,15 @@ func TestDockerHACorpusMatchesPython(t *testing.T) {
 		switch record.GetString("kind") {
 		case "b64":
 			decoded, ok := b64decodeValidate(record.GetString("input"))
+			if expected, present, err := n810Base64Expected(record); err != nil {
+				t.Fatal(err)
+			} else if present {
+				if ok != expected.GetBool("ok") || (ok && hex.EncodeToString(decoded) != expected.GetString("result")) || (!ok && len(decoded) != 0) {
+					t.Fatal("native base64 grammar differs")
+				}
+				counts["approved native base64"]++
+				continue
+			}
 			if ok != record.GetBool("ok") || (ok && hex.EncodeToString(decoded) != record.GetString("result")) {
 				failed++
 				t.Errorf("b64 %q: python %v %v, go %v %x", record.GetString("input"), record.GetBool("ok"), record.Value("result"), ok, decoded)

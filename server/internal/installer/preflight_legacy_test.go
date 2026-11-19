@@ -1,8 +1,10 @@
 package installer
 
 import (
-	"configflow/internal/jsonx"
 	"encoding/json"
+	"strings"
+
+	"configflow/internal/jsonx"
 )
 
 // ParsePreflightReport adapts the remaining request facade to EvaluatePreflight.
@@ -29,3 +31,8 @@ func ParsePreflightReport(output, networkMode any) (*jsonx.Object, error) {
 	}
 	return value.(*jsonx.Object), nil
 }
+
+func pyRstrip(text string) string                  { return trimScriptTail(text) }
+func pyStrip(text string) string                   { return strings.TrimSpace(text) }
+func pySplitLines(text string) []string            { return machineLines(text) }
+func b64decodeValidate(text string) ([]byte, bool) { return decodeProbeBase64(text) }

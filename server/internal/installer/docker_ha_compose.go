@@ -80,7 +80,7 @@ func composePrepare(params GuideOptions, request GuideRequest, owner, project st
 	}
 	if request.CreateHostIdentity {
 		script += "if [ ! -e " + q(identityPath) + " ] && [ ! -L " + q(identityPath) + " ]; then\n"
-		command, err := IdentityCommand(identityPath)
+		command, err := identityCommand(identityPath)
 		if err != nil {
 			return "", err
 		}

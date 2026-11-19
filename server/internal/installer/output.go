@@ -67,7 +67,7 @@ func withInstallOutput(script, beforeBody string) string {
 cf_verbose_options "$@"
 cf_init "安装与维护"
 ` + beforeBody + `(
-` + pyRstrip(body) + `
+` + trimScriptTail(body) + `
 )
 cf_installer_exit_status=$?
 cf_finish "$cf_installer_exit_status"

@@ -94,10 +94,9 @@ func httpURL(value, name string) (string, error) {
 	return strings.TrimRight(value, "/"), nil
 }
 
-// GatewayInstallOptions are the arguments of generate_gateway_install_script.
-// AgentChecksums nil is None (hash the local binaries); a non-nil empty
-// map is an explicit empty dict. Ports nil mean 8080 / 8082.
-// GatewayInstallOptions contains the validated native renderer input.
+// GatewayInstallOptions contains the native gateway renderer input.
+// A nil AgentChecksums hashes the local binaries; a non-nil empty map explicitly
+// supplies no checksums. Callers supply both Agent ports.
 type GatewayInstallOptions struct {
 	ServerURL         string
 	AgentName         string
