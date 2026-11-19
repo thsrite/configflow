@@ -56,6 +56,14 @@ the hand-back. If no notification arrives within ~3 h, check status once more.
 | e46d698f-6345-41b9-8a38-06d61b6622d3 | config black-box difftest, Step A coverage matrix (→ Opus O6 review) | wks_223d2a53f6e7abbb, branch `go-difftest-config` |
 ## >>> CURRENT STATE — 2026-11-19 night (coordinator 2f0cdf04 → next coordinator; READ THIS FIRST) <<<
 
+**Update 2026-11-19 late night (coordinator = this new session; 02a6c1ea + dfd5f2d2 re-routed and `paseo agent detach`ed):**
+- api/agents handed back: go-n8-10-api-agents@f8b387f7f (on go 5c5998e86; upgrades line 23d5d46c6..52dd0b884, api/agents
+  29d0a6115..f8b387f7f). Fresh Opus HR review 7cf88da4 running on branch go-opus-review-n8-10-api-agents (scope: the 3
+  api/agents commits only; fixes in that branch → review-n8-10-api-agents.md). After it: fresh Codex integrator for batch-13.
+- metrics-native owner part handed back: go-n8-10-metrics-native@e9cfd6f04; waits for batch-13, then rebase + traffic.go
+  switch + 5 difftest rows. Its "agents race timeout" = Go default 10m test timeout (package needs >10m under race; gate
+  uses 60m); TestOptionalAgentProfilesIgnoreOversizedUnrelatedConfig base 40.1s vs branch 42.0s on .64 → unrelated.
+
 **Why:** Claude account quota ran out; the maintainer is switching accounts. Everything below is current.
 **go = 5c5998e86** (pushed). batch-11 (core-2, json-case, Go 1.27.4) and batch-12 (monitor + installer) merged today.
 Details of both + all rulings: the two "Update 2026-11-19" paragraphs further down in this section's predecessor.
