@@ -1,0 +1,11 @@
+{
+  "archive_sha256": "b0c05e054db8fff7791505deb0c085195577b82e33c9a9482c7cf2f74545cb73",
+  "index": 1144,
+  "row_sha256": "40b073c3727cf506acca91d8430fc7331b6f91af16ee7e6c3448d8fedebe5c22",
+  "error": [
+    "EasyTierSettingsError",
+    "Agent 上报的内核版本无法识别：alpha-abc，请升级或重启 Agent"
+  ],
+  "mutation": "unchanged from original record",
+  "reason": "approved nonempty invalid Agent version is refused before EasyTier graph mutation"
+}

@@ -104,6 +104,10 @@ func recordedDatetime(t *time.Time) any {
 
 // recordedClassOf is type(err).__name__ for the replay comparison.
 func recordedClassOf(err error) string {
+	var subscription *substore.SubscriptionFetchError
+	if errors.As(err, &subscription) {
+		return "SubscriptionFetchError"
+	}
 	return pythonClass(err)
 }
 

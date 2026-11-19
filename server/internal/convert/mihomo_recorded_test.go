@@ -271,7 +271,8 @@ func replayRow(t *testing.T, entry *jsonx.Object, oracle writerOracle) string {
 func TestMihomoRecordedPythonTests(t *testing.T) {
 	rows := loadRecorded(t)
 	paths := recordedProviderReferences(t)
-	usedPaths := 0
+	agentRef := recordedAgentReference(t)
+	usedPaths, usedAgentRefs := 0, 0
 	oracle := loadWriterOracle(t)
 	failures, skipped := 0, 0
 	counts := map[string]int{}
@@ -281,6 +282,15 @@ func TestMihomoRecordedPythonTests(t *testing.T) {
 			usedPaths++
 		}
 		entry = recordedProviderReference(t, paths, rowIndex, entry)
+		if rowIndex == agentRef.Index {
+			if entry.GetString("fn") != "generate" || entry.Has("err") || entry.GetObject("args").GetString("mihomo_core_version") != "alpha-abc" || !entry.GetObject("args").GetBool("for_agent") {
+				t.Fatal("Agent version reference no longer binds original success")
+			}
+			entry = entry.DeepCopy()
+			entry.Delete("out")
+			entry.Set("err", []any{agentRef.Error[0], agentRef.Error[1]})
+			usedAgentRefs++
+		}
 		test := entry.GetString("test")
 		counts[entry.GetString("fn")]++
 		name := fmt.Sprintf("%s#%d", strings.TrimPrefix(test, "backend/"), index[test])
@@ -297,6 +307,9 @@ func TestMihomoRecordedPythonTests(t *testing.T) {
 				t.Errorf("%s (%s): %s", name, entry.GetString("fn"), msg)
 			}
 		}
+	}
+	if usedAgentRefs != 1 {
+		t.Fatal("exact Agent version reference was not consumed")
 	}
 	if usedPaths != paths.Len() {
 		t.Fatal("unused recorded provider references")

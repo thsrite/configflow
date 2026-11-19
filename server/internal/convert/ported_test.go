@@ -692,14 +692,18 @@ func TestTargetScope(t *testing.T) {
 	}
 }
 
-func TestOldAgentCoreIsRefusedAndUnknownVersionsPass(t *testing.T) {
+func TestOldAgentCoreAndInvalidVersionsAreRefused(t *testing.T) {
 	config := easytierConfig(easytierSettings("apply_to", "agent"))
 	_, err := ApplyEasyTier(baseDocument(), config, true, "v1.19.30")
 	var e *EasyTierSettingsError
 	if !errors.As(err, &e) || !strings.Contains(e.Message, "v1.19.31") {
 		t.Fatal(err)
 	}
-	for _, version := range []string{"v1.19.34", "alpha-abc"} {
+	_, err = ApplyEasyTier(baseDocument(), config, true, "alpha-abc")
+	if !errors.As(err, &e) || !strings.Contains(e.Message, "alpha-abc") {
+		t.Fatal("invalid nonempty Agent version was not refused", err)
+	}
+	for _, version := range []string{"v1.19.34", ""} {
 		document := baseDocument()
 		if _, err := ApplyEasyTier(document, config, true, version); err != nil {
 			t.Fatal(err)

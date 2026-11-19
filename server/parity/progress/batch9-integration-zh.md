@@ -106,3 +106,6 @@ convert corpus16.919s、draft0.134s、discovery owner0.481s、yamlx facade0.527s
 
 CopyGraph 集成已单独提交。draft 的取消错误链修正另作一个提交；已有真实 Runtime
 ShutdownBeforeRepositoryCommit 回归从红变绿，DB/文件状态原断言不变。
+
+旧测试接线修正单独提交：不可解析版本的单测/精确1144回放、20条数值词法参考、
+refresh native 错误类型映射。原 archive、原 byte manifest、原 cache/DB/文件期待均未改。

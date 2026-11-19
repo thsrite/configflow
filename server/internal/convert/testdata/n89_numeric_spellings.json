@@ -1,0 +1,166 @@
+{
+  "archive_sha256": "5e207c0aa54ac716a6b39acb2f363d39bb0be8e77337623c9bb0016e478b3ef7",
+  "manifest_sha256": "223b9b892ec60ac82f8018885ba91ec077ec8671a87ad9f60040888d896a44b2",
+  "rows": {
+    "380": {
+      "row_sha256": "ab34ec471082ed16aae69ab297aa2208edde9fa740fa5031d5810b66c69abc4f",
+      "old_byte_sha256": "23d6092521711f1d43d7bfaac622ee9d19fd1a093c8e21b040543f29b2bcaee8",
+      "field": "number",
+      "old": "1e+20",
+      "native": "1.0e+20",
+      "python_output_sha256": "65e8ff75187d89a30e602de58e539490cffeba95e482e410b4d88fa9b4904d5a"
+    },
+    "582": {
+      "row_sha256": "1da28415007bc6d45437eefaa05e12893095d698e8143893ffde0486b817c31d",
+      "old_byte_sha256": "f1c5a2966e243d0ba2c8724e878fbfad3321dca6094e7824c0f41b384ecb9693",
+      "field": "number",
+      "old": "1e+20",
+      "native": "1.0e+20",
+      "python_output_sha256": "b8aa02622c9e7ab622899240114c470e1370e50f9b74c35d1ba39d5eb4eea663"
+    },
+    "627": {
+      "row_sha256": "b5cb5b0ed594265026aefcdd76de8a4617c2adcc6bcd31f38cd8bceae66337d4",
+      "old_byte_sha256": "2cd778c593c0069f0e856ec062f6f67ef144f3398e783a02fdd4c9fb54e6d351",
+      "field": "text",
+      "old": "1000.0",
+      "native": "1e3",
+      "python_output_sha256": "4fdd106bf6868e9b7663584b24a996e193ef3683aaa07289abe54137461f29d5"
+    },
+    "634": {
+      "row_sha256": "740bbdcb87bc2f7aa30fc3e57f4722fef73bd3501a364356035d5e4c0088239e",
+      "old_byte_sha256": "a408bc479b0709652c2be37fad666349fd6b117b0e5e99f4f7e0e0077ae7b2b1",
+      "field": "number",
+      "old": "1e+20",
+      "native": "1.0e+20",
+      "python_output_sha256": "ba22a001df94ba6fdcf95af8a287e7c9143859aec283043c5178eebc4a4ee70a"
+    },
+    "1959": {
+      "row_sha256": "091cfd36760f8c8fabc641da18fd98abb1f609808a326f4792d5580ef4c280fe",
+      "old_byte_sha256": "2ef138e1f9e6c5d07b41becaf4c1e1bc24a725c50599c38752e4aa567a70bde9",
+      "field": "number",
+      "old": "1e+20",
+      "native": "1.0e+20",
+      "python_output_sha256": "1e09e20d87e5fc764b95c9b2f37a57bd05e903b15806bbdbb146107c52aaacdc"
+    },
+    "2084": {
+      "row_sha256": "8f194c9923e9db0e8454f195ac572a517611f2064f78a5a4bb95bfc5b6279092",
+      "old_byte_sha256": "48e96e731c11d7e20361f4637b5b784332ca704b76eb285d2c0436619c9bbc91",
+      "field": "number",
+      "old": "1e+20",
+      "native": "1.0e+20",
+      "python_output_sha256": "0e039d262d45326f0683f6ec971e8132378ba165dd5b762f0d7675e2644dc469"
+    },
+    "2095": {
+      "row_sha256": "88be0b5b757a742107c62e058c6056e6c64f16b2957f2a8472ab81058445b878",
+      "old_byte_sha256": "203fe3de30165ee739adf6b587ce7f50c8d13e86ea0f8f031b4e7fe3891ab20d",
+      "field": "number",
+      "old": "1e+20",
+      "native": "1.0e+20",
+      "python_output_sha256": "eb86d4aec482d7b9b6f1245758157a5d1a873860ea6ac364bfcea5a76d2fa857"
+    },
+    "2617": {
+      "row_sha256": "7c6a4baa559e83df1af1ea5fcaca19bba4d3959b3d2214dc4b2b72229826c65c",
+      "old_byte_sha256": "6e8a241e5b017fe91c3eaecd50f364e978d98770b10c0d2a2fef187441f55600",
+      "field": "number",
+      "old": "1e+20",
+      "native": "1.0e+20",
+      "python_output_sha256": "b749e2349e8cec946384d9a10c357128b043c5661571a76a492a040334370765"
+    },
+    "2739": {
+      "row_sha256": "31a243c68695b4e44292395333e6235f0f5efff4ac9db33b0065733a4fa57e46",
+      "old_byte_sha256": "761192140c6d51c0769b9b8642d5d7e9e08d94f3a20645c51fc3a708f2f0dd9f",
+      "field": "number",
+      "old": "1e+20",
+      "native": "1.0e+20",
+      "python_output_sha256": "8c6525015531c012cc615fb413a73078e8a32fea0d385396bfee022d49e414eb"
+    },
+    "3040": {
+      "row_sha256": "86b4acbe1961374799bbc4b52cda2af14e939d69e7ea7abce284cb8fcfdc6468",
+      "old_byte_sha256": "a7607caabd9f004e232add19fa82da57df17e442f3a3845218e849599d0571d3",
+      "field": "text",
+      "old": "1000.0",
+      "native": "1e3",
+      "python_output_sha256": "cdbb2490dbb6270c8b3daaed97e87169a8acbadb69b2fe27bdf39c88ba0d9cc8"
+    },
+    "3181": {
+      "row_sha256": "a5161e21fcaf5456742094b5bfea4a77cae8f6f439b8936dd0ade2db1140f025",
+      "old_byte_sha256": "4125854f9afb43bad672b667440648c16faad282fd4eb462d362d46f7afea1f7",
+      "field": "text",
+      "old": "1000.0",
+      "native": "1e3",
+      "python_output_sha256": "f62f7f2bce2c5303f7647e8937905691c2093d95c4c561c70bbdb02868dced00"
+    },
+    "3792": {
+      "row_sha256": "6a20693f3b97fe411ee8ae2d95f231d1d0484dd396fbca4983048f64be135944",
+      "old_byte_sha256": "54857b7208f51c6edaa10096cbbf9a44039535af197061a964ecf478527f1f06",
+      "field": "number",
+      "old": "1e+20",
+      "native": "1.0e+20",
+      "python_output_sha256": "f712062e448146f7605bac23eadee778d78ffe07b4f2c4f57671a6b44b8ee819"
+    },
+    "4411": {
+      "row_sha256": "58734bb9ffcb7c24da0bdcf79e64018678739d280abb57dd4d2ae8c97fdf4ab9",
+      "old_byte_sha256": "7127f8a759b1638d6348a057cbfade379021ed1cb6acd7faf3bd931bbbd22345",
+      "field": "number",
+      "old": "1e+20",
+      "native": "1.0e+20",
+      "python_output_sha256": "15df29e79b6ba4893b2676a9b2fe98dcfa9d57311ffefbc440dc4da3f472dd9b"
+    },
+    "4457": {
+      "row_sha256": "bec7d7cd9a2e15074381350ffbe6f6cb2b29b42c0a342f30850bbdbe3a191a5c",
+      "old_byte_sha256": "ab363761a0026cf4d01198e2e3c1f26caed9050e8df5b680a80c5c958b36e613",
+      "field": "number",
+      "old": "1e+20",
+      "native": "1.0e+20",
+      "python_output_sha256": "2810ecf685463dc9d7fafd00f987d9234034389f1b041add0eb87624ebe43538"
+    },
+    "5113": {
+      "row_sha256": "5e1c1eb811c6fd6200446c53d84b67a5fba1f9ef6b8ac51eb00bde26595e1b39",
+      "old_byte_sha256": "7c4cc8099c316886f92d912943f605baf0a417f444fcc092013399e166c9ab6e",
+      "field": "number",
+      "old": "1e+20",
+      "native": "1.0e+20",
+      "python_output_sha256": "b8cad57adaf378fbfcc2b031948c437ba62494e9061dbbced0ca8cce96852031"
+    },
+    "6339": {
+      "row_sha256": "bfacc6c887ecf25161957369c74e4bcab74705080c03ff4e270c510babe4b452",
+      "old_byte_sha256": "ea57927308be91d5ce0c8a2e1df217d4b8a290b7bcf98a9640c09986cdf2669f",
+      "field": "number",
+      "old": "1e+20",
+      "native": "1.0e+20",
+      "python_output_sha256": "4e508a6476790c441936b372bd0d721e03c37a2e89164f39ae76949120a1e0f2"
+    },
+    "6456": {
+      "row_sha256": "8536a448c9874443341d6f8569d82ba77b0d2f391a0579a0eed0246a112cce35",
+      "old_byte_sha256": "357b5fb5b41f70497977185e551978abe6ebf6435252978509de69f349996b0a",
+      "field": "number",
+      "old": "1e+20",
+      "native": "1.0e+20",
+      "python_output_sha256": "90ebc574f73e103bb381c7c85a5ee666150d3f992e294377c1daefad5edb16fd"
+    },
+    "6465": {
+      "row_sha256": "ef6a68534d177f515c7945c68e6200c1d6b99151ff1ddbe044205b70995d3d65",
+      "old_byte_sha256": "608a58987ef732eee05cb925828fb7c5cc9e7476c470eeeb78c92c5034926cd3",
+      "field": "text",
+      "old": "1000.0",
+      "native": "1e3",
+      "python_output_sha256": "e3eb44f3b5278d3f1948f8af5baf364b7e16fc667e36e96df2bc6ea2a34f8f50"
+    },
+    "7241": {
+      "row_sha256": "1d6adc32235e79df7080c255cd79caf6c7f962123c6dd583be1c691d8a801957",
+      "old_byte_sha256": "cd86fced4621143bafe2d95ff0fa6e450cb151d2fd1e070108f4bbada7976b47",
+      "field": "text",
+      "old": "1000.0",
+      "native": "1e3",
+      "python_output_sha256": "d4f258aecb0c518525e6d1648b0fa3a736412116adae1fa242ac446114f6bfe9"
+    },
+    "7416": {
+      "row_sha256": "dd0b369757aa7aa71d502922cc7745616b163c2b22adb12717ac861dfc142f93",
+      "old_byte_sha256": "5d821ff7748c1acae3b3eb9c2a48d71f554035ecf8ecd35b4fc715719a56724f",
+      "field": "number",
+      "old": "1e+20",
+      "native": "1.0e+20",
+      "python_output_sha256": "9cd7aad54e4aa887a80dda049a09aa7e824b9a33d7c189d0a000fe261bbc5f38"
+    }
+  }
+}
