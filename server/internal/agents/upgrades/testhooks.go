@@ -1,11 +1,12 @@
 package upgrades
 
 import (
+	"context"
+	"time"
+
 	"configflow/internal/agents"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
-	"context"
-	"time"
 )
 
 // SetRequestForTest replaces update control transport with a typed seam.
@@ -16,7 +17,7 @@ func SetRequestForTest(fn func(context.Context, *model.Agent, string, string, []
 }
 
 // SetArtifactsForTest replaces the native artifact catalog.
-func SetArtifactsForTest(fn func() (model.Map[model.UpgradeArtifact], error)) func() {
+func SetArtifactsForTest(fn func(context.Context) (model.Map[model.UpgradeArtifact], error)) func() {
 	prev := artifactsFunc
 	artifactsFunc = fn
 	return func() { artifactsFunc = prev }

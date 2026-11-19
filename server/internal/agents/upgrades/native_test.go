@@ -289,19 +289,53 @@ func FuzzUpgradeNativeProtocol(f *testing.F) {
 	})
 }
 
-func TestN810ShutdownAfterAcceptanceDoesNotWriteObservation(t *testing.T){
- e:=newUpgradeEnv(t)
- runner:=lifecycle.NewRuntime(lifecycle.Options{Registry:lifecycle.NewRegistry()});runner.Start(e.ctx);defer runner.Shutdown(context.Background())
- bound:=runner.BindRequest(e.ctx)
- var reservedHead string
- t.Cleanup(SetRequestForTest(func(_ context.Context,_ *model.Agent,method,path string,_ []byte)(*agents.Response,error){
-  if method=="GET"{return AgentResponse(nil,404),nil}
-  fp,err:=e.repo.Store().Fingerprint();if err!=nil{t.Fatal(err)};reservedHead=fmt.Sprint(fp)
-  runner.Shutdown(context.Background())
-  return AgentResponse(jsonx.Obj(),202),nil
- }))
- state,err:=StartModel(bound,e.m,e.ident)
- if state!=nil || !errors.Is(err,context.Canceled){t.Fatal("shutdown saved acceptance",state,err)}
- fp,err:=e.repo.Store().Fingerprint();if err!=nil || reservedHead=="" || fmt.Sprint(fp)!=reservedHead{t.Fatal("late observation changed durable reservation",err)}
- a:=nativeAgent(t,e);if a.LatestUpgrade==nil || a.LatestUpgrade.Status!="queued" || a.LatestUpgrade.Message==nil || !strings.HasPrefix(*a.LatestUpgrade.Message,"正在提交"){t.Fatal("initial durable task lost",a.LatestUpgrade)}
+func TestN810ShutdownAfterAcceptanceDoesNotWriteObservation(t *testing.T) {
+	e := newUpgradeEnv(t)
+	runner := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
+	runner.Start(e.ctx)
+	defer runner.Shutdown(context.Background())
+	bound := runner.BindRequest(e.ctx)
+	var reservedHead string
+	t.Cleanup(SetRequestForTest(func(_ context.Context, _ *model.Agent, method, path string, _ []byte) (*agents.Response, error) {
+		if method == "GET" {
+			return AgentResponse(nil, 404), nil
+		}
+		fp, err := e.repo.Store().Fingerprint()
+		if err != nil {
+			t.Fatal(err)
+		}
+		reservedHead = fmt.Sprint(fp)
+		runner.Shutdown(context.Background())
+		return AgentResponse(jsonx.Obj(), 202), nil
+	}))
+	state, err := StartModel(bound, e.m, e.ident)
+	if state != nil || !errors.Is(err, context.Canceled) {
+		t.Fatal("shutdown saved acceptance", state, err)
+	}
+	fp, err := e.repo.Store().Fingerprint()
+	if err != nil || reservedHead == "" || fmt.Sprint(fp) != reservedHead {
+		t.Fatal("late observation changed durable reservation", err)
+	}
+	a := nativeAgent(t, e)
+	if a.LatestUpgrade == nil || a.LatestUpgrade.Status != "queued" || a.LatestUpgrade.Message == nil || !strings.HasPrefix(*a.LatestUpgrade.Message, "正在提交") {
+		t.Fatal("initial durable task lost", a.LatestUpgrade)
+	}
+}
+
+func TestN810ArtifactShutdownDoesNotPublishDigest(t *testing.T) {
+	directory := artifactDir(t)
+	put(t, directory, []byte("\x7fELFsynthetic"), Arches[0])
+	runner := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
+	runner.Start(context.Background())
+	defer runner.Shutdown(context.Background())
+	bound := runner.BindRequest(context.Background())
+	readHook = func(string, int, int) error { runner.Shutdown(context.Background()); return nil }
+	result, err := ArtifactsModel(bound)
+	if !errors.Is(err, context.Canceled) || result.Len() != 0 || cacheLen() != 0 {
+		t.Fatal("shutdown published artifact digest", result.Len(), cacheLen(), err)
+	}
+	readHook = nil
+	if result, err := ArtifactsModel(context.Background()); err != nil || result.Len() != 1 || cacheLen() != 1 {
+		t.Fatal("artifact retry did not recover", result.Len(), err)
+	}
 }

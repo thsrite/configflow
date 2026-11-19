@@ -3,8 +3,8 @@
 package upgrades
 
 import (
+	"bytes"
 	"context"
-"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -108,8 +108,8 @@ func stateNumber(state *model.AgentUpgrade, key string, required bool) (float64,
 	if err != nil {
 		return 0, false, err
 	}
-	raw=bytes.TrimSpace(raw)
-if !present || string(raw) == "null" {
+	raw = bytes.TrimSpace(raw)
+	if !present || string(raw) == "null" {
 		if required {
 			return 0, false, &CorruptStateError{Field: "latest_upgrade." + key}
 		}
@@ -231,14 +231,14 @@ func saveModel(ctx context.Context, m *agents.Manager, agentID, updateID string,
 		return nil, err
 	}
 	if finished {
-		level, text := logx.Warning, "失败"
+		level, text := logx.Warning, msgFailed
 		switch saved.Status {
 		case "succeeded":
-			level, text = logx.Info, "成功"
+			level, text = logx.Info, msgSucceeded
 		case "rolled_back":
-			text = "失败，已回滚到原版本"
+			text = msgRolledBack
 		case "rollback_failed":
-			level, text = logx.Error, "失败，且回滚失败"
+			level, text = logx.Error, msgRollbackFailed
 		}
 		detail := ""
 		if saved.Error != nil {
@@ -313,13 +313,13 @@ func StartModel(ctx context.Context, m *agents.Manager, agentID string) (*model.
 		}
 		hasInfo = nonempty
 		if hasInfo {
-			var fields model.Fields
-			if jsondecode.Unmarshal(data, &fields) != nil {
+			fields, err := jsondecode.Select(data, "agent_id", "deployment_method", "architecture")
+			if err != nil {
 				return nil, agents.ErrInvalidAgentReply
 			}
-			info.AgentID, _ = fieldString(fields, "agent_id")
-			info.DeploymentMethod, _ = fieldString(fields, "deployment_method")
-			info.Architecture, _ = fieldString(fields, "architecture")
+			info.AgentID, _ = originalString(fields["agent_id"], fields["agent_id"] != nil, nil)
+			info.DeploymentMethod, _ = originalString(fields["deployment_method"], fields["deployment_method"] != nil, nil)
+			info.Architecture, _ = originalString(fields["architecture"], fields["architecture"] != nil, nil)
 		}
 	}
 	if hasInfo && (info.AgentID != agentID || info.DeploymentMethod != "shell") {
@@ -328,7 +328,7 @@ func StartModel(ctx context.Context, m *agents.Manager, agentID string) (*model.
 	if !hasInfo && method != "shell" {
 		return nil, valueError(msgLegacyMethod)
 	}
-	available, err := artifactsFunc()
+	available, err := artifactsFunc(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -675,4 +675,9 @@ func ReportLegacyJSON(ctx context.Context, m *agents.Manager, agentID string, da
 
 // StoredState validates the original persisted journal without contacting the
 // Agent. The protocol-1 bootstrap uses this to read its own pending plan.
-func StoredState(a *model.Agent)(*model.AgentUpgrade,error){if a==nil{return nil,nil};return readState(a)}
+func StoredState(a *model.Agent) (*model.AgentUpgrade, error) {
+	if a == nil {
+		return nil, nil
+	}
+	return readState(a)
+}

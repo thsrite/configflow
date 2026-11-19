@@ -17,8 +17,8 @@ import (
 )
 
 func originalString(raw []byte, present bool, err error) (string, bool) {
-	raw=bytes.TrimSpace(raw)
-if err != nil || !present || len(raw) == 0 || raw[0] != '"' {
+	raw = bytes.TrimSpace(raw)
+	if err != nil || !present || len(raw) == 0 || raw[0] != '"' {
 		return "", false
 	}
 	var text string

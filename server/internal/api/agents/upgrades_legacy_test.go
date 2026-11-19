@@ -1,14 +1,15 @@
 package agents_test
 
 import (
+	"context"
+	"testing"
+
 	"configflow/internal/agents"
 	"configflow/internal/agents/upgrades"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/jsondecode"
 	"configflow/internal/jsonx"
 	"configflow/internal/model"
-	"context"
-	"testing"
 )
 
 func legacyUpgradeObject(value any) *jsonx.Object {
@@ -73,13 +74,40 @@ func TestN810TypedHeartbeatHooksTakePrecedence(t *testing.T) {
 	}
 }
 
-func TestN810CorruptUpgradeDoesNotBreakAgentList(t *testing.T){
- for _,raw:=range []string{`"abc"`,`5`,`[["status","succeeded"],["target_version","9.9.9-go"],"ok"]`}{t.Run(raw,func(t *testing.T){
-  a:=newUpgradeApp(t)
-  if err:=a.m.EditAgents(a.s.Context(),"",func(_ context.Context,rows *[]model.Agent)error{return (*rows)[0].SetJSON("latest_upgrade",[]byte(raw))});err!=nil{t.Fatal(err)}
-  before,err:=a.s.Repo.Store().Fingerprint();if err!=nil{t.Fatal(err)}
-  for _,path:=range []string{"/api/agents","/api/agents?summary=1"}{items,ok:=a.s.Get(path,a.admin).WantStatus(200).JSON().([]any);if !ok || len(items)!=2{t.Fatal("bad Agent hid the list",items)};found:=false;for _,item:=range items{record:=item.(*jsonx.Object);if record.GetString("id")==a.other.GetString("id"){found=record.GetString("name")==a.other.GetString("name")}};if !found{t.Fatal("healthy Agent was lost")}}
-  a.s.Get("/api/agents/"+a.id()+"/upgrade",a.admin).WantStatus(500)
-  after,err:=a.s.Repo.Store().Fingerprint();if err!=nil || after!=before{t.Fatal("corrupt upgrade list/poll wrote database",err)}
- })}
+func TestN810CorruptUpgradeDoesNotBreakAgentList(t *testing.T) {
+	for _, raw := range []string{`"abc"`, `5`, `[["status","succeeded"],["target_version","9.9.9-go"],"ok"]`} {
+		t.Run(raw, func(t *testing.T) {
+			a := newUpgradeApp(t)
+			if err := a.m.EditAgents(a.s.Context(), "", func(_ context.Context, rows *[]model.Agent) error {
+				return (*rows)[0].SetJSON("latest_upgrade", []byte(raw))
+			}); err != nil {
+				t.Fatal(err)
+			}
+			before, err := a.s.Repo.Store().Fingerprint()
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, path := range []string{"/api/agents", "/api/agents?summary=1"} {
+				items, ok := a.s.Get(path, a.admin).WantStatus(200).JSON().([]any)
+				if !ok || len(items) != 2 {
+					t.Fatal("bad Agent hid the list", items)
+				}
+				found := false
+				for _, item := range items {
+					record := item.(*jsonx.Object)
+					if record.GetString("id") == a.other.GetString("id") {
+						found = record.GetString("name") == "other-agent"
+					}
+				}
+				if !found {
+					t.Fatal("healthy Agent was lost")
+				}
+			}
+			a.s.Get("/api/agents/"+a.id()+"/upgrade", a.admin).WantStatus(500)
+			after, err := a.s.Repo.Store().Fingerprint()
+			if err != nil || after != before {
+				t.Fatal("corrupt upgrade list/poll wrote database", err)
+			}
+		})
+	}
 }

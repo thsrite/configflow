@@ -2230,7 +2230,8 @@ N8-11 删除。
 - 协调者批准：已存 `latest_upgrade` / `latest_deployment` / HA 守卫 present、非 null、
   类型不正确时以 `CorruptStateError`/500 拒绝，不自动清除、不写数据库。原来部分 Python
   falsy 错型被当成空记录、pair-list 被 dict() 接受；Go 不再把这些值变成任务所有权证明。
-  原始 string 身份才可授权，numeric/null token 不再经 str() 发到设备。机器版本复用
+  单Agent Poll 的 string 坏记录由原404、pair-list由原200统一改500；int原500保持，
+  其他Agent列表条目仍正常返回。原始 string 身份才可授权，numeric/null token 不再经 str() 发到设备。机器版本复用
   ASCII 64 字节白名单；时间数值拒绝布尔值、非有限值和溢出。原旧 A15 archive 保留，
   `n810_native.json` 完整行 SHA 绑定新拒绝（含旧异常文本），有修改输入不命中负控。
 - Python bug 修正（协调者明确批准）：protocol-2 成功必须由**同一个** worker 回包同时证明
@@ -2240,6 +2241,9 @@ N8-11 删除。
   前以现有“更新文件未准备就绪”409 拒绝，不遗留 queued。原 Python 对空/缺失/空数组先写
   queued 再 KeyError500；truthy numeric 原本已409。五条真实 Python 原输入、回包、错误、
   calls、存储副作用冻结在 `n810_boundary_python.json`，逐行 SHA 校验，Go 只提供拒绝回归。
+- 人工语料中的非字符串 error 对象用 native JSON 诊断文本，保留原中文包装和共享 redact
+  脱敏；七条实际 HTTP 原/新完整期望及两棵完整存储差异逐行绑定，新期望由真实 Python
+  的原 HTTP 输出、正常更新对照及独立 policy 产生，不读取 Go 输出。
 - 原生地址文本使用 strings.TrimSpace/netip，不保留私有 CPython whitespace/IP parser。
   protocol-1、durable ID、fresh heartbeat 回滚确认、未知结果继续查询保持。坏记录恢复步骤
   见 `doc/manual/agents.md`，本轮不新增 HTTP/UI 恢复入口。

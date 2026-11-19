@@ -48,3 +48,24 @@ const (
 	msgDeviceWritten        = "，并写入了设备上的 Agent 配置。"
 	msgRecordOnly           = "（只修改了面板记录）。"
 )
+
+const (
+	msgSucceeded      = "成功"
+	msgFailed         = "失败"
+	msgRolledBack     = "失败，已回滚到原版本"
+	msgRollbackFailed = "失败，且回滚失败"
+)
+
+const (
+	// HASteps explains how to reconfigure HA after renumbering.
+	HASteps = "它是 DNS 高可用成员，面板没有修改记录：两台设备的主备配置和路由器的放行名单里写的都是旧地址。" +
+		"请依次：1. 停用 DNS 高可用；2. 等这台设备的地址在这里自动更新（约两分钟内）；" +
+		"3. 重新配对并开启高可用；4. 重新预览并发布上游路由。"
+	// HAEdit explains why a paired address cannot be edited directly.
+	HAEdit = "这台设备是 DNS 高可用成员，不能在这里修改地址：两台设备的主备配置和路由器的放行名单里写的都是当前地址。" +
+		"请依次：1. 停用 DNS 高可用；2. 修改地址；3. 重新配对并开启高可用；4. 重新预览并发布上游路由。"
+	// EnvEdit explains the container environment address owner.
+	EnvEdit = "这个容器的地址由环境变量 AGENT_IP 指定，容器每次启动都会用它。请修改 AGENT_IP 后重建容器，面板记录会自动更新。"
+	// RouterHint reminds operators to republish dependent routes.
+	RouterHint = "如果上游路由关联了这台设备（代理网关或 DHCP DNS），请重新预览并发布上游路由。"
+)

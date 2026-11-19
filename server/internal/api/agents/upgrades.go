@@ -8,8 +8,6 @@ package agents
 // get_latest_agent_version.
 
 import (
-	"configflow/internal/jsondecode"
-	"configflow/internal/model"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -18,7 +16,9 @@ import (
 	"configflow/internal/agents/upgrades"
 	"configflow/internal/auth"
 	"configflow/internal/httpx"
+	"configflow/internal/jsondecode"
 	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/redact"
 )
 
@@ -40,12 +40,16 @@ func registerUpgrades(r *httpx.Router) {
 }
 
 // upgradeStateErrors surfaces damaged stored evidence without changing its 500 class.
-func upgradeStateErrors(handler httpx.HandlerFunc)httpx.HandlerFunc{return func(c *httpx.Ctx)(*httpx.Response,error){
- response,err:=handler(c)
- var corrupt *upgrades.CorruptStateError
- if errors.As(err,&corrupt){return failure(500,corrupt.Error()),nil}
- return response,err
-}}
+func upgradeStateErrors(handler httpx.HandlerFunc) httpx.HandlerFunc {
+	return func(c *httpx.Ctx) (*httpx.Response, error) {
+		response, err := handler(c)
+		var corrupt *upgrades.CorruptStateError
+		if errors.As(err, &corrupt) {
+			return failure(500, corrupt.Error()), nil
+		}
+		return response, err
+	}
+}
 
 // operation is the `try: ... except Exception as e: return jsonify({'success':
 // False, 'message': str(e)}), 500` wrapper of the operation routes.
@@ -347,7 +351,9 @@ func getAgentUpgrade(c *httpx.Ctx) (*httpx.Response, error) {
 	}
 	if agentTokenMatches(c, agent) {
 		// Legacy bootstrap reads its own pending plan; no recursive Agent call.
-if _,err:=upgrades.StoredState(agent);err!=nil{return nil,err}
+		if _, err := upgrades.StoredState(agent); err != nil {
+			return nil, err
+		}
 		state, present, err := agent.MemberJSON("latest_upgrade")
 		if err != nil {
 			return nil, err

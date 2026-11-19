@@ -9,6 +9,7 @@ package upgrades
 
 import (
 	"container/list"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -20,6 +21,7 @@ import (
 	"sync"
 	"syscall"
 
+	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/resource"
 )
@@ -32,7 +34,10 @@ var Arches = []string{"linux-amd64", "linux-arm64", "linux-armv7"}
 // next to the program. Like Path.exists() of Python 3.11, a stat failure
 // other than "missing" (ENOENT, ENOTDIR, EBADF, ELOOP), e.g. EACCES below a
 // directory without search permission, is an error.
-func ArtifactDirectory() (string, error) {
+func ArtifactDirectory(ctx context.Context) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	configured, ok := os.LookupEnv("AGENTS_STATIC_DIR")
 	if !ok {
 		configured = "/opt/configflow/static/agents"
@@ -40,7 +45,7 @@ func ArtifactDirectory() (string, error) {
 	if configured == "" {
 		configured = "." // Path('')
 	}
-	exists, err := pathExists(configured)
+	exists, err := pathExists(ctx, configured)
 	if err != nil {
 		return "", err
 	}
@@ -66,7 +71,10 @@ func ignoredStatError(err error) bool {
 }
 
 // pathExists is Path.exists() (symlinks followed).
-func pathExists(path string) (bool, error) {
+func pathExists(ctx context.Context, path string) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
 	if _, err := os.Stat(path); err != nil {
 		if ignoredStatError(err) {
 			return false, nil
@@ -148,7 +156,10 @@ func cachePop(key string) {
 // readArtifact is _read_artifact(path, expected): the digest and size of an
 // ELF file within the size limit, nil for any other file, errChanged when the
 // path and the bytes read did not describe one stable file.
-func readArtifact(path string, expected signature) (*ArtifactInfo, error) {
+func readArtifact(ctx context.Context, path string, expected signature) (*ArtifactInfo, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if openHook != nil {
 		openHook(path)
 	}
@@ -170,12 +181,18 @@ func readArtifact(path string, expected signature) (*ArtifactInfo, error) {
 	buffer := make([]byte, artifactReadBytes)
 	calls := 0
 	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		count, err := handle.Read(buffer)
 		calls++
 		if readHook != nil {
 			if hookErr := readHook(path, calls, count); hookErr != nil {
 				return nil, hookErr
 			}
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, err
 		}
 		if count > 0 {
 			if len(magic) < 4 {
@@ -215,7 +232,10 @@ func readArtifact(path string, expected signature) (*ArtifactInfo, error) {
 
 // isFile is Path.is_file() of Python 3.11: a regular file (symlinks
 // followed); "missing" errors are false, other stat errors are raised.
-func isFile(path string) (bool, error) {
+func isFile(ctx context.Context, path string) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
 	info, err := os.Stat(path)
 	if err != nil {
 		if ignoredStatError(err) {
@@ -228,7 +248,10 @@ func isFile(path string) (bool, error) {
 
 // artifactMetadata is _artifact_metadata(path) (POSIX: the digest cache is
 // always used).
-func artifactMetadata(path string) (*ArtifactInfo, error) {
+func artifactMetadata(ctx context.Context, path string) (*ArtifactInfo, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	key, err := filepath.Abs(path)
 	if err != nil {
 		key = path
@@ -236,7 +259,10 @@ func artifactMetadata(path string) (*ArtifactInfo, error) {
 	cacheMu.Lock()
 	defer cacheMu.Unlock()
 	for attempt := 0; attempt < 2; attempt++ {
-		regular, err := isFile(path)
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		regular, err := isFile(ctx, path)
 		if err != nil {
 			return nil, err
 		}
@@ -258,7 +284,7 @@ func artifactMetadata(path string) (*ArtifactInfo, error) {
 			}
 		}
 		cachePop(key)
-		metadata, err := readArtifact(path, expected)
+		metadata, err := readArtifact(ctx, path, expected)
 		if errors.Is(err, errChanged) {
 			if attempt == 0 {
 				continue
@@ -266,6 +292,9 @@ func artifactMetadata(path string) (*ArtifactInfo, error) {
 			return nil, ErrArtifactChanged
 		}
 		if err != nil {
+			return nil, err
+		}
+		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
 		if metadata != nil {
@@ -284,15 +313,19 @@ func artifactMetadata(path string) (*ArtifactInfo, error) {
 // ArtifactsModel returns {arch: {'sha256', 'size'}} for every usable
 // executable, in Arches order. Each call returns new objects. Errors are
 // the OSError Python raises (unreadable file, ErrArtifactChanged).
-func ArtifactsModel() (model.Map[model.UpgradeArtifact], error) {
+func ArtifactsModel(ctx context.Context) (model.Map[model.UpgradeArtifact], error) {
+	ctx = lifecycle.Detach(ctx)
 	var result model.Map[model.UpgradeArtifact]
+	if err := ctx.Err(); err != nil {
+		return result, err
+	}
 	for _, arch := range Arches {
 		// artifact_directory() is evaluated for every architecture.
-		directory, err := ArtifactDirectory()
+		directory, err := ArtifactDirectory(ctx)
 		if err != nil {
 			return result, err
 		}
-		metadata, err := artifactMetadata(joinPath(directory, "configflow-agent-"+arch))
+		metadata, err := artifactMetadata(ctx, joinPath(directory, "configflow-agent-"+arch))
 		if err != nil {
 			return result, err
 		}

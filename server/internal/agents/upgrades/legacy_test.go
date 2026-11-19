@@ -3,13 +3,14 @@ package upgrades
 // Frozen Python-shape fixtures enter only through this test codec. State-machine
 // decisions and all writes still run through the production native owners.
 import (
+	"context"
+	"encoding/json"
+	"errors"
+
 	"configflow/internal/agents"
 	"configflow/internal/jsondecode"
 	"configflow/internal/jsonx"
 	"configflow/internal/model"
-	"context"
-	"encoding/json"
-	"errors"
 )
 
 var requestHook func(*jsonx.Object, string, string, *jsonx.Object) (*agents.Response, error)
@@ -63,7 +64,10 @@ func ReportLegacy(ctx context.Context, m *agents.Manager, id string, payload any
 	state, err := ReportLegacyJSON(ctx, m, id, raw)
 	return legacyObject(state), err
 }
-func Artifacts() (*jsonx.Object, error) { out, err := ArtifactsModel(); return legacyObject(out), err }
+func Artifacts() (*jsonx.Object, error) {
+	out, err := ArtifactsModel(context.Background())
+	return legacyObject(out), err
+}
 func Follow(ctx context.Context, m *agents.Manager, a *jsonx.Object, host string) error {
 	return FollowModel(ctx, m, legacyAgent(a), host)
 }
@@ -133,7 +137,7 @@ func AgentResponse(payload any, status int) *agents.Response {
 	return &agents.Response{StatusCode: status, Header: map[string][]string{"Content-Type": {"application/json"}}, Body: body}
 }
 func setLegacyArtifactsForTest(fn func() (*jsonx.Object, error)) func() {
-	return SetArtifactsForTest(func() (model.Map[model.UpgradeArtifact], error) {
+	return SetArtifactsForTest(func(context.Context) (model.Map[model.UpgradeArtifact], error) {
 		v, err := fn()
 		if err != nil {
 			return model.Map[model.UpgradeArtifact]{}, err

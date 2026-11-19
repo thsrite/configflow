@@ -22,19 +22,11 @@ import (
 	"configflow/internal/repo"
 )
 
-// Constants describe address-follow checks and the existing operator guidance.
-const (
-	VerifyTimeout = 4
-	HASteps       = "它是 DNS 高可用成员，面板没有修改记录：两台设备的主备配置和路由器的放行名单里写的都是旧地址。" +
-		"请依次：1. 停用 DNS 高可用；2. 等这台设备的地址在这里自动更新（约两分钟内）；" +
-		"3. 重新配对并开启高可用；4. 重新预览并发布上游路由。"
-	HAEdit = "这台设备是 DNS 高可用成员，不能在这里修改地址：两台设备的主备配置和路由器的放行名单里写的都是当前地址。" +
-		"请依次：1. 停用 DNS 高可用；2. 修改地址；3. 重新配对并开启高可用；4. 重新预览并发布上游路由。"
-	EnvEdit    = "这个容器的地址由环境变量 AGENT_IP 指定，容器每次启动都会用它。请修改 AGENT_IP 后重建容器，面板记录会自动更新。"
-	RouterHint = "如果上游路由关联了这台设备（代理网关或 DHCP DNS），请重新预览并发布上游路由。"
-	// DefaultRetrySeconds is the production address-follow throttle.
-	DefaultRetrySeconds = 120
-)
+// VerifyTimeout is the address probe timeout in seconds.
+const VerifyTimeout = 4
+
+// DefaultRetrySeconds is the production address-follow throttle.
+const DefaultRetrySeconds = 120
 
 // RetrySeconds controls address-follow retries; tests restore it after use.
 var RetrySeconds float64 = DefaultRetrySeconds
@@ -413,7 +405,7 @@ func DescribeModel(ctx context.Context, m *agents.Manager, a *model.Agent) (*Add
 		var listed []json.RawMessage
 		if jsondecode.Unmarshal(raw, &listed) == nil {
 			for _, rawAddress := range listed {
-address,valid:=originalString(rawAddress,true,nil)
+				address, valid := originalString(rawAddress, true, nil)
 				if valid && Usable(address) != "" {
 					result.Addresses = append(result.Addresses, address)
 				}
