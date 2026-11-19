@@ -144,3 +144,15 @@ func nativePageIdentity(result RegionResult, host, at string) (WebsitePage, erro
 	err = json.Unmarshal(raw, &out)
 	return out, err
 }
+
+func stageRule(ctx context.Context, item libraryItem) (*rulefetch.CachePublication, error) {
+	raw, err := json.Marshal(item)
+	if err != nil {
+		return nil, err
+	}
+	var declaration model.RuleLibraryItem
+	if err = json.Unmarshal(raw, &declaration); err != nil {
+		return nil, err
+	}
+	return rulefetch.StageCache(ctx, declaration, []byte(item.Content), nil)
+}

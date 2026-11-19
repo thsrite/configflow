@@ -8,11 +8,14 @@ import (
 
 	registry "configflow/internal/agents"
 	"configflow/internal/agents/trafficstore"
+	"configflow/internal/ctxx"
 	"configflow/internal/deploy"
 	"configflow/internal/discovery"
+	"configflow/internal/faultprobe"
 	"configflow/internal/health"
 	"configflow/internal/httpx"
 	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/oxidns"
 	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
@@ -205,8 +208,16 @@ func clientTargetsPayload(ctx context.Context, id string) (any, error) {
 	}{true, id, name, targets, direct, proxy}, err
 }
 func applyClientIP(ctx context.Context, id string, edit connectionEdit, dest *rules.Destination) (any, error) {
+	ctx, release, err := rulefetch.LockCacheEdits(ctx, edit.RulesetID)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+	var stage *rulefetch.CachePublication
+	defer func() { stage.Discard(ctx) }()
 	var result *rules.IPRuleResult
-	_, err := repo.UpdateSharedConfigTransaction(ctx, func(tx context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
+	_, err = repo.UpdateSharedConfigTransaction(ctx, func(tx context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
+		tx = ctxx.Detach(ctxx.WithParent(tx, ctx))
 		if err := checkClientBinding(tx, id, edit.ProfileID, true); err != nil {
 			return nil, err
 		}
@@ -219,13 +230,31 @@ func applyClientIP(ctx context.Context, id string, edit connectionEdit, dest *ru
 		if *failure != nil {
 			return nil, *failure
 		}
-		return nil, err
+		if err != nil {
+			return nil, err
+		}
+		for _, item := range result.Updated {
+			raw, err := json.Marshal(item)
+			if err != nil {
+				return nil, err
+			}
+			var declaration model.RuleLibraryItem
+			if err = json.Unmarshal(raw, &declaration); err != nil {
+				return nil, err
+			}
+			stage, err = rulefetch.StageCache(tx, declaration, []byte(item.GetString("content")), nil)
+			if err != nil {
+				return nil, err
+			}
+		}
+		return nil, nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	for _, item := range result.Updated {
-		if _, err = rulefetch.SaveRuleToLocal(ctx, item, nil); err != nil {
+	if stage != nil {
+		faultprobe.Point(ctx, faultprobe.RuleDBCommitted)
+		if err = stage.Commit(ctx); err != nil {
 			return nil, err
 		}
 	}

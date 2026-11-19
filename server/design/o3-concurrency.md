@@ -851,6 +851,9 @@ ProfileSessions 不取得操作锁；未来若需要取得，必须复用 C36 �
   disconnect scenarios deterministic even when rendering hits a cache and has
   no blocking network operation. All names are constants in faultprobe's Catalog;
   the harness reads that compiled registry and refuses unknown names.
+- C37/A24 adds RuleDBCommitted after the inline rule declaration commits and
+  before cache publication. Its SIGKILL regression verifies durable invalidation,
+  all three HTTP content readers, and repair in a fresh process.
 - Barriers poll with the shared Clock, honour ctx and have an independent 30s
   maximum. A timed-out barrier releases the work and records timeout; it cannot
   stall a process forever if the harness dies. O3-7 scans these tagged files too;

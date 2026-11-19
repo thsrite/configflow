@@ -16,6 +16,8 @@ const (
 	GenerateBuild Phase = "generate-build"
 	// ProviderRender is after a provider worker acquires its render pool slot.
 	ProviderRender Phase = "provider-render"
+	// RuleDBCommitted is after an inline declaration commit, before cache publication.
+	RuleDBCommitted Phase = "rule-db-committed"
 	// MaxWait bounds every test barrier, even if the harness disappears.
 	MaxWait = 30 * time.Second
 	// ControlEnv selects the private control directory in a difftest binary only.
@@ -26,9 +28,9 @@ const (
 
 // Catalog returns the registered symbolic names for harness discovery.
 func Catalog() map[string]Phase {
-	return map[string]Phase{"store": StoreBeforeCommit, "metrics": MetricsFlush, "generate": GenerateBuild, "provider": ProviderRender}
+	return map[string]Phase{"store": StoreBeforeCommit, "metrics": MetricsFlush, "generate": GenerateBuild, "provider": ProviderRender, "rule-cache": RuleDBCommitted}
 }
 
 func registered(phase Phase) bool {
-	return phase == StoreBeforeCommit || phase == MetricsFlush || phase == GenerateBuild || phase == ProviderRender
+	return phase == StoreBeforeCommit || phase == MetricsFlush || phase == GenerateBuild || phase == ProviderRender || phase == RuleDBCommitted
 }

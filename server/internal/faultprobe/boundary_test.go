@@ -41,7 +41,7 @@ func TestFaultBarrierIsTestBuildOnly(t *testing.T) {
 			t.Fatalf("barrier implementation outside difftest build: %s", name)
 		}
 	}
-	if len(Catalog()) != 4 {
+	if len(Catalog()) != 5 {
 		t.Fatal("update the documented harness phase registry")
 	}
 	for _, name := range Catalog() {

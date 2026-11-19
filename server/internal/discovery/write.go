@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 
+	"configflow/internal/ctxx"
+	"configflow/internal/faultprobe"
 	"configflow/internal/lifecycle"
 	"configflow/internal/rulefetch"
 	"configflow/internal/rules"
@@ -127,8 +129,24 @@ func ApplyDomains(ctx context.Context, id string, entries []ApplyEntry, source s
 		infos[e.Target] = v
 		targets = append(targets, e.Target)
 	}
-	updated := []libraryItem{}
+	ids := []string{}
+	for _, target := range targets {
+		ids = append(ids, infos[target].ID)
+	}
+	ctx, release, err := rulefetch.LockCacheEdits(ctx, ids...)
+	if err != nil {
+		return out, err
+	}
+	defer release()
+	stages := []*rulefetch.CachePublication{}
+	updated := map[string]libraryItem{}
+	defer func() {
+		for _, stage := range stages {
+			stage.Discard(ctx)
+		}
+	}()
 	err = editLibraryContext(ctx, func(tx context.Context, items *[]libraryItem) error {
+		tx = ctxx.Detach(ctxx.WithParent(tx, ctx))
 		for _, option := range options {
 			if option.BeforeWrite != nil {
 				if err := option.BeforeWrite(tx, infos); err != nil {
@@ -173,16 +191,32 @@ func ApplyDomains(ctx context.Context, id string, entries []ApplyEntry, source s
 				if err != nil {
 					return err
 				}
-				updated = append(updated, *item)
+				updated[item.ID] = *item
 			}
+		}
+		// Several targets can share one library. Stage its final declaration once.
+		for _, target := range targets {
+			item, ok := updated[infos[target].ID]
+			if !ok {
+				continue
+			}
+			stage, err := stageRule(tx, item)
+			if err != nil {
+				return err
+			}
+			stages = append(stages, stage)
+			delete(updated, item.ID)
 		}
 		return nil
 	})
 	if err != nil {
 		return out, err
 	}
-	for _, item := range updated {
-		if err = saveRule(ctx, item); err != nil {
+	if len(stages) > 0 {
+		faultprobe.Point(ctx, faultprobe.RuleDBCommitted)
+	}
+	for _, stage := range stages {
+		if err = stage.Commit(ctx); err != nil {
 			return out, err
 		}
 	}
@@ -331,8 +365,19 @@ func UndoDomain(ctx context.Context, id, value, target string) ([]string, error)
 		}
 	}
 	removed := []string{}
-	var changed *libraryItem
-	err = editLibrary(ctx, func(items *[]libraryItem) error {
+	var stage *rulefetch.CachePublication
+	ids := []string{}
+	if rid != nil {
+		ids = append(ids, *rid)
+	}
+	ctx, release, err := rulefetch.LockCacheEdits(ctx, ids...)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+	defer func() { stage.Discard(ctx) }()
+	err = editLibraryContext(ctx, func(tx context.Context, items *[]libraryItem) error {
+		tx = ctxx.Detach(ctxx.WithParent(tx, ctx))
 		if rid == nil {
 			return nil
 		}
@@ -353,7 +398,10 @@ func UndoDomain(ctx context.Context, id, value, target string) ([]string, error)
 			}
 			if len(lines) > 0 {
 				item.Content = content
-				changed = ptr(*item)
+				stage, err = stageRule(tx, *item)
+				if err != nil {
+					return err
+				}
 			}
 			break
 		}
@@ -362,8 +410,9 @@ func UndoDomain(ctx context.Context, id, value, target string) ([]string, error)
 	if err != nil {
 		return nil, err
 	}
-	if changed != nil {
-		if err = saveRule(ctx, *changed); err != nil {
+	if stage != nil {
+		faultprobe.Point(ctx, faultprobe.RuleDBCommitted)
+		if err = stage.Commit(ctx); err != nil {
 			return nil, err
 		}
 	}

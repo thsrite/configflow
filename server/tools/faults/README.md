@@ -68,3 +68,11 @@ They cannot disable loops; the normal production lifecycle timings remain active
    report summary. Add coverage to the report; never register a placeholder pass.
 
 Control tests: `cd server/tools/faults && PYTHONDONTWRITEBYTECODE=1 python test_core.py`.
+
+The C37/A24 inline-rule publication boundary is `rule-cache` / `rule-db-committed`.
+Its focused process regression kills writers after DB commit and checks new-process
+cache rejection, all three HTTP content routes, HEAD, and receipt/temp repair:
+
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && go test -race -tags configflow_difftest ./internal/rulefetch -run "^TestInlinePublication" -count=1'
+```
